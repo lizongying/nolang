@@ -1,0 +1,11 @@
+; test-typeowner-basic.no
+; 最小測試：不涉及網絡模組，只驗證 typeOwner 改動本身正確。
+; 使用 math 模組的函數和常量，確認跨模組調用前綴正常工作。
+
+main = () {
+    pi = math.PI
+    r = 2.0
+    area = math.degrees(pi)
+    print('pi={pi} area={area}')
+    print('typeOwner basic test: ok')
+}

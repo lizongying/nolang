@@ -11,7 +11,7 @@ import (
 	"strings"
 	"sync"
 
-	nbuild "github.com/lizongying/nolang/build"
+	"github.com/lizongying/nolang/checker"
 	nolangfmt "github.com/lizongying/nolang/fmt"
 	"github.com/lizongying/nolang/lexer"
 	"github.com/lizongying/nolang/parser"
@@ -139,7 +139,7 @@ func (s *Server) publishDocumentDiagnostics(uri string, parseErrors []string, as
 			docPath := strings.TrimPrefix(uri, "file://")
 			docDir := filepath.Dir(docPath)
 
-			typeErrs := nbuild.ValidateTypes(prog)
+			typeErrs := checker.ValidateTypes(prog)
 			for _, e := range typeErrs {
 				diagnostic := Diagnostic{
 					Range: Range{
@@ -153,7 +153,7 @@ func (s *Server) publishDocumentDiagnostics(uri string, parseErrors []string, as
 				diagnostics = append(diagnostics, diagnostic)
 			}
 
-			namingWarnings := nbuild.ValidateNaming(prog)
+			namingWarnings := checker.ValidateNaming(prog)
 			for _, w := range namingWarnings {
 				diagnostic := Diagnostic{
 					Range: Range{
@@ -167,7 +167,7 @@ func (s *Server) publishDocumentDiagnostics(uri string, parseErrors []string, as
 				diagnostics = append(diagnostics, diagnostic)
 			}
 
-			unusedVars := nbuild.ValidateUnusedVars(prog)
+			unusedVars := checker.ValidateUnusedVars(prog)
 			for _, u := range unusedVars {
 				endChar := uint32(u.Column)
 				if u.EndColumn > 0 {
@@ -186,35 +186,35 @@ func (s *Server) publishDocumentDiagnostics(uri string, parseErrors []string, as
 				diagnostics = append(diagnostics, diagnostic)
 			}
 
-			undefinedVars := nbuild.ValidateUndefinedVars(prog, docDir)
-		for _, u := range undefinedVars {
-			diagnostic := Diagnostic{
-				Range: Range{
-					Start: Position{Line: uint32(u.Line - 1), Character: uint32(u.Column - 1)},
-					End:   Position{Line: uint32(u.Line - 1), Character: uint32(u.Column)},
-				},
-				Severity: DiagnosticSeverityError,
-				Source:   "nolang-lint",
-				Message:  u.Message,
+			undefinedVars := checker.ValidateUndefinedVars(prog, docDir)
+			for _, u := range undefinedVars {
+				diagnostic := Diagnostic{
+					Range: Range{
+						Start: Position{Line: uint32(u.Line - 1), Character: uint32(u.Column - 1)},
+						End:   Position{Line: uint32(u.Line - 1), Character: uint32(u.Column)},
+					},
+					Severity: DiagnosticSeverityError,
+					Source:   "nolang-lint",
+					Message:  u.Message,
+				}
+				diagnostics = append(diagnostics, diagnostic)
 			}
-			diagnostics = append(diagnostics, diagnostic)
-		}
 
-		uninitOutParams := nbuild.ValidateUninitOutputParams(prog)
-		for _, u := range uninitOutParams {
-			diagnostic := Diagnostic{
-				Range: Range{
-					Start: Position{Line: uint32(u.Line - 1), Character: uint32(u.Column - 1)},
-					End:   Position{Line: uint32(u.Line - 1), Character: uint32(u.Column)},
-				},
-				Severity: DiagnosticSeverityError,
-				Source:   "nolang-type-checker",
-				Message:  u.Message,
+			uninitOutParams := checker.ValidateUninitOutputParams(prog)
+			for _, u := range uninitOutParams {
+				diagnostic := Diagnostic{
+					Range: Range{
+						Start: Position{Line: uint32(u.Line - 1), Character: uint32(u.Column - 1)},
+						End:   Position{Line: uint32(u.Line - 1), Character: uint32(u.Column)},
+					},
+					Severity: DiagnosticSeverityError,
+					Source:   "nolang-type-checker",
+					Message:  u.Message,
+				}
+				diagnostics = append(diagnostics, diagnostic)
 			}
-			diagnostics = append(diagnostics, diagnostic)
-		}
 
-		ifaceImplWarnings := nbuild.ValidateInterfaceImplementation(prog)
+			ifaceImplWarnings := checker.ValidateInterfaceImplementation(prog)
 			for _, u := range ifaceImplWarnings {
 				diagnostic := Diagnostic{
 					Range: Range{
@@ -228,7 +228,7 @@ func (s *Server) publishDocumentDiagnostics(uri string, parseErrors []string, as
 				diagnostics = append(diagnostics, diagnostic)
 			}
 
-			useKeywordHints := nbuild.ValidateUseKeyword(prog)
+			useKeywordHints := checker.ValidateUseKeyword(prog)
 			for _, u := range useKeywordHints {
 				diagnostic := Diagnostic{
 					Range: Range{
@@ -242,7 +242,7 @@ func (s *Server) publishDocumentDiagnostics(uri string, parseErrors []string, as
 				diagnostics = append(diagnostics, diagnostic)
 			}
 
-			useAliasHints := nbuild.ValidateUseAlias(prog)
+			useAliasHints := checker.ValidateUseAlias(prog)
 			for _, u := range useAliasHints {
 				diagnostic := Diagnostic{
 					Range: Range{
@@ -256,7 +256,7 @@ func (s *Server) publishDocumentDiagnostics(uri string, parseErrors []string, as
 				diagnostics = append(diagnostics, diagnostic)
 			}
 
-			duplicateVars := nbuild.ValidateDuplicateVars(prog)
+			duplicateVars := checker.ValidateDuplicateVars(prog)
 			for _, u := range duplicateVars {
 				diagnostic := Diagnostic{
 					Range: Range{
@@ -271,7 +271,7 @@ func (s *Server) publishDocumentDiagnostics(uri string, parseErrors []string, as
 			}
 
 			// Validate URL-style import paths are declared in mod.jsonc dependencies
-			depErrs := nbuild.ValidateDependencyImports(prog, docDir)
+			depErrs := checker.ValidateDependencyImports(prog, docDir)
 			for _, u := range depErrs {
 				diagnostic := Diagnostic{
 					Range: Range{
@@ -286,7 +286,7 @@ func (s *Server) publishDocumentDiagnostics(uri string, parseErrors []string, as
 			}
 
 			// Validate export symbols in lib.no
-			exportErrs := nbuild.ValidateExportSymbols(prog, docPath)
+			exportErrs := checker.ValidateExportSymbols(prog, docPath)
 			for _, u := range exportErrs {
 				diagnostic := Diagnostic{
 					Range: Range{
@@ -300,7 +300,7 @@ func (s *Server) publishDocumentDiagnostics(uri string, parseErrors []string, as
 				diagnostics = append(diagnostics, diagnostic)
 			}
 
-			stringConcatHints := nbuild.ValidateStringConcat(prog)
+			stringConcatHints := checker.ValidateStringConcat(prog)
 			for _, u := range stringConcatHints {
 				diagnostic := Diagnostic{
 					Range: Range{
@@ -314,7 +314,7 @@ func (s *Server) publishDocumentDiagnostics(uri string, parseErrors []string, as
 				diagnostics = append(diagnostics, diagnostic)
 			}
 
-			funcArgErrs := nbuild.ValidateFuncArgs(prog, docDir)
+			funcArgErrs := checker.ValidateFuncArgs(prog, docDir)
 			for _, u := range funcArgErrs {
 				diagnostic := Diagnostic{
 					Range: Range{
@@ -329,7 +329,7 @@ func (s *Server) publishDocumentDiagnostics(uri string, parseErrors []string, as
 			}
 
 			// Print format string validation
-			printFmtErrs := nbuild.ValidatePrintFormat(prog)
+			printFmtErrs := checker.ValidatePrintFormat(prog)
 			for _, u := range printFmtErrs {
 				diagnostic := Diagnostic{
 					Range: Range{
@@ -344,7 +344,7 @@ func (s *Server) publishDocumentDiagnostics(uri string, parseErrors []string, as
 			}
 
 			// Cross-module type prefix validation
-			crossModuleErrs := nbuild.ValidateCrossModuleTypeRefs(prog)
+			crossModuleErrs := checker.ValidateCrossModuleTypeRefs(prog)
 			for _, u := range crossModuleErrs {
 				diagnostic := Diagnostic{
 					Range: Range{
@@ -359,7 +359,7 @@ func (s *Server) publishDocumentDiagnostics(uri string, parseErrors []string, as
 			}
 
 			// Uppercase hex literal hints
-			hexCaseHints := nbuild.ValidateHexCase(prog)
+			hexCaseHints := checker.ValidateHexCase(prog)
 			for _, u := range hexCaseHints {
 				diagnostic := Diagnostic{
 					Range: Range{
@@ -374,7 +374,7 @@ func (s *Server) publishDocumentDiagnostics(uri string, parseErrors []string, as
 			}
 
 			// Async naming warnings
-			asyncNamingWarnings := nbuild.ValidateAsyncNaming(prog)
+			asyncNamingWarnings := checker.ValidateAsyncNaming(prog)
 			for _, w := range asyncNamingWarnings {
 				diagnostic := Diagnostic{
 					Range: Range{
@@ -389,7 +389,7 @@ func (s *Server) publishDocumentDiagnostics(uri string, parseErrors []string, as
 			}
 
 			// Uninitialized nullable output parameters
-			uninitErrs := nbuild.ValidateUninitOutputParams(prog)
+			uninitErrs := checker.ValidateUninitOutputParams(prog)
 			for _, u := range uninitErrs {
 				diagnostic := Diagnostic{
 					Range: Range{
@@ -404,7 +404,7 @@ func (s *Server) publishDocumentDiagnostics(uri string, parseErrors []string, as
 			}
 
 			// Embed annotation validation
-			embedErrs := nbuild.ValidateEmbedAnnotations(prog, docPath)
+			embedErrs := checker.ValidateEmbedAnnotations(prog, docPath)
 			for _, e := range embedErrs {
 				diagnostic := Diagnostic{
 					Range: Range{
@@ -419,7 +419,7 @@ func (s *Server) publishDocumentDiagnostics(uri string, parseErrors []string, as
 			}
 
 			// Interface implementation warnings
-			ifaceWarnings := nbuild.ValidateInterfaceImplementation(prog)
+			ifaceWarnings := checker.ValidateInterfaceImplementation(prog)
 			for _, u := range ifaceWarnings {
 				diagnostic := Diagnostic{
 					Range: Range{
@@ -434,7 +434,7 @@ func (s *Server) publishDocumentDiagnostics(uri string, parseErrors []string, as
 			}
 
 			// Redundant type annotation hints
-			redundantTypeHints := nbuild.ValidateRedundantTypeAnnotation(prog)
+			redundantTypeHints := checker.ValidateRedundantTypeAnnotation(prog)
 			for _, u := range redundantTypeHints {
 				diagnostic := Diagnostic{
 					Range: Range{

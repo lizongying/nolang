@@ -14,7 +14,9 @@ import (
 	"time"
 
 	nbuild "github.com/lizongying/nolang/build"
+	"github.com/lizongying/nolang/checker"
 	nfmt "github.com/lizongying/nolang/fmt"
+	"github.com/lizongying/nolang/mod"
 )
 
 type ProjectConfig struct {
@@ -251,7 +253,7 @@ func infoCommand() {
 	fmt.Printf("std source:  %s\n", stdDir)
 	fmt.Printf("  resolved:  via %s", stdSrc)
 	if stdSrc == "env" {
-		fmt.Printf(" ($%s)", nbuild.NOLANG_STD_SRC)
+		fmt.Printf(" ($%s)", mod.NOLANG_STD_SRC)
 	}
 	fmt.Println()
 
@@ -260,22 +262,22 @@ func infoCommand() {
 	fmt.Printf("source:      %s\n", srcDir)
 	fmt.Printf("  resolved:  via %s", srcSrc)
 	if srcSrc == "env" {
-		fmt.Printf(" ($%s)", nbuild.NOLANG_SRC)
+		fmt.Printf(" ($%s)", mod.NOLANG_SRC)
 	}
 	fmt.Println()
 
 	// Environment variables
-	stdEnvVal := os.Getenv(nbuild.NOLANG_STD_SRC)
+	stdEnvVal := os.Getenv(mod.NOLANG_STD_SRC)
 	if stdEnvVal != "" {
-		fmt.Printf("$%s: %s\n", nbuild.NOLANG_STD_SRC, stdEnvVal)
+		fmt.Printf("$%s: %s\n", mod.NOLANG_STD_SRC, stdEnvVal)
 	} else {
-		fmt.Printf("$%s: (not set)\n", nbuild.NOLANG_STD_SRC)
+		fmt.Printf("$%s: (not set)\n", mod.NOLANG_STD_SRC)
 	}
-	srcEnvVal := os.Getenv(nbuild.NOLANG_SRC)
+	srcEnvVal := os.Getenv(mod.NOLANG_SRC)
 	if srcEnvVal != "" {
-		fmt.Printf("$%s:  %s\n", nbuild.NOLANG_SRC, srcEnvVal)
+		fmt.Printf("$%s:  %s\n", mod.NOLANG_SRC, srcEnvVal)
 	} else {
-		fmt.Printf("$%s:  (not set)\n", nbuild.NOLANG_SRC)
+		fmt.Printf("$%s:  (not set)\n", mod.NOLANG_SRC)
 	}
 
 	// Working directory
@@ -284,7 +286,7 @@ func infoCommand() {
 	}
 
 	// Std module count
-	modules := nbuild.GetStdModules()
+	modules := checker.GetStdModules()
 	fmt.Printf("std modules: %d\n", len(modules))
 
 	// Package info (if in a project)

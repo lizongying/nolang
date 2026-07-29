@@ -3,6 +3,7 @@ package build
 import (
 	"testing"
 
+	"github.com/lizongying/nolang/checker"
 	"github.com/lizongying/nolang/lexer"
 	"github.com/lizongying/nolang/parser"
 )
@@ -18,7 +19,7 @@ num = int | float
 	if errs := p.Errors(); len(errs) > 0 {
 		t.Fatalf("parse errors: %v", errs)
 	}
-	aliases, results := ValidateUnionTypes(prog)
+	aliases, results := checker.ValidateUnionTypes(prog)
 	if len(results) > 0 {
 		t.Errorf("unexpected validate results: %v", results)
 	}
@@ -44,8 +45,8 @@ num = int | float
 	if errs := p.Errors(); len(errs) > 0 {
 		t.Fatalf("parse errors: %v", errs)
 	}
-	aliases, _ := ValidateUnionTypes(prog)
-	members := FlattenUnion("num", aliases)
+	aliases, _ := checker.ValidateUnionTypes(prog)
+	members := checker.FlattenUnion("num", aliases)
 	// Should expand num → int|float → i8|i16|i32|i64|f32|f64
 	if len(members) != 6 {
 		t.Errorf("expected 6 flattened members, got %d: %v", len(members), members)
@@ -66,7 +67,7 @@ max = (a ..num) (r num) {
 		t.Fatalf("parse errors: %v", errs)
 	}
 	// ValidateUnionTypes is needed to populate VariadicUnion.
-	ValidateUnionTypes(prog)
+	checker.ValidateUnionTypes(prog)
 	// Confirm the function got tagged.
 	var fd *parser.FunctionDefinition
 	for _, s := range prog.Statements {
@@ -112,7 +113,7 @@ int = i64
 	if errs := p.Errors(); len(errs) > 0 {
 		t.Fatalf("parse errors: %v", errs)
 	}
-	_, results := ValidateUnionTypes(prog)
+	_, results := checker.ValidateUnionTypes(prog)
 	if len(results) != 1 {
 		t.Errorf("expected 1 duplicate error, got %d: %v", len(results), results)
 	}
@@ -138,7 +139,7 @@ abs = (a num) (r num) {
 	}
 	// ValidateUnionTypes sets GenericUnion for non-variadic functions
 	// whose params/results are all the same union alias.
-	ValidateUnionTypes(prog)
+	checker.ValidateUnionTypes(prog)
 
 	// Confirm abs is tagged.
 	var abs *parser.FunctionDefinition
@@ -205,7 +206,7 @@ max = (a ..num) (r num) {
 	if errs := p.Errors(); len(errs) > 0 {
 		t.Fatalf("parse errors: %v", errs)
 	}
-	ValidateUnionTypes(prog)
+	checker.ValidateUnionTypes(prog)
 	monomorphizeUnions(prog)
 
 	type sig struct {
@@ -272,7 +273,7 @@ sign = (a num) (r num) {
 	if errs := p.Errors(); len(errs) > 0 {
 		t.Fatalf("parse errors: %v", errs)
 	}
-	ValidateUnionTypes(prog)
+	checker.ValidateUnionTypes(prog)
 	monomorphizeUnions(prog)
 
 	type sig struct {
@@ -331,7 +332,7 @@ even = (a int) (yes int) {
 	if errs := p.Errors(); len(errs) > 0 {
 		t.Fatalf("parse errors: %v", errs)
 	}
-	ValidateUnionTypes(prog)
+	checker.ValidateUnionTypes(prog)
 	monomorphizeUnions(prog)
 
 	got := map[string]bool{}
@@ -381,7 +382,7 @@ gcd = (a num, b num) (r num) {
 	if errs := p.Errors(); len(errs) > 0 {
 		t.Fatalf("parse errors: %v", errs)
 	}
-	ValidateUnionTypes(prog)
+	checker.ValidateUnionTypes(prog)
 	monomorphizeUnions(prog)
 
 	// Find the monomorphized gcd__i8 and check its body references
@@ -483,8 +484,8 @@ num = int | float
 	if errs := p.Errors(); len(errs) > 0 {
 		t.Fatalf("parse errors: %v", errs)
 	}
-	aliases, _ := ValidateUnionTypes(prog)
-	members := FlattenUnion("num", aliases)
+	aliases, _ := checker.ValidateUnionTypes(prog)
+	members := checker.FlattenUnion("num", aliases)
 	if len(members) != 10 {
 		t.Fatalf("expected 10 members for num, got %d: %v", len(members), members)
 	}

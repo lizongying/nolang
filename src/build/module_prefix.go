@@ -77,9 +77,9 @@ func renameTypeDef(stmt parser.Statement, newName string) {
 // module's statements so they carry the module short-name prefix
 // (e.g. `result` → `sql.result`, `result.exec` → `sql.result.exec`).
 //
-// typeOwner is updated with bareName → moduleShortName for every type
-// definition found in this module, so that a later pass can rewrite
-// type *references* across the entire merged program.
+// typeOwner 以 "module.name" 為 key 記錄所有模組的所有型別定義，
+// value 為 bareName（如 "client"）。這樣即使多個模組定義同名結構體
+// （如 net.client 與 ws.client），也不會互相覆蓋。
 func prefixModuleStatements(stmts []parser.Statement, moduleShortName string, typeOwner map[string]string) {
 	if moduleShortName == "" {
 		return
@@ -94,6 +94,8 @@ func prefixModuleStatements(stmts []parser.Statement, moduleShortName string, ty
 	}
 
 	// --- Phase 2: rename type definitions & register in typeOwner ---
+	// key = "module.name"，value = bareName。
+	// 同名結構體各自有獨立條目（如 "net.client" 和 "ws.client"），不會覆蓋。
 	for _, stmt := range stmts {
 		name := getTypeDefName(stmt)
 		if name == "" || !moduleTypes[name] {
@@ -101,12 +103,35 @@ func prefixModuleStatements(stmts []parser.Statement, moduleShortName string, ty
 		}
 		newName := moduleShortName + "." + name
 		renameTypeDef(stmt, newName)
-		typeOwner[name] = moduleShortName
+		typeOwner[newName] = name
 	}
 
-	// Note: method name renaming (Type.method → module.Type.method) is handled
-	// by prefixMethodNames() after ALL modules are merged, because a method may
-	// be defined in a different module than its receiver struct.
+	// --- Phase 3: rename method definitions defined in THIS module ---
+	// 同模組方法定義（Type.method → module.Type.method）在此直接重命名，
+	// 不依賴後續 prefixMethodNames 的全局 typeOwner 查找。這樣即使多個模組
+	// 定義同名結構體，各自的方法也能正確攜帶本模組前綴。
+	// 跨模組方法定義（接收者類型在 A 模組，方法定義在 B 模組）仍由
+	// prefixMethodNames 處理。
+	for _, stmt := range stmts {
+		fd, ok := stmt.(*parser.FunctionDefinition)
+		if !ok {
+			continue
+		}
+		dotIdx := strings.Index(fd.Name, ".")
+		if dotIdx <= 0 {
+			continue
+		}
+		typePrefix := fd.Name[:dotIdx]
+		if strings.Contains(typePrefix, ".") {
+			continue
+		}
+		if moduleTypes[typePrefix] {
+			fd.Name = moduleShortName + "." + fd.Name
+		}
+	}
+
+	// Note: cross-module method renaming (method defined in B but receiver
+	// struct in A) is handled by prefixMethodNames() after ALL modules merged.
 }
 
 // prefixMethodNames renames method function names across the merged program
@@ -115,6 +140,12 @@ func prefixModuleStatements(stmts []parser.Statement, moduleShortName string, ty
 // (e.g. reader.fill defined in bufio.no, but reader defined in io.no).
 //
 // Must be called AFTER all modules have been merged and typeOwner is complete.
+//
+// typeOwner 的 key 為 "module.name"，value 為 bareName。對於跨模組方法定義
+// （接收者型別為 bare name），遍歷 typeOwner 查找 value 匹配的條目：
+//   - 恰好一個匹配 → 用 "module.name" 作為前綴
+//   - 多個匹配（同名結構體跨模組）→ 有歧義，保持原樣要求用戶顯式指定
+//   - 零個匹配 → 不處理
 func prefixMethodNames(stmts []parser.Statement, typeOwner map[string]string) {
 	if len(typeOwner) == 0 {
 		return
@@ -133,9 +164,21 @@ func prefixMethodNames(stmts []parser.Statement, typeOwner map[string]string) {
 		if strings.Contains(typePrefix, ".") {
 			continue
 		}
-		if mod, ok := typeOwner[typePrefix]; ok && mod != "" {
-			fd.Name = mod + "." + fd.Name
+		// 遍歷 typeOwner 查找 value == typePrefix 的所有 "module.name" 鍵
+		match := ""
+		count := 0
+		for k, v := range typeOwner {
+			if v == typePrefix {
+				match = k
+				count++
+			}
 		}
+		if count == 1 {
+			// 恰好一個模組定義該型別，用 "module.name" 前綴
+			fd.Name = match + "." + fd.Name
+		}
+		// count == 0：無定義，不處理
+		// count > 1：同名結構體跨模組，bare name 有歧義，保持原樣
 	}
 }
 
@@ -155,15 +198,37 @@ func rewriteTypeRefs(stmts []parser.Statement, typeOwner map[string]string) {
 	}
 }
 
-// prefixTypeName returns the module-prefixed form of a bare type name, or the
-// original string if the name is built-in, already dotted, or unknown.
+// prefixTypeName returns the module-prefixed form of a type name, or the
+// original string if the name is built-in or unknown.
+//
+// typeOwner 的 key 為 "module.name"，value 為 bareName。查找規則：
+//   - name 已含 "."：視為已帶模組前綴，直接返回（typeOwner 中可能記錄也可能未記錄）
+//   - name 為 bare name：遍歷 typeOwner 查找 value == name 的鍵
+//     - 恰好一個匹配 → 返回 "module.name"
+//     - 多個匹配（同名結構體跨模組）→ bare name 無法消歧，保持原樣
+//     - 零個匹配 → 保持原樣
 func prefixTypeName(name string, typeOwner map[string]string) string {
 	if name == "" || isModulePrefixBuiltinType(name) {
 		return name
 	}
-	if mod, ok := typeOwner[name]; ok && mod != "" {
-		return mod + "." + name
+	// 已含 "."：已帶模組前綴，直接返回
+	if strings.Contains(name, ".") {
+		return name
 	}
+	// bare name：遍歷 typeOwner 查找 value == name 的鍵
+	match := ""
+	count := 0
+	for k, v := range typeOwner {
+		if v == name {
+			match = k
+			count++
+		}
+	}
+	if count == 1 {
+		return match
+	}
+	// count == 0：未知型別，保持原樣
+	// count > 1：同名結構體跨模組，bare name 無法消歧，保持原樣
 	return name
 }
 

@@ -547,6 +547,11 @@ Variable names, function names, struct names, etc. can start with an underscore,
 - **Local variables, function parameters**: lowercase (e.g. `hex-chars`, `data-len`)
 - **Function names, struct names**: lowercase (e.g. `sha1-block`, `db-mysql`)
 
+**Function naming convention (strongly recommended):**
+- **Do NOT prefix function names with the module name.** Functions within a module should use short, intuitive names. The module prefix is automatically provided by the `ShortName.` prefix during cross-module calls. For example, in `tail.no`, define the entry function as `tail` (not `tail-run`), and helper functions as `atoi` (not `tail-atoi`). This keeps code concise and makes cross-module calls like `tail.tail()` more intuitive.
+- **Entry functions** should use the module name itself (e.g. `ping.no` → `ping`, `cat.no` → `cat`). Cross-module imports look like `# /src/tail.tail`.
+- **Avoid keywords**: `run` (async keyword), `match` (conditional match keyword) cannot be used as function names. Use the module name directly for entry functions instead.
+
 ```no
 // ✅ Correct: global data uses uppercase
 NO-LANG = 'nolang'       // global constant, uppercase
@@ -1748,6 +1753,35 @@ math.degrees(rad)
 net.NET-BUF-SIZE
 math.PI
 ```
+
+#### Function Naming Convention
+
+**Do NOT prefix function names with the module name.** Functions within a module should use short, intuitive names. The module prefix is automatically provided by the `ShortName.` during cross-module calls.
+
+```no
+// ✅ Correct: function names are concise, no module-name prefix
+// tail.no
+tail = () { ... }              // entry function uses module name
+atoi = (s str) (v i64) { ... } // helper uses short name
+
+// ❌ Avoid: redundant module-name prefix on function names
+// tail-run = () { ... }
+// tail-atoi = (s str) (v i64) { ... }
+```
+
+Cross-module imports follow the same pattern:
+
+```no
+// ✅ Concise and intuitive
+# /src/tail.tail
+# /src/mktemp.mktemp
+
+// ❌ Redundant
+// # /src/tail.tail-run
+// # /src/mktemp.mktemp-run
+```
+
+> **Avoid keywords**: `run` (async keyword), `match` (conditional match keyword) cannot be used as function names. Entry functions should use the module name itself (e.g. `ping.no` → `ping`).
 
 #### Prefix Not Required
 

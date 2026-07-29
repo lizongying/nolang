@@ -3,7 +3,7 @@ package lsp
 import (
 	"testing"
 
-	nbuild "github.com/lizongying/nolang/build"
+	"github.com/lizongying/nolang/checker"
 )
 
 func TestDocumentManagerNew(t *testing.T) {
@@ -409,7 +409,7 @@ func TestOptionMatchItBindingWithCrossModuleCall(t *testing.T) {
 	}
 
 	// ValidateTypes should not report 'it' is not defined
-	typeErrs := nbuild.ValidateTypes(ast)
+	typeErrs := checker.ValidateTypes(ast)
 	for _, e := range typeErrs {
 		if e.Message == "'it' is not defined" {
 			t.Errorf("ValidateTypes reported 'it' is not defined — extern signatures not injected properly")

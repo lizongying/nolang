@@ -1,0 +1,35 @@
+; test-typeowner-duplicate.no
+; 驗證多模組同名結構體（net/ws.client 與 net/client.client）的類型解析正確。
+; typeOwner 以 "module.name" 為 key，同名結構體各自獨立記錄，不互相覆蓋。
+; 外部引用同名結構體時需用顯式 module.name 消歧。
+
+; 引用 ws.client 的方法（通過 ws-connect 返回 ?ws.client）
+test-ws-client = () {
+    c = ws.ws-connect('ws://127.0.0.1:8080/path')
+    c: {
+        nil -> return
+        ->
+            c.send-text('hello')
+            c.close()
+    }
+}
+
+; 引用 client.client 的方法（通過 client.client-create 返回 ?client.client）
+test-tcp-client = () {
+    c = client.client-create('127.0.0.1', 8080)
+    c: {
+        nil -> return
+        ->
+            line = c.recv-line()
+            line: {
+                nil -> *
+                -> *
+            }
+            c.close()
+    }
+}
+
+; 主入口：只驗證編譯通過，不實際連接
+main = () {
+    print('typeOwner duplicate test: ok')
+}

@@ -9,9 +9,10 @@ import (
 	"sync"
 	"time"
 
-	nbuild "github.com/lizongying/nolang/build"
 	"github.com/lizongying/nolang/builtin"
+	"github.com/lizongying/nolang/checker"
 	"github.com/lizongying/nolang/lexer"
+	"github.com/lizongying/nolang/mod"
 	"github.com/lizongying/nolang/parser"
 )
 
@@ -221,7 +222,7 @@ func (m *DocumentManager) ParseDocument(uri string) (*parser.Program, []string, 
 	// Inject std module function signatures and struct field types so that
 	// the parser can infer types from cross-module method calls (e.g.
 	// tls-c.send() → ?i64), which enables option-match `it` binding injection.
-	funcSigs, structFields := nbuild.CollectStdModuleSignatures()
+	funcSigs, structFields := checker.CollectStdModuleSignatures()
 	p.SetExternSignatures(funcSigs, structFields)
 	ast := p.ParseProgram()
 
@@ -234,7 +235,7 @@ func (m *DocumentManager) ParseDocument(uri string) (*parser.Program, []string, 
 	// Pre-populate auto-imported module exports (e.g., pi/e from std/math)
 	// before the AST walk, so user-defined vars in main take precedence.
 	if ast != nil {
-		moduleNames := nbuild.GetStdModuleShortNames()
+		moduleNames := checker.GetStdModuleShortNames()
 		for _, stmt := range ast.Statements {
 			if use, ok := stmt.(*parser.UseStatement); ok {
 				short := use.Path
@@ -244,7 +245,7 @@ func (m *DocumentManager) ParseDocument(uri string) (*parser.Program, []string, 
 				moduleNames = append(moduleNames, short)
 			}
 		}
-		exports := nbuild.GetModuleExports(moduleNames)
+		exports := checker.GetModuleExports(moduleNames)
 		for _, ex := range exports {
 			if ex.Value != "" {
 				// Use the actual type from the module's type annotation
@@ -280,8 +281,8 @@ func (m *DocumentManager) ParseDocument(uri string) (*parser.Program, []string, 
 		// Index auto-imported std module files with location info for go-to-definition.
 		// Module parses are cached by path+modtime (see parseModuleFile), so the
 		// std library is only parsed once per session, not on every keystroke.
-		for _, info := range nbuild.GetStdModules() {
-			modFilePath := nbuild.ResolveStdModulePath(info.ShortPath)
+		for _, info := range checker.GetStdModules() {
+			modFilePath := checker.ResolveStdModulePath(info.ShortPath)
 			if modFilePath == "" {
 				continue
 			}
@@ -310,14 +311,14 @@ func (m *DocumentManager) ParseDocument(uri string) (*parser.Program, []string, 
 				if _, err := os.Stat(modFilePath); err != nil {
 					continue
 				}
-			modProg, _, err := m.parseModuleFile(modFilePath)
-			if err != nil || modProg == nil {
-				continue
-			}
-			modURI := "file://" + modFilePath
-			for _, ms := range modProg.Statements {
-				m.indexModuleStatement(index, ms, modURI)
-			}
+				modProg, _, err := m.parseModuleFile(modFilePath)
+				if err != nil || modProg == nil {
+					continue
+				}
+				modURI := "file://" + modFilePath
+				for _, ms := range modProg.Statements {
+					m.indexModuleStatement(index, ms, modURI)
+				}
 			}
 		}
 
@@ -334,14 +335,14 @@ func (m *DocumentManager) ParseDocument(uri string) (*parser.Program, []string, 
 				if _, err := os.Stat(modFilePath); err != nil {
 					continue
 				}
-			modProg, _, err := m.parseModuleFile(modFilePath)
-			if err != nil || modProg == nil {
-				continue
-			}
-			modURI := "file://" + modFilePath
-			for _, ms := range modProg.Statements {
-				m.indexModuleStatement(index, ms, modURI)
-			}
+				modProg, _, err := m.parseModuleFile(modFilePath)
+				if err != nil || modProg == nil {
+					continue
+				}
+				modURI := "file://" + modFilePath
+				for _, ms := range modProg.Statements {
+					m.indexModuleStatement(index, ms, modURI)
+				}
 			}
 		}
 
@@ -351,15 +352,15 @@ func (m *DocumentManager) ParseDocument(uri string) (*parser.Program, []string, 
 		for _, stmt := range ast.Statements {
 			if export, ok := stmt.(*parser.ExportStatement); ok && export.Path != "" && export.Function != "" {
 				relPath := strings.TrimPrefix(export.Path, "/")
-			targetFilePath := m.resolveLocalModuleFile(relPath, uri)
-			if _, err := os.Stat(targetFilePath); err != nil {
-				continue
-			}
-			targetProg, _, err := m.parseModuleFile(targetFilePath)
-			if err != nil || targetProg == nil {
-				continue
-			}
-			targetURI := "file://" + targetFilePath
+				targetFilePath := m.resolveLocalModuleFile(relPath, uri)
+				if _, err := os.Stat(targetFilePath); err != nil {
+					continue
+				}
+				targetProg, _, err := m.parseModuleFile(targetFilePath)
+				if err != nil || targetProg == nil {
+					continue
+				}
+				targetURI := "file://" + targetFilePath
 
 				for _, ts := range targetProg.Statements {
 					var name string
@@ -510,7 +511,7 @@ func (m *DocumentManager) resolveDependencyModuleFile(usePath, docURI string) st
 	docDir := filepath.Dir(docPath)
 
 	// Load Package from the document's project root
-	pkg, _ := nbuild.LoadPackage(docDir)
+	pkg, _ := mod.LoadPackage(docDir)
 	if pkg == nil {
 		return ""
 	}
@@ -560,13 +561,13 @@ func (m *DocumentManager) indexModuleStatement(index *SymbolIndex, stmt parser.S
 				token = s.Name.Token
 				isVariadic = funcLit.IsVariadic
 				doc = extractDocComment(&s.CommentedNode)
-			for _, p := range funcLit.Parameters {
-				typeStr := ""
-				if p.Type != nil {
-					typeStr = p.Type.String()
+				for _, p := range funcLit.Parameters {
+					typeStr := ""
+					if p.Type != nil {
+						typeStr = p.Type.String()
+					}
+					params = append(params, ParamInfo{Name: p.Name, Type: typeStr, DefaultValue: defaultExprString(p.DefaultExpr)})
 				}
-				params = append(params, ParamInfo{Name: p.Name, Type: typeStr, DefaultValue: defaultExprString(p.DefaultExpr)})
-			}
 				for _, r := range funcLit.Results {
 					typeStr := ""
 					if r.Type != nil {

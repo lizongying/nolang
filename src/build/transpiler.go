@@ -1,5 +1,4 @@
 package build
-
 import (
 	"fmt"
 	"os"
@@ -8,15 +7,13 @@ import (
 	"sort"
 	"strconv"
 	"strings"
-	"sync"
-
 	nolang "github.com/lizongying/nolang"
 	"github.com/lizongying/nolang/build/llvm"
 	"github.com/lizongying/nolang/builtin"
+	"github.com/lizongying/nolang/checker"
 	"github.com/lizongying/nolang/lexer"
 	"github.com/lizongying/nolang/parser"
 )
-
 // mangleOverloads 對同名函數進行名稱修飾，並更新調用點
 func mangleOverloads(program *parser.Program, varTypes map[string]string) {
 	// 1. 構建重載表
@@ -26,7 +23,6 @@ func mangleOverloads(program *parser.Program, varTypes map[string]string) {
 			overloads[fd.Name] = append(overloads[fd.Name], fd)
 		}
 	}
-
 	// 2. 對需要修飾的函數生成新名稱
 	mangled := make(map[string]string) // 原始調用簽名 → 修飾後名稱
 	// 記錄需要從 program.Statements 中刪除的重複函數
@@ -66,7 +62,6 @@ func mangleOverloads(program *parser.Program, varTypes map[string]string) {
 			mangled[sig] = mangledName
 		}
 	}
-
 	// 從 program.Statements 中刪除重複的函數定義
 	if len(toRemove) > 0 {
 		filtered := make([]parser.Statement, 0, len(program.Statements))
@@ -82,11 +77,9 @@ func mangleOverloads(program *parser.Program, varTypes map[string]string) {
 		}
 		program.Statements = filtered
 	}
-
 	if len(mangled) == 0 {
 		return // 沒有重載，無需遍歷
 	}
-
 	// 3. 遍歷所有語句，更新 CallExpression 的函數名
 	var walk func(stmts []parser.Statement)
 	walk = func(stmts []parser.Statement) {
@@ -123,11 +116,9 @@ func mangleOverloads(program *parser.Program, varTypes map[string]string) {
 		}
 	}
 	walk(program.Statements)
-
 	// 也用於回退查找（無參數類型匹配時的前端保底）
 	_ = varTypes
 }
-
 // callSignature 生成調用簽名 key，用於查找
 func callSignature(name string, params []*parser.Parameter) string {
 	parts := []string{name}
@@ -136,7 +127,6 @@ func callSignature(name string, params []*parser.Parameter) string {
 	}
 	return strings.Join(parts, "_")
 }
-
 // platformAwareCallSignature 生成包含平台標註的調用簽名 key。
 // 用於 mangleOverloads 去重：不同平台標註（#{mac-arm64} vs #{wasi-wasm32}）
 // 的同名同參數函數視為不同函數，不應被去重。
@@ -152,7 +142,6 @@ func platformAwareCallSignature(name string, params []*parser.Parameter, platfor
 	sort.Strings(sorted)
 	return sig + "\x00" + strings.Join(sorted, ",")
 }
-
 // sanitizeTypeForName 將型別字串轉成 LLVM 識別符安全的形式：
 // - "[]byte"   → "slice.byte"
 // - "?i64"     → "opt.i64"
@@ -170,364 +159,298 @@ func sanitizeTypeForName(s string) string {
 	)
 	return r.Replace(s)
 }
-
-// isConcreteType 檢查型別名稱是否為已知具體型別
-func isConcreteType(typeName string) bool {
-	switch typeName {
-	case "i8", "i16", "i32", "i64", "u8", "u16", "u32", "u64",
-		"byte", "f64", "str", "bool", "char", "void":
-		return true
-	}
-	// 複合型別：切片、陣列、可空、指針
-	if strings.HasPrefix(typeName, "[]") || strings.HasPrefix(typeName, "[") ||
-		strings.HasPrefix(typeName, "?") || strings.HasPrefix(typeName, "ptr ") {
-		return true
-	}
-	// 已註冊的單具體型別別名（如 fd）視為具體型別，不再跳過型別檢查
-	if validationConcreteTypeAliases != nil {
-		if _, ok := validationConcreteTypeAliases[typeName]; ok {
-			return true
-		}
-	}
-	return false
-}
-
-// extractArrayElemType extracts the element type from an array/slice type string.
-// e.g. "[]byte" → "byte", "[16]byte" → "byte", "[4]i64" → "i64".
-// Returns "" if the type has no element type (e.g. "[4]").
-func extractArrayElemType(typeStr string) string {
-	idx := strings.Index(typeStr, "]")
-	if idx >= 0 && idx+1 < len(typeStr) {
-		return typeStr[idx+1:]
-	}
-	return ""
-}
-
-// validationStructFields holds struct name → field name → field type string,
-// populated by ValidateTypes for use in inferExprType when resolving
-// self.field method calls (e.g. .recv-buf.slice()).
-var validationStructFields map[string]map[string]string
-
-// validationFuncTypes holds function name → return type string,
-// populated by ValidatePrintFormat for use in inferExprType when resolving
-// user-defined function call return types (e.g. ok1 = test-clone-vec()).
-var validationFuncTypes map[string]string
-
-// validationConcreteTypeAliases holds single concrete type alias name →
-// underlying type string (e.g. "fd" → "i64"), populated by ValidateTypes.
-// Used to enforce newtype semantics: an alias of a primitive type is
-// mutually exclusive with its underlying type (i64 var cannot be assigned
-// to fd var, and vice versa), with an integer-literal exception
-// (STDIN-FD fd = 0 is allowed). Composite aliases (e.g. bytes=[]byte)
-// are also registered but treated as transparent (no newtype enforcement).
-var validationConcreteTypeAliases map[string]string
-
-// isValidationIntType 判斷型別是否為整數家族（i8/i16/i32/i64/u8/u16/u32/u64）。
-// 整數方法（to-str/to-i64 等）在 builtin/stdlib 中以 int.* 統一註冊，
-// transpiler 也會將 i64.to-str() 重寫為 int.to-str()；校驗器這裡同步歸一化
-// 才能正確推斷回傳型別（例如 dns.no 的 a.to-str()）。
-func isValidationIntType(t string) bool {
-	switch t {
-	case "i8", "i16", "i32", "i64", "u8", "u16", "u32", "u64":
-		return true
-	}
-	return false
-}
-
-func inferExprType(expr parser.Expression, varTypes map[string]string, funcTypes map[string]string, selfType string) string {
-	if expr == nil {
-		return ""
-	}
-	switch e := expr.(type) {
-	case *parser.IntegerLiteral:
-		// 十六進位字面量（0xNN）優先推斷為 byte
-		raw := e.Token.Literal
-		if len(raw) > 2 && raw[0] == '0' && (raw[1] == 'x' || raw[1] == 'X') {
-			return "byte"
-		}
-		return "i64"
-	case *parser.FloatLiteral:
-		return "f64"
-	case *parser.StringLiteral:
-		return "str"
-	case *parser.BooleanLiteral:
-		return "bool"
-	case *parser.CharLiteral:
-		return "char"
-	case *parser.ByteLiteral:
-		return "byte"
-	case *parser.RegexLiteral:
-		return "regexp"
-	case *parser.Identifier:
-		if t, ok := varTypes[e.Value]; ok {
-			// Function-type variable: return simplified "fn" marker
-			if strings.HasPrefix(t, "fn(") {
-				return "fn"
-			}
-			return t
-		}
-		return "" // 未知變數
-	case *parser.CallExpression:
-		// 1. 檢查內建函數
-		if ident, ok := e.Function.(*parser.Identifier); ok {
-			for _, m := range builtin.BuiltinMethodList {
-				if m.MethodName == ident.Value {
-					if len(m.Return) > 0 {
-						return m.Return[0].String()
-					}
-				}
-			}
-			// 2. 檢查用戶定義的函數（含 extern）
-			if retType, exists := funcTypes[ident.Value]; exists {
-				// FFI ptr 型別在 Nolang 層以 i64 儲存（透過 ptrtoint/inttoptr 轉換）
-				// ptr 可能是 "ptr <nil>"（不透明指標）或 "ptr T"（具型別指標）
-				if strings.HasPrefix(retType, "ptr") {
-					return "i64"
-				}
-				return retType
-			}
-			// 跨模組函數呼叫（定義在 std 模組中，vet 階段尚未 merge），
-			// 對已知回傳 str 的函數直接推斷，避免變數型別缺失
-			switch ident.Value {
-			case "char-to-str", "i64-to-str", "f64-to-str", "bool-to-str", "byte-to-str":
-				return "str"
-			}
-			return ""
-		}
-		// 4. 檢查 struct 方法調用（DotExpression）
-		if dot, ok := e.Function.(*parser.DotExpression); ok {
-			var typeName string
-			if recv, ok := dot.Receiver.(*parser.Identifier); ok {
-				if recv.Value == "self" {
-					// 從當前方法的 self 參數獲取類型
-					typeName = selfType
-				} else if recvType, exists := varTypes[recv.Value]; exists {
-					typeName = recvType
-				}
-			} else if _, ok := dot.Receiver.(*parser.StringLiteral); ok {
-				// 字串字面量接收者（如 '123'.to-i64()）→ str 型別
-				typeName = "str"
-			} else if innerDot, ok := dot.Receiver.(*parser.DotExpression); ok {
-				// struct field 方法調用（如 .field.method() 即 self.field.method()）
-				// 遞迴推斷接收者型別
-				if innerRecv, ok := innerDot.Receiver.(*parser.Identifier); ok && innerRecv.Value == "self" {
-					// self.field → 查 struct 定義取得 field 型別
-					if validationStructFields != nil {
-						if fields, ok := validationStructFields[selfType]; ok {
-							if fieldType, ok := fields[innerDot.Property]; ok {
-								typeName = fieldType
-							}
-						}
-					}
-				}
-			} else if _, ok := dot.Receiver.(*parser.IndexExpression); ok {
-				// 陣列元素接收者（如 arr[i].slice(...)）— 元素型別無法靜態推斷，
-				// 返回空字串跳過型別檢查，由 LLVM 端驗證
-				return ""
-			}
-			if typeName != "" {
-				// 整數家族方法（to-str/to-i64 等）在 builtin/stdlib 以 int.* 統一註冊，
-				// transpiler 也會將 i64.to-str() 重寫為 int.to-str()。校驗器同步歸一化，
-				// 才能正確推斷回傳型別（例如 dns.no 的 a.to-str()）。
-				if isValidationIntType(typeName) {
-					switch dot.Property {
-					case "to-str":
-						return "str"
-					case "to-i64":
-						return "i64"
-					case "to-u64":
-						return "u64"
-					case "to-bool":
-						return "bool"
-					case "to-f64":
-						return "f64"
-					case "to-f32":
-						return "f32"
-					}
-				}
-				methodName := typeName + "." + dot.Property
-				if retType, exists := funcTypes[methodName]; exists {
-					return retType
-				}
-				// 查詢內建方法（如 i64.to-str, str.to-i64, str.to-bool 等）
-				for _, m := range builtin.BuiltinMethodList {
-					if m.MethodName == methodName && len(m.Return) > 0 {
-						return m.Return[0].String()
-					}
-				}
-			// typeName 已知但方法定義在 std 模組中（vet 階段尚未 merge），
-			// 無法推斷回傳型別；返回空字串跳過型別檢查，由 LLVM 端驗證
-			// 例外：slice/array/str 的常用方法直接推斷，避免格式字串檢查誤報
-			if strings.HasPrefix(typeName, "[]") || (strings.HasPrefix(typeName, "[") && strings.Contains(typeName, "]")) {
-				switch dot.Property {
-				case "len", "cap", "index", "index-from":
-					return "i64"
-				case "slice", "copy", "repeat":
-					return typeName
-				case "to-str":
-					return "str"
-				}
-			}
-			return ""
-			}
-			// typeName 為空：可能是模組限定的內建呼叫（如 number.char-to-str(13)）。
-			// 此時接收者是模組名（非本作用域變數），對應裸內建回傳 str。
-			if recv, ok := dot.Receiver.(*parser.Identifier); ok {
-				if _, isVar := varTypes[recv.Value]; !isVar {
-					switch recv.Value + "." + dot.Property {
-					case "number.char-to-str":
-						return "str"
-					}
-					switch dot.Property {
-					case "char-to-str", "i64-to-str", "f64-to-str", "bool-to-str", "byte-to-str":
-						return "str"
-					}
-				}
-			}
-		}
-		// 接收者型別未知（如跨模組函數返回的變數、struct field 存取結果等），
-		// 無法推斷回傳型別；返回空字串跳過型別檢查，由 LLVM 端驗證
-		return ""
-	case *parser.InfixExpression:
-		// 簡單推斷：比較與邏輯運算返回 bool，算術返回左運算元型別，
-		// 位元/移位運算僅在左運算元為具體整數型別時返回該型別（避免泛型型別參數回傳非整數型別）
-		switch e.Operator {
-		case "==", "!=", "<", ">", "<=", ">=", "&&", "||":
-			return "bool"
-		case "+", "-", "*", "/":
-			// 根據左運算元推斷型別
-			leftType := inferExprType(e.Left, varTypes, funcTypes, selfType)
-			if leftType != "" {
-				return leftType
-			}
-		return ""
-	case "&", "|", "^", "<<", ">>":
-		// 位元/移位運算：僅當左運算元為具體整數型別時回傳該型別，
-		// 否則返回空字串（未知型別），跳過型別檢查
-		leftType := inferExprType(e.Left, varTypes, funcTypes, selfType)
-		if leftType != "" && intTypeBits(leftType) > 0 {
-			return leftType
-		}
-		return ""
-	default:
-		return ""
-	}
-	case *parser.CastExpression:
-		// 強轉表達式的型別即目標型別
-		if e.Type != nil {
-			return e.Type.String()
-		}
-		return ""
-	case *parser.PrefixExpression:
-		if e.Operator == "!" {
-			return "bool"
-		}
-		// 前綴正負號傳遞內層表達式的型別
-		return inferExprType(e.Right, varTypes, funcTypes, selfType)
-	case *parser.DotExpression:
-		// Struct field access: look up receiver type in varTypes,
-		// then resolve field type from validationStructFields.
-		if validationStructFields != nil {
-			var typeName string
-			if recv, ok := e.Receiver.(*parser.Identifier); ok {
-				if recv.Value == "self" {
-					typeName = selfType
-				} else if t, exists := varTypes[recv.Value]; exists {
-					typeName = t
-				}
-			}
-			if typeName != "" {
-				if fields, ok := validationStructFields[typeName]; ok {
-					if fieldType, ok := fields[e.Property]; ok {
-						return fieldType
-					}
-				}
-			}
-		}
-		return ""
-	case *parser.IndexExpression:
-		// Array/slice element access: cannot reliably infer element type here
-		return ""
-	case *parser.SliceExpression:
-		// Slicing [N]T returns []T; slicing str returns str
-		if e.Left != nil {
-			leftType := inferExprType(e.Left, varTypes, funcTypes, selfType)
-			if strings.HasPrefix(leftType, "[") {
-				if idx := strings.LastIndex(leftType, "]"); idx >= 0 && idx+1 < len(leftType) {
-					return "[]" + leftType[idx+1:]
-				}
-			}
-			if leftType == "str" {
-				return "str"
-			}
-			return leftType
-		}
-		return ""
-	case *parser.GroupedExpression:
-		return inferExprType(e.Expression, varTypes, funcTypes, selfType)
-	case *parser.ConditionalExpression:
-		// 三元運算子：從兩分支推斷型別
-		consequenceType := inferExprType(e.Consequence, varTypes, funcTypes, selfType)
-		alternativeType := inferExprType(e.Alternative, varTypes, funcTypes, selfType)
-		if consequenceType == alternativeType && consequenceType != "" {
-			return consequenceType
-		}
-		if consequenceType != "" {
-			return consequenceType
-		}
-		return ""
-	case *parser.StructLiteral:
-		// A struct literal `name{}` has the type of the struct itself.
-		if e.Type != "" {
-			return e.Type
-		}
-		// 無顯式型別名：左側賦值目標已標示型別，返回空字串由型別檢查器跳過
-		return ""
-	case *parser.ArrayLiteral:
-		// Array literal v[1, 2, ...] → infer type from elements
-		if len(e.Elements) > 0 {
-			elemType := inferExprType(e.Elements[0], varTypes, funcTypes, selfType)
-		if elemType != "" {
-			return fmt.Sprintf("[%d]%s", len(e.Elements), elemType)
-		}
-	}
-		return ""
-	case *parser.SliceLiteral:
-		// Slice literal [1, 2, ...] → infer type from elements
-		if len(e.Elements) > 0 {
-			elemType := inferExprType(e.Elements[0], varTypes, funcTypes, selfType)
-		if elemType != "" {
-			return fmt.Sprintf("[]%s", elemType)
-		}
-	}
-		return ""
-	case *parser.FunctionLiteral:
-		// Phase 1: anonymous function literals are typed with the simplified "fn" marker.
-		// Phase 2 may derive the precise FunctionType signature.
-		return "fn"
-	case *parser.MapLiteral:
-		// Map literal { k:v, ... } → infer type from associated MapType if present
-		if e.MapType != nil {
-			return e.MapType.String()
-		}
-		// Fallback: infer from first pair's key/value types
-		if len(e.Pairs) > 0 {
-			keyType := inferExprType(e.Pairs[0].Key, varTypes, funcTypes, selfType)
-			valType := inferExprType(e.Pairs[0].Value, varTypes, funcTypes, selfType)
-			if keyType != "" && valType != "" {
-				return "[" + keyType + "]" + valType
-			}
-		}
-		return ""
-	default:
-		return "i64"
-	}
-}
-
+                                                                                                                             
+                 
+           
+  
+                          
+                             
+                                                        
+                        
+                                                                        
+                
+   
+              
+                           
+              
+                            
+              
+                             
+               
+                          
+               
+                          
+               
+                           
+                 
+                         
+                                     
+                                                           
+                                   
+               
+    
+           
+   
+                           
+                             
+                          
+                                                       
+                                                
+                                    
+                           
+                                 
+      
+     
+    
+                                                    
+                                                         
+                                                                                      
+                                                                                     
+                                          
+                 
+     
+                  
+    
+                                                                                    
+                                                                          
+                       
+                                                                                
+                
+    
+            
+   
+                                                     
+                                                        
+                      
+                                                         
+                             
+                                                  
+                        
+                                                                
+                        
+     
+                                                                
+                                                                     
+                    
+                                                                       
+                                                                                 
+                                  
+                                                                                                 
+                                                           
+                                       
+                                                             
+                                                          
+                            
+        
+       
+      
+     
+                                                                  
+                                                                                            
+                                                             
+             
+    
+                      
+                                                                                            
+                                                                                             
+                                                                          
+                                      
+                          
+                   
+                  
+                   
+                  
+                   
+                  
+                    
+                   
+                   
+                  
+                   
+                  
+      
+     
+                                               
+                                                         
+                   
+     
+                                                                          
+                                                 
+                                                         
+                                 
+      
+     
+                                                                                    
+                                                                                       
+                                                                                           
+                                                                                                                  
+                         
+                                             
+                 
+                                   
+                    
+                  
+                 
+     
+    
+            
+    
+                                                                                               
+                                                                                           
+                                                         
+                                                 
+                                             
+                               
+                  
+      
+                          
+                                                                                  
+                  
+      
+     
+    
+   
+                                                                                                   
+                                                                                      
+           
+                              
+                                                                                        
+                                                                                                                                    
+                     
+                                                    
+                
+                          
+                                    
+                                                                   
+                      
+                   
+    
+           
+                                
+                                                                                       
+                                                                 
+                                                                  
+                                                  
+                  
+   
+           
+         
+           
+  
+                             
+                                            
+                    
+                         
+   
+           
+                               
+                        
+                
+   
+                                                  
+                                                              
+                            
+                                                            
+                                                         
+                                    
+                      
+                                                       
+                             
+                        
+                                                         
+                 
+     
+    
+                      
+                                                           
+                                                 
+                      
+      
+     
+    
+   
+           
+                              
+                                                                        
+           
+                              
+                                                      
+                    
+                                                                   
+                                        
+                                                                                   
+                                   
+     
+    
+                         
+                
+    
+                  
+   
+           
+                                
+                                                                   
+                                    
+                                               
+                                                                                
+                                                                                
+                                                                  
+                         
+   
+                            
+                         
+   
+           
+                            
+                                                                 
+                   
+                
+   
+                                                                                                     
+           
+                           
+                                                            
+                          
+                                                                          
+                     
+                                                          
+   
+  
+           
+                           
+                                                           
+                          
+                                                                          
+                     
+                                       
+   
+  
+           
+                              
+                                                                                    
+                                                           
+             
+                         
+                                                                               
+                       
+                            
+   
+                                                      
+                       
+                                                                          
+                                                                            
+                                      
+                                        
+    
+   
+           
+         
+              
+  
+ 
 // updateCallNames 遞迴更新 CallExpression 中的函數名
 func updateCallNames(expr parser.Expression, overloads map[string][]*parser.FunctionDefinition,
 	mangled map[string]string, varTypes map[string]string) {
-
 	switch e := expr.(type) {
 	case *parser.CallExpression:
 		if ident, ok := e.Function.(*parser.Identifier); ok {
@@ -536,7 +459,7 @@ func updateCallNames(expr parser.Expression, overloads map[string][]*parser.Func
 				// 收集實參類型
 				argTypes := make([]string, len(e.Arguments))
 				for i, arg := range e.Arguments {
-					t := inferExprType(arg, varTypes, nil, "")
+					t := checker.InferExprType(arg, varTypes, nil, "")
 					if t == "" {
 						// 無法推斷類型，使用第一個重載
 						if i < len(fns[0].Parameters) {
@@ -571,29 +494,23 @@ func updateCallNames(expr parser.Expression, overloads map[string][]*parser.Func
 		for _, arg := range e.Arguments {
 			updateCallNames(arg, overloads, mangled, varTypes)
 		}
-
 	case *parser.InfixExpression:
 		updateCallNames(e.Left, overloads, mangled, varTypes)
 		updateCallNames(e.Right, overloads, mangled, varTypes)
-
 	case *parser.PrefixExpression:
 		updateCallNames(e.Right, overloads, mangled, varTypes)
-
 	case *parser.DotExpression:
 		// receiver.property：遞迴處理 receiver 中的嵌套調用
 		updateCallNames(e.Receiver, overloads, mangled, varTypes)
-
 	case *parser.IndexExpression:
 		// arr[idx]：遞迴處理索引表達式中的嵌套調用
 		updateCallNames(e.Left, overloads, mangled, varTypes)
 		updateCallNames(e.Index, overloads, mangled, varTypes)
-
 	case *parser.ConditionalExpression:
 		// cond ? a : b：遞迴處理所有子表達式
 		updateCallNames(e.Condition, overloads, mangled, varTypes)
 		updateCallNames(e.Consequence, overloads, mangled, varTypes)
 		updateCallNames(e.Alternative, overloads, mangled, varTypes)
-
 	case *parser.IfExpression:
 		if e.Condition != nil {
 			updateCallNames(e.Condition, overloads, mangled, varTypes)
@@ -612,7 +529,6 @@ func updateCallNames(expr parser.Expression, overloads map[string][]*parser.Func
 		updateCallNames(e.Expression, overloads, mangled, varTypes)
 	}
 }
-
 func updateCallNamesInStmt(stmt parser.Statement, overloads map[string][]*parser.FunctionDefinition,
 	mangled map[string]string, varTypes map[string]string) {
 	switch s := stmt.(type) {
@@ -632,31 +548,26 @@ func updateCallNamesInStmt(stmt parser.Statement, overloads map[string][]*parser
 		}
 	}
 }
-
 type Transpiler struct {
 	llvmGenerator    *llvm.Generator
 	pkg              *Package // 當前套件（用於路徑解析）
 	sourcePath       string   // 當前編譯的源碼檔案路徑（用於 std 庫檢測）
 	allowAnonymousFn bool     // 是否允許匿名函式型別參數（來自 mod.jsonc）
-
 	// externFuncSigs/externStructFields: 預載入的跨文件函數簽名和 struct 欄位型別，
 	// 注入到所有 parser 實例中以支援 let 型別推斷
 	externFuncSigs     map[string][]string
 	externStructFields map[string]map[string]string
-
 	// targetGoos/targetGoarch: 編譯目標平台，用於平台變體過濾。
 	// 空字串表示 fallback 到 runtime.GOOS/GOARCH（編譯主機平台）。
 	targetGoos    string
 	targetGoarch  string
 	noBoundsCheck bool // skip bounds checks in generated code (unsafe mode)
-
 	// fileCache: per-Transpiler AST 解析快取，消除單次 CompileTarget 內的重复解析。
-	// 同一 std 模組檔案在一次編譯中最多被解析 4 次（preload/ValidateFuncArgs/merge/auto-load），
-	// 快取後降至 1 次。安全性：preload 和 ValidateFuncArgs 只讀不修改 AST，
+	// 同一 std 模組檔案在一次編譯中最多被解析 4 次（preload/checker.ValidateFuncArgs/merge/auto-load），
+	// 快取後降至 1 次。安全性：preload 和 checker.ValidateFuncArgs 只讀不修改 AST，
 	// merge 步驟的 prefixModuleStatements/alias 改名是冪等的（已帶前綴的名稱會被跳過）。
 	fileCache map[string]*parser.Program
 }
-
 func NewTranspiler(pkg *Package) *Transpiler {
 	t := &Transpiler{
 		llvmGenerator: llvm.NewGenerator(),
@@ -667,7 +578,6 @@ func NewTranspiler(pkg *Package) *Transpiler {
 	}
 	return t
 }
-
 // SetTargetPlatform sets the target (GOOS, GOARCH) for platform-variant filtering
 // during code generation. Empty strings fall back to the host runtime platform.
 // This is propagated to the underlying LLVM generator before Generate is called.
@@ -675,20 +585,16 @@ func (t *Transpiler) SetTargetPlatform(goos, goarch string) {
 	t.targetGoos = goos
 	t.targetGoarch = goarch
 }
-
 // SetNoBoundsCheck configures whether bounds checks are skipped in generated code.
 // When true (unsafe mode), array/slice/string indexing does not emit bounds checks.
 func (t *Transpiler) SetNoBoundsCheck(skip bool) {
 	t.noBoundsCheck = skip
 }
-
 type Target int
-
 const (
 	TargetUnknown Target = iota
 	TargetLLVM
 )
-
 func (t *Transpiler) parseFile(filePath string) (*parser.Program, error) {
 	// 快取命中：同一檔案在單次編譯中可能被 resolveUse 調用多次
 	if t.fileCache != nil {
@@ -721,7 +627,6 @@ func (t *Transpiler) parseFile(filePath string) (*parser.Program, error) {
 	}
 	return prog, nil
 }
-
 // parseEmbeddedProgram 從內嵌 FS 的位元組資料解析 Nolang 程式。
 // 與 parseFile 平行，但來源為 embed.FS.ReadFile 的結果而非磁碟檔案。
 // 用於 js/ 相容層模組解析（# js/<module>）。
@@ -751,11 +656,9 @@ func (t *Transpiler) parseEmbeddedProgram(filename string, data []byte) (*parser
 	}
 	return prog, nil
 }
-
 func (t *Transpiler) resolveUse(use *parser.UseStatement) (*parser.Program, error) {
 	// use path.fn → 載入 path.no 並取出 fn 函數
 	path := use.Path
-
 	// 本地模塊：/path → 相對於專案根目錄
 	if strings.HasPrefix(path, "/") {
 		relPath := strings.TrimPrefix(path, "/")
@@ -767,7 +670,6 @@ func (t *Transpiler) resolveUse(use *parser.UseStatement) (*parser.Program, erro
 		filePath := relPath + ".no"
 		return t.resolveFile(filePath)
 	}
-
 	// std/ 開頭 → 標準庫路徑（只從內嵌 StdFS 載入，支援單二進制分發）
 	if strings.HasPrefix(path, "std/") || path == "std" {
 		// strip "std/" prefix to get module path relative to std/
@@ -783,7 +685,7 @@ func (t *Transpiler) resolveUse(use *parser.UseStatement) (*parser.Program, erro
 			}
 		}
 		// 2. Lookup table: match ShortPath to FullPath (e.g. "net" → "net/net")
-		for _, info := range knownStdModules() {
+		for _, info := range checker.KnownStdModules() {
 			if info.ShortPath == relPath {
 				embedPath := "std/" + info.FullPath + ".no"
 				if data, err := nolang.StdFS.ReadFile(embedPath); err == nil {
@@ -794,7 +696,6 @@ func (t *Transpiler) resolveUse(use *parser.UseStatement) (*parser.Program, erro
 		// 找不到模組 → 返回語意化錯誤（不再回退到磁碟）
 		return nil, fmt.Errorf("std module not found in embedded StdFS: %s", path)
 	}
-
 	// js/ 開頭 → JS 相容層路徑（內建第三方包，與 std/ 機制平行）
 	// 模組名稱遵循 Nolang 的小寫中劃線風格（如 js/console-log、js/fs-read-file）
 	if strings.HasPrefix(path, "js/") || path == "js" {
@@ -809,8 +710,8 @@ func (t *Transpiler) resolveUse(use *parser.UseStatement) (*parser.Program, erro
 				return t.parseEmbeddedProgram(embedPath, data)
 			}
 		}
-		// 2. Lookup table: match ShortName to FullPath（與 std/ 的 knownStdModules 機制平行）
-		for _, info := range knownJsModules() {
+		// 2. Lookup table: match ShortName to FullPath（與 std/ 的 checker.knownStdModules 機制平行）
+		for _, info := range checker.KnownJsModules() {
 			if info.ShortPath == relPath || info.ShortName == relPath {
 				embedPath := "js/" + info.FullPath + ".no"
 				if data, err := nolang.JsFS.ReadFile(embedPath); err == nil {
@@ -827,11 +728,10 @@ func (t *Transpiler) resolveUse(use *parser.UseStatement) (*parser.Program, erro
 		}
 		return nil, fmt.Errorf("js compatibility module not found: %s", relPath)
 	}
-
 	// 依賴解析：domain/org/repo/... 風格的導入路徑
 	if first := strings.SplitN(path, "/", 2)[0]; strings.Contains(first, ".") {
 		if t.pkg != nil && len(t.pkg.Dependencies) > 0 {
-			if _, _, matched := t.pkg.matchDependency(path); matched {
+			if _, _, matched := t.pkg.MatchDependency(path); matched {
 				modPath, err := t.pkg.ResolveDependencyModule(path)
 				if err != nil {
 					return nil, err
@@ -844,7 +744,6 @@ func (t *Transpiler) resolveUse(use *parser.UseStatement) (*parser.Program, erro
 		// URL 風格的導入路徑但未在 dependencies 中宣告
 		return nil, fmt.Errorf("dependency not found: %q is not declared in mod.jsonc dependencies", path)
 	}
-
 	// 非 std 路徑 → 透過 alias 解析
 	if t.pkg != nil {
 		modulePath := t.pkg.ResolvePath(path)
@@ -853,12 +752,10 @@ func (t *Transpiler) resolveUse(use *parser.UseStatement) (*parser.Program, erro
 		}
 		return t.resolveFile(modulePath)
 	}
-
 	// 沒有套件配置，直接嘗試
 	filePath := path + ".no"
 	return t.resolveFile(filePath)
 }
-
 // resolveFile parses a .no file and applies lib.no export filtering if present.
 func (t *Transpiler) resolveFile(filePath string) (*parser.Program, error) {
 	prog, err := t.parseFile(filePath)
@@ -870,21 +767,19 @@ func (t *Transpiler) resolveFile(filePath string) (*parser.Program, error) {
 	if pkgRoot != "" {
 		libPath := filepath.Join(pkgRoot, "lib.no")
 		if _, err := os.Stat(libPath); err == nil {
-			prog = filterByExports(prog, libPath)
+			prog = checker.FilterByExports(prog, libPath)
 		}
 	}
 	return prog, nil
 }
-
 func (t *Transpiler) Compile(source string) (string, error) {
 	// 初始化 per-Transpiler AST 解析快取，消除單次編譯內的重复解析。
-	// 同一 std 模組在 preloadModuleSignatures、ValidateFuncArgs、merge 步驟中
+	// 同一 std 模組在 preloadModuleSignatures、checker.ValidateFuncArgs、merge 步驟中
 	// 會被重複載入，快取後僅解析一次。
 	t.fileCache = make(map[string]*parser.Program)
-	clearParseProgramFileCache()
+	checker.ClearModuleCache()
 	return t.CompileTarget(source, TargetLLVM)
 }
-
 // preloadModuleSignatures 掃描源碼中的 use 語句，預載入模組的函數簽名和 struct 欄位型別。
 // 這些簽名會注入到 parser 中，使 let 型別推斷能處理跨文件方法調用。
 // 也預載入所有已知 std 模組的簽名，因為 transpiler 會自動載入這些模組。
@@ -892,7 +787,6 @@ func (t *Transpiler) preloadModuleSignatures(source string) (map[string][]string
 	funcSigs := make(map[string][]string)
 	structFields := make(map[string]map[string]string)
 	loadedPaths := make(map[string]bool) // 避免重複載入同一模組
-
 	// collectSignaturesFromProg 從已解析的 Program 中收集函數簽名和 struct 欄位
 	collectSignaturesFromProg := func(modProg *parser.Program) {
 		for _, stmt := range modProg.Statements {
@@ -908,7 +802,7 @@ func (t *Transpiler) preloadModuleSignatures(source string) (map[string][]string
 			if sd, ok := stmt.(*parser.StructDefinition); ok {
 				fields := make(map[string]string)
 				for _, f := range sd.Fields {
-					if typeStr := structFieldTypeString(f); typeStr != "" {
+					if typeStr := checker.StructFieldTypeString(f); typeStr != "" {
 						fields[f.Name] = typeStr
 					}
 				}
@@ -916,7 +810,6 @@ func (t *Transpiler) preloadModuleSignatures(source string) (map[string][]string
 			}
 		}
 	}
-
 	// 1. 掃描顯式 use/# 語句（非 std 模組，std 模組由快取提供）
 	useRe := regexp.MustCompile(`(?m)^\s*(?:use|#)\s+([\w/.\-]+)`)
 	matches := useRe.FindAllStringSubmatch(source, -1)
@@ -948,9 +841,8 @@ func (t *Transpiler) preloadModuleSignatures(source string) (map[string][]string
 			collectSignaturesFromProg(modProg)
 		}
 	}
-
 	// 2. 合併 std 模組簽名（從 sync.Once 快取獲取，避免每次編譯重複解析所有 std 模組）
-	stdSigs, stdFields := CollectStdModuleSignatures()
+	stdSigs, stdFields := checker.CollectStdModuleSignatures()
 	for name, sigs := range stdSigs {
 		if _, exists := funcSigs[name]; !exists {
 			funcSigs[name] = sigs
@@ -961,17 +853,14 @@ func (t *Transpiler) preloadModuleSignatures(source string) (map[string][]string
 			structFields[name] = fields
 		}
 	}
-
 	return funcSigs, structFields
 }
-
 func (t *Transpiler) CompileTarget(source string, _ Target) (string, error) {
 	// 預載入跨文件模組簽名，供 parser 型別推斷使用
 	externFuncSigs, externStructFields := t.preloadModuleSignatures(source)
 	// 存儲到 Transpiler 中，使 parseFile（用於解析自動載入的模組）也能注入簽名
 	t.externFuncSigs = externFuncSigs
 	t.externStructFields = externStructFields
-
 	l := lexer.New(source)
 	p := parser.New(l)
 	p.AllowAnonymousFnType = t.allowAnonymousFn
@@ -990,12 +879,10 @@ func (t *Transpiler) CompileTarget(source string, _ Target) (string, error) {
 	for _, w := range p.WarningsByCode(parser.WarnSemiSwallow) {
 		fmt.Fprintf(os.Stderr, "warning: %s\n", w)
 	}
-
 	// 處理 #{embed=...} 註解：編譯期讀取嵌入文件
 	if err := t.processEmbeds(program, t.sourcePath); err != nil {
 		return "", err
 	}
-
 	// 驗證：僅標準庫能使用的功能
 	isUserCode := true
 	if t.pkg != nil {
@@ -1021,7 +908,7 @@ func (t *Transpiler) CompileTarget(source string, _ Target) (string, error) {
 	var importedModules []string
 	mainVarNames := make(map[string]bool)
 	// 預填充已知 std 模塊的 ShortName，允許 math.degrees()、base64.encode-std() 等呼叫無需顯式導入
-	for _, info := range knownStdModules() {
+	for _, info := range checker.KnownStdModules() {
 		importedModules = append(importedModules, info.ShortName)
 	}
 	for _, stmt := range program.Statements {
@@ -1069,54 +956,45 @@ func (t *Transpiler) CompileTarget(source string, _ Target) (string, error) {
 		}
 		// (3) 收集導入的模塊路徑
 		if use, ok := stmt.(*parser.UseStatement); ok {
-			importedModules = append(importedModules, moduleShortName(use.Path))
+			importedModules = append(importedModules, checker.ModuleShortName(use.Path))
 		}
 	}
-
 	// 編譯期陣列邊界檢查（單次遍歷同時收集陣列、切片、字串大小映射）
 	sizeMap := buildSizeMaps(program)
 	if err := validateArrayBounds(program, sizeMap.arraySizes, sizeMap.sliceSizes, sizeMap.stringSizes, varTypes); err != nil {
 		return "", err
 	}
-
 	// 編譯期重複變數檢查
 	if err := validateDuplicates(program); err != nil {
 		return "", err
 	}
-
 	// 型別檢查（收集所有錯誤後統一報告，而非遇錯即返）
 	// 這樣用戶在 no build 時能一次看到所有型別錯誤，而非逐個修復後才能看到下一個。
 	var allValidateErrs []string
-	if typeErrs := ValidateTypes(program); len(typeErrs) > 0 {
+	if typeErrs := checker.ValidateTypes(program); len(typeErrs) > 0 {
 		for _, e := range typeErrs {
 			allValidateErrs = append(allValidateErrs, fmt.Sprintf("line %d, column %d: %s", e.Line, e.Column, e.Message))
 		}
 	}
-
 	// 函數呼叫引數型別檢查（包括 newtype 語義：fd 變量不能傳給 i64 參數）
-	if funcArgErrs := ValidateFuncArgs(program, filepath.Dir(t.sourcePath)); len(funcArgErrs) > 0 {
+	if funcArgErrs := checker.ValidateFuncArgs(program, filepath.Dir(t.sourcePath)); len(funcArgErrs) > 0 {
 		for _, e := range funcArgErrs {
 			allValidateErrs = append(allValidateErrs, fmt.Sprintf("line %d, column %d: %s", e.Line, e.Column, e.Message))
 		}
 	}
-
 	// ?T 輸出參數未初始化檢查（case6）
-	if uninitErrs := ValidateUninitOutputParams(program); len(uninitErrs) > 0 {
+	if uninitErrs := checker.ValidateUninitOutputParams(program); len(uninitErrs) > 0 {
 		for _, e := range uninitErrs {
 			allValidateErrs = append(allValidateErrs, fmt.Sprintf("line %d, column %d: %s", e.Line, e.Column, e.Message))
 		}
 	}
-
 	if len(allValidateErrs) > 0 {
 		return "", fmt.Errorf("validation errors: %s", strings.Join(allValidateErrs, "; "))
 	}
-
 	// 名稱修飾 pass：處理方法重載
 	mangleOverloads(program, varTypes)
-
 	// 自動 enter/leave：插入作用域生命週期調用
 	injectEnterLeave(program)
-
 	// 處理 use 陳述句：載入模組並合併函數定義和常量
 	// 註：importedModules 和 mainVarNames 已在上方合併 PASS 中收集完成
 	merged := &parser.Program{Statements: []parser.Statement{}}
@@ -1156,7 +1034,7 @@ func (t *Transpiler) CompileTarget(source string, _ Target) (string, error) {
 				explicitStdModules[use.Path] = true
 			}
 			// 為導入模組的型別定義加上模組前綴（如 result → sql.result）
-			prefixModuleStatements(modProg.Statements, moduleShortName(use.Path), typeOwner)
+			prefixModuleStatements(modProg.Statements, checker.ModuleShortName(use.Path), typeOwner)
 			// 將模組中的 FunctionDefinition 和 LetStatement（常量）加入 merged
 			for _, ms := range modProg.Statements {
 				if fd, ok := ms.(*parser.FunctionDefinition); ok {
@@ -1180,7 +1058,7 @@ func (t *Transpiler) CompileTarget(source string, _ Target) (string, error) {
 							}
 							if !mainVarNames[ls.Name.Value] {
 								merged.Statements = append(merged.Statements, ls)
-								if isConstantExpr(ls.Value) && matchesTargetPlatform(modProg.Sem.PlatformKeysOf(ls), t.targetGoos, t.targetGoarch) {
+								if checker.IsConstantExpr(ls.Value) && checker.MatchesTargetPlatform(modProg.Sem.PlatformKeysOf(ls), t.targetGoos, t.targetGoarch) {
 									moduleConstants[ls.Name.Value] = ls.Value
 								}
 							}
@@ -1190,7 +1068,7 @@ func (t *Transpiler) CompileTarget(source string, _ Target) (string, error) {
 						// 如果主程序已有同名變量，跳過以避免衝突
 						if !mainVarNames[ls.Name.Value] {
 							merged.Statements = append(merged.Statements, ls)
-							if isConstantExpr(ls.Value) && matchesTargetPlatform(modProg.Sem.PlatformKeysOf(ls), t.targetGoos, t.targetGoarch) {
+							if checker.IsConstantExpr(ls.Value) && checker.MatchesTargetPlatform(modProg.Sem.PlatformKeysOf(ls), t.targetGoos, t.targetGoarch) {
 								moduleConstants[ls.Name.Value] = ls.Value
 							}
 						}
@@ -1229,9 +1107,8 @@ func (t *Transpiler) CompileTarget(source string, _ Target) (string, error) {
 			merged.Statements = append(merged.Statements, es)
 		}
 }
-
 	// 自動載入已知 std 模組（允許無需顯式導入的 module.fn() 呼叫）
-	for _, info := range knownStdModules() {
+	for _, info := range checker.KnownStdModules() {
 		// 如果頂層變量名與模塊名衝突，跳過自動載入
 		// 註：必須用 globalVarTypes（僅頂層變數），不能用 varTypes（含函數體內的局部變數），
 		// 否則函數內的局部變數（如 test-arr-reverse 中的 arr [4] = ...）會導致
@@ -1259,7 +1136,7 @@ func (t *Transpiler) CompileTarget(source string, _ Target) (string, error) {
 				// 如果主程序已有同名變量，跳過以避免衝突
 				if !mainVarNames[ls.Name.Value] {
 					merged.Statements = append(merged.Statements, ls)
-					if isConstantExpr(ls.Value) && matchesTargetPlatform(modProg.Sem.PlatformKeysOf(ls), t.targetGoos, t.targetGoarch) {
+					if checker.IsConstantExpr(ls.Value) && checker.MatchesTargetPlatform(modProg.Sem.PlatformKeysOf(ls), t.targetGoos, t.targetGoarch) {
 						moduleConstants[ls.Name.Value] = ls.Value
 					}
 				}
@@ -1281,7 +1158,6 @@ func (t *Transpiler) CompileTarget(source string, _ Target) (string, error) {
 			}
 		}
 	}
-
 	// 第一階段型別參考改寫：將導入模組語句中的裸型別名改寫為 module.type 形式。
 	// 必須在 resolveSelfMethodCalls 之前執行，因為 resolveSelfMethodCalls 透過
 	// collectStructFields 以 struct 名稱為 key 查找，若型別定義已重命名為
@@ -1291,21 +1167,17 @@ func (t *Transpiler) CompileTarget(source string, _ Target) (string, error) {
 	// 此時 typeOwner 已包含所有模組的型別歸屬，可以正確重命名。
 	prefixMethodNames(merged.Statements, typeOwner)
 	rewriteTypeRefs(merged.Statements, typeOwner)
-	debugCountHashFns("after-prefixMethodNames", merged)
-
+	checker.DebugCountHashFns("after-prefixMethodNames", merged)
 	// 常量傳播：將模組常量替換為字面值，使 module functions 可以直接使用常量
-	resolveModuleConstants(merged, moduleConstants)
-	debugCountHashFns("after-resolveModuleConstants", merged)
-
+	checker.ResolveModuleConstants(merged, moduleConstants)
+	checker.DebugCountHashFns("after-resolveModuleConstants", merged)
 	// 解析 module.fn() 呼叫：將 DotExpression 重寫為 Identifier
 	// 必須在 monomorphizeGenerics 之前執行，以便泛型模組函數也能被正確處理
-	resolveModuleCalls(merged, importedModules)
-	debugCountHashFns("after-resolveModuleCalls", merged)
-
+	checker.ResolveModuleCalls(merged, importedModules)
+	checker.DebugCountHashFns("after-resolveModuleCalls", merged)
 	// 解析 self.method() 呼叫：將方法體內的 self.method(args) 重寫為 Type.method(self, args)
-	resolveSelfMethodCalls(merged)
-	debugCountHashFns("after-resolveSelfMethodCalls", merged)
-
+	checker.ResolveSelfMethodCalls(merged)
+	checker.DebugCountHashFns("after-resolveSelfMethodCalls", merged)
 	// 非函數定義的陳述句（頂層呼叫）加入 merged
 	// 必須在 monomorphizeGenerics 之前添加，否則頂層的方法呼叫（如 a.clone()）
 	// 不會被解析與單態化；也必須在 monomorphizeUnions/rewriteUnionCalls 之前添加，
@@ -1339,13 +1211,11 @@ func (t *Transpiler) CompileTarget(source string, _ Target) (string, error) {
 		}
 		merged.Statements = append(merged.Statements, stmt)
 	}
-
 	// 泛型單態化：掃描泛型函數呼叫，生成具體版本
 	// 使用 globalVarTypes（僅頂層變數）避免其他函數的局部變數型別洩漏到 method resolution
 	// 傳入 typeOwner 以便 resolveMethodCall 為跨模組型別補上模組前綴
 	monomorphizeGenerics(merged, globalVarTypes, typeOwner)
-	debugCountHashFns("after-monomorphizeGenerics", merged)
-
+	checker.DebugCountHashFns("after-monomorphizeGenerics", merged)
 	// 過濾：移除尚未具現化的泛型函數定義（只有具體版本才能產生 LLVM IR）
 	filtered := make([]parser.Statement, 0, len(merged.Statements))
 	for _, stmt := range merged.Statements {
@@ -1357,50 +1227,41 @@ func (t *Transpiler) CompileTarget(source string, _ Target) (string, error) {
 		filtered = append(filtered, stmt)
 	}
 	merged.Statements = filtered
-	debugCountHashFns("after-filter-generic", merged)
-
+	checker.DebugCountHashFns("after-filter-generic", merged)
 	// 第二階段型別參考改寫：主檔案的頂層語句（struct 定義、let 宣告等）
 	// 在此時才加入 merged，需要再次改寫以處理主檔案中對導入模組型別的引用。
 	// 已改寫過的型別名（含 "."）會被 prefixTypeName 自動跳過，安全無副作用。
 	rewriteTypeRefs(merged.Statements, typeOwner)
-
 	// 解析頂層代碼中的 module.fn() 呼叫
-	resolveModuleCalls(merged, importedModules)
-
+	checker.ResolveModuleCalls(merged, importedModules)
 	// 解析 Type.method(args) 靜態方法呼叫：將 bigint.cmp(d, d2) 重寫為
 	// bigint.bigint.cmp(d, d2)，與 prefixMethodNames 重命名後的方法定義對齊。
 	// 必須在 resolveSelfMethodCalls 之後執行（該 pass 已用正確的 module 前綴
 	// 生成 Type.method(self, args)），並在所有頂層代碼加入 merged 之後執行。
-	resolveMethodCalls(merged, typeOwner)
-	debugCountHashFns("after-resolveMethodCalls", merged)
-
+	checker.ResolveMethodCalls(merged, typeOwner)
+	checker.DebugCountHashFns("after-resolveMethodCalls", merged)
 	// 泛型結構體單態化：掃描 map[K]V 使用點，自 hashmap-*-tmpl 模板生成具體結構與方法。
 	// 必須在 monomorphizeGenerics 之後（避免與 [n]t 泛型衝突）、monomorphizeUnions 之前執行。
 	monomorphizeGenericStructs(merged)
-	debugCountHashFns("after-monomorphizeGenericStructs", merged)
-
+	checker.DebugCountHashFns("after-monomorphizeGenericStructs", merged)
 	// 聯合型別單態化：對帶 ..T（T 為 union alias）的函數，
 	// 為 union 的每個具體型別生成一個函數版本。生成函數的命名
 	// 採用 "<原名>__<成員型別>" 的形式；對函數體內對自己的呼叫也
 	// 一併替換。
 	monomorphizeUnions(merged)
-	debugCountHashFns("after-monomorphizeUnions", merged)
-
+	checker.DebugCountHashFns("after-monomorphizeUnions", merged)
 	// 重寫對聯合型別泛型函數的呼叫：將 max(args) 改為 max__i64(args)
 	rewriteUnionCalls(merged, varTypes)
-	debugCountHashFns("after-rewriteUnionCalls", merged)
-
+	checker.DebugCountHashFns("after-rewriteUnionCalls", merged)
 	// 在合併所有 std 模組後再做一次名稱修飾，
 	// 處理跨模組的重載衝突（如 bigint.div-mod vs number.div-mod）
 	mangleOverloads(merged, nil)
-	debugCountHashFns("after-mangleOverloads", merged)
-
+	checker.DebugCountHashFns("after-mangleOverloads", merged)
 	// 編譯期未初始化變數檢查：循環體內聲明的變數在循環外使用
 	// 必須在模組合併後執行，才能檢查到導入模組（如 md5.no）中的問題
 	if err := validateLoopScopedVars(merged); err != nil {
 		return "", err
 	}
-
 	// 傳播目標平台到 LLVM generator，讓 Generate 內部的平台過濾使用目標平台
 	// 而非編譯主機平台（支援交叉編譯）。
 	t.llvmGenerator.SetTargetPlatform(t.targetGoos, t.targetGoarch)
@@ -1410,7 +1271,6 @@ func (t *Transpiler) CompileTarget(source string, _ Target) (string, error) {
 	t.llvmGenerator.SetMainFileNames(mainVarNames)
 	return t.llvmGenerator.Generate(merged), nil
 }
-
 // monomorphizeGenerics 對泛型函數進行單態化
 func monomorphizeGenerics(program *parser.Program, varTypes map[string]string, typeOwner map[string]string) {
 	// 收集所有泛型函數定義
@@ -1425,20 +1285,16 @@ func monomorphizeGenerics(program *parser.Program, varTypes map[string]string, t
 			}
 		}
 	}
-
 	if len(genericFns) == 0 {
 		return
 	}
-
 	// 遞迴掃描所有陳述句尋找泛型呼叫（包括函數體內）
 	var newStmts []parser.Statement
 	for _, stmt := range program.Statements {
 		scanStmtForGenericCalls(stmt, genericFns, varTypes, program, &newStmts, typeOwner)
 	}
-
 	program.Statements = append(program.Statements, newStmts...)
 }
-
 // isGenericMethod checks if a function name like "[n]t.method" has generic type params
 func isGenericMethod(name string) bool {
 	if len(name) > 3 && name[0] == '[' {
@@ -1466,11 +1322,9 @@ func isGenericMethod(name string) bool {
 	}
 	return false
 }
-
 // scanStmtForGenericCalls recursively scans statements for generic calls
 func scanStmtForGenericCalls(stmt parser.Statement, genericFns map[string]*parser.FunctionDefinition,
 	varTypes map[string]string, program *parser.Program, newStmts *[]parser.Statement, typeOwner map[string]string) {
-
 	switch s := stmt.(type) {
 	case *parser.ExpressionStatement:
 		if ce, ok := s.Expression.(*parser.CallExpression); ok {
@@ -1546,7 +1400,6 @@ func scanStmtForGenericCalls(stmt parser.Statement, genericFns map[string]*parse
 		}
 	}
 }
-
 // scanIfExpressionForGenericCalls recursively scans an IfExpression's Condition,
 // Consequence, and Alternative for method calls that need resolution.
 func scanIfExpressionForGenericCalls(ie *parser.IfExpression, genericFns map[string]*parser.FunctionDefinition,
@@ -1565,7 +1418,6 @@ func scanIfExpressionForGenericCalls(ie *parser.IfExpression, genericFns map[str
 		}
 	}
 }
-
 // scanExprForGenericCalls recursively walks an expression tree to find
 // CallExpressions (including method calls) that need generic/method resolution.
 func scanExprForGenericCalls(expr parser.Expression, genericFns map[string]*parser.FunctionDefinition,
@@ -1587,7 +1439,6 @@ func scanExprForGenericCalls(expr parser.Expression, genericFns map[string]*pars
 		scanExprForGenericCalls(e.Expression, genericFns, varTypes, program, newStmts, typeOwner)
 	}
 }
-
 // monomorphizeUnions 對聯合型別（union type alias）進行單態化。
 // 對每個帶有 ..T（T 為 union alias）的函數（variadic），或參數/結果
 // 使用 union alias 的非 variadic 函數，生成 N 個函數（每個 union
@@ -1595,7 +1446,7 @@ func scanExprForGenericCalls(expr parser.Expression, genericFns map[string]*pars
 // 供後續步驟識別用途，但會在 codegen 階段被跳過（靠 IsVariadic &&
 // VariadicUnion != "" 判斷；或 GenericUnion != "" 判斷）。
 func monomorphizeUnions(program *parser.Program) {
-	aliases, _ := ValidateUnionTypes(program)
+	aliases, _ := checker.ValidateUnionTypes(program)
 	if os.Getenv("NOLANG_UNION_DEBUG") != "" {
 		fmt.Fprintf(os.Stderr, "[union-debug] monomorphizeUnions: %d aliases, %d statements\n", len(aliases), len(program.Statements))
 		typeAliasCount := 0
@@ -1619,7 +1470,6 @@ func monomorphizeUnions(program *parser.Program) {
 	if len(aliases) == 0 {
 		return
 	}
-
 	// 收集所有需要單態化的函數
 	type pending struct {
 		fd        *parser.FunctionDefinition
@@ -1648,17 +1498,15 @@ func monomorphizeUnions(program *parser.Program) {
 		if os.Getenv("NOLANG_UNION_DEBUG") != "" {
 			fmt.Fprintf(os.Stderr, "[union-debug] monomorphize %s: union=%s\n", fd.Name, unionName)
 		}
-		members := FlattenUnion(unionName, aliases)
+		members := checker.FlattenUnion(unionName, aliases)
 		if len(members) == 0 {
 			continue
 		}
 		pendingFns = append(pendingFns, pending{fd: fd, unionName: unionName, members: members})
 	}
-
 	if len(pendingFns) == 0 {
 		return
 	}
-
 	var newStmts []parser.Statement
 	for _, p := range pendingFns {
 		for _, mem := range p.members {
@@ -1674,7 +1522,6 @@ func monomorphizeUnions(program *parser.Program) {
 	}
 	program.Statements = append(program.Statements, newStmts...)
 }
-
 // rewriteUnionCalls 重寫對聯合型別泛型函數的呼叫。
 // 在 monomorphizeUnions 之後，原函數被改名為 "<name>__<union>_TEMPLATE"，
 // 具體版本為 "<name>__<memberType>"。此函數遍歷所有呼叫點，
@@ -1696,8 +1543,8 @@ func rewriteUnionCalls(program *parser.Program, varTypes map[string]string) {
 			}
 			origName := parts[0]
 			unionName := parts[1]
-			aliases, _ := ValidateUnionTypes(program)
-			members := FlattenUnion(unionName, aliases)
+			aliases, _ := checker.ValidateUnionTypes(program)
+			members := checker.FlattenUnion(unionName, aliases)
 			memberNames := make([]string, 0, len(members))
 			for _, m := range members {
 				if nt, ok := m.(*parser.NamedType); ok {
@@ -1707,7 +1554,6 @@ func rewriteUnionCalls(program *parser.Program, varTypes map[string]string) {
 			templates[origName] = &unionTemplateInfo{origName: origName, unionName: unionName, members: memberNames}
 		}
 	}
-
 	if len(templates) == 0 {
 		if os.Getenv("NOLANG_UNION_DEBUG") != "" {
 			fmt.Fprintf(os.Stderr, "[union-debug] rewriteUnionCalls: no templates found\n")
@@ -1720,11 +1566,9 @@ func rewriteUnionCalls(program *parser.Program, varTypes map[string]string) {
 			fmt.Fprintf(os.Stderr, "[union-debug]   template %s: union=%s members=%v\n", name, tpl.unionName, tpl.members)
 		}
 	}
-
 	// 遍歷所有語句，重寫呼叫
 	rewriteUnionCallStmts(program.Statements, templates, varTypes)
 }
-
 // rewriteUnionCallStmts 遍歷語句列表，對每個語句中的聯合型別泛型呼叫進行重寫。
 // 此函數與 rewriteUnionCallExpr 互相遞迴：rewriteUnionCallExpr 處理 IfExpression
 // 的 Consequence/Alternative 時會呼叫本函數，以正確走訪所有語句類型
@@ -1789,14 +1633,12 @@ func rewriteUnionCallStmts(stmts []parser.Statement, templates map[string]*union
 		}
 	}
 }
-
 // unionTemplateInfo 記錄聯合型別模板函數的資訊
 type unionTemplateInfo struct {
 	origName  string
 	unionName string
 	members   []string
 }
-
 // rewriteUnionCallExpr 遞迴重寫表達式中的聯合型別呼叫
 func rewriteUnionCallExpr(expr parser.Expression, templates map[string]*unionTemplateInfo, varTypes map[string]string) {
 	if expr == nil {
@@ -1889,7 +1731,6 @@ func rewriteUnionCallExpr(expr parser.Expression, templates map[string]*unionTem
 		rewriteUnionCallExpr(e.Value, templates, varTypes)
 	}
 }
-
 // inferArgMemberType 從呼叫引數推斷應使用的聯合成員型別
 func inferArgMemberType(call *parser.CallExpression, tpl *unionTemplateInfo, varTypes map[string]string) string {
 	if len(call.Arguments) == 0 {
@@ -1900,7 +1741,6 @@ func inferArgMemberType(call *parser.CallExpression, tpl *unionTemplateInfo, var
 	firstArg := call.Arguments[0]
 	return inferExprMemberType(firstArg, varTypes)
 }
-
 // inferExprMemberType 從表達式推斷聯合成員型別
 func inferExprMemberType(expr parser.Expression, varTypes map[string]string) string {
 	switch v := expr.(type) {
@@ -1923,7 +1763,6 @@ func inferExprMemberType(expr parser.Expression, varTypes map[string]string) str
 	}
 	return "i64"
 }
-
 // inferTypeFromExpr 嘗試從值表達式推斷變數型別。無法推斷時返回空白字串。
 func inferTypeFromExpr(expr parser.Expression) string {
 	switch e := expr.(type) {
@@ -2016,7 +1855,6 @@ func inferTypeFromExpr(expr parser.Expression) string {
 	}
 	return ""
 }
-
 // isValidType 檢查是否為有效的 Nolang 型別名
 func isValidType(name string) bool {
 	switch name {
@@ -2025,7 +1863,6 @@ func isValidType(name string) bool {
 	}
 	return false
 }
-
 // cloneUnionVariant 為 union 函數的某個成員型別複製一份具體實例。
 // 替換函數簽名中的 variadic 元素型別為該成員（若為 variadic），
 // 並將所有 union 別名的參數/結果型別替換為具體成員型別。
@@ -2081,7 +1918,6 @@ func cloneUnionVariant(fd *parser.FunctionDefinition, memberType string, aliases
 	clone.Body = cloneBlockForUnion(fd.Body, fd.Name, clone.Name, memberType)
 	return &clone
 }
-
 // cloneBlockForUnion 深拷貝一個 block，遞迴地把對 <oldName> 的呼叫
 // 改名為 <newName>。<memberType> 是當前單態化的具體型別。
 func cloneBlockForUnion(bs *parser.BlockStatement, oldName, newName, memberType string) *parser.BlockStatement {
@@ -2094,7 +1930,6 @@ func cloneBlockForUnion(bs *parser.BlockStatement, oldName, newName, memberType 
 	}
 	return out
 }
-
 func cloneStmtForUnion(stmt parser.Statement, oldName, newName, memberType string) parser.Statement {
 	if stmt == nil {
 		return nil
@@ -2142,7 +1977,6 @@ func cloneStmtForUnion(stmt parser.Statement, oldName, newName, memberType strin
 	// Fallback: shallow copy via type assertion to the concrete type
 	return stmt
 }
-
 func cloneIterForUnion(it *parser.IterationExpr, oldName, newName, memberType string) *parser.IterationExpr {
 	if it == nil {
 		return nil
@@ -2157,7 +1991,6 @@ func cloneIterForUnion(it *parser.IterationExpr, oldName, newName, memberType st
 	}
 	return &cp
 }
-
 func cloneRangeForUnion(r *parser.RangeExpression, oldName, newName, memberType string) *parser.RangeExpression {
 	if r == nil {
 		return nil
@@ -2171,7 +2004,6 @@ func cloneRangeForUnion(r *parser.RangeExpression, oldName, newName, memberType 
 	}
 	return &cp
 }
-
 func cloneExprForUnion(expr parser.Expression, oldName, newName, memberType string) parser.Expression {
 	if expr == nil {
 		return nil
@@ -2215,11 +2047,9 @@ func cloneExprForUnion(expr parser.Expression, oldName, newName, memberType stri
 	}
 	return expr
 }
-
 // processCallExpression handles a single CallExpression for generic resolution
 func processCallExpression(ce *parser.CallExpression, genericFns map[string]*parser.FunctionDefinition,
 	varTypes map[string]string, program *parser.Program, newStmts *[]parser.Statement, typeOwner map[string]string) {
-
 	// Regular function call: fn(args)
 	if fnName, ok := ce.Function.(*parser.Identifier); ok {
 		if fd, exists := genericFns[fnName.Value]; exists {
@@ -2235,12 +2065,10 @@ func processCallExpression(ce *parser.CallExpression, genericFns map[string]*par
 			}
 		}
 	}
-
 	// Method call: receiver.method(args)
 	if dot, ok := ce.Function.(*parser.DotExpression); ok {
 		resolveMethodCall(dot, ce, genericFns, varTypes, newStmts, program, typeOwner)
 	}
-
 	// Recurse into arguments
 	for _, arg := range ce.Arguments {
 		if innerCe, ok := arg.(*parser.CallExpression); ok {
@@ -2248,7 +2076,6 @@ func processCallExpression(ce *parser.CallExpression, genericFns map[string]*par
 		}
 	}
 }
-
 // fnExistsInProgram checks if a function or method with the given name exists
 // in the program's top-level statements. Method definitions (e.g. f64.to-str,
 // int.to-str) are stored as *parser.FunctionDefinition with the full dotted
@@ -2264,13 +2091,11 @@ func fnExistsInProgram(program *parser.Program, name string) bool {
 	}
 	return false
 }
-
 // resolveMethodCall resolves a DotExpression-based method call.
 // Returns true if the call was resolved and rewritten.
 func resolveMethodCall(dot *parser.DotExpression, ce *parser.CallExpression,
 	genericFns map[string]*parser.FunctionDefinition, varTypes map[string]string,
 	newStmts *[]parser.Statement, program *parser.Program, typeOwner map[string]string) bool {
-
 	// Get receiver variable name and type
 	recvIdent, ok := dot.Receiver.(*parser.Identifier)
 	if !ok {
@@ -2280,9 +2105,7 @@ func resolveMethodCall(dot *parser.DotExpression, ce *parser.CallExpression,
 	if !ok {
 		return false
 	}
-
 	methodName := dot.Property
-
 	// Search for matching generic method
 	for name, fd := range genericFns {
 		dotIdx := strings.LastIndex(name, ".")
@@ -2294,17 +2117,14 @@ func resolveMethodCall(dot *parser.DotExpression, ce *parser.CallExpression,
 		if methodSuffix != methodName {
 			continue
 		}
-
 		// Try to match typePrefix (e.g., "[n]t") against recvType (e.g., "[4]i64")
 		genericArgs := matchTypePattern(typePrefix, recvType, fd)
 		if len(genericArgs) == 0 {
 			continue
 		}
-
 		// Create concrete version
 		concrete := cloneAndSubstitute(fd, genericArgs)
 		*newStmts = append(*newStmts, concrete)
-
 		// Rewrite call: replace DotExpression with Identifier, prepend receiver
 		ce.Function = &parser.Identifier{
 			Token: lexer.Token{Type: lexer.IDENT, Literal: concrete.Name},
@@ -2318,7 +2138,6 @@ func resolveMethodCall(dot *parser.DotExpression, ce *parser.CallExpression,
 		ce.Arguments = append([]parser.Expression{receiverArg}, ce.Arguments...)
 		return true
 	}
-
 	// Try non-generic method: type.method already exists
 	// Rewrite to direct call with receiver prepended
 	// Map types use "hashmap-K-V" naming convention (not "[K]V")
@@ -2333,16 +2152,15 @@ func resolveMethodCall(dot *parser.DotExpression, ce *parser.CallExpression,
 	// form (e.g. "conn" instead of "tls.conn"). Without this, the rewrite
 	// would produce "conn.recv" but the function definition was renamed to
 	// "tls.conn.recv" by prefixMethodNames.
-	if typeOwner != nil && !strings.Contains(recvTypeForMethod, ".") {
-		if mod, ok := typeOwner[recvTypeForMethod]; ok && mod != "" {
-			recvTypeForMethod = mod + "." + recvTypeForMethod
-		}
+	// typeOwner 的 key 為 "module.name"，value 為 bareName，故複用 prefixTypeName
+	// 進行查找：恰好一個模組定義該型別時補上前綴，多個模組同名時保持原樣。
+	if typeOwner != nil {
+		recvTypeForMethod = prefixTypeName(recvTypeForMethod, typeOwner)
 	}
 	concreteName := recvTypeForMethod + "." + methodName
 	if hmName := mapTypeToHashmapName(recvTypeForMethod); hmName != "" {
 		concreteName = hmName + "." + methodName
 	}
-
 	// Don't rewrite if this is a builtin method (e.g. vec.push, vec.clear).
 	// Builtins are registered with LLVM type prefixes (vec, arr, str, etc.),
 	// not Nolang type names ([]str, []i64, etc.). The LLVM code generator
@@ -2379,7 +2197,6 @@ func resolveMethodCall(dot *parser.DotExpression, ce *parser.CallExpression,
 	if builtin.FindBuiltinMethod(concreteName) != nil {
 		return false
 	}
-
 	// Check if recvType is a member of a union type alias
 	// If so, use the union alias prefix instead of the concrete type —
 	// BUT only when the union method actually exists. When the union method
@@ -2405,7 +2222,6 @@ func resolveMethodCall(dot *parser.DotExpression, ce *parser.CallExpression,
 			}
 		}
 	}
-
 	ce.Function = &parser.Identifier{
 		Token: lexer.Token{Type: lexer.IDENT, Literal: concreteName},
 		Value: concreteName,
@@ -2417,7 +2233,6 @@ func resolveMethodCall(dot *parser.DotExpression, ce *parser.CallExpression,
 	ce.Arguments = append([]parser.Expression{receiverArg}, ce.Arguments...)
 	return true
 }
-
 // matchTypePattern matches a type pattern like "[n]t" against a concrete type like "[4]i64".
 // Returns generic args (e.g., n=4, t=i64) or nil if no match.
 func matchTypePattern(pattern, concrete string, fd *parser.FunctionDefinition) []parser.Expression {
@@ -2427,13 +2242,11 @@ func matchTypePattern(pattern, concrete string, fd *parser.FunctionDefinition) [
 		if closeBracket > 0 && closeBracket+1 < len(pattern) {
 			sizeParam := pattern[1:closeBracket]
 			elemParam := pattern[closeBracket+1:]
-
 			if len(concrete) > 2 && concrete[0] == '[' {
 				argClose := strings.IndexByte(concrete, ']')
 				if argClose > 0 {
 					argSize := concrete[1:argClose]
 					argElem := concrete[argClose+1:]
-
 					// [n]t pattern is for fixed-size arrays only.
 					// If argSize is empty, concrete is a slice ([]T), not an array,
 					// and must be handled by the []t slice pattern below.
@@ -2443,7 +2256,6 @@ func matchTypePattern(pattern, concrete string, fd *parser.FunctionDefinition) [
 					if argSize == "" {
 						return nil
 					}
-
 					var args []parser.Expression
 					if isLowerLetter(sizeParam) {
 						// [n]t pattern requires a numeric size; non-numeric argSize
@@ -2464,7 +2276,6 @@ func matchTypePattern(pattern, concrete string, fd *parser.FunctionDefinition) [
 			}
 		}
 	}
-
 	// Match []t against []i64 (slice pattern)
 	if strings.HasPrefix(pattern, "[]") {
 		elemParam := pattern[2:]
@@ -2475,19 +2286,15 @@ func matchTypePattern(pattern, concrete string, fd *parser.FunctionDefinition) [
 			}
 		}
 	}
-
 	return nil
 }
-
 // inferGenericArgs 從函數呼叫的引數型別推斷泛型參數
 // 例如 fn(arr [n]t) 被以 [8]byte 引數呼叫 → n=8, t=byte
 func inferGenericArgs(fd *parser.FunctionDefinition, call *parser.CallExpression, program *parser.Program) []parser.Expression {
 	if len(fd.Parameters) == 0 || len(call.Arguments) == 0 {
 		return nil
 	}
-
 	var args []parser.Expression
-
 	for pi, param := range fd.Parameters {
 		if pi >= len(call.Arguments) {
 			break
@@ -2495,28 +2302,24 @@ func inferGenericArgs(fd *parser.FunctionDefinition, call *parser.CallExpression
 		arg := call.Arguments[pi]
 		argType := inferArgType(arg, program)
 		paramType := param.Type.String()
-
 		// 匹配泛型型別：t 與具體型別 i64
 		if len(paramType) == 1 && paramType[0] >= 'a' && paramType[0] <= 'z' {
 			if isLowerLetter(paramType) && argType != "" {
 				args = append(args, &parser.StringLiteral{Value: argType})
 			}
 		}
-
 		// 匹配參數型別 [n]t 與引數型別 [8]byte
 		if len(paramType) > 3 && paramType[0] == '[' {
 			closeBracket := strings.IndexByte(paramType, ']')
 			if closeBracket > 0 && closeBracket+1 < len(paramType) {
 				sizeParam := paramType[1:closeBracket]  // n
 				elemParam := paramType[closeBracket+1:] // t
-
 				// 從引數型別中提取具體值
 				if len(argType) > 2 && argType[0] == '[' {
 					argClose := strings.IndexByte(argType, ']')
 					if argClose > 0 {
 						argSize := argType[1:argClose]  // 8
 						argElem := argType[argClose+1:] // byte
-
 						if isLowerLetter(sizeParam) {
 							if val, err := strconv.ParseInt(argSize, 10, 64); err == nil {
 								args = append(args, &parser.IntegerLiteral{Value: val})
@@ -2533,11 +2336,9 @@ func inferGenericArgs(fd *parser.FunctionDefinition, call *parser.CallExpression
 	}
 	return args
 }
-
 func isLowerLetter(s string) bool {
 	return len(s) == 1 && s[0] >= 'a' && s[0] <= 'z'
 }
-
 func inferArgType(expr parser.Expression, program *parser.Program) string {
 	switch e := expr.(type) {
 	case *parser.Identifier:
@@ -2563,23 +2364,19 @@ func inferArgType(expr parser.Expression, program *parser.Program) string {
 	}
 	return ""
 }
-
 func stmtCount(body *parser.BlockStatement) int {
 	if body == nil {
 		return -1
 	}
 	return len(body.Statements)
 }
-
 // cloneAndSubstitute 複製泛型函數並以具體值替換泛型參數
 func cloneAndSubstitute(fd *parser.FunctionDefinition, genericArgs []parser.Expression) *parser.FunctionDefinition {
 	if len(genericArgs) == 0 {
 		return fd
 	}
-
 	// 複製並替換參數類型中的泛型標記
 	subst := make(map[string]string) // 泛型參數名 → 具體值字串
-
 	// For explicit generic params (positional matching)
 	// Skip for implicit generic methods like [n]t.method - use name-based matching below
 	isImplicitGenericMethod := len(fd.Name) > 3 && fd.Name[0] == '['
@@ -2594,7 +2391,6 @@ func cloneAndSubstitute(fd *parser.FunctionDefinition, genericArgs []parser.Expr
 			}
 		}
 	}
-
 	// For implicit generic methods like [n]t.method:
 	// Extract size/elem param names from the method name and match by type (not position)
 	var sizeVal string
@@ -2606,7 +2402,6 @@ func cloneAndSubstitute(fd *parser.FunctionDefinition, genericArgs []parser.Expr
 			elemVal = lit.Value
 		}
 	}
-
 	if isImplicitGenericMethod {
 		closeB := strings.IndexByte(fd.Name, ']')
 		if closeB > 0 && closeB+1 < len(fd.Name) {
@@ -2630,7 +2425,6 @@ func cloneAndSubstitute(fd *parser.FunctionDefinition, genericArgs []parser.Expr
 			}
 		}
 	}
-
 	// Build mangled name
 	mangledName := fd.Name
 	if isImplicitGenericMethod {
@@ -2656,7 +2450,6 @@ func cloneAndSubstitute(fd *parser.FunctionDefinition, genericArgs []parser.Expr
 			}
 		}
 	}
-
 	// 複製參數
 	newParams := make([]*parser.Parameter, len(fd.Parameters))
 	for i, p := range fd.Parameters {
@@ -2666,7 +2459,6 @@ func cloneAndSubstitute(fd *parser.FunctionDefinition, genericArgs []parser.Expr
 			Type:  substituteType(p.Type, subst),
 		}
 	}
-
 	// 複製回傳值
 	newResults := make([]*parser.Parameter, len(fd.Results))
 	for i, r := range fd.Results {
@@ -2676,10 +2468,8 @@ func cloneAndSubstitute(fd *parser.FunctionDefinition, genericArgs []parser.Expr
 			Type:  substituteType(r.Type, subst),
 		}
 	}
-
 	// 複製並替換函數體
 	newBody := substituteBody(fd.Body, subst)
-
 	return &parser.FunctionDefinition{
 		Token: fd.Token,
 		Name:  mangledName,
@@ -2692,7 +2482,6 @@ func cloneAndSubstitute(fd *parser.FunctionDefinition, genericArgs []parser.Expr
 		IsMethodDef: fd.IsMethodDef,
 	}
 }
-
 // substituteBody 遞迴替換函數體中的泛型參數
 func substituteBody(body *parser.BlockStatement, subst map[string]string) *parser.BlockStatement {
 	if body == nil || len(subst) == 0 {
@@ -2707,7 +2496,6 @@ func substituteBody(body *parser.BlockStatement, subst map[string]string) *parse
 		Statements: newStmts,
 	}
 }
-
 func substituteStmt(stmt parser.Statement, subst map[string]string) parser.Statement {
 	switch s := stmt.(type) {
 	case *parser.ExpressionStatement:
@@ -2744,7 +2532,6 @@ func substituteStmt(stmt parser.Statement, subst map[string]string) parser.State
 				}
 			}
 		}
-
 		// 也替換 for i < n 條件中的 n
 		if s.Condition != nil {
 			newFor.Condition = substituteExpr(s.Condition, subst)
@@ -2773,7 +2560,6 @@ func substituteStmt(stmt parser.Statement, subst map[string]string) parser.State
 		return stmt
 	}
 }
-
 func substituteExpr(expr parser.Expression, subst map[string]string) parser.Expression {
 	if expr == nil {
 		return nil
@@ -2901,7 +2687,6 @@ func substituteExpr(expr parser.Expression, subst map[string]string) parser.Expr
 		return e
 	}
 }
-
 func substituteRange(r *parser.RangeExpression, subst map[string]string) *parser.RangeExpression {
 	if r == nil {
 		return nil
@@ -2914,7 +2699,6 @@ func substituteRange(r *parser.RangeExpression, subst map[string]string) *parser
 		End:      substituteExpr(r.End, subst),
 	}
 }
-
 // substituteType 替換類型中的泛型參數
 // 遞迴處理所有 Type 節點
 func substituteType(t parser.Type, subst map[string]string) parser.Type {
@@ -2954,7 +2738,6 @@ func substituteType(t parser.Type, subst map[string]string) parser.Type {
 		return t
 	}
 }
-
 // collectVarTypesFromBody recursively collects variable types from a function body
 func collectVarTypesFromBody(body *parser.BlockStatement, varTypes map[string]string) {
 	if body == nil {
@@ -2992,7 +2775,6 @@ func collectVarTypesFromBody(body *parser.BlockStatement, varTypes map[string]st
 		}
 	}
 }
-
 // collectVarTypesFromExpr recurses into expression nodes that contain
 // BlockStatement bodies (IfExpression, etc.) and collects local variable types.
 func collectVarTypesFromExpr(expr parser.Expression, varTypes map[string]string) {
@@ -3011,7 +2793,6 @@ func collectVarTypesFromExpr(expr parser.Expression, varTypes map[string]string)
 		collectVarTypesFromExpr(e.Alternative, varTypes)
 	}
 }
-
 // makeIdent 建立 Identifier AST 節點
 func makeIdent(name string) *parser.Identifier {
 	return &parser.Identifier{
@@ -3019,7 +2800,6 @@ func makeIdent(name string) *parser.Identifier {
 		Value: name,
 	}
 }
-
 // makeMethodCall 建立 varName.methodName() 的 ExpressionStatement
 func makeMethodCall(varName, method string) *parser.ExpressionStatement {
 	return &parser.ExpressionStatement{
@@ -3035,13 +2815,11 @@ func makeMethodCall(varName, method string) *parser.ExpressionStatement {
 		},
 	}
 }
-
 // injectEnterLeave 為實現了 enter()/leave() 的類型自動插入作用域調用
 func injectEnterLeave(program *parser.Program) {
 	// 1. 收集實現了 enter/leave 的類型
 	hasEnter := make(map[string]bool)
 	hasLeave := make(map[string]bool)
-
 	for _, stmt := range program.Statements {
 		fd, ok := stmt.(*parser.FunctionDefinition)
 		if !ok {
@@ -3060,18 +2838,15 @@ func injectEnterLeave(program *parser.Program) {
 		}
 		typeName := fd.Name[:dotIdx]
 		methodName := fd.Name[dotIdx+1:]
-
 		if methodName == "enter" {
 			hasEnter[typeName] = true
 		} else if methodName == "leave" {
 			hasLeave[typeName] = true
 		}
 	}
-
 	if len(hasEnter) == 0 && len(hasLeave) == 0 {
 		return // 沒有類型需要處理
 	}
-
 	// 找出既有 enter 又有 leave 的類型
 	lifecycleTypes := make(map[string]bool)
 	for t := range hasEnter {
@@ -3080,17 +2855,14 @@ func injectEnterLeave(program *parser.Program) {
 	for t := range hasLeave {
 		lifecycleTypes[t] = true
 	}
-
 	// 2. 遍歷所有函數體，注入 enter/leave
 	var walkBlock func(block *parser.BlockStatement, inScope []string)
 	walkBlock = func(block *parser.BlockStatement, inScope []string) {
 		var newStmts []parser.Statement
 		scopeVars := make([]string, len(inScope))
 		copy(scopeVars, inScope)
-
 		for _, stmt := range block.Statements {
 			newStmts = append(newStmts, stmt)
-
 			switch s := stmt.(type) {
 			case *parser.LetStatement:
 				typeName := ""
@@ -3103,7 +2875,6 @@ func injectEnterLeave(program *parser.Program) {
 					newStmts = append(newStmts, makeMethodCall(varName, "enter"))
 					scopeVars = append(scopeVars, varName)
 				}
-
 			case *parser.ReturnStatement:
 				// 在 return 前插入 leave()
 				for i := len(scopeVars) - 1; i >= 0; i-- {
@@ -3111,12 +2882,10 @@ func injectEnterLeave(program *parser.Program) {
 						newStmts = append(newStmts, makeMethodCall(scopeVars[i], "leave"))
 					}
 				}
-
 			case *parser.ForStatement:
 				if s.Body != nil {
 					walkBlock(s.Body, scopeVars)
 				}
-
 			case *parser.ExpressionStatement:
 				if ifExpr, ok := s.Expression.(*parser.IfExpression); ok {
 					if ifExpr.Consequence != nil {
@@ -3127,9 +2896,7 @@ func injectEnterLeave(program *parser.Program) {
 					}
 				}
 			}
-
 		}
-
 		// 區塊結尾插入 leave()（反向）
 		if len(scopeVars) > len(inScope) {
 			for i := len(scopeVars) - 1; i >= len(inScope); i-- {
@@ -3138,10 +2905,8 @@ func injectEnterLeave(program *parser.Program) {
 				}
 			}
 		}
-
 		block.Statements = newStmts
 	}
-
 	// 遍歷頂層函數和區塊
 	for _, stmt := range program.Statements {
 		switch s := stmt.(type) {
@@ -3152,7 +2917,6 @@ func injectEnterLeave(program *parser.Program) {
 		}
 	}
 }
-
 // findTypeForVar 從區塊語句中查找變數的類型（簡化版）
 func findTypeForVar(varName string, block *parser.BlockStatement, lifecycleTypes map[string]bool) string {
 	for _, stmt := range block.Statements {
@@ -3168,7 +2932,6 @@ func findTypeForVar(varName string, block *parser.BlockStatement, lifecycleTypes
 	}
 	return ""
 }
-
 // buildArraySizeMap 構建變數名 → 陣列大小的映射
 // 從所有 LetStatement 中收集 ArraySize
 // sizeMaps 儲存陣列、切片、字串的大小映射，由 buildSizeMaps 單次遍歷填充。
@@ -3179,7 +2942,6 @@ type sizeMaps struct {
 	sliceSizes  map[string]int64
 	stringSizes map[string]int64
 }
-
 // buildSizeMaps 單次遍歷 AST 同時收集陣列、切片、字串的大小映射。
 // 替代原本獨立呼叫 buildArraySizeMap + buildSliceSizeMap + buildStringSizeMap 的 3 次遍歷。
 func buildSizeMaps(program *parser.Program) *sizeMaps {
@@ -3193,7 +2955,6 @@ func buildSizeMaps(program *parser.Program) *sizeMaps {
 	}
 	return sm
 }
-
 // collectSizesFromStmt 遞迴遍歷 AST 節點，同時收集三種大小映射。
 // 合併自 collectArraySizesFromStmt / collectSliceSizeMapFromStmt / collectStringSizeMapFromStmt。
 func collectSizesFromStmt(stmt parser.Statement, sm *sizeMaps) {
@@ -3288,7 +3049,6 @@ func collectSizesFromStmt(stmt parser.Statement, sm *sizeMaps) {
 		}
 	}
 }
-
 func buildArraySizeMap(program *parser.Program) map[string]int64 {
 	sizes := make(map[string]int64)
 	for _, stmt := range program.Statements {
@@ -3296,7 +3056,6 @@ func buildArraySizeMap(program *parser.Program) map[string]int64 {
 	}
 	return sizes
 }
-
 func collectArraySizesFromStmt(stmt parser.Statement, sizes map[string]int64) {
 	switch s := stmt.(type) {
 	case *parser.LetStatement:
@@ -3350,7 +3109,6 @@ func collectArraySizesFromStmt(stmt parser.Statement, sizes map[string]int64) {
 		}
 	}
 }
-
 // buildSliceSizeMap collects names of slice variables and their initial element count
 func buildSliceSizeMap(program *parser.Program) map[string]int64 {
 	slices := make(map[string]int64)
@@ -3359,7 +3117,6 @@ func buildSliceSizeMap(program *parser.Program) map[string]int64 {
 	}
 	return slices
 }
-
 func collectSliceSizeMapFromStmt(stmt parser.Statement, slices map[string]int64) {
 	switch s := stmt.(type) {
 	case *parser.LetStatement:
@@ -3408,7 +3165,6 @@ func collectSliceSizeMapFromStmt(stmt parser.Statement, slices map[string]int64)
 		}
 	}
 }
-
 // buildStringSizeMap collects names of string variables and their literal length
 func buildStringSizeMap(program *parser.Program) map[string]int64 {
 	strSizes := make(map[string]int64)
@@ -3417,7 +3173,6 @@ func buildStringSizeMap(program *parser.Program) map[string]int64 {
 	}
 	return strSizes
 }
-
 func collectStringSizeMapFromStmt(stmt parser.Statement, strSizes map[string]int64) {
 	switch s := stmt.(type) {
 	case *parser.LetStatement:
@@ -3482,7 +3237,6 @@ func collectStringSizeMapFromStmt(stmt parser.Statement, strSizes map[string]int
 		}
 	}
 }
-
 // validateArrayBounds 編譯期陣列邊界檢查
 // 檢查所有 IndexExpression 中的常數索引是否超出陣列長度
 // isStringExprForCollect is a stricter version of isStringExpr used during the
@@ -3527,7 +3281,6 @@ func isStringExprForCollect(expr parser.Expression, strSizes map[string]int64) b
 	}
 	return false
 }
-
 // isStringExpr checks if an expression is a string type
 func isStringExpr(expr parser.Expression, stringSizes map[string]int64) bool {
 	switch e := expr.(type) {
@@ -3561,7 +3314,6 @@ func isStringExpr(expr parser.Expression, stringSizes map[string]int64) bool {
 	}
 	return false
 }
-
 // validateDuplicates checks for duplicate variable declarations
 func validateDuplicates(program *parser.Program) error {
 	seen := make(map[string]bool)
@@ -3572,7 +3324,6 @@ func validateDuplicates(program *parser.Program) error {
 	}
 	return nil
 }
-
 func validateStmtDuplicates(sem *parser.SemanticContext, stmt parser.Statement, seen map[string]bool) error {
 	switch s := stmt.(type) {
 	case *parser.LetStatement:
@@ -3608,7 +3359,7 @@ func validateStmtDuplicates(sem *parser.SemanticContext, stmt parser.Statement, 
 				hasExplicitType = false
 			}
 		}
-		isConst := isConstantName(s.Name.Value)
+		isConst := checker.IsConstantName(s.Name.Value)
 		if !hasExplicitType && !isConst {
 			return nil
 		}
@@ -3658,7 +3409,6 @@ func validateStmtDuplicates(sem *parser.SemanticContext, stmt parser.Statement, 
 	}
 	return nil
 }
-
 // validateLoopScopedVars detects variables that are first declared inside a
 // ForStatement body and then used after the loop exits. Because the loop might
 // execute zero iterations, such variables would be undef at the point of use,
@@ -3685,7 +3435,6 @@ func validateLoopScopedVars(program *parser.Program) error {
 	}
 	return nil
 }
-
 // validateLoopScopedStmts walks a statement list sequentially, tracking which
 // variables are first declared inside a ForStatement body. After a ForStatement,
 // it checks ALL subsequent statements for uses of those loop-only variables.
@@ -3699,7 +3448,6 @@ func validateLoopScopedStmts(stmts []parser.Statement, preDefined map[string]boo
 	// loopOnlyVars: variables first declared inside a preceding loop body.
 	// These might be undef if the loop executed zero iterations.
 	loopOnlyVars := make(map[string]bool)
-
 	for _, stmt := range stmts {
 		// Check if this statement reads a loop-only variable in an expression
 		usedNames := collectExprIdentifiers(stmt)
@@ -3722,7 +3470,6 @@ func validateLoopScopedStmts(stmts []parser.Statement, preDefined map[string]boo
 				}
 			}
 		}
-
 		// Track top-level variable declarations
 		if ls, ok := stmt.(*parser.LetStatement); ok && ls.Name != nil {
 			definedBeforeLoop[ls.Name.Value] = true
@@ -3754,7 +3501,6 @@ func validateLoopScopedStmts(stmts []parser.Statement, preDefined map[string]boo
 	}
 	return nil
 }
-
 func collectLoopBodyVarDecls(fs *parser.ForStatement) map[string]bool {
 	vars := make(map[string]bool)
 	if fs.Body == nil {
@@ -3766,7 +3512,6 @@ func collectLoopBodyVarDecls(fs *parser.ForStatement) map[string]bool {
 	}
 	return vars
 }
-
 func collectVarDeclsFromStmts(stmts []parser.Statement, vars map[string]bool) {
 	for _, stmt := range stmts {
 		switch s := stmt.(type) {
@@ -3783,7 +3528,6 @@ func collectVarDeclsFromStmts(stmts []parser.Statement, vars map[string]bool) {
 		}
 	}
 }
-
 func collectExprIdentifiers(stmt parser.Statement) map[string]bool {
 	idents := make(map[string]bool)
 	switch s := stmt.(type) {
@@ -3829,7 +3573,6 @@ func collectExprIdentifiers(stmt parser.Statement) map[string]bool {
 	}
 	return idents
 }
-
 func collectIdentsFromExpr(expr parser.Expression, idents map[string]bool) {
 	if expr == nil {
 		return
@@ -3900,14 +3643,12 @@ func collectIdentsFromExpr(expr parser.Expression, idents map[string]bool) {
 		collectIdentsFromExpr(e.End, idents)
 	}
 }
-
 func stmtPosLine(stmt parser.Statement) int {
 	if stmt == nil {
 		return 0
 	}
 	return stmt.Pos().Line
 }
-
 // validateArrayBounds 編譯期陣列邊界檢查
 // 檢查所有 IndexExpression 中的常數索引是否超出陣列長度
 func validateArrayBounds(program *parser.Program, arraySizes map[string]int64, sliceSizes map[string]int64, stringSizes map[string]int64, varTypes map[string]string) error {
@@ -3918,7 +3659,6 @@ func validateArrayBounds(program *parser.Program, arraySizes map[string]int64, s
 	}
 	return nil
 }
-
 func validateStmtArrayBounds(stmt parser.Statement, arraySizes map[string]int64, sliceSizes map[string]int64, stringSizes map[string]int64, varTypes map[string]string) error {
 	switch s := stmt.(type) {
 	case *parser.ExpressionStatement:
@@ -4002,7 +3742,6 @@ func validateStmtArrayBounds(stmt parser.Statement, arraySizes map[string]int64,
 	}
 	return nil
 }
-
 // tryEvalConstInt 嘗試在編譯期求值整數常數表達式。
 // 支援：IntegerLiteral、PrefixExpression(-)、InfixExpression(+,-,*)、GroupedExpression。
 // 若成功求值回傳 (value, true)，否則回傳 (0, false)。
@@ -4037,7 +3776,6 @@ func tryEvalConstInt(expr parser.Expression) (int64, bool) {
 	}
 	return 0, false
 }
-
 // checkConstIndexBounds 檢查常數索引是否越界（負數或 >= size）。
 // 若索引非常數或 size <= 0 則跳過。回傳錯誤或 nil。
 func checkConstIndexBounds(idxExpr parser.Expression, size int64, varName string, typeName string) error {
@@ -4056,7 +3794,6 @@ func checkConstIndexBounds(idxExpr parser.Expression, size int64, varName string
 	}
 	return nil
 }
-
 func validateExprArrayBounds(expr parser.Expression, arraySizes map[string]int64, sliceSizes map[string]int64, stringSizes map[string]int64, varTypes map[string]string) error {
 	switch e := expr.(type) {
 	case *parser.IndexExpression:
@@ -4190,985 +3927,913 @@ func validateExprArrayBounds(expr parser.Expression, arraySizes map[string]int64
 	}
 	return nil
 }
-
 // ── 型別檢查 ──────────────────────────────────────────────
-
-// ValidateResult 型別檢查結果
-type ValidateResult struct {
-	Line      int
-	Column    int
-	EndColumn int
-	Message   string
-}
-
+// checker.ValidateResult 型別檢查結果
+                            
+              
+              
+              
+                 
+ 
 // ValidateEmbedAnnotations 校驗 #{embed=...} 註解的用法是否正確。
 // sourcePath 用於解析相對路徑（相對於包根目錄）。
-func ValidateEmbedAnnotations(program *parser.Program, sourcePath string) []ValidateResult {
-	var results []ValidateResult
-	for _, stmt := range program.Statements {
-		ls, ok := stmt.(*parser.LetStatement)
-		if !ok {
-			continue
-		}
-		// 查找 embed 註解（經由 side-table）
-		var embedPath string
-		var embedEntry *parser.AnnotationEntry
-		for _, annot := range program.Sem.AnnotationsOf(ls) {
-			if annot.Key != "embed" {
-				continue
-			}
-			embedEntry = annot
-			if sv, ok := annot.Value.(*parser.AnnotationStringValue); ok {
-				embedPath = sv.Value
-			} else if iv, ok := annot.Value.(*parser.AnnotationIdentValue); ok {
-				embedPath = iv.Value
-			}
-		}
-		if embedEntry == nil {
-			continue
-		}
-
-		line := ls.Token.Line
-		col := ls.Token.Column
-
-		// 規則 2：不能與顯式 Value 共存
-		if ls.Value != nil {
-			results = append(results, ValidateResult{
-				Line:    line,
-				Column:  col,
-				Message: "embed: cannot combine with explicit value",
-			})
-		}
-
-		// 規則 1：必須是 []byte 或 [N]byte 類型
-		if ls.Type == nil {
-			results = append(results, ValidateResult{
-				Line:    line,
-				Column:  col,
-				Message: "embed: only []byte / [N]byte declarations are supported, got untyped declaration",
-			})
-		} else {
-			typeStr := ls.Type.String()
-			isByteSlice := false
-			// 檢查是否為 []byte 或 [N]byte
-			if st, ok := ls.Type.(*parser.SliceType); ok {
-				if et, ok := st.Elem.(*parser.NamedType); ok {
-					if et.Value == "byte" || et.Value == "u8" {
-						isByteSlice = true
-					}
-				}
-			}
-			if at, ok := ls.Type.(*parser.ArrayType); ok {
-				if et, ok := at.Elem.(*parser.NamedType); ok {
-					if et.Value == "byte" || et.Value == "u8" {
-						isByteSlice = true
-					}
-				}
-			}
-			if !isByteSlice {
-				results = append(results, ValidateResult{
-					Line:    line,
-					Column:  col,
-					Message: fmt.Sprintf("embed: only []byte / [N]byte declarations are supported, got %s", typeStr),
-				})
-			}
-		}
-
-		// 規則 3：文件必須存在
-		if embedPath != "" {
-			resolvedPath := embedPath
-			if !filepath.IsAbs(embedPath) {
-				pkgRoot := ""
-				if sourcePath != "" {
-					pkgRoot = findPackageRootFromFile(sourcePath)
-				}
-				if pkgRoot == "" {
-					pkgRoot = filepath.Dir(sourcePath)
-				}
-				resolvedPath = filepath.Join(pkgRoot, embedPath)
-			}
-			if _, err := os.Stat(resolvedPath); err != nil {
-				results = append(results, ValidateResult{
-					Line:    line,
-					Column:  col,
-					Message: fmt.Sprintf("embed: file not found: %s (resolved: %s)", embedPath, resolvedPath),
-				})
-			}
-		}
-	}
-	return results
-}
-
-// ValidateTypes 對 Program 進行型別檢查，回傳錯誤列表（包含行號）
-func ValidateTypes(program *parser.Program) []ValidateResult {
-	var results []ValidateResult
-
-	// 1. 收集所有函式名稱
-	funcNames := make(map[string]bool)
-	for _, stmt := range program.Statements {
-		if fd, ok := stmt.(*parser.FunctionDefinition); ok {
-			funcNames[fd.Name] = true
-		}
-	}
-
-	// 1.5 構建函數返回類型映射（含 extern 宣告）
-	funcTypes := make(map[string]string)
-	for _, stmt := range program.Statements {
-		if fd, ok := stmt.(*parser.FunctionDefinition); ok {
-			if len(fd.Results) > 0 && fd.Results[0].Type != nil {
-				funcTypes[fd.Name] = fd.Results[0].Type.String()
-			}
-		}
-		if es, ok := stmt.(*parser.ExternStatement); ok {
-			if len(es.Results) > 0 && es.Results[0].Type != nil {
-				funcTypes[es.Name.Value] = es.Results[0].Type.String()
-			}
-		}
-	}
-
-	// 預填 stdlib 方法回傳型別（定義在 src/std/*.no，在 ValidateTypes 之後才合併）
-	stdlibMethodTypes := map[string]string{
-		"str.index":       "i64",
-		"str.slice":       "str",
-		"str.contains":    "bool",
-		"str.starts-with": "bool",
-		"str.ends-with":   "bool",
-		"str.to-upper":    "str",
-		"str.to-lower":    "str",
-		"str.trim":        "str",
-		"str.repeat":      "str",
-		"str.copy":        "str",
-	}
-	for k, v := range stdlibMethodTypes {
-		if _, exists := funcTypes[k]; !exists {
-			funcTypes[k] = v
-		}
-	}
-
-	// 2. 檢查重複函式簽名（允許重載，但簽名不能重複）
-	sigSeen := make(map[string]int) // signature → first seen line
-	for _, stmt := range program.Statements {
-		if fd, ok := stmt.(*parser.FunctionDefinition); ok {
-			var paramTypes []string
-			for _, p := range fd.Parameters {
-				paramTypes = append(paramTypes, p.Type.String())
-			}
-			sig := fd.Name + "(" + strings.Join(paramTypes, ", ") + ")"
-			// 使用複合 key：sig + "\x00" + platformKey（無平台註解則 suffix 為空）
-			// 同簽名 + 同平台才算衝突；不同平台或通用 vs 平台特定不衝突
-			fdPlatformKeys := program.Sem.PlatformKeysOf(fd)
-			var sigKeys []string
-			if len(fdPlatformKeys) == 0 {
-				sigKeys = []string{sig + "\x00"}
-			} else {
-				sigKeys = make([]string, 0, len(fdPlatformKeys))
-				for _, pk := range fdPlatformKeys {
-					sigKeys = append(sigKeys, sig+"\x00"+pk)
-				}
-			}
-			firstConflictLine := -1
-			for _, k := range sigKeys {
-				if firstLine, exists := sigSeen[k]; exists {
-					firstConflictLine = firstLine
-					break
-				}
-			}
-			if firstConflictLine >= 0 {
-				results = append(results, ValidateResult{
-					Line:    fd.Token.Line,
-					Column:  fd.Token.Column,
-					Message: fmt.Sprintf("duplicate function definition '%s' (first defined at line %d)", sig, firstConflictLine),
-				})
-			} else {
-				for _, k := range sigKeys {
-					sigSeen[k] = fd.Token.Line
-				}
-			}
-		}
-	}
-
-	// 3. 遍歷頂層語句做型別檢查
-	// 收集 struct 定義的欄位型別，供 inferExprType 解析 self.field.method() 接收者型別
-	validationStructFields = collectStructFields(program)
-	// 收集單具體型別別名（name = known-type，非 union、非 function-type），
-	// 供 isConcreteType / isArgTypeCompatible 實施 newtype 語義。
-	validationConcreteTypeAliases = collectConcreteTypeAliases(program)
-	// 合併預載入的 std 模組別名（如 fs.no 的 fd=i64），使跨模組 newtype 檢查生效。
-	// std 模組別名由 sync.Once 快取提供（CollectStdConcreteAliases），
-	// 避免並行構建時的資料競爭。
-	for k, v := range CollectStdConcreteAliases() {
-		if _, exists := validationConcreteTypeAliases[k]; !exists {
-			validationConcreteTypeAliases[k] = v
-		}
-	}
-	// 先收集所有頂層變數的顯式型別，供跨語句型別推斷使用
-	// （如 `z f64 = 2.0` 之後 `a = z * z` 需知道 z 是 f64）
-	topLevelVarTypes := make(map[string]string)
-	for _, stmt := range program.Statements {
-		if ls, ok := stmt.(*parser.LetStatement); ok {
-			if ls.Type != nil && ls.Type.String() != "" && ls.Type.String() != ls.Name.Value {
-				if _, exists := topLevelVarTypes[ls.Name.Value]; !exists {
-					topLevelVarTypes[ls.Name.Value] = ls.Type.String()
-				}
-			}
-		}
-	}
-	for _, stmt := range program.Statements {
-		// 判斷是否為 struct 方法
-		selfType := ""
-		if fd, ok := stmt.(*parser.FunctionDefinition); ok {
-			if len(fd.Parameters) > 0 && fd.Parameters[0].Name == "self" {
-				selfType = fd.Parameters[0].Type.String()
-			}
-		}
-		// 使用預填的頂層變數型別，避免跨語句型別推斷失敗
-		localVarTypes := make(map[string]string)
-		for k, v := range topLevelVarTypes {
-			localVarTypes[k] = v
-		}
-		errs := validateStmtTypes(stmt, funcNames, funcTypes, selfType, localVarTypes)
-		results = append(results, errs...)
-	}
-
-	return results
-}
-
-// ValidateUnionTypes 收集 type alias（單型別和 union）並對函數的
+                                                                                            
+                             
+                                          
+                                       
+          
+           
+   
+                                               
+                      
+                                        
+                                                       
+                            
+            
+    
+                     
+                                                                 
+                        
+                                                                       
+                        
+    
+   
+                        
+           
+   
+                       
+                        
+                                            
+                      
+                                            
+                  
+                 
+                                                         
+     
+   
+                                                   
+                     
+                                            
+                  
+                 
+                                                                                                
+     
+          
+                              
+                       
+                                        
+                                                 
+                                                  
+                                                
+                        
+      
+     
+    
+                                                 
+                                                  
+                                                
+                        
+      
+     
+    
+                    
+                                             
+                   
+                  
+                                                                                                      
+      
+    
+   
+                                  
+                      
+                            
+                                  
+                 
+                         
+                                                  
+     
+                      
+                                       
+     
+                                                    
+    
+                                                   
+                                             
+                   
+                  
+                                                                                               
+      
+    
+   
+  
+               
+ 
+// checker.ValidateTypes 對 Program 進行型別檢查，回傳錯誤列表（包含行號）
+                                                              
+                             
+                               
+                                   
+                                          
+                                                      
+                            
+   
+  
+                                                             
+                                     
+                                          
+                                                      
+                                                        
+                                                    
+    
+   
+                                                   
+                                                        
+                                                          
+    
+   
+  
+                                                                                                    
+                                        
+                           
+                           
+                            
+                            
+                            
+                           
+                           
+                           
+                           
+                           
+  
+                                      
+                                         
+                   
+   
+  
+                                                                         
+                                                                 
+                                          
+                                                      
+                          
+                                    
+                                                    
+    
+                                                              
+                                                                                         
+                                                                                        
+                                                   
+                       
+                                
+                                    
+           
+                                                    
+                                       
+                                             
+     
+    
+                          
+                              
+                                                
+                                  
+          
+     
+    
+                              
+                                             
+                            
+                              
+                                                                                                                   
+      
+           
+                               
+                               
+     
+    
+   
+  
+                                        
+                                                                                                      
+                                                      
+                                                                                         
+                                                                     
+                                                                    
+                                                                                                        
+                                                                                
+                                           
+                                                
+                                                             
+                                       
+   
+  
+                                                                               
+                                                                  
+                                            
+                                          
+                                                
+                                                                                     
+                                                              
+                                                       
+     
+    
+   
+  
+                                          
+                                  
+                
+                                                      
+                                                                 
+                                             
+    
+   
+                                                                          
+                                          
+                                      
+                       
+   
+                                                                                
+                                    
+  
+               
+ 
+// checker.ValidateUnionTypes 收集 type alias（單型別和 union）並對函數的
 // 聯合型別/泛型變體做檢查：
 //   - 記錄每個 alias 名稱 -> 解析後的具體型別列表
 //   - 對帶 ..T 形式的函數，若 T 是 union alias，記錄到 FunctionDefinition.VariadicUnion
 //   - 對每個 type alias，遞迴展開成扁平化的 []Type，供 codegen 使用
 //
-// 不在這裡阻擋編譯；錯誤一律以 ValidateResult 報告（warning 級別）。
-func ValidateUnionTypes(program *parser.Program) (map[string]*parser.TypeAlias, []ValidateResult) {
-	aliases := make(map[string]*parser.TypeAlias)
-	var results []ValidateResult
-
-	// Pass 1: 收集所有 type alias
-	for _, stmt := range program.Statements {
-		ta, ok := stmt.(*parser.TypeAlias)
-		if !ok {
-			continue
-		}
-		if _, exists := aliases[ta.Name]; exists {
-			results = append(results, ValidateResult{
-				Line:    ta.Token.Line,
-				Column:  ta.Token.Column,
-				Message: fmt.Sprintf("duplicate type alias %q", ta.Name),
-			})
-			continue
-		}
-		aliases[ta.Name] = ta
-	}
-
-	// Pass 2: 對函數的 variadic 參數，若類型是 union alias 名稱，
-	// 設到 FunctionDefinition.VariadicUnion，供 codegen 單態化。
-	for _, stmt := range program.Statements {
-		fd, ok := stmt.(*parser.FunctionDefinition)
-		if !ok || !fd.IsVariadic {
-			continue
-		}
-		if len(fd.Parameters) == 0 {
-			continue
-		}
-		last := fd.Parameters[len(fd.Parameters)-1]
-		if last.Type == nil {
-			continue
-		}
-		// variadic 參數型別以 []t 表示（"切片"）；內部元素名稱就是 union 名
-		typeName := strings.TrimPrefix(last.Type.String(), "[]")
-		if typeName == "" {
-			continue
-		}
-		if ta, ok := aliases[typeName]; ok && ta.IsUnion() {
-			fd.VariadicUnion = typeName
-		}
-	}
-
-	// Pass 3: 對函數的參數或結果型別，若整個函數只使用同一個 union alias
-	// （非 variadic 情況，例如 abs = (a num) (r num)），標記為 GenericUnion
-	// 供 codegen 單態化。
-	for _, stmt := range program.Statements {
-		fd, ok := stmt.(*parser.FunctionDefinition)
-		if !ok || fd.IsVariadic {
-			continue
-		}
-		if fd.GenericUnion != "" {
-			continue
-		}
-		unionName := findSingleUnionName(fd, aliases)
-		if unionName != "" {
-			fd.GenericUnion = unionName
-		}
-	}
-
-	return aliases, results
-}
-
+// 不在這裡阻擋編譯；錯誤一律以 checker.ValidateResult 報告（warning 級別）。
+                                                                                                   
+                                              
+                             
+                                   
+                                          
+                                    
+          
+           
+   
+                                            
+                                            
+                           
+                             
+                                                             
+     
+           
+   
+                       
+  
+                                                                             
+                                                                      
+                                          
+                                             
+                            
+           
+   
+                              
+           
+   
+                                             
+                       
+           
+   
+                                                                                           
+                                                          
+                     
+           
+   
+                                                      
+                              
+   
+  
+                                                                                             
+                                                                                     
+                            
+                                          
+                                             
+                           
+           
+   
+                            
+           
+   
+                                               
+                      
+                              
+   
+  
+                        
+ 
 // findSingleUnionName 檢查函數的參數與結果型別，找出唯一使用的 union alias。
 // 若函數只涉及一個 union alias，則返回該名稱；否則返回空字串。
 // 對於 variadic 函數，返回空字串（variadic 由 VariadicUnion 處理）。
-func findSingleUnionName(fd *parser.FunctionDefinition, aliases map[string]*parser.TypeAlias) string {
-	unionNames := make(map[string]bool)
-	for _, p := range fd.Parameters {
-		name := collectUnionNamesFromType(p.Type, aliases)
-		for n := range name {
-			unionNames[n] = true
-		}
-	}
-	for _, r := range fd.Results {
-		name := collectUnionNamesFromType(r.Type, aliases)
-		for n := range name {
-			unionNames[n] = true
-		}
-	}
-	if len(unionNames) == 1 {
-		for n := range unionNames {
-			return n
-		}
-	}
-	return ""
-}
-
+                                                                                                      
+                                    
+                                  
+                                                    
+                       
+                       
+   
+  
+                               
+                                                    
+                       
+                       
+   
+  
+                          
+                             
+           
+   
+  
+          
+ 
 // collectUnionNamesFromType 從型別中收集所有 union alias 名稱。
-func collectUnionNamesFromType(t parser.Type, aliases map[string]*parser.TypeAlias) map[string]bool {
-	out := make(map[string]bool)
-	if t == nil {
-		return out
-	}
-	switch ty := t.(type) {
-	case *parser.NamedType:
-		if ta, ok := aliases[ty.Value]; ok && ta.IsUnion() {
-			out[ty.Value] = true
-		}
-	case *parser.SliceType:
-		sub := collectUnionNamesFromType(ty.Elem, aliases)
-		for n := range sub {
-			out[n] = true
-		}
-	case *parser.ArrayType:
-		sub := collectUnionNamesFromType(ty.Elem, aliases)
-		for n := range sub {
-			out[n] = true
-		}
-	case *parser.PointerType:
-		sub := collectUnionNamesFromType(ty.Type, aliases)
-		for n := range sub {
-			out[n] = true
-		}
-	case *parser.NullableType:
-		sub := collectUnionNamesFromType(ty.Type, aliases)
-		for n := range sub {
-			out[n] = true
-		}
-	case *parser.FunctionType:
-		// Function types do not contribute union alias names.
-	}
-	return out
-}
-
+                                                                                                     
+                             
+              
+            
+  
+                        
+                        
+                                                      
+                       
+   
+                        
+                                                    
+                      
+                
+   
+                        
+                                                    
+                      
+                
+   
+                          
+                                                    
+                      
+                
+   
+                           
+                                                    
+                      
+                
+   
+                           
+                                                        
+  
+           
+ 
 // FlattenUnion 將一個 union alias（或單型別 alias）扁平化為具體型別列表。
 // 對於 union：對每個成員遞迴展開（若成員是另一個 union alias 會被展開）。
 // 對於單型別 alias：返回 [Type]（長度 1）。
 // 對於已知的 builtin（i8/i16/.../f64/bool/byte/char/str）：原樣返回。
-func FlattenUnion(name string, aliases map[string]*parser.TypeAlias) []parser.Type {
-	// 內建類型（不可遞迴展開，視為葉節點）
-	switch name {
-	case "i8", "i16", "i32", "i64",
-		"u8", "u16", "u32", "u64",
-		"f32", "f64",
-		"bool", "byte", "char", "str":
-		return []parser.Type{&parser.NamedType{Value: name}}
-	}
-	ta, ok := aliases[name]
-	if !ok {
-		// 未知型別，當作泛型變量返回
-		return []parser.Type{&parser.NamedType{Value: name}}
-	}
-	if ta.Union != nil {
-		var out []parser.Type
-		for _, t := range ta.Union.Types {
-			if nt, ok := t.(*parser.NamedType); ok {
-				// 對 union 的成員再做遞迴展開
-				out = append(out, FlattenUnion(nt.Value, aliases)...)
-			} else {
-				out = append(out, t)
-			}
-		}
-		return out
-	}
-	if ta.Type != nil {
-		if nt, ok := ta.Type.(*parser.NamedType); ok {
-			return FlattenUnion(nt.Value, aliases)
-		}
-		return []parser.Type{ta.Type}
-	}
-	return nil
-}
-
+                                                                                    
+                                                          
+              
+                                
+                            
+               
+                                
+                                                      
+  
+                        
+         
+                                            
+                                                      
+  
+                     
+                       
+                                    
+                                           
+                                            
+                                                         
+           
+                        
+    
+   
+            
+  
+                    
+                                                
+                                         
+   
+                               
+  
+           
+ 
 // isValidVarName 檢查名稱是否只包含小寫字母（a-z）、中連接符（-）和數字，且不能以數字開頭
-func isValidVarName(name string) bool {
-	if name == "" {
-		return true
-	}
-	for i, ch := range name {
-		if i == 0 {
-			// 不能以數字開頭
-			if ch >= '0' && ch <= '9' {
-				return false
-			}
-		}
-		if ch != '-' && (ch < 'a' || ch > 'z') && (ch < '0' || ch > '9') {
-			return false
-		}
-	}
-	return true
-}
-
-// ValidateNaming 檢查所有變數/函數名稱是否符合命名規範（只用小寫和中劃線）
-func ValidateNaming(program *parser.Program) []ValidateResult {
-	var results []ValidateResult
-
-	// Reuse the shared defined-vars collection (same first pass as
-	// ValidateUndefinedVars) to know which names are global variables.
-	definedVars := CollectDefinedVars(program)
-
-	for _, stmt := range program.Statements {
-		if _, ok := stmt.(*parser.LetStatement); ok {
-			continue
-		}
-		results = append(results, checkNaming(stmt, definedVars)...)
-	}
-	return results
-}
-
-func checkNaming(stmt parser.Statement, globalVars map[string]bool) []ValidateResult {
-	var results []ValidateResult
-	switch s := stmt.(type) {
-	case *parser.FunctionDefinition:
-		// For methods like "[]t.sort-desc", only validate the method name part (after the last '.')
-		nameToCheck := s.Name
-		if lastDot := strings.LastIndex(s.Name, "."); lastDot >= 0 {
-			nameToCheck = s.Name[lastDot+1:]
-		}
-		if !isValidVarName(nameToCheck) {
-			results = append(results, ValidateResult{
-				Line:    s.Token.Line,
-				Column:  s.Token.Column,
-				Message: fmt.Sprintf("'%s' should use only lowercase letters and hyphens", s.Name),
-			})
-		}
-		if s.Body != nil {
-			for _, bStmt := range s.Body.Statements {
-				results = append(results, checkNaming(bStmt, globalVars)...)
-			}
-		}
-	case *parser.LetStatement:
-		// Skip reassignments of known global variables (e.g., RAND-COUNTER).
-		// Local variables with uppercase names (e.g., C) are still flagged.
-		if s.Name != nil && globalVars[s.Name.Value] {
-			return results
-		}
-		if s.Name != nil && !isValidVarName(s.Name.Value) {
-			results = append(results, ValidateResult{
-				Line:    s.Name.Token.Line,
-				Column:  s.Name.Token.Column,
-				Message: fmt.Sprintf("'%s' should use only lowercase letters and hyphens", s.Name.Value),
-			})
-		}
-	case *parser.BlockStatement:
-		for _, bStmt := range s.Statements {
-			results = append(results, checkNaming(bStmt, globalVars)...)
-		}
-	case *parser.ExpressionStatement:
-		if ifExpr, ok := s.Expression.(*parser.IfExpression); ok {
-			if ifExpr.Consequence != nil {
-				results = append(results, checkNaming(ifExpr.Consequence, globalVars)...)
-			}
-			if ifExpr.Alternative != nil {
-				results = append(results, checkNaming(ifExpr.Alternative, globalVars)...)
-			}
-		}
-	}
-	return results
-}
-
-// ValidateAsyncNaming 檢查所有由 'run' 調用的函數名稱是否以 '-async' 結尾
-func ValidateAsyncNaming(program *parser.Program) []ValidateResult {
-	var results []ValidateResult
-	walkStatementsForAsync(program.Statements, &results)
-	return results
-}
-
-func walkStatementsForAsync(stmts []parser.Statement, results *[]ValidateResult) {
-	for _, stmt := range stmts {
-		switch s := stmt.(type) {
-		case *parser.FunctionDefinition:
-			if s.Body != nil {
-				walkStatementsForAsync(s.Body.Statements, results)
-			}
-		case *parser.LetStatement:
-			if s.Value != nil {
-				checkRunAsyncNaming(s.Value, results)
-				if fnLit, ok := s.Value.(*parser.FunctionLiteral); ok {
-					if fnLit.Body != nil {
-						walkStatementsForAsync(fnLit.Body.Statements, results)
-					}
-				}
-			}
-		case *parser.BlockStatement:
-			walkStatementsForAsync(s.Statements, results)
-		case *parser.ExpressionStatement:
-			if s.Expression != nil {
-				checkRunAsyncNaming(s.Expression, results)
-				if ifExpr, ok := s.Expression.(*parser.IfExpression); ok {
-					if ifExpr.Consequence != nil {
-						walkStatementsForAsync(ifExpr.Consequence.Statements, results)
-					}
-					if ifExpr.Alternative != nil {
-						walkStatementsForAsync(ifExpr.Alternative.Statements, results)
-					}
-				}
-			}
-		case *parser.ForStatement:
-			if s.Body != nil {
-				walkStatementsForAsync(s.Body.Statements, results)
-			}
-		}
-	}
-}
-
+                                       
+                
+             
+  
+                          
+             
+                           
+                              
+                
+    
+   
+                                                                    
+               
+   
+  
+            
+ 
+// checker.ValidateNaming 檢查所有變數/函數名稱是否符合命名規範（只用小寫和中劃線）
+                                                               
+                             
+                                                                
+                                                                    
+                                           
+                                          
+                                               
+           
+   
+                                                              
+  
+               
+ 
+                                                                                      
+                             
+                          
+                                 
+                                                                                              
+                       
+                                                              
+                                   
+   
+                                   
+                                            
+                          
+                            
+                                                                                       
+     
+   
+                    
+                                            
+                                                                
+    
+   
+                           
+                                                                       
+                                                                      
+                                                
+                 
+   
+                                                     
+                                            
+                               
+                                 
+                                                                                             
+     
+   
+                             
+                                      
+                                                               
+   
+                                  
+                                                            
+                                 
+                                                                             
+    
+                                 
+                                                                             
+    
+   
+  
+               
+ 
+// checker.ValidateAsyncNaming 檢查所有由 'run' 調用的函數名稱是否以 '-async' 結尾
+                                                                    
+                             
+                                                     
+               
+ 
+                                                                                  
+                             
+                           
+                                  
+                     
+                                                      
+    
+                            
+                      
+                                         
+                                                           
+                           
+                                                            
+      
+     
+    
+                              
+                                                
+                                   
+                           
+                                              
+                                                              
+                                   
+                                                                    
+      
+                                   
+                                                                    
+      
+     
+    
+                            
+                     
+                                                      
+    
+   
+  
+ 
 // checkRunAsyncNaming 檢查單個表達式是否為 RunExpression，並驗證其調用的函數名稱
-func checkRunAsyncNaming(expr parser.Expression, results *[]ValidateResult) {
-	runExpr, ok := expr.(*parser.RunExpression)
-	if !ok {
-		return
-	}
-	call, ok := runExpr.Call.(*parser.CallExpression)
-	if !ok {
-		return
-	}
-	fnName := asyncCallFunctionName(call)
-	if fnName == "" {
-		return
-	}
-	if !strings.HasSuffix(fnName, "-async") {
-		*results = append(*results, ValidateResult{
-			Line:    runExpr.Token.Line,
-			Column:  runExpr.Token.Column,
-			Message: fmt.Sprintf("function '%s' called by 'run' should end with '-async'", fnName),
-		})
-	}
-}
-
-func asyncCallFunctionName(call *parser.CallExpression) string {
-	if ident, ok := call.Function.(*parser.Identifier); ok {
-		return ident.Value
-	}
-	if dot, ok := call.Function.(*parser.DotExpression); ok {
-		return dot.Property
-	}
-	return ""
-}
-
-// ValidateUnusedVars detects top-level variables that are defined but never used.
-func ValidateUnusedVars(program *parser.Program) []ValidateResult {
-	var results []ValidateResult
-
-	// Collect top-level LetStatement names
-	topLevelVars := make(map[string]struct{ line, column int })
-	var varOrder []string
-
-	for _, stmt := range program.Statements {
-		if ls, ok := stmt.(*parser.LetStatement); ok {
-			if ls.Name != nil && ls.Name.Value != "_" {
-				topLevelVars[ls.Name.Value] = struct{ line, column int }{
-					line:   ls.Name.Token.Line,
-					column: ls.Name.Token.Column,
-				}
-				varOrder = append(varOrder, ls.Name.Value)
-			}
-		}
-	}
-
-	if len(topLevelVars) == 0 {
-		return nil
-	}
-
-	// Walk entire AST to find references
-	usedVars := make(map[string]bool)
-	for _, stmt := range program.Statements {
-		markReferencesInStatement(stmt, topLevelVars, usedVars)
-	}
-
-	// Report unused top-level variables
-	for _, name := range varOrder {
-		if !usedVars[name] {
-			def := topLevelVars[name]
-			results = append(results, ValidateResult{
-				Line:      def.line,
-				Column:    def.column,
-				EndColumn: def.column + len(name) - 1,
-				Message:   fmt.Sprintf("'%s' is defined but never used", name),
-			})
-		}
-	}
-
-	return results
-}
-
+                                                                             
+                                            
+         
+        
+  
+                                                  
+         
+        
+  
+                                      
+                  
+        
+  
+                                          
+                                             
+                               
+                                 
+                                                                                          
+    
+  
+ 
+                                                                
+                                                         
+                    
+  
+                                                          
+                     
+  
+          
+ 
+// checker.ValidateUnusedVars detects top-level variables that are defined but never used.
+                                                                   
+                             
+                                        
+                                                            
+                      
+                                          
+                                                
+                                              
+                                                             
+                                
+                                  
+     
+                                              
+    
+   
+  
+                            
+            
+  
+                                      
+                                  
+                                          
+                                                         
+  
+                                     
+                                
+                      
+                            
+                                            
+                        
+                          
+                                          
+                                                                   
+     
+   
+  
+               
+ 
 // markReferencesInStatement walks a statement tree, finding Identifier references to top-level vars.
-func markReferencesInStatement(stmt parser.Statement, varSet map[string]struct{ line, column int }, usedVars map[string]bool) {
-	switch s := stmt.(type) {
-	case *parser.LetStatement:
-		// Don't count the variable name itself as a usage
-		if s.Value != nil {
-			markReferencesInExpr(s.Value, varSet, usedVars)
-		}
-
-	case *parser.ExpressionStatement:
-		if s.Expression != nil {
-			markReferencesInExpr(s.Expression, varSet, usedVars)
-		}
-
-	case *parser.FunctionDefinition:
-		if s.Body != nil {
-			for _, inner := range s.Body.Statements {
-				markReferencesInStatement(inner, varSet, usedVars)
-			}
-		}
-
-	case *parser.ReturnStatement:
-		if s.ReturnValue != nil {
-			markReferencesInExpr(s.ReturnValue, varSet, usedVars)
-		}
-
-	case *parser.BlockStatement:
-		for _, inner := range s.Statements {
-			markReferencesInStatement(inner, varSet, usedVars)
-		}
-
-	case *parser.ForStatement:
-		if s.Init != nil {
-			markReferencesInStatement(s.Init, varSet, usedVars)
-		}
-		if s.Condition != nil {
-			markReferencesInExpr(s.Condition, varSet, usedVars)
-		}
-		if s.Update != nil {
-			markReferencesInStatement(s.Update, varSet, usedVars)
-		}
-		// Walk IterRange (e.g., `i <- [0..N)` — the range expression may reference vars)
-		if s.IterRange != nil {
-			if s.IterRange.Range != nil {
-				if s.IterRange.Range.Start != nil {
-					markReferencesInExpr(s.IterRange.Range.Start, varSet, usedVars)
-				}
-				if s.IterRange.Range.End != nil {
-					markReferencesInExpr(s.IterRange.Range.End, varSet, usedVars)
-				}
-			}
-			if s.IterRange.RangeExpr != nil {
-				markReferencesInExpr(s.IterRange.RangeExpr, varSet, usedVars)
-			}
-		}
-		// Walk CountExpr (for `{ } * N` counted loops)
-		if s.CountExpr != nil {
-			markReferencesInExpr(s.CountExpr, varSet, usedVars)
-		}
-		if s.Body != nil {
-			for _, inner := range s.Body.Statements {
-				markReferencesInStatement(inner, varSet, usedVars)
-			}
-		}
-
-	case *parser.MultiAssignStatement:
-		// Multi-assignment: targets, value = func(args)
-		// Walk targets (they may reference vars via index expressions)
-		for _, target := range s.Targets {
-			markReferencesInExpr(target, varSet, usedVars)
-		}
-		if s.Value != nil {
-			markReferencesInExpr(s.Value, varSet, usedVars)
-		}
-	}
-}
-
+                                                                                                                               
+                          
+                           
+                                                    
+                     
+                                                  
+   
+                                  
+                          
+                                                       
+   
+                                 
+                    
+                                            
+                                                      
+    
+   
+                              
+                           
+                                                        
+   
+                             
+                                      
+                                                     
+   
+                           
+                    
+                                                      
+   
+                         
+                                                      
+   
+                      
+                                                        
+   
+                                                                                     
+                         
+                                
+                                       
+                                                                    
+     
+                                     
+                                                                  
+     
+    
+                                    
+                                                                 
+    
+   
+                                                 
+                         
+                                                      
+   
+                    
+                                            
+                                                      
+    
+   
+                                   
+                                                  
+                                                                 
+                                    
+                                                 
+   
+                     
+                                                  
+   
+  
+ 
 // markReferencesInExpr walks an expression tree, marking Identifiers found in varSet as used.
-func markReferencesInExpr(expr parser.Expression, varSet map[string]struct{ line, column int }, usedVars map[string]bool) {
-	switch e := expr.(type) {
-	case *parser.Identifier:
-		if _, exists := varSet[e.Value]; exists {
-			usedVars[e.Value] = true
-		}
-
-	case *parser.InfixExpression:
-		if e.Left != nil {
-			markReferencesInExpr(e.Left, varSet, usedVars)
-		}
-		if e.Right != nil {
-			markReferencesInExpr(e.Right, varSet, usedVars)
-		}
-
-	case *parser.PrefixExpression:
-		if e.Right != nil {
-			markReferencesInExpr(e.Right, varSet, usedVars)
-		}
-
-	case *parser.CallExpression:
-		if e.Function != nil {
-			markReferencesInExpr(e.Function, varSet, usedVars)
-		}
-		for _, arg := range e.Arguments {
-			markReferencesInExpr(arg, varSet, usedVars)
-		}
-
-	case *parser.DotExpression:
-		if e.Receiver != nil {
-			markReferencesInExpr(e.Receiver, varSet, usedVars)
-		}
-
-	case *parser.GroupedExpression:
-		if e.Expression != nil {
-			markReferencesInExpr(e.Expression, varSet, usedVars)
-		}
-
-	case *parser.IfExpression:
-		if e.Condition != nil {
-			markReferencesInExpr(e.Condition, varSet, usedVars)
-		}
-		if e.Consequence != nil {
-			for _, inner := range e.Consequence.Statements {
-				markReferencesInStatement(inner, varSet, usedVars)
-			}
-		}
-		if e.Alternative != nil {
-			for _, inner := range e.Alternative.Statements {
-				markReferencesInStatement(inner, varSet, usedVars)
-			}
-		}
-
-	case *parser.ArrayLiteral:
-		for _, elem := range e.Elements {
-			markReferencesInExpr(elem, varSet, usedVars)
-		}
-
-	case *parser.SliceLiteral:
-		for _, elem := range e.Elements {
-			markReferencesInExpr(elem, varSet, usedVars)
-		}
-
-	case *parser.IndexExpression:
-		if e.Left != nil {
-			markReferencesInExpr(e.Left, varSet, usedVars)
-		}
-		if e.Index != nil {
-			markReferencesInExpr(e.Index, varSet, usedVars)
-		}
-
-	case *parser.AssignExpression:
-		if e.Left != nil {
-			markReferencesInExpr(e.Left, varSet, usedVars)
-		}
-		if e.Value != nil {
-			markReferencesInExpr(e.Value, varSet, usedVars)
-		}
-
-	case *parser.FunctionLiteral:
-		if e.Body != nil {
-			for _, inner := range e.Body.Statements {
-				markReferencesInStatement(inner, varSet, usedVars)
-			}
-		}
-
-	case *parser.SliceExpression:
-		if e.Left != nil {
-			markReferencesInExpr(e.Left, varSet, usedVars)
-		}
-		if e.Range != nil {
-			if e.Range.Start != nil {
-				markReferencesInExpr(e.Range.Start, varSet, usedVars)
-			}
-			if e.Range.End != nil {
-				markReferencesInExpr(e.Range.End, varSet, usedVars)
-			}
-		}
-
-	case *parser.ConditionalExpression:
-		if e.Condition != nil {
-			markReferencesInExpr(e.Condition, varSet, usedVars)
-		}
-		if e.Consequence != nil {
-			markReferencesInExpr(e.Consequence, varSet, usedVars)
-		}
-		if e.Alternative != nil {
-			markReferencesInExpr(e.Alternative, varSet, usedVars)
-		}
-
-	case *parser.StructLiteral:
-		for _, f := range e.Fields {
-			if f.Value != nil {
-				markReferencesInExpr(f.Value, varSet, usedVars)
-			}
-		}
-
-	case *parser.StringLiteral:
-		// Named format strings like 'pi = {pi:.2f}' reference variables
-		// via {name[:spec]} fields. Parse the literal and mark each
-		// referenced name as used so ValidateUnusedVars does not flag
-		// variables that are only consumed inside a format string.
-		segments, err := parser.ParseFormatString(e.Value)
-		if err != nil {
-			return
-		}
-		for _, seg := range segments {
-			if seg.Field == nil {
-				continue
-			}
-			if _, exists := varSet[seg.Field.Name]; exists {
-				usedVars[seg.Field.Name] = true
-			}
-		}
-	}
-}
-
+                                                                                                                           
+                          
+                         
+                                           
+                           
+   
+                              
+                    
+                                                 
+   
+                     
+                                                  
+   
+                               
+                     
+                                                  
+   
+                             
+                        
+                                                     
+   
+                                   
+                                              
+   
+                            
+                        
+                                                     
+   
+                                
+                          
+                                                       
+   
+                           
+                         
+                                                      
+   
+                           
+                                                   
+                                                      
+    
+   
+                           
+                                                   
+                                                      
+    
+   
+                           
+                                   
+                                               
+   
+                           
+                                   
+                                               
+   
+                              
+                    
+                                                 
+   
+                     
+                                                  
+   
+                               
+                    
+                                                 
+   
+                     
+                                                  
+   
+                              
+                    
+                                            
+                                                      
+    
+   
+                              
+                    
+                                                 
+   
+                     
+                            
+                                                         
+    
+                          
+                                                       
+    
+   
+                                    
+                         
+                                                      
+   
+                           
+                                                        
+   
+                           
+                                                        
+   
+                            
+                              
+                      
+                                                   
+    
+   
+                            
+                                                                  
+                                                              
+                                                                
+                                                             
+                                                    
+                 
+         
+   
+                                
+                        
+            
+    
+                                                   
+                                   
+    
+   
+  
+ 
 // CollectDefinedVars performs the first pass: collects all top-level defined
 // names (LetStatements, FunctionDefinitions, ExternStatements) from the program.
-// Shared by ValidateNaming (to skip global variable reassignments) and
-// ValidateUndefinedVars (as the base for its more comprehensive collection).
-func CollectDefinedVars(program *parser.Program) map[string]bool {
-	definedVars := make(map[string]bool)
-	for _, stmt := range program.Statements {
-		if ls, ok := stmt.(*parser.LetStatement); ok && ls.Name != nil {
-			definedVars[ls.Name.Value] = true
-		}
-		if fd, ok := stmt.(*parser.FunctionDefinition); ok {
-			definedVars[fd.Name] = true
-		}
-		if es, ok := stmt.(*parser.ExternStatement); ok && es.Name != nil {
-			definedVars[es.Name.Value] = true
-		}
-		if ta, ok := stmt.(*parser.TypeAlias); ok {
-			definedVars[ta.Name] = true
-		}
-	}
-	return definedVars
-}
-
-// ValidateUndefinedVars detects references to variables that are not defined.
-func ValidateUndefinedVars(program *parser.Program, rootDir string) []ValidateResult {
-	var results []ValidateResult
-
-	// 1. Collect all defined names (shared first pass)
-	definedVars := CollectDefinedVars(program)
-	funcNames := make(map[string]bool) // function names
-
-	// Collect function names (LetStatements and ExternStatements already
-	// collected into definedVars by CollectDefinedVars above)
-	for _, stmt := range program.Statements {
-		if fd, ok := stmt.(*parser.FunctionDefinition); ok {
-			funcNames[fd.Name] = true
-		}
-		if es, ok := stmt.(*parser.ExternStatement); ok && es.Name != nil {
-			funcNames[es.Name.Value] = true
-		}
-	}
-
-	// 2. Collect module names (from #use + auto-imported known std modules)
-	//    and also parse those module files for exported constants/functions.
-	moduleNames := collectModuleNames(program)
-	for _, m := range moduleNames {
-		definedVars[m] = true
-	}
-	exportedNames := collectModuleExports(program, moduleNames)
-	for _, n := range exportedNames {
-		definedVars[n] = true
-		// Union methods (e.g. "num.sign") can be called by short name ("sign")
-		// because rewriteUnionCalls dispatches by argument type.
-		// Register the short name so the validator doesn't flag it as undefined.
-		if idx := strings.LastIndex(n, "."); idx > 0 {
-			shortName := n[idx+1:]
-			definedVars[shortName] = true
-		}
-	}
-
-	// 3. Add explicitly imported function names from UseStatements
-	//    (e.g., # /src/utils.greet → defines greet();
-	//     # /src/utils.greet as myGreet → defines myGreet())
-	for _, stmt := range program.Statements {
-		if use, ok := stmt.(*parser.UseStatement); ok && use.Function != "" {
-			if use.Alias != "" {
-				definedVars[use.Alias] = true
-			} else {
-				definedVars[use.Function] = true
-			}
-		}
-		if _, ok := stmt.(*parser.ExportStatement); ok {
-			continue
-		}
-	}
-
-	// 3b. Collect symbols from local module imports (paths starting with /)
-	//     These include FFI declarations (#c), functions, and constants from
-	//     imported files like `# /sqlite-driver/sqlite`.
-	if rootDir != "" {
-		pkg, _ := LoadPackage(rootDir)
-		for _, stmt := range program.Statements {
-			use, ok := stmt.(*parser.UseStatement)
-			if !ok {
-				continue
-			}
-			// Only handle module-level imports (no specific function)
-			// Function-specific imports are already handled in step 3.
-			if use.Function != "" {
-				continue
-			}
-			modProg := resolveUseModule(use, pkg)
-			if modProg == nil {
-				continue
-			}
-			for _, ms := range modProg.Statements {
-				if es, ok := ms.(*parser.ExternStatement); ok && es.Name != nil {
-					// Skip private FFI declarations (underscore-prefixed)
-					if !strings.HasPrefix(es.Name.Value, "_") {
-						definedVars[es.Name.Value] = true
-						funcNames[es.Name.Value] = true
-					}
-				}
-				if fd, ok := ms.(*parser.FunctionDefinition); ok {
-					definedVars[fd.Name] = true
-					funcNames[fd.Name] = true
-				}
-				if ls, ok := ms.(*parser.LetStatement); ok && ls.Name != nil {
-					definedVars[ls.Name.Value] = true
-				}
-			}
-		}
-	}
-
-	// Collect enum variant names from EnumDefinition and TaggedEnumDefinition
-	for _, stmt := range program.Statements {
-		if ed, ok := stmt.(*parser.EnumDefinition); ok {
-			for _, v := range ed.Values {
-				definedVars[v.Name] = true
-			}
-		}
-		if ted, ok := stmt.(*parser.TaggedEnumDefinition); ok {
-			for _, v := range ted.Variants {
-				definedVars[v.Name] = true
-			}
-		}
-	}
-
-	// 4. Walk statements and check for undefined references
-	for _, stmt := range program.Statements {
-		results = append(results, checkUndefinedVarsInStmt(stmt, definedVars, funcNames)...)
-	}
-
-	return results
-}
-
-// ValidateUninitOutputParams checks that ?T (nullable) output parameters are
+// Shared by checker.ValidateNaming (to skip global variable reassignments) and
+// checker.ValidateUndefinedVars (as the base for its more comprehensive collection).
+                                                                  
+                                     
+                                          
+                                                                  
+                                    
+   
+                                                      
+                              
+   
+                                                                     
+                                    
+   
+                                             
+                              
+   
+  
+                   
+ 
+// checker.ValidateUndefinedVars detects references to variables that are not defined.
+                                                                                      
+                             
+                                                    
+                                           
+                                                     
+                                                                      
+                                                           
+                                          
+                                                      
+                            
+   
+                                                                     
+                                  
+   
+  
+                                                                         
+                                                                          
+                                           
+                                
+                       
+  
+                                                            
+                                  
+                       
+                                                                         
+                                                           
+                                                                           
+                                                
+                         
+                                
+   
+  
+                                                                
+                                                     
+                                                            
+                                          
+                                                                       
+                       
+                                 
+           
+                                    
+    
+   
+                                                  
+           
+   
+  
+                                                                         
+                                                                          
+                                                      
+                   
+                                
+                                           
+                                         
+           
+            
+    
+                                                             
+                                                              
+                          
+            
+    
+                                        
+                      
+            
+    
+                                          
+                                                                     
+                                                           
+                                                
+                                       
+                                     
+      
+     
+                                                      
+                                
+                              
+     
+                                                                  
+                                      
+     
+    
+   
+  
+                                                                           
+                                          
+                                                  
+                                
+                              
+    
+   
+                                                         
+                                   
+                              
+    
+   
+  
+                                                         
+                                          
+                                                                                      
+  
+               
+ 
+// checker.ValidateUninitOutputParams checks that ?T (nullable) output parameters are
 // directly assigned in the function body before being read. A ?T output
 // parameter that is read (used in an expression) but never assigned via '='
 // is flagged as an error — reading an uninitialized nullable value is unsafe
@@ -5178,2555 +4843,2453 @@ func ValidateUndefinedVars(program *parser.Program, rootDir string) []ValidateRe
 //   - Case 7 (?T 先賦值再用 → 允許): param IS assigned → no error.
 //   - Case 8 (?T 空函數體 → 返回 nil): param NOT read → no error.
 //   - Case 6 (?T 未初始化使用 → 報錯): param read but NOT assigned → error.
-func ValidateUninitOutputParams(program *parser.Program) []ValidateResult {
-	var results []ValidateResult
-	for _, stmt := range program.Statements {
-		fd, ok := stmt.(*parser.FunctionDefinition)
-		if !ok || fd.Body == nil {
-			continue
-		}
-		// Collect ?T output parameter names
-		type nullableParam struct {
-			name string
-			line int
-			col  int
-		}
-		var nullableParams []nullableParam
-		for _, r := range fd.Results {
-			if r.Name == "" {
-				continue
-			}
-			if _, ok := r.Type.(*parser.NullableType); ok {
-				nullableParams = append(nullableParams, nullableParam{
-					name: r.Name,
-					line: r.Token.Line,
-					col:  r.Token.Column,
-				})
-			}
-		}
-		if len(nullableParams) == 0 {
-			continue
-		}
-		// Collect all directly-assigned variable names in the body
-		assigned := make(map[string]bool)
-		collectAssignedNames(fd.Body.Statements, assigned)
-		// Collect all read variable names in the body
-		read := make(map[string]bool)
-		collectReadNames(fd.Body.Statements, read)
-		// Check each ?T output param: read but not assigned → error
-		for _, p := range nullableParams {
-			if read[p.name] && !assigned[p.name] {
-				results = append(results, ValidateResult{
-					Line:    p.line,
-					Column:  p.col,
-					Message: fmt.Sprintf("output parameter '%s' (?T) is read but never assigned in function body — uninitialized use of nullable output parameter", p.name),
-				})
-			}
-		}
-	}
-	return results
-}
-
+                                                                           
+                             
+                                          
+                                             
+                            
+           
+   
+                                      
+                             
+              
+           
+           
+   
+                                    
+                                
+                    
+            
+    
+                                                  
+                                                          
+                  
+                        
+                          
+      
+    
+   
+                               
+           
+   
+                                                             
+                                   
+                                                    
+                                                
+                               
+                                            
+                                                                
+                                    
+                                         
+                                             
+                     
+                    
+                                                                                                                                                               
+      
+    
+   
+  
+               
+ 
 // collectAssignedNames walks statements recursively and collects variable names
 // that are directly assigned via '=' (LetStatement.Name or MultiAssignStatement
 // Identifier targets). IndexExpression/DotExpression targets are NOT direct
 // assignments — they read the base variable to write to a field/element.
-func collectAssignedNames(stmts []parser.Statement, assigned map[string]bool) {
-	for _, stmt := range stmts {
-		if stmt == nil {
-			continue
-		}
-		switch s := stmt.(type) {
-		case *parser.LetStatement:
-			if s.Name != nil {
-				assigned[s.Name.Value] = true
-			}
-			if s.Value != nil {
-				collectAssignedNamesInExpr(s.Value, assigned)
-			}
-		case *parser.MultiAssignStatement:
-			for _, target := range s.Targets {
-				if ident, ok := target.(*parser.Identifier); ok {
-					assigned[ident.Value] = true
-				}
-				// IndexExpression/DotExpression targets: not direct assignments
-			}
-			if s.Value != nil {
-				collectAssignedNamesInExpr(s.Value, assigned)
-			}
-		case *parser.BlockStatement:
-			collectAssignedNames(s.Statements, assigned)
-		case *parser.ForStatement:
-			if s.Init != nil {
-				collectAssignedNames([]parser.Statement{s.Init}, assigned)
-			}
-			if s.Body != nil {
-				collectAssignedNames(s.Body.Statements, assigned)
-			}
-		case *parser.ExpressionStatement:
-			if s.Expression != nil {
-				collectAssignedNamesInExpr(s.Expression, assigned)
-			}
-		case *parser.ReturnStatement:
-			if s.ReturnValue != nil {
-				collectAssignedNamesInExpr(s.ReturnValue, assigned)
-			}
-		}
-	}
-}
-
+                                                                               
+                             
+                  
+           
+   
+                           
+                            
+                     
+                                 
+    
+                      
+                                                 
+    
+                                    
+                                     
+                                                     
+                                 
+     
+                                                                    
+    
+                      
+                                                 
+    
+                              
+                                               
+                            
+                     
+                                                              
+    
+                     
+                                                     
+    
+                                   
+                           
+                                                      
+    
+                               
+                            
+                                                       
+    
+   
+  
+ 
 // collectAssignedNamesInExpr walks expressions for nested statements (if/else)
 // that may contain assignments. Does NOT recurse into nested function literals.
-func collectAssignedNamesInExpr(expr parser.Expression, assigned map[string]bool) {
-	if expr == nil {
-		return
-	}
-	switch e := expr.(type) {
-	case *parser.IfExpression:
-		if e.Consequence != nil {
-			collectAssignedNames(e.Consequence.Statements, assigned)
-		}
-		if e.Alternative != nil {
-			collectAssignedNames(e.Alternative.Statements, assigned)
-		}
-	case *parser.ConditionalExpression:
-		// ternary cond ? a : b — no statements, just expressions
-	}
-}
-
+                                                                                   
+                 
+        
+  
+                          
+                           
+                           
+                                                           
+   
+                           
+                                                           
+   
+                                    
+                                                             
+  
+ 
 // collectReadNames walks statements recursively and collects variable names
 // that are read (used in expressions). Direct assignment targets (LetStatement.Name,
 // MultiAssignStatement Identifier targets) are NOT reads. However, IndexExpression.Left
 // and DotExpression.Receiver ARE reads — out[i]=val reads 'out' to get the data ptr.
-func collectReadNames(stmts []parser.Statement, read map[string]bool) {
-	for _, stmt := range stmts {
-		if stmt == nil {
-			continue
-		}
-		switch s := stmt.(type) {
-		case *parser.LetStatement:
-			if s.Value != nil {
-				collectReadNamesInExpr(s.Value, read)
-			}
-		case *parser.MultiAssignStatement:
-			for _, target := range s.Targets {
-				switch t := target.(type) {
-				case *parser.IndexExpression:
-					// out[i] = val → reads out (to get data pointer) and i
-					collectReadNamesInExpr(t.Left, read)
-					collectReadNamesInExpr(t.Index, read)
-				case *parser.DotExpression:
-					// out.field = val → reads out (to get struct pointer)
-					collectReadNamesInExpr(t.Receiver, read)
-				}
-				// Identifier targets are pure writes — not reads
-			}
-			if s.Value != nil {
-				collectReadNamesInExpr(s.Value, read)
-			}
-		case *parser.BlockStatement:
-			collectReadNames(s.Statements, read)
-		case *parser.ForStatement:
-			if s.Init != nil {
-				collectReadNames([]parser.Statement{s.Init}, read)
-			}
-			if s.Condition != nil {
-				collectReadNamesInExpr(s.Condition, read)
-			}
-			if s.Update != nil {
-				collectReadNames([]parser.Statement{s.Update}, read)
-			}
-			if s.IterRange != nil {
-				if s.IterRange.RangeExpr != nil {
-					collectReadNamesInExpr(s.IterRange.RangeExpr, read)
-				}
-				if s.IterRange.Range != nil {
-					if s.IterRange.Range.Start != nil {
-						collectReadNamesInExpr(s.IterRange.Range.Start, read)
-					}
-					if s.IterRange.Range.End != nil {
-						collectReadNamesInExpr(s.IterRange.Range.End, read)
-					}
-				}
-			}
-			if s.Body != nil {
-				collectReadNames(s.Body.Statements, read)
-			}
-		case *parser.ExpressionStatement:
-			if s.Expression != nil {
-				collectReadNamesInExpr(s.Expression, read)
-			}
-		case *parser.ReturnStatement:
-			if s.ReturnValue != nil {
-				collectReadNamesInExpr(s.ReturnValue, read)
-			}
-		}
-	}
-}
-
+                                                                       
+                             
+                  
+           
+   
+                           
+                            
+                      
+                                         
+    
+                                    
+                                     
+                               
+                                 
+                                                              
+                                         
+                                          
+                               
+                                                             
+                                             
+     
+                                                       
+    
+                      
+                                         
+    
+                              
+                                       
+                            
+                     
+                                                      
+    
+                          
+                                             
+    
+                       
+                                                        
+    
+                          
+                                     
+                                                        
+     
+                                 
+                                        
+                                                           
+      
+                                      
+                                                         
+      
+     
+    
+                     
+                                             
+    
+                                   
+                           
+                                              
+    
+                               
+                            
+                                               
+    
+   
+  
+ 
 // collectReadNamesInExpr walks an expression tree and collects all variable names
 // that are read. Handles all expression types including DotExpression.Receiver,
 // IndexExpression.Left, CallExpression args, etc.
-func collectReadNamesInExpr(expr parser.Expression, read map[string]bool) {
-	if expr == nil {
-		return
-	}
-	switch e := expr.(type) {
-	case *parser.Identifier:
-		read[e.Value] = true
-	case *parser.CallExpression:
-		collectReadNamesInExpr(e.Function, read)
-		for _, arg := range e.Arguments {
-			collectReadNamesInExpr(arg, read)
-		}
-	case *parser.DotExpression:
-		// out.field → reads out (the receiver)
-		collectReadNamesInExpr(e.Receiver, read)
-	case *parser.IndexExpression:
-		// out[i] → reads out and i
-		collectReadNamesInExpr(e.Left, read)
-		collectReadNamesInExpr(e.Index, read)
-	case *parser.SliceExpression:
-		collectReadNamesInExpr(e.Left, read)
-		if e.Range != nil {
-			if e.Range.Start != nil {
-				collectReadNamesInExpr(e.Range.Start, read)
-			}
-			if e.Range.End != nil {
-				collectReadNamesInExpr(e.Range.End, read)
-			}
-		}
-	case *parser.InfixExpression:
-		if e.Left != nil {
-			collectReadNamesInExpr(e.Left, read)
-		}
-		if e.Right != nil {
-			collectReadNamesInExpr(e.Right, read)
-		}
-	case *parser.PrefixExpression:
-		if e.Right != nil {
-			collectReadNamesInExpr(e.Right, read)
-		}
-	case *parser.GroupedExpression:
-		if e.Expression != nil {
-			collectReadNamesInExpr(e.Expression, read)
-		}
-	case *parser.IfExpression:
-		if e.Condition != nil {
-			collectReadNamesInExpr(e.Condition, read)
-		}
-		if e.Consequence != nil {
-			collectReadNames(e.Consequence.Statements, read)
-		}
-		if e.Alternative != nil {
-			collectReadNames(e.Alternative.Statements, read)
-		}
-	case *parser.AssignExpression:
-		// out.field = val → reads out (via DotExpression.Receiver)
-		if dot, ok := e.Left.(*parser.DotExpression); ok {
-			collectReadNamesInExpr(dot.Receiver, read)
-		}
-		if idx, ok := e.Left.(*parser.IndexExpression); ok {
-			collectReadNamesInExpr(idx.Left, read)
-			collectReadNamesInExpr(idx.Index, read)
-		}
-		if e.Value != nil {
-			collectReadNamesInExpr(e.Value, read)
-		}
-	case *parser.ConditionalExpression:
-		if e.Condition != nil {
-			collectReadNamesInExpr(e.Condition, read)
-		}
-		if e.Consequence != nil {
-			collectReadNamesInExpr(e.Consequence, read)
-		}
-		if e.Alternative != nil {
-			collectReadNamesInExpr(e.Alternative, read)
-		}
-	case *parser.ArrayLiteral:
-		for _, elem := range e.Elements {
-			collectReadNamesInExpr(elem, read)
-		}
-	case *parser.SliceLiteral:
-		for _, elem := range e.Elements {
-			collectReadNamesInExpr(elem, read)
-		}
-	case *parser.StructLiteral:
-		for _, f := range e.Fields {
-			if f.Value != nil {
-				collectReadNamesInExpr(f.Value, read)
-			}
-		}
-	case *parser.MapLiteral:
-		for _, pair := range e.Pairs {
-			collectReadNamesInExpr(pair.Key, read)
-			collectReadNamesInExpr(pair.Value, read)
-		}
-	case *parser.RunExpression:
-		if e.Call != nil {
-			collectReadNamesInExpr(e.Call, read)
-		}
-	case *parser.AwaitExpression:
-		if e.Right != nil {
-			collectReadNamesInExpr(e.Right, read)
-		}
-	case *parser.CastExpression:
-		if e.Expr != nil {
-			collectReadNamesInExpr(e.Expr, read)
-		}
-		// Literals (Integer, String, Float, Char, Boolean, Byte, Nil, Regex) don't read variables
-		// FunctionLiteral: don't recurse (nested function has its own scope)
-	}
-}
-
-// ValidateInterfaceImplementation matches dotted-name function definitions
+                                                                           
+                 
+        
+  
+                          
+                         
+                      
+                             
+                                          
+                                   
+                                    
+   
+                            
+                                           
+                                          
+                              
+                               
+                                      
+                                       
+                              
+                                      
+                     
+                            
+                                               
+    
+                          
+                                             
+    
+   
+                              
+                    
+                                       
+   
+                     
+                                        
+   
+                               
+                     
+                                        
+   
+                                
+                          
+                                             
+   
+                           
+                         
+                                            
+   
+                           
+                                                   
+   
+                           
+                                                   
+   
+                               
+                                                               
+                                                    
+                                             
+   
+                                                      
+                                         
+                                          
+   
+                     
+                                        
+   
+                                    
+                         
+                                            
+   
+                           
+                                              
+   
+                           
+                                              
+   
+                           
+                                   
+                                     
+   
+                           
+                                   
+                                     
+   
+                            
+                              
+                      
+                                         
+    
+   
+                         
+                                
+                                         
+                                           
+   
+                            
+                    
+                                       
+   
+                              
+                     
+                                        
+   
+                             
+                    
+                                       
+   
+                                                                                            
+                                                                       
+  
+ 
+// checker.ValidateInterfaceImplementation matches dotted-name function definitions
 // (e.g. `i8.gt = ...`) against generic-receiver interface method
 // declarations (e.g. `ord { t.gt(b t) (res bool) }`). Emits a warning
 // when an implementing type is missing or its method signature does not
 // match the interface constraint.
-func ValidateInterfaceImplementation(program *parser.Program) []ValidateResult {
-	var results []ValidateResult
-
-	type ifaceMethod struct {
-		Receiver string
-		Name     string
-		Params   []string // canonical type strings
-		Results  []string
-		Token    lexer.Token
-	}
-	ifaces := map[string][]ifaceMethod{} // interface name → methods
-	for _, stmt := range program.Statements {
-		id, ok := stmt.(*parser.InterfaceDefinition)
-		if !ok {
-			continue
-		}
-		var methods []ifaceMethod
-		for _, m := range id.Methods {
-			if !m.IsGenericReceiver {
-				continue
-			}
-			im := ifaceMethod{Receiver: m.Receiver, Name: m.Name, Token: m.Token}
-			for _, p := range m.Parameters {
-				if p.Type != nil {
-					im.Params = append(im.Params, p.Type.String())
-				}
-			}
-			for _, r := range m.Results {
-				if r.Type != nil {
-					im.Results = append(im.Results, r.Type.String())
-				}
-			}
-			methods = append(methods, im)
-		}
-		ifaces[id.Name] = methods
-	}
-
-	for _, stmt := range program.Statements {
-		fd, ok := stmt.(*parser.FunctionDefinition)
-		if !ok || !fd.IsMethodDef {
-			continue
-		}
-		implType, implMethod, ok := splitDottedMethodName(fd.Name)
-		if !ok {
-			continue
-		}
-		// Dotted methods have a hidden self parameter prepended by
-		// parseMethodDefinition. Skip it for signature comparison.
-		implParams := fd.Parameters
-		if len(implParams) > 0 && implParams[0].Name == "self" {
-			implParams = implParams[1:]
-		}
-		implResults := fd.Results
-		for _, methods := range ifaces {
-			for _, m := range methods {
-				if m.Name != implMethod {
-					continue
-				}
-				if len(implParams) != len(m.Params) {
-					results = append(results, ValidateResult{
-						Line:      fd.Token.Line,
-						Column:    fd.Token.Column,
-						EndColumn: fd.Token.Column + len(fd.Name),
-						Message: fmt.Sprintf("method '%s.%s' has %d parameter(s), interface expects %d",
-							implType, implMethod, len(implParams), len(m.Params)),
-					})
-					continue
-				}
-				for i, p := range implParams {
-					if p.Type == nil {
-						continue
-					}
-					paramType := p.Type.String()
-					expected := strings.ReplaceAll(m.Params[i], m.Receiver, implType)
-					if paramType != expected {
-						results = append(results, ValidateResult{
-							Line:      p.Token.Line,
-							Column:    p.Token.Column,
-							EndColumn: p.Token.Column + len(p.Name),
-							Message: fmt.Sprintf("parameter %d of '%s.%s': expected '%s', got '%s'",
-								i+1, implType, implMethod, expected, paramType),
-						})
-					}
-				}
-				if len(implResults) != len(m.Results) {
-					results = append(results, ValidateResult{
-						Line:      fd.Token.Line,
-						Column:    fd.Token.Column,
-						EndColumn: fd.Token.Column + len(fd.Name),
-						Message: fmt.Sprintf("method '%s.%s' has %d result(s), interface expects %d",
-							implType, implMethod, len(implResults), len(m.Results)),
-					})
-				} else {
-					for i, r := range implResults {
-						if r.Type == nil {
-							continue
-						}
-						resType := r.Type.String()
-						expected := strings.ReplaceAll(m.Results[i], m.Receiver, implType)
-						if resType != expected {
-							results = append(results, ValidateResult{
-								Line:      r.Token.Line,
-								Column:    r.Token.Column,
-								EndColumn: r.Token.Column + len(r.Name),
-								Message: fmt.Sprintf("result %d of '%s.%s': expected '%s', got '%s'",
-									i+1, implType, implMethod, expected, resType),
-							})
-						}
-					}
-				}
-			}
-		}
-	}
-	return results
-}
-
+                                                                                
+                             
+                          
+                 
+                 
+                                             
+                   
+                      
+  
+                                                                   
+                                          
+                                              
+          
+           
+   
+                           
+                                
+                            
+            
+    
+                                                                        
+                                   
+                      
+                                                   
+     
+    
+                                
+                      
+                                                     
+     
+    
+                                
+   
+                           
+  
+                                          
+                                             
+                             
+           
+   
+                                                            
+          
+           
+   
+                                                             
+                                                             
+                             
+                                                          
+                              
+   
+                           
+                                  
+                              
+                             
+             
+     
+                                         
+                                              
+                               
+                                 
+                                                
+                                                                                      
+                                                             
+       
+             
+     
+                                  
+                       
+              
+      
+                                 
+                                                                      
+                               
+                                               
+                               
+                                 
+                                               
+                                                                               
+                                                        
+        
+      
+     
+                                           
+                                              
+                               
+                                 
+                                                
+                                                                                   
+                                                               
+       
+            
+                                    
+                        
+               
+       
+                                
+                                                                        
+                              
+                                                
+                                
+                                  
+                                                
+                                                                             
+                                                       
+         
+       
+      
+     
+    
+   
+  
+               
+ 
 // splitDottedMethodName splits a function name like "i8.gt" or
 // "[]ord.ast" or "[?]ord.desc" into (implType, methodName). Returns
 // false if the name does not contain a dotted-method form.
-func splitDottedMethodName(name string) (string, string, bool) {
-	idx := strings.LastIndex(name, ".")
-	if idx < 0 {
-		return "", "", false
-	}
-	implType := name[:idx]
-	methodName := name[idx+1:]
-	if implType == "" || methodName == "" {
-		return "", "", false
-	}
-	return implType, methodName, true
-}
-
-// ValidateUseKeyword warns when "use" keyword is used instead of "#".
-func ValidateUseKeyword(program *parser.Program) []ValidateResult {
-	var results []ValidateResult
-	for _, stmt := range program.Statements {
-		if us, ok := stmt.(*parser.UseStatement); ok && us.Token.Literal == "use" {
-			results = append(results, ValidateResult{
-				Line:    us.Token.Line,
-				Column:  us.Token.Column,
-				Message: "'use' keyword is deprecated, use '#' instead (e.g., '# " + us.Path + "')",
-			})
-		}
-	}
-	return results
-}
-
-// ValidateUseAlias warns when 'as' keyword is used for import aliasing and suggests direct alias style.
-func ValidateUseAlias(program *parser.Program) []ValidateResult {
-	var results []ValidateResult
-	for _, stmt := range program.Statements {
-		if us, ok := stmt.(*parser.UseStatement); ok && us.Token.Literal == "#" && us.AsKeyword {
-			results = append(results, ValidateResult{
-				Line:    us.Token.Line,
-				Column:  us.Token.Column,
-				Message: fmt.Sprintf("use '# %s.%s %s' instead of '# %s.%s as %s'", us.Path, us.Function, us.Alias, us.Path, us.Function, us.Alias),
-			})
-		}
-	}
-	return results
-}
-
-// ValidateRedundantTypeAnnotation produces hints when a variable's explicit type
+                                                                
+                                    
+             
+                      
+  
+                       
+                           
+                                        
+                      
+  
+                                  
+ 
+// checker.ValidateUseKeyword warns when "use" keyword is used instead of "#".
+                                                                   
+                             
+                                          
+                                                                             
+                                            
+                           
+                             
+                                                                                        
+     
+   
+  
+               
+ 
+// checker.ValidateUseAlias warns when 'as' keyword is used for import aliasing and suggests direct alias style.
+                                                                 
+                             
+                                          
+                                                                                           
+                                            
+                           
+                             
+                                                                                                                                        
+     
+   
+  
+               
+ 
+// checker.ValidateRedundantTypeAnnotation produces hints when a variable's explicit type
 // annotation is redundant — the type can be inferred from the value (e.g. `m i64 = 100`).
-func ValidateRedundantTypeAnnotation(program *parser.Program) []ValidateResult {
-	var results []ValidateResult
-	// Build funcTypes for inferExprType
-	validationFuncTypes = make(map[string]string)
-	for _, stmt := range program.Statements {
-		if fd, ok := stmt.(*parser.FunctionDefinition); ok {
-			if len(fd.Results) > 0 && fd.Results[0].Type != nil {
-				validationFuncTypes[fd.Name] = fd.Results[0].Type.String()
-			}
-		}
-		if es, ok := stmt.(*parser.ExternStatement); ok {
-			if len(es.Results) > 0 && es.Results[0].Type != nil {
-				validationFuncTypes[es.Name.Value] = es.Results[0].Type.String()
-			}
-		}
-	}
-	varTypes := make(map[string]string)
-	for _, stmt := range program.Statements {
-		results = append(results, checkRedundantTypeInStmt(stmt, varTypes)...)
-	}
-	return results
-}
-
-func checkRedundantTypeInStmt(stmt parser.Statement, varTypes map[string]string) []ValidateResult {
-	if stmt == nil {
-		return nil
-	}
-	switch s := stmt.(type) {
-	case *parser.LetStatement:
-		var results []ValidateResult
-		if s.Type != nil && !isInferredType(s.Type) && s.Value != nil && s.Name != nil {
-			annotatedType := s.Type.String()
-			inferredType := inferExprType(s.Value, varTypes, validationFuncTypes, "")
-			if inferredType != "" && inferredType == annotatedType {
-				results = append(results, ValidateResult{
-					Line:    s.Type.Pos().Line,
-					Column:  s.Type.Pos().Column,
-					Message: fmt.Sprintf("type annotation '%s' can be omitted (inferred from value)", annotatedType),
-				})
-			}
-			// Register the variable for subsequent checks
-			varTypes[s.Name.Value] = annotatedType
-		}
-		return results
-	case *parser.FunctionDefinition:
-		if s.Body != nil {
-			localTypes := make(map[string]string)
-			for k, v := range varTypes {
-				localTypes[k] = v
-			}
-			for _, p := range s.Parameters {
-				if p.Type != nil {
-					localTypes[p.Name] = p.Type.String()
-				}
-			}
-			for _, r := range s.Results {
-				if r.Name != "" && r.Type != nil {
-					localTypes[r.Name] = r.Type.String()
-				}
-			}
-			var results []ValidateResult
-			for _, bs := range s.Body.Statements {
-				results = append(results, checkRedundantTypeInStmt(bs, localTypes)...)
-			}
-			return results
-		}
-	case *parser.BlockStatement:
-		var results []ValidateResult
-		for _, bs := range s.Statements {
-			results = append(results, checkRedundantTypeInStmt(bs, varTypes)...)
-		}
-		return results
-	}
-	return nil
-}
-
-// ValidateDuplicateVars checks for duplicate variable declarations and returns diagnostics.
-func ValidateDuplicateVars(program *parser.Program) []ValidateResult {
-	var results []ValidateResult
-	seen := make(map[string]struct{})
-	for _, stmt := range program.Statements {
-		results = append(results, checkStmtDuplicateVars(program.Sem, stmt, seen)...)
-	}
-	return results
-}
-
-func checkStmtDuplicateVars(sem *parser.SemanticContext, stmt parser.Statement, seen map[string]struct{}) []ValidateResult {
-	switch s := stmt.(type) {
-	case *parser.LetStatement:
-		if s.Name == nil {
-			return nil
-		}
-
-		// Detect parser-inferred types using the IsInferred flag.
-		// Handles NamedType, NullableType (?T), SliceType, ArrayType, etc.
-		isInferred := isInferredType(s.Type)
-
-		// 計算複合 key：name + "\x00" + platformKey（無平台註解則 suffix 為空）
-		// 同名 + 同平台才算衝突；不同平台或通用 vs 平台特定不衝突
-		sPlatformKeys := sem.PlatformKeysOf(s)
-		var compositeKeys []string
-		if len(sPlatformKeys) == 0 {
-			compositeKeys = []string{s.Name.Value + "\x00"}
-		} else {
-			compositeKeys = make([]string, 0, len(sPlatformKeys))
-			for _, pk := range sPlatformKeys {
-				compositeKeys = append(compositeKeys, s.Name.Value+"\x00"+pk)
-			}
-		}
-		// Check for duplicate when:
-		//   1. Real type annotation (not parser artifact where Type == Name, and not inferred), OR
-		//   2. Uppercase constant name (e.g., `A = 0`, `SBOX = 1`) — even without type annotation
-		hasRealTypeAnnotation := s.Type != nil && s.Type.String() != s.Name.Value && !isInferred
-		isConst := isConstantName(s.Name.Value)
-		if hasRealTypeAnnotation || isConst {
-			for _, k := range compositeKeys {
-				if _, exists := seen[k]; exists {
-					return []ValidateResult{{
-						Line:    s.Token.Line,
-						Column:  s.Token.Column,
-						Message: fmt.Sprintf("'%s' already declared in this scope", s.Name.Value),
-					}}
-				}
-			}
-			// Real type annotation or uppercase constant — always register
-			for _, k := range compositeKeys {
-				seen[k] = struct{}{}
-			}
-		} else if isInferred {
-			// Inferred type (e.g. `i = 0`): register only the first declaration,
-			// allow subsequent re-assignments like `i = 4`
-			anyExists := false
-			for _, k := range compositeKeys {
-				if _, exists := seen[k]; exists {
-					anyExists = true
-					break
-				}
-			}
-			if !anyExists {
-				for _, k := range compositeKeys {
-					seen[k] = struct{}{}
-				}
-			}
-		}
-	case *parser.FunctionDefinition:
-		if s.Body != nil {
-			bodySeen := make(map[string]struct{})
-			for _, bStmt := range s.Body.Statements {
-				results := checkStmtDuplicateVars(sem, bStmt, bodySeen)
-				if len(results) > 0 {
-					return results
-				}
-			}
-		}
-	case *parser.BlockStatement:
-		for _, bStmt := range s.Statements {
-			results := checkStmtDuplicateVars(sem, bStmt, seen)
-			if len(results) > 0 {
-				return results
-			}
-		}
-	}
-	return nil
-}
-
-// ValidateDependencyImports checks that URL-style import paths (e.g., github.com/...)
+                                                                                
+                             
+                                     
+                                              
+                                          
+                                                      
+                                                        
+                                                              
+    
+   
+                                                   
+                                                        
+                                                                    
+    
+   
+  
+                                    
+                                          
+                                                                        
+  
+               
+ 
+                                                                                                   
+                 
+            
+  
+                          
+                           
+                              
+                                                                                  
+                                   
+                                                                            
+                                                           
+                                             
+                                
+                                  
+                                                                                                      
+      
+    
+                                                 
+                                         
+   
+                
+                                 
+                    
+                                        
+                               
+                     
+    
+                                   
+                      
+                                         
+     
+    
+                                
+                                      
+                                         
+     
+    
+                               
+                                         
+                                                                          
+    
+                 
+   
+                             
+                              
+                                   
+                                                                       
+   
+                
+  
+           
+ 
+// checker.ValidateDuplicateVars checks for duplicate variable declarations and returns diagnostics.
+                                                                      
+                             
+                                  
+                                          
+                                                                               
+  
+               
+ 
+                                                                                                                            
+                          
+                           
+                    
+             
+   
+                                                            
+                                                                     
+                                      
+                                                                                         
+                                                                                    
+                                        
+                            
+                              
+                                                  
+          
+                                                        
+                                     
+                                                                 
+    
+   
+                              
+                                                                                             
+                                                                                              
+                                                                                          
+                                         
+                                       
+                                    
+                                     
+                              
+                            
+                              
+                                                                                
+       
+     
+    
+                                                                    
+                                    
+                        
+    
+                        
+                                                                        
+                                                  
+                     
+                                    
+                                     
+                     
+          
+     
+    
+                  
+                                     
+                         
+     
+    
+   
+                                 
+                    
+                                        
+                                            
+                                                           
+                         
+                   
+     
+    
+   
+                             
+                                      
+                                                      
+                        
+                  
+    
+   
+  
+           
+ 
+// checker.ValidateDependencyImports checks that URL-style import paths (e.g., github.com/...)
 // are declared in mod.jsonc dependencies. rootDir is the directory to search upward
 // from for the project's mod.jsonc.
-func ValidateDependencyImports(program *parser.Program, rootDir string) []ValidateResult {
-	if rootDir == "" {
-		return nil
-	}
-	pkg, _ := LoadPackage(rootDir)
-	if pkg == nil || len(pkg.Dependencies) == 0 {
-		return nil
-	}
-
-	var results []ValidateResult
-	for _, stmt := range program.Statements {
-		us, ok := stmt.(*parser.UseStatement)
-		if !ok {
-			continue
-		}
-		path := us.Path
-		// Check if this is a URL-style path (first segment contains ".")
-		first := strings.SplitN(path, "/", 2)[0]
-		if !strings.Contains(first, ".") {
-			continue
-		}
-		// Check if declared in dependencies
-		if _, _, matched := pkg.matchDependency(path); !matched {
-			results = append(results, ValidateResult{
-				Line:    us.Token.Line,
-				Column:  us.Token.Column,
-				Message: fmt.Sprintf("dependency not found: %q is not declared in mod.jsonc dependencies", path),
-			})
-		}
-	}
-	return results
-}
-
-// ValidateExportSymbols checks that all export declarations in lib.no reference
+                                                                                          
+                   
+            
+  
+                               
+                                              
+            
+  
+                             
+                                          
+                                       
+          
+           
+   
+                 
+                                                                   
+                                          
+                                    
+           
+   
+                                      
+                                                           
+                                            
+                           
+                             
+                                                                                                     
+     
+   
+  
+               
+ 
+// checker.ValidateExportSymbols checks that all export declarations in lib.no reference
 // symbols that actually exist in the corresponding module source files.
-func ValidateExportSymbols(program *parser.Program, docPath string) []ValidateResult {
-	// Only validate lib.no files
-	if !strings.HasSuffix(docPath, "lib.no") {
-		return nil
-	}
-
-	docDir := filepath.Dir(docPath)
-
-	var results []ValidateResult
-	for _, stmt := range program.Statements {
-		es, ok := stmt.(*parser.ExportStatement)
-		if !ok {
-			continue
-		}
-		if es.Function == "" {
-			continue
-		}
-
-		// Resolve the module file path
-		modFile := ""
-		path := es.Path
-		if strings.HasPrefix(path, "/") {
-			modFile = filepath.Join(docDir, strings.TrimPrefix(path, "/")) + ".no"
-		} else if strings.HasPrefix(path, "std/") || path == "std" {
-			modFile = path + ".no"
-		}
-
-		if modFile == "" {
-			continue
-		}
-
-		// Parse the module file
-		source, err := os.ReadFile(modFile)
-		if err != nil {
-			results = append(results, ValidateResult{
-				Line:    es.Token.Line,
-				Column:  es.Token.Column,
-				Message: fmt.Sprintf("module file not found: %s", modFile),
-			})
-			continue
-		}
-
-		l := lexer.New(string(source))
-		p := parser.New(l)
-		modProg := p.ParseProgram()
-		if len(p.Errors()) > 0 {
-			continue
-		}
-
-		// Check if the function exists in the module
-		found := false
-		for _, modStmt := range modProg.Statements {
-			switch s := modStmt.(type) {
-			case *parser.FunctionDefinition:
-				if s.Name == es.Function {
-					found = true
-				}
-			case *parser.StructDefinition:
-				if s.Name == es.Function {
-					found = true
-				}
-			case *parser.EnumDefinition:
-				if s.Name == es.Function {
-					found = true
-				}
-			case *parser.TaggedEnumDefinition:
-				if s.Name == es.Function {
-					found = true
-				}
-			case *parser.InterfaceDefinition:
-				if s.Name == es.Function {
-					found = true
-				}
-			case *parser.LetStatement:
-				if s.Name != nil && s.Name.Value == es.Function {
-					found = true
-				}
-			}
-		}
-
-		if !found {
-			results = append(results, ValidateResult{
-				Line:    es.Token.Line,
-				Column:  es.Token.Column,
-				Message: fmt.Sprintf("export references undefined symbol %q (not found in %s)", es.Function, modFile),
-			})
-		}
-	}
-	return results
-}
-
-// ValidateStringConcat warns when "+" is used with string operands and suggests "-" instead.
-func ValidateStringConcat(program *parser.Program) []ValidateResult {
-	var results []ValidateResult
-	for _, stmt := range program.Statements {
-		results = append(results, checkStringConcatInStmt(stmt)...)
-	}
-	return results
-}
-
-func checkStringConcatInStmt(stmt parser.Statement) []ValidateResult {
-	var results []ValidateResult
-	switch s := stmt.(type) {
-	case *parser.ExpressionStatement:
-		if s.Expression != nil {
-			results = append(results, checkStringConcatInExpr(s.Expression)...)
-		}
-	case *parser.LetStatement:
-		if s.Value != nil {
-			results = append(results, checkStringConcatInExpr(s.Value)...)
-		}
-	case *parser.FunctionDefinition:
-		if s.Body != nil {
-			for _, bodyStmt := range s.Body.Statements {
-				results = append(results, checkStringConcatInStmt(bodyStmt)...)
-			}
-		}
-	case *parser.BlockStatement:
-		for _, bodyStmt := range s.Statements {
-			results = append(results, checkStringConcatInStmt(bodyStmt)...)
-		}
-	case *parser.ReturnStatement:
-		if s.ReturnValue != nil {
-			results = append(results, checkStringConcatInExpr(s.ReturnValue)...)
-		}
-	case *parser.ForStatement:
-		if s.Init != nil {
-			results = append(results, checkStringConcatInStmt(s.Init)...)
-		}
-		if s.Condition != nil {
-			results = append(results, checkStringConcatInExpr(s.Condition)...)
-		}
-		if s.Update != nil {
-			results = append(results, checkStringConcatInStmt(s.Update)...)
-		}
-		if s.Body != nil {
-			for _, bodyStmt := range s.Body.Statements {
-				results = append(results, checkStringConcatInStmt(bodyStmt)...)
-			}
-		}
-	}
-	return results
-}
-
-func checkStringConcatInExpr(expr parser.Expression) []ValidateResult {
-	var results []ValidateResult
-	switch e := expr.(type) {
-	case *parser.InfixExpression:
-		if e.Operator == "+" {
-			// Check if either operand is a string literal
-			isStrConcat := false
-			if _, ok := e.Left.(*parser.StringLiteral); ok {
-				isStrConcat = true
-			} else if _, ok := e.Right.(*parser.StringLiteral); ok {
-				isStrConcat = true
-			}
-			if isStrConcat {
-				results = append(results, ValidateResult{
-					Line:    e.Token.Line,
-					Column:  e.Token.Column,
-					Message: "string concatenation: use '-' instead of '+'",
-				})
-			}
-		}
-		// Recurse into sub-expressions
-		results = append(results, checkStringConcatInExpr(e.Left)...)
-		results = append(results, checkStringConcatInExpr(e.Right)...)
-	case *parser.CallExpression:
-		for _, arg := range e.Arguments {
-			results = append(results, checkStringConcatInExpr(arg)...)
-		}
-	case *parser.DotExpression:
-		results = append(results, checkStringConcatInExpr(e.Receiver)...)
-	case *parser.PrefixExpression:
-		results = append(results, checkStringConcatInExpr(e.Right)...)
-	case *parser.GroupedExpression:
-		results = append(results, checkStringConcatInExpr(e.Expression)...)
-	case *parser.IndexExpression:
-		results = append(results, checkStringConcatInExpr(e.Left)...)
-		results = append(results, checkStringConcatInExpr(e.Index)...)
-	}
-	return results
-}
-
-// ValidateHexCase 檢查十六進位字面量是否使用了大寫字母。
+                                                                                      
+                              
+                                           
+            
+  
+                                
+                             
+                                          
+                                          
+          
+           
+   
+                        
+           
+   
+                                 
+               
+                 
+                                   
+                                                                         
+                                                              
+                         
+   
+                    
+           
+   
+                          
+                                     
+                 
+                                            
+                           
+                             
+                                                               
+     
+           
+   
+                                
+                    
+                             
+                          
+           
+   
+                                               
+                
+                                              
+                               
+                                   
+                              
+                 
+     
+                                 
+                              
+                 
+     
+                               
+                              
+                 
+     
+                                     
+                              
+                 
+     
+                                    
+                              
+                 
+     
+                             
+                                                     
+                 
+     
+    
+   
+             
+                                            
+                           
+                             
+                                                                                                          
+     
+   
+  
+               
+ 
+// checker.ValidateStringConcat warns when "+" is used with string operands and suggests "-" instead.
+                                                                     
+                             
+                                          
+                                                             
+  
+               
+ 
+                                                                      
+                             
+                          
+                                  
+                          
+                                                                      
+   
+                           
+                     
+                                                                 
+   
+                                 
+                    
+                                               
+                                                                   
+    
+   
+                             
+                                         
+                                                                  
+   
+                              
+                           
+                                                                       
+   
+                           
+                    
+                                                                
+   
+                         
+                                                                     
+   
+                      
+                                                                  
+   
+                    
+                                               
+                                                                   
+    
+   
+  
+               
+ 
+                                                                       
+                             
+                          
+                              
+                        
+                                                 
+                       
+                                                   
+                      
+                                                           
+                      
+    
+                   
+                                             
+                           
+                             
+                                                             
+      
+    
+   
+                                 
+                                                               
+                                                                
+                             
+                                   
+                                                             
+   
+                            
+                                                                   
+                               
+                                                                
+                                
+                                                                     
+                              
+                                                               
+                                                                
+  
+               
+ 
+// checker.ValidateHexCase 檢查十六進位字面量是否使用了大寫字母。
 // Nolang 慣例：hex 一律小寫（0xff 而非 0xFF）。
 // 格式化工具會自動將大寫轉為小寫，此檢查產生 hint 提醒。
-func ValidateHexCase(program *parser.Program) []ValidateResult {
-	var results []ValidateResult
-	for _, stmt := range program.Statements {
-		results = append(results, checkHexCaseInStmt(stmt)...)
-	}
-	return results
-}
-
-func checkHexCaseInStmt(stmt parser.Statement) []ValidateResult {
-	var results []ValidateResult
-	switch s := stmt.(type) {
-	case *parser.ExpressionStatement:
-		if s.Expression != nil {
-			results = append(results, checkHexCaseInExpr(s.Expression)...)
-		}
-	case *parser.LetStatement:
-		if s.Value != nil {
-			results = append(results, checkHexCaseInExpr(s.Value)...)
-		}
-	case *parser.FunctionDefinition:
-		if s.Body != nil {
-			for _, bodyStmt := range s.Body.Statements {
-				results = append(results, checkHexCaseInStmt(bodyStmt)...)
-			}
-		}
-	case *parser.BlockStatement:
-		for _, bodyStmt := range s.Statements {
-			results = append(results, checkHexCaseInStmt(bodyStmt)...)
-		}
-	case *parser.ReturnStatement:
-		if s.ReturnValue != nil {
-			results = append(results, checkHexCaseInExpr(s.ReturnValue)...)
-		}
-	case *parser.ForStatement:
-		if s.Init != nil {
-			results = append(results, checkHexCaseInStmt(s.Init)...)
-		}
-		if s.Condition != nil {
-			results = append(results, checkHexCaseInExpr(s.Condition)...)
-		}
-		if s.Update != nil {
-			results = append(results, checkHexCaseInStmt(s.Update)...)
-		}
-		if s.Body != nil {
-			for _, bodyStmt := range s.Body.Statements {
-				results = append(results, checkHexCaseInStmt(bodyStmt)...)
-			}
-		}
-	}
-	return results
-}
-
+                                                                
+                             
+                                          
+                                                        
+  
+               
+ 
+                                                                 
+                             
+                          
+                                  
+                          
+                                                                 
+   
+                           
+                     
+                                                            
+   
+                                 
+                    
+                                               
+                                                              
+    
+   
+                             
+                                         
+                                                             
+   
+                              
+                           
+                                                                  
+   
+                           
+                    
+                                                           
+   
+                         
+                                                                
+   
+                      
+                                                             
+   
+                    
+                                               
+                                                              
+    
+   
+  
+               
+ 
 // hasUpperHex returns true if a hex literal contains uppercase hex digits
 // or an uppercase '0X' prefix.
-func hasUpperHex(literal string) bool {
-	if len(literal) >= 2 && literal[0] == '0' && literal[1] == 'X' {
-		return true
-	}
-	if len(literal) >= 2 && literal[0] == '0' && literal[1] == 'x' {
-		for _, c := range literal[2:] {
-			if c >= 'A' && c <= 'F' {
-				return true
-			}
-		}
-	}
-	if len(literal) == 3 && literal[0] == 'x' {
-		for _, c := range literal[1:] {
-			if c >= 'A' && c <= 'F' {
-				return true
-			}
-		}
-	}
-	return false
-}
-
-func checkHexCaseInExpr(expr parser.Expression) []ValidateResult {
-	var results []ValidateResult
-	switch e := expr.(type) {
-	case *parser.IntegerLiteral:
-		if hasUpperHex(e.Token.Literal) {
-			results = append(results, ValidateResult{
-				Line:    e.Token.Line,
-				Column:  e.Token.Column,
-				Message: fmt.Sprintf("hex literal '%s' uses uppercase; format will convert to lowercase (e.g. 0xff)", e.Token.Literal),
-			})
-		}
-	case *parser.ByteLiteral:
-		if hasUpperHex(e.Token.Literal) {
-			results = append(results, ValidateResult{
-				Line:    e.Token.Line,
-				Column:  e.Token.Column,
-				Message: fmt.Sprintf("byte literal '%s' uses uppercase hex; format will convert to lowercase (e.g. xff)", e.Token.Literal),
-			})
-		}
-	case *parser.InfixExpression:
-		results = append(results, checkHexCaseInExpr(e.Left)...)
-		results = append(results, checkHexCaseInExpr(e.Right)...)
-	case *parser.PrefixExpression:
-		results = append(results, checkHexCaseInExpr(e.Right)...)
-	case *parser.GroupedExpression:
-		results = append(results, checkHexCaseInExpr(e.Expression)...)
-	case *parser.CallExpression:
-		for _, arg := range e.Arguments {
-			results = append(results, checkHexCaseInExpr(arg)...)
-		}
-	case *parser.DotExpression:
-		results = append(results, checkHexCaseInExpr(e.Receiver)...)
-	case *parser.IndexExpression:
-		results = append(results, checkHexCaseInExpr(e.Left)...)
-		results = append(results, checkHexCaseInExpr(e.Index)...)
-	case *parser.AssignExpression:
-		results = append(results, checkHexCaseInExpr(e.Value)...)
-	case *parser.ConditionalExpression:
-		results = append(results, checkHexCaseInExpr(e.Condition)...)
-		results = append(results, checkHexCaseInExpr(e.Consequence)...)
-		results = append(results, checkHexCaseInExpr(e.Alternative)...)
-	case *parser.ArrayLiteral:
-		for _, elem := range e.Elements {
-			results = append(results, checkHexCaseInExpr(elem)...)
-		}
-	case *parser.SliceLiteral:
-		for _, elem := range e.Elements {
-			results = append(results, checkHexCaseInExpr(elem)...)
-		}
-	case *parser.StructLiteral:
-		for _, field := range e.Fields {
-			if field.Value != nil {
-				results = append(results, checkHexCaseInExpr(field.Value)...)
-			}
-		}
-	case *parser.MapLiteral:
-		for _, pair := range e.Pairs {
-			results = append(results, checkHexCaseInExpr(pair.Key)...)
-			results = append(results, checkHexCaseInExpr(pair.Value)...)
-		}
-	case *parser.CastExpression:
-		results = append(results, checkHexCaseInExpr(e.Expr)...)
-	}
-	return results
-}
-
-// ValidatePrintFormat 檢查 print/printf/eprint/eprintf/sprintf 呼叫中的具名格式字串。
+                                       
+                                                                 
+             
+  
+                                                                 
+                                 
+                            
+               
+    
+   
+  
+                                            
+                                 
+                            
+               
+    
+   
+  
+             
+ 
+                                                                  
+                             
+                          
+                             
+                                   
+                                            
+                          
+                            
+                                                                                                                           
+     
+   
+                          
+                                   
+                                            
+                          
+                            
+                                                                                                                               
+     
+   
+                              
+                                                          
+                                                           
+                               
+                                                           
+                                
+                                                                
+                             
+                                   
+                                                        
+   
+                            
+                                                              
+                              
+                                                          
+                                                           
+                               
+                                                           
+                                    
+                                                               
+                                                                 
+                                                                 
+                           
+                                   
+                                                         
+   
+                           
+                                   
+                                                         
+   
+                            
+                                  
+                          
+                                                                 
+    
+   
+                         
+                                
+                                                             
+                                                               
+   
+                             
+                                                          
+  
+               
+ 
+// checker.ValidatePrintFormat 檢查 print/printf/eprint/eprintf/sprintf 呼叫中的具名格式字串。
 // 對於第一個參數為 StringLiteral 的呼叫，解析 {name:spec} 欄位並驗證：
 //   - 欄位名稱在當前作用域內已定義（否則 "undefined variable '<name>' in format string"）
 //   - 規格字串可被 ParseFormatSpec 解析（否則 "invalid format spec"）
 //   - 規格類型字元與變數型別相容（整數類型對應 b/c/d/o/x/X；
 //     浮點數對應 e/E/f/F/g/G/%；str/bool 對應 s）
-func ValidatePrintFormat(program *parser.Program) []ValidateResult {
-	var results []ValidateResult
-
-	// 收集 struct 欄位型別資訊，用於解析結構欄位存取
-	structFields := collectStructFields(program)
-
-	// 構建函數返回類型映射，供 inferExprType 推導用戶定義函數呼叫的返回類型
-	validationFuncTypes = make(map[string]string)
-	for _, stmt := range program.Statements {
-		if fd, ok := stmt.(*parser.FunctionDefinition); ok {
-			if len(fd.Results) > 0 && fd.Results[0].Type != nil {
-				validationFuncTypes[fd.Name] = fd.Results[0].Type.String()
-			}
-		}
-		if es, ok := stmt.(*parser.ExternStatement); ok {
-			if len(es.Results) > 0 && es.Results[0].Type != nil {
-				validationFuncTypes[es.Name.Value] = es.Results[0].Type.String()
-			}
-		}
-	}
-	// 預填 stdlib 方法回傳型別（定義在 src/std/*.no，在 vet 階段尚未合併）
-	// 覆蓋 str、slice/array 的常用方法，避免 inferExprType 回傳空字串
-	stdlibMethodTypes := map[string]string{
-		"str.len":          "i64",
-		"str.index":        "i64",
-		"str.index-from":   "i64",
-		"str.slice":        "str",
-		"str.contains":     "bool",
-		"str.starts-with":  "bool",
-		"str.ends-with":    "bool",
-		"str.to-upper":     "str",
-		"str.to-lower":     "str",
-		"str.trim":         "str",
-		"str.trim-left":   "str",
-		"str.trim-right":   "str",
-		"str.repeat":       "str",
-		"str.copy":         "str",
-		"str.to-i64":       "i64",
-		"str.to-bool":      "bool",
-		"str.to-f64":       "f64",
-		"str.split":        "[][]byte",
-		"str.replace":      "str",
-		"str.to-hex":       "str",
-		"str.to-hex-lower": "str",
-	}
-	for k, v := range stdlibMethodTypes {
-		if _, exists := validationFuncTypes[k]; !exists {
-			validationFuncTypes[k] = v
-		}
-	}
-
-	// 走訪頂層敘述，追蹤變數作用域
-	// 頂層變數共用同一作用域（模組級），故使用單一 varTypes map
-	varTypes := make(map[string]string)
-	for _, stmt := range program.Statements {
-		results = append(results, checkPrintFormatInStmt(stmt, varTypes, structFields)...)
-	}
-	return results
-}
-
+                                                                    
+                             
+                                                                     
+                                             
+                                                                                                    
+                                              
+                                          
+                                                      
+                                                        
+                                                              
+    
+   
+                                                   
+                                                        
+                                                                    
+    
+   
+  
+                                                                                             
+                                                                                   
+                                        
+                            
+                            
+                            
+                            
+                             
+                             
+                             
+                            
+                            
+                            
+                           
+                            
+                            
+                            
+                            
+                             
+                            
+                                 
+                            
+                            
+                            
+  
+                                      
+                                                   
+                             
+   
+  
+                                              
+                                                                                   
+                                    
+                                          
+                                                                                    
+  
+               
+ 
 // isPrintFormatCall 判斷呼叫是否為 print/eprint/format/printf/eprintf/sprintf（含 fmt. 前綴）
 // printf/eprintf/sprintf 為已廢棄的別名，仍保留以維持向後相容。
-func isPrintFormatCall(fnName string) bool {
-	switch fnName {
-	case "print", "eprint", "format", "printf", "eprintf", "sprintf",
-		"fmt.print", "fmt.eprint", "fmt.format",
-		"fmt.printf", "fmt.eprintf", "fmt.sprintf":
-		return true
-	}
-	return false
-}
-
+                                            
+                
+                                                                  
+                                          
+                                             
+             
+  
+             
+ 
 // checkPrintFormatInStmt 走訪敘述並驗證 print 格式字串，同時追蹤變數作用域。
-func checkPrintFormatInStmt(stmt parser.Statement, varTypes map[string]string, structFields map[string]map[string]string) []ValidateResult {
-	if stmt == nil {
-		return nil
-	}
-	switch s := stmt.(type) {
-	case *parser.ExpressionStatement:
-		if s.Expression != nil {
-			return checkPrintFormatInExpr(s.Expression, varTypes, structFields)
-		}
-	case *parser.LetStatement:
-		var results []ValidateResult
-		if s.Value != nil {
-			results = append(results, checkPrintFormatInExpr(s.Value, varTypes, structFields)...)
-			// 註冊變數：始終註冊變數名稱，即使型別無法推導。
-			// 型別未知時設為空字串 ""，validatePrintFormatCall 會跳過型別相容性檢查。
-			// 這避免了對已賦值變數誤報 "undefined variable"。
-			if s.Name != nil {
-				if s.Type != nil && s.Type.String() != "" {
-					varTypes[s.Name.Value] = s.Type.String()
-				} else if _, exists := varTypes[s.Name.Value]; !exists {
-					varTypes[s.Name.Value] = inferExprType(s.Value, varTypes, validationFuncTypes, "")
-				}
-			}
-			return results
-		}
-		// 僅型別宣告（無 = value）
-		if s.Name != nil && s.Type != nil {
-			varTypes[s.Name.Value] = s.Type.String()
-		}
-	case *parser.MultiAssignStatement:
-		if s.Value != nil {
-			var results []ValidateResult
-			results = append(results, checkPrintFormatInExpr(s.Value, varTypes, structFields)...)
-			// 註冊所有賦值目標變數名稱
-			for _, target := range s.Targets {
-				if ident, ok := target.(*parser.Identifier); ok {
-					if _, exists := varTypes[ident.Value]; !exists {
-						varTypes[ident.Value] = ""
-					}
-				}
-			}
-			return results
-		}
-	case *parser.FunctionDefinition:
-		// 為函數體建立本地作用域，包含參數與結果參數
-		localTypes := make(map[string]string)
-		for k, v := range varTypes {
-			localTypes[k] = v
-		}
-		for _, p := range s.Parameters {
-			if p.Type != nil {
-				localTypes[p.Name] = p.Type.String()
-			}
-		}
-		for _, r := range s.Results {
-			if r.Name != "" && r.Type != nil {
-				localTypes[r.Name] = r.Type.String()
-			}
-		}
-		if s.Body != nil {
-			var results []ValidateResult
-			for _, bs := range s.Body.Statements {
-				results = append(results, checkPrintFormatInStmt(bs, localTypes, structFields)...)
-			}
-			return results
-		}
-	case *parser.BlockStatement:
-		var results []ValidateResult
-		for _, bs := range s.Statements {
-			results = append(results, checkPrintFormatInStmt(bs, varTypes, structFields)...)
-		}
-		return results
-	case *parser.ForStatement:
-		var results []ValidateResult
-		// 註冊迴圈迭代變數（如 i <- [0..n): 中的 i）
-		if s.IterRange != nil && s.IterRange.Variable != "" {
-			if _, exists := varTypes[s.IterRange.Variable]; !exists {
-				varTypes[s.IterRange.Variable] = "i64"
-			}
-		}
-		// 註冊計次迴圈變數（{ } * N 語法）
-		if s.CountExpr != nil {
-			results = append(results, checkPrintFormatInExpr(s.CountExpr, varTypes, structFields)...)
-		}
-		if s.Init != nil {
-			results = append(results, checkPrintFormatInStmt(s.Init, varTypes, structFields)...)
-		}
-		if s.Condition != nil {
-			results = append(results, checkPrintFormatInExpr(s.Condition, varTypes, structFields)...)
-		}
-		if s.Update != nil {
-			results = append(results, checkPrintFormatInStmt(s.Update, varTypes, structFields)...)
-		}
-		if s.Body != nil {
-			for _, bs := range s.Body.Statements {
-				results = append(results, checkPrintFormatInStmt(bs, varTypes, structFields)...)
-			}
-		}
-		return results
-	case *parser.ReturnStatement:
-		if s.ReturnValue != nil {
-			return checkPrintFormatInExpr(s.ReturnValue, varTypes, structFields)
-		}
-	}
-	return nil
-}
-
+                                                                                                                                            
+                 
+            
+  
+                          
+                                  
+                          
+                                                                      
+   
+                           
+                              
+                     
+                                                                                        
+                                                                           
+                                                                                                   
+                                                                  
+                     
+                                               
+                                             
+                                                            
+                                                                                       
+     
+    
+                 
+   
+                                     
+                                     
+                                           
+   
+                                   
+                     
+                               
+                                                                                        
+                                          
+                                     
+                                                     
+                                                     
+                                
+      
+     
+    
+                 
+   
+                                 
+                                                                    
+                                       
+                              
+                    
+   
+                                  
+                     
+                                        
+    
+   
+                               
+                                     
+                                        
+    
+   
+                    
+                               
+                                         
+                                                                                      
+    
+                 
+   
+                             
+                              
+                                   
+                                                                                   
+   
+                
+                           
+                              
+                                                            
+                                                       
+                                                            
+                                          
+    
+   
+                                                 
+                         
+                                                                                            
+   
+                    
+                                                                                       
+   
+                         
+                                                                                            
+   
+                      
+                                                                                         
+   
+                    
+                                         
+                                                                                    
+    
+   
+                
+                              
+                           
+                                                                       
+   
+  
+           
+ 
 // checkPrintFormatInExpr 走訪表達式並驗證 print 格式字串。
-func checkPrintFormatInExpr(expr parser.Expression, varTypes map[string]string, structFields map[string]map[string]string) []ValidateResult {
-	if expr == nil {
-		return nil
-	}
-	var results []ValidateResult
-	switch e := expr.(type) {
-	case *parser.CallExpression:
-		// 識別 print/printf/eprint/eprintf/sprintf 呼叫
-		if ident, ok := e.Function.(*parser.Identifier); ok {
-			if isPrintFormatCall(ident.Value) && len(e.Arguments) > 0 {
-				results = append(results, validatePrintFormatCall(e, varTypes, structFields)...)
-			}
-		}
-		// 遞迴檢查引數中的巢狀呼叫
-		for _, arg := range e.Arguments {
-			results = append(results, checkPrintFormatInExpr(arg, varTypes, structFields)...)
-		}
-	case *parser.InfixExpression:
-		if e.Left != nil {
-			results = append(results, checkPrintFormatInExpr(e.Left, varTypes, structFields)...)
-		}
-		if e.Right != nil {
-			results = append(results, checkPrintFormatInExpr(e.Right, varTypes, structFields)...)
-		}
-	case *parser.PrefixExpression:
-		if e.Right != nil {
-			results = append(results, checkPrintFormatInExpr(e.Right, varTypes, structFields)...)
-		}
-	case *parser.GroupedExpression:
-		if e.Expression != nil {
-			results = append(results, checkPrintFormatInExpr(e.Expression, varTypes, structFields)...)
-		}
-	case *parser.IfExpression:
-		if e.Condition != nil {
-			results = append(results, checkPrintFormatInExpr(e.Condition, varTypes, structFields)...)
-		}
-		if e.Consequence != nil {
-			for _, is := range e.Consequence.Statements {
-				results = append(results, checkPrintFormatInStmt(is, varTypes, structFields)...)
-			}
-		}
-		if e.Alternative != nil {
-			for _, is := range e.Alternative.Statements {
-				results = append(results, checkPrintFormatInStmt(is, varTypes, structFields)...)
-			}
-		}
-	case *parser.IndexExpression:
-		if e.Left != nil {
-			results = append(results, checkPrintFormatInExpr(e.Left, varTypes, structFields)...)
-		}
-		if e.Index != nil {
-			results = append(results, checkPrintFormatInExpr(e.Index, varTypes, structFields)...)
-		}
-	case *parser.AssignExpression:
-		if e.Value != nil {
-			results = append(results, checkPrintFormatInExpr(e.Value, varTypes, structFields)...)
-		}
-	case *parser.ConditionalExpression:
-		if e.Condition != nil {
-			results = append(results, checkPrintFormatInExpr(e.Condition, varTypes, structFields)...)
-		}
-		if e.Consequence != nil {
-			results = append(results, checkPrintFormatInExpr(e.Consequence, varTypes, structFields)...)
-		}
-		if e.Alternative != nil {
-			results = append(results, checkPrintFormatInExpr(e.Alternative, varTypes, structFields)...)
-		}
-	case *parser.ArrayLiteral:
-		for _, elem := range e.Elements {
-			results = append(results, checkPrintFormatInExpr(elem, varTypes, structFields)...)
-		}
-	case *parser.SliceLiteral:
-		for _, elem := range e.Elements {
-			results = append(results, checkPrintFormatInExpr(elem, varTypes, structFields)...)
-		}
-	case *parser.StructLiteral:
-		for _, f := range e.Fields {
-			if f.Value != nil {
-				results = append(results, checkPrintFormatInExpr(f.Value, varTypes, structFields)...)
-			}
-		}
-	case *parser.FunctionLiteral:
-		if e.Body != nil {
-			for _, is := range e.Body.Statements {
-				results = append(results, checkPrintFormatInStmt(is, varTypes, structFields)...)
-			}
-		}
-	}
-	return results
-}
-
+                                                                                                                                             
+                 
+            
+  
+                             
+                          
+                             
+                                                      
+                                                       
+                                                              
+                                                                                    
+    
+   
+                                         
+                                   
+                                                                                    
+   
+                              
+                    
+                                                                                       
+   
+                     
+                                                                                        
+   
+                               
+                     
+                                                                                        
+   
+                                
+                          
+                                                                                             
+   
+                           
+                         
+                                                                                            
+   
+                           
+                                                
+                                                                                    
+    
+   
+                           
+                                                
+                                                                                    
+    
+   
+                              
+                    
+                                                                                       
+   
+                     
+                                                                                        
+   
+                               
+                     
+                                                                                        
+   
+                                    
+                         
+                                                                                            
+   
+                           
+                                                                                              
+   
+                           
+                                                                                              
+   
+                           
+                                   
+                                                                                     
+   
+                           
+                                   
+                                                                                     
+   
+                            
+                              
+                      
+                                                                                         
+    
+   
+                              
+                    
+                                         
+                                                                                    
+    
+   
+  
+               
+ 
 // validatePrintFormatCall 驗證單個 print/printf/eprint/eprintf/sprintf 呼叫的格式字串。
 // 只驗證含 '{' 的具名格式字串；C-style printf('...%d...', args) 不含 '{' 時跳過，
 // 保留向後相容性。
-func validatePrintFormatCall(e *parser.CallExpression, varTypes map[string]string, structFields map[string]map[string]string) []ValidateResult {
-	strLit, ok := e.Arguments[0].(*parser.StringLiteral)
-	if !ok {
-		// 第一個引數不是字串字面量：無法在編譯期檢查，跳過
-		return nil
-	}
-	// 只對含 '{' 的格式字串進行具名格式驗證。
-	// 不含 '{' 的字串視為 C-style 格式（如 printf('%d', x)），不做驗證。
-	if !strings.Contains(strLit.Value, "{") {
-		return nil
-	}
-	segments, err := parser.ParseFormatString(strLit.Value)
-	if err != nil {
-		return []ValidateResult{{
-			Line:    strLit.Token.Line,
-			Column:  strLit.Token.Column,
-			Message: fmt.Sprintf("format string error: %v", err),
-		}}
-	}
-	var results []ValidateResult
-	for _, seg := range segments {
-		if seg.Field == nil {
-			continue
-		}
-		field := seg.Field
-		// 1. 檢查變數是否在作用域內
-		// 支援點表達式欄位名（如 content.len）：先查全名，再查基礎變數名
-		varType, inScope := varTypes[field.Name]
-		if !inScope {
-			if dotIdx := strings.Index(field.Name, "."); dotIdx > 0 {
-				baseName := field.Name[:dotIdx]
-				varType, inScope = varTypes[baseName]
-			}
-		}
-		if !inScope {
-			results = append(results, ValidateResult{
-				Line:    strLit.Token.Line,
-				Column:  strLit.Token.Column,
-				Message: fmt.Sprintf("undefined variable '%s' in format string", field.Name),
-			})
-			continue
-		}
-		// 型別未知（推導失敗）：跳過型別相容性檢查，由 LLVM 端驗證
-		if varType == "" {
-			continue
-		}
-		// 2. 規格已由 ParseFormatString 解析；若 Parsed 為 nil 表示無規格
-		if field.Parsed == nil {
-			continue
-		}
-		// 3. 檢查規格類型字元與變數型別相容性
-		if msg := checkFormatSpecTypeCompat(field.Parsed.Type, varType, field.Spec); msg != "" {
-			results = append(results, ValidateResult{
-				Line:    strLit.Token.Line,
-				Column:  strLit.Token.Column,
-				Message: msg,
-			})
-		}
-	}
-	return results
-}
-
+                                                                                                                                                
+                                                     
+         
+                                                                             
+            
+  
+                                                            
+                                                                                        
+                                          
+            
+  
+                                                        
+                
+                           
+                              
+                                
+                                                        
+    
+  
+                             
+                               
+                       
+           
+   
+                    
+                                         
+                                                                                            
+                                          
+               
+                                                            
+                                   
+                                         
+    
+   
+               
+                                            
+                               
+                                 
+                                                                                 
+     
+           
+   
+                                                                                      
+                    
+           
+   
+                                                                                  
+                          
+           
+   
+                                                        
+                                                                                          
+                                            
+                               
+                                 
+                 
+     
+   
+  
+               
+ 
 // checkFormatSpecTypeCompat 檢查規格類型字元與變數型別是否相容。
 // 回傳非空字串表示錯誤訊息。
-func checkFormatSpecTypeCompat(typeChar byte, varType, specStr string) string {
-	if typeChar == 0 {
-		// 無類型字元：任何變數型別皆可
-		return ""
-	}
-	switch typeChar {
-	case 'b', 'c', 'd', 'o', 'x', 'X':
-		// 整數類型
-		if !isIntegerTypeStr(varType) {
-			return fmt.Sprintf("format spec '%c' requires integer type, got '%s' (spec: %q)", typeChar, varType, specStr)
-		}
-	case 'e', 'E', 'f', 'F', 'g', 'G', '%':
-		// 浮點數類型
-		if !isFloatTypeStr(varType) {
-			return fmt.Sprintf("format spec '%c' requires float type, got '%s' (spec: %q)", typeChar, varType, specStr)
-		}
-	case 's':
-		// 字串或布林值
-		if varType != "str" && varType != "bool" && !isIntegerTypeStr(varType) {
-			return fmt.Sprintf("format spec 's' requires str/bool/integer type, got '%s' (spec: %q)", varType, specStr)
-		}
-	}
-	return ""
-}
-
+                                                                               
+                   
+                                               
+           
+  
+                  
+                                   
+                 
+                                 
+                                                                                                                
+   
+                                        
+                    
+                               
+                                                                                                              
+   
+          
+                       
+                                                                          
+                                                                                                              
+   
+  
+          
+ 
 // isIntegerTypeStr 判斷型別字串是否為整數類型
-func isIntegerTypeStr(t string) bool {
-	switch t {
-	case "i8", "i16", "i32", "i64", "u8", "u16", "u32", "u64", "byte", "char":
-		return true
-	}
-	return false
-}
-
+                                      
+           
+                                                                           
+             
+  
+             
+ 
 // isFloatTypeStr 判斷型別字串是否為浮點數類型
-func isFloatTypeStr(t string) bool {
-	return t == "f32" || t == "f64"
-}
-
+                                    
+                                
+ 
 // collectModuleNames returns all known module ShortNames (from #use + auto-imported std modules).
-func collectModuleNames(program *parser.Program) []string {
-	seen := make(map[string]bool)
-	var names []string
-
-	for _, info := range knownStdModules() {
-		if !seen[info.ShortName] {
-			seen[info.ShortName] = true
-			names = append(names, info.ShortName)
-		}
-	}
-
-	for _, stmt := range program.Statements {
-		if use, ok := stmt.(*parser.UseStatement); ok {
-			short := moduleShortName(use.Path)
-			if !seen[short] {
-				seen[short] = true
-				names = append(names, short)
-			}
-		}
-		if _, ok := stmt.(*parser.ExportStatement); ok {
-			continue
-		}
-	}
-
-	return names
-}
-
-// ModuleExport holds an exported name and its string value from a module file.
-type ModuleExport struct {
-	Name  string
-	Value string
-	Type  string
-}
-
+                                                           
+                              
+                   
+                                         
+                            
+                              
+                                        
+   
+  
+                                          
+                                                 
+                                     
+                    
+                      
+                                
+    
+   
+                                                  
+           
+   
+  
+             
+ 
+// checker.ModuleExport holds an exported name and its string value from a module file.
+                          
+             
+             
+             
+ 
 // Per-module export cache: parsing a module's .no file to extract its exports
 // is expensive, and the std modules are identical across all vet calls in a
 // process. Cache the parsed exports keyed by module name.
-var (
-	moduleExportsCacheMu sync.Mutex
-	moduleExportsCache   = make(map[string][]ModuleExport)
-)
-
-// GetModuleExports resolves module .no files and extracts their top-level
+     
+                                
+                                                       
+ 
+// checker.GetModuleExports resolves module .no files and extracts their top-level
 // LetStatement names with values (for hover) and function names.
 // Results are cached per-module-name for the lifetime of the process.
-func GetModuleExports(moduleNames []string) []ModuleExport {
-	seen := make(map[string]bool)
-	var exports []ModuleExport
-
-	for _, m := range moduleNames {
-		// Fast path: use cached exports for this module name.
-		moduleExportsCacheMu.Lock()
-		cached, ok := moduleExportsCache[m]
-		moduleExportsCacheMu.Unlock()
-
-		if !ok {
-			// Parse the module once and cache its exports.
-			cached = parseModuleExports(m)
-			moduleExportsCacheMu.Lock()
-			moduleExportsCache[m] = cached
-			moduleExportsCacheMu.Unlock()
-		}
-
-		for _, e := range cached {
-			if seen[e.Name] {
-				continue
-			}
-			seen[e.Name] = true
-			exports = append(exports, e)
-		}
-	}
-
-	return exports
-}
-
+                                                            
+                              
+                           
+                                
+                                                        
+                             
+                                     
+                               
+          
+                                                  
+                                 
+                              
+                                 
+                                
+   
+                            
+                    
+            
+    
+                      
+                               
+   
+  
+               
+ 
 // parseModuleExports resolves a single module's .no file and extracts its
 // top-level exports (constants, functions, externs).
 // 只從內嵌 StdFS 讀取,支援單二進制分發。
-func parseModuleExports(moduleName string) []ModuleExport {
-	for _, info := range knownStdModules() {
-		if info.ShortPath == moduleName || info.FullPath == moduleName || info.ShortName == moduleName {
-			embedPath := "std/" + info.FullPath + ".no"
-			if data, err := nolang.StdFS.ReadFile(embedPath); err == nil {
-				return parseModuleExportsFromSource(data)
-			}
-		}
-	}
-	return nil
-}
-
+                                                           
+                                         
+                                                                                                  
+                                              
+                                                                 
+                                             
+    
+   
+  
+           
+ 
 // parseModuleExportsFromSource 從原始碼位元組解析模組導出列表。
 // 被 parseModuleExports 調用，支援磁碟和內嵌 StdFS 兩種來源。
-func parseModuleExportsFromSource(source []byte) []ModuleExport {
-	l := lexer.New(string(source))
-	p := parser.New(l)
-	modProg := p.ParseProgram()
-	if len(p.Errors()) > 0 {
-		return nil
-	}
-
-	var exports []ModuleExport
-	for _, stmt := range modProg.Statements {
-		if ls, ok := stmt.(*parser.LetStatement); ok && ls.Name != nil {
-			val := moduleExprValue(ls.Value)
-			typeStr := ""
-			if ls.Type != nil {
-				typeStr = ls.Type.String()
-			}
-			exports = append(exports, ModuleExport{Name: ls.Name.Value, Value: val, Type: typeStr})
-		}
-		if fd, ok := stmt.(*parser.FunctionDefinition); ok {
-			exports = append(exports, ModuleExport{Name: fd.Name, Value: ""})
-		}
-		if es, ok := stmt.(*parser.ExternStatement); ok && es.Name != nil {
-			// Skip private FFI declarations (underscore-prefixed)
-			if strings.HasPrefix(es.Name.Value, "_") {
-				continue
-			}
-			exports = append(exports, ModuleExport{Name: es.Name.Value, Value: ""})
-		}
-	}
-	return exports
-}
-
+                                                                 
+                               
+                   
+                            
+                         
+            
+  
+                           
+                                          
+                                                                  
+                                   
+                
+                      
+                              
+    
+                                                                                          
+   
+                                                      
+                                                                    
+   
+                                                                     
+                                                         
+                                             
+            
+    
+                                                                          
+   
+  
+               
+ 
 // moduleExprValue extracts the string representation of a module-level expression value.
-func moduleExprValue(expr parser.Expression) string {
-	if expr == nil {
-		return ""
-	}
-	switch e := expr.(type) {
-	case *parser.IntegerLiteral:
-		// Use the token literal so values that overflow int64 (e.g. 18446744073709551615)
-		// display correctly instead of showing the wrapped int64 value (e.g. -1).
-		if e.Token.Literal != "" {
-			return e.Token.Literal
-		}
-		return fmt.Sprintf("%d", e.Value)
-	case *parser.FloatLiteral:
-		if e.Raw != "" {
-			return e.Raw
-		}
-		return fmt.Sprintf("%g", e.Value)
-	case *parser.StringLiteral:
-		return "\"" + e.Value + "\""
-	case *parser.BooleanLiteral:
-		if e.Value {
-			return "true"
-		}
-		return "false"
-	case *parser.NilLiteral:
-		return "nil"
-	default:
-		return ""
-	}
-}
-
+                                                     
+                 
+           
+  
+                          
+                             
+                                                                                    
+                                                                            
+                            
+                         
+   
+                                   
+                           
+                  
+               
+   
+                                   
+                            
+                              
+                             
+              
+                
+   
+                
+                         
+              
+         
+           
+  
+ 
 // collectModuleExports tries to resolve each module's .no file and extract its
 // top-level LetStatement names (constants) and function names.
-func collectModuleExports(program *parser.Program, moduleNames []string) []string {
-	exports := GetModuleExports(moduleNames)
-	var names []string
-	for _, e := range exports {
-		names = append(names, e.Name)
-	}
-	return names
-}
-
+                                                                                   
+                                         
+                   
+                            
+                               
+  
+             
+ 
 // resolveModulePath tries to locate a .no file for the given module name.
-// It consults the knownStdModules() lookup table, matching by ShortPath
+// It consults the checker.KnownStdModules() lookup table, matching by ShortPath
 // (which omits the redundant directory name when dir==file), then uses
 // FullPath to resolve the actual file.
-func resolveModulePath(moduleName string) string {
-	// 1. Consult knownStdModules lookup table.
-	//    Match by ShortPath (or FullPath as fallback), resolve via FullPath.
-	//    - "math"   → FullPath: "math"      → std/math.no
-	//    - "net"    → FullPath: "net/net"   → std/net/net.no
-	//    - "client" → FullPath: "net/client"→ std/net/client.no
-	//    - "hmac"   → FullPath: "hash/hmac" → std/hash/hmac.no
-	for _, info := range knownStdModules() {
-		if info.ShortPath == moduleName || info.FullPath == moduleName || info.ShortName == moduleName {
-			stdFile := GetStdSourceFile(info.FullPath)
-			if _, err := os.Stat(stdFile); err == nil {
-				return stdFile
-			}
-		}
-	}
-
-	// 2. Try direct path via GetStdSourceDir (respects NOLANG_STD_SRC env var)
-	stdFile := GetStdSourceFile(moduleName)
-	if _, err := os.Stat(stdFile); err == nil {
-		return stdFile
-	}
-
-	// 3. Fallback: try relative to CWD
-	candidates := []string{
-		"std/" + moduleName + ".no",
-		"src/std/" + moduleName + ".no",
-	}
-
-	for _, c := range candidates {
-		if _, err := os.Stat(c); err == nil {
-			return c
-		}
-	}
-
-	return ""
-}
-
-// ResolveStdModulePath is the exported version of resolveModulePath,
+                                                  
+                                            
+                                                                          
+                                                           
+                                                              
+                                                                 
+                                                                
+                                         
+                                                                                                  
+                                             
+                                              
+                  
+    
+   
+  
+                                                                            
+                                        
+                                            
+                
+  
+                                    
+                        
+                              
+                                  
+  
+                               
+                                       
+           
+   
+  
+          
+ 
+// checker.ResolveStdModulePath is the exported version of resolveModulePath,
 // for use by the LSP server to locate std module source files.
-func ResolveStdModulePath(moduleName string) string {
-	return resolveModulePath(moduleName)
-}
-
-func checkUndefinedVarsInStmt(stmt parser.Statement, definedVars, funcNames map[string]bool) []ValidateResult {
-	var results []ValidateResult
-	switch s := stmt.(type) {
-	case *parser.ExpressionStatement:
-		if s.Expression != nil {
-			results = append(results, checkUndefinedVarsInExpr(s.Expression, definedVars, funcNames, false)...)
-		}
-	case *parser.LetStatement:
-		// Name is a definition — register it so it can be referenced later
-		if s.Value != nil {
-			results = append(results, checkUndefinedVarsInExpr(s.Value, definedVars, funcNames, false)...)
-		}
-		if s.Name != nil {
-			definedVars[s.Name.Value] = true
-		}
-	case *parser.MultiAssignStatement:
-		// Register all left-side variables as defined
-		for _, target := range s.Targets {
-			if ident, ok := target.(*parser.Identifier); ok {
-				definedVars[ident.Value] = true
-			}
-		}
-		if s.Value != nil {
-			results = append(results, checkUndefinedVarsInExpr(s.Value, definedVars, funcNames, false)...)
-		}
-	case *parser.FunctionDefinition:
-		// Parameters, generic params, and result params are defined vars at BOTH
-		// the function scope (localDefs) AND the outer scope (definedVars), so
-		// result/output parameters like 'ek' are visible at module level.
-		localDefs := make(map[string]bool)
-		for k, v := range definedVars {
-			localDefs[k] = v
-		}
-		for _, p := range s.Parameters {
-			definedVars[p.Name] = true
-			localDefs[p.Name] = true
-		}
-		for _, gp := range s.GenericParams {
-			definedVars[gp.Value] = true
-			localDefs[gp.Value] = true
-		}
-		for _, r := range s.Results {
-			if r.Name != "" {
-				definedVars[r.Name] = true
-				localDefs[r.Name] = true
-			}
-		}
-		if s.Body != nil {
-			for _, bodyStmt := range s.Body.Statements {
-				results = append(results, checkUndefinedVarsInStmt(bodyStmt, localDefs, funcNames)...)
-			}
-		}
-	case *parser.BlockStatement:
-		for _, bodyStmt := range s.Statements {
-			results = append(results, checkUndefinedVarsInStmt(bodyStmt, definedVars, funcNames)...)
-		}
-	case *parser.ForStatement:
-		localDefs := make(map[string]bool)
-		for k, v := range definedVars {
-			localDefs[k] = v
-		}
-		if s.IterRange != nil && s.IterRange.Variable != "" {
-			localDefs[s.IterRange.Variable] = true
-		}
-		// Labeled-conditional wrapper: `#2 val: { ... }` is encoded by
-		// parseLabeledStatement as ForStatement{Condition: *IfExpression,
-		// Body: Consequence, IsCondWrapper: true}. Skip the synthetic
-		// Condition check and let the Body be processed instead.
-		// 直接讀取 IsCondWrapper 欄位（parser 在合成位置顯式設置），
-		// 避免依賴 `s.Body == ifExpr.Consequence` 指標相等啟發式。
-		if s.IsCondWrapper {
-			if ifExpr, ok := s.Condition.(*parser.IfExpression); ok && ifExpr.Condition != nil {
-				if id, ok := ifExpr.Condition.(*parser.Identifier); ok {
-					localDefs[id.Value] = true
-				}
-			}
-		} else {
-			if s.Init != nil {
-				results = append(results, checkUndefinedVarsInStmt(s.Init, localDefs, funcNames)...)
-			}
-			if s.Condition != nil {
-				results = append(results, checkUndefinedVarsInExpr(s.Condition, localDefs, funcNames, false)...)
-			}
-			if s.Update != nil {
-				results = append(results, checkUndefinedVarsInStmt(s.Update, localDefs, funcNames)...)
-			}
-		}
-		if s.Body != nil {
-			for _, bodyStmt := range s.Body.Statements {
-				results = append(results, checkUndefinedVarsInStmt(bodyStmt, localDefs, funcNames)...)
-			}
-		}
-	case *parser.ReturnStatement:
-		if s.ReturnValue != nil {
-			results = append(results, checkUndefinedVarsInExpr(s.ReturnValue, definedVars, funcNames, false)...)
-		}
-	case *parser.ExternStatement:
-		if s.Name != nil {
-			definedVars[s.Name.Value] = true
-			funcNames[s.Name.Value] = true
-		}
-	}
-	return results
-}
-
-func checkUndefinedVarsInExpr(expr parser.Expression, definedVars, funcNames map[string]bool, isFuncCallArg bool) []ValidateResult {
-	var results []ValidateResult
-	if expr == nil {
-		return nil
-	}
-	switch e := expr.(type) {
-	case *parser.Identifier:
-		// Skip function call names (checked via builtin + funcNames)
-		if !definedVars[e.Value] {
-			// Check if it's a known function or builtin
-			if funcNames[e.Value] {
-				return nil
-			}
-			if builtin.FindBuiltinMethod(e.Value) != nil {
-				return nil
-			}
-			// Option constructors: val, err, ok are not real functions
-			// nil/it are option-pattern keywords and match-binding variables
-			if e.Value == "val" || e.Value == "err" || e.Value == "ok" ||
-				e.Value == "nil" || e.Value == "it" {
-				return nil
-			}
-			// Special hint for 'self' (.) used outside struct methods
-			if e.Value == "self" {
-				results = append(results, ValidateResult{
-					Line:    e.Token.Line,
-					Column:  e.Token.Column,
-					Message: "'self' (.) can only be used inside struct methods; if you meant the match value, use 'it'",
-				})
-			} else {
-				results = append(results, ValidateResult{
-					Line:    e.Token.Line,
-					Column:  e.Token.Column,
-					Message: fmt.Sprintf("'%s' is not defined", e.Value),
-				})
-			}
-		}
-	case *parser.CallExpression:
-		// Function name: check as call target, not variable reference
-		if e.Function != nil {
-			// Don't pass isFuncCallArg=true for the function — the function name
-			// is checked by the Identifier case's builtin/funcName check
-			results = append(results, checkUndefinedVarsInExpr(e.Function, definedVars, funcNames, false)...)
-		}
-		for _, arg := range e.Arguments {
-			results = append(results, checkUndefinedVarsInExpr(arg, definedVars, funcNames, true)...)
-		}
-	case *parser.DotExpression:
-		// Receiver is a module/struct/type name, Property is a method/field name.
-		// Neither is a plain variable reference — skip entirely.
-	case *parser.InfixExpression:
-		if e.Left != nil {
-			results = append(results, checkUndefinedVarsInExpr(e.Left, definedVars, funcNames, false)...)
-		}
-		if e.Right != nil {
-			results = append(results, checkUndefinedVarsInExpr(e.Right, definedVars, funcNames, false)...)
-		}
-	case *parser.PrefixExpression:
-		if e.Right != nil {
-			results = append(results, checkUndefinedVarsInExpr(e.Right, definedVars, funcNames, false)...)
-		}
-	case *parser.GroupedExpression:
-		if e.Expression != nil {
-			results = append(results, checkUndefinedVarsInExpr(e.Expression, definedVars, funcNames, false)...)
-		}
-	case *parser.IfExpression:
-		if e.Condition != nil {
-			results = append(results, checkUndefinedVarsInExpr(e.Condition, definedVars, funcNames, false)...)
-		}
-		if e.Consequence != nil {
-			for _, innerStmt := range e.Consequence.Statements {
-				results = append(results, checkUndefinedVarsInStmt(innerStmt, definedVars, funcNames)...)
-			}
-		}
-		if e.Alternative != nil {
-			for _, innerStmt := range e.Alternative.Statements {
-				results = append(results, checkUndefinedVarsInStmt(innerStmt, definedVars, funcNames)...)
-			}
-		}
-	case *parser.IndexExpression:
-		if e.Left != nil {
-			results = append(results, checkUndefinedVarsInExpr(e.Left, definedVars, funcNames, false)...)
-		}
-		if e.Index != nil {
-			results = append(results, checkUndefinedVarsInExpr(e.Index, definedVars, funcNames, false)...)
-		}
-	case *parser.SliceExpression:
-		if e.Left != nil {
-			results = append(results, checkUndefinedVarsInExpr(e.Left, definedVars, funcNames, false)...)
-		}
-		if e.Range != nil {
-			if e.Range.Start != nil {
-				results = append(results, checkUndefinedVarsInExpr(e.Range.Start, definedVars, funcNames, false)...)
-			}
-			if e.Range.End != nil {
-				results = append(results, checkUndefinedVarsInExpr(e.Range.End, definedVars, funcNames, false)...)
-			}
-		}
-	case *parser.AssignExpression:
-		// Left side is a target, not a reference — don't check it
-		if e.Value != nil {
-			results = append(results, checkUndefinedVarsInExpr(e.Value, definedVars, funcNames, false)...)
-		}
-	case *parser.ConditionalExpression:
-		if e.Condition != nil {
-			results = append(results, checkUndefinedVarsInExpr(e.Condition, definedVars, funcNames, false)...)
-		}
-		if e.Consequence != nil {
-			results = append(results, checkUndefinedVarsInExpr(e.Consequence, definedVars, funcNames, false)...)
-		}
-		if e.Alternative != nil {
-			results = append(results, checkUndefinedVarsInExpr(e.Alternative, definedVars, funcNames, false)...)
-		}
-	case *parser.ArrayLiteral:
-		for _, elem := range e.Elements {
-			results = append(results, checkUndefinedVarsInExpr(elem, definedVars, funcNames, false)...)
-		}
-	case *parser.SliceLiteral:
-		for _, elem := range e.Elements {
-			results = append(results, checkUndefinedVarsInExpr(elem, definedVars, funcNames, false)...)
-		}
-	case *parser.StructLiteral:
-		for _, f := range e.Fields {
-			if f.Value != nil {
-				results = append(results, checkUndefinedVarsInExpr(f.Value, definedVars, funcNames, false)...)
-			}
-		}
-	case *parser.FunctionLiteral:
-		if e.Body != nil {
-			for _, innerStmt := range e.Body.Statements {
-				results = append(results, checkUndefinedVarsInStmt(innerStmt, definedVars, funcNames)...)
-			}
-		}
-	}
-	return results
-}
-
+                                                     
+                                     
+ 
+                                                                                                               
+                             
+                          
+                                  
+                          
+                                                                                                      
+   
+                           
+                                                                       
+                     
+                                                                                                 
+   
+                    
+                                   
+   
+                                   
+                                                
+                                    
+                                                    
+                                   
+    
+   
+                     
+                                                                                                 
+   
+                                 
+                                                                           
+                                                                         
+                                                                    
+                                    
+                                 
+                   
+   
+                                  
+                             
+                           
+   
+                                      
+                               
+                             
+   
+                               
+                    
+                              
+                            
+    
+   
+                    
+                                               
+                                                                                          
+    
+   
+                             
+                                         
+                                                                                           
+   
+                           
+                                    
+                                 
+                   
+   
+                                                       
+                                         
+   
+                                                                 
+                                                                    
+                                                                
+                                                           
+                                                                                 
+                                                                         
+                      
+                                                                                       
+                                                            
+                               
+     
+    
+          
+                     
+                                                                                        
+    
+                          
+                                                                                                    
+    
+                       
+                                                                                          
+    
+   
+                    
+                                               
+                                                                                          
+    
+   
+                              
+                           
+                                                                                                       
+   
+                              
+                    
+                                   
+                                 
+   
+  
+               
+ 
+                                                                                                                                    
+                             
+                 
+            
+  
+                          
+                         
+                                                               
+                            
+                                               
+                          
+              
+    
+                                                 
+              
+    
+                                                              
+                                                                    
+                                                                
+                                         
+              
+    
+                                                             
+                         
+                                             
+                           
+                             
+                                                                                                          
+      
+           
+                                             
+                           
+                             
+                                                          
+      
+    
+   
+                             
+                                                                
+                        
+                                                                          
+                                                                
+                                                                                                    
+   
+                                   
+                                                                                            
+   
+                            
+                                                                            
+                                                             
+                              
+                    
+                                                                                                
+   
+                     
+                                                                                                 
+   
+                               
+                     
+                                                                                                 
+   
+                                
+                          
+                                                                                                      
+   
+                           
+                         
+                                                                                                     
+   
+                           
+                                                       
+                                                                                             
+    
+   
+                           
+                                                       
+                                                                                             
+    
+   
+                              
+                    
+                                                                                                
+   
+                     
+                                                                                                 
+   
+                              
+                    
+                                                                                                
+   
+                     
+                            
+                                                                                                        
+    
+                          
+                                                                                                      
+    
+   
+                               
+                                                              
+                     
+                                                                                                 
+   
+                                    
+                         
+                                                                                                     
+   
+                           
+                                                                                                       
+   
+                           
+                                                                                                       
+   
+                           
+                                   
+                                                                                              
+   
+                           
+                                   
+                                                                                              
+   
+                            
+                              
+                      
+                                                                                                  
+    
+   
+                              
+                    
+                                                
+                                                                                             
+    
+   
+  
+               
+ 
 // validateStmtTypes 檢查單個語句的型別問題
-func validateStmtTypes(stmt parser.Statement, funcNames map[string]bool, funcTypes map[string]string, selfType string, varTypes map[string]string) []ValidateResult {
-	var results []ValidateResult
-
-	switch s := stmt.(type) {
-	case *parser.FunctionDefinition:
-		// 進入函式體，用新的作用域
-		localTypes := make(map[string]string)
-		// 參數加入作用域
-		for _, p := range s.Parameters {
-			if p.Type != nil {
-				localTypes[p.Name] = p.Type.String()
-			}
-		}
-		// 結果參數加入作用域
-		for _, p := range s.Results {
-			if p.Type != nil {
-				localTypes[p.Name] = p.Type.String()
-			}
-		}
-		// 進入方法體時，更新 selfType
-		methodSelfType := selfType
-		if len(s.Parameters) > 0 && s.Parameters[0].Name == "self" {
-			methodSelfType = s.Parameters[0].Type.String()
-		}
-		if s.Body != nil {
-			for _, bStmt := range s.Body.Statements {
-				errs := validateStmtTypes(bStmt, funcNames, funcTypes, methodSelfType, localTypes)
-				results = append(results, errs...)
-			}
-		}
-
-	case *parser.LetStatement:
-		// Skip compiler-injected synthetic let statements (e.g. match arm `it` bindings)
-		if s.IsSynthetic {
-			// Still record its declared type so later synthetic references can resolve it
-			if s.Type != nil && s.Type.String() != "" {
-				varTypes[s.Name.Value] = s.Type.String()
-			}
-			break
-		}
-		// 檢查是否對函式名稱賦值
-		if funcNames[s.Name.Value] {
-			results = append(results, ValidateResult{
-				Line:    s.Token.Line,
-				Column:  s.Token.Column,
-				Message: fmt.Sprintf("cannot reassign function name '%s'", s.Name.Value),
-			})
-		}
-
-		// 檢查 nil 賦值到非可空變數
-		if _, isNil := s.Value.(*parser.NilLiteral); isNil {
-			// 有顯式型別註記
-			if s.Type != nil && s.Type.String() != "" && s.Type.String() != s.Name.Value {
-				_, isOption := s.Type.(*parser.NullableType)
-				if !isOption {
-					results = append(results, ValidateResult{
-						Line:    s.Token.Line,
-						Column:  s.Token.Column,
-						Message: fmt.Sprintf("cannot assign nil to non-option variable '%s'", s.Name.Value),
-					})
-				}
-				// 記錄型別
-				varTypes[s.Name.Value] = s.Type.String()
-				break
-			}
-			// 無顯式型別，檢查是否已有型別
-			if existingType, exists := varTypes[s.Name.Value]; exists {
-				if existingType != "" && !strings.HasPrefix(existingType, "?") {
-					results = append(results, ValidateResult{
-						Line:    s.Token.Line,
-						Column:  s.Token.Column,
-						Message: fmt.Sprintf("cannot assign nil to non-option variable '%s'", s.Name.Value),
-					})
-				}
-				break
-			}
-			// 新變數從 nil 推斷不出型別
-			results = append(results, ValidateResult{
-				Line:    s.Token.Line,
-				Column:  s.Token.Column,
-				Message: fmt.Sprintf("cannot infer type from nil for variable '%s'", s.Name.Value),
-			})
-			break
-		}
-
-		// 記錄型別
-		if s.Type != nil && s.Type.String() != "" && s.Type.String() != s.Name.Value {
-			// 只有新變數才記錄顯式型別；已存在的變數（如函式結果參數）不覆寫
-			if _, exists := varTypes[s.Name.Value]; !exists {
-				varTypes[s.Name.Value] = s.Type.String()
-			}
-		}
-		if s.Value != nil {
-			// val(x) 作為構造器已廢棄：應改用 ok(x) 或隱式賦值 val = n
-			if call, ok := s.Value.(*parser.CallExpression); ok {
-				if cid, ok2 := call.Function.(*parser.Identifier); ok2 {
-					if cid.Value == "val" {
-						callPos := call.Pos()
-						results = append(results, ValidateResult{
-							Line:    callPos.Line,
-							Column:  callPos.Column,
-							Message: "val() constructor is deprecated; use ok(x) for explicit construction or `name = expr` for implicit assignment",
-						})
-					}
-				}
-			}
-			// 型別推斷
-			inferredType := inferExprType(s.Value, varTypes, funcTypes, selfType)
-			if inferredType != "" {
-				if existingType, exists := varTypes[s.Name.Value]; exists {
-					// 變數已有型別，檢查是否相容
-					// 集合字面量 (ArrayLiteral/SliceLiteral) 可初始化陣列變數，跳過型別不匹配檢查
-					_, isSlice := s.Value.(*parser.SliceLiteral)
-					_, isArrayLit := s.Value.(*parser.ArrayLiteral)
-					isArrayAssign := (isSlice || isArrayLit) && strings.HasPrefix(existingType, "[")
-					// Per-element type checking for array/slice literals:
-					// Instead of only skipping the overall type check, verify each
-					// element is compatible with the declared element type.
-					if isArrayAssign {
-						elemType := extractArrayElemType(existingType)
-						if elemType != "" {
-							var elements []parser.Expression
-							if isSlice {
-								elements = s.Value.(*parser.SliceLiteral).Elements
-							} else {
-								elements = s.Value.(*parser.ArrayLiteral).Elements
-							}
-							for _, elem := range elements {
-								elemInferred := inferExprType(elem, varTypes, funcTypes, selfType)
-								if elemInferred != "" && elemInferred != elemType &&
-									!isArgTypeCompatible(elemType, elemInferred, elem) {
-									results = append(results, ValidateResult{
-										Line:    s.Token.Line,
-										Column:  s.Token.Column,
-										Message: fmt.Sprintf("cannot assign %s value to %s element in array '%s'%s", elemInferred, elemType, s.Name.Value, narrowingHint(elemInferred, elemType)),
-									})
-								}
-							}
-						}
-					}
-					// Option 建構子：err(x) / ok(x) / nil 可指派給 ?T 變數
-					// 注意：val(x) 已廢棄作為構造器，應改用 ok(x)；隱式賦值請用 val = n
-					isOptionCtor := false
-					if _, isNil := s.Value.(*parser.NilLiteral); isNil {
-						if strings.HasPrefix(existingType, "?") {
-							isOptionCtor = true
-						}
-					}
-					if call, ok := s.Value.(*parser.CallExpression); ok {
-						if cid, ok2 := call.Function.(*parser.Identifier); ok2 {
-							if cid.Value == "err" || cid.Value == "ok" {
-								if strings.HasPrefix(existingType, "?") {
-									isOptionCtor = true
-								}
-							}
-							if cid.Value == "val" {
-								// val(x) 作為構造器已廢棄：應改用 ok(x) 或隱式賦值 val = n
-								callPos := call.Pos()
-								results = append(results, ValidateResult{
-									Line:    callPos.Line,
-									Column:  callPos.Column,
-									Message: "val() constructor is deprecated; use ok(x) for explicit construction or `name = expr` for implicit assignment",
-								})
-								isOptionCtor = true
-							}
-						}
-					}
-					// 隱式值賦值：val = n 可直接賦值給 ?T 變數（tag 自動設為 0）
-					if strings.HasPrefix(existingType, "?") && !isOptionCtor {
-						// 檢查推斷型別是否與 Option 內部型別相符
-						innerType := existingType[1:]
-						if inferredType == innerType || isArgTypeCompatible(innerType, inferredType, s.Value) {
-							isOptionCtor = true
-						} else if _, _, ok1 := intTypeRange(innerType); ok1 {
-							if _, _, ok2 := intTypeRange(inferredType); ok2 {
-								// 整數型別之間的隱式賦值給 Option 變數允許窄化：
-								// generator 在 copyToData 中將所有整數存為 i64（8 位元組），
-								// 不區分 i8/u8/i16 等寬度；窄化安全性由程式碼邏輯（如範圍檢查）保證。
-								isOptionCtor = true
-							}
-						}
-					}
-					if inferredType != "" && inferredType != existingType && isConcreteType(existingType) && !isArrayAssign && !isOptionCtor &&
-						!isArgTypeCompatible(existingType, inferredType, s.Value) {
-						valPos := s.Value.Pos()
-						results = append(results, ValidateResult{
-							Line:    valPos.Line,
-							Column:  valPos.Column,
-							Message: fmt.Sprintf("cannot assign %s value to %s variable '%s'%s", inferredType, existingType, s.Name.Value, narrowingHint(inferredType, existingType)),
-						})
-					}
-				} else {
-					// 首次賦值，記錄推斷型別
-					varTypes[s.Name.Value] = inferredType
-				}
-			}
-		}
-
-	case *parser.ExpressionStatement:
-		// val(x) 作為構造器已廢棄：檢查語句表達式中的 val() 呼叫
-		if call, ok := s.Expression.(*parser.CallExpression); ok {
-			if cid, ok2 := call.Function.(*parser.Identifier); ok2 && cid.Value == "val" {
-				callPos := call.Pos()
-				results = append(results, ValidateResult{
-					Line:    callPos.Line,
-					Column:  callPos.Column,
-					Message: "val() constructor is deprecated; use ok(x) for explicit construction or `name = expr` for implicit assignment",
-				})
-			}
-		}
-		// 處理 if 表示式
-		if ifExpr, ok := s.Expression.(*parser.IfExpression); ok {
-			// 注意：不在 if 條件中檢查 val() 構造器。
-			// match 脫糖後 if 條件可能含 `matched == val(v)`，此處 val 可能是
-			// 用戶自定義枚舉的 variant，不能簡單當作廢棄的 Option 構造器報錯。
-			if ifExpr.Consequence != nil {
-				for _, bStmt := range ifExpr.Consequence.Statements {
-					errs := validateStmtTypes(bStmt, funcNames, funcTypes, selfType, varTypes)
-					results = append(results, errs...)
-				}
-			}
-			if ifExpr.Alternative != nil {
-				for _, bStmt := range ifExpr.Alternative.Statements {
-					errs := validateStmtTypes(bStmt, funcNames, funcTypes, selfType, varTypes)
-					results = append(results, errs...)
-				}
-			}
-			break
-		}
-		if assign, ok := s.Expression.(*parser.AssignExpression); ok {
-			if ident, ok := assign.Left.(*parser.Identifier); ok {
-				// 檢查是否對函式名稱賦值
-				if funcNames[ident.Value] {
-					results = append(results, ValidateResult{
-						Line:    ident.Token.Line,
-						Column:  ident.Token.Column,
-						Message: fmt.Sprintf("cannot reassign function name '%s'", ident.Value),
-					})
-				}
-				// 檢查 nil 賦值到非可空變數
-				isNilAssign := false
-				if _, isNil := assign.Value.(*parser.NilLiteral); isNil {
-					isNilAssign = true
-					if existingType, exists := varTypes[ident.Value]; exists {
-						if !strings.HasPrefix(existingType, "?") {
-							results = append(results, ValidateResult{
-								Line:    ident.Token.Line,
-								Column:  ident.Token.Column,
-								Message: fmt.Sprintf("cannot assign nil to non-option variable '%s'", ident.Value),
-							})
-						}
-					}
-				}
-				// 型別不匹配檢查
-				if !isNilAssign {
-			if existingType, exists := varTypes[ident.Value]; exists {
-				valType := inferExprType(assign.Value, varTypes, funcTypes, selfType)
-						// Option 建構子：err(x) / ok(x) 可指派給任何 ?T 變數
-						// 注意：val(x) 已廢棄作為構造器，應改用 ok(x)
-						isOptionCtor := false
-						if call, ok := assign.Value.(*parser.CallExpression); ok {
-							if cid, ok2 := call.Function.(*parser.Identifier); ok2 {
-								if cid.Value == "err" || cid.Value == "ok" {
-									if strings.HasPrefix(existingType, "?") {
-										isOptionCtor = true
-									}
-								}
-								if cid.Value == "val" {
-									callPos := call.Pos()
-									results = append(results, ValidateResult{
-										Line:    callPos.Line,
-										Column:  callPos.Column,
-										Message: "val() constructor is deprecated; use ok(x) for explicit construction or `name = expr` for implicit assignment",
-									})
-									isOptionCtor = true
-								}
-							}
-						}
-						if valType != "" && valType != existingType && isConcreteType(existingType) && !isOptionCtor &&
-							!isArgTypeCompatible(existingType, valType, assign.Value) {
-							// Check if this is an array/slice literal assignment to a typed array variable
-							_, isSlice := assign.Value.(*parser.SliceLiteral)
-							_, isArrayLit := assign.Value.(*parser.ArrayLiteral)
-							isArrayAssign := (isSlice || isArrayLit) && strings.HasPrefix(existingType, "[")
-							if isArrayAssign {
-								elemType := extractArrayElemType(existingType)
-								if elemType != "" {
-									var elements []parser.Expression
-									if isSlice {
-										elements = assign.Value.(*parser.SliceLiteral).Elements
-									} else {
-										elements = assign.Value.(*parser.ArrayLiteral).Elements
-									}
-									for _, elem := range elements {
-										elemInferred := inferExprType(elem, varTypes, funcTypes, selfType)
-										if elemInferred != "" && elemInferred != elemType &&
-											!isArgTypeCompatible(elemType, elemInferred, elem) {
-											results = append(results, ValidateResult{
-												Line:    assign.Token.Line,
-												Column:  assign.Token.Column,
-												Message: fmt.Sprintf("cannot assign %s value to %s element in array '%s'%s", elemInferred, elemType, ident.Value, narrowingHint(elemInferred, elemType)),
-											})
-										}
-									}
-								}
-							} else {
-								results = append(results, ValidateResult{
-									Line:    assign.Token.Line,
-									Column:  assign.Token.Column,
-									Message: fmt.Sprintf("cannot assign %s value to %s variable '%s'%s", valType, existingType, ident.Value, narrowingHint(valType, existingType)),
-								})
-							}
-						}
-					} else if !exists {
-						// 首次賦值，記錄推斷型別
-						valType := inferExprType(assign.Value, varTypes, funcTypes, selfType)
-						if valType != "" {
-							varTypes[ident.Value] = valType
-						}
-					}
-				}
-			}
-		}
-
-	case *parser.ForStatement:
-		if s.Body != nil {
-			for _, bStmt := range s.Body.Statements {
-				errs := validateStmtTypes(bStmt, funcNames, funcTypes, selfType, varTypes)
-				results = append(results, errs...)
-			}
-		}
-
-	case *parser.BlockStatement:
-		for _, bStmt := range s.Statements {
-			errs := validateStmtTypes(bStmt, funcNames, funcTypes, selfType, varTypes)
-			results = append(results, errs...)
-		}
-
-	case *parser.MultiAssignStatement:
-		// Type-check multi-return assignment: fields[n], pos = parse-field(s, pos)
-		// For each Identifier target, infer the type from the call's return types
-		// and check compatibility with any existing type.
-		if s.Value != nil {
-			// Determine the return types of the call expression
-			var returnTypes []string
-			if callExpr, ok := s.Value.(*parser.CallExpression); ok {
-				fnName := ""
-				if ident, ok := callExpr.Function.(*parser.Identifier); ok {
-					fnName = ident.Value
-				} else if dot, ok := callExpr.Function.(*parser.DotExpression); ok {
-					fnName = dot.Property
-					// Try full method name (e.g., str.to-upper)
-					if recv, ok := dot.Receiver.(*parser.Identifier); ok {
-						fnName = recv.Value + "." + fnName
-					}
-				}
-				if fnName != "" {
-					// Look up function return types from funcTypes (only first return type is stored)
-					// For multi-return, we need to look at the program's function definitions.
-					// Since funcTypes only stores the first return type, we infer each target
-					// from the call's return type signature.
-					if rt, ok := funcTypes[fnName]; ok && len(s.Targets) == 1 {
-						returnTypes = []string{rt}
-					}
-				}
-			}
-			// For each target, check type compatibility
-			for i, target := range s.Targets {
-				if ident, ok := target.(*parser.Identifier); ok {
-					// Only check if we know the return type for this position
-					if i < len(returnTypes) {
-						inferredType := returnTypes[i]
-						if existingType, exists := varTypes[ident.Value]; exists {
-							if inferredType != "" && existingType != "" &&
-								inferredType != existingType &&
-								isConcreteType(existingType) &&
-								!isArgTypeCompatible(existingType, inferredType, nil) {
-								results = append(results, ValidateResult{
-									Line:    s.Token.Line,
-									Column:  s.Token.Column,
-									Message: fmt.Sprintf("cannot assign %s value to %s variable '%s'", inferredType, existingType, ident.Value),
-								})
-							}
-						} else {
-							// First assignment: record the inferred type
-							if inferredType != "" {
-								varTypes[ident.Value] = inferredType
-							}
-						}
-					}
-				}
-				// IndexExpression targets (e.g., fields[n]) are assignments to
-				// existing array elements — no new variable definition or type check needed.
-			}
-		}
-
-	}
-
-	return results
-}
-
+                                                                                                                                                                     
+                             
+                          
+                                 
+                                         
+                                       
+                          
+                                  
+                     
+                                        
+    
+   
+                                
+                               
+                     
+                                        
+    
+   
+                                         
+                            
+                                                              
+                                                 
+   
+                    
+                                            
+                                                                                      
+                                      
+    
+   
+                           
+                                                                                   
+                    
+                                                                                 
+                                              
+                                            
+    
+        
+   
+                                      
+                              
+                                            
+                          
+                            
+                                                                             
+     
+   
+                                        
+                                                      
+                           
+                                                                                 
+                                                
+                  
+                                              
+                            
+                              
+                                                                                          
+       
+     
+                   
+                                            
+         
+    
+                                                
+                                                              
+                                                                    
+                                              
+                            
+                              
+                                                                                          
+       
+     
+         
+    
+                                         
+                                            
+                          
+                            
+                                                                                       
+     
+        
+   
+                 
+                                                                                
+                                                                                                   
+                                                    
+                                            
+    
+   
+                     
+                                                                               
+                                                        
+                                                            
+                            
+                           
+                                               
+                             
+                               
+                                                                                                                                
+        
+      
+     
+    
+                  
+                                                                        
+                          
+                                                               
+                                               
+                                                                                                          
+                                                 
+                                                    
+                                                                                     
+                                                           
+                                                                    
+                                                             
+                       
+                                                    
+                         
+                                       
+                   
+                                                          
+               
+                                                          
+        
+                                      
+                                                                          
+                                                            
+                                                             
+                                                  
+                                
+                                  
+                                                                                                                                                                    
+           
+         
+        
+       
+      
+                                                                      
+                                                                                               
+                          
+                                                         
+                                               
+                          
+       
+      
+                                                          
+                                                              
+                                                   
+                                                 
+                            
+         
+        
+                              
+                                                                                    
+                             
+                                                 
+                               
+                                 
+                                                                                                                                  
+          
+                           
+        
+       
+      
+                                                                                      
+                                                               
+                                                              
+                                   
+                                                                                             
+                          
+                                                           
+                                                        
+                                                                            
+                                                                                    
+                                                                                                          
+                           
+        
+       
+      
+                                                                                                                                
+                                                                 
+                             
+                                               
+                            
+                              
+                                                                                                                                                                 
+        
+      
+            
+                                         
+                                          
+     
+    
+   
+                                  
+                                                                               
+                                                            
+                                                                                 
+                         
+                                             
+                           
+                             
+                                                                                                                              
+      
+    
+   
+                        
+                                                            
+                                                           
+                                                                                   
+                                                                                              
+                                 
+                                                         
+                                                                               
+                                       
+     
+    
+                                 
+                                                         
+                                                                               
+                                       
+     
+    
+        
+   
+                                                                
+                                                         
+                                        
+                               
+                                              
+                                
+                                  
+                                                                              
+       
+     
+                                          
+                        
+                                                             
+                       
+                                                               
+                                                
+                                                
+                                  
+                                    
+                                                                                           
+         
+       
+      
+     
+                            
+                     
+                                                             
+                                                                         
+                                                                       
+                                                                   
+                           
+                                                                
+                                                               
+                                                    
+                                                  
+                             
+          
+         
+                               
+                              
+                                                  
+                                
+                                  
+                                                                                                                                   
+           
+                            
+         
+        
+       
+                                                                                                     
+                                                                  
+                                                                                      
+                                                        
+                                                           
+                                                                                       
+                         
+                                                      
+                           
+                                         
+                     
+                                                                 
+                 
+                                                                 
+          
+                                        
+                                                                            
+                                                              
+                                                               
+                                                    
+                                       
+                                         
+                                                                                                                                                                     
+             
+           
+          
+         
+               
+                                                 
+                                    
+                                      
+                                                                                                                                                        
+          
+        
+       
+                        
+                                          
+                                                                           
+                        
+                                      
+       
+      
+     
+    
+   
+                           
+                    
+                                            
+                                                                              
+                                      
+    
+   
+                             
+                                      
+                                                                             
+                                     
+   
+                                   
+                                                                             
+                                                                            
+                                                    
+                     
+                                                       
+                           
+                                                            
+                
+                                                                
+                         
+                                                                        
+                          
+                                                 
+                                                           
+                                        
+      
+     
+                     
+                                                                                       
+                                                                                
+                                                                               
+                                              
+                                                                
+                                
+      
+     
+    
+                                               
+                                     
+                                                     
+                                                               
+                              
+                                    
+                                                                
+                                                     
+                                       
+                                       
+                                                               
+                                                 
+                               
+                                 
+                                                                                                                     
+          
+        
+              
+                                                    
+                              
+                                            
+        
+       
+      
+     
+                                                                   
+                                                                                   
+    
+   
+  
+               
+ 
 // moduleShortName extracts the last path segment as the module name.
 // "std/math" → "math", "fmt" → "fmt", "hash/md5" → "md5"
-func moduleShortName(path string) string {
-	if idx := strings.LastIndex(path, "/"); idx >= 0 {
-		return path[idx+1:]
-	}
-	return path
-}
-
-var (
-	knownStdModulesOnce sync.Once
-	knownStdModulesList []StdModuleInfo
-
-	// Cache for CollectStdModuleSignatures: parsing all std modules is
-	// expensive (~0.5s). VetFile is called once per .no file, so without
-	// caching a full std vet spends ~95% of its time re-parsing modules.
-	stdSigsOnce       sync.Once
-	stdSigsCache      map[string][]string
-	stdFieldsCache    map[string]map[string]string
-	stdAliasesCache   map[string]string // 單具體型別別名快取（如 "fd" → "i64"）
-	stdStructModCache map[string]string // struct name → module short name（如 "conn" → "tls"）
-)
-
-// StdModuleInfo holds information about a standard library module.
-type StdModuleInfo struct {
-	ShortName string // last path segment of FullPath, e.g. "rand", "math"
-	FullPath  string // relative to std/, e.g. "hash/rand", "net/net", "math"
-	ShortPath string // FullPath with redundant dir omitted when dir==file, e.g. "net", "hash/hmac", "math"
-}
-
+                                          
+                                                   
+                     
+  
+            
+ 
+     
+                              
+                                    
+                                                                    
+                                                                      
+                                                                      
+                            
+                                      
+                                               
+                                                                                           
+                                                                                                   
+ 
+// checker.StdModuleInfo holds information about a standard library module.
+                           
+                                                                       
+                                                                          
+                                                                                                        
+ 
 // debugCountHashFns is a no-op placeholder retained for call-site compatibility.
 // All temporary debugging output has been removed.
-func debugCountHashFns(stage string, merged *parser.Program) {
-	_ = stage
-	_ = merged
-}
-
-// knownStdModules returns all embedded standard library modules.
+                                                              
+          
+           
+ 
+// checker.knownStdModules returns all embedded standard library modules.
 // Uses //go:embed to discover all .no files in src/std/ at compile time.
-func knownStdModules() []StdModuleInfo {
-	knownStdModulesOnce.Do(func() {
-		var infos []StdModuleInfo
-		seen := make(map[string]bool)
-
-		var walkDir func(dir string)
-		walkDir = func(dir string) {
-			entries, err := nolang.StdFS.ReadDir(dir)
-			if err != nil {
-				return
-			}
-			for _, e := range entries {
-				path := dir + "/" + e.Name()
-				if e.IsDir() {
-					walkDir(path)
-				} else if strings.HasSuffix(e.Name(), ".no") {
-					rel := strings.TrimPrefix(path, "std/")
-					fullPath := strings.TrimSuffix(rel, ".no")
-					if !seen[fullPath] {
-						seen[fullPath] = true
-						shortName := fullPath
-						if idx := strings.LastIndex(fullPath, "/"); idx >= 0 {
-							shortName = fullPath[idx+1:]
-						}
-						// ShortPath: omit the redundant directory name when
-						// file name equals directory name (e.g. "net/net" → "net").
-						shortPath := fullPath
-						if idx := strings.LastIndex(fullPath, "/"); idx >= 0 {
-							dir := fullPath[:idx]
-							file := fullPath[idx+1:]
-							if dir == file {
-								shortPath = file
-							}
-						}
-						infos = append(infos, StdModuleInfo{
-							ShortName: shortName,
-							FullPath:  fullPath,
-							ShortPath: shortPath,
-						})
-					}
-				}
-			}
-		}
-		walkDir("std")
-		knownStdModulesList = infos
-	})
-	return knownStdModulesList
-}
-
-// GetStdModules returns StdModuleInfo for all embedded standard library modules.
-func GetStdModules() []StdModuleInfo {
-	return knownStdModules()
-}
-
-// JsModuleInfo 描述一個 JS 相容層模組（src/js/ 下的 .no 檔案）。
-// 與 StdModuleInfo 結構相同，但用於 js/ 命名空間。
-type JsModuleInfo struct {
-	ShortName string // 檔名去掉 .no 與目錄前綴，如 "console-log"
-	FullPath  string // 相對於 js/，如 "console-log"
-	ShortPath string // 與 FullPath 相同（JS 相容層目前無子目錄，dir==file 的情況不適用）
-}
-
-var (
-	knownJsModulesOnce sync.Once
-	knownJsModulesList []JsModuleInfo
-)
-
+                                        
+                                
+                           
+                               
+                              
+                              
+                                            
+                  
+          
+    
+                              
+                                
+                  
+                  
+                                                  
+                                            
+                                               
+                         
+                           
+                           
+                                                            
+                                   
+       
+                                                          
+                                                                    
+                           
+                                                            
+                            
+                               
+                       
+                        
+        
+       
+                                          
+                            
+                           
+                            
+        
+      
+     
+    
+   
+                
+                             
+   
+                           
+ 
+// checker.GetStdModules returns checker.StdModuleInfo for all embedded standard library modules.
+                                      
+                         
+ 
+// checker.JsModuleInfo 描述一個 JS 相容層模組（src/js/ 下的 .no 檔案）。
+// 與 checker.StdModuleInfo 結構相同，但用於 js/ 命名空間。
+                          
+                                                                         
+                                                      
+                                                                                                           
+ 
+     
+                             
+                                  
+ 
 // knownJsModules 回傳所有內嵌的 JS 相容層模組。
 // 使用 //go:embed js 在編譯時發現 src/js/ 下的所有 .no 檔案。
-// 與 knownStdModules 機制平行。
-func knownJsModules() []JsModuleInfo {
-	knownJsModulesOnce.Do(func() {
-		var infos []JsModuleInfo
-		seen := make(map[string]bool)
-
-		var walkDir func(dir string)
-		walkDir = func(dir string) {
-			entries, err := nolang.JsFS.ReadDir(dir)
-			if err != nil {
-				return
-			}
-			for _, e := range entries {
-				path := dir + "/" + e.Name()
-				if e.IsDir() {
-					walkDir(path)
-				} else if strings.HasSuffix(e.Name(), ".no") {
-					rel := strings.TrimPrefix(path, "js/")
-					fullPath := strings.TrimSuffix(rel, ".no")
-					if !seen[fullPath] {
-						seen[fullPath] = true
-						shortName := fullPath
-						if idx := strings.LastIndex(fullPath, "/"); idx >= 0 {
-							shortName = fullPath[idx+1:]
-						}
-						shortPath := fullPath
-						if idx := strings.LastIndex(fullPath, "/"); idx >= 0 {
-							dirName := fullPath[:idx]
-							file := fullPath[idx+1:]
-							if dirName == file {
-								shortPath = file
-							}
-						}
-						infos = append(infos, JsModuleInfo{
-							ShortName: shortName,
-							FullPath:  fullPath,
-							ShortPath: shortPath,
-						})
-					}
-				}
-			}
-		}
-		walkDir("js")
-		knownJsModulesList = infos
-	})
-	return knownJsModulesList
-}
-
-// GetJsModules returns JsModuleInfo for all embedded JS compatibility modules.
-func GetJsModules() []JsModuleInfo {
-	return knownJsModules()
-}
-
-// CollectStdModuleSignatures parses all std module source files and returns
+// 與 checker.knownStdModules 機制平行。
+                                      
+                               
+                          
+                               
+                              
+                              
+                                           
+                  
+          
+    
+                              
+                                
+                  
+                  
+                                                  
+                                           
+                                               
+                         
+                           
+                           
+                                                            
+                                   
+       
+                           
+                                                            
+                                
+                               
+                           
+                        
+        
+       
+                                         
+                            
+                           
+                            
+        
+      
+     
+    
+   
+               
+                            
+   
+                          
+ 
+// checker.GetJsModules returns checker.JsModuleInfo for all embedded JS compatibility modules.
+                                    
+                        
+ 
+// checker.CollectStdModuleSignatures parses all std module source files and returns
 // function signatures (funcName → return types) and struct field types
 // (structName → field name → field type). This is used by the LSP to inject
 // extern signatures into the parser so that type inference (e.g. option match
 // `it` binding) works correctly for cross-module method calls.
-func CollectStdModuleSignatures() (map[string][]string, map[string]map[string]string) {
-	stdSigsOnce.Do(func() {
-		funcSigs := make(map[string][]string)
-		structFields := make(map[string]map[string]string)
-		aliases := make(map[string]string)
-		structMod := make(map[string]string) // struct name → module short name
-
-		for _, info := range knownStdModules() {
-			// 只從內嵌 StdFS 讀取,支援單二進制分發
-			embedPath := "std/" + info.FullPath + ".no"
-			source, err := nolang.StdFS.ReadFile(embedPath)
-			if err != nil {
-				continue
-			}
-			l := lexer.New(string(source))
-			p := parser.New(l)
-			prog := p.ParseProgram()
-			if len(p.Errors()) > 0 {
-				continue
-			}
-			for _, stmt := range prog.Statements {
-				if fd, ok := stmt.(*parser.FunctionDefinition); ok {
-					if len(fd.Results) > 0 {
-						rets := make([]string, len(fd.Results))
-						for i, r := range fd.Results {
-							rets[i] = r.Type.String()
-						}
-						funcSigs[fd.Name] = rets
-					}
-				}
-				if sd, ok := stmt.(*parser.StructDefinition); ok {
-					fields := make(map[string]string)
-					for _, f := range sd.Fields {
-						if typeStr := structFieldTypeString(f); typeStr != "" {
-							fields[f.Name] = typeStr
-						}
-					}
-					structFields[sd.Name] = fields
-					// Map struct name → module short name for cross-module prefix validation
-					if _, exists := structMod[sd.Name]; !exists {
-						structMod[sd.Name] = info.ShortName
-					}
-				}
-				// 收集單具體型別別名（name = known-type），使 newtype 語義
-				// 在跨模組場景下也能生效（如 fs.no 定義 fd=i64，io.no 使用 fd）
-				if ta, ok := stmt.(*parser.TypeAlias); ok && ta.Type != nil && ta.Union == nil {
-					if _, ok := ta.Type.(*parser.FunctionType); !ok {
-						if _, exists := aliases[ta.Name]; !exists {
-							aliases[ta.Name] = ta.Type.String()
-						}
-					}
-				}
-			}
-		}
-
-		stdSigsCache = funcSigs
-		stdFieldsCache = structFields
-		stdAliasesCache = aliases
-		stdStructModCache = structMod
-	})
-	return stdSigsCache, stdFieldsCache
-}
-
-// CollectStdConcreteAliases returns the cached single concrete type aliases
+                                                                                       
+                        
+                                       
+                                                    
+                                    
+                                                                           
+                                          
+                                                        
+                                              
+                                                  
+                  
+            
+    
+                                 
+                     
+                           
+                           
+            
+    
+                                         
+                                                        
+                             
+                                             
+                                    
+                                
+       
+                              
+      
+     
+                                                      
+                                      
+                                  
+                                                             
+                               
+       
+      
+                                   
+                                                                                
+                                                  
+                                         
+      
+     
+                                                                              
+                                                                                       
+                                                                                    
+                                                      
+                                                 
+                                          
+       
+      
+     
+    
+   
+                         
+                               
+                           
+                               
+   
+                                    
+ 
+// checker.CollectStdConcreteAliases returns the cached single concrete type aliases
 // collected from std modules (e.g. "fd" → "i64" from fs.no). Triggers
-// CollectStdModuleSignatures via sync.Once to populate the cache.
-func CollectStdConcreteAliases() map[string]string {
-	CollectStdModuleSignatures() // 觸發 sync.Once 填充快取
-	return stdAliasesCache
-}
-
-// CollectStdStructModules returns a map from struct name to the short name
+// checker.CollectStdModuleSignatures via sync.Once to populate the cache.
+                                                    
+                                                              
+                       
+ 
+// checker.CollectStdStructModules returns a map from struct name to the short name
 // of the module that defines it (e.g. "conn" → "tls"). Used by
-// ValidateCrossModuleTypeRefs to enforce module-prefix on cross-module type
-// references. Triggers CollectStdModuleSignatures via sync.Once.
-func CollectStdStructModules() map[string]string {
-	CollectStdModuleSignatures() // 觸發 sync.Once 填充快取
-	return stdStructModCache
-}
-
+// checker.ValidateCrossModuleTypeRefs to enforce module-prefix on cross-module type
+// references. Triggers checker.CollectStdModuleSignatures via sync.Once.
+                                                  
+                                                              
+                         
+ 
 // extractBaseTypeName unwraps NullableType, PointerType, ArrayType, and
 // SliceType wrappers to find the innermost NamedType value string.
 // Returns "" if the type is nil or not a NamedType (after unwrapping).
-func extractBaseTypeName(t parser.Type) string {
-	if t == nil {
-		return ""
-	}
-	switch tt := t.(type) {
-	case *parser.NamedType:
-		return tt.Value
-	case *parser.NullableType:
-		return extractBaseTypeName(tt.Type)
-	case *parser.PointerType:
-		return extractBaseTypeName(tt.Type)
-	case *parser.ArrayType:
-		return extractBaseTypeName(tt.Elem)
-	case *parser.SliceType:
-		return extractBaseTypeName(tt.Elem)
-	}
-	return ""
-}
-
+                                                
+              
+           
+  
+                        
+                        
+                 
+                           
+                                     
+                          
+                                     
+                        
+                                     
+                        
+                                     
+  
+          
+ 
 // isInferredType recursively checks if a type node was inferred by the parser
-// (not explicitly written by the user). Used by ValidateCrossModuleTypeRefs to
+// (not explicitly written by the user). Used by checker.ValidateCrossModuleTypeRefs to
 // skip inferred types — they are auto-derived from function call return types,
 // so flagging them for missing module prefix would be a false positive.
-func isInferredType(t parser.Type) bool {
-	if t == nil {
-		return false
-	}
-	switch tt := t.(type) {
-	case *parser.NamedType:
-		return tt.IsInferred
-	case *parser.NullableType:
-		return tt.IsInferred || isInferredType(tt.Type)
-	case *parser.PointerType:
-		return isInferredType(tt.Type)
-	case *parser.ArrayType:
-		return tt.IsInferred || isInferredType(tt.Elem)
-	case *parser.SliceType:
-		return tt.IsInferred || isInferredType(tt.Elem)
-	}
-	return false
-}
-
+                                         
+              
+              
+  
+                        
+                        
+                      
+                           
+                                                 
+                          
+                                
+                        
+                                                 
+                        
+                                                 
+  
+             
+ 
 // isBuiltinType returns true for primitive type names that don't require
 // a module prefix.
-func isBuiltinType(name string) bool {
-	switch name {
-	case "i8", "i16", "i32", "i64",
-		"u8", "u16", "u32", "u64",
-		"f32", "f64",
-		"byte", "bool", "str":
-		return true
-	}
-	return false
-}
-
-// ValidateCrossModuleTypeRefs checks that struct field types, variable
+                                      
+              
+                                
+                            
+               
+                        
+             
+  
+             
+ 
+// checker.ValidateCrossModuleTypeRefs checks that struct field types, variable
 // declaration types, and function parameter/result types use the proper
 // module prefix when referencing a struct defined in another module.
 //
@@ -7738,200 +7301,191 @@ func isBuiltinType(name string) bool {
 //   - Builtin primitive types (i64, str, bool, ...)
 //   - Types already using a module prefix (contain a dot)
 //   - Types defined locally in the current file (structs, type aliases)
-//   - Type aliases collected via CollectStdConcreteAliases (e.g. "fd" → "i64")
-func ValidateCrossModuleTypeRefs(program *parser.Program) []ValidateResult {
-	var results []ValidateResult
-
-	// 1. Build the struct-name → module-short-name map from std modules.
-	structMod := CollectStdStructModules()
-	if len(structMod) == 0 {
-		return results
-	}
-
-	// 2. Collect locally defined type names (structs + type aliases).
-	localTypes := make(map[string]bool)
-	for _, stmt := range program.Statements {
-		if sd, ok := stmt.(*parser.StructDefinition); ok {
-			localTypes[sd.Name] = true
-		}
-		if ta, ok := stmt.(*parser.TypeAlias); ok {
-			localTypes[ta.Name] = true
-		}
-	}
-	// Also include std concrete aliases (e.g. "fd") — these are intentionally
-	// shared without module prefix.
-	for k := range CollectStdConcreteAliases() {
-		localTypes[k] = true
-	}
-
-	// 3. Helper: check a single Type and emit a result if it's a cross-module
-	//    struct used without prefix.
-	checkType := func(t parser.Type, fallbackLine, fallbackCol int) {
-		baseName := extractBaseTypeName(t)
-		if baseName == "" {
-			return
-		}
-		// Already has a module prefix (contains a dot) — correct.
-		if strings.Contains(baseName, ".") {
-			return
-		}
-		// Builtin primitive type — no prefix needed.
-		if isBuiltinType(baseName) {
-			return
-		}
-		// Locally defined type — no prefix needed.
-		if localTypes[baseName] {
-			return
-		}
-		// Check if this type is a struct from another std module.
-		modName, isCrossModule := structMod[baseName]
-		if !isCrossModule {
-			return
-		}
-		// Report error: should use module.type
-		line := fallbackLine
-		col := fallbackCol
-		if t != nil {
-			pos := t.Pos()
-			if pos.Line > 0 {
-				line = pos.Line
-				col = pos.Column
-			}
-		}
-		results = append(results, ValidateResult{
-			Line:    line,
-			Column:  col,
-			Message: fmt.Sprintf("type '%s' not found; did you mean '%s.%s'?", baseName, modName, baseName),
-		})
-	}
-
-	// 4. Walk all top-level statements.
-	for _, stmt := range program.Statements {
-		switch s := stmt.(type) {
-		case *parser.StructDefinition:
-			for _, f := range s.Fields {
-				if f.Type != nil {
-					checkType(f.Type, f.Token.Line, f.Token.Column)
-				}
-			}
-		case *parser.LetStatement:
-			if s.Type != nil && !isInferredType(s.Type) {
-				checkType(s.Type, s.Token.Line, s.Token.Column)
-			}
-		case *parser.FunctionDefinition:
-			for _, p := range s.Parameters {
-				if p.Type != nil {
-					checkType(p.Type, p.Token.Line, p.Token.Column)
-				}
-			}
-			for _, r := range s.Results {
-				if r.Type != nil {
-					checkType(r.Type, r.Token.Line, r.Token.Column)
-				}
-			}
-			// Also check local variable declarations inside function bodies.
-			// Skip inferred types — they are auto-derived by the compiler
-			// from function calls, not written by the user, so flagging them
-			// for missing module prefix would be a false positive.
-			if s.Body != nil {
-				for _, bodyStmt := range s.Body.Statements {
-					if ls, ok := bodyStmt.(*parser.LetStatement); ok && ls.Type != nil && !isInferredType(ls.Type) {
-						checkType(ls.Type, ls.Token.Line, ls.Token.Column)
-					}
-				}
-			}
-		case *parser.ExternStatement:
-			for _, p := range s.Parameters {
-				if p.Type != nil {
-					checkType(p.Type, p.Token.Line, p.Token.Column)
-				}
-			}
-			for _, r := range s.Results {
-				if r.Type != nil {
-					checkType(r.Type, r.Token.Line, r.Token.Column)
-				}
-			}
-		}
-	}
-
-	return results
-}
-
-// GetStdModuleShortNames returns the short names of all embedded standard library
+//   - Type aliases collected via checker.CollectStdConcreteAliases (e.g. "fd" → "i64")
+                                                                            
+                             
+                                                                        
+                                       
+                         
+                
+  
+                                                                   
+                                    
+                                          
+                                                    
+                             
+   
+                                             
+                             
+   
+  
+                                                                             
+                                 
+                                             
+                      
+  
+                                                                           
+                                  
+                                                                  
+                                    
+                     
+         
+   
+                                                              
+                                      
+         
+   
+                                                 
+                              
+         
+   
+                                               
+                           
+         
+   
+                                                            
+                                               
+                     
+         
+   
+                                         
+                      
+                    
+               
+                 
+                    
+                   
+                    
+    
+   
+                                           
+                 
+                
+                                                                                                   
+    
+  
+                                     
+                                          
+                           
+                                
+                               
+                      
+                                                    
+     
+    
+                            
+                                                
+                                                   
+    
+                                  
+                                   
+                      
+                                                    
+     
+    
+                                
+                      
+                                                    
+     
+    
+                                                                    
+                                                                   
+                                                                    
+                                                          
+                     
+                                                
+                                                                                                     
+                                                        
+      
+     
+    
+                               
+                                   
+                      
+                                                    
+     
+    
+                                
+                      
+                                                    
+     
+    
+   
+  
+               
+ 
+// checker.GetStdModuleShortNames returns the short names of all embedded standard library
 // modules (for use in definedVars and module name registration).
-func GetStdModuleShortNames() []string {
-	infos := knownStdModules()
-	names := make([]string, len(infos))
-	for i, info := range infos {
-		names[i] = info.ShortName
-	}
-	return names
-}
-
+                                        
+                           
+                                    
+                             
+                           
+  
+             
+ 
 // GetStdModuleFullPaths returns the full paths of all embedded standard library
 // modules (for use in file resolution and auto-loading).
-func GetStdModuleFullPaths() []string {
-	infos := knownStdModules()
-	paths := make([]string, len(infos))
-	for i, info := range infos {
-		paths[i] = info.FullPath
-	}
-	return paths
-}
-
+                                       
+                           
+                                    
+                             
+                          
+  
+             
+ 
 // resolveModuleCalls walks the program and rewrites module.fn() calls
 // where the DotExpression receiver chain matches an imported module ShortName.
 // Supports single-level (base64.encode-std → encode-std) module paths.
 // Also rewrites module.CONST constant accesses (e.g. base64.BASE64-STD → BASE64-STD).
-func resolveModuleCalls(program *parser.Program, importedModules []string) {
-	if len(importedModules) == 0 {
-		return
-	}
-	modSet := make(map[string]bool)
-	for _, m := range importedModules {
-		modSet[m] = true
-	}
-	// Collect simple (non-dotted) function names — these are module-level
-	// functions like `degrees` (from math.no). Method definitions like
-	// `str.starts-with` or `path.exists` have dots and are NOT module functions.
-	moduleFns := make(map[string]bool)
-	// Collect top-level constant names (LetStatement) — these are module-level
-	// constants like `BASE64-STD` (from encoding/base64.no), used to rewrite
-	// module.CONST dotted accesses to bare constant references.
-	moduleConsts := make(map[string]bool)
-	for _, stmt := range program.Statements {
-		if fd, ok := stmt.(*parser.FunctionDefinition); ok {
-			if !fd.IsMethodDef {
-				moduleFns[fd.Name] = true
-			}
-		}
-		if ls, ok := stmt.(*parser.LetStatement); ok && ls.Name != nil {
-			// 僅收集符合大寫常數命名規範的名稱（如 SEP、DOT、BASE64-STD、FNV-OFFSET）。
-			// 小寫變數（如 len、i、result、path）不應視為模組常量，否則會造成
-			// `path.len`（path 為函數參數）被錯誤改寫為 `len`（Identifier），
-			// 導致 cookie.no 的 parse-response 在與其他模組連結時 IR 出現 `%len undefined`。
-			// 函數定義（FunctionLiteral 值）另由 moduleFns 收集，不受此篩選影響。
-			if isConstantName(ls.Name.Value) {
-				moduleConsts[ls.Name.Value] = true
-			}
-			// Also collect functions defined as LetStatement with FunctionLiteral
-			// value (e.g. `list-dir = (dirpath str) (entries []str) { ... }`).
-			// Without this, module.fn() calls to these functions are not rewritten
-			// to fn(), causing varLLVMType to fail type inference for the result
-			// (it doesn't handle DotExpression function calls for module-prefixed
-			// names, so variables assigned from them default to i64).
-			if _, isFn := ls.Value.(*parser.FunctionLiteral); isFn {
-				if !strings.Contains(ls.Name.Value, ".") {
-					moduleFns[ls.Name.Value] = true
-				}
-			}
-		}
-	}
-	for _, stmt := range program.Statements {
-		resolveModuleCallsInStmt(stmt, modSet, moduleFns, moduleConsts)
-	}
-}
-
+                                                                            
+                               
+        
+  
+                                
+                                    
+                  
+  
+                                                                         
+                                                                    
+                                                                              
+                                   
+                                                                              
+                                                                          
+                                                             
+                                      
+                                          
+                                                      
+                       
+                             
+    
+   
+                                                                  
+                                                                                                      
+                                                                                             
+                                                                                     
+                                                                                                   
+                                                                                             
+                                     
+                                      
+    
+                                                                         
+                                                                      
+                                                                          
+                                                                        
+                                                                         
+                                                             
+                                                           
+                                              
+                                    
+     
+    
+   
+  
+                                          
+                                                                 
+  
+ 
 // extractModulePathAndFunc walks a DotExpression chain to extract the
 // module path (joined with "/") and the final property (function name).
 // For example:
@@ -7941,199 +7495,186 @@ func resolveModuleCalls(program *parser.Program, importedModules []string) {
 //	                                              → ("hash/sha256", "sha256")
 //
 // Returns ("", "") if the chain contains non-Identifier nodes.
-func extractModulePathAndFunc(dot *parser.DotExpression) (path, fnName string) {
-	fnName = dot.Property
-	var segments []string
-	cur := dot.Receiver
-	for {
-		if d, ok := cur.(*parser.DotExpression); ok {
-			segments = append([]string{d.Property}, segments...)
-			cur = d.Receiver
-		} else if ident, ok := cur.(*parser.Identifier); ok {
-			segments = append([]string{ident.Value}, segments...)
-			break
-		} else {
-			return "", ""
-		}
-	}
-	path = strings.Join(segments, "/")
-	return path, fnName
-}
-
-func resolveModuleCallsInStmt(stmt parser.Statement, modSet map[string]bool, moduleFns map[string]bool, moduleConsts map[string]bool) {
-	switch s := stmt.(type) {
-	case *parser.ExpressionStatement:
-		if s.Expression != nil {
-			s.Expression = resolveModuleCallsInExpr(s.Expression, modSet, moduleFns, moduleConsts)
-		}
-	case *parser.LetStatement:
-		if s.Value != nil {
-			s.Value = resolveModuleCallsInExpr(s.Value, modSet, moduleFns, moduleConsts)
-		}
-	case *parser.MultiAssignStatement:
-		if s.Value != nil {
-			s.Value = resolveModuleCallsInExpr(s.Value, modSet, moduleFns, moduleConsts)
-		}
-	case *parser.FunctionDefinition:
-		if s.Body != nil {
-			for _, bodyStmt := range s.Body.Statements {
-				resolveModuleCallsInStmt(bodyStmt, modSet, moduleFns, moduleConsts)
-			}
-		}
-	case *parser.BlockStatement:
-		for _, bodyStmt := range s.Statements {
-			resolveModuleCallsInStmt(bodyStmt, modSet, moduleFns, moduleConsts)
-		}
-	case *parser.ForStatement:
-		if s.Condition != nil {
-			s.Condition = resolveModuleCallsInExpr(s.Condition, modSet, moduleFns, moduleConsts)
-		}
-		if s.Init != nil {
-			resolveModuleCallsInStmt(s.Init, modSet, moduleFns, moduleConsts)
-		}
-		if s.Update != nil {
-			resolveModuleCallsInStmt(s.Update, modSet, moduleFns, moduleConsts)
-		}
-		if s.Body != nil {
-			for _, bodyStmt := range s.Body.Statements {
-				resolveModuleCallsInStmt(bodyStmt, modSet, moduleFns, moduleConsts)
-			}
-		}
-	}
-}
-
-func resolveModuleCallsInExpr(expr parser.Expression, modSet map[string]bool, moduleFns map[string]bool, moduleConsts map[string]bool) parser.Expression {
-	if expr == nil {
-		return nil
-	}
-	switch e := expr.(type) {
-	case *parser.CallExpression:
-		// For curried calls (e.g. `mod.fn(args)(out1, out2)`), the outer
-		// CallExpression's Function is itself a CallExpression. Recurse into
-		// it first so the inner module-qualified name gets resolved.
-		if _, isCall := e.Function.(*parser.CallExpression); isCall {
-			e.Function = resolveModuleCallsInExpr(e.Function, modSet, moduleFns, moduleConsts)
-		}
-		// Check if this is a module.fn() call (single or multi-level).
-		// Only rewrite when the function property is a known module-level function
-		// and the receiver chain matches a known module ShortName.
-		if dot, ok := e.Function.(*parser.DotExpression); ok {
-			modPath, fnName := extractModulePathAndFunc(dot)
-			if modPath != "" && modSet[modPath] && moduleFns[fnName] {
-				// Rewrite to direct function call
-				e.Function = &parser.Identifier{
-					Token: lexer.Token{Type: lexer.IDENT, Literal: fnName},
-					Value: fnName,
-				}
-			}
-		}
-		// Recurse into arguments
-		for i, arg := range e.Arguments {
-			e.Arguments[i] = resolveModuleCallsInExpr(arg, modSet, moduleFns, moduleConsts)
-		}
-		return e
-
-	case *parser.DotExpression:
-		// 處理 module.CONST 常量存取（非呼叫），如 base64.BASE64-STD → BASE64-STD。
-		// 僅當 receiver 鏈比對到已知模組 ShortName（modSet）且 property 為已知模組常量時改寫。
-		// struct 欄位存取（f.read、p.path）的 receiver 變數名不在 modSet，不受影響。
-		modPath, propName := extractModulePathAndFunc(e)
-		if modPath != "" && modSet[modPath] && moduleConsts[propName] {
-			return &parser.Identifier{
-				Token: lexer.Token{Type: lexer.IDENT, Literal: propName},
-				Value: propName,
-			}
-		}
-		// 遞迴處理 receiver（鏈式存取如 a.b.c 的 struct 欄位）
-		e.Receiver = resolveModuleCallsInExpr(e.Receiver, modSet, moduleFns, moduleConsts)
-		return e
-
-	case *parser.InfixExpression:
-		if e.Left != nil {
-			e.Left = resolveModuleCallsInExpr(e.Left, modSet, moduleFns, moduleConsts)
-		}
-		if e.Right != nil {
-			e.Right = resolveModuleCallsInExpr(e.Right, modSet, moduleFns, moduleConsts)
-		}
-		return e
-
-	case *parser.PrefixExpression:
-		if e.Right != nil {
-			e.Right = resolveModuleCallsInExpr(e.Right, modSet, moduleFns, moduleConsts)
-		}
-		return e
-
-	case *parser.ConditionalExpression:
-		if e.Condition != nil {
-			e.Condition = resolveModuleCallsInExpr(e.Condition, modSet, moduleFns, moduleConsts)
-		}
-		if e.Consequence != nil {
-			e.Consequence = resolveModuleCallsInExpr(e.Consequence, modSet, moduleFns, moduleConsts)
-		}
-		if e.Alternative != nil {
-			e.Alternative = resolveModuleCallsInExpr(e.Alternative, modSet, moduleFns, moduleConsts)
-		}
-		return e
-
-	case *parser.IfExpression:
-		if e.Condition != nil {
-			e.Condition = resolveModuleCallsInExpr(e.Condition, modSet, moduleFns, moduleConsts)
-		}
-		if e.Consequence != nil {
-			for _, bodyStmt := range e.Consequence.Statements {
-				resolveModuleCallsInStmt(bodyStmt, modSet, moduleFns, moduleConsts)
-			}
-		}
-		if e.Alternative != nil {
-			for _, bodyStmt := range e.Alternative.Statements {
-				resolveModuleCallsInStmt(bodyStmt, modSet, moduleFns, moduleConsts)
-			}
-		}
-		return e
-
-	case *parser.GroupedExpression:
-		if e.Expression != nil {
-			e.Expression = resolveModuleCallsInExpr(e.Expression, modSet, moduleFns, moduleConsts)
-		}
-		return e
-
-	case *parser.IndexExpression:
-		if e.Left != nil {
-			e.Left = resolveModuleCallsInExpr(e.Left, modSet, moduleFns, moduleConsts)
-		}
-		if e.Index != nil {
-			e.Index = resolveModuleCallsInExpr(e.Index, modSet, moduleFns, moduleConsts)
-		}
-		return e
-
-	case *parser.SliceExpression:
-		if e.Left != nil {
-			e.Left = resolveModuleCallsInExpr(e.Left, modSet, moduleFns, moduleConsts)
-		}
-		if e.Range != nil {
-			if e.Range.Start != nil {
-				e.Range.Start = resolveModuleCallsInExpr(e.Range.Start, modSet, moduleFns, moduleConsts)
-			}
-			if e.Range.End != nil {
-				e.Range.End = resolveModuleCallsInExpr(e.Range.End, modSet, moduleFns, moduleConsts)
-			}
-		}
-		return e
-
-	case *parser.AssignExpression:
-		if e.Left != nil {
-			e.Left = resolveModuleCallsInExpr(e.Left, modSet, moduleFns, moduleConsts)
-		}
-		if e.Value != nil {
-			e.Value = resolveModuleCallsInExpr(e.Value, modSet, moduleFns, moduleConsts)
-		}
-		return e
-
-	default:
-		return e
-	}
-}
-
+                                                                                
+                      
+                      
+                    
+      
+                                               
+                                                       
+                   
+                                                       
+                                                        
+        
+          
+                
+   
+  
+                                   
+                    
+ 
+                                                                                                                                       
+                          
+                                  
+                          
+                                                                                         
+   
+                           
+                     
+                                                                               
+   
+                                   
+                     
+                                                                               
+   
+                                 
+                    
+                                               
+                                                                       
+    
+   
+                             
+                                         
+                                                                      
+   
+                           
+                         
+                                                                                       
+   
+                    
+                                                                    
+   
+                      
+                                                                      
+   
+                    
+                                               
+                                                                       
+    
+   
+  
+ 
+                                                                                                                                                          
+                 
+            
+  
+                          
+                             
+                                                                   
+                                                                       
+                                                               
+                                                               
+                                                                                     
+   
+                                                                 
+                                                                             
+                                                             
+                                                        
+                                                   
+                                                             
+                                      
+                                    
+                                                            
+                   
+     
+    
+   
+                           
+                                   
+                                                                                  
+   
+          
+                            
+                                                                                              
+                                                                                                                 
+                                                                                                  
+                                                  
+                                                                 
+                             
+                                                             
+                    
+    
+   
+                                                                       
+                                                                                    
+          
+                              
+                    
+                                                                             
+   
+                     
+                                                                               
+   
+          
+                               
+                     
+                                                                               
+   
+          
+                                    
+                         
+                                                                                       
+   
+                           
+                                                                                           
+   
+                           
+                                                                                           
+   
+          
+                           
+                         
+                                                                                       
+   
+                           
+                                                      
+                                                                       
+    
+   
+                           
+                                                      
+                                                                       
+    
+   
+          
+                                
+                          
+                                                                                         
+   
+          
+                              
+                    
+                                                                             
+   
+                     
+                                                                               
+   
+          
+                              
+                    
+                                                                             
+   
+                     
+                            
+                                                                                            
+    
+                          
+                                                                                        
+    
+   
+          
+                               
+                    
+                                                                             
+   
+                     
+                                                                               
+   
+          
+         
+          
+  
+ 
 // resolveSelfMethodCalls rewrites self.method(args) calls inside method bodies
 // to StructType.method(self, args), where StructType is derived from the
 // function's implicit self parameter.
@@ -8143,31 +7684,30 @@ func resolveModuleCallsInExpr(expr parser.Expression, modSet map[string]bool, mo
 // are dispatched to the field's type method. This mirrors the self.method()
 // rewrite and is required because the LLVM generator only handles Identifier
 // receivers, not DotExpression receivers.
-func resolveSelfMethodCalls(program *parser.Program) {
-	structFields := collectStructFields(program)
-	for _, stmt := range program.Statements {
-		fd, ok := stmt.(*parser.FunctionDefinition)
-		if !ok {
-			continue
-		}
-		if len(fd.Parameters) == 0 || fd.Parameters[0].Name != "self" {
-			continue
-		}
-		selfType := fd.Parameters[0].Type.String()
-		if fd.Body != nil {
-			for _, bodyStmt := range fd.Body.Statements {
-				resolveSelfInStmt(bodyStmt, selfType, structFields)
-			}
-		}
-	}
-}
-
+                                                      
+                                             
+                                          
+                                             
+          
+           
+   
+                                                                 
+           
+   
+                                            
+                     
+                                                
+                                                       
+    
+   
+  
+ 
 // resolveMethodCalls rewrites user-written `Type.method(args)` static method
 // calls to `module.Type.method(args)` using the typeOwner registry.
 //
 // prefixMethodNames() renames method definitions from `Type.method` to
 // `module.Type.method` (e.g. bigint.cmp → bigint.bigint.cmp).  However,
-// resolveModuleCalls() only rewrites simple `module.fn()` calls — it does
+// checker.ResolveModuleCalls() only rewrites simple `module.fn()` calls — it does
 // NOT touch `Type.method()` calls because the method name contains a dot
 // and is not collected into moduleFns.
 //
@@ -8180,1550 +7720,667 @@ func resolveSelfMethodCalls(program *parser.Program) {
 // whose receiver is a bare Identifier matching a typeOwner key are rewritten;
 // instance method calls (var.method()) and already-prefixed calls are left
 // untouched.
-func resolveMethodCalls(program *parser.Program, typeOwner map[string]string) {
-	if len(typeOwner) == 0 {
-		return
-	}
-	// Collect all defined method names (with dots) so we only rewrite calls
-	// that actually target a known method.  This avoids rewriting field-access
-	// patterns that happen to share a name with a type.
-	definedMethods := make(map[string]bool)
-	for _, stmt := range program.Statements {
-		if fd, ok := stmt.(*parser.FunctionDefinition); ok {
-			if fd.IsMethodDef {
-				definedMethods[fd.Name] = true
-			}
-		}
-	}
-	for _, stmt := range program.Statements {
-		resolveMethodCallsInStmt(stmt, typeOwner, definedMethods)
-	}
-}
-
-func resolveMethodCallsInStmt(stmt parser.Statement, typeOwner map[string]string, definedMethods map[string]bool) {
-	if stmt == nil {
-		return
-	}
-	switch s := stmt.(type) {
-	case *parser.ExpressionStatement:
-		if s.Expression != nil {
-			s.Expression = resolveMethodCallsInExpr(s.Expression, typeOwner, definedMethods)
-		}
-	case *parser.LetStatement:
-		if s.Value != nil {
-			s.Value = resolveMethodCallsInExpr(s.Value, typeOwner, definedMethods)
-		}
-	case *parser.MultiAssignStatement:
-		if s.Value != nil {
-			s.Value = resolveMethodCallsInExpr(s.Value, typeOwner, definedMethods)
-		}
-	case *parser.FunctionDefinition:
-		if s.Body != nil {
-			for _, bodyStmt := range s.Body.Statements {
-				resolveMethodCallsInStmt(bodyStmt, typeOwner, definedMethods)
-			}
-		}
-	case *parser.BlockStatement:
-		for _, bodyStmt := range s.Statements {
-			resolveMethodCallsInStmt(bodyStmt, typeOwner, definedMethods)
-		}
-	case *parser.ForStatement:
-		if s.Condition != nil {
-			s.Condition = resolveMethodCallsInExpr(s.Condition, typeOwner, definedMethods)
-		}
-		if s.Init != nil {
-			resolveMethodCallsInStmt(s.Init, typeOwner, definedMethods)
-		}
-		if s.Update != nil {
-			resolveMethodCallsInStmt(s.Update, typeOwner, definedMethods)
-		}
-		if s.Body != nil {
-			for _, bodyStmt := range s.Body.Statements {
-				resolveMethodCallsInStmt(bodyStmt, typeOwner, definedMethods)
-			}
-		}
-	case *parser.ReturnStatement:
-		if s.ReturnValue != nil {
-			s.ReturnValue = resolveMethodCallsInExpr(s.ReturnValue, typeOwner, definedMethods)
-		}
-	}
-}
-
-func resolveMethodCallsInExpr(expr parser.Expression, typeOwner map[string]string, definedMethods map[string]bool) parser.Expression {
-	if expr == nil {
-		return nil
-	}
-	switch e := expr.(type) {
-	case *parser.CallExpression:
-		// Rewrite Type.method(args) → module.Type.method(args) when Type is
-		// a known user-defined struct type (in typeOwner) and the method
-		// exists (module.Type.method is in definedMethods).
-		if dot, ok := e.Function.(*parser.DotExpression); ok {
-			if recv, ok := dot.Receiver.(*parser.Identifier); ok {
-				typeName := recv.Value
-				if mod, ok := typeOwner[typeName]; ok && mod != "" {
-					fullName := mod + "." + typeName + "." + dot.Property
-					if definedMethods[fullName] {
-						e.Function = &parser.Identifier{
-							Token: lexer.Token{Type: lexer.IDENT, Literal: fullName},
-							Value: fullName,
-						}
-					}
-				}
-			}
-		}
-		// Recurse into arguments and nested calls
-		if innerCall, ok := e.Function.(*parser.CallExpression); ok {
-			e.Function = resolveMethodCallsInExpr(innerCall, typeOwner, definedMethods)
-		}
-		for i, arg := range e.Arguments {
-			e.Arguments[i] = resolveMethodCallsInExpr(arg, typeOwner, definedMethods)
-		}
-		return e
-	case *parser.DotExpression:
-		e.Receiver = resolveMethodCallsInExpr(e.Receiver, typeOwner, definedMethods)
-		return e
-	case *parser.InfixExpression:
-		if e.Left != nil {
-			e.Left = resolveMethodCallsInExpr(e.Left, typeOwner, definedMethods)
-		}
-		if e.Right != nil {
-			e.Right = resolveMethodCallsInExpr(e.Right, typeOwner, definedMethods)
-		}
-		return e
-	case *parser.PrefixExpression:
-		if e.Right != nil {
-			e.Right = resolveMethodCallsInExpr(e.Right, typeOwner, definedMethods)
-		}
-		return e
-	case *parser.IndexExpression:
-		if e.Left != nil {
-			e.Left = resolveMethodCallsInExpr(e.Left, typeOwner, definedMethods)
-		}
-		if e.Index != nil {
-			e.Index = resolveMethodCallsInExpr(e.Index, typeOwner, definedMethods)
-		}
-		return e
-	case *parser.IfExpression:
-		if e.Condition != nil {
-			e.Condition = resolveMethodCallsInExpr(e.Condition, typeOwner, definedMethods)
-		}
-		if e.Consequence != nil {
-			for _, bs := range e.Consequence.Statements {
-				resolveMethodCallsInStmt(bs, typeOwner, definedMethods)
-			}
-		}
-		if e.Alternative != nil {
-			for _, bs := range e.Alternative.Statements {
-				resolveMethodCallsInStmt(bs, typeOwner, definedMethods)
-			}
-		}
-		return e
-	case *parser.ConditionalExpression:
-		if e.Condition != nil {
-			e.Condition = resolveMethodCallsInExpr(e.Condition, typeOwner, definedMethods)
-		}
-		if e.Consequence != nil {
-			e.Consequence = resolveMethodCallsInExpr(e.Consequence, typeOwner, definedMethods)
-		}
-		if e.Alternative != nil {
-			e.Alternative = resolveMethodCallsInExpr(e.Alternative, typeOwner, definedMethods)
-		}
-		return e
-	}
-	return expr
-}
-
+                                                                               
+                         
+        
+  
+                                                                         
+                                                                            
+                                                     
+                                        
+                                          
+                                                      
+                      
+                                  
+    
+   
+  
+                                          
+                                                           
+  
+ 
+                                                                                                                   
+                 
+        
+  
+                          
+                                  
+                          
+                                                                                   
+   
+                           
+                     
+                                                                         
+   
+                                   
+                     
+                                                                         
+   
+                                 
+                    
+                                               
+                                                                 
+    
+   
+                             
+                                         
+                                                                
+   
+                           
+                         
+                                                                                 
+   
+                    
+                                                              
+   
+                      
+                                                                
+   
+                    
+                                               
+                                                                 
+    
+   
+                              
+                           
+                                                                                     
+   
+  
+ 
+                                                                                                                                      
+                 
+            
+  
+                          
+                             
+                                                                        
+                                                                   
+                                                      
+                                                        
+                                                         
+                          
+                                                        
+                                                          
+                                  
+                                      
+                                                                
+                       
+       
+      
+     
+    
+   
+                                            
+                                                               
+                                                                              
+   
+                                   
+                                                                            
+   
+          
+                            
+                                                                              
+          
+                              
+                    
+                                                                       
+   
+                     
+                                                                         
+   
+          
+                               
+                     
+                                                                         
+   
+          
+                              
+                    
+                                                                       
+   
+                     
+                                                                         
+   
+          
+                           
+                         
+                                                                                 
+   
+                           
+                                                
+                                                           
+    
+   
+                           
+                                                
+                                                           
+    
+   
+          
+                                    
+                         
+                                                                                 
+   
+                           
+                                                                                     
+   
+                           
+                                                                                     
+   
+          
+  
+            
+ 
 // collectStructFields builds a map from struct name to field name → field type
 // string. Used by resolveSelfInExpr to look up field types when rewriting
 // .field.method(args) calls.
 // structFieldTypeString returns the full type string of a struct field,
 // taking into account ArraySize and IsSlice flags that are stored separately
 // from f.Type (which only holds the element type).
-func structFieldTypeString(f *parser.StructField) string {
-	if f.Type == nil {
-		return ""
-	}
-	typeStr := f.Type.String()
-	if f.ArraySize > 0 {
-		return fmt.Sprintf("[%d]%s", f.ArraySize, typeStr)
-	}
-	if f.IsSlice {
-		return "[]" + typeStr
-	}
-	return typeStr
-}
-
-func collectStructFields(program *parser.Program) map[string]map[string]string {
-	result := make(map[string]map[string]string)
-	for _, stmt := range program.Statements {
-		sd, ok := stmt.(*parser.StructDefinition)
-		if !ok {
-			continue
-		}
-		fields := make(map[string]string)
-		for _, f := range sd.Fields {
-			if typeStr := structFieldTypeString(f); typeStr != "" {
-				fields[f.Name] = typeStr
-			}
-		}
-		result[sd.Name] = fields
-	}
-	return result
-}
-
+                                                          
+                   
+           
+  
+                           
+                     
+                                                    
+  
+               
+                       
+  
+               
+ 
+                                                                                
+                                             
+                                          
+                                           
+          
+           
+   
+                                   
+                               
+                                                          
+                            
+    
+   
+                          
+  
+              
+ 
 // collectConcreteTypeAliases builds a map from single concrete type alias
 // name to its underlying type string (e.g. "fd" → "i64"). Only aliases of
 // the form `name = known-type` (non-union, non-function-type) are collected.
 // Used by isConcreteType / isArgTypeCompatible to enforce newtype semantics.
-func collectConcreteTypeAliases(program *parser.Program) map[string]string {
-	result := make(map[string]string)
-	for _, stmt := range program.Statements {
-		ta, ok := stmt.(*parser.TypeAlias)
-		if !ok {
-			continue
-		}
-		// Skip union aliases (ta.Union != nil) and function-type aliases
-		// (ta.Type is *parser.FunctionType, handled separately as fnTypeAliases).
-		if ta.Type == nil || ta.Union != nil {
-			continue
-		}
-		if _, ok := ta.Type.(*parser.FunctionType); ok {
-			continue
-		}
-		result[ta.Name] = ta.Type.String()
-	}
-	return result
-}
-
-func resolveSelfInStmt(stmt parser.Statement, selfType string, structFields map[string]map[string]string) {
-	switch s := stmt.(type) {
-	case *parser.ExpressionStatement:
-		if s.Expression != nil {
-			resolveSelfInExpr(s.Expression, selfType, structFields)
-		}
-	case *parser.LetStatement:
-		if s.Value != nil {
-			resolveSelfInExpr(s.Value, selfType, structFields)
-		}
-	case *parser.MultiAssignStatement:
-		if s.Value != nil {
-			resolveSelfInExpr(s.Value, selfType, structFields)
-		}
-	case *parser.FunctionDefinition:
-		if s.Body != nil {
-			for _, bodyStmt := range s.Body.Statements {
-				resolveSelfInStmt(bodyStmt, selfType, structFields)
-			}
-		}
-	case *parser.BlockStatement:
-		for _, bodyStmt := range s.Statements {
-			resolveSelfInStmt(bodyStmt, selfType, structFields)
-		}
-	case *parser.ForStatement:
-		if s.Condition != nil {
-			resolveSelfInExpr(s.Condition, selfType, structFields)
-		}
-		if s.Body != nil {
-			for _, bodyStmt := range s.Body.Statements {
-				resolveSelfInStmt(bodyStmt, selfType, structFields)
-			}
-		}
-	case *parser.ReturnStatement:
-		if s.ReturnValue != nil {
-			resolveSelfInExpr(s.ReturnValue, selfType, structFields)
-		}
-	}
-}
-
-func resolveSelfInExpr(expr parser.Expression, selfType string, structFields map[string]map[string]string) {
-	if expr == nil {
-		return
-	}
-	switch e := expr.(type) {
-	case *parser.CallExpression:
-		if dot, ok := e.Function.(*parser.DotExpression); ok {
-			// Case 1: self.method(args) → StructType.method(self, args)
-			if recv, ok := dot.Receiver.(*parser.Identifier); ok && recv.Value == "self" {
-				concreteName := selfType + "." + dot.Property
-				e.Function = &parser.Identifier{
-					Token: lexer.Token{Type: lexer.IDENT, Literal: concreteName},
-					Value: concreteName,
-				}
-				receiverArg := &parser.Identifier{
-					Token: recv.Token,
-					Value: "self",
-				}
-				e.Arguments = append([]parser.Expression{receiverArg}, e.Arguments...)
-			}
-			// Case 2: .field.method(args) → FieldType.method(.field, args)
-			// where .field is self.field (DotExpression with Receiver=Identifier{"self"})
-			if innerDot, ok := dot.Receiver.(*parser.DotExpression); ok {
-				if innerRecv, ok := innerDot.Receiver.(*parser.Identifier); ok && innerRecv.Value == "self" {
-					fieldName := innerDot.Property
-					if fields, ok := structFields[selfType]; ok {
-						if fieldType, ok := fields[fieldName]; ok {
-							concreteName := fieldType + "." + dot.Property
-							e.Function = &parser.Identifier{
-								Token: lexer.Token{Type: lexer.IDENT, Literal: concreteName},
-								Value: concreteName,
-							}
-							// receiver arg: .field (= self.field)
-							receiverArg := &parser.DotExpression{
-								Token:    innerDot.Token,
-								Property: fieldName,
-								Receiver: &parser.Identifier{
-									Token: lexer.Token{Type: lexer.IDENT, Literal: "self"},
-									Value: "self",
-								},
-							}
-							e.Arguments = append([]parser.Expression{receiverArg}, e.Arguments...)
-						}
-					}
-				}
-			}
-			// Case 3: .field[i].method(args) → ElementType.method(.field[i], args)
-			// where .field is self.field and field is an array type [N]T
-			if idxExpr, ok := dot.Receiver.(*parser.IndexExpression); ok {
-				if innerDot, ok := idxExpr.Left.(*parser.DotExpression); ok {
-					if innerRecv, ok := innerDot.Receiver.(*parser.Identifier); ok && innerRecv.Value == "self" {
-						fieldName := innerDot.Property
-						if fields, ok := structFields[selfType]; ok {
-							if fieldType, ok := fields[fieldName]; ok {
-								// fieldType 形如 "[N]T" — 提取元素型別 T
-								closingIdx := strings.LastIndex(fieldType, "]")
-								if closingIdx >= 0 && closingIdx+1 < len(fieldType) {
-									elemType := fieldType[closingIdx+1:]
-									concreteName := elemType + "." + dot.Property
-									e.Function = &parser.Identifier{
-										Token: lexer.Token{Type: lexer.IDENT, Literal: concreteName},
-										Value: concreteName,
-									}
-									// receiver arg: .field[i] (= self.field[i])
-									receiverArg := &parser.IndexExpression{
-										Token: idxExpr.Token,
-										Left: &parser.DotExpression{
-											Token:    innerDot.Token,
-											Property: fieldName,
-											Receiver: &parser.Identifier{
-												Token: lexer.Token{Type: lexer.IDENT, Literal: "self"},
-												Value: "self",
-											},
-										},
-										Index: idxExpr.Index,
-									}
-									e.Arguments = append([]parser.Expression{receiverArg}, e.Arguments...)
-								}
-							}
-						}
-					}
-				}
-			}
-		}
-		if innerCall, ok := e.Function.(*parser.CallExpression); ok {
-			resolveSelfInExpr(innerCall, selfType, structFields)
-		}
-		for _, arg := range e.Arguments {
-			resolveSelfInExpr(arg, selfType, structFields)
-		}
-	case *parser.InfixExpression:
-		resolveSelfInExpr(e.Left, selfType, structFields)
-		resolveSelfInExpr(e.Right, selfType, structFields)
-	case *parser.PrefixExpression:
-		resolveSelfInExpr(e.Right, selfType, structFields)
-	case *parser.IfExpression:
-		if e.Consequence != nil {
-			for _, s := range e.Consequence.Statements {
-				resolveSelfInStmt(s, selfType, structFields)
-			}
-		}
-		if e.Alternative != nil {
-			for _, s := range e.Alternative.Statements {
-				resolveSelfInStmt(s, selfType, structFields)
-			}
-		}
-	case *parser.GroupedExpression:
-		resolveSelfInExpr(e.Expression, selfType, structFields)
-	case *parser.ConditionalExpression:
-		resolveSelfInExpr(e.Condition, selfType, structFields)
-		resolveSelfInExpr(e.Consequence, selfType, structFields)
-		resolveSelfInExpr(e.Alternative, selfType, structFields)
-	}
-}
-
+                                                                            
+                                  
+                                          
+                                    
+          
+           
+   
+                                                                   
+                                                                            
+                                        
+           
+   
+                                                  
+           
+   
+                                    
+  
+              
+ 
+                                                                                                           
+                          
+                                  
+                          
+                                                          
+   
+                           
+                     
+                                                     
+   
+                                   
+                     
+                                                     
+   
+                                 
+                    
+                                               
+                                                       
+    
+   
+                             
+                                         
+                                                      
+   
+                           
+                         
+                                                         
+   
+                    
+                                               
+                                                       
+    
+   
+                              
+                           
+                                                           
+   
+  
+ 
+                                                                                                            
+                 
+        
+  
+                          
+                             
+                                                        
+                                                                 
+                                                                                 
+                                                 
+                                    
+                                                                  
+                         
+     
+                                      
+                       
+                   
+     
+                                                                          
+    
+                                                                    
+                                                                                 
+                                                                
+                                                                                                 
+                                   
+                                                  
+                                                 
+                                                     
+                                       
+                                                                     
+                            
+        
+                                             
+                                            
+                                 
+                            
+                                     
+                                                                
+                       
+          
+        
+                                                                             
+       
+      
+     
+    
+                                                                            
+                                                                
+                                                                 
+                                                                 
+                                                                                                  
+                                    
+                                                   
+                                                  
+                                                           
+                                                       
+                                                             
+                                             
+                                                      
+                                         
+                                                                       
+                              
+          
+                                                     
+                                                
+                               
+                                      
+                                    
+                               
+                                        
+                                                                   
+                          
+             
+            
+                               
+          
+                                                                               
+         
+        
+       
+      
+     
+    
+   
+                                                               
+                                                       
+   
+                                   
+                                                 
+   
+                              
+                                                   
+                                                    
+                               
+                                                    
+                           
+                           
+                                               
+                                                
+    
+   
+                           
+                                               
+                                                
+    
+   
+                                
+                                                         
+                                    
+                                                        
+                                                          
+                                                          
+  
+ 
 // isConstantExpr returns true if the expression is a compile-time constant literal.
-func isConstantExpr(expr parser.Expression) bool {
-	switch expr.(type) {
-	case *parser.IntegerLiteral:
-		return true
-	case *parser.FloatLiteral:
-		return true
-	case *parser.StringLiteral:
-		return true
-	}
-	return false
-}
-
+                                                  
+                     
+                             
+             
+                           
+             
+                            
+             
+  
+             
+ 
 // isConstantName 判斷名稱是否符合 Nolang 大寫常數命名規範。
 // 規則：首字元為大寫 ASCII 字母（A-Z），且名稱中不含小寫 ASCII 字母（a-z）。
 // 例：SBOX, FNV-OFFSET, O-EXCL, A, MAX-LEN 為常數；sum, i, myVar, Foo 不為常數。
 // 用於重複定義偵測——大寫常數即使無顯式型別註記也應禁止重複賦值。
-func isConstantName(name string) bool {
-	if name == "" {
-		return false
-	}
-	if name[0] < 'A' || name[0] > 'Z' {
-		return false
-	}
-	for i := 0; i < len(name); i++ {
-		c := name[i]
-		if c >= 'a' && c <= 'z' {
-			return false
-		}
-	}
-	return true
-}
-
+                                       
+                
+              
+  
+                                    
+              
+  
+                                 
+              
+                           
+               
+   
+  
+            
+ 
 // matchesTargetPlatform 檢查宣告的 PlatformKeys 是否符合目標平台。
 // 無 PlatformKeys（平台通用宣告）永遠回傳 true。
 // goos/goarch 為空時（未設定目標平台），也回傳 true（向後相容）。
-func matchesTargetPlatform(platformKeys []string, goos, goarch string) bool {
-	if len(platformKeys) == 0 {
-		return true
-	}
-	if goos == "" || goarch == "" {
-		return true // 未設定目標平台，接受所有（向後相容）
-	}
-	targetKey := llvm.PlatformKeyFor(goos, goarch)
-	if targetKey == "" {
-		return true // 不支援的平台，接受所有
-	}
-	for _, pk := range platformKeys {
-		if pk == targetKey {
-			return true
-		}
-	}
-	return false
-}
-
+                                                                             
+                            
+             
+  
+                                
+                                                                       
+  
+                                               
+                     
+                                                  
+  
+                                  
+                      
+              
+   
+  
+             
+ 
 // resolveModuleConstants walks the program and replaces Identifier references to
 // module constants with their literal values, allowing module functions like
 // degrees() to reference pi/e directly.
-func resolveModuleConstants(program *parser.Program, constants map[string]parser.Expression) {
-	if len(constants) == 0 {
-		return
-	}
-	for _, stmt := range program.Statements {
-		resolveModuleConstantsInStmt(stmt, constants, nil)
-	}
-}
-
-func resolveModuleConstantsInStmt(stmt parser.Statement, constants map[string]parser.Expression, locals map[string]bool) {
-	switch s := stmt.(type) {
-	case *parser.ExpressionStatement:
-		if s.Expression != nil {
-			s.Expression = resolveModuleConstantsInExpr(s.Expression, constants, locals)
-		}
-	case *parser.LetStatement:
-		if s.Value != nil {
-			s.Value = resolveModuleConstantsInExpr(s.Value, constants, locals)
-		}
-	case *parser.MultiAssignStatement:
-		if s.Value != nil {
-			s.Value = resolveModuleConstantsInExpr(s.Value, constants, locals)
-		}
-	case *parser.FunctionDefinition:
-		if s.Body != nil {
-			funcLocals := make(map[string]bool)
-			if locals != nil {
-				for k, v := range locals {
-					funcLocals[k] = v
-				}
-			}
-			for _, p := range s.Parameters {
-				funcLocals[p.Name] = true
-			}
-			for _, r := range s.Results {
-				if r.Name != "" {
-					funcLocals[r.Name] = true
-				}
-			}
-			collectLocalNames(s.Body, funcLocals)
-			for _, bodyStmt := range s.Body.Statements {
-				resolveModuleConstantsInStmt(bodyStmt, constants, funcLocals)
-			}
-		}
-	case *parser.BlockStatement:
-		for _, bodyStmt := range s.Statements {
-			resolveModuleConstantsInStmt(bodyStmt, constants, locals)
-		}
-	case *parser.ForStatement:
-		if s.Condition != nil {
-			s.Condition = resolveModuleConstantsInExpr(s.Condition, constants, locals)
-		}
-		if s.Init != nil {
-			resolveModuleConstantsInStmt(s.Init, constants, locals)
-		}
-		if s.Update != nil {
-			resolveModuleConstantsInStmt(s.Update, constants, locals)
-		}
-		if s.Body != nil {
-			for _, bodyStmt := range s.Body.Statements {
-				resolveModuleConstantsInStmt(bodyStmt, constants, locals)
-			}
-		}
-	case *parser.ReturnStatement:
-		if s.ReturnValue != nil {
-			s.ReturnValue = resolveModuleConstantsInExpr(s.ReturnValue, constants, locals)
-		}
-	}
-}
-
-func collectLocalNames(block *parser.BlockStatement, locals map[string]bool) {
-	if block == nil {
-		return
-	}
-	for _, stmt := range block.Statements {
-		if ls, ok := stmt.(*parser.LetStatement); ok && ls.Name != nil {
-			locals[ls.Name.Value] = true
-		}
-		if fd, ok := stmt.(*parser.FunctionDefinition); ok {
-			if fd.Body != nil {
-				for _, p := range fd.Parameters {
-					locals[p.Name] = true
-				}
-				for _, r := range fd.Results {
-					if r.Name != "" {
-						locals[r.Name] = true
-					}
-				}
-				collectLocalNames(fd.Body, locals)
-			}
-		}
-		if fs, ok := stmt.(*parser.ForStatement); ok {
-			if fs.Init != nil {
-				if ls, ok := fs.Init.(*parser.LetStatement); ok && ls.Name != nil {
-					locals[ls.Name.Value] = true
-				}
-			}
-			if fs.Body != nil {
-				if fs.IterRange != nil && fs.IterRange.Variable != "" {
-					locals[fs.IterRange.Variable] = true
-				}
-				collectLocalNames(fs.Body, locals)
-			}
-		}
-		if bs, ok := stmt.(*parser.BlockStatement); ok {
-			collectLocalNames(bs, locals)
-		}
-	}
-}
-
-func resolveModuleConstantsInExpr(expr parser.Expression, constants map[string]parser.Expression, locals map[string]bool) parser.Expression {
-	if expr == nil {
-		return nil
-	}
-	switch e := expr.(type) {
-	case *parser.Identifier:
-		// Skip option type variant names (ok/nil/err) — these are built-in
-		// keywords used in match patterns and must never be replaced by
-		// module constants, even if a module happens to define a top-level
-		// or local variable with the same name.
-		if e.Value == "ok" || e.Value == "nil" || e.Value == "err" {
-			return e
-		}
-		// Skip local variables — they shadow module constants
-		if locals != nil && locals[e.Value] {
-			return e
-		}
-		if lit, ok := constants[e.Value]; ok {
-			return lit
-		}
-		return e
-	case *parser.CallExpression:
-		e.Function = resolveModuleConstantsInExpr(e.Function, constants, locals)
-		for i, arg := range e.Arguments {
-			e.Arguments[i] = resolveModuleConstantsInExpr(arg, constants, locals)
-		}
-		return e
-	case *parser.InfixExpression:
-		if e.Left != nil {
-			e.Left = resolveModuleConstantsInExpr(e.Left, constants, locals)
-		}
-		if e.Right != nil {
-			e.Right = resolveModuleConstantsInExpr(e.Right, constants, locals)
-		}
-		return e
-	case *parser.PrefixExpression:
-		if e.Right != nil {
-			e.Right = resolveModuleConstantsInExpr(e.Right, constants, locals)
-		}
-		return e
-	case *parser.ConditionalExpression:
-		if e.Condition != nil {
-			e.Condition = resolveModuleConstantsInExpr(e.Condition, constants, locals)
-		}
-		if e.Consequence != nil {
-			e.Consequence = resolveModuleConstantsInExpr(e.Consequence, constants, locals)
-		}
-		if e.Alternative != nil {
-			e.Alternative = resolveModuleConstantsInExpr(e.Alternative, constants, locals)
-		}
-		return e
-	case *parser.IfExpression:
-		if e.Condition != nil {
-			e.Condition = resolveModuleConstantsInExpr(e.Condition, constants, locals)
-		}
-		if e.Consequence != nil {
-			for _, bodyStmt := range e.Consequence.Statements {
-				resolveModuleConstantsInStmt(bodyStmt, constants, locals)
-			}
-		}
-		if e.Alternative != nil {
-			for _, bodyStmt := range e.Alternative.Statements {
-				resolveModuleConstantsInStmt(bodyStmt, constants, locals)
-			}
-		}
-		return e
-	case *parser.GroupedExpression:
-		if e.Expression != nil {
-			e.Expression = resolveModuleConstantsInExpr(e.Expression, constants, locals)
-		}
-		return e
-	case *parser.IndexExpression:
-		if e.Left != nil {
-			e.Left = resolveModuleConstantsInExpr(e.Left, constants, locals)
-		}
-		if e.Index != nil {
-			e.Index = resolveModuleConstantsInExpr(e.Index, constants, locals)
-		}
-		return e
-	case *parser.SliceExpression:
-		if e.Left != nil {
-			e.Left = resolveModuleConstantsInExpr(e.Left, constants, locals)
-		}
-		if e.Range != nil {
-			if e.Range.Start != nil {
-				e.Range.Start = resolveModuleConstantsInExpr(e.Range.Start, constants, locals)
-			}
-			if e.Range.End != nil {
-				e.Range.End = resolveModuleConstantsInExpr(e.Range.End, constants, locals)
-			}
-		}
-		return e
-	case *parser.AssignExpression:
-		if e.Left != nil {
-			e.Left = resolveModuleConstantsInExpr(e.Left, constants, locals)
-		}
-		if e.Value != nil {
-			e.Value = resolveModuleConstantsInExpr(e.Value, constants, locals)
-		}
-		return e
-	default:
-		return e
-	}
-}
-
-// ValidateFuncArgs checks that function call argument types match the function signature.
+                                                                                              
+                         
+        
+  
+                                          
+                                                    
+  
+ 
+                                                                                                                          
+                          
+                                  
+                          
+                                                                               
+   
+                           
+                     
+                                                                     
+   
+                                   
+                     
+                                                                     
+   
+                                 
+                    
+                                      
+                     
+                              
+                      
+     
+    
+                                   
+                             
+    
+                                
+                     
+                              
+     
+    
+                                        
+                                               
+                                                                 
+    
+   
+                             
+                                         
+                                                            
+   
+                           
+                         
+                                                                             
+   
+                    
+                                                          
+   
+                      
+                                                            
+   
+                    
+                                               
+                                                             
+    
+   
+                              
+                           
+                                                                                 
+   
+  
+ 
+                                                                              
+                  
+        
+  
+                                        
+                                                                  
+                               
+   
+                                                      
+                      
+                                     
+                          
+     
+                                  
+                      
+                           
+      
+     
+                                      
+    
+   
+                                                
+                      
+                                                                       
+                                 
+     
+    
+                      
+                                                           
+                                         
+     
+                                      
+    
+   
+                                                  
+                                
+   
+  
+ 
+                                                                                                                                             
+                 
+            
+  
+                          
+                         
+                                                                       
+                                                                  
+                                                                     
+                                          
+                                                              
+           
+   
+                                                          
+                                       
+           
+   
+                                        
+             
+   
+          
+                             
+                                                                          
+                                   
+                                                                        
+   
+          
+                              
+                    
+                                                                   
+   
+                     
+                                                                     
+   
+          
+                               
+                     
+                                                                     
+   
+          
+                                    
+                         
+                                                                             
+   
+                           
+                                                                                 
+   
+                           
+                                                                                 
+   
+          
+                           
+                         
+                                                                             
+   
+                           
+                                                      
+                                                             
+    
+   
+                           
+                                                      
+                                                             
+    
+   
+          
+                                
+                          
+                                                                               
+   
+          
+                              
+                    
+                                                                   
+   
+                     
+                                                                     
+   
+          
+                              
+                    
+                                                                   
+   
+                     
+                            
+                                                                                  
+    
+                          
+                                                                              
+    
+   
+          
+                               
+                    
+                                                                   
+   
+                     
+                                                                     
+   
+          
+         
+          
+  
+ 
+// checker.ValidateFuncArgs checks that function call argument types match the function signature.
 // rootDir is optional — if empty, only locally defined function signatures are checked.
 // If provided, imported function signatures from module files are also resolved.
-
 // funcSigFromDef extracts the parameter and result type info from a function
 // definition, used to build the signature table for type inference.
-func funcSigFromDef(fd *parser.FunctionDefinition) *funcSig {
-	params := make([]paramInfo, len(fd.Parameters))
-	for i, p := range fd.Parameters {
-		t := ""
-		if p != nil && p.Type != nil {
-			t = p.Type.String()
-		}
-		params[i] = paramInfo{Name: p.Name, Type: t, HasDefault: p.DefaultExpr != nil}
-	}
-	results := make([]paramInfo, len(fd.Results))
-	for i, r := range fd.Results {
-		t := ""
-		if r != nil && r.Type != nil {
-			t = r.Type.String()
-		}
-		results[i] = paramInfo{Name: r.Name, Type: t}
-	}
-	return &funcSig{ParamTypes: params, ResultTypes: results}
-}
-
+                                                             
+                                                
+                                  
+         
+                                
+                      
+   
+                                                                                
+  
+                                              
+                               
+         
+                                
+                      
+   
+                                               
+  
+                                                          
+ 
 // funcSigFirstReturnType returns the type of the function's first result
 // parameter, or "" if the function has no results.
-func funcSigFirstReturnType(sig *funcSig) string {
-	if sig == nil || len(sig.ResultTypes) == 0 {
-		return ""
-	}
-	return sig.ResultTypes[0].Type
-}
-
-func ValidateFuncArgs(program *parser.Program, rootDir string) []ValidateResult {
-	var results []ValidateResult
-
-	// 1. Collect local function signatures (including from resolved imports
-	//    which are already merged into the program at build time)
-	sigs := make(map[string]*funcSig)
-	for _, stmt := range program.Statements {
-		if fd, ok := stmt.(*parser.FunctionDefinition); ok {
-			sigs[fd.Name] = funcSigFromDef(fd)
-		}
-	}
-
-	// 2. Collect imported function signatures from UseStatements
-	//    by parsing the referenced module files (when rootDir is available)
-	if rootDir != "" {
-		pkg, _ := LoadPackage(rootDir)
-		for _, stmt := range program.Statements {
-			use, ok := stmt.(*parser.UseStatement)
-			if !ok || use.Function == "" {
-				continue
-			}
-			funcName := use.Function
-			if use.Alias != "" {
-				funcName = use.Alias
-			}
-			if _, exists := sigs[funcName]; exists {
-				continue // already defined locally or via another import
-			}
-
-			modProg := resolveUseModule(use, pkg)
-			if modProg == nil {
-				continue
-			}
-			for _, ms := range modProg.Statements {
-				if fd, ok := ms.(*parser.FunctionDefinition); ok && fd.Name == use.Function {
-					sigs[funcName] = funcSigFromDef(fd)
-					break
-				}
-			}
-		}
-	}
-
-	// 3. Collect struct field type info from struct definitions
-	structFields := make(map[string]map[string]string)
-	for _, stmt := range program.Statements {
-		if sd, ok := stmt.(*parser.StructDefinition); ok {
-			fields := make(map[string]string)
-			for _, f := range sd.Fields {
-				if typeStr := structFieldTypeString(f); typeStr != "" {
-					fields[f.Name] = typeStr
-				}
-			}
-			if len(fields) > 0 {
-				structFields[sd.Name] = fields
-			}
-		}
-	}
-
-	// 4. Collect top-level variable types (explicit type annotations) so that
-	//    call argument type checking can resolve variable types. This is needed
-	//    for newtype enforcement (e.g. passing an `fd` variable to an `i64`
-	//    parameter must be rejected).
-	topLevelVarTypes := make(map[string]string)
-	for _, stmt := range program.Statements {
-		if ls, ok := stmt.(*parser.LetStatement); ok {
-			if ls.Type != nil && ls.Type.String() != "" && ls.Type.String() != ls.Name.Value {
-				if _, exists := topLevelVarTypes[ls.Name.Value]; !exists {
-					topLevelVarTypes[ls.Name.Value] = ls.Type.String()
-				}
-			}
-		}
-	}
-
-	// 5. Validate call expressions
-	for _, stmt := range program.Statements {
-		results = append(results, checkCallArgsInStmt(stmt, sigs, topLevelVarTypes, structFields)...)
-	}
-
-	return results
-}
-
-// resolveUseModule resolves a UseStatement to its module program.
-// It handles local paths (/path), std paths, and dependency paths (domain/...).
-func resolveUseModule(use *parser.UseStatement, pkg *Package) *parser.Program {
-	path := use.Path
-	var prog *parser.Program
-	var filePath string
-
-	// Local module paths (starting with /)
-	if strings.HasPrefix(path, "/") {
-		if pkg == nil {
-			return nil
-		}
-		relPath := strings.TrimPrefix(path, "/")
-		filePath = filepath.Join(pkg.RootDir, relPath) + ".no"
-		prog = parseProgramFile(filePath)
-	} else if strings.HasPrefix(path, "std/") || path == "std" {
-		// std/ paths — strip "std/" prefix to get module path relative to std/
-		relPath := strings.TrimPrefix(path, "std/")
-		if path == "std" {
-			relPath = ""
-		}
-		filePath = resolveModulePath(relPath)
-		if filePath == "" {
-			return nil
-		}
-		prog = parseProgramFile(filePath)
-	} else if pkg != nil {
-		// Dependency paths (domain/org/repo/...)
-		var err error
-		filePath, err = pkg.ResolveDependencyModule(path)
-		if err == nil && filePath != "" {
-			prog = parseProgramFile(filePath)
-		}
-	}
-
-	if prog == nil {
-		return nil
-	}
-
-	// Apply lib.no export filtering
-	if filePath != "" {
-		pkgRoot := findPackageRootFromFile(filePath)
-		if pkgRoot != "" {
-			libPath := filepath.Join(pkgRoot, "lib.no")
-			if _, err := os.Stat(libPath); err == nil {
-				prog = filterByExports(prog, libPath)
-			}
-		}
-	}
-	return prog
-}
-
-// parseProgramFileCache: 包級 AST 解析快取，供 standalone 函數 parseProgramFile 使用。
-// resolveUseModule（被 ValidateFuncArgs 調用）獨立於 Transpiler，無法存取 per-instance 快取。
-// 每次 Compile 開始時由 clearParseProgramFileCache() 清空，避免跨編譯的陳舊資料。
-var (
-	parseProgramFileCacheMu sync.Mutex
-	parseProgramFileCache   = make(map[string]*parser.Program)
-)
-
-func clearParseProgramFileCache() {
-	parseProgramFileCacheMu.Lock()
-	defer parseProgramFileCacheMu.Unlock()
-	parseProgramFileCache = make(map[string]*parser.Program)
-}
-
-// parseProgramFile reads and parses a .no file into a Program.
-func parseProgramFile(filePath string) *parser.Program {
-	// 快取命中：ValidateFuncArgs 可能對同一模組重複調用 resolveUseModule
-	parseProgramFileCacheMu.Lock()
-	if cached, ok := parseProgramFileCache[filePath]; ok {
-		parseProgramFileCacheMu.Unlock()
-		return cached
-	}
-	parseProgramFileCacheMu.Unlock()
-
-	if _, err := os.Stat(filePath); err != nil {
-		return nil
-	}
-	source, err := os.ReadFile(filePath)
-	if err != nil {
-		return nil
-	}
-	l := lexer.New(string(source))
-	p := parser.New(l)
-	prog := p.ParseProgram()
-	if len(p.Errors()) > 0 {
-		return nil
-	}
-	parseProgramFileCacheMu.Lock()
-	parseProgramFileCache[filePath] = prog
-	parseProgramFileCacheMu.Unlock()
-	return prog
-}
-
-type funcSig struct {
-	ParamTypes  []paramInfo
-	ResultTypes []paramInfo
-}
-
-type paramInfo struct {
-	Name       string
-	Type       string
-	HasDefault bool // 參數是否有默認值
-}
-
-func checkCallArgsInStmt(stmt parser.Statement, sigs map[string]*funcSig, varTypes map[string]string, structFields map[string]map[string]string) []ValidateResult {
-	return checkCallArgsInStmtWithResultParams(stmt, sigs, varTypes, nil, structFields)
-}
-
-// checkCallArgsInIfExpr descends into an IfExpression's branches.
-func checkCallArgsInIfExpr(s *parser.IfExpression, sigs map[string]*funcSig, varTypes map[string]string, resultParamNames map[string]bool, structFields map[string]map[string]string) []ValidateResult {
-	var results []ValidateResult
-	if s.Condition != nil {
-		results = append(results, checkCallArgsInExpr(s.Condition, sigs, varTypes, structFields)...)
-	}
-	if s.Consequence != nil {
-		for _, bs := range s.Consequence.Statements {
-			results = append(results, checkCallArgsInStmtWithResultParams(bs, sigs, varTypes, resultParamNames, structFields)...)
-		}
-	}
-	if s.Alternative != nil {
-		for _, bs := range s.Alternative.Statements {
-			results = append(results, checkCallArgsInStmtWithResultParams(bs, sigs, varTypes, resultParamNames, structFields)...)
-		}
-	}
-	return results
-}
-
-func checkCallArgsInStmtWithResultParams(stmt parser.Statement, sigs map[string]*funcSig, varTypes map[string]string, resultParamNames map[string]bool, structFields map[string]map[string]string) []ValidateResult {
-	switch s := stmt.(type) {
-	case *parser.ExpressionStatement:
-		if s.Expression != nil {
-			// If-as-statement: ExpressionStatement wraps an IfExpression.
-			// Descend into both branches so result-param types propagate.
-			if ifExpr, ok := s.Expression.(*parser.IfExpression); ok {
-				return checkCallArgsInIfExpr(ifExpr, sigs, varTypes, resultParamNames, structFields)
-			}
-			return checkCallArgsInExpr(s.Expression, sigs, varTypes, structFields)
-		}
-	case *parser.LetStatement:
-		if s.Value != nil {
-			results := checkCallArgsInExpr(s.Value, sigs, varTypes, structFields)
-			// Register the variable type from assignment for subsequent checks.
-			// Prefer the user-defined function's first return type over the
-			// generic "i64" default of inferExprType for CallExpression.
-			// Skip result parameters: their declared type is authoritative and
-			// must not be overwritten.
-			if s.Name != nil && !resultParamNames[s.Name.Value] {
-				// If the variable has an explicit type annotation, that type
-				// is authoritative — do not overwrite with inferred type.
-				// e.g. `t u64 = 0` should register "u64", not "i64".
-				if s.Type != nil && s.Type.String() != "" {
-					varTypes[s.Name.Value] = s.Type.String()
-				} else if _, exists := varTypes[s.Name.Value]; !exists {
-					// No explicit type and variable not yet seen: infer from value.
-					inferred := ""
-					if call, ok := s.Value.(*parser.CallExpression); ok {
-						if fn, ok := call.Function.(*parser.Identifier); ok {
-							inferred = funcSigFirstReturnType(sigs[fn.Value])
-						}
-					}
-					if inferred == "" {
-						inferred = inferExprType(s.Value, varTypes, nil, "")
-					}
-					if inferred != "" {
-						varTypes[s.Name.Value] = inferred
-					}
-				}
-				// If variable already exists in varTypes (e.g. declared with
-				// explicit type earlier), keep the existing type — do not
-				// overwrite with inferred type from reassignment.
-			} else if s.Name != nil && resultParamNames[s.Name.Value] {
-				// Result parameter: only seed the type if we can pin it
-				// from a known function's first return type, otherwise
-				// leave the declared type alone.
-				if ident, ok := s.Value.(*parser.CallExpression); ok {
-					if fn, ok := ident.Function.(*parser.Identifier); ok {
-						if t := funcSigFirstReturnType(sigs[fn.Value]); t != "" {
-							varTypes[s.Name.Value] = t
-						}
-					}
-				}
-			}
-			return results
-		}
-		// Type-only declaration: name [N]type (no = value)
-		if s.Name != nil && s.Type != nil {
-			varTypes[s.Name.Value] = s.Type.String()
-		}
-	case *parser.MultiAssignStatement:
-		if s.Value != nil {
-			return checkCallArgsInExpr(s.Value, sigs, varTypes, structFields)
-		}
-	case *parser.FunctionDefinition:
-		// Build local var types including function parameters and result params.
-		// Result parameter types are FROZEN — they may not be re-inferred from
-		// later assignments in the body (e.g. `q = zero()` must not turn `q`
-		// from `bigint` into the default call return type `i64`).
-		localTypes := make(map[string]string)
-		for k, v := range varTypes {
-			localTypes[k] = v
-		}
-		innerResultParams := make(map[string]bool)
-		for _, p := range s.Parameters {
-			if p.Type != nil {
-				localTypes[p.Name] = p.Type.String()
-			}
-		}
-		for _, r := range s.Results {
-			if r.Name != "" && r.Type != nil {
-				localTypes[r.Name] = r.Type.String()
-				innerResultParams[r.Name] = true
-			}
-		}
-		if s.Body != nil {
-			var results []ValidateResult
-			for _, bs := range s.Body.Statements {
-				results = append(results, checkCallArgsInStmtWithResultParams(bs, sigs, localTypes, innerResultParams, structFields)...)
-			}
-			return results
-		}
-	case *parser.BlockStatement:
-		var results []ValidateResult
-		for _, bs := range s.Statements {
-			results = append(results, checkCallArgsInStmtWithResultParams(bs, sigs, varTypes, resultParamNames, structFields)...)
-		}
-		return results
-	case *parser.ForStatement:
-		var results []ValidateResult
-		if s.Init != nil {
-			results = append(results, checkCallArgsInStmtWithResultParams(s.Init, sigs, varTypes, resultParamNames, structFields)...)
-		}
-		if s.Condition != nil {
-			results = append(results, checkCallArgsInExpr(s.Condition, sigs, varTypes, structFields)...)
-		}
-		if s.Update != nil {
-			results = append(results, checkCallArgsInStmtWithResultParams(s.Update, sigs, varTypes, resultParamNames, structFields)...)
-		}
-		if s.Body != nil {
-			for _, bs := range s.Body.Statements {
-				results = append(results, checkCallArgsInStmtWithResultParams(bs, sigs, varTypes, resultParamNames, structFields)...)
-			}
-		}
-		return results
-	case *parser.ReturnStatement:
-		if s.ReturnValue != nil {
-			return checkCallArgsInExpr(s.ReturnValue, sigs, varTypes, structFields)
-		}
-	}
-	return nil
-}
-
-// resolveExprType resolves the type of an expression, using struct field definitions
-// and variable type info to correctly handle struct field access and array element types.
-func resolveExprType(expr parser.Expression, varTypes map[string]string, structFields map[string]map[string]string) string {
-	if expr == nil {
-		return ""
-	}
-	switch e := expr.(type) {
-	case *parser.IndexExpression:
-		// Array/slice element access: extract element type from [N]type or []type
-		leftType := resolveExprType(e.Left, varTypes, structFields)
-		if strings.HasPrefix(leftType, "[") {
-			if idx := strings.LastIndex(leftType, "]"); idx >= 0 && idx+1 < len(leftType) {
-				elemType := leftType[idx+1:]
-				if elemType != "" {
-					return elemType
-				}
-			}
-		}
-		return ""
-	case *parser.DotExpression:
-		// Struct field access: resolve field type from struct definition
-		if ident, ok := e.Receiver.(*parser.Identifier); ok {
-			if receiverType, ok := varTypes[ident.Value]; ok {
-				if fields, ok := structFields[receiverType]; ok {
-					if t, ok := fields[e.Property]; ok {
-						return t
-					}
-				}
-			}
-		}
-		return ""
-	case *parser.SliceExpression:
-		// Slicing [N]T returns []T; slicing str returns str
-		if e.Left != nil {
-			leftType := resolveExprType(e.Left, varTypes, structFields)
-			if strings.HasPrefix(leftType, "[") {
-				if idx := strings.LastIndex(leftType, "]"); idx >= 0 && idx+1 < len(leftType) {
-					return "[]" + leftType[idx+1:]
-				}
-			}
-			if leftType == "str" {
-				return "str"
-			}
-			return leftType
-		}
-		return ""
-	case *parser.InfixExpression:
-		// Comparison and logical operators always produce bool
-		switch e.Operator {
-		case "==", "!=", "<", ">", "<=", ">=", "&&", "||":
-			return "bool"
-		}
-		// For arithmetic and bitwise operators, infer from operands.
-		// Use resolveExprType (not inferExprType) so that IndexExpression
-		// (e.g. v[d]) and DotExpression (e.g. .field) are resolved correctly.
-		if t := resolveExprType(e.Left, varTypes, structFields); t != "" {
-			return t
-		}
-		return resolveExprType(e.Right, varTypes, structFields)
-	case *parser.PrefixExpression:
-		if e.Operator == "!" {
-			return "bool"
-		}
-		return resolveExprType(e.Right, varTypes, structFields)
-	default:
-		return inferExprType(expr, varTypes, nil, "")
-	}
-}
-
-// isIntegerLiteral checks if an expression is an integer literal.
-func isIntegerLiteral(expr parser.Expression) bool {
-	_, ok := expr.(*parser.IntegerLiteral)
-	return ok
-}
-
-// isNumericType returns true for all integer and float types.
-func isNumericType(t string) bool {
-	switch t {
-	case "i8", "i16", "i32", "i64", "u8", "u16", "u32", "u64", "f32", "f64":
-		return true
-	}
-	return false
-}
-
-// intTypeRange returns the (min, max) range for a given integer type.
-// byte is treated as u8 (0–255).
-// char is treated as a Unicode code point (0–0x10FFFF).
-func intTypeRange(t string) (min, max int64, ok bool) {
-	// 單具體型別別名解析：若 t 是已註冊的整型基礎別名（如 fd → i64），
-	// 遞迴解析到底層型別的整數範圍，使整數字面量例外可正確範圍檢查
-	if validationConcreteTypeAliases != nil {
-		if underlying, exists := validationConcreteTypeAliases[t]; exists {
-			return intTypeRange(underlying)
-		}
-	}
-	switch t {
-	case "i8":
-		return -128, 127, true
-	case "i16":
-		return -32768, 32767, true
-	case "i32":
-		return -2147483648, 2147483647, true
-	case "i64":
-		return -9223372036854775808, 9223372036854775807, true
-	case "u8", "byte":
-		return 0, 255, true
-	case "char":
-		return 0, 1114111, true // Unicode code points: 0 to 0x10FFFF
-	case "u16":
-		return 0, 65535, true
-	case "u32":
-		return 0, 4294967295, true
-	case "u64":
-		// u64 max (2^64-1) cannot be represented in int64.
-		// We use int64 max as the upper bound for range comparisons
-		// involving int64 values. Large unsigned literals (> int64 max)
-		// are handled separately in isArgTypeCompatible via uint64FromLiteral.
-		return 0, 9223372036854775807, true
-	}
-	return 0, 0, false
-}
-
-// intTypeBits returns the bit width of an integer type.
-// byte is treated as u8 (8 bits). Returns 0 for unknown types.
-func intTypeBits(t string) int {
-	switch t {
-	case "i8", "u8", "byte":
-		return 8
-	case "i16", "u16":
-		return 16
-	case "i32", "u32":
-		return 32
-	case "i64", "u64":
-		return 64
-	}
-	return 0
-}
-
-// isSafeBitwiseNarrowing 報告一個表達式賦值給更窄的無號整數型別時是否安全。
-//
-// 當賦值的右側表達式僅由位元運算（& | ^ << >>）和整數字面量/byte 值構成，
-// 且目標型別為無號整數（u8/u16/u32/u64/byte）時，截斷高位是位元操作的標準語義，
-// 不會造成資料遺失（mask/位移已保證結果落在目標範圍內或刻意截斷高位）。
-//
-// 對有號目標型別從不適用，因為符號位元的截斷語義不明確。
-func isSafeBitwiseNarrowing(expr parser.Expression, targetType string) bool {
-	// 僅對無號整數目標型別放行
-	switch targetType {
-	case "u8", "u16", "u32", "u64", "byte":
-	default:
-		return false
-	}
-	return isBitwiseConstructExpr(expr)
-}
-
-// narrowingHint 回傳一個可操作的窄化修復提示。當 fromType 的值需要賦值給
-// 更窄的 toType 時，提示使用者如何用位元運算安全窄化。
-//
-// 對無號目標型別：建議使用 mask（如 `& 4294967295`）或位移（如 `>> 32`）。
-// 對有號目標型別：提示位元窄化不適用（符號位元截斷語義不明確）。
-// 非整數型別或非窄化場景回傳空字串。
-func narrowingHint(fromType, toType string) string {
-	fromBits := intTypeBits(fromType)
-	toBits := intTypeBits(toType)
-	if fromBits == 0 || toBits == 0 || fromBits <= toBits {
-		return ""
-	}
-	shift := fromBits - toBits
-	switch toType {
-	case "u8", "u16", "u32", "u64", "byte":
-		mask := (uint64(1) << toBits) - 1
-		return fmt.Sprintf("; hint: narrow safely with a bitwise mask (e.g. `& %d`) or right shift (e.g. `>> %d`)", mask, shift)
-	default:
-		// 有號目標型別：位元窄化不適用
-		return fmt.Sprintf("; hint: bitwise narrowing is not safe for signed target %s (sign-bit truncation is ambiguous); use an explicit range check instead", toType)
-	}
-}
-
-// isBitwiseConstructExpr 判斷表達式的頂層是否為位元運算（& | ^ << >>）。
-//
-// 當一個賦值的右側以位元運算為頂層運算子時，其語義是構造一個位元模式，
-// 賦值給更窄的無號整數型別只是截斷高位，是位元操作的標準安全模式
-// （常見於 ChaCha20/Poly1305 等密碼學/編解碼代碼）。
-//
-// 葉節點可以是任意子表達式（變數、陣列索引、字面量等）——只要頂層是位元運算即可，
-// 因為截斷發生在賦值那一刻，與值的來源無關。但單純的直接賦值（如 u64_var → u32）
-// 頂層不是位元運算，不會被此規則放行。
-func isBitwiseConstructExpr(expr parser.Expression) bool {
-	if expr == nil {
-		return false
-	}
-	// 括號包裹：穿透到內層
-	if g, ok := expr.(*parser.GroupedExpression); ok {
-		return isBitwiseConstructExpr(g.Expression)
-	}
-	// 頂層必須是位元運算 InfixExpression
-	ie, ok := expr.(*parser.InfixExpression)
-	if !ok {
-		return false
-	}
-	switch ie.Operator {
-	case "&", "|", "^", "<<", ">>":
-		return true
-	}
-	return false
-}
-
-// isArgTypeCompatible checks whether argType can be used where expectedType
-// is required. This handles implicit coercions that the compiler allows:
-//   - [N]T → []T  (fixed array passed where slice is expected)
-//   - i64 literal → any integer type whose range includes the literal value
-//     (e.g. 200 fits u8, but 300 does not; -1 does not fit any unsigned type)
-//   - Implicit widening: a narrower integer type (e.g. byte/u8) can be
-//     passed where a wider type (e.g. i64) is expected, as long as every
-//     value of the narrower type fits within the wider type's range.
-//   - Safe bitwise narrowing: an expression composed solely of bitwise
-//     operators (& | ^ << >>) and integer literals may be assigned to a
-//     narrower unsigned integer type, since the high-bit truncation is the
-//     intended bit-pattern construction (common in crypto/codec code).
-//   - Newtype enforcement: a single concrete type alias of a primitive
-//     type (e.g. fd=i64) is mutually exclusive with its underlying type.
-//     i64 var → fd and fd var → i64 are rejected. Integer literals cross
-//     the boundary (STDIN-FD fd = 0 is allowed).
-func isArgTypeCompatible(expectedType, argType string, arg parser.Expression) bool {
-	if argType == expectedType {
-		return true
-	}
-	// Newtype enforcement: a primitive single concrete type alias and its
-	// underlying type are mutually exclusive. Block i64 var → fd and
-	// fd var → i64 (non-literal cases). Integer literals are allowed to
-	// cross the boundary (handled by the integer literal path below).
-	if isAliasPair(expectedType, argType) {
-		if _, isLit := integerLiteralValue(arg); !isLit {
-			return false
-		}
-		// fall through to integer literal path for range check
-	}
-	// Safe bitwise narrowing (checked early so it takes precedence over
-	// the widening range check below): an expression built solely from
-	// bitwise operators may be assigned to a narrower unsigned integer
-	// type — the high-bit truncation is the intended bit-pattern
-	// construction (common in crypto/codec code like ChaCha20/Poly1305).
-	if isSafeBitwiseNarrowing(arg, expectedType) {
-		return true
-	}
-	// [N]T is compatible with []T (array-to-slice coercion)
-	if strings.HasPrefix(argType, "[") && !strings.HasPrefix(argType, "[]") {
-		if idx := strings.Index(argType, "]"); idx >= 0 {
-			elemType := argType[idx+1:]
-			if "[]"+elemType == expectedType {
-				return true
-			}
-		}
-	}
-	// []T is compatible with [N]T (slice-to-array coercion): a SliceLiteral
-	// can be assigned to a fixed-size array variable, following the left-hand
-	// side type. e.g. BLAKE2B-SIGMA [12][16]i64 = [[0,1,...,15], ...]
-	// where each inner [0,1,...,15] is a SliceLiteral inferred as []i64.
-	if strings.HasPrefix(argType, "[]") && strings.HasPrefix(expectedType, "[") && !strings.HasPrefix(expectedType, "[]") {
-		if idx := strings.Index(expectedType, "]"); idx >= 0 {
-			expectedElemType := expectedType[idx+1:]
-			if "[]"+expectedElemType == argType {
-				return true
-			}
-		}
-	}
-	// Integer/char literals (inferred as i64, byte, or char) are compatible with integer types
-	// whose range includes the literal value.
-	if val, ok := integerLiteralValue(arg); ok {
-		if argType == "i64" || argType == "byte" || argType == "char" {
-			if min, max, ok := intTypeRange(expectedType); ok {
-				// Fast path: the int64 value fits within the target range.
-				if val >= min && val <= max {
-					return true
-				}
-				// Fallback for large unsigned literals (e.g. 18446744073709551615
-				// = 2^64-1) that overflow int64 and become negative. When the
-				// target is an unsigned type and the literal's source text
-				// represents a valid uint64 within the target's range, allow it.
-				if val < 0 && min == 0 {
-					if uval, ok := uint64FromLiteral(arg); ok {
-						// For u64, any uint64 value is in range.
-						if expectedType == "u64" {
-							return true
-						}
-						return uval <= uint64(max)
-					}
-				}
-				return false
-			}
-		}
-	}
-	// Transparent composite alias: a composite alias (e.g. bytes=[]byte)
-	// is interchangeable with its underlying type — no newtype enforcement.
-	if validationConcreteTypeAliases != nil {
-		if underlying, ok := validationConcreteTypeAliases[expectedType]; ok && underlying == argType {
-			return true
-		}
-		if underlying, ok := validationConcreteTypeAliases[argType]; ok && underlying == expectedType {
-			return true
-		}
-	}
-	// Implicit widening: if both types are integer types and the argType's
-	// range is fully contained within the expectedType's range, allow the
-	// conversion (e.g. byte → i64, u8 → i32, i8 → i64).
-	if aMin, aMax, aOk := intTypeRange(argType); aOk {
-		if eMin, eMax, eOk := intTypeRange(expectedType); eOk {
-			return aMin >= eMin && aMax <= eMax
-		}
-	}
-	return false
-}
-
-// isSimplePrimitiveTypeName reports whether t is a simple primitive type
-// name (i8/i16/i32/i64/u8/u16/u32/u64/byte/char/bool/f32/f64), as opposed
-// to a composite type string like "[]byte" or "?i64".
-func isSimplePrimitiveTypeName(t string) bool {
-	switch t {
-	case "i8", "i16", "i32", "i64", "u8", "u16", "u32", "u64",
-		"byte", "char", "bool", "f32", "f64":
-		return true
-	}
-	return false
-}
-
-// isAliasPair reports whether (a, b) form a newtype pair: one is a
-// registered single concrete type alias of the other, AND the underlying
-// type is a simple primitive. Only primitive aliases enforce newtype
-// semantics (mutual exclusion with their underlying type); composite
-// aliases (e.g. bytes=[]byte) are transparent and return false here.
-func isAliasPair(a, b string) bool {
-	if validationConcreteTypeAliases == nil {
-		return false
-	}
-	// a is alias, b is underlying
-	if underlying, ok := validationConcreteTypeAliases[a]; ok && underlying == b {
-		return isSimplePrimitiveTypeName(underlying)
-	}
-	// b is alias, a is underlying
-	if underlying, ok := validationConcreteTypeAliases[b]; ok && underlying == a {
-		return isSimplePrimitiveTypeName(underlying)
-	}
-	return false
-}
-
-// integerLiteralValue extracts the int64 value from an integer literal,
-// including negative literals expressed as PrefixExpression("-", IntegerLiteral).
-// CharLiteral values are converted to their Unicode code point.
-func integerLiteralValue(expr parser.Expression) (int64, bool) {
-	if lit, ok := expr.(*parser.IntegerLiteral); ok {
-		return lit.Value, true
-	}
-	// Handle negative literals: -100 is parsed as PrefixExpression("-", IntegerLiteral(100))
-	if prefix, ok := expr.(*parser.PrefixExpression); ok && prefix.Operator == "-" {
-		if lit, ok := prefix.Right.(*parser.IntegerLiteral); ok {
-			return -lit.Value, true
-		}
-	}
-	// CharLiteral: convert Unicode code point to int64
-	if charLit, ok := expr.(*parser.CharLiteral); ok {
-		runes := []rune(charLit.Value)
-		if len(runes) == 1 {
-			return int64(runes[0]), true
-		}
-	}
-	return 0, false
-}
-
-// uint64FromLiteral extracts the uint64 value from an integer literal's Raw
-// or Token.Literal string. This is needed for large unsigned literals (e.g.
-// 18446744073709551615 = 2^64-1) whose int64 Value overflows to a negative
-// number. The Raw/Token.Literal fields preserve the original source text.
-func uint64FromLiteral(expr parser.Expression) (uint64, bool) {
-	if lit, ok := expr.(*parser.IntegerLiteral); ok {
-		raw := lit.Raw
-		if raw == "" {
-			raw = lit.Token.Literal
-		}
-		if raw != "" {
-			if uval, err := strconv.ParseUint(raw, 10, 64); err == nil {
-				return uval, true
-			}
-		}
-		// Fall back to the int64 value reinterpreted as uint64.
-		return uint64(lit.Value), true
-	}
-	return 0, false
-}
-
-func checkCallArgsInExpr(expr parser.Expression, sigs map[string]*funcSig, varTypes map[string]string, structFields map[string]map[string]string) []ValidateResult {
-	if expr == nil {
-		return nil
-	}
-	switch e := expr.(type) {
-	case *parser.CallExpression:
-		var results []ValidateResult
-		if ident, ok := e.Function.(*parser.Identifier); ok {
-			if sig, ok := sigs[ident.Value]; ok {
-				// Check argument count (allow fewer args when default values exist)
-				minArgs := len(sig.ParamTypes)
-				for j := len(sig.ParamTypes) - 1; j >= 0; j-- {
-					if sig.ParamTypes[j].HasDefault {
-						minArgs = j
-					} else {
-						break
-					}
-				}
-				if len(e.Arguments) > len(sig.ParamTypes) {
-					// More args than params: last arg might be output param, check up to param count
-				} else if len(e.Arguments) < minArgs {
-					results = append(results, ValidateResult{
-						Line:    e.Token.Line,
-						Column:  e.Token.Column,
-						Message: fmt.Sprintf("function '%s' expects at least %d argument(s), got %d", ident.Value, minArgs, len(e.Arguments)),
-					})
-				} else {
-					// Check argument types using resolveExprType (handles struct fields, arrays, etc.)
-					for i, arg := range e.Arguments {
-						if i >= len(sig.ParamTypes) {
-							break
-						}
-						argType := resolveExprType(arg, varTypes, structFields)
-						expectedType := sig.ParamTypes[i].Type
-						if expectedType != "" && argType != "" && !isArgTypeCompatible(expectedType, argType, arg) {
-							results = append(results, ValidateResult{
-								Line:    e.Token.Line,
-								Column:  e.Token.Column,
-								Message: fmt.Sprintf("argument %d of '%s': expected '%s', got '%s'", i+1, ident.Value, expectedType, argType),
-							})
-						}
-					}
-				}
-			}
-		}
-		// Recurse into arguments for nested calls
-		for _, arg := range e.Arguments {
-			results = append(results, checkCallArgsInExpr(arg, sigs, varTypes, structFields)...)
-		}
-		return results
-
-	case *parser.InfixExpression:
-		var results []ValidateResult
-		if e.Left != nil {
-			results = append(results, checkCallArgsInExpr(e.Left, sigs, varTypes, structFields)...)
-		}
-		if e.Right != nil {
-			results = append(results, checkCallArgsInExpr(e.Right, sigs, varTypes, structFields)...)
-		}
-		return results
-
-	case *parser.PrefixExpression:
-		if e.Right != nil {
-			return checkCallArgsInExpr(e.Right, sigs, varTypes, structFields)
-		}
-	case *parser.GroupedExpression:
-		if e.Expression != nil {
-			return checkCallArgsInExpr(e.Expression, sigs, varTypes, structFields)
-		}
-	case *parser.IfExpression:
-		var results []ValidateResult
-		if e.Condition != nil {
-			results = append(results, checkCallArgsInExpr(e.Condition, sigs, varTypes, structFields)...)
-		}
-		if e.Consequence != nil {
-			for _, is := range e.Consequence.Statements {
-				results = append(results, checkCallArgsInStmt(is, sigs, varTypes, structFields)...)
-			}
-		}
-		if e.Alternative != nil {
-			for _, is := range e.Alternative.Statements {
-				results = append(results, checkCallArgsInStmt(is, sigs, varTypes, structFields)...)
-			}
-		}
-		return results
-	case *parser.IndexExpression:
-		var results []ValidateResult
-		if e.Left != nil {
-			results = append(results, checkCallArgsInExpr(e.Left, sigs, varTypes, structFields)...)
-		}
-		if e.Index != nil {
-			results = append(results, checkCallArgsInExpr(e.Index, sigs, varTypes, structFields)...)
-		}
-		return results
-	case *parser.AssignExpression:
-		if e.Value != nil {
-			return checkCallArgsInExpr(e.Value, sigs, varTypes, structFields)
-		}
-	case *parser.ConditionalExpression:
-		var results []ValidateResult
-		if e.Condition != nil {
-			results = append(results, checkCallArgsInExpr(e.Condition, sigs, varTypes, structFields)...)
-		}
-		if e.Consequence != nil {
-			results = append(results, checkCallArgsInExpr(e.Consequence, sigs, varTypes, structFields)...)
-		}
-		if e.Alternative != nil {
-			results = append(results, checkCallArgsInExpr(e.Alternative, sigs, varTypes, structFields)...)
-		}
-		return results
-	case *parser.ArrayLiteral:
-		var results []ValidateResult
-		for _, elem := range e.Elements {
-			results = append(results, checkCallArgsInExpr(elem, sigs, varTypes, structFields)...)
-		}
-		return results
-	case *parser.SliceLiteral:
-		var results []ValidateResult
-		for _, elem := range e.Elements {
-			results = append(results, checkCallArgsInExpr(elem, sigs, varTypes, structFields)...)
-		}
-		return results
-	case *parser.StructLiteral:
-		var results []ValidateResult
-		for _, f := range e.Fields {
-			if f.Value != nil {
-				results = append(results, checkCallArgsInExpr(f.Value, sigs, varTypes, structFields)...)
-			}
-		}
-		return results
-	case *parser.FunctionLiteral:
-		if e.Body != nil {
-			var results []ValidateResult
-			for _, is := range e.Body.Statements {
-				results = append(results, checkCallArgsInStmt(is, sigs, varTypes, structFields)...)
-			}
-			return results
-		}
-	}
-	return nil
-}
-
+                                                  
+                                             
+           
+  
+                               
+ 
 // processEmbeds 遍歷 program 中帶有 #{embed=...} 註解的 LetStatement，
 // 在編譯期讀取指定文件並填充 EmbedData 字段。
 // 路徑相對於包根目錄（mod.jsonc 所在目錄）解析。
@@ -9748,7 +8405,6 @@ func (t *Transpiler) processEmbeds(program *parser.Program, sourcePath string) e
 		if embedPath == "" {
 			continue
 		}
-
 		// 解析路徑：絕對路徑直接使用，相對路徑相對於包根目錄
 		resolvedPath := embedPath
 		if !filepath.IsAbs(embedPath) {
@@ -9761,7 +8417,6 @@ func (t *Transpiler) processEmbeds(program *parser.Program, sourcePath string) e
 			}
 			resolvedPath = filepath.Join(pkgRoot, embedPath)
 		}
-
 		// 讀取文件
 		data, err := os.ReadFile(resolvedPath)
 		if err != nil {
@@ -9771,7 +8426,6 @@ func (t *Transpiler) processEmbeds(program *parser.Program, sourcePath string) e
 	}
 	return nil
 }
-
 // findPackageRootFromFile walks up from a file path to find the directory containing mod.jsonc.
 func findPackageRootFromFile(filePath string) string {
 	dir := filepath.Dir(filePath)
@@ -9786,171 +8440,4 @@ func findPackageRootFromFile(filePath string) string {
 		}
 		dir = parent
 	}
-}
-
-// filterByExports filters a module's program to only include exported items declared in lib.no.
-// It also auto-exports structs/enums/interfaces referenced by exported functions.
-func filterByExports(prog *parser.Program, libPath string) *parser.Program {
-	libSource, err := os.ReadFile(libPath)
-	if err != nil {
-		return prog
-	}
-
-	l := lexer.New(string(libSource))
-	p := parser.New(l)
-	libProg := p.ParseProgram()
-	if len(p.Errors()) > 0 {
-		return prog
-	}
-
-	type exportEntry struct {
-		fn    string
-		alias string
-	}
-	var exports []exportEntry
-	for _, stmt := range libProg.Statements {
-		if es, ok := stmt.(*parser.ExportStatement); ok {
-			exports = append(exports, exportEntry{
-				fn:    es.Function,
-				alias: es.Alias,
-			})
-		}
-	}
-
-	if len(exports) == 0 {
-		return &parser.Program{Statements: []parser.Statement{}}
-	}
-
-	// Build set of all defined names in the module
-	defined := make(map[string]bool)
-	for _, stmt := range prog.Statements {
-		switch s := stmt.(type) {
-		case *parser.FunctionDefinition:
-			defined[s.Name] = true
-		case *parser.StructDefinition:
-			defined[s.Name] = true
-		case *parser.EnumDefinition:
-			defined[s.Name] = true
-		case *parser.TaggedEnumDefinition:
-			defined[s.Name] = true
-		case *parser.InterfaceDefinition:
-			defined[s.Name] = true
-		case *parser.LetStatement:
-			if s.Name != nil {
-				defined[s.Name.Value] = true
-			}
-		}
-	}
-
-	// Validate that all exported names exist in the module
-	for _, e := range exports {
-		if !defined[e.fn] {
-			fmt.Fprintf(os.Stderr, "warning: export references undefined symbol %q (not found in module)\n", e.fn)
-		}
-	}
-
-	exported := make(map[string]string)
-	for _, e := range exports {
-		name := e.fn
-		if e.alias != "" {
-			exported[name] = e.alias
-		} else {
-			exported[name] = ""
-		}
-	}
-
-	// Collect type definitions in this module
-	structs := make(map[string]bool)
-	enums := make(map[string]bool)
-	interfaces := make(map[string]bool)
-	for _, stmt := range prog.Statements {
-		switch s := stmt.(type) {
-		case *parser.StructDefinition:
-			structs[s.Name] = true
-		case *parser.EnumDefinition:
-			enums[s.Name] = true
-		case *parser.InterfaceDefinition:
-			interfaces[s.Name] = true
-		case *parser.TaggedEnumDefinition:
-			enums[s.Name] = true
-		}
-	}
-
-	// Auto-export types referenced by exported functions
-	var collectTypes func(t parser.Type, result map[string]bool)
-	collectTypes = func(t parser.Type, result map[string]bool) {
-		if t == nil {
-			return
-		}
-		switch tt := t.(type) {
-		case *parser.NamedType:
-			if structs[tt.Value] || enums[tt.Value] || interfaces[tt.Value] {
-				result[tt.Value] = true
-			}
-		case *parser.ArrayType:
-			collectTypes(tt.Elem, result)
-		case *parser.SliceType:
-			collectTypes(tt.Elem, result)
-		case *parser.PointerType:
-			collectTypes(tt.Type, result)
-		case *parser.NullableType:
-			collectTypes(tt.Type, result)
-		}
-	}
-
-	autoResult := make(map[string]bool)
-	for _, stmt := range prog.Statements {
-		if fd, ok := stmt.(*parser.FunctionDefinition); ok {
-			if _, isExported := exported[fd.Name]; !isExported {
-				continue
-			}
-			for _, param := range fd.Parameters {
-				collectTypes(param.Type, autoResult)
-			}
-			for _, result := range fd.Results {
-				collectTypes(result.Type, autoResult)
-			}
-		}
-	}
-	for name := range autoResult {
-		exported[name] = ""
-	}
-
-	// Filter statements
-	filtered := &parser.Program{Statements: []parser.Statement{}}
-	for _, stmt := range prog.Statements {
-		switch s := stmt.(type) {
-		case *parser.FunctionDefinition:
-			if alias, ok := exported[s.Name]; ok {
-				if alias != "" {
-					s.Name = alias
-				}
-				filtered.Statements = append(filtered.Statements, s)
-			}
-		case *parser.StructDefinition:
-			if _, ok := exported[s.Name]; ok {
-				filtered.Statements = append(filtered.Statements, s)
-			}
-		case *parser.EnumDefinition:
-			if _, ok := exported[s.Name]; ok {
-				filtered.Statements = append(filtered.Statements, s)
-			}
-		case *parser.TaggedEnumDefinition:
-			if _, ok := exported[s.Name]; ok {
-				filtered.Statements = append(filtered.Statements, s)
-			}
-		case *parser.InterfaceDefinition:
-			if _, ok := exported[s.Name]; ok {
-				filtered.Statements = append(filtered.Statements, s)
-			}
-		case *parser.LetStatement:
-			if s.Name != nil {
-				if _, ok := exported[s.Name.Value]; ok {
-					filtered.Statements = append(filtered.Statements, s)
-				}
-			}
-		}
-	}
-
-	return filtered
 }

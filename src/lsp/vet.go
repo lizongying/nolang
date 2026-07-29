@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	nbuild "github.com/lizongying/nolang/build"
+	"github.com/lizongying/nolang/checker"
 	"github.com/lizongying/nolang/lexer"
 	"github.com/lizongying/nolang/parser"
 )
@@ -44,7 +44,7 @@ func VetFile(filePath string) []VetResult {
 	p.Filename = filepath.Base(filePath)
 
 	// Inject std module signatures so the parser can infer cross-module types
-	funcSigs, structFields := nbuild.CollectStdModuleSignatures()
+	funcSigs, structFields := checker.CollectStdModuleSignatures()
 	p.SetExternSignatures(funcSigs, structFields)
 
 	prog := p.ParseProgram()
@@ -70,7 +70,7 @@ func VetFile(filePath string) []VetResult {
 	}
 
 	// 2. Type errors
-	for _, e := range nbuild.ValidateTypes(prog) {
+	for _, e := range checker.ValidateTypes(prog) {
 		results = append(results, VetResult{
 			File:     filePath,
 			Line:     e.Line,
@@ -82,7 +82,7 @@ func VetFile(filePath string) []VetResult {
 	}
 
 	// 3. Naming warnings
-	for _, w := range nbuild.ValidateNaming(prog) {
+	for _, w := range checker.ValidateNaming(prog) {
 		results = append(results, VetResult{
 			File:     filePath,
 			Line:     w.Line,
@@ -94,7 +94,7 @@ func VetFile(filePath string) []VetResult {
 	}
 
 	// 3.5. Async naming warnings
-	for _, w := range nbuild.ValidateAsyncNaming(prog) {
+	for _, w := range checker.ValidateAsyncNaming(prog) {
 		results = append(results, VetResult{
 			File:     filePath,
 			Line:     w.Line,
@@ -106,7 +106,7 @@ func VetFile(filePath string) []VetResult {
 	}
 
 	// 4. Unused variables (hint)
-	for _, u := range nbuild.ValidateUnusedVars(prog) {
+	for _, u := range checker.ValidateUnusedVars(prog) {
 		results = append(results, VetResult{
 			File:     filePath,
 			Line:     u.Line,
@@ -118,7 +118,7 @@ func VetFile(filePath string) []VetResult {
 	}
 
 	// 5. Undefined variables
-	for _, u := range nbuild.ValidateUndefinedVars(prog, docDir) {
+	for _, u := range checker.ValidateUndefinedVars(prog, docDir) {
 		results = append(results, VetResult{
 			File:     filePath,
 			Line:     u.Line,
@@ -130,7 +130,7 @@ func VetFile(filePath string) []VetResult {
 	}
 
 	// 5b. Uninitialized nullable output parameters (case6)
-	for _, u := range nbuild.ValidateUninitOutputParams(prog) {
+	for _, u := range checker.ValidateUninitOutputParams(prog) {
 		results = append(results, VetResult{
 			File:     filePath,
 			Line:     u.Line,
@@ -142,7 +142,7 @@ func VetFile(filePath string) []VetResult {
 	}
 
 	// 5c. Embed annotation validation
-	for _, e := range nbuild.ValidateEmbedAnnotations(prog, filePath) {
+	for _, e := range checker.ValidateEmbedAnnotations(prog, filePath) {
 		results = append(results, VetResult{
 			File:     filePath,
 			Line:     e.Line,
@@ -154,7 +154,7 @@ func VetFile(filePath string) []VetResult {
 	}
 
 	// 6. Interface implementation warnings
-	for _, u := range nbuild.ValidateInterfaceImplementation(prog) {
+	for _, u := range checker.ValidateInterfaceImplementation(prog) {
 		results = append(results, VetResult{
 			File:     filePath,
 			Line:     u.Line,
@@ -166,7 +166,7 @@ func VetFile(filePath string) []VetResult {
 	}
 
 	// 7. Use keyword hints
-	for _, u := range nbuild.ValidateUseKeyword(prog) {
+	for _, u := range checker.ValidateUseKeyword(prog) {
 		results = append(results, VetResult{
 			File:     filePath,
 			Line:     u.Line,
@@ -178,7 +178,7 @@ func VetFile(filePath string) []VetResult {
 	}
 
 	// 8. Use alias hints
-	for _, u := range nbuild.ValidateUseAlias(prog) {
+	for _, u := range checker.ValidateUseAlias(prog) {
 		results = append(results, VetResult{
 			File:     filePath,
 			Line:     u.Line,
@@ -190,7 +190,7 @@ func VetFile(filePath string) []VetResult {
 	}
 
 	// 8b. Redundant type annotation hints
-	for _, u := range nbuild.ValidateRedundantTypeAnnotation(prog) {
+	for _, u := range checker.ValidateRedundantTypeAnnotation(prog) {
 		results = append(results, VetResult{
 			File:     filePath,
 			Line:     u.Line,
@@ -202,7 +202,7 @@ func VetFile(filePath string) []VetResult {
 	}
 
 	// 9. Duplicate variables
-	for _, u := range nbuild.ValidateDuplicateVars(prog) {
+	for _, u := range checker.ValidateDuplicateVars(prog) {
 		results = append(results, VetResult{
 			File:     filePath,
 			Line:     u.Line,
@@ -214,7 +214,7 @@ func VetFile(filePath string) []VetResult {
 	}
 
 	// 10. Dependency import validation
-	for _, u := range nbuild.ValidateDependencyImports(prog, docDir) {
+	for _, u := range checker.ValidateDependencyImports(prog, docDir) {
 		results = append(results, VetResult{
 			File:     filePath,
 			Line:     u.Line,
@@ -226,7 +226,7 @@ func VetFile(filePath string) []VetResult {
 	}
 
 	// 11. Export symbol validation
-	for _, u := range nbuild.ValidateExportSymbols(prog, absPath) {
+	for _, u := range checker.ValidateExportSymbols(prog, absPath) {
 		results = append(results, VetResult{
 			File:     filePath,
 			Line:     u.Line,
@@ -238,7 +238,7 @@ func VetFile(filePath string) []VetResult {
 	}
 
 	// 12. String concatenation hints
-	for _, u := range nbuild.ValidateStringConcat(prog) {
+	for _, u := range checker.ValidateStringConcat(prog) {
 		results = append(results, VetResult{
 			File:     filePath,
 			Line:     u.Line,
@@ -250,7 +250,7 @@ func VetFile(filePath string) []VetResult {
 	}
 
 	// 12b. Uppercase hex literal hints
-	for _, u := range nbuild.ValidateHexCase(prog) {
+	for _, u := range checker.ValidateHexCase(prog) {
 		results = append(results, VetResult{
 			File:     filePath,
 			Line:     u.Line,
@@ -262,7 +262,7 @@ func VetFile(filePath string) []VetResult {
 	}
 
 	// 13. Function argument type checking
-	for _, u := range nbuild.ValidateFuncArgs(prog, docDir) {
+	for _, u := range checker.ValidateFuncArgs(prog, docDir) {
 		results = append(results, VetResult{
 			File:     filePath,
 			Line:     u.Line,
@@ -274,7 +274,7 @@ func VetFile(filePath string) []VetResult {
 	}
 
 	// 14. Print format string validation (named {name:spec} fields)
-	for _, u := range nbuild.ValidatePrintFormat(prog) {
+	for _, u := range checker.ValidatePrintFormat(prog) {
 		results = append(results, VetResult{
 			File:     filePath,
 			Line:     u.Line,
@@ -286,7 +286,7 @@ func VetFile(filePath string) []VetResult {
 	}
 
 	// 15. Cross-module type prefix validation
-	for _, u := range nbuild.ValidateCrossModuleTypeRefs(prog) {
+	for _, u := range checker.ValidateCrossModuleTypeRefs(prog) {
 		results = append(results, VetResult{
 			File:     filePath,
 			Line:     u.Line,
