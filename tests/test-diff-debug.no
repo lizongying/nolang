@@ -1,0 +1,158 @@
+; test-diff-debug.no — debug diff engine
+; Build: no run tests/test-diff-debug.no
+
+; diff-op struct
+diff-op {
+    kind i64
+    line str
+    a-no i64
+    b-no i64
+}
+
+; diff-split-lines: split content into lines
+diff-split-lines = (content str) (lines []str) {
+    eprint('SPLIT: entered, content.len={content.len}')
+    start = 0
+    i <- [0..content.len): {
+        content[i] == 10 -> {
+            lines.push(content.slice(start, i))
+            start = i + 1
+        }
+    }
+    start < content.len -> lines.push(content.slice(start, content.len))
+    ll = lines.len
+    eprint('SPLIT: done, lines.len={ll}')
+}
+
+; diff-engine-lcs: full LCS-based diff
+diff-engine-lcs = (a []str, b []str) (ops []diff-op) {
+    na = a.len
+    nb = b.len
+    cols = nb + 1
+    total = (na + 1) * cols
+    dp []i64 = with-len(total)
+
+    ai <- [na - 1..0]: {
+        aj <- [nb - 1..0]: {
+            a[ai].compare(b[aj]) == 0 -> {
+                dp[ai * cols + aj] = dp[(ai + 1) * cols + (aj + 1)] + 1
+            }
+            dp[ai * cols + aj] < dp[(ai + 1) * cols + aj] -> {
+                dp[ai * cols + aj] = dp[(ai + 1) * cols + aj]
+            }
+            dp[ai * cols + aj] < dp[ai * cols + (aj + 1)] -> {
+                dp[ai * cols + aj] = dp[ai * cols + (aj + 1)]
+            }
+        }
+    }
+
+    ; Debug: print dp table
+    eprint('DEBUG dp table:')
+    eprint('  na={na} nb={nb} cols={cols} total={total}')
+    ai <- [0..na + 1): {
+        row = ''
+        aj <- [0..nb + 1): {
+            v = dp[ai * cols + aj]
+            row = row - ' ' - v.to-str()
+        }
+        eprint('  {row}')
+    }
+
+    i = 0
+    j = 0
+    {
+        i < na && j < nb -> {
+            a[i].compare(b[j]) == 0 -> {
+                op = diff-op {}
+                op.kind = 0
+                tmp-line = a[i]
+                op.line = tmp-line
+                op.a-no = i + 1
+                op.b-no = j + 1
+                ops.push(op)
+                i = i + 1
+                j = j + 1
+            }
+            dp[(i + 1) * cols + j] >= dp[i * cols + (j + 1)] -> {
+                op = diff-op {}
+                op.kind = 1
+                tmp-line = a[i]
+                op.line = tmp-line
+                op.a-no = i + 1
+                ops.push(op)
+                i = i + 1
+            }
+            dp[(i + 1) * cols + j] < dp[i * cols + (j + 1)] -> {
+                op = diff-op {}
+                op.kind = 2
+                tmp-line = b[j]
+                op.line = tmp-line
+                op.b-no = j + 1
+                ops.push(op)
+                j = j + 1
+            }
+        }
+        i < na -> {
+            op = diff-op {}
+            op.kind = 1
+            tmp-line = a[i]
+            op.line = tmp-line
+            op.a-no = i + 1
+            ops.push(op)
+            i = i + 1
+        }
+        j < nb -> {
+            op = diff-op {}
+            op.kind = 2
+            tmp-line = b[j]
+            op.line = tmp-line
+            op.b-no = j + 1
+            ops.push(op)
+            j = j + 1
+        }
+    } (i < na || j < nb)
+}
+
+main = () {
+    c1 = 'a
+b
+c'
+    c2 = 'a
+X
+c'
+
+    lines1 []str
+    lines2 []str
+    diff-split-lines(c1, lines1)
+    diff-split-lines(c2, lines2)
+
+    n1 = lines1.len
+    n2 = lines2.len
+    eprint('lines1.len={n1}')
+    eprint('lines2.len={n2}')
+    cl = c1.len
+    eprint('c1.len={cl}')
+    i <- [0..cl): {
+        b = c1[i]
+        eprint('  c1[{i}]={b}')
+    }
+    i <- [0..n1): {
+        s = lines1[i]
+        eprint('  L1[{i}]={s}')
+    }
+    i <- [0..n2): {
+        s = lines2[i]
+        eprint('  L2[{i}]={s}')
+    }
+
+    ops []diff-op
+    ops = diff-engine-lcs(lines1, lines2)
+
+    on = ops.len
+    eprint('ops.len={on}')
+    i <- [0..on): {
+        op = ops[i]
+        k = op.kind
+        eprint('  op[{i}] kind={k}')
+    }
+}

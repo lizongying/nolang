@@ -587,7 +587,7 @@ _PRIVATE-CONST = 42      // private global constant
 
 ```no
 // ❌ Avoid: using global mutable variables in modules
-// g-conn = tls-conn {}
+// g-conn = tls.conn {}
 // g-buf = ' '
 //
 // fn-a = () {
@@ -596,7 +596,7 @@ _PRIVATE-CONST = 42      // private global constant
 
 // ✅ Recommended: use local variables, pass state via params/return values
 fn-a = () {
-    conn = tls-conn {}    ; local variable, consistent address
+    conn = tls.conn {}    ; local variable, consistent address
     buf = ' '
     conn.send(buf)
 }
@@ -605,7 +605,7 @@ fn-a = () {
 serve-once = (listen-fd fd, body str) (ok bool) {
     ok = false
     client-fd = net.net-accept(listen-fd)
-    conn = tls-server-init(client-fd)   ; local variable
+    conn = tls.server-init(client-fd)   ; local variable
     conn: {
         ok -> {
             c = it
@@ -1522,7 +1522,7 @@ Method calls on struct fields via `self.field` (abbreviated `.field`) are fully 
 // .recv-buf is a str field → .recv-buf.slice() returns str
 data = .recv-buf.slice(0, .recv-buf-len)   // correctly inferred as str
 
-// .tls-c is a tls-conn field → .tls-c.send() works directly
+// .tls-c is a tls.conn field → .tls-c.send() works directly
 written = .tls-c.send(req, req.len)
 ```
 
@@ -3102,7 +3102,7 @@ sse-event {
 // sse-client struct
 sse-client {
     fd i64              // TCP socket fd
-    tls-c tls-conn      // TLS connection
+    tls-c tls.conn      // TLS connection
     use-tls bool        // Whether to use TLS
     connected bool      // Connection state
     host str            // Server hostname
@@ -3145,7 +3145,7 @@ http-request {
     headers [16]str
     header-count i64
 }
-http-response {
+http.response {
     status-code i64
     status-text str
     headers str
@@ -3156,15 +3156,15 @@ http-response {
 }
 
 // Convenience functions
-resp = http.http-get(url)                        // GET request (?http-response)
-resp = http.http-post(url, body)                  // POST request (?http-response)
-resp = http.http-do(method, url, body)            // Custom method (?http-response)
+resp = http.http-get(url)                        // GET request (?http.response)
+resp = http.http-post(url, body)                  // POST request (?http.response)
+resp = http.http-do(method, url, body)            // Custom method (?http.response)
 
 // Using request object
 req = http-request{}
 req.init('POST', url, body)
 req.add-header('Content-Type', 'application/json')
-resp = http.http-do-req(req)                      // Send request (?http-response)
+resp = http.http-do-req(req)                      // Send request (?http.response)
 
 // Parse response headers
 resp.parse-headers()
@@ -3196,7 +3196,7 @@ http2-conn {
 
 // Connection and request
 c = http2.http2-connect(host, port)                // Establish connection (?http2-conn)
-resp = http2.http2-do(method, url, body)           // Send request (?http-response)
+resp = http2.http2-do(method, url, body)           // Send request (?http.response)
 
 // Frame operations
 frame = http2-frame{}
@@ -3222,9 +3222,9 @@ HTTP3-METHOD-OPTIONS = 'OPTIONS'
 
 // Convenience functions
 c = http3.http3-connect(host, port)                // Establish QUIC connection (?http3-conn)
-resp = http3.http3-send-request(c, method, path, headers, body) // Send request (?http-response)
-resp = http3.http3-get(url)                        // GET request (?http-response)
-resp = http3.http3-post(url, body)                 // POST request (?http-response)
+resp = http3.http3-send-request(c, method, path, headers, body) // Send request (?http.response)
+resp = http3.http3-get(url)                        // GET request (?http.response)
+resp = http3.http3-post(url, body)                 // POST request (?http.response)
 
 // QPACK header encoding/decoding
 buf, n = http3.qpack-encode-header(name, value)
@@ -3266,7 +3266,7 @@ Provides TLS encrypted connections, supporting TLS 1.2 and 1.3:
 
 ```no
 // Connection
-c = tls.tls-dial(host, port)                     // Establish TLS connection (?tls-conn)
+c = tls.tls-dial(host, port)                     // Establish TLS connection (?tls.conn)
 n = c.send(data)                             // Send encrypted data (?i64)
 n = c.recv(buf, n)                           // Receive decrypted data (?i64)
 c.close()
@@ -3293,7 +3293,7 @@ c.close()
 Provides QUIC transport protocol implementation, serving as the underlying transport layer for HTTP/3:
 
 ```no
-c = quic.quic-dial(host, port)                    // Establish QUIC connection (?quic-conn)
+c = quic.quic-dial(host, port)                    // Establish QUIC connection (?quic.conn)
 n = c.send(data, n)                          // Send data
 n = c.recv(buf, n)                           // Receive data
 c.close()

@@ -1,7 +1,7 @@
 ; test-x25519-dh-inline — 測試 X25519 DH 金鑰交換（內聯 hex 解析）
 ; # std/crypto/x25519
 
-; key-holder: 測試用結構體，模擬 tls-conn 的欄位
+; key-holder: 測試用結構體，模擬 tls.conn 的欄位
 key-holder {
     priv [32]byte
     pub [32]byte

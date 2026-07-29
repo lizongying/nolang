@@ -677,7 +677,7 @@ sse-event {
 ; sse-client 結構體
 sse-client {
     fd i64              ; TCP socket fd
-    tls-c tls-conn      ; TLS 連線
+    tls-c tls.conn      ; TLS 連線
     use-tls bool        ; 是否使用 TLS
     connected bool      ; 連線狀態
     host str            ; 伺服器主機名
@@ -689,7 +689,7 @@ sse-client {
 }
 
 ; 連接與事件接收
-client = sse.sse-connect('http://host:3000/events')  ; 返回 ?sse-client
+client = sse.connect('http://host:3000/events')  ; 返回 ?sse-client
 client: {
     nil -> print('connect failed')
     ->
@@ -720,7 +720,7 @@ http-request {
     headers [16]str
     header-count i64
 }
-http-response {
+http.response {
     status-code i64
     status-text str
     headers str
@@ -731,15 +731,15 @@ http-response {
 }
 
 ; 便捷函數
-resp = http.http-get(url)                        ; GET 請求（?http-response）
-resp = http.http-post(url, body)                  ; POST 請求（?http-response）
-resp = http.http-do(method, url, body)            ; 自訂方法（?http-response）
+resp = http.get(url)                        ; GET 請求（?http.response）
+resp = http.post(url, body)                  ; POST 請求（?http.response）
+resp = http.do(method, url, body)            ; 自訂方法（?http.response）
 
 ; 使用 request 物件
 req = http-request{}
 req.init('POST', url, body)
 req.add-header('Content-Type', 'application/json')
-resp = http.http-do-req(req)                      ; 發送請求（?http-response）
+resp = http.do-req(req)                      ; 發送請求（?http.response）
 
 ; 解析回應標頭
 resp.parse-headers()
@@ -770,8 +770,8 @@ http2-conn {
 }
 
 ; 連線與請求
-c = http2.http2-connect(host, port)                ; 建立連線（?http2-conn）
-resp = http2.http2-do(method, url, body)           ; 發送請求（?http-response）
+c = http2.connect(host, port)                ; 建立連線（?http2-conn）
+resp = http2.do(method, url, body)           ; 發送請求（?http.response）
 
 ; 影格操作
 frame = http2-frame{}
@@ -796,10 +796,10 @@ HTTP3-METHOD-HEAD = 'HEAD'
 HTTP3-METHOD-OPTIONS = 'OPTIONS'
 
 ; 便捷函數
-c = http3.http3-connect(host, port)                ; 建立 QUIC 連線（?http3-conn）
-resp = http3.http3-send-request(c, method, path, headers, body) ; 發送請求（?http-response）
-resp = http3.http3-get(url)                        ; GET 請求（?http-response）
-resp = http3.http3-post(url, body)                 ; POST 請求（?http-response）
+c = http3.connect(host, port)                ; 建立 QUIC 連線（?http3-conn）
+resp = http3.send-request(c, method, path, headers, body) ; 發送請求（?http.response）
+resp = http3.get(url)                        ; GET 請求（?http.response）
+resp = http3.post(url, body)                 ; POST 請求（?http.response）
 
 ; QPACK 標頭編解碼
 buf, n = http3.qpack-encode-header(name, value)
@@ -820,7 +820,7 @@ ws-message {
 }
 
 ; 服務端
-s = ws.ws-listen-on(host, port)                 ; 建立監聽（?ws-server）
+s = ws.listen-on(host, port)                 ; 建立監聽（?ws-server）
 c = s.accept()                               ; 接受連接（?ws-server-conn）
 msg = c.recv()                               ; 接收訊息（?ws-message）
 ok = c.send-text(text)                       ; 發送文字
@@ -828,7 +828,7 @@ ok = c.send-binary(data)                     ; 發送二進制
 c.close()
 
 ; 客戶端
-c = ws.ws-connect(url)                          ; 連接服務端（?ws-client）
+c = ws.connect(url)                          ; 連接服務端（?ws-client）
 msg = c.recv()                               ; 接收訊息（?ws-message）
 ok = c.send-text(text)                       ; 發送文字
 ok = c.send-binary(data)                     ; 發送二進制
@@ -841,7 +841,7 @@ c.close()
 
 ```no
 ; 連接
-c = tls.tls-dial(host, port)                     ; 建立 TLS 連接（?tls-conn）
+c = tls.tls-dial(host, port)                     ; 建立 TLS 連接（?tls.conn）
 n = c.send(data)                             ; 發送加密資料（?i64）
 n = c.recv(buf, n)                           ; 接收解密資料（?i64）
 c.close()
@@ -868,7 +868,7 @@ c.close()
 提供 QUIC 傳輸協議實現，作為 HTTP/3 的底層傳輸層：
 
 ```no
-c = quic.quic-dial(host, port)                    ; 建立 QUIC 連接（?quic-conn）
+c = quic.dial(host, port)                    ; 建立 QUIC 連接（?quic.conn）
 n = c.send(data, n)                          ; 發送資料
 n = c.recv(buf, n)                           ; 接收資料
 c.close()
@@ -890,7 +890,7 @@ s.close()
 提供 DNS 查詢功能：
 
 ```no
-ip = dns.dns-resolve(host)                       ; 解析主機名（?str）
+ip = dns.resolve(host)                       ; 解析主機名（?str）
 ```
 
 ### net/url — URL 解析
@@ -926,8 +926,8 @@ fields = multipart.multipart-parse(data, boundary)
 提供 HPACK 演算法的編解碼，用於 HTTP/2 標頭壓縮：
 
 ```no
-buf, n = hpack.hpack-encode(headers)
-headers = hpack.hpack-decode(buf, n)
+buf, n = hpack.encode(headers)
+headers = hpack.decode(buf, n)
 ```
 
 ### net/proxy — 代理支援
@@ -935,7 +935,7 @@ headers = hpack.hpack-decode(buf, n)
 提供 HTTP/SOCKS 代理連接功能：
 
 ```no
-c = proxy.proxy-dial(proxy-url, target-host, target-port)
+c = proxy.dial(proxy-url, target-host, target-port)
 ```
 
 ### net/pool — 連接池

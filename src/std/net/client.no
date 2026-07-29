@@ -17,19 +17,19 @@
 ;   ok = c.reconnect()
 ;
 ;   // 便捷函數
-;   c = net-client('127.0.0.1', 8080)          // 返回 ?client
+;   c = client-create('127.0.0.1', 8080)          // 返回 ?client
 
 ; ═══════════════════════════════════════════════
 ; client 結構體
 ; ═══════════════════════════════════════════════
 
 ; client: 高階 TCP 客戶端
-; c: 底層 TCP 連接（conn 結構體）
+; c: 底層 TCP 連接（net.conn 結構體）
 ; host: 目標主機（記錄供 reconnect 使用）
 ; port: 目標埠號
 ; connected: 連接狀態
 client {
-    c conn
+    c net.conn
     host str
     port i64
     connected bool
@@ -130,9 +130,9 @@ client.close = () {
 ; 便捷函數
 ; ═══════════════════════════════════════════════
 
-; net-client: 建立客戶端並連接
+; client-create: 建立客戶端並連接
 ; 返回 c ?client: ok=客戶端, nil=失敗
-net-client = (host str, port i64) (c ?client) {
+client-create = (host str, port i64) (c ?client) {
     c = nil
     cl = client{}
     ok = false

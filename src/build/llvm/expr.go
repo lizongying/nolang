@@ -3144,7 +3144,7 @@ func (g *Generator) generateAssignExpression(sb *strings.Builder, expr *parser.A
 						g.indent(), llvmElemType, storeVal, llvmElemType, elemGEP))
 
 					// Auto-update len (field 0) to max(len, idx+1). Without this,
-					// sha256/hmac-sha256/tls-prf receive vec.len == 0 even after
+					// sha256/hmac-sha256/prf receive vec.len == 0 even after
 					// elements were written via vec[i] = val, producing wrong outputs.
 					// Optimization: skip the load+add+icmp+select+store when the index
 					// is a compile-time constant. For constant indices, either:

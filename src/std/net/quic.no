@@ -71,11 +71,11 @@ QUIC-MAX-FRAMES = 32
 ; 變長整數編解碼（RFC 9000 §16）
 ; ═══════════════════════════════════════════════
 
-; quic-varint-encode: 將 i64 編碼為 QUIC 變長整數
+; varint-encode: 將 i64 編碼為 QUIC 變長整數
 ; val i64: 要編碼的值
 ; 返回 buf []byte: 編碼結果（1/2/4/8 位元組）
 ; 返回 n i64: 編碼長度
-quic-varint-encode = (val i64) (buf []byte, n i64) {
+varint-encode = (val i64) (buf []byte, n i64) {
     n = 0
     {
         val <= 63 -> {
@@ -108,12 +108,12 @@ quic-varint-encode = (val i64) (buf []byte, n i64) {
     }
 }
 
-; quic-varint-decode: 從 buf 的 pos 位置解碼 QUIC 變長整數
+; varint-decode: 從 buf 的 pos 位置解碼 QUIC 變長整數
 ; buf []byte: 資料緩衝區
 ; pos i64: 起始位置
 ; 返回 val i64: 解碼值
 ; 返回 next-pos i64: 下一個位置（-1=錯誤）
-quic-varint-decode = (buf []byte, pos i64) (val i64, next-pos i64) {
+varint-decode = (buf []byte, pos i64) (val i64, next-pos i64) {
     next-pos = -1
     val = 0
     pos >= buf.len -> return
@@ -156,10 +156,10 @@ quic-varint-decode = (buf []byte, pos i64) (val i64, next-pos i64) {
 ; Connection ID 操作
 ; ═══════════════════════════════════════════════
 
-; quic-gen-cid: 生成隨機 Connection ID
+; gen-cid: 生成隨機 Connection ID
 ; len i64: CID 長度（通常 8）
 ; 返回 cid []byte: 隨機 CID
-quic-gen-cid = (len i64) (cid []byte) {
+gen-cid = (len i64) (cid []byte) {
     state i64 = 0
     state, cid-r = rand.rand(0)
     cid = with-len(len)
@@ -173,13 +173,13 @@ quic-gen-cid = (len i64) (cid []byte) {
 ; 影格解析
 ; ═══════════════════════════════════════════════
 
-; quic-frame: QUIC 影格
+; frame: QUIC 影格
 ; frame-type i64: 影格類型
 ; offset i64: CRYPTO/STREAM 影格的偏移量
 ; length i64: 影格資料長度
 ; stream-id i64: STREAM 影格的串流 ID
 ; data []byte: 影格資料
-quic-frame {
+frame {
     frame-type i64
     offset i64
     length i64
@@ -187,20 +187,20 @@ quic-frame {
     data []byte
 }
 
-; quic-parse-frames: 從 buf 的 pos 位置開始解析所有影格
+; parse-frames: 從 buf 的 pos 位置開始解析所有影格
 ; buf []byte: 資料緩衝區
 ; pos i64: 起始位置
 ; end i64: 結束位置
-; 返回 frames [32]quic-frame: 解析出的影格陣列
+; 返回 frames [32]frame: 解析出的影格陣列
 ; 返回 count i64: 影格數量（-1=錯誤）
-quic-parse-frames = (buf []byte, pos i64, end i64) (frames [32]quic-frame, count i64) {
+parse-frames = (buf []byte, pos i64, end i64) (frames [32]frame, count i64) {
     count = 0
     ft = 0
     {
         count >= QUIC-MAX-FRAMES -> return
         ft-val = 0
         ft-pos = 0
-        ft-val, ft-pos = quic-varint-decode(buf, pos)
+        ft-val, ft-pos = varint-decode(buf, pos)
         ft-pos < 0 -> {
             count = -1
             return
@@ -225,7 +225,7 @@ quic-parse-frames = (buf []byte, pos i64, end i64) (frames [32]quic-frame, count
         ; error_code + frame_type + reason_length + reason
         ec-val = 0
         ec-np = 0
-        ec-val, ec-np = quic-varint-decode(buf, pos)
+        ec-val, ec-np = varint-decode(buf, pos)
         ec-np < 0 -> {
             count = -1
             return
@@ -233,7 +233,7 @@ quic-parse-frames = (buf []byte, pos i64, end i64) (frames [32]quic-frame, count
         pos = ec-np
         ft2-val = 0
         ft2-np = 0
-        ft2-val, ft2-np = quic-varint-decode(buf, pos)
+        ft2-val, ft2-np = varint-decode(buf, pos)
         ft2-np < 0 -> {
             count = -1
             return
@@ -241,7 +241,7 @@ quic-parse-frames = (buf []byte, pos i64, end i64) (frames [32]quic-frame, count
         pos = ft2-np
         rl-val = 0
         rl-np = 0
-        rl-val, rl-np = quic-varint-decode(buf, pos)
+        rl-val, rl-np = varint-decode(buf, pos)
         rl-np < 0 -> {
             count = -1
             return
@@ -255,7 +255,7 @@ quic-parse-frames = (buf []byte, pos i64, end i64) (frames [32]quic-frame, count
     ft == QUIC-FRAME-CONNECTION-CLOSE-APP -> {
         ec-val = 0
         ec-np = 0
-        ec-val, ec-np = quic-varint-decode(buf, pos)
+        ec-val, ec-np = varint-decode(buf, pos)
         ec-np < 0 -> {
             count = -1
             return
@@ -263,7 +263,7 @@ quic-parse-frames = (buf []byte, pos i64, end i64) (frames [32]quic-frame, count
         pos = ec-np
         rl-val = 0
         rl-np = 0
-        rl-val, rl-np = quic-varint-decode(buf, pos)
+        rl-val, rl-np = varint-decode(buf, pos)
         rl-np < 0 -> {
             count = -1
             return
@@ -283,7 +283,7 @@ quic-parse-frames = (buf []byte, pos i64, end i64) (frames [32]quic-frame, count
     ft == QUIC-FRAME-NEW-TOKEN -> {
         tl-val = 0
         tl-np = 0
-        tl-val, tl-np = quic-varint-decode(buf, pos)
+        tl-val, tl-np = varint-decode(buf, pos)
         tl-np < 0 -> {
             count = -1
             return
@@ -297,7 +297,7 @@ quic-parse-frames = (buf []byte, pos i64, end i64) (frames [32]quic-frame, count
     ft == QUIC-FRAME-MAX-DATA || ft == QUIC-FRAME-MAX-STREAMS-BIDI || ft == QUIC-FRAME-DATA-BLOCKED || ft == QUIC-FRAME-STREAM-DATA-BLOCKED -> {
         mv-val = 0
         mv-np = 0
-        mv-val, mv-np = quic-varint-decode(buf, pos)
+        mv-val, mv-np = varint-decode(buf, pos)
         mv-np < 0 -> {
             count = -1
             return
@@ -313,13 +313,13 @@ quic-parse-frames = (buf []byte, pos i64, end i64) (frames [32]quic-frame, count
 ; Initial 金鑰推導（RFC 9001 §5.2）
 ; ═══════════════════════════════════════════════
 
-; quic-derive-initial-keys: 從 Destination CID 推導 Initial 金鑰
+; derive-initial-keys: 從 Destination CID 推導 Initial 金鑰
 ; dst-cid []byte: 目標 Connection ID
 ; is-client bool: true=客戶端金鑰, false=伺服器端金鑰
 ; 返回 key [16]byte: AEAD 金鑰
 ; 返回 iv [12]byte: AEAD IV
 ; 返回 hp [16]byte: 標頭保護金鑰
-quic-derive-initial-keys = (dst-cid []byte, is-client bool) (key [16]byte, iv [12]byte, hp [16]byte) {
+derive-initial-keys = (dst-cid []byte, is-client bool) (key [16]byte, iv [12]byte, hp [16]byte) {
     ; 1. Initial Secret = HKDF-Extract(Initial_Salt, dst_cid)
     initial-salt []byte
     i <- [0..20): {
@@ -363,12 +363,12 @@ quic-derive-initial-keys = (dst-cid []byte, is-client bool) (key [16]byte, iv [1
 ; 標頭保護（Header Protection, RFC 9001 §5.4）
 ; ═══════════════════════════════════════════════
 
-; quic-apply-header-protection: 對封包應用/移除標頭保護
+; apply-header-protection: 對封包應用/移除標頭保護
 ; packet []byte: 封包資料（就地修改）
 ; pn-offset i64: 封包號碼偏移量
 ; hp [16]byte: 標頭保護金鑰
 ; is-long-header bool: 是否為 Long Header
-quic-apply-header-protection = (packet []byte, pn-offset i64, hp [16]byte, is-long-header bool) {
+apply-header-protection = (packet []byte, pn-offset i64, hp [16]byte, is-long-header bool) {
     pn-offset + 4 > packet.len -> return
 
     ; 取取 16 位元組樣本（從 pn-offset + 4 開始）
@@ -395,22 +395,22 @@ quic-apply-header-protection = (packet []byte, pn-offset i64, hp [16]byte, is-lo
     } (j < 4)
 }
 
-; quic-remove-header-protection: 移除標頭保護（同 apply，XOR 對稱）
+; remove-header-protection: 移除標頭保護（同 apply，XOR 對稱）
 ; packet []byte: 封包資料
 ; pn-offset i64: 封包號碼偏移量
 ; hp [16]byte: 標頭保護金鑰
 ; is-long-header bool: 是否為 Long Header
-quic-remove-header-protection = (packet []byte, pn-offset i64, hp [16]byte, is-long-header bool) {
-    quic-apply-header-protection(packet, pn-offset, hp, is-long-header)
+remove-header-protection = (packet []byte, pn-offset i64, hp [16]byte, is-long-header bool) {
+    apply-header-protection(packet, pn-offset, hp, is-long-header)
 }
 
-; quic-decode-packet-number: 從封包中解碼封包號碼
+; decode-packet-number: 從封包中解碼封包號碼
 ; packet []byte: 封包資料（已移除標頭保護）
 ; pn-offset i64: 封包號碼偏移量
 ; largest-pn i64: 之前接收到的最大封包號碼
 ; 返回 pn i64: 封包號碼
 ; 返回 pn-len i64: 封包號碼位元組數
-quic-decode-packet-number = (packet []byte, pn-offset i64, largest-pn i64) (pn i64, pn-len i64) {
+decode-packet-number = (packet []byte, pn-offset i64, largest-pn i64) (pn i64, pn-len i64) {
     pn = 0
     pn-len = 0
 
@@ -463,8 +463,8 @@ quic-decode-packet-number = (packet []byte, pn-offset i64, largest-pn i64) (pn i
 ; QUIC 連線結構體
 ; ═══════════════════════════════════════════════
 
-; quic-conn: QUIC 連線
-quic-conn {
+; conn: QUIC 連線
+conn {
     fd fd
     host str
     port i64
@@ -506,8 +506,8 @@ QUIC-STATE-INITIAL-RECV = 2
 QUIC-STATE-HANDSHAKE = 3
 QUIC-STATE-CONNECTED = 4
 
-; quic-conn.init: 初始化連線
-quic-conn.init = () {
+; conn.init: 初始化連線
+conn.init = () {
     .fd = -1
     .state = QUIC-STATE-NEW
     .connected = false
@@ -520,8 +520,8 @@ quic-conn.init = () {
     .hs-buf-len = 0
 }
 
-; quic-conn.close: 關閉連線
-quic-conn.close = () {
+; conn.close: 關閉連線
+conn.close = () {
     .fd >= 0 -> {
         fs.close(.fd)
         .fd = -1
@@ -537,7 +537,7 @@ quic-conn.close = () {
 ; crypto-data []byte: CRYPTO 影格資料（TLS ClientHello）
 ; 返回 packet []byte: 完整的 Initial 封包（已加密）
 ; 返回 ok bool: true=成功
-quic-conn.build-initial-packet = (crypto-data []byte) (packet []byte, ok bool) {
+conn.build-initial-packet = (crypto-data []byte) (packet []byte, ok bool) {
     ok = false
     pn = .initial-pn
     pn-len i64 = 4
@@ -587,7 +587,7 @@ quic-conn.build-initial-packet = (crypto-data []byte) (packet []byte, ok bool) {
     payload-len = pn-len + crypto-frame-len + 16
     len-buf []byte
     len-n = 0
-    len-buf, len-n = quic-varint-encode(payload-len)
+    len-buf, len-n = varint-encode(payload-len)
     i <- [0..len-n): {
         packet[pos + i] = len-buf[i]
     }
@@ -607,7 +607,7 @@ quic-conn.build-initial-packet = (crypto-data []byte) (packet []byte, ok bool) {
     ; Frame type = CRYPTO (0x06)
     crypto-ft []byte
     crypto-ft-n = 0
-    crypto-ft, crypto-ft-n = quic-varint-encode(QUIC-FRAME-CRYPTO)
+    crypto-ft, crypto-ft-n = varint-encode(QUIC-FRAME-CRYPTO)
     i <- [0..crypto-ft-n): {
         packet[pos + i] = crypto-ft[i]
     }
@@ -616,7 +616,7 @@ quic-conn.build-initial-packet = (crypto-data []byte) (packet []byte, ok bool) {
     ; Offset = 0
     off-buf []byte
     off-n = 0
-    off-buf, off-n = quic-varint-encode(0)
+    off-buf, off-n = varint-encode(0)
     i <- [0..off-n): {
         packet[pos + i] = off-buf[i]
     }
@@ -625,7 +625,7 @@ quic-conn.build-initial-packet = (crypto-data []byte) (packet []byte, ok bool) {
     ; Length
     data-len-buf []byte
     data-len-n = 0
-    data-len-buf, data-len-n = quic-varint-encode(crypto-data.len)
+    data-len-buf, data-len-n = varint-encode(crypto-data.len)
     i <- [0..data-len-n): {
         packet[pos + i] = data-len-buf[i]
     }
@@ -680,7 +680,7 @@ quic-conn.build-initial-packet = (crypto-data []byte) (packet []byte, ok bool) {
     ; 調整 packet 長度（透過設定返回值）
     ; packet 資料從 0 到 final-pos
     ; ── 標頭保護 ──
-    quic-apply-header-protection(packet, pn-offset, .client-initial-hp, true)
+    apply-header-protection(packet, pn-offset, .client-initial-hp, true)
 
     .initial-pn = .initial-pn + 1
     ok = true
@@ -690,11 +690,11 @@ quic-conn.build-initial-packet = (crypto-data []byte) (packet []byte, ok bool) {
 ; 封包接收與解密
 ; ═══════════════════════════════════════════════
 
-; quic-conn.recv-initial: 接收並解密伺服器 Initial 封包
-; 返回 frames [32]quic-frame: 解析出的影格
+; conn.recv-initial: 接收並解密伺服器 Initial 封包
+; 返回 frames [32]frame: 解析出的影格
 ; 返回 count i64: 影格數量（-1=錯誤）
 ; 返回 ok bool: true=成功
-quic-conn.recv-initial = () (frames [32]quic-frame, count i64, ok bool) {
+conn.recv-initial = () (frames [32]frame, count i64, ok bool) {
     ok = false
     count = -1
 
@@ -729,14 +729,14 @@ quic-conn.recv-initial = () (frames [32]quic-frame, count i64, ok bool) {
     ; Token length (varint)
     token-len = 0
     token-np = 0
-    token-len, token-np = quic-varint-decode(buf, pos)
+    token-len, token-np = varint-decode(buf, pos)
     token-np < 0 -> return
     pos = token-np + token-len
 
     ; Length (varint)
     length-val = 0
     length-np = 0
-    length-val, length-np = quic-varint-decode(buf, pos)
+    length-val, length-np = varint-decode(buf, pos)
     length-np < 0 -> return
     pos = length-np
 
@@ -744,12 +744,12 @@ quic-conn.recv-initial = () (frames [32]quic-frame, count i64, ok bool) {
     pn-offset = pos
 
     ; 移除標頭保護
-    quic-remove-header-protection(buf, pn-offset, .server-initial-hp, true)
+    remove-header-protection(buf, pn-offset, .server-initial-hp, true)
 
     ; 解碼封包號碼
     pn = 0
     pn-len = 0
-    pn, pn-len = quic-decode-packet-number(buf, pn-offset, .largest-initial-pn)
+    pn, pn-len = decode-packet-number(buf, pn-offset, .largest-initial-pn)
     pn-len <= 0 -> .largest-initial-pn = pn
 
     ; AEAD 解密
@@ -778,15 +778,15 @@ quic-conn.recv-initial = () (frames [32]quic-frame, count i64, ok bool) {
     plain []byte
     plain = aes-gcm.aes-128-gcm-open(.server-initial-key, nonce, aad, sealed)
     plain.len == 0 -> return
-    frames, count = quic-parse-frames(plain, 0, plain.len)
+    frames, count = parse-frames(plain, 0, plain.len)
     count < 0 -> return
     ok = true
 }
 
-; quic-conn.recv-packet: 接收任意 QUIC 封包
+; conn.recv-packet: 接收任意 QUIC 封包
 ; 返回 buf []byte: 原始封包
 ; 返回 n i64: 接收位元組數（-1=錯誤, 0=逾時）
-quic-conn.recv-raw = () (buf []byte, n i64) {
+conn.recv-raw = () (buf []byte, n i64) {
     buf = with-len(QUIC-MAX-PACKET-SIZE)
     n = net.net-udp-recvfrom(.fd, buf, QUIC-MAX-PACKET-SIZE)
 }
@@ -795,13 +795,13 @@ quic-conn.recv-raw = () (buf []byte, n i64) {
 ; QUIC 連線建立
 ; ═══════════════════════════════════════════════
 
-; quic-dial: 建立 QUIC 連線
+; dial: 建立 QUIC 連線
 ; host str: 伺服器主機名或 IP
 ; port i64: 埠號
-; 返回 conn ?quic-conn: ok=連線, nil=失敗
-quic-dial = (host str, port i64) (conn ?quic-conn) {
+; 返回 conn ?conn: ok=連線, nil=失敗
+dial = (host str, port i64) (conn ?conn) {
     conn = nil
-    c quic-conn
+    c conn
     c.init()
     c.host = host
     c.port = port
@@ -813,13 +813,13 @@ quic-dial = (host str, port i64) (conn ?quic-conn) {
     ; 設定接收逾時（5 秒）
 
     ; 2. 生成 Connection IDs
-    c.local-cid = quic-gen-cid(8)
+    c.local-cid = gen-cid(8)
     c.remote-cid = c.local-cid
-    cik, cii, cih = quic-derive-initial-keys(c.local-cid, true)
+    cik, cii, cih = derive-initial-keys(c.local-cid, true)
     c.client-initial-key = cik
     c.client-initial-iv = cii
     c.client-initial-hp = cih
-    sik, sii, sih = quic-derive-initial-keys(c.local-cid, false)
+    sik, sii, sih = derive-initial-keys(c.local-cid, false)
     c.server-initial-key = sik
     c.server-initial-iv = sii
     c.server-initial-hp = sih

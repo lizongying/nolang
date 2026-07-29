@@ -5,7 +5,7 @@ print('=== TLS Part 1 ===')
 
 ; test-tls-put-u16
 buf []byte
-tls.tls-put-u16(buf, 0, 0x1234)
+tls.put-u16(buf, 0, 0x1234)
 buf[0] != 0x12 -> {
     print('FAIL: put-u16')
     return
@@ -14,7 +14,7 @@ print('PASS: put-u16')
 
 ; test-tls-get-u16
 val i64 = 0
-val = tls.tls-get-u16(buf, 0)
+val = tls.get-u16(buf, 0)
 val != 0x1234 -> {
     print('FAIL: get-u16')
     return
@@ -22,7 +22,7 @@ val != 0x1234 -> {
 print('PASS: get-u16')
 
 ; test-tls-put-u24
-tls.tls-put-u24(buf, 0, 0x123456)
+tls.put-u24(buf, 0, 0x123456)
 buf[0] != 0x12 -> {
     print('FAIL: put-u24')
     return
@@ -30,7 +30,7 @@ buf[0] != 0x12 -> {
 print('PASS: put-u24')
 
 ; test-tls-get-u24
-val = tls.tls-get-u24(buf, 0)
+val = tls.get-u24(buf, 0)
 val != 0x123456 -> {
     print('FAIL: get-u24')
     return

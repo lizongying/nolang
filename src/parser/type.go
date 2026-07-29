@@ -20,7 +20,7 @@ func (p *Parser) resolveReceiverType(receiver Expression) string {
 		// self 欄位：在方法體中，`.field` 語法會解析為裸識別符 `field`，
 		// 其型別應從所屬 struct 的欄位表中查詢（而非區域變數表）。
 		// 例如 sse-client.reconnect 中的 `.tls-c.recv`：receiver 為裸識別符
-		// `tls-c`，其型別是 sse-client 結構的 tls-c 欄位（tls-conn）。
+		// `tls-c`，其型別是 sse-client 結構的 tls-c 欄位（tls.conn）。
 		if len(p.methodStructStack) > 0 {
 			structName := p.methodStructStack[len(p.methodStructStack)-1]
 			if fields, ok := p.structFields[structName]; ok {
@@ -50,8 +50,8 @@ func (p *Parser) resolveReceiverType(receiver Expression) string {
 				}
 			} else {
 				// 自由函數中沒有 self：`.field` 視為對同名區域變數的存取
-				// （例如 sse-connect 中的 `tls-c tls-conn` 區域變數，`.tls-c.recv`
-				// 應解析為 tls-conn.recv）。此回退讓 inferTypeFromCallExpr 能推斷
+				// （例如 sse-connect 中的 `tls-c tls.conn` 區域變數，`.tls-c.recv`
+				// 應解析為 tls.conn.recv）。此回退讓 inferTypeFromCallExpr 能推斷
 				// 方法呼叫的回傳型別，避免 match 的 it 綁定型別缺失而誤報。
 				if t, ok := p.sem.VarTypes[dot.Property]; ok {
 					return strings.TrimPrefix(t, "?")

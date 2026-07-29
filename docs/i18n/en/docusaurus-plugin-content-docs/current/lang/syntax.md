@@ -320,7 +320,7 @@ hello-world = 'Hello World'
 
 ```no
 // ❌ Avoid: using global mutable variables in modules
-// g-conn = tls-conn {}
+// g-conn = tls.conn {}
 // g-buf = ' '
 //
 // fn-a = () {
@@ -329,7 +329,7 @@ hello-world = 'Hello World'
 
 // ✅ Recommended: use local variables, pass state via params/return values
 fn-a = () {
-    conn = tls-conn {}    ; local variable, consistent address
+    conn = tls.conn {}    ; local variable, consistent address
     buf = ' '
     conn.send(buf)
 }
@@ -338,7 +338,7 @@ fn-a = () {
 serve-once = (listen-fd fd, body str) (ok bool) {
     ok = false
     client-fd = net.net-accept(listen-fd)
-    conn = tls-server-init(client-fd)   ; local variable
+    conn = tls.server-init(client-fd)   ; local variable
     conn: {
         ok -> {
             c = it
@@ -352,7 +352,7 @@ serve-once = (listen-fd fd, body str) (ok bool) {
 }
 ```
 
-> **Real-world example**: The `tls-https-serve-once` function in `std/net/tls.no` encapsulates the entire HTTPS request-response cycle (accept + handshake + recv + send + close) in a single function, keeping all TLS state in local variables — successfully avoiding the compiler bug where global variables have inconsistent addresses across functions.
+> **Real-world example**: The `https-serve-once` function in `std/net/tls.no` encapsulates the entire HTTPS request-response cycle (accept + handshake + recv + send + close) in a single function, keeping all TLS state in local variables — successfully avoiding the compiler bug where global variables have inconsistent addresses across functions.
 
 ## API Documentation Conventions
 

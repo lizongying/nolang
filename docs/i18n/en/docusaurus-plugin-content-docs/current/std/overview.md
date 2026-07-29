@@ -663,7 +663,7 @@ sse-event {
 ; sse-client struct
 sse-client {
     fd i64              ; TCP socket fd
-    tls-c tls-conn      ; TLS connection
+    tls-c tls.conn      ; TLS connection
     use-tls bool        ; Whether TLS is used
     connected bool      ; Connection state
     host str            ; Server hostname
@@ -675,7 +675,7 @@ sse-client {
 }
 
 ; Connection and event reception
-client = sse.sse-connect('http://host:3000/events')  ; Returns ?sse-client
+client = sse.connect('http://host:3000/events')  ; Returns ?sse-client
 client: {
     nil -> print('connect failed')
     ->
@@ -706,7 +706,7 @@ http-request {
     headers [16]str
     header-count i64
 }
-http-response {
+http.response {
     status-code i64
     status-text str
     headers str
@@ -717,15 +717,15 @@ http-response {
 }
 
 ; Convenience functions
-resp = http.http-get(url)                        ; GET request (?http-response)
-resp = http.http-post(url, body)                  ; POST request (?http-response)
-resp = http.http-do(method, url, body)            ; Custom method (?http-response)
+resp = http.get(url)                        ; GET request (?http.response)
+resp = http.post(url, body)                  ; POST request (?http.response)
+resp = http.do(method, url, body)            ; Custom method (?http.response)
 
 ; Using a request object
 req = http-request{}
 req.init('POST', url, body)
 req.add-header('Content-Type', 'application/json')
-resp = http.http-do-req(req)                      ; Send request (?http-response)
+resp = http.do-req(req)                      ; Send request (?http.response)
 
 ; Parse response headers
 resp.parse-headers()
@@ -756,8 +756,8 @@ http2-conn {
 }
 
 ; Connection and request
-c = http2.http2-connect(host, port)                ; Establish connection (?http2-conn)
-resp = http2.http2-do(method, url, body)           ; Send request (?http-response)
+c = http2.connect(host, port)                ; Establish connection (?http2-conn)
+resp = http2.do(method, url, body)           ; Send request (?http.response)
 
 ; Frame operations
 frame = http2-frame{}
@@ -782,10 +782,10 @@ HTTP3-METHOD-HEAD = 'HEAD'
 HTTP3-METHOD-OPTIONS = 'OPTIONS'
 
 ; Convenience functions
-c = http3.http3-connect(host, port)                ; Establish QUIC connection (?http3-conn)
-resp = http3.http3-send-request(c, method, path, headers, body) ; Send request (?http-response)
-resp = http3.http3-get(url)                        ; GET request (?http-response)
-resp = http3.http3-post(url, body)                 ; POST request (?http-response)
+c = http3.connect(host, port)                ; Establish QUIC connection (?http3-conn)
+resp = http3.send-request(c, method, path, headers, body) ; Send request (?http.response)
+resp = http3.get(url)                        ; GET request (?http.response)
+resp = http3.post(url, body)                 ; POST request (?http.response)
 
 ; QPACK header encoding/decoding
 buf, n = http3.qpack-encode-header(name, value)
@@ -806,7 +806,7 @@ ws-message {
 }
 
 ; Server
-s = ws.ws-listen-on(host, port)                 ; Create listener (?ws-server)
+s = ws.listen-on(host, port)                 ; Create listener (?ws-server)
 c = s.accept()                               ; Accept connection (?ws-server-conn)
 msg = c.recv()                               ; Receive message (?ws-message)
 ok = c.send-text(text)                       ; Send text
@@ -814,7 +814,7 @@ ok = c.send-binary(data)                     ; Send binary
 c.close()
 
 ; Client
-c = ws.ws-connect(url)                          ; Connect to server (?ws-client)
+c = ws.connect(url)                          ; Connect to server (?ws-client)
 msg = c.recv()                               ; Receive message (?ws-message)
 ok = c.send-text(text)                       ; Send text
 ok = c.send-binary(data)                     ; Send binary
@@ -827,7 +827,7 @@ Provides TLS encrypted connections, supporting TLS 1.2 and 1.3:
 
 ```no
 ; Connection
-c = tls.tls-dial(host, port)                     ; Establish TLS connection (?tls-conn)
+c = tls.tls-dial(host, port)                     ; Establish TLS connection (?tls.conn)
 n = c.send(data)                             ; Send encrypted data (?i64)
 n = c.recv(buf, n)                           ; Receive decrypted data (?i64)
 c.close()
@@ -854,7 +854,7 @@ c.close()
 Provides an implementation of the QUIC transport protocol, serving as the underlying transport layer for HTTP/3:
 
 ```no
-c = quic.quic-dial(host, port)                    ; Establish QUIC connection (?quic-conn)
+c = quic.dial(host, port)                    ; Establish QUIC connection (?quic.conn)
 n = c.send(data, n)                          ; Send data
 n = c.recv(buf, n)                           ; Receive data
 c.close()
@@ -876,7 +876,7 @@ s.close()
 Provides DNS query functionality:
 
 ```no
-ip = dns.dns-resolve(host)                       ; Resolve hostname (?str)
+ip = dns.resolve(host)                       ; Resolve hostname (?str)
 ```
 
 ### net/url — URL Parsing
@@ -912,8 +912,8 @@ fields = multipart.multipart-parse(data, boundary)
 Provides encoding/decoding of the HPACK algorithm, used for HTTP/2 header compression:
 
 ```no
-buf, n = hpack.hpack-encode(headers)
-headers = hpack.hpack-decode(buf, n)
+buf, n = hpack.encode(headers)
+headers = hpack.decode(buf, n)
 ```
 
 ### net/proxy — Proxy Support
@@ -921,7 +921,7 @@ headers = hpack.hpack-decode(buf, n)
 Provides HTTP/SOCKS proxy connection functionality:
 
 ```no
-c = proxy.proxy-dial(proxy-url, target-host, target-port)
+c = proxy.dial(proxy-url, target-host, target-port)
 ```
 
 ### net/pool — Connection Pool

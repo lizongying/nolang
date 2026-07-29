@@ -6,7 +6,7 @@
 ;
 ; 用法：
 ;   // TCP 服務端
-;   l = net-listen-on('127.0.0.1', 8080)         // 返回 ?listener
+;   l = listen-on('127.0.0.1', 8080)         // 返回 ?listener
 ;   l: {
 ;       nil -> return
 ;       -> c = l.accept()                      // 返回 ?conn
@@ -17,7 +17,7 @@
 ;   l.close()
 ;
 ;   // TCP 客戶端
-;   c = net-dial-to('127.0.0.1', 8080)           // 返回 ?conn
+;   c = dial-to('127.0.0.1', 8080)           // 返回 ?conn
 ;   n = c.send('hello')
 ;   n = c.recv(buf, 1024)
 ;   c.close()
@@ -228,9 +228,9 @@ conn.fd-of = () (fd fd) {
 ; 便捷函數
 ; ═══════════════════════════════════════════════
 
-; net-listen-on: 建立監聽器並開始監聽
+; listen-on: 建立監聽器並開始監聽
 ; 返回 l ?listener: ok=監聽器, nil=失敗
-net-listen-on = (host str, port i64) (l ?listener) {
+listen-on = (host str, port i64) (l ?listener) {
     l = nil
     lst = listener{}
     ok = false
@@ -238,9 +238,9 @@ net-listen-on = (host str, port i64) (l ?listener) {
     ok -> l = lst
 }
 
-; net-dial-to: 建立連接並撥號
+; dial-to: 建立連接並撥號
 ; 返回 c ?conn: ok=連接, nil=失敗
-net-dial-to = (host str, port i64) (c ?conn) {
+dial-to = (host str, port i64) (c ?conn) {
     c = nil
     cn = conn{}
     ok = false
@@ -459,12 +459,12 @@ listener.accept-with-timeout = (timeout-ms i64) (c ?conn) {
 ; 便捷撥號函數（帶逾時）
 ; ═══════════════════════════════════════════════
 
-; net-dial-timeout: 帶連接逾時的撥號
+; dial-timeout: 帶連接逾時的撥號
 ; host str: 目標主機
 ; port i64: 目標埠號
 ; timeout-ms i64: 逾時毫秒數（目前用於連接後的 recv 逾時設定）
 ; 返回 c ?conn: ok=連接, nil=失敗
-net-dial-timeout = (host str, port i64, timeout-ms i64) (c ?conn) {
+dial-timeout = (host str, port i64, timeout-ms i64) (c ?conn) {
     c = nil
     fd = net-dial(host, port)
     fd < 0 -> return
@@ -621,7 +621,7 @@ enc-conn.close = () {
 ; 返回 ec ?enc-conn: ok=加密連接, nil=失敗
 enc-dial = (host str, port i64, key [32]byte) (ec ?enc-conn) {
     ec = nil
-    c ?conn = net-dial-to(host, port)
+    c ?conn = dial-to(host, port)
     c: {
         nil -> return
         err -> return

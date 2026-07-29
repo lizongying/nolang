@@ -1469,7 +1469,7 @@ func scanStmtForGenericCalls(stmt parser.Statement, genericFns map[string]*parse
 			// Build per-function varTypes to avoid cross-function name pollution.
 			// The global varTypes is shared across all functions, so a local variable
 			// named `resp` of type `str` in one function would pollute the lookup for
-			// a parameter named `resp` of type `http-response` in another function.
+			// a parameter named `resp` of type `response` in another function.
 			funcVarTypes := make(map[string]string)
 			for k, v := range varTypes {
 				funcVarTypes[k] = v
@@ -2313,9 +2313,9 @@ func resolveMethodCall(dot *parser.DotExpression, ce *parser.CallExpression,
 	}
 	// Apply module prefix if recvTypeForMethod is a bare user-defined type name.
 	// varTypes is built before rewriteTypeRefs, so it may contain the un-prefixed
-	// form (e.g. "tls-conn" instead of "tls.tls-conn"). Without this, the rewrite
-	// would produce "tls-conn.recv" but the function definition was renamed to
-	// "tls.tls-conn.recv" by prefixMethodNames.
+	// form (e.g. "conn" instead of "tls.conn"). Without this, the rewrite
+	// would produce "conn.recv" but the function definition was renamed to
+	// "tls.conn.recv" by prefixMethodNames.
 	if typeOwner != nil && !strings.Contains(recvTypeForMethod, ".") {
 		if mod, ok := typeOwner[recvTypeForMethod]; ok && mod != "" {
 			recvTypeForMethod = mod + "." + recvTypeForMethod
@@ -7103,7 +7103,7 @@ var (
 	stdSigsCache      map[string][]string
 	stdFieldsCache    map[string]map[string]string
 	stdAliasesCache   map[string]string // 單具體型別別名快取（如 "fd" → "i64"）
-	stdStructModCache map[string]string // struct name → module short name（如 "tls-conn" → "tls"）
+	stdStructModCache map[string]string // struct name → module short name（如 "conn" → "tls"）
 )
 
 // StdModuleInfo holds information about a standard library module.
@@ -7321,7 +7321,7 @@ func CollectStdConcreteAliases() map[string]string {
 }
 
 // CollectStdStructModules returns a map from struct name to the short name
-// of the module that defines it (e.g. "tls-conn" → "tls"). Used by
+// of the module that defines it (e.g. "conn" → "tls"). Used by
 // ValidateCrossModuleTypeRefs to enforce module-prefix on cross-module type
 // references. Triggers CollectStdModuleSignatures via sync.Once.
 func CollectStdStructModules() map[string]string {
@@ -7351,6 +7351,29 @@ func extractBaseTypeName(t parser.Type) string {
 	return ""
 }
 
+// isInferredType recursively checks if a type node was inferred by the parser
+// (not explicitly written by the user). Used by ValidateCrossModuleTypeRefs to
+// skip inferred types — they are auto-derived from function call return types,
+// so flagging them for missing module prefix would be a false positive.
+func isInferredType(t parser.Type) bool {
+	if t == nil {
+		return false
+	}
+	switch tt := t.(type) {
+	case *parser.NamedType:
+		return tt.IsInferred
+	case *parser.NullableType:
+		return tt.IsInferred || isInferredType(tt.Type)
+	case *parser.PointerType:
+		return isInferredType(tt.Type)
+	case *parser.ArrayType:
+		return tt.IsInferred || isInferredType(tt.Elem)
+	case *parser.SliceType:
+		return tt.IsInferred || isInferredType(tt.Elem)
+	}
+	return false
+}
+
 // isBuiltinType returns true for primitive type names that don't require
 // a module prefix.
 func isBuiltinType(name string) bool {
@@ -7369,8 +7392,8 @@ func isBuiltinType(name string) bool {
 // module prefix when referencing a struct defined in another module.
 //
 // Per the language spec, cross-module type references must use the
-// "module.type" form (e.g. `tls.tls-conn`). Using the bare struct name
-// (e.g. `tls-conn`) without the module prefix is an error.
+// "module.type" form (e.g. `tls.conn`). Using the bare struct name
+// (e.g. `conn`) without the module prefix is an error.
 //
 // Exceptions:
 //   - Builtin primitive types (i64, str, bool, ...)
@@ -7468,9 +7491,12 @@ func ValidateCrossModuleTypeRefs(program *parser.Program) []ValidateResult {
 				}
 			}
 			// Also check local variable declarations inside function bodies.
+			// Skip inferred types — they are auto-derived by the compiler
+			// from function calls, not written by the user, so flagging them
+			// for missing module prefix would be a false positive.
 			if s.Body != nil {
 				for _, bodyStmt := range s.Body.Statements {
-					if ls, ok := bodyStmt.(*parser.LetStatement); ok && ls.Type != nil {
+					if ls, ok := bodyStmt.(*parser.LetStatement); ok && ls.Type != nil && !isInferredType(ls.Type) {
 						checkType(ls.Type, ls.Token.Line, ls.Token.Column)
 					}
 				}

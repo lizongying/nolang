@@ -4,7 +4,7 @@
 ;
 ; 用法：
 ;   // 通過 HTTP 代理連接
-;   c = proxy-dial('proxy.example.com', 3128, 'target.example.com', 443)
+;   c = dial('proxy.example.com', 3128, 'target.example.com', 443)
 ;   c: {
 ;       nil -> print('proxy connection failed')
 ;       -> c.send('hello')
@@ -28,12 +28,12 @@ PROXY-BUF-SIZE = 4096
 ; 結構體
 ; ═══════════════════════════════════════════════
 
-; proxy-config: 代理配置
+; config: 代理配置
 ; host str: 代理伺服器主機
 ; port i64: 代理伺服器埠號
 ; username str: 認證用戶名（空=不認證）
 ; password str: 認證密碼
-proxy-config {
+config {
     host str
     port i64
     username str
@@ -44,7 +44,7 @@ proxy-config {
 ; HTTP CONNECT 代理
 ; ═══════════════════════════════════════════════
 
-; proxy-connect: 通過 HTTP CONNECT 建立代理隧道
+; connect: 通過 HTTP CONNECT 建立代理隧道
 ; proxy-host str: 代理伺服器主機
 ; proxy-port i64: 代理伺服器埠號
 ; target-host str: 目標主機
@@ -52,7 +52,7 @@ proxy-config {
 ; username str: 認證用戶名（空=不認證）
 ; password str: 認證密碼
 ; 返回 fd fd: 隧道 socket fd（-1=失敗）
-proxy-connect = (proxy-host str, proxy-port i64, target-host str, target-port i64, username str, password str) (fd fd) {
+connect = (proxy-host str, proxy-port i64, target-host str, target-port i64, username str, password str) (fd fd) {
     fd = -1
 
     ; 連接到代理伺服器
@@ -150,17 +150,17 @@ proxy-connect = (proxy-host str, proxy-port i64, target-host str, target-port i6
     }
 }
 
-; proxy-dial: 通過代理建立 TCP 連接（便捷函數，無認證）
+; dial: 通過代理建立 TCP 連接（便捷函數，無認證）
 ; proxy-host str: 代理伺服器主機
 ; proxy-port i64: 代理伺服器埠號
 ; target-host str: 目標主機
 ; target-port i64: 目標埠號
 ; 返回 fd fd: socket fd（-1=失敗）
-proxy-dial = (proxy-host str, proxy-port i64, target-host str, target-port i64) (fd fd) {
-    fd = proxy-connect(proxy-host, proxy-port, target-host, target-port, '', '')
+dial = (proxy-host str, proxy-port i64, target-host str, target-port i64) (fd fd) {
+    fd = connect(proxy-host, proxy-port, target-host, target-port, '', '')
 }
 
-; proxy-dial-auth: 通過代理建立 TCP 連接（含認證）
+; dial-auth: 通過代理建立 TCP 連接（含認證）
 ; proxy-host str: 代理伺服器主機
 ; proxy-port i64: 代理伺服器埠號
 ; target-host str: 目標主機
@@ -168,8 +168,8 @@ proxy-dial = (proxy-host str, proxy-port i64, target-host str, target-port i64) 
 ; username str: 認證用戶名
 ; password str: 認證密碼
 ; 返回 fd fd: socket fd（-1=失敗）
-proxy-dial-auth = (proxy-host str, proxy-port i64, target-host str, target-port i64, username str, password str) (fd fd) {
-    fd = proxy-connect(proxy-host, proxy-port, target-host, target-port, username, password)
+dial-auth = (proxy-host str, proxy-port i64, target-host str, target-port i64, username str, password str) (fd fd) {
+    fd = connect(proxy-host, proxy-port, target-host, target-port, username, password)
 }
 
 ; ═══════════════════════════════════════════════
@@ -181,16 +181,16 @@ proxy-dial-auth = (proxy-host str, proxy-port i64, target-host str, target-port 
 ; proxy-port i64: 代理伺服器埠號
 ; target-host str: 目標主機
 ; target-port i64: 目標埠號
-; 返回 tc ?tls-conn: ok=TLS 連接, nil=失敗
-proxy-tls-dial = (proxy-host str, proxy-port i64, target-host str, target-port i64) (tc ?tls-conn) {
+; 返回 tc ?tls.conn: ok=TLS 連接, nil=失敗
+proxy-tls-dial = (proxy-host str, proxy-port i64, target-host str, target-port i64) (tc ?tls.conn) {
     tc = nil
 
     ; 1. 通過代理建立 TCP 隧道
-    fd = proxy-connect(proxy-host, proxy-port, target-host, target-port, '', '')
+    fd = connect(proxy-host, proxy-port, target-host, target-port, '', '')
     fd < 0 -> return
 
     ; 2. 在隧道上建立 TLS 連接
-    c tls-conn
+    c tls.conn
     c.init()
     c.fd = fd
     c.connected = true
@@ -236,7 +236,7 @@ proxy-tls-dial = (proxy-host str, proxy-port i64, target-host str, target-port i
             premaster []byte
             premaster[0] = 0x03
             premaster[1] = 0x03
-            rand-bytes []byte = tls.tls-rand-bytes(c.rand-state, 46)
+            rand-bytes []byte = tls.rand-bytes(c.rand-state, 46)
             i <- [0..46): {
                 premaster[2 + i] = rand-bytes[i]
             }
@@ -275,23 +275,23 @@ proxy-tls-dial = (proxy-host str, proxy-port i64, target-host str, target-port i
     tc = c
 }
 
-; proxy-config.connect: 使用 proxy-config 建立代理連接
+; config.connect: 使用 config 建立代理連接
 ; target-host str: 目標主機
 ; target-port i64: 目標埠號
 ; 返回 fd fd: socket fd（-1=失敗）
-proxy-config.connect = (target-host str, target-port i64) (fd fd) {
-    fd = proxy-connect(.host, .port, target-host, target-port, .username, .password)
+config.connect = (target-host str, target-port i64) (fd fd) {
+    fd = connect(.host, .port, target-host, target-port, .username, .password)
 }
 
-; proxy-config.tls-connect: 使用 proxy-config 建立代理 TLS 連接
+; config.tls-connect: 使用 config 建立代理 TLS 連接
 ; target-host str: 目標主機
 ; target-port i64: 目標埠號
-; 返回 tc ?tls-conn: ok=TLS 連接, nil=失敗
-proxy-config.tls-connect = (target-host str, target-port i64) (tc ?tls-conn) {
+; 返回 tc ?tls.conn: ok=TLS 連接, nil=失敗
+config.tls-connect = (target-host str, target-port i64) (tc ?tls.conn) {
     tc = nil
-    fd = proxy-connect(.host, .port, target-host, target-port, .username, .password)
+    fd = connect(.host, .port, target-host, target-port, .username, .password)
     fd < 0 -> return
-    c tls-conn
+    c tls.conn
     c.init()
     c.fd = fd
     c.connected = true
@@ -328,7 +328,7 @@ proxy-config.tls-connect = (target-host str, target-port i64) (tc ?tls-conn) {
             premaster []byte
             premaster[0] = 0x03
             premaster[1] = 0x03
-            rand-bytes []byte = tls.tls-rand-bytes(c.rand-state, 46)
+            rand-bytes []byte = tls.rand-bytes(c.rand-state, 46)
             i <- [0..46): {
                 premaster[2 + i] = rand-bytes[i]
             }

@@ -15,7 +15,7 @@ seed[0] = 0xAA
 seed[1] = 0xBB
 seed[2] = 0xCC
 prf-out []byte
-prf-out = tls.tls-prf(secret, 4, 'test label', seed, 3, 32)
+prf-out = tls.prf(secret, 4, 'test label', seed, 3, 32)
 print('after prf')
 has-nonzero = 0
 i <- [0..32): {
@@ -29,7 +29,7 @@ print('PASS: prf')
 
 ; test-tls-conn-init
 print('before conn-init')
-c tls-conn
+c tls.conn
 c.init()
 c.connected != false -> {
     print('FAIL: conn-init connected')

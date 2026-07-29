@@ -3,7 +3,7 @@
 ; 本測試為 vet-only，需要實際 HTTP 伺服器才能執行。
 ; 測試 Phase 3 新增的 REST 支援：http-request struct、自訂標頭、
 ; http-put / http-delete / http-patch 便捷函數、http-do-req、
-; http-response.parse-headers / get-header。
+; http.response.parse-headers / get-header。
 
 
 ; ── 測試 1: http-request 結構體與 init ──
@@ -43,15 +43,15 @@ ok2 bool = req.add-header('Authorization', 'Bearer token123')
     -> print('fail: add-header Authorization')
 }
 
-; ── 測試 3: http-response 擴充欄位 ──
-r http-response = http-response{}
+; ── 測試 3: http.response 擴充欄位 ──
+r http.response = http.response{}
 r.status-code = 200
 r.status-text = 'OK'
 r.headers = 'Content-Type: text/html\r\nContent-Length: 13'
 r.body = '<html></html>'
 {
-    r.status-code == 200 -> print('ok: http-response status-code')
-    -> print('fail: http-response status-code')
+    r.status-code == 200 -> print('ok: http.response status-code')
+    -> print('fail: http.response status-code')
 }
 
 ; ── 測試 4: parse-headers（手動填充 headers 後解析）
@@ -98,7 +98,7 @@ none: {
 }
 
 ; ── 測試 6: http-put 便捷函數（vet-only，需網路才能執行）
-resp = http.http-put('http://example.com/api/item', 'data')
+resp = http.put('http://example.com/api/item', 'data')
 resp: {
     nil -> print('skip: http-put (no network)')
     -> {
@@ -108,14 +108,14 @@ resp: {
 }
 
 ; ── 測試 7: http-delete 便捷函數
-resp2 = http.http-delete('http://example.com/api/item/1')
+resp2 = http.delete('http://example.com/api/item/1')
 resp2: {
     nil -> print('skip: http-delete (no network)')
     -> print('ok: http-delete connected')
 }
 
 ; ── 測試 8: http-patch 便捷函數
-resp3 = http.http-patch('http://example.com/api/item/1', '{"key":"v"}')
+resp3 = http.patch('http://example.com/api/item/1', '{"key":"v"}')
 resp3: {
     nil -> print('skip: http-patch (no network)')
     -> print('ok: http-patch connected')
@@ -126,7 +126,7 @@ req2 http-request = http-request{}
 req2.init('POST', 'http://example.com/api/auth', '{"user":"admin"}')
 req2.add-header('Content-Type', 'application/json')
 req2.add-header('X-Request-Id', 'abc123')
-resp4 = http.http-do-req(req2)
+resp4 = http.do-req(req2)
 resp4: {
     nil -> print('skip: http-do-req (no network)')
     -> print('ok: http-do-req connected')

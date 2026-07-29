@@ -1,7 +1,7 @@
 ; test-x25519-struct — 測試 X25519 與結構體欄位
 ; # std/crypto/x25519
 
-; key-holder: 測試用結構體，模擬 tls-server-conn 的欄位
+; key-holder: 測試用結構體，模擬 tls.server-conn 的欄位
 key-holder {
     priv [32]byte
     pub [32]byte

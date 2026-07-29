@@ -1474,8 +1474,8 @@ func (g *Generator) Generate(program *parser.Program) string {
 					g.globalVars[name] = true
 				}
 			} else if g.classifyTypeKind(llvmType).Kind == KindUserStruct && ls.Value == nil {
-				// User-defined struct types (e.g. %tls.tls-conn, %server.https-server)
-				// Emit as global when declared without an initial value (e.g. `e2e-tc tls-conn`).
+				// User-defined struct types (e.g. %tls.conn, %server.https-server)
+				// Emit as global when declared without an initial value (e.g. `e2e-tc tls.conn`).
 				// This allows functions to reference the variable via @name.
 				sb.WriteString(fmt.Sprintf("%s = global %s zeroinitializer\n", llvmGlobalRef(name), llvmType))
 				g.globalVars[name] = true

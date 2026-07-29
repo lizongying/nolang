@@ -392,7 +392,7 @@ _PRIVATE-CONST = 42
 
 ```no
 ; ❌ 避免：在模組中使用全局可變變量
-; g-conn = tls-conn {}
+; g-conn = tls.conn {}
 ; g-buf = ' '
 ;
 ; fn-a = () {
@@ -401,7 +401,7 @@ _PRIVATE-CONST = 42
 
 ; ✅ 推薦：使用局部變量，狀態透過參數/返回值傳遞
 fn-a = () {
-    conn = tls-conn {}    ; 局部變量，位址一致
+    conn = tls.conn {}    ; 局部變量，位址一致
     buf = ' '
     conn.send(buf)
 }
@@ -410,7 +410,7 @@ fn-a = () {
 serve-once = (listen-fd fd, body str) (ok bool) {
     ok = false
     client-fd = net.net-accept(listen-fd)
-    conn = tls-server-init(client-fd)   ; 局部變量
+    conn = tls.server-init(client-fd)   ; 局部變量
     conn: {
         ok -> {
             c = it
@@ -424,7 +424,7 @@ serve-once = (listen-fd fd, body str) (ok bool) {
 }
 ```
 
-> **實踐案例**：`std/net/tls.no` 的 `tls-https-serve-once` 函式將完整的 HTTPS 請求-回應週期（accept + handshake + recv + send + close）封裝在單一函式中，所有 TLS 狀態保留在局部變量中，成功避開了全局變量跨函式位址不一致的編譯器 bug。
+> **實踐案例**：`std/net/tls.no` 的 `https-serve-once` 函式將完整的 HTTPS 請求-回應週期（accept + handshake + recv + send + close）封裝在單一函式中，所有 TLS 狀態保留在局部變量中，成功避開了全局變量跨函式位址不一致的編譯器 bug。
 
 ## API 文檔規範
 

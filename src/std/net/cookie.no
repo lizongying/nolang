@@ -6,7 +6,7 @@
 ;
 ; 用法：
 ;   // 解析 Set-Cookie 標頭
-;   c = cookie-parse-set('sessionid=abc123; Path=/; HttpOnly; Secure')
+;   c = parse-set('sessionid=abc123; Path=/; HttpOnly; Secure')
 ;   c.valid -> {
 ;       print(c.name)        // 'sessionid'
 ;       print(c.value)       // 'abc123'
@@ -17,14 +17,14 @@
 
 ;
 ;   // 建構 Cookie 標頭
-;   jar = cookie-jar{}
+;   jar = jar{}
 ;   jar.set('sessionid', 'abc123', '/', '', 0)
 ;   header = jar.build-header('example.com', '/api')  // 'sessionid=abc123'
 ;
 ;   // 簽名 Cookie
-;   signed = cookie-sign('sessionid=abc123', secret-key)
+;   signed = sign('sessionid=abc123', secret-key)
 ;   // signed = 'sessionid=abc123.hmac-hex-signature'
-;   ok = cookie-verify(signed, secret-key)
+;   ok = verify(signed, secret-key)
 ;   // ok = true 表示簽名驗證通過
 
 ; ═══════════════════════════════════════════════
@@ -62,13 +62,13 @@ cookie {
     same-site str
 }
 
-; cookie-jar: Cookie 存儲
+; jar: Cookie 存儲
 ; names [64]str: Cookie 名稱陣列
 ; values [64]str: Cookie 值陣列
 ; domains [64]str: 域名陣列
 ; paths [64]str: 路徑陣列
 ; count i64: 已存儲的 Cookie 數量
-cookie-jar {
+jar {
     names [64]str
     values [64]str
     domains [64]str
@@ -80,10 +80,10 @@ cookie-jar {
 ; Cookie 解析
 ; ═══════════════════════════════════════════════
 
-; cookie-parse-set: 解析 Set-Cookie 標頭值
+; parse-set: 解析 Set-Cookie 標頭值
 ; set-cookie-str str: Set-Cookie 標頭值（如 'name=value; Path=/; HttpOnly'）
 ; 返回 c cookie: 解析結果
-cookie-parse-set = (set-cookie-str str) (c cookie) {
+parse-set = (set-cookie-str str) (c cookie) {
     c.valid = false
     c.name = ''
     c.value = ''
@@ -184,12 +184,12 @@ cookie-parse-set = (set-cookie-str str) (c cookie) {
     } ()
 }
 
-; cookie-parse-header: 解析 Cookie 請求標頭
+; parse-header: 解析 Cookie 請求標頭
 ; cookie-header str: Cookie 標頭值（如 'name1=val1; name2=val2'）
 ; names [16]str: 輸出名稱陣列
 ; values [16]str: 輸出值陣列
 ; 返回 count i64: 解析出的 Cookie 數量
-cookie-parse-header = (cookie-header str) (names [16]str, values [16]str, count i64) {
+parse-header = (cookie-header str) (names [16]str, values [16]str, count i64) {
     count = 0
     cookie-header.len == 0 -> return
     pos = 0
@@ -221,10 +221,10 @@ cookie-parse-header = (cookie-header str) (names [16]str, values [16]str, count 
 ; Cookie 建構
 ; ═══════════════════════════════════════════════
 
-; cookie-build-set: 建構 Set-Cookie 標頭值
+; build-set: 建構 Set-Cookie 標頭值
 ; c cookie: Cookie 結構體
 ; 返回 out str: Set-Cookie 標頭值
-cookie-build-set = (c cookie) (out str) {
+build-set = (c cookie) (out str) {
     out = c.name - '=' - c.value
     c.path.len > 0 -> out = out - '; Path=' - c.path
     c.domain.len > 0 -> out = out - '; Domain=' - c.domain
@@ -237,12 +237,12 @@ cookie-build-set = (c cookie) (out str) {
     c.same-site.len > 0 -> out = out - '; SameSite=' - c.same-site
 }
 
-; cookie-build-header: 建構 Cookie 請求標頭
+; build-header: 建構 Cookie 請求標頭
 ; names [16]str: Cookie 名稱陣列
 ; values [16]str: Cookie 值陣列
 ; count i64: Cookie 數量
 ; 返回 out str: Cookie 標頭值（如 'name1=val1; name2=val2'）
-cookie-build-header = (names [16]str, values [16]str, count i64) (out str) {
+build-header = (names [16]str, values [16]str, count i64) (out str) {
     out = ''
     i <- [0..count): {
         out.len > 0 -> out = out - '; '
@@ -260,7 +260,7 @@ cookie-build-header = (names [16]str, values [16]str, count i64) (out str) {
 ; domain str: 域名
 ; path str: 路徑
 ; max-age i64: 最大存活秒數
-cookie-jar.set = (name str, value str, domain str, path str, max-age i64) {
+jar.set = (name str, value str, domain str, path str, max-age i64) {
     ; 檢查是否已存在同名 Cookie
     i <- [0...count): {
         .names[i] == name && .domains[i] == domain && .paths[i] == path -> {
@@ -284,7 +284,7 @@ cookie-jar.set = (name str, value str, domain str, path str, max-age i64) {
 ; domain str: 域名
 ; path str: 路徑
 ; 返回 val ?str: ok=Cookie 值, nil=未找到
-cookie-jar.get = (name str, domain str, path str) (val ?str) {
+jar.get = (name str, domain str, path str) (val ?str) {
     val = nil
     i <- [0...count): {
         .names[i] == name -> {
@@ -316,7 +316,7 @@ cookie-jar.get = (name str, domain str, path str) (val ?str) {
 ; name str: Cookie 名稱
 ; domain str: 域名
 ; path str: 路徑
-cookie-jar.delete = (name str, domain str, path str) {
+jar.delete = (name str, domain str, path str) {
     i <- [0...count): {
         .names[i] == name && .domains[i] == domain && .paths[i] == path -> {
             ; 將最後一個移到當前位置
@@ -337,7 +337,7 @@ cookie-jar.delete = (name str, domain str, path str) {
 ; domain str: 請求目標域名
 ; path str: 請求目標路徑
 ; 返回 out str: Cookie 標頭值
-cookie-jar.build-header = (domain str, path str) (out str) {
+jar.build-header = (domain str, path str) (out str) {
     out = ''
     i <- [0...count): {
         ; 域名匹配
@@ -364,9 +364,9 @@ cookie-jar.build-header = (domain str, path str) (out str) {
 ; set-cookie-str str: Set-Cookie 標頭值
 ; domain str: 回應來源的域名
 ; path str: 回應來源的路徑
-cookie-jar.parse-response = (set-cookie-str str, domain str, path str) {
+jar.parse-response = (set-cookie-str str, domain str, path str) {
     c cookie
-    c = cookie-parse-set(set-cookie-str)
+    c = parse-set(set-cookie-str)
     c.valid == false -> return
 
     ; 如果 Cookie 未指定 domain，使用回應的 domain
@@ -392,13 +392,13 @@ cookie-jar.parse-response = (set-cookie-str str, domain str, path str) {
 }
 
 ; clear: 清空 Cookie Jar
-cookie-jar.clear = () {
+jar.clear = () {
     .count = 0
 }
 
 ; count-of: 取得 Cookie 數量
 ; 返回 n i64: Cookie 數量
-cookie-jar.count-of = () (n i64) {
+jar.count-of = () (n i64) {
     n = .count
 }
 
@@ -406,12 +406,12 @@ cookie-jar.count-of = () (n i64) {
 ; 簽名 Cookie（HMAC-SHA256）
 ; ═══════════════════════════════════════════════
 
-; cookie-sign: 對 Cookie 值進行 HMAC-SHA256 簽名
+; sign: 對 Cookie 值進行 HMAC-SHA256 簽名
 ; name str: Cookie 名稱
 ; value str: Cookie 值
 ; key []byte: 簽名金鑰
 ; 返回 signed str: 簽名後的值（格式: value.hex-hmac）
-cookie-sign = (name str, value str, key []byte) (signed str) {
+sign = (name str, value str, key []byte) (signed str) {
     ; 簽名內容 = name=value
     msg-str = name - '=' - value
     msg []byte = msg-str.to-bytes()
@@ -428,13 +428,13 @@ cookie-sign = (name str, value str, key []byte) (signed str) {
     signed = value - '.' - hex-str
 }
 
-; cookie-verify: 驗證簽名 Cookie
+; verify: 驗證簽名 Cookie
 ; name str: Cookie 名稱
 ; signed-value str: 簽名後的值（格式: value.hex-hmac）
 ; key []byte: 簽名金鑰
 ; 返回 ok bool: true=驗證通過
 ; 返回 value str: 原始 Cookie 值（驗證失敗時為空）
-cookie-verify = (name str, signed-value str, key []byte) (ok bool, value str) {
+verify = (name str, signed-value str, key []byte) (ok bool, value str) {
     ok = false
     value = ''
 
@@ -455,7 +455,7 @@ cookie-verify = (name str, signed-value str, key []byte) (ok bool, value str) {
     provided-hex = signed-value.slice(dot-pos + 1, signed-value.len)
 
     ; 計算期望的簽名
-    expected-signed = cookie-sign(name, value, key)
+    expected-signed = sign(name, value, key)
 
     ; 提取期望的 hex 部分
     expected-hex = expected-signed.slice(value.len + 1, expected-signed.len)
@@ -475,25 +475,25 @@ cookie-verify = (name str, signed-value str, key []byte) (ok bool, value str) {
     }
 }
 
-; cookie-jar.set-signed: 設定簽名 Cookie
+; jar.set-signed: 設定簽名 Cookie
 ; name str: Cookie 名稱
 ; value str: Cookie 值
 ; domain str: 域名
 ; path str: 路徑
 ; max-age i64: 最大存活秒數
 ; key []byte: 簽名金鑰
-cookie-jar.set-signed = (name str, value str, domain str, path str, max-age i64, key []byte) {
-    signed-value = cookie-sign(name, value, key)
+jar.set-signed = (name str, value str, domain str, path str, max-age i64, key []byte) {
+    signed-value = sign(name, value, key)
     .set(name, signed-value, domain, path, max-age)
 }
 
-; cookie-jar.get-verified: 取得並驗證簽名 Cookie
+; jar.get-verified: 取得並驗證簽名 Cookie
 ; name str: Cookie 名稱
 ; domain str: 域名
 ; path str: 路徑
 ; key []byte: 簽名金鑰
 ; 返回 val ?str: ok=原始 Cookie 值, nil=未找到或驗證失敗
-cookie-jar.get-verified = (name str, domain str, path str, key []byte) (val ?str) {
+jar.get-verified = (name str, domain str, path str, key []byte) (val ?str) {
     val = nil
     signed-val ?str = .get(name, domain, path)
     signed-val: {
@@ -502,7 +502,7 @@ cookie-jar.get-verified = (name str, domain str, path str, key []byte) (val ?str
         ok -> {
             verified-ok = false
             verified-val = ''
-            verified-ok, verified-val = cookie-verify(name, it, key)
+            verified-ok, verified-val = verify(name, it, key)
             {
                 verified-ok -> val = verified-val
                 -> val = nil

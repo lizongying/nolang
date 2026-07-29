@@ -792,7 +792,7 @@ func (p *Parser) parseLetStatement() Statement {
 		}
 		// Advance past the type IDENT to check for dotted/qualified names
 		p.nextToken()
-		// Support dotted/qualified type names: tls.tls-conn, sql.result, etc.
+		// Support dotted/qualified type names: tls.conn, sql.result, etc.
 		for p.currentToken.Type == lexer.DOT {
 			typeName += "."
 			p.nextToken() // skip DOT

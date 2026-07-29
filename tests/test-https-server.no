@@ -19,15 +19,15 @@ test-https-listen = () (pass bool) {
 test-tls-server-init = () (pass bool) {
     pass = false
 
-    ; tls-server-init 需要一個 fd, 用 -1 表示未連接（僅測試初始化邏輯）
-    conn = tls-server-init(-1)
+    ; tls.server-init 需要一個 fd, 用 -1 表示未連接（僅測試初始化邏輯）
+    conn = tls.server-init(-1)
     conn: {
         nil -> {
-            print('FAIL: tls-server-init returned nil')
+            print('FAIL: server-init returned nil')
             return
         }
         err -> {
-            print('FAIL: tls-server-init returned err')
+            print('FAIL: server-init returned err')
             return
         }
         ok -> {
@@ -63,7 +63,7 @@ test-https-server-struct = () (pass bool) {
     pass = false
     space = ' '
     buf = space.repeat(8192)
-    tc = tls-server-conn {}
+    tc = tls.server-conn {}
     conn = https-server-conn {
         tls: tc
         method: ''
@@ -88,14 +88,14 @@ test-https-server-struct = () (pass bool) {
 run-https-e2e-client = (host str, port i64) (ok bool) {
     ok = false
 
-    tls-opt = tls-dial(host, port)
+    tls-opt = dial(host, port)
     tls-opt: {
         nil -> {
-            print('FAIL: e2e tls-dial nil')
+            print('FAIL: e2e dial nil')
             return
         }
         err -> {
-            print('FAIL: e2e tls-dial err')
+            print('FAIL: e2e dial err')
             return
         }
         ok -> {
@@ -183,10 +183,10 @@ test-https-e2e = () (pass bool) {
     }
 
     ; === 子進程: 伺服器 (處理一個連線後退出) ===
-    ; 使用 tls-https-serve-once 在單一函式中完成全部流程，
+    ; 使用 https-serve-once 在單一函式中完成全部流程，
     ; 避開全域變數 bug 和結構體複製 bug。
     pid == 0 -> {
-        serve-ok = tls.tls-https-serve-once(srv.fd, 200, 'hello from nolang https')
+        serve-ok = tls.https-serve-once(srv.fd, 200, 'hello from nolang https')
         serve-ok == false -> os.exit(1)
         os.exit(0)
     }
@@ -202,21 +202,21 @@ test-https-e2e = () (pass bool) {
 }
 
 ; run-https-e2e-client-12: 父進程客戶端邏輯（TLS 1.2）
-; 使用 tls-dial-12 發送純 TLS 1.2 ClientHello（無 supported_versions 擴展）。
+; 使用 dial-12 發送純 TLS 1.2 ClientHello（無 supported_versions 擴展）。
 ; host str: 伺服器主機
 ; port i64: 伺服器埠號
 ; 返回 ok bool: true=成功收到預期回應
 run-https-e2e-client-12 = (host str, port i64) (ok bool) {
     ok = false
 
-    tls-opt = tls.tls-dial-12(host, port)
+    tls-opt = tls.dial-12(host, port)
     tls-opt: {
         nil -> {
-            print('FAIL: e2e-12 tls-dial-12 nil')
+            print('FAIL: e2e-12 dial-12 nil')
             return
         }
         err -> {
-            print('FAIL: e2e-12 tls-dial-12 err')
+            print('FAIL: e2e-12 dial-12 err')
             return
         }
         ok -> {
@@ -304,10 +304,10 @@ test-https-e2e-12 = () (pass bool) {
     }
 
     ; === 子進程: 伺服器 (處理一個連線後退出) ===
-    ; tls-https-serve-once 自動協商 TLS 1.2/1.3。
+    ; https-serve-once 自動協商 TLS 1.2/1.3。
     ; 客戶端發送 TLS 1.2 ClientHello（無 supported_versions），伺服器走 TLS 1.2 路徑。
     pid == 0 -> {
-        serve-ok = tls.tls-https-serve-once(srv.fd, 200, 'hello from nolang https 1.2')
+        serve-ok = tls.https-serve-once(srv.fd, 200, 'hello from nolang https 1.2')
         serve-ok == false -> os.exit(1)
         os.exit(0)
     }
@@ -329,8 +329,8 @@ main = () {
     p1 == false -> print('FAIL: https-server.listen')
 
     p2 = test-tls-server-init()
-    p2 == true -> print('PASS: tls-server-init')
-    p2 == false -> print('FAIL: tls-server-init')
+    p2 == true -> print('PASS: server-init')
+    p2 == false -> print('FAIL: server-init')
 
     p3 = test-https-server-struct()
     p3 == true -> print('PASS: https-server-conn struct')

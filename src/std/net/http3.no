@@ -9,7 +9,7 @@
 ;
 ; 用法：
 ;   # std/net/http3
-;   resp = http3-get('https://example.com/path')   // 返回 ?http-response
+;   resp = get('https://example.com/path')   // 返回 ?http.response
 ;   resp = http3-do('GET', 'https://example.com/path', '')
 
 ; ═══════════════════════════════════════════════
@@ -58,12 +58,12 @@ QPACK-LITERAL-PREFIX = 0x20
 ; 簡化版 QPACK 編解碼
 ; ═══════════════════════════════════════════════
 
-; qpack-encode-header: 將單個標頭編碼為 QPACK 字面格式
+; encode-header: 將單個標頭編碼為 QPACK 字面格式
 ; name str: 標頭名稱
 ; value str: 標頭值
 ; 返回 buf []byte: 編碼結果
 ; 返回 n i64: 編碼長度
-qpack-encode-header = (name str, value str) (buf []byte, n i64) {
+encode-header = (name str, value str) (buf []byte, n i64) {
     pos = 0
     name-bytes []byte = name.to-bytes()
     value-bytes []byte = value.to-bytes()
@@ -115,13 +115,13 @@ qpack-encode-header = (name str, value str) (buf []byte, n i64) {
     n = pos
 }
 
-; qpack-encode-headers: 編碼多個標頭
+; encode-headers: 編碼多個標頭
 ; names [16]str: 標頭名稱陣列
 ; values [16]str: 標頭值陣列
 ; count i64: 標頭數量
 ; 返回 buf []byte: 編碼結果
 ; 返回 n i64: 編碼長度
-qpack-encode-headers = (names [16]str, values [16]str, count i64) (buf []byte, n i64) {
+encode-headers = (names [16]str, values [16]str, count i64) (buf []byte, n i64) {
     pos = 0
 
     ; 前綴: 2 位元組（required insert count=0, delta base=0）
@@ -132,7 +132,7 @@ qpack-encode-headers = (names [16]str, values [16]str, count i64) (buf []byte, n
     i <- [0..count): {
         hdr-buf []byte
         hdr-n = 0
-        hdr-buf, hdr-n = qpack-encode-header(names[i], values[i])
+        hdr-buf, hdr-n = encode-header(names[i], values[i])
         j <- [0..hdr-n): {
             buf[pos + j] = hdr-buf[j]
         }
@@ -142,13 +142,13 @@ qpack-encode-headers = (names [16]str, values [16]str, count i64) (buf []byte, n
     n = pos
 }
 
-; qpack-decode-header: 從 buf 的 pos 位置解碼一個標頭
+; decode-header: 從 buf 的 pos 位置解碼一個標頭
 ; buf []byte: 資料緩衝區
 ; pos i64: 起始位置
 ; 返回 name str: 標頭名稱
 ; 返回 value str: 標頭值
 ; 返回 next-pos i64: 下一個位置（-1=錯誤）
-qpack-decode-header = (buf []byte, pos i64) (name str, value str, next-pos i64) {
+decode-header = (buf []byte, pos i64) (name str, value str, next-pos i64) {
     next-pos = -1
     pos >= buf.len -> return
     prefix = buf[pos] & 255
@@ -186,18 +186,18 @@ qpack-decode-header = (buf []byte, pos i64) (name str, value str, next-pos i64) 
 ; HTTP/3 影格編解碼
 ; ═══════════════════════════════════════════════
 
-; http3-encode-frame: 編碼 HTTP/3 影格
+; encode-frame: 編碼 HTTP/3 影格
 ; frame-type i64: 影格類型
 ; payload []byte: 影格資料
 ; 返回 buf []byte: 編碼結果
 ; 返回 n i64: 編碼長度
-http3-encode-frame = (frame-type i64, payload []byte) (buf []byte, n i64) {
+encode-frame = (frame-type i64, payload []byte) (buf []byte, n i64) {
     pos = 0
 
     ; 影格類型（varint）
     ft-buf []byte
     ft-n = 0
-    ft-buf, ft-n = quic.quic-varint-encode(frame-type)
+    ft-buf, ft-n = quic.varint-encode(frame-type)
     i <- [0..ft-n): {
         buf[pos + i] = ft-buf[i]
     }
@@ -206,7 +206,7 @@ http3-encode-frame = (frame-type i64, payload []byte) (buf []byte, n i64) {
     ; 影格長度（varint）
     len-buf []byte
     len-n = 0
-    len-buf, len-n = quic.quic-varint-encode(payload.len)
+    len-buf, len-n = quic.varint-encode(payload.len)
     i <- [0..len-n): {
         buf[pos + i] = len-buf[i]
     }
@@ -221,33 +221,33 @@ http3-encode-frame = (frame-type i64, payload []byte) (buf []byte, n i64) {
     n = pos
 }
 
-; http3-encode-headers-frame: 編碼 HEADERS 影格
+; encode-headers-frame: 編碼 HEADERS 影格
 ; names [16]str: 標頭名稱陣列
 ; values [16]str: 標頭值陣列
 ; count i64: 標頭數量
 ; 返回 buf []byte: 編碼結果
 ; 返回 n i64: 編碼長度
-http3-encode-headers-frame = (names [16]str, values [16]str, count i64) (buf []byte, n i64) {
+encode-headers-frame = (names [16]str, values [16]str, count i64) (buf []byte, n i64) {
     ; 先編碼 QPACK 標頭區塊
     qpack-buf []byte
     qpack-n = 0
-    qpack-buf, qpack-n = qpack-encode-headers(names, values, count)
-    buf, n = http3-encode-frame(0x01, qpack-buf[..qpack-n])
+    qpack-buf, qpack-n = encode-headers(names, values, count)
+    buf, n = encode-frame(0x01, qpack-buf[..qpack-n])
 }
 
-; http3-encode-data-frame: 編碼 DATA 影格
+; encode-data-frame: 編碼 DATA 影格
 ; data str: 資料
 ; 返回 buf []byte: 編碼結果
 ; 返回 n i64: 編碼長度
-http3-encode-data-frame = (data str) (buf []byte, n i64) {
+encode-data-frame = (data str) (buf []byte, n i64) {
     payload []byte = data.to-bytes()
-    buf, n = http3-encode-frame(0x00, payload)
+    buf, n = encode-frame(0x00, payload)
 }
 
-; http3-encode-settings-frame: 編碼 SETTINGS 影格（空設定）
+; encode-settings-frame: 編碼 SETTINGS 影格（空設定）
 ; 返回 buf []byte: 編碼結果
 ; 返回 n i64: 編碼長度
-http3-encode-settings-frame = () (buf []byte, n i64) {
+encode-settings-frame = () (buf []byte, n i64) {
     ; 空 SETTINGS（無參數）
     buf = with-len(2)
     buf[0] = 0x04
@@ -255,26 +255,26 @@ http3-encode-settings-frame = () (buf []byte, n i64) {
     n = 2
 }
 
-; http3-parse-frame: 從 buf 的 pos 位置解析一個 HTTP/3 影格
+; parse-frame: 從 buf 的 pos 位置解析一個 HTTP/3 影格
 ; buf []byte: 資料緩衝區
 ; pos i64: 起始位置
 ; 返回 frame-type i64: 影格類型
 ; 返回 payload []byte: 影格資料
 ; 返回 next-pos i64: 下一個位置（-1=錯誤）
-http3-parse-frame = (buf []byte, pos i64) (frame-type i64, payload []byte, next-pos i64) {
+parse-frame = (buf []byte, pos i64) (frame-type i64, payload []byte, next-pos i64) {
     next-pos = -1
     frame-type = 0
 
     ft = 0
     ft-np = 0
-    ft, ft-np = quic.quic-varint-decode(buf, pos)
+    ft, ft-np = quic.varint-decode(buf, pos)
     ft-np < 0 -> return
     frame-type = ft
     pos = ft-np
 
     len-val = 0
     len-np = 0
-    len-val, len-np = quic.quic-varint-decode(buf, pos)
+    len-val, len-np = quic.varint-decode(buf, pos)
     len-np < 0 -> return
     pos = len-np
 
@@ -291,13 +291,13 @@ http3-parse-frame = (buf []byte, pos i64) (frame-type i64, payload []byte, next-
 ; HTTP/3 回應結構體
 ; ═══════════════════════════════════════════════
 
-; http3-response: HTTP/3 回應
+; response: HTTP/3 回應
 ; status-code i64: 狀態碼
 ; header-names [32]str: 標頭名稱
 ; header-values [32]str: 標頭值
 ; header-count i64: 標頭數量
 ; body str: 回應主體
-http3-response {
+response {
     status-code i64
     header-names [32]str
     header-values [32]str
@@ -305,10 +305,10 @@ http3-response {
     body str
 }
 
-; http3-response.get-header: 取得標頭值
+; response.get-header: 取得標頭值
 ; name str: 標頭名稱（不區分大小寫）
 ; 返回 val ?str: ok=值, nil=未找到
-http3-response.get-header = (name str) (val ?str) {
+response.get-header = (name str) (val ?str) {
     val = nil
     target = name.to-lower()
     i <- [0...header-count): {
@@ -324,13 +324,13 @@ http3-response.get-header = (name str) (val ?str) {
 ; URL 解析
 ; ═══════════════════════════════════════════════
 
-; http3-parse-url: 解析 HTTPS URL
+; parse-url: 解析 HTTPS URL
 ; url str: 完整 URL（如 https://host:port/path）
 ; 返回 host str: 主機名
 ; 返回 port i64: 埠號
 ; 返回 path str: 路徑
 ; 返回 ok bool: true=成功
-http3-parse-url = (url str) (host str, port i64, path str, ok bool) {
+parse-url = (url str) (host str, port i64, path str, ok bool) {
     ok = false
     port = HTTP3-DEFAULT-PORT
     path = '/'
@@ -369,22 +369,22 @@ http3-parse-url = (url str) (host str, port i64, path str, ok bool) {
 ; HTTP/3 客戶端連接
 ; ═══════════════════════════════════════════════
 
-; http3-connect: 建立 HTTP/3 連線
+; connect: 建立 HTTP/3 連線
 ; host str: 伺服器主機名或 IP
 ; port i64: 埠號
-; 返回 conn ?quic-conn: ok=連線, nil=失敗
-http3-connect = (host str, port i64) (conn ?quic-conn) {
-    conn = quic.quic-dial(host, port)
+; 返回 conn ?quic.conn: ok=連線, nil=失敗
+connect = (host str, port i64) (conn ?quic.conn) {
+    conn = quic.dial(host, port)
 }
 
-; http3-send-request: 在 QUIC 連線上發送 HTTP/3 請求
-; conn quic-conn: QUIC 連線
+; send-request: 在 QUIC 連線上發送 HTTP/3 請求
+; conn quic.conn: QUIC 連線
 ; method str: HTTP 方法
 ; path str: 請求路徑
 ; host str: 主機名
 ; body str: 請求主體（空字串=無主體）
-; 返回 resp ?http3-response: ok=回應, nil=失敗
-http3-send-request = (conn quic-conn, method str, path str, host str, body str) (resp ?http3-response) {
+; 返回 resp ?response: ok=回應, nil=失敗
+send-request = (conn quic.conn, method str, path str, host str, body str) (resp ?response) {
     resp = nil
 
     conn.fd < 0 -> return
@@ -429,12 +429,12 @@ http3-send-request = (conn quic-conn, method str, path str, host str, body str) 
     ; ── 編碼 HEADERS 影格 ──
     hdr-buf []byte
     hdr-n = 0
-    hdr-buf, hdr-n = http3-encode-headers-frame(hdr-names, hdr-values, hdr-count)
+    hdr-buf, hdr-n = encode-headers-frame(hdr-names, hdr-values, hdr-count)
 
     ; ── 編碼 DATA 影格（如有主體）──
     data-buf []byte
     data-n = 0
-    body.len > 0 -> data-buf, data-n = http3-encode-data-frame(body)
+    body.len > 0 -> data-buf, data-n = encode-data-frame(body)
 
     ; ── 合併為串流資料 ──
     stream-data []byte
@@ -460,7 +460,7 @@ http3-send-request = (conn quic-conn, method str, path str, host str, body str) 
     ; STREAM 影格類型
     stream-ft []byte
     stream-ft-n = 0
-    stream-ft, stream-ft-n = quic.quic-varint-encode(0x0f)
+    stream-ft, stream-ft-n = quic.varint-encode(0x0f)
     i <- [0..stream-ft-n): {
         pkt[pkt-pos + i] = stream-ft[i]
     }
@@ -469,7 +469,7 @@ http3-send-request = (conn quic-conn, method str, path str, host str, body str) 
     ; 串流 ID
     sid-buf []byte
     sid-n = 0
-    sid-buf, sid-n = quic.quic-varint-encode(stream-id)
+    sid-buf, sid-n = quic.varint-encode(stream-id)
     i <- [0..sid-n): {
         pkt[pkt-pos + i] = sid-buf[i]
     }
@@ -478,7 +478,7 @@ http3-send-request = (conn quic-conn, method str, path str, host str, body str) 
     ; Offset = 0
     off-buf []byte
     off-n = 0
-    off-buf, off-n = quic.quic-varint-encode(0)
+    off-buf, off-n = quic.varint-encode(0)
     i <- [0..off-n): {
         pkt[pkt-pos + i] = off-buf[i]
     }
@@ -487,7 +487,7 @@ http3-send-request = (conn quic-conn, method str, path str, host str, body str) 
     ; Length
     len-buf []byte
     len-n = 0
-    len-buf, len-n = quic.quic-varint-encode(stream-pos)
+    len-buf, len-n = quic.varint-encode(stream-pos)
     i <- [0..len-n): {
         pkt[pkt-pos + i] = len-buf[i]
     }
@@ -512,7 +512,7 @@ http3-send-request = (conn quic-conn, method str, path str, host str, body str) 
     n <= 0 -> return
 
     ; 解析回應（簡化: 直接解析 HTTP/3 影格）
-    r http3-response
+    r response
     r.header-count = 0
     r.body = ''
     r.status-code = 0
@@ -522,7 +522,7 @@ http3-send-request = (conn quic-conn, method str, path str, host str, body str) 
         ft = 0
         payload []byte
         np = 0
-        ft, payload, np = http3-parse-frame(recv-buf, pos)
+        ft, payload, np = parse-frame(recv-buf, pos)
         np < 0 -> break
         pos = np
 
@@ -533,7 +533,7 @@ http3-send-request = (conn quic-conn, method str, path str, host str, body str) 
                 name = ''
                 value = ''
                 qpack-np = 0
-                name, value, qpack-np = qpack-decode-header(payload, qpack-pos)
+                name, value, qpack-np = decode-header(payload, qpack-pos)
                 qpack-np < 0 -> break
                 qpack-pos = qpack-np
 
@@ -571,42 +571,42 @@ http3-send-request = (conn quic-conn, method str, path str, host str, body str) 
 ; 便捷函數
 ; ═══════════════════════════════════════════════
 
-; http3-get: 發送 HTTP/3 GET 請求
+; get: 發送 HTTP/3 GET 請求
 ; url str: 完整 URL（如 https://example.com/path）
-; 返回 resp ?http3-response: ok=回應, nil=失敗
-http3-get = (url str) (resp ?http3-response) {
+; 返回 resp ?response: ok=回應, nil=失敗
+get = (url str) (resp ?response) {
     resp = nil
     host = ''
     port i64 = HTTP3-DEFAULT-PORT
     path = '/'
     ok = false
-    host, port, path, ok = http3-parse-url(url)
+    host, port, path, ok = parse-url(url)
     ok == false -> return
-    conn = http3-connect(host, port)
+    conn = connect(host, port)
     conn: {
         nil -> return
         err -> return
-        ok -> resp = http3-send-request(it, HTTP3-METHOD-GET, path, host, '')
+        ok -> resp = send-request(it, HTTP3-METHOD-GET, path, host, '')
     }
 }
 
-; http3-post: 發送 HTTP/3 POST 請求
+; post: 發送 HTTP/3 POST 請求
 ; url str: 完整 URL
 ; body str: 請求主體
-; 返回 resp ?http3-response: ok=回應, nil=失敗
-http3-post = (url str, body str) (resp ?http3-response) {
+; 返回 resp ?response: ok=回應, nil=失敗
+post = (url str, body str) (resp ?response) {
     resp = nil
     host = ''
     port i64 = HTTP3-DEFAULT-PORT
     path = '/'
     ok = false
-    host, port, path, ok = http3-parse-url(url)
+    host, port, path, ok = parse-url(url)
     ok == false -> return
-    conn = http3-connect(host, port)
+    conn = connect(host, port)
     conn: {
         nil -> return
         err -> return
-        ok -> resp = http3-send-request(it, HTTP3-METHOD-POST, path, host, body)
+        ok -> resp = send-request(it, HTTP3-METHOD-POST, path, host, body)
     }
 }
 
@@ -614,19 +614,19 @@ http3-post = (url str, body str) (resp ?http3-response) {
 ; method str: HTTP 方法（GET、POST、PUT、DELETE 等）
 ; url str: 完整 URL
 ; body str: 請求主體（空字串=無主體）
-; 返回 resp ?http3-response: ok=回應, nil=失敗
-http3-do = (method str, url str, body str) (resp ?http3-response) {
+; 返回 resp ?response: ok=回應, nil=失敗
+http3-do = (method str, url str, body str) (resp ?response) {
     resp = nil
     host = ''
     port i64 = HTTP3-DEFAULT-PORT
     path = '/'
     ok = false
-    host, port, path, ok = http3-parse-url(url)
+    host, port, path, ok = parse-url(url)
     ok == false -> return
-    conn = http3-connect(host, port)
+    conn = connect(host, port)
     conn: {
         nil -> return
         err -> return
-        ok -> resp = http3-send-request(it, method, path, host, body)
+        ok -> resp = send-request(it, method, path, host, body)
     }
 }

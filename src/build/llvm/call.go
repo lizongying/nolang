@@ -1072,7 +1072,7 @@ func (g *Generator) generateCallExpression(sb *strings.Builder, expr *parser.Cal
 	if ident, ok := expr.Function.(*parser.Identifier); ok {
 		fnName = ident.Value
 	} else if dot, ok := expr.Function.(*parser.DotExpression); ok {
-		// 支援多段限定名（如 net.quic.quic-varint-encode）：
+		// 支援多段限定名（如 net.quic.varint-encode）：
 		// 鏈式 DotExpression 的 Receiver 本身也是 DotExpression，
 		// 需遞迴展開為完整名稱。
 		fnName = flattenDottedExpr(dot)
@@ -1899,7 +1899,7 @@ func (g *Generator) generateCallExpression(sb *strings.Builder, expr *parser.Cal
 	// 此類函數需分配臨時空間、傳遞指標、調用後載入結果作為返回值。
 	// 注意：啟發式檢測的輸出參數（funcHeuristicOutput）已存在於 fd.Parameters 中，
 	// 函數定義已將其作為常規 LLVM 參數生成。當調用方已傳遞所有參數（語句形式）時不加返回槽；
-	// 但當調用方未傳遞輸出參數（表達式形式，如 resp = http.http-get(url)）時，
+	// 但當調用方未傳遞輸出參數（表達式形式，如 resp = http.get(url)）時，
 	// 仍需分配臨時 buffer 並作為最後一個參數傳遞，否則會生成缺少參數的 void call。
 	voidSingleOutput := false
 	voidSingleOutputType := ""

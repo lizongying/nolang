@@ -122,11 +122,11 @@ pow = (a bigint, n i64, out bigint) {
 // desugaring inside an `if` consequence caused the validator to lose
 // track of previously defined variables.
 func TestValidateUndefinedVarsScopeAfterMatch(t *testing.T) {
-	src := `tls-conn {
+	src := `conn {
     fd i64
 }
 
-send = (c tls-conn, req str) (w ?i64) {
+send = (c conn, req str) (w ?i64) {
     w = nil
 }
 

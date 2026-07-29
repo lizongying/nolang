@@ -5,14 +5,14 @@
 ;
 ; 用法：
 ;   // 解析域名
-;   ip = dns-resolve('example.com')           // 返回 ?str（IP 地址）
+;   ip = resolve('example.com')           // 返回 ?str（IP 地址）
 ;   ip: {
 ;       nil -> print('解析失敗')
 ;       -> print(ip)                         // 如 '93.184.216.34'
 ;   }
 ;
 ;   // 指定 DNS 伺服器
-;   ip = dns-resolve-from('8.8.8.8', 'example.com')  // 返回 ?str
+;   ip = resolve-from('8.8.8.8', 'example.com')  // 返回 ?str
 
 ; ═══════════════════════════════════════════════
 ; 常量
@@ -56,12 +56,12 @@ DNS-RCODE-REFUSED = 5
 ; 結構體
 ; ═══════════════════════════════════════════════
 
-; dns-record: DNS 記錄
+; record: DNS 記錄
 ; rtype i64: 記錄類型（1=A, 5=CNAME, 28=AAAA）
 ; name str: 域名
 ; value str: 記錄值（A 記錄為 IP 地址）
 ; ttl i64: 存活時間
-dns-record {
+record {
     rtype i64
     name str
     value str
@@ -72,11 +72,11 @@ dns-record {
 ; 內部工具函數
 ; ═══════════════════════════════════════════════
 
-; dns-build-query: 構建 DNS 查詢封包
+; build-query: 構建 DNS 查詢封包
 ; domain str: 要查詢的域名
 ; qtype i64: 查詢類型（1=A）
 ; 返回 query []byte: DNS 查詢封包
-dns-build-query = (domain str, qtype i64) (query []byte, qlen i64) {
+build-query = (domain str, qtype i64) (query []byte, qlen i64) {
     ; Pre-allocate: header(12) + domain labels(domain.len+1) + qtype(2) + qclass(2)
     max-len = domain.len + 20
     query = with-len(max-len)
@@ -154,12 +154,12 @@ dns-build-query = (domain str, qtype i64) (query []byte, qlen i64) {
     qlen = pos
 }
 
-; dns-parse-name: 從回應封包中解析域名（支援壓縮指標）
+; parse-name: 從回應封包中解析域名（支援壓縮指標）
 ; data []byte: DNS 封包
 ; offset i64: 起始位置
 ; 返回 name str: 解析出的域名
 ; 返回 next-pos i64: 解析後的下一個位置
-dns-parse-name = (data []byte, offset i64) (name str, next-pos i64) {
+parse-name = (data []byte, offset i64) (name str, next-pos i64) {
     ; Use a byte buffer for building the name (str indexed assignment requires cap>0)
     buf []byte = with-len(256)
     buf-pos = 0
@@ -210,10 +210,10 @@ dns-parse-name = (data []byte, offset i64) (name str, next-pos i64) {
     }
 }
 
-; dns-parse-response: 解析 DNS 回應封包，返回第一個 A 記錄的 IP
+; parse-response: 解析 DNS 回應封包，返回第一個 A 記錄的 IP
 ; data []byte: DNS 回應封包
 ; 返回 ip ?str: ok=IP 地址, nil=未找到 A 記錄
-dns-parse-response = (data []byte) (ip ?str) {
+parse-response = (data []byte) (ip ?str) {
     ip = nil
     data.len < 12 -> return
 
@@ -234,7 +234,7 @@ dns-parse-response = (data []byte) (ip ?str) {
     ; 跳過問題部分
     i <- [0..qdcount): {
         qname = ''
-        qname, pos = dns-parse-name(data, pos)
+        qname, pos = parse-name(data, pos)
         ; 跳過 QTYPE(2) + QCLASS(2)
         pos = pos + 4
     }
@@ -242,7 +242,7 @@ dns-parse-response = (data []byte) (ip ?str) {
     ; 解析回答部分
     i <- [0..ancount): {
         rname = ''
-        rname, pos = dns-parse-name(data, pos)
+        rname, pos = parse-name(data, pos)
         pos + 10 > data.len -> return
         rtype = ((data[pos] & 255) << 8) | (data[pos + 1] & 255)
         pos = pos + 2
@@ -275,17 +275,17 @@ dns-parse-response = (data []byte) (ip ?str) {
 ; 公開 API
 ; ═══════════════════════════════════════════════
 
-; dns-resolve-from: 使用指定 DNS 伺服器解析域名
+; resolve-from: 使用指定 DNS 伺服器解析域名
 ; server str: DNS 伺服器 IP（如 '8.8.8.8'）
 ; domain str: 要解析的域名
 ; 返回 ip ?str: ok=IP 地址, nil=解析失敗
-dns-resolve-from = (server str, domain str) (ip ?str) {
+resolve-from = (server str, domain str) (ip ?str) {
     ip = nil
 
     ; 構建查詢封包
     query []byte
     qlen = 0
-    query, qlen = dns-build-query(domain, DNS-TYPE-A)
+    query, qlen = build-query(domain, DNS-TYPE-A)
     qlen == 0 -> return
 
     ; 建立 UDP socket
@@ -315,28 +315,28 @@ dns-resolve-from = (server str, domain str) (ip ?str) {
     i <- [0..n): {
         resp[i] = resp-str[i]
     }
-    ip = dns-parse-response(resp)
+    ip = parse-response(resp)
 }
 
-; dns-resolve: 使用預設 DNS 伺服器解析域名
+; resolve: 使用預設 DNS 伺服器解析域名
 ; domain str: 要解析的域名
 ; 返回 ip ?str: ok=IP 地址, nil=解析失敗
-dns-resolve = (domain str) (ip ?str) {
+resolve = (domain str) (ip ?str) {
     ; Try primary DNS server first
-    ip = dns-resolve-from(DNS-DEFAULT-SERVER, domain)
+    ip = resolve-from(DNS-DEFAULT-SERVER, domain)
     ; If primary failed, try backup server
-    ip == nil -> ip = dns-resolve-from(DNS-BACKUP-SERVER, domain)
+    ip == nil -> ip = resolve-from(DNS-BACKUP-SERVER, domain)
 }
 
-; dns-resolve-all: 解析域名，返回第一個 A 記錄
+; resolve-all: 解析域名，返回第一個 A 記錄
 ; domain str: 要解析的域名
 ; 返回 ip ?str: ok=IP 地址, nil=解析失敗
-dns-resolve-all = (domain str) (ip ?str) {
+resolve-all = (domain str) (ip ?str) {
     ip = nil
 
     query []byte
     qlen = 0
-    query, qlen = dns-build-query(domain, DNS-TYPE-A)
+    query, qlen = build-query(domain, DNS-TYPE-A)
     qlen == 0 -> return
     fd = net.net-udp-open()
     fd < 0 -> return
@@ -358,14 +358,14 @@ dns-resolve-all = (domain str) (ip ?str) {
     i <- [0..n): {
         resp[i] = resp-str[i]
     }
-    ip = dns-parse-response(resp)
+    ip = parse-response(resp)
 }
 
-; dns-dial: 解析域名並建立 TCP 連接
+; dial: 解析域名並建立 TCP 連接
 ; domain str: 域名
 ; port i64: 埠號
 ; 返回 fd fd: socket fd（-1=失敗）
-dns-dial = (domain str, port i64) (fd fd) {
+dial = (domain str, port i64) (fd fd) {
     fd = -1
 
     ; 先嘗試直接連接（net-dial 內建已支援 hostname 解析）
@@ -373,7 +373,7 @@ dns-dial = (domain str, port i64) (fd fd) {
     fd >= 0 -> return
 
     ; 如果直接連接失敗，使用 DNS 解析
-    ip = dns-resolve(domain)
+    ip = resolve(domain)
     ip: {
         nil ->
         ok -> fd = net.net-dial(ip, port)

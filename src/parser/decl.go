@@ -613,6 +613,7 @@ func (p *Parser) isFunctionDefinition() bool {
 			p.currentToken.Type != lexer.INT &&
 			p.currentToken.Type != lexer.QUESTION &&
 			p.currentToken.Type != lexer.COMMA &&
+			p.currentToken.Type != lexer.DOT &&
 			p.currentToken.Type != lexer.LBRACKET && p.currentToken.Type != lexer.RBRACKET &&
 			p.currentToken.Type != lexer.ELLIPSIS &&
 			p.currentToken.Type != lexer.NEWLINE &&

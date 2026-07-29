@@ -112,7 +112,7 @@ test-conn-init = () {
 test-http2-do-req-signature = () {
     ; 此測試只驗證函數可被正確呼叫，不實際連線
     ; 這行會嘗試連線並失敗，但驗證了函數簽名正確
-    resp = http2.http2-do-req('GET', 'http://127.0.0.1:1/test', '')
+    resp = http2.do-req('GET', 'http://127.0.0.1:1/test', '')
 
     ; 預期 nil（連線失敗）
     resp != nil -> {
@@ -124,7 +124,7 @@ test-http2-do-req-signature = () {
 
 ; test-http2-get-signature: http2-get 函數簽名驗證（vet-only）
 test-http2-get-signature = () {
-    resp = http2.http2-get('http://127.0.0.1:1/test')
+    resp = http2.get('http://127.0.0.1:1/test')
     resp != nil -> {
         print('FAIL: expected connection failure')
         return
@@ -134,7 +134,7 @@ test-http2-get-signature = () {
 
 ; test-http2-post-signature: http2-post 函數簽名驗證（vet-only）
 test-http2-post-signature = () {
-    resp = http2.http2-post('http://127.0.0.1:1/test', 'body')
+    resp = http2.post('http://127.0.0.1:1/test', 'body')
     resp != nil -> {
         print('FAIL: expected connection failure')
         return

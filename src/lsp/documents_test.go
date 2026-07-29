@@ -366,7 +366,7 @@ func TestDocumentMultipleUpdates(t *testing.T) {
 }
 
 // TestOptionMatchItBindingWithCrossModuleCall verifies that the LSP's parser
-// can infer option types from cross-module method calls (e.g. tls-conn.send → ?i64),
+// can infer option types from cross-module method calls (e.g. tls.conn.send → ?i64),
 // enabling the `it` binding injection in option match arms. Without extern
 // signature injection, `it` would be reported as undefined.
 func TestOptionMatchItBindingWithCrossModuleCall(t *testing.T) {
@@ -375,7 +375,7 @@ func TestOptionMatchItBindingWithCrossModuleCall(t *testing.T) {
 	// Simulate a pattern like http2.no: w = tls-c.send(preface); w: { ok -> if it != n { ... } }
 	text := `test-fn = (host str) (conn ?i64) {
     conn = nil
-    tc tls-conn
+    tc tls.conn
     tc.init()
     w = tc.send(host)
     w: {
