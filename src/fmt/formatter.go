@@ -816,7 +816,7 @@ func (f *formatter) formatFunctionDefinition(s *parser.FunctionDefinition) {
 		f.writef("  // %s", strings.TrimSpace(c.Text))
 	}
 	f.indent++
-	f.formatBlockInner(s.Body, s.Body.Token.Line)
+	f.formatBlockInner(s.Body, 0) // pass 0 to avoid preserving blank lines after { in function bodies
 	f.indent--
 	f.newline()
 	f.write("}")

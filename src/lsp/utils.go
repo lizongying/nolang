@@ -119,15 +119,25 @@ func getTokenAtPosition(text string, position Position) string {
 	}
 	c := int(position.Character)
 
-	// 按優先級嘗試長度由長到短：`...` > `**` > `*` > `!`
-	for _, op := range []string{"...", "**", "*", "!"} {
-		// 嘗試 op 在 [c-len(op), c) 的位置
-		if c >= len(op) && c <= len(line) && line[c-len(op):c] == op {
+	// 按優先級嘗試長度由長到短：`...` > `!=` > `!!` > `**` > `*` > `!`
+	// `!=` 和 `!!` 必須在 `!` 之前，避免將 `!=` 中的 `!` 誤匹配為迴圈關鍵字
+	for _, op := range []string{"...", "!=", "!!", "**", "*", "!"} {
+		opLen := len(op)
+		// 嘗試 op 在 [c-opLen, c) 的位置（游標在運算符之後）
+		if c >= opLen && c <= len(line) && line[c-opLen:c] == op {
 			return op
 		}
-		// 嘗試 op 在 [c, c+len(op)) 的位置
-		if c+len(op) <= len(line) && line[c:c+len(op)] == op {
+		// 嘗試 op 在 [c, c+opLen) 的位置（游標在運算符第一個字元）
+		if c+opLen <= len(line) && line[c:c+opLen] == op {
 			return op
+		}
+		// 嘗試 op 跨越游標（游標在運算符中間字元上，如 != 的 = 上）
+		for i := 1; i < opLen; i++ {
+			start := c - i
+			end := c - i + opLen
+			if start >= 0 && end <= len(line) && line[start:end] == op {
+				return op
+			}
 		}
 	}
 

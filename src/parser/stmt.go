@@ -45,7 +45,7 @@ func (p *Parser) parseStatement() Statement {
 		return p.parseLabeledStatement()
 	case lexer.AT:
 		return p.parseExportStatement()
-	case lexer.IDENT:
+	case lexer.IDENT, lexer.TRUE, lexer.FALSE, lexer.NIL:
 		// 檢查介面實作/繼承：user json, fmt { name str } 或 db enter, leave { close() }
 		// 也支援跨模組限定名：stmt-mysql sql.stmt { ... }
 		if p.peekToken.Type == lexer.IDENT {

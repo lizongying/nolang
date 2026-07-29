@@ -20,10 +20,12 @@ greet = () {
     print('hello from mac, sep is /')
 }
 
+#{linux-amd64}
 greet = () {
     print('hello from linux, sep is /')
 }
 
+#{win-amd64}
 greet = () {
     print('hello from win, sep is \\')
 }

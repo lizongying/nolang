@@ -513,7 +513,10 @@ func (p *Parser) parseArrayTypeMethodDefinition() Statement {
 }
 
 func (p *Parser) isFunctionDefinition() bool {
-	if p.currentToken.Type != lexer.IDENT {
+	if p.currentToken.Type != lexer.IDENT &&
+		p.currentToken.Type != lexer.TRUE &&
+		p.currentToken.Type != lexer.FALSE &&
+		p.currentToken.Type != lexer.NIL {
 		return false
 	}
 	if p.peekToken.Type != lexer.ASSIGN && p.peekToken.Type != lexer.LESS {
