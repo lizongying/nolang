@@ -190,7 +190,7 @@ func (g *Generator) writeDeclarations(sb *strings.Builder) {
 		sb.WriteString("declare i32 @_dup2(i32, i32)\n")
 		// kill/getppid not declared on Windows: routed to nolang.win_* stubs.
 		// fork not declared on Windows: POSIX-only (process module needs win path).
-		sb.WriteString("declare i32 @_execlp(i8*, ...)\n")
+		sb.WriteString("declare i32 @_execlp(i8*, i8*, ...)\n")
 		sb.WriteString("declare i32 @_pipe(i32*)\n")
 		// _cwait actual signature: int _cwait(int* termstat, int procid, int action).
 		// Parameter order differs from POSIX waitpid(pid, status*, options);
@@ -205,7 +205,7 @@ func (g *Generator) writeDeclarations(sb *strings.Builder) {
 		sb.WriteString("declare i32 @dup2(i32, i32)\n")
 		sb.WriteString("declare i32 @kill(i32, i32)\n")
 		sb.WriteString("declare i32 @getppid()\n")
-		sb.WriteString("declare i32 @execlp(i8*, ...)\n")
+		sb.WriteString("declare i32 @execlp(i8*, i8*, ...)\n")
 		sb.WriteString("declare i32 @fork()\n")
 		sb.WriteString("declare i32 @pipe(i32*)\n")
 		sb.WriteString("declare i32 @waitpid(i32, i32*, i32)\n")
@@ -213,7 +213,7 @@ func (g *Generator) writeDeclarations(sb *strings.Builder) {
 		sb.WriteString("declare i32 @dup2(i32, i32)\n")
 		sb.WriteString("declare i32 @kill(i32, i32)\n")
 		sb.WriteString("declare i32 @getppid()\n")
-		sb.WriteString("declare i32 @execlp(i8*, ...)\n")
+		sb.WriteString("declare i32 @execlp(i8*, i8*, ...)\n")
 		sb.WriteString("declare i32 @fork()\n")
 		sb.WriteString("declare i32 @pipe(i32*)\n")
 		sb.WriteString("declare i32 @waitpid(i32, i32*, i32)\n")

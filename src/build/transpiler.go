@@ -35,18 +35,6 @@ func mangleOverloads(program *parser.Program, varTypes map[string]string) {
 		if len(fns) <= 1 {
 			continue // 無重載，不改名
 		}
-		// Debug: track hashutil functions
-		if name == "hash-cmd" || name == "do-hash" || name == "bytes-to-hex" {
-			for i, fd := range fns {
-				sig := platformAwareCallSignature(name, fd.Parameters, program.Sem.PlatformKeysOf(fd))
-				paramStrs := make([]string, 0, len(fd.Parameters))
-				for _, p := range fd.Parameters {
-					paramStrs = append(paramStrs, p.Type.String())
-				}
-				fmt.Fprintf(os.Stderr, "[DEBUG] mangleOverloads: name=%s copy[%d] sig=%q params=[%s] platformKeys=%v\n",
-					name, i, sig, strings.Join(paramStrs, ", "), program.Sem.PlatformKeysOf(fd))
-			}
-		}
 		// 去重：對於相同名稱+簽名+平台組合的重複定義（多模組同函數），只保留第一個。
 		// 不同平台標註（#{mac-arm64} vs #{wasi-wasm32}）的定義視為不同函數，不去重。
 		seenSigs := make(map[string]bool)
@@ -81,12 +69,6 @@ func mangleOverloads(program *parser.Program, varTypes map[string]string) {
 
 	// 從 program.Statements 中刪除重複的函數定義
 	if len(toRemove) > 0 {
-		// Debug: log what's being removed
-		for fd := range toRemove {
-			if fd.Name == "hash-cmd" || fd.Name == "do-hash" || fd.Name == "bytes-to-hex" {
-				fmt.Fprintf(os.Stderr, "[DEBUG] mangleOverloads toRemove: name=%s\n", fd.Name)
-			}
-		}
 		filtered := make([]parser.Statement, 0, len(program.Statements))
 		removedCount := 0
 		for _, stmt := range program.Statements {
@@ -98,20 +80,7 @@ func mangleOverloads(program *parser.Program, varTypes map[string]string) {
 			}
 			filtered = append(filtered, stmt)
 		}
-		fmt.Fprintf(os.Stderr, "[DEBUG] mangleOverloads: removed %d duplicate functions, before=%d after=%d\n",
-			removedCount, len(program.Statements), len(filtered))
 		program.Statements = filtered
-		// Debug: check hashutil functions after toRemove filtering
-		hashCnt := 0
-		for _, s := range program.Statements {
-			if fd, ok := s.(*parser.FunctionDefinition); ok {
-				if fd.Name == "hash-cmd" || fd.Name == "do-hash" || fd.Name == "bytes-to-hex" {
-					hashCnt++
-					fmt.Fprintf(os.Stderr, "[DEBUG] mangleOverloads after-toRemove: name=%s\n", fd.Name)
-				}
-			}
-		}
-		fmt.Fprintf(os.Stderr, "[DEBUG] mangleOverloads after-toRemove: hashutil-fn-count=%d\n", hashCnt)
 	}
 
 	if len(mangled) == 0 {
@@ -1166,16 +1135,6 @@ func (t *Transpiler) CompileTarget(source string, _ Target) (string, error) {
 			if use.Alias == "" {
 				loadedUserModules[use.Path] = true
 			}
-			if strings.Contains(use.Path, "/od") {
-				fmt.Fprintf(os.Stderr, "[DEBUG] Loading od: path=%s func=%s alias=%q stmtCount=%d\n", use.Path, use.Function, use.Alias, len(modProg.Statements))
-				for i, ms := range modProg.Statements {
-					fdName := ""
-					if fd, ok := ms.(*parser.FunctionDefinition); ok {
-						fdName = fd.Name
-					}
-					fmt.Fprintf(os.Stderr, "[DEBUG]   od-stmt[%d] type=%T name=%s\n", i, ms, fdName)
-				}
-			}
 			if strings.HasPrefix(use.Path, "std/") || use.Path == "std" {
 				explicitStdModules[use.Path] = true
 			}
@@ -1253,15 +1212,6 @@ func (t *Transpiler) CompileTarget(source string, _ Target) (string, error) {
 			merged.Statements = append(merged.Statements, es)
 		}
 }
-
-	// Debug: check hash functions right after merge loop
-	for i, s := range merged.Statements {
-		if fd, ok := s.(*parser.FunctionDefinition); ok {
-			if fd.Name == "hash-cmd" || fd.Name == "do-hash" || fd.Name == "bytes-to-hex" {
-				fmt.Fprintf(os.Stderr, "[DEBUG] after-merge[%d] FunctionDefinition name=%s\n", i, fd.Name)
-			}
-		}
-	}
 
 	// 自動載入已知 std 模組（允許無需顯式導入的 module.fn() 呼叫）
 	for _, info := range knownStdModules() {
@@ -1441,14 +1391,6 @@ func (t *Transpiler) CompileTarget(source string, _ Target) (string, error) {
 	// 傳遞主檔案名稱集合，讓 generator 能區分主檔案全域變數的合法重新賦值
 	// 與導入模組函數中的同名局部變數（如 bigint.cmp 中的 result 不應誤寫到 @result）
 	t.llvmGenerator.SetMainFileNames(mainVarNames)
-	// Debug: check if hash-cmd is in merged before Generate
-	for i, s := range merged.Statements {
-		if fd, ok := s.(*parser.FunctionDefinition); ok {
-			if strings.Contains(fd.Name, "hash") || strings.HasPrefix(fd.Name, "od-") {
-				fmt.Fprintf(os.Stderr, "[DEBUG] merged[%d] FunctionDefinition name=%s\n", i, fd.Name)
-			}
-		}
-	}
 	return t.llvmGenerator.Generate(merged), nil
 }
 
@@ -6777,9 +6719,6 @@ func validateStmtTypes(stmt parser.Statement, funcNames map[string]bool, funcTyp
 			// Still record its declared type so later synthetic references can resolve it
 			if s.Type != nil && s.Type.String() != "" {
 				varTypes[s.Name.Value] = s.Type.String()
-				if s.Name.Value == "it" {
-					fmt.Fprintf(os.Stderr, "DBG record it: type=%q line=%d varTypes[it]=%q\n", s.Type.String(), s.Token.Line, varTypes["it"])
-				}
 			}
 			break
 		}
@@ -7000,11 +6939,6 @@ func validateStmtTypes(stmt parser.Statement, funcNames map[string]bool, funcTyp
 				if !isNilAssign {
 			if existingType, exists := varTypes[ident.Value]; exists {
 				valType := inferExprType(assign.Value, varTypes, funcTypes, selfType)
-				if ident.Value == "n" {
-					if idv, ok := assign.Value.(*parser.Identifier); ok && idv.Value == "it" {
-						fmt.Fprintf(os.Stderr, "DBG check n=it: nType=%q itType=%q valType=%q line=%d\n", existingType, varTypes["it"], valType, ident.Token.Line)
-					}
-				}
 						// Option 建構子：err(x) / ok(x) 可指派給任何 ?T 變數
 						// 注意：val(x) 已廢棄作為構造器，應改用 ok(x)
 						isOptionCtor := false
@@ -7165,10 +7099,11 @@ var (
 	// Cache for CollectStdModuleSignatures: parsing all std modules is
 	// expensive (~0.5s). VetFile is called once per .no file, so without
 	// caching a full std vet spends ~95% of its time re-parsing modules.
-	stdSigsOnce     sync.Once
-	stdSigsCache    map[string][]string
-	stdFieldsCache  map[string]map[string]string
-	stdAliasesCache map[string]string // 單具體型別別名快取（如 "fd" → "i64"）
+	stdSigsOnce       sync.Once
+	stdSigsCache      map[string][]string
+	stdFieldsCache    map[string]map[string]string
+	stdAliasesCache   map[string]string // 單具體型別別名快取（如 "fd" → "i64"）
+	stdStructModCache map[string]string // struct name → module short name（如 "tls-conn" → "tls"）
 )
 
 // StdModuleInfo holds information about a standard library module.
@@ -7178,19 +7113,11 @@ type StdModuleInfo struct {
 	ShortPath string // FullPath with redundant dir omitted when dir==file, e.g. "net", "hash/hmac", "math"
 }
 
-// debugCountHashFns prints how many hash-cmd/do-hash/bytes-to-hex definitions
-// exist in merged.Statements at the given stage. Temporary debugging helper.
+// debugCountHashFns is a no-op placeholder retained for call-site compatibility.
+// All temporary debugging output has been removed.
 func debugCountHashFns(stage string, merged *parser.Program) {
-	count := 0
-	for _, s := range merged.Statements {
-		if fd, ok := s.(*parser.FunctionDefinition); ok {
-			if fd.Name == "hash-cmd" || fd.Name == "do-hash" || fd.Name == "bytes-to-hex" {
-				count++
-				fmt.Fprintf(os.Stderr, "[DEBUG] %s: found FunctionDefinition name=%s\n", stage, fd.Name)
-			}
-		}
-	}
-	fmt.Fprintf(os.Stderr, "[DEBUG] %s: total statements=%d, hashutil-fn-count=%d\n", stage, len(merged.Statements), count)
+	_ = stage
+	_ = merged
 }
 
 // knownStdModules returns all embedded standard library modules.
@@ -7327,6 +7254,7 @@ func CollectStdModuleSignatures() (map[string][]string, map[string]map[string]st
 		funcSigs := make(map[string][]string)
 		structFields := make(map[string]map[string]string)
 		aliases := make(map[string]string)
+		structMod := make(map[string]string) // struct name → module short name
 
 		for _, info := range knownStdModules() {
 			// 只從內嵌 StdFS 讀取,支援單二進制分發
@@ -7359,6 +7287,10 @@ func CollectStdModuleSignatures() (map[string][]string, map[string]map[string]st
 						}
 					}
 					structFields[sd.Name] = fields
+					// Map struct name → module short name for cross-module prefix validation
+					if _, exists := structMod[sd.Name]; !exists {
+						structMod[sd.Name] = info.ShortName
+					}
 				}
 				// 收集單具體型別別名（name = known-type），使 newtype 語義
 				// 在跨模組場景下也能生效（如 fs.no 定義 fd=i64，io.no 使用 fd）
@@ -7375,11 +7307,7 @@ func CollectStdModuleSignatures() (map[string][]string, map[string]map[string]st
 		stdSigsCache = funcSigs
 		stdFieldsCache = structFields
 		stdAliasesCache = aliases
-		for k := range funcSigs {
-			if strings.Contains(k, "recv") || strings.Contains(k, "tls-conn") || strings.Contains(k, "send") {
-				fmt.Fprintf(os.Stderr, "DBG stdSig: %s -> %v\n", k, funcSigs[k])
-			}
-		}
+		stdStructModCache = structMod
 	})
 	return stdSigsCache, stdFieldsCache
 }
@@ -7390,6 +7318,178 @@ func CollectStdModuleSignatures() (map[string][]string, map[string]map[string]st
 func CollectStdConcreteAliases() map[string]string {
 	CollectStdModuleSignatures() // 觸發 sync.Once 填充快取
 	return stdAliasesCache
+}
+
+// CollectStdStructModules returns a map from struct name to the short name
+// of the module that defines it (e.g. "tls-conn" → "tls"). Used by
+// ValidateCrossModuleTypeRefs to enforce module-prefix on cross-module type
+// references. Triggers CollectStdModuleSignatures via sync.Once.
+func CollectStdStructModules() map[string]string {
+	CollectStdModuleSignatures() // 觸發 sync.Once 填充快取
+	return stdStructModCache
+}
+
+// extractBaseTypeName unwraps NullableType, PointerType, ArrayType, and
+// SliceType wrappers to find the innermost NamedType value string.
+// Returns "" if the type is nil or not a NamedType (after unwrapping).
+func extractBaseTypeName(t parser.Type) string {
+	if t == nil {
+		return ""
+	}
+	switch tt := t.(type) {
+	case *parser.NamedType:
+		return tt.Value
+	case *parser.NullableType:
+		return extractBaseTypeName(tt.Type)
+	case *parser.PointerType:
+		return extractBaseTypeName(tt.Type)
+	case *parser.ArrayType:
+		return extractBaseTypeName(tt.Elem)
+	case *parser.SliceType:
+		return extractBaseTypeName(tt.Elem)
+	}
+	return ""
+}
+
+// isBuiltinType returns true for primitive type names that don't require
+// a module prefix.
+func isBuiltinType(name string) bool {
+	switch name {
+	case "i8", "i16", "i32", "i64",
+		"u8", "u16", "u32", "u64",
+		"f32", "f64",
+		"byte", "bool", "str":
+		return true
+	}
+	return false
+}
+
+// ValidateCrossModuleTypeRefs checks that struct field types, variable
+// declaration types, and function parameter/result types use the proper
+// module prefix when referencing a struct defined in another module.
+//
+// Per the language spec, cross-module type references must use the
+// "module.type" form (e.g. `tls.tls-conn`). Using the bare struct name
+// (e.g. `tls-conn`) without the module prefix is an error.
+//
+// Exceptions:
+//   - Builtin primitive types (i64, str, bool, ...)
+//   - Types already using a module prefix (contain a dot)
+//   - Types defined locally in the current file (structs, type aliases)
+//   - Type aliases collected via CollectStdConcreteAliases (e.g. "fd" → "i64")
+func ValidateCrossModuleTypeRefs(program *parser.Program) []ValidateResult {
+	var results []ValidateResult
+
+	// 1. Build the struct-name → module-short-name map from std modules.
+	structMod := CollectStdStructModules()
+	if len(structMod) == 0 {
+		return results
+	}
+
+	// 2. Collect locally defined type names (structs + type aliases).
+	localTypes := make(map[string]bool)
+	for _, stmt := range program.Statements {
+		if sd, ok := stmt.(*parser.StructDefinition); ok {
+			localTypes[sd.Name] = true
+		}
+		if ta, ok := stmt.(*parser.TypeAlias); ok {
+			localTypes[ta.Name] = true
+		}
+	}
+	// Also include std concrete aliases (e.g. "fd") — these are intentionally
+	// shared without module prefix.
+	for k := range CollectStdConcreteAliases() {
+		localTypes[k] = true
+	}
+
+	// 3. Helper: check a single Type and emit a result if it's a cross-module
+	//    struct used without prefix.
+	checkType := func(t parser.Type, fallbackLine, fallbackCol int) {
+		baseName := extractBaseTypeName(t)
+		if baseName == "" {
+			return
+		}
+		// Already has a module prefix (contains a dot) — correct.
+		if strings.Contains(baseName, ".") {
+			return
+		}
+		// Builtin primitive type — no prefix needed.
+		if isBuiltinType(baseName) {
+			return
+		}
+		// Locally defined type — no prefix needed.
+		if localTypes[baseName] {
+			return
+		}
+		// Check if this type is a struct from another std module.
+		modName, isCrossModule := structMod[baseName]
+		if !isCrossModule {
+			return
+		}
+		// Report error: should use module.type
+		line := fallbackLine
+		col := fallbackCol
+		if t != nil {
+			pos := t.Pos()
+			if pos.Line > 0 {
+				line = pos.Line
+				col = pos.Column
+			}
+		}
+		results = append(results, ValidateResult{
+			Line:    line,
+			Column:  col,
+			Message: fmt.Sprintf("cross-module type '%s' must use module prefix: '%s.%s'", baseName, modName, baseName),
+		})
+	}
+
+	// 4. Walk all top-level statements.
+	for _, stmt := range program.Statements {
+		switch s := stmt.(type) {
+		case *parser.StructDefinition:
+			for _, f := range s.Fields {
+				if f.Type != nil {
+					checkType(f.Type, f.Token.Line, f.Token.Column)
+				}
+			}
+		case *parser.LetStatement:
+			if s.Type != nil {
+				checkType(s.Type, s.Token.Line, s.Token.Column)
+			}
+		case *parser.FunctionDefinition:
+			for _, p := range s.Parameters {
+				if p.Type != nil {
+					checkType(p.Type, p.Token.Line, p.Token.Column)
+				}
+			}
+			for _, r := range s.Results {
+				if r.Type != nil {
+					checkType(r.Type, r.Token.Line, r.Token.Column)
+				}
+			}
+			// Also check local variable declarations inside function bodies.
+			if s.Body != nil {
+				for _, bodyStmt := range s.Body.Statements {
+					if ls, ok := bodyStmt.(*parser.LetStatement); ok && ls.Type != nil {
+						checkType(ls.Type, ls.Token.Line, ls.Token.Column)
+					}
+				}
+			}
+		case *parser.ExternStatement:
+			for _, p := range s.Parameters {
+				if p.Type != nil {
+					checkType(p.Type, p.Token.Line, p.Token.Column)
+				}
+			}
+			for _, r := range s.Results {
+				if r.Type != nil {
+					checkType(r.Type, r.Token.Line, r.Token.Column)
+				}
+			}
+		}
+	}
+
+	return results
 }
 
 // GetStdModuleShortNames returns the short names of all embedded standard library

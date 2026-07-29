@@ -261,7 +261,19 @@ func VetFile(filePath string) []VetResult {
 		})
 	}
 
-	// 15. Parser warnings
+	// 15. Cross-module type prefix validation
+	for _, u := range nbuild.ValidateCrossModuleTypeRefs(prog) {
+		results = append(results, VetResult{
+			File:     filePath,
+			Line:     u.Line,
+			Column:   u.Column,
+			Severity: "error",
+			Source:   "nolang-type-checker",
+			Message:  u.Message,
+		})
+	}
+
+	// 16. Parser warnings
 	for _, warnMsg := range prog.Warnings {
 		var line, col int
 		fmt.Sscanf(warnMsg, "line %d, column %d:", &line, &col)

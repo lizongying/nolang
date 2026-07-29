@@ -368,7 +368,7 @@ func TestDeclarationsForDarwinTarget(t *testing.T) {
 		"@__stdinp = external global i8*\n", // macOS stdin
 		"@__stderrp = external global i8*\n", // macOS stderr
 		"declare i32 @fork()\n",           // macOS has fork
-		"declare i32 @execlp(i8*, ...)\n", // macOS has execlp
+		"declare i32 @execlp(i8*, i8*, ...)\n", // macOS has execlp (file, arg0, ...)
 		"declare i32 @pipe(i32*)\n",       // macOS has pipe
 		"declare i8* @getcwd(i8*, i64)\n", // macOS POSIX getcwd
 		"declare i32 @chdir(i8*)\n",       // macOS has chdir
@@ -452,7 +452,7 @@ func TestDeclarationsForWindowsTarget(t *testing.T) {
 
 	wantNotContains := []string{
 		"declare i32 @fork()\n",          // POSIX only — not on Windows
-		"declare i32 @execlp(i8*, ...)\n", // POSIX only (Windows has _execlp)
+		"declare i32 @execlp(i8*, i8*, ...)\n", // POSIX only (Windows has _execlp)
 		"declare i32 @pipe(i32*)\n",       // POSIX only (Windows has _pipe)
 		"declare i8* @opendir(i8*)\n",     // POSIX directory ops — not on Windows
 		"declare i8* @readdir(i8*)\n",

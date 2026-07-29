@@ -786,13 +786,25 @@ func (p *Parser) parseLetStatement() Statement {
 	//      僅在 option（?type）解析路徑下允許此繞過，避免 `n = value` 把變數名 n 誤當型別
 	if typeToken.Type == lexer.IDENT && stmt.Type == nil && (p.peekToken.Type != lexer.ASSIGN || (letIsOption && typeToken == p.currentToken)) {
 		typeName := typeToken.Literal
+		// Advance to the type token position
+		if typeToken == p.peekToken {
+			p.nextToken() // now p.currentToken = type token
+		}
+		// Advance past the type IDENT to check for dotted/qualified names
+		p.nextToken()
+		// Support dotted/qualified type names: tls.tls-conn, sql.result, etc.
+		for p.currentToken.Type == lexer.DOT {
+			typeName += "."
+			p.nextToken() // skip DOT
+			if p.currentToken.Type == lexer.IDENT {
+				typeName += p.currentToken.Literal
+				p.nextToken() // skip IDENT part
+			}
+		}
 		if letIsOption {
 			typeName = "?" + typeName
 		}
 		stmt.Type = buildType(typeName, typeToken)
-		if typeToken == p.peekToken {
-			p.nextToken()
-		}
 	}
 
 	// 解析赋值运算符

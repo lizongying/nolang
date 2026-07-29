@@ -5777,6 +5777,7 @@ func (g *Generator) isStrPtrReg(val string) bool {
 		"%gd.str.",             // getdomainname builtin in call_stdlib.go
 		"%sc.str.",             // sysctl builtin in call_stdlib.go
 		"%slic.",               // generateSliceExpression (string slice → %str-long*)
+		"%vso.tmp.",            // voidSingleOutput temporary buffer
 	}
 	for _, p := range ptrPatterns {
 		if strings.HasPrefix(val, p) {

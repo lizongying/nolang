@@ -3,7 +3,6 @@ package parser
 
 import (
 	"fmt"
-	"os"
 	"strconv"
 	"strings"
 
@@ -14,14 +13,6 @@ import (
 // 支援：局部變數 (Identifier)、self 欄位 (DotExpression{self, field})、
 // 以及 self.field.subfield (嵌套 DotExpression{DotExpression{self, field}, subfield})
 func (p *Parser) resolveReceiverType(receiver Expression) string {
-	if dbgRecv, ok := receiver.(*Identifier); ok && (dbgRecv.Value == "tls-c" || dbgRecv.Value == "tls") {
-		fmt.Fprintf(os.Stderr, "DBG resolveReceiverType: Identifier value=%q varTypes=%q stack=%v structFields[sse-client][tls-c]=%q\n",
-			dbgRecv.Value, p.sem.VarTypes[dbgRecv.Value], p.methodStructStack,
-			func() string { if f, ok := p.structFields["sse-client"]; ok { return f["tls-c"] }; return "" }())
-	}
-	if dot, ok := receiver.(*DotExpression); ok && (dot.Property == "recv" || dot.Property == "send") {
-		fmt.Fprintf(os.Stderr, "DBG resolveReceiverType: DotExpr recvType=%T recv=%v stack=%v\n", dot.Receiver, dot.Receiver, p.methodStructStack)
-	}
 	if ident, ok := receiver.(*Identifier); ok {
 		if t, ok := p.sem.VarTypes[ident.Value]; ok {
 			return strings.TrimPrefix(t, "?")
@@ -63,7 +54,6 @@ func (p *Parser) resolveReceiverType(receiver Expression) string {
 				// 應解析為 tls-conn.recv）。此回退讓 inferTypeFromCallExpr 能推斷
 				// 方法呼叫的回傳型別，避免 match 的 it 綁定型別缺失而誤報。
 				if t, ok := p.sem.VarTypes[dot.Property]; ok {
-					fmt.Fprintf(os.Stderr, "DBG resolveRecv fallback: self.%s -> %q\n", dot.Property, t)
 					return strings.TrimPrefix(t, "?")
 				}
 			}
@@ -111,10 +101,6 @@ func (p *Parser) inferTypeFromCallExpr(call *CallExpression) string {
 			// receiver is a module path, not a variable. Try matching
 			// just the last property name against funcSignatures.
 			fnName = dot.Property
-		}
-		if dot.Property == "recv" || dot.Property == "send" {
-			rets, found := p.funcSignatures[fnName]
-			fmt.Fprintf(os.Stderr, "DBG inferCall: prop=%q receiverType=%q fnName=%q found=%v rets=%v\n", dot.Property, receiverType, fnName, found, rets)
 		}
 	}
 	if fnName == "" {

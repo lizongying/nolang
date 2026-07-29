@@ -2227,7 +2227,7 @@ func (g *Generator) callBuiltin(sb *strings.Builder, fnName string, hasArgs bool
 		execRet := g.tmpReg("proc.exec.ret")
 		execExt := g.tmpReg("proc.exec.ext")
 		if sb != nil {
-			sb.WriteString(fmt.Sprintf("%s%s = call i32 (i8*, ...) @%s(i8* %s, i8* %s, i8* %s, i8* null)\n", g.indent(), execRet, g.libcFn("execlp"), progPtr, progPtr, argPtr))
+			sb.WriteString(fmt.Sprintf("%s%s = call i32 (i8*, i8*, ...) @%s(i8* %s, i8* %s, i8* %s, i8* null)\n", g.indent(), execRet, g.libcFn("execlp"), progPtr, progPtr, argPtr))
 			sb.WriteString(fmt.Sprintf("%s%s = sext i32 %s to i64\n", g.indent(), execExt, execRet))
 		}
 		return execExt
@@ -2242,7 +2242,7 @@ func (g *Generator) callBuiltin(sb *strings.Builder, fnName string, hasArgs bool
 		execRet := g.tmpReg("proc.execs.ret")
 		execExt := g.tmpReg("proc.execs.ext")
 		if sb != nil {
-			sb.WriteString(fmt.Sprintf("%s%s = call i32 (i8*, ...) @%s(i8* getelementptr inbounds ([3 x i8], [3 x i8]* @.str.sh, i64 0, i64 0), i8* getelementptr inbounds ([3 x i8], [3 x i8]* @.str.sh, i64 0, i64 0), i8* getelementptr inbounds ([3 x i8], [3 x i8]* @.str.dashc, i64 0, i64 0), i8* %s, i8* null)\n",
+			sb.WriteString(fmt.Sprintf("%s%s = call i32 (i8*, i8*, ...) @%s(i8* getelementptr inbounds ([3 x i8], [3 x i8]* @.str.sh, i64 0, i64 0), i8* getelementptr inbounds ([3 x i8], [3 x i8]* @.str.sh, i64 0, i64 0), i8* getelementptr inbounds ([3 x i8], [3 x i8]* @.str.dashc, i64 0, i64 0), i8* %s, i8* null)\n",
 				g.indent(), execRet, g.libcFn("execlp"), cmdPtr))
 			sb.WriteString(fmt.Sprintf("%s%s = sext i32 %s to i64\n", g.indent(), execExt, execRet))
 		}
