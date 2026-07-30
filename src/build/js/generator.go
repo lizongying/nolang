@@ -47,6 +47,10 @@ type Generator struct {
 	// 在 Generate phase 1 前填充，供 generateStructDefinition 在 class body 內發射方法。
 	methodsByReceiver map[string][]*parser.FunctionDefinition
 
+	// globalVars 記錄頂層宣告的全域變數名（原始 Nolang 名稱），
+	// 用於在函式內部避免以 let 重新宣告全域變數。
+	globalVars map[string]bool
+
 	// out 為輸出緩衝；Generate 入口會重置
 	out *strings.Builder
 }
@@ -59,6 +63,7 @@ func NewGenerator() *Generator {
 		targetEnv:         "node",
 		declaredVars:      make(map[string]bool),
 		methodsByReceiver: make(map[string][]*parser.FunctionDefinition),
+		globalVars:        make(map[string]bool),
 	}
 }
 
@@ -110,12 +115,16 @@ func (g *Generator) Generate(program *parser.Program) (string, error) {
 
 	g.out = &strings.Builder{}
 	g.declaredVars = make(map[string]bool)
+	g.globalVars = make(map[string]bool)
 	g.indentLevel = 0
 	g.inFunctionBody = false
 	g.currentResults = nil
 	g.methodsByReceiver = make(map[string][]*parser.FunctionDefinition)
 
-	// 0. browser prelude：在所有輸出之前注入 console 重導向至 #nolang-output。
+	// 0. runtime helpers：在所有輸出之前注入 Nolang 運行時輔助函數。
+	g.writeRaw(runtimeHelpers)
+
+	// 0b. browser prelude：在 browser 模式下注入 console 重導向至 #nolang-output。
 	if g.targetEnv == "browser" {
 		g.writeRaw(browserPrelude)
 	}
@@ -135,6 +144,13 @@ func (g *Generator) Generate(program *parser.Program) (string, error) {
 		}
 		typeName := fd.Name[:dotIdx]
 		g.methodsByReceiver[typeName] = append(g.methodsByReceiver[typeName], fd)
+	}
+
+	// 1c. 收集全域變數名（頂層 let 敘述），供函式內部避免以 let 重新宣告。
+	for _, stmt := range stmts {
+		if ls, ok := stmt.(*parser.LetStatement); ok && ls.Name != nil {
+			g.globalVars[ls.Name.Value] = true
+		}
 	}
 
 	// 2. 輸出所有 struct 定義（→ JS class）
@@ -184,6 +200,15 @@ var platformKeys = map[string]struct{ goos, goarch string }{
 	"js":          {"js", ""},
 	"js-browser":  {"js", "browser"},
 }
+
+// runtimeHelpers 提供 Nolang → JS 編譯所需的運行時輔助函數。
+// 這些函數在所有輸出之前注入，無論目標環境是 node 還是 browser。
+const runtimeHelpers = `// Nolang runtime helpers
+function __nsub(a, b) {
+    if (typeof a === 'number' && typeof b === 'number') return a - b;
+    return String(a) + String(b);
+}
+`
 
 // browserPrelude 在 browser 模式下注入於所有輸出之前，將 console.log/error
 // 重導向至 id="nolang-output" 的 DOM 元素。

@@ -139,11 +139,11 @@ Install the Nolang extension from [VS Code Marketplace](https://marketplace.visu
 | Command                                                      | Description             |
 | ------------------------------------------------------------ | ----------------------- |
 | `no version`                                                 | Print version info      |
-| `no init`                                                    | Initialize repo in current directory |
-| `no new <name>`                                              | Create new repo         |
+| `no init`                                                    | Define the workspace (creates workspace.jsonc, no mod.jsonc) |
+| `no new <name>`                                              | Create a new package under the workspace (subdir + mod.jsonc, registered in workspace.jsonc) |
 | `no fmt [-w] [-d] <file\|dir>`                               | Format source code      |
 | `no build [-o <file>] [-cc <s>] [-target <s>] [<file\|dir>]` | Build (outputs executable) |
-| `no run [-cc <s>] [-target <s>] [<file\|dir>]`               | Build and run main.no   |
+| `no run [-cc <s>] [-target <s>] [<package\|dir\|file>]`        | Build and run (package/dir/file) |
 | `no test [-cc <s>] [-target <s>] [<file>]`                   | Run tests               |
 | `no add <pkg>`                                               | Add dependency          |
 | `no remove <pkg>`                                            | Remove dependency       |
@@ -155,17 +155,41 @@ Install the Nolang extension from [VS Code Marketplace](https://marketplace.visu
 | `no uninstall <name>`                                        | Remove binary           |
 | `no pub --token <token> [--registry <url>]`                  | Publish to registry     |
 
-### Create New Project
+### Single-Repo, Multi-Package Layout
+
+Nolang separates `no init` and `no new` into two distinct steps:
+
+- `no init` —— defines the workspace in the current directory (creates `workspace.jsonc` only; **no `mod.jsonc`**).
+- `no new <name>` —— creates a package under the current workspace (subdirectory `./<name>/` with its `mod.jsonc`) and registers it in `workspace.jsonc`.
 
 ```bash
-# Create new repo
-no new test1
+# 1) Define the workspace at the repo root
+no init
 
-# Enter directory
-cd test1
+# 2) Create a package (auto-registered in workspace.jsonc)
+no new foo
+
+# 3) Enter the package directory
+cd foo
 
 # Run directly (auto-builds and executes main.no)
 no run
+```
+
+### Initialize the Workspace
+
+```bash
+# Define the workspace in the current directory
+no init
+```
+
+`no init` only creates `workspace.jsonc` (initially an empty `{}`); it does **not** generate `mod.jsonc` or `main.no`. If `workspace.jsonc` already exists, it is left untouched. Packages are added with `no new <name>`, which writes `"<name>": "./<name>"` into `workspace.jsonc`:
+
+```jsonc
+{
+  "foo": "./foo",
+  "bar": "./bar"
+}
 ```
 
 ### Build & Run
@@ -179,10 +203,20 @@ no build -cc zig            # Use Zig compiler
 no build -target x86_64-linux-gnu  # Cross-compile (specify target platform)
 
 # Run (build + execute)
-no run                      # Build and execute main.no (must have main.no)
+no run                      # Build and execute main.no in the current directory
+no run foo                  # Run package 'foo' from the workspace (resolves workspace.jsonc)
+no run ./foo                # Run the ./foo directory's main.no
+no run main.no              # Run a specified .no file
 no run -cc zig
 no run -target aarch64-macos-gnu
 ```
+
+`no run` resolves its argument in this order:
+1. an existing `.no` file -> run that file
+2. an existing directory -> run its `main.no`
+3. a package name registered in the nearest `workspace.jsonc` -> run that package's `main.no`
+
+With no argument it runs `main.no` in the current directory. A bare workspace root (has `workspace.jsonc` but no `main.no`) requires `no run <package>`.
 
 ### Cross-compilation Targets
 

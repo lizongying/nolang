@@ -1009,6 +1009,10 @@ func (t *Transpiler) CompileTarget(source string, _ Target) (string, error) {
 	// 用於將導入模組的 struct/interface/enum 等型別定義加上模組前綴
 	// （如 result → sql.result），避免與主檔案變數或型別衝突。
 	typeOwner := make(map[string]string)
+	// stmtOwner 記錄 merged 中每條模組語句的來源模組短名（主程序語句無記錄）。
+	// 供 prefixCollidingFunctions 判定：同名頂層函數衝突時，只有模組側定義
+	// 改名為 module.fn，主程序定義永不改名。
+	stmtOwner := make(map[parser.Statement]string)
 	// loadedUserModules tracks non-std module paths that have already been
 	// imported (when use.Alias == ""). Prevents duplicate FunctionDefinition
 	// pointers from being appended when the same module is referenced by
@@ -1034,7 +1038,8 @@ func (t *Transpiler) CompileTarget(source string, _ Target) (string, error) {
 				explicitStdModules[use.Path] = true
 			}
 			// 為導入模組的型別定義加上模組前綴（如 result → sql.result）
-			prefixModuleStatements(modProg.Statements, checker.ModuleShortName(use.Path), typeOwner)
+			useModShort := checker.ModuleShortName(use.Path)
+			prefixModuleStatements(modProg.Statements, useModShort, typeOwner)
 			// 將模組中的 FunctionDefinition 和 LetStatement（常量）加入 merged
 			for _, ms := range modProg.Statements {
 				if fd, ok := ms.(*parser.FunctionDefinition); ok {
@@ -1043,10 +1048,12 @@ func (t *Transpiler) CompileTarget(source string, _ Target) (string, error) {
 						if use.Function != "" && fd.Name == use.Function {
 							fd.Name = use.Alias
 							merged.Statements = append(merged.Statements, fd)
+							// alias 導入按用戶指定名，不參與衝突前綴
 						}
 						// Skip other functions when alias is used
 					} else {
 						merged.Statements = append(merged.Statements, fd)
+						stmtOwner[fd] = useModShort
 					}
 				}
 				if ls, ok := ms.(*parser.LetStatement); ok && ls.Name != nil {
@@ -1068,6 +1075,7 @@ func (t *Transpiler) CompileTarget(source string, _ Target) (string, error) {
 						// 如果主程序已有同名變量，跳過以避免衝突
 						if !mainVarNames[ls.Name.Value] {
 							merged.Statements = append(merged.Statements, ls)
+							stmtOwner[ls] = useModShort
 							if checker.IsConstantExpr(ls.Value) && checker.MatchesTargetPlatform(modProg.Sem.PlatformKeysOf(ls), t.targetGoos, t.targetGoarch) {
 								moduleConstants[ls.Name.Value] = ls.Value
 							}
@@ -1131,11 +1139,13 @@ func (t *Transpiler) CompileTarget(source string, _ Target) (string, error) {
 		for _, ms := range modProg.Statements {
 			if fd, ok := ms.(*parser.FunctionDefinition); ok {
 				merged.Statements = append(merged.Statements, fd)
+				stmtOwner[fd] = info.ShortName
 			}
 			if ls, ok := ms.(*parser.LetStatement); ok && ls.Name != nil {
 				// 如果主程序已有同名變量，跳過以避免衝突
 				if !mainVarNames[ls.Name.Value] {
 					merged.Statements = append(merged.Statements, ls)
+					stmtOwner[ls] = info.ShortName
 					if checker.IsConstantExpr(ls.Value) && checker.MatchesTargetPlatform(modProg.Sem.PlatformKeysOf(ls), t.targetGoos, t.targetGoarch) {
 						moduleConstants[ls.Name.Value] = ls.Value
 					}
@@ -1168,12 +1178,16 @@ func (t *Transpiler) CompileTarget(source string, _ Target) (string, error) {
 	prefixMethodNames(merged.Statements, typeOwner)
 	rewriteTypeRefs(merged.Statements, typeOwner)
 	checker.DebugCountHashFns("after-prefixMethodNames", merged)
+	// 函數衝突前綴：多模組同名頂層函數（connect×4、get×5 …）改名為
+	// module.fn 並改寫模組內裸呼叫。必須在 prefixMethodNames 之後執行，
+	// 否則 path.join 之類的新名字會被誤認成 struct path 的方法。
+	prefixedFns := prefixCollidingFunctions(merged, stmtOwner)
 	// 常量傳播：將模組常量替換為字面值，使 module functions 可以直接使用常量
 	checker.ResolveModuleConstants(merged, moduleConstants)
 	checker.DebugCountHashFns("after-resolveModuleConstants", merged)
 	// 解析 module.fn() 呼叫：將 DotExpression 重寫為 Identifier
 	// 必須在 monomorphizeGenerics 之前執行，以便泛型模組函數也能被正確處理
-	checker.ResolveModuleCalls(merged, importedModules)
+	checker.ResolveModuleCalls(merged, importedModules, prefixedFns)
 	checker.DebugCountHashFns("after-resolveModuleCalls", merged)
 	// 解析 self.method() 呼叫：將方法體內的 self.method(args) 重寫為 Type.method(self, args)
 	checker.ResolveSelfMethodCalls(merged)
@@ -1233,13 +1247,20 @@ func (t *Transpiler) CompileTarget(source string, _ Target) (string, error) {
 	// 已改寫過的型別名（含 "."）會被 prefixTypeName 自動跳過，安全無副作用。
 	rewriteTypeRefs(merged.Statements, typeOwner)
 	// 解析頂層代碼中的 module.fn() 呼叫
-	checker.ResolveModuleCalls(merged, importedModules)
+	checker.ResolveModuleCalls(merged, importedModules, prefixedFns)
 	// 解析 Type.method(args) 靜態方法呼叫：將 bigint.cmp(d, d2) 重寫為
 	// bigint.bigint.cmp(d, d2)，與 prefixMethodNames 重命名後的方法定義對齊。
 	// 必須在 resolveSelfMethodCalls 之後執行（該 pass 已用正確的 module 前綴
 	// 生成 Type.method(self, args)），並在所有頂層代碼加入 merged 之後執行。
 	checker.ResolveMethodCalls(merged, typeOwner)
 	checker.DebugCountHashFns("after-resolveMethodCalls", merged)
+	// 檢查期診斷：主程式中呼叫不存在的 module.fn（如 bigint.from-int）。
+	// 以前這類錯誤會落到 LLVM opt 才報 `use of undefined value`，難以定位。
+	// 必須在 ResolveModuleCalls + ResolveMethodCalls 之後執行：合法的
+	// module.fn / Type.method 呼叫此時都已被改寫，殘留的模組點呼叫即非法。
+	if err := checkUnresolvedModuleCalls(merged, stmtOwner, importedModules); err != nil {
+		return "", fmt.Errorf("check error: %v", err)
+	}
 	// 泛型結構體單態化：掃描 map[K]V 使用點，自 hashmap-*-tmpl 模板生成具體結構與方法。
 	// 必須在 monomorphizeGenerics 之後（避免與 [n]t 泛型衝突）、monomorphizeUnions 之前執行。
 	monomorphizeGenericStructs(merged)

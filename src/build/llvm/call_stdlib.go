@@ -3363,7 +3363,6 @@ func (g *Generator) generateFieldStr(sb *strings.Builder, field *parser.FormatFi
 	// pointer to crash (SIGABRT). Per project convention, the caller must
 	// initialize output parameters: str → {len=0, cap=0, data=null}.
 	outBuf := g.tmpReg("nfmt.field")
-	fmt.Fprintf(os.Stderr, "[DEBUG-FIELDSTR] generateFieldStr outBuf=%s field.Name=%s\n", outBuf, field.Name)
 	sb.WriteString(fmt.Sprintf("%s%s = alloca %%str-long\n", g.indent(), outBuf))
 	sb.WriteString(fmt.Sprintf("%sstore %%str-long zeroinitializer, %%str-long* %s\n", g.indent(), outBuf))
 

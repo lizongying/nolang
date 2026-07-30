@@ -3500,6 +3500,17 @@ func CollectStdModuleSignatures() (map[string][]string, map[string]map[string]st
 		aliases := make(map[string]string)
 		structMod := make(map[string]string) // struct name → module short name
 
+		// PASS 1: 解析所有模組並暫存，同時統計裸 struct 名的跨模組定義數。
+		// 多模組同名結構體（如 server-conn 定義於 server/tls/sse/ws）的裸名
+		// 有歧義：函數簽名快照若記錄裸名（?server-conn），解析期 it 綁定會
+		// 標注錯誤型別，合併後 codegen 解析到錯誤模組的結構體。
+		type parsedMod struct {
+			info StdModuleInfo
+			prog *parser.Program
+		}
+		var mods []parsedMod
+		structCount := make(map[string]int)
+		funcCount := make(map[string]int)
 		for _, info := range knownStdModules() {
 			// 只從內嵌 StdFS 讀取,支援單二進制分發
 			embedPath := "std/" + info.FullPath + ".no"
@@ -3513,14 +3524,61 @@ func CollectStdModuleSignatures() (map[string][]string, map[string]map[string]st
 			if len(p.Errors()) > 0 {
 				continue
 			}
+			mods = append(mods, parsedMod{info, prog})
 			for _, stmt := range prog.Statements {
+				if sd, ok := stmt.(*parser.StructDefinition); ok {
+					structCount[sd.Name]++
+				}
+				if fd, ok := stmt.(*parser.FunctionDefinition); ok && !fd.IsMethodDef && !strings.Contains(fd.Name, ".") {
+					funcCount[fd.Name]++
+				}
+			}
+		}
+
+		// qualifyRet: 函數結果型別若引用「本模組定義且跨模組同名歧義」的
+		// struct 裸名，改記為 module.name（與 build 合併後 prefixModuleStatements
+		// 的重命名世界一致）。唯一裸名保持不變（解析期 structFields 查找仍用裸名）。
+		qualifyRet := func(typeStr, modShort string, ownStructs map[string]bool) string {
+			bare := strings.TrimPrefix(typeStr, "?")
+			if bare == typeStr {
+				// 非 option 形式：僅處理裸名
+				if ownStructs[bare] && structCount[bare] > 1 {
+					return modShort + "." + bare
+				}
+				return typeStr
+			}
+			if ownStructs[bare] && structCount[bare] > 1 {
+				return "?" + modShort + "." + bare
+			}
+			return typeStr
+		}
+
+		// PASS 2: 收集簽名/欄位/別名
+		for _, m := range mods {
+			ownStructs := make(map[string]bool)
+			for _, stmt := range m.prog.Statements {
+				if sd, ok := stmt.(*parser.StructDefinition); ok {
+					ownStructs[sd.Name] = true
+				}
+			}
+			for _, stmt := range m.prog.Statements {
 				if fd, ok := stmt.(*parser.FunctionDefinition); ok {
 					if len(fd.Results) > 0 {
 						rets := make([]string, len(fd.Results))
 						for i, r := range fd.Results {
-							rets[i] = r.Type.String()
+							rets[i] = qualifyRet(r.Type.String(), m.info.ShortName, ownStructs)
 						}
-						funcSigs[fd.Name] = rets
+						// 跨模組同名頂層函數（dial 定義於 quic/dns/proxy/tls）：
+						// 裸名鍵按載入順序 last-wins，會令 dns.dial() 呼叫在
+						// 解析期被標注成其他模組 dial 的返回型別。歧義名以
+						// "module.fn" 為鍵註冊，裸名鍵不寫入（避免錯誤匹配）；
+						// inferTypeFromCallExpr 對 module.fn() 呼叫優先查
+						// "module.fn" 鍵。唯一名維持裸名鍵。
+						if !fd.IsMethodDef && !strings.Contains(fd.Name, ".") && funcCount[fd.Name] > 1 {
+							funcSigs[m.info.ShortName+"."+fd.Name] = rets
+						} else {
+							funcSigs[fd.Name] = rets
+						}
 					}
 				}
 				if sd, ok := stmt.(*parser.StructDefinition); ok {
@@ -3531,9 +3589,14 @@ func CollectStdModuleSignatures() (map[string][]string, map[string]map[string]st
 						}
 					}
 					structFields[sd.Name] = fields
+					// 歧義結構體另以 module.name 為 key 註冊一份，使解析期
+					// it 綁定標注 "tls.server-conn" 後仍能解析欄位/方法。
+					if structCount[sd.Name] > 1 {
+						structFields[m.info.ShortName+"."+sd.Name] = fields
+					}
 					// Map struct name → module short name for cross-module prefix validation
 					if _, exists := structMod[sd.Name]; !exists {
-						structMod[sd.Name] = info.ShortName
+						structMod[sd.Name] = m.info.ShortName
 					}
 				}
 				// 收集單具體型別別名（name = known-type），使 newtype 語義
@@ -3742,7 +3805,7 @@ func GetStdModuleFullPaths() []string {
 	}
 	return paths
 }
-func resolveModuleCalls(program *parser.Program, importedModules []string) {
+func resolveModuleCalls(program *parser.Program, importedModules []string, prefixedFns map[string]bool) {
 	if len(importedModules) == 0 {
 		return
 	}
@@ -3787,7 +3850,7 @@ func resolveModuleCalls(program *parser.Program, importedModules []string) {
 		}
 	}
 	for _, stmt := range program.Statements {
-		resolveModuleCallsInStmt(stmt, modSet, moduleFns, moduleConsts)
+		resolveModuleCallsInStmt(stmt, modSet, moduleFns, moduleConsts, prefixedFns)
 	}
 }
 func extractModulePathAndFunc(dot *parser.DotExpression) (path, fnName string) {
@@ -3808,48 +3871,48 @@ func extractModulePathAndFunc(dot *parser.DotExpression) (path, fnName string) {
 	path = strings.Join(segments, "/")
 	return path, fnName
 }
-func resolveModuleCallsInStmt(stmt parser.Statement, modSet map[string]bool, moduleFns map[string]bool, moduleConsts map[string]bool) {
+func resolveModuleCallsInStmt(stmt parser.Statement, modSet map[string]bool, moduleFns map[string]bool, moduleConsts map[string]bool, prefixedFns map[string]bool) {
 	switch s := stmt.(type) {
 	case *parser.ExpressionStatement:
 		if s.Expression != nil {
-			s.Expression = resolveModuleCallsInExpr(s.Expression, modSet, moduleFns, moduleConsts)
+			s.Expression = resolveModuleCallsInExpr(s.Expression, modSet, moduleFns, moduleConsts, prefixedFns)
 		}
 	case *parser.LetStatement:
 		if s.Value != nil {
-			s.Value = resolveModuleCallsInExpr(s.Value, modSet, moduleFns, moduleConsts)
+			s.Value = resolveModuleCallsInExpr(s.Value, modSet, moduleFns, moduleConsts, prefixedFns)
 		}
 	case *parser.MultiAssignStatement:
 		if s.Value != nil {
-			s.Value = resolveModuleCallsInExpr(s.Value, modSet, moduleFns, moduleConsts)
+			s.Value = resolveModuleCallsInExpr(s.Value, modSet, moduleFns, moduleConsts, prefixedFns)
 		}
 	case *parser.FunctionDefinition:
 		if s.Body != nil {
 			for _, bodyStmt := range s.Body.Statements {
-				resolveModuleCallsInStmt(bodyStmt, modSet, moduleFns, moduleConsts)
+				resolveModuleCallsInStmt(bodyStmt, modSet, moduleFns, moduleConsts, prefixedFns)
 			}
 		}
 	case *parser.BlockStatement:
 		for _, bodyStmt := range s.Statements {
-			resolveModuleCallsInStmt(bodyStmt, modSet, moduleFns, moduleConsts)
+			resolveModuleCallsInStmt(bodyStmt, modSet, moduleFns, moduleConsts, prefixedFns)
 		}
 	case *parser.ForStatement:
 		if s.Condition != nil {
-			s.Condition = resolveModuleCallsInExpr(s.Condition, modSet, moduleFns, moduleConsts)
+			s.Condition = resolveModuleCallsInExpr(s.Condition, modSet, moduleFns, moduleConsts, prefixedFns)
 		}
 		if s.Init != nil {
-			resolveModuleCallsInStmt(s.Init, modSet, moduleFns, moduleConsts)
+			resolveModuleCallsInStmt(s.Init, modSet, moduleFns, moduleConsts, prefixedFns)
 		}
 		if s.Update != nil {
-			resolveModuleCallsInStmt(s.Update, modSet, moduleFns, moduleConsts)
+			resolveModuleCallsInStmt(s.Update, modSet, moduleFns, moduleConsts, prefixedFns)
 		}
 		if s.Body != nil {
 			for _, bodyStmt := range s.Body.Statements {
-				resolveModuleCallsInStmt(bodyStmt, modSet, moduleFns, moduleConsts)
+				resolveModuleCallsInStmt(bodyStmt, modSet, moduleFns, moduleConsts, prefixedFns)
 			}
 		}
 	}
 }
-func resolveModuleCallsInExpr(expr parser.Expression, modSet map[string]bool, moduleFns map[string]bool, moduleConsts map[string]bool) parser.Expression {
+func resolveModuleCallsInExpr(expr parser.Expression, modSet map[string]bool, moduleFns map[string]bool, moduleConsts map[string]bool, prefixedFns map[string]bool) parser.Expression {
 	if expr == nil {
 		return nil
 	}
@@ -3859,24 +3922,38 @@ func resolveModuleCallsInExpr(expr parser.Expression, modSet map[string]bool, mo
 		// CallExpression's Function is itself a CallExpression. Recurse into
 		// it first so the inner module-qualified name gets resolved.
 		if _, isCall := e.Function.(*parser.CallExpression); isCall {
-			e.Function = resolveModuleCallsInExpr(e.Function, modSet, moduleFns, moduleConsts)
+			e.Function = resolveModuleCallsInExpr(e.Function, modSet, moduleFns, moduleConsts, prefixedFns)
 		}
 		// Check if this is a module.fn() call (single or multi-level).
 		// Only rewrite when the function property is a known module-level function
 		// and the receiver chain matches a known module ShortName.
 		if dot, ok := e.Function.(*parser.DotExpression); ok {
 			modPath, fnName := extractModulePathAndFunc(dot)
-			if modPath != "" && modSet[modPath] && moduleFns[fnName] {
-				// Rewrite to direct function call
-				e.Function = &parser.Identifier{
-					Token: lexer.Token{Type: lexer.IDENT, Literal: fnName},
-					Value: fnName,
+			if modPath != "" && modSet[modPath] {
+				// 模組短名：多層路徑（hash/sha256）取最後一段
+				short := modPath
+				if idx := strings.LastIndex(short, "/"); idx >= 0 {
+					short = short[idx+1:]
+				}
+				if full := short + "." + fnName; prefixedFns[full] {
+					// 衝突函數已改名為 module.fn：改寫為扁平帶點 Identifier
+					// （與方法呼叫同通道），保持與定義名精確對齊。
+					e.Function = &parser.Identifier{
+						Token: lexer.Token{Type: lexer.IDENT, Literal: full},
+						Value: full,
+					}
+				} else if moduleFns[fnName] {
+					// Rewrite to direct function call
+					e.Function = &parser.Identifier{
+						Token: lexer.Token{Type: lexer.IDENT, Literal: fnName},
+						Value: fnName,
+					}
 				}
 			}
 		}
 		// Recurse into arguments
 		for i, arg := range e.Arguments {
-			e.Arguments[i] = resolveModuleCallsInExpr(arg, modSet, moduleFns, moduleConsts)
+			e.Arguments[i] = resolveModuleCallsInExpr(arg, modSet, moduleFns, moduleConsts, prefixedFns)
 		}
 		return e
 
@@ -3892,87 +3969,87 @@ func resolveModuleCallsInExpr(expr parser.Expression, modSet map[string]bool, mo
 			}
 		}
 		// 遞迴處理 receiver（鏈式存取如 a.b.c 的 struct 欄位）
-		e.Receiver = resolveModuleCallsInExpr(e.Receiver, modSet, moduleFns, moduleConsts)
+		e.Receiver = resolveModuleCallsInExpr(e.Receiver, modSet, moduleFns, moduleConsts, prefixedFns)
 		return e
 
 	case *parser.InfixExpression:
 		if e.Left != nil {
-			e.Left = resolveModuleCallsInExpr(e.Left, modSet, moduleFns, moduleConsts)
+			e.Left = resolveModuleCallsInExpr(e.Left, modSet, moduleFns, moduleConsts, prefixedFns)
 		}
 		if e.Right != nil {
-			e.Right = resolveModuleCallsInExpr(e.Right, modSet, moduleFns, moduleConsts)
+			e.Right = resolveModuleCallsInExpr(e.Right, modSet, moduleFns, moduleConsts, prefixedFns)
 		}
 		return e
 
 	case *parser.PrefixExpression:
 		if e.Right != nil {
-			e.Right = resolveModuleCallsInExpr(e.Right, modSet, moduleFns, moduleConsts)
+			e.Right = resolveModuleCallsInExpr(e.Right, modSet, moduleFns, moduleConsts, prefixedFns)
 		}
 		return e
 
 	case *parser.ConditionalExpression:
 		if e.Condition != nil {
-			e.Condition = resolveModuleCallsInExpr(e.Condition, modSet, moduleFns, moduleConsts)
+			e.Condition = resolveModuleCallsInExpr(e.Condition, modSet, moduleFns, moduleConsts, prefixedFns)
 		}
 		if e.Consequence != nil {
-			e.Consequence = resolveModuleCallsInExpr(e.Consequence, modSet, moduleFns, moduleConsts)
+			e.Consequence = resolveModuleCallsInExpr(e.Consequence, modSet, moduleFns, moduleConsts, prefixedFns)
 		}
 		if e.Alternative != nil {
-			e.Alternative = resolveModuleCallsInExpr(e.Alternative, modSet, moduleFns, moduleConsts)
+			e.Alternative = resolveModuleCallsInExpr(e.Alternative, modSet, moduleFns, moduleConsts, prefixedFns)
 		}
 		return e
 
 	case *parser.IfExpression:
 		if e.Condition != nil {
-			e.Condition = resolveModuleCallsInExpr(e.Condition, modSet, moduleFns, moduleConsts)
+			e.Condition = resolveModuleCallsInExpr(e.Condition, modSet, moduleFns, moduleConsts, prefixedFns)
 		}
 		if e.Consequence != nil {
 			for _, bodyStmt := range e.Consequence.Statements {
-				resolveModuleCallsInStmt(bodyStmt, modSet, moduleFns, moduleConsts)
+				resolveModuleCallsInStmt(bodyStmt, modSet, moduleFns, moduleConsts, prefixedFns)
 			}
 		}
 		if e.Alternative != nil {
 			for _, bodyStmt := range e.Alternative.Statements {
-				resolveModuleCallsInStmt(bodyStmt, modSet, moduleFns, moduleConsts)
+				resolveModuleCallsInStmt(bodyStmt, modSet, moduleFns, moduleConsts, prefixedFns)
 			}
 		}
 		return e
 
 	case *parser.GroupedExpression:
 		if e.Expression != nil {
-			e.Expression = resolveModuleCallsInExpr(e.Expression, modSet, moduleFns, moduleConsts)
+			e.Expression = resolveModuleCallsInExpr(e.Expression, modSet, moduleFns, moduleConsts, prefixedFns)
 		}
 		return e
 
 	case *parser.IndexExpression:
 		if e.Left != nil {
-			e.Left = resolveModuleCallsInExpr(e.Left, modSet, moduleFns, moduleConsts)
+			e.Left = resolveModuleCallsInExpr(e.Left, modSet, moduleFns, moduleConsts, prefixedFns)
 		}
 		if e.Index != nil {
-			e.Index = resolveModuleCallsInExpr(e.Index, modSet, moduleFns, moduleConsts)
+			e.Index = resolveModuleCallsInExpr(e.Index, modSet, moduleFns, moduleConsts, prefixedFns)
 		}
 		return e
 
 	case *parser.SliceExpression:
 		if e.Left != nil {
-			e.Left = resolveModuleCallsInExpr(e.Left, modSet, moduleFns, moduleConsts)
+			e.Left = resolveModuleCallsInExpr(e.Left, modSet, moduleFns, moduleConsts, prefixedFns)
 		}
 		if e.Range != nil {
 			if e.Range.Start != nil {
-				e.Range.Start = resolveModuleCallsInExpr(e.Range.Start, modSet, moduleFns, moduleConsts)
+				e.Range.Start = resolveModuleCallsInExpr(e.Range.Start, modSet, moduleFns, moduleConsts, prefixedFns)
 			}
 			if e.Range.End != nil {
-				e.Range.End = resolveModuleCallsInExpr(e.Range.End, modSet, moduleFns, moduleConsts)
+				e.Range.End = resolveModuleCallsInExpr(e.Range.End, modSet, moduleFns, moduleConsts, prefixedFns)
 			}
 		}
 		return e
 
 	case *parser.AssignExpression:
 		if e.Left != nil {
-			e.Left = resolveModuleCallsInExpr(e.Left, modSet, moduleFns, moduleConsts)
+			e.Left = resolveModuleCallsInExpr(e.Left, modSet, moduleFns, moduleConsts, prefixedFns)
 		}
 		if e.Value != nil {
-			e.Value = resolveModuleCallsInExpr(e.Value, modSet, moduleFns, moduleConsts)
+			e.Value = resolveModuleCallsInExpr(e.Value, modSet, moduleFns, moduleConsts, prefixedFns)
 		}
 		return e
 

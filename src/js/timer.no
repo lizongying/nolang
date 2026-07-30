@@ -1,0 +1,17 @@
+; timer.no — Browser Timer API declarations (JS backend)
+; Actual mapping is in src/build/js/builtin.go
+#{js}
+
+timer.set-interval = (cb str, ms i64) (id i64) {
+    id = 0
+}
+
+timer.clear-interval = (id i64) {
+}
+
+timer.set-timeout = (cb str, ms i64) (id i64) {
+    id = 0
+}
+
+timer.clear-timeout = (id i64) {
+}

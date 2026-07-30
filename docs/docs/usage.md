@@ -26,11 +26,11 @@ sudo mv nolang /usr/local/bin/no
 | 命令                                                         | 說明                    |
 | ------------------------------------------------------------ | ----------------------- |
 | `no version`                                                 | 打印版本信息            |
-| `no init`                                                    | 在當前目錄初始化倉庫    |
-| `no new <name>`                                              | 建立新倉庫              |
+| `no init`                                                    | 定義工作區（生成 workspace.jsonc，不含 mod.jsonc） |
+| `no new <name>`                                              | 在工作區內新建包（子目錄 + mod.jsonc，並註冊到 workspace.jsonc） |
 | `no fmt [-w] [-d] <file\|dir>`                               | 格式化源代碼            |
 | `no build [-o <file>] [-cc <s>] [-target <s>] [<file\|dir>]` | 構建（輸出 executable） |
-| `no run [-cc <s>] [-target <s>] [<file\|dir>]`               | 構建並執行 main.no      |
+| `no run [-cc <s>] [-target <s>] [<package\|dir\|file>]`        | 構建並執行（包名/目錄/文件） |
 | `no test [-cc <s>] [-target <s>] [<file>]`                   | 執行測試                |
 | `no add <pkg>`                                               | 添加依賴                |
 | `no remove <pkg>`                                            | 移除依賴                |
@@ -44,25 +44,54 @@ sudo mv nolang /usr/local/bin/no
 
 ## 快速開始
 
-### 創建新項目
+Nolang 采用**單倉（項目）多包**架構：倉庫根目錄是工作區（只有 `workspace.jsonc`），每個包是一個子目錄（有自己的 `mod.jsonc`）。`no init` 與 `no new` 是兩件獨立的事：
+
+- `no init` —— 在當前目錄定義工作區（只生成 `workspace.jsonc`）。
+- `no new <name>` —— 在當前工作區下新建一個包（生成子目錄 `./<name>/` 及其 `mod.jsonc`），並把該包註冊進 `workspace.jsonc`。
+
+### 初始化工作區並新建包
 
 ```bash
-# 創建新倉庫
-no new test1
+# 1) 在倉庫根目錄定義工作區
+no init
 
-# 進入目錄
-cd test1
+# 2) 在工作區內新建包（會自動註冊到 workspace.jsonc）
+no new foo
+
+# 3) 進入包目錄
+cd foo
 
 # 直接運行（自動構建並執行 main.no）
 no run
 ```
 
-### 初始化現有目錄
+可在工作區內反覆使用 `no new` 添加更多包：
 
 ```bash
-# 在當前目錄初始化
+no new bar
+no new baz
+```
+
+此時 `workspace.jsonc` 形如：
+
+```jsonc
+{
+  "foo": "./foo",
+  "bar": "./bar",
+  "baz": "./baz"
+}
+```
+
+`no build` 在根目錄無參數運行時，會並行構建工作區內所有包。
+
+### 只初始化工作區（不創建包）
+
+```bash
+# 在當前目錄定義工作區
 no init
 ```
+
+`no init` 只生成 `workspace.jsonc`（初始為空 `{}`），**不會生成 `mod.jsonc` 或 `main.no`**。若 `workspace.jsonc` 已存在則不會被覆蓋。包需要通過 `no new <name>` 創建。
 
 ### 構建與運行
 
@@ -75,10 +104,21 @@ no build -cc zig            # 使用 Zig 編譯器
 no build -target x86_64-linux-gnu  # 交叉編譯（指定目標平台）
 
 # 運行（構建 + 執行）
-no run                      # 構建並執行 main.no（必須有 main.no）
+no run                      # 構建並執行當前目錄的 main.no
+no run foo                  # 運行工作區中名為 foo 的包（解析 workspace.jsonc）
+no run ./foo                # 運行 ./foo 目錄的 main.no
+no run main.no              # 運行指定 .no 文件
 no run -cc zig
 no run -target aarch64-macos-gnu
 ```
+
+`no run` 的位置參數按以下順序解析：
+
+1. 已存在的 `.no` 文件 → 直接運行該文件
+2. 已存在的目錄 → 運行其中的 `main.no`
+3. 工作區（最近的 `workspace.jsonc`）中註冊的包名 → 運行該包的 `main.no`
+
+無參數時，默認運行當前目錄的 `main.no`。若當前目錄是工作區根（含 `workspace.jsonc` 但沒有 `main.no`），會提示用 `no run <package>` 指定包。
 
 ### 交叉編譯目標
 
@@ -353,3 +393,16 @@ no sync
   "https://mirror.example.com/"
 ]
 ```
+
+### 工作區配置 workspace.jsonc
+
+`workspace.jsonc` 位於倉庫根目錄，描述一個**單倉多包**工作區，是一個「包名 → 相對路徑」的映射。`no build` 在無參數且存在 `workspace.jsonc` 時，會並行編譯其中列出的所有包；`no run` 則透過包名（如 `no run foo`）執行工作區中的單個包。
+
+```jsonc
+{
+  "foo": "./foo",
+  "bar": "./bar"
+}
+```
+
+`no init` 負責定義工作區：若 `workspace.jsonc` 不存在則生成一個空對象 `{}`，**不生成任何 `mod.jsonc`**；已存在時則保持不變，不會被覆蓋。隨後用 `no new <name>` 創建包時，會自動把 `"<name>": "./<name>"` 註冊進 `workspace.jsonc`。

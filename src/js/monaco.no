@@ -1,0 +1,53 @@
+; monaco.no — Monaco Editor API declarations (JS backend)
+; Actual mapping is in src/build/js/builtin.go
+#{js}
+
+monaco.init = (cdn str, cb str) {
+}
+
+monaco.create = (el str, value str, language str) (editor str) {
+    editor = ''
+}
+
+monaco.create-opts = (el str, opts str) (editor str) {
+    editor = ''
+}
+
+monaco.get-value = (editor str) (value str) {
+    value = ''
+}
+
+monaco.set-value = (editor str, value str) {
+}
+
+monaco.on-change = (editor str, cb str) {
+}
+
+monaco.set-language = (editor str, language str) {
+}
+
+monaco.create-model = (value str, language str) (model str) {
+    model = ''
+}
+
+monaco.set-model = (editor str, model str) {
+}
+
+monaco.dispose = (editor str) {
+}
+
+monaco.define-theme = (name str, theme str) {
+}
+
+monaco.set-theme = (name str) {
+}
+
+monaco.get-model = (editor str) (model str) {
+    model = ''
+}
+
+monaco.set-readonly = (editor str, readonly bool) {
+}
+
+monaco.layout = (editor str) {
+}

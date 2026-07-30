@@ -200,6 +200,29 @@ func (g *Generator) generateModuleCall(de *parser.DotExpression, args []parser.E
 			if len(args) == 2 {
 				return "(" + argStrs[0] + ").indexOf(" + argStrs[1] + ")", true
 			}
+		case "last-index":
+			if len(args) == 2 {
+				return "(" + argStrs[0] + ").lastIndexOf(" + argStrs[1] + ")", true
+			}
+		case "replace":
+			if len(args) == 3 {
+				return "(" + argStrs[0] + ").replaceAll(" + argStrs[1] + ", " + argStrs[2] + ")", true
+			}
+		case "slice":
+			if len(args) == 3 {
+				return "(" + argStrs[0] + ").slice(" + argStrs[1] + ", " + argStrs[2] + ")", true
+			}
+			if len(args) == 2 {
+				return "(" + argStrs[0] + ").slice(" + argStrs[1] + ")", true
+			}
+		case "char-at":
+			if len(args) == 2 {
+				return "(" + argStrs[0] + ").charCodeAt(" + argStrs[1] + ")", true
+			}
+		case "char-to-str":
+			if len(args) == 2 {
+				return "String.fromCharCode(" + argStrs[1] + ")", true
+			}
 		case "empty":
 			if len(args) == 1 {
 				return "(" + argStrs[0] + ").length === 0", true
@@ -252,6 +275,10 @@ func (g *Generator) generateModuleCall(de *parser.DotExpression, args []parser.E
 			if len(args) == 1 {
 				return "Math.abs(" + argStrs[0] + ")", true
 			}
+		case "char-to-str":
+			if len(args) == 1 {
+				return "String.fromCharCode(" + argStrs[0] + ")", true
+			}
 		}
 		return "", false
 
@@ -269,8 +296,30 @@ func (g *Generator) generateModuleCall(de *parser.DotExpression, args []parser.E
 			if len(args) >= 1 {
 				return "document.createElement(" + argStrs[0] + ")", true
 			}
+		case "query-all":
+			if len(args) >= 1 {
+				return "document.querySelectorAll(" + argStrs[0] + ")", true
+			}
+		case "create-text-node":
+			if len(args) >= 1 {
+				return "document.createTextNode(" + argStrs[0] + ")", true
+			}
 		case "body":
 			return "document.body", true
+		case "head":
+			return "document.head", true
+		case "load-script":
+			if len(args) >= 1 {
+				return "(function() { var s = document.createElement('script'); s.src = " + argStrs[0] + "; document.head.appendChild(s); })()", true
+			}
+		case "load-script-callback":
+			if len(args) >= 2 {
+				return "(function() { var s = document.createElement('script'); s.src = " + argStrs[0] + "; s.onload = " + argStrs[1] + "; document.head.appendChild(s); })()", true
+			}
+		case "load-style":
+			if len(args) >= 1 {
+				return "(function() { var l = document.createElement('link'); l.rel = 'stylesheet'; l.href = " + argStrs[0] + "; document.head.appendChild(l); })()", true
+			}
 		}
 		return "", false
 
@@ -377,6 +426,158 @@ func (g *Generator) generateModuleCall(de *parser.DotExpression, args []parser.E
 		case "json-async":
 			if len(args) >= 1 {
 				return "fetch(" + argStrs[0] + ").then(function(r) { return r.json(); })", true
+			}
+		case "post-async":
+			if len(args) >= 2 {
+				return "fetch(" + argStrs[0] + ", { method: 'POST', body: " + argStrs[1] + " }).then(function(r) { return r.text(); })", true
+			}
+		case "post-json-async":
+			if len(args) >= 2 {
+				return "fetch(" + argStrs[0] + ", { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(" + argStrs[1] + ") }).then(function(r) { return r.json(); })", true
+			}
+		}
+		return "", false
+
+	case "ws-browser":
+		switch method {
+		case "connect":
+			if len(args) >= 1 {
+				return "new WebSocket(" + argStrs[0] + ")", true
+			}
+		case "on-open":
+			if len(args) >= 2 {
+				return "(" + argStrs[0] + ").onopen = " + argStrs[1], true
+			}
+		case "on-message":
+			if len(args) >= 2 {
+				return "(" + argStrs[0] + ").onmessage = function(e) { (" + argStrs[1] + ")(e.data); }", true
+			}
+		case "on-close":
+			if len(args) >= 2 {
+				return "(" + argStrs[0] + ").onclose = " + argStrs[1], true
+			}
+		case "on-error":
+			if len(args) >= 2 {
+				return "(" + argStrs[0] + ").onerror = " + argStrs[1], true
+			}
+		case "send":
+			if len(args) >= 2 {
+				return "(" + argStrs[0] + ").send(" + argStrs[1] + ")", true
+			}
+		case "send-json":
+			if len(args) >= 2 {
+				return "(" + argStrs[0] + ").send(JSON.stringify(" + argStrs[1] + "))", true
+			}
+		case "close":
+			if len(args) >= 1 {
+				return "(" + argStrs[0] + ").close()", true
+			}
+		case "ready-state":
+			if len(args) >= 1 {
+				return "(" + argStrs[0] + ").readyState", true
+			}
+		}
+		return "", false
+
+	case "json":
+		switch method {
+		case "parse":
+			if len(args) >= 1 {
+				return "JSON.parse(" + argStrs[0] + ")", true
+			}
+		case "stringify":
+			if len(args) >= 1 {
+				return "JSON.stringify(" + argStrs[0] + ")", true
+			}
+		case "stringify-pretty":
+			if len(args) >= 1 {
+				return "JSON.stringify(" + argStrs[0] + ", null, 2)", true
+			}
+		}
+		return "", false
+
+	case "timer":
+		switch method {
+		case "set-interval":
+			if len(args) >= 2 {
+				return "setInterval(" + argStrs[0] + ", " + argStrs[1] + ")", true
+			}
+		case "clear-interval":
+			if len(args) >= 1 {
+				return "clearInterval(" + argStrs[0] + ")", true
+			}
+		case "set-timeout":
+			if len(args) >= 2 {
+				return "setTimeout(" + argStrs[0] + ", " + argStrs[1] + ")", true
+			}
+		case "clear-timeout":
+			if len(args) >= 1 {
+				return "clearTimeout(" + argStrs[0] + ")", true
+			}
+		}
+		return "", false
+
+	case "monaco":
+		switch method {
+		case "init":
+			if len(args) >= 2 {
+				return "(function() { var s = document.createElement('script'); s.src = " + argStrs[0] + " + '/loader.js'; s.onload = function() { require.config({ paths: { vs: " + argStrs[0] + " + '/vs' } }); require(['vs/editor/editor.main'], " + argStrs[1] + "); }; document.head.appendChild(s); })()", true
+			}
+		case "create":
+			if len(args) >= 3 {
+				return "monaco.editor.create(" + argStrs[0] + ", { value: " + argStrs[1] + ", language: " + argStrs[2] + " })", true
+			}
+		case "create-opts":
+			if len(args) >= 2 {
+				return "monaco.editor.create(" + argStrs[0] + ", " + argStrs[1] + ")", true
+			}
+		case "get-value":
+			if len(args) >= 1 {
+				return "(" + argStrs[0] + ").getValue()", true
+			}
+		case "set-value":
+			if len(args) >= 2 {
+				return "(" + argStrs[0] + ").setValue(" + argStrs[1] + ")", true
+			}
+		case "on-change":
+			if len(args) >= 2 {
+				return "(" + argStrs[0] + ").onDidChangeModelContent(" + argStrs[1] + ")", true
+			}
+		case "set-language":
+			if len(args) >= 2 {
+				return "monaco.editor.setModelLanguage((" + argStrs[0] + ").getModel(), " + argStrs[1] + ")", true
+			}
+		case "create-model":
+			if len(args) >= 2 {
+				return "monaco.editor.createModel(" + argStrs[0] + ", " + argStrs[1] + ")", true
+			}
+		case "set-model":
+			if len(args) >= 2 {
+				return "(" + argStrs[0] + ").setModel(" + argStrs[1] + ")", true
+			}
+		case "dispose":
+			if len(args) >= 1 {
+				return "(" + argStrs[0] + ").dispose()", true
+			}
+		case "define-theme":
+			if len(args) >= 2 {
+				return "monaco.editor.defineTheme(" + argStrs[0] + ", " + argStrs[1] + ")", true
+			}
+		case "set-theme":
+			if len(args) >= 1 {
+				return "monaco.editor.setTheme(" + argStrs[0] + ")", true
+			}
+		case "get-model":
+			if len(args) >= 1 {
+				return "(" + argStrs[0] + ").getModel()", true
+			}
+		case "set-readonly":
+			if len(args) >= 2 {
+				return "(" + argStrs[0] + ").updateOptions({ readOnly: " + argStrs[1] + " })", true
+			}
+		case "layout":
+			if len(args) >= 1 {
+				return "(" + argStrs[0] + ").layout()", true
 			}
 		}
 		return "", false

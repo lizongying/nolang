@@ -1,0 +1,32 @@
+; ws-browser.no — Browser WebSocket API declarations (JS backend)
+; Actual mapping is in src/build/js/builtin.go
+#{js}
+
+ws-browser.connect = (url str) (ws str) {
+    ws = ''
+}
+
+ws-browser.on-open = (ws str, cb str) {
+}
+
+ws-browser.on-message = (ws str, cb str) {
+}
+
+ws-browser.on-close = (ws str, cb str) {
+}
+
+ws-browser.on-error = (ws str, cb str) {
+}
+
+ws-browser.send = (ws str, data str) {
+}
+
+ws-browser.send-json = (ws str, obj str) {
+}
+
+ws-browser.close = (ws str) {
+}
+
+ws-browser.ready-state = (ws str) (state i64) {
+    state = 0
+}

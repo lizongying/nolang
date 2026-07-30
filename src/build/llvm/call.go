@@ -2632,7 +2632,6 @@ func (g *Generator) generateCallExpression(sb *strings.Builder, expr *parser.Cal
 	voidSingleTmp := ""
 	voidSingleSp := ""
 	if voidSingleOutput {
-		fmt.Fprintf(os.Stderr, "[DEBUG-VOIDSINGLE] voidSingleOutput triggered for fnName=%s voidSingleOutputType=%s\n", fnName, voidSingleOutputType)
 		g.tmpIdx++
 		voidSingleTmp = fmt.Sprintf("%%vso.tmp.%d", g.tmpIdx)
 		if sb != nil {
@@ -3892,10 +3891,12 @@ func (g *Generator) genForwardFunc(sb *strings.Builder, forwardFunc string, expr
 		}
 		// Get the data pointer - handle both %arr struct and raw [N x i8]* output params
 		var dataPtr string
+		var storeOutParam string // out 參數名（寫入後需標記 __ret_init_bitmap，否則返回時被零填充覆蓋）
 		if ident, ok := args[0].(*parser.Identifier); ok {
 			varName := ident.Value
 			// Check if this is an output parameter with raw array type (e.g. [16]byte)
 			if g.outputParamNames != nil && g.outputParamNames[varName] {
+				storeOutParam = varName
 				// Output params of [N]byte type are passed as [N x i8]* directly
 				dataPtr = g.varAddr(varName)
 				g.tmpIdx++
@@ -3944,6 +3945,10 @@ func (g *Generator) genForwardFunc(sb *strings.Builder, forwardFunc string, expr
 		if sb != nil {
 			sb.WriteString(fmt.Sprintf("%sstore i32 %s, i32* %s\n",
 				g.indent(), valI32, typedPtr))
+		}
+		// 寫入 out 參數後標記已初始化，避免 return 路徑的延遲零填充覆蓋寫入內容
+		if storeOutParam != "" && sb != nil {
+			g.emitSetRetInitBit(sb, storeOutParam)
 		}
 		return "0"
 	}

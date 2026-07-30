@@ -32,8 +32,11 @@ func MatchesTargetPlatform(platformKeys []string, goos, goarch string) bool {
 }
 
 // ResolveModuleCalls 將 program 中對已導入模組的呼叫改寫為完整限定名。
-func ResolveModuleCalls(program *parser.Program, importedModules []string) {
-	resolveModuleCalls(program, importedModules)
+// prefixedFns（可為 nil）的 key 為 "module.fn"：多模組同名頂層函數經
+// prefixCollidingFunctions 改名後的完整名。命中時 module.fn() 呼叫改寫為
+// 扁平帶點 Identifier（與方法呼叫同通道），而非降級為裸名。
+func ResolveModuleCalls(program *parser.Program, importedModules []string, prefixedFns map[string]bool) {
+	resolveModuleCalls(program, importedModules, prefixedFns)
 }
 
 // ResolveMethodCalls 依 typeOwner 表將方法呼叫改寫至所屬模組。

@@ -58,7 +58,7 @@ func main() {
 		initProject()
 	case "new":
 		if len(os.Args) < 3 {
-			fmt.Println("Usage: no new <project-name>")
+			fmt.Println("Usage: no new <package-name>")
 			return
 		}
 		newProject(os.Args[2])
@@ -311,32 +311,23 @@ func initProject() {
 		return
 	}
 
-	projectName := filepath.Base(dir)
+	// `no init` only defines the workspace: it creates workspace.jsonc (if missing)
+	// and does NOT generate a mod.jsonc. Packages are added later via `no new`.
+	createWorkspaceFile()
 
-	config := ProjectConfig{
-		Name:        projectName,
-		Version:     "0.1.0",
-		Description: "A new Nolang project",
-		Dependencies: map[string]string{
-			"fmt": "*",
-		},
-		Main: "main.no",
-		Compiler: CompilerConfig{
-			Version: "0.1.0",
-		},
-	}
-
-	createConfigFile(config)
-	createMainFile()
-
-	fmt.Printf("Project initialized in %s\n", dir)
+	fmt.Printf("Workspace initialized in %s\n", dir)
 	fmt.Println("")
 	fmt.Println("Files created:")
-	fmt.Println("  - mod.jsonc (project configuration)")
-	fmt.Println("  - main.no (main entry file)")
+	fmt.Println("  - workspace.jsonc (workspace definition)")
+	fmt.Println("")
+	fmt.Println("Next: create a package with `no new <name>`")
 }
 
 func newProject(name string) {
+	// Register this package in the workspace (defined by `no init`) before changing
+	// into the new package directory. The package directory itself is created next.
+	registerPackageInWorkspace(name)
+
 	err := os.MkdirAll(name, 0755)
 	if err != nil {
 		fmt.Printf("Error creating directory: %v\n", err)
@@ -352,7 +343,7 @@ func newProject(name string) {
 	config := ProjectConfig{
 		Name:         name,
 		Version:      "0.1.0",
-		Description:  "A new Nolang project",
+		Description:  "A new Nolang package",
 		Dependencies: map[string]string{},
 		Main:         "main.no",
 		Compiler: CompilerConfig{
@@ -366,14 +357,16 @@ func newProject(name string) {
 	createLibFile()
 	createTestDirectory()
 
-	fmt.Printf("Project created: %s\n", name)
+	fmt.Printf("Package created: %s\n", name)
 	fmt.Println("")
 	fmt.Println("Files created:")
-	fmt.Println("  - mod.jsonc (project configuration)")
+	fmt.Println("  - mod.jsonc (package configuration)")
 	fmt.Println("  - main.no (main entry file)")
 	fmt.Println("  - lib.no (library export file)")
 	fmt.Println("  - src/ (source directory)")
 	fmt.Println("  - tests/ (test directory)")
+	fmt.Println("")
+	fmt.Printf("Registered '%s' in workspace.jsonc\n", name)
 }
 
 func createConfigFile(config ProjectConfig) {
@@ -432,6 +425,180 @@ print('Hello, Nolang!')
 	if err != nil {
 		fmt.Printf("Error writing main file: %v\n", err)
 	}
+}
+
+// createWorkspaceFile generates a workspace.jsonc in the current directory if one
+// does not already exist. A freshly initialized workspace starts empty (no packages
+// yet); packages are added via `no new`, which also registers them here. An existing
+// workspace.jsonc is never overwritten.
+func createWorkspaceFile() {
+	wsFile := "workspace.jsonc"
+	if _, err := os.Stat(wsFile); err == nil {
+		// workspace.jsonc already exists; keep the user's configuration intact.
+		return
+	}
+	content := `{
+}
+`
+	if err := os.WriteFile(wsFile, []byte(content), 0644); err != nil {
+		fmt.Printf("Error writing workspace file: %v\n", err)
+	}
+}
+
+// registerPackageInWorkspace records the new package in the nearest workspace.jsonc
+// (searched upward from the current directory). If no workspace.jsonc is found, the
+// package is created standalone (backward compatible with the old single-package layout).
+func registerPackageInWorkspace(name string) {
+	cwd, err := os.Getwd()
+	if err != nil {
+		return
+	}
+	wsRoot, ok := findWorkspaceRoot(cwd)
+	if !ok {
+		return
+	}
+
+	wsFile := filepath.Join(wsRoot, "workspace.jsonc")
+	ws := map[string]string{}
+	if raw, err := os.ReadFile(wsFile); err == nil && len(raw) > 0 {
+		cleaned := stripJSONCComments(raw)
+		_ = json.Unmarshal(cleaned, &ws)
+	}
+
+	rel, err := filepath.Rel(wsRoot, filepath.Join(cwd, name))
+	if err != nil {
+		rel = name
+	}
+	ws[name] = "./" + rel
+
+	out, err := json.MarshalIndent(ws, "", "  ")
+	if err != nil {
+		fmt.Printf("Error serializing workspace file: %v\n", err)
+		return
+	}
+	if err := os.WriteFile(wsFile, append(out, '\n'), 0644); err != nil {
+		fmt.Printf("Error writing workspace file: %v\n", err)
+	}
+}
+
+// findWorkspaceRoot walks up from start looking for a workspace.jsonc file.
+func findWorkspaceRoot(start string) (string, bool) {
+	dir := start
+	for {
+		if _, err := os.Stat(filepath.Join(dir, "workspace.jsonc")); err == nil {
+			return dir, true
+		}
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			break
+		}
+		dir = parent
+	}
+	return "", false
+}
+
+// stripJSONCComments removes // and /* */ comments so workspace.jsonc can be parsed
+// even if the user added comments. String contents are respected.
+func stripJSONCComments(data []byte) []byte {
+	out := make([]byte, 0, len(data))
+	inStr, inLine, inBlock := false, false, false
+	for i := 0; i < len(data); i++ {
+		c := data[i]
+		switch {
+		case inLine:
+			if c == '\n' {
+				inLine = false
+				out = append(out, c)
+			}
+		case inBlock:
+			if c == '*' && i+1 < len(data) && data[i+1] == '/' {
+				inBlock = false
+				i++
+			}
+		case inStr:
+			out = append(out, c)
+			if c == '\\' && i+1 < len(data) {
+				out = append(out, data[i+1])
+				i++
+			} else if c == '"' {
+				inStr = false
+			}
+		default:
+			if c == '"' {
+				inStr = true
+				out = append(out, c)
+			} else if c == '/' && i+1 < len(data) && data[i+1] == '/' {
+				inLine = true
+				i++
+			} else if c == '/' && i+1 < len(data) && data[i+1] == '*' {
+				inBlock = true
+				i++
+			} else {
+				out = append(out, c)
+			}
+		}
+	}
+	return out
+}
+
+// resolveRunTarget interprets the `no run` positional argument as one of:
+//  1. an existing .no file                 -> run that file
+//  2. an existing directory                -> run its main.no
+//  3. a package name in the nearest workspace.jsonc -> run that package's main.no
+//
+// An empty argument (or ".") defaults to the current directory (folder semantics).
+// It returns the path to the entry .no file to build & run, or an error if the
+// argument does not match any of the three forms.
+func resolveRunTarget(arg string) (string, error) {
+	// 無參數或 "."：目前目錄（資料夾語意）。
+	if arg == "" || arg == "." {
+		if _, werr := os.Stat("workspace.jsonc"); werr == nil {
+			if _, merr := os.Stat("main.no"); merr != nil {
+				return "", fmt.Errorf("current directory is a workspace root with no main.no; run a package with: no run <package>")
+			}
+		}
+		return ".", nil
+	}
+
+	// 1. 已存在的檔案
+	if info, err := os.Stat(arg); err == nil && !info.IsDir() {
+		return arg, nil
+	}
+
+	// 2. 已存在的資料夾 -> 其 main.no
+	if info, err := os.Stat(arg); err == nil && info.IsDir() {
+		mainPath := filepath.Join(arg, "main.no")
+		if _, err := os.Stat(mainPath); err != nil {
+			return "", fmt.Errorf("main.no not found in %s", arg)
+		}
+		return mainPath, nil
+	}
+
+	// 3. 最近 workspace.jsonc 中註冊的套件名稱
+	if cwd, err := os.Getwd(); err == nil {
+		if wsRoot, ok := findWorkspaceRoot(cwd); ok {
+			wsFile := filepath.Join(wsRoot, "workspace.jsonc")
+			if raw, rerr := os.ReadFile(wsFile); rerr == nil && len(raw) > 0 {
+				ws := map[string]string{}
+				cleaned := stripJSONCComments(raw)
+				if _ = json.Unmarshal(cleaned, &ws); len(ws) > 0 {
+					if rel, found := ws[arg]; found {
+						dir := rel
+						if !filepath.IsAbs(dir) {
+							dir = filepath.Join(wsRoot, rel)
+						}
+						mainPath := filepath.Join(dir, "main.no")
+						if _, serr := os.Stat(mainPath); serr != nil {
+							return "", fmt.Errorf("main.no not found in package %q (%s)", arg, dir)
+						}
+						return mainPath, nil
+					}
+				}
+			}
+		}
+	}
+
+	return "", fmt.Errorf("no such file, directory, or package: %s", arg)
 }
 
 func createGitIgnore() {
@@ -523,7 +690,7 @@ func addDependency(name string) {
 func loadProjectConfig() (*ProjectConfig, error) {
 	data, err := os.ReadFile("mod.jsonc")
 	if err != nil {
-		return nil, fmt.Errorf("mod.jsonc not found. Run 'no init' first")
+		return nil, fmt.Errorf("mod.jsonc not found. Run 'no new <name>' to create a package, or cd into a package directory")
 	}
 	cleaned := nbuild.StripJSONC(data)
 	var config ProjectConfig
@@ -609,7 +776,7 @@ func syncDependencies() {
 		return
 	}
 	if pkg == nil {
-		fmt.Println("Error: mod.jsonc not found. Run 'no init' first")
+		fmt.Println("Error: mod.jsonc not found. Run 'no new <name>' to create a package, or cd into a package directory")
 		return
 	}
 	if len(pkg.Dependencies) == 0 {
@@ -1201,10 +1368,14 @@ func runCommand(args []string) {
 	jsBackend := fs.Bool("js", false, "Use JS backend (emit JavaScript, run with node)")
 	browserMode := fs.Bool("browser", false, "Open in browser (requires --js)")
 	fs.Usage = func() {
-		fmt.Println("Usage: no run [<file|dir>]")
+		fmt.Println("Usage: no run [<package|dir|file>]")
 		fmt.Println("")
 		fmt.Println("Build and run a Nolang project.")
-		fmt.Println("If directory, requires main.no (entry point).")
+		fmt.Println("The argument is resolved in this order:")
+		fmt.Println("  1. an existing .no file        -> run that file")
+		fmt.Println("  2. an existing directory       -> run its main.no")
+		fmt.Println("  3. a package name in workspace  -> run that package's main.no")
+		fmt.Println("With no argument, runs main.no in the current directory.")
 		fmt.Println("")
 		fmt.Println("Flags:")
 		fs.PrintDefaults()
@@ -1215,9 +1386,11 @@ func runCommand(args []string) {
 		fmt.Println("Use --js --browser to emit browser JS + HTML and open in the default browser.")
 		fmt.Println("")
 		fmt.Println("Examples:")
-		fmt.Println("  no run                     build and run main.no in current dir")
-		fmt.Println("  no run main.no             build and run main.no")
-		fmt.Println("  no run -cc zig main.no     build and run with Zig compiler")
+		fmt.Println("  no run                       build and run main.no in current dir")
+		fmt.Println("  no run foo                   run package 'foo' (from workspace.jsonc)")
+		fmt.Println("  no run ./foo                 run the ./foo directory's main.no")
+		fmt.Println("  no run main.no               build and run main.no")
+		fmt.Println("  no run -cc zig main.no       build and run with Zig compiler")
 		fmt.Println("  no run -target wasm32-wasi main.no")
 		fmt.Println("  no run --wasm-direct main.no  build via Direct WASM backend then run with wasmtime (if available)")
 		fmt.Println("  no run --js main.no            build via JS backend then run with node")
@@ -1225,19 +1398,16 @@ func runCommand(args []string) {
 	}
 	_ = fs.Parse(args)
 
-	inputPath := "."
+	// 解析執行目標：包名（來自最近 workspace.jsonc）/ 資料夾 / 檔案。
+	// 無參數時預設為目前目錄（資料夾語意，執行其中的 main.no）。
+	var runArg string
 	if len(fs.Args()) > 0 {
-		inputPath = fs.Args()[0]
+		runArg = fs.Args()[0]
 	}
-
-	// 如果是文件夾，驗證 main.no 存在
-	info, err := os.Stat(inputPath)
-	if err == nil && info.IsDir() {
-		mainPath := filepath.Join(inputPath, "main.no")
-		if _, err := os.Stat(mainPath); err != nil {
-			fmt.Fprintf(os.Stderr, "Error: main.no not found in %s\n", inputPath)
-			os.Exit(1)
-		}
+	inputPath, rerr := resolveRunTarget(runArg)
+	if rerr != nil {
+		fmt.Fprintf(os.Stderr, "Error: %v\n", rerr)
+		os.Exit(1)
 	}
 
 	tmpDir, err := os.MkdirTemp("", "nolang-run")

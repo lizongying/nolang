@@ -121,7 +121,7 @@ lcm = (a int, b int) (r int) {
         r = 0
         return
     }
-    g = bigint.gcd(a, b)
+    g = gcd(a, b)
     r = a / g * b
 }
 

@@ -5,8 +5,8 @@
 storage.set-item = (key str, val str) {
 }
 
-storage.get-item = (key str) (val str) {
-    val = ''
+storage.get-item = (key str) (val ?str) {
+    val = nil
 }
 
 storage.remove-item = (key str) {

@@ -2793,6 +2793,25 @@ func (g *Generator) varLLVMType(stmt *parser.LetStatement) string {
 							return t
 						}
 					}
+					// User-defined functions use void + by-reference convention:
+					// funcRetTypes is "void" but funcResultLLVMType holds the semantic type.
+					// For single-result functions (e.g. tls.server-accept → ?server-conn),
+					// resolve the LLVM return type from funcResultLLVMType.
+					// Without this, module-prefixed option-returning calls default to i64,
+					// causing type mismatches when the option value is used.
+					if g.funcNumResults != nil {
+						if n, ok := g.funcNumResults[fullName]; ok && n == 1 {
+							if g.funcResultLLVMType != nil {
+								if ts, ok := g.funcResultLLVMType[fullName]; ok && len(ts) == 1 {
+									retType := ts[0]
+									if retType == "i1" {
+										retType = "i64"
+									}
+									return retType
+								}
+							}
+						}
+					}
 					// Then check builtins (strip module prefix)
 					if m := builtin.FindBuiltinMethod(dot.Property); m != nil && len(m.Return) > 0 {
 						if m.Return[0] == parser.TypeF64 {
@@ -3161,6 +3180,10 @@ func (g *Generator) inferOptionInnerType(stmt *parser.LetStatement) string {
 				if recvType, ok := g.varTypes[recv.Value]; ok {
 					srcType := strings.TrimPrefix(recvType, "%")
 					fnName = srcType + "." + dot.Property
+				} else {
+					// Receiver is not a variable → module-prefixed call
+					// (e.g. tls.server-accept → fnName = "tls.server-accept")
+					fnName = recv.Value + "." + dot.Property
 				}
 			}
 			if _, ok := dot.Receiver.(*parser.StringLiteral); ok {
@@ -4961,6 +4984,10 @@ func (g *Generator) generateLet(sb *strings.Builder, stmt *parser.LetStatement) 
 							if recvType, ok := g.varTypes[recv.Value]; ok {
 								srcType := strings.TrimPrefix(recvType, "%")
 								fnName = srcType + "." + dot.Property
+							} else {
+								// Receiver is not a variable → module-prefixed call
+								// (e.g. tls.server-accept → fnName = "tls.server-accept")
+								fnName = recv.Value + "." + dot.Property
 							}
 						}
 						// Also try string literal receiver

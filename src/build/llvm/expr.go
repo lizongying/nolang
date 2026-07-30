@@ -5316,14 +5316,16 @@ func (g *Generator) getStrPtr(sb *strings.Builder, expr parser.Expression) strin
 	// extractStrLen/extractStrDataPtr 需要的是 %str-long* 指標，而非載入的值。
 	val := g.generateExprWithSB(sb, expr)
 	if val == "" {
-		// Debug: identify which expression produces empty value in string context
-		exprStr := ""
-		if ce, ok := expr.(*parser.CallExpression); ok {
-			exprStr = fmt.Sprintf("CallExpression fn=%v args=%d", ce.Function, len(ce.Arguments))
-		} else {
-			exprStr = fmt.Sprintf("%T: %v", expr, expr)
+		if os.Getenv("NOLANG_DEBUG_STRPTR") != "" {
+			// Debug: identify which expression produces empty value in string context
+			exprStr := ""
+			if ce, ok := expr.(*parser.CallExpression); ok {
+				exprStr = fmt.Sprintf("CallExpression fn=%v args=%d", ce.Function, len(ce.Arguments))
+			} else {
+				exprStr = fmt.Sprintf("%T: %v", expr, expr)
+			}
+			fmt.Fprintf(os.Stderr, "[debug-getStrPtr] empty val from expr: %s\n", exprStr)
 		}
-		fmt.Fprintf(os.Stderr, "[debug-getStrPtr] empty val from expr: %s\n", exprStr)
 		return val
 	}
 	if strings.HasPrefix(val, "@") {

@@ -226,6 +226,256 @@ func prefixMethodNames(stmts []parser.Statement, typeOwner map[string]string) {
 	}
 }
 
+// prefixCollidingFunctions renames module-level top-level functions whose
+// bare name collides with another module's (or the main program's) top-level
+// function, giving them a module prefix: `connect` → `proxy.connect`.
+//
+// 背景：f9eede0 將標準庫頂層函數改為短名（http2-connect → connect），多個
+// 模組合併到同一命名空間後產生大量同名函數（connect×4、get×5、dial×4…），
+// resolveModuleCalls 將 `proxy.connect()` 改寫為裸名 `connect()` 後，codegen
+// 按名查找會解析到錯誤的定義（如 http2 的 connect），生成型別錯誤的 IR。
+//
+// 設計原則（與型別的 typeOwner 機制對稱，但只處理衝突名）：
+//   - 唯一的裸名保持不變 —— codegen 內部按裸名合成大量 std 呼叫
+//     （@fmt-int、@fmt-str 等），全量加前綴會破壞這些內建通道。
+//   - 主程序函數永不改名（stmtOwner 無記錄 → owner 為空），只有模組側的
+//     衝突定義改為 module.fn。主程序與模組同名時，模組側讓位。
+//   - 改名後的呼叫方式與方法一致：扁平帶點 Identifier（"proxy.connect"），
+//     codegen 原生支援帶點函數名。
+//
+// 參數 stmtOwner 記錄 merged 中每條模組語句的來源模組短名。
+// 返回值 prefixedFns 的 key 為 "module.fn"，供 resolveModuleCalls 將
+// `module.fn()` DotExpression 呼叫改寫為扁平帶點 Identifier（而非裸名）。
+//
+// 必須在 prefixMethodNames 之後執行：若先把 `join` 改為 `path.join`，
+// prefixMethodNames 會把它誤認成 struct `path` 的方法再改成 `path.path.join`。
+func prefixCollidingFunctions(merged *parser.Program, stmtOwner map[parser.Statement]string) map[string]bool {
+	// --- Pass 1: count bare top-level function names (module + main) ---
+	type fnDef struct {
+		stmt  parser.Statement
+		name  string
+		owner string // "" = main program
+	}
+	var defs []fnDef
+	counts := make(map[string]int)
+	for _, stmt := range merged.Statements {
+		switch s := stmt.(type) {
+		case *parser.FunctionDefinition:
+			if s.IsMethodDef || strings.Contains(s.Name, ".") {
+				continue
+			}
+			defs = append(defs, fnDef{stmt, s.Name, stmtOwner[stmt]})
+			counts[s.Name]++
+		case *parser.LetStatement:
+			if s.Name == nil || strings.Contains(s.Name.Value, ".") {
+				continue
+			}
+			if _, isFn := s.Value.(*parser.FunctionLiteral); !isFn {
+				continue
+			}
+			defs = append(defs, fnDef{stmt, s.Name.Value, stmtOwner[stmt]})
+			counts[s.Name.Value]++
+		}
+	}
+
+	// --- Pass 2: rename colliding module-owned definitions ---
+	prefixedFns := make(map[string]bool)
+	renameByModule := make(map[string]map[string]string) // module → bare → full
+	for _, d := range defs {
+		if counts[d.name] <= 1 || d.owner == "" {
+			continue
+		}
+		full := d.owner + "." + d.name
+		switch s := d.stmt.(type) {
+		case *parser.FunctionDefinition:
+			s.Name = full
+		case *parser.LetStatement:
+			s.Name.Value = full
+		}
+		prefixedFns[full] = true
+		if renameByModule[d.owner] == nil {
+			renameByModule[d.owner] = make(map[string]string)
+		}
+		renameByModule[d.owner][d.name] = full
+	}
+	if len(prefixedFns) == 0 {
+		return prefixedFns
+	}
+
+	// --- Pass 3: rewrite in-module bare call sites ---
+	// 模組 M 內部對本模組被改名函數的裸名呼叫 `connect(...)` 改寫為
+	// `M.connect(...)`（扁平帶點 Identifier）。模組內裸呼叫必屬本模組
+	// （跨模組呼叫依語言規範必須帶模組前綴），無歧義。
+	for _, stmt := range merged.Statements {
+		owner := stmtOwner[stmt]
+		if owner == "" {
+			continue
+		}
+		rename := renameByModule[owner]
+		if len(rename) == 0 {
+			continue
+		}
+		renameBareFnRefsInStmt(stmt, rename)
+	}
+	return prefixedFns
+}
+
+// renameBareFnRefsInStmt rewrites bare function-call references
+// (`fn(...)` where fn ∈ rename) to the module-prefixed flat identifier.
+func renameBareFnRefsInStmt(stmt parser.Statement, rename map[string]string) {
+	if stmt == nil {
+		return
+	}
+	switch s := stmt.(type) {
+	case *parser.FunctionDefinition:
+		if s.Body != nil {
+			for _, bs := range s.Body.Statements {
+				renameBareFnRefsInStmt(bs, rename)
+			}
+		}
+	case *parser.LetStatement:
+		if s.Value != nil {
+			renameBareFnRefsInExpr(s.Value, rename)
+		}
+	case *parser.MultiAssignStatement:
+		if s.Value != nil {
+			renameBareFnRefsInExpr(s.Value, rename)
+		}
+		for _, tgt := range s.Targets {
+			renameBareFnRefsInExpr(tgt, rename)
+		}
+	case *parser.ExpressionStatement:
+		if s.Expression != nil {
+			renameBareFnRefsInExpr(s.Expression, rename)
+		}
+	case *parser.ForStatement:
+		if s.Init != nil {
+			renameBareFnRefsInStmt(s.Init, rename)
+		}
+		if s.Condition != nil {
+			renameBareFnRefsInExpr(s.Condition, rename)
+		}
+		if s.Update != nil {
+			renameBareFnRefsInStmt(s.Update, rename)
+		}
+		if s.IterRange != nil {
+			if s.IterRange.Range != nil {
+				renameBareFnRefsInExpr(s.IterRange.Range, rename)
+			}
+			if s.IterRange.RangeExpr != nil {
+				renameBareFnRefsInExpr(s.IterRange.RangeExpr, rename)
+			}
+		}
+		if s.CountExpr != nil {
+			renameBareFnRefsInExpr(s.CountExpr, rename)
+		}
+		if s.Body != nil {
+			for _, bs := range s.Body.Statements {
+				renameBareFnRefsInStmt(bs, rename)
+			}
+		}
+	case *parser.BlockStatement:
+		for _, bs := range s.Statements {
+			renameBareFnRefsInStmt(bs, rename)
+		}
+	case *parser.ReturnStatement:
+		if s.ReturnValue != nil {
+			renameBareFnRefsInExpr(s.ReturnValue, rename)
+		}
+	}
+}
+
+func renameBareFnRefsInExpr(expr parser.Expression, rename map[string]string) {
+	if expr == nil {
+		return
+	}
+	switch e := expr.(type) {
+	case *parser.CallExpression:
+		// 只改寫呼叫位置的裸名 Identifier；一般值位置的函數引用
+		// （函數作為值傳遞）不改寫，避免誤傷同名局部變數。
+		if ident, ok := e.Function.(*parser.Identifier); ok {
+			if full, hit := rename[ident.Value]; hit {
+				ident.Value = full
+				ident.Token.Literal = full
+			}
+		} else {
+			renameBareFnRefsInExpr(e.Function, rename)
+		}
+		for _, arg := range e.Arguments {
+			renameBareFnRefsInExpr(arg, rename)
+		}
+	case *parser.PrefixExpression:
+		renameBareFnRefsInExpr(e.Right, rename)
+	case *parser.InfixExpression:
+		renameBareFnRefsInExpr(e.Left, rename)
+		renameBareFnRefsInExpr(e.Right, rename)
+	case *parser.ConditionalExpression:
+		renameBareFnRefsInExpr(e.Condition, rename)
+		renameBareFnRefsInExpr(e.Consequence, rename)
+		renameBareFnRefsInExpr(e.Alternative, rename)
+	case *parser.GroupedExpression:
+		renameBareFnRefsInExpr(e.Expression, rename)
+	case *parser.DotExpression:
+		renameBareFnRefsInExpr(e.Receiver, rename)
+	case *parser.IndexExpression:
+		renameBareFnRefsInExpr(e.Left, rename)
+		renameBareFnRefsInExpr(e.Index, rename)
+	case *parser.SliceExpression:
+		renameBareFnRefsInExpr(e.Left, rename)
+		if e.Range.Start != nil {
+			renameBareFnRefsInExpr(e.Range.Start, rename)
+		}
+		if e.Range.End != nil {
+			renameBareFnRefsInExpr(e.Range.End, rename)
+		}
+	case *parser.AssignExpression:
+		renameBareFnRefsInExpr(e.Left, rename)
+		renameBareFnRefsInExpr(e.Value, rename)
+	case *parser.RangeExpression:
+		renameBareFnRefsInExpr(e.Start, rename)
+		renameBareFnRefsInExpr(e.End, rename)
+	case *parser.IfExpression:
+		renameBareFnRefsInExpr(e.Condition, rename)
+		if e.Consequence != nil {
+			for _, bs := range e.Consequence.Statements {
+				renameBareFnRefsInStmt(bs, rename)
+			}
+		}
+		if e.Alternative != nil {
+			for _, bs := range e.Alternative.Statements {
+				renameBareFnRefsInStmt(bs, rename)
+			}
+		}
+	case *parser.FunctionLiteral:
+		if e.Body != nil {
+			for _, bs := range e.Body.Statements {
+				renameBareFnRefsInStmt(bs, rename)
+			}
+		}
+	case *parser.StructLiteral:
+		for _, f := range e.Fields {
+			if f.Value != nil {
+				renameBareFnRefsInExpr(f.Value, rename)
+			}
+		}
+	case *parser.CastExpression:
+		renameBareFnRefsInExpr(e.Expr, rename)
+	case *parser.RunExpression:
+		renameBareFnRefsInExpr(e.Call, rename)
+	case *parser.AwaitExpression:
+		renameBareFnRefsInExpr(e.Right, rename)
+	case *parser.MapLiteral:
+		for _, pair := range e.Pairs {
+			renameBareFnRefsInExpr(pair.Key, rename)
+			renameBareFnRefsInExpr(pair.Value, rename)
+		}
+	case *parser.ArrayLiteral:
+		for _, elem := range e.Elements {
+			renameBareFnRefsInExpr(elem, rename)
+		}
+	}
+}
+
 // rewriteTypeRefs walks every statement in *stmts* and rewrites type
 // references so that bare names registered in typeOwner are replaced by
 // `module.name`.  This covers:

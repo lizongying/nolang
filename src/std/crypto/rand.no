@@ -18,12 +18,14 @@ rand = (state i64) (new-state i64, r i64) {
 
 ; rand-str: 產生指定長度的隨機字母數字字串
 ; state: 輸入/輸出狀態變數
-; s: 輸出字串緩衝區（長度至少 n）
 ; n: 產生的字元數
+; s: 輸出字串（長度 n）
 ; chars: 可用字元集 (A-Z a-z 0-9)
-rand-str = (state i64, n i64, s str) {
+rand-str = (state i64, n i64) (s str) {
     chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789'
+    r = 0
     i <- [0..n): {
+        r = 0
         state, r = rand(state)
         s[i] = chars[r % 62]
     }

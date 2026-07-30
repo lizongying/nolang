@@ -7,6 +7,13 @@ import (
 	"github.com/lizongying/nolang/parser"
 )
 
+// jsIdent converts a Nolang identifier to a valid JS identifier.
+// Nolang allows hyphens in identifiers (e.g. my-var, WS-CONN); JS does not.
+// Hyphens are replaced with underscores (e.g. my_var, WS_CONN).
+func jsIdent(name string) string {
+	return strings.ReplaceAll(name, "-", "_")
+}
+
 // generateExpression dispatches an expression to its JS codegen handler.
 // Returns the generated JS string; does NOT write to g.out.
 func (g *Generator) generateExpression(expr parser.Expression) string {
@@ -34,7 +41,7 @@ func (g *Generator) generateExpression(expr parser.Expression) string {
 	case *parser.RegexLiteral:
 		return "/" + e.Pattern + "/" + e.Flags
 	case *parser.Identifier:
-		return e.Value
+		return jsIdent(e.Value)
 	case *parser.GroupedExpression:
 		return "(" + g.generateExpression(e.Expression) + ")"
 	case *parser.PrefixExpression:
@@ -104,19 +111,19 @@ func (g *Generator) generateExpression(expr parser.Expression) string {
 
 // generateInfixExpression handles infix operators with type-erasure string concat detection.
 //
-// CRITICAL: Nolang uses `-` for STRING CONCATENATION. Since we do type erasure, we detect
-// string operands (StringLiteral/CharLiteral) at codegen time and emit `+` instead of `-`.
-// For variables, we can't tell, so we keep `-`. This is a known v1 limitation.
+// CRITICAL: Nolang uses `-` for STRING CONCATENATION. Since we do type erasure, we cannot
+// reliably distinguish string concat from numeric subtraction at compile time.
+// We use the __nsub runtime helper which checks types at runtime:
+//   - both numbers → subtraction (a - b)
+//   - otherwise    → string concatenation (String(a) + String(b))
 func (g *Generator) generateInfixExpression(e *parser.InfixExpression) string {
 	left := g.generateExpression(e.Left)
 	right := g.generateExpression(e.Right)
 	op := e.Operator
 
-	// String concatenation detection: Nolang `-` becomes JS `+` when either side is a string/char literal.
+	// Nolang `-` → JS __nsub() runtime helper (handles both string concat and numeric subtraction)
 	if op == "-" {
-		if isStringLikeExpr(e.Left) || isStringLikeExpr(e.Right) {
-			op = "+"
-		}
+		return "__nsub(" + left + ", " + right + ")"
 	}
 
 	// &^ (bit clear) — JS has no direct equivalent; emit as a runtime expression: (left & ~right)
@@ -125,15 +132,6 @@ func (g *Generator) generateInfixExpression(e *parser.InfixExpression) string {
 	}
 
 	return "(" + left + " " + op + " " + right + ")"
-}
-
-// isStringLikeExpr reports whether the expression is a StringLiteral or CharLiteral.
-func isStringLikeExpr(e parser.Expression) bool {
-	switch e.(type) {
-	case *parser.StringLiteral, *parser.CharLiteral:
-		return true
-	}
-	return false
 }
 
 // generateCallExpression handles function/method/module calls.
@@ -148,7 +146,7 @@ func (g *Generator) generateCallExpression(ce *parser.CallExpression) string {
 		}
 		// Regular function call: name(args)
 		args := g.joinExpressions(ce.Arguments)
-		return ident.Value + "(" + args + ")"
+		return jsIdent(ident.Value) + "(" + args + ")"
 	}
 
 	// DotExpression: method call (obj.method(args)) or module call (math.sin(x))
@@ -164,7 +162,7 @@ func (g *Generator) generateCallExpression(ce *parser.CallExpression) string {
 		// Regular method/module call: receiver.property(args)
 		receiver := g.generateExpression(de.Receiver)
 		args := g.joinExpressions(ce.Arguments)
-		return receiver + "." + de.Property + "(" + args + ")"
+		return receiver + "." + jsIdent(de.Property) + "(" + args + ")"
 	}
 
 	// Generic call: function(args)
@@ -193,7 +191,11 @@ func (g *Generator) generateDotExpression(de *parser.DotExpression) string {
 			}
 		}
 	}
-	return g.generateExpression(de.Receiver) + "." + de.Property
+	// Special property: .len → .length (Nolang strings/arrays use .len, JS uses .length)
+	if de.Property == "len" {
+		return g.generateExpression(de.Receiver) + ".length"
+	}
+	return g.generateExpression(de.Receiver) + "." + jsIdent(de.Property)
 }
 
 // generateBrowserMethodCall maps browser-style method calls on values
@@ -256,6 +258,71 @@ func (g *Generator) generateBrowserMethodCall(de *parser.DotExpression, args []p
 			return "(" + receiver + ").removeEventListener(" + argStrs[0] + ", " + argStrs[1] + ")", true
 		}
 
+	// String methods (on variables — Nolang uses method syntax, JS uses different names)
+	case "index":
+		if len(argStrs) >= 1 {
+			return "(" + receiver + ").indexOf(" + argStrs[0] + ")", true
+		}
+	case "last-index":
+		if len(argStrs) >= 1 {
+			return "(" + receiver + ").lastIndexOf(" + argStrs[0] + ")", true
+		}
+	case "to-lower":
+		return "(" + receiver + ").toLowerCase()", true
+	case "to-upper":
+		return "(" + receiver + ").toUpperCase()", true
+	case "trim":
+		return "(" + receiver + ").trim()", true
+	case "contains":
+		if len(argStrs) >= 1 {
+			return "(" + receiver + ").includes(" + argStrs[0] + ")", true
+		}
+	case "starts-with":
+		if len(argStrs) >= 1 {
+			return "(" + receiver + ").startsWith(" + argStrs[0] + ")", true
+		}
+	case "ends-with":
+		if len(argStrs) >= 1 {
+			return "(" + receiver + ").endsWith(" + argStrs[0] + ")", true
+		}
+	case "replace":
+		if len(argStrs) >= 2 {
+			return "(" + receiver + ").replaceAll(" + argStrs[0] + ", " + argStrs[1] + ")", true
+		}
+	case "split":
+		if len(argStrs) >= 1 {
+			return "(" + receiver + ").split(" + argStrs[0] + ")", true
+		}
+	case "char-at":
+		if len(argStrs) >= 1 {
+			return "(" + receiver + ").charCodeAt(" + argStrs[0] + ")", true
+		}
+	case "char-to-str":
+		if len(argStrs) >= 1 {
+			return "String.fromCharCode(" + argStrs[0] + ")", true
+		}
+	case "slice":
+		if len(argStrs) >= 2 {
+			return "(" + receiver + ").slice(" + argStrs[0] + ", " + argStrs[1] + ")", true
+		}
+		if len(argStrs) >= 1 {
+			return "(" + receiver + ").slice(" + argStrs[0] + ")", true
+		}
+	case "repeat":
+		if len(argStrs) >= 1 {
+			return "(" + receiver + ").repeat(" + argStrs[0] + ")", true
+		}
+
+	// Type conversion methods
+	case "to-str":
+		return "String(" + receiver + ")", true
+	case "to-i64":
+		return "parseInt(" + receiver + ")", true
+	case "to-f64":
+		return "parseFloat(" + receiver + ")", true
+	case "to-bytes":
+		return "new TextEncoder().encode(" + receiver + ")", true
+
 	// Canvas context methods
 	case "fill-rect":
 		return "(" + receiver + ").fillRect(" + joinedArgs + ")", true
@@ -281,6 +348,80 @@ func (g *Generator) generateBrowserMethodCall(de *parser.DotExpression, args []p
 		return "(" + receiver + ").fill()", true
 	case "arc":
 		return "(" + receiver + ").arc(" + joinedArgs + ")", true
+
+	// CSS class methods
+	case "set-class":
+		if len(argStrs) >= 1 {
+			return "(" + receiver + ").className = " + argStrs[0], true
+		}
+	case "add-class":
+		if len(argStrs) >= 1 {
+			return "(" + receiver + ").classList.add(" + argStrs[0] + ")", true
+		}
+	case "remove-class":
+		if len(argStrs) >= 1 {
+			return "(" + receiver + ").classList.remove(" + argStrs[0] + ")", true
+		}
+	case "toggle-class":
+		if len(argStrs) >= 1 {
+			return "(" + receiver + ").classList.toggle(" + argStrs[0] + ")", true
+		}
+
+	// Element properties
+	case "set-id":
+		if len(argStrs) >= 1 {
+			return "(" + receiver + ").id = " + argStrs[0], true
+		}
+	case "set-value":
+		if len(argStrs) >= 1 {
+			return "(" + receiver + ").value = " + argStrs[0], true
+		}
+	case "get-value":
+		return "(" + receiver + ").value", true
+	case "set-placeholder":
+		if len(argStrs) >= 1 {
+			return "(" + receiver + ").placeholder = " + argStrs[0], true
+		}
+	case "get-parent":
+		return "(" + receiver + ").parentNode", true
+	case "focus":
+		return "(" + receiver + ").focus()", true
+	case "blur":
+		return "(" + receiver + ").blur()", true
+
+	// Scrolling
+	case "scroll-to-bottom":
+		return "(" + receiver + ").scrollTop = (" + receiver + ").scrollHeight", true
+	case "get-scroll-height":
+		return "(" + receiver + ").scrollHeight", true
+	case "get-scroll-top":
+		return "(" + receiver + ").scrollTop", true
+	case "set-scroll-top":
+		if len(argStrs) >= 1 {
+			return "(" + receiver + ").scrollTop = " + argStrs[0], true
+		}
+
+	// DOM manipulation
+	case "prepend":
+		if len(argStrs) >= 1 {
+			return "(" + receiver + ").prepend(" + argStrs[0] + ")", true
+		}
+	case "replace-with":
+		if len(argStrs) >= 1 {
+			return "(" + receiver + ").replaceWith(" + argStrs[0] + ")", true
+		}
+	case "insert-before":
+		if len(argStrs) >= 2 {
+			return "(" + receiver + ").insertBefore(" + argStrs[0] + ", " + argStrs[1] + ")", true
+		}
+	case "remove-all-children":
+		return "(" + receiver + ").innerHTML = ''", true
+	case "get-children":
+		return "(" + receiver + ").children", true
+	case "contains-child":
+		if len(argStrs) >= 1 {
+			return "(" + receiver + ").contains(" + argStrs[0] + ")", true
+		}
 	}
 	return "", false
 }
@@ -375,7 +516,7 @@ func (g *Generator) generateStructLiteral(sl *parser.StructLiteral) string {
 			values = append(values, "undefined")
 		}
 	}
-	return "new " + sl.Type + "(" + strings.Join(values, ", ") + ")"
+	return "new " + jsIdent(sl.Type) + "(" + strings.Join(values, ", ") + ")"
 }
 
 // generateFunctionLiteral emits an anonymous JS function.
@@ -385,14 +526,14 @@ func (g *Generator) generateFunctionLiteral(fl *parser.FunctionLiteral) string {
 	}
 	params := make([]string, 0, len(fl.Parameters))
 	for _, p := range fl.Parameters {
-		params = append(params, p.Name)
+		params = append(params, jsIdent(p.Name))
 	}
 
 	// Save declaredVars for local scope.
 	savedVars := g.declaredVars
 	g.declaredVars = make(map[string]bool)
 	for _, p := range fl.Parameters {
-		g.declaredVars[p.Name] = true
+		g.declaredVars[p.Name] = true // track original name for scope resolution
 	}
 
 	var sb strings.Builder

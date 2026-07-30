@@ -71,22 +71,24 @@ func (g *Generator) generateLetStatement(ls *parser.LetStatement) {
 	if ls == nil || ls.Name == nil {
 		return
 	}
-	name := ls.Name.Value
-	alreadyDeclared := g.declaredVars != nil && g.declaredVars[name]
+	name := jsIdent(ls.Name.Value)
+	alreadyDeclared := g.declaredVars != nil && g.declaredVars[ls.Name.Value]
+	// Only skip `let` for globals when inside a function body (not at top-level)
+	isGlobal := g.inFunctionBody && g.globalVars != nil && g.globalVars[ls.Name.Value]
 	if ls.Value == nil {
-		if !alreadyDeclared {
+		if !alreadyDeclared && !isGlobal {
 			g.writeLine("let " + name + ";")
 		}
 	} else {
 		val := g.generateExpression(ls.Value)
-		if alreadyDeclared {
+		if alreadyDeclared || isGlobal {
 			g.writeLine(name + " = " + val + ";")
 		} else {
 			g.writeLine("let " + name + " = " + val + ";")
 		}
 	}
 	if g.declaredVars != nil {
-		g.declaredVars[name] = true
+		g.declaredVars[ls.Name.Value] = true
 	}
 }
 
@@ -114,7 +116,7 @@ func (g *Generator) generateReturnStatement(rs *parser.ReturnStatement) {
 func (g *Generator) formatResultsReturn() string {
 	names := make([]string, 0, len(g.currentResults))
 	for _, p := range g.currentResults {
-		names = append(names, p.Name)
+		names = append(names, jsIdent(p.Name))
 	}
 	if len(names) == 1 {
 		return names[0]
@@ -201,7 +203,7 @@ func (g *Generator) generateEnumDefinition(ed *parser.EnumDefinition) {
 	for _, v := range ed.Values {
 		parts = append(parts, v.Name+": "+fmt.Sprintf("%d", v.Value))
 	}
-	g.writeLine("const " + ed.Name + " = { " + strings.Join(parts, ", ") + " };")
+	g.writeLine("const " + jsIdent(ed.Name) + " = { " + strings.Join(parts, ", ") + " };")
 }
 
 // generateStructDefinition emits a JS class with a constructor and inline methods.
@@ -216,13 +218,13 @@ func (g *Generator) generateStructDefinition(sd *parser.StructDefinition) {
 	if sd == nil {
 		return
 	}
-	g.writeLine("class " + sd.Name + " {")
+	g.writeLine("class " + jsIdent(sd.Name) + " {")
 	g.indentLevel++
 
 	// constructor(params...) { this.field = field; ... }
 	fieldNames := make([]string, 0, len(sd.Fields))
 	for _, f := range sd.Fields {
-		fieldNames = append(fieldNames, f.Name)
+		fieldNames = append(fieldNames, jsIdent(f.Name))
 	}
 	if len(fieldNames) > 0 {
 		g.writeLine("constructor(" + strings.Join(fieldNames, ", ") + ") {")
@@ -231,7 +233,7 @@ func (g *Generator) generateStructDefinition(sd *parser.StructDefinition) {
 	}
 	g.indentLevel++
 	for _, f := range sd.Fields {
-		g.writeLine("this." + f.Name + " = " + f.Name + ";")
+		g.writeLine("this." + jsIdent(f.Name) + " = " + jsIdent(f.Name) + ";")
 	}
 	g.indentLevel--
 	g.writeLine("}")
@@ -256,20 +258,21 @@ func (g *Generator) generateMethod(fd *parser.FunctionDefinition) {
 	if idx := strings.Index(fd.Name, "."); idx >= 0 {
 		methodName = fd.Name[idx+1:]
 	}
+	methodName = jsIdent(methodName)
 	// Skip the receiver (first parameter); remaining params become method params.
 	params := make([]string, 0, len(fd.Parameters))
 	for i, p := range fd.Parameters {
 		if i == 0 {
 			continue // skip receiver
 		}
-		params = append(params, p.Name)
+		params = append(params, jsIdent(p.Name))
 	}
 	g.writeLine(asyncPrefix(methodName) + methodName + "(" + strings.Join(params, ", ") + ") {")
 	g.indentLevel++
 
 	// Alias the receiver name to `this` so body references (self.field / self) map to this.
 	if len(fd.Parameters) > 0 && fd.Parameters[0].Name != "" {
-		g.writeLine("let " + fd.Parameters[0].Name + " = this;")
+		g.writeLine("let " + jsIdent(fd.Parameters[0].Name) + " = this;")
 	}
 
 	// Declare out-params (Results) as local variables at method entry so that
@@ -321,9 +324,9 @@ func (g *Generator) generateFunctionDefinition(fd *parser.FunctionDefinition) {
 	}
 	params := make([]string, 0, len(fd.Parameters))
 	for _, p := range fd.Parameters {
-		params = append(params, p.Name)
+		params = append(params, jsIdent(p.Name))
 	}
-	g.writeLine(asyncPrefix(fd.Name) + "function " + fd.Name + "(" + strings.Join(params, ", ") + ") {")
+	g.writeLine(asyncPrefix(fd.Name) + "function " + jsIdent(fd.Name) + "(" + strings.Join(params, ", ") + ") {")
 	g.indentLevel++
 
 	// Save and reset declaredVars for function-local scope tracking.

@@ -50,11 +50,11 @@ vscode 插件
 
 | 命令                                                         | 說明                                   |
 | ------------------------------------------------------------ | -------------------------------------- |
-| `no init`                                                    | 初始化倉庫                             |
-| `no new <name>`                                              | 建立新倉庫                             |
+| `no init`                                                    | 定義工作區（生成 workspace.jsonc，不含 mod.jsonc） |
+| `no new <name>`                                              | 在工作區內新建包（子目錄 + mod.jsonc，並註冊到 workspace.jsonc） |
 | `no fmt [-w] [-d] <file\|dir>`                               | 格式化源代碼                           |
 | `no build [-o <file>] [-cc <s>] [-target <s>] [<file\|dir>]` | 構建（輸出 executable）                |
-| `no run [-cc <s>] [-target <s>] [<file\|dir>]`               | 構建並執行 main.no                     |
+| `no run [-cc <s>] [-target <s>] [<package\|dir\|file>]`        | 構建並執行（包名/目錄/文件）           |
 | `no test [-cc <s>] [-target <s>] [<file\|dir>]`              | 執行測試                               |
 | `no add <pkg>`                                               | 添加依賴                               |
 | `no remove <pkg>`                                            | 移除依賴                               |
@@ -75,7 +75,9 @@ no build -cc zig            # 使用 Zig 編譯器
 no build -target x86_64-linux-gnu  # 交叉編譯（指定目標平台）
 
 # 運行（構建 + 執行）
-no run                    # 構建並執行 main.no（必須有 main.no）
+no run                    # 構建並執行當前目錄的 main.no
+no run foo                # 運行工作區中名為 foo 的包
+no run ./foo              # 運行 ./foo 目錄的 main.no
 no run -cc zig
 no run -target aarch64-macos-gnu
 

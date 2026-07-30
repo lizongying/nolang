@@ -1,0 +1,15 @@
+; json-browser.no — Browser JSON API declarations (JS backend)
+; Actual mapping is in src/build/js/builtin.go
+#{js}
+
+json.parse = (data str) (obj map[str]str) {
+    obj = {}
+}
+
+json.stringify = (obj str) (out str) {
+    out = ''
+}
+
+json.stringify-pretty = (obj str) (out str) {
+    out = ''
+}
