@@ -47,6 +47,7 @@ description: Reference for Nolang programming language syntax. Use when working 
   - [FFI (`#{c}` annotation)](#ffi-c-annotation)
   - [Annotations (#{...} system)](#annotations-system)
   - [Platform annotations (`#{mac-arm64}`, `#{linux-amd64}`, etc.)](#platform-annotations)
+  - [JS Backend (`--js`, `--browser`)](#js-backend)
 - [String Operations](#string-operations)
 - [Standard Library Overview](#standard-library-overview)
   - [Base Types](#base-types)
@@ -2357,6 +2358,119 @@ neural = () {
 
 Use `os.get-arch()` to get the current architecture at runtime, and platform annotations to include/exclude code at compile time.
 
+### JS Backend
+
+Nolang supports compiling `.no` source directly to JavaScript via the `--js` flag, bypassing the LLVM toolchain entirely. The JS backend uses **type erasure** — all Nolang type annotations (`int`/`str`/`bool`/`vec[T]`/`[N]T`/`?T`) are dropped in JS output; only runtime behavior is generated.
+
+#### Build & Run
+
+```bash
+# Compile to JS (output: dist/<name>.js)
+no build --js main.no
+
+# Compile with explicit output path
+no build --js -o app.js main.no
+
+# Browser mode: generate JS + HTML wrapper
+no build --js --browser main.no
+# Output: dist/<name>.js and dist/<name>.html
+
+# Run compiled JS with node
+no run --js main.no
+
+# Build browser JS + HTML and open in default browser
+no run --js --browser main.no
+```
+
+#### Platform Annotations for JS
+
+Two additional platform keys are available for the JS backend:
+
+| Key | Matches |
+| --- | --- |
+| `#{js}` | JS backend only (both Node.js and browser) |
+| `#{js-browser}` | Browser mode only (with `--browser`) |
+
+```no
+// JS-only declaration — excluded on native (LLVM) builds
+#{js}
+js-helper = () {
+    print('JS only code')
+}
+
+// Browser-only code — excluded in Node.js and native builds
+#{js-browser}
+print('running in browser mode')
+
+// Native-only code — excluded in JS builds
+#{mac-arm64}
+print('running on macOS ARM64')
+```
+
+#### JS Standard Library Modules
+
+The `src/js/` directory provides JS-backend-specific modules. All carry the `#{js}` platform annotation and are only compiled under the JS backend:
+
+| Module | Description |
+| --- | --- |
+| `js/dom` | DOM operations (create-element, query-selector, set-text, set-style, append-child, etc.) |
+| `js/canvas` | Canvas 2D drawing (fill-rect, stroke, begin-path, move-to, line-to, fill, etc.) |
+| `js/events` | Event handling (on-click, on-load) |
+| `js/storage` | localStorage (set-item, get-item, remove-item, clear) |
+| `js/fetch` | Fetch API async (fetch.async, fetch.json-async) |
+| `js/console-log` | console.log wrapper |
+| `js/fs-read-file` | Node.js fs.readFileSync wrapper |
+| `js/fs-write-file` | Node.js fs.writeFileSync wrapper |
+| `js/http-fetch` | fetch API wrapper (Node 18+ / browser) |
+| `js/process-exit` | process.exit wrapper |
+| `js/location` | Location API (href, search, path, host, redirect) |
+| `js/history` | History API (back, forward, push, length) |
+| `js/animation` | Animation frames (request-frame, cancel-frame) |
+
+Usage:
+
+```no
+# js/dom
+# js/canvas
+# js/events
+# js/storage
+
+heading = dom.create-element('h2')
+heading.set-text('Hello from Nolang!')
+body = dom.body()
+body.append-child(heading)
+
+btn = dom.create-element('button')
+btn.set-text('Click me')
+body.append-child(btn)
+events.on-click(btn, () {
+    print('button was clicked!')
+})
+
+storage.set-item('greeting', 'Hello from localStorage')
+g = storage.get-item('greeting')
+print('stored:', g)
+```
+
+#### Builtin Function Mapping
+
+| Nolang | JavaScript |
+| --- | --- |
+| `print(x)` | `console.log(x)` |
+| `eprint(x)` | `console.error(x)` |
+| `format(...)` | String concatenation |
+| `len(x)` | `x.length` |
+| `with-len(n)` | `new Array(n)` |
+
+#### Browser Mode
+
+When using `--browser`, the compiler generates an HTML wrapper that:
+- References the JS file via `<script>` tag
+- Provides a `#nolang-output` div where `print()` output is redirected
+- Includes a simple styled page layout
+
+The HTML template is defined in `src/build/js/html_wrapper.go`.
+
 - #{embed='path/to/file'} 或 #{embed=path/to/file} — 編譯期文件嵌入：將外部文件內容嵌入為 []byte 只讀常量，路徑相對於包根目錄（mod.jsonc 所在目錄）解析；變數宣告不能帶顯式初始值；嵌入數據為只讀，不參與堆釋放
 
 The `range` annotation is particularly useful for `num` type (`num = int | float`) to mark valid value ranges. Range bounds can be integers or identifiers (e.g. constants):
@@ -3279,7 +3393,7 @@ ws-message {
 }
 
 // Server
-s = ws.ws-listen-on(host, port)                 // Create listener (?ws-server)
+s = ws.listen-on(host, port)                    // Create listener (?ws-server)
 c = s.accept()                               // Accept connection (?ws-server-conn)
 msg = c.recv()                               // Receive message (?ws-message)
 ok = c.send-text(text)                       // Send text
@@ -3287,7 +3401,7 @@ ok = c.send-binary(data)                     // Send binary
 c.close()
 
 // Client
-c = ws.ws-connect(url)                          // Connect to server (?ws-client)
+c = ws.connect(url)                             // Connect to server (?ws-client)
 msg = c.recv()                               // Receive message (?ws-message)
 ok = c.send-text(text)                       // Send text
 ok = c.send-binary(data)                     // Send binary

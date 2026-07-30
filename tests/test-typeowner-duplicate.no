@@ -5,7 +5,7 @@
 
 ; 引用 ws.client 的方法（通過 ws-connect 返回 ?ws.client）
 test-ws-client = () {
-    c = ws.ws-connect('ws://127.0.0.1:8080/path')
+    c = ws.connect('ws://127.0.0.1:8080/path')
     c: {
         nil -> return
         ->

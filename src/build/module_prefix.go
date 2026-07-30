@@ -127,8 +127,35 @@ func prefixModuleStatements(stmts []parser.Statement, moduleShortName string, ty
 		}
 		if moduleTypes[typePrefix] {
 			fd.Name = moduleShortName + "." + fd.Name
+			// 同步改寫 self 參數型別：parser 為方法合成的 self 參數型別是
+			// 裸名（如 "client"）。若多個模組定義了同名結構體（如 client.no
+			// 與 ws.no 都定義 client），合併後 rewriteTypeRefs 因 bare name
+			// 歧義而拒絕改寫，導致 selfType 與重命名後的 struct key
+			// （"client.client"）不匹配，self 方法解析全部失敗
+			// （IR 中出現未定義的 @self.field.method void call）。
+			// 在模組內部改寫則無歧義：接收者型別必屬本模組。
+			if len(fd.Parameters) > 0 && fd.Parameters[0].Name == "self" {
+				if nt, ok := fd.Parameters[0].Type.(*parser.NamedType); ok && nt.Value == typePrefix {
+					nt.Value = moduleShortName + "." + typePrefix
+				}
+			}
 		}
 	}
+
+	// --- Phase 4: rewrite bare type references WITHIN this module ---
+	// 模組內對本模組型別的裸名引用（函數參數/結果型別如 `?client`、區域變數
+	// 宣告、struct literal、欄位型別等）在此用「僅含本模組型別」的局部
+	// typeOwner 改寫。不能留給合併後的全局 rewriteTypeRefs：多個模組定義
+	// 同名結構體時（如 client.no 與 ws.no 都定義 client、net 與 tls 都定義
+	// conn），全局改寫因 bare name 歧義而放棄，留下未改寫的裸型別引用，
+	// codegen 產生未定義的 `%client` 等型別（Cannot allocate unsized type）。
+	// 模組內部引用本模組型別永無歧義，可安全改寫；跨模組引用依語言規範
+	// 必須顯式帶 module 前綴（ValidateCrossModuleTypeRefs 強制），不受影響。
+	localOwner := make(map[string]string, len(moduleTypes))
+	for name := range moduleTypes {
+		localOwner[moduleShortName+"."+name] = name
+	}
+	rewriteTypeRefs(stmts, localOwner)
 
 	// Note: cross-module method renaming (method defined in B but receiver
 	// struct in A) is handled by prefixMethodNames() after ALL modules merged.
@@ -163,6 +190,23 @@ func prefixMethodNames(stmts []parser.Statement, typeOwner map[string]string) {
 		// Skip if the type prefix already contains a dot (already prefixed)
 		if strings.Contains(typePrefix, ".") {
 			continue
+		}
+		// Skip if the name is ALREADY module-prefixed: the first two segments
+		// form a "module.type" key registered in typeOwner. Without this guard,
+		// a module whose type name equals the module short name (e.g. module
+		// `tar` defining struct `tar`) gets double-prefixed: Phase 3 renames
+		// `tar.entry` → `tar.tar.entry`, then this pass would see typePrefix
+		// "tar" (== bare name of "tar.tar") and rename it AGAIN to
+		// `tar.tar.tar.tar.entry`, breaking all method lookups (self method
+		// calls degrade to unresolved `@self.xxx` void calls with empty
+		// return slots → invalid LLVM IR `store i64 ,`).
+		if rest := fd.Name[dotIdx+1:]; rest != "" {
+			if secondDot := strings.Index(rest, "."); secondDot > 0 {
+				twoSeg := fd.Name[:dotIdx+1+secondDot]
+				if _, alreadyPrefixed := typeOwner[twoSeg]; alreadyPrefixed {
+					continue
+				}
+			}
 		}
 		// 遍歷 typeOwner 查找 value == typePrefix 的所有 "module.name" 鍵
 		match := ""

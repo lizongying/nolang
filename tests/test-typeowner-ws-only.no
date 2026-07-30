@@ -2,7 +2,7 @@
 ; 最小測試：只引用 ws.client，驗證 typeOwner 改動後 ws 模組正確編譯。
 
 test-ws-client = () {
-    c = ws.ws-connect('ws://127.0.0.1:8080/path')
+    c = ws.connect('ws://127.0.0.1:8080/path')
     c: {
         nil -> return
         ->

@@ -4,7 +4,7 @@
 ; 底層使用 HTTP/1.1 升級交握，支援明文 WS 與加密 WSS（TLS 1.2）。
 ;
 ; 用法（服務端）：
-;   srv = ws-listen-on('0.0.0.0', 8080)   // 返回 ?server
+;   srv = ws.listen-on('0.0.0.0', 8080)   // 返回 ?server
 ;   srv: {
 ;       nil -> return
 ;       ->
@@ -25,7 +25,7 @@
 ;   }
 ;
 ; 用法（客戶端 WS）：
-;   c = ws-connect('ws://127.0.0.1:8080/path')   // 返回 ?client
+;   c = ws.connect('ws://127.0.0.1:8080/path')   // 返回 ?client
 ;   c: {
 ;       nil -> print('connect failed')
 ;       ->
@@ -40,7 +40,7 @@
 ;   }
 ;
 ; 用法（客戶端 WSS）：
-;   c = ws-connect('wss://echo.websocket.org/path')   // 返回 ?client
+;   c = ws.connect('wss://echo.websocket.org/path')   // 返回 ?client
 ;   c: {
 ;       nil -> print('connect failed')
 ;       ->
@@ -1031,11 +1031,11 @@ client.close = () {
 ; 便捷函數
 ; ═══════════════════════════════════════════════
 
-; ws-listen-on: 建立 WebSocket 服務端並開始監聽
+; listen-on: 建立 WebSocket 服務端並開始監聽
 ; host str: 綁定的 IP 地址（如 '0.0.0.0'）
 ; port i64: 監聽埠號
 ; 返回 s ?server: ok=服務端, nil=失敗
-ws-listen-on = (host str, port i64) (s ?server) {
+listen-on = (host str, port i64) (s ?server) {
     s = nil
     srv = server {}
     ok = false
@@ -1043,13 +1043,13 @@ ws-listen-on = (host str, port i64) (s ?server) {
     ok -> s = srv
 }
 
-; ws-connect: 連接到 WebSocket 端點
+; connect: 連接到 WebSocket 端點
 ; url str: WS/WSS 端點 URL（ws://host:port/path 或 wss://host:port/path）
 ; 返回 c ?client:
 ;   ok = 已連接的客戶端
 ;   nil = 連線失敗
 ;   err = 錯誤訊息
-ws-connect = (url str) (c ?client) {
+connect = (url str) (c ?client) {
     c = nil
 
     ; 解析 URL

@@ -1675,16 +1675,42 @@ func (p *Parser) parseMapLiteral(mapType *MapType) Expression {
 	return ml
 }
 
+// flattenDotTypeName 將 Identifier / DotExpression 鏈展平為點分型別名
+// （如 net.conn → "net.conn"）。僅當鏈上全部節點為 Identifier/DotExpression
+// 時有效；否則返回 ""（表示不是合法的型別名，如 fn().field{...}）。
+func flattenDotTypeName(expr Expression) string {
+	switch e := expr.(type) {
+	case *Identifier:
+		return e.Value
+	case *DotExpression:
+		base := flattenDotTypeName(e.Receiver)
+		if base == "" {
+			return ""
+		}
+		return base + "." + e.Property
+	}
+	return ""
+}
+
 func (p *Parser) parseStructLiteral(typeExpr Expression) Expression {
 	// 處理匿名結構體：typeExpr 為 nil 時，用空字串作為 type（由 codegen 推斷）
 	var typeName string
 	if typeExpr != nil {
-		ident, ok := typeExpr.(*Identifier)
-		if !ok {
+		switch te := typeExpr.(type) {
+		case *Identifier:
+			typeName = te.Value
+		case *DotExpression:
+			// 模組前綴型別的 struct literal：net.conn{} / tls.conn{} 等。
+			// 將 DotExpression 鏈展平為 "module.type" 形式的型別名。
+			if flat := flattenDotTypeName(te); flat != "" {
+				typeName = flat
+			} else {
+				return nil
+			}
+		default:
 			// Not a valid struct literal type expression; caller should handle as match
 			return nil
 		}
-		typeName = ident.Value
 	}
 	sl := &StructLiteral{
 		Token:  p.currentToken,
