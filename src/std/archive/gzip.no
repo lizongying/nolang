@@ -28,11 +28,14 @@ bit-reader {
 ; 緩衝區中剩餘位元數
 
 ; read-bit: 讀取一個位元
+; 越界時返回 0，避免 DEFLATE 解碼器讀超時崩潰
 bit-reader.read-bit = () (bit i64) {
     .bit-cnt == 0 -> {
-        .bit-buf = .data[.pos] & 255
-        .pos = .pos + 1
-        .bit-cnt = 8
+        .pos < .data.len -> {
+            .bit-buf = .data[.pos] & 255
+            .pos = .pos + 1
+            .bit-cnt = 8
+        }
     }
     bit = .bit-buf & 1
     .bit-buf = .bit-buf >> 1
@@ -601,18 +604,20 @@ gzip-decompress = (data []byte) (out []byte) {
 
     ; FNAME (bit 3) — 以 \0 結尾的字串
     (flg & 8) != 0 -> {
-        {
+        for pos < data.len {
+            c = data[pos] & 255
             pos = pos + 1
-        } ((data[pos] & 255) != 0)
-        pos = pos + 1
+            c == 0 -> break
+        }
     }
 
     ; FCOMMENT (bit 4) — 以 \0 結尾的字串
     (flg & 16) != 0 -> {
-        {
+        for pos < data.len {
+            c = data[pos] & 255
             pos = pos + 1
-        } ((data[pos] & 255) != 0)
-        pos = pos + 1
+            c == 0 -> break
+        }
     }
 
     ; FHCRC (bit 0) — 2 bytes CRC16
@@ -629,7 +634,7 @@ gzip-decompress = (data []byte) (out []byte) {
     }
 
     ; 預期大小 = ISIZE（最後 4 bytes）
-    isize = (data[data.len - 8] & 255) | ((data[data.len - 7] & 255) << 8) | ((data[data.len - 6] & 255) << 16) | ((data[data.len - 5] & 255) << 24)
+    isize = (data[data.len - 4] & 255) | ((data[data.len - 3] & 255) << 8) | ((data[data.len - 2] & 255) << 16) | ((data[data.len - 1] & 255) << 24)
 
     out = inflate-decompress(deflate-data, isize)
 }

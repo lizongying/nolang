@@ -74,7 +74,7 @@ tar.count = () (count i64) {
         ; 檢查是否為結束標記（全零區塊）
         empty = 1
         i <- [0..TAR-BLOCK): {
-            .data[off + i] & 255 != 0 -> empty = 0
+            (.data[off + i] & 255) != 0 -> empty = 0
         }
         empty == 1 -> return
         count = count + 1
@@ -115,10 +115,11 @@ tar.entry = (idx i64) (e tar-entry) {
 ; name: 讀取第 idx 個條目的檔名
 tar.name = (idx i64) (name str) {
     hdr = .offset(idx)
+    name = ''
     i <- [0..100): {
         c = .data[hdr + i] & 255
         c == 0 -> break
-        name[i] = c
+        name = name - number.char-to-str(c)
     }
 }
 
@@ -194,10 +195,11 @@ tar.mtime = (idx i64) (ts i64) {
 ; name: 讀取條目檔名
 tar-entry.name = () (name str) {
     hdr = .idx
+    name = ''
     i <- [0..100): {
         c = .data[hdr + i] & 255
         c == 0 -> break
-        name[i] = c
+        name = name - number.char-to-str(c)
     }
 }
 

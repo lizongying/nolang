@@ -118,9 +118,10 @@ zip.name = (idx i64) (name str) {
     off28 = off + 28
     name-len = u16le(.data, off28)
     off46 = off + 46
+    name = ''
     i <- [0..name-len): {
         idx2 = off46 + i
-        name[i] = .data[idx2]
+        name = name - number.char-to-str(.data[idx2] & 255)
     }
 }
 
@@ -192,9 +193,10 @@ zip-entry.name = () (name str) {
     off28 = off + 28
     name-len = u16le(.data, off28)
     off46 = off + 46
+    name = ''
     i <- [0..name-len): {
         idx2 = off46 + i
-        name[i] = .data[idx2]
+        name = name - number.char-to-str(.data[idx2] & 255)
     }
 }
 
