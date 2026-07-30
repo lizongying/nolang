@@ -2657,20 +2657,17 @@ func substituteExpr(expr parser.Expression, subst map[string]string) parser.Expr
 		} else {
 			valuePatterns = e.ValuePatterns
 		}
+		// 表層往返標誌（RTBareMatch 等）已遷至語義副表；泛型實例化克隆體
+		// 只進編譯管線、不進 formatter，無需複製這些標誌。
 		newIf := &parser.IfExpression{
-			Token:            e.Token,
-			Condition:        substituteExpr(e.Condition, subst),
-			IsBareMatch:      e.IsBareMatch,
-			MatchedExpr:      substituteExpr(e.MatchedExpr, subst),
-			IsStandalone:     e.IsStandalone,
-			RangePattern:     e.RangePattern,
-			IsMatchWildcard:  e.IsMatchWildcard,
-			EqualityPattern:  substituteExpr(e.EqualityPattern, subst),
-			OptionPatterns:   e.OptionPatterns,
-			ValuePatterns:    valuePatterns,
-			RawCond:          substituteExpr(e.RawCond, subst),
-			IsMatchWrapper:   e.IsMatchWrapper,
-			IsElif:           e.IsElif,
+			Token:           e.Token,
+			Condition:       substituteExpr(e.Condition, subst),
+			MatchedExpr:     substituteExpr(e.MatchedExpr, subst),
+			RangePattern:    e.RangePattern,
+			EqualityPattern: substituteExpr(e.EqualityPattern, subst),
+			OptionPatterns:  e.OptionPatterns,
+			ValuePatterns:   valuePatterns,
+			RawCond:         substituteExpr(e.RawCond, subst),
 		}
 		if e.Consequence != nil {
 			newIf.Consequence = substituteBody(e.Consequence, subst)
@@ -8438,12 +8435,50 @@ func (t *Transpiler) processEmbeds(program *parser.Program, sourcePath string) e
 			}
 			resolvedPath = filepath.Join(pkgRoot, embedPath)
 		}
-		// 讀取文件
-		data, err := os.ReadFile(resolvedPath)
+		// 檢測路徑是文件還是目錄
+		info, err := os.Stat(resolvedPath)
 		if err != nil {
 			return fmt.Errorf("embed: file not found: %s (resolved: %s)", embedPath, resolvedPath)
 		}
-		program.Sem.SetEmbedData(ls, data)
+		if info.IsDir() {
+			// 文件夾嵌入：遞迴讀取所有文件
+			files := make(map[string][]byte)
+			err = filepath.Walk(resolvedPath, func(path string, fi os.FileInfo, err error) error {
+				if err != nil {
+					return err
+				}
+				if fi.IsDir() {
+					return nil
+				}
+				data, rerr := os.ReadFile(path)
+				if rerr != nil {
+					return rerr
+				}
+				// 以相對於嵌入目錄的路徑作為鍵
+				rel, rerr := filepath.Rel(resolvedPath, path)
+				if rerr != nil {
+					rel = path
+				}
+				// 統一為正斜槓（跨平台一致）
+				rel = filepath.ToSlash(rel)
+				files[rel] = data
+				return nil
+			})
+			if err != nil {
+				return fmt.Errorf("embed: failed to read directory %s: %w", resolvedPath, err)
+			}
+			if len(files) == 0 {
+				return fmt.Errorf("embed: directory is empty: %s (resolved: %s)", embedPath, resolvedPath)
+			}
+			program.Sem.SetEmbedFiles(ls, files)
+		} else {
+			// 單個文件嵌入：讀取文件字節
+			data, err := os.ReadFile(resolvedPath)
+			if err != nil {
+				return fmt.Errorf("embed: file not found: %s (resolved: %s)", embedPath, resolvedPath)
+			}
+			program.Sem.SetEmbedData(ls, data)
+		}
 	}
 	return nil
 }

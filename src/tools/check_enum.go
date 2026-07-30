@@ -54,7 +54,8 @@ test-match = () {
 					if es, ok := b.(*parser.ExpressionStatement); ok {
 						fmt.Printf("      Expr: %T\n", es.Expression)
 						if ife, ok := es.Expression.(*parser.IfExpression); ok {
-							fmt.Printf("        IfExpr: IsBareMatch=%v, MatchedExpr=%v\n", ife.IsBareMatch, ife.MatchedExpr)
+							fmt.Printf("        IfExpr: IsBareMatch=%v, MatchedExpr=%v\n",
+								program.Sem.HasRTFlag(ife, parser.RTBareMatch), ife.MatchedExpr)
 							dumpIfExpr(ife, "        ")
 						}
 					}

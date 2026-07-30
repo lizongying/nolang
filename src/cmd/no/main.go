@@ -1229,6 +1229,18 @@ func buildCommand(args []string) {
 		targetStr = nbuild.DetectTarget()
 	}
 
+	// 如果未通過命令列指定後端，檢查 mod.jsonc 的 emit 配置自動選擇 JS 後端
+	useJS := *jsBackend
+	if !useJS && !*wasmDirect {
+		checkDir := inputPath
+		if info, err := os.Stat(inputPath); err == nil && !info.IsDir() {
+			checkDir = filepath.Dir(inputPath)
+		}
+		if pkg, _ := nbuild.LoadPackage(checkDir); pkg != nil && pkg.Compiler.Emit == "js" {
+			useJS = true
+		}
+	}
+
 	opts := nbuild.BuildOptions{
 		CC:            *cc,
 		Target:        targetStr,
@@ -1236,16 +1248,21 @@ func buildCommand(args []string) {
 		Output:        *outputFile,
 		NoBoundsCheck: *unsafe,
 		UseDirectWasm: *wasmDirect,
-		UseJS:         *jsBackend,
+		UseJS:         useJS,
 		BrowserMode:   *browserMode,
 	}
 
 	// JS 後端路徑：繞過 LLVM 工具鏈，直接發射 JavaScript 原始碼（型別擦除）。
-	if *jsBackend {
-		// workspace 模式不適用 JS 後端（單一輸出檔案）；要求明確輸入檔案。
-		if inputPath == "." {
-			fmt.Fprintln(os.Stderr, "Error: --js requires an explicit input file (workspace mode not supported)")
-			os.Exit(1)
+	if useJS {
+		// 如果 inputPath 是目錄，嘗試解析為 main.no
+		if info, err := os.Stat(inputPath); err == nil && info.IsDir() {
+			mainPath := filepath.Join(inputPath, "main.no")
+			if _, err := os.Stat(mainPath); err == nil {
+				inputPath = mainPath
+			} else {
+				fmt.Fprintln(os.Stderr, "Error: JS backend requires an explicit input file or main.no (workspace mode not supported)")
+				os.Exit(1)
+			}
 		}
 
 		if *browserMode {
@@ -1427,8 +1444,20 @@ func runCommand(args []string) {
 		targetStr = nbuild.DetectTarget()
 	}
 
+	// 如果未通過命令列指定後端，檢查 mod.jsonc 的 emit 配置自動選擇 JS 後端
+	useJS := *jsBackend
+	if !useJS && !*wasmDirect {
+		checkDir := filepath.Dir(inputPath)
+		if info, err := os.Stat(inputPath); err == nil && info.IsDir() {
+			checkDir = inputPath
+		}
+		if pkg, _ := nbuild.LoadPackage(checkDir); pkg != nil && pkg.Compiler.Emit == "js" {
+			useJS = true
+		}
+	}
+
 	// JS 後端路徑：編譯為 .js 後以 node 執行。
-	if *jsBackend {
+	if useJS {
 		// 若 inputPath 是目錄，解析為 main.no
 		if info, err := os.Stat(inputPath); err == nil && info.IsDir() {
 			inputPath = filepath.Join(inputPath, "main.no")

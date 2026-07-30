@@ -1117,7 +1117,7 @@ func (p *Parser) parseMatchExprFrom(matched Expression) Expression {
 		if parsedBlock != nil {
 			bodyBlock.TrailingComments = parsedBlock.TrailingComments
 			bodyBlock.ClosingBraceComment = parsedBlock.ClosingBraceComment
-			bodyBlock.OpeningBraceComment = parsedBlock.OpeningBraceComment
+			p.sem.SetOpeningBraceComment(bodyBlock, p.sem.OpeningBraceCommentOf(parsedBlock))
 			bodyBlock.RBrace = parsedBlock.RBrace
 		}
 		ma.body = bodyBlock
@@ -1305,8 +1305,8 @@ func (p *Parser) parseElifBlock() *BlockStatement {
 				Condition:   &Identifier{Token: p.currentToken, Value: "true"},
 				Consequence: body,
 				Alternative: alternative,
-				IsElif:      true,
 			}
+			p.sem.SetRTFlag(nestedIf, RTElif)
 			return &BlockStatement{
 				Token: body.Token,
 				Statements: []Statement{
@@ -1374,8 +1374,8 @@ func (p *Parser) parseElifBlock() *BlockStatement {
 		Condition:   condition,
 		Consequence: consequence,
 		Alternative: alternative,
-		IsElif:      true,
 	}
+	p.sem.SetRTFlag(nestedIf, RTElif)
 
 	// Wrap in a block statement so it plugs into IfExpression.Alternative
 	return &BlockStatement{

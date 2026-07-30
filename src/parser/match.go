@@ -309,7 +309,7 @@ func (p *Parser) parseBareMatchExpr() Expression {
 		if parsedBlock != nil {
 			bodyBlock.TrailingComments = parsedBlock.TrailingComments
 			bodyBlock.ClosingBraceComment = parsedBlock.ClosingBraceComment
-			bodyBlock.OpeningBraceComment = parsedBlock.OpeningBraceComment
+			p.sem.SetOpeningBraceComment(bodyBlock, p.sem.OpeningBraceCommentOf(parsedBlock))
 			bodyBlock.RBrace = parsedBlock.RBrace
 		}
 		ma.body = bodyBlock

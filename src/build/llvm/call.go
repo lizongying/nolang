@@ -363,7 +363,12 @@ func (g *Generator) generateCallArg(sb *strings.Builder, arg parser.Expression) 
 		return structTy + "* " + tmpName
 	case *parser.SliceLiteral:
 		// Slice literal passed as function argument in indirect/curried calls.
-		// Default to i64 element type (parameter type info unavailable here).
+		// Infer element type from the actual elements (parameter type info
+		// unavailable here). Default to i64 for integer elements.
+		elemType := "i64"
+		if len(a.Elements) > 0 && g.isStringExpr(a.Elements[0]) {
+			elemType = "%str-long"
+		}
 		n := int64(len(a.Elements))
 		g.tmpIdx++
 		vecName := fmt.Sprintf("%%callvec.%d", g.tmpIdx)
@@ -373,17 +378,41 @@ func (g *Generator) generateCallArg(sb *strings.Builder, arg parser.Expression) 
 		if n > 0 {
 			g.tmpIdx++
 			tmpArr := fmt.Sprintf("%%callvec.arr.%d", g.tmpIdx)
-			arrType := fmt.Sprintf("[%d x i64]", n)
+			arrType := fmt.Sprintf("[%d x %s]", n, elemType)
 			if sb != nil {
 				sb.WriteString(fmt.Sprintf("%s%s = alloca %s\n", g.indent(), tmpArr, arrType))
 				for i, elem := range a.Elements {
 					ev := g.generateExprWithSB(sb, elem)
 					ev = g.stripLLVMType(ev)
+					// For struct types (e.g. %str-long), strip the type prefix
+					// if present (generateExprWithSB may return "%str-long %reg").
+					if g.isStructLLVMType(elemType) && strings.HasPrefix(ev, elemType+" ") {
+						ev = ev[len(elemType)+1:]
+					}
 					g.tmpIdx++
 					gepReg := fmt.Sprintf("%%callvec.gep.%d", g.tmpIdx)
 					sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %s, %s* %s, i32 0, i32 %d\n",
 						g.indent(), gepReg, arrType, arrType, tmpArr, i))
-					sb.WriteString(fmt.Sprintf("%sstore i64 %s, i64* %s\n", g.indent(), ev, gepReg))
+					// For struct types, generateExprWithSB may return a pointer
+					// (e.g. StringLiteral returns %str-longlit.N which is a %str-long*).
+					// Load the struct value before storing into the array.
+					storeVal := ev
+					if g.isStructLLVMType(elemType) {
+						// StringLiteral returns an alloca pointer; load the value.
+						if strings.HasPrefix(ev, "%str-longlit") {
+							g.tmpIdx++
+							loadReg := fmt.Sprintf("%%callvec.load.%d", g.tmpIdx)
+							sb.WriteString(fmt.Sprintf("%s%s = load %s, %s* %s\n", g.indent(), loadReg, elemType, elemType, ev))
+							storeVal = loadReg
+						}
+					} else if g.isIntegerLLVMType(elemType) && elemType != "i64" && strings.HasPrefix(ev, "%") {
+						// Truncate i64 to smaller integer types
+						g.tmpIdx++
+						truncReg := fmt.Sprintf("%%callvec.trunc.%d", g.tmpIdx)
+						sb.WriteString(fmt.Sprintf("%s%s = trunc i64 %s to %s\n", g.indent(), truncReg, ev, elemType))
+						storeVal = truncReg
+					}
+					sb.WriteString(fmt.Sprintf("%sstore %s %s, %s* %s\n", g.indent(), elemType, storeVal, elemType, gepReg))
 				}
 				g.tmpIdx++
 				ptrReg := fmt.Sprintf("%%callvec.ptr.%d", g.tmpIdx)
@@ -513,9 +542,9 @@ func (g *Generator) generateCallArg(sb *strings.Builder, arg parser.Expression) 
 				sb.WriteString(fmt.Sprintf("%s%s = alloca i64\n", g.indent(), tmpName))
 				sb.WriteString(fmt.Sprintf("%sstore i64 %s, i64* %s\n", g.indent(), ev, tmpName))
 			}
-			return "i64* " + tmpName
-		}
-		return ev
+		return "i64* " + tmpName
+	}
+	return ev
 	}
 }
 
@@ -1025,26 +1054,25 @@ func (g *Generator) generateCallExpression(sb *strings.Builder, expr *parser.Cal
 							continue
 						}
 					}
-					allArgs = append(allArgs, g.generateCallArg(sb, outArg))
-				}
-				sb.WriteString(fmt.Sprintf("%scall void @%s(%s)\n", g.indent(), sanitizeLLVMName(innerFnName), strings.Join(allArgs, ", ")))
-				// Post-call: auto-update vec/arr len for IndexExpression output targets.
-				// The called function wrote elements via pointer; without updating len,
-				// subsequent reads (fields[0]) would fail bounds check (len still 0).
-				for _, lu := range lenUpdates {
-					g.emitVecLenAutoUpdate(sb, lu.varName, lu.idxReg, lu.isConst)
-				}
-				return ""
+				allArgs = append(allArgs, g.generateCallArg(sb, outArg))
 			}
-			// 純 void（無輸出參數）：直接調用
-			sb.WriteString(fmt.Sprintf("%scall void @%s(%s)\n", g.indent(), sanitizeLLVMName(innerFnName), strings.Join(innerArgs, ", ")))
+			sb.WriteString(fmt.Sprintf("%scall void @%s(%s)\n", g.indent(), sanitizeLLVMName(innerFnName), strings.Join(allArgs, ", ")))
+			// The called function wrote elements via pointer; without updating len,
+			// subsequent reads (fields[0]) would fail bounds check (len still 0).
+			for _, lu := range lenUpdates {
+				g.emitVecLenAutoUpdate(sb, lu.varName, lu.idxReg, lu.isConst)
+			}
 			return ""
 		}
+		// 純 void（無輸出參數）：直接調用
+		sb.WriteString(fmt.Sprintf("%scall void @%s(%s)\n", g.indent(), sanitizeLLVMName(innerFnName), strings.Join(innerArgs, ", ")))
+		return ""
+	}
 
-		// 有返回值：生成 call 並捕獲結果
-		g.tmpIdx++
-		retReg := fmt.Sprintf("%%callret.%d", g.tmpIdx)
-		sb.WriteString(fmt.Sprintf("%s%s = call %s @%s(%s)\n", g.indent(), retReg, retType, sanitizeLLVMName(innerFnName), strings.Join(innerArgs, ", ")))
+	// 有返回值：生成 call 並捕獲結果
+	g.tmpIdx++
+	retReg := fmt.Sprintf("%%callret.%d", g.tmpIdx)
+	sb.WriteString(fmt.Sprintf("%s%s = call %s @%s(%s)\n", g.indent(), retReg, retType, sanitizeLLVMName(innerFnName), strings.Join(innerArgs, ", ")))
 
 		// 將返回值存入輸出參數變數
 		for _, outArg := range expr.Arguments {
@@ -2390,11 +2418,15 @@ func (g *Generator) generateCallExpression(sb *strings.Builder, expr *parser.Cal
 					paramType := types[argIdx]
 					if strings.HasPrefix(paramType, "[]") {
 						mapped := g.mapToLLVMType(paramType[2:])
-						if g.isIntegerLLVMType(mapped) {
+						if g.isIntegerLLVMType(mapped) || g.isStructLLVMType(mapped) {
 							elemType = mapped
 						}
 					}
 				}
+			}
+			// Fallback: infer from actual elements if param type didn't resolve
+			if elemType == "i64" && len(a.Elements) > 0 && g.isStringExpr(a.Elements[0]) {
+				elemType = "%str-long"
 			}
 			n := int64(len(a.Elements))
 			g.tmpIdx++
@@ -2415,14 +2447,22 @@ func (g *Generator) generateCallExpression(sb *strings.Builder, expr *parser.Cal
 						gepReg := fmt.Sprintf("%%callvec.gep.%d", g.tmpIdx)
 						sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %s, %s* %s, i32 0, i32 %d\n",
 							g.indent(), gepReg, arrType, arrType, tmpArr, i))
-						storeVal := ev
-						if elemType != "i64" && strings.HasPrefix(ev, "%") {
+					storeVal := ev
+					if g.isStructLLVMType(elemType) {
+						// StringLiteral returns an alloca pointer; load the value.
+						if strings.HasPrefix(ev, "%str-longlit") {
 							g.tmpIdx++
-							truncReg := fmt.Sprintf("%%callvec.trunc.%d", g.tmpIdx)
-							sb.WriteString(fmt.Sprintf("%s%s = trunc i64 %s to %s\n", g.indent(), truncReg, ev, elemType))
-							storeVal = truncReg
+							loadReg := fmt.Sprintf("%%callvec.load.%d", g.tmpIdx)
+							sb.WriteString(fmt.Sprintf("%s%s = load %s, %s* %s\n", g.indent(), loadReg, elemType, elemType, ev))
+							storeVal = loadReg
 						}
-						sb.WriteString(fmt.Sprintf("%sstore %s %s, %s* %s\n", g.indent(), elemType, storeVal, elemType, gepReg))
+					} else if g.isIntegerLLVMType(elemType) && elemType != "i64" && strings.HasPrefix(ev, "%") {
+						g.tmpIdx++
+						truncReg := fmt.Sprintf("%%callvec.trunc.%d", g.tmpIdx)
+						sb.WriteString(fmt.Sprintf("%s%s = trunc i64 %s to %s\n", g.indent(), truncReg, ev, elemType))
+						storeVal = truncReg
+					}
+					sb.WriteString(fmt.Sprintf("%sstore %s %s, %s* %s\n", g.indent(), elemType, storeVal, elemType, gepReg))
 					}
 					g.tmpIdx++
 					ptrReg := fmt.Sprintf("%%callvec.ptr.%d", g.tmpIdx)

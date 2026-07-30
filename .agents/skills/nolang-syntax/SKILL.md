@@ -2506,6 +2506,15 @@ When using `--browser`, the compiler generates an HTML wrapper that:
 The HTML template is defined in `src/build/js/html_wrapper.go`.
 
 - #{embed='path/to/file'} 或 #{embed=path/to/file} — 編譯期文件嵌入：將外部文件內容嵌入為 []byte 只讀常量，路徑相對於包根目錄（mod.jsonc 所在目錄）解析；變數宣告不能帶顯式初始值；嵌入數據為只讀，不參與堆釋放
+- #{embed='dir/'} - Directory embed: recursively reads all files in a directory, embedding them as fs.embed type (read-only filesystem). Access files at runtime via read(path)->([]byte,bool) and exists(path)->(bool). Lookup logic is pure Nolang, no C functions. Ideal for single-binary distribution (e.g. HTTP static server embedding frontend files).
+
+## mod.jsonc Compiler Configuration
+
+The `compiler` block in `mod.jsonc` controls compiler behavior:
+
+- `emit` (string): Output target backend. `"js"` = use JS backend (type erasure, no LLVM toolchain). Default empty = LLVM native backend. Command-line `--js` flag takes precedence.
+- `anonymous-fn-type` (bool): Whether anonymous function type syntax is permitted. Default false.
+- `link-libs` ([]string): C libraries to link.
 
 The `range` annotation is particularly useful for `num` type (`num = int | float`) to mark valid value ranges. Range bounds can be integers or identifiers (e.g. constants):
 

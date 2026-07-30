@@ -1126,19 +1126,23 @@ str.from-hex = () (out ?[]byte) {
 ; sep str: 分隔符
 ; 返回 out []str: 分割後的子字串切片
 ; 空分隔符時返回整個字串作為唯一元素
+; 注意：使用本地 result 切片再賦值給 out，避免 out.push 在輸出參數上不生效的編譯器 bug
 str.split = (sep str) (out []str) {
+    result []str
     sep.len == 0 -> {
-        out.push(.slice(0, .len))
+        result.push(.slice(0, .len))
+        out = result
         return
     }
     start = 0
     pos = .index-from(sep, start)
     {
-        out.push(.slice(start, pos))
+        result.push(.slice(start, pos))
         start = pos + sep.len
         pos = .index-from(sep, start)
     } (pos >= 0)
-    out.push(.slice(start, .len))
+    result.push(.slice(start, .len))
+    out = result
 }
 
 ; []str.join: 用分隔符連接字串切片中的所有元素
@@ -1228,6 +1232,7 @@ str.fields = () (out []str) {
     n = .len
     n == 0 -> return
 
+    result []str
     start = -1
     i <- [0..n): {
         b = .[i]
@@ -1236,7 +1241,7 @@ str.fields = () (out []str) {
                 start < 0 -> start = i
             }
             start >= 0 -> {
-                out.push(.slice(start, i))
+                result.push(.slice(start, i))
                 start = -1
             }
             ->
@@ -1244,7 +1249,8 @@ str.fields = () (out []str) {
     }
 
     ; 處理最後一個欄位
-    start >= 0 -> out.push(.slice(start, n))
+    start >= 0 -> result.push(.slice(start, n))
+    out = result
 }
 
 ; ═══════════════════════════════════════════════
@@ -1892,8 +1898,10 @@ str.replace-n = (old str, new str, n i64) (val str) {
 ; maxsplit i64: 最大分割次數（產生 maxsplit+1 個元素），maxsplit <= 0 不限制
 ; 返回 out []str: 分割結果
 str.split-n = (sep str, maxsplit i64) (out []str) {
+    result []str
     sep.len == 0 -> {
-        out.push(.slice(0, .len))
+        result.push(.slice(0, .len))
+        out = result
         return
     }
     maxsplit <= 0 -> {
@@ -1905,15 +1913,17 @@ str.split-n = (sep str, maxsplit i64) (out []str) {
     count = 0
     {
         count >= maxsplit -> {
-            out.push(.slice(start, .len))
+            result.push(.slice(start, .len))
+            out = result
             return
         }
-        out.push(.slice(start, pos))
+        result.push(.slice(start, pos))
         start = pos + sep.len
         count = count + 1
         pos = .index-from(sep, start)
     } (pos >= 0)
-    out.push(.slice(start, .len))
+    result.push(.slice(start, .len))
+    out = result
 }
 
 ; ═══════════════════════════════════════════════
@@ -1925,6 +1935,7 @@ str.split-n = (sep str, maxsplit i64) (out []str) {
 ; 返回 out []str: 行列表（末尾換行不產生空行）
 str.lines = () (out []str) {
     .len == 0 -> return
+    result []str
     start = 0
     i = 0
     {
@@ -1935,12 +1946,13 @@ str.lines = () (out []str) {
                 prev = .[i - 1]
                 prev == 13 -> end = i - 1
             }
-            out.push(.slice(start, end))
+            result.push(.slice(start, end))
             start = i + 1
         }
         i = i + 1
     } (i < .len)
-    start < .len -> out.push(.slice(start, .len))
+    start < .len -> result.push(.slice(start, .len))
+    out = result
 }
 
 ; ═══════════════════════════════════════════════

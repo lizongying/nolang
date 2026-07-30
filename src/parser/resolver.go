@@ -23,7 +23,35 @@ type NodeSemantics struct {
 	PlatformKeys  []string           // 平台註解 key（如 ["mac-arm64"]）；空 = 平台通用
 	GenericParams []string           // 泛型型別參數名（來自 #{generic=[K,V]}）
 	EmbedData     []byte             // 編譯期嵌入的文件字節（來自 #{embed=...}）
+	EmbedFiles    map[string][]byte  // directory embed (relative path -> content, #{embed=dir})
+
+	// RTFlags 是 fmt 往返（round-trip）專用的表層語法標誌位（裸 match /
+	// wildcard arm / standalone if / rawCond 包裝層 / elif）。僅 formatter
+	// 讀取，編譯管線（build/checker/codegen）不讀。
+	RTFlags RTFlag
+
+	// OpeningBraceComment 保存 `{` 同行註釋（BlockStatement 或裸 match 的
+	// IfExpression）。僅 formatter 讀取。
+	OpeningBraceComment *CommentGroup
 }
+
+// RTFlag 是 fmt 往返專用的表層語法標誌位集合。
+type RTFlag uint8
+
+const (
+	// RTBareMatch 標記 IfExpression 來自裸 match 表達式 `{ cond -> body }`，
+	// 格式化器應輸出新式語法而非 if/else。
+	RTBareMatch RTFlag = 1 << iota
+	// RTMatchWildcard 標記此 arm 為 catch-all wildcard `->`（desugar 時
+	// Condition 被設為 IntegerLiteral(1)，此標誌讓 formatter 直接識別）。
+	RTMatchWildcard
+	// RTStandalone 標記 `cond -> body` 形式的裸 if-then 表達式（無外層 `{ }`）。
+	RTStandalone
+	// RTMatchWrapper 標記 rawCond 包裝層 `if 1 { it = matched; <if-chain> }`。
+	RTMatchWrapper
+	// RTElif 標記來自 deprecated `elif` desugar 的 IfExpression。
+	RTElif
+)
 
 // SemanticContext 是解析/语义分离后的“副表”。
 //
@@ -84,15 +112,23 @@ func (s *SemanticContext) Merge(other *SemanticContext) {
 
 // SetEmbedData 設定節點的嵌入字節（由 Resolver 的 embed 解析填入 side-table）。
 func (s *SemanticContext) SetEmbedData(n Node, data []byte) {
-	if ns, ok := s.nodeSem[n]; ok {
-		ns.EmbedData = data
-	}
+	s.ensure(n).EmbedData = data
+}
+
+// SetEmbedFiles sets the directory embed file map for a node.
+func (s *SemanticContext) SetEmbedFiles(n Node, files map[string][]byte) {
+	s.ensure(n).EmbedFiles = files
 }
 
 // ---- 節點級語義（side-table）----
 
 // SetRawAnnotations 記錄某節點的原始 #{...} 註解條目（parser 解析期呼叫）。
 func (s *SemanticContext) SetRawAnnotations(n Node, entries []*AnnotationEntry) {
+	s.ensure(n).RawAnnotations = entries
+}
+
+// ensure 取得（必要時創建）節點的 NodeSemantics 條目。
+func (s *SemanticContext) ensure(n Node) *NodeSemantics {
 	if s.nodeSem == nil {
 		s.nodeSem = make(map[Node]*NodeSemantics)
 	}
@@ -101,7 +137,51 @@ func (s *SemanticContext) SetRawAnnotations(n Node, entries []*AnnotationEntry) 
 		ns = &NodeSemantics{}
 		s.nodeSem[n] = ns
 	}
-	ns.RawAnnotations = entries
+	return ns
+}
+
+// SetRTFlag 為節點疊加 fmt 往返標誌位（parser/lowering 寫入）。
+func (s *SemanticContext) SetRTFlag(n Node, fl RTFlag) {
+	if s == nil || n == nil {
+		return
+	}
+	s.ensure(n).RTFlags |= fl
+}
+
+// HasRTFlag 報告節點是否帶指定往返標誌。nil receiver 安全。
+func (s *SemanticContext) HasRTFlag(n Node, fl RTFlag) bool {
+	if s == nil {
+		return false
+	}
+	if ns, ok := s.nodeSem[n]; ok {
+		return ns.RTFlags&fl != 0
+	}
+	return false
+}
+
+// SetOpeningBraceComment 設定節點的 `{` 同行註釋；cg 為 nil 時清除。
+func (s *SemanticContext) SetOpeningBraceComment(n Node, cg *CommentGroup) {
+	if s == nil || n == nil {
+		return
+	}
+	if cg == nil {
+		if ns, ok := s.nodeSem[n]; ok {
+			ns.OpeningBraceComment = nil
+		}
+		return
+	}
+	s.ensure(n).OpeningBraceComment = cg
+}
+
+// OpeningBraceCommentOf 返回節點的 `{` 同行註釋（無則 nil）。nil receiver 安全。
+func (s *SemanticContext) OpeningBraceCommentOf(n Node) *CommentGroup {
+	if s == nil {
+		return nil
+	}
+	if ns, ok := s.nodeSem[n]; ok {
+		return ns.OpeningBraceComment
+	}
+	return nil
 }
 
 // HasSemantics 報告該節點是否帶有任意語義信息。
@@ -153,6 +233,17 @@ func (s *SemanticContext) EmbedDataOf(n Node) []byte {
 	}
 	if ns, ok := s.nodeSem[n]; ok {
 		return ns.EmbedData
+	}
+	return nil
+}
+
+// EmbedFilesOf returns the directory embed file map for a node (nil if none).
+func (s *SemanticContext) EmbedFilesOf(n Node) map[string][]byte {
+	if s == nil {
+		return nil
+	}
+	if ns, ok := s.nodeSem[n]; ok {
+		return ns.EmbedFiles
 	}
 	return nil
 }

@@ -40,6 +40,13 @@ func (sm *SurfaceMatch) EndPos() lexer.Position {
 // newSurfaceMatch 建立表層 match 節點（不捕獲型別快照；類型推斷由 Resolver pass
 // 寫入語義副表，lowering 時自 p.sem 讀取）。
 func (p *Parser) newSurfaceMatch(tok lexer.Token, matched Expression, arms []matchArm) *SurfaceMatch {
+	if ident, ok := matched.(*Identifier); ok {
+		fmt.Printf("[DEBUG-NEWSM] creating SurfaceMatch: matched=%s arms=%d\n", ident.Value, len(arms))
+	} else if matched != nil {
+		fmt.Printf("[DEBUG-NEWSM] creating SurfaceMatch: matched=%T arms=%d\n", matched, len(arms))
+	} else {
+		fmt.Printf("[DEBUG-NEWSM] creating bare SurfaceMatch: arms=%d\n", len(arms))
+	}
 	return &SurfaceMatch{Token: tok, Matched: matched, Arms: arms}
 }
 
@@ -121,6 +128,9 @@ func (l *lowerer) walk(v reflect.Value) {
 // lowerSurfaceMatch 將單個表層 match 節點展開為核心 AST。
 // 先自底向上處理 matched 與各 arm 內部（嵌套 match），再建 if 鏈。
 func (l *lowerer) lowerSurfaceMatch(sm *SurfaceMatch) Expression {
+	if ident, ok := sm.Matched.(*Identifier); ok {
+		fmt.Printf("[DEBUG-LOWER] lowering SurfaceMatch: matched=%s arms=%d\n", ident.Value, len(sm.Arms))
+	}
 	l.walk(reflect.ValueOf(&sm.Matched))
 	for i := range sm.Arms {
 		a := &sm.Arms[i]
@@ -136,7 +146,7 @@ func (l *lowerer) lowerSurfaceMatch(sm *SurfaceMatch) Expression {
 	if sm.Matched == nil {
 		result := l.p.buildBareMatchDesugar(sm.Token, sm.Arms)
 		if ifExpr, ok := result.(*IfExpression); ok && ifExpr != nil {
-			ifExpr.OpeningBraceComment = sm.OpeningBraceComment
+			l.p.sem.SetOpeningBraceComment(ifExpr, sm.OpeningBraceComment)
 		}
 		return result
 	}
@@ -157,12 +167,11 @@ func (p *Parser) buildBareMatchDesugar(tok lexer.Token, arms []matchArm) Express
 		if arm.isWildcard {
 			if ifExpr == nil {
 				ifExpr = &IfExpression{
-					Token:           tok,
-					Condition:       &IntegerLiteral{Token: tok, Value: 1},
-					Consequence:     arm.body,
-					IsBareMatch:     true,
-					IsMatchWildcard: true,
+					Token:       tok,
+					Condition:   &IntegerLiteral{Token: tok, Value: 1},
+					Consequence: arm.body,
 				}
+				p.sem.SetRTFlag(ifExpr, RTBareMatch|RTMatchWildcard)
 			} else {
 				if ifExpr.Alternative == nil {
 					ifExpr.Alternative = arm.body
@@ -181,10 +190,10 @@ func (p *Parser) buildBareMatchDesugar(tok lexer.Token, arms []matchArm) Express
 				Condition:       arm.condition,
 				Consequence:     arm.body,
 				Alternative:     nil,
-				IsBareMatch:     true,
 				EqualityPattern: equalityPattern,
 				RangePattern:    rangePattern,
 			}
+			p.sem.SetRTFlag(newIf, RTBareMatch)
 			if ifExpr != nil {
 				newIf.Alternative = &BlockStatement{
 					Token:      tok,
@@ -448,10 +457,10 @@ func (p *Parser) buildMatchDesugar(sm *SurfaceMatch) Expression {
 						Condition:       cond,
 						Consequence:     arm.body,
 						Alternative:     defaultBody,
-						IsBareMatch:     true,
 						MatchedExpr:     matched,
 						EqualityPattern: &Identifier{Token: tok, Value: "ok"},
 					}
+					p.sem.SetRTFlag(newIf, RTBareMatch)
 					ifExpr = newIf
 				} else {
 					// 最內層 wildcard：儲存 body 作為下一個條件 arm 的 else
@@ -478,10 +487,10 @@ func (p *Parser) buildMatchDesugar(sm *SurfaceMatch) Expression {
 							Token:      tok,
 							Statements: []Statement{&ExpressionStatement{Token: tok, Expression: ifExpr}},
 						},
-						IsBareMatch:     true,
 						MatchedExpr:     matched,
 						EqualityPattern: &Identifier{Token: tok, Value: "ok"},
 					}
+					p.sem.SetRTFlag(newIf, RTBareMatch)
 					ifExpr = newIf
 				} else {
 					ifExpr.Alternative = arm.body
@@ -571,7 +580,6 @@ func (p *Parser) buildMatchDesugar(sm *SurfaceMatch) Expression {
 				Condition:       cond,
 				Consequence:     arm.body,
 				Alternative:     nil,
-				IsBareMatch:     true,
 				MatchedExpr:     matched,
 				RangePattern:    rangePattern,
 				EqualityPattern: equalityPattern,
@@ -579,6 +587,7 @@ func (p *Parser) buildMatchDesugar(sm *SurfaceMatch) Expression {
 				ValuePatterns:   valuePatterns,
 				RawCond:         rawCond,
 			}
+			p.sem.SetRTFlag(newIf, RTBareMatch)
 			if ifExpr != nil {
 				newIf.Alternative = &BlockStatement{
 					Token:      tok,
@@ -600,13 +609,12 @@ func (p *Parser) buildMatchDesugar(sm *SurfaceMatch) Expression {
 		if defaultBody != nil {
 			// 唯一 arm 是 wildcard：用 if 1 {} 包裝（無法避免）
 			ifExpr = &IfExpression{
-				Token:           tok,
-				Condition:       &IntegerLiteral{Token: tok, Value: 1},
-				Consequence:     defaultBody,
-				IsBareMatch:     true,
-				MatchedExpr:     matched,
-				IsMatchWildcard: true,
+				Token:       tok,
+				Condition:   &IntegerLiteral{Token: tok, Value: 1},
+				Consequence: defaultBody,
+				MatchedExpr: matched,
 			}
+			p.sem.SetRTFlag(ifExpr, RTBareMatch|RTMatchWildcard)
 			if defaultDotValBody == defaultBody {
 				ifExpr.DotValBody = defaultBody
 			}
@@ -628,10 +636,9 @@ func (p *Parser) buildMatchDesugar(sm *SurfaceMatch) Expression {
 					&ExpressionStatement{Token: tok, Expression: ifExpr},
 				},
 			},
-			IsBareMatch:    true,
-			MatchedExpr:    matched,
-			IsMatchWrapper: true,
+			MatchedExpr: matched,
 		}
+		p.sem.SetRTFlag(ifExpr, RTBareMatch|RTMatchWrapper)
 	}
 
 	return ifExpr

@@ -1366,6 +1366,109 @@ func (g *Generator) Generate(program *parser.Program) string {
 				g.embedVars[name] = true
 				continue
 			}
+			// 處理 #{embed='dir'} 文件夾嵌入變數
+			if files := g.sem.EmbedFilesOf(ls); files != nil {
+				name := ls.Name.Value
+				// 收集排序後的文件列表
+				type entry struct {
+					path string
+					data []byte
+				}
+				var entries []entry
+				for p, d := range files {
+					entries = append(entries, entry{p, d})
+				}
+				// 按 path 排序以保證穩定輸出
+				sort.Slice(entries, func(i, j int) bool {
+					return entries[i].path < entries[j].path
+				})
+
+				count := len(entries)
+				// 1. 拼接所有路徑（用 \0 分隔）
+				var pathsBlob []byte
+				var pathStarts, pathLens []int
+				for _, e := range entries {
+					pathStarts = append(pathStarts, len(pathsBlob))
+					pathLens = append(pathLens, len(e.path))
+					pathsBlob = append(pathsBlob, []byte(e.path)...)
+					pathsBlob = append(pathsBlob, 0) // \0 separator
+				}
+
+				// 2. 拼接所有文件內容
+				var dataBlob []byte
+				var dataStarts, dataLens []int
+				for _, e := range entries {
+					dataStarts = append(dataStarts, len(dataBlob))
+					dataLens = append(dataLens, len(e.data))
+					dataBlob = append(dataBlob, e.data...)
+				}
+
+				// 3. 發出常量全局變數
+				emitBytes := func(globalName string, data []byte) {
+					n := len(data)
+					var cstr strings.Builder
+					cstr.WriteString("c\"")
+					for _, b := range data {
+						if b >= 0x20 && b <= 0x7E && b != '"' && b != '\\' {
+							cstr.WriteByte(b)
+						} else {
+							cstr.WriteString(fmt.Sprintf("\\%02X", b))
+						}
+					}
+					cstr.WriteString("\"")
+					sb.WriteString(fmt.Sprintf("%s = private constant [%d x i8] %s\n", globalName, n, cstr.String()))
+				}
+
+				// 發出 paths blob
+				pathsGlobal := "@.embedf." + name + ".paths"
+				emitBytes(pathsGlobal, pathsBlob)
+
+				// 發出 data blob
+				dataGlobal := "@.embedf." + name + ".data"
+				emitBytes(dataGlobal, dataBlob)
+
+				// 發出 pathStarts / pathLens / dataStarts / dataLens 數組
+				emitI64Array := func(globalName string, arr []int) {
+					n := len(arr)
+					var b strings.Builder
+					b.WriteString("[")
+					for i, v := range arr {
+						if i > 0 {
+							b.WriteString(", ")
+						}
+						b.WriteString(fmt.Sprintf("i64 %d", v))
+					}
+					b.WriteString("]")
+					sb.WriteString(fmt.Sprintf("%s = private constant [%d x i64] %s\n", globalName, n, b.String()))
+				}
+
+				psGlobal := "@.embedf." + name + ".pathStarts"
+				plGlobal := "@.embedf." + name + ".pathLens"
+				dsGlobal := "@.embedf." + name + ".dataStarts"
+				dlGlobal := "@.embedf." + name + ".dataLens"
+				emitI64Array(psGlobal, pathStarts)
+				emitI64Array(plGlobal, pathLens)
+				emitI64Array(dsGlobal, dataStarts)
+				emitI64Array(dlGlobal, dataLens)
+
+				// 發出 embed struct 全局變數
+				pathsLen := len(pathsBlob)
+				dataLen := len(dataBlob)
+				sb.WriteString(fmt.Sprintf("%%embed.%s = type { i64, %%str-long, %%vec, %%vec, %%vec, %%vec, %%vec }\n", name))
+				sb.WriteString(fmt.Sprintf("%s = global %%embed.%s {\n", llvmGlobalRef(name), name))
+				sb.WriteString(fmt.Sprintf("\ti64 %d,\n", count))
+				sb.WriteString(fmt.Sprintf("\t%%str-long { i64 %d, i64 %d, i64 ptrtoint ([%d x i8]* %s to i64) },\n", pathsLen, pathsLen, pathsLen, pathsGlobal))
+				sb.WriteString(fmt.Sprintf("\t%%vec { i64 %d, i64 %d, i64 ptrtoint ([%d x i64]* %s to i64) },\n", count, count, count, psGlobal))
+				sb.WriteString(fmt.Sprintf("\t%%vec { i64 %d, i64 %d, i64 ptrtoint ([%d x i64]* %s to i64) },\n", count, count, count, plGlobal))
+				sb.WriteString(fmt.Sprintf("\t%%vec { i64 %d, i64 %d, i64 ptrtoint ([%d x i8]* %s to i64) },\n", dataLen, dataLen, dataLen, dataGlobal))
+				sb.WriteString(fmt.Sprintf("\t%%vec { i64 %d, i64 %d, i64 ptrtoint ([%d x i64]* %s to i64) },\n", count, count, count, dsGlobal))
+				sb.WriteString(fmt.Sprintf("\t%%vec { i64 %d, i64 %d, i64 ptrtoint ([%d x i64]* %s to i64) }\n", count, count, count, dlGlobal))
+				sb.WriteString("}\n")
+
+				g.globalVars[name] = true
+				g.embedVars[name] = true
+				continue
+			}
 			llvmType := g.varLLVMType(ls)
 			if llvmType == "%str-long" {
 				// Only emit as global for string literal constants, uninitialized

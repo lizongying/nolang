@@ -421,7 +421,7 @@ inflate-decompress = (data []byte, out-size i64) (out []byte) {
         btype == 0 -> {
             br.skip-to-byte()
             blen = br.read-u16-le()
-            br.read-u16-le(); 跳過 NLEN
+            br.read-u16-le()
             i <- [0..blen): {
                 result.push(data[br.pos] & 255)
                 br.pos = br.pos + 1
@@ -546,16 +546,16 @@ gzip-compress = (data []byte) (out []byte) {
     result []byte
 
     ; GZIP 標頭 (10 bytes)
-    result.push(0x1f); ID1
-    result.push(0x8b); ID2
-    result.push(0x08); CM = deflate
-    result.push(0x00); FLG = 0
-    result.push(0x00); MTIME
+    result.push(0x1f)
+    result.push(0x8b)
+    result.push(0x08)
     result.push(0x00)
     result.push(0x00)
     result.push(0x00)
-    result.push(0x00); XFL
-    result.push(0xff); OS = unknown
+    result.push(0x00)
+    result.push(0x00)
+    result.push(0x00)
+    result.push(0xff)
 
     ; DEFLATE 資料（stored blocks）
     deflated = deflate-stored(data)
@@ -592,7 +592,7 @@ gzip-decompress = (data []byte) (out []byte) {
     flg = data[3] & 255
 
     ; FEXTRA (bit 2)
-    flg & 4 != 0 -> {
+    (flg & 4) != 0 -> {
         xlen = data[pos] & 255
         pos = pos + 1
         xlen = xlen | ((data[pos] & 255) << 8)
@@ -600,23 +600,23 @@ gzip-decompress = (data []byte) (out []byte) {
     }
 
     ; FNAME (bit 3) — 以 \0 結尾的字串
-    flg & 8 != 0 -> {
+    (flg & 8) != 0 -> {
         {
             pos = pos + 1
-        } (data[pos] & 255 != 0)
+        } ((data[pos] & 255) != 0)
         pos = pos + 1
     }
 
     ; FCOMMENT (bit 4) — 以 \0 結尾的字串
-    flg & 16 != 0 -> {
+    (flg & 16) != 0 -> {
         {
             pos = pos + 1
-        } (data[pos] & 255 != 0)
+        } ((data[pos] & 255) != 0)
         pos = pos + 1
     }
 
     ; FHCRC (bit 0) — 2 bytes CRC16
-    flg & 1 != 0 -> pos = pos + 2
+    (flg & 1) != 0 -> pos = pos + 2
 
     ; DEFLATE 資料從 pos 開始
     ; 複製 DEFLATE 資料到新切片（inflate 需要獨立的位元讀取器）

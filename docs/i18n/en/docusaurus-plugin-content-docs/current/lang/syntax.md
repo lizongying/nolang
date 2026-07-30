@@ -1522,6 +1522,68 @@ print('first byte: ', WIN-ICON[0])
 4. The file must exist at compile time, otherwise an error is reported
 5. Cannot be combined with an explicit initial value (e.g., `ICON []byte = [1, 2, 3]` will error)
 
+#### Directory Embedding (`#{embed='dir'}`)
+
+The `#{embed=...}` annotation also supports embedding an entire directory. When the path points to a directory, the compiler recursively reads all files and embeds them as an `fs.embed` read-only filesystem. At runtime, files are accessed via `read()` and `exists()` methods — the lookup logic is implemented entirely in Nolang, with no C functions.
+
+**Syntax**:
+
+```no
+; Embed an entire frontend directory
+#{embed='../frontend/dist'}
+DIST fs.embed
+
+; Read a file from the embedded filesystem
+data = DIST.read('index.html')
+; Check if a file exists
+ok = DIST.exists('css/style.css')
+```
+
+**`fs.embed` type**:
+
+`fs.embed` is a struct defined in the Nolang standard library `fs` module, containing metadata for embedded files (paths, offsets, lengths). The compiler reads the directory at compile time and stores all file contents as constant global variables. The `read` method is implemented in pure Nolang.
+
+| Method | Signature | Description |
+| --- | --- | --- |
+| `read` | `(path str) (data []byte, ok bool)` | Read an embedded file, returns content and whether found |
+| `exists` | `(path str) (yes bool)` | Check if an embedded file exists |
+
+**Example**:
+
+```no
+; HTTP static file server: embed frontend files into single binary
+#{embed='../frontend/dist'}
+DIST fs.embed
+
+serve = (conn server-conn) {
+    conn.parse()
+    path = conn.path
+    path == '/' -> path = '/index.html'
+
+    ; Strip leading / to get relative path
+    rel = path.slice(1, path.len)
+
+    ; Read from embedded filesystem
+    data, ok = DIST.read(rel)
+    ok == false -> {
+        conn.write-html(404, 'Not Found')
+        conn.close()
+        return
+    }
+    conn.write-status(200)
+    conn.write-header('Content-Type', get-content-type(path))
+    conn.write-body(data)
+    conn.close()
+}
+```
+
+**Notes**:
+
+1. All files in the directory (including subdirectories) are recursively embedded, with paths stored relative to the embed directory (e.g. `css/style.css`)
+2. Path separators are normalized to forward slashes `/` (cross-platform consistent)
+3. `fs.embed` type variables are read-only and excluded from heap cleanup
+4. Suitable for single-binary distribution scenarios (e.g. HTTP static file servers, CLI tools with embedded resources)
+
 #### Platform Annotations
 
 Platform annotations are compile-time filters that include or exclude code based on the target platform. They use **flattened keys** that unambiguously specify both OS and architecture (e.g. `#{mac-arm64}`), and are attached to the declaration that follows. Non-matching code is excluded from the build entirely — no LLVM IR is generated, no type checking is performed.
@@ -1603,3 +1665,49 @@ neural = () {
 ```
 
 Use `os.get-arch()` to get the current architecture at runtime, and platform annotations to include/exclude code at compile time.
+
+## mod.jsonc Compiler Configuration
+
+The `compiler` block in `mod.jsonc` controls compiler behavior.
+
+```jsonc
+{
+  "compiler": {
+    "version": "0.1.0",
+    "anonymous-fn-type": false,
+    "emit": "js"
+  }
+}
+```
+
+### `emit`
+
+Controls the output target backend:
+
+| Value | Description |
+| --- | --- |
+| `""` (empty, default) | Use LLVM backend to generate native executable |
+| `"js"` | Use JS backend to emit JavaScript (type erasure), no LLVM toolchain required |
+
+When set to `"js"`, `no build` automatically uses the JS backend, equivalent to the `--js` command-line flag. Command-line flags take precedence over config file settings.
+
+```jsonc
+// Automatically generate JavaScript
+"compiler": {
+  "emit": "js"
+}
+```
+
+### `anonymous-fn-type`
+
+Controls whether anonymous function type syntax (e.g. `cb ()()`) is permitted. Defaults to `false` (disabled), requiring named function type aliases.
+
+### `link-libs`
+
+Specifies a list of C libraries to link:
+
+```jsonc
+"compiler": {
+  "link-libs": ["crypto", "ssl"]
+}
+```

@@ -1794,6 +1794,68 @@ print('first byte: ', WIN-ICON[0])
 4. 文件必須在編譯期存在，否則報錯
 5. 不能與顯式初始值共存（如 `ICON []byte = [1, 2, 3]` 會報錯）
 
+#### 文件夾嵌入（`#{embed='dir'}`）
+
+`#{embed=...}` 也支援嵌入整個目錄。當路徑指向目錄時，編譯器遞迴讀取目錄下所有文件，嵌入為 `fs.embed` 類型的只讀文件系統。運行時通過 `read()`、`exists()` 方法按路徑訪問嵌入的文件，無需任何 C 函數——查找邏輯完全由 Nolang 實現。
+
+**語法**：
+
+```no
+; 嵌入整個前端目錄
+#{embed='../frontend/dist'}
+DIST fs.embed
+
+; 從嵌入的文件系統讀取文件
+data = DIST.read('index.html')
+; 檢查文件是否存在
+ok = DIST.exists('css/style.css')
+```
+
+**`fs.embed` 類型**：
+
+`fs.embed` 是 Nolang 標準庫 `fs` 模組中定義的結構體，包含嵌入文件的元資料（路徑、偏移、長度）。編譯器在編譯期讀取目錄並將所有文件內容拼接為常量全局變數，運行時由純 Nolang 實現的 `read` 方法遍歷查找。
+
+| 方法 | 簽名 | 說明 |
+| --- | --- | --- |
+| `read` | `(path str) (data []byte, ok bool)` | 讀取嵌入的文件，返回內容和是否找到 |
+| `exists` | `(path str) (yes bool)` | 檢查嵌入的文件是否存在 |
+
+**範例**：
+
+```no
+; HTTP 靜態文件伺服器：將前端文件嵌入單一二進制
+#{embed='../frontend/dist'}
+DIST fs.embed
+
+serve = (conn server-conn) {
+    conn.parse()
+    path = conn.path
+    path == '/' -> path = '/index.html'
+
+    ; 去掉前導 / 得到相對路徑
+    rel = path.slice(1, path.len)
+
+    ; 從嵌入的文件系統讀取
+    data, ok = DIST.read(rel)
+    ok == false -> {
+        conn.write-html(404, 'Not Found')
+        conn.close()
+        return
+    }
+    conn.write-status(200)
+    conn.write-header('Content-Type', get-content-type(path))
+    conn.write-body(data)
+    conn.close()
+}
+```
+
+**注意事項**：
+
+1. 目錄中所有文件（含子目錄）遞迴嵌入，路徑以相對於嵌入目錄的路徑存儲（如 `css/style.css`）
+2. 路徑分隔符統一為正斜槓 `/`（跨平台一致）
+3. `fs.embed` 類型變數為只讀，不參與堆釋放
+4. 適用於單二進制分發場景（如 HTTP 靜態文件伺服器、CLI 工具嵌入資源）
+
 #### 平台註解
 
 平台註解是編譯期過濾器，根據目標平台決定是否包含代碼。使用**扁平化鍵**（如 `#{mac-arm64}`）同時指定 OS 與架構，無歧義，附加到緊隨其後的宣告上。不匹配的代碼完全不參與編譯——不生成 LLVM IR，不進行類型檢查。
@@ -1874,3 +1936,49 @@ neural = () {
 ```
 
 使用 `os.get-arch()` 可在執行期取得當前架構，使用平台註解則在編譯期包含或排除代碼。
+
+## mod.jsonc 編譯器配置
+
+`mod.jsonc` 中的 `compiler` 區塊控制編譯器行為。
+
+```jsonc
+{
+  "compiler": {
+    "version": "0.1.0",
+    "anonymous-fn-type": false,
+    "emit": "js"
+  }
+}
+```
+
+### `emit`
+
+控制輸出目標後端：
+
+| 值 | 說明 |
+| --- | --- |
+| `""` （空，預設） | 使用 LLVM 後端生成原生可執行檔 |
+| `"js"` | 使用 JS 後端生成 JavaScript（型別擦除），無需 LLVM 工具鏈 |
+
+設定為 `"js"` 後，`no build` 自動走 JS 後端，等效於命令列 `--js`。命令列旗標優先級高於配置文件。
+
+```jsonc
+// 自動生成 JavaScript
+"compiler": {
+  "emit": "js"
+}
+```
+
+### `anonymous-fn-type`
+
+控制是否允許匿名函式型別語法（如 `cb ()()`）。預設 `false`（禁用），需使用具名函式型別別名。
+
+### `link-libs`
+
+指定連結的 C 函式庫列表：
+
+```jsonc
+"compiler": {
+  "link-libs": ["crypto", "ssl"]
+}
+```

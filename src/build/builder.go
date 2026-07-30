@@ -283,16 +283,6 @@ func buildWithPkg(inputPath string, pkg *Package, opts BuildOptions, buffered bo
 		return fmt.Errorf("reading input file: %w", err)
 	}
 
-	compiler := NewTranspiler(pkg)
-	compiler.sourcePath = inputPath
-	goos, goarch := parseTargetPlatform(opts.Target)
-	compiler.SetTargetPlatform(goos, goarch)
-	compiler.SetNoBoundsCheck(opts.NoBoundsCheck)
-	code, err := compiler.Compile(string(source))
-	if err != nil {
-		return fmt.Errorf("compilation error: %w", err)
-	}
-
 	// 決定輸出名稱：main 檔 → 套件名稱，lib 檔 → lib-套件名稱
 	baseName := strings.TrimSuffix(filepath.Base(inputPath), ".no")
 	fileName := baseName
@@ -327,15 +317,31 @@ func buildWithPkg(inputPath string, pkg *Package, opts BuildOptions, buffered bo
 		outPath = filepath.Join(distDir, fileName)
 	}
 
-	var linkLibs []string
-	if pkg != nil {
-		linkLibs = pkg.Compiler.LinkLibs
-	}
-
 	// 並行構建時使用緩衝區避免輸出交錯
 	var sink *bytes.Buffer
 	if buffered {
 		sink = &bytes.Buffer{}
+	}
+
+	// 如果 mod.jsonc 指定 emit: js，使用 JS 後端發射 JavaScript
+	if pkg != nil && pkg.Compiler.Emit == "js" {
+		return buildJSPkg(source, inputPath, pkg, opts, outPath, sink)
+	}
+
+	// LLVM 路徑
+	compiler := NewTranspiler(pkg)
+	compiler.sourcePath = inputPath
+	goos, goarch := parseTargetPlatform(opts.Target)
+	compiler.SetTargetPlatform(goos, goarch)
+	compiler.SetNoBoundsCheck(opts.NoBoundsCheck)
+	code, err := compiler.Compile(string(source))
+	if err != nil {
+		return fmt.Errorf("compilation error: %w", err)
+	}
+
+	var linkLibs []string
+	if pkg != nil {
+		linkLibs = pkg.Compiler.LinkLibs
 	}
 
 	err = buildLLVMInternal(code, fileName, outPath, opts.CC, opts.Target, opts.Verbose, linkLibs, sink)
@@ -592,6 +598,55 @@ func BuildDirectWasm(inputPath string, opts BuildOptions) ([]byte, error) {
 		fmt.Fprintf(os.Stderr, "[direct-wasm] target: %s-%s\n", goarch, goos)
 	}
 	return g.Generate(program)
+}
+
+// buildJSPkg 使用 JS 後端從 Nolang 源碼發射 JavaScript 並寫入輸出檔案。
+// 當 mod.jsonc 的 compiler.emit 為 "js" 時由 buildWithPkg 呼叫，
+// 使 workspace 模式下的單個 JS 目標也能自動走 JS 後端。
+func buildJSPkg(source []byte, inputPath string, pkg *Package, opts BuildOptions, outPath string, sink *bytes.Buffer) error {
+	// 輸出路徑加上 .js 副檔名
+	if !strings.HasSuffix(outPath, ".js") {
+		outPath = outPath + ".js"
+	}
+
+	// 解析為 AST
+	l := lexer.New(string(source))
+	p := parser.New(l)
+	p.Filename = filepath.Base(inputPath)
+	program := p.ParseProgram()
+	if program == nil {
+		return fmt.Errorf("%s: parser returned nil program", inputPath)
+	}
+	if errs := p.Errors(); len(errs) > 0 {
+		return fmt.Errorf("%s: %v", inputPath, errs)
+	}
+
+	// JS 後端 codegen（型別擦除）
+	g := js.NewGenerator()
+	g.SetTargetPlatform("js", "")
+	envMode := "node"
+	if opts.BrowserMode {
+		g.SetTargetEnv("browser")
+		envMode = "browser"
+	}
+	if opts.Verbose {
+		vprintf(sink, "[js] emit: js (type erasure), env: %s\n", envMode)
+	}
+	jsCode, err := g.Generate(program)
+	if err != nil {
+		return fmt.Errorf("JS generation error: %w", err)
+	}
+
+	// 確保輸出目錄存在
+	if dir := filepath.Dir(outPath); dir != "" {
+		_ = os.MkdirAll(dir, 0755)
+	}
+	if err := os.WriteFile(outPath, []byte(jsCode), 0644); err != nil {
+		return fmt.Errorf("writing JS output: %w", err)
+	}
+
+	vprintf(sink, "Built: %s\n", outPath)
+	return nil
 }
 
 // BuildJS 使用 JS 後端從 Nolang 源碼直接產生 JavaScript 原始碼字串。

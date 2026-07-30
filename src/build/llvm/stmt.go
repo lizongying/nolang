@@ -2,6 +2,7 @@ package llvm
 
 import (
 	"fmt"
+	"os"
 	"sort"
 	"strings"
 
@@ -2326,6 +2327,10 @@ func (g *Generator) generateMainFunction(sb *strings.Builder, program *parser.Pr
 		if ls, ok := stmt.(*parser.LetStatement); ok {
 			// Embed vars are emitted as statically initialized globals; skip runtime init.
 			if g.sem.EmbedDataOf(ls) != nil {
+			// Directory embed vars are also statically initialized globals; skip runtime init.
+			if g.sem.EmbedFilesOf(ls) != nil {
+				continue
+			}
 				continue
 			}
 			// Skip LetStatements already emitted as globals, EXCEPT for:
@@ -3190,11 +3195,11 @@ func (g *Generator) inferOptionInnerType(stmt *parser.LetStatement) string {
 				fnName = "str." + dot.Property
 			}
 		}
-		if fnName != "" && g.funcResultInnerTypes != nil {
-			if innerTypes, ok := g.funcResultInnerTypes[fnName]; ok && len(innerTypes) >= 1 && innerTypes[0] != "" {
-				return innerTypes[0]
-			}
+	if fnName != "" && g.funcResultInnerTypes != nil {
+		if innerTypes, ok := g.funcResultInnerTypes[fnName]; ok && len(innerTypes) >= 1 && innerTypes[0] != "" {
+			return innerTypes[0]
 		}
+	}
 	}
 	return ""
 }
@@ -3297,6 +3302,53 @@ func (g *Generator) collectVarDeclsFromStmtInner(stmt parser.Statement, vars map
 			// （如 ?str → %str-long, ?client → %client），必須每次更新以確保
 			// 方法呼叫解析（it.close()）能正確找到型別前綴。
 			vt := g.varLLVMType(s)
+			// 診斷輸出走 NOLANG_DEBUG_IT 環境變量（默認關閉）
+			if os.Getenv("NOLANG_DEBUG_IT") != "" && s.Name != nil && s.Name.Value == "it" {
+				typeStr := "nil"
+				if s.Type != nil {
+					typeStr = s.Type.String()
+				}
+				srcName := ""
+				if ident, ok := s.Value.(*parser.Identifier); ok {
+					srcName = ident.Value
+				}
+				srcType := ""
+				if srcName != "" && g.varTypes != nil {
+					if t, ok := g.varTypes[srcName]; ok {
+						srcType = t
+					}
+				}
+				srcInner := ""
+				if srcName != "" && g.optionInnerTypes != nil {
+					if t, ok := g.optionInnerTypes[srcName]; ok {
+						srcInner = t
+					}
+				}
+				fmt.Printf("[DEBUG-IT] it binding: Type=%s, src=%s, srcType=%s, srcInner=%s, vt=%s\n", typeStr, srcName, srcType, srcInner, vt)
+			}
+			// Fallback: if the source is an option variable with a struct inner type,
+			// use the struct inner type as vt. This handles cases where:
+			// - mapToLLVMType couldn't resolve a bare struct name (e.g. "server-conn")
+			// - varLLVMType returned an existing type from a previous match's it binding
+			//   (e.g. %str-long from ?str match), which is wrong for ?tls.server-conn
+			if ident, ok := s.Value.(*parser.Identifier); ok {
+				if g.varTypes != nil {
+					if srcType, ok := g.varTypes[ident.Value]; ok && srcType == "%option" {
+						if g.optionInnerTypes != nil {
+							if innerType, ok := g.optionInnerTypes[ident.Value]; ok {
+								if g.isStructLLVMType(innerType) {
+									vt = innerType
+								} else if g.isStructLLVMType(vt) {
+									// vt is a struct (leaked from previous match arm),
+									// but inner type is not (e.g. vt=%str-long, innerType=i64).
+									// Use the inner type to avoid type mismatch.
+									vt = innerType
+								}
+							}
+						}
+					}
+				}
+			}
 			if existing, exists := vars[s.Name.Value]; !exists || existing == "i64" || (g.isStructLLVMType(existing) && existing != vt) {
 				// 選擇較大的型別以避免 overflow：struct 型別（%）通常比 i64 大，
 				// 多個 struct 型別則保留先到的（因為 option data field 固定 16 bytes）。
@@ -3430,14 +3482,18 @@ func (g *Generator) collectVarDeclsFromStmtInner(stmt parser.Statement, vars map
 								}
 							} else {
 								// Fallback: receiver is a module name (e.g. "fs"),
-								// not a variable. User-defined functions are
-								// registered under their simple name (e.g.
-								// "list-dir"), so look up dot.Property directly.
-								// This makes `entries = fs.list-dir(dir)` infer
-								// the []str element type (%str-long) and register
-								// g.arrayElemTypes["entries"], fixing slice
-								// indexing codegen (24-byte stride vs 8-byte).
-								if _, ok := g.funcResultNolangTypes[dot.Property]; ok {
+								// not a variable. User-defined functions may be
+								// registered under their full qualified name (e.g.
+								// "process.list-all") or their simple name (e.g.
+								// "list-dir"). Try the full name first, then the
+								// simple name. This makes `all = process.list-all()`
+								// infer the []proc-info element type and register
+								// g.arrayElemTypes["all"], fixing downstream struct
+								// field access type inference.
+								fullName := recv.Value + "." + dot.Property
+								if _, ok := g.funcResultNolangTypes[fullName]; ok {
+									fnName = fullName
+								} else if _, ok := g.funcResultNolangTypes[dot.Property]; ok {
 									fnName = dot.Property
 								}
 							}
@@ -5158,17 +5214,14 @@ func (g *Generator) generateLet(sb *strings.Builder, stmt *parser.LetStatement) 
 	// (bitcast to inner struct pointer) for struct inner types.
 	// We need to load the struct value before storing into `it`.
 	// Additionally, `it` may be allocated with a different struct type
-	// (e.g. %client) when shared across multiple matches with different
-	// element types (e.g. ?str → %str-long, ?client → %client).
-	// In that case, bitcast the alloca pointer to the value's type.
+	// (e.g. %tls.server-conn) when shared across multiple matches with different
+	// element types (e.g. ?str → %str-long, ?tls.server-conn → %tls.server-conn).
+	// In that case, use the source option's inner type for the load, and bitcast
+	// the `it` alloca to the inner type for the store.
 	if stmt.IsSynthetic && g.isStructLLVMType(llvmType) {
 		if ident, ok := stmt.Value.(*parser.Identifier); ok {
 			// Detect whether the source is an option variable whose inner
 			// value was extracted as a struct pointer by generateExprWithSB.
-			// Two signals:
-			//  1. varTypes[src] == "%option" (preferred), or
-			//  2. ssaTypes[val] == llvmType + "*" (fallback for generic ?v
-			//     where varTypes lookup may not be "%option").
 			isOptionSrc := false
 			if g.varTypes != nil {
 				if srcType, ok := g.varTypes[ident.Value]; ok && srcType == "%option" {
@@ -5181,9 +5234,30 @@ func (g *Generator) generateLet(sb *strings.Builder, stmt *parser.LetStatement) 
 				}
 			}
 			if isOptionSrc && strings.HasPrefix(val, "%") {
+				// Determine the source option's inner type to use for the load.
+				// When `it` is shared across matches with different element types,
+				// the option extraction returns a pointer of the source's inner type,
+				// not `it`'s allocated type. Using llvmType for the load would cause
+				// a type mismatch (e.g. load %tls.server-conn from %str-long*).
+				loadType := llvmType
+				if g.optionInnerTypes != nil {
+					if innerType, ok := g.optionInnerTypes[ident.Value]; ok && g.isStructLLVMType(innerType) {
+						loadType = innerType
+					}
+				}
 				loadReg := g.tmpReg("it.syn.load")
-				sb.WriteString(fmt.Sprintf("%s%s = load %s, %s* %s\n", g.indent(), loadReg, llvmType, llvmType, val))
+				sb.WriteString(fmt.Sprintf("%s%s = load %s, %s* %s\n", g.indent(), loadReg, loadType, loadType, val))
 				val = loadReg
+				// If the load type differs from llvmType (it's allocated type),
+				// bitcast the alloca pointer so the store uses the correct type.
+				if loadType != llvmType {
+					castReg := g.tmpReg("it.syn.cast")
+					sb.WriteString(fmt.Sprintf("%s%s = bitcast %s* %s to %s*\n", g.indent(), castReg, llvmType, g.varAddr(name), loadType))
+					// Store using the bitcasted pointer
+					sb.WriteString(fmt.Sprintf("%sstore %s %s, %s* %s\n", g.indent(), loadType, val, loadType, castReg))
+					// Skip the general store below
+					return
+				}
 			}
 		}
 	}
@@ -6127,6 +6201,14 @@ func (g *Generator) generateOptionAssign(sb *strings.Builder, stmt *parser.LetSt
 								isNolangOptionCall = true
 								break
 							}
+						}
+					} else {
+						// Receiver is a module name (not a variable), e.g.
+						// json-util.extract-str(msg, 'content').
+						// Check the full qualified name in funcResultLLVMType.
+						fullName := recvIdent.Value + "." + dot.Property
+						if ts, ok := g.funcResultLLVMType[fullName]; ok && len(ts) == 1 && ts[0] == "%option" {
+							isNolangOptionCall = true
 						}
 					}
 				} else if _, isStrLit := recv.(*parser.StringLiteral); isStrLit {

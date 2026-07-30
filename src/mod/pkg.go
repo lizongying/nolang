@@ -12,6 +12,9 @@ import (
 type CompilerOptions struct {
 	AnonymousFnType bool     `json:"anonymous-fn-type"`
 	LinkLibs        []string `json:"link-libs,omitempty"`
+	// Emit 控制輸出目標後端："js" 表示使用 JS 後端發射 JavaScript；
+	// 空字串（預設）表示使用 LLVM 後端生成原生可執行檔。
+	Emit string `json:"emit,omitempty"`
 }
 
 // Package 表示 mod.jsonc 定義的專案套件

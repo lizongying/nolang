@@ -447,14 +447,18 @@ process.list-all = () (procs []proc-info) {
 ; find-by-name: 按名稱查找進程 PID
 ; name: 進程名稱（部分匹配，大小寫不敏感）
 ; 返回匹配的 PID 列表
+process-find-match = (pname str, target str) (yes bool) {
+    ; 大小寫不敏感的部分匹配；用獨立函式確保 pname/target 型別為 str
+    lower-pname = pname.to-lower()
+    lower-target = target.to-lower()
+    yes = lower-pname.contains(lower-target)
+}
+
 process.find-by-name = (name str) (pids []i64) {
-    all = process.list-all()
+    all []proc-info = process.list-all()
     i <- [0..all.len): {
-        p = all[i]
-        ; 大小寫不敏感的部分匹配
-        lower-name = p.name.to-lower()
-        lower-target = name.to-lower()
-        yes = lower-name.contains(lower-target)
+        p proc-info = all[i]
+        yes = process-find-match(p.name, name)
         yes -> {
             pids.push(p.pid)
         }

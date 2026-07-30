@@ -1270,17 +1270,18 @@ func (p *Parser) wrapStandaloneChain(tok lexer.Token, body *BlockStatement) *Blo
 		innerCond := es.Expression
 		p.nextToken() // skip ->
 		nextBody := p.parseStandaloneBody(tok)
+		chained := &IfExpression{
+			Token:       tok,
+			Condition:   innerCond,
+			Consequence: nextBody,
+		}
+		p.sem.SetRTFlag(chained, RTStandalone)
 		body = &BlockStatement{
 			Token: tok,
 			Statements: []Statement{
 				&ExpressionStatement{
-					Token: tok,
-					Expression: &IfExpression{
-						Token:        tok,
-						Condition:    innerCond,
-						Consequence:  nextBody,
-						IsStandalone: true,
-					},
+					Token:      tok,
+					Expression: chained,
 				},
 			},
 		}
@@ -1306,16 +1307,16 @@ func (p *Parser) parseExpressionStatement() Statement {
 			altBody = p.wrapStandaloneChain(tok, altBody)
 		}
 
+		wildcardIf := &IfExpression{
+			Token:       tok,
+			Condition:   &IntegerLiteral{Token: tok, Value: 1}, // wildcard marker
+			Consequence: conseq,
+			Alternative: altBody,
+		}
+		p.sem.SetRTFlag(wildcardIf, RTStandalone|RTMatchWildcard)
 		return &ExpressionStatement{
-			Token: tok,
-			Expression: &IfExpression{
-				Token:           tok,
-				Condition:       &IntegerLiteral{Token: tok, Value: 1}, // wildcard marker
-				Consequence:     conseq,
-				Alternative:     altBody,
-				IsStandalone:    true,
-				IsMatchWildcard: true,
-			},
+			Token:      tok,
+			Expression: wildcardIf,
 		}
 	}
 
@@ -1435,15 +1436,16 @@ func (p *Parser) parseExpressionStatement() Statement {
 			altBody = p.wrapStandaloneChain(tok, altBody)
 		}
 
+		standaloneIf := &IfExpression{
+			Token:       tok,
+			Condition:   stmt.Expression,
+			Consequence: conseq,
+			Alternative: altBody,
+		}
+		p.sem.SetRTFlag(standaloneIf, RTStandalone)
 		return &ExpressionStatement{
-			Token: tok,
-			Expression: &IfExpression{
-				Token:        tok,
-				Condition:    stmt.Expression,
-				Consequence:  conseq,
-				Alternative:  altBody,
-				IsStandalone: true,
-			},
+			Token:      tok,
+			Expression: standaloneIf,
 		}
 	}
 
@@ -1518,7 +1520,7 @@ func (p *Parser) parseBlockStatement() *BlockStatement {
 		openingComments = group
 		p.comments = p.comments[i:]
 	}
-	block.OpeningBraceComment = openingComments
+	p.sem.SetOpeningBraceComment(block, openingComments)
 
 	for p.currentToken.Type != lexer.RBRACE && p.currentToken.Type != lexer.EOF {
 		doc := p.collectDocComments()

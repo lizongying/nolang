@@ -60,16 +60,9 @@ func (w *ASTWalker) walkStatement(stmt parser.Statement, scope string) {
 
 			if funcLit, ok := s.Value.(*parser.FunctionLiteral); ok {
 				kind = SymbolKindFunction
-				detail = w.formatFuncLitDetail(funcLit)
-				params = w.extractParams(funcLit.Parameters)
-				// For variadic functions, convert last param's []type to ..type
-				if funcLit.IsVariadic && len(params) > 0 {
-					last := &params[len(params)-1]
-					if strings.HasPrefix(last.Type, "[]") {
-						last.Type = ".." + last.Type[2:]
-					}
-				}
-				resultParams := w.extractParams(funcLit.Results)
+				params = buildParamInfos(funcLit.Parameters, funcLit.IsVariadic)
+				resultParams := buildParamInfos(funcLit.Results, false)
+				detail = fnSignature(params, resultParams)
 				value = detail
 				entry := &IndexEntry{
 					Name: s.Name.Value,
@@ -348,77 +341,10 @@ func (w *ASTWalker) addFunction(name string, token interface{}, params, results 
 		column = t.Column
 	}
 
-	paramInfos := make([]ParamInfo, len(params))
-	for i, p := range params {
-		typeStr := ""
-		if p.Type != nil {
-			typeStr = p.Type.String()
-		}
-		paramInfos[i] = ParamInfo{Name: p.Name, Type: typeStr, DefaultValue: defaultExprString(p.DefaultExpr)}
-	}
+	paramInfos := buildParamInfos(params, isVariadic)
+	resultInfos := buildParamInfos(results, false)
 
-	// For variadic functions, the last parameter's type is stored as []type
-	// but should be displayed as ..type
-	if isVariadic && len(paramInfos) > 0 {
-		last := &paramInfos[len(paramInfos)-1]
-		if strings.HasPrefix(last.Type, "[]") {
-			last.Type = ".." + last.Type[2:]
-		}
-	}
-
-	resultInfos := make([]ParamInfo, len(results))
-	for i, r := range results {
-		typeStr := ""
-		if r.Type != nil {
-			typeStr = r.Type.String()
-		}
-		resultInfos[i] = ParamInfo{Name: r.Name, Type: typeStr}
-	}
-
-	s := "fn("
-	for i, p := range paramInfos {
-		if i > 0 {
-			s += ", "
-		}
-	s += p.Name
-	if p.Type != "" {
-		s += " " + p.Type
-	}
-	if p.DefaultValue != "" {
-		s += " = " + p.DefaultValue
-	}
-	}
-	s += ")"
-	if len(resultInfos) > 0 {
-		s += " ("
-		for i, r := range resultInfos {
-			if i > 0 {
-				s += ", "
-			}
-			s += r.Name
-			if r.Type != "" {
-				s += " " + r.Type
-			}
-		}
-		s += ")"
-	}
-
-	entry := &IndexEntry{
-		Name: name,
-		Kind: SymbolKindFunction,
-		Type: s,
-		Location: Location{
-			URI: w.uri,
-			Range: Range{
-				Start: Position{Line: uint32(line - 1), Character: uint32(column - 1)},
-				End:   Position{Line: uint32(line - 1), Character: uint32(column - 1 + len(name))},
-			},
-		},
-		Scope:        scope,
-		Params:       paramInfos,
-		ResultParams: resultInfos,
-		Doc:          doc,
-	}
+	entry := newFunctionEntry(name, w.uri, scope, doc, line, column, paramInfos, resultInfos)
 	w.index.functions[name] = entry
 	w.index.definitions[name] = entry
 }
@@ -490,22 +416,6 @@ func (w *ASTWalker) addReference(name string, token interface{}) {
 	w.index.references[name] = append(w.index.references[name], loc)
 }
 
-func (w *ASTWalker) addToScope(name string, entry *IndexEntry) {
-	// already added directly to maps
-}
-
-func (w *ASTWalker) extractParams(params []*parser.Parameter) []ParamInfo {
-	result := make([]ParamInfo, len(params))
-	for i, p := range params {
-		typeStr := ""
-		if p.Type != nil {
-			typeStr = p.Type.String()
-		}
-		result[i] = ParamInfo{Name: p.Name, Type: typeStr, DefaultValue: defaultExprString(p.DefaultExpr)}
-	}
-	return result
-}
-
 // defaultExprString 將參數默認值表達式轉為字串表示。
 func defaultExprString(expr parser.Expression) string {
 	if expr == nil {
@@ -535,45 +445,7 @@ func defaultExprString(expr parser.Expression) string {
 }
 
 func (w *ASTWalker) formatFuncLitDetail(fl *parser.FunctionLiteral) string {
-	params := make([]string, len(fl.Parameters))
-	for i, p := range fl.Parameters {
-		typeStr := ""
-		if p.Type != nil {
-			typeStr = p.Type.String()
-		}
-		// For variadic, convert []type to ..type on the last parameter
-		if fl.IsVariadic && i == len(fl.Parameters)-1 && strings.HasPrefix(typeStr, "[]") {
-			typeStr = ".." + typeStr[2:]
-		}
-		if typeStr != "" {
-			params[i] = p.Name + " " + typeStr
-		} else {
-			params[i] = p.Name
-		}
-		if p.DefaultExpr != nil {
-			params[i] += " = " + defaultExprString(p.DefaultExpr)
-		}
-	}
-	s := "fn(" + strings.Join(params, ", ") + ")"
-	if len(fl.Results) > 0 {
-		s += " ("
-		for i, r := range fl.Results {
-			if i > 0 {
-				s += ", "
-			}
-			typeStr := ""
-			if r.Type != nil {
-				typeStr = r.Type.String()
-			}
-			if typeStr != "" {
-				s += r.Name + " " + typeStr
-			} else {
-				s += r.Name
-			}
-		}
-		s += ")"
-	}
-	return s
+	return fnSignature(buildParamInfos(fl.Parameters, fl.IsVariadic), buildParamInfos(fl.Results, false))
 }
 
 func (w *ASTWalker) getExprType(expr parser.Expression) string {

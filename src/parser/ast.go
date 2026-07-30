@@ -452,8 +452,8 @@ type BlockStatement struct {
 	CommentedNode
 	TrailingComments    *CommentGroup   // standalone statements before }
 	ClosingBraceComment *CommentGroup   // comment on the } line itself
-	OpeningBraceComment *CommentGroup   // comment on the { line itself
 	BetweenComments     []*CommentGroup // free-standing comment lines between statements
+	// `{` 同行註釋已遷至語義副表：SemanticContext.OpeningBraceCommentOf(block)。
 }
 
 func (bs *BlockStatement) statementNode()         {}
@@ -812,9 +812,25 @@ type DotExpression struct {
 	Property string
 }
 
-func (de *DotExpression) expressionNode()        {}
-func (de *DotExpression) Pos() lexer.Position    { return posFromToken(de.Token) }
-func (de *DotExpression) EndPos() lexer.Position { return posFromToken(de.Token) }
+func (de *DotExpression) expressionNode() {}
+func (de *DotExpression) Pos() lexer.Position {
+	// Prefer the receiver's start so the range covers the whole expression.
+	// Synthesized receivers (lowering/module rewrites) may carry zero-value
+	// tokens — fall back to the property token in that case.
+	if de.Receiver != nil {
+		if p := de.Receiver.Pos(); p.Line > 0 {
+			return p
+		}
+	}
+	return posFromToken(de.Token)
+}
+func (de *DotExpression) EndPos() lexer.Position {
+	// de.Token is the property IDENT token; the expression ends after the
+	// property name.
+	p := posFromToken(de.Token)
+	p.Column += len(de.Property)
+	return p
+}
 
 type NullableType struct {
 	Token lexer.Token
@@ -851,9 +867,14 @@ type GroupedExpression struct {
 	Expression Expression
 }
 
-func (ge *GroupedExpression) expressionNode()        {}
-func (ge *GroupedExpression) Pos() lexer.Position    { return posFromToken(ge.Token) }
-func (ge *GroupedExpression) EndPos() lexer.Position { return posFromToken(ge.Token) }
+func (ge *GroupedExpression) expressionNode()     {}
+func (ge *GroupedExpression) Pos() lexer.Position { return posFromToken(ge.Token) }
+func (ge *GroupedExpression) EndPos() lexer.Position {
+	if ge.Expression != nil {
+		return ge.Expression.EndPos()
+	}
+	return posFromToken(ge.Token)
+}
 
 type IntegerLiteral struct {
 	Token lexer.Token
@@ -1006,34 +1027,25 @@ func (ae *AwaitExpression) EndPos() lexer.Position {
 }
 
 // if
+//
+// 表層語法標誌（裸 match / wildcard / standalone / wrapper / elif）與 `{` 同行
+// 註釋已遷至語義副表：見 SemanticContext 的 RTFlag（HasRTFlag/SetRTFlag）與
+// OpeningBraceCommentOf/SetOpeningBraceComment。
 type IfExpression struct {
 	Token       lexer.Token
 	Condition   Expression
 	Consequence *BlockStatement
 	Alternative *BlockStatement
-	// IsBareMatch 標記此 IfExpression 來自裸 match 表達式 `{ cond -> body }`，
-	// 格式化器應輸出新式語法而非 if/else。
-	IsBareMatch bool
 	// MatchedExpr holds the matched expression in `x: { pattern -> body }` syntax.
 	// When set, the formatter outputs `matched: { ... }` instead of if/else.
 	MatchedExpr Expression
 	// DotValBody marks that the wildcard alternative is an ok-> or .-> val branch
 	// (not a catch-all else). The formatter outputs `ok -> body` instead of `-> body`.
 	DotValBody *BlockStatement
-	// IsStandalone marks a bare if-then expression written as `cond -> body`
-	// without the enclosing `{ }` block. The formatter outputs `cond -> body`.
-	IsStandalone bool
-	// OpeningBraceComment holds comments on the same line as the opening `{`
-	// of a bare match expression. The formatter outputs them inline after `{`.
-	OpeningBraceComment *CommentGroup
 	// RangePattern 保留 match arm 中原始的 RangeExpression 條件（如 `[a..b)`）。
 	// desugar 時 Condition 會被改寫為 `matched >= a && matched < b`，但保留此欄位
 	// 供 formatter 準確反推為 range 語法，避免對布林表達式做启发式推斷。
 	RangePattern *RangeExpression
-	// IsMatchWildcard 標記此 arm 為 catch-all wildcard `->`。
-	// desugar 時 Condition 會被設為 IntegerLiteral(1)，此欄位讓 formatter 直接
-	// 識別 wildcard 而不依賴該 hack。
-	IsMatchWildcard bool
 	// EqualityPattern 保留 `matched == X` arm 中原始的右值 X。
 	// desugar 時 Condition 會被改寫為 `matched == X`，但保留此欄位讓 formatter
 	// 直接輸出 X 而不需反向匹配 InfixExpression 結構。
@@ -1050,14 +1062,6 @@ type IfExpression struct {
 	// desugar 時 Condition 會被改寫為 `(matched == ok) && cond`，
 	// 此欄位讓 formatter 直接輸出 `ok(cond)`。
 	RawCond Expression
-	// IsMatchWrapper 標記此 IfExpression 為 rawCond 包裝層
-	// （`if 1 { it = matched; <if-chain> }`），並非真正的 match arm。
-	// formatter 應跳過包裝層，直接輸出內部的 if-chain。
-	IsMatchWrapper bool
-	// IsElif 標記此 IfExpression 來自 deprecated `elif` desugar
-	// （parseElifBlock 將 `elif cond { }` 轉為 `else { if cond { } }`）。
-	// formatter 直接讀取此欄位輸出 `elif`，避免對 BlockStatement 結構做啟發式推斷。
-	IsElif bool
 }
 
 func (ie *IfExpression) expressionNode()     {}
@@ -1078,9 +1082,17 @@ type RangeExpression struct {
 	RightInc bool        // ] = true, ) = false
 }
 
-func (re *RangeExpression) expressionNode()        {}
-func (re *RangeExpression) Pos() lexer.Position    { return posFromToken(re.Token) }
-func (re *RangeExpression) EndPos() lexer.Position { return posFromToken(re.Token) }
+func (re *RangeExpression) expressionNode()     {}
+func (re *RangeExpression) Pos() lexer.Position { return posFromToken(re.Token) }
+func (re *RangeExpression) EndPos() lexer.Position {
+	if re.End != nil {
+		return re.End.EndPos()
+	}
+	if re.Start != nil {
+		return re.Start.EndPos()
+	}
+	return posFromToken(re.Token)
+}
 
 // nums[..], nums[1..], nums[..3], nums[1..3], nums[1..3), nums(1..3)
 type SliceExpression struct {
@@ -1089,9 +1101,14 @@ type SliceExpression struct {
 	Range *RangeExpression // 範圍（nil = [..] 全切片）
 }
 
-func (se *SliceExpression) expressionNode()        {}
-func (se *SliceExpression) Pos() lexer.Position    { return posFromToken(se.Token) }
-func (se *SliceExpression) EndPos() lexer.Position { return posFromToken(se.Token) }
+func (se *SliceExpression) expressionNode()     {}
+func (se *SliceExpression) Pos() lexer.Position { return posFromToken(se.Token) }
+func (se *SliceExpression) EndPos() lexer.Position {
+	if se.Range != nil {
+		return se.Range.EndPos()
+	}
+	return posFromToken(se.Token)
+}
 
 // arr[i], vec[i], str[i], map[key]
 type IndexExpression struct {
@@ -1100,9 +1117,14 @@ type IndexExpression struct {
 	Index Expression  // 索引值
 }
 
-func (ie *IndexExpression) expressionNode()        {}
-func (ie *IndexExpression) Pos() lexer.Position    { return posFromToken(ie.Token) }
-func (ie *IndexExpression) EndPos() lexer.Position { return posFromToken(ie.Token) }
+func (ie *IndexExpression) expressionNode()     {}
+func (ie *IndexExpression) Pos() lexer.Position { return posFromToken(ie.Token) }
+func (ie *IndexExpression) EndPos() lexer.Position {
+	if ie.Index != nil {
+		return ie.Index.EndPos()
+	}
+	return posFromToken(ie.Token)
+}
 
 // u.name = value 欄位賦值
 type AssignExpression struct {
@@ -1170,7 +1192,15 @@ type IterationExpr struct {
 
 func (ie *IterationExpr) expressionNode()        {}
 func (ie *IterationExpr) Pos() lexer.Position    { return posFromToken(ie.Token) }
-func (ie *IterationExpr) EndPos() lexer.Position { return posFromToken(ie.Token) }
+func (ie *IterationExpr) EndPos() lexer.Position {
+	if ie.Range != nil {
+		return ie.Range.EndPos()
+	}
+	if ie.RangeExpr != nil {
+		return ie.RangeExpr.EndPos()
+	}
+	return posFromToken(ie.Token)
+}
 
 type ForStatement struct {
 	Token     lexer.Token
@@ -1305,8 +1335,16 @@ type StructField struct {
 	Value       Expression
 }
 
-func (sf *StructField) Pos() lexer.Position    { return posFromToken(sf.Token) }
-func (sf *StructField) EndPos() lexer.Position { return posFromToken(sf.Token) }
+func (sf *StructField) Pos() lexer.Position { return posFromToken(sf.Token) }
+func (sf *StructField) EndPos() lexer.Position {
+	if sf.Value != nil {
+		return sf.Value.EndPos()
+	}
+	if sf.Type != nil {
+		return sf.Type.EndPos()
+	}
+	return posFromToken(sf.Token)
+}
 
 type EnumValue struct {
 	Token lexer.Token
@@ -1328,7 +1366,12 @@ type EnumDefinition struct {
 
 func (ed *EnumDefinition) statementNode()         {}
 func (ed *EnumDefinition) Pos() lexer.Position    { return posFromToken(ed.Token) }
-func (ed *EnumDefinition) EndPos() lexer.Position { return posFromToken(ed.Token) }
+func (ed *EnumDefinition) EndPos() lexer.Position {
+	if n := len(ed.Values); n > 0 {
+		return posFromToken(ed.Values[n-1].Token)
+	}
+	return posFromToken(ed.Token)
+}
 
 // UnionType is a union of multiple Types, e.g. i8 | i16 | ... | u64
 type UnionType struct {
@@ -1364,9 +1407,17 @@ type TypeAlias struct {
 	CommentedNode
 }
 
-func (ta *TypeAlias) statementNode()         {}
-func (ta *TypeAlias) Pos() lexer.Position    { return posFromToken(ta.Token) }
-func (ta *TypeAlias) EndPos() lexer.Position { return posFromToken(ta.Token) }
+func (ta *TypeAlias) statementNode()      {}
+func (ta *TypeAlias) Pos() lexer.Position { return posFromToken(ta.Token) }
+func (ta *TypeAlias) EndPos() lexer.Position {
+	if ta.Union != nil {
+		return ta.Union.EndPos()
+	}
+	if ta.Type != nil {
+		return ta.Type.EndPos()
+	}
+	return posFromToken(ta.Token)
+}
 
 // IsUnion reports whether the alias binds to a union.
 func (ta *TypeAlias) IsUnion() bool { return ta.Union != nil }
@@ -1387,9 +1438,18 @@ type TaggedEnumDefinition struct {
 	CommentedNode
 }
 
-func (ted *TaggedEnumDefinition) statementNode()         {}
-func (ted *TaggedEnumDefinition) Pos() lexer.Position    { return posFromToken(ted.Token) }
-func (ted *TaggedEnumDefinition) EndPos() lexer.Position { return posFromToken(ted.Token) }
+func (ted *TaggedEnumDefinition) statementNode()      {}
+func (ted *TaggedEnumDefinition) Pos() lexer.Position { return posFromToken(ted.Token) }
+func (ted *TaggedEnumDefinition) EndPos() lexer.Position {
+	if n := len(ted.Variants); n > 0 {
+		last := ted.Variants[n-1]
+		if last.Type != nil {
+			return last.Type.EndPos()
+		}
+		return posFromToken(last.Token)
+	}
+	return posFromToken(ted.Token)
+}
 
 type InterfaceMethod struct {
 	Token             lexer.Token
@@ -1411,7 +1471,12 @@ type InterfaceDefinition struct {
 
 func (id *InterfaceDefinition) statementNode()         {}
 func (id *InterfaceDefinition) Pos() lexer.Position    { return posFromToken(id.Token) }
-func (id *InterfaceDefinition) EndPos() lexer.Position { return posFromToken(id.Token) }
+func (id *InterfaceDefinition) EndPos() lexer.Position {
+	if n := len(id.Methods); n > 0 {
+		return posFromToken(id.Methods[n-1].Token)
+	}
+	return posFromToken(id.Token)
+}
 
 type StructDefinition struct {
 	Token         lexer.Token
@@ -1421,9 +1486,14 @@ type StructDefinition struct {
 	CommentedNode
 }
 
-func (sd *StructDefinition) statementNode()         {}
-func (sd *StructDefinition) Pos() lexer.Position    { return posFromToken(sd.Token) }
-func (sd *StructDefinition) EndPos() lexer.Position { return posFromToken(sd.Token) }
+func (sd *StructDefinition) statementNode()      {}
+func (sd *StructDefinition) Pos() lexer.Position { return posFromToken(sd.Token) }
+func (sd *StructDefinition) EndPos() lexer.Position {
+	if len(sd.Fields) > 0 {
+		return sd.Fields[len(sd.Fields)-1].EndPos()
+	}
+	return posFromToken(sd.Token)
+}
 
 type StructLiteral struct {
 	Token  lexer.Token
@@ -1431,6 +1501,11 @@ type StructLiteral struct {
 	Fields []*StructField
 }
 
-func (sl *StructLiteral) expressionNode()        {}
-func (sl *StructLiteral) Pos() lexer.Position    { return posFromToken(sl.Token) }
-func (sl *StructLiteral) EndPos() lexer.Position { return posFromToken(sl.Token) }
+func (sl *StructLiteral) expressionNode()     {}
+func (sl *StructLiteral) Pos() lexer.Position { return posFromToken(sl.Token) }
+func (sl *StructLiteral) EndPos() lexer.Position {
+	if len(sl.Fields) > 0 {
+		return sl.Fields[len(sl.Fields)-1].EndPos()
+	}
+	return posFromToken(sl.Token)
+}

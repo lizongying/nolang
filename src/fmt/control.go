@@ -1,0 +1,539 @@
+package fmt
+
+import (
+	"strings"
+
+	"github.com/lizongying/nolang/lexer"
+	"github.com/lizongying/nolang/parser"
+)
+
+// formatStandaloneBody formats the body of a standalone if-then (cond -> body).
+// If the body is a single simple statement (expression, let, multi-assign,
+// return, break, continue), it outputs inline without braces.
+// If the body contains multiple statements, it outputs `{ stmts }`.
+func (f *formatter) formatStandaloneBody(body *parser.BlockStatement) {
+	if len(body.Statements) == 1 &&
+		body.TrailingComments == nil &&
+		body.ClosingBraceComment == nil &&
+		f.obcOf(body) == nil &&
+		!f.hasDocComment(body.Statements[0]) {
+		switch body.Statements[0].(type) {
+		case *parser.ExpressionStatement:
+			f.formatExpression(body.Statements[0].(*parser.ExpressionStatement).Expression)
+			return
+		case *parser.LetStatement, *parser.MultiAssignStatement,
+			*parser.ReturnStatement, *parser.BreakStatement, *parser.ContinueStatement:
+			f.formatStatement(body.Statements[0])
+			return
+		}
+	}
+	f.formatBlockStatement(body)
+}
+
+func (f *formatter) formatIfExpression(e *parser.IfExpression) {
+	// Standalone if-then: `cond -> body` (without enclosing { })
+	if f.hasRT(e, parser.RTStandalone) {
+		// Wildcard standalone: -> body
+		if f.hasRT(e, parser.RTMatchWildcard) {
+			// Empty body: just output -> (no trailing space)
+			if e.Consequence == nil || len(e.Consequence.Statements) == 0 {
+				f.write("->")
+				return
+			}
+			f.write("-> ")
+		} else {
+			f.formatExpression(e.Condition)
+			f.write(" -> ")
+		}
+		f.formatStandaloneBody(e.Consequence)
+		if e.Alternative != nil {
+			f.write(" -> ")
+			f.formatStandaloneBody(e.Alternative)
+		}
+		return
+	}
+
+	// 裸 match 表達式 `{ cond -> body }` 輸出新式語法
+	if f.hasRT(e, parser.RTBareMatch) {
+		f.formatBareMatchExpression(e)
+		return
+	}
+	// 區分 `if cond { } else { }`（deprecated，Token 為 IF 關鍵字）
+	// 與 `cond: { } else: { }`（向後相容舊式，Token 為條件首 token，非 IF）
+	isDeprecatedIf := e.Token.Type == lexer.IF
+	if isDeprecatedIf {
+		f.write("if ")
+	}
+	f.formatExpression(e.Condition)
+	if isDeprecatedIf {
+		f.write(" {")
+	} else {
+		f.write(": {")
+	}
+	f.indent++
+	f.formatBlockInner(e.Consequence, e.Consequence.Token.Line)
+	f.indent--
+	f.newline()
+	f.write("}")
+
+	if e.Alternative != nil {
+		// Check if alternative contains a single if expression (elif desugaring)
+		if f.isElifBlock(e.Alternative) {
+			ifExpr := e.Alternative.Statements[0].(*parser.ExpressionStatement).Expression.(*parser.IfExpression)
+			f.write(" elif ")
+			f.formatExpression(ifExpr.Condition)
+			f.write(" {")
+			f.indent++
+			f.formatBlockInner(ifExpr.Consequence, ifExpr.Consequence.Token.Line)
+			f.indent--
+			f.newline()
+			f.write("}")
+			// Handle nested alternative
+			if ifExpr.Alternative != nil {
+				f.formatElifChain(ifExpr.Alternative)
+			}
+		} else {
+			if isDeprecatedIf {
+				f.write(" else {")
+			} else {
+				f.write(" else: {")
+			}
+			f.indent++
+			f.formatBlockInner(e.Alternative, e.Alternative.Token.Line)
+			f.indent--
+			f.newline()
+			f.write("}")
+		}
+	}
+}
+
+// formatBareMatchExpression 將裸 match 鏈（IfExpression desugar）格式化為
+// 新式語法 `{ cond -> body }`。
+// 鏈的結構由 buildBareMatchDesugar 產生：
+//   - 若最後一個 arm 是 wildcard（else），頂層 IfExpression 可能會被包裝在
+//     ExpressionStatement 內。
+//   - 對於非 wildcard arm，Alternative 為 BlockStatement{ExpressionStatement{next IfExpression}}
+//   - 對於 wildcard arm，Alternative 為直接的 BlockStatement
+
+// formatBareMatchExpression 將裸 match 鏈（IfExpression desugar）格式化為
+// 新式語法 `{ cond -> body }`。
+// 鏈的結構由 buildBareMatchDesugar 產生：
+//   - 若最後一個 arm 是 wildcard（else），頂層 IfExpression 可能會被包裝在
+//     ExpressionStatement 內。
+//   - 對於非 wildcard arm，Alternative 為 BlockStatement{ExpressionStatement{next IfExpression}}
+//   - 對於 wildcard arm，Alternative 為直接的 BlockStatement
+func (f *formatter) formatBareMatchExpression(e *parser.IfExpression) {
+	// RTMatchWrapper: rawCond 包裝層 `if 1 { it = matched; <if-chain> }`
+	// 跳過包裝層，直接格式化內部的 if-chain。
+	if f.hasRT(e, parser.RTMatchWrapper) {
+		for _, stmt := range e.Consequence.Statements {
+			if es, ok := stmt.(*parser.ExpressionStatement); ok {
+				if inner, ok := es.Expression.(*parser.IfExpression); ok && f.hasRT(inner, parser.RTBareMatch) {
+					f.formatBareMatchExpression(inner)
+					return
+				}
+			}
+		}
+	}
+	if e.MatchedExpr != nil {
+		f.formatExpression(e.MatchedExpr)
+		f.write(": {")
+	} else {
+		f.write("{")
+	}
+	// Output opening brace comment on the same line as {
+	if obc := f.obcOf(e); obc != nil && len(obc.List) > 0 {
+		f.write("  //")
+		for _, c := range obc.List {
+			f.write(c.Text)
+		}
+	}
+	f.indent++
+	// 輸出當前 arm
+	f.writeBareMatchArm(e)
+	// 處理後續 arm（Alternative 鏈）
+	for e.Alternative != nil {
+		if len(e.Alternative.Statements) == 1 {
+			if es, ok := e.Alternative.Statements[0].(*parser.ExpressionStatement); ok {
+				if next, ok := es.Expression.(*parser.IfExpression); ok && f.hasRT(next, parser.RTBareMatch) {
+					e = next
+					f.writeBareMatchArm(e)
+					continue
+				}
+			}
+		}
+		// Wildcard arm 的 Alternative 是直接的 BlockStatement
+		// 模擬 IfExpression 包裝後調用 writeBareMatchArm；
+		// 標誌記入 formatter 本地合成表，不污染 program.Sem。
+		wildcardIf := &parser.IfExpression{
+			Token:       e.Token,
+			Condition:   &parser.IntegerLiteral{Token: e.Token, Value: 1},
+			Consequence: e.Alternative,
+		}
+		if f.synthRT == nil {
+			f.synthRT = make(map[*parser.IfExpression]parser.RTFlag)
+		}
+		f.synthRT[wildcardIf] = parser.RTBareMatch | parser.RTMatchWildcard
+		if e.DotValBody == e.Alternative {
+			wildcardIf.DotValBody = e.Alternative
+		}
+		f.writeBareMatchArm(wildcardIf)
+		break
+	}
+	f.indent--
+	f.newline()
+	f.write("}")
+}
+
+// writeBareMatchArm 輸出單個 arm。
+// 對於非 wildcard：cond -> body
+// 對於 wildcard：-> body
+// 若 body 只有一個簡單語句（ExpressionStatement / LetStatement / ReturnStatement 等）且無註釋，
+// 內聯輸出在同一行；若 body 有多個語句，用 { } 大括號包裹。
+
+// writeBareMatchArm 輸出單個 arm。
+// 對於非 wildcard：cond -> body
+// 對於 wildcard：-> body
+// 若 body 只有一個簡單語句（ExpressionStatement / LetStatement / ReturnStatement 等）且無註釋，
+// 內聯輸出在同一行；若 body 有多個語句，用 { } 大括號包裹。
+func (f *formatter) writeBareMatchArm(e *parser.IfExpression) {
+	// 過濾 compiler 注入的合成語句（如 `it = matched`）
+	statements := make([]parser.Statement, 0, len(e.Consequence.Statements))
+	for _, stmt := range e.Consequence.Statements {
+		if ls, ok := stmt.(*parser.LetStatement); ok && ls.IsSynthetic {
+			continue
+		}
+		statements = append(statements, stmt)
+	}
+
+	// 判斷是否為可內聯的簡單 body：單語句、無塊級註釋、類型為表達式/let/return/break/continue。
+	// 注意：body 語句的 doc comment（arm 前的註釋，如 `; F grade`）不阻止內聯，
+	// 該註釋會在 arm 條件之前獨立行輸出。
+	canInline := len(statements) == 1 &&
+		e.Consequence.TrailingComments == nil &&
+		e.Consequence.ClosingBraceComment == nil &&
+		f.obcOf(e.Consequence) == nil
+	if canInline {
+		switch statements[0].(type) {
+		case *parser.ExpressionStatement, *parser.LetStatement,
+			*parser.ReturnStatement, *parser.BreakStatement, *parser.ContinueStatement:
+		default:
+			canInline = false
+		}
+	}
+
+	// 若可內聯且 body 語句有 doc comment：
+	//   - body 原始為 inline（IsInline=true）：doc comment 是 arm 前的註釋
+	//     （如 `; F grade`），先輸出註釋再內聯 body。
+	//   - body 原始為顯式 block（IsInline=false）：doc comment 是 block 內註釋
+	//     （如 `// 部分區塊`），不內聯，走 block 路徑讓註釋在 block 內輸出。
+	if canInline && f.hasDocComment(statements[0]) {
+		if e.Consequence.IsInline {
+			f.newline()
+			var doc *parser.CommentGroup
+			if d, ok := statements[0].(interface{ GetDoc() *parser.CommentGroup }); ok {
+				doc = d.GetDoc()
+			}
+			f.formatDocComments(doc)
+			f.newline()
+		} else {
+			// 顯式 block 內的註釋：不內聯，保持 block 形式
+			canInline = false
+			f.newline()
+		}
+	} else {
+		f.newline()
+	}
+
+	if f.hasRT(e, parser.RTMatchWildcard) {
+		if e.DotValBody != nil && e.DotValBody == e.Consequence {
+			f.write("ok ->")
+		} else {
+			f.write("->")
+		}
+	} else if e.MatchedExpr != nil {
+		// 按 pattern 類型依序檢查顯式欄位，避免對 desugar 後的 Condition 做啟發式推斷
+		switch {
+		case e.RangePattern != nil:
+			// [a..b) 等 range pattern
+			f.formatRangeBrackets(e.RangePattern)
+			f.write(" ->")
+		case len(e.OptionPatterns) > 0:
+			// nil || err 等 option pattern 列表
+			f.write(strings.Join(e.OptionPatterns, " || "))
+			f.write(" ->")
+		case len(e.ValuePatterns) > 0:
+			// 1 || 3 || 5 等 multi-value pattern 列表
+			for i, vp := range e.ValuePatterns {
+				if i > 0 {
+					f.write(" || ")
+				}
+				f.formatExpression(vp)
+			}
+			f.write(" ->")
+		case e.RawCond != nil:
+			// ok(cond) raw cond arm
+			f.write("ok(")
+			f.formatExpression(e.RawCond)
+			f.write(") ->")
+		case e.EqualityPattern != nil:
+			// matched == X 等值 pattern，直接輸出 X
+			f.formatExpression(e.EqualityPattern)
+			f.write(" ->")
+		default:
+			// 無顯式欄位：回退到格式化 Condition（向後相容）
+			f.formatExpression(e.Condition)
+			f.write(" ->")
+		}
+	} else {
+		f.formatExpression(e.Condition)
+		f.write(" ->")
+	}
+
+	// 空 body（如 wildcard `->`）：不輸出任何內容
+	if len(statements) == 0 &&
+		e.Consequence.TrailingComments == nil &&
+		e.Consequence.ClosingBraceComment == nil {
+		return
+	}
+	// 內聯簡單 body：輸出在同一行
+	if canInline {
+		f.write(" ")
+		// 臨時清除 doc comment 以避免 formatStatement 再次輸出（已在上文輸出過），
+		// 格式化後恢復以保持 AST 不變（避免影響後續格式化）。
+		stmt := statements[0]
+		var origDoc *parser.CommentGroup
+		if d, ok := stmt.(interface {
+			GetDoc() *parser.CommentGroup
+			SetDoc(*parser.CommentGroup)
+		}); ok {
+			origDoc = d.GetDoc()
+			d.SetDoc(nil)
+		}
+		f.formatStatement(stmt)
+		if d, ok := stmt.(interface {
+			GetDoc() *parser.CommentGroup
+			SetDoc(*parser.CommentGroup)
+		}); ok && origDoc != nil {
+			d.SetDoc(origDoc)
+		}
+		return
+	}
+	// 多語句 body：用 { } 大括號包裹
+	f.write(" {")
+	// Output opening brace comment on the same line as {
+	if obc := f.obcOf(e.Consequence); obc != nil && len(obc.List) > 0 {
+		f.write("  //")
+		for _, c := range obc.List {
+			f.write(c.Text)
+		}
+	}
+	f.indent++
+	f.formatBlockInner(e.Consequence, 0)
+	f.indent--
+	f.newline()
+	f.write("}")
+}
+
+func (f *formatter) formatElifChain(alt *parser.BlockStatement) {
+	if f.isElifBlock(alt) {
+		ifExpr := alt.Statements[0].(*parser.ExpressionStatement).Expression.(*parser.IfExpression)
+		f.write(" elif ")
+		f.formatExpression(ifExpr.Condition)
+		f.write(" {")
+		f.indent++
+		f.formatBlockInner(ifExpr.Consequence, ifExpr.Consequence.Token.Line)
+		f.indent--
+		f.newline()
+		f.write("}")
+		if ifExpr.Alternative != nil {
+			f.formatElifChain(ifExpr.Alternative)
+		}
+	} else {
+		f.write(" else {")
+		f.indent++
+		f.formatBlockInner(alt, alt.Token.Line)
+		f.indent--
+		f.newline()
+		f.write("}")
+	}
+}
+
+func (f *formatter) isElifBlock(bs *parser.BlockStatement) bool {
+	if len(bs.Statements) != 1 {
+		return false
+	}
+	es, ok := bs.Statements[0].(*parser.ExpressionStatement)
+	if !ok {
+		return false
+	}
+	ifExpr, ok := es.Expression.(*parser.IfExpression)
+	if !ok {
+		return false
+	}
+	// 顯式標記：parser 在 parseElifBlock 中寫入 RTElif（語義副表），
+	// 直接讀取此標誌避免啟發式推斷。
+	return f.hasRT(ifExpr, parser.RTElif)
+}
+
+// writeLoopBodyBlock 輸出循環主體 "{\n  stmts\n}"，保留語句間的空行與文檔註釋。
+
+// writeLoopBodyBlock 輸出循環主體 "{\n  stmts\n}"，保留語句間的空行與文檔註釋。
+func (f *formatter) writeLoopBodyBlock(s *parser.ForStatement) {
+	f.write("{")
+	f.indent++
+	f.formatBlockInner(s.Body, s.Body.Token.Line)
+	f.indent--
+	f.newline()
+	f.write("}")
+}
+
+// writeLoopBodyAfterColon 輸出循環主體（冒號之後的部分）。
+// 當 body 是單條 inline 語句（IsInline=true，無 trailing comments）時，
+// 輸出 " stmt"（單行，不加 {}）；否則輸出 " {\n  stmts\n}"（block 形式）。
+
+// writeLoopBodyAfterColon 輸出循環主體（冒號之後的部分）。
+// 當 body 是單條 inline 語句（IsInline=true，無 trailing comments）時，
+// 輸出 " stmt"（單行，不加 {}）；否則輸出 " {\n  stmts\n}"（block 形式）。
+func (f *formatter) writeLoopBodyAfterColon(s *parser.ForStatement) {
+	if s.Body != nil && s.Body.IsInline && len(s.Body.Statements) == 1 && s.Body.TrailingComments == nil {
+		f.write(" ")
+		f.formatStatement(s.Body.Statements[0])
+		return
+	}
+	f.write(" {")
+	f.indent++
+	f.formatBlockInner(s.Body, s.Body.Token.Line)
+	f.indent--
+	f.newline()
+	f.write("}")
+}
+
+func (f *formatter) formatForStatement(s *parser.ForStatement) {
+	if s.Label != "" {
+		f.write("#")
+		f.write(s.Label)
+		f.write(" ")
+	}
+
+	// Bare range-for: i <- [a..b]: { body } — when token type is not FOR and IterRange set
+	if s.Token.Type != lexer.FOR && s.IterRange != nil && s.IterRange.Variable != "" {
+		f.write(s.IterRange.Variable)
+		f.write(" <- ")
+		if s.IterRange.RangeStr != "" {
+			f.write(s.IterRange.RangeStr)
+		} else if s.IterRange.Range != nil {
+			if s.IterRange.Range.LeftInc {
+				f.write("[")
+			} else {
+				f.write("(")
+			}
+			f.formatExpression(s.IterRange.Range.Start)
+			f.write("..")
+			f.formatExpression(s.IterRange.Range.End)
+			if s.IterRange.Range.RightInc {
+				f.write("]")
+			} else {
+				f.write(")")
+			}
+		} else if s.IterRange.RangeExpr != nil {
+			f.formatExpression(s.IterRange.RangeExpr)
+		} else {
+			f.write("?")
+		}
+		f.write(":")
+		f.writeLoopBodyAfterColon(s)
+		return
+	}
+
+	// Counted loop: { body } * N（新式語法；Token 非 FOR）
+	if s.CountExpr != nil && s.Token.Type != lexer.FOR {
+		f.write("{")
+		f.indent++
+		f.formatBlockInner(s.Body, s.Body.Token.Line)
+		f.indent--
+		f.newline()
+		f.write("} * ")
+		f.formatExpression(s.CountExpr)
+		return
+	}
+
+	// for 關鍵字形式的 range-for（已廢棄，向後相容輸出）：for i <- [a..b]: { body }
+	if s.Token.Type == lexer.FOR && s.IterRange != nil && s.IterRange.Variable != "" {
+		f.write("for ")
+		f.write(s.IterRange.Variable)
+		f.write(" <- ")
+		if s.IterRange.RangeStr != "" {
+			f.write("'")
+			f.write(s.IterRange.RangeStr)
+			f.write("'")
+		} else if ident, ok := s.IterRange.RangeExpr.(*parser.Identifier); ok {
+			f.write(ident.Value)
+		} else if sliceLit, ok := s.IterRange.RangeExpr.(*parser.SliceLiteral); ok {
+			f.formatSliceLiteral(sliceLit)
+		} else {
+			f.formatRangeBrackets(s.IterRange.Range)
+		}
+		f.write(":")
+		f.writeLoopBodyAfterColon(s)
+		return
+	}
+
+	// C-style for（已廢棄，向後相容輸出）：for init, cond, update { body }
+	if s.Token.Type == lexer.FOR && s.Init != nil {
+		f.write("for ")
+		f.formatStatement(s.Init)
+		f.write(", ")
+		f.formatExpression(s.Condition)
+		f.write(", ")
+		f.formatStatement(s.Update)
+		f.write(" {")
+		f.indent++
+		f.formatBlockInner(s.Body, s.Body.Token.Line)
+		f.indent--
+		f.newline()
+		f.write("}")
+		return
+	}
+
+	// 條件循環（while-style）：{ body } (cond)
+	// 涵蓋新式 { } (cond)、舊式 for cond { }、以及標籤條件包裝器
+	// (#N cond: { } → ForStatement{Condition: *IfExpression, Body: Consequence})。
+	// 解開合成的 IfExpression 以輸出原始條件。
+	// 直接讀取 IsCondWrapper 欄位（parser 在合成位置顯式設置），
+	// 避免依賴 `s.Body == ifExpr.Consequence` 指標相等啟發式。
+	cond := s.Condition
+	if s.IsCondWrapper {
+		if ifExpr, ok := cond.(*parser.IfExpression); ok {
+			cond = ifExpr.Condition
+		}
+	}
+	if cond != nil {
+		f.writeLoopBodyBlock(s)
+		f.write(" (")
+		f.formatExpression(cond)
+		f.write(")")
+		return
+	}
+
+	// 無限循環：{ body } ()
+	// 涵蓋新式 { } ()、舊式 !! { } / for { }。
+	f.writeLoopBodyBlock(s)
+	f.write(" ()")
+}
+
+func (f *formatter) formatRangeBrackets(re *parser.RangeExpression) {
+	if re.LeftInc {
+		f.write("[")
+	} else {
+		f.write("(")
+	}
+	f.formatExpression(re.Start)
+	f.write("..")
+	f.formatExpression(re.End)
+	if re.RightInc {
+		f.write("]")
+	} else {
+		f.write(")")
+	}
+}
