@@ -388,6 +388,13 @@ func buildLLVMInternal(code string, fileName string, outPath string, cc string, 
 	if err != nil {
 		return fmt.Errorf("creating temp directory: %w", err)
 	}
+	// 中間產物（.ll/.s）每次建構可達數百 MB，必須清理，否則會撐爆系統暫存目錄。
+	// 需要保留 IR 供分析時設 NOLANG_KEEP_IR（與 cmd/no run 路徑同一約定）。
+	if os.Getenv("NOLANG_KEEP_IR") == "" {
+		defer os.RemoveAll(tempDir)
+	} else {
+		fmt.Fprintf(os.Stderr, "[debug] keep build tmp dir: %s\n", tempDir)
+	}
 
 	llPath := filepath.Join(tempDir, fileName+".ll")
 	err = os.WriteFile(llPath, []byte(code), 0644)

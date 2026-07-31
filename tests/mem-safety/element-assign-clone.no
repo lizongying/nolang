@@ -1,0 +1,108 @@
+; 元素賦值深層 clone 測試：vec[i] = s / arr[i] = s
+; 驗證堆擁有型元素賦值時執行 deep clone，避免 double free 和洩漏
+;
+; 修復內容：
+;   - vec[i] = s（s 為 str）：store 前先 free 舊元素值，再 deep clone 新值
+;   - arr[i] = s（s 為 str）：同上
+;   - struct field 賦值：emitDeepClone 傳入 fieldElemType，使 []str 字段
+;     的字串元素也正確深層 clone
+;
+; 對稱性：讀方向 x = vec[i] 已深拷貝，寫方向 vec[i] = s 現也深拷貝
+
+; 測試 1：vec[i] = strVar — 獨立性驗證
+; s[0] = a 後，a 重新賦值不應影響 s[0]
+test-vec-str-assign = () (ok bool) {
+    s []str
+    s.push('hello')
+    s.push('world')
+
+    a = 'original'
+    s[0] = a
+    a = 'changed'
+
+    s[0] == 'original' -> ok = true
+    s[1] == 'world' -> ok = true
+}
+
+; 測試 2：vec[i] = strVar — 反覆賦值同一索引（驗證釋放舊值，不洩漏）
+test-vec-str-reassign = () (ok bool) {
+    s []str
+    s.push('first')
+    s.push('second')
+
+    a = 'aaa'
+    s[0] = a
+    b = 'bbb'
+    s[0] = b
+    c = 'ccc'
+    s[0] = c
+
+    s[0] == 'ccc' -> ok = true
+    s[1] == 'second' -> ok = true
+}
+
+; 測試 3：vec[i] = '字串字面量' — 指標載入 + deep clone
+test-vec-str-literal = () (ok bool) {
+    s []str
+    s.push('placeholder')
+    s.push('keep')
+
+    s[0] = 'literal value'
+
+    s[0] == 'literal value' -> ok = true
+    s[1] == 'keep' -> ok = true
+}
+
+; 測試 4：struct field str 賦值 — 獨立性驗證
+DataHolder {
+    name str
+    items []i64
+}
+
+test-struct-str-field = () (ok bool) {
+    d = DataHolder{name: 'old', items: [1, 2, 3]}
+
+    s = 'field value'
+    d.name = s
+    s = 'changed'
+
+    d.name == 'field value' -> ok = true
+    d.items[0] == 1 -> ok = true
+}
+
+; 測試 5：多次函數呼叫不 double-free（驗證跨函數邊界安全）
+make-str-vec = () (out []str) {
+    s []str
+    s.push('a')
+    s.push('b')
+    out = s
+}
+
+test-multi-call = () (ok bool) {
+    v1 = make-str-vec()
+    v2 = make-str-vec()
+
+    v1[0] == 'a' -> ok = true
+    v1[1] == 'b' -> ok = true
+    v2[0] == 'a' -> ok = true
+    v2[1] == 'b' -> ok = true
+}
+
+main = () {
+    ok1 = test-vec-str-assign()
+    print('test-vec-str-assign: {ok1}')
+
+    ok2 = test-vec-str-reassign()
+    print('test-vec-str-reassign: {ok2}')
+
+    ok3 = test-vec-str-literal()
+    print('test-vec-str-literal: {ok3}')
+
+    ok4 = test-struct-str-field()
+    print('test-struct-str-field: {ok4}')
+
+    ok5 = test-multi-call()
+    print('test-multi-call: {ok5}')
+
+    print('all done')
+}

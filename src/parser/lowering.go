@@ -40,13 +40,6 @@ func (sm *SurfaceMatch) EndPos() lexer.Position {
 // newSurfaceMatch 建立表層 match 節點（不捕獲型別快照；類型推斷由 Resolver pass
 // 寫入語義副表，lowering 時自 p.sem 讀取）。
 func (p *Parser) newSurfaceMatch(tok lexer.Token, matched Expression, arms []matchArm) *SurfaceMatch {
-	if ident, ok := matched.(*Identifier); ok {
-		fmt.Printf("[DEBUG-NEWSM] creating SurfaceMatch: matched=%s arms=%d\n", ident.Value, len(arms))
-	} else if matched != nil {
-		fmt.Printf("[DEBUG-NEWSM] creating SurfaceMatch: matched=%T arms=%d\n", matched, len(arms))
-	} else {
-		fmt.Printf("[DEBUG-NEWSM] creating bare SurfaceMatch: arms=%d\n", len(arms))
-	}
 	return &SurfaceMatch{Token: tok, Matched: matched, Arms: arms}
 }
 
@@ -128,9 +121,6 @@ func (l *lowerer) walk(v reflect.Value) {
 // lowerSurfaceMatch 將單個表層 match 節點展開為核心 AST。
 // 先自底向上處理 matched 與各 arm 內部（嵌套 match），再建 if 鏈。
 func (l *lowerer) lowerSurfaceMatch(sm *SurfaceMatch) Expression {
-	if ident, ok := sm.Matched.(*Identifier); ok {
-		fmt.Printf("[DEBUG-LOWER] lowering SurfaceMatch: matched=%s arms=%d\n", ident.Value, len(sm.Arms))
-	}
 	l.walk(reflect.ValueOf(&sm.Matched))
 	for i := range sm.Arms {
 		a := &sm.Arms[i]

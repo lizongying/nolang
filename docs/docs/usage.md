@@ -406,3 +406,26 @@ no sync
 ```
 
 `no init` 負責定義工作區：若 `workspace.jsonc` 不存在則生成一個空對象 `{}`，**不生成任何 `mod.jsonc`**；已存在時則保持不變，不會被覆蓋。隨後用 `no new <name>` 創建包時，會自動把 `"<name>": "./<name>"` 註冊進 `workspace.jsonc`。
+
+#### 工作區流程
+
+編譯和執行的入口目錄始終是**工作區目錄**（`workspace.jsonc` 所在目錄）。整體流程如下：
+
+1. 用戶在工作區目錄中執行 `no build` 或 `no run <包名>`
+2. 編譯器讀取 `workspace.jsonc`，按包名查找對應的子目錄路徑
+3. 載入該子目錄中的 `mod.jsonc`（即包根目錄），以包根目錄為基準進行構建/運行
+4. 所有導入路徑（`use /path/to/module`）**相對於包的 `mod.jsonc` 所在目錄解析**
+
+```
+workspace/               ← 工作區目錄（workspace.jsonc 所在此處）
+├── workspace.jsonc      ← 包名 → 路徑映射
+├── foo/                 ← 包 foo
+│   ├── mod.jsonc        ← foo 的包根目錄
+│   ├── main.no
+│   └── lib.no
+└── bar/                 ← 包 bar
+    ├── mod.jsonc        ← bar 的包根目錄
+    └── main.no
+```
+
+> **注意**：導入路徑以包自身的 `mod.jsonc` 所在目錄為準，而非工作區根目錄。包子目錄中若存在嵌套的 `mod.jsonc`，`LoadPackage` 會向上搜索找到最近的 `mod.jsonc` 並將其作為包根目錄。

@@ -159,7 +159,8 @@ func resolveUseModule(use *parser.UseStatement, pkg *mod.Package) *parser.Progra
 			return nil
 		}
 		relPath := strings.TrimPrefix(path, "/")
-		filePath = filepath.Join(pkg.RootDir, relPath) + ".no"
+		baseDir := pkg.WorkspaceRoot()
+		filePath = filepath.Join(baseDir, relPath) + ".no"
 		prog = parseProgramFile(filePath)
 	} else if strings.HasPrefix(path, "std/") || path == "std" {
 		// std/ paths — strip "std/" prefix to get module path relative to std/

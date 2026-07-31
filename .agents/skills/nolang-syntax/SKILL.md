@@ -192,6 +192,29 @@ no init
 }
 ```
 
+#### Workspace Flow
+
+The compile/execute entry directory is always the **workspace directory** (where `workspace.jsonc` resides). The flow:
+
+1. User runs `no build` or `no run <package>` from the workspace directory
+2. Compiler reads `workspace.jsonc`, looks up the package's subdirectory by name
+3. Loads the `mod.jsonc` in that subdirectory (the **package root**), builds/runs relative to it
+4. All import paths (`# /path/to/module`) are **resolved relative to the package's `mod.jsonc` directory**
+
+```
+workspace/               ← workspace dir (workspace.jsonc lives here)
+├── workspace.jsonc      ← package name -> path mapping
+├── foo/                 ← package foo
+│   ├── mod.jsonc        ← foo's package root (import paths resolve from here)
+│   ├── main.no
+│   └── lib.no
+└── bar/                 ← package bar
+    ├── mod.jsonc        ← bar's package root
+    └── main.no
+```
+
+> **Important**: Import paths are relative to the package's own `mod.jsonc` directory, **not** the workspace root. If a nested `mod.jsonc` exists in a subdirectory within a package, `LoadPackage` searches upward and uses the nearest `mod.jsonc` as the package root.
+
 ### Build & Run
 
 ```bash

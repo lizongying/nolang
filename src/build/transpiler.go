@@ -659,11 +659,15 @@ func (t *Transpiler) parseEmbeddedProgram(filename string, data []byte) (*parser
 func (t *Transpiler) resolveUse(use *parser.UseStatement) (*parser.Program, error) {
 	// use path.fn → 載入 path.no 並取出 fn 函數
 	path := use.Path
-	// 本地模塊：/path → 相對於專案根目錄
+	// 本地模塊：/path → 相對於 workspace 根目錄（如有），否則相對於包根目錄
 	if strings.HasPrefix(path, "/") {
 		relPath := strings.TrimPrefix(path, "/")
 		if t.pkg != nil {
-			fullPath := filepath.Join(t.pkg.RootDir, relPath) + ".no"
+			baseDir := t.pkg.RootDir
+			if wsRoot := t.pkg.WorkspaceRoot(); wsRoot != "" {
+				baseDir = wsRoot
+			}
+			fullPath := filepath.Join(baseDir, relPath) + ".no"
 			return t.resolveFile(fullPath)
 		}
 		// 沒有套件配置，相對於當前目錄
@@ -744,13 +748,17 @@ func (t *Transpiler) resolveUse(use *parser.UseStatement) (*parser.Program, erro
 		// URL 風格的導入路徑但未在 dependencies 中宣告
 		return nil, fmt.Errorf("dependency not found: %q is not declared in mod.jsonc dependencies", path)
 	}
-	// 非 std 路徑 → 透過 alias 解析
+	// 非 std 路徑 → 透過 alias 解析（workspace 根目錄優先）
 	if t.pkg != nil {
-		modulePath := t.pkg.ResolvePath(path)
+		baseDir := t.pkg.RootDir
+		if wsRoot := t.pkg.WorkspaceRoot(); wsRoot != "" {
+			baseDir = wsRoot
+		}
+		modulePath := filepath.Join(baseDir, path)
 		if !strings.HasSuffix(modulePath, ".no") {
 			modulePath = modulePath + ".no"
 		}
-		return t.resolveFile(modulePath)
+		return t.resolveFile(filepath.Clean(modulePath))
 	}
 	// 沒有套件配置，直接嘗試
 	filePath := path + ".no"
@@ -787,6 +795,22 @@ func (t *Transpiler) preloadModuleSignatures(source string) (map[string][]string
 	funcSigs := make(map[string][]string)
 	structFields := make(map[string]map[string]string)
 	loadedPaths := make(map[string]bool) // 避免重複載入同一模組
+	// 0. 先合併 std 模組簽名快取，並立即掛到 t.externFuncSigs：
+	// 本地子模組（如 # /agent/agent）在下方步驟 1 就會被 parseFile 解析並
+	// 寫入 fileCache，若此時 externFuncSigs 尚未設置，子模組內的
+	// `resp = http.do-req(req)` 等 let 推斷拿不到任何 std 簽名，resp 無
+	// 型別注解 → codegen 端 option inner 推斷錯誤（i64），字段訪問級聯崩潰。
+	// 注意：本地模組簽名（步驟 1）寫入同一 map，同名鍵覆蓋 std 簽名，
+	// 維持原「本地優先」語義。
+	stdSigs, stdFields := checker.CollectStdModuleSignatures()
+	for name, sigs := range stdSigs {
+		funcSigs[name] = sigs
+	}
+	for name, fields := range stdFields {
+		structFields[name] = fields
+	}
+	t.externFuncSigs = funcSigs
+	t.externStructFields = structFields
 	// collectSignaturesFromProg 從已解析的 Program 中收集函數簽名和 struct 欄位
 	collectSignaturesFromProg := func(modProg *parser.Program) {
 		for _, stmt := range modProg.Statements {
@@ -818,6 +842,15 @@ func (t *Transpiler) preloadModuleSignatures(source string) (map[string][]string
 			continue
 		}
 		rawPath := m[1]
+		// std/ 模組簽名一律由 checker.CollectStdModuleSignatures 快取提供
+		// （含跨模組同名 struct/函數的 module.name 限定鍵）。此處不得重複
+		// 載入：直接解析會以裸名註冊簽名（如 do-req → ?response），在步驟 2
+		// 的 !exists 合併中壓過快取的限定簽名，令 parser 推斷出未限定的
+		// ?response 注解，codegen 端 mapToLLVMType 對裸名失敗回退 i64，
+		// 造成 it 綁定型別錯誤與字段訪問級聯崩潰（status-code.to-str bug）。
+		if rawPath == "std" || strings.HasPrefix(rawPath, "std/") {
+			continue
+		}
 		// 嘗試解析模組路徑：先嘗試完整路徑，再嘗試去掉最後 .function 部分
 		candidates := []string{rawPath}
 		if idx := strings.LastIndex(rawPath, "."); idx > 0 {
@@ -841,18 +874,7 @@ func (t *Transpiler) preloadModuleSignatures(source string) (map[string][]string
 			collectSignaturesFromProg(modProg)
 		}
 	}
-	// 2. 合併 std 模組簽名（從 sync.Once 快取獲取，避免每次編譯重複解析所有 std 模組）
-	stdSigs, stdFields := checker.CollectStdModuleSignatures()
-	for name, sigs := range stdSigs {
-		if _, exists := funcSigs[name]; !exists {
-			funcSigs[name] = sigs
-		}
-	}
-	for name, fields := range stdFields {
-		if _, exists := structFields[name]; !exists {
-			structFields[name] = fields
-		}
-	}
+	// std 簽名已於步驟 0 合入（本地模組簽名在步驟 1 直接覆蓋同名鍵）。
 	return funcSigs, structFields
 }
 func (t *Transpiler) CompileTarget(source string, _ Target) (string, error) {
@@ -1175,8 +1197,37 @@ func (t *Transpiler) CompileTarget(source string, _ Target) (string, error) {
 	// 但先要完成跨模組方法名稱重命名：一個方法可能定義在 B 模組但接收者型別
 	// 定義在 A 模組（如 bufio.no 的 reader.fill，reader 定義在 io.no）。
 	// 此時 typeOwner 已包含所有模組的型別歸屬，可以正確重命名。
-	prefixMethodNames(merged.Statements, typeOwner)
-	rewriteTypeRefs(merged.Statements, typeOwner)
+	// mainLocalTypes：主程序自行定義的型別裸名。主程序型別與 std 模組同名時
+	//（如自定義 tree-set vs std/collection/tree-set），主程序方法不得加模組前綴。
+	mainLocalTypes := make(map[string]bool)
+	for _, mainStmt := range program.Statements {
+		if name := getTypeDefName(mainStmt); name != "" {
+			mainLocalTypes[name] = true
+		}
+	}
+	prefixMethodNames(merged.Statements, typeOwner, mainLocalTypes)
+	// 型別參考改寫必須區分歸屬：
+	//   - 模組語句用完整 typeOwner（模組內的裸名引用要跟隨定義端一起改寫成
+	//     module.type，否則模組自身的方法簽名與型別定義對不上）。
+	//   - 主程序語句用剔除本地型別後的表：主程序自定義的 struct 與 std 模組
+	//     同名時（tests/test-bare-match.no 的 tree-set vs std/collection/tree-set），
+	//     主程序的裸名引用必須繼續指向本地定義，否則方法簽名被改成
+	//     `%tree-set.tree-set*` 而定義名仍是 `tree-set.test-match`，呼叫端與
+	//     定義端錯位，產生 "use of undefined value" 的無效 IR。
+	mainLocalOwner := excludeLocalTypes(typeOwner, mainLocalTypes)
+	if len(typeOwner) > 0 {
+		mainStmtSet := make(map[parser.Statement]bool, len(program.Statements))
+		for _, mainStmt := range program.Statements {
+			mainStmtSet[mainStmt] = true
+		}
+		for _, mergedStmt := range merged.Statements {
+			if mainStmtSet[mergedStmt] {
+				rewriteTypeRefsInStmt(mergedStmt, mainLocalOwner)
+			} else {
+				rewriteTypeRefsInStmt(mergedStmt, typeOwner)
+			}
+		}
+	}
 	checker.DebugCountHashFns("after-prefixMethodNames", merged)
 	// 函數衝突前綴：多模組同名頂層函數（connect×4、get×5 …）改名為
 	// module.fn 並改寫模組內裸呼叫。必須在 prefixMethodNames 之後執行，
@@ -1228,7 +1279,9 @@ func (t *Transpiler) CompileTarget(source string, _ Target) (string, error) {
 	// 泛型單態化：掃描泛型函數呼叫，生成具體版本
 	// 使用 globalVarTypes（僅頂層變數）避免其他函數的局部變數型別洩漏到 method resolution
 	// 傳入 typeOwner 以便 resolveMethodCall 為跨模組型別補上模組前綴
-	monomorphizeGenerics(merged, globalVarTypes, typeOwner)
+	// typeOwner 用剔除主程序本地型別的版本：globalVarTypes 只含主程序頂層變數，
+	// 其裸名型別若由主程序自行定義，方法呼叫不得被加上模組前綴。
+	monomorphizeGenerics(merged, globalVarTypes, mainLocalOwner)
 	checker.DebugCountHashFns("after-monomorphizeGenerics", merged)
 	// 過濾：移除尚未具現化的泛型函數定義（只有具體版本才能產生 LLVM IR）
 	filtered := make([]parser.Statement, 0, len(merged.Statements))
@@ -1245,7 +1298,9 @@ func (t *Transpiler) CompileTarget(source string, _ Target) (string, error) {
 	// 第二階段型別參考改寫：主檔案的頂層語句（struct 定義、let 宣告等）
 	// 在此時才加入 merged，需要再次改寫以處理主檔案中對導入模組型別的引用。
 	// 已改寫過的型別名（含 "."）會被 prefixTypeName 自動跳過，安全無副作用。
-	rewriteTypeRefs(merged.Statements, typeOwner)
+	// 使用剔除主程序本地型別後的表：主程序自定義型別與模組同名時，裸名引用
+	// 必須保持指向本地定義（與 prefixMethodNames 的本地優先語義一致）。
+	rewriteTypeRefs(merged.Statements, mainLocalOwner)
 	// 解析頂層代碼中的 module.fn() 呼叫
 	checker.ResolveModuleCalls(merged, importedModules, prefixedFns)
 	// 解析 Type.method(args) 靜態方法呼叫：將 bigint.cmp(d, d2) 重寫為

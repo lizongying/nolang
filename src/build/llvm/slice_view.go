@@ -2,10 +2,63 @@ package llvm
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 
 	"github.com/lizongying/nolang/parser"
 )
+
+// parseConstIntStr 嘗試將 LLVM i64 操作數字串解析為編譯期常量。
+// 接受 "5"、"-3"、"0" 等純數字形式；拒絕 "%xxx"（SSA 寄存器）或空字串。
+// 用於切片邊界檢查：當 start/end/srcLen 均為常量時編譯期驗證，避免運行時開銷。
+func parseConstIntStr(s string) (int64, bool) {
+	if s == "" || strings.ContainsRune(s, '%') {
+		return 0, false
+	}
+	v, err := strconv.ParseInt(s, 10, 64)
+	if err != nil {
+		return 0, false
+	}
+	return v, true
+}
+
+// checkSliceBound 驗證切片邊界 idx ≥ 0 且 idx ≤ srcLen。
+// 編譯期可計算時編譯期驗證（失敗 panic，因為這是程序邏輯錯誤），
+// 否則運行時 emit @nolang.slice_bounds_check 調用。
+// 注意：nolang 支持反向 view（start > end 合法），故不檢查 start ≤ end。
+func (g *Generator) checkSliceBound(sb *strings.Builder, idx, srcLen, name string) {
+	if sb == nil || g.noBoundsCheck {
+		return
+	}
+	idxConst, idxIsConst := parseConstIntStr(idx)
+	srcLenConst, srcLenIsConst := parseConstIntStr(srcLen)
+
+	// 全編譯期常量：編譯期靜態驗證，無需運行時檢查
+	if idxIsConst && srcLenIsConst {
+		if idxConst < 0 {
+			panic(fmt.Sprintf("slice %s out of range: %d < 0", name, idxConst))
+		}
+		if idxConst > srcLenConst {
+			panic(fmt.Sprintf("slice %s out of range: %d > srcLen %d", name, idxConst, srcLenConst))
+		}
+		return
+	}
+	// idx 為編譯期常量但 srcLen 不是：僅 idx < 0 可編譯期驗證
+	if idxIsConst {
+		if idxConst < 0 {
+			panic(fmt.Sprintf("slice %s out of range: %d < 0", name, idxConst))
+		}
+		// idx ≥ 0 且 idx ≤ srcLen 需運行時驗證（srcLen 未知）
+		// 特例：idx == 0 時 0 ≤ srcLen 恆成立（srcLen 來自 len 字段，假設 ≥ 0），跳過
+		if idxConst == 0 {
+			return
+		}
+	}
+	// 運行時驗證：emit @nolang.slice_bounds_check(idx, srcLen)
+	// alwaysinline 使 opt -O3 在調用點內聯並常量傳播消除不可達分支
+	sb.WriteString(fmt.Sprintf("%scall void @nolang.slice_bounds_check(i64 %s, i64 %s)\n",
+		g.indent(), idx, srcLen))
+}
 
 // generateSliceViewAssignment handles `view = base[start..end]` by registering
 // a slice view alias instead of creating an independent struct.
@@ -308,10 +361,15 @@ func (g *Generator) emitSliceClone(sb *strings.Builder, destVar, srcDataPtr, vie
 
 // computeSliceBounds computes the start offset and view length from a RangeExpression.
 // srcLen is the source's total length (used for [..] and [start..] cases).
+// 同時對顯式提供的 start/end 邊界做檢查：start ≥ 0 且 start ≤ srcLen，end 同理。
+// nolang 支持反向 view（start > end 合法），故不檢查 start ≤ end。
+// 編譯期常量在編譯期驗證（失敗 panic），否則運行時 emit @nolang.slice_bounds_check。
 func (g *Generator) computeSliceBounds(sb *strings.Builder, r *parser.RangeExpression, srcLen string) (startReg, viewLenReg string) {
 	startReg = "0"
 	if r != nil && r.Start != nil {
 		startVal := g.generateExprWithSB(sb, r.Start)
+		// 邊界檢查：用戶顯式提供的 start 需驗證 ≥ 0 且 ≤ srcLen
+		g.checkSliceBound(sb, startVal, srcLen, "start")
 		if !r.LeftInc {
 			// ( exclusive: start = start + 1
 			g.tmpIdx++
@@ -363,6 +421,8 @@ func (g *Generator) computeSliceBounds(sb *strings.Builder, r *parser.RangeExpre
 	} else if r.Start == nil && r.End != nil {
 		// [..end] / (..end]: view_len = end - start + (1 if ] else 0)
 		endVal := g.generateExprWithSB(sb, r.End)
+		// 邊界檢查：用戶顯式提供的 end 需驗證 ≥ 0 且 ≤ srcLen
+		g.checkSliceBound(sb, endVal, srcLen, "end")
 		g.tmpIdx++
 		subReg := fmt.Sprintf("%%sv.sublen.%d", g.tmpIdx)
 		if sb != nil {
@@ -394,6 +454,8 @@ func (g *Generator) computeSliceBounds(sb *strings.Builder, r *parser.RangeExpre
 	} else {
 		// [start..end]: view_len = end - start + (1 if ] else 0)
 		endVal := g.generateExprWithSB(sb, r.End)
+		// 邊界檢查：用戶顯式提供的 end 需驗證 ≥ 0 且 ≤ srcLen
+		g.checkSliceBound(sb, endVal, srcLen, "end")
 		g.tmpIdx++
 		subReg := fmt.Sprintf("%%sv.sublen.%d", g.tmpIdx)
 		if sb != nil {

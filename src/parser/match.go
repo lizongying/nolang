@@ -267,7 +267,9 @@ func (p *Parser) parseBareMatchExpr() Expression {
 			for p.currentToken.Type == lexer.NEWLINE {
 				p.nextToken()
 			}
-			p.ctx.push(CTX_MATCH_ARM)
+			// 不在 CTX_MATCH_ARM 下解析 body 語句（與大括號臂體一致）：
+			// 臂邊界由 isArmStart() 判定；否則 body 內 standalone if-then 的 `->`
+			// 會截斷語句並被誤判為新臂，導致整個 match 解析失敗（見 expr.go 同步註釋）。
 			for p.currentToken.Type != lexer.RBRACE && p.currentToken.Type != lexer.EOF &&
 				!p.isArmStart() {
 				if p.currentToken.Type == lexer.NEWLINE {
@@ -282,7 +284,6 @@ func (p *Parser) parseBareMatchExpr() Expression {
 					bodyStmts = append(bodyStmts, s)
 				}
 			}
-			p.ctx.pop()
 		} else {
 			// Inline statement form（單行 body）
 			// 使用 parseStatement 以支援 let 賦值（如 `cond -> a = 1`）與表達式（如 `cond -> print(1)`）

@@ -362,8 +362,29 @@ func (g *Generator) emitArgAsStrLong(sb *strings.Builder, expr parser.Expression
 	// For option variables (?str), generateExprWithSB extracts the inner %str-long*.
 	if srcType == "%str-long" {
 		if isOptionStr {
-			// Option ?str: generateExprWithSB returns the inner %str-long* via inttoptr.
-			return g.generateExprWithSB(sb, expr)
+			// Option ?str: generateExprWithSB returns the inner %str-long* via
+			// inttoptr of the option's data field. For nil (tag==1, data==0) that
+			// would be a NULL %str-long* and @out would dereference it (UB) — opt
+			// then deletes the whole function and main collapses to `unreachable`,
+			// crashing with SIGTRAP. Guard the nil case with a `select` that returns
+			// the literal "nil" string instead of the null pointer.
+			innerPtr := g.generateExprWithSB(sb, expr)
+			if ident, ok := expr.(*parser.Identifier); ok {
+				tagGEP := g.tmpReg("opt.tag.gep")
+				tagLoad := g.tmpReg("opt.tag")
+				sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%option, %%option* %s, i32 0, i32 0\n", g.indent(), tagGEP, llvmVarRef(ident.Value)))
+				sb.WriteString(fmt.Sprintf("%s%s = load i64, i64* %s\n", g.indent(), tagLoad, tagGEP))
+				isNil := g.tmpReg("opt.isnil")
+				sb.WriteString(fmt.Sprintf("%s%s = icmp eq i64 %s, 1\n", g.indent(), isNil, tagLoad))
+				nilStrPtr := g.buildStrLongFromValue(sb, "nil")
+				resPtr := g.tmpReg("opt.str.ptr")
+				sb.WriteString(fmt.Sprintf("%s%s = select i1 %s, %%str-long* %s, %%str-long* %s\n", g.indent(), resPtr, isNil, nilStrPtr, innerPtr))
+				if g.ssaTypes != nil {
+					g.ssaTypes[resPtr] = "%str-long*"
+				}
+				return resPtr
+			}
+			return innerPtr
 		}
 		return g.getStrPtr(sb, expr)
 	}

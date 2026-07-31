@@ -234,6 +234,15 @@ func LoadPackage(dir string) (*Package, error) {
 	return nil, nil // 沒有找到套件
 }
 
+// WorkspaceRoot 返回工作區根目錄（workspace.jsonc 所在目錄）。
+// 若未偵測到 workspace.jsonc 則返回空字串。
+func (p *Package) WorkspaceRoot() string {
+	if p == nil {
+		return ""
+	}
+	return p.workspaceRoot
+}
+
 // ResolvePath 根據 alias 解析路徑
 func (p *Package) ResolvePath(inputPath string) string {
 	if p == nil {

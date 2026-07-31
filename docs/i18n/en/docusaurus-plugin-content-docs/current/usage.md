@@ -279,3 +279,26 @@ Configure mirror URLs in the `mirrors` array in `mod.jsonc` to accelerate remote
 ```
 
 `no init` defines the workspace: if `workspace.jsonc` is missing it generates an empty object `{}` and **does not create any `mod.jsonc`**; if it already exists, it is preserved and not overwritten. Each subsequent `no new <name>` automatically registers `"<name>": "./<name>"` into `workspace.jsonc`.
+
+#### Workspace Flow
+
+The compile/execute entry directory is always the **workspace directory** (where `workspace.jsonc` resides). The overall flow is:
+
+1. User runs `no build` or `no run <package-name>` from the workspace directory
+2. Compiler reads `workspace.jsonc` and looks up the package's subdirectory path by name
+3. Loads the `mod.jsonc` in that subdirectory (the package root) and builds/runs relative to it
+4. All import paths (`use /path/to/module`) are **resolved relative to the package's `mod.jsonc` directory**
+
+```
+workspace/               ← workspace directory (workspace.jsonc lives here)
+├── workspace.jsonc      ← package name -> path mapping
+├── foo/                 ← package foo
+│   ├── mod.jsonc        ← foo's package root
+│   ├── main.no
+│   └── lib.no
+└── bar/                 ← package bar
+    ├── mod.jsonc        ← bar's package root
+    └── main.no
+```
+
+> **Note**: Import paths are relative to the package's own `mod.jsonc` directory, not the workspace root. If a nested `mod.jsonc` exists in a subdirectory within a package, `LoadPackage` searches upward and uses the nearest `mod.jsonc` as the package root.

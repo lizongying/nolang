@@ -1,0 +1,332 @@
+; ln — 建立檔案連結（純 Nolang 實作）
+;
+; 設計目標：以純 Nolang 完成引數解析、目標解析、目錄判斷、存在性檢查
+; 與錯誤處理；底層的連結動作委由標準庫內建 fs.symlink / fs.link。
+;
+; 註：早期規劃曾寫道「ln 因標準庫暫缺 symlink / link 內建而委託系統命令」，
+; 但標準庫現已內建 fs.symlink / fs.link（見 src/builtin/os.go），
+; 故此處改為完整純 Nolang 實作，不再委託系統命令。
+;
+; 支援：
+;   -s, --symbolic            建立符號連結（預設為硬連結）
+;   -f, --force               若目的檔已存在則先移除
+;   -n, --no-dereference      將已存在的符號連結視為一般檔案（配合 -f 移除之）
+;   -v, --verbose             每建立一條連結都印出
+;   -T, --no-target-directory 將最後一個引數視為連結名稱（即使它是目錄）
+;   -t DIR, --target-directory=DIR   將所有來源連結進 DIR
+;       --help                顯示說明
+;       --version             顯示版本
+;   也支援合併短選項，如 -sfv、-sn 等；-t 可接受附加值（-tDIR）或單獨引數（-t DIR）。
+;
+; 已知限制（待編譯器修復後可補齊）：
+;   -r, --relative 需對路徑做分量運算，依賴可索引的 []str，目前編譯器對
+;     []str 索引有 codegen 缺陷，故暫未實作。
+;   -b/-S（備份）、-i（互動）等同屬 GNU 擴充，未實作。
+
+; ═════════════════════════════════════════════
+; 全域旗標（由引數解析決定）
+; ═══════════════════════════════════════════
+symbolic = false
+force = false
+noDeref = false
+verbose = false
+noTargetDir = false
+relative = false
+targetDir = ''
+progName = 'ln'
+hadError = false
+
+; ═══════════════════════════════════════════
+; 工具函式
+; ═══════════════════════════════════════════
+
+; base-name: 取路徑最後一段檔名（自寫，避免 path.base 的長度 bug）
+base-name = (p str) (out str) {
+    plen = p.len
+    plen > 1 -> {
+        pc = p[plen - 1] & 255
+        pc == 45 -> plen = plen - 1
+    }
+    last = -1
+    i <- [0..plen): {
+        c = p[i] & 255
+        c == 45 -> last = i
+    }
+    start = last + 1
+    out = ''
+    k <- [start..plen): {
+        out = out - p.slice(k, k + 1)
+    }
+}
+
+; join-path: 拼接目錄與檔名，避免重複分隔符
+join-path = (d str, name str) (out str) {
+    dlen = d.len
+    dlen == 0 -> {
+        out = name
+        return
+    }
+    lastc = d[dlen - 1] & 255
+    lastc == 45 -> out = d - name
+    lastc != 45 -> out = d - '/' - name
+}
+
+; err-msg: 印出錯誤訊息到標準錯誤
+err-msg = (msg str) {
+    eprint(progName - ': ' - msg)
+}
+
+; do-link: 對單一 (來源, 連結路徑) 執行連結
+do-link = (src str, linkPath str) {
+    lkSym, lkSymOk = fs.readlink(linkPath)
+    lkDir = fs.is-dir(linkPath)
+    lkFile = fs.is-file(linkPath)
+
+    lkSymOk == true -> {
+        removeIt = false
+        force == true -> removeIt = true
+        noDeref == true -> removeIt = true
+        removeIt == true -> {
+            rm = fs.remove(linkPath)
+            rm == false -> {
+                err-msg('cannot remove existing link ' - linkPath)
+                hadError = true
+                return
+            }
+        }
+        removeIt == false -> {
+            err-msg('failed to create link ' - linkPath - ': File exists')
+            hadError = true
+            return
+        }
+    }
+
+    lkSymOk == false -> {
+        lkDir == true -> {
+            err-msg('cannot overwrite directory ' - linkPath)
+            hadError = true
+            return
+        }
+        lkFile == true -> {
+            force == true -> {
+                rm = fs.remove(linkPath)
+                rm == false -> {
+                    err-msg('cannot remove existing file ' - linkPath)
+                    hadError = true
+                    return
+                }
+            }
+            force == false -> {
+                err-msg('failed to create link ' - linkPath - ': File exists')
+                hadError = true
+                return
+            }
+        }
+    }
+
+    symbolic == true -> {
+        ok = fs.symlink(src, linkPath)
+        ok == false -> {
+            err-msg('failed to create symbolic link ' - linkPath - ' -> ' - src)
+            hadError = true
+            return
+        }
+        verbose == true -> print(linkPath - ' -> ' - src)
+    }
+    symbolic == false -> {
+        ok = fs.link(src, linkPath)
+        ok == false -> {
+            err-msg('failed to create hard link ' - linkPath - ' <= ' - src)
+            hadError = true
+            return
+        }
+        verbose == true -> print(linkPath - ' <= ' - src)
+    }
+}
+
+; print-help / print-version
+print-help = () {
+    print('Usage: ln [OPTION]... [-T] TARGET LINK_NAME')
+    print('  or:  ln [OPTION]... TARGET')
+    print('  or:  ln [OPTION]... TARGET... DIRECTORY')
+    print('  or:  ln [OPTION]... -t DIRECTORY TARGET...')
+    print('')
+    print('Create a link to TARGET with the specified LINK_NAME.')
+    print('By default a hard link is created; with -s a symbolic link is created.')
+    print('')
+    print('  -s, --symbolic            make symbolic links instead of hard links')
+    print('  -f, --force               remove existing destination files')
+    print('  -n, --no-dereference      treat LINK_NAME as a normal file if it is a symlink')
+    print('  -v, --verbose             print each created link')
+    print('  -T, --no-target-directory treat LINK_NAME as a normal file (never a directory)')
+    print('  -t, --target-directory=DIR  specify the destination directory')
+    print('      --help             display this help and exit')
+    print('      --version          output version information and exit')
+}
+
+print-version = () {
+    print('ln (Nolang pure-implementation) 1.0')
+}
+
+; ═══════════════════════════════════════════
+; 主程式
+; ═══════════════════════════════════════════
+main = () {
+    arg0 = os.arg(0)
+    progName = base-name(arg0)
+
+    n = os.args()
+    i = 1
+    endOpts = false
+    firstPos = -1
+    npos = 0
+
+    {
+        i >= n -> *
+        a = os.arg(i)
+
+        a == '--' -> endOpts = true
+
+        opt = false
+        endOpts == false -> {
+            a.len > 0 -> {
+                a[0] & 255 == 45 -> opt = true
+            }
+        }
+
+        opt == true -> {
+            a[0] & 255 == 45 -> a[1] & 255 == 45 -> {
+                a == '--help' -> {
+                    print-help()
+                    os.exit(0)
+                }
+                a == '--version' -> {
+                    print-version()
+                    os.exit(0)
+                }
+                a == '--symbolic' -> symbolic = true
+                a == '--force' -> force = true
+                a == '--no-dereference' -> noDeref = true
+                a == '--verbose' -> verbose = true
+                a == '--no-target-directory' -> noTargetDir = true
+                a == '--target-directory' -> {
+                    i < n - 1 -> {
+                        i = i + 1
+                        targetDir = os.arg(i)
+                    }
+                    i == n - 1 -> {
+                        err-msg('option --target-directory requires an argument')
+                        hadError = true
+                    }
+                }
+                a.starts-with('--target-directory=') -> {
+                    targetDir = a.slice(19, a.len)
+                }
+            }
+            a[0] & 255 == 45 -> a[1] & 255 != 45 -> {
+                needTArg = false
+                j <- [1..a.len): {
+                    ch = a[j] & 255
+                    ch == 115 -> symbolic = true
+                    ch == 102 -> force = true
+                    ch == 110 -> noDeref = true
+                    ch == 118 -> verbose = true
+                    ch == 84  -> noTargetDir = true
+                    ch == 116 -> {
+                        j + 1 < a.len -> targetDir = a.slice(j + 1, a.len)
+                        j + 1 == a.len -> needTArg = true
+                    }
+                }
+                needTArg == true -> {
+                    i < n - 1 -> {
+                        i = i + 1
+                        targetDir = os.arg(i)
+                    }
+                    i == n - 1 -> {
+                        err-msg('option requires an argument -- t')
+                        hadError = true
+                    }
+                }
+            }
+        }
+
+        countIt = true
+        a == '--' -> countIt = false
+        countIt == true -> {
+            firstPos < 0 -> firstPos = i
+            npos = npos + 1
+        }
+
+        i = i + 1
+    } (true)
+
+    npos == 0 -> {
+        targetDir != '' -> err-msg('missing file operand after --target-directory')
+        targetDir == '' -> err-msg('missing file operand')
+        hadError = true
+    }
+
+    npos > 0 -> {
+        targetDir != '' -> {
+            k <- [0..npos): {
+                src = os.arg(firstPos + k)
+                linkPath = join-path(targetDir, base-name(src))
+                do-link(src, linkPath)
+            }
+        }
+
+        targetDir == '' -> noTargetDir == true -> {
+            npos < 2 -> {
+                err-msg('missing destination file operand after --no-target-directory')
+                hadError = true
+            }
+            npos > 2 -> {
+                err-msg('target directory not allowed when using --no-target-directory')
+                hadError = true
+            }
+            npos == 2 -> {
+                linkName = os.arg(firstPos + 1)
+                k <- [0..npos - 1): {
+                    src = os.arg(firstPos + k)
+                    do-link(src, linkName)
+                }
+            }
+        }
+
+        targetDir == '' -> noTargetDir == false -> {
+            npos == 1 -> {
+                src = os.arg(firstPos)
+                do-link(src, base-name(src))
+            }
+            npos == 2 -> {
+                src = os.arg(firstPos)
+                linkName = os.arg(firstPos + 1)
+                do-link(src, linkName)
+            }
+            npos >= 3 -> {
+                dir = os.arg(firstPos + npos - 1)
+                isDir = fs.is-dir(dir)
+                isSym, isSymOk = fs.readlink(dir)
+                dirOk = false
+                isDir == true -> dirOk = true
+                isSymOk == true -> dirOk = true
+                dirOk == false -> {
+                    err-msg('target ' - dir - ' is not a directory')
+                    hadError = true
+                }
+                dirOk == true -> {
+                    k <- [0..npos - 1): {
+                        src = os.arg(firstPos + k)
+                        linkPath = join-path(dir, base-name(src))
+                        do-link(src, linkPath)
+                    }
+                }
+            }
+        }
+    }
+
+    hadError == true -> os.exit(1)
+    os.exit(0)
+}
+
+main()

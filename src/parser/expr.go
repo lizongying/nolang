@@ -1049,7 +1049,12 @@ func (p *Parser) parseMatchExprFrom(matched Expression) Expression {
 				p.nextToken()
 			}
 			// Read statements until next arm or }
-			p.ctx.push(CTX_MATCH_ARM)
+			// 注意：不在 CTX_MATCH_ARM 下解析 body 語句（與大括號臂體一致）。
+			// 臂邊界由迴圈頭的 isArmStart()（純 token 前瞻）判定；若語句在
+			// CTX_MATCH_ARM 下解析，body 內的 standalone if-then（如
+			// `r.code != 200 -> { ... }`）會在 `->` 前截斷，殘留的 `->` 被誤判
+			// 為新 wildcard 臂，最終整個 match 解析失敗並 fallback 成 while 迴圈
+			//（丟失 it 綁定與 nil/err 分派，引發 codegen 類型污染崩潰）。
 			for p.currentToken.Type != lexer.RBRACE && p.currentToken.Type != lexer.EOF &&
 				!p.isArmStart() {
 				// Skip NEWLINE
@@ -1065,7 +1070,6 @@ func (p *Parser) parseMatchExprFrom(matched Expression) Expression {
 					bodyStmts = append(bodyStmts, s)
 				}
 			}
-			p.ctx.pop()
 		} else {
 			// Inline statement form（單行 body）
 			// 使用 parseStatement 以支援 let 賦值（如 `cond -> a = 1`）與表達式（如 `cond -> print(1)`）

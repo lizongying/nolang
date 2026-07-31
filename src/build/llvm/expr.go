@@ -527,6 +527,12 @@ func (g *Generator) generateIfExpression(sb *strings.Builder, expr *parser.IfExp
 	// branch
 	sb.WriteString(fmt.Sprintf("%sbr i1 %s, label %%if.then.%d, label %%if.else.%d\n",
 		g.indent(), cond, labelId, labelId))
+	// CFG: cond 块 → then / else
+	condBlock := g.cfgBlockLabel()
+	endLabel := fmt.Sprintf("if.end.%d", labelId)
+	g.cfgEdge(condBlock, fmt.Sprintf("if.then.%d", labelId))
+	g.cfgEdge(condBlock, fmt.Sprintf("if.else.%d", labelId))
+	g.cfgTerm(condBlock, termCondBr)
 
 	// then
 	thenLabel := fmt.Sprintf("if.then.%d", labelId)
@@ -595,6 +601,12 @@ func (g *Generator) generateIfExpression(sb *strings.Builder, expr *parser.IfExp
 	thenPredecessor := g.currentBlock
 	if !thenTerminated {
 		sb.WriteString(fmt.Sprintf("%sbr label %%if.end.%d\n", g.indent(), labelId))
+		// CFG: then 块 → if.end
+		g.cfgEdge(thenPredecessor, endLabel)
+		g.cfgTerm(thenPredecessor, termBr)
+	} else {
+		// then 块以 ret 终结（无后继）
+		g.cfgTerm(thenPredecessor, termRet)
 	}
 	g.indentLevel--
 
@@ -651,6 +663,11 @@ func (g *Generator) generateIfExpression(sb *strings.Builder, expr *parser.IfExp
 	elsePredecessor := g.currentBlock
 	if !elseTerminated {
 		sb.WriteString(fmt.Sprintf("%sbr label %%if.end.%d\n", g.indent(), labelId))
+		// CFG: else 块 → if.end
+		g.cfgEdge(elsePredecessor, endLabel)
+		g.cfgTerm(elsePredecessor, termBr)
+	} else {
+		g.cfgTerm(elsePredecessor, termRet)
 	}
 	g.indentLevel--
 
@@ -674,7 +691,7 @@ func (g *Generator) generateIfExpression(sb *strings.Builder, expr *parser.IfExp
 			g.ssaVersion[k] = v
 		}
 	}
-	endLabel := fmt.Sprintf("if.end.%d", labelId)
+	endLabel = fmt.Sprintf("if.end.%d", labelId)
 	g.emitLabel(sb, endLabel)
 	phiReg := g.tmpReg("if.phi")
 	// phi type matches current function's return type
@@ -818,8 +835,14 @@ func (g *Generator) generateConditionalExpression(sb *strings.Builder, expr *par
 	}
 
 	// branch
+	condBlock := g.cfgBlockLabel()
+	endLabel := fmt.Sprintf("cond.end.%d", labelId)
 	sb.WriteString(fmt.Sprintf("%sbr i1 %s, label %%cond.then.%d, label %%cond.else.%d\n",
 		g.indent(), cond, labelId, labelId))
+	// CFG: cond block → then / else
+	g.cfgEdge(condBlock, fmt.Sprintf("cond.then.%d", labelId))
+	g.cfgEdge(condBlock, fmt.Sprintf("cond.else.%d", labelId))
+	g.cfgTerm(condBlock, termCondBr)
 
 	// then (consequence)
 	g.emitLabel(sb, fmt.Sprintf("cond.then.%d", labelId))
@@ -827,6 +850,9 @@ func (g *Generator) generateConditionalExpression(sb *strings.Builder, expr *par
 	thenVal := g.generateExprWithSB(sb, expr.Consequence)
 	thenPredecessor := g.currentBlock
 	sb.WriteString(fmt.Sprintf("%sbr label %%cond.end.%d\n", g.indent(), labelId))
+	// CFG: then → end
+	g.cfgEdge(thenPredecessor, endLabel)
+	g.cfgTerm(thenPredecessor, termBr)
 	g.indentLevel--
 
 	// else (alternative)
@@ -835,10 +861,13 @@ func (g *Generator) generateConditionalExpression(sb *strings.Builder, expr *par
 	elseVal := g.generateExprWithSB(sb, expr.Alternative)
 	elsePredecessor := g.currentBlock
 	sb.WriteString(fmt.Sprintf("%sbr label %%cond.end.%d\n", g.indent(), labelId))
+	// CFG: else → end
+	g.cfgEdge(elsePredecessor, endLabel)
+	g.cfgTerm(elsePredecessor, termBr)
 	g.indentLevel--
 
 	// end: phi
-	g.emitLabel(sb, fmt.Sprintf("cond.end.%d", labelId))
+	g.emitLabel(sb, endLabel)
 	phiReg := g.tmpReg("cond.phi")
 	sb.WriteString(fmt.Sprintf("%s%s = phi %s [%s, %%%s], [%s, %%%s]\n",
 		g.indent(), phiReg, phiType, thenVal, thenPredecessor, elseVal, elsePredecessor))
@@ -2303,7 +2332,10 @@ func (g *Generator) generateStructFieldIndexAssign(sb *strings.Builder, dot *par
 						} else {
 							_, isStrLit := value.(*parser.StringLiteral)
 							_, isIdent := value.(*parser.Identifier)
-							if !isStrLit && !isIdent {
+							// CallExpression (e.g. hs.slice(...)) returns a value, not a
+							// pointer; loading from it as %str-long* causes a type mismatch.
+							_, isCall := value.(*parser.CallExpression)
+							if !isStrLit && !isIdent && !isCall {
 								_, isIdx := value.(*parser.IndexExpression)
 								if isIdx || g.isStringExpr(value) {
 									loadReg := g.tmpReg("set.arr.load")
@@ -2865,10 +2897,12 @@ func (g *Generator) generateAssignExpression(sb *strings.Builder, expr *parser.A
 		if fields, ok := g.structTypes[structName]; ok {
 			fieldIdx := -1
 			var fieldType string
+			var fieldElemType string
 			for i, f := range fields {
 				if f.name == fieldName {
 					fieldIdx = i
 					fieldType = f.typ
+					fieldElemType = f.elemType
 					break
 				}
 			}
@@ -2918,7 +2952,36 @@ func (g *Generator) generateAssignExpression(sb *strings.Builder, expr *parser.A
 					sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %s, %s* %s, i32 0, i32 %d\n",
 						g.indent(), reg, structTy, structTy, g.varAddr(varName), fieldIdx))
 				}
-				sb.WriteString(fmt.Sprintf("%sstore %s %s, %s* %s\n", g.indent(), fieldType, val, fieldType, reg))
+				if val == "zeroinitializer" || !g.isHeapOwningType(fieldType) {
+					sb.WriteString(fmt.Sprintf("%sstore %s %s, %s* %s\n", g.indent(), fieldType, val, fieldType, reg))
+				} else {
+					if fieldType == "%str-long" || fieldType == "%vec" || fieldType == "%arr" {
+						oldLenGEP := g.tmpReg("set.fld.oldlen.gep")
+						oldLenReg := g.tmpReg("set.fld.oldlen")
+						lenCmpReg := g.tmpReg("set.fld.lencmp")
+						g.tmpIdx++
+						skipFreeLabel := fmt.Sprintf("set.fld.skipfree.%d", g.tmpIdx)
+						g.tmpIdx++
+						doFreeLabel := fmt.Sprintf("set.fld.dofree.%d", g.tmpIdx)
+						sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %s, %s* %s, i32 0, i32 0\n",
+							g.indent(), oldLenGEP, fieldType, fieldType, reg))
+						sb.WriteString(fmt.Sprintf("%s%s = load i64, i64* %s\n", g.indent(), oldLenReg, oldLenGEP))
+						sb.WriteString(fmt.Sprintf("%s%s = icmp eq i64 %s, 0\n", g.indent(), lenCmpReg, oldLenReg))
+						sb.WriteString(fmt.Sprintf("%sbr i1 %s, label %%%s, label %%%s\n",
+							g.indent(), lenCmpReg, skipFreeLabel, doFreeLabel))
+						g.emitLabel(sb, doFreeLabel)
+						g.emitElementFree(sb, reg, fieldType)
+						sb.WriteString(fmt.Sprintf("%sbr label %%%s\n", g.indent(), skipFreeLabel))
+						g.emitLabel(sb, skipFreeLabel)
+					} else {
+						g.emitElementFree(sb, reg, fieldType)
+					}
+					cloneSrc := g.tmpReg("set.fld.csrc")
+					sb.WriteString(fmt.Sprintf("%s%s = alloca %s\n", g.indent(), cloneSrc, fieldType))
+					sb.WriteString(fmt.Sprintf("%sstore %s %s, %s* %s\n",
+						g.indent(), fieldType, val, fieldType, cloneSrc))
+					g.emitDeepClone(sb, cloneSrc, reg, fieldType, fieldElemType)
+				}
 			}
 		}
 		return "0"
@@ -3080,13 +3143,46 @@ func (g *Generator) generateAssignExpression(sb *strings.Builder, expr *parser.A
 							storeVal = convReg
 						}
 					}
+				if g.isHeapOwningType(llvmElemType) {
+					// Free old element value, then deep clone new value.
+					// Same pattern as struct field assignment: for container types
+					// (%str-long/%vec/%arr), check len==0 to skip freeing
+					// uninitialized elements; for user structs, free unconditionally.
+					if llvmElemType == "%str-long" || llvmElemType == "%vec" || llvmElemType == "%arr" {
+						oldLenGEP := g.tmpReg("arr.set.oldlen.gep")
+						oldLenReg := g.tmpReg("arr.set.oldlen")
+						lenCmpReg := g.tmpReg("arr.set.lencmp")
+						g.tmpIdx++
+						skipFreeLabel := fmt.Sprintf("arr.set.skipfree.%d", g.tmpIdx)
+						g.tmpIdx++
+						doFreeLabel := fmt.Sprintf("arr.set.dofree.%d", g.tmpIdx)
+						sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %s, %s* %s, i32 0, i32 0\n",
+							g.indent(), oldLenGEP, llvmElemType, llvmElemType, elemGEP))
+						sb.WriteString(fmt.Sprintf("%s%s = load i64, i64* %s\n", g.indent(), oldLenReg, oldLenGEP))
+						sb.WriteString(fmt.Sprintf("%s%s = icmp eq i64 %s, 0\n", g.indent(), lenCmpReg, oldLenReg))
+						sb.WriteString(fmt.Sprintf("%sbr i1 %s, label %%%s, label %%%s\n",
+							g.indent(), lenCmpReg, skipFreeLabel, doFreeLabel))
+						g.emitLabel(sb, doFreeLabel)
+						g.emitElementFree(sb, elemGEP, llvmElemType)
+						sb.WriteString(fmt.Sprintf("%sbr label %%%s\n", g.indent(), skipFreeLabel))
+						g.emitLabel(sb, skipFreeLabel)
+					} else {
+						g.emitElementFree(sb, elemGEP, llvmElemType)
+					}
+					cloneSrc := g.tmpReg("arr.set.csrc")
+					sb.WriteString(fmt.Sprintf("%s%s = alloca %s\n", g.indent(), cloneSrc, llvmElemType))
+					sb.WriteString(fmt.Sprintf("%sstore %s %s, %s* %s\n",
+						g.indent(), llvmElemType, storeVal, llvmElemType, cloneSrc))
+					g.emitDeepClone(sb, cloneSrc, elemGEP, llvmElemType, "")
+				} else {
 					sb.WriteString(fmt.Sprintf("%sstore %s %s, %s* %s\n",
 						g.indent(), llvmElemType, storeVal, llvmElemType, elemGEP))
 				}
-				return "0"
 			}
+			return "0"
+		}
 
-			if t == "%vec" {
+		if t == "%vec" {
 				// %vec type: load data pointer (field 2), bitcast, GEP, store
 				llvmElemType = "i64"
 				if et, ok := g.arrayElemTypes[varName]; ok {
@@ -3147,15 +3243,61 @@ func (g *Generator) generateAssignExpression(sb *strings.Builder, expr *parser.A
 					}
 				}
 
-				// GEP to element index and store
-				elemGEP := g.tmpReg("vec.set.elem")
-				if sb != nil {
-					sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %s, %s* %s, i64 %s\n",
-						g.indent(), elemGEP, llvmElemType, llvmElemType, dataTyped, idx))
+			// GEP to element index and store
+			elemGEP := g.tmpReg("vec.set.elem")
+			if sb != nil {
+				sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %s, %s* %s, i64 %s\n",
+					g.indent(), elemGEP, llvmElemType, llvmElemType, dataTyped, idx))
+				// For %str-long elements, load from pointer if the value is a
+				// %str-long* pointer (e.g. StringLiteral, string concat result).
+				// Identifier with %str-long type already returns a loaded value.
+				if llvmElemType == "%str-long" {
+					if _, ok := expr.Value.(*parser.Identifier); !ok {
+						if g.isStrPtrReg(storeVal) {
+							strLoadReg := g.tmpReg("vec.set.strload")
+							sb.WriteString(fmt.Sprintf("%s%s = load %%str-long, %%str-long* %s\n",
+								g.indent(), strLoadReg, storeVal))
+							storeVal = strLoadReg
+						}
+					}
+				}
+				if g.isHeapOwningType(llvmElemType) {
+					// Free old element value, then deep clone new value.
+					// Same pattern as struct field assignment: for container types
+					// (%str-long/%vec/%arr), check len==0 to skip freeing
+					// uninitialized elements; for user structs, free unconditionally.
+					if llvmElemType == "%str-long" || llvmElemType == "%vec" || llvmElemType == "%arr" {
+						oldLenGEP := g.tmpReg("vec.set.oldlen.gep")
+						oldLenReg := g.tmpReg("vec.set.oldlen")
+						lenCmpReg := g.tmpReg("vec.set.lencmp")
+						g.tmpIdx++
+						skipFreeLabel := fmt.Sprintf("vec.set.skipfree.%d", g.tmpIdx)
+						g.tmpIdx++
+						doFreeLabel := fmt.Sprintf("vec.set.dofree.%d", g.tmpIdx)
+						sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %s, %s* %s, i32 0, i32 0\n",
+							g.indent(), oldLenGEP, llvmElemType, llvmElemType, elemGEP))
+						sb.WriteString(fmt.Sprintf("%s%s = load i64, i64* %s\n", g.indent(), oldLenReg, oldLenGEP))
+						sb.WriteString(fmt.Sprintf("%s%s = icmp eq i64 %s, 0\n", g.indent(), lenCmpReg, oldLenReg))
+						sb.WriteString(fmt.Sprintf("%sbr i1 %s, label %%%s, label %%%s\n",
+							g.indent(), lenCmpReg, skipFreeLabel, doFreeLabel))
+						g.emitLabel(sb, doFreeLabel)
+						g.emitElementFree(sb, elemGEP, llvmElemType)
+						sb.WriteString(fmt.Sprintf("%sbr label %%%s\n", g.indent(), skipFreeLabel))
+						g.emitLabel(sb, skipFreeLabel)
+					} else {
+						g.emitElementFree(sb, elemGEP, llvmElemType)
+					}
+					cloneSrc := g.tmpReg("vec.set.csrc")
+					sb.WriteString(fmt.Sprintf("%s%s = alloca %s\n", g.indent(), cloneSrc, llvmElemType))
+					sb.WriteString(fmt.Sprintf("%sstore %s %s, %s* %s\n",
+						g.indent(), llvmElemType, storeVal, llvmElemType, cloneSrc))
+					g.emitDeepClone(sb, cloneSrc, elemGEP, llvmElemType, "")
+				} else {
 					sb.WriteString(fmt.Sprintf("%sstore %s %s, %s* %s\n",
 						g.indent(), llvmElemType, storeVal, llvmElemType, elemGEP))
+				}
 
-					// Auto-update len (field 0) to max(len, idx+1). Without this,
+				// Auto-update len (field 0) to max(len, idx+1). Without this,
 					// sha256/hmac-sha256/prf receive vec.len == 0 even after
 					// elements were written via vec[i] = val, producing wrong outputs.
 					// Optimization: skip the load+add+icmp+select+store when the index
@@ -4556,6 +4698,8 @@ func (g *Generator) generateSliceExpression(sb *strings.Builder, expr *parser.Sl
 	startReg := "0"
 	if r != nil && r.Start != nil {
 		startVal := g.generateExprWithSB(sb, r.Start)
+		// 邊界檢查：用戶顯式提供的 start 需驗證 ≥ 0 且 ≤ srcLen
+		g.checkSliceBound(sb, startVal, srcLen, "start")
 		if !r.LeftInc {
 			// ( exclusive: start = start + 1
 			startPlus := g.tmpReg("vec.start.plus")
@@ -4607,6 +4751,8 @@ func (g *Generator) generateSliceExpression(sb *strings.Builder, expr *parser.Sl
 	} else if r.Start == nil && r.End != nil {
 		// [..end] / (..end]: new_len = end - start + (1 if ] else 0)
 		endVal := g.generateExprWithSB(sb, r.End)
+		// 邊界檢查：用戶顯式提供的 end 需驗證 ≥ 0 且 ≤ srcLen
+		g.checkSliceBound(sb, endVal, srcLen, "end")
 		subReg := g.tmpReg("vec.sublen")
 		if sb != nil {
 			sb.WriteString(fmt.Sprintf("%s%s = sub i64 %s, %s\n",
@@ -4633,6 +4779,8 @@ func (g *Generator) generateSliceExpression(sb *strings.Builder, expr *parser.Sl
 	} else {
 		// [start..end]: new_len = end - start + (1 if ] else 0)
 		endVal := g.generateExprWithSB(sb, r.End)
+		// 邊界檢查：用戶顯式提供的 end 需驗證 ≥ 0 且 ≤ srcLen
+		g.checkSliceBound(sb, endVal, srcLen, "end")
 		subReg := g.tmpReg("vec.sublen")
 		if sb != nil {
 			sb.WriteString(fmt.Sprintf("%s%s = sub i64 %s, %s\n",

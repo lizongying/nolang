@@ -107,20 +107,8 @@ request.add-header = (name str, value str) (ok bool) {
     .header-count >= HTTP-MAX-REQ-HEADERS -> return
     idx = .header-count
 
-    ; 複製 name 到 headers[idx]
-    i <- [0..name.len): {
-        .headers[idx][i] = name[i]
-    }
-
-    ; 加 ': '
-    .headers[idx][name.len] = ":"
-    .headers[idx][name.len + 1] = " "
-
-    ; 複製 value
-    j <- [0..value.len): {
-        .headers[idx][name.len + 2 + j] = value[j]
-    }
-    .headers[idx].len = name.len + 2 + value.len
+    ; 用字串串接組裝 'Name: Value'（建立獨立緩衝區，避免逐位元組寫入溢出）
+    .headers[idx] = name - ': ' - value
     .header-count = idx + 1
     ok = true
 }
@@ -161,20 +149,11 @@ response.parse-headers = () {
         colon-pos >= 0 && colon-pos < line-end -> {
             cnt = .header-count
             cnt < HTTP-MAX-RESP-HEADERS -> {
-                ; 複製 name: [pos, colon-pos)
-                name-len = colon-pos - pos
-                j <- [0..name-len): {
-                    .header-names[cnt][j] = hs[pos + j]
-                }
-                .header-names[cnt].len = name-len
-
-                ; 複製 value: [colon-pos+2, line-end)
-                val-start = colon-pos + 2
-                val-len = line-end - val-start
-                j <- [0..val-len): {
-                    .header-values[cnt][j] = hs[val-start + j]
-                }
-                .header-values[cnt].len = val-len
+                ; 用 slice 複製 name/value（建立獨立緩衝區，避免逐位元組寫入溢出）
+                name-str = hs.slice(pos, colon-pos)
+                .header-names[cnt] = name-str
+                val-str = hs.slice(colon-pos + 2, line-end)
+                .header-values[cnt] = val-str
                 .header-count = cnt + 1
             }
         }
@@ -224,11 +203,12 @@ do = (method str, url str, body str) (resp ?response) {
     r response
 
     ; ── 字串變數（頂層宣告，供 if 區塊內使用）──
-    scheme = 'http://'
+    ; scheme 初始化為空字串，在 URL 解析分支中只賦值一次（避免重新賦值觸發 double-free）
+    scheme-len i64 = 7
     rest = ''
     host = ''
     port i64 = HTTP-DEFAULT-PORT
-    path = '/'
+    path str
     host-only = ''
     port-str = ''
     cr = number.char-to-str(13)
@@ -255,17 +235,20 @@ do = (method str, url str, body str) (resp ?response) {
     {
         url.starts-with('https://') -> {
             use-tls = true
-            scheme = 'https://'
+            scheme-len = 8
             port = HTTPS-DEFAULT-PORT
         }
         url.starts-with('http://') == false -> return
     }
-    rest = url.slice(scheme.len, url.len)
+    rest = url.slice(scheme-len, url.len)
 
     ; 分離 host[:port] 與 path（找到第一個 /）
     slash-pos = rest.index('/')
     {
-        slash-pos < 0 -> host = rest
+        slash-pos < 0 -> {
+            host = rest
+            path = '/'
+        }
         -> {
             host = rest.slice(0, slash-pos)
             path = rest.slice(slash-pos, rest.len)
@@ -346,18 +329,12 @@ do = (method str, url str, body str) (resp ?response) {
             }
         }
     }
-
     ; ── 接收回應 ──
     ; net-recv 從 offset 0 覆寫，不更新 len；用 buf 暫存再複製到 raw
     {
         {
             use-tls -> {
-                rn ?i64 = tls-c.recv(buf, HTTP-BUF-SIZE)
-                rn: {
-                    nil -> *
-                    err -> *
-                    ok -> n = it
-                }
+                n = tls-c.recv(buf, HTTP-BUF-SIZE)
             }
             -> n = net.net-recv(fd, buf, HTTP-BUF-SIZE)
         }
@@ -411,14 +388,13 @@ do = (method str, url str, body str) (resp ?response) {
     code = 0
     i <- [0..code-str.len): {
         c = code-str[i]
-        c < 48 || c > 57 -> return
+        c < 48 || c > 57 -> {
+            return
+        }
         code = code * 10 + c - 48
     }
     r.status-code = code
-
-    ; 解析回應標頭到 header-names / header-values
     r.parse-headers()
-
     resp = r
 }
 
@@ -430,11 +406,11 @@ do-req = (req request) (resp ?response) {
     r response
 
     ; ── 字串變數 ──
-    scheme = 'http://'
+    scheme-len i64 = 7
     rest = ''
     host = ''
     port i64 = HTTP-DEFAULT-PORT
-    path = '/'
+    path str
     host-only = ''
     port-str = ''
     cr = number.char-to-str(13)
@@ -464,16 +440,19 @@ do-req = (req request) (resp ?response) {
     {
         url.starts-with('https://') -> {
             use-tls = true
-            scheme = 'https://'
+            scheme-len = 8
             port = HTTPS-DEFAULT-PORT
         }
         url.starts-with('http://') == false -> return
     }
-    rest = url.slice(scheme.len, url.len)
+    rest = url.slice(scheme-len, url.len)
 
     slash-pos = rest.index('/')
     {
-        slash-pos < 0 -> host = rest
+        slash-pos < 0 -> {
+            host = rest
+            path = '/'
+        }
         -> {
             host = rest.slice(0, slash-pos)
             path = rest.slice(slash-pos, rest.len)
@@ -564,12 +543,7 @@ do-req = (req request) (resp ?response) {
     {
         {
             use-tls -> {
-                rn ?i64 = tls-c.recv(buf, HTTP-BUF-SIZE)
-                rn: {
-                    nil -> *
-                    err -> *
-                    ok -> n = it
-                }
+                n = tls-c.recv(buf, HTTP-BUF-SIZE)
             }
             -> n = net.net-recv(fd, buf, HTTP-BUF-SIZE)
         }
@@ -617,7 +591,9 @@ do-req = (req request) (resp ?response) {
     code = 0
     i <- [0..code-str.len): {
         c = code-str[i]
-        c < 48 || c > 57 -> return
+        c < 48 || c > 57 -> {
+            return
+        }
         code = code * 10 + c - 48
     }
     r.status-code = code

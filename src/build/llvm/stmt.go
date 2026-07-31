@@ -2,7 +2,6 @@ package llvm
 
 import (
 	"fmt"
-	"os"
 	"sort"
 	"strings"
 
@@ -146,7 +145,14 @@ func (g *Generator) flushOutputBindings(sb *strings.Builder) {
 	if g.outputBindings == nil || len(g.outputBindings) == 0 {
 		return
 	}
-	for name, versions := range g.outputBindings {
+	// 排序確保輸出順序確定（與 emitHeapFree/emitGlobalHeapFree 一致）。
+	sortedOutNames := make([]string, 0, len(g.outputBindings))
+	for name := range g.outputBindings {
+		sortedOutNames = append(sortedOutNames, name)
+	}
+	sort.Strings(sortedOutNames)
+	for _, name := range sortedOutNames {
+		versions := g.outputBindings[name]
 		if len(versions) == 0 {
 			continue
 		}
@@ -214,6 +220,234 @@ func (g *Generator) flushOutputBindings(sb *strings.Builder) {
 //	%str-long:  field 2 (i64 data)
 //	%arr:       field 1 (i64 data)
 
+// ---- Liveness 预分析：判定 b=a 中源变量 a 是否在后续被引用 ----
+
+// computeMoveEligibility 遍历函数体，对每个 b=a（LetStatement，RHS 为 Identifier）
+// 判定源变量 a 是否在后续语句中被引用。若未被引用 → moveEligible[stmt]=true（可 move）。
+// 保守策略：若 a 出现在后续任何表达式位置（包括赋值目标，因为重赋值会触发 freeOldHeapValue
+// 读取旧值），则视为"被引用"，不可 move。
+func (g *Generator) computeMoveEligibility(body *parser.BlockStatement) {
+	g.moveEligible = make(map[*parser.LetStatement]bool)
+	if body == nil {
+		return
+	}
+	stmts := flattenStmts(body.Statements)
+	for i, stmt := range stmts {
+		ls, ok := stmt.(*parser.LetStatement)
+		if !ok || ls.IsSynthetic {
+			continue
+		}
+		ident, ok := ls.Value.(*parser.Identifier)
+		if !ok {
+			continue
+		}
+		usedAfter := false
+		for j := i + 1; j < len(stmts); j++ {
+			if stmtContainsVarRef(stmts[j], ident.Value) {
+				usedAfter = true
+				break
+			}
+		}
+		g.moveEligible[ls] = !usedAfter
+	}
+}
+
+// flattenStmts 将语句列表递归展开为一维列表（DFS 顺序），
+// 展开 if/for/while 体内的语句，保留执行顺序。
+func flattenStmts(stmts []parser.Statement) []parser.Statement {
+	var result []parser.Statement
+	for _, stmt := range stmts {
+		result = append(result, stmt)
+		switch s := stmt.(type) {
+		case *parser.ExpressionStatement:
+			result = append(result, flattenExprStmts(s.Expression)...)
+		case *parser.ForStatement:
+			if s.Init != nil {
+				result = append(result, flattenStmts([]parser.Statement{s.Init})...)
+			}
+			if s.Update != nil {
+				result = append(result, flattenStmts([]parser.Statement{s.Update})...)
+			}
+			if s.Body != nil {
+				result = append(result, flattenStmts(s.Body.Statements)...)
+			}
+		case *parser.MultiAssignStatement:
+			// MultiAssign targets are expressions, not statements
+		}
+	}
+	return result
+}
+
+// flattenExprStmts 展开表达式语句中嵌套的块（if 表达式的 then/else 体）。
+func flattenExprStmts(expr parser.Expression) []parser.Statement {
+	var result []parser.Statement
+	collectNestedStmts(expr, &result)
+	return result
+}
+
+func collectNestedStmts(expr parser.Expression, result *[]parser.Statement) {
+	switch e := expr.(type) {
+	case *parser.IfExpression:
+		if e.Consequence != nil {
+			*result = append(*result, flattenStmts(e.Consequence.Statements)...)
+		}
+		if e.Alternative != nil {
+			*result = append(*result, flattenStmts(e.Alternative.Statements)...)
+		}
+	case *parser.InfixExpression:
+		collectNestedStmts(e.Left, result)
+		collectNestedStmts(e.Right, result)
+	case *parser.PrefixExpression:
+		collectNestedStmts(e.Right, result)
+	case *parser.CallExpression:
+		collectNestedStmts(e.Function, result)
+		for _, arg := range e.Arguments {
+			collectNestedStmts(arg, result)
+		}
+	case *parser.GroupedExpression:
+		collectNestedStmts(e.Expression, result)
+	case *parser.ConditionalExpression:
+		collectNestedStmts(e.Condition, result)
+		collectNestedStmts(e.Consequence, result)
+		collectNestedStmts(e.Alternative, result)
+	case *parser.AssignExpression:
+		if e.Left != nil {
+			collectNestedStmts(e.Left, result)
+		}
+		if e.Value != nil {
+			collectNestedStmts(e.Value, result)
+		}
+	}
+}
+
+// stmtContainsVarRef 检查语句中是否引用了指定变量名。
+// 赋值目标也视为引用（因为重赋值触发 freeOldHeapValue 读取旧值）。
+func stmtContainsVarRef(stmt parser.Statement, varName string) bool {
+	switch s := stmt.(type) {
+	case *parser.LetStatement:
+		// 赋值目标视为引用（freeOldHeapValue 会读取旧值）
+		if s.Name != nil && s.Name.Value == varName {
+			return true
+		}
+		if s.Value != nil {
+			return exprContainsVarRef(s.Value, varName)
+		}
+	case *parser.ExpressionStatement:
+		return exprContainsVarRef(s.Expression, varName)
+	case *parser.ForStatement:
+		if s.Condition != nil && exprContainsVarRef(s.Condition, varName) {
+			return true
+		}
+		if s.CountExpr != nil && exprContainsVarRef(s.CountExpr, varName) {
+			return true
+		}
+		if s.Body != nil {
+			for _, ss := range s.Body.Statements {
+				if stmtContainsVarRef(ss, varName) {
+					return true
+				}
+			}
+		}
+	case *parser.ReturnStatement:
+		// ReturnValue 始终为 nil
+	case *parser.MultiAssignStatement:
+		for _, t := range s.Targets {
+			if exprContainsVarRef(t, varName) {
+				return true
+			}
+		}
+		if s.Value != nil && exprContainsVarRef(s.Value, varName) {
+			return true
+		}
+	case *parser.BreakStatement:
+	case *parser.ContinueStatement:
+	}
+	return false
+}
+
+// exprContainsVarRef 递归检查表达式中是否引用了指定变量名。
+func exprContainsVarRef(expr parser.Expression, varName string) bool {
+	switch e := expr.(type) {
+	case *parser.Identifier:
+		return e.Value == varName
+	case *parser.InfixExpression:
+		return exprContainsVarRef(e.Left, varName) || exprContainsVarRef(e.Right, varName)
+	case *parser.PrefixExpression:
+		return exprContainsVarRef(e.Right, varName)
+	case *parser.CallExpression:
+		if exprContainsVarRef(e.Function, varName) {
+			return true
+		}
+		for _, arg := range e.Arguments {
+			if exprContainsVarRef(arg, varName) {
+				return true
+			}
+		}
+	case *parser.DotExpression:
+		return exprContainsVarRef(e.Receiver, varName)
+	case *parser.IndexExpression:
+		return exprContainsVarRef(e.Left, varName) || exprContainsVarRef(e.Index, varName)
+	case *parser.IfExpression:
+		if e.Condition != nil && exprContainsVarRef(e.Condition, varName) {
+			return true
+		}
+		if e.Consequence != nil {
+			for _, ss := range e.Consequence.Statements {
+				if stmtContainsVarRef(ss, varName) {
+					return true
+				}
+			}
+		}
+		if e.Alternative != nil {
+			for _, ss := range e.Alternative.Statements {
+				if stmtContainsVarRef(ss, varName) {
+					return true
+				}
+			}
+		}
+	case *parser.SliceExpression:
+		if exprContainsVarRef(e.Left, varName) {
+			return true
+		}
+		if e.Range != nil {
+			if e.Range.Start != nil && exprContainsVarRef(e.Range.Start, varName) {
+				return true
+			}
+			if e.Range.End != nil && exprContainsVarRef(e.Range.End, varName) {
+				return true
+			}
+		}
+	case *parser.SliceLiteral:
+		for _, elem := range e.Elements {
+			if exprContainsVarRef(elem, varName) {
+				return true
+			}
+		}
+	case *parser.GroupedExpression:
+		return exprContainsVarRef(e.Expression, varName)
+	case *parser.ConditionalExpression:
+		return exprContainsVarRef(e.Condition, varName) ||
+			exprContainsVarRef(e.Consequence, varName) ||
+			exprContainsVarRef(e.Alternative, varName)
+	case *parser.AssignExpression:
+		if e.Left != nil && exprContainsVarRef(e.Left, varName) {
+			return true
+		}
+		if e.Value != nil && exprContainsVarRef(e.Value, varName) {
+			return true
+		}
+	case *parser.RangeExpression:
+		if e.Start != nil && exprContainsVarRef(e.Start, varName) {
+			return true
+		}
+		if e.End != nil && exprContainsVarRef(e.End, varName) {
+			return true
+		}
+	// Literals (Integer, Float, String, Char, Byte, Boolean, Nil) — no refs
+	}
+	return false
+}
+
 // trackLocalHeapVar 將局部變數加入 heapVars 追蹤，用於函數結束時深層 free。
 // 跳過參數（paramNames）和輸出參數（outputParamNames，由呼叫者管理）。
 // 同時分配 varIdx（堆變數下標），用於 bitmap bit 定位。
@@ -243,7 +477,15 @@ func (g *Generator) emitHeapFree(sb *strings.Builder) {
 	if g.heapVars == nil || len(g.heapVars) == 0 {
 		return
 	}
-	for name, llvmType := range g.heapVars {
+	// 排序確保輸出順序確定（別名場景下先 free 誰隨機會增加 double-free 調試難度，
+	// 且編譯不可復現）。與 emitGlobalHeapFree 保持一致。
+	sortedNames := make([]string, 0, len(g.heapVars))
+	for name := range g.heapVars {
+		sortedNames = append(sortedNames, name)
+	}
+	sort.Strings(sortedNames)
+	for _, name := range sortedNames {
+		llvmType := g.heapVars[name]
 		// 輸出參數本身不 free（由呼叫者管理）
 		if g.outputParamNames != nil && g.outputParamNames[name] {
 			continue
@@ -718,11 +960,9 @@ func detectBranchMoveToOut(stmts []parser.Statement, outNames map[string]bool) b
 				}
 			case *parser.BlockStatement:
 				scanStmts(s.Statements, inBranch)
-			case *parser.ReturnStatement:
-				if s.ReturnValue != nil {
-					scanExpr(s.ReturnValue, inBranch)
-				}
-			case *parser.MultiAssignStatement:
+		case *parser.ReturnStatement:
+			// ReturnValue 始终为 nil（Nolang 禁止 return <值>），无需扫描
+		case *parser.MultiAssignStatement:
 				for _, t := range s.Targets {
 					scanExpr(t, inBranch)
 				}
@@ -1147,6 +1387,7 @@ func (g *Generator) emitElementFree(sb *strings.Builder, elemPtr, elemType strin
 // 跳過合成 let（IsSynthetic）。
 // 輸出參數也釋放舊值（函數結束時由 emitHeapFree 跳過最終值，歸呼叫者）。
 // 對已 move 的變數執行雙重校驗：bit=0 仍需 free，bit=1 跳過（所有權已轉移）。
+// 釋放決策後清除 moved bit：變數即將獲得新值，不再處於 moved 狀態。
 func (g *Generator) freeOldHeapValue(sb *strings.Builder, stmt *parser.LetStatement, name string) {
 	if g.heapVars == nil || stmt.IsSynthetic {
 		return
@@ -1170,10 +1411,16 @@ func (g *Generator) freeOldHeapValue(sb *strings.Builder, stmt *parser.LetStatem
 		// bit=1 → 所有權已轉移，跳過 free（舊 data 不屬於此變數）
 		// bit=0 → 仍擁有數據，free 舊值
 		g.emitBitCheckFree(sb, name, varIdx, oldType, elemType)
+		// 清除 moved bit：變數即將獲得新值，不再處於 moved 狀態。
+		// 若不清除，函數結束時 emitHeapFree 會誤跳過釋放新值（記憶體洩漏）。
+		g.emitClearMovedBitIR(sb, varIdx)
 	} else {
 		// 無 bitmap：編譯期檢查 movedVarBitset
 		if g.isMovedVar(varIdx) {
-			return // 跳過 free（所有權轉移）
+			// 跳過 free（所有權轉移）
+			// 清除 moved bit：變數即將獲得新值
+			g.unmarkMovedVar(varIdx)
+			return
 		}
 		g.emitVarHeapFree(sb, g.varAddr(name), oldType, elemType, name)
 	}
@@ -2009,8 +2256,43 @@ func (g *Generator) generateFunctionDefinition(sb *strings.Builder, fd *parser.F
 		delete(localVarTypes, r.Name)
 	}
 
+	// 零初始化 out 參數：out 參數由呼叫者傳入指標，呼叫者可能未初始化
+	// （如 resp = http.do(...) 中 resp 為未初始化的棧變數）。
+	// out 參數已加入 heapVars，函數內首次賦值（如 resp = nil）會觸發
+	// freeOldHeapValue 釋放舊值。若舊值為呼叫者的棧殘值，free 會釋放垃圾指標
+	// 導致 heap corruption，後續 malloc 偵測到 corruption 時觸發 trace/BPT trap。
+	for _, r := range fd.Results {
+		if r.Name == "" {
+			continue
+		}
+		llvmType := g.varTypes[r.Name]
+		if llvmType == "%option" {
+			// option: tag=1 (nil), data=0
+			tagGEP := g.tmpReg("outzero.tag.gep")
+			sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%option, %%option* %s, i32 0, i32 0\n", g.indent(), tagGEP, llvmVarRef(r.Name)))
+			sb.WriteString(fmt.Sprintf("%sstore i64 1, i64* %s\n", g.indent(), tagGEP))
+			dataGEP := g.tmpReg("outzero.data.gep")
+			sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%option, %%option* %s, i32 0, i32 1\n", g.indent(), dataGEP, llvmVarRef(r.Name)))
+			sb.WriteString(fmt.Sprintf("%sstore i64 0, i64* %s\n", g.indent(), dataGEP))
+		} else if g.isHeapOwningType(llvmType) {
+			// 用戶結構體/%vec/%str-long/%arr: memset 確保所有 data 指標為 NULL
+			sz := g.llvmTypeSize(llvmType)
+			if sz > 0 {
+				sb.WriteString(fmt.Sprintf("%scall void @llvm.memset.p0.i64(ptr %s, i8 0, i64 %d, i1 false)\n", g.indent(), llvmVarRef(r.Name), sz))
+			}
+		}
+	}
+
 	// 分配 + lifetime.start
-	for varName, varType := range localVarTypes {
+	// 排序確保輸出順序確定（與 emitHeapFree/emitGlobalHeapFree 一致），
+	// 避免 IR 因 map 遍歷順序隨機而不可復現。
+	sortedVarNames := make([]string, 0, len(localVarTypes))
+	for name := range localVarTypes {
+		sortedVarNames = append(sortedVarNames, name)
+	}
+	sort.Strings(sortedVarNames)
+	for _, varName := range sortedVarNames {
+		varType := localVarTypes[varName]
 		sz := g.llvmTypeSize(varType)
 		g.funcVars = append(g.funcVars, varInfo{Name: varName, Type: varType, Size: sz})
 		// Record allocated type for synthetic `it` variables so that
@@ -2023,8 +2305,26 @@ func (g *Generator) generateFunctionDefinition(sb *strings.Builder, fd *parser.F
 		sb.WriteString(fmt.Sprintf("%scall void @llvm.lifetime.start.p0i8(i64 %d, i8* %s)\n", g.indent(), sz, llvmVarRef(varName)))
 		// %str-long 局部變數零初始化：確保 data 指標為 NULL。
 		// 若變數在循環/條件塊內賦值但運行時未執行，emitHeapFree 的 NULL 檢查能安全跳過 free。
+		// 使用 llvm.memset 而非 store zeroinitializer：後者會被 LLVM opt 的 DSE 移除
+		// （opt 看到後續的 = '' 初始化就判定零初始化為死存儲）。但提前 return 路徑
+		// 未執行 = '' 賦值時，freeOldHeapValue 仍會讀取 data 指標並嘗試 free。
 		if varType == "%str-long" {
-			sb.WriteString(fmt.Sprintf("%sstore %%str-long zeroinitializer, %%str-long* %s\n", g.indent(), llvmVarRef(varName)))
+			sb.WriteString(fmt.Sprintf("%scall void @llvm.memset.p0.i64(ptr %s, i8 0, i64 24, i1 false)\n", g.indent(), llvmVarRef(varName)))
+		}
+		// 用戶自定義結構體局部變數零初始化：確保所有堆擁有欄位（%str-long、%vec、
+		// [N]%str-long 內聯陣列、嵌套結構體）的 data 指標為 NULL。
+		// 若函數在所有欄位被明確初始化前提前 return（如 HTTPS 回應解析中狀態碼
+		// 解析失敗觸發 return，parse-headers 尚未執行），emitHeapFree 的 NULL
+		// 檢查能安全跳過 free，避免釋放 stack 殘值導致 exit 133 崩潰。
+		if g.isUserStructType(varType) {
+			// 使用 llvm.memset 而非 store zeroinitializer：後者會被 LLVM opt 的
+			// DSE（Dead Store Elimination）移除，因為 opt 看到後續對各欄位的 store
+			// 就判定零初始化為死存儲。但提前 return 路徑（如狀態碼解析失敗）
+			// 未寫入所有欄位，emitHeapFree 仍會讀取並嘗試 free 未初始化的 data
+			// 指標。llvm.memset 是 intrinsic call，opt 不會輕易移除，確保所有
+			// 堆擁有欄位在函數返回時 data 指標為 NULL，emitHeapFree 的 NULL 檢查
+			// 能安全跳過 free。
+			sb.WriteString(fmt.Sprintf("%scall void @llvm.memset.p0.i64(ptr %s, i8 0, i64 %d, i1 false)\n", g.indent(), llvmVarRef(varName), sz))
 		}
 		// %vec (slice) 局部變數需要 malloc 資料緩衝區，否則 buf[i] = val 會因 data 為 null 而崩潰。
 		// 使用 malloc（而非 alloca）使得資料在函數返回後仍然有效（例如函數輸出 []byte 給呼叫者）。
@@ -2144,6 +2444,9 @@ func (g *Generator) generateFunctionDefinition(sb *strings.Builder, fd *parser.F
 		sb.WriteString(fmt.Sprintf("%sstore i64 0, i64* %s\n", g.indent(), g.retInitBitmapVar))
 	}
 
+	// Liveness 预分析：判定 b=a 中源变量是否在后续被引用，用于选择 clone/move。
+	g.computeMoveEligibility(fd.Body)
+
 	// 生成函數體到獨立緩衝區，同時收集 entry-block alloca（來自字面量參數的臨時變量）。
 	// 將 alloca 提升到 entry block 可避免循環體內的 call 參數每次迭代都增長棧，
 	// 導致長循環（如 n-body 1000000 次 advance()）棧溢出。
@@ -2177,27 +2480,14 @@ func (g *Generator) generateFunctionDefinition(sb *strings.Builder, fd *parser.F
 	// 再寫入函數體
 	sb.WriteString(bodyBuf.String())
 
-	// 若函數無 return 陳述句（void），自動銷毀 + return
-	if returnType == "void" {
-		g.emitRetInitZeroFill(sb)
-		g.flushOutputBindings(sb)
-		g.emitLocalTasksFree(sb)
-		g.emitHeapFree(sb)
-		g.emitLifetimeEnd(sb)
-		sb.WriteString(g.indent() + "ret void\n")
-	} else if len(fd.Results) > 0 && fd.Results[0].Name != "" {
-		// 有輸出參數但無顯式 return：載入輸出參數並返回
-		g.emitRetInitZeroFill(sb)
-		g.flushOutputBindings(sb)
-		g.emitLocalTasksFree(sb)
-		g.emitHeapFree(sb)
-		g.emitLifetimeEnd(sb)
-		resultName := fd.Results[0].Name
-		resultLLVMType := g.mapToLLVMType(fd.Results[0].Type.String())
-		resultLoad := g.tmpReg("ret.val")
-		sb.WriteString(fmt.Sprintf("%s%s = load %s, %s* %s\n", g.indent(), resultLoad, resultLLVMType, resultLLVMType, llvmVarRef(resultName)))
-		sb.WriteString(fmt.Sprintf("%sret %s %s\n", g.indent(), resultLLVMType, resultLoad))
-	}
+	// 所有 Nolang 函數均採用 void 返回 + 指針傳參約定（returnType 恆為 "void"）。
+	// 函數體無顯式 return 時自動銷毀局部堆變數並返回。
+	g.emitRetInitZeroFill(sb)
+	g.flushOutputBindings(sb)
+	g.emitLocalTasksFree(sb)
+	g.emitHeapFree(sb)
+	g.emitLifetimeEnd(sb)
+	sb.WriteString(g.indent() + "ret void\n")
 	g.indentLevel--
 	g.indentLevel--
 	sb.WriteString("}\n\n")
@@ -2534,6 +2824,17 @@ func (g *Generator) varLLVMType(stmt *parser.LetStatement) string {
 				// prefer the target variable's existing type, since the option's
 				// inner value has already been extracted by generateExprWithSB.
 				if t == "%option" && stmt.Name != nil {
+					// 合成 it 綁定：優先用 source option 的 inner 型別。
+					// 共享 it alloca 的型別（varTypes[it]）可能被其它 match 的
+					// err 臂（%str-long）或更大 struct 污染；ok 臂真正提取的值
+					// 型別由 optionInnerTypes[source] 決定（如 ?i64 → i64），
+					// 用 alloca 型別會生成 `load %str-long, %str-long* <i64值>`
+					// 之類的非法 IR。指標型別差異由 itAllocTypes bitcast 機制吸收。
+					if stmt.IsSynthetic && g.optionInnerTypes != nil {
+						if inner, ok := g.optionInnerTypes[v.Value]; ok && inner != "" {
+							return inner
+						}
+					}
 					if existingType, ok := g.varTypes[stmt.Name.Value]; ok {
 						return existingType
 					}
@@ -2765,19 +3066,33 @@ func (g *Generator) varLLVMType(stmt *parser.LetStatement) string {
 				if t, ok := g.funcRetTypes[name]; ok && t != "void" {
 					return t
 				}
+				// Fallback: try short name without module prefix (e.g. "http.do-req" → "do-req")
+				if idx := strings.Index(name, "."); idx >= 0 {
+					shortName := name[idx+1:]
+					if t, ok := g.funcRetTypes[shortName]; ok && t != "void" {
+						return t
+					}
+				}
 			}
 			// 用戶自定義函數使用 void + by-reference 輸出約定，
 			// funcRetTypes 為 "void" 但 funcResultLLVMType 仍保留語意型別。
 			// 對於單結果函數，從 funcResultLLVMType 取得輸出型別。
 			if g.funcNumResults != nil {
-				if n, ok := g.funcNumResults[name]; ok && n == 1 {
-					if g.funcResultLLVMType != nil {
-						if ts, ok := g.funcResultLLVMType[name]; ok && len(ts) == 1 {
-							retType := ts[0]
-							if retType == "i1" {
-								retType = "i64"
+				// Try full name and short name (without module prefix)
+				lookupNames := []string{name}
+				if idx := strings.Index(name, "."); idx >= 0 {
+					lookupNames = append(lookupNames, name[idx+1:])
+				}
+				for _, lookupName := range lookupNames {
+					if n, ok := g.funcNumResults[lookupName]; ok && n == 1 {
+						if g.funcResultLLVMType != nil {
+							if ts, ok := g.funcResultLLVMType[lookupName]; ok && len(ts) == 1 {
+								retType := ts[0]
+								if retType == "i1" {
+									retType = "i64"
+								}
+								return retType
 							}
-							return retType
 						}
 					}
 				}
@@ -2793,8 +3108,13 @@ func (g *Generator) varLLVMType(stmt *parser.LetStatement) string {
 				if !isVar {
 					// First check user-defined functions with module prefix
 					fullName := recvIdent.Value + "." + dot.Property
+					// Also try short name without module prefix (e.g. "http.do-req" → "do-req")
+					shortName := dot.Property
 					if g.funcRetTypes != nil {
 						if t, ok := g.funcRetTypes[fullName]; ok && t != "void" {
+							return t
+						}
+						if t, ok := g.funcRetTypes[shortName]; ok && t != "void" {
 							return t
 						}
 					}
@@ -2805,14 +3125,17 @@ func (g *Generator) varLLVMType(stmt *parser.LetStatement) string {
 					// Without this, module-prefixed option-returning calls default to i64,
 					// causing type mismatches when the option value is used.
 					if g.funcNumResults != nil {
-						if n, ok := g.funcNumResults[fullName]; ok && n == 1 {
-							if g.funcResultLLVMType != nil {
-								if ts, ok := g.funcResultLLVMType[fullName]; ok && len(ts) == 1 {
-									retType := ts[0]
-									if retType == "i1" {
-										retType = "i64"
+						// Try full name first, then short name
+						for _, lookupName := range []string{fullName, shortName} {
+							if n, ok := g.funcNumResults[lookupName]; ok && n == 1 {
+								if g.funcResultLLVMType != nil {
+									if ts, ok := g.funcResultLLVMType[lookupName]; ok && len(ts) == 1 {
+										retType := ts[0]
+										if retType == "i1" {
+											retType = "i64"
+										}
+										return retType
 									}
-									return retType
 								}
 							}
 						}
@@ -3199,6 +3522,13 @@ func (g *Generator) inferOptionInnerType(stmt *parser.LetStatement) string {
 		if innerTypes, ok := g.funcResultInnerTypes[fnName]; ok && len(innerTypes) >= 1 && innerTypes[0] != "" {
 			return innerTypes[0]
 		}
+		// Fallback: try short name without module prefix (e.g. "http.do-req" → "do-req")
+		if idx := strings.Index(fnName, "."); idx >= 0 {
+			shortName := fnName[idx+1:]
+			if innerTypes, ok := g.funcResultInnerTypes[shortName]; ok && len(innerTypes) >= 1 && innerTypes[0] != "" {
+				return innerTypes[0]
+			}
+		}
 	}
 	}
 	return ""
@@ -3285,7 +3615,20 @@ func (g *Generator) collectVarDeclsFromStmtInner(stmt parser.Statement, vars map
 			// and collectVarDecls skips function bodies. Module-level synthetic `it`
 			// must be collected so that %it gets allocated for top-level match.
 			if nt, ok := s.Type.(*parser.NamedType); ok {
-				if nt.Value == "err" || nt.Value == "nil" {
+				if nt.Value == "err" {
+					// err 臂的 it = 錯誤消息字符串（%str-long），非佔位符。
+					// 走 max-size 覆寫邏輯：僅在不存在 / 現有為 i64 / %str-long 更大時更新，
+					// 避免縮小已按更大 struct（如 %http.response）分配的共享 it alloca。
+					if existing, exists := vars[s.Name.Value]; !exists || existing == "i64" ||
+						g.llvmTypeSize("%str-long") > g.llvmTypeSize(existing) {
+						vars[s.Name.Value] = "%str-long"
+						if g.varTypes != nil {
+							g.varTypes[s.Name.Value] = "%str-long"
+						}
+					}
+					return
+				}
+				if nt.Value == "nil" {
 					if _, exists := vars[s.Name.Value]; !exists {
 						vars[s.Name.Value] = "i64"
 						if g.varTypes != nil {
@@ -3303,29 +3646,6 @@ func (g *Generator) collectVarDeclsFromStmtInner(stmt parser.Statement, vars map
 			// 方法呼叫解析（it.close()）能正確找到型別前綴。
 			vt := g.varLLVMType(s)
 			// 診斷輸出走 NOLANG_DEBUG_IT 環境變量（默認關閉）
-			if os.Getenv("NOLANG_DEBUG_IT") != "" && s.Name != nil && s.Name.Value == "it" {
-				typeStr := "nil"
-				if s.Type != nil {
-					typeStr = s.Type.String()
-				}
-				srcName := ""
-				if ident, ok := s.Value.(*parser.Identifier); ok {
-					srcName = ident.Value
-				}
-				srcType := ""
-				if srcName != "" && g.varTypes != nil {
-					if t, ok := g.varTypes[srcName]; ok {
-						srcType = t
-					}
-				}
-				srcInner := ""
-				if srcName != "" && g.optionInnerTypes != nil {
-					if t, ok := g.optionInnerTypes[srcName]; ok {
-						srcInner = t
-					}
-				}
-				fmt.Printf("[DEBUG-IT] it binding: Type=%s, src=%s, srcType=%s, srcInner=%s, vt=%s\n", typeStr, srcName, srcType, srcInner, vt)
-			}
 			// Fallback: if the source is an option variable with a struct inner type,
 			// use the struct inner type as vt. This handles cases where:
 			// - mapToLLVMType couldn't resolve a bare struct name (e.g. "server-conn")
@@ -3344,11 +3664,11 @@ func (g *Generator) collectVarDeclsFromStmtInner(stmt parser.Statement, vars map
 									// Use the inner type to avoid type mismatch.
 									vt = innerType
 								}
-							}
 						}
 					}
 				}
 			}
+		}
 			if existing, exists := vars[s.Name.Value]; !exists || existing == "i64" || (g.isStructLLVMType(existing) && existing != vt) {
 				// 選擇較大的型別以避免 overflow：struct 型別（%）通常比 i64 大，
 				// 多個 struct 型別則保留先到的（因為 option data field 固定 16 bytes）。
@@ -3372,6 +3692,12 @@ func (g *Generator) collectVarDeclsFromStmtInner(stmt parser.Statement, vars map
 			// 例外：若同名變數是當前函數的參數（如 make-repeat-fasta 的參數 n
 			// 與模組級 n i64 = 1000 同名），參數應遮蔽全域變數，不可刪除
 			// funcLocalNames 中的記錄，否則 varAddr 會錯誤返回 @n 而非 %n。
+			if false && s.Name != nil && s.Name.Value == "symbolic" {
+				fmt.Printf("[DBG-GV] symbolic: TypeNil=%v gv=%v curFunc=%q mainFile=%v isParam=%v\n",
+					s.Type == nil, g.globalVars[s.Name.Value], g.curFuncName,
+					(g.mainFileNames != nil && g.mainFileNames[g.curFuncName]),
+					(g.funcParams != nil && g.funcParams[s.Name.Value]))
+			}
 			if s.Type == nil && g.globalVars != nil && g.globalVars[s.Name.Value] &&
 				g.curFuncName != "" && g.mainFileNames != nil && g.mainFileNames[g.curFuncName] &&
 				(g.funcParams == nil || !g.funcParams[s.Name.Value]) {
@@ -3617,10 +3943,15 @@ func (g *Generator) collectVarDeclsFromStmtInner(stmt parser.Statement, vars map
 			for i, target := range s.Targets {
 				if ident, ok := target.(*parser.Identifier); ok {
 					if _, exists := vars[ident.Value]; !exists {
+						var vt string
 						if i < len(retTypes) {
-							vars[ident.Value] = retTypes[i]
+							vt = retTypes[i]
 						} else {
-							vars[ident.Value] = "i64"
+							vt = "i64"
+						}
+						vars[ident.Value] = vt
+						if g.varTypes != nil {
+							g.varTypes[ident.Value] = vt
 						}
 					}
 				}
@@ -3631,6 +3962,9 @@ func (g *Generator) collectVarDeclsFromStmtInner(stmt parser.Statement, vars map
 				if ident, ok := target.(*parser.Identifier); ok {
 					if _, exists := vars[ident.Value]; !exists {
 						vars[ident.Value] = "i64"
+						if g.varTypes != nil {
+							g.varTypes[ident.Value] = "i64"
+						}
 					}
 				}
 			}
@@ -3755,15 +4089,23 @@ func (g *Generator) generateStatement(sb *strings.Builder, stmt parser.Statement
 		// loop's `i`, `matched`, `limit`) as undefined behavior.
 		target := g.findLoopTarget(s.Label, true)
 		if target != "" {
+			curBlock := g.cfgBlockLabel()
 			sb.WriteString(fmt.Sprintf("%sbr label %%%s\n", g.indent(), target))
 			g.blockTerminated = true
+			// CFG: current block → loop exit target
+			g.cfgEdge(curBlock, target)
+			g.cfgTerm(curBlock, termBr)
 		}
 
 	case *parser.ContinueStatement:
 		target := g.findLoopTarget(s.Label, false)
 		if target != "" {
+			curBlock := g.cfgBlockLabel()
 			sb.WriteString(fmt.Sprintf("%sbr label %%%s\n", g.indent(), target))
 			g.blockTerminated = true
+			// CFG: current block → loop continue target (step/cond)
+			g.cfgEdge(curBlock, target)
+			g.cfgTerm(curBlock, termBr)
 		}
 
 	case *parser.InterfaceDefinition:
@@ -3809,19 +4151,14 @@ func (g *Generator) generateStatement(sb *strings.Builder, stmt parser.Statement
 		}
 
 	case *parser.ReturnStatement:
+		// Nolang 禁止 return <值>，结果通过具名输出参数（out-param）传递。
+		// ReturnValue 始终为 nil，此处只处理裸 return。
 		g.emitRetInitZeroFill(sb)
 		g.flushOutputBindings(sb)
 		g.emitLocalTasksFree(sb)
 		g.emitHeapFree(sb)
 		g.emitLifetimeEnd(sb)
-		if s.ReturnValue != nil {
-			val := g.generateExprWithSB(sb, s.ReturnValue)
-			retType := g.curFuncRetType
-			if retType == "" {
-				retType = "i64"
-			}
-			sb.WriteString(fmt.Sprintf("%sret %s %s\n", g.indent(), retType, val))
-		} else if g.curFuncRetType != "void" && g.curFuncRetName != "" {
+		if g.curFuncRetType != "void" && g.curFuncRetName != "" {
 			// 有輸出參數的裸 return：載入輸出參數並返回
 			resultLoad := g.tmpReg("ret.val")
 			sb.WriteString(fmt.Sprintf("%s%s = load %s, %s* %%%s\n",
@@ -3837,6 +4174,8 @@ func (g *Generator) generateStatement(sb *strings.Builder, stmt parser.Statement
 			sb.WriteString(g.indent() + "ret void\n")
 		}
 		g.blockTerminated = true
+		// CFG: return terminator (no successors)
+		g.cfgTerm(g.cfgBlockLabel(), termRet)
 	}
 	// 语句结束前释放未绑定变量的临时堆对象（如 str 拼接结果）。
 	// 只 free data buffer，不 free 结构体本身（alloca 栈分配）。
@@ -3912,10 +4251,15 @@ func (g *Generator) generateForStatement(sb *strings.Builder, stmt *parser.ForSt
 		}()
 
 		// br → cond
+		preheaderBlock := g.cfgBlockLabel()
 		sb.WriteString(fmt.Sprintf("%sbr label %%for.cond.%d\n", g.indent(), labelId))
+		// CFG: preheader → cond
+		g.cfgEdge(preheaderBlock, fmt.Sprintf("for.cond.%d", labelId))
+		g.cfgTerm(preheaderBlock, termBr)
 
 		// cond block
-		g.emitLabel(sb, fmt.Sprintf("for.cond.%d", labelId))
+		condLabel := fmt.Sprintf("for.cond.%d", labelId)
+		g.emitLabel(sb, condLabel)
 		g.indentLevel++
 		counterLoad := fmt.Sprintf("%%%s.val", counterVar)
 		sb.WriteString(fmt.Sprintf("%s%s = load i64, i64* %%%s\n", g.indent(), counterLoad, counterVar))
@@ -3924,10 +4268,15 @@ func (g *Generator) generateForStatement(sb *strings.Builder, stmt *parser.ForSt
 		sb.WriteString(fmt.Sprintf("%s%s = icmp slt i64 %s, %s\n", g.indent(), cmpResult, counterLoad, cmpVal))
 		sb.WriteString(fmt.Sprintf("%sbr i1 %s, label %%for.body.%d, label %%for.end.%d\n",
 			g.indent(), cmpResult, labelId, labelId))
+		// CFG: cond → body / end
+		g.cfgEdge(condLabel, fmt.Sprintf("for.body.%d", labelId))
+		g.cfgEdge(condLabel, fmt.Sprintf("for.end.%d", labelId))
+		g.cfgTerm(condLabel, termCondBr)
 		g.indentLevel--
 
 		// body block
-		g.emitLabel(sb, fmt.Sprintf("for.body.%d", labelId))
+		bodyLabel := fmt.Sprintf("for.body.%d", labelId)
+		g.emitLabel(sb, bodyLabel)
 		g.indentLevel++
 		if stmt.Body != nil {
 			for _, s := range stmt.Body.Statements {
@@ -3936,13 +4285,18 @@ func (g *Generator) generateForStatement(sb *strings.Builder, stmt *parser.ForSt
 		}
 		// body 未終止時跳到 step 執行更新
 		if !g.blockTerminated {
+			bodyTail := g.cfgBlockLabel()
 			sb.WriteString(fmt.Sprintf("%sbr label %%for.step.%d\n", g.indent(), labelId))
+			// CFG: body tail → step
+			g.cfgEdge(bodyTail, fmt.Sprintf("for.step.%d", labelId))
+			g.cfgTerm(bodyTail, termBr)
 		}
 		g.blockTerminated = false
 		g.indentLevel--
 
 		// step block: counter++（continue 跳轉目標）
-		g.emitLabel(sb, fmt.Sprintf("for.step.%d", labelId))
+		stepLabel := fmt.Sprintf("for.step.%d", labelId)
+		g.emitLabel(sb, stepLabel)
 		g.indentLevel++
 		// update: %val = load i64, %cnt; %inc = add i64 %val, 1; store i64 %inc, %cnt
 		updateLoad := fmt.Sprintf("%%%s.val2", counterVar)
@@ -3951,6 +4305,9 @@ func (g *Generator) generateForStatement(sb *strings.Builder, stmt *parser.ForSt
 		sb.WriteString(fmt.Sprintf("%s%s = add i64 %s, 1\n", g.indent(), updateInc, updateLoad))
 		sb.WriteString(fmt.Sprintf("%sstore i64 %s, i64* %%%s\n", g.indent(), updateInc, counterVar))
 		sb.WriteString(fmt.Sprintf("%sbr label %%for.cond.%d\n", g.indent(), labelId))
+		// CFG: step → cond (back edge)
+		g.cfgEdge(stepLabel, condLabel)
+		g.cfgTerm(stepLabel, termBr)
 		g.indentLevel--
 
 		// end block
@@ -3973,10 +4330,15 @@ func (g *Generator) generateForStatement(sb *strings.Builder, stmt *parser.ForSt
 	}
 
 	// br → cond
+	preheaderBlock := g.cfgBlockLabel()
 	sb.WriteString(fmt.Sprintf("%sbr label %%for.cond.%d\n", g.indent(), labelId))
+	// CFG: preheader → cond
+	g.cfgEdge(preheaderBlock, fmt.Sprintf("for.cond.%d", labelId))
+	g.cfgTerm(preheaderBlock, termBr)
 
 	// cond block
-	g.emitLabel(sb, fmt.Sprintf("for.cond.%d", labelId))
+	condLabel := fmt.Sprintf("for.cond.%d", labelId)
+	g.emitLabel(sb, condLabel)
 	g.indentLevel++
 	condVal := ""
 	if stmt.Condition != nil {
@@ -4038,10 +4400,15 @@ func (g *Generator) generateForStatement(sb *strings.Builder, stmt *parser.ForSt
 	}
 	sb.WriteString(fmt.Sprintf("%sbr i1 %s, label %%for.body.%d, label %%for.end.%d\n",
 		g.indent(), condVal, labelId, labelId))
+	// CFG: cond → body / end
+	g.cfgEdge(condLabel, fmt.Sprintf("for.body.%d", labelId))
+	g.cfgEdge(condLabel, fmt.Sprintf("for.end.%d", labelId))
+	g.cfgTerm(condLabel, termCondBr)
 	g.indentLevel--
 
 	// body block
-	g.emitLabel(sb, fmt.Sprintf("for.body.%d", labelId))
+	bodyLabel := fmt.Sprintf("for.body.%d", labelId)
+	g.emitLabel(sb, bodyLabel)
 	g.indentLevel++
 	if stmt.Body != nil {
 		for _, s := range stmt.Body.Statements {
@@ -4050,19 +4417,27 @@ func (g *Generator) generateForStatement(sb *strings.Builder, stmt *parser.ForSt
 	}
 	// body 未終止時跳到 step 執行更新
 	if !g.blockTerminated {
+		bodyTail := g.cfgBlockLabel()
 		sb.WriteString(fmt.Sprintf("%sbr label %%for.step.%d\n", g.indent(), labelId))
+		// CFG: body tail → step
+		g.cfgEdge(bodyTail, fmt.Sprintf("for.step.%d", labelId))
+		g.cfgTerm(bodyTail, termBr)
 	}
 	g.blockTerminated = false
 	g.indentLevel--
 
 	// step block: 執行 update（continue 跳轉目標）
-	g.emitLabel(sb, fmt.Sprintf("for.step.%d", labelId))
+	stepLabel := fmt.Sprintf("for.step.%d", labelId)
+	g.emitLabel(sb, stepLabel)
 	g.indentLevel++
 	// update
 	if stmt.Update != nil {
 		g.generateStatement(sb, stmt.Update)
 	}
 	sb.WriteString(fmt.Sprintf("%sbr label %%for.cond.%d\n", g.indent(), labelId))
+	// CFG: step → cond (back edge)
+	g.cfgEdge(stepLabel, condLabel)
+	g.cfgTerm(stepLabel, termBr)
 	g.indentLevel--
 
 	// end block
@@ -4092,20 +4467,30 @@ func (g *Generator) generateStringRange(sb *strings.Builder, stmt *parser.ForSta
 	sb.WriteString(fmt.Sprintf("%s%s = add i64 0, 0\n", g.indent(), ptrReg))
 
 	// br → cond
+	preheaderBlock := g.cfgBlockLabel()
 	sb.WriteString(fmt.Sprintf("%sbr label %%str-long.cond.%d\n", g.indent(), lbl))
+	// CFG: preheader → cond
+	g.cfgEdge(preheaderBlock, fmt.Sprintf("str.cond.%d", lbl))
+	g.cfgTerm(preheaderBlock, termBr)
 
 	// cond block
-	g.emitLabel(sb, fmt.Sprintf("str.cond.%d", lbl))
+	condLabel := fmt.Sprintf("str.cond.%d", lbl)
+	g.emitLabel(sb, condLabel)
 	g.indentLevel++
 	iLoad := g.tmpReg("str-longi")
 	cmpReg := g.tmpReg("str-longcmp")
 	sb.WriteString(fmt.Sprintf("%s%s = load i64, i64* %%%s\n", g.indent(), iLoad, varName))
 	sb.WriteString(fmt.Sprintf("%s%s = icmp slt i64 %s, %d\n", g.indent(), cmpReg, iLoad, len(str)))
 	sb.WriteString(fmt.Sprintf("%sbr i1 %s, label %%str-long.body.%d, label %%str-long.end.%d\n", g.indent(), cmpReg, lbl, lbl))
+	// CFG: cond → body / end
+	g.cfgEdge(condLabel, fmt.Sprintf("str.body.%d", lbl))
+	g.cfgEdge(condLabel, fmt.Sprintf("str.end.%d", lbl))
+	g.cfgTerm(condLabel, termCondBr)
 	g.indentLevel--
 
 	// body: char = str[i]; varName = char
-	g.emitLabel(sb, fmt.Sprintf("str.body.%d", lbl))
+	bodyLabel := fmt.Sprintf("str.body.%d", lbl)
+	g.emitLabel(sb, bodyLabel)
 	g.indentLevel++
 	chReg := g.tmpReg("str-longch")
 	chZext := g.tmpReg("str-longchz")
@@ -4123,11 +4508,18 @@ func (g *Generator) generateStringRange(sb *strings.Builder, stmt *parser.ForSta
 		}
 	}
 
-	// update: idx++
-	iNext := g.tmpReg("str-longnext")
-	sb.WriteString(fmt.Sprintf("%s%s = add i64 %s, 1\n", g.indent(), iNext, iLoad))
-	sb.WriteString(fmt.Sprintf("%sstore i64 %s, i64* %%%s\n", g.indent(), iNext, varName))
-	sb.WriteString(fmt.Sprintf("%sbr label %%str-long.cond.%d\n", g.indent(), lbl))
+	// update + back-edge: idx++; br → cond
+	if !g.blockTerminated {
+		bodyTail := g.cfgBlockLabel()
+		iNext := g.tmpReg("str-longnext")
+		sb.WriteString(fmt.Sprintf("%s%s = add i64 %s, 1\n", g.indent(), iNext, iLoad))
+		sb.WriteString(fmt.Sprintf("%sstore i64 %s, i64* %%%s\n", g.indent(), iNext, varName))
+		sb.WriteString(fmt.Sprintf("%sbr label %%str-long.cond.%d\n", g.indent(), lbl))
+		// CFG: body tail → cond (back edge)
+		g.cfgEdge(bodyTail, condLabel)
+		g.cfgTerm(bodyTail, termBr)
+	}
+	g.blockTerminated = false
 	g.indentLevel--
 
 	g.emitLabel(sb, fmt.Sprintf("str.end.%d", lbl))
@@ -4188,16 +4580,25 @@ func (g *Generator) generateArrayRange(sb *strings.Builder, stmt *parser.ForStat
 			sb.WriteString(fmt.Sprintf("%sstore i64 0, i64* %%%s\n", g.indent(), varName))
 
 			// br → cond
+			preheaderBlock := g.cfgBlockLabel()
 			sb.WriteString(fmt.Sprintf("%sbr label %%arr.cond.%d\n", g.indent(), lbl))
+			// CFG: preheader → cond
+			g.cfgEdge(preheaderBlock, fmt.Sprintf("arr.cond.%d", lbl))
+			g.cfgTerm(preheaderBlock, termBr)
 
 			// cond block: i < viewLen
-			g.emitLabel(sb, fmt.Sprintf("arr.cond.%d", lbl))
+			condLabel := fmt.Sprintf("arr.cond.%d", lbl)
+			g.emitLabel(sb, condLabel)
 			g.indentLevel++
 			iLoad := g.tmpReg("arr.i")
 			sb.WriteString(fmt.Sprintf("%s%s = load i64, i64* %%%s\n", g.indent(), iLoad, varName))
 			cmpReg := g.tmpReg("arr.cmp")
 			sb.WriteString(fmt.Sprintf("%s%s = icmp slt i64 %s, %s\n", g.indent(), cmpReg, iLoad, view.viewLen))
 			sb.WriteString(fmt.Sprintf("%sbr i1 %s, label %%arr.body.%d, label %%arr.end.%d\n", g.indent(), cmpReg, lbl, lbl))
+			// CFG: cond → body / end
+			g.cfgEdge(condLabel, fmt.Sprintf("arr.body.%d", lbl))
+			g.cfgEdge(condLabel, fmt.Sprintf("arr.end.%d", lbl))
+			g.cfgTerm(condLabel, termCondBr)
 			g.indentLevel--
 
 			// body block
@@ -4226,13 +4627,18 @@ func (g *Generator) generateArrayRange(sb *strings.Builder, stmt *parser.ForStat
 			}
 			// body 未終止時跳到 step 執行更新
 			if !g.blockTerminated {
+				bodyTail := g.cfgBlockLabel()
 				sb.WriteString(fmt.Sprintf("%sbr label %%arr.step.%d\n", g.indent(), lbl))
+				// CFG: body tail → step
+				g.cfgEdge(bodyTail, fmt.Sprintf("arr.step.%d", lbl))
+				g.cfgTerm(bodyTail, termBr)
 			}
 			g.blockTerminated = false
 			g.indentLevel--
 
 			// step block: i++（continue 跳轉目標）
-			g.emitLabel(sb, fmt.Sprintf("arr.step.%d", lbl))
+			stepLabel := fmt.Sprintf("arr.step.%d", lbl)
+			g.emitLabel(sb, stepLabel)
 			g.indentLevel++
 			// Increment i
 			iLoad2 := g.tmpReg("arr.i2")
@@ -4241,6 +4647,9 @@ func (g *Generator) generateArrayRange(sb *strings.Builder, stmt *parser.ForStat
 			sb.WriteString(fmt.Sprintf("%s%s = add i64 %s, 1\n", g.indent(), iInc, iLoad2))
 			sb.WriteString(fmt.Sprintf("%sstore i64 %s, i64* %%%s\n", g.indent(), iInc, varName))
 			sb.WriteString(fmt.Sprintf("%sbr label %%arr.cond.%d\n", g.indent(), lbl))
+			// CFG: step → cond (back edge)
+			g.cfgEdge(stepLabel, condLabel)
+			g.cfgTerm(stepLabel, termBr)
 			g.indentLevel--
 
 			// end block
@@ -4284,6 +4693,11 @@ func (g *Generator) generateArrayRange(sb *strings.Builder, stmt *parser.ForStat
 		for i, elem := range sliceLit.Elements {
 			ev := g.generateExprWithSB(sb, elem)
 			ev = g.stripLLVMType(ev)
+			// When elemType is %str-long and ev is a %str-long* pointer (e.g. from
+			// a StringLiteral alloca), load the struct value before storing.
+			if elemType == "%str-long" {
+				ev = g.loadStrValueIfNeeded(sb, ev)
+			}
 			gepReg := g.tmpReg("slice.gep")
 			sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %s, %s* %s, i32 0, i32 %d\n",
 				g.indent(), gepReg, arrType, arrType, tmpArr, i))
@@ -4337,16 +4751,25 @@ func (g *Generator) generateArrayRange(sb *strings.Builder, stmt *parser.ForStat
 	sb.WriteString(fmt.Sprintf("%sstore i64 0, i64* %%%s\n", g.indent(), varName))
 
 	// br → cond
+	preheaderBlock := g.cfgBlockLabel()
 	sb.WriteString(fmt.Sprintf("%sbr label %%arr.cond.%d\n", g.indent(), lbl))
+	// CFG: preheader → cond
+	g.cfgEdge(preheaderBlock, fmt.Sprintf("arr.cond.%d", lbl))
+	g.cfgTerm(preheaderBlock, termBr)
 
 	// cond block: i < len
-	g.emitLabel(sb, fmt.Sprintf("arr.cond.%d", lbl))
+	condLabel := fmt.Sprintf("arr.cond.%d", lbl)
+	g.emitLabel(sb, condLabel)
 	g.indentLevel++
 	iLoad := g.tmpReg("arr.i")
 	sb.WriteString(fmt.Sprintf("%s%s = load i64, i64* %%%s\n", g.indent(), iLoad, varName))
 	cmpReg := g.tmpReg("arr.cmp")
 	sb.WriteString(fmt.Sprintf("%s%s = icmp slt i64 %s, %s\n", g.indent(), cmpReg, iLoad, lenLoad))
 	sb.WriteString(fmt.Sprintf("%sbr i1 %s, label %%arr.body.%d, label %%arr.end.%d\n", g.indent(), cmpReg, lbl, lbl))
+	// CFG: cond → body / end
+	g.cfgEdge(condLabel, fmt.Sprintf("arr.body.%d", lbl))
+	g.cfgEdge(condLabel, fmt.Sprintf("arr.end.%d", lbl))
+	g.cfgTerm(condLabel, termCondBr)
 	g.indentLevel--
 
 	// body block
@@ -4401,19 +4824,27 @@ func (g *Generator) generateArrayRange(sb *strings.Builder, stmt *parser.ForStat
 	}
 	// body 未終止時跳到 step 執行更新
 	if !g.blockTerminated {
+		bodyTail := g.cfgBlockLabel()
 		sb.WriteString(fmt.Sprintf("%sbr label %%arr.step.%d\n", g.indent(), lbl))
+		// CFG: body tail → step
+		g.cfgEdge(bodyTail, fmt.Sprintf("arr.step.%d", lbl))
+		g.cfgTerm(bodyTail, termBr)
 	}
 	g.blockTerminated = false
 	g.indentLevel--
 
 	// step block: i++（continue 跳轉目標）
-	g.emitLabel(sb, fmt.Sprintf("arr.step.%d", lbl))
+	stepLabel := fmt.Sprintf("arr.step.%d", lbl)
+	g.emitLabel(sb, stepLabel)
 	g.indentLevel++
 	// Update: i++
 	iNext := g.tmpReg("arr.next")
 	sb.WriteString(fmt.Sprintf("%s%s = add i64 %s, 1\n", g.indent(), iNext, iLoad))
 	sb.WriteString(fmt.Sprintf("%sstore i64 %s, i64* %%%s\n", g.indent(), iNext, varName))
 	sb.WriteString(fmt.Sprintf("%sbr label %%arr.cond.%d\n", g.indent(), lbl))
+	// CFG: step → cond (back edge)
+	g.cfgEdge(stepLabel, condLabel)
+	g.cfgTerm(stepLabel, termBr)
 	g.indentLevel--
 
 	// end block
@@ -4510,10 +4941,15 @@ func (g *Generator) generateRangeFor(sb *strings.Builder, stmt *parser.ForStatem
 			iInitVal = iInitReg
 		}
 		sb.WriteString(fmt.Sprintf("%sstore i64 %s, i64* %%%s\n", g.indent(), iInitVal, varName))
+		preheaderBlock := g.cfgBlockLabel()
 		sb.WriteString(fmt.Sprintf("%sbr label %%rng.cond.%d\n", g.indent(), lbl))
+		// CFG: preheader → cond
+		g.cfgEdge(preheaderBlock, fmt.Sprintf("rng.cond.%d", lbl))
+		g.cfgTerm(preheaderBlock, termBr)
 
 		// cond block: single comparison (no select!)
-		g.emitLabel(sb, fmt.Sprintf("rng.cond.%d", lbl))
+		condLabel := fmt.Sprintf("rng.cond.%d", lbl)
+		g.emitLabel(sb, condLabel)
 		g.indentLevel++
 		iLoad := g.tmpReg("rng.i")
 		sb.WriteString(fmt.Sprintf("%s%s = load i64, i64* %%%s\n", g.indent(), iLoad, varName))
@@ -4532,6 +4968,10 @@ func (g *Generator) generateRangeFor(sb *strings.Builder, stmt *parser.ForStatem
 			sb.WriteString(fmt.Sprintf("%s%s = icmp %s i64 %s, %s\n", g.indent(), cmpReg, cmpOp, iLoad, endVal))
 		}
 		sb.WriteString(fmt.Sprintf("%sbr i1 %s, label %%rng.body.%d, label %%rng.end.%d\n", g.indent(), cmpReg, lbl, lbl))
+		// CFG: cond → body / end
+		g.cfgEdge(condLabel, fmt.Sprintf("rng.body.%d", lbl))
+		g.cfgEdge(condLabel, fmt.Sprintf("rng.end.%d", lbl))
+		g.cfgTerm(condLabel, termCondBr)
 		g.indentLevel--
 
 		// body block
@@ -4543,13 +4983,18 @@ func (g *Generator) generateRangeFor(sb *strings.Builder, stmt *parser.ForStatem
 			}
 		}
 		if !g.blockTerminated {
+			bodyTail := g.cfgBlockLabel()
 			sb.WriteString(fmt.Sprintf("%sbr label %%rng.step.%d\n", g.indent(), lbl))
+			// CFG: body tail → step
+			g.cfgEdge(bodyTail, fmt.Sprintf("rng.step.%d", lbl))
+			g.cfgTerm(bodyTail, termBr)
 		}
 		g.blockTerminated = false
 		g.indentLevel--
 
 		// step block: simple increment or decrement (no select!)
-		g.emitLabel(sb, fmt.Sprintf("rng.step.%d", lbl))
+		stepLabel := fmt.Sprintf("rng.step.%d", lbl)
+		g.emitLabel(sb, stepLabel)
 		g.indentLevel++
 		iLoad2 := g.tmpReg("rng.i2")
 		sb.WriteString(fmt.Sprintf("%s%s = load i64, i64* %%%s\n", g.indent(), iLoad2, varName))
@@ -4561,6 +5006,9 @@ func (g *Generator) generateRangeFor(sb *strings.Builder, stmt *parser.ForStatem
 		}
 		sb.WriteString(fmt.Sprintf("%sstore i64 %s, i64* %%%s\n", g.indent(), iNext, varName))
 		sb.WriteString(fmt.Sprintf("%sbr label %%rng.cond.%d\n", g.indent(), lbl))
+		// CFG: step → cond (back edge)
+		g.cfgEdge(stepLabel, condLabel)
+		g.cfgTerm(stepLabel, termBr)
 		g.indentLevel--
 
 		// end block
@@ -4583,16 +5031,25 @@ func (g *Generator) generateRangeFor(sb *strings.Builder, stmt *parser.ForStatem
 	if startIsLit && startLit.Value == 0 && r.LeftInc && !r.RightInc {
 		// i = 0 (left-inclusive)
 		sb.WriteString(fmt.Sprintf("%sstore i64 0, i64* %%%s\n", g.indent(), varName))
+		preheaderBlock := g.cfgBlockLabel()
 		sb.WriteString(fmt.Sprintf("%sbr label %%rng.cond.%d\n", g.indent(), lbl))
+		// CFG: preheader → cond
+		g.cfgEdge(preheaderBlock, fmt.Sprintf("rng.cond.%d", lbl))
+		g.cfgTerm(preheaderBlock, termBr)
 
 		// cond block: i < end (ascending only, single icmp)
-		g.emitLabel(sb, fmt.Sprintf("rng.cond.%d", lbl))
+		condLabel := fmt.Sprintf("rng.cond.%d", lbl)
+		g.emitLabel(sb, condLabel)
 		g.indentLevel++
 		iLoad := g.tmpReg("rng.i")
 		sb.WriteString(fmt.Sprintf("%s%s = load i64, i64* %%%s\n", g.indent(), iLoad, varName))
 		cmpReg := g.tmpReg("rng.cmp")
 		sb.WriteString(fmt.Sprintf("%s%s = icmp slt i64 %s, %s\n", g.indent(), cmpReg, iLoad, endVal))
 		sb.WriteString(fmt.Sprintf("%sbr i1 %s, label %%rng.body.%d, label %%rng.end.%d\n", g.indent(), cmpReg, lbl, lbl))
+		// CFG: cond → body / end
+		g.cfgEdge(condLabel, fmt.Sprintf("rng.body.%d", lbl))
+		g.cfgEdge(condLabel, fmt.Sprintf("rng.end.%d", lbl))
+		g.cfgTerm(condLabel, termCondBr)
 		g.indentLevel--
 
 		// body block
@@ -4604,13 +5061,18 @@ func (g *Generator) generateRangeFor(sb *strings.Builder, stmt *parser.ForStatem
 			}
 		}
 		if !g.blockTerminated {
+			bodyTail := g.cfgBlockLabel()
 			sb.WriteString(fmt.Sprintf("%sbr label %%rng.step.%d\n", g.indent(), lbl))
+			// CFG: body tail → step
+			g.cfgEdge(bodyTail, fmt.Sprintf("rng.step.%d", lbl))
+			g.cfgTerm(bodyTail, termBr)
 		}
 		g.blockTerminated = false
 		g.indentLevel--
 
 		// step block: i = i + 1 (simple increment)
-		g.emitLabel(sb, fmt.Sprintf("rng.step.%d", lbl))
+		stepLabel := fmt.Sprintf("rng.step.%d", lbl)
+		g.emitLabel(sb, stepLabel)
 		g.indentLevel++
 		iLoad2 := g.tmpReg("rng.i2")
 		sb.WriteString(fmt.Sprintf("%s%s = load i64, i64* %%%s\n", g.indent(), iLoad2, varName))
@@ -4618,6 +5080,9 @@ func (g *Generator) generateRangeFor(sb *strings.Builder, stmt *parser.ForStatem
 		sb.WriteString(fmt.Sprintf("%s%s = add i64 %s, 1\n", g.indent(), iNext, iLoad2))
 		sb.WriteString(fmt.Sprintf("%sstore i64 %s, i64* %%%s\n", g.indent(), iNext, varName))
 		sb.WriteString(fmt.Sprintf("%sbr label %%rng.cond.%d\n", g.indent(), lbl))
+		// CFG: step → cond (back edge)
+		g.cfgEdge(stepLabel, condLabel)
+		g.cfgTerm(stepLabel, termBr)
 		g.indentLevel--
 
 		// end block
@@ -4663,9 +5128,14 @@ func (g *Generator) generateRangeFor(sb *strings.Builder, stmt *parser.ForStatem
 
 	// Single condition block: uses select to choose asc/desc comparison.
 	// No per-iteration branch on dirCmp needed.
+	preheaderBlock := g.cfgBlockLabel()
 	sb.WriteString(fmt.Sprintf("%sbr label %%rng.cond.%d\n", g.indent(), lbl))
+	// CFG: preheader → cond
+	g.cfgEdge(preheaderBlock, fmt.Sprintf("rng.cond.%d", lbl))
+	g.cfgTerm(preheaderBlock, termBr)
 
-	g.emitLabel(sb, fmt.Sprintf("rng.cond.%d", lbl))
+	condLabel := fmt.Sprintf("rng.cond.%d", lbl)
+	g.emitLabel(sb, condLabel)
 	g.indentLevel++
 	condILoad := g.tmpReg("rng.cond.i")
 	sb.WriteString(fmt.Sprintf("%s%s = load i64, i64* %%%s\n", g.indent(), condILoad, varName))
@@ -4687,6 +5157,10 @@ func (g *Generator) generateRangeFor(sb *strings.Builder, stmt *parser.ForStatem
 	condResult := g.tmpReg("rng.cond.result")
 	sb.WriteString(fmt.Sprintf("%s%s = select i1 %s, i1 %s, i1 %s\n", g.indent(), condResult, dirCmp, ascCmp, descCmp))
 	sb.WriteString(fmt.Sprintf("%sbr i1 %s, label %%rng.body.%d, label %%rng.end.%d\n", g.indent(), condResult, lbl, lbl))
+	// CFG: cond → body / end
+	g.cfgEdge(condLabel, fmt.Sprintf("rng.body.%d", lbl))
+	g.cfgEdge(condLabel, fmt.Sprintf("rng.end.%d", lbl))
+	g.cfgTerm(condLabel, termCondBr)
 	g.indentLevel--
 
 	// body block
@@ -4699,14 +5173,19 @@ func (g *Generator) generateRangeFor(sb *strings.Builder, stmt *parser.ForStatem
 	}
 	// body 未終止時跳到 step 執行更新
 	if !g.blockTerminated {
+		bodyTail := g.cfgBlockLabel()
 		sb.WriteString(fmt.Sprintf("%sbr label %%rng.step.%d\n", g.indent(), lbl))
+		// CFG: body tail → step
+		g.cfgEdge(bodyTail, fmt.Sprintf("rng.step.%d", lbl))
+		g.cfgTerm(bodyTail, termBr)
 	}
 	g.blockTerminated = false
 	g.indentLevel--
 
 	// step block: i = i + step (single add, no branch on dirCmp!)
 	// continue 跳轉目標
-	g.emitLabel(sb, fmt.Sprintf("rng.step.%d", lbl))
+	stepLabel := fmt.Sprintf("rng.step.%d", lbl)
+	g.emitLabel(sb, stepLabel)
 	g.indentLevel++
 	stepILoad := g.tmpReg("rng.step.i")
 	sb.WriteString(fmt.Sprintf("%s%s = load i64, i64* %%%s\n", g.indent(), stepILoad, varName))
@@ -4715,6 +5194,9 @@ func (g *Generator) generateRangeFor(sb *strings.Builder, stmt *parser.ForStatem
 	sb.WriteString(fmt.Sprintf("%sstore i64 %s, i64* %%%s\n", g.indent(), iNext, varName))
 	// Back-edge: directly to cond block (no dirCmp branch!)
 	sb.WriteString(fmt.Sprintf("%sbr label %%rng.cond.%d\n", g.indent(), lbl))
+	// CFG: step → cond (back edge)
+	g.cfgEdge(stepLabel, condLabel)
+	g.cfgTerm(stepLabel, termBr)
 	g.indentLevel--
 
 	// end block
@@ -4733,9 +5215,12 @@ func (g *Generator) generateLet(sb *strings.Builder, stmt *parser.LetStatement) 
 	}
 
 	// 處理 match 對應 err/nil arm 注入的合成 let 陳述句（`it = matched`）。
-	// 這些 let 的 Type 為 "err" / "nil" / "err | nil" 哨兵字串，無法映射到真實的 LLVM 型別。
-	// 為了避免嘗試將 ?file option 的內部 struct 指標存入 i64* 而產生型別衝突，
-	// 將其型別降為 i64 並直接賦值 0 作為佔位符（`it` 在 err/nil 分支語意上無值）。
+	// 這些 let 的 Type 為 "err" / "nil" / "err | nil" 哨兵字串。
+	// - "err" 臂：it = 錯誤消息字符串（%str-long）。err('msg') 裝箱時把
+	//   %str-long box 指標 ptrtoint 存入 option data 欄位，此處逆向解箱：
+	//   data → load i64 → inttoptr → %str-long* → load → store 到 it。
+	//   it 僅為借用視圖（淺拷貝，不 track heap），box 所有權仍屬 option。
+	// - "nil" / "err | nil"：語意上無確定值，維持 i64 佔位符。
 	if stmt.IsSynthetic {
 		if nt, ok := stmt.Type.(*parser.NamedType); ok {
 			// 判斷型別字串是否僅由 err/nil 組成（如 "err"、"nil"、"err | nil"），
@@ -4750,6 +5235,56 @@ func (g *Generator) generateLet(sb *strings.Builder, stmt *parser.LetStatement) 
 				break
 			}
 			if onlyErrNil {
+				// 純 err 臂且 matched 是 option 變數：解箱錯誤消息到 it。
+				if nt.Value == "err" {
+					if srcIdent, ok := stmt.Value.(*parser.Identifier); ok && g.varTypes != nil {
+						if srcType, ok := g.varTypes[srcIdent.Value]; ok && srcType == "%option" {
+							// 確保 it 有 alloca（模組級/函數級皆由 collectVarDecls 註冊；
+							// 若缺失則就地分配 %str-long）。
+							if _, exists := g.varTypes[name]; !exists {
+								g.varTypes[name] = "%str-long"
+								g.funcLocalNames[name] = true
+								sb.WriteString(fmt.Sprintf("%s%s = alloca %%str-long\n", g.indent(), llvmVarRef(name)))
+								sb.WriteString(fmt.Sprintf("%scall void @llvm.lifetime.start.p0i8(i64 24, i8* %s)\n", g.indent(), llvmVarRef(name)))
+								if g.itAllocTypes != nil && name == "it" {
+									g.itAllocTypes[name] = "%str-long"
+								}
+							}
+							// 解箱：option data(i64) → inttoptr %str-long* → load
+							srcAddr := g.varAddr(srcIdent.Value)
+							dataGEP := g.tmpReg("it.err.data.gep")
+							sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%option, %%option* %s, i32 0, i32 1\n", g.indent(), dataGEP, srcAddr))
+							dataInt := g.tmpReg("it.err.data")
+							sb.WriteString(fmt.Sprintf("%s%s = load i64, i64* %s\n", g.indent(), dataInt, dataGEP))
+							boxPtr := g.tmpReg("it.err.box")
+							sb.WriteString(fmt.Sprintf("%s%s = inttoptr i64 %s to %%str-long*\n", g.indent(), boxPtr, dataInt))
+							msgVal := g.tmpReg("it.err.msg")
+							sb.WriteString(fmt.Sprintf("%s%s = load %%str-long, %%str-long* %s\n", g.indent(), msgVal, boxPtr))
+							// store 到 it（alloca 型別不同時 bitcast；alloca 保證 ≥24B，
+							// 由 collectVarDecls 的 max-size 邏輯保障）。
+							storeAddr := g.varAddr(name)
+							allocType := ""
+							if g.itAllocTypes != nil {
+								if at, ok := g.itAllocTypes[name]; ok {
+									allocType = at
+								}
+							}
+							if allocType == "" {
+								allocType = g.varTypes[name]
+							}
+							if allocType != "" && allocType != "%str-long" {
+								castReg := g.tmpReg("it.err.cast")
+								sb.WriteString(fmt.Sprintf("%s%s = bitcast %s* %s to %%str-long*\n", g.indent(), castReg, allocType, storeAddr))
+								storeAddr = castReg
+							}
+							sb.WriteString(fmt.Sprintf("%sstore %%str-long %s, %%str-long* %s\n", g.indent(), msgVal, storeAddr))
+							// 後續此臂內讀 it 一律按 %str-long 處理
+							// （expr.go 的 itAllocTypes bitcast 機制負責指標型別匹配）。
+							g.varTypes[name] = "%str-long"
+							return
+						}
+					}
+				}
 				if g.varTypes != nil {
 					if _, exists := g.varTypes[name]; !exists {
 						g.varTypes[name] = "i64"
@@ -4776,15 +5311,21 @@ func (g *Generator) generateLet(sb *strings.Builder, stmt *parser.LetStatement) 
 		g.emitSetRetInitBit(sb, name)
 	}
 
-	// 堆變數 moved 追蹤：若目標是輸出參數且源是局部堆變數，走 move（所有權轉移）。
-	// move 不 free out 舊值（舊值可能與前一個 source 共享 data），
-	// 設 oldValFreed=true 跳過通用路徑的 freeOldHeapValue。
-	// 非 move 的 out 賦值（表達式）由通用路徑 freeOldHeapValue 釋放舊值。
+	// 堆變數 moved 追蹤：若目標是輸出參數且源是局部堆變數，根據 liveness 決定 clone/move。
+	// 此处仅设置 oldValFreed 标志（防止通用路径对 out 参数 freeOldHeapValue），
+	// 实际的 move/clone 决策和执行由下方统一赋值逻辑处理。
+	// - 源是全局变量 → 禁止 move，一律 clone（全局变量持久存在，不能转移所有权）
+	// - 源在后续被引用 → clone（源仍需拥有 data）
+	// - 源在后续未被引用 → move（所有权转移，源跳过 free）
 	if g.heapVars != nil && g.outputParamNames != nil && g.outputParamNames[name] && g.heapVarIndex != nil && !stmt.IsSynthetic {
 		if ident, ok := stmt.Value.(*parser.Identifier); ok {
 			if _, isHeap := g.heapVars[ident.Value]; isHeap {
-				g.handleMoveToOut(sb, ident.Value, name)
-				oldValFreed = true
+				// move 時不 free out 舊值（舊值可能與前一個 source 共享 data）
+				canMove := g.moveEligible != nil && g.moveEligible[stmt]
+				if canMove {
+					oldValFreed = true
+				}
+				// clone 時由統一路徑 freeOldHeapValue 釋放舊值
 			}
 		}
 	}
@@ -4916,6 +5457,11 @@ func (g *Generator) generateLet(sb *strings.Builder, stmt *parser.LetStatement) 
 			for i, elem := range slice.Elements {
 				ev := g.generateExprWithSB(sb, elem)
 				ev = g.stripLLVMType(ev)
+				// When elemType is %str-long and ev is a %str-long* pointer (e.g. from
+				// a StringLiteral alloca), load the struct value before storing.
+				if elemType == "%str-long" {
+					ev = g.loadStrValueIfNeeded(sb, ev)
+				}
 				gepReg := g.tmpReg("slice.gep")
 				sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %s, %s* %s, i32 0, i32 %d\n",
 					g.indent(), gepReg, arrType, arrType, arrPtr, i))
@@ -5051,11 +5597,17 @@ func (g *Generator) generateLet(sb *strings.Builder, stmt *parser.LetStatement) 
 							fnName = "str." + dot.Property
 						}
 					}
-					if fnName != "" && g.funcResultInnerTypes != nil {
-						if innerTypes, ok := g.funcResultInnerTypes[fnName]; ok && len(innerTypes) >= 1 && innerTypes[0] != "" {
+				if fnName != "" && g.funcResultInnerTypes != nil {
+					if innerTypes, ok := g.funcResultInnerTypes[fnName]; ok && len(innerTypes) >= 1 && innerTypes[0] != "" {
+						g.optionInnerTypes[name] = innerTypes[0]
+					} else if idx := strings.Index(fnName, "."); idx >= 0 {
+						// Fallback: try short name without module prefix (e.g. "http.do-req" → "do-req")
+						shortName := fnName[idx+1:]
+						if innerTypes, ok := g.funcResultInnerTypes[shortName]; ok && len(innerTypes) >= 1 && innerTypes[0] != "" {
 							g.optionInnerTypes[name] = innerTypes[0]
 						}
 					}
+				}
 				}
 			}
 		}
@@ -5094,26 +5646,87 @@ func (g *Generator) generateLet(sb *strings.Builder, stmt *parser.LetStatement) 
 		}
 	}
 
-	// 深層 clone 路徑：b = a，其中 a 是堆擁有型別的局部變數。
-	// 不使用淺拷貝 + move（會泄漏或 double-free），而是深層 clone a 的堆數據到 b，
-	// 使 a 和 b 各自獨立擁有 data，函數結束時各自 free。
-	// 巢狀容器（%vec/%arr 元素為 %vec/%arr）因子元素型別未知，使用 move 代替。
+	// 统一赋值逻辑：b = a，其中 a 是堆拥有型变量。
+	// - 源是全局变量 → 禁止 move，一律深層 clone
+	// - 源是局部变量且后续未被引用 → move（浅拷贝 + 标记 moved，源跳过 free）
+	// - 源是局部变量且后续被引用 → 深層 clone（两者各自独立拥有 data）
+	// 巢狀容器（%vec/%arr 元素為 %vec/%arr）因子元素型別未知，無法安全深層 clone，
+	// 但 move 仍然安全（move 只是浅拷贝 + 标记，不涉及递归）。
 	if g.heapVars != nil && !stmt.IsSynthetic {
 		if ident, ok := stmt.Value.(*parser.Identifier); ok {
-			if srcHeapType, isHeap := g.heapVars[ident.Value]; isHeap {
-				if ident.Value != name {
-					_, isLocal := g.funcLocalNames[name]
-					isOutput := g.outputParamNames != nil && g.outputParamNames[name]
-					if isLocal && !isOutput {
+			if ident.Value != name {
+				_, isLocal := g.funcLocalNames[name]
+				isOutput := g.outputParamNames != nil && g.outputParamNames[name]
+
+				// 情况 1：源是全局堆拥有型变量 → 一律 clone
+				if g.globalVars != nil && g.globalVars[ident.Value] {
+					if srcType, hasType := g.varTypes[ident.Value]; hasType && g.isHeapOwningType(srcType) {
 						srcElemType := ""
 						if g.arrayElemTypes != nil {
 							srcElemType = g.arrayElemTypes[ident.Value]
 						}
-						// 檢查是否可以安全深層 clone
+						canClone := true
+						if (srcType == "%vec" || srcType == "%arr") &&
+							(srcElemType == "%vec" || srcElemType == "%arr") {
+							canClone = false
+						}
+						if srcType != "%vec" && srcType != "%arr" && srcType != "%str-long" {
+							if !g.canDeepCloneStruct(srcType) {
+								canClone = false
+							}
+						}
+						if canClone && (isLocal || isOutput) {
+							g.freeOldHeapValue(sb, stmt, name)
+							g.emitDeepClone(sb, g.varAddr(ident.Value), g.varAddr(name), srcType, srcElemType)
+							if !isOutput {
+								g.trackLocalHeapVar(name, srcType)
+							}
+							if srcElemType != "" && g.arrayElemTypes != nil {
+								g.arrayElemTypes[name] = srcElemType
+							}
+							return
+						}
+					}
+				}
+
+				// 情况 2：源是局部堆拥有型变量
+				if srcHeapType, isHeap := g.heapVars[ident.Value]; isHeap {
+					if isLocal || isOutput {
+						srcElemType := ""
+						if g.arrayElemTypes != nil {
+							srcElemType = g.arrayElemTypes[ident.Value]
+						}
+						// 检查是否可以 move（源未被后续引用）
+						canMove := g.moveEligible != nil && g.moveEligible[stmt]
+						if canMove {
+							// move：浅拷贝结构体 + 标记源为 moved
+							// 对输出参数不 free 旧值（旧值可能与前一个 source 共享 data）
+							if !isOutput {
+								g.freeOldHeapValue(sb, stmt, name)
+							}
+							moveReg := g.tmpReg("move.val")
+							sb.WriteString(fmt.Sprintf("%s%s = load %s, %s* %s\n",
+								g.indent(), moveReg, srcHeapType, srcHeapType, g.varAddr(ident.Value)))
+							sb.WriteString(fmt.Sprintf("%sstore %s %s, %s* %s\n",
+								g.indent(), srcHeapType, moveReg, srcHeapType, g.varAddr(name)))
+							if isOutput {
+								// move 到输出参数：用 handleMoveToOut（含 outBindState 管理）
+								g.handleMoveToOut(sb, ident.Value, name)
+							} else {
+								// move 到局部变量：用 handleMoveLocal（仅设 bit）
+								g.handleMoveLocal(sb, ident.Value)
+								g.trackLocalHeapVar(name, srcHeapType)
+							}
+							if srcElemType != "" && g.arrayElemTypes != nil {
+								g.arrayElemTypes[name] = srcElemType
+							}
+							return
+						}
+						// clone：深層 clone（源仍需拥有 data）
 						canClone := true
 						if (srcHeapType == "%vec" || srcHeapType == "%arr") &&
 							(srcElemType == "%vec" || srcElemType == "%arr") {
-							canClone = false // 巢狀容器，子元素型別未知
+							canClone = false
 						}
 						if srcHeapType != "%vec" && srcHeapType != "%arr" && srcHeapType != "%str-long" {
 							if !g.canDeepCloneStruct(srcHeapType) {
@@ -5121,17 +5734,66 @@ func (g *Generator) generateLet(sb *strings.Builder, stmt *parser.LetStatement) 
 							}
 						}
 						if canClone {
-							// 釋放目標變數的舊堆值（如有）
 							g.freeOldHeapValue(sb, stmt, name)
-							// 深層 clone
 							g.emitDeepClone(sb, g.varAddr(ident.Value), g.varAddr(name), srcHeapType, srcElemType)
-							// 追蹤目標變數為堆變數
-							g.trackLocalHeapVar(name, srcHeapType)
-							// 傳播 elemType
+							if !isOutput {
+								g.trackLocalHeapVar(name, srcHeapType)
+							}
 							if srcElemType != "" && g.arrayElemTypes != nil {
 								g.arrayElemTypes[name] = srcElemType
 							}
 							return
+						}
+					}
+				}
+			}
+		}
+		// 深層 clone 路徑：x = vec[i] / arr[i]，其中元素為堆擁有型別（如 %str-long）。
+		// vec[i] 的 codegen 會 load 出 %str-long 值（淺拷貝 {len, cap, data}），
+		// 使 x.data 與 vec[i].data 指向同一塊堆記憶體。函數結束時 emitHeapFree 會
+		// 同時 free x（釋放 x.data）和 vec（深層 free 釋放每個元素的 data），導致
+		// vec[i].data 被 double-free → heap corruption → SIGABRT/SIGTRAP。
+		// 修復：對堆擁有型別元素進行深層 clone，使 x 擁有獨立的 data 緩衝區。
+		if idxExpr, ok := stmt.Value.(*parser.IndexExpression); ok {
+			if ident, ok := idxExpr.Left.(*parser.Identifier); ok {
+				if srcType, ok := g.varTypes[ident.Value]; ok && (srcType == "%vec" || srcType == "%arr") {
+					srcElemType := "i64"
+					if g.arrayElemTypes != nil {
+						if et, ok := g.arrayElemTypes[ident.Value]; ok {
+							srcElemType = et
+						}
+					}
+					// 僅對堆擁有型別元素深層 clone（%str-long/用戶結構體）；
+					// 純量元素（i64/i8/...）淺拷貝即可，無所有權問題。
+					if g.isHeapOwningType(srcElemType) {
+						_, isLocal := g.funcLocalNames[name]
+						isOutput := g.outputParamNames != nil && g.outputParamNames[name]
+						if isLocal && !isOutput && ident.Value != name {
+							// 巢狀容器（[]vec/[]arr）因子元素型別未知，無法安全深層 clone
+							canClone := true
+							if srcElemType == "%vec" || srcElemType == "%arr" {
+								canClone = false
+							}
+							if srcElemType != "%vec" && srcElemType != "%arr" && srcElemType != "%str-long" {
+								if !g.canDeepCloneStruct(srcElemType) {
+									canClone = false
+								}
+							}
+							if canClone {
+								// 釋放目標變數的舊堆值（如有）
+								g.freeOldHeapValue(sb, stmt, name)
+								// 取得 vec/arr 元素指標（含 bounds check）
+								elemPtr := g.generateIndexExprPtr(sb, idxExpr)
+								// 深層 clone 元素到目標變數（malloc 新 data + memcpy）
+								g.emitDeepClone(sb, elemPtr, g.varAddr(name), srcElemType, "")
+								// 追蹤目標變數為堆變數
+								g.trackLocalHeapVar(name, srcElemType)
+								// 傳播 elemType
+								if g.arrayElemTypes != nil {
+									g.arrayElemTypes[name] = srcElemType
+								}
+								return
+							}
 						}
 					}
 				}
@@ -5234,29 +5896,47 @@ func (g *Generator) generateLet(sb *strings.Builder, stmt *parser.LetStatement) 
 				}
 			}
 			if isOptionSrc && strings.HasPrefix(val, "%") {
-				// Determine the source option's inner type to use for the load.
-				// When `it` is shared across matches with different element types,
-				// the option extraction returns a pointer of the source's inner type,
-				// not `it`'s allocated type. Using llvmType for the load would cause
-				// a type mismatch (e.g. load %tls.server-conn from %str-long*).
-				loadType := llvmType
+				// Determine the source option's inner type.
+				// When the source is ?T where T is a struct (e.g. ?str), generateExprWithSB
+				// returned a pointer (via inttoptr) we can load from. When the source is
+				// ?T where T is primitive (e.g. ?i64), generateExprWithSB returned the raw
+				// i64 value, NOT a pointer — loading from it triggers LLVM type errors.
+				srcInnerType := ""
 				if g.optionInnerTypes != nil {
-					if innerType, ok := g.optionInnerTypes[ident.Value]; ok && g.isStructLLVMType(innerType) {
-						loadType = innerType
-					}
+					srcInnerType = g.optionInnerTypes[ident.Value]
 				}
-				loadReg := g.tmpReg("it.syn.load")
-				sb.WriteString(fmt.Sprintf("%s%s = load %s, %s* %s\n", g.indent(), loadReg, loadType, loadType, val))
-				val = loadReg
-				// If the load type differs from llvmType (it's allocated type),
-				// bitcast the alloca pointer so the store uses the correct type.
-				if loadType != llvmType {
-					castReg := g.tmpReg("it.syn.cast")
-					sb.WriteString(fmt.Sprintf("%s%s = bitcast %s* %s to %s*\n", g.indent(), castReg, llvmType, g.varAddr(name), loadType))
-					// Store using the bitcasted pointer
-					sb.WriteString(fmt.Sprintf("%sstore %s %s, %s* %s\n", g.indent(), loadType, val, loadType, castReg))
-					// Skip the general store below
-					return
+				// Only treat as struct when srcInnerType is a known non-empty struct type.
+					// When srcInnerType is "" (unknown, e.g. tls.conn.send returns ?i64 but
+					// optionInnerTypes is not populated), treat as primitive to avoid loading
+					// from a raw i64 value as if it were a pointer (which causes trace/BPT trap).
+					if srcInnerType != "" && g.isStructLLVMType(srcInnerType) {
+						// Source option holds a struct pointer — load the struct value.
+					loadType := srcInnerType
+					loadReg := g.tmpReg("it.syn.load")
+					sb.WriteString(fmt.Sprintf("%s%s = load %s, %s* %s\n", g.indent(), loadReg, loadType, loadType, val))
+					val = loadReg
+					// If the load type differs from llvmType (it's allocated type),
+					// bitcast the alloca pointer so the store uses the correct type.
+					if loadType != llvmType {
+						castReg := g.tmpReg("it.syn.cast")
+						sb.WriteString(fmt.Sprintf("%s%s = bitcast %s* %s to %s*\n", g.indent(), castReg, llvmType, g.varAddr(name), loadType))
+						sb.WriteString(fmt.Sprintf("%sstore %s %s, %s* %s\n", g.indent(), loadType, val, loadType, castReg))
+						return
+					}
+				} else {
+					// Source option holds a primitive (e.g. ?i64). `val` is the raw i64 value,
+					// not a pointer. `it` may have been pre-allocated as a struct type
+					// (e.g. %str-long) from a previous match with a different element type;
+					// in that case the arm body does not use `it` (types would not match),
+					// so we store the i64 via a bitcast instead of treating the value as a
+					// pointer. Without this, LLVM reports:
+					//   '%w.data.val.N' defined with type 'i64' but expected 'ptr'
+					if llvmType != "i64" {
+						castReg := g.tmpReg("it.syn.cast")
+						sb.WriteString(fmt.Sprintf("%s%s = bitcast %s* %s to i64*\n", g.indent(), castReg, llvmType, g.varAddr(name)))
+						sb.WriteString(fmt.Sprintf("%sstore i64 %s, i64* %s\n", g.indent(), val, castReg))
+						return
+					}
 				}
 			}
 		}
@@ -5888,6 +6568,23 @@ func (g *Generator) isStrPtrReg(val string) bool {
 	return false
 }
 
+// loadStrValueIfNeeded checks if val is a %str-long* pointer (alloca from
+// string literal, concat, repeat, etc.) and, if so, emits a load to obtain
+// the %str-long struct value. Returns the loaded register name or val as-is.
+// This is necessary when storing string expressions into struct/slice fields
+// that expect a %str-long value, not a pointer to one.
+func (g *Generator) loadStrValueIfNeeded(sb *strings.Builder, val string) string {
+	if sb == nil || val == "" {
+		return val
+	}
+	if g.isStrPtrReg(val) {
+		loadReg := g.tmpReg("str-long.load")
+		sb.WriteString(fmt.Sprintf("%s%s = load %%str-long, %%str-long* %s\n", g.indent(), loadReg, val))
+		return loadReg
+	}
+	return val
+}
+
 func (g *Generator) stripLLVMType(val string) string {
 	prefixes := []string{"i8* ", "i64 ", "i32 ", "i16 ", "i8 ", "double ", "float ", "i1 "}
 	for _, p := range prefixes {
@@ -6052,6 +6749,25 @@ func (g *Generator) generateOptionAssign(sb *strings.Builder, stmt *parser.LetSt
 		sb.WriteString(fmt.Sprintf("%sstore double %s, double* %s\n", g.indent(), val, dataGEP))
 	}
 
+	// Helper: 取得變數的 %str-long* 指標。
+	// 共享合成 it 的 alloca 可能按更大的 struct 型別分配（如 %http.response），
+	// varTypes 已收窄為 %str-long 時需 bitcast 指標，避免 emitDeepClone 型別錯配。
+	strPtrOf := func(varName string) string {
+		ptr := g.varAddr(varName)
+		allocType := ""
+		if g.itAllocTypes != nil {
+			if at, ok := g.itAllocTypes[varName]; ok {
+				allocType = at
+			}
+		}
+		if allocType != "" && allocType != "%str-long" {
+			castReg := g.tmpReg("opt.src.cast")
+			sb.WriteString(fmt.Sprintf("%s%s = bitcast %s* %s to %%str-long*\n", g.indent(), castReg, allocType, ptr))
+			ptr = castReg
+		}
+		return ptr
+	}
+
 	// Helper: store a float (f32) value directly into data field (fits in 8 bytes)
 	copyF32ToData := func(val string) {
 		dataGEP := g.tmpReg("opt.data.gep")
@@ -6094,7 +6810,13 @@ func (g *Generator) generateOptionAssign(sb *strings.Builder, stmt *parser.LetSt
 			// source pointer to read from (it requires pointers, not SSA values).
 			srcTmp := g.tmpReg("opt.src.tmp")
 			sb.WriteString(fmt.Sprintf("%s%s = alloca %s\n", g.indent(), srcTmp, innerType))
-			sb.WriteString(fmt.Sprintf("%sstore %s %s, %s* %s\n", g.indent(), innerType, val, innerType, srcTmp))
+			// 防禦：val 非 SSA 寄存器（如整數字面量 "0" 佔位）時，
+			// 不能 `store %str-long 0`（非法 IR），改存 zeroinitializer。
+			storeVal := val
+			if !strings.HasPrefix(val, "%") && !strings.HasPrefix(val, "@") {
+				storeVal = "zeroinitializer"
+			}
+			sb.WriteString(fmt.Sprintf("%sstore %s %s, %s* %s\n", g.indent(), innerType, storeVal, innerType, srcTmp))
 			// emitDeepClone does a memcpy of the whole struct (copying scalar fields
 			// like fd/i64 directly) then recursively clones heap-owned fields
 			// (vec.data → malloc+memcpy, str-long.data → malloc+memcpy, nested
@@ -6109,6 +6831,15 @@ func (g *Generator) generateOptionAssign(sb *strings.Builder, stmt *parser.LetSt
 			// All integer types (i8/u8/i16/u16/i32/u32/i64/u64/bool) stored as i64
 			copyI64ToData(val)
 		}
+	}
+
+	// 純宣告（x ?T，無 RHS）：預設初始化為 nil（tag=1, data=0）。
+	// 不可走 default 分支的 storeTag(0)+copyToData("0")——對 struct inner
+	// 型別會生成 `store %str-long 0`（整數常量存入結構體型別，非法 IR）。
+	if stmt.Value == nil {
+		storeTag(1)
+		zeroData()
+		return
 	}
 
 	switch v := stmt.Value.(type) {
@@ -6129,13 +6860,8 @@ func (g *Generator) generateOptionAssign(sb *strings.Builder, stmt *parser.LetSt
 				} else if argIdent, isIdent := arg.(*parser.Identifier); isIdent {
 					if t, ok := g.varTypes[argIdent.Value]; ok && (t == "%str-long") {
 						// String variable: load and copy %str-long struct
-						// For %str-long, copy directly
-						if t == "%str-long" {
-							copyStrToData("%" + argIdent.Value)
-						} else {
-							// Unknown type: store as i64 placeholder
-							zeroData()
-						}
+						// （共享 it alloca 型別不同時由 strPtrOf bitcast）
+						copyStrToData(strPtrOf(argIdent.Value))
 					} else {
 						// i64/f64 variable
 						val := g.generateExprWithSB(sb, arg)
@@ -6161,7 +6887,8 @@ func (g *Generator) generateOptionAssign(sb *strings.Builder, stmt *parser.LetSt
 					copyStrToData(srcPtr)
 				} else if argIdent, isIdent := arg.(*parser.Identifier); isIdent {
 					if t, ok := g.varTypes[argIdent.Value]; ok && t == "%str-long" {
-						copyStrToData("%" + argIdent.Value)
+						// （共享 it alloca 型別不同時由 strPtrOf bitcast）
+						copyStrToData(strPtrOf(argIdent.Value))
 					} else {
 						val := g.generateExprWithSB(sb, arg)
 						copyToData(val)

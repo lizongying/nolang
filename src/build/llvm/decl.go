@@ -688,7 +688,8 @@ func (g *Generator) writeDeclarations(sb *strings.Builder) {
 	sb.WriteString("@.str.sh = private unnamed_addr constant [3 x i8] c\"sh\\00\"\n")
 	sb.WriteString("@.str.dashc = private unnamed_addr constant [3 x i8] c\"-c\\00\"\n")
 	sb.WriteString("@.str.r = private unnamed_addr constant [2 x i8] c\"r\\00\"\n")
-	sb.WriteString("@.str.oob = private unnamed_addr constant [36 x i8] c\"runtime error: index out of bounds\\0A\\00\"\n\n")
+	sb.WriteString("@.str.oob = private unnamed_addr constant [36 x i8] c\"runtime error: index out of bounds\\0A\\00\"\n")
+	sb.WriteString("@.str.slice.oob = private unnamed_addr constant [42 x i8] c\"runtime error: slice bounds out of range\\0A\\00\"\n\n")
 
 	// Global storage for argc/argv, set by @main and read by args-count/args-get builtins.
 	// These must be globals (not local allocas) because builtins are called from
@@ -713,6 +714,30 @@ func (g *Generator) writeDeclarations(sb *strings.Builder) {
 		// 非 Windows 平台：WASI 透過 @nolang.write wrapper（trunc i64→i32 並 sext i32→i64），
 		// 其他平台直接使用 libc @write（i64 介面）。符號由 g.writeSymbol() 決定。
 		sb.WriteString("\tcall i64 " + g.writeSymbol() + "(i32 2, i8* getelementptr inbounds ([36 x i8], [36 x i8]* @.str.oob, i64 0, i64 0), i64 36)\n")
+	}
+	sb.WriteString("\tcall void @exit(i32 1)\n")
+	sb.WriteString("\tunreachable\n")
+	sb.WriteString("ok:\n")
+	sb.WriteString("\tret void\n")
+	sb.WriteString("}\n\n")
+
+	// nolang.slice_bounds_check: runtime slice view bounds check.
+	// 語義：idx < 0 || idx > len 時 panic（idx == len 合法，對應空視圖）。
+	// 與 @nolang.bounds_check 的 區別：後者用 sge (idx >= len) → OOB，
+	// 此處用 sgt (idx > len)，因為 start==srcLen/end==srcLen 是合法的空切片。
+	// nolang 支持反向 view（start > end 合法），故不檢查 start ≤ end。
+	// alwaysinline 使 opt -O3 在調用點內聯並做常量傳播消除不可達分支。
+	sb.WriteString("define internal void @nolang.slice_bounds_check(i64 %idx, i64 %len) alwaysinline {\n")
+	sb.WriteString("entry:\n")
+	sb.WriteString("\t%lo = icmp slt i64 %idx, 0\n")
+	sb.WriteString("\t%hi = icmp sgt i64 %idx, %len\n")
+	sb.WriteString("\t%oob = or i1 %lo, %hi\n")
+	sb.WriteString("\tbr i1 %oob, label %err, label %ok\n")
+	sb.WriteString("err:\n")
+	if goos == "windows" {
+		sb.WriteString("\tcall i64 @_write(i32 2, i8* getelementptr inbounds ([42 x i8], [42 x i8]* @.str.slice.oob, i64 0, i64 0), i64 42)\n")
+	} else {
+		sb.WriteString("\tcall i64 " + g.writeSymbol() + "(i32 2, i8* getelementptr inbounds ([42 x i8], [42 x i8]* @.str.slice.oob, i64 0, i64 0), i64 42)\n")
 	}
 	sb.WriteString("\tcall void @exit(i32 1)\n")
 	sb.WriteString("\tunreachable\n")

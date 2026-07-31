@@ -485,7 +485,21 @@ func (m *DocumentManager) resolveLocalModuleFile(relPath, docURI string) string 
 	docPath := strings.TrimPrefix(docURI, "file://")
 	docDir := filepath.Dir(docPath)
 
-	// Look for mod.jsonc upward
+	// 優先向上搜尋 workspace.jsonc，以 workspace 根目錄為導入基準
+	wsRoot := docDir
+	for {
+		wsCandidate := filepath.Join(wsRoot, "workspace.jsonc")
+		if _, err := os.Stat(wsCandidate); err == nil {
+			return filepath.Join(wsRoot, relPath) + ".no"
+		}
+		parent := filepath.Dir(wsRoot)
+		if parent == wsRoot {
+			break
+		}
+		wsRoot = parent
+	}
+
+	// 沒有 workspace.jsonc，向上搜尋 mod.jsonc 作為包根目錄
 	root := docDir
 	for {
 		candidate := filepath.Join(root, "mod.jsonc")

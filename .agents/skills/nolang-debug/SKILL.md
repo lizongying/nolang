@@ -222,6 +222,49 @@ Both targets run `cd src && go build …`. The Go test suite (`go test ./...`) d
 - **RARROW body corruption (formatter replaces `=` with `;`)**: when a match arm body (`cond -> body`) contains a LetStatement (`x = value`) or MultiAssignStatement (`a, b = func()`), the formatter may incorrectly output `x;` or `a; b = func()` instead of the inline statement. Check `formatStandaloneBody` in `src/fmt/formatter.go` — it must handle `LetStatement` and `MultiAssignStatement` as inline bodies. Also check `parseStatement` / RARROW handling in `src/parser/parser.go` — the `IDENT && (peekToken == ASSIGN || peekToken == COMMA)` check must be present for both consequence and alternative bodies.
 - **Option type not narrowed in match `ok ->` arm**: when `?quic.conn` is matched but `it` in the `ok ->` arm has the wrong type, check `buildMatchDesugar` in `src/parser/parser.go` — dotVal wildcard arms (`ok ->`, `isDotVal=true`) must set `armType = "ok"` so that `buildItBindingForArm` generates the correct narrowed `it` binding. Also verify `varDeclTypes` is updated for option types (`?type`) even when `declaredVars` is already true.
 - **Out param returns unexpected zero value (`found = false`, `result = nil`)**: since the deferred zero-init mechanism was added (see spec `defer-return-zero-init`), the function prologue no longer zero-initializes out parameters. Instead, the compiler tracks explicit assignments via `%__ret_init_bitmap` (parallel to `%__move_bitmap`) and zero-fills any out param whose bit is still 0 at return time. **Symptom**: a function returns `false` / `nil` / `0` on a path that should have returned a real value. **Cause**: the success branch forgot to explicitly assign the out parameter. **Debugging step**: read the function body and confirm that *every* code path that should return a non-zero value explicitly assigns the out parameter — the compiler does **not** infer intent, it only zero-fills unassigned out params. For `?T` out params, a bare `return` on a not-found path is correct (compiler fills `nil`); but a success path that falls through without assigning `result = <value>` will silently return `nil`. Reference: `%__ret_init_bitmap` is allocated in the function prologue (`src/build/llvm/stmt.go`), bits are set by `emitSetRetInitBit` on each assignment, and zero-fill happens in `emitRetInitZeroFill` before `flushOutputBindings` at return.
+- **Module not found / wrong path resolved**: the workspace flow is: workspace dir → `workspace.jsonc` → package path → package's `mod.jsonc`. Import paths (`# /path/to/module`) are resolved relative to the package's `mod.jsonc` directory (`RootDir`), **not** the workspace root. If a nested `mod.jsonc` exists in a subdirectory, `LoadPackage` (`src/mod/pkg.go`) searches upward and uses the nearest one. To debug: print `pkg.RootDir` and `pkg.workspaceRoot` in `LoadPackage` to verify which `mod.jsonc` is being used. Check `ResolvePath` in `src/mod/pkg.go` and `resolveUse` in `src/build/transpiler.go` for how `# /path` imports are resolved.
+
+## Writing `.no` Probe Files — Validate the Syntax First
+
+When you hand-write a small `.no` file to reproduce a suspected codegen bug, **three
+syntax mistakes are extremely easy to make and every one of them masquerades as a
+compiler bug**. Rule these out before filing anything as a codegen defect.
+
+1. **New-style if/else must be wrapped in its own `{ }` block.**
+
+   ```no
+   // correct
+   f = (a i64) (r i64) {
+       {
+           a > 0 -> r = 100
+           -> r = -1
+       }
+   }
+
+   // WRONG — this is not an if/else
+   f = (a i64) (r i64) {
+       a > 0 -> r = 100
+       -> r = -1        // lowered to `if (true) { r = -1 }`: runs unconditionally
+   }                    // and overwrites the previous assignment
+   ```
+
+   The broken form always yields the last arm's value, which looks exactly like
+   "codegen computed the wrong value".
+
+2. **Never pass the output parameter explicitly.** `o = mk(5)` is the user-facing
+   syntax. `mk(5, o)` is the compiler's *internal* lowered form — writing it by hand
+   makes codegen drop your variable, allocate a throwaway `%vso.tmp` slot, and never
+   copy the result back, so you always read the zero value.
+
+3. **The `ok` arm of an option match is `->` or `ok ->`, never `it ->`.** `it` is the
+   implicit binding name; used as an arm pattern it is treated as an equality
+   comparison and emits invalid IR such as `icmp eq i64 <ptr>, <structvalue>`.
+
+**Triage order when a probe misbehaves:** first run the same file with a known-good
+baseline binary (e.g. `make no` from an older commit checked out in `/tmp/no-head`).
+If the baseline behaves identically, the cause is either long-standing or — far more
+likely for a freshly written probe — a syntax error on your side. Re-read
+`.agents/skills/nolang-syntax/SKILL.md` before touching codegen.
 
 ## Minimal Repro Snippet (template)
 

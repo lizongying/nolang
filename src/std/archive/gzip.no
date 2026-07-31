@@ -69,20 +69,19 @@ bit-reader.read-u16-le = () (v i64) {
 
 ; huffman: 規範 Huffman 碼表
 huffman {
-    count []i64
-    symbol []i64
+    count [17]i64
+    symbol [288]i64
 }
 ; 各長度的碼數（0-15）
 ; 按碼排序的符號
 
 ; build: 從碼長度陣列建構 Huffman 碼表
+; 使用固定陣列欄位直接索引賦值，避免局部 vec 賦值導致懸空指標
 huffman.build = (lengths []i64, n i64) {
     ; 初始化 count[0..16] = 0
-    c []i64
-    i <- [0..16): {
-        c.push(0)
+    i <- [0..17): {
+        .count[i] = 0
     }
-    .count = c
 
     ; 計算各長度的碼數
     i <- [0..n): {
@@ -92,24 +91,23 @@ huffman.build = (lengths []i64, n i64) {
     .count[0] = 0
 
     ; 計算各長度的起始偏移
-    offs []i64
+    offs [17]i64
     i <- [0..17): {
-        offs.push(0)
+        offs[i] = 0
     }
     i <- [1..16): {
         offs[i + 1] = offs[i] + .count[i]
     }
 
     ; 排序符號
-    s []i64
     i <- [0..n): {
-        s.push(0)
+        .symbol[i] = 0
     }
-    .symbol = s
 
     i <- [0..n): {
         lengths[i] != 0 -> {
-            .symbol[offs[lengths[i]]] = i
+            idx = offs[lengths[i]]
+            .symbol[idx] = i
             offs[lengths[i]] = offs[lengths[i]] + 1
         }
     }

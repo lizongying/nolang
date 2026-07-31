@@ -172,6 +172,7 @@ type funcState struct {
 	loopExits       []loopExit // 活躍循環退出目標棧
 	currentBlock    string     // current basic block label (for PHI predecessor tracking)
 	blockTerminated bool       // true if current basic block ends with a terminator (ret/br)
+	curCFG          *FuncCFG   // 當前函數的 CFG（數據流分析載體，nil = 未啟用）
 	// === 函數上下文 ===
 	curFuncRetType string // 當前函數回傳型別（void/i64/...）
 	curFuncRetName string // 當前函數輸出參數名稱（為空表示 void）
@@ -243,6 +244,7 @@ type Generator struct {
 	moduleArrayElemTypes   map[string]string               // module-level array/slice element types (preserved across functions)
 	unionAliases           map[string][]string             // union type alias name → member type names (e.g. "float"→["f32","f64"])
 	moduleOptionInnerTypes map[string]string               // 模組級 option 變數 inner type 備份（避免函數級 map reset 後丟失）
+	moveEligible           map[*parser.LetStatement]bool   // b=a 赋值中，源变量 a 在后续未被引用 → true（可 move）
 	funcResultInnerTypes   map[string][]string             // function name → inner LLVM types of ?T results
 	enumVariantIndex       map[string]int64                // enum variant name → tag index (e.g. status1→0, status2→1)
 	enumVariants           map[string]map[string]int64     // enum type name → variant name → value (e.g. "FileMode"→{"WRITE":1,"CREATE":64})
@@ -403,6 +405,7 @@ func (g *Generator) emitLabel(sb *strings.Builder, label string) {
 	sb.WriteString(label + ":\n")
 	g.currentBlock = label
 	g.blockTerminated = false
+	g.cfgRegisterBlock(label)
 }
 
 func (g *Generator) getFormatGlobal(fmtStr string) string {
@@ -1563,6 +1566,25 @@ func (g *Generator) Generate(program *parser.Program) string {
 				// This allows functions to reference the variable via @name.
 				sb.WriteString(fmt.Sprintf("%s = global %s zeroinitializer\n", llvmGlobalRef(name), llvmType))
 				g.globalVars[name] = true
+			} else if bl, ok := ls.Value.(*parser.BooleanLiteral); ok {
+				// bool 模組級全域變數（如 force = false / symbolic = true）。
+				// 必須發出為 LLVM 全域變數 @name，否則會被誤當作函數局部變數，
+				// 導致 alloca 順序錯亂（SSA use-before-definition，opt 報
+				// "use of undefined value '%force'"）。
+				initVal := "0"
+				if bl.Value {
+					initVal = "1"
+				}
+				sb.WriteString(fmt.Sprintf("%s = global i1 %s\n", llvmGlobalRef(name), initVal))
+				g.globalVars[name] = true
+			} else if ls.Type != nil && ls.Type.String() == "bool" {
+				// 未初始化或非常量初始值的 bool 全域變數（如 hadError bool）。
+				initVal := "0"
+				if bl, ok := ls.Value.(*parser.BooleanLiteral); ok && bl.Value {
+					initVal = "1"
+				}
+				sb.WriteString(fmt.Sprintf("%s = global i1 %s\n", llvmGlobalRef(name), initVal))
+				g.globalVars[name] = true
 			}
 		}
 	}
@@ -1908,9 +1930,7 @@ func (g *Generator) walkStmtForAnalysis(stmt parser.Statement, state map[string]
 	case *parser.ExpressionStatement:
 		g.walkExprForAnalysis(s.Expression, state)
 	case *parser.ReturnStatement:
-		if s.ReturnValue != nil {
-			g.walkExprReadsForAnalysis(s.ReturnValue, state)
-		}
+		// ReturnValue 始终为 nil（Nolang 禁止 return <值>），无需分析
 	}
 }
 
@@ -2133,7 +2153,10 @@ func (g *Generator) genCLibCall(sb *strings.Builder, m *builtin.BuiltinMethod, e
 	}
 
 	// RetBuf: return the buffer pointer instead of C return value
-	// 同時需要把 C 字串（null 結尾的 i8*）轉換為 Nolang %str-long
+	// 同時需要把 C 字串（null 結尾的 i8*）轉換為 Nolang %str-long。
+	// 注意：BufGlobal（如 @.os-buf）是靜態全域緩衝區，不可直接放入 %str-long，
+	// 否則 emitHeapFree 會在釋放時 free 非堆指標 → heap corruption → SIGABRT。
+	// 因此 strlen + malloc + memcpy 複製到獨立堆緩衝（與 RetCStrToStr / getdomainname 路徑一致）。
 	if clib.RetBuf {
 		bufExpr := fmt.Sprintf("getelementptr inbounds ([1024 x i8], [1024 x i8]* %s, i64 0, i64 0)", clib.BufGlobal)
 		buf := "i8* " + bufExpr
@@ -2142,7 +2165,6 @@ func (g *Generator) genCLibCall(sb *strings.Builder, m *builtin.BuiltinMethod, e
 			sb.WriteString(fmt.Sprintf("%scall %s%s @%s(%s)\n", g.indent(), cRetType, sigStr, clib.FuncName, argStr))
 		}
 		// 如果返回型別是 str，需把 buf 中的 C 字串包裝成 %str-long
-		// 通過 strlen 計算長度，並把 (len, ptr) 寫入新的 %str-long 值
 		returnsStr := false
 		for _, t := range m.Return {
 			if t == parser.TypeStr {
@@ -2153,9 +2175,10 @@ func (g *Generator) genCLibCall(sb *strings.Builder, m *builtin.BuiltinMethod, e
 		if clib.RetType == builtin.LLVMI8Ptr || returnsStr {
 			g.tmpIdx++
 			lenReg := fmt.Sprintf("%%retbuf.len.%d", g.tmpIdx)
-			if sb != nil {
-				sb.WriteString(fmt.Sprintf("%s%s = call i64 @nolang.strlen(%s)\n", g.indent(), lenReg, buf))
-			}
+			g.tmpIdx++
+			bufSizeReg := fmt.Sprintf("%%retbuf.bufsize.%d", g.tmpIdx)
+			g.tmpIdx++
+			heapBufReg := fmt.Sprintf("%%retbuf.buf.%d", g.tmpIdx)
 			g.tmpIdx++
 			strReg1 := fmt.Sprintf("%%retbuf.val.%d", g.tmpIdx)
 			g.tmpIdx++
@@ -2163,12 +2186,20 @@ func (g *Generator) genCLibCall(sb *strings.Builder, m *builtin.BuiltinMethod, e
 			g.tmpIdx++
 			strReg3 := fmt.Sprintf("%%retbuf.val.%d", g.tmpIdx)
 			if sb != nil {
+				// strlen on static buf
+				sb.WriteString(fmt.Sprintf("%s%s = call i64 @nolang.strlen(%s)\n", g.indent(), lenReg, buf))
+				// malloc(len+1) — include null terminator
+				sb.WriteString(fmt.Sprintf("%s%s = add i64 %s, 1\n", g.indent(), bufSizeReg, lenReg))
+				sb.WriteString(fmt.Sprintf("%s%s = call i8* @nolang.malloc(i64 %s)\n", g.indent(), heapBufReg, bufSizeReg))
+				// memcpy heap <- static buf (len+1 bytes, copies null terminator)
+				sb.WriteString(fmt.Sprintf("%scall void @llvm.memcpy.p0i8.p0i8.i64(i8* %s, %s, i64 %s, i1 false)\n", g.indent(), heapBufReg, buf, bufSizeReg))
+				// construct %str-long (len, len, heapBuf)
 				sb.WriteString(fmt.Sprintf("%s%s = insertvalue %%str-long zeroinitializer, i64 %s, 0\n", g.indent(), strReg1, lenReg))
 				sb.WriteString(fmt.Sprintf("%s%s = insertvalue %%str-long %s, i64 %s, 1\n", g.indent(), strReg2, strReg1, lenReg))
-				// Convert i8* buf to i64 for data field
+				// Convert i8* heapBuf to i64 for data field
 				g.tmpIdx++
-				bufPtrReg := g.ptrToIntVal(sb, buf)
-				sb.WriteString(fmt.Sprintf("%s%s = insertvalue %%str-long %s, i64 %s, 2\n", g.indent(), strReg3, strReg2, bufPtrReg))
+				heapBufPtrReg := g.ptrToIntVal(sb, heapBufReg)
+				sb.WriteString(fmt.Sprintf("%s%s = insertvalue %%str-long %s, i64 %s, 2\n", g.indent(), strReg3, strReg2, heapBufPtrReg))
 			}
 			return strReg3
 		}

@@ -97,9 +97,28 @@ func (p *Parser) inferTypeFromCallExpr(call *CallExpression) string {
 			}
 			fnName = receiverType + "." + dot.Property
 		} else {
-			// Multi-level dot expression (e.g. encoding.base64.decode):
-			// receiver is a module path, not a variable. Try matching
-			// just the last property name against funcSignatures.
+			// Module-path receiver（如 http.do-req(...)）：receiver 是模組
+			// 識別符而非變數。跨模組同名（歧義）std 函數在簽名快取中只以
+			// "module.fn" 為鍵註冊（見 checker qualifyRet 注釋），因此先查
+			// 組合鍵；命中即返回限定型別（如 ?http.response），避免回退到
+			// 裸名鍵拿到未限定的 ?response（codegen 端 mapToLLVMType 會把
+			// 未知裸名映射為 i64，導致 it 綁定型別錯誤、字段訪問級聯崩潰）。
+			modName := ""
+			if ident, ok := dot.Receiver.(*Identifier); ok {
+				modName = ident.Value
+			} else if innerDot, ok := dot.Receiver.(*DotExpression); ok {
+				// Multi-level module path (e.g. encoding.base64.decode):
+				// use the last path segment as the module short name.
+				modName = innerDot.Property
+			}
+			if modName != "" {
+				if rets, ok := p.funcSignatures[modName+"."+dot.Property]; ok && len(rets) == 1 {
+					if strings.HasPrefix(rets[0], "?") {
+						return rets[0]
+					}
+				}
+			}
+			// Fallback: try matching just the last property name.
 			fnName = dot.Property
 		}
 	}

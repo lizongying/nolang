@@ -56,54 +56,61 @@ u16le = (data []byte, off i64) (v i64) {
 zip.find-eocd = () (off i64) {
     off = -1
     n = len(.data)
-    i = n - 22
-    {
-        sig = u32le(.data, i)
-        sig == 101010256 -> {
-            off = i
-            return
-        }
-        i = i - 1
-    } (i >= 0)
+    ! n >= 22 -> return
+    start = n - 22
+    i <- [0..start + 1): {
+        idx = start - i
+        sig = u32le(.data, idx)
+        ! sig == 101010256 -> continue
+        off = idx
+        break
+    }
 }
 
-; cd-info: 讀取中央目錄偏移和條目數
-zip.cd-info = () (cd-off i64, total i64) {
+; get-cd-off: 讀取中央目錄偏移（單值返回，避免多值 compiler bug）
+zip.get-cd-off = () (cd-off i64) {
     eocd = .find-eocd()
     eocd < 0 -> {
         cd-off = 0
+        return
+    }
+    off16 = eocd + 16
+    cd-off = u32le(.data, off16)
+}
+
+; get-total: 讀取條目數（單值返回）
+zip.get-total = () (total i64) {
+    eocd = .find-eocd()
+    eocd < 0 -> {
         total = 0
         return
     }
     off8 = eocd + 8
-    off12 = eocd + 12
-    off16 = eocd + 16
     total = u16le(.data, off8)
-    cd-sz = u32le(.data, off12)
-    cd-off = u32le(.data, off16)
 }
 
 ; entry-off: 第 idx 個 central directory 條目的偏移
 zip.entry-off = (idx i64) (off i64) {
-    cd-off, total = .cd-info()
-    off = cd-off
+    cd-off = .get-cd-off()
+    total = .get-total()
+    cur = cd-off
     j <- [0..idx): {
         j >= total -> break
-        off28 = off + 28
-        off30 = off + 30
-        off32 = off + 32
+        off28 = cur + 28
+        off30 = cur + 30
+        off32 = cur + 32
         name-len = u16le(.data, off28)
         extra-len = u16le(.data, off30)
         comment-len = u16le(.data, off32)
         skip = 46 + name-len + extra-len + comment-len
-        off = off + skip
+        cur = cur + skip
     }
+    off = cur
 }
 
 ; count: 傳回 ZIP 中的條目數
 zip.count = () (count i64) {
-    cd-off, total = .cd-info()
-    count = total
+    count = .get-total()
 }
 
 ; entry: 取得第 idx 個條目
@@ -118,11 +125,12 @@ zip.name = (idx i64) (name str) {
     off28 = off + 28
     name-len = u16le(.data, off28)
     off46 = off + 46
-    name = ''
+    result = ''
     i <- [0..name-len): {
         idx2 = off46 + i
-        name = name - number.char-to-str(.data[idx2] & 255)
+        result = result - number.char-to-str(.data[idx2] & 255)
     }
+    name = result
 }
 
 ; size: 原始大小
@@ -165,11 +173,12 @@ zip.extract = (idx i64) (out []byte) {
     name-len2 = u16le(.data, off26)
     extra-len2 = u16le(.data, off28)
     data-off = off30 + name-len2 + extra-len2
+    result []byte
     {
         method == 0 && sz > 0 -> {
             i <- [0..sz): {
                 src-off = data-off + i
-                out.push(.data[src-off])
+                result.push(.data[src-off])
             }
         }
         method == 8 && sz > 0 -> {
@@ -180,9 +189,10 @@ zip.extract = (idx i64) (out []byte) {
             }
 
             ; 解壓縮 DEFLATE
-            out = gzip.inflate-decompress(compressed, sz)
+            result = gzip.inflate-decompress(compressed, sz)
         }
     }
+    out = result
 }
 
 ; ─── zip-entry 方法 ───────────────────────────
@@ -193,11 +203,12 @@ zip-entry.name = () (name str) {
     off28 = off + 28
     name-len = u16le(.data, off28)
     off46 = off + 46
-    name = ''
+    result = ''
     i <- [0..name-len): {
         idx2 = off46 + i
-        name = name - number.char-to-str(.data[idx2] & 255)
+        result = result - number.char-to-str(.data[idx2] & 255)
     }
+    name = result
 }
 
 ; size: 讀取條目原始大小
@@ -237,11 +248,12 @@ zip-entry.extract = () (out []byte) {
     name-len2 = u16le(.data, off26)
     extra-len2 = u16le(.data, off28)
     data-off = off30 + name-len2 + extra-len2
+    result []byte
     {
         method == 0 && sz > 0 -> {
             i <- [0..sz): {
                 src-off = data-off + i
-                out.push(.data[src-off])
+                result.push(.data[src-off])
             }
         }
         method == 8 && sz > 0 -> {
@@ -252,9 +264,10 @@ zip-entry.extract = () (out []byte) {
             }
 
             ; 解壓縮 DEFLATE
-            out = gzip.inflate-decompress(compressed, sz)
+            result = gzip.inflate-decompress(compressed, sz)
         }
     }
+    out = result
 }
 
 ; ─── ZIP 寫入器 ───────────────────────────────

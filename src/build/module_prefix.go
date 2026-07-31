@@ -173,7 +173,13 @@ func prefixModuleStatements(stmts []parser.Statement, moduleShortName string, ty
 //   - 恰好一個匹配 → 用 "module.name" 作為前綴
 //   - 多個匹配（同名結構體跨模組）→ 有歧義，保持原樣要求用戶顯式指定
 //   - 零個匹配 → 不處理
-func prefixMethodNames(stmts []parser.Statement, typeOwner map[string]string) {
+//
+// localTypes 為主程序（非模組）自行定義的型別裸名集合。主程序型別優先：
+// 若接收者型別在主程序已定義，該方法屬於主程序而非任何模組，不得加模組
+// 前綴。否則主程序 struct 與 std 模組同名時（如使用者自定義 `tree-set`
+// 與 std/collection/tree-set），方法定義會被改成 `tree-set.tree-set.m`，
+// 而呼叫點解析為 `tree-set.m`，產生 "use of undefined value" 的無效 IR。
+func prefixMethodNames(stmts []parser.Statement, typeOwner map[string]string, localTypes map[string]bool) {
 	if len(typeOwner) == 0 {
 		return
 	}
@@ -189,6 +195,11 @@ func prefixMethodNames(stmts []parser.Statement, typeOwner map[string]string) {
 		typePrefix := fd.Name[:dotIdx]
 		// Skip if the type prefix already contains a dot (already prefixed)
 		if strings.Contains(typePrefix, ".") {
+			continue
+		}
+		// 主程序本地型別優先：接收者型別由主程序定義時，方法歸主程序所有，
+		// 不加任何模組前綴（見函數註釋的同名衝突說明）。
+		if localTypes[typePrefix] {
 			continue
 		}
 		// Skip if the name is ALREADY module-prefixed: the first two segments
@@ -490,6 +501,25 @@ func rewriteTypeRefs(stmts []parser.Statement, typeOwner map[string]string) {
 	for _, stmt := range stmts {
 		rewriteTypeRefsInStmt(stmt, typeOwner)
 	}
+}
+
+// excludeLocalTypes 從 typeOwner 中剔除 localTypes 佔用的裸名，返回可安全用於
+// 主程序型別引用改寫的表。主程序自定義型別與模組同名時（如自定義 tree-set 與
+// std/collection/tree-set），主程序中的裸名引用必須保持指向本地定義，否則會被
+// 改寫成模組型別，令方法呼叫解析到模組前綴名而定義端仍是裸名，產生
+// "use of undefined value" 的無效 IR。
+func excludeLocalTypes(typeOwner map[string]string, localTypes map[string]bool) map[string]string {
+	if len(localTypes) == 0 {
+		return typeOwner
+	}
+	out := make(map[string]string, len(typeOwner))
+	for k, v := range typeOwner {
+		if localTypes[v] {
+			continue
+		}
+		out[k] = v
+	}
+	return out
 }
 
 // prefixTypeName returns the module-prefixed form of a type name, or the
