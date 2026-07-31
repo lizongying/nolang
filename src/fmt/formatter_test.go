@@ -211,6 +211,38 @@ func TestFormatBasic(t *testing.T) {
 }`,
 		},
 		{
+			// regression: `match` is a keyword but is used as a variable
+			// name in std/fs.no.  Before the fix, the parser skipped the
+			// `match` token (returning nil), so the formatter produced
+			// ` -> body` (extra leading space from nil condition) on the
+			// first pass but `-> body` on the second — breaking
+			// idempotency.  The fix treats MATCH as an identifier in
+			// expression/statement position.
+			name: "match_keyword_as_variable",
+			input: `f = () {
+    a != b -> *
+    match = true
+    j <- [0..n): {
+        .x[j] != y[j] -> {
+            match = false
+            *
+        }
+    }
+    match -> return
+}`,
+			expected: `f = () {
+    a != b -> *
+    match = true
+    j <- [0..n): {
+        .x[j] != y[j] -> {
+            match = false
+            *
+        }
+    }
+    match -> return
+}`,
+		},
+		{
 			name:     "c-style for loop with comma",
 			input:    "for i=0,i<5,i++{i=i}",
 			expected: "for i = 0, i < 5, i ++  {\n    i = i\n}",

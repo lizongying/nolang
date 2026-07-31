@@ -45,7 +45,16 @@ func (p *Parser) parseStatement() Statement {
 		return p.parseLabeledStatement()
 	case lexer.AT:
 		return p.parseExportStatement()
-	case lexer.IDENT, lexer.TRUE, lexer.FALSE, lexer.NIL:
+	case lexer.IDENT, lexer.TRUE, lexer.FALSE, lexer.NIL, lexer.MATCH:
+		// `match` keyword followed by an expression is the deprecated
+		// `match expr { ... }` syntax — skip the keyword and let the
+		// expression be parsed normally (same as the old default path).
+		// `match` used as a variable name (`match = true`, `match -> body`)
+		// falls through to the normal IDENT handling below.
+		if p.currentToken.Type == lexer.MATCH && p.peekToken.Type == lexer.IDENT {
+			p.nextToken() // skip deprecated `match` keyword
+			return p.parseExpressionStatement()
+		}
 		// 檢查介面實作/繼承：user json, fmt { name str } 或 db enter, leave { close() }
 		// 也支援跨模組限定名：stmt-mysql sql.stmt { ... }
 		if p.peekToken.Type == lexer.IDENT {
@@ -1477,7 +1486,9 @@ func isStatementBoundary(t lexer.TokenType) bool {
 		// preceding `break`/`continue`/`return`).
 		lexer.MUL, lexer.STAR_STAR, lexer.BANG_BANG, lexer.LABEL,
 		// -> can begin a standalone wildcard if-then (-> body)
-		lexer.RARROW:
+		lexer.RARROW,
+		// match can be used as a variable name (keyword used as ident)
+		lexer.MATCH:
 		return true
 	}
 	return false

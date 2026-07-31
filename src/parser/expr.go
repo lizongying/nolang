@@ -92,7 +92,7 @@ func (p *Parser) parseExpression(precedence int) Expression {
 	var leftExp Expression
 
 	switch p.currentToken.Type {
-	case lexer.IDENT, lexer.IN:
+	case lexer.IDENT, lexer.IN, lexer.MATCH:
 		leftExp = p.parseIdentifier()
 		// 處理後綴 ++ / --
 		isIncDec := false
