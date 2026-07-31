@@ -127,12 +127,56 @@ func (g *Generator) generateExprWithSB(sb *strings.Builder, expr parser.Expressi
 					}
 					return dataPtr
 				}
-				// For primitive types (i64, double, etc.), load the value directly
+				// For primitive types (i64, i8, i16, i32, double, float), the option's
+				// data field is always stored as i64 (8 bytes). We must always load i64,
+				// then convert to the inner type. Loading the inner type directly from
+				// an i64* pointer causes LLVM type mismatch errors (e.g. "load i8, i64*").
 				g.tmpIdx++
 				dataLoad := llvmSSAReg(e.Value, fmt.Sprintf(".data.val.%d", g.tmpIdx))
 				if sb != nil {
 					sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%option, %%option* %s, i32 0, i32 1\n", g.indent(), dataGEP, llvmVarRef(e.Value)))
-					sb.WriteString(fmt.Sprintf("%s%s = load %s, i64* %s\n", g.indent(), dataLoad, innerType, dataGEP))
+					sb.WriteString(fmt.Sprintf("%s%s = load i64, i64* %s\n", g.indent(), dataLoad, dataGEP))
+				}
+				// If inner type is a smaller integer, trunc i64 → inner type
+				if innerType != "i64" && g.isIntegerLLVMType(innerType) {
+					g.tmpIdx++
+					truncReg := llvmSSAReg(e.Value, fmt.Sprintf(".data.trunc.%d", g.tmpIdx))
+					if sb != nil {
+						sb.WriteString(fmt.Sprintf("%s%s = trunc i64 %s to %s\n", g.indent(), truncReg, dataLoad, innerType))
+					}
+					if g.ssaTypes != nil {
+						g.ssaTypes[truncReg] = innerType
+					}
+					return truncReg
+				}
+				// If inner type is double, bitcast i64 → double
+				if innerType == "double" {
+					g.tmpIdx++
+					bcReg := llvmSSAReg(e.Value, fmt.Sprintf(".data.bc.%d", g.tmpIdx))
+					if sb != nil {
+						sb.WriteString(fmt.Sprintf("%s%s = bitcast i64 %s to double\n", g.indent(), bcReg, dataLoad))
+					}
+					if g.ssaTypes != nil {
+						g.ssaTypes[bcReg] = innerType
+					}
+					return bcReg
+				}
+				// If inner type is float, trunc i64 → i32 then bitcast to float
+				if innerType == "float" {
+					g.tmpIdx++
+					truncReg := llvmSSAReg(e.Value, fmt.Sprintf(".data.trunc.%d", g.tmpIdx))
+					bcReg := llvmSSAReg(e.Value, fmt.Sprintf(".data.bc.%d", g.tmpIdx))
+					if sb != nil {
+						sb.WriteString(fmt.Sprintf("%s%s = trunc i64 %s to i32\n", g.indent(), truncReg, dataLoad))
+						sb.WriteString(fmt.Sprintf("%s%s = bitcast i32 %s to float\n", g.indent(), bcReg, truncReg))
+					}
+					if g.ssaTypes != nil {
+						g.ssaTypes[bcReg] = innerType
+					}
+					return bcReg
+				}
+				if g.ssaTypes != nil {
+					g.ssaTypes[dataLoad] = "i64"
 				}
 				return dataLoad
 			}

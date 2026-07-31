@@ -1388,41 +1388,66 @@ func (g *Generator) emitElementFree(sb *strings.Builder, elemPtr, elemType strin
 // 輸出參數也釋放舊值（函數結束時由 emitHeapFree 跳過最終值，歸呼叫者）。
 // 對已 move 的變數執行雙重校驗：bit=0 仍需 free，bit=1 跳過（所有權已轉移）。
 // 釋放決策後清除 moved bit：變數即將獲得新值，不再處於 moved 狀態。
+// 全局变量也釋放舊值（不在 heapVars 中，用 moduleVarTypes 查型別）。
 func (g *Generator) freeOldHeapValue(sb *strings.Builder, stmt *parser.LetStatement, name string) {
-	if g.heapVars == nil || stmt.IsSynthetic {
+	if stmt.IsSynthetic {
 		return
 	}
-	oldType, isHeap := g.heapVars[name]
-	if !isHeap {
-		return
-	}
-	elemType := ""
-	if g.arrayElemTypes != nil {
-		elemType = g.arrayElemTypes[name]
-	}
-	varIdx, hasIdx := g.heapVarIndex[name]
-	if !hasIdx {
-		// 無 varIdx，直接 free 舊值
-		g.emitVarHeapFree(sb, g.varAddr(name), oldType, elemType, name)
-		return
-	}
-	if g.hasBranchMove && g.movedBitmapBase != "" {
-		// 有運行時 bitmap：生成 IR 檢查 bit
-		// bit=1 → 所有權已轉移，跳過 free（舊 data 不屬於此變數）
-		// bit=0 → 仍擁有數據，free 舊值
-		g.emitBitCheckFree(sb, name, varIdx, oldType, elemType)
-		// 清除 moved bit：變數即將獲得新值，不再處於 moved 狀態。
-		// 若不清除，函數結束時 emitHeapFree 會誤跳過釋放新值（記憶體洩漏）。
-		g.emitClearMovedBitIR(sb, varIdx)
-	} else {
-		// 無 bitmap：編譯期檢查 movedVarBitset
-		if g.isMovedVar(varIdx) {
-			// 跳過 free（所有權轉移）
-			// 清除 moved bit：變數即將獲得新值
-			g.unmarkMovedVar(varIdx)
+	// 局部堆變數路徑
+	if g.heapVars != nil {
+		oldType, isHeap := g.heapVars[name]
+		if isHeap {
+			elemType := ""
+			if g.arrayElemTypes != nil {
+				elemType = g.arrayElemTypes[name]
+			}
+			varIdx, hasIdx := g.heapVarIndex[name]
+			if !hasIdx {
+				// 無 varIdx，直接 free 舊值
+				g.emitVarHeapFree(sb, g.varAddr(name), oldType, elemType, name)
+				return
+			}
+			if g.hasBranchMove && g.movedBitmapBase != "" {
+				// 有運行時 bitmap：生成 IR 檢查 bit
+				// bit=1 → 所有權已轉移，跳過 free（舊 data 不屬於此變數）
+				// bit=0 → 仍擁有數據，free 舊值
+				g.emitBitCheckFree(sb, name, varIdx, oldType, elemType)
+				// 清除 moved bit：變數即將獲得新值，不再處於 moved 狀態。
+				// 若不清除，函數結束時 emitHeapFree 會誤跳過釋放新值（記憶體洩漏）。
+				g.emitClearMovedBitIR(sb, varIdx)
+			} else {
+				// 無 bitmap：編譯期檢查 movedVarBitset
+				if g.isMovedVar(varIdx) {
+					// 跳過 free（所有權轉移）
+					// 清除 moved bit：變數即將獲得新值
+					g.unmarkMovedVar(varIdx)
+					return
+				}
+				g.emitVarHeapFree(sb, g.varAddr(name), oldType, elemType, name)
+			}
 			return
 		}
-		g.emitVarHeapFree(sb, g.varAddr(name), oldType, elemType, name)
+	}
+	// 全局變數路徑：不在 heapVars 中（trackLocalHeapVar 跳過 globalVars），
+	// 用 moduleVarTypes/varTypes 查型別，無條件釋放舊值（全局無 moved 追蹤）。
+	if g.globalVars != nil && g.globalVars[name] && (g.funcLocalNames == nil || !g.funcLocalNames[name]) {
+		oldType := ""
+		if g.moduleVarTypes != nil {
+			oldType = g.moduleVarTypes[name]
+		}
+		if oldType == "" && g.varTypes != nil {
+			oldType = g.varTypes[name]
+		}
+		if oldType != "" && g.isHeapOwningType(oldType) {
+			elemType := ""
+			if g.moduleArrayElemTypes != nil {
+				elemType = g.moduleArrayElemTypes[name]
+			}
+			if elemType == "" && g.arrayElemTypes != nil {
+				elemType = g.arrayElemTypes[name]
+			}
+			g.emitVarHeapFree(sb, g.varAddr(name), oldType, elemType, name)
+		}
 	}
 }
 
@@ -5650,13 +5675,16 @@ func (g *Generator) generateLet(sb *strings.Builder, stmt *parser.LetStatement) 
 	// - 源是全局变量 → 禁止 move，一律深層 clone
 	// - 源是局部变量且后续未被引用 → move（浅拷贝 + 标记 moved，源跳过 free）
 	// - 源是局部变量且后续被引用 → 深層 clone（两者各自独立拥有 data）
+	// - 目标是全局变量 → 也走 clone/move 路径（freeOldHeapValue 已支持全局）
 	// 巢狀容器（%vec/%arr 元素為 %vec/%arr）因子元素型別未知，無法安全深層 clone，
 	// 但 move 仍然安全（move 只是浅拷贝 + 标记，不涉及递归）。
+	// canClone==false 时退化路径：forced move（浅拷贝 + 标记 moved），防止 double-free。
 	if g.heapVars != nil && !stmt.IsSynthetic {
 		if ident, ok := stmt.Value.(*parser.Identifier); ok {
 			if ident.Value != name {
 				_, isLocal := g.funcLocalNames[name]
 				isOutput := g.outputParamNames != nil && g.outputParamNames[name]
+				isGlobal := g.globalVars != nil && g.globalVars[name] && (g.funcLocalNames == nil || !g.funcLocalNames[name])
 
 				// 情况 1：源是全局堆拥有型变量 → 一律 clone
 				// 注意：必须排除局部变量（参数/局部），因为局部变量可能与全局变量同名。
@@ -5676,14 +5704,19 @@ func (g *Generator) generateLet(sb *strings.Builder, stmt *parser.LetStatement) 
 								canClone = false
 							}
 						}
-						if canClone && (isLocal || isOutput) {
+						if canClone && (isLocal || isOutput || isGlobal) {
 							g.freeOldHeapValue(sb, stmt, name)
 							g.emitDeepClone(sb, g.varAddr(ident.Value), g.varAddr(name), srcType, srcElemType)
-							if !isOutput {
+							if !isOutput && !isGlobal {
 								g.trackLocalHeapVar(name, srcType)
 							}
-							if srcElemType != "" && g.arrayElemTypes != nil {
-								g.arrayElemTypes[name] = srcElemType
+							if srcElemType != "" {
+								if g.arrayElemTypes != nil {
+									g.arrayElemTypes[name] = srcElemType
+								}
+								if isGlobal && g.moduleArrayElemTypes != nil {
+									g.moduleArrayElemTypes[name] = srcElemType
+								}
 							}
 							return
 						}
@@ -5711,14 +5744,19 @@ func (g *Generator) generateLet(sb *strings.Builder, stmt *parser.LetStatement) 
 								canClone = false
 							}
 						}
-						if canClone && (isLocal || isOutput) {
+						if canClone && (isLocal || isOutput || isGlobal) {
 							g.freeOldHeapValue(sb, stmt, name)
 							g.emitDeepClone(sb, g.varAddr(ident.Value), g.varAddr(name), srcType, srcElemType)
-							if !isOutput {
+							if !isOutput && !isGlobal {
 								g.trackLocalHeapVar(name, srcType)
 							}
-							if srcElemType != "" && g.arrayElemTypes != nil {
-								g.arrayElemTypes[name] = srcElemType
+							if srcElemType != "" {
+								if g.arrayElemTypes != nil {
+									g.arrayElemTypes[name] = srcElemType
+								}
+								if isGlobal && g.moduleArrayElemTypes != nil {
+									g.moduleArrayElemTypes[name] = srcElemType
+								}
 							}
 							return
 						}
@@ -5727,7 +5765,7 @@ func (g *Generator) generateLet(sb *strings.Builder, stmt *parser.LetStatement) 
 
 				// 情况 2：源是局部堆拥有型变量
 				if srcHeapType, isHeap := g.heapVars[ident.Value]; isHeap {
-					if isLocal || isOutput {
+					if isLocal || isOutput || isGlobal {
 						srcElemType := ""
 						if g.arrayElemTypes != nil {
 							srcElemType = g.arrayElemTypes[ident.Value]
@@ -5749,12 +5787,19 @@ func (g *Generator) generateLet(sb *strings.Builder, stmt *parser.LetStatement) 
 								// move 到输出参数：用 handleMoveToOut（含 outBindState 管理）
 								g.handleMoveToOut(sb, ident.Value, name)
 							} else {
-								// move 到局部变量：用 handleMoveLocal（仅设 bit）
+								// move 到局部变量/全局变量：用 handleMoveLocal（仅设 bit）
 								g.handleMoveLocal(sb, ident.Value)
-								g.trackLocalHeapVar(name, srcHeapType)
+								if !isGlobal {
+									g.trackLocalHeapVar(name, srcHeapType)
+								}
 							}
-							if srcElemType != "" && g.arrayElemTypes != nil {
-								g.arrayElemTypes[name] = srcElemType
+							if srcElemType != "" {
+								if g.arrayElemTypes != nil {
+									g.arrayElemTypes[name] = srcElemType
+								}
+								if isGlobal && g.moduleArrayElemTypes != nil {
+									g.moduleArrayElemTypes[name] = srcElemType
+								}
 							}
 							return
 						}
@@ -5772,14 +5817,47 @@ func (g *Generator) generateLet(sb *strings.Builder, stmt *parser.LetStatement) 
 						if canClone {
 							g.freeOldHeapValue(sb, stmt, name)
 							g.emitDeepClone(sb, g.varAddr(ident.Value), g.varAddr(name), srcHeapType, srcElemType)
-							if !isOutput {
+							if !isOutput && !isGlobal {
 								g.trackLocalHeapVar(name, srcHeapType)
 							}
-							if srcElemType != "" && g.arrayElemTypes != nil {
-								g.arrayElemTypes[name] = srcElemType
+							if srcElemType != "" {
+								if g.arrayElemTypes != nil {
+									g.arrayElemTypes[name] = srcElemType
+								}
+								if isGlobal && g.moduleArrayElemTypes != nil {
+									g.moduleArrayElemTypes[name] = srcElemType
+								}
 							}
 							return
 						}
+						// P1-5 退化路径：canClone==false（巢狀容器等無法深層 clone）。
+						// forced move：浅拷贝 + 标记源为 moved，防止 double-free。
+						// 源後續若被引用，值為已 moved 狀態（數據已轉移），但優於 double-free 崩潰。
+						if !isOutput {
+							g.freeOldHeapValue(sb, stmt, name)
+						}
+						fmoveReg := g.tmpReg("fmove.val")
+						sb.WriteString(fmt.Sprintf("%s%s = load %s, %s* %s\n",
+							g.indent(), fmoveReg, srcHeapType, srcHeapType, g.varAddr(ident.Value)))
+						sb.WriteString(fmt.Sprintf("%sstore %s %s, %s* %s\n",
+							g.indent(), srcHeapType, fmoveReg, srcHeapType, g.varAddr(name)))
+						if isOutput {
+							g.handleMoveToOut(sb, ident.Value, name)
+						} else {
+							g.handleMoveLocal(sb, ident.Value)
+							if !isGlobal {
+								g.trackLocalHeapVar(name, srcHeapType)
+							}
+						}
+						if srcElemType != "" {
+							if g.arrayElemTypes != nil {
+								g.arrayElemTypes[name] = srcElemType
+							}
+							if isGlobal && g.moduleArrayElemTypes != nil {
+								g.moduleArrayElemTypes[name] = srcElemType
+							}
+						}
+						return
 					}
 				}
 			}
@@ -6322,13 +6400,24 @@ func (g *Generator) generateLet(sb *strings.Builder, stmt *parser.LetStatement) 
 			alreadyCoerced = true
 		}
 	}
-	if !alreadyCoerced && g.isIntegerLLVMType(llvmType) && llvmType != "i64" && strings.HasPrefix(val, "%") {
-		valType := g.intExprLLVMType(stmt.Value)
-		if valType == "i64" {
-			truncReg := g.tmpReg("trunc")
-			sb.WriteString(fmt.Sprintf("%s%s = trunc i64 %s to %s\n", g.indent(), truncReg, val, llvmType))
-			val = truncReg
-		}
+if !alreadyCoerced && g.isIntegerLLVMType(llvmType) && llvmType != "i64" && strings.HasPrefix(val, "%") {
+				// Check actual SSA type first (e.g. option data extraction may
+				// already have truncated i64 → i8). Only trunc if the value
+				// is genuinely i64.
+				actualType := "i64"
+				if g.ssaTypes != nil {
+					if t, ok := g.ssaTypes[val]; ok {
+						actualType = t
+					}
+				}
+				if actualType == "i64" {
+					valType := g.intExprLLVMType(stmt.Value)
+					if valType == "i64" {
+						truncReg := g.tmpReg("trunc")
+						sb.WriteString(fmt.Sprintf("%s%s = trunc i64 %s to %s\n", g.indent(), truncReg, val, llvmType))
+						val = truncReg
+					}
+				}
 	}
 	// 寬變數賦值窄整數值（如 u64 = u32 | u32, u64 = u32 + u32）：
 	// 兩個窄型別運算的結果仍是窄型別，需要 zext 到變數的寬型別。
