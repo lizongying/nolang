@@ -4753,21 +4753,8 @@ func (g *Generator) generateSliceExpression(sb *strings.Builder, expr *parser.Sl
 		endVal := g.generateExprWithSB(sb, r.End)
 		// 邊界檢查：用戶顯式提供的 end 需驗證 ≥ 0 且 ≤ srcLen
 		g.checkSliceBound(sb, endVal, srcLen, "end")
-		subReg := g.tmpReg("vec.sublen")
-		if sb != nil {
-			sb.WriteString(fmt.Sprintf("%s%s = sub i64 %s, %s\n",
-				g.indent(), subReg, endVal, startReg))
-		}
-		if r.RightInc {
-			g.tmpIdx++
-			newLenReg = fmt.Sprintf("%%vec.newlen.%d", g.tmpIdx)
-			if sb != nil {
-				sb.WriteString(fmt.Sprintf("%s%s = add i64 %s, 1\n",
-					g.indent(), newLenReg, subReg))
-			}
-		} else {
-			newLenReg = subReg
-		}
+		// 使用 computeReversibleLen 處理反向情況
+		_, newLenReg = g.computeReversibleLen(sb, startReg, endVal, r.RightInc, "vec")
 	} else if r.Start != nil && r.End == nil {
 		// [start..]: new_len = src_len - start
 		g.tmpIdx++
@@ -4781,21 +4768,8 @@ func (g *Generator) generateSliceExpression(sb *strings.Builder, expr *parser.Sl
 		endVal := g.generateExprWithSB(sb, r.End)
 		// 邊界檢查：用戶顯式提供的 end 需驗證 ≥ 0 且 ≤ srcLen
 		g.checkSliceBound(sb, endVal, srcLen, "end")
-		subReg := g.tmpReg("vec.sublen")
-		if sb != nil {
-			sb.WriteString(fmt.Sprintf("%s%s = sub i64 %s, %s\n",
-				g.indent(), subReg, endVal, startReg))
-		}
-		if r.RightInc {
-			g.tmpIdx++
-			newLenReg = fmt.Sprintf("%%vec.newlen.%d", g.tmpIdx)
-			if sb != nil {
-				sb.WriteString(fmt.Sprintf("%s%s = add i64 %s, 1\n",
-					g.indent(), newLenReg, subReg))
-			}
-		} else {
-			newLenReg = subReg
-		}
+		// 使用 computeReversibleLen 處理反向情況
+		_, newLenReg = g.computeReversibleLen(sb, startReg, endVal, r.RightInc, "vec")
 	}
 
 	// Compute new cap: src_cap - start

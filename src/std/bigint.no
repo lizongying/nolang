@@ -75,7 +75,7 @@ bigint.copy = () (out bigint) {
     out.limbs = with-len(.len)
     out.sign = .sign
     out.len = .len
-    i <- [0...len): {
+    i <- [0..self.len): {
         out.limbs[i] = .limbs[i]
     }
 }
@@ -524,7 +524,7 @@ lcm = (a bigint, b bigint) (l bigint) {
 ; bigint.shl1: self = self << 1
 bigint.shl1 = () {
     carry = 0
-    i <- [0...len): {
+    i <- [0..self.len): {
         v = (.limbs[i] & MASK) << 1 | carry
         carry = v >> 32
         .limbs[i] = v & MASK

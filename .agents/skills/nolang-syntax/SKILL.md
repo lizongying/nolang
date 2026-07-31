@@ -1075,6 +1075,13 @@ i <- 'abc': {      // iterate over each character in the string
 //   i <- [1.5..5.5]: { }       // compile error
 //   i <- [0..[1..5][0]]: { }   // syntax error
 
+// ⚠️ Avoid the ... ambiguity in range bounds
+//   The range operator is .. (two dots). The self-method call is .len.
+//   When written without a space: [0.. .len) → [0...len), the three dots
+//   look like a single operator (and ... is the return/terminate operator).
+//   Use self.len instead of .len to disambiguate: i <- [0..self.len): { }
+//   (self and . are semantically equivalent inside method bodies)
+
 // Single if (retained)
 x == 1 -> do-something()
 
@@ -2141,8 +2148,8 @@ External packages can only access exports declared in `lib.no` when importing vi
 
 - `#` — import module
 - `@` — export module
-- `..` — parent (super)
-- `.` — self
+- `..` — parent (super) / range operator (`[a..b)`)
+- `.` — self (⚠️ in range bounds, use `self.method` not `.method` to avoid `...` ambiguity with the return operator)
 - `!` — false (planned, currently still uses `false`)
 - `!!` — true (planned, currently still uses `true`)
 - `{ } ()` — infinite loop (new style; `!! { }` is deprecated)

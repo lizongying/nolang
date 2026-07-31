@@ -5370,7 +5370,7 @@ func (g *Generator) generateLet(sb *strings.Builder, stmt *parser.LetStatement) 
 					}
 				}
 				// clone view data 到目標變數（malloc + memcpy + store len/cap/data）
-				g.emitSliceClone(sb, name, view.dataPtrReg, view.viewLen, view.elemType, elemSize, view.isStr)
+				g.emitSliceClone(sb, name, view.dataPtrReg, view.viewLen, view.elemType, elemSize, view.isStr, "0")
 				// 追蹤目標為堆變數（僅局部變數，非輸出參數；輸出參數由呼叫者管理）
 				resultType := "%vec"
 				if view.isStr {
@@ -5659,7 +5659,43 @@ func (g *Generator) generateLet(sb *strings.Builder, stmt *parser.LetStatement) 
 				isOutput := g.outputParamNames != nil && g.outputParamNames[name]
 
 				// 情况 1：源是全局堆拥有型变量 → 一律 clone
-				if g.globalVars != nil && g.globalVars[ident.Value] {
+				// 注意：必须排除局部变量（参数/局部），因为局部变量可能与全局变量同名。
+				if g.globalVars != nil && g.globalVars[ident.Value] && g.funcLocalNames != nil && !g.funcLocalNames[ident.Value] {
+					if srcType, hasType := g.varTypes[ident.Value]; hasType && g.isHeapOwningType(srcType) {
+						srcElemType := ""
+						if g.arrayElemTypes != nil {
+							srcElemType = g.arrayElemTypes[ident.Value]
+						}
+						canClone := true
+						if (srcType == "%vec" || srcType == "%arr") &&
+							(srcElemType == "%vec" || srcElemType == "%arr") {
+							canClone = false
+						}
+						if srcType != "%vec" && srcType != "%arr" && srcType != "%str-long" {
+							if !g.canDeepCloneStruct(srcType) {
+								canClone = false
+							}
+						}
+						if canClone && (isLocal || isOutput) {
+							g.freeOldHeapValue(sb, stmt, name)
+							g.emitDeepClone(sb, g.varAddr(ident.Value), g.varAddr(name), srcType, srcElemType)
+							if !isOutput {
+								g.trackLocalHeapVar(name, srcType)
+							}
+							if srcElemType != "" && g.arrayElemTypes != nil {
+								g.arrayElemTypes[name] = srcElemType
+							}
+							return
+						}
+					}
+				}
+
+				// 情况 1.5：源是函数参数（堆拥有型别）→ 一律 clone
+				// 参数通过指针传递（指向调用者的变量），调用者仍拥有原始数据。
+				// 不能 move：move 需要修改源的数据字段（置零），这会影响调用者的变量，
+				// 导致调用者在函数返回后使用该变量时崩溃（use-after-free）。
+				// 因此参数→输出参数/局部变量 赋值时，必须深拷贝，使目标拥有独立的 data。
+				if g.funcParams != nil && g.funcParams[ident.Value] {
 					if srcType, hasType := g.varTypes[ident.Value]; hasType && g.isHeapOwningType(srcType) {
 						srcElemType := ""
 						if g.arrayElemTypes != nil {

@@ -39,7 +39,7 @@
 ; 返回 true=相等, false=不相等
 []t.eq = (b []t) (eq bool) {
     eq = true
-    i <- [0...len): {
+    i <- [0..self.len): {
         .[i] != b[i] -> {
             eq = false
             return
@@ -141,7 +141,7 @@
 ; 否則編譯器生成錯誤循環條件 i < 0 導致循環不執行
 []t.contains = (val t) (found bool) {
     sz = .len
-    i <- [0...len): {
+    i <- [0..self.len): {
         v = .[i]
         v == val -> {
             found = true
@@ -167,21 +167,21 @@
 ; []t.clone: 複製切片
 []t.clone = () (dst []t) {
     dst = with-len(.len)
-    i <- [0...len): {
+    i <- [0..self.len): {
         dst[i] = .[i]
     }
 }
 
 ; []t.fill: 填充為 val
 []t.fill = (val t) {
-    i <- [0...len): {
+    i <- [0..self.len): {
         .[i] = val
     }
 }
 
 ; []t.to-arr: 切片方法，轉為 [n]t 陣列
 []t.to-arr = () (out [?]t) {
-    i <- [0...len): {
+    i <- [0..self.len): {
         out[i] = .[i]
     }
 }
@@ -244,7 +244,7 @@
 []t.index-of = (val t) (idx i64) {
     sz = .len
     idx = -1
-    i <- [0...len): {
+    i <- [0..self.len): {
         v = .[i]
         v == val -> {
             idx = i
@@ -305,7 +305,7 @@
         sz == 0 -> max = nil
         -> {
             cur = .[0]
-            i <- [1...len): {
+            i <- [1..self.len): {
                 v = .[i]
                 v > cur -> cur = v
             }
@@ -323,7 +323,7 @@
         sz == 0 -> min = nil
         -> {
             cur = .[0]
-            i <- [1...len): {
+            i <- [1..self.len): {
                 v = .[i]
                 v < cur -> cur = v
             }
@@ -338,7 +338,7 @@
 []t.sum = () (sum t) {
     sz = .len
     acc = 0
-    i <- [0...len): {
+    i <- [0..self.len): {
         acc = acc + .[i]
     }
     sum = acc
@@ -397,7 +397,7 @@
             out = '['
             last = .len
             last = last - 1
-            i <- [0...len): {
+            i <- [0..self.len): {
                 out = out - number.i64-to-str(.[i])
                 i < last -> out = out - ', '
             }

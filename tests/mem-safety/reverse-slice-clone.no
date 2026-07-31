@@ -1,0 +1,97 @@
+; 反向切片克隆測試：x[3..1], y(10..2] 等
+; 驗證 start > end 時正確計算長度並反向拷貝元素
+
+; 測試 1：vec 正向切片（回歸測試）
+test-forward-slice = () (ok bool) {
+    a []i64 = [10, 20, 30, 40, 50]
+    b = a[1..3]
+    b[0] == 20 -> ok = true
+    b[1] == 30 -> ok = true
+    b.len == 2 -> ok = true
+}
+
+; 測試 2：vec 反向切片 [3..1]（兩端包含）
+test-vec-reverse-inclusive = () (ok bool) {
+    a []i64 = [10, 20, 30, 40, 50]
+    b = a[3..1]
+    b[0] == 40 -> ok = true
+    b[1] == 30 -> ok = true
+    b[2] == 20 -> ok = true
+    b.len == 3 -> ok = true
+}
+
+; 測試 3：vec 反向切片 [3..1)（右端不包含）
+test-vec-reverse-exclusive = () (ok bool) {
+    a []i64 = [10, 20, 30, 40, 50]
+    b = a[3..1)
+    b[0] == 40 -> ok = true
+    b[1] == 30 -> ok = true
+    b.len == 2 -> ok = true
+}
+
+; 測試 4：vec 反向切片 (3..1]（左端不包含）
+test-vec-reverse-left-excl = () (ok bool) {
+    a []i64 = [10, 20, 30, 40, 50]
+    b = a(3..1]
+    b[0] == 50 -> ok = true
+    b[1] == 40 -> ok = true
+    b[2] == 30 -> ok = true
+    b[3] == 20 -> ok = true
+    b.len == 4 -> ok = true
+}
+
+; 測試 5：str 反向切片
+test-str-reverse = () (ok bool) {
+    s = 'hello'
+    r = s[4..0]
+    r[0] == 111 -> ok = true
+    r[1] == 108 -> ok = true
+    r[2] == 108 -> ok = true
+    r[3] == 101 -> ok = true
+    r[4] == 104 -> ok = true
+    r.len == 5 -> ok = true
+}
+
+; 測試 6：vec 反向切片獨立性（修改源不影響結果）
+test-vec-reverse-independence = () (ok bool) {
+    a []i64 = [10, 20, 30, 40, 50]
+    b = a[4..0]
+    a[0] = 99
+    b[4] == 10 -> ok = true
+    b[0] == 50 -> ok = true
+}
+
+; 測試 7：vec 反向切片字面量索引 [4..2]
+test-vec-reverse-simple = () (ok bool) {
+    a []i64 = [10, 20, 30, 40, 50]
+    b = a[4..2]
+    b[0] == 50 -> ok = true
+    b[1] == 40 -> ok = true
+    b[2] == 30 -> ok = true
+    b.len == 3 -> ok = true
+}
+
+main = () {
+    ok1 = test-forward-slice()
+    print('test-forward-slice: {ok1}')
+
+    ok2 = test-vec-reverse-inclusive()
+    print('test-vec-reverse-inclusive: {ok2}')
+
+    ok3 = test-vec-reverse-exclusive()
+    print('test-vec-reverse-exclusive: {ok3}')
+
+    ok4 = test-vec-reverse-left-excl()
+    print('test-vec-reverse-left-excl: {ok4}')
+
+    ok5 = test-str-reverse()
+    print('test-str-reverse: {ok5}')
+
+    ok6 = test-vec-reverse-independence()
+    print('test-vec-reverse-independence: {ok6}')
+
+    ok7 = test-vec-reverse-simple()
+    print('test-vec-reverse-simple: {ok7}')
+
+    print('all done')
+}

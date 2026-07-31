@@ -12,8 +12,8 @@ sidebar_position: 4
 - `:` ; Match expression (e.g., `x: { ... }`)
 - `!!` ; Infinite loop (`!! { }`)
 - `<-` ; Range iteration (e.g., `i <- [a..b]: { }`)
-- `..` ; Parent class
-- `.` ; Self (current struct/type)
+- `..` ; Parent class / range operator (e.g., `[a..b)`)
+- `.` ; Self (current struct/type) (⚠️ in range bounds, use `self.method` not `.method` to avoid `...` ambiguity with the return operator)
 - `?` ; Option type prefix (e.g., `?i64`, `?str`)
 - `!` ; False, error — replaces false (planned, not yet replaced)
 - `!!` ; True, correct — replaces true (planned, not yet replaced)

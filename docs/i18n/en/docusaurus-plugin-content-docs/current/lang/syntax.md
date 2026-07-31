@@ -551,6 +551,13 @@ i <- 'abc': {   ; iterate over each character in the string
 ;   for i <- [1.5..5.5] { }   ; compile error
 ;   for i <- [0..[1..5][0]] { } ; syntax error
 
+; ⚠️ Avoid the ... ambiguity
+;   The range operator is .. (two dots). The self-method call is .len.
+;   When written without a space: [0.. .len) → [0...len), the three dots
+;   look like a single operator (and ... is the return/terminate operator).
+;   Use self.len instead of .len to disambiguate: i <- [0..self.len): { }
+;   (self and . are semantically equivalent inside method bodies)
+
 ; Conditional loop (the for keyword form is retained for non-1 steps or complex conditions)
 ; In most cases, range-for can be used instead: i <- [0..n): { }
 for x == 1 {

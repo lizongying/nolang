@@ -159,18 +159,19 @@ func (g *Generator) generateSliceViewAssignment(sb *strings.Builder, stmt *parse
 		}
 	}
 
-	// Compute start offset and view length
-	startReg, viewLenReg := g.computeSliceBounds(sb, sliceExpr.Range, srcLen)
+	// Compute start offset, view length, and reversal flag
+	startReg, viewLenReg, reversedFlag := g.computeSliceBounds(sb, sliceExpr.Range, srcLen)
 
 	// Compute adjusted data pointer: srcData + start * elemSize
 	dataPtrReg := g.computeAdjustedDataPtr(sb, srcData, startReg, elemSize)
 
-	// 需要完全克隆：malloc 新緩衝區 + memcpy，寫入目標變量地址
+	// 需要完全克隆：malloc 新緩衝區 + memcpy（正向）或逐元素反向拷貝（反向），
+	// 寫入目標變量地址。
 	// 注意：克隆後的變量獨立擁有 data，不再是切片視圖。
 	// 必須追蹤為 heapVars，使後續 b = view 賦值走深層 clone 路徑，
 	// 並在函數結束時正確 free。
 	if needClone {
-		g.emitSliceClone(sb, name, dataPtrReg, viewLenReg, elemType, elemSize, isStr)
+		g.emitSliceClone(sb, name, dataPtrReg, viewLenReg, elemType, elemSize, isStr, reversedFlag)
 		// 追蹤為堆變數（僅局部變數，非輸出參數；輸出參數由呼叫者管理）
 		if g.outputParamNames == nil || !g.outputParamNames[name] {
 			resultType := "%vec"
@@ -210,7 +211,9 @@ func (g *Generator) generateSliceViewAssignment(sb *strings.Builder, stmt *parse
 // Computes offsets relative to the original base.
 func (g *Generator) generateChainedSliceView(sb *strings.Builder, name string, baseView *sliceViewInfo, sliceExpr *parser.SliceExpression) bool {
 	// Compute start offset and view length relative to the base view
-	startReg, viewLenReg := g.computeSliceBounds(sb, sliceExpr.Range, baseView.viewLen)
+	// reversedFlag is ignored here: sliceViews is never populated (§5.4 design change),
+	// making this path dead code. Retained for backward compatibility.
+	startReg, viewLenReg, _ := g.computeSliceBounds(sb, sliceExpr.Range, baseView.viewLen)
 
 	// Compute the absolute start offset from the original base
 	var absStartReg string
@@ -259,8 +262,8 @@ func (g *Generator) generateChainedSliceView(sb *strings.Builder, name string, b
 // 且目標需要完全克隆（輸出參數或顯式 vec 類型）。
 // 計算相對偏移後，從原始 base 的數據指針執行 malloc + memcpy 克隆到目標變量。
 func (g *Generator) generateChainedSliceViewClone(sb *strings.Builder, name string, baseView *sliceViewInfo, sliceExpr *parser.SliceExpression) bool {
-	// 計算相對於 base view 的起始偏移和視圖長度
-	startReg, viewLenReg := g.computeSliceBounds(sb, sliceExpr.Range, baseView.viewLen)
+	// 計算相對於 base view 的起始偏移、視圖長度和反向標誌
+	startReg, viewLenReg, reversedFlag := g.computeSliceBounds(sb, sliceExpr.Range, baseView.viewLen)
 
 	// 計算從 base view 數據指針出發的調整後指針
 	elemSize := int64(8)
@@ -277,7 +280,7 @@ func (g *Generator) generateChainedSliceViewClone(sb *strings.Builder, name stri
 	// 注意：克隆後的變量獨立擁有 data，不再是切片視圖。
 	// 必須追蹤為 heapVars，使後續 b = view 賦值走深層 clone 路徑，
 	// 並在函數結束時正確 free。
-	g.emitSliceClone(sb, name, dataPtrReg, viewLenReg, baseView.elemType, elemSize, baseView.isStr)
+	g.emitSliceClone(sb, name, dataPtrReg, viewLenReg, baseView.elemType, elemSize, baseView.isStr, reversedFlag)
 	if g.outputParamNames == nil || !g.outputParamNames[name] {
 		resultType := "%vec"
 		if baseView.isStr {
@@ -288,10 +291,10 @@ func (g *Generator) generateChainedSliceViewClone(sb *strings.Builder, name stri
 	return true
 }
 
-// emitSliceClone 將切片數據完全克隆到目標變量：malloc 新緩衝區 + memcpy。
+// emitSliceClone 將切片數據完全克隆到目標變量：malloc 新緩衝區 + memcpy（正向）或逐元素反向拷貝（反向）。
 // 用於切片視圖逃逸函數作用域（輸出參數）或顯式 vec 類型賦值。
-// 切片是視圖，不能脫離函數作用域；vec 需要獨立擁有數據。
-func (g *Generator) emitSliceClone(sb *strings.Builder, destVar, srcDataPtr, viewLenReg, elemType string, elemSize int64, isStr bool) {
+// reversedFlag: "0"=正向 memcpy, "1"=反向逐元素拷貝, 或 i1 SSA 暫存器（運行時判定）。
+func (g *Generator) emitSliceClone(sb *strings.Builder, destVar, srcDataPtr, viewLenReg, elemType string, elemSize int64, isStr bool, reversedFlag string) {
 	if sb == nil {
 		// 類型註冊仍需執行（即使 sb 為 nil，例如類型推導階段）
 		resultType := "%vec"
@@ -316,9 +319,36 @@ func (g *Generator) emitSliceClone(sb *strings.Builder, destVar, srcDataPtr, vie
 	sb.WriteString(fmt.Sprintf("%s%s = call i8* @nolang.malloc(i64 %s)\n",
 		g.indent(), bufReg, byteLenReg))
 
-	// memcpy 從源數據指針到新緩衝區
-	sb.WriteString(fmt.Sprintf("%scall void @llvm.memcpy.p0i8.p0i8.i64(i8* %s, i8* %s, i64 %s, i1 false)\n",
-		g.indent(), bufReg, srcDataPtr, byteLenReg))
+	// 根據方向選擇拷貝策略
+	if reversedFlag == "0" {
+		// 正向：memcpy 從源數據指針到新緩衝區
+		sb.WriteString(fmt.Sprintf("%scall void @llvm.memcpy.p0i8.p0i8.i64(i8* %s, i8* %s, i64 %s, i1 false)\n",
+			g.indent(), bufReg, srcDataPtr, byteLenReg))
+	} else if reversedFlag == "1" {
+		// 反向（編譯期確定）：逐元素反向拷貝
+		// srcDataPtr 指向 start 位置（最高索引），需要從 start 開始向前拷貝
+		g.emitReverseCopy(sb, bufReg, srcDataPtr, viewLenReg, elemSize)
+	} else {
+		// 運行時判定：分支選擇 memcpy 或反向拷貝
+		g.tmpIdx++
+		fwdLabel := fmt.Sprintf("svclone.fwd.%d", g.tmpIdx)
+		g.tmpIdx++
+		revLabel := fmt.Sprintf("svclone.rev.%d", g.tmpIdx)
+		g.tmpIdx++
+		endLabel := fmt.Sprintf("svclone.end.%d", g.tmpIdx)
+		sb.WriteString(fmt.Sprintf("%sbr i1 %s, label %%%s, label %%%s\n",
+			g.indent(), reversedFlag, revLabel, fwdLabel))
+		// 正向分支
+		g.emitLabel(sb, fwdLabel)
+		sb.WriteString(fmt.Sprintf("%scall void @llvm.memcpy.p0i8.p0i8.i64(i8* %s, i8* %s, i64 %s, i1 false)\n",
+			g.indent(), bufReg, srcDataPtr, byteLenReg))
+		sb.WriteString(fmt.Sprintf("%sbr label %%%s\n", g.indent(), endLabel))
+		// 反向分支
+		g.emitLabel(sb, revLabel)
+		g.emitReverseCopy(sb, bufReg, srcDataPtr, viewLenReg, elemSize)
+		sb.WriteString(fmt.Sprintf("%sbr label %%%s\n", g.indent(), endLabel))
+		g.emitLabel(sb, endLabel)
+	}
 
 	// 將 len/cap/data 寫入目標變量地址
 	destPtr := g.varAddr(destVar)
@@ -359,12 +389,68 @@ func (g *Generator) emitSliceClone(sb *strings.Builder, destVar, srcDataPtr, vie
 	}
 }
 
+// emitReverseCopy 逐元素反向拷貝：從 srcPtr（指向 start 位置，最高索引）開始，
+// 向前（遞減索引）拷貝 len 個元素到 dstBuf。
+// 用於反向切片克隆：x[3..1] 產生 [x[3], x[2], x[1]]，srcPtr 指向 x[3]。
+func (g *Generator) emitReverseCopy(sb *strings.Builder, dstBuf, srcPtr, lenReg string, elemSize int64) {
+	g.tmpIdx++
+	tid := g.tmpIdx
+
+	// 迴圈計數器 i = 0；每次拷貝 srcPtr[-i*elemSize] → dstBuf[i*elemSize]
+	iPtr := fmt.Sprintf("%%rc.i.%d", tid)
+	sb.WriteString(fmt.Sprintf("%s%s = alloca i64\n", g.indent(), iPtr))
+	sb.WriteString(fmt.Sprintf("%sstore i64 0, i64* %s\n", g.indent(), iPtr))
+
+	condLabel := fmt.Sprintf("rc.cond.%d", tid)
+	sb.WriteString(fmt.Sprintf("%sbr label %%%s\n", g.indent(), condLabel))
+	g.emitLabel(sb, condLabel)
+
+	iVal := fmt.Sprintf("%%rc.iv.%d", tid)
+	sb.WriteString(fmt.Sprintf("%s%s = load i64, i64* %s\n", g.indent(), iVal, iPtr))
+	cmp := fmt.Sprintf("%%rc.cmp.%d", tid)
+	bodyLabel := fmt.Sprintf("rc.body.%d", tid)
+	endLabel := fmt.Sprintf("rc.end.%d", tid)
+	sb.WriteString(fmt.Sprintf("%s%s = icmp slt i64 %s, %s\n", g.indent(), cmp, iVal, lenReg))
+	sb.WriteString(fmt.Sprintf("%sbr i1 %s, label %%%s, label %%%s\n", g.indent(), cmp, bodyLabel, endLabel))
+	g.emitLabel(sb, bodyLabel)
+
+	// 源偏移 = i * elemSize（正值），源指針 = srcPtr - srcOffset
+	// GEP 不帶 inbounds 可接受負索引：negOffset = 0 - srcOffset
+	srcOffset := fmt.Sprintf("%%rc.srcoff.%d", tid)
+	sb.WriteString(fmt.Sprintf("%s%s = mul i64 %s, %d\n", g.indent(), srcOffset, iVal, elemSize))
+	negOffset := fmt.Sprintf("%%rc.negoff.%d", tid)
+	sb.WriteString(fmt.Sprintf("%s%s = sub i64 0, %s\n", g.indent(), negOffset, srcOffset))
+	srcGEP := fmt.Sprintf("%%rc.srcgep.%d", tid)
+	sb.WriteString(fmt.Sprintf("%s%s = getelementptr i8, i8* %s, i64 %s\n",
+		g.indent(), srcGEP, srcPtr, negOffset))
+
+	// 目標偏移 = i * elemSize（正值）
+	dstOffset := fmt.Sprintf("%%rc.dstoff.%d", tid)
+	sb.WriteString(fmt.Sprintf("%s%s = mul i64 %s, %d\n", g.indent(), dstOffset, iVal, elemSize))
+	dstGEP := fmt.Sprintf("%%rc.dstgep.%d", tid)
+	sb.WriteString(fmt.Sprintf("%s%s = getelementptr i8, i8* %s, i64 %s\n",
+		g.indent(), dstGEP, dstBuf, dstOffset))
+
+	// 拷貝 elemSize 字節
+	copySizeConst := strconv.FormatInt(elemSize, 10)
+	sb.WriteString(fmt.Sprintf("%scall void @llvm.memcpy.p0i8.p0i8.i64(i8* %s, i8* %s, i64 %s, i1 false)\n",
+		g.indent(), dstGEP, srcGEP, copySizeConst))
+
+	// i++
+	next := fmt.Sprintf("%%rc.next.%d", tid)
+	sb.WriteString(fmt.Sprintf("%s%s = add i64 %s, 1\n", g.indent(), next, iVal))
+	sb.WriteString(fmt.Sprintf("%sstore i64 %s, i64* %s\n", g.indent(), next, iPtr))
+	sb.WriteString(fmt.Sprintf("%sbr label %%%s\n", g.indent(), condLabel))
+	g.emitLabel(sb, endLabel)
+}
+
 // computeSliceBounds computes the start offset and view length from a RangeExpression.
 // srcLen is the source's total length (used for [..] and [start..] cases).
 // 同時對顯式提供的 start/end 邊界做檢查：start ≥ 0 且 start ≤ srcLen，end 同理。
 // nolang 支持反向 view（start > end 合法），故不檢查 start ≤ end。
 // 編譯期常量在編譯期驗證（失敗 panic），否則運行時 emit @nolang.slice_bounds_check。
-func (g *Generator) computeSliceBounds(sb *strings.Builder, r *parser.RangeExpression, srcLen string) (startReg, viewLenReg string) {
+// 返回 reversedFlag："0"=正向，"1"=反向（編譯期確定），或 i1 SSA 暫存器（運行時判定）。
+func (g *Generator) computeSliceBounds(sb *strings.Builder, r *parser.RangeExpression, srcLen string) (startReg, viewLenReg, reversedFlag string) {
 	startReg = "0"
 	if r != nil && r.Start != nil {
 		startVal := g.generateExprWithSB(sb, r.Start)
@@ -386,6 +472,8 @@ func (g *Generator) computeSliceBounds(sb *strings.Builder, r *parser.RangeExpre
 		// (..end / (..] / (..) / (.. : 左開無下限，起始偏移 +1
 		startReg = "1"
 	}
+
+	reversedFlag = "0" // 預設正向
 
 	if r == nil || (r.Start == nil && r.End == nil) {
 		// Full slice: [..] / [..) / (..] / (..)
@@ -423,22 +511,8 @@ func (g *Generator) computeSliceBounds(sb *strings.Builder, r *parser.RangeExpre
 		endVal := g.generateExprWithSB(sb, r.End)
 		// 邊界檢查：用戶顯式提供的 end 需驗證 ≥ 0 且 ≤ srcLen
 		g.checkSliceBound(sb, endVal, srcLen, "end")
-		g.tmpIdx++
-		subReg := fmt.Sprintf("%%sv.sublen.%d", g.tmpIdx)
-		if sb != nil {
-			sb.WriteString(fmt.Sprintf("%s%s = sub i64 %s, %s\n",
-				g.indent(), subReg, endVal, startReg))
-		}
-		if r.RightInc {
-			g.tmpIdx++
-			viewLenReg = fmt.Sprintf("%%sv.viewlen.%d", g.tmpIdx)
-			if sb != nil {
-				sb.WriteString(fmt.Sprintf("%s%s = add i64 %s, 1\n",
-					g.indent(), viewLenReg, subReg))
-			}
-		} else {
-			viewLenReg = subReg
-		}
+		// 檢查是否反向：start > end
+		reversedFlag, viewLenReg = g.computeReversibleLen(sb, startReg, endVal, r.RightInc, "sv")
 	} else if r.Start != nil && r.End == nil {
 		// [start..]: view_len = src_len - start
 		if startReg == "0" {
@@ -456,25 +530,95 @@ func (g *Generator) computeSliceBounds(sb *strings.Builder, r *parser.RangeExpre
 		endVal := g.generateExprWithSB(sb, r.End)
 		// 邊界檢查：用戶顯式提供的 end 需驗證 ≥ 0 且 ≤ srcLen
 		g.checkSliceBound(sb, endVal, srcLen, "end")
-		g.tmpIdx++
-		subReg := fmt.Sprintf("%%sv.sublen.%d", g.tmpIdx)
-		if sb != nil {
-			sb.WriteString(fmt.Sprintf("%s%s = sub i64 %s, %s\n",
-				g.indent(), subReg, endVal, startReg))
-		}
-		if r.RightInc {
-			g.tmpIdx++
-			viewLenReg = fmt.Sprintf("%%sv.viewlen.%d", g.tmpIdx)
-			if sb != nil {
-				sb.WriteString(fmt.Sprintf("%s%s = add i64 %s, 1\n",
-					g.indent(), viewLenReg, subReg))
-			}
-		} else {
-			viewLenReg = subReg
-		}
+		// 檢查是否反向：start > end
+		reversedFlag, viewLenReg = g.computeReversibleLen(sb, startReg, endVal, r.RightInc, "sv")
 	}
 
-	return startReg, viewLenReg
+	return startReg, viewLenReg, reversedFlag
+}
+
+// computeReversibleLen 計算切片長度，處理正向和反向兩種情況。
+// 正向（start ≤ end）：len = end - start + (1 if rightInc)
+// 反向（start > end）：len = start - end + (1 if rightInc)
+// 返回 (reversedFlag, viewLenReg)：
+//   reversedFlag = "0"（正向，編譯期確定）/ "1"（反向，編譯期確定）/ i1 SSA 暫存器（運行時判定）
+func (g *Generator) computeReversibleLen(sb *strings.Builder, startReg, endVal string, rightInc bool, prefix string) (reversedFlag, viewLenReg string) {
+	startConst, startIsConst := parseConstIntStr(startReg)
+	endConst, endIsConst := parseConstIntStr(endVal)
+
+	if startIsConst && endIsConst {
+		// 編譯期確定方向
+		var diff int64
+		if startConst > endConst {
+			// 反向：len = start - end
+			reversedFlag = "1"
+			diff = startConst - endConst
+		} else {
+			// 正向：len = end - start
+			reversedFlag = "0"
+			diff = endConst - startConst
+		}
+		if rightInc {
+			diff++
+		}
+		viewLenReg = strconv.FormatInt(diff, 10)
+		return
+	}
+
+	// 運行時判定方向
+	if sb == nil {
+		// 類型推導階段：假設正向
+		reversedFlag = "0"
+		g.tmpIdx++
+		subReg := fmt.Sprintf("%%%s.sublen.%d", prefix, g.tmpIdx)
+		viewLenReg = subReg
+		return
+	}
+
+	// 生成運行時比較和 select
+	g.tmpIdx++
+	tid := g.tmpIdx
+	cmpReg := fmt.Sprintf("%%%s.revcmp.%d", prefix, tid)
+	sb.WriteString(fmt.Sprintf("%s%s = icmp sgt i64 %s, %s\n",
+		g.indent(), cmpReg, startReg, endVal))
+	reversedFlag = cmpReg
+
+	// 正向 len = end - start (+1 if rightInc)
+	g.tmpIdx++
+	fwdSub := fmt.Sprintf("%%%s.fwdsub.%d", prefix, g.tmpIdx)
+	sb.WriteString(fmt.Sprintf("%s%s = sub i64 %s, %s\n",
+		g.indent(), fwdSub, endVal, startReg))
+	var fwdLen string
+	if rightInc {
+		g.tmpIdx++
+		fwdLen = fmt.Sprintf("%%%s.fwdlen.%d", prefix, g.tmpIdx)
+		sb.WriteString(fmt.Sprintf("%s%s = add i64 %s, 1\n",
+			g.indent(), fwdLen, fwdSub))
+	} else {
+		fwdLen = fwdSub
+	}
+
+	// 反向 len = start - end (+1 if rightInc)
+	g.tmpIdx++
+	revSub := fmt.Sprintf("%%%s.revsub.%d", prefix, g.tmpIdx)
+	sb.WriteString(fmt.Sprintf("%s%s = sub i64 %s, %s\n",
+		g.indent(), revSub, startReg, endVal))
+	var revLen string
+	if rightInc {
+		g.tmpIdx++
+		revLen = fmt.Sprintf("%%%s.revlen.%d", prefix, g.tmpIdx)
+		sb.WriteString(fmt.Sprintf("%s%s = add i64 %s, 1\n",
+			g.indent(), revLen, revSub))
+	} else {
+		revLen = revSub
+	}
+
+	// select: reversed ? revLen : fwdLen
+	g.tmpIdx++
+	viewLenReg = fmt.Sprintf("%%%s.viewlen.%d", prefix, g.tmpIdx)
+	sb.WriteString(fmt.Sprintf("%s%s = select i1 %s, i64 %s, i64 %s\n",
+		g.indent(), viewLenReg, cmpReg, revLen, fwdLen))
+	return
 }
 
 // computeAdjustedDataPtr computes srcData + start * elemSize as an i8* GEP.
@@ -515,7 +659,7 @@ func (g *Generator) materializeSliceView(sb *strings.Builder, varName string) st
 			lenGEP := fmt.Sprintf("%%svmat.str.len.%d", g.tmpIdx)
 			sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%str-long, %%str-long* %s, i32 0, i32 0\n",
 				g.indent(), lenGEP, resultReg))
-				sb.WriteString(fmt.Sprintf("%sstore i64 %s, i64* %s\n", g.indent(), view.viewLen, lenGEP))
+			sb.WriteString(fmt.Sprintf("%sstore i64 %s, i64* %s\n", g.indent(), view.viewLen, lenGEP))
 			// Store cap (field 1) = viewLen
 			g.tmpIdx++
 			capGEP := fmt.Sprintf("%%svmat.str.cap.%d", g.tmpIdx)
@@ -523,14 +667,14 @@ func (g *Generator) materializeSliceView(sb *strings.Builder, varName string) st
 				g.indent(), capGEP, resultReg))
 			sb.WriteString(fmt.Sprintf("%sstore i64 %s, i64* %s\n", g.indent(), view.viewLen, capGEP))
 			// Store data (field 2)
-		g.tmpIdx++
-		dataGEP := fmt.Sprintf("%%svmat.str.data.%d", g.tmpIdx)
-		sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%str-long, %%str-long* %s, i32 0, i32 2\n",
-			g.indent(), dataGEP, resultReg))
-		g.storeDataPtrField(sb, view.dataPtrReg, dataGEP)
+			g.tmpIdx++
+			dataGEP := fmt.Sprintf("%%svmat.str.data.%d", g.tmpIdx)
+			sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%str-long, %%str-long* %s, i32 0, i32 2\n",
+				g.indent(), dataGEP, resultReg))
+			g.storeDataPtrField(sb, view.dataPtrReg, dataGEP)
+		}
+		return resultReg
 	}
-	return resultReg
-}
 
 	// Materialize as %vec { len, cap, data }
 	// cap is set to view length (no separate capacity tracking for views)

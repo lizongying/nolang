@@ -44,14 +44,14 @@ str.len = () (n i64) {
 ; str.copy: 将 src 复制到 dst（整個字串）
 str.copy = () (dst str) {
     dst = with-cap(.len)
-    i <- [0...len): {
+    i <- [0..self.len): {
         dst[i] = .[i]
     }
 }
 
 ; str.fill: 用 byte 值填充整個字串
 str.fill = (val byte) {
-    i <- [0...len): {
+    i <- [0..self.len): {
         .[i] = val
     }
 }
@@ -169,7 +169,7 @@ str.ends-with = (target str) (yes bool) {
 ; 返回新字符串
 str.to-upper = () (val str) {
     val = with-cap(.len)
-    i <- [0...len): {
+    i <- [0..self.len): {
         c = .[i]
         {
             c >= 97 && c <= 122 -> val[i] = c - 32
@@ -182,7 +182,7 @@ str.to-upper = () (val str) {
 ; 返回新字符串
 str.to-lower = () (val str) {
     val = with-cap(.len)
-    i <- [0...len): {
+    i <- [0..self.len): {
         c = .[i]
         {
             c >= 65 && c <= 90 -> val[i] = c + 32
@@ -194,7 +194,7 @@ str.to-lower = () (val str) {
 ; str.trim: 去除字符串首尾空白字符
 ; 返回新字符串
 str.trim = () (val str) {
-    start <- [0...len): {
+    start <- [0..self.len): {
         c = .[start]
         c != 32 && c != 9 && c != 10 && c != 13 -> break
     }
@@ -221,7 +221,7 @@ str.trim = () (val str) {
 str.repeat = (times i64) (val str) {
     val = with-cap(.len * times)
     i <- [0..times): {
-        j <- [0...len): {
+        j <- [0..self.len): {
             val[i * .len + j] = .[j]
         }
     }
@@ -247,7 +247,7 @@ str.slice = (start i64, end i64) (val str) {
 ; str.to-bytes: 将字符串转为字节数组
 str.to-bytes = () (val []byte) {
     val = with-len(.len)
-    i <- [0...len): {
+    i <- [0..self.len): {
         val[i] = .[i]
     }
 }
@@ -283,7 +283,7 @@ str.to-i64 = () (val ?i64) {
             }
         }
     }
-    i <- [start...len): {
+    i <- [start..self.len): {
         c = .[i]
         c < 48 || c > 57 -> {
             val = err('invalid number: non-digit character')
@@ -326,7 +326,7 @@ str.to-i8 = () (val ?i8) {
             }
         }
     }
-    i <- [start...len): {
+    i <- [start..self.len): {
         c = .[i]
         c < 48 || c > 57 -> {
             val = err('invalid number: non-digit character')
@@ -372,7 +372,7 @@ str.to-i16 = () (val ?i16) {
             }
         }
     }
-    i <- [start...len): {
+    i <- [start..self.len): {
         c = .[i]
         c < 48 || c > 57 -> {
             val = err('invalid number: non-digit character')
@@ -418,7 +418,7 @@ str.to-i32 = () (val ?i32) {
             }
         }
     }
-    i <- [start...len): {
+    i <- [start..self.len): {
         c = .[i]
         c < 48 || c > 57 -> {
             val = err('invalid number: non-digit character')
@@ -459,7 +459,7 @@ str.to-u8 = () (val ?u8) {
             }
         }
     }
-    i <- [start...len): {
+    i <- [start..self.len): {
         c = .[i]
         c < 48 || c > 57 -> {
             val = err('invalid number: non-digit character')
@@ -499,7 +499,7 @@ str.to-u16 = () (val ?u16) {
             }
         }
     }
-    i <- [start...len): {
+    i <- [start..self.len): {
         c = .[i]
         c < 48 || c > 57 -> {
             val = err('invalid number: non-digit character')
@@ -539,7 +539,7 @@ str.to-u32 = () (val ?u32) {
             }
         }
     }
-    i <- [start...len): {
+    i <- [start..self.len): {
         c = .[i]
         c < 48 || c > 57 -> {
             val = err('invalid number: non-digit character')
@@ -568,7 +568,7 @@ str.to-u64 = () (val ?u64) {
     n = 0
     start = 0
     c == 43 -> start = 1
-    i <- [start...len): {
+    i <- [start..self.len): {
         c = .[i]
         c < 48 || c > 57 -> {
             val = err('invalid number: non-digit character')
@@ -605,7 +605,7 @@ str.to-byte = () (val ?byte) {
             }
         }
     }
-    i <- [start...len): {
+    i <- [start..self.len): {
         c = .[i]
         c < 48 || c > 57 -> {
             val = err('invalid number: non-digit character')
@@ -748,7 +748,7 @@ str.to-f64 = () (val ?f64) {
     start = 0
     c = .[0]
     c == 45 || c == 43 -> start = 1
-    i <- [start...len): {
+    i <- [start..self.len): {
         c = .[i]
         {
             c >= 48 && c <= 57 -> has-digit = 1
@@ -825,7 +825,7 @@ str.to-bool = () (val ?bool) {
 ; 将 s 反转后写入 val
 str.reverse = () (val str) {
     val = with-cap(.len)
-    i <- [0...len): {
+    i <- [0..self.len): {
         val[i] = .[.len - 1 - i]
     }
 }
@@ -1760,7 +1760,7 @@ f64-to-str-general = (x f64, precision i64) (out str) {
 str.eq-full = (b str) (yes bool) {
     .len != b.len -> return
     yes = true
-    i <- [0...len): {
+    i <- [0..self.len): {
         .[i] != b[i] -> {
             yes = false
             return
@@ -1966,7 +1966,7 @@ str.to-hex = () (out str) {
     .len == 0 -> return
     out = with-cap(.len * 2)
     hex = '0123456789abcdef'
-    i <- [0...len): {
+    i <- [0..self.len): {
         b = .[i] & 255
         out[i * 2] = hex[b >> 4]
         out[i * 2 + 1] = hex[b & 15]
