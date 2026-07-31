@@ -1245,13 +1245,19 @@ func (g *Generator) generateCallExpression(sb *strings.Builder, expr *parser.Cal
 				// special LLVM code generation in callBuiltin that must be used.
 				// The Nolang function definition has an empty body — the real
 				// implementation is the built-in LLVM intrinsic.
+				//
+				// ⚠️ Only check the FULL function name (e.g. "gzip-decompress") as a
+				// builtin. Do NOT strip the prefix and check the short name (e.g. "max"
+				// from "[]t.max"), because a user-defined method like []t.max has a
+				// full Nolang body and shares its short name "max" with the unrelated
+				// math-max ForwardFunc builtin. Stripping would incorrectly classify
+				// []t.max as a ForwardFunc, leaving skipBuiltin=false and causing the
+				// prefix-stripping at ~L1295 to mangle fnName to "max", which then
+				// fails all funcRetTypes/funcNumResults/funcResultLLVMType lookups,
+				// so voidSingleOutput is never triggered and the call loses its
+				// output parameter.
 				isForwardBuiltin := false
 				m := builtin.FindBuiltinMethod(fnName)
-				if m == nil {
-					if idx := strings.Index(fnName, "."); idx >= 0 {
-						m = builtin.FindBuiltinMethod(fnName[idx+1:])
-					}
-				}
 				if m != nil && m.ForwardFunc != "" {
 					isForwardBuiltin = true
 				}
