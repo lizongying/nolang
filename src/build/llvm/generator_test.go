@@ -471,3 +471,42 @@ func TestDeclarationsForWindowsTarget(t *testing.T) {
 		}
 	}
 }
+
+// TestGlobalScalarTypeDeclZeroInit 驗證頂層非 i64 整數/浮點數型別宣告
+// （無初值，如 `a i16`、`b u8`、`c f64`）會被發射為零初始化的全域變數，
+// 而非遺漏分配導致 LLVM opt 報 "use of undefined value '%a'"。
+//
+// 回歸場景：修復前僅 i64 無初值宣告會發射全域，i8/i16/i32/u8/u16/u32
+// 及 float/double 無初值宣告落入 default 分支，generateLet 仍輸出
+// `store i16 0, i16* %a`，但 %a 從未 alloca → opt 報錯。
+func TestGlobalScalarTypeDeclZeroInit(t *testing.T) {
+	cases := []struct {
+		name    string
+		src     string
+		wantPat string
+	}{
+		{"i16", "a i16\n", "@a = global i16 0"},
+		{"i8", "a i8\n", "@a = global i8 0"},
+		{"i32", "a i32\n", "@a = global i32 0"},
+		{"u8", "a u8\n", "@a = global i8 0"},
+		{"u16", "a u16\n", "@a = global i16 0"},
+		{"u32", "a u32\n", "@a = global i32 0"},
+		{"f32", "a f32\n", "@a = global float 0.0"},
+		{"f64", "a f64\n", "@a = global double 0.0"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			l := lexer.New(c.src)
+			p := parser.New(l)
+			prog := p.ParseProgram()
+			if len(p.Errors()) > 0 {
+				t.Fatalf("parse errors: %v", p.Errors())
+			}
+			g := NewGenerator()
+			ir := g.Generate(prog)
+			if !strings.Contains(ir, c.wantPat) {
+				t.Errorf("IR should contain %q, got:\n%s", c.wantPat, ir)
+			}
+		})
+	}
+}

@@ -299,7 +299,7 @@ zip-writer.add-file = (name str, content []byte) {
 ; add-dir: 添加目錄條目
 zip-writer.add-dir = (name str) {
     dname = name
-    ! dname.ends-with('/') -> dname = dname - '/'
+    dname.ends-with('/') == false -> dname = dname - '/'
     empty []byte
     off = .data.len
     .write-local-file(dname, empty, 0)

@@ -1510,10 +1510,15 @@ func (g *Generator) Generate(program *parser.Program) string {
 					sb.WriteString(fmt.Sprintf("%s = global i32 %d\n", llvmGlobalRef(name), v))
 					g.globalVars[name] = true
 				}
-			} else if llvmType == "i64" && ls.Value == nil {
-				// i64 module-level declaration without initial value (e.g. `e2e-recv-total i64`).
+			} else if (g.isIntegerLLVMType(llvmType) || llvmType == "float" || llvmType == "double") && ls.Value == nil {
+				// Integer/float module-level declaration without initial value
+				// (e.g. `a i16`, `b u8`, `c f64`, `e2e-recv-total i64`).
 				// Emit as global zero-initialized so functions can share state via @name.
-				sb.WriteString(fmt.Sprintf("%s = global i64 0\n", llvmGlobalRef(name)))
+				zeroVal := "0"
+				if llvmType == "float" || llvmType == "double" {
+					zeroVal = "0.0"
+				}
+				sb.WriteString(fmt.Sprintf("%s = global %s %s\n", llvmGlobalRef(name), llvmType, zeroVal))
 				g.globalVars[name] = true
 			} else if llvmType == "i64" && ls.Value != nil {
 				if v, ok := intConstValue(ls.Value); ok {
