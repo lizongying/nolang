@@ -3847,11 +3847,11 @@ func (g *Generator) genForwardFunc(sb *strings.Builder, forwardFunc string, expr
 		// Determine the integer width from the first argument's type
 		argType := g.intExprLLVMType(args[0])
 		if argType == "" {
-			// intExprLLVMType does not handle IndexExpression (array/slice
-			// element access), defaulting to i64. For rotate-left on u32
-			// array elements (e.g. rotate-left(w[i-15], 25) where w is []u32),
-			// look up the element type directly from arrayElemTypes so the
-			// correct llvm.fshl.i32 intrinsic is selected.
+		// intExprLLVMType intentionally does not handle IndexExpression
+		// (because generateIndexExpression zexts to i64). For rotate-left
+		// on u32 array elements (e.g. rotate-left(w[i-15], 25) where w is
+		// []u32), look up the element type directly from arrayElemTypes so
+		// the correct llvm.fshl.i32 intrinsic is selected.
 			if idx, ok := args[0].(*parser.IndexExpression); ok {
 				if ident, ok := idx.Left.(*parser.Identifier); ok && g.arrayElemTypes != nil {
 					if et, ok := g.arrayElemTypes[ident.Value]; ok {

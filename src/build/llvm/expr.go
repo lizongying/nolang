@@ -1222,9 +1222,10 @@ func llvmIntBitWidth(t string) int {
 }
 
 // 與硬編碼 i64 指令之間的型別不匹配。
-// 注意：IndexExpression 預設回傳 i64，因為 generateIndexExpression
-// 會將 i8 元素 zext 到 i64。但對 rotate-left/rotate-right 而言，
-// 需要正確的元素寬度（如 []u32 → i32）以選擇 llvm.fshl.i32 而非 i64。
+// 注意：IndexExpression 不在此處處理，因為 generateIndexExpression
+// 會將 i8 元素 zext 到 i64，實際 SSA 值型別為 i64。
+// rotate-left/rotate-right 內建（call.go ~L3848）有自己的 fallback 邏輯，
+// 在 intExprLLVMType 回傳 "" 時直接從 arrayElemTypes 查找元素寬度。
 func (g *Generator) intExprLLVMType(expr parser.Expression) string {
 	switch v := expr.(type) {
 	case *parser.Identifier:
@@ -1245,21 +1246,14 @@ func (g *Generator) intExprLLVMType(expr parser.Expression) string {
 				}
 			}
 		}
-	case *parser.IndexExpression:
-		// Array/slice element: determine element type for correct rotation
-		// width. exprResultLLVMType looks up arrayElemTypes (e.g. []u32 → "i32")
-		// and moduleArrayElemTypes for module-level arrays.
-		elemType := g.exprResultLLVMType(v)
-		switch elemType {
-		case "i8", "i16", "i32":
-			return elemType
-		case "u8":
-			return "i8"
-		case "u16":
-			return "i16"
-		case "u32":
-			return "i32"
-		}
+	// Note: IndexExpression is intentionally NOT handled here.
+	// generateIndexExpression always zexts narrow integer elements (i8/i16/i32)
+	// to i64, so the actual SSA value type is i64. Returning the element type
+	// (e.g. "i8") here would cause type mismatches in all other callers
+	// (e.g. vec.set, prefix ~, prefix -) that expect the value to be i64.
+	// The rotate-left/rotate-right intrinsic (call.go ~L3848) has its own
+	// fallback that directly looks up the element type from arrayElemTypes
+	// when intExprLLVMType returns "".
 	case *parser.DotExpression:
 		// Field access on a struct variable: look up field's LLVM type.
 		// e.g. .connected (where self.connected is bool) → i1
