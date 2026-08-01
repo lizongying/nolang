@@ -1103,6 +1103,15 @@ func (g *Generator) intExprLLVMType(expr parser.Expression) string {
 				switch t {
 				case "i1", "i8", "i16", "i32", "i64":
 					return t
+					// u32 and u64 map to i32 and i64 in LLVM but were
+					// missing here, causing rotate-left/rotate-right to
+					// use the wrong (i64) fshl/fshr intrinsic width for
+					// u32 operands — producing incorrect rotation results
+					// in hash algorithms (MD5, SHA-256, BLAKE2, etc.).
+				case "u32":
+					return "i32"
+				case "u64":
+					return "i64"
 				}
 			}
 		}

@@ -2352,6 +2352,11 @@ func (g *Generator) callBuiltin(sb *strings.Builder, fnName string, hasArgs bool
 			sb.WriteString(fmt.Sprintf("%s%s = getelementptr [16 x i8], [16 x i8]* %s, i64 0, i64 0\n", g.indent(), addrPtr, addrReg))
 			sb.WriteString(fmt.Sprintf("%scall void @llvm.memset.p0i8.i64(i8* %s, i8 0, i64 16, i1 false)\n", g.indent(), addrPtr))
 
+			// sin_len = 16 (sizeof(struct sockaddr_in)) — required on macOS/BSD
+			// macOS/BSD sockaddr_in has sin_len at offset 0; without it,
+			// connect()/bind() may reject the address.
+			sb.WriteString(fmt.Sprintf("%sstore i8 16, i8* %s\n", g.indent(), addrPtr))
+
 			// sin_family = AF_INET (2)
 			sb.WriteString(fmt.Sprintf("%s%s = getelementptr i8, i8* %s, i64 1\n", g.indent(), famGep, addrPtr))
 			sb.WriteString(fmt.Sprintf("%sstore i8 2, i8* %s\n", g.indent(), famGep))
@@ -2487,6 +2492,11 @@ func (g *Generator) callBuiltin(sb *strings.Builder, fnName string, hasArgs bool
 			sb.WriteString(fmt.Sprintf("%s%s = alloca [16 x i8]\n", g.indent(), addrReg))
 			sb.WriteString(fmt.Sprintf("%s%s = getelementptr [16 x i8], [16 x i8]* %s, i64 0, i64 0\n", g.indent(), addrPtr, addrReg))
 			sb.WriteString(fmt.Sprintf("%scall void @llvm.memset.p0i8.i64(i8* %s, i8 0, i64 16, i1 false)\n", g.indent(), addrPtr))
+
+			// sin_len = 16 (sizeof(struct sockaddr_in)) — required on macOS/BSD
+			// macOS/BSD sockaddr_in has sin_len at offset 0; without it,
+			// connect()/bind() may reject the address.
+			sb.WriteString(fmt.Sprintf("%sstore i8 16, i8* %s\n", g.indent(), addrPtr))
 
 			// sin_family = AF_INET (2)
 			sb.WriteString(fmt.Sprintf("%s%s = getelementptr i8, i8* %s, i64 1\n", g.indent(), famGep, addrPtr))
@@ -2820,12 +2830,14 @@ func (g *Generator) callBuiltin(sb *strings.Builder, fnName string, hasArgs bool
 			useResolved := fmt.Sprintf("net.us.useresolved.%d", g.tmpIdx)
 			doSendto := fmt.Sprintf("net.us.dosendto.%d", g.tmpIdx)
 
-			sb.WriteString(fmt.Sprintf("%s%s = alloca [16 x i8]\n", g.indent(), addrReg))
-			sb.WriteString(fmt.Sprintf("%s%s = getelementptr [16 x i8], [16 x i8]* %s, i64 0, i64 0\n", g.indent(), addrPtr, addrReg))
-			sb.WriteString(fmt.Sprintf("%scall void @llvm.memset.p0i8.i64(i8* %s, i8 0, i64 16, i1 false)\n", g.indent(), addrPtr))
-			sb.WriteString(fmt.Sprintf("%s%s = getelementptr i8, i8* %s, i64 1\n", g.indent(), famGep, addrPtr))
-			sb.WriteString(fmt.Sprintf("%sstore i8 2, i8* %s\n", g.indent(), famGep))
-			sb.WriteString(fmt.Sprintf("%s%s = and i64 %s, 255\n", g.indent(), portLo, portVal))
+		sb.WriteString(fmt.Sprintf("%s%s = alloca [16 x i8]\n", g.indent(), addrReg))
+		sb.WriteString(fmt.Sprintf("%s%s = getelementptr [16 x i8], [16 x i8]* %s, i64 0, i64 0\n", g.indent(), addrPtr, addrReg))
+		sb.WriteString(fmt.Sprintf("%scall void @llvm.memset.p0i8.i64(i8* %s, i8 0, i64 16, i1 false)\n", g.indent(), addrPtr))
+		// sin_len = 16 (sizeof(struct sockaddr_in)) — required on macOS/BSD
+		sb.WriteString(fmt.Sprintf("%sstore i8 16, i8* %s\n", g.indent(), addrPtr))
+		sb.WriteString(fmt.Sprintf("%s%s = getelementptr i8, i8* %s, i64 1\n", g.indent(), famGep, addrPtr))
+		sb.WriteString(fmt.Sprintf("%sstore i8 2, i8* %s\n", g.indent(), famGep))
+		sb.WriteString(fmt.Sprintf("%s%s = and i64 %s, 255\n", g.indent(), portLo, portVal))
 			sb.WriteString(fmt.Sprintf("%s%s = lshr i64 %s, 8\n", g.indent(), portHi, portVal))
 			sb.WriteString(fmt.Sprintf("%s%s = and i64 %s, 255\n", g.indent(), portHiM, portHi))
 			sb.WriteString(fmt.Sprintf("%s%s = shl i64 %s, 8\n", g.indent(), portSl, portLo))
@@ -2856,13 +2868,21 @@ func (g *Generator) callBuiltin(sb *strings.Builder, fnName string, hasArgs bool
 			sb.WriteString(fmt.Sprintf("%s%s = icmp eq i32 %s, 0\n", g.indent(), gaiOk, gaiRet))
 			sb.WriteString(fmt.Sprintf("%sbr i1 %s, label %%%s, label %%%s\n", g.indent(), gaiOk, useResolved, doSendto))
 
-			// use_resolved: copy ai_addr to our sockaddr_in
+			// use_resolved: copy only sin_addr (4 bytes at offset 4) from ai_addr
+			// to our buffer, preserving sin_family and sin_port we already set.
+			// getaddrinfo was called with NULL service, so ai_addr.sin_port = 0;
+			// copying all 16 bytes would overwrite our port with 0.
 			g.emitLabel(sb, useResolved)
 			resVal = g.loadDataPtrField(sb, resReg)
 			sb.WriteString(fmt.Sprintf("%s%s = getelementptr i8, i8* %s, i64 32\n", g.indent(), aiAddrGep, resVal))
 			sb.WriteString(fmt.Sprintf("%s%s = bitcast i8* %s to i8**\n", g.indent(), aiAddrCast, aiAddrGep))
 			aiAddr := g.loadDataPtrField(sb, aiAddrCast)
-			sb.WriteString(fmt.Sprintf("%scall void @llvm.memcpy.p0i8.p0i8.i64(i8* %s, i8* %s, i64 16, i1 false)\n", g.indent(), addrPtr, aiAddr))
+			// Copy only sin_addr (4 bytes at offset 4) from ai_addr to our buffer
+			usSinAddrGep := g.tmpReg("net.us.sinaddr")
+			usAiSinAddrGep := g.tmpReg("net.us.aisin")
+			sb.WriteString(fmt.Sprintf("%s%s = getelementptr i8, i8* %s, i64 4\n", g.indent(), usSinAddrGep, addrPtr))
+			sb.WriteString(fmt.Sprintf("%s%s = getelementptr i8, i8* %s, i64 4\n", g.indent(), usAiSinAddrGep, aiAddr))
+			sb.WriteString(fmt.Sprintf("%scall void @llvm.memcpy.p0i8.p0i8.i64(i8* %s, i8* %s, i64 4, i1 false)\n", g.indent(), usSinAddrGep, usAiSinAddrGep))
 			sb.WriteString(fmt.Sprintf("%scall void @freeaddrinfo(i8* %s)\n", g.indent(), resVal))
 			sb.WriteString(fmt.Sprintf("%sbr label %%%s\n", g.indent(), doSendto))
 
@@ -2976,8 +2996,17 @@ func (g *Generator) callBuiltin(sb *strings.Builder, fnName string, hasArgs bool
 			sb.WriteString(fmt.Sprintf("%s%s = bitcast i8* %s to i64*\n", g.indent(), tvUsecCast, tvUsecGep))
 			sb.WriteString(fmt.Sprintf("%sstore i64 %s, i64* %s\n", g.indent(), usecVal, tvUsecCast))
 			// setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv))
+			// Platform-specific constants:
+			//   macOS: SOL_SOCKET=0xFFFF=65535, SO_RCVTIMEO=0x1006=4102
+			//   Linux: SOL_SOCKET=1,           SO_RCVTIMEO=20
+			solSocket := "65535"
+			soRcvtimeo := "4102"
+			if runtime.GOOS == "linux" {
+				solSocket = "1"
+				soRcvtimeo = "20"
+			}
 			sb.WriteString(fmt.Sprintf("%s%s = trunc i64 %s to i32\n", g.indent(), fdTrunc, fdVal))
-			sb.WriteString(fmt.Sprintf("%s%s = call i32 @setsockopt(i32 %s, i32 65535, i32 20, i8* %s, i32 16)\n", g.indent(), setRet, fdTrunc, tvPtr))
+			sb.WriteString(fmt.Sprintf("%s%s = call i32 @setsockopt(i32 %s, i32 %s, i32 %s, i8* %s, i32 16)\n", g.indent(), setRet, fdTrunc, solSocket, soRcvtimeo, tvPtr))
 			sb.WriteString(fmt.Sprintf("%s%s = sext i32 %s to i64\n", g.indent(), retExt, setRet))
 		}
 		return retExt
