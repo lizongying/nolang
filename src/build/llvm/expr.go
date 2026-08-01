@@ -1741,6 +1741,12 @@ func (g *Generator) generateDotExpression(sb *strings.Builder, expr *parser.DotE
 			// 一律 load 欄位值。對 struct 型別的鏈式存取由 generateExprPtr 處理（需指標的情況）。
 			loadReg := g.tmpReg("dot.val")
 			sb.WriteString(fmt.Sprintf("%s%s = load %s, %s* %s\n", g.indent(), loadReg, fieldType, fieldType, reg))
+			// Track the SSA type so downstream code (e.g. generateLet) can
+			// distinguish loaded values from pointers when deciding whether
+			// to load again before storing.
+			if g.ssaTypes != nil {
+				g.ssaTypes[loadReg] = fieldType
+			}
 			return loadReg
 		}
 	}
@@ -2589,11 +2595,15 @@ func (g *Generator) generateStructFieldIndexRead(sb *strings.Builder, dot *parse
 					elemGEP := g.tmpReg("idx.arr.elem")
 					sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %s, %s* %s, i64 0, i64 %s\n",
 						g.indent(), elemGEP, fieldType, fieldType, fieldGEP, idx))
-					// Struct element: return pointer (by-reference), no load needed
-					if g.isStructLLVMType(elemType) {
-						return elemGEP
-					}
-					// Integer element: load value
+				// Struct element: return pointer (by-reference), no load needed.
+				// generateExprPtr / generateIndexExprPtr callers use this pointer
+				// for chained access (e.g. .sessions[i].field).
+				// generateLet / generateExprWithSB callers that need a value should
+				// load from the returned pointer themselves.
+				if g.isStructLLVMType(elemType) {
+					return elemGEP
+				}
+				// Integer element: load value
 					elemLoad := g.tmpReg("idx.arr.val")
 					sb.WriteString(fmt.Sprintf("%s%s = load %s, %s* %s\n",
 						g.indent(), elemLoad, elemType, elemType, elemGEP))

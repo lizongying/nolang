@@ -1802,6 +1802,13 @@ str.rindex = (target str) (pos i64) {
     } (i >= 0)
 }
 
+; str.last-index: 反向查找子串最後出現位置（last-index 是 rindex 的別名）
+; target str: 要查找的子串
+; 返回 pos i64: 找到的字節位置，未找到 -1
+str.last-index = (target str) (pos i64) {
+    pos = .rindex(target)
+}
+
 ; str.rindex-from: 從 from 位置反向查找子串
 ; 語義同 Python rfind(target, from)：在 [from, .len) 範圍內查找 target 最後出現位置
 ; target str: 要查找的子串

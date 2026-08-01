@@ -2864,6 +2864,21 @@ func (g *Generator) varLLVMType(stmt *parser.LetStatement) string {
 		if t, ok := g.varTypes[sl.Type]; ok {
 			return t
 		}
+		// Direct match in structTypes
+		if _, ok := g.structTypes[sl.Type]; ok {
+			return "%" + sl.Type
+		}
+		// Try module-prefixed variants (e.g. "server" → "server.server")
+		// when the bare type name is not directly registered but a
+		// module-prefixed version exists. This fixes "unsized type" errors
+		// when struct literals use bare names that were prefixed by
+		// prefixModuleStatements.
+		suffix := "." + sl.Type
+		for name := range g.structTypes {
+			if strings.HasSuffix(name, suffix) {
+				return "%" + name
+			}
+		}
 		return "%" + sl.Type
 	}
 	// struct 欄位讀取 (e.g. p-local = fp.path)：依 receiver 型別與欄位名稱查詢 LLVM 型別
@@ -6181,6 +6196,18 @@ func (g *Generator) generateLet(sb *strings.Builder, stmt *parser.LetStatement) 
 	if sl, ok := stmt.Value.(*parser.StructLiteral); ok {
 		structName := sl.Type
 		fields := g.structTypes[structName]
+		// If bare type name not found, try module-prefixed variant
+		// (e.g. "server" → "server.server") to avoid unsized type errors.
+		if fields == nil {
+			suffix := "." + structName
+			for name := range g.structTypes {
+				if strings.HasSuffix(name, suffix) {
+					structName = name
+					fields = g.structTypes[name]
+					break
+				}
+			}
+		}
 		structTy := "%" + structName
 		// Ensure variable is allocated (needed for top-level LetStatements in main function)
 		if _, exists := g.funcLocalNames[name]; !exists {

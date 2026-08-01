@@ -1056,23 +1056,34 @@ func (g *Generator) generateCallExpression(sb *strings.Builder, expr *parser.Cal
 					}
 				allArgs = append(allArgs, g.generateCallArg(sb, outArg))
 			}
-			sb.WriteString(fmt.Sprintf("%scall void @%s(%s)\n", g.indent(), sanitizeLLVMName(innerFnName), strings.Join(allArgs, ", ")))
-			// The called function wrote elements via pointer; without updating len,
-			// subsequent reads (fields[0]) would fail bounds check (len still 0).
-			for _, lu := range lenUpdates {
-				g.emitVecLenAutoUpdate(sb, lu.varName, lu.idxReg, lu.isConst)
+			// Guard against empty function name: if innerFnName is empty,
+			// skip the call to avoid generating malformed IR `call void @(...)`.
+			if innerFnName != "" {
+				sb.WriteString(fmt.Sprintf("%scall void @%s(%s)\n", g.indent(), sanitizeLLVMName(innerFnName), strings.Join(allArgs, ", ")))
+				// The called function wrote elements via pointer; without updating len,
+				// subsequent reads (fields[0]) would fail bounds check (len still 0).
+				for _, lu := range lenUpdates {
+					g.emitVecLenAutoUpdate(sb, lu.varName, lu.idxReg, lu.isConst)
+				}
 			}
 			return ""
 		}
 		// 純 void（無輸出參數）：直接調用
-		sb.WriteString(fmt.Sprintf("%scall void @%s(%s)\n", g.indent(), sanitizeLLVMName(innerFnName), strings.Join(innerArgs, ", ")))
+		if innerFnName != "" {
+			sb.WriteString(fmt.Sprintf("%scall void @%s(%s)\n", g.indent(), sanitizeLLVMName(innerFnName), strings.Join(innerArgs, ", ")))
+		}
 		return ""
 	}
 
 	// 有返回值：生成 call 並捕獲結果
 	g.tmpIdx++
 	retReg := fmt.Sprintf("%%callret.%d", g.tmpIdx)
-	sb.WriteString(fmt.Sprintf("%s%s = call %s @%s(%s)\n", g.indent(), retReg, retType, sanitizeLLVMName(innerFnName), strings.Join(innerArgs, ", ")))
+	if innerFnName != "" {
+		sb.WriteString(fmt.Sprintf("%s%s = call %s @%s(%s)\n", g.indent(), retReg, retType, sanitizeLLVMName(innerFnName), strings.Join(innerArgs, ", ")))
+	} else {
+		fmt.Fprintf(os.Stderr, "codegen warning: skipping call with empty function name\n")
+		return ""
+	}
 
 		// 將返回值存入輸出參數變數
 		for _, outArg := range expr.Arguments {
