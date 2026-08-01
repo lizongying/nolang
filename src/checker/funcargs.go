@@ -1020,10 +1020,13 @@ func filterByExports(prog *parser.Program, libPath string) *parser.Program {
 	for _, stmt := range prog.Statements {
 		switch s := stmt.(type) {
 		case *parser.FunctionDefinition:
-			if alias, ok := exported[s.Name]; ok {
-				if alias != "" {
-					s.Name = alias
-				}
+			if _, ok := exported[s.Name]; ok {
+				// Do NOT rename s.Name to the export alias here.
+				// filterByExports may be called multiple times on the same
+				// cached Program (preload + merge), and mutating s.Name
+				// would cause subsequent calls to fail to find the original
+				// function name. The merge step in the transpiler handles
+				// renaming via the import alias (use.Alias).
 				filtered.Statements = append(filtered.Statements, s)
 			}
 		case *parser.StructDefinition:

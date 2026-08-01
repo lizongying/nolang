@@ -11,6 +11,7 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	nbuild "github.com/lizongying/nolang/build"
@@ -1851,11 +1852,32 @@ func vetCommand(args []string) {
 			fmt.Fprintf(os.Stderr, "Error: no .no files found in %s\n", inputPath)
 			os.Exit(1)
 		}
+		// 並行驗證：每個文件獨立編譯，使用 worker pool 並行處理。
+		// vet 模式下跳過 ClearModuleCache，全域 parseProgramFileCache 為執行緒安全
+		// （mutex 保護），可跨文件復用。
+		var wg sync.WaitGroup
+		sem := make(chan struct{}, runtime.NumCPU())
+		var errMu sync.Mutex
+		var firstErr error
 		for _, file := range files {
-			if err := nbuild.VetFile(file, opts); err != nil {
-				fmt.Fprintf(os.Stderr, "Error in %s: %v\n", file, err)
-				os.Exit(1)
-			}
+			wg.Add(1)
+			sem <- struct{}{}
+			go func(f string) {
+				defer wg.Done()
+				defer func() { <-sem }()
+				if e := nbuild.VetFile(f, opts); e != nil {
+					errMu.Lock()
+					if firstErr == nil {
+						firstErr = fmt.Errorf("Error in %s: %w", f, e)
+					}
+					errMu.Unlock()
+				}
+			}(file)
+		}
+		wg.Wait()
+		if firstErr != nil {
+			fmt.Fprintf(os.Stderr, "%v\n", firstErr)
+			os.Exit(1)
 		}
 	} else {
 		// 文件模式：驗證單個文件

@@ -553,6 +553,7 @@ type Transpiler struct {
 	pkg              *Package // 當前套件（用於路徑解析）
 	sourcePath       string   // 當前編譯的源碼檔案路徑（用於 std 庫檢測）
 	allowAnonymousFn bool     // 是否允許匿名函式型別參數（來自 mod.jsonc）
+	vetMode          bool     // vet 模式：只做語法+型別檢查，跳過 LLVM IR 生成
 	// externFuncSigs/externStructFields: 預載入的跨文件函數簽名和 struct 欄位型別，
 	// 注入到所有 parser 實例中以支援 let 型別推斷
 	externFuncSigs     map[string][]string
@@ -589,6 +590,14 @@ func (t *Transpiler) SetTargetPlatform(goos, goarch string) {
 // When true (unsafe mode), array/slice/string indexing does not emit bounds checks.
 func (t *Transpiler) SetNoBoundsCheck(skip bool) {
 	t.noBoundsCheck = skip
+}
+
+// SetVetMode configures the transpiler to skip LLVM IR generation.
+// When true, Compile/CompileTarget performs full front-end validation
+// (parse, type-check, module merge, monomorphization) but returns before
+// the expensive LLVM codegen step. Used by `no vet`.
+func (t *Transpiler) SetVetMode(vet bool) {
+	t.vetMode = vet
 }
 type Target int
 const (
@@ -785,7 +794,11 @@ func (t *Transpiler) Compile(source string) (string, error) {
 	// 同一 std 模組在 preloadModuleSignatures、checker.ValidateFuncArgs、merge 步驟中
 	// 會被重複載入，快取後僅解析一次。
 	t.fileCache = make(map[string]*parser.Program)
-	checker.ClearModuleCache()
+	// vet 模式下保留全域模組解析快取，使跨文件可復用 parseProgramFile 結果。
+	// 非 vet 模式（即 build）仍需清空快取以確保每次編譯的 AST 完全隔離。
+	if !t.vetMode {
+		checker.ClearModuleCache()
+	}
 	return t.CompileTarget(source, TargetLLVM)
 }
 // preloadModuleSignatures 掃描源碼中的 use 語句，預載入模組的函數簽名和 struct 欄位型別。
@@ -1337,6 +1350,11 @@ func (t *Transpiler) CompileTarget(source string, _ Target) (string, error) {
 	// 必須在模組合併後執行，才能檢查到導入模組（如 md5.no）中的問題
 	if err := validateLoopScopedVars(merged); err != nil {
 		return "", err
+	}
+	// vet 模式：前端驗證（語法+型別+模組合併+單態化）已全部完成，
+	// 跳過 LLVM IR 生成以大幅加速 `no vet`。
+	if t.vetMode {
+		return "", nil
 	}
 	// 傳播目標平台到 LLVM generator，讓 Generate 內部的平台過濾使用目標平台
 	// 而非編譯主機平台（支援交叉編譯）。

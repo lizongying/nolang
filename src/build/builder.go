@@ -267,6 +267,8 @@ func VetFile(inputPath string, opts BuildOptions) error {
 	compiler.sourcePath = inputPath
 	goos, goarch := parseTargetPlatform(opts.Target)
 	compiler.SetTargetPlatform(goos, goarch)
+	// vet 模式：跳過 LLVM IR 生成，只做前端驗證（語法+型別+模組合併+單態化）
+	compiler.SetVetMode(true)
 	_, err = compiler.Compile(string(source))
 	if err != nil {
 		return fmt.Errorf("validation error: %w", err)
