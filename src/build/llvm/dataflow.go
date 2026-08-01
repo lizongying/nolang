@@ -461,9 +461,16 @@ func initTransfer(in bitsetFact, effects []effect) bitsetFact {
 // 返回 (meet, join) 用于三态分类。
 func factAtPoint(cfg *FuncCFG, facts map[string]*blockFact, label string, preEffects int) (bitsetFact, bitsetFact) {
 	bf := facts[label]
+	if bf == nil {
+		// block 不在求解結果中（可能不可達或未註冊），返回全 0 fact
+		return newBitsetFact(0), newBitsetFact(0)
+	}
 	meet := bf.inMeet.copy()
 	join := bf.inJoin.copy()
 	b := cfg.Blocks[label]
+	if b == nil {
+		return meet, join
+	}
 	for i := 0; i < preEffects && i < len(b.Effects); i++ {
 		e := b.Effects[i]
 		switch e.Kind {
@@ -566,4 +573,31 @@ func (g *Generator) cfgAddFreeSite(fs *freeSite) {
 	if g.curCFG != nil {
 		g.curCFG.addFreeSite(g.cfgBlockLabel(), fs)
 	}
+}
+
+// computeReachableBlocks 計算從 Entry 可達的所有 block（BFS）。
+// 用於排除內部 codegen 產生的孤立塊（如 heapfree.skip.N 等），
+// 這些塊可能未連接到 CFG 但被 emitLabel 註冊。
+func (g *Generator) computeReachableBlocks() map[string]bool {
+	reachable := make(map[string]bool)
+	if g.curCFG == nil || g.curCFG.Entry == "" {
+		return reachable
+	}
+	queue := []string{g.curCFG.Entry}
+	reachable[g.curCFG.Entry] = true
+	for len(queue) > 0 {
+		label := queue[0]
+		queue = queue[1:]
+		b, ok := g.curCFG.Blocks[label]
+		if !ok {
+			continue
+		}
+		for _, succ := range b.Succs {
+			if !reachable[succ] {
+				reachable[succ] = true
+				queue = append(queue, succ)
+			}
+		}
+	}
+	return reachable
 }

@@ -173,6 +173,7 @@ type funcState struct {
 	currentBlock    string     // current basic block label (for PHI predecessor tracking)
 	blockTerminated bool       // true if current basic block ends with a terminator (ret/br)
 	curCFG          *FuncCFG   // 當前函數的 CFG（數據流分析載體，nil = 未啟用）
+	cfgMovedFacts   map[string]*blockFact // 求解後的 MovedFact（每個 block 的 IN/OUT meet/join）
 	// === 函數上下文 ===
 	curFuncRetType string // 當前函數回傳型別（void/i64/...）
 	curFuncRetName string // 當前函數輸出參數名稱（為空表示 void）

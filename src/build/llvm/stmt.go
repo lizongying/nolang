@@ -1,9 +1,9 @@
 package llvm
 
 import (
-	"fmt"
-	"sort"
-	"strings"
+"fmt"
+"sort"
+"strings"
 
 	"github.com/lizongying/nolang/builtin"
 	"github.com/lizongying/nolang/parser"
@@ -500,10 +500,42 @@ func (g *Generator) emitHeapFree(sb *strings.Builder) {
 			g.emitVarHeapFree(sb, g.varAddr(name), llvmType, elemType, name)
 			continue
 		}
+		// 數據流優化：若數據流分析確認變數在所有路徑都已 moved（triMust），
+		// 則靜態跳過 free，無需運行時 bitmap 檢查。
+		// 對於 triMay/triMustNot，回退到舊邏輯（movedVarBitset 或 bitmap）。
+		if g.cfgMovedFacts != nil && g.curCFG != nil {
+			reachable := g.computeReachableBlocks()
+			allMeet := newBitsetFact(g.nextHeapVarIdx)
+			allJoin := newBitsetFact(g.nextHeapVarIdx)
+			first := true
+			for _, label := range g.curCFG.Order {
+				if !reachable[label] {
+					continue
+				}
+				bf := g.cfgMovedFacts[label]
+				if bf == nil {
+					continue
+				}
+				if first {
+					allMeet = bf.outMeet.copy()
+					allJoin = bf.outJoin.copy()
+					first = false
+				} else {
+					allMeet = allMeet.meet(bf.outMeet)
+					allJoin = allJoin.join(bf.outJoin)
+				}
+			}
+			if !first {
+				tri := classifyMoved(allMeet, allJoin, varIdx)
+				if tri == triMust {
+					// 所有路徑 moved → 靜態跳過 free
+					continue
+				}
+			}
+		}
+		// 回退到舊邏輯
 		if g.hasBranchMove && g.movedBitmapBase != "" {
 			// 有運行時 bitmap：生成 IR 檢查 bit
-			// bit=1 → move 已發生，所有權轉移，跳過 free
-			// bit=0 → move 未發生（分支未執行），仍擁有數據，需 free
 			g.emitBitCheckFree(sb, name, varIdx, llvmType, elemType)
 		} else {
 			// 無 bitmap：編譯期檢查 movedVarBitset
@@ -1266,6 +1298,8 @@ func (g *Generator) handleMoveToOut(sb *strings.Builder, srcName, outName string
 			} else {
 				g.unmarkMovedVar(oldVarIdx) // 編譯期清 bit
 			}
+			// CFG: 舊綁定變數恢復所有權（effRemove）
+			g.cfgAddEffect(effect{Kind: effRemove, VarIdx: oldVarIdx})
 		}
 	}
 	// 2. 設新：設置當前變數的 bit
@@ -1274,6 +1308,9 @@ func (g *Generator) handleMoveToOut(sb *strings.Builder, srcName, outName string
 	} else {
 		g.markMovedVar(srcVarIdx) // 編譯期設 bit
 	}
+	// CFG: 源變數 moved（effAdd）+ out 參數綁定（effBind）
+	g.cfgAddEffect(effect{Kind: effAdd, VarIdx: srcVarIdx})
+	g.cfgAddEffect(effect{Kind: effBind, OutIdx: outIdx, VarIdx: srcVarIdx})
 	// 3. 更新 outBindState
 	if outIdx < len(g.outBindState) {
 		g.outBindState[outIdx] = srcVarIdx
@@ -1292,6 +1329,8 @@ func (g *Generator) handleMoveLocal(sb *strings.Builder, srcName string) {
 	} else {
 		g.markMovedVar(srcVarIdx) // 編譯期設 bit
 	}
+	// CFG: 記錄 effAdd（源變數 moved，所有權轉移）
+	g.cfgAddEffect(effect{Kind: effAdd, VarIdx: srcVarIdx})
 }
 
 // emitShallowDataFree releases a container's data buffer without iterating elements.
@@ -1421,10 +1460,15 @@ func (g *Generator) freeOldHeapValue(sb *strings.Builder, stmt *parser.LetStatem
 					// 跳過 free（所有權轉移）
 					// 清除 moved bit：變數即將獲得新值
 					g.unmarkMovedVar(varIdx)
+					// CFG: 變數重賦值，清除 moved 狀態（effRemove）
+					g.cfgAddEffect(effect{Kind: effRemove, VarIdx: varIdx})
 					return
 				}
 				g.emitVarHeapFree(sb, g.varAddr(name), oldType, elemType, name)
 			}
+			// CFG: 變數重賦值，清除 moved 狀態（effRemove）
+			// 覆蓋 bitmap 和直接 free 兩條路徑（上面 return 的路徑已單獨記錄）
+			g.cfgAddEffect(effect{Kind: effRemove, VarIdx: varIdx})
 			return
 		}
 	}
@@ -2244,6 +2288,13 @@ func (g *Generator) generateFunctionDefinition(sb *strings.Builder, fd *parser.F
 	g.emitLabel(sb, "entry")
 	g.indentLevel++
 
+	// 初始化 CFG 用于数据流分析（MovedFact must/may 分析）。
+	// entry block 已由 emitLabel 注册，设置 Entry 指向它。
+	g.curCFG = newFuncCFG()
+	g.curCFG.Entry = "entry"
+	g.curCFG.getOrCreateBlock("entry")
+	g.cfgMovedFacts = nil
+
 	// 收集所有變數（一次分配），排除參數（已是指標）
 	localVarTypes := make(map[string]string)
 	// Reset itAllocTypes per function to prevent type leakage from prior functions
@@ -2482,6 +2533,20 @@ func (g *Generator) generateFunctionDefinition(sb *strings.Builder, fd *parser.F
 		for _, stmt := range fd.Body.Statements {
 			g.generateStatement(bodyBuf, stmt)
 		}
+	}
+
+	// 求解數據流分析（MovedFact must/may）。
+	// CFG 在函數體生成過程中已通過 cfgEdge/cfgTerm/cfgAddEffect 構建完成。
+	// 求解結果存入 cfgMovedFacts，供 emitHeapFree 做三態決策：
+	//   triMust → 所有路徑 moved → 靜態跳過 free
+	//   triMustNot → 無路徑 moved → 靜態 free
+	//   triMay → 部分路徑 moved → 運行時 bitmap 檢查
+	if g.curCFG != nil && g.nextHeapVarIdx > 0 {
+		g.cfgMovedFacts = solveBitsetForward(
+			g.curCFG, g.nextHeapVarIdx,
+			newBitsetFact(g.nextHeapVarIdx),
+			movedTransfer,
+		)
 	}
 
 	// 分配運行時 bitmap（僅當存在分支內 move 且有局部堆變數時）：
