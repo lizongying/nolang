@@ -1030,8 +1030,8 @@ func (g *Generator) conditionalResultType(expr *parser.ConditionalExpression) st
 			return t
 		}
 	}
-	// 檢查字串字面量
-	if isStringExpr(expr.Consequence) || isStringExpr(expr.Alternative) {
+	// 檢查字串字面量和 struct str 字段
+	if g.isStringExpr(expr.Consequence) || g.isStringExpr(expr.Alternative) {
 		return "%str-long"
 	}
 	// 檢查 nil 字面量（option 型別）

@@ -469,6 +469,7 @@ func (g *Generator) generateCallArg(sb *strings.Builder, arg parser.Expression) 
 			g.tmpIdx++
 			tmpName := fmt.Sprintf("%%ref.tmp.%d", g.tmpIdx)
 			ptrType := "i64*"
+			// 1. Try varTypes lookup by variable name (for simple Identifier args)
 			parts := strings.SplitN(ev, ".", 2)
 			baseName := strings.TrimPrefix(parts[0], "%")
 			if g.varTypes != nil {
@@ -479,6 +480,10 @@ func (g *Generator) generateCallArg(sb *strings.Builder, arg parser.Expression) 
 						ptrType = "%str-long*"
 					} else if t == "i8*" {
 						ptrType = "i8**"
+					} else if g.isStructLLVMType(t) {
+						ptrType = t + "*"
+					} else if g.isIntegerLLVMType(t) {
+						ptrType = t + "*"
 					}
 				}
 				if idx := strings.IndexByte(baseName, '.'); idx > 0 {
@@ -491,10 +496,9 @@ func (g *Generator) generateCallArg(sb *strings.Builder, arg parser.Expression) 
 					}
 				}
 			}
-			// DotExpression (e.g. .field) loads a struct value into an SSA register.
-			// The baseName "dot" is not a real variable, so varTypes lookup fails and
-			// ptrType defaults to i64*. Determine the field type from structTypes so
-			// %vec / %arr / %str-long fields get the correct pointer type.
+			// 2. DotExpression (e.g. .field): look up field type from structTypes.
+			//    Handles Identifier receivers (cfg.field) and chained access
+			//    (a.b.field) by using exprResultLLVMType as fallback.
 			if dot, ok := arg.(*parser.DotExpression); ok {
 				if ident, ok := dot.Receiver.(*parser.Identifier); ok {
 					if g.varTypes != nil {
@@ -511,6 +515,13 @@ func (g *Generator) generateCallArg(sb *strings.Builder, arg parser.Expression) 
 						}
 					}
 				}
+				// For chained DotExpression (a.b.field) or non-Identifier receivers,
+				// exprResultLLVMType can resolve the full chain to the field type.
+				if ptrType == "i64*" {
+					if et := g.exprResultLLVMType(arg); et != "" && et != "i64" {
+						ptrType = et + "*"
+					}
+				}
 			}
 			// CallExpression: the baseName (e.g. "call") is not a real variable,
 			// so varTypes lookup fails. Use exprResultLLVMType to determine the
@@ -518,6 +529,16 @@ func (g *Generator) generateCallArg(sb *strings.Builder, arg parser.Expression) 
 			if call, ok := arg.(*parser.CallExpression); ok {
 				if et := g.exprResultLLVMType(call); et != "" {
 					ptrType = et + "*"
+				}
+			}
+			// 3. Fallback: check ssaTypes for the SSA register's type.
+			//    generateDotExpression and other generators record the loaded
+			//    value's type in ssaTypes. This catches cases where varTypes
+			//    and structTypes lookups fail (e.g. module-prefixed struct names,
+			//    complex chained access).
+			if ptrType == "i64*" && g.ssaTypes != nil {
+				if ssaType, ok := g.ssaTypes[ev]; ok && ssaType != "" && ssaType != "i64" {
+					ptrType = ssaType + "*"
 				}
 			}
 			elemType := strings.TrimSuffix(ptrType, "*")
