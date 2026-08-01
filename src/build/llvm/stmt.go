@@ -508,14 +508,17 @@ func (g *Generator) emitHeapFree(sb *strings.Builder) {
 			allMeet := newBitsetFact(g.nextHeapVarIdx)
 			allJoin := newBitsetFact(g.nextHeapVarIdx)
 			first := true
-			for _, label := range g.curCFG.Order {
-				if !reachable[label] {
-					continue
-				}
-				bf := g.cfgMovedFacts[label]
-				if bf == nil {
-					continue
-				}
+		for _, label := range g.curCFG.Order {
+			if !reachable[label] {
+				continue
+			}
+			bf := g.cfgMovedFacts[label]
+			if bf == nil {
+				continue
+			}
+			// 只取函数出口块（无后继的 block = return 终止块）的 OUT 作为函数结尾真实状态，
+			// 而非对全部 block 取 meet（中间块会把结果稀释成全 0，导致 triMust 恒不触发）。
+			if b := g.curCFG.Blocks[label]; b != nil && len(b.Succs) == 0 {
 				if first {
 					allMeet = bf.outMeet.copy()
 					allJoin = bf.outJoin.copy()
@@ -525,12 +528,16 @@ func (g *Generator) emitHeapFree(sb *strings.Builder) {
 					allJoin = allJoin.join(bf.outJoin)
 				}
 			}
+		}
 			if !first {
 				tri := classifyMoved(allMeet, allJoin, varIdx)
+				dfStat(tri, len(g.curCFG.Order), len(reachable))
 				if tri == triMust {
 					// 所有路徑 moved → 靜態跳過 free
 					continue
 				}
+			} else {
+				dfStatNoBlock()
 			}
 		}
 		// 回退到舊邏輯

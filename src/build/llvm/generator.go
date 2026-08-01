@@ -787,6 +787,7 @@ func (g *Generator) goarch() string {
 }
 
 func (g *Generator) Generate(program *parser.Program) string {
+	defer DFStatDump()
 	// Filter out statements that don't match the target platform
 	// (#{mac-arm64}, #{linux-amd64}, etc.). If SetTargetPlatform was not
 	// called (empty fields), fall back to the host runtime platform.
