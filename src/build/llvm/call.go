@@ -1115,6 +1115,12 @@ func (g *Generator) generateCallExpression(sb *strings.Builder, expr *parser.Cal
 		// 鏈式 DotExpression 的 Receiver 本身也是 DotExpression，
 		// 需遞迴展開為完整名稱。
 		fnName = flattenDottedExpr(dot)
+		// For non-Identifier receivers (e.g. IndexExpression, CallExpression),
+		// flattenDottedExpr returns "". Use just the method name so that
+		// the method receiver resolution at ~L1424 can handle it.
+		if fnName == "" {
+			fnName = dot.Property
+		}
 		// Detect module-qualified calls: if the first segment is not a
 		// variable in varTypes, treat it as a module name. Strip the prefix
 		// when the short name is a user function (registered without the
@@ -1136,6 +1142,14 @@ func (g *Generator) generateCallExpression(sb *strings.Builder, expr *parser.Cal
 							isModuleQualified = true
 						}
 					}
+				} else if _, isIdentReceiver := dot.Receiver.(*parser.Identifier); !isIdentReceiver {
+					// Chained method call (e.g. data.len.to-str()):
+					// The first segment IS a variable, but the receiver is
+					// NOT a simple Identifier (it's a DotExpression, IndexExpression,
+					// etc.). Don't use the flattened chain as a function name;
+					// use just the method name and let the method receiver
+					// resolution at ~L1697 resolve the correct type-prefixed name.
+					fnName = dot.Property
 				}
 			}
 		}
@@ -3812,7 +3826,26 @@ func (g *Generator) genForwardFunc(sb *strings.Builder, forwardFunc string, expr
 		// Determine the integer width from the first argument's type
 		argType := g.intExprLLVMType(args[0])
 		if argType == "" {
-			argType = "i64"
+			// intExprLLVMType does not handle IndexExpression (array/slice
+			// element access), defaulting to i64. For rotate-left on u32
+			// array elements (e.g. rotate-left(w[i-15], 25) where w is []u32),
+			// look up the element type directly from arrayElemTypes so the
+			// correct llvm.fshl.i32 intrinsic is selected.
+			if idx, ok := args[0].(*parser.IndexExpression); ok {
+				if ident, ok := idx.Left.(*parser.Identifier); ok && g.arrayElemTypes != nil {
+					if et, ok := g.arrayElemTypes[ident.Value]; ok {
+						switch et {
+						case "i32":
+							argType = "i32"
+						case "i16":
+							argType = "i16"
+						}
+					}
+				}
+			}
+			if argType == "" {
+				argType = "i64"
+			}
 		}
 		intrinsic := "llvm.fshl.i64"
 		retType := "i64"

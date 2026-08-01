@@ -852,12 +852,10 @@ func (g *Generator) coercePhiValue(sb *strings.Builder, val, targetType string) 
 
 // generateConditionalExpression 產生三元運算子的 LLVM IR
 // 支持 condition ? consequence : alternative
+// 處理所有型別：i64, f64, str (%str-long), struct, option 等。
 func (g *Generator) generateConditionalExpression(sb *strings.Builder, expr *parser.ConditionalExpression) string {
 	g.tmpIdx++
 	labelId := g.tmpIdx
-
-	// 判斷結果型別
-	phiType := g.conditionalResultType(expr)
 
 	// 生成條件（若為比較運算，直接取 i1）
 	cond := ""
@@ -873,9 +871,16 @@ func (g *Generator) generateConditionalExpression(sb *strings.Builder, expr *par
 			cond = reg
 		}
 	} else {
-		reg := g.tmpReg("cond.trunc")
-		sb.WriteString(fmt.Sprintf("%s%s = trunc i64 %s to i1\n", g.indent(), reg, g.generateExprWithSB(sb, expr.Condition)))
-		cond = reg
+		// Check if condition is a logical (&&/||) infix — already i1
+		// or a bool variable — need to check ssaTypes
+		condExpr := expr.Condition
+		if g.generateConditionAsI1Available(condExpr) {
+			cond = g.generateConditionAsI1(sb, condExpr)
+		} else {
+			reg := g.tmpReg("cond.trunc")
+			sb.WriteString(fmt.Sprintf("%s%s = trunc i64 %s to i1\n", g.indent(), reg, g.generateExprWithSB(sb, condExpr)))
+			cond = reg
+		}
 	}
 
 	// branch
@@ -892,6 +897,17 @@ func (g *Generator) generateConditionalExpression(sb *strings.Builder, expr *par
 	g.emitLabel(sb, fmt.Sprintf("cond.then.%d", labelId))
 	g.indentLevel++
 	thenVal := g.generateExprWithSB(sb, expr.Consequence)
+	// Load struct value from alloca pointer before br (must be before terminator).
+	// String literals (%str-longlit.*) are alloca %str-long (pointers);
+	// the PHI needs the %str-long struct value, so load it.
+	if !g.blockTerminated && strings.Contains(thenVal, "str-longlit") {
+		loadReg := g.tmpReg("cond.then.strload")
+		sb.WriteString(fmt.Sprintf("%s%s = load %%str-long, %%str-long* %s\n", g.indent(), loadReg, thenVal))
+		thenVal = loadReg
+		if g.ssaTypes != nil {
+			g.ssaTypes[loadReg] = "%str-long"
+		}
+	}
 	thenPredecessor := g.currentBlock
 	sb.WriteString(fmt.Sprintf("%sbr label %%cond.end.%d\n", g.indent(), labelId))
 	// CFG: then → end
@@ -903,6 +919,15 @@ func (g *Generator) generateConditionalExpression(sb *strings.Builder, expr *par
 	g.emitLabel(sb, fmt.Sprintf("cond.else.%d", labelId))
 	g.indentLevel++
 	elseVal := g.generateExprWithSB(sb, expr.Alternative)
+	// Load struct value from alloca pointer before br (must be before terminator).
+	if !g.blockTerminated && strings.Contains(elseVal, "str-longlit") {
+		loadReg := g.tmpReg("cond.else.strload")
+		sb.WriteString(fmt.Sprintf("%s%s = load %%str-long, %%str-long* %s\n", g.indent(), loadReg, elseVal))
+		elseVal = loadReg
+		if g.ssaTypes != nil {
+			g.ssaTypes[loadReg] = "%str-long"
+		}
+	}
 	elsePredecessor := g.currentBlock
 	sb.WriteString(fmt.Sprintf("%sbr label %%cond.end.%d\n", g.indent(), labelId))
 	// CFG: else → end
@@ -910,13 +935,83 @@ func (g *Generator) generateConditionalExpression(sb *strings.Builder, expr *par
 	g.cfgTerm(elsePredecessor, termBr)
 	g.indentLevel--
 
-	// end: phi
+	// end: phi — determine the correct phi type
 	g.emitLabel(sb, endLabel)
 	phiReg := g.tmpReg("cond.phi")
+
+	// Determine phi type: prefer inferSSAType from actual values,
+	// then conditionalResultType as fallback.
+	phiType := g.conditionalResultType(expr)
+	// Override with inferred type from actual SSA values (handles str, struct, option)
+	if thenVal != "" && thenVal != "0" {
+		if inferred := g.inferSSAType(thenVal); inferred != "" {
+			phiType = inferred
+		}
+	} else if elseVal != "" && elseVal != "0" {
+		if inferred := g.inferSSAType(elseVal); inferred != "" {
+			phiType = inferred
+		}
+	}
+	// Also check ssaTypes map directly for then/else values
+	if g.ssaTypes != nil {
+		if t, ok := g.ssaTypes[thenVal]; ok && t != "" {
+			phiType = t
+		} else if t, ok := g.ssaTypes[elseVal]; ok && t != "" {
+			phiType = t
+		}
+	}
+
+	// For struct types, use zeroinitializer instead of integer 0
+	zeroVal := "0"
+	if g.isStructLLVMType(phiType) {
+		zeroVal = "zeroinitializer"
+	} else if phiType == "ptr" {
+		zeroVal = "null"
+	} else if phiType == "float" || phiType == "double" {
+		zeroVal = "0.000000e+00"
+	}
+	if thenVal == "" || thenVal == "0" {
+		thenVal = zeroVal
+	}
+	if elseVal == "" || elseVal == "0" {
+		elseVal = zeroVal
+	}
+
+	// Coerce branch values to phiType to avoid type mismatches in phi nodes.
+	if strings.HasPrefix(thenVal, "%") {
+		thenVal = g.coercePhiValue(sb, thenVal, phiType)
+	}
+	if strings.HasPrefix(elseVal, "%") {
+		elseVal = g.coercePhiValue(sb, elseVal, phiType)
+	}
+
 	sb.WriteString(fmt.Sprintf("%s%s = phi %s [%s, %%%s], [%s, %%%s]\n",
 		g.indent(), phiReg, phiType, thenVal, thenPredecessor, elseVal, elsePredecessor))
 
+	// Track phi node type for downstream code
+	if g.ssaTypes != nil {
+		g.ssaTypes[phiReg] = phiType
+	}
+
 	return phiReg
+}
+
+// generateConditionAsI1Available checks if generateConditionAsI1 can handle the expression
+func (g *Generator) generateConditionAsI1Available(expr parser.Expression) bool {
+	switch e := expr.(type) {
+	case *parser.InfixExpression:
+		switch e.Operator {
+		case "&&", "||":
+			return true
+		default:
+			return false
+		}
+	case *parser.Identifier:
+		// bool variable — needs trunc from i64
+		return false
+	default:
+		return false
+	}
 }
 
 // conditionalResultType 推導三元運算式的結果型別
@@ -924,7 +1019,7 @@ func (g *Generator) conditionalResultType(expr *parser.ConditionalExpression) st
 	if isFloatExpr(expr.Consequence) || isFloatExpr(expr.Alternative) {
 		return "f64"
 	}
-	// 檢查是否為泛型（由變數名判斷）
+	// 檢查是否為變數（由變數名判斷型別）
 	if ident, ok := expr.Consequence.(*parser.Identifier); ok {
 		if t, ok := g.varTypes[ident.Value]; ok {
 			return t
@@ -935,7 +1030,41 @@ func (g *Generator) conditionalResultType(expr *parser.ConditionalExpression) st
 			return t
 		}
 	}
+	// 檢查字串字面量
+	if isStringExpr(expr.Consequence) || isStringExpr(expr.Alternative) {
+		return "%str-long"
+	}
+	// 檢查 nil 字面量（option 型別）
+	if _, ok := expr.Consequence.(*parser.NilLiteral); ok {
+		return "%option"
+	}
+	if _, ok := expr.Alternative.(*parser.NilLiteral); ok {
+		return "%option"
+	}
 	return "i64"
+}
+
+// isStringExpr 判斷表達式是否為 str 類型
+func isStringExpr(e parser.Expression) bool {
+	switch v := e.(type) {
+	case *parser.StringLiteral:
+		return true
+	case *parser.InfixExpression:
+		// 字串拼接 (+) 的結果仍為 str
+		if v.Operator == "+" {
+			return isStringExpr(v.Left) || isStringExpr(v.Right)
+		}
+		return false
+	case *parser.GroupedExpression:
+		return isStringExpr(v.Expression)
+	case *parser.PrefixExpression:
+		return false
+	case *parser.CallExpression:
+		// 呼叫結果可能是 str，但無法在靜態期確定
+		return false
+	default:
+		return false
+	}
 }
 
 // isFloatExpr 判斷表達式是否為 f64 類型
@@ -1094,7 +1223,8 @@ func llvmIntBitWidth(t string) int {
 
 // 與硬編碼 i64 指令之間的型別不匹配。
 // 注意：IndexExpression 預設回傳 i64，因為 generateIndexExpression
-// 會將 i8 元素 zext 到 i64。
+// 會將 i8 元素 zext 到 i64。但對 rotate-left/rotate-right 而言，
+// 需要正確的元素寬度（如 []u32 → i32）以選擇 llvm.fshl.i32 而非 i64。
 func (g *Generator) intExprLLVMType(expr parser.Expression) string {
 	switch v := expr.(type) {
 	case *parser.Identifier:
@@ -1114,6 +1244,21 @@ func (g *Generator) intExprLLVMType(expr parser.Expression) string {
 					return "i64"
 				}
 			}
+		}
+	case *parser.IndexExpression:
+		// Array/slice element: determine element type for correct rotation
+		// width. exprResultLLVMType looks up arrayElemTypes (e.g. []u32 → "i32")
+		// and moduleArrayElemTypes for module-level arrays.
+		elemType := g.exprResultLLVMType(v)
+		switch elemType {
+		case "i8", "i16", "i32":
+			return elemType
+		case "u8":
+			return "i8"
+		case "u16":
+			return "i16"
+		case "u32":
+			return "i32"
 		}
 	case *parser.DotExpression:
 		// Field access on a struct variable: look up field's LLVM type.
@@ -3693,6 +3838,11 @@ func (g *Generator) generateIndexExpression(sb *strings.Builder, expr *parser.In
 			if sb != nil {
 				sb.WriteString(fmt.Sprintf("%s%s = load %s, %s* %s\n",
 					g.indent(), elemLoad, llvmElemType, llvmElemType, elemGEP))
+			}
+			// Track the SSA type so downstream consumers (e.g. generateLet, option
+			// assignment) can distinguish loaded struct values from pointers.
+			if g.ssaTypes != nil && g.isStructLLVMType(llvmElemType) {
+				g.ssaTypes[elemLoad] = llvmElemType
 			}
 			// 統一回傳 i64：若元素為較窄整數型別則 zext 到 i64（與 %vec 路徑一致）
 			if llvmElemType == "i1" || llvmElemType == "i8" || llvmElemType == "i16" || llvmElemType == "i32" {
