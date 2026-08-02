@@ -1,6 +1,6 @@
 ; test-replace: 验证 str.replace-str
 
-# std/str
+; # std/str
 
 print('=== str.replace-str ===')
 

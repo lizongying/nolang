@@ -31,7 +31,7 @@ aes-256-cbc-enc = (in []byte, key [32]byte, iv [16]byte) (out []byte) {
         }
 
         enc-block [16]byte
-        enc-block = aes-256.aes-256-enc(xored, key)
+        enc-block = aes.aes-256-enc(xored, key)
 
         i <- [0..16): {
             out[blk + i] = enc-block[i]
@@ -61,7 +61,7 @@ aes-256-cbc-dec = (in []byte, key [32]byte, iv [16]byte) (out []byte) {
         }
 
         dec-block [16]byte
-        dec-block = aes-256.aes-256-dec(cipher-block, key)
+        dec-block = aes.aes-256-dec(cipher-block, key)
 
         i <- [0..16): {
             out[blk + i] = (dec-block[i] & 255) ^ (prev[i] & 255)

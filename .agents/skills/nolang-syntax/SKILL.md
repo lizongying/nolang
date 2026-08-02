@@ -192,6 +192,10 @@ no init
 }
 ```
 
+#### Private Local Configuration (.workspace.jsonc)
+
+Nolang supports a private local config `.workspace.jsonc` (add to `.gitignore`) alongside the shared `workspace.jsonc`. Loading: public first, then private; same keys — private overrides public; new keys — merged. This separates team-standardized config from personal local debugging overrides.
+
 #### Workspace Flow
 
 The compile/execute entry directory is always the **workspace directory** (where `workspace.jsonc` resides). The flow:
@@ -350,7 +354,7 @@ The `package.jsonc` file in the project root directory describes project informa
 ### Dependency Management
 
 ```bash
-# Add dependency (version number can be omitted, no version in repo)
+# Add dependency (version number optional, not written in repo)
 no add pkg-name
 
 # Remove dependency
@@ -368,6 +372,71 @@ no list
 # Sync dependencies (download and generate lock file)
 no sync
 ```
+
+### Dependency Types & Version Rules
+
+Dependencies in `package.jsonc` are classified as **local packages** or **remote packages**. The compiler automatically determines the type and emits a warning when a local package does not use `"*"` as its version.
+
+#### Classification Rules
+
+```
+Dependency key → lookup in workspace.jsonc (short name or full key match)
+  ├─ Found → local package (should use "*")
+  └─ Not found → check path prefix (./ or /)
+      ├─ Yes → local package (should use "*")
+      └─ No → remote package (use version number, no warning)
+```
+
+1. **Lookup `workspace.jsonc`**: Search for the dependency key as a short name or full key in `workspace.jsonc`. If found, it is a local package.
+2. **Check path prefix**: If not found in `workspace.jsonc`, and the key starts with `./` (relative path) or `/` (workspace-relative path), it is also a local package.
+3. **Otherwise → remote package**: Should specify a version number.
+
+#### Local Package Reference Forms
+
+Local packages support four reference forms, all using `"*"`:
+
+```jsonc
+"dependencies": {
+  // 1. Short name: a key registered in workspace.jsonc
+  "test2": "*",
+  // 2. Workspace-relative path: starts with /
+  "/example/test2": "*",
+  // 3. Relative path: starts with ./
+  "./test2": "*",
+  // 4. Full URL: local if workspace.jsonc has a matching mapping
+  "github.com/lizongying/nolang/test2": "*",
+}
+```
+
+#### Advanced: Redirecting a Remote Package to Local
+
+`workspace.jsonc` can map a remote package name to a local path:
+
+```jsonc
+// workspace.jsonc
+{
+  "test2": "/example/test2",
+  "github.com/lizongying/nolang/test2": "/example/test2"
+}
+```
+
+This allows switching a remote dependency to local source code for development. The dependency referenced as `github.com/lizongying/nolang/test2` is resolved to local path `/example/test2` and should use `"*"`.
+
+#### Version Warnings
+
+If a local package uses a non-`"*"` version (e.g. `"v0.1.0"`), a warning is emitted. Remote packages are not restricted.
+
+#### Recursive Workspace Mapping (Cross-Package Chains)
+
+Nolang supports recursive workspace mapping: dependency packages can carry their own `workspace.jsonc`, creating natural cross-package resolution chains. This is a core differentiator — Go/Cargo `replace`/`patch` only applies to the current project.
+
+When resolving a dependency key, the compiler checks the target directory for its own `workspace.jsonc` and follows the chain recursively. Cycle detection via a visit stack prevents infinite loops:
+
+```
+Error: circular workspace mapping detected: /path/A → /path/B → /path/A
+```
+
+See [usage docs](#dependency-types--version-rules) for details.
 
 ### Mirror Configuration
 
@@ -1780,6 +1849,8 @@ s u32 = (key[0] & 255) | ((key[1] & 255) << 8) | ((key[2] & 255) << 16) | ((key[
 // use /utils/math.add
 // use std/math.add a
 ```
+
+Import paths are resolved relative to the **workspace root** (the directory containing `workspace.jsonc`). Local packages can also be referenced by short name or full URL if they are registered in `workspace.jsonc` (see [Dependency Types & Version Rules](#dependency-types--version-rules) for details on how `workspace.jsonc` mappings affect local vs. remote classification).
 
 ### Module Prefix Rules
 

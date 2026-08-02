@@ -6,6 +6,8 @@ import (
 	"runtime"
 	"strings"
 
+	"github.com/lizongying/nolang/checker"
+	"github.com/lizongying/nolang/lexer"
 	"github.com/lizongying/nolang/parser"
 )
 
@@ -3395,23 +3397,15 @@ func (g *Generator) buildStrLongFromValue(sb *strings.Builder, s string) string 
 // generateFieldStr generates code to format a single {name:spec} field.
 // Looks up the variable's LLVM type, dispatches to the appropriate fmt-*
 // helper, and returns a %str-long* alloca holding the formatted result.
+//
+// For expression fields ({hash[i] & 255:02x}), the expression is parsed
+// and evaluated inline, then the result is stored in a temp alloca and
+// formatted the same way as a simple variable.
 func (g *Generator) generateFieldStr(sb *strings.Builder, field *parser.FormatField) string {
-	varType, ok := g.varTypes[field.Name]
-	if !ok {
-		// Variable not in scope — ValidatePrintFormat should have caught this.
-		// Emit an empty string as fallback.
-		return g.buildStrLongFromValue(sb, "")
-	}
-
 	// Build spec %str-long*
 	specPtr := g.buildStrLongFromValue(sb, field.Spec)
 
 	// Allocate output buffer and zero-initialize it.
-	// fmt-* helpers perform move-assignment to `out` (out = fmt-apply-spec(...)),
-	// which frees the old value of `out` before assigning. An uninitialized
-	// buffer would contain stack garbage, causing the free of a bogus data
-	// pointer to crash (SIGABRT). Per project convention, the caller must
-	// initialize output parameters: str → {len=0, cap=0, data=null}.
 	outBuf := g.tmpReg("nfmt.field")
 	sb.WriteString(fmt.Sprintf("%s%s = alloca %%str-long\n", g.indent(), outBuf))
 	sb.WriteString(fmt.Sprintf("%sstore %%str-long zeroinitializer, %%str-long* %s\n", g.indent(), outBuf))
@@ -3422,35 +3416,115 @@ func (g *Generator) generateFieldStr(sb *strings.Builder, field *parser.FormatFi
 		specType = field.Parsed.Type
 	}
 
-	// Dispatch based on spec type and variable LLVM type
+	// --- Expression field path ---
+	// Parse and evaluate the expression, store result in a temp alloca,
+	// then dispatch to the appropriate fmt-* helper.
+	if field.IsExpr {
+		argPtr, varType := g.evalFmtExpr(sb, field.Name)
+		if argPtr == "" {
+			return g.buildStrLongFromValue(sb, "")
+		}
+		g.dispatchFmtCall(sb, argPtr, varType, specType, specPtr, outBuf)
+		return outBuf
+	}
+
+	// --- Simple variable path (original) ---
+	varType, ok := g.varTypes[field.Name]
+	if !ok {
+		return g.buildStrLongFromValue(sb, "")
+	}
+
+	g.dispatchFmtCall(sb, "", varType, specType, specPtr, outBuf, field.Name)
+	return outBuf
+}
+
+// dispatchFmtCall emits the appropriate fmt-* call based on spec type and variable type.
+// For simple variables, varName is set and argPtr is ignored (computed from varName).
+// For expressions, varName is empty and argPtr is the pre-computed alloca pointer.
+func (g *Generator) dispatchFmtCall(sb *strings.Builder, argPtr, varType string, specType byte, specPtr, outBuf string, varName ...string) {
+	name := ""
+	if len(varName) > 0 {
+		name = varName[0]
+	}
 	switch {
 	case specType == 'b' || specType == 'o' || specType == 'x' || specType == 'X':
 		// Unsigned format — use fmt-uint (expects i64*)
-		argPtr := g.emitFmtArgPtr(sb, field.Name, varType, "i64")
+		if name != "" {
+			argPtr = g.emitFmtArgPtr(sb, name, varType, "i64")
+		}
 		sb.WriteString(fmt.Sprintf("%scall void @fmt-uint(i64* %s, %%str-long* %s, %%str-long* %s)\n",
 			g.indent(), argPtr, specPtr, outBuf))
 	case varType == "double":
-		// fmt-f64(double* x, %str-long* spec, %str-long* out)
-		argPtr := g.emitFmtArgPtr(sb, field.Name, varType, "double")
+		if name != "" {
+			argPtr = g.emitFmtArgPtr(sb, name, varType, "double")
+		}
 		sb.WriteString(fmt.Sprintf("%scall void @fmt-f64(double* %s, %%str-long* %s, %%str-long* %s)\n",
 			g.indent(), argPtr, specPtr, outBuf))
 	case varType == "%str-long":
-		// fmt-str(%str-long* s, %str-long* spec, %str-long* out)
-		argPtr := g.varAddr(field.Name)
+		if name != "" {
+			argPtr = g.varAddr(name)
+		}
 		sb.WriteString(fmt.Sprintf("%scall void @fmt-str(%%str-long* %s, %%str-long* %s, %%str-long* %s)\n",
 			g.indent(), argPtr, specPtr, outBuf))
 	case varType == "i1":
-		// fmt-bool(i1* b, %str-long* spec, %str-long* out)
-		argPtr := g.varAddr(field.Name)
+		if name != "" {
+			argPtr = g.varAddr(name)
+		}
 		sb.WriteString(fmt.Sprintf("%scall void @fmt-bool(i1* %s, %%str-long* %s, %%str-long* %s)\n",
 			g.indent(), argPtr, specPtr, outBuf))
 	default:
 		// Integer — fmt-int(i64* n, %str-long* spec, %str-long* out)
-		argPtr := g.emitFmtArgPtr(sb, field.Name, varType, "i64")
+		if name != "" {
+			argPtr = g.emitFmtArgPtr(sb, name, varType, "i64")
+		}
 		sb.WriteString(fmt.Sprintf("%scall void @fmt-int(i64* %s, %%str-long* %s, %%str-long* %s)\n",
 			g.indent(), argPtr, specPtr, outBuf))
 	}
-	return outBuf
+}
+
+// evalFmtExpr parses and evaluates a format string expression (e.g. "hash[i] & 255"),
+// stores the result in a temp alloca, and returns (allocaPtr, llvmType).
+// Returns ("", "") on parse failure.
+func (g *Generator) evalFmtExpr(sb *strings.Builder, exprStr string) (string, string) {
+	// Parse the expression string using lexer + parser
+	l := lexer.New(exprStr)
+	p := parser.New(l)
+	prog := p.ParseProgram()
+	if len(p.Errors()) > 0 || len(prog.Statements) == 0 {
+		return "", ""
+	}
+	// Extract the expression from the first statement
+	es, ok := prog.Statements[0].(*parser.ExpressionStatement)
+	if !ok || es.Expression == nil {
+		return "", ""
+	}
+	expr := es.Expression
+
+	// Infer the Nolang type to determine the LLVM type
+	funcTypes := make(map[string]string)
+	if g.funcRetTypes != nil {
+		for k, v := range g.funcRetTypes {
+			funcTypes[k] = v
+		}
+	}
+	nolangType := checker.InferExprType(expr, g.varTypes, funcTypes, "")
+
+	// Map Nolang type to LLVM type
+	llvmType := g.mapToLLVMType(nolangType)
+	if llvmType == "" {
+		// Default to i64 for unknown integer expressions
+		llvmType = "i64"
+	}
+
+	// Generate the expression to get the LLVM value
+	val := g.generateExprWithSB(sb, expr)
+
+	// Allocate a temp variable and store the value
+	tmpAlloca := g.tmpReg("nfmt.expr")
+	sb.WriteString(fmt.Sprintf("%s%s = alloca %s\n", g.indent(), tmpAlloca, llvmType))
+	sb.WriteString(fmt.Sprintf("%sstore %s %s, %s* %s\n", g.indent(), llvmType, val, llvmType, tmpAlloca))
+
+	return tmpAlloca, llvmType
 }
 
 // emitFmtArgPtr returns a pointer to a value of targetType, coercing if necessary.

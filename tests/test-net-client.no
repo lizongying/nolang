@@ -5,6 +5,8 @@
 ;
 ; 可用 nc -l 8080 作為 echo server 手動測試。
 
+; # std/net/client
+
 ; 測試 1: connect
 c client.client =  {}
 ok = c.connect('127.0.0.1', 8080)
@@ -64,7 +66,7 @@ re-ok = c.reconnect()
 }
 
 ; 測試 7: 便捷函數 net-client
-c2 = client.net-client('127.0.0.1', 8080)
+c2 = client.client-create('127.0.0.1', 8080)
 c2: {
     nil -> print('fail: net-client')
     -> {

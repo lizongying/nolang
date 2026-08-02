@@ -289,13 +289,6 @@ func loadWorkspaceMap(workspaceRoot string) (WorkspaceMap, error) {
 		ws = make(WorkspaceMap)
 	}
 
-	// 驗證公共配置：禁止 "./" 和 "../" 相對跳轉
-	for k, v := range ws {
-		if isRelativeJumpPath(v) {
-			return nil, fmt.Errorf("workspace.jsonc: mapping %q → %q: relative paths (./ ../) are not allowed; use `/` prefix for workspace-relative or OS absolute path", k, v)
-		}
-	}
-
 	// 2. 加載私有配置 .workspace.jsonc（可選，覆蓋公共配置）
 	privateFile := filepath.Join(workspaceRoot, ".workspace.jsonc")
 	if privateRaw, pErr := os.ReadFile(privateFile); pErr == nil {
@@ -303,12 +296,6 @@ func loadWorkspaceMap(workspaceRoot string) (WorkspaceMap, error) {
 		var privateWs WorkspaceMap
 		if err := json.Unmarshal(privateCleaned, &privateWs); err != nil {
 			return nil, fmt.Errorf("parsing %s: %w", privateFile, err)
-		}
-		// 驗證私有配置：同樣禁止 "./" 和 "../"
-		for k, v := range privateWs {
-			if isRelativeJumpPath(v) {
-				return nil, fmt.Errorf(".workspace.jsonc: mapping %q → %q: relative paths (./ ../) are not allowed; use `/` prefix for workspace-relative or OS absolute path", k, v)
-			}
 		}
 		// 合併：私有配置覆蓋公共配置，新 key 疊加
 		for k, v := range privateWs {
@@ -518,13 +505,22 @@ func lookupWorkspaceMap(ws WorkspaceMap, key, workspaceRoot string) (string, boo
 
 // resolveWorkspaceMapValue 解析 workspace.jsonc 映射值為本地目錄。
 //
-// 支援兩種路徑形式：
-//   - 工作區相對路徑（以 "/" 開頭）：先嘗試 workspaceRoot + path，若不存在再嘗試作為 OS 絕對路徑
+// 支援三種路徑形式：
+//   - 工作區相對路徑（以 "/" 開頭）：workspaceRoot + path
+//   - 相對跳轉路徑（以 "./" 或 "../" 開頭）：相對於 workspaceRoot 解析，允許逃逸工作區邊界
 //   - 作業系統絕對路徑：直接使用（允許指向工作區外部，用於 fork、外部組件）
 //
-// 這是唯一允許突破工作區邊界的入口。
+// workspace.jsonc / .workspace.jsonc 是唯一允許突破工作區邊界的入口。
 func resolveWorkspaceMapValue(localPath, workspaceRoot string) (string, bool) {
-	// 工作區相對路徑：先嘗試 workspaceRoot + path
+	// 相對跳轉路徑（"./" 或 "../"）：相對於 workspaceRoot 解析
+	if strings.HasPrefix(localPath, "./") || strings.HasPrefix(localPath, "../") {
+		resolved := filepath.Join(workspaceRoot, localPath)
+		if info, err := os.Stat(resolved); err == nil && info.IsDir() {
+			return filepath.Clean(resolved), true
+		}
+		return "", false
+	}
+	// 工作區相對路徑（"/" 前綴）：先嘗試 workspaceRoot + path
 	wsRelative := filepath.Join(workspaceRoot, localPath)
 	if info, err := os.Stat(wsRelative); err == nil && info.IsDir() {
 		return wsRelative, true

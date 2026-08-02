@@ -1,5 +1,5 @@
 ; test-sha256-block-abc — test sha256-block with "abc" block
-; # std/hash/sha256
+; # std/crypto/sha256
 
 print('start')
 ; "abc" padded block:

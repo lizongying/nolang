@@ -4,7 +4,7 @@
 ; 需系統安裝 libsqlite3（macOS/Linux 通常已內建）。
 ; 驅動包 example/sqlite-driver 使用 #{c} FFI 註解直接呼叫 SQLite C API。
 
-# /example/sqlite-driver/sqlite
+# /example/sqlite-driver/src/sqlite
 
 ; 測試 1: 開啟記憶體資料庫
 d db = fs.open(':memory:')

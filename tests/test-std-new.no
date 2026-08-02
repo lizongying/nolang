@@ -4,11 +4,11 @@
 ;   - encoding/pem
 ;   - fs.read-dir + fs.walk
 
-# std/str
-# std/time
-# std/encoding/pem
-# std/encoding/base64
-# std/fs
+; # std/str
+; # std/time
+; # std/encoding/pem
+; # std/encoding/base64
+; # std/fs
 
 ; ═══════════════════════════════════════════════
 ; 1. str.replace-str

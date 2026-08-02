@@ -1,5 +1,5 @@
 ; test-vec-assign — 測試 []u32 賦值
-; # std/hash/sha256
+; # std/crypto/sha256
 
 print('start')
 block []u32 = [

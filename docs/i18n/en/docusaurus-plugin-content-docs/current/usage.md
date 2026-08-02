@@ -76,11 +76,13 @@ no new baz
 
 ```jsonc
 {
-  "foo": "./foo",
-  "bar": "./bar",
-  "baz": "./baz"
+  "foo": "/foo",
+  "bar": "/bar",
+  "baz": "/baz"
 }
 ```
+
+> **Path format**: Mapping values in `workspace.jsonc` use `/` prefix for workspace-relative paths (e.g. `/foo` → `workspaceRoot/foo`). `./`, `../` relative jumps and OS absolute paths (e.g. `/home/user/code/fork`) are also supported for pointing to directories outside the workspace.
 
 `no build` run from the root with no arguments builds all packages in the workspace in parallel.
 
@@ -257,6 +259,110 @@ no list
 no sync
 ```
 
+### Dependency Types & Version Rules
+
+Dependencies in `package.jsonc` are classified as **local packages** or **remote packages**. The compiler automatically determines the type using the following rules and emits a warning when a local package does not use `"*"` as its version.
+
+#### Classification Rules
+
+```
+Dependency key → lookup in workspace.jsonc (short name or full key match)
+  ├─ Found → local package (should use "*")
+  └─ Not found → check path prefix (/ only)
+      ├─ Yes → local package (should use "*")
+      └─ No → remote package (use version number, no warning)
+```
+
+1. **Lookup `workspace.jsonc`**: First, search for the dependency key as a short name or full key in `workspace.jsonc`. If found, it is a local package.
+2. **Check path prefix**: If not found in `workspace.jsonc`, and the key starts with `/` (workspace-relative path), it is also a local package.
+3. **Otherwise → remote package**: Keys not matching the above conditions are treated as remote packages and should specify a version number.
+
+> **Workspace boundary constraint**: Local paths in `package.jsonc` must start with `/` (workspace-relative). `./`, `../`, and OS absolute paths are forbidden. The only escape hatch for referencing external directories is through `workspace.jsonc` / `.workspace.jsonc` mappings. See [Workspace Boundary Constraints](#workspace-boundary-constraints).
+
+#### Local Package Reference Forms
+
+Local packages support the following three reference forms, all of which should use `"*"` as the version:
+
+```jsonc
+"dependencies": {
+  // 1. Short name: a key registered in workspace.jsonc
+  "test2": "*",
+
+  // 2. Workspace-relative path: starts with /, relative to workspace root
+  "/example/test2": "*",
+
+  // 3. Full URL: local if workspace.jsonc has a matching mapping
+  "github.com/lizongying/nolang/test2": "*",
+}
+```
+
+> **Note**:
+> - Whether form 3 is a local or remote package depends on `workspace.jsonc`. If `workspace.jsonc` maps `github.com/lizongying/nolang/test2` to a local path, the dependency is local (should use `"*"`); otherwise it is remote (should use a version number).
+> - `./` and `../` prefixes are no longer allowed in `package.jsonc`. All local paths must start with `/` (workspace-relative).
+
+#### Advanced: Redirecting a Remote Package to Local
+
+`workspace.jsonc` can map a remote package name to a local path, enabling a "remote-to-local" development workflow:
+
+```jsonc
+// workspace.jsonc
+{
+  "test2": "/example/test2",
+  "github.com/lizongying/nolang/test2": "/example/test2"
+}
+```
+
+With this mapping, a dependency referenced as `github.com/lizongying/nolang/test2` in `package.jsonc` is resolved to the local path `/example/test2` and should use `"*"` as its version. This is extremely convenient for local development of remote packages — simply add a mapping in `workspace.jsonc` to switch a remote dependency to local source code for joint debugging.
+
+#### Version Warnings
+
+During compilation, if a local package is detected using a non-`"*"` version (e.g. `"v0.1.0"`), a warning is emitted suggesting `"*"`. Remote packages are not subject to this restriction.
+
+#### Recursive Workspace Mapping (Cross-Package Mapping Chains)
+
+Nolang supports **recursive workspace mapping**: a dependency package can carry its own `workspace.jsonc` with internal mapping rules, forming a natural cross-package resolution chain. This is a core differentiating capability — mainstream Go/Cargo `replace`/`patch` only applies to the current project and does not propagate into dependency packages.
+
+**Use cases:**
+- Unified internal aliases for base libraries
+- Standardized import paths
+- Multi-layer library compatibility migration
+
+**How it works:**
+
+When resolving a dependency key, the compiler:
+1. Looks up the key in the current `workspace.jsonc`
+2. If found, checks whether the target directory has its own `workspace.jsonc`
+3. If so, continues looking up the same key, resolving layer by layer
+4. Until no further mapping is found
+
+**Example:**
+
+```
+workspace/                  ← top-level workspace
+├── workspace.jsonc         ← {"testkey": "/pkgA"}
+├── pkgA/
+│   ├── workspace.jsonc     ← {"testkey": "/pkgB"}
+│   └── pkgB/
+│       ├── workspace.jsonc ← {"testkey": "/pkgC"}
+│       └── pkgC/           ← final target (no workspace.jsonc)
+```
+
+Resolving `testkey`:
+1. Top-level `workspace.jsonc` maps → `/pkgA` (workspace-relative)
+2. `pkgA/workspace.jsonc` maps → `/pkgB` (relative to pkgA workspace)
+3. `pkgB/workspace.jsonc` maps → `/pkgC` (relative to pkgB workspace)
+4. `pkgC` has no `workspace.jsonc` → final resolution to `pkgC`
+
+**Cycle detection:**
+
+The compiler maintains a resolution visit stack tracking visited workspace root directories. If a circular mapping is detected (e.g. A→B, B→A), it immediately errors with the full chain:
+
+```
+Error: circular workspace mapping detected: /path/to/A → /path/to/B → /path/to/A
+```
+
+> **Note**: This capability only supports natural cross-package recursive mapping (dependency packages carrying their own `workspace.jsonc`). It does not support manual chain shorthand within a single file.
+
 ### Mirror Configuration
 
 Configure mirror URLs in the `mirrors` array in `package.jsonc` to accelerate remote package downloads:
@@ -273,12 +379,159 @@ Configure mirror URLs in the `mirrors` array in `package.jsonc` to accelerate re
 
 ```jsonc
 {
-  "foo": "./foo",
-  "bar": "./bar"
+  "foo": "/foo",
+  "bar": "/bar"
 }
 ```
 
-`no init` defines the workspace: if `workspace.jsonc` is missing it generates an empty object `{}` and **does not create any `package.jsonc`**; if it already exists, it is preserved and not overwritten. Each subsequent `no new <name>` automatically registers `"<name>": "./<name>"` into `workspace.jsonc`.
+`no init` defines the workspace: if `workspace.jsonc` is missing it generates an empty object `{}` and **does not create any `package.jsonc`**; if it already exists, it is preserved and not overwritten. Each subsequent `no new <name>` automatically registers `"<name>": "/<name>"` into `workspace.jsonc`.
+
+#### Private Local Configuration (.workspace.jsonc)
+
+In addition to the shared `workspace.jsonc`, Nolang supports a private local configuration file `.workspace.jsonc` (note the leading `.`). This file should be added to `.gitignore` and is used for developer-specific temporary dependency overrides.
+
+**Loading logic:**
+
+1. Load the public config `workspace.jsonc` first
+2. Then load the private config `.workspace.jsonc`
+3. **Same keys**: private config overrides public config
+4. **New keys**: merged together
+
+```
+workspace/
+├── workspace.jsonc       ← shared project config (version-controlled)
+├── .workspace.jsonc      ← private local config (add to .gitignore)
+├── foo/
+└── bar/
+```
+
+**Use cases:**
+
+- Team-wide aliases and dependency forwarding rules go in `workspace.jsonc` (version-controlled)
+- Developers needing to temporarily point a dependency to a local fork can override it in `.workspace.jsonc`
+- Prevents temporary fork mappings from polluting the project's public config, balancing large-team collaboration with individual development flexibility
+
+**Example:**
+
+```jsonc
+// workspace.jsonc (public, version-controlled)
+{
+  "foo": "/foo",
+  "bar": "/bar"
+}
+
+// .workspace.jsonc (private, local debugging)
+{
+  // Override public config: point foo to a local fork (within workspace)
+  "foo": "/my-fork-foo",
+  // Add a private mapping: point to an external fork (OS absolute path, the only escape hatch)
+  "github.com/lizongying/nolang/core": "/home/lzy/code/fork/core",
+  // Add a private mapping (within workspace)
+  "experimental": "/experimental"
+}
+```
+
+Effective mappings: `foo` → `/my-fork-foo` (private override), `bar` → `/bar` (from public), `github.com/lizongying/nolang/core` → `/home/lzy/code/fork/core` (private addition, escapes workspace), `experimental` → `/experimental` (private addition).
+
+### Workspace Boundary Constraints
+
+Nolang enforces strict workspace boundary controls on path references to ensure project portability and security.
+
+#### Rule Summary
+
+| Config layer | `/` workspace-relative | OS absolute path | `./` `../` relative jump |
+| --- | --- | --- | --- |
+| `package.jsonc` dependency key | ✅ Allowed | ❌ Forbidden | ❌ Forbidden |
+| `workspace.jsonc` mapping value | ✅ Allowed | ✅ Allowed (escape hatch) | ✅ Allowed (escape hatch) |
+| `.workspace.jsonc` mapping value | ✅ Allowed | ✅ Allowed (escape hatch) | ✅ Allowed (escape hatch) |
+| Source code `#` import path | ✅ Allowed | ❌ Forbidden | ❌ Forbidden |
+
+#### 1. package.jsonc (strictly constrained, no workspace escape)
+
+`package.jsonc` is the standard baseline configuration for project publishing, CI, and team collaboration, committed to the repository.
+
+```jsonc
+"dependencies": {
+    // ✅ Valid: starts with /, relative to workspace root
+    "/vendor/test": "*",
+    // ❌ Forbidden: OS absolute path /home/xxx/...
+    // ❌ Forbidden: ./ ../ relative jump
+}
+```
+
+**Constraints:**
+- Local paths must start with `/xxx`, base = workspace root
+- OS absolute paths are not accepted
+- `./` and `../` are not supported
+- Cannot directly reference any directory outside the workspace
+
+**Purpose:** If external paths were allowed, it would easily lead to "compiles on my machine but fails for others", and also poses security risks of accidentally loading unfamiliar external code.
+
+#### 2. workspace.jsonc + .workspace.jsonc (the only escape hatch)
+
+Mapping targets support three local path forms:
+- `/xxx` → workspace-internal directory (same semantics as package.jsonc)
+- `./xxx`, `../xxx` → resolved relative to workspace root, allowed to escape workspace boundary
+- OS absolute path → allowed to point outside the workspace (forks, external components)
+
+```jsonc
+// .workspace.jsonc private config, for local development
+{
+  // Within workspace
+  "foo": "/vendor/foo",
+  // Relative jump: point to an external fork
+  "github.com/lizongying/nolang/core": "../fork/core",
+  // OS absolute path: point to any external directory
+  "github.com/lizongying/nolang/utils": "/home/lzy/code/utils"
+}
+```
+
+**Key logic:** `package.jsonc` has no ability to directly reference external code; to mount source code outside the repository, users must explicitly configure a mapping in the workspace config. This effectively adds a clear, visible switch for "cross-directory loading", with all external dependencies controlled in one place.
+
+#### 3. Source Code Import Constraints
+
+Source code cannot use OS absolute paths in imports; all external code references must go through workspace aliases or remote package identifiers. `./` and `../` relative jumps are also forbidden.
+
+```no
+; ✅ Valid: workspace-relative path
+# /vendor/utils.helper
+
+; ✅ Valid: remote package identifier
+# github.com/lizongying/nolang/core.process
+
+; ✅ Valid: standard library
+# std/fs
+
+; ❌ Forbidden: relative jump
+; # ./utils.helper
+; # ../lib/helper.process
+
+; ❌ Forbidden: OS absolute path
+; # /home/user/code/core.process
+```
+
+#### Data Flow Demo
+
+Scenario: A project with workspace root at `/code/project` wants to use external `/code/fork/core`
+
+❌ This won't work (package.jsonc forbids it):
+
+```jsonc
+// package.jsonc
+"/code/fork/core": "*" // invalid: cannot escape workspace
+```
+
+✅ Standard approach (break through boundary via workspace mapping):
+
+```jsonc
+// .workspace.jsonc
+"github.com/lizongying/nolang/core": "/code/fork/core"
+```
+
+```no
+; Source code imports normally
+# github.com/lizongying/nolang/core
+```
 
 #### Workspace Flow
 

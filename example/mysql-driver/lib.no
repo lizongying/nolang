@@ -1,5 +1,5 @@
 ; Export declarations
-@ /src/mysql.db-mysql
-@ /src/mysql.rows-mysql
-@ /src/mysql.stmt-mysql
-@ /src/mysql.open
+@ /example/mysql-driver/src/mysql.db-mysql
+@ /example/mysql-driver/src/mysql.rows-mysql
+@ /example/mysql-driver/src/mysql.stmt-mysql
+@ /example/mysql-driver/src/mysql.open

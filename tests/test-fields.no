@@ -1,6 +1,6 @@
 ; test-fields: 验证 str.fields
 
-# std/str
+; # std/str
 
 print('=== str.fields ===')
 

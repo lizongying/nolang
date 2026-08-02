@@ -4,6 +4,8 @@
 ; 注意：str-long value type 跨函式邊界傳遞時長度不一致，
 ; 故 msg 相關測試只驗證呼叫完成，不檢查字串長度。
 
+; # std/err
+
 ; ── 1. new 建立錯誤，檢查 code ──
 e = err.new(code.io, 'disk full')
 

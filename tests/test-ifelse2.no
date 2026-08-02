@@ -1,6 +1,6 @@
 ; test-ifelse2: test if-else with block
 
-# std/str
+; # std/str
 
 x i64 = 5
 

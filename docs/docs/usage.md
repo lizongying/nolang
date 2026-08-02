@@ -76,11 +76,13 @@ no new baz
 
 ```jsonc
 {
-  "foo": "./foo",
-  "bar": "./bar",
-  "baz": "./baz"
+  "foo": "/foo",
+  "bar": "/bar",
+  "baz": "/baz"
 }
 ```
+
+> **路徑格式**：`workspace.jsonc` 中的映射值使用 `/` 前綴表示工作區相對路徑（如 `/foo` → `workspaceRoot/foo`）。也支援 `./`、`../` 相對跳轉和作業系統絕對路徑（如 `/home/user/code/fork`），允許指向工作區外部目錄。
 
 `no build` 在根目錄無參數運行時，會並行構建工作區內所有包。
 
@@ -384,6 +386,110 @@ no list
 no sync
 ```
 
+### 依賴類型與版本號規則
+
+`package.jsonc` 中的依賴分為**本地包**和**線上包**兩類。編譯器會根據以下規則自動判定依賴類型，並在本地包未使用 `"*"` 版本時發出警告。
+
+#### 判定規則
+
+```
+依賴鍵 → 查找 workspace.jsonc（短名稱或完整鍵匹配）
+  ├─ 找到 → 本地包（應使用 "*"）
+  └─ 未找到 → 檢查路徑前綴（/ 開頭）
+      ├─ 是 → 本地包（應使用 "*"）
+      └─ 否 → 線上包（使用版本號，不警告）
+```
+
+1. **查找 `workspace.jsonc`**：先以依賴鍵作為短名稱或完整鍵在 `workspace.jsonc` 中查找。找到即為本地包。
+2. **檢查路徑前綴**：未在 `workspace.jsonc` 中找到時，若依賴鍵以 `/`（工作區相對路徑）開頭，亦為本地包。
+3. **其餘為線上包**：不滿足上述條件的依賴鍵視為線上包，應指定版本號。
+
+> **工作區邊界約束**：`package.jsonc` 中的本地路徑只能以 `/` 開頭（工作區相對），禁止 `./`、`../` 和作業系統絕對路徑。唯一允許突破工作區邊界的入口是 `workspace.jsonc` / `.workspace.jsonc` 映射。詳見 [工作區邊界約束](#工作區邊界約束)。
+
+#### 本地包的多種引用形式
+
+本地包支持以下三種引用方式，版本號均應使用 `"*"`：
+
+```jsonc
+"dependencies": {
+  // 1. 短名稱：workspace.jsonc 中註冊的鍵
+  "test2": "*",
+
+  // 2. 工作區相對路徑：以 / 開頭，相對工作區根目錄
+  "/example/test2": "*",
+
+  // 3. 完整 URL：若 workspace.jsonc 中有對應映射則為本地包
+  "github.com/lizongying/nolang/test2": "*",
+}
+```
+
+> **注意**：
+> - 第 3 種形式是否為本地包取決於 `workspace.jsonc` 中是否存在對應映射。若 `workspace.jsonc` 中將 `github.com/lizongying/nolang/test2` 映射到本地路徑，則該依賴為本地包（應使用 `"*"`）；否則為線上包（應使用版本號）。
+> - `./` 和 `../` 前綴已不再允許在 `package.jsonc` 中使用。所有本地路徑必須以 `/` 開頭（工作區相對）。
+
+#### 高級用法：線上包轉本地包
+
+`workspace.jsonc` 不僅可以註冊短名稱，還可以將一個線上包名映射到本地路徑，實現「線上包轉本地包」的開發模式：
+
+```jsonc
+// workspace.jsonc
+{
+  "test2": "/example/test2",
+  "github.com/lizongying/nolang/test2": "/example/test2"
+}
+```
+
+此時 `package.jsonc` 中以 `github.com/lizongying/nolang/test2` 引用的依賴會被解析為本地包 `/example/test2`，版本號應使用 `"*"`。這在本地開發線上包時非常方便——只需在 `workspace.jsonc` 中添加映射，即可將遠端依賴切換為本地源碼進行聯調。
+
+#### 版本號警告
+
+編譯時若檢測到本地包使用了非 `"*"` 的版本號（如 `"v0.1.0"`），會輸出警告提示使用 `"*"`。線上包則不受此限制。
+
+#### 遞迴工作區映射（跨包映射鏈）
+
+Nolang 支援**遞迴工作區映射**：被依賴的包可以自帶 `workspace.jsonc`，內部繼續存在映射規則，形成自然的跨包解析鏈。這是 Nolang 的核心差異化能力——主流 Go/Cargo 的 `replace`/`patch` 僅生效於當前項目，不會傳遞到依賴包內部。
+
+**適用場景：**
+- 基礎庫統一內部別名
+- 標準化導入路徑
+- 多層庫兼容遷移
+
+**工作原理：**
+
+當解析依賴鍵時，編譯器會：
+1. 在當前 `workspace.jsonc` 中查找鍵
+2. 若找到映射，檢查目標目錄是否自帶 `workspace.jsonc`
+3. 若有，繼續在同一鍵的基礎上查找，逐層解析
+4. 直到沒有更深的映射為止
+
+**範例：**
+
+```
+workspace/                  ← 頂層工作區
+├── workspace.jsonc         ← {"testkey": "/pkgA"}
+├── pkgA/
+│   ├── workspace.jsonc     ← {"testkey": "/pkgB"}
+│   └── pkgB/
+│       ├── workspace.jsonc ← {"testkey": "/pkgC"}
+│       └── pkgC/           ← 最終目標（無 workspace.jsonc）
+```
+
+解析 `testkey` 時：
+1. 頂層 `workspace.jsonc` 映射 → `/pkgA`（工作區相對）
+2. `pkgA/workspace.jsonc` 映射 → `/pkgB`（pkgA 工作區相對）
+3. `pkgB/workspace.jsonc` 映射 → `/pkgC`（pkgB 工作區相對）
+4. `pkgC` 無 `workspace.jsonc` → 最終解析到 `pkgC`
+
+**循環檢測：**
+
+編譯器維護一條解析訪問棧，跟蹤已訪問的工作區根目錄。一旦檢測到循環映射（如 A→B, B→A），立刻報錯並輸出完整鏈路：
+
+```
+Error: circular workspace mapping detected: /path/to/A → /path/to/B → /path/to/A
+```
+
+> **注意**：此能力僅支援跨包的天然遞迴映射（被依賴包自帶 `workspace.jsonc`），不支援單文件手動鏈式簡寫。
+
 ### 鏡像配置
 
 在 `package.jsonc` 的 `mirrors` 數組中配置鏡像地址，用於加速遠端包下載：
@@ -400,12 +506,159 @@ no sync
 
 ```jsonc
 {
-  "foo": "./foo",
-  "bar": "./bar"
+  "foo": "/foo",
+  "bar": "/bar"
 }
 ```
 
 `no init` 負責定義工作區：若 `workspace.jsonc` 不存在則生成一個空對象 `{}`，**不生成任何 `package.jsonc`**；已存在時則保持不變，不會被覆蓋。隨後用 `no new <name>` 創建包時，會自動把 `"<name>": "./<name>"` 註冊進 `workspace.jsonc`。
+
+#### 本機私有配置 .workspace.jsonc
+
+除公共的 `workspace.jsonc` 外，Nolang 還支援本機私有配置檔案 `.workspace.jsonc`（注意前導 `.`）。該檔案建議加入 `.gitignore`，用於開發者個人的臨時依賴替換。
+
+**加載邏輯：**
+
+1. 先加載公共配置 `workspace.jsonc`
+2. 再加載私有配置 `.workspace.jsonc`
+3. **相同 key**：私有配置覆蓋公共配置
+4. **新 key**：相互疊加
+
+```
+workspace/
+├── workspace.jsonc       ← 工程共享配置（納入版本管理）
+├── .workspace.jsonc      ← 本機私有配置（建議加入 .gitignore）
+├── foo/
+└── bar/
+```
+
+**使用場景：**
+
+- 團隊統一別名、依賴轉發規則寫在 `workspace.jsonc` 中，納入版本管理
+- 開發者本地調試時需要臨時將某個依賴指向本地 fork，在 `.workspace.jsonc` 中覆蓋即可
+- 避免臨時 fork 映射污染項目公共配置，兼顧大型團隊協作與開發者本地開發靈活性
+
+**範例：**
+
+```jsonc
+// workspace.jsonc（公共，版本管理）
+{
+  "foo": "/foo",
+  "bar": "/bar"
+}
+
+// .workspace.jsonc（私有，本地調試）
+{
+  // 覆蓋公共配置：foo 指向本地 fork（工作區內）
+  "foo": "/my-fork-foo",
+  // 新增私有映射：指向工作區外部的 fork（OS 絕對路徑，唯一逃逸出口）
+  "github.com/lizongying/nolang/core": "/home/lzy/code/fork/core",
+  // 新增私有映射（工作區內）
+  "experimental": "/experimental"
+}
+```
+
+最終生效的映射：`foo` → `/my-fork-foo`（私有覆蓋），`bar` → `/bar`（公共保留），`github.com/lizongying/nolang/core` → `/home/lzy/code/fork/core`（私有新增，逃逸工作區），`experimental` → `/experimental`（私有新增）。
+
+### 工作區邊界約束
+
+Nolang 對路徑引用實施嚴格的工作區邊界控制，確保項目的可移植性和安全性。
+
+#### 規則總覽
+
+| 配置層級 | `/` 工作區相對 | OS 絕對路徑 | `./` `../` 相對跳轉 |
+| --- | --- | --- | --- |
+| `package.jsonc` 依賴鍵 | ✅ 允許 | ❌ 禁止 | ❌ 禁止 |
+| `workspace.jsonc` 映射值 | ✅ 允許 | ✅ 允許（逃逸出口） | ✅ 允許（逃逸出口） |
+| `.workspace.jsonc` 映射值 | ✅ 允許 | ✅ 允許（逃逸出口） | ✅ 允許（逃逸出口） |
+| 源碼 `#` 導入路徑 | ✅ 允許 | ❌ 禁止 | ❌ 禁止 |
+
+#### 1. package.jsonc（嚴格受限，禁止逃逸工作區）
+
+`package.jsonc` 是項目對外發布、CI、多人協作的標準基線配置，提交到代碼倉庫。
+
+```jsonc
+"dependencies": {
+    // ✅ 合法：以 / 開頭，相對於 workspace 根
+    "/vendor/test": "*",
+    // ❌ 禁止：作業系統絕對路徑 /home/xxx/...
+    // ❌ 禁止：./ ../ 相對跳轉
+}
+```
+
+**約束：**
+- 本地路徑只能寫 `/xxx`，基準 = workspace 根目錄
+- 不接受作業系統絕對路徑
+- 不支援 `./`、`../`
+- 無法直接引用工作倉庫外部任何目錄
+
+**目的：** 如果允許外部路徑，極易出現「本機能編譯，別人編譯失敗」，也存在意外加載外部陌生代碼的安全隱患。
+
+#### 2. workspace.jsonc + .workspace.jsonc（唯一逃逸出口）
+
+映射目標支援三種本地路徑：
+- `/xxx` → workspace 根內部目錄（和 package.jsonc 語義一致）
+- `./xxx`、`../xxx` → 相對於 workspace 根目錄解析，允許逃逸工作區邊界
+- 作業系統絕對路徑 → 允許指向工作區外部（fork、外部組件）
+
+```jsonc
+// .workspace.jsonc 私有配置，用於本地開發
+{
+  // 工作區內部
+  "foo": "/vendor/foo",
+  // 相對跳轉：指向工作區外部的 fork
+  "github.com/lizongying/nolang/core": "../fork/core",
+  // OS 絕對路徑：指向任意外部目錄
+  "github.com/lizongying/nolang/utils": "/home/lzy/code/utils"
+}
+```
+
+**關鍵邏輯：** `package.jsonc` 沒有能力直接引用外部代碼；用戶想要掛載倉庫外源碼，必須顯式在 workspace 配置映射。相當於給「跨目錄加載」增加一道明確、可見的開關，所有外部依賴集中一處管控。
+
+#### 3. 源碼導入層面配套約束
+
+源碼內不允許直接書寫作業系統絕對路徑導入；所有外部代碼引用，只能通過 workspace 別名或遠端包標識間接引入。`./` 和 `../` 相對跳轉同樣被禁止。
+
+```no
+; ✅ 合法：工作區相對路徑
+# /vendor/utils.helper
+
+; ✅ 合法：遠端包標識
+# github.com/lizongying/nolang/core.process
+
+; ✅ 合法：標準庫
+# std/fs
+
+; ❌ 禁止：相對跳轉
+; # ./utils.helper
+; # ../lib/helper.process
+
+; ❌ 禁止：作業系統絕對路徑
+; # /home/user/code/core.process
+```
+
+#### 數據流鏈路演示
+
+場景：業務項目 workspace 根在 `/code/project`，想要使用外部 `/code/fork/core`
+
+❌ 不能這麼幹（package.jsonc 禁止）：
+
+```jsonc
+// package.jsonc
+"/code/fork/core": "*" // 非法：無法逃逸工作區
+```
+
+✅ 標準做法（通過 workspace 映射突破邊界）：
+
+```jsonc
+// .workspace.jsonc
+"github.com/lizongying/nolang/core": "/code/fork/core"
+```
+
+```no
+; 源碼正常導入
+# github.com/lizongying/nolang/core
+```
 
 #### 工作區流程
 

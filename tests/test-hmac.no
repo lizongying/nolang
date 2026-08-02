@@ -1,5 +1,5 @@
 ; test-hmac — 測試 hmac-sha256
-; # std/hash/hmac
+; # std/crypto/hmac
 
 print('start')
 key []byte = with-cap(2)

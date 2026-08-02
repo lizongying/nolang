@@ -3,6 +3,7 @@
 ; 本測試為 vet-only，需要實際 HTTP 伺服器才能執行。
 ; 測試 http-do、http-get、http-post 及 URL 解析。
 
+; # std/net/http
 
 ; 測試 1: http.response 結構體
 r http.response = http.response{}

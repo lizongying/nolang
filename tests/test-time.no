@@ -2,6 +2,8 @@
 ;
 ; 測試 now-s, now-ms, duration-between, sleep-ms, since-ms, timer, format-duration
 
+; # std/time
+
 ; ── 1. now-s 回傳正值 ──
 ts i64 = 0
 ts = time.now-s()

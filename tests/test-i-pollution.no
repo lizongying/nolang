@@ -1,5 +1,5 @@
 ; test-i-pollution — 測試 import hmac 後 i 變數是否被污染
-; # std/hash/hmac
+; # std/crypto/hmac
 
 print('start')
 i <- [0..5): {

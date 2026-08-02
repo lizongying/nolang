@@ -1,4 +1,5 @@
 // 測試所有量詞
+; # std/regexp
 print('=== quantifier tests ===')
 
 // * 測試

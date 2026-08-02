@@ -1,6 +1,6 @@
 ; test-cmp: debug byte comparison
 
-# std/str
+; # std/str
 
 fstr str = '  hello   world  nolang  '
 n = fstr.len

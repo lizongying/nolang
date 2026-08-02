@@ -1,10 +1,12 @@
 ; test_path_char2 — 驗證 path.no 使用 char 字面量常量後正常工作
+; # std/path
 print('=== path char test ===')
 
-p = path.new('/usr/local/bin')
+p = path{p: '/usr/local/bin'}
 print(p.p)
 
-joined = path.join('/usr', 'local', 'bin')
+p2 = path{p: '/usr'}
+joined = p2.join('local/bin')
 print(joined)
 
 print('=== done ===')

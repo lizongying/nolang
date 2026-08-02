@@ -217,10 +217,23 @@ func TestParseFormatString(t *testing.T) {
 	})
 
 	t.Run("invalid_name_with_space", func(t *testing.T) {
-		// '{id name}' → error invalid name (space)
-		_, err := ParseFormatString("{id name}")
-		if err == nil {
-			t.Fatalf("expected error for invalid name with space")
+		// '{id name}' → no longer an error; treated as expression (IsExpr=true)
+		segs, err := ParseFormatString("{id name}")
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		var field *FormatField
+		for _, seg := range segs {
+			if seg.Field != nil {
+				field = seg.Field
+				break
+			}
+		}
+		if field == nil {
+			t.Fatalf("no field segment found")
+		}
+		if !field.IsExpr {
+			t.Errorf("expected IsExpr=true for non-identifier name %q", field.Name)
 		}
 	})
 
@@ -323,6 +336,57 @@ func TestParseFormatString(t *testing.T) {
 		// "編號 " = 3 + 3 + 1 = 7 字节
 		if field.Pos != 7 {
 			t.Errorf("Pos = %d, want 7", field.Pos)
+		}
+	})
+
+	t.Run("expression_with_index_and_bitwise", func(t *testing.T) {
+		// '{hash[i] & 255:02x}' → expression field with spec "02x"
+		segs, err := ParseFormatString("{hash[i] & 255:02x}")
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		var field *FormatField
+		for _, seg := range segs {
+			if seg.Field != nil {
+				field = seg.Field
+				break
+			}
+		}
+		if field == nil {
+			t.Fatalf("no field segment found")
+		}
+		if field.Name != "hash[i] & 255" {
+			t.Errorf("Name = %q, want %q", field.Name, "hash[i] & 255")
+		}
+		if !field.IsExpr {
+			t.Errorf("IsExpr = false, want true")
+		}
+		if field.Spec != "02x" {
+			t.Errorf("Spec = %q, want %q", field.Spec, "02x")
+		}
+	})
+
+	t.Run("expression_arithmetic", func(t *testing.T) {
+		// '{a + b}' → expression field without spec
+		segs, err := ParseFormatString("{a + b}")
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		var field *FormatField
+		for _, seg := range segs {
+			if seg.Field != nil {
+				field = seg.Field
+				break
+			}
+		}
+		if field == nil {
+			t.Fatalf("no field segment found")
+		}
+		if field.Name != "a + b" {
+			t.Errorf("Name = %q, want %q", field.Name, "a + b")
+		}
+		if !field.IsExpr {
+			t.Errorf("IsExpr = false, want true")
 		}
 	})
 }

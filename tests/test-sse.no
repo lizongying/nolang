@@ -1,7 +1,10 @@
 ; test-sse.no — SSE (Server-Sent Events) 客戶端測試
 ;
 ; 測試 sse-client 的 connect/next-event/close/reconnect。
-; 需 live SSE server 才能執行（vet-only，不執行）。
+; 需 live SSE server 才能執行（vet-only，不執行）;
+
+; # std/net/sse
+; # std/net/client
 ;
 ; 可用以下 Node.js 腳本作為 SSE server 手動測試：
 ;   const http = require('http');

@@ -27,7 +27,7 @@ aes-256-ctr-xor = (key [32]byte, icb [16]byte, data []byte) (out []byte) {
     pos = 0
     {
         ks [16]byte
-        ks = aes-256.aes-256-enc(cb, key)
+        ks = aes.aes-256-enc(cb, key)
 
         n = 16
         pos + n > data.len -> n = data.len - pos
@@ -68,7 +68,7 @@ aes-256-gcm-seal = (key [32]byte, iv [12]byte, aad []byte, plain []byte) (sealed
         zero-block[i] = 0
     }
     h-bytes [16]byte
-    h-bytes = aes-256.aes-256-enc(zero-block, key)
+    h-bytes = aes.aes-256-enc(zero-block, key)
     h [16]byte
     i <- [0..16): {
         h[i] = h-bytes[i]
@@ -105,7 +105,7 @@ aes-256-gcm-seal = (key [32]byte, iv [12]byte, aad []byte, plain []byte) (sealed
 
     ; 5. tag = AES-256-enc(key, J0) XOR GHASH
     j0-enc [16]byte
-    j0-enc = aes-256.aes-256-enc(j0, key)
+    j0-enc = aes.aes-256-enc(j0, key)
     tag [16]byte
     i <- [0..16): {
         tag[i] = (j0-enc[i] & 255) ^ (ghash-out[i] & 255)
@@ -137,7 +137,7 @@ aes-256-gcm-open = (key [32]byte, iv [12]byte, aad []byte, sealed []byte) (plain
         zero-block[i] = 0
     }
     h-bytes [16]byte
-    h-bytes = aes-256.aes-256-enc(zero-block, key)
+    h-bytes = aes.aes-256-enc(zero-block, key)
     h [16]byte
     i <- [0..16): {
         h[i] = h-bytes[i]
@@ -168,7 +168,7 @@ aes-256-gcm-open = (key [32]byte, iv [12]byte, aad []byte, sealed []byte) (plain
     ghash-out [16]byte
     ghash-out = aes-gcm.ghash(h, aad, cipher)
     j0-enc [16]byte
-    j0-enc = aes-256.aes-256-enc(j0, key)
+    j0-enc = aes.aes-256-enc(j0, key)
     exp-tag [16]byte
     i <- [0..16): {
         exp-tag[i] = (j0-enc[i] & 255) ^ (ghash-out[i] & 255)

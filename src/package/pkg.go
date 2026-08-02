@@ -200,12 +200,12 @@ func LoadPackage(dir string) (*Package, error) {
 				wsRoot = parent
 			}
 
-			// 快取 workspace.jsonc 映射，避免後續重複讀取磁碟
-			if pkg.workspaceRoot != "" {
-				pkg.wsMap, _ = loadWorkspaceMap(pkg.workspaceRoot)
-				// 警告：workspace 內的依賴不應有版本號（僅首次）
-				pkg.warnWorkspaceDepVersion()
-			}
+		// 快取 workspace.jsonc 映射，避免後續重複讀取磁碟
+		if pkg.workspaceRoot != "" {
+			pkg.wsMap, _ = loadWorkspaceMap(pkg.workspaceRoot)
+		}
+		// 警告依賴版本約束不當（本地包應用 *，線上包應用版本號）
+		pkg.warnWorkspaceDepVersion()
 
 			// 補上預設 alias
 			if pkg.Alias == nil {
@@ -267,8 +267,13 @@ func (p *Package) ResolvePath(inputPath string) string {
 // key 為套件短名稱，value 為相對於 workspaceRoot 的本地路徑
 type WorkspaceMap map[string]string
 
-// loadWorkspaceMap 從磁碟讀取並解析 workspace.jsonc
+// loadWorkspaceMap 從磁碟讀取並解析 workspace.jsonc，同時合併 .workspace.jsonc。
+//
+// 加載順序：先加載公共配置 workspace.jsonc，再加載私有配置 .workspace.jsonc。
+// 相同的 key，私有配置覆蓋公共配置；新 key 相互疊加。
+// 這分離了「工程標準化配置」與「個人本地調試配置」，避免臨時 fork 映射污染項目公共配置。
 func loadWorkspaceMap(workspaceRoot string) (WorkspaceMap, error) {
+	// 1. 加載公共配置 workspace.jsonc
 	wsFile := filepath.Join(workspaceRoot, "workspace.jsonc")
 	raw, err := os.ReadFile(wsFile)
 	if err != nil {
@@ -280,6 +285,24 @@ func loadWorkspaceMap(workspaceRoot string) (WorkspaceMap, error) {
 	if err := json.Unmarshal(cleaned, &ws); err != nil {
 		return nil, fmt.Errorf("parsing %s: %w", wsFile, err)
 	}
+	if ws == nil {
+		ws = make(WorkspaceMap)
+	}
+
+	// 2. 加載私有配置 .workspace.jsonc（可選，覆蓋公共配置）
+	privateFile := filepath.Join(workspaceRoot, ".workspace.jsonc")
+	if privateRaw, pErr := os.ReadFile(privateFile); pErr == nil {
+		privateCleaned := stripJSONC(privateRaw)
+		var privateWs WorkspaceMap
+		if err := json.Unmarshal(privateCleaned, &privateWs); err != nil {
+			return nil, fmt.Errorf("parsing %s: %w", privateFile, err)
+		}
+		// 合併：私有配置覆蓋公共配置，新 key 疊加
+		for k, v := range privateWs {
+			ws[k] = v
+		}
+	}
+
 	return ws, nil
 }
 
@@ -337,26 +360,50 @@ func PackageShortName(depKey string) string {
 }
 
 // resolveDependency 解析依賴路徑，返回本地套件目錄
-// 先檢查 workspace.jsonc 是否有本地覆蓋，否則回退到下載
+//
+// 工作區邊界約束：
+//   - package.jsonc 中的本地路徑只能以 "/" 開頭（工作區相對），
+//     禁止 "./"、"../" 和作業系統絕對路徑。
+//   - 唯一允許突破工作區邊界的入口是 workspace.jsonc / .workspace.jsonc 映射。
+//
+// 解析順序：
+// 1. "/" 前綴 → 工作區相對路徑解析（嚴格限制在工作區內）
+// 2. workspace.jsonc 中有匹配（短名稱或直接鍵）→ 遞迴解析（支援跨包映射鏈，允許逃逸工作區）
+// 3. 無本地覆蓋 → 下載線上套件
 func (p *Package) resolveDependency(importPath string) (string, error) {
 	key, version, ok := p.MatchDependency(importPath)
 	if !ok {
 		return "", nil
 	}
 
-	shortName := PackageShortName(key)
+	// 禁止 "./" 和 "../" 前綴（package.jsonc 不允許相對跳轉）
+	if strings.HasPrefix(key, "./") || strings.HasPrefix(key, "../") {
+		return "", fmt.Errorf("dependency %q: relative paths (./ ../) are not allowed in package.jsonc; use `/` prefix for workspace-relative paths", key)
+	}
 
-	// 檢查 workspace.jsonc 是否有本地覆蓋
-	if p.workspaceRoot != "" {
-		ws, err := p.LoadWorkspace()
-		if err == nil && ws != nil {
-			if localPath, exists := ws[shortName]; exists {
-				localDir := filepath.Join(p.workspaceRoot, localPath)
-				if info, err := os.Stat(localDir); err == nil && info.IsDir() {
-					return filepath.Clean(localDir), nil
-				}
-			}
+	// "/" 前綴：相對於 workspace 根目錄解析（嚴格限制在工作區內）
+	if strings.HasPrefix(key, "/") {
+		relPath := strings.TrimPrefix(key, "/")
+		localDir := filepath.Join(p.workspaceRoot, relPath)
+		// 安全檢查：解析後的路徑必須在工作區根目錄內
+		if !isWithinWorkspace(localDir, p.workspaceRoot) {
+			return "", fmt.Errorf("dependency %q: path escapes workspace root; package.jsonc dependencies must stay within the workspace", key)
 		}
+		if info, err := os.Stat(localDir); err == nil && info.IsDir() {
+			return filepath.Clean(localDir), nil
+		}
+		return "", fmt.Errorf("workspace-local dependency path %q not found", key)
+	}
+
+	// 檢查 workspace.jsonc 是否有本地覆蓋（遞迴解析，支援跨包映射鏈）
+	// workspace.jsonc / .workspace.jsonc 是唯一允許逃逸工作區邊界的入口
+	ws, _ := p.LoadWorkspace()
+	localDir, found, err := resolveWorkspaceChain(key, p.workspaceRoot, ws, nil)
+	if err != nil {
+		return "", err // 循環映射等硬錯誤
+	}
+	if found {
+		return filepath.Clean(localDir), nil
 	}
 
 	// 無本地覆蓋，需要下載
@@ -364,25 +411,217 @@ func (p *Package) resolveDependency(importPath string) (string, error) {
 	return pkgDir, err
 }
 
-// warnWorkspaceDepVersion 警告 workspace 內的依賴不應指定版本號（僅首次）
+// warnWorkspaceDepVersion 警告依賴版本約束不當（僅首次）
+//
+// 規則：
+//   - 本地包（在 workspace.jsonc 中存在，或依賴鍵以 "/" 開頭）：
+//     應使用 "*"，若指定了版本號則警告。
+//   - "./" 和 "../" 前綴的依賴鍵：報錯（不允許在 package.jsonc 中使用）。
+//   - 線上包（不在 workspace.jsonc 中且非路徑形式）：
+//     版本號和 "*" 均可，不警告。
 func (p *Package) warnWorkspaceDepVersion() {
-	if p == nil || p.warned || p.workspaceRoot == "" || len(p.Dependencies) == 0 {
+	if p == nil || p.warned || len(p.Dependencies) == 0 {
 		return
 	}
 	p.warned = true
-	ws, err := p.LoadWorkspace()
-	if err != nil || ws == nil {
-		return
-	}
+	ws, _ := p.LoadWorkspace()
 	for key, version := range p.Dependencies {
-		if version == "" || version == "*" {
+		// 禁止 "./" 和 "../" 前綴
+		if strings.HasPrefix(key, "./") || strings.HasPrefix(key, "../") {
+			fmt.Fprintf(os.Stderr, "Error: dependency %q: relative paths (./ ../) are not allowed in package.jsonc; use `/` prefix for workspace-relative paths\n", key)
 			continue
 		}
-		shortName := PackageShortName(key)
-		if _, exists := ws[shortName]; exists {
-			fmt.Fprintf(os.Stderr, "Warning: dependency %q specifies version %q but is a workspace-local package. Remove the version constraint (use \"*\").\n", key, version)
+		// 先判斷是否為本地包（路徑形式或 workspace.jsonc 中直接匹配）
+		isLocal := isLocalPathDep(key) || isWorkspaceLocalDepStatic(ws, key, p.workspaceRoot)
+		if isLocal {
+			if version != "" && version != "*" {
+				fmt.Fprintf(os.Stderr, "Warning: dependency %q specifies version %q but is a workspace-local package. Use \"*\" instead.\n", key, version)
+			}
+			continue
+		}
+		// 標準庫依賴不檢查
+		if isStdDependency(key) {
+			continue
+		}
+		// 線上包：版本號和 "*" 均可，不警告
+	}
+}
+
+// isLocalPathDep 判斷依賴鍵是否為本地路徑形式（以 "/" 開頭）
+// 注意："./" 和 "../" 已被禁止，不再視為合法本地路徑。
+func isLocalPathDep(key string) bool {
+	return strings.HasPrefix(key, "/")
+}
+
+// isRelativeJumpPath 判斷路徑是否以 "./" 或 "../" 開頭（禁止的相對跳轉形式）。
+func isRelativeJumpPath(path string) bool {
+	return strings.HasPrefix(path, "./") || strings.HasPrefix(path, "../")
+}
+
+// isWorkspaceLocalDepStatic 判斷依賴鍵是否為 workspace 本地套件（無需 *Package 接收者）
+// 使用遞迴解析，支援被依賴包自帶 workspace.jsonc 的跨包映射。
+func isWorkspaceLocalDepStatic(ws WorkspaceMap, key, workspaceRoot string) bool {
+	if workspaceRoot == "" {
+		// 無工作區根目錄時，退路為單層查找
+		_, found := lookupWorkspaceMap(ws, key, workspaceRoot)
+		return found
+	}
+	_, found, err := resolveWorkspaceChain(key, workspaceRoot, ws, nil)
+	if err != nil {
+		return true // 循環映射 = 本地套件（但有問題，錯誤會在 resolveDependency 中報告）
+	}
+	return found
+}
+
+// lookupWorkspaceMap 在 workspace.jsonc 中查找依賴鍵對應的本地路徑。
+// 查找順序：短名稱匹配 → 直接鍵匹配。
+//
+// 映射值（localPath）的解析規則：
+//   - "/xxx"：先嘗試工作區相對路徑（workspaceRoot + path），若目錄存在則使用；
+//     若不存在，嘗試作為作業系統絕對路徑使用（允許逃逸工作區邊界）。
+//   - 作業系統絕對路徑（如 /home/user/code/foo）：直接使用。
+//   - "./" 和 "../"：禁止（已由 loadWorkspaceMap 驗證）。
+//
+// 返回 (本地目錄絕對路徑, 是否找到)。
+func lookupWorkspaceMap(ws WorkspaceMap, key, workspaceRoot string) (string, bool) {
+	if ws == nil || workspaceRoot == "" {
+		return "", false
+	}
+	// 1. 短名稱匹配（如 github.com/lizongying/nolang/test2 → test2）
+	shortName := PackageShortName(key)
+	if localPath, exists := ws[shortName]; exists {
+		if dir, ok := resolveWorkspaceMapValue(localPath, workspaceRoot); ok {
+			return dir, true
 		}
 	}
+	// 2. 直接鍵匹配（workspace.jsonc 可直接以完整依賴鍵註冊）
+	if localPath, exists := ws[key]; exists {
+		if dir, ok := resolveWorkspaceMapValue(localPath, workspaceRoot); ok {
+			return dir, true
+		}
+	}
+	return "", false
+}
+
+// resolveWorkspaceMapValue 解析 workspace.jsonc 映射值為本地目錄。
+//
+// 支援三種路徑形式：
+//   - 工作區相對路徑（以 "/" 開頭）：workspaceRoot + path
+//   - 相對跳轉路徑（以 "./" 或 "../" 開頭）：相對於 workspaceRoot 解析，允許逃逸工作區邊界
+//   - 作業系統絕對路徑：直接使用（允許指向工作區外部，用於 fork、外部組件）
+//
+// workspace.jsonc / .workspace.jsonc 是唯一允許突破工作區邊界的入口。
+func resolveWorkspaceMapValue(localPath, workspaceRoot string) (string, bool) {
+	// 相對跳轉路徑（"./" 或 "../"）：相對於 workspaceRoot 解析
+	if strings.HasPrefix(localPath, "./") || strings.HasPrefix(localPath, "../") {
+		resolved := filepath.Join(workspaceRoot, localPath)
+		if info, err := os.Stat(resolved); err == nil && info.IsDir() {
+			return filepath.Clean(resolved), true
+		}
+		return "", false
+	}
+	// 工作區相對路徑（"/" 前綴）：先嘗試 workspaceRoot + path
+	wsRelative := filepath.Join(workspaceRoot, localPath)
+	if info, err := os.Stat(wsRelative); err == nil && info.IsDir() {
+		return wsRelative, true
+	}
+	// 嘗試作為作業系統絕對路徑（允許逃逸工作區邊界）
+	if info, err := os.Stat(localPath); err == nil && info.IsDir() {
+		return filepath.Clean(localPath), true
+	}
+	return "", false
+}
+
+// isWithinWorkspace 檢查 target 是否在 workspaceRoot 內（防止路徑逃逸）。
+func isWithinWorkspace(target, workspaceRoot string) bool {
+	if workspaceRoot == "" {
+		return false
+	}
+	rel, err := filepath.Rel(workspaceRoot, target)
+	if err != nil {
+		return false
+	}
+	// 如果相對路徑以 ".." 開頭，表示逃逸了工作區
+	return rel != ".." && !strings.HasPrefix(rel, "../")
+}
+
+// lookupWorkspaceLocal 是 lookupWorkspaceMap 的 *Package 方法版本，使用遞迴解析。
+func (p *Package) lookupWorkspaceLocal(key string) (string, bool) {
+	if p == nil || p.workspaceRoot == "" {
+		return "", false
+	}
+	ws, _ := p.LoadWorkspace()
+	dir, found, err := resolveWorkspaceChain(key, p.workspaceRoot, ws, nil)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		return "", false
+	}
+	return dir, found
+}
+
+// resolveWorkspaceChain 遞迴解析依賴鍵通過多層 workspace.jsonc 映射。
+//
+// 當依賴鍵在當前 workspace.jsonc 中找到映射後，檢查目標目錄是否自帶 workspace.jsonc。
+// 若有，則繼續在同一鍵的基礎上查找，形成自然的解析鏈。
+//
+// 這是 Nolang 的核心差異化能力：被依賴的包可以自帶 workspace.jsonc，
+// 內部繼續存在映射規則，形成自然的跨包解析鏈。
+// 適用場景：基礎庫統一內部別名、標準化導入路徑、多層庫兼容遷移。
+// 主流 Go/Cargo 不具備此能力，它們的 replace/patch 僅生效於當前項目。
+//
+// 使用 visitStack 跟蹤已訪問的工作區根目錄，防止循環映射。
+// 一旦檢測到循環（如 A→B, B→A），立刻報錯並輸出完整鏈路。
+//
+// 參數:
+//   - key: 依賴鍵（如 "github.com/foo/bar" 或短名稱 "bar"）
+//   - workspaceRoot: 當前層的工作區根目錄路徑
+//   - ws: 預載入的 workspace 映射（僅第一層使用，可為 nil）
+//   - visitStack: 已訪問的工作區根目錄棧（用於循環檢測）
+//
+// 返回:
+//   - localDir: 最終解析到的本地目錄絕對路徑
+//   - found: 是否找到映射
+//   - err: 循環映射等錯誤
+func resolveWorkspaceChain(key, workspaceRoot string, ws WorkspaceMap, visitStack []string) (string, bool, error) {
+	// 循環檢檢測：檢查當前工作區根目錄是否已在訪問棧中
+	for i, visited := range visitStack {
+		if visited == workspaceRoot {
+			chain := strings.Join(visitStack[i:], " → ") + " → " + workspaceRoot
+			return "", false, fmt.Errorf("circular workspace mapping detected: %s", chain)
+		}
+	}
+
+	// 使用預載入的映射（第一層），或從磁碟載入
+	currentWs := ws
+	if currentWs == nil {
+		loaded, err := loadWorkspaceMap(workspaceRoot)
+		if err != nil || loaded == nil {
+			return "", false, nil
+		}
+		currentWs = loaded
+	}
+
+	// 單層查找（短名稱匹配 → 直接鍵匹配）
+	localDir, found := lookupWorkspaceMap(currentWs, key, workspaceRoot)
+	if !found {
+		return "", false, nil
+	}
+
+	// 檢查目標目錄是否有自己的 workspace.jsonc（遞迴解析）
+	nestedWsFile := filepath.Join(localDir, "workspace.jsonc")
+	if _, err := os.Stat(nestedWsFile); err == nil {
+		// 遞迴：在同一鍵的基礎上繼續查找
+		deeperDir, deeperFound, err := resolveWorkspaceChain(key, localDir, nil, append(visitStack, workspaceRoot))
+		if err != nil {
+			return "", false, err
+		}
+		if deeperFound {
+			return deeperDir, true, nil
+		}
+	}
+
+	// 沒有更深的映射，返回當前解析結果
+	return localDir, true, nil
 }
 
 // ResolveDependencyModule 解析依賴中的模組完整路徑
@@ -459,24 +698,18 @@ func (p *Package) GetDependencyGraph() *DependencyGraph {
 	return p.depGraph
 }
 
-// isWorkspaceLocalDep 判斷依賴鍵是否為 workspace 本地套件
-// 如果 workspace.jsonc 中存在與依賴短名稱匹配的條目，且本地路徑有效，則返回 true
+// isWorkspaceLocalDep 判斷依賴鍵是否為本地套件
+// 如果依賴鍵為本地路徑形式（以 "/" 開頭），或在 workspace.jsonc 中有匹配（含遞迴），則返回 true
 func (p *Package) isWorkspaceLocalDep(key string) bool {
-	if p == nil || p.workspaceRoot == "" {
-		return false
+	if isLocalPathDep(key) {
+		return true
 	}
-	ws, err := p.LoadWorkspace()
-	if err != nil || ws == nil {
-		return false
+	ws, _ := p.LoadWorkspace()
+	_, found, err := resolveWorkspaceChain(key, p.workspaceRoot, ws, nil)
+	if err != nil {
+		return true // 循環映射 = 本地套件（但有問題）
 	}
-	shortName := PackageShortName(key)
-	localPath, exists := ws[shortName]
-	if !exists {
-		return false
-	}
-	localDir := filepath.Join(p.workspaceRoot, localPath)
-	info, err := os.Stat(localDir)
-	return err == nil && info.IsDir()
+	return found
 }
 
 // resolveFromScratch 從頭解析所有依賴（無鎖檔案）

@@ -1,6 +1,6 @@
 ; test-fmt-heuristic: verify formatter no longer relies on heuristics
 
-# std/str
+; # std/str
 
 ; 1. Inferred types (no type annotation)
 n i64 = 42

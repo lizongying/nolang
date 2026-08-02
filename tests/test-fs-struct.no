@@ -7,7 +7,6 @@ tmp = '/tmp/nolang-fs-test.txt'
 payload = 'hello nolang file struct'
 fs.remove(tmp)
 
-f-w ?fs.file
 f-w = fs.open(tmp,  {
     mode: file-mode.write
     perm: file-perm.perm-644
@@ -25,7 +24,6 @@ f-w: {
     }
 }
 
-f-e ?fs.file
 f-e = fs.open(tmp,  {
     mode: file-mode.write
     perm: file-perm.perm-644
@@ -39,7 +37,6 @@ f-e: {
     -> print('fail: excl did not block')
 }
 
-f-r ?fs.file
 f-r = fs.open(tmp,  {
     mode: file-mode.read
     perm: file-perm.perm-644

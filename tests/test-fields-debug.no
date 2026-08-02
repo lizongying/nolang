@@ -1,6 +1,6 @@
 ; test-fields-debug: debug str.fields
 
-# std/str
+; # std/str
 
 fstr str = '  hello   world  nolang  '
 n = fstr.len

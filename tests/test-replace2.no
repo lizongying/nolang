@@ -1,6 +1,6 @@
 ; test-replace2: simpler str.replace-str test
 
-# std/str
+; # std/str
 
 ; 簡單替換
 s str = 'abc'

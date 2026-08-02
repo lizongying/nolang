@@ -8,7 +8,8 @@ import (
 
 // FormatField 表示一个替换字段 {name[:spec]}
 type FormatField struct {
-	Name   string      // 变量名称
+	Name   string      // 变量名称或表达式文本
+	IsExpr bool        // true 表示 Name 是表达式而非简单标识符
 	Spec   string      // 原始规格字符串（无规格时为空）
 	Parsed *FormatSpec // 解析后的规格（无规格时为 nil）
 	Pos    int         // 在原始字符串中的位置（用于错误报告）
@@ -103,21 +104,38 @@ func ParseFormatString(s string) ([]FormatSegment, error) {
 	return segments, nil
 }
 
-// parseField 从 s[start]（应为 '{'）开始解析一个替换字段。
+// parseField 从 s[start]（应为 '{' ）开始解析一个替换字段。
 // 返回字段、'}' 之后的下一个位置以及可能的错误。
+//
+// 支持两种字段名形式：
+//   - 简单标识符：{name}、{name:spec}
+//   - 表达式：{hash[i] & 255:02x}（含 []、()、运算符等）
+//
+// 表达式形式通过跟踪括号深度来区分 ':' 是表达式的一部分还是规格分隔符。
+// 只有在括号深度为 0 时的 ':' 才被视为规格分隔符。
 func parseField(s string, start int) (*FormatField, int, error) {
 	// s[start] == '{'，从 start+1 开始寻找匹配的 '}'
 	i := start + 1
 	n := len(s)
 	var name, spec []byte
 	hasSpec := false
+	bracketDepth := 0 // 跟踪 [] 和 () 深度
 
 	for i < n {
 		c := s[i]
-		if c == '}' {
+		if c == '}' && bracketDepth == 0 {
 			break
 		}
-		if c == ':' && !hasSpec {
+		// 跟踪括号深度
+		if c == '[' || c == '(' {
+			bracketDepth++
+		} else if c == ']' || c == ')' {
+			if bracketDepth > 0 {
+				bracketDepth--
+			}
+		}
+		// 只有在括号深度为 0 时的 ':' 才被视为规格分隔符
+		if c == ':' && !hasSpec && bracketDepth == 0 {
 			hasSpec = true
 			i++
 			continue
@@ -142,14 +160,15 @@ func parseField(s string, start int) (*FormatField, int, error) {
 	if len(nameStr) == 0 {
 		return nil, 0, fmt.Errorf("格式字符串位置 %d: 空的字段名称", start)
 	}
-	if !isValidIdentifier(nameStr) {
-		return nil, 0, fmt.Errorf("格式字符串位置 %d: 无效的字段名称 %q", start, nameStr)
-	}
+
+	// 判断是简单标识符还是表达式
+	isExpr := !isValidIdentifier(nameStr)
 
 	field := &FormatField{
-		Name: nameStr,
-		Spec: specStr,
-		Pos:  start,
+		Name:   nameStr,
+		IsExpr: isExpr,
+		Spec:   specStr,
+		Pos:    start,
 	}
 
 	// 若存在规格则解析之

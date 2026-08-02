@@ -4,7 +4,7 @@
 ;   test-run = (name str, fn fn ()) (passed i64, failed i64)
 ; 傳入具名函式作為回呼，確認計數正確（執行完成 → passed=1, failed=0）。
 
-# /src/test/runner/test-run
+# /test/runner
 
 greet = () {
     print('hi from greet')

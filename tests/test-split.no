@@ -1,6 +1,6 @@
 ; test-split: test str.split
 
-# std/str
+; # std/str
 
 s str = 'hello world hello'
 parts []str

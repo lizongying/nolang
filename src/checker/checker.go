@@ -160,6 +160,11 @@ func inferExprType(expr parser.Expression, varTypes map[string]string, funcTypes
 			// 此時接收者是模組名（非本作用域變數），對應裸內建回傳 str。
 			if recv, ok := dot.Receiver.(*parser.Identifier); ok {
 				if _, isVar := varTypes[recv.Value]; !isVar {
+					// 模組限定函數呼叫（如 math.sin、sha1.sha1）：
+					// 接收者為模組名而非變數，直接以裸函數名查 funcTypes。
+					if retType, exists := funcTypes[dot.Property]; exists {
+						return retType
+					}
 					switch recv.Value + "." + dot.Property {
 					case "number.char-to-str":
 						return "str"
@@ -405,6 +410,8 @@ func ValidateEmbedAnnotations(program *parser.Program, sourcePath string) []Vali
 	return results
 }
 func ValidateTypes(program *parser.Program) []ValidateResult {
+	validationMu.Lock()
+	defer validationMu.Unlock()
 	var results []ValidateResult
 
 	// 1. 收集所有函式名稱
@@ -1091,6 +1098,19 @@ func markReferencesInExpr(expr parser.Expression, varSet map[string]struct{ line
 		}
 		for _, seg := range segments {
 			if seg.Field == nil {
+				continue
+			}
+			if seg.Field.IsExpr {
+				// Expression field: parse and mark all identifiers as used
+				l := lexer.New(seg.Field.Name)
+				p := parser.New(l)
+				prog := p.ParseProgram()
+				if len(p.Errors()) > 0 {
+					continue
+				}
+				for _, s := range prog.Statements {
+					markReferencesInStatement(s, varSet, usedVars)
+				}
 				continue
 			}
 			if _, exists := varSet[seg.Field.Name]; exists {
@@ -2459,6 +2479,12 @@ func validatePrintFormatCall(e *parser.CallExpression, varTypes map[string]strin
 			continue
 		}
 		field := seg.Field
+		// Expression fields (e.g. {hash[i] & 255:02x}) skip variable
+		// scope/type validation here — the expression is validated when
+		// parsed by the code generator.
+		if field.IsExpr {
+			continue
+		}
 		// 1. 檢查變數是否在作用域內
 		// 支援點表達式欄位名（如 content.len）：先查全名，再查基礎變數名
 		varType, inScope := varTypes[field.Name]
@@ -4755,6 +4781,12 @@ type funcSig struct {
 	ResultTypes []paramInfo
 }
 var validationStructFields map[string]map[string]string
+
+// validationMu protects validationStructFields and validationConcreteTypeAliases
+// from concurrent writes during parallel vet/build. ValidateTypes writes these
+// globals; ValidateFuncArgs reads them. Without the mutex, parallel goroutines
+// racing on the map writes cause "concurrent map writes" fatal panics.
+var validationMu sync.Mutex
 func isValidationIntType(t string) bool {
 	switch t {
 	case "i8", "i16", "i32", "i64", "u8", "u16", "u32", "u64":

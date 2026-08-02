@@ -5,7 +5,6 @@ payload = 'hello nolang'
 fs.remove(tmp)
 
 ; 先寫入
-f-w ?fs.file
 f-w = fs.open(tmp,  {
     mode: file-mode.write
     perm: file-perm.perm-600
@@ -24,7 +23,6 @@ f-w: {
 }
 
 ; 再讀取
-f-r ?fs.file
 f-r = fs.open(tmp,  {
     mode: file-mode.read
     perm: file-perm.perm-600

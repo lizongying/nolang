@@ -1,5 +1,7 @@
 ; test-aes-enc.no — AES-128 加密簡單測試
 
+; # std/crypto/aes
+
 aes-key [16]byte = [
     0x2b, 0x7e, 0x15, 0x16, 0x28, 0xae, 0xd2, 0xa6,
     0xab, 0xf7, 0x15, 0x88, 0x09, 0xcf, 0x4f, 0x3c,
@@ -14,6 +16,6 @@ aes-out = aes.aes-128-enc(aes-plain, aes-key)
 
 print('aes-enc=')
 i <- [0..16): {
-    fmt.print-hex8(aes-out[i] & 255)
+    print('{aes-out[i] & 255:02x}')
 }
 print('')

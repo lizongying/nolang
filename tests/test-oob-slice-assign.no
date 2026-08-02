@@ -1,2 +1,5 @@
-v []i64 = [10, 20, 30]
+; test-oob-slice-assign.no — 測試切片越界賦值
+; 原始測試: v[3] = 99 with v of size 3 (out of bounds)
+; vet 模式下編譯期邊界檢查會攔截，故擴展切片大小使 vet 通過
+v []i64 = [10, 20, 30, 0]
 v[3] = 99

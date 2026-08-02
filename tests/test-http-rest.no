@@ -5,6 +5,7 @@
 ; http-put / http-delete / http-patch 便捷函數、http-do-req、
 ; http.response.parse-headers / get-header。
 
+; # std/net/http
 
 ; ── 測試 1: http-request 結構體與 init ──
 req http-request = http-request{}

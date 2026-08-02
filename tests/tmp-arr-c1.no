@@ -9,11 +9,11 @@ test-arr-sort-asc = () {
 }
 
 test-arr-swap = () {
-    a [3] = [1, 2, 3]
-    a.swap(0, 2)
-    print(a[0])
-    print(a[1])
-    print(a[2])
+    b [3] = [1, 2, 3]
+    b.swap(0, 2)
+    print(b[0])
+    print(b[1])
+    print(b[2])
 }
 
 test-arr-sort-asc()

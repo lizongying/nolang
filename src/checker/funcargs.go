@@ -74,6 +74,8 @@ func extractArrayElemType(typeStr string) string {
 var validationConcreteTypeAliases map[string]string
 
 func ValidateFuncArgs(program *parser.Program, rootDir string) []ValidateResult {
+	validationMu.Lock()
+	defer validationMu.Unlock()
 	var results []ValidateResult
 	// 1. Collect local function signatures (including from resolved imports
 	//    which are already merged into the program at build time)

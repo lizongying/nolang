@@ -5,8 +5,8 @@ test-arr-sort-asc = () {
 }
 
 test-arr-to-str = () {
-    a [3] = [1, 2, 3]
-    print(a.to-str())
+    b [3] = [1, 2, 3]
+    print(b.to-str())
 }
 
 test-arr-sort-asc()

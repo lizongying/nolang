@@ -1,61 +1,61 @@
 ; 第一半测试
 test-arr-len = () {
-    a [3] = [10, 20, 30]
-    print(a.len)
+    b [3] = [10, 20, 30]
+    print(b.len)
 }
 
 test-arr-clone = () {
-    a [3] = [10, 20, 30]
-    b = a.clone()
+    b [3] = [10, 20, 30]
+    b = b.clone()
     print(b[0])
     print(b[1])
     print(b[2])
 }
 
 test-arr-eq = () {
-    a [3] = [10, 20, 30]
+    e [3] = [10, 20, 30]
     b [3] = [10, 20, 30]
     c [3] = [10, 20, 31]
-    print(a.eq(b))
-    print(a.eq(c))
+    print(e.eq(b))
+    print(e.eq(c))
 }
 
 test-arr-fill = () {
-    a [3] = [0, 0, 0]
-    a.fill(99)
-    print(a[0])
-    print(a[1])
-    print(a[2])
+    b [3] = [0, 0, 0]
+    b.fill(99)
+    print(b[0])
+    print(b[1])
+    print(b[2])
 }
 
 test-arr-reverse = () {
-    a [4] = [1, 2, 3, 4]
-    a.reverse()
-    print(a[0])
-    print(a[1])
-    print(a[2])
-    print(a[3])
+    b [4] = [1, 2, 3, 4]
+    b.reverse()
+    print(b[0])
+    print(b[1])
+    print(b[2])
+    print(b[3])
 }
 
 test-arr-contains = () {
-    a [3] = [1, 2, 3]
-    print(a.contains(2))
-    print(a.contains(99))
+    b [3] = [1, 2, 3]
+    print(b.contains(2))
+    print(b.contains(99))
 }
 
 test-arr-to-vec = () {
-    a [3] = [10, 20, 30]
-    v = a.to-vec()
+    b [3] = [10, 20, 30]
+    v = b.to-vec()
     print(v[0])
     print(v[1])
     print(v[2])
 }
 
 test-arr-max-min-sum = () {
-    a [5] = [3, 1, 4, 1, 5]
-    print(a.max())
-    print(a.min())
-    print(a.sum())
+    b [5] = [3, 1, 4, 1, 5]
+    print(b.max())
+    print(b.min())
+    print(b.sum())
 }
 
 test-arr-len()

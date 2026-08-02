@@ -1,5 +1,6 @@
 ; test-hmac2 — 測試 hmac-sha256 輸出參數形式
-; # std/hash/hmac
+
+; # std/crypto/hmac
 
 print('start')
 key []byte

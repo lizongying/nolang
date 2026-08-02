@@ -9,7 +9,7 @@
 ; 注意：本測試為 vet-only（語法驗證），不執行，因需 live MySQL server。
 ; 執行前需建立資料庫 testdb 並設定 root/secret 帳密。
 
-# /example/mysql-driver/mysql
+# /example/mysql-driver/src/mysql
 
 ; 測試 1: 以 DSN 連線
 d db = fs.open('root:secret@localhost/testdb')

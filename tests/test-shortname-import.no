@@ -3,6 +3,8 @@
 ; 標準庫模組由編譯器自動載入，可直接使用 ShortName 前綴調用。
 ; 不需 # std/... 導入註解。
 
+; # std/crypto/sha256
+
 ; 測試常量存取：base64.BASE64-STD
 print('base64.BASE64-STD=')
 print(base64.BASE64-STD)

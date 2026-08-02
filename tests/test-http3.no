@@ -1,6 +1,9 @@
 ; test-http3 — HTTP/3 和 QUIC 模組測試
 ; 驗證 QUIC 變長整數、影格解析、金鑰推導、HTTP/3 影格編解碼
 
+; # std/net/http3
+; # std/net/quic
+
 ; ═══════════════════════════════════════════════
 ; QUIC 變長整數測試
 ; ═══════════════════════════════════════════════
@@ -256,11 +259,15 @@ test-http3-frame-encode-decode = () {
 ; test-qpack-encode-decode: 測試 QPACK 標頭編解碼
 test-qpack-encode-decode = () {
     ; 編碼單個標頭
+    names [16]str
+    values [16]str
+    names[0] = 'content-type'
+    values[0] = 'text/plain'
     buf []byte
     n = 0
-    buf, n = http3.qpack-encode-header('content-type', 'text/plain')
+    buf, n = http3.encode-headers(names, values, 1)
     n == 0 -> {
-        print('FAIL: qpack-encode-header returned n=0')
+        print('FAIL: encode-headers returned n=0')
         return
     }
 
@@ -268,18 +275,18 @@ test-qpack-encode-decode = () {
     name = ''
     value = ''
     np = 0
-    name, value, np = http3.qpack-decode-header(buf, 0)
+    name, value, np = http3.decode-header(buf, 0)
     np < 0 -> {
-        print('FAIL: qpack-decode-header failed')
+        print('FAIL: decode-header failed')
         return
     }
     name != 'content-type' -> {
-        print('FAIL: qpack-decode-header name mismatch: ')
+        print('FAIL: decode-header name mismatch: ')
         print(name)
         return
     }
     value != 'text/plain' -> {
-        print('FAIL: qpack-decode-header value mismatch: ')
+        print('FAIL: decode-header value mismatch: ')
         print(value)
         return
     }

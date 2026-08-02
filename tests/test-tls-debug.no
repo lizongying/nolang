@@ -6,7 +6,7 @@ print('=== TLS Debug Test ===')
 ; 測試 1: tls-put-u16
 print('test 1: tls-put-u16')
 buf []byte
-tls.tls-put-u16(buf, 0, 0x1234)
+tls.put-u16(buf, 0, 0x1234)
 buf[0] != 0x12 -> {
     print('FAIL: expected 0x12')
     return
@@ -16,7 +16,7 @@ print('PASS: tls-put-u16')
 ; 測試 2: tls-get-u16
 print('test 2: tls-get-u16')
 val i64 = 0
-val = tls.tls-get-u16(buf, 0)
+val = tls.get-u16(buf, 0)
 val != 0x1234 -> {
     print('FAIL: expected 0x1234')
     return
@@ -32,7 +32,7 @@ b []byte
 b[0] = 3
 b[1] = 4
 out []byte
-out = tls.tls-bytes-cat(a, b)
+out = tls.bytes-cat(a, b)
 out.len != 4 -> {
     print('FAIL: expected out.len=4')
     return
@@ -43,7 +43,7 @@ print('PASS: tls-bytes-cat')
 print('test 4: tls-rand-bytes')
 state i64 = 12345
 r-out []byte
-r-out = tls.tls-rand-bytes(state, 8)
+r-out = tls.rand-bytes(state, 8)
 print('PASS: tls-rand-bytes')
 
 print('=== Done ===')

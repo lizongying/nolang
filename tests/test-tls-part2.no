@@ -12,7 +12,7 @@ b []byte = with-cap(2)
 b[0] = 4
 b[1] = 5
 out []byte
-out = tls.tls-bytes-cat(a, b)
+out = tls.bytes-cat(a, b)
 out.len != 5 -> {
     print('FAIL: bytes-cat len')
     return
@@ -34,7 +34,7 @@ data[1] = 0x02
 data[2] = 0x03
 data[3] = 0x04
 bn-out []i64
-bn-out = tls.tls-bytes-to-bn(data)
+bn-out = tls.bytes-to-bn(data)
 bn-out.len != 1 -> {
     print('FAIL: bytes-to-bn n')
     return
@@ -49,7 +49,7 @@ print('PASS: bytes-to-bn')
 num []i64 = with-cap(1)
 num[0] = 0x01020304
 bb-out []byte
-bb-out = tls.tls-bn-to-bytes(num)
+bb-out = tls.bn-to-bytes(num)
 bb-out.len != 4 -> {
     print('FAIL: bn-to-bytes n')
     return
@@ -63,7 +63,7 @@ print('PASS: bn-to-bytes')
 ; test-tls-rand-bytes
 state i64 = 12345
 r-out []byte
-r-out = tls.tls-rand-bytes(state, 16)
+r-out = tls.rand-bytes(state, 16)
 print('PASS: rand-bytes')
 
 print('=== Done ===')

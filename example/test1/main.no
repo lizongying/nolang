@@ -1,14 +1,9 @@
 ; This is optional — if there's no ambiguity, explicit import is not needed
 ; # std/math
 
-; # /src/utils.greet
+; 導入本地包（相對於 workspace 根目錄的路徑形式）
+# /example/test2/utils.greet greet2
 
-; 導入線上模塊
-# github.com/lizongying/nolang/test1/utils.greet greet1
-# github.com/lizongying/nolang/test2/utils.greet greet2
-
-; print('greet:', greet())
-greet1('World')
 greet2('World')
 print()
 

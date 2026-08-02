@@ -81,7 +81,7 @@ aes-256-ctr = (in []byte, key [32]byte, iv [16]byte) (out []byte) {
     pos = 0
     {
         ks [16]byte
-        ks = aes-256.aes-256-enc(ctr, key)
+        ks = aes.aes-256-enc(ctr, key)
 
         n = 16
         pos + n > in.len -> n = in.len - pos

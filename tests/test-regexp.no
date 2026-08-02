@@ -1,3 +1,5 @@
+; # std/regexp
+
 matched = regexp.regexp-match('hello.*world', 'hello nolang world')
 print('regexp-match test 1: {matched}')
 

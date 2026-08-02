@@ -1,3 +1,4 @@
+; # std/regexp
 print('=== quantifier tests ===')
 
 // * 測試

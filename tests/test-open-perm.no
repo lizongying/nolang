@@ -3,7 +3,6 @@
 tmp = '/tmp/nolang-perm-test.txt'
 fs.remove(tmp)
 
-f ?fs.file
 f = fs.open(tmp,  {
     mode: file-mode.write
     perm: file-perm.perm-600

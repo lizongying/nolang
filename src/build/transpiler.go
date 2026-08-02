@@ -691,10 +691,29 @@ func (t *Transpiler) workspaceRoot() string {
 func (t *Transpiler) resolveUse(use *parser.UseStatement) (*parser.Program, error) {
 	// use path.fn → 載入 path.no 並取出 fn 函數
 	path := use.Path
-	// 本地模塊：/path → 相對於 workspace 根目錄（如有），否則相對於包根目錄
+
+	// 源碼導入約束：禁止 "./" 和 "../" 相對跳轉
+	// 所有外部代碼引用只能通過 workspace 別名或遠端包標識間接引入
+	if strings.HasPrefix(path, "./") || strings.HasPrefix(path, "../") {
+		return nil, fmt.Errorf("import %q: relative paths (./ ../) are not allowed in source code; use workspace alias or remote package identifier instead", path)
+	}
+
+	// 本地模塊：/path → 先嘗試依賴匹配，再回退到相對於 workspace 根目錄的路徑解析
 	if strings.HasPrefix(path, "/") {
+		// 先嘗試作為依賴鍵匹配（如 "/example/test2/utils.greet" 匹配依賴 "/example/test2"）
+		if t.pkg != nil && len(t.pkg.Dependencies) > 0 {
+			if _, _, matched := t.pkg.MatchDependency(path); matched {
+				modPath, err := t.pkg.ResolveDependencyModule(path)
+				if err != nil {
+					return nil, err
+				}
+				if modPath != "" {
+					return t.resolveFile(modPath)
+				}
+			}
+		}
+		// 回退：相對於 workspace 根目錄的直接路徑
 		relPath := strings.TrimPrefix(path, "/")
-		// 一律相對於工作區根目錄解析，不再以當前源碼檔目錄為相對基準
 		fullPath := pkg.ResolveToWorkspaceRoot(t.workspaceRoot(), relPath)
 		if !strings.HasSuffix(fullPath, ".no") {
 			fullPath = fullPath + ".no"
@@ -759,19 +778,22 @@ func (t *Transpiler) resolveUse(use *parser.UseStatement) (*parser.Program, erro
 		}
 		return nil, fmt.Errorf("js compatibility module not found: %s", relPath)
 	}
-	// 依賴解析：domain/org/repo/... 風格的導入路徑
-	if first := strings.SplitN(path, "/", 2)[0]; strings.Contains(first, ".") {
-		if t.pkg != nil && len(t.pkg.Dependencies) > 0 {
-			if _, _, matched := t.pkg.MatchDependency(path); matched {
-				modPath, err := t.pkg.ResolveDependencyModule(path)
-				if err != nil {
-					return nil, err
-				}
-				if modPath != "" {
-					return t.resolveFile(modPath)
-				}
+	// 依賴解析：嘗試所有導入路徑匹配 package.jsonc 中宣告的依賴
+	// 支援 URL 風格（github.com/...）、路徑風格（/example/pkg、./pkg）、短名稱風格（test2）
+	first := strings.SplitN(path, "/", 2)[0]
+	isURLStyle := strings.Contains(first, ".")
+	if t.pkg != nil && len(t.pkg.Dependencies) > 0 {
+		if _, _, matched := t.pkg.MatchDependency(path); matched {
+			modPath, err := t.pkg.ResolveDependencyModule(path)
+			if err != nil {
+				return nil, err
+			}
+			if modPath != "" {
+				return t.resolveFile(modPath)
 			}
 		}
+	}
+	if isURLStyle {
 		// URL 風格的導入路徑但未在 dependencies 中宣告
 		return nil, fmt.Errorf("dependency not found: %q is not declared in package.jsonc dependencies", path)
 	}
@@ -981,6 +1003,17 @@ func (t *Transpiler) collectReferencedStdModules(prog *parser.Program) map[strin
 		case *parser.CallExpression:
 			if dot, ok := ex.Function.(*parser.DotExpression); ok {
 				addRef(dotModulePath(dot))
+			} else if ident, ok := ex.Function.(*parser.Identifier); ok {
+				// 裸函數呼叫：若函數名恰好為某個 std 模組的 ShortName，
+				// 且該模組確實定義了同名頂層函數（如 crypto/rand.no 的 rand），
+				// 則將該模組標記為被引用。這處理 std 模組之間以裸名相互呼叫
+				// 的情況（如 x25519.no 呼叫 rand(state)），使傳遞閉包能正確
+				// 載入依賴模組。
+				if info, ok := lookup[ident.Value]; ok {
+					if info.ShortName == ident.Value {
+						addRef(ident.Value)
+					}
+				}
 			}
 			walkExpr(ex.Function)
 			for _, a := range ex.GenericArgs {
@@ -1437,7 +1470,15 @@ func (t *Transpiler) CompileTarget(source string, _ Target) (string, error) {
 	// 此處載入；std 函數僅能經顯式 module.fn() 觸達，閉包已覆蓋。
 	loadedStd := make(map[string]bool)
 	var stdWorklist []string
-	for sp := range t.collectReferencedStdModules(merged) {
+	// 掃描 merged（含已載入模組）和原始 program（含頂層語句）中的 std 模組引用。
+	// 原始 program 的頂層 LetStatement / ExpressionStatement 此時尚未加入 merged，
+	// 但其中可能引用 module.fn()（如 sha1.sha1(data)），必須在此處一併檢測，
+	// 否則這些 std 模組不會被自動載入，導致標準庫函數無法在頂層代碼中使用。
+	refs := t.collectReferencedStdModules(merged)
+	for sp := range t.collectReferencedStdModules(program) {
+		refs[sp] = true
+	}
+	for sp := range refs {
 		if !loadedStd[sp] {
 			loadedStd[sp] = true
 			stdWorklist = append(stdWorklist, sp)
@@ -1629,6 +1670,10 @@ func (t *Transpiler) CompileTarget(source string, _ Target) (string, error) {
 	rewriteTypeRefs(merged.Statements, mainLocalOwner)
 	// 解析頂層代碼中的 module.fn() 呼叫
 	checker.ResolveModuleCalls(merged, importedModules, prefixedFns)
+	// 再次傳播模組常量：頂層語句此時已加入 merged，且 module.CONST 已被
+	// ResolveModuleCalls 改寫為裸名（如 math.PI → PI），需要再次將裸名
+	// 常量替換為字面值。否則頂層代碼中的模組常量會殘留為變數引用。
+	checker.ResolveModuleConstants(merged, moduleConstants)
 	// 解析 Type.method(args) 靜態方法呼叫：將 bigint.cmp(d, d2) 重寫為
 	// bigint.bigint.cmp(d, d2)，與 prefixMethodNames 重命名後的方法定義對齊。
 	// 必須在 resolveSelfMethodCalls 之後執行（該 pass 已用正確的 module 前綴

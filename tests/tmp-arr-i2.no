@@ -1,17 +1,17 @@
 test-arr-index-of = () {
-    a [3] = [1, 2, 3]
-    print(a.index-of(2))
+    b [3] = [1, 2, 3]
+    print(b.index-of(2))
 }
 
 test-arr-last-first = () {
-    a [3] = [10, 20, 30]
-    print(a.first())
+    b [3] = [10, 20, 30]
+    print(b.first())
 }
 
 test-arr-sort-asc = () {
-    a [5] = [3, 1, 4, 1, 5]
-    a.sort-asc()
-    print(a[3])
+    b [5] = [3, 1, 4, 1, 5]
+    b.sort-asc()
+    print(b[3])
 }
 
 test-arr-index-of()
