@@ -523,7 +523,7 @@ func (p *Parser) isFunctionDefinition() bool {
 		return false
 	}
 
-	state := p.saveState()
+	state := p.saveLexState()
 
 	// 跳过 IDENT 令牌
 	p.nextToken()
@@ -534,7 +534,7 @@ func (p *Parser) isFunctionDefinition() bool {
 			p.nextToken()
 		}
 		if p.currentToken.Type != lexer.GREATER {
-			p.restoreState(state)
+			p.restoreLexState(state)
 			return false
 		}
 		p.nextToken()
@@ -542,14 +542,14 @@ func (p *Parser) isFunctionDefinition() bool {
 
 	// 跳過 ASSIGN 令牌
 	if p.currentToken.Type != lexer.ASSIGN {
-		p.restoreState(state)
+		p.restoreLexState(state)
 		return false
 	}
 	p.nextToken()
 
 	// 跳過 LPAREN 令牌
 	if p.currentToken.Type != lexer.LPAREN {
-		p.restoreState(state)
+		p.restoreLexState(state)
 		return false
 	}
 	p.nextToken()
@@ -575,7 +575,7 @@ func (p *Parser) isFunctionDefinition() bool {
 		if p.currentToken.Type == lexer.LBRACE {
 			isFunctionDef = true
 		}
-		p.restoreState(state)
+		p.restoreLexState(state)
 		return isFunctionDef
 	}
 
@@ -623,7 +623,7 @@ func (p *Parser) isFunctionDefinition() bool {
 			!(p.currentToken.Type == lexer.LPAREN && prevIdent) &&
 			!(p.currentToken.Type == lexer.LPAREN && allowFnResultsParen) &&
 			!(p.currentToken.Type == lexer.RPAREN && parenDepth > 0) {
-			p.restoreState(state)
+			p.restoreLexState(state)
 			return false
 		}
 		switch p.currentToken.Type {
@@ -683,7 +683,7 @@ func (p *Parser) isFunctionDefinition() bool {
 		}
 	}
 
-	p.restoreState(state)
+	p.restoreLexState(state)
 	return isFunctionDef
 }
 

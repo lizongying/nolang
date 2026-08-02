@@ -529,6 +529,41 @@ func (p *Parser) saveState() parserState {
 	}
 }
 
+// lexState 是純前瞻（lookahead）用的輕量狀態快照：只記錄 token 游標與
+// comments/ctx 的長度，不深拷貝語義符號表。僅可用於「保證不寫入 sem 表、
+// 且 context push/pop 平衡」的掃描式判定（如 isFunctionDefinition）。
+type lexState struct {
+	cur       int
+	peek      int
+	prevToken lexer.Token
+	nComments int
+	ctxDepth  int
+}
+
+func (p *Parser) saveLexState() lexState {
+	return lexState{
+		cur:       p.cur,
+		peek:      p.peek,
+		prevToken: p.prevToken,
+		nComments: len(p.comments),
+		ctxDepth:  len(p.ctx),
+	}
+}
+
+func (p *Parser) restoreLexState(s lexState) {
+	p.cur = s.cur
+	p.peek = s.peek
+	p.currentToken = p.tokAt(s.cur)
+	p.peekToken = p.tokAt(s.peek)
+	p.prevToken = s.prevToken
+	if len(p.comments) > s.nComments {
+		p.comments = p.comments[:s.nComments]
+	}
+	if len(p.ctx) > s.ctxDepth {
+		p.ctx = p.ctx[:s.ctxDepth]
+	}
+}
+
 func (p *Parser) restoreState(state parserState) {
 	p.cur = state.cur
 	p.peek = state.peek

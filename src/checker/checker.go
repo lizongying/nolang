@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 
@@ -3505,17 +3506,38 @@ func CollectStdModuleSignatures() (map[string][]string, map[string]map[string]st
 		var mods []parsedMod
 		structCount := make(map[string]int)
 		funcCount := make(map[string]int)
-		for _, info := range knownStdModules() {
-			// 只從內嵌 StdFS 讀取,支援單二進制分發
-			embedPath := "std/" + info.FullPath + ".no"
-			source, err := nolang.StdFS.ReadFile(embedPath)
-			if err != nil {
-				continue
+		// 並行解析：各模組的 lex+parse 相互獨立，僅共用有鎖的 token LRU。
+		// 結果按 knownStdModules() 原順序寫回，保持 last-wins 合併語義不變。
+		known := knownStdModules()
+		parsed := make([]*parser.Program, len(known))
+		{
+			var wg sync.WaitGroup
+			sem := make(chan struct{}, runtime.GOMAXPROCS(0))
+			for i, info := range known {
+				wg.Add(1)
+				go func(i int, info StdModuleInfo) {
+					defer wg.Done()
+					sem <- struct{}{}
+					defer func() { <-sem }()
+					embedPath := "std/" + info.FullPath + ".no"
+					source, err := nolang.StdFS.ReadFile(embedPath)
+					if err != nil {
+						return
+					}
+					l := lexer.NewCached(embedPath, string(source))
+					p := parser.New(l)
+					prog := p.ParseProgram()
+					if len(p.Errors()) > 0 {
+						return
+					}
+					parsed[i] = prog
+				}(i, info)
 			}
-			l := lexer.NewCached(embedPath, string(source))
-			p := parser.New(l)
-			prog := p.ParseProgram()
-			if len(p.Errors()) > 0 {
+			wg.Wait()
+		}
+		for i, info := range known {
+			prog := parsed[i]
+			if prog == nil {
 				continue
 			}
 			mods = append(mods, parsedMod{info, prog})

@@ -14,7 +14,10 @@ sidebar_position: 99
   注意：`package.jsonc` 所在目录是**包根目录**（`pkg.RootDir`），二者不是同一层——工作区根在上层（含 `workspace.jsonc`，可包含多个包），包根是具体**包**的目录（含 `package.jsonc`），包内包含若干**模块**（`.no` 源文件）。不要混淆。
 - 解析后做规范化（`filepath.Clean`、去 `.`/`..`、统一分隔符），得到**全局唯一**的规范路径，
   作为模块加载、缓存键、AST/语义归属的唯一标识。
-- 该规范路径同时是 `lexer.tokenCache` 与 `checker.parseProgramFileCache` 的缓存键。
+- 该规范路径是 `lexer.tokenCache` 与 `checker.parseProgramFileCache` 缓存键的**路径分量**。
+  缓存键实际为复合键 `(规范路径, 内容哈希)`（`cache.Key`，见 `src/cache/lru.go`）：
+  同路径内容变化 → 哈希变化 → 自动失效，不再拿到过期 token/AST；且缓存是有容量上限的
+  LRU，常驻进程（LSP / fmt）不会内存泄漏（原两遍架构审查中的第③项）。
 
 ## 为什么
 
@@ -55,8 +58,9 @@ sidebar_position: 99
   （工作区根优先）。
 - `src/checker/checker.go` `ValidateEmbedAnnotations`：embed 校验路径同样改走 `pkg.ResolveEmbedBase`。
 
-缓存键（`tokenCache` / `parseProgramFileCache`）经由 `resolveFile(filePath)` 自动获得规范
-绝对路径——因 `filePath` 现在恒为工作区根基准路径，碰撞在构造上消失。
+缓存键（`tokenCache` / `parseProgramFileCache`）经由 `resolveFile(filePath)` 获得工作区根基准的
+规范绝对路径作为路径分量；再与源文件内容哈希拼成复合键（`cache.Key`），碰撞在构造上消失，
+且同路径编辑后自动失效、LRU 有上限防泄漏。
 
 `std/` 与 `js/` 内嵌模块仍走 `StdFS`/`JsFS`（key 为 `std/<rel>.no` / `js/<rel>.no`），不受
 影响；`processEmbeds` 仅对主程序（用户源码）生效，std 模块自身 embed 仍相对其自身位置解析。

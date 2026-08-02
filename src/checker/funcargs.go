@@ -10,8 +10,8 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
-	"sync"
 
+	"github.com/lizongying/nolang/cache"
 	"github.com/lizongying/nolang/lexer"
 	"github.com/lizongying/nolang/package"
 	"github.com/lizongying/nolang/parser"
@@ -200,26 +200,17 @@ func resolveUseModule(use *parser.UseStatement, pkg *pkg.Package) *parser.Progra
 // parseProgramFileCache: 包級 AST 解析快取，供 standalone 函數 parseProgramFile 使用。
 // resolveUseModule（被 ValidateFuncArgs 調用）獨立於 Transpiler，無法存取 per-instance 快取。
 // 每次 Compile 開始時由 clearParseProgramFileCache() 清空，避免跨編譯的陳舊資料。
-var (
-	parseProgramFileCacheMu sync.Mutex
-	parseProgramFileCache   = make(map[string]*parser.Program)
-)
+//
+// 緩存鍵為 (路徑, 內容哈希)（見 cache.Key），同路徑內容變化自動失效；
+// LRU 有容量上限，常駐進程不會無限增長。
+var parseProgramFileCache = cache.NewLRU[*parser.Program](2048)
 
 func clearParseProgramFileCache() {
-	parseProgramFileCacheMu.Lock()
-	defer parseProgramFileCacheMu.Unlock()
-	parseProgramFileCache = make(map[string]*parser.Program)
+	parseProgramFileCache.Clear()
 }
 
 // parseProgramFile reads and parses a .no file into a Program.
 func parseProgramFile(filePath string) *parser.Program {
-	// 快取命中：ValidateFuncArgs 可能對同一模組重複調用 resolveUseModule
-	parseProgramFileCacheMu.Lock()
-	if cached, ok := parseProgramFileCache[filePath]; ok {
-		parseProgramFileCacheMu.Unlock()
-		return cached
-	}
-	parseProgramFileCacheMu.Unlock()
 	if _, err := os.Stat(filePath); err != nil {
 		return nil
 	}
@@ -227,15 +218,18 @@ func parseProgramFile(filePath string) *parser.Program {
 	if err != nil {
 		return nil
 	}
+	// 內容尋址鍵：同路徑內容不同 → 不同鍵 → 不會命中過期 AST
+	ck := cache.Key(filePath, string(source))
+	if cached, ok := parseProgramFileCache.Get(ck); ok {
+		return cached
+	}
 	l := lexer.NewCached(filePath, string(source))
 	p := parser.New(l)
 	prog := p.ParseProgram()
 	if len(p.Errors()) > 0 {
 		return nil
 	}
-	parseProgramFileCacheMu.Lock()
-	parseProgramFileCache[filePath] = prog
-	parseProgramFileCacheMu.Unlock()
+	parseProgramFileCache.Put(ck, prog)
 	return prog
 }
 

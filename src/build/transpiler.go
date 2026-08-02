@@ -3,6 +3,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
 	"regexp"
 	"sort"
 	"strconv"
@@ -814,13 +815,18 @@ func (t *Transpiler) preloadModuleSignatures(source string) (map[string][]string
 	funcSigs := make(map[string][]string)
 	structFields := make(map[string]map[string]string)
 	loadedPaths := make(map[string]bool) // 避免重複載入同一模組
-	// 0. 先合併 std 模組簽名快取，並立即掛到 t.externFuncSigs：
+	// 0. 合併 std 模組簽名快取，並掛到 t.externFuncSigs：
 	// 本地子模組（如 # /agent/agent）在下方步驟 1 就會被 parseFile 解析並
 	// 寫入 fileCache，若此時 externFuncSigs 尚未設置，子模組內的
 	// `resp = http.do-req(req)` 等 let 推斷拿不到任何 std 簽名，resp 無
 	// 型別注解 → codegen 端 option inner 推斷錯誤（i64），字段訪問級聯崩潰。
 	// 注意：本地模組簽名（步驟 1）寫入同一 map，同名鍵覆蓋 std 簽名，
 	// 維持原「本地優先」語義。
+	// 第一遍（簽名預收集）必須全量解析所有 std：nolang 的標準庫隱式可用
+	// （無需顯式 `use std/...` 即可呼叫 module.fn()），parser 做 let 型別
+	// 推斷時需要全部 std 簽名，故無法按「是否引用」跳過（對應審查點 ②）。
+	// 真正可省略的 std 工作在第二遍（語義/IR）：見下方自動載入 std 迴圈，
+	// 僅載入程式實際引用到的 std 模組體，其餘略過。
 	stdSigs, stdFields := checker.CollectStdModuleSignatures()
 	for name, sigs := range stdSigs {
 		funcSigs[name] = sigs
@@ -896,6 +902,256 @@ func (t *Transpiler) preloadModuleSignatures(source string) (map[string][]string
 	// std 簽名已於步驟 0 合入（本地模組簽名在步驟 1 直接覆蓋同名鍵）。
 	return funcSigs, structFields
 }
+
+// stdModuleLookup 建立 std 模組 shortName/shortPath → info 的查表。
+// 供「第二遍按需載入 std」判斷某個 module.fn() 的 module 是否為已知 std 模組。
+// KnownStdModules 本身已 sync.Once 快取，此處每呼叫重建 O(n) 查表（n 為 std
+// 模組數，約百位），並發安全且開銷可忽略。
+func stdModuleLookup() map[string]checker.StdModuleInfo {
+	m := make(map[string]checker.StdModuleInfo)
+	for _, info := range checker.KnownStdModules() {
+		m[info.ShortName] = info
+		m[info.ShortPath] = info
+	}
+	return m
+}
+
+// alwaysAutoLoadStd 是 codegen 內建路徑（print/格式化等）無條件引用、但源碼
+// AST 無顯式 module.fn() 的 std 模組，必須始終自動載入（靜態掃描無法捕捉）。
+//   - fmt：@fmt-int/@fmt-uint/@fmt-f64/@fmt-str/@fmt-bool 等（print/格式化內建）
+//   - io ：@out/@err（emitOutCall 直接發出的裸呼叫，對應 io.out/io.err）
+// 若未來 codegen 新增其他隱式 std 依賴，在此追加即可。
+var alwaysAutoLoadStd = []string{"fmt", "io"}
+
+// dotModulePath 從 DotExpression 提取模組路徑（如 array.map → "array"，
+// hash/sha256.sum → "hash/sha256"），與 checker.extractModulePathAndFunc 同義
+// 但獨立實作於 build 包（該函數未導出）。
+func dotModulePath(dot *parser.DotExpression) string {
+	var segments []string
+	cur := dot.Receiver
+	for {
+		if d, ok := cur.(*parser.DotExpression); ok {
+			segments = append([]string{d.Property}, segments...)
+			cur = d.Receiver
+		} else if ident, ok := cur.(*parser.Identifier); ok {
+			segments = append([]string{ident.Value}, segments...)
+			break
+		} else {
+			return ""
+		}
+	}
+	return strings.Join(segments, "/")
+}
+
+// collectReferencedStdModules 掃描程式，收集被顯式引用到的 std 模組 short path：
+//   - module.fn() / module.CONST 的 module 部分（module 為已知 std shortName/shortPath）；
+//   - use std/... 語句路徑（含 use std 導入全部，保守加入所有已知 std）。
+//
+// 這是「第二遍」確定實際引用哪些 std 的依據。隱式分發（arr./vec./[]/str. 等）
+// 走 builtin，不經此路徑，故不會被計入——它們本就不需要 std 模組體。
+func (t *Transpiler) collectReferencedStdModules(prog *parser.Program) map[string]bool {
+	refs := make(map[string]bool)
+	lookup := stdModuleLookup()
+	addRef := func(path string) {
+		if path == "" {
+			return
+		}
+		if _, ok := lookup[path]; ok {
+			refs[path] = true
+		}
+	}
+	var walkExpr func(e parser.Expression)
+	var walkStmt func(s parser.Statement)
+	walkExpr = func(e parser.Expression) {
+		if e == nil {
+			return
+		}
+		// 防禦 typed-nil：非 nil 的 Expression 介面包裹 nil 指標（如切片中的
+		// 元素），`if e == nil` 攔不住，type switch 會把其分派到指標 case 後
+		// 解引用欄位（如 ex.Receiver）觸發 SIGSEGV。此處以 reflect 攔截底層
+		// 指標為 nil 的情況。
+		if v := reflect.ValueOf(e); v.Kind() == reflect.Ptr && v.IsNil() {
+			return
+		}
+		switch ex := e.(type) {
+		case *parser.DotExpression:
+			addRef(dotModulePath(ex))
+			walkExpr(ex.Receiver)
+		case *parser.CallExpression:
+			if dot, ok := ex.Function.(*parser.DotExpression); ok {
+				addRef(dotModulePath(dot))
+			}
+			walkExpr(ex.Function)
+			for _, a := range ex.GenericArgs {
+				walkExpr(a)
+			}
+			for _, a := range ex.Arguments {
+				walkExpr(a)
+			}
+		case *parser.PrefixExpression:
+			walkExpr(ex.Right)
+		case *parser.InfixExpression:
+			walkExpr(ex.Left)
+			walkExpr(ex.Right)
+		case *parser.GroupedExpression:
+			walkExpr(ex.Expression)
+		case *parser.RunExpression:
+			walkExpr(ex.Call)
+		case *parser.AwaitExpression:
+			walkExpr(ex.Right)
+		case *parser.IfExpression:
+			walkExpr(ex.Condition)
+			walkExpr(ex.MatchedExpr)
+			walkExpr(ex.RawCond)
+			walkExpr(ex.EqualityPattern)
+			if ex.Consequence != nil {
+				for _, s := range ex.Consequence.Statements {
+					walkStmt(s)
+				}
+			}
+			if ex.Alternative != nil {
+				for _, s := range ex.Alternative.Statements {
+					walkStmt(s)
+				}
+			}
+			if ex.DotValBody != nil {
+				for _, s := range ex.DotValBody.Statements {
+					walkStmt(s)
+				}
+			}
+			walkExpr(ex.RangePattern)
+			for _, vp := range ex.ValuePatterns {
+				walkExpr(vp)
+			}
+		case *parser.RangeExpression:
+			walkExpr(ex.Start)
+			walkExpr(ex.End)
+		case *parser.SliceExpression:
+			walkExpr(ex.Left)
+			walkExpr(ex.Range)
+		case *parser.IndexExpression:
+			walkExpr(ex.Left)
+			walkExpr(ex.Index)
+		case *parser.AssignExpression:
+			walkExpr(ex.Left)
+			walkExpr(ex.Value)
+		case *parser.ConditionalExpression:
+			walkExpr(ex.Condition)
+			walkExpr(ex.Consequence)
+			walkExpr(ex.Alternative)
+		case *parser.CastExpression:
+			walkExpr(ex.Expr)
+		case *parser.IterationExpr:
+			walkExpr(ex.Range)
+			walkExpr(ex.RangeExpr)
+		case *parser.FunctionLiteral:
+			if ex.Body != nil {
+				for _, s := range ex.Body.Statements {
+					walkStmt(s)
+				}
+			}
+			for _, p := range ex.Parameters {
+				walkExpr(p.DefaultExpr)
+			}
+		case *parser.ArrayLiteral:
+			walkExpr(ex.Size)
+			for _, el := range ex.Elements {
+				walkExpr(el)
+			}
+		case *parser.MapLiteral:
+			for _, pr := range ex.Pairs {
+				walkExpr(pr.Key)
+				walkExpr(pr.Value)
+			}
+		case *parser.SliceLiteral:
+			for _, el := range ex.Elements {
+				walkExpr(el)
+			}
+		case *parser.StructLiteral:
+			for _, f := range ex.Fields {
+				walkExpr(f.Value)
+			}
+		}
+	}
+	walkStmt = func(s parser.Statement) {
+		if s == nil {
+			return
+		}
+		// 同上：防禦 typed-nil（非 nil 的 Statement 介面包裹 nil 指標）。
+		if v := reflect.ValueOf(s); v.Kind() == reflect.Ptr && v.IsNil() {
+			return
+		}
+		switch st := s.(type) {
+		case *parser.ExpressionStatement:
+			walkExpr(st.Expression)
+		case *parser.LetStatement:
+			walkExpr(st.Value)
+		case *parser.MultiAssignStatement:
+			for _, tg := range st.Targets {
+				walkExpr(tg)
+			}
+			walkExpr(st.Value)
+		case *parser.FunctionDefinition:
+			if st.Body != nil {
+				for _, bs := range st.Body.Statements {
+					walkStmt(bs)
+				}
+			}
+			for _, p := range st.Parameters {
+				walkExpr(p.DefaultExpr)
+			}
+		case *parser.ReturnStatement:
+			walkExpr(st.ReturnValue)
+		case *parser.BlockStatement:
+			for _, bs := range st.Statements {
+				walkStmt(bs)
+			}
+		case *parser.ForStatement:
+			if st.Init != nil {
+				walkStmt(st.Init)
+			}
+			walkExpr(st.Condition)
+			if st.Update != nil {
+				walkStmt(st.Update)
+			}
+			if st.Body != nil {
+				for _, bs := range st.Body.Statements {
+					walkStmt(bs)
+				}
+			}
+			if st.IterRange != nil {
+				walkExpr(st.IterRange.Range)
+				walkExpr(st.IterRange.RangeExpr)
+			}
+			walkExpr(st.CountExpr)
+		case *parser.UseStatement:
+			if st.Path == "std" || strings.HasPrefix(st.Path, "std/") {
+				sp := strings.TrimPrefix(st.Path, "std/")
+				if sp == "" {
+					// use std（導入全部）：保守加入所有已知 std 模組。
+					for k := range lookup {
+						refs[k] = true
+					}
+				} else {
+					addRef(sp)
+				}
+			}
+		case *parser.ExportStatement:
+			if st.Path == "std" || strings.HasPrefix(st.Path, "std/") {
+				addRef(strings.TrimPrefix(st.Path, "std/"))
+			}
+		case *parser.StructDefinition:
+			for _, f := range st.Fields {
+				walkExpr(f.Value)
+			}
+		}
+	}
+	for _, s := range prog.Statements {
+		walkStmt(s)
+	}
+	return refs
+}
+
 func (t *Transpiler) CompileTarget(source string, _ Target) (string, error) {
 	// 預載入跨文件模組簽名，供 parser 型別推斷使用
 	externFuncSigs, externStructFields := t.preloadModuleSignatures(source)
@@ -1156,9 +1412,38 @@ func (t *Transpiler) CompileTarget(source string, _ Target) (string, error) {
 			merged.Statements = append(merged.Statements, es)
 		}
 }
-	// 自動載入已知 std 模組（允許無需顯式導入的 module.fn() 呼叫）
-	for _, info := range checker.KnownStdModules() {
-		// 如果頂層變量名與模塊名衝突，跳過自動載入
+	// 第二遍按需載入 std 模組體（對應審查點 ②）：
+	// 第一遍（簽名預收集 CollectStdModuleSignatures）已全量解析所有 std ——
+	// 因為 nolang 標準庫隱式可用（無需顯式 use 即可呼叫 module.fn()），parser
+	// 做 let 型別推斷需要全部 std 簽名，故第一遍必須全量、無法跳過。
+	// 但 codegen 只需程式「實際引用到」的 std 模組。此處掃描 merged（含主程式
+	// 與本地 use 模組）中的 module.fn()/module.CONST/use std/... 引用，取 std
+	// 模組間的可達閉包，僅載入這些模組體，其餘略過，避免為未使用的 std 付出
+	// 解析 + 合併成本。與全量載入相比正確性等價：隱式分發走 builtin，不依賴
+	// 此處載入；std 函數僅能經顯式 module.fn() 觸達，閉包已覆蓋。
+	loadedStd := make(map[string]bool)
+	var stdWorklist []string
+	for sp := range t.collectReferencedStdModules(merged) {
+		if !loadedStd[sp] {
+			loadedStd[sp] = true
+			stdWorklist = append(stdWorklist, sp)
+		}
+	}
+	// 始終自動載入 codegen 內建隱式依賴的 std 模組（見 alwaysAutoLoadStd 註解）。
+	for _, name := range alwaysAutoLoadStd {
+		if _, ok := stdModuleLookup()[name]; ok && !loadedStd[name] {
+			loadedStd[name] = true
+			stdWorklist = append(stdWorklist, name)
+		}
+	}
+	for len(stdWorklist) > 0 {
+		sp := stdWorklist[0]
+		stdWorklist = stdWorklist[1:]
+		info, ok := stdModuleLookup()[sp]
+		if !ok {
+			continue
+		}
+		// 頂層變量名與模塊名衝突 → 跳過自動載入（與原全量自動載入邏輯一致）。
 		// 註：必須用 globalVarTypes（僅頂層變數），不能用 varTypes（含函數體內的局部變數），
 		// 否則函數內的局部變數（如 test-arr-reverse 中的 arr [4] = ...）會導致
 		// arr 模組被錯誤跳過，使 [n]t 方法無法載入。
@@ -1206,6 +1491,14 @@ func (t *Transpiler) CompileTarget(source string, _ Target) (string, error) {
 			}
 			if ted, ok := ms.(*parser.TaggedEnumDefinition); ok {
 				merged.Statements = append(merged.Statements, ted)
+			}
+		}
+		// 傳遞閉包：掃描本模組體內的 std 引用（module.fn()/use std/...），
+		// 加入 worklist，處理 std 模組間的相互呼叫。
+		for dep := range t.collectReferencedStdModules(modProg) {
+			if !loadedStd[dep] {
+				loadedStd[dep] = true
+				stdWorklist = append(stdWorklist, dep)
 			}
 		}
 	}
