@@ -1838,6 +1838,7 @@ func testCommand(args []string) {
 func vetCommand(args []string) {
 	nbuild.ClearCaches()
 	fs := flag.NewFlagSet("vet", flag.ExitOnError)
+	reuseStdAST := fs.Bool("reuse-std-ast", false, "reuse already-parsed std Program AST for 'no vet src/std' (experimental, skips re-parsing each std module)")
 	fs.Usage = func() {
 		fmt.Println("Usage: no vet [<file|dir>]")
 		fmt.Println("")
@@ -1850,6 +1851,12 @@ func vetCommand(args []string) {
 		fmt.Println("  no vet src/std/            validate all .no files in src/std/")
 	}
 	_ = fs.Parse(args)
+
+	// --reuse-std-ast 開關：轉為環境變量，由 CompileTarget 直接讀取，
+	// 避免透傳到編譯鏈多層簽名（VetFile → compiler.Compile → CompileTarget）。
+	if *reuseStdAST {
+		os.Setenv("NOLANG_REUSE_STD_AST", "1")
+	}
 
 	inputPath := "."
 	if len(fs.Args()) > 0 {

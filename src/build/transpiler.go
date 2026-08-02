@@ -11,6 +11,7 @@ import (
 	nolang "github.com/lizongying/nolang"
 	"github.com/lizongying/nolang/build/llvm"
 	"github.com/lizongying/nolang/builtin"
+	"github.com/lizongying/nolang/cache"
 	"github.com/lizongying/nolang/checker"
 	"github.com/lizongying/nolang/lexer"
 	"github.com/lizongying/nolang/package"
@@ -1158,23 +1159,36 @@ func (t *Transpiler) CompileTarget(source string, _ Target) (string, error) {
 	// 存儲到 Transpiler 中，使 parseFile（用於解析自動載入的模組）也能注入簽名
 	t.externFuncSigs = externFuncSigs
 	t.externStructFields = externStructFields
-	l := lexer.NewCached(t.sourcePath, source)
-	p := parser.New(l)
-	p.AllowAnonymousFnType = t.allowAnonymousFn
-	if t.sourcePath != "" {
-		p.Filename = filepath.Base(t.sourcePath)
+
+	// B（開關 NOLANG_REUSE_STD_AST）：no vet src/std 時，target 即某個 std 模組，
+	// 其 Program 已在 CollectStdModuleSignatures PASS1 解析過。若磁盤文件內容與
+	// embed 解析內容一致（內容哈希命中），直接復用該 Program，跳過磁盤重新 parse。
+	// 限定標準庫：非 std 文件內容不會命中任何 std 模組鍵，自動走正常 parse 路徑。
+	var program *parser.Program
+	if os.Getenv("NOLANG_REUSE_STD_AST") == "1" {
+		if reused := checker.StdProgramForContent(cache.ContentKey(source)); reused != nil {
+			program = reused
+		}
 	}
-	// 注入外部簽名
-	if len(externFuncSigs) > 0 || len(externStructFields) > 0 {
-		p.SetExternSignatures(externFuncSigs, externStructFields)
-	}
-	program := p.ParseProgram()
-	if len(p.Errors()) > 0 {
-		return "", fmt.Errorf("parser errors: %v", p.Errors())
-	}
-	// 高危警告直出 stderr：單個 ; 行註釋疑似吞掉了同一行後面的代碼
-	for _, w := range p.WarningsByCode(parser.WarnSemiSwallow) {
-		fmt.Fprintf(os.Stderr, "warning: %s\n", w)
+	if program == nil {
+		l := lexer.NewCached(t.sourcePath, source)
+		p := parser.New(l)
+		p.AllowAnonymousFnType = t.allowAnonymousFn
+		if t.sourcePath != "" {
+			p.Filename = filepath.Base(t.sourcePath)
+		}
+		// 注入外部簽名
+		if len(externFuncSigs) > 0 || len(externStructFields) > 0 {
+			p.SetExternSignatures(externFuncSigs, externStructFields)
+		}
+		program = p.ParseProgram()
+		if len(p.Errors()) > 0 {
+			return "", fmt.Errorf("parser errors: %v", p.Errors())
+		}
+		// 高危警告直出 stderr：單個 ; 行註釋疑似吞掉了同一行後面的代碼
+		for _, w := range p.WarningsByCode(parser.WarnSemiSwallow) {
+			fmt.Fprintf(os.Stderr, "warning: %s\n", w)
+		}
 	}
 	// 處理 #{embed=...} 註解：編譯期讀取嵌入文件
 	if err := t.processEmbeds(program, t.sourcePath); err != nil {

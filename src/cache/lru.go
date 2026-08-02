@@ -93,3 +93,14 @@ func Key(path, content string) string {
 	sum := sha256.Sum256([]byte(content))
 	return path + "\x00" + hex.EncodeToString(sum[:])
 }
+
+// ContentKey 返回仅由内容决定的缓存键（不含路径分量）。
+// 适用于「缓存值是源码的纯函数」的场景，例如词法 token 序列：
+// 同一份内容无论以 embed 路径、磁盘路径或重复文件出现，词法结果都相同，
+// 因此应命中同一份缓存，跨遍/跨文件复用。
+// 与 Key 的区别：Key 把路径编入键（避免不同文件内容偶然相同而误共享），
+// ContentKey 刻意舍去路径，专门用于「值只依赖内容」的缓存。
+func ContentKey(content string) string {
+	sum := sha256.Sum256([]byte(content))
+	return hex.EncodeToString(sum[:])
+}

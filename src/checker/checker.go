@@ -10,6 +10,7 @@ import (
 
 	nolang "github.com/lizongying/nolang"
 	"github.com/lizongying/nolang/builtin"
+	"github.com/lizongying/nolang/cache"
 	"github.com/lizongying/nolang/lexer"
 	"github.com/lizongying/nolang/package"
 	"github.com/lizongying/nolang/parser"
@@ -3369,6 +3370,11 @@ var (
 	stdFieldsCache    map[string]map[string]string
 	stdAliasesCache   map[string]string // 單具體型別別名快取（如 "fd" → "i64"）
 	stdStructModCache map[string]string // struct name → module short name（如 "conn" → "tls"）
+	// stdProgramsCache 緩存 CollectStdModuleSignatures PASS1 已解析的 std 模組
+	// Program，按「內容哈希」(cache.ContentKey) 索引。no vet src/std 的第二遍
+	// 可直接復用，跳過磁盤文件的重新 parse；內容與 embed 不一致時自然不命中，
+	// 安全回退到正常 parse。僅在 NOLANG_REUSE_STD_AST 開關開啟時由 build 端查詢。
+	stdProgramsCache map[string]*parser.Program
 )
 type StdModuleInfo struct {
 	ShortName string // last path segment of FullPath, e.g. "rand", "math"
@@ -3510,6 +3516,7 @@ func CollectStdModuleSignatures() (map[string][]string, map[string]map[string]st
 		// 結果按 knownStdModules() 原順序寫回，保持 last-wins 合併語義不變。
 		known := knownStdModules()
 		parsed := make([]*parser.Program, len(known))
+		parsedCK := make([]string, len(known))
 		{
 			var wg sync.WaitGroup
 			sem := make(chan struct{}, runtime.GOMAXPROCS(0))
@@ -3531,15 +3538,18 @@ func CollectStdModuleSignatures() (map[string][]string, map[string]map[string]st
 						return
 					}
 					parsed[i] = prog
+					parsedCK[i] = cache.ContentKey(string(source))
 				}(i, info)
 			}
 			wg.Wait()
 		}
+		stdProgramsCache = make(map[string]*parser.Program)
 		for i, info := range known {
 			prog := parsed[i]
 			if prog == nil {
 				continue
 			}
+			stdProgramsCache[parsedCK[i]] = prog
 			mods = append(mods, parsedMod{info, prog})
 			for _, stmt := range prog.Statements {
 				if sd, ok := stmt.(*parser.StructDefinition); ok {
@@ -3641,6 +3651,14 @@ func CollectStdConcreteAliases() map[string]string {
 func CollectStdStructModules() map[string]string {
 	CollectStdModuleSignatures() // 觸發 sync.Once 填充快取
 	return stdStructModCache
+}
+
+// StdProgramForContent 返回與內容哈希相對應、在 CollectStdModuleSignatures
+// PASS1 已解析的 std 模組 Program；未命中（非 std 模組或內容與 embed 不一致）
+// 返回 nil。僅在 NOLANG_REUSE_STD_AST 開關開啟時由 build 端查詢，用於
+// no vet src/std 跳過磁盤文件重新 parse。
+func StdProgramForContent(contentKey string) *parser.Program {
+	return stdProgramsCache[contentKey]
 }
 func extractBaseTypeName(t parser.Type) string {
 	if t == nil {
