@@ -2,7 +2,7 @@
 ; # std/math
 
 ; 導入本地包（相對於 workspace 根目錄的路徑形式）
-# /example/test2/utils.greet greet2
+# /example/test2/src/utils.greet greet2
 
 greet2('World')
 print()
