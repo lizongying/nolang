@@ -12,7 +12,7 @@ import (
 	"github.com/lizongying/nolang/builtin"
 	"github.com/lizongying/nolang/checker"
 	"github.com/lizongying/nolang/lexer"
-	"github.com/lizongying/nolang/mod"
+	"github.com/lizongying/nolang/package"
 	"github.com/lizongying/nolang/parser"
 )
 
@@ -479,7 +479,7 @@ func (m *DocumentManager) IsDirty(uri string) bool {
 var ErrDocumentNotFound = errors.New("document not found")
 
 // resolveLocalModuleFile resolves a local module relative path (no leading /)
-// to an absolute file path by searching for the project root (mod.jsonc).
+// to an absolute file path by searching for the project root (package.jsonc).
 func (m *DocumentManager) resolveLocalModuleFile(relPath, docURI string) string {
 	// Extract document directory from URI (file:///path/to/file.no)
 	docPath := strings.TrimPrefix(docURI, "file://")
@@ -499,10 +499,10 @@ func (m *DocumentManager) resolveLocalModuleFile(relPath, docURI string) string 
 		wsRoot = parent
 	}
 
-	// 沒有 workspace.jsonc，向上搜尋 mod.jsonc 作為包根目錄
+	// 沒有 workspace.jsonc，向上搜尋 package.jsonc 作為包根目錄
 	root := docDir
 	for {
-		candidate := filepath.Join(root, "mod.jsonc")
+		candidate := filepath.Join(root, "package.jsonc")
 		if _, err := os.Stat(candidate); err == nil {
 			return filepath.Join(root, relPath) + ".no"
 		}
@@ -525,7 +525,7 @@ func (m *DocumentManager) resolveDependencyModuleFile(usePath, docURI string) st
 	docDir := filepath.Dir(docPath)
 
 	// Load Package from the document's project root
-	pkg, _ := mod.LoadPackage(docDir)
+	pkg, _ := pkg.LoadPackage(docDir)
 	if pkg == nil {
 		return ""
 	}

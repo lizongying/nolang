@@ -518,11 +518,11 @@ func (cp *CompletionProvider) getExportCompletions(position Position) []Completi
 	return cp.getFileCompletions(projectRoot, pathPrefix, pathReplaceRange)
 }
 
-// findProjectRoot searches upward from startDir for a mod.jsonc file.
+// findProjectRoot searches upward from startDir for a package.jsonc file.
 func findProjectRoot(startDir string) string {
 	dir := startDir
 	for {
-		candidate := filepath.Join(dir, "mod.jsonc")
+		candidate := filepath.Join(dir, "package.jsonc")
 		if _, err := os.Stat(candidate); err == nil {
 			return dir
 		}

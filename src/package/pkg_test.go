@@ -1,11 +1,11 @@
-package mod
+package pkg
 
 import (
 	"testing"
 )
 
 func TestLoadPackageTestDir(t *testing.T) {
-	// 確保 tests/mod.jsonc 能被正確解析
+	// 確保 tests/package.jsonc 能被正確解析
 	pkg, err := LoadPackage("../../tests")
 	if err != nil {
 		t.Fatalf("LoadPackage(tests) error: %v", err)

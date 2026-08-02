@@ -13,13 +13,13 @@ import (
 func TestProcessEmbeds(t *testing.T) {
 	// 創建臨時目錄結構
 	tmpDir := t.TempDir()
-	// 創建 mod.jsonc
+	// 創建 package.jsonc
 	modContent := `{
   "name": "test-embed",
   "version": "1.0.0",
   "description": "test"
 }`
-	if err := os.WriteFile(filepath.Join(tmpDir, "mod.jsonc"), []byte(modContent), 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(tmpDir, "package.jsonc"), []byte(modContent), 0644); err != nil {
 		t.Fatal(err)
 	}
 	// 創建嵌入資源文件

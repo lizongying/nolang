@@ -17,7 +17,7 @@ import (
 	nbuild "github.com/lizongying/nolang/build"
 	"github.com/lizongying/nolang/checker"
 	nfmt "github.com/lizongying/nolang/fmt"
-	"github.com/lizongying/nolang/mod"
+	"github.com/lizongying/nolang/package"
 )
 
 type ProjectConfig struct {
@@ -254,7 +254,7 @@ func infoCommand() {
 	fmt.Printf("std source:  %s\n", stdDir)
 	fmt.Printf("  resolved:  via %s", stdSrc)
 	if stdSrc == "env" {
-		fmt.Printf(" ($%s)", mod.NOLANG_STD_SRC)
+		fmt.Printf(" ($%s)", pkg.NOLANG_STD_SRC)
 	}
 	fmt.Println()
 
@@ -263,22 +263,22 @@ func infoCommand() {
 	fmt.Printf("source:      %s\n", srcDir)
 	fmt.Printf("  resolved:  via %s", srcSrc)
 	if srcSrc == "env" {
-		fmt.Printf(" ($%s)", mod.NOLANG_SRC)
+		fmt.Printf(" ($%s)", pkg.NOLANG_SRC)
 	}
 	fmt.Println()
 
 	// Environment variables
-	stdEnvVal := os.Getenv(mod.NOLANG_STD_SRC)
+	stdEnvVal := os.Getenv(pkg.NOLANG_STD_SRC)
 	if stdEnvVal != "" {
-		fmt.Printf("$%s: %s\n", mod.NOLANG_STD_SRC, stdEnvVal)
+		fmt.Printf("$%s: %s\n", pkg.NOLANG_STD_SRC, stdEnvVal)
 	} else {
-		fmt.Printf("$%s: (not set)\n", mod.NOLANG_STD_SRC)
+		fmt.Printf("$%s: (not set)\n", pkg.NOLANG_STD_SRC)
 	}
-	srcEnvVal := os.Getenv(mod.NOLANG_SRC)
+	srcEnvVal := os.Getenv(pkg.NOLANG_SRC)
 	if srcEnvVal != "" {
-		fmt.Printf("$%s:  %s\n", mod.NOLANG_SRC, srcEnvVal)
+		fmt.Printf("$%s:  %s\n", pkg.NOLANG_SRC, srcEnvVal)
 	} else {
-		fmt.Printf("$%s:  (not set)\n", mod.NOLANG_SRC)
+		fmt.Printf("$%s:  (not set)\n", pkg.NOLANG_SRC)
 	}
 
 	// Working directory
@@ -313,7 +313,7 @@ func initProject() {
 	}
 
 	// `no init` only defines the workspace: it creates workspace.jsonc (if missing)
-	// and does NOT generate a mod.jsonc. Packages are added later via `no new`.
+	// and does NOT generate a package.jsonc. Packages are added later via `no new`.
 	createWorkspaceFile()
 
 	fmt.Printf("Workspace initialized in %s\n", dir)
@@ -361,7 +361,7 @@ func newProject(name string) {
 	fmt.Printf("Package created: %s\n", name)
 	fmt.Println("")
 	fmt.Println("Files created:")
-	fmt.Println("  - mod.jsonc (package configuration)")
+	fmt.Println("  - package.jsonc (package configuration)")
 	fmt.Println("  - main.no (main entry file)")
 	fmt.Println("  - lib.no (library export file)")
 	fmt.Println("  - src/ (source directory)")
@@ -398,7 +398,7 @@ func createConfigFile(config ProjectConfig) {
 		config.Compiler.Version,
 	)
 
-	err := os.WriteFile("mod.jsonc", []byte(content), 0644)
+	err := os.WriteFile("package.jsonc", []byte(content), 0644)
 	if err != nil {
 		fmt.Printf("Error writing config file: %v\n", err)
 	}
@@ -689,9 +689,9 @@ func addDependency(name string) {
 }
 
 func loadProjectConfig() (*ProjectConfig, error) {
-	data, err := os.ReadFile("mod.jsonc")
+	data, err := os.ReadFile("package.jsonc")
 	if err != nil {
-		return nil, fmt.Errorf("mod.jsonc not found. Run 'no new <name>' to create a package, or cd into a package directory")
+		return nil, fmt.Errorf("package.jsonc not found. Run 'no new <name>' to create a package, or cd into a package directory")
 	}
 	cleaned := nbuild.StripJSONC(data)
 	var config ProjectConfig
@@ -777,7 +777,7 @@ func syncDependencies() {
 		return
 	}
 	if pkg == nil {
-		fmt.Println("Error: mod.jsonc not found. Run 'no new <name>' to create a package, or cd into a package directory")
+		fmt.Println("Error: package.jsonc not found. Run 'no new <name>' to create a package, or cd into a package directory")
 		return
 	}
 	if len(pkg.Dependencies) == 0 {
@@ -830,7 +830,7 @@ func installCommand(args []string) {
 		// 無參數：安裝當前目錄的包
 		pkg, err := nbuild.LoadPackage(".")
 		if err != nil || pkg == nil {
-			fmt.Fprintf(os.Stderr, "Error: mod.jsonc not found in current directory\n")
+			fmt.Fprintf(os.Stderr, "Error: package.jsonc not found in current directory\n")
 			return
 		}
 		buildDir = "."
@@ -1179,6 +1179,7 @@ func fmtProcessDirectory(dirname string, writeInPlace bool, diffMode bool) error
 }
 
 func buildCommand(args []string) {
+	nbuild.ClearCaches()
 	fs := flag.NewFlagSet("build", flag.ExitOnError)
 	outputFile := fs.String("o", "", "Output file path")
 	cc := fs.String("cc", "clang", "C compiler: clang (default), zig")
@@ -1230,7 +1231,7 @@ func buildCommand(args []string) {
 		targetStr = nbuild.DetectTarget()
 	}
 
-	// 如果未通過命令列指定後端，檢查 mod.jsonc 的 emit 配置自動選擇 JS 後端
+	// 如果未通過命令列指定後端，檢查 package.jsonc 的 emit 配置自動選擇 JS 後端
 	useJS := *jsBackend
 	if !useJS && !*wasmDirect {
 		checkDir := inputPath
@@ -1314,7 +1315,7 @@ func buildCommand(args []string) {
 			// 預設輸出路徑：dist/<base-name>.js
 			baseName := strings.TrimSuffix(filepath.Base(inputPath), ".no")
 			if baseName == "main" {
-				// 嘗試從同目錄的 mod.jsonc 取得套件名稱
+				// 嘗試從同目錄的 package.jsonc 取得套件名稱
 				if pkg, _ := nbuild.LoadPackage(filepath.Dir(inputPath)); pkg != nil && pkg.Name != "" {
 					baseName = pkg.Name
 				}
@@ -1378,6 +1379,7 @@ func buildCommand(args []string) {
 }
 
 func runCommand(args []string) {
+	nbuild.ClearCaches()
 	fs := flag.NewFlagSet("run", flag.ExitOnError)
 	cc := fs.String("cc", "clang", "C compiler: clang (default), zig")
 	target := fs.String("target", "", "Target triple (e.g. x86_64-linux-gnu, aarch64-macos-gnu, x86_64-windows-gnu, wasm32-wasi)")
@@ -1445,7 +1447,7 @@ func runCommand(args []string) {
 		targetStr = nbuild.DetectTarget()
 	}
 
-	// 如果未通過命令列指定後端，檢查 mod.jsonc 的 emit 配置自動選擇 JS 後端
+	// 如果未通過命令列指定後端，檢查 package.jsonc 的 emit 配置自動選擇 JS 後端
 	useJS := *jsBackend
 	if !useJS && !*wasmDirect {
 		checkDir := filepath.Dir(inputPath)
@@ -1618,6 +1620,7 @@ func runCommand(args []string) {
 }
 
 func testCommand(args []string) {
+	nbuild.ClearCaches()
 	fs := flag.NewFlagSet("test", flag.ExitOnError)
 	cc := fs.String("cc", "clang", "C compiler: clang (default), zig")
 	target := fs.String("target", "", "Target triple (e.g. x86_64-linux-gnu, aarch64-macos-gnu, x86_64-windows-gnu, wasm32-wasi)")
@@ -1720,62 +1723,87 @@ func testCommand(args []string) {
 	}
 
 	hadFailure := false
-	for _, tf := range testFiles {
+
+	// 兩遍遍歷方式：
+	// Pass 1（並行構建）：所有測試文件並行編譯，共用全局 token/AST 緩存。
+	//   編譯是最耗時的階段（lex+parse+check+LLVM codegen），並行化可大幅加速。
+	// Pass 2（順序執行）：依次執行編譯產物，避免 stdout/stderr 交錯。
+	type testBuildResult struct {
+		testFile string
+		binPath  string
+		tmpDir   string
+		err      error
+	}
+
+	// Pass 1: 並行構建所有測試文件
+	var wg sync.WaitGroup
+	concurrency := runtime.NumCPU()
+	if concurrency < 1 {
+		concurrency = 1
+	}
+	sem := make(chan struct{}, concurrency)
+	results := make([]testBuildResult, len(testFiles))
+
+	for i, tf := range testFiles {
 		if verbose {
 			fmt.Printf("Testing: %s\n", tf)
 		}
-		tmpDir, err := os.MkdirTemp("", "nolang-test")
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-			os.Exit(1)
-		}
+		wg.Add(1)
+		go func(idx int, f string) {
+			defer wg.Done()
+			sem <- struct{}{}
+			defer func() { <-sem }()
 
-		if useDirectWasm {
-			// Direct WASM 路徑：產生 .wasm 後以 wasmtime 執行。
-			outPath := filepath.Join(tmpDir, "out.wasm")
-			wasmBytes, berr := nbuild.BuildDirectWasm(tf, nbuild.BuildOptions{
+			tmpDir, err := os.MkdirTemp("", "nolang-test")
+			if err != nil {
+				results[idx] = testBuildResult{testFile: f, err: err}
+				return
+			}
+
+			if useDirectWasm {
+				outPath := filepath.Join(tmpDir, "out.wasm")
+				wasmBytes, berr := nbuild.BuildDirectWasm(f, nbuild.BuildOptions{
+					Target:        targetStr,
+					UseDirectWasm: true,
+					Verbose:       false,
+				})
+				if berr != nil {
+					results[idx] = testBuildResult{testFile: f, tmpDir: tmpDir, err: berr}
+					return
+				}
+				if werr := os.WriteFile(outPath, wasmBytes, 0755); werr != nil {
+					results[idx] = testBuildResult{testFile: f, tmpDir: tmpDir, err: werr}
+					return
+				}
+				results[idx] = testBuildResult{testFile: f, binPath: outPath, tmpDir: tmpDir}
+				return
+			}
+
+			outPath := filepath.Join(tmpDir, "out")
+			opts := nbuild.BuildOptions{
+				CC:            *cc,
 				Target:        targetStr,
-				UseDirectWasm: true,
+				Output:        outPath,
 				Verbose:       false,
-			})
-			if berr != nil {
-				fmt.Fprintf(os.Stderr, "FAIL: %s\n  %v\n", tf, berr)
-				hadFailure = true
-				os.RemoveAll(tmpDir)
-				continue
+				UseDirectWasm: *wasmDirect,
 			}
-			if werr := os.WriteFile(outPath, wasmBytes, 0755); werr != nil {
-				fmt.Fprintf(os.Stderr, "FAIL: %s\n  %v\n", tf, werr)
-				hadFailure = true
-				os.RemoveAll(tmpDir)
-				continue
+			if err := nbuild.BuildFile(f, opts); err != nil {
+				results[idx] = testBuildResult{testFile: f, tmpDir: tmpDir, err: err}
+				return
 			}
-			cmd := exec.Command("wasmtime", "run", outPath)
-			cmd.Stdout = os.Stdout
-			cmd.Stderr = os.Stderr
-			if err := cmd.Run(); err != nil {
-				fmt.Fprintf(os.Stderr, "FAIL: %s (exit code %v)\n", tf, err)
-				hadFailure = true
-				os.RemoveAll(tmpDir)
-				continue
-			}
-			os.RemoveAll(tmpDir)
-			continue
-		}
+			results[idx] = testBuildResult{testFile: f, binPath: outPath, tmpDir: tmpDir}
+		}(i, tf)
+	}
+	wg.Wait()
 
-		outPath := filepath.Join(tmpDir, "out")
-		opts := nbuild.BuildOptions{
-			CC:            *cc,
-			Target:        targetStr,
-			Output:        outPath,
-			Verbose:       false,
-			UseDirectWasm: *wasmDirect,
-		}
-
-		if err := nbuild.BuildFile(tf, opts); err != nil {
-			fmt.Fprintf(os.Stderr, "FAIL: %s\n  %v\n", tf, err)
+	// Pass 2: 順序執行編譯產物（避免輸出交錯）
+	for _, r := range results {
+		if r.err != nil {
+			fmt.Fprintf(os.Stderr, "FAIL: %s\n  %v\n", r.testFile, r.err)
 			hadFailure = true
-			os.RemoveAll(tmpDir)
+			if r.tmpDir != "" {
+				os.RemoveAll(r.tmpDir)
+			}
 			continue
 		}
 
@@ -1784,16 +1812,22 @@ func testCommand(args []string) {
 			fmt.Fprintln(os.Stderr, "Error: running compiled binary not supported in browser playground")
 			os.Exit(1)
 		}
-		cmd := exec.Command(outPath)
+
+		var cmd *exec.Cmd
+		if useDirectWasm {
+			cmd = exec.Command("wasmtime", "run", r.binPath)
+		} else {
+			cmd = exec.Command(r.binPath)
+		}
 		cmd.Stdout = os.Stdout
 		cmd.Stderr = os.Stderr
 		if err := cmd.Run(); err != nil {
-			fmt.Fprintf(os.Stderr, "FAIL: %s (exit code %v)\n", tf, err)
+			fmt.Fprintf(os.Stderr, "FAIL: %s (exit code %v)\n", r.testFile, err)
 			hadFailure = true
-			os.RemoveAll(tmpDir)
-			continue
 		}
-		os.RemoveAll(tmpDir)
+		if r.tmpDir != "" {
+			os.RemoveAll(r.tmpDir)
+		}
 	}
 
 	if hadFailure {
@@ -1802,6 +1836,7 @@ func testCommand(args []string) {
 }
 
 func vetCommand(args []string) {
+	nbuild.ClearCaches()
 	fs := flag.NewFlagSet("vet", flag.ExitOnError)
 	fs.Usage = func() {
 		fmt.Println("Usage: no vet [<file|dir>]")

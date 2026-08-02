@@ -8,7 +8,7 @@ import (
 	"strings"
 
 	"github.com/lizongying/nolang/builtin"
-	"github.com/lizongying/nolang/mod"
+	"github.com/lizongying/nolang/package"
 	"github.com/lizongying/nolang/parser"
 )
 
@@ -616,7 +616,7 @@ func (g *Generator) sortedExternNames() []string {
 	return names
 }
 
-// platformKeys 已遷移至 mod.PlatformKeys（與 checker 的平台註解校驗共用同一張表）。
+// platformKeys 已遷移至 pkg.PlatformKeys（與 checker 的平台註解校驗共用同一張表）。
 
 // targetDatalayoutAndTriple returns the LLVM target datalayout and triple
 // for the given (goos, goarch) platform. Empty strings fall back to the
@@ -682,7 +682,7 @@ func matchesPlatform(annotations []*parser.AnnotationEntry, goos, goarch string)
 		if entry.Value != nil {
 			continue
 		}
-		matcher, isPlatform := mod.PlatformKeys[entry.Key]
+		matcher, isPlatform := pkg.PlatformKeys[entry.Key]
 		if !isPlatform {
 			continue
 		}
@@ -707,8 +707,8 @@ func FilterByPlatform(sem *parser.SemanticContext, stmts []parser.Statement, goo
 	return filtered
 }
 
-// PlatformKeyFor 轉發至 mod.PlatformKeyFor（實現與 PlatformKeys 表同駐 mod 套件）。
-var PlatformKeyFor = mod.PlatformKeyFor
+// PlatformKeyFor 轉發至 pkg.PlatformKeyFor（實現與 PlatformKeys 表同駐 mod 套件）。
+var PlatformKeyFor = pkg.PlatformKeyFor
 
 // SetTargetPlatform configures the target (GOOS, GOARCH) used by Generate's
 // platform filter. Empty strings cause Generate to fall back to the host

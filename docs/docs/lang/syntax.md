@@ -1769,7 +1769,7 @@ ICON []byte
 
 **路徑解析**：
 
-- 相對路徑相對於包根目錄（`mod.jsonc` 所在目錄）解析
+- 相對路徑相對於包根目錄（`package.jsonc` 所在目錄）解析
 - 支援絕對路徑
 - 路徑中可包含 `/`、`.`、`-` 字符
 
@@ -1944,9 +1944,9 @@ neural = () {
 
 使用 `os.get-arch()` 可在執行期取得當前架構，使用平台註解則在編譯期包含或排除代碼。
 
-## mod.jsonc 編譯器配置
+## package.jsonc 編譯器配置
 
-`mod.jsonc` 中的 `compiler` 區塊控制編譯器行為。
+`package.jsonc` 中的 `compiler` 區塊控制編譯器行為。
 
 ```jsonc
 {

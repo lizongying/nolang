@@ -7,7 +7,7 @@
 ; FFI 綁定直接宣告於本檔案中，使用 #{c} 註解標記。
 ; 以 _ 開頭的名稱為私有（不導出），C ABI 符號自動去除前綴 _ 並將連字號轉為底線。
 ; 使用前需系統安裝 libsqlite3（macOS/Linux 通常已內建）。
-; mod.jsonc 中 "link-libs": ["sqlite3"] 負責連結。
+; package.jsonc 中 "link-libs": ["sqlite3"] 負責連結。
 ;
 ; 用法：
 ;   d = open(':memory:')

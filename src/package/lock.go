@@ -1,4 +1,4 @@
-package mod
+package pkg
 
 import (
 	"crypto/sha256"
@@ -102,10 +102,10 @@ func SaveLockFile(dir string, graph *DependencyGraph) error {
 	return nil
 }
 
-// CheckLockFile 檢查鎖檔案是否與 mod.jsonc 相容
+// CheckLockFile 檢查鎖檔案是否與 package.jsonc 相容
 // 返回 (是否需要重新解析, 錯誤)
 // 相容條件：
-//   - mod.jsonc 中所有的 dependencies 都在鎖檔案中
+//   - package.jsonc 中所有的 dependencies 都在鎖檔案中
 //   - 版本號一致
 func CheckLockFile(pkg *Package, lock *LockFile) (bool, error) {
 	if pkg == nil || lock == nil {

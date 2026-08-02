@@ -1,4 +1,4 @@
-package mod
+package pkg
 
 // PlatformKeys maps flattened platform annotation keys to (GOOS, GOARCH) pairs.
 // 供 llvm 代碼生成的平台過濾與 checker 的 #{platform=...} 註解校驗共用，

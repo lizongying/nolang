@@ -1,4 +1,4 @@
-package mod
+package pkg
 
 import (
 	"encoding/json"
@@ -8,7 +8,7 @@ import (
 	"strings"
 )
 
-// CompilerOptions 表示 mod.jsonc 的 compiler 區塊選項
+// CompilerOptions 表示 package.jsonc 的 compiler 區塊選項
 type CompilerOptions struct {
 	AnonymousFnType bool     `json:"anonymous-fn-type"`
 	LinkLibs        []string `json:"link-libs,omitempty"`
@@ -17,7 +17,7 @@ type CompilerOptions struct {
 	Emit string `json:"emit,omitempty"`
 }
 
-// Package 表示 mod.jsonc 定義的專案套件
+// Package 表示 package.jsonc 定義的專案套件
 type Package struct {
 	Name            string            `json:"name"`
 	Version         string            `json:"version"`
@@ -38,7 +38,7 @@ type Package struct {
 	Mirrors         []string          `json:"mirrors,omitempty"`   // 下載鏡像清單（依序嘗試）
 	Compiler        CompilerOptions   `json:"compiler,omitempty"`
 	Output          string            `json:"output,omitempty"` // 輸出目錄（如 "./dist"）
-	RootDir         string            // 套件根目錄（含 mod.jsonc）
+	RootDir         string            // 套件根目錄（含 package.jsonc）
 	workspaceRoot   string            // 解析後的絕對工作區根目錄路徑
 	wsMap           WorkspaceMap      // 快取的 workspace.jsonc 映射
 	warned          bool              // 是否已輸出過 workspace 版本警告
@@ -162,17 +162,17 @@ func removeTrailingCommas(s string) string {
 	return out.String()
 }
 
-// LoadPackage 從 dir 目錄尋找並解析 mod.jsonc
+// LoadPackage 從 dir 目錄尋找並解析 package.jsonc
 func LoadPackage(dir string) (*Package, error) {
 	abs, err := filepath.Abs(dir)
 	if err != nil {
 		return nil, err
 	}
 
-	// 向上尋找 mod.jsonc
+	// 向上尋找 package.jsonc
 	root := abs
 	for {
-		candidate := filepath.Join(root, "mod.jsonc")
+		candidate := filepath.Join(root, "package.jsonc")
 		if _, err := os.Stat(candidate); err == nil {
 			raw, err := os.ReadFile(candidate)
 			if err != nil {

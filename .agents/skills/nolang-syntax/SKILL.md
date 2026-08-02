@@ -139,8 +139,8 @@ Install the Nolang extension from [VS Code Marketplace](https://marketplace.visu
 | Command                                                      | Description             |
 | ------------------------------------------------------------ | ----------------------- |
 | `no version`                                                 | Print version info      |
-| `no init`                                                    | Define the workspace (creates workspace.jsonc, no mod.jsonc) |
-| `no new <name>`                                              | Create a new package under the workspace (subdir + mod.jsonc, registered in workspace.jsonc) |
+| `no init`                                                    | Define the workspace (creates workspace.jsonc, no package.jsonc) |
+| `no new <name>`                                              | Create a new package under the workspace (subdir + package.jsonc, registered in workspace.jsonc) |
 | `no fmt [-w] [-d] <file\|dir>`                               | Format source code      |
 | `no build [-o <file>] [-cc <s>] [-target <s>] [<file\|dir>]` | Build (outputs executable) |
 | `no run [-cc <s>] [-target <s>] [<package\|dir\|file>]`        | Build and run (package/dir/file) |
@@ -159,8 +159,8 @@ Install the Nolang extension from [VS Code Marketplace](https://marketplace.visu
 
 Nolang separates `no init` and `no new` into two distinct steps:
 
-- `no init` —— defines the workspace in the current directory (creates `workspace.jsonc` only; **no `mod.jsonc`**).
-- `no new <name>` —— creates a package under the current workspace (subdirectory `./<name>/` with its `mod.jsonc`) and registers it in `workspace.jsonc`.
+- `no init` —— defines the workspace in the current directory (creates `workspace.jsonc` only; **no `package.jsonc`**).
+- `no new <name>` —— creates a package under the current workspace (subdirectory `./<name>/` with its `package.jsonc`) and registers it in `workspace.jsonc`.
 
 ```bash
 # 1) Define the workspace at the repo root
@@ -183,7 +183,7 @@ no run
 no init
 ```
 
-`no init` only creates `workspace.jsonc` (initially an empty `{}`); it does **not** generate `mod.jsonc` or `main.no`. If `workspace.jsonc` already exists, it is left untouched. Packages are added with `no new <name>`, which writes `"<name>": "./<name>"` into `workspace.jsonc`:
+`no init` only creates `workspace.jsonc` (initially an empty `{}`); it does **not** generate `package.jsonc` or `main.no`. If `workspace.jsonc` already exists, it is left untouched. Packages are added with `no new <name>`, which writes `"<name>": "./<name>"` into `workspace.jsonc`:
 
 ```jsonc
 {
@@ -198,22 +198,22 @@ The compile/execute entry directory is always the **workspace directory** (where
 
 1. User runs `no build` or `no run <package>` from the workspace directory
 2. Compiler reads `workspace.jsonc`, looks up the package's subdirectory by name
-3. Loads the `mod.jsonc` in that subdirectory (the **package root**), builds/runs relative to it
-4. All import paths (`# /path/to/module`) are **resolved relative to the package's `mod.jsonc` directory**
+3. Loads the `package.jsonc` in that subdirectory (the **package root**), builds/runs relative to it
+4. All import paths (`# /path/to/module`) are **resolved relative to the package's `package.jsonc` directory**
 
 ```
 workspace/               ← workspace dir (workspace.jsonc lives here)
 ├── workspace.jsonc      ← package name -> path mapping
 ├── foo/                 ← package foo
-│   ├── mod.jsonc        ← foo's package root (import paths resolve from here)
+│   ├── package.jsonc        ← foo's package root (import paths resolve from here)
 │   ├── main.no
 │   └── lib.no
 └── bar/                 ← package bar
-    ├── mod.jsonc        ← bar's package root
+    ├── package.jsonc        ← bar's package root
     └── main.no
 ```
 
-> **Important**: Import paths are relative to the package's own `mod.jsonc` directory, **not** the workspace root. If a nested `mod.jsonc` exists in a subdirectory within a package, `LoadPackage` searches upward and uses the nearest `mod.jsonc` as the package root.
+> **Important**: Import paths are relative to the package's own `package.jsonc` directory, **not** the workspace root. If a nested `package.jsonc` exists in a subdirectory within a package, `LoadPackage` searches upward and uses the nearest `package.jsonc` as the package root.
 
 ### Build & Run
 
@@ -320,7 +320,7 @@ no uninstall pkg-name
 
 ### Project Configuration
 
-The `mod.jsonc` file in the project root directory describes project information:
+The `package.jsonc` file in the project root directory describes project information:
 
 ```jsonc
 {
@@ -371,7 +371,7 @@ no sync
 
 ### Mirror Configuration
 
-Configure mirror addresses in the `mirrors` array of `mod.jsonc` to accelerate remote package downloads:
+Configure mirror addresses in the `mirrors` array of `package.jsonc` to accelerate remote package downloads:
 
 ```jsonc
 "mirrors": [
@@ -2535,12 +2535,12 @@ When using `--browser`, the compiler generates an HTML wrapper that:
 
 The HTML template is defined in `src/build/js/html_wrapper.go`.
 
-- #{embed='path/to/file'} 或 #{embed=path/to/file} — 編譯期文件嵌入：將外部文件內容嵌入為 []byte 只讀常量，路徑相對於包根目錄（mod.jsonc 所在目錄）解析；變數宣告不能帶顯式初始值；嵌入數據為只讀，不參與堆釋放
+- #{embed='path/to/file'} 或 #{embed=path/to/file} — 編譯期文件嵌入：將外部文件內容嵌入為 []byte 只讀常量，路徑相對於包根目錄（package.jsonc 所在目錄）解析；變數宣告不能帶顯式初始值；嵌入數據為只讀，不參與堆釋放
 - #{embed='dir/'} - Directory embed: recursively reads all files in a directory, embedding them as fs.embed type (read-only filesystem). Access files at runtime via read(path)->([]byte,bool) and exists(path)->(bool). Lookup logic is pure Nolang, no C functions. Ideal for single-binary distribution (e.g. HTTP static server embedding frontend files).
 
-## mod.jsonc Compiler Configuration
+## package.jsonc Compiler Configuration
 
-The `compiler` block in `mod.jsonc` controls compiler behavior:
+The `compiler` block in `package.jsonc` controls compiler behavior:
 
 - `emit` (string): Output target backend. `"js"` = use JS backend (type erasure, no LLVM toolchain). Default empty = LLVM native backend. Command-line `--js` flag takes precedence.
 - `anonymous-fn-type` (bool): Whether anonymous function type syntax is permitted. Default false.

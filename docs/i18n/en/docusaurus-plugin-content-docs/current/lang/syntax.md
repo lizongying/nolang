@@ -1497,7 +1497,7 @@ The `embed` annotation attaches to the `[]byte` variable declaration that immedi
 
 **Path Resolution**:
 
-- Relative paths are resolved relative to the package root (the directory containing `mod.jsonc`)
+- Relative paths are resolved relative to the package root (the directory containing `package.jsonc`)
 - Absolute paths are supported
 - Paths may contain `/`, `.`, and `-` characters
 
@@ -1673,9 +1673,9 @@ neural = () {
 
 Use `os.get-arch()` to get the current architecture at runtime, and platform annotations to include/exclude code at compile time.
 
-## mod.jsonc Compiler Configuration
+## package.jsonc Compiler Configuration
 
-The `compiler` block in `mod.jsonc` controls compiler behavior.
+The `compiler` block in `package.jsonc` controls compiler behavior.
 
 ```jsonc
 {

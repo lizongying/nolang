@@ -50,8 +50,8 @@ vscode 插件
 
 | 命令                                                         | 說明                                   |
 | ------------------------------------------------------------ | -------------------------------------- |
-| `no init`                                                    | 定義工作區（生成 workspace.jsonc，不含 mod.jsonc） |
-| `no new <name>`                                              | 在工作區內新建包（子目錄 + mod.jsonc，並註冊到 workspace.jsonc） |
+| `no init`                                                    | 定義工作區（生成 workspace.jsonc，不含 package.jsonc） |
+| `no new <name>`                                              | 在工作區內新建包（子目錄 + package.jsonc，並註冊到 workspace.jsonc） |
 | `no fmt [-w] [-d] <file\|dir>`                               | 格式化源代碼                           |
 | `no build [-o <file>] [-cc <s>] [-target <s>] [<file\|dir>]` | 構建（輸出 executable）                |
 | `no run [-cc <s>] [-target <s>] [<package\|dir\|file>]`        | 構建並執行（包名/目錄/文件）           |

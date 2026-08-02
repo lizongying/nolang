@@ -13,6 +13,7 @@ import (
 
 	"github.com/lizongying/nolang/build/js"
 	"github.com/lizongying/nolang/build/wasm"
+	"github.com/lizongying/nolang/checker"
 	"github.com/lizongying/nolang/lexer"
 	"github.com/lizongying/nolang/parser"
 )
@@ -106,6 +107,15 @@ type BuildOptions struct {
 	BrowserMode   bool   // when true with UseJS, generate browser-targeted JS + HTML wrapper
 }
 
+// ClearCaches 清空全局 token 緩存和模組 AST 緩存。
+// 應在命令級別（no build / no test / no vet 等）開始時調用一次，
+// 之後所有文件共享同一份緩存，避免重複詞法分析和解析。
+// 不在每次 Compile 調用中清空，使 no test 等多文件場景能跨文件復用。
+func ClearCaches() {
+	lexer.ClearTokenCache()
+	checker.ClearModuleCache()
+}
+
 // parseTargetPlatform extracts (goos, goarch) from a target triple.
 // Returns ("", "") when target is empty, signaling the caller to fall back
 // to the host runtime platform.
@@ -181,7 +191,7 @@ func BuildFile(inputPath string, opts BuildOptions) error {
 		return err
 	}
 
-	// 若指定的是目錄，先找目錄內的 mod.jsonc
+	// 若指定的是目錄，先找目錄內的 package.jsonc
 	info, err := os.Stat(inputPath)
 	isDir := err == nil && info.IsDir()
 
@@ -226,7 +236,7 @@ func BuildFile(inputPath string, opts BuildOptions) error {
 // VetFile performs syntax and semantic validation on a .no source file without
 // producing any compilation artifacts (no LLVM IR, no binary).
 func VetFile(inputPath string, opts BuildOptions) error {
-	// 若指定的是目錄，先找目錄內的 mod.jsonc
+	// 若指定的是目錄，先找目錄內的 package.jsonc
 	info, err := os.Stat(inputPath)
 	isDir := err == nil && info.IsDir()
 
@@ -325,7 +335,7 @@ func buildWithPkg(inputPath string, pkg *Package, opts BuildOptions, buffered bo
 		sink = &bytes.Buffer{}
 	}
 
-	// 如果 mod.jsonc 指定 emit: js，使用 JS 後端發射 JavaScript
+	// 如果 package.jsonc 指定 emit: js，使用 JS 後端發射 JavaScript
 	if pkg != nil && pkg.Compiler.Emit == "js" {
 		return buildJSPkg(source, inputPath, pkg, opts, outPath, sink)
 	}
@@ -580,7 +590,7 @@ func BuildDirectWasm(inputPath string, opts BuildOptions) ([]byte, error) {
 
 	// 2. 解析為 AST（與 Transpiler.parseFile 一致的最小流程；
 	//    Direct WASM 後端目前不需跨文件簽名預載入）。
-	l := lexer.New(string(source))
+	l := lexer.NewCached(inputPath, string(source))
 	p := parser.New(l)
 	p.Filename = filepath.Base(inputPath)
 	program := p.ParseProgram()
@@ -610,7 +620,7 @@ func BuildDirectWasm(inputPath string, opts BuildOptions) ([]byte, error) {
 }
 
 // buildJSPkg 使用 JS 後端從 Nolang 源碼發射 JavaScript 並寫入輸出檔案。
-// 當 mod.jsonc 的 compiler.emit 為 "js" 時由 buildWithPkg 呼叫，
+// 當 package.jsonc 的 compiler.emit 為 "js" 時由 buildWithPkg 呼叫，
 // 使 workspace 模式下的單個 JS 目標也能自動走 JS 後端。
 func buildJSPkg(source []byte, inputPath string, pkg *Package, opts BuildOptions, outPath string, sink *bytes.Buffer) error {
 	// 輸出路徑加上 .js 副檔名
@@ -619,7 +629,7 @@ func buildJSPkg(source []byte, inputPath string, pkg *Package, opts BuildOptions
 	}
 
 	// 解析為 AST
-	l := lexer.New(string(source))
+	l := lexer.NewCached(inputPath, string(source))
 	p := parser.New(l)
 	p.Filename = filepath.Base(inputPath)
 	program := p.ParseProgram()
@@ -676,7 +686,7 @@ func BuildJS(inputPath string, opts BuildOptions) (string, error) {
 	}
 
 	// 2. 解析為 AST（與 BuildDirectWasm 一致的最小流程）
-	l := lexer.New(string(source))
+	l := lexer.NewCached(inputPath, string(source))
 	p := parser.New(l)
 	p.Filename = filepath.Base(inputPath)
 	program := p.ParseProgram()

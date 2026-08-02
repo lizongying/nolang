@@ -1,4 +1,4 @@
-package mod
+package pkg
 
 import (
 	"fmt"
@@ -19,7 +19,7 @@ type DependencyNode struct {
 	Key          string            // 依賴鍵，如 "github.com/lizongying/nolang/test2"
 	Version      string            // 版本號
 	PkgDir       string            // 本地下載目錄（套件源碼目錄）
-	PkgRoot      string            // 包含 mod.jsonc 的目錄（可能與 PkgDir 相同）
+	PkgRoot      string            // 包含 package.jsonc 的目錄（可能與 PkgDir 相同）
 	DownloadHash string            // 下載壓縮包的 SHA256 雜湊值
 	Dependencies []*DependencyNode // 子依賴
 	Depth        int               // 依賴深度
@@ -84,10 +84,10 @@ func (g *DependencyGraph) resolveNode(key, version string, depth, maxDepth int) 
 		return nil, fmt.Errorf("downloading %s@%s: %w", key, version, err)
 	}
 
-	// 6. 尋找包含 mod.jsonc 的根目錄
+	// 6. 尋找包含 package.jsonc 的根目錄
 	pkgRoot := findPackageRootForDep(key, version, pkgDir)
 
-	// 7. 載入套件的 mod.jsonc 以讀取其依賴
+	// 7. 載入套件的 package.jsonc 以讀取其依賴
 	var deps map[string]string
 	if hasNolangConfig(pkgRoot) {
 		pkg, err := LoadPackage(pkgRoot)
@@ -224,9 +224,9 @@ func (g *DependencyGraph) DetectCycles() error {
 	return nil
 }
 
-// findPackageRootForDep 根據依賴鍵和源碼目錄，尋找包含 mod.jsonc 的根目錄
+// findPackageRootForDep 根據依賴鍵和源碼目錄，尋找包含 package.jsonc 的根目錄
 func findPackageRootForDep(key, version, pkgDir string) string {
-	// 先檢查 pkgDir 自身是否包含 mod.jsonc
+	// 先檢查 pkgDir 自身是否包含 package.jsonc
 	if hasNolangConfig(pkgDir) {
 		return pkgDir
 	}
@@ -272,7 +272,7 @@ func loadCachedPackageFromDir(pkgDir string) *Package {
 		return pkg
 	}
 
-	// LoadPackage 向上尋找 mod.jsonc，如果還是 nil，嘗試子目錄
+	// LoadPackage 向上尋找 package.jsonc，如果還是 nil，嘗試子目錄
 	entries, err := os.ReadDir(pkgDir)
 	if err != nil {
 		return nil

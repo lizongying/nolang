@@ -12,6 +12,7 @@ import (
 	"github.com/lizongying/nolang/builtin"
 	"github.com/lizongying/nolang/checker"
 	"github.com/lizongying/nolang/lexer"
+	"github.com/lizongying/nolang/package"
 	"github.com/lizongying/nolang/parser"
 )
 // mangleOverloads 對同名函數進行名稱修飾，並更新調用點
@@ -552,7 +553,7 @@ type Transpiler struct {
 	llvmGenerator    *llvm.Generator
 	pkg              *Package // 當前套件（用於路徑解析）
 	sourcePath       string   // 當前編譯的源碼檔案路徑（用於 std 庫檢測）
-	allowAnonymousFn bool     // 是否允許匿名函式型別參數（來自 mod.jsonc）
+	allowAnonymousFn bool     // 是否允許匿名函式型別參數（來自 package.jsonc）
 	vetMode          bool     // vet 模式：只做語法+型別檢查，跳過 LLVM IR 生成
 	// externFuncSigs/externStructFields: 預載入的跨文件函數簽名和 struct 欄位型別，
 	// 注入到所有 parser 實例中以支援 let 型別推斷
@@ -615,7 +616,7 @@ func (t *Transpiler) parseFile(filePath string) (*parser.Program, error) {
 	if err != nil {
 		return nil, err
 	}
-	l := lexer.New(string(source))
+	l := lexer.NewCached(filePath, string(source))
 	p := parser.New(l)
 	p.AllowAnonymousFnType = t.allowAnonymousFn
 	p.Filename = filepath.Base(filePath)
@@ -646,7 +647,7 @@ func (t *Transpiler) parseEmbeddedProgram(filename string, data []byte) (*parser
 			return cached, nil
 		}
 	}
-	l := lexer.New(string(data))
+	l := lexer.NewCached(filename, string(data))
 	p := parser.New(l)
 	p.AllowAnonymousFnType = t.allowAnonymousFn
 	p.Filename = filepath.Base(filename)
@@ -665,23 +666,38 @@ func (t *Transpiler) parseEmbeddedProgram(filename string, data []byte) (*parser
 	}
 	return prog, nil
 }
+// workspaceRoot 回傳當前編譯的工作區根目錄（workspace.jsonc 所在目錄）。
+// 優先使用套件宣告的 WorkspaceRoot，否則從 sourcePath 向上查找 workspace.jsonc。
+// 這是所有本地導入路徑解析的單一基準，編譯器不再以當前源碼檔目錄作為相對基準。
+func (t *Transpiler) workspaceRoot() string {
+	if t.pkg != nil {
+		if ws := t.pkg.WorkspaceRoot(); ws != "" {
+			return ws
+		}
+		if t.pkg.RootDir != "" {
+			return t.pkg.RootDir
+		}
+	}
+	if t.sourcePath != "" {
+		if ws, ok := pkg.FindWorkspaceRoot(t.sourcePath); ok {
+			return ws
+		}
+	}
+	return ""
+}
+
 func (t *Transpiler) resolveUse(use *parser.UseStatement) (*parser.Program, error) {
 	// use path.fn → 載入 path.no 並取出 fn 函數
 	path := use.Path
 	// 本地模塊：/path → 相對於 workspace 根目錄（如有），否則相對於包根目錄
 	if strings.HasPrefix(path, "/") {
 		relPath := strings.TrimPrefix(path, "/")
-		if t.pkg != nil {
-			baseDir := t.pkg.RootDir
-			if wsRoot := t.pkg.WorkspaceRoot(); wsRoot != "" {
-				baseDir = wsRoot
-			}
-			fullPath := filepath.Join(baseDir, relPath) + ".no"
-			return t.resolveFile(fullPath)
+		// 一律相對於工作區根目錄解析，不再以當前源碼檔目錄為相對基準
+		fullPath := pkg.ResolveToWorkspaceRoot(t.workspaceRoot(), relPath)
+		if !strings.HasSuffix(fullPath, ".no") {
+			fullPath = fullPath + ".no"
 		}
-		// 沒有套件配置，相對於當前目錄
-		filePath := relPath + ".no"
-		return t.resolveFile(filePath)
+		return t.resolveFile(fullPath)
 	}
 	// std/ 開頭 → 標準庫路徑（只從內嵌 StdFS 載入，支援單二進制分發）
 	if strings.HasPrefix(path, "std/") || path == "std" {
@@ -755,23 +771,14 @@ func (t *Transpiler) resolveUse(use *parser.UseStatement) (*parser.Program, erro
 			}
 		}
 		// URL 風格的導入路徑但未在 dependencies 中宣告
-		return nil, fmt.Errorf("dependency not found: %q is not declared in mod.jsonc dependencies", path)
+		return nil, fmt.Errorf("dependency not found: %q is not declared in package.jsonc dependencies", path)
 	}
-	// 非 std 路徑 → 透過 alias 解析（workspace 根目錄優先）
-	if t.pkg != nil {
-		baseDir := t.pkg.RootDir
-		if wsRoot := t.pkg.WorkspaceRoot(); wsRoot != "" {
-			baseDir = wsRoot
-		}
-		modulePath := filepath.Join(baseDir, path)
-		if !strings.HasSuffix(modulePath, ".no") {
-			modulePath = modulePath + ".no"
-		}
-		return t.resolveFile(filepath.Clean(modulePath))
+	// 非 std 路徑 → 透過 alias 解析（一律相對於工作區根目錄，不再以當前源碼檔目錄為基準）
+	modulePath := pkg.ResolveToWorkspaceRoot(t.workspaceRoot(), path)
+	if !strings.HasSuffix(modulePath, ".no") {
+		modulePath = modulePath + ".no"
 	}
-	// 沒有套件配置，直接嘗試
-	filePath := path + ".no"
-	return t.resolveFile(filePath)
+	return t.resolveFile(filepath.Clean(modulePath))
 }
 // resolveFile parses a .no file and applies lib.no export filtering if present.
 func (t *Transpiler) resolveFile(filePath string) (*parser.Program, error) {
@@ -794,11 +801,10 @@ func (t *Transpiler) Compile(source string) (string, error) {
 	// 同一 std 模組在 preloadModuleSignatures、checker.ValidateFuncArgs、merge 步驟中
 	// 會被重複載入，快取後僅解析一次。
 	t.fileCache = make(map[string]*parser.Program)
-	// vet 模式下保留全域模組解析快取，使跨文件可復用 parseProgramFile 結果。
-	// 非 vet 模式（即 build）仍需清空快取以確保每次編譯的 AST 完全隔離。
-	if !t.vetMode {
-		checker.ClearModuleCache()
-	}
+	// 保留全域模組解析快取（parseProgramFileCache + tokenCache），
+	// 使 no test / no build workspace 等多文件場景可跨文件復用。
+	// 快取在命令級別清空（BuildFile / BuildWorkspace / VetFile 入口），
+	// 而非每次 Compile 調用都清空。
 	return t.CompileTarget(source, TargetLLVM)
 }
 // preloadModuleSignatures 掃描源碼中的 use 語句，預載入模組的函數簽名和 struct 欄位型別。
@@ -896,7 +902,7 @@ func (t *Transpiler) CompileTarget(source string, _ Target) (string, error) {
 	// 存儲到 Transpiler 中，使 parseFile（用於解析自動載入的模組）也能注入簽名
 	t.externFuncSigs = externFuncSigs
 	t.externStructFields = externStructFields
-	l := lexer.New(source)
+	l := lexer.NewCached(t.sourcePath, source)
 	p := parser.New(l)
 	p.AllowAnonymousFnType = t.allowAnonymousFn
 	if t.sourcePath != "" {
@@ -5553,8 +5559,8 @@ func validateExprArrayBounds(expr parser.Expression, arraySizes map[string]int64
            
  
 // checker.ValidateDependencyImports checks that URL-style import paths (e.g., github.com/...)
-// are declared in mod.jsonc dependencies. rootDir is the directory to search upward
-// from for the project's mod.jsonc.
+// are declared in package.jsonc dependencies. rootDir is the directory to search upward
+// from for the project's package.jsonc.
                                                                                           
                    
             
@@ -8474,7 +8480,7 @@ func validateExprArrayBounds(expr parser.Expression, arraySizes map[string]int64
  
 // processEmbeds 遍歷 program 中帶有 #{embed=...} 註解的 LetStatement，
 // 在編譯期讀取指定文件並填充 EmbedData 字段。
-// 路徑相對於包根目錄（mod.jsonc 所在目錄）解析。
+// 路徑相對於包根目錄（package.jsonc 所在目錄）解析。
 func (t *Transpiler) processEmbeds(program *parser.Program, sourcePath string) error {
 	for _, stmt := range program.Statements {
 		ls, ok := stmt.(*parser.LetStatement)
@@ -8499,14 +8505,9 @@ func (t *Transpiler) processEmbeds(program *parser.Program, sourcePath string) e
 		// 解析路徑：絕對路徑直接使用，相對路徑相對於包根目錄
 		resolvedPath := embedPath
 		if !filepath.IsAbs(embedPath) {
-			pkgRoot := ""
-			if sourcePath != "" {
-				pkgRoot = findPackageRootFromFile(sourcePath)
-			}
-			if pkgRoot == "" {
-				pkgRoot = filepath.Dir(sourcePath)
-			}
-			resolvedPath = filepath.Join(pkgRoot, embedPath)
+			// 一律相對於工作區根目錄解析（workspace.jsonc 所在目錄），
+			// 退路為包根目錄（package.jsonc）/ 源碼目錄，保持對無 workspace 專案的相容。
+			resolvedPath = filepath.Join(pkg.ResolveEmbedBase(sourcePath), embedPath)
 		}
 		// 檢測路徑是文件還是目錄
 		info, err := os.Stat(resolvedPath)
@@ -8555,11 +8556,11 @@ func (t *Transpiler) processEmbeds(program *parser.Program, sourcePath string) e
 	}
 	return nil
 }
-// findPackageRootFromFile walks up from a file path to find the directory containing mod.jsonc.
+// findPackageRootFromFile walks up from a file path to find the directory containing package.jsonc.
 func findPackageRootFromFile(filePath string) string {
 	dir := filepath.Dir(filePath)
 	for {
-		cfgFile := filepath.Join(dir, "mod.jsonc")
+		cfgFile := filepath.Join(dir, "package.jsonc")
 		if _, err := os.Stat(cfgFile); err == nil {
 			return dir
 		}

@@ -1,4 +1,4 @@
-package mod
+package pkg
 
 import (
 	"encoding/json"
@@ -137,7 +137,7 @@ func VerifySumFile(graph *DependencyGraph, sum *SumFile) (bool, error) {
 	return true, nil
 }
 
-// CheckSumFile 檢查總和檔案是否與 mod.jsonc 相容
+// CheckSumFile 檢查總和檔案是否與 package.jsonc 相容
 // 返回 (是否需要重新解析, 錯誤)
 func CheckSumFile(pkg *Package, sum *SumFile) (bool, error) {
 	if pkg == nil || sum == nil {

@@ -26,8 +26,8 @@ Install the Nolang extension from the [VS Code Marketplace](https://marketplace.
 | Command                                                      | Description             |
 | ------------------------------------------------------------ | ----------------------- |
 | `no version`                                                 | Print version info      |
-| `no init`                                                    | Define the workspace (creates workspace.jsonc, no mod.jsonc) |
-| `no new <name>`                                              | Create a new package under the workspace (subdir + mod.jsonc, registered in workspace.jsonc) |
+| `no init`                                                    | Define the workspace (creates workspace.jsonc, no package.jsonc) |
+| `no new <name>`                                              | Create a new package under the workspace (subdir + package.jsonc, registered in workspace.jsonc) |
 | `no fmt [-w] [-d] <file\|dir>`                               | Format source code      |
 | `no build [-o <file>] [-cc <s>] [-target <s>] [<file\|dir>]` | Build (output executable) |
 | `no run [-cc <s>] [-target <s>] [<package\|dir\|file>]`        | Build and run (package/dir/file) |
@@ -44,10 +44,10 @@ Install the Nolang extension from the [VS Code Marketplace](https://marketplace.
 
 ## Quick Start
 
-Nolang uses a **single-repo (project), multi-package** layout: the repo root is the workspace (it only has `workspace.jsonc`), and each package is a subdirectory with its own `mod.jsonc`. `no init` and `no new` are two separate steps:
+Nolang uses a **single-repo (project), multi-package** layout: the repo root is the workspace (it only has `workspace.jsonc`), and each package is a subdirectory with its own `package.jsonc`. `no init` and `no new` are two separate steps:
 
 - `no init` —— defines the workspace in the current directory (creates `workspace.jsonc` only).
-- `no new <name>` —— creates a new package under the current workspace (generates the subdirectory `./<name>/` with its `mod.jsonc`) and registers it in `workspace.jsonc`.
+- `no new <name>` —— creates a new package under the current workspace (generates the subdirectory `./<name>/` with its `package.jsonc`) and registers it in `workspace.jsonc`.
 
 ### Initialize the Workspace and Create a Package
 
@@ -91,7 +91,7 @@ no new baz
 no init
 ```
 
-`no init` only creates `workspace.jsonc` (initially an empty `{}`); it does **not** generate a `mod.jsonc` or `main.no`. If `workspace.jsonc` already exists, it is left untouched. Packages are created with `no new <name>`.
+`no init` only creates `workspace.jsonc` (initially an empty `{}`); it does **not** generate a `package.jsonc` or `main.no`. If `workspace.jsonc` already exists, it is left untouched. Packages are created with `no new <name>`.
 
 ### Build & Run
 
@@ -208,7 +208,7 @@ Uninstalling removes the symlink from `/usr/local/bin/` and the binary from `~/n
 
 ## Project Configuration
 
-The `mod.jsonc` file in the project root directory describes project information:
+The `package.jsonc` file in the project root directory describes project information:
 
 ```jsonc
 {
@@ -259,7 +259,7 @@ no sync
 
 ### Mirror Configuration
 
-Configure mirror URLs in the `mirrors` array in `mod.jsonc` to accelerate remote package downloads:
+Configure mirror URLs in the `mirrors` array in `package.jsonc` to accelerate remote package downloads:
 
 ```jsonc
 "mirrors": [
@@ -278,7 +278,7 @@ Configure mirror URLs in the `mirrors` array in `mod.jsonc` to accelerate remote
 }
 ```
 
-`no init` defines the workspace: if `workspace.jsonc` is missing it generates an empty object `{}` and **does not create any `mod.jsonc`**; if it already exists, it is preserved and not overwritten. Each subsequent `no new <name>` automatically registers `"<name>": "./<name>"` into `workspace.jsonc`.
+`no init` defines the workspace: if `workspace.jsonc` is missing it generates an empty object `{}` and **does not create any `package.jsonc`**; if it already exists, it is preserved and not overwritten. Each subsequent `no new <name>` automatically registers `"<name>": "./<name>"` into `workspace.jsonc`.
 
 #### Workspace Flow
 
@@ -286,19 +286,19 @@ The compile/execute entry directory is always the **workspace directory** (where
 
 1. User runs `no build` or `no run <package-name>` from the workspace directory
 2. Compiler reads `workspace.jsonc` and looks up the package's subdirectory path by name
-3. Loads the `mod.jsonc` in that subdirectory (the package root) and builds/runs relative to it
-4. All import paths (`use /path/to/module`) are **resolved relative to the package's `mod.jsonc` directory**
+3. Loads the `package.jsonc` in that subdirectory (the package root) and builds/runs relative to it
+4. All import paths (`use /path/to/module`) are **resolved relative to the workspace root** (see the path-resolution convention), i.e. the directory containing `workspace.jsonc` — no longer relative to the importing package.
 
 ```
 workspace/               ← workspace directory (workspace.jsonc lives here)
 ├── workspace.jsonc      ← package name -> path mapping
 ├── foo/                 ← package foo
-│   ├── mod.jsonc        ← foo's package root
+│   ├── package.jsonc        ← foo's package root
 │   ├── main.no
 │   └── lib.no
 └── bar/                 ← package bar
-    ├── mod.jsonc        ← bar's package root
+    ├── package.jsonc        ← bar's package root
     └── main.no
 ```
 
-> **Note**: Import paths are relative to the package's own `mod.jsonc` directory, not the workspace root. If a nested `mod.jsonc` exists in a subdirectory within a package, `LoadPackage` searches upward and uses the nearest `mod.jsonc` as the package root.
+> **Note**: Import paths are resolved relative to the **workspace root** (directory containing `workspace.jsonc`), not the package's `package.jsonc` directory. If a nested `package.jsonc` exists in a subdirectory within a package, `LoadPackage` searches upward and uses the nearest `package.jsonc` as the package root, but import resolution is uniformly based on the workspace root.

@@ -1,4 +1,4 @@
-package mod
+package pkg
 
 import (
 	"archive/tar"
@@ -393,7 +393,7 @@ func findPackageDir(cachePath, shortName string) string {
 	return ""
 }
 
-// findPackageRoot 在快取路徑中尋找包含 mod.jsonc 的目錄
+// findPackageRoot 在快取路徑中尋找包含 package.jsonc 的目錄
 // 優先檢查短名稱目錄，然後遍歷子目錄
 func findPackageRoot(cachePath, shortName string) string {
 	// 先檢查短名稱目錄
@@ -420,7 +420,7 @@ func findPackageRoot(cachePath, shortName string) string {
 		}
 	}
 
-	// 遍歷子目錄尋找 mod.jsonc
+	// 遍歷子目錄尋找 package.jsonc
 	entries, err := os.ReadDir(cachePath)
 	if err != nil {
 		return pkgDir // 返回預設路徑
@@ -447,13 +447,13 @@ func findPackageRoot(cachePath, shortName string) string {
 		}
 	}
 
-	// 沒找到 mod.jsonc，返回短名稱目錄（套件可能沒有配置文件）
+	// 沒找到 package.jsonc，返回短名稱目錄（套件可能沒有配置文件）
 	return pkgDir
 }
 
-// hasNolangConfig 檢查目錄中是否存在 mod.jsonc
+// hasNolangConfig 檢查目錄中是否存在 package.jsonc
 func hasNolangConfig(dir string) bool {
-	cfgFile := filepath.Join(dir, "mod.jsonc")
+	cfgFile := filepath.Join(dir, "package.jsonc")
 	info, err := os.Stat(cfgFile)
 	return err == nil && !info.IsDir()
 }

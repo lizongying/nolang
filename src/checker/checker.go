@@ -10,7 +10,7 @@ import (
 	nolang "github.com/lizongying/nolang"
 	"github.com/lizongying/nolang/builtin"
 	"github.com/lizongying/nolang/lexer"
-	"github.com/lizongying/nolang/mod"
+	"github.com/lizongying/nolang/package"
 	"github.com/lizongying/nolang/parser"
 )
 
@@ -388,14 +388,8 @@ func ValidateEmbedAnnotations(program *parser.Program, sourcePath string) []Vali
 		if embedPath != "" {
 			resolvedPath := embedPath
 			if !filepath.IsAbs(embedPath) {
-				pkgRoot := ""
-				if sourcePath != "" {
-					pkgRoot = findPackageRootFromFile(sourcePath)
-				}
-				if pkgRoot == "" {
-					pkgRoot = filepath.Dir(sourcePath)
-				}
-				resolvedPath = filepath.Join(pkgRoot, embedPath)
+				// 一律相對於工作區根目錄解析，退路為包根/源碼目錄（相容無 workspace 專案）
+				resolvedPath = filepath.Join(pkg.ResolveEmbedBase(sourcePath), embedPath)
 			}
 			if _, err := os.Stat(resolvedPath); err != nil {
 				results = append(results, ValidateResult{
@@ -1177,7 +1171,7 @@ func ValidateUndefinedVars(program *parser.Program, rootDir string) []ValidateRe
 	//     These include FFI declarations (#c), functions, and constants from
 	//     imported files like `# /sqlite-driver/sqlite`.
 	if rootDir != "" {
-		pkg, _ := mod.LoadPackage(rootDir)
+		pkg, _ := pkg.LoadPackage(rootDir)
 		for _, stmt := range program.Statements {
 			use, ok := stmt.(*parser.UseStatement)
 			if !ok {
@@ -1832,7 +1826,7 @@ func ValidateDependencyImports(program *parser.Program, rootDir string) []Valida
 	if rootDir == "" {
 		return nil
 	}
-	pkg, _ := mod.LoadPackage(rootDir)
+	pkg, _ := pkg.LoadPackage(rootDir)
 	if pkg == nil || len(pkg.Dependencies) == 0 {
 		return nil
 	}
@@ -1854,7 +1848,7 @@ func ValidateDependencyImports(program *parser.Program, rootDir string) []Valida
 			results = append(results, ValidateResult{
 				Line:    us.Token.Line,
 				Column:  us.Token.Column,
-				Message: fmt.Sprintf("dependency not found: %q is not declared in mod.jsonc dependencies", path),
+				Message: fmt.Sprintf("dependency not found: %q is not declared in package.jsonc dependencies", path),
 			})
 		}
 	}
@@ -1902,7 +1896,7 @@ func ValidateExportSymbols(program *parser.Program, docPath string) []ValidateRe
 			continue
 		}
 
-		l := lexer.New(string(source))
+		l := lexer.NewCached(modFile, string(source))
 		p := parser.New(l)
 		modProg := p.ParseProgram()
 		if len(p.Errors()) > 0 {
@@ -2686,7 +2680,7 @@ func resolveModulePath(moduleName string) string {
 	//    - "hmac"   → FullPath: "hash/hmac" → std/hash/hmac.no
 	for _, info := range knownStdModules() {
 		if info.ShortPath == moduleName || info.FullPath == moduleName || info.ShortName == moduleName {
-			stdFile := mod.GetStdSourceFile(info.FullPath)
+			stdFile := pkg.GetStdSourceFile(info.FullPath)
 			if _, err := os.Stat(stdFile); err == nil {
 				return stdFile
 			}
@@ -2694,7 +2688,7 @@ func resolveModulePath(moduleName string) string {
 	}
 
 	// 2. Try direct path via GetStdSourceDir (respects NOLANG_STD_SRC env var)
-	stdFile := mod.GetStdSourceFile(moduleName)
+	stdFile := pkg.GetStdSourceFile(moduleName)
 	if _, err := os.Stat(stdFile); err == nil {
 		return stdFile
 	}
@@ -3518,7 +3512,7 @@ func CollectStdModuleSignatures() (map[string][]string, map[string]map[string]st
 			if err != nil {
 				continue
 			}
-			l := lexer.New(string(source))
+			l := lexer.NewCached(embedPath, string(source))
 			p := parser.New(l)
 			prog := p.ParseProgram()
 			if len(p.Errors()) > 0 {
@@ -4469,7 +4463,7 @@ func matchesTargetPlatform(platformKeys []string, goos, goarch string) bool {
 	if goos == "" || goarch == "" {
 		return true // 未設定目標平台，接受所有（向後相容）
 	}
-	targetKey := mod.PlatformKeyFor(goos, goarch)
+	targetKey := pkg.PlatformKeyFor(goos, goarch)
 	if targetKey == "" {
 		return true // 不支援的平台，接受所有
 	}
@@ -4749,7 +4743,7 @@ func intTypeBits(t string) int {
 func findPackageRootFromFile(filePath string) string {
 	dir := filepath.Dir(filePath)
 	for {
-		cfgFile := filepath.Join(dir, "mod.jsonc")
+		cfgFile := filepath.Join(dir, "package.jsonc")
 		if _, err := os.Stat(cfgFile); err == nil {
 			return dir
 		}

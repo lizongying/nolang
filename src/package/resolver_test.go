@@ -1,4 +1,4 @@
-package mod
+package pkg
 
 import (
 	"os"
@@ -298,19 +298,19 @@ func TestEnsureDependenciesEmptyDeps(t *testing.T) {
 func TestHasNolangConfig(t *testing.T) {
 	tmpDir := t.TempDir()
 
-	// 沒有 mod.jsonc
+	// 沒有 package.jsonc
 	if hasNolangConfig(tmpDir) {
-		t.Error("expected false for dir without mod.jsonc")
+		t.Error("expected false for dir without package.jsonc")
 	}
 
-	// 建立 mod.jsonc
-	cfgPath := filepath.Join(tmpDir, "mod.jsonc")
+	// 建立 package.jsonc
+	cfgPath := filepath.Join(tmpDir, "package.jsonc")
 	if err := os.WriteFile(cfgPath, []byte(`{}`), 0644); err != nil {
 		t.Fatal(err)
 	}
 
 	if !hasNolangConfig(tmpDir) {
-		t.Error("expected true for dir with mod.jsonc")
+		t.Error("expected true for dir with package.jsonc")
 	}
 }
 
@@ -323,19 +323,19 @@ func TestFindPackageRootForDep(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// 在 pkgDir 中建立 mod.jsonc
-	cfgPath := filepath.Join(pkgDir, "mod.jsonc")
+	// 在 pkgDir 中建立 package.jsonc
+	cfgPath := filepath.Join(pkgDir, "package.jsonc")
 	if err := os.WriteFile(cfgPath, []byte(`{"name":"test-pkg"}`), 0644); err != nil {
 		t.Fatal(err)
 	}
 
-	// findPackageRootForDep 應該返回 pkgDir 因為它包含 mod.jsonc
+	// findPackageRootForDep 應該返回 pkgDir 因為它包含 package.jsonc
 	result := findPackageRootForDep("github.com/user/test-pkg", "v1.0.0", pkgDir)
 	if result != pkgDir {
 		t.Errorf("expected %q, got %q", pkgDir, result)
 	}
 
-	// 如果 pkgDir 中沒有 mod.jsonc，應該返回 pkgDir 本身
+	// 如果 pkgDir 中沒有 package.jsonc，應該返回 pkgDir 本身
 	os.Remove(cfgPath)
 	result2 := findPackageRootForDep("github.com/user/test-pkg", "v1.0.0", pkgDir)
 	if result2 == "" {

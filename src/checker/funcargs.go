@@ -13,7 +13,7 @@ import (
 	"sync"
 
 	"github.com/lizongying/nolang/lexer"
-	"github.com/lizongying/nolang/mod"
+	"github.com/lizongying/nolang/package"
 	"github.com/lizongying/nolang/parser"
 )
 
@@ -86,7 +86,7 @@ func ValidateFuncArgs(program *parser.Program, rootDir string) []ValidateResult 
 	// 2. Collect imported function signatures from UseStatements
 	//    by parsing the referenced module files (when rootDir is available)
 	if rootDir != "" {
-		pkg, _ := mod.LoadPackage(rootDir)
+		pkg, _ := pkg.LoadPackage(rootDir)
 		for _, stmt := range program.Statements {
 			use, ok := stmt.(*parser.UseStatement)
 			if !ok || use.Function == "" {
@@ -149,7 +149,7 @@ func ValidateFuncArgs(program *parser.Program, rootDir string) []ValidateResult 
 
 // resolveUseModule resolves a UseStatement to its module program.
 // It handles local paths (/path), std paths, and dependency paths (domain/...).
-func resolveUseModule(use *parser.UseStatement, pkg *mod.Package) *parser.Program {
+func resolveUseModule(use *parser.UseStatement, pkg *pkg.Package) *parser.Program {
 	path := use.Path
 	var prog *parser.Program
 	var filePath string
@@ -227,7 +227,7 @@ func parseProgramFile(filePath string) *parser.Program {
 	if err != nil {
 		return nil
 	}
-	l := lexer.New(string(source))
+	l := lexer.NewCached(filePath, string(source))
 	p := parser.New(l)
 	prog := p.ParseProgram()
 	if len(p.Errors()) > 0 {
@@ -904,7 +904,7 @@ func filterByExports(prog *parser.Program, libPath string) *parser.Program {
 	if err != nil {
 		return prog
 	}
-	l := lexer.New(string(libSource))
+	l := lexer.NewCached(libPath, string(libSource))
 	p := parser.New(l)
 	libProg := p.ParseProgram()
 	if len(p.Errors()) > 0 {

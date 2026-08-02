@@ -26,8 +26,8 @@ sudo mv nolang /usr/local/bin/no
 | 命令                                                         | 說明                    |
 | ------------------------------------------------------------ | ----------------------- |
 | `no version`                                                 | 打印版本信息            |
-| `no init`                                                    | 定義工作區（生成 workspace.jsonc，不含 mod.jsonc） |
-| `no new <name>`                                              | 在工作區內新建包（子目錄 + mod.jsonc，並註冊到 workspace.jsonc） |
+| `no init`                                                    | 定義工作區（生成 workspace.jsonc，不含 package.jsonc） |
+| `no new <name>`                                              | 在工作區內新建包（子目錄 + package.jsonc，並註冊到 workspace.jsonc） |
 | `no fmt [-w] [-d] <file\|dir>`                               | 格式化源代碼            |
 | `no build [-o <file>] [-cc <s>] [-target <s>] [<file\|dir>]` | 構建（輸出 executable） |
 | `no run [-cc <s>] [-target <s>] [<package\|dir\|file>]`        | 構建並執行（包名/目錄/文件） |
@@ -44,10 +44,10 @@ sudo mv nolang /usr/local/bin/no
 
 ## 快速開始
 
-Nolang 采用**單倉（項目）多包**架構：倉庫根目錄是工作區（只有 `workspace.jsonc`），每個包是一個子目錄（有自己的 `mod.jsonc`）。`no init` 與 `no new` 是兩件獨立的事：
+Nolang 采用**單倉（項目）多包**架構：倉庫根目錄是工作區（只有 `workspace.jsonc`），每個包是一個子目錄（有自己的 `package.jsonc`）。`no init` 與 `no new` 是兩件獨立的事：
 
 - `no init` —— 在當前目錄定義工作區（只生成 `workspace.jsonc`）。
-- `no new <name>` —— 在當前工作區下新建一個包（生成子目錄 `./<name>/` 及其 `mod.jsonc`），並把該包註冊進 `workspace.jsonc`。
+- `no new <name>` —— 在當前工作區下新建一個包（生成子目錄 `./<name>/` 及其 `package.jsonc`），並把該包註冊進 `workspace.jsonc`。
 
 ### 初始化工作區並新建包
 
@@ -91,7 +91,7 @@ no new baz
 no init
 ```
 
-`no init` 只生成 `workspace.jsonc`（初始為空 `{}`），**不會生成 `mod.jsonc` 或 `main.no`**。若 `workspace.jsonc` 已存在則不會被覆蓋。包需要通過 `no new <name>` 創建。
+`no init` 只生成 `workspace.jsonc`（初始為空 `{}`），**不會生成 `package.jsonc` 或 `main.no`**。若 `workspace.jsonc` 已存在則不會被覆蓋。包需要通過 `no new <name>` 創建。
 
 ### 構建與運行
 
@@ -335,7 +335,7 @@ no uninstall pkg-name
 
 ## 項目配置
 
-項目根目錄下的 `mod.jsonc` 文件描述項目信息：
+項目根目錄下的 `package.jsonc` 文件描述項目信息：
 
 ```jsonc
 {
@@ -386,7 +386,7 @@ no sync
 
 ### 鏡像配置
 
-在 `mod.jsonc` 的 `mirrors` 數組中配置鏡像地址，用於加速遠端包下載：
+在 `package.jsonc` 的 `mirrors` 數組中配置鏡像地址，用於加速遠端包下載：
 
 ```jsonc
 "mirrors": [
@@ -405,7 +405,7 @@ no sync
 }
 ```
 
-`no init` 負責定義工作區：若 `workspace.jsonc` 不存在則生成一個空對象 `{}`，**不生成任何 `mod.jsonc`**；已存在時則保持不變，不會被覆蓋。隨後用 `no new <name>` 創建包時，會自動把 `"<name>": "./<name>"` 註冊進 `workspace.jsonc`。
+`no init` 負責定義工作區：若 `workspace.jsonc` 不存在則生成一個空對象 `{}`，**不生成任何 `package.jsonc`**；已存在時則保持不變，不會被覆蓋。隨後用 `no new <name>` 創建包時，會自動把 `"<name>": "./<name>"` 註冊進 `workspace.jsonc`。
 
 #### 工作區流程
 
@@ -413,19 +413,19 @@ no sync
 
 1. 用戶在工作區目錄中執行 `no build` 或 `no run <包名>`
 2. 編譯器讀取 `workspace.jsonc`，按包名查找對應的子目錄路徑
-3. 載入該子目錄中的 `mod.jsonc`（即包根目錄），以包根目錄為基準進行構建/運行
-4. 所有導入路徑（`use /path/to/module`）**相對於包的 `mod.jsonc` 所在目錄解析**
+3. 載入該子目錄中的 `package.jsonc`（即包根目錄），以包根目錄為基準進行構建/運行
+4. 所有導入路徑（`use /path/to/module`）**相對於工作區根目錄解析**（見[路徑解析約定](path-resolution.md)），即以 `workspace.jsonc` 所在目錄為唯一基準，不再依賴導入方所在的包。
 
 ```
 workspace/               ← 工作區目錄（workspace.jsonc 所在此處）
 ├── workspace.jsonc      ← 包名 → 路徑映射
 ├── foo/                 ← 包 foo
-│   ├── mod.jsonc        ← foo 的包根目錄
+│   ├── package.jsonc        ← foo 的包根目錄
 │   ├── main.no
 │   └── lib.no
 └── bar/                 ← 包 bar
-    ├── mod.jsonc        ← bar 的包根目錄
+    ├── package.jsonc        ← bar 的包根目錄
     └── main.no
 ```
 
-> **注意**：導入路徑以包自身的 `mod.jsonc` 所在目錄為準，而非工作區根目錄。包子目錄中若存在嵌套的 `mod.jsonc`，`LoadPackage` 會向上搜索找到最近的 `mod.jsonc` 並將其作為包根目錄。
+> **注意**：導入路徑以**工作區根目錄**（`workspace.jsonc` 所在目錄）為準，而非包的 `package.jsonc` 目錄。包子目錄中若存在嵌套的 `package.jsonc`，`LoadPackage` 會向上搜索找到最近的 `package.jsonc` 並將其作為包根目錄，但導入解析統一以工作區根為基準。
