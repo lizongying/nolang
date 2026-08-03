@@ -130,6 +130,7 @@ runs:
           mkdir -p "$RUNNER_TEMP/zig"
           tar -xf /tmp/zig.tar.xz -C "$RUNNER_TEMP/zig" --strip-components=1
           echo "$RUNNER_TEMP/zig" >> "$GITHUB_PATH"
+          export PATH="$RUNNER_TEMP/zig:$PATH"
           zig version
         fi
 

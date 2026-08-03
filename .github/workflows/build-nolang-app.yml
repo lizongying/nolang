@@ -5,14 +5,12 @@ name: Build Nolang App
 #   2. cross-compiles the project for multiple platforms (via build-nolang)
 #   3. on a tag push, publishes the binaries as release assets
 #
-# Copy/adapt this file into any Nolang project. Change `entry` to your
-# project's directory or main.no, and adjust `targets` / `name` as needed.
+# This workflow is a TEMPLATE for other Nolang projects — copy/adapt this file
+# into your own repo. The nolang project itself does not need to run it
+# (it builds the compiler directly via build.yml).
+# To test locally: trigger manually via "Actions" tab → "Run workflow".
 
 on:
-  push:
-    branches: [main]
-    tags: ["v*"]
-  pull_request:
   workflow_dispatch:
 
 permissions:
