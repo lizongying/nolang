@@ -3370,6 +3370,13 @@ func (g *Generator) genForwardFunc(sb *strings.Builder, forwardFunc string, expr
 		recvName := ident.Value
 		recvAddr := g.varAddr(recvName)
 
+		// If the receiver is an output parameter, mark it as initialized.
+		// Without this, emitRetInitZeroFill at function end would overwrite
+		// the pushed data with zeroinitializer (clobbering the result).
+		if g.outputParamNames != nil && g.outputParamNames[recvName] {
+			g.emitSetRetInitBit(sb, recvName)
+		}
+
 		// Get element type and size
 		elemType := "i64"
 		if g.arrayElemTypes != nil {
