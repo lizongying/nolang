@@ -3,9 +3,13 @@
 A reusable GitHub Action (composite) that **downloads a nolang release** and
 **cross-compiles a Nolang project for multiple target platforms** in one job.
 
-It chains [`setup-nolang`](../setup-nolang/README.md) (which fetches the `no`
-binary + std source), installs the required toolchain (LLVM `opt`/`llc` and/or
-Zig), then runs `no build -cc zig -target <triple>` for every requested target.
+It is **self-contained** — the `no` compiler download + std source fetch logic
+is inlined directly (no dependency on a local `setup-nolang` action), so it works
+both in-repo (`./.github/actions/build-nolang`) and cross-repo
+(`owner/repo/.github/actions/build-nolang@ref`).
+
+The standalone [`setup-nolang`](../setup-nolang/README.md) action is still
+available for workflows that only need the compiler without the build step.
 
 > **Requirements:** the job that uses this action must run on **`ubuntu-latest`**
 > (the toolchain install step uses `apt`/`sudo` for LLVM, and Zig cross-compiles
@@ -59,19 +63,34 @@ Zig), then runs `no build -cc zig -target <triple>` for every requested target.
 
 ## Outputs
 
-| Output      | Description |
-|-------------|-------------|
-| `output-dir`| Directory containing the built binaries. |
-| `binaries`  | Newline-separated list of built binary paths. |
-| `failed`    | Newline-separated list of target tokens that failed. |
+| Output             | Description |
+|--------------------|-------------|
+| `output-dir`       | Directory containing the built binaries. |
+| `binaries`         | Newline-separated list of built binary paths. |
+| `failed`           | Newline-separated list of target tokens that failed. |
+| `nolang-version`   | Resolved nolang version without the leading `v`. |
 
 ## Usage
+
+### Cross-repo (from another repository)
+
+```yaml
+- uses: lizongying/nolang/.github/actions/build-nolang@main
+  with:
+    version: "0.2.5"
+    entry: notools/main.no
+    name: notools
+    targets: linux/amd64,linux/arm64,darwin/amd64,darwin/arm64,windows/amd64,windows/arm64
+    cc: zig
+```
+
+### In-repo (local action)
 
 ```yaml
 - uses: ./.github/actions/build-nolang
   with:
     version: latest
-    entry: example/test1      # your project dir or main.no
+    entry: example/test1
     name: myapp
     targets: linux/amd64,linux/arm64,darwin/arm64,wasm32/wasi,js
     cc: zig

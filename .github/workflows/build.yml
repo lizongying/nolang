@@ -120,7 +120,7 @@ jobs:
           asset_content_type: application/octet-stream
 
   wasm-smoke:
-    if: github.event_name == 'pull_request' || (github.event_name == 'push' && !startsWith(github.ref, 'refs/tags/'))
+    if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
 
     steps:
