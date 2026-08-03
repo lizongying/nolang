@@ -237,6 +237,65 @@ func prefixMethodNames(stmts []parser.Statement, typeOwner map[string]string, lo
 	}
 }
 
+// cExternNames is the set of C library function names declared as LLVM
+// `declare` in decl.go's writeDeclarations(). These names occupy the global
+// LLVM symbol table; if a Nolang module-level function has the same bare name,
+// LLVM IR will have both `declare ... @name` and `define ... @name`, causing
+// "invalid redefinition" errors.
+//
+// We treat these as if they were main-program functions (owner = "") for
+// collision purposes: any module function whose bare name appears in this set
+// gets a module prefix (e.g. `connect` → `ws.connect`), while the C extern
+// declaration keeps its bare name.
+var cExternNames = map[string]bool{
+	// POSIX socket / network
+	"socket": true, "setsockopt": true, "bind": true, "listen": true,
+	"accept": true, "connect": true, "send": true, "recv": true,
+	"sendto": true, "recvfrom": true, "inet_pton": true,
+	"getaddrinfo": true, "freeaddrinfo": true,
+	"WSAStartup": true, "WSACleanup": true,
+	// memory / string
+	"malloc": true, "free": true, "realloc": true,
+	// env / process
+	"getenv": true, "setenv": true, "exit": true, "getpid": true,
+	"gethostname": true, "system": true,
+	"fork": true, "execlp": true, "pipe": true, "waitpid": true,
+	"dup2": true, "kill": true, "getppid": true,
+	// file / directory
+	"open": true, "read": true, "write": true, "close": true,
+	"fopen": true, "fgets": true, "fclose": true,
+	"getcwd": true, "chdir": true,
+	"mkdir": true, "chmod": true, "chown": true,
+	"getuid": true, "getgid": true, "geteuid": true, "getegid": true,
+	"getgroups": true, "unlink": true, "rename": true,
+	"stat": true, "lstat": true,
+	"symlink": true, "link": true,
+	"opendir": true, "readdir": true, "closedir": true,
+	"rmdir": true, "mknod": true, "truncate": true,
+	"sync": true, "utimes": true, "utimensat": true,
+	"realpath": true, "readlink": true,
+	"mkstemp": true, "mkdtemp": true, "mkfifo": true,
+	"flock": true, "setsid": true,
+	"setpriority": true, "getpriority": true,
+	"getlogin": true, "gethostid": true,
+	"getdomainname": true, "syslog": true,
+	"uname": true, "sysconf": true, "ttyname": true, "signal": true,
+	"sysctlbyname": true,
+	// time
+	"gettimeofday": true, "usleep": true, "nanosleep": true,
+	"clock_gettime": true,
+	// errno
+	"__error": true, "_errno": true, "__errno_location": true,
+	// Windows variants
+	"_getcwd": true, "_chdir": true, "_mkdir": true, "_chmod": true,
+	"_unlink": true, "_stat64": true, "_open": true,
+	"_read": true, "_write": true, "_close": true,
+	"_dup2": true, "_execlp": true, "_pipe": true, "_cwait": true,
+	"FindFirstFileA": true, "FindNextFileA": true, "FindClose": true,
+	// misc
+	"sincos": true,
+}
+
 // prefixCollidingFunctions renames module-level top-level functions whose
 // bare name collides with another module's (or the main program's) top-level
 // function, giving them a module prefix: `connect` → `proxy.connect`.
@@ -246,11 +305,17 @@ func prefixMethodNames(stmts []parser.Statement, typeOwner map[string]string, lo
 // resolveModuleCalls 將 `proxy.connect()` 改寫為裸名 `connect()` 後，codegen
 // 按名查找會解析到錯誤的定義（如 http2 的 connect），生成型別錯誤的 IR。
 //
+// 此外，C extern 函數（decl.go 中的 declare @connect 等）也佔用 LLVM 全局
+// 符號表。若模組函數與 C extern 同名，LLVM IR 會同時有 declare 和 define，
+// 引發 "invalid redefinition" 錯誤。cExternNames 記錄所有 C extern 名稱，
+// 視同主程序函數參與衝突計數，使衝突的模組函數被改名為 module.fn。
+//
 // 設計原則（與型別的 typeOwner 機制對稱，但只處理衝突名）：
 //   - 唯一的裸名保持不變 —— codegen 內部按裸名合成大量 std 呼叫
 //     （@fmt-int、@fmt-str 等），全量加前綴會破壞這些內建通道。
 //   - 主程序函數永不改名（stmtOwner 無記錄 → owner 為空），只有模組側的
 //     衝突定義改為 module.fn。主程序與模組同名時，模組側讓位。
+//   - C extern 名稱也視同主程序佔位（owner = ""），模組側讓位。
 //   - 改名後的呼叫方式與方法一致：扁平帶點 Identifier（"proxy.connect"），
 //     codegen 原生支援帶點函數名。
 //
@@ -269,6 +334,11 @@ func prefixCollidingFunctions(merged *parser.Program, stmtOwner map[parser.State
 	}
 	var defs []fnDef
 	counts := make(map[string]int)
+	// C extern 名稱視同主程序佔位：模組函數與 C extern 同名時衝突計數 > 1，
+	// 模組側被改名為 module.fn，C extern 的 declare 保持裸名不動。
+	for name := range cExternNames {
+		counts[name]++
+	}
 	for _, stmt := range merged.Statements {
 		switch s := stmt.(type) {
 		case *parser.FunctionDefinition:
