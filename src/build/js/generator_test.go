@@ -262,7 +262,7 @@ func TestJSGeneratorBuiltinPrint(t *testing.T) {
 	for _, want := range []string{
 		"console.log(\"hello\");",
 		"console.error(\"error\");",
-		"console.log(\"len:\", (arr).length);",
+		"console.log(\"len:\", arr.length);",
 		"let arr = [1, 2, 3];",
 	} {
 		if !strings.Contains(out, want) {
@@ -500,7 +500,7 @@ func TestJSGeneratorAsyncFunction(t *testing.T) {
 		"}\n"
 	out := generateJSWithEnv(t, source, "node") // async works in both modes
 	t.Logf("generated JS:\n%s", out)
-	if !strings.Contains(out, "async function fetch-data-async") {
+	if !strings.Contains(out, "async function fetchDataAsync") {
 		t.Errorf("function ending with -async should generate 'async function'; got:\n%s", out)
 	}
 }

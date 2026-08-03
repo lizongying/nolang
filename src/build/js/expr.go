@@ -7,11 +7,45 @@ import (
 	"github.com/lizongying/nolang/parser"
 )
 
-// jsIdent converts a Nolang identifier to a valid JS identifier.
+// jsIdent converts a Nolang identifier to a valid JS identifier in camelCase.
 // Nolang allows hyphens in identifiers (e.g. my-var, WS-CONN); JS does not.
-// Hyphens are replaced with underscores (e.g. my_var, WS_CONN).
+// Hyphens and underscores are treated as word separators and converted to
+// camelCase: first word lowercased, subsequent words capitalized.
+// Single-word identifiers (no separators) preserve their original case
+// (e.g. Point stays Point, sidebar stays sidebar).
+// Leading underscores are preserved (e.g. __i → __i).
 func jsIdent(name string) string {
-	return strings.ReplaceAll(name, "-", "_")
+	s := strings.ReplaceAll(name, "-", "_")
+	// Single word (no underscores): preserve original case.
+	if !strings.Contains(s, "_") {
+		return s
+	}
+	parts := strings.Split(s, "_")
+	var result strings.Builder
+	firstWord := true
+	for _, part := range parts {
+		if part == "" {
+			// Preserve leading/consecutive underscores
+			result.WriteString("_")
+			continue
+		}
+		if firstWord {
+			result.WriteString(strings.ToLower(part))
+			firstWord = false
+		} else {
+			result.WriteString(strings.ToUpper(part[:1]) + strings.ToLower(part[1:]))
+		}
+	}
+	return result.String()
+}
+
+// maybeParen wraps s in parentheses unless expr is a simple identifier,
+// in which case the parentheses are unnecessary.
+func maybeParen(s string, expr parser.Expression) string {
+	if _, ok := expr.(*parser.Identifier); ok {
+		return s
+	}
+	return "(" + s + ")"
 }
 
 // generateExpression dispatches an expression to its JS codegen handler.
@@ -208,7 +242,7 @@ func (g *Generator) generateBrowserMethodCall(de *parser.DotExpression, args []p
 	if de == nil {
 		return "", false
 	}
-	receiver := g.generateExpression(de.Receiver)
+	receiver := maybeParen(g.generateExpression(de.Receiver), de.Receiver)
 	argStrs := make([]string, 0, len(args))
 	for _, a := range args {
 		argStrs = append(argStrs, g.generateExpression(a))
@@ -219,23 +253,23 @@ func (g *Generator) generateBrowserMethodCall(de *parser.DotExpression, args []p
 	// DOM element methods
 	case "set-text":
 		if len(argStrs) >= 1 {
-			return "(" + receiver + ").textContent = " + argStrs[0], true
+			return receiver + ".textContent = " + argStrs[0], true
 		}
 	case "get-text":
-		return "(" + receiver + ").textContent", true
+		return receiver + ".textContent", true
 	case "set-html":
 		if len(argStrs) >= 1 {
-			return "(" + receiver + ").innerHTML = " + argStrs[0], true
+			return receiver + ".innerHTML = " + argStrs[0], true
 		}
 	case "append-child":
 		if len(argStrs) >= 1 {
-			return "(" + receiver + ").appendChild(" + argStrs[0] + ")", true
+			return receiver + ".appendChild(" + argStrs[0] + ")", true
 		}
 	case "remove":
-		return "(" + receiver + ").remove()", true
+		return receiver + ".remove()", true
 	case "set-style":
 		if len(argStrs) >= 2 {
-			return "(" + receiver + ").style[" + argStrs[0] + "] = " + argStrs[1], true
+			return receiver + ".style[" + argStrs[0] + "] = " + argStrs[1], true
 		}
 	case "get-style":
 		if len(argStrs) >= 1 {
@@ -243,59 +277,59 @@ func (g *Generator) generateBrowserMethodCall(de *parser.DotExpression, args []p
 		}
 	case "set-attr":
 		if len(argStrs) >= 2 {
-			return "(" + receiver + ").setAttribute(" + argStrs[0] + ", " + argStrs[1] + ")", true
+			return receiver + ".setAttribute(" + argStrs[0] + ", " + argStrs[1] + ")", true
 		}
 	case "get-attr":
 		if len(argStrs) >= 1 {
-			return "(" + receiver + ").getAttribute(" + argStrs[0] + ")", true
+			return receiver + ".getAttribute(" + argStrs[0] + ")", true
 		}
 	case "add-event-listener":
 		if len(argStrs) >= 2 {
-			return "(" + receiver + ").addEventListener(" + argStrs[0] + ", " + argStrs[1] + ")", true
+			return receiver + ".addEventListener(" + argStrs[0] + ", " + argStrs[1] + ")", true
 		}
 	case "remove-event-listener":
 		if len(argStrs) >= 2 {
-			return "(" + receiver + ").removeEventListener(" + argStrs[0] + ", " + argStrs[1] + ")", true
+			return receiver + ".removeEventListener(" + argStrs[0] + ", " + argStrs[1] + ")", true
 		}
 
 	// String methods (on variables — Nolang uses method syntax, JS uses different names)
 	case "index":
 		if len(argStrs) >= 1 {
-			return "(" + receiver + ").indexOf(" + argStrs[0] + ")", true
+			return receiver + ".indexOf(" + argStrs[0] + ")", true
 		}
 	case "last-index":
 		if len(argStrs) >= 1 {
-			return "(" + receiver + ").lastIndexOf(" + argStrs[0] + ")", true
+			return receiver + ".lastIndexOf(" + argStrs[0] + ")", true
 		}
 	case "to-lower":
-		return "(" + receiver + ").toLowerCase()", true
+		return receiver + ".toLowerCase()", true
 	case "to-upper":
-		return "(" + receiver + ").toUpperCase()", true
+		return receiver + ".toUpperCase()", true
 	case "trim":
-		return "(" + receiver + ").trim()", true
+		return receiver + ".trim()", true
 	case "contains":
 		if len(argStrs) >= 1 {
-			return "(" + receiver + ").includes(" + argStrs[0] + ")", true
+			return receiver + ".includes(" + argStrs[0] + ")", true
 		}
 	case "starts-with":
 		if len(argStrs) >= 1 {
-			return "(" + receiver + ").startsWith(" + argStrs[0] + ")", true
+			return receiver + ".startsWith(" + argStrs[0] + ")", true
 		}
 	case "ends-with":
 		if len(argStrs) >= 1 {
-			return "(" + receiver + ").endsWith(" + argStrs[0] + ")", true
+			return receiver + ".endsWith(" + argStrs[0] + ")", true
 		}
 	case "replace":
 		if len(argStrs) >= 2 {
-			return "(" + receiver + ").replaceAll(" + argStrs[0] + ", " + argStrs[1] + ")", true
+			return receiver + ".replaceAll(" + argStrs[0] + ", " + argStrs[1] + ")", true
 		}
 	case "split":
 		if len(argStrs) >= 1 {
-			return "(" + receiver + ").split(" + argStrs[0] + ")", true
+			return receiver + ".split(" + argStrs[0] + ")", true
 		}
 	case "char-at":
 		if len(argStrs) >= 1 {
-			return "(" + receiver + ").charCodeAt(" + argStrs[0] + ")", true
+			return receiver + ".charCodeAt(" + argStrs[0] + ")", true
 		}
 	case "char-to-str":
 		if len(argStrs) >= 1 {
@@ -303,14 +337,14 @@ func (g *Generator) generateBrowserMethodCall(de *parser.DotExpression, args []p
 		}
 	case "slice":
 		if len(argStrs) >= 2 {
-			return "(" + receiver + ").slice(" + argStrs[0] + ", " + argStrs[1] + ")", true
+			return receiver + ".slice(" + argStrs[0] + ", " + argStrs[1] + ")", true
 		}
 		if len(argStrs) >= 1 {
-			return "(" + receiver + ").slice(" + argStrs[0] + ")", true
+			return receiver + ".slice(" + argStrs[0] + ")", true
 		}
 	case "repeat":
 		if len(argStrs) >= 1 {
-			return "(" + receiver + ").repeat(" + argStrs[0] + ")", true
+			return receiver + ".repeat(" + argStrs[0] + ")", true
 		}
 
 	// Type conversion methods
@@ -325,102 +359,102 @@ func (g *Generator) generateBrowserMethodCall(de *parser.DotExpression, args []p
 
 	// Canvas context methods
 	case "fill-rect":
-		return "(" + receiver + ").fillRect(" + joinedArgs + ")", true
+		return receiver + ".fillRect(" + joinedArgs + ")", true
 	case "clear-rect":
-		return "(" + receiver + ").clearRect(" + joinedArgs + ")", true
+		return receiver + ".clearRect(" + joinedArgs + ")", true
 	case "set-fill":
 		if len(argStrs) >= 1 {
-			return "(" + receiver + ").fillStyle = " + argStrs[0], true
+			return receiver + ".fillStyle = " + argStrs[0], true
 		}
 	case "set-stroke":
 		if len(argStrs) >= 1 {
-			return "(" + receiver + ").strokeStyle = " + argStrs[0], true
+			return receiver + ".strokeStyle = " + argStrs[0], true
 		}
 	case "begin-path":
-		return "(" + receiver + ").beginPath()", true
+		return receiver + ".beginPath()", true
 	case "move-to":
-		return "(" + receiver + ").moveTo(" + joinedArgs + ")", true
+		return receiver + ".moveTo(" + joinedArgs + ")", true
 	case "line-to":
-		return "(" + receiver + ").lineTo(" + joinedArgs + ")", true
+		return receiver + ".lineTo(" + joinedArgs + ")", true
 	case "stroke":
-		return "(" + receiver + ").stroke()", true
+		return receiver + ".stroke()", true
 	case "fill":
-		return "(" + receiver + ").fill()", true
+		return receiver + ".fill()", true
 	case "arc":
-		return "(" + receiver + ").arc(" + joinedArgs + ")", true
+		return receiver + ".arc(" + joinedArgs + ")", true
 
 	// CSS class methods
 	case "set-class":
 		if len(argStrs) >= 1 {
-			return "(" + receiver + ").className = " + argStrs[0], true
+			return receiver + ".className = " + argStrs[0], true
 		}
 	case "add-class":
 		if len(argStrs) >= 1 {
-			return "(" + receiver + ").classList.add(" + argStrs[0] + ")", true
+			return receiver + ".classList.add(" + argStrs[0] + ")", true
 		}
 	case "remove-class":
 		if len(argStrs) >= 1 {
-			return "(" + receiver + ").classList.remove(" + argStrs[0] + ")", true
+			return receiver + ".classList.remove(" + argStrs[0] + ")", true
 		}
 	case "toggle-class":
 		if len(argStrs) >= 1 {
-			return "(" + receiver + ").classList.toggle(" + argStrs[0] + ")", true
+			return receiver + ".classList.toggle(" + argStrs[0] + ")", true
 		}
 
 	// Element properties
 	case "set-id":
 		if len(argStrs) >= 1 {
-			return "(" + receiver + ").id = " + argStrs[0], true
+			return receiver + ".id = " + argStrs[0], true
 		}
 	case "set-value":
 		if len(argStrs) >= 1 {
-			return "(" + receiver + ").value = " + argStrs[0], true
+			return receiver + ".value = " + argStrs[0], true
 		}
 	case "get-value":
-		return "(" + receiver + ").value", true
+		return receiver + ".value", true
 	case "set-placeholder":
 		if len(argStrs) >= 1 {
-			return "(" + receiver + ").placeholder = " + argStrs[0], true
+			return receiver + ".placeholder = " + argStrs[0], true
 		}
 	case "get-parent":
-		return "(" + receiver + ").parentNode", true
+		return receiver + ".parentNode", true
 	case "focus":
-		return "(" + receiver + ").focus()", true
+		return receiver + ".focus()", true
 	case "blur":
-		return "(" + receiver + ").blur()", true
+		return receiver + ".blur()", true
 
 	// Scrolling
 	case "scroll-to-bottom":
-		return "(" + receiver + ").scrollTop = (" + receiver + ").scrollHeight", true
+		return receiver + ".scrollTop = " + receiver + ".scrollHeight", true
 	case "get-scroll-height":
-		return "(" + receiver + ").scrollHeight", true
+		return receiver + ".scrollHeight", true
 	case "get-scroll-top":
-		return "(" + receiver + ").scrollTop", true
+		return receiver + ".scrollTop", true
 	case "set-scroll-top":
 		if len(argStrs) >= 1 {
-			return "(" + receiver + ").scrollTop = " + argStrs[0], true
+			return receiver + ".scrollTop = " + argStrs[0], true
 		}
 
 	// DOM manipulation
 	case "prepend":
 		if len(argStrs) >= 1 {
-			return "(" + receiver + ").prepend(" + argStrs[0] + ")", true
+			return receiver + ".prepend(" + argStrs[0] + ")", true
 		}
 	case "replace-with":
 		if len(argStrs) >= 1 {
-			return "(" + receiver + ").replaceWith(" + argStrs[0] + ")", true
+			return receiver + ".replaceWith(" + argStrs[0] + ")", true
 		}
 	case "insert-before":
 		if len(argStrs) >= 2 {
-			return "(" + receiver + ").insertBefore(" + argStrs[0] + ", " + argStrs[1] + ")", true
+			return receiver + ".insertBefore(" + argStrs[0] + ", " + argStrs[1] + ")", true
 		}
 	case "remove-all-children":
-		return "(" + receiver + ").innerHTML = ''", true
+		return receiver + ".innerHTML = ''", true
 	case "get-children":
-		return "(" + receiver + ").children", true
+		return receiver + ".children", true
 	case "contains-child":
 		if len(argStrs) >= 1 {
-			return "(" + receiver + ").contains(" + argStrs[0] + ")", true
+			return receiver + ".contains(" + argStrs[0] + ")", true
 		}
 	}
 	return "", false
@@ -636,7 +670,7 @@ func mapKeyToJS(e parser.Expression) string {
 	case *parser.StringLiteral:
 		return "\"" + escapeJSString(k.Value) + "\""
 	case *parser.Identifier:
-		return k.Value
+		return jsIdent(k.Value)
 	default:
 		return ""
 	}

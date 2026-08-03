@@ -56,7 +56,7 @@ func (g *Generator) generateBuiltinCall(ce *parser.CallExpression) (string, bool
 		// v1 limitation: (arg).length works for strings and arrays.
 		// For Map, JS uses .size (not .length). This is a known limitation.
 		if len(args) == 1 {
-			return "(" + g.generateExpression(args[0]) + ").length", true
+			return maybeParen(g.generateExpression(args[0]), args[0]) + ".length", true
 		}
 		return "", false
 
@@ -99,6 +99,13 @@ func (g *Generator) generateModuleCall(de *parser.DotExpression, args []parser.E
 		argStrs = append(argStrs, g.generateExpression(a))
 	}
 	joinedArgs := strings.Join(argStrs, ", ")
+
+	// recv0 is argStrs[0] with conditional parentheses for use as a method receiver.
+	// Simple identifiers don't need parentheses; complex expressions do.
+	recv0 := ""
+	if len(args) >= 1 {
+		recv0 = maybeParen(argStrs[0], args[0])
+	}
 
 	switch module {
 	case "math":
@@ -162,62 +169,62 @@ func (g *Generator) generateModuleCall(de *parser.DotExpression, args []parser.E
 		switch method {
 		case "upper", "to-upper":
 			if len(args) == 1 {
-				return "(" + argStrs[0] + ").toUpperCase()", true
+				return recv0 + ".toUpperCase()", true
 			}
 		case "lower", "to-lower":
 			if len(args) == 1 {
-				return "(" + argStrs[0] + ").toLowerCase()", true
+				return recv0 + ".toLowerCase()", true
 			}
 		case "trim":
 			if len(args) == 1 {
-				return "(" + argStrs[0] + ").trim()", true
+				return recv0 + ".trim()", true
 			}
 		case "split":
 			if len(args) == 2 {
-				return "(" + argStrs[0] + ").split(" + argStrs[1] + ")", true
+				return recv0 + ".split(" + argStrs[1] + ")", true
 			}
 		case "contains":
 			if len(args) == 2 {
-				return "(" + argStrs[0] + ").includes(" + argStrs[1] + ")", true
+				return recv0 + ".includes(" + argStrs[1] + ")", true
 			}
 		case "reverse":
 			if len(args) == 1 {
-				return "(" + argStrs[0] + ").split('').reverse().join('')", true
+				return recv0 + ".split('').reverse().join('')", true
 			}
 		case "repeat":
 			if len(args) == 2 {
-				return "(" + argStrs[0] + ").repeat(" + argStrs[1] + ")", true
+				return recv0 + ".repeat(" + argStrs[1] + ")", true
 			}
 		case "starts-with":
 			if len(args) == 2 {
-				return "(" + argStrs[0] + ").startsWith(" + argStrs[1] + ")", true
+				return recv0 + ".startsWith(" + argStrs[1] + ")", true
 			}
 		case "ends-with":
 			if len(args) == 2 {
-				return "(" + argStrs[0] + ").endsWith(" + argStrs[1] + ")", true
+				return recv0 + ".endsWith(" + argStrs[1] + ")", true
 			}
 		case "index":
 			if len(args) == 2 {
-				return "(" + argStrs[0] + ").indexOf(" + argStrs[1] + ")", true
+				return recv0 + ".indexOf(" + argStrs[1] + ")", true
 			}
 		case "last-index":
 			if len(args) == 2 {
-				return "(" + argStrs[0] + ").lastIndexOf(" + argStrs[1] + ")", true
+				return recv0 + ".lastIndexOf(" + argStrs[1] + ")", true
 			}
 		case "replace":
 			if len(args) == 3 {
-				return "(" + argStrs[0] + ").replaceAll(" + argStrs[1] + ", " + argStrs[2] + ")", true
+				return recv0 + ".replaceAll(" + argStrs[1] + ", " + argStrs[2] + ")", true
 			}
 		case "slice":
 			if len(args) == 3 {
-				return "(" + argStrs[0] + ").slice(" + argStrs[1] + ", " + argStrs[2] + ")", true
+				return recv0 + ".slice(" + argStrs[1] + ", " + argStrs[2] + ")", true
 			}
 			if len(args) == 2 {
-				return "(" + argStrs[0] + ").slice(" + argStrs[1] + ")", true
+				return recv0 + ".slice(" + argStrs[1] + ")", true
 			}
 		case "char-at":
 			if len(args) == 2 {
-				return "(" + argStrs[0] + ").charCodeAt(" + argStrs[1] + ")", true
+				return recv0 + ".charCodeAt(" + argStrs[1] + ")", true
 			}
 		case "char-to-str":
 			if len(args) == 2 {
@@ -225,7 +232,7 @@ func (g *Generator) generateModuleCall(de *parser.DotExpression, args []parser.E
 			}
 		case "empty":
 			if len(args) == 1 {
-				return "(" + argStrs[0] + ").length === 0", true
+				return recv0 + ".length === 0", true
 			}
 		}
 		return "", false
@@ -235,31 +242,31 @@ func (g *Generator) generateModuleCall(de *parser.DotExpression, args []parser.E
 		switch method {
 		case "len":
 			if len(args) == 1 {
-				return "(" + argStrs[0] + ").length", true
+				return recv0 + ".length", true
 			}
 		case "push":
 			if len(args) == 2 {
-				return "(" + argStrs[0] + ").push(" + argStrs[1] + ")", true
+				return recv0 + ".push(" + argStrs[1] + ")", true
 			}
 		case "pop":
 			if len(args) == 1 {
-				return "(" + argStrs[0] + ").pop()", true
+				return recv0 + ".pop()", true
 			}
 		case "contains":
 			if len(args) == 2 {
-				return "(" + argStrs[0] + ").includes(" + argStrs[1] + ")", true
+				return recv0 + ".includes(" + argStrs[1] + ")", true
 			}
 		case "reverse":
 			if len(args) == 1 {
-				return "(" + argStrs[0] + ").reverse()", true
+				return recv0 + ".reverse()", true
 			}
 		case "clone":
 			if len(args) == 1 {
-				return "(" + argStrs[0] + ").slice()", true
+				return recv0 + ".slice()", true
 			}
 		case "clear":
 			if len(args) == 1 {
-				return "(" + argStrs[0] + ").length = 0", true
+				return recv0 + ".length = 0", true
 			}
 		}
 		return "", false
@@ -327,7 +334,7 @@ func (g *Generator) generateModuleCall(de *parser.DotExpression, args []parser.E
 		switch method {
 		case "on-click":
 			if len(args) >= 2 {
-				return "(" + argStrs[0] + ").addEventListener('click', " + argStrs[1] + ")", true
+				return recv0 + ".addEventListener('click', " + argStrs[1] + ")", true
 			}
 		case "on-load":
 			if len(args) >= 1 {
@@ -340,15 +347,15 @@ func (g *Generator) generateModuleCall(de *parser.DotExpression, args []parser.E
 		switch method {
 		case "get-context-2d":
 			if len(args) >= 1 {
-				return "(" + argStrs[0] + ").getContext('2d')", true
+				return recv0 + ".getContext('2d')", true
 			}
 		case "get-width":
 			if len(args) >= 1 {
-				return "(" + argStrs[0] + ").width", true
+				return recv0 + ".width", true
 			}
 		case "get-height":
 			if len(args) >= 1 {
-				return "(" + argStrs[0] + ").height", true
+				return recv0 + ".height", true
 			}
 		}
 		return "", false
@@ -446,35 +453,35 @@ func (g *Generator) generateModuleCall(de *parser.DotExpression, args []parser.E
 			}
 		case "on-open":
 			if len(args) >= 2 {
-				return "(" + argStrs[0] + ").onopen = " + argStrs[1], true
+				return recv0 + ".onopen = " + argStrs[1], true
 			}
 		case "on-message":
 			if len(args) >= 2 {
-				return "(" + argStrs[0] + ").onmessage = function(e) { (" + argStrs[1] + ")(e.data); }", true
+				return recv0 + ".onmessage = function(e) { (" + argStrs[1] + ")(e.data); }", true
 			}
 		case "on-close":
 			if len(args) >= 2 {
-				return "(" + argStrs[0] + ").onclose = " + argStrs[1], true
+				return recv0 + ".onclose = " + argStrs[1], true
 			}
 		case "on-error":
 			if len(args) >= 2 {
-				return "(" + argStrs[0] + ").onerror = " + argStrs[1], true
+				return recv0 + ".onerror = " + argStrs[1], true
 			}
 		case "send":
 			if len(args) >= 2 {
-				return "(" + argStrs[0] + ").send(" + argStrs[1] + ")", true
+				return recv0 + ".send(" + argStrs[1] + ")", true
 			}
 		case "send-json":
 			if len(args) >= 2 {
-				return "(" + argStrs[0] + ").send(JSON.stringify(" + argStrs[1] + "))", true
+				return recv0 + ".send(JSON.stringify(" + argStrs[1] + "))", true
 			}
 		case "close":
 			if len(args) >= 1 {
-				return "(" + argStrs[0] + ").close()", true
+				return recv0 + ".close()", true
 			}
 		case "ready-state":
 			if len(args) >= 1 {
-				return "(" + argStrs[0] + ").readyState", true
+				return recv0 + ".readyState", true
 			}
 		}
 		return "", false
@@ -533,19 +540,19 @@ func (g *Generator) generateModuleCall(de *parser.DotExpression, args []parser.E
 			}
 		case "get-value":
 			if len(args) >= 1 {
-				return "(" + argStrs[0] + ").getValue()", true
+				return recv0 + ".getValue()", true
 			}
 		case "set-value":
 			if len(args) >= 2 {
-				return "(" + argStrs[0] + ").setValue(" + argStrs[1] + ")", true
+				return recv0 + ".setValue(" + argStrs[1] + ")", true
 			}
 		case "on-change":
 			if len(args) >= 2 {
-				return "(" + argStrs[0] + ").onDidChangeModelContent(" + argStrs[1] + ")", true
+				return recv0 + ".onDidChangeModelContent(" + argStrs[1] + ")", true
 			}
 		case "set-language":
 			if len(args) >= 2 {
-				return "monaco.editor.setModelLanguage((" + argStrs[0] + ").getModel(), " + argStrs[1] + ")", true
+				return "monaco.editor.setModelLanguage(" + recv0 + ".getModel(), " + argStrs[1] + ")", true
 			}
 		case "create-model":
 			if len(args) >= 2 {
@@ -553,11 +560,11 @@ func (g *Generator) generateModuleCall(de *parser.DotExpression, args []parser.E
 			}
 		case "set-model":
 			if len(args) >= 2 {
-				return "(" + argStrs[0] + ").setModel(" + argStrs[1] + ")", true
+				return recv0 + ".setModel(" + argStrs[1] + ")", true
 			}
 		case "dispose":
 			if len(args) >= 1 {
-				return "(" + argStrs[0] + ").dispose()", true
+				return recv0 + ".dispose()", true
 			}
 		case "define-theme":
 			if len(args) >= 2 {
@@ -569,15 +576,15 @@ func (g *Generator) generateModuleCall(de *parser.DotExpression, args []parser.E
 			}
 		case "get-model":
 			if len(args) >= 1 {
-				return "(" + argStrs[0] + ").getModel()", true
+				return recv0 + ".getModel()", true
 			}
 		case "set-readonly":
 			if len(args) >= 2 {
-				return "(" + argStrs[0] + ").updateOptions({ readOnly: " + argStrs[1] + " })", true
+				return recv0 + ".updateOptions({ readOnly: " + argStrs[1] + " })", true
 			}
 		case "layout":
 			if len(args) >= 1 {
-				return "(" + argStrs[0] + ").layout()", true
+				return recv0 + ".layout()", true
 			}
 		}
 		return "", false

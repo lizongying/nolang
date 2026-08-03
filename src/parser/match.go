@@ -270,8 +270,14 @@ func (p *Parser) parseBareMatchExpr() Expression {
 			// 不在 CTX_MATCH_ARM 下解析 body 語句（與大括號臂體一致）：
 			// 臂邊界由 isArmStart() 判定；否則 body 內 standalone if-then 的 `->`
 			// 會截斷語句並被誤判為新臂，導致整個 match 解析失敗（見 expr.go 同步註釋）。
+			//
+			// 對 wildcard 臂（->），isArmStart() 的 scanForArrowAtDepth0 會將
+			// body 內的 standalone if-then（如 `pos >= 0 -> { ... }`）誤判為新臂，
+			// 導致 body 被截斷、match 解析失敗。wildcard 語義上是 catch-all，
+			// 必為最後一個臂，因此跳過 isArmStart() 檢查，直接解析到 }。
+			checkArmStart := !ma.isWildcard
 			for p.currentToken.Type != lexer.RBRACE && p.currentToken.Type != lexer.EOF &&
-				!p.isArmStart() {
+				(!checkArmStart || !p.isArmStart()) {
 				if p.currentToken.Type == lexer.NEWLINE {
 					p.nextToken()
 					continue

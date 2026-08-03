@@ -280,7 +280,7 @@ func (g *Generator) generateMethod(fd *parser.FunctionDefinition) {
 	savedResults := g.currentResults
 	g.currentResults = fd.Results
 	for _, r := range fd.Results {
-		g.writeLine("let " + r.Name + ";")
+		g.writeLine("let " + jsIdent(r.Name) + ";")
 		if g.declaredVars != nil {
 			g.declaredVars[r.Name] = true
 		}
@@ -341,7 +341,7 @@ func (g *Generator) generateFunctionDefinition(fd *parser.FunctionDefinition) {
 	savedResults := g.currentResults
 	g.currentResults = fd.Results
 	for _, r := range fd.Results {
-		g.writeLine("let " + r.Name + ";")
+		g.writeLine("let " + jsIdent(r.Name) + ";")
 		if g.declaredVars != nil {
 			g.declaredVars[r.Name] = true
 		}
@@ -451,7 +451,7 @@ func (g *Generator) generateForStatement(fs *parser.ForStatement) {
 // generateForIterRange handles range/iteration for-loops (IterRange != nil).
 func (g *Generator) generateForIterRange(fs *parser.ForStatement) {
 	ir := fs.IterRange
-	varName := ir.Variable
+	varName := jsIdent(ir.Variable)
 
 	// Numeric range: [a..b], (a..b], [a..b), (a..b)
 	if ir.Range != nil {
@@ -559,9 +559,9 @@ func (g *Generator) generateStmtInline(stmt parser.Statement) string {
 			return ""
 		}
 		if s.Value == nil {
-			return "let " + s.Name.Value
+			return "let " + jsIdent(s.Name.Value)
 		}
-		return "let " + s.Name.Value + " = " + g.generateExpression(s.Value)
+		return "let " + jsIdent(s.Name.Value) + " = " + g.generateExpression(s.Value)
 	case *parser.ExpressionStatement:
 		// AssignExpression and other expressions are wrapped in ExpressionStatement.
 		return g.generateExpression(s.Expression)

@@ -1055,8 +1055,14 @@ func (p *Parser) parseMatchExprFrom(matched Expression) Expression {
 			// `r.code != 200 -> { ... }`）會在 `->` 前截斷，殘留的 `->` 被誤判
 			// 為新 wildcard 臂，最終整個 match 解析失敗並 fallback 成 while 迴圈
 			//（丟失 it 綁定與 nil/err 分派，引發 codegen 類型污染崩潰）。
+			//
+			// 對 wildcard 臂（->），isArmStart() 的 scanForArrowAtDepth0 會將
+			// body 內的 standalone if-then（如 `pos >= 0 -> { ... }`）誤判為新臂，
+			// 導致 body 被截斷、match 解析失敗。wildcard 語義上是 catch-all，
+			// 必為最後一個臂，因此跳過 isArmStart() 檢查，直接解析到 }。
+			checkArmStart := !ma.isWildcard
 			for p.currentToken.Type != lexer.RBRACE && p.currentToken.Type != lexer.EOF &&
-				!p.isArmStart() {
+				(!checkArmStart || !p.isArmStart()) {
 				// Skip NEWLINE
 				if p.currentToken.Type == lexer.NEWLINE {
 					p.nextToken()
