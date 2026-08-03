@@ -1522,6 +1522,16 @@ func (g *Generator) Generate(program *parser.Program) string {
 				}
 				sb.WriteString(fmt.Sprintf("%s = global %s %s\n", llvmGlobalRef(name), toLLVMType(llvmType), zeroVal))
 				g.globalVars[name] = true
+			} else if g.isIntegerLLVMType(llvmType) && llvmType != "i32" && llvmType != "i64" && ls.Value != nil {
+				// Non-i32/non-i64 integer module-level variable with initial value
+				// (e.g. `h0 u32 = 0`, `flag u8 = 1`). Emit as global so functions
+				// can reference it via @name. Without this, the variable would be
+				// treated as a local alloca in each function, causing undefined
+				// value errors when accessed from a different function.
+				if v, ok := intConstValue(ls.Value); ok {
+					sb.WriteString(fmt.Sprintf("%s = global %s %d\n", llvmGlobalRef(name), toLLVMType(llvmType), v))
+					g.globalVars[name] = true
+				}
 			} else if llvmType == "i64" && ls.Value != nil {
 				if v, ok := intConstValue(ls.Value); ok {
 					initVal := fmt.Sprintf("%d", v)

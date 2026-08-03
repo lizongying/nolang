@@ -2693,7 +2693,7 @@ func (g *Generator) generateMainFunction(sb *strings.Builder, program *parser.Pr
 			if g.funcRefVars != nil && g.funcRefVars[name] {
 				continue
 			}
-			if varType == "" || !g.isStructLLVMType(varType) && varType != "i64" && varType != "double" && varType != "i1" && varType != "i8" && varType != "i32" {
+			if varType == "" || (!g.isStructLLVMType(varType) && !g.isIntegerLLVMType(varType) && varType != "double" && varType != "i1") {
 				// Skip complex types that need special allocation (handled by generateLet)
 				continue
 			}
@@ -6791,6 +6791,11 @@ if !alreadyCoerced && g.isIntegerLLVMType(llvmType) && llvmType != "i64" && stri
 		// declared as `out [16]byte`). val is a raw LLVM array value (e.g.,
 		// [16 x i8] %call.tmp.N from voidSingleOutput). Store it into the
 		// %arr struct's data buffer via bitcast.
+		//
+		// IMPORTANT: freeOldHeapValue may have already freed the old data buffer.
+		// We must allocate a NEW buffer via malloc rather than reusing the old
+		// (potentially freed) data pointer. Using the freed pointer causes
+		// use-after-free, manifesting as trace/BPT trap on macOS.
 		if val == "0" || val == "" {
 			sb.WriteString(fmt.Sprintf("%sstore %%arr zeroinitializer, %%arr* %s\n", g.indent(), storeAddr))
 		} else {
@@ -6803,15 +6808,28 @@ if !alreadyCoerced && g.isIntegerLLVMType(llvmType) && llvmType != "i64" && stri
 				llvmElemType = et
 			}
 			rawArrType := fmt.Sprintf("[%d x %s]", arraySize, toLLVMType(llvmElemType))
-			// Get data pointer from %arr struct (field 1)
+			// Allocate new data buffer (old was freed by freeOldHeapValue if it existed)
+			elemSize := g.llvmTypeSize(llvmElemType)
+			if elemSize == 0 {
+				elemSize = 8
+			}
+			totalSize := arraySize * elemSize
+			dataMallocReg := g.tmpReg("arr.let.data.malloc")
+			sb.WriteString(fmt.Sprintf("%s%s = call i8* @nolang.malloc(i64 %d)\n", g.indent(), dataMallocReg, totalSize))
+			// Store new data pointer in %arr struct (field 1)
 			dataGEP := g.tmpReg("arr.let.data.gep")
-			dataLoad := g.tmpReg("arr.let.data")
-			dataCast := g.tmpReg("arr.let.cast")
 			sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%arr, %%arr* %s, i32 0, i32 1\n",
 				g.indent(), dataGEP, storeAddr))
-			dataLoad = g.loadDataPtrField(sb, dataGEP)
+			g.storeDataPtrField(sb, dataMallocReg, dataGEP)
+			// Store len field (field 0)
+			lenGEP := g.tmpReg("arr.let.len.gep")
+			sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%arr, %%arr* %s, i32 0, i32 0\n",
+				g.indent(), lenGEP, storeAddr))
+			sb.WriteString(fmt.Sprintf("%sstore i64 %d, i64* %s\n", g.indent(), arraySize, lenGEP))
+			// Bitcast and store the value into the new data buffer
+			dataCast := g.tmpReg("arr.let.cast")
 			sb.WriteString(fmt.Sprintf("%s%s = bitcast i8* %s to %s*\n",
-				g.indent(), dataCast, dataLoad, rawArrType))
+				g.indent(), dataCast, dataMallocReg, rawArrType))
 			sb.WriteString(fmt.Sprintf("%sstore %s %s, %s* %s\n",
 				g.indent(), rawArrType, val, rawArrType, dataCast))
 		}
