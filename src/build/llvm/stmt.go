@@ -1,9 +1,10 @@
 package llvm
 
 import (
-"fmt"
-"sort"
-"strings"
+	"fmt"
+	"os"
+	"sort"
+	"strings"
 
 	"github.com/lizongying/nolang/builtin"
 	"github.com/lizongying/nolang/parser"
@@ -2041,7 +2042,7 @@ func (g *Generator) initVecFieldFromSliceLiteral(sb *strings.Builder, structVar,
 	g.tmpIdx++
 	tid := g.tmpIdx
 	tmpArr := fmt.Sprintf("%%st.slice.tmp.%d", tid)
-	arrType := fmt.Sprintf("[%d x %s]", n, elemType)
+	arrType := fmt.Sprintf("[%d x %s]", n, toLLVMType(elemType))
 	elemSize := g.llvmTypeSize(elemType)
 	if elemSize == 0 {
 		elemSize = 8
@@ -2061,7 +2062,7 @@ func (g *Generator) initVecFieldFromSliceLiteral(sb *strings.Builder, structVar,
 		gepReg := g.tmpReg("st.slice.gep")
 		sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %s, %s* %s, i32 0, i32 %d\n",
 			g.indent(), gepReg, arrType, arrType, arrPtrReg, i))
-		sb.WriteString(fmt.Sprintf("%sstore %s %s, %s* %s\n", g.indent(), elemType, ev, elemType, gepReg))
+		sb.WriteString(fmt.Sprintf("%sstore %s %s, %s* %s\n", g.indent(), toLLVMType(elemType), ev, toLLVMType(elemType), gepReg))
 	}
 
 	// data 指針即 malloc 返回的 i8*
@@ -2851,6 +2852,9 @@ func (g *Generator) builtinStructReturnType(m *builtin.BuiltinMethod) string {
 }
 
 func (g *Generator) varLLVMType(stmt *parser.LetStatement) string {
+	if os.Getenv("NOLANG_DEBUG_VARTYPE") != "" && stmt.Name != nil && strings.Contains(stmt.Name.Value, "packet-str") {
+		fmt.Fprintf(os.Stderr, "[DBG-VARTYPE] varLLVMType called for %s, Type=%v, Value=%T\n", stmt.Name.Value, stmt.Type, stmt.Value)
+	}
 	// 單具體型別別名解析：若顯式型別為已註冊的具體型別別名，用底層 Type 遞迴解析
 	// 使 ArrayType/SliceType 等特殊路徑也能正確套用到底層型別
 	if nt, ok := stmt.Type.(*parser.NamedType); ok && g.concreteTypeAliases != nil {
@@ -3108,6 +3112,12 @@ func (g *Generator) varLLVMType(stmt *parser.LetStatement) string {
 		}
 		return "i64"
 	case *parser.CallExpression:
+		if os.Getenv("NOLANG_DEBUG_VARTYPE") != "" {
+			fmt.Fprintf(os.Stderr, "[DBG-VARTYPE] CallExpression: Function=%T\n", v.Function)
+			if stmt.Name != nil && strings.Contains(stmt.Name.Value, "packet-str") {
+				fmt.Fprintf(os.Stderr, "[DBG-VARTYPE] packet-str func name=%v\n", v.Function)
+			}
+		}
 		// -async 函数调用返回 %future（惰性，未执行）
 		if g.isAsyncCall(v) {
 			if _, _, resultType := g.resolveAsyncCallInfo(v); resultType != "" {
@@ -3117,8 +3127,21 @@ func (g *Generator) varLLVMType(stmt *parser.LetStatement) string {
 			}
 			return "%future"
 		}
+		if os.Getenv("NOLANG_DEBUG_VARTYPE") != "" && stmt.Name != nil && strings.Contains(stmt.Name.Value, "packet-str") {
+			fmt.Fprintf(os.Stderr, "[DBG-VARTYPE] before ident check, v.Function type=%T\n", v.Function)
+		}
 		if ident, ok := v.Function.(*parser.Identifier); ok {
 			name := ident.Value
+			if os.Getenv("NOLANG_DEBUG_VARTYPE") != "" && stmt.Name != nil && strings.Contains(stmt.Name.Value, "packet-str") {
+				fmt.Fprintf(os.Stderr, "[DBG-VARTYPE] ident name=%q funcRetTypes[%s]=%v\n", name, name, g.funcRetTypes[name])
+				if g.funcResultLLVMType != nil {
+					if ts, ok := g.funcResultLLVMType[name]; ok {
+						fmt.Fprintf(os.Stderr, "[DBG-VARTYPE] funcResultLLVMType[%s]=%v\n", name, ts)
+					} else {
+						fmt.Fprintf(os.Stderr, "[DBG-VARTYPE] no funcResultLLVMType for %s\n", name)
+					}
+				}
+			}
 			// FFI extern 函式：依 extern 宣告的 result 型別推斷 Nolang 儲存型別。
 			// callExtern 會將 str 構造為 %str-long、ptr/pptr/ppptr/i32/bool 轉為 i64、f64 保持 double。
 			if g.externFuncs != nil {
@@ -3278,8 +3301,29 @@ func (g *Generator) varLLVMType(stmt *parser.LetStatement) string {
 				recvExpr = ge.Expression
 			}
 			if recv, ok := recvExpr.(*parser.Identifier); ok {
+				if os.Getenv("NOLANG_DEBUG_VARTYPE") != "" && dot.Property == "to-str" {
+					recvType, hasType := g.varTypes[recv.Value]
+					fmt.Fprintf(os.Stderr, "[DBG-VARTYPE] recv=%s hasType=%v recvType=%s\n", recv.Value, hasType, recvType)
+				}
 				if recvType, ok := g.varTypes[recv.Value]; ok {
 					srcType := strings.TrimPrefix(recvType, "%")
+					if os.Getenv("NOLANG_DEBUG_VARTYPE") != "" && dot.Property == "to-str" {
+						fmt.Fprintf(os.Stderr, "[DBG-VARTYPE] recv=%s recvType=%s srcType=%s elemTypes=%v\n", recv.Value, recvType, srcType, g.arrayElemTypes != nil)
+						if g.arrayElemTypes != nil {
+							if et, ok := g.arrayElemTypes[recv.Value]; ok {
+								fmt.Fprintf(os.Stderr, "[DBG-VARTYPE] elemType=%s llvmTypeToNolang=%v\n", et, llvmTypeToNolang[et])
+							} else {
+								fmt.Fprintf(os.Stderr, "[DBG-VARTYPE] no arrayElemTypes for %s\n", recv.Value)
+							}
+						}
+						if g.funcRetTypes != nil {
+							for k, v := range g.funcRetTypes {
+								if strings.Contains(k, "byte") && strings.Contains(k, "to-str") {
+									fmt.Fprintf(os.Stderr, "[DBG-VARTYPE] funcRetTypes[%s]=%s\n", k, v)
+								}
+							}
+						}
+					}
 					candidates := []string{srcType}
 					// 基本型別可能對應多個 nolang 型別名稱（如 i32 → char, i32, u32）
 					if primAliases, ok := llvmTypeToNolang[srcType]; ok {
@@ -3322,10 +3366,13 @@ func (g *Generator) varLLVMType(stmt *parser.LetStatement) string {
 							}
 						}
 					}
-					for _, cand := range candidates {
-						shortName := cand + "." + dot.Property
+				for _, cand := range candidates {
+					shortName := cand + "." + dot.Property
+					// Try both the raw name and the sanitized name (e.g. []byte.to-str → _LB__RB_byte.to-str)
+					lookupNames := []string{shortName, sanitizeLLVMName(shortName)}
+					for _, ln := range lookupNames {
 						if g.funcRetTypes != nil {
-							if t, ok := g.funcRetTypes[shortName]; ok {
+							if t, ok := g.funcRetTypes[ln]; ok {
 								if t != "void" {
 									return t
 								}
@@ -3333,7 +3380,7 @@ func (g *Generator) varLLVMType(stmt *parser.LetStatement) string {
 								// 使用 funcResultLLVMType 中的輸出型別
 								// Nolang bools are stored as i64, not i1
 								if g.funcResultLLVMType != nil {
-									if ts, ok := g.funcResultLLVMType[shortName]; ok && len(ts) == 1 {
+									if ts, ok := g.funcResultLLVMType[ln]; ok && len(ts) == 1 {
 										retType := ts[0]
 										if retType == "i1" {
 											retType = "i64"
@@ -3343,22 +3390,46 @@ func (g *Generator) varLLVMType(stmt *parser.LetStatement) string {
 								}
 							}
 						}
-						// Also check build-in methods (e.g., str.eq, str.copy, i64.to-str)
-						if m := builtin.FindBuiltinMethod(shortName); m != nil {
-							if len(m.Return) > 0 {
-								return g.mapToLLVMType(m.Return[0].String())
+					}
+					// Also check build-in methods (e.g., str.eq, str.copy, i64.to-str)
+					if m := builtin.FindBuiltinMethod(shortName); m != nil {
+						if len(m.Return) > 0 {
+							return g.mapToLLVMType(m.Return[0].String())
+						}
+						// ForwardFunc builtins with empty Return: infer from ForwardFunc name
+						if m.ForwardFunc != "" {
+							switch m.ForwardFunc {
+							case "with-cap", "with-len", "with-cap-len":
+								return "%vec"
+							case "bool-to-str", "ffi-cstr-at":
+								return "%str-long"
 							}
-							// ForwardFunc builtins with empty Return: infer from ForwardFunc name
-							if m.ForwardFunc != "" {
-								switch m.ForwardFunc {
-								case "with-cap", "with-len", "with-cap-len":
-									return "%vec"
-								case "bool-to-str", "ffi-cstr-at":
-									return "%str-long"
+						}
+					}
+					// Fallback: try module-prefixed versions of the sanitized name.
+					// User-defined functions in imported modules may be registered with
+					// a module prefix (e.g. "byte._LB__RB_byte.to-str").
+					sanitizedSuffix := "." + sanitizeLLVMName(shortName)
+					if g.funcRetTypes != nil {
+						for fullName, rt := range g.funcRetTypes {
+							if !strings.HasSuffix(fullName, sanitizedSuffix) {
+								continue
+							}
+							if rt != "void" {
+								return rt
+							}
+							if g.funcResultLLVMType != nil {
+								if ts, ok := g.funcResultLLVMType[fullName]; ok && len(ts) == 1 {
+									retType := ts[0]
+									if retType == "i1" {
+										retType = "i64"
+									}
+									return retType
 								}
 							}
 						}
 					}
+				}
 					// Fallback: ReceiverGlobal builtins (sqrt, abs, ...) not prefixed by type;
 					// look up by method name alone. e.g. r2.sqrt() -> sqrt -> double.
 					if m := builtin.FindBuiltinMethod(dot.Property); m != nil && len(m.Return) > 0 {
@@ -6272,32 +6343,32 @@ func (g *Generator) generateLet(sb *strings.Builder, stmt *parser.LetStatement) 
 					// need to load the %str-long value before storing.
 					if _, isStrLit := f.Value.(*parser.StringLiteral); isStrLit || g.isStrPtrReg(fieldVal) {
 						loadReg := g.tmpReg("st.fload")
-						sb.WriteString(fmt.Sprintf("%s%s = load %s, %s* %s\n", g.indent(), loadReg, fieldType, fieldType, fieldVal))
-						sb.WriteString(fmt.Sprintf("%sstore %s %s, %s* %s\n", g.indent(), fieldType, loadReg, fieldType, gepReg))
+						sb.WriteString(fmt.Sprintf("%s%s = load %s, %s* %s\n", g.indent(), loadReg, toLLVMType(fieldType), toLLVMType(fieldType), fieldVal))
+						sb.WriteString(fmt.Sprintf("%sstore %s %s, %s* %s\n", g.indent(), toLLVMType(fieldType), loadReg, toLLVMType(fieldType), gepReg))
 					} else {
 						// 決定實際的 source str 型別
 						sourceStrType := g.inferSourceStrType(f.Value)
 						if sourceStrType == "" {
 							// 非 str 值，直接 store（已是 struct 值）
-							sb.WriteString(fmt.Sprintf("%sstore %s %s, %s* %s\n", g.indent(), fieldType, fieldVal, fieldType, gepReg))
+							sb.WriteString(fmt.Sprintf("%sstore %s %s, %s* %s\n", g.indent(), toLLVMType(fieldType), fieldVal, toLLVMType(fieldType), gepReg))
 						} else if sourceStrType == fieldType {
 							// 同型別，直接 store
-							sb.WriteString(fmt.Sprintf("%sstore %s %s, %s* %s\n", g.indent(), fieldType, fieldVal, fieldType, gepReg))
+							sb.WriteString(fmt.Sprintf("%sstore %s %s, %s* %s\n", g.indent(), toLLVMType(fieldType), fieldVal, toLLVMType(fieldType), gepReg))
 						} else {
 							// 不同型別：先取得 source 指標，轉換為目標型別的指標，再 load + store
 							sourcePtr := g.materializeStrPtr(sb, f.Value, sourceStrType, fieldVal)
 							convertedPtr := sourcePtr
 							loadReg := g.tmpReg("st.fload")
-							sb.WriteString(fmt.Sprintf("%s%s = load %s, %s* %s\n", g.indent(), loadReg, fieldType, fieldType, convertedPtr))
-							sb.WriteString(fmt.Sprintf("%sstore %s %s, %s* %s\n", g.indent(), fieldType, loadReg, fieldType, gepReg))
+							sb.WriteString(fmt.Sprintf("%s%s = load %s, %s* %s\n", g.indent(), loadReg, toLLVMType(fieldType), toLLVMType(fieldType), convertedPtr))
+							sb.WriteString(fmt.Sprintf("%sstore %s %s, %s* %s\n", g.indent(), toLLVMType(fieldType), loadReg, toLLVMType(fieldType), gepReg))
 						}
 					}
 				}
-			} else {
-				sb.WriteString(fmt.Sprintf("%sstore %s %s, %s* %s\n", g.indent(), fieldType, fieldVal, fieldType, gepReg))
-			}
+		} else {
+			sb.WriteString(fmt.Sprintf("%sstore %s %s, %s* %s\n", g.indent(), toLLVMType(fieldType), fieldVal, toLLVMType(fieldType), gepReg))
 		}
-		// 為未明確設定的 %vec 欄位分配 data 緩衝區
+	}
+	// 為未明確設定的 %vec 欄位分配 data 緩衝區
 		for i, f := range fields {
 			if setFields[i] {
 				continue
@@ -6436,22 +6507,22 @@ func (g *Generator) generateLet(sb *strings.Builder, stmt *parser.LetStatement) 
 		if arrLit, ok := stmt.Value.(*parser.ArrayLiteral); ok && len(arrLit.Elements) > 0 {
 			dataCast := g.tmpReg("arr.data.cast")
 			sb.WriteString(fmt.Sprintf("%s%s = bitcast i8* %s to %s*\n",
-				g.indent(), dataCast, dataReg, llvmElemType))
+				g.indent(), dataCast, dataReg, toLLVMType(llvmElemType)))
 
 			for i, elem := range arrLit.Elements {
 				ev := g.generateExprWithSB(sb, elem)
 				ev = g.stripLLVMType(ev)
 				elemGEP := g.tmpReg("arr.elem.gep")
 				sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %s, %s* %s, i64 %d\n",
-					g.indent(), elemGEP, llvmElemType, llvmElemType, dataCast, i))
+					g.indent(), elemGEP, toLLVMType(llvmElemType), toLLVMType(llvmElemType), dataCast, i))
 				sb.WriteString(fmt.Sprintf("%sstore %s %s, %s* %s\n",
-					g.indent(), llvmElemType, ev, llvmElemType, elemGEP))
+					g.indent(), toLLVMType(llvmElemType), ev, toLLVMType(llvmElemType), elemGEP))
 			}
 		} else if stmt.Value != nil {
 			// Non-ArrayLiteral value (e.g., function call returning [N]T):
 			// val holds the raw LLVM array value (e.g., [20 x i8] %call.tmp.N).
 			// Store it into the data buffer via bitcast to [N x T]*.
-			rawArrType := fmt.Sprintf("[%d x %s]", arraySize, llvmElemType)
+			rawArrType := fmt.Sprintf("[%d x %s]", arraySize, toLLVMType(llvmElemType))
 			dataCast := g.tmpReg("arr.data.cast")
 			sb.WriteString(fmt.Sprintf("%s%s = bitcast i8* %s to %s*\n",
 				g.indent(), dataCast, dataReg, rawArrType))

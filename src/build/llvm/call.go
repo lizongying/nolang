@@ -222,7 +222,7 @@ func (g *Generator) generateCallArg(sb *strings.Builder, arg parser.Expression) 
 		}
 		if strings.Contains(ev, ".gep.") || strings.Contains(ev, ".elem.") {
 			// GEP result is a pointer
-			return elemLLVMType + "* " + ev
+			return toLLVMType(elemLLVMType) + "* " + ev
 		}
 		// SSA value (e.g., %idx.zext.* for []byte, %arr.idx.val.* for []str)
 		// 需根據元素型別選擇正確的 alloca/store 型別
@@ -258,7 +258,7 @@ func (g *Generator) generateCallArg(sb *strings.Builder, arg parser.Expression) 
 			sb.WriteString(fmt.Sprintf("%s%s = alloca %s\n", g.indent(), tmpName, toLLVMType(elemLLVMType)))
 			sb.WriteString(fmt.Sprintf("%sstore %s %s, %s* %s\n", g.indent(), toLLVMType(elemLLVMType), storeVal, toLLVMType(elemLLVMType), tmpName))
 		}
-		return elemLLVMType + "* " + tmpName
+		return toLLVMType(elemLLVMType) + "* " + tmpName
 	case *parser.SliceExpression:
 		// 切片表達式回傳 %vec 或 %str-long（已分配在 stack 上）
 		ev := g.generateExprWithSB(sb, arg)
@@ -2308,9 +2308,9 @@ func (g *Generator) generateCallExpression(sb *strings.Builder, expr *parser.Cal
 			}
 			if strings.Contains(ev, ".gep.") || strings.Contains(ev, ".elem.") {
 				// GEP result is a pointer
-				return elemLLVMType + "* " + ev
-			}
-			// 若 SSA 值為 i64（如 zext 後的 byte/int32）但元素型別為 i8/i16/i32，需 trunc
+			return toLLVMType(elemLLVMType) + "* " + ev
+		}
+		// 若 SSA 值為 i64（如 zext 後的 byte/int32）但元素型別為 i8/i16/i32，需 trunc
 			storeVal := ev
 			if strings.HasPrefix(ev, "%") && g.isIntegerLLVMType(elemLLVMType) {
 				// generateIndexExpression always zexts narrow integer elements to i64,
@@ -2323,26 +2323,26 @@ func (g *Generator) generateCallExpression(sb *strings.Builder, expr *parser.Cal
 					if sb != nil {
 						if srcType == "i64" {
 							// i64 → smaller type: trunc
-							sb.WriteString(fmt.Sprintf("%s%s = trunc %s %s to %s\n", g.indent(), convReg, srcType, ev, elemLLVMType))
-						} else if elemLLVMType == "i64" {
+					sb.WriteString(fmt.Sprintf("%s%s = trunc %s %s to %s\n", g.indent(), convReg, srcType, ev, toLLVMType(elemLLVMType)))
+				} else if elemLLVMType == "i64" {
 							// smaller type → i64: zext
 							sb.WriteString(fmt.Sprintf("%s%s = zext %s %s to i64\n", g.indent(), convReg, srcType, ev))
 						} else {
 							// smaller → smaller (both non-i64): trunc to target
-							sb.WriteString(fmt.Sprintf("%s%s = trunc %s %s to %s\n", g.indent(), convReg, srcType, ev, elemLLVMType))
-						}
-					}
+					sb.WriteString(fmt.Sprintf("%s%s = trunc %s %s to %s\n", g.indent(), convReg, srcType, ev, toLLVMType(elemLLVMType)))
+				}
+				}
 					storeVal = convReg
 				}
 			}
 			g.tmpIdx++
 			tmpName := fmt.Sprintf("%%ref.tmp.%d", g.tmpIdx)
 			if sb != nil {
-				sb.WriteString(fmt.Sprintf("%s%s = alloca %s\n", g.indent(), tmpName, elemLLVMType))
-				sb.WriteString(fmt.Sprintf("%sstore %s %s, %s* %s\n", g.indent(), elemLLVMType, storeVal, elemLLVMType, tmpName))
-			}
-			return elemLLVMType + "* " + tmpName
-		case *parser.SliceExpression:
+			sb.WriteString(fmt.Sprintf("%s%s = alloca %s\n", g.indent(), tmpName, toLLVMType(elemLLVMType)))
+			sb.WriteString(fmt.Sprintf("%sstore %s %s, %s* %s\n", g.indent(), toLLVMType(elemLLVMType), storeVal, toLLVMType(elemLLVMType), tmpName))
+		}
+		return toLLVMType(elemLLVMType) + "* " + tmpName
+	case *parser.SliceExpression:
 			ev := g.generateExprWithSB(sb, arg)
 			ptrType := "%vec*"
 			if ident, ok := a.Left.(*parser.Identifier); ok {
@@ -2429,11 +2429,11 @@ func (g *Generator) generateCallExpression(sb *strings.Builder, expr *parser.Cal
 					sb.WriteString(fmt.Sprintf("%s%s = load %s, %s* %s\n", g.indent(), loadReg, toLLVMType(fieldType), toLLVMType(fieldType), fieldVal))
 					sb.WriteString(fmt.Sprintf("%sstore %s %s, %s* %s\n", g.indent(), toLLVMType(fieldType), loadReg, toLLVMType(fieldType), gepReg))
 						}
-					} else if sb != nil {
-						sb.WriteString(fmt.Sprintf("%sstore %s %s, %s* %s\n", g.indent(), fieldType, fieldVal, fieldType, gepReg))
-					}
 				} else if sb != nil {
-					sb.WriteString(fmt.Sprintf("%sstore %s %s, %s* %s\n", g.indent(), fieldType, fieldVal, fieldType, gepReg))
+					sb.WriteString(fmt.Sprintf("%sstore %s %s, %s* %s\n", g.indent(), toLLVMType(fieldType), fieldVal, toLLVMType(fieldType), gepReg))
+				}
+			} else if sb != nil {
+				sb.WriteString(fmt.Sprintf("%sstore %s %s, %s* %s\n", g.indent(), toLLVMType(fieldType), fieldVal, toLLVMType(fieldType), gepReg))
 				}
 			}
 			// 為未明確設定的 %vec 欄位分配 data 緩衝區
@@ -2495,17 +2495,17 @@ func (g *Generator) generateCallExpression(sb *strings.Builder, expr *parser.Cal
 			if n > 0 {
 				g.tmpIdx++
 				tmpArr := fmt.Sprintf("%%callvec.arr.%d", g.tmpIdx)
-				arrType := fmt.Sprintf("[%d x %s]", n, elemType)
-				if sb != nil {
-					sb.WriteString(fmt.Sprintf("%s%s = alloca %s\n", g.indent(), tmpArr, arrType))
-					for i, elem := range a.Elements {
-						ev := g.generateExprWithSB(sb, elem)
-						ev = g.stripLLVMType(ev)
-						g.tmpIdx++
-						gepReg := fmt.Sprintf("%%callvec.gep.%d", g.tmpIdx)
-						sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %s, %s* %s, i32 0, i32 %d\n",
-							g.indent(), gepReg, arrType, arrType, tmpArr, i))
-					storeVal := ev
+			arrType := fmt.Sprintf("[%d x %s]", n, toLLVMType(elemType))
+			if sb != nil {
+				sb.WriteString(fmt.Sprintf("%s%s = alloca %s\n", g.indent(), tmpArr, arrType))
+				for i, elem := range a.Elements {
+					ev := g.generateExprWithSB(sb, elem)
+					ev = g.stripLLVMType(ev)
+					g.tmpIdx++
+					gepReg := fmt.Sprintf("%%callvec.gep.%d", g.tmpIdx)
+					sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %s, %s* %s, i32 0, i32 %d\n",
+						g.indent(), gepReg, arrType, arrType, tmpArr, i))
+				storeVal := ev
 					if g.isStructLLVMType(elemType) {
 						// StringLiteral returns an alloca pointer; load the value.
 						if strings.HasPrefix(ev, "%str-longlit") {
@@ -2521,7 +2521,7 @@ func (g *Generator) generateCallExpression(sb *strings.Builder, expr *parser.Cal
 						storeVal = truncReg
 					}
 					sb.WriteString(fmt.Sprintf("%sstore %s %s, %s* %s\n", g.indent(), toLLVMType(elemType), storeVal, toLLVMType(elemType), gepReg))
-					}
+				}
 					g.tmpIdx++
 					ptrReg := fmt.Sprintf("%%callvec.ptr.%d", g.tmpIdx)
 					sb.WriteString(fmt.Sprintf("%s%s = bitcast %s* %s to i8*\n", g.indent(), ptrReg, arrType, tmpArr))
@@ -2606,11 +2606,11 @@ func (g *Generator) generateCallExpression(sb *strings.Builder, expr *parser.Cal
 										for _, f := range fields {
 											if f.name == dot.Property {
 												fieldType := f.typ
-												if fieldType != "i64" {
-													sb.WriteString(fmt.Sprintf("%s%s = alloca %s\n", g.indent(), tmpName, fieldType))
-													sb.WriteString(fmt.Sprintf("%sstore %s %s, %s* %s\n", g.indent(), fieldType, ev, fieldType, tmpName))
-													return fieldType + "* " + tmpName
-												}
+											if fieldType != "i64" {
+												sb.WriteString(fmt.Sprintf("%s%s = alloca %s\n", g.indent(), tmpName, toLLVMType(fieldType)))
+												sb.WriteString(fmt.Sprintf("%sstore %s %s, %s* %s\n", g.indent(), toLLVMType(fieldType), ev, toLLVMType(fieldType), tmpName))
+												return toLLVMType(fieldType) + "* " + tmpName
+											}
 												break
 											}
 										}
@@ -2685,7 +2685,7 @@ func (g *Generator) generateCallExpression(sb *strings.Builder, expr *parser.Cal
 		if n > 0 {
 			g.tmpIdx++
 			arrName := fmt.Sprintf("%%varr.%d", g.tmpIdx)
-			arrType := fmt.Sprintf("[%d x %s]", n, elemType)
+			arrType := fmt.Sprintf("[%d x %s]", n, toLLVMType(elemType))
 			if sb != nil {
 				sb.WriteString(fmt.Sprintf("%s%s = alloca %s\n", g.indent(), arrName, arrType))
 			}
@@ -2696,7 +2696,7 @@ func (g *Generator) generateCallExpression(sb *strings.Builder, expr *parser.Cal
 				if sb != nil {
 					sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %s, %s* %s, i32 0, i32 %d\n",
 						g.indent(), gepReg, arrType, arrType, arrName, i))
-					sb.WriteString(fmt.Sprintf("%sstore %s %s, %s* %s\n", g.indent(), elemType, ev, elemType, gepReg))
+					sb.WriteString(fmt.Sprintf("%sstore %s %s, %s* %s\n", g.indent(), toLLVMType(elemType), ev, toLLVMType(elemType), gepReg))
 				}
 			}
 			// Set len (field 0)
@@ -2711,7 +2711,7 @@ func (g *Generator) generateCallExpression(sb *strings.Builder, expr *parser.Cal
 				sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%vec, %%vec* %s, i32 0, i32 0\n", g.indent(), lenGEP, vecName))
 				sb.WriteString(fmt.Sprintf("%sstore i64 %d, i64* %s\n", g.indent(), n, lenGEP))
 				sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%vec, %%vec* %s, i32 0, i32 2\n", g.indent(), dataGEP, vecName))
-				sb.WriteString(fmt.Sprintf("%s%s = bitcast [%d x %s]* %s to i8*\n", g.indent(), dataCast, n, elemType, arrName))
+				sb.WriteString(fmt.Sprintf("%s%s = bitcast [%d x %s]* %s to i8*\n", g.indent(), dataCast, n, toLLVMType(elemType), arrName))
 				g.storeDataPtrField(sb, dataCast, dataGEP)
 			}
 		} else {

@@ -943,8 +943,13 @@ func stdModuleLookup() map[string]checker.StdModuleInfo {
 // AST 無顯式 module.fn() 的 std 模組，必須始終自動載入（靜態掃描無法捕捉）。
 //   - fmt：@fmt-int/@fmt-uint/@fmt-f64/@fmt-str/@fmt-bool 等（print/格式化內建）
 //   - io ：@out/@err（emitOutCall 直接發出的裸呼叫，對應 io.out/io.err）
+//   - byte：[]byte.to-str / []byte.to-hex 等類型方法經 transpiler 重寫為
+//     []byte.fn(receiver) 識別碼呼叫，collectReferencedStdModules 無法偵測
+//     （它只掃描 module.fn() DotExpression，不掃描 Type.method Identifier）。
+//     byte 模組體積小且 []byte 方法被廣泛使用（net/crypto/encoding 等），
+//     始終載入避免未定義函式呼叫。
 // 若未來 codegen 新增其他隱式 std 依賴，在此追加即可。
-var alwaysAutoLoadStd = []string{"fmt", "io"}
+var alwaysAutoLoadStd = []string{"fmt", "io", "byte"}
 
 // dotModulePath 從 DotExpression 提取模組路徑（如 array.map → "array"，
 // hash/sha256.sum → "hash/sha256"），與 checker.extractModulePathAndFunc 同義

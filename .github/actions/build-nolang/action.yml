@@ -1,0 +1,222 @@
+name: Build Nolang
+description: >-
+  Download a nolang release (via setup-nolang) and cross-compile a Nolang
+  project for one or more target platforms using `no build -cc zig -target
+  <triple>`. Produces one binary per target into the output directory.
+
+branding:
+  icon: package
+  color: green
+
+inputs:
+  version:
+    description: nolang release version ("latest" or explicit, e.g. "1.2.3").
+    required: false
+    default: latest
+  repo:
+    description: nolang release repo, e.g. "lizongying/nolang".
+    required: false
+    default: lizongying/nolang
+  token:
+    description: GitHub token for the releases API (defaults to job token).
+    required: false
+    default: ${{ github.token }}
+  entry:
+    description: >-
+      Entry point to build: a .no file or a directory containing main.no.
+    required: false
+    default: main.no
+  targets:
+    description: >-
+      Comma-separated list of platforms to build. Supported tokens:
+      linux/amd64, linux/arm64, darwin/amd64, darwin/arm64, windows/amd64,
+      windows/arm64, wasm32/wasi, js. Example:
+      "linux/amd64,linux/arm64,darwin/arm64,wasm32/wasi,js"
+    required: false
+    default: linux/amd64,linux/arm64,darwin/amd64,darwin/arm64,wasm32/wasi
+  name:
+    description: Base name for output binaries (e.g. "myapp" -> myapp-linux-amd64).
+    required: false
+    default: app
+  cc:
+    description: >-
+      C compiler used to assemble/link the generated code. "zig" enables
+      cross-compilation to every target from a single Linux runner; "clang"
+      requires a matching native toolchain per target.
+    required: false
+    default: zig
+  zig-version:
+    description: Zig version to install when cc=zig (used for cross-compilation).
+    required: false
+    default: "0.16.0"
+  llvm-version:
+    description: LLVM version providing opt/llc for native + wasi builds (Ubuntu only).
+    required: false
+    default: "21"
+  install-toolchain:
+    description: >-
+      When "true", install LLVM (opt/llc) and/or Zig as required by the chosen
+      targets/cc. Set "false" if the runner already provides them.
+    required: false
+    default: "true"
+  output-dir:
+    description: Directory where built binaries are written.
+    required: false
+    default: dist
+  fail-on-error:
+    description: >-
+      When "true", the action fails if any single target fails to build
+      (e.g. due to an upstream compiler limitation). When "false" (default),
+      failures are reported but the action still succeeds for the targets that
+      built.
+    required: false
+    default: "false"
+  extra-flags:
+    description: >-
+      Extra flags appended to every `no build` invocation, e.g. "-unsafe".
+    required: false
+    default: ""
+
+outputs:
+  output-dir:
+    description: Directory containing the built binaries.
+  binaries:
+    description: Newline-separated list of paths to the binaries that were built.
+  failed:
+    description: Newline-separated list of target tokens that failed to build.
+
+runs:
+  using: composite
+  steps:
+    - name: Download nolang release
+      uses: ./.github/actions/setup-nolang
+      with:
+        version: ${{ inputs.version }}
+        repo: ${{ inputs.repo }}
+        token: ${{ inputs.token }}
+
+    - name: Install toolchain (LLVM + Zig)
+      if: inputs.install-toolchain == 'true'
+      shell: bash
+      env:
+        TARGETS: ${{ inputs.targets }}
+        CC: ${{ inputs.cc }}
+        LLVM_VER: ${{ inputs.llvm-version }}
+        ZIG_VER: ${{ inputs.zig-version }}
+      run: |
+        set -euo pipefail
+        NEED_LLVM=0
+        NEED_ZIG=0
+        # LLVM (opt/llc) is required for every target except pure-JS.
+        case "$TARGETS" in
+          *js*) ;;
+          *) NEED_LLVM=1 ;;
+        esac
+        [ "$CC" = "zig" ] && NEED_ZIG=1
+
+        if [ "$NEED_LLVM" = "1" ]; then
+          echo "Installing LLVM $LLVM_VER (opt/llc)…"
+          wget -qO- https://apt.llvm.org/llvm.sh | sudo bash -s -- "$LLVM_VER"
+          sudo apt-get install -y "llvm-$LLVM_VER"
+          echo "/usr/lib/llvm-$LLVM_VER/bin" >> "$GITHUB_PATH"
+          sudo ln -sf "/usr/lib/llvm-$LLVM_VER/bin/opt" /usr/local/bin/opt
+          sudo ln -sf "/usr/lib/llvm-$LLVM_VER/bin/llc" /usr/local/bin/llc
+          opt --version
+        fi
+
+        if [ "$NEED_ZIG" = "1" ]; then
+          echo "Installing Zig $ZIG_VER…"
+          curl -L -o /tmp/zig.tar.xz "https://ziglang.org/download/$ZIG_VER/zig-x86_64-linux-$ZIG_VER.tar.xz"
+          mkdir -p "$RUNNER_TEMP/zig"
+          tar -xf /tmp/zig.tar.xz -C "$RUNNER_TEMP/zig" --strip-components=1
+          echo "$RUNNER_TEMP/zig" >> "$GITHUB_PATH"
+          zig version
+        fi
+
+    - name: Build targets
+      id: build
+      shell: bash
+      env:
+        ENTRY: ${{ inputs.entry }}
+        NAME: ${{ inputs.name }}
+        CC: ${{ inputs.cc }}
+        OUTDIR: ${{ inputs.output-dir }}
+        EXTRA: ${{ inputs.extra-flags }}
+        TARGETS: ${{ inputs.targets }}
+        FAIL_ON_ERROR: ${{ inputs.fail-on-error }}
+      run: |
+        set -euo pipefail
+        no version
+        mkdir -p "$OUTDIR"
+
+        # token -> "<llvm-triple>|<ext>" ; "JS|<ext>" for the JS backend.
+        triple_for() {
+          case "$1" in
+            linux/amd64)   echo "x86_64-linux-gnu|" ;;
+            linux/arm64)   echo "aarch64-linux-gnu|" ;;
+            darwin/amd64)  echo "x86_64-macos-none|" ;;
+            darwin/arm64)  echo "aarch64-macos-none|" ;;
+            windows/amd64) echo "x86_64-windows-gnu|.exe" ;;
+            windows/arm64) echo "aarch64-windows-gnu|.exe" ;;
+            wasm32/wasi)   echo "wasm32-wasi|.wasm" ;;
+            js)            echo "JS|.js" ;;
+            *)             echo "UNKNOWN|" ;;
+          esac
+        }
+
+        ok_list=""
+        fail_list=""
+        overall_rc=0
+
+        IFS=',' read -ra ARR <<< "$TARGETS"
+        for t in "${ARR[@]}"; do
+          t=$(echo "$t" | tr -d '[:space:]')
+          [ -z "$t" ] && continue
+          IFS='|' read -r TRIPLE EXT <<< "$(triple_for "$t")"
+          if [ "$TRIPLE" = "UNKNOWN" ]; then
+            echo "::warning::Unknown target token '$t' — skipped"
+            fail_list="$fail_list$t"$'\n'
+            continue
+          fi
+
+          if [ "$TRIPLE" = "JS" ]; then
+            OUT="$OUTDIR/$NAME.js"
+            BUILD_CMD=(no build --js -o "$OUT" $ENTRY $EXTRA)
+          else
+            OUT="$OUTDIR/$NAME-$(echo "$t" | tr '/' '-')$EXT"
+            BUILD_CMD=(no build -cc "$CC" -target "$TRIPLE" -o "$OUT" $ENTRY $EXTRA)
+          fi
+
+          echo ":::: Building $t -> $OUT"
+          echo "\$ ${BUILD_CMD[*]}"
+          set +e
+          "${BUILD_CMD[@]}" 2>&1
+          brc=$?
+          set -e
+
+          if [ "$brc" -eq 0 ] && [ -s "$OUT" ]; then
+            echo "::notice::Built $t -> $OUT"
+            ok_list="$ok_list$OUT"$'\n'
+          else
+            echo "::error::Build failed for $t (rc=$brc)"
+            fail_list="$fail_list$t"$'\n'
+            [ "$FAIL_ON_ERROR" = "true" ] && overall_rc=1
+          fi
+        done
+
+        echo "==== BUILD SUMMARY ===="
+        echo "OK:";     printf '%s' "$ok_list"
+        echo "FAILED:"; printf '%s' "$fail_list"
+
+        {
+          echo "binaries<<EOF"
+          printf '%s' "$ok_list"
+          echo "EOF"
+        } >> "$GITHUB_OUTPUT"
+        {
+          echo "failed<<EOF"
+          printf '%s' "$fail_list"
+          echo "EOF"
+        } >> "$GITHUB_OUTPUT"
+        echo "output-dir=$OUTDIR" >> "$GITHUB_OUTPUT"
+        exit "$overall_rc"

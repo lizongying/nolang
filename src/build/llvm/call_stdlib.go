@@ -3534,7 +3534,7 @@ func (g *Generator) evalFmtExpr(sb *strings.Builder, exprStr string) (string, st
 // Otherwise, loads the value, converts (zext/sext), and stores to a temp alloca.
 func (g *Generator) emitFmtArgPtr(sb *strings.Builder, varName, varType, targetType string) string {
 	addr := g.varAddr(varName)
-	if varType == targetType {
+	if toLLVMType(varType) == targetType {
 		return addr
 	}
 	// Load value, convert, store to temp alloca of targetType
@@ -3543,7 +3543,7 @@ func (g *Generator) emitFmtArgPtr(sb *strings.Builder, varName, varType, targetT
 	convReg := g.tmpReg("fmtarg.conv")
 
 	sb.WriteString(fmt.Sprintf("%s%s = alloca %s\n", g.indent(), tmpAlloca, targetType))
-	sb.WriteString(fmt.Sprintf("%s%s = load %s, %s* %s\n", g.indent(), loadReg, varType, varType, addr))
+	sb.WriteString(fmt.Sprintf("%s%s = load %s, %s* %s\n", g.indent(), loadReg, toLLVMType(varType), toLLVMType(varType), addr))
 
 	switch {
 	case (varType == "i8" || varType == "u8" || varType == "i16" || varType == "u16" || varType == "i32" || varType == "u32" || varType == "i1") && targetType == "i64":

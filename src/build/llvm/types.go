@@ -271,7 +271,7 @@ func (g *Generator) arrayTypeToLLVM(at *parser.ArrayType) string {
 	if inner, ok := at.Elem.(*parser.ArrayType); ok {
 		elemLLVMType = g.arrayTypeToLLVM(inner)
 	} else {
-		elemLLVMType = g.mapToLLVMType(at.Elem.String())
+		elemLLVMType = toLLVMType(g.mapToLLVMType(at.Elem.String()))
 	}
 	return fmt.Sprintf("[%d x %s]", size, elemLLVMType)
 }

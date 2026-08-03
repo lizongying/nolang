@@ -1,0 +1,112 @@
+name: Setup Nolang
+description: >-
+  Download a specific nolang release (the `no` compiler binary) for the current
+  runner platform and the matching standard-library source, then put `no` on
+  PATH and point NOLANG_STD_SRC / NOLANG_SRC at the downloaded std lib.
+
+branding:
+  icon: download
+  color: blue
+
+inputs:
+  version:
+    description: >-
+      nolang release version to download. Use "latest" to resolve the newest
+      GitHub release, or an explicit version like "1.2.3" (the leading "v" is
+      optional).
+    required: false
+    default: latest
+  repo:
+    description: >-
+      Owner/name of the nolang GitHub repository that publishes releases, e.g.
+      "lizongying/nolang".
+    required: false
+    default: lizongying/nolang
+  token:
+    description: >-
+      GitHub token used to query the releases API. Defaults to the job token;
+      only needed for private repos or to raise rate limits.
+    required: false
+    default: ${{ github.token }}
+
+outputs:
+  version:
+    description: Resolved nolang version without the leading "v" (e.g. "1.2.3").
+  nolang-path:
+    description: Absolute path to the downloaded `no` executable.
+  std-src:
+    description: Absolute path to the downloaded standard-library source directory (src/std).
+
+runs:
+  using: composite
+  steps:
+    - name: Resolve version and download nolang
+      id: download
+      shell: bash
+      env:
+        REPO: ${{ inputs.repo }}
+        VERSION: ${{ inputs.version }}
+        TOKEN: ${{ inputs.token }}
+      run: |
+        set -euo pipefail
+
+        # ── 1. Resolve the release tag ──────────────────────────────────────
+        if [ "$VERSION" = "latest" ]; then
+          API="https://api.github.com/repos/${REPO}/releases/latest"
+          if [ -n "$TOKEN" ]; then
+            TAG=$(curl -fsSL -H "Authorization: Bearer ${TOKEN}" \
+              -H "Accept: application/vnd.github+json" "$API" | jq -r .tag_name)
+          else
+            TAG=$(curl -fsSL -H "Accept: application/vnd.github+json" "$API" | jq -r .tag_name)
+          fi
+        else
+          TAG="v${VERSION#v}"
+        fi
+        VERSION_NO_V="${TAG#v}"
+        echo "Resolved nolang version: $TAG"
+        echo "version=$VERSION_NO_V" >> "$GITHUB_OUTPUT"
+
+        # ── 2. Pick the release asset for this runner ───────────────────────
+        case "${RUNNER_OS}-${RUNNER_ARCH}" in
+          Linux-X64)   ASSET="no_${VERSION_NO_V}_linux_amd64" ;;
+          Linux-ARM64) ASSET="no_${VERSION_NO_V}_linux_arm64" ;;
+          macOS-X64)   ASSET="no_${VERSION_NO_V}_darwin_amd64" ;;
+          macOS-ARM64) ASSET="no_${VERSION_NO_V}_darwin_arm64" ;;
+          Windows-X64) ASSET="no_${VERSION_NO_V}_windows_amd64.exe" ;;
+          *) echo "::error::Unsupported runner ${RUNNER_OS}/${RUNNER_ARCH}" >&2; exit 1 ;;
+        esac
+
+        # ── 3. Download + install the compiler binary ───────────────────────
+        URL="https://github.com/${REPO}/releases/download/${TAG}/${ASSET}"
+        INSTALL_DIR="$RUNNER_TEMP/nolang-bin"
+        mkdir -p "$INSTALL_DIR"
+        echo "Downloading $URL"
+        curl -fsSL -L -o "$INSTALL_DIR/no" "$URL"
+        chmod +x "$INSTALL_DIR/no"
+        echo "$INSTALL_DIR" >> "$GITHUB_PATH"
+        echo "nolang-path=$INSTALL_DIR/no" >> "$GITHUB_OUTPUT"
+        "$INSTALL_DIR/no" version
+
+        # ── 4. Download the matching std source (src/) ──────────────────────
+        # nolang's build needs the std library on disk; the release binary does
+        # not bundle it. The auto-generated source tarball for the tag contains
+        # src/std (and src/ for third-party modules), so we extract just that.
+        SRC_DIR="$RUNNER_TEMP/nolang-src"
+        mkdir -p "$SRC_DIR"
+        SRC_TAR="$SRC_DIR/nolang-src.tar.gz"
+        echo "Downloading source tarball for std lib (tag $TAG)"
+        curl -fsSL -L -o "$SRC_TAR" "https://github.com/${REPO}/archive/refs/tags/${TAG}.tar.gz"
+        tar -xzf "$SRC_TAR" -C "$SRC_DIR"
+        REPO_NAME="${REPO##*/}"
+        STD_SRC="$SRC_DIR/${REPO_NAME}-${VERSION_NO_V}/src/std"
+        SRC_ROOT="$SRC_DIR/${REPO_NAME}-${VERSION_NO_V}/src"
+        if [ ! -d "$STD_SRC" ]; then
+          echo "::error::Expected std lib at $STD_SRC but it was not found" >&2
+          exit 1
+        fi
+        echo "std-src=$STD_SRC" >> "$GITHUB_OUTPUT"
+        {
+          echo "NOLANG_STD_SRC=$STD_SRC"
+          echo "NOLANG_SRC=$SRC_ROOT"
+        } >> "$GITHUB_ENV"
+        echo "NOLANG_STD_SRC=$STD_SRC"

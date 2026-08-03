@@ -2501,7 +2501,7 @@ func (g *Generator) generateStructFieldIndexAssign(sb *strings.Builder, dot *par
 					}
 					elemGEP := g.tmpReg("set.arr.elem")
 					sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %s, %s* %s, i64 0, i64 %s\n",
-						g.indent(), elemGEP, fieldType, fieldType, fieldGEP, idx))
+						g.indent(), elemGEP, toLLVMType(fieldType), toLLVMType(fieldType), fieldGEP, idx))
 					// Truncate/extend val to elemType if needed (e.g., i64 → i8 for byte arrays)
 					// Only convert for integer types; struct types (e.g. %str-long) need different handling
 					storeVal := val
@@ -2515,11 +2515,11 @@ func (g *Generator) generateStructFieldIndexAssign(sb *strings.Builder, dot *par
 							// Determine if we need trunc (wider→narrower) or zext (narrower→wider)
 							valW := llvmIntBitWidth(valType)
 							elemW := llvmIntBitWidth(elemType)
-							if valW >= elemW {
-								sb.WriteString(fmt.Sprintf("%s%s = trunc %s %s to %s\n", g.indent(), convReg, valType, val, elemType))
-							} else {
-								sb.WriteString(fmt.Sprintf("%s%s = zext %s %s to %s\n", g.indent(), convReg, valType, val, elemType))
-							}
+					if valW >= elemW {
+						sb.WriteString(fmt.Sprintf("%s%s = trunc %s %s to %s\n", g.indent(), convReg, toLLVMType(valType), val, toLLVMType(elemType)))
+					} else {
+						sb.WriteString(fmt.Sprintf("%s%s = zext %s %s to %s\n", g.indent(), convReg, toLLVMType(valType), val, toLLVMType(elemType)))
+					}
 							storeVal = convReg
 						}
 					}
@@ -2553,8 +2553,8 @@ func (g *Generator) generateStructFieldIndexAssign(sb *strings.Builder, dot *par
 								_, isIdx := value.(*parser.IndexExpression)
 								if isIdx || g.isStringExpr(value) {
 									loadReg := g.tmpReg("set.arr.load")
-									sb.WriteString(fmt.Sprintf("%s%s = load %s, %s* %s\n",
-										g.indent(), loadReg, elemType, elemType, val))
+							sb.WriteString(fmt.Sprintf("%s%s = load %s, %s* %s\n",
+								g.indent(), loadReg, toLLVMType(elemType), toLLVMType(elemType), val))
 									storeVal = loadReg
 								}
 							}
@@ -2575,8 +2575,8 @@ func (g *Generator) generateStructFieldIndexAssign(sb *strings.Builder, dot *par
 							skipFreeLabel := fmt.Sprintf("set.arr.skipfree.%d", g.tmpIdx)
 							g.tmpIdx++
 							doFreeLabel := fmt.Sprintf("set.arr.dofree.%d", g.tmpIdx)
-							sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %s, %s* %s, i32 0, i32 0\n",
-								g.indent(), oldLenGEP, elemType, elemType, elemGEP))
+						sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %s, %s* %s, i32 0, i32 0\n",
+							g.indent(), oldLenGEP, toLLVMType(elemType), toLLVMType(elemType), elemGEP))
 							sb.WriteString(fmt.Sprintf("%s%s = load i64, i64* %s\n", g.indent(), oldLenReg, oldLenGEP))
 							sb.WriteString(fmt.Sprintf("%s%s = icmp eq i64 %s, 0\n", g.indent(), lenCmpReg, oldLenReg))
 							sb.WriteString(fmt.Sprintf("%sbr i1 %s, label %%%s, label %%%s\n",
@@ -2591,13 +2591,13 @@ func (g *Generator) generateStructFieldIndexAssign(sb *strings.Builder, dot *par
 						}
 						// Build srcPtr: alloca + store the value, then deep clone to slot.
 						cloneSrc := g.tmpReg("set.arr.csrc")
-						sb.WriteString(fmt.Sprintf("%s%s = alloca %s\n", g.indent(), cloneSrc, elemType))
-						sb.WriteString(fmt.Sprintf("%sstore %s %s, %s* %s\n",
-							g.indent(), elemType, storeVal, elemType, cloneSrc))
+					sb.WriteString(fmt.Sprintf("%s%s = alloca %s\n", g.indent(), cloneSrc, toLLVMType(elemType)))
+					sb.WriteString(fmt.Sprintf("%sstore %s %s, %s* %s\n",
+						g.indent(), toLLVMType(elemType), storeVal, toLLVMType(elemType), cloneSrc))
 						g.emitDeepClone(sb, cloneSrc, elemGEP, elemType, "")
 					} else {
-						sb.WriteString(fmt.Sprintf("%sstore %s %s, %s* %s\n",
-							g.indent(), elemType, storeVal, elemType, elemGEP))
+					sb.WriteString(fmt.Sprintf("%sstore %s %s, %s* %s\n",
+						g.indent(), toLLVMType(elemType), storeVal, toLLVMType(elemType), elemGEP))
 					}
 					return "0"
 				}
@@ -2761,7 +2761,7 @@ func (g *Generator) generateStructFieldIndexRead(sb *strings.Builder, dot *parse
 					}
 					elemGEP := g.tmpReg("idx.arr.elem")
 					sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %s, %s* %s, i64 0, i64 %s\n",
-						g.indent(), elemGEP, fieldType, fieldType, fieldGEP, idx))
+						g.indent(), elemGEP, toLLVMType(fieldType), toLLVMType(fieldType), fieldGEP, idx))
 				// Struct element: return pointer (by-reference), no load needed.
 				// generateExprPtr / generateIndexExprPtr callers use this pointer
 				// for chained access (e.g. .sessions[i].field).
@@ -2773,10 +2773,10 @@ func (g *Generator) generateStructFieldIndexRead(sb *strings.Builder, dot *parse
 				// Integer element: load value
 					elemLoad := g.tmpReg("idx.arr.val")
 					sb.WriteString(fmt.Sprintf("%s%s = load %s, %s* %s\n",
-						g.indent(), elemLoad, elemType, elemType, elemGEP))
+						g.indent(), elemLoad, toLLVMType(elemType), toLLVMType(elemType), elemGEP))
 					if elemType != "i64" {
 						zextReg := g.tmpReg("idx.arr.zext")
-						sb.WriteString(fmt.Sprintf("%s%s = zext %s %s to i64\n", g.indent(), zextReg, elemType, elemLoad))
+						sb.WriteString(fmt.Sprintf("%s%s = zext %s %s to i64\n", g.indent(), zextReg, toLLVMType(elemType), elemLoad))
 						return zextReg
 					}
 					return elemLoad
@@ -3047,8 +3047,8 @@ func (g *Generator) generateAssignExpression(sb *strings.Builder, expr *parser.A
 								sfType := structLitFields[sfi].typ
 								sfVal := g.generateExprWithSB(sb, sf.Value)
 								sfGEP := g.tmpReg("set.st.fld")
-								sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %s, %s* %s, i32 0, i32 %d\n",
-									g.indent(), sfGEP, fieldType, fieldType, reg, sfi))
+						sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %s, %s* %s, i32 0, i32 %d\n",
+							g.indent(), sfGEP, toLLVMType(fieldType), toLLVMType(fieldType), reg, sfi))
 								sb.WriteString(fmt.Sprintf("%sstore %s %s, %s* %s\n", g.indent(), toLLVMType(sfType), sfVal, toLLVMType(sfType), sfGEP))
 							}
 						}
@@ -3158,8 +3158,8 @@ func (g *Generator) generateAssignExpression(sb *strings.Builder, expr *parser.A
 							// CallExpression and DotExpression return loaded values, not pointers.
 							if isIdx || (isInfix && g.isStringExpr(expr.Value)) {
 								loadReg := g.tmpReg("set.fld.load")
-								sb.WriteString(fmt.Sprintf("%s%s = load %s, %s* %s\n",
-									g.indent(), loadReg, fieldType, fieldType, val))
+						sb.WriteString(fmt.Sprintf("%s%s = load %s, %s* %s\n",
+							g.indent(), loadReg, toLLVMType(fieldType), toLLVMType(fieldType), val))
 								val = loadReg
 							}
 						}
@@ -3184,8 +3184,8 @@ func (g *Generator) generateAssignExpression(sb *strings.Builder, expr *parser.A
 						skipFreeLabel := fmt.Sprintf("set.fld.skipfree.%d", g.tmpIdx)
 						g.tmpIdx++
 						doFreeLabel := fmt.Sprintf("set.fld.dofree.%d", g.tmpIdx)
-						sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %s, %s* %s, i32 0, i32 0\n",
-							g.indent(), oldLenGEP, fieldType, fieldType, reg))
+					sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %s, %s* %s, i32 0, i32 0\n",
+						g.indent(), oldLenGEP, toLLVMType(fieldType), toLLVMType(fieldType), reg))
 						sb.WriteString(fmt.Sprintf("%s%s = load i64, i64* %s\n", g.indent(), oldLenReg, oldLenGEP))
 						sb.WriteString(fmt.Sprintf("%s%s = icmp eq i64 %s, 0\n", g.indent(), lenCmpReg, oldLenReg))
 						sb.WriteString(fmt.Sprintf("%sbr i1 %s, label %%%s, label %%%s\n",
@@ -3200,7 +3200,7 @@ func (g *Generator) generateAssignExpression(sb *strings.Builder, expr *parser.A
 					cloneSrc := g.tmpReg("set.fld.csrc")
 					sb.WriteString(fmt.Sprintf("%s%s = alloca %s\n", g.indent(), cloneSrc, toLLVMType(fieldType)))
 					sb.WriteString(fmt.Sprintf("%sstore %s %s, %s* %s\n",
-						g.indent(), fieldType, val, fieldType, cloneSrc))
+						g.indent(), toLLVMType(fieldType), val, toLLVMType(fieldType), cloneSrc))
 					g.emitDeepClone(sb, cloneSrc, reg, fieldType, fieldElemType)
 				}
 			}
