@@ -2007,7 +2007,7 @@ func (g *Generator) generateIndexExprPtr(sb *strings.Builder, v *parser.IndexExp
 			if idxType != "i64" {
 				zextReg := g.tmpReg("dotarr.zext")
 				if sb != nil {
-					sb.WriteString(fmt.Sprintf("%s%s = zext %s %s to i64\n", g.indent(), zextReg, idxType, idx))
+					sb.WriteString(fmt.Sprintf("%s%s = zext %s %s to i64\n", g.indent(), zextReg, toLLVMType(idxType), idx))
 				}
 				idx = zextReg
 			}
@@ -2728,7 +2728,7 @@ func (g *Generator) generateStructFieldIndexRead(sb *strings.Builder, dot *parse
 					idxType := g.intExprLLVMType(index)
 					if idxType != "i64" {
 						zextReg := g.tmpReg("idx.strf.zext")
-						sb.WriteString(fmt.Sprintf("%s%s = zext %s %s to i64\n", g.indent(), zextReg, idxType, idx))
+						sb.WriteString(fmt.Sprintf("%s%s = zext %s %s to i64\n", g.indent(), zextReg, toLLVMType(idxType), idx))
 						strIdx = zextReg
 					}
 				}
@@ -2817,7 +2817,7 @@ func (g *Generator) generateNestedStrIndexRead(sb *strings.Builder, innerIdx *pa
 		if idxType != "i64" {
 			zextReg := g.tmpReg("nestidx.zext")
 			if sb != nil {
-				sb.WriteString(fmt.Sprintf("%s%s = zext %s %s to i64\n", g.indent(), zextReg, idxType, idx))
+				sb.WriteString(fmt.Sprintf("%s%s = zext %s %s to i64\n", g.indent(), zextReg, toLLVMType(idxType), idx))
 			}
 			idx = zextReg
 		}
@@ -2860,7 +2860,7 @@ func (g *Generator) generateNestedStrIndexAssign(sb *strings.Builder, innerIdx *
 		if idxType != "i64" {
 			zextReg := g.tmpReg("nestset.zext")
 			if sb != nil {
-				sb.WriteString(fmt.Sprintf("%s%s = zext %s %s to i64\n", g.indent(), zextReg, idxType, idx))
+				sb.WriteString(fmt.Sprintf("%s%s = zext %s %s to i64\n", g.indent(), zextReg, toLLVMType(idxType), idx))
 			}
 			idx = zextReg
 		}
@@ -3232,7 +3232,7 @@ func (g *Generator) generateAssignExpression(sb *strings.Builder, expr *parser.A
 			if idxType != "i64" {
 				zextReg := g.tmpReg("idx.set.zext")
 				if sb != nil {
-					sb.WriteString(fmt.Sprintf("%s%s = zext %s %s to i64\n", g.indent(), zextReg, idxType, idx))
+					sb.WriteString(fmt.Sprintf("%s%s = zext %s %s to i64\n", g.indent(), zextReg, toLLVMType(idxType), idx))
 				}
 				idx = zextReg
 			}
@@ -3771,7 +3771,7 @@ func (g *Generator) generateIndexExpression(sb *strings.Builder, expr *parser.In
 		if idxType != "i64" {
 			zextReg := g.tmpReg("idx.zext")
 			if sb != nil {
-				sb.WriteString(fmt.Sprintf("%s%s = zext %s %s to i64\n", g.indent(), zextReg, idxType, idx))
+				sb.WriteString(fmt.Sprintf("%s%s = zext %s %s to i64\n", g.indent(), zextReg, toLLVMType(idxType), idx))
 			}
 			idx = zextReg
 		}
@@ -4169,7 +4169,7 @@ func (g *Generator) generateSliceExprIndexRead(sb *strings.Builder, sliceExpr *p
 		if idxType != "i64" {
 			zextReg := g.tmpReg("slicidx.idx.zext")
 			if sb != nil {
-				sb.WriteString(fmt.Sprintf("%s%s = zext %s %s to i64\n", g.indent(), zextReg, idxType, idx))
+				sb.WriteString(fmt.Sprintf("%s%s = zext %s %s to i64\n", g.indent(), zextReg, toLLVMType(idxType), idx))
 			}
 			idx = zextReg
 		}
@@ -4239,7 +4239,7 @@ func (g *Generator) generateStringLiteralIndex(sb *strings.Builder, lit *parser.
 		if idxType != "i64" {
 			zextReg := g.tmpReg("str-longlit.idx.zext")
 			if sb != nil {
-				sb.WriteString(fmt.Sprintf("%s%s = zext %s %s to i64\n", g.indent(), zextReg, idxType, idx))
+				sb.WriteString(fmt.Sprintf("%s%s = zext %s %s to i64\n", g.indent(), zextReg, toLLVMType(idxType), idx))
 			}
 			idx = zextReg
 		}

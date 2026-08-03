@@ -814,14 +814,12 @@ client.recv = () (msg ?message) {
             {
                 .use-tls -> {
                     rn = .tls-c.recv(tmp, WS-RECV-SIZE)
-                    rn: {
-                        ok -> n = it
-                        -> {
-                            .connected = false
-                            msg = nil
-                            return
-                        }
+                    rn <= 0 -> {
+                        .connected = false
+                        msg = nil
+                        return
                     }
+                    n = rn
                 }
                 -> n = net.net-recv(.fd, tmp, WS-RECV-SIZE)
             }
@@ -858,14 +856,12 @@ client.recv = () (msg ?message) {
                 {
                     .use-tls -> {
                         rn = .tls-c.recv(tmp, need)
-                        rn: {
-                            ok -> n = it
-                            -> {
-                                .connected = false
-                                msg = err('incomplete frame')
-                                return
-                            }
+                        rn <= 0 -> {
+                            .connected = false
+                            msg = err('incomplete frame')
+                            return
                         }
+                        n = rn
                     }
                     -> n = net.net-recv(.fd, tmp, need)
                 }
@@ -892,14 +888,12 @@ client.recv = () (msg ?message) {
                 {
                     .use-tls -> {
                         rn = .tls-c.recv(tmp, need)
-                        rn: {
-                            ok -> n = it
-                            -> {
-                                .connected = false
-                                msg = err('incomplete frame')
-                                return
-                            }
+                        rn <= 0 -> {
+                            .connected = false
+                            msg = err('incomplete frame')
+                            return
                         }
+                        n = rn
                     }
                     -> n = net.net-recv(.fd, tmp, need)
                 }
@@ -925,14 +919,12 @@ client.recv = () (msg ?message) {
                 {
                     .use-tls -> {
                         rn = .tls-c.recv(tmp, need)
-                        rn: {
-                            ok -> n = it
-                            -> {
-                                .connected = false
-                                msg = err('incomplete frame')
-                                return
-                            }
+                        rn <= 0 -> {
+                            .connected = false
+                            msg = err('incomplete frame')
+                            return
                         }
+                        n = rn
                     }
                     -> n = net.net-recv(.fd, tmp, need)
                 }
@@ -1190,25 +1182,15 @@ connect = (url str) (c ?client) {
         {
             use-tls -> {
                 rn = tc.recv(tmp, WS-RECV-SIZE)
-                rn: {
-                    nil -> {
-                        {
-                            use-tls -> tc.close()
-                            -> fs.close(fd)
-                        }
-                        c = err('connection closed during handshake')
-                        return
+                rn <= 0 -> {
+                    {
+                        use-tls -> tc.close()
+                        -> fs.close(fd)
                     }
-                    err -> {
-                        {
-                            use-tls -> tc.close()
-                            -> fs.close(fd)
-                        }
-                        c = err('connection closed during handshake')
-                        return
-                    }
-                    ok -> n = it
+                    c = err('connection closed during handshake')
+                    return
                 }
+                n = rn
             }
             -> n = net.net-recv(fd, tmp, WS-RECV-SIZE)
         }

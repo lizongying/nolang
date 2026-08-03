@@ -609,7 +609,7 @@ func (g *Generator) generateOutputIdxPtr(sb *strings.Builder, v *parser.IndexExp
 			g.tmpIdx++
 			zextReg := fmt.Sprintf("%%outidx.zext.%d", g.tmpIdx)
 			if sb != nil {
-				sb.WriteString(fmt.Sprintf("%s%s = zext %s %s to i64\n", g.indent(), zextReg, idxType, idx))
+				sb.WriteString(fmt.Sprintf("%s%s = zext %s %s to i64\n", g.indent(), zextReg, toLLVMType(idxType), idx))
 			}
 			idx = zextReg
 		}
@@ -1309,6 +1309,11 @@ func (g *Generator) generateCallExpression(sb *strings.Builder, expr *parser.Cal
 				// output parameter.
 				isForwardBuiltin := false
 				m := builtin.FindBuiltinMethod(fnName)
+				if m == nil && strings.Contains(fnName, ".") {
+					if idx := strings.Index(fnName, "."); idx >= 0 {
+						m = builtin.FindBuiltinMethod(fnName[idx+1:])
+					}
+				}
 				if m != nil && m.ForwardFunc != "" {
 					isForwardBuiltin = true
 				}

@@ -959,6 +959,13 @@ func (g *Generator) writeDeclarations(sb *strings.Builder) {
 		sb.WriteString("\t%result = select i1 %iserr, i32 -1, i32 %pid\n")
 		sb.WriteString("\tret i32 %result\n")
 		sb.WriteString("}\n\n")
+
+		// nolang.win_chroot: chroot is not supported on Windows.
+		// Return -1 (failure) to indicate the operation is not supported.
+		sb.WriteString("define internal i32 @nolang.win_chroot(i8* %path) {\n")
+		sb.WriteString("entry:\n")
+		sb.WriteString("\tret i32 -1\n")
+		sb.WriteString("}\n\n")
 	}
 }
 
