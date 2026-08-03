@@ -271,7 +271,8 @@ func TestJSGeneratorBuiltinPrint(t *testing.T) {
 	}
 }
 
-// Test 10: String concatenation with the Nolang `-` operator becomes JS `+`.
+// Test 10: String concatenation with the Nolang `-` operator uses __nsub runtime helper.
+// Nolang `-` is ambiguous (string concat vs numeric subtraction); __nsub resolves at runtime.
 func TestJSGeneratorStringConcat(t *testing.T) {
 	src := "name = 'World'\n" +
 		"greeting = 'Hello, ' - name - '!'\n" +
@@ -280,7 +281,7 @@ func TestJSGeneratorStringConcat(t *testing.T) {
 	t.Logf("generated JS:\n%s", out)
 
 	for _, want := range []string{
-		"let greeting = ((\"Hello, \" + name) + \"!\");",
+		"let greeting = __nsub(__nsub(\"Hello, \", name), \"!\");",
 		"console.log(greeting);",
 	} {
 		if !strings.Contains(out, want) {
