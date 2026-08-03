@@ -172,12 +172,12 @@ put-u24 = (buf []byte, pos i64, val i64) {
 
 ; get-u16: 從緩衝區讀取 16-bit 大端序值
 get-u16 = (buf []byte, pos i64) (val i64) {
-    val = ((buf[pos] & 255) << 8) | (buf[pos + 1] & 255)
+    val = ((buf[pos]) << 8) | (buf[pos + 1])
 }
 
 ; get-u24: 從緩衝區讀取 24-bit 大端序值
 get-u24 = (buf []byte, pos i64) (val i64) {
-    val = ((buf[pos] & 255) << 16) | ((buf[pos + 1] & 255) << 8) | (buf[pos + 2] & 255)
+    val = ((buf[pos]) << 16) | ((buf[pos + 1]) << 8) | (buf[pos + 2])
 }
 
 ; bytes-cat: 串接兩個位元組陣列
@@ -212,7 +212,7 @@ bytes-to-bn = (data []byte) (out []i64) {
         byte-from-lsb = n - 1 - i
         limb = byte-from-lsb / 4
         shift = (byte-from-lsb % 4) * 8
-        out[limb] = out[limb] | ((data[i] & 255) << shift)
+        out[limb] = out[limb] | ((data[i]) << shift)
     }
     out.len = limb-count
 }
@@ -348,7 +348,7 @@ read-record = (fd fd, buf []byte) (ct i64, rlen i64) {
     } (hdr-total < 5)
 
     ; 解析標頭
-    ct = buf[0] & 255
+    ct = buf[0]
     rlen = get-u16(buf, 3)
 
     rlen > 16384 -> {
@@ -503,14 +503,14 @@ conn.decrypt-record = (buf []byte, expected-ct i64) (ct i64, out []byte) {
     ; 提取 IV
     iv [16]byte
     i <- [0..16): {
-        iv[i] = buf[5 + i] & 255
+        iv[i] = buf[5 + i]
     }
 
     ; 密文
     cipher-len = rlen - 16
     cipher []byte = with-len(cipher-len)
     i <- [0..cipher-len): {
-        cipher[i] = buf[5 + 16 + i] & 255
+        cipher[i] = buf[5 + 16 + i]
     }
     cipher.len = cipher-len
 
@@ -548,8 +548,8 @@ conn.decrypt-record = (buf []byte, expected-ct i64) (ct i64, out []byte) {
     ; 驗證 MAC
     recv-mac-off = content-len
     i <- [0..32): {
-        b1 = plain[recv-mac-off + i] & 255
-        b2 = exp-mac[i] & 255
+        b1 = plain[recv-mac-off + i]
+        b2 = exp-mac[i]
         b1 != b2 -> return
     }
 
@@ -730,7 +730,7 @@ conn.read-server-hello = () (ok bool) {
 
     ; 解析 handshake message（buf[5] = handshake type, buf[6..8] = length, buf[9+] = data）
     pos = 9
-    msg-type = buf[5] & 255
+    msg-type = buf[5]
     msg-type != TLS-HS-SERVER-HELLO -> return
     msg-len i64 = get-u24(buf, 6)
 
@@ -739,12 +739,12 @@ conn.read-server-hello = () (ok bool) {
 
     ; random (32 bytes)
     i <- [0..32): {
-        .server-random[i] = buf[pos + i] & 255
+        .server-random[i] = buf[pos + i]
     }
     pos = pos + 32
 
     ; session_id
-    sid-len = buf[pos] & 255
+    sid-len = buf[pos]
     pos = pos + 1 + sid-len
 
     ; cipher_suite
@@ -753,7 +753,7 @@ conn.read-server-hello = () (ok bool) {
     cipher != TLS-CIPHER-RSA-AES128-CBC-SHA256 -> return
 
     ; compression_method
-    comp = buf[pos] & 255
+    comp = buf[pos]
     pos = pos + 1
     comp != 0 -> return
     ok = true
@@ -773,7 +773,7 @@ conn.read-certificate = (cert-out []byte) (ok bool) {
     .append-hs-from(buf, 5, rlen)
 
     ; 解析 handshake message（buf[5] = type, buf[6..8] = length, buf[9+] = data）
-    msg-type = buf[5] & 255
+    msg-type = buf[5]
     msg-type != TLS-HS-CERTIFICATE -> return
     pos = 9
 
@@ -805,7 +805,7 @@ conn.read-server-hello-done = () (ok bool) {
     ct != TLS-CT-HANDSHAKE -> return
     .append-hs-from(buf, 5, rlen)
 
-    msg-type = buf[5] & 255
+    msg-type = buf[5]
     msg-type != TLS-HS-SERVER-HELLO-DONE -> return
     ok = true
 }
@@ -911,7 +911,7 @@ conn.read-change-cipher-spec = () (ok bool) {
     ct, rlen = read-record(.fd, buf)
     ct != TLS-CT-CCS -> return
     rlen != 1 -> return
-    (buf[5] & 255) != 1 -> return
+    (buf[5]) != 1 -> return
     ok = true
 }
 
@@ -933,7 +933,7 @@ conn.read-finished = () (ok bool) {
     d-ct < 0 -> return
 
     ; 解析 Finished 訊息
-    msg-type = plain[0] & 255
+    msg-type = plain[0]
     msg-type != TLS-HS-FINISHED -> return
 
     ; 驗證 verify_data（hash 不包含 server Finished）
@@ -948,8 +948,8 @@ conn.read-finished = () (ok bool) {
     verify = prf(.master-secret, 'server finished', hs-hash, TLS-FINISHED-SIZE)
 
     i <- [0..TLS-FINISHED-SIZE): {
-        b1 = plain[4 + i] & 255
-        b2 = verify[i] & 255
+        b1 = plain[4 + i]
+        b2 = verify[i]
         b1 != b2 -> return
     }
 
@@ -1230,7 +1230,7 @@ conn.send-client-hello-13 = () (ok bool) {
     ; debug: 列印 ClientHello 內容
     dump = ''
     j <- [0..pos): {
-        b = hs[j] & 255
+        b = hs[j]
         dump = dump - b.to-str() - ' '
     }
 
@@ -1261,7 +1261,7 @@ conn.read-server-hello-13 = () (ok bool) {
     .append-hs-from(buf, 5, rlen)
 
     ; 解析 handshake message（buf[5] = type, buf[6..8] = length, buf[9+] = data）
-    msg-type = buf[5] & 255
+    msg-type = buf[5]
     msg-type != TLS-HS-SERVER-HELLO -> return
     pos = 9
 
@@ -1270,12 +1270,12 @@ conn.read-server-hello-13 = () (ok bool) {
 
     ; random (32 bytes)
     i <- [0..32): {
-        .server-random[i] = buf[pos + i] & 255
+        .server-random[i] = buf[pos + i]
     }
     pos = pos + 32
 
     ; session_id
-    sid-len = buf[pos] & 255
+    sid-len = buf[pos]
     pos = pos + 1 + sid-len
 
     ; cipher_suite
@@ -1323,7 +1323,7 @@ conn.read-server-hello-13 = () (ok bool) {
             ks-len i64 = get-u16(buf, pos + 2)
             ks-group == TLS-GROUP-X25519 && ks-len == 32 -> {
                 i <- [0..32): {
-                    .server-pub[i] = buf[pos + 4 + i] & 255
+                    .server-pub[i] = buf[pos + 4 + i]
                 }
             }
         }
@@ -1600,7 +1600,7 @@ conn.decrypt-record-13 = (rec []byte, key [16]byte, iv [12]byte, seq i64) (ct i6
     ; 提取密文+tag
     sealed []byte = with-len(rlen)
     i <- [0..rlen): {
-        sealed[i] = rec[5 + i] & 255
+        sealed[i] = rec[5 + i]
     }
 
     ; 構建 nonce
@@ -1609,11 +1609,11 @@ conn.decrypt-record-13 = (rec []byte, key [16]byte, iv [12]byte, seq i64) (ct i6
 
     ; 構建 AAD = record_header(5 bytes)
     aad []byte = with-len(5)
-    aad[0] = rec[0] & 255
-    aad[1] = rec[1] & 255
-    aad[2] = rec[2] & 255
-    aad[3] = rec[3] & 255
-    aad[4] = rec[4] & 255
+    aad[0] = rec[0]
+    aad[1] = rec[1]
+    aad[2] = rec[2]
+    aad[3] = rec[3]
+    aad[4] = rec[4]
 
     ; 解密
     plain []byte
@@ -1622,7 +1622,7 @@ conn.decrypt-record-13 = (rec []byte, key [16]byte, iv [12]byte, seq i64) (ct i6
 
     ; 最後一個位元組是原始 content type
     plain-len = plain.len
-    ct = plain[plain-len - 1] & 255
+    ct = plain[plain-len - 1]
     plain-len = plain-len - 1
 
     out = with-len(plain-len)
@@ -1690,7 +1690,7 @@ conn.read-encrypted-handshake-13 = () (msg-type i64, msg-data []byte) {
     ; 注意：plain 中最後 1 byte 是 inner content type，真正的 handshake 資料不含它
     ; 但 read-encrypted-record-13 已經移除了 inner content type，plain 就是純 handshake 資料
     pos = .hs-plain-pos
-    msg-type = .hs-plain-buf[pos] & 255
+    msg-type = .hs-plain-buf[pos]
     msg-len i64 = get-u24(.hs-plain-buf, pos + 1)
 
     ; 檢查是否有足夠的資料
@@ -1698,7 +1698,7 @@ conn.read-encrypted-handshake-13 = () (msg-type i64, msg-data []byte) {
 
     msg-data = with-len(msg-len)
     i <- [0..msg-len): {
-        msg-data[i] = .hs-plain-buf[pos + 4 + i] & 255
+        msg-data[i] = .hs-plain-buf[pos + 4 + i]
     }
     msg-data.len = msg-len
 
@@ -2281,19 +2281,19 @@ server-conn.read-client-hello = () (ok bool) {
     .append-hs-from(buf, 5, rlen)
 
     ; 解析 ClientHello: buf[5]=type, buf[6..8]=length, buf[9..10]=version, buf[11..42]=random
-    msg-type = buf[5] & 255
+    msg-type = buf[5]
     msg-type != TLS-HS-CLIENT-HELLO -> return
 
     pos = 11; 跳過 type(1)+length(3)+version(2)
 
     ; client random (32 bytes)
     i <- [0..32): {
-        .client-random[i] = buf[pos + i] & 255
+        .client-random[i] = buf[pos + i]
     }
     pos = pos + 32
 
     ; session_id
-    sid-len = buf[pos] & 255
+    sid-len = buf[pos]
     pos = pos + 1 + sid-len
 
     ; cipher_suites
@@ -2317,7 +2317,7 @@ server-conn.read-client-hello = () (ok bool) {
     pos = pos + cs-len
 
     ; compression methods（跳過）
-    comp-len = buf[pos] & 255
+    comp-len = buf[pos]
     pos = pos + 1 + comp-len
 
     ; 預設 TLS 1.2
@@ -2340,7 +2340,7 @@ server-conn.read-client-hello = () (ok bool) {
                 ext-type == TLS-EXT-SUPPORTED-VERSIONS -> {
 
                     ; client 端: 1 byte list length + versions
-                    sv-list-len = buf[pos] & 255
+                    sv-list-len = buf[pos]
                     sv-pos = pos + 1
                     sv-end = sv-pos + sv-list-len
                     {
@@ -2366,7 +2366,7 @@ server-conn.read-client-hello = () (ok bool) {
                             ks-key-len = get-u16(buf, ks-pos + 2)
                             ks-group == TLS-GROUP-X25519 && ks-key-len == 32 -> {
                                 i <- [0..32): {
-                                    .client-pub[i] = buf[ks-pos + 4 + i] & 255
+                                    .client-pub[i] = buf[ks-pos + 4 + i]
                                 }
                             }
                             ks-pos = ks-pos + 4 + ks-key-len
@@ -2578,7 +2578,7 @@ server-conn.read-client-key-exchange = () (ok bool) {
     .append-hs-from(buf, 5, rlen)
 
     ; 解析 ClientKeyExchange
-    msg-type = buf[5] & 255
+    msg-type = buf[5]
     msg-type != TLS-HS-CLIENT-KEY-EXCHANGE -> return
 
     ; encrypted premaster length (2 bytes)
@@ -2587,7 +2587,7 @@ server-conn.read-client-key-exchange = () (ok bool) {
     ; 提取加密的 premaster
     enc-premaster []byte = with-len(enc-len)
     i <- [0..enc-len): {
-        enc-premaster[i] = buf[11 + i] & 255
+        enc-premaster[i] = buf[11 + i]
     }
     enc-premaster.len = enc-len
 
@@ -2751,14 +2751,14 @@ server-conn.decrypt-record = (buf []byte, expected-ct i64) (ct i64, out []byte) 
     ; 提取 IV
     iv [16]byte
     i <- [0..16): {
-        iv[i] = buf[5 + i] & 255
+        iv[i] = buf[5 + i]
     }
 
     ; 密文
     cipher-len = rlen - 16
     cipher []byte = with-len(cipher-len)
     i <- [0..cipher-len): {
-        cipher[i] = buf[5 + 16 + i] & 255
+        cipher[i] = buf[5 + 16 + i]
     }
     cipher.len = cipher-len
 
@@ -2794,8 +2794,8 @@ server-conn.decrypt-record = (buf []byte, expected-ct i64) (ct i64, out []byte) 
     ; 比較 MAC
     mac-ok = 1
     i <- [0..32): {
-        b1 = plain[data-len + i] & 255
-        b2 = exp-mac[i] & 255
+        b1 = plain[data-len + i]
+        b2 = exp-mac[i]
         b1 != b2 -> mac-ok = 0
     }
     mac-ok == 0 -> return
@@ -2835,7 +2835,7 @@ server-conn.read-change-cipher-spec = () (ok bool) {
     ct, rlen = read-record(.fd, buf)
     ct != TLS-CT-CCS -> return
     rlen != 1 -> return
-    (buf[5] & 255) != 1 -> return
+    (buf[5]) != 1 -> return
     ok = true
 }
 
@@ -2857,7 +2857,7 @@ server-conn.read-finished = () (ok bool) {
     d-ct < 0 -> return
 
     ; 解析 Finished 訊息
-    msg-type = plain[0] & 255
+    msg-type = plain[0]
     msg-type != TLS-HS-FINISHED -> return
 
     ; 驗證 verify_data（hash 不包含 client Finished）
@@ -2872,8 +2872,8 @@ server-conn.read-finished = () (ok bool) {
     verify = prf(.master-secret, 'client finished', hs-hash, TLS-FINISHED-SIZE)
 
     i <- [0..TLS-FINISHED-SIZE): {
-        b1 = plain[4 + i] & 255
-        b2 = verify[i] & 255
+        b1 = plain[4 + i]
+        b2 = verify[i]
         b1 != b2 -> return
     }
 
@@ -3273,7 +3273,7 @@ server-conn.decrypt-record-13 = (rec []byte, key [16]byte, iv [12]byte, seq i64)
     ; 提取密文+tag
     sealed []byte = with-len(rlen)
     i <- [0..rlen): {
-        sealed[i] = rec[5 + i] & 255
+        sealed[i] = rec[5 + i]
     }
 
     ; 構建 nonce
@@ -3282,11 +3282,11 @@ server-conn.decrypt-record-13 = (rec []byte, key [16]byte, iv [12]byte, seq i64)
 
     ; 構建 AAD = record_header(5 bytes)
     aad []byte = with-len(5)
-    aad[0] = rec[0] & 255
-    aad[1] = rec[1] & 255
-    aad[2] = rec[2] & 255
-    aad[3] = rec[3] & 255
-    aad[4] = rec[4] & 255
+    aad[0] = rec[0]
+    aad[1] = rec[1]
+    aad[2] = rec[2]
+    aad[3] = rec[3]
+    aad[4] = rec[4]
 
     ; 解密
     plain []byte
@@ -3295,7 +3295,7 @@ server-conn.decrypt-record-13 = (rec []byte, key [16]byte, iv [12]byte, seq i64)
 
     ; 最後一個位元組是原始 content type
     plain-len = plain.len
-    ct = plain[plain-len - 1] & 255
+    ct = plain[plain-len - 1]
     plain-len = plain-len - 1
 
     out = with-len(plain-len)
@@ -3344,14 +3344,14 @@ server-conn.read-encrypted-handshake-13 = () (msg-type i64, msg-data []byte) {
     }
 
     pos = .hs-plain-pos
-    msg-type = .hs-plain-buf[pos] & 255
+    msg-type = .hs-plain-buf[pos]
     msg-len i64 = get-u24(.hs-plain-buf, pos + 1)
 
     pos + 4 + msg-len > .hs-plain-len -> return
 
     msg-data = with-len(msg-len)
     i <- [0..msg-len): {
-        msg-data[i] = .hs-plain-buf[pos + 4 + i] & 255
+        msg-data[i] = .hs-plain-buf[pos + 4 + i]
     }
     msg-data.len = msg-len
 
@@ -3513,8 +3513,8 @@ server-conn.read-client-finished-13 = () (ok bool) {
 
     ; 比較 verify_data
     i <- [0..32): {
-        b1 = cf-data[i] & 255
-        b2 = verify[i] & 255
+        b1 = cf-data[i]
+        b2 = verify[i]
         b1 != b2 -> return
     }
 
@@ -3690,7 +3690,7 @@ server-conn.recv = (buf str, n i64) (read-n i64) {
 
     ; 直接寫入 buf（避免 buf = tmp-str 不會傳播到呼叫端）
     i <- [0..copy-n): {
-        buf[i] = plain[i] & 255
+        buf[i] = plain[i]
     }
     read-n = copy-n
 }

@@ -423,8 +423,8 @@ socks5-connect = (proxy-host str, proxy-port i64, target-host str, target-port i
         fd = -1
         return
     }
-    ver = resp[0] & 255
-    method = resp[1] & 255
+    ver = resp[0]
+    method = resp[1]
     ver != SOCKS5-VERSION || method == SOCKS5-METHOD-NONE-ACCEPTABLE -> {
         fs.close(fd)
         fd = -1
@@ -440,13 +440,13 @@ socks5-connect = (proxy-host str, proxy-port i64, target-host str, target-port i
         auth-req[pos] = username.len & 255
         pos = pos + 1
         i <- [0..username.len): {
-            auth-req[pos] = username[i] & 255
+            auth-req[pos] = username[i]
             pos = pos + 1
         }
         auth-req[pos] = password.len & 255
         pos = pos + 1
         i <- [0..password.len): {
-            auth-req[pos] = password[i] & 255
+            auth-req[pos] = password[i]
             pos = pos + 1
         }
         auth-str = auth-req.to-str()
@@ -465,7 +465,7 @@ socks5-connect = (proxy-host str, proxy-port i64, target-host str, target-port i
             fd = -1
             return
         }
-        (auth-resp[1] & 255) != 0 -> {
+        (auth-resp[1]) != 0 -> {
             fs.close(fd)
             fd = -1
             return
@@ -488,7 +488,7 @@ socks5-connect = (proxy-host str, proxy-port i64, target-host str, target-port i
     conn-req[pos] = target-host.len & 255
     pos = pos + 1
     i <- [0..target-host.len): {
-        conn-req[pos] = target-host[i] & 255
+        conn-req[pos] = target-host[i]
         pos = pos + 1
     }
     conn-req[pos] = (target-port >> 8) & 255
@@ -511,12 +511,12 @@ socks5-connect = (proxy-host str, proxy-port i64, target-host str, target-port i
         fd = -1
         return
     }
-    (reply[0] & 255) != SOCKS5-VERSION -> {
+    (reply[0]) != SOCKS5-VERSION -> {
         fs.close(fd)
         fd = -1
         return
     }
-    rep = reply[1] & 255
+    rep = reply[1]
     rep != 0 -> {
         fs.close(fd)
         fd = -1

@@ -22,7 +22,7 @@ func keyCategory(keyType string) string {
 		return "str"
 	case "bool":
 		return "bool"
-	case "i8", "i16", "i32", "i64", "u8", "u16", "u32", "u64":
+	case "i8", "i16", "i32", "i64", "i128", "u8", "u16", "u32", "u64", "u128":
 		return "int"
 	default:
 		return ""

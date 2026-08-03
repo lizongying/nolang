@@ -186,6 +186,9 @@ func TestReceiverKindString(t *testing.T) {
 		{ReceiverF32, "f32"},
 		{ReceiverF64, "f64"},
 		{ReceiverI64, "i64"},
+		{ReceiverI128, "i128"},
+		{ReceiverU64, "u64"},
+		{ReceiverU128, "u128"},
 		{ReceiverVec, "[]t"},
 		{ReceiverArr, "[n]t"},
 	}

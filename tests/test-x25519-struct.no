@@ -45,12 +45,12 @@ test-struct-field = () (pass bool) {
     eprint('Struct field test pub:')
     i <- [0..32): {
         eprint(' ')
-        eprint(kh.pub[i] & 255)
+        eprint(kh.pub[i])
     }
 
     1
     i <- [0..32): {
-        (kh.pub[i] & 255) != expected[i] -> {
+        (kh.pub[i]) != expected[i] -> {
             0
             break
         }
@@ -90,7 +90,7 @@ test-func-output = () (pass bool) {
     ; 驗證 alice-priv 本身是否正確
     eprint('alice-priv[0..7]: ')
     i <- [0..8): {
-        eprint(alice-priv[i] & 255)
+        eprint(alice-priv[i])
         eprint(' ')
     }
 
@@ -108,12 +108,12 @@ test-func-output = () (pass bool) {
     eprint('Func output test pub:')
     i <- [0..32): {
         eprint(' ')
-        eprint(alice-pub[i] & 255)
+        eprint(alice-pub[i])
     }
 
     1
     i <- [0..32): {
-        (alice-pub[i] & 255) != expected[i] -> {
+        (alice-pub[i]) != expected[i] -> {
             0
             break
         }

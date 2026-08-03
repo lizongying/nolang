@@ -15,10 +15,12 @@ const (
 	ReceiverI16
 	ReceiverI32
 	ReceiverI64
+	ReceiverI128
 	ReceiverU8
 	ReceiverU16
 	ReceiverU32
 	ReceiverU64
+	ReceiverU128
 	ReceiverVec
 	ReceiverArr
 	ReceiverBool
@@ -44,6 +46,8 @@ func (k ReceiverKind) String() string {
 		return "i32"
 	case ReceiverI64:
 		return "i64"
+	case ReceiverI128:
+		return "i128"
 	case ReceiverU8:
 		return "u8"
 	case ReceiverU16:
@@ -52,6 +56,8 @@ func (k ReceiverKind) String() string {
 		return "u32"
 	case ReceiverU64:
 		return "u64"
+	case ReceiverU128:
+		return "u128"
 	case ReceiverVec:
 		return "[]t"
 	case ReceiverArr:

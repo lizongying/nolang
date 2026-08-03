@@ -8,6 +8,6 @@ hash [20]byte = sha1.sha1(data)
 
 print('sha1(abc)=')
 i <- [0..20): {
-    print('{hash[i] & 255:02x}')
+    print('{hash[i]:02x}')
 }
 print('')

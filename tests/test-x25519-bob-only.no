@@ -38,7 +38,7 @@ main = () {
 
     eprint('bob-priv: ')
     i <- [0..32): {
-        eprint(bob-priv[i] & 255)
+        eprint(bob-priv[i])
         eprint(' ')
     }
 
@@ -46,7 +46,7 @@ main = () {
 
     eprint('bob-pub: ')
     i <- [0..32): {
-        eprint(bob-pub[i] & 255)
+        eprint(bob-pub[i])
         eprint(' ')
     }
 
@@ -58,7 +58,7 @@ main = () {
         print('FAIL: Bob only')
         eprint('expected: ')
         i <- [0..32): {
-            eprint(bob-pub-expected[i] & 255)
+            eprint(bob-pub-expected[i])
             eprint(' ')
         }
     }

@@ -95,14 +95,18 @@ func (g *Generator) mapToLLVMType(nolangType string) string {
 		return "i32"
 	case "i64":
 		return "i64"
+	case "i128":
+		return "i128"
 	case "u8":
-		return "i8"
+		return "u8"
 	case "u16":
-		return "i16"
+		return "u16"
 	case "u32":
-		return "i32"
+		return "u32"
 	case "u64":
-		return "i64"
+		return "u64"
+	case "u128":
+		return "u128"
 	case "f32":
 		return "float"
 	case "f64":
@@ -114,11 +118,143 @@ func (g *Generator) mapToLLVMType(nolangType string) string {
 	case "ptr":
 		return "i8*"
 	case "byte":
-		return "i8"
+		return "u8"
 	case "char":
 		return "i32"
 	default:
 		return "i64"
+	}
+}
+
+// toLLVMType converts an internal type string (which may carry signedness info
+// like "u8"/"u16"/"u32"/"u64") to the actual LLVM IR type string.
+// LLVM IR does not distinguish signed/unsigned integers, so "u8" → "i8", etc.
+// Use this when emitting LLVM IR instructions (load, store, zext, sext, GEP, etc.).
+// Use mapToLLVMType() when storing into varTypes/arrayElemTypes to preserve
+// signedness information for later widening decisions.
+// Also handles array types like "[3 x u8]" → "[3 x i8]".
+func toLLVMType(t string) string {
+	// Handle array types: "[N x T]" → "[N x toLLVMType(T)]"
+	if len(t) > 5 && strings.HasPrefix(t, "[") && strings.Contains(t, " x ") {
+		closeBracket := strings.Index(t, "]")
+		if closeBracket > 0 {
+			spaceIdx := strings.Index(t, " x ")
+			if spaceIdx > 0 && spaceIdx < closeBracket {
+				size := t[1:spaceIdx]
+				elemType := t[spaceIdx+3 : closeBracket]
+				return "[" + size + " x " + toLLVMType(elemType) + "]"
+			}
+		}
+	}
+	switch t {
+	case "u8":
+		return "i8"
+	case "u16":
+		return "i16"
+	case "u32":
+		return "i32"
+	case "u64":
+		return "i64"
+	case "u128":
+		return "i128"
+	default:
+		return t
+	}
+}
+
+// isUnsignedIntType reports whether the internal type string represents
+// an unsigned integer type (u8/u16/u32/u64). These types must use zext
+// for widening; signed types (i8/i16/i32) must use sext.
+func isUnsignedIntType(t string) bool {
+	switch t {
+	case "u8", "u16", "u32", "u64", "u128":
+		return true
+	}
+	return false
+}
+
+// widenExtOp returns the LLVM extension instruction ("zext" or "sext") for
+// widening a narrow integer type to a wider one.
+//
+// - Unsigned types (u8/u16/u32/u64) → "zext" (zero-extend, preserves high bits as 0)
+// - Signed types   (i8/i16/i32/i64) → "sext" (sign-extend, replicates sign bit)
+// - i1 (bool)      → "zext" (boolean is always 0/1)
+//
+// This is the single source of truth for all widening decisions, replacing
+// the previous scattered hardcoded checks that only covered i8 and missed
+// i16/i32 (causing them to be incorrectly zero-extended).
+func widenExtOp(valType string) string {
+	if valType == "i1" {
+		return "zext"
+	}
+	if isUnsignedIntType(valType) {
+		return "zext"
+	}
+	return "sext"
+}
+
+// divOp returns the LLVM division instruction ("sdiv" or "udiv") based on
+// the type's signedness. Unsigned types use "udiv", signed types use "sdiv".
+func divOp(valType string) string {
+	if isUnsignedIntType(valType) {
+		return "udiv"
+	}
+	return "sdiv"
+}
+
+// remOp returns the LLVM remainder instruction ("srem" or "urem") based on
+// the type's signedness. Unsigned types use "urem", signed types use "srem".
+func remOp(valType string) string {
+	if isUnsignedIntType(valType) {
+		return "urem"
+	}
+	return "srem"
+}
+
+// icmpPred converts a signed comparison predicate to the correct LLVM icmp
+// predicate based on the type's signedness. For unsigned types, signed
+// predicates (slt/sgt/sle/sge) are converted to their unsigned equivalents
+// (ult/ugt/ule/uge). Equality predicates (eq/ne) are returned unchanged.
+//
+// LLVM IR does not distinguish signed/unsigned types — the distinction is
+// made by the comparison predicate. Using "slt" on an unsigned value would
+// produce incorrect results when the high bit is set (e.g. u8 value 200
+// would be treated as -56).
+func icmpPred(op, llvmType string) string {
+	if !isUnsignedIntType(llvmType) {
+		return op // signed or eq/ne — no change needed
+	}
+	switch op {
+	case "slt":
+		return "ult"
+	case "sgt":
+		return "ugt"
+	case "sle":
+		return "ule"
+	case "sge":
+		return "uge"
+	}
+	return op // eq, ne, etc.
+}
+
+// llvmIntBitWidth returns the bit width of an integer type string (including
+// unsigned variants). Returns 64 for unknown/non-integer types.
+func llvmIntBitWidth(t string) int {
+	switch t {
+	case "i1":
+		return 1
+	case "i8", "u8":
+		return 8
+	case "i16", "u16":
+		return 16
+	case "i32", "u32":
+		return 32
+	case "i64", "u64":
+		return 64
+	case "i128", "u128":
+		return 128
+	default:
+		return 64
 	}
 }
 
@@ -293,6 +429,8 @@ func llvmTypeSize(llvmType string) int64 {
 		return 4
 	case "i64", "u64", "double", "i8*", "i8**", "i8***":
 		return 8
+	case "i128", "u128":
+		return 16
 	case "%str-long", "%vec":
 		// { i64, i64, i64 } = 8 + 8 + 8 = 24 bytes
 		return 24

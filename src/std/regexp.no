@@ -349,7 +349,7 @@ regexp.parse-atom = (pattern str, i i64) (new-i i64) {
         return
     }
 
-    c = pattern[i] & 255
+    c = pattern[i]
 
     c == 46 -> {
         ; . — 任意字元
@@ -393,7 +393,7 @@ regexp.parse-class = (pattern str, i i64) (new-i i64) {
 
     ; 檢查反向 ^
     negated = 0
-    i < n -> pattern[i] & 255 == 94 -> {
+    i < n -> pattern[i] == 94 -> {
         negated = 1
         i = i + 1
     }
@@ -402,7 +402,7 @@ regexp.parse-class = (pattern str, i i64) (new-i i64) {
     first = 1
 
     {
-        c = pattern[i] & 255
+        c = pattern[i]
 
         ; 結束（非首字元）
         c == 93 && first == 0 -> {
@@ -417,9 +417,9 @@ regexp.parse-class = (pattern str, i i64) (new-i i64) {
         ; 檢查範圍 c-end
         is-range = 0
         i + 2 < n -> {
-            next-c = pattern[i + 1] & 255
+            next-c = pattern[i + 1]
             next-c == 45 -> {
-                end-c = pattern[i + 2] & 255
+                end-c = pattern[i + 2]
                 end-c != 93 -> {
                     is-range = 1
                     k = c
@@ -437,7 +437,7 @@ regexp.parse-class = (pattern str, i i64) (new-i i64) {
             c == 92 -> {
                 next-i = i + 1
                 i < n -> {
-                    esc-c = pattern[i + 1] & 255
+                    esc-c = pattern[i + 1]
                     .set-class-escape(cls-idx, esc-c)
                     next-i = i + 2
                 }
@@ -479,7 +479,7 @@ regexp.parse-escape = (pattern str, i i64) (new-i i64) {
         return
     }
 
-    c = pattern[i] & 255
+    c = pattern[i]
 
     c == 100 -> {
         ; \d — 數字
@@ -617,7 +617,7 @@ regexp.compile = () {
     i = 0
 
     {
-        c = .pattern[i] & 255
+        c = .pattern[i]
 
         ; 預設前進 1
         .tmp-next-i = i + 1
@@ -649,7 +649,7 @@ regexp.compile = () {
             ; 完全不涉及 == 42 的比較，繞過 LLVM 優化 bug
             .tmp-quant = _RE-QUANT-NONE
             atom-i < n -> {
-                qc = .pattern[atom-i] & 255
+                qc = .pattern[atom-i]
                 is-star = .in-class(star-cls, qc)
                 is-star -> .tmp-quant = _RE-QUANT-STAR
                 is-plus = .in-class(plus-cls, qc)
@@ -685,10 +685,10 @@ regexp.match-at = (pc i64, sp i64, text str) (ok bool) {
     pc < .n -> {
         op = .op[pc]
 
-        op == RE-OP-CHAR -> sp < text.len -> (text[sp] & 255) == .arg1[pc] -> result-ok = .match-at(pc + 1, sp + 1, text)
-        op == RE-OP-ANY -> sp < text.len -> (text[sp] & 255) != 10 -> result-ok = .match-at(pc + 1, sp + 1, text)
+        op == RE-OP-CHAR -> sp < text.len -> (text[sp]) == .arg1[pc] -> result-ok = .match-at(pc + 1, sp + 1, text)
+        op == RE-OP-ANY -> sp < text.len -> (text[sp]) != 10 -> result-ok = .match-at(pc + 1, sp + 1, text)
         op == RE-OP-CLASS -> sp < text.len -> {
-            ch = text[sp] & 255
+            ch = text[sp]
             yes = .in-class(.arg1[pc], ch)
             yes -> result-ok = .match-at(pc + 1, sp + 1, text)
         }

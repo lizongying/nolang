@@ -63,13 +63,13 @@ hmac-sha256 = (key []byte, msg []byte) (out [32]byte) {
     ; ipad-key = K' ⊕ ipad
     ipad-key [64]byte
     i <- [0..64): {
-        ipad-key[i] = (k[i] & 255) ^ HMAC-IPAD
+        ipad-key[i] = (k[i]) ^ HMAC-IPAD
     }
 
     ; opad-key = K' ⊕ opad
     opad-key [64]byte
     i <- [0..64): {
-        opad-key[i] = (k[i] & 255) ^ HMAC-OPAD
+        opad-key[i] = (k[i]) ^ HMAC-OPAD
     }
 
     ; inner = H(ipad-key || msg)
@@ -144,12 +144,12 @@ hmac-sha1 = (key []byte, msg []byte) (out [20]byte) {
 
     ipad-key [64]byte
     i <- [0..64): {
-        ipad-key[i] = (k[i] & 255) ^ HMAC-IPAD
+        ipad-key[i] = (k[i]) ^ HMAC-IPAD
     }
 
     opad-key [64]byte
     i <- [0..64): {
-        opad-key[i] = (k[i] & 255) ^ HMAC-OPAD
+        opad-key[i] = (k[i]) ^ HMAC-OPAD
     }
 
     inner-data []byte
@@ -222,12 +222,12 @@ hmac-sha512 = (key []byte, msg []byte) (out [64]byte) {
 
     ipad-key [128]byte
     i <- [0..128): {
-        ipad-key[i] = (k[i] & 255) ^ HMAC-IPAD
+        ipad-key[i] = (k[i]) ^ HMAC-IPAD
     }
 
     opad-key [128]byte
     i <- [0..128): {
-        opad-key[i] = (k[i] & 255) ^ HMAC-OPAD
+        opad-key[i] = (k[i]) ^ HMAC-OPAD
     }
 
     inner-data []byte
@@ -293,12 +293,12 @@ hmac-sha384 = (key []byte, msg []byte) (out [48]byte) {
 
     ipad-key [128]byte
     i <- [0..128): {
-        ipad-key[i] = (k[i] & 255) ^ HMAC-IPAD
+        ipad-key[i] = (k[i]) ^ HMAC-IPAD
     }
 
     opad-key [128]byte
     i <- [0..128): {
-        opad-key[i] = (k[i] & 255) ^ HMAC-OPAD
+        opad-key[i] = (k[i]) ^ HMAC-OPAD
     }
 
     inner-data []byte
@@ -364,12 +364,12 @@ hmac-md5 = (key []byte, msg []byte) (out [16]byte) {
 
     ipad-key [64]byte
     i <- [0..64): {
-        ipad-key[i] = (k[i] & 255) ^ HMAC-IPAD
+        ipad-key[i] = (k[i]) ^ HMAC-IPAD
     }
 
     opad-key [64]byte
     i <- [0..64): {
-        opad-key[i] = (k[i] & 255) ^ HMAC-OPAD
+        opad-key[i] = (k[i]) ^ HMAC-OPAD
     }
 
     inner-data []byte

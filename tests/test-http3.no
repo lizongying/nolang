@@ -18,9 +18,9 @@ test-quic-varint-1byte = () {
         print(n.to-str())
         return
     }
-    (buf[0] & 255) != 37 -> {
+    (buf[0]) != 37 -> {
         print('FAIL: quic-varint-encode(37) expected byte=37, got ')
-        print((buf[0] & 255).to-str())
+        print((buf[0]).to-str())
         return
     }
 

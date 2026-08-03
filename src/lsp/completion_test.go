@@ -483,7 +483,7 @@ func TestGetTypeCompletions(t *testing.T) {
 	cp := NewCompletionProvider(doc, nil)
 	items := cp.getTypeCompletions()
 
-	expectedTypes := []string{"i8", "i16", "i32", "i64", "u8", "u16", "u32", "u64",
+	expectedTypes := []string{"i8", "i16", "i32", "i64", "i128", "u8", "u16", "u32", "u64", "u128",
 		"f32", "f64", "byte", "char", "str", "bool", "ptr", "err", "bigint", "void"}
 	found := make(map[string]bool)
 	for _, item := range items {
@@ -503,9 +503,9 @@ func TestGetTypeCompletionsWithFilter(t *testing.T) {
 	doc := createTestDocument("")
 	cp := NewCompletionProvider(doc, nil)
 
-	// Typing 'i' should suggest i8, i16, i32, i64
+	// Typing 'i' should suggest i8, i16, i32, i64, i128
 	items := cp.getTypeCompletionsWithFilter("i")
-	expected := []string{"i8", "i16", "i32", "i64"}
+	expected := []string{"i8", "i16", "i32", "i64", "i128"}
 	if len(items) != len(expected) {
 		t.Errorf("expected %d type completions for 'i', got %d: %v", len(expected), len(items), items)
 	}
@@ -522,10 +522,10 @@ func TestGetTypeCompletionsWithFilter(t *testing.T) {
 		}
 	}
 
-	// Typing 'u' should suggest u8, u16, u32, u64
+	// Typing 'u' should suggest u8, u16, u32, u64, u128
 	items = cp.getTypeCompletionsWithFilter("u")
-	if len(items) != 4 {
-		t.Errorf("expected 4 type completions for 'u', got %d: %v", len(items), items)
+	if len(items) != 5 {
+		t.Errorf("expected 5 type completions for 'u', got %d: %v", len(items), items)
 	}
 
 	// Typing 'f' should suggest f32, f64

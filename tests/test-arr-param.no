@@ -25,7 +25,7 @@ test-via-inner = () (pass bool) {
     ; 打印所有 bytes
     hex = ''
     i <- [0..32): {
-        hex = hex - (arr[i] & 255).to-str() - ' '
+        hex = hex - (arr[i]).to-str() - ' '
     }
     eprint('via inner bytes:')
     eprint(hex)
@@ -52,7 +52,7 @@ test-via-inner = () (pass bool) {
 ; 更接近 fe-tobytes 的真實簽名
 inner-write-i64 = (s [32]byte, h []i64) {
     i <- [0..32): {
-        s[i] = (h[i % 10] & 255) & 255
+        s[i] = (h[i % 10]) & 255
     }
 }
 
@@ -75,7 +75,7 @@ test-via-i64 = () (pass bool) {
     ; 打印所有 bytes
     hex = ''
     i <- [0..32): {
-        hex = hex - (arr[i] & 255).to-str() - ' '
+        hex = hex - (arr[i]).to-str() - ' '
     }
     eprint('via i64 bytes:')
     eprint(hex)

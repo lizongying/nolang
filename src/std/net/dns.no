@@ -128,7 +128,7 @@ build-query = (domain str, qtype i64) (query []byte, qlen i64) {
                 query[pos] = label-len & 255
                 pos = pos + 1
                 j <- [0..label-len): {
-                    query[pos] = domain[label-start + j] & 255
+                    query[pos] = domain[label-start + j]
                     pos = pos + 1
                 }
             }
@@ -170,7 +170,7 @@ parse-name = (data []byte, offset i64) (name str, next-pos i64) {
 
     {
         pos >= data.len -> *
-        len-byte = data[pos] & 255
+        len-byte = data[pos]
         len-byte == 0 -> {
             pos = pos + 1
             jumped == false -> end-pos = pos
@@ -181,7 +181,7 @@ parse-name = (data []byte, offset i64) (name str, next-pos i64) {
         {
             (len-byte & 0xC0) == 0xC0 -> {
                 jumped == false -> end-pos = pos + 2
-                pointer = ((len-byte & 0x3F) << 8) | (data[pos + 1] & 255)
+                pointer = ((len-byte & 0x3F) << 8) | (data[pos + 1])
                 pos = pointer
                 jumped = true
             }
@@ -218,16 +218,16 @@ parse-response = (data []byte) (ip ?str) {
     data.len < 12 -> return
 
     ; 檢查回應碼
-    flags-hi = data[2] & 255
-    flags-lo = data[3] & 255
+    flags-hi = data[2]
+    flags-lo = data[3]
     rcode = flags-lo & 0x0F
     rcode != DNS-RCODE-NO-ERROR -> return
 
     ; 問題數
-    qdcount = ((data[4] & 255) << 8) | (data[5] & 255)
+    qdcount = ((data[4]) << 8) | (data[5])
 
     ; 回答數
-    ancount = ((data[6] & 255) << 8) | (data[7] & 255)
+    ancount = ((data[6]) << 8) | (data[7])
     ancount == 0 -> return
     pos = 12
 
@@ -244,22 +244,22 @@ parse-response = (data []byte) (ip ?str) {
         rname = ''
         rname, pos = parse-name(data, pos)
         pos + 10 > data.len -> return
-        rtype = ((data[pos] & 255) << 8) | (data[pos + 1] & 255)
+        rtype = ((data[pos]) << 8) | (data[pos + 1])
         pos = pos + 2
         ; CLASS (2 bytes)
         pos = pos + 2
         ; TTL (4 bytes)
         pos = pos + 4
         ; RDLENGTH (2 bytes)
-        rdlength = ((data[pos] & 255) << 8) | (data[pos + 1] & 255)
+        rdlength = ((data[pos]) << 8) | (data[pos + 1])
         pos = pos + 2
         pos + rdlength > data.len -> return
         ; A 記錄（4 bytes IPv4）
         rtype == DNS-TYPE-A && rdlength == 4 -> {
-            a = data[pos] & 255
-            b = data[pos + 1] & 255
-            c = data[pos + 2] & 255
-            d = data[pos + 3] & 255
+            a = data[pos]
+            b = data[pos + 1]
+            c = data[pos + 2]
+            d = data[pos + 3]
             sa = a.to-str()
             sb = b.to-str()
             sc = c.to-str()

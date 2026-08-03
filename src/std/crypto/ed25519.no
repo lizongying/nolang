@@ -442,7 +442,7 @@ sc-reduce = (s []byte) (out [32]byte) {
     limbs [8]u64
     i <- [0..8): {
         off = i * 8
-        limbs[i] = (s[off] & 255) | ((s[off + 1] & 255) << 8) | ((s[off + 2] & 255) << 16) | ((s[off + 3] & 255) << 24) | ((s[off + 4] & 255) << 32) | ((s[off + 5] & 255) << 40) | ((s[off + 6] & 255) << 48) | ((s[off + 7] & 255) << 56)
+        limbs[i] = (s[off]) | ((s[off + 1]) << 8) | ((s[off + 2]) << 16) | ((s[off + 3]) << 24) | ((s[off + 4]) << 32) | ((s[off + 5]) << 40) | ((s[off + 6]) << 48) | ((s[off + 7]) << 56)
     }
 
     ; L 的 limb 表示
@@ -511,7 +511,7 @@ sc-reduce = (s []byte) (out [32]byte) {
         ; 減去 L（從低位開始）
         borrow = 0
         i <- [0..32): {
-            diff-val = (work[i] & 255) - (ED-L[i] & 255) - borrow
+            diff-val = (work[i]) - (ED-L[i]) - borrow
             {
                 diff-val < 0 -> {
                     diff-val = diff-val + 256
@@ -523,7 +523,7 @@ sc-reduce = (s []byte) (out [32]byte) {
         }
         ; 處理高位借位
         i <- [32..64 && borrow != 0): {
-            diff-val = (work[i] & 255) - borrow
+            diff-val = (work[i]) - borrow
             {
                 diff-val < 0 -> {
                     diff-val = diff-val + 256
@@ -557,14 +557,14 @@ sc-muladd = (a [32]byte, b [32]byte, c [32]byte) (s [32]byte) {
         carry = 0
         j <- [0..32): {
             idx = i + j
-            val = (product[idx] & 255) + (a[i] & 255) * (b[j] & 255) + carry
+            val = (product[idx]) + (a[i]) * (b[j]) + carry
             product[idx] = val & 255
             carry = val >> 8
         }
         ; 傳播進位
         idx = i + 32
         {
-            val = (product[idx] & 255) + carry
+            val = (product[idx]) + carry
             product[idx] = val & 255
             carry = val >> 8
             idx = idx + 1
@@ -574,12 +574,12 @@ sc-muladd = (a [32]byte, b [32]byte, c [32]byte) (s [32]byte) {
     ; 加上 c
     carry = 0
     i <- [0..32): {
-        val = (product[i] & 255) + (c[i] & 255) + carry
+        val = (product[i]) + (c[i]) + carry
         product[i] = val & 255
         carry = val >> 8
     }
     i <- [32..64 && carry != 0): {
-        val = (product[i] & 255) + carry
+        val = (product[i]) + carry
         product[i] = val & 255
         carry = val >> 8
     }

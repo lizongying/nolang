@@ -21,14 +21,14 @@
 ; data: DER 編碼資料, pos: 位置
 ; tag: 輸出標籤值
 der-tag = (data []byte, pos i64) (tag i64) {
-    tag = data[pos] & 255
+    tag = data[pos]
 }
 
 ; der-len: 解碼 DER 長度
 ; data: DER 編碼資料, pos: 位置（指向長度位元組）
 ; len: 輸出長度值, adv: 輸出消耗的位元組數（1 或更多）
 der-len = (data []byte, pos i64) (len i64, adv i64) {
-    b = data[pos] & 255
+    b = data[pos]
 
     ; 短格式：長度 = b (0-127)
     b < 128 -> {
@@ -41,7 +41,7 @@ der-len = (data []byte, pos i64) (len i64, adv i64) {
     n = b & 127
     len = 0
     i <- [0..n): {
-        len = (len << 8) | (data[pos + 1 + i] & 255)
+        len = (len << 8) | (data[pos + 1 + i])
     }
     adv = 1 + n
 }
@@ -68,7 +68,7 @@ der-skip = (data []byte, pos i64) (next i64) {
 ; end: 輸出 TBS 結束位置（不含，即下個元素的起始）
 x509-tbs-range = (data []byte) (start i64, end i64) {
     ; 驗證外層 SEQUENCE
-    tag = data[0] & 255
+    tag = data[0]
     tag != 48 -> {
         start = 0
         end = 0
@@ -86,9 +86,9 @@ x509-tbs-range = (data []byte) (start i64, end i64) {
     }
 
     ; 印出 TBS 標頭位元組以驗證
-    b0 = data[start + 1] & 255
-    b1 = data[start + 2] & 255
-    b2 = data[start + 3] & 255
+    b0 = data[start + 1]
+    b1 = data[start + 2]
+    b2 = data[start + 3]
     end = der-skip(data, start)
 }
 
@@ -129,7 +129,7 @@ x509-serial = (data []byte, serial i64) {
     ; 讀取序號值
     val = 0
     i <- [0..int-len): {
-        val = (val << 8) | (data[p + 1 + adv + i] & 255)
+        val = (val << 8) | (data[p + 1 + adv + i])
     }
     serial = val
 }
@@ -220,7 +220,7 @@ x509-rsa-e = (data []byte) (e i64) {
     }
     val = 0
     i <- [0..exp-len): {
-        val = (val << 8) | (data[rsa-start + 1 + adv + i] & 255)
+        val = (val << 8) | (data[rsa-start + 1 + adv + i])
     }
     e = val
 }
@@ -277,7 +277,7 @@ x509-rsa-n = (data []byte) (out []byte) {
     ; 跳過前導 0x00（用於保持正號）
     actual-start = mod-val-start
     actual-len = mod-len
-    mod-len > 0 -> (data[mod-val-start] & 255) == 0 -> {
+    mod-len > 0 -> (data[mod-val-start]) == 0 -> {
         actual-start = mod-val-start + 1
         actual-len = mod-len - 1
     }
@@ -356,7 +356,7 @@ x509-fingerprint = (data []byte) (h0 i64, h1 i64, h2 i64, h3 i64, h4 i64, h5 i64
         b3 = 0
         ; 位元組 0
         {
-            boff < tbs-len -> b0 = data[tbs-start + boff] & 255
+            boff < tbs-len -> b0 = data[tbs-start + boff]
             boff == tbs-len -> b0 = 128
             boff >= pad-len - 8 -> {
                 ; 0x80
@@ -378,7 +378,7 @@ x509-fingerprint = (data []byte) (h0 i64, h1 i64, h2 i64, h3 i64, h4 i64, h5 i64
         }
         ; 位元組 1
         {
-            boff + 1 < tbs-len -> b1 = data[tbs-start + boff + 1] & 255
+            boff + 1 < tbs-len -> b1 = data[tbs-start + boff + 1]
             boff + 1 == tbs-len -> b1 = 128
             boff + 1 >= pad-len - 8 -> {
                 ; 0x80
@@ -399,7 +399,7 @@ x509-fingerprint = (data []byte) (h0 i64, h1 i64, h2 i64, h3 i64, h4 i64, h5 i64
         }
         ; 位元組 2
         {
-            boff + 2 < tbs-len -> b2 = data[tbs-start + boff + 2] & 255
+            boff + 2 < tbs-len -> b2 = data[tbs-start + boff + 2]
             boff + 2 == tbs-len -> b2 = 0
             boff + 2 >= pad-len - 8 -> {
                 bit-len = tbs-len * 8
@@ -418,7 +418,7 @@ x509-fingerprint = (data []byte) (h0 i64, h1 i64, h2 i64, h3 i64, h4 i64, h5 i64
         }
         ; 位元組 3
         {
-            boff + 3 < tbs-len -> b3 = data[tbs-start + boff + 3] & 255
+            boff + 3 < tbs-len -> b3 = data[tbs-start + boff + 3]
             boff + 3 == tbs-len -> b3 = 128
             boff + 3 >= pad-len - 8 -> {
                 ; 只有當 0x80 剛好在這位置
@@ -2346,7 +2346,7 @@ x509-bytes-to-bn = (data []byte) (out []i64) {
         byte-from-lsb = n - 1 - i
         limb = byte-from-lsb / 4
         shift = (byte-from-lsb % 4) * 8
-        out[limb] = out[limb] | ((data[i] & 255) << shift)
+        out[limb] = out[limb] | ((data[i]) << shift)
     }
     out.len = limb-count
 }

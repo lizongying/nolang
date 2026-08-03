@@ -37,7 +37,7 @@ aes-128-ctr = (in []byte, key [16]byte, iv [16]byte) (out []byte) {
         n = 16
         pos + n > in.len -> n = in.len - pos
         i <- [0..n): {
-            out[pos + i] = (in[pos + i] & 255) ^ (ks[i] & 255)
+            out[pos + i] = (in[pos + i]) ^ (ks[i])
         }
 
         ; 遞增計數器（大端序，最低 32 位元）
@@ -86,7 +86,7 @@ aes-256-ctr = (in []byte, key [32]byte, iv [16]byte) (out []byte) {
         n = 16
         pos + n > in.len -> n = in.len - pos
         i <- [0..n): {
-            out[pos + i] = (in[pos + i] & 255) ^ (ks[i] & 255)
+            out[pos + i] = (in[pos + i]) ^ (ks[i])
         }
 
         j = 15

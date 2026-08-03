@@ -80,12 +80,12 @@ main = () {
         print('FAIL: (p-1)*1')
         eprint('h3 bytes: ')
         i <- [0..32): {
-            eprint(h3-bytes[i] & 255)
+            eprint(h3-bytes[i])
             eprint(' ')
         }
         eprint('pm1 bytes: ')
         i <- [0..32): {
-            eprint(pm1-bytes[i] & 255)
+            eprint(pm1-bytes[i])
             eprint(' ')
         }
     }

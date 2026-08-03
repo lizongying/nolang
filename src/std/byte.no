@@ -42,7 +42,7 @@ i64.to-bytes-le = () (out [?]byte) {
     v = 0
     n = .len()
     i <- [0..n): {
-        v = (v << 8) | (.[i] & 255)
+        v = (v << 8) | (.[i])
     }
 }
 
@@ -51,7 +51,7 @@ i64.to-bytes-le = () (out [?]byte) {
     v = 0
     n = .len()
     i <- [0..n): {
-        v = v | ((.[i] & 255) << (i * 8))
+        v = v | ((.[i]) << (i * 8))
     }
 }
 
@@ -152,7 +152,7 @@ HEX-LOWER = '0123456789abcdef'
     n = .len()
     out = with-len(n * 2)
     i <- [0..n): {
-        b = .[i] & 255
+        b = .[i]
         out[i * 2] = HEX-UPPER[b >> 4]
         out[i * 2 + 1] = HEX-UPPER[b & 15]
     }
@@ -163,7 +163,7 @@ HEX-LOWER = '0123456789abcdef'
     n = .len()
     out = with-len(n * 2)
     i <- [0..n): {
-        b = .[i] & 255
+        b = .[i]
         out[i * 2] = HEX-LOWER[b >> 4]
         out[i * 2 + 1] = HEX-LOWER[b & 15]
     }

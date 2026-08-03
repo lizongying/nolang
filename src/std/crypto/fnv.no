@@ -21,7 +21,7 @@ FNV64-PRIME u64 = 1099511628211
 fnv-1a-32 = (data []byte) (hash i64) {
     hash = FNV32-OFFSET
     i <- [0..data.len): {
-        hash = hash ^ (data[i] & 255)
+        hash = hash ^ (data[i])
         hash = (hash * FNV32-PRIME) & 4294967295
     }
 }
@@ -33,7 +33,7 @@ fnv-1a-64 = (data []byte) (hash u64) {
     mask u64 = 18446744073709551615
     hash = FNV64-OFFSET
     i <- [0..data.len): {
-        hash = hash ^ (data[i] & 255)
+        hash = hash ^ (data[i])
         hash = (hash * FNV64-PRIME) & mask
     }
 }

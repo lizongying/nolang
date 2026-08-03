@@ -110,7 +110,7 @@ blake2b-compress = (h []u64, block []byte, t u64, last i64) {
     m [16]u64
     i <- [0..16): {
         off = i * 8
-        m[i] = (block[off] & 255) | ((block[off + 1] & 255) << 8) | ((block[off + 2] & 255) << 16) | ((block[off + 3] & 255) << 24) | ((block[off + 4] & 255) << 32) | ((block[off + 5] & 255) << 40) | ((block[off + 6] & 255) << 48) | ((block[off + 7] & 255) << 56)
+        m[i] = (block[off]) | ((block[off + 1]) << 8) | ((block[off + 2]) << 16) | ((block[off + 3]) << 24) | ((block[off + 4]) << 32) | ((block[off + 5]) << 40) | ((block[off + 6]) << 48) | ((block[off + 7]) << 56)
     }
 
     ; 12 輪
@@ -176,7 +176,7 @@ blake2b = (data []byte) (hash [64]byte) {
     ; 輸出（小端序）
     i <- [0..8): {
         off = i * 8
-        hash[off] = h[i] & 255
+        hash[off] = h[i]
         hash[off + 1] = (h[i] >> 8) & 255
         hash[off + 2] = (h[i] >> 16) & 255
         hash[off + 3] = (h[i] >> 24) & 255
@@ -223,7 +223,7 @@ blake2b-256 = (data []byte) (hash [32]byte) {
     ; 輸出前 32 位元組（小端序）
     i <- [0..4): {
         off = i * 8
-        hash[off] = h[i] & 255
+        hash[off] = h[i]
         hash[off + 1] = (h[i] >> 8) & 255
         hash[off + 2] = (h[i] >> 16) & 255
         hash[off + 3] = (h[i] >> 24) & 255
@@ -324,7 +324,7 @@ blake2s-compress = (h []u32, block []byte, t u32, last i64) {
     m [16]u32
     i <- [0..16): {
         off = i * 4
-        m[i] = (block[off] & 255) | ((block[off + 1] & 255) << 8) | ((block[off + 2] & 255) << 16) | ((block[off + 3] & 255) << 24)
+        m[i] = (block[off]) | ((block[off + 1]) << 8) | ((block[off + 2]) << 16) | ((block[off + 3]) << 24)
     }
 
     round <- [0..10): {
@@ -378,7 +378,7 @@ blake2s = (data []byte) (hash [32]byte) {
 
     i <- [0..8): {
         off = i * 4
-        hash[off] = h[i] & 255
+        hash[off] = h[i]
         hash[off + 1] = (h[i] >> 8) & 255
         hash[off + 2] = (h[i] >> 16) & 255
         hash[off + 3] = (h[i] >> 24) & 255

@@ -60,7 +60,7 @@ static-hashmap-str-tmpl.init = () {
 static-hashmap-str-tmpl.hash = (key str) (idx i64) {
     h = FNV-OFFSET
     i <- [0..key.len): {
-        h = h ^ (key[i] & 255)
+        h = h ^ (key[i])
         h = h * FNV-PRIME
     }
     idx = h & (.cap - 1)

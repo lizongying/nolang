@@ -19,7 +19,7 @@ crc-64 = (data []byte) (crc u64) {
     poly u64 = 14180682008813511362
     crc = 0
     i <- [0..data.len): {
-        crc = crc ^ (data[i] & 255)
+        crc = crc ^ (data[i])
         j <- [0..8): {
             {
                 crc & 1 != 0 -> crc = ((crc >> 1) ^ poly) & mask

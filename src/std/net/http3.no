@@ -151,7 +151,7 @@ encode-headers = (names [16]str, values [16]str, count i64) (buf []byte, n i64) 
 decode-header = (buf []byte, pos i64) (name str, value str, next-pos i64) {
     next-pos = -1
     pos >= buf.len -> return
-    prefix = buf[pos] & 255
+    prefix = buf[pos]
     pos = pos + 1
 
     ; 檢查是否為字面標頭（001x xxxx）

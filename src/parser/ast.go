@@ -227,10 +227,12 @@ var (
 	TypeI16  = &NamedType{Value: "i16"}
 	TypeI32  = &NamedType{Value: "i32"}
 	TypeI64  = &NamedType{Value: "i64"}
+	TypeI128 = &NamedType{Value: "i128"}
 	TypeU8   = &NamedType{Value: "u8"}
 	TypeU16  = &NamedType{Value: "u16"}
 	TypeU32  = &NamedType{Value: "u32"}
 	TypeU64  = &NamedType{Value: "u64"}
+	TypeU128 = &NamedType{Value: "u128"}
 	TypeF32  = &NamedType{Value: "f32"}
 	TypeF64  = &NamedType{Value: "f64"}
 	TypeInt  = TypeI64

@@ -31,7 +31,7 @@ print-bytes = (label str, a [32]byte) {
     eprint(label)
     i <- [0..32): {
         eprint(' ')
-        eprint(a[i] & 255)
+        eprint(a[i])
     }
 }
 

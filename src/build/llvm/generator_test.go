@@ -491,6 +491,8 @@ func TestGlobalScalarTypeDeclZeroInit(t *testing.T) {
 		{"u8", "a u8\n", "@a = global i8 0"},
 		{"u16", "a u16\n", "@a = global i16 0"},
 		{"u32", "a u32\n", "@a = global i32 0"},
+		{"i128", "a i128\n", "@a = global i128 0"},
+		{"u128", "a u128\n", "@a = global i128 0"},
 		{"f32", "a f32\n", "@a = global float 0.0"},
 		{"f64", "a f64\n", "@a = global double 0.0"},
 	}

@@ -26,10 +26,12 @@ const (
 	ValueTypeInt16
 	ValueTypeInt32
 	ValueTypeInt64
+	ValueTypeInt128
 	ValueTypeUint8
 	ValueTypeUint16
 	ValueTypeUint32
 	ValueTypeUint64
+	ValueTypeUint128
 
 	ValueTypeFloat32
 	ValueTypeFloat64
@@ -46,14 +48,16 @@ const (
 	vtCharStr   = "char"
 	vtStringStr = "str"
 
-	vtI8Str  = "i8"
-	vtI16Str = "i16"
-	vtI32Str = "i32"
-	vtI64Str = "i64"
-	vtU8Str  = "u8"
-	vtU16Str = "u16"
-	vtU32Str = "u32"
-	vtU64Str = "u64"
+	vtI8Str   = "i8"
+	vtI16Str  = "i16"
+	vtI32Str  = "i32"
+	vtI64Str  = "i64"
+	vtI128Str = "i128"
+	vtU8Str   = "u8"
+	vtU16Str  = "u16"
+	vtU32Str  = "u32"
+	vtU64Str  = "u64"
+	vtU128Str = "u128"
 
 	vtF32Str = "f32"
 	vtF64Str = "f64"
@@ -87,6 +91,8 @@ func (v ValueType) String() string {
 		return vtI32Str
 	case ValueTypeInt64:
 		return vtI64Str
+	case ValueTypeInt128:
+		return vtI128Str
 	case ValueTypeUint8:
 		return vtU8Str
 	case ValueTypeUint16:
@@ -95,6 +101,8 @@ func (v ValueType) String() string {
 		return vtU32Str
 	case ValueTypeUint64:
 		return vtU64Str
+	case ValueTypeUint128:
+		return vtU128Str
 	case ValueTypeFloat32:
 		return vtF32Str
 	case ValueTypeFloat64:
@@ -118,10 +126,12 @@ var strToValueType = map[string]ValueType{
 	vtI16Str:     ValueTypeInt16,
 	vtI32Str:     ValueTypeInt32,
 	vtI64Str:     ValueTypeInt64,
+	vtI128Str:    ValueTypeInt128,
 	vtU8Str:      ValueTypeUint8,
 	vtU16Str:     ValueTypeUint16,
 	vtU32Str:     ValueTypeUint32,
 	vtU64Str:     ValueTypeUint64,
+	vtU128Str:    ValueTypeUint128,
 	vtF32Str:     ValueTypeFloat32,
 	vtF64Str:     ValueTypeFloat64,
 }

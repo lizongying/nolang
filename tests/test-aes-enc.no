@@ -16,6 +16,6 @@ aes-out = aes.aes-128-enc(aes-plain, aes-key)
 
 print('aes-enc=')
 i <- [0..16): {
-    print('{aes-out[i] & 255:02x}')
+    print('{aes-out[i]:02x}')
 }
 print('')

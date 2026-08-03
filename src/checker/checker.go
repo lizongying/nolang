@@ -666,8 +666,8 @@ func collectUnionNamesFromType(t parser.Type, aliases map[string]*parser.TypeAli
 func FlattenUnion(name string, aliases map[string]*parser.TypeAlias) []parser.Type {
 	// 內建類型（不可遞迴展開，視為葉節點）
 	switch name {
-	case "i8", "i16", "i32", "i64",
-		"u8", "u16", "u32", "u64",
+	case "i8", "i16", "i32", "i64", "i128",
+		"u8", "u16", "u32", "u64", "u128",
 		"f32", "f64",
 		"bool", "byte", "char", "str":
 		return []parser.Type{&parser.NamedType{Value: name}}
@@ -2547,7 +2547,7 @@ func checkFormatSpecTypeCompat(typeChar byte, varType, specStr string) string {
 }
 func isIntegerTypeStr(t string) bool {
 	switch t {
-	case "i8", "i16", "i32", "i64", "u8", "u16", "u32", "u64", "byte", "char":
+	case "i8", "i16", "i32", "i64", "i128", "u8", "u16", "u32", "u64", "u128", "byte", "char":
 		return true
 	}
 	return false
@@ -3724,8 +3724,8 @@ func isInferredType(t parser.Type) bool {
 }
 func isBuiltinType(name string) bool {
 	switch name {
-	case "i8", "i16", "i32", "i64",
-		"u8", "u16", "u32", "u64",
+	case "i8", "i16", "i32", "i64", "i128",
+		"u8", "u16", "u32", "u64", "u128",
 		"f32", "f64",
 		"byte", "bool", "str":
 		return true
@@ -4789,7 +4789,7 @@ var validationStructFields map[string]map[string]string
 var validationMu sync.Mutex
 func isValidationIntType(t string) bool {
 	switch t {
-	case "i8", "i16", "i32", "i64", "u8", "u16", "u32", "u64":
+	case "i8", "i16", "i32", "i64", "i128", "u8", "u16", "u32", "u64", "u128":
 		return true
 	}
 	return false
@@ -4809,6 +4809,8 @@ func intTypeBits(t string) int {
 		return 32
 	case "i64", "u64":
 		return 64
+	case "i128", "u128":
+		return 128
 	}
 	return 0
 }

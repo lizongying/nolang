@@ -117,7 +117,7 @@ varint-decode = (buf []byte, pos i64) (val i64, next-pos i64) {
     next-pos = -1
     val = 0
     pos >= buf.len -> return
-    first = buf[pos] & 255
+    first = buf[pos]
     prefix = first >> 6
     {
         prefix == 0 -> {
@@ -126,27 +126,27 @@ varint-decode = (buf []byte, pos i64) (val i64, next-pos i64) {
         }
         prefix == 1 -> {
             pos + 1 >= buf.len -> return
-            val = ((first & 63) << 8) | (buf[pos + 1] & 255)
+            val = ((first & 63) << 8) | (buf[pos + 1])
             next-pos = pos + 2
         }
         prefix == 2 -> {
             pos + 3 >= buf.len -> return
             val = ((first & 63) << 24)
-            val = val | ((buf[pos + 1] & 255) << 16)
-            val = val | ((buf[pos + 2] & 255) << 8)
-            val = val | (buf[pos + 3] & 255)
+            val = val | ((buf[pos + 1]) << 16)
+            val = val | ((buf[pos + 2]) << 8)
+            val = val | (buf[pos + 3])
             next-pos = pos + 4
         }
         -> {
             pos + 7 >= buf.len -> return
             val = ((first & 63) << 56)
-            val = val | ((buf[pos + 1] & 255) << 48)
-            val = val | ((buf[pos + 2] & 255) << 40)
-            val = val | ((buf[pos + 3] & 255) << 32)
-            val = val | ((buf[pos + 4] & 255) << 24)
-            val = val | ((buf[pos + 5] & 255) << 16)
-            val = val | ((buf[pos + 6] & 255) << 8)
-            val = val | (buf[pos + 7] & 255)
+            val = val | ((buf[pos + 1]) << 48)
+            val = val | ((buf[pos + 2]) << 40)
+            val = val | ((buf[pos + 3]) << 32)
+            val = val | ((buf[pos + 4]) << 24)
+            val = val | ((buf[pos + 5]) << 16)
+            val = val | ((buf[pos + 6]) << 8)
+            val = val | (buf[pos + 7])
             next-pos = pos + 8
         }
     }
@@ -415,13 +415,13 @@ decode-packet-number = (packet []byte, pn-offset i64, largest-pn i64) (pn i64, p
     pn-len = 0
 
     pn-offset >= packet.len -> return
-    first = packet[pn-offset] & 255
+    first = packet[pn-offset]
     pn-len = (first & 3) + 1
 
     pn-offset + pn-len > packet.len -> return
     truncated-pn = 0
     i <- [0..pn-len): {
-        truncated-pn = (truncated-pn << 8) | (packet[pn-offset + i] & 255)
+        truncated-pn = (truncated-pn << 8) | (packet[pn-offset + i])
     }
 
     ; 清除長度位元
@@ -705,7 +705,7 @@ conn.recv-initial = () (frames [32]frame, count i64, ok bool) {
     end = n
 
     end < 1 -> return
-    first = buf[0] & 255
+    first = buf[0]
 
     ; 檢查是否為 Long Header
     (first & 0x80) == 0 -> return
@@ -718,12 +718,12 @@ conn.recv-initial = () (frames [32]frame, count i64, ok bool) {
 
     ; Destination CID
     pos >= end -> return
-    dcid-len = buf[pos] & 255
+    dcid-len = buf[pos]
     pos = pos + 1 + dcid-len
 
     ; Source CID
     pos >= end -> return
-    scid-len = buf[pos] & 255
+    scid-len = buf[pos]
     pos = pos + 1 + scid-len
 
     ; Token length (varint)

@@ -864,7 +864,7 @@ func (p *Parser) parseLetStatement() Statement {
 
 			// 使用默认值
 			switch typeStr {
-			case "i8", "i16", "i32", "i64", "u8", "u16", "u32", "u64", "byte":
+			case "i8", "i16", "i32", "i64", "i128", "u8", "u16", "u32", "u64", "u128", "byte":
 				stmt.Value = &Identifier{
 					Token: nameToken,
 					Value: "0",

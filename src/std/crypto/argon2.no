@@ -142,14 +142,14 @@ argon2-compress = (x []byte, y []byte) (out []byte) {
     ; R = X XOR Y
     r []byte
     i <- [0..1024): {
-        r[i] = (x[i] & 255) ^ (y[i] & 255)
+        r[i] = (x[i]) ^ (y[i])
     }
 
     ; 載入為 128 個 u64（16×8 矩陣）
     v [128]u64
     i <- [0..128): {
         off = i * 8
-        v[i] = (r[off] & 255) | ((r[off + 1] & 255) << 8) | ((r[off + 2] & 255) << 16) | ((r[off + 3] & 255) << 24) | ((r[off + 4] & 255) << 32) | ((r[off + 5] & 255) << 40) | ((r[off + 6] & 255) << 48) | ((r[off + 7] & 255) << 56)
+        v[i] = (r[off]) | ((r[off + 1]) << 8) | ((r[off + 2]) << 16) | ((r[off + 3]) << 24) | ((r[off + 4]) << 32) | ((r[off + 5]) << 40) | ((r[off + 6]) << 48) | ((r[off + 7]) << 56)
     }
 
     ; 應用 P 函數（Blake2b 排列）到每行
@@ -388,7 +388,7 @@ argon2id = (password []byte, salt []byte, time-cost i64, memory-cost i64, parall
             new-block = argon2-compress(mem[prev-idx * 1024..], mem[ref-idx * 1024..])
 
             i <- [0..1024): {
-                mem[curr-idx * 1024 + i] = (mem[curr-idx * 1024 + i] & 255) ^ (new-block[i] & 255)
+                mem[curr-idx * 1024 + i] = (mem[curr-idx * 1024 + i]) ^ (new-block[i])
             }
 
             curr-idx = curr-idx + 1

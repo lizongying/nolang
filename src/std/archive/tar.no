@@ -74,7 +74,7 @@ tar.count = () (count i64) {
         ; 檢查是否為結束標記（全零區塊）
         empty = 1
         i <- [0..TAR-BLOCK): {
-            (.data[off + i] & 255) != 0 -> empty = 0
+            (.data[off + i]) != 0 -> empty = 0
         }
         empty == 1 -> return
         count = count + 1
@@ -82,7 +82,7 @@ tar.count = () (count i64) {
         ; 讀取 size 欄位（偏移 124，12 位元組八進制）
         sz = 0
         j <- [0..12): {
-            c = .data[off + 124 + j] & 255
+            c = .data[off + 124 + j]
             c >= 48 && c <= 57 -> sz = sz * 8 + (c - 48)
         }
         blocks = (sz + 511) / TAR-BLOCK
@@ -97,7 +97,7 @@ tar.offset = (idx i64) (off i64) {
     i <- [0..idx): {
         sz = 0
         j <- [0..12): {
-            c = .data[off + 124 + j] & 255
+            c = .data[off + 124 + j]
             c >= 48 && c <= 57 -> sz = sz * 8 + (c - 48)
         }
         blocks = (sz + 511) / TAR-BLOCK
@@ -117,7 +117,7 @@ tar.name = (idx i64) (name str) {
     hdr = .offset(idx)
     name = ''
     i <- [0..100): {
-        c = .data[hdr + i] & 255
+        c = .data[hdr + i]
         c == 0 -> break
         name = name - number.char-to-str(c)
     }
@@ -128,7 +128,7 @@ tar.size = (idx i64) (sz i64) {
     hdr = .offset(idx)
     sz = 0
     i <- [0..12): {
-        c = .data[hdr + 124 + i] & 255
+        c = .data[hdr + 124 + i]
         c >= 48 && c <= 57 -> sz = sz * 8 + (c - 48)
     }
 }
@@ -137,7 +137,7 @@ tar.size = (idx i64) (sz i64) {
 ; 返回 "file"、"dir" 或 "unknown"
 tar.type = (idx i64) (typ str) {
     hdr = .offset(idx)
-    c = .data[hdr + 156] & 255
+    c = .data[hdr + 156]
     typ = 'unknown'
     {
         c == 48 || c == 0 -> typ = 'file'
@@ -148,14 +148,14 @@ tar.type = (idx i64) (typ str) {
 ; is-dir: 判斷第 idx 個條目是否為目錄
 tar.is-dir = (idx i64) (yes bool) {
     hdr = .offset(idx)
-    c = .data[hdr + 156] & 255
+    c = .data[hdr + 156]
     yes = (c == 53)
 }
 
 ; is-file: 判斷第 idx 個條目是否為普通檔案
 tar.is-file = (idx i64) (yes bool) {
     hdr = .offset(idx)
-    c = .data[hdr + 156] & 255
+    c = .data[hdr + 156]
     yes = (c == 48 || c == 0)
 }
 
@@ -175,7 +175,7 @@ tar.mode = (idx i64) (mode i64) {
     hdr = .offset(idx)
     mode = 0
     i <- [0..8): {
-        c = .data[hdr + 100 + i] & 255
+        c = .data[hdr + 100 + i]
         c >= 48 && c <= 55 -> mode = mode * 8 + (c - 48)
     }
 }
@@ -185,7 +185,7 @@ tar.mtime = (idx i64) (ts i64) {
     hdr = .offset(idx)
     ts = 0
     i <- [0..12): {
-        c = .data[hdr + 136 + i] & 255
+        c = .data[hdr + 136 + i]
         c >= 48 && c <= 57 -> ts = ts * 8 + (c - 48)
     }
 }
@@ -197,7 +197,7 @@ tar-entry.name = () (name str) {
     hdr = .idx
     name = ''
     i <- [0..100): {
-        c = .data[hdr + i] & 255
+        c = .data[hdr + i]
         c == 0 -> break
         name = name - number.char-to-str(c)
     }
@@ -208,7 +208,7 @@ tar-entry.size = () (sz i64) {
     hdr = .idx
     sz = 0
     i <- [0..12): {
-        c = .data[hdr + 124 + i] & 255
+        c = .data[hdr + 124 + i]
         c >= 48 && c <= 57 -> sz = sz * 8 + (c - 48)
     }
 }
@@ -216,7 +216,7 @@ tar-entry.size = () (sz i64) {
 ; type: 讀取條目類型
 tar-entry.type = () (typ str) {
     hdr = .idx
-    c = .data[hdr + 156] & 255
+    c = .data[hdr + 156]
     typ = 'unknown'
     {
         c == 48 || c == 0 -> typ = 'file'
@@ -227,14 +227,14 @@ tar-entry.type = () (typ str) {
 ; is-dir: 判斷是否為目錄
 tar-entry.is-dir = () (yes bool) {
     hdr = .idx
-    c = .data[hdr + 156] & 255
+    c = .data[hdr + 156]
     yes = (c == 53)
 }
 
 ; is-file: 判斷是否為普通檔案
 tar-entry.is-file = () (yes bool) {
     hdr = .idx
-    c = .data[hdr + 156] & 255
+    c = .data[hdr + 156]
     yes = (c == 48 || c == 0)
 }
 
@@ -254,7 +254,7 @@ tar-entry.mode = () (mode i64) {
     hdr = .idx
     mode = 0
     i <- [0..8): {
-        c = .data[hdr + 100 + i] & 255
+        c = .data[hdr + 100 + i]
         c >= 48 && c <= 55 -> mode = mode * 8 + (c - 48)
     }
 }
@@ -264,7 +264,7 @@ tar-entry.mtime = () (ts i64) {
     hdr = .idx
     ts = 0
     i <- [0..12): {
-        c = .data[hdr + 136 + i] & 255
+        c = .data[hdr + 136 + i]
         c >= 48 && c <= 57 -> ts = ts * 8 + (c - 48)
     }
 }
@@ -379,7 +379,7 @@ tar-builder.write-header = (name str, typ i64, sz i64) {
 
     checksum = 0
     i <- [0..TAR-BLOCK): {
-        checksum = checksum + (.buf[.pos + i] & 255)
+        checksum = checksum + (.buf[.pos + i])
     }
     .write-octal(148, 6, checksum)
     .buf[.pos + 154] = 0

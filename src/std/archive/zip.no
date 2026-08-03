@@ -35,18 +35,18 @@ u32le = (data []byte, off i64) (v i64) {
     off1 = off + 1
     off2 = off + 2
     off3 = off + 3
-    b0 = data[off] & 255
-    b1 = data[off1] & 255
-    b2 = data[off2] & 255
-    b3 = data[off3] & 255
+    b0 = data[off]
+    b1 = data[off1]
+    b2 = data[off2]
+    b3 = data[off3]
     v = b0 | (b1 << 8) | (b2 << 16) | (b3 << 24)
 }
 
 ; u16le: 讀取 2 位元組小端序無號整數
 u16le = (data []byte, off i64) (v i64) {
     off1 = off + 1
-    b0 = data[off] & 255
-    b1 = data[off1] & 255
+    b0 = data[off]
+    b1 = data[off1]
     v = b0 | (b1 << 8)
 }
 
@@ -128,7 +128,7 @@ zip.name = (idx i64) (name str) {
     result = ''
     i <- [0..name-len): {
         idx2 = off46 + i
-        result = result - number.char-to-str(.data[idx2] & 255)
+        result = result - number.char-to-str(.data[idx2])
     }
     name = result
 }
@@ -206,7 +206,7 @@ zip-entry.name = () (name str) {
     result = ''
     i <- [0..name-len): {
         idx2 = off46 + i
-        result = result - number.char-to-str(.data[idx2] & 255)
+        result = result - number.char-to-str(.data[idx2])
     }
     name = result
 }

@@ -82,11 +82,11 @@ path.join = (b str) {
     ; 如果 a 不以 '/' 結尾且 b 不以 '/' 開頭，加入 '/'
     need-sep = 1
     out-n > 0 -> {
-        last-a = .p[out-n - 1] & 255
+        last-a = .p[out-n - 1]
         last-a == SEP -> need-sep = 0
     }
     bn > 0 -> {
-        first-b = b[0] & 255
+        first-b = b[0]
         first-b == SEP -> need-sep = 0
     }
     out-n == 0 -> need-sep = 0
@@ -98,7 +98,7 @@ path.join = (b str) {
     ; 如果 b 以 '/' 開頭，跳過
     start-b = 0
     bn > 0 -> {
-        first-b = b[0] & 255
+        first-b = b[0]
         first-b == SEP -> start-b = 1
     }
 
@@ -119,7 +119,7 @@ path.base = () (out str) {
     ; 找最右邊的 '/'
     last-sep = -1
     i <- [0...p.len): {
-        c = .p[i] & 255
+        c = .p[i]
         c == SEP -> last-sep = i
     }
     start = last-sep + 1
@@ -136,7 +136,7 @@ path.dir = () {
     ; 找最右邊的 '/'
     last-sep = -1
     i <- [0...p.len): {
-        c = .p[i] & 255
+        c = .p[i]
         c == SEP -> last-sep = i
     }
     {
@@ -168,7 +168,7 @@ path.ext = () (out str) {
     last-sep = -1
     last-dot = -1
     i <- [0...p.len): {
-        c = .p[i] & 255
+        c = .p[i]
         c == SEP -> last-sep = i
         c == DOT -> last-dot = i
     }
@@ -194,7 +194,7 @@ path.ext = () (out str) {
 ; 返回 true=是, false=否
 path.is-abs = () (yes bool) {
     .p.len > 0 -> {
-        c = .p[0] & 255
+        c = .p[0]
         c == SEP -> yes = true
     }
 }
@@ -209,7 +209,7 @@ path.clean = () {
     out-n = 0
     dot-count = 0
     i <- [0...p.len): {
-        c = .p[i] & 255
+        c = .p[i]
         {
             c == SEP -> {
                 ; 處理上一段
@@ -229,7 +229,7 @@ path.clean = () {
                         }
                     }
                     out-n > 0 -> {
-                        prev = .p[out-n - 1] & 255
+                        prev = .p[out-n - 1]
                         prev != SEP -> {
                             .p[out-n] = SEP
                             out-n = out-n + 1
@@ -274,7 +274,7 @@ path.clean = () {
 
     ; 移除末尾 '/'
     out-n > 1 -> {
-        prev = .p[out-n - 1] & 255
+        prev = .p[out-n - 1]
         prev == SEP -> out-n = out-n - 1
     }
 
@@ -293,7 +293,7 @@ path.split = () (f str) {
     ; 找最右邊的 '/'
     last-sep = -1
     i <- [0...p.len): {
-        c = .p[i] & 255
+        c = .p[i]
         c == SEP -> last-sep = i
     }
 

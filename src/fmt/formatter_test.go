@@ -557,7 +557,7 @@ tar-for-each = (data []byte, idx i64, name str, sz i64, typ str, data-out []byte
         empty = 1
         i = 0
         {
-            if data[off + i] & 255 != 0 {
+            if data[off + i] != 0 {
                 empty = 0
                 break
             }
@@ -569,7 +569,7 @@ tar-for-each = (data []byte, idx i64, name str, sz i64, typ str, data-out []byte
         name = ''
         i = 0
         {
-            c = data[off + i] & 255
+            c = data[off + i]
             if c == 0 {
                 break
             }
@@ -579,13 +579,13 @@ tar-for-each = (data []byte, idx i64, name str, sz i64, typ str, data-out []byte
         sz = 0
         i = 0
         {
-            c = data[off + 124 + i] & 255
+            c = data[off + 124 + i]
             if c >= 48 && c <= 57 {
                 sz = sz * 8 + c - 48
             }
             i = i + 1
         } (i < 12)
-        c = data[off + 156] & 255
+        c = data[off + 156]
         if c == 48 || c == 0 {
             typ = 'file'
         } elif c == 53 {
@@ -618,7 +618,7 @@ tar-for-each = (data []byte, idx i64, name str, sz i64, typ str, data-out []byte
         empty = 1
         i = 0
         {
-            if data[off + i] & 255 != 0 {
+            if data[off + i] != 0 {
                 empty = 0
                 break
             }
@@ -630,7 +630,7 @@ tar-for-each = (data []byte, idx i64, name str, sz i64, typ str, data-out []byte
         name = ''
         i = 0
         {
-            c = data[off + i] & 255
+            c = data[off + i]
             if c == 0 {
                 break
             }
@@ -640,13 +640,13 @@ tar-for-each = (data []byte, idx i64, name str, sz i64, typ str, data-out []byte
         sz = 0
         i = 0
         {
-            c = data[off + 124 + i] & 255
+            c = data[off + 124 + i]
             if c >= 48 && c <= 57 {
                 sz = sz * 8 + c - 48
             }
             i = i + 1
         } (i < 12)
-        c = data[off + 156] & 255
+        c = data[off + 156]
         if c == 48 || c == 0 {
             typ = 'file'
         } elif c == 53 {
@@ -689,7 +689,7 @@ tar-for-each = (data []byte, idx i64, name str, sz i64, typ str, data-out []byte
         empty = 1
         i = 0
         {
-            if data[off + i] & 255 != 0 {
+            if data[off + i] != 0 {
                 empty = 0
                 break
             }
@@ -703,7 +703,7 @@ tar-for-each = (data []byte, idx i64, name str, sz i64, typ str, data-out []byte
         name = ''
         i = 0
         {
-            c = data[off + i] & 255
+            c = data[off + i]
             if c == 0 {
                 break
             }
@@ -715,7 +715,7 @@ tar-for-each = (data []byte, idx i64, name str, sz i64, typ str, data-out []byte
         sz = 0
         i = 0
         {
-            c = data[off + 124 + i] & 255
+            c = data[off + 124 + i]
             if c >= 48 && c <= 57 {
                 sz = sz * 8 + (c - 48)
             }
@@ -723,7 +723,7 @@ tar-for-each = (data []byte, idx i64, name str, sz i64, typ str, data-out []byte
         } (i < 12)
 
         // 類型
-        c = data[off + 156] & 255
+        c = data[off + 156]
         if c == 48 || c == 0 {
             typ = 'file'
         } elif c == 53 {
@@ -765,7 +765,7 @@ tar-for-each = (data []byte, idx i64, name str, sz i64, typ str, data-out []byte
         empty = 1
         i = 0
         {
-            if data[off + i] & 255 != 0 {
+            if data[off + i] != 0 {
                 empty = 0
                 break
             }
@@ -779,7 +779,7 @@ tar-for-each = (data []byte, idx i64, name str, sz i64, typ str, data-out []byte
         name = ''
         i = 0
         {
-            c = data[off + i] & 255
+            c = data[off + i]
             if c == 0 {
                 break
             }
@@ -791,7 +791,7 @@ tar-for-each = (data []byte, idx i64, name str, sz i64, typ str, data-out []byte
         sz = 0
         i = 0
         {
-            c = data[off + 124 + i] & 255
+            c = data[off + 124 + i]
             if c >= 48 && c <= 57 {
                 sz = sz * 8 + (c - 48)
             }
@@ -799,7 +799,7 @@ tar-for-each = (data []byte, idx i64, name str, sz i64, typ str, data-out []byte
         } (i < 12)
 
         // 類型
-        c = data[off + 156] & 255
+        c = data[off + 156]
         if c == 48 || c == 0 {
             typ = 'file'
         } elif c == 53 {

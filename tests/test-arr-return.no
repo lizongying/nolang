@@ -42,7 +42,7 @@ test-direct-return = () (pass bool) {
     ; 打印所有 bytes 用於 debug
     hex = ''
     i <- [0..32): {
-        hex = hex - (arr[i] & 255).to-str() - ' '
+        hex = hex - (arr[i]).to-str() - ' '
     }
     eprint('direct return bytes:')
     eprint(hex)

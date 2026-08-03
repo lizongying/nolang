@@ -138,8 +138,8 @@ func (p *Parser) inferTypeFromCallExpr(call *CallExpression) string {
 // Used to support concise declarations like `i64` on its own line.
 func isTypeName(literal string) bool {
 	switch literal {
-	case "i8", "i16", "i32", "i64",
-		"u8", "u16", "u32", "u64",
+	case "i8", "i16", "i32", "i64", "i128",
+		"u8", "u16", "u32", "u64", "u128",
 		"f32", "f64",
 		"byte", "bool", "str":
 		return true
@@ -151,8 +151,8 @@ func isTypeName(literal string) bool {
 // map key or value type (e.g. [str]i64).
 func isBuiltinTypeName(name string) bool {
 	switch name {
-	case "str", "i64", "i32", "i16", "i8",
-		"u64", "u32", "u16", "u8",
+	case "str", "i64", "i32", "i16", "i8", "i128",
+		"u64", "u32", "u16", "u8", "u128",
 		"bool", "byte", "char",
 		"f64", "f32":
 		return true
@@ -322,8 +322,8 @@ func (p *Parser) parseFunctionTypeAlias() Statement {
 // When `name = IDENT` is seen at the top level and IDENT is one of these,
 // it is treated as a type alias rather than a let statement.
 var builtInTypeNames = map[string]bool{
-	"i8": true, "i16": true, "i32": true, "i64": true,
-	"u8": true, "u16": true, "u32": true, "u64": true,
+	"i8": true, "i16": true, "i32": true, "i64": true, "i128": true,
+	"u8": true, "u16": true, "u32": true, "u64": true, "u128": true,
 	"f32": true, "f64": true,
 	"byte": true, "bool": true, "str": true, "any": true,
 }

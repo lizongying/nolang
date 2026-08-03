@@ -578,7 +578,7 @@ enc-conn.recv-encrypted = () (data ?str) {
     len-buf str = with-len(4)
     n = net-recv(.underlying.fd, len-buf, 4)
     n != 4 -> return
-    payload-len = ((len-buf[0] & 255) << 24) | ((len-buf[1] & 255) << 16) | ((len-buf[2] & 255) << 8) | (len-buf[3] & 255)
+    payload-len = ((len-buf[0]) << 24) | ((len-buf[1]) << 16) | ((len-buf[2]) << 8) | (len-buf[3])
     payload-len < 12 || payload-len > 65536 -> return
 
     ; 讀取 payload (IV + sealed)
@@ -738,7 +738,7 @@ icmp-checksum = (data []byte, len i64) (checksum i64) {
     {
         i + 1 < len -> {
             ; 16-bit word: data[i] << 8 | data[i+1]
-            w = ((data[i] & 255) << 8) | (data[i + 1] & 255)
+            w = ((data[i]) << 8) | (data[i + 1])
             checksum = checksum + w
             ; 處理進位
             checksum > 65535 -> {
@@ -749,7 +749,7 @@ icmp-checksum = (data []byte, len i64) (checksum i64) {
     } (i < len)
     ; 奇數長度：補零處理最後一個位元組
     len & 1 == 1 -> {
-        checksum = checksum + ((data[len - 1] & 255) << 8)
+        checksum = checksum + ((data[len - 1]) << 8)
         checksum > 65535 -> {
             checksum = (checksum & 65535) + (checksum >> 16)
         }
@@ -807,15 +807,15 @@ icmp-conn.ping-once = (host str, timeout-ms i64) (rtt ?i64) {
     n - offset < ICMP-HEADER-SIZE -> return
 
     ; 驗證 ICMP Type = 0 (Echo Reply)
-    icmp-type = recv-buf[offset] & 255
+    icmp-type = recv-buf[offset]
     icmp-type != ICMP-ECHO-REPLY -> return
 
     ; 驗證 Identifier
-    recv-ident = ((recv-buf[offset + 4] & 255) << 8) | (recv-buf[offset + 5] & 255)
+    recv-ident = ((recv-buf[offset + 4]) << 8) | (recv-buf[offset + 5])
     recv-ident != .ident -> return
 
     ; 驗證 Sequence（只比較低 16 位）
-    recv-seq = ((recv-buf[offset + 6] & 255) << 8) | (recv-buf[offset + 7] & 255)
+    recv-seq = ((recv-buf[offset + 6]) << 8) | (recv-buf[offset + 7])
     recv-seq != (.seq & 65535) -> return
 
     ; 計算 RTT

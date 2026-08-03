@@ -1275,7 +1275,7 @@ func (g *Generator) Generate(program *parser.Program) string {
 			if i > 0 {
 				sb.WriteString(", ")
 			}
-			sb.WriteString(f.typ)
+			sb.WriteString(toLLVMType(f.typ))
 		}
 		sb.WriteString(" }\n")
 	}
@@ -1520,7 +1520,7 @@ func (g *Generator) Generate(program *parser.Program) string {
 				if llvmType == "float" || llvmType == "double" {
 					zeroVal = "0.0"
 				}
-				sb.WriteString(fmt.Sprintf("%s = global %s %s\n", llvmGlobalRef(name), llvmType, zeroVal))
+				sb.WriteString(fmt.Sprintf("%s = global %s %s\n", llvmGlobalRef(name), toLLVMType(llvmType), zeroVal))
 				g.globalVars[name] = true
 			} else if llvmType == "i64" && ls.Value != nil {
 				if v, ok := intConstValue(ls.Value); ok {

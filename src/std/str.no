@@ -638,7 +638,7 @@ str-to-f64 = (s str) (result f64) {
 
     ; 跳過前導空白
     {
-        c = s[i] & 255
+        c = s[i]
         {
             c == 32 || c == 9 || c == 10 || c == 13 -> i = i + 1
             -> break
@@ -647,7 +647,7 @@ str-to-f64 = (s str) (result f64) {
     i >= n -> return
 
     ; 處理正負號
-    c = s[i] & 255
+    c = s[i]
     c == 45 -> {
         sign = -1.0
         i = i + 1
@@ -656,7 +656,7 @@ str-to-f64 = (s str) (result f64) {
 
     ; 解析整數部分
     {
-        c = s[i] & 255
+        c = s[i]
         {
             c >= 48 && c <= 57 -> {
                 int-part = int-part * 10.0 + number.i64-to-f64(c - 48)
@@ -669,11 +669,11 @@ str-to-f64 = (s str) (result f64) {
 
     ; 解析小數部分
     i < n -> {
-        c = s[i] & 255
+        c = s[i]
         c == 46 -> {
             i = i + 1
             {
-                c = s[i] & 255
+                c = s[i]
                 {
                     c >= 48 && c <= 57 -> {
                         frac-part = frac-part * 10.0 + number.i64-to-f64(c - 48)
@@ -691,11 +691,11 @@ str-to-f64 = (s str) (result f64) {
 
     ; 解析指數部分
     i < n -> {
-        c = s[i] & 255
+        c = s[i]
         c == 101 || c == 69 -> {
             i = i + 1
             i < n -> {
-                c = s[i] & 255
+                c = s[i]
                 c == 45 -> {
                     exp-sign = -1
                     i = i + 1
@@ -703,7 +703,7 @@ str-to-f64 = (s str) (result f64) {
                 c == 43 -> i = i + 1
             }
             {
-                c = s[i] & 255
+                c = s[i]
                 {
                     c >= 48 && c <= 57 -> {
                         exp = exp * 10 + (c - 48)
@@ -1974,7 +1974,7 @@ str.to-hex = () (out str) {
     out = with-cap(.len * 2)
     hex = '0123456789abcdef'
     i <- [0..self.len): {
-        b = .[i] & 255
+        b = .[i]
         out[i * 2] = hex[b >> 4]
         out[i * 2 + 1] = hex[b & 15]
     }

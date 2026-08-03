@@ -439,7 +439,7 @@ func ValTypeFromName(t parser.Type) ValType {
 	switch t.String() {
 	case "i32", "u32", "bool":
 		return I32
-	case "i64", "u64", "int", "i8", "u8", "i16", "u16", "byte", "char":
+	case "i64", "u64", "int", "i8", "u8", "i16", "u16", "byte", "char", "i128", "u128":
 		return I64
 	case "f32":
 		return F32

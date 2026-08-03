@@ -456,7 +456,7 @@ Configure mirror addresses in the `mirrors` array of `package.jsonc` to accelera
 
 ### Data Types
 
-**Base types:** `byte`, `bool` (lowercase only), `char` (character type / rune, double-quoted single character, e.g. `"中"`), `str` (string type, single-quoted `'hello'`, or raw string with backticks), `i8`, `i16`, `i32`, `i64` (default numeric type, architecture-independent), `u8`, `u16`, `u32`, `u64`, `usize` (ffi only), `f32`, `f64`
+**Base types:** `byte`, `bool` (lowercase only), `char` (character type / rune, double-quoted single character, e.g. `"中"`), `str` (string type, single-quoted `'hello'`, or raw string with backticks), `i8`, `i16`, `i32`, `i64` (default numeric type, architecture-independent), `i128` (128-bit signed integer), `u8`, `u16`, `u32`, `u64`, `u128` (128-bit unsigned integer), `usize` (ffi only), `f32`, `f64`
 
 **Container types:** `obj` (object), `map` (map), `arr` (fixed-length array `[n]t`), `vec` (variable-length array `[]t`), `slice` (slice/view, no independent data structure, must be attached to arr/vec/str)
 
@@ -472,7 +472,7 @@ Type aliases create a new name for an existing type. Use the equals syntax `name
 
 ```no
 // Union type: multiple types separated by |
-int = i8 | i16 | i32 | i64 | u8 | u16 | u32 | u64
+int = i8 | i16 | i32 | i64 | i128 | u8 | u16 | u32 | u64 | u128
 float = f32 | f64
 num = int | float
 
@@ -1042,7 +1042,7 @@ The parser automatically adds a hidden `self` parameter with the receiver type, 
 // type aliases & union types — equals syntax
 // name = type1 | type2 | ...  — union of multiple types
 // name = type               — single type alias
-int = i8 | i16 | i32 | i64 | u8 | u16 | u32 | u64
+int = i8 | i16 | i32 | i64 | i128 | u8 | u16 | u32 | u64 | u128
 float = f32 | f64
 num = int | float
 

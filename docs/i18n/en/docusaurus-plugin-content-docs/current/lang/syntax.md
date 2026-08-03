@@ -70,10 +70,12 @@ Basic types
 - i16
 - i32
 - i64 ; default numeric type, architecture-independent
+- i128 ; 128-bit signed integer
 - u8
 - u16
 - u32
 - u64
+- u128 ; 128-bit unsigned integer
 - usize ; FFI only
 - f32
 - f64
@@ -102,7 +104,7 @@ A type alias creates a new name for an existing type. It uses the equals syntax 
 
 ```no
 ; Union type: multiple types separated by |
-int = i8 | i16 | i32 | i64 | u8 | u16 | u32 | u64
+int = i8 | i16 | i32 | i64 | i128 | u8 | u16 | u32 | u64 | u128
 float = f32 | f64
 num = int | float
 
@@ -116,7 +118,7 @@ buf = [16]u8
 Union types can reference other union types to form a hierarchy:
 
 ```no
-int = i8 | i16 | i32 | i64 | u8 | u16 | u32 | u64
+int = i8 | i16 | i32 | i64 | i128 | u8 | u16 | u32 | u64 | u128
 float = f32 | f64
 num = int | float     ; num is a union of int and float
 ```

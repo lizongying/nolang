@@ -52,8 +52,8 @@ test-vec-1 = () (pass bool) {
     ok == false -> {
         print('FAIL: Alice public key mismatch')
         i <- [0..32): {
-            e = alice-pub-expected[i] & 255
-            c = alice-pub[i] & 255
+            e = alice-pub-expected[i]
+            c = alice-pub[i]
             eprint('  idx=')
             eprint(i)
             eprint(' expected=')
@@ -88,12 +88,12 @@ test-vec-1 = () (pass bool) {
         eprint('Alice shared:')
         i <- [0..32): {
             eprint(' ')
-            eprint(shared-alice[i] & 255)
+            eprint(shared-alice[i])
         }
         eprint('Bob shared:')
         i <- [0..32): {
             eprint(' ')
-            eprint(shared-bob[i] & 255)
+            eprint(shared-bob[i])
         }
         return
     }
@@ -107,12 +107,12 @@ test-vec-1 = () (pass bool) {
         eprint('Computed:')
         i <- [0..32): {
             eprint(' ')
-            eprint(shared-alice[i] & 255)
+            eprint(shared-alice[i])
         }
         eprint('Expected:')
         i <- [0..32): {
             eprint(' ')
-            eprint(shared-expected[i] & 255)
+            eprint(shared-expected[i])
         }
         return
     }

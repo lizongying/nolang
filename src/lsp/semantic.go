@@ -461,7 +461,7 @@ func (sp *SemanticTokensProvider) mapTokenModifiers(tok lexer.Token, identMods m
 // isTypeName returns true if the literal is a known Nolang built-in type.
 func isTypeName(s string) bool {
 	switch s {
-	case "i8", "i16", "i32", "i64", "u8", "u16", "u32", "u64",
+	case "i8", "i16", "i32", "i64", "i128", "u8", "u16", "u32", "u64", "u128",
 		"f32", "f64", "bool", "str", "byte", "char", "ptr", "err", "bigint",
 		"void":
 		return true

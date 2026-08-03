@@ -38,7 +38,7 @@ main = () {
 
     eprint('alice-priv: ')
     i <- [0..32): {
-        eprint(alice-priv[i] & 255)
+        eprint(alice-priv[i])
         eprint(' ')
     }
 
@@ -46,7 +46,7 @@ main = () {
 
     eprint('alice-pub: ')
     i <- [0..32): {
-        eprint(alice-pub[i] & 255)
+        eprint(alice-pub[i])
         eprint(' ')
     }
 
@@ -58,7 +58,7 @@ main = () {
         print('FAIL: Alice only')
         eprint('expected: ')
         i <- [0..32): {
-            eprint(alice-pub-expected[i] & 255)
+            eprint(alice-pub-expected[i])
             eprint(' ')
         }
     }

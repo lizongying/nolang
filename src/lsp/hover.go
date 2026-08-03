@@ -25,10 +25,12 @@ var builtinTypeDoc = map[string]string{
 	"i16":  "**型別**: `i16` (16-bit signed integer)\n\n- **Range(dec)**: `-32768` .. `32767`\n- **Range(hex)**: `0x8000` .. `0x7fff`",
 	"i32":  "**型別**: `i32` (32-bit signed integer)\n\n- **Range(dec)**: `-2147483648` .. `2147483647`\n- **Range(hex)**: `0x80000000` .. `0x7fffffff`",
 	"i64":  "**型別**: `i64` (64-bit signed integer)\n\n- **Range(dec)**: `-9223372036854775808` .. `9223372036854775807`\n- **Range(hex)**: `0x8000000000000000` .. `0x7fffffffffffffff`",
+	"i128": "**型別**: `i128` (128-bit signed integer)\n\n- **Range(dec)**: `-170141183460469231731687303715884105728` .. `170141183460469231731687303715884105727`\n- **Range(hex)**: `0x80000000000000000000000000000000` .. `0x7fffffffffffffffffffffffffffffff`",
 	"u8":   "**型別**: `u8` (8-bit unsigned integer)\n\n- **Range(dec)**: `0` .. `255`\n- **Range(hex)**: `0x00` .. `0xff`",
 	"u16":  "**型別**: `u16` (16-bit unsigned integer)\n\n- **Range(dec)**: `0` .. `65535`\n- **Range(hex)**: `0x0000` .. `0xffff`",
 	"u32":  "**型別**: `u32` (32-bit unsigned integer)\n\n- **Range(dec)**: `0` .. `4294967295`\n- **Range(hex)**: `0x00000000` .. `0xffffffff`",
 	"u64":  "**型別**: `u64` (64-bit unsigned integer)\n\n- **Range(dec)**: `0` .. `18446744073709551615`\n- **Range(hex)**: `0x0000000000000000` .. `0xffffffffffffffff`",
+	"u128": "**型別**: `u128` (128-bit unsigned integer)\n\n- **Range(dec)**: `0` .. `340282366920938463463374607431768211455`\n- **Range(hex)**: `0x00000000000000000000000000000000` .. `0xffffffffffffffffffffffffffffffff`",
 	"byte": "**型別**: `byte` (8-bit unsigned, alias of u8)\n\n- **Range(dec)**: `0` .. `255`\n- **Range(hex)**: `0x00` .. `0xff`",
 	"f32":  "**型別**: `f32` (32-bit float)\n\n- **Range(dec)**: `-3.4028234663852886e+38` .. `3.4028234663852886e+38`",
 	"f64":  "**型別**: `f64` (64-bit float)\n\n- **Range(dec)**: `-1.7976931348623157e+308` .. `1.7976931348623157e+308`",
@@ -173,6 +175,8 @@ func typeRangeInfo(typeName string) string {
 		return "- **Range(dec)**: `-2147483648` .. `2147483647`\n- **Range(hex)**: `0x80000000` .. `0x7fffffff`\n"
 	case "i64":
 		return "- **Range(dec)**: `-9223372036854775808` .. `9223372036854775807`\n- **Range(hex)**: `0x8000000000000000` .. `0x7fffffffffffffff`\n"
+	case "i128":
+		return "- **Range(dec)**: `-170141183460469231731687303715884105728` .. `170141183460469231731687303715884105727`\n- **Range(hex)**: `0x80000000000000000000000000000000` .. `0x7fffffffffffffffffffffffffffffff`\n"
 	case "u8":
 		return "- **Range(dec)**: `0` .. `255`\n- **Range(hex)**: `0x00` .. `0xff`\n"
 	case "u16":
@@ -181,6 +185,8 @@ func typeRangeInfo(typeName string) string {
 		return "- **Range(dec)**: `0` .. `4294967295`\n- **Range(hex)**: `0x00000000` .. `0xffffffff`\n"
 	case "u64":
 		return "- **Range(dec)**: `0` .. `18446744073709551615`\n- **Range(hex)**: `0x0000000000000000` .. `0xffffffffffffffff`\n"
+	case "u128":
+		return "- **Range(dec)**: `0` .. `340282366920938463463374607431768211455`\n- **Range(hex)**: `0x00000000000000000000000000000000` .. `0xffffffffffffffffffffffffffffffff`\n"
 	case "byte":
 		return "- **Range(dec)**: `0` .. `255`\n- **Range(hex)**: `0x00` .. `0xff`\n"
 	case "f32":

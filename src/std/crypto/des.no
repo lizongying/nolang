@@ -184,7 +184,7 @@ permute = (input i64, tbl []byte, n i64, width i64) (r i64) {
     r = 0
     i = 0
     {
-        pos = width - (tbl[i] & 255)
+        pos = width - (tbl[i])
         bit = (input >> pos) & 1
         r = r | (bit << (n - 1 - i))
         i = i + 1
@@ -242,22 +242,22 @@ f = (r i64, k i64) (out i64) {
 des-key-schedule = (key [8]byte) (ks [96]byte) {
     k64 = 0
     i <- [0..8): {
-        k64 = (k64 << 8) | (key[i] & 255)
+        k64 = (k64 << 8) | (key[i])
     }
 
     c = 0
     d = 0
     i <- [0..28): {
-        pos = 64 - (PC1-C[i] & 255)
+        pos = 64 - (PC1-C[i])
         bit = (k64 >> pos) & 1
         c = c | (bit << (27 - i))
-        pos2 = 64 - (PC1-D[i] & 255)
+        pos2 = 64 - (PC1-D[i])
         bit2 = (k64 >> pos2) & 1
         d = d | (bit2 << (27 - i))
     }
 
     round <- [0..16): {
-        shift = SHIFT-TBL[round] & 255
+        shift = SHIFT-TBL[round]
         cm = (1 << 28) - 1
         c = ((c << shift) | (c >> (28 - shift))) & cm
         d = ((d << shift) | (d >> (28 - shift))) & cm
@@ -280,7 +280,7 @@ des-key-schedule = (key [8]byte) (ks [96]byte) {
 des-block = (in []byte, n i64, ks [96]byte, encrypt i64) (out []byte) {
     block = 0
     i <- [0..8): {
-        block = (block << 8) | (in[i] & 255)
+        block = (block << 8) | (in[i])
     }
 
     ip = 0

@@ -78,12 +78,12 @@ test-dh = () (pass bool) {
     ; 列印共享金鑰
     eprint('Alice shared: ')
     i <- [0..32): {
-        eprint(alice.shared[i] & 255)
+        eprint(alice.shared[i])
         eprint(' ')
     }
     eprint('Bob shared: ')
     i <- [0..32): {
-        eprint(bob.shared[i] & 255)
+        eprint(bob.shared[i])
         eprint(' ')
     }
 

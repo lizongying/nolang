@@ -451,9 +451,9 @@ func (g *Generator) emitArgAsStrLong(sb *strings.Builder, expr parser.Expression
 	case specType == 'b' || specType == 'o' || specType == 'x' || specType == 'X':
 		// Unsigned format — use fmt-uint (expects i64*).
 		// Coerce narrow integers to i64 with zext (unsigned semantics).
-		if srcType == "i8" || srcType == "i16" || srcType == "i32" {
+		if srcType == "i8" || srcType == "u8" || srcType == "i16" || srcType == "u16" || srcType == "i32" || srcType == "u32" || srcType == "i1" {
 			extReg := g.tmpReg("arg.ext")
-			sb.WriteString(fmt.Sprintf("%s%s = zext %s %s to i64\n", g.indent(), extReg, srcType, v))
+			sb.WriteString(fmt.Sprintf("%s%s = zext %s %s to i64\n", g.indent(), extReg, toLLVMType(srcType), v))
 			v = extReg
 		}
 		valAlloca := g.tmpReg("fmtval")
@@ -479,9 +479,10 @@ func (g *Generator) emitArgAsStrLong(sb *strings.Builder, expr parser.Expression
 		// Integer — fmt-int(i64* n, %str-long* spec, %str-long* out).
 		// Coerce narrow integers to i64 with sext (signed semantics, matches
 		// the previous printVariadic behavior for %lld).
-		if srcType == "i8" || srcType == "i16" || srcType == "i32" {
+		if srcType == "i8" || srcType == "u8" || srcType == "i16" || srcType == "u16" || srcType == "i32" || srcType == "u32" || srcType == "i1" {
 			extReg := g.tmpReg("arg.ext")
-			sb.WriteString(fmt.Sprintf("%s%s = sext %s %s to i64\n", g.indent(), extReg, srcType, v))
+			op := widenExtOp(srcType)
+			sb.WriteString(fmt.Sprintf("%s%s = %s %s %s to i64\n", g.indent(), extReg, op, toLLVMType(srcType), v))
 			v = extReg
 		}
 		valAlloca := g.tmpReg("fmtval")
@@ -3521,8 +3522,8 @@ func (g *Generator) evalFmtExpr(sb *strings.Builder, exprStr string) (string, st
 
 	// Allocate a temp variable and store the value
 	tmpAlloca := g.tmpReg("nfmt.expr")
-	sb.WriteString(fmt.Sprintf("%s%s = alloca %s\n", g.indent(), tmpAlloca, llvmType))
-	sb.WriteString(fmt.Sprintf("%sstore %s %s, %s* %s\n", g.indent(), llvmType, val, llvmType, tmpAlloca))
+	sb.WriteString(fmt.Sprintf("%s%s = alloca %s\n", g.indent(), tmpAlloca, toLLVMType(llvmType)))
+	sb.WriteString(fmt.Sprintf("%sstore %s %s, %s* %s\n", g.indent(), toLLVMType(llvmType), val, toLLVMType(llvmType), tmpAlloca))
 
 	return tmpAlloca, llvmType
 }
@@ -3545,14 +3546,9 @@ func (g *Generator) emitFmtArgPtr(sb *strings.Builder, varName, varType, targetT
 	sb.WriteString(fmt.Sprintf("%s%s = load %s, %s* %s\n", g.indent(), loadReg, varType, varType, addr))
 
 	switch {
-	case varType == "i8" && targetType == "i64":
-		sb.WriteString(fmt.Sprintf("%s%s = zext i8 %s to i64\n", g.indent(), convReg, loadReg))
-	case varType == "i16" && targetType == "i64":
-		sb.WriteString(fmt.Sprintf("%s%s = sext i16 %s to i64\n", g.indent(), convReg, loadReg))
-	case varType == "i32" && targetType == "i64":
-		sb.WriteString(fmt.Sprintf("%s%s = sext i32 %s to i64\n", g.indent(), convReg, loadReg))
-	case varType == "i1" && targetType == "i64":
-		sb.WriteString(fmt.Sprintf("%s%s = zext i1 %s to i64\n", g.indent(), convReg, loadReg))
+	case (varType == "i8" || varType == "u8" || varType == "i16" || varType == "u16" || varType == "i32" || varType == "u32" || varType == "i1") && targetType == "i64":
+		op := widenExtOp(varType)
+		sb.WriteString(fmt.Sprintf("%s%s = %s %s %s to i64\n", g.indent(), convReg, op, toLLVMType(varType), loadReg))
 	case varType == "i64" && targetType == "double":
 		// Integer to double conversion (sitofp)
 		sb.WriteString(fmt.Sprintf("%s%s = sitofp i64 %s to double\n", g.indent(), convReg, loadReg))

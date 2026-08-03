@@ -28,11 +28,11 @@ base32-encode = (data []byte) (out str) {
     pos = 0
     {
         ; 提取 5 位元組 → 40 位元 → 8 個 5-bit 值
-        b0 = data[pos] & 255
-        b1 = data[pos + 1] & 255
-        b2 = data[pos + 2] & 255
-        b3 = data[pos + 3] & 255
-        b4 = data[pos + 4] & 255
+        b0 = data[pos]
+        b1 = data[pos + 1]
+        b2 = data[pos + 2]
+        b3 = data[pos + 3]
+        b4 = data[pos + 4]
 
         out[out-pos] = BASE32-ALPHABET[(b0 >> 3) & 31]
         out[out-pos + 1] = BASE32-ALPHABET[((b0 & 7) << 2) | ((b1 >> 6) & 3)]
@@ -55,10 +55,10 @@ base32-encode = (data []byte) (out str) {
         b2 = 0
         b3 = 0
         b4 = 0
-        remainder >= 1 -> b0 = data[pos] & 255
-        remainder >= 2 -> b1 = data[pos + 1] & 255
-        remainder >= 3 -> b2 = data[pos + 2] & 255
-        remainder >= 4 -> b3 = data[pos + 3] & 255
+        remainder >= 1 -> b0 = data[pos]
+        remainder >= 2 -> b1 = data[pos + 1]
+        remainder >= 3 -> b2 = data[pos + 2]
+        remainder >= 4 -> b3 = data[pos + 3]
 
         ; 根據剩餘位元組數決定輸出字元和填充
         out[out-pos] = BASE32-ALPHABET[(b0 >> 3) & 31]

@@ -98,7 +98,7 @@ ip-addr.parse = (s str) (ok bool) {
     octet-idx = 0
     has-digit = 0
     i <- [0..n): {
-        c = s[i] & 255
+        c = s[i]
         {
             c >= 48 && c <= 57 -> {
                 octet = octet * 10 + (c - 48)

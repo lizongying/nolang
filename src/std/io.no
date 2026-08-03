@@ -59,7 +59,7 @@ reader.read-byte = () (b ?i64) {
     .fd < 0 -> return
     buf = ' '
     n = fs.read(.fd, buf, 1)
-    n > 0 -> b = buf[0] & 255
+    n > 0 -> b = buf[0]
 }
 
 ; read-line: 讀取一行（最多 4096 位元組）

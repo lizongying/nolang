@@ -35,7 +35,7 @@ func StructFieldTypeString(f *parser.StructField) string {
 // isConcreteType 檢查型別名稱是否為已知具體型別
 func isConcreteType(typeName string) bool {
 	switch typeName {
-	case "i8", "i16", "i32", "i64", "u8", "u16", "u32", "u64",
+	case "i8", "i16", "i32", "i64", "i128", "u8", "u16", "u32", "u64", "u128",
 		"byte", "f64", "str", "bool", "char", "void":
 		return true
 	}
@@ -459,7 +459,7 @@ func isIntegerLiteral(expr parser.Expression) bool {
 // isNumericType returns true for all integer and float types.
 func isNumericType(t string) bool {
 	switch t {
-	case "i8", "i16", "i32", "i64", "u8", "u16", "u32", "u64", "f32", "f64":
+	case "i8", "i16", "i32", "i64", "i128", "u8", "u16", "u32", "u64", "u128", "f32", "f64":
 		return true
 	}
 	return false
@@ -485,6 +485,9 @@ func intTypeRange(t string) (min, max int64, ok bool) {
 		return -2147483648, 2147483647, true
 	case "i64":
 		return -9223372036854775808, 9223372036854775807, true
+	case "i128":
+		// i128 range exceeds int64; any int64 literal fits within i128.
+		return -9223372036854775808, 9223372036854775807, true
 	case "u8", "byte":
 		return 0, 255, true
 	case "char":
@@ -498,6 +501,10 @@ func intTypeRange(t string) (min, max int64, ok bool) {
 		// We use int64 max as the upper bound for range comparisons
 		// involving int64 values. Large unsigned literals (> int64 max)
 		// are handled separately in isArgTypeCompatible via uint64FromLiteral.
+		return 0, 9223372036854775807, true
+	case "u128":
+		// u128 range exceeds int64; any non-negative int64 literal fits within u128.
+		// Large unsigned literals are handled via uint64FromLiteral.
 		return 0, 9223372036854775807, true
 	}
 	return 0, 0, false
@@ -513,7 +520,7 @@ func intTypeRange(t string) (min, max int64, ok bool) {
 func isSafeBitwiseNarrowing(expr parser.Expression, targetType string) bool {
 	// 僅對無號整數目標型別放行
 	switch targetType {
-	case "u8", "u16", "u32", "u64", "byte":
+	case "u8", "u16", "u32", "u64", "u128", "byte":
 	default:
 		return false
 	}
@@ -647,9 +654,9 @@ func isArgTypeCompatible(expectedType, argType string, arg parser.Expression) bo
 				if val < 0 && min == 0 {
 					if uval, ok := uint64FromLiteral(arg); ok {
 						// For u64, any uint64 value is in range.
-						if expectedType == "u64" {
-							return true
-						}
+					if expectedType == "u64" || expectedType == "u128" {
+						return true
+					}
 						return uval <= uint64(max)
 					}
 				}
@@ -683,7 +690,7 @@ func isArgTypeCompatible(expectedType, argType string, arg parser.Expression) bo
 // to a composite type string like "[]byte" or "?i64".
 func isSimplePrimitiveTypeName(t string) bool {
 	switch t {
-	case "i8", "i16", "i32", "i64", "u8", "u16", "u32", "u64",
+	case "i8", "i16", "i32", "i64", "i128", "u8", "u16", "u32", "u64", "u128",
 		"byte", "char", "bool", "f32", "f64":
 		return true
 	}

@@ -9,8 +9,8 @@ import (
 // modulePrefixBuiltinTypes is the set of built-in type names that must never
 // receive a module prefix.
 var modulePrefixBuiltinTypes = map[string]bool{
-	"i8": true, "i16": true, "i32": true, "i64": true,
-	"u8": true, "u16": true, "u32": true, "u64": true,
+	"i8": true, "i16": true, "i32": true, "i64": true, "i128": true,
+	"u8": true, "u16": true, "u32": true, "u64": true, "u128": true,
 	"bool": true, "byte": true, "char": true,
 	"f32": true, "f64": true,
 	"str": true, "ptr": true,

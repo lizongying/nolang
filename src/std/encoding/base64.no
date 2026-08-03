@@ -30,9 +30,9 @@ encode = (data []byte, table str) (out str) {
     i = 0
     j = 0
     {
-        b0 = data[i] & 255
-        b1 = data[i + 1] & 255
-        b2 = data[i + 2] & 255
+        b0 = data[i]
+        b1 = data[i + 1]
+        b2 = data[i + 2]
         out[j] = table[b0 >> 2]
         out[j + 1] = table[((b0 & 3) << 4) | (b1 >> 4)]
         out[j + 2] = table[((b1 & 15) << 2) | (b2 >> 6)]
@@ -44,15 +44,15 @@ encode = (data []byte, table str) (out str) {
     ; 處理剩餘 1 或 2 位元組
     rem = n - i
     rem == 1 -> {
-        b0 = data[i] & 255
+        b0 = data[i]
         out[j] = table[b0 >> 2]
         out[j + 1] = table[(b0 & 3) << 4]
         out[j + 2] = PAD
         out[j + 3] = PAD
     }
     rem == 2 -> {
-        b0 = data[i] & 255
-        b1 = data[i + 1] & 255
+        b0 = data[i]
+        b1 = data[i + 1]
         out[j] = table[b0 >> 2]
         out[j + 1] = table[((b0 & 3) << 4) | (b1 >> 4)]
         out[j + 2] = table[(b1 & 15) << 2]
@@ -89,11 +89,11 @@ decode = (s str, table str) (out ?[]byte) {
     ; 計算填充數
     pad-count = 0
     n > 0 -> {
-        last = s[n - 1] & 255
+        last = s[n - 1]
         last == 61 -> pad-count = 1
     }
     n > 1 -> {
-        last2 = s[n - 2] & 255
+        last2 = s[n - 2]
         last2 == 61 -> pad-count = 2
     }
     i = 0
@@ -109,14 +109,14 @@ decode = (s str, table str) (out ?[]byte) {
             return
         }
         out[j] = (v0 << 2) | (v1 >> 4)
-        s[i + 2] & 255 != 61 -> {
+        s[i + 2] != 61 -> {
             v2 < 0 -> {
                 out = err('invalid base64 character')
                 return
             }
             out[j + 1] = ((v1 & 15) << 4) | (v2 >> 2)
         }
-        s[i + 3] & 255 != 61 -> {
+        s[i + 3] != 61 -> {
             v3 < 0 -> {
                 out = err('invalid base64 character')
                 return
@@ -143,7 +143,7 @@ b64-val = (c i64, table str) (v i64) {
         return
     }
     i <- [0..64): {
-        tc = table[i] & 255
+        tc = table[i]
         tc == c -> {
             v = i
             return

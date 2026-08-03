@@ -618,7 +618,7 @@ from-str = (s str) (out bigint) {
     pos = 0
     tmp-bigint = bigint{}
     {
-        c = s[pos] & 255
+        c = s[pos]
         c != 32 && c != 9 && c != 10 && c != 13 -> break
         pos = pos + 1
     } (pos < s.len)
@@ -630,7 +630,7 @@ from-str = (s str) (out bigint) {
         s[pos] == 43 -> pos = pos + 1
     }
     {
-        c = s[pos] & 255
+        c = s[pos]
         {
             c >= 48 && c <= 57 -> {
                 mul-i64(out, 10, tmp-bigint)
@@ -703,7 +703,7 @@ from-hex = (s str) (out bigint) {
     out.len = 1
     tmp-bigint = bigint{}
     i <- [0..s.len): {
-        c = s[i] & 255
+        c = s[i]
         {
             c >= 48 && c <= 57 -> {
                 mul-i64(out, 16, tmp-bigint)

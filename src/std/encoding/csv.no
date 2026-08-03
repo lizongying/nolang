@@ -22,7 +22,7 @@ parse-field = (s str, pos i64) (field str, new-pos i64) {
         new-pos = pos
         return
     }
-    c = s[pos] & 255
+    c = s[pos]
     c == 44 -> {
         ; 空欄位（逗號開頭）
         new-pos = pos + 1
@@ -32,11 +32,11 @@ parse-field = (s str, pos i64) (field str, new-pos i64) {
         ; 雙引號包圍的欄位
         pos = pos + 1
         {
-            c = s[pos] & 255
+            c = s[pos]
             c == 34 -> {
                 ; 檢查是否為跳脫的雙引號
                 pos + 1 < s.len -> {
-                    nc = s[pos + 1] & 255
+                    nc = s[pos + 1]
                     nc == 34 -> {
                         field[fn] = 34
                         fn = fn + 1
@@ -50,7 +50,7 @@ parse-field = (s str, pos i64) (field str, new-pos i64) {
 
                 ; 跳過後續逗號
                 pos < s.len -> {
-                    nc = s[pos] & 255
+                    nc = s[pos]
                     nc == 44 -> pos = pos + 1
                 }
                 new-pos = pos
@@ -75,7 +75,7 @@ parse-field = (s str, pos i64) (field str, new-pos i64) {
 
     ; 普通欄位（無引號）
     {
-        c = s[pos] & 255
+        c = s[pos]
         c == 44 -> {
             pos = pos + 1
             new-pos = pos
@@ -115,7 +115,7 @@ parse-line = (s str, max-fields i64 = 1024) (fields []str) {
 encode-field = (field str) (out str) {
     need-quote = false
     i <- [0..field.len): {
-        c = field[i] & 255
+        c = field[i]
         c == 44 || c == 34 || c == 10 || c == 13 -> {
             need-quote = true
             break
@@ -130,7 +130,7 @@ encode-field = (field str) (out str) {
     out[j] = 34
     j = j + 1
     i <- [0..field.len): {
-        c = field[i] & 255
+        c = field[i]
         {
             c == 34 -> {
                 out[j] = 34

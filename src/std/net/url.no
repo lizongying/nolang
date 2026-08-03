@@ -282,7 +282,7 @@ url-encode = (s str) (out str) {
     hex-chars = '0123456789ABCDEF'
     out = ''
     i <- [0..s.len): {
-        c = s[i] & 255
+        c = s[i]
         ; 不編碼的字元：A-Z, a-z, 0-9, -, _, ., ~
         keep = false
         {
@@ -313,7 +313,7 @@ url-encode-component = (s str) (out str) {
     hex-chars = '0123456789ABCDEF'
     out = ''
     i <- [0..s.len): {
-        c = s[i] & 255
+        c = s[i]
         ; 只保留 A-Z, a-z, 0-9, -, _, ., ~
         keep = false
         {
@@ -344,7 +344,7 @@ url-decode = (s str) (out str) {
     out = ''
     i = 0
     {
-        c = s[i] & 255
+        c = s[i]
         {
             c == 37 -> {
                 i + 2 < s.len -> {

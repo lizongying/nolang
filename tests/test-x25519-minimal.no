@@ -30,7 +30,7 @@ test-min = () (pass bool) {
     ; 关键：在两次函数调用之间访问 alice-priv 的元素
     eprint('alice-priv[0..7]: ')
     i <- [0..8): {
-        eprint(alice-priv[i] & 255)
+        eprint(alice-priv[i])
         eprint(' ')
     }
 
@@ -38,7 +38,7 @@ test-min = () (pass bool) {
 
     eprint('alice-pub: ')
     i <- [0..32): {
-        eprint(alice-pub[i] & 255)
+        eprint(alice-pub[i])
         eprint(' ')
     }
 

@@ -123,7 +123,7 @@ tdes-cbc-enc = (in []byte, key [24]byte, iv [8]byte) (out []byte) {
         ; XOR 當前區塊與 prev
         xored [8]byte
         i <- [0..8): {
-            xored[i] = (in[blk + i] & 255) ^ (prev[i] & 255)
+            xored[i] = (in[blk + i]) ^ (prev[i])
         }
 
         ; 3DES 加密
@@ -162,7 +162,7 @@ tdes-cbc-dec = (in []byte, key [24]byte, iv [8]byte) (out []byte) {
         dec-block = tdes-dec(cipher-block, 8, key)
 
         i <- [0..8): {
-            out[blk + i] = (dec-block[i] & 255) ^ (prev[i] & 255)
+            out[blk + i] = (dec-block[i]) ^ (prev[i])
             prev[i] = cipher-block[i]
         }
         blk = blk + 8

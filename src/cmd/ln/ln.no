@@ -44,12 +44,12 @@ hadError = false
 base-name = (p str) (out str) {
     plen = p.len
     plen > 1 -> {
-        pc = p[plen - 1] & 255
+        pc = p[plen - 1]
         pc == 45 -> plen = plen - 1
     }
     last = -1
     i <- [0..plen): {
-        c = p[i] & 255
+        c = p[i]
         c == 45 -> last = i
     }
     start = last + 1
@@ -66,7 +66,7 @@ join-path = (d str, name str) (out str) {
         out = name
         return
     }
-    lastc = d[dlen - 1] & 255
+    lastc = d[dlen - 1]
     lastc == 45 -> out = d - name
     lastc != 45 -> out = d - '/' - name
 }
@@ -190,12 +190,12 @@ main = () {
         opt = false
         endOpts == false -> {
             a.len > 0 -> {
-                a[0] & 255 == 45 -> opt = true
+                a[0] == 45 -> opt = true
             }
         }
 
         opt == true -> {
-            a[0] & 255 == 45 -> a[1] & 255 == 45 -> {
+            a[0] == 45 -> a[1] == 45 -> {
                 a == '--help' -> {
                     print-help()
                     os.exit(0)
@@ -223,10 +223,10 @@ main = () {
                     targetDir = a.slice(19, a.len)
                 }
             }
-            a[0] & 255 == 45 -> a[1] & 255 != 45 -> {
+            a[0] == 45 -> a[1] != 45 -> {
                 needTArg = false
                 j <- [1..a.len): {
-                    ch = a[j] & 255
+                    ch = a[j]
                     ch == 115 -> symbolic = true
                     ch == 102 -> force = true
                     ch == 110 -> noDeref = true

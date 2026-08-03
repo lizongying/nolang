@@ -54,7 +54,7 @@ main = () {
     eprint('g-priv: ')
     s = ''
     i <- [0..32): {
-        s = s - (g-priv[i] & 255).to-str() - ' '
+        s = s - (g-priv[i]).to-str() - ' '
     }
     eprint(s)
 
@@ -64,7 +64,7 @@ main = () {
     eprint('global-pub: ')
     s = ''
     i <- [0..32): {
-        s = s - (global-pub[i] & 255).to-str() - ' '
+        s = s - (global-pub[i]).to-str() - ' '
     }
     eprint(s)
 

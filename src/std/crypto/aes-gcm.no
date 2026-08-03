@@ -211,7 +211,7 @@ aes-128-ctr-xor = (key [16]byte, icb [16]byte, data []byte) (out []byte) {
         n = 16
         pos + n > data.len -> n = data.len - pos
         i <- [0..n): {
-            out[pos + i] = (data[pos + i] & 255) ^ (ks[i] & 255)
+            out[pos + i] = (data[pos + i]) ^ (ks[i])
         }
 
         ; 遞增計數器（大端序，最低 32 位元）
@@ -296,7 +296,7 @@ aes-128-gcm-seal = (key [16]byte, iv [12]byte, aad []byte, plain []byte) (sealed
     j0-enc = aes.aes-128-enc(j0, key)
     tag [16]byte
     i <- [0..16): {
-        tag[i] = (j0-enc[i] & 255) ^ (ghash-out[i] & 255)
+        tag[i] = (j0-enc[i]) ^ (ghash-out[i])
     }
 
     ; 6. 輸出密文 + tag
@@ -359,7 +359,7 @@ aes-128-gcm-open = (key [16]byte, iv [12]byte, aad []byte, sealed []byte) (plain
     j0-enc = aes.aes-128-enc(j0, key)
     exp-tag [16]byte
     i <- [0..16): {
-        exp-tag[i] = (j0-enc[i] & 255) ^ (ghash-out[i] & 255)
+        exp-tag[i] = (j0-enc[i]) ^ (ghash-out[i])
     }
 
     ; 常數時間比較

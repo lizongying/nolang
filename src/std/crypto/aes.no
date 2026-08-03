@@ -96,7 +96,7 @@ gf-mul2 = (x i64) (r i64) {
 ; sub-bytes: 使用 S-box 取代狀態中每個位元組
 sub-bytes = (state []byte, n i64) {
     i <- [0..16): {
-        b = state[i] & 255
+        b = state[i]
         state[i] = SBOX[b]
     }
 }
@@ -104,7 +104,7 @@ sub-bytes = (state []byte, n i64) {
 ; inv-sub-bytes: 使用逆 S-box 取代
 inv-sub-bytes = (state []byte, n i64) {
     i <- [0..16): {
-        b = state[i] & 255
+        b = state[i]
         state[i] = INV-SBOX[b]
     }
 }
@@ -171,22 +171,22 @@ mix-columns = (state []byte) {
     d1 = 0
     d2 = 0
     d3 = 0
-    d0, d1, d2, d3 = mix-col(state[0] & 255, state[1] & 255, state[2] & 255, state[3] & 255)
+    d0, d1, d2, d3 = mix-col(state[0], state[1], state[2], state[3])
     state[0] = d0
     state[1] = d1
     state[2] = d2
     state[3] = d3
-    d0, d1, d2, d3 = mix-col(state[4] & 255, state[5] & 255, state[6] & 255, state[7] & 255)
+    d0, d1, d2, d3 = mix-col(state[4], state[5], state[6], state[7])
     state[4] = d0
     state[5] = d1
     state[6] = d2
     state[7] = d3
-    d0, d1, d2, d3 = mix-col(state[8] & 255, state[9] & 255, state[10] & 255, state[11] & 255)
+    d0, d1, d2, d3 = mix-col(state[8], state[9], state[10], state[11])
     state[8] = d0
     state[9] = d1
     state[10] = d2
     state[11] = d3
-    d0, d1, d2, d3 = mix-col(state[12] & 255, state[13] & 255, state[14] & 255, state[15] & 255)
+    d0, d1, d2, d3 = mix-col(state[12], state[13], state[14], state[15])
     state[12] = d0
     state[13] = d1
     state[14] = d2
@@ -230,22 +230,22 @@ inv-mix-columns = (state []byte) {
     d1 = 0
     d2 = 0
     d3 = 0
-    d0, d1, d2, d3 = inv-mix-col(state[0] & 255, state[1] & 255, state[2] & 255, state[3] & 255)
+    d0, d1, d2, d3 = inv-mix-col(state[0], state[1], state[2], state[3])
     state[0] = d0
     state[1] = d1
     state[2] = d2
     state[3] = d3
-    d0, d1, d2, d3 = inv-mix-col(state[4] & 255, state[5] & 255, state[6] & 255, state[7] & 255)
+    d0, d1, d2, d3 = inv-mix-col(state[4], state[5], state[6], state[7])
     state[4] = d0
     state[5] = d1
     state[6] = d2
     state[7] = d3
-    d0, d1, d2, d3 = inv-mix-col(state[8] & 255, state[9] & 255, state[10] & 255, state[11] & 255)
+    d0, d1, d2, d3 = inv-mix-col(state[8], state[9], state[10], state[11])
     state[8] = d0
     state[9] = d1
     state[10] = d2
     state[11] = d3
-    d0, d1, d2, d3 = inv-mix-col(state[12] & 255, state[13] & 255, state[14] & 255, state[15] & 255)
+    d0, d1, d2, d3 = inv-mix-col(state[12], state[13], state[14], state[15])
     state[12] = d0
     state[13] = d1
     state[14] = d2
@@ -255,7 +255,7 @@ inv-mix-columns = (state []byte) {
 ; add-round-key: 將狀態與輪金鑰 XOR
 add-round-key = (state []byte, rk []byte) {
     i <- [0..16): {
-        state[i] = (state[i] & 255) ^ (rk[i] & 255)
+        state[i] = (state[i]) ^ (rk[i])
     }
 }
 
@@ -284,10 +284,10 @@ rot-word = (w i64) (r i64) {
 
 ; sub-word: 對 4 個位元組分別套用 S-box
 sub-word = (w i64) (r i64) {
-    b0 = SBOX[(w >> 24) & 255] & 255
-    b1 = SBOX[(w >> 16) & 255] & 255
-    b2 = SBOX[(w >> 8) & 255] & 255
-    b3 = SBOX[w & 255] & 255
+    b0 = SBOX[(w >> 24) & 255]
+    b1 = SBOX[(w >> 16) & 255]
+    b2 = SBOX[(w >> 8) & 255]
+    b3 = SBOX[w & 255]
     r = (b0 << 24) | (b1 << 16) | (b2 << 8) | b3
 }
 
