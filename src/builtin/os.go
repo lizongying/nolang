@@ -952,4 +952,19 @@ func init() {
 		Doc:          "Write a message to the system logger with the given priority",
 		ForwardFunc:  "syslog",
 	})
+
+	// chroot: change root directory (POSIX chroot(2))
+	// Returns ok bool. Not supported on Windows.
+	chrootFn := "chroot"
+	if runtime.GOOS == "windows" {
+		chrootFn = "nolang.win_chroot"
+	}
+	BuiltinMethodList = append(BuiltinMethodList, BuiltinMethod{
+		ReceiverType: ReceiverGlobal,
+		MethodName:   "chroot",
+		Params:       []parser.Type{parser.TypeStr},
+		Return:       []parser.Type{parser.TypeBool},
+		Doc:          "Change root directory to the given path. Returns true on success",
+		CLibCall:     &CLibCall{FuncName: chrootFn, ArgTypes: []LLVMArgType{LLVMStrPtr}, RetType: LLVMI32, CmpRet: true},
+	})
 }

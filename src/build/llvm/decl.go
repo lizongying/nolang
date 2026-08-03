@@ -161,6 +161,8 @@ func (g *Generator) writeDeclarations(sb *strings.Builder) {
 		sb.WriteString("declare i32 @flock(i32, i32)\n")
 		sb.WriteString("declare i32 @getdomainname(i8*, i32)\n")
 		sb.WriteString("declare void @syslog(i32, i8*, ...)\n")
+		// chroot: change root directory (POSIX chroot(2))
+		sb.WriteString("declare i32 @chroot(i8*)\n")
 		// macOS/BSD sysctlbyname (Linux uses /proc/sys instead)
 		if goos == "darwin" {
 			sb.WriteString("declare i32 @sysctlbyname(i8*, i8*, i64*, i8*, i64)\n")
