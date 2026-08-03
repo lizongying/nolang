@@ -197,6 +197,18 @@ greeting = 'hello, ' - name
 ; Explicit type annotation
 a u64 = 10
 
+; Hex literal type inference:
+; - Decimal integer literals (e.g. 771) infer to i64 (default integer type)
+; - Hex literals (e.g. 0x0303) infer to byte (u8)
+; - If a hex value exceeds the byte range (> 255), you MUST add an explicit
+;   type annotation to avoid incorrect truncation:
+PORT i64 = 0x0303        ; ok: explicit i64, value = 771
+; PORT = 0x0303          ; WRONG: inferred as byte, value truncated!
+; PORT = 771             ; ok: decimal defaults to i64
+; - Hex literals should use lowercase letters (0x00ff, not 0x00FF)
+; - Recommendation: use decimal for general integer constants; use hex with
+;   explicit i64 type annotation only for protocol/bitmask constants.
+
 ; Character (no quotes)
 c char = 中
 

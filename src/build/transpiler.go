@@ -990,6 +990,48 @@ func (t *Transpiler) collectReferencedStdModules(prog *parser.Program) map[strin
 	}
 	var walkExpr func(e parser.Expression)
 	var walkStmt func(s parser.Statement)
+	var walkType func(t parser.Type)
+	// walkType 遞迴遍歷型別節點，從帶點的 NamedType（如 tls.conn）
+	// 提取模組前綴並標記為被引用的 std 模組。這解決了 collectReferencedStdModules
+	// 無法偵測型別注解（如 `tls-c tls.conn`）中隱含的模組依賴問題：
+	// 方法呼叫 tls-c.close() 在 codegen 被重寫為 tls.conn.close(tls-c)，
+	// 但靜態掃描在 codegen 前執行，無法得知 tls-c 的型別來自 tls 模組。
+	// 透過掃描型別注解，能正確偵測 tls 模組依賴並按需載入。
+	walkType = func(t parser.Type) {
+		if t == nil {
+			return
+		}
+		switch ty := t.(type) {
+		case *parser.NamedType:
+			// 從帶點的型別名（如 tls.conn、http.request）提取模組前綴。
+			// 前綴對應 std 模組的 ShortName（如 tls → net/tls.no）。
+			if idx := strings.Index(ty.Value, "."); idx > 0 {
+				addRef(ty.Value[:idx])
+			}
+		case *parser.ArrayType:
+			walkType(ty.Elem)
+		case *parser.SliceType:
+			walkType(ty.Elem)
+		case *parser.MapType:
+			walkType(ty.Key)
+			walkType(ty.Value)
+		case *parser.NullableType:
+			walkType(ty.Type)
+		case *parser.PointerType:
+			walkType(ty.Type)
+		case *parser.FunctionType:
+			for _, p := range ty.Params {
+				walkType(p.Type)
+			}
+			for _, r := range ty.Results {
+				walkType(r.Type)
+			}
+		case *parser.UnionType:
+			for _, ut := range ty.Types {
+				walkType(ut)
+			}
+		}
+	}
 	walkExpr = func(e parser.Expression) {
 		if e == nil {
 			return
@@ -1080,6 +1122,7 @@ func (t *Transpiler) collectReferencedStdModules(prog *parser.Program) map[strin
 			walkExpr(ex.Alternative)
 		case *parser.CastExpression:
 			walkExpr(ex.Expr)
+			walkType(ex.Type)
 		case *parser.IterationExpr:
 			walkExpr(ex.Range)
 			walkExpr(ex.RangeExpr)
@@ -1090,7 +1133,11 @@ func (t *Transpiler) collectReferencedStdModules(prog *parser.Program) map[strin
 				}
 			}
 			for _, p := range ex.Parameters {
+				walkType(p.Type)
 				walkExpr(p.DefaultExpr)
+			}
+			for _, r := range ex.Results {
+				walkType(r.Type)
 			}
 		case *parser.ArrayLiteral:
 			walkExpr(ex.Size)
@@ -1124,6 +1171,7 @@ func (t *Transpiler) collectReferencedStdModules(prog *parser.Program) map[strin
 		case *parser.ExpressionStatement:
 			walkExpr(st.Expression)
 		case *parser.LetStatement:
+			walkType(st.Type)
 			walkExpr(st.Value)
 		case *parser.MultiAssignStatement:
 			for _, tg := range st.Targets {
@@ -1131,6 +1179,12 @@ func (t *Transpiler) collectReferencedStdModules(prog *parser.Program) map[strin
 			}
 			walkExpr(st.Value)
 		case *parser.FunctionDefinition:
+			for _, p := range st.Parameters {
+				walkType(p.Type)
+			}
+			for _, r := range st.Results {
+				walkType(r.Type)
+			}
 			if st.Body != nil {
 				for _, bs := range st.Body.Statements {
 					walkStmt(bs)
@@ -1181,7 +1235,37 @@ func (t *Transpiler) collectReferencedStdModules(prog *parser.Program) map[strin
 			}
 		case *parser.StructDefinition:
 			for _, f := range st.Fields {
+				walkType(f.Type)
 				walkExpr(f.Value)
+			}
+		case *parser.ExternStatement:
+			for _, p := range st.Parameters {
+				walkType(p.Type)
+			}
+			for _, r := range st.Results {
+				walkType(r.Type)
+			}
+		case *parser.TypeAlias:
+			if st.Type != nil {
+				walkType(st.Type)
+			}
+			if st.Union != nil {
+				for _, ut := range st.Union.Types {
+					walkType(ut)
+				}
+			}
+		case *parser.TaggedEnumDefinition:
+			for _, v := range st.Variants {
+				walkType(v.Type)
+			}
+		case *parser.InterfaceDefinition:
+			for _, m := range st.Methods {
+				for _, p := range m.Parameters {
+					walkType(p.Type)
+				}
+				for _, r := range m.Results {
+					walkType(r.Type)
+				}
 			}
 		}
 	}

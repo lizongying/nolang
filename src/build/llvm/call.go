@@ -2956,10 +2956,11 @@ func (g *Generator) evalI64Arg(sb *strings.Builder, arg parser.Expression) strin
 	// If it's a variable pointer, load from it
 	if ident, ok := arg.(*parser.Identifier); ok {
 		if g.varTypes != nil {
-			if t, ok := g.varTypes[ident.Value]; ok && (t == "i64" || t == "i32" || t == "i8" || t == "i1") {
+			if t, ok := g.varTypes[ident.Value]; ok && (t == "i64" || t == "i32" || t == "i16" || t == "i8" || t == "i1" ||
+				t == "u64" || t == "u32" || t == "u16" || t == "u8" || t == "u128") {
 				g.tmpIdx++
 				loadReg := fmt.Sprintf("%%fwd.i64.%d", g.tmpIdx)
-				llvmType := t
+				llvmType := toLLVMType(t)
 				if sb != nil {
 					sb.WriteString(fmt.Sprintf("%s%s = load %s, %s* %s\n", g.indent(), loadReg, llvmType, llvmType, g.varAddr(ident.Value)))
 				}
@@ -2967,7 +2968,12 @@ func (g *Generator) evalI64Arg(sb *strings.Builder, arg parser.Expression) strin
 					g.tmpIdx++
 					extReg := fmt.Sprintf("%%fwd.i64.ext.%d", g.tmpIdx)
 					if sb != nil {
-						sb.WriteString(fmt.Sprintf("%s%s = zext %s %s to i64\n", g.indent(), extReg, llvmType, loadReg))
+						// Unsigned types use zext, signed types use sext
+						extOp := "zext"
+						if !isUnsignedIntType(t) && llvmType != "i1" {
+							extOp = "sext"
+						}
+						sb.WriteString(fmt.Sprintf("%s%s = %s %s %s to i64\n", g.indent(), extReg, extOp, llvmType, loadReg))
 					}
 					return extReg
 				}
@@ -3859,10 +3865,10 @@ func (g *Generator) genForwardFunc(sb *strings.Builder, forwardFunc string, expr
 		// on u32 array elements (e.g. rotate-left(w[i-15], 25) where w is
 		// []u32), look up the element type directly from arrayElemTypes so
 		// the correct llvm.fshl.i32 intrinsic is selected.
-			if idx, ok := args[0].(*parser.IndexExpression); ok {
+		if idx, ok := args[0].(*parser.IndexExpression); ok {
 				if ident, ok := idx.Left.(*parser.Identifier); ok && g.arrayElemTypes != nil {
 					if et, ok := g.arrayElemTypes[ident.Value]; ok {
-						switch et {
+						switch toLLVMType(et) {
 						case "i32":
 							argType = "i32"
 						case "i16":
@@ -3877,7 +3883,7 @@ func (g *Generator) genForwardFunc(sb *strings.Builder, forwardFunc string, expr
 		}
 		intrinsic := "llvm.fshl.i64"
 		retType := "i64"
-		if argType == "i32" {
+		if toLLVMType(argType) == "i32" {
 			intrinsic = "llvm.fshl.i32"
 			retType = "i32"
 			// For i32 operands, truncate x and n to i32

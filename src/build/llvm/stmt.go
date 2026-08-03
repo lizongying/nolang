@@ -3664,7 +3664,13 @@ func (g *Generator) varLLVMType(stmt *parser.LetStatement) string {
 			}
 		}
 		return "i64"
+	case *parser.IntegerLiteral:
+		// Integer literal without explicit type annotation defaults to i64
+		return "i64"
 	default:
+		if os.Getenv("NOLANG_DEBUG_VARTYPE") != "" && stmt.Name != nil {
+			fmt.Fprintf(os.Stderr, "[DBG-VARTYPE] varLLVMType default: name=%s, Value=%T, Type=%v\n", stmt.Name.Value, stmt.Value, stmt.Type)
+		}
 		return "i64"
 	}
 }
@@ -4238,7 +4244,7 @@ func (g *Generator) collectStructTypeFields(sd *parser.StructDefinition) {
 		if f.ArraySize > 0 {
 			elemType := "i64"
 			if f.Type != nil {
-				elemType = g.mapToLLVMType(f.Type.String())
+				elemType = toLLVMType(g.mapToLLVMType(f.Type.String()))
 			}
 			llvmType = fmt.Sprintf("[%d x %s]", f.ArraySize, elemType)
 		} else if f.IsSlice {
