@@ -2079,9 +2079,24 @@ func (g *Generator) genCLibCall(sb *strings.Builder, m *builtin.BuiltinMethod, e
 	a := evalArgs()
 	clib := m.CLibCall
 
+	// WASI: wasi-libc 的 read/write 簽名為 (i32, i8*, i32) -> i32，
+	// 但 CLibCall 的 ArgTypes/RetType 使用 i64 介面。使用 @nolang.read/
+	// @nolang.write wrapper（定義在 decl.go）來橋接 i64↔i32 差異。
+	// 否則 call i64 @write(..., i64) 與 declare i32 @write(i32, i8*, i32)
+	// 的型別不匹配會導致 WASM 產生 unreachable trap。
+	fnName := clib.FuncName
+	if g.goos() == "wasi" {
+		switch fnName {
+		case "read", "_read":
+			fnName = "nolang.read"
+		case "write", "_write":
+			fnName = "nolang.write"
+		}
+	}
+
 	// 變參函數需帶上完整函數類型簽名，否則變參部分可能傳遞錯誤
 	sigStr := ""
-	if sig := clibCallSig(clib.FuncName); sig != "" {
+	if sig := clibCallSig(fnName); sig != "" {
 		sigStr = " " + sig
 	}
 
@@ -2179,7 +2194,7 @@ func (g *Generator) genCLibCall(sb *strings.Builder, m *builtin.BuiltinMethod, e
 		buf := "i8* " + bufExpr
 		cRetType := llvmLLVMType(clib.RetType)
 		if sb != nil {
-			sb.WriteString(fmt.Sprintf("%scall %s%s @%s(%s)\n", g.indent(), cRetType, sigStr, clib.FuncName, argStr))
+			sb.WriteString(fmt.Sprintf("%scall %s%s @%s(%s)\n", g.indent(), cRetType, sigStr, fnName, argStr))
 		}
 		// 如果返回型別是 str，需把 buf 中的 C 字串包裝成 %str-long
 		returnsStr := false
@@ -2251,7 +2266,7 @@ func (g *Generator) genCLibCall(sb *strings.Builder, m *builtin.BuiltinMethod, e
 		mergeLabel := fmt.Sprintf("cstr.merge.%d", id)
 		if sb != nil {
 			// 1) 調用 C 函數取得 i8*
-			sb.WriteString(fmt.Sprintf("%s%s = call i8*%s @%s(%s)\n", g.indent(), cstrReg, sigStr, clib.FuncName, argStr))
+			sb.WriteString(fmt.Sprintf("%s%s = call i8*%s @%s(%s)\n", g.indent(), cstrReg, sigStr, fnName, argStr))
 			// 2) 檢查 NULL：若為 NULL 則 data=null/len=0，使 `v == nil` 成立
 			sb.WriteString(fmt.Sprintf("%s%s = icmp eq i8* %s, null\n", g.indent(), nullCmpReg, cstrReg))
 			sb.WriteString(fmt.Sprintf("%sbr i1 %s, label %%%s, label %%%s\n", g.indent(), nullCmpReg, nilLabel, copyLabel))
@@ -2288,7 +2303,7 @@ func (g *Generator) genCLibCall(sb *strings.Builder, m *builtin.BuiltinMethod, e
 		g.tmpIdx++
 		callReg := fmt.Sprintf("%%clib.ret.%d", g.tmpIdx)
 		if sb != nil {
-			sb.WriteString(fmt.Sprintf("%s%s = call %s%s @%s(%s)\n", g.indent(), callReg, cRetType, sigStr, clib.FuncName, argStr))
+			sb.WriteString(fmt.Sprintf("%s%s = call %s%s @%s(%s)\n", g.indent(), callReg, cRetType, sigStr, fnName, argStr))
 		}
 		g.tmpIdx++
 		extReg := fmt.Sprintf("%%clib.ext.%d", g.tmpIdx)
@@ -2306,7 +2321,7 @@ func (g *Generator) genCLibCall(sb *strings.Builder, m *builtin.BuiltinMethod, e
 		g.tmpIdx++
 		callReg := fmt.Sprintf("%%clib.ret.%d", g.tmpIdx)
 		if sb != nil {
-			sb.WriteString(fmt.Sprintf("%s%s = call %s%s @%s(%s)\n", g.indent(), callReg, cRetType, sigStr, clib.FuncName, argStr))
+			sb.WriteString(fmt.Sprintf("%s%s = call %s%s @%s(%s)\n", g.indent(), callReg, cRetType, sigStr, fnName, argStr))
 		}
 		g.tmpIdx++
 		cmpReg := fmt.Sprintf("%%clib.cmp.%d", g.tmpIdx)
@@ -2321,7 +2336,7 @@ func (g *Generator) genCLibCall(sb *strings.Builder, m *builtin.BuiltinMethod, e
 		return extReg
 	}
 
-	return fmt.Sprintf("call %s%s @%s(%s)", cRetType, sigStr, clib.FuncName, argStr)
+	return fmt.Sprintf("call %s%s @%s(%s)", cRetType, sigStr, fnName, argStr)
 }
 
 func (g *Generator) extractStrFromEvalArg(sb *strings.Builder, evalResult string) string {

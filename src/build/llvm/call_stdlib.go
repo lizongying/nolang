@@ -1018,8 +1018,15 @@ func (g *Generator) callBuiltin(sb *strings.Builder, fnName string, hasArgs bool
 			sb.WriteString(fmt.Sprintf("%s%s = call i64 @%s(i32 %s, i8* %s, i64 %s)\n", g.indent(), readRet, g.libcFn("read"), openRet, bufReg, sizeSel))
 			// close(fd)
 			sb.WriteString(fmt.Sprintf("%scall i32 @%s(i32 %s)\n", g.indent(), g.libcFn("close"), openRet))
-			// If open failed, use 0 for read count
-			sb.WriteString(fmt.Sprintf("%s%s = select i1 %s, i64 %s, i64 0\n", g.indent(), readSel, openCmp, readRet))
+			// If open failed OR read returned negative (e.g. reading a directory
+			// returns -1 with EISDIR), use 0 for read count to avoid storing
+			// a negative value as string length (which would be interpreted as
+			// a huge unsigned number, causing buffer overreads and segfaults).
+			readOk := g.tmpReg("rf.readok")
+			readOkAll := g.tmpReg("rf.readokall")
+			sb.WriteString(fmt.Sprintf("%s%s = icmp sge i64 %s, 0\n", g.indent(), readOk, readRet))
+			sb.WriteString(fmt.Sprintf("%s%s = and i1 %s, %s\n", g.indent(), readOkAll, openCmp, readOk))
+			sb.WriteString(fmt.Sprintf("%s%s = select i1 %s, i64 %s, i64 0\n", g.indent(), readSel, readOkAll, readRet))
 			// Construct %str-long {len, cap, data}
 			sb.WriteString(fmt.Sprintf("%s%s = alloca %%str-long\n", g.indent(), strReg))
 			sb.WriteString(fmt.Sprintf("%s%s = getelementptr %%str-long, %%str-long* %s, i32 0, i32 0\n", g.indent(), lenGEP, strReg))
