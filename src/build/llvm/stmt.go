@@ -6600,7 +6600,7 @@ if !alreadyCoerced && g.isIntegerLLVMType(llvmType) && llvmType != "i64" && stri
 				}
 				if actualType == "i64" {
 					valType := g.intExprLLVMType(stmt.Value)
-					if valType == "i64" {
+					if valType == "i64" && toLLVMType(llvmType) != "i64" {
 						truncReg := g.tmpReg("trunc")
 						sb.WriteString(fmt.Sprintf("%s%s = trunc i64 %s to %s\n", g.indent(), truncReg, val, toLLVMType(llvmType)))
 						val = truncReg

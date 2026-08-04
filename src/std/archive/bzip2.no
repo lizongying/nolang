@@ -316,17 +316,15 @@ bzip2-decompress = (data []byte) (out []byte) {
                 i = 0
                 {
                     i >= alpha-size -> *
-                    {
-                        bit = br.read-bit()
-                        bit == 0 -> {
-                            lengths[i] = curr-len
-                            i = i + 1
-                        }
-                        bit == 1 -> {
-                            bit2 = br.read-bit()
-                            bit2 == 0 -> curr-len = curr-len + 1
-                            bit2 == 1 -> curr-len = curr-len - 1
-                        }
+                    bit = br.read-bit()
+                    bit == 0 -> {
+                        lengths[i] = curr-len
+                        i = i + 1
+                    }
+                    bit == 1 -> {
+                        bit2 = br.read-bit()
+                        bit2 == 0 -> curr-len = curr-len + 1
+                        bit2 == 1 -> curr-len = curr-len - 1
                     }
                 } (i < alpha-size)
 
@@ -421,7 +419,7 @@ bzip2-decompress = (data []byte) (out []byte) {
 
                     bwt-out.push(val)
                 }
-            } (block_done == 0)
+            } (block-done == 0)
 
             ; ── BWT 反變換 ──
             bwt-n = bwt-out.len

@@ -521,7 +521,7 @@ func (g *Generator) generateCastExpression(sb *strings.Builder, e *parser.CastEx
 		return val
 	}
 	castReg := g.tmpReg("cast")
-	if srcType == "i64" && tgtType != "i128" {
+	if srcType == "i64" && tgtType != "i128" && toLLVMType(tgtType) != "i64" {
 		// i64 → smaller (not i128): trunc
 		sb.WriteString(fmt.Sprintf("%s%s = trunc %s %s to %s\n", g.indent(), castReg, toLLVMType(srcType), val, toLLVMType(tgtType)))
 	} else if tgtType == "i64" && srcType != "i128" {
@@ -552,9 +552,15 @@ func (g *Generator) generateConditionAsI1(sb *strings.Builder, cond parser.Expre
 	if g.intExprLLVMType(cond) == "i1" {
 		return g.generateExprWithSB(sb, cond)
 	}
-	// Default: assume i64, need trunc to i1
+	// Check the expression type — only truncate integer types
+	condType := g.intExprLLVMType(cond)
+	condVal := g.generateExprWithSB(sb, cond)
+	// Non-integer types (e.g. %vec, %str-long): treat as truthy (i1 = 1)
+	if !g.isIntegerLLVMType(condType) && condType != "" {
+		return "1"
+	}
 	reg := g.tmpReg("if.trunc")
-	sb.WriteString(fmt.Sprintf("%s%s = trunc i64 %s to i1\n", g.indent(), reg, g.generateExprWithSB(sb, cond)))
+	sb.WriteString(fmt.Sprintf("%s%s = trunc i64 %s to i1\n", g.indent(), reg, condVal))
 	return reg
 }
 
@@ -1451,7 +1457,7 @@ func (g *Generator) coerceToInt(sb *strings.Builder, v string, exprForType parse
 			return v
 		}
 		cvtReg := g.tmpReg("cvt")
-		if srcType == "i64" {
+		if srcType == "i64" && toLLVMType(targetType) != "i64" {
 			// i64 → 較窄型別：trunc
 			sb.WriteString(fmt.Sprintf("%s%s = trunc i64 %s to %s\n", g.indent(), cvtReg, v, toLLVMType(targetType)))
 		} else {
@@ -2004,7 +2010,7 @@ func (g *Generator) generateIndexExprPtr(sb *strings.Builder, v *parser.IndexExp
 		// Ensure idx is i64
 		if strings.HasPrefix(idx, "%") {
 			idxType := g.intExprLLVMType(v.Index)
-			if idxType != "i64" {
+			if toLLVMType(idxType) != "i64" {
 				zextReg := g.tmpReg("dotarr.zext")
 				if sb != nil {
 					sb.WriteString(fmt.Sprintf("%s%s = zext %s %s to i64\n", g.indent(), zextReg, toLLVMType(idxType), idx))
@@ -2394,7 +2400,7 @@ func (g *Generator) generateStructFieldIndexAssign(sb *strings.Builder, dot *par
 			storeVal := val
 			if strings.HasPrefix(val, "%") {
 				valType := g.intExprLLVMType(value)
-				if valType != "" && valType != vecElemType && g.isIntegerLLVMType(valType) && g.isIntegerLLVMType(vecElemType) {
+				if valType != "" && toLLVMType(valType) != toLLVMType(vecElemType) && g.isIntegerLLVMType(valType) && g.isIntegerLLVMType(vecElemType) {
 					convReg := g.tmpReg("set.vec.conv")
 					if valType == "i64" {
 						sb.WriteString(fmt.Sprintf("%s%s = trunc %s %s to %s\n", g.indent(), convReg, valType, val, vecIRType))
@@ -2510,7 +2516,7 @@ func (g *Generator) generateStructFieldIndexAssign(sb *strings.Builder, dot *par
 						if valType == "" {
 							valType = "i64" // default assumption
 						}
-						if valType != elemType {
+						if toLLVMType(valType) != toLLVMType(elemType) {
 							convReg := g.tmpReg("set.arr.trunc")
 							// Determine if we need trunc (wider→narrower) or zext (narrower→wider)
 							valW := llvmIntBitWidth(valType)
@@ -2552,10 +2558,21 @@ func (g *Generator) generateStructFieldIndexAssign(sb *strings.Builder, dot *par
 							if !isStrLit && !isIdent && !isCall {
 								_, isIdx := value.(*parser.IndexExpression)
 								if isIdx || g.isStringExpr(value) {
-									loadReg := g.tmpReg("set.arr.load")
-							sb.WriteString(fmt.Sprintf("%s%s = load %s, %s* %s\n",
-								g.indent(), loadReg, toLLVMType(elemType), toLLVMType(elemType), val))
-									storeVal = loadReg
+									// IndexExpression for vec/array struct elements returns a
+									// loaded value (tracked in ssaTypes) — skip the load.
+									// Slice path and struct array field path return pointers — load needed.
+									alreadyLoaded := false
+									if g.ssaTypes != nil {
+										if ssaType, ok := g.ssaTypes[val]; ok && g.isStructLLVMType(ssaType) {
+											alreadyLoaded = true
+										}
+									}
+									if !alreadyLoaded {
+										loadReg := g.tmpReg("set.arr.load")
+						sb.WriteString(fmt.Sprintf("%s%s = load %s, %s* %s\n",
+									g.indent(), loadReg, toLLVMType(elemType), toLLVMType(elemType), val))
+										storeVal = loadReg
+									}
 								}
 							}
 						}
@@ -2726,7 +2743,7 @@ func (g *Generator) generateStructFieldIndexRead(sb *strings.Builder, dot *parse
 				strIdx := idx
 				if strings.HasPrefix(idx, "%") {
 					idxType := g.intExprLLVMType(index)
-					if idxType != "i64" {
+					if toLLVMType(idxType) != "i64" {
 						zextReg := g.tmpReg("idx.strf.zext")
 						sb.WriteString(fmt.Sprintf("%s%s = zext %s %s to i64\n", g.indent(), zextReg, toLLVMType(idxType), idx))
 						strIdx = zextReg
@@ -2814,7 +2831,7 @@ func (g *Generator) generateNestedStrIndexRead(sb *strings.Builder, innerIdx *pa
 	// GEP 索引必須是 i64；若索引為 i8/i16/i32 SSA 值則 zext 到 i64
 	if strings.HasPrefix(idx, "%") {
 		idxType := g.intExprLLVMType(index)
-		if idxType != "i64" {
+		if toLLVMType(idxType) != "i64" {
 			zextReg := g.tmpReg("nestidx.zext")
 			if sb != nil {
 				sb.WriteString(fmt.Sprintf("%s%s = zext %s %s to i64\n", g.indent(), zextReg, toLLVMType(idxType), idx))
@@ -2857,7 +2874,7 @@ func (g *Generator) generateNestedStrIndexAssign(sb *strings.Builder, innerIdx *
 	// GEP 索引必須是 i64
 	if strings.HasPrefix(idx, "%") {
 		idxType := g.intExprLLVMType(index)
-		if idxType != "i64" {
+		if toLLVMType(idxType) != "i64" {
 			zextReg := g.tmpReg("nestset.zext")
 			if sb != nil {
 				sb.WriteString(fmt.Sprintf("%s%s = zext %s %s to i64\n", g.indent(), zextReg, toLLVMType(idxType), idx))
@@ -3127,6 +3144,7 @@ func (g *Generator) generateAssignExpression(sb *strings.Builder, expr *parser.A
 					break
 				}
 			}
+			storeVal := val
 			if fieldIdx >= 0 && sb != nil {
 				// String literal is %str-long* pointer (alloca), load the value.
 				if fieldType == "%str-long" {
@@ -3145,24 +3163,35 @@ func (g *Generator) generateAssignExpression(sb *strings.Builder, expr *parser.A
 					// Integer literal 0 assigned to a struct-type field (e.g.,
 					// rec.field = 0 where field is str): use zeroinitializer.
 					if intLit, ok := expr.Value.(*parser.IntegerLiteral); ok && intLit.Value == 0 {
-						val = "zeroinitializer"
+						storeVal = "zeroinitializer"
 					} else {
 						_, isStrLit := expr.Value.(*parser.StringLiteral)
 						_, isIdent := expr.Value.(*parser.Identifier)
-						if !isStrLit && !isIdent {
-							_, isIdx := expr.Value.(*parser.IndexExpression)
-							_, isInfix := expr.Value.(*parser.InfixExpression)
-							// Only load for pointer-producing expressions:
-							//   - IndexExpression (GEP → pointer)
-							//   - InfixExpression (string concat/repeat → alloca pointer)
-							// CallExpression and DotExpression return loaded values, not pointers.
-							if isIdx || (isInfix && g.isStringExpr(expr.Value)) {
-								loadReg := g.tmpReg("set.fld.load")
+							if !isStrLit && !isIdent {
+								_, isIdx := expr.Value.(*parser.IndexExpression)
+								_, isInfix := expr.Value.(*parser.InfixExpression)
+								// Only load for pointer-producing expressions:
+								//   - IndexExpression when it returns a GEP pointer (slice path,
+								//     struct array field path)
+								//   - InfixExpression (string concat/repeat → alloca pointer)
+								// CallExpression and DotExpression return loaded values, not pointers.
+								// IndexExpression for vec/array struct elements also returns a
+								// loaded value (tracked in ssaTypes) — skip the load in that case.
+								if isIdx || (isInfix && g.isStringExpr(expr.Value)) {
+									alreadyLoaded := false
+									if g.ssaTypes != nil {
+										if ssaType, ok := g.ssaTypes[val]; ok && g.isStructLLVMType(ssaType) {
+											alreadyLoaded = true
+										}
+									}
+									if !alreadyLoaded {
+										loadReg := g.tmpReg("set.fld.load")
 						sb.WriteString(fmt.Sprintf("%s%s = load %s, %s* %s\n",
-							g.indent(), loadReg, toLLVMType(fieldType), toLLVMType(fieldType), val))
-								val = loadReg
+								g.indent(), loadReg, toLLVMType(fieldType), toLLVMType(fieldType), val))
+										val = loadReg
+									}
+								}
 							}
-						}
 					}
 				}
 				structTy := "%" + structName
@@ -3173,8 +3202,13 @@ func (g *Generator) generateAssignExpression(sb *strings.Builder, expr *parser.A
 					sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %s, %s* %s, i32 0, i32 %d\n",
 						g.indent(), reg, structTy, structTy, g.varAddr(varName), fieldIdx))
 				}
-				if val == "zeroinitializer" || !g.isHeapOwningType(fieldType) {
-					sb.WriteString(fmt.Sprintf("%sstore %s %s, %s* %s\n", g.indent(), toLLVMType(fieldType), val, toLLVMType(fieldType), reg))
+				
+					storeVal = val
+					if val == "0" && g.isHeapOwningType(fieldType) {
+						storeVal = "zeroinitializer"
+					}
+					if storeVal == "zeroinitializer" || !g.isHeapOwningType(fieldType) {
+					sb.WriteString(fmt.Sprintf("%sstore %s %s, %s* %s\n", g.indent(), toLLVMType(fieldType), storeVal, toLLVMType(fieldType), reg))
 				} else {
 					if fieldType == "%str-long" || fieldType == "%vec" || fieldType == "%arr" {
 						oldLenGEP := g.tmpReg("set.fld.oldlen.gep")
@@ -3200,7 +3234,7 @@ func (g *Generator) generateAssignExpression(sb *strings.Builder, expr *parser.A
 					cloneSrc := g.tmpReg("set.fld.csrc")
 					sb.WriteString(fmt.Sprintf("%s%s = alloca %s\n", g.indent(), cloneSrc, toLLVMType(fieldType)))
 					sb.WriteString(fmt.Sprintf("%sstore %s %s, %s* %s\n",
-						g.indent(), toLLVMType(fieldType), val, toLLVMType(fieldType), cloneSrc))
+						g.indent(), toLLVMType(fieldType), storeVal, toLLVMType(fieldType), cloneSrc))
 					g.emitDeepClone(sb, cloneSrc, reg, fieldType, fieldElemType)
 				}
 			}
@@ -3229,7 +3263,7 @@ func (g *Generator) generateAssignExpression(sb *strings.Builder, expr *parser.A
 		// GEP 索引必須是 i64；若索引為 i8/i16/i32 SSA 值則 zext 到 i64
 		if strings.HasPrefix(idx, "%") {
 			idxType := g.intExprLLVMType(idxExpr.Index)
-			if idxType != "i64" {
+			if toLLVMType(idxType) != "i64" {
 				zextReg := g.tmpReg("idx.set.zext")
 				if sb != nil {
 					sb.WriteString(fmt.Sprintf("%s%s = zext %s %s to i64\n", g.indent(), zextReg, toLLVMType(idxType), idx))
@@ -3768,7 +3802,7 @@ func (g *Generator) generateIndexExpression(sb *strings.Builder, expr *parser.In
 	// GEP 索引必須是 i64；若索引為 i8/i16/i32 SSA 值則 zext 到 i64
 	if strings.HasPrefix(idx, "%") {
 		idxType := g.intExprLLVMType(expr.Index)
-		if idxType != "i64" {
+		if toLLVMType(idxType) != "i64" {
 			zextReg := g.tmpReg("idx.zext")
 			if sb != nil {
 				sb.WriteString(fmt.Sprintf("%s%s = zext %s %s to i64\n", g.indent(), zextReg, toLLVMType(idxType), idx))
@@ -4020,6 +4054,11 @@ func (g *Generator) generateIndexExpression(sb *strings.Builder, expr *parser.In
 					sb.WriteString(fmt.Sprintf("%s%s = load %s, %s* %s\n",
 						g.indent(), loadReg, toLLVMType(llvmElemType), toLLVMType(llvmElemType), gepReg))
 				}
+				// Track SSA type for struct elements so downstream consumers
+				// (e.g. struct field assignment) know this is a loaded value, not a pointer.
+				if g.ssaTypes != nil && g.isStructLLVMType(llvmElemType) {
+					g.ssaTypes[loadReg] = llvmElemType
+				}
 				if llvmElemType == "i8" || llvmElemType == "u8" {
 					zextReg := g.tmpReg("idx.zext")
 					op := widenExtOp(llvmElemType)
@@ -4107,6 +4146,11 @@ func (g *Generator) generateIndexExpression(sb *strings.Builder, expr *parser.In
 		sb.WriteString(fmt.Sprintf("%s%s = load %s, %s* %s\n",
 			g.indent(), loadReg, toLLVMType(llvmElemType), toLLVMType(llvmElemType), gepReg))
 	}
+	// Track SSA type for struct elements so downstream consumers
+	// (e.g. struct field assignment) know this is a loaded value, not a pointer.
+	if g.ssaTypes != nil && g.isStructLLVMType(llvmElemType) {
+		g.ssaTypes[loadReg] = llvmElemType
+	}
 	// 統一回傳 i64：若元素為窄整數則拓寬到 i64，與其他索引路徑一致
 	// 無符號（u8）使用 zext，有符號（i8）使用 sext
 	if llvmElemType == "i8" || llvmElemType == "u8" {
@@ -4166,7 +4210,7 @@ func (g *Generator) generateSliceExprIndexRead(sb *strings.Builder, sliceExpr *p
 	idx := g.generateExprWithSB(sb, index)
 	if strings.HasPrefix(idx, "%") {
 		idxType := g.intExprLLVMType(index)
-		if idxType != "i64" {
+		if toLLVMType(idxType) != "i64" {
 			zextReg := g.tmpReg("slicidx.idx.zext")
 			if sb != nil {
 				sb.WriteString(fmt.Sprintf("%s%s = zext %s %s to i64\n", g.indent(), zextReg, toLLVMType(idxType), idx))
@@ -4236,7 +4280,7 @@ func (g *Generator) generateStringLiteralIndex(sb *strings.Builder, lit *parser.
 	// GEP 索引必須是 i64；若索引為 i8/i16/i32 SSA 值則 zext 到 i64
 	if strings.HasPrefix(idx, "%") {
 		idxType := g.intExprLLVMType(index)
-		if idxType != "i64" {
+		if toLLVMType(idxType) != "i64" {
 			zextReg := g.tmpReg("str-longlit.idx.zext")
 			if sb != nil {
 				sb.WriteString(fmt.Sprintf("%s%s = zext %s %s to i64\n", g.indent(), zextReg, toLLVMType(idxType), idx))
@@ -4610,7 +4654,7 @@ func (g *Generator) generateStructLiteral(sb *strings.Builder, expr *parser.Stru
 	// struct literal: user { name: 'abc', age: 20 }
 	// 在 generateLet 中處理（varLLVMType 已回傳 struct type）
 	// 這裡只產生一個 placeholder
-	return "{ }"
+	return "0"
 }
 
 func (g *Generator) generateInfixI1(sb *strings.Builder, expr *parser.InfixExpression) string {

@@ -647,6 +647,8 @@ func setComment(stmt Statement, comment *CommentGroup) {
 		s.Comment = comment
 	case *StructDefinition:
 		s.Comment = comment
+	case *MultiAssignStatement:
+		s.Comment = comment
 	}
 }
 
@@ -715,6 +717,11 @@ func stmtTokenEndLine(stmt Statement) int {
 	case *InterfaceDefinition:
 		return s.Token.Line
 	case *StructDefinition:
+		return s.Token.Line
+	case *MultiAssignStatement:
+		if s.Value != nil {
+			return s.Value.EndPos().Line
+		}
 		return s.Token.Line
 	}
 	return 0
@@ -810,6 +817,8 @@ func setDoc(stmt Statement, doc *CommentGroup) {
 	case *InterfaceDefinition:
 		s.Doc = doc
 	case *StructDefinition:
+		s.Doc = doc
+	case *MultiAssignStatement:
 		s.Doc = doc
 	case *TypeAlias:
 		s.Doc = doc

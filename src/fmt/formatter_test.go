@@ -2477,6 +2477,24 @@ func TestFormatSemicolonBlockComment(t *testing.T) {
 	}
 }
 
+// TestFormatSemicolonCommentBeforeMultiAssign verifies that a ';' line comment
+// preceding a multi-assign statement (e.g. `a, b = f()`) is preserved by the
+// formatter. Before the fix, setDoc() did not handle *MultiAssignStatement, so
+// the doc comment was silently dropped.
+func TestFormatSemicolonCommentBeforeMultiAssign(t *testing.T) {
+	input := "x = 1\n; a, b = f(x)\na, b = f(x)\n"
+	want := "x = 1\n\n; a, b = f(x)\na, b = f(x)"
+	got := Format(input)
+	if got != want {
+		t.Errorf("Format semicolon comment before multi-assign:\n got:  %q\n want: %q", got, want)
+	}
+	// idempotent via FormatFile
+	file := FormatFile(input)
+	if FormatFile(file) != file {
+		t.Errorf("FormatFile not idempotent: %q", file)
+	}
+}
+
 // TestFormatEnumPreservesBare verifies that a simple enum written without
 // explicit `= <int>` values (e.g. `color { red, green, blue }`) is preserved
 // verbatim by the formatter — the formatter must NOT inject sequential values

@@ -1,0 +1,11 @@
+probs = [1, 2, 3]
+m = 1
+
+bit, probs[m] = decode-bit(probs[m])
+
+; bit, tmp = decode-bit(probs[m])
+; probs[m] = tmp
+
+decode-bit = (prob i64) (bit i64, new-prob i64) {
+    new-prob = prob - (prob >> 5)
+}

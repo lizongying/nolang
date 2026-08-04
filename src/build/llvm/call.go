@@ -233,7 +233,7 @@ func (g *Generator) generateCallArg(sb *strings.Builder, arg parser.Expression) 
 			// so the SSA value type is i64 regardless of elemLLVMType.
 			// When elemLLVMType is a narrow integer (i8/i16/i32), trunc to elemLLVMType.
 			srcType := "i64"
-			if srcType != elemLLVMType {
+			if toLLVMType(srcType) != toLLVMType(elemLLVMType) {
 				g.tmpIdx++
 				convReg := fmt.Sprintf("%%ref.conv.%d", g.tmpIdx)
 				if sb != nil {
@@ -605,7 +605,7 @@ func (g *Generator) generateOutputIdxPtr(sb *strings.Builder, v *parser.IndexExp
 	idx := g.generateExprWithSB(sb, v.Index)
 	if strings.HasPrefix(idx, "%") {
 		idxType := g.intExprLLVMType(v.Index)
-		if idxType != "" && idxType != "i64" {
+		if idxType != "" && toLLVMType(idxType) != "i64" {
 			g.tmpIdx++
 			zextReg := fmt.Sprintf("%%outidx.zext.%d", g.tmpIdx)
 			if sb != nil {
@@ -2322,7 +2322,7 @@ func (g *Generator) generateCallExpression(sb *strings.Builder, expr *parser.Cal
 				// so the SSA value type is i64 regardless of elemLLVMType.
 				// When elemLLVMType is a narrow integer (i8/i16/i32), trunc to elemLLVMType.
 				srcType := "i64"
-				if srcType != elemLLVMType {
+				if toLLVMType(srcType) != toLLVMType(elemLLVMType) {
 					g.tmpIdx++
 					convReg := fmt.Sprintf("%%ref.conv.%d", g.tmpIdx)
 					if sb != nil {
@@ -3402,7 +3402,7 @@ func (g *Generator) genForwardFunc(sb *strings.Builder, forwardFunc string, expr
 		storeVal := val
 		if strings.HasPrefix(val, "%") {
 			valType := g.intExprLLVMType(args[1])
-			if valType != "" && valType != elemType && g.isIntegerLLVMType(valType) && g.isIntegerLLVMType(elemType) {
+			if valType != "" && toLLVMType(valType) != toLLVMType(elemType) && g.isIntegerLLVMType(valType) && g.isIntegerLLVMType(elemType) {
 				g.tmpIdx++
 				convReg := fmt.Sprintf("%%vp.conv.%d", g.tmpIdx)
 				if sb != nil {

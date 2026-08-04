@@ -91,7 +91,8 @@ lzma-rd.decode-direct-bits = (num-bits i64) (res i64) {
 lzma-rd.decode-bit-tree = (probs []i64, num-bits i64) (sym i64) {
     m = 1
     i <- [0..num-bits): {
-        bit, probs[m] = .decode-bit(probs[m])
+        bit, tmp = .decode-bit(probs[m])
+        probs[m] = tmp
         m = (m << 1) | bit
     }
     sym = m - (1 << num-bits)
@@ -102,7 +103,8 @@ lzma-rd.decode-reverse-bit-tree = (probs []i64, num-bits i64) (sym i64) {
     m = 1
     sym = 0
     i <- [0..num-bits): {
-        bit, probs[m] = .decode-bit(probs[m])
+        bit, tmp = .decode-bit(probs[m])
+        probs[m] = tmp
         m = (m << 1) | bit
         sym = sym | (bit << i)
     }
@@ -149,7 +151,7 @@ lzma-decoder {
     is-rep-g1 [16]i64
     is-rep-g2 [16]i64
     is-rep0-long [16]i64
-    pos-slot [4][64]i64       ; 4 states * 64 slots
+    pos-slot [256]i64        ; 4 states * 64 slots (flattened)
     spec-pos [128]i64         ; special positions
     align [16]i64             ; alignment
     len-coder [0x200]i64      ; length coder
@@ -177,7 +179,7 @@ lzma-decoder.init-probs = () {
     }
     i <- [0..4): {
         j <- [0..64): {
-            .pos-slot[i][j] = 0x400
+            .pos-slot[i * 64 + j] = 0x400
         }
     }
     i <- [0..128): {
@@ -235,20 +237,21 @@ lzma-decoder.decode-literal = () {
     ctx = prev >> (8 - .lc)
 
     ; 解碼 8 個位元
-    byte = 0
+    b = 0
     i <- [0..8): {
         ; 選擇機率
         prob-idx = ctx + 0x100
         symbol = 1
         {
-            bit, .literal[prob-idx + symbol] = .rd.decode-bit(.literal[prob-idx + symbol])
+            bit, tmp = .rd.decode-bit(.literal[prob-idx + symbol])
+            .literal[prob-idx + symbol] = tmp
             symbol = (symbol << 1) | bit
         } (symbol < 0x100)
-        byte = (byte << 1) | (symbol & 1)
+        b = (b << 1) | (symbol & 1)
     }
 
-    .out.push(byte)
-    .prev-byte = byte
+    .out.push(b)
+    .prev-byte = b
     .update-state-literal()
 }
 
@@ -256,7 +259,8 @@ lzma-decoder.decode-literal = () {
 ; probs: 機率陣列，返回長度
 lzma-decoder.decode-length = (probs []i64) (length i64) {
     ; 選擇低位/中位/高位
-    bit, probs[0] = .rd.decode-bit(probs[0])
+    bit, tmp = .rd.decode-bit(probs[0])
+    probs[0] = tmp
     bit == 0 -> {
         ; 低位：3 bits
         sym = .rd.decode-bit-tree(probs, 3)
@@ -264,7 +268,8 @@ lzma-decoder.decode-length = (probs []i64) (length i64) {
         return
     }
 
-    bit, probs[1] = .rd.decode-bit(probs[1])
+    bit, tmp = .rd.decode-bit(probs[1])
+    probs[1] = tmp
     bit == 0 -> {
         ; 中位：3 bits + 8
         ; 使用子陣列（從 index 2 開始）
@@ -296,7 +301,7 @@ lzma-decoder.decode-distance = (length i64) (dist i64) {
     ; 解碼 pos-slot（6 bits）
     slot-probs []i64
     i <- [0..64): {
-        slot-probs.push(.pos-slot[st][i])
+        slot-probs.push(.pos-slot[st * 64 + i])
     }
     pos-slot = .rd.decode-bit-tree(slot-probs, 6)
 
@@ -346,7 +351,8 @@ lzma-decoder.decode = (data []byte, start-pos i64, unpacked-size i64) {
         }
 
         ; 解碼 is_match
-        bit, .is-match[.state] = .rd.decode-bit(.is-match[.state])
+        bit, tmp = .rd.decode-bit(.is-match[.state])
+        .is-match[.state] = tmp
 
         bit == 0 -> {
             ; 字面量
@@ -355,7 +361,8 @@ lzma-decoder.decode = (data []byte, start-pos i64, unpacked-size i64) {
 
         bit == 1 -> {
             ; 匹配或重複
-            bit2, .is-rep[.state] = .rd.decode-bit(.is-rep[.state])
+            bit2, tmp = .rd.decode-bit(.is-rep[.state])
+            .is-rep[.state] = tmp
 
             bit2 == 0 -> {
                 ; 簡單匹配
@@ -389,11 +396,13 @@ lzma-decoder.decode = (data []byte, start-pos i64, unpacked-size i64) {
 
             bit2 == 1 -> {
                 ; 重複匹配
-                bit3, .is-rep-g0[.state] = .rd.decode-bit(.is-rep-g0[.state])
+                bit3, tmp = .rd.decode-bit(.is-rep-g0[.state])
+                .is-rep-g0[.state] = tmp
 
                 bit3 == 0 -> {
                     ; rep0
-                    bit4, .is-rep0-long[.state] = .rd.decode-bit(.is-rep0-long[.state])
+                    bit4, tmp = .rd.decode-bit(.is-rep0-long[.state])
+                    .is-rep0-long[.state] = tmp
                     bit4 == 0 -> {
                         ; 短重複（1 字節）
                         .update-state-shortrep()
@@ -491,12 +500,12 @@ lzma-decompress = (data []byte) (out []byte) {
     unpacked-size < 0 -> unpacked-size = -1
 
     ; 建立解碼器
+    empty-rd lzma-rd
     dec = lzma-decoder{
-        rd: lzma-rd{}
+        rd: empty-rd
         lc: lc
         lp: lp
         pb: pb
-        out: nil
         state: 0
         rep0: 0
         rep1: 0
@@ -504,6 +513,7 @@ lzma-decompress = (data []byte) (out []byte) {
         rep3: 0
         prev-byte: 0
     }
+    dec.out []byte
     dec.decode(data, 13, unpacked-size)
 
     out = dec.out

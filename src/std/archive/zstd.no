@@ -63,10 +63,10 @@ zs-bit-reader.read-varint = () (v i64) {
     v = 0
     shift = 0
     {
-        byte = .data[.pos]
+        b = .data[.pos]
         .pos = .pos + 1
-        v = v | ((byte & 0x7F) << shift)
-        (byte & 0x80) == 0 -> *
+        v = v | ((b & 0x7F) << shift)
+        (b & 0x80) == 0 -> *
         shift = shift + 7
     } (true)
 }
@@ -490,10 +490,10 @@ zstd-decompress = (data []byte) (out []byte) {
     frame = zs-frame{
         data: data
         pos: 0
-        out: nil
         window-size: 0
-        dict: nil
     }
+    frame.out []byte
+    frame.dict []byte
 
     ; 讀取 frame header
     ok = frame.read-frame-header()
@@ -501,9 +501,7 @@ zstd-decompress = (data []byte) (out []byte) {
 
     ; 解碼區塊
     {
-        done = frame.decode-block()
-        last-block = done.0
-        success = done.1
+        last-block, success = frame.decode-block()
 
         success == false -> *
 

@@ -584,14 +584,15 @@ func joinPathParts(parts []string) string {
 // parseMultiAssignStatement parses multi-variable assignment:
 //
 //	existing, exist-n = read-file(path)
+//	bit, probs[m] = decode-bit(probs[m])
 //
 // The left-side variables are treated as new definitions if not already defined.
+// Targets can be simple identifiers (bit) or index expressions (probs[m]).
 func (p *Parser) parseMultiAssignStatement() Statement {
 	var targets []Expression
 
 	// First variable name (already confirmed as IDENT by caller)
-	targets = append(targets, &Identifier{Token: p.currentToken, Value: p.currentToken.Literal})
-	p.nextToken() // skip first IDENT
+	targets = append(targets, p.parseAssignTarget())
 
 	// Additional variables separated by commas
 	for p.currentToken.Type == lexer.COMMA {
@@ -602,8 +603,7 @@ func (p *Parser) parseMultiAssignStatement() Statement {
 			p.saveError(msg)
 			return nil
 		}
-		targets = append(targets, &Identifier{Token: p.currentToken, Value: p.currentToken.Literal})
-		p.nextToken() // skip IDENT
+		targets = append(targets, p.parseAssignTarget())
 	}
 
 	if p.currentToken.Type != lexer.ASSIGN {
@@ -625,6 +625,24 @@ func (p *Parser) parseMultiAssignStatement() Statement {
 		Targets: targets,
 		Value:   value,
 	}
+}
+
+// parseAssignTarget parses a single multi-assign target starting at the current
+// IDENT token. The result is either a simple Identifier (bit) or an IndexExpression
+// (probs[m]) if the identifier is followed by '['.
+func (p *Parser) parseAssignTarget() Expression {
+	ident := &Identifier{Token: p.currentToken, Value: p.currentToken.Literal}
+	p.nextToken() // skip IDENT
+	if p.currentToken.Type == lexer.LBRACKET {
+		tok := p.currentToken // [
+		p.nextToken()         // skip [
+		index := p.parseExpression(LOWEST)
+		if p.currentToken.Type == lexer.RBRACKET {
+			p.nextToken() // skip ]
+		}
+		return &IndexExpression{Token: tok, Left: ident, Index: index}
+	}
+	return ident
 }
 
 func (p *Parser) parseLetStatement() Statement {
@@ -1337,6 +1355,7 @@ func (p *Parser) parseExpressionStatement() Statement {
 
 	// Multi-assign with expression target: expr, ident = call()
 	// e.g., fields[n], pos = parse-field(s, pos)
+	// Also supports: bit, probs[m] = decode-bit(probs[m])
 	if p.currentToken.Type == lexer.COMMA {
 		targets := []Expression{firstExpr}
 		for p.currentToken.Type == lexer.COMMA {
@@ -1345,8 +1364,7 @@ func (p *Parser) parseExpressionStatement() Statement {
 				p.fatalf(p.currentToken, "E_EXPECTED_IDENT",
 					"expected variable name after ',', got %s", p.currentToken.Type.String())
 			}
-			targets = append(targets, &Identifier{Token: p.currentToken, Value: p.currentToken.Literal})
-			p.nextToken() // skip IDENT
+			targets = append(targets, p.parseAssignTarget())
 		}
 		if p.currentToken.Type != lexer.ASSIGN {
 			p.fatalf(p.currentToken, "E_EXPECTED_ASSIGN",
