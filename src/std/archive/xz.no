@@ -340,7 +340,6 @@ lzma-decoder.decode-distance = (length i64) (dist i64) {
 ; data: 壓縮資料，start-pos: 資料起始位置
 ; unpacked-size: 預期解壓大小（-1 表示未知）
 lzma-decoder.decode = (data []byte, start-pos i64, unpacked-size i64) {
-    .out = nil
     .rd.init(data, start-pos)
     .init-probs()
 
@@ -500,20 +499,17 @@ lzma-decompress = (data []byte) (out []byte) {
     unpacked-size < 0 -> unpacked-size = -1
 
     ; 建立解碼器
-    empty-rd lzma-rd
-    dec = lzma-decoder{
-        rd: empty-rd
-        lc: lc
-        lp: lp
-        pb: pb
-        state: 0
-        rep0: 0
-        rep1: 0
-        rep2: 0
-        rep3: 0
-        prev-byte: 0
-    }
+    dec lzma-decoder = lzma-decoder{ prev-byte: 0 }
+    dec.lc = lc
+    dec.lp = lp
+    dec.pb = pb
     dec.out []byte
+    dec.state = 0
+    dec.rep0 = 0
+    dec.rep1 = 0
+    dec.rep2 = 0
+    dec.rep3 = 0
+    dec.prev-byte = 0
     dec.decode(data, 13, unpacked-size)
 
     out = dec.out
@@ -666,19 +662,17 @@ lzma2-decompress-stream = (data []byte, start-pos i64, out []byte) {
             }
 
             ; 使用 LZMA 解碼器解壓縮
-            dec = lzma-decoder{
-                rd: lzma-rd{}
-                lc: 3
-                lp: 0
-                pb: 2
-                out: nil
-                state: 0
-                rep0: 0
-                rep1: 0
-                rep2: 0
-                rep3: 0
-                prev-byte: 0
-            }
+            dec lzma-decoder
+            dec.lc = 3
+            dec.lp = 0
+            dec.pb = 2
+            dec.out []byte
+            dec.state = 0
+            dec.rep0 = 0
+            dec.rep1 = 0
+            dec.rep2 = 0
+            dec.rep3 = 0
+            dec.prev-byte = 0
 
             ; 設定壓縮資料範圍
             comp-data []byte

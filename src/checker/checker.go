@@ -4409,21 +4409,41 @@ func resolveSelfInExpr(expr parser.Expression, selfType string, structFields map
 					fieldName := innerDot.Property
 					if fields, ok := structFields[selfType]; ok {
 						if fieldType, ok := fields[fieldName]; ok {
-							concreteName := fieldType + "." + dot.Property
-							e.Function = &parser.Identifier{
-								Token: lexer.Token{Type: lexer.IDENT, Literal: concreteName},
-								Value: concreteName,
+							// Don't rewrite builtin methods on slice/array types
+							// (e.g. []byte.push, []i64.len, [N]byte.zero).
+							// Builtins are handled by the codegen via DotExpression
+							// dispatch + ForwardFunc. Rewriting them to
+							// []T.method(field, ...) would create undefined function calls.
+							isBuiltinMethod := false
+							if strings.HasPrefix(fieldType, "[]") {
+								if builtin.FindBuiltinMethod("vec."+dot.Property) != nil ||
+									builtin.FindBuiltinMethod(dot.Property) != nil ||
+									builtin.FindBuiltinMethod(fieldType+"."+dot.Property) != nil {
+									isBuiltinMethod = true
+								}
+							} else if strings.HasPrefix(fieldType, "[") {
+								if builtin.FindBuiltinMethod("arr."+dot.Property) != nil ||
+									builtin.FindBuiltinMethod(fieldType+"."+dot.Property) != nil {
+									isBuiltinMethod = true
+								}
 							}
-							// receiver arg: .field (= self.field)
-							receiverArg := &parser.DotExpression{
-								Token:    innerDot.Token,
-								Property: fieldName,
-								Receiver: &parser.Identifier{
-									Token: lexer.Token{Type: lexer.IDENT, Literal: "self"},
-									Value: "self",
-								},
+							if !isBuiltinMethod {
+								concreteName := fieldType + "." + dot.Property
+								e.Function = &parser.Identifier{
+									Token: lexer.Token{Type: lexer.IDENT, Literal: concreteName},
+									Value: concreteName,
+								}
+								// receiver arg: .field (= self.field)
+								receiverArg := &parser.DotExpression{
+									Token:    innerDot.Token,
+									Property: fieldName,
+									Receiver: &parser.Identifier{
+										Token: lexer.Token{Type: lexer.IDENT, Literal: "self"},
+										Value: "self",
+									},
+								}
+								e.Arguments = append([]parser.Expression{receiverArg}, e.Arguments...)
 							}
-							e.Arguments = append([]parser.Expression{receiverArg}, e.Arguments...)
 						}
 					}
 				}

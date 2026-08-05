@@ -20,6 +20,6 @@
       "sqlite3",
     ],
   },
-  "output": "./dist",
+  "output": "/dist",
   "ignore": [],
 }

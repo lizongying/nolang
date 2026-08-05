@@ -10,11 +10,12 @@ import (
 
 // CompilerOptions 表示 package.jsonc 的 compiler 區塊選項
 type CompilerOptions struct {
-	AnonymousFnType bool     `json:"anonymous-fn-type"`
-	LinkLibs        []string `json:"link-libs,omitempty"`
+	AnonymousFnType bool   `json:"anonymous-fn-type"`
+	Version         string `json:"version,omitempty"`
 	// Emit 控制輸出目標後端："js" 表示使用 JS 後端發射 JavaScript；
 	// 空字串（預設）表示使用 LLVM 後端生成原生可執行檔。
-	Emit string `json:"emit,omitempty"`
+	Emit     string   `json:"emit,omitempty"`
+	LinkLibs []string `json:"link-libs,omitempty"`
 }
 
 // Package 表示 package.jsonc 定義的專案套件
@@ -160,6 +161,84 @@ func removeTrailingCommas(s string) string {
 	}
 
 	return out.String()
+}
+
+// IsIgnored 判斷給定的檔案路徑是否匹配 ignore 列表中的任一模式。
+//
+// 支援以下模式格式：
+//   - 檔名精確匹配：如 "main.no" 匹配任意目錄下的 main.no
+//   - Glob 萬用字元：如 "*.no"、"*_test.no" 匹配檔名
+//   - 相對路徑匹配：如 "src/utils.no" 匹配套件根目錄下的相應路徑
+//   - 目錄前綴匹配：如 "tests/" 匹配該目錄下所有檔案
+//   - 路徑 Glob：如 "src/*.no"、"tests/*" 匹配相對路徑模式
+//
+// filePath 可以是絕對路徑或相對路徑。若是絕對路徑，會先轉換為
+// 相對於套件根目錄（RootDir）的路徑再進行匹配。
+func (p *Package) IsIgnored(filePath string) bool {
+	if p == nil || len(p.Ignore) == 0 {
+		return false
+	}
+
+	// 取得檔名
+	fileName := filepath.Base(filePath)
+
+	// 計算相對於套件根目錄的路徑
+	relPath := filePath
+	if p.RootDir != "" {
+		if abs, err := filepath.Abs(filePath); err == nil {
+			if rel, err := filepath.Rel(p.RootDir, abs); err == nil {
+				relPath = filepath.ToSlash(rel)
+			}
+		}
+	}
+	// 統一路徑分隔符為 /
+	relPath = filepath.ToSlash(relPath)
+	fileName = filepath.ToSlash(fileName)
+
+	for _, pattern := range p.Ignore {
+		pattern = strings.TrimSpace(pattern)
+		if pattern == "" {
+			continue
+		}
+		pattern = filepath.ToSlash(pattern)
+
+		// 1. 檔名精確匹配
+		if fileName == pattern {
+			return true
+		}
+
+		// 2. 相對路徑精確匹配
+		if relPath == pattern {
+			return true
+		}
+
+		// 3. 目錄前綴匹配（以 / 結尾表示目錄）
+		if strings.HasSuffix(pattern, "/") {
+			dir := strings.TrimSuffix(pattern, "/")
+			if relPath == dir || strings.HasPrefix(relPath, dir+"/") {
+				return true
+			}
+			continue
+		}
+
+		// 4. Glob 萬用字元匹配——先嘗試匹配檔名
+		if matched, err := filepath.Match(pattern, fileName); err == nil && matched {
+			return true
+		}
+
+		// 5. Glob 萬用字元匹配——再嘗試匹配相對路徑
+		if matched, err := filepath.Match(pattern, relPath); err == nil && matched {
+			return true
+		}
+
+		// 6. 目錄前綴匹配（不以 / 結尾但也匹配目錄結構）
+		// 例如 pattern="tests" 時，匹配 tests 目錄下所有檔案
+		if relPath == pattern || strings.HasPrefix(relPath, pattern+"/") {
+			return true
+		}
+	}
+
+	return false
 }
 
 // LoadPackage 從 dir 目錄尋找並解析 package.jsonc

@@ -559,6 +559,15 @@ func (g *Generator) generateConditionAsI1(sb *strings.Builder, cond parser.Expre
 	if !g.isIntegerLLVMType(condType) && condType != "" {
 		return "1"
 	}
+	// intExprLLVMType returns "" for non-integer types (e.g. %vec, %str-long).
+	// Check the actual variable/field type to avoid generating invalid
+	// trunc i64 on a non-i64 value (e.g. trunc i64 %vec-val to i1).
+	if condType == "" {
+		actualType := g.exprResultLLVMType(cond)
+		if actualType != "" && !g.isIntegerLLVMType(actualType) {
+			return "1"
+		}
+	}
 	reg := g.tmpReg("if.trunc")
 	sb.WriteString(fmt.Sprintf("%s%s = trunc i64 %s to i1\n", g.indent(), reg, condVal))
 	return reg
@@ -5973,8 +5982,22 @@ func (g *Generator) generateStrConcat(sb *strings.Builder, leftExpr, rightExpr p
 
 	leftLen := g.extractLenFromExpr(sb, leftExpr, leftPtr)
 	rightLen := g.extractLenFromExpr(sb, rightExpr, rightPtr)
+	// Handle empty lengths (from codegen errors) by using 0
+	if leftLen == "" {
+		leftLen = "0"
+	}
+	if rightLen == "" {
+		rightLen = "0"
+	}
 	leftData := g.extractDataFromExpr(sb, leftExpr, leftPtr)
 	rightData := g.extractDataFromExpr(sb, rightExpr, rightPtr)
+	// Handle empty data pointers (from codegen errors) by using null
+	if leftData == "" {
+		leftData = "null"
+	}
+	if rightData == "" {
+		rightData = "null"
+	}
 
 	totalLen := g.tmpReg("concat.total")
 	sb.WriteString(fmt.Sprintf("%s%s = add i64 %s, %s\n", g.indent(), totalLen, leftLen, rightLen))

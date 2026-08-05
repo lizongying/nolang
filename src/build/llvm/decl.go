@@ -80,6 +80,7 @@ func (g *Generator) writeDeclarations(sb *strings.Builder) {
 	if goos == "windows" {
 		sb.WriteString("declare i32 @_mkdir(i8*, i32)\n")
 		sb.WriteString("declare i32 @_chmod(i8*, i32)\n")
+		sb.WriteString("declare i32 @_rmdir(i8*)\n")
 		// chown/getuid/getgid/getppid/kill/utimensat not declared on Windows:
 		// routed to nolang.win_* stubs (see writeWindowsStubs).
 		sb.WriteString("declare i32 @_unlink(i8*)\n")
@@ -667,15 +668,31 @@ func (g *Generator) writeDeclarations(sb *strings.Builder) {
 	sb.WriteString("declare i8* @fopen(i8*, i8*)\n")
 	sb.WriteString("declare i8* @fgets(i8*, i32, i8*)\n")
 	sb.WriteString("declare i32 @fclose(i8*)\n")
-	// stdin 全域變數：macOS 為 __stdinp，Linux/Windows 為 stdin
+	// stdin 全域變數：macOS 為 __stdinp，Linux 為 stdin
+	// Windows: stdin/stderr are macros, not global variables.
+	// Zig's MinGW runtime doesn't export _iob, __iob_func, or _acrt_iob_func.
+	// We provide null-returning stubs so the build links successfully.
+	// Functions using stdin/stderr will get null FILE* and handle it gracefully.
 	if goos == "darwin" {
 		sb.WriteString("@__stdinp = external global i8*\n")
+	} else if goos == "windows" {
+		sb.WriteString("define internal i8* @nolang.win_stdin() {\n")
+		sb.WriteString("entry:\n")
+		sb.WriteString("\tret i8* null\n")
+		sb.WriteString("}\n\n")
+		sb.WriteString("define internal i8* @nolang.win_stderr() {\n")
+		sb.WriteString("entry:\n")
+		sb.WriteString("\tret i8* null\n")
+		sb.WriteString("}\n\n")
 	} else {
 		sb.WriteString("@stdin = external global i8*\n")
 	}
-	// stderr 全域變數：macOS 為 __stderrp，Linux/Windows 為 stderr
+	// stderr 全域變數：macOS 為 __stderrp，Linux 為 stderr
+	// Windows: handled via nolang.win_stderr above
 	if goos == "darwin" {
 		sb.WriteString("@__stderrp = external global i8*\n")
+	} else if goos == "windows" {
+		// nolang.win_stderr already defined above
 	} else {
 		sb.WriteString("@stderr = external global i8*\n")
 	}
@@ -966,6 +983,75 @@ func (g *Generator) writeDeclarations(sb *strings.Builder) {
 		sb.WriteString("entry:\n")
 		sb.WriteString("\tret i32 -1\n")
 		sb.WriteString("}\n\n")
+
+		// nolang.win_mknod: mknod is not supported on Windows.
+		sb.WriteString("define internal i32 @nolang.win_mknod(i8* %path, i32 %mode, i64 %dev) {\n")
+		sb.WriteString("entry:\n")
+		sb.WriteString("\tret i32 -1\n")
+		sb.WriteString("}\n\n")
+
+		// nolang.win_truncate: truncate is not directly available on Windows.
+		// Could use SetEndOfFile, but for now return -1 (failure).
+		sb.WriteString("define internal i32 @nolang.win_truncate(i8* %path, i64 %length) {\n")
+		sb.WriteString("entry:\n")
+		sb.WriteString("\tret i32 -1\n")
+		sb.WriteString("}\n\n")
+
+		// nolang.win_mkfifo: mkfifo (named pipes) not supported via POSIX API on Windows.
+		sb.WriteString("define internal i32 @nolang.win_mkfifo(i8* %path, i32 %mode) {\n")
+		sb.WriteString("entry:\n")
+		sb.WriteString("\tret i32 -1\n")
+		sb.WriteString("}\n\n")
+
+		// nolang.win_signal: signal handling is different on Windows.
+		// Return 0 (SIG_DFL) as a no-op.
+		sb.WriteString("define internal i64 @nolang.win_signal(i32 %sig, i64 %handler) {\n")
+		sb.WriteString("entry:\n")
+		sb.WriteString("\tret i64 0\n")
+		sb.WriteString("}\n\n")
+
+		// nolang.win_gethostid: gethostid is not available on Windows.
+		sb.WriteString("define internal i32 @nolang.win_gethostid() {\n")
+		sb.WriteString("entry:\n")
+		sb.WriteString("\tret i32 0\n")
+		sb.WriteString("}\n\n")
+
+		// nolang.win_setpriority: setpriority is not available on Windows.
+		sb.WriteString("define internal i32 @nolang.win_setpriority(i32 %which, i32 %who, i32 %prio) {\n")
+		sb.WriteString("entry:\n")
+		sb.WriteString("\tret i32 -1\n")
+		sb.WriteString("}\n\n")
+
+		// nolang.win_setsid: setsid is not available on Windows.
+		sb.WriteString("define internal i32 @nolang.win_setsid() {\n")
+		sb.WriteString("entry:\n")
+		sb.WriteString("\tret i32 -1\n")
+		sb.WriteString("}\n\n")
+
+		// nolang.win_flock: flock is not available on Windows.
+		// Could use LockFileEx, but for now return 0 (success) as a no-op.
+		sb.WriteString("define internal i32 @nolang.win_flock(i32 %fd, i32 %op) {\n")
+		sb.WriteString("entry:\n")
+		sb.WriteString("\tret i32 0\n")
+		sb.WriteString("}\n\n")
+
+		// nolang.win_setenv: Windows doesn't have setenv, use _putenv_s instead.
+		// _putenv_s(name, value) returns 0 on success.
+		sb.WriteString("define internal i32 @nolang.win_setenv(i8* %name, i8* %value, i32 %overwrite) {\n")
+		sb.WriteString("entry:\n")
+		sb.WriteString("\t%ret = call i32 @_putenv_s(i8* %name, i8* %value)\n")
+		sb.WriteString("\tret i32 %ret\n")
+		sb.WriteString("}\n\n")
+
+		// sync: POSIX sync() is not available on Windows.
+		// Provide a no-op stub so that any generated call links successfully.
+		sb.WriteString("define internal void @sync() {\n")
+		sb.WriteString("entry:\n")
+		sb.WriteString("\tret void\n")
+		sb.WriteString("}\n\n")
+
+		// Declare _putenv_s for the setenv wrapper
+		sb.WriteString("declare i32 @_putenv_s(i8*, i8*)\n")
 	}
 }
 
@@ -1089,8 +1175,46 @@ func libcFnFor(goos, posixName string) string {
 		case "waitpid":
 			return "_cwait"
 		case "open", "read", "write", "close", "mkdir", "chmod", "unlink",
-			"getcwd", "chdir", "dup2", "pipe", "execlp":
+			"getcwd", "chdir", "dup2", "pipe", "execlp", "rmdir":
 			return "_" + posixName
+		// Unix-only functions routed to nolang.win_* stubs on Windows.
+		// These stubs are defined in writeWindowsStubs (decl.go).
+		case "chown":
+			return "nolang.win_chown"
+		case "symlink":
+			return "nolang.win_symlink"
+		case "link":
+			return "nolang.win_link"
+		case "kill":
+			return "nolang.win_kill"
+		case "getuid", "geteuid":
+			return "nolang.win_getuid"
+		case "getgid", "getegid":
+			return "nolang.win_getgid"
+		case "getppid":
+			return "nolang.win_getppid"
+		case "utimensat":
+			return "nolang.win_utimensat"
+		case "chroot":
+			return "nolang.win_chroot"
+		case "mknod":
+			return "nolang.win_mknod"
+		case "truncate":
+			return "nolang.win_truncate"
+		case "mkfifo":
+			return "nolang.win_mkfifo"
+		case "signal":
+			return "nolang.win_signal"
+		case "gethostid":
+			return "nolang.win_gethostid"
+		case "setpriority":
+			return "nolang.win_setpriority"
+		case "setsid":
+			return "nolang.win_setsid"
+		case "flock":
+			return "nolang.win_flock"
+		case "setenv":
+			return "nolang.win_setenv"
 		}
 	}
 	return posixName

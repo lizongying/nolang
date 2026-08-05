@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"sync"
 
@@ -97,14 +98,61 @@ func CheckToolchain(cc string) error {
 
 // BuildOptions holds all options for a build operation.
 type BuildOptions struct {
-	CC            string // C compiler: "clang" or "zig"
-	Target        string // target triple (e.g. "x86_64-linux-gnu", "" = auto)
-	Verbose       bool
-	Output        string // optional output path ("" = auto)
-	NoBoundsCheck bool   // skip bounds checks (unsafe mode, for max performance)
-	UseDirectWasm bool   // use Direct WASM backend (no LLVM toolchain required)
-	UseJS         bool   // use JS backend (emit JavaScript source, no LLVM toolchain)
-	BrowserMode   bool   // when true with UseJS, generate browser-targeted JS + HTML wrapper
+	CC              string // C compiler: "clang" or "zig"
+	Target          string // target triple (e.g. "x86_64-linux-gnu", "" = auto)
+	Verbose         bool
+	Output          string // optional output path ("" = auto)
+	NoBoundsCheck   bool   // skip bounds checks (unsafe mode, for max performance)
+	UseDirectWasm   bool   // use Direct WASM backend (no LLVM toolchain required)
+	UseJS           bool   // use JS backend (emit JavaScript source, no LLVM toolchain)
+	BrowserMode     bool   // when true with UseJS, generate browser-targeted JS + HTML wrapper
+	CompilerVersion string // current compiler version (for package.jsonc compatibility check)
+}
+
+// versionCompatible 檢查 package.jsonc 中聲明的編譯器版本是否與當前編譯器版本兼容。
+// 採用語義化版本規則：
+//   - major >= 1 時，major 版本相同即視為兼容（1.2.0 與 1.3.1 兼容）
+//   - major == 0 時（初始開發階段），API 不穩定，以 minor 作為兼容性判斷依據
+//     （0.1.0 與 0.1.5 兼容，但 0.1.0 與 0.2.0 不兼容）
+//   - 若無法解析為 semver，則要求精確匹配
+func versionCompatible(required, current string) bool {
+	required = strings.TrimSpace(required)
+	current = strings.TrimSpace(current)
+	if required == "" || current == "" {
+		return true
+	}
+	if required == current {
+		return true
+	}
+	// 嘗試 semver 解析：major.minor.patch
+	parseSemver := func(v string) (major, minor int, ok bool) {
+		v = strings.TrimPrefix(v, "v")
+		parts := strings.SplitN(v, ".", 3)
+		if len(parts) < 2 {
+			return 0, 0, false
+		}
+		m, err := strconv.Atoi(parts[0])
+		if err != nil {
+			return 0, 0, false
+		}
+		n, err := strconv.Atoi(parts[1])
+		if err != nil {
+			return 0, 0, false
+		}
+		return m, n, true
+	}
+	reqMajor, reqMinor, ok1 := parseSemver(required)
+	curMajor, curMinor, ok2 := parseSemver(current)
+	if ok1 && ok2 {
+		if reqMajor == 0 && curMajor == 0 {
+			// 0.x.y 階段：minor 必須相同才算兼容
+			return reqMinor == curMinor
+		}
+		// 1.x.y 及以上：major 相同即兼容
+		return reqMajor == curMajor
+	}
+	// 無法解析為 semver，要求精確匹配
+	return required == current
 }
 
 // ClearCaches 清空全局 token 緩存和模組 AST 緩存。
@@ -290,6 +338,19 @@ func VetFile(inputPath string, opts BuildOptions) error {
 // buildWithPkg 是核心編譯邏輯，使用已載入的 Package（可為 nil）。
 // BuildFile 和 BuildWorkspace 共用此函數，避免重複載入 Package。
 func buildWithPkg(inputPath string, pkg *Package, opts BuildOptions, buffered bool) error {
+	// 檢查 package.jsonc 中聲明的編譯器版本是否與當前編譯器版本匹配
+	if pkg != nil && pkg.Compiler.Version != "" && opts.CompilerVersion != "" {
+		if !versionCompatible(pkg.Compiler.Version, opts.CompilerVersion) {
+			msg := fmt.Sprintf("warning: compiler version mismatch: package.jsonc requires %q, current compiler is %q\n",
+				pkg.Compiler.Version, opts.CompilerVersion)
+			if buffered {
+				fmt.Fprint(os.Stderr, msg)
+			} else {
+				fmt.Fprint(os.Stderr, msg)
+			}
+		}
+	}
+
 	source, err := os.ReadFile(inputPath)
 	if err != nil {
 		return fmt.Errorf("reading input file: %w", err)
@@ -810,14 +871,24 @@ func BuildWorkspace(workspaceDir string, opts BuildOptions) error {
 
 		// Check main.no
 		if _, err := os.Stat(mainPath); err == nil {
-			targets = append(targets, buildTarget{projectName: name, filePath: mainPath, pkg: pkg})
-			hasMain = true
+			if pkg == nil || !pkg.IsIgnored(mainPath) {
+				targets = append(targets, buildTarget{projectName: name, filePath: mainPath, pkg: pkg})
+				hasMain = true
+			} else {
+				fmt.Fprintf(os.Stderr, "SKIP (ignored): %s: %s\n", name, mainPath)
+				hasMain = true
+			}
 		}
 
 		// Check lib.no
 		if _, err := os.Stat(libPath); err == nil {
-			targets = append(targets, buildTarget{projectName: name, filePath: libPath, pkg: pkg})
-			hasLib = true
+			if pkg == nil || !pkg.IsIgnored(libPath) {
+				targets = append(targets, buildTarget{projectName: name, filePath: libPath, pkg: pkg})
+				hasLib = true
+			} else {
+				fmt.Fprintf(os.Stderr, "SKIP (ignored): %s: %s\n", name, libPath)
+				hasLib = true
+			}
 		}
 
 		// At least one of main.no or lib.no must exist
@@ -837,6 +908,10 @@ func BuildWorkspace(workspaceDir string, opts BuildOptions) error {
 					return nil
 				}
 				if fname == "main.no" || fname == "lib.no" {
+					return nil
+				}
+				// 跳過 ignore 列表中匹配的檔案
+				if pkg != nil && pkg.IsIgnored(path) {
 					return nil
 				}
 				targets = append(targets, buildTarget{projectName: name, filePath: path, pkg: pkg})

@@ -23,6 +23,18 @@ func init() {
 		ForwardFunc:  "vec-len",
 	})
 
+	// .push: append element to slice (method on []t)
+	// Note: MethodName is "push" (without "vec." prefix) so it matches
+	// code like []byte.push() when the compiler looks up "push" for slice types.
+	BuiltinMethodList = append(BuiltinMethodList, BuiltinMethod{
+		ReceiverType: ReceiverVec,
+		MethodName:   "push",
+		Params:       []parser.Type{parser.TypeI64},
+		Return:       []parser.Type{},
+		Doc:          "Push an element to the end of the slice (auto-grow)",
+		ForwardFunc: "vec-push",
+	})
+
 	// vec.push: append element to slice (with auto-grow)
 	// Expansion: cap==0→4, cap<1024→cap*2, cap>=1024→cap*5/4
 	BuiltinMethodList = append(BuiltinMethodList, BuiltinMethod{
@@ -31,7 +43,7 @@ func init() {
 		Params:       []parser.Type{parser.TypeI64},
 		Return:       []parser.Type{},
 		Doc:          "Push an element to the end of the slice (auto-grow)",
-		ForwardFunc:  "vec-push",
+		ForwardFunc: "vec-push",
 	})
 
 	// vec.clear: clear slice in-place (set len=0, no free/shrink)

@@ -2085,6 +2085,11 @@ func (g *Generator) genCLibCall(sb *strings.Builder, m *builtin.BuiltinMethod, e
 	// 否則 call i64 @write(..., i64) 與 declare i32 @write(i32, i8*, i32)
 	// 的型別不匹配會導致 WASM 產生 unreachable trap。
 	fnName := clib.FuncName
+	// Cross-compile fix: builtin/os.go registers CLibCall names using runtime.GOOS
+	// (host), but decl.go emits declarations for the *target* platform. When
+	// cross-compiling (e.g. Linux→Windows), the host name (e.g. "chdir") won't
+	// match the target declaration (e.g. "_chdir"). Remap using the target OS.
+	fnName = libcFnFor(g.goos(), fnName)
 	if g.goos() == "wasi" {
 		switch fnName {
 		case "read", "_read":

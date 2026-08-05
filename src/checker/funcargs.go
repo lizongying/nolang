@@ -269,6 +269,34 @@ func checkCallArgsInStmtWithResultParams(stmt parser.Statement, sigs map[string]
 			return checkCallArgsInExpr(s.Expression, sigs, varTypes, structFields)
 		}
 	case *parser.LetStatement:
+		// Compiler-injected synthetic let statements (e.g. match arm `it` bindings).
+		// If the synthetic binding has an explicit Type, record it directly.
+		// If not (fallback path when parser couldn't resolve the matched variable's
+		// type at parse time), infer from value but unwrap Optional types (?T → T),
+		// because `it` in a match arm always represents the unwrapped inner value.
+		if s.IsSynthetic {
+			if s.Value != nil {
+				results := checkCallArgsInExpr(s.Value, sigs, varTypes, structFields)
+				if s.Name != nil && !resultParamNames[s.Name.Value] {
+					if s.Type != nil && s.Type.String() != "" {
+						varTypes[s.Name.Value] = s.Type.String()
+					} else if _, exists := varTypes[s.Name.Value]; !exists {
+						inferred := inferExprType(s.Value, varTypes, nil, "")
+						if strings.HasPrefix(inferred, "?") {
+							inferred = strings.TrimPrefix(inferred, "?")
+						}
+						if inferred != "" {
+							varTypes[s.Name.Value] = inferred
+						}
+					}
+				}
+				return results
+			}
+			if s.Name != nil && s.Type != nil {
+				varTypes[s.Name.Value] = s.Type.String()
+			}
+			return nil
+		}
 		if s.Value != nil {
 			results := checkCallArgsInExpr(s.Value, sigs, varTypes, structFields)
 			// Register the variable type from assignment for subsequent checks.

@@ -24,9 +24,19 @@ type ProjectConfig struct {
 	Name         string            `json:"name"`
 	Version      string            `json:"version"`
 	Description  string            `json:"description"`
+	Keywords     []string          `json:"keywords"`
+	Author       string            `json:"author"`
+	Email        string            `json:"email"`
+	Organization string            `json:"organization"`
+	Repository   string            `json:"repository"`
+	Homepage     string            `json:"homepage"`
+	License      string            `json:"license"`
+	Mirrors      []string          `json:"mirrors"`
 	Dependencies map[string]string `json:"dependencies"`
 	Main         string            `json:"main"`
 	Compiler     CompilerConfig    `json:"compiler"`
+	Output       string            `json:"output"`
+	Ignore       []string          `json:"ignore"`
 }
 
 type CompilerConfig struct {
@@ -341,15 +351,22 @@ func newProject(name string) {
 		return
 	}
 
+	// 從 git 和環境變數中探測作者、郵箱、倉庫等信息
+	gitInfo := detectGitInfo()
+
 	config := ProjectConfig{
 		Name:         name,
 		Version:      "0.1.0",
-		Description:  "A new Nolang package",
+		Author:       gitInfo.Author,
+		Email:        gitInfo.Email,
+		Repository:   gitInfo.Repository,
+		Homepage:     gitInfo.Homepage,
 		Dependencies: map[string]string{},
 		Main:         "main.no",
 		Compiler: CompilerConfig{
 			Version: "0.1.0",
 		},
+		Output: "/dist",
 	}
 
 	createConfigFile(config)
@@ -367,6 +384,22 @@ func newProject(name string) {
 	fmt.Println("  - src/ (source directory)")
 	fmt.Println("  - tests/ (test directory)")
 	fmt.Println("")
+	if gitInfo.Author != "" || gitInfo.Email != "" || gitInfo.Repository != "" {
+		fmt.Println("Pre-filled from git/environment:")
+		if gitInfo.Author != "" {
+			fmt.Printf("  author:     %s\n", gitInfo.Author)
+		}
+		if gitInfo.Email != "" {
+			fmt.Printf("  email:      %s\n", gitInfo.Email)
+		}
+		if gitInfo.Repository != "" {
+			fmt.Printf("  repository: %s\n", gitInfo.Repository)
+		}
+		if gitInfo.Homepage != "" {
+			fmt.Printf("  homepage:   %s\n", gitInfo.Homepage)
+		}
+		fmt.Println("")
+	}
 	fmt.Printf("Registered '%s' in workspace.jsonc\n", name)
 }
 
@@ -377,31 +410,123 @@ func createConfigFile(config ProjectConfig) {
   "version": "%s",
   "description": "%s",
   "keywords": [],
-  "author": "",
-  "email": "",
-  "organization": "",
-  "repository": "",
-  "homepage": "",
-  "license": "MIT",
+  "author": "%s",
+  "email": "%s",
+  "organization": "%s",
+  "repository": "%s",
+  "homepage": "%s",
+  "license": "%s",
   "mirrors": [],
   "dependencies": %s,
   "compiler": {
     "version": "%s",
   },
-  "output": "./dist",
+  "output": "%s",
   "ignore": [],
 }`,
 		config.Name,
 		config.Version,
 		config.Description,
+		config.Author,
+		config.Email,
+		config.Organization,
+		config.Repository,
+		config.Homepage,
+		config.License,
 		formatDependencies(config.Dependencies),
 		config.Compiler.Version,
+		config.Output,
 	)
 
 	err := os.WriteFile("package.jsonc", []byte(content), 0644)
 	if err != nil {
 		fmt.Printf("Error writing config file: %v\n", err)
 	}
+}
+
+// GitInfo holds author/repository information detected from git config and environment.
+type GitInfo struct {
+	Author     string
+	Email      string
+	Repository string
+	Homepage   string
+}
+
+// detectGitInfo tries to obtain author name, email, and repository URL from:
+//  1. `git config user.name` / `git config user.email` / `git config remote.origin.url`
+//  2. Environment variables: $GIT_AUTHOR_NAME, $GIT_AUTHOR_EMAIL,
+//     $USER (or $USERNAME on Windows), $EMAIL
+//
+// For remote URLs in SSH format (git@host:org/repo.git) or HTTPS format,
+// the homepage is derived as an https URL.
+func detectGitInfo() GitInfo {
+	var info GitInfo
+
+	// --- Author ---
+	// 優先使用 git config user.name
+	if out, err := exec.Command("git", "config", "user.name").Output(); err == nil {
+		info.Author = strings.TrimSpace(string(out))
+	}
+	// 回退到環境變數
+	if info.Author == "" {
+		info.Author = os.Getenv("GIT_AUTHOR_NAME")
+	}
+	if info.Author == "" {
+		info.Author = os.Getenv("USER")
+	}
+	if info.Author == "" {
+		info.Author = os.Getenv("USERNAME")
+	}
+
+	// --- Email ---
+	if out, err := exec.Command("git", "config", "user.email").Output(); err == nil {
+		info.Email = strings.TrimSpace(string(out))
+	}
+	if info.Email == "" {
+		info.Email = os.Getenv("GIT_AUTHOR_EMAIL")
+	}
+	if info.Email == "" {
+		info.Email = os.Getenv("EMAIL")
+	}
+
+	// --- Repository & Homepage ---
+	if out, err := exec.Command("git", "config", "remote.origin.url").Output(); err == nil {
+		repoURL := strings.TrimSpace(string(out))
+		if repoURL != "" {
+			info.Repository = repoURL
+			info.Homepage = gitURLToHTTPS(repoURL)
+		}
+	}
+
+	return info
+}
+
+// gitURLToHTTPS converts a git remote URL (SSH or HTTPS) to an https:// URL suitable
+// for the "homepage" field. Returns "" if the URL cannot be normalized.
+//
+//	git@github.com:org/repo.git  -> https://github.com/org/repo
+//	https://github.com/org/repo.git -> https://github.com/org/repo
+//	git@gitlab.com:org/repo.git  -> https://gitlab.com/org/repo
+func gitURLToHTTPS(url string) string {
+	url = strings.TrimSpace(url)
+
+	// SSH format: git@host:org/repo.git
+	if strings.HasPrefix(url, "git@") || strings.HasPrefix(url, "ssh://") {
+		// git@host:path -> host/path
+		s := strings.TrimPrefix(url, "ssh://")
+		s = strings.TrimPrefix(s, "git@")
+		s = strings.Replace(s, ":", "/", 1)
+		// 移除 .git 後綴
+		s = strings.TrimSuffix(s, ".git")
+		return "https://" + s
+	}
+
+	// HTTPS format: https://github.com/org/repo.git
+	if strings.HasPrefix(url, "https://") || strings.HasPrefix(url, "http://") {
+		return strings.TrimSuffix(url, ".git")
+	}
+
+	return ""
 }
 
 func formatDependencies(deps map[string]string) string {
@@ -890,9 +1015,10 @@ func installCommand(args []string) {
 
 	outPath := filepath.Join(tmpDir, binName)
 	opts := nbuild.BuildOptions{
-		CC:      "clang",
-		Output:  outPath,
-		Verbose: verbose,
+		CC:              "clang",
+		Output:          outPath,
+		Verbose:         verbose,
+		CompilerVersion: version,
 	}
 
 	fmt.Printf("Building %s...\n", binName)
@@ -1125,6 +1251,8 @@ func fmtProcessDirectory(dirname string, writeInPlace bool, diffMode bool) error
 	// 無 -w 且無 -d 時為「檢查模式」：只列出需要格式化的文件名，
 	// 不把所有文件內容拼接到 stdout（多文件拼接沒有意義）。
 	checkMode := !writeInPlace && !diffMode
+	// 載入 package 配置以套用 ignore 列表
+	fmtPkg, _ := nbuild.LoadPackage(dirname)
 	_ = filepath.Walk(dirname, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			if firstErr == nil {
@@ -1136,6 +1264,10 @@ func fmtProcessDirectory(dirname string, writeInPlace bool, diffMode bool) error
 			return nil
 		}
 		if !strings.HasSuffix(path, ".no") {
+			return nil
+		}
+		// 跳過 ignore 列表中匹配的檔案
+		if fmtPkg != nil && fmtPkg.IsIgnored(path) {
 			return nil
 		}
 		checked++
@@ -1244,14 +1376,15 @@ func buildCommand(args []string) {
 	}
 
 	opts := nbuild.BuildOptions{
-		CC:            *cc,
-		Target:        targetStr,
-		Verbose:       verbose,
-		Output:        *outputFile,
-		NoBoundsCheck: *unsafe,
-		UseDirectWasm: *wasmDirect,
-		UseJS:         useJS,
-		BrowserMode:   *browserMode,
+		CC:              *cc,
+		Target:          targetStr,
+		Verbose:         verbose,
+		Output:          *outputFile,
+		NoBoundsCheck:   *unsafe,
+		UseDirectWasm:   *wasmDirect,
+		UseJS:           useJS,
+		BrowserMode:     *browserMode,
+		CompilerVersion: version,
 	}
 
 	// JS 後端路徑：繞過 LLVM 工具鏈，直接發射 JavaScript 原始碼（型別擦除）。
@@ -1593,12 +1726,13 @@ func runCommand(args []string) {
 
 	outPath := filepath.Join(tmpDir, "out")
 	opts := nbuild.BuildOptions{
-		CC:            *cc,
-		Target:        targetStr,
-		Output:        outPath,
-		Verbose:       verbose,
-		NoBoundsCheck: *unsafe,
-		UseDirectWasm: *wasmDirect,
+		CC:              *cc,
+		Target:          targetStr,
+		Output:          outPath,
+		Verbose:         verbose,
+		NoBoundsCheck:   *unsafe,
+		UseDirectWasm:   *wasmDirect,
+		CompilerVersion: version,
 	}
 	if err := nbuild.BuildFile(inputPath, opts); err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
@@ -1665,6 +1799,9 @@ func testCommand(args []string) {
 		os.Exit(1)
 	}
 
+	// 載入 package 配置以套用 ignore 列表
+	testPkg, _ := nbuild.LoadPackage(filepath.Dir(inputPath))
+
 	var testFiles []string
 	if info.IsDir() {
 		// 目錄：遞迴掃描所有 .no 文件，排除 main.no 和 lib.no
@@ -1680,6 +1817,10 @@ func testCommand(args []string) {
 				return nil
 			}
 			if name == "main.no" || name == "lib.no" {
+				return nil
+			}
+			// 跳過 ignore 列表中匹配的檔案
+			if testPkg != nil && testPkg.IsIgnored(path) {
 				return nil
 			}
 			testFiles = append(testFiles, path)
@@ -1874,6 +2015,9 @@ func vetCommand(args []string) {
 		os.Exit(1)
 	}
 
+	// 載入 package 配置以套用 ignore 列表
+	vetPkg, _ := nbuild.LoadPackage(inputPath)
+
 	if info.IsDir() {
 		// 目錄模式：遞迴驗證所有 .no 文件（與 testCommand/fmtProcessDirectory/BuildWorkspace 一致）
 		var files []string
@@ -1882,6 +2026,10 @@ func vetCommand(args []string) {
 				return err
 			}
 			if !d.IsDir() && strings.HasSuffix(path, ".no") {
+				// 跳過 ignore 列表中匹配的檔案
+				if vetPkg != nil && vetPkg.IsIgnored(path) {
+					return nil
+				}
 				files = append(files, path)
 			}
 			return nil

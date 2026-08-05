@@ -1099,7 +1099,12 @@ func (g *Generator) callBuiltin(sb *strings.Builder, fnName string, hasArgs bool
 			if g.goos() == "darwin" {
 				stdinSym = "@__stdinp"
 			}
-			sb.WriteString(fmt.Sprintf("%s%s = load i8*, i8** %s\n", g.indent(), stdinReg, stdinSym))
+			if g.goos() == "windows" {
+				// Windows: stdin is not a global, use nolang.win_stdin()
+				sb.WriteString(fmt.Sprintf("%s%s = call i8* @nolang.win_stdin()\n", g.indent(), stdinReg))
+			} else {
+				sb.WriteString(fmt.Sprintf("%s%s = load i8*, i8** %s\n", g.indent(), stdinReg, stdinSym))
+			}
 			// fgets(buf, 4096, stdin)
 			sb.WriteString(fmt.Sprintf("%s%s = call i8* @fgets(i8* %s, i32 4096, i8* %s)\n", g.indent(), fgetsReg, bufReg, stdinReg))
 			// Check if fgets returned NULL
@@ -1166,7 +1171,14 @@ func (g *Generator) callBuiltin(sb *strings.Builder, fnName string, hasArgs bool
 
 	// open-dir: open a directory for reading entries
 	// Returns: dirp i64 (0 on failure)
+	// Windows: opendir not available, return 0 (failure).
 	if fnName == "open-dir" && hasArgs {
+		if g.goos() == "windows" {
+			if sb != nil {
+				sb.WriteString(fmt.Sprintf("%s; open-dir: opendir not available on Windows, returning 0\n", g.indent()))
+			}
+			return "0"
+		}
 		a := evalArgs()
 		pathPtr := g.nullTerminateStrArg(sb, a[0], expr.Arguments[0])
 		dirpReg := g.tmpReg("opendir.ret")
@@ -1182,7 +1194,26 @@ func (g *Generator) callBuiltin(sb *strings.Builder, fnName string, hasArgs bool
 	// Args: dirp i64 (from open-dir)
 	// Returns: name str, ok bool (ok=false when no more entries)
 	// macOS struct dirent: d_name at offset 12
+	// Windows: readdir not available, return empty string + false.
 	if fnName == "read-dir" && hasArgs {
+		if g.goos() == "windows" {
+			strReg := g.tmpReg("readdir.win.str")
+			if sb != nil {
+				sb.WriteString(fmt.Sprintf("%s; read-dir: readdir not available on Windows, returning empty + false\n", g.indent()))
+				sb.WriteString(fmt.Sprintf("%s%s = alloca %%str-long\n", g.indent(), strReg))
+				lenGEP := g.tmpReg("readdir.win.len")
+				capGEP := g.tmpReg("readdir.win.cap")
+				dataGEP := g.tmpReg("readdir.win.data")
+				sb.WriteString(fmt.Sprintf("%s%s = getelementptr %%str-long, %%str-long* %s, i32 0, i32 0\n", g.indent(), lenGEP, strReg))
+				sb.WriteString(fmt.Sprintf("%sstore i64 0, i64* %s\n", g.indent(), lenGEP))
+				sb.WriteString(fmt.Sprintf("%s%s = getelementptr %%str-long, %%str-long* %s, i32 0, i32 1\n", g.indent(), capGEP, strReg))
+				sb.WriteString(fmt.Sprintf("%sstore i64 0, i64* %s\n", g.indent(), capGEP))
+				sb.WriteString(fmt.Sprintf("%s%s = getelementptr %%str-long, %%str-long* %s, i32 0, i32 2\n", g.indent(), dataGEP, strReg))
+				g.storeDataPtrField(sb, "null", dataGEP)
+			}
+			g.lastBuiltinExtra = "0"
+			return strReg
+		}
 		a := evalArgs()
 		dirpVal := a[0]
 		dirpPtr := g.tmpReg("readdir.dirp")
@@ -1239,7 +1270,14 @@ func (g *Generator) callBuiltin(sb *strings.Builder, fnName string, hasArgs bool
 
 	// close-dir: close a directory handle
 	// Returns: ok bool
+	// Windows: closedir not available, return false.
 	if fnName == "close-dir" && hasArgs {
+		if g.goos() == "windows" {
+			if sb != nil {
+				sb.WriteString(fmt.Sprintf("%s; close-dir: closedir not available on Windows, returning false\n", g.indent()))
+			}
+			return "0"
+		}
 		a := evalArgs()
 		dirpVal := a[0]
 		dirpPtr := g.tmpReg("closedir.dirp")
@@ -1532,7 +1570,30 @@ func (g *Generator) callBuiltin(sb *strings.Builder, fnName string, hasArgs bool
 
 	// realpath: resolve absolute path (POSIX realpath(3))
 	// Returns: %str-long* (empty string on failure)
+	// Windows: realpath not available, return empty string.
 	if fnName == "realpath" && hasArgs {
+		if g.goos() == "windows" {
+			strReg := g.tmpReg("rp.win.str")
+			if sb != nil {
+				sb.WriteString(fmt.Sprintf("%s; realpath: not available on Windows, returning empty string\n", g.indent()))
+				sb.WriteString(fmt.Sprintf("%s%s = alloca %%str-long\n", g.indent(), strReg))
+				lenGEP := g.tmpReg("rp.win.len")
+				capGEP := g.tmpReg("rp.win.cap")
+				dataGEP := g.tmpReg("rp.win.data")
+				sb.WriteString(fmt.Sprintf("%s%s = getelementptr %%str-long, %%str-long* %s, i32 0, i32 0\n", g.indent(), lenGEP, strReg))
+				sb.WriteString(fmt.Sprintf("%sstore i64 0, i64* %s\n", g.indent(), lenGEP))
+				sb.WriteString(fmt.Sprintf("%s%s = getelementptr %%str-long, %%str-long* %s, i32 0, i32 1\n", g.indent(), capGEP, strReg))
+				sb.WriteString(fmt.Sprintf("%sstore i64 0, i64* %s\n", g.indent(), capGEP))
+				sb.WriteString(fmt.Sprintf("%s%s = getelementptr %%str-long, %%str-long* %s, i32 0, i32 2\n", g.indent(), dataGEP, strReg))
+				g.storeDataPtrField(sb, "null", dataGEP)
+			}
+			// Load %str-long value from pointer so assignment codegen can store it directly.
+			winLoad := g.tmpReg("rp.win.load")
+			if sb != nil {
+				sb.WriteString(fmt.Sprintf("%s%s = load %%str-long, %%str-long* %s\n", g.indent(), winLoad, strReg))
+			}
+			return winLoad
+		}
 		a := evalArgs()
 		pathPtr := g.nullTerminateStrArg(sb, a[0], expr.Arguments[0])
 		rpRet := g.tmpReg("rp.ptr")
@@ -1576,7 +1637,26 @@ func (g *Generator) callBuiltin(sb *strings.Builder, fnName string, hasArgs bool
 
 	// readlink: read symbolic link target (POSIX readlink(2))
 	// Returns: (target str, ok bool)
+	// Windows: readlink not available, return empty string + false.
 	if fnName == "readlink" && hasArgs {
+		if g.goos() == "windows" {
+			strReg := g.tmpReg("rl.win.str")
+			if sb != nil {
+				sb.WriteString(fmt.Sprintf("%s; readlink: not available on Windows, returning empty + false\n", g.indent()))
+				sb.WriteString(fmt.Sprintf("%s%s = alloca %%str-long\n", g.indent(), strReg))
+				lenGEP := g.tmpReg("rl.win.len")
+				capGEP := g.tmpReg("rl.win.cap")
+				dataGEP := g.tmpReg("rl.win.data")
+				sb.WriteString(fmt.Sprintf("%s%s = getelementptr %%str-long, %%str-long* %s, i32 0, i32 0\n", g.indent(), lenGEP, strReg))
+				sb.WriteString(fmt.Sprintf("%sstore i64 0, i64* %s\n", g.indent(), lenGEP))
+				sb.WriteString(fmt.Sprintf("%s%s = getelementptr %%str-long, %%str-long* %s, i32 0, i32 1\n", g.indent(), capGEP, strReg))
+				sb.WriteString(fmt.Sprintf("%sstore i64 0, i64* %s\n", g.indent(), capGEP))
+				sb.WriteString(fmt.Sprintf("%s%s = getelementptr %%str-long, %%str-long* %s, i32 0, i32 2\n", g.indent(), dataGEP, strReg))
+				g.storeDataPtrField(sb, "null", dataGEP)
+			}
+			g.lastBuiltinExtra = "0"
+			return strReg
+		}
 		a := evalArgs()
 		pathPtr := g.nullTerminateStrArg(sb, a[0], expr.Arguments[0])
 		rlBuf := g.tmpReg("rl.buf")
@@ -1615,7 +1695,26 @@ func (g *Generator) callBuiltin(sb *strings.Builder, fnName string, hasArgs bool
 
 	// mkstemp: create and open a unique temporary file (POSIX mkstemp(3))
 	// Returns: (fd, name). fd=-1 and empty name on failure.
+	// Windows: mkstemp not available, return empty string + fd=-1.
 	if fnName == "mkstemp" && hasArgs {
+		if g.goos() == "windows" {
+			strReg := g.tmpReg("ms.win.str")
+			if sb != nil {
+				sb.WriteString(fmt.Sprintf("%s; mkstemp: not available on Windows, returning empty + fd=-1\n", g.indent()))
+				sb.WriteString(fmt.Sprintf("%s%s = alloca %%str-long\n", g.indent(), strReg))
+				lenGEP := g.tmpReg("ms.win.len")
+				capGEP := g.tmpReg("ms.win.cap")
+				dataGEP := g.tmpReg("ms.win.data")
+				sb.WriteString(fmt.Sprintf("%s%s = getelementptr %%str-long, %%str-long* %s, i32 0, i32 0\n", g.indent(), lenGEP, strReg))
+				sb.WriteString(fmt.Sprintf("%sstore i64 0, i64* %s\n", g.indent(), lenGEP))
+				sb.WriteString(fmt.Sprintf("%s%s = getelementptr %%str-long, %%str-long* %s, i32 0, i32 1\n", g.indent(), capGEP, strReg))
+				sb.WriteString(fmt.Sprintf("%sstore i64 0, i64* %s\n", g.indent(), capGEP))
+				sb.WriteString(fmt.Sprintf("%s%s = getelementptr %%str-long, %%str-long* %s, i32 0, i32 2\n", g.indent(), dataGEP, strReg))
+				g.storeDataPtrField(sb, "null", dataGEP)
+			}
+			g.lastBuiltinExtra = "-1"
+			return strReg
+		}
 		a := evalArgs()
 		tmplPtr := g.nullTerminateStrArg(sb, a[0], expr.Arguments[0])
 		// Need to copy template into mutable buffer (mkstemp modifies in place)
@@ -1669,7 +1768,26 @@ func (g *Generator) callBuiltin(sb *strings.Builder, fnName string, hasArgs bool
 
 	// mkdtemp: create a unique temporary directory (POSIX mkdtemp(3))
 	// Returns: (name str, ok bool)
+	// Windows: mkdtemp not available, return empty string + false.
 	if fnName == "mkdtemp" && hasArgs {
+		if g.goos() == "windows" {
+			strReg := g.tmpReg("md.win.str")
+			if sb != nil {
+				sb.WriteString(fmt.Sprintf("%s; mkdtemp: not available on Windows, returning empty + false\n", g.indent()))
+				sb.WriteString(fmt.Sprintf("%s%s = alloca %%str-long\n", g.indent(), strReg))
+				lenGEP := g.tmpReg("md.win.len")
+				capGEP := g.tmpReg("md.win.cap")
+				dataGEP := g.tmpReg("md.win.data")
+				sb.WriteString(fmt.Sprintf("%s%s = getelementptr %%str-long, %%str-long* %s, i32 0, i32 0\n", g.indent(), lenGEP, strReg))
+				sb.WriteString(fmt.Sprintf("%sstore i64 0, i64* %s\n", g.indent(), lenGEP))
+				sb.WriteString(fmt.Sprintf("%s%s = getelementptr %%str-long, %%str-long* %s, i32 0, i32 1\n", g.indent(), capGEP, strReg))
+				sb.WriteString(fmt.Sprintf("%sstore i64 0, i64* %s\n", g.indent(), capGEP))
+				sb.WriteString(fmt.Sprintf("%s%s = getelementptr %%str-long, %%str-long* %s, i32 0, i32 2\n", g.indent(), dataGEP, strReg))
+				g.storeDataPtrField(sb, "null", dataGEP)
+			}
+			g.lastBuiltinExtra = "0"
+			return strReg
+		}
 		a := evalArgs()
 		tmplPtr := g.nullTerminateStrArg(sb, a[0], expr.Arguments[0])
 		mdLen := g.tmpReg("md.len")
@@ -1713,7 +1831,14 @@ func (g *Generator) callBuiltin(sb *strings.Builder, fnName string, hasArgs bool
 
 	// utime: set file access and modification times (POSIX utimes(2))
 	// Returns: ok bool
+	// Windows: utimes not available, return false.
 	if fnName == "utime" && hasArgs {
+		if g.goos() == "windows" {
+			if sb != nil {
+				sb.WriteString(fmt.Sprintf("%s; utime: not available on Windows, returning false\n", g.indent()))
+			}
+			return "0"
+		}
 		a := evalArgs()
 		pathPtr := g.nullTerminateStrArg(sb, a[0], expr.Arguments[0])
 		utBuf := g.tmpReg("ut.buf")
@@ -1760,6 +1885,13 @@ func (g *Generator) callBuiltin(sb *strings.Builder, fnName string, hasArgs bool
 	// the count for validation; full group ID retrieval will be added when loop
 	// generation inside builtins is available.
 	if fnName == "getgroups" {
+		if g.goos() == "windows" {
+			if sb != nil {
+				sb.WriteString(fmt.Sprintf("%s; getgroups: not available on Windows, returning empty + -1\n", g.indent()))
+			}
+			g.lastBuiltinExtra = "-1"
+			return ""
+		}
 		ggN := g.tmpReg("gg.n")
 		ggVec := g.tmpReg("gg.vec")
 		ggLenGEP := g.tmpReg("gg.lengep")
@@ -1817,6 +1949,30 @@ func (g *Generator) callBuiltin(sb *strings.Builder, fnName string, hasArgs bool
 	// uname: get kernel/architecture info (POSIX uname(2))
 	// Returns: %utsname* (struct with 5 %str-long fields)
 	if fnName == "uname" {
+		if g.goos() == "windows" {
+			// uname not available on Windows; return an empty utsname struct.
+			utsnameKey := "utsname"
+			if _, ok := g.structTypes[utsnameKey]; !ok {
+				for name := range g.structTypes {
+					if strings.HasSuffix(name, ".utsname") {
+						utsnameKey = name
+						break
+					}
+				}
+			}
+			utsnameLLVMType := "%" + utsnameKey
+			result := g.tmpReg("un.win.result")
+			if sb != nil {
+				sb.WriteString(fmt.Sprintf("%s; uname: not available on Windows, returning empty struct\n", g.indent()))
+				sb.WriteString(fmt.Sprintf("%s%s = alloca %s\n", g.indent(), result, utsnameLLVMType))
+			}
+			// Load the struct value from pointer so assignment codegen can store it directly.
+			winLoad := g.tmpReg("un.win.load")
+			if sb != nil {
+				sb.WriteString(fmt.Sprintf("%s%s = load %s, %s* %s\n", g.indent(), winLoad, utsnameLLVMType, utsnameLLVMType, result))
+			}
+			return winLoad
+		}
 		// Resolve the utsname struct name — it may be registered as "utsname"
 		// or "os.utsname" (after prefixModuleStatements adds the module prefix).
 		utsnameKey := "utsname"
@@ -1926,6 +2082,28 @@ func (g *Generator) callBuiltin(sb *strings.Builder, fnName string, hasArgs bool
 	// ttyname: get terminal name (POSIX ttyname(3))
 	// Returns: %str-long* (empty string on failure)
 	if fnName == "ttyname" && hasArgs {
+		if g.goos() == "windows" {
+			strReg := g.tmpReg("tn.win.str")
+			if sb != nil {
+				sb.WriteString(fmt.Sprintf("%s; ttyname: not available on Windows, returning empty string\n", g.indent()))
+				sb.WriteString(fmt.Sprintf("%s%s = alloca %%str-long\n", g.indent(), strReg))
+				lenGEP := g.tmpReg("tn.win.len")
+				capGEP := g.tmpReg("tn.win.cap")
+				dataGEP := g.tmpReg("tn.win.data")
+				sb.WriteString(fmt.Sprintf("%s%s = getelementptr %%str-long, %%str-long* %s, i32 0, i32 0\n", g.indent(), lenGEP, strReg))
+				sb.WriteString(fmt.Sprintf("%sstore i64 0, i64* %s\n", g.indent(), lenGEP))
+				sb.WriteString(fmt.Sprintf("%s%s = getelementptr %%str-long, %%str-long* %s, i32 0, i32 1\n", g.indent(), capGEP, strReg))
+				sb.WriteString(fmt.Sprintf("%sstore i64 0, i64* %s\n", g.indent(), capGEP))
+				sb.WriteString(fmt.Sprintf("%s%s = getelementptr %%str-long, %%str-long* %s, i32 0, i32 2\n", g.indent(), dataGEP, strReg))
+				g.storeDataPtrField(sb, "null", dataGEP)
+			}
+			// Load %str-long value from pointer so assignment codegen can store it directly.
+			winLoad := g.tmpReg("tn.win.load")
+			if sb != nil {
+				sb.WriteString(fmt.Sprintf("%s%s = load %%str-long, %%str-long* %s\n", g.indent(), winLoad, strReg))
+			}
+			return winLoad
+		}
 		a := evalArgs()
 		// fd is i64; need to trunc to i32 for the C call
 		tnFd := g.tmpReg("tn.fd")
@@ -1972,7 +2150,14 @@ func (g *Generator) callBuiltin(sb *strings.Builder, fnName string, hasArgs bool
 
 	// sync: flush filesystem buffers to disk (POSIX sync(2))
 	// void return, no args.
+	// Windows: sync not available, no-op.
 	if fnName == "sync" {
+		if g.goos() == "windows" {
+			if sb != nil {
+				sb.WriteString(fmt.Sprintf("%s; sync: not available on Windows, no-op\n", g.indent()))
+			}
+			return ""
+		}
 		if sb != nil {
 			sb.WriteString(fmt.Sprintf("%scall void @sync()\n", g.indent()))
 		}
@@ -1981,7 +2166,14 @@ func (g *Generator) callBuiltin(sb *strings.Builder, fnName string, hasArgs bool
 
 	// lstat: get info about symlink itself (POSIX lstat(2))
 	// Returns ok bool. Like is-file but calls @lstat instead of @stat.
+	// Windows: lstat not available, return false.
 	if fnName == "lstat" && hasArgs {
+		if g.goos() == "windows" {
+			if sb != nil {
+				sb.WriteString(fmt.Sprintf("%s; lstat: not available on Windows, returning false\n", g.indent()))
+			}
+			return "0"
+		}
 		a := evalArgs()
 		pathPtr := g.nullTerminateStrArg(sb, a[0], expr.Arguments[0])
 		statBuf := g.tmpReg("lstatbuf")
@@ -2000,7 +2192,29 @@ func (g *Generator) callBuiltin(sb *strings.Builder, fnName string, hasArgs bool
 
 	// getlogin: get login name (POSIX getlogin(3))
 	// Returns name str (empty on failure). Like ttyname but no args.
+	// Windows: getlogin not available, return empty string.
 	if fnName == "getlogin" {
+		if g.goos() == "windows" {
+			strReg := g.tmpReg("gl.win.str")
+			if sb != nil {
+				sb.WriteString(fmt.Sprintf("%s; getlogin: not available on Windows, returning empty string\n", g.indent()))
+				sb.WriteString(fmt.Sprintf("%s%s = alloca %%str-long\n", g.indent(), strReg))
+				lenGEP := g.tmpReg("gl.win.len")
+				capGEP := g.tmpReg("gl.win.cap")
+				dataGEP := g.tmpReg("gl.win.data")
+				sb.WriteString(fmt.Sprintf("%s%s = getelementptr %%str-long, %%str-long* %s, i32 0, i32 0\n", g.indent(), lenGEP, strReg))
+				sb.WriteString(fmt.Sprintf("%sstore i64 0, i64* %s\n", g.indent(), lenGEP))
+				sb.WriteString(fmt.Sprintf("%s%s = getelementptr %%str-long, %%str-long* %s, i32 0, i32 1\n", g.indent(), capGEP, strReg))
+				sb.WriteString(fmt.Sprintf("%sstore i64 0, i64* %s\n", g.indent(), capGEP))
+				sb.WriteString(fmt.Sprintf("%s%s = getelementptr %%str-long, %%str-long* %s, i32 0, i32 2\n", g.indent(), dataGEP, strReg))
+				g.storeDataPtrField(sb, "null", dataGEP)
+			}
+			winLoad := g.tmpReg("gl.win.load")
+			if sb != nil {
+				sb.WriteString(fmt.Sprintf("%s%s = load %%str-long, %%str-long* %s\n", g.indent(), winLoad, strReg))
+			}
+			return winLoad
+		}
 		glRet := g.tmpReg("gl.ret")
 		glCmp := g.tmpReg("gl.cmp")
 		glSafe := g.tmpReg("gl.safe")
@@ -2034,7 +2248,29 @@ func (g *Generator) callBuiltin(sb *strings.Builder, fnName string, hasArgs bool
 
 	// getdomainname: get NIS domain name (POSIX getdomainname(2))
 	// Returns name str (empty on failure). Uses @.os-buf as buffer.
+	// Windows: getdomainname not available, return empty string.
 	if fnName == "getdomainname" {
+		if g.goos() == "windows" {
+			strReg := g.tmpReg("gd.win.str")
+			if sb != nil {
+				sb.WriteString(fmt.Sprintf("%s; getdomainname: not available on Windows, returning empty string\n", g.indent()))
+				sb.WriteString(fmt.Sprintf("%s%s = alloca %%str-long\n", g.indent(), strReg))
+				lenGEP := g.tmpReg("gd.win.len")
+				capGEP := g.tmpReg("gd.win.cap")
+				dataGEP := g.tmpReg("gd.win.data")
+				sb.WriteString(fmt.Sprintf("%s%s = getelementptr %%str-long, %%str-long* %s, i32 0, i32 0\n", g.indent(), lenGEP, strReg))
+				sb.WriteString(fmt.Sprintf("%sstore i64 0, i64* %s\n", g.indent(), lenGEP))
+				sb.WriteString(fmt.Sprintf("%s%s = getelementptr %%str-long, %%str-long* %s, i32 0, i32 1\n", g.indent(), capGEP, strReg))
+				sb.WriteString(fmt.Sprintf("%sstore i64 0, i64* %s\n", g.indent(), capGEP))
+				sb.WriteString(fmt.Sprintf("%s%s = getelementptr %%str-long, %%str-long* %s, i32 0, i32 2\n", g.indent(), dataGEP, strReg))
+				g.storeDataPtrField(sb, "null", dataGEP)
+			}
+			winLoad := g.tmpReg("gd.win.load")
+			if sb != nil {
+				sb.WriteString(fmt.Sprintf("%s%s = load %%str-long, %%str-long* %s\n", g.indent(), winLoad, strReg))
+			}
+			return winLoad
+		}
 		gdRet := g.tmpReg("gd.ret")
 		gdCmp := g.tmpReg("gd.cmp")
 		gdLen := g.tmpReg("gd.len")
@@ -2068,6 +2304,13 @@ func (g *Generator) callBuiltin(sb *strings.Builder, fnName string, hasArgs bool
 	// Returns (prio i64, ok bool). Uses errno to distinguish error from -1.
 	// lastBuiltinExtra carries the ok bool.
 	if fnName == "get-priority" && hasArgs {
+		if g.goos() == "windows" {
+			if sb != nil {
+				sb.WriteString(fmt.Sprintf("%s; get-priority: not available on Windows, returning -1 + false\n", g.indent()))
+			}
+			g.lastBuiltinExtra = "0"
+			return "-1"
+		}
 		a := evalArgs()
 		gpWhich := g.tmpReg("gp.which")
 		gpWho := g.tmpReg("gp.who")
@@ -2108,7 +2351,14 @@ func (g *Generator) callBuiltin(sb *strings.Builder, fnName string, hasArgs bool
 
 	// syslog: write a system log entry (POSIX syslog(3))
 	// void return. Args: (priority i64, msg str)
+	// Windows: syslog not available, no-op.
 	if fnName == "syslog" && hasArgs {
+		if g.goos() == "windows" {
+			if sb != nil {
+				sb.WriteString(fmt.Sprintf("%s; syslog: not available on Windows, no-op\n", g.indent()))
+			}
+			return ""
+		}
 		a := evalArgs()
 		msgPtr := g.nullTerminateStrArg(sb, a[1], expr.Arguments[1])
 		slPrio := g.tmpReg("sl.prio")
@@ -2124,6 +2374,24 @@ func (g *Generator) callBuiltin(sb *strings.Builder, fnName string, hasArgs bool
 	// Returns (val str, ok bool). macOS/BSD uses sysctl(2); Linux reads /proc/sys.
 	// This is a simplified implementation for macOS: parses 'kern.ostype' etc.
 	if fnName == "sysctl" && hasArgs {
+		if g.goos() == "windows" {
+			strReg := g.tmpReg("sc.win.str")
+			if sb != nil {
+				sb.WriteString(fmt.Sprintf("%s; sysctl: not available on Windows, returning empty + false\n", g.indent()))
+				sb.WriteString(fmt.Sprintf("%s%s = alloca %%str-long\n", g.indent(), strReg))
+				lenGEP := g.tmpReg("sc.win.len")
+				capGEP := g.tmpReg("sc.win.cap")
+				dataGEP := g.tmpReg("sc.win.data")
+				sb.WriteString(fmt.Sprintf("%s%s = getelementptr %%str-long, %%str-long* %s, i32 0, i32 0\n", g.indent(), lenGEP, strReg))
+				sb.WriteString(fmt.Sprintf("%sstore i64 0, i64* %s\n", g.indent(), lenGEP))
+				sb.WriteString(fmt.Sprintf("%s%s = getelementptr %%str-long, %%str-long* %s, i32 0, i32 1\n", g.indent(), capGEP, strReg))
+				sb.WriteString(fmt.Sprintf("%sstore i64 0, i64* %s\n", g.indent(), capGEP))
+				sb.WriteString(fmt.Sprintf("%s%s = getelementptr %%str-long, %%str-long* %s, i32 0, i32 2\n", g.indent(), dataGEP, strReg))
+				g.storeDataPtrField(sb, "null", dataGEP)
+			}
+			g.lastBuiltinExtra = "0"
+			return strReg
+		}
 		a := evalArgs()
 		namePtr := g.nullTerminateStrArg(sb, a[0], expr.Arguments[0])
 		// macOS/BSD: use sysctlbyname(3) which takes a C string name.
@@ -2185,9 +2453,12 @@ func (g *Generator) callBuiltin(sb *strings.Builder, fnName string, hasArgs bool
 	// Windows has no fork() equivalent; report a compile-time error directing
 	// users to process-spawn (which wraps _execlp + _cwait on Windows).
 	if fnName == "process-fork" {
-		// Windows/WASI 不支援 fork()。decl.go 在這些目標下不會宣告 @fork，
-		// 因此連結階段會產生 "undefined symbol: fork" 錯誤（符合 spec 行為）。
-		// 使用者應使用 #{wasi-wasm32} 或 #{win-amd64,win-arm64} 標註提供替代方案。
+		if g.goos() == "windows" {
+			if sb != nil {
+				sb.WriteString(fmt.Sprintf("%s; process-fork: fork not available on Windows, returning -1\n", g.indent()))
+			}
+			return "-1"
+		}
 		forkRet := g.tmpReg("proc.fork.ret")
 		forkExt := g.tmpReg("proc.fork.ext")
 		if sb != nil {
@@ -3297,7 +3568,12 @@ func (g *Generator) loadStderr(sb *strings.Builder) string {
 		globalName = "@stderr"
 	}
 	if sb != nil {
-		sb.WriteString(fmt.Sprintf("%s%s = load i8*, i8** %s\n", g.indent(), reg, globalName))
+		if g.goos() == "windows" {
+			// Windows: stderr is not a global, use nolang.win_stderr()
+			sb.WriteString(fmt.Sprintf("%s%s = call i8* @nolang.win_stderr()\n", g.indent(), reg))
+		} else {
+			sb.WriteString(fmt.Sprintf("%s%s = load i8*, i8** %s\n", g.indent(), reg, globalName))
+		}
 	}
 	return reg
 }
