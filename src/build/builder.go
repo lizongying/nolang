@@ -708,6 +708,12 @@ func buildJSPkg(source []byte, inputPath string, pkg *Package, opts BuildOptions
 		return fmt.Errorf("%s: %v", inputPath, errs)
 	}
 
+	// 解析並合併本地模組導入
+	program, err := resolveAndMergeJSModules(program, inputPath, pkg)
+	if err != nil {
+		return fmt.Errorf("module resolution: %w", err)
+	}
+
 	// JS 後端 codegen（型別擦除）
 	g := js.NewGenerator()
 	g.SetTargetPlatform("js", "")
@@ -736,14 +742,208 @@ func buildJSPkg(source []byte, inputPath string, pkg *Package, opts BuildOptions
 	return nil
 }
 
+// resolveAndMergeJSModules resolves local module imports (UseStatements with
+// paths starting with "/") and merges their statements into the main program.
+// This is necessary because the JS backend, unlike the LLVM backend, does not
+// go through the full Transpiler.Compile pipeline that handles module merging.
+//
+// Without this step, global variables and functions defined in imported local
+// modules (e.g. state.no, editor.no) would be missing from the generated JS,
+// causing runtime ReferenceErrors (e.g. "EDITOR is not defined").
+//
+// js/ modules are skipped — their function calls are mapped to JS builtins by
+// builtin.go. std/ modules are also skipped — common std functions are mapped
+// by builtin.go, and merging full std source would bloat the output.
+func resolveAndMergeJSModules(program *parser.Program, inputPath string, pkgConfig *Package) (*parser.Program, error) {
+	if program == nil {
+		return program, nil
+	}
+
+	// Determine workspace root for resolving "/"-prefixed import paths.
+	var wsRoot string
+	if pkgConfig != nil {
+		wsRoot = pkgConfig.WorkspaceRoot()
+		if wsRoot == "" {
+			wsRoot = pkgConfig.RootDir
+		}
+	}
+	if wsRoot == "" {
+		if ws, ok := FindWorkspaceRoot(inputPath); ok {
+			wsRoot = ws
+		}
+	}
+
+	// Collect main program's top-level variable and function names to avoid
+	// duplicating them when merging module statements.
+	mainVarNames := make(map[string]bool)
+	for _, stmt := range program.Statements {
+		if ls, ok := stmt.(*parser.LetStatement); ok && ls.Name != nil {
+			mainVarNames[ls.Name.Value] = true
+		}
+		if fd, ok := stmt.(*parser.FunctionDefinition); ok {
+			mainVarNames[fd.Name] = true
+		}
+	}
+
+	// Build the merged program: start with a fresh statement list and merge
+	// semantic contexts from the main program and all imported modules.
+	merged := &parser.Program{Statements: []parser.Statement{}}
+	merged.Sem = parser.NewSemanticContext()
+	merged.Sem.Merge(program.Sem)
+
+	loadedModules := make(map[string]bool) // track resolved file paths to avoid duplicate loading
+
+	// parseModuleFile reads and parses a .no file, applying lib.no export
+	// filtering if the module belongs to a package with exports.
+	parseModuleFile := func(filePath string) (*parser.Program, error) {
+		source, err := os.ReadFile(filePath)
+		if err != nil {
+			return nil, err
+		}
+		l := lexer.NewCached(filePath, string(source))
+		p := parser.New(l)
+		p.Filename = filepath.Base(filePath)
+		prog := p.ParseProgram()
+		if len(p.Errors()) > 0 {
+			return nil, fmt.Errorf("%s: %v", filePath, p.Errors())
+		}
+		// Apply lib.no export filtering if the module's package has exports.
+		pkgRoot := FindPackageRoot(filePath)
+		if pkgRoot != "" {
+			libPath := filepath.Join(pkgRoot, "lib.no")
+			if _, err := os.Stat(libPath); err == nil {
+				prog = checker.FilterByExports(prog, libPath)
+			}
+		}
+		return prog, nil
+	}
+
+	// resolveModulePath converts a UseStatement path to a file path.
+	// Only local paths (starting with "/") are handled; std/ and js/ paths
+	// are skipped by the caller.
+	resolveModulePath := func(usePath string) string {
+		relPath := strings.TrimPrefix(usePath, "/")
+		fullPath := ResolveToWorkspaceRoot(wsRoot, relPath)
+		if !strings.HasSuffix(fullPath, ".no") {
+			fullPath = fullPath + ".no"
+		}
+		return filepath.Clean(fullPath)
+	}
+
+	// processUseAndMerge loads a module from a UseStatement, merges its
+	// non-UseStatement statements into merged, and collects its UseStatements
+	// for transitive processing.
+	var pendingUses []*parser.UseStatement
+	processUseAndMerge := func(use *parser.UseStatement) error {
+		// Only resolve local module imports (path starts with "/").
+		// Skip js/ modules (handled by builtin.go) and std/ modules
+		// (common functions handled by builtin.go).
+		if !strings.HasPrefix(use.Path, "/") {
+			return nil
+		}
+
+		modulePath := resolveModulePath(use.Path)
+		if loadedModules[modulePath] {
+			return nil
+		}
+		loadedModules[modulePath] = true
+
+		modProg, err := parseModuleFile(modulePath)
+		if err != nil {
+			return fmt.Errorf("loading module %s: %w", use.Path, err)
+		}
+		merged.Sem.Merge(modProg.Sem)
+
+		for _, ms := range modProg.Statements {
+			// Collect transitive UseStatements for recursive processing.
+			// Only local module imports (path starts with "/") are processed;
+			// std/ and js/ modules are handled by builtin.go.
+			if nestedUse, ok := ms.(*parser.UseStatement); ok {
+				if strings.HasPrefix(nestedUse.Path, "/") {
+					pendingUses = append(pendingUses, nestedUse)
+				}
+				continue
+			}
+
+			// When alias is specified, only import the specific function/constant.
+			if use.Alias != "" {
+				if fd, ok := ms.(*parser.FunctionDefinition); ok {
+					if use.Function != "" && fd.Name == use.Function {
+						fd.Name = use.Alias
+						merged.Statements = append(merged.Statements, fd)
+					}
+				}
+				if ls, ok := ms.(*parser.LetStatement); ok && ls.Name != nil {
+					if use.Function != "" && ls.Name.Value == use.Function {
+						ls.Name.Value = use.Alias
+						if !mainVarNames[ls.Name.Value] {
+							merged.Statements = append(merged.Statements, ls)
+						}
+					}
+				}
+				continue
+			}
+
+			// No alias: merge all non-UseStatement statements.
+			// Skip variables/functions that already exist in the main program.
+			if fd, ok := ms.(*parser.FunctionDefinition); ok {
+				if !mainVarNames[fd.Name] {
+					merged.Statements = append(merged.Statements, fd)
+				}
+			} else if ls, ok := ms.(*parser.LetStatement); ok && ls.Name != nil {
+				if !mainVarNames[ls.Name.Value] {
+					merged.Statements = append(merged.Statements, ls)
+				}
+			} else if sd, ok := ms.(*parser.StructDefinition); ok {
+				merged.Statements = append(merged.Statements, sd)
+			} else if id, ok := ms.(*parser.InterfaceDefinition); ok {
+				merged.Statements = append(merged.Statements, id)
+			} else if ta, ok := ms.(*parser.TypeAlias); ok {
+				merged.Statements = append(merged.Statements, ta)
+			} else if ed, ok := ms.(*parser.EnumDefinition); ok {
+				merged.Statements = append(merged.Statements, ed)
+			} else if ted, ok := ms.(*parser.TaggedEnumDefinition); ok {
+				merged.Statements = append(merged.Statements, ted)
+			} else if es, ok := ms.(*parser.ExternStatement); ok {
+				merged.Statements = append(merged.Statements, es)
+			}
+		}
+		return nil
+	}
+
+	// Process main program's UseStatements first, then drain transitive imports.
+	for _, stmt := range program.Statements {
+		if use, ok := stmt.(*parser.UseStatement); ok {
+			if err := processUseAndMerge(use); err != nil {
+				return nil, err
+			}
+			continue
+		}
+		// Add main program's own statements to merged (except UseStatements).
+		merged.Statements = append(merged.Statements, stmt)
+	}
+
+	// Process transitive imports: drain the pendingUses worklist.
+	for len(pendingUses) > 0 {
+		use := pendingUses[0]
+		pendingUses = pendingUses[1:]
+		if err := processUseAndMerge(use); err != nil {
+			return nil, err
+		}
+	}
+
+	return merged, nil
+}
+
 // BuildJS 使用 JS 後端從 Nolang 源碼直接產生 JavaScript 原始碼字串。
 // 當 opts.UseJS 為 true 時呼叫。輸出的 JS 可由 node 直接執行。
 //
 // 流程：
 //  1. 讀取源碼檔案
 //  2. 以 lexer + parser 解析為 *parser.Program
-//  3. 由 js.Generator.Generate(program) 直接發射 JS 原始碼（型別擦除）
-//  4. 回傳 JS 原始碼字串
+//  3. 解析並合併本地模組導入（resolveAndMergeJSModules）
+//  4. 由 js.Generator.Generate(program) 直接發射 JS 原始碼（型別擦除）
+//  5. 回傳 JS 原始碼字串
 //
 // 此路徑不經過 LLVM 工具鏈（opt/llc/clang），適用於 Node.js 與瀏覽器環境。
 func BuildJS(inputPath string, opts BuildOptions) (string, error) {
@@ -765,7 +965,14 @@ func BuildJS(inputPath string, opts BuildOptions) (string, error) {
 		return "", fmt.Errorf("%s: %v", inputPath, errs)
 	}
 
-	// 3. JS 後端 codegen（型別擦除）
+	// 3. 解析並合併本地模組導入
+	pkgConfig, _ := LoadPackage(filepath.Dir(inputPath))
+	program, err = resolveAndMergeJSModules(program, inputPath, pkgConfig)
+	if err != nil {
+		return "", fmt.Errorf("module resolution: %w", err)
+	}
+
+	// 4. JS 後端 codegen（型別擦除）
 	g := js.NewGenerator()
 	g.SetTargetPlatform("js", "")
 	envMode := "node"

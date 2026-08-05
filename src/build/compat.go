@@ -15,16 +15,19 @@ type (
 )
 
 var (
-	LoadPackage        = pkg.LoadPackage
-	NewDependencyGraph = pkg.NewDependencyGraph
-	LoadLockFile       = pkg.LoadLockFile
-	PackageShortName   = pkg.PackageShortName
-	NoHomeDir          = pkg.NoHomeDir
-	GetStdSourceDir    = pkg.GetStdSourceDir
-	GetStdSourceFile   = pkg.GetStdSourceFile
-	GetSourceDir       = pkg.GetSourceDir
-	DownloadPackage    = pkg.DownloadPackage
-	StripJSONC         = pkg.StripJSONC
+	LoadPackage             = pkg.LoadPackage
+	NewDependencyGraph      = pkg.NewDependencyGraph
+	LoadLockFile            = pkg.LoadLockFile
+	PackageShortName        = pkg.PackageShortName
+	NoHomeDir               = pkg.NoHomeDir
+	GetStdSourceDir         = pkg.GetStdSourceDir
+	GetStdSourceFile        = pkg.GetStdSourceFile
+	GetSourceDir            = pkg.GetSourceDir
+	DownloadPackage         = pkg.DownloadPackage
+	StripJSONC              = pkg.StripJSONC
+	FindWorkspaceRoot       = pkg.FindWorkspaceRoot
+	FindPackageRoot         = pkg.FindPackageRoot
+	ResolveToWorkspaceRoot  = pkg.ResolveToWorkspaceRoot
 )
 
 // stripJSONC 舊私有名稱轉發（builder.go 等內部呼叫）。
