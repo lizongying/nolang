@@ -621,6 +621,13 @@ func buildLLVMInternal(code string, fileName string, outPath string, cc string, 
 		return fmt.Errorf("linking failed: %w", err)
 	}
 
+	// Ensure the output binary has the executable bit.
+	// clang/zig normally produce 0755, but some environments (cross-compilation,
+	// unusual umask, copied artifacts) may strip the +x bit. Set it explicitly.
+	if err = os.Chmod(outPath, 0755); err != nil {
+		vprintf(sink, "warning: chmod 0755 %s failed: %v\n", outPath, err)
+	}
+
 	return nil
 }
 

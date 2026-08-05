@@ -1,17 +1,20 @@
 ; json — JSON 序列化/反序列化
 ;
-; 基於節點池（pool）的 JSON 樹狀結構，支援巢狀陣列與物件。
+; 高級 API：json 結構體封裝節點池，提供直觀的 parse/stringify 介面。
+; 底層基於節點池（json-pool）的 JSON 樹狀結構，支援巢狀陣列與物件。
 ;
 ; 用法：
-;   p = json-pool{}
-;   p.init()
-;   root, next = p.parse('{"name":"Alice","age":30}', 0)  // next=-1 表示失敗
-;   ok -> {
-;       val-idx, found = p.get-key(root, 'name')
-;       found -> {
-;           buf, ok2 = p.get-str(val-idx)
-;           ok2 -> {
-;               print(buf)
+;   j = json.parse('{"name":"Alice","age":30}')
+;   j: {
+;       ok -> {
+;           name, found = it.get-str('name')
+;           found -> print(name)
+;       }
+;   }
+;
+;   j2 = new()
+;   j2.set('key', 'value')
+;   s = j2.stringify()
 ;
 
 ;
@@ -58,9 +61,41 @@ json-pool {
     count i64
 }
 
+; json: 高級 JSON 值，封裝節點池與根節點索引
+; 用法：
+;   j = new()                      // 建立 null json
+;   j = json.parse('{"a":1}')      // 從字串解析
+;   s = j.stringify()              // 序列化為字串
+json {
+    pool json-pool
+    root i64
+}
+
 ; ═══════════════════════════════════════════════
 ; 初始化
 ; ═══════════════════════════════════════════════
+
+; new: 建立一個空的 json 值（null）
+; 用法：
+;   j = new()
+;   j.set('key', 'value')
+;   s = j.stringify()
+new = () (j json) {
+    j = json{
+        pool: json-pool{}
+        root: -1
+    }
+    j.pool.init()
+}
+
+; new-pool: 建立並初始化一個 json-pool（低級 API）
+; 用法：
+;   p = new-pool()
+;   root, next, ok = p.parse('{"key":"value"}', 0)
+new-pool = () (p json-pool) {
+    p = json-pool{}
+    p.init()
+}
 
 ; init: 初始化節點池
 json-pool.init = () {
@@ -657,4 +692,467 @@ json-pool.stringify = (node-idx i64, out str, start i64) (out-n i64) {
         out-n = out-n + 1
         return
     }
+}
+
+; ═══════════════════════════════════════════════
+; 高級 API：json 結構體方法
+; ═══════════════════════════════════════════════
+
+; json.parse: 從字串解析 JSON，返回 ?json
+; 成功返回 ok(json)，失敗返回 err('parse error')
+; 用法：
+;   j = json.parse('{"name":"Alice","age":30}')
+;   j: {
+;       ok -> {
+;           name, found = it.get-str('name')
+;       }
+;   }
+json.parse = (s str) (result ?json) {
+    result = nil
+    s.len == 0 -> {
+        result = err('empty input')
+        return
+    }
+
+    ; 建立json 並解析
+    j json
+    j = new()
+    root, next, ok = j.pool.parse(s, 0)
+
+    ok == false -> {
+        result = err('parse error')
+        return
+    }
+
+    ; 檢查是否還有未消費的字元（跳過尾部空白）
+    p = j.pool.skip-ws(s, next)
+    p != s.len -> {
+        result = err('trailing characters')
+        return
+    }
+
+    j.root = root
+    result = j
+}
+
+; json.stringify: 將 JSON 值序列化為字串
+; 返回 out: JSON 字串
+; 用法：
+;   j = new()
+;   s = j.stringify()
+json.stringify = () (out str) {
+    out = ''
+    .root < 0 -> return
+
+    ; 預估容量：每個節點平均 32 位元組
+    cap = .pool.count * 32
+    cap < 16 -> cap = 16
+    out = with-cap(cap)
+    n = .pool.stringify(.root, out, 0)
+    out.len = n
+}
+
+; json.is-null: 判斷是否為 null
+; 返回 yes: 是否為 null
+json.is-null = () (yes bool) {
+    yes = false
+    .root < 0 -> {
+        yes = true
+        return
+    }
+    k json-kind = .pool.get-kind(.root)
+    yes = k == json-kind.null
+}
+
+; json.is-obj: 判斷是否為物件
+json.is-obj = () (yes bool) {
+    yes = false
+    .root < 0 -> return
+    k json-kind = .pool.get-kind(.root)
+    yes = k == json-kind.obj
+}
+
+; json.is-arr: 判斷是否為陣列
+json.is-arr = () (yes bool) {
+    yes = false
+    .root < 0 -> return
+    k json-kind = .pool.get-kind(.root)
+    yes = k == json-kind.arr
+}
+
+; json.is-str: 判斷是否為字串
+json.is-str = () (yes bool) {
+    yes = false
+    .root < 0 -> return
+    k json-kind = .pool.get-kind(.root)
+    yes = k == json-kind.str
+}
+
+; json.is-num: 判斷是否為數字
+json.is-num = () (yes bool) {
+    yes = false
+    .root < 0 -> return
+    k json-kind = .pool.get-kind(.root)
+    yes = k == json-kind.num
+}
+
+; json.is-bool: 判斷是否為布林值
+json.is-bool = () (yes bool) {
+    yes = false
+    .root < 0 -> return
+    k json-kind = .pool.get-kind(.root)
+    yes = k == json-kind.bool
+}
+
+; json.kind: 取得節點類型
+; 返回 json-kind 枚舉值
+json.kind = () (k json-kind) {
+    k = json-kind.null
+    .root < 0 -> return
+    k = .pool.get-kind(.root)
+}
+
+; ═══════════════════════════════════════════════
+; 物件操作
+; ═══════════════════════════════════════════════
+
+; json.get: 從物件取得子節點作為 json
+; 返回 child ?json: ok=找到, nil=未找到或非物件
+; 用法：
+;   child = j.get('key')
+;   child: {
+;       ok -> {
+;           s, found = it.get-str('sub-key')
+;       }
+;   }
+json.get = (key str) (child ?json) {
+    child = nil
+    .root < 0 -> return
+
+    ; 確保為物件，若非物件則自動建立
+    k json-kind = .pool.get-kind(.root)
+    k == json-kind.null -> {
+        ; 將 root 轉為空物件
+        .pool.nodes[.root].kind = json-kind.obj
+        .pool.nodes[.root].count = 0
+    }
+    k != json-kind.obj -> return
+
+    val-idx, found = .pool.get-key(.root, key)
+    found == false -> return
+
+    ; 包裝為 json
+    c json
+    c = json{
+        pool: .pool
+        root: val-idx
+    }
+    child = c
+}
+
+; json.get-str: 從物件取得字串值
+; 返回 val str, ok bool: ok=找到且為字串
+; 用法：
+;   s, found = j.get-str('name')
+;   found -> print(s)
+json.get-str = (key str) (val str, ok bool) {
+    ok = false
+    .root < 0 -> return
+    .pool.get-kind(.root) != json-kind.obj -> return
+
+    val-idx, found = .pool.get-key(.root, key)
+    found == false -> return
+
+    val, ok = .pool.get-str(val-idx)
+}
+
+; json.get-num: 從物件取得數值
+; 返回 val f64, ok bool: ok=找到且為數字
+json.get-num = (key str) (val f64, ok bool) {
+    ok = false
+    .root < 0 -> return
+    .pool.get-kind(.root) != json-kind.obj -> return
+
+    val-idx, found = .pool.get-key(.root, key)
+    found == false -> return
+
+    val, ok = .pool.get-num(val-idx)
+}
+
+; json.get-bool: 從物件取得布林值
+; 返回 val bool, ok bool: ok=找到且為布林值
+json.get-bool = (key str) (val bool, ok bool) {
+    ok = false
+    .root < 0 -> return
+    .pool.get-kind(.root) != json-kind.obj -> return
+
+    val-idx, found = .pool.get-key(.root, key)
+    found == false -> return
+
+    val, ok = .pool.get-bool(val-idx)
+}
+
+; json.get-i64: 從物件取得整數值
+; 返回 val i64, ok bool: ok=找到且為數字
+json.get-i64 = (key str) (val i64, ok bool) {
+    ok = false
+    f, found = .get-num(key)
+    found == false -> return
+    val = f
+    ok = true
+}
+
+; json.set: 在物件中設定鍵值（值為另一個 json 節點）
+; 返回 ok bool: 是否成功
+json.set = (key str, val json) (ok bool) {
+    ok = false
+    .root < 0 -> {
+        ; 建立 root 為物件
+        .root = .pool.alloc()
+        .root < 0 -> return
+        .pool.nodes[.root].kind = json-kind.obj
+        .pool.nodes[.root].count = 0
+    }
+
+    k json-kind = .pool.get-kind(.root)
+    k == json-kind.null -> {
+        .pool.nodes[.root].kind = json-kind.obj
+        .pool.nodes[.root].count = 0
+    }
+    k != json-kind.obj -> return
+
+    ok = .pool.set-key(.root, key, val.root)
+}
+
+; json.set-str: 在物件中設定字串值
+; 返回 ok bool: 是否成功
+; 用法：
+;   j.set-str('name', 'Alice')
+json.set-str = (key str, val str) (ok bool) {
+    ok = false
+    idx = .pool.alloc()
+    idx < 0 -> return
+
+    .pool.nodes[idx].kind = json-kind.str
+    .pool.nodes[idx].str-val.len = val.len
+    i <- [0..val.len): {
+        .pool.nodes[idx].str-val[i] = val[i]
+    }
+
+    ok = .set(key, json{
+        pool: .pool
+        root: idx
+    })
+}
+
+; json.set-num: 在物件中設定數值
+; 返回 ok bool: 是否成功
+; 用法：
+;   j.set-num('age', 30.0)
+json.set-num = (key str, val f64) (ok bool) {
+    ok = false
+    idx = .pool.alloc()
+    idx < 0 -> return
+
+    .pool.nodes[idx].kind = json-kind.num
+    .pool.nodes[idx].num-val = val
+
+    ok = .set(key, json{
+        pool: .pool
+        root: idx
+    })
+}
+
+; json.set-i64: 在物件中設定整數值
+; 返回 ok bool: 是否成功
+json.set-i64 = (key str, val i64) (ok bool) {
+    f f64 = val
+    ok = .set-num(key, f)
+}
+
+; json.set-bool: 在物件中設定布林值
+; 返回 ok bool: 是否成功
+; 用法：
+;   j.set-bool('active', true)
+json.set-bool = (key str, val bool) (ok bool) {
+    ok = false
+    idx = .pool.alloc()
+    idx < 0 -> return
+
+    .pool.nodes[idx].kind = json-kind.bool
+    .pool.nodes[idx].bool-val = val
+
+    ok = .set(key, json{
+        pool: .pool
+        root: idx
+    })
+}
+
+; json.set-null: 在物件中設定 null 值
+; 返回 ok bool: 是否成功
+json.set-null = (key str) (ok bool) {
+    ok = false
+    idx = .pool.alloc()
+    idx < 0 -> return
+
+    .pool.nodes[idx].kind = json-kind.null
+
+    ok = .set(key, json{
+        pool: .pool
+        root: idx
+    })
+}
+
+; ═══════════════════════════════════════════════
+; 陣列操作
+; ═══════════════════════════════════════════════
+
+; json.arr-get: 從陣列取得指定索引的元素作為 json
+; 返回 child ?json: ok=找到, nil=未找到或非陣列
+; 用法：
+;   elem = j.arr-get(0)
+;   elem: {
+;       ok -> {
+;           s, found = it.get-str('name')
+;       }
+;   }
+json.arr-get = (elem i64) (child ?json) {
+    child = nil
+    .root < 0 -> return
+    .pool.get-kind(.root) != json-kind.arr -> return
+
+    val-idx, found = .pool.arr-get(.root, elem)
+    found == false -> return
+
+    c json
+    c = json{
+        pool: .pool
+        root: val-idx
+    }
+    child = c
+}
+
+; json.arr-len: 取得陣列長度
+; 返回 n: 陣列元素數量（非陣列返回 0）
+; 用法：
+;   n = j.arr-len()
+json.arr-len = () (n i64) {
+    n = 0
+    .root < 0 -> return
+    .pool.get-kind(.root) != json-kind.arr -> return
+    n = .pool.arr-len(.root)
+}
+
+; json.arr-push: 向陣列末尾添加元素
+; 返回 ok bool: 是否成功
+; 用法：
+;   j.arr-push(item)
+json.arr-push = (val json) (ok bool) {
+    ok = false
+    .root < 0 -> {
+        ; 建立 root 為陣列
+        .root = .pool.alloc()
+        .root < 0 -> return
+        .pool.nodes[.root].kind = json-kind.arr
+        .pool.nodes[.root].count = 0
+    }
+
+    k json-kind = .pool.get-kind(.root)
+    k == json-kind.null -> {
+        .pool.nodes[.root].kind = json-kind.arr
+        .pool.nodes[.root].count = 0
+    }
+    k != json-kind.arr -> return
+
+    cnt = .pool.nodes[.root].count
+    cnt >= JSON-MAX-CHILDREN -> return
+
+    .pool.nodes[.root].children[cnt] = val.root
+    .pool.nodes[.root].count = cnt + 1
+    ok = true
+}
+
+; json.arr-push-str: 向陣列末尾添加字串元素
+; 返回 ok bool: 是否成功
+json.arr-push-str = (val str) (ok bool) {
+    ok = false
+    idx = .pool.alloc()
+    idx < 0 -> return
+
+    .pool.nodes[idx].kind = json-kind.str
+    .pool.nodes[idx].str-val.len = val.len
+    i <- [0..val.len): {
+        .pool.nodes[idx].str-val[i] = val[i]
+    }
+
+    ok = .arr-push(json{
+        pool: .pool
+        root: idx
+    })
+}
+
+; json.arr-push-num: 向陣列末尾添加數值元素
+; 返回 ok bool: 是否成功
+json.arr-push-num = (val f64) (ok bool) {
+    ok = false
+    idx = .pool.alloc()
+    idx < 0 -> return
+
+    .pool.nodes[idx].kind = json-kind.num
+    .pool.nodes[idx].num-val = val
+
+    ok = .arr-push(json{
+        pool: .pool
+        root: idx
+    })
+}
+
+; json.arr-push-bool: 向陣列末尾添加布林元素
+; 返回 ok bool: 是否成功
+json.arr-push-bool = (val bool) (ok bool) {
+    ok = false
+    idx = .pool.alloc()
+    idx < 0 -> return
+
+    .pool.nodes[idx].kind = json-kind.bool
+    .pool.nodes[idx].bool-val = val
+
+    ok = .arr-push(json{
+        pool: .pool
+        root: idx
+    })
+}
+
+; ═══════════════════════════════════════════════
+; 標量值取得（root 為標量時直接取值）
+; ═══════════════════════════════════════════════
+
+; json.str: 取得字串值（當 root 為字串時）
+; 返回 val str, ok bool: ok=成功
+; 用法：
+;   s, found = j.str()
+json.str = () (val str, ok bool) {
+    val, ok = .pool.get-str(.root)
+}
+
+; json.num: 取得數值（當 root 為數字時）
+; 返回 val f64, ok bool: ok=成功
+json.num = () (val f64, ok bool) {
+    val, ok = .pool.get-num(.root)
+}
+
+; json.bool: 取得布林值（當 root 為布林值時）
+; 返回 val bool, ok bool: ok=成功
+json.bool = () (val bool, ok bool) {
+    val, ok = .pool.get-bool(.root)
+}
+
+; json.i64: 取得整數值（當 root 為數字時）
+; 返回 val i64, ok bool: ok=成功
+json.i64 = () (val i64, ok bool) {
+    ok = false
+    f, found = .num()
+    found == false -> return
+    val = f
+    ok = true
 }

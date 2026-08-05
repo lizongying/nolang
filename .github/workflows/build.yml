@@ -50,6 +50,10 @@ jobs:
 
           GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -ldflags "-s -w -X 'main.version=${{ env.version_name }}' -X 'main.buildDate=${{ env.build_date }}'" -o ./../bin/no_windows_amd64.exe ./cmd/no
 
+          # Ensure executable bit on non-Windows binaries (GitHub release
+          # downloads may not preserve permissions; set +x before upload).
+          chmod +x ./../bin/no_linux_amd64 ./../bin/no_linux_arm64 ./../bin/no_darwin_amd64 ./../bin/no_darwin_arm64
+
       - name: Get History
         id: get_history
         run: |

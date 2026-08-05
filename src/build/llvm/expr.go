@@ -4724,6 +4724,44 @@ func (g *Generator) generateInfixI1(sb *strings.Builder, expr *parser.InfixExpre
 					}
 					return cmpReg
 				}
+				// Non-option variable compared with err/ok identifier:
+				// The variable is not %option (e.g. i64 pointer from a function
+				// whose ?T return type was not propagated as %option). In this
+				// case, err/ok comparisons are semantically meaningless on the
+				// raw value. Generate a constant result to avoid referencing
+				// an undefined variable:
+				//   - x == err → false (a non-option value can never be "err")
+				//   - x != err → true
+				//   - x == ok  → true  (a non-option value is always "ok")
+				//   - x != ok  → false
+				// nil comparisons on non-option fall through to the generic
+				// path below (NilLiteral generates 0, which works for pointers).
+				if rightIdent, ok := expr.Right.(*parser.Identifier); ok {
+					if rightIdent.Value == "err" || rightIdent.Value == "ok" {
+						cmpReg := g.tmpReg("cmp.i1")
+						isEq := expr.Operator == "=="
+						if rightIdent.Value == "err" {
+							// err never matches a non-option value
+							if sb != nil {
+								if isEq {
+									sb.WriteString(fmt.Sprintf("%s%s = icmp eq i1 0, 0\n", g.indent(), cmpReg))
+								} else {
+									sb.WriteString(fmt.Sprintf("%s%s = icmp ne i1 0, 0\n", g.indent(), cmpReg))
+								}
+							}
+						} else {
+							// ok always matches a non-option value
+							if sb != nil {
+								if isEq {
+									sb.WriteString(fmt.Sprintf("%s%s = icmp eq i1 1, 1\n", g.indent(), cmpReg))
+								} else {
+									sb.WriteString(fmt.Sprintf("%s%s = icmp ne i1 1, 1\n", g.indent(), cmpReg))
+								}
+							}
+						}
+						return cmpReg
+					}
+				}
 			}
 		}
 	}
@@ -5255,6 +5293,19 @@ func (g *Generator) generateInfix(sb *strings.Builder, expr *parser.InfixExpress
 						sb.WriteString(fmt.Sprintf("%s%s = zext i1 %s to i64\n", g.indent(), reg, i1Result))
 					}
 					return reg
+				}
+				// Non-option variable compared with err/ok identifier:
+				// Delegate to generateInfixI1 (which generates constant true/false
+				// for non-option err/ok comparisons) and zext to i64.
+				if rightIdent, ok := expr.Right.(*parser.Identifier); ok {
+					if rightIdent.Value == "err" || rightIdent.Value == "ok" {
+						i1Result := g.generateInfixI1(sb, expr)
+						reg := g.tmpReg("optcmp.zext")
+						if sb != nil {
+							sb.WriteString(fmt.Sprintf("%s%s = zext i1 %s to i64\n", g.indent(), reg, i1Result))
+						}
+						return reg
+					}
 				}
 			}
 		}

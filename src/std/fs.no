@@ -137,6 +137,12 @@
 ; lstat = (p str) (ok bool) {  // LLVM: call i32 @lstat → icmp eq 0 → zext
 ; }
 
+; build-in (ForwardFunc: stat-exists)
+; exists: 判斷路徑是否存在（跟隨符號連結）
+; 成功返回 true，失敗返回 false
+; exists = (p str) (yes bool) {  // LLVM: call i32 @stat → icmp eq 0 → zext
+; }
+
 ; build-in (ForwardFunc: stat-file)
 ; is-file: 判斷路徑是否為普通檔案
 ; is-file = (p str) (exists bool) {  // LLVM: call i32 @stat → icmp eq → zext

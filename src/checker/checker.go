@@ -357,16 +357,17 @@ func ValidateEmbedAnnotations(program *parser.Program, sourcePath string) []Vali
 			})
 		}
 
-		// 規則 1：必須是 []byte 或 [N]byte 類型
+		// 規則 1：必須是 []byte / [N]byte / fs.embed 類型
 		if ls.Type == nil {
 			results = append(results, ValidateResult{
 				Line:    line,
 				Column:  col,
-				Message: "embed: only []byte / [N]byte declarations are supported, got untyped declaration",
+				Message: "embed: only []byte / [N]byte / fs.embed declarations are supported, got untyped declaration",
 			})
 		} else {
 			typeStr := ls.Type.String()
 			isByteSlice := false
+			isFsEmbed := false
 			// 檢查是否為 []byte 或 [N]byte
 			if st, ok := ls.Type.(*parser.SliceType); ok {
 				if et, ok := st.Elem.(*parser.NamedType); ok {
@@ -382,28 +383,53 @@ func ValidateEmbedAnnotations(program *parser.Program, sourcePath string) []Vali
 					}
 				}
 			}
-			if !isByteSlice {
+			// 檢查是否為 fs.embed（目錄嵌入）
+			if nt, ok := ls.Type.(*parser.NamedType); ok {
+				if nt.Value == "fs.embed" {
+					isFsEmbed = true
+				}
+			}
+			if !isByteSlice && !isFsEmbed {
 				results = append(results, ValidateResult{
 					Line:    line,
 					Column:  col,
-					Message: fmt.Sprintf("embed: only []byte / [N]byte declarations are supported, got %s", typeStr),
+					Message: fmt.Sprintf("embed: only []byte / [N]byte / fs.embed declarations are supported, got %s", typeStr),
 				})
 			}
 		}
 
-		// 規則 3：文件必須存在
+		// 規則 3：文件/目錄必須存在
 		if embedPath != "" {
-			resolvedPath := embedPath
-			if !filepath.IsAbs(embedPath) {
-				// 一律相對於工作區根目錄解析，退路為包根/源碼目錄（相容無 workspace 專案）
-				resolvedPath = filepath.Join(pkg.ResolveEmbedBase(sourcePath), embedPath)
-			}
-			if _, err := os.Stat(resolvedPath); err != nil {
+			// 與 import 路徑一致：前置 "/" 表示相對於工作區根目錄（不是文件系統絕對路徑）
+			embedRel := strings.TrimPrefix(embedPath, "/")
+			resolvedPath := filepath.Join(pkg.ResolveEmbedBase(sourcePath), embedRel)
+			info, err := os.Stat(resolvedPath)
+			if err != nil {
 				results = append(results, ValidateResult{
 					Line:    line,
 					Column:  col,
 					Message: fmt.Sprintf("embed: file not found: %s (resolved: %s)", embedPath, resolvedPath),
 				})
+			} else if ls.Type != nil {
+				// 規則 3b：fs.embed 類型必須指向目錄；[]byte/[N]byte 類型必須指向文件
+				isFsEmbedType := false
+				if nt, ok := ls.Type.(*parser.NamedType); ok && nt.Value == "fs.embed" {
+					isFsEmbedType = true
+				}
+				if isFsEmbedType && !info.IsDir() {
+					results = append(results, ValidateResult{
+						Line:    line,
+						Column:  col,
+						Message: fmt.Sprintf("embed: fs.embed requires a directory, got file: %s (resolved: %s)", embedPath, resolvedPath),
+					})
+				}
+				if !isFsEmbedType && info.IsDir() {
+					results = append(results, ValidateResult{
+						Line:    line,
+						Column:  col,
+						Message: fmt.Sprintf("embed: []byte requires a file, got directory: %s (resolved: %s). Use fs.embed type for directory embedding", embedPath, resolvedPath),
+					})
+				}
 			}
 		}
 	}

@@ -187,6 +187,16 @@ func init() {
 		ForwardFunc:  "stat-file",
 	})
 
+	// exists: check if path exists (follows symlinks)
+	BuiltinMethodList = append(BuiltinMethodList, BuiltinMethod{
+		ReceiverType: ReceiverGlobal,
+		MethodName:   "exists",
+		Params:       []parser.Type{parser.TypeStr},
+		Return:       []parser.Type{parser.TypeBool},
+		Doc:          "Check if the path exists (follows symlinks). Returns true if stat succeeds",
+		ForwardFunc:  "stat-exists",
+	})
+
 	// open-read: open a file for reading
 	openFn := "open"
 	if runtime.GOOS == "windows" {

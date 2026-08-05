@@ -1453,90 +1453,111 @@ func (t *Transpiler) CompileTarget(source string, _ Target) (string, error) {
 	// mangleOverloads to remove ALL copies (pointer-keyed dedup removes
 	// every occurrence of the same pointer).
 	loadedUserModules := make(map[string]bool)
-	for _, stmt := range program.Statements {
-		if use, ok := stmt.(*parser.UseStatement); ok {
-			// When importing entire module (no alias), skip if already loaded
-			if use.Alias == "" && loadedUserModules[use.Path] {
+	// pendingUses is a worklist of UseStatements from imported modules that
+	// need to be processed (transitive imports). When a module is loaded, its
+	// UseStatements are added to this worklist so that their target modules
+	// are also loaded and merged.
+	var pendingUses []*parser.UseStatement
+	// processUseAndMerge loads a module from a UseStatement, merges its
+	// non-UseStatement statements into merged, and collects its UseStatements
+	// into pendingUses for recursive processing.
+	processUseAndMerge := func(use *parser.UseStatement) error {
+		if use.Alias == "" && loadedUserModules[use.Path] {
+			return nil
+		}
+		modProg, err := t.resolveUse(use)
+		if err != nil {
+			return fmt.Errorf("loading module %s: %w", use.Path, err)
+		}
+		merged.Sem.Merge(modProg.Sem)
+		if use.Alias == "" {
+			loadedUserModules[use.Path] = true
+		}
+		if strings.HasPrefix(use.Path, "std/") || use.Path == "std" {
+			explicitStdModules[use.Path] = true
+		}
+		// 為導入模組的型別定義加上模組前綴（如 result → sql.result）
+		useModShort := checker.ModuleShortName(use.Path)
+		prefixModuleStatements(modProg.Statements, useModShort, typeOwner)
+		// 將模組中的 FunctionDefinition 和 LetStatement（常量）加入 merged
+		for _, ms := range modProg.Statements {
+			// Collect transitive UseStatements for recursive processing
+			if nestedUse, ok := ms.(*parser.UseStatement); ok {
+				if nestedUse.Alias == "" && loadedUserModules[nestedUse.Path] {
+					continue
+				}
+				pendingUses = append(pendingUses, nestedUse)
 				continue
 			}
-			modProg, err := t.resolveUse(use)
-			if err != nil {
-				return "", fmt.Errorf("loading module %s: %w", use.Path, err)
-			}
-			merged.Sem.Merge(modProg.Sem)
-			if use.Alias == "" {
-				loadedUserModules[use.Path] = true
-			}
-			if strings.HasPrefix(use.Path, "std/") || use.Path == "std" {
-				explicitStdModules[use.Path] = true
-			}
-			// 為導入模組的型別定義加上模組前綴（如 result → sql.result）
-			useModShort := checker.ModuleShortName(use.Path)
-			prefixModuleStatements(modProg.Statements, useModShort, typeOwner)
-			// 將模組中的 FunctionDefinition 和 LetStatement（常量）加入 merged
-			for _, ms := range modProg.Statements {
-				if fd, ok := ms.(*parser.FunctionDefinition); ok {
-					// If alias is specified, only import the specific function under the alias name
-					if use.Alias != "" {
-						if use.Function != "" && fd.Name == use.Function {
-							fd.Name = use.Alias
-							merged.Statements = append(merged.Statements, fd)
-							// alias 導入按用戶指定名，不參與衝突前綴
-						}
-						// Skip other functions when alias is used
-					} else {
+			if fd, ok := ms.(*parser.FunctionDefinition); ok {
+				// If alias is specified, only import the specific function under the alias name
+				if use.Alias != "" {
+					if use.Function != "" && fd.Name == use.Function {
+						fd.Name = use.Alias
 						merged.Statements = append(merged.Statements, fd)
-						stmtOwner[fd] = useModShort
+						// alias 導入按用戶指定名，不參與衝突前綴
 					}
+					// Skip other functions when alias is used
+				} else {
+					merged.Statements = append(merged.Statements, fd)
+					stmtOwner[fd] = useModShort
 				}
-				if ls, ok := ms.(*parser.LetStatement); ok && ls.Name != nil {
-					// If alias is specified, only import the specific function under the alias name
-					if use.Alias != "" {
-						if use.Function != "" && ls.Name.Value == use.Function {
-							if _, ok := ls.Value.(*parser.FunctionLiteral); ok {
-								ls.Name.Value = use.Alias
-							}
-							if !mainVarNames[ls.Name.Value] {
-								merged.Statements = append(merged.Statements, ls)
-								if checker.IsConstantExpr(ls.Value) && checker.MatchesTargetPlatform(modProg.Sem.PlatformKeysOf(ls), t.targetGoos, t.targetGoarch) {
-									moduleConstants[ls.Name.Value] = ls.Value
-								}
-							}
+			}
+			if ls, ok := ms.(*parser.LetStatement); ok && ls.Name != nil {
+				// If alias is specified, only import the specific function under the alias name
+				if use.Alias != "" {
+					if use.Function != "" && ls.Name.Value == use.Function {
+						if _, ok := ls.Value.(*parser.FunctionLiteral); ok {
+							ls.Name.Value = use.Alias
 						}
-						// Skip other lets when alias is used
-					} else {
-						// 如果主程序已有同名變量，跳過以避免衝突
 						if !mainVarNames[ls.Name.Value] {
 							merged.Statements = append(merged.Statements, ls)
-							stmtOwner[ls] = useModShort
 							if checker.IsConstantExpr(ls.Value) && checker.MatchesTargetPlatform(modProg.Sem.PlatformKeysOf(ls), t.targetGoos, t.targetGoarch) {
 								moduleConstants[ls.Name.Value] = ls.Value
 							}
 						}
 					}
-				}
-				if use.Alias == "" {
-					if sd, ok := ms.(*parser.StructDefinition); ok {
-						merged.Statements = append(merged.Statements, sd)
-					}
-					if id, ok := ms.(*parser.InterfaceDefinition); ok {
-						merged.Statements = append(merged.Statements, id)
-					}
-					if ta, ok := ms.(*parser.TypeAlias); ok {
-						merged.Statements = append(merged.Statements, ta)
-					}
-					if ed, ok := ms.(*parser.EnumDefinition); ok {
-						merged.Statements = append(merged.Statements, ed)
-					}
-					if ted, ok := ms.(*parser.TaggedEnumDefinition); ok {
-						merged.Statements = append(merged.Statements, ted)
-					}
-					// FFI extern 宣告必須隨模組一起合併，否則 codegen 的 externFuncs
-					// 會缺少條目，導致 extern 呼叫走 Nolang by-reference 路徑而非 FFI 路徑。
-					if es, ok := ms.(*parser.ExternStatement); ok {
-						merged.Statements = append(merged.Statements, es)
+					// Skip other lets when alias is used
+				} else {
+					// 如果主程序已有同名變量，跳過以避免衝突
+					if !mainVarNames[ls.Name.Value] {
+						merged.Statements = append(merged.Statements, ls)
+						stmtOwner[ls] = useModShort
+						if checker.IsConstantExpr(ls.Value) && checker.MatchesTargetPlatform(modProg.Sem.PlatformKeysOf(ls), t.targetGoos, t.targetGoarch) {
+							moduleConstants[ls.Name.Value] = ls.Value
+						}
 					}
 				}
+			}
+			if use.Alias == "" {
+				if sd, ok := ms.(*parser.StructDefinition); ok {
+					merged.Statements = append(merged.Statements, sd)
+				}
+				if id, ok := ms.(*parser.InterfaceDefinition); ok {
+					merged.Statements = append(merged.Statements, id)
+				}
+				if ta, ok := ms.(*parser.TypeAlias); ok {
+					merged.Statements = append(merged.Statements, ta)
+				}
+				if ed, ok := ms.(*parser.EnumDefinition); ok {
+					merged.Statements = append(merged.Statements, ed)
+				}
+				if ted, ok := ms.(*parser.TaggedEnumDefinition); ok {
+					merged.Statements = append(merged.Statements, ted)
+				}
+				// FFI extern 宣告必須隨模組一起合併，否則 codegen 的 externFuncs
+				// 會缺少條目，導致 extern 呼叫走 Nolang by-reference 路徑而非 FFI 路徑。
+				if es, ok := ms.(*parser.ExternStatement); ok {
+					merged.Statements = append(merged.Statements, es)
+				}
+			}
+		}
+		return nil
+	}
+	for _, stmt := range program.Statements {
+		if use, ok := stmt.(*parser.UseStatement); ok {
+			if err := processUseAndMerge(use); err != nil {
+				return "", err
 			}
 			continue
 		}
@@ -1547,7 +1568,17 @@ func (t *Transpiler) CompileTarget(source string, _ Target) (string, error) {
 			// FFI extern 宣告 — 收集至 merged 供後續 codegen 使用（目前尚未實作）
 			merged.Statements = append(merged.Statements, es)
 		}
-}
+	}
+	// Process transitive imports: drain the pendingUses worklist.
+	// Each imported module may itself import other modules; those must also
+	// be loaded and merged to make their function definitions available.
+	for len(pendingUses) > 0 {
+		use := pendingUses[0]
+		pendingUses = pendingUses[1:]
+		if err := processUseAndMerge(use); err != nil {
+			return "", err
+		}
+	}
 	// 第二遍按需載入 std 模組體（對應審查點 ②）：
 	// 第一遍（簽名預收集 CollectStdModuleSignatures）已全量解析所有 std ——
 	// 因為 nolang 標準庫隱式可用（無需顯式 use 即可呼叫 module.fn()），parser
@@ -8943,13 +8974,9 @@ func (t *Transpiler) processEmbeds(program *parser.Program, sourcePath string) e
 		if embedPath == "" {
 			continue
 		}
-		// 解析路徑：絕對路徑直接使用，相對路徑相對於包根目錄
-		resolvedPath := embedPath
-		if !filepath.IsAbs(embedPath) {
-			// 一律相對於工作區根目錄解析（workspace.jsonc 所在目錄），
-			// 退路為包根目錄（package.jsonc）/ 源碼目錄，保持對無 workspace 專案的相容。
-			resolvedPath = filepath.Join(pkg.ResolveEmbedBase(sourcePath), embedPath)
-		}
+		// 解析路徑：與 import 路徑一致，前置 "/" 表示相對於工作區根目錄
+		embedRel := strings.TrimPrefix(embedPath, "/")
+		resolvedPath := filepath.Join(pkg.ResolveEmbedBase(sourcePath), embedRel)
 		// 檢測路徑是文件還是目錄
 		info, err := os.Stat(resolvedPath)
 		if err != nil {

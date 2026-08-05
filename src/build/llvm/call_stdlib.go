@@ -864,6 +864,25 @@ func (g *Generator) callBuiltin(sb *strings.Builder, fnName string, hasArgs bool
 		}
 	}
 
+	// exists / stat-exists: 判斷路徑是否存在（跟隨符號連結）
+	// Calls stat(path, &buf) and returns true if stat == 0.
+	if (fnName == "exists" || fnName == "stat-exists") && hasArgs {
+		a := evalArgs()
+		pathPtr := g.nullTerminateStrArg(sb, a[0], expr.Arguments[0])
+		statBuf := g.tmpReg("statbuf.ex")
+		statRet := g.tmpReg("stat.ret.ex")
+		cmpReg := g.tmpReg("stat.cmp.ex")
+		zextReg := g.tmpReg("stat.zext.ex")
+		statL := g.statLayout()
+		if sb != nil {
+			sb.WriteString(fmt.Sprintf("%s%s = alloca i8, i64 %d\n", g.indent(), statBuf, statL.Size))
+			sb.WriteString(fmt.Sprintf("%s%s = call i32 @%s(i8* %s, i8* %s)\n", g.indent(), statRet, g.libcFn("stat"), pathPtr, statBuf))
+			sb.WriteString(fmt.Sprintf("%s%s = icmp eq i32 %s, 0\n", g.indent(), cmpReg, statRet))
+			sb.WriteString(fmt.Sprintf("%s%s = zext i1 %s to i64\n", g.indent(), zextReg, cmpReg))
+		}
+		return zextReg
+	}
+
 	// stat-size / file-size: 獲取文件大小
 	if (fnName == "stat-size" || fnName == "file-size") && hasArgs {
 		a := evalArgs()

@@ -389,6 +389,13 @@ func (g *Generator) generateCallArg(sb *strings.Builder, arg parser.Expression) 
 				for i, elem := range a.Elements {
 					ev := g.generateExprWithSB(sb, elem)
 					ev = g.stripLLVMType(ev)
+					// If generateExprWithSB returned empty (e.g. void function call
+					// from an imported module whose definition is not in the AST),
+					// use 0 as a fallback to avoid generating invalid IR like
+					// "store i64 , i64* ...".
+					if ev == "" {
+						ev = "0"
+					}
 					// For struct types (e.g. %str-long), strip the type prefix
 					// if present (generateExprWithSB may return "%str-long %reg").
 					if g.isStructLLVMType(elemType) && strings.HasPrefix(ev, elemType+" ") {
