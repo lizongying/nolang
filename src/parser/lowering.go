@@ -304,7 +304,15 @@ func (p *Parser) buildMatchDesugar(sm *SurfaceMatch) Expression {
 
 		// Create per-arm `it` binding with correct unwrapped type for LSP inference.
 		// For ?i64: err arm → it: err, nil arm → it: nil, ok arm → it: i64
-		if itStmt != nil && !hasRawCond && elemType != "" {
+		// The per-arm path runs even when elemType == "" (matched option type
+		// unknown at parse time, e.g. a method-call result resolved later): in
+		// that case buildItBindingForArm returns nil, and we only fall back to the
+		// shared binding for the ok/else arm (safe — the option is non-nil there,
+		// so the struct-deref codegen is guarded by the live variant). Sentinel
+		// (nil/err) arms must NOT receive any `it` binding in that case, since the
+		// shared Type=nil binding would emit an unconditional deref of the option's
+		// data field, which is 0 (null) when the option is nil/err → segfault.
+		if itStmt != nil && !hasRawCond {
 			var armType string
 			skipItBinding := false
 			if len(arm.multiOptionPatterns) > 0 {
@@ -423,12 +431,20 @@ func (p *Parser) buildMatchDesugar(sm *SurfaceMatch) Expression {
 					}
 					armIt.SyntheticEnd = bodyEnd
 					arm.body = p.prependStmt(arm.body, armIt)
+				} else if !skipItBinding && !isSentinelArmType(armType) {
+					// ok/else arm whose matched type is unknown at parse time:
+					// fall back to the shared `it` binding (best-effort). Safe,
+					// because `it` is only meaningful in the ok arm where the
+					// option is non-nil, so the struct-deref is guarded by the
+					// live variant. Sentinel (nil/err) arms must NOT receive any
+					// `it` binding here — doing so would emit an unconditional
+					// deref of the option's data field (null when nil/err).
+					arm.body = p.prependStmt(arm.body, itStmt)
 				}
+				// Sentinel arms with unknown matched type: intentionally bind nothing.
 			} else if !skipItBinding {
 				arm.body = p.prependStmt(arm.body, itStmt)
 			}
-		} else if itStmt != nil && !hasRawCond {
-			arm.body = p.prependStmt(arm.body, itStmt)
 		}
 
 		if arm.isWildcard {
@@ -764,6 +780,25 @@ func unionElemType(t string) string {
 		return elem[0]
 	}
 	return ""
+}
+
+// isSentinelArmType reports whether armType denotes only the nil/err variants
+// (no payload), e.g. "nil", "err", or "err | nil". For these arms `it` is a
+// placeholder and must never trigger the struct-deref codegen path
+// (stmt.go:6339), which would load the option's data field unconditionally —
+// including when the option is nil/err (data == 0 → null deref → segfault).
+func isSentinelArmType(armType string) bool {
+	if armType == "" {
+		return false
+	}
+	for _, part := range strings.Split(armType, "|") {
+		part = strings.TrimSpace(part)
+		if part == "err" || part == "nil" || part == "" {
+			continue
+		}
+		return false
+	}
+	return true
 }
 
 // buildItBindingForArm creates `it = matched` LetStatement with the correct type

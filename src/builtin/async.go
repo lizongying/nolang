@@ -34,17 +34,4 @@ func init() {
 		Doc:          "Returns true if the currently running async task has been cancelled via async-cancel",
 		ForwardFunc:  "async-cancelled",
 	})
-
-	// async-yield: 协作式让出（re-enqueue 当前任务并返回事件循环）。
-	// 用于非阻塞轮询循环：在 WS 处理器的 recv-nb 返回“would-block”时调用，
-	// 让事件循环有机会运行其他任务（例如正在执行的 Agent Loop），
-	// 从而避免单线程协程因忙等而饿死其它任务。
-	// 返回 void。
-	BuiltinMethodList = append(BuiltinMethodList, BuiltinMethod{
-		ReceiverType: ReceiverGlobal,
-		MethodName:   "async-yield",
-		Params:       []parser.Type{},
-		Doc:          "Cooperatively yield: re-enqueue the current task and return to the event loop",
-		ForwardFunc:  "async-yield",
-	})
 }

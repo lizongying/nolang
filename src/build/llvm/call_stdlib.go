@@ -2528,17 +2528,6 @@ func (g *Generator) callBuiltin(sb *strings.Builder, fnName string, hasArgs bool
 		return canValZext
 	}
 
-	// async-yield: 协作式让出（D10 配套）。
-	// 直接调用事件循环运行时 @nolang_async_yield，将当前任务重新入就绪队列
-	// 并返回事件循环，让其它就绪任务（如并行运行的 Agent Loop）获得执行机会。
-	// 用于非阻塞轮询循环（ws.recv-nb 返回 would-block 时）。返回 void。
-	if fnName == "async-yield" {
-		if sb != nil {
-			sb.WriteString(fmt.Sprintf("%scall void @nolang_async_yield()\n", g.indent()))
-		}
-		return ""
-	}
-
 	// ═══════════════════════════════════════════════
 	// process — 進程操作
 	// ═══════════════════════════════════════════════

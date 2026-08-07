@@ -719,23 +719,25 @@ server-conn.recv-nb = () (msg ?message) {
     crlf = cr - lf
 
     ; 1) 非阻塞填充 recv-buf，直到 would-block（-2）或緩衝區已滿
+    ;    注意（nolang 語意坑）：cond -> stmt 是「順序 guard」，不是 if-else 鏈；
+    ;    裸 -> 是無條件執行。所以 would-block（-2）與 closed（<=0）必須互斥：
+    ;    would-block 直接 return（recv-buf 不變，呼叫方解析階段回傳 nil），
+    ;    這樣才不會落入下方的 n<=0（err）與 append 程式碼。
     fill = true
     while fill {
         .recv-buf-len < WS-BUF-SIZE -> {
             tmp str = with-len(WS-RECV-SIZE)
             n = net.net-recv-nb(.fd, tmp, WS-RECV-SIZE)
-            n == -2 -> fill = false
+            n == -2 -> return
             n <= 0 -> {
                 .connected = false
                 msg = err('closed')
                 return
             }
-            -> {
-                i <- [0..n): {
-                    .recv-buf[.recv-buf-len + i] = tmp[i]
-                }
-                .recv-buf-len = .recv-buf-len + n
+            i <- [0..n): {
+                .recv-buf[.recv-buf-len + i] = tmp[i]
             }
+            .recv-buf-len = .recv-buf-len + n
         }
         -> fill = false
     }

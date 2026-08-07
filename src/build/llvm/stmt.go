@@ -3924,16 +3924,22 @@ func (g *Generator) collectVarDeclsFromStmtInner(stmt parser.Statement, vars map
 				}
 			}
 		}
-			if existing, exists := vars[s.Name.Value]; !exists || existing == "i64" || (g.isStructLLVMType(existing) && existing != vt) {
-				// 選擇較大的型別以避免 overflow：struct 型別（%）通常比 i64 大，
-				// 多個 struct 型別則保留先到的（因為 option data field 固定 16 bytes）。
-				if !exists || existing == "i64" || g.llvmTypeSize(vt) > g.llvmTypeSize(existing) {
-					vars[s.Name.Value] = vt
-					if g.varTypes != nil {
-						g.varTypes[s.Name.Value] = vt
-					}
+		if existing, exists := vars[s.Name.Value]; !exists || existing == "i64" || (g.isStructLLVMType(existing) && existing != vt) {
+			// 選擇較大的型別以避免 overflow：struct 型別（%）通常比 i64 大，
+			// 多個 struct 型別則保留先到的（因為 option data field 固定 16 bytes）。
+			// 例外：當新舊型別同為 struct 且大小相同時，仍需更新為 ok arm 的正確型別。
+			// 否則 varTypes["it"] 會保留 err arm 的型別（如 %str-long），
+			// 導致後續 c = it 被推導為錯誤型別，c.path 找不到欄位而回退為 i64，
+			// 造成 alloca 過小（8 bytes 而非 24），str 欄位截斷為空字串。
+			// 安全性：alloca 大小不變，其他 arm 透過 itAllocTypes bitcast 機制適配。
+			if !exists || existing == "i64" || g.llvmTypeSize(vt) > g.llvmTypeSize(existing) ||
+				(g.isStructLLVMType(vt) && g.llvmTypeSize(vt) == g.llvmTypeSize(existing)) {
+				vars[s.Name.Value] = vt
+				if g.varTypes != nil {
+					g.varTypes[s.Name.Value] = vt
 				}
 			}
+		}
 			return
 		}
 		// Don't overwrite existing type (e.g. %option declared with ?type)
