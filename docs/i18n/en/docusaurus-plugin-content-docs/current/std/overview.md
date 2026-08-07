@@ -555,7 +555,13 @@ pid = process.parent-pid()          ; Parent process ID
 ; Lifecycle
 p.close()                          ; Close all pipes and wait
 
-; Convenience functions
+; Cross-platform one-shot execution (recommended): fork/exec + capture stdout/stderr, with timeout and environment
+;   Inputs: program path, args slice, dir working directory, input written to child stdin,
+;           env K=V environment-variable slice, timeout in ms (<=0 = no limit), merge-err nonzero merges stderr into out
+;   Outputs: out captured stdout (stderr merged depending on merge-err), code exit code (-2=timeout kill, -1=start failure), err error message
+out, code, err = process.cmd('echo', ['hello'], '', '', [], 0, 0)
+
+; Convenience functions (legacy, pending decision)
 status = process.process-run(cmd)           ; Execute shell command
 content, code = process.process-output(program, arg) ; Execute and capture output
 ```

@@ -2996,9 +2996,27 @@ func (g *Generator) varLLVMType(stmt *parser.LetStatement) string {
 						if inner, ok := g.optionInnerTypes[v.Value]; ok && inner != "" {
 							return inner
 						}
-					}
-					if existingType, ok := g.varTypes[stmt.Name.Value]; ok {
-						return existingType
+						// optionInnerTypes is not populated for the source variable.
+						// This can happen when the source was assigned from a function
+						// call whose return type couldn't be resolved at collectVarDecls
+						// time (e.g. cross-module function name mismatch).
+						//
+						// Do NOT fall back to g.varTypes[stmt.Name.Value] (i.e. the
+						// shared `it` variable's existing type). That type may have been
+						// set by a previous match arm with a different element type
+						// (e.g. %ws.server-conn from a ?ws.server-conn match), leading
+						// to type contamination: the ok arm generates i64 extraction
+						// (matching generateExprWithSB's default for unknown options),
+						// but the alloca is typed as the wrong struct, producing
+						// "use of undefined value '%it'" or type-mismatched IR.
+						//
+						// Instead, return "i64" — the same default that
+						// generateExprWithSB uses when optionInnerTypes is not
+						// populated. The itAllocTypes bitcast mechanism handles any
+						// alloca-type vs. actual-type difference. And the collectVarDecls
+						// max-size logic ensures the alloca is large enough if a
+						// previous match already set it to a larger type.
+						return "i64"
 					}
 				}
 				return t
@@ -6137,6 +6155,100 @@ func (g *Generator) generateLet(sb *strings.Builder, stmt *parser.LetStatement) 
 								return
 							}
 						}
+					}
+				}
+			}
+	}
+
+		// Deep clone path for struct field array element: s = .sessions[idx]
+		// where .sessions is [N]session (inline array field of a struct).
+		// generateStructFieldIndexRead returns a GEP pointer for struct elements,
+		// not a loaded value. Without this path, generateLet would try to
+		// store the pointer as a struct value (type mismatch: ptr vs %session).
+		// For heap-owning element types (struct with str/vec fields), use deep
+		// clone to avoid double-free. For non-heap-owning struct types, load
+		// the value from the pointer before storing.
+		if idxExpr, ok := stmt.Value.(*parser.IndexExpression); ok {
+			if dot, ok := idxExpr.Left.(*parser.DotExpression); ok {
+				// Determine the receiver struct name
+				recvName := ""
+				if ident, ok := dot.Receiver.(*parser.Identifier); ok {
+					recvName = ident.Value
+				}
+				structName := ""
+				if recvName != "" {
+					if t, ok := g.varTypes[recvName]; ok {
+						structName = strings.TrimPrefix(t, "%")
+					}
+				} else {
+					recvType := g.exprResultLLVMType(dot.Receiver)
+					if g.isStructLLVMType(recvType) {
+						structName = strings.TrimPrefix(recvType, "%")
+					}
+				}
+				// Find the field's array type and extract element type
+				fieldElemType := ""
+				if structName != "" {
+					if fields, ok := g.structTypes[structName]; ok {
+						for _, f := range fields {
+							if f.name == dot.Property && strings.HasPrefix(f.typ, "[") {
+								closeB := strings.IndexByte(f.typ, ']')
+								if closeB > 0 {
+									inner := f.typ[1:closeB]
+									xIdx := strings.LastIndex(inner, " x ")
+									if xIdx >= 0 {
+										fieldElemType = inner[xIdx+3:]
+									}
+								}
+								break
+							}
+						}
+					}
+				}
+				if fieldElemType != "" && g.isHeapOwningType(fieldElemType) {
+					_, isLocal := g.funcLocalNames[name]
+					isOutput := g.outputParamNames != nil && g.outputParamNames[name]
+					isGlobal := g.globalVars != nil && g.globalVars[name] && (g.funcLocalNames == nil || !g.funcLocalNames[name])
+					if isLocal || isOutput || isGlobal {
+						// Check if deep clone is possible
+						canClone := true
+						if fieldElemType == "%vec" || fieldElemType == "%arr" {
+							canClone = false
+						}
+						if fieldElemType != "%vec" && fieldElemType != "%arr" && fieldElemType != "%str-long" {
+							if !g.canDeepCloneStruct(fieldElemType) {
+								canClone = false
+							}
+						}
+						if canClone {
+							g.freeOldHeapValue(sb, stmt, name)
+							// Get element pointer via generateStructFieldIndexRead
+							// (returns GEP pointer for struct elements)
+							elemPtr := g.generateExprWithSB(sb, stmt.Value)
+							if elemPtr != "" && elemPtr != "0" {
+								g.emitDeepClone(sb, elemPtr, g.varAddr(name), fieldElemType, "")
+								if !isOutput && !isGlobal {
+									g.trackLocalHeapVar(name, fieldElemType)
+								}
+								if g.arrayElemTypes != nil {
+									g.arrayElemTypes[name] = fieldElemType
+								}
+							}
+							return
+						}
+						// Fallback: can't deep clone (nested containers), use load+store
+						// This creates a shallow copy, which may cause double-free for
+						// heap-owning types, but is better than type-mismatch crash.
+						g.freeOldHeapValue(sb, stmt, name)
+						elemPtr := g.generateExprWithSB(sb, stmt.Value)
+						if elemPtr != "" && elemPtr != "0" {
+							loadReg := g.tmpReg("sf.arr.val")
+							sb.WriteString(fmt.Sprintf("%s%s = load %s, %s* %s\n",
+								g.indent(), loadReg, toLLVMType(fieldElemType), toLLVMType(fieldElemType), elemPtr))
+							sb.WriteString(fmt.Sprintf("%sstore %s %s, %s* %s\n",
+								g.indent(), toLLVMType(fieldElemType), loadReg, toLLVMType(fieldElemType), g.varAddr(name)))
+						}
+						return
 					}
 				}
 			}

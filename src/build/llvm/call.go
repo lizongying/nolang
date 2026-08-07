@@ -516,7 +516,8 @@ func (g *Generator) generateCallArg(sb *strings.Builder, arg parser.Expression) 
 					if g.varTypes != nil {
 						if t, ok := g.varTypes[ident.Value]; ok && g.isStructLLVMType(t) {
 							structName := strings.TrimPrefix(t, "%")
-							if fields, ok := g.structTypes[structName]; ok {
+							// D3 fix: use resolveStructFields to handle module-prefixed struct names
+							if fields, _ := g.resolveStructFields(structName); fields != nil {
 								for _, f := range fields {
 									if f.name == dot.Property {
 										ptrType = f.typ + "*"
@@ -1022,6 +1023,37 @@ func (g *Generator) generateCallExpression(sb *strings.Builder, expr *parser.Cal
 		}
 		for _, arg := range innerCall.Arguments {
 			innerArgs = append(innerArgs, g.generateCallArg(sb, arg))
+		}
+
+		// Module-function receiver fix (nested call dispatch):
+		// Functions declared inside a struct module namespace (e.g. process.cmd)
+		// carry a hidden `%self` receiver as their first LLVM parameter. When called
+		// via a module-qualified name with no instance (always the case for these
+		// functions), no receiver is passed by the caller. Without a dummy self, every
+		// argument shifts right by one and the trailing output parameter (e.g. %err)
+		// is left undefined → null → memset crash inside the callee (opt/llc mis-schedule).
+		// Detect it via funcParamLLVMTypes (includes the receiver) vs funcParamCount
+		// (excludes it): a +1 difference means a receiver exists but was not passed.
+		if innerMethodRecv == nil && innerFnName != "" && g.funcParamCount != nil && g.funcParamLLVMTypes != nil && sb != nil && !g.funcIsVariadic[innerFnName] {
+			if pt, ok := g.funcParamLLVMTypes[innerFnName]; ok && len(pt) > 0 {
+				// funcParamCount includes the (unpassed) self receiver for module
+				// functions; a +1 gap vs the supplied input args means self is missing.
+				if pc, ok := g.funcParamCount[innerFnName]; ok && pc == len(innerArgs)+1 {
+					// funcParamLLVMTypes stores element types (no trailing '*');
+					// the receiver is always passed by reference, matching the
+					// callee's `%T* %self` first parameter.
+					recvElemType := strings.TrimSuffix(pt[0], "*")
+					if recvElemType == "" {
+						recvElemType = "i64"
+					}
+					g.tmpIdx++
+					dummySelf := fmt.Sprintf("%%dummy.self.%d", g.tmpIdx)
+					sb.WriteString(fmt.Sprintf("%s%s = alloca %s\n", g.indent(), dummySelf, recvElemType))
+					sb.WriteString(fmt.Sprintf("%sstore %s zeroinitializer, %s* %s\n", g.indent(), recvElemType, recvElemType, dummySelf))
+					// Prepend pointer to dummy self as the FIRST argument.
+					innerArgs = append([]string{recvElemType + "* " + dummySelf}, innerArgs...)
+				}
+			}
 		}
 
 		if retType == "void" {
@@ -1781,17 +1813,6 @@ func (g *Generator) generateCallExpression(sb *strings.Builder, expr *parser.Cal
 		// 透過 exprResultLLVMType 推導欄位型別，再映射到 nolang 型別名查找方法
 		elemType := g.exprResultLLVMType(receiverExpr)
 		srcType := strings.TrimPrefix(elemType, "%")
-		if os.Getenv("NOLANG_DEBUG_DOT") != "" {
-			recvType := ""
-			if innerDot, ok := receiverExpr.(*parser.DotExpression); ok {
-				if innerIdent, ok := innerDot.Receiver.(*parser.Identifier); ok {
-					if t, ok := g.varTypes[innerIdent.Value]; ok {
-						recvType = t
-					}
-				}
-			}
-			fmt.Fprintf(os.Stderr, "[debug-dot] receiverExpr=%v elemType=%q srcType=%q property=%q recvType=%q\n", receiverExpr, elemType, srcType, dot.Property, recvType)
-		}
 		// 先嘗試聯合型別別名（如 i64 → int.to-str），與 Identifier 接收者路徑保持一致
 		if g.unionAliases != nil {
 			unionSrcType := srcType

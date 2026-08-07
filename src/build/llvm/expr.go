@@ -1527,7 +1527,8 @@ func (g *Generator) exprResultLLVMType(expr parser.Expression) string {
 		recvType := g.exprResultLLVMType(v.Receiver)
 		if g.isStructLLVMType(recvType) {
 			structName := strings.TrimPrefix(recvType, "%")
-			if fields, ok := g.structTypes[structName]; ok {
+			// D3 fix: use resolveStructFields to handle module-prefixed struct names
+			if fields, _ := g.resolveStructFields(structName); fields != nil {
 				for _, f := range fields {
 					if f.name == v.Property {
 						// Inline array field (e.g. [32 x i8]) should be treated as
@@ -1874,7 +1875,12 @@ func (g *Generator) generateDotExpression(sb *strings.Builder, expr *parser.DotE
 		}
 	}
 
-	if fields, ok := g.structTypes[structName]; ok {
+	// resolveStructFields tries the bare name and module-prefixed variants,
+	// so struct field access works even when varTypes has a bare name but
+	// structTypes has the module-prefixed name (D3 fix).
+	fields, resolvedName := g.resolveStructFields(structName)
+	if fields != nil {
+		structName = resolvedName
 		fieldIdx := -1
 		var fieldType string
 		for i, f := range fields {
@@ -1945,7 +1951,9 @@ func (g *Generator) generateExprPtr(sb *strings.Builder, expr parser.Expression)
 				basePtr = g.generateExprPtr(sb, v.Receiver)
 			}
 		}
-		if fields, ok := g.structTypes[structName]; ok {
+		// D3 fix: use resolveStructFields to handle module-prefixed struct names
+		if fields, resolvedName := g.resolveStructFields(structName); fields != nil {
+			structName = resolvedName
 			for i, f := range fields {
 				if f.name == v.Property {
 					reg := g.tmpReg("dot.ptr.gep")

@@ -128,6 +128,27 @@ type structField struct {
 	elemType string // for %vec fields: LLVM element type (e.g. "i8" for []byte, "i64" for []i64)
 }
 
+// resolveStructFields looks up struct field definitions by name, trying both the
+// bare name and module-prefixed variants. When a struct type is imported from
+// another module, the struct definition is registered in structTypes under the
+// module-prefixed name (e.g. "config.app-config"), but varTypes may hold the
+// bare name (e.g. "app-config") if the parameter type annotation was not rewritten.
+// Returns (fields, resolvedName) where resolvedName is the actual key that matched.
+// Returns (nil, "") if not found.
+func (g *Generator) resolveStructFields(structName string) ([]structField, string) {
+	if fields, ok := g.structTypes[structName]; ok {
+		return fields, structName
+	}
+	// Try module-prefixed variant: "app-config" → "config.app-config"
+	suffix := "." + structName
+	for name, fields := range g.structTypes {
+		if strings.HasSuffix(name, suffix) {
+			return fields, name
+		}
+	}
+	return nil, ""
+}
+
 // ExternFuncInfo 描述一個 FFI extern 宣告的型別資訊。
 // ParamTypes / ResultTypes 為 FFI 型別名稱（"i64","i32","f64","str","ptr","pptr","ppptr","bool"）。
 type ExternFuncInfo struct {

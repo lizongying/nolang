@@ -569,7 +569,13 @@ pid = process.parent-pid()          ; 父進程 ID
 ; 生命週期
 p.close()                          ; 關閉所有管道並等待
 
-; 便捷函數
+; 跨平台一次性執行（推薦）：fork/exec + 捕獲 stdout/stderr，帶超時與環境
+;   入參：program 可執行檔路徑，args 參數切片，dir 工作目錄，input 寫入子進程 stdin 的內容，
+;         env K=V 形式環境變數切片，timeout 毫秒（<=0 表示不限時），merge-err 非 0 時合併 stderr 到 out
+;   出參：out 捕獲的 stdout（stderr 依 merge-err 決定是否合併），code 退出碼（-2=超時殺死，-1=啟動失敗），err 錯誤信息
+out, code, err = process.cmd('echo', ['hello'], '', '', [], 0, 0)
+
+; 便捷函數（舊，後續取捨）
 status = process.process-run(cmd)           ; 執行 shell 命令
 content, code = process.process-output(program, arg) ; 執行並捕獲輸出
 ```
