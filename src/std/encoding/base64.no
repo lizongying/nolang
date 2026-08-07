@@ -126,8 +126,7 @@ decode = (s str, table str) (out ?[]byte) {
         j = j + 3
         i = i + 4
     } (i + 4 <= n)
-    out.len = j - pad-count
-    out.len < 0 -> out.len = 0
+    out.truncate(j - pad-count)
 }
 
 ; ═══════════════════════════════════════════════

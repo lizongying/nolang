@@ -1070,6 +1070,12 @@ str.empty = () (yes bool) {
 ; build-in
 ; str.clear = () { }
 
+; str.truncate: 原地截斷字串至至多 n 個位元組（len = min(len, n)）
+; 不 free 堆、不改变 cap/ptr，仅调整 len
+; 替代低阶 s.len = n 写法（验证器拒绝直接修改 .len）
+; build-in
+; str.truncate = (n i64) { }
+
 ; 全局函数 with-cap / with-len / with-cap-len 的声明已移至 global.no
 
 ; ═══════════════════════════════════════════════

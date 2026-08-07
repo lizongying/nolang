@@ -35,6 +35,18 @@ func init() {
 		ForwardFunc:  "str-clear",
 	})
 
+	// str.truncate: truncate string in-place to at most n bytes (len = min(len, n))
+	// Replaces the low-level `s.len = n` pattern which is rejected by the validator.
+	// cap/ptr unchanged; only the logical length is adjusted.
+	BuiltinMethodList = append(BuiltinMethodList, BuiltinMethod{
+		ReceiverType: ReceiverStr,
+		MethodName:   "str.truncate",
+		Params:       []parser.Type{parser.TypeI64},
+		Return:       []parser.Type{},
+		Doc:          "Truncate string in-place to at most n bytes (len = min(len, n))",
+		ForwardFunc:  "str-truncate",
+	})
+
 	// with-cap: create a new str or vec with specified capacity (len=0)
 	// Builtin syntax: with-cap(cap) — type inferred from assignment LHS
 	//   s str = with-cap(256)   → str-long with cap=256

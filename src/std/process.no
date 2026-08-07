@@ -9,8 +9,12 @@
 ;   code = p.wait()
 ;   print('exit code: ' - code.to-str())
 ;
-;   // 簡易命令執行
-;   code = process-run('echo hello')
+;   // 簡易 shell 命令執行
+;   code = process-shell('echo hello')
+;
+;   // 完整功能的子進程執行器（扁平參數：program, args, dir, stdin, env, timeout, merge-err）
+;   out, code, err = process.cmd('ls', args, '', '', env, 5000, 0)
+;   print('out=' - out - ' code=' - code.to-str())
 
 ; ═══════════════════════════════════════════════
 ; 內建函數（底層實作）
@@ -72,6 +76,20 @@ SIG-CHLD = 17
 
 ; waitpid options
 WNOHANG = 1
+
+; ═══════════════════════════════════════════════
+; 執行選項（概念說明）
+; ═══════════════════════════════════════════════
+;
+; process-run 的公開介面以「扁平參數」暴露執行選項（對應下列欄位）。
+; 之所以不用 Run-Opts 結構體：nolang 目前跨模組傳遞結構體時
+; 不會轉發其型別定義，會導致呼叫端 alloca %Run-Opts 失敗
+; （"Cannot allocate unsized type"）。欄位順序即 process-run 的參數順序：
+;   dir       : 工作目錄；空字串 = 繼承父進程工作目錄
+;   stdin     : 寫入子進程 stdin 的內容；空字串 = 不提供 stdin
+;   env       : 環境變數（["K=V", ...]）；空陣列 = 繼承父進程環境
+;   timeout   : 超時時間（毫秒），<=0 = 無限等待
+;   merge-err : 非 0 = 將 stderr 合併到捕獲的 out 中
 
 ; ═══════════════════════════════════════════════
 ; process 結構體
@@ -375,10 +393,44 @@ process.close = () {
 ; 便捷函數
 ; ═══════════════════════════════════════════════
 
-; process-run: 執行 shell 命令並等待完成
+; process-shell: 執行 shell 命令字串並等待完成（透過 sh -c）
 ; 返回 status=退出狀態
-process-run = (cmd str) (status i64) {
+process-shell = (cmd str) (status i64) {
     status = process-system(cmd)
+}
+
+; process.cmd: 完整功能的子進程執行器（跨平台生產級實作）
+; program   : 要執行的程式名（PATH 搜尋）
+; args      : 傳給程式的參數列表
+; dir       : 工作目錄；空字串 = 繼承父進程工作目錄
+; input     : 寫入子進程 stdin 的內容；空字串 = 不提供 stdin
+;             （參數名用 input 而非 stdin，因 std/fs.no 已預定義全域 stdin/file 句柄，
+;               同名校驗名會與該全域變數的 SSA 名 %stdin 衝突，導致呼叫端誤用全域。）
+; env       : 環境變數（["K=V", ...]）；空陣列 = 繼承父進程環境
+; timeout   : 超時時間（毫秒），<=0 = 無限等待
+; merge-err : 非 0 = 將 stderr 合併到捕獲的 out 中
+; 返回 out=捕獲的 stdout（merge-err 時含 stderr），code=退出碼，err=錯誤訊息
+;   code >= 0 : 正常退出碼
+;   code == -1 : 啟動 / exec 失敗
+;   code == -2 : 超時（子進程已被殺死）
+; 底層呼叫 process-run-capture 內建函數（C runtime: src/build/runtime/process.c），
+; 支援 argv 陣列、環境變數、工作目錄、stdin、超時與 stderr 合併。
+process.cmd = (program str, args []str, dir str, input str, env []str, timeout i64, merge-err i64) (out str, code i64, err str) {
+    ; 構建 argv = [program] + args
+    argv []str = with-len(args.len + 1)
+    argv[0] = program
+    i <- [0..args.len): {
+        argv[i + 1] = args[i]
+    }
+    out, status = process-run-capture(argv, env, dir, input, timeout, merge-err)
+    code = status
+    err = ''
+    code == -1 -> {
+        err = 'failed to start or exec process'
+    }
+    code == -2 -> {
+        err = 'process timed out'
+    }
 }
 
 ; process-output: 執行命令並捕獲 stdout 輸出

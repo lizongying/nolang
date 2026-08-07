@@ -2184,14 +2184,14 @@ der-enc-len = (val i64) (out []byte) {
     val < 128 -> {
         out = with-len(1)
         out[0] = val & 255
-        out.len = 1
+        out.truncate(1)
         return
     }
     val < 256 -> {
         out = with-len(2)
         out[0] = 0x81
         out[1] = val & 255
-        out.len = 2
+        out.truncate(2)
         return
     }
     val < 65536 -> {
@@ -2199,7 +2199,7 @@ der-enc-len = (val i64) (out []byte) {
         out[0] = 0x82
         out[1] = (val >> 8) & 255
         out[2] = val & 255
-        out.len = 3
+        out.truncate(3)
         return
     }
     out = with-len(5)
@@ -2207,7 +2207,7 @@ der-enc-len = (val i64) (out []byte) {
     out[1] = (val >> 16) & 255
     out[2] = (val >> 8) & 255
     out[3] = val & 255
-    out.len = 4
+    out.truncate(4)
 }
 
 ; der-enc-tlv: 包裝 TLV
@@ -2227,7 +2227,7 @@ der-enc-tlv = (tag i64, content []byte) (out []byte) {
     i <- [0..cl): {
         out[1 + lb + i] = content[i]
     }
-    out.len = 1 + lb + cl
+    out.truncate(1 + lb + cl)
 }
 
 ; der-enc-integer-bytes: 將 big-endian 位元組陣列編碼為 DER INTEGER
@@ -2238,7 +2238,7 @@ der-enc-integer-bytes = (data []byte) (out []byte) {
     n == 0 -> {
         zero []byte = with-len(1)
         zero[0] = 0
-        zero.len = 1
+        zero.truncate(1)
         out = der-enc-tlv(2, zero)
         return
     }
@@ -2270,7 +2270,7 @@ der-enc-integer-bytes = (data []byte) (out []byte) {
             }
         }
     }
-    content.len = content-len
+    content.truncate(content-len)
     out = der-enc-tlv(2, content)
 }
 
@@ -2281,7 +2281,7 @@ der-enc-integer-i64 = (val i64) (out []byte) {
     val == 0 -> {
         zero []byte = with-len(1)
         zero[0] = 0
-        zero.len = 1
+        zero.truncate(1)
         out = der-enc-tlv(2, zero)
         return
     }
@@ -2298,7 +2298,7 @@ der-enc-integer-i64 = (val i64) (out []byte) {
     i <- [0..n): {
         data[n - 1 - i] = (val >> (i * 8)) & 255
     }
-    data.len = n
+    data.truncate(n)
     out = der-enc-integer-bytes(data)
 }
 
@@ -2322,7 +2322,7 @@ der-enc-bitstring = (data []byte) (out []byte) {
     i <- [0..n): {
         content[1 + i] = data[i]
     }
-    content.len = n + 1
+    content.truncate(n + 1)
     out = der-enc-tlv(3, content)
 }
 
@@ -2348,7 +2348,7 @@ x509-bytes-to-bn = (data []byte) (out []i64) {
         shift = (byte-from-lsb % 4) * 8
         out[limb] = out[limb] | ((data[i]) << shift)
     }
-    out.len = limb-count
+    out.truncate(limb-count)
 }
 
 ; der-enc-null: NULL
@@ -2356,7 +2356,7 @@ der-enc-null = () (out []byte) {
     out = with-len(2)
     out[0] = 5
     out[1] = 0
-    out.len = 2
+    out.truncate(2)
 }
 
 ; der-enc-printablestring: PrintableString
@@ -2406,7 +2406,7 @@ alg-id-rsa-encryption = () (out []byte) {
     oid-rsa[6] = 0x01; 1
     oid-rsa[7] = 0x01; 1
     oid-rsa[8] = 0x01; 1
-    oid-rsa.len = 9
+    oid-rsa.truncate(9)
     oid-tlv []byte
     oid-tlv = der-enc-oid-raw(oid-rsa)
     null-tlv []byte
@@ -2418,7 +2418,7 @@ alg-id-rsa-encryption = () (out []byte) {
     i <- [0..null-tlv.len): {
         content[oid-tlv.len + i] = null-tlv[i]
     }
-    content.len = oid-tlv.len + null-tlv.len
+    content.truncate(oid-tlv.len + null-tlv.len)
     out = der-enc-sequence(content)
 }
 
@@ -2435,7 +2435,7 @@ alg-id-sha256-with-rsa = () (out []byte) {
     oid[6] = 0x01
     oid[7] = 0x01
     oid[8] = 0x0B; 11
-    oid.len = 9
+    oid.truncate(9)
     oid-tlv []byte
     oid-tlv = der-enc-oid-raw(oid)
     null-tlv []byte
@@ -2447,7 +2447,7 @@ alg-id-sha256-with-rsa = () (out []byte) {
     i <- [0..null-tlv.len): {
         content[oid-tlv.len + i] = null-tlv[i]
     }
-    content.len = oid-tlv.len + null-tlv.len
+    content.truncate(oid-tlv.len + null-tlv.len)
     out = der-enc-sequence(content)
 }
 
@@ -2471,7 +2471,7 @@ x509-build-rsa-public-key = (n []byte, e i64) (out []byte) {
     i <- [0..e-int.len): {
         content[n-int.len + i] = e-int[i]
     }
-    content.len = n-int.len + e-int.len
+    content.truncate(n-int.len + e-int.len)
     out = der-enc-sequence(content)
 }
 
@@ -2493,7 +2493,7 @@ x509-build-spki = (n []byte, e i64) (out []byte) {
     i <- [0..bit-str.len): {
         content[alg-id.len + i] = bit-str[i]
     }
-    content.len = alg-id.len + bit-str.len
+    content.truncate(alg-id.len + bit-str.len)
     out = der-enc-sequence(content)
 }
 
@@ -2506,7 +2506,7 @@ x509-build-name-cn = (cn str) (out []byte) {
     oid-cn[0] = 0x55
     oid-cn[1] = 0x04
     oid-cn[2] = 0x03
-    oid-cn.len = 3
+    oid-cn.truncate(3)
     oid-tlv []byte
     oid-tlv = der-enc-oid-raw(oid-cn)
     val-tlv []byte
@@ -2520,7 +2520,7 @@ x509-build-name-cn = (cn str) (out []byte) {
     i <- [0..val-tlv.len): {
         atv-content[oid-tlv.len + i] = val-tlv[i]
     }
-    atv-content.len = oid-tlv.len + val-tlv.len
+    atv-content.truncate(oid-tlv.len + val-tlv.len)
     atv []byte
     atv = der-enc-sequence(atv-content)
 
@@ -2548,7 +2548,7 @@ x509-build-validity = (not-before str, not-after str) (out []byte) {
     i <- [0..na.len): {
         content[nb.len + i] = na[i]
     }
-    content.len = nb.len + na.len
+    content.truncate(nb.len + na.len)
     out = der-enc-sequence(content)
 }
 
@@ -2622,7 +2622,7 @@ x509-build-tbs = (n []byte, e i64, cn str, not-before str, not-after str) (out [
     i <- [0..spki.len): {
         content[pos + i] = spki[i]
     }
-    content.len = total
+    content.truncate(total)
 
     out = der-enc-sequence(content)
 }
@@ -2644,7 +2644,7 @@ rsa-pkcs1-sign-sha256 = (data []byte, n []byte, d []byte) (sig []byte) {
     i <- [0..32): {
         hash[i] = h-arr[i]
     }
-    hash.len = 32
+    hash.truncate(32)
 
     ; 2. DigestInfo = SEQUENCE { SEQUENCE { OID sha256, NULL }, OCTET STRING hash }
     ; OID sha256 (2.16.840.1.101.3.4.2.1): 60 86 48 01 65 03 04 02 01
@@ -2658,7 +2658,7 @@ rsa-pkcs1-sign-sha256 = (data []byte, n []byte, d []byte) (sig []byte) {
     oid-sha256[6] = 0x04
     oid-sha256[7] = 0x02
     oid-sha256[8] = 0x01
-    oid-sha256.len = 9
+    oid-sha256.truncate(9)
     oid-tlv []byte
     oid-tlv = der-enc-oid-raw(oid-sha256)
     null-tlv []byte
@@ -2670,7 +2670,7 @@ rsa-pkcs1-sign-sha256 = (data []byte, n []byte, d []byte) (sig []byte) {
     i <- [0..null-tlv.len): {
         inner-content[oid-tlv.len + i] = null-tlv[i]
     }
-    inner-content.len = oid-tlv.len + null-tlv.len
+    inner-content.truncate(oid-tlv.len + null-tlv.len)
     inner-seq []byte
     inner-seq = der-enc-sequence(inner-content)
 
@@ -2684,7 +2684,7 @@ rsa-pkcs1-sign-sha256 = (data []byte, n []byte, d []byte) (sig []byte) {
     i <- [0..hash-octet.len): {
         di-content[inner-seq.len + i] = hash-octet[i]
     }
-    di-content.len = inner-seq.len + hash-octet.len
+    di-content.truncate(inner-seq.len + hash-octet.len)
     digest-info []byte
     digest-info = der-enc-sequence(di-content)
 
@@ -2705,7 +2705,7 @@ rsa-pkcs1-sign-sha256 = (data []byte, n []byte, d []byte) (sig []byte) {
     i <- [0..di-len): {
         padded[3 + pad-len + i] = digest-info[i]
     }
-    padded.len = mod-len
+    padded.truncate(mod-len)
 
     ; 4. RSA 簽章：sig = padded^d mod n
     ; 將 big-endian 位元組轉為 little-endian limb 陣列
@@ -2748,7 +2748,7 @@ rsa-pkcs1-sign-sha256 = (data []byte, n []byte, d []byte) (sig []byte) {
         out-pos > 1 -> sig[out-pos - 2] = limb-byte-2
         out-pos > 2 -> sig[out-pos - 3] = limb-byte-3
     }
-    sig.len = mod-len
+    sig.truncate(mod-len)
 }
 
 ; ═══════════════════════════════════════════════
@@ -2795,7 +2795,7 @@ x509-build-self-signed-cert = (n []byte, e i64, d []byte, cn str) (cert []byte) 
     i <- [0..sig-bitstr.len): {
         content[pos + i] = sig-bitstr[i]
     }
-    content.len = total
+    content.truncate(total)
 
     cert = der-enc-sequence(content)
 }

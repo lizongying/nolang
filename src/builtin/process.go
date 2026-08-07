@@ -66,6 +66,33 @@ func init() {
 		ForwardFunc:  "process-exec-shell",
 	})
 
+	// process-run-capture: full-featured subprocess runner (cross-platform).
+	// argv: program name followed by arguments. envp: full environment
+	// (["K=V", ...]); empty slice inherits the parent environment.
+	// dir: working directory ("" inherits). stdin: bytes fed to child's stdin.
+	// timeout_ms: 0 = wait forever. merge_err: non-zero merges stderr into out.
+	// Returns (out str, status i64): status >=0 exit code, -1 start/exec failure,
+	// -2 timed out. The heavy lifting lives in src/build/runtime/process.c
+	// (@nolang.process_run), which fork/execs (POSIX) or CreateProcess (Windows),
+	// captures output, and enforces the timeout.
+	// (The user-facing API is process.cmd in std/process.no, which builds the
+	//  argv slice and decodes status into (out, code, err).)
+	BuiltinMethodList = append(BuiltinMethodList, BuiltinMethod{
+		ReceiverType: ReceiverGlobal,
+		MethodName:   "process-run-capture",
+		Params: []parser.Type{
+			&parser.SliceType{Elem: parser.TypeStr},
+			&parser.SliceType{Elem: parser.TypeStr},
+			parser.TypeStr,
+			parser.TypeStr,
+			parser.TypeI64,
+			parser.TypeI64,
+		},
+		Return:      []parser.Type{parser.TypeStr, parser.TypeI64},
+		Doc:         "Run a subprocess and capture its output. Returns (out, status)",
+		ForwardFunc: "process-run-capture",
+	})
+
 	// process-kill: send signal to process
 	killFn := "kill"
 	if runtime.GOOS == "windows" {

@@ -749,7 +749,7 @@ json.stringify = () (out str) {
     cap < 16 -> cap = 16
     out = with-cap(cap)
     n = .pool.stringify(.root, out, 0)
-    out.len = n
+    out.truncate(n)
 }
 
 ; json.is-null: 判斷是否為 null

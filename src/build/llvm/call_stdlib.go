@@ -582,6 +582,55 @@ func (g *Generator) isTempStrDataPtr(arg parser.Expression) bool {
 // Tries makeNullTerminatedStr first (handles Identifier, StringLiteral, InfixExpression, DotExpression).
 // Falls back to manual null-termination from the eval result for other expression types
 // (e.g. CallExpression like arg(i)).
+// strLongPtr resolves an evaluated string argument — which may be a loaded
+// %str-long VALUE rather than a pointer — to a stable %str-long* pointer so field
+// extraction (length/data) works uniformly. voidSingleOutput loaded values
+// (%call.tmp.N) are %str-long VALUES, so they are materialized into a temp alloca;
+// simple variable loads (%var.val.N) resolve to their alloca (%var); complex
+// expression results (e.g. %vec.idx.val.N) are materialized into a temp alloca.
+// If evalResult is already a %str-long* pointer it is returned unchanged.
+func (g *Generator) strLongPtr(sb *strings.Builder, evalResult string) string {
+	if !strings.HasPrefix(evalResult, "%") {
+		return evalResult
+	}
+	// voidSingleOutput loaded values (%call.tmp.N) are %str-long VALUES, not pointers.
+	if g.ssaTypes != nil {
+		if t, ok := g.ssaTypes[evalResult]; ok && t == "%str-long" {
+			tmpAlloca := g.tmpReg("str-long.vso")
+			if sb != nil {
+				sb.WriteString(fmt.Sprintf("%s%s = alloca %%str-long\n", g.indent(), tmpAlloca))
+				sb.WriteString(fmt.Sprintf("%sstore %%str-long %s, %%str-long* %s\n", g.indent(), evalResult, tmpAlloca))
+			}
+			return tmpAlloca
+		}
+	}
+	if strings.Index(evalResult, ".val.") > 0 {
+		idx := strings.Index(evalResult, ".val.")
+		baseRef := evalResult[:idx]
+		// baseRef is a valid alloca pointer only if it is a simple variable
+		// reference (%varName with no extra dots). For complex expressions
+		// like %vec.idx.val.N, baseRef (%vec.idx) is NOT a valid register,
+		// so we materialize the value into a temp alloca instead.
+		simpleVar := !strings.Contains(strings.TrimPrefix(baseRef, "%"), ".")
+		known := false
+		if simpleVar && g.varTypes != nil {
+			varName := strings.TrimPrefix(baseRef, "%")
+			_, known = g.varTypes[varName]
+		}
+		if known {
+			// Simple variable load: %var.val.N → %var is the alloca pointer
+			return baseRef
+		}
+		tmpAlloca := g.tmpReg("str-long.nt")
+		if sb != nil {
+			sb.WriteString(fmt.Sprintf("%s%s = alloca %%str-long\n", g.indent(), tmpAlloca))
+			sb.WriteString(fmt.Sprintf("%sstore %%str-long %s, %%str-long* %s\n", g.indent(), evalResult, tmpAlloca))
+		}
+		return tmpAlloca
+	}
+	return evalResult
+}
+
 func (g *Generator) nullTerminateStrArg(sb *strings.Builder, evalResult string, expr parser.Expression) string {
 	// Try makeNullTerminatedStr for known expression types
 	if ptr := g.makeNullTerminatedStr(sb, expr); ptr != "" {
@@ -594,47 +643,7 @@ func (g *Generator) nullTerminateStrArg(sb *strings.Builder, evalResult string, 
 	// %x.val.N → %x). For complex expressions like IndexExpression results
 	// (e.g. %vec.idx.val.N), the stripped prefix (%vec.idx) is NOT a valid
 	// register, so we materialize the value into a temp alloca instead.
-	strPtr := evalResult
-	if strings.HasPrefix(evalResult, "%") {
-		// voidSingleOutput loaded values (%call.tmp.N) are %str-long VALUES, not pointers.
-		// Materialize into a temp alloca to get a valid %str-long* pointer.
-		if g.ssaTypes != nil {
-			if t, ok := g.ssaTypes[evalResult]; ok && t == "%str-long" {
-				tmpAlloca := g.tmpReg("str-long.vso")
-				if sb != nil {
-					sb.WriteString(fmt.Sprintf("%s%s = alloca %%str-long\n", g.indent(), tmpAlloca))
-					sb.WriteString(fmt.Sprintf("%sstore %%str-long %s, %%str-long* %s\n", g.indent(), evalResult, tmpAlloca))
-				}
-				strPtr = tmpAlloca
-			}
-		}
-		if strPtr == evalResult && strings.Index(evalResult, ".val.") > 0 {
-			idx := strings.Index(evalResult, ".val.")
-			baseRef := evalResult[:idx]
-			// baseRef is a valid alloca pointer only if it is a simple variable
-			// reference (%varName with no extra dots). For complex expressions
-			// like %vec.idx.val.N, baseRef (%vec.idx) is NOT a valid register,
-			// so we materialize the value into a temp alloca instead.
-			simpleVar := !strings.Contains(strings.TrimPrefix(baseRef, "%"), ".")
-			known := false
-			if simpleVar && g.varTypes != nil {
-				varName := strings.TrimPrefix(baseRef, "%")
-				_, known = g.varTypes[varName]
-			}
-			if known {
-				// Simple variable load: %var.val.N → %var is the alloca pointer
-				strPtr = baseRef
-			} else {
-				// Complex expression result: materialize value into temp alloca
-				tmpAlloca := g.tmpReg("str-long.nt")
-				if sb != nil {
-					sb.WriteString(fmt.Sprintf("%s%s = alloca %%str-long\n", g.indent(), tmpAlloca))
-					sb.WriteString(fmt.Sprintf("%sstore %%str-long %s, %%str-long* %s\n", g.indent(), evalResult, tmpAlloca))
-				}
-				strPtr = tmpAlloca
-			}
-		}
-	}
+	strPtr := g.strLongPtr(sb, evalResult)
 	dataPtr := g.extractStrDataPtr(sb, strPtr)
 	strLen := g.extractStrLen(sb, strPtr)
 	// Allocate buffer of len+1
@@ -2581,6 +2590,99 @@ func (g *Generator) callBuiltin(sb *strings.Builder, fnName string, hasArgs bool
 			sb.WriteString(fmt.Sprintf("%s%s = sext i32 %s to i64\n", g.indent(), execExt, execRet))
 		}
 		return execExt
+	}
+
+	// ═══════════════════════════════════════════════
+	// process-run: full-featured, cross-platform subprocess runner.
+	// Args: argv []str (program + args), envp []str, dir str, stdin str,
+	//       timeout i64 (ms, 0 = forever), merge i64 (non-zero merges stderr)
+	// Returns: (out str, status i64)
+	//   status >= 0 : child exit code
+	//   status == -1 : failed to start / exec
+	//   status == -2 : timed out (child killed)
+	// The heavy lifting lives in the C runtime @nolang.process_run
+	// (src/build/runtime/process.c), which fork/execs (POSIX) or CreateProcess
+	// (Windows), captures output, and enforces the timeout.
+	// argv/envp slices are passed as raw byte buffers together with the element
+	// stride and the byte offset of the `data` pointer field, so the C side can
+	// iterate generically without assuming the in-memory layout of nolang strings
+	// (which differs between build modes).
+	if fnName == "process-run-capture" && hasArgs && nArgs >= 6 {
+		a := evalArgs()
+		argvVec := g.sliceEvalArgToPtr(sb, a[0])
+		envpVec := g.sliceEvalArgToPtr(sb, a[1])
+		dirPtr := g.nullTerminateStrArg(sb, a[2], expr.Arguments[2])
+		stdinPtr := g.nullTerminateStrArg(sb, a[3], expr.Arguments[3])
+		stdinStrPtr := g.strLongPtr(sb, a[3])
+		stdinLen := g.extractStrLen(sb, stdinStrPtr)
+		timeoutVal := a[4]
+		mergeVal := a[5]
+		outStr := g.tmpReg("procrun.out.str")
+		statusLoad := g.tmpReg("procrun.status.load")
+		if sb != nil {
+			// Extract len + data pointer from the argv %vec.
+			argvLenGEP := g.tmpReg("procrun.argv.len.gep")
+			argvLen := g.tmpReg("procrun.argv.len")
+			argvDataGEP := g.tmpReg("procrun.argv.data.gep")
+			argvData := g.tmpReg("procrun.argv.data")
+			sb.WriteString(fmt.Sprintf("%s%s = getelementptr %%vec, %%vec* %s, i32 0, i32 0\n", g.indent(), argvLenGEP, argvVec))
+			sb.WriteString(fmt.Sprintf("%s%s = load i64, i64* %s\n", g.indent(), argvLen, argvLenGEP))
+			sb.WriteString(fmt.Sprintf("%s%s = getelementptr %%vec, %%vec* %s, i32 0, i32 2\n", g.indent(), argvDataGEP, argvVec))
+			argvData = g.loadDataPtrField(sb, argvDataGEP)
+			// Extract len + data pointer from the envp %vec.
+			envpLenGEP := g.tmpReg("procrun.envp.len.gep")
+			envpLen := g.tmpReg("procrun.envp.len")
+			envpDataGEP := g.tmpReg("procrun.envp.data.gep")
+			envpData := g.tmpReg("procrun.envp.data")
+			sb.WriteString(fmt.Sprintf("%s%s = getelementptr %%vec, %%vec* %s, i32 0, i32 0\n", g.indent(), envpLenGEP, envpVec))
+			sb.WriteString(fmt.Sprintf("%s%s = load i64, i64* %s\n", g.indent(), envpLen, envpLenGEP))
+			sb.WriteString(fmt.Sprintf("%s%s = getelementptr %%vec, %%vec* %s, i32 0, i32 2\n", g.indent(), envpDataGEP, envpVec))
+			envpData = g.loadDataPtrField(sb, envpDataGEP)
+			// Element stride (sizeof %str-long) and byte offset of the data pointer
+			// field, computed at compile time so the C side stays layout-agnostic.
+			strideGEP := g.tmpReg("procrun.stride.gep")
+			stride := g.tmpReg("procrun.stride")
+			dataOffGEP := g.tmpReg("procrun.dataoff.gep")
+			dataOff := g.tmpReg("procrun.dataoff")
+			sb.WriteString(fmt.Sprintf("%s%s = getelementptr %%str-long, %%str-long* null, i32 1\n", g.indent(), strideGEP))
+			sb.WriteString(fmt.Sprintf("%s%s = ptrtoint %%str-long* %s to i64\n", g.indent(), stride, strideGEP))
+			sb.WriteString(fmt.Sprintf("%s%s = getelementptr %%str-long, %%str-long* null, i32 0, i32 2\n", g.indent(), dataOffGEP))
+			sb.WriteString(fmt.Sprintf("%s%s = ptrtoint %%str-long* %s to i64\n", g.indent(), dataOff, dataOffGEP))
+			// Output allocas passed by reference to the C runtime.
+			outDataPtr := g.tmpReg("procrun.out.data")
+			outLen := g.tmpReg("procrun.out.len")
+			status := g.tmpReg("procrun.status")
+			outDataLoad := g.tmpReg("procrun.out.data.load")
+			outLenLoad := g.tmpReg("procrun.out.len.load")
+			sb.WriteString(fmt.Sprintf("%s%s = alloca i8*\n", g.indent(), outDataPtr))
+			sb.WriteString(fmt.Sprintf("%s%s = alloca i64\n", g.indent(), outLen))
+			sb.WriteString(fmt.Sprintf("%s%s = alloca i64\n", g.indent(), status))
+			// Call the C runtime. Argument order matches runtime/process.c:
+			// argv_data, argv_len, envp_data, envp_len, stride, data_off, dir,
+			// stdin_buf, stdin_len, timeout_ms, merge_err, out_data, out_len, status.
+		sb.WriteString(fmt.Sprintf("%scall void @nolang.process_run(i8* %s, i64 %s, i8* %s, i64 %s, i64 %s, i64 %s, i8* %s, i8* %s, i64 %s, i64 %s, i64 %s, i8** %s, i64* %s, i64* %s)\n",
+			g.indent(), argvData, argvLen, envpData, envpLen, stride, dataOff,
+			dirPtr, stdinPtr, stdinLen, timeoutVal, mergeVal, outDataPtr, outLen, status))
+			// Load the outputs returned by the C runtime.
+			sb.WriteString(fmt.Sprintf("%s%s = load i8*, i8** %s\n", g.indent(), outDataLoad, outDataPtr))
+			sb.WriteString(fmt.Sprintf("%s%s = load i64, i64* %s\n", g.indent(), outLenLoad, outLen))
+			sb.WriteString(fmt.Sprintf("%s%s = load i64, i64* %s\n", g.indent(), statusLoad, status))
+			// Wrap (out_data, out_len) into a nolang %str-long (cap = len).
+			sb.WriteString(fmt.Sprintf("%s%s = alloca %%str-long\n", g.indent(), outStr))
+			olLenGEP := g.tmpReg("procrun.o.len.gep")
+			sb.WriteString(fmt.Sprintf("%s%s = getelementptr %%str-long, %%str-long* %s, i32 0, i32 0\n", g.indent(), olLenGEP, outStr))
+			sb.WriteString(fmt.Sprintf("%sstore i64 %s, i64* %s\n", g.indent(), outLenLoad, olLenGEP))
+			olCapGEP := g.tmpReg("procrun.o.cap.gep")
+			sb.WriteString(fmt.Sprintf("%s%s = getelementptr %%str-long, %%str-long* %s, i32 0, i32 1\n", g.indent(), olCapGEP, outStr))
+			sb.WriteString(fmt.Sprintf("%sstore i64 %s, i64* %s\n", g.indent(), outLenLoad, olCapGEP))
+			olDataGEP := g.tmpReg("procrun.o.data.gep")
+			sb.WriteString(fmt.Sprintf("%s%s = getelementptr %%str-long, %%str-long* %s, i32 0, i32 2\n", g.indent(), olDataGEP, outStr))
+			g.storeDataPtrField(sb, outDataLoad, olDataGEP)
+		}
+		// 2nd return value (status) carried via lastBuiltinExtra (consumed by the
+		// caller at outIdx == 1 for multi-result builtins).
+		g.lastBuiltinExtra = statusLoad
+		return outStr
 	}
 
 	// ═══════════════════════════════════════════════

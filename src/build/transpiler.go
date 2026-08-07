@@ -3806,8 +3806,25 @@ func collectStringSizeMapFromStmt(stmt parser.Statement, strSizes map[string]int
 		}
 	}
 }
-// validateArrayBounds 編譯期陣列邊界檢查
-// 檢查所有 IndexExpression 中的常數索引是否超出陣列長度
+
+// isSliceTypeOrOptionSlice reports whether a type is a slice ([]T) or an
+// option wrapping a slice (?[]T). Used to track slice-typed parameters and
+// results so that .len = assignments are rejected.
+func isSliceTypeOrOptionSlice(t parser.Type) bool {
+	if t == nil {
+		return false
+	}
+	if _, ok := t.(*parser.SliceType); ok {
+		return true
+	}
+	if nt, ok := t.(*parser.NullableType); ok {
+		if _, ok := nt.Type.(*parser.SliceType); ok {
+			return true
+		}
+	}
+	return false
+}
+
 // isStringExprForCollect is a stricter version of isStringExpr used during the
 // string size map collection phase. Unlike isStringExpr (which defers unknown
 // types to LLVM), this function only returns true for expressions that are
@@ -4265,22 +4282,33 @@ func validateStmtArrayBounds(stmt parser.Statement, arraySizes map[string]int64,
 		// and i64 in another). Only include this function's parameters, results,
 		// and local variables — not global constants or other functions' variables.
 		funcStringSizes := make(map[string]int64)
+		funcSliceSizes := make(map[string]int64)
 		for _, p := range s.Parameters {
 			if p.Type != nil && (p.Type.String() == "str") {
 				funcStringSizes[p.Name] = 0
+			}
+			// Track slice-typed parameters ([]T and ?[]T) so that .len =
+			// assignments are rejected. Skip 'self' to allow vec.truncate/extend
+			// and other low-level slice methods to modify .len internally.
+			if p.Name != "self" && isSliceTypeOrOptionSlice(p.Type) {
+				funcSliceSizes[p.Name] = 0
 			}
 		}
 		for _, p := range s.Results {
 			if p.Type != nil && (p.Type.String() == "str") {
 				funcStringSizes[p.Name] = 0
 			}
+			if isSliceTypeOrOptionSlice(p.Type) {
+				funcSliceSizes[p.Name] = 0
+			}
 		}
 		if s.Body != nil {
 			for _, ss := range s.Body.Statements {
 				collectStringSizeMapFromStmt(ss, funcStringSizes)
+				collectSliceSizeMapFromStmt(ss, funcSliceSizes)
 			}
 			for _, ss := range s.Body.Statements {
-				if err := validateStmtArrayBounds(ss, arraySizes, sliceSizes, funcStringSizes, varTypes); err != nil {
+				if err := validateStmtArrayBounds(ss, arraySizes, funcSliceSizes, funcStringSizes, varTypes); err != nil {
 					return err
 				}
 			}
@@ -4392,13 +4420,16 @@ func validateExprArrayBounds(expr parser.Expression, arraySizes map[string]int64
 		}
 		return validateExprArrayBounds(e.Index, arraySizes, sliceSizes, stringSizes, varTypes)
 	case *parser.AssignExpression:
-		// array.len = val / string.len = val → 不允許修改唯讀的 len 欄位
-		// 注意：slice 的 len 欄位允許修改（用於截斷或擴展，runtime 支援）
+		// array.len = val / slice.len = val / string.len = val → 不允許修改唯讀的 len 欄位
+		// 使用 str.truncate(n) 或 []t.truncate(n) 替代直接修改 .len
 		if dot, ok := e.Left.(*parser.DotExpression); ok {
 			if dot.Property == "len" {
 				if ident, ok := dot.Receiver.(*parser.Identifier); ok {
 					if _, exists := arraySizes[ident.Value]; exists {
 						return fmt.Errorf("cannot modify read-only field 'len' of array '%s'", ident.Value)
+					}
+					if _, exists := sliceSizes[ident.Value]; exists {
+						return fmt.Errorf("cannot modify read-only field 'len' of slice '%s'", ident.Value)
 					}
 					if _, exists := stringSizes[ident.Value]; exists {
 						return fmt.Errorf("cannot modify read-only field 'len' of string '%s'", ident.Value)

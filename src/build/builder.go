@@ -2,6 +2,7 @@ package build
 
 import (
 	"bytes"
+	"embed"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -18,6 +19,9 @@ import (
 	"github.com/lizongying/nolang/lexer"
 	"github.com/lizongying/nolang/parser"
 )
+
+//go:embed runtime
+var processRuntimeC embed.FS
 
 // DetectTarget 根据当前运行平台返回对应的 target triple。
 // 用于 no build/run/test 未指定 -target 时的默认值。
@@ -38,12 +42,18 @@ func DetectTarget() string {
 	}
 
 	// 映射GOOS到LLVM系统名
+	//
+	// 注意：macOS 必须使用 Apple 的 darwin 环境（apple-darwin / apple-macosx），
+	// 不能用 "macos-gnu"。gnu 环境会让 clang 走 Linux/ELF 风格的标头与 sysroot
+	// 搜索路径，从而跳过 macOS SDK，导致 <stdlib.h> 等系统标头找不到
+	// （process_runtime.c 等任何内嵌 C 在链接阶段都会编译失败）。
+	// Linux 用 linux-gnu、Windows 用 windows-gnu（MinGW）均正确。
 	var llvmOS string
 	switch osName {
 	case "linux":
 		llvmOS = "linux-gnu"
 	case "darwin":
-		llvmOS = "macos-gnu"
+		llvmOS = "apple-darwin"
 	case "windows":
 		llvmOS = "windows-gnu"
 	default:
@@ -586,7 +596,18 @@ func buildLLVMInternal(code string, fileName string, outPath string, cc string, 
 		if target != "" {
 			clangArgs = append(clangArgs, "--target="+target)
 		}
-		clangArgs = append(clangArgs, sPath, "-o", outPath)
+		// Link the cross-platform process runtime (provides @nolang.process_run).
+		// Read from the embedded FS and written next to the generated
+		// assembly so clang compiles+links it.
+		procCPath := filepath.Join(tempDir, "process_runtime.c")
+		cBytes, rErr := processRuntimeC.ReadFile("runtime/process.c")
+		if rErr != nil {
+			return fmt.Errorf("read process runtime C: %w", rErr)
+		}
+		if wErr := os.WriteFile(procCPath, cBytes, 0644); wErr != nil {
+			return fmt.Errorf("write process runtime C: %w", wErr)
+		}
+		clangArgs = append(clangArgs, procCPath, sPath, "-o", outPath)
 		for _, lib := range linkLibs {
 			clangArgs = append(clangArgs, "-l"+lib)
 		}

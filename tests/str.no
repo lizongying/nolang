@@ -9,6 +9,7 @@ a = 'cabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcab
 ; print(a.len)
 
 ; compilation error: cannot modify read-only field 'len' of string 'a'
+; Use a.truncate(n) instead (sets len = max(0, min(len, n)))
 ; a.len = 2
 
 ; a[0] = 2

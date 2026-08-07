@@ -234,6 +234,7 @@ type Generator struct {
 	structTypes            map[string][]structField        // struct name → fields
 	structTypeLLVM         string                          // 當前正在生成的 struct LLVM type name
 	globalVars             map[string]bool                 // module-level vars that should be LLVM globals
+	globalFirstAssigned    map[string]bool                 // 全局变量是否已做过首次（初始化）赋值；首次不释放旧值（旧值是字面量/zeroinitializer，非堆）
 	embedVars              map[string]bool                 // module-level embed vars (read-only, excluded from heap free)
 	mainFileNames          map[string]bool                 // names (vars+funcs) from the main file being compiled (not imported modules)
 	reassignedVars         map[string]bool                 // module-level vars that are reassigned (not constants)
@@ -825,6 +826,7 @@ func (g *Generator) Generate(program *parser.Program) string {
 	g.structTypes = make(map[string][]structField)
 	g.arrayElemTypes = make(map[string]string)
 	g.globalVars = make(map[string]bool)
+	g.globalFirstAssigned = make(map[string]bool)
 	g.embedVars = make(map[string]bool)
 	g.ssaTypes = make(map[string]string)
 	g.unionAliases = make(map[string][]string)

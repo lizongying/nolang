@@ -9,3 +9,12 @@ a = [1]
 ; compilation error: index 1 out of bounds for array 'a' of size 1
 ; a[10] = 3
 ; a.full(8)
+
+; ── slice .len = rejection ──
+; []byte (and all []T) types reject direct .len = assignment.
+; Use .truncate(n) instead (sets len = max(0, min(len, n))).
+b []byte = with-len(4)
+; compilation error: cannot modify read-only field 'len' of slice 'b'
+; b.len = 2
+; correct: use truncate instead
+b.truncate(2)

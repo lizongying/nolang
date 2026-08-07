@@ -344,12 +344,10 @@
     sum = acc
 }
 
-; []t.truncate: 截斷到 cnt 個元素，cnt >= .len 時無操作
+; []t.truncate: 截斷到 cnt 個元素，cnt < 0 時視為 0，cnt >= .len 時無操作
 []t.truncate = (cnt i64) {
-    {
-        cnt < .len -> .len = cnt
-        ->
-    }
+    cnt < 0 -> cnt = 0
+    cnt < .len -> .len = cnt
 }
 
 ; []t.extend: 追加另一切片所有元素

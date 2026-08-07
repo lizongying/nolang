@@ -105,7 +105,7 @@ parse-line = (s str, max-fields i64 = 1024) (fields []str) {
         fields[n], pos = parse-field(s, pos)
         n = n + 1
     } (pos < s.len && n < max-fields)
-    fields.len = n
+    fields.truncate(n)
 }
 
 ; encode-field: 將一個欄位編碼為 CSV 格式

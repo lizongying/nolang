@@ -59,6 +59,14 @@ func (g *Generator) writeDeclarations(sb *strings.Builder) {
 	sb.WriteString("declare void @llvm.stackrestore.p0(ptr)\n")
 	sb.WriteString("declare i8* @getenv(i8*)\n")
 	sb.WriteString("declare i32 @setenv(i8*, i8*, i32)\n")
+	// nolang.process_run: cross-platform subprocess runner (see src/build/runtime/process.c).
+	// argv/envp slices are passed as raw byte buffers plus element stride and the byte
+	// offset of each element's `data` pointer field, so the C side can iterate them
+	// without assuming nolang's string layout. Output is returned via out_data/out_len;
+	// the caller wraps it into a %str-long. status: >=0 exit code, -1 start failure, -2 timeout.
+	if goos != "wasi" {
+		sb.WriteString("declare void @nolang.process_run(i8*, i64, i8*, i64, i64, i64, i8*, i8*, i64, i64, i64, i8**, i64*, i64*)\n")
+	}
 	if goos == "windows" {
 		sb.WriteString("declare i8* @_getcwd(i8*, i64)\n")
 		sb.WriteString("declare i32 @_chdir(i8*)\n")

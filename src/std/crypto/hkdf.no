@@ -167,7 +167,7 @@ hkdf-expand-label = (prk [32]byte, label str, context []byte, out-len i64) (okm 
     i <- [0..context.len): {
         info[pos + i] = context[i]
     }
-    info.len = info-len
+    info.truncate(info-len)
 
     okm = hkdf-expand(prk, info, out-len)
 }

@@ -1432,7 +1432,7 @@ func (g *Generator) generateCallExpression(sb *strings.Builder, expr *parser.Cal
 				if dot, isDot := expr.Function.(*parser.DotExpression); isDot && !isModuleQualified {
 					fwdReceiver = dot.Receiver
 				}
-				if r := g.genForwardFunc(sb, m.ForwardFunc, expr, fwdReceiver); r != "" || m.ForwardFunc == "memcpy" || m.ForwardFunc == "memset" || m.ForwardFunc == "str-clear" {
+				if r := g.genForwardFunc(sb, m.ForwardFunc, expr, fwdReceiver); r != "" || m.ForwardFunc == "memcpy" || m.ForwardFunc == "memset" || m.ForwardFunc == "str-clear" || m.ForwardFunc == "str-truncate" {
 					return r
 				}
 				// If genForwardFunc didn't handle it, try callBuiltin with the
@@ -1928,7 +1928,7 @@ func (g *Generator) generateCallExpression(sb *strings.Builder, expr *parser.Cal
 		if !hasNolangImpl {
 			if m := builtin.FindBuiltinMethod(fnName); m != nil {
 				if m.ForwardFunc != "" {
-					if r := g.genForwardFunc(sb, m.ForwardFunc, expr, methodReceiver); r != "" || m.ForwardFunc == "memcpy" || m.ForwardFunc == "memset" || m.ForwardFunc == "arr-zero" || m.ForwardFunc == "str-clear" || m.ForwardFunc == "vec-clear" || m.ForwardFunc == "vec-push" {
+					if r := g.genForwardFunc(sb, m.ForwardFunc, expr, methodReceiver); r != "" || m.ForwardFunc == "memcpy" || m.ForwardFunc == "memset" || m.ForwardFunc == "arr-zero" || m.ForwardFunc == "str-clear" || m.ForwardFunc == "str-truncate" || m.ForwardFunc == "vec-clear" || m.ForwardFunc == "vec-push" {
 						return r
 					}
 				}
@@ -2713,6 +2713,22 @@ func (g *Generator) generateCallExpression(sb *strings.Builder, expr *parser.Cal
 	typedArgs := make([]string, 0, len(nonVariadicArgs)+1)
 	for i, arg := range nonVariadicArgs {
 		typedArgs = append(typedArgs, genTypedArg(arg, i))
+	}
+
+	// Static method call fix: when a user-defined type method (Type.method())
+	// is called without an instance receiver, the function definition still
+	// includes self as the first parameter (from parseMethodDefinition), but
+	// methodReceiver is nil and self is not prepended. Detect this mismatch
+	// by comparing funcParamCount (includes self) with the number of provided
+	// args. If exactly 1 arg is missing (self), add a dummy null self pointer.
+	if methodReceiver == nil && g.funcParamCount != nil && sb != nil && !isVariadic {
+		if pc, ok := g.funcParamCount[fnName]; ok && pc == len(nonVariadicArgs)+1 {
+			g.tmpIdx++
+			dummySelf := fmt.Sprintf("%%dummy.self.%d", g.tmpIdx)
+			sb.WriteString(fmt.Sprintf("%s%s = alloca i64\n", g.indent(), dummySelf))
+			sb.WriteString(fmt.Sprintf("%sstore i64 0, i64* %s\n", g.indent(), dummySelf))
+			typedArgs = append([]string{"i64* " + dummySelf}, typedArgs...)
+		}
 	}
 
 	// If variadic, pack variadic args into a %vec struct
@@ -3752,6 +3768,44 @@ func (g *Generator) genForwardFunc(sb *strings.Builder, forwardFunc string, expr
 		if sb != nil {
 			sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%str-long, %%str-long* %s, i32 0, i32 0\n", g.indent(), lenGEP, recvAddr))
 			sb.WriteString(fmt.Sprintf("%sstore i64 0, i64* %s\n", g.indent(), lenGEP))
+		}
+		return ""
+
+	case "str-truncate":
+		// str.truncate(n) — set len = max(0, min(len, n)) in-place, cap/ptr unchanged
+		// str-long: field 0 is i64 len
+		if len(args) < 2 {
+			return ""
+		}
+		ident, ok := args[0].(*parser.Identifier)
+		if !ok {
+			return ""
+		}
+		recvName := ident.Value
+		recvAddr := g.varAddr(recvName)
+		nVal := g.evalI64Arg(sb, args[1])
+		g.tmpIdx++
+		lenGEP := fmt.Sprintf("%%st.len.gep.%d", g.tmpIdx)
+		g.tmpIdx++
+		curLen := fmt.Sprintf("%%st.cur-len.%d", g.tmpIdx)
+		g.tmpIdx++
+		negCmp := fmt.Sprintf("%%st.neg-cmp.%d", g.tmpIdx)
+		g.tmpIdx++
+		clampedN := fmt.Sprintf("%%st.clamped-n.%d", g.tmpIdx)
+		g.tmpIdx++
+		cmpReg := fmt.Sprintf("%%st.cmp.%d", g.tmpIdx)
+		g.tmpIdx++
+		finalLen := fmt.Sprintf("%%st.final-len.%d", g.tmpIdx)
+		if sb != nil {
+			sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%str-long, %%str-long* %s, i32 0, i32 0\n", g.indent(), lenGEP, recvAddr))
+			sb.WriteString(fmt.Sprintf("%s%s = load i64, i64* %s\n", g.indent(), curLen, lenGEP))
+			// Clamp n to [0, ∞): if n < 0, use 0
+			sb.WriteString(fmt.Sprintf("%s%s = icmp slt i64 %s, 0\n", g.indent(), negCmp, nVal))
+			sb.WriteString(fmt.Sprintf("%s%s = select i1 %s, i64 0, i64 %s\n", g.indent(), clampedN, negCmp, nVal))
+			// len = min(clampedN, curLen)
+			sb.WriteString(fmt.Sprintf("%s%s = icmp slt i64 %s, %s\n", g.indent(), cmpReg, clampedN, curLen))
+			sb.WriteString(fmt.Sprintf("%s%s = select i1 %s, i64 %s, i64 %s\n", g.indent(), finalLen, cmpReg, clampedN, curLen))
+			sb.WriteString(fmt.Sprintf("%sstore i64 %s, i64* %s\n", g.indent(), finalLen, lenGEP))
 		}
 		return ""
 

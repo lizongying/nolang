@@ -104,7 +104,7 @@ hmac-sha256-vec = (key []byte, msg []byte) (out []byte) {
     i <- [0..32): {
         out[i] = h[i]
     }
-    out.len = 32
+    out.truncate(32)
 }
 
 ; ─── HMAC-SHA1 ──────────────────────────────────

@@ -191,7 +191,7 @@ bytes-cat = (a []byte, b []byte) (out []byte) {
     i <- [0..bn): {
         out[an + i] = b[i]
     }
-    out.len = an + bn
+    out.truncate(an + bn)
 }
 
 ; ═══════════════════════════════════════════════
@@ -214,7 +214,7 @@ bytes-to-bn = (data []byte) (out []i64) {
         shift = (byte-from-lsb % 4) * 8
         out[limb] = out[limb] | ((data[i]) << shift)
     }
-    out.len = limb-count
+    out.truncate(limb-count)
 }
 
 ; bn-to-bytes: []i64（little-endian base 2^32）→ big-endian 位元組陣列
@@ -238,7 +238,7 @@ bn-to-bytes = (num []i64) (out []byte) {
         }
         out-n = out-n - 1
     } (out-n > 1 && out[0] == 0)
-    out.len = out-n
+    out.truncate(out-n)
 }
 
 ; ═══════════════════════════════════════════════
@@ -452,7 +452,7 @@ conn.encrypt-record = (ct i64, data []byte) (ok bool) {
         plain[n + i] = mac[i]
     }
     plain-len = n + 32
-    plain.len = plain-len
+    plain.truncate(plain-len)
 
     ; 3. PKCS#7 填充
     padded []byte
@@ -481,7 +481,7 @@ conn.encrypt-record = (ct i64, data []byte) (ok bool) {
     i <- [0..padded.len): {
         rec[5 + 16 + i] = cipher[i]
     }
-    rec.len = 5 + rec-len
+    rec.truncate(5 + rec-len)
 
     ; 7. 發送
     sent = net.net-send(.fd, rec, 5 + rec-len)
@@ -512,7 +512,7 @@ conn.decrypt-record = (buf []byte, expected-ct i64) (ct i64, out []byte) {
     i <- [0..cipher-len): {
         cipher[i] = buf[5 + 16 + i]
     }
-    cipher.len = cipher-len
+    cipher.truncate(cipher-len)
 
     ; AES-128-CBC 解密
     plain []byte
@@ -558,7 +558,7 @@ conn.decrypt-record = (buf []byte, expected-ct i64) (ct i64, out []byte) {
     i <- [0..content-len): {
         out[i] = plain[i]
     }
-    out.len = content-len
+    out.truncate(content-len)
     ct = expected-ct
     .read-seq = .read-seq + 1
 }
@@ -601,7 +601,7 @@ rsa-pkcs1-encrypt = (msg []byte, mod-bytes []byte, exp i64) (out []byte) {
         padded[3 + ps-len + i] = msg[i]
     }
     padded-n = mod-n
-    padded.len = padded-n
+    padded.truncate(padded-n)
 
     ; 轉換為大整數
     m-bn []i64
@@ -789,7 +789,7 @@ conn.read-certificate = (cert-out []byte) (ok bool) {
     i <- [0..cert-len): {
         cert-out[i] = buf[pos + i]
     }
-    cert-out.len = cert-len
+    cert-out.truncate(cert-len)
     ok = true
 }
 
@@ -975,7 +975,7 @@ conn.derive-keys = (premaster []byte) {
     i <- [0..32): {
         seed[32 + i] = .server-random[i]
     }
-    seed.len = 64
+    seed.truncate(64)
 
     .master-secret = prf(premaster, 'master secret', seed, 48)
 
@@ -988,7 +988,7 @@ conn.derive-keys = (premaster []byte) {
     i <- [0..32): {
         ks[32 + i] = .client-random[i]
     }
-    ks.len = 64
+    ks.truncate(64)
 
     key-block []byte
     key-block = prf(.master-secret, 'key expansion', ks, 96)
@@ -1225,7 +1225,7 @@ conn.send-client-hello-13 = () (ok bool) {
     put-u24(hs, 1, body-len)
 
     ; 設定實際長度
-    hs.len = pos
+    hs.truncate(pos)
 
     ; debug: 列印 ClientHello 內容
     dump = ''
@@ -1548,7 +1548,7 @@ conn.encrypt-record-13 = (ct i64, data []byte, key [16]byte, iv [12]byte, seq i6
     }
     plain[n] = ct & 255
     plain-len = n + 1
-    plain.len = plain-len
+    plain.truncate(plain-len)
 
     ; 構建 nonce
     nonce [12]byte
@@ -1561,7 +1561,7 @@ conn.encrypt-record-13 = (ct i64, data []byte, key [16]byte, iv [12]byte, seq i6
 
     ; 密文長度 = plain_len + 16 (tag)
     put-u16(aad, 3, plain-len + 16)
-    aad.len = 5
+    aad.truncate(5)
 
     ; AES-128-GCM 加密
     sealed []byte
@@ -1576,7 +1576,7 @@ conn.encrypt-record-13 = (ct i64, data []byte, key [16]byte, iv [12]byte, seq i6
     i <- [0..rec-len): {
         rec[5 + i] = sealed[i]
     }
-    rec.len = 5 + rec-len
+    rec.truncate(5 + rec-len)
 
     ; 發送
     sent = net.net-send(.fd, rec, 5 + rec-len)
@@ -1700,7 +1700,7 @@ conn.read-encrypted-handshake-13 = () (msg-type i64, msg-data []byte) {
     i <- [0..msg-len): {
         msg-data[i] = .hs-plain-buf[pos + 4 + i]
     }
-    msg-data.len = msg-len
+    msg-data.truncate(msg-len)
 
     ; 構建完整的 handshake message（含標頭）用於 transcript hash
     full-msg []byte
@@ -1712,7 +1712,7 @@ conn.read-encrypted-handshake-13 = () (msg-type i64, msg-data []byte) {
     i <- [0..msg-len): {
         full-msg[4 + i] = msg-data[i]
     }
-    full-msg.len = 4 + msg-len
+    full-msg.truncate(4 + msg-len)
 
     ; 追加到交握緩衝區（用於 transcript hash）
     .append-hs(full-msg)
@@ -1823,7 +1823,7 @@ conn.send-finished-13 = () (ok bool) {
     i <- [0..32): {
         hs[4 + i] = verify[i]
     }
-    hs.len = 36
+    hs.truncate(36)
 
     ; 追加到交握緩衝區
     .append-hs(hs)
@@ -2434,7 +2434,7 @@ server-conn.send-server-hello = () (ok bool) {
     ; 填入 length
     body-len = pos - 4
     put-u24(hs, 1, body-len)
-    hs.len = pos
+    hs.truncate(pos)
 
     .append-hs(hs)
     send-raw(.fd, TLS-CT-HANDSHAKE, hs)
@@ -2467,7 +2467,7 @@ server-conn.send-certificate = () (ok bool) {
     i <- [0..cert-len): {
         hs[10 + i] = .cert[i]
     }
-    hs.len = hs-len
+    hs.truncate(hs-len)
 
     .append-hs(hs)
     send-raw(.fd, TLS-CT-HANDSHAKE, hs)
@@ -2483,7 +2483,7 @@ server-conn.send-server-hello-done = () (ok bool) {
     hs []byte = with-len(4)
     hs[0] = TLS-HS-SERVER-HELLO-DONE
     put-u24(hs, 1, 0)
-    hs.len = 4
+    hs.truncate(4)
 
     .append-hs(hs)
     send-raw(.fd, TLS-CT-HANDSHAKE, hs)
@@ -2561,7 +2561,7 @@ rsa-pkcs1-decrypt = (ciphertext []byte, n []byte, d []byte) (out []byte) {
     i <- [0..msg-len): {
         out[i] = m-bytes[sep-pos + 1 + i]
     }
-    out.len = msg-len
+    out.truncate(msg-len)
 }
 
 ; server-conn.read-client-key-exchange: 讀取 ClientKeyExchange 並解密 premaster
@@ -2589,7 +2589,7 @@ server-conn.read-client-key-exchange = () (ok bool) {
     i <- [0..enc-len): {
         enc-premaster[i] = buf[11 + i]
     }
-    enc-premaster.len = enc-len
+    enc-premaster.truncate(enc-len)
 
     ; RSA 解密
     premaster []byte
@@ -2604,7 +2604,7 @@ server-conn.read-client-key-exchange = () (ok bool) {
     i <- [0..48): {
         fixed-premaster[i] = premaster[i]
     }
-    fixed-premaster.len = 48
+    fixed-premaster.truncate(48)
 
     ; 推導金鑰
     .derive-keys(fixed-premaster)
@@ -2624,7 +2624,7 @@ server-conn.derive-keys = (premaster []byte) {
     i <- [0..32): {
         seed[32 + i] = .server-random[i]
     }
-    seed.len = 64
+    seed.truncate(64)
 
     .master-secret = prf(premaster, 'master secret', seed, 48)
 
@@ -2636,7 +2636,7 @@ server-conn.derive-keys = (premaster []byte) {
     i <- [0..32): {
         ks[32 + i] = .client-random[i]
     }
-    ks.len = 64
+    ks.truncate(64)
 
     key-block []byte
     key-block = prf(.master-secret, 'key expansion', ks, 96)
@@ -2698,7 +2698,7 @@ server-conn.encrypt-record = (ct i64, data []byte) (ok bool) {
     i <- [0..32): {
         plain[n + i] = mac[i]
     }
-    plain.len = n + 32
+    plain.truncate(n + 32)
 
     ; 3. PKCS#7 填充
     padded []byte
@@ -2728,7 +2728,7 @@ server-conn.encrypt-record = (ct i64, data []byte) (ok bool) {
     i <- [0..padded.len): {
         rec[5 + 16 + i] = cipher[i]
     }
-    rec.len = 5 + rec-len
+    rec.truncate(5 + rec-len)
 
     ; 7. 發送
     sent = net.net-send(.fd, rec, 5 + rec-len)
@@ -2760,7 +2760,7 @@ server-conn.decrypt-record = (buf []byte, expected-ct i64) (ct i64, out []byte) 
     i <- [0..cipher-len): {
         cipher[i] = buf[5 + 16 + i]
     }
-    cipher.len = cipher-len
+    cipher.truncate(cipher-len)
 
     ; AES-128-CBC 解密
     plain []byte
@@ -2805,7 +2805,7 @@ server-conn.decrypt-record = (buf []byte, expected-ct i64) (ct i64, out []byte) 
     i <- [0..data-len): {
         out[i] = plain[i]
     }
-    out.len = data-len
+    out.truncate(data-len)
     ct = expected-ct
     .read-seq = .read-seq + 1
 }
@@ -2907,7 +2907,7 @@ server-conn.send-finished = () (ok bool) {
     i <- [0..TLS-FINISHED-SIZE): {
         hs[4 + i] = verify[i]
     }
-    hs.len = 4 + TLS-FINISHED-SIZE
+    hs.truncate(4 + TLS-FINISHED-SIZE)
 
     ; 追加到交握緩衝區（在加密之前）
     .append-hs(hs)
@@ -3017,7 +3017,7 @@ server-conn.send-server-hello-13 = () (ok bool) {
     ; 填入 handshake message length
     body-len = pos - 4
     put-u24(hs, 1, body-len)
-    hs.len = pos
+    hs.truncate(pos)
 
     ; 追加到交握緩衝區
     .append-hs(hs)
@@ -3223,7 +3223,7 @@ server-conn.encrypt-record-13 = (ct i64, data []byte, key [16]byte, iv [12]byte,
     }
     plain[n] = ct & 255
     plain-len = n + 1
-    plain.len = plain-len
+    plain.truncate(plain-len)
 
     ; 構建 nonce
     nonce [12]byte
@@ -3234,7 +3234,7 @@ server-conn.encrypt-record-13 = (ct i64, data []byte, key [16]byte, iv [12]byte,
     aad[0] = TLS-CT-APP-DATA & 255
     put-u16(aad, 1, TLS-VERSION)
     put-u16(aad, 3, plain-len + 16)
-    aad.len = 5
+    aad.truncate(5)
 
     ; AES-128-GCM 加密
     sealed []byte
@@ -3249,7 +3249,7 @@ server-conn.encrypt-record-13 = (ct i64, data []byte, key [16]byte, iv [12]byte,
     i <- [0..rec-len): {
         rec[5 + i] = sealed[i]
     }
-    rec.len = 5 + rec-len
+    rec.truncate(5 + rec-len)
 
     ; 發送
     sent = net.net-send(.fd, rec, 5 + rec-len)
@@ -3353,7 +3353,7 @@ server-conn.read-encrypted-handshake-13 = () (msg-type i64, msg-data []byte) {
     i <- [0..msg-len): {
         msg-data[i] = .hs-plain-buf[pos + 4 + i]
     }
-    msg-data.len = msg-len
+    msg-data.truncate(msg-len)
 
     full-msg []byte
     full-msg = with-len(4 + msg-len)
@@ -3364,7 +3364,7 @@ server-conn.read-encrypted-handshake-13 = () (msg-type i64, msg-data []byte) {
     i <- [0..msg-len): {
         full-msg[4 + i] = msg-data[i]
     }
-    full-msg.len = 4 + msg-len
+    full-msg.truncate(4 + msg-len)
 
     .append-hs(full-msg)
 
@@ -3381,7 +3381,7 @@ server-conn.send-encrypted-extensions-13 = () (ok bool) {
     hs[0] = TLS-HS-ENCRYPTED-EXTENSIONS
     put-u24(hs, 1, 2)
     put-u16(hs, 4, 0)
-    hs.len = 6
+    hs.truncate(6)
 
     ; 追加到交握緩衝區
     .append-hs(hs)
@@ -3422,7 +3422,7 @@ server-conn.send-certificate-13 = () (ok bool) {
 
     ; extensions length = 0
     put-u16(hs, 11 + cert-len, 0)
-    hs.len = hs-len
+    hs.truncate(hs-len)
 
     ; 追加到交握緩衝區
     .append-hs(hs)
@@ -3465,7 +3465,7 @@ server-conn.send-finished-13 = () (ok bool) {
     i <- [0..32): {
         hs[4 + i] = verify[i]
     }
-    hs.len = 36
+    hs.truncate(36)
 
     ; 追加到交握緩衝區（在加密之前）
     .append-hs(hs)

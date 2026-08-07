@@ -719,6 +719,21 @@ func (g *Generator) classifyFieldHeap(llvmType, elemType string) fieldHeapInfo {
 // 透過 classifyFieldHeap 統一分派，避免與 clone 路徑重複維護型別 switch。
 // name 為變數名，用於查詢 optionInnerTypes（option 釋放時需要）；
 // 遞迴場景（釋放 option 內部結構）可傳 ""，此時 %option 分支會走兜底路徑。
+// emitVarHeapFreeViaLocalCopy 先將變數當前值拷貝進一個局部 alloca，再釋放局部副本。
+// 用途：變數重賦值前的「釋放舊值」。若直接從變數位址 load 再釋放，opt -O3 會把後續
+// 賦值的 store 經 SROA/GVN 前向傳播到釋放點的 load，並據此消除釋放迴圈的 NULL 檢查，
+// 導致以 len!=0 但 data=NULL（或尚未寫入元素）的狀態解引用而崩潰。
+// 改從獨立的局部 alloca 釋放，opt 無法把變數的賦值 store 與 alloca 的初始 load 等同，
+// 從而保全「釋放的是賦值前的舊值」語意（含 NULL 檢查）。
+func (g *Generator) emitVarHeapFreeViaLocalCopy(sb *strings.Builder, varPtr, llvmType, elemType, name string) {
+	oldVal := g.tmpReg("freeold.val")
+	sb.WriteString(fmt.Sprintf("%s%s = load %s, %s* %s\n", g.indent(), oldVal, llvmType, llvmType, varPtr))
+	oldLocal := g.tmpReg("freeold")
+	sb.WriteString(fmt.Sprintf("%s%s = alloca %s\n", g.indent(), oldLocal, llvmType))
+	sb.WriteString(fmt.Sprintf("%sstore %s %s, %s* %s\n", g.indent(), llvmType, oldVal, llvmType, oldLocal))
+	g.emitVarHeapFree(sb, oldLocal, llvmType, elemType, name)
+}
+
 func (g *Generator) emitVarHeapFree(sb *strings.Builder, varPtr, llvmType, elemType, name string) {
 	info := g.classifyFieldHeap(llvmType, elemType)
 	switch info.kind {
@@ -1379,12 +1394,27 @@ func (g *Generator) emitDeepContainerFree(sb *strings.Builder, containerPtr, con
 		g.indent(), lenGEP, containerType, containerType, containerPtr))
 	lenReg := fmt.Sprintf("%%df.len.%d", tid)
 	sb.WriteString(fmt.Sprintf("%s%s = load i64, i64* %s\n", g.indent(), lenReg, lenGEP))
+
+	// Empty container (len == 0) owns no elements and no heap buffer, even if
+	// its data pointer is still NULL — e.g. a global sitting in its
+	// zeroinitializer state *before* its first assignment. This guard is
+	// load-bearing: opt -O3 can prove the data field is non-null from the
+	// `inbounds` field GEP and delete the NULL check below, turning a
+	// not-yet-initialized global container into a NULL-deref crash.
+	// Short-circuiting on len makes the free of such a container a no-op and
+	// cannot be eliminated by the optimizer.
+	lenZero := fmt.Sprintf("%%df.len.zero.%d", tid)
+	skipLabel := fmt.Sprintf("df.skip.%d", tid)
+	dataLoadLabel := fmt.Sprintf("df.dataload.%d", tid)
+	sb.WriteString(fmt.Sprintf("%s%s = icmp eq i64 %s, 0\n", g.indent(), lenZero, lenReg))
+	sb.WriteString(fmt.Sprintf("%sbr i1 %s, label %%%s, label %%%s\n", g.indent(), lenZero, skipLabel, dataLoadLabel))
+	g.emitLabel(sb, dataLoadLabel)
+
 	dataGEP := fmt.Sprintf("%%df.data.gep.%d", tid)
 	sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %s, %s* %s, i32 0, i32 %d\n",
 		g.indent(), dataGEP, containerType, containerType, containerPtr, dataFieldIdx))
 	dataLoad := g.loadDataPtrField(sb, dataGEP)
 	nullCmp := fmt.Sprintf("%%df.null.%d", tid)
-	skipLabel := fmt.Sprintf("df.skip.%d", tid)
 	loopStartLabel := fmt.Sprintf("df.loop.start.%d", tid)
 	sb.WriteString(fmt.Sprintf("%s%s = icmp eq i8* %s, null\n", g.indent(), nullCmp, dataLoad))
 	sb.WriteString(fmt.Sprintf("%sbr i1 %s, label %%%s, label %%%s\n", g.indent(), nullCmp, skipLabel, loopStartLabel))
@@ -1445,6 +1475,34 @@ func (g *Generator) freeOldHeapValue(sb *strings.Builder, stmt *parser.LetStatem
 	if stmt.IsSynthetic {
 		return
 	}
+	if os.Getenv("NOLANG_DBG_FOHV") != "" && name == "g" {
+		vstr := "<nil>"
+		if stmt.Value != nil {
+			vstr = fmt.Sprintf("%T", stmt.Value)
+		}
+		typ := stmt.Type
+		typStr := "<nil>"
+		if typ != nil {
+			typStr = fmt.Sprintf("%T", typ)
+		}
+		fmt.Fprintf(os.Stderr, "DBG fohv g: firstAssigned=%v value=%s type=%s\n", g.globalFirstAssigned[name], vstr, typStr)
+	}
+	// 全局變數首次（初始化）賦值：舊值是全局初始值 / 字符串字面量（rodata）/ zeroinitializer，
+	// 絕非堆數據。釋放它會 free rodata 崩潰（如 @HEX-UPPER 等 std 字符串常量全局），
+	// 或讓 opt -O3 把後續賦值的 len/data 前向傳播到釋放點的 load 而 NULL 解引用。
+	// 因此全局首次賦值一律跳過釋放舊值；後續重賦值才釋放舊堆值（下方兩條路徑處理）。
+	// 注意：必須同時要求「不是函數局部變數」(funcLocalNames 未登記)，否則同名局部
+	// 變數（如 std 庫 gcd/lcm 內的局部 g）會佔用「首次賦值」槽位，導致真正的全局
+	// g 被誤判為「後續重賦值」而發出致命的 free。
+	if g.globalVars != nil && g.globalVars[name] && (g.funcLocalNames == nil || !g.funcLocalNames[name]) {
+		if !g.globalFirstAssigned[name] {
+			g.globalFirstAssigned[name] = true
+			if os.Getenv("NOLANG_DBG_FOHV") != "" && name == "g" {
+				fmt.Fprintln(os.Stderr, "DBG fohv g: SKIP first-assign")
+			}
+			return
+		}
+	}
 	// 局部堆變數路徑
 	if g.heapVars != nil {
 		oldType, isHeap := g.heapVars[name]
@@ -1454,11 +1512,11 @@ func (g *Generator) freeOldHeapValue(sb *strings.Builder, stmt *parser.LetStatem
 				elemType = g.arrayElemTypes[name]
 			}
 			varIdx, hasIdx := g.heapVarIndex[name]
-			if !hasIdx {
-				// 無 varIdx，直接 free 舊值
-				g.emitVarHeapFree(sb, g.varAddr(name), oldType, elemType, name)
-				return
-			}
+		if !hasIdx {
+			// 無 varIdx，直接 free 舊值（拷貝到局部 alloca 再釋放，避免 opt 前向傳播）
+			g.emitVarHeapFreeViaLocalCopy(sb, g.varAddr(name), oldType, elemType, name)
+			return
+		}
 			if g.hasBranchMove && g.movedBitmapBase != "" {
 				// 有運行時 bitmap：生成 IR 檢查 bit
 				// bit=1 → 所有權已轉移，跳過 free（舊 data 不屬於此變數）
@@ -1477,7 +1535,8 @@ func (g *Generator) freeOldHeapValue(sb *strings.Builder, stmt *parser.LetStatem
 					g.cfgAddEffect(effect{Kind: effRemove, VarIdx: varIdx})
 					return
 				}
-				g.emitVarHeapFree(sb, g.varAddr(name), oldType, elemType, name)
+				// 拷貝到局部 alloca 再釋放，避免 opt 把後續賦值的前向傳播到釋放點 load
+				g.emitVarHeapFreeViaLocalCopy(sb, g.varAddr(name), oldType, elemType, name)
 			}
 			// CFG: 變數重賦值，清除 moved 狀態（effRemove）
 			// 覆蓋 bitmap 和直接 free 兩條路徑（上面 return 的路徑已單獨記錄）
@@ -1486,7 +1545,13 @@ func (g *Generator) freeOldHeapValue(sb *strings.Builder, stmt *parser.LetStatem
 		}
 	}
 	// 全局變數路徑：不在 heapVars 中（trackLocalHeapVar 跳過 globalVars），
-	// 用 moduleVarTypes/varTypes 查型別，無條件釋放舊值（全局無 moved 追蹤）。
+	// 用 moduleVarTypes/varTypes 查型別，釋放「當前（賦值前）」舊值（全局無 moved 追蹤）。
+	// 關鍵：先把舊值拷貝進一個局部 alloca，再釋放局部副本，而不是直接從 @g 重新讀取。
+	// 否則 opt -O3 會對「先釋放舊值、再賦值」做 SROA + 全域值編號，把後續賦值的
+	// len/data 常量前向傳播 / 下沉到釋放點的 load，導致以 len!=0 但 data=NULL
+	// 的狀態進入釋放迴圈而 NULL 解引用崩潰（甚至把 main 證明為 unreachable）。
+	// 釋放區域變數的 @free 引數依賴這次拷貝 load，opt 無法把賦值 store 移到 load 之前
+	// （那會釋放不同的指標，而 @free 對 opt 是不透明函數），從而保全「釋放舊值」語意。
 	if g.globalVars != nil && g.globalVars[name] && (g.funcLocalNames == nil || !g.funcLocalNames[name]) {
 		oldType := ""
 		if g.moduleVarTypes != nil {
@@ -1503,7 +1568,11 @@ func (g *Generator) freeOldHeapValue(sb *strings.Builder, stmt *parser.LetStatem
 			if elemType == "" && g.arrayElemTypes != nil {
 				elemType = g.arrayElemTypes[name]
 			}
-			g.emitVarHeapFree(sb, g.varAddr(name), oldType, elemType, name)
+			if os.Getenv("NOLANG_DBG_FOHV") != "" && name == "g" {
+				fmt.Fprintln(os.Stderr, "DBG fohv g: EMIT free old global")
+			}
+			// 拷貝到局部 alloca 再釋放，避免 opt 把後續賦值前向傳播到釋放點 load。
+			g.emitVarHeapFreeViaLocalCopy(sb, g.varAddr(name), oldType, elemType, name)
 		}
 	}
 }
