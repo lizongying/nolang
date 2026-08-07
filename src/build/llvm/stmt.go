@@ -592,10 +592,12 @@ func (g *Generator) emitLocalTasksFree(sb *strings.Builder) {
 		return
 	}
 	for _, varName := range g.localTasks {
-		// 加载 %task* 从变量 alloca
+		// task 句柄为 i8*（run 返回不透明指针），bitcast 到 %task* 供 GEP 访问。
 		taskVarAddr := g.varAddr(varName)
+		taskPtrCast := g.tmpReg("ltask.cast")
+		sb.WriteString(fmt.Sprintf("%s%s = load i8*, i8** %s\n", g.indent(), taskPtrCast, taskVarAddr))
 		taskPtr := g.tmpReg("ltask.ptr")
-		sb.WriteString(fmt.Sprintf("%s%s = load %%task*, %%task** %s\n", g.indent(), taskPtr, taskVarAddr))
+		sb.WriteString(fmt.Sprintf("%s%s = bitcast i8* %s to %%task*\n", g.indent(), taskPtr, taskPtrCast))
 
 		// 检查 done (field 2)
 		doneGEP := g.tmpReg("ltask.dgep")
@@ -2734,7 +2736,7 @@ func (g *Generator) generateMainFunction(sb *strings.Builder, program *parser.Pr
 			if g.funcRefVars != nil && g.funcRefVars[name] {
 				continue
 			}
-			if varType == "" || (!g.isStructLLVMType(varType) && !g.isIntegerLLVMType(varType) && varType != "double" && varType != "i1") {
+			if varType == "" || (!g.isStructLLVMType(varType) && !g.isIntegerLLVMType(varType) && varType != "double" && varType != "i1" && !strings.HasSuffix(varType, "*")) {
 				// Skip complex types that need special allocation (handled by generateLet)
 				continue
 			}
@@ -3699,7 +3701,7 @@ func (g *Generator) varLLVMType(stmt *parser.LetStatement) string {
 				}
 			}
 		}
-		return "%task*"
+		return "i8*"
 	case *parser.AwaitExpression:
 		// awy f-async(args) — 直接调用 -async 函数
 		if call, ok := v.Right.(*parser.CallExpression); ok {

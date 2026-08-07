@@ -80,6 +80,11 @@ func inferExprType(expr parser.Expression, varTypes map[string]string, funcTypes
 			}
 			return ""
 		}
+		// run <expr> 返回不透明的 task 句柄（LLVM i8*），供 async-cancel 使用。
+		// 显式推断为 "i8*" 使 `h = run ...` 的变量获得一致类型。
+		if _, ok := expr.(*parser.RunExpression); ok {
+			return "i8*"
+		}
 		// 4. 檢查 struct 方法調用（DotExpression）
 		if dot, ok := e.Function.(*parser.DotExpression); ok {
 			var typeName string

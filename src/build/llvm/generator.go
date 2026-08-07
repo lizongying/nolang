@@ -1051,9 +1051,10 @@ func (g *Generator) Generate(program *parser.Program) string {
 		}
 	}
 
-	// %task type for async/await (run/awy): { resume_fn, data, done }
+	// %task type for async/await (run/awy): { resume_fn, data, done, cancelled }
 	// 無棧協程：resume_fn 是 wrapper 函數指針，data 是 i64（存指針整數值，與 vec/arr/str 的 data 字段一致）
-	sb.WriteString("%task = type { void (i8*)*, i64, i1 }\n")
+	// cancelled (i1) 为取消标志：async-cancel 置位后，wrapper / coro_resume 在入口检查并优雅中止。
+	sb.WriteString("%task = type { void (i8*)*, i64, i1, i1 }\n")
 	// %future type for lazy async futures: { wrapper_fn_ptr, args_ptr, result_ptr }
 	// args_ptr/result_ptr 均為 i64（存指針整數值），通過 storeDataPtrField/loadDataPtrField 轉換
 	sb.WriteString("%future = type { void (i8*)*, i64, i64 }\n")

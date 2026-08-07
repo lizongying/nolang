@@ -3127,6 +3127,13 @@ func (g *Generator) generateAssignExpression(sb *strings.Builder, expr *parser.A
 	}
 
 	val := g.generateExprWithSB(sb, expr.Value)
+	// Defensive fallback: if generateExprWithSB returned empty (e.g. void
+	// function call from an imported module whose definition is not in the
+	// AST), use 0 to avoid generating invalid IR like
+	// "store %str-long , %str-long* ..." (empty value position).
+	if val == "" {
+		val = "0"
+	}
 
 	g.currentTargetType = prevTargetType
 	g.currentTargetElemType = prevTargetElemType
@@ -5264,6 +5271,11 @@ func (g *Generator) generateSliceLiteral(sb *strings.Builder, slice *parser.Slic
 		}
 		ev := g.generateExprWithSB(sb, elem)
 		ev = g.stripLLVMType(ev)
+		// Defensive fallback: if generateExprWithSB returned empty
+		// (e.g. void function call), use 0 to avoid invalid IR.
+		if ev == "" {
+			ev = "0"
+		}
 		sb2.WriteString(fmt.Sprintf("%s %s", elemType, ev))
 	}
 	sb2.WriteString("]")
@@ -6328,7 +6340,16 @@ func (g *Generator) prepareAsyncCall(sb *strings.Builder, call *parser.CallExpre
 	// 检查 done (field 2)，已完成则跳过执行
 	w.WriteString(fmt.Sprintf("\t%%w.done.gep.%d = getelementptr inbounds %%task, %%task* %%w.task.%d, i32 0, i32 2\n", wrapperNum, wrapperNum))
 	w.WriteString(fmt.Sprintf("\t%%w.done.val.%d = load i1, i1* %%w.done.gep.%d\n", wrapperNum, wrapperNum))
-	w.WriteString(fmt.Sprintf("\tbr i1 %%w.done.val.%d, label %%w_exit.%d, label %%w_exec.%d\n", wrapperNum, wrapperNum, wrapperNum))
+	w.WriteString(fmt.Sprintf("\tbr i1 %%w.done.val.%d, label %%w_exit.%d, label %%w_can.%d\n", wrapperNum, wrapperNum, wrapperNum))
+	// 检查 cancelled (field 3)，已取消则置 done=true 并跳过执行（优雅中止）
+	w.WriteString(fmt.Sprintf("w_can.%d:\n", wrapperNum))
+	w.WriteString(fmt.Sprintf("\t%%w.can.gep.%d = getelementptr inbounds %%task, %%task* %%w.task.%d, i32 0, i32 3\n", wrapperNum, wrapperNum))
+	w.WriteString(fmt.Sprintf("\t%%w.can.val.%d = load i1, i1* %%w.can.gep.%d\n", wrapperNum, wrapperNum))
+	w.WriteString(fmt.Sprintf("\tbr i1 %%w.can.val.%d, label %%w_skip.%d, label %%w_exec.%d\n", wrapperNum, wrapperNum, wrapperNum))
+	// 已取消：标记 done=true（事件循环不再重调度），直接退出，不执行目标函数
+	w.WriteString(fmt.Sprintf("w_skip.%d:\n", wrapperNum))
+	w.WriteString(fmt.Sprintf("\tstore i1 true, i1* %%w.done.gep.%d\n", wrapperNum))
+	w.WriteString(fmt.Sprintf("\tbr label %%w_exit.%d\n", wrapperNum))
 	w.WriteString(fmt.Sprintf("w_exec.%d:\n", wrapperNum))
 	// 从 task_ptr 取 args (field 1)
 	w.WriteString(fmt.Sprintf("\t%%w.args.gep.%d = getelementptr inbounds %%task, %%task* %%w.task.%d, i32 0, i32 1\n", wrapperNum, wrapperNum))
@@ -6551,21 +6572,29 @@ func (g *Generator) launchThread(sb *strings.Builder, wrapperName, argsBitcast, 
 		sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%task, %%task* %s, i32 0, i32 2\n", g.indent(), taskF2GEP, taskAddr))
 		sb.WriteString(fmt.Sprintf("%sstore i1 false, i1* %s\n", g.indent(), taskF2GEP))
 	}
+	// Store cancelled = false (field 3)
+	taskF3GEP := g.tmpReg("async.task.f3")
+	if sb != nil {
+		sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%task, %%task* %s, i32 0, i32 3\n", g.indent(), taskF3GEP, taskAddr))
+		sb.WriteString(fmt.Sprintf("%sstore i1 false, i1* %s\n", g.indent(), taskF3GEP))
+	}
 	// Enqueue task into the event loop ready queue
 	taskCast := g.tmpReg("async.task.cast")
 	if sb != nil {
 		sb.WriteString(fmt.Sprintf("%s%s = bitcast %%task* %s to i8*\n", g.indent(), taskCast, taskAddr))
 		sb.WriteString(fmt.Sprintf("%scall void @nolang_async_enqueue(i8* %s)\n", g.indent(), taskCast))
 	}
-	// 返回堆 task 指针（%task*），而非值拷贝。
-	// 原因：事件循环更新的是堆 task 的 done 字段，值拷贝不会被更新。
+	// 返回堆 task 指针的 i8* 句柄（不返回值拷贝）。
+	// 原因：事件循环更新的是堆 task 的 done/cancelled 字段，值拷贝不会被更新。
+	// 以 i8* 形式返回，便于作为 async-cancel 的参数（不透明句柄）。
 	// awy 需要通过指针访问最新的 done 字段。
-	// Track SSA type
+	// Track SSA type：返回 i8* 句柄（run 的结果类型），taskAddr 仍为 %task* 供内部使用。
 	if g.ssaTypes != nil {
 		g.ssaTypes[taskAddr] = "%task*"
+		g.ssaTypes[taskCast] = "i8*"
 	}
 
-	return taskAddr
+	return taskCast
 }
 
 // launchThreadFromFuture extracts data from a %future variable and creates a %task
@@ -6622,23 +6651,30 @@ func (g *Generator) launchThreadFromFuture(sb *strings.Builder, varName string) 
 		sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%task, %%task* %s, i32 0, i32 2\n", g.indent(), taskF2GEP, taskAddr))
 		sb.WriteString(fmt.Sprintf("%sstore i1 false, i1* %s\n", g.indent(), taskF2GEP))
 	}
+	// Store cancelled = false (field 3)
+	taskF3GEP := g.tmpReg("run.fut.task.f3")
+	if sb != nil {
+		sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%task, %%task* %s, i32 0, i32 3\n", g.indent(), taskF3GEP, taskAddr))
+		sb.WriteString(fmt.Sprintf("%sstore i1 false, i1* %s\n", g.indent(), taskF3GEP))
+	}
 	// Enqueue
 	taskCast := g.tmpReg("run.fut.task.cast")
 	if sb != nil {
 		sb.WriteString(fmt.Sprintf("%s%s = bitcast %%task* %s to i8*\n", g.indent(), taskCast, taskAddr))
 		sb.WriteString(fmt.Sprintf("%scall void @nolang_async_enqueue(i8* %s)\n", g.indent(), taskCast))
 	}
-	// 返回堆 task 指针（%task*），与 launchThread 保持一致。
+	// 返回堆 task 指针的 i8* 句柄，与 launchThread 保持一致。
 	// Track SSA type and result type
 	if g.ssaTypes != nil {
 		g.ssaTypes[taskAddr] = "%task*"
+		g.ssaTypes[taskCast] = "i8*"
 	}
 	// Propagate result type to task variable
 	if g.taskResultTypes != nil {
 		g.taskResultTypes[varName] = resultType
 	}
 
-	return taskAddr
+	return taskCast
 }
 
 // generateRunExpression generates LLVM IR for `run <expression>`.
@@ -6766,14 +6802,17 @@ func (g *Generator) awaitFutureVar(sb *strings.Builder, varName string) string {
 // if the task is not yet done. In async functions, awy is handled by the state machine
 // transform (coro.go), so this path is only reached for misuse.
 func (g *Generator) awaitTaskVar(sb *strings.Builder, varName string) string {
-	// task 变量存储在 alloca 中（alloca %task*），需先 load %task* 再使用。
-	// 直接使用 varAddr 会得到 alloca 地址（%task**），将其作为 %task* 会导致
-	// GEP 越界访问（field 2 偏移 16 字节超出 8 字节 alloca），读取到栈垃圾。
+	// task 变量（run 的返回值）以 i8* 不透明句柄形式存储（alloca i8*）。
+	// 先 load i8*，再 bitcast 为 %task* 供后续 GEP 使用。
 	// 与 generateAwaitForCoro Case 2 保持一致的 load 模式。
 	taskVarAddr := g.varAddr(varName)
+	taskI8 := g.tmpReg("awy.task.i8")
+	if sb != nil {
+		sb.WriteString(fmt.Sprintf("%s%s = load i8*, i8** %s\n", g.indent(), taskI8, taskVarAddr))
+	}
 	taskPtr := g.tmpReg("awy.task.ptr")
 	if sb != nil {
-		sb.WriteString(fmt.Sprintf("%s%s = load %%task*, %%task** %s\n", g.indent(), taskPtr, taskVarAddr))
+		sb.WriteString(fmt.Sprintf("%s%s = bitcast i8* %s to %%task*\n", g.indent(), taskPtr, taskI8))
 	}
 
 	// Check task.done (field 2)
@@ -6806,13 +6845,13 @@ func (g *Generator) awaitTaskVar(sb *strings.Builder, varName string) string {
 		sb.WriteString(fmt.Sprintf("%s%s = load void (i8*)*, void (i8*)** %s\n", g.indent(), fnVal, fnGEP))
 	}
 	// bitcast task* to i8*
-	taskI8 := g.tmpReg("awy.task.i8")
+	resumeTaskI8 := g.tmpReg("awy.task.i8")
 	if sb != nil {
-		sb.WriteString(fmt.Sprintf("%s%s = bitcast %%task* %s to i8*\n", g.indent(), taskI8, taskPtr))
+		sb.WriteString(fmt.Sprintf("%s%s = bitcast %%task* %s to i8*\n", g.indent(), resumeTaskI8, taskPtr))
 	}
 	// call resume_fn(task)
 	if sb != nil {
-		sb.WriteString(fmt.Sprintf("%scall void %s(i8* %s)\n", g.indent(), fnVal, taskI8))
+		sb.WriteString(fmt.Sprintf("%scall void %s(i8* %s)\n", g.indent(), fnVal, resumeTaskI8))
 		sb.WriteString(fmt.Sprintf("%sbr label %%%s\n", g.indent(), doneLabel))
 	}
 
@@ -6921,12 +6960,17 @@ func (g *Generator) generateAwaitExpression(sb *strings.Builder, expr *parser.Aw
 		return g.awaitTaskVar(sb, ident.Value)
 	}
 
-	// Fallback: evaluate expression, store to a %task alloca, then await it
+	// Fallback: evaluate expression, store to an i8* alloca (run 句柄), then await it
 	taskVal := g.generateExprWithSB(sb, expr.Right)
 	taskAlloca := g.tmpReg("awy.task")
 	if sb != nil {
-		sb.WriteString(fmt.Sprintf("%s%s = alloca %%task\n", g.indent(), taskAlloca))
-		sb.WriteString(fmt.Sprintf("%sstore %%task %s, %%task* %s\n", g.indent(), taskVal, taskAlloca))
+		sb.WriteString(fmt.Sprintf("%s%s = alloca i8*\n", g.indent(), taskAlloca))
+		sb.WriteString(fmt.Sprintf("%sstore i8* %s, i8** %s\n", g.indent(), taskVal, taskAlloca))
+	}
+	// bitcast i8** alloca 到 %task*，供后续 GEP 访问 task 字段
+	taskTyped := g.tmpReg("awy.task.typed")
+	if sb != nil {
+		sb.WriteString(fmt.Sprintf("%s%s = bitcast i8** %s to %%task*\n", g.indent(), taskTyped, taskAlloca))
 	}
 
 	// Determine result type from SSA types
@@ -6940,7 +6984,7 @@ func (g *Generator) generateAwaitExpression(sb *strings.Builder, expr *parser.Aw
 	// Check done (field 2); if not done, synchronously call resume_fn
 	doneGEP := g.tmpReg("awy.fb.done.gep")
 	if sb != nil {
-		sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%task, %%task* %s, i32 0, i32 2\n", g.indent(), doneGEP, taskAlloca))
+		sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%task, %%task* %s, i32 0, i32 2\n", g.indent(), doneGEP, taskTyped))
 	}
 	doneVal := g.tmpReg("awy.fb.done")
 	if sb != nil {
@@ -6957,7 +7001,7 @@ func (g *Generator) generateAwaitExpression(sb *strings.Builder, expr *parser.Aw
 	}
 	fnGEP := g.tmpReg("awy.fb.fn.gep")
 	if sb != nil {
-		sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%task, %%task* %s, i32 0, i32 0\n", g.indent(), fnGEP, taskAlloca))
+		sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%task, %%task* %s, i32 0, i32 0\n", g.indent(), fnGEP, taskTyped))
 	}
 	fnVal := g.tmpReg("awy.fb.fn")
 	if sb != nil {
@@ -6965,7 +7009,7 @@ func (g *Generator) generateAwaitExpression(sb *strings.Builder, expr *parser.Aw
 	}
 	taskI8 := g.tmpReg("awy.fb.task.i8")
 	if sb != nil {
-		sb.WriteString(fmt.Sprintf("%s%s = bitcast %%task* %s to i8*\n", g.indent(), taskI8, taskAlloca))
+		sb.WriteString(fmt.Sprintf("%s%s = bitcast %%task* %s to i8*\n", g.indent(), taskI8, taskTyped))
 		sb.WriteString(fmt.Sprintf("%scall void %s(i8* %s)\n", g.indent(), fnVal, taskI8))
 		sb.WriteString(fmt.Sprintf("%sbr label %%%s\n", g.indent(), doneLabel))
 	}
@@ -6976,7 +7020,7 @@ func (g *Generator) generateAwaitExpression(sb *strings.Builder, expr *parser.Aw
 	// Extract data (field 1) → args struct field 0 = result_ptr
 	dataGEP := g.tmpReg("awy.fb.data.gep")
 	if sb != nil {
-		sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%task, %%task* %s, i32 0, i32 1\n", g.indent(), dataGEP, taskAlloca))
+		sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%task, %%task* %s, i32 0, i32 1\n", g.indent(), dataGEP, taskTyped))
 	}
 	dataVal := g.tmpReg("awy.fb.data")
 	if sb != nil {

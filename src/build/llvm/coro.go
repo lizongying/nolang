@@ -370,8 +370,10 @@ func (g *Generator) generateCoroResume(sb *strings.Builder, fd *parser.FunctionD
 			}
 			varType := g.moduleVarTypes[name]
 			// 与 generateMainFunction 的预分配条件一致：
-			// 跳过空类型，以及非 % 前缀且非简单标量的类型
-			if varType == "" || (!g.isStructLLVMType(varType) && varType != "i64" && varType != "double" && varType != "i1" && varType != "i8" && varType != "i32") {
+			// 跳过空类型，以及非 % 前缀且非简单标量的类型。
+			// 指针类型（如 i8* 的 run 任务句柄、%task* 等）作为扁平 8 字节值，
+			// 按指针大小直接 alloca（alloca i8* / alloca %task*），无需特殊处理。
+			if varType == "" || (!g.isStructLLVMType(varType) && varType != "i64" && varType != "double" && varType != "i1" && varType != "i8" && varType != "i32" && !strings.HasSuffix(varType, "*")) {
 				continue
 			}
 			if !g.funcLocalNames[name] {
@@ -548,18 +550,16 @@ func (g *Generator) generateAwaitForCoro(sb *strings.Builder, expr *parser.Await
 		}
 	}
 	// Case 2: awy <identifier> — 已有 task 变量
-	// 在 coro 上下文中，task 变量类型为 %task*（指向堆任务的指针），
-	// 需从 alloca 加载 %task* 再 bitcast 为 i8*。
-	// 直接使用 varAddr 会得到 alloca 地址（值拷贝），其 done 字段
-	// 不会被事件循环更新（事件循环操作的是堆任务）。
+	// run 返回的是 i8* 不透明句柄（指向堆 %task），需从 alloca 加载 i8*，
+	// 再 bitcast 为 i8*（句柄本身就是 i8*，此处保持类型一致）。
 	if ident, ok := expr.Right.(*parser.Identifier); ok {
 		taskVarAddr := g.varAddr(ident.Value)
 		g.tmpIdx++
 		taskLoaded := fmt.Sprintf("%%awy.task.load.%d", g.tmpIdx)
-		sb.WriteString(fmt.Sprintf("\t%s = load %%task*, %%task** %s\n", taskLoaded, taskVarAddr))
+		sb.WriteString(fmt.Sprintf("\t%s = load i8*, i8** %s\n", taskLoaded, taskVarAddr))
 		g.tmpIdx++
 		cast := fmt.Sprintf("%%awy.task.cast.%d", g.tmpIdx)
-		sb.WriteString(fmt.Sprintf("\t%s = bitcast %%task* %s to i8*\n", cast, taskLoaded))
+		sb.WriteString(fmt.Sprintf("\t%s = bitcast i8* %s to i8*\n", cast, taskLoaded))
 		return cast
 	}
 	return ""
@@ -604,6 +604,11 @@ func (g *Generator) createTaskAndEnqueue(sb *strings.Builder, call *parser.CallE
 	f2GEP := fmt.Sprintf("%%coro.task.f2.%d", g.tmpIdx)
 	sb.WriteString(fmt.Sprintf("\t%s = getelementptr inbounds %%task, %%task* %s, i32 0, i32 2\n", f2GEP, taskAddr))
 	sb.WriteString(fmt.Sprintf("\tstore i1 false, i1* %s\n", f2GEP))
+	// store cancelled = false (field 3)
+	g.tmpIdx++
+	f3GEP := fmt.Sprintf("%%coro.task.f3.%d", g.tmpIdx)
+	sb.WriteString(fmt.Sprintf("\t%s = getelementptr inbounds %%task, %%task* %s, i32 0, i32 3\n", f3GEP, taskAddr))
+	sb.WriteString(fmt.Sprintf("\tstore i1 false, i1* %s\n", f3GEP))
 
 	// 入队
 	g.tmpIdx++
@@ -918,6 +923,11 @@ func (g *Generator) generateCoroCall(sb *strings.Builder, expr *parser.CallExpre
 	taskF2 := fmt.Sprintf("%%corocall.task.f2.%d", g.tmpIdx)
 	sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%task, %%task* %s, i32 0, i32 2\n", g.indent(), taskF2, taskAddr))
 	sb.WriteString(fmt.Sprintf("%sstore i1 false, i1* %s\n", g.indent(), taskF2))
+	// store cancelled (field 3) = false
+	g.tmpIdx++
+	taskF3 := fmt.Sprintf("%%corocall.task.f3.%d", g.tmpIdx)
+	sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%task, %%task* %s, i32 0, i32 3\n", g.indent(), taskF3, taskAddr))
+	sb.WriteString(fmt.Sprintf("%sstore i1 false, i1* %s\n", g.indent(), taskF3))
 
 	// bitcast task* to i8*
 	g.tmpIdx++
@@ -1029,6 +1039,11 @@ func (g *Generator) generateAsyncMainEntry(sb *strings.Builder, num int) {
 	taskF2 := fmt.Sprintf("%%main.task.f2.%d", g.tmpIdx)
 	sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%task, %%task* %s, i32 0, i32 2\n", g.indent(), taskF2, taskAddr))
 	sb.WriteString(fmt.Sprintf("%sstore i1 false, i1* %s\n", g.indent(), taskF2))
+	// store cancelled (field 3) = false
+	g.tmpIdx++
+	taskF3 := fmt.Sprintf("%%main.task.f3.%d", g.tmpIdx)
+	sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%task, %%task* %s, i32 0, i32 3\n", g.indent(), taskF3, taskAddr))
+	sb.WriteString(fmt.Sprintf("%sstore i1 false, i1* %s\n", g.indent(), taskF3))
 
 	// bitcast task* to i8*
 	g.tmpIdx++

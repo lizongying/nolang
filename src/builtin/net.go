@@ -41,6 +41,24 @@ func init() {
 		ForwardFunc:  "net-accept",
 	})
 
+	// net-recv-nb: non-blocking receive on a connected socket (MSG_DONTWAIT).
+	// Unlike net-recv (which blocks until data arrives), this returns
+	// immediately when no data is available.
+	// Args: fd, buf str|[]byte, n i64
+	// Returns: read-n i64
+	//   > 0 : bytes received
+	//     0 : connection closed (peer sent FIN)
+	//    -1 : hard error
+	//    -2 : would block (no data available right now)
+	BuiltinMethodList = append(BuiltinMethodList, BuiltinMethod{
+		ReceiverType: ReceiverGlobal,
+		MethodName:   "net-recv-nb",
+		Params:       []parser.Type{parser.TypeFd, parser.TypeStr, parser.TypeI64},
+		Return:       []parser.Type{parser.TypeI64},
+		Doc:          "Non-blocking receive (MSG_DONTWAIT). Returns bytes (>0), 0=closed, -1=error, -2=would-block",
+		ForwardFunc:  "net-recv-nb",
+	})
+
 	// net-send: send data on connected socket
 	// Args: fd, data str|[]byte, n i64
 	// Returns: written i64 (bytes sent, -1 on error)

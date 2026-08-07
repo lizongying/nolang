@@ -448,13 +448,13 @@ cmdopts {
     merge-err i64
 }
 
-; run: 以結構體選項執行子進程（跨模組結構體參數示例）。
+; exec: 以結構體選項執行子進程（跨模組結構體參數示例）。
 ; 演示 nolang 的跨模組結構體轉發：cmdopts 定義於本模組，
-; 呼叫端在另一模組構造 cmdopts{...} 並傳入。
-; (TEMP DISABLED for isolation)
-; process.run = (program str, args []str, o cmdopts) (out str, code i64, err str) {
-;     out, code, err = process.cmd(program, args, o.dir, o.stdin, o.env, o.timeout, o.merge-err)
-; }
+; 呼叫端在另一模組構造 process.cmdopts{...} 並傳入。
+; 註：函數名為 exec 而非 run，因 run 是語言保留字（關鍵字）。
+process.exec = (program str, args []str, o cmdopts) (out str, code i64, err str) {
+    out, code, err = process.cmd(program, args, o.dir, o.stdin, o.env, o.timeout, o.merge-err)
+}
 
 ; process-output: 執行命令並捕獲 stdout 輸出
 ; 返回 content=輸出內容, code=退出碼

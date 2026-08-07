@@ -1421,9 +1421,47 @@ func (g *Generator) generateCallExpression(sb *strings.Builder, expr *parser.Cal
 				shortName := fnName[idx+1:]
 				m2 := builtin.FindBuiltinMethod(shortName)
 				if m2 != nil {
-					if !isVar || m2.ReceiverType == builtin.ReceiverGlobal {
+					if !isVar {
 						m = m2
 						fnName = shortName
+					} else if m2.ReceiverType == builtin.ReceiverGlobal {
+						// For ReceiverGlobal builtins (e.g. sqrt, abs), stripping
+						// the prefix is normally safe. BUT: if the variable has a
+						// type-specific builtin (e.g. vec.truncate), prefer that
+						// to avoid dispatching to the wrong builtin (e.g. POSIX
+						// truncate instead of vec.truncate). Let the method
+						// resolution code at ~L1564 handle the dispatch instead.
+						shouldStrip := true
+						if recvType, ok := g.varTypes[firstSegment]; ok {
+							recvTypeName := strings.TrimPrefix(recvType, "%")
+							// Build candidate type names to check for type-specific
+							// builtins (e.g. vec.truncate, str.truncate).
+							candTypes := []string{recvTypeName}
+							// nolang type aliases (e.g. str-long → str)
+							if aliases, ok2 := llvmTypeToNolang[recvTypeName]; ok2 {
+								candTypes = append(candTypes, aliases...)
+							}
+							// Option (?T): also try the inner type
+							if recvTypeName == "option" && g.optionInnerTypes != nil {
+								if innerType, ok3 := g.optionInnerTypes[firstSegment]; ok3 {
+									innerSrc := strings.TrimPrefix(innerType, "%")
+									candTypes = append(candTypes, innerSrc)
+									if innerAliases, ok4 := llvmTypeToNolang[innerSrc]; ok4 {
+										candTypes = append(candTypes, innerAliases...)
+									}
+								}
+							}
+							for _, ct := range candTypes {
+								if builtin.FindBuiltinMethod(ct + "." + shortName) != nil {
+									shouldStrip = false
+									break
+								}
+							}
+						}
+						if shouldStrip {
+							m = m2
+							fnName = shortName
+						}
 					}
 				}
 			}
@@ -1963,7 +2001,7 @@ func (g *Generator) generateCallExpression(sb *strings.Builder, expr *parser.Cal
 		if !hasNolangImpl {
 			if m := builtin.FindBuiltinMethod(fnName); m != nil {
 				if m.ForwardFunc != "" {
-					if r := g.genForwardFunc(sb, m.ForwardFunc, expr, methodReceiver); r != "" || m.ForwardFunc == "memcpy" || m.ForwardFunc == "memset" || m.ForwardFunc == "arr-zero" || m.ForwardFunc == "str-clear" || m.ForwardFunc == "str-truncate" || m.ForwardFunc == "vec-clear" || m.ForwardFunc == "vec-push" {
+					if r := g.genForwardFunc(sb, m.ForwardFunc, expr, methodReceiver); r != "" || m.ForwardFunc == "memcpy" || m.ForwardFunc == "memset" || m.ForwardFunc == "arr-zero" || m.ForwardFunc == "str-clear" || m.ForwardFunc == "str-truncate" || m.ForwardFunc == "vec-truncate" || m.ForwardFunc == "vec-clear" || m.ForwardFunc == "vec-push" {
 						return r
 					}
 				}
@@ -2056,12 +2094,19 @@ func (g *Generator) generateCallExpression(sb *strings.Builder, expr *parser.Cal
 							paramCount = pc
 						}
 					}
-					if methodReceiver != nil {
-						// Method call: self is implicit, so effective args = len+1
-						if len(expr.Arguments)+1 >= paramCount {
-							hasOutputParam = true
-						}
-					} else {
+				if methodReceiver != nil {
+					// Method call: self is implicit, so effective args = len+1.
+					// Use > (not >=): when effective args == paramCount, the caller
+					// provided exactly the input params (self + args), NOT the output.
+					// The output param is only present when effective args > paramCount.
+					// Using >= would misidentify the last input arg (e.g. `end` in
+					// s.slice(0, end)) as the output param, causing the call to be
+					// treated as statement-form (void return) instead of expression-form
+					// (voidSingleOutput), producing empty store values in codegen.
+					if len(expr.Arguments)+1 > paramCount {
+						hasOutputParam = true
+					}
+				} else {
 						if len(expr.Arguments) > paramCount {
 							hasOutputParam = true
 						}
@@ -2594,14 +2639,20 @@ func (g *Generator) generateCallExpression(sb *strings.Builder, expr *parser.Cal
 			arrType := fmt.Sprintf("[%d x %s]", n, toLLVMType(elemType))
 			if sb != nil {
 				sb.WriteString(fmt.Sprintf("%s%s = alloca %s\n", g.indent(), tmpArr, arrType))
-				for i, elem := range a.Elements {
-					ev := g.generateExprWithSB(sb, elem)
-					ev = g.stripLLVMType(ev)
-					g.tmpIdx++
-					gepReg := fmt.Sprintf("%%callvec.gep.%d", g.tmpIdx)
-					sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %s, %s* %s, i32 0, i32 %d\n",
-						g.indent(), gepReg, arrType, arrType, tmpArr, i))
-				storeVal := ev
+			for i, elem := range a.Elements {
+				ev := g.generateExprWithSB(sb, elem)
+				ev = g.stripLLVMType(ev)
+				// Defensive fallback: if generateExprWithSB returned empty
+				// (e.g. void function call), use 0 to avoid invalid IR
+				// "store i64 , i64* ...".
+				if ev == "" {
+					ev = "0"
+				}
+				g.tmpIdx++
+				gepReg := fmt.Sprintf("%%callvec.gep.%d", g.tmpIdx)
+				sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %s, %s* %s, i32 0, i32 %d\n",
+					g.indent(), gepReg, arrType, arrType, tmpArr, i))
+			storeVal := ev
 					if g.isStructLLVMType(elemType) {
 						// StringLiteral returns an alloca pointer; load the value.
 						if strings.HasPrefix(ev, "%str-longlit") {
@@ -3865,6 +3916,42 @@ func (g *Generator) genForwardFunc(sb *strings.Builder, forwardFunc string, expr
 			sb.WriteString(fmt.Sprintf("%s%s = icmp slt i64 %s, 0\n", g.indent(), negCmp, nVal))
 			sb.WriteString(fmt.Sprintf("%s%s = select i1 %s, i64 0, i64 %s\n", g.indent(), clampedN, negCmp, nVal))
 			// len = min(clampedN, curLen)
+			sb.WriteString(fmt.Sprintf("%s%s = icmp slt i64 %s, %s\n", g.indent(), cmpReg, clampedN, curLen))
+			sb.WriteString(fmt.Sprintf("%s%s = select i1 %s, i64 %s, i64 %s\n", g.indent(), finalLen, cmpReg, clampedN, curLen))
+			sb.WriteString(fmt.Sprintf("%sstore i64 %s, i64* %s\n", g.indent(), finalLen, lenGEP))
+		}
+		return ""
+
+	case "vec-truncate":
+		// vec.truncate(n) — set len = max(0, min(len, n)) in-place, cap/ptr unchanged
+		// vec: field 0 is i64 len (same layout as str-long)
+		if len(args) < 2 {
+			return ""
+		}
+		ident, ok := args[0].(*parser.Identifier)
+		if !ok {
+			return ""
+		}
+		recvName := ident.Value
+		recvAddr := g.varAddr(recvName)
+		nVal := g.evalI64Arg(sb, args[1])
+		g.tmpIdx++
+		lenGEP := fmt.Sprintf("%%vt.len.gep.%d", g.tmpIdx)
+		g.tmpIdx++
+		curLen := fmt.Sprintf("%%vt.cur-len.%d", g.tmpIdx)
+		g.tmpIdx++
+		negCmp := fmt.Sprintf("%%vt.neg-cmp.%d", g.tmpIdx)
+		g.tmpIdx++
+		clampedN := fmt.Sprintf("%%vt.clamped-n.%d", g.tmpIdx)
+		g.tmpIdx++
+		cmpReg := fmt.Sprintf("%%vt.cmp.%d", g.tmpIdx)
+		g.tmpIdx++
+		finalLen := fmt.Sprintf("%%vt.final-len.%d", g.tmpIdx)
+		if sb != nil {
+			sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%vec, %%vec* %s, i32 0, i32 0\n", g.indent(), lenGEP, recvAddr))
+			sb.WriteString(fmt.Sprintf("%s%s = load i64, i64* %s\n", g.indent(), curLen, lenGEP))
+			sb.WriteString(fmt.Sprintf("%s%s = icmp slt i64 %s, 0\n", g.indent(), negCmp, nVal))
+			sb.WriteString(fmt.Sprintf("%s%s = select i1 %s, i64 0, i64 %s\n", g.indent(), clampedN, negCmp, nVal))
 			sb.WriteString(fmt.Sprintf("%s%s = icmp slt i64 %s, %s\n", g.indent(), cmpReg, clampedN, curLen))
 			sb.WriteString(fmt.Sprintf("%s%s = select i1 %s, i64 %s, i64 %s\n", g.indent(), finalLen, cmpReg, clampedN, curLen))
 			sb.WriteString(fmt.Sprintf("%sstore i64 %s, i64* %s\n", g.indent(), finalLen, lenGEP))

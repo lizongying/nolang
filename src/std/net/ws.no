@@ -695,6 +695,131 @@ server-conn.recv = () (msg ?message) {
     } ()
 }
 
+; recv-nb: 非阻塞讀取一個完整 WebSocket 訊息（D10 配套）
+; 與阻塞版 recv 不同：本方法呼叫 net.net-recv-nb（MSG_DONTWAIT），
+; 當底層 socket 暫無資料時立即返回，不會卡住協作式事件循環。
+;
+; 傳回 msg ?message：
+;   ok = 訊息已就緒（消費並返回）
+;   nil = would-block（目前無完整 frame；部分資料保留在 recv-buf 下次再試）
+;   err = 連線關閉或錯誤
+;
+; 注意：為配合非阻塞輪詢，本方法不跨多次呼叫累積 fragmentation；
+;       單 frame 的 text/binary 訊息（nowork 前端用法）直接成為一條訊息。
+;       需要完整分片重組時仍請使用阻塞版 recv。
+server-conn.recv-nb = () (msg ?message) {
+    msg = nil
+    .connected == false -> {
+        msg = err('not connected')
+        return
+    }
+
+    cr = number.char-to-str(13)
+    lf = number.char-to-str(10)
+    crlf = cr - lf
+
+    ; 1) 非阻塞填充 recv-buf，直到 would-block（-2）或緩衝區已滿
+    fill = true
+    while fill {
+        .recv-buf-len < WS-BUF-SIZE -> {
+            tmp str = with-len(WS-RECV-SIZE)
+            n = net.net-recv-nb(.fd, tmp, WS-RECV-SIZE)
+            n == -2 -> fill = false
+            n <= 0 -> {
+                .connected = false
+                msg = err('closed')
+                return
+            }
+            -> {
+                i <- [0..n): {
+                    .recv-buf[.recv-buf-len + i] = tmp[i]
+                }
+                .recv-buf-len = .recv-buf-len + n
+            }
+        }
+        -> fill = false
+    }
+
+    ; 2) 只從已緩衝的 recv-buf 解析一個完整 frame；資料不足則回傳 nil（would-block）
+    .recv-buf-len < 2 -> return
+    b0 = .recv-buf[0]
+    b1 = .recv-buf[1]
+    fin = (b0 & 128) != 0
+    opcode = b0 & 15
+    masked = (b1 & 128) != 0
+    payload-len = b1 & 127
+
+    ; header 長度 = 2 + 長度欄位(0/2/8) + mask(4 if masked)
+    extra-len = 0
+    payload-len == 126 -> extra-len = 2
+    payload-len == 127 -> extra-len = 8
+    mask-bytes = 0
+    masked -> mask-bytes = 4
+    header-total = 2 + extra-len + mask-bytes
+
+    .recv-buf-len < header-total -> return
+
+    payload-len == 127 -> {
+        payload-len = 0
+        j <- [0..8): {
+            payload-len = (payload-len << 8) | .recv-buf[2 + j]
+        }
+    }
+    payload-len == 126 -> {
+        payload-len = (.recv-buf[2] << 8) | .recv-buf[3]
+    }
+
+    frame-total = header-total + payload-len
+    .recv-buf-len < frame-total -> return
+
+    actual-extra = 0
+    payload-len == 126 -> actual-extra = 2
+    payload-len == 127 -> actual-extra = 8
+    mask-start = 2 + actual-extra
+    mask-key = ''
+    masked -> {
+        mask-key str = with-len(4)
+        k <- [0..4): {
+            mask-key[k] = .recv-buf[mask-start + k]
+        }
+    }
+    payload-start = mask-start
+    masked -> payload-start = mask-start + 4
+    payload str = with-len(payload-len)
+    p <- [0..payload-len): {
+        b = .recv-buf[payload-start + p]
+        masked -> b
+        b ^ mask-key[p % 4]
+        payload[p] = b & 255
+    }
+
+    ; 從 recv-buf 移除已消費的 frame
+    remaining-start = frame-total
+    remaining-len = .recv-buf-len - remaining-start
+    r <- [0..remaining-len): {
+        .recv-buf[r] = .recv-buf[remaining-start + r]
+    }
+    .recv-buf-len = remaining-len
+
+    ; 控制訊框與資料訊框
+    opcode == WS-OP-CLOSE -> {
+        .connected = false
+        msg = nil
+        return
+    }
+    opcode == WS-OP-PING -> .send-pong(payload)
+    opcode == WS-OP-TEXT || opcode == WS-OP-BINARY -> {
+        msg = message {
+            opcode: opcode
+            data: payload
+            fin: true
+        }
+        return
+    }
+    ; 其它 opcode（pong / continuation / 未知）：已消費 frame，下次 poll 再試
+    return
+}
+
 ; is-connected: 檢查連線狀態
 ; 返回 yes bool: true=已連接
 server-conn.is-connected = () (yes bool) {

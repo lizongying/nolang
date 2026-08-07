@@ -115,4 +115,17 @@ func init() {
 		Doc:          "Sort the slice in descending order in-place (insertion sort)",
 		ForwardFunc:  "vec-sort-desc",
 	})
+
+	// .truncate: truncate slice in-place to at most n elements (len = min(len, n))
+	// Same semantics as str.truncate but for []t receivers (vec).
+	// cap/data unchanged; only the logical length is adjusted.
+	// MethodName uses "vec." prefix to avoid conflict with POSIX truncate CLibCall.
+	BuiltinMethodList = append(BuiltinMethodList, BuiltinMethod{
+		ReceiverType: ReceiverVec,
+		MethodName:   "vec.truncate",
+		Params:       []parser.Type{parser.TypeI64},
+		Return:       []parser.Type{},
+		Doc:          "Truncate slice in-place to at most n elements (len = min(len, n))",
+		ForwardFunc:  "vec-truncate",
+	})
 }

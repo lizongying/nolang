@@ -561,6 +561,25 @@ p.close()                          ; Close all pipes and wait
 ;   Outputs: out captured stdout (stderr merged depending on merge-err), code exit code (-2=timeout kill, -1=start failure), err error message
 out, code, err = process.cmd('echo', ['hello'], '', '', [], 0, 0)
 
+; Struct-options form (recommended, more readable): demonstrates cross-module
+; struct forwarding — cmdopts is defined in this module, while the caller
+; constructs process.cmdopts{...} in another module and passes it by reference.
+cmdopts {
+    dir str        ; working directory; empty = inherit parent's
+    stdin str      ; data written to child stdin; empty = no stdin
+    env []str      ; environment variables (["K=V", ...]); empty = inherit parent's
+    timeout i64    ; timeout in ms; <=0 = no limit
+    merge-err i64  ; nonzero = merge stderr into captured out
+}
+o = process.cmdopts{
+    dir: '',
+    stdin: 'piped-data',
+    env: ['K=V'],
+    timeout: 200,
+    merge-err: 0
+}
+out, code, err = process.exec('echo', ['hello'], o)
+
 ; Convenience functions (legacy, pending decision)
 status = process.process-run(cmd)           ; Execute shell command
 content, code = process.process-output(program, arg) ; Execute and capture output

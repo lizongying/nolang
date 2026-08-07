@@ -41,8 +41,38 @@
 #include <sys/wait.h>
 #include <signal.h>
 #include <time.h>
+#include <sys/socket.h>
 #else
 #include <windows.h>
+#include <winsock2.h>
+#endif
+
+// nolang_net_recv_nb: non-blocking recv used by the WebSocket poll loop
+// (ws.recv-nb) so a connection handler can check for incoming "stop" messages
+// without blocking the cooperative event loop.
+//
+// Return convention (maps cleanly onto nolang's i64 result):
+//   > 0 : bytes received
+//     0 : connection closed (peer sent FIN)
+//    -1 : hard error
+//    -2 : would block (no data available right now; EAGAIN / EWOULDBLOCK)
+#ifdef _WIN32
+long nolang_net_recv_nb(int fd, char* buf, long n) {
+    u_long mode = 1;
+    ioctlsocket((SOCKET)fd, FIONBIO, &mode);
+    int r = recv((SOCKET)fd, buf, (int)n, 0);
+    if (r == SOCKET_ERROR) {
+        if (WSAGetLastError() == WSAEWOULDBLOCK) return -2;
+        return -1;
+    }
+    return (long)r;
+}
+#else
+long nolang_net_recv_nb(int fd, char* buf, long n) {
+    long r = recv(fd, buf, n, MSG_DONTWAIT);
+    if (r == -1 && (errno == EAGAIN || errno == EWOULDBLOCK)) return -2;
+    return r;
+}
 #endif
 
 // ---- small helpers -------------------------------------------------------

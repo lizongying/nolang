@@ -2473,6 +2473,73 @@ func (g *Generator) callBuiltin(sb *strings.Builder, fnName string, hasArgs bool
 	// 代碼生成（呼叫 @compress2 / @uncompress / @nolang.inflate_raw）已全部移除。
 
 	// ═══════════════════════════════════════════════
+	// async — 协程取消原语（D10）
+	// ═══════════════════════════════════════════════
+
+	// async-cancel: 取消一个通过 run() 启动的异步任务。
+	// 参数 task 是 run 返回的不透明 i8* 句柄（指向堆上的 %task）。
+	// 将 %task.cancelled（field 3）置为 true；事件循环调度该任务时，
+	// async_wrapper 在入口检查该标志，若已置位则跳过目标函数并标记 done=true（优雅中止）。
+	if fnName == "async-cancel" && hasArgs {
+		a := evalArgs()
+		taskPtr := g.tmpReg("ac.task")
+		canGEP := g.tmpReg("ac.can.gep")
+		if sb != nil {
+			sb.WriteString(fmt.Sprintf("%s%s = bitcast i8* %s to %%task*\n", g.indent(), taskPtr, a[0]))
+			sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%task, %%task* %s, i32 0, i32 3\n", g.indent(), canGEP, taskPtr))
+			sb.WriteString(fmt.Sprintf("%sstore i1 true, i1* %s\n", g.indent(), canGEP))
+		}
+		// void 内建若返回 "" 会被上层误判为“未处理”而生成直接的 @async-cancel 调用，
+		// 因此返回已定义的 taskPtr 寄存器作为“已处理”信号（语句上下文忽略其值）。
+		return taskPtr
+	}
+
+	// async-cancelled: 协作式自我取消检查。
+	// 读取 @nolang_current_task（事件循环调度时写入的当前任务指针）的 cancelled 标志（field 3），返回 i1(bool)。
+	// 异步函数可在每个步骤开头调用它，若返回 true 则提前返回，从而实现被外部 async-cancel 后及时退出。
+	// 若当前不在异步任务中（@nolang_current_task 为 null，例如直接 awy 驱动而非事件循环调度），安全返回 false。
+	if fnName == "async-cancelled" {
+		curTask := g.tmpReg("acur.task")
+		isNull := g.tmpReg("acur.isnull")
+		loaded := g.tmpReg("acur.loaded")
+		canVal := g.tmpReg("acur.can.val")
+		nullLbl := g.tmpReg("acur.nlbl")
+		loadLbl := g.tmpReg("acur.llbl")
+		doneLbl := g.tmpReg("acur.dlbl")
+		canValZext := g.tmpReg("acur.can.zext")
+		if sb != nil {
+			sb.WriteString(fmt.Sprintf("%s%s = load i8*, i8** @nolang_current_task\n", g.indent(), curTask))
+			sb.WriteString(fmt.Sprintf("%s%s = icmp eq i8* %s, null\n", g.indent(), isNull, curTask))
+			sb.WriteString(fmt.Sprintf("%sbr i1 %s, label %s, label %s\n", g.indent(), isNull, nullLbl, loadLbl))
+			sb.WriteString(fmt.Sprintf("%s:\n", strings.TrimPrefix(loadLbl, "%")))
+			curCast := g.tmpReg("acur.cast")
+			canGEP := g.tmpReg("acur.can.gep")
+			sb.WriteString(fmt.Sprintf("%s%s = bitcast i8* %s to %%task*\n", g.indent(), curCast, curTask))
+			sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%task, %%task* %s, i32 0, i32 3\n", g.indent(), canGEP, curCast))
+			sb.WriteString(fmt.Sprintf("%s%s = load i1, i1* %s\n", g.indent(), loaded, canGEP))
+			sb.WriteString(fmt.Sprintf("%sbr label %s\n", g.indent(), doneLbl))
+			sb.WriteString(fmt.Sprintf("%s:\n", strings.TrimPrefix(nullLbl, "%")))
+			sb.WriteString(fmt.Sprintf("%sbr label %s\n", g.indent(), doneLbl))
+			sb.WriteString(fmt.Sprintf("%s:\n", strings.TrimPrefix(doneLbl, "%")))
+			sb.WriteString(fmt.Sprintf("%s%s = phi i1 [ %s, %s ], [ false, %s ]\n", g.indent(), canVal, loaded, loadLbl, nullLbl))
+			// nolang bool 内建约定返回 i64（与 is-dir 等一致），故将 i1 零扩展为 i64 再返回。
+			sb.WriteString(fmt.Sprintf("%s%s = zext i1 %s to i64\n", g.indent(), canValZext, canVal))
+		}
+		return canValZext
+	}
+
+	// async-yield: 协作式让出（D10 配套）。
+	// 直接调用事件循环运行时 @nolang_async_yield，将当前任务重新入就绪队列
+	// 并返回事件循环，让其它就绪任务（如并行运行的 Agent Loop）获得执行机会。
+	// 用于非阻塞轮询循环（ws.recv-nb 返回 would-block 时）。返回 void。
+	if fnName == "async-yield" {
+		if sb != nil {
+			sb.WriteString(fmt.Sprintf("%scall void @nolang_async_yield()\n", g.indent()))
+		}
+		return ""
+	}
+
+	// ═══════════════════════════════════════════════
 	// process — 進程操作
 	// ═══════════════════════════════════════════════
 
@@ -3131,6 +3198,59 @@ func (g *Generator) callBuiltin(sb *strings.Builder, fnName string, hasArgs bool
 		if sb != nil {
 			sb.WriteString(fmt.Sprintf("%s%s = trunc i64 %s to i32\n", g.indent(), fdTrunc, fdVal))
 			sb.WriteString(fmt.Sprintf("%s%s = call i64 @recv(i32 %s, i8* %s, i64 %s, i32 0)\n", g.indent(), recvRet, fdTrunc, bufPtr, nVal))
+		}
+		return recvRet
+	}
+
+	// net-recv-nb: non-blocking receive (MSG_DONTWAIT via @nolang_net_recv_nb).
+	// Same buffer handling as net-recv, but the C helper maps EAGAIN to -2 so
+	// the caller can distinguish "would block" (-2) from a real error (-1) or
+	// clean close (0).
+	if fnName == "net-recv-nb" && hasArgs && nArgs >= 3 {
+		a := evalArgs()
+		fdVal := a[0]
+
+		var bufPtr string
+		bufArgType := g.exprResultLLVMType(expr.Arguments[1])
+		if bufArgType == "%vec" {
+			vecPtr := g.sliceEvalArgToPtr(sb, a[1])
+			bufGEP := g.tmpReg("net.rnb.datagep")
+			bufLoad := g.tmpReg("net.rnb.dataptr")
+			if sb != nil {
+				sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%vec, %%vec* %s, i32 0, i32 2\n", g.indent(), bufGEP, vecPtr))
+				bufLoad = g.loadDataPtrField(sb, bufGEP)
+			}
+			bufPtr = bufLoad
+		} else if bufArgType == "%arr" {
+			arrEval := a[1]
+			arrPtr := arrEval
+			if idx := strings.Index(arrEval, ".val."); idx > 0 {
+				tmpAlloca := g.tmpReg("net.rnb.arrtmp")
+				if sb != nil {
+					sb.WriteString(fmt.Sprintf("%s%s = alloca %%arr\n", g.indent(), tmpAlloca))
+					sb.WriteString(fmt.Sprintf("%sstore %%arr %s, %%arr* %s\n", g.indent(), arrEval, tmpAlloca))
+				}
+				arrPtr = tmpAlloca
+			}
+			bufGEP := g.tmpReg("net.rnb.arrgep")
+			bufLoad := g.tmpReg("net.rnb.arrptr")
+			if sb != nil {
+				sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%arr, %%arr* %s, i32 0, i32 1\n", g.indent(), bufGEP, arrPtr))
+				bufLoad = g.loadDataPtrField(sb, bufGEP)
+			}
+			bufPtr = bufLoad
+		} else {
+			bufPtr = g.extractStrFromEvalArg(sb, a[1])
+		}
+
+		nVal := a[2]
+
+		fdTrunc := g.tmpReg("net.rnb.fdtrunc")
+		recvRet := g.tmpReg("net.rnb.ret")
+
+		if sb != nil {
+			sb.WriteString(fmt.Sprintf("%s%s = trunc i64 %s to i32\n", g.indent(), fdTrunc, fdVal))
+			sb.WriteString(fmt.Sprintf("%s%s = call i64 @nolang_net_recv_nb(i32 %s, i8* %s, i64 %s)\n", g.indent(), recvRet, fdTrunc, bufPtr, nVal))
 		}
 		return recvRet
 	}
