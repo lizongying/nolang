@@ -1475,31 +1475,13 @@ func (g *Generator) freeOldHeapValue(sb *strings.Builder, stmt *parser.LetStatem
 	if stmt.IsSynthetic {
 		return
 	}
-	if os.Getenv("NOLANG_DBG_FOHV") != "" && name == "g" {
-		vstr := "<nil>"
-		if stmt.Value != nil {
-			vstr = fmt.Sprintf("%T", stmt.Value)
-		}
-		typ := stmt.Type
-		typStr := "<nil>"
-		if typ != nil {
-			typStr = fmt.Sprintf("%T", typ)
-		}
-		fmt.Fprintf(os.Stderr, "DBG fohv g: firstAssigned=%v value=%s type=%s\n", g.globalFirstAssigned[name], vstr, typStr)
-	}
-	// 全局變數首次（初始化）賦值：舊值是全局初始值 / 字符串字面量（rodata）/ zeroinitializer，
+	// 全局變數首次（初始化）賦值：舊值是 zeroinitializer（容器）或字符串字面量（rodata），
 	// 絕非堆數據。釋放它會 free rodata 崩潰（如 @HEX-UPPER 等 std 字符串常量全局），
-	// 或讓 opt -O3 把後續賦值的 len/data 前向傳播到釋放點的 load 而 NULL 解引用。
-	// 因此全局首次賦值一律跳過釋放舊值；後續重賦值才釋放舊堆值（下方兩條路徑處理）。
-	// 注意：必須同時要求「不是函數局部變數」(funcLocalNames 未登記)，否則同名局部
-	// 變數（如 std 庫 gcd/lcm 內的局部 g）會佔用「首次賦值」槽位，導致真正的全局
-	// g 被誤判為「後續重賦值」而發出致命的 free。
+	// 或讓 opt -O3 把後續賦值的 len/data 前向傳播到釋放點 load 而 NULL 解引用。
+	// 因此全局首次賦值一律跳過釋放舊值；後續重賦值才釋放舊堆值（下方全局路徑處理）。
 	if g.globalVars != nil && g.globalVars[name] && (g.funcLocalNames == nil || !g.funcLocalNames[name]) {
 		if !g.globalFirstAssigned[name] {
 			g.globalFirstAssigned[name] = true
-			if os.Getenv("NOLANG_DBG_FOHV") != "" && name == "g" {
-				fmt.Fprintln(os.Stderr, "DBG fohv g: SKIP first-assign")
-			}
 			return
 		}
 	}
@@ -1512,11 +1494,10 @@ func (g *Generator) freeOldHeapValue(sb *strings.Builder, stmt *parser.LetStatem
 				elemType = g.arrayElemTypes[name]
 			}
 			varIdx, hasIdx := g.heapVarIndex[name]
-		if !hasIdx {
-			// 無 varIdx，直接 free 舊值（拷貝到局部 alloca 再釋放，避免 opt 前向傳播）
-			g.emitVarHeapFreeViaLocalCopy(sb, g.varAddr(name), oldType, elemType, name)
-			return
-		}
+			if !hasIdx {
+				g.emitVarHeapFree(sb, g.varAddr(name), oldType, elemType, name)
+				return
+			}
 			if g.hasBranchMove && g.movedBitmapBase != "" {
 				// 有運行時 bitmap：生成 IR 檢查 bit
 				// bit=1 → 所有權已轉移，跳過 free（舊 data 不屬於此變數）
@@ -1535,8 +1516,7 @@ func (g *Generator) freeOldHeapValue(sb *strings.Builder, stmt *parser.LetStatem
 					g.cfgAddEffect(effect{Kind: effRemove, VarIdx: varIdx})
 					return
 				}
-				// 拷貝到局部 alloca 再釋放，避免 opt 把後續賦值的前向傳播到釋放點 load
-				g.emitVarHeapFreeViaLocalCopy(sb, g.varAddr(name), oldType, elemType, name)
+				g.emitVarHeapFree(sb, g.varAddr(name), oldType, elemType, name)
 			}
 			// CFG: 變數重賦值，清除 moved 狀態（effRemove）
 			// 覆蓋 bitmap 和直接 free 兩條路徑（上面 return 的路徑已單獨記錄）
@@ -1544,14 +1524,10 @@ func (g *Generator) freeOldHeapValue(sb *strings.Builder, stmt *parser.LetStatem
 			return
 		}
 	}
-	// 全局變數路徑：不在 heapVars 中（trackLocalHeapVar 跳過 globalVars），
-	// 用 moduleVarTypes/varTypes 查型別，釋放「當前（賦值前）」舊值（全局無 moved 追蹤）。
+	// 全局變數路徑（重賦值，非首次）：釋放「賦值前」舊值（全局無 moved 追蹤）。
 	// 關鍵：先把舊值拷貝進一個局部 alloca，再釋放局部副本，而不是直接從 @g 重新讀取。
-	// 否則 opt -O3 會對「先釋放舊值、再賦值」做 SROA + 全域值編號，把後續賦值的
-	// len/data 常量前向傳播 / 下沉到釋放點的 load，導致以 len!=0 但 data=NULL
-	// 的狀態進入釋放迴圈而 NULL 解引用崩潰（甚至把 main 證明為 unreachable）。
-	// 釋放區域變數的 @free 引數依賴這次拷貝 load，opt 無法把賦值 store 移到 load 之前
-	// （那會釋放不同的指標，而 @free 對 opt 是不透明函數），從而保全「釋放舊值」語意。
+	// 否則 opt -O3 會把後續賦值的 store 經 SROA/GVN 前向傳播到釋放點的 load，並消除
+	// 釋放迴圈的 NULL 檢查，導致以 len!=0 但 data=NULL 的狀態解引用而崩潰。
 	if g.globalVars != nil && g.globalVars[name] && (g.funcLocalNames == nil || !g.funcLocalNames[name]) {
 		oldType := ""
 		if g.moduleVarTypes != nil {
@@ -1568,10 +1544,6 @@ func (g *Generator) freeOldHeapValue(sb *strings.Builder, stmt *parser.LetStatem
 			if elemType == "" && g.arrayElemTypes != nil {
 				elemType = g.arrayElemTypes[name]
 			}
-			if os.Getenv("NOLANG_DBG_FOHV") != "" && name == "g" {
-				fmt.Fprintln(os.Stderr, "DBG fohv g: EMIT free old global")
-			}
-			// 拷貝到局部 alloca 再釋放，避免 opt 把後續賦值前向傳播到釋放點 load。
 			g.emitVarHeapFreeViaLocalCopy(sb, g.varAddr(name), oldType, elemType, name)
 		}
 	}
@@ -4202,10 +4174,17 @@ func (g *Generator) collectVarDeclsFromStmtInner(stmt parser.Statement, vars map
 					}
 				}
 			}
-			// Register each Identifier target with the corresponding return type
-			for i, target := range s.Targets {
-				if ident, ok := target.(*parser.Identifier); ok {
-					if _, exists := vars[ident.Value]; !exists {
+		// Register each Identifier target with the corresponding return type
+		for i, target := range s.Targets {
+			if ident, ok := target.(*parser.Identifier); ok {
+				// 多賦值左側變數屬於當前作用域（main 或函數體），必須註冊為
+				// 局部名，否則會與同名全局函數（如標準庫的 out/err 打印函數）
+				// 衝突：作為返回槽指標傳遞時被誤判成函數指標 void(...)**，
+				// 導致呼叫方傳參型別錯亂、opt 把形參表重排、運行時空指標崩潰。
+				if g.funcLocalNames != nil {
+					g.funcLocalNames[ident.Value] = true
+				}
+				if _, exists := vars[ident.Value]; !exists {
 						var vt string
 						if i < len(retTypes) {
 							vt = retTypes[i]
@@ -4382,6 +4361,16 @@ func (g *Generator) generateStatement(sb *strings.Builder, stmt parser.Statement
 	// struct definition 本身不生成 IR（type 已由 Generate 發出）
 	case *parser.MultiAssignStatement:
 		if innerCall, ok := s.Value.(*parser.CallExpression); ok {
+			// 註冊左側目標變數為局部名，避免與同名全局函數（如標準庫的 out/err
+			// 打印函數）衝突：否則在將其作為返回槽指標傳遞時會被誤判成函數指標
+			// void(...)**，導致呼叫方傳參型別錯亂、opt 把形參表重排、運行時空指標崩潰。
+			for _, target := range s.Targets {
+				if ident, ok := target.(*parser.Identifier); ok {
+					if g.funcLocalNames != nil {
+						g.funcLocalNames[ident.Value] = true
+					}
+				}
+			}
 			outerCall := &parser.CallExpression{
 				Token:     innerCall.Token,
 				Function:  innerCall,

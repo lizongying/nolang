@@ -1824,6 +1824,15 @@ func (t *Transpiler) CompileTarget(source string, _ Target) (string, error) {
 	// 處理跨模組的重載衝突（如 bigint.div-mod vs number.div-mod）
 	mangleOverloads(merged, nil)
 	checker.DebugCountHashFns("after-mangleOverloads", merged)
+	// D16: 模組合併後重新執行 validateArrayBounds。
+	// 原本僅在主程式合併前執行（line 1397），導入模組內的錯誤（如 out.len = 1
+	// 違反 str.len 只讀約束）被靜默吞掉，直到連結期才以 undefined symbol 報錯。
+	// 必須在所有轉換 pass 完成後執行，此時 merged 包含全部主程式與模組陳述句。
+	mergedVarTypes := buildVarTypes(merged)
+	mergedSizeMap := buildSizeMaps(merged)
+	if err := validateArrayBounds(merged, mergedSizeMap.arraySizes, mergedSizeMap.sliceSizes, mergedSizeMap.stringSizes, mergedVarTypes); err != nil {
+		return "", err
+	}
 	// 編譯期未初始化變數檢查：循環體內聲明的變數在循環外使用
 	// 必須在模組合併後執行，才能檢查到導入模組（如 md5.no）中的問題
 	if err := validateLoopScopedVars(merged); err != nil {
@@ -3511,6 +3520,37 @@ type sizeMaps struct {
 	sliceSizes  map[string]int64
 	stringSizes map[string]int64
 }
+// buildVarTypes 從程式的頂層陳述句中收集變數型別映射。
+// 用於在模組合併後重新建構 varTypes，使 validateArrayBounds 等檢查能應用於 merged 程式。
+func buildVarTypes(program *parser.Program) map[string]string {
+	varTypes := make(map[string]string)
+	for _, stmt := range program.Statements {
+		if ls, ok := stmt.(*parser.LetStatement); ok {
+			if ls.Type != nil {
+				varTypes[ls.Name.Value] = ls.Type.String()
+			} else if ls.Value != nil {
+				if t := inferTypeFromExpr(ls.Value); t != "" {
+					varTypes[ls.Name.Value] = t
+				}
+			}
+		}
+		if fd, ok := stmt.(*parser.FunctionDefinition); ok {
+			for _, p := range fd.Parameters {
+				if p.Type != nil {
+					varTypes[p.Name] = p.Type.String()
+				}
+			}
+			for _, r := range fd.Results {
+				if r.Type != nil {
+					varTypes[r.Name] = r.Type.String()
+				}
+			}
+			collectVarTypesFromBody(fd.Body, varTypes)
+		}
+	}
+	return varTypes
+}
+
 // buildSizeMaps 單次遍歷 AST 同時收集陣列、切片、字串的大小映射。
 // 替代原本獨立呼叫 buildArraySizeMap + buildSliceSizeMap + buildStringSizeMap 的 3 次遍歷。
 func buildSizeMaps(program *parser.Program) *sizeMaps {

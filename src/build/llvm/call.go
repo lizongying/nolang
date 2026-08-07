@@ -1057,6 +1057,20 @@ func (g *Generator) generateCallExpression(sb *strings.Builder, expr *parser.Cal
 				for outIdx, outArg := range expr.Arguments {
 					// Auto-allocate undeclared output variables (e.g. `total` in `.c.recv-all()(response, total)`)
 					if ident, ok := outArg.(*parser.Identifier); ok {
+						// Output targets are the LHS of a multi-assignment / curried
+						// call — they are ALWAYS variables, never function references.
+						// Register them as local names so generateCallArg emits a typed
+						// pointer (e.g. %str-long*) instead of a function pointer
+						// (void(...)**). This is critical when the target name collides
+						// with a global function of the same name (e.g. the std print
+						// functions `out`/`err`): without this, `out, code, err = f()`
+						// would pass a `void(...)**` slot holding @out/@err, leaving the
+						// real %out/%err locals unwritten and corrupting the call's
+						// output parameters (opt -O2/-O3 then mis-schedules and crashes).
+						if g.funcLocalNames == nil {
+							g.funcLocalNames = make(map[string]bool)
+						}
+						g.funcLocalNames[ident.Value] = true
 						_, exists := g.varTypes[ident.Value]
 						if !exists {
 							outType := "i64"
@@ -3861,10 +3875,14 @@ func (g *Generator) genForwardFunc(sb *strings.Builder, forwardFunc string, expr
 			g.tmpIdx++
 			v2 := fmt.Sprintf("%%wc.v2.%d", g.tmpIdx)
 			g.tmpIdx++
-			v3 := fmt.Sprintf("%%wc.v3.%d", g.tmpIdx)
-			if sb != nil {
-				sb.WriteString(fmt.Sprintf("%s%s = mul i64 %s, %d\n", g.indent(), bytesReg, capVal, elemSize))
-				sb.WriteString(fmt.Sprintf("%s%s = call i8* @nolang.malloc(i64 %s)\n", g.indent(), bufReg, bytesReg))
+		v3 := fmt.Sprintf("%%wc.v3.%d", g.tmpIdx)
+		if sb != nil {
+			sb.WriteString(fmt.Sprintf("%s%s = mul i64 %s, %d\n", g.indent(), bytesReg, capVal, elemSize))
+			sb.WriteString(fmt.Sprintf("%s%s = call i8* @nolang.malloc(i64 %s)\n", g.indent(), bufReg, bytesReg))
+			// Zero the element array so element-assignment's "free old value" path
+			// loads defined len=0/data=null (not undef) and never calls free(undef).
+			// (load undef -> icmp -> free(undef) is UB that SCCP deletes the whole fn.)
+			sb.WriteString(fmt.Sprintf("%scall void @llvm.memset.p0i8.i64(i8* %s, i8 0, i64 %s, i1 false)\n", g.indent(), bufReg, bytesReg))
 				sb.WriteString(fmt.Sprintf("%s%s = insertvalue %%vec zeroinitializer, i64 0, 0\n", g.indent(), v1))
 				sb.WriteString(fmt.Sprintf("%s%s = insertvalue %%vec %s, i64 %s, 1\n", g.indent(), v2, v1, capVal))
 				_p2i_v3 := g.ptrToIntVal(sb, bufReg)
@@ -3924,10 +3942,13 @@ func (g *Generator) genForwardFunc(sb *strings.Builder, forwardFunc string, expr
 			g.tmpIdx++
 			v2 := fmt.Sprintf("%%wl.v2.%d", g.tmpIdx)
 			g.tmpIdx++
-			v3 := fmt.Sprintf("%%wl.v3.%d", g.tmpIdx)
-			if sb != nil {
-				sb.WriteString(fmt.Sprintf("%s%s = mul i64 %s, %d\n", g.indent(), bytesReg, lenVal, elemSize))
-				sb.WriteString(fmt.Sprintf("%s%s = call i8* @nolang.malloc(i64 %s)\n", g.indent(), bufReg, bytesReg))
+		v3 := fmt.Sprintf("%%wl.v3.%d", g.tmpIdx)
+		if sb != nil {
+			sb.WriteString(fmt.Sprintf("%s%s = mul i64 %s, %d\n", g.indent(), bytesReg, lenVal, elemSize))
+			sb.WriteString(fmt.Sprintf("%s%s = call i8* @nolang.malloc(i64 %s)\n", g.indent(), bufReg, bytesReg))
+			// Zero the element array so element-assignment's "free old value" path
+			// loads defined len=0/data=null (not undef) and never calls free(undef).
+			sb.WriteString(fmt.Sprintf("%scall void @llvm.memset.p0i8.i64(i8* %s, i8 0, i64 %s, i1 false)\n", g.indent(), bufReg, bytesReg))
 				// len=len, cap=len (both set to the argument value)
 				sb.WriteString(fmt.Sprintf("%s%s = insertvalue %%vec zeroinitializer, i64 %s, 0\n", g.indent(), v1, lenVal))
 				sb.WriteString(fmt.Sprintf("%s%s = insertvalue %%vec %s, i64 %s, 1\n", g.indent(), v2, v1, lenVal))
@@ -3990,10 +4011,13 @@ func (g *Generator) genForwardFunc(sb *strings.Builder, forwardFunc string, expr
 			g.tmpIdx++
 			v2 := fmt.Sprintf("%%wcl.v2.%d", g.tmpIdx)
 			g.tmpIdx++
-			v3 := fmt.Sprintf("%%wcl.v3.%d", g.tmpIdx)
-			if sb != nil {
-				sb.WriteString(fmt.Sprintf("%s%s = mul i64 %s, %d\n", g.indent(), bytesReg, capVal, elemSize))
-				sb.WriteString(fmt.Sprintf("%s%s = call i8* @nolang.malloc(i64 %s)\n", g.indent(), bufReg, bytesReg))
+		v3 := fmt.Sprintf("%%wcl.v3.%d", g.tmpIdx)
+		if sb != nil {
+			sb.WriteString(fmt.Sprintf("%s%s = mul i64 %s, %d\n", g.indent(), bytesReg, capVal, elemSize))
+			sb.WriteString(fmt.Sprintf("%s%s = call i8* @nolang.malloc(i64 %s)\n", g.indent(), bufReg, bytesReg))
+			// Zero the element array so element-assignment's "free old value" path
+			// loads defined len=0/data=null (not undef) and never calls free(undef).
+			sb.WriteString(fmt.Sprintf("%scall void @llvm.memset.p0i8.i64(i8* %s, i8 0, i64 %s, i1 false)\n", g.indent(), bufReg, bytesReg))
 				// len=len, cap=cap (independent values)
 				sb.WriteString(fmt.Sprintf("%s%s = insertvalue %%vec zeroinitializer, i64 %s, 0\n", g.indent(), v1, lenVal))
 				sb.WriteString(fmt.Sprintf("%s%s = insertvalue %%vec %s, i64 %s, 1\n", g.indent(), v2, v1, capVal))

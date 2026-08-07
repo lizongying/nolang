@@ -2660,7 +2660,7 @@ func (g *Generator) callBuiltin(sb *strings.Builder, fnName string, hasArgs bool
 			// Call the C runtime. Argument order matches runtime/process.c:
 			// argv_data, argv_len, envp_data, envp_len, stride, data_off, dir,
 			// stdin_buf, stdin_len, timeout_ms, merge_err, out_data, out_len, status.
-		sb.WriteString(fmt.Sprintf("%scall void @nolang.process_run(i8* %s, i64 %s, i8* %s, i64 %s, i64 %s, i64 %s, i8* %s, i8* %s, i64 %s, i64 %s, i64 %s, i8** %s, i64* %s, i64* %s)\n",
+		sb.WriteString(fmt.Sprintf("%scall void @nolang_process_run(i8* %s, i64 %s, i8* %s, i64 %s, i64 %s, i64 %s, i8* %s, i8* %s, i64 %s, i64 %s, i64 %s, i8** %s, i64* %s, i64* %s)\n",
 			g.indent(), argvData, argvLen, envpData, envpLen, stride, dataOff,
 			dirPtr, stdinPtr, stdinLen, timeoutVal, mergeVal, outDataPtr, outLen, status))
 			// Load the outputs returned by the C runtime.

@@ -65,7 +65,7 @@ func (g *Generator) writeDeclarations(sb *strings.Builder) {
 	// without assuming nolang's string layout. Output is returned via out_data/out_len;
 	// the caller wraps it into a %str-long. status: >=0 exit code, -1 start failure, -2 timeout.
 	if goos != "wasi" {
-		sb.WriteString("declare void @nolang.process_run(i8*, i64, i8*, i64, i64, i64, i8*, i8*, i64, i64, i64, i8**, i64*, i64*)\n")
+		sb.WriteString("declare void @nolang_process_run(i8*, i64, i8*, i64, i64, i64, i8*, i8*, i64, i64, i64, i8**, i64*, i64*)\n")
 	}
 	if goos == "windows" {
 		sb.WriteString("declare i8* @_getcwd(i8*, i64)\n")
