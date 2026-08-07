@@ -2988,12 +2988,21 @@ func (g *Generator) generateAssignExpression(sb *strings.Builder, expr *parser.A
 									break
 								}
 							}
-							if subIdx >= 0 {
-								subGEP := g.tmpReg("set.nested.sub.gep")
-								sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %s, %s* %s, i32 0, i32 %d\n",
-									g.indent(), subGEP, outerType, outerType, outerGEP, subIdx))
-								sb.WriteString(fmt.Sprintf("%sstore %s %s, %s* %s\n", g.indent(), toLLVMType(subType), val, toLLVMType(subType), subGEP))
+                        if subIdx >= 0 {
+							subGEP := g.tmpReg("set.nested.sub.gep")
+							sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %s, %s* %s, i32 0, i32 %d\n",
+								g.indent(), subGEP, outerType, outerType, outerGEP, subIdx))
+							// String literal is %str-long* pointer (alloca), load the value before storing.
+							storeVal := val
+							if subType == "%str-long" {
+								if _, ok := expr.Value.(*parser.StringLiteral); ok {
+									loadReg := g.tmpReg("set.nested.strload")
+									sb.WriteString(fmt.Sprintf("%s%s = load %%str-long, %%str-long* %s\n", g.indent(), loadReg, val))
+									storeVal = loadReg
+								}
 							}
+							sb.WriteString(fmt.Sprintf("%sstore %s %s, %s* %s\n", g.indent(), toLLVMType(subType), storeVal, toLLVMType(subType), subGEP))
+						}
 						}
 					}
 				}

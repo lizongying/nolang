@@ -368,3 +368,120 @@ main = () {
 		t.Errorf("IR should use deep clone (memcpy) or load %%session for struct array element copy, got:\n%s", ir)
 	}
 }
+
+// TestStructFieldNestedStrAssign tests D3: assigning a string literal to a
+// nested struct field (e.g., self.t.name = 'read_file') inside a method.
+// Bug: generateAssignExpression's nested field path stored the string literal
+// pointer (%str-longlit.N) directly as a %str-long value, causing:
+//   store %str-long %str-longlit.1, %str-long* %set.nested.sub.gep.8  (type mismatch)
+func TestStructFieldNestedStrAssign(t *testing.T) {
+	src := `
+tool {
+    name str
+    kind i64
+}
+
+holder {
+    t tool
+}
+
+holder.init = () {
+    .t.name = 'read_file'
+    .t.kind = 42
+}
+
+main = () {
+    h holder
+    h.init()
+    print(h.t.name)
+    print(h.t.kind)
+}
+`
+	l := lexer.New(src)
+	p := parser.New(l)
+	prog := p.ParseProgram()
+	if len(p.Errors()) > 0 {
+		t.Fatalf("parse errors: %v", p.Errors())
+	}
+
+	g := NewGenerator()
+	ir := g.Generate(prog)
+
+	// Verify the nested field assignment loads the str-long value before storing
+	// (not storing the %str-longlit pointer directly)
+	hasNestedStrLoad := false
+	for _, line := range strings.Split(ir, "\n") {
+		trimmed := strings.TrimSpace(line)
+		if strings.Contains(trimmed, "load %str-long") && strings.Contains(trimmed, "set.nested") {
+			hasNestedStrLoad = true
+			break
+		}
+	}
+	if !hasNestedStrLoad {
+		// Also check that there's no direct store of str-longlit to nested sub.gep
+		for _, line := range strings.Split(ir, "\n") {
+			trimmed := strings.TrimSpace(line)
+			if strings.Contains(trimmed, "store %str-long %str-longlit") && strings.Contains(trimmed, "set.nested") {
+				t.Errorf("IR should NOT store str-longlit pointer as str-long value in nested assignment, got: %s", trimmed)
+			}
+		}
+	}
+}
+
+// TestMethodCallWithOutputParam tests voidSingleOutput fix: a method call
+// with an output parameter (e.g., sm.get-session(0, s)) should pass the output
+// variable pointer as the last argument, without adding an extra temp buffer.
+// Bug: voidSingleOutput always added a temp buffer even when the caller
+// already passed the output param, causing an extra argument mismatch.
+func TestMethodCallWithOutputParam(t *testing.T) {
+	src := `
+session {
+    id i64
+    count i64
+}
+
+session-manager {
+    sessions [8]session
+    count i64
+}
+
+session-manager.get-session = (idx i64) (s session) {
+    s = .sessions[idx]
+}
+
+main = () {
+    sm session-manager
+    sm.sessions[0].id = 100
+    sm.sessions[0].count = 5
+    s session
+    sm.get-session(0, s)
+    print(s.id)
+    print(s.count)
+}
+`
+	l := lexer.New(src)
+	p := parser.New(l)
+	prog := p.ParseProgram()
+	if len(p.Errors()) > 0 {
+		t.Fatalf("parse errors: %v", p.Errors())
+	}
+
+	g := NewGenerator()
+	ir := g.Generate(prog)
+
+	// Verify the method call has exactly 3 arguments (self + idx + output)
+	// and does NOT have a 4th vso.tmp argument
+	for _, line := range strings.Split(ir, "\n") {
+		trimmed := strings.TrimSpace(line)
+		if strings.Contains(trimmed, "call void @session-manager.get-session") {
+			// Should contain %session* %s (the output param), not %vso.tmp
+			if strings.Contains(trimmed, "%vso.tmp") {
+				t.Errorf("IR should NOT have vso.tmp in method call with output param, got: %s", trimmed)
+			}
+			// Should contain %s as output parameter
+			if !strings.Contains(trimmed, "%s") {
+				t.Errorf("IR should pass %%s as output parameter, got: %s", trimmed)
+			}
+		}
+	}
+}

@@ -433,6 +433,29 @@ process.cmd = (program str, args []str, dir str, input str, env []str, timeout i
     }
 }
 
+; cmdopts: process.run 的執行選項（跨模組結構體示例）。
+; 欄位對應 process.cmd 的扁平參數：
+;   dir       : 工作目錄；空字串 = 繼承父進程工作目錄
+;   stdin     : 寫入子進程 stdin 的內容；空字串 = 不提供 stdin
+;   env       : 環境變數（["K=V", ...]）；空陣列 = 繼承父進程環境
+;   timeout   : 超時時間（毫秒），<=0 = 無限等待
+;   merge-err : 非 0 = 將 stderr 合併到捕獲的 out 中
+cmdopts {
+    dir str
+    stdin str
+    env []str
+    timeout i64
+    merge-err i64
+}
+
+; run: 以結構體選項執行子進程（跨模組結構體參數示例）。
+; 演示 nolang 的跨模組結構體轉發：cmdopts 定義於本模組，
+; 呼叫端在另一模組構造 cmdopts{...} 並傳入。
+; (TEMP DISABLED for isolation)
+; process.run = (program str, args []str, o cmdopts) (out str, code i64, err str) {
+;     out, code, err = process.cmd(program, args, o.dir, o.stdin, o.env, o.timeout, o.merge-err)
+; }
+
 ; process-output: 執行命令並捕獲 stdout 輸出
 ; 返回 content=輸出內容, code=退出碼
 process-output = (program str, arg str) (content str, code i64) {
