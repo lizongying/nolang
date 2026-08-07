@@ -6371,21 +6371,38 @@ func (g *Generator) generateLet(sb *strings.Builder, stmt *parser.LetStatement) 
 					// When srcInnerType is "" (unknown, e.g. tls.conn.send returns ?i64 but
 					// optionInnerTypes is not populated), treat as primitive to avoid loading
 					// from a raw i64 value as if it were a pointer (which causes trace/BPT trap).
-					if srcInnerType != "" && g.isStructLLVMType(srcInnerType) {
-						// Source option holds a struct pointer — load the struct value.
-					loadType := srcInnerType
-					loadReg := g.tmpReg("it.syn.load")
-					sb.WriteString(fmt.Sprintf("%s%s = load %s, %s* %s\n", g.indent(), loadReg, loadType, loadType, val))
-					val = loadReg
-					// If the load type differs from llvmType (it's allocated type),
-					// bitcast the alloca pointer so the store uses the correct type.
-					if loadType != llvmType {
-						castReg := g.tmpReg("it.syn.cast")
-						sb.WriteString(fmt.Sprintf("%s%s = bitcast %s* %s to %s*\n", g.indent(), castReg, llvmType, g.varAddr(name), loadType))
-						sb.WriteString(fmt.Sprintf("%sstore %s %s, %s* %s\n", g.indent(), loadType, val, loadType, castReg))
-						return
+				if srcInnerType != "" && g.isStructLLVMType(srcInnerType) {
+					// Source option holds a struct pointer — load the struct value.
+					// This is a SHALLOW copy: the struct's str/vec fields share data
+					// pointers with the option's heap box. The option owns the data.
+					// We must return after the store to prevent heap tracking (which
+					// would double-free the borrowed data at function exit).
+				loadType := srcInnerType
+				loadReg := g.tmpReg("it.syn.load")
+				sb.WriteString(fmt.Sprintf("%s%s = load %s, %s* %s\n", g.indent(), loadReg, loadType, loadType, val))
+				val = loadReg
+				// If the load type differs from llvmType (it's allocated type),
+				// bitcast the alloca pointer so the store uses the correct type.
+				if loadType != llvmType {
+					castReg := g.tmpReg("it.syn.cast")
+					sb.WriteString(fmt.Sprintf("%s%s = bitcast %s* %s to %s*\n", g.indent(), castReg, llvmType, g.varAddr(name), loadType))
+					sb.WriteString(fmt.Sprintf("%sstore %s %s, %s* %s\n", g.indent(), loadType, val, loadType, castReg))
+					// Update varTypes so reads of `it` in this arm use the correct type
+					if g.varTypes != nil {
+						g.varTypes[name] = loadType
 					}
-				} else {
+					return
+				}
+				// loadType == llvmType: store directly and return.
+				// Without this return, the code falls through to the general store
+				// path which tracks `it` as a heap variable → double-free at exit.
+				sb.WriteString(fmt.Sprintf("%sstore %s %s, %s* %s\n", g.indent(), loadType, val, loadType, g.varAddr(name)))
+				// Update varTypes so reads of `it` in this arm use the correct type
+				if g.varTypes != nil {
+					g.varTypes[name] = loadType
+				}
+				return
+			} else {
 					// Source option holds a primitive (e.g. ?i64). `val` is the raw i64 value,
 					// not a pointer. `it` may have been pre-allocated as a struct type
 					// (e.g. %str-long) from a previous match with a different element type;

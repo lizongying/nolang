@@ -38,10 +38,40 @@ func containsAwaitInStmt(stmt parser.Statement) bool {
 	return false
 }
 
-// containsAwaitInExpr 递归检测表达式中是否含 awy。
+// containsAsyncYield 递归检测表达式中是否含 async-yield() 调用。
+func containsAsyncYield(expr parser.Expression) bool {
+	if expr == nil {
+		return false
+	}
+	switch e := expr.(type) {
+	case *parser.CallExpression:
+		if ident, ok := e.Function.(*parser.Identifier); ok && ident.Value == "async-yield" {
+			return true
+		}
+		if containsAsyncYield(e.Function) {
+			return true
+		}
+		for _, arg := range e.Arguments {
+			if containsAsyncYield(arg) {
+				return true
+			}
+		}
+		return false
+	case *parser.InfixExpression:
+		return containsAsyncYield(e.Left) || containsAsyncYield(e.Right)
+	case *parser.PrefixExpression:
+		return containsAsyncYield(e.Right)
+	}
+	return false
+}
+
+// containsAwaitInExpr 递归检测表达式中是否含 awy（或 async-yield）。
 func containsAwaitInExpr(expr parser.Expression) bool {
 	if expr == nil {
 		return false
+	}
+	if containsAsyncYield(expr) {
+		return true
 	}
 	switch e := expr.(type) {
 	case *parser.AwaitExpression:
@@ -64,38 +94,48 @@ func containsAwaitInExpr(expr parser.Expression) bool {
 	return false
 }
 
-// topLevelAwaitIndex 记录一个顶层 awy 语句的位置及其结果变量。
+// topLevelAwaitIndex 记录一个顶层挂起点（awy 或 async-yield）的位置与元信息。
 type topLevelAwaitIndex struct {
-	stmtIdx    int    // 语句在函数体中的索引
-	resultVar  string // 结果变量名（如 r = awy ... 中的 r），空表示无结果
+	stmtIdx   int    // 语句在函数体中的索引
+	resultVar string // 结果变量名（如 r = awy ... 中的 r），空表示无结果
+	kind      string // "await" = awy 等待子任务; "yield" = async-yield 自让出
 }
 
-// collectTopLevelAwaitIndices 收集函数体顶层 awy 语句的索引及结果变量。
-// 只收集「整条语句是 awy」的情况（如 r = awy ... 或 awy ...）。
-// 不收集 awy 嵌套在复杂表达式中的情况（暂不支持）。
+// collectTopLevelAwaitIndices 收集函数体顶层挂起点（awy 与 async-yield）的索引及元信息。
+// 只收集「整条语句是 awy / async-yield」的情况（如 r = awy ... / awy ... / async-yield()）。
+// 不收集嵌套在复杂表达式中的情况（暂不支持）。
 func collectTopLevelAwaitIndices(stmts []parser.Statement) []topLevelAwaitIndex {
 	var indices []topLevelAwaitIndex
 	for i, stmt := range stmts {
-		if rv, ok := topLevelAwaitInfo(stmt); ok {
-			indices = append(indices, topLevelAwaitIndex{stmtIdx: i, resultVar: rv})
+		if rv, ok, kind := topLevelAwaitInfo(stmt); ok {
+			indices = append(indices, topLevelAwaitIndex{stmtIdx: i, resultVar: rv, kind: kind})
 		}
 	}
 	return indices
 }
 
-// topLevelAwaitInfo 返回 (resultVar, true) 如果 stmt 是顶层 awy 语句。
-func topLevelAwaitInfo(stmt parser.Statement) (string, bool) {
+// topLevelAwaitInfo 返回 (resultVar, true, kind) 如果 stmt 是顶层挂起点。
+//   - awy 语句           → kind="await"
+//   - async-yield() 语句 → kind="yield"（自让出：保存状态、自入队、ret void）
+func topLevelAwaitInfo(stmt parser.Statement) (string, bool, string) {
 	switch s := stmt.(type) {
 	case *parser.LetStatement:
 		if _, ok := s.Value.(*parser.AwaitExpression); ok {
-			return s.Name.Value, true
+			return s.Name.Value, true, "await"
 		}
 	case *parser.ExpressionStatement:
 		if _, ok := s.Expression.(*parser.AwaitExpression); ok {
-			return "", true
+			return "", true, "await"
+		}
+		// async-yield() 顶层调用：自让出挂起点
+		if call, ok := s.Expression.(*parser.CallExpression); ok {
+			if ident, ok := call.Function.(*parser.Identifier); ok &&
+				ident.Value == "async-yield" && len(call.Arguments) == 0 {
+				return "", true, "yield"
+			}
 		}
 	}
-	return "", false
+	return "", false, ""
 }
 
 // isTopLevelAwaitStmt 检测语句是否是顶层 awy 语句。
