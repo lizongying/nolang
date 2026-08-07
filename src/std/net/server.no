@@ -135,6 +135,32 @@ server.accept = () (c ?server-conn) {
     c = conn
 }
 
+; accept-nb: 非阻塞接受新的連接（供協程事件循環輪詢）
+; 返回 c ?server-conn: 有連接=server-conn, 暫無連接或失敗=nil
+; 與 server.accept 不同，本方法不阻塞，配合 async-yield() 實現可中斷的事件循環
+server.accept-nb = () (c ?server-conn) {
+    c = nil
+    .fd < 0 -> return
+    client-fd = net.net-accept-nb(.fd)
+    client-fd < 0 -> return
+    buf str = with-len(HTTP-SRV-BUF-SIZE)
+    conn = server-conn {
+        fd: client-fd
+        method: ''
+        path: ''
+        query: ''
+        version: ''
+        headers: ''
+        header-count: 0
+        body: ''
+        remote-addr: ''
+        keep-alive: false
+        recv-buf: buf
+        recv-buf-len: 0
+    }
+    c = conn
+}
+
 ; close: 關閉伺服器
 server.close = () {
     .fd >= 0 -> {

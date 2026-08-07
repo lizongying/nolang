@@ -6165,7 +6165,39 @@ func (g *Generator) generateLet(sb *strings.Builder, stmt *parser.LetStatement) 
 						}
 					}
 				}
+	}
+}
+
+	// Deep clone path for struct field read: x = s.field
+	// where field is a heap-owning type (%str-long, %vec, user struct).
+	// generateDotExpression loads the field value (shallow copy of {len, cap, data}),
+	// making x.data share the same buffer as s.field.data. At function exit,
+	// emitHeapFree would free x.data, corrupting s.field.data → use-after-free.
+	// Fix: deep clone the field so x owns an independent data buffer.
+	if dotExpr, ok := stmt.Value.(*parser.DotExpression); ok {
+		fieldType := g.exprResultLLVMType(dotExpr)
+		if fieldType != "" && g.isHeapOwningType(fieldType) {
+			_, isLocal := g.funcLocalNames[name]
+			isOutput := g.outputParamNames != nil && g.outputParamNames[name]
+			if isLocal && !isOutput {
+				canClone := true
+				if fieldType == "%vec" || fieldType == "%arr" {
+					canClone = false
+				}
+				if fieldType != "%vec" && fieldType != "%arr" && fieldType != "%str-long" {
+					if !g.canDeepCloneStruct(fieldType) {
+						canClone = false
+					}
+				}
+				if canClone {
+					g.freeOldHeapValue(sb, stmt, name)
+					fieldPtr := g.generateExprPtr(sb, dotExpr)
+					g.emitDeepClone(sb, fieldPtr, g.varAddr(name), fieldType, "")
+					g.trackLocalHeapVar(name, fieldType)
+					return
+				}
 			}
+		}
 	}
 
 		// Deep clone path for struct field array element: s = .sessions[idx]

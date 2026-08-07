@@ -6302,6 +6302,14 @@ func (g *Generator) prepareAsyncCall(sb *strings.Builder, call *parser.CallExpre
 		return "", "", "", ""
 	}
 
+	// 异步参数生命周期修正：run / awy / future 的目标函数由事件循环在「调用方可能已
+	// yield 或返回」之后才执行，因此参数指针必须存活到那时。generateCallArg 对字面量
+	// 仅在 g.coroInAsyncFunc 为真时堆分配；此处强制置真，使所有字面量/表达式参数
+	// 走堆分配（malloc），避免指向调用方栈帧的悬垂指针（之前负数 i64 字面量被读成垃圾）。
+	oldCoro := g.coroInAsyncFunc
+	g.coroInAsyncFunc = true
+	defer func() { g.coroInAsyncFunc = oldCoro }()
+
 	// Build the list of argument expressions (receiver + explicit args for methods)
 	var argExprs []parser.Expression
 	if dot, ok := call.Function.(*parser.DotExpression); ok {
@@ -6447,13 +6455,36 @@ func (g *Generator) prepareAsyncCall(sb *strings.Builder, call *parser.CallExpre
 					if cloneSize == 0 {
 						cloneSize = 8
 					}
-					cloneBuf := g.allocForCoro(sb, "async.argclone", varType, cloneSize)
-					g.emitDeepClone(sb, g.varAddr(ident.Value), cloneBuf, varType, elemType)
-					argTypeStr = varType + "*"
-					argPtr = cloneBuf
-				}
+				cloneBuf := g.allocForCoro(sb, "async.argclone", varType, cloneSize)
+				g.emitDeepClone(sb, g.varAddr(ident.Value), cloneBuf, varType, elemType)
+				argTypeStr = varType + "*"
+				argPtr = cloneBuf
 			}
 		}
+	}
+	// 标量变元（i64/i32/i16/i8/i1/double/float）当前指向调用方栈帧（字面量用 alloca，
+	// 变量用局部槽），调用方返回/yield 后悬垂。此处统一在「调用方运行时」把值拷入堆缓冲
+	// （此刻调用方栈仍存活，load 安全），堆缓冲存活到事件循环稍后执行 wrapper 时。
+	// 堆自有类型（vec/arr/str-long/struct）已由上面的深拷贝处理，跳过。
+	if argTypeStr != "" {
+		valType := strings.TrimSuffix(argTypeStr, "*")
+		isScalar := g.isIntegerLLVMType(valType) || valType == "double" || valType == "float"
+		if isScalar && !g.isHeapOwningType(valType) {
+			sz := g.llvmTypeSize(valType)
+			if sz == 0 {
+				sz = 8
+			}
+			heapPtr := g.allocForCoro(sb, "async.argscalar", valType, sz)
+			g.tmpIdx++
+			loadReg := fmt.Sprintf("%%async.scalar.load.%d", g.tmpIdx)
+			if sb != nil {
+				sb.WriteString(fmt.Sprintf("%s%s = load %s, %s %s\n", g.indent(), loadReg, valType, argTypeStr, argPtr))
+				sb.WriteString(fmt.Sprintf("%sstore %s %s, %s* %s\n", g.indent(), valType, loadReg, valType, heapPtr))
+			}
+			argPtr = heapPtr
+			argTypeStr = valType + "*"
+		}
+	}
 		g.tmpIdx++
 		argCast := fmt.Sprintf("%%async.arg.%d.cast.%d", i, g.tmpIdx)
 		if sb != nil {
@@ -6683,6 +6714,14 @@ func (g *Generator) launchThreadFromFuture(sb *strings.Builder, varName string) 
 func (g *Generator) generateRunExpression(sb *strings.Builder, expr *parser.RunExpression) string {
 	switch c := expr.Call.(type) {
 	case *parser.CallExpression:
+		// run <协程函数>(args)：含顶层 awy / async-yield 的函数已被变换为无栈协程，
+		// 其原始 @fn 符号不存在。直接走协程任务启动（创建 coro_state + task 入队，非阻塞）。
+		fnName, _, _ := g.resolveAsyncCallInfo(c)
+		if g.asyncFuncCoroNum != nil {
+			if num, isCoro := g.asyncFuncCoroNum[fnName]; isCoro {
+				return g.launchCoroTask(sb, c, fnName, num)
+			}
+		}
 		// run f-async(args) or run non-async-func(args)
 		wrapperName, argsBitcast, resultPtrCast, resultType := g.prepareAsyncCall(sb, c)
 		if wrapperName == "" {

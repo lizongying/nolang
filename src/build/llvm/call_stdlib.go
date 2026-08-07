@@ -3088,6 +3088,25 @@ func (g *Generator) callBuiltin(sb *strings.Builder, fnName string, hasArgs bool
 		return acceptExt
 	}
 
+	// net-accept-nb: non-blocking accept (listen socket set non-blocking in C).
+	// Calls @nolang_net_accept_nb which returns:
+	//   >= 0 : client fd
+	//     -2 : would block (no connection pending right now)
+	//     -1 : hard error
+	// Args: listen-fd i64
+	// Returns: fd i64
+	if fnName == "net-accept-nb" && hasArgs && nArgs >= 1 {
+		a := evalArgs()
+		listenFd := a[0]
+		fdTrunc := g.tmpReg("net.anb.fdtrunc")
+		acceptRet := g.tmpReg("net.anb.ret")
+		if sb != nil {
+			sb.WriteString(fmt.Sprintf("%s%s = trunc i64 %s to i32\n", g.indent(), fdTrunc, listenFd))
+			sb.WriteString(fmt.Sprintf("%s%s = call i64 @nolang_net_accept_nb(i32 %s)\n", g.indent(), acceptRet, fdTrunc))
+		}
+		return acceptRet
+	}
+
 	// net-send: send data on connected socket
 	// Args: fd i64, data str|[]byte, n i64
 	// Returns: written i64 (-1 on error)

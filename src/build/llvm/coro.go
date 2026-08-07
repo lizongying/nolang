@@ -271,6 +271,11 @@ func (g *Generator) transformAsyncFunction(sb *strings.Builder, fd *parser.Funct
 	for i, f := range fields {
 		g.coroFieldIdx[f.name] = i
 	}
+	// 记录 coro_state 字节大小上界（每字段 ≤8 字节，故 8*字段数 +8 安全），
+	// 供 run 异步启动（launchCoroTask）堆分配 coro_state，避免栈帧销毁后悬垂。
+	if g.coroStateSizes != nil {
+		g.coroStateSizes[num] = int64(8*len(fields)) + 8
+	}
 	// 记录结果字段（含索引），供直接调用 coro 函数后从 coro_state 取回结果。
 	// coroFieldIdx 在下一個 coro 函數變換時會被覆蓋，因此此處固化结果字段信息。
 	if g.coroResultFields != nil {
@@ -1056,6 +1061,106 @@ func (g *Generator) generateCoroCall(sb *strings.Builder, expr *parser.CallExpre
 		}
 	}
 	return ""
+}
+
+// launchCoroTask 创建协程任务并入就绪队列（不立即运行事件循环），返回不透明任务句柄 i8*。
+// 供 `run f-async-body(...)` 在目标是「含顶层 awy / async-yield 的协程函数」时调用，
+// 实现非阻塞启动：调用方拿到句柄后可继续做其他事（或 async-cancel 它），
+// 事件循环稍后调度该任务，任务内 async-yield() 会让出控制权供其他任务运行。
+// 与 generateCoroCall 的区别：generateCoroCall 同步驱动事件循环直至完成并取回结果；
+// launchCoroTask 仅入队并返回句柄（真正的并发/可取消启动）。
+// 任务的 data（%task field 1）= coro_state 指针，与 coro_trampoline / generateCoroCall 约定一致。
+func (g *Generator) launchCoroTask(sb *strings.Builder, call *parser.CallExpression, fnName string, num int) string {
+	stateType := g.coroStateName(num)
+	initName := g.coroInitName(num)
+	trampName := fmt.Sprintf("coro_trampoline.%d", num)
+
+	// 堆分配 coro_state.N（必须堆分配：run 异步启动后 launchCoroTask 立即返回，
+	// 协程稍后才由事件循环运行；若用 alloca 则 coro_state 随栈帧销毁成为悬垂指针）。
+	csSize := int64(8 * 16) // 默认上界（单协程字段数有限），优先用精确大小。
+	if g.coroStateSizes != nil {
+		if s, ok := g.coroStateSizes[num]; ok {
+			csSize = s
+		}
+	}
+	csAddr := g.allocForCoro(sb, "corolaunch.cs", stateType, csSize)
+
+	// 评估输入参数并构建 coro_init.N 调用参数列表（仅为输入参数，不含输出参数）。
+	var argStrs []string
+	paramCount := 0
+	if pc, ok := g.funcParamCount[fnName]; ok {
+		paramCount = pc
+	}
+	argExprs := call.Arguments
+	if paramCount > 0 && len(argExprs) > paramCount {
+		argExprs = argExprs[:paramCount]
+	}
+	if types, ok := g.funcParamLLVMTypes[fnName]; ok {
+		for i, argExpr := range argExprs {
+			argVal := g.generateExprWithSB(sb, argExpr)
+			ty := "i64"
+			if i < len(types) {
+				ty = types[i]
+			}
+			argStrs = append(argStrs, fmt.Sprintf("%s %s", ty, argVal))
+		}
+	} else {
+		for _, argExpr := range argExprs {
+			argVal := g.generateExprWithSB(sb, argExpr)
+			argStrs = append(argStrs, fmt.Sprintf("i64 %s", argVal))
+		}
+	}
+
+	// call coro_init.N(cs, args...)
+	argStr := ""
+	if len(argStrs) > 0 {
+		argStr = ", " + strings.Join(argStrs, ", ")
+	}
+	sb.WriteString(fmt.Sprintf("%scall void @%s(%s* %s%s)\n", g.indent(), sanitizeLLVMName(initName), stateType, csAddr, argStr))
+
+	// 堆分配 %task（必须堆分配：task 入全局就绪队列，run 返回后调用方栈帧销毁，
+	// 若用 alloca 则 task 成为悬垂指针，事件循环稍后解引用即 UAF / SIGSEGV）。
+	taskAddr := g.allocForCoro(sb, "corolaunch.task", "%task", 24)
+
+	// store resume_fn (field 0) = coro_trampoline.N
+	g.tmpIdx++
+	taskF0 := fmt.Sprintf("%%corolaunch.task.f0.%d", g.tmpIdx)
+	sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%task, %%task* %s, i32 0, i32 0\n", g.indent(), taskF0, taskAddr))
+	sb.WriteString(fmt.Sprintf("%sstore void (i8*)* @%s, void (i8*)** %s\n", g.indent(), sanitizeLLVMName(trampName), taskF0))
+
+	// store data (field 1) = cs bitcast to i8*（与 coro_trampoline / generateCoroCall 一致）
+	g.tmpIdx++
+	csCast := fmt.Sprintf("%%corolaunch.cs.cast.%d", g.tmpIdx)
+	sb.WriteString(fmt.Sprintf("%s%s = bitcast %s* %s to i8*\n", g.indent(), csCast, stateType, csAddr))
+	g.tmpIdx++
+	taskF1 := fmt.Sprintf("%%corolaunch.task.f1.%d", g.tmpIdx)
+	sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%task, %%task* %s, i32 0, i32 1\n", g.indent(), taskF1, taskAddr))
+	g.storeDataPtrField(sb, csCast, taskF1)
+
+	// store done (field 2) = false
+	g.tmpIdx++
+	taskF2 := fmt.Sprintf("%%corolaunch.task.f2.%d", g.tmpIdx)
+	sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%task, %%task* %s, i32 0, i32 2\n", g.indent(), taskF2, taskAddr))
+	sb.WriteString(fmt.Sprintf("%sstore i1 false, i1* %s\n", g.indent(), taskF2))
+	// store cancelled (field 3) = false
+	g.tmpIdx++
+	taskF3 := fmt.Sprintf("%%corolaunch.task.f3.%d", g.tmpIdx)
+	sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%task, %%task* %s, i32 0, i32 3\n", g.indent(), taskF3, taskAddr))
+	sb.WriteString(fmt.Sprintf("%sstore i1 false, i1* %s\n", g.indent(), taskF3))
+
+	// bitcast task* to i8*
+	g.tmpIdx++
+	taskI8 := fmt.Sprintf("%%corolaunch.task.i8.%d", g.tmpIdx)
+	sb.WriteString(fmt.Sprintf("%s%s = bitcast %%task* %s to i8*\n", g.indent(), taskI8, taskAddr))
+
+	// 入就绪队列（非阻塞启动），返回句柄
+	sb.WriteString(fmt.Sprintf("%scall void @nolang_async_enqueue(i8* %s)\n", g.indent(), taskI8))
+
+	if g.ssaTypes != nil {
+		g.ssaTypes[taskAddr] = "%task*"
+		g.ssaTypes[taskI8] = "i8*"
+	}
+	return taskI8
 }
 
 // generateAsyncMainEntry 生成 @main 函数，创建 coro_state + task 并启动事件循环。

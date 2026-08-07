@@ -1552,6 +1552,34 @@ func (p *Parser) parseBlockStatement() *BlockStatement {
 	p.sem.SetOpeningBraceComment(block, openingComments)
 
 	for p.currentToken.Type != lexer.RBRACE && p.currentToken.Type != lexer.EOF {
+		// If current token is `->` (RARROW) and the last statement in the block
+		// was a standalone if-then without an else, attach the `-> body` as the
+		// else arm of that if-then instead of parsing it as a separate statement.
+		//
+		// This handles the pattern:
+		//   {
+		//       x = 1
+		//       cond -> print('MATCH')
+		//       -> print('FALLBACK')
+		//   }
+		// where `-> print('FALLBACK')` on a new line should be the else
+		// arm of `cond -> print('MATCH')`, not a separate always-true if-then.
+		if p.currentToken.Type == lexer.RARROW && len(block.Statements) > 0 {
+			prevStmt := block.Statements[len(block.Statements)-1]
+			if es, ok := prevStmt.(*ExpressionStatement); ok {
+				if ie, ok := es.Expression.(*IfExpression); ok {
+					if p.sem.HasRTFlag(ie, RTStandalone) && ie.Alternative == nil {
+						tok := p.currentToken
+						p.nextToken() // skip ->
+						altBody := p.parseStandaloneBody(tok)
+						altBody = p.wrapStandaloneChain(tok, altBody)
+						ie.Alternative = altBody
+						continue
+					}
+				}
+			}
+		}
+
 		doc := p.collectDocComments()
 		stmt := p.parseStatement()
 		if stmt != nil {

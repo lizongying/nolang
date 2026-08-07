@@ -819,6 +819,7 @@ func (g *Generator) writeDeclarations(sb *strings.Builder) {
 	sb.WriteString("declare i64 @send(i32, i8*, i64, i32)\n")
 	sb.WriteString("declare i64 @recv(i32, i8*, i64, i32)\n")
 	sb.WriteString("declare i64 @nolang_net_recv_nb(i32, i8*, i64)\n")
+	sb.WriteString("declare i64 @nolang_net_accept_nb(i32)\n")
 	sb.WriteString("declare i64 @sendto(i32, i8*, i64, i32, i8*, i32)\n")
 	sb.WriteString("declare i64 @recvfrom(i32, i8*, i64, i32, i8*, i32*)\n")
 	sb.WriteString("declare i32 @inet_pton(i32, i8*, i8*)\n")

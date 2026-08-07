@@ -54,9 +54,11 @@ main = () {
 		t.Errorf("IR should contain GEP with %%tool-def base type for field access, got:\n%s", ir)
 	}
 
-	// Verify no type mismatch: the load of .name should be load %str-long, not load i64
-	if !strings.Contains(ir, "load %str-long") {
-		t.Errorf("IR should load %%str-long for .name field access, got:\n%s", ir)
+	// Verify field access: the .name field is %str-long. With deep clone
+	// (struct field read → heap-owning type), the codegen uses emitDeepClone
+	// (memcpy + malloc) instead of a plain load. Check for either pattern.
+	if !strings.Contains(ir, "load %str-long") && !strings.Contains(ir, "clone.") {
+		t.Errorf("IR should reference %%str-long for .name field access (via load or deep clone), got:\n%s", ir)
 	}
 }
 
@@ -115,9 +117,11 @@ main = () {
 		t.Errorf("IR should contain GEP with %%tool-def base type for field access, got:\n%s", ir)
 	}
 
-	// Verify no type mismatch: the load of .name should be load %str-long, not load i64
-	if !strings.Contains(ir, "load %str-long") {
-		t.Errorf("IR should load %%str-long for .name field access, got:\n%s", ir)
+	// Verify field access: the .name field is %str-long. With deep clone
+	// (struct field read → heap-owning type), the codegen uses emitDeepClone
+	// (memcpy + malloc) instead of a plain load. Check for either pattern.
+	if !strings.Contains(ir, "load %str-long") && !strings.Contains(ir, "clone.") {
+		t.Errorf("IR should reference %%str-long for .name field access (via load or deep clone), got:\n%s", ir)
 	}
 }
 
@@ -175,9 +179,11 @@ main = () {
 		t.Errorf("IR should contain GEP with %%tool-def base type for field access, got:\n%s", ir)
 	}
 
-	// Verify no type mismatch: the load of .name should be load %str-long, not load i64
-	if !strings.Contains(ir, "load %str-long") {
-		t.Errorf("IR should load %%str-long for .name field access, got:\n%s", ir)
+	// Verify field access: the .name field is %str-long. With deep clone
+	// (struct field read → heap-owning type), the codegen uses emitDeepClone
+	// (memcpy + malloc) instead of a plain load. Check for either pattern.
+	if !strings.Contains(ir, "load %str-long") && !strings.Contains(ir, "clone.") {
+		t.Errorf("IR should reference %%str-long for .name field access (via load or deep clone), got:\n%s", ir)
 	}
 }
 
@@ -353,9 +359,11 @@ main = () {
 		t.Errorf("IR should contain GEP with %%tool-def base type for field access, got:\n%s", ir)
 	}
 
-	// Verify no type mismatch: the load of .name should be load %str-long, not load i64
-	if !strings.Contains(ir, "load %str-long") {
-		t.Errorf("IR should load %%str-long for .name field access, got:\n%s", ir)
+	// Verify field access: the .name field is %str-long. With deep clone
+	// (struct field read → heap-owning type), the codegen uses emitDeepClone
+	// (memcpy + malloc) instead of a plain load. Check for either pattern.
+	if !strings.Contains(ir, "load %str-long") && !strings.Contains(ir, "clone.") {
+		t.Errorf("IR should reference %%str-long for .name field access (via load or deep clone), got:\n%s", ir)
 	}
 }
 

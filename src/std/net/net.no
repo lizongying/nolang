@@ -50,6 +50,11 @@
 ; 返回客戶端 fd（-1=失敗）
 ; net-accept = (listen-fd fd) (fd fd) { }
 
+; build-in (ForwardFunc: net-accept-nb)
+; net-accept-nb: 非阻塞接受 TCP 連接（監聽 socket 設為非阻塞）
+; 返回客戶端 fd：>=0=成功, -2=暫無連接（would-block）, -1=失敗
+; net-accept-nb = (listen-fd fd) (fd fd) { }
+
 ; build-in (ForwardFunc: net-send)
 ; net-send: 發送資料
 ; 返回實際發送位元組數（-1=錯誤）

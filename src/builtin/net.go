@@ -41,6 +41,22 @@ func init() {
 		ForwardFunc:  "net-accept",
 	})
 
+	// net-accept-nb: non-blocking accept on a listening socket.
+	// Puts the listen socket into non-blocking mode (idempotent) and returns
+	// immediately when no connection is pending, so the cooperative event loop
+	// can poll for connections without blocking the whole scheduler. The accepted
+	// socket is also put into non-blocking mode.
+	// Args: listen-fd fd
+	// Returns: fd (client socket fd; >=0 accepted, -2 would-block, -1 error)
+	BuiltinMethodList = append(BuiltinMethodList, BuiltinMethod{
+		ReceiverType: ReceiverGlobal,
+		MethodName:   "net-accept-nb",
+		Params:       []parser.Type{parser.TypeFd},
+		Return:       []parser.Type{parser.TypeFd},
+		Doc:          "Non-blocking accept (listen fd set non-blocking). Returns client fd (>=0), -2=would-block, -1=error",
+		ForwardFunc:  "net-accept-nb",
+	})
+
 	// net-recv-nb: non-blocking receive on a connected socket (MSG_DONTWAIT).
 	// Unlike net-recv (which blocks until data arrives), this returns
 	// immediately when no data is available.

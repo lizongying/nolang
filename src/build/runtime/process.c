@@ -75,6 +75,50 @@ long nolang_net_recv_nb(int fd, char* buf, long n) {
 }
 #endif
 
+// nolang_net_accept_nb: non-blocking accept used by the cooperative event loop
+// (ws/server.accept-nb and net.accept-nb) so the main coroutine can poll for
+// incoming connections without blocking the whole scheduler.
+//
+// The listen socket is put into non-blocking mode (idempotent) so this call
+// returns immediately when no connection is pending. The accepted socket is
+// likewise put into non-blocking mode so the connection handler can use
+// net-recv-nb / ws.recv-nb right away.
+//
+// Return convention (maps cleanly onto nolang's i64 result):
+//   >= 0 : client socket fd
+//    -2  : would block (no connection pending right now; EAGAIN / EWOULDBLOCK)
+//    -1  : hard error
+#ifdef _WIN32
+long nolang_net_accept_nb(int listen_fd) {
+    u_long mode = 1;
+    ioctlsocket((SOCKET)listen_fd, FIONBIO, &mode);
+    SOCKET client = accept((SOCKET)listen_fd, NULL, NULL);
+    if (client == INVALID_SOCKET) {
+        if (WSAGetLastError() == WSAEWOULDBLOCK) return -2;
+        return -1;
+    }
+    u_long cmode = 1;
+    ioctlsocket(client, FIONBIO, &cmode);
+    return (long)client;
+}
+#else
+long nolang_net_accept_nb(int listen_fd) {
+    int flags = fcntl(listen_fd, F_GETFL, 0);
+    if (flags < 0) return -1;
+    if (!(flags & O_NONBLOCK)) {
+        if (fcntl(listen_fd, F_SETFL, flags | O_NONBLOCK) < 0) return -1;
+    }
+    int client = accept(listen_fd, NULL, NULL);
+    if (client < 0) {
+        if (errno == EAGAIN || errno == EWOULDBLOCK) return -2;
+        return -1;
+    }
+    int cflags = fcntl(client, F_GETFL, 0);
+    if (cflags >= 0) fcntl(client, F_SETFL, cflags | O_NONBLOCK);
+    return (long)client;
+}
+#endif
+
 // ---- small helpers -------------------------------------------------------
 
 // Read an entire pipe/file descriptor into a malloc'd, NUL-terminated buffer.
