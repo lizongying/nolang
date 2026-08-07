@@ -287,6 +287,7 @@ type Generator struct {
 	asyncFuncCoroNum      map[string]int      // async 函数名 → coro 编号（用于 run/awy 生成 coro_state task）
 	coroTrampolineEmitted map[int]bool        // coro 编号 → trampoline 是否已生成
 	coroResultFields      map[int][]coroField // coro 编号 → 结果字段（name/llvmTy/idx），供直接调用 coro 函数后取回结果
+	coroTaskHandles       map[string]int      // 持有协程任务句柄的变量名 → coro 编号（供 awy/run 识别协程任务并从其 coro_state 取回结果）
 }
 
 // awaitPoint 描述一个 awy 挂起点的信息。
@@ -831,6 +832,7 @@ func (g *Generator) Generate(program *parser.Program) string {
 	g.asyncFuncCoroNum = make(map[string]int)
 	g.coroTrampolineEmitted = make(map[int]bool)
 	g.coroResultFields = make(map[int][]coroField)
+	g.coroTaskHandles = make(map[string]int)
 	g.varTypes = make(map[string]string)
 	g.paramNames = make(map[string]bool)
 	g.funcRetTypes = make(map[string]string)

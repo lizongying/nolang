@@ -2528,6 +2528,18 @@ func (g *Generator) callBuiltin(sb *strings.Builder, fnName string, hasArgs bool
 		return canValZext
 	}
 
+	// async-yield: 让出控制权（退化路径）。
+	// 在协程函数中作为顶层语句时，由 coro.go 转换为真正的状态保存式挂起点，不会到达此处。
+	// 此处仅处理非协程上下文 / 嵌套位置：调用运行时 @nolang_async_yield 将当前任务自入队后返回。
+	// 返回占位寄存器 "0"（async-yield 返回 void，占位值不被使用），使上层认定“已处理”，
+	// 避免生成未定义的 @async-yield 直接调用。
+	if fnName == "async-yield" {
+		if sb != nil {
+			sb.WriteString(fmt.Sprintf("%scall void @nolang_async_yield()\n", g.indent()))
+		}
+		return "0"
+	}
+
 	// ═══════════════════════════════════════════════
 	// process — 進程操作
 	// ═══════════════════════════════════════════════

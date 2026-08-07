@@ -138,9 +138,9 @@ func topLevelAwaitInfo(stmt parser.Statement) (string, bool, string) {
 	return "", false, ""
 }
 
-// isTopLevelAwaitStmt 检测语句是否是顶层 awy 语句。
+// isTopLevelAwaitStmt 检测语句是否是顶层挂起点（awy 或 async-yield）。
 func isTopLevelAwaitStmt(stmt parser.Statement) bool {
-	_, ok := topLevelAwaitInfo(stmt)
+	_, ok, _ := topLevelAwaitInfo(stmt)
 	return ok
 }
 
@@ -430,7 +430,13 @@ func (g *Generator) generateCoroResume(sb *strings.Builder, fd *parser.FunctionD
 	numSegments := len(awaitIndices) + 1
 	sb.WriteString("\tswitch i32 %r.state, label %cs.0 [\n")
 	for i := 1; i < numSegments; i++ {
-		sb.WriteString(fmt.Sprintf("\t\ti32 %d, label %%cs.%d.chk\n", i, i))
+		if awaitIndices[i-1].kind == "yield" {
+			// yield 挂起点：resume 后无需检查子任务，直接进入段体继续。
+			sb.WriteString(fmt.Sprintf("\t\ti32 %d, label %%cs.%d\n", i, i))
+		} else {
+			// await 挂起点：resume 后需检查被等待任务的 done 标志。
+			sb.WriteString(fmt.Sprintf("\t\ti32 %d, label %%cs.%d.chk\n", i, i))
+		}
 	}
 	sb.WriteString("\t]\n")
 
@@ -445,36 +451,39 @@ func (g *Generator) generateCoroResume(sb *strings.Builder, fd *parser.FunctionD
 			segEnd = len(stmts)
 		}
 
-		// 如果 segIdx > 0，先生成 check 块（检查上一个 awy 的 task 是否完成）
+		// 如果 segIdx > 0，先生成 check 块（检查上一个挂起点的状态）
 		if segIdx > 0 {
 			prevAwait := awaitIndices[segIdx-1]
-			sb.WriteString(fmt.Sprintf("cs.%d.chk:\n", segIdx))
-			// 检查 %r.awaited 的 done 字段（上次 yield 时等待的 task）
-			// %task = { void (i8*)*, i64, i1 }
-			// done 是 field 2
-			g.tmpIdx++
-			doneGEP := fmt.Sprintf("%%r.done.gep.%d", g.tmpIdx)
-			sb.WriteString(fmt.Sprintf("\t%s = bitcast i8* %%r.awaited to %%task*\n", doneGEP))
-			g.tmpIdx++
-			doneFieldGEP := fmt.Sprintf("%%r.done.field.%d", g.tmpIdx)
-			sb.WriteString(fmt.Sprintf("\t%s = getelementptr inbounds %%task, %%task* %s, i32 0, i32 2\n", doneFieldGEP, doneGEP))
-			g.tmpIdx++
-			doneVal := fmt.Sprintf("%%r.done.val.%d", g.tmpIdx)
-			sb.WriteString(fmt.Sprintf("\t%s = load i1, i1* %s\n", doneVal, doneFieldGEP))
-			// done=true → 加载结果（若有 resultVar）→ 跳到段体
-			// done=false → yield（ret void）
-			sb.WriteString(fmt.Sprintf("\tbr i1 %s, label %%cs.%d.cont, label %%cs.%d.yld\n", doneVal, segIdx, segIdx))
-			// cont 块：task 已完成，加载结果到 resultVar（慢路径专用）
-			sb.WriteString(fmt.Sprintf("cs.%d.cont:\n", segIdx))
-			if prevAwait.resultVar != "" {
-				g.loadTaskResult(sb, "%r.awaited", prevAwait.resultVar, fields)
+			// yield 挂起点 resume 后无需检查子任务（switch 已直接跳转至 cs.segIdx），不生成 check 块。
+			if prevAwait.kind != "yield" {
+				sb.WriteString(fmt.Sprintf("cs.%d.chk:\n", segIdx))
+				// 检查 %r.awaited 的 done 字段（上次 yield 时等待的 task）
+				// %task = { void (i8*)*, i64, i1 }
+				// done 是 field 2
+				g.tmpIdx++
+				doneGEP := fmt.Sprintf("%%r.done.gep.%d", g.tmpIdx)
+				sb.WriteString(fmt.Sprintf("\t%s = bitcast i8* %%r.awaited to %%task*\n", doneGEP))
+				g.tmpIdx++
+				doneFieldGEP := fmt.Sprintf("%%r.done.field.%d", g.tmpIdx)
+				sb.WriteString(fmt.Sprintf("\t%s = getelementptr inbounds %%task, %%task* %s, i32 0, i32 2\n", doneFieldGEP, doneGEP))
+				g.tmpIdx++
+				doneVal := fmt.Sprintf("%%r.done.val.%d", g.tmpIdx)
+				sb.WriteString(fmt.Sprintf("\t%s = load i1, i1* %s\n", doneVal, doneFieldGEP))
+				// done=true → 加载结果（若有 resultVar）→ 跳到段体
+				// done=false → yield（ret void）
+				sb.WriteString(fmt.Sprintf("\tbr i1 %s, label %%cs.%d.cont, label %%cs.%d.yld\n", doneVal, segIdx, segIdx))
+				// cont 块：task 已完成，加载结果到 resultVar（慢路径专用）
+				sb.WriteString(fmt.Sprintf("cs.%d.cont:\n", segIdx))
+				if prevAwait.resultVar != "" {
+					g.loadTaskResult(sb, "%r.awaited", prevAwait.resultVar, fields)
+				}
+				sb.WriteString(fmt.Sprintf("\tbr label %%cs.%d\n", segIdx))
+				// yield 块：未完成，ret void
+				sb.WriteString(fmt.Sprintf("cs.%d.yld:\n", segIdx))
+				sb.WriteString(fmt.Sprintf("\tcall void @nolang_async_wait(i8* %%r.task)\n"))
+				g.emitCoroSaveLocals(sb, stateType, fields)
+				sb.WriteString("\tret void\n")
 			}
-			sb.WriteString(fmt.Sprintf("\tbr label %%cs.%d\n", segIdx))
-			// yield 块：未完成，ret void
-			sb.WriteString(fmt.Sprintf("cs.%d.yld:\n", segIdx))
-			sb.WriteString(fmt.Sprintf("\tcall void @nolang_async_wait(i8* %%r.task)\n"))
-			g.emitCoroSaveLocals(sb, stateType, fields)
-			sb.WriteString("\tret void\n")
 		}
 
 		// 生成段体
@@ -488,10 +497,14 @@ func (g *Generator) generateCoroResume(sb *strings.Builder, fd *parser.FunctionD
 		for i := prevIdx; i < segEnd; i++ {
 			g.generateStatement(sb, stmts[i])
 		}
-		// 如果当前段是 awy 段（segIdx < len(awaitIndices)），生成 awy yield 逻辑
+		// 如果当前段是挂起段（segIdx < len(awaitIndices)），按 kind 生成挂起逻辑
 		if segIdx < len(awaitIndices) {
-			awyStmt := stmts[awaitIndices[segIdx].stmtIdx]
-			g.generateAwaitYield(sb, awyStmt, segIdx+1, stateType, fields)
+			suspStmt := stmts[awaitIndices[segIdx].stmtIdx]
+			if awaitIndices[segIdx].kind == "yield" {
+				g.generateYieldSuspend(sb, suspStmt, segIdx+1, stateType, fields)
+			} else {
+				g.generateAwaitYield(sb, suspStmt, segIdx+1, stateType, fields)
+			}
 		} else {
 			// 最终段：若段体未以 terminator 结束（如 return/break），补 br 到 cs.end
 			if !g.blockTerminated {
@@ -579,6 +592,30 @@ func (g *Generator) generateAwaitYield(sb *strings.Builder, stmt parser.Statemen
 	// 快速路径：task 已完成，跳过 check 块，直接进入下一段体。
 	// （check 块仅供 resume 路径使用：协程被重新调度时检查 awaited task 是否完成）
 	sb.WriteString(fmt.Sprintf("\tbr label %%cs.%d\n", nextState))
+}
+
+// generateYieldSuspend 在顶层 async-yield() 语句处生成真正的协程挂起逻辑。
+// 与 generateAwaitYield 不同，yield 不等待任何子任务（无 awaited task）：
+//  1. 保存协程状态（__state = nextState），并清空 __awaited（本段无子任务）。
+//     注意：不清空 __awaited 也可，但保持干净避免后续 check 块误读。
+//  2. 把当前任务（%r.task，events 循环调度时写入 coro_state.__task）重新入就绪队列尾，
+//     让出控制权；事件循环会先调度其他就绪任务（如 WS 消息泵）。
+//  3. ret void —— 协程挂起，交由事件循环稍后再次调度 resume。
+//
+// 该函数仅用于「顶层 async-yield()」语句。若 async-yield() 出现在非顶层位置或被当作
+// 普通内建调用，则由 call_stdlib.go 退化为调用运行时的 @nolang_async_yield（仅自入队后返回）。
+func (g *Generator) generateYieldSuspend(sb *strings.Builder, stmt parser.Statement, nextState int, stateType string, fields []coroField) {
+	_ = stmt // async-yield() 无结果变量，无需解析
+	// store state = nextState
+	sb.WriteString(fmt.Sprintf("\tstore i32 %d, i32* %%r.state.gep\n", nextState))
+	// 清空 __awaited（field 2），表明本段不等待子任务。
+	sb.WriteString("\tstore i8* null, i8** %r.awaited.gep\n")
+	// 保存全部局部变量与参数回 coro_state，保证 resume 时状态一致。
+	g.emitCoroSaveLocals(sb, stateType, fields)
+	// 自入队当前任务：让出控制权，事件循环稍后会再次调度本协程。
+	// %r.task 在 resume 入口从 coro_state.__task 加载，正是当前任务指针。
+	sb.WriteString("\tcall void @nolang_async_enqueue(i8* %r.task)\n")
+	sb.WriteString("\tret void\n")
 }
 
 // generateAwaitForCoro 在协程上下文中生成 awy 表达式，返回 task 指针（i8*）。

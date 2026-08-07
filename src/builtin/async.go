@@ -34,4 +34,19 @@ func init() {
 		Doc:          "Returns true if the currently running async task has been cancelled via async-cancel",
 		ForwardFunc:  "async-cancelled",
 	})
+
+	// async-yield: 主动让出控制权，使事件循环可以调度其他就绪任务。
+	// 在含 awy 的协程函数中，作为「顶层语句」使用时会被转换为真正的协程挂起点：
+	// 保存协程状态（coro_state）、把当前任务重新入就绪队列、ret void —— 待事件循环
+	// 稍后再次调度时从上一点继续。这使得 Agent Loop 等协程能在两步之间让出控制权，
+	// 让并发到达的“stop”消息被处理（从而实现可中断的 Agent Loop，见 D10）。
+	// 在非协程上下文或嵌套位置退化为运行时 @nolang_async_yield（仅将当前任务自入队后返回），
+	// 此时不构成状态保存式挂起。
+	BuiltinMethodList = append(BuiltinMethodList, BuiltinMethod{
+		ReceiverType: ReceiverGlobal,
+		MethodName:   "async-yield",
+		Params:       []parser.Type{},
+		Doc:          "Yield control back to the event loop so other ready tasks (e.g. a stop handler) can run; a true coroutine suspend point when used as a top-level statement in an async function",
+		ForwardFunc:  "async-yield",
+	})
 }
