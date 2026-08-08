@@ -1,0 +1,10 @@
+test-u128-basic = (r i64) {
+    r = 1
+    return
+}
+
+main = () {
+    r: i64
+    r = test-u128-basic(r)
+    return
+}

@@ -112,6 +112,11 @@ func (p *Parser) classifyBlock() blockType {
 			(tok4.Type == lexer.NEWLINE || tok4.Type == lexer.RBRACE || tok4.Type == lexer.COMMA) {
 			return blockStruct
 		}
+		// Struct literal field with dot expression value: name : .field or name : obj.field
+		// Match arms never have "name: .expr" form, so DOT → struct literal.
+		if tok3.Type == lexer.DOT {
+			return blockStruct
+		}
 		// Struct literal with expression value: name : <expr> , or name : <expr> }
 		// Scan forward to find `,` or `}` (skipping nested brackets); if we hit `->`
 		// before any top-level `,`/`}`, it's a match arm. Otherwise it's a struct literal.
@@ -128,6 +133,11 @@ func (p *Parser) classifyBlock() blockType {
 			// Struct literal field with function call value: name : func(args)
 			// Match arms never have "name: ident(" form, so LPAREN → struct literal.
 			if tok4.Type == lexer.LPAREN {
+				return blockStruct
+			}
+			// Struct literal field with nested struct literal value: name : TypeName{...}
+			// Match arms never have "name: ident{" form, so LBRACE → struct literal.
+			if tok4.Type == lexer.LBRACE {
 				return blockStruct
 			}
 		}
@@ -303,6 +313,11 @@ func (p *Parser) classifyBlockAtCurrent() blockType {
 				return blockStruct
 			}
 		}
+		// Struct literal field with dot expression value: name : .field or name : obj.field
+		// Match arms never have "name: .expr" form, so DOT → struct literal.
+		if tok3.Type == lexer.DOT {
+			return blockStruct
+		}
 		// Struct literal with bitwise/arithmetic expression: name : <IDENT> <OP> <IDENT>
 		// e.g. mode: o-wronly | o-creat → name: IDENT OR IDENT
 		// Without this, the parser falls back to blockMatch and parses the field
@@ -341,6 +356,11 @@ func (p *Parser) classifyBlockAtCurrent() blockType {
 						return blockStruct
 					}
 				}
+			}
+			// Struct literal field with nested struct literal value: name : TypeName{...}
+			// Match arms never have "name: ident{" form, so LBRACE → struct literal.
+			if tok4.Type == lexer.LBRACE {
+				return blockStruct
 			}
 		}
 		return blockMatch

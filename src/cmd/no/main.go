@@ -372,7 +372,7 @@ func newProject(name string) {
 	createConfigFile(config)
 	createMainFile()
 	createSrcDirectory()
-	createLibFile()
+	createLibFile(name)
 	createTestDirectory()
 
 	fmt.Printf("Package created: %s\n", name)
@@ -572,8 +572,8 @@ func createWorkspaceFile() {
 }
 
 // registerPackageInWorkspace records the new package in the nearest workspace.jsonc
-// (searched upward from the current directory). If no workspace.jsonc is found, the
-// package is created standalone (backward compatible with the old single-package layout).
+// (searched upward from the current directory). If no workspace.jsonc is found, one
+// is created in the current directory so the package is always registered.
 func registerPackageInWorkspace(name string) {
 	cwd, err := os.Getwd()
 	if err != nil {
@@ -581,14 +581,24 @@ func registerPackageInWorkspace(name string) {
 	}
 	wsRoot, ok := findWorkspaceRoot(cwd)
 	if !ok {
-		return
+		// No workspace.jsonc found anywhere upward; create one in cwd.
+		wsRoot = cwd
 	}
 
 	wsFile := filepath.Join(wsRoot, "workspace.jsonc")
 	ws := map[string]string{}
 	if raw, err := os.ReadFile(wsFile); err == nil && len(raw) > 0 {
-		cleaned := stripJSONCComments(raw)
-		_ = json.Unmarshal(cleaned, &ws)
+		// Use nbuild.StripJSONC (not the local stripJSONCComments) so that trailing
+		// commas — valid in JSONC but not in standard JSON — are removed before
+		// unmarshalling. Otherwise json.Unmarshal fails silently and existing
+		// packages are lost when the file is rewritten.
+		cleaned := nbuild.StripJSONC(raw)
+		if err := json.Unmarshal(cleaned, &ws); err != nil {
+			fmt.Printf("Warning: parsing workspace.jsonc: %v\n", err)
+		}
+	}
+	if ws == nil {
+		ws = make(map[string]string)
 	}
 
 	rel, err := filepath.Rel(wsRoot, filepath.Join(cwd, name))
@@ -706,7 +716,7 @@ func resolveRunTarget(arg string) (string, error) {
 			wsFile := filepath.Join(wsRoot, "workspace.jsonc")
 			if raw, rerr := os.ReadFile(wsFile); rerr == nil && len(raw) > 0 {
 				ws := map[string]string{}
-				cleaned := stripJSONCComments(raw)
+				cleaned := nbuild.StripJSONC(raw)
 				if _ = json.Unmarshal(cleaned, &ws); len(ws) > 0 {
 					if rel, found := ws[arg]; found {
 						dir := rel
@@ -758,7 +768,7 @@ func createSrcDirectory() {
 
 	content := `// Example module
 greet = (name str) {
-    print('Hello, ' + name)
+    print('Hello, ' - name)
 }
 `
 	err = os.WriteFile("src/utils.no", []byte(content), 0644)
@@ -767,10 +777,10 @@ greet = (name str) {
 	}
 }
 
-func createLibFile() {
-	content := `// Export declarations
-// @ /src/utils.greet greet
-`
+func createLibFile(name string) {
+	content := fmt.Sprintf(`// Export declarations
+@ /%s/src/utils.greet greet
+`, name)
 	err := os.WriteFile("lib.no", []byte(content), 0644)
 	if err != nil {
 		fmt.Printf("Error writing lib.no: %v\n", err)
@@ -785,8 +795,6 @@ func createTestDirectory() {
 	}
 
 	content := `// Test example
-// # std/fmt.print
-
 // test-greet = () {
 //     print('test passed')
 // }

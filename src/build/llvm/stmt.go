@@ -6805,6 +6805,33 @@ func (g *Generator) generateLet(sb *strings.Builder, stmt *parser.LetStatement) 
 		}
 	}
 
+	// int → float/double conversion when the declared type is float/double but
+	// the actual value is an integer SSA register (e.g., `f f64 = val` where val
+	// is i64). The coercion block above misses this because both existingType and
+	// llvmType are "double" (both derived from the f64 type annotation), so
+	// existingType != llvmType is false.
+	// Guard: skip if the expression is already a float expression (e.g., frac * 0.1
+	// produces fmul double), since intExprLLVMType defaults to "i64" for non-integer
+	// types including floats, which would cause a spurious sitofp on an already-double value.
+	if !alreadyCoerced && (llvmType == "double" || llvmType == "float") && strings.HasPrefix(val, "%") &&
+		g.floatLLVMType(stmt.Value) == "" {
+		actualType := ""
+		if g.ssaTypes != nil {
+			if t, ok := g.ssaTypes[val]; ok {
+				actualType = t
+			}
+		}
+		if actualType == "" {
+			actualType = valActualType
+		}
+		if actualType != "" && g.isIntegerLLVMType(actualType) {
+			convReg := g.tmpReg("sitofp")
+			sb.WriteString(fmt.Sprintf("%s%s = sitofp %s %s to %s\n", g.indent(), convReg, toLLVMType(actualType), val, llvmType))
+			val = convReg
+			alreadyCoerced = true
+		}
+	}
+
 	// 對單態化後的小整數型別（i8/u8/i16/u16/i32/u32），若值來自 i64 上下文
 	// （如陣列索引 zext 或字面常量運算），需要 trunc 到變數型別
 	// 注意：若上面的型別強制轉換已經處理過，則跳過，避免重複 trunc
