@@ -1,7 +1,6 @@
 package main
 
 import (
-	"encoding/json"
 	"flag"
 	"fmt"
 	"io"
@@ -588,13 +587,13 @@ func registerPackageInWorkspace(name string) {
 	wsFile := filepath.Join(wsRoot, "workspace.jsonc")
 	ws := map[string]string{}
 	if raw, err := os.ReadFile(wsFile); err == nil && len(raw) > 0 {
-		// Use nbuild.StripJSONC (not the local stripJSONCComments) so that trailing
-		// commas — valid in JSONC but not in standard JSON — are removed before
-		// unmarshalling. Otherwise json.Unmarshal fails silently and existing
-		// packages are lost when the file is rewritten.
-		cleaned := nbuild.StripJSONC(raw)
-		if err := json.Unmarshal(cleaned, &ws); err != nil {
-			fmt.Printf("Warning: parsing workspace.jsonc: %v\n", err)
+		// Use the JSONC parser so that comments and trailing commas — both
+		// legal in JSONC — are handled natively without json.Unmarshal.
+		parsed, perr := jsoncParseMap(raw)
+		if perr != nil {
+			fmt.Printf("Warning: parsing workspace.jsonc: %v\n", perr)
+		} else {
+			ws = parsed
 		}
 	}
 	if ws == nil {
@@ -607,12 +606,7 @@ func registerPackageInWorkspace(name string) {
 	}
 	ws[name] = "./" + rel
 
-	out, err := json.MarshalIndent(ws, "", "  ")
-	if err != nil {
-		fmt.Printf("Error serializing workspace file: %v\n", err)
-		return
-	}
-	if err := os.WriteFile(wsFile, append(out, '\n'), 0644); err != nil {
+	if err := os.WriteFile(wsFile, []byte(jsoncMarshalMap(ws)), 0644); err != nil {
 		fmt.Printf("Error writing workspace file: %v\n", err)
 	}
 }
@@ -631,50 +625,6 @@ func findWorkspaceRoot(start string) (string, bool) {
 		dir = parent
 	}
 	return "", false
-}
-
-// stripJSONCComments removes // and /* */ comments so workspace.jsonc can be parsed
-// even if the user added comments. String contents are respected.
-func stripJSONCComments(data []byte) []byte {
-	out := make([]byte, 0, len(data))
-	inStr, inLine, inBlock := false, false, false
-	for i := 0; i < len(data); i++ {
-		c := data[i]
-		switch {
-		case inLine:
-			if c == '\n' {
-				inLine = false
-				out = append(out, c)
-			}
-		case inBlock:
-			if c == '*' && i+1 < len(data) && data[i+1] == '/' {
-				inBlock = false
-				i++
-			}
-		case inStr:
-			out = append(out, c)
-			if c == '\\' && i+1 < len(data) {
-				out = append(out, data[i+1])
-				i++
-			} else if c == '"' {
-				inStr = false
-			}
-		default:
-			if c == '"' {
-				inStr = true
-				out = append(out, c)
-			} else if c == '/' && i+1 < len(data) && data[i+1] == '/' {
-				inLine = true
-				i++
-			} else if c == '/' && i+1 < len(data) && data[i+1] == '*' {
-				inBlock = true
-				i++
-			} else {
-				out = append(out, c)
-			}
-		}
-	}
-	return out
 }
 
 // resolveRunTarget interprets the `no run` positional argument as one of:
@@ -715,9 +665,8 @@ func resolveRunTarget(arg string) (string, error) {
 		if wsRoot, ok := findWorkspaceRoot(cwd); ok {
 			wsFile := filepath.Join(wsRoot, "workspace.jsonc")
 			if raw, rerr := os.ReadFile(wsFile); rerr == nil && len(raw) > 0 {
-				ws := map[string]string{}
-				cleaned := nbuild.StripJSONC(raw)
-				if _ = json.Unmarshal(cleaned, &ws); len(ws) > 0 {
+				ws, perr := jsoncParseMap(raw)
+				if perr == nil && len(ws) > 0 {
 					if rel, found := ws[arg]; found {
 						dir := rel
 						if !filepath.IsAbs(dir) {
@@ -826,10 +775,7 @@ func loadProjectConfig() (*ProjectConfig, error) {
 	if err != nil {
 		return nil, fmt.Errorf("package.jsonc not found. Run 'no new <name>' to create a package, or cd into a package directory")
 	}
-	cleaned := nbuild.StripJSONC(data)
-	var config ProjectConfig
-	err = json.Unmarshal(cleaned, &config)
-	return &config, err
+	return jsoncParseProjectConfig(data)
 }
 
 func removeDependency(name string) {
