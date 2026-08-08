@@ -1568,6 +1568,28 @@ func (g *Generator) exprResultLLVMType(expr parser.Expression) string {
 			if ident, ok := dot.Receiver.(*parser.Identifier); ok {
 				recvName = ident.Value
 			}
+			// For non-Identifier receivers (e.g., .pool.nodes[idx]),
+			// recursively resolve the receiver type to find the struct name.
+			if recvName == "" {
+				recvType := g.exprResultLLVMType(dot.Receiver)
+				if g.isStructLLVMType(recvType) {
+					recvStructName := strings.TrimPrefix(recvType, "%")
+					if fields, _ := g.resolveStructFields(recvStructName); fields != nil {
+						for _, f := range fields {
+							if f.name == dot.Property && strings.HasPrefix(f.typ, "[") {
+								closeB := strings.IndexByte(f.typ, ']')
+								if closeB > 0 {
+									inner := f.typ[1:closeB]
+									xIdx := strings.LastIndex(inner, " x ")
+									if xIdx >= 0 {
+										return inner[xIdx+3:]
+									}
+								}
+							}
+						}
+					}
+				}
+			}
 			if recvName != "" && g.varTypes != nil {
 				if t, ok := g.varTypes[recvName]; ok {
 					structName := strings.TrimPrefix(t, "%")
@@ -2341,7 +2363,6 @@ func (g *Generator) generateStructFieldIndexAssign(sb *strings.Builder, dot *par
 	}
 	fieldName := dot.Property
 	idx := g.generateExprWithSB(sb, index)
-	val := g.generateExprWithSB(sb, value)
 
 	// 判定 struct 名稱與基底指標
 	// - Identifier receiver: 使用變數名稱（%%%s）
@@ -2361,6 +2382,29 @@ func (g *Generator) generateStructFieldIndexAssign(sb *strings.Builder, dot *par
 			basePtr = g.generateExprPtr(sb, dot.Receiver)
 		}
 	}
+
+	// Set target type for type-inferred builtins (e.g. with-cap)
+	// before generating the RHS value. The target type is the element
+	// type of the array/slice field being indexed.
+	prevTargetType := g.currentTargetType
+	g.currentTargetType = ""
+	if structName != "" {
+		if fields, ok := g.structTypes[structName]; ok {
+			for _, f := range fields {
+				if f.name == fieldName {
+					if f.elemType != "" {
+						g.currentTargetType = f.elemType
+					} else if f.typ == "%str-long" {
+						g.currentTargetType = "%str-long"
+					}
+					break
+				}
+			}
+		}
+	}
+
+	val := g.generateExprWithSB(sb, value)
+	g.currentTargetType = prevTargetType
 
 	if fields, ok := g.structTypes[structName]; ok {
 		fieldIdx := -1

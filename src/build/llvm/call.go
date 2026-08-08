@@ -3967,11 +3967,6 @@ func (g *Generator) genForwardFunc(sb *strings.Builder, forwardFunc string, expr
 		}
 		capVal := g.evalI64Arg(sb, args[0])
 		targetType := g.currentTargetType
-		if targetType == "" {
-			pos := expr.Pos()
-			g.AddCodegenError(fmt.Sprintf("line %d, column %d: cannot infer type for %s() without explicit type annotation or previously defined variable", pos.Line, pos.Column, forwardFunc))
-			return "0"
-		}
 		switch targetType {
 		case "%str-long", "str":
 			// malloc(cap)
@@ -4042,11 +4037,6 @@ func (g *Generator) genForwardFunc(sb *strings.Builder, forwardFunc string, expr
 		}
 		lenVal := g.evalI64Arg(sb, args[0])
 		targetType := g.currentTargetType
-		if targetType == "" {
-			pos := expr.Pos()
-			g.AddCodegenError(fmt.Sprintf("line %d, column %d: cannot infer type for %s() without explicit type annotation or previously defined variable", pos.Line, pos.Column, forwardFunc))
-			return "0"
-		}
 		switch targetType {
 		case "%str-long", "str":
 			// malloc(len)
@@ -4116,11 +4106,6 @@ func (g *Generator) genForwardFunc(sb *strings.Builder, forwardFunc string, expr
 		capVal := g.evalI64Arg(sb, args[0])
 		lenVal := g.evalI64Arg(sb, args[1])
 		targetType := g.currentTargetType
-		if targetType == "" {
-			pos := expr.Pos()
-			g.AddCodegenError(fmt.Sprintf("line %d, column %d: cannot infer type for %s() without explicit type annotation or previously defined variable", pos.Line, pos.Column, forwardFunc))
-			return "0"
-		}
 		switch targetType {
 		case "%str-long", "str":
 			// malloc(cap)
