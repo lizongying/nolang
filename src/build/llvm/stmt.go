@@ -1669,7 +1669,27 @@ func (g *Generator) emitStructFieldFree(sb *strings.Builder, structPtr, structTy
 	sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %s, %s* %s, i32 0, i32 %d\n",
 		g.indent(), fieldGEP, structType, structType, structPtr, fieldIdx))
 	if fieldType == "%str-long" {
+		// len==0 skip: struct fields initialized with string literals (e.g.
+		// json-pool.init sets str-val = ' ') have non-null data pointers
+		// pointing to non-heap (alloca/rodata) memory. Freeing them crashes.
+		// len==0 means the field holds no heap data; skip free to match
+		// emitInlineArrayFieldFree's behavior for the same scenario.
+		g.tmpIdx++
+		tid := g.tmpIdx
+		lenGEP := fmt.Sprintf("%%sf.len.gep.%d", tid)
+		sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%str-long, %%str-long* %s, i32 0, i32 0\n",
+			g.indent(), lenGEP, fieldGEP))
+		lenLoad := fmt.Sprintf("%%sf.len.%d", tid)
+		sb.WriteString(fmt.Sprintf("%s%s = load i64, i64* %s\n", g.indent(), lenLoad, lenGEP))
+		lenCmp := fmt.Sprintf("%%sf.lencmp.%d", tid)
+		sb.WriteString(fmt.Sprintf("%s%s = icmp eq i64 %s, 0\n", g.indent(), lenCmp, lenLoad))
+		skipLabel := fmt.Sprintf("sf.skip.%d", tid)
+		freeLabel := fmt.Sprintf("sf.free.%d", tid)
+		sb.WriteString(fmt.Sprintf("%sbr i1 %s, label %%%s, label %%%s\n", g.indent(), lenCmp, skipLabel, freeLabel))
+		g.emitLabel(sb, freeLabel)
 		g.emitShallowDataFree(sb, fieldGEP, fieldType, dataFieldIdx)
+		sb.WriteString(fmt.Sprintf("%sbr label %%%s\n", g.indent(), skipLabel))
+		g.emitLabel(sb, skipLabel)
 		return
 	}
 	if g.isHeapOwningType(fieldElemType) {
@@ -2171,6 +2191,73 @@ func (g *Generator) resolveParamLLVMType(t parser.Type) string {
 	return g.mapToLLVMType(t.String())
 }
 
+// hasInlineArrayStructParam checks if a function definition has parameters or
+// local struct types that contain inline array fields with heap-owning elements
+// (e.g., json.json with [64]json-value where json-value has %str-long fields).
+// Such functions use deep clone/free patterns that can trigger LLVM -O3
+// optimizer miscompilation, so optnone is added to prevent it.
+func (g *Generator) hasInlineArrayStructParam(fd *parser.FunctionDefinition) bool {
+	checkType := func(llvmType string) bool {
+		if !g.isStructLLVMType(llvmType) {
+			return false
+		}
+		structName := strings.TrimPrefix(llvmType, "%")
+		return g.structHasInlineArrayHeap(structName, map[string]bool{})
+	}
+	// Check parameters
+	for _, p := range fd.Parameters {
+		llvmType := g.resolveParamLLVMType(p.Type)
+		if checkType(llvmType) {
+			return true
+		}
+	}
+	// Check results
+	for _, r := range fd.Results {
+		llvmType := g.resolveParamLLVMType(r.Type)
+		if checkType(llvmType) {
+			return true
+		}
+	}
+	return false
+}
+
+// structHasInlineArrayHeap recursively checks if a struct type contains
+// inline array fields ([N x T]) where T is a heap-owning type.
+func (g *Generator) structHasInlineArrayHeap(structName string, visited map[string]bool) bool {
+	if visited[structName] {
+		return false
+	}
+	visited[structName] = true
+	fields, ok := g.structTypes[structName]
+	if !ok {
+		return false
+	}
+	for _, f := range fields {
+		// Check if field is an inline array [N x T]
+		if n, elemType, ok := parseInlineArrayType(f.typ); ok && n > 0 {
+			if g.isHeapOwningType(elemType) {
+				return true
+			}
+			// Recursively check if elemType is a struct with inline arrays
+			if g.isStructLLVMType(elemType) {
+				innerName := strings.TrimPrefix(elemType, "%")
+				if g.structHasInlineArrayHeap(innerName, visited) {
+					return true
+				}
+			}
+		}
+		// Recursively check struct fields
+		if g.isStructLLVMType(f.typ) && !strings.HasPrefix(f.typ, "%str-long") &&
+			!strings.HasPrefix(f.typ, "%vec") && !strings.HasPrefix(f.typ, "%arr") {
+			innerName := strings.TrimPrefix(f.typ, "%")
+			if g.structHasInlineArrayHeap(innerName, visited) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 func (g *Generator) generateFunctionDefinition(sb *strings.Builder, fd *parser.FunctionDefinition) {
 	// 創建全新 funcState 實例：消除 40+ 手動重置，防止遺漏導致跨函數污染
 	g.resetFuncState()
@@ -2339,7 +2426,16 @@ func (g *Generator) generateFunctionDefinition(sb *strings.Builder, fd *parser.F
 		}
 	}
 
-	sb.WriteString(") {\n")
+	sb.WriteString(")")
+	// Add optnone noinline for functions with large struct types containing inline arrays
+	// (e.g., json.json.parse with [64]json-value). The deep clone/free patterns in these
+	// functions trigger LLVM -O3 constant propagation bugs that produce invalid free
+	// targets (e.g., free(-16)). optnone disables optimization for the function body,
+	// while llc still generates optimized machine code.
+	if g.hasInlineArrayStructParam(fd) {
+		sb.WriteString(" noinline optnone")
+	}
+	sb.WriteString(" {\n")
 	g.indentLevel++
 	g.emitLabel(sb, "entry")
 	g.indentLevel++
@@ -7601,6 +7697,40 @@ func (g *Generator) generateOptionAssign(sb *strings.Builder, stmt *parser.LetSt
 			// the i64* to the struct pointer and load the struct value.
 			if g.optionInnerTypes != nil {
 				if innerType, ok := g.optionInnerTypes[name]; ok && g.isStructLLVMType(innerType) {
+					// Move-semantics fast path: when source is a local heap variable
+					// and target is an output parameter, use shallow copy (memcpy)
+					// + move (handleMoveToOut) instead of deep clone.
+					// This avoids the emitDeepClone pattern (malloc+memcpy+NULL check)
+					// that triggers LLVM -O3 optimizer miscompilation (free(-16)).
+					isOutput := g.outputParamNames != nil && g.outputParamNames[name]
+					_, isHeapVar := g.heapVars[v.Value]
+					isLocal := g.funcLocalNames != nil && g.funcLocalNames[v.Value]
+					srcIsStruct := false
+					if srcType, ok := g.varTypes[v.Value]; ok {
+						srcIsStruct = g.isStructLLVMType(srcType)
+					}
+					if isOutput && isHeapVar && isLocal && srcIsStruct && v.Value != name {
+						structSize := g.llvmTypeSize(innerType)
+						if structSize == 0 {
+							structSize = 8
+						}
+						heapPtr := g.tmpReg("opt.heap")
+						sb.WriteString(fmt.Sprintf("%s%s = call i8* @nolang.malloc(i64 %d)\n", g.indent(), heapPtr, structSize))
+						// Shallow copy: memcpy from source to heap box
+						srcAddr := g.varAddr(v.Value)
+						sb.WriteString(fmt.Sprintf("%scall void @llvm.memcpy.p0.p0.i64(i8* %s, i8* %s, i64 %d, i1 false)\n",
+							g.indent(), heapPtr, srcAddr, structSize))
+						// Mark source as moved: skip free at function end.
+						// The heap box takes ownership of the source's data.
+						g.handleMoveToOut(sb, v.Value, name)
+						// Store heap pointer in option data field
+						ptrInt := g.tmpReg("opt.ptr.int")
+						sb.WriteString(fmt.Sprintf("%s%s = ptrtoint i8* %s to i64\n", g.indent(), ptrInt, heapPtr))
+						dataGEP := g.tmpReg("opt.data.gep")
+						sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%option, %%option* %%%s, i32 0, i32 1\n", g.indent(), dataGEP, name))
+						sb.WriteString(fmt.Sprintf("%sstore i64 %s, i64* %s\n", g.indent(), ptrInt, dataGEP))
+						return
+					}
 					if srcType, ok := g.varTypes[v.Value]; !ok || (srcType != innerType && !g.isStructLLVMType(srcType)) {
 						castReg := g.tmpReg("opt.src.cast")
 						sb.WriteString(fmt.Sprintf("%s%s = bitcast i64* %%%s to %s*\n", g.indent(), castReg, v.Value, innerType))

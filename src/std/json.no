@@ -103,15 +103,11 @@ json-pool.init = () {
     i <- [0..JSON-MAX-NODES): {
         .nodes[i].count = 0
         .nodes[i].kind = json-kind.null
-        ; 用空格字串初始化 str-val，使 data buffer 非 null
-        .nodes[i].str-val = ' '
         .nodes[i].str-val.len = 0
         .nodes[i].num-val = 0.0
         .nodes[i].bool-val = false
         j <- [0..JSON-MAX-CHILDREN): {
             .nodes[i].children[j] = -1
-            ; 用空格字串初始化 keys[j]，使 data buffer 非 null
-            .nodes[i].keys[j] = ' '
             .nodes[i].keys[j].len = 0
         }
     }
@@ -125,15 +121,11 @@ json-pool.alloc = () (idx i64) {
     .count = .count + 1
     .nodes[idx].count = 0
     .nodes[idx].kind = json-kind.null
-
-    ; 用空格字串初始化 str-val，使 data buffer 非 null
-    .nodes[idx].str-val = ' '
     .nodes[idx].str-val.len = 0
     .nodes[idx].num-val = 0.0
     .nodes[idx].bool-val = false
     j <- [0..JSON-MAX-CHILDREN): {
         .nodes[idx].children[j] = -1
-        .nodes[idx].keys[j] = ' '
         .nodes[idx].keys[j].len = 0
     }
 }
@@ -301,10 +293,11 @@ json-pool.parse = (s str, pos i64) (node-idx i64, next-pos i64, ok bool) {
 
             ; copy key string to keys[cnt]
             key-len = .nodes[key-idx].str-val.len
-            .nodes[node-idx].keys[cnt].len = key-len
+            .nodes[node-idx].keys[cnt] = with-cap(key-len)
             j <- [0..key-len): {
                 .nodes[node-idx].keys[cnt][j] = .nodes[key-idx].str-val[j]
             }
+            .nodes[node-idx].keys[cnt].len = key-len
             .nodes[node-idx].children[cnt] = val-idx
             .nodes[node-idx].count = cnt + 1
             p = val-next
@@ -338,6 +331,8 @@ json-pool.parse-str = (node-idx i64, s str, pos i64) (next-pos i64, ok bool) {
     i = pos + 1
     j = 0
     c = 0
+    ; 分配足夠容量的緩衝區（s.len 足過任何子字串長度）
+    .nodes[node-idx].str-val = with-cap(s.len)
     {
         c = s[i]
         c == 34 -> {
@@ -465,10 +460,11 @@ json-pool.set-key = (obj-idx i64, key str, val-idx i64) (ok bool) {
     cnt >= JSON-MAX-CHILDREN -> return
 
     ; 复制键字符串到 keys[cnt]
-    .nodes[obj-idx].keys[cnt].len = key.len
+    .nodes[obj-idx].keys[cnt] = with-cap(key.len)
     j <- [0..key.len): {
         .nodes[obj-idx].keys[cnt][j] = key[j]
     }
+    .nodes[obj-idx].keys[cnt].len = key.len
     .nodes[obj-idx].children[cnt] = val-idx
     .nodes[obj-idx].count = cnt + 1
     ok = true
@@ -934,10 +930,11 @@ json.set-str = (key str, val str) (ok bool) {
     idx < 0 -> return
 
     .pool.nodes[idx].kind = json-kind.str
-    .pool.nodes[idx].str-val.len = val.len
+    .pool.nodes[idx].str-val = with-cap(val.len)
     i <- [0..val.len): {
         .pool.nodes[idx].str-val[i] = val[i]
     }
+    .pool.nodes[idx].str-val.len = val.len
 
     ok = .set(key, json{
         pool: .pool
@@ -1080,10 +1077,11 @@ json.arr-push-str = (val str) (ok bool) {
     idx < 0 -> return
 
     .pool.nodes[idx].kind = json-kind.str
-    .pool.nodes[idx].str-val.len = val.len
+    .pool.nodes[idx].str-val = with-cap(val.len)
     i <- [0..val.len): {
         .pool.nodes[idx].str-val[i] = val[i]
     }
+    .pool.nodes[idx].str-val.len = val.len
 
     ok = .arr-push(json{
         pool: .pool
