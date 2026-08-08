@@ -1850,7 +1850,11 @@ func (t *Transpiler) CompileTarget(source string, _ Target) (string, error) {
 	// 傳遞主檔案名稱集合，讓 generator 能區分主檔案全域變數的合法重新賦值
 	// 與導入模組函數中的同名局部變數（如 bigint.cmp 中的 result 不應誤寫到 @result）
 	t.llvmGenerator.SetMainFileNames(mainVarNames)
-	return t.llvmGenerator.Generate(merged), nil
+	ir := t.llvmGenerator.Generate(merged)
+	if errs := t.llvmGenerator.CodegenErrors(); len(errs) > 0 {
+		return "", fmt.Errorf("codegen errors: %v", errs)
+	}
+	return ir, nil
 }
 // monomorphizeGenerics 對泛型函數進行單態化
 func monomorphizeGenerics(program *parser.Program, varTypes map[string]string, typeOwner map[string]string) {

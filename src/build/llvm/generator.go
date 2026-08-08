@@ -289,6 +289,17 @@ type Generator struct {
 	coroResultFields      map[int][]coroField // coro 编号 → 结果字段（name/llvmTy/idx），供直接调用 coro 函数后取回结果
 	coroTaskHandles       map[string]int      // 持有协程任务句柄的变量名 → coro 编号（供 awy/run 识别协程任务并从其 coro_state 取回结果）
 	coroStateSizes        map[int]int64       // coro 编号 → coro_state 字节大小（供 run 异步启动时堆分配，避免栈帧销毁后悬垂）
+	codegenErrors         []string            // codegen 阶段收集的错误（如 with-cap 类型推断失败）
+}
+
+// AddCodegenError 添加一个 codegen 错误。
+func (g *Generator) AddCodegenError(msg string) {
+	g.codegenErrors = append(g.codegenErrors, msg)
+}
+
+// CodegenErrors 返回 codegen 阶段收集的所有错误。
+func (g *Generator) CodegenErrors() []string {
+	return g.codegenErrors
 }
 
 // awaitPoint 描述一个 awy 挂起点的信息。
