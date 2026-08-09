@@ -715,7 +715,7 @@ func createSrcDirectory() {
 		return
 	}
 
-	content := `// Example module
+	content := `; Example module
 greet = (name str) {
     print('Hello, ' - name)
 }
@@ -727,7 +727,7 @@ greet = (name str) {
 }
 
 func createLibFile(name string) {
-	content := fmt.Sprintf(`// Export declarations
+	content := fmt.Sprintf(`; Export declarations
 @ /%s/src/utils.greet greet
 `, name)
 	err := os.WriteFile("lib.no", []byte(content), 0644)
@@ -743,10 +743,10 @@ func createTestDirectory() {
 		return
 	}
 
-	content := `// Test example
-// test-greet = () {
-//     print('test passed')
-// }
+	content := `; Test example
+; test-greet = () {
+;     print('test passed')
+; }
 `
 	err = os.WriteFile("tests/test.no", []byte(content), 0644)
 	if err != nil {

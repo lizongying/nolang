@@ -633,13 +633,13 @@ Flags (optional, after closing `/`): `g` (global), `i` (case-insensitive), `m` (
 
 Nolang supports three single-line comment markers and one multi-line (block) comment marker:
 
-- `//` — traditional single-line marker (comments to end-of-line)
-- `;` — single-line marker (comments to end-of-line)
+- `;` — **preferred** single-line marker (comments to end-of-line)
+- `//` — legacy single-line marker (**will be abolished**, use `;` instead)
 - `;; <content>` — single-line marker (when `;;` is followed by content on the **same line**, comments to end-of-line; same semantics as `;`)
 - `;;\n` — multi-line (block) comment: when `;;` is **immediately followed by a newline** (only whitespace allowed in between), it enters multi-line mode until another `;;` followed by a newline/EOF is encountered
 
 ```no
-// this is a comment
+; this is a comment (preferred style)
 ; this is also a comment, same semantics
 ;; this is still a single-line comment (no newline after ;;)
 x = 1 ; trailing comment, runs to end of line
@@ -2186,19 +2186,20 @@ Nolang uses the `@` keyword to declare exports in the package root `lib.no` file
 - Export items can only be final symbols such as functions, constants, enums
 - Structs, enums, and other types referenced by exported functions are **auto-exported**, no manual declaration needed
 - If an exported function does not exist in the module, LSP will report an error
+- **When the alias is the same as the function name, the alias should be omitted** — the compiler will emit a warning if a redundant alias is provided
 
 #### Example
 
 ```no
-// lib.no - package root export file
+; lib.no - package root export file
 @ /src/utils.greet a
 @ /src/utils.hello b
 @ /src/math.pi
 ```
 
 ```no
-// src/utils.no
-// Define exported functions
+; src/utils.no
+; Define exported functions
 greet = (name str) {
     print('Hello, ' - name)
 }

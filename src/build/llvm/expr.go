@@ -2396,6 +2396,16 @@ func (g *Generator) generateStructFieldIndexAssign(sb *strings.Builder, dot *par
 						g.currentTargetType = f.elemType
 					} else if f.typ == "%str-long" {
 						g.currentTargetType = "%str-long"
+					} else if strings.HasPrefix(f.typ, "[") {
+						// Array field: [N x %type] → extract %type
+						closeB := strings.IndexByte(f.typ, ']')
+						if closeB > 0 {
+							inner := f.typ[1:closeB]
+							xIdx := strings.LastIndex(inner, " x ")
+							if xIdx >= 0 {
+								g.currentTargetType = inner[xIdx+3:]
+							}
+						}
 					}
 					break
 				}

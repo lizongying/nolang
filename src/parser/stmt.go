@@ -554,6 +554,11 @@ func (p *Parser) parseExportStatement() Statement {
 							p.nextToken()
 						}
 					}
+					// 提醒：別名與函數名相同時不需要寫別名
+					if stmt.Alias != "" && stmt.Alias == stmt.Function {
+						p.saveError(fmt.Sprintf("line %d, column %d: export alias '%s' is the same as the function name; the alias can be omitted",
+							stmt.Token.Line, stmt.Token.Column, stmt.Alias))
+					}
 					stmt.Path = joinPathParts(parts)
 					return stmt
 				}
