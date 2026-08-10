@@ -1792,7 +1792,13 @@ parseBody:
 		p.nextToken() // skip ; or ,
 		stmt.Condition = p.parseExpression(LOWEST)
 		p.nextToken()
-		update := p.parseExpressionStatement()
+		// Use parseStatement (not parseExpressionStatement) for the update so
+		// that assignment updates like `i = i + 1` are parsed as LetStatement
+		// rather than truncated to just the identifier `i`.
+		// CTX_FOR_COND prevents skipToStatementEnd from consuming past the loop body.
+		p.ctx.push(CTX_FOR_COND)
+		update := p.parseStatement()
+		p.ctx.pop()
 		if update != nil {
 			stmt.Update = update
 		}

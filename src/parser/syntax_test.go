@@ -55,6 +55,84 @@ func TestOldSyntax(t *testing.T) {
 	}
 }
 
+// TestCStyleForAssignUpdate is a regression test for bug05-loop-block-assignment.
+// The C-style for loop parser used parseExpressionStatement() for the update part,
+// which could only parse expressions (like i++), not assignments (like i = i + 1).
+// This caused the update to be truncated to just "i", leaving "= i + 1" in the
+// token stream, which then corrupted the loop body parsing.
+func TestCStyleForAssignUpdate(t *testing.T) {
+	src := `main = () () {
+    count i64 = 0
+    for i i64 = 0, i < 3, i = i + 1 {
+        count = count + 1
+    }
+    print('result' - util.i64-to-str(count))
+}
+`
+	l := lexer.New(src)
+	p := New(l)
+	prog := p.ParseProgram()
+	if errs := p.Errors(); len(errs) > 0 {
+		t.Fatalf("parser errors: %v", errs)
+	}
+	if len(prog.Statements) == 0 {
+		t.Fatalf("no statements parsed")
+	}
+	// Find the ForStatement in the body
+	var forStmt *ForStatement
+	for _, s := range getBodyStatements(prog.Statements[0]) {
+		if fs, ok := s.(*ForStatement); ok {
+			forStmt = fs
+			break
+		}
+	}
+	if forStmt == nil {
+		t.Fatalf("no ForStatement found in function body")
+	}
+	// Verify Init is set
+	if forStmt.Init == nil {
+		t.Fatalf("ForStatement.Init is nil")
+	}
+	// Verify Condition is set
+	if forStmt.Condition == nil {
+		t.Fatalf("ForStatement.Condition is nil")
+	}
+	// Verify Update is set and is an assignment (LetStatement), not just an Identifier
+	if forStmt.Update == nil {
+		t.Fatalf("ForStatement.Update is nil — should be the assignment 'i = i + 1'")
+	}
+	if ls, ok := forStmt.Update.(*LetStatement); ok {
+		if ls.Name == nil || ls.Name.Value != "i" {
+			t.Errorf("Update name: expected 'i', got %v", ls.Name)
+		}
+		if ls.Value == nil {
+			t.Errorf("Update value is nil — should be the expression 'i + 1'")
+		}
+	} else {
+		t.Errorf("Update: expected *LetStatement (assignment 'i = i + 1'), got %T", forStmt.Update)
+	}
+	// Verify Body is set and contains the expected statement
+	if forStmt.Body == nil || len(forStmt.Body.Statements) == 0 {
+		t.Fatalf("ForStatement.Body is empty — should contain 'count = count + 1'")
+	}
+}
+
+// getBodyStatements extracts the body statements from a top-level function
+// definition (either *FunctionDefinition or *LetStatement wrapping a FunctionLiteral).
+func getBodyStatements(stmt Statement) []Statement {
+	switch s := stmt.(type) {
+	case *FunctionDefinition:
+		if s.Body != nil {
+			return s.Body.Statements
+		}
+	case *LetStatement:
+		if fl, ok := s.Value.(*FunctionLiteral); ok && fl.Body != nil {
+			return fl.Body.Statements
+		}
+	}
+	return nil
+}
+
 func TestNewSyntax(t *testing.T) {
 	tests := []struct {
 		name    string
