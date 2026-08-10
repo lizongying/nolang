@@ -1079,6 +1079,31 @@ str.empty = () (yes bool) {
 ; 全局函数 with-cap / with-len / with-cap-len 的声明已移至 global.no
 
 ; ═══════════════════════════════════════════════
+; 便捷构造方法（方法形式的全局 with-cap / with-len / with-cap-len）
+; ═══════════════════════════════════════════════
+
+; str.with-cap: 建立指定容量的新字串（len=0）
+;   s = ''.with-cap(256)  → 預分配 256 位元組的空字串
+; 便捷方法，等同全域 with-cap(cap)
+str.with-cap = (cap i64) (out str) {
+    out = with-cap(cap)
+}
+
+; str.with-len: 建立指定長度的字串
+;   s = ''.with-len(10)  → 長度為 10 的字串
+; 便捷方法，等同全域 with-len(len)
+str.with-len = (len i64) (out str) {
+    out = with-len(len)
+}
+
+; str.with-len-cap: 建立指定長度和容量的字串
+;   s = ''.with-len-cap(10, 256)  → 長度 10、容量 256 的字串
+; 便捷方法，等同全域 with-cap-len(cap, len)
+str.with-len-cap = (len i64, cap i64) (out str) {
+    out = with-cap-len(cap, len)
+}
+
+; ═══════════════════════════════════════════════
 ; 十六進制解碼
 ; ═══════════════════════════════════════════════
 

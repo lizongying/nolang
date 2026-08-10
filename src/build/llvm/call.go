@@ -224,41 +224,27 @@ func (g *Generator) generateCallArg(sb *strings.Builder, arg parser.Expression) 
 			// GEP result is a pointer
 			return toLLVMType(elemLLVMType) + "* " + ev
 		}
-		// SSA value (e.g., %idx.zext.* for []byte, %arr.idx.val.* for []str)
-		// 需根據元素型別選擇正確的 alloca/store 型別
-		// 若 SSA 值為 i64（如 zext 後的 byte/int32）但元素型別為 i8/i16/i32，需 trunc
+		// generateIndexExpression always zexts/sexts narrow integer elements
+		// (i8/i16/i32) to i64, so the SSA value type is i64 regardless of
+		// elemLLVMType. Use i64 for the alloca and store to ensure the
+		// pointer type is i64*. This is safe because:
+		//   - Callee loads i64 from i64 alloca → correct full value
+		//   - Callee loads i8 from i64 alloca → reads low byte = correct value
+		//     (zext ensures high bytes are 0)
+		//   - Callee stores i8 to i64 alloca → modifies low byte only,
+		//     high bytes stay 0 → caller reads correct i64
 		storeVal := ev
+		argType := elemLLVMType
 		if strings.HasPrefix(ev, "%") && g.isIntegerLLVMType(elemLLVMType) {
-			// generateIndexExpression always zexts narrow integer elements to i64,
-			// so the SSA value type is i64 regardless of elemLLVMType.
-			// When elemLLVMType is a narrow integer (i8/i16/i32), trunc to elemLLVMType.
-			srcType := "i64"
-			if toLLVMType(srcType) != toLLVMType(elemLLVMType) {
-				g.tmpIdx++
-				convReg := fmt.Sprintf("%%ref.conv.%d", g.tmpIdx)
-				if sb != nil {
-					if srcType == "i64" {
-					// i64 → smaller type: trunc
-						sb.WriteString(fmt.Sprintf("%s%s = trunc %s %s to %s\n", g.indent(), convReg, toLLVMType(srcType), ev, toLLVMType(elemLLVMType)))
-					} else if elemLLVMType == "i64" {
-						// smaller type → i64: zext (unsigned) or sext (signed)
-						op := widenExtOp(srcType)
-						sb.WriteString(fmt.Sprintf("%s%s = %s %s %s to i64\n", g.indent(), convReg, op, toLLVMType(srcType), ev))
-					} else {
-						// smaller → smaller (both non-i64): trunc to target
-						sb.WriteString(fmt.Sprintf("%s%s = trunc %s %s to %s\n", g.indent(), convReg, toLLVMType(srcType), ev, toLLVMType(elemLLVMType)))
-					}
-				}
-				storeVal = convReg
-			}
+			argType = "i64"
 		}
 		g.tmpIdx++
 		tmpName := fmt.Sprintf("%%ref.tmp.%d", g.tmpIdx)
 		if sb != nil {
-			sb.WriteString(fmt.Sprintf("%s%s = alloca %s\n", g.indent(), tmpName, toLLVMType(elemLLVMType)))
-			sb.WriteString(fmt.Sprintf("%sstore %s %s, %s* %s\n", g.indent(), toLLVMType(elemLLVMType), storeVal, toLLVMType(elemLLVMType), tmpName))
+			sb.WriteString(fmt.Sprintf("%s%s = alloca %s\n", g.indent(), tmpName, toLLVMType(argType)))
+			sb.WriteString(fmt.Sprintf("%sstore %s %s, %s* %s\n", g.indent(), toLLVMType(argType), storeVal, toLLVMType(argType), tmpName))
 		}
-		return toLLVMType(elemLLVMType) + "* " + tmpName
+		return toLLVMType(argType) + "* " + tmpName
 	case *parser.SliceExpression:
 		// 切片表達式回傳 %vec 或 %str-long（已分配在 stack 上）
 		ev := g.generateExprWithSB(sb, arg)
@@ -2451,38 +2437,27 @@ func (g *Generator) generateCallExpression(sb *strings.Builder, expr *parser.Cal
 				// GEP result is a pointer
 			return toLLVMType(elemLLVMType) + "* " + ev
 		}
-		// 若 SSA 值為 i64（如 zext 後的 byte/int32）但元素型別為 i8/i16/i32，需 trunc
+		// generateIndexExpression always zexts/sexts narrow integer elements
+			// (i8/i16/i32) to i64, so the SSA value type is i64 regardless of
+			// elemLLVMType. Use i64 for the alloca and store to ensure the
+			// pointer type is i64*. This is safe because:
+			//   - Callee loads i64 from i64 alloca → correct full value
+			//   - Callee loads i8 from i64 alloca → reads low byte = correct value
+			//     (zext ensures high bytes are 0)
+			//   - Callee stores i8 to i64 alloca → modifies low byte only,
+			//     high bytes stay 0 → caller reads correct i64
 			storeVal := ev
+			argType := elemLLVMType
 			if strings.HasPrefix(ev, "%") && g.isIntegerLLVMType(elemLLVMType) {
-				// generateIndexExpression always zexts narrow integer elements to i64,
-				// so the SSA value type is i64 regardless of elemLLVMType.
-				// When elemLLVMType is a narrow integer (i8/i16/i32), trunc to elemLLVMType.
-				srcType := "i64"
-				if toLLVMType(srcType) != toLLVMType(elemLLVMType) {
-					g.tmpIdx++
-					convReg := fmt.Sprintf("%%ref.conv.%d", g.tmpIdx)
-					if sb != nil {
-						if srcType == "i64" {
-							// i64 → smaller type: trunc
-					sb.WriteString(fmt.Sprintf("%s%s = trunc %s %s to %s\n", g.indent(), convReg, srcType, ev, toLLVMType(elemLLVMType)))
-				} else if elemLLVMType == "i64" {
-							// smaller type → i64: zext
-							sb.WriteString(fmt.Sprintf("%s%s = zext %s %s to i64\n", g.indent(), convReg, srcType, ev))
-						} else {
-							// smaller → smaller (both non-i64): trunc to target
-					sb.WriteString(fmt.Sprintf("%s%s = trunc %s %s to %s\n", g.indent(), convReg, srcType, ev, toLLVMType(elemLLVMType)))
-				}
-				}
-					storeVal = convReg
-				}
+				argType = "i64"
 			}
 			g.tmpIdx++
 			tmpName := fmt.Sprintf("%%ref.tmp.%d", g.tmpIdx)
 			if sb != nil {
-			sb.WriteString(fmt.Sprintf("%s%s = alloca %s\n", g.indent(), tmpName, toLLVMType(elemLLVMType)))
-			sb.WriteString(fmt.Sprintf("%sstore %s %s, %s* %s\n", g.indent(), toLLVMType(elemLLVMType), storeVal, toLLVMType(elemLLVMType), tmpName))
-		}
-		return toLLVMType(elemLLVMType) + "* " + tmpName
+				sb.WriteString(fmt.Sprintf("%s%s = alloca %s\n", g.indent(), tmpName, toLLVMType(argType)))
+				sb.WriteString(fmt.Sprintf("%sstore %s %s, %s* %s\n", g.indent(), toLLVMType(argType), storeVal, toLLVMType(argType), tmpName))
+			}
+			return toLLVMType(argType) + "* " + tmpName
 	case *parser.SliceExpression:
 			ev := g.generateExprWithSB(sb, arg)
 			ptrType := "%vec*"
@@ -3962,10 +3937,15 @@ func (g *Generator) genForwardFunc(sb *strings.Builder, forwardFunc string, expr
 		// with-cap(cap) — builtin syntax, type inferred from assignment LHS
 		//   s str = with-cap(256)   → %str-long { len=0, cap=256, data=malloc(256) }
 		//   v []i64 = with-cap(100) → %vec { len=0, cap=100, data=malloc(100*8) }
-		if len(args) < 1 {
+		// Method form (v.with-cap(100)): receiver is args[0], cap is args[1].
+		argIdx := 0
+		if len(args) > 1 {
+			argIdx = 1 // skip receiver
+		}
+		if len(args) < argIdx+1 {
 			return ""
 		}
-		capVal := g.evalI64Arg(sb, args[0])
+		capVal := g.evalI64Arg(sb, args[argIdx])
 		targetType := g.currentTargetType
 		switch targetType {
 		case "%str-long", "str":
@@ -4032,10 +4012,15 @@ func (g *Generator) genForwardFunc(sb *strings.Builder, forwardFunc string, expr
 		//   v []i64 = with-len(100) → %vec { len=100, cap=100, data=malloc(100*8) }
 		// Like with-cap, but also sets len=cap so that direct index reads/writes
 		// pass bounds checks without needing push() to grow the length.
-		if len(args) < 1 {
+		// Method form (v.with-len(100)): receiver is args[0], len is args[1].
+		argIdx := 0
+		if len(args) > 1 {
+			argIdx = 1 // skip receiver
+		}
+		if len(args) < argIdx+1 {
 			return ""
 		}
-		lenVal := g.evalI64Arg(sb, args[0])
+		lenVal := g.evalI64Arg(sb, args[argIdx])
 		targetType := g.currentTargetType
 		switch targetType {
 		case "%str-long", "str":
@@ -4100,11 +4085,16 @@ func (g *Generator) genForwardFunc(sb *strings.Builder, forwardFunc string, expr
 		// Combines with-cap and with-len: allocates cap elements, sets len to the
 		// given length (len <= cap), enabling direct index access within [0,len)
 		// while reserving extra capacity for future growth.
-		if len(args) < 2 {
+		// Method form (v.with-len-cap(len, cap)): receiver is args[0].
+		argIdx := 0
+		if len(args) > 2 {
+			argIdx = 1 // skip receiver
+		}
+		if len(args) < argIdx+2 {
 			return ""
 		}
-		capVal := g.evalI64Arg(sb, args[0])
-		lenVal := g.evalI64Arg(sb, args[1])
+		capVal := g.evalI64Arg(sb, args[argIdx])
+		lenVal := g.evalI64Arg(sb, args[argIdx+1])
 		targetType := g.currentTargetType
 		switch targetType {
 		case "%str-long", "str":

@@ -949,7 +949,7 @@ func stdModuleLookup() map[string]checker.StdModuleInfo {
 //     byte 模組體積小且 []byte 方法被廣泛使用（net/crypto/encoding 等），
 //     始終載入避免未定義函式呼叫。
 // 若未來 codegen 新增其他隱式 std 依賴，在此追加即可。
-var alwaysAutoLoadStd = []string{"fmt", "io", "byte"}
+var alwaysAutoLoadStd = []string{"fmt", "io", "byte", "str", "vec"}
 
 // dotModulePath 從 DotExpression 提取模組路徑（如 array.map → "array"，
 // hash/sha256.sum → "hash/sha256"），與 checker.extractModulePathAndFunc 同義

@@ -3155,6 +3155,102 @@ func (g *Generator) generateAssignExpression(sb *strings.Builder, expr *parser.A
 			}
 		}
 
+		// SliceLiteral assigned to a %vec field: handle specially to avoid
+		// generating invalid IR (generateSliceLiteral returns a raw array
+		// constant like [i64 1, i64 2, i64 3] which cannot be stored as a
+		// %vec struct { len, cap, data }). Instead, allocate a heap buffer,
+		// store elements, and set the %vec fields directly.
+		if sliceLit, ok := expr.Value.(*parser.SliceLiteral); ok && structName != "" {
+			if fields, ok := g.structTypes[structName]; ok {
+				fieldIdx := -1
+				var fieldElemType string
+				for i, f := range fields {
+					if f.name == fieldName {
+						fieldIdx = i
+						fieldElemType = f.elemType
+						break
+					}
+				}
+				if fieldIdx >= 0 && fields[fieldIdx].typ == "%vec" && sb != nil {
+					structTy := "%" + structName
+					reg := g.tmpReg("set.gep")
+					if basePtr != "" {
+						sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %s, %s* %s, i32 0, i32 %d\n",
+							g.indent(), reg, structTy, structTy, basePtr, fieldIdx))
+					} else {
+						sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %s, %s* %s, i32 0, i32 %d\n",
+							g.indent(), reg, structTy, structTy, g.varAddr(varName), fieldIdx))
+					}
+					// Free old value if present
+					oldLenGEP := g.tmpReg("set.fld.oldlen.gep")
+					oldLenReg := g.tmpReg("set.fld.oldlen")
+					lenCmpReg := g.tmpReg("set.fld.lencmp")
+					g.tmpIdx++
+					skipFreeLabel := fmt.Sprintf("set.fld.skipfree.%d", g.tmpIdx)
+					g.tmpIdx++
+					doFreeLabel := fmt.Sprintf("set.fld.dofree.%d", g.tmpIdx)
+					sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%vec, %%vec* %s, i32 0, i32 0\n",
+						g.indent(), oldLenGEP, reg))
+					sb.WriteString(fmt.Sprintf("%s%s = load i64, i64* %s\n", g.indent(), oldLenReg, oldLenGEP))
+					sb.WriteString(fmt.Sprintf("%s%s = icmp eq i64 %s, 0\n", g.indent(), lenCmpReg, oldLenReg))
+					sb.WriteString(fmt.Sprintf("%sbr i1 %s, label %%%s, label %%%s\n",
+						g.indent(), lenCmpReg, skipFreeLabel, doFreeLabel))
+					g.emitLabel(sb, doFreeLabel)
+					g.emitElementFree(sb, reg, "%vec")
+					sb.WriteString(fmt.Sprintf("%sbr label %%%s\n", g.indent(), skipFreeLabel))
+					g.emitLabel(sb, skipFreeLabel)
+					// Initialize from slice literal
+					elemType := fieldElemType
+					if elemType == "" {
+						elemType = "i64"
+					}
+					n := int64(len(sliceLit.Elements))
+					g.tmpIdx++
+					tid := g.tmpIdx
+					tmpArr := fmt.Sprintf("%%fld.slice.tmp.%d", tid)
+					arrType := fmt.Sprintf("[%d x %s]", n, toLLVMType(elemType))
+					elemSize := g.llvmTypeSize(elemType)
+					if elemSize == 0 {
+						elemSize = 8
+					}
+					bufSize := n * elemSize
+					if bufSize == 0 {
+						bufSize = 1
+					}
+					sb.WriteString(fmt.Sprintf("%s%s = call i8* @nolang.malloc(i64 %d)\n", g.indent(), tmpArr, bufSize))
+					arrPtrReg := g.tmpReg("fld.slice.arrptr")
+					sb.WriteString(fmt.Sprintf("%s%s = bitcast i8* %s to %s*\n", g.indent(), arrPtrReg, tmpArr, arrType))
+					for i, elem := range sliceLit.Elements {
+						ev := g.generateExprWithSB(sb, elem)
+						ev = g.stripLLVMType(ev)
+						if elemType == "%str-long" {
+							ev = g.loadStrValueIfNeeded(sb, ev)
+						}
+						gepReg := g.tmpReg("fld.slice.gep")
+						sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %s, %s* %s, i32 0, i32 %d\n",
+							g.indent(), gepReg, arrType, arrType, arrPtrReg, i))
+						sb.WriteString(fmt.Sprintf("%sstore %s %s, %s* %s\n", g.indent(), toLLVMType(elemType), ev, toLLVMType(elemType), gepReg))
+					}
+					// store len
+					lenGEP := g.tmpReg("fld.slice.len")
+					sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%vec, %%vec* %s, i32 0, i32 0\n",
+						g.indent(), lenGEP, reg))
+					sb.WriteString(fmt.Sprintf("%sstore i64 %d, i64* %s\n", g.indent(), n, lenGEP))
+					// store cap
+					capGEP := g.tmpReg("fld.slice.cap")
+					sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%vec, %%vec* %s, i32 0, i32 1\n",
+						g.indent(), capGEP, reg))
+					sb.WriteString(fmt.Sprintf("%sstore i64 %d, i64* %s\n", g.indent(), n, capGEP))
+					// store data
+					dataGEP := g.tmpReg("fld.slice.data")
+					sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%vec, %%vec* %s, i32 0, i32 2\n",
+						g.indent(), dataGEP, reg))
+					g.storeDataPtrField(sb, tmpArr, dataGEP)
+					return "0"
+				}
+			}
+		}
+
 		// Set target type info for type-inferred builtins (e.g. with-len)
 	// before generating the RHS value. Without this, with-len defaults
 	// to i64 (8 bytes) element size, causing undersized allocations for

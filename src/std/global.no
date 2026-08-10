@@ -28,6 +28,16 @@
 ; build-in (ForwardFunc: with-cap-len)
 ; with-cap-len = (cap i64, len i64) { }
 
+; ── 方法形式（便捷调用）──────────────────────────────────────
+; 以上三个全局函数也可作为 str 和 vec 的方法调用：
+;   s str = ''.with-cap(256)         → 等同 with-cap(256)
+;   s str = ''.with-len(10)          → 等同 with-len(10)
+;   s str = ''.with-len-cap(10, 256) → 等同 with-cap-len(256, 10)
+;   v []i64 = [].with-cap(100)       → 等同 with-cap(100)
+;   v []i64 = [].with-len(100)       → 等同 with-len(100)
+;   v []i64 = [].with-len-cap(100, 200) → 等同 with-cap-len(200, 100)
+; str 的方法定义在 str.no，vec 的方法由编译器内置实现（builtin）。
+
 ; ── 输出/格式化 ────────────────────────────────────────────
 
 ; print: 输出字串到标准输出并换行，支援 {name:spec} 命名格式栏位

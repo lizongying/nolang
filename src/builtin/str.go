@@ -87,4 +87,37 @@ func init() {
 		Doc:          "Create a new str or vec with specified capacity and length (type inferred from LHS)",
 		ForwardFunc:  "with-cap-len",
 	})
+
+	// vec.with-cap: method form of with-cap for vec/slice receivers
+	//   v []i64 = [].with-cap(100) → %vec { len=0, cap=100, data=malloc(100*8) }
+	BuiltinMethodList = append(BuiltinMethodList, BuiltinMethod{
+		ReceiverType: ReceiverVec,
+		MethodName:   "vec.with-cap",
+		Params:       []parser.Type{parser.TypeI64},
+		Return:       []parser.Type{},
+		Doc:          "Create a new vec with specified capacity (method form, type inferred from LHS)",
+		ForwardFunc:  "with-cap",
+	})
+
+	// vec.with-len: method form of with-len for vec/slice receivers
+	//   v []i64 = [].with-len(100) → %vec { len=100, cap=100, data=malloc(100*8) }
+	BuiltinMethodList = append(BuiltinMethodList, BuiltinMethod{
+		ReceiverType: ReceiverVec,
+		MethodName:   "vec.with-len",
+		Params:       []parser.Type{parser.TypeI64},
+		Return:       []parser.Type{},
+		Doc:          "Create a new vec with specified length (method form, type inferred from LHS)",
+		ForwardFunc:  "with-len",
+	})
+
+	// vec.with-len-cap: method form of with-cap-len for vec/slice receivers
+	//   v []i64 = [].with-len-cap(100, 200) → %vec { len=100, cap=200 }
+	BuiltinMethodList = append(BuiltinMethodList, BuiltinMethod{
+		ReceiverType: ReceiverVec,
+		MethodName:   "vec.with-len-cap",
+		Params:       []parser.Type{parser.TypeI64, parser.TypeI64},
+		Return:       []parser.Type{},
+		Doc:          "Create a new vec with specified length and capacity (method form, type inferred from LHS)",
+		ForwardFunc:  "with-cap-len",
+	})
 }
