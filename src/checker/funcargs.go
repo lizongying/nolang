@@ -18,8 +18,10 @@ import (
 )
 
 // FilterByExports 依 lib.no 匯出聲明過濾模組 Program（供 build 代碼生成使用）。
-func FilterByExports(prog *parser.Program, libPath string) *parser.Program {
-	return filterByExports(prog, libPath)
+// modFilePath is the file path of the module being filtered (used to match
+// exports to the correct module). If empty, path-based filtering is skipped.
+func FilterByExports(prog *parser.Program, libPath string, modFilePath string) *parser.Program {
+	return filterByExports(prog, libPath, modFilePath)
 }
 
 // ClearModuleCache 清空模組 AST 解析快取（build 每次 Compile 前調用）。
@@ -192,7 +194,7 @@ func resolveUseModule(use *parser.UseStatement, pkg *pkg.Package) *parser.Progra
 		if pkgRoot != "" {
 			libPath := filepath.Join(pkgRoot, "lib.no")
 			if _, err := os.Stat(libPath); err == nil {
-				prog = filterByExports(prog, libPath)
+				prog = filterByExports(prog, libPath, filePath)
 			}
 		}
 	}
@@ -930,7 +932,7 @@ func checkCallArgsInExpr(expr parser.Expression, sigs map[string]*funcSig, varTy
 
 // filterByExports filters a module's program to only include exported items declared in lib.no.
 // It also auto-exports structs/enums/interfaces referenced by exported functions.
-func filterByExports(prog *parser.Program, libPath string) *parser.Program {
+func filterByExports(prog *parser.Program, libPath string, modFilePath string) *parser.Program {
 	libSource, err := os.ReadFile(libPath)
 	if err != nil {
 		return prog
@@ -942,6 +944,7 @@ func filterByExports(prog *parser.Program, libPath string) *parser.Program {
 		return prog
 	}
 	type exportEntry struct {
+		path  string
 		fn    string
 		alias string
 	}
@@ -949,6 +952,7 @@ func filterByExports(prog *parser.Program, libPath string) *parser.Program {
 	for _, stmt := range libProg.Statements {
 		if es, ok := stmt.(*parser.ExportStatement); ok {
 			exports = append(exports, exportEntry{
+				path:  es.Path,
 				fn:    es.Function,
 				alias: es.Alias,
 			})
@@ -989,7 +993,25 @@ func filterByExports(prog *parser.Program, libPath string) *parser.Program {
 		}
 	}
 	if hasFuncDefs {
+		// Compute the module's relative path (without .no extension) from the
+		// file path and lib.no location. Only exports whose Path matches this
+		// module are validated, avoiding false positives from other modules'
+		// exports in the same lib.no file.
+		modRelPath := ""
+		if modFilePath != "" {
+			pkgRoot := filepath.Dir(libPath)
+			rel, err := filepath.Rel(pkgRoot, modFilePath)
+			if err == nil {
+				modRelPath = strings.TrimSuffix(rel, ".no")
+			}
+		}
 		for _, e := range exports {
+			// Skip validation for exports that don't belong to this module.
+			if modRelPath != "" {
+				if !strings.HasSuffix(e.path, "/"+modRelPath) && e.path != "/"+modRelPath && e.path != modRelPath {
+					continue
+				}
+			}
 			if !defined[e.fn] {
 				fmt.Fprintf(os.Stderr, "warning: export references undefined symbol %q (not found in module)\n", e.fn)
 			}

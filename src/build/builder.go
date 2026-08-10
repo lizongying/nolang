@@ -833,7 +833,7 @@ func resolveAndMergeJSModules(program *parser.Program, inputPath string, pkgConf
 		if pkgRoot != "" {
 			libPath := filepath.Join(pkgRoot, "lib.no")
 			if _, err := os.Stat(libPath); err == nil {
-				prog = checker.FilterByExports(prog, libPath)
+				prog = checker.FilterByExports(prog, libPath, filePath)
 			}
 		}
 		return prog, nil
