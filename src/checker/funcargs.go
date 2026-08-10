@@ -977,10 +977,22 @@ func filterByExports(prog *parser.Program, libPath string) *parser.Program {
 			}
 		}
 	}
-	// Validate that all exported names exist in the module
-	for _, e := range exports {
-		if !defined[e.fn] {
-			fmt.Fprintf(os.Stderr, "warning: export references undefined symbol %q (not found in module)\n", e.fn)
+	// Validate that all exported names exist in the module.
+	// Skip validation when the program has no function definitions (e.g. lib.no
+	// itself only contains ExportStatement + UseStatement); the actual definitions
+	// will be loaded from the UseStatements' target modules.
+	hasFuncDefs := false
+	for _, stmt := range prog.Statements {
+		if _, ok := stmt.(*parser.FunctionDefinition); ok {
+			hasFuncDefs = true
+			break
+		}
+	}
+	if hasFuncDefs {
+		for _, e := range exports {
+			if !defined[e.fn] {
+				fmt.Fprintf(os.Stderr, "warning: export references undefined symbol %q (not found in module)\n", e.fn)
+			}
 		}
 	}
 	exported := make(map[string]string)
@@ -1017,7 +1029,7 @@ func filterByExports(prog *parser.Program, libPath string) *parser.Program {
 		switch tt := t.(type) {
 		case *parser.NamedType:
 			if structs[tt.Value] || enums[tt.Value] || interfaces[tt.Value] {
-				result[tt.Value] = true
+			result[tt.Value] = true
 			}
 		case *parser.ArrayType:
 			collectTypes(tt.Elem, result)
@@ -1046,10 +1058,156 @@ func filterByExports(prog *parser.Program, libPath string) *parser.Program {
 	for name := range autoResult {
 		exported[name] = ""
 	}
+
+	// Track call dependencies: if an exported function calls another function
+	// defined in the same module, that function must also be kept (transitively).
+	// Without this, non-exported helper functions called by exported functions
+	// would be filtered out, leaving dangling call sites that cause linker errors.
+	funcDefs := make(map[string]*parser.FunctionDefinition)
+	for _, stmt := range prog.Statements {
+		if fd, ok := stmt.(*parser.FunctionDefinition); ok {
+			funcDefs[fd.Name] = fd
+		}
+	}
+	calledFuncs := make(map[string]bool)
+	var collectCalledFuncs func(body *parser.BlockStatement)
+	var walkExpr func(expr parser.Expression)
+	var walkStmts func(stmts []parser.Statement)
+	walkExpr = func(expr parser.Expression) {
+		if expr == nil {
+			return
+		}
+		switch e := expr.(type) {
+		case *parser.CallExpression:
+			if ident, ok := e.Function.(*parser.Identifier); ok {
+				if defined[ident.Value] {
+					calledFuncs[ident.Value] = true
+				}
+			}
+			walkExpr(e.Function)
+			for _, arg := range e.Arguments {
+				walkExpr(arg)
+			}
+		case *parser.InfixExpression:
+			walkExpr(e.Left)
+			walkExpr(e.Right)
+		case *parser.PrefixExpression:
+			walkExpr(e.Right)
+		case *parser.DotExpression:
+			walkExpr(e.Receiver)
+		case *parser.IndexExpression:
+			walkExpr(e.Left)
+			walkExpr(e.Index)
+		case *parser.SliceExpression:
+			walkExpr(e.Left)
+		case *parser.GroupedExpression:
+			walkExpr(e.Expression)
+		case *parser.FunctionLiteral:
+			if e.Body != nil {
+				walkStmts(e.Body.Statements)
+			}
+		case *parser.IfExpression:
+			walkExpr(e.Condition)
+			if e.Consequence != nil {
+				walkStmts(e.Consequence.Statements)
+			}
+			if e.Alternative != nil {
+				walkStmts(e.Alternative.Statements)
+			}
+		case *parser.ArrayLiteral:
+			for _, elem := range e.Elements {
+				walkExpr(elem)
+			}
+		case *parser.SliceLiteral:
+			for _, elem := range e.Elements {
+				walkExpr(elem)
+			}
+		case *parser.StructLiteral:
+			for _, f := range e.Fields {
+				walkExpr(f.Value)
+			}
+		case *parser.AssignExpression:
+			walkExpr(e.Left)
+			walkExpr(e.Value)
+		case *parser.ConditionalExpression:
+			walkExpr(e.Condition)
+			walkExpr(e.Consequence)
+			walkExpr(e.Alternative)
+		case *parser.CastExpression:
+			walkExpr(e.Expr)
+		case *parser.AwaitExpression:
+			walkExpr(e.Right)
+		}
+	}
+	walkStmts = func(stmts []parser.Statement) {
+		for _, stmt := range stmts {
+			if stmt == nil {
+				continue
+			}
+			switch s := stmt.(type) {
+			case *parser.LetStatement:
+				walkExpr(s.Value)
+			case *parser.ExpressionStatement:
+				walkExpr(s.Expression)
+			case *parser.MultiAssignStatement:
+				walkExpr(s.Value)
+			case *parser.ReturnStatement:
+				walkExpr(s.ReturnValue)
+			case *parser.ForStatement:
+				walkExpr(s.Condition)
+				if s.Body != nil {
+					walkStmts(s.Body.Statements)
+				}
+				if s.IterRange != nil {
+					if s.IterRange.Range != nil {
+						walkExpr(s.IterRange.Range.Start)
+						walkExpr(s.IterRange.Range.End)
+					}
+					walkExpr(s.IterRange.RangeExpr)
+				}
+				walkExpr(s.CountExpr)
+			}
+		}
+	}
+	collectCalledFuncs = func(body *parser.BlockStatement) {
+		if body == nil {
+			return
+		}
+		walkStmts(body.Statements)
+	}
+	// Iteratively expand the keep set with call dependencies (transitive closure)
+	worklist := make([]string, 0, len(exported))
+	for name := range exported {
+		worklist = append(worklist, name)
+	}
+	for len(worklist) > 0 {
+		name := worklist[0]
+		worklist = worklist[1:]
+		fd, ok := funcDefs[name]
+		if !ok {
+			continue
+		}
+		prevLen := len(calledFuncs)
+		collectCalledFuncs(fd.Body)
+		// Add newly discovered called functions to worklist and exported set
+		if len(calledFuncs) > prevLen {
+			for called := range calledFuncs {
+				if _, alreadyKept := exported[called]; !alreadyKept {
+					exported[called] = ""
+					worklist = append(worklist, called)
+				}
+			}
+		}
+	}
 	// Filter statements
 	filtered := &parser.Program{Statements: []parser.Statement{}}
 	for _, stmt := range prog.Statements {
 		switch s := stmt.(type) {
+		case *parser.UseStatement:
+			// Always keep UseStatements so that transitive imports are processed.
+			// Without this, a lib.no's `# /path/to/impl` would be filtered out,
+			// preventing the actual function definitions from being loaded.
+			filtered.Statements = append(filtered.Statements, s)
 		case *parser.FunctionDefinition:
 			if _, ok := exported[s.Name]; ok {
 				// Do NOT rename s.Name to the export alias here.

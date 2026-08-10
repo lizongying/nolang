@@ -1394,6 +1394,7 @@ func (t *Transpiler) CompileTarget(source string, _ Target) (string, error) {
 	}
 	// 編譯期陣列邊界檢查（單次遍歷同時收集陣列、切片、字串大小映射）
 	sizeMap := buildSizeMaps(program)
+	validateFuncStrReturns = sizeMap.funcStrReturns
 	if err := validateArrayBounds(program, sizeMap.arraySizes, sizeMap.sliceSizes, sizeMap.stringSizes, varTypes); err != nil {
 		return "", err
 	}
@@ -1830,6 +1831,7 @@ func (t *Transpiler) CompileTarget(source string, _ Target) (string, error) {
 	// 必須在所有轉換 pass 完成後執行，此時 merged 包含全部主程式與模組陳述句。
 	mergedVarTypes := buildVarTypes(merged)
 	mergedSizeMap := buildSizeMaps(merged)
+	validateFuncStrReturns = mergedSizeMap.funcStrReturns
 	if err := validateArrayBounds(merged, mergedSizeMap.arraySizes, mergedSizeMap.sliceSizes, mergedSizeMap.stringSizes, mergedVarTypes); err != nil {
 		return "", err
 	}
@@ -3520,10 +3522,18 @@ func findTypeForVar(varName string, block *parser.BlockStatement, lifecycleTypes
 // 合併三個原本各自獨立遍歷 AST 的函數（buildArraySizeMap/buildSliceSizeMap/buildStringSizeMap），
 // 將遍歷次數從 3 次降至 1 次，顯著減少大型程序的校驗開銷。
 type sizeMaps struct {
-	arraySizes  map[string]int64
-	sliceSizes  map[string]int64
-	stringSizes map[string]int64
+	arraySizes    map[string]int64
+	sliceSizes    map[string]int64
+	stringSizes   map[string]int64
+	funcStrReturns map[string]bool // user-defined functions returning str
 }
+
+// validateFuncStrReturns is a package-level variable that holds the
+// funcStrReturns map from buildSizeMaps. It is set before validateArrayBounds
+// runs so that collectStringSizeMapFromStmt (which is called from the
+// FunctionDefinition case of validateStmtArrayBounds with a fresh per-function
+// stringSizes map) can access funcStrReturns without a signature change.
+var validateFuncStrReturns map[string]bool
 // buildVarTypes 從程式的頂層陳述句中收集變數型別映射。
 // 用於在模組合併後重新建構 varTypes，使 validateArrayBounds 等檢查能應用於 merged 程式。
 func buildVarTypes(program *parser.Program) map[string]string {
@@ -3559,9 +3569,30 @@ func buildVarTypes(program *parser.Program) map[string]string {
 // 替代原本獨立呼叫 buildArraySizeMap + buildSliceSizeMap + buildStringSizeMap 的 3 次遍歷。
 func buildSizeMaps(program *parser.Program) *sizeMaps {
 	sm := &sizeMaps{
-		arraySizes:  make(map[string]int64),
-		sliceSizes:  make(map[string]int64),
-		stringSizes: make(map[string]int64),
+		arraySizes:    make(map[string]int64),
+		sliceSizes:    make(map[string]int64),
+		stringSizes:   make(map[string]int64),
+		funcStrReturns: make(map[string]bool),
+	}
+	// Pre-scan: collect names of user-defined functions whose single result
+	// type is str. This allows isStringExprForCollect to recognize calls to
+	// str-returning functions (e.g., s = get-str() where get-str returns str)
+	// so that the variable is tracked in stringSizes. Without this, s - 'x'
+	// is misidentified as byte arithmetic instead of string concatenation.
+	for _, stmt := range program.Statements {
+		switch s := stmt.(type) {
+		case *parser.FunctionDefinition:
+			if len(s.Results) == 1 && s.Results[0].Type != nil && s.Results[0].Type.String() == "str" {
+				sm.funcStrReturns[s.Name] = true
+			}
+		case *parser.LetStatement:
+			// Method definitions: str.my-method = (self str) (out str) { ... }
+			if fl, ok := s.Value.(*parser.FunctionLiteral); ok {
+				if s.Name != nil && len(fl.Results) == 1 && fl.Results[0].Type != nil && fl.Results[0].Type.String() == "str" {
+					sm.funcStrReturns[s.Name.Value] = true
+				}
+			}
+		}
 	}
 	for _, stmt := range program.Statements {
 		collectSizesFromStmt(stmt, sm)
@@ -3607,15 +3638,16 @@ func collectSizesFromStmt(stmt parser.Statement, sm *sizeMaps) {
 			} else {
 				sm.stringSizes[s.Name.Value] = 0 // unknown size, mark as string but no bound check
 			}
-		} else if isStringExprForCollect(s.Value, sm.stringSizes) {
-			// Also detect string from inferred expression (StringLiteral, string concatenation,
-			// string method calls like slice/repeat, char-to-str, copy from known string var)
-			if sl, ok := s.Value.(*parser.StringLiteral); ok {
-				sm.stringSizes[s.Name.Value] = int64(len(sl.Value))
-			} else {
-				sm.stringSizes[s.Name.Value] = 0 // unknown size, mark as string but no bound check
-			}
+} else if isStringExprForCollect(s.Value, sm.stringSizes, sm.funcStrReturns) {
+		// Also detect string from inferred expression (StringLiteral, string concatenation,
+		// string method calls like slice/repeat, char-to-str, copy from known string var,
+		// or calls to user-defined functions returning str)
+		if sl, ok := s.Value.(*parser.StringLiteral); ok {
+			sm.stringSizes[s.Name.Value] = int64(len(sl.Value))
+		} else {
+			sm.stringSizes[s.Name.Value] = 0 // unknown size, mark as string but no bound check
 		}
+	}
 	case *parser.FunctionDefinition:
 		// 字串參數與返回值收集（僅 buildStringSizeMap 有此邏輯）
 		for _, p := range s.Parameters {
@@ -3795,9 +3827,9 @@ func collectStringSizeMapFromStmt(stmt parser.Statement, strSizes map[string]int
 			} else {
 				strSizes[s.Name.Value] = 0 // unknown size, mark as string but no bound check
 			}
-		} else if isStringExprForCollect(s.Value, strSizes) {
-			// Also detect string from inferred expression (StringLiteral, string concatenation,
-			// string method calls like slice/repeat, char-to-str, copy from known string var)
+} else if isStringExprForCollect(s.Value, strSizes, validateFuncStrReturns) {
+	// Also detect string from inferred expression (StringLiteral, string concatenation,
+	// string method calls like slice/repeat, char-to-str, copy from known string var,
 			if sl, ok := s.Value.(*parser.StringLiteral); ok {
 				strSizes[s.Name.Value] = int64(len(sl.Value))
 			} else {
@@ -3874,7 +3906,7 @@ func isSliceTypeOrOptionSlice(t parser.Type) bool {
 // types to LLVM), this function only returns true for expressions that are
 // DEFINITELY strings, avoiding false positives like struct field access (DotExpression)
 // or array element access (IndexExpression) which may be non-string types.
-func isStringExprForCollect(expr parser.Expression, strSizes map[string]int64) bool {
+func isStringExprForCollect(expr parser.Expression, strSizes map[string]int64, funcStrReturns map[string]bool) bool {
 	switch e := expr.(type) {
 	case *parser.StringLiteral:
 		return true
@@ -3882,11 +3914,11 @@ func isStringExprForCollect(expr parser.Expression, strSizes map[string]int64) b
 		_, exists := strSizes[e.Value]
 		return exists
 	case *parser.GroupedExpression:
-		return isStringExprForCollect(e.Expression, strSizes)
+		return isStringExprForCollect(e.Expression, strSizes, funcStrReturns)
 	case *parser.InfixExpression:
 		// String concatenation: when both sides are strings, the result is a string
 		if e.Operator == "-" {
-			return isStringExprForCollect(e.Left, strSizes) && isStringExprForCollect(e.Right, strSizes)
+			return isStringExprForCollect(e.Left, strSizes, funcStrReturns) && isStringExprForCollect(e.Right, strSizes, funcStrReturns)
 		}
 	case *parser.CallExpression:
 		// Check if it's a method call on a known string receiver (e.g., s.slice(), s.repeat())
@@ -3894,6 +3926,12 @@ func isStringExprForCollect(expr parser.Expression, strSizes map[string]int64) b
 			if ident, ok := dot.Receiver.(*parser.Identifier); ok {
 				if _, exists := strSizes[ident.Value]; exists {
 					return true // method call on known string variable
+				}
+				// Module-prefixed call to a user-defined function returning str
+				// (e.g., my-mod.get-str() where get-str returns str)
+				fullName := ident.Value + "." + dot.Property
+				if funcStrReturns[fullName] || funcStrReturns[dot.Property] {
+					return true
 				}
 			}
 			// 'literal'.method() — method call on string literal
@@ -3905,6 +3943,10 @@ func isStringExprForCollect(expr parser.Expression, strSizes map[string]int64) b
 		if ident, ok := e.Function.(*parser.Identifier); ok {
 			switch ident.Value {
 			case "char-to-str":
+				return true
+			}
+			// Check if it's a user-defined function that returns str
+			if funcStrReturns[ident.Value] {
 				return true
 			}
 		}
