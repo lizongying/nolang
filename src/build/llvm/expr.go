@@ -2177,9 +2177,8 @@ func (g *Generator) generateIndexExprPtr(sb *strings.Builder, v *parser.IndexExp
 // extractStrDataPtr extracts the i8* data pointer (field 1) from a %str-long* pointer.
 // Returns the register name holding the i8*.
 func (g *Generator) extractStrDataPtr(sb *strings.Builder, strPtr string) string {
-	if strPtr == "" {
-		fmt.Fprintf(os.Stderr, "codegen error: extractStrDataPtr called with empty strPtr\n")
-		return ""
+	if strPtr == "" || strPtr == "0" {
+		return "null"
 	}
 	dataGEP := g.tmpReg("str-long.data.gep")
 	dataLoad := g.tmpReg("str-long.data.val")
@@ -2197,9 +2196,8 @@ func (g *Generator) extractStrDataPtr(sb *strings.Builder, strPtr string) string
 
 // extractStrLen extracts the i64 len (field 0) from a %str-long* pointer.
 func (g *Generator) extractStrLen(sb *strings.Builder, strPtr string) string {
-	if strPtr == "" {
-		fmt.Fprintf(os.Stderr, "codegen error: extractStrLen called with empty strPtr\n")
-		return ""
+	if strPtr == "" || strPtr == "0" {
+		return "0"
 	}
 	lenGEP := g.tmpReg("str-long.len.gep")
 	lenLoad := g.tmpReg("str-long.len.val")
@@ -2212,9 +2210,8 @@ func (g *Generator) extractStrLen(sb *strings.Builder, strPtr string) string {
 
 // extractStrCap extracts the i64 cap (field 1) from a %str-long* pointer.
 func (g *Generator) extractStrCap(sb *strings.Builder, strPtr string) string {
-	if strPtr == "" {
-		fmt.Fprintf(os.Stderr, "codegen error: extractStrCap called with empty strPtr\n")
-		return ""
+	if strPtr == "" || strPtr == "0" {
+		return "0"
 	}
 	capGEP := g.tmpReg("str-long.cap.gep")
 	capLoad := g.tmpReg("str-long.cap.val")

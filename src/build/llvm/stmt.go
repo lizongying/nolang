@@ -5837,6 +5837,14 @@ func (g *Generator) generateLet(sb *strings.Builder, stmt *parser.LetStatement) 
 				if elemType == "%str-long" {
 					ev = g.loadStrValueIfNeeded(sb, ev)
 				}
+				// When elemType is i64 (untyped slice literal) but the element is a
+				// string expression (str-long* pointer), convert via ptrtoint to avoid
+				// storing a ptr value into an i64 slot (LLVM type error).
+				if elemType == "i64" && g.isStringExpr(elem) && strings.HasPrefix(ev, "%") {
+					p2i := g.tmpReg("slice.p2i")
+					sb.WriteString(fmt.Sprintf("%s%s = ptrtoint %%str-long* %s to i64\n", g.indent(), p2i, ev))
+					ev = p2i
+				}
 				gepReg := g.tmpReg("slice.gep")
 				sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %s, %s* %s, i32 0, i32 %d\n",
 					g.indent(), gepReg, toLLVMType(arrType), toLLVMType(arrType), arrPtr, i))
