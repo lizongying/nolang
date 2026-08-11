@@ -435,6 +435,28 @@ func (g *Generator) generateCallArg(sb *strings.Builder, arg parser.Expression) 
 		if strings.HasPrefix(ev, "%str-longlit") {
 			return "%str-long* " + ev
 		}
+		// Cross-module string stride safety: detect %str-long* pointers from
+		// builtins (fs.read-file, get-line, read-dir, etc.) via isStrPtrReg.
+		// Also track for stmt-level free to prevent memory leak.
+		if strings.HasPrefix(ev, "%") && g.isStrPtrReg(ev) {
+			g.trackStrTemporary(ev)
+			return "%str-long* " + ev
+		}
+		// Cross-module string stride safety: detect %str-long SSA values
+		// (from with-len, with-cap, etc.) via ssaTypes.
+		// Track the temp alloca for stmt-level free to prevent memory leak.
+		if strings.HasPrefix(ev, "%") && g.ssaTypes != nil {
+			if ssaType, ok := g.ssaTypes[ev]; ok && ssaType == "%str-long" {
+				g.tmpIdx++
+				tmpName := fmt.Sprintf("%%ref.tmp.%d", g.tmpIdx)
+				if sb != nil {
+					sb.WriteString(fmt.Sprintf("%s%s = alloca %%str-long\n", g.indent(), tmpName))
+					sb.WriteString(fmt.Sprintf("%sstore %%str-long %s, %%str-long* %s\n", g.indent(), ev, tmpName))
+				}
+				g.trackStrTemporary(tmpName)
+				return "%str-long* " + tmpName
+			}
+		}
 		// String concat / string method call results: ev is a %str-long* SSA register.
 		// Detect via isStringExpr so InfixExpression (- for concat) and other string
 		// expressions are passed as %str-long* instead of being truncated to i64.
@@ -2667,6 +2689,34 @@ func (g *Generator) generateCallExpression(sb *strings.Builder, expr *parser.Cal
 			if strings.HasPrefix(ev, "%str-longlit") {
 				return "%str-long* " + ev
 			}
+			// Cross-module string stride safety: detect %str-long* pointers from
+			// builtins (fs.read-file, get-line, read-dir, etc.) via isStrPtrReg.
+			// Without this, builtin results passed as function arguments fall
+			// through to i64* handling, causing the callee to index the string
+			// with stride=8 instead of stride=1 (reading garbage data).
+			// Also track for stmt-level free to prevent memory leak when builtin
+			// results are used directly as function arguments (not stored in vars).
+			if strings.HasPrefix(ev, "%") && g.isStrPtrReg(ev) {
+				g.trackStrTemporary(ev)
+				return "%str-long* " + ev
+			}
+			// Cross-module string stride safety: detect %str-long SSA values
+			// (from with-len, with-cap, etc.) via ssaTypes. Without this,
+			// with-len results passed as function arguments fall through to
+			// i64* handling, causing stride mismatch.
+			// Track the temp alloca for stmt-level free to prevent memory leak.
+			if strings.HasPrefix(ev, "%") && g.ssaTypes != nil {
+				if ssaType, ok := g.ssaTypes[ev]; ok && ssaType == "%str-long" {
+					g.tmpIdx++
+					tmpName := fmt.Sprintf("%%ref.tmp.%d", g.tmpIdx)
+					if sb != nil {
+						sb.WriteString(fmt.Sprintf("%s%s = alloca %%str-long\n", g.indent(), tmpName))
+						sb.WriteString(fmt.Sprintf("%sstore %%str-long %s, %%str-long* %s\n", g.indent(), ev, tmpName))
+					}
+					g.trackStrTemporary(tmpName)
+					return "%str-long* " + tmpName
+				}
+			}
 			// String concat / string method call results: ev is a %str-long* SSA register.
 			// Detect via isStringExpr so InfixExpression (- for concat) and other string
 			// expressions are passed as %str-long* instead of being truncated to i64.
@@ -2787,10 +2837,42 @@ func (g *Generator) generateCallExpression(sb *strings.Builder, expr *parser.Cal
 	}
 
 	// Generate typed arguments for non-variadic params
+	// Propagate parameter type to currentTargetType so that type-inferred
+	// builtins (with-len, with-cap, with-cap-len) produce the correct LLVM
+	// type (e.g. %str-long for str params, %vec for []T params).
+	// Without this, with-len used as a direct function argument defaults to
+	// %vec (stride=8) instead of %str-long (stride=1), causing cross-module
+	// string stride corruption.
+	savedTargetType := g.currentTargetType
+	savedTargetElemType := g.currentTargetElemType
 	typedArgs := make([]string, 0, len(nonVariadicArgs)+1)
+	paramLLVMTypes := g.funcParamLLVMTypes[fnName]
+	paramNolangTypes := g.funcParamTypes[fnName]
 	for i, arg := range nonVariadicArgs {
+		g.currentTargetType = ""
+		g.currentTargetElemType = ""
+		if i < len(paramLLVMTypes) {
+			g.currentTargetType = paramLLVMTypes[i]
+		}
+		if i < len(paramNolangTypes) {
+			nt := paramNolangTypes[i]
+			if strings.HasPrefix(nt, "[]") {
+				elemNolang := strings.TrimPrefix(nt, "[]")
+				g.currentTargetElemType = g.mapToLLVMType(elemNolang)
+			}
+		}
+		// For DotExpression-based calls (e.g. os.read-file), funcParamLLVMTypes
+		// is keyed by the full name (e.g. "fs.read-file"). Try the full name
+		// if the short name didn't match.
+		if i >= len(paramLLVMTypes) && g.funcParamLLVMTypes != nil {
+			if pts, ok := g.funcParamLLVMTypes[fnName]; ok && i < len(pts) {
+				g.currentTargetType = pts[i]
+			}
+		}
 		typedArgs = append(typedArgs, genTypedArg(arg, i))
 	}
+	g.currentTargetType = savedTargetType
+	g.currentTargetElemType = savedTargetElemType
 
 	// Static method call fix: when a user-defined type method (Type.method())
 	// is called without an instance receiver, the function definition still

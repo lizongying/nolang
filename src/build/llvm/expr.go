@@ -1076,13 +1076,17 @@ func (g *Generator) conditionalResultType(expr *parser.ConditionalExpression) st
 }
 
 // isStringExpr 判斷表達式是否為 str 類型
+// 注意：此為靜態判斷函式，不依賴 Generator 狀態。
+// 對於需要型別推導的場景（如 CallExpression、Identifier），
+// 請使用 g.isStringExpr（方法版本），它會查詢 varTypes 和 exprResultLLVMType。
 func isStringExpr(e parser.Expression) bool {
 	switch v := e.(type) {
 	case *parser.StringLiteral:
 		return true
 	case *parser.InfixExpression:
-		// 字串拼接 (+) 的結果仍為 str
-		if v.Operator == "+" {
+		// 字串拼接 (+/-) 的結果仍為 str
+		// Nolang 中 - 和 + 均可用於字串拼接
+		if v.Operator == "+" || v.Operator == "-" {
 			return isStringExpr(v.Left) || isStringExpr(v.Right)
 		}
 		return false

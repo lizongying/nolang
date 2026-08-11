@@ -804,6 +804,7 @@ func (g *Generator) callBuiltin(sb *strings.Builder, fnName string, hasArgs bool
 			sb.WriteString(fmt.Sprintf("%s%s = getelementptr %%str-long, %%str-long* %s, i32 0, i32 2\n", g.indent(), dataGEP, strReg))
 			g.storeDataPtrField(sb, bufReg, dataGEP)
 		}
+		g.trackStrTemporary(strReg)
 		return strReg
 	}
 
@@ -1065,6 +1066,10 @@ func (g *Generator) callBuiltin(sb *strings.Builder, fnName string, hasArgs bool
 			sb.WriteString(fmt.Sprintf("%s%s = getelementptr %%str-long, %%str-long* %s, i32 0, i32 2\n", g.indent(), dataGEP, strReg))
 			g.storeDataPtrField(sb, bufReg, dataGEP)
 		}
+		// Track for stmt-level free: read-file allocates malloc'd data.
+		// If stored in a variable, generateLet's untrackStmtTemporary + heapVars
+		// takes over. If used directly as an argument, stmtTemporaries frees it.
+		g.trackStrTemporary(strReg)
 		return strReg
 	}
 
@@ -1293,6 +1298,7 @@ func (g *Generator) callBuiltin(sb *strings.Builder, fnName string, hasArgs bool
 			sb.WriteString(fmt.Sprintf("%s%s = zext i1 %s to i64\n", g.indent(), okZext, cmpReg))
 		}
 		g.lastBuiltinExtra = okZext
+		g.trackStrTemporary(strReg)
 		return strReg
 	}
 
@@ -1488,6 +1494,7 @@ func (g *Generator) callBuiltin(sb *strings.Builder, fnName string, hasArgs bool
 			sb.WriteString(fmt.Sprintf("%s%s = zext i1 %s to i64\n", g.indent(), okZextReg, okReg))
 		}
 		g.lastBuiltinExtra = okZextReg
+		g.trackStrTemporary(finalStrReg)
 		return finalStrReg
 	}
 
@@ -1589,6 +1596,7 @@ func (g *Generator) callBuiltin(sb *strings.Builder, fnName string, hasArgs bool
 				g.indent(), archBuf, strLen, strLen, idx, strLen+1))
 			g.storeDataPtrField(sb, archBuf, dataGEP)
 		}
+		g.trackStrTemporary(allocaReg)
 		return allocaReg
 	}
 
@@ -2271,6 +2279,7 @@ func (g *Generator) callBuiltin(sb *strings.Builder, fnName string, hasArgs bool
 			sb.WriteString(fmt.Sprintf("%s%s = getelementptr %%str-long, %%str-long* %s, i32 0, i32 2\n", g.indent(), glDataGEP, glStr))
 			g.storeDataPtrField(sb, glBuf, glDataGEP)
 		}
+		g.trackStrTemporary(glStr)
 		return glStr
 	}
 
@@ -2325,6 +2334,7 @@ func (g *Generator) callBuiltin(sb *strings.Builder, fnName string, hasArgs bool
 			sb.WriteString(fmt.Sprintf("%s%s = getelementptr %%str-long, %%str-long* %s, i32 0, i32 2\n", g.indent(), gdDataGEP, gdStr))
 			g.storeDataPtrField(sb, gdBuf, gdDataGEP)
 		}
+		g.trackStrTemporary(gdStr)
 		return gdStr
 	}
 
@@ -2465,6 +2475,7 @@ func (g *Generator) callBuiltin(sb *strings.Builder, fnName string, hasArgs bool
 			sb.WriteString(fmt.Sprintf("%s%s = zext i1 %s to i64\n", g.indent(), scOkZext, scCmp2))
 		}
 		g.lastBuiltinExtra = scOkZext
+		g.trackStrTemporary(scStr)
 		return scStr
 	}
 

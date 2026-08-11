@@ -4593,6 +4593,19 @@ func (g *Generator) untrackStmtTemporary(val string) {
 	}
 }
 
+// trackStrTemporary 将一个 %str-long* 临时指针注册到 stmtTemporaries，
+// 若已存在则跳过（避免 double-free）。
+// 用于 builtin 结果（如 read-file）和 SSA 值物化的临时 alloca，
+// 确保其 malloc'd data 在语句结束时被释放。
+func (g *Generator) trackStrTemporary(ptr string) {
+	for _, t := range g.stmtTemporaries {
+		if t == ptr {
+			return
+		}
+	}
+	g.stmtTemporaries = append(g.stmtTemporaries, ptr)
+}
+
 func (g *Generator) generateForStatement(sb *strings.Builder, stmt *parser.ForStatement) {
 	// range for: for i in [a..b] — push/pop handled in generateRangeFor
 	if stmt.IterRange != nil {
