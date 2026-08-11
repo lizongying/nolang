@@ -44,7 +44,7 @@ error {
 ; ec: 錯誤碼（code 枚舉值，如 code.io）
 ; msg: 錯誤訊息
 new = (ec code, msg str) (e error) {
-    e = error{
+    e = error {
         code: ec
         msg: msg
     }
@@ -68,7 +68,7 @@ errno-to-code = (errno i64) (ec code) {
 ; errno: C 標準錯誤碼（如 13 = EACCES）
 err-from-errno = (errno i64) (e error) {
     msg = os.strerror(errno)
-    e = error{
+    e = error {
         code: errno-to-code(errno)
         msg: msg
     }

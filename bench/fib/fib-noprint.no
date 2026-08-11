@@ -12,13 +12,14 @@ fib = (n i64, o i64) {
     } (i <= n)
     o = b
 }
-
 sink = 0
 iter <- [0..10000000): {
     result = 0
     n = iter
-    iter < 5000000 -> n = 40
-    iter >= 5000000 -> n = 41
+    {
+        iter < 5000000 -> n = 40
+        iter >= 5000000 -> n = 41
+    }
     fib(n, result)
     sink = result
 }

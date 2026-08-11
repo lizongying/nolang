@@ -1,11 +1,10 @@
 ; 最小化测试：m [str]str 只 put，不 get/print
 
 test-minimal = () {
-    m [str]str = {}
+    m [str]str = { }
     m.init()
     m.put('k', 'v')
     ; m 退出作用域：应释放 keys 和 vals 的 256 个 str-long
 }
-
 test-minimal()
 print('done')

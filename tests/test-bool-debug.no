@@ -24,6 +24,5 @@ test-bool-false = () {
         }
     }
 }
-
 test-bool-true()
 test-bool-false()

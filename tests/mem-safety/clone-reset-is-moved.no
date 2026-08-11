@@ -5,8 +5,9 @@ clone-after-move = (flag i64) (out []i64) {
     a = [10, 20, 30]
     b = [1, 2, 3]
     if flag == 1 {
-        out = b        ; move b, is_moved=true, movedVars[b]=true (並集)
+        out = b; move b, is_moved=true, movedVars[b]=true (並集)
     }
+
     ; 深拷貝: b 從 a 克隆新數據
     ; 修復前: is_moved 保持 stale=true → 函數結束時跳過 free → 洩漏
     ; 修復後: is_moved 重置為 false → 函數結束時正確 free
@@ -14,7 +15,6 @@ clone-after-move = (flag i64) (out []i64) {
     print(b.len)
     print(b[0])
 }
-
 v = clone-after-move(1)
 print(v.len)
 print(v[0])

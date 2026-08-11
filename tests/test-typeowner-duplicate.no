@@ -8,9 +8,10 @@ test-ws-client = () {
     c = ws.connect('ws://127.0.0.1:8080/path')
     c: {
         nil -> return
-        ->
+        -> {
             c.send-text('hello')
             c.close()
+        }
     }
 }
 
@@ -19,13 +20,14 @@ test-tcp-client = () {
     c = client.client-create('127.0.0.1', 8080)
     c: {
         nil -> return
-        ->
+        -> {
             line = c.recv-line()
             line: {
                 nil -> *
                 -> *
             }
             c.close()
+        }
     }
 }
 

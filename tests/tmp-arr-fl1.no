@@ -3,5 +3,4 @@ test-arr-fill = () {
     a.fill(99)
     print(a[0])
 }
-
 test-arr-fill()

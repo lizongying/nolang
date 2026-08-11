@@ -3,5 +3,4 @@ test-arr-contains = () {
     print(a.contains(2))
     print(a.contains(99))
 }
-
 test-arr-contains()

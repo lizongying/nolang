@@ -13,6 +13,5 @@ i <- [0..100000): {
     input[2] = i & 255
     result = md5.md5(input)
 }
-
 b = result[0]
 print('{b}')

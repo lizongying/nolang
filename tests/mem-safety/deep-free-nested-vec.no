@@ -24,6 +24,5 @@ make-nested-vec = () {
     ; outer 離開作用域時：
     ;   深層 free → 遍歷 2 個內部 vec 各 free 其 data，再 free outer.data ✓
 }
-
 make-nested-vec()
 print('done')

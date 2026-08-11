@@ -7,8 +7,8 @@ key []byte
 key[0] = 1
 key[1] = 2
 msg []byte
-msg[0] = 0xAA
-msg[1] = 0xBB
+msg[0] = 0xaa
+msg[1] = 0xbb
 print('before hmac')
 a [32]byte
 a = hmac.hmac-sha256(key, msg)

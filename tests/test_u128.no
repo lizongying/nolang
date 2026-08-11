@@ -4,7 +4,8 @@ test-u128-basic = (r i64) {
 }
 
 main = () {
-    r: i64
+    r
+    i64 i64
     r = test-u128-basic(r)
     return
 }

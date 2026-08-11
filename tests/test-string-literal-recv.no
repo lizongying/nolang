@@ -3,5 +3,4 @@ test-string-literal = () {
     n = '12345'.to-i64()
     print(n)
 }
-
 test-string-literal()

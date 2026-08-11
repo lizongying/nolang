@@ -35,17 +35,19 @@ zs-bit-reader.init = (data []byte, pos i64) {
 ; read-bit: 讀取一個位元（LSB-first）
 zs-bit-reader.read-bit = () (bit i64) {
     bit = 0
-    .bit-cnt == 0 -> {
-        .pos < .data.len -> {
-            .bit-buf = .data[.pos]
-            .pos = .pos + 1
-            .bit-cnt = 8
+    {
+        .bit-cnt == 0 -> {
+            .pos < .data.len -> {
+                .bit-buf = .data[.pos]
+                .pos = .pos + 1
+                .bit-cnt = 8
+            }
         }
-    }
-    .bit-cnt > 0 -> {
-        bit = .bit-buf & 1
-        .bit-buf = .bit-buf >> 1
-        .bit-cnt = .bit-cnt - 1
+        .bit-cnt > 0 -> {
+            bit = .bit-buf & 1
+            .bit-buf = .bit-buf >> 1
+            .bit-cnt = .bit-cnt - 1
+        }
     }
 }
 
@@ -65,7 +67,7 @@ zs-bit-reader.read-varint = () (v i64) {
     {
         b = .data[.pos]
         .pos = .pos + 1
-        v = v | ((b & 0x7F) << shift)
+        v = v | ((b & 0x7f) << shift)
         (b & 0x80) == 0 -> *
         shift = shift + 7
     } (true)
@@ -81,7 +83,7 @@ zs-bit-reader.align-to-byte = () {
 ; ═══════════════════════════════════════════════
 
 ; Zstandard 常數
-ZS-MAGIC = 0xFD2FB528
+ZS-MAGIC = 0xfd2fb528
 ZS-WINDOW-LOG-MAX = 27
 ZS-MAX-SEQ = 3
 ZS-MAX-SYMBOL = 255
@@ -90,16 +92,20 @@ ZS-MAX-SYMBOL = 255
 fse-table {
     table-log i64
     table-size i64
-    ; 狀態轉移表
     next-state [512]i64
-    ; 符號表
     symbol [512]i64
-    ; 位元數表
     nb-bits [512]i64
-    ; 符號出現次數
     norm-count [256]i64
     n-symbols i64
 }
+
+; 狀態轉移表
+
+; 符號表
+
+; 位元數表
+
+; 符號出現次數
 
 ; build: 從正規化計數建構 FSE 表
 ; norm-count: 各符號的正規化計數
@@ -135,13 +141,10 @@ fse-table.build = (norm-count []i64, max-symbol i64, table-log i64) {
             high-thresh = high-thresh - 1
         }
     }
-
     i <- [0..max-symbol + 1): {
         positions[i] = pos
         nc = norm-count[i]
-        nc > 0 -> {
-            pos = pos + nc
-        }
+        nc > 0 -> pos = pos + nc
     }
 
     ; 分配符號到表中
@@ -179,6 +182,7 @@ bits-for-count = (count i64) (n i64) {
 ; decode: FSE 解碼一個符號
 ; 返回符號和新的狀態
 fse-table.decode = (br zs-bit-reader, state i64) (sym i64, new-state i64) {
+
     ; 從當前狀態讀取符號
     sym = .symbol[state]
 
@@ -199,13 +203,15 @@ fse-table.decode = (br zs-bit-reader, state i64) (sym i64, new-state i64) {
 zs-huffman {
     max-symbol i64
     table-log i64
-    ; 碼長度
     lengths [256]i64
-    ; 解碼表（簡化版：使用碼長度 + 符號映射）
     count [16]i64
     base [16]i64
     symbol [256]i64
 }
+
+; 碼長度
+
+; 解碼表（簡化版：使用碼長度 + 符號映射）
 
 ; build: 建構 Huffman 解碼表
 zs-huffman.build = (lengths []i64, max-symbol i64) {
@@ -251,6 +257,7 @@ zs-huffman.build = (lengths []i64, max-symbol i64) {
 ; decode: 解碼一個符號
 zs-huffman.decode = (br zs-bit-reader) (sym i64) {
     sym = 0
+
     ; 讀取最大碼長度位元，然後逐步縮小
     ; 簡化版：逐位元解碼
     code = 0
@@ -276,23 +283,25 @@ zs-frame {
     data []byte
     pos i64
     out []byte
-    ; window size
     window-size i64
-    ; 上一個 frame 的字典
     dict []byte
 }
+
+; window size
+
+; 上一個 frame 的字典
 
 ; read-frame-header: 讀取 frame header
 zs-frame.read-frame-header = () (ok bool) {
     ok = false
     .pos < .data.len -> *
-    .data[.pos] != 0x28 -> *  ; magic 低字節
+    .data[.pos] != 0x28 -> *; magic 低字節
     .pos = .pos + 1
-    .data[.pos] != 0xB5 -> *
+    .data[.pos] != 0xb5 -> *
     .pos = .pos + 1
-    .data[.pos] != 0x2F -> *
+    .data[.pos] != 0x2f -> *
     .pos = .pos + 1
-    .data[.pos] != 0xFD -> *
+    .data[.pos] != 0xfd -> *
     .pos = .pos + 1
 
     ; Frame Header
@@ -311,6 +320,7 @@ zs-frame.read-frame-header = () (ok bool) {
     single-segment == false -> {
         wd = .data[.pos]
         .pos = .pos + 1
+
         ; window_size = (1 << (10 + (wd >> 3))) + (wd & 7) * (1 << (10 + (wd >> 3)))
         exponent = wd >> 3
         mantissa = wd & 7
@@ -325,30 +335,31 @@ zs-frame.read-frame-header = () (ok bool) {
     }
 
     ; Frame Content Size（如果存在）
-    fcs-flag == 0 -> {
-        single-segment -> {
+    {
+        fcs-flag == 0 -> {
+            single-segment -> {
+                fcs = .data[.pos]
+                .pos = .pos + 1
+            }
+        }
+        fcs-flag == 1 -> {
+            fcs = .data[.pos] | (.data[.pos + 1] << 8)
+            .pos = .pos + 2
+            fcs = fcs + 256
+        }
+        fcs-flag == 2 -> {
+            fcs = .data[.pos] | (.data[.pos + 1] << 8) | (.data[.pos + 2] << 16) | (.data[.pos + 3] << 24)
+            .pos = .pos + 4
+        }
+        fcs-flag == 3 -> {
             fcs = .data[.pos]
-            .pos = .pos + 1
+            fcs = fcs | (.data[.pos + 1] << 8)
+            fcs = fcs | (.data[.pos + 2] << 16)
+            fcs = fcs | (.data[.pos + 3] << 24)
+            fcs = fcs | (.data[.pos + 4] << 32)
+            .pos = .pos + 5
         }
     }
-    fcs-flag == 1 -> {
-        fcs = .data[.pos] | (.data[.pos + 1] << 8)
-        .pos = .pos + 2
-        fcs = fcs + 256
-    }
-    fcs-flag == 2 -> {
-        fcs = .data[.pos] | (.data[.pos + 1] << 8) | (.data[.pos + 2] << 16) | (.data[.pos + 3] << 24)
-        .pos = .pos + 4
-    }
-    fcs-flag == 3 -> {
-        fcs = .data[.pos]
-        fcs = fcs | (.data[.pos + 1] << 8)
-        fcs = fcs | (.data[.pos + 2] << 16)
-        fcs = fcs | (.data[.pos + 3] << 24)
-        fcs = fcs | (.data[.pos + 4] << 32)
-        .pos = .pos + 5
-    }
-
     ok = true
 }
 
@@ -359,7 +370,6 @@ zs-frame.decode-block = () (last-block bool, ok bool) {
 
     ; 讀取 Block_Header (3 bytes)
     .pos + 3 > .data.len -> return
-
     b0 = .data[.pos]
     b1 = .data[.pos + 1]
     b2 = .data[.pos + 2]
@@ -371,32 +381,37 @@ zs-frame.decode-block = () (last-block bool, ok bool) {
     block-size = (b0 >> 3) | (b1 << 5) | (b2 << 13)
 
     ; Raw_Block (type 0)
-    block-type == 0 -> {
-        ; 直接複製未壓縮資料
-        i <- [0..block-size): {
-            .out.push(.data[.pos + i])
-        }
-        .pos = .pos + block-size
-        ok = true
-        return
-    }
+    {
+        block-type == 0 -> {
 
-    ; RLE_Block (type 1)
-    block-type == 1 -> {
-        ; 重複單個字節
-        b = .data[.pos]
-        .pos = .pos + 1
-        i <- [0..block-size): {
-            .out.push(b)
+            ; 直接複製未壓縮資料
+            i <- [0..block-size): {
+                .out.push(.data[.pos + i])
+            }
+            .pos = .pos + block-size
+            ok = true
+            return
         }
-        ok = true
-        return
-    }
+        block-type == 1 -> {
 
-    ; Compressed_Block (type 2)
-    block-type == 2 -> {
-        ok = .decode-compressed-block(block-size)
-        return
+            ; RLE_Block (type 1)
+
+            ; 重複單個字節
+            b = .data[.pos]
+            .pos = .pos + 1
+            i <- [0..block-size): {
+                .out.push(b)
+            }
+            ok = true
+            return
+        }
+        block-type == 2 -> {
+
+            ; Compressed_Block (type 2)
+
+            ok = .decode-compressed-block(block-size)
+            return
+        }
     }
 
     ; 保留 (type 3)
@@ -410,7 +425,7 @@ zs-frame.decode-compressed-block = (block-size i64) (ok bool) {
     block-end = .pos + block-size
 
     ; 建立位元讀取器
-    br = zs-bit-reader{}
+    br = zs-bit-reader {}
     br.init(.data, .pos)
 
     ; 讀取 Literals_Section
@@ -419,6 +434,7 @@ zs-frame.decode-compressed-block = (block-size i64) (ok bool) {
 
     ; Raw_Literals (type 0)
     lit-type == 0 -> {
+
         ; 讀取 literals 大小
         lit-size-format = br.read-bits(2)
         lit-size = 0
@@ -426,6 +442,7 @@ zs-frame.decode-compressed-block = (block-size i64) (ok bool) {
         lit-size-format == 1 -> lit-size = br.read-bits(12)
         lit-size-format == 2 -> lit-size = br.read-bits(20)
         lit-size-format == 3 -> {
+
             ; 單段，size = block_size
             lit-size = block-size
         }
@@ -458,7 +475,6 @@ zs-frame.decode-compressed-block = (block-size i64) (ok bool) {
         i <- [0..literals.len): {
             .out.push(literals[i])
         }
-
         ok = true
         .pos = block-end
         return
@@ -482,12 +498,12 @@ zstd-decompress = (data []byte) (out []byte) {
 
     ; 檢查 Zstandard magic number (小端序)
     data[0] != 0x28 -> return
-    data[1] != 0xB5 -> return
-    data[2] != 0x2F -> return
-    data[3] != 0xFD -> return
+    data[1] != 0xb5 -> return
+    data[2] != 0x2f -> return
+    data[3] != 0xfd -> return
 
     ; 建立 frame 解碼器
-    frame = zs-frame{
+    frame = zs-frame {
         data: data
         pos: 0
         window-size: 0
@@ -504,7 +520,6 @@ zstd-decompress = (data []byte) (out []byte) {
         last-block, success = frame.decode-block()
 
         success == false -> *
-
         last-block == true -> *
     } (true)
 
@@ -522,27 +537,28 @@ zstd-decompress = (data []byte) (out []byte) {
 ; 注意：目前使用 raw block 的基本實現，
 ;       完整 FSE + Huffman + LZ77 壓縮待後續實現。
 zstd-compress = (data []byte) (out []byte) {
+
     ; Zstandard magic number (小端序)
     out.push(0x28)
-    out.push(0xB5)
-    out.push(0x2F)
-    out.push(0xFD)
+    out.push(0xb5)
+    out.push(0x2f)
+    out.push(0xfd)
 
     ; Frame Header
     ; Frame_Header_Descriptor: single_segment=1, fcs_flag=1
-    out.push(0xA0)
+    out.push(0xa0)
 
     ; Frame Content Size (1 byte, size = value + 256)
     ; 限制：data.len <= 511 (256 + 255)
     fcs = data.len - 256
     fcs < 0 -> fcs = 0
-    out.push(fcs & 0xFF)
+    out.push(fcs & 0xff)
 
     ; Block Header: last_block=1, block_type=0 (raw), block_size=data.len
     block-size = data.len
-    b0 = 1 | (0 << 1) | ((block-size & 0x1F) << 3)
-    b1 = (block-size >> 5) & 0xFF
-    b2 = (block-size >> 13) & 0xFF
+    b0 = 1 | (0 << 1) | ((block-size & 0x1f) << 3)
+    b1 = (block-size >> 5) & 0xff
+    b2 = (block-size >> 13) & 0xff
     out.push(b0)
     out.push(b1)
     out.push(b2)
@@ -551,6 +567,5 @@ zstd-compress = (data []byte) (out []byte) {
     i <- [0..data.len): {
         out.push(data[i])
     }
-
     ; Content Checksum (可選，這裡跳過)
 }

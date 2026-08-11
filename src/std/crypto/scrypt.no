@@ -180,7 +180,6 @@ scrypt-romix = (b []byte, n i64, r i64) (out []byte) {
     i <- [0..block-bytes): {
         v[i] = x[i]
     }
-
     n-idx = 1
     {
 
@@ -213,7 +212,6 @@ scrypt-romix = (b []byte, n i64, r i64) (out []byte) {
         i <- [0..block-bytes): {
             x[i] = mixed[i]
         }
-
         n-idx = n-idx + 1
     } (n-idx < n)
 

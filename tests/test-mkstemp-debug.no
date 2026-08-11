@@ -2,6 +2,8 @@
 
 test-mkstemp = () {
     name, fd = fs.mkstemp('/tmp/test.XXXXXX')
-    fd >= 0 -> print(name)
-    -> print('failed')
+    {
+        fd >= 0 -> print(name)
+        -> print('failed')
+    }
 }

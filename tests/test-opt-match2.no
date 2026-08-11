@@ -5,5 +5,4 @@ test1 = () {
     }
     print(r)
 }
-
 test1()

@@ -7,7 +7,6 @@ test-fn2 = () {
     b [3] = [1, 2, 3]
     print(b[0])
 }
-
 test-fn1()
 print('---')
 test-fn2()

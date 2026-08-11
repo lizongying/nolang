@@ -41,7 +41,6 @@ rs.res == 0 -> {
     d.close()
     return
 }
-
 count i64 = 0
 {
     id i64 = rs.scan-int(0)
@@ -111,6 +110,5 @@ rs3.res != 0 -> {
     }
     rs3.close()
 }
-
 d.close()
 print('ok: all tests done')

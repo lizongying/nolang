@@ -80,6 +80,7 @@ encode-header = (name str, value str) (buf []byte, n i64) {
             pos = pos + 1
         }
         -> {
+
             ; 大於等於 64 的長度使用多位元組編碼
             buf[pos] = 0x40 | ((name-bytes.len >> 8) & 255)
             buf[pos + 1] = name-bytes.len & 255
@@ -138,7 +139,6 @@ encode-headers = (names [16]str, values [16]str, count i64) (buf []byte, n i64) 
         }
         pos = pos + hdr-n
     }
-
     n = pos
 }
 
@@ -156,6 +156,7 @@ decode-header = (buf []byte, pos i64) (name str, value str, next-pos i64) {
 
     ; 檢查是否為字面標頭（001x xxxx）
     (prefix & 0xe0) != 0x20 -> {
+
         ; 不是字面標頭格式，回傳錯誤
         return
     }
@@ -228,6 +229,7 @@ encode-frame = (frame-type i64, payload []byte) (buf []byte, n i64) {
 ; 返回 buf []byte: 編碼結果
 ; 返回 n i64: 編碼長度
 encode-headers-frame = (names [16]str, values [16]str, count i64) (buf []byte, n i64) {
+
     ; 先編碼 QPACK 標頭區塊
     qpack-buf []byte
     qpack-n = 0
@@ -248,6 +250,7 @@ encode-data-frame = (data str) (buf []byte, n i64) {
 ; 返回 buf []byte: 編碼結果
 ; 返回 n i64: 編碼長度
 encode-settings-frame = () (buf []byte, n i64) {
+
     ; 空 SETTINGS（無參數）
     buf = with-len(2)
     buf[0] = 0x04
@@ -283,7 +286,6 @@ parse-frame = (buf []byte, pos i64) (frame-type i64, payload []byte, next-pos i6
     i <- [0..len-val): {
         payload[i] = buf[pos + i]
     }
-
     next-pos = pos + len-val
 }
 
@@ -346,7 +348,6 @@ parse-url = (url str) (host str, port i64, path str, ok bool) {
             path = rest.slice(slash-pos, rest.len)
         }
     }
-
     colon-pos = host.index(':')
     colon-pos >= 0 -> {
         host-only = host.slice(0, colon-pos)
@@ -360,7 +361,6 @@ parse-url = (url str) (host str, port i64, path str, ok bool) {
         port = p
         host = host-only
     }
-
     host.len == 0 -> return
     ok = true
 }
@@ -527,42 +527,44 @@ send-request = (conn quic.conn, method str, path str, host str, body str) (resp 
         pos = np
 
         ; HEADERS 影格: 解析 QPACK 標頭區塊
-        ft == 0x01 -> {
-            qpack-pos = 0
-            {
-                name = ''
-                value = ''
-                qpack-np = 0
-                name, value, qpack-np = decode-header(payload, qpack-pos)
-                qpack-np < 0 -> break
-                qpack-pos = qpack-np
+        {
+            ft == 0x01 -> {
+                qpack-pos = 0
+                {
+                    name = ''
+                    value = ''
+                    qpack-np = 0
+                    name, value, qpack-np = decode-header(payload, qpack-pos)
+                    qpack-np < 0 -> break
+                    qpack-pos = qpack-np
 
-                ; :status 標頭
-                name == ':status' -> {
-                    status-val ?i64 = value.to-i64()
-                    status-val: {
-                        nil -> r.status-code = 0
-                        err -> r.status-code = 0
-                        ok -> r.status-code = it
+                    ; :status 標頭
+                    name == ':status' -> {
+                        status-val ?i64 = value.to-i64()
+                        status-val: {
+                            nil -> r.status-code = 0
+                            err -> r.status-code = 0
+                            ok -> r.status-code = it
+                        }
                     }
-                }
-                r.header-count < 32 -> {
-                    r.header-names[r.header-count] = name
-                    r.header-values[r.header-count] = value
-                    r.header-count = r.header-count + 1
-                }
-            } (qpack-pos < payload.len)
-        }
+                    r.header-count < 32 -> {
+                        r.header-names[r.header-count] = name
+                        r.header-values[r.header-count] = value
+                        r.header-count = r.header-count + 1
+                    }
+                } (qpack-pos < payload.len)
+            }
+            ft == 0x00 -> {
 
-        ; DATA 影格: 追加到 body
-        ft == 0x00 -> {
-            i <- [0..payload.len): {
-                r.body[r.body.len] = payload[i]
+                ; DATA 影格: 追加到 body
+
+                i <- [0..payload.len): {
+                    r.body[r.body.len] = payload[i]
+                }
             }
         }
         ; 忽略其他影格類型
     } (pos < n)
-
     r.status-code == 0 -> return
     resp = r
 }

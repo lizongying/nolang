@@ -33,12 +33,12 @@
 loop-concat = () (out str) {
     out = ''
     i <- [0..100): {
+
         ; 每次迭代的字串拼接結果 malloc 新 buffer
         ; 但前一輪的 buffer 不被釋放 → 洩漏 99 次
         tmp = 'item' + i.to-str()
         out = out + tmp
     }
 }
-
 s = loop-concat()
 print(s.len)

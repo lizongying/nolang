@@ -44,7 +44,6 @@ test-via-inner = () (pass bool) {
             return
         }
     }
-
     pass = true
 }
 
@@ -82,6 +81,7 @@ test-via-i64 = () (pass bool) {
 
     ; 檢查前 8 bytes
     i <- [0..8): {
+
         ; h[0] = 10, h[1] = 20, ...
         expected = ((i + 1) * 10) & 255
         arr[i] != expected -> {
@@ -95,17 +95,19 @@ test-via-i64 = () (pass bool) {
             return
         }
     }
-
     pass = true
 }
 
 ; main
 main = () {
     p1 = test-via-inner()
-    p1 == true -> print('PASS: via inner')
-    p1 == false -> print('FAIL: via inner')
-
+    {
+        p1 == true -> print('PASS: via inner')
+        p1 == false -> print('FAIL: via inner')
+    }
     p2 = test-via-i64()
-    p2 == true -> print('PASS: via i64')
-    p2 == false -> print('FAIL: via i64')
+    {
+        p2 == true -> print('PASS: via i64')
+        p2 == false -> print('FAIL: via i64')
+    }
 }

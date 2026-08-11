@@ -8,5 +8,4 @@ demo-number = () {
     number.min(10, 20, r)
     print(r)
 }
-
 demo-number()

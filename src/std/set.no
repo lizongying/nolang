@@ -27,6 +27,7 @@ set-remove = (s []i64, n i64, val i64) (new-n i64) {
     new-n = n
     i <- [0..n): {
         s[i] == val -> {
+
             ; 將最後一個元素移到該位置
             s[i] = s[n - 1]
             new-n = n - 1

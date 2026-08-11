@@ -30,7 +30,6 @@ test-arr-sort-desc = () {
     print(b[3])
     print(b[4])
 }
-
 test-arr-index-of()
 print('---')
 test-arr-last-first()

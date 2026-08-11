@@ -8,10 +8,14 @@ n = fstr.len
 i <- [0..n): {
     b = fstr[i]
     is-ws = false
-    b == 32 -> is-ws = true
-    b == 9 -> is-ws = true
-    b == 10 -> is-ws = true
-    b == 13 -> is-ws = true
-    is-ws -> print('byte[' - i.to-str() - ']=' - b.to-str() - ' WS')
-    -> print('byte[' - i.to-str() - ']=' - b.to-str() - ' non-WS')
+    {
+        b == 32 -> is-ws = true
+        b == 9 -> is-ws = true
+        b == 10 -> is-ws = true
+        b == 13 -> is-ws = true
+    }
+    {
+        is-ws -> print('byte[' - i.to-str() - ']=' - b.to-str() - ' WS')
+        -> print('byte[' - i.to-str() - ']=' - b.to-str() - ' non-WS')
+    }
 }

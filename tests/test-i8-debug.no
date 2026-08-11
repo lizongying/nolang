@@ -13,6 +13,7 @@ test-to-i8-127 = () {
 }
 
 test-to-i8-minmax = () {
+
     ; 直接測試 i8.MIN 和 i8.MAX 常數
     {
         i8.MIN == -128 -> print('i8.MIN ok')
@@ -31,7 +32,6 @@ test-to-i8-range = () {
         -> print('127 not in range')
     }
 }
-
 test-to-i8-127()
 test-to-i8-minmax()
 test-to-i8-range()

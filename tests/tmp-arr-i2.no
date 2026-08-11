@@ -13,7 +13,6 @@ test-arr-sort-asc = () {
     b.sort-asc()
     print(b[3])
 }
-
 test-arr-index-of()
 print('---')
 test-arr-last-first()

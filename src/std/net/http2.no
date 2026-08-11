@@ -146,19 +146,16 @@ conn.send-frame = (frame frame) (ok bool) {
     }
 
     ; 發送 payload
-    frame.payload.len > 0 -> {
-        .use-tls -> {
-            w = .tls-c.send(frame.payload)
-            w: {
-                nil -> return
-                err -> return
-                ->
-            }
+    frame.payload.len > 0 -> .use-tls -> {
+        w = .tls-c.send(frame.payload)
+        w: {
+            nil -> return
+            err -> return
+            ->
         }
-        -> {
-            written = net.net-send(.fd, frame.payload, frame.payload.len)
-            written != frame.payload.len -> return
-        }
+    } -> {
+        written = net.net-send(.fd, frame.payload, frame.payload.len)
+        written != frame.payload.len -> return
     }
     ok = true
 }

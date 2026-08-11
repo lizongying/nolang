@@ -23,68 +23,75 @@ parse-field = (s str, pos i64) (field str, new-pos i64) {
         return
     }
     c = s[pos]
-    c == 44 -> {
-        ; 空欄位（逗號開頭）
-        new-pos = pos + 1
-        return
-    }
-    c == 34 -> {
-        ; 雙引號包圍的欄位
-        pos = pos + 1
-        {
-            c = s[pos]
-            c == 34 -> {
-                ; 檢查是否為跳脫的雙引號
-                pos + 1 < s.len -> {
-                    nc = s[pos + 1]
-                    nc == 34 -> {
-                        field[fn] = 34
-                        fn = fn + 1
-                        pos = pos + 2
-                        continue
+    {
+        c == 44 -> {
+
+            ; 空欄位（逗號開頭）
+            new-pos = pos + 1
+            return
+        }
+        c == 34 -> {
+
+            ; 雙引號包圍的欄位
+            pos = pos + 1
+            {
+                c = s[pos]
+                c == 34 -> {
+
+                    ; 檢查是否為跳脫的雙引號
+                    pos + 1 < s.len -> {
+                        nc = s[pos + 1]
+                        nc == 34 -> {
+                            field[fn] = 34
+                            fn = fn + 1
+                            pos = pos + 2
+                            continue
+                        }
                     }
+
+                    ; 結束雙引號
+                    pos = pos + 1
+
+                    ; 跳過後續逗號
+                    pos < s.len -> {
+                        nc = s[pos]
+                        nc == 44 -> pos = pos + 1
+                    }
+                    new-pos = pos
+                    return
                 }
+                c == 10 || c == 13 -> {
 
-                ; 結束雙引號
-                pos = pos + 1
-
-                ; 跳過後續逗號
-                pos < s.len -> {
-                    nc = s[pos]
-                    nc == 44 -> pos = pos + 1
+                    ; 換行在引號內視為換行字元
+                    field[fn] = c
+                    fn = fn + 1
+                    pos = pos + 1
+                    continue
                 }
-                new-pos = pos
-                return
-            }
-
-            c == 10 || c == 13 -> {
-                ; 換行在引號內視為換行字元
                 field[fn] = c
                 fn = fn + 1
                 pos = pos + 1
-                continue
-            }
-            field[fn] = c
-            fn = fn + 1
-            pos = pos + 1
-        } (pos < s.len)
-
-        new-pos = pos
-        return
+            } (pos < s.len)
+            new-pos = pos
+            return
+        }
     }
 
     ; 普通欄位（無引號）
     {
         c = s[pos]
-        c == 44 -> {
-            pos = pos + 1
-            new-pos = pos
-            return
-        }
-        c == 10 || c == 13 -> {
-            ; 換行結束欄位（不消耗換行）
-            new-pos = pos
-            return
+        {
+            c == 44 -> {
+                pos = pos + 1
+                new-pos = pos
+                return
+            }
+            c == 10 || c == 13 -> {
+
+                ; 換行結束欄位（不消耗換行）
+                new-pos = pos
+                return
+            }
         }
         field[fn] = c
         fn = fn + 1

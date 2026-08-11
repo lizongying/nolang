@@ -7,9 +7,11 @@ n = fstr.len
 
 i <- [0..n): {
     b = fstr[i]
-    b == 32 -> print('byte[' - i.to-str() - ']=32 WS')
-    b == 9 -> print('byte[' - i.to-str() - ']=9 WS')
-    b == 10 -> print('byte[' - i.to-str() - ']=10 WS')
-    b == 13 -> print('byte[' - i.to-str() - ']=13 WS')
-    b != 32 && b != 9 && b != 10 && b != 13 -> print('byte[' - i.to-str() - ']=' - b.to-str() - ' non-WS')
+    {
+        b == 32 -> print('byte[' - i.to-str() - ']=32 WS')
+        b == 9 -> print('byte[' - i.to-str() - ']=9 WS')
+        b == 10 -> print('byte[' - i.to-str() - ']=10 WS')
+        b == 13 -> print('byte[' - i.to-str() - ']=13 WS')
+        b != 32 && b != 9 && b != 10 && b != 13 -> print('byte[' - i.to-str() - ']=' - b.to-str() - ' non-WS')
+    }
 }

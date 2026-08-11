@@ -37,6 +37,7 @@ json-kind {
 
 ; 池最大節點數
 JSON-MAX-NODES = 64
+
 ; 每節點最大子元素數
 JSON-MAX-CHILDREN = 16
 
@@ -81,8 +82,8 @@ json {
 ;   j.set('key', 'value')
 ;   s = j.stringify()
 new = () (j json) {
-    j = json{
-        pool: json-pool{}
+    j = json {
+        pool: json-pool {}
         root: -1
     }
     j.pool.init()
@@ -93,7 +94,7 @@ new = () (j json) {
 ;   p = new-pool()
 ;   root, next, ok = p.parse('{"key":"value"}', 0)
 new-pool = () (p json-pool) {
-    p = json-pool{}
+    p = json-pool {}
     p.init()
 }
 
@@ -168,152 +169,160 @@ json-pool.parse = (s str, pos i64) (node-idx i64, next-pos i64, ok bool) {
     node-idx < 0 -> return
 
     ; null
-    c == 110 -> {
-        .nodes[node-idx].kind = json-kind.null
-        next-pos = p + 4
-        ok = true
-        return
-    }
-
-    ; true
-    c == 116 -> {
-        .nodes[node-idx].kind = json-kind.bool
-        .nodes[node-idx].bool-val = true
-        next-pos = p + 4
-        ok = true
-        return
-    }
-
-    ; false
-    c == 102 -> {
-        .nodes[node-idx].kind = json-kind.bool
-        .nodes[node-idx].bool-val = false
-        next-pos = p + 5
-        ok = true
-        return
-    }
-
-    ; string
-    c == 34 -> {
-        .nodes[node-idx].kind = json-kind.str
-        next-pos, ok = .parse-str(node-idx, s, p)
-        return
-    }
-
-    ; number
-    c == 45 -> {
-        .nodes[node-idx].kind = json-kind.num
-        next-pos, ok = .parse-num(node-idx, s, p)
-        return
-    }
-    c >= 48 && c <= 57 -> {
-        .nodes[node-idx].kind = json-kind.num
-        next-pos, ok = .parse-num(node-idx, s, p)
-        return
-    }
-
-    ; array
-    c == 91 -> {
-        .nodes[node-idx].kind = json-kind.arr
-        .nodes[node-idx].count = 0
-        p = p + 1
-        p = .skip-ws(s, p)
-        p >= sn -> return
-
-        ; empty array
-        s[p] == 93 -> {
-            next-pos = p + 1
+    {
+        c == 110 -> {
+            .nodes[node-idx].kind = json-kind.null
+            next-pos = p + 4
             ok = true
             return
         }
+        c == 116 -> {
 
-        ; parse elements
-        {
-            p = .skip-ws(s, p)
-            p >= sn -> return
-            child-idx, child-next, child-ok = .parse(s, p)
-            child-ok == false -> return
-            cnt = .nodes[node-idx].count
-            cnt >= JSON-MAX-CHILDREN -> return
-            .nodes[node-idx].children[cnt] = child-idx
-            .nodes[node-idx].count = cnt + 1
-            p = child-next
-            p = .skip-ws(s, p)
-            p >= sn -> return
-            c2 = s[p]
-            c2 == 93 -> {
-                next-pos = p + 1
-                ok = true
-                return
-            }
-            {
-                c2 == 44 -> p = p + 1
-                -> return
-            }
-        } ()
-    }
+            ; true
 
-    ; object
-    c == 123 -> {
-        .nodes[node-idx].kind = json-kind.obj
-        .nodes[node-idx].count = 0
-        p = p + 1
-        p = .skip-ws(s, p)
-        p >= sn -> return
-
-        ; empty object
-        s[p] == 125 -> {
-            next-pos = p + 1
+            .nodes[node-idx].kind = json-kind.bool
+            .nodes[node-idx].bool-val = true
+            next-pos = p + 4
             ok = true
             return
         }
+        c == 102 -> {
 
-        ; parse key-value pairs
-        {
-            p = .skip-ws(s, p)
-            p >= sn -> return
+            ; false
 
-            ; key must be string
-            s[p] != 34 -> return
-            key-idx, key-next, key-ok = .parse(s, p)
-            key-ok == false -> return
-            p = key-next
-            p = .skip-ws(s, p)
-            p >= sn -> return
+            .nodes[node-idx].kind = json-kind.bool
+            .nodes[node-idx].bool-val = false
+            next-pos = p + 5
+            ok = true
+            return
+        }
+        c == 34 -> {
 
-            ; expect ':'
-            s[p] != 58 -> return
+            ; string
+
+            .nodes[node-idx].kind = json-kind.str
+            next-pos, ok = .parse-str(node-idx, s, p)
+            return
+        }
+        c == 45 -> {
+
+            ; number
+
+            .nodes[node-idx].kind = json-kind.num
+            next-pos, ok = .parse-num(node-idx, s, p)
+            return
+        }
+        c >= 48 && c <= 57 -> {
+            .nodes[node-idx].kind = json-kind.num
+            next-pos, ok = .parse-num(node-idx, s, p)
+            return
+        }
+        c == 91 -> {
+
+            ; array
+
+            .nodes[node-idx].kind = json-kind.arr
+            .nodes[node-idx].count = 0
             p = p + 1
-            val-idx, val-next, val-ok = .parse(s, p)
-            val-ok == false -> return
-
-            ; add to object
-            cnt = .nodes[node-idx].count
-            cnt >= JSON-MAX-CHILDREN -> return
-
-            ; copy key string to keys[cnt]
-            key-len = .nodes[key-idx].str-val.len
-            .nodes[node-idx].keys[cnt] = with-cap(key-len)
-            j <- [0..key-len): {
-                .nodes[node-idx].keys[cnt][j] = .nodes[key-idx].str-val[j]
-            }
-            .nodes[node-idx].keys[cnt].len = key-len
-            .nodes[node-idx].children[cnt] = val-idx
-            .nodes[node-idx].count = cnt + 1
-            p = val-next
             p = .skip-ws(s, p)
             p >= sn -> return
-            c2 = s[p]
-            c2 == 125 -> {
+
+            ; empty array
+            s[p] == 93 -> {
                 next-pos = p + 1
                 ok = true
                 return
             }
+
+            ; parse elements
             {
-                c2 == 44 -> p = p + 1
-                -> return
+                p = .skip-ws(s, p)
+                p >= sn -> return
+                child-idx, child-next, child-ok = .parse(s, p)
+                child-ok == false -> return
+                cnt = .nodes[node-idx].count
+                cnt >= JSON-MAX-CHILDREN -> return
+                .nodes[node-idx].children[cnt] = child-idx
+                .nodes[node-idx].count = cnt + 1
+                p = child-next
+                p = .skip-ws(s, p)
+                p >= sn -> return
+                c2 = s[p]
+                c2 == 93 -> {
+                    next-pos = p + 1
+                    ok = true
+                    return
+                }
+                {
+                    c2 == 44 -> p = p + 1
+                    -> return
+                }
+            } ()
+        }
+        c == 123 -> {
+
+            ; object
+
+            .nodes[node-idx].kind = json-kind.obj
+            .nodes[node-idx].count = 0
+            p = p + 1
+            p = .skip-ws(s, p)
+            p >= sn -> return
+
+            ; empty object
+            s[p] == 125 -> {
+                next-pos = p + 1
+                ok = true
+                return
             }
-        } ()
+
+            ; parse key-value pairs
+            {
+                p = .skip-ws(s, p)
+                p >= sn -> return
+
+                ; key must be string
+                s[p] != 34 -> return
+                key-idx, key-next, key-ok = .parse(s, p)
+                key-ok == false -> return
+                p = key-next
+                p = .skip-ws(s, p)
+                p >= sn -> return
+
+                ; expect ':'
+                s[p] != 58 -> return
+                p = p + 1
+                val-idx, val-next, val-ok = .parse(s, p)
+                val-ok == false -> return
+
+                ; add to object
+                cnt = .nodes[node-idx].count
+                cnt >= JSON-MAX-CHILDREN -> return
+
+                ; copy key string to keys[cnt]
+                key-len = .nodes[key-idx].str-val.len
+                .nodes[node-idx].keys[cnt] = with-cap(key-len)
+                j <- [0..key-len): {
+                    .nodes[node-idx].keys[cnt][j] = .nodes[key-idx].str-val[j]
+                }
+                .nodes[node-idx].keys[cnt].len = key-len
+                .nodes[node-idx].children[cnt] = val-idx
+                .nodes[node-idx].count = cnt + 1
+                p = val-next
+                p = .skip-ws(s, p)
+                p >= sn -> return
+                c2 = s[p]
+                c2 == 125 -> {
+                    next-pos = p + 1
+                    ok = true
+                    return
+                }
+                {
+                    c2 == 44 -> p = p + 1
+                    -> return
+                }
+            } ()
+        }
     }
 }
 
@@ -331,30 +340,33 @@ json-pool.parse-str = (node-idx i64, s str, pos i64) (next-pos i64, ok bool) {
     i = pos + 1
     j = 0
     c = 0
+
     ; 分配足夠容量的緩衝區（s.len 足過任何子字串長度）
     .nodes[node-idx].str-val = with-cap(s.len)
     {
         c = s[i]
-        c == 34 -> {
-            .nodes[node-idx].str-val.len = j
-            next-pos = i + 1
-            ok = true
-            return
+        {
+            c == 34 -> {
+                .nodes[node-idx].str-val.len = j
+                next-pos = i + 1
+                ok = true
+                return
+            }
+            c == 92 -> {
+
+                ; 跳過轉義字元
+
+                i = i + 1
+                i >= s.len -> return
+                c = s[i]
+
+                ; 處理常見轉義
+                c == 110 -> c = 10
+                c == 116 -> c = 9
+                c == 114 -> c = 13
+                ; c == 34, 92, 47 保留原樣
+            }
         }
-
-        ; 跳過轉義字元
-        c == 92 -> {
-            i = i + 1
-            i >= s.len -> return
-            c = s[i]
-
-            ; 處理常見轉義
-            c == 110 -> c = 10
-            c == 116 -> c = 9
-            c == 114 -> c = 13
-            ; c == 34, 92, 47 保留原樣
-        }
-
         .nodes[node-idx].str-val[j] = c
         j = j + 1
         i = i + 1
@@ -554,139 +566,145 @@ json-pool.stringify = (node-idx i64, out str, start i64) (out-n i64) {
     num-val f64 = 0.0
     num-str = ''
 
-    kind == json-kind.null -> {
-        out[out-n] = 110
-        out[out-n + 1] = 117
-        out[out-n + 2] = 108
-        out[out-n + 3] = 108
-        out-n = out-n + 4
-        return
-    }
-    kind == json-kind.bool -> {
-        {
-            .nodes[node-idx].bool-val -> {
-                out[out-n] = 116
-                out[out-n + 1] = 114
-                out[out-n + 2] = 117
-                out[out-n + 3] = 101
-                out-n = out-n + 4
-            }
-            -> {
-                out[out-n] = 102
-                out[out-n + 1] = 97
-                out[out-n + 2] = 108
-                out[out-n + 3] = 115
-                out[out-n + 4] = 101
-                out-n = out-n + 5
-            }
+    {
+        kind == json-kind.null -> {
+            out[out-n] = 110
+            out[out-n + 1] = 117
+            out[out-n + 2] = 108
+            out[out-n + 3] = 108
+            out-n = out-n + 4
+            return
         }
-        return
-    }
-    kind == json-kind.num -> {
-        num-val = .nodes[node-idx].num-val
-        num-str = num-val.to-str()
-        j <- [0..num-str.len): {
-            out[out-n] = num-str[j]
-            out-n = out-n + 1
-        }
-        return
-    }
-    kind == json-kind.str -> {
-        out[out-n] = 34
-        out-n = out-n + 1
-        j <- [0...nodes[node-idx].str-val.len): {
-            c = .nodes[node-idx].str-val[j]
-            ; 跳脫特殊字元
+        kind == json-kind.bool -> {
             {
-                c == 34 -> {
-                    out[out-n] = 92
-                    out[out-n + 1] = 34
-                    out-n = out-n + 2
+                .nodes[node-idx].bool-val -> {
+                    out[out-n] = 116
+                    out[out-n + 1] = 114
+                    out[out-n + 2] = 117
+                    out[out-n + 3] = 101
+                    out-n = out-n + 4
                 }
                 -> {
-                    c == 92 -> {
+                    out[out-n] = 102
+                    out[out-n + 1] = 97
+                    out[out-n + 2] = 108
+                    out[out-n + 3] = 115
+                    out[out-n + 4] = 101
+                    out-n = out-n + 5
+                }
+            }
+            return
+        }
+        kind == json-kind.num -> {
+            num-val = .nodes[node-idx].num-val
+            num-str = num-val.to-str()
+            j <- [0..num-str.len): {
+                out[out-n] = num-str[j]
+                out-n = out-n + 1
+            }
+            return
+        }
+        kind == json-kind.str -> {
+            out[out-n] = 34
+            out-n = out-n + 1
+            j <- [0...nodes[node-idx].str-val.len): {
+                c = .nodes[node-idx].str-val[j]
+
+                ; 跳脫特殊字元
+                {
+                    c == 34 -> {
                         out[out-n] = 92
-                        out[out-n + 1] = 92
+                        out[out-n + 1] = 34
                         out-n = out-n + 2
                     }
                     -> {
-                        c == 10 -> {
+                        c == 92 -> {
                             out[out-n] = 92
-                            out[out-n + 1] = 110
+                            out[out-n + 1] = 92
                             out-n = out-n + 2
                         }
                         -> {
-                            c == 9 -> {
+                            c == 10 -> {
                                 out[out-n] = 92
-                                out[out-n + 1] = 116
+                                out[out-n + 1] = 110
                                 out-n = out-n + 2
                             }
                             -> {
-                                c == 13 -> {
+                                c == 9 -> {
                                     out[out-n] = 92
-                                    out[out-n + 1] = 114
+                                    out[out-n + 1] = 116
                                     out-n = out-n + 2
                                 }
                                 -> {
-                                    out[out-n] = c
-                                    out-n = out-n + 1
+                                    c == 13 -> {
+                                        out[out-n] = 92
+                                        out[out-n + 1] = 114
+                                        out-n = out-n + 2
+                                    }
+                                    -> {
+                                        out[out-n] = c
+                                        out-n = out-n + 1
+                                    }
                                 }
                             }
                         }
                     }
                 }
             }
-        }
-        out[out-n] = 34
-        out-n = out-n + 1
-        return
-    }
-    kind == json-kind.arr -> {
-        out[out-n] = 91
-        out-n = out-n + 1
-        cnt = .nodes[node-idx].count
-        i <- [0..cnt): {
-            i > 0 -> {
-                out[out-n] = 44
-                out-n = out-n + 1
-            }
-            child-n = 0
-            child-n = .stringify(.nodes[node-idx].children[i], out, out-n)
-            out-n = child-n
-        }
-        out[out-n] = 93
-        out-n = out-n + 1
-        return
-    }
-    kind == json-kind.obj -> {
-        out[out-n] = 123
-        out-n = out-n + 1
-        cnt = .nodes[node-idx].count
-        i <- [0..cnt): {
-            i > 0 -> {
-                out[out-n] = 44
-                out-n = out-n + 1
-            }
-            ; key
             out[out-n] = 34
             out-n = out-n + 1
-            j <- [0...nodes[node-idx].keys[i].len): {
-                out[out-n] = .nodes[node-idx].keys[i][j]
-                out-n = out-n + 1
-            }
-            out[out-n] = 34
-            out-n = out-n + 1
-            ; ':'
-            out[out-n] = 58
-            out-n = out-n + 1
-            ; value
-            child-n = 0
-            child-n = .stringify(.nodes[node-idx].children[i], out, out-n)
-            out-n = child-n
+            return
         }
-        out[out-n] = 125
-        out-n = out-n + 1
-        return
+        kind == json-kind.arr -> {
+            out[out-n] = 91
+            out-n = out-n + 1
+            cnt = .nodes[node-idx].count
+            i <- [0..cnt): {
+                i > 0 -> {
+                    out[out-n] = 44
+                    out-n = out-n + 1
+                }
+                child-n = 0
+                child-n = .stringify(.nodes[node-idx].children[i], out, out-n)
+                out-n = child-n
+            }
+            out[out-n] = 93
+            out-n = out-n + 1
+            return
+        }
+        kind == json-kind.obj -> {
+            out[out-n] = 123
+            out-n = out-n + 1
+            cnt = .nodes[node-idx].count
+            i <- [0..cnt): {
+                i > 0 -> {
+                    out[out-n] = 44
+                    out-n = out-n + 1
+                }
+
+                ; key
+                out[out-n] = 34
+                out-n = out-n + 1
+                j <- [0...nodes[node-idx].keys[i].len): {
+                    out[out-n] = .nodes[node-idx].keys[i][j]
+                    out-n = out-n + 1
+                }
+                out[out-n] = 34
+                out-n = out-n + 1
+
+                ; ':'
+                out[out-n] = 58
+                out-n = out-n + 1
+
+                ; value
+                child-n = 0
+                child-n = .stringify(.nodes[node-idx].children[i], out, out-n)
+                out-n = child-n
+            }
+            out[out-n] = 125
+            out-n = out-n + 1
+            return
+        }
     }
 }
 
@@ -726,7 +744,6 @@ json.parse = (s str) (result ?json) {
         result = err('trailing characters')
         return
     }
-
     j.root = root
     result = j
 }
@@ -827,19 +844,21 @@ json.get = (key str) (child ?json) {
 
     ; 確保為物件，若非物件則自動建立
     k json-kind = .pool.get-kind(.root)
-    k == json-kind.null -> {
-        ; 將 root 轉為空物件
-        .pool.nodes[.root].kind = json-kind.obj
-        .pool.nodes[.root].count = 0
-    }
-    k != json-kind.obj -> return
+    {
+        k == json-kind.null -> {
 
+            ; 將 root 轉為空物件
+            .pool.nodes[.root].kind = json-kind.obj
+            .pool.nodes[.root].count = 0
+        }
+        k != json-kind.obj -> return
+    }
     val-idx, found = .pool.get-key(.root, key)
     found == false -> return
 
     ; 包裝為 json
     c json
-    c = json{
+    c = json {
         pool: .pool
         root: val-idx
     }
@@ -855,10 +874,8 @@ json.get-str = (key str) (val str, ok bool) {
     ok = false
     .root < 0 -> return
     .pool.get-kind(.root) != json-kind.obj -> return
-
     val-idx, found = .pool.get-key(.root, key)
     found == false -> return
-
     val, ok = .pool.get-str(val-idx)
 }
 
@@ -868,10 +885,8 @@ json.get-num = (key str) (val f64, ok bool) {
     ok = false
     .root < 0 -> return
     .pool.get-kind(.root) != json-kind.obj -> return
-
     val-idx, found = .pool.get-key(.root, key)
     found == false -> return
-
     val, ok = .pool.get-num(val-idx)
 }
 
@@ -881,10 +896,8 @@ json.get-bool = (key str) (val bool, ok bool) {
     ok = false
     .root < 0 -> return
     .pool.get-kind(.root) != json-kind.obj -> return
-
     val-idx, found = .pool.get-key(.root, key)
     found == false -> return
-
     val, ok = .pool.get-bool(val-idx)
 }
 
@@ -903,20 +916,21 @@ json.get-i64 = (key str) (val i64, ok bool) {
 json.set = (key str, val json) (ok bool) {
     ok = false
     .root < 0 -> {
+
         ; 建立 root 為物件
         .root = .pool.alloc()
         .root < 0 -> return
         .pool.nodes[.root].kind = json-kind.obj
         .pool.nodes[.root].count = 0
     }
-
     k json-kind = .pool.get-kind(.root)
-    k == json-kind.null -> {
-        .pool.nodes[.root].kind = json-kind.obj
-        .pool.nodes[.root].count = 0
+    {
+        k == json-kind.null -> {
+            .pool.nodes[.root].kind = json-kind.obj
+            .pool.nodes[.root].count = 0
+        }
+        k != json-kind.obj -> return
     }
-    k != json-kind.obj -> return
-
     ok = .pool.set-key(.root, key, val.root)
 }
 
@@ -928,7 +942,6 @@ json.set-str = (key str, val str) (ok bool) {
     ok = false
     idx = .pool.alloc()
     idx < 0 -> return
-
     .pool.nodes[idx].kind = json-kind.str
     .pool.nodes[idx].str-val = with-cap(val.len)
     i <- [0..val.len): {
@@ -936,7 +949,7 @@ json.set-str = (key str, val str) (ok bool) {
     }
     .pool.nodes[idx].str-val.len = val.len
 
-    ok = .set(key, json{
+    ok = .set(key, json {
         pool: .pool
         root: idx
     })
@@ -950,11 +963,10 @@ json.set-num = (key str, val f64) (ok bool) {
     ok = false
     idx = .pool.alloc()
     idx < 0 -> return
-
     .pool.nodes[idx].kind = json-kind.num
     .pool.nodes[idx].num-val = val
 
-    ok = .set(key, json{
+    ok = .set(key, json {
         pool: .pool
         root: idx
     })
@@ -975,11 +987,10 @@ json.set-bool = (key str, val bool) (ok bool) {
     ok = false
     idx = .pool.alloc()
     idx < 0 -> return
-
     .pool.nodes[idx].kind = json-kind.bool
     .pool.nodes[idx].bool-val = val
 
-    ok = .set(key, json{
+    ok = .set(key, json {
         pool: .pool
         root: idx
     })
@@ -991,10 +1002,9 @@ json.set-null = (key str) (ok bool) {
     ok = false
     idx = .pool.alloc()
     idx < 0 -> return
-
     .pool.nodes[idx].kind = json-kind.null
 
-    ok = .set(key, json{
+    ok = .set(key, json {
         pool: .pool
         root: idx
     })
@@ -1017,12 +1027,10 @@ json.arr-get = (elem i64) (child ?json) {
     child = nil
     .root < 0 -> return
     .pool.get-kind(.root) != json-kind.arr -> return
-
     val-idx, found = .pool.arr-get(.root, elem)
     found == false -> return
-
     c json
-    c = json{
+    c = json {
         pool: .pool
         root: val-idx
     }
@@ -1047,23 +1055,23 @@ json.arr-len = () (n i64) {
 json.arr-push = (val json) (ok bool) {
     ok = false
     .root < 0 -> {
+
         ; 建立 root 為陣列
         .root = .pool.alloc()
         .root < 0 -> return
         .pool.nodes[.root].kind = json-kind.arr
         .pool.nodes[.root].count = 0
     }
-
     k json-kind = .pool.get-kind(.root)
-    k == json-kind.null -> {
-        .pool.nodes[.root].kind = json-kind.arr
-        .pool.nodes[.root].count = 0
+    {
+        k == json-kind.null -> {
+            .pool.nodes[.root].kind = json-kind.arr
+            .pool.nodes[.root].count = 0
+        }
+        k != json-kind.arr -> return
     }
-    k != json-kind.arr -> return
-
     cnt = .pool.nodes[.root].count
     cnt >= JSON-MAX-CHILDREN -> return
-
     .pool.nodes[.root].children[cnt] = val.root
     .pool.nodes[.root].count = cnt + 1
     ok = true
@@ -1075,7 +1083,6 @@ json.arr-push-str = (val str) (ok bool) {
     ok = false
     idx = .pool.alloc()
     idx < 0 -> return
-
     .pool.nodes[idx].kind = json-kind.str
     .pool.nodes[idx].str-val = with-cap(val.len)
     i <- [0..val.len): {
@@ -1083,7 +1090,7 @@ json.arr-push-str = (val str) (ok bool) {
     }
     .pool.nodes[idx].str-val.len = val.len
 
-    ok = .arr-push(json{
+    ok = .arr-push(json {
         pool: .pool
         root: idx
     })
@@ -1095,11 +1102,10 @@ json.arr-push-num = (val f64) (ok bool) {
     ok = false
     idx = .pool.alloc()
     idx < 0 -> return
-
     .pool.nodes[idx].kind = json-kind.num
     .pool.nodes[idx].num-val = val
 
-    ok = .arr-push(json{
+    ok = .arr-push(json {
         pool: .pool
         root: idx
     })
@@ -1111,11 +1117,10 @@ json.arr-push-bool = (val bool) (ok bool) {
     ok = false
     idx = .pool.alloc()
     idx < 0 -> return
-
     .pool.nodes[idx].kind = json-kind.bool
     .pool.nodes[idx].bool-val = val
 
-    ok = .arr-push(json{
+    ok = .arr-push(json {
         pool: .pool
         root: idx
     })

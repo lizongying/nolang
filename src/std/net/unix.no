@@ -85,7 +85,7 @@ unix-listener.accept = () (c ?unix-conn) {
     .fd < 0 -> return
     fd = net.net-accept(.fd)
     fd < 0 -> return
-    c = unix-conn{
+    c = unix-conn {
         fd: fd
     }
 }
@@ -111,7 +111,7 @@ unix-listener.accept-with-timeout = (timeout-ms i64) (c ?unix-conn) {
     fd = net.net-accept(.fd)
     net.net-set-recv-timeout(.fd, 0)
     fd < 0 -> return
-    c = unix-conn{
+    c = unix-conn {
         fd: fd
     }
 }
@@ -249,7 +249,7 @@ unix-conn.fd-of = () (fd fd) {
 ; 返回 l ?unix-listener: ok=監聽器, nil=失敗
 unix-listen-on = (path str) (l ?unix-listener) {
     l = nil
-    lst = unix-listener{}
+    lst = unix-listener {}
     ok = false
     ok = lst.listen(path)
     ok -> l = lst
@@ -260,7 +260,7 @@ unix-listen-on = (path str) (l ?unix-listener) {
 ; 返回 c ?unix-conn: ok=連接, nil=失敗
 unix-dial-to = (path str) (c ?unix-conn) {
     c = nil
-    cn = unix-conn{}
+    cn = unix-conn {}
     ok = false
     ok = cn.dial(path)
     ok -> c = cn
@@ -275,7 +275,7 @@ unix-dial-timeout = (path str, timeout-ms i64) (c ?unix-conn) {
     fd = unix-dial(path)
     fd < 0 -> return
     net.net-set-recv-timeout(fd, timeout-ms)
-    cn = unix-conn{
+    cn = unix-conn {
         fd: fd
     }
     c = cn

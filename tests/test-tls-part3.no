@@ -11,9 +11,9 @@ secret[1] = 2
 secret[2] = 3
 secret[3] = 4
 seed []byte = with-cap(3)
-seed[0] = 0xAA
-seed[1] = 0xBB
-seed[2] = 0xCC
+seed[0] = 0xaa
+seed[1] = 0xbb
+seed[2] = 0xcc
 prf-out []byte
 prf-out = tls.prf(secret, 4, 'test label', seed, 3, 32)
 print('after prf')

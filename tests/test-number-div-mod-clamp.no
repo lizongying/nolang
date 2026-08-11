@@ -24,7 +24,6 @@ test-div = () {
     number.div(0, 5, r)
     print(r); expect: 0
 }
-
 test-div()
 print(111)
 
@@ -47,7 +46,6 @@ test-mod = () {
     number.mod(1, 3, r)
     print(r); expect: 1
 }
-
 test-mod()
 print(222)
 
@@ -80,6 +78,5 @@ test-clamp = () {
     v.clamp(1, 10, r)
     print(r); expect: 10
 }
-
 test-clamp()
 print(333)

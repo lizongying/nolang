@@ -1,6 +1,5 @@
 test-fn = () (fd i64) {
     fd = net.net-icmp-open()
 }
-
 r = test-fn()
 print(r)

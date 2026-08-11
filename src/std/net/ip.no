@@ -31,7 +31,7 @@
 ; ═══════════════════════════════════════════════
 
 ; IP-ZERO: 0.0.0.0
-IP-ZERO = ip-addr{
+IP-ZERO = ip-addr {
     a: 0
     b: 0
     c: 0
@@ -39,7 +39,7 @@ IP-ZERO = ip-addr{
 }
 
 ; IP-LOOPBACK: 127.0.0.1
-IP-LOOPBACK = ip-addr{
+IP-LOOPBACK = ip-addr {
     a: 127
     b: 0
     c: 0
@@ -47,7 +47,7 @@ IP-LOOPBACK = ip-addr{
 }
 
 ; IP-ANY: 0.0.0.0（同 IP-ZERO，語義化命名）
-IP-ANY = ip-addr{
+IP-ANY = ip-addr {
     a: 0
     b: 0
     c: 0
@@ -55,7 +55,7 @@ IP-ANY = ip-addr{
 }
 
 ; IP-BROADCAST: 255.255.255.255
-IP-BROADCAST = ip-addr{
+IP-BROADCAST = ip-addr {
     a: 255
     b: 255
     c: 255
@@ -106,6 +106,7 @@ ip-addr.parse = (s str) (ok bool) {
                 octet > 255 -> return
             }
             c == 46 -> {
+
                 ; 點分隔符
                 has-digit == 0 -> return
                 dot-count = dot-count + 1
@@ -135,7 +136,7 @@ ip-addr.parse = (s str) (ok bool) {
 ; 返回 addr ?ip-addr: ok=解析結果, nil=解析失敗
 ip-addr.from-str = (s str) (addr ?ip-addr) {
     addr = nil
-    a = ip-addr{}
+    a = ip-addr {}
     ok = false
     ok = a.parse(s)
     ok -> addr = a
@@ -220,22 +221,27 @@ ip-addr.is-loopback = () (yes bool) {
 ; is-private: 是否為私有地址
 ; 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16
 ip-addr.is-private = () (yes bool) {
+
     ; 10.0.0.0/8
-    .a == 10 -> {
-        yes = true
-        return
-    }
+    {
+        .a == 10 -> {
+            yes = true
+            return
+        }
+        .a == 172 -> {
 
-    ; 172.16.0.0/12 (172.16.0.0 ~ 172.31.255.255)
-    .a == 172 -> .b >= 16 && .b <= 31 -> {
-        yes = true
-        return
-    }
+            ; 172.16.0.0/12 (172.16.0.0 ~ 172.31.255.255)
+            .b >= 16 && .b <= 31
+        }
+        .a == 192 -> {
 
-    ; 192.168.0.0/16
-    .a == 192 -> .b == 168 -> {
-        yes = true
-        return
+            ; 192.168.0.0/16
+            .b == 168
+        }
+        -> {
+            yes = true
+            return
+        }
     }
 }
 
@@ -292,13 +298,15 @@ ip-addr.equal = (other ip-addr) (yes bool) {
 ; prefix-len: 前綴長度（0~32）
 ; 返回 yes=true=在子網內
 ip-addr.in-subnet = (base ip-addr, prefix-len i64) (yes bool) {
-    prefix-len <= 0 -> {
-        yes = true
-        return
-    }
-    prefix-len >= 32 -> {
-        yes = .equal(base)
-        return
+    {
+        prefix-len <= 0 -> {
+            yes = true
+            return
+        }
+        prefix-len >= 32 -> {
+            yes = .equal(base)
+            return
+        }
     }
 
     ; 計算子網遮罩
@@ -311,7 +319,7 @@ ip-addr.in-subnet = (base ip-addr, prefix-len i64) (yes bool) {
         prefix-len == 32 -> mask = 0 - 1
         -> {
             mask = (0 - 1) << (32 - prefix-len)
-            mask = mask & 0xFFFFFFFF
+            mask = mask & 0xffffffff
         }
     }
 
@@ -329,7 +337,7 @@ ip-addr.in-subnet = (base ip-addr, prefix-len i64) (yes bool) {
 ; 返回 addr ?ip-addr: ok=解析結果, nil=解析失敗
 ip-parse = (s str) (addr ?ip-addr) {
     addr = nil
-    a = ip-addr{}
+    a = ip-addr {}
     ok = false
     ok = a.parse(s)
     ok -> addr = a
@@ -337,14 +345,14 @@ ip-parse = (s str) (addr ?ip-addr) {
 
 ; ip-is-loopback: 快速判斷字串是否為環回地址
 ip-is-loopback = (s str) (yes bool) {
-    addr = ip-addr{}
+    addr = ip-addr {}
     ok = addr.parse(s)
     ok -> yes = addr.is-loopback()
 }
 
 ; ip-is-private: 快速判斷字串是否為私有地址
 ip-is-private = (s str) (yes bool) {
-    addr = ip-addr{}
+    addr = ip-addr {}
     ok = addr.parse(s)
     ok -> yes = addr.is-private()
 }

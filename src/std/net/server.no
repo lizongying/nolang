@@ -265,7 +265,6 @@ server-conn.parse = () (ok bool) {
         .header-values[i] = ' '
         .header-values[i].len = 0
     }
-
     hs = .headers
     hn = hs.len
     hn > 0 -> {
@@ -305,8 +304,10 @@ server-conn.parse = () (ok bool) {
     conn-val: {
         ok -> {
             cl = it
-            cl == 'close' -> .keep-alive = false
-            cl == 'keep-alive' -> .keep-alive = true
+            {
+                cl == 'close' -> .keep-alive = false
+                cl == 'keep-alive' -> .keep-alive = true
+            }
         }
         ->
     }
@@ -338,7 +339,6 @@ server-conn.parse = () (ok bool) {
         }
         ->
     }
-
     ok = true
 }
 
@@ -351,25 +351,26 @@ server-conn.get-header = (name str) (val ?str) {
     i <- [0..cnt): {
         matched = 1
         .header-names[i].len != name.len -> matched = 0
-        matched == 1 -> {
-            j <- [0..name.len): {
-                c1 = .header-names[i][j]
-                c2 = name[j]
+        {
+            matched == 1 -> {
+                j <- [0..name.len): {
+                    c1 = .header-names[i][j]
+                    c2 = name[j]
 
-                ; 大小寫不敏感比較
-                c1 >= 65 && c1 <= 90 -> c1 = c1 + 32
-                c2 >= 65 && c2 <= 90 -> c2 = c2 + 32
-                c1 != c2 -> {
-                    matched = 0
-                    break
+                    ; 大小寫不敏感比較
+                    c1 >= 65 && c1 <= 90 -> c1 = c1 + 32
+                    c2 >= 65 && c2 <= 90 -> c2 = c2 + 32
+                    c1 != c2 -> {
+                        matched = 0
+                        break
+                    }
                 }
             }
-        }
-
-        matched == 1 -> {
-            vlen = .header-values[i].len
-            val = .header-values[i].slice(0, vlen)
-            return
+            matched == 1 -> {
+                vlen = .header-values[i].len
+                val = .header-values[i].slice(0, vlen)
+                return
+            }
         }
     }
 }
@@ -408,7 +409,6 @@ server-conn.write-status = (status i64) (ok bool) {
         status == 504 -> status-text = 'Gateway Timeout'
         ->
     }
-
     line = 'HTTP/1.1 ' - status-s - ' ' - status-text - crlf
     written = net.net-send(.fd, line, line.len)
     written < 0 -> return
@@ -857,7 +857,6 @@ https-server-conn.parse = () (ok bool) {
         .header-values[i] = ' '
         .header-values[i].len = 0
     }
-
     hs = .headers
     hn = hs.len
     hn > 0 -> {
@@ -897,8 +896,10 @@ https-server-conn.parse = () (ok bool) {
     conn-val: {
         ok -> {
             cl = it
-            cl == 'close' -> .keep-alive = false
-            cl == 'keep-alive' -> .keep-alive = true
+            {
+                cl == 'close' -> .keep-alive = false
+                cl == 'keep-alive' -> .keep-alive = true
+            }
         }
         ->
     }
@@ -926,7 +927,6 @@ https-server-conn.parse = () (ok bool) {
         }
         ->
     }
-
     ok = true
 }
 
@@ -939,22 +939,24 @@ https-server-conn.get-header = (name str) (val ?str) {
     i <- [0..cnt): {
         matched = 1
         .header-names[i].len != name.len -> matched = 0
-        matched == 1 -> {
-            j <- [0..name.len): {
-                c1 = .header-names[i][j]
-                c2 = name[j]
-                c1 >= 65 && c1 <= 90 -> c1 = c1 + 32
-                c2 >= 65 && c2 <= 90 -> c2 = c2 + 32
-                c1 != c2 -> {
-                    matched = 0
-                    break
+        {
+            matched == 1 -> {
+                j <- [0..name.len): {
+                    c1 = .header-names[i][j]
+                    c2 = name[j]
+                    c1 >= 65 && c1 <= 90 -> c1 = c1 + 32
+                    c2 >= 65 && c2 <= 90 -> c2 = c2 + 32
+                    c1 != c2 -> {
+                        matched = 0
+                        break
+                    }
                 }
             }
-        }
-        matched == 1 -> {
-            vlen = .header-values[i].len
-            val = .header-values[i].slice(0, vlen)
-            return
+            matched == 1 -> {
+                vlen = .header-values[i].len
+                val = .header-values[i].slice(0, vlen)
+                return
+            }
         }
     }
 }
@@ -988,7 +990,6 @@ https-server-conn.write-status = (status i64) (ok bool) {
         status == 503 -> status-text = 'Service Unavailable'
         ->
     }
-
     line = 'HTTP/1.1 ' - status-s - ' ' - status-text - crlf
     w = .tls.send(line)
     send-ok = false
@@ -998,9 +999,7 @@ https-server-conn.write-status = (status i64) (ok bool) {
         err -> return
         ok -> send-ok = true
     }
-
     send-ok == false -> return
-
     ok = true
 }
 
@@ -1022,9 +1021,7 @@ https-server-conn.write-header = (name str, value str) (ok bool) {
         err -> return
         ok -> send-ok = true
     }
-
     send-ok == false -> return
-
     ok = true
 }
 
@@ -1043,9 +1040,7 @@ https-server-conn.write-headers-done = () (ok bool) {
         err -> return
         ok -> send-ok = true
     }
-
     send-ok == false -> return
-
     ok = true
 }
 
@@ -1063,12 +1058,9 @@ https-server-conn.write-body = (data str) (ok bool) {
             err -> return
             ok -> send-ok = true
         }
-
         send-ok == false -> return
-
         ok = true
     }
-
     ok = true
 }
 
@@ -1081,7 +1073,6 @@ https-server-conn.write-text = (status i64, text str) (ok bool) {
 
     ok = .write-status(status)
     ok == false -> return
-
     text-len = text.len
     len-s = text-len.to-str()
     .write-header('Content-Type', 'text/plain; charset=utf-8')

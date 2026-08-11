@@ -88,6 +88,7 @@ blake2b-g = (v []u64, a i64, b i64, c i64, d i64, x u64, y u64) {
 ; t u64: 偏移量（已處理的位元組數）
 ; last i64: 是否為最後一個區塊（0 或 1）
 blake2b-compress = (h []u64, block []byte, t u64, last i64) {
+
     ; 初始化工作向量 v[0..15]
     v []u64
     i <- [0..8): {
@@ -140,6 +141,7 @@ blake2b-compress = (h []u64, block []byte, t u64, last i64) {
 ; data []byte: 輸入資料
 ; 返回 hash [64]byte: 64 位元組雜湊值
 blake2b = (data []byte) (hash [64]byte) {
+
     ; 初始化狀態: h = IV，h[0] ^= 0x01010000 | out_len
     h []u64
     i <- [0..8): {
@@ -152,11 +154,11 @@ blake2b = (data []byte) (hash [64]byte) {
 
     ; 處理完整區塊（while loop: 只在有完整 128-byte 區塊時才執行）
     offset = 0
-    for offset + 128 < dlen {
+    {
         t = (t + 128) & BLAKE2B-MASK
         blake2b-compress(h, data[offset..], t, 0)
         offset = offset + 128
-    }
+    } (offset + 128 < dlen)
 
     ; 處理最後一個區塊（可能不完整）
     last-block = with-len(128)
@@ -169,7 +171,6 @@ blake2b = (data []byte) (hash [64]byte) {
     i <- [remaining..128): {
         last-block[i] = 0
     }
-
     t = (t + remaining) & BLAKE2B-MASK
     blake2b-compress(h, last-block, t, 1)
 
@@ -191,6 +192,7 @@ blake2b = (data []byte) (hash [64]byte) {
 ; data []byte: 輸入資料
 ; 返回 hash [32]byte: 32 位元組雜湊值
 blake2b-256 = (data []byte) (hash [32]byte) {
+
     ; 初始化狀態: h = IV，h[0] ^= 0x01010000 | 32
     h []u64
     i <- [0..8): {
@@ -202,12 +204,11 @@ blake2b-256 = (data []byte) (hash [32]byte) {
     t u64 = 0
 
     offset = 0
-    for offset + 128 < dlen {
+    {
         t = (t + 128) & BLAKE2B-MASK
         blake2b-compress(h, data[offset..], t, 0)
         offset = offset + 128
-    }
-
+    } (offset + 128 < dlen)
     last-block = with-len(128)
     remaining = dlen - offset
     i <- [0..remaining): {
@@ -216,7 +217,6 @@ blake2b-256 = (data []byte) (hash [32]byte) {
     i <- [remaining..128): {
         last-block[i] = 0
     }
-
     t = (t + remaining) & BLAKE2B-MASK
     blake2b-compress(h, last-block, t, 1)
 
@@ -318,7 +318,6 @@ blake2s-compress = (h []u32, block []byte, t u32, last i64) {
     i <- [0..8): {
         v[8 + i] = BLAKE2S-IV[i]
     }
-
     v[12] = (v[12] ^ t) & BLAKE2S-MASK
     last != 0 -> v[14] = v[14] ^ BLAKE2S-MASK
     m [16]u32
@@ -326,7 +325,6 @@ blake2s-compress = (h []u32, block []byte, t u32, last i64) {
         off = i * 4
         m[i] = (block[off]) | ((block[off + 1]) << 8) | ((block[off + 2]) << 16) | ((block[off + 3]) << 24)
     }
-
     round <- [0..10): {
         s = BLAKE2S-SIGMA[round]
         blake2s-g(v, 0, 4, 8, 12, m[s[0]], m[s[1]])
@@ -338,7 +336,6 @@ blake2s-compress = (h []u32, block []byte, t u32, last i64) {
         blake2s-g(v, 2, 7, 8, 13, m[s[12]], m[s[13]])
         blake2s-g(v, 3, 4, 9, 14, m[s[14]], m[s[15]])
     }
-
     i <- [0..8): {
         h[i] = (h[i] ^ v[i] ^ v[8 + i]) & BLAKE2S-MASK
     }
@@ -358,12 +355,11 @@ blake2s = (data []byte) (hash [32]byte) {
     t u32 = 0
 
     offset = 0
-    for offset + 64 < dlen {
+    {
         t = (t + 64) & BLAKE2S-MASK
         blake2s-compress(h, data[offset..], t, 0)
         offset = offset + 64
-    }
-
+    } (offset + 64 < dlen)
     last-block = with-len(64)
     remaining = dlen - offset
     i <- [0..remaining): {
@@ -372,7 +368,6 @@ blake2s = (data []byte) (hash [32]byte) {
     i <- [remaining..64): {
         last-block[i] = 0
     }
-
     t = (t + remaining) & BLAKE2S-MASK
     blake2s-compress(h, last-block, t, 1)
 

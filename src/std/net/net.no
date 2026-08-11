@@ -97,6 +97,7 @@ NET-BUF-SIZE = 4096
 
 ; Windows 需要在使用 socket API 前呼叫 WSAStartup 初始化 Winsock 2.2
 ; 此頂層呼叫在模組載入時自動執行，確保後續所有網路操作可用
+
 #{win-amd64, win-arm64}
 os.win-wsa-startup()
 
@@ -130,7 +131,7 @@ listener.accept = () (c ?conn) {
     .fd < 0 -> return
     fd = net-accept(.fd)
     fd < 0 -> return
-    c = conn{
+    c = conn {
         fd: fd
     }
 }
@@ -237,7 +238,7 @@ conn.fd-of = () (fd fd) {
 ; 返回 l ?listener: ok=監聽器, nil=失敗
 listen-on = (host str, port i64) (l ?listener) {
     l = nil
-    lst = listener{}
+    lst = listener {}
     ok = false
     ok = lst.listen(host, port)
     ok -> l = lst
@@ -247,7 +248,7 @@ listen-on = (host str, port i64) (l ?listener) {
 ; 返回 c ?conn: ok=連接, nil=失敗
 dial-to = (host str, port i64) (c ?conn) {
     c = nil
-    cn = conn{}
+    cn = conn {}
     ok = false
     ok = cn.dial(host, port)
     ok -> c = cn
@@ -374,7 +375,7 @@ udp-conn.fd-of = () (fd fd) {
 ; 返回 c ?udp-conn: ok=連接, nil=失敗
 udp-dial-to = (host str, port i64) (c ?udp-conn) {
     c = nil
-    uc = udp-conn{}
+    uc = udp-conn {}
     ok = false
     ok = uc.open()
     ok == false -> return
@@ -455,7 +456,7 @@ listener.accept-with-timeout = (timeout-ms i64) (c ?conn) {
     fd = net-accept(.fd)
     net-set-recv-timeout(.fd, 0)
     fd < 0 -> return
-    c = conn{
+    c = conn {
         fd: fd
     }
 }
@@ -474,7 +475,7 @@ dial-timeout = (host str, port i64, timeout-ms i64) (c ?conn) {
     fd = net-dial(host, port)
     fd < 0 -> return
     net-set-recv-timeout(fd, timeout-ms)
-    cn = conn{
+    cn = conn {
         fd: fd
     }
     c = cn
@@ -710,23 +711,30 @@ icmp-conn.close = () {
 ; pkt []byte: 輸出封包緩衝區（至少 64 位元組）
 ; seq i64: 序號
 icmp-conn.build-echo = (pkt []byte, seq i64) {
+
     ; Type = 8 (Echo Request)
     pkt[0] = ICMP-ECHO-REQUEST
+
     ; Code = 0
     pkt[1] = 0
+
     ; Checksum = 0 (先填 0，之後計算)
     pkt[2] = 0
     pkt[3] = 0
+
     ; Identifier (big-endian)
     pkt[4] = (.ident >> 8) & 255
     pkt[5] = .ident & 255
+
     ; Sequence (big-endian)
     pkt[6] = (seq >> 8) & 255
     pkt[7] = seq & 255
+
     ; Payload: 填入序號作為資料（用於驗證回應）
     i <- [0..ICMP-PAYLOAD-SIZE): {
         pkt[ICMP-HEADER-SIZE + i] = (seq + i) & 255
     }
+
     ; 計算並填入 checksum
     cksum = icmp-checksum(pkt, ICMP-PACKET-SIZE)
     pkt[2] = (cksum >> 8) & 255
@@ -742,22 +750,21 @@ icmp-checksum = (data []byte, len i64) (checksum i64) {
     i = 0
     {
         i + 1 < len -> {
+
             ; 16-bit word: data[i] << 8 | data[i+1]
             w = ((data[i]) << 8) | (data[i + 1])
             checksum = checksum + w
+
             ; 處理進位
-            checksum > 65535 -> {
-                checksum = (checksum & 65535) + (checksum >> 16)
-            }
+            checksum > 65535 -> checksum = (checksum & 65535) + (checksum >> 16)
         }
         i = i + 2
     } (i < len)
+
     ; 奇數長度：補零處理最後一個位元組
     len & 1 == 1 -> {
         checksum = checksum + ((data[len - 1]) << 8)
-        checksum > 65535 -> {
-            checksum = (checksum & 65535) + (checksum >> 16)
-        }
+        checksum > 65535 -> checksum = (checksum & 65535) + (checksum >> 16)
     }
     checksum = (checksum & 65535) + (checksum >> 16)
     checksum = (~checksum) & 65535
@@ -798,9 +805,11 @@ icmp-conn.ping-once = (host str, timeout-ms i64) (rtt ?i64) {
     offset = 0
     {
         n >= 20 -> {
+
             ; 檢查 IP 版本 (byte 0 >> 4 == 4 表示 IPv4)
             ver = (recv-buf[0] >> 4) & 15
             ver == 4 -> {
+
                 ; IHL = (byte 0 & 0x0F) * 4
                 ihl = (recv-buf[0] & 15) * 4
                 offset = ihl
@@ -838,6 +847,7 @@ icmp-conn.ping-host = (host str, count i64, timeout-ms i64) {
             nil -> print(host + ': ping timeout (seq=' + (.seq & 65535).to-str() + ')')
             -> print(host + ': seq=' + (.seq & 65535).to-str() + ' rtt=' + it.to-str() + ' us')
         }
+
         ; 間隔 1 秒
         count > 1 -> os.sleep(1)
     }
@@ -942,7 +952,7 @@ ifconfig-list = () (ifs []if-info) {
         stats-str = line.slice(colon-pos + 1, line.len).trim()
         fields = split-ws(stats-str)
         fields.len >= 10 -> {
-            info = if-info{}
+            info = if-info {}
             info.name = name
             v0 ?i64 = fields[0].to-i64()
             v0: {
@@ -1001,7 +1011,7 @@ route-list = () (routes []route-info) {
         line.len == 0 -> *
         fields = split-ws(line)
         fields.len >= 11 -> {
-            r = route-info{}
+            r = route-info {}
             r.iface = fields[0]
             r.destination = fields[1]
             r.gateway = fields[2]
@@ -1040,7 +1050,7 @@ arp-list = () (arps []arp-info) {
         line.len == 0 -> *
         fields = split-ws(line)
         fields.len >= 6 -> {
-            a = arp-info{}
+            a = arp-info {}
             a.ip = fields[0]
             a.hw-type = fields[1]
             a.flags = fields[2]
@@ -1068,15 +1078,19 @@ split-ws = (s str) (out []str) {
     n = s.len
     i = 0
     {
+
         ; 跳過前導空白
         {
             i < n -> {
                 c = s[i]
-                c == 32 || c == 9 -> i = i + 1
-                -> *
+                {
+                    c == 32 || c == 9 -> i = i + 1
+                    -> *
+                }
             }
         } (i < n && (s[i] == 32 || s[i] == 9))
         i >= n -> *
+
         ; 找到欄位結束
         start = i
         {

@@ -127,5 +127,4 @@ main = () {
     s = fmt.fmt-bool(false, '<6')
     print('[' - s - ']')
 }
-
 main()

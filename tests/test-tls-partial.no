@@ -15,11 +15,11 @@ print('PASS: tls-put-u16')
 
 ; 測試 2: tls-get-u16
 buf2 str = space.repeat(8)
-buf2[0] = 0xAB
-buf2[1] = 0xCD
+buf2[0] = 0xab
+buf2[1] = 0xcd
 val i64 = 0
 val = tls.get-u16(buf2, 0)
-val != 0xABCD -> {
+val != 0xabcd -> {
     print('FAIL: get-u16 expected 0xABCD')
     return
 }

@@ -4,6 +4,7 @@
 ; 注意：Nolang 中 ';' 是註解符號，不可用作語句分隔。
 
 main = () {
+
     ; 特殊值（使用顯式 f64 型別，繞過編譯器對直接除法表達式的型別推導 bug）
     nan-val f64 = 0.0
     nan-val = nan-val / nan-val
@@ -89,5 +90,4 @@ main = () {
     s = str.f64-to-str-general(neg-inf-val, 4)
     print(s)
 }
-
 main()

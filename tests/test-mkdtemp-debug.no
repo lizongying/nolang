@@ -2,6 +2,5 @@
 
 test-mkdtemp = () {
     name, ok = fs.mkdtemp('/tmp/test.XXXXXX')
-    ok -> print(name)
-    -> print('failed')
+    ok -> print(name) -> print('failed')
 }

@@ -52,7 +52,6 @@ linked-hash-map.put = (key i64, val i64) (is-new bool) {
         idx = idx + 1
         idx >= .cap -> idx = 0
     } (.occ[idx] == 1)
-
     .keys[idx] = key
     .vals[idx] = val
     .occ[idx] = 1
@@ -69,7 +68,6 @@ linked-hash-map.put = (key i64, val i64) (is-new bool) {
             .tail = idx
         }
     }
-
     .size = .size + 1
     is-new = true
 }
@@ -77,7 +75,6 @@ linked-hash-map.put = (key i64, val i64) (is-new bool) {
 ; get: 查找 key，返回 ?i64（nil=未找到）
 linked-hash-map.get = (key i64) (result ?i64) {
     .size == 0 -> return
-
     idx = .hash(key)
 
     {
@@ -95,8 +92,8 @@ linked-hash-map.contains = (key i64) (found bool) {
     val = .get(key)
     val: {
         ok -> found = true
-        err -> {}
-        nil -> {}
+        err ->
+        nil ->
     }
 }
 
@@ -121,7 +118,6 @@ linked-hash-map.remove = (key i64) (removed bool) {
             removed = true
             return
         }
-
         idx = idx + 1
         idx >= .cap -> idx = 0
     } (.occ[idx] == 1)

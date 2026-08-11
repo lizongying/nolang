@@ -1018,6 +1018,7 @@ sha1-block = (s []u32, h0 u32, h1 u32, h2 u32, h3 u32, h4 u32) (r0 u32, r1 u32, 
 ; data []byte: 輸入位元組陣列
 ; 返回 hash [20]byte: 20 位元組雜湊值
 sha1 = (data []byte) (hash [20]byte) {
+
     ; SHA-1 初始狀態
     h0 u32 = 1732584193
     h1 u32 = 4023233417
@@ -1062,26 +1063,13 @@ sha1 = (data []byte) (hash [20]byte) {
 
     ; 處理每個 64 位元組區塊
     block []u32 = [
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
+        0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0,
     ]
 
     offset = 0
     {
+
         ; 將 64 位元組轉為 16 個 32-bit big-endian 字
         i <- [0..16): {
             block[i] = (padded[offset + i * 4] << 24) | (padded[offset + i * 4 + 1] << 16) | (padded[offset + i * 4 + 2] << 8) | padded[offset + i * 4 + 3]

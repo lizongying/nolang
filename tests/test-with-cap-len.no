@@ -2,36 +2,22 @@
 
 ; Test 1: basic vec with cap > len
 v []i64 = with-cap-len(200, 100)
-v.len == 100 -> {
-    print(1)
-}
-v.cap == 200 -> {
-    print(2)
-}
+v.len == 100 -> print(1)
+v.cap == 200 -> print(2)
 
 ; Test 2: write within len range
 v[50] = 42
-v[50] == 42 -> {
-    print(3)
-}
+v[50] == 42 -> print(3)
 
 ; Test 3: push should not realloc (cap has room)
 v.push(99)
-v.len == 101 -> {
-    print(4)
-}
+v.len == 101 -> print(4)
 
 ; Test 4: str with cap-len
 s str = with-cap-len(256, 10)
-s.len == 10 -> {
-    print(5)
-}
+s.len == 10 -> print(5)
 
 ; Test 5: cap == len (equivalent to with-len)
 v2 []i64 = with-cap-len(100, 100)
-v2.len == 100 -> {
-    print(6)
-}
-v2.cap == 100 -> {
-    print(7)
-}
+v2.len == 100 -> print(6)
+v2.cap == 100 -> print(7)

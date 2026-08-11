@@ -122,6 +122,7 @@ parse-set = (set-cookie-str str) (c cookie) {
     ; 解析屬性
     pos = 0
     {
+
         ; 跳過前導空格
         {
             pos = pos + 1
@@ -162,6 +163,7 @@ parse-set = (set-cookie-str str) (c cookie) {
                         valid -> c.max-age = ma
                     }
                     attr-name-lower == 'expires' -> {
+
                         ; 簡化：不解析日期格式，記錄為已設定
                         c.expires = -1
                     }
@@ -178,7 +180,6 @@ parse-set = (set-cookie-str str) (c cookie) {
                 }
             }
         }
-
         next-semi < 0 -> *
         pos = next-semi + 1
     } ()
@@ -194,6 +195,7 @@ parse-header = (cookie-header str) (names [16]str, values [16]str, count i64) {
     cookie-header.len == 0 -> return
     pos = 0
     {
+
         ; 跳過空格
         {
             pos = pos + 1
@@ -261,6 +263,7 @@ build-header = (names [16]str, values [16]str, count i64) (out str) {
 ; path str: 路徑
 ; max-age i64: 最大存活秒數
 jar.set = (name str, value str, domain str, path str, max-age i64) {
+
     ; 檢查是否已存在同名 Cookie
     i <- [0...count): {
         .names[i] == name && .domains[i] == domain && .paths[i] == path -> {
@@ -288,6 +291,7 @@ jar.get = (name str, domain str, path str) (val ?str) {
     val = nil
     i <- [0...count): {
         .names[i] == name -> {
+
             ; 域名匹配（簡化：精確匹配或子域名匹配）
             domain-match = false
             {
@@ -319,6 +323,7 @@ jar.get = (name str, domain str, path str) (val ?str) {
 jar.delete = (name str, domain str, path str) {
     i <- [0...count): {
         .names[i] == name && .domains[i] == domain && .paths[i] == path -> {
+
             ; 將最後一個移到當前位置
             last = .count - 1
             i != last -> {
@@ -340,6 +345,7 @@ jar.delete = (name str, domain str, path str) {
 jar.build-header = (domain str, path str) (out str) {
     out = ''
     i <- [0...count): {
+
         ; 域名匹配
         domain-match = false
         {
@@ -347,6 +353,7 @@ jar.build-header = (domain str, path str) (out str) {
             .domains[i] == domain -> domain-match = true
             domain.ends-with('.' - .domains[i]) -> domain-match = true
         }
+
         ; 路徑匹配
         path-match = false
         {
@@ -412,6 +419,7 @@ jar.count-of = () (n i64) {
 ; key []byte: 簽名金鑰
 ; 返回 signed str: 簽名後的值（格式: value.hex-hmac）
 sign = (name str, value str, key []byte) (signed str) {
+
     ; 簽名內容 = name=value
     msg-str = name - '=' - value
     msg []byte = msg-str.to-bytes()

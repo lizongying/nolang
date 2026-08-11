@@ -151,6 +151,7 @@ PC1-C [28]byte = [
     0x3b, 0x33, 0x2b, 0x23, 0x1b, 0x13, 0x0b, 0x03,
     0x3c, 0x34, 0x2c, 0x24,
 ]
+
 ; D 部分（28 位元）
 PC1-D [28]byte = [
     0x3f, 0x37, 0x2f, 0x27, 0x1f, 0x17, 0x0f, 0x07,
@@ -244,7 +245,6 @@ des-key-schedule = (key [8]byte) (ks [96]byte) {
     i <- [0..8): {
         k64 = (k64 << 8) | (key[i])
     }
-
     c = 0
     d = 0
     i <- [0..28): {
@@ -255,7 +255,6 @@ des-key-schedule = (key [8]byte) (ks [96]byte) {
         bit2 = (k64 >> pos2) & 1
         d = d | (bit2 << (27 - i))
     }
-
     round <- [0..16): {
         shift = SHIFT-TBL[round]
         cm = (1 << 28) - 1
@@ -282,7 +281,6 @@ des-block = (in []byte, n i64, ks [96]byte, encrypt i64) (out []byte) {
     i <- [0..8): {
         block = (block << 8) | (in[i])
     }
-
     ip = 0
     fout = 0
     ip = permute(block, IP-TBL, 64, 64)
@@ -306,7 +304,6 @@ des-block = (in []byte, n i64, ks [96]byte, encrypt i64) (out []byte) {
         r = l ^ fout
         l = new-l
     }
-
     pre-out = (r << 32) | l
     fp = permute(pre-out, FP-TBL, 64, 64)
 

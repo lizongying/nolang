@@ -89,9 +89,7 @@ static-hashmap-str-tmpl.put = (key str, val v) (is-new bool) {
                 return
             }
         }
-        .occ[idx] == 2 -> {
-            first-tomb < 0 -> first-tomb = idx
-        }
+        .occ[idx] == 2 -> first-tomb < 0 -> first-tomb = idx
         idx = idx + 1
         idx >= .cap -> idx = 0
     } (.occ[idx] != 0)
@@ -99,7 +97,6 @@ static-hashmap-str-tmpl.put = (key str, val v) (is-new bool) {
     ; 未找到相同 key，插入
     insert-idx = idx
     first-tomb >= 0 -> insert-idx = first-tomb
-
     .keys[insert-idx] = key
     .vals[insert-idx] = val
     .occ[insert-idx] = 1
@@ -110,7 +107,6 @@ static-hashmap-str-tmpl.put = (key str, val v) (is-new bool) {
 ; get: 查找 key，返回 ?v（nil=未找到）
 static-hashmap-str-tmpl.get = (key str) (result ?v) {
     .size == 0 -> return
-
     idx = .hash(key)
 
     {
@@ -131,8 +127,8 @@ static-hashmap-str-tmpl.contains = (key str) (found bool) {
     val ?v = .get(key)
     val: {
         ok -> found = true
-        err -> {}
-        nil -> {}
+        err ->
+        nil ->
     }
 }
 
@@ -231,23 +227,17 @@ static-hashmap-int-tmpl.put = (key k, val v) (is-new bool) {
     first-tomb = -1
 
     {
-        .occ[idx] == 1 -> {
-            .keys[idx] == key -> {
-                .vals[idx] = val
-                is-new = false
-                return
-            }
+        .occ[idx] == 1 -> .keys[idx] == key -> {
+            .vals[idx] = val
+            is-new = false
+            return
         }
-        .occ[idx] == 2 -> {
-            first-tomb < 0 -> first-tomb = idx
-        }
+        .occ[idx] == 2 -> first-tomb < 0 -> first-tomb = idx
         idx = idx + 1
         idx >= .cap -> idx = 0
     } (.occ[idx] != 0)
-
     insert-idx = idx
     first-tomb >= 0 -> insert-idx = first-tomb
-
     .keys[insert-idx] = key
     .vals[insert-idx] = val
     .occ[insert-idx] = 1
@@ -258,15 +248,12 @@ static-hashmap-int-tmpl.put = (key k, val v) (is-new bool) {
 ; get: 查找 key，返回 ?v（nil=未找到）
 static-hashmap-int-tmpl.get = (key k) (result ?v) {
     .size == 0 -> return
-
     idx = .hash(key)
 
     {
-        .occ[idx] == 1 -> {
-            .keys[idx] == key -> {
-                result = .vals[idx]
-                return
-            }
+        .occ[idx] == 1 -> .keys[idx] == key -> {
+            result = .vals[idx]
+            return
         }
         idx = idx + 1
         idx >= .cap -> idx = 0
@@ -278,8 +265,8 @@ static-hashmap-int-tmpl.contains = (key k) (found bool) {
     val ?v = .get(key)
     val: {
         ok -> found = true
-        err -> {}
-        nil -> {}
+        err ->
+        nil ->
     }
 }
 
@@ -289,13 +276,11 @@ static-hashmap-int-tmpl.remove = (key k) (removed bool) {
     idx = .hash(key)
 
     {
-        .occ[idx] == 1 -> {
-            .keys[idx] == key -> {
-                .occ[idx] = 2
-                .size = .size - 1
-                removed = true
-                return
-            }
+        .occ[idx] == 1 -> .keys[idx] == key -> {
+            .occ[idx] = 2
+            .size = .size - 1
+            removed = true
+            return
         }
         idx = idx + 1
         idx >= .cap -> idx = 0
@@ -381,7 +366,6 @@ static-hashmap-bool-tmpl.put = (key bool, val v) (is-new bool) {
         is-new = false
         return
     }
-
     .keys[idx] = key
     .vals[idx] = val
     .occ[idx] = 1
@@ -392,7 +376,6 @@ static-hashmap-bool-tmpl.put = (key bool, val v) (is-new bool) {
 ; get: 查找 key，返回 ?v（nil=未找到）
 static-hashmap-bool-tmpl.get = (key bool) (result ?v) {
     .size == 0 -> return
-
     idx = .hash(key)
 
     .occ[idx] == 1 -> {
@@ -406,8 +389,8 @@ static-hashmap-bool-tmpl.contains = (key bool) (found bool) {
     val ?v = .get(key)
     val: {
         ok -> found = true
-        err -> {}
-        nil -> {}
+        err ->
+        nil ->
     }
 }
 

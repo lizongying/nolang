@@ -116,6 +116,7 @@ path.join = (b str) {
 ; path.base: 取出路徑的最後一個元素（檔名）
 ; 返回檔名字串
 path.base = () (out str) {
+
     ; 找最右邊的 '/'
     last-sep = -1
     i <- [0...p.len): {
@@ -133,6 +134,7 @@ path.base = () (out str) {
 ; path.dir: 取出路徑的目錄部分
 ; 原地修改 .p
 path.dir = () {
+
     ; 找最右邊的 '/'
     last-sep = -1
     i <- [0...p.len): {
@@ -141,6 +143,7 @@ path.dir = () {
     }
     {
         last-sep < 0 -> {
+
             ; 無 '/'，變為 '.'
             .p[0] = DOT
             .p.len = 1
@@ -149,6 +152,7 @@ path.dir = () {
         -> {
             out-n = last-sep
             out-n == 0 -> {
+
                 ; 根目錄 '/'
                 .p[0] = SEP
                 .p.len = 1
@@ -169,15 +173,21 @@ path.ext = () (out str) {
     last-dot = -1
     i <- [0...p.len): {
         c = .p[i]
-        c == SEP -> last-sep = i
-        c == DOT -> last-dot = i
+        {
+            c == SEP -> last-sep = i
+            c == DOT -> last-dot = i
+        }
     }
 
     ; '.' 必須在 '/' 之後
-    last-dot <= last-sep -> return
+    {
+        last-dot <= last-sep -> return
+        last-dot == .p.len - 1 -> {
 
-    ; 副檔名不能是路徑的最後一個字元（排除 '.' 和 '..'）
-    last-dot == .p.len - 1 -> return
+            ; 副檔名不能是路徑的最後一個字元（排除 '.' 和 '..'）
+            return
+        }
+    }
     start = last-dot
     out-n = .p.len - start
     out = with-cap(.p.len)
@@ -212,10 +222,12 @@ path.clean = () {
         c = .p[i]
         {
             c == SEP -> {
+
                 ; 處理上一段
                 {
                     dot-count == 1 ->
                     dot-count == 2 -> {
+
                         ; 回退 '..'
                         ; 找 .p 中前一個 '/'
                         j = out-n - 1
@@ -244,6 +256,7 @@ path.clean = () {
             }
             c == DOT -> dot-count = dot-count + 1
             -> {
+
                 ; 寫入之前積累的 '.' 字元
                 j <- [0..dot-count): {
                     .p[out-n] = DOT
@@ -277,7 +290,6 @@ path.clean = () {
         prev = .p[out-n - 1]
         prev == SEP -> out-n = out-n - 1
     }
-
     .p.len = out-n
 }
 
@@ -290,6 +302,7 @@ path.clean = () {
 ; 例：path{ p: '/a/b/c.txt' }.split() → .p='/a/b', f='c.txt'
 ; （結構體字面量必須多行，此處為簡寫示意）
 path.split = () (f str) {
+
     ; 找最右邊的 '/'
     last-sep = -1
     i <- [0...p.len): {
@@ -308,12 +321,14 @@ path.split = () (f str) {
     ; 原地修改 .p 為目錄部分
     {
         last-sep < 0 -> {
+
             ; 無 '/'，.p 變為 '.'
             .p[0] = DOT
             .p.len = 1
             return
         }
         last-sep == 0 -> {
+
             ; 根目錄 '/'
             .p[0] = SEP
             .p.len = 1

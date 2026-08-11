@@ -23,7 +23,6 @@ f-w: {
         print('ok: open write')
     }
 }
-
 f-e = fs.open(tmp,  {
     mode: file-mode.write
     perm: file-perm.perm-644
@@ -36,7 +35,6 @@ f-e: {
     nil -> print('ok: excl blocks existing file')
     -> print('fail: excl did not block')
 }
-
 f-r = fs.open(tmp,  {
     mode: file-mode.read
     perm: file-perm.perm-644
@@ -57,5 +55,4 @@ f-r: {
         }
     }
 }
-
 fs.remove(tmp)

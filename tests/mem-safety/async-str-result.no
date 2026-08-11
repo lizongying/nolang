@@ -33,6 +33,5 @@ consumer = () {
     print(v[1])
     print(v[2])
 }
-
 consumer()
 print('done')

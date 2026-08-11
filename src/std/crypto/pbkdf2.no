@@ -21,6 +21,7 @@
 ; key-len i64: 期望金鑰長度（位元組）
 ; 返回 out []byte: 推導出的金鑰
 pbkdf2-hmac-sha256 = (password []byte, salt []byte, iterations i64, key-len i64) (out []byte) {
+
     ; HMAC-SHA256 輸出為 32 位元組
     h-len = 32
 
@@ -31,6 +32,7 @@ pbkdf2-hmac-sha256 = (password []byte, salt []byte, iterations i64, key-len i64)
     block-idx = 1
     out-pos = 0
     {
+
         ; 構建 U1 的輸入: salt || INT_32_BE(block_idx)
         salt-len = salt.len
         u-input []byte
@@ -56,8 +58,10 @@ pbkdf2-hmac-sha256 = (password []byte, salt []byte, iterations i64, key-len i64)
 
         ; U2..Uc
         iter <- [1..iterations): {
+
             ; U_{iter+1} = HMAC(password, U_iter)
             u = hmac.hmac-sha256(password, u)
+
             ; T = T XOR U
             i <- [0..32): {
                 t[i] = t[i] ^ u[i]
@@ -70,7 +74,6 @@ pbkdf2-hmac-sha256 = (password []byte, salt []byte, iterations i64, key-len i64)
         i <- [0..copy-len): {
             out[out-pos + i] = t[i]
         }
-
         out-pos = out-pos + copy-len
         block-idx = block-idx + 1
     } (block-idx <= blocks)
@@ -112,20 +115,17 @@ pbkdf2-hmac-sha512 = (password []byte, salt []byte, iterations i64, key-len i64)
         i <- [0..64): {
             t[i] = u[i]
         }
-
         iter <- [1..iterations): {
             u = hmac.hmac-sha512(password, u)
             i <- [0..64): {
                 t[i] = t[i] ^ u[i]
             }
         }
-
         copy-len = h-len
         out-pos + copy-len > key-len -> copy-len = key-len - out-pos
         i <- [0..copy-len): {
             out[out-pos + i] = t[i]
         }
-
         out-pos = out-pos + copy-len
         block-idx = block-idx + 1
     } (block-idx <= blocks)
@@ -167,20 +167,17 @@ pbkdf2-hmac-sha1 = (password []byte, salt []byte, iterations i64, key-len i64) (
         i <- [0..20): {
             t[i] = u[i]
         }
-
         iter <- [1..iterations): {
             u = hmac.hmac-sha1(password, u)
             i <- [0..20): {
                 t[i] = t[i] ^ u[i]
             }
         }
-
         copy-len = h-len
         out-pos + copy-len > key-len -> copy-len = key-len - out-pos
         i <- [0..copy-len): {
             out[out-pos + i] = t[i]
         }
-
         out-pos = out-pos + copy-len
         block-idx = block-idx + 1
     } (block-idx <= blocks)

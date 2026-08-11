@@ -4,7 +4,7 @@ user {
     age i64
 }
 
-u = user{
+u = user {
     name: 'abc'
     age: 20
 }

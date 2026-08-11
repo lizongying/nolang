@@ -56,8 +56,10 @@ pool {
 pool.init = (host str, port i64, max-size i64) {
     .host = host
     .port = port
-    max-size > POOL-MAX-CONNS -> max-size = POOL-MAX-CONNS
-    max-size <= 0 -> max-size = 1
+    {
+        max-size > POOL-MAX-CONNS -> max-size = POOL-MAX-CONNS
+        max-size <= 0 -> max-size = 1
+    }
     .max-size = max-size
     .count = 0
     i <- [0..POOL-MAX-CONNS): {
@@ -81,7 +83,7 @@ pool.get = () (c ?net.conn) {
 
     ; 沒有空閒連接，嘗試新建
     .count < .max-size -> {
-        cn = net.conn{}
+        cn = net.conn {}
         ok = false
         ok = cn.dial(.host, .port)
         ok -> {
@@ -96,6 +98,7 @@ pool.get = () (c ?net.conn) {
 ; put: 歸還連接到池中（不關閉）
 ; c net.conn: 要歸還的連接
 pool.put = (c net.conn) {
+
     ; 尋找該連接在池中的位置
     i <- [0...count): {
         .conns[i].fd == c.fd -> {

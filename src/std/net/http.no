@@ -93,6 +93,7 @@ request.init = (method str, url str, body str) {
     .body = body
     .header-count = 0
     i <- [0..HTTP-MAX-REQ-HEADERS): {
+
         ; 用空格字串初始化 headers[i]，使 data buffer 非 null
         .headers[i] = ' '
         .headers[i].len = 0
@@ -129,7 +130,6 @@ response.parse-headers = () {
         .header-values[i] = ' '
         .header-values[i].len = 0
     }
-
     hs = .headers
     n = hs.len
     n == 0 -> return
@@ -140,15 +140,18 @@ response.parse-headers = () {
     pos = 0
     {
         pos >= n -> *
+
         ; 找下一個 CRLF
         next-crlf = hs.index-from(crlf, pos)
         line-end = next-crlf
         line-end < 0 -> line-end = n
+
         ; 在 [pos, line-end) 中找 ': '
         colon-pos = hs.index-from(': ', pos)
         colon-pos >= 0 && colon-pos < line-end -> {
             cnt = .header-count
             cnt < HTTP-MAX-RESP-HEADERS -> {
+
                 ; 用 slice 複製 name/value（建立獨立緩衝區，避免逐位元組寫入溢出）
                 name-str = hs.slice(pos, colon-pos)
                 .header-names[cnt] = name-str
@@ -169,22 +172,26 @@ response.get-header = (name str) (val ?str) {
     val = nil
     cnt = .header-count
     i <- [0..cnt): {
+
         ; 直接存取 .header-names[i] 比較（避免 local str 從陣列元素賦值的 codegen 限制）
         matched = 1
         .header-names[i].len != name.len -> matched = 0
-        matched == 1 -> {
-            j <- [0..name.len): {
-                .header-names[i][j] != name[j] -> {
-                    matched = 0
-                    break
+        {
+            matched == 1 -> {
+                j <- [0..name.len): {
+                    .header-names[i][j] != name[j] -> {
+                        matched = 0
+                        break
+                    }
                 }
             }
-        }
-        matched == 1 -> {
-            ; 用 slice 複製值到 val（slice 是 CallExpression，正確載入 str-long value）
-            vlen = .header-values[i].len
-            val = .header-values[i].slice(0, vlen)
-            return
+            matched == 1 -> {
+
+                ; 用 slice 複製值到 val（slice 是 CallExpression，正確載入 str-long value）
+                vlen = .header-values[i].len
+                val = .header-values[i].slice(0, vlen)
+                return
+            }
         }
     }
 }
@@ -269,7 +276,6 @@ do = (method str, url str, body str) (resp ?response) {
         port = p
         host = host-only
     }
-
     host.len == 0 -> return
 
     ; ── 建立連接 ──
@@ -314,8 +320,7 @@ do = (method str, url str, body str) (resp ?response) {
         use-tls -> {
             w = tls-c.send(req)
             w: {
-                ok ->
-                -> {
+                ok -> -> {
                     tls-c.close()
                     return
                 }
@@ -329,17 +334,17 @@ do = (method str, url str, body str) (resp ?response) {
             }
         }
     }
+
     ; ── 接收回應 ──
     ; net-recv 從 offset 0 覆寫，不更新 len；用 buf 暫存再複製到 raw
     {
         {
-            use-tls -> {
-                n = tls-c.recv(buf, HTTP-BUF-SIZE)
-            }
+            use-tls -> n = tls-c.recv(buf, HTTP-BUF-SIZE)
             -> n = net.net-recv(fd, buf, HTTP-BUF-SIZE)
         }
         n <= 0 -> *
         total + n > HTTP-MAX-RESPONSE -> *
+
         ; 將接收的位元組複製到 raw
         i <- [0..n): {
             raw[total + i] = buf[i]
@@ -350,7 +355,6 @@ do = (method str, url str, body str) (resp ?response) {
         use-tls -> tls-c.close()
         -> fs.close(fd)
     }
-
     total == 0 -> return
 
     ; 取得實際接收的資料（raw.len 仍為 HTTP-MAX-RESPONSE，用 slice 擷取）
@@ -388,9 +392,7 @@ do = (method str, url str, body str) (resp ?response) {
     code = 0
     i <- [0..code-str.len): {
         c = code-str[i]
-        c < 48 || c > 57 -> {
-            return
-        }
+        c < 48 || c > 57 -> return
         code = code * 10 + c - 48
     }
     r.status-code = code
@@ -458,7 +460,6 @@ do-req = (req request) (resp ?response) {
             path = rest.slice(slash-pos, rest.len)
         }
     }
-
     colon-pos = host.index(':')
     colon-pos >= 0 -> {
         host-only = host.slice(0, colon-pos)
@@ -472,7 +473,6 @@ do-req = (req request) (resp ?response) {
         port = p
         host = host-only
     }
-
     host.len == 0 -> return
 
     ; ── 建立連接 ──
@@ -507,7 +507,6 @@ do-req = (req request) (resp ?response) {
         req-str = req-str - req.headers[hi]
         req-str = req-str - crlf
     }
-
     body.len > 0 -> {
         body-len i64 = body.len
         len-str = body-len.to-str()
@@ -523,8 +522,7 @@ do-req = (req request) (resp ?response) {
         use-tls -> {
             w = tls-c.send(req-str)
             w: {
-                ok ->
-                -> {
+                ok -> -> {
                     tls-c.close()
                     return
                 }
@@ -542,9 +540,7 @@ do-req = (req request) (resp ?response) {
     ; ── 接收回應 ──
     {
         {
-            use-tls -> {
-                n = tls-c.recv(buf, HTTP-BUF-SIZE)
-            }
+            use-tls -> n = tls-c.recv(buf, HTTP-BUF-SIZE)
             -> n = net.net-recv(fd, buf, HTTP-BUF-SIZE)
         }
         n <= 0 -> *
@@ -558,7 +554,6 @@ do-req = (req request) (resp ?response) {
         use-tls -> tls-c.close()
         -> fs.close(fd)
     }
-
     total == 0 -> return
     recv-raw = raw.slice(0, total)
 
@@ -579,7 +574,6 @@ do-req = (req request) (resp ?response) {
             r.headers = head.slice(first-line-end + crlf.len, head.len)
         }
     }
-
     sp1 = status-line.index(' ')
     sp1 < 0 -> return
     after-code = status-line.slice(sp1 + 1, status-line.len)
@@ -591,9 +585,7 @@ do-req = (req request) (resp ?response) {
     code = 0
     i <- [0..code-str.len): {
         c = code-str[i]
-        c < 48 || c > 57 -> {
-            return
-        }
+        c < 48 || c > 57 -> return
         code = code * 10 + c - 48
     }
     r.status-code = code
@@ -656,6 +648,7 @@ patch = (url str, body str) (resp ?response) {
 ; password str: 密碼
 ; 返回 ok=true=成功
 set-basic-auth = (req request, user str, password str) (ok bool) {
+
     ; 拼接 user:password 並 Base64 編碼
     raw = user - ':' - password
     raw-bytes []byte = raw.to-bytes()

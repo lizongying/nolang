@@ -1,6 +1,7 @@
 ; test-number-nan-inf.no — 測試 float.is-nan 和 float.is-inf
 
 test-nan-inf = () {
+
     ; 正常數值
     a = 1.0
     yes = 0
@@ -81,5 +82,4 @@ test-nan-inf = () {
     ; expect: 1
     ; expect: 0 (not printed)
 }
-
 test-nan-inf()

@@ -134,7 +134,7 @@ client.close = () {
 ; 返回 c ?client: ok=客戶端, nil=失敗
 client-create = (host str, port i64) (c ?client) {
     c = nil
-    cl = client{}
+    cl = client {}
     ok = false
     ok = cl.connect(host, port)
     ok -> c = cl

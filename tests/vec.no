@@ -1,5 +1,6 @@
 ; cd src && go run ./cmd/cli/. build ../tests/vec.no
 a = [1]
+
 ; compilation error: array 'a' has no method 'len', use 'a.len' instead
 ; print(a.len())
 ; print(a.len)
@@ -14,6 +15,7 @@ a = [1]
 ; []byte (and all []T) types reject direct .len = assignment.
 ; Use .truncate(n) instead (sets len = max(0, min(len, n))).
 b []byte = with-len(4)
+
 ; compilation error: cannot modify read-only field 'len' of slice 'b'
 ; b.len = 2
 ; correct: use truncate instead

@@ -31,10 +31,9 @@
 
 reassign-str = () (out str) {
     s = 'old value'
-    s = 'new value'   ; "old value" 的 buffer 洩漏
-    s = 'another'     ; "new value" 的 buffer 洩漏
+    s = 'new value'; "old value" 的 buffer 洩漏
+    s = 'another'; "new value" 的 buffer 洩漏
     out = s
 }
-
 r = reassign-str()
 print(r)

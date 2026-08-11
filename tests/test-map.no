@@ -8,11 +8,9 @@ test-map-str-i64 = () {
     v: {
         ok -> print(); expect: 0
     }
-
     v = m.get('c')
     v: {
         ok -> print(); expect: 2
     }
 }
-
 test-map-str-i64()

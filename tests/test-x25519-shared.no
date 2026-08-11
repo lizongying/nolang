@@ -7,12 +7,16 @@ hex-to-bytes = (hex-str str) (out [32]byte) {
         lo = hex-str[i * 2 + 1]
         hi-v = 0
         lo-v = 0
-        hi >= 48 && hi <= 57 -> hi-v = hi - 48
-        hi >= 97 && hi <= 102 -> hi-v = hi - 87
-        hi >= 65 && hi <= 70 -> hi-v = hi - 55
-        lo >= 48 && lo <= 57 -> lo-v = lo - 48
-        lo >= 97 && lo <= 102 -> lo-v = lo - 87
-        lo >= 65 && lo <= 70 -> lo-v = lo - 55
+        {
+            hi >= 48 && hi <= 57 -> hi-v = hi - 48
+            hi >= 97 && hi <= 102 -> hi-v = hi - 87
+            hi >= 65 && hi <= 70 -> hi-v = hi - 55
+        }
+        {
+            lo >= 48 && lo <= 57 -> lo-v = lo - 48
+            lo >= 97 && lo <= 102 -> lo-v = lo - 87
+            lo >= 65 && lo <= 70 -> lo-v = lo - 55
+        }
         out[i] = (hi-v << 4) | lo-v
     }
 }
@@ -53,27 +57,35 @@ main = () {
     alice-pub-comp = x25519.x25519-scalarmult-base(alice-priv)
     print-bytes('alice-pub:', alice-pub-comp)
     ok1 = bytes-eq(alice-pub-comp, alice-pub)
-    ok1 == true -> print('PASS: Alice scalarmult-base')
-    ok1 == false -> print('FAIL: Alice scalarmult-base')
+    {
+        ok1 == true -> print('PASS: Alice scalarmult-base')
+        ok1 == false -> print('FAIL: Alice scalarmult-base')
+    }
 
     ; 測試 2: Bob 的 scalarmult-base
     bob-pub-comp = x25519.x25519-scalarmult-base(bob-priv)
     print-bytes('bob-pub:', bob-pub-comp)
     ok2 = bytes-eq(bob-pub-comp, bob-pub)
-    ok2 == true -> print('PASS: Bob scalarmult-base')
-    ok2 == false -> print('FAIL: Bob scalarmult-base')
+    {
+        ok2 == true -> print('PASS: Bob scalarmult-base')
+        ok2 == false -> print('FAIL: Bob scalarmult-base')
+    }
 
     ; 測試 3: shared = scalarmult(alice-priv, bob-pub) — 用已知的 bob-pub
     shared-1 = x25519.x25519-scalarmult(alice-priv, bob-pub)
     print-bytes('shared-1:', shared-1)
     ok3 = bytes-eq(shared-1, shared-expected)
-    ok3 == true -> print('PASS: shared secret (alice-priv, bob-pub)')
-    ok3 == false -> print('FAIL: shared secret (alice-priv, bob-pub)')
+    {
+        ok3 == true -> print('PASS: shared secret (alice-priv, bob-pub)')
+        ok3 == false -> print('FAIL: shared secret (alice-priv, bob-pub)')
+    }
 
     ; 測試 4: shared = scalarmult(bob-priv, alice-pub) — 用已知的 alice-pub
     shared-2 = x25519.x25519-scalarmult(bob-priv, alice-pub)
     print-bytes('shared-2:', shared-2)
     ok4 = bytes-eq(shared-2, shared-expected)
-    ok4 == true -> print('PASS: shared secret (bob-priv, alice-pub)')
-    ok4 == false -> print('FAIL: shared secret (bob-priv, alice-pub)')
+    {
+        ok4 == true -> print('PASS: shared secret (bob-priv, alice-pub)')
+        ok4 == false -> print('FAIL: shared secret (bob-priv, alice-pub)')
+    }
 }

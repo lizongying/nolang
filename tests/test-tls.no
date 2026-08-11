@@ -19,11 +19,11 @@ test-tls-put-u16 = () {
 ; test-tls-get-u16: 測試 16-bit 大端序讀取
 test-tls-get-u16 = () {
     buf []byte = with-cap(2)
-    buf[0] = 0xAB
-    buf[1] = 0xCD
+    buf[0] = 0xab
+    buf[1] = 0xcd
     val i64 = 0
     val = tls.get-u16(buf, 0)
-    val != 0xABCD -> {
+    val != 0xabcd -> {
         print('FAIL: expected 0xABCD')
         return
     }
@@ -161,9 +161,9 @@ test-tls-prf = () {
     secret[2] = 3
     secret[3] = 4
     seed []byte = with-cap(3)
-    seed[0] = 0xAA
-    seed[1] = 0xBB
-    seed[2] = 0xCC
+    seed[0] = 0xaa
+    seed[1] = 0xbb
+    seed[2] = 0xcc
     out []byte
     out = tls.prf(secret, 'test label', seed, 32)
 
@@ -204,6 +204,7 @@ test-tls-conn-init = () {
 
 ; test-https-url-detection: 測試 http-do 的 https:// 偵測（編譯時驗證）
 test-https-url-detection = () {
+
     ; 這個測試僅驗證 https:// URL 能被 http-do 接受（不會因 scheme 不匹配而 return）
     ; 實際網路連線需要真實伺服器，這裡只做編譯/vet 驗證
     ; 不實際呼叫，僅驗證型別檢查通過

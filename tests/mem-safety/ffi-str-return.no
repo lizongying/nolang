@@ -1,13 +1,10 @@
-; 測試 FFI extern str 返回值的安全釋放
-; 修復前：C 字串指標被 emitHeapFree free → UB（若指向靜態/外部記憶體）
-; 修復後：malloc+memcpy 複製到獨立緩衝區，安全 free
-
 #{c}
 strchr = (s str, c i64) (r str)
 
 ; 測試 1：strchr 找到字元，返回指向 s 內部的指標
 test-found = () (ok bool) {
     s = 'hello world'
+
     ; 尋找 'o'（ASCII 111），返回指向第一個 'o' 的指標
     r = strchr(s, 111)
     r.len > 0 -> ok = true
@@ -16,6 +13,7 @@ test-found = () (ok bool) {
 ; 測試 2：strchr 找不到字元，返回 NULL
 test-not-found = () (ok bool) {
     s = 'hello'
+
     ; 尋找 'z'（ASCII 122），不存在 → C 返回 NULL
     r = strchr(s, 122)
     r == nil -> ok = true

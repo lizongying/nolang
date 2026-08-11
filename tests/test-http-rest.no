@@ -8,7 +8,7 @@
 ; # std/net/http
 
 ; ── 測試 1: http-request 結構體與 init ──
-req http-request = http-request{}
+req http-request = http-request {}
 req.init('PUT', 'http://example.com/api/item', '{"name":"test"}')
 {
     req.method == 'PUT' -> print('ok: http-request.init method')
@@ -18,11 +18,12 @@ req.init('PUT', 'http://example.com/api/item', '{"name":"test"}')
     req.url == 'http://example.com/api/item' -> print('ok: http-request.init url')
     -> print('fail: http-request.init url')
 }
-req.body == ' -> "name":"test"' {
-    print('ok: http-request.init body')
-} else {
-    print('fail: http-request.init body')
-}
+req.body == ' -> "name":"test"'
+
+print('ok: http-request.init body')
+
+
+print('fail: http-request.init body')
 {
     req.header-count == 0 -> print('ok: http-request.init header-count')
     -> print('fail: http-request.init header-count')
@@ -45,7 +46,7 @@ ok2 bool = req.add-header('Authorization', 'Bearer token123')
 }
 
 ; ── 測試 3: http.response 擴充欄位 ──
-r http.response = http.response{}
+r http.response = http.response {}
 r.status-code = 200
 r.status-text = 'OK'
 r.headers = 'Content-Type: text/html\r\nContent-Length: 13'
@@ -61,7 +62,7 @@ r.parse-headers()
     r.header-count == 2 -> print('ok: parse-headers count=2')
     -> {
         print('fail: parse-headers count')
-            print(r.header-count)
+        print(r.header-count)
     }
 }
 
@@ -70,21 +71,20 @@ ct = r.get-header('Content-Type')
 ct: {
     nil -> print('fail: get-header Content-Type not found')
     -> {
-                {
+        {
             it == 'text/html' -> print('ok: get-header Content-Type')
             -> {
                 print('fail: get-header Content-Type value')
-                            print(it)
+                print(it)
             }
         }
     }
 }
-
 cl = r.get-header('Content-Length')
 cl: {
     nil -> print('fail: get-header Content-Length')
     -> {
-                {
+        {
             it == '13' -> print('ok: get-header Content-Length')
             -> print('fail: get-header Content-Length')
         }
@@ -123,7 +123,7 @@ resp3: {
 }
 
 ; ── 測試 9: http-do-req（自訂標頭）
-req2 http-request = http-request{}
+req2 http-request = http-request {}
 req2.init('POST', 'http://example.com/api/auth', '{"user":"admin"}')
 req2.add-header('Content-Type', 'application/json')
 req2.add-header('X-Request-Id', 'abc123')
@@ -132,5 +132,4 @@ resp4: {
     nil -> print('skip: http-do-req (no network)')
     -> print('ok: http-do-req connected')
 }
-
 print('ok: all tests done')

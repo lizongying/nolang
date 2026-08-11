@@ -11,6 +11,5 @@ stress = () {
         s.len == 5 -> print('ok ', i)
     }
 }
-
 stress()
 print('done')

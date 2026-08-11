@@ -16,14 +16,19 @@ MyType {
 
 make-struct-vec = () {
     v []MyType
-    m1 = MyType{ name: 'hello', items: [1, 2, 3] }
+    m1 = MyType {
+        name: 'hello'
+        items: [1, 2, 3]
+    }
     v.push(m1)
-    m2 = MyType{ name: 'world', items: [4, 5, 6] }
+    m2 = MyType {
+        name: 'world'
+        items: [4, 5, 6]
+    }
     v.push(m2)
     print(v.len)
     ; v 離開作用域時：
     ;   深層 free → 遍歷 2 個 MyType 元素，各遞迴釋放 name.data 和 items.data，再 free v.data ✓
 }
-
 make-struct-vec()
 print('done')

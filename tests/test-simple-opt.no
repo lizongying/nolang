@@ -2,5 +2,4 @@ test1 = () {
     n = 42
     print('ok')
 }
-
 test1()

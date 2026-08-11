@@ -32,27 +32,25 @@ get-view = () (out []i64) {
     view = local[1..3]
     out = view
 }
-
 v = get-view()
-print(v[0])   ; 預期 200
-print(v[1])   ; 預期 300
+print(v[0]); 預期 200
+print(v[1]); 預期 300
 
 ; 測試 2：v []i64 = view（view 是切片視圖，目標是顯式 []T 型別）
 test-explicit-type = () {
     local []i64 = [10, 20, 30, 40, 50]
     view = local[1..4]
-    v []i64 = view   ; 顯式 []T 型別，應 clone
-    print(v[0])      ; 預期 20
-    print(v[1])      ; 預期 30
-    print(v[2])      ; 預期 40
+    v []i64 = view; 顯式 []T 型別，應 clone
+    print(v[0]); 預期 20
+    print(v[1]); 預期 30
+    print(v[2]); 預期 40
 }
-
 test-explicit-type()
 
 ; 測試 3：多次調用確認不會 double-free
 v2 = get-view()
-print(v2[0])   ; 預期 200
-print(v2[1])   ; 預期 300
+print(v2[0]); 預期 200
+print(v2[1]); 預期 300
 
 ; 測試 4：view 來自固定陣列（堆分配的 vec）
 get-view2 = () (out []i64) {
@@ -60,19 +58,18 @@ get-view2 = () (out []i64) {
     view = arr[0..2]
     out = view
 }
-
 v3 = get-view2()
-print(v3[0])   ; 預期 1
-print(v3[1])   ; 預期 2
+print(v3[0]); 預期 1
+print(v3[1]); 預期 2
 
 ; 測試 5：view = arr[1..3] 後重新賦值 arr — view 應保持獨立（總是 clone）
 ; 對應原「slice-view + 原數組 move 懸空」問題，新設計下已自動解決
 test-reassign-after-view = () {
     arr = [10, 20, 30, 40, 50]
-    view = arr[1..3]    ; view 總是 clone，獨立擁有 [20, 30]
-    arr = [99, 88, 77]  ; arr 重新賦值，舊 data 被 free
-    print(view[0])      ; 預期 20（view 不受影響）
-    print(view[1])      ; 預期 30
+    view = arr[1..3]; view 總是 clone，獨立擁有 [20, 30]
+    arr = [99, 88, 77]; arr 重新賦值，舊 data 被 free
+    print(view[0]); 預期 20（view 不受影響）
+    print(view[1]); 預期 30
 }
 test-reassign-after-view()
 

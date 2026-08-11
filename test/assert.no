@@ -14,82 +14,98 @@
 
 ; eq: a == b
 eq = (a t, b t, msg str) (ok bool) {
-    a != b -> {
-        ok = false
-        print('FAIL: eq')
-        print(msg)
+    {
+        a != b -> {
+            ok = false
+            print('FAIL: eq')
+            print(msg)
+        }
+        -> ok = true
     }
-    -> ok = true
 }
 
 ; ne: a != b
 ne = (a t, b t, msg str) (ok bool) {
-    a == b -> {
-        ok = false
-        print('FAIL: ne')
-        print(msg)
+    {
+        a == b -> {
+            ok = false
+            print('FAIL: ne')
+            print(msg)
+        }
+        -> ok = true
     }
-    -> ok = true
 }
 
 ; true: val == true
 true = (val bool, msg str) (ok bool) {
-    val == false -> {
-        ok = false
-        print('FAIL: true')
-        print(msg)
+    {
+        val == false -> {
+            ok = false
+            print('FAIL: true')
+            print(msg)
+        }
+        -> ok = true
     }
-    -> ok = true
 }
 
 ; false: val == false
 false = (val bool, msg str) (ok bool) {
-    val == true -> {
-        ok = false
-        print('FAIL: false')
-        print(msg)
+    {
+        val == true -> {
+            ok = false
+            print('FAIL: false')
+            print(msg)
+        }
+        -> ok = true
     }
-    -> ok = true
 }
 
 ; gt: a > b
 gt = (a t, b t, msg str) (ok bool) {
-    a <= b -> {
-        ok = false
-        print('FAIL: gt')
-        print(msg)
+    {
+        a <= b -> {
+            ok = false
+            print('FAIL: gt')
+            print(msg)
+        }
+        -> ok = true
     }
-    -> ok = true
 }
 
 ; ge: a >= b
 ge = (a t, b t, msg str) (ok bool) {
-    a < b -> {
-        ok = false
-        print('FAIL: ge')
-        print(msg)
+    {
+        a < b -> {
+            ok = false
+            print('FAIL: ge')
+            print(msg)
+        }
+        -> ok = true
     }
-    -> ok = true
 }
 
 ; lt: a < b
 lt = (a t, b t, msg str) (ok bool) {
-    a >= b -> {
-        ok = false
-        print('FAIL: lt')
-        print(msg)
+    {
+        a >= b -> {
+            ok = false
+            print('FAIL: lt')
+            print(msg)
+        }
+        -> ok = true
     }
-    -> ok = true
 }
 
 ; le: a <= b
 le = (a t, b t, msg str) (ok bool) {
-    a > b -> {
-        ok = false
-        print('FAIL: le')
-        print(msg)
+    {
+        a > b -> {
+            ok = false
+            print('FAIL: le')
+            print(msg)
+        }
+        -> ok = true
     }
-    -> ok = true
 }
 
 ; ═══════════════════════════════════════════════
@@ -130,42 +146,50 @@ f64-ne = (a f64, b f64, eps f64, msg str) (ok bool) {
 
 ; str-eq: 字串相等（比較前 n 個字節）
 str-eq = (a str, b str, n i64, msg str) (ok bool) {
-    a.eq(b, n) == false -> {
-        ok = false
-        print('FAIL: str-eq')
-        print(msg)
+    {
+        a.eq(b, n) == false -> {
+            ok = false
+            print('FAIL: str-eq')
+            print(msg)
+        }
+        -> ok = true
     }
-    -> ok = true
 }
 
 ; str-ne: 字串不相等
 str-ne = (a str, b str, n i64, msg str) (ok bool) {
-    a.eq(b, n) == true -> {
-        ok = false
-        print('FAIL: str-ne')
-        print(msg)
+    {
+        a.eq(b, n) == true -> {
+            ok = false
+            print('FAIL: str-ne')
+            print(msg)
+        }
+        -> ok = true
     }
-    -> ok = true
 }
 
 ; str-empty: 字串為空（n == 0）
 str-empty = (s str, n i64, msg str) (ok bool) {
-    n != 0 -> {
-        ok = false
-        print('FAIL: str-empty')
-        print(msg)
+    {
+        n != 0 -> {
+            ok = false
+            print('FAIL: str-empty')
+            print(msg)
+        }
+        -> ok = true
     }
-    -> ok = true
 }
 
 ; str-not-empty: 字串非空
 str-not-empty = (s str, n i64, msg str) (ok bool) {
-    n == 0 -> {
-        ok = false
-        print('FAIL: str-not-empty')
-        print(msg)
+    {
+        n == 0 -> {
+            ok = false
+            print('FAIL: str-not-empty')
+            print(msg)
+        }
+        -> ok = true
     }
-    -> ok = true
 }
 
 ; ═══════════════════════════════════════════════
@@ -174,20 +198,24 @@ str-not-empty = (s str, n i64, msg str) (ok bool) {
 
 ; nil: 指標為空
 is-nil = (p i64, msg str) (ok bool) {
-    p != 0 -> {
-        ok = false
-        print('FAIL: is-nil')
-        print(msg)
+    {
+        p != 0 -> {
+            ok = false
+            print('FAIL: is-nil')
+            print(msg)
+        }
+        -> ok = true
     }
-    -> ok = true
 }
 
 ; not-nil: 指標非空
 not-nil = (p i64, msg str) (ok bool) {
-    p == 0 -> {
-        ok = false
-        print('FAIL: not-nil')
-        print(msg)
+    {
+        p == 0 -> {
+            ok = false
+            print('FAIL: not-nil')
+            print(msg)
+        }
+        -> ok = true
     }
-    -> ok = true
 }

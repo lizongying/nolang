@@ -95,7 +95,7 @@ varint-encode = (val i64) (buf []byte, n i64) {
             n = 4
         }
         -> {
-            buf[0] = ((val >> 56) | 0xC0) & 255
+            buf[0] = ((val >> 56) | 0xc0) & 255
             buf[1] = (val >> 48) & 255
             buf[2] = (val >> 40) & 255
             buf[3] = (val >> 32) & 255
@@ -221,90 +221,97 @@ parse-frames = (buf []byte, pos i64, end i64) (frames [32]frame, count i64) {
     } (pos < end)
 
     ; CONNECTION_CLOSE (0x1c)
-    ft == QUIC-FRAME-CONNECTION-CLOSE -> {
-        ; error_code + frame_type + reason_length + reason
-        ec-val = 0
-        ec-np = 0
-        ec-val, ec-np = varint-decode(buf, pos)
-        ec-np < 0 -> {
-            count = -1
-            return
-        }
-        pos = ec-np
-        ft2-val = 0
-        ft2-np = 0
-        ft2-val, ft2-np = varint-decode(buf, pos)
-        ft2-np < 0 -> {
-            count = -1
-            return
-        }
-        pos = ft2-np
-        rl-val = 0
-        rl-np = 0
-        rl-val, rl-np = varint-decode(buf, pos)
-        rl-np < 0 -> {
-            count = -1
-            return
-        }
-        pos = rl-np + rl-val
-        frames[count].length = 0
-        count = count + 1
-    }
+    {
+        ft == QUIC-FRAME-CONNECTION-CLOSE -> {
 
-    ; CONNECTION_CLOSE (0x1d) — application
-    ft == QUIC-FRAME-CONNECTION-CLOSE-APP -> {
-        ec-val = 0
-        ec-np = 0
-        ec-val, ec-np = varint-decode(buf, pos)
-        ec-np < 0 -> {
-            count = -1
-            return
+            ; error_code + frame_type + reason_length + reason
+            ec-val = 0
+            ec-np = 0
+            ec-val, ec-np = varint-decode(buf, pos)
+            ec-np < 0 -> {
+                count = -1
+                return
+            }
+            pos = ec-np
+            ft2-val = 0
+            ft2-np = 0
+            ft2-val, ft2-np = varint-decode(buf, pos)
+            ft2-np < 0 -> {
+                count = -1
+                return
+            }
+            pos = ft2-np
+            rl-val = 0
+            rl-np = 0
+            rl-val, rl-np = varint-decode(buf, pos)
+            rl-np < 0 -> {
+                count = -1
+                return
+            }
+            pos = rl-np + rl-val
+            frames[count].length = 0
+            count = count + 1
         }
-        pos = ec-np
-        rl-val = 0
-        rl-np = 0
-        rl-val, rl-np = varint-decode(buf, pos)
-        rl-np < 0 -> {
-            count = -1
-            return
-        }
-        pos = rl-np + rl-val
-        frames[count].length = 0
-        count = count + 1
-    }
+        ft == QUIC-FRAME-CONNECTION-CLOSE-APP -> {
 
-    ; HANDSHAKE_DONE
-    ft == QUIC-FRAME-HANDSHAKE-DONE -> {
-        frames[count].length = 0
-        count = count + 1
-    }
+            ; CONNECTION_CLOSE (0x1d) — application
 
-    ; NEW_TOKEN
-    ft == QUIC-FRAME-NEW-TOKEN -> {
-        tl-val = 0
-        tl-np = 0
-        tl-val, tl-np = varint-decode(buf, pos)
-        tl-np < 0 -> {
-            count = -1
-            return
+            ec-val = 0
+            ec-np = 0
+            ec-val, ec-np = varint-decode(buf, pos)
+            ec-np < 0 -> {
+                count = -1
+                return
+            }
+            pos = ec-np
+            rl-val = 0
+            rl-np = 0
+            rl-val, rl-np = varint-decode(buf, pos)
+            rl-np < 0 -> {
+                count = -1
+                return
+            }
+            pos = rl-np + rl-val
+            frames[count].length = 0
+            count = count + 1
         }
-        pos = tl-np + tl-val
-        frames[count].length = 0
-        count = count + 1
-    }
+        ft == QUIC-FRAME-HANDSHAKE-DONE -> {
 
-    ; MAX_DATA, MAX_STREAMS, etc. — 帶單個 varint
-    ft == QUIC-FRAME-MAX-DATA || ft == QUIC-FRAME-MAX-STREAMS-BIDI || ft == QUIC-FRAME-DATA-BLOCKED || ft == QUIC-FRAME-STREAM-DATA-BLOCKED -> {
-        mv-val = 0
-        mv-np = 0
-        mv-val, mv-np = varint-decode(buf, pos)
-        mv-np < 0 -> {
-            count = -1
-            return
+            ; HANDSHAKE_DONE
+
+            frames[count].length = 0
+            count = count + 1
         }
-        pos = mv-np
-        frames[count].length = 0
-        count = count + 1
+        ft == QUIC-FRAME-NEW-TOKEN -> {
+
+            ; NEW_TOKEN
+
+            tl-val = 0
+            tl-np = 0
+            tl-val, tl-np = varint-decode(buf, pos)
+            tl-np < 0 -> {
+                count = -1
+                return
+            }
+            pos = tl-np + tl-val
+            frames[count].length = 0
+            count = count + 1
+        }
+        ft == QUIC-FRAME-MAX-DATA || ft == QUIC-FRAME-MAX-STREAMS-BIDI || ft == QUIC-FRAME-DATA-BLOCKED || ft == QUIC-FRAME-STREAM-DATA-BLOCKED -> {
+
+            ; MAX_DATA, MAX_STREAMS, etc. — 帶單個 varint
+
+            mv-val = 0
+            mv-np = 0
+            mv-val, mv-np = varint-decode(buf, pos)
+            mv-np < 0 -> {
+                count = -1
+                return
+            }
+            pos = mv-np
+            frames[count].length = 0
+            count = count + 1
+        }
     }
     pos = end
 }
@@ -320,6 +327,7 @@ parse-frames = (buf []byte, pos i64, end i64) (frames [32]frame, count i64) {
 ; 返回 iv [12]byte: AEAD IV
 ; 返回 hp [16]byte: 標頭保護金鑰
 derive-initial-keys = (dst-cid []byte, is-client bool) (key [16]byte, iv [12]byte, hp [16]byte) {
+
     ; 1. Initial Secret = HKDF-Extract(Initial_Salt, dst_cid)
     initial-salt []byte
     i <- [0..20): {
@@ -445,7 +453,6 @@ decode-packet-number = (packet []byte, pn-offset i64, largest-pn i64) (pn i64, p
         pn-len == 3 -> pn-win = 8388608
         -> pn-win = 2147483648
     }
-
     pn-hwin = pn-win / 2
     pn-mask = pn-win - 1
 
@@ -455,7 +462,6 @@ decode-packet-number = (packet []byte, pn-offset i64, largest-pn i64) (pn i64, p
         candidate-pn <= expected-pn - pn-hwin && candidate-pn < (1 << 62) - pn-win -> candidate-pn = candidate-pn + pn-win
         candidate-pn > expected-pn + pn-hwin && candidate-pn >= pn-win -> candidate-pn = candidate-pn - pn-win
     }
-
     pn = candidate-pn
 }
 
@@ -487,6 +493,7 @@ conn {
     hs-buf []byte
     hs-buf-len i64
 }
+
 ; Connection IDs
 
 ; 封包號碼

@@ -16,16 +16,17 @@
 ; key []byte: 金鑰（1-256 位元組）
 ; 返回 out []byte: 輸出資料
 rc4 = (in []byte, key []byte) (out []byte) {
+
     ; KSA: 金鑰排程
     s [256]byte
     i <- [0..256): {
         s[i] = i
     }
-
     key-len = key.len
     j = 0
     i <- [0..256): {
         j = (j + (s[i]) + (key[i % key-len])) % 256
+
         ; Swap s[i] and s[j]
         t = s[i]
         s[i] = s[j]
@@ -39,10 +40,12 @@ rc4 = (in []byte, key []byte) (out []byte) {
     pos <- [0..in.len): {
         i = (i + 1) % 256
         j = (j + (s[i])) % 256
+
         ; Swap s[i] and s[j]
         t = s[i]
         s[i] = s[j]
         s[j] = t
+
         ; 生成密鑰流位元組
         k = s[((s[i]) + (s[j])) % 256]
         out[pos] = (in[pos]) ^ (k & 255)

@@ -67,9 +67,11 @@ hashmap-str-tmpl.str-eq = (a str, b str) (eq bool) {
 
 ; put: 插入或更新 key→value，回傳是否新增
 hashmap-str-tmpl.put = (key str, val v) (is-new bool) {
-    ; 檢查裝載因子，觸發擴容
-    { .size + 1 > .cap * 3 / 4 -> .rehash(.cap * 2) }
 
+    ; 檢查裝載因子，觸發擴容
+    {
+        .size + 1 > .cap * 3 / 4 -> .rehash(.cap * 2)
+    }
     idx = .hash(key)
     first-tomb = -1
 
@@ -83,9 +85,7 @@ hashmap-str-tmpl.put = (key str, val v) (is-new bool) {
                 return
             }
         }
-        .occ[idx] == 2 -> {
-            first-tomb < 0 -> first-tomb = idx
-        }
+        .occ[idx] == 2 -> first-tomb < 0 -> first-tomb = idx
         idx = idx + 1
         idx >= .cap -> idx = 0
     } (.occ[idx] != 0)
@@ -93,7 +93,6 @@ hashmap-str-tmpl.put = (key str, val v) (is-new bool) {
     ; 未找到相同 key，插入
     insert-idx = idx
     first-tomb >= 0 -> insert-idx = first-tomb
-
     .keys[insert-idx] = key
     .vals[insert-idx] = val
     .occ[insert-idx] = 1
@@ -104,7 +103,6 @@ hashmap-str-tmpl.put = (key str, val v) (is-new bool) {
 ; get: 查找 key，返回 ?v（nil=未找到）
 hashmap-str-tmpl.get = (key str) (result ?v) {
     .size == 0 -> return
-
     idx = .hash(key)
 
     {
@@ -126,8 +124,8 @@ hashmap-str-tmpl.contains = (key str) (found bool) {
     val ?v = .get(key)
     val: {
         ok -> found = true
-        err -> {}
-        nil -> {}
+        err ->
+        nil ->
     }
 }
 
@@ -184,6 +182,7 @@ hashmap-str-tmpl.for-each = (k str, v v) {
 
 ; rehash: 擴容並重新雜湊所有 occ==1 條目
 hashmap-str-tmpl.rehash = (new-cap i64) {
+
     ; 保存舊資料
     old-keys = .keys
     old-vals = .vals
@@ -210,7 +209,6 @@ hashmap-str-tmpl.rehash = (new-cap i64) {
                     idx >= .cap -> idx = 0
                 }
             } (.occ[idx] != 0)
-
             .keys[idx] = k
             .vals[idx] = v
             .occ[idx] = 1
@@ -252,30 +250,26 @@ hashmap-int-tmpl.hash = (key k) (idx i64) {
 
 ; put: 插入或更新 key→value，回傳是否新增
 hashmap-int-tmpl.put = (key k, val v) (is-new bool) {
-    ; 檢查裝載因子，觸發擴容
-    { .size + 1 > .cap * 3 / 4 -> .rehash(.cap * 2) }
 
+    ; 檢查裝載因子，觸發擴容
+    {
+        .size + 1 > .cap * 3 / 4 -> .rehash(.cap * 2)
+    }
     idx = .hash(key)
     first-tomb = -1
 
     {
-        .occ[idx] == 1 -> {
-            .keys[idx] == key -> {
-                .vals[idx] = val
-                is-new = false
-                return
-            }
+        .occ[idx] == 1 -> .keys[idx] == key -> {
+            .vals[idx] = val
+            is-new = false
+            return
         }
-        .occ[idx] == 2 -> {
-            first-tomb < 0 -> first-tomb = idx
-        }
+        .occ[idx] == 2 -> first-tomb < 0 -> first-tomb = idx
         idx = idx + 1
         idx >= .cap -> idx = 0
     } (.occ[idx] != 0)
-
     insert-idx = idx
     first-tomb >= 0 -> insert-idx = first-tomb
-
     .keys[insert-idx] = key
     .vals[insert-idx] = val
     .occ[insert-idx] = 1
@@ -286,15 +280,12 @@ hashmap-int-tmpl.put = (key k, val v) (is-new bool) {
 ; get: 查找 key，返回 ?v（nil=未找到）
 hashmap-int-tmpl.get = (key k) (result ?v) {
     .size == 0 -> return
-
     idx = .hash(key)
 
     {
-        .occ[idx] == 1 -> {
-            .keys[idx] == key -> {
-                result = .vals[idx]
-                return
-            }
+        .occ[idx] == 1 -> .keys[idx] == key -> {
+            result = .vals[idx]
+            return
         }
         idx = idx + 1
         idx >= .cap -> idx = 0
@@ -306,8 +297,8 @@ hashmap-int-tmpl.contains = (key k) (found bool) {
     val ?v = .get(key)
     val: {
         ok -> found = true
-        err -> {}
-        nil -> {}
+        err ->
+        nil ->
     }
 }
 
@@ -317,13 +308,11 @@ hashmap-int-tmpl.remove = (key k) (removed bool) {
     idx = .hash(key)
 
     {
-        .occ[idx] == 1 -> {
-            .keys[idx] == key -> {
-                .occ[idx] = 2
-                .size = .size - 1
-                removed = true
-                return
-            }
+        .occ[idx] == 1 -> .keys[idx] == key -> {
+            .occ[idx] = 2
+            .size = .size - 1
+            removed = true
+            return
         }
         idx = idx + 1
         idx >= .cap -> idx = 0
@@ -359,6 +348,7 @@ hashmap-int-tmpl.for-each = (k k, v v) {
 
 ; rehash: 擴容並重新雜湊所有 occ==1 條目
 hashmap-int-tmpl.rehash = (new-cap i64) {
+
     ; 保存舊資料
     old-keys = .keys
     old-vals = .vals
@@ -385,7 +375,6 @@ hashmap-int-tmpl.rehash = (new-cap i64) {
                     idx >= .cap -> idx = 0
                 }
             } (.occ[idx] != 0)
-
             .keys[idx] = k
             .vals[idx] = v
             .occ[idx] = 1
@@ -436,7 +425,6 @@ hashmap-bool-tmpl.put = (key bool, val v) (is-new bool) {
         is-new = false
         return
     }
-
     .keys[idx] = key
     .vals[idx] = val
     .occ[idx] = 1
@@ -447,7 +435,6 @@ hashmap-bool-tmpl.put = (key bool, val v) (is-new bool) {
 ; get: 查找 key，返回 ?v（nil=未找到）
 hashmap-bool-tmpl.get = (key bool) (result ?v) {
     .size == 0 -> return
-
     idx = .hash(key)
 
     .occ[idx] == 1 -> {
@@ -461,8 +448,8 @@ hashmap-bool-tmpl.contains = (key bool) (found bool) {
     val ?v = .get(key)
     val: {
         ok -> found = true
-        err -> {}
-        nil -> {}
+        err ->
+        nil ->
     }
 }
 

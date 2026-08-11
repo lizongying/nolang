@@ -1,4 +1,4 @@
-re = regexp{
+re = regexp {
     pattern: 'a*'
 }
 re.compile()
@@ -7,10 +7,12 @@ i <- [0..re.n): {
     op = re.op[i]
     a1 = re.arg1[i]
     a2 = re.arg2[i]
-    op == 1 -> print(i, ': CHAR', a1)
-    op == 2 -> print(i, ': ANY')
-    op == 3 -> print(i, ': CLASS', a1)
-    op == 7 -> print(i, ': JUMP', a1)
-    op == 8 -> print(i, ': SPLIT', a1, ',', a2)
-    op == 9 -> print(i, ': MATCH')
+    {
+        op == 1 -> print(i, ': CHAR', a1)
+        op == 2 -> print(i, ': ANY')
+        op == 3 -> print(i, ': CLASS', a1)
+        op == 7 -> print(i, ': JUMP', a1)
+        op == 8 -> print(i, ': SPLIT', a1, ',', a2)
+        op == 9 -> print(i, ': MATCH')
+    }
 }

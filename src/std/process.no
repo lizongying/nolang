@@ -131,28 +131,31 @@ process.start = (program str, arg str) (ok bool) {
     ; 建立 stdout 管道
     fds = process-pipe()
     stdout-read = fds >> 32
-    stdout-write = fds & 0xFFFFFFFF
+    stdout-write = fds & 0xffffffff
 
     ; fork
     pid = process-fork()
-    pid == 0 -> {
-        ; 子進程：重定向 stdout 到管道寫端
-        process-dup2(stdout-write, 1)
-        fs.close(stdout-read)
-        fs.close(stdout-write)
+    {
+        pid == 0 -> {
 
-        ; exec
-        process-exec(program, arg)
+            ; 子進程：重定向 stdout 到管道寫端
+            process-dup2(stdout-write, 1)
+            fs.close(stdout-read)
+            fs.close(stdout-write)
 
-        ; exec 失敗，退出
-        os.exit(1)
-    }
+            ; exec
+            process-exec(program, arg)
 
-    pid < 0 -> {
-        ; fork 失敗
-        fs.close(stdout-read)
-        fs.close(stdout-write)
-        return
+            ; exec 失敗，退出
+            os.exit(1)
+        }
+        pid < 0 -> {
+
+            ; fork 失敗
+            fs.close(stdout-read)
+            fs.close(stdout-write)
+            return
+        }
     }
 
     ; 父進程
@@ -182,31 +185,34 @@ process.start-with-stdin = (program str, arg str) (ok bool) {
     ; 建立 stdin 管道
     in-fds = process-pipe()
     in-read = in-fds >> 32
-    in-write = in-fds & 0xFFFFFFFF
+    in-write = in-fds & 0xffffffff
 
     ; 建立 stdout 管道
     out-fds = process-pipe()
     out-read = out-fds >> 32
-    out-write = out-fds & 0xFFFFFFFF
+    out-write = out-fds & 0xffffffff
 
     pid = process-fork()
-    pid == 0 -> {
-        ; 子進程
-        process-dup2(in-read, 0)
-        process-dup2(out-write, 1)
-        fs.close(in-read)
-        fs.close(in-write)
-        fs.close(out-read)
-        fs.close(out-write)
-        process-exec(program, arg)
-        os.exit(1)
-    }
-    pid < 0 -> {
-        fs.close(in-read)
-        fs.close(in-write)
-        fs.close(out-read)
-        fs.close(out-write)
-        return
+    {
+        pid == 0 -> {
+
+            ; 子進程
+            process-dup2(in-read, 0)
+            process-dup2(out-write, 1)
+            fs.close(in-read)
+            fs.close(in-write)
+            fs.close(out-read)
+            fs.close(out-write)
+            process-exec(program, arg)
+            os.exit(1)
+        }
+        pid < 0 -> {
+            fs.close(in-read)
+            fs.close(in-write)
+            fs.close(out-read)
+            fs.close(out-write)
+            return
+        }
     }
 
     ; 父進程
@@ -416,6 +422,7 @@ process-shell = (cmd str) (status i64) {
 ; 底層呼叫 process-run-capture 內建函數（C runtime: src/build/runtime/process.c），
 ; 支援 argv 陣列、環境變數、工作目錄、stdin、超時與 stderr 合併。
 process.cmd = (program str, args []str, dir str, input str, env []str, timeout i64, merge-err i64) (out str, code i64, err str) {
+
     ; 構建 argv = [program] + args
     argv []str = with-len(args.len + 1)
     argv[0] = program
@@ -425,11 +432,9 @@ process.cmd = (program str, args []str, dir str, input str, env []str, timeout i
     out, status = process-run-capture(argv, env, dir, input, timeout, merge-err)
     code = status
     err = ''
-    code == -1 -> {
-        err = 'failed to start or exec process'
-    }
-    code == -2 -> {
-        err = 'process timed out'
+    {
+        code == -1 -> err = 'failed to start or exec process'
+        code == -2 -> err = 'process timed out'
     }
 }
 
@@ -459,7 +464,7 @@ process.exec = (program str, args []str, o cmdopts) (out str, code i64, err str)
 ; process-output: 執行命令並捕獲 stdout 輸出
 ; 返回 content=輸出內容, code=退出碼
 process-output = (program str, arg str) (content str, code i64) {
-    p = process{}
+    p = process {}
     p.start(program, arg)
     content, n = p.read-all()
     p.wait()
@@ -489,22 +494,22 @@ process.list-all = () (procs []proc-info) {
     names = fs.list-dir('/proc')
     i <- [0..names.len): {
         name = names[i]
+
         ; 只處理全數字條目（PID 目錄）
         pid-val ?i64 = name.to-i64()
         pid-val: {
             ok -> {
-                p = proc-info{}
+                p = proc-info {}
                 p.pid = it
+
                 ; 讀取 /proc/<pid>/comm 取得進程名
                 comm-path = '/proc/' - name - '/comm'
                 comm = fs.read-file(comm-path)
-                comm.len > 0 -> {
-                    p.name = comm.trim()
-                }
+                comm.len > 0 -> p.name = comm.trim()
                 procs.push(p)
             }
-            nil -> {}
-            err -> {}
+            nil ->
+            err ->
         }
     }
 }
@@ -523,6 +528,7 @@ process.list-all = () (procs []proc-info) {
 ; name: 進程名稱（部分匹配，大小寫不敏感）
 ; 返回匹配的 PID 列表
 process-find-match = (pname str, target str) (yes bool) {
+
     ; 大小寫不敏感的部分匹配；用獨立函式確保 pname/target 型別為 str
     lower-pname = pname.to-lower()
     lower-target = target.to-lower()
@@ -534,9 +540,7 @@ process.find-by-name = (name str) (pids []i64) {
     i <- [0..all.len): {
         p proc-info = all[i]
         yes = process-find-match(p.name, name)
-        yes -> {
-            pids.push(p.pid)
-        }
+        yes -> pids.push(p.pid)
     }
 }
 
@@ -548,17 +552,23 @@ process.find-by-name = (name str) (pids []i64) {
 ; cmd: 完整命令字串（將透過 sh -c 執行）
 ; 返回 pid > 0=父進程(子PID), -1=錯誤
 process-spawn = (cmd str) (pid i64) {
+
     ; fork
     pid = process-fork()
-    pid == 0 -> {
-        ; 子進程：用 sh -c 執行
-        process-exec-shell(cmd)
-        ; exec 失敗，退出
-        os.exit(127)
-    }
-    pid < 0 -> {
-        ; fork 失敗
-        pid = -1
+    {
+        pid == 0 -> {
+
+            ; 子進程：用 sh -c 執行
+            process-exec-shell(cmd)
+
+            ; exec 失敗，退出
+            os.exit(127)
+        }
+        pid < 0 -> {
+
+            ; fork 失敗
+            pid = -1
+        }
     }
 }
 

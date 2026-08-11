@@ -11,7 +11,6 @@ fib = (n i64) (o i64) {
     } (i <= n)
     o = b
 }
-
 {
     result = fib(40)
     print('{result}')

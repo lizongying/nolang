@@ -730,7 +730,6 @@ x25519-scalarmult = (scalar [32]byte, point [32]byte) (out [32]byte) {
     i <- [0..10): {
         x1[i] = u[i]
     }
-
     x2 []i64 = with-len(10)
     fe-one(x2)
 
@@ -741,7 +740,6 @@ x25519-scalarmult = (scalar [32]byte, point [32]byte) (out [32]byte) {
     i <- [0..10): {
         x3[i] = u[i]
     }
-
     z3 []i64 = with-len(10)
     fe-one(z3)
 
@@ -882,7 +880,6 @@ x25519-scalarmult-bytes = (scalar []byte, point []byte) (out []byte) {
     i <- [0..10): {
         x1[i] = u[i]
     }
-
     x2 []i64 = with-len(10)
     fe-one(x2)
 
@@ -893,7 +890,6 @@ x25519-scalarmult-bytes = (scalar []byte, point []byte) (out []byte) {
     i <- [0..10): {
         x3[i] = u[i]
     }
-
     z3 []i64 = with-len(10)
     fe-one(z3)
 
@@ -948,7 +944,6 @@ x25519-scalarmult-bytes = (scalar []byte, point []byte) (out []byte) {
 
         t = t - 1
     } (t >= 0)
-
     fe-cswap(x2, x3, swap)
     fe-cswap(z2, z3, swap)
 

@@ -192,6 +192,7 @@ tables.dyn-add = (name str, value str) {
     ; 向後移動（從尾部開始避免覆蓋）
     i = .dyn-count
     {
+
         ; 用 slice 複製（CallExpression 正確載入 str-long value）
         prev-name-len = .dyn-names[i - 1].len
         prev-val-len = .dyn-values[i - 1].len
@@ -326,16 +327,19 @@ tables.find-name = (name str) (idx i64) {
 ; 返回 name, value, ok=true=找到
 tables.lookup = (idx i64) (name str, value str, ok bool) {
     ok = false
-    idx <= 0 -> return
-    idx <= HPACK-STATIC-COUNT -> {
-        ; 靜態表（內部從 0 開始）
-        arr-idx = idx - 1
-        n-len = .static-names[arr-idx].len
-        v-len = .static-values[arr-idx].len
-        name = .static-names[arr-idx].slice(0, n-len)
-        v-len > 0 -> value = .static-values[arr-idx].slice(0, v-len)
-        ok = true
-        return
+    {
+        idx <= 0 -> return
+        idx <= HPACK-STATIC-COUNT -> {
+
+            ; 靜態表（內部從 0 開始）
+            arr-idx = idx - 1
+            n-len = .static-names[arr-idx].len
+            v-len = .static-values[arr-idx].len
+            name = .static-names[arr-idx].slice(0, n-len)
+            v-len > 0 -> value = .static-values[arr-idx].slice(0, v-len)
+            ok = true
+            return
+        }
     }
     dyn-idx = idx - HPACK-STATIC-COUNT - 1
     dyn-idx < .dyn-count -> {
@@ -420,6 +424,7 @@ decode-int = (data str, pos i64, prefix-bits i64) (val i64, next-pos i64) {
 ; 返回 out=編碼後字串
 encode-str = (s str) (out str) {
     out = with-cap(s.len + 8)
+
     ; H bit=0, 長度用 7-bit prefix 編碼
     len-out = ' '
     len-out = encode-int(s.len, 7, 0)
@@ -450,13 +455,15 @@ decode-str = (data str, pos i64) (out str, next-pos i64) {
     len = 0
     p = 0
     len, p = decode-int(data, pos, 7)
-    p < 0 -> {
-        next-pos = -1
-        return
-    }
-    p + len > data.len -> {
-        next-pos = -1
-        return
+    {
+        p < 0 -> {
+            next-pos = -1
+            return
+        }
+        p + len > data.len -> {
+            next-pos = -1
+            return
+        }
     }
 
     ; 複製字串內容
@@ -476,21 +483,23 @@ decode-str = (data str, pos i64) (out str, next-pos i64) {
 ;       否則→literal with indexing（新 name）
 ; 返回 out=編碼字串
 tables.encode-header = (name str, value str) (out str) {
+
     ; 1. 完全匹配 → Indexed Header Field（6.1）
     full-idx = 0
     full-idx = .find(name, value)
     full-idx > 0 -> {
+
         ; 格式：1xxxxxxx（高 1 位為 1，7-bit 索引）
         out = encode-int(full-idx, 7, 128)
         return
     }
-
     out = with-cap(name.len + value.len + 8)
 
     ; 2. name 匹配 → Literal with Incremental Indexing（6.2.1），name 用索引
     name-idx = 0
     name-idx = .find-name(name)
     name-idx > 0 -> {
+
         ; 格式：01xxxxxx（高 2 位為 01，6-bit 索引）
         idx-out = ' '
         idx-out = encode-int(name-idx, 6, 64)
@@ -588,6 +597,7 @@ tables.decode-headers = (data str) (names [128]str, values [128]str, count i64, 
                 pos = next
             }
             (b & 192) == 64 -> {
+
                 ; Literal with Incremental Indexing（6.2.1）：01xxxxxx
 
                 name-idx = 0
@@ -629,6 +639,7 @@ tables.decode-headers = (data str) (names [128]str, values [128]str, count i64, 
                 .dyn-add(name, value)
             }
             (b & 240) == 0 -> {
+
                 ; Literal without Indexing（6.2.2）：0000xxxx
 
                 name-idx = 0
@@ -665,6 +676,7 @@ tables.decode-headers = (data str) (names [128]str, values [128]str, count i64, 
                 count = count + 1
             }
             (b & 240) == 16 -> {
+
                 ; Literal Never Indexed（6.2.3）：0001xxxx
 
                 name-idx = 0
@@ -704,6 +716,5 @@ tables.decode-headers = (data str) (names [128]str, values [128]str, count i64, 
         }
         ; 未知表示類型
     } ()
-
     ok = true
 }

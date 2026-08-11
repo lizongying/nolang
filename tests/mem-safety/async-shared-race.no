@@ -34,16 +34,15 @@
 ; ═════════════════════════════════════════════════════════════════
 
 modify-async = (v []i64) (r i64) {
-    v[0] = 999   ; 子線程修改 v 的 data
+    v[0] = 999; 子線程修改 v 的 data
     r = v[0]
 }
 
 race-test = () (out i64) {
     shared []i64 = [1, 2, 3]
-    task = run modify-async(shared)   ; 傳 shared 的 data 指針給子線程
-    shared[0] = 100                    ; 主線程同時修改 → 數據競爭
+    task = run modify-async(shared); 傳 shared 的 data 指針給子線程
+    shared[0] = 100; 主線程同時修改 → 數據競爭
     out = awy task
 }
-
 r = race-test()
-print(r)   ; 未定義行為，可能是 999 或 100 或其他
+print(r); 未定義行為，可能是 999 或 100 或其他

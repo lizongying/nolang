@@ -2218,6 +2218,7 @@ sha512-block = (s []u64, h0 u64, h1 u64, h2 u64, h3 u64, h4 u64, h5 u64, h6 u64,
 ; data []byte: 輸入位元組陣列
 ; 返回 hash [64]byte: 64 位元組雜湊值
 sha512 = (data []byte) (hash [64]byte) {
+
     ; SHA-512 初始狀態
     h0 u64 = 7640891576956012808
     h1 u64 = 13503953896175478587
@@ -2271,26 +2272,13 @@ sha512 = (data []byte) (hash [64]byte) {
 
     ; 處理每個 128 位元組區塊
     block []u64 = [
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
+        0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0,
     ]
 
     offset = 0
     {
+
         ; 將 128 位元組轉為 16 個 64-bit big-endian 字
         i <- [0..16): {
             block[i] = (padded[offset + i * 8] << 56) | (padded[offset + i * 8 + 1] << 48) | (padded[offset + i * 8 + 2] << 40) | (padded[offset + i * 8 + 3] << 32) | (padded[offset + i * 8 + 4] << 24) | (padded[offset + i * 8 + 5] << 16) | (padded[offset + i * 8 + 6] << 8) | padded[offset + i * 8 + 7]

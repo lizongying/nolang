@@ -16,8 +16,10 @@ fd-w >= 0 -> {
     link-ok = fs.link(link-src, link-dst)
     eprint('link ok = ')
     print(link-ok.to-str())
-    link-ok -> print('PASS: link succeeded')
-    link-ok == false -> print('FAIL: link failed')
+    {
+        link-ok -> print('PASS: link succeeded')
+        link-ok == false -> print('FAIL: link failed')
+    }
     fs.remove(link-src)
     fs.remove(link-dst)
 }
@@ -33,8 +35,10 @@ fd-w2 >= 0 -> {
     trunc-ok = fs.truncate(trunc-path, 100)
     eprint('truncate ok = ')
     print(trunc-ok.to-str())
-    trunc-ok -> print('PASS: truncate succeeded')
-    trunc-ok == false -> print('FAIL: truncate failed')
+    {
+        trunc-ok -> print('PASS: truncate succeeded')
+        trunc-ok == false -> print('FAIL: truncate failed')
+    }
     fs.remove(trunc-path)
 }
 
@@ -93,12 +97,16 @@ flock-path = '/tmp/nolang-flock-test.txt'
 fs.remove(flock-path)
 fd-w3 = fs.open-write(flock-path)
 fd-w3 >= 0 -> {
+
     ; LOCK_SH = 1
     flock-ok = os.flock(fd-w3, 1)
     eprint('flock(LOCK_SH) ok = ')
     print(flock-ok.to-str())
-    flock-ok -> print('PASS: flock succeeded')
-    flock-ok == false -> print('FAIL: flock failed')
+    {
+        flock-ok -> print('PASS: flock succeeded')
+        flock-ok == false -> print('FAIL: flock failed')
+    }
+
     ; LOCK_UN = 4 (unlock)
     os.flock(fd-w3, 4)
     fs.close(fd-w3)
@@ -137,5 +145,4 @@ spawn-pid > 0 -> {
     print(status.to-str())
 }
 spawn-pid < 0 -> print('FAIL: spawn returned negative pid')
-
 print('--- All tests done ---')

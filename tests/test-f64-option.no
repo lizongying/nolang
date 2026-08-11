@@ -61,7 +61,6 @@ test-f64-sci = () {
         -> print(f)
     }
 }
-
 test-f64-ok()
 test-f64-neg()
 test-f64-zero()

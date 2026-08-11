@@ -11,5 +11,4 @@ test-str-i64-match = () {
         -> print(n)
     }
 }
-
 test-str-i64-match()

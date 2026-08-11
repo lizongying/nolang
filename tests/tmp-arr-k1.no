@@ -10,7 +10,6 @@ test-arr-max-min-sum = () {
     print(a.min())
     print(a.sum())
 }
-
 test-arr-sort-asc()
 print('---')
 test-arr-max-min-sum()

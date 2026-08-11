@@ -85,7 +85,6 @@ mysql-read-exact = (fd fd, n i64) (data str, ok bool) {
         } (i < read-n)
         total = total + read-n
     } (total < n)
-
     ok = true
 }
 
@@ -143,7 +142,6 @@ mysql-pkt-send = (fd fd, seq i64, payload str, payload-len i64) (ok bool) {
             }
         }
     }
-
     ok = true
 }
 
@@ -159,18 +157,20 @@ mysql-read-lenenc = (data str, pos i64) (val i64, is-null bool, new-pos i64) {
     val = first
     new-pos = pos + 1
 
-    first == 251 -> is-null = true
-    first == 252 -> {
-        val = data[pos + 1] | (data[pos + 2] << 8)
-        new-pos = pos + 3
-    }
-    first == 253 -> {
-        val = data[pos + 1] | (data[pos + 2] << 8) | (data[pos + 3] << 16)
-        new-pos = pos + 4
-    }
-    first == 254 -> {
-        val = data[pos + 1] | (data[pos + 2] << 8) | (data[pos + 3] << 16) | (data[pos + 4] << 24) | (data[pos + 5] << 32) | (data[pos + 6] << 40) | (data[pos + 7] << 48) | (data[pos + 8] << 56)
-        new-pos = pos + 9
+    {
+        first == 251 -> is-null = true
+        first == 252 -> {
+            val = data[pos + 1] | (data[pos + 2] << 8)
+            new-pos = pos + 3
+        }
+        first == 253 -> {
+            val = data[pos + 1] | (data[pos + 2] << 8) | (data[pos + 3] << 16)
+            new-pos = pos + 4
+        }
+        first == 254 -> {
+            val = data[pos + 1] | (data[pos + 2] << 8) | (data[pos + 3] << 16) | (data[pos + 4] << 24) | (data[pos + 5] << 32) | (data[pos + 6] << 40) | (data[pos + 7] << 48) | (data[pos + 8] << 56)
+            new-pos = pos + 9
+        }
     }
 }
 
@@ -283,7 +283,6 @@ open = (dsn str) (d db-mysql) {
     {
         colon-pos > at-pos -> return
     }
-
     user = dsn.slice(0, colon-pos)
     password = dsn.slice(colon-pos + 1, at-pos)
 
@@ -293,7 +292,6 @@ open = (dsn str) (d db-mysql) {
     {
         slash-pos < 0 -> return
     }
-
     host-port = rest.slice(0, slash-pos)
     dbname = rest.slice(slash-pos + 1, rest.len)
 
@@ -548,7 +546,6 @@ open = (dsn str) (d db-mysql) {
             }
         }
     }
-
     d.fd = fd
     d.seq = 0
     d.connected = true
@@ -883,7 +880,6 @@ rows-mysql.scan-float = (col i64) (v f64) {
         }
         i = i + 1
     } (i < field-len)
-
     v = int-part + frac-part / frac-div
     {
         neg == 1 -> v = 0.0 - v

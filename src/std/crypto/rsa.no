@@ -22,19 +22,21 @@
 ; 返回 cmp: 1 = a > b, 0 = a == b, -1 = a < b
 rsa-bn-cmp = (a []i64, an i64, b []i64, bn i64) (cmp i64) {
     cmp = 0
-    an > bn -> cmp = 1
-    an < bn -> cmp = -1
-    an == bn -> {
-        an == 0 -> cmp = 0
-        an > 0 -> {
-            i = an - 1
-            {
-                cmp == 0 -> {
-                    a[i] > b[i] -> cmp = 1
-                    a[i] < b[i] -> cmp = -1
-                    cmp == 0 -> i = i - 1
-                }
-            } (cmp == 0 && i >= 0)
+    {
+        an > bn -> cmp = 1
+        an < bn -> cmp = -1
+        an == bn -> {
+            an == 0 -> cmp = 0
+            an > 0 -> {
+                i = an - 1
+                {
+                    cmp == 0 -> {
+                        a[i] > b[i] -> cmp = 1
+                        a[i] < b[i] -> cmp = -1
+                        cmp == 0 -> i = i - 1
+                    }
+                } (cmp == 0 && i >= 0)
+            }
         }
     }
 }
@@ -43,6 +45,7 @@ rsa-bn-cmp = (a []i64, an i64, b []i64, bn i64) (cmp i64) {
 
 ; rsa-bn-add: c = a + b
 rsa-bn-add = (a []i64, an i64, b []i64, bn i64) (c []i64, cn i64) {
+
     ; 分配輸出緩衝區（結果最多 max(an, bn) + 1 個 limb）
     max-ab = an
     bn > max-ab -> max-ab = bn
@@ -51,8 +54,10 @@ rsa-bn-add = (a []i64, an i64, b []i64, bn i64) (c []i64, cn i64) {
     i = 0
     {
         sum = carry
-        i < an -> sum = sum + a[i]
-        i < bn -> sum = sum + b[i]
+        {
+            i < an -> sum = sum + a[i]
+            i < bn -> sum = sum + b[i]
+        }
         c[i] = sum & 4294967295
         carry = sum >> 32
         i = i + 1
@@ -64,6 +69,7 @@ rsa-bn-add = (a []i64, an i64, b []i64, bn i64) (c []i64, cn i64) {
 
 ; rsa-bn-sub: c = a - b（需 a ≥ b）
 rsa-bn-sub = (a []i64, an i64, b []i64, bn i64) (c []i64, cn i64) {
+
     ; 分配輸出緩衝區（多配置 1 個 limb 供後續左移使用）
     c = with-len(an + 2)
     borrow = 0
@@ -99,6 +105,7 @@ rsa-bn-sub = (a []i64, an i64, b []i64, bn i64) (c []i64, cn i64) {
 
 ; rsa-bn-mul: c = a × b
 rsa-bn-mul = (a []i64, an i64, b []i64, bn i64) (c []i64, cn i64) {
+
     ; 分配輸出緩衝區
     c = with-len(an + bn + 1)
     i <- [0..an + bn): {
@@ -183,6 +190,7 @@ rsa-bn-shr1 = (a []i64, an i64) (new-an i64) {
 ; q: 商數（輸出）, qn: 商長度
 ; r: 餘數（輸出）, rn: 餘長度
 rsa-bn-div-mod = (a []i64, an i64, b []i64, bn i64) (q []i64, qn i64, r []i64, rn i64) {
+
     ; 處理 b = 0
     bn == 1 && b[0] == 0 -> {
         q = with-len(1)
@@ -225,6 +233,7 @@ rsa-bn-div-mod = (a []i64, an i64, b []i64, bn i64) (q []i64, qn i64, r []i64, r
     ; 二進位長除法：從最高位到最低位
     i = bits - 1
     {
+
         ; r = r << 1
         carry-shl = 0
         j <- [0..local-rn): {
@@ -269,7 +278,6 @@ rsa-bn-div-mod = (a []i64, an i64, b []i64, bn i64) (q []i64, qn i64, r []i64, r
             q-bit = i % 32
             local-q[q-limb] = local-q[q-limb] | (1 << q-bit)
         }
-
         i = i - 1
     } (i >= 0)
 
@@ -298,6 +306,7 @@ rsa-bn-div-mod = (a []i64, an i64, b []i64, bn i64) (q []i64, qn i64, r []i64, r
 ; rsa-modpow-step: 單步平方乘（獨立函數以確保每步釋放暫存緩衝區）
 ; result = result^2 mod modulus; 若 exp-bit == 1，再 result = result * base mod modulus
 rsa-modpow-step = (result []i64, rn i64, base []i64, bn i64, exp-bit i64, modulus []i64, mn i64) (new-result []i64, new-rn i64) {
+
     ; t = result * result
     t []i64
     prod-n = 0
@@ -319,7 +328,6 @@ rsa-modpow-step = (result []i64, rn i64, base []i64, bn i64, exp-bit i64, modulu
         qn2 = 0
         q2, qn2, local-r, local-rn = rsa-bn-div-mod(t2, prod-n2, modulus, mn)
     }
-
     new-result = local-r
     new-rn = local-rn
 }
@@ -329,6 +337,7 @@ rsa-modpow-step = (result []i64, rn i64, base []i64, bn i64, exp-bit i64, modulu
 ; 注意：loop body 提取為 rsa-modpow-step 以確保每步釋放暫存緩衝區
 ; （Nolang heap 變數在函數返回時才釋放，若在 loop body 內分配會累積至 OOM）
 rsa-modpow = (base []i64, bn i64, exp []i64, en i64, modulus []i64, mn i64) (result []i64, rn i64) {
+
     ; 使用局部變數避免輸出參數 aliasing 問題
     local-result []i64 = with-len(mn)
     i <- [0..mn): {
@@ -363,7 +372,6 @@ rsa-modpow = (base []i64, bn i64, exp []i64, en i64, modulus []i64, mn i64) (res
 
         i = i - 1
     } (i >= 0)
-
     result = local-result
     rn = local-rn
 }

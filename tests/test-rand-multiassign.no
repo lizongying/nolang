@@ -2,6 +2,7 @@
 ; # std/crypto/rand
 
 main = () {
+
     ; 測試 1: 相同 seed 應產生相同序列
     s1 = 12345
     s1, r1 = rand(s1)
@@ -26,8 +27,10 @@ main = () {
     eprint(' seed=99999: rb=')
     eprint(rb)
 
-    ra == rb -> print('FAIL: different seeds produced same value')
-    ra != rb -> print('PASS: different seeds produce different values')
+    {
+        ra == rb -> print('FAIL: different seeds produced same value')
+        ra != rb -> print('PASS: different seeds produce different values')
+    }
 
     ; 測試 3: 驗證 state 確實更新（連續呼叫產生不同值）
     s4 = 11111
@@ -42,8 +45,10 @@ main = () {
     eprint(' x3=')
     eprint(x3)
 
-    x1 == x2 -> print('FAIL: state not evolving (x1==x2)')
-    x1 != x2 -> print('PASS: state evolves (x1!=x2)')
+    {
+        x1 == x2 -> print('FAIL: state not evolving (x1==x2)')
+        x1 != x2 -> print('PASS: state evolves (x1!=x2)')
+    }
 
     ; 測試 4: 模擬 TLS 金鑰生成 — 用兩個相近的 seed
     seed-a = 1785194093050130278
@@ -67,6 +72,8 @@ main = () {
     eprint('seed-b priv bytes (first 4): ')
     eprint(kb-priv)
 
-    ka-priv == kb-priv -> print('FAIL: different seeds produce same priv key bytes')
-    ka-priv != kb-priv -> print('PASS: different seeds produce different priv key bytes')
+    {
+        ka-priv == kb-priv -> print('FAIL: different seeds produce same priv key bytes')
+        ka-priv != kb-priv -> print('PASS: different seeds produce different priv key bytes')
+    }
 }

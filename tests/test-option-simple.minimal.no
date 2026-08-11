@@ -34,7 +34,6 @@ test-simple3 = () {
         }
     }
 }
-
 test-simple()
 test-simple2()
 test-simple3()

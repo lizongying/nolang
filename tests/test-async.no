@@ -12,9 +12,11 @@ add-async = (a i64, b i64) (r i64) {
 
 ; 異步函數：條件邏輯
 classify-async = (n i64) (r i64) {
-    n > 0 -> r = 1
-    n < 0 -> r = -1
-    n == 0 -> r = 0
+    {
+        n > 0 -> r = 1
+        n < 0 -> r = -1
+        n == 0 -> r = 0
+    }
 }
 
 ; 1. 串行等待（最簡）— awy f-async()
@@ -65,7 +67,6 @@ test-await-future = () {
     r = awy f
     print(r); expect: 50
 }
-
 test-serial()
 test-multi-params()
 test-conditional()

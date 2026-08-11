@@ -191,21 +191,24 @@ tree-map.rebalance = (idx i64) (nr i64) {
     b = .bf(idx)
 
     ; 左重（b > 1）
-    b > 1 -> {
-        lb = .bf(.left[idx])
-        lb < 0 -> .rot-left(.left[idx])
-        .rot-right(idx)
-        nr = .parent[idx]
-        return
-    }
+    {
+        b > 1 -> {
+            lb = .bf(.left[idx])
+            lb < 0 -> .rot-left(.left[idx])
+            .rot-right(idx)
+            nr = .parent[idx]
+            return
+        }
+        b < -1 -> {
 
-    ; 右重（b < -1）
-    b < -1 -> {
-        rb = .bf(.right[idx])
-        rb > 0 -> .rot-right(.right[idx])
-        .rot-left(idx)
-        nr = .parent[idx]
-        return
+            ; 右重（b < -1）
+
+            rb = .bf(.right[idx])
+            rb > 0 -> .rot-right(.right[idx])
+            .rot-left(idx)
+            nr = .parent[idx]
+            return
+        }
     }
     .update-ht(idx)
 }

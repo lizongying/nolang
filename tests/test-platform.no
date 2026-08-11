@@ -29,7 +29,6 @@ greet = () {
 greet = () {
     print('hello from win, sep is \\')
 }
-
 greet()
 
 ; OR semantics: multiple flattened keys

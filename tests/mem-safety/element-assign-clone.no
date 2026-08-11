@@ -60,7 +60,10 @@ DataHolder {
 }
 
 test-struct-str-field = () (ok bool) {
-    d = DataHolder{name: 'old', items: [1, 2, 3]}
+    d = DataHolder {
+        name: 'old'
+        items: [1, 2, 3]
+    }
 
     s = 'field value'
     d.name = s

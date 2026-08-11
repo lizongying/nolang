@@ -11,5 +11,4 @@ test-last-minimal = () {
         -> print(it)
     }
 }
-
 test-last-minimal()

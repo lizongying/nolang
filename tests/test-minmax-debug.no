@@ -9,9 +9,9 @@ test1 = () {
 }
 
 test2 = () {
+
     ; 嘗試作為函數定義
     print(i8.MIN)
 }
-
 test1()
 test2()

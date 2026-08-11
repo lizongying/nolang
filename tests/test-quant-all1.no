@@ -33,7 +33,7 @@ print('.* vs abc: {m5}')
 // dump a? 的指令
 print('')
 print('=== a? compiled ===')
-re3 = regexp{
+re3 = regexp {
     pattern: 'a?'
 }
 re3.compile()
@@ -42,17 +42,18 @@ i <- [0..re3.n): {
     op = re3.op[i]
     a1 = re3.arg1[i]
     a2 = re3.arg2[i]
-    op == 1 -> print(i, ': CHAR', a1)
-    op == 2 -> print(i, ': ANY')
-    op == 3 -> print(i, ': CLASS', a1)
-    op == 7 -> print(i, ': JUMP', a1)
-    op == 8 -> print(i, ': SPLIT', a1, ',', a2)
-    op == 9 -> print(i, ': MATCH')
+    {
+        op == 1 -> print(i, ': CHAR', a1)
+        op == 2 -> print(i, ': ANY')
+        op == 3 -> print(i, ': CLASS', a1)
+        op == 7 -> print(i, ': JUMP', a1)
+        op == 8 -> print(i, ': SPLIT', a1, ',', a2)
+        op == 9 -> print(i, ': MATCH')
+    }
 }
-
 print('')
 print('=== .* compiled ===')
-re5 = regexp{
+re5 = regexp {
     pattern: '.*'
 }
 re5.compile()
@@ -61,10 +62,12 @@ i <- [0..re5.n): {
     op = re5.op[i]
     a1 = re5.arg1[i]
     a2 = re5.arg2[i]
-    op == 1 -> print(i, ': CHAR', a1)
-    op == 2 -> print(i, ': ANY')
-    op == 3 -> print(i, ': CLASS', a1)
-    op == 7 -> print(i, ': JUMP', a1)
-    op == 8 -> print(i, ': SPLIT', a1, ',', a2)
-    op == 9 -> print(i, ': MATCH')
+    {
+        op == 1 -> print(i, ': CHAR', a1)
+        op == 2 -> print(i, ': ANY')
+        op == 3 -> print(i, ': CLASS', a1)
+        op == 7 -> print(i, ': JUMP', a1)
+        op == 8 -> print(i, ': SPLIT', a1, ',', a2)
+        op == 9 -> print(i, ': MATCH')
+    }
 }

@@ -9,7 +9,6 @@ test-simple = () {
     a.reverse()
     print(a[0])
 }
-
 test-arr-sort-asc()
 print('---')
 test-simple()

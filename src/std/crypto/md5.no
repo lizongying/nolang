@@ -11,6 +11,7 @@
 ; in: 輸入位元組陣列
 ; out: 輸出 16 位元組哈希值
 md5 = (data []byte) (out [16]byte) {
+
     ; MD5 初始值（u32 自然 32-bit 溢出）
     h0 u32 = 1732584193
     h1 u32 = 4023233417
@@ -51,11 +52,13 @@ md5 = (data []byte) (out [16]byte) {
         w13 = data.load-le-u32(off + 52)
         w14 = data.load-le-u32(off + 56)
         w15 = data.load-le-u32(off + 60)
+
         ; MD5 壓縮函數（64 輪）— u32 算術自然 32-bit 溢出
         a = h0
         b = h1
         c = h2
         d = h3
+
         ; 第 1 輪 (F): f = d ^ (b & (c ^ d))
         f = d ^ (b & (c ^ d))
         t = a + f + w0 + 3614090360
@@ -105,6 +108,7 @@ md5 = (data []byte) (out [16]byte) {
         f = a ^ (c & (d ^ a))
         t = b + f + w15 + 1236535329
         b = c + number.rotate-left(t, 22)
+
         ; 第 2 輪 (G): f = c ^ (d & (b ^ c))
         f = c ^ (d & (b ^ c))
         t = a + f + w1 + 4129170786
@@ -154,6 +158,7 @@ md5 = (data []byte) (out [16]byte) {
         f = d ^ (a & (c ^ d))
         t = b + f + w12 + 2368359562
         b = c + number.rotate-left(t, 20)
+
         ; 第 3 輪 (H): f = x ^ y ^ z
         f = b ^ c ^ d
         t = a + f + w5 + 4294588738
@@ -203,6 +208,7 @@ md5 = (data []byte) (out [16]byte) {
         f = c ^ d ^ a
         t = b + f + w2 + 3299628645
         b = c + number.rotate-left(t, 23)
+
         ; 第 4 輪 (I): f = y ^ (x | ~z)  — ~d 即按位取反
         f = c ^ (b | ~d)
         t = a + f + w0 + 4096336452
@@ -252,6 +258,7 @@ md5 = (data []byte) (out [16]byte) {
         f = d ^ (c | ~a)
         t = b + f + w9 + 3951481745
         b = c + number.rotate-left(t, 21)
+
         ; 累加回初始值（u32 自然溢出）
         h0 = h0 + a
         h1 = h1 + b

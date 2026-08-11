@@ -3,5 +3,4 @@ test-min = () {
     a [3] = [1, 2, 3]
     print(a.contains(2))
 }
-
 test-min()

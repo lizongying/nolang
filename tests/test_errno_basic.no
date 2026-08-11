@@ -23,6 +23,5 @@ if fd < 0 {
     msg = os.strerror(e2)
     print('  错误信息: ' - msg)
 }
-
 print('')
 print('--- 测试完成 ---')

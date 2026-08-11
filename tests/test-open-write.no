@@ -20,5 +20,4 @@ f: {
         print('ok: write')
     }
 }
-
 fs.remove(tmp)

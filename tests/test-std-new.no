@@ -82,8 +82,10 @@ ts2: {
     ok -> {
         v = it
         print('roundtrip:' - v.to-str())
-        v == 946684800 -> print('PASS')
-        -> print('FAIL')
+        {
+            v == 946684800 -> print('PASS')
+            -> print('FAIL')
+        }
     }
     nil -> print('FAIL: parse returned nil')
     err -> print('FAIL: parse error')
@@ -126,8 +128,10 @@ decoded: {
         j <- [0..blk.data.len): {
             blk.data[j] != raw[j] -> ok2 = false
         }
-        ok2 -> print('PEM roundtrip: PASS')
-        -> print('PEM roundtrip: FAIL')
+        {
+            ok2 -> print('PEM roundtrip: PASS')
+            -> print('PEM roundtrip: FAIL')
+        }
     }
     nil -> print('PEM decode: FAIL')
     err -> print('PEM decode: ERROR')

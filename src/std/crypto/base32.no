@@ -27,6 +27,7 @@ base32-encode = (data []byte) (out str) {
 
     pos = 0
     {
+
         ; 提取 5 位元組 → 40 位元 → 8 個 5-bit 值
         b0 = data[pos]
         b1 = data[pos + 1]
@@ -49,6 +50,7 @@ base32-encode = (data []byte) (out str) {
 
     ; 處理剩餘位元組
     remainder != 0 -> {
+
         ; 補零到 5 位元組
         b0 = 0
         b1 = 0
@@ -66,6 +68,7 @@ base32-encode = (data []byte) (out str) {
 
         {
             remainder == 1 -> {
+
                 ; 1 byte → 2 chars + 6 padding
                 out[out-pos + 2] = '='
                 out[out-pos + 3] = '='
@@ -119,10 +122,10 @@ base32-decode = (in str) (out []byte) {
         }
         i = i - 1
     } (i >= 0)
-
     out-pos = 0
     pos = 0
     {
+
         ; 解碼 8 個字元 → 5 位元組
         v0 = 0
         v1 = 0

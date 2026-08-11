@@ -34,15 +34,9 @@ diff-engine-lcs = (a []str, b []str) (ops []diff-op) {
 
     ai <- [na - 1..0]: {
         aj <- [nb - 1..0]: {
-            a[ai].compare(b[aj]) == 0 -> {
-                dp[ai * cols + aj] = dp[(ai + 1) * cols + (aj + 1)] + 1
-            }
-            dp[ai * cols + aj] < dp[(ai + 1) * cols + aj] -> {
-                dp[ai * cols + aj] = dp[(ai + 1) * cols + aj]
-            }
-            dp[ai * cols + aj] < dp[ai * cols + (aj + 1)] -> {
-                dp[ai * cols + aj] = dp[ai * cols + (aj + 1)]
-            }
+            a[ai].compare(b[aj]) == 0 -> dp[ai * cols + aj] = dp[(ai + 1) * cols + (aj + 1)] + 1
+            dp[ai * cols + aj] < dp[(ai + 1) * cols + aj] -> dp[ai * cols + aj] = dp[(ai + 1) * cols + aj]
+            dp[ai * cols + aj] < dp[ai * cols + (aj + 1)] -> dp[ai * cols + aj] = dp[ai * cols + (aj + 1)]
         }
     }
 
@@ -57,7 +51,6 @@ diff-engine-lcs = (a []str, b []str) (ops []diff-op) {
         }
         eprint('  {row}')
     }
-
     i = 0
     j = 0
     {
@@ -144,7 +137,6 @@ c'
         s = lines2[i]
         eprint('  L2[{i}]={s}')
     }
-
     ops []diff-op
     ops = diff-engine-lcs(lines1, lines2)
 

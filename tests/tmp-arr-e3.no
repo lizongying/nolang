@@ -9,7 +9,6 @@ test-simple = () {
     a.fill(99)
     print(a[0])
 }
-
 test-arr-sort-asc()
 print('---')
 test-simple()

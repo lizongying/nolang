@@ -27,10 +27,8 @@ GLOBAL-ARR[0] == 10 -> print('test-global-arr: ok')
 local-str = 'local string'
 print('local-str: {local-str}')
 local-str == 'local string' -> print('test-local-str: ok')
-
 local-vec = [1, 2, 3]
 lvlen = local-vec.len
 print('local-vec.len: {lvlen}')
 local-vec.len == 3 -> print('test-local-vec: ok')
-
 print('done')

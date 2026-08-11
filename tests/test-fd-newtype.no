@@ -30,5 +30,4 @@ copy-fd == 0 -> print('ok: fd-to-fd assignment')
 ; ── 5. STDOUT-FD 標準常量使用 ──
 n2 = fs.write(STDOUT-FD, 'std-ok\n', 7)
 n2 == 7 -> print('ok: STDOUT-FD standard constant')
-
 print('all fd newtype positive tests passed')

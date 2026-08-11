@@ -43,7 +43,6 @@ test-vec-reverse-single = () {
     v.reverse()
     print(v[0])
 }
-
 test-vec-reverse-4()
 print('---')
 test-vec-reverse-3()
@@ -247,7 +246,6 @@ test-vec-to-str = () {
     s2 = e.to-str()
     print(s2)
 }
-
 test-vec-insert()
 print('---')
 test-vec-remove()

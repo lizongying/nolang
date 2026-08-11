@@ -49,7 +49,6 @@ test-err-only = () {
     }
     print(r)
 }
-
 test-err()
 test-nil()
 test-val()

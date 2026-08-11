@@ -8,9 +8,9 @@ a i16
 ; compilation error: duplicate variable 'a'
 ; a i16
 
-i64
+i64 i64
 
-i8
+i8 i8
 
 ; compilation error: i16 'a' has no method 'len', use 'a.len' instead
 ; print(a.len())

@@ -605,7 +605,7 @@ a, b = swap(5, 3)
 | `for i <- [a..b] { }` 範圍   | `i <- [a..b]: { }`                                 |
 | `for i in [a..b) { }` 範圍   | `i <- [a..b): { }`                                 |
 | `match x { ... }` 匹配       | `x: { ... }`                                       |
-| `if/elif/else { }` 分支      | `{ cond -> body }`                                 |
+| `if/elif/else { }` 分支      | `{ cond -> body }`（短路，必須用 `{}` 包裹）      |
 | `continue`                   | `**`                                               |
 | `break`                      | `*`                                                |
 | `return`                     | `...`                                              |
@@ -950,8 +950,10 @@ val: {
 
 ### If / Else
 
+if-else 組（短路）**必須**用 `{}` 包裹。第一個匹配的條件勝出，後續條件不再檢查。
+
 ```no
-; 多分支（推薦新式）
+; 多分支（推薦新式）— 短路 if-else 鏈
 {
     a == 1 -> {
         a = 1
@@ -963,12 +965,52 @@ val: {
     }
 }
 
-; 單 if（保留）
+; 單 if（保留）— 獨立 if，不短路
 x == 1 -> do-something()
 
 ; 三元表達式 condition ? true-value : false-value
 c = flag ? 1 : 2
 max = sum > 10 ? sum : 10
+```
+
+**重要規則：**
+
+1. **短路組** — 多個 `cond -> body` 用 `{}` 包裹時，形成 if-elif-else 鏈，只有第一個匹配的分支執行。
+2. **獨立 if** — 在函數體/循環體中直接寫 `cond -> body`（不包裹 `{}`）是獨立 if，不會與相鄰的 if-then 短路。
+3. **禁止混雜** — `{}` 短路組內的直接子節點必須全部是 `cond -> body` 分支，不能混入普通語句。
+
+```no
+; ❌ 不會短路 — 這些是獨立 if，所有條件都會被檢查
+git-dispatch = (cmd str) {
+    cmd == 'a' -> { fa() }
+    cmd == 'b' -> { fb() }
+}
+
+; ✅ 短路 — 用 {} 包裹，第一個匹配勝出
+git-dispatch = (cmd str) {
+    {
+        cmd == 'a' -> { fa() }
+        cmd == 'b' -> { fb() }
+        true -> {}
+    }
+}
+
+; ❌ match-block 混雜普通語句 → 編譯報錯
+{
+    cmd == 'a' -> { fa() }
+    print(cmd)
+    cmd == 'b' -> { fb() }
+}
+
+; ✅ 普通語句放到分支 body 內部
+{
+    cmd == 'a' -> {
+        print(cmd)
+        fa()
+    }
+    cmd == 'b' -> { fb() }
+    true -> {}
+}
 ```
 
 ### 異步編程（run / awy）

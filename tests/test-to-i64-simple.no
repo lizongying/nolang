@@ -4,5 +4,4 @@ test-simple = () {
     n = s.to-i64()
     print(n); 期望 12345
 }
-
 test-simple()

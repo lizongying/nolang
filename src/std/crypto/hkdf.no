@@ -18,6 +18,7 @@
 ; ikm []byte: 輸入金鑰材料
 ; 返回 prk [32]byte: 偽隨機金鑰
 hkdf-extract = (salt []byte, ikm []byte) (prk [32]byte) {
+
     ; PRK = HMAC-SHA256(salt, IKM)
     ; 若 salt 為空，使用 32 個零位元組
     k []byte = with-len(32)
@@ -49,10 +50,10 @@ hkdf-extract = (salt []byte, ikm []byte) (prk [32]byte) {
 ; counter i64: 計數器位元組（1-255），0 表示不加
 ; 返回 out [32]byte: HMAC 結果
 hkdf-expand-hmac = (prk-vec []byte, t-data []byte, t-len i64, info []byte, counter i64) (out [32]byte) {
+
     ; 計算訊息長度: t-len + info.len + (counter > 0 ? 1 : 0)
     msg-len = t-len + info.len
     counter > 0 -> msg-len = msg-len + 1
-
     msg []byte = with-len(msg-len)
     i <- [0..t-len): {
         msg[i] = t-data[i]
@@ -61,7 +62,6 @@ hkdf-expand-hmac = (prk-vec []byte, t-data []byte, t-len i64, info []byte, count
         msg[t-len + i] = info[i]
     }
     counter > 0 -> msg[t-len + info.len] = counter & 255
-
     out = hmac.hmac-sha256(prk-vec, msg)
 }
 
@@ -71,6 +71,7 @@ hkdf-expand-hmac = (prk-vec []byte, t-data []byte, t-len i64, info []byte, count
 ; out-len i64: 需要的輸出長度（最大 255*32 = 8160）
 ; 返回 okm []byte: 展開後的金鑰材料
 hkdf-expand = (prk [32]byte, info []byte, out-len i64) (okm []byte) {
+
     ; 將 prk 轉為 []byte
     prk-vec []byte = with-len(32)
     i <- [0..32): {
@@ -85,38 +86,39 @@ hkdf-expand = (prk [32]byte, info []byte, out-len i64) (okm []byte) {
     off = 0
     counter = 1
 
-    out-len <= 32 -> {
-        ; T(1) = HMAC-SHA256(PRK, info || 1)
-        t-tmp [32]byte
-        t-tmp = hkdf-expand-hmac(prk-vec, t, 0, info, counter)
+    {
+        out-len <= 32 -> {
 
-        copy-n = out-len
-        i <- [0..copy-n): {
-            okm[i] = t-tmp[i]
-        }
-    }
-
-    out-len > 32 -> {
-        {
-            t-len-for-hmac = 0
-            t-valid -> t-len-for-hmac = 32
-
+            ; T(1) = HMAC-SHA256(PRK, info || 1)
             t-tmp [32]byte
-            t-tmp = hkdf-expand-hmac(prk-vec, t, t-len-for-hmac, info, counter)
+            t-tmp = hkdf-expand-hmac(prk-vec, t, 0, info, counter)
 
-            i <- [0..32): {
-                t[i] = t-tmp[i]
-            }
-            t-valid = true
-
-            copy-n = 32
-            off + copy-n > out-len -> copy-n = out-len - off
+            copy-n = out-len
             i <- [0..copy-n): {
-                okm[off + i] = t[i]
+                okm[i] = t-tmp[i]
             }
-            off = off + copy-n
-            counter = counter + 1
-        } (off < out-len)
+        }
+        out-len > 32 -> {
+            {
+                t-len-for-hmac = 0
+                t-valid -> t-len-for-hmac = 32
+                t-tmp [32]byte
+                t-tmp = hkdf-expand-hmac(prk-vec, t, t-len-for-hmac, info, counter)
+
+                i <- [0..32): {
+                    t[i] = t-tmp[i]
+                }
+                t-valid = true
+
+                copy-n = 32
+                off + copy-n > out-len -> copy-n = out-len - off
+                i <- [0..copy-n): {
+                    okm[off + i] = t[i]
+                }
+                off = off + copy-n
+                counter = counter + 1
+            } (off < out-len)
+        }
     }
 }
 
@@ -131,6 +133,7 @@ hkdf-expand = (prk [32]byte, info []byte, out-len i64) (okm []byte) {
 ; out-len i64: 需要的輸出長度
 ; 返回 okm []byte: 展開後的金鑰材料
 hkdf-expand-label = (prk [32]byte, label str, context []byte, out-len i64) (okm []byte) {
+
     ; HkdfLabel struct:
     ;   uint16 length = out-len
     ;   opaque label<7..255> = "tls13 " + label

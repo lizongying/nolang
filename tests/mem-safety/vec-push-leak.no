@@ -33,11 +33,9 @@
 
 grow-vec = () (out []i64) {
     out = []
-    i <- [0..100): out.push(i)
-    ; 100 次 push 會多次觸發擴容
+    i <- [0..100): out.push(i); 100 次 push 會多次觸發擴容
     ; 每次擴容的舊 buffer 全部洩漏
 }
-
 v = grow-vec()
 print(v.len)
 print(v[0])

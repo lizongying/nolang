@@ -20,12 +20,16 @@ test-struct-field = () (pass bool) {
         lo = hex-str[i * 2 + 1]
         hi-v = 0
         lo-v = 0
-        hi >= 48 && hi <= 57 -> hi-v = hi - 48
-        hi >= 97 && hi <= 102 -> hi-v = hi - 87
-        hi >= 65 && hi <= 70 -> hi-v = hi - 55
-        lo >= 48 && lo <= 57 -> lo-v = lo - 48
-        lo >= 97 && lo <= 102 -> lo-v = lo - 87
-        lo >= 65 && lo <= 70 -> lo-v = lo - 55
+        {
+            hi >= 48 && hi <= 57 -> hi-v = hi - 48
+            hi >= 97 && hi <= 102 -> hi-v = hi - 87
+            hi >= 65 && hi <= 70 -> hi-v = hi - 55
+        }
+        {
+            lo >= 48 && lo <= 57 -> lo-v = lo - 48
+            lo >= 97 && lo <= 102 -> lo-v = lo - 87
+            lo >= 65 && lo <= 70 -> lo-v = lo - 55
+        }
         kh.priv[i] = (hi-v << 4) | lo-v
     }
 
@@ -47,7 +51,6 @@ test-struct-field = () (pass bool) {
         eprint(' ')
         eprint(kh.pub[i])
     }
-
     1
     i <- [0..32): {
         (kh.pub[i]) != expected[i] -> {
@@ -55,12 +58,10 @@ test-struct-field = () (pass bool) {
             break
         }
     }
-
     0 -> {
         print('FAIL: struct field scalarmult-base mismatch')
         return
     }
-
     pass = true
 }
 
@@ -72,12 +73,16 @@ hex-to-bytes = (hex-str str) (out [32]byte) {
         lo = hex-str[i * 2 + 1]
         hi-v = 0
         lo-v = 0
-        hi >= 48 && hi <= 57 -> hi-v = hi - 48
-        hi >= 97 && hi <= 102 -> hi-v = hi - 87
-        hi >= 65 && hi <= 70 -> hi-v = hi - 55
-        lo >= 48 && lo <= 57 -> lo-v = lo - 48
-        lo >= 97 && lo <= 102 -> lo-v = lo - 87
-        lo >= 65 && lo <= 70 -> lo-v = lo - 55
+        {
+            hi >= 48 && hi <= 57 -> hi-v = hi - 48
+            hi >= 97 && hi <= 102 -> hi-v = hi - 87
+            hi >= 65 && hi <= 70 -> hi-v = hi - 55
+        }
+        {
+            lo >= 48 && lo <= 57 -> lo-v = lo - 48
+            lo >= 97 && lo <= 102 -> lo-v = lo - 87
+            lo >= 65 && lo <= 70 -> lo-v = lo - 55
+        }
         out[i] = (hi-v << 4) | lo-v
     }
 }
@@ -110,7 +115,6 @@ test-func-output = () (pass bool) {
         eprint(' ')
         eprint(alice-pub[i])
     }
-
     1
     i <- [0..32): {
         (alice-pub[i]) != expected[i] -> {
@@ -118,21 +122,22 @@ test-func-output = () (pass bool) {
             break
         }
     }
-
     0 -> {
         print('FAIL: func output scalarmult-base mismatch')
         return
     }
-
     pass = true
 }
 
 main = () {
     p1 = test-struct-field()
-    p1 == true -> print('PASS: struct-field scalarmult')
-    p1 == false -> print('FAIL: struct-field scalarmult')
-
+    {
+        p1 == true -> print('PASS: struct-field scalarmult')
+        p1 == false -> print('FAIL: struct-field scalarmult')
+    }
     p2 = test-func-output()
-    p2 == true -> print('PASS: func-output scalarmult')
-    p2 == false -> print('FAIL: func-output scalarmult')
+    {
+        p2 == true -> print('PASS: func-output scalarmult')
+        p2 == false -> print('FAIL: func-output scalarmult')
+    }
 }

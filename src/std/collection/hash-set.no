@@ -44,7 +44,6 @@ hash-set.add = (key i64) (is-new bool) {
         idx = idx + 1
         idx >= .cap -> idx = 0
     } (.occ[idx] == 1)
-
     .keys[idx] = key
     .occ[idx] = 1
     .size = .size + 1

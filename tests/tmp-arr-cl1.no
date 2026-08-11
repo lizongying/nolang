@@ -3,5 +3,4 @@ test-arr-clone = () {
     b = a.clone()
     print(b[0])
 }
-
 test-arr-clone()

@@ -13,12 +13,16 @@ hex-to-bytes = (hex-str str) (out [32]byte) {
         lo = hex-str[i * 2 + 1]
         hi-v = 0
         lo-v = 0
-        hi >= 48 && hi <= 57 -> hi-v = hi - 48
-        hi >= 97 && hi <= 102 -> hi-v = hi - 87
-        hi >= 65 && hi <= 70 -> hi-v = hi - 55
-        lo >= 48 && lo <= 57 -> lo-v = lo - 48
-        lo >= 97 && lo <= 102 -> lo-v = lo - 87
-        lo >= 65 && lo <= 70 -> lo-v = lo - 55
+        {
+            hi >= 48 && hi <= 57 -> hi-v = hi - 48
+            hi >= 97 && hi <= 102 -> hi-v = hi - 87
+            hi >= 65 && hi <= 70 -> hi-v = hi - 55
+        }
+        {
+            lo >= 48 && lo <= 57 -> lo-v = lo - 48
+            lo >= 97 && lo <= 102 -> lo-v = lo - 87
+            lo >= 65 && lo <= 70 -> lo-v = lo - 55
+        }
         out[i] = (hi-v << 4) | lo-v
     }
 }
@@ -33,7 +37,6 @@ test-min = () (pass bool) {
         eprint(alice-priv[i])
         eprint(' ')
     }
-
     alice-pub = x25519.x25519-scalarmult-base(alice-priv)
 
     eprint('alice-pub: ')
@@ -48,6 +51,8 @@ test-min = () (pass bool) {
 
 main = () {
     p = test-min()
-    p == true -> print('PASS: minimal test')
-    p == false -> print('FAIL: minimal test')
+    {
+        p == true -> print('PASS: minimal test')
+        p == false -> print('FAIL: minimal test')
+    }
 }

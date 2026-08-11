@@ -22,7 +22,6 @@ aes-256-ctr-xor = (key [32]byte, icb [16]byte, data []byte) (out []byte) {
     i <- [0..16): {
         cb[i] = icb[i]
     }
-
     out = with-len(data.len)
     pos = 0
     {
@@ -50,7 +49,6 @@ aes-256-ctr-xor = (key [32]byte, icb [16]byte, data []byte) (out []byte) {
                 j = j - 1
             } (j >= 0)
         }
-
         pos = pos + n
     } (pos < data.len)
 }
@@ -62,6 +60,7 @@ aes-256-ctr-xor = (key [32]byte, icb [16]byte, data []byte) (out []byte) {
 ; plain []byte: 明文
 ; 返回 sealed []byte: 密文 + 16 位元組 tag
 aes-256-gcm-seal = (key [32]byte, iv [12]byte, aad []byte, plain []byte) (sealed []byte) {
+
     ; 1. H = AES-256-enc(key, 0^128)
     zero-block [16]byte
     i <- [0..16): {
@@ -95,7 +94,6 @@ aes-256-gcm-seal = (key [32]byte, iv [12]byte, aad []byte, plain []byte) (sealed
         ctr[j] != 0 -> break
         j = j - 1
     } (j >= 12)
-
     cipher []byte
     cipher = aes-256-ctr-xor(key, ctr, plain)
 
@@ -158,7 +156,6 @@ aes-256-gcm-open = (key [32]byte, iv [12]byte, aad []byte, sealed []byte) (plain
     i <- [0..cipher-len): {
         cipher[i] = sealed[i]
     }
-
     tag [16]byte
     i <- [0..16): {
         tag[i] = sealed[cipher-len + i]
@@ -173,7 +170,6 @@ aes-256-gcm-open = (key [32]byte, iv [12]byte, aad []byte, sealed []byte) (plain
     i <- [0..16): {
         exp-tag[i] = (j0-enc[i]) ^ (ghash-out[i])
     }
-
     diff = 0
     i <- [0..16): {
         diff = diff | (tag[i] ^ exp-tag[i])
@@ -191,6 +187,5 @@ aes-256-gcm-open = (key [32]byte, iv [12]byte, aad []byte, sealed []byte) (plain
         ctr[j] != 0 -> break
         j = j - 1
     } (j >= 12)
-
     plain = aes-256-ctr-xor(key, ctr, cipher)
 }

@@ -45,6 +45,7 @@ pem-block {
 ; data []byte: 原始二進制資料
 ; 返回 out str: PEM 格式字串
 pem-encode = (label str, data []byte) (out str) {
+
     ; Base64 編碼
     b64 str
     b64 = base64.encode-std(data)
@@ -57,7 +58,6 @@ pem-encode = (label str, data []byte) (out str) {
     b64-len = b64.len
     num-lines = b64-len / PEM-LINE-LEN
     b64-len % PEM-LINE-LEN != 0 -> num-lines = num-lines + 1
-
     total = header.len + 1
     total = total + b64-len
     total = total + num-lines
@@ -142,11 +142,14 @@ pem-decode = (pem-str str) (result ?pem-block) {
     dst = 0
     i <- [b64-start..end-pos): {
         c = pem-str[i]
+
         ; 跳過換行符和空白
         skip = false
-        c == 10 -> skip = true
-        c == 13 -> skip = true
-        c == 32 -> skip = true
+        {
+            c == 10 -> skip = true
+            c == 13 -> skip = true
+            c == 32 -> skip = true
+        }
         skip == false -> {
             b64-data[dst] = c
             dst = dst + 1

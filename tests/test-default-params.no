@@ -4,6 +4,7 @@
 ; # std/encoding/csv
 
 main = () {
+
     ; 使用默認值：不傳 max-fields，應使用 1024
     fields = csv.parse-line('a,b,c')
     print(fields.len)

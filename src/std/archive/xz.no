@@ -30,8 +30,8 @@ lzma-rd {
 ; init: 初始化範圍解碼器
 lzma-rd.init = (data []byte, start-pos i64) {
     .data = data
-    .pos = start-pos + 1  ; 跳過第一個位元組（必須為 0）
-    .range = 0xFFFFFFFF
+    .pos = start-pos + 1; 跳過第一個位元組（必須為 0）
+    .range = 0xffffffff
     .code = 0
     i <- [0..4): {
         .code = (.code << 8) | .data[.pos]
@@ -55,16 +55,18 @@ lzma-rd.decode-bit = (prob i64) (bit i64, new-prob i64) {
     bound = (.range >> 11) * prob
 
     bit = 0
-    .code < bound -> {
-        .range = bound
-        new-prob = prob + ((0x800 - prob) >> 5)
-        bit = 0
-    }
-    .code >= bound -> {
-        .range = .range - bound
-        .code = .code - bound
-        new-prob = prob - (prob >> 5)
-        bit = 1
+    {
+        .code < bound -> {
+            .range = bound
+            new-prob = prob + ((0x800 - prob) >> 5)
+            bit = 0
+        }
+        .code >= bound -> {
+            .range = .range - bound
+            .code = .code - bound
+            new-prob = prob - (prob >> 5)
+            bit = 1
+        }
     }
 }
 
@@ -75,14 +77,14 @@ lzma-rd.decode-direct-bits = (num-bits i64) (res i64) {
         .normalize()
         .range = .range >> 1
         t = .code - .range
-        t < 0 -> {
-            .code = t
+        {
+            t < 0 -> .code = t
+            t >= 0 -> {
+                .code = .range
+                res = (res << 1) | 1
+            }
         }
-        t >= 0 -> {
-            .code = .range
-            res = (res << 1) | 1
-        }
-        res < 0 -> res = res & 0x7FFFFFFFFFFFFFFF  ; 防止溢位
+        res < 0 -> res = res & 0x7fffffffffffffff; 防止溢位
     }
 }
 
@@ -117,19 +119,19 @@ lzma-rd.decode-reverse-bit-tree = (probs []i64, num-bits i64) (sym i64) {
 ; LZMA 機率模型大小
 LZMA-NUM-STATES = 12
 LZMA-NUM-LEN-LOW-BITS = 3
-LZMA-NUM-LEN-LOW-SYMS = 8  ; 1 << 3
+LZMA-NUM-LEN-LOW-SYMS = 8; 1 << 3
 LZMA-NUM-LEN-MID-BITS = 3
-LZMA-NUM-LEN-MID-SYMS = 8  ; 1 << 3
+LZMA-NUM-LEN-MID-SYMS = 8; 1 << 3
 LZMA-NUM-LEN-HIGH-BITS = 8
-LZMA-NUM-LEN-HIGH-SYMS = 256  ; 1 << 8
-LZMA-NUM-LEN-PROBS = 0x200  ; 2 + 2*(8+8+256)
+LZMA-NUM-LEN-HIGH-SYMS = 256; 1 << 8
+LZMA-NUM-LEN-PROBS = 0x200; 2 + 2*(8+8+256)
 LZMA-NUM-DIST-SLOTS = 64
 LZMA-NUM-DIST-LOW-BITS = 4
 LZMA-NUM-DIST-MID-BITS = 4
 LZMA-NUM-DIST-HIGH-BITS = 8
-LZMA-NUM-FULL-DISTANCES = 128  ; 1 << (4+3)
+LZMA-NUM-FULL-DISTANCES = 128; 1 << (4+3)
 LZMA-NUM-ALIGN-BITS = 4
-LZMA-NUM-ALIGN-SYMS = 16  ; 1 << 4
+LZMA-NUM-ALIGN-SYMS = 16; 1 << 4
 
 ; LZMA 解碼常數
 LZMA-EOF-SYM = 0x100
@@ -138,34 +140,48 @@ LZMA-MIN-MATCH = 2
 ; lzma-decoder: LZMA 解碼器
 lzma-decoder {
     rd lzma-rd
-    ; 屬性
-    lc i64       ; literal context bits
-    lp i64       ; literal position bits
-    pb i64       ; position bits
-    ; 輸出
+    lc i64
+    lp i64
+    pb i64
     out []byte
-    ; 機率模型
-    is-match [16]i64          ; 12 states * 4 (padded)
+    is-match [16]i64
     is-rep [16]i64
     is-rep-g0 [16]i64
     is-rep-g1 [16]i64
     is-rep-g2 [16]i64
     is-rep0-long [16]i64
-    pos-slot [256]i64        ; 4 states * 64 slots (flattened)
-    spec-pos [128]i64         ; special positions
-    align [16]i64             ; alignment
-    len-coder [0x200]i64      ; length coder
-    rep-len-coder [0x200]i64  ; rep length coder
-    literal [0x300]i64        ; literal (simplified)
-    ; 狀態
+    pos-slot [256]i64
+    spec-pos [128]i64
+    align [16]i64
+    len-coder i64
+    rep-len-coder i64
+    literal i64
     state i64
     rep0 i64
     rep1 i64
     rep2 i64
     rep3 i64
-    ; 前一個字節
     prev-byte i64
 }
+
+; 屬性
+; literal context bits
+; literal position bits
+; position bits
+; 輸出
+
+; 機率模型
+; 12 states * 4 (padded)
+
+; 4 states * 64 slots (flattened)
+; special positions
+; alignment
+; length coder
+; rep length coder
+; literal (simplified)
+; 狀態
+
+; 前一個字節
 
 ; init-probs: 初始化所有機率值為 0x400（一半機率）
 lzma-decoder.init-probs = () {
@@ -205,40 +221,51 @@ lzma-decoder.init-probs = () {
 
 ; update-state-literal: 更新狀態（字面量後）
 lzma-decoder.update-state-literal = () {
-    .state < 4 -> .state = 0
-    .state < 10 -> .state = .state - 3
-    .state >= 10 -> .state = .state - 6
+    {
+        .state < 4 -> .state = 0
+        .state < 10 -> .state = .state - 3
+        .state >= 10 -> .state = .state - 6
+    }
 }
 
 ; update-state-match: 更新狀態（匹配後）
 lzma-decoder.update-state-match = () {
-    .state < 7 -> .state = 7
-    .state >= 7 -> .state = 10
+    {
+        .state < 7 -> .state = 7
+        .state >= 7 -> .state = 10
+    }
 }
 
 ; update-state-rep: 更新狀態（重複匹配後）
 lzma-decoder.update-state-rep = () {
-    .state < 7 -> .state = 8
-    .state >= 7 -> .state = 11
+    {
+        .state < 7 -> .state = 8
+        .state >= 7 -> .state = 11
+    }
 }
 
 ; update-state-shortrep: 更新狀態（短重複後）
 lzma-decoder.update-state-shortrep = () {
-    .state < 7 -> .state = 9
-    .state >= 7 -> .state = 11
+    {
+        .state < 7 -> .state = 9
+        .state >= 7 -> .state = 11
+    }
 }
 
 ; decode-literal: 解碼字面量
 lzma-decoder.decode-literal = () {
+
     ; 簡化版：直接從範圍解碼器讀取一個位元組
     ; 完整版本需要考慮 lc/lp/pb 和前一個字節的上下文
     prev = .prev-byte
+
     ; 使用前一個字節的高位作為上下文
     ctx = prev >> (8 - .lc)
 
     ; 解碼 8 個位元
     b = 0
     i <- [0..8): {
+
         ; 選擇機率
         prob-idx = ctx + 0x100
         symbol = 1
@@ -249,7 +276,6 @@ lzma-decoder.decode-literal = () {
         } (symbol < 0x100)
         b = (b << 1) | (symbol & 1)
     }
-
     .out.push(b)
     .prev-byte = b
     .update-state-literal()
@@ -258,19 +284,21 @@ lzma-decoder.decode-literal = () {
 ; decode-length: 解碼匹配長度
 ; probs: 機率陣列，返回長度
 lzma-decoder.decode-length = (probs []i64) (length i64) {
+
     ; 選擇低位/中位/高位
     bit, tmp = .rd.decode-bit(probs[0])
     probs[0] = tmp
     bit == 0 -> {
+
         ; 低位：3 bits
         sym = .rd.decode-bit-tree(probs, 3)
         length = sym
         return
     }
-
     bit, tmp = .rd.decode-bit(probs[1])
     probs[1] = tmp
     bit == 0 -> {
+
         ; 中位：3 bits + 8
         ; 使用子陣列（從 index 2 開始）
         sub-probs []i64
@@ -294,6 +322,7 @@ lzma-decoder.decode-length = (probs []i64) (length i64) {
 ; decode-distance: 解碼匹配距離
 ; length: 匹配長度（用於決定距離編碼方式）
 lzma-decoder.decode-distance = (length i64) (dist i64) {
+
     ; 根據狀態選擇 pos-slot 機率表
     st = .state
     st > 3 -> st = 3
@@ -316,6 +345,7 @@ lzma-decoder.decode-distance = (length i64) (dist i64) {
     base = (2 | (pos-slot & 1)) << num-direct-bits
 
     pos-slot < 14 -> {
+
         ; 使用反向位元樹
         sub-probs []i64
         i <- [0..1 << num-direct-bits): {
@@ -344,78 +374,108 @@ lzma-decoder.decode = (data []byte, start-pos i64, unpacked-size i64) {
     .init-probs()
 
     {
+
         ; 檢查是否達到預期大小
-        unpacked-size >= 0 -> {
-            .out.len >= unpacked-size -> *
-        }
+        unpacked-size >= 0 -> .out.len >= unpacked-size -> *
 
         ; 解碼 is_match
         bit, tmp = .rd.decode-bit(.is-match[.state])
         .is-match[.state] = tmp
 
         bit == 0 -> {
+
             ; 字面量
             .decode-literal()
         }
-
         bit == 1 -> {
+
             ; 匹配或重複
             bit2, tmp = .rd.decode-bit(.is-rep[.state])
             .is-rep[.state] = tmp
 
-            bit2 == 0 -> {
-                ; 簡單匹配
-                length = .decode-length(.len-coder)
-                dist = .decode-distance(length)
+            {
+                bit2 == 0 -> {
 
-                ; 更新重複距離
-                .rep3 = .rep2
-                .rep2 = .rep1
-                .rep1 = .rep0
-                .rep0 = dist
+                    ; 簡單匹配
+                    length = .decode-length(.len-coder)
+                    dist = .decode-distance(length)
 
-                .update-state-match()
+                    ; 更新重複距離
+                    .rep3 = .rep2
+                    .rep2 = .rep1
+                    .rep1 = .rep0
+                    .rep0 = dist
 
-                ; 複製匹配資料
-                ; length + LZMA-MIN-MATCH 個字節
-                actual-len = length + LZMA-MIN-MATCH
-                i <- [0..actual-len): {
-                    src-pos = .out.len - .rep0 - 1
-                    src-pos >= 0 -> {
-                        b = .out[src-pos]
-                        .out.push(b)
-                        .prev-byte = b
-                    }
-                    src-pos < 0 -> {
-                        .out.push(0)
-                        .prev-byte = 0
-                    }
-                }
-            }
+                    .update-state-match()
 
-            bit2 == 1 -> {
-                ; 重複匹配
-                bit3, tmp = .rd.decode-bit(.is-rep-g0[.state])
-                .is-rep-g0[.state] = tmp
-
-                bit3 == 0 -> {
-                    ; rep0
-                    bit4, tmp = .rd.decode-bit(.is-rep0-long[.state])
-                    .is-rep0-long[.state] = tmp
-                    bit4 == 0 -> {
-                        ; 短重複（1 字節）
-                        .update-state-shortrep()
+                    ; 複製匹配資料
+                    ; length + LZMA-MIN-MATCH 個字節
+                    actual-len = length + LZMA-MIN-MATCH
+                    i <- [0..actual-len): {
                         src-pos = .out.len - .rep0 - 1
                         src-pos >= 0 -> {
                             b = .out[src-pos]
                             .out.push(b)
                             .prev-byte = b
                         }
+                        src-pos < 0 -> {
+                            .out.push(0)
+                            .prev-byte = 0
+                        }
                     }
-                    bit4 == 1 -> {
-                        ; 長重複
+                }
+                bit2 == 1 -> {
+
+                    ; 重複匹配
+                    bit3, tmp = .rd.decode-bit(.is-rep-g0[.state])
+                    .is-rep-g0[.state] = tmp
+
+                    bit3 == 0 -> {
+
+                        ; rep0
+                        bit4, tmp = .rd.decode-bit(.is-rep0-long[.state])
+                        .is-rep0-long[.state] = tmp
+                        bit4 == 0 -> {
+
+                            ; 短重複（1 字節）
+                            .update-state-shortrep()
+                            src-pos = .out.len - .rep0 - 1
+                            src-pos >= 0 -> {
+                                b = .out[src-pos]
+                                .out.push(b)
+                                .prev-byte = b
+                            }
+                        }
+                        bit4 == 1 -> {
+
+                            ; 長重複
+                            length = .decode-length(.rep-len-coder)
+                            .update-state-rep()
+                            i <- [0..length + LZMA-MIN-MATCH): {
+                                src-pos = .out.len - .rep0 - 1
+                                src-pos >= 0 -> {
+                                    b = .out[src-pos]
+                                    .out.push(b)
+                                    .prev-byte = b
+                                }
+                                src-pos < 0 -> {
+                                    .out.push(0)
+                                    .prev-byte = 0
+                                }
+                            }
+                        }
+                    }
+                    bit3 == 1 -> {
+
+                        ; rep1, rep2, or rep3
+                        ; 簡化處理
+                        .rep3 = .rep2
+                        .rep2 = .rep1
+                        .rep1 = .rep0
+
                         length = .decode-length(.rep-len-coder)
                         .update-state-rep()
+
                         i <- [0..length + LZMA-MIN-MATCH): {
                             src-pos = .out.len - .rep0 - 1
                             src-pos >= 0 -> {
@@ -427,30 +487,6 @@ lzma-decoder.decode = (data []byte, start-pos i64, unpacked-size i64) {
                                 .out.push(0)
                                 .prev-byte = 0
                             }
-                        }
-                    }
-                }
-
-                bit3 == 1 -> {
-                    ; rep1, rep2, or rep3
-                    ; 簡化處理
-                    .rep3 = .rep2
-                    .rep2 = .rep1
-                    .rep1 = .rep0
-
-                    length = .decode-length(.rep-len-coder)
-                    .update-state-rep()
-
-                    i <- [0..length + LZMA-MIN-MATCH): {
-                        src-pos = .out.len - .rep0 - 1
-                        src-pos >= 0 -> {
-                            b = .out[src-pos]
-                            .out.push(b)
-                            .prev-byte = b
-                        }
-                        src-pos < 0 -> {
-                            .out.push(0)
-                            .prev-byte = 0
                         }
                     }
                 }
@@ -499,7 +535,9 @@ lzma-decompress = (data []byte) (out []byte) {
     unpacked-size < 0 -> unpacked-size = -1
 
     ; 建立解碼器
-    dec lzma-decoder = lzma-decoder{ prev-byte: 0 }
+    dec lzma-decoder = lzma-decoder {
+        prev-byte: 0
+    }
     dec.lc = lc
     dec.lp = lp
     dec.pb = pb
@@ -520,7 +558,7 @@ lzma-decompress = (data []byte) (out []byte) {
 ; ═══════════════════════════════════════════════
 
 ; XZ 常數
-XZ-MAGIC = [0xFD, 0x37, 0x7A, 0x58, 0x5A, 0x00]
+XZ-MAGIC = [0xfd, 0x37, 0x7a, 0x58, 0x5a, 0x00]
 
 ; xz-decompress: 解壓縮 .xz 格式
 ;   data: .xz 壓縮資料 ([]byte)
@@ -532,6 +570,7 @@ XZ-MAGIC = [0xFD, 0x37, 0x7A, 0x58, 0x5A, 0x00]
 ;   - Index
 ;   - Stream Footer: 12 bytes
 xz-decompress = (data []byte) (out []byte) {
+
     ; 檢查 XZ magic
     data.len < 12 -> return
     i <- [0..6): {
@@ -562,12 +601,14 @@ xz-decompress = (data []byte) (out []byte) {
 
         ; 跳過壓縮大小（如果有）
         (block-flags & 0x40) != 0 -> {
+
             ; 壓縮大小使用變長整數編碼
             pos = pos + 1
         }
 
         ; 跳過解壓大小（如果有）
         (block-flags & 0x80) != 0 -> {
+
             ; 解壓大小使用變長整數編碼
             pos = pos + 1
         }
@@ -610,7 +651,6 @@ lzma2-decompress-stream = (data []byte, start-pos i64, out []byte) {
 
     {
         pos >= data.len -> *
-
         ctrl = data[pos]
         pos = pos + 1
 
@@ -619,9 +659,11 @@ lzma2-decompress-stream = (data []byte, start-pos i64, out []byte) {
 
         ; 未壓縮區塊（字典重置）
         ctrl == 1 -> {
+
             ; 讀取大小 (2 bytes)
             size = (data[pos] << 8) | data[pos + 1]
             pos = pos + 2
+
             ; 複製未壓縮資料
             i <- [0..size): {
                 out.push(data[pos + i])
@@ -641,9 +683,10 @@ lzma2-decompress-stream = (data []byte, start-pos i64, out []byte) {
 
         ; LZMA 壓縮區塊
         ctrl >= 0x80 -> {
+
             ; 解析大小
             ; 高 2 bits 在 ctrl 中（bits 6-5），低 16 bits 在接下來 2 bytes
-            size-hi = (ctrl & 0x1F)
+            size-hi = (ctrl & 0x1f)
             size = (size-hi << 16) | (data[pos] << 8) | data[pos + 1]
             pos = pos + 2
 
@@ -655,7 +698,8 @@ lzma2-decompress-stream = (data []byte, start-pos i64, out []byte) {
             reset-dict = (ctrl & 0x20) != 0
 
             ; 讀取 LZMA 屬性（如果字典重置且 ctrl >= 0xC0）
-            ctrl >= 0xC0 -> {
+            ctrl >= 0xc0 -> {
+
                 ; 屬性位元組
                 props = data[pos]
                 pos = pos + 1
@@ -701,10 +745,12 @@ lzma2-decompress-stream = (data []byte, start-pos i64, out []byte) {
 ; 注意：目前使用 stored block 的基本實現，
 ;       完整 LZMA2 壓縮待後續實現。
 xz-compress = (data []byte) (out []byte) {
+
     ; Stream Header: magic (6 bytes) + stream flags (2 bytes)
     i <- [0..6): {
         out.push(XZ-MAGIC[i])
     }
+
     ; Stream Flags: Check = CRC32 (0x01)
     out.push(0x01)
     out.push(0x00)
@@ -714,7 +760,7 @@ xz-compress = (data []byte) (out []byte) {
     ; TODO: 實現完整 LZMA2 壓縮
 
     ; Index
-    out.push(0x00)  ; Index indicator
+    out.push(0x00); Index indicator
 
     ; Stream Footer (12 bytes)
     ; CRC32 (4 bytes) + Backward Size (4 bytes) + Stream Flags (2 bytes) + Magic (2 bytes)
@@ -729,5 +775,5 @@ xz-compress = (data []byte) (out []byte) {
     out.push(0x01)
     out.push(0x00)
     out.push(0x59)
-    out.push(0x5A)
+    out.push(0x5a)
 }

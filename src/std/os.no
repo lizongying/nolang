@@ -120,6 +120,7 @@ strerror = (errnum i64) (msg str) {
         -> msg = 'Unknown error: ' + errnum.to-str()
     }
 }
+
 ; build-in (ForwardFunc: get-errno)
 ; get-errno: 取得最後的 errno 值
 ; get-errno = () (errno i64) {  // LLVM: call i32* @__errno_location() → load → sext
@@ -189,7 +190,6 @@ utsname {
     version str
     machine str
 }
-
 ; build-in (CLibCall: signal)
 ; signal: 設定信號處理函數（簡化版，僅支援 SIG_IGN=1 / SIG_DFL=0）
 ; sig: 信號編號
@@ -197,46 +197,37 @@ utsname {
 ; 返回先前的處理值
 ; signal = (sig i64, handler i64) (prev i64) {  // LLVM: call i64 (i32, ...)* @signal(sig, handler)
 ; }
-
 ; build-in (ForwardFunc: ttyname)
 ; ttyname: 取得終端機名稱
 ; fd: 檔案描述符
 ; 成功返回終端機路徑字串，失敗返回空串
 ; ttyname = (fd fd) (name str) {  // LLVM: call i8* @ttyname(fd) → emitStrLongFromCStr
 ; }
-
 ; build-in (ForwardFunc: stat-mode)
 ; stat-mode: 取得檔案模式（包含權限與類型位元）
 ; stat-mode = (path str) (mode i64, ok bool) { }
-
 ; build-in (ForwardFunc: stat-uid)
 ; stat-uid: 取得檔案擁有者 uid
 ; stat-uid = (path str) (uid i64, ok bool) { }
-
 ; build-in (ForwardFunc: stat-gid)
 ; stat-gid: 取得檔案群組 gid
 ; stat-gid = (path str) (gid i64, ok bool) { }
-
 ; build-in (ForwardFunc: stat-mtime)
 ; stat-mtime: 取得檔案修改時間（Unix 秒）
 ; stat-mtime = (path str) (mtime i64, ok bool) { }
-
 ; ═══════════════════════════════════════════════
 ; 使用者與系統資訊擴充
 ; ═══════════════════════════════════════════════
-
 ; build-in (ForwardFunc: getlogin)
 ; get-login: 取得當前登入使用者名稱
 ; 成功返回使用者名稱字串，失敗返回空串
 ; get-login = () (name str) {  // LLVM: call i8* @getlogin → emitStrLongFromCStr
 ; }
-
 ; build-in (CLibCall: gethostid)
 ; get-host-id: 取得主機識別碼（32 位元整數）
 ; 返回主機 ID（非負整數；錯誤時平台行為不同）
 ; get-host-id = () (id i64) {  // LLVM: call i32 @gethostid → zext
 ; }
-
 ; build-in (CLibCall: setpriority)
 ; set-priority: 設定行程優先級
 ; which: 來源類型（0=PRIO_PROCESS, 1=PRIO_PGRP, 2=PRIO_USER）
@@ -245,7 +236,6 @@ utsname {
 ; 成功返回 true，失敗返回 false
 ; set-priority = (which i64, who i64, prio i64) (ok bool) {  // LLVM: call i32 @setpriority → icmp eq 0 → zext
 ; }
-
 ; build-in (CLibCall: getpriority)
 ; get-priority: 取得行程優先級
 ; which: 來源類型（0=PRIO_PROCESS, 1=PRIO_PGRP, 2=PRIO_USER）
@@ -255,13 +245,11 @@ utsname {
 ;       需以 errno==0 區分。這裡以 ok bool 明確表達。
 ; get-priority = (which i64, who i64) (prio i64, ok bool) {  // LLVM: call i32 @getpriority → check errno
 ; }
-
 ; build-in (ForwardFunc: setsid)
 ; set-sid: 建立新對話並脫離控制終端
 ; 成功返回新的行程群組 ID（>0），失敗返回 -1
 ; set-sid = () (pid i64) {  // LLVM: call i32 @setsid → sext
 ; }
-
 ; build-in (CLibCall: flock)
 ; flock: 對檔案描述符施加或釋放建議性鎖
 ; fd: 檔案描述符
@@ -269,7 +257,6 @@ utsname {
 ; 成功返回 true，失敗返回 false
 ; flock = (fd fd, op i64) (ok bool) {  // LLVM: call i32 @flock → icmp eq 0 → zext
 ; }
-
 ; build-in (ForwardFunc: sysctl)
 ; sysctl: 查詢系統控制參數（讀取字串值）
 ; name: 參數名稱（如 'kern.ostype'、'hw.model'）
@@ -277,24 +264,20 @@ utsname {
 ; 注意：Linux 上 /proc/sys 對應；macOS/BSD 走 sysctl(2) syscall
 ; sysctl = (name str) (val str, ok bool) {  // LLVM: platform-specific impl
 ; }
-
 ; build-in (ForwardFunc: getdomainname)
 ; get-domain-name: 取得 NIS 網域名稱
 ; 成功返回網域字串，失敗返回空串
 ; get-domain-name = () (name str) {  // LLVM: call i32 @getdomainname(buf, 256) → emitStrLongFromCStr
 ; }
-
 ; build-in (ForwardFunc: syslog)
 ; syslog: 寫入一筆系統日誌
 ; priority: 日誌優先級（0=EMERG ~ 7=DEBUG，常見 6=INFO）
 ; msg: 日誌訊息內容
 ; syslog = (priority i64, msg str) {  // LLVM: call void @syslog(prio, "%s", msg)
 ; }
-
 ; ═══════════════════════════════════════════════
 ; 根目錄切換
 ; ═══════════════════════════════════════════════
-
 ; build-in (CLibCall: chroot)
 ; chroot: 切換根目錄（POSIX chroot(2)）
 ; path: 新的根目錄路徑
@@ -302,7 +285,6 @@ utsname {
 ; 注意：需要 root 權限；呼叫後應配合 ch-dir('/') 設定工作目錄
 ; chroot = (path str) (ok bool) {  // LLVM: call i32 @chroot → icmp eq 0 → zext
 ; }
-
 ; ═══════════════════════════════════════════════
 ; 時間
 ; ═══════════════════════════════════════════════
@@ -347,23 +329,18 @@ utsname {
 ; arg = (idx i64) (val str) {
 ;     // LLVM: access argv[idx]
 ; }
-
 ; ═══════════════════════════════════════════════
 ; Windows 平台專用（內建）
 ; ═══════════════════════════════════════════════
-
 ; build-in (CLibCall: FindFirstFileA)
 ; win-find-first-file: Windows 目錄搜尋（FindFirstFileA），返回 bufPtr（0=失敗）
 ; win-find-first-file = (path str) (bufptr i64) { }
-
 ; build-in (CLibCall: FindNextFileA)
 ; win-find-next-file: 讀取下一個 Windows 目錄條目名稱，返回 (name, ok)
 ; win-find-next-file = (bufptr i64) (name str, ok bool) { }
-
 ; build-in (CLibCall: FindClose)
 ; win-find-close: 關閉 Windows 目錄搜尋 handle
 ; win-find-close = (bufptr i64) (ok bool) { }
-
 ; build-in (CLibCall: WSAStartup)
 ; win-wsa-startup: 初始化 Winsock 2.2（僅 Windows），返回 true=成功
 ; win-wsa-startup = () (ok bool) { }

@@ -1,7 +1,7 @@
 ; 最小化测试: ?str 类型的 match 解构
 
 test-simple = () {
-    m [str]str = {}
+    m [str]str = { }
     m.init()
     m.put('k', 'v')
 
@@ -11,6 +11,5 @@ test-simple = () {
         nil -> print('nil')
     }
 }
-
 test-simple()
 print('done')

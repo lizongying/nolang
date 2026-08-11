@@ -4,6 +4,7 @@
 ; 本測試為純計算，不需網路，可實際執行。
 
 print('start')
+
 ; ── 所有變數頂層宣告（遵循 http-no 慣例）──
 json-str str = '{"name":"Alice","age":30,"items":[1,2,3],"active":true}'
 root i64 = -1
@@ -22,7 +23,7 @@ out-n i64 = 0
 result str = ''
 
 ; ── 測試 1: 剖析物件 ──
-p = json-pool{}
+p = json-pool {}
 p.init()
 root, next, ok = p.parse(json-str, 0)
 {
@@ -49,6 +50,7 @@ val-idx, found = p.get-key(root, 'age')
         num-val, ok = p.get-num(val-idx)
         {
             ok -> {
+
                 ; 用比較驗證，避免 f64.to-str 的 codegen bug
                 {
                     num-val == 30.0 -> print('ok: age=30')
@@ -117,5 +119,4 @@ val-idx, found = p.get-key(root, 'nonexistent')
     found == false -> print('ok: nonexistent key not found')
     -> print('fail: nonexistent key should not be found')
 }
-
 print('ok: all tests done')

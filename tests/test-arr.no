@@ -179,15 +179,15 @@ test-arr-at = () {
     v0 = a.at(0)
     v5 = a.at(5)
     v-1 = a.at(-1)
-    match v0 {
+    v0: {
         nil -> print('nil')
         -> print('ok')
     }
-    match v5 {
+    v5: {
         nil -> print('nil')
         -> print('ok')
     }
-    match v-1 {
+    v-1: {
         nil -> print('nil')
         -> print('ok')
     }

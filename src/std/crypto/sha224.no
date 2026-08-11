@@ -12,6 +12,7 @@
 ; data []byte: 輸入位元組陣列
 ; 返回 hash [28]byte: 28 位元組雜湊值
 sha224 = (data []byte) (hash [28]byte) {
+
     ; SHA-224 初始狀態（不同於 SHA-256）
     h0 u32 = 3238371032
     h1 u32 = 914150663

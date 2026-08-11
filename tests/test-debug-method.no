@@ -4,5 +4,4 @@ test-m1 = () {
     s2 = s.to-upper()
     print(s2)
 }
-
 test-m1()

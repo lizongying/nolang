@@ -22,7 +22,6 @@ test-max = () {
     r = number.max(100, 50)
     print(r); expect: 100
 }
-
 test-max()
 print(0)
 
@@ -34,7 +33,6 @@ test-min = () {
     r = number.min(3, 1, 4, 1, 5)
     print(r); expect: 1
 }
-
 test-min()
 print(1)
 
@@ -49,7 +47,6 @@ test-abs = () {
     r = number.abs(0)
     print(r); expect: 0
 }
-
 test-abs()
 print(2)
 
@@ -64,7 +61,6 @@ test-sign = () {
     r = sign(0)
     print(r); expect: 0
 }
-
 test-sign()
 print(3)
 
@@ -82,7 +78,6 @@ test-even-odd = () {
     yes = number.odd(7)
     print(yes); expect: true
 }
-
 test-even-odd()
 print(4)
 
@@ -100,7 +95,6 @@ test-pow = () {
     r = number.pow(7, 1)
     print(r); expect: 7
 }
-
 test-pow()
 print(5)
 
@@ -121,7 +115,6 @@ test-gcd = () {
     r = number.gcd(0 - 12, 8)
     print(r); expect: 4
 }
-
 test-gcd()
 print(6)
 
@@ -142,6 +135,5 @@ test-lcm = () {
     r = number.lcm(2, 5)
     print(r); expect: 10
 }
-
 test-lcm()
 print(7)

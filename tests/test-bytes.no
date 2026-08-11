@@ -11,6 +11,5 @@ test-str-bytes = () {
     print(b1); expect: 98
     print(b2); expect: 99
 }
-
 test-str-bytes()
 print(1)

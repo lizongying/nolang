@@ -1,4 +1,5 @@
 ; test-embed — 測試 #{embed=...} 文件嵌入功能
+
 #{embed='tests/embed-test-asset.txt'}
 DATA []byte
 
@@ -8,7 +9,6 @@ print('embed len: {n}')
     n == 5 -> print('len OK')
     -> print('len FAIL')
 }
-
 b = DATA[0]
 {
     b == 72 -> print('first byte OK')

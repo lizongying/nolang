@@ -20,15 +20,16 @@
 ; iv [16]byte: 初始計數器值（nonce + counter）
 ; 返回 out []byte: 輸出資料
 aes-128-ctr = (in []byte, key [16]byte, iv [16]byte) (out []byte) {
+
     ; 計數器（初始為 IV）
     ctr [16]byte
     i <- [0..16): {
         ctr[i] = iv[i]
     }
-
     out = with-len(in.len)
     pos = 0
     {
+
         ; 加密當前計數器區塊
         ks [16]byte
         ks = aes.aes-128-enc(ctr, key)
@@ -57,7 +58,6 @@ aes-128-ctr = (in []byte, key [16]byte, iv [16]byte) (out []byte) {
                 j = j - 1
             } (j >= 0)
         }
-
         pos = pos + n
     } (pos < in.len)
 }
@@ -76,7 +76,6 @@ aes-256-ctr = (in []byte, key [32]byte, iv [16]byte) (out []byte) {
     i <- [0..16): {
         ctr[i] = iv[i]
     }
-
     out = with-len(in.len)
     pos = 0
     {
@@ -88,7 +87,6 @@ aes-256-ctr = (in []byte, key [32]byte, iv [16]byte) (out []byte) {
         i <- [0..n): {
             out[pos + i] = (in[pos + i]) ^ (ks[i])
         }
-
         j = 15
         {
             ctr[j] = (ctr[j] + 1) & 255
@@ -103,7 +101,6 @@ aes-256-ctr = (in []byte, key [32]byte, iv [16]byte) (out []byte) {
                 j = j - 1
             } (j >= 0)
         }
-
         pos = pos + n
     } (pos < in.len)
 }

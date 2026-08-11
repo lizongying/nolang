@@ -30,11 +30,11 @@
 ; ═════════════════════════════════════════════════════════════════
 
 make-vec = () (out []i64) {
+
     ; prologue 已為 out malloc(256*8) 的 buffer
-    out = [1, 2, 3, 4, 5]   ; 覆蓋 out，prologue buffer 應被 free
+    out = [1, 2, 3, 4, 5]; 覆蓋 out，prologue buffer 應被 free
     ; out 的 data 現在指向字面量分配的新 buffer
 }
-
 v = make-vec()
 print(v.len)
 print(v[0])
@@ -42,12 +42,12 @@ print(v[4])
 
 ; 測試 2：局部 %vec 變數 prologue buffer 也應在首次賦值時釋放
 test-local-vec = () {
+
     ; v 是 %vec 局部變數，prologue 已 malloc(256*8)
-    v = [10, 20, 30, 40, 50]   ; 覆蓋 v，prologue buffer 應被 free
+    v = [10, 20, 30, 40, 50]; 覆蓋 v，prologue buffer 應被 free
     print(v[0])
     print(v[4])
 }
-
 test-local-vec()
 
 ; 多次調用以放大洩漏（若 prologue buffer 未釋放，每次調用洩漏 2048 字節）

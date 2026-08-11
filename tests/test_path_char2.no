@@ -2,10 +2,14 @@
 ; # std/path
 print('=== path char test ===')
 
-p = path{p: '/usr/local/bin'}
+p = path {
+    p: '/usr/local/bin'
+}
 print(p.p)
 
-p2 = path{p: '/usr'}
+p2 = path {
+    p: '/usr'
+}
 joined = p2.join('local/bin')
 print(joined)
 

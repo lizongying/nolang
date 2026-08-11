@@ -76,12 +76,14 @@ main = () {
     i <- [0..32): {
         ga-pub[i] != gb-pub[i] -> pub-same = false
     }
-
-    priv-same == true -> print('FAIL: different seeds produce same priv')
-    priv-same == false -> print('PASS: different seeds produce different priv')
-
-    pub-same == true -> print('FAIL: different seeds produce same pub')
-    pub-same == false -> print('PASS: different seeds produce different pub')
+    {
+        priv-same == true -> print('FAIL: different seeds produce same priv')
+        priv-same == false -> print('PASS: different seeds produce different priv')
+    }
+    {
+        pub-same == true -> print('FAIL: different seeds produce same pub')
+        pub-same == false -> print('PASS: different seeds produce different pub')
+    }
 
     ; 測試共享金鑰
     g-shared-a = x25519.x25519-scalarmult(ga-priv, gb-pub)
@@ -108,7 +110,8 @@ main = () {
     i <- [0..32): {
         g-shared-a[i] != g-shared-b[i] -> shared-same = false
     }
-
-    shared-same == true -> print('PASS: ECDH shared secrets match')
-    shared-same == false -> print('FAIL: ECDH shared secrets mismatch')
+    {
+        shared-same == true -> print('PASS: ECDH shared secrets match')
+        shared-same == false -> print('FAIL: ECDH shared secrets mismatch')
+    }
 }

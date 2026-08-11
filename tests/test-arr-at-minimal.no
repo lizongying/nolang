@@ -1,7 +1,7 @@
 ; minimal test for [n]t.at method
 a [3]i64 = [1, 2, 3]
 v = a.at(0)
-match v {
+v: {
     nil -> print('nil')
     -> print('ok')
 }

@@ -69,13 +69,13 @@ connect = (proxy-host str, proxy-port i64, target-host str, target-port i64, use
 
     ; 代理認證（Basic 認證）
     username.len > 0 -> {
+
         ; 格式: Proxy-Authorization: Basic base64(user:pass)
         auth-raw = username - ':' - password
         auth-bytes []byte = auth-raw.to-bytes()
         enc-str = base64.encode-std(auth-bytes)
         req = req - 'Proxy-Authorization: Basic ' - enc-str - crlf
     }
-
     req = req - crlf
 
     ; 發送 CONNECT 請求
@@ -141,7 +141,6 @@ connect = (proxy-host str, proxy-port i64, target-host str, target-port i64, use
         }
         code = code * 10 + ch - 48
     }
-
     code != 200 -> {
         fs.close(fd)
         fd = -1
@@ -207,6 +206,7 @@ proxy-tls-dial = (proxy-host str, proxy-port i64, target-host str, target-port i
     ok = c.read-server-hello-13()
     {
         ok -> {
+
             ; TLS 1.3 路徑
             ok = c.connect-13()
             ok == false -> {
@@ -215,6 +215,7 @@ proxy-tls-dial = (proxy-host str, proxy-port i64, target-host str, target-port i
             }
         }
         -> {
+
             ; TLS 1.2 fallback
             c.version = tls.TLS-VERSION
 
@@ -224,7 +225,6 @@ proxy-tls-dial = (proxy-host str, proxy-port i64, target-host str, target-port i
                 c.close()
                 return
             }
-
             ok = c.read-server-hello-done()
             ok == false -> {
                 c.close()
@@ -239,7 +239,6 @@ proxy-tls-dial = (proxy-host str, proxy-port i64, target-host str, target-port i
             i <- [0..46): {
                 premaster[2 + i] = rand-bytes[i]
             }
-
             c.derive-keys(premaster)
 
             ok = c.send-client-key-exchange(premaster, cert)
@@ -247,7 +246,6 @@ proxy-tls-dial = (proxy-host str, proxy-port i64, target-host str, target-port i
                 c.close()
                 return
             }
-
             c.send-change-cipher-spec()
             c.encrypted = true
 
@@ -256,13 +254,11 @@ proxy-tls-dial = (proxy-host str, proxy-port i64, target-host str, target-port i
                 c.close()
                 return
             }
-
             ok = c.read-change-cipher-spec()
             ok == false -> {
                 c.close()
                 return
             }
-
             ok = c.read-finished(premaster)
             ok == false -> {
                 c.close()
@@ -270,7 +266,6 @@ proxy-tls-dial = (proxy-host str, proxy-port i64, target-host str, target-port i
             }
         }
     }
-
     tc = c
 }
 

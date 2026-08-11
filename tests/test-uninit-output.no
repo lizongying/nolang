@@ -12,7 +12,10 @@ uninit-struct {
 
 ; Case 7: 先賦值再用 → 允許
 case7-assign-then-read = () (out ?uninit-struct) {
-    out = {val: 42, data: [1, 2, 3]}
+    out =  {
+        val: 42
+        data: [1, 2, 3]
+    }
     v = out.val
     print(v)
 }
@@ -22,9 +25,8 @@ case7-nil-check = () (out ?uninit-struct) {
     out = nil
     if out != nil {
         print('has value')
-    } {
-        print('is nil')
     }
+    print('is nil')
 }
 
 ; Case 8: 空函數體 → 返回 nil

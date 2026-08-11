@@ -161,15 +161,20 @@ date {
 }
 
 ; 月份天數表（非閏年）
-_days-in-month = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
+_days-in-month = [
+    31, 28, 31, 30, 31, 30, 31, 31,
+    30, 31, 30, 31,
+]
 
 ; is-leap: 判斷閏年
 is-leap = (y i64) (leap bool) {
     leap = false
-    y % 4 != 0 -> return
-    y % 100 == 0 -> {
-        y % 400 == 0 -> leap = true
-        return
+    {
+        y % 4 != 0 -> return
+        y % 100 == 0 -> {
+            y % 400 == 0 -> leap = true
+            return
+        }
     }
     leap = true
 }
@@ -177,8 +182,10 @@ is-leap = (y i64) (leap bool) {
 ; _days-in-month: 取得指定年月的天數
 days-in-month-fn = (y i64, m i64) (d i64) {
     d = 31
-    m < 1 -> return
-    m > 12 -> return
+    {
+        m < 1 -> return
+        m > 12 -> return
+    }
     d = _days-in-month[m - 1]
     m == 2 -> {
         leap bool
@@ -190,6 +197,7 @@ days-in-month-fn = (y i64, m i64) (d i64) {
 ; unix-to-date: 將 Unix 時間戳（秒）轉換為 date 結構體（UTC）
 ; 使用經典的 civil-from-days 演算法（Howard Hinnant）
 unix-to-date = (ts i64) (d date) {
+
     ; 分離天數和秒數
     days = ts / 86400
     rem = ts % 86400
@@ -221,8 +229,10 @@ unix-to-date = (ts i64) (d date) {
     d.day = doy - (153 * mp + 2) / 5 + 1
     d.month = mp + 3
     mp >= 10 -> d.month = mp - 9
-    d.month <= 2 -> d.year = y + 1
-    -> d.year = y
+    {
+        d.month <= 2 -> d.year = y + 1
+        -> d.year = y
+    }
 
     ; 星期幾（1970-01-01 是星期四 = 4）
     w = days % 7
@@ -235,16 +245,17 @@ unix-to-date = (ts i64) (d date) {
 date-to-unix = (d date) (ts i64) {
     y = d.year
     m = d.month
+
     ; 調整：3月為年初
-    m <= 2 -> {
-        y = y - 1
-    }
+    m <= 2 -> y = y - 1
     era = y / 400
     y < 0 && y % 400 != 0 -> era = era - 1
     yoe = y - era * 400
     m2 = m
-    m2 > 2 -> m2 = m2 - 3
-    -> m2 = m2 + 9
+    {
+        m2 > 2 -> m2 = m2 - 3
+        -> m2 = m2 + 9
+    }
     doy = (153 * m2 + 2) / 5 + d.day - 1
     doe = yoe * 365 + yoe / 4 - yoe / 100 + doy
     days = era * 146097 + doe - 719468
@@ -255,6 +266,7 @@ date-to-unix = (d date) (ts i64) {
 ; 格式：YYYY-MM-DD HH:MM:SS
 format-date = (d date) (out str) {
     out = with-cap(19)
+
     ; 年
     yr = d.year
     yr < 0 -> {
@@ -266,22 +278,27 @@ format-date = (d date) (out str) {
     out[2] = (yr / 10) % 10 + 48
     out[3] = yr % 10 + 48
     out[4] = 45
+
     ; 月
     out[5] = d.month / 10 + 48
     out[6] = d.month % 10 + 48
     out[7] = 45
+
     ; 日
     out[8] = d.day / 10 + 48
     out[9] = d.day % 10 + 48
     out[10] = 32
+
     ; 時
     out[11] = d.hour / 10 + 48
     out[12] = d.hour % 10 + 48
     out[13] = 58
+
     ; 分
     out[14] = d.min / 10 + 48
     out[15] = d.min % 10 + 48
     out[16] = 58
+
     ; 秒
     out[17] = d.sec / 10 + 48
     out[18] = d.sec % 10 + 48
@@ -302,7 +319,6 @@ parse-date = (s str) (ts ?i64) {
     ts = nil
     n = s.len
     n < 10 -> return
-
     d date
     d.year = 0
     d.month = 0
@@ -318,14 +334,12 @@ parse-date = (s str) (ts ?i64) {
         d.year = d.year * 10 + (c - 48)
     }
     s[4] != 45 -> return
-
     i <- [5..7): {
         c = s[i]
         c < 48 || c > 57 -> return
         d.month = d.month * 10 + (c - 48)
     }
     s[7] != 45 -> return
-
     i <- [8..10): {
         c = s[i]
         c < 48 || c > 57 -> return
@@ -333,10 +347,14 @@ parse-date = (s str) (ts ?i64) {
     }
 
     ; 驗證日期範圍
-    d.month < 1 -> return
-    d.month > 12 -> return
-    d.day < 1 -> return
-    d.day > 31 -> return
+    {
+        d.month < 1 -> return
+        d.month > 12 -> return
+    }
+    {
+        d.day < 1 -> return
+        d.day > 31 -> return
+    }
 
     ; 可選的時間部分 HH:MM:SS
     n >= 19 -> {
@@ -362,7 +380,6 @@ parse-date = (s str) (ts ?i64) {
         d.min > 59 -> return
         d.sec > 59 -> return
     }
-
     ts = date-to-unix(d)
 }
 

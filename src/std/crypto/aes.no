@@ -296,7 +296,6 @@ aes-key-expand = (key [16]byte) (ek [176]byte) {
     i <- [0..16): {
         ek[i] = key[i]
     }
-
     i <- [4..44): {
         off = (i - 1) * 4
         w = (ek[off] << 24) | (ek[off + 1] << 16) | (ek[off + 2] << 8) | ek[off + 3]

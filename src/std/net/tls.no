@@ -271,7 +271,6 @@ prf = (secret []byte, label str, seed []byte, out-len i64) (out []byte) {
     i <- [0..32): {
         a[i] = a-tmp[i]
     }
-
     out-off = 0
     {
 
@@ -624,27 +623,28 @@ rsa-pkcs1-encrypt = (msg []byte, mod-bytes []byte, exp i64) (out []byte) {
     raw = bn-to-bytes(c-bn)
 
     ; 確保輸出長度 = mod-n（左側補零）
-    raw.len == mod-n -> out = raw
-    raw.len < mod-n -> {
+    {
+        raw.len == mod-n -> out = raw
+        raw.len < mod-n -> {
 
-        ; 建立新緩衝區, 左側補零
-        out = with-len(mod-n)
-        shift = mod-n - raw.len
-        i <- [0..shift): {
-            out[i] = 0
+            ; 建立新緩衝區, 左側補零
+            out = with-len(mod-n)
+            shift = mod-n - raw.len
+            i <- [0..shift): {
+                out[i] = 0
+            }
+            i <- [0..raw.len): {
+                out[shift + i] = raw[i]
+            }
         }
-        i <- [0..raw.len): {
-            out[shift + i] = raw[i]
-        }
-    }
+        raw.len > mod-n -> {
 
-    raw.len > mod-n -> {
-
-        ; 結果比模數長（不應發生）, 截斷
-        out = with-len(mod-n)
-        off = raw.len - mod-n
-        i <- [0..mod-n): {
-            out[i] = raw[off + i]
+            ; 結果比模數長（不應發生）, 截斷
+            out = with-len(mod-n)
+            off = raw.len - mod-n
+            i <- [0..mod-n): {
+                out[i] = raw[off + i]
+            }
         }
     }
 }
@@ -846,7 +846,6 @@ conn.send-client-key-exchange = (premaster []byte, cert []byte) (ok bool) {
     i <- [0..enc-premaster.len): {
         hs[6 + i] = enc-premaster[i]
     }
-
     .append-hs(hs)
     send-raw(.fd, TLS-CT-HANDSHAKE, hs)
 
@@ -943,7 +942,6 @@ conn.read-finished = () (ok bool) {
     i <- [0..32): {
         hs-hash[i] = hs-hash-arr[i]
     }
-
     verify []byte
     verify = prf(.master-secret, 'server finished', hs-hash, TLS-FINISHED-SIZE)
 
@@ -1292,7 +1290,6 @@ conn.read-server-hello-13 = () (ok bool) {
         .version = TLS-VERSION
         return
     }
-
     ext-len i64 = get-u16(buf, pos)
     pos = pos + 2
     ext-end = pos + ext-len
@@ -1305,32 +1302,32 @@ conn.read-server-hello-13 = () (ok bool) {
         ext-data-len i64 = get-u16(buf, pos)
         pos = pos + 2
 
-        ext-type == TLS-EXT-SUPPORTED-VERSIONS -> {
+        {
+            ext-type == TLS-EXT-SUPPORTED-VERSIONS -> {
+                ext-data-len == 2 -> {
 
-            ; supported_versions (server): 2 bytes selected_version
-            ; supported_versions (client): 1 byte list length + list
-            ; 伺服器版本只有 2 bytes
-            ext-data-len == 2 -> {
-                sv = get-u16(buf, pos)
-                sv == TLS-VERSION-1-3 -> is-tls13 = true
+                    ; supported_versions (server): 2 bytes selected_version
+                    ; supported_versions (client): 1 byte list length + list
+                    ; 伺服器版本只有 2 bytes
+
+                    sv = get-u16(buf, pos)
+                    sv == TLS-VERSION-1-3 -> is-tls13 = true
+                }
             }
-        }
+            ext-type == TLS-EXT-KEY-SHARE -> {
 
-        ext-type == TLS-EXT-KEY-SHARE -> {
-
-            ; key_share: 2 bytes group + 2 bytes key length + key
-            ks-group = get-u16(buf, pos)
-            ks-len i64 = get-u16(buf, pos + 2)
-            ks-group == TLS-GROUP-X25519 && ks-len == 32 -> {
-                i <- [0..32): {
-                    .server-pub[i] = buf[pos + 4 + i]
+                ; key_share: 2 bytes group + 2 bytes key length + key
+                ks-group = get-u16(buf, pos)
+                ks-len i64 = get-u16(buf, pos + 2)
+                ks-group == TLS-GROUP-X25519 && ks-len == 32 -> {
+                    i <- [0..32): {
+                        .server-pub[i] = buf[pos + 4 + i]
+                    }
                 }
             }
         }
-
         pos = pos + ext-data-len
     } (pos < ext-end)
-
     {
         is-tls13 -> {
             .version = TLS-VERSION-1-3
@@ -1444,7 +1441,6 @@ conn.derive-handshake-keys-13 = () {
     i <- [0..32): {
         .shared-secret[i] = hs-prk[i]
     }
-
     .hs-write-seq = 0
     .hs-read-seq = 0
 }
@@ -1510,7 +1506,6 @@ conn.derive-application-keys-13 = () {
     i <- [0..12): {
         .ap-server-iv[i] = iv-tmp[i]
     }
-
     .ap-write-seq = 0
     .ap-read-seq = 0
 }
@@ -1695,7 +1690,6 @@ conn.read-encrypted-handshake-13 = () (msg-type i64, msg-data []byte) {
 
     ; 檢查是否有足夠的資料
     pos + 4 + msg-len > .hs-plain-len -> return
-
     msg-data = with-len(msg-len)
     i <- [0..msg-len): {
         msg-data[i] = .hs-plain-buf[pos + 4 + i]
@@ -1768,7 +1762,6 @@ conn.connect-13 = () (ok bool) {
             ok = true
             return
         }
-
         return
     }
 
@@ -1800,7 +1793,6 @@ conn.send-finished-13 = () (ok bool) {
     i <- [0..32): {
         c-hs-secret[i] = .hs-c-secret[i]
     }
-
     finished-key []byte
     zero-ctx []byte = with-len(0)
     finished-key = hkdf.hkdf-expand-label-vec(c-hs-secret, 'finished', zero-ctx, 32)
@@ -1948,7 +1940,6 @@ conn.connect = (host str, port i64) (ok bool) {
         .close()
         return
     }
-
     ok = true
 }
 
@@ -2079,7 +2070,6 @@ conn.send = (data str) (written ?i64) {
             ok == false -> return
         }
     }
-
     written = data.len
 }
 
@@ -2109,17 +2099,23 @@ conn.recv = (buf str, n i64) (read-n i64) {
                 r-ct = 0
                 rlen = 0
                 r-ct, rlen = read-record(.fd, rec)
-                r-ct < 0 -> return
-                ; CCS: middlebox compatibility dummy, 跳過不解密
-                r-ct != TLS-CT-CCS -> {
-                    d-ct, plain = .decrypt-record-13(rec, .ap-server-key, .ap-server-iv, .ap-read-seq)
-                    .ap-read-seq = .ap-read-seq + 1
-                    d-ct < 0 -> return
-                    ; alert: 返回錯誤
-                    d-ct == TLS-CT-ALERT -> return
-                    ; application data: 取得資料
-                    d-ct == TLS-CT-APP-DATA -> got-app-data = true
-                    ; handshake (e.g., NewSessionTicket): 跳過繼續讀取
+                {
+                    r-ct < 0 -> return
+                    r-ct != TLS-CT-CCS -> {
+
+                        ; CCS: middlebox compatibility dummy, 跳過不解密
+
+                        d-ct, plain = .decrypt-record-13(rec, .ap-server-key, .ap-server-iv, .ap-read-seq)
+                        .ap-read-seq = .ap-read-seq + 1
+                        d-ct < 0 -> return
+
+                        ; alert: 返回錯誤
+                        d-ct == TLS-CT-ALERT -> return
+
+                        ; application data: 取得資料
+                        d-ct == TLS-CT-APP-DATA -> got-app-data = true
+                        ; handshake (e.g., NewSessionTicket): 跳過繼續讀取
+                    }
                 }
             } (got-app-data == false)
         }
@@ -2283,7 +2279,6 @@ server-conn.read-client-hello = () (ok bool) {
     ; 解析 ClientHello: buf[5]=type, buf[6..8]=length, buf[9..10]=version, buf[11..42]=random
     msg-type = buf[5]
     msg-type != TLS-HS-CLIENT-HELLO -> return
-
     pos = 11; 跳過 type(1)+length(3)+version(2)
 
     ; client random (32 bytes)
@@ -2307,13 +2302,14 @@ server-conn.read-client-hello = () (ok bool) {
     {
         j < cs-len -> {
             cs = get-u16(buf, pos + j)
-            cs == TLS-CIPHER-RSA-AES128-CBC-SHA256 -> found-12 = true
-            cs == TLS-CIPHER-AES128-GCM-SHA256 -> found-13 = true
+            {
+                cs == TLS-CIPHER-RSA-AES128-CBC-SHA256 -> found-12 = true
+                cs == TLS-CIPHER-AES128-GCM-SHA256 -> found-13 = true
+            }
             j = j + 2
         }
     } (j < cs-len)
     found-12 == false && found-13 == false -> return
-
     pos = pos + cs-len
 
     ; compression methods（跳過）
@@ -2373,7 +2369,6 @@ server-conn.read-client-hello = () (ok bool) {
                         }
                     } (ks-pos + 4 <= ks-end)
                 }
-
                 pos = pos + ext-data-len
             }
         } (pos + 4 <= ext-end)
@@ -2390,7 +2385,6 @@ server-conn.read-client-hello = () (ok bool) {
             .version = TLS-VERSION
         }
     }
-
     ok = true
 }
 
@@ -2520,22 +2514,24 @@ rsa-pkcs1-decrypt = (ciphertext []byte, n []byte, d []byte) (out []byte) {
 
     ; 左側補零至 mod-len
     m-bytes []byte
-    raw.len == mod-len -> m-bytes = raw
-    raw.len < mod-len -> {
-        m-bytes = with-len(mod-len)
-        shift = mod-len - raw.len
-        i <- [0..shift): {
-            m-bytes[i] = 0
+    {
+        raw.len == mod-len -> m-bytes = raw
+        raw.len < mod-len -> {
+            m-bytes = with-len(mod-len)
+            shift = mod-len - raw.len
+            i <- [0..shift): {
+                m-bytes[i] = 0
+            }
+            i <- [0..raw.len): {
+                m-bytes[shift + i] = raw[i]
+            }
         }
-        i <- [0..raw.len): {
-            m-bytes[shift + i] = raw[i]
-        }
-    }
-    raw.len > mod-len -> {
-        m-bytes = with-len(mod-len)
-        off = raw.len - mod-len
-        i <- [0..mod-len): {
-            m-bytes[i] = raw[off + i]
+        raw.len > mod-len -> {
+            m-bytes = with-len(mod-len)
+            off = raw.len - mod-len
+            i <- [0..mod-len): {
+                m-bytes[i] = raw[off + i]
+            }
         }
     }
 
@@ -2574,7 +2570,6 @@ server-conn.read-client-key-exchange = () (ok bool) {
     rlen = 0
     ct, rlen = read-record(.fd, buf)
     ct != TLS-CT-HANDSHAKE -> return
-
     .append-hs-from(buf, 5, rlen)
 
     ; 解析 ClientKeyExchange
@@ -2594,10 +2589,14 @@ server-conn.read-client-key-exchange = () (ok bool) {
     ; RSA 解密
     premaster []byte
     premaster = rsa-pkcs1-decrypt(enc-premaster, .n-bytes, .d-bytes)
-    premaster.len == 0 -> return
+    {
+        premaster.len == 0 -> return
+        premaster.len < 48 -> {
 
-    ; premaster 應為 48 bytes，且前 2 bytes 為版本 0x0303
-    premaster.len < 48 -> return
+            ; premaster 應為 48 bytes，且前 2 bytes 為版本 0x0303
+            return
+        }
+    }
 
     ; 確保 premaster 為 48 bytes
     fixed-premaster []byte = with-len(48)
@@ -2867,7 +2866,6 @@ server-conn.read-finished = () (ok bool) {
     i <- [0..32): {
         hs-hash[i] = hs-hash-arr[i]
     }
-
     verify []byte
     verify = prf(.master-secret, 'client finished', hs-hash, TLS-FINISHED-SIZE)
 
@@ -3105,18 +3103,15 @@ server-conn.derive-handshake-keys-13 = () {
     i <- [0..16): {
         .hs-client-key[i] = key-tmp[i]
     }
-
     iv-tmp []byte
     iv-tmp = hkdf.hkdf-expand-label-vec(c-hs-secret, 'iv', empty-ctx, TLS13-IV-SIZE)
     i <- [0..12): {
         .hs-client-iv[i] = iv-tmp[i]
     }
-
     key-tmp = hkdf.hkdf-expand-label-vec(s-hs-secret, 'key', empty-ctx, TLS13-KEY-SIZE)
     i <- [0..16): {
         .hs-server-key[i] = key-tmp[i]
     }
-
     iv-tmp = hkdf.hkdf-expand-label-vec(s-hs-secret, 'iv', empty-ctx, TLS13-IV-SIZE)
     i <- [0..12): {
         .hs-server-iv[i] = iv-tmp[i]
@@ -3126,14 +3121,12 @@ server-conn.derive-handshake-keys-13 = () {
     i <- [0..32): {
         .shared-secret[i] = hs-prk[i]
     }
-
     .hs-write-seq = 0
     .hs-read-seq = 0
 }
 
 ; server-conn.derive-application-keys-13: 推導應用層金鑰
 server-conn.derive-application-keys-13 = () {
-
     hs-prk []byte = with-len(32)
     i <- [0..32): {
         hs-prk[i] = .hs-prk-field[i]
@@ -3191,7 +3184,6 @@ server-conn.derive-application-keys-13 = () {
     i <- [0..12): {
         .ap-client-iv[i] = iv-tmp[i]
     }
-
     key-tmp = hkdf.hkdf-expand-label-vec(s-ap-secret, 'key', empty-ctx, TLS13-KEY-SIZE)
     i <- [0..16): {
         .ap-server-key[i] = key-tmp[i]
@@ -3200,7 +3192,6 @@ server-conn.derive-application-keys-13 = () {
     i <- [0..12): {
         .ap-server-iv[i] = iv-tmp[i]
     }
-
     .ap-write-seq = 0
     .ap-read-seq = 0
 }
@@ -3335,20 +3326,16 @@ server-conn.read-encrypted-handshake-13 = () (msg-type i64, msg-data []byte) {
         ct, plain = .read-encrypted-record-13(.hs-client-key, .hs-client-iv, .hs-read-seq)
         .hs-read-seq = .hs-read-seq + 1
         ct < 0 -> return
-
         ct != TLS-CT-HANDSHAKE -> return
-
         .hs-plain-buf = plain
         .hs-plain-len = plain.len
         .hs-plain-pos = 0
     }
-
     pos = .hs-plain-pos
     msg-type = .hs-plain-buf[pos]
     msg-len i64 = get-u24(.hs-plain-buf, pos + 1)
 
     pos + 4 + msg-len > .hs-plain-len -> return
-
     msg-data = with-len(msg-len)
     i <- [0..msg-len): {
         msg-data[i] = .hs-plain-buf[pos + 4 + i]
@@ -3442,7 +3429,6 @@ server-conn.send-finished-13 = () (ok bool) {
     i <- [0..32): {
         s-hs-secret[i] = .hs-s-secret[i]
     }
-
     finished-key []byte
     zero-ctx []byte = with-len(0)
     finished-key = hkdf.hkdf-expand-label-vec(s-hs-secret, 'finished', zero-ctx, 32)
@@ -3489,7 +3475,6 @@ server-conn.read-client-finished-13 = () (ok bool) {
     i <- [0..32): {
         c-hs-secret[i] = .hs-c-secret[i]
     }
-
     finished-key []byte
     zero-ctx []byte = with-len(0)
     finished-key = hkdf.hkdf-expand-label-vec(c-hs-secret, 'finished', zero-ctx, 32)
@@ -3517,7 +3502,6 @@ server-conn.read-client-finished-13 = () (ok bool) {
         b2 = verify[i]
         b1 != b2 -> return
     }
-
     ok = true
 }
 
@@ -3610,7 +3594,6 @@ server-conn.handshake = () (ok bool) {
     ; 9. 發送 server Finished（加密）
     ok = .send-finished()
     ok == false -> return
-
     ok = true
 }
 
@@ -3620,7 +3603,6 @@ server-conn.handshake = () (ok bool) {
 server-conn.send = (data str) (written ?i64) {
     written = nil
     .encrypted == false -> return
-
     data-bytes []byte = data.to-bytes()
     data-len = data-bytes.len
 
@@ -3639,7 +3621,6 @@ server-conn.send = (data str) (written ?i64) {
             ok == false -> return
         }
     }
-
     written = data-len
 }
 
@@ -3650,7 +3631,6 @@ server-conn.send = (data str) (written ?i64) {
 server-conn.recv = (buf str, n i64) (read-n i64) {
     read-n = -1
     .encrypted == false -> return
-
     plain []byte
     d-ct i64 = -1
 
@@ -3662,11 +3642,14 @@ server-conn.recv = (buf str, n i64) (read-n i64) {
             out []byte
             ct, out = .read-encrypted-record-13(.ap-client-key, .ap-client-iv, .ap-read-seq)
             .ap-read-seq = .ap-read-seq + 1
-            ct < 0 -> return
+            {
+                ct < 0 -> return
+                ct == TLS-CT-ALERT -> {
 
-            ; 處理 alert
-            ct == TLS-CT-ALERT -> return
-
+                    ; 處理 alert
+                    return
+                }
+            }
             plain = out
             d-ct = ct
         }
@@ -3779,7 +3762,6 @@ server-accept = (listen-fd fd) (conn ?server-conn) {
                 c.close()
                 return
             }
-
             conn = c
         }
     }
@@ -3833,11 +3815,9 @@ https-serve-once = (listen-fd fd, status i64, body str) (ok bool) {
             {
                 sep-found -> *
                 recv-len + 4096 > 8192 -> *
-
                 tmp str = with-len(4096)
                 rn = c.recv(tmp, 4096)
                 rn <= 0 -> *
-
                 i <- [0..rn): {
                     recv-buf[recv-len + i] = tmp[i]
                 }
@@ -3851,10 +3831,11 @@ https-serve-once = (listen-fd fd, status i64, body str) (ok bool) {
             ; 5. 發送 HTTP 回應（透過 TLS 加密）
             status-s = status.to-str()
             status-text = 'OK'
-            status == 200 -> status-text = 'OK'
-            status == 404 -> status-text = 'Not Found'
-            status == 500 -> status-text = 'Internal Server Error'
-
+            {
+                status == 200 -> status-text = 'OK'
+                status == 404 -> status-text = 'Not Found'
+                status == 500 -> status-text = 'Internal Server Error'
+            }
             body-len = body.len
             len-s = body-len.to-str()
 

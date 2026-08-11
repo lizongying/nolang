@@ -8,12 +8,16 @@ hex-to-bytes = (hex-str str) (out [32]byte) {
         lo = hex-str[i * 2 + 1]
         hi-v = 0
         lo-v = 0
-        hi >= 48 && hi <= 57 -> hi-v = hi - 48
-        hi >= 97 && hi <= 102 -> hi-v = hi - 87
-        hi >= 65 && hi <= 70 -> hi-v = hi - 55
-        lo >= 48 && lo <= 57 -> lo-v = lo - 48
-        lo >= 97 && lo <= 102 -> lo-v = lo - 87
-        lo >= 65 && lo <= 70 -> lo-v = lo - 55
+        {
+            hi >= 48 && hi <= 57 -> hi-v = hi - 48
+            hi >= 97 && hi <= 102 -> hi-v = hi - 87
+            hi >= 65 && hi <= 70 -> hi-v = hi - 55
+        }
+        {
+            lo >= 48 && lo <= 57 -> lo-v = lo - 48
+            lo >= 97 && lo <= 102 -> lo-v = lo - 87
+            lo >= 65 && lo <= 70 -> lo-v = lo - 55
+        }
         out[i] = (hi-v << 4) | lo-v
     }
 }
@@ -41,7 +45,6 @@ main = () {
         eprint(alice-priv[i])
         eprint(' ')
     }
-
     alice-pub = x25519.x25519-scalarmult-base(alice-priv)
 
     eprint('alice-pub: ')
@@ -49,17 +52,18 @@ main = () {
         eprint(alice-pub[i])
         eprint(' ')
     }
-
     alice-pub-expected = hex-to-bytes('8520f0098930a754748b7ddcb43ef75a0dbf3a0d26381af4eba4a98eaa9b4e6a')
 
     ok = bytes-eq(alice-pub, alice-pub-expected)
-    ok == true -> print('PASS: Alice only')
-    ok == false -> {
-        print('FAIL: Alice only')
-        eprint('expected: ')
-        i <- [0..32): {
-            eprint(alice-pub-expected[i])
-            eprint(' ')
+    {
+        ok == true -> print('PASS: Alice only')
+        ok == false -> {
+            print('FAIL: Alice only')
+            eprint('expected: ')
+            i <- [0..32): {
+                eprint(alice-pub-expected[i])
+                eprint(' ')
+            }
         }
     }
 }

@@ -90,7 +90,6 @@ str-map.put = (key str, val str) (is-new bool) {
 ; get: 查找 key，返回 ?str（nil=未找到）
 str-map.get = (key str) (result ?str) {
     .size == 0 -> return
-
     idx = .hash(key)
 
     {
@@ -109,8 +108,8 @@ str-map.contains = (key str) (found bool) {
     val = .get(key)
     val: {
         ok -> found = true
-        err -> {}
-        nil -> {}
+        err ->
+        nil ->
     }
 }
 

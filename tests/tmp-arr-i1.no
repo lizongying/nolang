@@ -12,7 +12,6 @@ test-arr-index-of = () {
     b [3] = [1, 2, 3]
     print(b.index-of(2))
 }
-
 test-arr-sort-asc()
 print('---')
 test-arr-index-of()

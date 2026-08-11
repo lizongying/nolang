@@ -9,6 +9,5 @@ test-local-str-vec = () {
     print(s.len)
     ; s 離開作用域時應深層 free 每個 string 的 data
 }
-
 test-local-str-vec()
 print('done')

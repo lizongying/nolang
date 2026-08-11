@@ -46,7 +46,6 @@ test-str-option = () {
     print(v)
     ; v 離開作用域時應釋放 box + str data
 }
-
 test-str-option()
 print('test-str-option: ok')
 
@@ -57,16 +56,19 @@ MyStruct {
 }
 
 make-struct = () (out MyStruct) {
-    out = MyStruct{ name: 'world', count: 42 }
+    out = MyStruct {
+        name: 'world'
+        count: 42
+    }
 }
 
 test-struct-option = () {
     u ?MyStruct = make-struct()
+
     ; u 離開作用域時應釋放 box + struct fields 的堆數據（name.data）
     ; 不直接讀取 u.name/u.count（option-struct 字段讀取是另一個獨立問題）
     print('struct-option-created')
 }
-
 test-struct-option()
 print('test-struct-option: ok')
 
@@ -77,7 +79,6 @@ test-reassign = () {
     print(v)
     ; 第二次賦值前應先釋放 "first" 的 box
 }
-
 test-reassign()
 print('test-reassign: ok')
 
@@ -89,7 +90,6 @@ test-clone = () {
     print(b)
     ; a 和 b 應各自獨立擁有 box，離開作用域時各自 free（不 double-free）
 }
-
 test-clone()
 print('test-clone: ok')
 
@@ -100,7 +100,6 @@ make-opt = () (out ?str) {
     ; a 走 move 到 out，a 標記 moved，函數結束時跳過 a 的 free
     ; out 由呼叫者管理
 }
-
 r ?str = make-opt()
 print(r)
 print('test-move-out: ok')
@@ -111,7 +110,6 @@ test-scalar-option = () {
     print(n)
     ; 純量 option 不持有堆，無需釋放
 }
-
 test-scalar-option()
 print('test-scalar-option: ok')
 

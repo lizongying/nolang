@@ -32,7 +32,6 @@ fib-rec = (n i64) (r i64) {
     p2 = fib-rec(n - 2)
     r = p1 + p2
 }
-
 loop10 = fib-loop(10)
 print('fib-loop(10) = ' - loop10.to-str())
 

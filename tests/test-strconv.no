@@ -21,14 +21,12 @@ test-str-to-i64 = () {
         n == err -> print('err')
         -> print(n); 期望: 12345
     }
-
     n = '-42'.to-i64()
     {
         n == nil -> print('nil')
         n == err -> print('err')
         -> print(n); 期望: -42
     }
-
     n = '0'.to-i64()
     {
         n == nil -> print('nil')
@@ -45,7 +43,6 @@ test-str-to-i32 = () {
         n == err -> print('err')
         -> print(n); 期望: 32767
     }
-
     n = '-32768'.to-i32()
     {
         n == nil -> print('nil')
@@ -62,7 +59,6 @@ test-str-to-i16 = () {
         n == err -> print('err')
         -> print(n); 期望: 100
     }
-
     n = '-1'.to-i16()
     {
         n == nil -> print('nil')
@@ -79,7 +75,6 @@ test-str-to-i8 = () {
         n == err -> print('err')
         -> print(n); 期望: 127
     }
-
     n = '-128'.to-i8()
     {
         n == nil -> print('nil')
@@ -106,14 +101,12 @@ test-str-to-f64 = () {
         f == err -> print('err')
         -> print(f); 期望: 3.14
     }
-
     f = '-2.5'.to-f64()
     {
         f == nil -> print('nil')
         f == err -> print('err')
         -> print(f); 期望: -2.5
     }
-
     f = '0.0'.to-f64()
     {
         f == nil -> print('nil')
@@ -130,7 +123,6 @@ test-str-to-bool = () {
         b == err -> print('err')
         -> print(b); 期望: 1
     }
-
     b = 'false'.to-bool()
     {
         b == nil -> print('nil')

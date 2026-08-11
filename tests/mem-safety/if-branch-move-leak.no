@@ -36,15 +36,14 @@ branch-move = (cond bool) (out str) {
     x = 'from x'
     y = 'from y'
     {
-        cond -> out = x   ; then 分支 move x
-        -> out = y        ; else 分支 move y
+        cond -> out = x; then 分支 move x
+        -> out = y; else 分支 move y
     }
     ; 若 cond=false，x 標記為 moved（編譯時），但運行時未走 then
     ; x 的 "from x" buffer 洩漏
 }
-
 s1 = branch-move(true)
-print(s1)   ; "from x"
+print(s1); "from x"
 
 s2 = branch-move(false)
-print(s2)   ; "from y"，但 "from x" 的 buffer 洩漏
+print(s2); "from y"，但 "from x" 的 buffer 洩漏

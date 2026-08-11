@@ -32,14 +32,17 @@ uuid {
 ; new-v4: 生成隨機 UUID v4
 ; state: xorshift32 狀態（輸入/輸出，初始為非零種子）
 new-v4 = (state i64) (out uuid) {
+
     ; 生成 16 個隨機位元組（每次 rand 產生 4 位元組）
     i = 0
     {
         state, r = rand.rand(state)
         out.bytes[i] = r & 255
-        i + 1 < 16 -> out.bytes[i + 1] = (r >> 8) & 255
-        i + 2 < 16 -> out.bytes[i + 2] = (r >> 16) & 255
-        i + 3 < 16 -> out.bytes[i + 3] = (r >> 24) & 255
+        {
+            i + 1 < 16 -> out.bytes[i + 1] = (r >> 8) & 255
+            i + 2 < 16 -> out.bytes[i + 2] = (r >> 16) & 255
+            i + 3 < 16 -> out.bytes[i + 3] = (r >> 24) & 255
+        }
         i = i + 4
     } (i < 16)
 
@@ -58,8 +61,10 @@ new-v4 = (state i64) (out uuid) {
 ; 格式：xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx（小寫）
 ; 返回 out str: UUID 字串
 uuid.to-str = () (out str) {
+
     ; 8-4-4-4-12 格式
     out = with-len(36)
+
     ; byte 0-3 → position 0-7
     hex-byte(.bytes[0], 0, out)
     hex-byte(.bytes[1], 2, out)

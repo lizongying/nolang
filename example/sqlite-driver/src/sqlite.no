@@ -1,22 +1,3 @@
-; sqlite — SQLite 驅動程式
-;
-; 本驅動實作 std/database/sql 介面。
-; db-sqlite、rows-sqlite、stmt-sqlite 分別實作 sql.db、sql.rows、sql.stmt 介面，
-; 變數離開作用域時自動呼叫 leave() → close()，無需手動關閉。
-;
-; FFI 綁定直接宣告於本檔案中，使用 #{c} 註解標記。
-; 以 _ 開頭的名稱為私有（不導出），C ABI 符號自動去除前綴 _ 並將連字號轉為底線。
-; 使用前需系統安裝 libsqlite3（macOS/Linux 通常已內建）。
-; package.jsonc 中 "link-libs": ["sqlite3"] 負責連結。
-;
-; 用法：
-;   d = open(':memory:')
-;   r = d.exec('CREATE TABLE ...')
-;   rs = d.query('SELECT ...')
-;   rs.next()
-;   v = rs.scan-int(0)
-;   // rs、d 離開作用域時自動關閉，無需手動呼叫 close()
-
 #{c}
 _sqlite3-open = (filename str, db **byte) (rc i32)
 
@@ -107,6 +88,7 @@ open = (dsn str) (d db-sqlite) {
     handle = 0
     rc = _sqlite3-open(dsn, handle)
     rc != SQLITE-OK -> {
+
         ; 開啟失敗：handle 保持 0
         return
     }
@@ -147,6 +129,7 @@ db-sqlite.query = (sql str) (rs rows-sqlite) {
     stmt-handle = 0
     rc = _sqlite3-prepare-v2(.handle, sql, -1, stmt-handle, 0)
     rc != SQLITE-OK -> {
+
         ; 準備失敗：stmt-handle 保持 0
         return
     }

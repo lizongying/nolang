@@ -77,6 +77,7 @@ record {
 ; qtype i64: 查詢類型（1=A）
 ; 返回 query []byte: DNS 查詢封包
 build-query = (domain str, qtype i64) (query []byte, qlen i64) {
+
     ; Pre-allocate: header(12) + domain labels(domain.len+1) + qtype(2) + qclass(2)
     max-len = domain.len + 20
     query = with-len(max-len)
@@ -160,6 +161,7 @@ build-query = (domain str, qtype i64) (query []byte, qlen i64) {
 ; 返回 name str: 解析出的域名
 ; 返回 next-pos i64: 解析後的下一個位置
 parse-name = (data []byte, offset i64) (name str, next-pos i64) {
+
     ; Use a byte buffer for building the name (str indexed assignment requires cap>0)
     buf []byte = with-len(256)
     buf-pos = 0
@@ -179,13 +181,13 @@ parse-name = (data []byte, offset i64) (name str, next-pos i64) {
 
         ; 檢查是否為壓縮指標（前兩位為 11）
         {
-            (len-byte & 0xC0) == 0xC0 -> {
+            (len-byte & 0xc0) == 0xc0 -> {
                 jumped == false -> end-pos = pos + 2
-                pointer = ((len-byte & 0x3F) << 8) | (data[pos + 1])
+                pointer = ((len-byte & 0x3f) << 8) | (data[pos + 1])
                 pos = pointer
                 jumped = true
             }
-            (len-byte & 0xC0) == 0 -> {
+            (len-byte & 0xc0) == 0 -> {
                 label-len = len-byte
                 pos = pos + 1
                 i <- [0..label-len): {
@@ -201,6 +203,7 @@ parse-name = (data []byte, offset i64) (name str, next-pos i64) {
 
     ; 移除末尾的點
     buf-pos > 0 -> buf[buf-pos - 1] == 46 -> buf-pos = buf-pos - 1
+
     ; Convert buffer to string and trim to actual length
     name = buf.to-str()
     name = name.slice(0, buf-pos)
@@ -220,7 +223,7 @@ parse-response = (data []byte) (ip ?str) {
     ; 檢查回應碼
     flags-hi = data[2]
     flags-lo = data[3]
-    rcode = flags-lo & 0x0F
+    rcode = flags-lo & 0x0f
     rcode != DNS-RCODE-NO-ERROR -> return
 
     ; 問題數
@@ -235,6 +238,7 @@ parse-response = (data []byte) (ip ?str) {
     i <- [0..qdcount): {
         qname = ''
         qname, pos = parse-name(data, pos)
+
         ; 跳過 QTYPE(2) + QCLASS(2)
         pos = pos + 4
     }
@@ -246,14 +250,18 @@ parse-response = (data []byte) (ip ?str) {
         pos + 10 > data.len -> return
         rtype = ((data[pos]) << 8) | (data[pos + 1])
         pos = pos + 2
+
         ; CLASS (2 bytes)
         pos = pos + 2
+
         ; TTL (4 bytes)
         pos = pos + 4
+
         ; RDLENGTH (2 bytes)
         rdlength = ((data[pos]) << 8) | (data[pos + 1])
         pos = pos + 2
         pos + rdlength > data.len -> return
+
         ; A 記錄（4 bytes IPv4）
         rtype == DNS-TYPE-A && rdlength == 4 -> {
             a = data[pos]
@@ -321,8 +329,10 @@ resolve-from = (server str, domain str) (ip ?str) {
 ; domain str: 要解析的域名
 ; 返回 ip ?str: ok=IP 地址, nil=解析失敗
 resolve = (domain str) (ip ?str) {
+
     ; Try primary DNS server first
     ip = resolve-from(DNS-DEFAULT-SERVER, domain)
+
     ; If primary failed, try backup server
     ip == nil -> ip = resolve-from(DNS-BACKUP-SERVER, domain)
 }
@@ -347,7 +357,6 @@ resolve-all = (domain str) (ip ?str) {
         fs.close(fd)
         return
     }
-
     resp-str str = with-len(DNS-MAX-PACKET)
     n = net.net-udp-recvfrom(fd, resp-str, DNS-MAX-PACKET)
     fs.close(fd)

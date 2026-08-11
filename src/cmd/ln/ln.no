@@ -67,8 +67,10 @@ join-path = (d str, name str) (out str) {
         return
     }
     lastc = d[dlen - 1]
-    lastc == 45 -> out = d - name
-    lastc != 45 -> out = d - '/' - name
+    {
+        lastc == 45 -> out = d - name
+        lastc != 45 -> out = d - '/' - name
+    }
 }
 
 ; err-msg: 印出錯誤訊息到標準錯誤
@@ -82,65 +84,67 @@ do-link = (src str, linkPath str) {
     lkDir = fs.is-dir(linkPath)
     lkFile = fs.is-file(linkPath)
 
-    lkSymOk == true -> {
-        removeIt = false
-        force == true -> removeIt = true
-        noDeref == true -> removeIt = true
-        removeIt == true -> {
-            rm = fs.remove(linkPath)
-            rm == false -> {
-                err-msg('cannot remove existing link ' - linkPath)
-                hadError = true
-                return
-            }
-        }
-        removeIt == false -> {
-            err-msg('failed to create link ' - linkPath - ': File exists')
-            hadError = true
-            return
-        }
-    }
-
-    lkSymOk == false -> {
-        lkDir == true -> {
-            err-msg('cannot overwrite directory ' - linkPath)
-            hadError = true
-            return
-        }
-        lkFile == true -> {
-            force == true -> {
+    {
+        lkSymOk == true -> {
+            removeIt = false
+            force == true -> removeIt = true
+            noDeref == true -> removeIt = true
+            removeIt == true -> {
                 rm = fs.remove(linkPath)
                 rm == false -> {
-                    err-msg('cannot remove existing file ' - linkPath)
+                    err-msg('cannot remove existing link ' - linkPath)
                     hadError = true
                     return
                 }
             }
-            force == false -> {
+            removeIt == false -> {
                 err-msg('failed to create link ' - linkPath - ': File exists')
                 hadError = true
                 return
             }
         }
-    }
-
-    symbolic == true -> {
-        ok = fs.symlink(src, linkPath)
-        ok == false -> {
-            err-msg('failed to create symbolic link ' - linkPath - ' -> ' - src)
-            hadError = true
-            return
+        lkSymOk == false -> {
+            lkDir == true -> {
+                err-msg('cannot overwrite directory ' - linkPath)
+                hadError = true
+                return
+            }
+            lkFile == true -> {
+                force == true -> {
+                    rm = fs.remove(linkPath)
+                    rm == false -> {
+                        err-msg('cannot remove existing file ' - linkPath)
+                        hadError = true
+                        return
+                    }
+                }
+                force == false -> {
+                    err-msg('failed to create link ' - linkPath - ': File exists')
+                    hadError = true
+                    return
+                }
+            }
         }
-        verbose == true -> print(linkPath - ' -> ' - src)
     }
-    symbolic == false -> {
-        ok = fs.link(src, linkPath)
-        ok == false -> {
-            err-msg('failed to create hard link ' - linkPath - ' <= ' - src)
-            hadError = true
-            return
+    {
+        symbolic == true -> {
+            ok = fs.symlink(src, linkPath)
+            ok == false -> {
+                err-msg('failed to create symbolic link ' - linkPath - ' -> ' - src)
+                hadError = true
+                return
+            }
+            verbose == true -> print(linkPath - ' -> ' - src)
         }
-        verbose == true -> print(linkPath - ' <= ' - src)
+        symbolic == false -> {
+            ok = fs.link(src, linkPath)
+            ok == false -> {
+                err-msg('failed to create hard link ' - linkPath - ' <= ' - src)
+                hadError = true
+                return
+            }
+            verbose == true -> print(linkPath - ' <= ' - src)
+        }
     }
 }
 
@@ -186,14 +190,8 @@ main = () {
         a = os.arg(i)
 
         a == '--' -> endOpts = true
-
         opt = false
-        endOpts == false -> {
-            a.len > 0 -> {
-                a[0] == 45 -> opt = true
-            }
-        }
-
+        endOpts == false -> a.len > 0 -> a[0] == 45 -> opt = true
         opt == true -> {
             a[0] == 45 -> a[1] == 45 -> {
                 a == '--help' -> {
@@ -219,22 +217,22 @@ main = () {
                         hadError = true
                     }
                 }
-                a.starts-with('--target-directory=') -> {
-                    targetDir = a.slice(19, a.len)
-                }
+                a.starts-with('--target-directory=') -> targetDir = a.slice(19, a.len)
             }
             a[0] == 45 -> a[1] != 45 -> {
                 needTArg = false
                 j <- [1..a.len): {
                     ch = a[j]
-                    ch == 115 -> symbolic = true
-                    ch == 102 -> force = true
-                    ch == 110 -> noDeref = true
-                    ch == 118 -> verbose = true
-                    ch == 84  -> noTargetDir = true
-                    ch == 116 -> {
-                        j + 1 < a.len -> targetDir = a.slice(j + 1, a.len)
-                        j + 1 == a.len -> needTArg = true
+                    {
+                        ch == 115 -> symbolic = true
+                        ch == 102 -> force = true
+                        ch == 110 -> noDeref = true
+                        ch == 118 -> verbose = true
+                        ch == 84 -> noTargetDir = true
+                        ch == 116 -> {
+                            j + 1 < a.len -> targetDir = a.slice(j + 1, a.len)
+                            j + 1 == a.len -> needTArg = true
+                        }
                     }
                 }
                 needTArg == true -> {
@@ -249,84 +247,63 @@ main = () {
                 }
             }
         }
-
         countIt = true
         a == '--' -> countIt = false
         countIt == true -> {
             firstPos < 0 -> firstPos = i
             npos = npos + 1
         }
-
         i = i + 1
     } (true)
-
-    npos == 0 -> {
-        targetDir != '' -> err-msg('missing file operand after --target-directory')
-        targetDir == '' -> err-msg('missing file operand')
-        hadError = true
-    }
-
-    npos > 0 -> {
-        targetDir != '' -> {
-            k <- [0..npos): {
-                src = os.arg(firstPos + k)
-                linkPath = join-path(targetDir, base-name(src))
-                do-link(src, linkPath)
-            }
+    {
+        npos == 0 -> {
+            targetDir != '' -> err-msg('missing file operand after --target-directory')
+            targetDir == '' -> err-msg('missing file operand')
+            hadError = true
         }
-
-        targetDir == '' -> noTargetDir == true -> {
-            npos < 2 -> {
-                err-msg('missing destination file operand after --no-target-directory')
-                hadError = true
-            }
-            npos > 2 -> {
-                err-msg('target directory not allowed when using --no-target-directory')
-                hadError = true
-            }
-            npos == 2 -> {
-                linkName = os.arg(firstPos + 1)
-                k <- [0..npos - 1): {
+        npos > 0 -> {
+            targetDir != '' -> {
+                k <- [0..npos): {
                     src = os.arg(firstPos + k)
+                    linkPath = join-path(targetDir, base-name(src))
+                    do-link(src, linkPath)
+                }
+            }
+            targetDir == '' -> noTargetDir == true
+            targetDir == '' -> noTargetDir == false
+            -> {
+                npos == 1 -> {
+                    src = os.arg(firstPos)
+                    do-link(src, base-name(src))
+                }
+                npos == 2 -> {
+                    src = os.arg(firstPos)
+                    linkName = os.arg(firstPos + 1)
                     do-link(src, linkName)
                 }
-            }
-        }
-
-        targetDir == '' -> noTargetDir == false -> {
-            npos == 1 -> {
-                src = os.arg(firstPos)
-                do-link(src, base-name(src))
-            }
-            npos == 2 -> {
-                src = os.arg(firstPos)
-                linkName = os.arg(firstPos + 1)
-                do-link(src, linkName)
-            }
-            npos >= 3 -> {
-                dir = os.arg(firstPos + npos - 1)
-                isDir = fs.is-dir(dir)
-                isSym, isSymOk = fs.readlink(dir)
-                dirOk = false
-                isDir == true -> dirOk = true
-                isSymOk == true -> dirOk = true
-                dirOk == false -> {
-                    err-msg('target ' - dir - ' is not a directory')
-                    hadError = true
-                }
-                dirOk == true -> {
-                    k <- [0..npos - 1): {
-                        src = os.arg(firstPos + k)
-                        linkPath = join-path(dir, base-name(src))
-                        do-link(src, linkPath)
+                npos >= 3 -> {
+                    dir = os.arg(firstPos + npos - 1)
+                    isDir = fs.is-dir(dir)
+                    isSym, isSymOk = fs.readlink(dir)
+                    dirOk = false
+                    isDir == true -> dirOk = true
+                    isSymOk == true -> dirOk = true
+                    dirOk == false -> {
+                        err-msg('target ' - dir - ' is not a directory')
+                        hadError = true
+                    }
+                    dirOk == true -> {
+                        k <- [0..npos - 1): {
+                            src = os.arg(firstPos + k)
+                            linkPath = join-path(dir, base-name(src))
+                            do-link(src, linkPath)
+                        }
                     }
                 }
             }
         }
     }
-
     hadError == true -> os.exit(1)
     os.exit(0)
 }
-
 main()

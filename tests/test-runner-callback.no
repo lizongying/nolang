@@ -13,7 +13,6 @@ greet = () {
 test1 = () {
     print('test1 running')
 }
-
 p i64 = 0
 f i64 = 0
 p, f = test-run('greet', greet)
@@ -25,7 +24,6 @@ p, f = test-run('greet', greet)
     f == 0 -> print('ok: test-run greet failed=0')
     -> print('fail: test-run greet failed=0')
 }
-
 p2 i64 = 0
 f2 i64 = 0
 p2, f2 = test-run('test1', test1)

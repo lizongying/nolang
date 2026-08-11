@@ -2,5 +2,4 @@ test-arr-len = () {
     a [3] = [10, 20, 30]
     print(a.len)
 }
-
 test-arr-len()

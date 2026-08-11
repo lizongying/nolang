@@ -109,7 +109,6 @@ client.next-event = () (ev ?event) {
         ev = err('not connected')
         return
     }
-
     cr = number.char-to-str(13)
     lf = number.char-to-str(10)
     crlf = cr - lf
@@ -117,8 +116,10 @@ client.next-event = () (ev ?event) {
     crlf-crlf = crlf - crlf
 
     {
+
         ; 建立緩衝區視圖（slice 會複製，安全）
         data = .recv-buf.slice(0, .recv-buf-len)
+
         ; 搜尋事件分隔符（\n\n 或 \r\n\r\n）
         pos1 = data.index(lf-lf)
         pos2 = data.index(crlf-crlf)
@@ -145,117 +146,121 @@ client.next-event = () (ev ?event) {
             }
             ->
         }
-        sep-pos >= 0 -> {
-            ; 找到事件邊界
-            event-block = data.slice(0, sep-pos)
-            remaining-start = sep-pos + sep-len
-            remaining = data.slice(remaining-start, data.len)
+        {
+            sep-pos >= 0 -> {
 
-            ; 將剩餘資料移到緩衝區開頭
-            i <- [0..remaining.len): {
-                .recv-buf[i] = remaining[i]
-            }
-            .recv-buf-len = remaining.len
+                ; 找到事件邊界
+                event-block = data.slice(0, sep-pos)
+                remaining-start = sep-pos + sep-len
+                remaining = data.slice(remaining-start, data.len)
 
-            ; 解析事件區塊
-            e-event = 'message'
-            e-data = ''
-            e-id = ''
-            e-retry i64 = -1
-            has-data = false
-            pos = 0
-            {
-                nl = event-block.index-from(lf, pos)
-                line-end = nl
-                line-end < 0 -> line-end = event-block.len
-                line = event-block.slice(pos, line-end)
+                ; 將剩餘資料移到緩衝區開頭
+                i <- [0..remaining.len): {
+                    .recv-buf[i] = remaining[i]
+                }
+                .recv-buf-len = remaining.len
 
-                ; 去除行尾 \r
-                line.len > 0 -> line[line.len - 1] == 13 -> line = line.slice(0, line.len - 1)
+                ; 解析事件區塊
+                e-event = 'message'
+                e-data = ''
+                e-id = ''
+                e-retry i64 = -1
+                has-data = false
+                pos = 0
+                {
+                    nl = event-block.index-from(lf, pos)
+                    line-end = nl
+                    line-end < 0 -> line-end = event-block.len
+                    line = event-block.slice(pos, line-end)
 
-                ; 跳過空行和註解行
-                line.len > 0 -> line[0] != 58 -> {
-                    ; 尋找冒號分隔符
-                    colon = line.index(':')
-                    field = line
-                    value = ''
-                    colon >= 0 -> {
-                        field = line.slice(0, colon)
-                        val-start = colon + 1
-                        val-start < line.len -> line[val-start] == 32 -> val-start = val-start + 1
-                        value = line.slice(val-start, line.len)
-                    }
-                    {
-                        field == 'data' -> {
-                            has-data -> e-data = e-data - lf - value
-                            -> {
-                                e-data = value
-                                has-data = true
+                    ; 去除行尾 \r
+                    line.len > 0 -> line[line.len - 1] == 13 -> line = line.slice(0, line.len - 1)
+
+                    ; 跳過空行和註解行
+                    line.len > 0 -> line[0] != 58 -> {
+
+                        ; 尋找冒號分隔符
+                        colon = line.index(':')
+                        field = line
+                        value = ''
+                        colon >= 0 -> {
+                            field = line.slice(0, colon)
+                            val-start = colon + 1
+                            val-start < line.len -> line[val-start] == 32 -> val-start = val-start + 1
+                            value = line.slice(val-start, line.len)
+                        }
+                        {
+                            field == 'data' -> {
+                                has-data -> e-data = e-data - lf - value
+                                -> {
+                                    e-data = value
+                                    has-data = true
+                                }
+                            }
+                            field == 'event' -> e-event = value
+                            field == 'id' -> {
+                                e-id = value
+                                .last-event-id = value
+                            }
+                            field == 'retry' -> {
+                                retry-val ?i64 = value.to-i64()
+                                retry-val: {
+                                    nil -> e-retry = -1
+                                    err -> e-retry = -1
+                                    ok -> e-retry = it
+                                }
                             }
                         }
-                        field == 'event' -> e-event = value
-                        field == 'id' -> {
-                            e-id = value
-                            .last-event-id = value
-                        }
-                        field == 'retry' -> {
-                            retry-val ?i64 = value.to-i64()
-                            retry-val: {
-                                nil -> e-retry = -1
-                                err -> e-retry = -1
-                                ok -> e-retry = it
-                            }
+                    }
+                    pos = line-end + 1
+                } (pos < event-block.len)
+
+                ; 只有包含 data 的事件才回傳
+                has-data -> {
+                    ev = event {
+                        event: e-event
+                        data: e-data
+                        id: e-id
+                        retry: e-retry
+                    }
+                    return
+                }
+                ; 此事件無 data，繼續讀取下一個事件
+            }
+            sep-pos < 0 -> {
+
+                ; 未找到完整事件，接收更多資料
+                .recv-buf-len >= SSE-BUF-SIZE -> {
+                    ev = err('event too large')
+                    return
+                }
+                tmp str = with-len(SSE-RECV-SIZE)
+                n = 0
+                recv-ok = false
+                .use-tls -> {
+                    rn = .tls-c.recv(tmp, SSE-RECV-SIZE)
+                    rn: {
+                        ok -> n = it
+                        -> {
+                            .connected = false
+                            ev = err('recv failed')
+                            return
                         }
                     }
                 }
-
-                pos = line-end + 1
-            } (pos < event-block.len)
-
-            ; 只有包含 data 的事件才回傳
-            has-data -> {
-                ev = event{
-                    event: e-event
-                    data: e-data
-                    id: e-id
-                    retry: e-retry
+                .use-tls == false -> n = net.net-recv(.fd, tmp, SSE-RECV-SIZE)
+                n <= 0 -> {
+                    .connected = false
+                    ev = nil
+                    return
                 }
-                return
-            }
-            ; 此事件無 data，繼續讀取下一個事件
-        }
-        sep-pos < 0 -> {
-            ; 未找到完整事件，接收更多資料
-            .recv-buf-len >= SSE-BUF-SIZE -> {
-                ev = err('event too large')
-                return
-            }
-            tmp str = with-len(SSE-RECV-SIZE)
-            n = 0
-            recv-ok = false
-            .use-tls -> {
-                rn = .tls-c.recv(tmp, SSE-RECV-SIZE)
-                rn: {
-                    ok -> n = it
-                    -> {
-                        .connected = false
-                        ev = err('recv failed')
-                        return
-                    }
-                }
-            }
-            .use-tls == false -> n = net.net-recv(.fd, tmp, SSE-RECV-SIZE)
-            n <= 0 -> {
-                .connected = false
-                ev = nil
-                return
-            }
 
-            ; 複製到緩衝區末尾
-            i <- [0..n): {
-                .recv-buf[.recv-buf-len + i] = tmp[i]
+                ; 複製到緩衝區末尾
+                i <- [0..n): {
+                    .recv-buf[.recv-buf-len + i] = tmp[i]
+                }
+                .recv-buf-len = .recv-buf-len + n
             }
-            .recv-buf-len = .recv-buf-len + n
         }
     } ()
 }
@@ -288,15 +293,16 @@ client.reconnect = () (ok bool) {
     crlf = cr - lf
 
     ; 建立連線
-    .use-tls -> {
-        .tls-c.init()
-        ok2 = .tls-c.connect(.host, .port)
-        ok2 == false -> return
-    }
-
-    .use-tls == false -> {
-        .fd = net.net-dial(.host, .port)
-        .fd < 0 -> return
+    {
+        .use-tls -> {
+            .tls-c.init()
+            ok2 = .tls-c.connect(.host, .port)
+            ok2 == false -> return
+        }
+        .use-tls == false -> {
+            .fd = net.net-dial(.host, .port)
+            .fd < 0 -> return
+        }
     }
     .connected = true
 
@@ -321,28 +327,29 @@ client.reconnect = () (ok bool) {
         req = req - .last-event-id
         req = req - crlf
     }
-
     req = req - 'User-Agent: nolang-sse/1.0'
     req = req - crlf
     req = req - crlf
 
     ; 發送請求
     written = 0
-    .use-tls -> {
-        w = .tls-c.send(req)
-        w: {
-            nil -> {
+    {
+        .use-tls -> {
+            w = .tls-c.send(req)
+            w: {
+                nil -> {
+                    .close()
+                    return
+                }
+                ->
+            }
+        }
+        .use-tls == false -> {
+            written = net.net-send(.fd, req, req.len)
+            written < 0 -> {
                 .close()
                 return
             }
-            ->
-        }
-    }
-    .use-tls == false -> {
-        written = net.net-send(.fd, req, req.len)
-        written < 0 -> {
-            .close()
-            return
         }
     }
 
@@ -406,7 +413,6 @@ client.reconnect = () (ok bool) {
         }
         status-code = status-code * 10 + c - 48
     }
-
     status-code != 200 -> {
         .close()
         return
@@ -421,7 +427,6 @@ client.reconnect = () (ok bool) {
     i <- [0..remaining.len): {
         .recv-buf[i] = remaining[i]
     }
-
     ok = true
 }
 
@@ -462,12 +467,13 @@ sse-connect = (url str) (client ?client) {
     rest = url.slice(scheme.len, url.len)
 
     slash-pos = rest.index('/')
-    slash-pos < 0 -> host = rest
-    slash-pos >= 0 -> {
-        host = rest.slice(0, slash-pos)
-        path = rest.slice(slash-pos, rest.len)
+    {
+        slash-pos < 0 -> host = rest
+        slash-pos >= 0 -> {
+            host = rest.slice(0, slash-pos)
+            path = rest.slice(slash-pos, rest.len)
+        }
     }
-
     colon-pos = host.index(':')
     colon-pos >= 0 -> {
         host-only = host.slice(0, colon-pos)
@@ -484,26 +490,27 @@ sse-connect = (url str) (client ?client) {
         port = p
         host = host-only
     }
-
     host.len == 0 -> {
         client = err('empty host')
         return
     }
 
     ; ── 建立連線 ──
-    use-tls -> {
-        tls-c.init()
-        ok2 = tls-c.connect(host, port)
-        ok2 == false -> {
-            client = err('TLS connection failed')
-            return
+    {
+        use-tls -> {
+            tls-c.init()
+            ok2 = tls-c.connect(host, port)
+            ok2 == false -> {
+                client = err('TLS connection failed')
+                return
+            }
         }
-    }
-    use-tls == false -> {
-        fd = net.net-dial(host, port)
-        fd < 0 -> {
-            client = err('TCP connection failed')
-            return
+        use-tls == false -> {
+            fd = net.net-dial(host, port)
+            fd < 0 -> {
+                client = err('TCP connection failed')
+                return
+            }
         }
     }
 
@@ -530,23 +537,25 @@ sse-connect = (url str) (client ?client) {
 
     ; ── 發送請求 ──
     written = 0
-    use-tls -> {
-        w = tls-c.send(req)
-        w: {
-            nil -> {
-                tls-c.close()
+    {
+        use-tls -> {
+            w = tls-c.send(req)
+            w: {
+                nil -> {
+                    tls-c.close()
+                    client = err('send failed')
+                    return
+                }
+                ->
+            }
+        }
+        use-tls == false -> {
+            written = net.net-send(fd, req, req.len)
+            written < 0 -> {
+                fs.close(fd)
                 client = err('send failed')
                 return
             }
-            ->
-        }
-    }
-    use-tls == false -> {
-        written = net.net-send(fd, req, req.len)
-        written < 0 -> {
-            fs.close(fd)
-            client = err('send failed')
-            return
         }
     }
 
@@ -619,7 +628,6 @@ sse-connect = (url str) (client ?client) {
         }
         status-code = status-code * 10 + c - 48
     }
-
     status-code != 200 -> {
         use-tls -> tls-c.close()
         use-tls == false -> fs.close(fd)
@@ -636,8 +644,7 @@ sse-connect = (url str) (client ?client) {
     i <- [0..remaining.len): {
         rb[i] = remaining[i]
     }
-
-    cli client = client{
+    cli client = client {
         fd: fd
         tls-c: tls-c
         use-tls: use-tls
@@ -701,7 +708,7 @@ server.accept = () (c ?server-conn) {
     .fd < 0 -> return
     client-fd = net.net-accept(.fd)
     client-fd < 0 -> return
-    conn = server-conn{
+    conn = server-conn {
         fd: client-fd
         connected: false
     }
@@ -711,7 +718,6 @@ server.accept = () (c ?server-conn) {
         conn.close()
         return
     }
-
     c = conn
 }
 
@@ -820,7 +826,6 @@ server-conn.send-event = (event str, data str, id str, retry i64) (ok bool) {
         }
         -> msg = msg - 'data: ' - lf
     }
-
     id.len > 0 -> msg = msg - 'id: ' - id - lf
     retry >= 0 -> {
         retry-s = retry.to-str()
@@ -835,7 +840,6 @@ server-conn.send-event = (event str, data str, id str, retry i64) (ok bool) {
         .connected = false
         return
     }
-
     ok = true
 }
 
@@ -853,7 +857,6 @@ server-conn.send-comment = (comment str) (ok bool) {
         .connected = false
         return
     }
-
     ok = true
 }
 
@@ -882,7 +885,7 @@ server-conn.close = () {
 ; 返回 s ?server: ok=服務端, nil=失敗
 listen-on = (host str, port i64) (s ?server) {
     s = nil
-    srv = server{}
+    srv = server {}
     ok = false
     ok = srv.listen(host, port)
     ok -> s = srv

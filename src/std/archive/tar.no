@@ -69,8 +69,10 @@ tar.count = () (count i64) {
     count = 0
     off = 0
     n = len(.data)
+
     ; 先檢查再執行，避免資料不足時越界
-    for off + TAR-BLOCK <= n {
+    {
+
         ; 檢查是否為結束標記（全零區塊）
         empty = 1
         i <- [0..TAR-BLOCK): {
@@ -88,7 +90,7 @@ tar.count = () (count i64) {
         blocks = (sz + 511) / TAR-BLOCK
         blocks < 0 -> blocks = 0
         off = off + TAR-BLOCK + blocks * TAR-BLOCK
-    }
+    } (off + TAR-BLOCK <= n)
 }
 
 ; offset: 計算第 idx 個條目的實際位元組偏移（遍歷前面所有條目）
@@ -329,6 +331,7 @@ tar-builder.add-bytes = (name str, content []byte, typ i64) {
 
 ; write-header: 寫入 512 位元組 header（內部方法）
 tar-builder.write-header = (name str, typ i64, sz i64) {
+
     ; 清零 header 區
     i <- [0..TAR-BLOCK): {
         .buf[.pos + i] = 0
@@ -410,6 +413,7 @@ tar-builder.write-octal = (offset i64, width i64, val i64) {
 
 ; finish: 結束建構，寫入結束標記並返回 tar 歸檔
 tar-builder.finish = () (archive tar) {
+
     ; 寫入兩個全零區塊作為結束標記
     i <- [0..TAR-BLOCK * 2): {
         .buf[.pos + i] = 0

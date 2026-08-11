@@ -57,6 +57,7 @@ qr = (state []u32, a i64, b i64, c i64, d i64) {
 ; nonce [12]byte: 96-bit nonce
 ; 返回 out [64]byte: 密鑰流
 chacha20-block = (key [32]byte, counter u32, nonce [12]byte) (out [64]byte) {
+
     ; 初始化狀態（16 個 32-bit 字）
     state []u32
     state[0] = CC-SIGMA0
@@ -85,11 +86,13 @@ chacha20-block = (key [32]byte, counter u32, nonce [12]byte) (out [64]byte) {
 
     ; 20 輪（10 次雙輪）
     round <- [0..10): {
+
         ; 列輪
         qr(state, 0, 4, 8, 12)
         qr(state, 1, 5, 9, 13)
         qr(state, 2, 6, 10, 14)
         qr(state, 3, 7, 11, 15)
+
         ; 對角輪
         qr(state, 0, 5, 10, 15)
         qr(state, 1, 6, 11, 12)
@@ -126,7 +129,6 @@ chacha20-xor = (key [32]byte, counter u32, nonce [12]byte, data []byte) (out []b
         i <- [0..n): {
             out[pos + i] = (data[pos + i]) ^ (ks[i])
         }
-
         pos = pos + n
         blk-counter = (blk-counter + 1) & CC-MASK32
     } (pos < data.len)
@@ -141,6 +143,7 @@ chacha20-xor = (key [32]byte, counter u32, nonce [12]byte, data []byte) (out []b
 ; data []byte: 輸入資料
 ; 返回 tag [16]byte: 16 位元組認證標籤
 poly1305 = (key [32]byte, data []byte) (tag [16]byte) {
+
     ; r = key[0..16]，清除高位（clamping）
     ; r &= 0x0ffffffc0ffffffc0ffffffc0fffffff
     r [5]u32
@@ -168,6 +171,7 @@ poly1305 = (key [32]byte, data []byte) (tag [16]byte) {
     ; 逐 16 位元組區塊處理
     pos = 0
     {
+
         ; 載入區塊（小端序），末尾補零
         n = 16
         pos + n > data.len -> n = data.len - pos
@@ -177,28 +181,31 @@ poly1305 = (key [32]byte, data []byte) (tag [16]byte) {
         t3 u32 = 0
         t4 u32 = 0
 
-        n > 0 -> t0 = data[pos]
-        n > 1 -> t0 = t0 | ((data[pos + 1]) << 8)
-        n > 2 -> t0 = t0 | ((data[pos + 2]) << 16)
-        n > 3 -> t0 = t0 | ((data[pos + 3]) << 24)
-        n > 4 -> t1 = data[pos + 4]
-        n > 5 -> t1 = t1 | ((data[pos + 5]) << 8)
-        n > 6 -> t1 = t1 | ((data[pos + 6]) << 16)
-        n > 7 -> t1 = t1 | ((data[pos + 7]) << 24)
-        n > 8 -> t2 = data[pos + 8]
-        n > 9 -> t2 = t2 | ((data[pos + 9]) << 8)
-        n > 10 -> t2 = t2 | ((data[pos + 10]) << 16)
-        n > 11 -> t2 = t2 | ((data[pos + 11]) << 24)
-        n > 12 -> t3 = data[pos + 12]
-        n > 13 -> t3 = t3 | ((data[pos + 13]) << 8)
-        n > 14 -> t3 = t3 | ((data[pos + 14]) << 16)
-        n > 15 -> t3 = t3 | ((data[pos + 15]) << 24)
+        {
+            n > 0 -> t0 = data[pos]
+            n > 1 -> t0 = t0 | ((data[pos + 1]) << 8)
+            n > 2 -> t0 = t0 | ((data[pos + 2]) << 16)
+            n > 3 -> t0 = t0 | ((data[pos + 3]) << 24)
+            n > 4 -> t1 = data[pos + 4]
+            n > 5 -> t1 = t1 | ((data[pos + 5]) << 8)
+            n > 6 -> t1 = t1 | ((data[pos + 6]) << 16)
+            n > 7 -> t1 = t1 | ((data[pos + 7]) << 24)
+            n > 8 -> t2 = data[pos + 8]
+            n > 9 -> t2 = t2 | ((data[pos + 9]) << 8)
+            n > 10 -> t2 = t2 | ((data[pos + 10]) << 16)
+            n > 11 -> t2 = t2 | ((data[pos + 11]) << 24)
+            n > 12 -> t3 = data[pos + 12]
+            n > 13 -> t3 = t3 | ((data[pos + 13]) << 8)
+            n > 14 -> t3 = t3 | ((data[pos + 14]) << 16)
+            n > 15 -> t3 = t3 | ((data[pos + 15]) << 24)
+        }
 
         ; 高位 1（2^128 或 2^(n*8)）
         ; 完整區塊添加 2^128，部分區塊添加 2^(n*8)
         {
             n == 16 -> t4 = 1
             -> {
+
                 ; 部分區塊：設置對應位元
                 t0 = t0 | (1 << (n * 8))
             }
@@ -380,6 +387,7 @@ poly1305 = (key [32]byte, data []byte) (tag [16]byte) {
 ; nonce [12]byte: nonce
 ; 返回 otk [32]byte: 一次性 Poly1305 金鑰
 poly1305-key-gen = (key [32]byte, nonce [12]byte) (otk [32]byte) {
+
     ; 使用 ChaCha20(block_counter=0) 生成 64 位元組
     ; 前 32 位元組作為 Poly1305 金鑰
     block [64]byte
@@ -396,6 +404,7 @@ poly1305-key-gen = (key [32]byte, nonce [12]byte) (otk [32]byte) {
 ; plain []byte: 明文
 ; 返回 sealed []byte: 密文 + 16 位元組 tag
 chacha20-poly1305-seal = (key [32]byte, nonce [12]byte, aad []byte, plain []byte) (sealed []byte) {
+
     ; 1. 生成 Poly1305 金鑰
     otk [32]byte
     otk = poly1305-key-gen(key, nonce)
@@ -493,7 +502,6 @@ chacha20-poly1305-open = (key [32]byte, nonce [12]byte, aad []byte, sealed []byt
     i <- [0..cipher-len): {
         cipher[i] = sealed[i]
     }
-
     tag [16]byte
     i <- [0..16): {
         tag[i] = sealed[cipher-len + i]

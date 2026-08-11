@@ -8,4 +8,4 @@ compute = (n i64) (r i64) {
 
 ; 模組級 awy：直接在頂層調用 awy
 r = awy compute(21)
-print(r) ; expect: 42
+print(r); expect: 42

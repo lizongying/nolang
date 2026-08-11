@@ -8,7 +8,6 @@ test-arr-sort-asc = () {
     a.sort-asc()
     print(a[0])
 }
-
 test-arr-to-str()
 print('---')
 test-arr-sort-asc()

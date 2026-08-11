@@ -7,7 +7,6 @@ print('q={q}')
     q == 43 -> print('matched: q == 43')
     -> print('matched: default')
 }
-
 print('')
 
 ; 測試減法比較
@@ -17,7 +16,6 @@ print('')
     (q - 43) == 0 -> print('sub: (q-43)==0')
     -> print('sub: default')
 }
-
 print('')
 
 ; 測試用變量
@@ -29,7 +27,6 @@ print('q2={q2}')
     q2 == 43 -> print('q2: == 43')
     -> print('q2: default')
 }
-
 print('')
 
 ; 測試不等於

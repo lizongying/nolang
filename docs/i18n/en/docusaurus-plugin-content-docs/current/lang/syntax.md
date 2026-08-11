@@ -742,25 +742,67 @@ val: {
 
 ### If / Else
 
+If-else groups (short-circuit) **must** be wrapped in `{}`. The first matching condition wins; later conditions are not checked.
+
 ```no
-; Multiple branches (new style recommended)
+; Multiple branches (new style recommended) — short-circuit if-else chain
 {
-    a == 1 -> {
-        a = 1
-        b = 2
-    }
-    a == 2 || a == 3 -> do-something()
-    -> {
-        c = 0
-    }
+a == 1 -> {
+a = 1
+b = 2
+}
+a == 2 || a == 3 -> do-something()
+-> {
+c = 0
+}
 }
 
-; Single if (retained)
+; Single if (retained) — standalone, no short-circuit
 x == 1 -> do-something()
 
 ; Ternary expression: condition ? true-value : false-value
 c = flag ? 1 : 2
 max = sum > 10 ? sum : 10
+```
+
+**Key rules:**
+
+1. **Short-circuit group** — Multiple `cond -> body` wrapped in `{}` form an if-elif-else chain. Only the first matching branch executes.
+2. **Standalone if** — Writing `cond -> body` directly in a function/loop body (without `{}`) is an independent if. It does **not** short-circuit with adjacent if-then lines.
+3. **No mixing** — Inside a `{}` short-circuit group, all direct children must be `cond -> body` arms. Regular statements are not allowed as direct children; place them inside branch bodies.
+
+```no
+; ❌ No short-circuit — independent ifs, all conditions checked
+git-dispatch = (cmd str) {
+    cmd == 'a' -> { fa() }
+    cmd == 'b' -> { fb() }
+}
+
+; ✅ Short-circuit — wrapped in {}, first match wins
+git-dispatch = (cmd str) {
+    {
+        cmd == 'a' -> { fa() }
+        cmd == 'b' -> { fb() }
+        true -> {}
+    }
+}
+
+; ❌ Match-block with mixed regular statement → compile error
+{
+    cmd == 'a' -> { fa() }
+    print(cmd)
+    cmd == 'b' -> { fb() }
+}
+
+; ✅ Regular statement moved into branch body
+{
+    cmd == 'a' -> {
+        print(cmd)
+        fa()
+    }
+    cmd == 'b' -> { fb() }
+    true -> {}
+}
 ```
 
 ### Async Programming (run / awy)

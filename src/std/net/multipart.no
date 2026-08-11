@@ -226,9 +226,11 @@ multipart-reader.parse-headers = (header-block str, part multipart-part) {
 
     pos = 0
     {
+
         ; 找到下一個 CRLF
         next-crlf = header-block.index-from(crlf, pos)
         next-crlf < 0 -> {
+
             ; 最後一行
             line = header-block.slice(pos, header-block.len)
             .parse-header-line(line, part)
@@ -245,31 +247,34 @@ multipart-reader.parse-headers = (header-block str, part multipart-part) {
 ; line str: 標頭行
 ; part multipart-part: 輸出，解析結果
 multipart-reader.parse-header-line = (line str, part multipart-part) {
+
     ; Content-Disposition: form-data; name="field"; filename="file.txt"
-    line.starts-with('Content-Disposition:') -> {
-        ; 提取 name
-        name-marker = 'name="'
-        name-pos = line.index(name-marker)
-        name-pos >= 0 -> {
-            name-start = name-pos + name-marker.len
-            name-end = line.index-from('"', name-start)
-            name-end >= 0 -> part.name = line.slice(name-start, name-end)
-        }
+    {
+        line.starts-with('Content-Disposition:') -> {
 
-        ; 提取 filename
-        file-marker = 'filename="'
-        file-pos = line.index(file-marker)
-        file-pos >= 0 -> {
-            file-start = file-pos + file-marker.len
-            file-end = line.index-from('"', file-start)
-            file-end >= 0 -> part.filename = line.slice(file-start, file-end)
-        }
-    }
+            ; 提取 name
+            name-marker = 'name="'
+            name-pos = line.index(name-marker)
+            name-pos >= 0 -> {
+                name-start = name-pos + name-marker.len
+                name-end = line.index-from('"', name-start)
+                name-end >= 0 -> part.name = line.slice(name-start, name-end)
+            }
 
-    line.starts-with('Content-Type:') -> {
-        ct-start = 13
-        part.content-type = line.slice(ct-start, line.len)
-        part.content-type = part.content-type.trim()
+            ; 提取 filename
+            file-marker = 'filename="'
+            file-pos = line.index(file-marker)
+            file-pos >= 0 -> {
+                file-start = file-pos + file-marker.len
+                file-end = line.index-from('"', file-start)
+                file-end >= 0 -> part.filename = line.slice(file-start, file-end)
+            }
+        }
+        line.starts-with('Content-Type:') -> {
+            ct-start = 13
+            part.content-type = line.slice(ct-start, line.len)
+            part.content-type = part.content-type.trim()
+        }
     }
 }
 
@@ -292,6 +297,7 @@ multipart-reader.next = () (has-part bool) {
     ; 檢查是否為結束邊界: --boundary--
     after-marker = marker-pos + boundary-marker.len
     after-marker + 1 < .end -> .data[after-marker] == 45 && .data[after-marker + 1] == 45 -> {
+
         ; '--' = 結束邊界
         .pos = .end
         return
@@ -372,7 +378,7 @@ multipart-reader.has-current-part = () (yes bool) {
 ; 返回 w ?multipart-writer: ok=編碼器, nil=失敗
 multipart-create = () (w ?multipart-writer) {
     w = nil
-    writer = multipart-writer{}
+    writer = multipart-writer {}
     ok = false
     ok = writer.init()
     ok -> w = writer
@@ -402,6 +408,7 @@ multipart-parse = (content-type str, body str) (r ?multipart-reader) {
     {
         bstart < content-type.len -> {
             content-type[bstart] == 34 -> {
+
                 ; 引號開始，找結束引號
                 bstart = bstart + 1
                 bend = content-type.index-from('"', bstart)
@@ -409,6 +416,7 @@ multipart-parse = (content-type str, body str) (r ?multipart-reader) {
                 boundary = content-type.slice(bstart, bend)
             }
             -> {
+
                 ; 無引號，取到行尾或分號
                 bend = content-type.index-from(';', bstart)
                 bend < 0 -> bend = content-type.len
@@ -418,8 +426,7 @@ multipart-parse = (content-type str, body str) (r ?multipart-reader) {
         }
         -> return
     }
-
-    reader = multipart-reader{}
+    reader = multipart-reader {}
     reader.init(boundary, body)
     r = reader
 }
@@ -433,19 +440,16 @@ multipart-extract-boundary = (content-type str) (boundary str) {
     bpos = content-type.index(boundary-marker)
     bpos < 0 -> return
     bstart = bpos + boundary-marker.len
-    bstart < content-type.len -> {
-        content-type[bstart] == 34 -> {
-            bstart = bstart + 1
-            bend = content-type.index-from('"', bstart)
-            bend < 0 -> return
-            boundary = content-type.slice(bstart, bend)
-        }
-        -> {
-            bend = content-type.index-from(';', bstart)
-            bend < 0 -> bend = content-type.len
-            boundary = content-type.slice(bstart, bend)
-            boundary = boundary.trim()
-        }
+    bstart < content-type.len -> content-type[bstart] == 34 -> {
+        bstart = bstart + 1
+        bend = content-type.index-from('"', bstart)
+        bend < 0 -> return
+        boundary = content-type.slice(bstart, bend)
+    } -> {
+        bend = content-type.index-from(';', bstart)
+        bend < 0 -> bend = content-type.len
+        boundary = content-type.slice(bstart, bend)
+        boundary = boundary.trim()
     }
 }
 

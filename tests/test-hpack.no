@@ -22,6 +22,7 @@ test-encode-int-small = () {
 
 ; test-encode-int-multi: 編碼多 byte 整數
 test-encode-int-multi = () {
+
     ; 1337 with 5-bit prefix: 1337 > 31, so multi-byte
     ; First byte: 31 (all 1s in prefix)
     ; 1337 - 31 = 1306

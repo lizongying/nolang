@@ -75,5 +75,4 @@ c2: {
         .close()
     }
 }
-
 print('ok: all tests done')

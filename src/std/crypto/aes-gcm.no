@@ -35,6 +35,7 @@ GCM-IV-SIZE = 12
 ; h [16]byte: 雜湊子金鑰
 ; 返回 out [16]byte: 乘積
 ghash-mul = (x [16]byte, h [16]byte) (out [16]byte) {
+
     ; 將 x 和 h 視為 128 位元整數（大端序）
     ; 使用 bit-by-bit 乘法
 
@@ -52,18 +53,22 @@ ghash-mul = (x [16]byte, h [16]byte) (out [16]byte) {
 
     ; 逐位元處理 x 的每一位
     i <- [0..128): {
+
         ; 取 x 的第 i 位元（從最高位開始）
         byte-idx = i / 8
         bit-idx = 7 - (i % 8)
         xi = (x[byte-idx] >> bit-idx) & 1
+
         ; z = z XOR (xi * v) — 僅在 xi == 1 時執行
         xi == 1 -> {
             j <- [0..16): {
                 z[j] = z[j] ^ v[j]
             }
         }
+
         ; 判斷 v 的最低位元
         v-lsb = v[15] & 1
+
         ; v = v >> 1
         j = 15
         {
@@ -71,10 +76,10 @@ ghash-mul = (x [16]byte, h [16]byte) (out [16]byte) {
             j = j - 1
         } (j > 0)
         v[0] = v[0] >> 1
+
         ; 若 v_lsb == 1，v = v XOR R（R = 0xE1000...0）
         v-lsb == 1 -> v[0] = v[0] ^ 225
     }
-
     i <- [0..16): {
         out[i] = z[i]
     }
@@ -86,6 +91,7 @@ ghash-mul = (x [16]byte, h [16]byte) (out [16]byte) {
 ; cipher []byte: 密文
 ; 返回 out [16]byte: GHASH 值
 ghash = (h [16]byte, aad []byte, cipher []byte) (out [16]byte) {
+
     ; y = 0
     y [16]byte
     blk [16]byte
@@ -199,10 +205,10 @@ aes-128-ctr-xor = (key [16]byte, icb [16]byte, data []byte) (out []byte) {
     i <- [0..16): {
         cb[i] = icb[i]
     }
-
     out = with-len(data.len)
     pos = 0
     {
+
         ; 加密當前計數器區塊
         ks [16]byte
         ks = aes.aes-128-enc(cb, key)
@@ -231,7 +237,6 @@ aes-128-ctr-xor = (key [16]byte, icb [16]byte, data []byte) (out []byte) {
                 j = j - 1
             } (j >= 0)
         }
-
         pos = pos + n
     } (pos < data.len)
 }
@@ -247,6 +252,7 @@ aes-128-ctr-xor = (key [16]byte, icb [16]byte, data []byte) (out []byte) {
 ; plain []byte: 明文
 ; 返回 sealed []byte: 密文 + 16 位元組 tag（長度 = plain.len + 16）
 aes-128-gcm-seal = (key [16]byte, iv [12]byte, aad []byte, plain []byte) (sealed []byte) {
+
     ; 1. 計算雜湊子金鑰 H = AES-enc(key, 0^128)
     zero-block [16]byte
     i <- [0..16): {
@@ -346,7 +352,6 @@ aes-128-gcm-open = (key [16]byte, iv [12]byte, aad []byte, sealed []byte) (plain
     i <- [0..cipher-len): {
         cipher[i] = sealed[i]
     }
-
     tag [16]byte
     i <- [0..16): {
         tag[i] = sealed[cipher-len + i]
@@ -368,6 +373,7 @@ aes-128-gcm-open = (key [16]byte, iv [12]byte, aad []byte, sealed []byte) (plain
         diff = diff | (tag[i] ^ exp-tag[i])
     }
     diff != 0 -> {
+
         ; 認證失敗
         return
     }
@@ -383,6 +389,5 @@ aes-128-gcm-open = (key [16]byte, iv [12]byte, aad []byte, sealed []byte) (plain
         ctr[j] != 0 -> break
         j = j - 1
     } (j >= 12)
-
     plain = aes-128-ctr-xor(key, ctr, cipher)
 }

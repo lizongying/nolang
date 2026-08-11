@@ -45,9 +45,8 @@ json-pool.alloc = () (idx i64) {
     .nodes[idx].kind = json-kind.null
     .nodes[idx].str-val.len = 0
 }
-
 print('start')
-p = json-pool{}
+p = json-pool {}
 p.init()
 
 node-idx i64 = 0

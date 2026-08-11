@@ -1097,7 +1097,7 @@ int.to-str = () (out str) {
 | Counted loop     | `{ } * n` or `i <- [0..n): { }` | `for i=0, i<n, i++ { }`                  |
 | Range iteration  | `i <- [a..b]: { }`             | `for i <- [a..b] { }` / `for i in [...]` |
 | Conditional match| `x: { ... }`                   | `match x { ... }`                        |
-| Branch selection | `{ cond -> body }`             | `if/elif/else { }`                       |
+| Branch selection | `{ cond -> body }` (short-circuit) | `if/elif/else { }`                       |
 | Skip iteration   | `continue` (temporarily retained) | `**` (planned, not yet replaced)      |
 | Break loop       | `break` (temporarily retained) | `*` (planned, not yet replaced)          |
 | Early return     | `return` (temporarily retained) | `...` (planned, not yet replaced)       |
@@ -1342,6 +1342,8 @@ val: {
 
 ### If/Else (new style `{ cond -> body }`)
 
+If-else groups (short-circuit) **must** be wrapped in `{}`. The first matching condition wins; later conditions are not checked.
+
 ```no
 {
     a == 1 -> {
@@ -1351,6 +1353,46 @@ val: {
     a == 2 || a == 3 -> do-something()
     ->
         c = 0
+}
+```
+
+**Key rules:**
+
+1. **Short-circuit group** — Multiple `cond -> body` lines wrapped in `{}` form an if-elif-else chain. Only the first matching branch executes.
+2. **Standalone if** — A single `cond -> body` written directly in a function/loop body (without wrapping `{}`) is an independent if. It does **not** short-circuit with adjacent if-then lines.
+3. **No mixing** — Inside a `{}` short-circuit group, all direct children must be `cond -> body` arms. Regular statements (assignments, calls, etc.) are not allowed as direct children; place them inside branch bodies instead.
+
+```no
+; ❌ No short-circuit — these are independent ifs, all conditions are checked
+func = (cmd str) {
+    cmd == 'a' -> { fa() }
+    cmd == 'b' -> { fb() }
+}
+
+; ✅ Short-circuit — wrapped in {}, first match wins
+func = (cmd str) {
+    {
+        cmd == 'a' -> { fa() }
+        cmd == 'b' -> { fb() }
+        true -> {}
+    }
+}
+
+; ❌ Match-block with mixed regular statement → compile error
+{
+    cmd == 'a' -> { fa() }
+    print(cmd)        ; regular statement not allowed here
+    cmd == 'b' -> { fb() }
+}
+
+; ✅ Regular statement moved into branch body
+{
+    cmd == 'a' -> {
+        print(cmd)
+        fa()
+    }
+    cmd == 'b' -> { fb() }
+    true -> {}
 }
 ```
 

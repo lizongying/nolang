@@ -102,7 +102,9 @@ fd-w >= 0 -> {
     ut-ok = fs.utime(ut-path, 1000, 2000)
     eprint('utime ok = ')
     print(ut-ok.to-str())
-    ut-ok -> print('PASS: utime succeeded')
-    ut-ok == false -> print('FAIL: utime failed')
+    {
+        ut-ok -> print('PASS: utime succeeded')
+        ut-ok == false -> print('FAIL: utime failed')
+    }
     fs.remove(ut-path)
 }

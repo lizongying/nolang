@@ -10,9 +10,9 @@ flag = true; bool
 a i8 = 2; i8 类型
 
 ; 特殊类型标注
-i8 = 3; i8 类型
+i8 i8 = 3; i8 类型
 
-i8
+i8 i8
 
 ; 中连接符变量名
 foo-bar = 42

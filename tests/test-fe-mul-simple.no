@@ -16,9 +16,10 @@ main = () {
         eprint(h[i])
         eprint(' ')
     }
-
-    h[0] == 6 -> print('PASS: 2*3=6')
-    h[0] != 6 -> print('FAIL: 2*3')
+    {
+        h[0] == 6 -> print('PASS: 2*3=6')
+        h[0] != 6 -> print('FAIL: 2*3')
+    }
 
     ; 測試 2: 大數乘法 — f = [0, 1, 0, ...] (值 = 2^26), g = [0, 1, 0, ...] (值 = 2^26)
     ; h = 2^52 = [0, 0, 2, 0, ...] (shift 51, limb 2 = 2*2^0 = 2? No...)
@@ -35,9 +36,10 @@ main = () {
         eprint(h2[i])
         eprint(' ')
     }
-
-    h2[2] == 2 -> print('PASS: 2^26*2^26=2^52')
-    h2[2] != 2 -> print('FAIL: 2^26*2^26')
+    {
+        h2[2] == 2 -> print('PASS: 2^26*2^26=2^52')
+        h2[2] != 2 -> print('FAIL: 2^26*2^26')
+    }
 
     ; 測試 3: (p-1) * 1 = p-1 = 2^255 - 20
     ; p-1 in limbs: 2^255 - 1 (all limbs maxed) minus 19
@@ -75,18 +77,20 @@ main = () {
     i <- [0..32): {
         h3-bytes[i] != pm1-bytes[i] -> ok3 = false
     }
-    ok3 == true -> print('PASS: (p-1)*1=p-1')
-    ok3 == false -> {
-        print('FAIL: (p-1)*1')
-        eprint('h3 bytes: ')
-        i <- [0..32): {
-            eprint(h3-bytes[i])
-            eprint(' ')
-        }
-        eprint('pm1 bytes: ')
-        i <- [0..32): {
-            eprint(pm1-bytes[i])
-            eprint(' ')
+    {
+        ok3 == true -> print('PASS: (p-1)*1=p-1')
+        ok3 == false -> {
+            print('FAIL: (p-1)*1')
+            eprint('h3 bytes: ')
+            i <- [0..32): {
+                eprint(h3-bytes[i])
+                eprint(' ')
+            }
+            eprint('pm1 bytes: ')
+            i <- [0..32): {
+                eprint(pm1-bytes[i])
+                eprint(' ')
+            }
         }
     }
 
@@ -99,7 +103,8 @@ main = () {
         eprint(h4[i])
         eprint(' ')
     }
-
-    h4[0] == 1 -> print('PASS: (p-1)^2=1 mod p')
-    h4[0] != 1 -> print('FAIL: (p-1)^2')
+    {
+        h4[0] == 1 -> print('PASS: (p-1)^2=1 mod p')
+        h4[0] != 1 -> print('FAIL: (p-1)^2')
+    }
 }

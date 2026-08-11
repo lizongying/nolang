@@ -51,6 +51,7 @@ der-len = (data []byte, pos i64) (len i64, adv i64) {
 ; pos: 目前位置（指向標籤位元組）
 ; next: 輸出下一個元素的位置
 der-skip = (data []byte, pos i64) (next i64) {
+
     ; 跳過標籤（1 位元組）
     p = pos + 1
     l, adv = der-len(data, p)
@@ -67,6 +68,7 @@ der-skip = (data []byte, pos i64) (next i64) {
 ; start: 輸出 TBS 起始位置（含 SEQUENCE 標籤）
 ; end: 輸出 TBS 結束位置（不含，即下個元素的起始）
 x509-tbs-range = (data []byte) (start i64, end i64) {
+
     ; 驗證外層 SEQUENCE
     tag = data[0]
     tag != 48 -> {
@@ -110,17 +112,21 @@ x509-serial = (data []byte, serial i64) {
     ; 檢查是否為 [0] EXPLICIT（版本，v2/v3 才有）
     ; 現在應該是 INTEGER（序號）
     t = der-tag(data, p)
-    t == 160 -> {
-        ; 跳過 [0] EXPLICIT 元素
-        p = der-skip(data, p)
-        t = der-tag(data, p)
-    }
-    t != 2 -> {
-        serial = 0
-        return
+    {
+        t == 160 -> {
+
+            ; 跳過 [0] EXPLICIT 元素
+            p = der-skip(data, p)
+            t = der-tag(data, p)
+        }
+        t != 2 -> {
+            serial = 0
+            return
+        }
     }
     int-len, adv = der-len(data, p + 1)
     int-len > 8 -> {
+
         ; 序號太大，無法放入 i64
         serial = 0
         return
@@ -349,16 +355,19 @@ x509-fingerprint = (data []byte) (h0 i64, h1 i64, h2 i64, h3 i64, h4 i64, h5 i64
 
     wi <- [0..16): {
         boff = off + wi * 4; 此字在 padded 訊息中的位元組偏移
+
         ; 組裝 4 個位元組 → 32-bit 大端字
         b0 = 0
         b1 = 0
         b2 = 0; 0x80 已放在 b0 或 b1
         b3 = 0
+
         ; 位元組 0
         {
             boff < tbs-len -> b0 = data[tbs-start + boff]
             boff == tbs-len -> b0 = 128
             boff >= pad-len - 8 -> {
+
                 ; 0x80
 
                 ; 長度欄位（64-bit big-endian，在位元組偏移 pad-len-8 開始）
@@ -376,11 +385,13 @@ x509-fingerprint = (data []byte) (h0 i64, h1 i64, h2 i64, h3 i64, h4 i64, h5 i64
                 }
             }
         }
+
         ; 位元組 1
         {
             boff + 1 < tbs-len -> b1 = data[tbs-start + boff + 1]
             boff + 1 == tbs-len -> b1 = 128
             boff + 1 >= pad-len - 8 -> {
+
                 ; 0x80
 
                 bit-len = tbs-len * 8
@@ -397,6 +408,7 @@ x509-fingerprint = (data []byte) (h0 i64, h1 i64, h2 i64, h3 i64, h4 i64, h5 i64
                 }
             }
         }
+
         ; 位元組 2
         {
             boff + 2 < tbs-len -> b2 = data[tbs-start + boff + 2]
@@ -416,11 +428,13 @@ x509-fingerprint = (data []byte) (h0 i64, h1 i64, h2 i64, h3 i64, h4 i64, h5 i64
                 }
             }
         }
+
         ; 位元組 3
         {
             boff + 3 < tbs-len -> b3 = data[tbs-start + boff + 3]
             boff + 3 == tbs-len -> b3 = 128
             boff + 3 >= pad-len - 8 -> {
+
                 ; 只有當 0x80 剛好在這位置
 
                 bit-len = tbs-len * 8
@@ -2181,26 +2195,28 @@ sha256-compress = (w0 i64, w1 i64, w2 i64, w3 i64, w4 i64, w5 i64, w6 i64, w7 i6
 ; val i64: 長度值
 ; 返回 out []byte: DER 長度位元組
 der-enc-len = (val i64) (out []byte) {
-    val < 128 -> {
-        out = with-len(1)
-        out[0] = val & 255
-        out.truncate(1)
-        return
-    }
-    val < 256 -> {
-        out = with-len(2)
-        out[0] = 0x81
-        out[1] = val & 255
-        out.truncate(2)
-        return
-    }
-    val < 65536 -> {
-        out = with-len(3)
-        out[0] = 0x82
-        out[1] = (val >> 8) & 255
-        out[2] = val & 255
-        out.truncate(3)
-        return
+    {
+        val < 128 -> {
+            out = with-len(1)
+            out[0] = val & 255
+            out.truncate(1)
+            return
+        }
+        val < 256 -> {
+            out = with-len(2)
+            out[0] = 0x81
+            out[1] = val & 255
+            out.truncate(2)
+            return
+        }
+        val < 65536 -> {
+            out = with-len(3)
+            out[0] = 0x82
+            out[1] = (val >> 8) & 255
+            out[2] = val & 255
+            out.truncate(3)
+            return
+        }
     }
     out = with-len(5)
     out[0] = 0x83
@@ -2248,13 +2264,11 @@ der-enc-integer-bytes = (data []byte) (out []byte) {
     {
         start < n - 1 && data[start] == 0 -> start = start + 1
     } (start < n - 1 && data[start] == 0)
-
     actual = n - start
 
     ; 若 MSB 為 1，需補 0x00 以保持正號
     need-pad = 0
     (data[start] & 128) != 0 -> need-pad = 1
-
     content-len = actual + need-pad
     content []byte = with-len(content-len)
     {
@@ -2293,7 +2307,6 @@ der-enc-integer-i64 = (val i64) (out []byte) {
         n = n + 1
         tmp = tmp >> 8
     } (tmp != 0)
-
     data []byte = with-len(n + 1)
     i <- [0..n): {
         data[n - 1 - i] = (val >> (i * 8)) & 255
@@ -2378,7 +2391,7 @@ der-enc-utctime = (s str) (out []byte) {
 ; content []byte: 內容
 ; 返回 out []byte: DER [n] EXPLICIT
 der-enc-explicit = (tag-num i64, content []byte) (out []byte) {
-    tag = 0xA0 | (tag-num & 31)
+    tag = 0xa0 | (tag-num & 31)
     out = der-enc-tlv(tag, content)
 }
 
@@ -2397,12 +2410,12 @@ der-enc-oid-raw = (raw []byte) (out []byte) {
 ; 返回 out []byte: SEQUENCE { OID rsaEncryption, NULL }
 alg-id-rsa-encryption = () (out []byte) {
     oid-rsa []byte = with-len(9)
-    oid-rsa[0] = 0x2A; 1.2
+    oid-rsa[0] = 0x2a; 1.2
     oid-rsa[1] = 0x86; 840 (high bit)
     oid-rsa[2] = 0x48; 840 (low)
     oid-rsa[3] = 0x86; 113549 (high)
-    oid-rsa[4] = 0xF7; 113549
-    oid-rsa[5] = 0x0D; 113549
+    oid-rsa[4] = 0xf7; 113549
+    oid-rsa[5] = 0x0d; 113549
     oid-rsa[6] = 0x01; 1
     oid-rsa[7] = 0x01; 1
     oid-rsa[8] = 0x01; 1
@@ -2426,15 +2439,15 @@ alg-id-rsa-encryption = () (out []byte) {
 ; 返回 out []byte: SEQUENCE { OID sha256WithRSAEncryption, NULL }
 alg-id-sha256-with-rsa = () (out []byte) {
     oid []byte = with-len(9)
-    oid[0] = 0x2A
+    oid[0] = 0x2a
     oid[1] = 0x86
     oid[2] = 0x48
     oid[3] = 0x86
-    oid[4] = 0xF7
-    oid[5] = 0x0D
+    oid[4] = 0xf7
+    oid[5] = 0x0d
     oid[6] = 0x01
     oid[7] = 0x01
-    oid[8] = 0x0B; 11
+    oid[8] = 0x0b; 11
     oid.truncate(9)
     oid-tlv []byte
     oid-tlv = der-enc-oid-raw(oid)
@@ -2501,6 +2514,7 @@ x509-build-spki = (n []byte, e i64) (out []byte) {
 ; cn str: commonName
 ; 返回 out []byte: RDNSequence
 x509-build-name-cn = (cn str) (out []byte) {
+
     ; OID commonName (2.5.4.3): 55 04 03
     oid-cn []byte = with-len(3)
     oid-cn[0] = 0x55
@@ -2560,6 +2574,7 @@ x509-build-validity = (not-before str, not-after str) (out []byte) {
 ; not-after str: 結束時間
 ; 返回 out []byte: TBSCertificate DER
 x509-build-tbs = (n []byte, e i64, cn str, not-before str, not-after str) (out []byte) {
+
     ; version [0] EXPLICIT INTEGER (v3 = 2)
     v-int []byte
     v-int = der-enc-integer-i64(2)
@@ -2589,7 +2604,6 @@ x509-build-tbs = (n []byte, e i64, cn str, not-before str, not-after str) (out [
     ; subjectPublicKeyInfo
     spki []byte
     spki = x509-build-spki(n, e)
-
 
     ; 串接所有欄位
     total = version.len + serial.len + sig-alg.len + issuer.len + validity.len + subject.len + spki.len
@@ -2637,6 +2651,7 @@ x509-build-tbs = (n []byte, e i64, cn str, not-before str, not-after str) (out [
 ; d []byte: 私鑰指數（big-endian）
 ; 返回 sig []byte: 簽章（模數長度）
 rsa-pkcs1-sign-sha256 = (data []byte, n []byte, d []byte) (sig []byte) {
+
     ; 1. 計算 SHA-256 雜湊
     h-arr [32]byte
     h-arr = sha256.sha256(data)
@@ -2699,7 +2714,7 @@ rsa-pkcs1-sign-sha256 = (data []byte, n []byte, d []byte) (sig []byte) {
     padded[0] = 0x00
     padded[1] = 0x01
     i <- [0..pad-len): {
-        padded[2 + i] = 0xFF
+        padded[2 + i] = 0xff
     }
     padded[2 + pad-len] = 0x00
     i <- [0..di-len): {
@@ -2740,13 +2755,16 @@ rsa-pkcs1-sign-sha256 = (data []byte, n []byte, d []byte) (sig []byte) {
         limb-byte-1 = (limb >> 8) & 255
         limb-byte-2 = (limb >> 16) & 255
         limb-byte-3 = (limb >> 24) & 255
+
         ; little-endian limb: byte 0 = LSB
         ; big-endian 輸出: 在 mod-len 中，limb i 對應位元組 (mod-len - 1 - i*4 .. mod-len - 1 - i*4 - 3)
         out-pos = mod-len - 1 - i * 4
         sig[out-pos] = limb-byte-0
-        out-pos > 0 -> sig[out-pos - 1] = limb-byte-1
-        out-pos > 1 -> sig[out-pos - 2] = limb-byte-2
-        out-pos > 2 -> sig[out-pos - 3] = limb-byte-3
+        {
+            out-pos > 0 -> sig[out-pos - 1] = limb-byte-1
+            out-pos > 1 -> sig[out-pos - 2] = limb-byte-2
+            out-pos > 2 -> sig[out-pos - 3] = limb-byte-3
+        }
     }
     sig.truncate(mod-len)
 }
@@ -2762,6 +2780,7 @@ rsa-pkcs1-sign-sha256 = (data []byte, n []byte, d []byte) (sig []byte) {
 ; cn str: Common Name
 ; 返回 cert []byte: 完整 DER 編碼憑證
 x509-build-self-signed-cert = (n []byte, e i64, d []byte, cn str) (cert []byte) {
+
     ; 1. 建構 TBSCertificate
     not-before = '240101000000Z'
     not-after = '400101000000Z'

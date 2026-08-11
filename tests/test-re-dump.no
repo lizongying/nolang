@@ -1,5 +1,5 @@
 ; 編譯 a* 並 dump 指令
-re = regexp{
+re = regexp {
     pattern: 'a*'
 }
 re.compile()
@@ -8,19 +8,20 @@ i <- [0..re.n): {
     op = re.op[i]
     a1 = re.arg1[i]
     a2 = re.arg2[i]
-    op == 1 -> print(i, ': CHAR', a1)
-    op == 2 -> print(i, ': ANY')
-    op == 3 -> print(i, ': CLASS', a1)
-    op == 7 -> print(i, ': JUMP', a1)
-    op == 8 -> print(i, ': SPLIT', a1, ',', a2)
-    op == 9 -> print(i, ': MATCH')
-    op == 10 -> print(i, ': START')
-    op == 11 -> print(i, ': END')
+    {
+        op == 1 -> print(i, ': CHAR', a1)
+        op == 2 -> print(i, ': ANY')
+        op == 3 -> print(i, ': CLASS', a1)
+        op == 7 -> print(i, ': JUMP', a1)
+        op == 8 -> print(i, ': SPLIT', a1, ',', a2)
+        op == 9 -> print(i, ': MATCH')
+        op == 10 -> print(i, ': START')
+        op == 11 -> print(i, ': END')
+    }
 }
-
 print('')
 print('=== a+ compiled ===')
-re2 = regexp{
+re2 = regexp {
     pattern: 'a+'
 }
 re2.compile()
@@ -29,12 +30,14 @@ i <- [0..re2.n): {
     op = re2.op[i]
     a1 = re2.arg1[i]
     a2 = re2.arg2[i]
-    op == 1 -> print(i, ': CHAR', a1)
-    op == 2 -> print(i, ': ANY')
-    op == 3 -> print(i, ': CLASS', a1)
-    op == 7 -> print(i, ': JUMP', a1)
-    op == 8 -> print(i, ': SPLIT', a1, ',', a2)
-    op == 9 -> print(i, ': MATCH')
-    op == 10 -> print(i, ': START')
-    op == 11 -> print(i, ': END')
+    {
+        op == 1 -> print(i, ': CHAR', a1)
+        op == 2 -> print(i, ': ANY')
+        op == 3 -> print(i, ': CLASS', a1)
+        op == 7 -> print(i, ': JUMP', a1)
+        op == 8 -> print(i, ': SPLIT', a1, ',', a2)
+        op == 9 -> print(i, ': MATCH')
+        op == 10 -> print(i, ': START')
+        op == 11 -> print(i, ': END')
+    }
 }

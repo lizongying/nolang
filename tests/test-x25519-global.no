@@ -11,12 +11,16 @@ hex-to-bytes = (hex-str str) (out [32]byte) {
         lo = hex-str[i * 2 + 1]
         hi-v = 0
         lo-v = 0
-        hi >= 48 && hi <= 57 -> hi-v = hi - 48
-        hi >= 97 && hi <= 102 -> hi-v = hi - 87
-        hi >= 65 && hi <= 70 -> hi-v = hi - 55
-        lo >= 48 && lo <= 57 -> lo-v = lo - 48
-        lo >= 97 && lo <= 102 -> lo-v = lo - 87
-        lo >= 65 && lo <= 70 -> lo-v = lo - 55
+        {
+            hi >= 48 && hi <= 57 -> hi-v = hi - 48
+            hi >= 97 && hi <= 102 -> hi-v = hi - 87
+            hi >= 65 && hi <= 70 -> hi-v = hi - 55
+        }
+        {
+            lo >= 48 && lo <= 57 -> lo-v = lo - 48
+            lo >= 97 && lo <= 102 -> lo-v = lo - 87
+            lo >= 65 && lo <= 70 -> lo-v = lo - 55
+        }
         out[i] = (hi-v << 4) | lo-v
     }
 }
@@ -44,8 +48,10 @@ main = () {
     expected-pub = hex-to-bytes('8520f0098930a754748b7ddcb43ef75a0dbf3a0d26381af4eba4a98eaa9b4e6a')
 
     ok1 = bytes-eq(local-pub, expected-pub)
-    ok1 == true -> print('PASS: local priv -> correct pub')
-    ok1 == false -> print('FAIL: local priv -> wrong pub')
+    {
+        ok1 == true -> print('PASS: local priv -> correct pub')
+        ok1 == false -> print('FAIL: local priv -> wrong pub')
+    }
 
     ; 測試 2: 用 global [32]byte 呼叫 scalarmult-base
     g-priv = hex-to-bytes('77076d0a7318a57d3c16c17251b26645df4c2f87ebc0992ab177fba51db92c2a')
@@ -69,11 +75,15 @@ main = () {
     eprint(s)
 
     ok2 = bytes-eq(global-pub, expected-pub)
-    ok2 == true -> print('PASS: global priv -> correct pub')
-    ok2 == false -> print('FAIL: global priv -> wrong pub')
+    {
+        ok2 == true -> print('PASS: global priv -> correct pub')
+        ok2 == false -> print('FAIL: global priv -> wrong pub')
+    }
 
     ; 測試 3: 比較 local-pub 和 global-pub
     ok3 = bytes-eq(local-pub, global-pub)
-    ok3 == true -> print('PASS: local pub == global pub')
-    ok3 == false -> print('FAIL: local pub != global pub (global passing bug)')
+    {
+        ok3 == true -> print('PASS: local pub == global pub')
+        ok3 == false -> print('FAIL: local pub != global pub (global passing bug)')
+    }
 }

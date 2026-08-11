@@ -5,7 +5,7 @@ json-str str = '"hello"'
 root i64 = -1
 next i64 = 0
 ok bool = false
-p = json-pool{}
+p = json-pool {}
 p.init()
 root, next, ok = p.parse(json-str, 0)
 {

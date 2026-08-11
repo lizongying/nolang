@@ -220,19 +220,19 @@ char-to-str = (c i64) (out str) {
     {
         c < 0x80 -> out[0] = c
         c < 0x800 -> {
-            out[0] = 0xC0 | ((c >> 6) & 0x1F)
-            out[1] = 0x80 | (c & 0x3F)
+            out[0] = 0xc0 | ((c >> 6) & 0x1f)
+            out[1] = 0x80 | (c & 0x3f)
         }
         c < 0x10000 -> {
-            out[0] = 0xE0 | ((c >> 12) & 0x0F)
-            out[1] = 0x80 | ((c >> 6) & 0x3F)
-            out[2] = 0x80 | (c & 0x3F)
+            out[0] = 0xe0 | ((c >> 12) & 0x0f)
+            out[1] = 0x80 | ((c >> 6) & 0x3f)
+            out[2] = 0x80 | (c & 0x3f)
         }
         -> {
-            out[0] = 0xF0 | ((c >> 18) & 0x07)
-            out[1] = 0x80 | ((c >> 12) & 0x3F)
-            out[2] = 0x80 | ((c >> 6) & 0x3F)
-            out[3] = 0x80 | (c & 0x3F)
+            out[0] = 0xf0 | ((c >> 18) & 0x07)
+            out[1] = 0x80 | ((c >> 12) & 0x3f)
+            out[2] = 0x80 | ((c >> 6) & 0x3f)
+            out[3] = 0x80 | (c & 0x3f)
         }
     }
 }
@@ -326,23 +326,26 @@ LN10 = 2.302585092994046
 ; f64-to-str: 將 f64 轉為字串（模擬 C %g 格式）
 ; 6 位有效數字，去除尾隨零，指數 < -4 或 >= 6 時使用科學記號
 f64-to-str = (x f64) (out str) {
+
     ; 特殊值處理
     ; 注意：必須使用 .copy() 建立堆副本，避免字串字面量的全局常量資料被 emitHeapFree 釋放
-    x != x -> {
-        out = 'nan'.copy()
-        return
-    }
-    x == 0.0 -> {
-        out = '0'.copy()
-        return
-    }
-    x + x == x -> {
-        x < 0.0 -> {
-            out = '-inf'.copy()
+    {
+        x != x -> {
+            out = 'nan'.copy()
             return
         }
-        out = 'inf'.copy()
-        return
+        x == 0.0 -> {
+            out = '0'.copy()
+            return
+        }
+        x + x == x -> {
+            x < 0.0 -> {
+                out = '-inf'.copy()
+                return
+            }
+            out = 'inf'.copy()
+            return
+        }
     }
 
     ; 符號處理
@@ -398,10 +401,12 @@ f64-to-str = (x f64) (out str) {
 
     ; 決定格式
     use-sci = 0
-    e < -4 -> use-sci = 1
-    e >= 6 -> use-sci = 1
-
+    {
+        e < -4 -> use-sci = 1
+        e >= 6 -> use-sci = 1
+    }
     use-sci == 1 -> {
+
         ; 科學記號：d.ddddde±NN
         out = with-cap(20)
         pos = 0
@@ -575,19 +580,15 @@ float.is-inf = () (yes bool) {
 ;         i = i + 1
 ;     }
 ; }
-
 ; ═══════════════════════════════════════════════
 ; 位元操作（內建）
 ; ═══════════════════════════════════════════════
-
 ; build-in (ForwardFunc: rotate-left)
 ; rotate-left: 整數左旋 n 位元（映射到 ARM64 ROR via llvm.fshl）
 ; rotate-left = (x i64, n i64) (r i64) { }
-
 ; build-in (ForwardFunc: rotate-right)
 ; rotate-right: 整數右旋 n 位元（映射到 ARM64 ROR via llvm.fshr）
 ; rotate-right = (x i64, n i64) (r i64) { }
-
 ; build-in (ForwardFunc: store-le-u32)
 ; store-le-u32: 將 u32 值以小端序寫入位元組陣列指定偏移位置
 ; store-le-u32 = (arr i64, offset i64, val u32) { }

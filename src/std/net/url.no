@@ -76,6 +76,7 @@ url-parse = (url-str str) (u url-info) {
     ; 解析 scheme（尋找 ://）
     scheme-end = url-str.index('://')
     scheme-end < 0 -> {
+
         ; 無 scheme，視為相對路徑
         u.path = url-str
         u.ok = true
@@ -150,10 +151,9 @@ url-parse = (url-str str) (u url-info) {
         u.scheme == 'https' -> u.port = 443
         u.scheme == 'ws' -> u.port = 80
         u.scheme == 'wss' -> u.port = 443
-        u.scheme == 'ftp' -> u.port = 21
-        ->
+        u.scheme == 'ftp' -> u.port = 21 -> {
+        }
     }
-
     u.ok = true
 }
 
@@ -167,6 +167,7 @@ url-info.get-query = (key str) (val ?str) {
     pos = 0
     {
         pos >= q.len -> *
+
         ; 找下一個 &
         next-amp = q.index-from('&', pos)
         pair-end = next-amp
@@ -229,10 +230,7 @@ url-info.set-query = (key str, value str) {
         next-amp < 0 -> *
         pos = next-amp + 1
     } ()
-    found == false -> {
-        new-query.len > 0 -> new-query = new-query - '&' - key - '=' - value
-        -> new-query = key - '=' - value
-    }
+    found == false -> new-query.len > 0 -> new-query = new-query - '&' - key - '=' - value -> new-query = key - '=' - value
     .query = new-query
 }
 
@@ -283,6 +281,7 @@ url-encode = (s str) (out str) {
     out = ''
     i <- [0..s.len): {
         c = s[i]
+
         ; 不編碼的字元：A-Z, a-z, 0-9, -, _, ., ~
         keep = false
         {
@@ -314,6 +313,7 @@ url-encode-component = (s str) (out str) {
     out = ''
     i <- [0..s.len): {
         c = s[i]
+
         ; 只保留 A-Z, a-z, 0-9, -, _, ., ~
         keep = false
         {
@@ -348,6 +348,7 @@ url-decode = (s str) (out str) {
         {
             c == 37 -> {
                 i + 2 < s.len -> {
+
                     ; %XX
 
                     h1 = s[i + 1]
@@ -371,7 +372,7 @@ url-decode = (s str) (out str) {
                     i = i + 2
                 }
             }
-            c == 43 -> out[out.len] = 32   ; + 號轉空格
+            c == 43 -> out[out.len] = 32; + 號轉空格
             -> out[out.len] = c
         }
         i = i + 1
@@ -402,6 +403,7 @@ url-build-query = (keys [16]str, values [16]str, count i64) (out str) {
 ; path-str str: 要附加的路徑
 ; 返回 out str: 完整 URL
 url-join = (base str, path-str str) (out str) {
+
     ; 如果 path-str 是完整 URL，直接返回
     path-str.starts-with('http://') || path-str.starts-with('https://') -> {
         out = path-str
@@ -434,9 +436,11 @@ url-join = (base str, path-str str) (out str) {
         i = i - 1
     } (i >= 0)
     {
-        slash-pos >= 0 -> { ; 確保不是 protocol:// 中的 //
-            slash-pos > 0 && base[slash-pos - 1] == 58 -> out = base - '/' - path-str
-            -> out = base.slice(0, slash-pos + 1) - path-str
+        slash-pos >= 0 -> {  // 確保不是 protocol:// 中的 //
+            {
+                slash-pos > 0 && base[slash-pos - 1] == 58 -> out = base - '/' - path-str
+                -> out = base.slice(0, slash-pos + 1) - path-str
+            }
         }
         -> out = base - '/' - path-str
     }
@@ -451,6 +455,7 @@ url-join = (base str, path-str str) (out str) {
 ; password str: 密碼
 ; 返回 out str: 標頭值（如 'Basic dXNlcjpwYXNz'）
 url-basic-auth = (user str, password str) (out str) {
+
     ; 拼接 user:password
     raw = user - ':' - password
     raw-bytes []byte = raw.to-bytes()

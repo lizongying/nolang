@@ -32,17 +32,14 @@ test-match = () {
         ok -> log()
         -> log()
     }
-
     x: {
         ok -> log()
         nil -> log()
         -> log()
     }
-
     x: {
         -> log()
     }
-
     a i64
 
     x: {
@@ -53,12 +50,10 @@ test-match = () {
         }
         -> log()
     }
-
     x: {
         err -> log()
         -> log()
     }
-
     s status
     s: {
         status1 -> log()
@@ -73,6 +68,5 @@ test-match = () {
         a == 1 -> log('1')
         -> log('else')
     }
-
     a == 2 -> log('2')
 }

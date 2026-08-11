@@ -38,7 +38,10 @@ MyData {
 }
 
 test-clone-struct = () (ok bool) {
-    d = MyData{name: 'test', value: 42}
+    d = MyData {
+        name: 'test'
+        value: 42
+    }
     c = d
     d.value == 42 -> ok = true
     c.value == 42 -> ok = true

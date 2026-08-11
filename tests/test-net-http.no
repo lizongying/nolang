@@ -6,7 +6,7 @@
 ; # std/net/http
 
 ; 測試 1: http.response 結構體
-r http.response = http.response{}
+r http.response = http.response {}
 r.status-code = 200
 r.status-text = 'OK'
 r.headers = 'Content-Type: text/html'
@@ -48,5 +48,4 @@ resp4: {
     nil -> print('skip: http-get with port (no server)')
     -> print('ok: http-get with port')
 }
-
 print('ok: all tests done')

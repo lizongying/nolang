@@ -36,10 +36,10 @@ work-async = (n i64) (r i64) {
 
 leak-task = () (out i64) {
     task = run work-async(42)
+
     ; 未 awy task 即返回 — task 的 args/result 在本函數棧上
     ; 返回後棧幀銷毀，子線程仍訪問已失效記憶體
     out = 0
 }
-
 r = leak-task()
 print(r)

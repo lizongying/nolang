@@ -31,8 +31,8 @@ test-hkdf-expand = () {
         prk[i] = i + 1
     }
     info []byte = with-cap(2)
-    info[0] = 0xAA
-    info[1] = 0xBB
+    info[0] = 0xaa
+    info[1] = 0xbb
     okm []byte
     okm = hkdf.hkdf-expand(prk, info, 32)
 
@@ -55,8 +55,8 @@ test-hkdf-expand-label = () {
         prk[i] = i + 1
     }
     ctx []byte = with-cap(2)
-    ctx[0] = 0xDE
-    ctx[1] = 0xAD
+    ctx[0] = 0xde
+    ctx[1] = 0xad
     okm []byte
     okm = hkdf.hkdf-expand-label(prk, 'derived', ctx, 32)
 
@@ -74,6 +74,7 @@ test-hkdf-expand-label = () {
 
 ; test-aes-gcm-seal-open: 測試 AES-128-GCM 加密/解密往返
 test-aes-gcm-seal-open = () {
+
     ; 16-byte key
     key [16]byte
     i <- [0..16): {
@@ -88,9 +89,9 @@ test-aes-gcm-seal-open = () {
 
     ; AAD
     aad []byte = with-cap(3)
-    aad[0] = 0xAA
-    aad[1] = 0xBB
-    aad[2] = 0xCC
+    aad[0] = 0xaa
+    aad[1] = 0xbb
+    aad[2] = 0xcc
 
     ; plaintext
     plain []byte = with-cap(5)
@@ -131,6 +132,7 @@ test-aes-gcm-seal-open = () {
 
 ; test-x25519-scalarmult: 測試 X25519 純量乘法（自乘基點）
 test-x25519-scalarmult = () {
+
     ; 生成私鑰（固定值）
     priv [32]byte
     i <- [0..32): {

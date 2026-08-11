@@ -27,5 +27,4 @@ arps = net.arp-list()
 eprint('arp-list returned ')
 print(arps.len.to-str() + ' entries')
 arps.len >= 0 -> print('PASS: arp-list returned non-negative count')
-
 print('--- All tests done ---')

@@ -40,5 +40,4 @@ f-r: {
         print('ok: read')
     }
 }
-
 fs.remove(tmp)

@@ -4,5 +4,4 @@ test-let = () {
     n = s.to-i64()
     print(n)
 }
-
 test-let()

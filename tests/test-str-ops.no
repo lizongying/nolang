@@ -10,14 +10,15 @@ n = 'x' * 5
 print(n)
 
 print('=== str repeat (*) inside loop body ===')
+
 ; This triggers the generateStrRepeat label bug:
 ; label definitions must not have '%' prefix, only br references do.
-for i in [0..3] {
+for i <- [0..3]: {
     r = 'ab' * 2
     print(r)
 }
-
 print('=== char literal + str concat ===')
+
 ; "B" is a CharLiteral (rune 66). Previously getStrPtr treated 66 as
 ; %str-long* pointer, producing invalid IR. Now isByteValueExpr detects
 ; CharLiteral and byteToSingleCharStr converts it to a single-char str.
@@ -28,6 +29,7 @@ t2 = "B" - hi
 print(t2)
 
 print('=== single-char string lit byte arithmetic (regression) ===')
+
 ; 'A' is a single-char StringLiteral; 'A' + 1 must stay byte arithmetic (66),
 ; NOT string concat. isStringExpr returns false for this case.
 a = 'A' + 1

@@ -44,6 +44,7 @@ SHA3-MASK64 u64 = 18446744073709551615
 ; state []u64: 25 個 64-bit lane（輸入/輸出）
 keccak-f1600 = (state []u64) {
     round <- [0..24): {
+
         ; θ (theta)
         c [5]u64
         x <- [0..5): {
@@ -61,6 +62,7 @@ keccak-f1600 = (state []u64) {
                 state[x + 5 * y] = state[x + 5 * y] ^ d[x]
             }
         }
+
         ; ρ (rho) + π (pi) 合併
         b [25]u64
         x <- [0..5): {
@@ -69,12 +71,14 @@ keccak-f1600 = (state []u64) {
                 val = state[x + 5 * y]
                 rotated = ((val << rc) | (val >> (64 - rc))) & SHA3-MASK64
                 rc == 0 -> rotated = val
+
                 ; π: new[x'][y'] where x' = y, y' = (2x+3y) % 5
                 nx = y
                 ny = (2 * x + 3 * y) % 5
                 b[nx + 5 * ny] = rotated
             }
         }
+
         ; χ (chi)
         x <- [0..5): {
             y <- [0..5): {
@@ -83,6 +87,7 @@ keccak-f1600 = (state []u64) {
                 state[x + 5 * y] = b[x + 5 * y] ^ ((SHA3-MASK64 ^ b[x1 + 5 * y]) & b[x2 + 5 * y])
             }
         }
+
         ; ι (iota)
         state[0] = state[0] ^ KECCAK-RC-FINAL[round]
     }
@@ -101,18 +106,19 @@ keccak-f1600 = (state []u64) {
 ; 返回 out []byte: 輸出雜湊值
 keccak-sponge = (data []byte, rate i64, capacity i64, out-len i64, suffix byte) (out []byte) {
     out = with-len(out-len)
+
     ; 初始化狀態（25 個 64-bit lane，全零）
     state []u64
     i <- [0..25): {
         state[i] = 0
     }
-
     dlen = data.len
 
     ; 吸收階段（absorbing）
     ; 按 rate 位元組分塊處理
     absorbed = 0
     {
+
         ; 將 rate 位元組 XOR 到狀態中（little-endian lane 方式）
         i <- [0..rate): {
             absorbed + i < dlen -> {

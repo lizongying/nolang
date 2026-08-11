@@ -16,31 +16,34 @@ test-tcp-fork-basic = () (pass bool) {
 
     ; 2. fork
     pid = process.process-fork()
-    pid < 0 -> {
-        io.errln('[TEST] tcp: fork failed')
-        fs.close(listen-fd)
-        return
-    }
-
-    ; === 子進程: 伺服器 ===
-    pid == 0 -> {
-        io.errln('[TEST] tcp: child accepting')
-        client-fd = net.net-accept(listen-fd)
-        client-fd < 0 -> {
-            io.errln('[TEST] tcp: child accept failed')
-            os.exit(1)
+    {
+        pid < 0 -> {
+            io.errln('[TEST] tcp: fork failed')
+            fs.close(listen-fd)
+            return
         }
-        io.errln('[TEST] tcp: child accepted')
+        pid == 0 -> {
 
-        ; 接收資料
-        buf = ' '.repeat(64)
-        n = net.net-recv(client-fd, buf, 64)
-        io.errln('[TEST] tcp: child recv n=' - n.to-str())
+            ; === 子進程: 伺服器 ===
 
-        ; 回應
-        net.net-send(client-fd, 'hello from server', 17)
-        fs.close(client-fd)
-        os.exit(0)
+            io.errln('[TEST] tcp: child accepting')
+            client-fd = net.net-accept(listen-fd)
+            client-fd < 0 -> {
+                io.errln('[TEST] tcp: child accept failed')
+                os.exit(1)
+            }
+            io.errln('[TEST] tcp: child accepted')
+
+            ; 接收資料
+            buf = ' '.repeat(64)
+            n = net.net-recv(client-fd, buf, 64)
+            io.errln('[TEST] tcp: child recv n=' - n.to-str())
+
+            ; 回應
+            net.net-send(client-fd, 'hello from server', 17)
+            fs.close(client-fd)
+            os.exit(0)
+        }
     }
 
     ; === 父進程: 客戶端 ===
@@ -69,7 +72,6 @@ test-tcp-fork-basic = () (pass bool) {
         io.errln('[TEST] tcp: parent got=' - resp)
         pass = true
     }
-
     fs.close(fd)
     fs.close(listen-fd)
     process.process-waitpid(pid, 0)
@@ -78,7 +80,9 @@ test-tcp-fork-basic = () (pass bool) {
 main = () {
     io.errln('=== TCP Fork Tests ===')
     p = test-tcp-fork-basic()
-    p -> print('PASS: tcp-fork-basic')
-    p == false -> print('FAIL: tcp-fork-basic')
+    {
+        p -> print('PASS: tcp-fork-basic')
+        p == false -> print('FAIL: tcp-fork-basic')
+    }
     io.errln('=== TCP Fork Tests Done ===')
 }

@@ -17,12 +17,16 @@ parse-hex-into = (hex-str str, target key-holder) {
         lo = hex-str[i * 2 + 1]
         hi-v = 0
         lo-v = 0
-        hi >= 48 && hi <= 57 -> hi-v = hi - 48
-        hi >= 97 && hi <= 102 -> hi-v = hi - 87
-        hi >= 65 && hi <= 70 -> hi-v = hi - 55
-        lo >= 48 && lo <= 57 -> lo-v = lo - 48
-        lo >= 97 && lo <= 102 -> lo-v = lo - 87
-        lo >= 65 && lo <= 70 -> lo-v = lo - 55
+        {
+            hi >= 48 && hi <= 57 -> hi-v = hi - 48
+            hi >= 97 && hi <= 102 -> hi-v = hi - 87
+            hi >= 65 && hi <= 70 -> hi-v = hi - 55
+        }
+        {
+            lo >= 48 && lo <= 57 -> lo-v = lo - 48
+            lo >= 97 && lo <= 102 -> lo-v = lo - 87
+            lo >= 65 && lo <= 70 -> lo-v = lo - 55
+        }
         target.priv[i] = (hi-v << 4) | lo-v
     }
 }
@@ -39,15 +43,18 @@ test-dh = () (pass bool) {
         lo = alice-hex[i * 2 + 1]
         hi-v = 0
         lo-v = 0
-        hi >= 48 && hi <= 57 -> hi-v = hi - 48
-        hi >= 97 && hi <= 102 -> hi-v = hi - 87
-        hi >= 65 && hi <= 70 -> hi-v = hi - 55
-        lo >= 48 && lo <= 57 -> lo-v = lo - 48
-        lo >= 97 && lo <= 102 -> lo-v = lo - 87
-        lo >= 65 && lo <= 70 -> lo-v = lo - 55
+        {
+            hi >= 48 && hi <= 57 -> hi-v = hi - 48
+            hi >= 97 && hi <= 102 -> hi-v = hi - 87
+            hi >= 65 && hi <= 70 -> hi-v = hi - 55
+        }
+        {
+            lo >= 48 && lo <= 57 -> lo-v = lo - 48
+            lo >= 97 && lo <= 102 -> lo-v = lo - 87
+            lo >= 65 && lo <= 70 -> lo-v = lo - 55
+        }
         alice.priv[i] = (hi-v << 4) | lo-v
     }
-
     alice.pub = x25519.x25519-scalarmult-base(alice.priv)
 
     ; Bob — 內聯解析私鑰到結構體欄位
@@ -58,15 +65,18 @@ test-dh = () (pass bool) {
         lo = bob-hex[i * 2 + 1]
         hi-v = 0
         lo-v = 0
-        hi >= 48 && hi <= 57 -> hi-v = hi - 48
-        hi >= 97 && hi <= 102 -> hi-v = hi - 87
-        hi >= 65 && hi <= 70 -> hi-v = hi - 55
-        lo >= 48 && lo <= 57 -> lo-v = lo - 48
-        lo >= 97 && lo <= 102 -> lo-v = lo - 87
-        lo >= 65 && lo <= 70 -> lo-v = lo - 55
+        {
+            hi >= 48 && hi <= 57 -> hi-v = hi - 48
+            hi >= 97 && hi <= 102 -> hi-v = hi - 87
+            hi >= 65 && hi <= 70 -> hi-v = hi - 55
+        }
+        {
+            lo >= 48 && lo <= 57 -> lo-v = lo - 48
+            lo >= 97 && lo <= 102 -> lo-v = lo - 87
+            lo >= 65 && lo <= 70 -> lo-v = lo - 55
+        }
         bob.priv[i] = (hi-v << 4) | lo-v
     }
-
     bob.pub = x25519.x25519-scalarmult-base(bob.priv)
 
     ; 驗證公鑰
@@ -94,7 +104,6 @@ test-dh = () (pass bool) {
         }
         return
     }
-
     bob-pub-expected = [
         222, 158, 219, 125, 123, 125, 193, 180,
         211, 91, 97, 194, 236, 228, 53, 55,
@@ -112,7 +121,6 @@ test-dh = () (pass bool) {
         print('FAIL: Bob pub mismatch')
         return
     }
-
     print('PASS: public keys match')
 
     ; 計算共享金鑰 — 模擬 TLS 的 DH（兩個 struct field 參數）
@@ -163,12 +171,13 @@ test-dh = () (pass bool) {
         print('FAIL: shared secret does not match expected')
         return
     }
-
     pass = true
 }
 
 main = () {
     p = test-dh()
-    p == true -> print('PASS: X25519 DH test')
-    p == false -> print('FAIL: X25519 DH test')
+    {
+        p == true -> print('PASS: X25519 DH test')
+        p == false -> print('FAIL: X25519 DH test')
+    }
 }

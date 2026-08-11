@@ -1751,6 +1751,7 @@ sha256-block = (s []u32, h0 u32, h1 u32, h2 u32, h3 u32, h4 u32, h5 u32, h6 u32,
 ; data []byte: 輸入位元組陣列
 ; 返回 hash [32]byte: 32 位元組雜湊值
 sha256 = (data []byte) (hash [32]byte) {
+
     ; SHA-256 初始狀態
     h0 u32 = 1779033703
     h1 u32 = 3144134277
@@ -1804,6 +1805,7 @@ sha256 = (data []byte) (hash [32]byte) {
     }
     offset = 0
     {
+
         ; 將 64 位元組轉為 16 個 32-bit big-endian 字
         i <- [0..16): {
             block[i] = (padded[offset + i * 4] << 24) | (padded[offset + i * 4 + 1] << 16) | (padded[offset + i * 4 + 2] << 8) | padded[offset + i * 4 + 3]

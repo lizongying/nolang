@@ -53,5 +53,4 @@ caller = () {
     bigint.gcd(12, 18, r)
     print(r)
 }
-
 caller()

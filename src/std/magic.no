@@ -63,8 +63,8 @@ get-extension = (path str) (ext str) {
     {
         i < 0 -> return
         c = path[i]
-        c == 47 -> return  ; '/' - 目錄分隔符，停止查找
-        c == 46 -> {  ; '.' - 找到副檔名
+        c == 47 -> return; '/' - 目錄分隔符，停止查找
+        c == 46 -> {  // '.' - 找到副檔名
             ext = path.slice(i + 1, n)
             ext = ext.to-lower()
             return
@@ -148,7 +148,7 @@ detect-by-magic = (path str) (kind str) {
     n = fs.read(fd, buf, 64)
     fs.close(fd)
 
-    n < 4 -> return  ; 至少需要 4 字節才能判斷
+    n < 4 -> return; 至少需要 4 字節才能判斷
 
     ; 取得前 4 個位元組
     b0 = buf[0]
@@ -157,98 +157,136 @@ detect-by-magic = (path str) (kind str) {
     b3 = buf[3]
 
     {
-        ; PNG: 89 50 4E 47 (\x89PNG)
         b0 == 137 && b1 == 80 && b2 == 78 && b3 == 71 -> {
+
+            ; PNG: 89 50 4E 47 (\x89PNG)
+
             kind = 'PNG image'
             return
         }
-        ; JPEG: FF D8 FF
         b0 == 255 && b1 == 216 && b2 == 255 -> {
+
+            ; JPEG: FF D8 FF
+
             kind = 'JPEG image'
             return
         }
-        ; GIF: 47 49 46 38 (GIF8)
         b0 == 71 && b1 == 73 && b2 == 70 && b3 == 56 -> {
+
+            ; GIF: 47 49 46 38 (GIF8)
+
             kind = 'GIF image'
             return
         }
-        ; BMP: 42 4D (BM)
         b0 == 66 && b1 == 77 -> {
+
+            ; BMP: 42 4D (BM)
+
             kind = 'BMP image'
             return
         }
-        ; PDF: 25 50 44 46 (%PDF)
         b0 == 37 && b1 == 80 && b2 == 68 && b3 == 70 -> {
+
+            ; PDF: 25 50 44 46 (%PDF)
+
             kind = 'PDF document'
             return
         }
-        ; ZIP: 50 4B 03 04 (PK\x03\x04)
         b0 == 80 && b1 == 75 && b2 == 3 && b3 == 4 -> {
+
+            ; ZIP: 50 4B 03 04 (PK\x03\x04)
+
             kind = 'Zip archive'
             return
         }
-        ; GZIP: 1F 8B
         b0 == 31 && b1 == 139 -> {
+
+            ; GZIP: 1F 8B
+
             kind = 'Gzip compressed'
             return
         }
-        ; ELF: 7F 45 4C 46 (\x7fELF)
         b0 == 127 && b1 == 69 && b2 == 76 && b3 == 70 -> {
+
+            ; ELF: 7F 45 4C 46 (\x7fELF)
+
             kind = 'ELF executable'
             return
         }
-        ; Mach-O 64-bit LE: CF FA ED FE
         b0 == 207 && b1 == 250 && b2 == 237 && b3 == 254 -> {
+
+            ; Mach-O 64-bit LE: CF FA ED FE
+
             kind = 'Mach-O 64-bit executable'
             return
         }
-        ; Mach-O 32-bit BE: FE ED FA CE
         b0 == 254 && b1 == 237 && b2 == 250 && b3 == 206 -> {
+
+            ; Mach-O 32-bit BE: FE ED FA CE
+
             kind = 'Mach-O executable'
             return
         }
-        ; Mach-O 64-bit BE: FE ED FA CF
         b0 == 254 && b1 == 237 && b2 == 250 && b3 == 207 -> {
+
+            ; Mach-O 64-bit BE: FE ED FA CF
+
             kind = 'Mach-O 64-bit executable'
             return
         }
-        ; Mach-O 32-bit LE: CE FA ED FE
         b0 == 206 && b1 == 250 && b2 == 237 && b3 == 254 -> {
+
+            ; Mach-O 32-bit LE: CE FA ED FE
+
             kind = 'Mach-O executable'
             return
         }
-        ; PE/COFF: 4D 5A (MZ)
         b0 == 77 && b1 == 90 -> {
+
+            ; PE/COFF: 4D 5A (MZ)
+
             kind = 'PE executable'
             return
         }
-        ; WebAssembly: 00 61 73 6D (\0asm)
         b0 == 0 && b1 == 97 && b2 == 115 && b3 == 109 -> {
+
+            ; WebAssembly: 00 61 73 6D (\0asm)
+
             kind = 'WebAssembly module'
             return
         }
-        ; Bzip2: 42 5A 68 (BZh)
         b0 == 66 && b1 == 90 && b2 == 104 -> {
+
+            ; Bzip2: 42 5A 68 (BZh)
+
             kind = 'Bzip2 compressed'
             return
         }
-        ; XZ: FD 37 7A 58 5A 00
         b0 == 253 && b1 == 55 && b2 == 122 && b3 == 88 -> {
+
+            ; XZ: FD 37 7A 58 5A 00
+
             kind = 'XZ compressed'
             return
         }
-        ; RAR: 52 61 72 21 (Rar!)
         b0 == 82 && b1 == 97 && b2 == 114 && b3 == 33 -> {
+
+            ; RAR: 52 61 72 21 (Rar!)
+
             kind = 'RAR archive'
             return
         }
-        ; 7-Zip: 37 7A BC AF 27 1C
         b0 == 55 && b1 == 122 && b2 == 188 && b3 == 175 -> {
+
+            ; 7-Zip: 37 7A BC AF 27 1C
+
             kind = '7-Zip archive'
             return
         }
-        ; WAV: 52 49 46 46 (RIFF) + offset 8: 57 41 56 45 (WAVE)
         b0 == 82 && b1 == 73 && b2 == 70 && b3 == 70 -> {
+
+            ; WAV: 52 49 46 46 (RIFF) + offset 8: 57 41 56 45 (WAVE)
+
             n >= 12 -> {
                 w4 = buf[8]
                 w5 = buf[9]
@@ -262,13 +300,17 @@ detect-by-magic = (path str) (kind str) {
             kind = 'RIFF container'
             return
         }
-        ; MP3 ID3: 49 44 33 (ID3)
         b0 == 73 && b1 == 68 && b2 == 33 -> {
+
+            ; MP3 ID3: 49 44 33 (ID3)
+
             kind = 'MP3 audio'
             return
         }
-        ; MP3 frame sync: FF FB or FF F3 or FF F2
         b0 == 255 && (b1 == 251 || b1 == 243 || b1 == 242) -> {
+
+            ; MP3 frame sync: FF FB or FF F3 or FF F2
+
             kind = 'MP3 audio'
             return
         }

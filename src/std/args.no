@@ -31,6 +31,7 @@ has-flag = (flag str, flagn i64) (yes bool) {
     n = count()
     i <- [1..n): {
         arg = get(i)
+
         ; 精確比對 arg 與 flag
         matched = true
         flagn == 0 -> matched = false
@@ -58,6 +59,7 @@ get-option = (key str, keyn i64, val str) (ok bool) {
     n = count()
     i <- [1..n): {
         arg = get(i)
+
         ; 檢查 arg 是否以 key + '=' 開頭
         matched-prefix = 1
         j <- [0..keyn): {
@@ -69,9 +71,11 @@ get-option = (key str, keyn i64, val str) (ok bool) {
             }
         }
         matched-prefix == 1 -> {
+
             ; 檢查 key 後是 '='
             eq = arg[keyn]
             eq == 61 -> {
+
                 ; 複製 '=' 後的內容到 val
                 k = keyn + 1
                 vn = 0
@@ -115,8 +119,8 @@ get-positional = (idx i64) (val str, ok bool) {
             }
             continue
         }
-
         pos == idx -> {
+
             ; 複製 arg 到 val
             k = 0
             {

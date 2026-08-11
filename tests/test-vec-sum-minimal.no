@@ -16,5 +16,4 @@ test-sum-min = () {
     print('sum:')
     print(s)
 }
-
 test-sum-min()

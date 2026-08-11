@@ -15,7 +15,6 @@ test-str-len = () {
     m = empty.len
     print(m); expect: 0
 }
-
 test-str-len()
 print(0)
 
@@ -54,7 +53,6 @@ test-str-eq = () {
     eq4 = a.eq(d, 5)
     print(eq4); expect: 0
 }
-
 test-str-eq()
 print(2)
 
@@ -106,7 +104,6 @@ test-str-index = () {
     pos4 = s.index('')
     print(pos4); expect: 0
 }
-
 test-str-index()
 print(5)
 
@@ -124,7 +121,6 @@ test-str-contains = () {
     c3 = s.contains('lo wo')
     print(c3); expect: 1
 }
-
 test-str-contains()
 print(6)
 
@@ -148,7 +144,6 @@ test-str-starts-with = () {
     sw5 = s.starts-with('hello world!')
     print(sw5); expect: 0
 }
-
 test-str-starts-with()
 print(7)
 
@@ -172,7 +167,6 @@ test-str-ends-with = () {
     ew5 = s.ends-with('!hello world')
     print(ew5); expect: 0
 }
-
 test-str-ends-with()
 print(8)
 
@@ -196,7 +190,6 @@ test-str-trim = () {
     t4 = s4.trim()
     print(t4.len); expect: 5
 }
-
 test-str-trim()
 print(9)
 
@@ -224,7 +217,6 @@ test-str-case = () {
     c10 = u2[5]
     print(c10); expect: 49 (1, unchanged)
 }
-
 test-str-case()
 print(10)
 
@@ -249,7 +241,6 @@ test-str-repeat = () {
     print(c4); expect: 97 (a)
     print(c5); expect: 98 (b)
 }
-
 test-str-repeat()
 print(11)
 
@@ -271,7 +262,6 @@ test-str-slice = () {
     sl6 = s.slice(10, 11)
     print(sl6.len); expect: 1
 }
-
 test-str-slice()
 print(12)
 
@@ -295,7 +285,6 @@ test-str-to-i64 = () {
     v4 = s4.to-i64()
     print(v4); expect: 999
 }
-
 test-str-to-i64()
 print(13)
 
@@ -312,7 +301,6 @@ test-i64-to-str = () {
     s4 = (9999).to-str()
     print(s4.len); expect: 4
 }
-
 test-i64-to-str()
 print(14)
 
@@ -331,7 +319,6 @@ test-str-bytes = () {
     print(b1); expect: 98 (b)
     print(b2); expect: 99 (c)
 }
-
 test-str-bytes()
 print(15)
 
@@ -362,7 +349,6 @@ test-str-reverse = () {
     print(c4); expect: 100 (d)
     print(c5); expect: 97 (a)
 }
-
 test-str-reverse()
 print(16)
 
@@ -388,7 +374,6 @@ test-str-compare = () {
     r6 = 'a'.compare('b')
     print(r6); expect: -1
 }
-
 test-str-compare()
 print(17)
 
@@ -408,7 +393,6 @@ test-str-count = () {
     cnt3 = s3.count()
     print(cnt3); expect: 0
 }
-
 test-str-count()
 print(18)
 
@@ -432,10 +416,9 @@ test-str-replace-char = () {
 
     ; 多字節 UTF-8：'a' (0x61) → '中' (0x4E2D, 3 bytes UTF-8)
     s2 = 'aTa'
-    r2 = s2.replace-char(0x61, 0x4E2D)
+    r2 = s2.replace-char(0x61, 0x4e2d)
     print(r2.len); expect: 7 (3+1+3)
 }
-
 test-str-replace-char()
 print(19)
 
@@ -461,10 +444,9 @@ test-str-trim-char = () {
 
     ; 多字節 UTF-8：trim '中' (0x4E2D)
     s5 = '中hello中'
-    tc5 = s5.trim-char(0x4E2D)
+    tc5 = s5.trim-char(0x4e2d)
     print(tc5.len); expect: 5 (hello)
 }
-
 test-str-trim-char()
 print(20)
 
@@ -484,7 +466,6 @@ test-str-empty = () {
     e3 = s3.empty()
     print(e3); expect: 0
 }
-
 test-str-empty()
 print(21)
 
@@ -514,7 +495,6 @@ test-integration = () {
     c11 = lower[0]
     print(c11); expect: 104 (h)
 }
-
 test-integration()
 print(22)
 
@@ -537,7 +517,6 @@ test-eq-full = () {
     r5 = 'abc'.eq-full('')
     print(r5); expect: 0 (false, len mismatch)
 }
-
 test-eq-full()
 print('---')
 
@@ -557,7 +536,6 @@ test-rindex = () {
     p4 = 'hello'.rindex('hello')
     print(p4); expect: 0
 }
-
 test-rindex()
 print('---')
 
@@ -577,7 +555,6 @@ test-rindex-from = () {
     p4 = 'hello world hello'.rindex-from('hello', 5)
     print(p4); expect: 12
 }
-
 test-rindex-from()
 print('---')
 
@@ -600,7 +577,6 @@ test-replace-n = () {
     print(ok3); expect: 1 (true)
     print(r3)
 }
-
 test-replace-n()
 print('---')
 
@@ -614,14 +590,12 @@ test-split-n = () {
     i <- [0..n1): {
         print(parts1[i])
     }
-
     parts2 = 'a-b-c'.split-n('-', 0)
     n2 = parts2.len
     print(n2); expect: 3 (unlimited)
     i <- [0..n2): {
         print(parts2[i])
     }
-
     parts3 = 'abc'.split-n('-', 1)
     n3 = parts3.len
     print(n3); expect: 1 (no sep found)
@@ -629,7 +603,6 @@ test-split-n = () {
         print(parts3[i])
     }
 }
-
 test-split-n()
 print('---')
 
@@ -643,14 +616,12 @@ test-lines = () {
     i <- [0..n1): {
         print(lines1[i])
     }
-
     lines2 = 'a\r\nb'.lines()
     n2 = lines2.len
     print(n2); expect: 2
     i <- [0..n2): {
         print(lines2[i])
     }
-
     lines3 = 'a\nb\n'.lines()
     n3 = lines3.len
     print(n3); expect: 2 (no trailing empty)
@@ -659,7 +630,6 @@ test-lines = () {
     n4 = lines4.len
     print(n4); expect: 0
 }
-
 test-lines()
 print('---')
 
@@ -680,7 +650,6 @@ test-to-hex = () {
     print(ok3); expect: 1 (true)
     print(h3)
 }
-
 test-to-hex()
 print('---')
 
@@ -694,6 +663,7 @@ test-at = () {
         err -> print('err')
         -> print(it)
     }
+
     ; expect: 97
 
     v2 = 'abc'.at(5)
@@ -702,6 +672,7 @@ test-at = () {
         err -> print('err')
         -> print(it)
     }
+
     ; expect: nil
 
     v3 = 'abc'.at(-1)
@@ -710,6 +681,7 @@ test-at = () {
         err -> print('err')
         -> print(it)
     }
+
     ; expect: nil
 
     v4 = 'abc'.at(2)
@@ -720,7 +692,6 @@ test-at = () {
     }
     ; expect: 99
 }
-
 test-at()
 
 print(-1)

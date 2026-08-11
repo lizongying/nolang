@@ -19,7 +19,6 @@ k = 0
 k <- [0..wlen): {
     tmp-word[k] = word[k]
 }
-
 words.push(tmp-word)
 counts.push(1)
 n = 1
@@ -49,7 +48,6 @@ k <- [0..n): {
         }
     }
 }
-
 found == 0 -> {
     words.push(tmp-word)
     counts.push(1)

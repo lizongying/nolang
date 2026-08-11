@@ -70,7 +70,6 @@ test-u8-u32-overflow = () {
         }
     }
 }
-
 test-u8-ok()
 test-u8-fail()
 test-u8-zero()

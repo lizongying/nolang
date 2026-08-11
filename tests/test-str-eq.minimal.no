@@ -19,7 +19,6 @@ test-str-len = () {
     s = 'true'
     print(s.len)
 }
-
 test-str-eq()
 test-str-eq-2()
 test-str-len()

@@ -57,7 +57,6 @@ test-arr-max-min-sum = () {
     print(b.min())
     print(b.sum())
 }
-
 test-arr-len()
 print('---')
 test-arr-clone()

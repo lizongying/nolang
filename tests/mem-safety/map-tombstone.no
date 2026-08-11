@@ -2,7 +2,7 @@
 
 ; 测试 1: 墓碑探测链 — remove 后 get 其他 key 仍成功
 test-tombstone = () {
-    m [str]i64 = {}
+    m [str]i64 = { }
     m.init()
     m.put('a', 1)
     m.put('b', 2)
@@ -20,13 +20,11 @@ test-tombstone = () {
         ok -> print(v)
         nil -> print('e-nil')
     }
-
     v2 = m.get('b')
     v2: {
         ok -> print(v2)
         nil -> print('b-nil')
     }
-
     v3 = m.get('d')
     v3: {
         ok -> print(v3)
@@ -39,18 +37,16 @@ test-tombstone = () {
         ok -> print('c-found')
         nil -> print('c-removed-ok')
     }
-
     l = m.len()
     print('len:')
     print(l)
 }
-
 test-tombstone()
 print('test-tombstone: ok')
 
 ; 测试 2: 墓碑复用 — put 复用被 remove 的槽位
 test-reuse = () {
-    m [str]i64 = {}
+    m [str]i64 = { }
     m.init()
     m.put('x', 100)
     m.remove('x')
@@ -65,13 +61,12 @@ test-reuse = () {
     print('len:')
     print(l)
 }
-
 test-reuse()
 print('test-reuse: ok')
 
 ; 测试 3: 容器类型值（str 值，堆类型）
 test-str-values = () {
-    m [str]str = {}
+    m [str]str = { }
     m.init()
     m.put('name', 'alice')
     m.put('city', 'beijing')
@@ -81,7 +76,6 @@ test-str-values = () {
         ok -> print(v)
         nil -> print('name-nil')
     }
-
     v2 = m.get('city')
     v2: {
         ok -> print(v2)
@@ -103,13 +97,12 @@ test-str-values = () {
         nil -> print('city-nil-after-remove')
     }
 }
-
 test-str-values()
 print('test-str-values: ok')
 
 ; 测试 4: int 键墓碑机制
 test-int-tombstone = () {
-    m [i64]i64 = {}
+    m [i64]i64 = { }
     m.init()
     m.put(1, 10)
     m.put(2, 20)
@@ -122,20 +115,17 @@ test-int-tombstone = () {
         ok -> print(v)
         nil -> print('3-nil')
     }
-
     v2 = m.get(1)
     v2: {
         ok -> print(v2)
         nil -> print('1-nil')
     }
-
     v3 = m.get(2)
     v3: {
         ok -> print('2-found')
         nil -> print('2-removed-ok')
     }
 }
-
 test-int-tombstone()
 print('test-int-tombstone: ok')
 

@@ -25,7 +25,6 @@ yes = e.is(code.io)
     yes -> print('ok: error.is true')
     -> print('fail: error.is true')
 }
-
 yes = e.is(code.not-found)
 {
     yes == false -> print('ok: error.is false')
@@ -46,7 +45,6 @@ yes2 = e2.is(code.not-found)
     yes2 -> print('ok: err-from-errno code')
     -> print('fail: err-from-errno code')
 }
-
 errno-msg = e2.msg()
 print('ok: err-from-errno msg')
 

@@ -2,7 +2,9 @@
 ; # std/path
 print('=== path char test ===')
 
-p = path{p: '/usr/local/bin'}
+p = path {
+    p: '/usr/local/bin'
+}
 print(p.p)
 
 dir = p.dir()
