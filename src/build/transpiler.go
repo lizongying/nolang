@@ -4369,6 +4369,7 @@ func validateStmtArrayBounds(stmt parser.Statement, arraySizes map[string]int64,
 		// and local variables — not global constants or other functions' variables.
 		funcStringSizes := make(map[string]int64)
 		funcSliceSizes := make(map[string]int64)
+		funcArraySizes := make(map[string]int64)
 		for _, p := range s.Parameters {
 			if p.Type != nil && (p.Type.String() == "str") {
 				funcStringSizes[p.Name] = 0
@@ -4392,9 +4393,10 @@ func validateStmtArrayBounds(stmt parser.Statement, arraySizes map[string]int64,
 			for _, ss := range s.Body.Statements {
 				collectStringSizeMapFromStmt(ss, funcStringSizes)
 				collectSliceSizeMapFromStmt(ss, funcSliceSizes)
+				collectArraySizesFromStmt(ss, funcArraySizes)
 			}
 			for _, ss := range s.Body.Statements {
-				if err := validateStmtArrayBounds(ss, arraySizes, funcSliceSizes, funcStringSizes, varTypes); err != nil {
+				if err := validateStmtArrayBounds(ss, funcArraySizes, funcSliceSizes, funcStringSizes, varTypes); err != nil {
 					return err
 				}
 			}
