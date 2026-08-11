@@ -54,7 +54,7 @@ func init() {
 		Params:       []parser.Type{parser.TypeStr},
 		Return:       []parser.Type{parser.TypeBool},
 		Doc:          "Change the current working directory",
-		CLibCall:     &CLibCall{FuncName: chdirFn, ArgTypes: []LLVMArgType{LLVMStrPtr}, RetType: LLVMI32, RetExt: &i64Type},
+		CLibCall:     &CLibCall{FuncName: chdirFn, ArgTypes: []LLVMArgType{LLVMStrPtr}, RetType: LLVMI32, CmpRet: true},
 	})
 
 	// exit: exit the process with status code

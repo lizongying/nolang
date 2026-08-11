@@ -3949,12 +3949,14 @@ func (g *Generator) genForwardFunc(sb *strings.Builder, forwardFunc string, expr
 		targetType := g.currentTargetType
 		switch targetType {
 		case "%str-long", "str":
-			// malloc(cap)
-			g.tmpIdx++
-			bufReg := fmt.Sprintf("%%wc.sbuf.%d", g.tmpIdx)
-			if sb != nil {
-				sb.WriteString(fmt.Sprintf("%s%s = call i8* @nolang.malloc(i64 %s)\n", g.indent(), bufReg, capVal))
-			}
+		// malloc(cap) — stride-1 (each element is 1 byte, i8)
+		g.tmpIdx++
+		bufReg := fmt.Sprintf("%%wc.sbuf.%d", g.tmpIdx)
+		if sb != nil {
+			sb.WriteString(fmt.Sprintf("%s%s = call i8* @nolang.malloc(i64 %s)\n", g.indent(), bufReg, capVal))
+			// Zero-initialize the buffer to prevent garbage data.
+			sb.WriteString(fmt.Sprintf("%scall void @llvm.memset.p0i8.i64(i8* %s, i8 0, i64 %s, i1 false)\n", g.indent(), bufReg, capVal))
+		}
 			// Build %str-long { len=0, cap=cap, data=buf } via insertvalue
 			g.tmpIdx++
 			s1 := fmt.Sprintf("%%wc.s1.%d", g.tmpIdx)
@@ -4024,11 +4026,15 @@ func (g *Generator) genForwardFunc(sb *strings.Builder, forwardFunc string, expr
 		targetType := g.currentTargetType
 		switch targetType {
 		case "%str-long", "str":
-			// malloc(len)
+			// malloc(len) — stride-1 (each element is 1 byte, i8)
 			g.tmpIdx++
 			bufReg := fmt.Sprintf("%%wl.sbuf.%d", g.tmpIdx)
 			if sb != nil {
 				sb.WriteString(fmt.Sprintf("%s%s = call i8* @nolang.malloc(i64 %s)\n", g.indent(), bufReg, lenVal))
+				// Zero-initialize the buffer to prevent garbage data when
+				// the string is returned cross-module before all positions
+				// are explicitly written. Matches with-cap/vec behavior.
+				sb.WriteString(fmt.Sprintf("%scall void @llvm.memset.p0i8.i64(i8* %s, i8 0, i64 %s, i1 false)\n", g.indent(), bufReg, lenVal))
 			}
 			// Build %str-long { len=len, cap=len, data=buf }
 			g.tmpIdx++
@@ -4098,11 +4104,13 @@ func (g *Generator) genForwardFunc(sb *strings.Builder, forwardFunc string, expr
 		targetType := g.currentTargetType
 		switch targetType {
 		case "%str-long", "str":
-			// malloc(cap)
+			// malloc(cap) — stride-1 (each element is 1 byte, i8)
 			g.tmpIdx++
 			bufReg := fmt.Sprintf("%%wcl.sbuf.%d", g.tmpIdx)
 			if sb != nil {
 				sb.WriteString(fmt.Sprintf("%s%s = call i8* @nolang.malloc(i64 %s)\n", g.indent(), bufReg, capVal))
+				// Zero-initialize the buffer to prevent garbage data.
+				sb.WriteString(fmt.Sprintf("%scall void @llvm.memset.p0i8.i64(i8* %s, i8 0, i64 %s, i1 false)\n", g.indent(), bufReg, capVal))
 			}
 			// Build %str-long { len=len, cap=cap, data=buf }
 			g.tmpIdx++

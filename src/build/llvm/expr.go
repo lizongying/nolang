@@ -902,21 +902,16 @@ func (g *Generator) generateConditionalExpression(sb *strings.Builder, expr *par
 		if isCmp {
 			cond = g.generateInfixI1(sb, infix)
 		} else {
-			reg := g.tmpReg("cond.trunc")
-			sb.WriteString(fmt.Sprintf("%s%s = trunc i64 %s to i1\n", g.indent(), reg, g.generateExprWithSB(sb, expr.Condition)))
-			cond = reg
+			// 非比較運算（如 && / ||）：使用 generateConditionAsI1
+			// 它會檢查表達式的 LLVM 型別，若已是 i1 則直接使用，
+			// 否則才 trunc i64 to i1。避免對 i1 值生成 trunc i64。
+			cond = g.generateConditionAsI1(sb, expr.Condition)
 		}
 	} else {
-		// Check if condition is a logical (&&/||) infix — already i1
-		// or a bool variable — need to check ssaTypes
-		condExpr := expr.Condition
-		if g.generateConditionAsI1Available(condExpr) {
-			cond = g.generateConditionAsI1(sb, condExpr)
-		} else {
-			reg := g.tmpReg("cond.trunc")
-			sb.WriteString(fmt.Sprintf("%s%s = trunc i64 %s to i1\n", g.indent(), reg, g.generateExprWithSB(sb, condExpr)))
-			cond = reg
-		}
+		// 非 InfixExpression 條件（如 bool 變數、函數調用等）：
+		// 使用 generateConditionAsI1 統一處理型別檢查，
+		// 避免對 i1 值生成無效的 trunc i64 ... to i1。
+		cond = g.generateConditionAsI1(sb, expr.Condition)
 	}
 
 	// branch
@@ -4946,6 +4941,27 @@ func (g *Generator) generateInfixI1(sb *strings.Builder, expr *parser.InfixExpre
 		}
 	}
 
+	// multi-char string literal vs non-string (byte/i64): type mismatch.
+	// A byte value can never equal a multi-char string. Generate constant
+	// i1 result to prevent invalid strcmp on non-string operands.
+	if (isMultiCharStringLit(expr.Left) && !g.isStringExpr(expr.Right) && !isNilLiteral(expr.Right)) ||
+		(isMultiCharStringLit(expr.Right) && !g.isStringExpr(expr.Left) && !isNilLiteral(expr.Left)) {
+		switch expr.Operator {
+		case "==":
+			reg := g.tmpReg("mcharcmp.const")
+			if sb != nil {
+				sb.WriteString(fmt.Sprintf("%s%s = icmp eq i1 0, 0\n", g.indent(), reg))
+			}
+			return reg // always false
+		case "!=":
+			reg := g.tmpReg("mcharcmp.const")
+			if sb != nil {
+				sb.WriteString(fmt.Sprintf("%s%s = icmp ne i1 0, 0\n", g.indent(), reg))
+			}
+			return reg // always true
+		}
+	}
+
 	// 字串比較：使用 strcmp 直接回傳 i1
 	// 注意：str == nil 已在前面處理，不會走到這裡
 	if (g.isStringExpr(expr.Left) || g.isStringExpr(expr.Right)) &&
@@ -5568,6 +5584,19 @@ func (g *Generator) generateInfix(sb *strings.Builder, expr *parser.InfixExpress
 		}
 	}
 
+	// multi-char string literal vs non-string (byte/i64): type mismatch.
+	// A byte value can never equal a multi-char string. Generate constant
+	// result to prevent invalid strcmp on non-string operands.
+	if (isMultiCharStringLit(expr.Left) && !g.isStringExpr(expr.Right) && !isNilLiteral(expr.Right)) ||
+		(isMultiCharStringLit(expr.Right) && !g.isStringExpr(expr.Left) && !isNilLiteral(expr.Left)) {
+		switch expr.Operator {
+		case "==":
+			return "0" // always false
+		case "!=":
+			return "1" // always true
+		}
+	}
+
 	// 字串比較：使用 strcmp 而非整數比較指令
 	if g.isStringExpr(expr.Left) || g.isStringExpr(expr.Right) {
 		switch expr.Operator {
@@ -5977,6 +6006,16 @@ func (g *Generator) isByteValueExpr(expr parser.Expression) bool {
 func isSingleCharStringLit(expr parser.Expression) bool {
 	if lit, ok := expr.(*parser.StringLiteral); ok {
 		return len(lit.Value) == 1
+	}
+	return false
+}
+
+// isMultiCharStringLit checks if an expression is a multi-character string literal.
+// Used to detect type-unsafe comparisons (byte vs multi-char string) and prevent
+// generating invalid strcmp calls on non-string (byte/i64) values.
+func isMultiCharStringLit(expr parser.Expression) bool {
+	if lit, ok := expr.(*parser.StringLiteral); ok {
+		return len(lit.Value) > 1
 	}
 	return false
 }

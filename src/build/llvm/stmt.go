@@ -4724,15 +4724,10 @@ func (g *Generator) generateForStatement(sb *strings.Builder, stmt *parser.ForSt
 			if isCmp {
 				condVal = g.generateInfixI1(sb, infix)
 			} else {
-				// 非比較運算（如 && / ||）返回 i64，需 trunc 到 i1
-				rawVal := g.generateExprWithSB(sb, stmt.Condition)
-				if strings.HasPrefix(rawVal, "%") {
-					truncReg := g.tmpReg("for.trunc")
-					sb.WriteString(fmt.Sprintf("%s%s = trunc i64 %s to i1\n", g.indent(), truncReg, rawVal))
-					condVal = truncReg
-				} else {
-					condVal = rawVal
-				}
+				// 非比較運算（如 && / ||）：使用 generateConditionAsI1
+				// 它會檢查表達式的 LLVM 型別，若已是 i1 則直接使用，
+				// 否則才 trunc i64 to i1。避免對 i1 值生成 trunc i64。
+				condVal = g.generateConditionAsI1(sb, stmt.Condition)
 			}
 		} else {
 			// Option variable as boolean condition (e.g. for cond = recv-f where
