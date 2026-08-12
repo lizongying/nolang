@@ -1327,6 +1327,62 @@ func ValidateUninitOutputParams(program *parser.Program) []ValidateResult {
 	}
 	return results
 }
+
+// ValidateUnassignedReturns checks for named result parameters (output
+// parameters) that are never explicitly assigned in the function body.
+// The ret_init mechanism silently zero-fills such parameters, which can
+// mask bugs where a function forgets to set a return value.  This check
+// reports a warning (not an error) to make the oversight visible without
+// blocking compilation, since zero-default returns are sometimes intentional.
+func ValidateUnassignedReturns(program *parser.Program) []ValidateResult {
+	var results []ValidateResult
+	for _, stmt := range program.Statements {
+		fd, ok := stmt.(*parser.FunctionDefinition)
+		if !ok || fd.Body == nil {
+			continue
+		}
+		// Collect named result parameters (non-nullable only; nullable
+		// ones are already handled by ValidateUninitOutputParams).
+		type retParam struct {
+			name string
+			typ  string
+			line int
+			col  int
+		}
+		var retParams []retParam
+		for _, r := range fd.Results {
+			if r.Name == "" || r.Type == nil {
+				continue
+			}
+			if _, ok := r.Type.(*parser.NullableType); ok {
+				continue // nullable already checked by ValidateUninitOutputParams
+			}
+			retParams = append(retParams, retParam{
+				name: r.Name,
+				typ:  r.Type.String(),
+				line: r.Token.Line,
+				col:  r.Token.Column,
+			})
+		}
+		if len(retParams) == 0 {
+			continue
+		}
+		// Collect all directly-assigned variable names in the body
+		assigned := make(map[string]bool)
+		collectAssignedNames(fd.Body.Statements, assigned)
+		// Report any result parameter that is never assigned
+		for _, p := range retParams {
+			if !assigned[p.name] {
+				results = append(results, ValidateResult{
+					Line:    p.line,
+					Column:  p.col,
+					Message: fmt.Sprintf("result parameter '%s' (%s) is never assigned in function body — will be zero-filled on return", p.name, p.typ),
+				})
+			}
+		}
+	}
+	return results
+}
 func collectAssignedNames(stmts []parser.Statement, assigned map[string]bool) {
 	for _, stmt := range stmts {
 		if stmt == nil {

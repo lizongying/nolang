@@ -2358,6 +2358,14 @@ func (g *Generator) generateStructFieldIndexAssign(sb *strings.Builder, dot *par
 		recvName = ident.Value
 	}
 	fieldName := dot.Property
+
+	// 返回值延遲零值追蹤：out.field[i] = expr 時標記 out 參數已賦值。
+	// 沒有此標記，emitRetInitZeroFill 會在 return 時以 zeroinitializer 覆蓋
+	// 整個 struct，抹消透過 GEP 寫入的 inline array / vec / str-long 欄位資料。
+	if recvName != "" && sb != nil && g.outputParamNames != nil && g.outputParamNames[recvName] {
+		g.emitSetRetInitBit(sb, recvName)
+	}
+
 	idx := g.generateExprWithSB(sb, index)
 
 	// 判定 struct 名稱與基底指標
@@ -2931,6 +2939,16 @@ func (g *Generator) generateNestedStrIndexRead(sb *strings.Builder, innerIdx *pa
 // generateNestedStrIndexAssign 處理巢狀索引賦值 .vals[idx][i] = val：
 // 內層 .vals[idx] 回傳 %str-long* 指標，外層 [i] 取出 data 指標後 GEP 到第 i 個位元組並 store。
 func (g *Generator) generateNestedStrIndexAssign(sb *strings.Builder, innerIdx *parser.IndexExpression, index parser.Expression, value parser.Expression) string {
+	// 返回值延遲零值追蹤：out.field[idx][i] = expr 時標記 out 參數已賦值。
+	if sb != nil && g.outputParamNames != nil {
+		if dot, ok := innerIdx.Left.(*parser.DotExpression); ok {
+			if ident, ok := dot.Receiver.(*parser.Identifier); ok {
+				if g.outputParamNames[ident.Value] {
+					g.emitSetRetInitBit(sb, ident.Value)
+				}
+			}
+		}
+	}
 	// 評估內層索引表達式，取得 %str-long* 指標
 	// 使用 generateIndexExprPtr 取得元素指標（而非載入的 str-long value）
 	strPtr := g.generateIndexExprPtr(sb, innerIdx)

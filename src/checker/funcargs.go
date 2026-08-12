@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/lizongying/nolang/builtin"
 	"github.com/lizongying/nolang/cache"
 	"github.com/lizongying/nolang/lexer"
 	"github.com/lizongying/nolang/package"
@@ -349,9 +350,24 @@ func checkCallArgsInStmtWithResultParams(stmt parser.Statement, sigs map[string]
 			varTypes[s.Name.Value] = s.Type.String()
 		}
 	case *parser.MultiAssignStatement:
+		var results []ValidateResult
 		if s.Value != nil {
-			return checkCallArgsInExpr(s.Value, sigs, varTypes, structFields)
+			results = append(results, checkCallArgsInExpr(s.Value, sigs, varTypes, structFields)...)
+			// #5: Validate that the number of assignment targets matches the
+			// number of return values of the called function.  A mismatch
+			// causes silent memory corruption / SIGTRAP at runtime.
+			if callExpr, ok := s.Value.(*parser.CallExpression); ok {
+				expectedReturns := lookupReturnCount(callExpr, sigs, varTypes)
+				if expectedReturns >= 0 && len(s.Targets) != expectedReturns {
+					results = append(results, ValidateResult{
+						Line:    s.Token.Line,
+						Column:  s.Token.Column,
+						Message: fmt.Sprintf("function returns %d value(s) but %d target(s) provided", expectedReturns, len(s.Targets)),
+					})
+				}
+			}
 		}
+		return results
 	case *parser.FunctionDefinition:
 		// Build local var types including function parameters and result params.
 		// Result parameter types are FROZEN — they may not be re-inferred from
@@ -1265,4 +1281,88 @@ func filterByExports(prog *parser.Program, libPath string, modFilePath string) *
 		}
 	}
 	return filtered
+}
+
+// lookupReturnCount determines how many values a call expression returns.
+// It checks user-defined signatures (sigs), built-in functions, and std
+// module signatures. Returns -1 if the return count cannot be determined
+// (in which case the caller should skip the count check).
+func lookupReturnCount(callExpr *parser.CallExpression, sigs map[string]*funcSig, varTypes map[string]string) int {
+	// Direct function call: foo(args)
+	if ident, ok := callExpr.Function.(*parser.Identifier); ok {
+		name := ident.Value
+		// 1. User-defined function
+		if sig, ok := sigs[name]; ok {
+			return len(sig.ResultTypes)
+		}
+		// 2. Built-in function
+		if bi := builtin.FindBuiltinMethod(name); bi != nil {
+			return len(bi.Return)
+		}
+		// 3. Std module function
+		stdSigs, _ := CollectStdModuleSignatures()
+		if rets, ok := stdSigs[name]; ok {
+			return len(rets)
+		}
+		return -1
+	}
+
+	// Method call: receiver.method(args)
+	if dot, ok := callExpr.Function.(*parser.DotExpression); ok {
+		methodName := dot.Property
+		// Determine receiver type to construct lookup key (e.g. "str.split")
+		if recv, ok := dot.Receiver.(*parser.Identifier); ok {
+			// If receiver is a known variable, use its type
+			if varType, isVar := varTypes[recv.Value]; isVar {
+				// Strip generic/array prefix to get base type name
+				// e.g. "[]u8" → "slice", "str" → "str", "i64" → "i64"
+				baseType := baseTypeNameForMethod(varType)
+				fullName := baseType + "." + methodName
+				// 1. User-defined method
+				if sig, ok := sigs[fullName]; ok {
+					return len(sig.ResultTypes)
+				}
+				// 2. Built-in method
+				if bi := builtin.FindBuiltinMethod(fullName); bi != nil {
+					return len(bi.Return)
+				}
+				// 3. Std module method
+				stdSigs, _ := CollectStdModuleSignatures()
+				if rets, ok := stdSigs[fullName]; ok {
+					return len(rets)
+				}
+			} else {
+				// Receiver is a module name (e.g. math.sin, os.stat-size)
+				// Look up by bare method name in builtins
+				if bi := builtin.FindBuiltinMethod(methodName); bi != nil {
+					return len(bi.Return)
+				}
+				stdSigs, _ := CollectStdModuleSignatures()
+				if rets, ok := stdSigs[methodName]; ok {
+					return len(rets)
+				}
+				// Also try module.method form
+				fullName := recv.Value + "." + methodName
+				if rets, ok := stdSigs[fullName]; ok {
+					return len(rets)
+				}
+			}
+		}
+		return -1
+	}
+
+	return -1
+}
+
+// baseTypeNameForMethod extracts the base type name used for method lookup.
+// e.g. "str" → "str", "i64" → "i64", "[]u8" → "slice", "[64]i64" → "array"
+func baseTypeNameForMethod(typeStr string) string {
+	typeStr = strings.TrimPrefix(typeStr, "?")
+	if strings.HasPrefix(typeStr, "[]") {
+		return "slice"
+	}
+	if strings.HasPrefix(typeStr, "[") && strings.Contains(typeStr, "]") {
+		return "array"
+	}
+	return typeStr
 }

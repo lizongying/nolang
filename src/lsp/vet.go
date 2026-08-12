@@ -141,6 +141,19 @@ func VetFile(filePath string) []VetResult {
 		})
 	}
 
+	// 5b2. Unassigned result parameters (warning) — named return params
+	// that are never explicitly assigned will be silently zero-filled.
+	for _, w := range checker.ValidateUnassignedReturns(prog) {
+		results = append(results, VetResult{
+			File:     filePath,
+			Line:     w.Line,
+			Column:   w.Column,
+			Severity: "warning",
+			Source:   "nolang-type-checker",
+			Message:  w.Message,
+		})
+	}
+
 	// 5c. Embed annotation validation
 	for _, e := range checker.ValidateEmbedAnnotations(prog, filePath) {
 		results = append(results, VetResult{
