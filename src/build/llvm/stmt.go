@@ -4439,6 +4439,7 @@ func (g *Generator) generateStatement(sb *strings.Builder, stmt parser.Statement
 	// 清空语句级临时堆对象列表：每个语句独立管理自己的临时对象，
 	// 循环体内每次迭代的语句都会清空+注册+释放，不会累积。
 	g.stmtTemporaries = nil
+	g.stmtTempRawPtrs = nil
 	switch s := stmt.(type) {
 	case *parser.LetStatement:
 		g.generateLet(sb, s)
@@ -4558,19 +4559,22 @@ func (g *Generator) generateStatement(sb *strings.Builder, stmt parser.Statement
 	g.emitStmtTemporariesFree(sb)
 }
 
-// emitStmtTemporariesFree 释放当前语句注册的临时 %str-long* 堆对象。
-// 对每个临时指针，load 其 data 字段（field 2），NULL check 后 call @free。
+// emitStmtTemporariesFree 释放当前语句注册的临时堆对象。
+// 对每个 %str-long* 临时指针，load 其 data 字段（field 2），NULL check 后 call @free。
+// 对每个 raw i8* 临时指针，NULL check 后 call @free。
 // 不 free 结构体本身（alloca 栈分配）。
 // 若 block 已终止，跳过释放（避免在 ret/br 后发射指令）。
 func (g *Generator) emitStmtTemporariesFree(sb *strings.Builder) {
-	if len(g.stmtTemporaries) == 0 {
+	if len(g.stmtTemporaries) == 0 && len(g.stmtTempRawPtrs) == 0 {
 		g.stmtTemporaries = nil
+		g.stmtTempRawPtrs = nil
 		return
 	}
 	// block 已终止（如 return/break/continue），无法继续发射指令。
 	// 被返回值消费的临时对象所有权已转移；break/continue 语句本身不产生临时对象。
 	if g.blockTerminated {
 		g.stmtTemporaries = nil
+		g.stmtTempRawPtrs = nil
 		return
 	}
 	for _, tmp := range g.stmtTemporaries {
@@ -4578,7 +4582,20 @@ func (g *Generator) emitStmtTemporariesFree(sb *strings.Builder) {
 		// emitShallowDataFree 会 GEP field 2 → load i8* → NULL check → free
 		g.emitShallowDataFree(sb, tmp, "%str-long", 2)
 	}
+	for _, rawPtr := range g.stmtTempRawPtrs {
+		// raw i8* pointer: NULL check → free
+		nullCmp := g.tmpReg("heapfree.rawnull")
+		sb.WriteString(fmt.Sprintf("%s%s = icmp eq i8* %s, null\n", g.indent(), nullCmp, rawPtr))
+		skipLabel := g.tmpReg("heapfree.rawskip")
+		freeLabel := g.tmpReg("heapfree.rawfree")
+		sb.WriteString(fmt.Sprintf("%sbr i1 %s, label %s, label %s\n", g.indent(), nullCmp, skipLabel, freeLabel))
+		sb.WriteString(fmt.Sprintf("%s:\n", freeLabel))
+		sb.WriteString(fmt.Sprintf("%scall void @free(i8* %s)\n", g.indent(), rawPtr))
+		sb.WriteString(fmt.Sprintf("%sbr label %s\n", g.indent(), skipLabel))
+		sb.WriteString(fmt.Sprintf("%s:\n", skipLabel))
+	}
 	g.stmtTemporaries = nil
+	g.stmtTempRawPtrs = nil
 }
 
 // untrackStmtTemporary 从 stmtTemporaries 列表移除指定临时指针。

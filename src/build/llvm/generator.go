@@ -221,7 +221,8 @@ type funcState struct {
 	currentTargetType     string           // target type for type-inferred builtins (e.g. with-cap)
 	currentTargetElemType string           // element type for slice builtins (e.g. %str-long for []str)
 	entryAllocaBuf        *strings.Builder // entry-block alloca buffer (hoisted out of loops)
-	stmtTemporaries       []string         // statement-level temporary pointers to free at statement end
+	stmtTemporaries       []string         // statement-level temporary %str-long* pointers to free at statement end
+	stmtTempRawPtrs       []string         // statement-level temporary raw i8* pointers to free at statement end
 	localTasks            []string         // task variable names via `run` not yet awy'd
 	// === 无栈协程（状态机变换）per-async-function 狀態 ===
 	coroInAsyncFunc   bool           // 当前正在生成 async 函数的状态机

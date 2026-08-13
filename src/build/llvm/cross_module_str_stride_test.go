@@ -298,17 +298,28 @@ main = () {
 	// entry should be removed by untrackStmtTemporary. The variable 'content'
 	// is tracked by heapVars instead.
 	//
-	// We verify by counting @free calls: should be exactly 1 (for content
-	// at function exit via emitHeapFree), not 2 (which would indicate both
-	// stmtTemporaries and heapVars freeing → double-free).
-	freeCount := 0
+	// We verify by counting @free calls for the content variable's data
+	// pointer (load from %content field 2 → free). There should be exactly
+	// 1 such free (at function exit via emitHeapFree), not 2 (which would
+	// indicate both stmtTemporaries and heapVars freeing → double-free).
+	//
+	// Additionally, there may be 1 @free for the null-terminated buffer
+	// allocated by makeNullTerminatedStr for the 'test.txt' argument
+	// (tracked via stmtTempRawPtrs and freed at statement end). This is
+	// a different pointer and does not constitute a double-free.
+	contentFreeCount := 0
+	rawBufFreeCount := 0
 	for _, line := range strings.Split(ir, "\n") {
 		trimmed := strings.TrimSpace(line)
 		if strings.Contains(trimmed, "call void @free(") {
-			freeCount++
+			if strings.Contains(trimmed, "%dptr.") {
+				contentFreeCount++
+			} else {
+				rawBufFreeCount++
+			}
 		}
 	}
-	if freeCount != 1 {
-		t.Errorf("Expected exactly 1 @free call (for content at function exit), got %d. IR:\n%s", freeCount, ir)
+	if contentFreeCount != 1 {
+		t.Errorf("Expected exactly 1 @free call for content's data (at function exit), got %d. IR:\n%s", contentFreeCount, ir)
 	}
 }

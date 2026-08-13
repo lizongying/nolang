@@ -653,7 +653,8 @@ func (g *Generator) nullTerminateStrArg(sb *strings.Builder, evalResult string, 
 	}
 	buf := g.tmpReg("nt.buf")
 	if sb != nil {
-		sb.WriteString(fmt.Sprintf("%s%s = alloca i8, i64 %s\n", g.indent(), buf, sizeReg))
+		sb.WriteString(fmt.Sprintf("%s%s = call i8* @nolang.malloc(i64 %s)\n", g.indent(), buf, sizeReg))
+		g.stmtTempRawPtrs = append(g.stmtTempRawPtrs, buf)
 		// Null-terminate
 		nullEnd := g.tmpReg("nt.end")
 		sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds i8, i8* %s, i64 %s\n", g.indent(), nullEnd, buf, strLen))
@@ -3817,7 +3818,10 @@ func (g *Generator) makeNullTerminatedStr(sb *strings.Builder, expr parser.Expre
 	sb.WriteString(fmt.Sprintf("%s%s = add i64 %s, 1\n", g.indent(), sizeReg, strLen))
 
 	buf := g.tmpReg("str-longnull.buf")
-	sb.WriteString(fmt.Sprintf("%s%s = alloca i8, i64 %s\n", g.indent(), buf, sizeReg))
+	sb.WriteString(fmt.Sprintf("%s%s = call i8* @nolang.malloc(i64 %s)\n", g.indent(), buf, sizeReg))
+
+	// Track the raw i8* buffer for freeing at statement end.
+	g.stmtTempRawPtrs = append(g.stmtTempRawPtrs, buf)
 
 	nullEnd := g.tmpReg("str-longnull.end")
 	sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds i8, i8* %s, i64 %s\n", g.indent(), nullEnd, buf, strLen))

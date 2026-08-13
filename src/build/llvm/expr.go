@@ -4547,7 +4547,8 @@ func (g *Generator) generateStringCmp(sb *strings.Builder, expr *parser.InfixExp
 	leftEnd := g.tmpReg("strcmp.lend")
 	if sb != nil {
 		sb.WriteString(fmt.Sprintf("%s%s = add i64 %s, 1\n", g.indent(), leftSize, leftLen))
-		sb.WriteString(fmt.Sprintf("%s%s = alloca i8, i64 %s\n", g.indent(), leftBuf, leftSize))
+		sb.WriteString(fmt.Sprintf("%s%s = call i8* @nolang.malloc(i64 %s)\n", g.indent(), leftBuf, leftSize))
+		g.stmtTempRawPtrs = append(g.stmtTempRawPtrs, leftBuf)
 		sb.WriteString(fmt.Sprintf("%scall void @llvm.memcpy.p0i8.p0i8.i64(i8* %s, i8* %s, i64 %s, i1 false)\n", g.indent(), leftBuf, leftData, leftLen))
 		sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds i8, i8* %s, i64 %s\n", g.indent(), leftEnd, leftBuf, leftLen))
 		sb.WriteString(fmt.Sprintf("%sstore i8 0, i8* %s\n", g.indent(), leftEnd))
@@ -4558,7 +4559,8 @@ func (g *Generator) generateStringCmp(sb *strings.Builder, expr *parser.InfixExp
 	rightEnd := g.tmpReg("strcmp.rend")
 	if sb != nil {
 		sb.WriteString(fmt.Sprintf("%s%s = add i64 %s, 1\n", g.indent(), rightSize, rightLen))
-		sb.WriteString(fmt.Sprintf("%s%s = alloca i8, i64 %s\n", g.indent(), rightBuf, rightSize))
+		sb.WriteString(fmt.Sprintf("%s%s = call i8* @nolang.malloc(i64 %s)\n", g.indent(), rightBuf, rightSize))
+		g.stmtTempRawPtrs = append(g.stmtTempRawPtrs, rightBuf)
 		sb.WriteString(fmt.Sprintf("%scall void @llvm.memcpy.p0i8.p0i8.i64(i8* %s, i8* %s, i64 %s, i1 false)\n", g.indent(), rightBuf, rightData, rightLen))
 		sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds i8, i8* %s, i64 %s\n", g.indent(), rightEnd, rightBuf, rightLen))
 		sb.WriteString(fmt.Sprintf("%sstore i8 0, i8* %s\n", g.indent(), rightEnd))
@@ -4689,7 +4691,8 @@ func (g *Generator) generateStringCmpI1(sb *strings.Builder, expr *parser.InfixE
 	leftEnd := g.tmpReg("strcmp.lend")
 	if sb != nil {
 		sb.WriteString(fmt.Sprintf("%s%s = add i64 %s, 1\n", g.indent(), leftSize, leftLen))
-		sb.WriteString(fmt.Sprintf("%s%s = alloca i8, i64 %s\n", g.indent(), leftBuf, leftSize))
+		sb.WriteString(fmt.Sprintf("%s%s = call i8* @nolang.malloc(i64 %s)\n", g.indent(), leftBuf, leftSize))
+		g.stmtTempRawPtrs = append(g.stmtTempRawPtrs, leftBuf)
 		sb.WriteString(fmt.Sprintf("%scall void @llvm.memcpy.p0i8.p0i8.i64(i8* %s, i8* %s, i64 %s, i1 false)\n", g.indent(), leftBuf, leftData, leftLen))
 		sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds i8, i8* %s, i64 %s\n", g.indent(), leftEnd, leftBuf, leftLen))
 		sb.WriteString(fmt.Sprintf("%sstore i8 0, i8* %s\n", g.indent(), leftEnd))
@@ -4700,7 +4703,8 @@ func (g *Generator) generateStringCmpI1(sb *strings.Builder, expr *parser.InfixE
 	rightEnd := g.tmpReg("strcmp.rend")
 	if sb != nil {
 		sb.WriteString(fmt.Sprintf("%s%s = add i64 %s, 1\n", g.indent(), rightSize, rightLen))
-		sb.WriteString(fmt.Sprintf("%s%s = alloca i8, i64 %s\n", g.indent(), rightBuf, rightSize))
+		sb.WriteString(fmt.Sprintf("%s%s = call i8* @nolang.malloc(i64 %s)\n", g.indent(), rightBuf, rightSize))
+		g.stmtTempRawPtrs = append(g.stmtTempRawPtrs, rightBuf)
 		sb.WriteString(fmt.Sprintf("%scall void @llvm.memcpy.p0i8.p0i8.i64(i8* %s, i8* %s, i64 %s, i1 false)\n", g.indent(), rightBuf, rightData, rightLen))
 		sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds i8, i8* %s, i64 %s\n", g.indent(), rightEnd, rightBuf, rightLen))
 		sb.WriteString(fmt.Sprintf("%sstore i8 0, i8* %s\n", g.indent(), rightEnd))
