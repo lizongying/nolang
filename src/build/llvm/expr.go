@@ -593,6 +593,12 @@ func (g *Generator) generateIfExpression(sb *strings.Builder, expr *parser.IfExp
 		cond = g.generateConditionAsI1(sb, expr.Condition)
 	}
 
+	// Free raw pointers accumulated during condition evaluation (e.g. null-terminated
+	// buffers from C library calls like stat/strcmp). These were allocated in the
+	// condition block and must be freed here — before the branch split — to avoid
+	// LLVM domination errors at the if.end merge point.
+	g.emitStmtTemporariesFree(sb)
+
 	// branch
 	sb.WriteString(fmt.Sprintf("%sbr i1 %s, label %%if.then.%d, label %%if.else.%d\n",
 		g.indent(), cond, labelId, labelId))
@@ -666,6 +672,12 @@ func (g *Generator) generateIfExpression(sb *strings.Builder, expr *parser.IfExp
 			g.ssaTypes[loadReg] = "%str-long"
 		}
 	}
+	// Free raw pointers accumulated during then-branch body (e.g. from C library
+	// calls in expressions that went through generateExprWithSB rather than
+	// generateStatement). Must be freed here — before br to if.end — so the free
+	// is in the same block as the malloc, avoiding LLVM domination errors.
+	g.emitStmtTemporariesFree(sb)
+
 	thenTerminated := g.blockTerminated
 	thenPredecessor := g.currentBlock
 	if !thenTerminated {
@@ -728,6 +740,9 @@ func (g *Generator) generateIfExpression(sb *strings.Builder, expr *parser.IfExp
 			g.ssaTypes[loadReg] = "%str-long"
 		}
 	}
+	// Free raw pointers accumulated during else-branch body (same rationale as then).
+	g.emitStmtTemporariesFree(sb)
+
 	elseTerminated := g.blockTerminated
 	elsePredecessor := g.currentBlock
 	if !elseTerminated {
@@ -914,6 +929,11 @@ func (g *Generator) generateConditionalExpression(sb *strings.Builder, expr *par
 		cond = g.generateConditionAsI1(sb, expr.Condition)
 	}
 
+	// Free raw pointers accumulated during condition evaluation (e.g. null-terminated
+	// buffers from C library calls). Must be freed before the branch split to avoid
+	// LLVM domination errors at the merge point.
+	g.emitStmtTemporariesFree(sb)
+
 	// branch
 	condBlock := g.cfgBlockLabel()
 	endLabel := fmt.Sprintf("cond.end.%d", labelId)
@@ -939,6 +959,8 @@ func (g *Generator) generateConditionalExpression(sb *strings.Builder, expr *par
 			g.ssaTypes[loadReg] = "%str-long"
 		}
 	}
+	// Free raw pointers accumulated during then-branch expression evaluation.
+	g.emitStmtTemporariesFree(sb)
 	thenPredecessor := g.currentBlock
 	sb.WriteString(fmt.Sprintf("%sbr label %%cond.end.%d\n", g.indent(), labelId))
 	// CFG: then → end
@@ -959,6 +981,8 @@ func (g *Generator) generateConditionalExpression(sb *strings.Builder, expr *par
 			g.ssaTypes[loadReg] = "%str-long"
 		}
 	}
+	// Free raw pointers accumulated during else-branch body (same rationale as then).
+	g.emitStmtTemporariesFree(sb)
 	elsePredecessor := g.currentBlock
 	sb.WriteString(fmt.Sprintf("%sbr label %%cond.end.%d\n", g.indent(), labelId))
 	// CFG: else → end
