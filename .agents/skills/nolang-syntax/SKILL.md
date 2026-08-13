@@ -684,7 +684,7 @@ Variable names, function names, struct names, etc. can start with an underscore,
 
 **Case rules (mandatory):**
 - **Global constants/variables**: **MUST** start with an uppercase letter (e.g. `NO-LANG`, `MAX-SIZE`, `HEX-CHARS`). Private globals use underscore prefix followed by uppercase (e.g. `_NO-LANG`, `_PRIVATE-CONST`). This is a mandatory rule, not a convention. Lowercase top-level variables will be treated as locals by the compiler, causing undefined reference errors.
-- **Local variables, function parameters**: lowercase (e.g. `hex-chars`, `data-len`)
+- **Local variables, function parameters**: lowercase (e.g. `hex-chars`, `data-len`). Do **NOT** use the `_` prefix for local variables — they are inherently private to their scope and do not need a visibility marker. The `_` prefix is reserved for private globals and FFI private declarations only.
 - **Function names, struct names**: lowercase (e.g. `sha1-block`, `db-mysql`)
 
 **Function naming convention (strongly recommended):**
@@ -707,10 +707,11 @@ _PRIVATE-CONST = 42      // private global constant
 // foo-bar = 42           // lowercase global — will cause errors
 // hello-world = 'Hello World'  // lowercase global — will cause errors
 
-// ✅ Local variables (inside functions) use lowercase
+// ✅ Local variables (inside functions) use lowercase, no _ prefix
 // example-fn = () {
 //     x = 10             // local variable, lowercase — correct
 //     foo-bar = 42       // local variable, lowercase — correct
+//     _x = 10            // ❌ wrong: local variables do not need _ prefix
 // }
 ```
 

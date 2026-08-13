@@ -298,22 +298,26 @@ re = regexp-compile('\\d+')
 Variable names, function names, struct names, etc. can start with an underscore, followed by hyphens, letters, and digits. They cannot start with a digit, cannot end with a hyphen, and cannot contain consecutive hyphens.
 
 **Case conventions:**
-- **Global constants, global variables**: use uppercase letters (e.g., `NOLANG`, `MAX-SIZE`)
-- **Local variables, function parameters**: use lowercase letters (e.g., `hex-chars`, `data-len`)
+- **Global constants, global variables**: use uppercase letters (e.g., `NOLANG`, `MAX-SIZE`). Private globals use underscore prefix followed by uppercase (e.g., `_NOLANG`, `_PRIVATE-CONST`).
+- **Local variables, function parameters**: use lowercase letters (e.g., `hex-chars`, `data-len`). Do **NOT** use the `_` prefix for local variables — they are inherently private to their scope and do not need a visibility marker. The `_` prefix is reserved for private globals and FFI private declarations only.
 - **Function names, struct names**: use lowercase letters (e.g., `sha1-block`, `db-mysql`)
 
 ```no
 ; Global data uses uppercase letters, including global constants, global variables, etc.
 NOLANG = 'nolang'
 
-; Private
+; Private global: underscore prefix + uppercase
 _NOLANG = 'nolang'
 
-x1 = 10
-x = 10
-_x = 10
-foo-bar = 42
-hello-world = 'Hello World'
+; Local variables (inside functions): lowercase, no _ prefix
+; fn-example = () {
+;     x1 = 10
+;     x = 10
+;     foo-bar = 42
+;     hello-world = 'Hello World'
+;     ; ❌ wrong: local variables do not need _ prefix
+;     ; _x = 10
+; }
 ```
 
 ### Avoid Global Variables in Modules
