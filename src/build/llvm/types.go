@@ -276,6 +276,20 @@ func (g *Generator) arrayTypeToLLVM(at *parser.ArrayType) string {
 	return fmt.Sprintf("[%d x %s]", size, elemLLVMType)
 }
 
+// resolveOutputParamLLVMType returns the LLVM type for an output (result) parameter.
+// bool (i1) is widened to i64 to match the caller's convention: callers allocate
+// i64 allocas for bool targets (see collectVarDeclsFromStmt i1→i64 conversion).
+// Without this, the function signature would use i1* while the caller passes i64*,
+// causing the function to write only 1 byte but the caller to read 8 bytes,
+// resulting in garbage in the upper 7 bytes (bug15: multi-return bool corruption).
+func (g *Generator) resolveOutputParamLLVMType(t parser.Type) string {
+	llvmType := g.resolveParamLLVMType(t)
+	if llvmType == "i1" {
+		return "i64"
+	}
+	return llvmType
+}
+
 // constFoldInt evaluates a constant integer expression (IntegerLiteral,
 // negative IntegerLiteral, CharLiteral, or InfixExpression with +/-/* on
 // constants) and returns the folded value. Used for array sizes like [16 + 160].

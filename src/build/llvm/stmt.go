@@ -2316,9 +2316,9 @@ func (g *Generator) generateFunctionDefinition(sb *strings.Builder, fd *parser.F
 			if mt, ok := r.Type.(*parser.MapType); ok {
 				typeStr = mt.LLVMName()
 			} else {
-				typeStr = r.Type.String()
-			}
-			g.varTypes[r.Name] = g.resolveParamLLVMType(r.Type)
+			typeStr = r.Type.String()
+		}
+			g.varTypes[r.Name] = g.resolveOutputParamLLVMType(r.Type)
 			if strings.HasPrefix(typeStr, "?") {
 				g.optionInnerTypes[r.Name] = g.mapToLLVMType(typeStr[1:])
 			}
@@ -2416,7 +2416,7 @@ func (g *Generator) generateFunctionDefinition(sb *strings.Builder, fd *parser.F
 	firstResult := true
 	for _, r := range fd.Results {
 		if r.Name != "" {
-			llvmType := toLLVMType(g.resolveParamLLVMType(r.Type)) + "*"
+			llvmType := toLLVMType(g.resolveOutputParamLLVMType(r.Type)) + "*"
 			sep := ", "
 			if firstResult && len(fd.Parameters) == 0 {
 				sep = "" // 第一個參數前不需逗號
@@ -2465,7 +2465,7 @@ func (g *Generator) generateFunctionDefinition(sb *strings.Builder, fd *parser.F
 	// 結果參數為 passed by reference（單結果與多結果皆同），不分配本地 alloca。
 	for _, r := range fd.Results {
 		if r.Name != "" {
-			g.varTypes[r.Name] = g.resolveParamLLVMType(r.Type)
+			g.varTypes[r.Name] = g.resolveOutputParamLLVMType(r.Type)
 			g.funcLocalNames[r.Name] = true
 			// Register slice element type for []T result params (e.g. []str → "%str-long").
 			// Without this, vec-push defaults to i64 (8 bytes) instead of %str-long (24 bytes),
@@ -4584,15 +4584,19 @@ func (g *Generator) emitStmtTemporariesFree(sb *strings.Builder) {
 	}
 	for _, rawPtr := range g.stmtTempRawPtrs {
 		// raw i8* pointer: NULL check → free
+		// Labels must NOT start with '%' — LLVM IR label definitions are "name:"
+		// without the '%' prefix (only br references use "%name").
 		nullCmp := g.tmpReg("heapfree.rawnull")
+		g.tmpIdx++
+		freeLabel := fmt.Sprintf("heapfree.rawfree.%d", g.tmpIdx)
+		g.tmpIdx++
+		skipLabel := fmt.Sprintf("heapfree.rawskip.%d", g.tmpIdx)
 		sb.WriteString(fmt.Sprintf("%s%s = icmp eq i8* %s, null\n", g.indent(), nullCmp, rawPtr))
-		skipLabel := g.tmpReg("heapfree.rawskip")
-		freeLabel := g.tmpReg("heapfree.rawfree")
-		sb.WriteString(fmt.Sprintf("%sbr i1 %s, label %s, label %s\n", g.indent(), nullCmp, skipLabel, freeLabel))
-		sb.WriteString(fmt.Sprintf("%s:\n", freeLabel))
+		sb.WriteString(fmt.Sprintf("%sbr i1 %s, label %%%s, label %%%s\n", g.indent(), nullCmp, skipLabel, freeLabel))
+		g.emitLabel(sb, freeLabel)
 		sb.WriteString(fmt.Sprintf("%scall void @free(i8* %s)\n", g.indent(), rawPtr))
-		sb.WriteString(fmt.Sprintf("%sbr label %s\n", g.indent(), skipLabel))
-		sb.WriteString(fmt.Sprintf("%s:\n", skipLabel))
+		sb.WriteString(fmt.Sprintf("%sbr label %%%s\n", g.indent(), skipLabel))
+		g.emitLabel(sb, skipLabel)
 	}
 	g.stmtTemporaries = nil
 	g.stmtTempRawPtrs = nil
@@ -7038,34 +7042,15 @@ if !alreadyCoerced && g.isIntegerLLVMType(llvmType) && llvmType != "i64" && stri
 		}
 	}
 
-	// 延遲綁定（SSA 版本化）：若目標是輸出參數且源是簡單變數，
-	// 不立即 store，而是遞增 SSA 版本並記錄綁定（源變數名 + 型別）。
-	// flushOutputBindings 時按當前 SSA 版本查表：
-	// - 找到綁定 → load 源變數並 store 到輸出參數
-	// - 找不到 → 跳過（立即 store 已處理，如常量賦值）
-	// SSA 版本由 if 分支前後的 save/restore 隔離，不同分支的綁定互不覆蓋。
+	// 輸出參數賦值：立即 store（不再使用延遲綁定）。
+	// 原延遲綁定機制（SSA 版本化 + flushOutputBindings）在 if/break 場景下
+	// 會丟失賦值：分支內的賦值遞增 SSA 版本，但分支後版本被 restore，
+	// 導致函數返回時 flush 查不到綁定，out 參數保留舊值。
+	// 立即 store 確保 `out = x` 在執行時即刻生效，語意正確且無副作用。
+	// SSA 版本遞增保留以維持與 expr.go save/restore 的相容性，但不再記錄綁定。
 	if g.outputParamNames != nil && g.outputParamNames[name] && !stmt.IsSynthetic {
-		// 每次賦值都遞增 SSA 版本（無論是否延遲綁定）
 		g.ssaVersion[name]++
-		ver := g.ssaVersion[name]
-		if paramType, ptOk := g.varTypes[name]; ptOk && g.isIntegerLLVMType(paramType) {
-			if ident, ok := stmt.Value.(*parser.Identifier); ok {
-				if srcType, srcOk := g.varTypes[ident.Value]; srcOk {
-					// 簡單變數賦值：res = x → 記錄綁定，不 store
-					if g.outputBindings[name] == nil {
-						g.outputBindings[name] = make(map[int]outputBinding)
-					}
-					g.outputBindings[name][ver] = outputBinding{
-						sourceVar: ident.Value,
-						llvmType:  srcType,
-					}
-					return
-				}
-			}
-			// 複雜表達式：不延遲，正常 store（值不會變化）
-			// 版本已遞增但無綁定，flush 時查不到 → 跳過
-		}
-		// 非整數型別：版本已遞增但無綁定，正常 store
+		// 不記錄延遲綁定，落入後續立即 store 路徑
 	}
 
 	// 堆變數追蹤：記錄有堆分配資料的局部變數，用於函數結束時 free。

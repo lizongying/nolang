@@ -1118,7 +1118,7 @@ func (g *Generator) Generate(program *parser.Program) string {
 				innerRets := make([]string, len(fd.Results))
 				for i, r := range fd.Results {
 					typeStr := r.Type.String()
-					rets[i] = g.resolveParamLLVMType(r.Type)
+					rets[i] = g.resolveOutputParamLLVMType(r.Type)
 					nolangRets[i] = typeStr
 					if nt, ok := r.Type.(*parser.NullableType); ok {
 						innerRets[i] = g.resolveParamLLVMType(nt.Type)
@@ -1171,7 +1171,7 @@ func (g *Generator) Generate(program *parser.Program) string {
 						innerRets := make([]string, len(fl.Results))
 						for i, r := range fl.Results {
 							typeStr := r.Type.String()
-							rets[i] = g.resolveParamLLVMType(r.Type)
+							rets[i] = g.resolveOutputParamLLVMType(r.Type)
 							nolangRets[i] = typeStr
 							if nt, ok := r.Type.(*parser.NullableType); ok {
 								innerRets[i] = g.resolveParamLLVMType(nt.Type)
@@ -1221,7 +1221,7 @@ func (g *Generator) Generate(program *parser.Program) string {
 						innerRets := make([]string, len(fl.Results))
 						for i, r := range fl.Results {
 							typeStr := r.Type.String()
-							rets[i] = g.resolveParamLLVMType(r.Type)
+							rets[i] = g.resolveOutputParamLLVMType(r.Type)
 							nolangRets[i] = typeStr
 							if nt, ok := r.Type.(*parser.NullableType); ok {
 								innerRets[i] = g.resolveParamLLVMType(nt.Type)
@@ -1890,7 +1890,7 @@ func (g *Generator) detectOutputParamsFromBody(program *parser.Program, funcName
 		innerRets := make([]string, len(outputs))
 		for i, p := range outputs {
 			typeStr := p.Type.String()
-			rets[i] = g.resolveParamLLVMType(p.Type)
+			rets[i] = g.resolveOutputParamLLVMType(p.Type)
 			nolangRets[i] = typeStr
 			if nt, ok := p.Type.(*parser.NullableType); ok {
 				innerRets[i] = g.resolveParamLLVMType(nt.Type)
