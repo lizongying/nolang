@@ -2073,7 +2073,8 @@ func (p *Parser) parseStarStarContinue() Statement {
 // parseLabeledStatement 解析帶 #N 標籤的循環語句：
 //
 //	#1 i <- [0..256): { ... }   bare range-for
-//	#1!! { ... }                infinite loop
+//	#1 { ... } (true)           infinite loop (new style)
+//	#1!! { ... }                infinite loop (deprecated)
 //	#1 { ... } * N              counted loop (N 為常數計數)
 //	#1 x == 1: { ... }          conditional
 //

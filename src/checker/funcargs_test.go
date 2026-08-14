@@ -116,7 +116,7 @@ pow = (a bigint, n i64, out bigint) {
 
 // TestValidateUndefinedVarsScopeAfterMatch verifies that variables defined
 // before an `if` block containing a match expression (`w: { nil -> ... -> }`)
-// are still recognized as defined after the `if` block, inside a `!! { }`
+// are still recognized as defined after the `if` block, inside a `{ } (true)`
 // loop, and after the loop.
 // This is a regression test for a scope-tracking bug where the match
 // desugaring inside an `if` consequence caused the validator to lose
@@ -166,7 +166,7 @@ reconnect = () (ok bool) {
     separator = crlf - crlf
     sep-pos i64 = -1
 
-    !! {
+    {
         if total + 32 > 64 {
             .close()
             return
@@ -197,7 +197,7 @@ reconnect = () (ok bool) {
         if sep-pos >= 0 {
             *
         }
-    }
+    } (true)
 
     head = raw.slice(0, sep-pos)
     first-line-end = head.index(crlf)

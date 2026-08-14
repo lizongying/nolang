@@ -97,6 +97,12 @@ func TestFormatBasic(t *testing.T) {
 			expected: "{\n    break\n} (true)",
 		},
 		{
+			// 新式 { } (true) 無限循環（原生新式語法輸入）
+			name:     "true_loop",
+			input:    "{break}(true)",
+			expected: "{\n    break\n} (true)",
+		},
+		{
 			// 新式 { } * N 計數循環
 			name:     "counted_loop",
 			input:    "{print(1)}*5",

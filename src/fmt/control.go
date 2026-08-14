@@ -522,10 +522,11 @@ func (f *formatter) formatForStatement(s *parser.ForStatement) {
 		return
 	}
 
-	// 無限循環：{ body } ()
+	// 無限循環：{ body } (true)
 	// 涵蓋舊式 !! { } / for { }（Condition 保持 nil 的歷史路徑，現已改為 BooleanLiteral{true}）。
+	// 空括號 () 代表 false（不執行），因此無限循環必須顯式輸出 (true)。
 	f.writeLoopBodyBlock(s)
-	f.write(" ()")
+	f.write(" (true)")
 }
 
 func (f *formatter) formatRangeBrackets(re *parser.RangeExpression) {
