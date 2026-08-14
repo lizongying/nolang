@@ -1093,7 +1093,7 @@ int.to-str = () (out str) {
 
 | Purpose          | New syntax                     | Old (deprecated)                         |
 | ---------------- | ------------------------------ | ---------------------------------------- |
-| Infinite loop    | `{ } ()`                       | `!! { }` / `! { }` / `for { }`           |
+| Infinite loop    | `{ } (true)`                  | `!! { }` / `! { }` / `for { }`           |
 | Conditional loop | `{ } (cond)`                   | `for cond { }` / `while cond { }`        |
 | Counted loop     | `{ } * n` or `i <- [0..n): { }` | `for i=0, i<n, i++ { }`                  |
 | Range iteration  | `i <- [a..b]: { }`             | `for i <- [a..b] { }` / `for i in [...]` |
@@ -1105,19 +1105,20 @@ int.to-str = () (out str) {
 
 The new loop syntax puts the body block **first**, followed by the loop kind suffix:
 
-- `{ body } ()` — infinite loop (empty parens)
+- `{ body } (true)` — infinite loop (condition is always true)
+- `{ body } ()` — not executed (empty parens mean false)
 - `{ body } (cond)` — conditional loop (condition in parens, checked before each iteration)
 - `{ body } * N` — counted loop (body repeats `N` times)
 
 This "body-first" ordering is intentional: it mirrors how you read the block, and the suffix
-unambiguously declares the loop variant. The empty `()` reads as "loop forever"; `(cond)` reads
-as "loop while condition holds".
+unambiguously declares the loop variant. The `(true)` reads as "loop forever"; `(cond)` reads
+as "loop while condition holds"; `()` reads as "do not execute" (false).
 
 ```no
 // Infinite loop (new style)
 {
     // body
-} ()
+} (true)
 
 // Conditional loop (new style) — condition checked before each iteration
 {
@@ -2280,7 +2281,8 @@ External packages can only access exports declared in `lib.no` when importing vi
 - `.` — self (⚠️ in range bounds, use `self.method` not `.method` to avoid `...` ambiguity with the return operator)
 - `!` — false (planned, currently still uses `false`)
 - `!!` — true (planned, currently still uses `true`)
-- `{ } ()` — infinite loop (new style; `!! { }` is deprecated)
+- `{ } (true)` — infinite loop (new style; `!! { }` is deprecated)
+- `{ } ()` — not executed (empty parens mean false)
 - `{ } (cond)` — conditional loop (new style; `for cond { }` is deprecated)
 - `{ } * N` — counted loop (body repeats N times; N ≤ 0 skips the body)
 - `**` — continue (skip current iteration) (planned, currently still uses `continue`)

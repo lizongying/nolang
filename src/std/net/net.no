@@ -214,7 +214,7 @@ conn.recv-all = () (content str, total i64) {
             content[total + i] = buf[i]
         }
         total = total + chunk-n
-    } ()
+    } (true)
 }
 
 ; close: 關閉連接

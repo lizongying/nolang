@@ -81,14 +81,20 @@ func TestFormatBasic(t *testing.T) {
 		},
 		{
 			name:     "infinite for loop with break",
+			input:    "{break}(true)",
+			expected: "{\n    break\n} (true)",
+		},
+		{
+			// 不執行的循環（空括號代表 false）
+			name:     "empty_parens_not_executed",
 			input:    "{break}()",
 			expected: "{\n    break\n} ()",
 		},
 		{
-			// 新式 { } () 無限循環（由舊式 !! { } 遷移）
+			// 新式 { } (true) 無限循環（由舊式 !! { } 遷移）
 			name:     "bang_loop",
 			input:    "!!{break}",
-			expected: "{\n    break\n} ()",
+			expected: "{\n    break\n} (true)",
 		},
 		{
 			// 新式 { } * N 計數循環
@@ -1892,10 +1898,10 @@ func TestFormatLabeledFor(t *testing.T) {
 			name: "labeled infinite loop",
 			input: `#1 {
     x = 1
-} ()`,
+} (true)`,
 			expected: `#1 {
     x = 1
-} ()`,
+} (true)`,
 		},
 		{
 			name: "labeled conditional",

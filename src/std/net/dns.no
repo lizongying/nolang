@@ -199,7 +199,7 @@ parse-name = (data []byte, offset i64) (name str, next-pos i64) {
                 pos = pos + label-len
             }
         }
-    } ()
+    } (true)
 
     ; 移除末尾的點
     buf-pos > 0 -> buf[buf-pos - 1] == 46 -> buf-pos = buf-pos - 1

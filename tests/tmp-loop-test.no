@@ -4,5 +4,5 @@
     line, ok = fs.get-line()
     ok == false -> break
     print('got: ' - line)
-} ()
+} (true)
 print('done')

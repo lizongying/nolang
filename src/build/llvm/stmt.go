@@ -4799,7 +4799,7 @@ func (g *Generator) generateForStatement(sb *strings.Builder, stmt *parser.ForSt
 			}
 		}
 	} else {
-		condVal = "1" // infinite loop
+		condVal = "1" // infinite loop (Condition 保持 nil 的歷史路徑，現已改為 BooleanLiteral{true})
 	}
 	sb.WriteString(fmt.Sprintf("%sbr i1 %s, label %%for.body.%d, label %%for.end.%d\n",
 		g.indent(), condVal, labelId, labelId))
@@ -6717,9 +6717,38 @@ func (g *Generator) generateLet(sb *strings.Builder, stmt *parser.LetStatement) 
 						if sourceStrType == "" {
 							// 非 str 值，直接 store（已是 struct 值）
 							sb.WriteString(fmt.Sprintf("%sstore %s %s, %s* %s\n", g.indent(), toLLVMType(fieldType), fieldVal, toLLVMType(fieldType), gepReg))
-						} else if sourceStrType == fieldType {
-							// 同型別，直接 store
+					} else if sourceStrType == fieldType {
+						// 同型別。若源是函數參數或局部堆變數（如 Identifier
+						// 指向 str 參數），直接 store 只做淺拷貝——結構體欄位
+						// 與源共享同一 data 指標。當結構體被傳遞給另一個函數
+						// 且該函數從欄位讀取 str 並賦值給輸出參數時，輸出參數
+						// 與原始 str 共享 data，導致 double-free（bug19）。
+						// 修復：對來自參數/局部堆變數的 str 值執行深層 clone。
+						needClone := false
+						if ident, ok := f.Value.(*parser.Identifier); ok {
+							if g.funcParams != nil && g.funcParams[ident.Value] {
+								needClone = true
+							}
+							if g.heapVars != nil {
+								if _, isHeap := g.heapVars[ident.Value]; isHeap {
+									needClone = true
+								}
+							}
+						}
+						if needClone {
+							// 深層 clone：malloc 新 data + memcpy
+							// srcPtr = 源變數的地址（如函數參數 %raw）
+							// dstPtr = 結構體欄位的 GEP 指標
+							// containerType = %str-long, dataFieldIdx = 2（data 在欄位 2）
+							srcIdent := f.Value.(*parser.Identifier)
+							dataFieldIdx := 2
+							if toLLVMType(fieldType) == "%arr" {
+								dataFieldIdx = 1
+							}
+							g.emitContainerClone(sb, g.varAddr(srcIdent.Value), gepReg, toLLVMType(fieldType), dataFieldIdx, "")
+						} else {
 							sb.WriteString(fmt.Sprintf("%sstore %s %s, %s* %s\n", g.indent(), toLLVMType(fieldType), fieldVal, toLLVMType(fieldType), gepReg))
+						}
 						} else {
 							// 不同型別：先取得 source 指標，轉換為目標型別的指標，再 load + store
 							sourcePtr := g.materializeStrPtr(sb, f.Value, sourceStrType, fieldVal)

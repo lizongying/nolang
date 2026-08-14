@@ -112,7 +112,7 @@ connect = (proxy-host str, proxy-port i64, target-host str, target-port i64, use
         data = raw.slice(0, total)
         sep-pos = data.index(separator)
         sep-pos >= 0 -> break
-    } ()
+    } (true)
 
     ; 解析狀態行
     head = raw.slice(0, sep-pos)

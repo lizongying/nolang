@@ -184,7 +184,7 @@ conn.recv-frame = () (frame ?frame) {
             hdr-buf[hdr-total + i] = hdr-buf[i]
         }
         hdr-total = hdr-total + recv-n
-    } ()
+    } (true)
 
     ; 解析標頭
     np = f.parse(hdr-buf, 0)
@@ -209,7 +209,7 @@ conn.recv-frame = () (frame ?frame) {
                 f.payload[payload-total + i] = f.payload[i]
             }
             payload-total = payload-total + recv-n
-        } ()
+        } (true)
     }
     frame = f
 }
@@ -518,7 +518,7 @@ conn.request = (method str, path str, host str, body str) (names [32]str, values
             -> return
         }
         ; 忽略其他影格類型（SETTINGS, PING, WINDOW-UPDATE 等）
-    } ()
+    } (true)
 }
 
 ; do: HTTP/2 h2c 便捷函數

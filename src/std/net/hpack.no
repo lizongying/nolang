@@ -413,7 +413,7 @@ decode-int = (data str, pos i64, prefix-bits i64) (val i64, next-pos i64) {
             next-pos = -1
             *
         }
-    } ()
+    } (true)
 }
 
 ; ═══════════════════════════════════════════════
@@ -715,6 +715,6 @@ tables.decode-headers = (data str) (names [128]str, values [128]str, count i64, 
             -> return
         }
         ; 未知表示類型
-    } ()
+    } (true)
     ok = true
 }

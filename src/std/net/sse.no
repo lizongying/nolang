@@ -262,7 +262,7 @@ client.next-event = () (ev ?event) {
                 .recv-buf-len = .recv-buf-len + n
             }
         }
-    } ()
+    } (true)
 }
 
 ; close: 關閉 SSE 連線
@@ -388,7 +388,7 @@ client.reconnect = () (ok bool) {
         data = raw.slice(0, total)
         sep-pos = data.index(separator)
         sep-pos >= 0 -> *
-    } ()
+    } (true)
 
     ; 驗證狀態碼
     head = raw.slice(0, sep-pos)
@@ -599,7 +599,7 @@ sse-connect = (url str) (client ?client) {
         data = raw.slice(0, total)
         sep-pos = data.index(separator)
         sep-pos >= 0 -> *
-    } ()
+    } (true)
 
     ; ── 驗證狀態碼 ──
     head = raw.slice(0, sep-pos)
@@ -761,7 +761,7 @@ server-conn.handshake = () (ok bool) {
         data = raw.slice(0, total)
         sep-pos = data.index(separator)
         sep-pos >= 0 -> *
-    } ()
+    } (true)
 
     ; 解析請求行
     head = raw.slice(0, sep-pos)
@@ -822,7 +822,7 @@ server-conn.send-event = (event str, data str, id str, retry i64) (ok bool) {
                 msg = msg - 'data: ' - line - lf
                 nl < 0 -> *
                 pos = nl + 1
-            } ()
+            } (true)
         }
         -> msg = msg - 'data: ' - lf
     }

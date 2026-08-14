@@ -162,7 +162,7 @@ response.parse-headers = () {
         }
         next-crlf < 0 -> *
         pos = next-crlf + 2
-    } ()
+    } (true)
 }
 
 ; get-header: 取得指定標頭值（線性搜尋）
@@ -350,7 +350,7 @@ do = (method str, url str, body str) (resp ?response) {
             raw[total + i] = buf[i]
         }
         total = total + n
-    } ()
+    } (true)
     {
         use-tls -> tls-c.close()
         -> fs.close(fd)
@@ -549,7 +549,7 @@ do-req = (req request) (resp ?response) {
             raw[total + i] = buf[i]
         }
         total = total + n
-    } ()
+    } (true)
     {
         use-tls -> tls-c.close()
         -> fs.close(fd)

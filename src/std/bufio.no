@@ -64,7 +64,7 @@ reader.read-line = (line str) (ok bool) {
             line[n] = c
             n = n + 1
         } (.pos < .avail)
-    } ()
+    } (true)
 }
 
 ; close: 關閉

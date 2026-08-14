@@ -13,7 +13,7 @@ A disciplined test-first workflow for diagnosing and fixing bugs in the Nolang c
 
 > **Nolang 檔名使用中連字符 `-`**（如 `string-helper.no`），**不使用下劃線 `_`**。詳見 [nolang-syntax-reference](./nolang-syntax-reference/SKILL.md)。
 
-> **Deprecation warnings**：舊式流程控制語法（`for { }`、`for cond { }`、`for i=0,i<n,i++ { }`、`for i <- [...] { }`、`for i in [...] { }`、`match x { }`、`if/elif/else { }`）會輸出 deprecation warning 但仍可解析。建議改用新式（`! { }`、`cond: { }`、`n * { }`、`i <- [..]: { }`、`x: { }`、`{ cond -> body }`）。詳見 [nolang-syntax-reference](./nolang-syntax-reference/SKILL.md) 的 Control Flow 段落。
+> **Deprecation warnings**：舊式流程控制語法（`for { }`、`for cond { }`、`for i=0,i<n,i++ { }`、`for i <- [...] { }`、`for i in [...] { }`、`match x { }`、`if/elif/else { }`）會輸出 deprecation warning 但仍可解析。建議改用新式（`{ } (true)`、`{ } (cond)`、`{ } * n`、`i <- [..]: { }`、`x: { }`、`{ cond -> body }`）。詳見 [nolang-syntax-reference](./nolang-syntax-reference/SKILL.md) 的 Control Flow 段落。
 
 Always:
 

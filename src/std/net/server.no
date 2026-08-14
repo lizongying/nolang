@@ -220,7 +220,7 @@ server-conn.parse = () (ok bool) {
         ; 接收更多資料
         n = .recv-more()
         n <= 0 -> return
-    } ()
+    } (true)
 
     ; 解析請求行和標頭
     head = .recv-buf.slice(0, sep-pos)
@@ -294,7 +294,7 @@ server-conn.parse = () (ok bool) {
             }
             next-crlf < 0 -> *
             pos = next-crlf + 2
-        } ()
+        } (true)
     }
 
     ; 判斷 Keep-Alive
@@ -810,7 +810,7 @@ https-server-conn.parse = () (ok bool) {
         .recv-buf-len + HTTP-SRV-RECV-SIZE > HTTP-SRV-BUF-SIZE -> return
         n = .recv-more()
         n <= 0 -> return
-    } ()
+    } (true)
 
     ; 解析請求行和標頭
     head = .recv-buf.slice(0, sep-pos)
@@ -886,7 +886,7 @@ https-server-conn.parse = () (ok bool) {
             }
             next-crlf < 0 -> *
             pos = next-crlf + 2
-        } ()
+        } (true)
     }
 
     ; 判斷 Keep-Alive

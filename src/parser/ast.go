@@ -1212,7 +1212,7 @@ type ForStatement struct {
 	Update    Statement
 	Body      *BlockStatement
 	IterRange *IterationExpr // unified iteration (range/str/ident/slice)
-	CountExpr Expression     // ! { } 或 { } * N 語法
+	CountExpr Expression     // !! { } 或 { } * N 語法（!! 已改為 Condition=true）
 	// IsCondWrapper 標記此 ForStatement 由 parseLabeledStatement 合成，
 	// 將 `#N val: { body }` 包裝為 ForStatement{Condition: *IfExpression, Body: Consequence}。
 	// formatter/transpiler 直接讀取此欄位識別合成包裝，

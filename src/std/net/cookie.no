@@ -182,7 +182,7 @@ parse-set = (set-cookie-str str) (c cookie) {
         }
         next-semi < 0 -> *
         pos = next-semi + 1
-    } ()
+    } (true)
 }
 
 ; parse-header: 解析 Cookie 請求標頭
@@ -216,7 +216,7 @@ parse-header = (cookie-header str) (names [16]str, values [16]str, count i64) {
         }
         next-semi < 0 -> *
         pos = next-semi + 1
-    } ()
+    } (true)
 }
 
 ; ═══════════════════════════════════════════════

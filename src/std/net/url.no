@@ -192,7 +192,7 @@ url-info.get-query = (key str) (val ?str) {
         }
         next-amp < 0 -> *
         pos = next-amp + 1
-    } ()
+    } (true)
 }
 
 ; url-info.set-query: 設定查詢參數值
@@ -229,7 +229,7 @@ url-info.set-query = (key str, value str) {
         }
         next-amp < 0 -> *
         pos = next-amp + 1
-    } ()
+    } (true)
     found == false -> new-query.len > 0 -> new-query = new-query - '&' - key - '=' - value -> new-query = key - '=' - value
     .query = new-query
 }

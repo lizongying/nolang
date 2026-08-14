@@ -190,7 +190,7 @@ unix-conn.recv-all = () (content str, total i64) {
             content[total + i] = buf[i]
         }
         total = total + chunk-n
-    } ()
+    } (true)
 }
 
 ; set-recv-timeout: 設定接收逾時

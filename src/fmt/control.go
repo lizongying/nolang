@@ -508,6 +508,12 @@ func (f *formatter) formatForStatement(s *parser.ForStatement) {
 			cond = ifExpr.Condition
 		}
 	}
+	// BooleanLiteral{Value: false} → 空括號 ()（不執行）
+	if bl, ok := cond.(*parser.BooleanLiteral); ok && !bl.Value {
+		f.writeLoopBodyBlock(s)
+		f.write(" ()")
+		return
+	}
 	if cond != nil {
 		f.writeLoopBodyBlock(s)
 		f.write(" (")
@@ -517,7 +523,7 @@ func (f *formatter) formatForStatement(s *parser.ForStatement) {
 	}
 
 	// 無限循環：{ body } ()
-	// 涵蓋新式 { } ()、舊式 !! { } / for { }。
+	// 涵蓋舊式 !! { } / for { }（Condition 保持 nil 的歷史路徑，現已改為 BooleanLiteral{true}）。
 	f.writeLoopBodyBlock(s)
 	f.write(" ()")
 }

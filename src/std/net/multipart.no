@@ -240,7 +240,7 @@ multipart-reader.parse-headers = (header-block str, part multipart-part) {
         .parse-header-line(line, part)
         pos = next-crlf + 2
         pos >= header-block.len -> break
-    } ()
+    } (true)
 }
 
 ; parse-header-line: 解析單個標頭行

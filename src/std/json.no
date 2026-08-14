@@ -257,7 +257,7 @@ json-pool.parse = (s str, pos i64) (node-idx i64, next-pos i64, ok bool) {
                     c2 == 44 -> p = p + 1
                     -> return
                 }
-            } ()
+            } (true)
         }
         c == 123 -> {
 
@@ -321,7 +321,7 @@ json-pool.parse = (s str, pos i64) (node-idx i64, next-pos i64, ok bool) {
                     c2 == 44 -> p = p + 1
                     -> return
                 }
-            } ()
+            } (true)
         }
     }
 }

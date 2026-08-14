@@ -10,14 +10,14 @@ sidebar_position: 4
 - `@` ; Export module
 - `->` ; Match arm and if/else branch (e.g., `cond -> body`)
 - `:` ; Match expression (e.g., `x: { ... }`)
-- `!!` ; Infinite loop (`!! { }`)
+- `{ } (true)` ; Infinite loop (condition is always true)
 - `<-` ; Range iteration (e.g., `i <- [a..b]: { }`)
 - `..` ; Parent class / range operator (e.g., `[a..b)`)
 - `.` ; Self (current struct/type) (⚠️ in range bounds, use `self.method` not `.method` to avoid `...` ambiguity with the return operator)
 - `?` ; Option type prefix (e.g., `?i64`, `?str`)
 - `!` ; False, error — replaces false (planned, not yet replaced)
 - `!!` ; True, correct — replaces true (planned, not yet replaced)
-- `!{}` ; Loop
+- `{ } ()` ; Not executed (empty parens mean false)
 - `*` ; Break — replaces break (planned, not yet replaced)
 - `**` ; Skip current iteration — replaces continue (planned, not yet replaced)
 - `...` ; Return statement, terminate function — replaces return (planned, not yet replaced)

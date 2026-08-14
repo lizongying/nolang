@@ -351,7 +351,7 @@ server-conn.handshake = () {
         data = raw.slice(0, total)
         sep-pos = data.index(separator)
         sep-pos >= 0 -> *
-    } ()
+    } (true)
     head = raw.slice(0, sep-pos)
 
     ; 解析請求行，驗證方法為 GET
@@ -625,7 +625,7 @@ server-conn.recv = () (msg ?message) {
                 }
                 .recv-buf-len = .recv-buf-len + n
                 need = frame-total - .recv-buf-len
-            } ()
+            } (true)
         }
 
         ; 提取 mask key（如有）
@@ -700,7 +700,7 @@ server-conn.recv = () (msg ?message) {
             }
             return
         }
-    } ()
+    } (true)
 }
 
 ; recv-nb: 非阻塞讀取一個完整 WebSocket 訊息（D10 配套）
@@ -1075,7 +1075,7 @@ client.recv = () (msg ?message) {
                 }
                 .recv-buf-len = .recv-buf-len + n
                 need = frame-total - .recv-buf-len
-            } ()
+            } (true)
         }
         mask-key = ''
         mask-start = 2
@@ -1135,7 +1135,7 @@ client.recv = () (msg ?message) {
             }
             return
         }
-    } ()
+    } (true)
 }
 
 ; is-connected: 檢查連線狀態
@@ -1346,7 +1346,7 @@ connect = (url str) (c ?client) {
         data = raw.slice(0, total)
         sep-pos = data.index(separator)
         sep-pos >= 0 -> *
-    } ()
+    } (true)
 
     ; 驗證狀態碼為 101
     head = raw.slice(0, sep-pos)

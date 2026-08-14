@@ -509,8 +509,8 @@ a, b = swap(5, 3)
 
 | Old                             | New                                                |
 | ---------------------------- | -------------------------------------------------- |
-| `for { }` infinite loop      | `!! { }`                                           |
-| `for cond { }` conditional loop | `for cond { }` (retained; for non-1 steps or complex conditions) |
+| `for { }` infinite loop      | `{ } (true)`                                     |
+| `for cond { }` conditional loop | `{ } (cond)` (empty `()` means false, not executed) |
 | `for i=0, i<n, i++ { }` counting | `{ } * n` (constant count) or `i <- [0..n): { }` (variable) |
 | `for i <- [a..b] { }` range  | `i <- [a..b]: { }`                                 |
 | `for i in [a..b) { }` range  | `i <- [a..b): { }`                                 |
@@ -523,10 +523,15 @@ a, b = swap(5, 3)
 ### Loop / While / for-in
 
 ```no
-; Infinite loop
-!! {
+; Infinite loop (condition is always true)
+{
     ...
-}
+} (true)
+
+; Not executed (empty parens mean false)
+{
+    ...
+} ()
 
 ; Limited execution count
 {

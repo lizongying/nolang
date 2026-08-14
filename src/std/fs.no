@@ -548,7 +548,7 @@ file.copy-to = (dst-path str) (ok bool) {
         n = read(.fd, buf, 4096)
         n <= 0 -> *
         write(fd-w, buf, n)
-    } ()
+    } (true)
     close(fd-w)
     ok = true
 }

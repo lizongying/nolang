@@ -295,7 +295,7 @@ tree-set.add = (key i64) (ok bool) {
                 cur = .right[cur]
             }
         }
-    } ()
+    } (true)
 }
 
 ; contains: 檢查元素是否存在

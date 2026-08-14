@@ -305,7 +305,7 @@ tree-map.put = (key i64, val i64) (ok bool) {
                 cur = .right[cur]
             }
         }
-    } ()
+    } (true)
 }
 
 ; get: 查找鍵對應的值

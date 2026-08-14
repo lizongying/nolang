@@ -324,7 +324,7 @@ process.read-all = () (content str, n i64) {
             content[n + i] = buf[i]
         }
         n = n + chunk-n
-    } ()
+    } (true)
 }
 
 ; write: 寫入資料到子進程的 stdin

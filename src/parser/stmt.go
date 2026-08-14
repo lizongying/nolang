@@ -340,7 +340,7 @@ func (p *Parser) parseStatement() Statement {
 		if p.isCountedLoopBlockFirst() {
 			return p.parseCountedLoopBlockFirst()
 		}
-		// { body } (cond) 條件循環 或 { body } () 無限循環（新式語法，取代 !! { } 與 for cond { }）
+		// { body } (cond) 條件循環 或 { body } (true) 無限循環（新式語法，取代 !! { } 與 for cond { }）
 		if p.isCondLoopBlockFirst() {
 			return p.parseCondLoopBlockFirst()
 		}
@@ -1701,10 +1701,10 @@ func (p *Parser) parseForStatement() Statement {
 
 	// 检查是否是无限循环 for { }
 	if p.currentToken.Type == lexer.LBRACE {
-		stmt.Condition = nil
+		stmt.Condition = &BooleanLiteral{Token: stmt.Token, Value: true}
 		stmt.Body = p.parseBlockStatement()
 		p.nextToken() // skip body's }
-		p.saveWarning(fmt.Sprintf("line %d, column %d: 'for { }' is deprecated, use '{ } ()' infinite loop instead",
+		p.saveWarning(fmt.Sprintf("line %d, column %d: 'for { }' is deprecated, use '{ } (true)' infinite loop instead",
 			stmt.Token.Line, stmt.Token.Column))
 		return stmt
 	}
@@ -2021,7 +2021,8 @@ func (p *Parser) parseBangLoop() Statement {
 	p.nextToken() // skip !! / !
 	stmt.Body = p.parseBlockStatement()
 	p.nextToken() // skip body's }
-	p.saveWarning(fmt.Sprintf("line %d, column %d: '%s { }' is deprecated, use '{ } ()' infinite loop instead",
+	stmt.Condition = &BooleanLiteral{Token: bangTok, Value: true}
+	p.saveWarning(fmt.Sprintf("line %d, column %d: '%s { }' is deprecated, use '{ } (true)' infinite loop instead",
 		bangTok.Line, bangTok.Column, bangTok.Literal))
 	return stmt
 }
@@ -2090,10 +2091,10 @@ func (p *Parser) parseLabeledStatement() Statement {
 		if p.isCountedLoopBlockFirst() {
 			stmt = p.parseCountedLoopBlockFirst()
 		} else if p.isCondLoopBlockFirst() {
-			// Conditional/infinite loop: #1 { ... } (cond) / #1 { ... } ()
+			// Conditional/infinite loop: #1 { ... } (cond) / #1 { ... } (true)
 			stmt = p.parseCondLoopBlockFirst()
 		} else {
-			p.saveError(fmt.Sprintf("line %d, column %d: expected loop body after label #%s, got { without '* N' or '(cond)'",
+			p.saveError(fmt.Sprintf("line %d, column %d: expected loop body after label #%s, got { without '* N' or '(cond)' or '(true)'",
 				p.currentToken.Line, p.currentToken.Column, label))
 			return nil
 		}
@@ -2262,10 +2263,10 @@ func (p *Parser) parseCountedLoopBlockFirst() Statement {
 	return stmt
 }
 
-// isCondLoopBlockFirst 報告當前位置是否為 `{ ... } (cond)` 條件循環或 `{ ... } ()` 無限循環。
+// isCondLoopBlockFirst 報告當前位置是否為 `{ ... } (cond)` 條件循環或 `{ ... } (true)` 無限循環。
 // 前提：p.currentToken.Type == LBRACE。
 // 掃描匹配的大括號後，檢查是否跟著匹配的括號，且括號後為語句結束。
-// `()` 空括號 → 無限循環；`(cond)` → 條件循環。
+// `(true)` → 無限循環；`(cond)` → 條件循環。
 func (p *Parser) isCondLoopBlockFirst() bool {
 	// token at index k: k==1 → peekToken; k>=2 → look(k-2)
 	tokAt := func(k int) lexer.Token {
@@ -2322,9 +2323,9 @@ func (p *Parser) isCondLoopBlockFirst() bool {
 	return false
 }
 
-// parseCondLoopBlockFirst 解析 `{ body } (cond)` 條件循環或 `{ body } ()` 無限循環。
+// parseCondLoopBlockFirst 解析 `{ body } (cond)` 條件循環或 `{ body } (true)` 無限循環。
 // 前提：p.currentToken.Type == LBRACE，且 isCondLoopBlockFirst() 為 true。
-// `()` → 無限循環（Condition 為 nil）；`(cond)` → 條件循環（Condition 已設置）。
+// `(true)` → 無限循環（Condition 為 BooleanLiteral{Value: true}）；`(cond)` → 條件循環。
 func (p *Parser) parseCondLoopBlockFirst() Statement {
 	stmt := &ForStatement{Token: p.currentToken} // LBRACE
 	stmt.Body = p.parseBlockStatement()
@@ -2336,9 +2337,10 @@ func (p *Parser) parseCondLoopBlockFirst() Statement {
 		return stmt
 	}
 	p.nextToken() // skip (
-	// 空括號 () → 無限循環（Condition 保持 nil）
+	// 空括號 () → 視為 false（不執行），等價於 (false)
 	if p.currentToken.Type == lexer.RPAREN {
 		p.nextToken() // skip )
+		stmt.Condition = &BooleanLiteral{Token: p.currentToken, Value: false}
 		return stmt
 	}
 	// 解析條件表達式

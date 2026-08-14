@@ -351,11 +351,11 @@ func TestGetSymbolsNewSyntaxBareMatchInFunction(t *testing.T) {
 	}
 }
 
-// 新式語法：`{ } ()` 無限迴圈函式體內變數應被收集
+// 新式語法：`{ } (true)` 無限迴圈函式體內變數應被收集
 func TestGetSymbolsNewSyntaxBangLoop(t *testing.T) {
 	text := `{
     i = 0
-} ()`
+} (true)`
 	doc := createTestDocument(text)
 	program := createTestProgram(text)
 
