@@ -59,17 +59,7 @@ func (g *Generator) writeDeclarations(sb *strings.Builder) {
 	sb.WriteString("declare void @llvm.stackrestore.p0(ptr)\n")
 	sb.WriteString("declare i8* @getenv(i8*)\n")
 	sb.WriteString("declare i32 @setenv(i8*, i8*, i32)\n")
-	// nolang.process_run: cross-platform subprocess runner (see src/build/runtime/process.c).
-	// argv/envp slices are passed as raw byte buffers plus element stride and the byte
-	// offset of each element's `data` pointer field, so the C side can iterate them
-	// without assuming nolang's string layout. Output is returned via out_data/out_len;
-	// the caller wraps it into a %str-long. status: >=0 exit code, -1 start failure, -2 timeout.
-	// Windows: replaced by pure Nolang Win32 API builtins (win-create-process etc.),
-	// so the C runtime declaration is not needed.
-	if goos != "wasi" && goos != "windows" {
-		sb.WriteString("declare void @nolang_process_run(i8*, i64, i8*, i64, i64, i64, i8*, i8*, i64, i64, i64, i8**, i64*, i64*)\n")
-	}
-	if goos == "windows" {
+if goos == "windows" {
 		sb.WriteString("declare i8* @_getcwd(i8*, i64)\n")
 		sb.WriteString("declare i32 @_chdir(i8*)\n")
 	} else if goos == "wasi" {
@@ -838,8 +828,34 @@ func (g *Generator) writeDeclarations(sb *strings.Builder) {
 	sb.WriteString("declare i32 @connect(i32, i8*, i32)\n")
 	sb.WriteString("declare i64 @send(i32, i8*, i64, i32)\n")
 	sb.WriteString("declare i64 @recv(i32, i8*, i64, i32)\n")
-	sb.WriteString("declare i64 @nolang_net_recv_nb(i32, i8*, i64)\n")
-	sb.WriteString("declare i64 @nolang_net_accept_nb(i32)\n")
+	// nolang_net_recv_nb / nolang_net_accept_nb: LLVM IR implementations.
+	// Previously provided by src/build/runtime/process.c, now inlined as LLVM IR.
+	// POSIX: uses recv with MSG_DONTWAIT flag (non-blocking).
+	// Windows: returns -1 (stub). Non-blocking I/O on Windows requires
+	// ioctlsocket + WSAEventSelect which is complex; the pure Nolang
+	// implementation in net/ws.no uses async coroutines instead.
+	if goos == "windows" {
+		sb.WriteString("define internal i64 @nolang_net_recv_nb(i32 %fd, i8* %buf, i64 %n) {\n")
+		sb.WriteString("entry:\n")
+		sb.WriteString("\tret i64 -1\n")
+		sb.WriteString("}\n")
+		sb.WriteString("define internal i64 @nolang_net_accept_nb(i32 %listen_fd) {\n")
+		sb.WriteString("entry:\n")
+		sb.WriteString("\tret i64 -1\n")
+		sb.WriteString("}\n")
+	} else {
+		sb.WriteString("define internal i64 @nolang_net_recv_nb(i32 %fd, i8* %buf, i64 %n) {\n")
+		sb.WriteString("entry:\n")
+		sb.WriteString("\t%rr = call i64 @recv(i32 %fd, i8* %buf, i64 %n, i32 64)\n")
+		sb.WriteString("\tret i64 %rr\n")
+		sb.WriteString("}\n")
+		sb.WriteString("define internal i64 @nolang_net_accept_nb(i32 %listen_fd) {\n")
+		sb.WriteString("entry:\n")
+		sb.WriteString("\t%c = call i32 @accept(i32 %listen_fd, i8* null, i32* null)\n")
+		sb.WriteString("\t%ext = zext i32 %c to i64\n")
+		sb.WriteString("\tret i64 %ext\n")
+		sb.WriteString("}\n")
+	}
 	sb.WriteString("declare i64 @sendto(i32, i8*, i64, i32, i8*, i32)\n")
 	sb.WriteString("declare i64 @recvfrom(i32, i8*, i64, i32, i8*, i32*)\n")
 	sb.WriteString("declare i32 @inet_pton(i32, i8*, i8*)\n")

@@ -2672,97 +2672,34 @@ func (g *Generator) callBuiltin(sb *strings.Builder, fnName string, hasArgs bool
 		return execExt
 	}
 
-	// ═══════════════════════════════════════════════
-	// process-run: full-featured, cross-platform subprocess runner.
-	// Args: argv []str (program + args), envp []str, dir str, stdin str,
-	//       timeout i64 (ms, 0 = forever), merge i64 (non-zero merges stderr)
-	// Returns: (out str, status i64)
-	//   status >= 0 : child exit code
-	//   status == -1 : failed to start / exec
-	//   status == -2 : timed out (child killed)
-	// The heavy lifting lives in the C runtime @nolang.process_run
-	// (src/build/runtime/process.c), which fork/execs (POSIX) or CreateProcess
-	// (Windows), captures output, and enforces the timeout.
-	// argv/envp slices are passed as raw byte buffers together with the element
-	// stride and the byte offset of the `data` pointer field, so the C side can
-	// iterate generically without assuming the in-memory layout of nolang strings
-	// (which differs between build modes).
+	// process-run-capture: removed.
+	// Previously called @nolang_process_run from process.c C runtime.
+	// Now replaced by pure Nolang implementations of process.cmd in process.no
+	// (POSIX: process-fork/pipe/dup2/exec; Windows: Win32 API builtins).
+	// This builtin is kept as a stub that returns empty output and status -1
+	// to avoid link errors if any old code still references it.
 	if fnName == "process-run-capture" && hasArgs && nArgs >= 6 {
-		a := evalArgs()
-		argvVec := g.sliceEvalArgToPtr(sb, a[0])
-		envpVec := g.sliceEvalArgToPtr(sb, a[1])
-		dirPtr := g.nullTerminateStrArg(sb, a[2], expr.Arguments[2])
-		stdinPtr := g.nullTerminateStrArg(sb, a[3], expr.Arguments[3])
-		stdinStrPtr := g.strLongPtr(sb, a[3])
-		stdinLen := g.extractStrLen(sb, stdinStrPtr)
-		timeoutVal := a[4]
-		mergeVal := a[5]
+		_ = evalArgs()
 		outStr := g.tmpReg("procrun.out.str")
 		statusLoad := g.tmpReg("procrun.status.load")
 		if sb != nil {
-			// Extract len + data pointer from the argv %vec.
-			argvLenGEP := g.tmpReg("procrun.argv.len.gep")
-			argvLen := g.tmpReg("procrun.argv.len")
-			argvDataGEP := g.tmpReg("procrun.argv.data.gep")
-			argvData := g.tmpReg("procrun.argv.data")
-			sb.WriteString(fmt.Sprintf("%s%s = getelementptr %%vec, %%vec* %s, i32 0, i32 0\n", g.indent(), argvLenGEP, argvVec))
-			sb.WriteString(fmt.Sprintf("%s%s = load i64, i64* %s\n", g.indent(), argvLen, argvLenGEP))
-			sb.WriteString(fmt.Sprintf("%s%s = getelementptr %%vec, %%vec* %s, i32 0, i32 2\n", g.indent(), argvDataGEP, argvVec))
-			argvData = g.loadDataPtrField(sb, argvDataGEP)
-			// Extract len + data pointer from the envp %vec.
-			envpLenGEP := g.tmpReg("procrun.envp.len.gep")
-			envpLen := g.tmpReg("procrun.envp.len")
-			envpDataGEP := g.tmpReg("procrun.envp.data.gep")
-			envpData := g.tmpReg("procrun.envp.data")
-			sb.WriteString(fmt.Sprintf("%s%s = getelementptr %%vec, %%vec* %s, i32 0, i32 0\n", g.indent(), envpLenGEP, envpVec))
-			sb.WriteString(fmt.Sprintf("%s%s = load i64, i64* %s\n", g.indent(), envpLen, envpLenGEP))
-			sb.WriteString(fmt.Sprintf("%s%s = getelementptr %%vec, %%vec* %s, i32 0, i32 2\n", g.indent(), envpDataGEP, envpVec))
-			envpData = g.loadDataPtrField(sb, envpDataGEP)
-			// Element stride (sizeof %str-long) and byte offset of the data pointer
-			// field, computed at compile time so the C side stays layout-agnostic.
-			strideGEP := g.tmpReg("procrun.stride.gep")
-			stride := g.tmpReg("procrun.stride")
-			dataOffGEP := g.tmpReg("procrun.dataoff.gep")
-			dataOff := g.tmpReg("procrun.dataoff")
-			sb.WriteString(fmt.Sprintf("%s%s = getelementptr %%str-long, %%str-long* null, i32 1\n", g.indent(), strideGEP))
-			sb.WriteString(fmt.Sprintf("%s%s = ptrtoint %%str-long* %s to i64\n", g.indent(), stride, strideGEP))
-			sb.WriteString(fmt.Sprintf("%s%s = getelementptr %%str-long, %%str-long* null, i32 0, i32 2\n", g.indent(), dataOffGEP))
-			sb.WriteString(fmt.Sprintf("%s%s = ptrtoint %%str-long* %s to i64\n", g.indent(), dataOff, dataOffGEP))
-			// Output allocas passed by reference to the C runtime.
-			outDataPtr := g.tmpReg("procrun.out.data")
-			outLen := g.tmpReg("procrun.out.len")
-			status := g.tmpReg("procrun.status")
-			outDataLoad := g.tmpReg("procrun.out.data.load")
-			outLenLoad := g.tmpReg("procrun.out.len.load")
-			sb.WriteString(fmt.Sprintf("%s%s = alloca i8*\n", g.indent(), outDataPtr))
-			sb.WriteString(fmt.Sprintf("%s%s = alloca i64\n", g.indent(), outLen))
-			sb.WriteString(fmt.Sprintf("%s%s = alloca i64\n", g.indent(), status))
-			// Call the C runtime. Argument order matches runtime/process.c:
-			// argv_data, argv_len, envp_data, envp_len, stride, data_off, dir,
-			// stdin_buf, stdin_len, timeout_ms, merge_err, out_data, out_len, status.
-		sb.WriteString(fmt.Sprintf("%scall void @nolang_process_run(i8* %s, i64 %s, i8* %s, i64 %s, i64 %s, i64 %s, i8* %s, i8* %s, i64 %s, i64 %s, i64 %s, i8** %s, i64* %s, i64* %s)\n",
-			g.indent(), argvData, argvLen, envpData, envpLen, stride, dataOff,
-			dirPtr, stdinPtr, stdinLen, timeoutVal, mergeVal, outDataPtr, outLen, status))
-			// Load the outputs returned by the C runtime.
-			sb.WriteString(fmt.Sprintf("%s%s = load i8*, i8** %s\n", g.indent(), outDataLoad, outDataPtr))
-			sb.WriteString(fmt.Sprintf("%s%s = load i64, i64* %s\n", g.indent(), outLenLoad, outLen))
-			sb.WriteString(fmt.Sprintf("%s%s = load i64, i64* %s\n", g.indent(), statusLoad, status))
-			// Wrap (out_data, out_len) into a nolang %str-long (cap = len).
 			sb.WriteString(fmt.Sprintf("%s%s = alloca %%str-long\n", g.indent(), outStr))
 			olLenGEP := g.tmpReg("procrun.o.len.gep")
 			sb.WriteString(fmt.Sprintf("%s%s = getelementptr %%str-long, %%str-long* %s, i32 0, i32 0\n", g.indent(), olLenGEP, outStr))
-			sb.WriteString(fmt.Sprintf("%sstore i64 %s, i64* %s\n", g.indent(), outLenLoad, olLenGEP))
+			sb.WriteString(fmt.Sprintf("%sstore i64 0, i64* %s\n", g.indent(), olLenGEP))
 			olCapGEP := g.tmpReg("procrun.o.cap.gep")
 			sb.WriteString(fmt.Sprintf("%s%s = getelementptr %%str-long, %%str-long* %s, i32 0, i32 1\n", g.indent(), olCapGEP, outStr))
-			sb.WriteString(fmt.Sprintf("%sstore i64 %s, i64* %s\n", g.indent(), outLenLoad, olCapGEP))
+			sb.WriteString(fmt.Sprintf("%sstore i64 0, i64* %s\n", g.indent(), olCapGEP))
 			olDataGEP := g.tmpReg("procrun.o.data.gep")
 			sb.WriteString(fmt.Sprintf("%s%s = getelementptr %%str-long, %%str-long* %s, i32 0, i32 2\n", g.indent(), olDataGEP, outStr))
-			g.storeDataPtrField(sb, outDataLoad, olDataGEP)
+			g.storeDataPtrField(sb, "null", olDataGEP)
+			_ = olDataGEP
+			sb.WriteString(fmt.Sprintf("%s%s = alloca i64\n", g.indent(), statusLoad))
+			sb.WriteString(fmt.Sprintf("%sstore i64 -1, i64* %s\n", g.indent(), statusLoad))
+			_ = olCapGEP
 		}
-	// 2nd return value (status) carried via lastBuiltinExtra (consumed by the
-	// caller at outIdx == 1 for multi-result builtins).
-	g.lastBuiltinExtra = statusLoad
-	return outStr
+		g.lastBuiltinExtra = statusLoad
+		return outStr
 	}
 
 	// ═══════════════════════════════════════════════
@@ -2854,11 +2791,13 @@ func (g *Generator) callBuiltin(sb *strings.Builder, fnName string, hasArgs bool
 		writtenExt := g.tmpReg("wwp.written.ext")
 		errCmpReg := g.tmpReg("wwp.errcmp")
 		errSelReg := g.tmpReg("wwp.errsel")
+		dataLenTrunc := g.tmpReg("wwp.dlen.trunc")
 		if sb != nil {
 			sb.WriteString(fmt.Sprintf("%s%s = inttoptr i64 %s to i8*\n", g.indent(), handleReg, handleVal))
+			sb.WriteString(fmt.Sprintf("%s%s = trunc i64 %s to i32\n", g.indent(), dataLenTrunc, dataLen))
 			sb.WriteString(fmt.Sprintf("%s%s = alloca i32\n", g.indent(), writtenBuf))
 			sb.WriteString(fmt.Sprintf("%s%s = call i32 @WriteFile(i8* %s, i8* %s, i32 %s, i8* %s, i8* null)\n",
-				g.indent(), retReg, handleReg, dataPtr, dataLen, writtenBuf))
+				g.indent(), retReg, handleReg, dataPtr, dataLenTrunc, writtenBuf))
 			// WriteFile returns 0 on error
 			sb.WriteString(fmt.Sprintf("%s%s = load i32, i32* %s\n", g.indent(), writtenLoad, writtenBuf))
 			sb.WriteString(fmt.Sprintf("%s%s = sext i32 %s to i64\n", g.indent(), writtenExt, writtenLoad))

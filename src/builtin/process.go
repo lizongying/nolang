@@ -66,17 +66,11 @@ func init() {
 		ForwardFunc:  "process-exec-shell",
 	})
 
-	// process-run-capture: full-featured subprocess runner (cross-platform).
-	// argv: program name followed by arguments. envp: full environment
-	// (["K=V", ...]); empty slice inherits the parent environment.
-	// dir: working directory ("" inherits). stdin: bytes fed to child's stdin.
-	// timeout_ms: 0 = wait forever. merge_err: non-zero merges stderr into out.
-	// Returns (out str, status i64): status >=0 exit code, -1 start/exec failure,
-	// -2 timed out. The heavy lifting lives in src/build/runtime/process.c
-	// (@nolang.process_run), which fork/execs (POSIX) or CreateProcess (Windows),
-	// captures output, and enforces the timeout.
-	// (The user-facing API is process.cmd in std/process.no, which builds the
-	//  argv slice and decodes status into (out, code, err).)
+	// process-run-capture: legacy subprocess runner (now a stub).
+	// Previously delegated to @nolang_process_run in process.c C runtime.
+	// Now replaced by pure Nolang implementations of process.cmd in process.no
+	// (POSIX: process-fork/pipe/dup2/exec-shell/waitpid; Windows: Win32 API builtins).
+	// This builtin is kept as a stub returning ("", -1) for backward compatibility.
 	BuiltinMethodList = append(BuiltinMethodList, BuiltinMethod{
 		ReceiverType: ReceiverGlobal,
 		MethodName:   "process-run-capture",

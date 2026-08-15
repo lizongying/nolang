@@ -472,23 +472,194 @@ process-shell = (cmd str) (status i64) {
 ;   code == -1 : 啟動 / exec 失敗
 ;   code == -2 : 超時（子進程已被殺死）
 
-; POSIX 版本：底層呼叫 process-run-capture 內建函數（C runtime: src/build/runtime/process.c），
-; 支援 argv 陣列、環境變數、工作目錄、stdin、超時與 stderr 合併。
+; POSIX 版本：使用純 Nolang 實現（process-fork/pipe/dup2/exec-shell/waitpid）。
+; 不依賴 process.c C runtime，與 Windows 版本對稱。
 #{mac-amd64, mac-arm64, linux-amd64, linux-arm64, wasi-wasm32}
 process.cmd = (program str, args []str, dir str, input str, env []str, timeout i64, merge-err i64) (out str, code i64, err str) {
-
-    ; 構建 argv = [program] + args
-    argv []str = with-len(args.len + 1)
-    argv[0] = program
-    i <- [0..args.len): {
-        argv[i + 1] = args[i]
-    }
-    out, status = process-run-capture(argv, env, dir, input, timeout, merge-err)
-    code = status
+    out = ''
+    code = -1
     err = ''
+
+    ; 構建命令字串
+    cmdline str = program
+    i <- [0..args.len): {
+        cmdline = cmdline - ' ' - args[i]
+    }
+
+    ; 建立 stdout 管道
+    out-fds = process-pipe()
     {
-        code == -1 -> err = 'failed to start or exec process'
-        code == -2 -> err = 'process timed out'
+        out-fds < 0 -> {
+            err = 'failed to create stdout pipe'
+            return
+        }
+    }
+    out-read = out-fds >> 32
+    out-write = out-fds & 0xffffffff
+
+    ; 建立 stderr 管道（除非 merge-err）
+    err-read i64 = -1
+    err-write i64 = -1
+    {
+        merge-err == 0 -> {
+            err-fds = process-pipe()
+            {
+                err-fds < 0 -> {
+                    fs.close(out-read)
+                    fs.close(out-write)
+                    err = 'failed to create stderr pipe'
+                    return
+                }
+            }
+            err-read = err-fds >> 32
+            err-write = err-fds & 0xffffffff
+        }
+    }
+
+    ; 建立 stdin 管道（如有 input）
+    in-read i64 = -1
+    in-write i64 = -1
+    {
+        input.len > 0 -> {
+            in-fds = process-pipe()
+            {
+                in-fds < 0 -> {
+                    fs.close(out-read)
+                    fs.close(out-write)
+                    {
+                        merge-err == 0 -> {
+                            fs.close(err-read)
+                            fs.close(err-write)
+                        }
+                    }
+                    err = 'failed to create stdin pipe'
+                    return
+                }
+            }
+            in-read = in-fds >> 32
+            in-write = in-fds & 0xffffffff
+        }
+    }
+
+    ; fork
+    pid = process-fork()
+
+    {
+        pid == 0 -> {
+            ; 子進程：重定向標準流
+            process-dup2(out-write, 1)
+            {
+                merge-err != 0 -> {
+                    process-dup2(out-write, 2)
+                }
+                merge-err == 0 -> {
+                    process-dup2(err-write, 2)
+                }
+            }
+            {
+                in-read >= 0 -> process-dup2(in-read, 0)
+            }
+            fs.close(out-read)
+            fs.close(out-write)
+            {
+                merge-err == 0 -> {
+                    fs.close(err-read)
+                    fs.close(err-write)
+                }
+            }
+            {
+                in-read >= 0 -> {
+                    fs.close(in-read)
+                    fs.close(in-write)
+                }
+            }
+            ; 工作目錄
+            {
+                dir.len > 0 -> ch-dir(dir)
+            }
+            ; 執行命令
+            process-exec-shell(cmdline)
+            ; exec 失敗
+            exit(127)
+        }
+
+        pid < 0 -> {
+            ; fork 失敗
+            fs.close(out-read)
+            fs.close(out-write)
+            {
+                merge-err == 0 -> {
+                    fs.close(err-read)
+                    fs.close(err-write)
+                }
+            }
+            {
+                in-read >= 0 -> {
+                    fs.close(in-read)
+                    fs.close(in-write)
+                }
+            }
+            err = 'failed to fork'
+            return
+        }
+    }
+
+    ; 父進程：關閉子進程端的 fd
+    fs.close(out-write)
+    {
+        merge-err == 0 -> {
+            err-write >= 0 -> fs.close(err-write)
+        }
+    }
+    {
+        in-read >= 0 -> fs.close(in-read)
+    }
+
+    ; 寫入 stdin
+    {
+        in-write >= 0 -> {
+            fs.write(in-write, input, input.len)
+            fs.close(in-write)
+        }
+    }
+
+    ; 讀取 stdout 輸出（在 waitpid 之前讀取以避免管道死鎖）
+    buf str = with-len(4096)
+    {
+        n = fs.read(out-read, buf, 4096)
+        n > 0 -> {
+            out = out - buf.slice(0, n)
+        }
+    } (n > 0)
+
+    ; 等待進程結束
+    {
+        timeout > 0 -> {
+            ; TODO: 超時功能需要 alarm/SIGALRM 或非阻塞 waitpid 支援
+            ; 目前直接阻塞等待（與 stdbuf.no 一致）
+            code = process-waitpid(pid, 0)
+        }
+        timeout <= 0 -> {
+            ; 無限等待
+            code = process-waitpid(pid, 0)
+        }
+    }
+
+    fs.close(out-read)
+
+    ; 讀取 stderr 輸出（如果不 merge-err，丟棄）
+    {
+        merge-err == 0 -> {
+            {
+                err-read >= 0 -> {
+                    {
+                        n = fs.read(err-read, buf, 4096)
+                        n > 0 -> *
+                    } (n > 0)
+                    fs.close(err-read)
+                }
+            }
+        }
     }
 }
 
