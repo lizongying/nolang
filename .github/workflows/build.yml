@@ -135,32 +135,70 @@ jobs:
         with:
           go-version: "1.25"
 
+      - name: Cache LLVM
+        id: llvm-cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            /usr/lib/llvm-21
+            /usr/local/bin/opt
+            /usr/local/bin/llc
+          key: llvm-21-ubuntu-latest
+
       - name: Install LLVM (opt/llc)
+        if: steps.llvm-cache.outputs.cache-hit != 'true'
         run: |
           wget -qO- https://apt.llvm.org/llvm.sh | sudo bash -s -- 21
           sudo apt-get install -y llvm-21 llvm-21-dev
-          echo "/usr/lib/llvm-21/bin" >> $GITHUB_PATH
           sudo ln -sf /usr/lib/llvm-21/bin/opt /usr/local/bin/opt
           sudo ln -sf /usr/lib/llvm-21/bin/llc /usr/local/bin/llc
-          opt --version
+
+      - name: Add LLVM to PATH
+        run: |
+          sudo ln -sf /usr/lib/llvm-21/bin/opt /usr/local/bin/opt
+          sudo ln -sf /usr/lib/llvm-21/bin/llc /usr/local/bin/llc
+          echo "/usr/lib/llvm-21/bin" >> $GITHUB_PATH
+          /usr/lib/llvm-21/bin/opt --version
+
+      - name: Cache Zig
+        id: zig-cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            /home/runner/zig
+          key: zig-0.16.0-linux-x86_64
 
       - name: Install Zig (provides wasi-libc + clang compatible with LLVM 21 IR)
+        if: steps.zig-cache.outputs.cache-hit != 'true'
         run: |
           curl -L -o zig.tar.xz https://ziglang.org/download/0.16.0/zig-x86_64-linux-0.16.0.tar.xz
           mkdir -p $HOME/zig
           tar -xf zig.tar.xz -C $HOME/zig --strip-components=1
+
+      - name: Add Zig to PATH
+        run: |
           echo "$HOME/zig" >> $GITHUB_PATH
-          export PATH="$HOME/zig:$PATH"
-          zig version
+          "$HOME/zig/zig" version
+
+      - name: Cache wasmtime
+        id: wasmtime-cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            /home/runner/wasmtime
+          key: wasmtime-47.0.2-linux-x86_64
 
       - name: Install wasmtime
+        if: steps.wasmtime-cache.outputs.cache-hit != 'true'
         run: |
           curl -L -o wasmtime.tar.xz https://github.com/bytecodealliance/wasmtime/releases/download/v47.0.2/wasmtime-v47.0.2-x86_64-linux.tar.xz
           mkdir -p $HOME/wasmtime
           tar -xf wasmtime.tar.xz -C $HOME/wasmtime --strip-components=1
+
+      - name: Add wasmtime to PATH
+        run: |
           echo "$HOME/wasmtime" >> $GITHUB_PATH
-          export PATH="$HOME/wasmtime:$PATH"
-          wasmtime --version
+          "$HOME/wasmtime/wasmtime" --version
 
       - name: Build no binary
         run: make no

@@ -233,7 +233,7 @@ runs:
         ZIG_VER: ${{ inputs.zig-version }}
       run: |
         set -euo pipefail
-        echo "Installing Zig $ZIG_VER…"
+        echo "Installing Zig $ZIG_VER..."
         curl -L -o /tmp/zig.tar.xz "https://ziglang.org/download/$ZIG_VER/zig-x86_64-linux-$ZIG_VER.tar.xz"
         mkdir -p "$RUNNER_TEMP/zig"
         tar -xf /tmp/zig.tar.xz -C "$RUNNER_TEMP/zig" --strip-components=1
@@ -266,7 +266,7 @@ runs:
         LLVM_VER: ${{ inputs.llvm-version }}
       run: |
         set -euo pipefail
-        echo "Installing LLVM $LLVM_VER (opt/llc)…"
+        echo "Installing LLVM $LLVM_VER (opt/llc)..."
         wget -qO- https://apt.llvm.org/llvm.sh | sudo bash -s -- "$LLVM_VER"
         sudo apt-get install -y "llvm-$LLVM_VER"
         sudo ln -sf "/usr/lib/llvm-$LLVM_VER/bin/opt" /usr/local/bin/opt
@@ -275,9 +275,17 @@ runs:
     - name: Add LLVM to PATH
       if: inputs.install-toolchain == 'true' && steps.toolchain-needs.outputs.need-llvm == '1'
       shell: bash
+      env:
+        LLVM_VER: ${{ inputs.llvm-version }}
       run: |
-        echo "/usr/lib/llvm-${{ inputs.llvm-version }}/bin" >> "$GITHUB_PATH"
-        opt --version
+        set -euo pipefail
+        LLVM_BIN="/usr/lib/llvm-${LLVM_VER}/bin"
+        # Ensure symlinks exist even when restored from cache (cache restores
+        # files but symlinks may not survive intact across runners).
+        sudo ln -sf "${LLVM_BIN}/opt" /usr/local/bin/opt
+        sudo ln -sf "${LLVM_BIN}/llc" /usr/local/bin/llc
+        echo "${LLVM_BIN}" >> "$GITHUB_PATH"
+        "${LLVM_BIN}/opt" --version
 
     # ── 3. Build all targets ──────────────────────────────────────────────
     - name: Build targets
