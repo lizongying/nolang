@@ -232,6 +232,10 @@ func (p *Parser) classifyBlockAtCurrent() blockType {
 		return blockMatch
 	case lexer.INT, lexer.FLOAT, lexer.STRING, lexer.BYTE, lexer.CHAR, lexer.REGEX, lexer.TRUE, lexer.FALSE:
 		return blockMatch
+	case lexer.NOT:
+		// Bare match arm starting with !expr (negated condition),
+		// e.g. { ! fs.is-file(filename) -> ... }
+		return blockMatch
 	case lexer.DOT:
 		// Bare match arm starting with .field (self.field access),
 		// e.g. { .scheme == 'http' -> ... }

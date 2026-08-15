@@ -1345,6 +1345,13 @@ func (t *Transpiler) CompileTarget(source string, _ Target) (string, error) {
 		importedModules = append(importedModules, info.ShortName)
 	}
 	for _, stmt := range program.Statements {
+		// Debug: check if filename/raw/data/archive leaked into program.Statements
+		if ls, ok := stmt.(*parser.LetStatement); ok && ls.Name != nil {
+			n := ls.Name.Value
+			if n == "filename" || n == "raw" || n == "data" || n == "archive" || n == "n" {
+				fmt.Fprintf(os.Stderr, "[DBG-PROG] %s LetStatement found in program.Statements, Type=%v, Value=%T\n", n, ls.Type, ls.Value)
+			}
+		}
 		// (1) ..any 標準庫限制檢查
 		if fd, ok := stmt.(*parser.FunctionDefinition); ok && isUserCode {
 			if fd.IsVariadic {

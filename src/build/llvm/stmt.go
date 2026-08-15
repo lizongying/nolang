@@ -2,7 +2,6 @@ package llvm
 
 import (
 	"fmt"
-	"os"
 	"sort"
 	"strings"
 
@@ -3007,9 +3006,6 @@ func (g *Generator) builtinStructReturnType(m *builtin.BuiltinMethod) string {
 }
 
 func (g *Generator) varLLVMType(stmt *parser.LetStatement) string {
-	if os.Getenv("NOLANG_DEBUG_VARTYPE") != "" && stmt.Name != nil && strings.Contains(stmt.Name.Value, "packet-str") {
-		fmt.Fprintf(os.Stderr, "[DBG-VARTYPE] varLLVMType called for %s, Type=%v, Value=%T\n", stmt.Name.Value, stmt.Type, stmt.Value)
-	}
 	// 單具體型別別名解析：若顯式型別為已註冊的具體型別別名，用底層 Type 遞迴解析
 	// 使 ArrayType/SliceType 等特殊路徑也能正確套用到底層型別
 	if nt, ok := stmt.Type.(*parser.NamedType); ok && g.concreteTypeAliases != nil {
@@ -3285,12 +3281,6 @@ func (g *Generator) varLLVMType(stmt *parser.LetStatement) string {
 		}
 		return "i64"
 	case *parser.CallExpression:
-		if os.Getenv("NOLANG_DEBUG_VARTYPE") != "" {
-			fmt.Fprintf(os.Stderr, "[DBG-VARTYPE] CallExpression: Function=%T\n", v.Function)
-			if stmt.Name != nil && strings.Contains(stmt.Name.Value, "packet-str") {
-				fmt.Fprintf(os.Stderr, "[DBG-VARTYPE] packet-str func name=%v\n", v.Function)
-			}
-		}
 		// -async 函数调用返回 %future（惰性，未执行）
 		if g.isAsyncCall(v) {
 			if _, _, resultType := g.resolveAsyncCallInfo(v); resultType != "" {
@@ -3300,21 +3290,8 @@ func (g *Generator) varLLVMType(stmt *parser.LetStatement) string {
 			}
 			return "%future"
 		}
-		if os.Getenv("NOLANG_DEBUG_VARTYPE") != "" && stmt.Name != nil && strings.Contains(stmt.Name.Value, "packet-str") {
-			fmt.Fprintf(os.Stderr, "[DBG-VARTYPE] before ident check, v.Function type=%T\n", v.Function)
-		}
 		if ident, ok := v.Function.(*parser.Identifier); ok {
 			name := ident.Value
-			if os.Getenv("NOLANG_DEBUG_VARTYPE") != "" && stmt.Name != nil && strings.Contains(stmt.Name.Value, "packet-str") {
-				fmt.Fprintf(os.Stderr, "[DBG-VARTYPE] ident name=%q funcRetTypes[%s]=%v\n", name, name, g.funcRetTypes[name])
-				if g.funcResultLLVMType != nil {
-					if ts, ok := g.funcResultLLVMType[name]; ok {
-						fmt.Fprintf(os.Stderr, "[DBG-VARTYPE] funcResultLLVMType[%s]=%v\n", name, ts)
-					} else {
-						fmt.Fprintf(os.Stderr, "[DBG-VARTYPE] no funcResultLLVMType for %s\n", name)
-					}
-				}
-			}
 			// FFI extern 函式：依 extern 宣告的 result 型別推斷 Nolang 儲存型別。
 			// callExtern 會將 str 構造為 %str-long、ptr/pptr/ppptr/i32/bool 轉為 i64、f64 保持 double。
 			if g.externFuncs != nil {
@@ -3473,30 +3450,9 @@ func (g *Generator) varLLVMType(stmt *parser.LetStatement) string {
 			if ge, ok := recvExpr.(*parser.GroupedExpression); ok {
 				recvExpr = ge.Expression
 			}
-			if recv, ok := recvExpr.(*parser.Identifier); ok {
-				if os.Getenv("NOLANG_DEBUG_VARTYPE") != "" && dot.Property == "to-str" {
-					recvType, hasType := g.varTypes[recv.Value]
-					fmt.Fprintf(os.Stderr, "[DBG-VARTYPE] recv=%s hasType=%v recvType=%s\n", recv.Value, hasType, recvType)
-				}
-				if recvType, ok := g.varTypes[recv.Value]; ok {
+		if recv, ok := recvExpr.(*parser.Identifier); ok {
+			if recvType, ok := g.varTypes[recv.Value]; ok {
 					srcType := strings.TrimPrefix(recvType, "%")
-					if os.Getenv("NOLANG_DEBUG_VARTYPE") != "" && dot.Property == "to-str" {
-						fmt.Fprintf(os.Stderr, "[DBG-VARTYPE] recv=%s recvType=%s srcType=%s elemTypes=%v\n", recv.Value, recvType, srcType, g.arrayElemTypes != nil)
-						if g.arrayElemTypes != nil {
-							if et, ok := g.arrayElemTypes[recv.Value]; ok {
-								fmt.Fprintf(os.Stderr, "[DBG-VARTYPE] elemType=%s llvmTypeToNolang=%v\n", et, llvmTypeToNolang[et])
-							} else {
-								fmt.Fprintf(os.Stderr, "[DBG-VARTYPE] no arrayElemTypes for %s\n", recv.Value)
-							}
-						}
-						if g.funcRetTypes != nil {
-							for k, v := range g.funcRetTypes {
-								if strings.Contains(k, "byte") && strings.Contains(k, "to-str") {
-									fmt.Fprintf(os.Stderr, "[DBG-VARTYPE] funcRetTypes[%s]=%s\n", k, v)
-								}
-							}
-						}
-					}
 					candidates := []string{srcType}
 					// 基本型別可能對應多個 nolang 型別名稱（如 i32 → char, i32, u32）
 					if primAliases, ok := llvmTypeToNolang[srcType]; ok {
@@ -3841,9 +3797,6 @@ func (g *Generator) varLLVMType(stmt *parser.LetStatement) string {
 		// Integer literal without explicit type annotation defaults to i64
 		return "i64"
 	default:
-		if os.Getenv("NOLANG_DEBUG_VARTYPE") != "" && stmt.Name != nil {
-			fmt.Fprintf(os.Stderr, "[DBG-VARTYPE] varLLVMType default: name=%s, Value=%T, Type=%v\n", stmt.Name.Value, stmt.Value, stmt.Type)
-		}
 		return "i64"
 	}
 }
@@ -4064,14 +4017,8 @@ func (g *Generator) collectVarDeclsFromStmtInner(stmt parser.Statement, vars map
 			// 若有名為 result 的局部變數，不應誤寫到主檔案的全域 @result。
 			// 例外：若同名變數是當前函數的參數（如 make-repeat-fasta 的參數 n
 			// 與模組級 n i64 = 1000 同名），參數應遮蔽全域變數，不可刪除
-			// funcLocalNames 中的記錄，否則 varAddr 會錯誤返回 @n 而非 %n。
-			if false && s.Name != nil && s.Name.Value == "symbolic" {
-				fmt.Printf("[DBG-GV] symbolic: TypeNil=%v gv=%v curFunc=%q mainFile=%v isParam=%v\n",
-					s.Type == nil, g.globalVars[s.Name.Value], g.curFuncName,
-					(g.mainFileNames != nil && g.mainFileNames[g.curFuncName]),
-					(g.funcParams != nil && g.funcParams[s.Name.Value]))
-			}
-			if s.Type == nil && g.globalVars != nil && g.globalVars[s.Name.Value] &&
+		// funcLocalNames 中的記錄，否則 varAddr 會錯誤返回 @n 而非 %n。
+		if s.Type == nil && g.globalVars != nil && g.globalVars[s.Name.Value] &&
 				g.curFuncName != "" && g.mainFileNames != nil && g.mainFileNames[g.curFuncName] &&
 				(g.funcParams == nil || !g.funcParams[s.Name.Value]) {
 				if g.funcLocalNames != nil {
