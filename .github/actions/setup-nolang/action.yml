@@ -40,8 +40,8 @@ outputs:
 runs:
   using: composite
   steps:
-    - name: Resolve version and download nolang
-      id: download
+    - name: Resolve nolang version
+      id: resolve
       shell: bash
       env:
         REPO: ${{ inputs.repo }}
@@ -65,6 +65,7 @@ runs:
         VERSION_NO_V="${TAG#v}"
         echo "Resolved nolang version: $TAG"
         echo "version=$VERSION_NO_V" >> "$GITHUB_OUTPUT"
+        echo "tag=$TAG" >> "$GITHUB_OUTPUT"
 
         # ── 2. Pick the release asset for this runner ───────────────────────
         case "${RUNNER_OS}-${RUNNER_ARCH}" in
@@ -75,38 +76,78 @@ runs:
           Windows-X64) ASSET="no_${VERSION_NO_V}_windows_amd64.exe" ;;
           *) echo "::error::Unsupported runner ${RUNNER_OS}/${RUNNER_ARCH}" >&2; exit 1 ;;
         esac
+        echo "asset=$ASSET" >> "$GITHUB_OUTPUT"
+
+    # ── Cache nolang binary + std source by version + platform ──────────────
+    # When the version matches a previous run, the cache is restored and the
+    # download is skipped entirely.
+    - name: Cache nolang download
+      id: cache
+      uses: actions/cache@v4
+      with:
+        path: |
+          ${{ runner.temp }}/nolang-cache
+        key: nolang-${{ steps.resolve.outputs.version }}-${{ runner.os }}-${{ runner.arch }}
+
+    - name: Download and install nolang
+      if: steps.cache.outputs.cache-hit != 'true'
+      id: download
+      shell: bash
+      env:
+        REPO: ${{ inputs.repo }}
+        TAG: ${{ steps.resolve.outputs.tag }}
+        VERSION_NO_V: ${{ steps.resolve.outputs.version }}
+        ASSET: ${{ steps.resolve.outputs.asset }}
+      run: |
+        set -euo pipefail
+
+        CACHE_DIR="$RUNNER_TEMP/nolang-cache"
+        mkdir -p "$CACHE_DIR/bin" "$CACHE_DIR/src"
 
         # ── 3. Download + install the compiler binary ───────────────────────
         URL="https://github.com/${REPO}/releases/download/${TAG}/${ASSET}"
-        INSTALL_DIR="$RUNNER_TEMP/nolang-bin"
-        mkdir -p "$INSTALL_DIR"
         echo "Downloading $URL"
-        curl -fsSL -L -o "$INSTALL_DIR/no" "$URL"
-        chmod +x "$INSTALL_DIR/no"
-        echo "$INSTALL_DIR" >> "$GITHUB_PATH"
-        echo "nolang-path=$INSTALL_DIR/no" >> "$GITHUB_OUTPUT"
-        "$INSTALL_DIR/no" version
+        curl -fsSL -L -o "$CACHE_DIR/bin/no" "$URL"
+        chmod +x "$CACHE_DIR/bin/no"
 
         # ── 4. Download the matching std source (src/) ──────────────────────
         # nolang's build needs the std library on disk; the release binary does
         # not bundle it. The auto-generated source tarball for the tag contains
         # src/std (and src/ for third-party modules), so we extract just that.
-        SRC_DIR="$RUNNER_TEMP/nolang-src"
-        mkdir -p "$SRC_DIR"
-        SRC_TAR="$SRC_DIR/nolang-src.tar.gz"
         echo "Downloading source tarball for std lib (tag $TAG)"
-        curl -fsSL -L -o "$SRC_TAR" "https://github.com/${REPO}/archive/refs/tags/${TAG}.tar.gz"
-        tar -xzf "$SRC_TAR" -C "$SRC_DIR"
+        curl -fsSL -L -o "$CACHE_DIR/src/nolang-src.tar.gz" \
+          "https://github.com/${REPO}/archive/refs/tags/${TAG}.tar.gz"
+        tar -xzf "$CACHE_DIR/src/nolang-src.tar.gz" -C "$CACHE_DIR/src"
         REPO_NAME="${REPO##*/}"
-        STD_SRC="$SRC_DIR/${REPO_NAME}-${VERSION_NO_V}/src/std"
-        SRC_ROOT="$SRC_DIR/${REPO_NAME}-${VERSION_NO_V}/src"
+        STD_SRC="$CACHE_DIR/src/${REPO_NAME}-${VERSION_NO_V}/src/std"
+        SRC_ROOT="$CACHE_DIR/src/${REPO_NAME}-${VERSION_NO_V}/src"
         if [ ! -d "$STD_SRC" ]; then
           echo "::error::Expected std lib at $STD_SRC but it was not found" >&2
           exit 1
         fi
+
+    # ── Expose nolang binary + std source from cache (always runs) ──────────
+    - name: Set up nolang paths
+      id: paths
+      shell: bash
+      run: |
+        set -euo pipefail
+        CACHE_DIR="$RUNNER_TEMP/nolang-cache"
+        REPO_NAME="${REPO##*/}"
+        VERSION_NO_V="${{ steps.resolve.outputs.version }}"
+        STD_SRC="$CACHE_DIR/src/${REPO_NAME}-${VERSION_NO_V}/src/std"
+        SRC_ROOT="$CACHE_DIR/src/${REPO_NAME}-${VERSION_NO_V}/src"
+
+        # Put the binary on PATH
+        echo "$CACHE_DIR/bin" >> "$GITHUB_PATH"
+        echo "nolang-path=$CACHE_DIR/bin/no" >> "$GITHUB_OUTPUT"
         echo "std-src=$STD_SRC" >> "$GITHUB_OUTPUT"
         {
           echo "NOLANG_STD_SRC=$STD_SRC"
           echo "NOLANG_SRC=$SRC_ROOT"
         } >> "$GITHUB_ENV"
         echo "NOLANG_STD_SRC=$STD_SRC"
+
+        "$CACHE_DIR/bin/no" version
+      env:
+        REPO: ${{ inputs.repo }}

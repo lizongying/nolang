@@ -91,9 +91,9 @@ outputs:
 runs:
   using: composite
   steps:
-    # ── 1. Download no compiler binary + std source (inlined setup-nolang) ──
-    - name: Download nolang release
-      id: download
+    # ── 1a. Resolve nolang version (no download yet) ────────────────────────
+    - name: Resolve nolang version
+      id: resolve
       shell: bash
       env:
         REPO: ${{ inputs.repo }}
@@ -102,7 +102,6 @@ runs:
       run: |
         set -euo pipefail
 
-        # ── 1a. Resolve the release tag ────────────────────────────────────
         if [ "$VERSION" = "latest" ]; then
           API="https://api.github.com/repos/${REPO}/releases/latest"
           if [ -n "$TOKEN" ]; then
@@ -117,8 +116,9 @@ runs:
         VERSION_NO_V="${TAG#v}"
         echo "Resolved nolang version: $TAG"
         echo "nolang-version=$VERSION_NO_V" >> "$GITHUB_OUTPUT"
+        echo "version=$VERSION_NO_V" >> "$GITHUB_OUTPUT"
+        echo "tag=$TAG" >> "$GITHUB_OUTPUT"
 
-        # ── 1b. Pick the release asset for this runner ─────────────────────
         case "${RUNNER_OS}-${RUNNER_ARCH}" in
           Linux-X64)   ASSET="no_${VERSION_NO_V}_linux_amd64" ;;
           Linux-ARM64) ASSET="no_${VERSION_NO_V}_linux_arm64" ;;
@@ -127,78 +127,157 @@ runs:
           Windows-X64) ASSET="no_${VERSION_NO_V}_windows_amd64.exe" ;;
           *) echo "::error::Unsupported runner ${RUNNER_OS}/${RUNNER_ARCH}" >&2; exit 1 ;;
         esac
+        echo "asset=$ASSET" >> "$GITHUB_OUTPUT"
 
-        # ── 1c. Download + install the compiler binary ────────────────────
+    # ── 1b. Cache nolang binary + std source by version + platform ──────────
+    - name: Cache nolang download
+      id: nolang-cache
+      uses: actions/cache@v4
+      with:
+        path: |
+          ${{ runner.temp }}/nolang-cache
+        key: nolang-${{ steps.resolve.outputs.version }}-${{ runner.os }}-${{ runner.arch }}
+
+    # ── 1c. Download only when cache misses ─────────────────────────────────
+    - name: Download nolang release
+      if: steps.nolang-cache.outputs.cache-hit != 'true'
+      id: download
+      shell: bash
+      env:
+        REPO: ${{ inputs.repo }}
+        TAG: ${{ steps.resolve.outputs.tag }}
+        VERSION_NO_V: ${{ steps.resolve.outputs.version }}
+        ASSET: ${{ steps.resolve.outputs.asset }}
+      run: |
+        set -euo pipefail
+
+        CACHE_DIR="$RUNNER_TEMP/nolang-cache"
+        mkdir -p "$CACHE_DIR/bin" "$CACHE_DIR/src"
+
+        # Download + install the compiler binary
         URL="https://github.com/${REPO}/releases/download/${TAG}/${ASSET}"
-        INSTALL_DIR="$RUNNER_TEMP/nolang-bin"
-        mkdir -p "$INSTALL_DIR"
         echo "Downloading $URL"
-        curl -fsSL -L -o "$INSTALL_DIR/no" "$URL"
-        chmod +x "$INSTALL_DIR/no"
-        echo "$INSTALL_DIR" >> "$GITHUB_PATH"
-        echo "nolang-path=$INSTALL_DIR/no" >> "$GITHUB_OUTPUT"
-        "$INSTALL_DIR/no" version
+        curl -fsSL -L -o "$CACHE_DIR/bin/no" "$URL"
+        chmod +x "$CACHE_DIR/bin/no"
 
-        # ── 1d. Download the matching std source (src/) ───────────────────
-        SRC_DIR="$RUNNER_TEMP/nolang-src"
-        mkdir -p "$SRC_DIR"
-        SRC_TAR="$SRC_DIR/nolang-src.tar.gz"
+        # Download the matching std source (src/)
         echo "Downloading source tarball for std lib (tag $TAG)"
-        curl -fsSL -L -o "$SRC_TAR" "https://github.com/${REPO}/archive/refs/tags/${TAG}.tar.gz"
-        tar -xzf "$SRC_TAR" -C "$SRC_DIR"
+        curl -fsSL -L -o "$CACHE_DIR/src/nolang-src.tar.gz" \
+          "https://github.com/${REPO}/archive/refs/tags/${TAG}.tar.gz"
+        tar -xzf "$CACHE_DIR/src/nolang-src.tar.gz" -C "$CACHE_DIR/src"
         REPO_NAME="${REPO##*/}"
-        STD_SRC="$SRC_DIR/${REPO_NAME}-${VERSION_NO_V}/src/std"
-        SRC_ROOT="$SRC_DIR/${REPO_NAME}-${VERSION_NO_V}/src"
+        STD_SRC="$CACHE_DIR/src/${REPO_NAME}-${VERSION_NO_V}/src/std"
         if [ ! -d "$STD_SRC" ]; then
           echo "::error::Expected std lib at $STD_SRC but it was not found" >&2
           exit 1
         fi
+
+    # ── 1d. Set up nolang paths (always runs, from cache or fresh download) ─
+    - name: Set up nolang paths
+      id: nolang-paths
+      shell: bash
+      env:
+        REPO: ${{ inputs.repo }}
+      run: |
+        set -euo pipefail
+        CACHE_DIR="$RUNNER_TEMP/nolang-cache"
+        REPO_NAME="${REPO##*/}"
+        VERSION_NO_V="${{ steps.resolve.outputs.version }}"
+        STD_SRC="$CACHE_DIR/src/${REPO_NAME}-${VERSION_NO_V}/src/std"
+        SRC_ROOT="$CACHE_DIR/src/${REPO_NAME}-${VERSION_NO_V}/src"
+
+        echo "$CACHE_DIR/bin" >> "$GITHUB_PATH"
+        echo "nolang-path=$CACHE_DIR/bin/no" >> "$GITHUB_OUTPUT"
         echo "std-src=$STD_SRC" >> "$GITHUB_OUTPUT"
         {
           echo "NOLANG_STD_SRC=$STD_SRC"
           echo "NOLANG_SRC=$SRC_ROOT"
         } >> "$GITHUB_ENV"
         echo "NOLANG_STD_SRC=$STD_SRC"
+        "$CACHE_DIR/bin/no" version
 
-    # ── 2. Install toolchain (LLVM + Zig) ─────────────────────────────────
-    - name: Install toolchain (LLVM + Zig)
+    # ── 2. Determine toolchain requirements ─────────────────────────────────
+    - name: Determine toolchain requirements
       if: inputs.install-toolchain == 'true'
+      id: toolchain-needs
       shell: bash
       env:
         TARGETS: ${{ inputs.targets }}
         CC: ${{ inputs.cc }}
-        LLVM_VER: ${{ inputs.llvm-version }}
-        ZIG_VER: ${{ inputs.zig-version }}
       run: |
         set -euo pipefail
         NEED_LLVM=0
         NEED_ZIG=0
-        # LLVM (opt/llc) is required for every target except pure-JS.
         case "$TARGETS" in
           *js*) ;;
           *) NEED_LLVM=1 ;;
         esac
         [ "$CC" = "zig" ] && NEED_ZIG=1
+        echo "need-llvm=$NEED_LLVM" >> "$GITHUB_OUTPUT"
+        echo "need-zig=$NEED_ZIG" >> "$GITHUB_OUTPUT"
 
-        if [ "$NEED_LLVM" = "1" ]; then
-          echo "Installing LLVM $LLVM_VER (opt/llc)…"
-          wget -qO- https://apt.llvm.org/llvm.sh | sudo bash -s -- "$LLVM_VER"
-          sudo apt-get install -y "llvm-$LLVM_VER"
-          echo "/usr/lib/llvm-$LLVM_VER/bin" >> "$GITHUB_PATH"
-          sudo ln -sf "/usr/lib/llvm-$LLVM_VER/bin/opt" /usr/local/bin/opt
-          sudo ln -sf "/usr/lib/llvm-$LLVM_VER/bin/llc" /usr/local/bin/llc
-          opt --version
-        fi
+    # ── 2a. Cache Zig (portable tarball, easy to cache) ─────────────────────
+    - name: Cache Zig
+      if: inputs.install-toolchain == 'true' && steps.toolchain-needs.outputs.need-zig == '1'
+      id: zig-cache
+      uses: actions/cache@v4
+      with:
+        path: |
+          ${{ runner.temp }}/zig
+        key: zig-${{ inputs.zig-version }}-linux-x86_64
 
-        if [ "$NEED_ZIG" = "1" ]; then
-          echo "Installing Zig $ZIG_VER…"
-          curl -L -o /tmp/zig.tar.xz "https://ziglang.org/download/$ZIG_VER/zig-x86_64-linux-$ZIG_VER.tar.xz"
-          mkdir -p "$RUNNER_TEMP/zig"
-          tar -xf /tmp/zig.tar.xz -C "$RUNNER_TEMP/zig" --strip-components=1
-          echo "$RUNNER_TEMP/zig" >> "$GITHUB_PATH"
-          export PATH="$RUNNER_TEMP/zig:$PATH"
-          zig version
-        fi
+    - name: Install Zig
+      if: inputs.install-toolchain == 'true' && steps.toolchain-needs.outputs.need-zig == '1' && steps.zig-cache.outputs.cache-hit != 'true'
+      shell: bash
+      env:
+        ZIG_VER: ${{ inputs.zig-version }}
+      run: |
+        set -euo pipefail
+        echo "Installing Zig $ZIG_VER…"
+        curl -L -o /tmp/zig.tar.xz "https://ziglang.org/download/$ZIG_VER/zig-x86_64-linux-$ZIG_VER.tar.xz"
+        mkdir -p "$RUNNER_TEMP/zig"
+        tar -xf /tmp/zig.tar.xz -C "$RUNNER_TEMP/zig" --strip-components=1
+
+    - name: Add Zig to PATH
+      if: inputs.install-toolchain == 'true' && steps.toolchain-needs.outputs.need-zig == '1'
+      shell: bash
+      run: |
+        echo "$RUNNER_TEMP/zig" >> "$GITHUB_PATH"
+        "$RUNNER_TEMP/zig/zig" version
+
+    # ── 2b. Cache LLVM (apt-installed, cache the installed files) ───────────
+    # LLVM via apt takes ~2 min; caching the installed tree avoids re-running
+    # apt on every workflow run when the version hasn't changed.
+    - name: Cache LLVM
+      if: inputs.install-toolchain == 'true' && steps.toolchain-needs.outputs.need-llvm == '1'
+      id: llvm-cache
+      uses: actions/cache@v4
+      with:
+        path: |
+          /usr/lib/llvm-${{ inputs.llvm-version }}
+          /usr/local/bin/opt
+          /usr/local/bin/llc
+        key: llvm-${{ inputs.llvm-version }}-ubuntu-latest
+
+    - name: Install LLVM
+      if: inputs.install-toolchain == 'true' && steps.toolchain-needs.outputs.need-llvm == '1' && steps.llvm-cache.outputs.cache-hit != 'true'
+      shell: bash
+      env:
+        LLVM_VER: ${{ inputs.llvm-version }}
+      run: |
+        set -euo pipefail
+        echo "Installing LLVM $LLVM_VER (opt/llc)…"
+        wget -qO- https://apt.llvm.org/llvm.sh | sudo bash -s -- "$LLVM_VER"
+        sudo apt-get install -y "llvm-$LLVM_VER"
+        sudo ln -sf "/usr/lib/llvm-$LLVM_VER/bin/opt" /usr/local/bin/opt
+        sudo ln -sf "/usr/lib/llvm-$LLVM_VER/bin/llc" /usr/local/bin/llc"
+
+    - name: Add LLVM to PATH
+      if: inputs.install-toolchain == 'true' && steps.toolchain-needs.outputs.need-llvm == '1'
+      shell: bash
+      run: |
+        echo "/usr/lib/llvm-${{ inputs.llvm-version }}/bin" >> "$GITHUB_PATH"
+        opt --version
 
     # ── 3. Build all targets ──────────────────────────────────────────────
     - name: Build targets
