@@ -2221,6 +2221,22 @@ func (g *Generator) hasInlineArrayStructParam(fd *parser.FunctionDefinition) boo
 	return false
 }
 
+// hasMultiStrResults checks if a function has 2 or more str (%str-long) output
+// parameters. When such functions are inlined by the LLVM optimizer, the
+// caller's alloca slots for str outputs can be mis-optimized (constant
+// propagation corrupts the first str output). Adding optnone+noinline
+// prevents inlining and optimization, working around the bug.
+func (g *Generator) hasMultiStrResults(fd *parser.FunctionDefinition) bool {
+	strCount := 0
+	for _, r := range fd.Results {
+		llvmType := g.resolveParamLLVMType(r.Type)
+		if llvmType == "%str-long" {
+			strCount++
+		}
+	}
+	return strCount >= 2
+}
+
 // structHasInlineArrayHeap recursively checks if a struct type contains
 // inline array fields ([N x T]) where T is a heap-owning type.
 func (g *Generator) structHasInlineArrayHeap(structName string, visited map[string]bool) bool {
@@ -4069,6 +4085,13 @@ func (g *Generator) collectVarDeclsFromStmtInner(stmt parser.Statement, vars map
 			// 切片表達式（view = arr[0..4]）總是走 clone 路徑（malloc + memcpy），
 			// 變量需要獨立的 alloca 存儲空間。不再跳過 alloca。
 			vt := g.varLLVMType(s)
+			// bool (i1) 局部變量擴展為 i64：Nolang 的引用傳遞模型中，函數參數使用
+			// resolveOutputParamLLVMType 將 i1 映射為 i64。若局部變量使用 i1 alloca
+			// （1 byte），但函數寫入 i64（8 bytes），會覆蓋相鄰變量的內存。
+			// 將所有 bool 局部變量統一使用 i64 存儲，避免此問題。
+			if vt == "i1" {
+				vt = "i64"
+			}
 			vars[s.Name.Value] = vt
 			// Update g.varTypes immediately so subsequent lookups work
 			if g.varTypes != nil {
@@ -4749,9 +4772,28 @@ func (g *Generator) generateForStatement(sb *strings.Builder, stmt *parser.ForSt
 	g.emitLabel(sb, condLabel)
 	g.indentLevel++
 	condVal := ""
+	isInfiniteLoop := false
+	skipBody := false
 	if stmt.Condition != nil {
-		// 若條件是 InfixExpression（比較運算），直接取 i1
-		if infix, ok := stmt.Condition.(*parser.InfixExpression); ok {
+		// 無限循環 { body } (true)：條件是 BooleanLiteral{true}，直接生成 br label %for.body
+		// 不創建 for.cond → for.end 的不可達邊，避免 LLVM 優化器在多輸出參數 + break
+		// 場景下錯誤地常量傳播輸出參數值（如 ok=true 被優化為 false）。
+		if boolLit, ok := stmt.Condition.(*parser.BooleanLiteral); ok && boolLit.Value {
+			isInfiniteLoop = true
+			sb.WriteString(fmt.Sprintf("%sbr label %%for.body.%d\n", g.indent(), labelId))
+			// CFG: cond → body only (no edge to end)
+			g.cfgEdge(condLabel, fmt.Sprintf("for.body.%d", labelId))
+			g.cfgTerm(condLabel, termBr)
+			g.indentLevel--
+		} else if boolLit, ok := stmt.Condition.(*parser.BooleanLiteral); ok && !boolLit.Value {
+			// { body } (false) 或 { body } () — 條件永遠為 false，直接跳到 for.end
+			skipBody = true
+			sb.WriteString(fmt.Sprintf("%sbr label %%for.end.%d\n", g.indent(), labelId))
+			// CFG: cond → end only
+			g.cfgEdge(condLabel, fmt.Sprintf("for.end.%d", labelId))
+			g.cfgTerm(condLabel, termBr)
+			g.indentLevel--
+		} else if infix, ok := stmt.Condition.(*parser.InfixExpression); ok {
 			isCmp := infix.Operator == "==" || infix.Operator == "!=" ||
 				infix.Operator == "<" || infix.Operator == ">" ||
 				infix.Operator == "<=" || infix.Operator == ">="
@@ -4799,49 +4841,59 @@ func (g *Generator) generateForStatement(sb *strings.Builder, stmt *parser.ForSt
 			}
 		}
 	} else {
-		condVal = "1" // infinite loop (Condition 保持 nil 的歷史路徑，現已改為 BooleanLiteral{true})
+		// Condition is nil — treat as infinite loop (historical path)
+		isInfiniteLoop = true
+		sb.WriteString(fmt.Sprintf("%sbr label %%for.body.%d\n", g.indent(), labelId))
+		// CFG: cond → body only (no edge to end)
+		g.cfgEdge(condLabel, fmt.Sprintf("for.body.%d", labelId))
+		g.cfgTerm(condLabel, termBr)
+		g.indentLevel--
 	}
-	sb.WriteString(fmt.Sprintf("%sbr i1 %s, label %%for.body.%d, label %%for.end.%d\n",
-		g.indent(), condVal, labelId, labelId))
-	// CFG: cond → body / end
-	g.cfgEdge(condLabel, fmt.Sprintf("for.body.%d", labelId))
-	g.cfgEdge(condLabel, fmt.Sprintf("for.end.%d", labelId))
-	g.cfgTerm(condLabel, termCondBr)
-	g.indentLevel--
+	if !isInfiniteLoop && condVal != "" {
+		sb.WriteString(fmt.Sprintf("%sbr i1 %s, label %%for.body.%d, label %%for.end.%d\n",
+			g.indent(), condVal, labelId, labelId))
+		// CFG: cond → body / end
+		g.cfgEdge(condLabel, fmt.Sprintf("for.body.%d", labelId))
+		g.cfgEdge(condLabel, fmt.Sprintf("for.end.%d", labelId))
+		g.cfgTerm(condLabel, termCondBr)
+		g.indentLevel--
+	}
 
-	// body block
-	bodyLabel := fmt.Sprintf("for.body.%d", labelId)
-	g.emitLabel(sb, bodyLabel)
-	g.indentLevel++
-	if stmt.Body != nil {
-		for _, s := range stmt.Body.Statements {
-			g.generateStatement(sb, s)
+	// body block (skip when condition is constant false)
+	if !skipBody {
+		bodyLabel := fmt.Sprintf("for.body.%d", labelId)
+		g.emitLabel(sb, bodyLabel)
+		g.indentLevel++
+		if stmt.Body != nil {
+			for _, s := range stmt.Body.Statements {
+				g.generateStatement(sb, s)
+			}
 		}
-	}
-	// body 未終止時跳到 step 執行更新
-	if !g.blockTerminated {
-		bodyTail := g.cfgBlockLabel()
-		sb.WriteString(fmt.Sprintf("%sbr label %%for.step.%d\n", g.indent(), labelId))
-		// CFG: body tail → step
-		g.cfgEdge(bodyTail, fmt.Sprintf("for.step.%d", labelId))
-		g.cfgTerm(bodyTail, termBr)
-	}
-	g.blockTerminated = false
-	g.indentLevel--
+		// body 未終止時跳到 step 執行更新
+		if !g.blockTerminated {
+			bodyTail := g.cfgBlockLabel()
+			sb.WriteString(fmt.Sprintf("%sbr label %%for.step.%d\n", g.indent(), labelId))
+			// CFG: body tail → step
+			g.cfgEdge(bodyTail, fmt.Sprintf("for.step.%d", labelId))
+			g.cfgTerm(bodyTail, termBr)
+		}
+		g.blockTerminated = false
+		g.indentLevel--
 
-	// step block: 執行 update（continue 跳轉目標）
-	stepLabel := fmt.Sprintf("for.step.%d", labelId)
-	g.emitLabel(sb, stepLabel)
-	g.indentLevel++
-	// update
-	if stmt.Update != nil {
-		g.generateStatement(sb, stmt.Update)
+		// step block: 執行 update（continue 跳轉目標）
+		stepLabel := fmt.Sprintf("for.step.%d", labelId)
+		g.emitLabel(sb, stepLabel)
+		g.indentLevel++
+		// update
+		if stmt.Update != nil {
+			g.generateStatement(sb, stmt.Update)
+		}
+		sb.WriteString(fmt.Sprintf("%sbr label %%for.cond.%d\n", g.indent(), labelId))
+		// CFG: step → cond (back edge)
+		g.cfgEdge(stepLabel, condLabel)
+		g.cfgTerm(stepLabel, termBr)
+		g.indentLevel--
 	}
-	sb.WriteString(fmt.Sprintf("%sbr label %%for.cond.%d\n", g.indent(), labelId))
-	// CFG: step → cond (back edge)
-	g.cfgEdge(stepLabel, condLabel)
-	g.cfgTerm(stepLabel, termBr)
-	g.indentLevel--
 
 	// end block
 	g.emitLabel(sb, fmt.Sprintf("for.end.%d", labelId))
@@ -6701,7 +6753,39 @@ func (g *Generator) generateLet(sb *strings.Builder, stmt *parser.LetStatement) 
 			//      需要先 load 出 struct 值再 store
 			//   3. 欄位型別為 %str-long 但值是不同型別：先轉換為 %str-long 再 store
 			if g.isStructLLVMType(fieldType) {
-				if !strings.HasPrefix(fieldVal, "%") {
+				if nestedSL, ok := f.Value.(*parser.StructLiteral); ok {
+					// 嵌套 struct literal：先 zeroinitializer 清零，再递归设置子字段
+					sb.WriteString(fmt.Sprintf("%sstore %s zeroinitializer, %s* %s\n", g.indent(), toLLVMType(fieldType), toLLVMType(fieldType), gepReg))
+					nestedStructName := strings.TrimPrefix(fieldType, "%")
+					nestedFields := g.structTypes[nestedStructName]
+					if nestedFields != nil {
+						nestedFieldIdxMap := make(map[string]int)
+						for i, nf := range nestedFields {
+							nestedFieldIdxMap[nf.name] = i
+						}
+						for _, nsf := range nestedSL.Fields {
+							if nfIdx, ok := nestedFieldIdxMap[nsf.Name]; ok {
+								nfType := nestedFields[nfIdx].typ
+								nfGEP := g.tmpReg("st.ngep")
+								sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %s, %s* %s, i32 0, i32 %d\n",
+									g.indent(), nfGEP, toLLVMType(fieldType), toLLVMType(fieldType), gepReg, nfIdx))
+								// StringLiteral 和某些表达式返回 %str-long* 指针，需要 load
+								// Identifier 返回 %str-long 值（已 load），直接 store
+								if _, isStrLit := nsf.Value.(*parser.StringLiteral); isStrLit {
+									nfVal := g.generateExprWithSB(sb, nsf.Value)
+									nfVal = g.stripLLVMType(nfVal)
+									loadReg := g.tmpReg("st.nfload")
+									sb.WriteString(fmt.Sprintf("%s%s = load %s, %s* %s\n", g.indent(), loadReg, toLLVMType(nfType), toLLVMType(nfType), nfVal))
+									sb.WriteString(fmt.Sprintf("%sstore %s %s, %s* %s\n", g.indent(), toLLVMType(nfType), loadReg, toLLVMType(nfType), nfGEP))
+								} else {
+									nfVal := g.generateExprWithSB(sb, nsf.Value)
+									nfVal = g.stripLLVMType(nfVal)
+									sb.WriteString(fmt.Sprintf("%sstore %s %s, %s* %s\n", g.indent(), toLLVMType(nfType), nfVal, toLLVMType(nfType), nfGEP))
+								}
+							}
+						}
+					}
+				} else if !strings.HasPrefix(fieldVal, "%") {
 					// 純量值，無法轉為 struct：使用 zeroinitializer
 					sb.WriteString(fmt.Sprintf("%sstore %s zeroinitializer, %s* %s\n", g.indent(), toLLVMType(fieldType), toLLVMType(fieldType), gepReg))
 				} else {

@@ -160,10 +160,13 @@ func (g *Generator) generateCallArg(sb *strings.Builder, arg parser.Expression) 
 			if t, ok := g.varTypes[a.Value]; ok && g.isStructLLVMType(t) {
 				return t + "* " + g.varAddr(a.Value)
 			}
-			// bool (i1) 變數 → 返回 i1*
-			if t, ok := g.varTypes[a.Value]; ok && t == "i1" {
-				return "i1* " + g.varAddr(a.Value)
-			}
+			// bool (i1) 變數 → 返回 i64* (not i1*)，因為 Nolang 的引用傳遞模型中
+			// 所有整數類型（包括 bool）都以 i64 存儲。函數參數使用 resolveOutputParamLLVMType
+			// 將 i1 映射為 i64，若呼叫端傳遞 i1* 會導致類型不匹配（UB），使 LLVM 優化器
+			// 在內聯後錯誤地常量傳播 bool 輸出參數的值。
+if t, ok := g.varTypes[a.Value]; ok && t == "i1" {
+return "i64* " + g.varAddr(a.Value)
+}
 			// i32 / i16 / i8 等純量型別 — 使用實際型別而非預設 i64*
 			if t, ok := g.varTypes[a.Value]; ok {
 				return toLLVMType(t) + "* " + g.varAddr(a.Value)
@@ -445,10 +448,6 @@ func (g *Generator) generateCallArg(sb *strings.Builder, arg parser.Expression) 
 		// Cross-module string stride safety: detect %str-long SSA values
 		// (from with-len, with-cap, etc.) via ssaTypes.
 		// Track the temp alloca for stmt-level free to prevent memory leak.
-		// BUT: if the SSA value comes from a DotExpression (struct field load,
-		// e.g. t.raw), the alloca only holds a shallow copy sharing the same
-		// data pointer as the struct field. Tracking it would free the
-		// struct field's data at statement end → use-after-free (bug19).
 		if strings.HasPrefix(ev, "%") && g.ssaTypes != nil {
 			if ssaType, ok := g.ssaTypes[ev]; ok && ssaType == "%str-long" {
 				g.tmpIdx++
@@ -457,14 +456,7 @@ func (g *Generator) generateCallArg(sb *strings.Builder, arg parser.Expression) 
 					sb.WriteString(fmt.Sprintf("%s%s = alloca %%str-long\n", g.indent(), tmpName))
 					sb.WriteString(fmt.Sprintf("%sstore %%str-long %s, %%str-long* %s\n", g.indent(), ev, tmpName))
 				}
-				// Only track for stmt-level free if the SSA value is NOT a shallow
-				// copy from a struct field load (DotExpression). Struct field
-				// loads share the data pointer with the field; freeing it would
-				// corrupt the struct (bug19). SSA values from with-len/with-cap
-				// own their data and should be freed.
-				if _, isDot := arg.(*parser.DotExpression); !isDot {
-					g.trackStrTemporary(tmpName)
-				}
+				g.trackStrTemporary(tmpName)
 				return "%str-long* " + tmpName
 			}
 		}
@@ -558,15 +550,8 @@ func (g *Generator) generateCallArg(sb *strings.Builder, arg parser.Expression) 
 			// CallExpression: the baseName (e.g. "call") is not a real variable,
 			// so varTypes lookup fails. Use exprResultLLVMType to determine the
 			// function's return type for correct alloca/store.
-			// bool (i1) is widened to i64: nolang bool values are always stored
-			// as i64 (zext i1 to i64), so the temp alloca must be i64 to match.
-			// Without this, builtin results like is-file() → i1 get stored into
-			// an i1 alloca, but the SSA value is i64 → type mismatch (bug21).
 			if call, ok := arg.(*parser.CallExpression); ok {
 				if et := g.exprResultLLVMType(call); et != "" {
-					if et == "i1" {
-						et = "i64"
-					}
 					ptrType = et + "*"
 				}
 			}
@@ -1032,12 +1017,21 @@ func (g *Generator) generateCallExpression(sb *strings.Builder, expr *parser.Cal
 							curStoreType = "i1"
 						}
 					}
-					sb.WriteString(fmt.Sprintf("%sstore %s %s, %s* %%%s\n", g.indent(), curStoreType, curVal, curStoreType, varName))
+			sb.WriteString(fmt.Sprintf("%sstore %s %s, %s* %%%s\n", g.indent(), curStoreType, curVal, curStoreType, varName))
+				// 当第一个返回值是字符串/切片类型并存储到变量时，
+				// 从 stmtTemporaries 中移除临时指针，避免语句结束时
+				// 释放变量引用的堆内存（use-after-free）。
+				// 变量通过 heapVars/trackLocalHeapVar 接管 data 所有权。
+				if outIdx == 0 && (curStoreType == "%str-long" || curStoreType == "%vec") {
+					g.untrackStmtTemporary(retReg)
+					// 标记变量为堆变量，以便后续赋值时释放旧值
+					g.trackLocalHeapVar(varName, curStoreType)
 				}
-				outIdx++
 			}
-			g.lastBuiltinExtra = ""
-			return retReg
+			outIdx++
+		}
+		g.lastBuiltinExtra = ""
+		return retReg
 		}
 
 		// 生成內層調用的參數（receiver 作為第一個參數）
@@ -2418,6 +2412,12 @@ func (g *Generator) generateCallExpression(sb *strings.Builder, expr *parser.Cal
 					argType = t
 				}
 			}
+			// bool (i1) 變數作為函數參數傳遞時，使用 i64* 而非 i1*。
+			// 原因：resolveOutputParamLLVMType 將 bool 映射為 i64，函數簽名使用 i64*。
+			// 若呼叫端傳遞 i1* 會導致類型不匹配（UB），使 LLVM 優化器錯誤地常量傳播。
+			if argType == "i1" {
+				argType = "i64"
+			}
 			// 對 by-reference 函數呼叫，先將引數值存到暫存變數，
 			// 避免被呼叫函數修改原始變數（例如 gcd 會修改 a, b）
 			// Nolang 帶 result parameter 的函數 retType 也是 "void"，需額外檢查 isNolangSingleResult
@@ -2723,11 +2723,6 @@ func (g *Generator) generateCallExpression(sb *strings.Builder, expr *parser.Cal
 			// with-len results passed as function arguments fall through to
 			// i64* handling, causing stride mismatch.
 			// Track the temp alloca for stmt-level free to prevent memory leak.
-			// BUT: if the SSA value comes from a DotExpression (struct field
-			// load, e.g. t.raw), the alloca holds a shallow copy sharing the
-			// data pointer with the struct field. Freeing it would corrupt
-			// the struct → use-after-free (bug19). Skip tracking for
-			// DotExpression; the struct owns the data, not this temp.
 			if strings.HasPrefix(ev, "%") && g.ssaTypes != nil {
 				if ssaType, ok := g.ssaTypes[ev]; ok && ssaType == "%str-long" {
 					g.tmpIdx++
@@ -2736,9 +2731,7 @@ func (g *Generator) generateCallExpression(sb *strings.Builder, expr *parser.Cal
 						sb.WriteString(fmt.Sprintf("%s%s = alloca %%str-long\n", g.indent(), tmpName))
 						sb.WriteString(fmt.Sprintf("%sstore %%str-long %s, %%str-long* %s\n", g.indent(), ev, tmpName))
 					}
-					if _, isDot := arg.(*parser.DotExpression); !isDot {
-						g.trackStrTemporary(tmpName)
-					}
+					g.trackStrTemporary(tmpName)
 					return "%str-long* " + tmpName
 				}
 			}
@@ -2819,15 +2812,8 @@ func (g *Generator) generateCallExpression(sb *strings.Builder, expr *parser.Cal
 					// CallExpression: the baseName (e.g. "call") is not a real variable,
 					// so varTypes lookup fails. Use exprResultLLVMType to determine the
 					// function's return type for correct alloca/store.
-					// bool (i1) is widened to i64: nolang bool values are always stored
-					// as i64 (zext i1 to i64), so the alloca must be i64 to match.
-					// Without this, builtin results like is-file() → i1 get stored
-					// into an i1 alloca, but the SSA value is i64 → type mismatch (bug21).
 					if call, ok := arg.(*parser.CallExpression); ok {
 						if et := g.exprResultLLVMType(call); et != "" && et != "i64" {
-							if et == "i1" {
-								et = "i64"
-							}
 							sb.WriteString(fmt.Sprintf("%s%s = alloca %s\n", g.indent(), tmpName, et))
 							sb.WriteString(fmt.Sprintf("%sstore %s %s, %s* %s\n", g.indent(), et, ev, et, tmpName))
 							return et + "* " + tmpName
