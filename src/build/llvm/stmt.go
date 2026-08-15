@@ -6065,9 +6065,29 @@ func (g *Generator) generateLet(sb *strings.Builder, stmt *parser.LetStatement) 
 	// 巢狀容器（%vec/%arr 元素為 %vec/%arr）因子元素型別未知，無法安全深層 clone，
 	// 但 move 仍然安全（move 只是浅拷贝 + 标记，不涉及递归）。
 	// canClone==false 时退化路径：forced move（浅拷贝 + 标记 moved），防止 double-free。
-	if g.heapVars != nil && !stmt.IsSynthetic {
+	//
+	// Synthetic `it = matched` bindings (injected by match expression desugar)
+	// are also included when the source is NOT an %option variable. For option
+	// sources, the `it` binding only borrows the inner value (shallow copy);
+	// the option box retains data ownership, so clone/move must be skipped
+	// (handled by the option-specific synthetic paths above). For non-option
+	// heap-owning sources (e.g. `cmd: { 'x' -> ... }` where cmd is %str-long),
+	// the synthetic `it = cmd` must deep-clone to give `it` an independent data
+	// buffer — otherwise both `it` and `cmd` share the same data pointer and
+	// emitHeapFree double-frees it at function exit.
+	if g.heapVars != nil {
 		if ident, ok := stmt.Value.(*parser.Identifier); ok {
 			if ident.Value != name {
+				// Skip synthetic bindings when source is an option variable:
+				// option `it` extraction borrows the value (shallow copy),
+				// the option box owns the data — clone would double-free.
+				skipSynthetic := false
+				if stmt.IsSynthetic {
+					if srcType, hasType := g.varTypes[ident.Value]; hasType && srcType == "%option" {
+						skipSynthetic = true
+					}
+				}
+				if !skipSynthetic {
 				_, isLocal := g.funcLocalNames[name]
 				isOutput := g.outputParamNames != nil && g.outputParamNames[name]
 				isGlobal := g.globalVars != nil && g.globalVars[name] && (g.funcLocalNames == nil || !g.funcLocalNames[name])
@@ -6243,12 +6263,13 @@ func (g *Generator) generateLet(sb *strings.Builder, stmt *parser.LetStatement) 
 								g.moduleArrayElemTypes[name] = srcElemType
 							}
 						}
-						return
-					}
+					return
 				}
 			}
+			} // close if !skipSynthetic
 		}
-		// 深層 clone 路徑：x = vec[i] / arr[i]，其中元素為堆擁有型別（如 %str-long）。
+	}
+	// 深層 clone 路徑：x = vec[i] / arr[i]，其中元素為堆擁有型別（如 %str-long）。
 		// vec[i] 的 codegen 會 load 出 %str-long 值（淺拷貝 {len, cap, data}），
 		// 使 x.data 與 vec[i].data 指向同一塊堆記憶體。函數結束時 emitHeapFree 會
 		// 同時 free x（釋放 x.data）和 vec（深層 free 釋放每個元素的 data），導致
