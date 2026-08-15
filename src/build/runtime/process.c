@@ -24,6 +24,15 @@
 //      -1 : failed to start / exec the child
 //      -2 : timed out (child was killed)
 
+// On Windows, winsock2.h must be included before any header that pulls in
+// windows.h (which includes <stdlib.h> and <string.h> in MinGW/zig libc).
+// Include it first to avoid the "Please include winsock2.h before windows.h"
+// warning.
+#ifdef _WIN32
+#include <winsock2.h>
+#include <windows.h>
+#endif
+
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
@@ -42,10 +51,6 @@
 #include <signal.h>
 #include <time.h>
 #include <sys/socket.h>
-#else
-// winsock2.h must be included before windows.h to avoid redefinition warnings.
-#include <winsock2.h>
-#include <windows.h>
 #endif
 
 // nolang_net_recv_nb: non-blocking recv used by the WebSocket poll loop
@@ -190,16 +195,15 @@ static char **build_argv(uint8_t *base, int64_t count, int64_t stride,
         uint8_t *elem = base + i * stride;
         uint64_t slen = *(const uint64_t *)elem;            // length at offset 0
         const char *sdata = *(const char *const *)(elem + data_off); // ptr at data_off
-#ifdef _WIN32
-        // strndup is not available on Windows; emulate it.
+        // Use malloc+memcpy instead of strndup for portability.
+        // strndup is POSIX.1-2008 and not available on Windows (MinGW/zig).
+        // Even when _WIN32 is defined, some toolchains (e.g. zig cc with
+        // windows-gnu target) may not expose strndup, so we always emulate it.
         a[i] = (char *)malloc((size_t)slen + 1);
         if (a[i]) {
             memcpy(a[i], sdata, (size_t)slen);
             a[i][slen] = '\0';
         }
-#else
-        a[i] = strndup(sdata, (size_t)slen);
-#endif
     }
     a[count] = NULL;
     return a;
@@ -292,10 +296,10 @@ void nolang_process_run(
         *status_out = -1;
         return;
     }
-    char **envp = NULL;
 #ifdef _WIN32
     char *env_block = build_env_block(envp_data, envp_len, stride, data_off);
 #else
+    char **envp = NULL;
     if (envp_len > 0) {
         envp = build_argv(envp_data, envp_len, stride, data_off);
     }
