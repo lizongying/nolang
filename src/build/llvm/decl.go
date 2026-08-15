@@ -64,7 +64,9 @@ func (g *Generator) writeDeclarations(sb *strings.Builder) {
 	// offset of each element's `data` pointer field, so the C side can iterate them
 	// without assuming nolang's string layout. Output is returned via out_data/out_len;
 	// the caller wraps it into a %str-long. status: >=0 exit code, -1 start failure, -2 timeout.
-	if goos != "wasi" {
+	// Windows: replaced by pure Nolang Win32 API builtins (win-create-process etc.),
+	// so the C runtime declaration is not needed.
+	if goos != "wasi" && goos != "windows" {
 		sb.WriteString("declare void @nolang_process_run(i8*, i64, i8*, i64, i64, i64, i8*, i8*, i64, i64, i64, i8**, i64*, i64*)\n")
 	}
 	if goos == "windows" {
@@ -128,6 +130,24 @@ func (g *Generator) writeDeclarations(sb *strings.Builder) {
 		sb.WriteString("declare i8* @FindFirstFileA(i8*, i8*)\n")
 		sb.WriteString("declare i32 @FindNextFileA(i8*, i8*)\n")
 		sb.WriteString("declare i32 @FindClose(i8*)\n")
+		// Win32 process/pipe API — used by win-create-process, win-create-pipe,
+		// win-read-pipe, win-write-pipe, win-wait-process, win-get-exit-code,
+		// win-terminate-process, win-close-handle ForwardFunc builtins.
+		// These replace the C runtime (process.c) on Windows with pure Nolang.
+		sb.WriteString("declare i32 @CreateProcessA(i8*, i8*, i8*, i8*, i32, i32, i8*, i8*, i8*, i8*)\n")
+		sb.WriteString("declare i32 @CreatePipe(i8*, i8*, i8*, i32)\n")
+		sb.WriteString("declare i32 @ReadFile(i8*, i8*, i32, i8*, i8*)\n")
+		sb.WriteString("declare i32 @WriteFile(i8*, i8*, i32, i8*, i8*)\n")
+		sb.WriteString("declare i32 @WaitForSingleObject(i8*, i32)\n")
+		sb.WriteString("declare i32 @GetExitCodeProcess(i8*, i32*)\n")
+		sb.WriteString("declare i32 @TerminateProcess(i8*, i32)\n")
+		sb.WriteString("declare i32 @CloseHandle(i8*)\n")
+		sb.WriteString("declare i8* @GetStdHandle(i32)\n")
+		// STARTUPINFOA (68 bytes): cb@0, lpReserved@4, lpDesktop@8, lpTitle@12,
+		//   dwX@16, dwY@20, dwXSize@24, dwYSize@28, dwXCountChars@32,
+		//   dwYCountChars@36, dwFillAttribute@40, dwFlags@44, wShowWindow@48,
+		//   cbReserved2@52, lpReserved2@56, hStdInput@60, hStdOutput@64, hStdError@68.
+		// PROCESS_INFORMATION (24 bytes): hProcess@0, hThread@8, dwProcessId@16, dwThreadId@20.
 	} else {
 		sb.WriteString("declare i8* @opendir(i8*)\n")
 		sb.WriteString("declare i8* @readdir(i8*)\n")

@@ -64,6 +64,58 @@
 ; process-exec-shell = (cmd str) (err i64) { }
 
 ; ═══════════════════════════════════════════════
+; Windows 平台專用 Win32 API 內建函數
+; 這些取代 process.c 的 C runtime，以純 Nolang 實現 process.cmd
+; ═══════════════════════════════════════════════
+
+; build-in (ForwardFunc: win-create-pipe)
+; win-create-pipe: 建立匿名管道（CreatePipe）
+; 返回打包值 (read_handle << 32) | write_handle，0=失敗
+; win-create-pipe = () (handles i64) { }
+
+; build-in (ForwardFunc: win-close-handle)
+; win-close-handle: 關閉 Windows handle（CloseHandle）
+; win-close-handle = (handle i64) (ok bool) { }
+
+; build-in (ForwardFunc: win-write-pipe)
+; win-write-pipe: 寫入資料到管道/handle（WriteFile）
+; 返回寫入位元組數，-1=錯誤
+; win-write-pipe = (handle i64, data str) (written i64) { }
+
+; build-in (ForwardFunc: win-read-pipe)
+; win-read-pipe: 從管道/handle 讀取資料（ReadFile）
+; 返回 (data, n)：n=讀取位元組數，-1=錯誤
+; win-read-pipe = (handle i64, max-bytes i64) (data str, n i64) { }
+
+; build-in (ForwardFunc: win-create-process)
+; win-create-process: 創建子進程（CreateProcessA）
+; cmdline: 完整命令列字串
+; dir: 工作目錄（空=繼承）
+; stdin-handle, stdout-handle, stderr-handle: 標準流 handle（0=繼承父進程）
+; 返回 (proc-handle, status)：proc-handle>0=成功, 0=失敗
+; win-create-process = (cmdline str, dir str, stdin-handle i64, stdout-handle i64, stderr-handle i64) (proc-handle i64, status i64) { }
+
+; build-in (ForwardFunc: win-wait-process)
+; win-wait-process: 等待進程結束（WaitForSingleObject）
+; timeout-ms: 超時毫秒（0=無限等待）
+; 返回 0=超時, 1=已退出, -1=錯誤
+; win-wait-process = (proc-handle i64, timeout-ms i64) (status i64) { }
+
+; build-in (ForwardFunc: win-get-exit-code)
+; win-get-exit-code: 取得進程退出碼（GetExitCodeProcess）
+; 返回 (exit-code, ok)：ok=false 表示仍在執行
+; win-get-exit-code = (proc-handle i64) (exit-code i64, ok bool) { }
+
+; build-in (ForwardFunc: win-terminate-process)
+; win-terminate-process: 終止進程（TerminateProcess）
+; win-terminate-process = (proc-handle i64, exit-code i64) (ok bool) { }
+
+; build-in (ForwardFunc: win-get-std-handle)
+; win-get-std-handle: 取得標準 handle（GetStdHandle）
+; which: 0=stdin, 1=stdout, 2=stderr
+; win-get-std-handle = (which i64) (handle i64) { }
+
+; ═══════════════════════════════════════════════
 ; 信號常量
 ; ═══════════════════════════════════════════════
 
@@ -419,8 +471,10 @@ process-shell = (cmd str) (status i64) {
 ;   code >= 0 : 正常退出碼
 ;   code == -1 : 啟動 / exec 失敗
 ;   code == -2 : 超時（子進程已被殺死）
-; 底層呼叫 process-run-capture 內建函數（C runtime: src/build/runtime/process.c），
+
+; POSIX 版本：底層呼叫 process-run-capture 內建函數（C runtime: src/build/runtime/process.c），
 ; 支援 argv 陣列、環境變數、工作目錄、stdin、超時與 stderr 合併。
+#{mac-amd64, mac-arm64, linux-amd64, linux-arm64, wasi-wasm32}
 process.cmd = (program str, args []str, dir str, input str, env []str, timeout i64, merge-err i64) (out str, code i64, err str) {
 
     ; 構建 argv = [program] + args
@@ -436,6 +490,194 @@ process.cmd = (program str, args []str, dir str, input str, env []str, timeout i
         code == -1 -> err = 'failed to start or exec process'
         code == -2 -> err = 'process timed out'
     }
+}
+
+; Windows 版本：使用 Win32 API（CreateProcessA、CreatePipe 等）以純 Nolang 實現。
+; 不依賴 process.c C runtime，所有進程創建、管道管理、輸出捕獲均透過
+; win-create-process、win-create-pipe、win-read-pipe 等 ForwardFunc 內建完成。
+#{win-amd64, win-arm64}
+process.cmd = (program str, args []str, dir str, input str, env []str, timeout i64, merge-err i64) (out str, code i64, err str) {
+    out = ''
+    code = -1
+    err = ''
+
+    ; 構建命令列字串：program + " " + arg1 + " " + arg2 + ...
+    cmdline str = program
+    i <- [0..args.len): {
+        arg str = args[i]
+        ; 含空格的參數需要加引號
+        has-space = arg.contains(' ')
+        has-space != 0 -> {
+            cmdline = cmdline - ' "' - arg - '"'
+        } has-space == 0 -> {
+            cmdline = cmdline - ' ' - arg
+        }
+    }
+
+    ; 建立 stdout 管道
+    out-fds = win-create-pipe()
+    {
+        out-fds == 0 -> {
+            err = 'failed to create stdout pipe'
+            return
+        }
+    }
+    out-read = out-fds >> 32
+    out-write = out-fds & 0xffffffff
+
+    ; 建立 stderr 管道（除非 merge-err）
+    err-read i64 = 0
+    err-write i64 = 0
+    {
+        merge-err == 0 -> {
+            err-fds = win-create-pipe()
+            {
+                err-fds == 0 -> {
+                    win-close-handle(out-read)
+                    win-close-handle(out-write)
+                    err = 'failed to create stderr pipe'
+                    return
+                }
+            }
+            err-read = err-fds >> 32
+            err-write = err-fds & 0xffffffff
+        }
+    }
+
+    ; 建立 stdin 管道（如有 input）
+    in-read i64 = 0
+    in-write i64 = 0
+    {
+        input.len > 0 -> {
+            in-fds = win-create-pipe()
+            {
+                in-fds == 0 -> {
+                    win-close-handle(out-read)
+                    win-close-handle(out-write)
+                    {
+                        merge-err == 0 -> {
+                            win-close-handle(err-read)
+                            win-close-handle(err-write)
+                        }
+                    }
+                    err = 'failed to create stdin pipe'
+                    return
+                }
+            }
+            in-read = in-fds >> 32
+            in-write = in-fds & 0xffffffff
+        }
+    }
+
+    ; 取得父進程標準 handle（當對應 handle 為 0 時使用）
+    parent-stdin = win-get-std-handle(0)
+    parent-stdout = win-get-std-handle(1)
+    parent-stderr = win-get-std-handle(2)
+
+    ; 決定傳給子進程的標準 handle
+    child-stdin i64 = 0
+    child-stdout i64 = 0
+    child-stderr i64 = 0
+    child-stdin = in-read != 0 ? in-read : parent-stdin
+    child-stdout = out-write
+    child-stderr = merge-err != 0 ? out-write : err-write
+
+    ; 創建子進程
+    proc-handle, status = win-create-process(cmdline, dir, child-stdin, child-stdout, child-stderr)
+
+    ; 父進程關閉子進程端的 handle
+    win-close-handle(out-write)
+    {
+        merge-err == 0 -> {
+            err-write != 0 -> win-close-handle(err-write)
+        }
+    }
+    {
+        in-read != 0 -> win-close-handle(in-read)
+    }
+
+    {
+        proc-handle == 0 -> {
+            win-close-handle(out-read)
+            {
+                merge-err == 0 -> {
+                    err-read != 0 -> win-close-handle(err-read)
+                }
+            }
+            {
+                in-write != 0 -> win-close-handle(in-write)
+            }
+            err = 'failed to create process'
+            return
+        }
+    }
+
+    ; 寫入 stdin
+    {
+        in-write != 0 -> {
+            win-write-pipe(in-write, input)
+            win-close-handle(in-write)
+        }
+    }
+
+    ; 等待進程結束（含超時）
+    {
+        timeout > 0 -> {
+            wait-status = win-wait-process(proc-handle, timeout)
+            {
+                wait-status == 0 -> {
+                    ; 超時，終止進程
+                    win-terminate-process(proc-handle, 1)
+                    win-wait-process(proc-handle, 0)
+                    code = -2
+                    err = 'process timed out'
+                } !wait-status == 0 -> {
+                    ; 已退出
+                    exit-code, ok = win-get-exit-code(proc-handle)
+                    code = exit-code
+                }
+            }
+        } timeout <= 0 -> {
+            ; 無限等待
+            win-wait-process(proc-handle, 0)
+            exit-code, ok = win-get-exit-code(proc-handle)
+            code = exit-code
+        }
+    }
+
+    ; 讀取 stdout 輸出
+    {
+        true -> {
+            chunk str = ''
+            chunk-n i64 = 0
+            {
+                chunk, chunk-n = win-read-pipe(out-read, 4096)
+                chunk-n > 0 -> {
+                    out = out - chunk
+                }
+            } (chunk-n > 0)
+        }
+    }
+    win-close-handle(out-read)
+
+    ; 讀取 stderr 輸出（如果不 merge-err，丟棄）
+    {
+        merge-err == 0 -> {
+            {
+                err-read != 0 -> {
+                    chunk str = ''
+                    chunk-n i64 = 0
+                    {
+                        chunk, chunk-n = win-read-pipe(err-read, 4096)
+                        chunk-n > 0 -> *
+                    } (chunk-n > 0)
+                    win-close-handle(err-read)
+                }
+            }
+        }
+    }
+
+    win-close-handle(proc-handle)
 }
 
 ; cmdopts: process.run 的執行選項（跨模組結構體示例）。

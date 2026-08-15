@@ -144,4 +144,123 @@ func init() {
 		Doc:          "Execute shell command via system(). Returns exit status",
 		CLibCall:     &CLibCall{FuncName: "system", ArgTypes: []LLVMArgType{LLVMStrPtr}, RetType: LLVMI32, RetExt: &i64Type},
 	})
+
+	// ═══════════════════════════════════════════════
+	// Win32 process/pipe API — ForwardFunc builtins
+	// These replace the C runtime (process.c) on Windows,
+	// allowing pure Nolang implementation of process.cmd on Windows.
+	// ═══════════════════════════════════════════════
+
+	// win-create-pipe: create an anonymous pipe (CreatePipe)
+	// Returns packed i64: (read_handle << 32) | write_handle, or 0 on failure
+	BuiltinMethodList = append(BuiltinMethodList, BuiltinMethod{
+		ReceiverType: ReceiverGlobal,
+		MethodName:   "win-create-pipe",
+		Params:       []parser.Type{},
+		Return:       []parser.Type{parser.TypeI64},
+		Doc:          "Create an anonymous pipe (CreatePipe). Returns packed (read_handle << 32) | write_handle, 0 on failure",
+		ForwardFunc:  "win-create-pipe",
+	})
+
+	// win-close-handle: close a Windows handle (CloseHandle)
+	// Returns ok bool
+	BuiltinMethodList = append(BuiltinMethodList, BuiltinMethod{
+		ReceiverType: ReceiverGlobal,
+		MethodName:   "win-close-handle",
+		Params:       []parser.Type{parser.TypeI64},
+		Return:       []parser.Type{parser.TypeBool},
+		Doc:          "Close a Windows handle (CloseHandle). Returns true on success",
+		ForwardFunc:  "win-close-handle",
+	})
+
+	// win-write-pipe: write data to a pipe/handle (WriteFile)
+	// Args: handle i64, data str (writes all bytes)
+	// Returns written i64 (bytes written, -1 on error)
+	BuiltinMethodList = append(BuiltinMethodList, BuiltinMethod{
+		ReceiverType: ReceiverGlobal,
+		MethodName:   "win-write-pipe",
+		Params:       []parser.Type{parser.TypeI64, parser.TypeStr},
+		Return:       []parser.Type{parser.TypeI64},
+		Doc:          "Write data to a pipe/handle (WriteFile). Returns bytes written, -1 on error",
+		ForwardFunc:  "win-write-pipe",
+	})
+
+	// win-read-pipe: read data from a pipe/handle (ReadFile)
+	// Args: handle i64, max_bytes i64
+	// Returns (data str, n i64): n = bytes read, -1 on error
+	BuiltinMethodList = append(BuiltinMethodList, BuiltinMethod{
+		ReceiverType: ReceiverGlobal,
+		MethodName:   "win-read-pipe",
+		Params:       []parser.Type{parser.TypeI64, parser.TypeI64},
+		Return:       []parser.Type{parser.TypeStr, parser.TypeI64},
+		Doc:          "Read data from a pipe/handle (ReadFile). Returns (data, bytes_read), bytes_read=-1 on error",
+		ForwardFunc:  "win-read-pipe",
+	})
+
+	// win-create-process: spawn a child process (CreateProcessA)
+	// Args: cmdline str, dir str, stdin_handle i64, stdout_handle i64, stderr_handle i64
+	//   (pass 0 to inherit parent's corresponding std handle)
+	// Returns (proc_handle i64, status i64):
+	//   proc_handle > 0 = success (handle to process), status = 0
+	//   proc_handle = 0 = failure, status = -1
+	// The returned proc_handle must be closed with win-close-handle.
+	BuiltinMethodList = append(BuiltinMethodList, BuiltinMethod{
+		ReceiverType: ReceiverGlobal,
+		MethodName:   "win-create-process",
+		Params:       []parser.Type{parser.TypeStr, parser.TypeStr, parser.TypeI64, parser.TypeI64, parser.TypeI64},
+		Return:       []parser.Type{parser.TypeI64, parser.TypeI64},
+		Doc:          "Spawn a child process (CreateProcessA). Returns (proc_handle, status): handle>0=ok, 0=fail",
+		ForwardFunc:  "win-create-process",
+	})
+
+	// win-wait-process: wait for a process to exit (WaitForSingleObject)
+	// Args: proc_handle i64, timeout_ms i64 (0 = INFINITE)
+	// Returns status i64:
+	//   0 = still active (WAIT_TIMEOUT, only when timeout > 0)
+	//   1 = exited normally
+	//  -1 = error
+	BuiltinMethodList = append(BuiltinMethodList, BuiltinMethod{
+		ReceiverType: ReceiverGlobal,
+		MethodName:   "win-wait-process",
+		Params:       []parser.Type{parser.TypeI64, parser.TypeI64},
+		Return:       []parser.Type{parser.TypeI64},
+		Doc:          "Wait for a process (WaitForSingleObject). Returns 0=timeout, 1=exited, -1=error",
+		ForwardFunc:  "win-wait-process",
+	})
+
+	// win-get-exit-code: get process exit code (GetExitCodeProcess)
+	// Args: proc_handle i64
+	// Returns (exit_code i64, ok bool): ok=false if still running
+	BuiltinMethodList = append(BuiltinMethodList, BuiltinMethod{
+		ReceiverType: ReceiverGlobal,
+		MethodName:   "win-get-exit-code",
+		Params:       []parser.Type{parser.TypeI64},
+		Return:       []parser.Type{parser.TypeI64, parser.TypeBool},
+		Doc:          "Get process exit code (GetExitCodeProcess). Returns (code, ok): ok=false if still running",
+		ForwardFunc:  "win-get-exit-code",
+	})
+
+	// win-terminate-process: kill a process (TerminateProcess)
+	// Args: proc_handle i64, exit_code i64
+	// Returns ok bool
+	BuiltinMethodList = append(BuiltinMethodList, BuiltinMethod{
+		ReceiverType: ReceiverGlobal,
+		MethodName:   "win-terminate-process",
+		Params:       []parser.Type{parser.TypeI64, parser.TypeI64},
+		Return:       []parser.Type{parser.TypeBool},
+		Doc:          "Terminate a process (TerminateProcess). Returns true on success",
+		ForwardFunc:  "win-terminate-process",
+	})
+
+	// win-get-std-handle: get a standard handle (GetStdHandle)
+	// Args: which i64 (0=stdin, 1=stdout, 2=stderr)
+	// Returns handle i64
+	BuiltinMethodList = append(BuiltinMethodList, BuiltinMethod{
+		ReceiverType: ReceiverGlobal,
+		MethodName:   "win-get-std-handle",
+		Params:       []parser.Type{parser.TypeI64},
+		Return:       []parser.Type{parser.TypeI64},
+		Doc:          "Get standard handle (GetStdHandle). 0=stdin, 1=stdout, 2=stderr",
+		ForwardFunc:  "win-get-std-handle",
+	})
 }

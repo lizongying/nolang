@@ -224,7 +224,7 @@ func parseTargetPlatform(target string) (goos, goarch string) {
 		switch p {
 		case "linux":
 			goos = "linux"
-		case "windows":
+		case "windows", "mingw32", "mingw64", "w64":
 			goos = "windows"
 		case "macos", "darwin", "apple":
 			goos = "darwin"
@@ -596,24 +596,36 @@ func buildLLVMInternal(code string, fileName string, outPath string, cc string, 
 		if target != "" {
 			clangArgs = append(clangArgs, "--target="+target)
 		}
+		isWindowsTarget := runtime.GOOS == "windows"
+		if !isWindowsTarget {
+			// Also check the target triple for Windows/Mingw components.
+			tGoos, _ := parseTargetPlatform(target)
+			isWindowsTarget = tGoos == "windows"
+		}
 		// Link the cross-platform process runtime (provides @nolang.process_run).
 		// Read from the embedded FS and written next to the generated
 		// assembly so clang compiles+links it.
-		procCPath := filepath.Join(tempDir, "process_runtime.c")
-		cBytes, rErr := processRuntimeC.ReadFile("runtime/process.c")
-		if rErr != nil {
-			return fmt.Errorf("read process runtime C: %w", rErr)
+		// Windows no longer needs the C runtime — process.cmd is implemented
+		// in pure Nolang using Win32 API ForwardFunc builtins (CreateProcessA,
+		// CreatePipe, etc.). The C runtime is only linked for POSIX targets.
+		if !isWindowsTarget {
+			procCPath := filepath.Join(tempDir, "process_runtime.c")
+			cBytes, rErr := processRuntimeC.ReadFile("runtime/process.c")
+			if rErr != nil {
+				return fmt.Errorf("read process runtime C: %w", rErr)
+			}
+			if wErr := os.WriteFile(procCPath, cBytes, 0644); wErr != nil {
+				return fmt.Errorf("write process runtime C: %w", wErr)
+			}
+			clangArgs = append(clangArgs, procCPath)
 		}
-		if wErr := os.WriteFile(procCPath, cBytes, 0644); wErr != nil {
-			return fmt.Errorf("write process runtime C: %w", wErr)
-		}
-		clangArgs = append(clangArgs, procCPath, sPath, "-o", outPath)
+		clangArgs = append(clangArgs, sPath, "-o", outPath)
 		for _, lib := range linkLibs {
 			clangArgs = append(clangArgs, "-l"+lib)
 		}
 		// Windows 平台需要連結 ws2_32（Winsock，供 net-* 內建使用）。
 		// 無棧協程不需要 pthread，事件循環運行時由 src/runtime/async_runtime.c 提供。
-		if runtime.GOOS == "windows" || strings.Contains(target, "windows") {
+		if isWindowsTarget {
 			clangArgs = append(clangArgs, "-lws2_32")
 		}
 	}

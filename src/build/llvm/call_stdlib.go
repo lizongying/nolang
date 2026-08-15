@@ -2759,10 +2759,345 @@ func (g *Generator) callBuiltin(sb *strings.Builder, fnName string, hasArgs bool
 			sb.WriteString(fmt.Sprintf("%s%s = getelementptr %%str-long, %%str-long* %s, i32 0, i32 2\n", g.indent(), olDataGEP, outStr))
 			g.storeDataPtrField(sb, outDataLoad, olDataGEP)
 		}
-		// 2nd return value (status) carried via lastBuiltinExtra (consumed by the
-		// caller at outIdx == 1 for multi-result builtins).
-		g.lastBuiltinExtra = statusLoad
-		return outStr
+	// 2nd return value (status) carried via lastBuiltinExtra (consumed by the
+	// caller at outIdx == 1 for multi-result builtins).
+	g.lastBuiltinExtra = statusLoad
+	return outStr
+	}
+
+	// ═══════════════════════════════════════════════
+	// Win32 process/pipe API — pure Nolang replacement for process.c
+	// ═══════════════════════════════════════════════
+
+	// win-create-pipe: create an anonymous pipe (CreatePipe)
+	// Returns packed i64: (read_handle << 32) | write_handle, or 0 on failure
+	// Buffer layout: [0..8) read HANDLE, [8..16) write HANDLE, [16..24) SECURITY_ATTRIBUTES
+	if fnName == "win-create-pipe" {
+		saBuf := g.tmpReg("wcp.sa")
+		readPtr := g.tmpReg("wcp.readptr")
+		writePtr := g.tmpReg("wcp.writeptr")
+		retReg := g.tmpReg("wcp.ret")
+		readHandle := g.tmpReg("wcp.read")
+		writeHandle := g.tmpReg("wcp.write")
+		readExt := g.tmpReg("wcp.readext")
+		writeExt := g.tmpReg("wcp.writeext")
+		shlReg := g.tmpReg("wcp.shl")
+		failCmpReg := g.tmpReg("wcp.failcmp")
+		failSelReg := g.tmpReg("wcp.failsel")
+		packReg := g.tmpReg("wcp.pack")
+		if sb != nil {
+			// SECURITY_ATTRIBUTES: nLength=24, bInheritHandle=TRUE
+			// Layout: [0..4) nLength=24, [4..8) lpSecurityDescriptor=NULL, [8..12) bInheritHandle=1
+			sb.WriteString(fmt.Sprintf("%s%s = alloca [24 x i8]\n", g.indent(), saBuf))
+			// Zero the buffer
+			sb.WriteString(fmt.Sprintf("%scall void @llvm.memset.p0i8.i64(i8* %s, i8 0, i64 24, i1 false)\n", g.indent(), saBuf))
+			// Set nLength = 24 (sizeof(SECURITY_ATTRIBUTES))
+			saLenGep := g.tmpReg("wcp.sa.len")
+			sb.WriteString(fmt.Sprintf("%s%s = bitcast [24 x i8]* %s to i32*\n", g.indent(), saLenGep, saBuf))
+			sb.WriteString(fmt.Sprintf("%sstore i32 24, i32* %s\n", g.indent(), saLenGep))
+			// Set bInheritHandle = TRUE (at offset 8)
+			saInhGep := g.tmpReg("wcp.sa.inh")
+			saInhCast := g.tmpReg("wcp.sa.inh.cast")
+			sb.WriteString(fmt.Sprintf("%s%s = getelementptr i8, i8* %s, i64 8\n", g.indent(), saInhGep, saBuf))
+			sb.WriteString(fmt.Sprintf("%s%s = bitcast i8* %s to i32*\n", g.indent(), saInhCast, saInhGep))
+			sb.WriteString(fmt.Sprintf("%sstore i32 1, i32* %s\n", g.indent(), saInhCast))
+			// Allocate space for read/write handles
+			sb.WriteString(fmt.Sprintf("%s%s = alloca i8*\n", g.indent(), readPtr))
+			sb.WriteString(fmt.Sprintf("%s%s = alloca i8*\n", g.indent(), writePtr))
+			// CreatePipe(&read, &write, &sa, 0)
+			sb.WriteString(fmt.Sprintf("%s%s = call i32 @CreatePipe(i8* %s, i8* %s, i8* %s, i32 0)\n", g.indent(), retReg, readPtr, writePtr, saBuf))
+			// Load handles
+			sb.WriteString(fmt.Sprintf("%s%s = load i8*, i8** %s\n", g.indent(), readHandle, readPtr))
+			sb.WriteString(fmt.Sprintf("%s%s = load i8*, i8** %s\n", g.indent(), writeHandle, writePtr))
+			sb.WriteString(fmt.Sprintf("%s%s = ptrtoint i8* %s to i64\n", g.indent(), readExt, readHandle))
+			sb.WriteString(fmt.Sprintf("%s%s = ptrtoint i8* %s to i64\n", g.indent(), writeExt, writeHandle))
+			sb.WriteString(fmt.Sprintf("%s%s = shl i64 %s, 32\n", g.indent(), shlReg, readExt))
+			sb.WriteString(fmt.Sprintf("%s%s = or i64 %s, %s\n", g.indent(), packReg, shlReg, writeExt))
+			// If CreatePipe returned 0 (failure), return 0
+			sb.WriteString(fmt.Sprintf("%s%s = icmp eq i32 %s, 0\n", g.indent(), failCmpReg, retReg))
+			sb.WriteString(fmt.Sprintf("%s%s = select i1 %s, i64 0, i64 %s\n", g.indent(), failSelReg, failCmpReg, packReg))
+		}
+		return failSelReg
+	}
+
+	// win-close-handle: close a Windows handle (CloseHandle)
+	// Returns ok bool
+	if fnName == "win-close-handle" && hasArgs && nArgs >= 1 {
+		a := evalArgs()
+		handleVal := a[0]
+		handlePtr := g.tmpReg("wch.handle")
+		retReg := g.tmpReg("wch.ret")
+		cmpReg := g.tmpReg("wch.cmp")
+		extReg := g.tmpReg("wch.ext")
+		if sb != nil {
+			sb.WriteString(fmt.Sprintf("%s%s = inttoptr i64 %s to i8*\n", g.indent(), handlePtr, handleVal))
+			sb.WriteString(fmt.Sprintf("%s%s = call i32 @CloseHandle(i8* %s)\n", g.indent(), retReg, handlePtr))
+			sb.WriteString(fmt.Sprintf("%s%s = icmp ne i32 %s, 0\n", g.indent(), cmpReg, retReg))
+			sb.WriteString(fmt.Sprintf("%s%s = zext i1 %s to i64\n", g.indent(), extReg, cmpReg))
+		}
+		return extReg
+	}
+
+	// win-write-pipe: write data to a pipe/handle (WriteFile)
+	// Args: handle i64, data str
+	// Returns written i64 (bytes written, -1 on error)
+	if fnName == "win-write-pipe" && hasArgs && nArgs >= 2 {
+		a := evalArgs()
+		handleVal := a[0]
+		dataStrPtr := g.strLongPtr(sb, a[1])
+		dataPtr := g.extractStrDataPtr(sb, dataStrPtr)
+		dataLen := g.extractStrLen(sb, dataStrPtr)
+		handleReg := g.tmpReg("wwp.handle")
+		writtenBuf := g.tmpReg("wwp.written")
+		retReg := g.tmpReg("wwp.ret")
+		writtenLoad := g.tmpReg("wwp.written.load")
+		writtenExt := g.tmpReg("wwp.written.ext")
+		errCmpReg := g.tmpReg("wwp.errcmp")
+		errSelReg := g.tmpReg("wwp.errsel")
+		if sb != nil {
+			sb.WriteString(fmt.Sprintf("%s%s = inttoptr i64 %s to i8*\n", g.indent(), handleReg, handleVal))
+			sb.WriteString(fmt.Sprintf("%s%s = alloca i32\n", g.indent(), writtenBuf))
+			sb.WriteString(fmt.Sprintf("%s%s = call i32 @WriteFile(i8* %s, i8* %s, i32 %s, i8* %s, i8* null)\n",
+				g.indent(), retReg, handleReg, dataPtr, dataLen, writtenBuf))
+			// WriteFile returns 0 on error
+			sb.WriteString(fmt.Sprintf("%s%s = load i32, i32* %s\n", g.indent(), writtenLoad, writtenBuf))
+			sb.WriteString(fmt.Sprintf("%s%s = sext i32 %s to i64\n", g.indent(), writtenExt, writtenLoad))
+			sb.WriteString(fmt.Sprintf("%s%s = icmp eq i32 %s, 0\n", g.indent(), errCmpReg, retReg))
+			sb.WriteString(fmt.Sprintf("%s%s = select i1 %s, i64 -1, i64 %s\n", g.indent(), errSelReg, errCmpReg, writtenExt))
+		}
+		return errSelReg
+	}
+
+	// win-read-pipe: read data from a pipe/handle (ReadFile)
+	// Args: handle i64, max_bytes i64
+	// Returns (data str, n i64): n = bytes read, -1 on error
+	if fnName == "win-read-pipe" && hasArgs && nArgs >= 2 {
+		a := evalArgs()
+		handleVal := a[0]
+		maxBytes := a[1]
+		handleReg := g.tmpReg("wrp.handle")
+		bufReg := g.tmpReg("wrp.buf")
+		bytesReadBuf := g.tmpReg("wrp.bytesread")
+		retReg := g.tmpReg("wrp.ret")
+		bytesReadLoad := g.tmpReg("wrp.bytesread.load")
+		bytesReadExt := g.tmpReg("wrp.bytesread.ext")
+		errCmpReg := g.tmpReg("wrp.errcmp")
+		errSelReg := g.tmpReg("wrp.errsel")
+		strReg := g.tmpReg("wrp.str")
+		lenGEP := g.tmpReg("wrp.len.gep")
+		capGEP := g.tmpReg("wrp.cap.gep")
+		dataGEP := g.tmpReg("wrp.data.gep")
+		if sb != nil {
+			sb.WriteString(fmt.Sprintf("%s%s = inttoptr i64 %s to i8*\n", g.indent(), handleReg, handleVal))
+			sb.WriteString(fmt.Sprintf("%s%s = call i8* @nolang.malloc(i64 %s)\n", g.indent(), bufReg, maxBytes))
+			sb.WriteString(fmt.Sprintf("%s%s = alloca i32\n", g.indent(), bytesReadBuf))
+			sb.WriteString(fmt.Sprintf("%s%s = call i32 @ReadFile(i8* %s, i8* %s, i32 %s, i8* %s, i8* null)\n",
+				g.indent(), retReg, handleReg, bufReg, maxBytes, bytesReadBuf))
+			sb.WriteString(fmt.Sprintf("%s%s = load i32, i32* %s\n", g.indent(), bytesReadLoad, bytesReadBuf))
+			sb.WriteString(fmt.Sprintf("%s%s = sext i32 %s to i64\n", g.indent(), bytesReadExt, bytesReadLoad))
+			sb.WriteString(fmt.Sprintf("%s%s = icmp eq i32 %s, 0\n", g.indent(), errCmpReg, retReg))
+			sb.WriteString(fmt.Sprintf("%s%s = select i1 %s, i64 -1, i64 %s\n", g.indent(), errSelReg, errCmpReg, bytesReadExt))
+			// Build %str-long from buf (even on error, return empty string)
+			sb.WriteString(fmt.Sprintf("%s%s = alloca %%str-long\n", g.indent(), strReg))
+			sb.WriteString(fmt.Sprintf("%s%s = getelementptr %%str-long, %%str-long* %s, i32 0, i32 0\n", g.indent(), lenGEP, strReg))
+			sb.WriteString(fmt.Sprintf("%sstore i64 %s, i64* %s\n", g.indent(), bytesReadExt, lenGEP))
+			sb.WriteString(fmt.Sprintf("%s%s = getelementptr %%str-long, %%str-long* %s, i32 0, i32 1\n", g.indent(), capGEP, strReg))
+			sb.WriteString(fmt.Sprintf("%sstore i64 %s, i64* %s\n", g.indent(), bytesReadExt, capGEP))
+			sb.WriteString(fmt.Sprintf("%s%s = getelementptr %%str-long, %%str-long* %s, i32 0, i32 2\n", g.indent(), dataGEP, strReg))
+			g.storeDataPtrField(sb, bufReg, dataGEP)
+		}
+		g.trackStrTemporary(strReg)
+		g.lastBuiltinExtra = errSelReg
+		return strReg
+	}
+
+	// win-create-process: spawn a child process (CreateProcessA)
+	// Args: cmdline str, dir str, stdin_handle i64, stdout_handle i64, stderr_handle i64
+	// Returns (proc_handle i64, status i64):
+	//   proc_handle > 0 = success, status = 0
+	//   proc_handle = 0 = failure, status = -1
+	if fnName == "win-create-process" && hasArgs && nArgs >= 5 {
+		a := evalArgs()
+		cmdlinePtr := g.nullTerminateStrArg(sb, a[0], expr.Arguments[0])
+		dirPtr := g.nullTerminateStrArg(sb, a[1], expr.Arguments[1])
+		stdinHandle := a[2]
+		stdoutHandle := a[3]
+		stderrHandle := a[4]
+		siBuf := g.tmpReg("wcproc.si")
+		piBuf := g.tmpReg("wcproc.pi")
+		stdinReg := g.tmpReg("wcproc.stdin")
+		stdoutReg := g.tmpReg("wcproc.stdout")
+		stderrReg := g.tmpReg("wcproc.stderr")
+		siCbGep := g.tmpReg("wcproc.si.cb")
+		siFlagsGep := g.tmpReg("wcproc.si.flags")
+		siStdinGep := g.tmpReg("wcproc.si.stdin")
+		siStdoutGep := g.tmpReg("wcproc.si.stdout")
+		siStderrGep := g.tmpReg("wcproc.si.stderr")
+		retReg := g.tmpReg("wcproc.ret")
+		piProcGep := g.tmpReg("wcproc.pi.proc")
+		piProcLoad := g.tmpReg("wcproc.pi.proc.load")
+		piProcExt := g.tmpReg("wcproc.pi.proc.ext")
+		failCmpReg := g.tmpReg("wcproc.failcmp")
+		failSelReg := g.tmpReg("wcproc.failsel")
+		if sb != nil {
+			// Allocate STARTUPINFOA (72 bytes) and PROCESS_INFORMATION (24 bytes)
+			sb.WriteString(fmt.Sprintf("%s%s = alloca [72 x i8]\n", g.indent(), siBuf))
+			sb.WriteString(fmt.Sprintf("%s%s = alloca [24 x i8]\n", g.indent(), piBuf))
+			// Zero both buffers
+			sb.WriteString(fmt.Sprintf("%scall void @llvm.memset.p0i8.i64(i8* %s, i8 0, i64 72, i1 false)\n", g.indent(), siBuf))
+			sb.WriteString(fmt.Sprintf("%scall void @llvm.memset.p0i8.i64(i8* %s, i8 0, i64 24, i1 false)\n", g.indent(), piBuf))
+			// Set si.cb = 72 (sizeof(STARTUPINFOA))
+			sb.WriteString(fmt.Sprintf("%s%s = bitcast [72 x i8]* %s to i32*\n", g.indent(), siCbGep, siBuf))
+			sb.WriteString(fmt.Sprintf("%sstore i32 72, i32* %s\n", g.indent(), siCbGep))
+		// Set si.dwFlags = STARTF_USESTDHANDLES (0x100)
+		sb.WriteString(fmt.Sprintf("%s%s = getelementptr i8, i8* %s, i64 44\n", g.indent(), siFlagsGep, siBuf))
+		siFlagsCast := g.tmpReg("wcproc.si.flags.cast")
+		sb.WriteString(fmt.Sprintf("%s%s = bitcast i8* %s to i32*\n", g.indent(), siFlagsCast, siFlagsGep))
+		sb.WriteString(fmt.Sprintf("%sstore i32 256, i32* %s\n", g.indent(), siFlagsCast))
+			// Resolve std handles: if caller passed 0, use GetStdHandle
+			sb.WriteString(fmt.Sprintf("%s%s = inttoptr i64 %s to i8*\n", g.indent(), stdinReg, stdinHandle))
+			sb.WriteString(fmt.Sprintf("%s%s = inttoptr i64 %s to i8*\n", g.indent(), stdoutReg, stdoutHandle))
+			sb.WriteString(fmt.Sprintf("%s%s = inttoptr i64 %s to i8*\n", g.indent(), stderrReg, stderrHandle))
+			// Use select to conditionally call GetStdHandle — but since we can't
+			// conditionally call, we'll just use the provided handles directly.
+			// If handle is 0, caller should pass the parent's std handle.
+			// Set si.hStdInput (offset 60)
+			sb.WriteString(fmt.Sprintf("%s%s = getelementptr i8, i8* %s, i64 60\n", g.indent(), siStdinGep, siBuf))
+			siStdinCast := g.tmpReg("wcproc.si.stdin.cast")
+			sb.WriteString(fmt.Sprintf("%s%s = bitcast i8* %s to i8**\n", g.indent(), siStdinCast, siStdinGep))
+			sb.WriteString(fmt.Sprintf("%sstore i8* %s, i8** %s\n", g.indent(), stdinReg, siStdinCast))
+			// Set si.hStdOutput (offset 64)
+			sb.WriteString(fmt.Sprintf("%s%s = getelementptr i8, i8* %s, i64 64\n", g.indent(), siStdoutGep, siBuf))
+			siStdoutCast := g.tmpReg("wcproc.si.stdout.cast")
+			sb.WriteString(fmt.Sprintf("%s%s = bitcast i8* %s to i8**\n", g.indent(), siStdoutCast, siStdoutGep))
+			sb.WriteString(fmt.Sprintf("%sstore i8* %s, i8** %s\n", g.indent(), stdoutReg, siStdoutCast))
+			// Set si.hStdError (offset 68)
+			sb.WriteString(fmt.Sprintf("%s%s = getelementptr i8, i8* %s, i64 68\n", g.indent(), siStderrGep, siBuf))
+			siStderrCast := g.tmpReg("wcproc.si.stderr.cast")
+			sb.WriteString(fmt.Sprintf("%s%s = bitcast i8* %s to i8**\n", g.indent(), siStderrCast, siStderrGep))
+			sb.WriteString(fmt.Sprintf("%sstore i8* %s, i8** %s\n", g.indent(), stderrReg, siStderrCast))
+			// Call CreateProcessA(NULL, cmdline, NULL, NULL, TRUE, 0, NULL, dir, &si, &pi)
+			sb.WriteString(fmt.Sprintf("%s%s = call i32 @CreateProcessA(i8* null, i8* %s, i8* null, i8* null, i32 1, i32 0, i8* null, i8* %s, i8* %s, i8* %s)\n",
+				g.indent(), retReg, cmdlinePtr, dirPtr, siBuf, piBuf))
+			// Load hProcess from PROCESS_INFORMATION (offset 0)
+			sb.WriteString(fmt.Sprintf("%s%s = bitcast [24 x i8]* %s to i8**\n", g.indent(), piProcGep, piBuf))
+			sb.WriteString(fmt.Sprintf("%s%s = load i8*, i8** %s\n", g.indent(), piProcLoad, piProcGep))
+			sb.WriteString(fmt.Sprintf("%s%s = ptrtoint i8* %s to i64\n", g.indent(), piProcExt, piProcLoad))
+			// If CreateProcessA returned 0 (failure), return proc_handle=0, status=-1
+			sb.WriteString(fmt.Sprintf("%s%s = icmp eq i32 %s, 0\n", g.indent(), failCmpReg, retReg))
+			sb.WriteString(fmt.Sprintf("%s%s = select i1 %s, i64 0, i64 %s\n", g.indent(), failSelReg, failCmpReg, piProcExt))
+		}
+		// status: 0 on success, -1 on failure
+		statusReg := g.tmpReg("wcproc.status")
+		if sb != nil {
+			sb.WriteString(fmt.Sprintf("%s%s = select i1 %s, i64 -1, i64 0\n", g.indent(), statusReg, failCmpReg))
+		}
+		g.lastBuiltinExtra = statusReg
+		return failSelReg
+	}
+
+	// win-wait-process: wait for a process to exit (WaitForSingleObject)
+	// Args: proc_handle i64, timeout_ms i64 (0 = INFINITE)
+	// Returns status i64: 0=timeout, 1=exited, -1=error
+	if fnName == "win-wait-process" && hasArgs && nArgs >= 2 {
+		a := evalArgs()
+		handleVal := a[0]
+		timeoutVal := a[1]
+		handleReg := g.tmpReg("ww.proc.handle")
+		// If timeout is 0, use INFINITE (0xFFFFFFFF)
+		timeoutSel := g.tmpReg("ww.proc.timeout.sel")
+		timeoutCmp := g.tmpReg("ww.proc.timeout.cmp")
+		retReg := g.tmpReg("ww.proc.ret")
+		// WAIT_OBJECT_0 = 0, WAIT_TIMEOUT = 258, WAIT_FAILED = 0xFFFFFFFF
+		cmpFailed := g.tmpReg("ww.proc.cmp.failed")
+		cmpTimeout := g.tmpReg("ww.proc.cmp.timeout")
+		retExt := g.tmpReg("ww.proc.ret.ext")
+		selFailed := g.tmpReg("ww.proc.sel.failed")
+		selResult := g.tmpReg("ww.proc.sel")
+		if sb != nil {
+			sb.WriteString(fmt.Sprintf("%s%s = inttoptr i64 %s to i8*\n", g.indent(), handleReg, handleVal))
+			// timeout: if timeout_ms == 0, use INFINITE (-1 as i32)
+			sb.WriteString(fmt.Sprintf("%s%s = icmp eq i64 %s, 0\n", g.indent(), timeoutCmp, timeoutVal))
+			timeoutTrunc := g.tmpReg("ww.proc.timeout.trunc")
+			sb.WriteString(fmt.Sprintf("%s%s = trunc i64 %s to i32\n", g.indent(), timeoutTrunc, timeoutVal))
+			sb.WriteString(fmt.Sprintf("%s%s = select i1 %s, i32 -1, i32 %s\n", g.indent(), timeoutSel, timeoutCmp, timeoutTrunc))
+			sb.WriteString(fmt.Sprintf("%s%s = call i32 @WaitForSingleObject(i8* %s, i32 %s)\n", g.indent(), retReg, handleReg, timeoutSel))
+			sb.WriteString(fmt.Sprintf("%s%s = sext i32 %s to i64\n", g.indent(), retExt, retReg))
+			// WAIT_FAILED = 0xFFFFFFFF
+			sb.WriteString(fmt.Sprintf("%s%s = icmp eq i32 %s, -1\n", g.indent(), cmpFailed, retReg))
+			// WAIT_TIMEOUT = 258
+			sb.WriteString(fmt.Sprintf("%s%s = icmp eq i32 %s, 258\n", g.indent(), cmpTimeout, retReg))
+			// status: -1 if failed, 0 if timeout, 1 if exited
+			sb.WriteString(fmt.Sprintf("%s%s = select i1 %s, i64 -1, i64 %s\n", g.indent(), selFailed, cmpFailed, retExt))
+			sb.WriteString(fmt.Sprintf("%s%s = select i1 %s, i64 0, i64 %s\n", g.indent(), selResult, cmpTimeout, selFailed))
+		}
+		return selResult
+	}
+
+	// win-get-exit-code: get process exit code (GetExitCodeProcess)
+	// Args: proc_handle i64
+	// Returns (exit_code i64, ok bool): ok=false if still running (STILL_ACTIVE=259)
+	if fnName == "win-get-exit-code" && hasArgs && nArgs >= 1 {
+		a := evalArgs()
+		handleVal := a[0]
+		handleReg := g.tmpReg("wge.handle")
+		codeBuf := g.tmpReg("wge.code")
+		retReg := g.tmpReg("wge.ret")
+		codeLoad := g.tmpReg("wge.code.load")
+		codeExt := g.tmpReg("wge.code.ext")
+		cmpActive := g.tmpReg("wge.cmp.active")
+		okExt := g.tmpReg("wge.ok.ext")
+		if sb != nil {
+			sb.WriteString(fmt.Sprintf("%s%s = inttoptr i64 %s to i8*\n", g.indent(), handleReg, handleVal))
+			sb.WriteString(fmt.Sprintf("%s%s = alloca i32\n", g.indent(), codeBuf))
+			sb.WriteString(fmt.Sprintf("%s%s = call i32 @GetExitCodeProcess(i8* %s, i32* %s)\n", g.indent(), retReg, handleReg, codeBuf))
+			sb.WriteString(fmt.Sprintf("%s%s = load i32, i32* %s\n", g.indent(), codeLoad, codeBuf))
+			sb.WriteString(fmt.Sprintf("%s%s = sext i32 %s to i64\n", g.indent(), codeExt, codeLoad))
+			// STILL_ACTIVE = 259
+			sb.WriteString(fmt.Sprintf("%s%s = icmp ne i32 %s, 259\n", g.indent(), cmpActive, codeLoad))
+			sb.WriteString(fmt.Sprintf("%s%s = zext i1 %s to i64\n", g.indent(), okExt, cmpActive))
+		}
+		g.lastBuiltinExtra = okExt
+		return codeExt
+	}
+
+	// win-terminate-process: kill a process (TerminateProcess)
+	// Args: proc_handle i64, exit_code i64
+	// Returns ok bool
+	if fnName == "win-terminate-process" && hasArgs && nArgs >= 2 {
+		a := evalArgs()
+		handleVal := a[0]
+		exitCode := a[1]
+		handleReg := g.tmpReg("wtp.handle")
+		exitTrunc := g.tmpReg("wtp.exit.trunc")
+		retReg := g.tmpReg("wtp.ret")
+		cmpReg := g.tmpReg("wtp.cmp")
+		extReg := g.tmpReg("wtp.ext")
+		if sb != nil {
+			sb.WriteString(fmt.Sprintf("%s%s = inttoptr i64 %s to i8*\n", g.indent(), handleReg, handleVal))
+			sb.WriteString(fmt.Sprintf("%s%s = trunc i64 %s to i32\n", g.indent(), exitTrunc, exitCode))
+			sb.WriteString(fmt.Sprintf("%s%s = call i32 @TerminateProcess(i8* %s, i32 %s)\n", g.indent(), retReg, handleReg, exitTrunc))
+			sb.WriteString(fmt.Sprintf("%s%s = icmp ne i32 %s, 0\n", g.indent(), cmpReg, retReg))
+			sb.WriteString(fmt.Sprintf("%s%s = zext i1 %s to i64\n", g.indent(), extReg, cmpReg))
+		}
+		return extReg
+	}
+
+	// win-get-std-handle: get a standard handle (GetStdHandle)
+	// Args: which i64 (0=stdin, 1=stdout, 2=stderr)
+	// Returns handle i64
+	if fnName == "win-get-std-handle" && hasArgs && nArgs >= 1 {
+		a := evalArgs()
+		whichVal := a[0]
+		whichTrunc := g.tmpReg("wgsh.which.trunc")
+		retReg := g.tmpReg("wgsh.ret")
+		extReg := g.tmpReg("wgsh.ext")
+		if sb != nil {
+			sb.WriteString(fmt.Sprintf("%s%s = trunc i64 %s to i32\n", g.indent(), whichTrunc, whichVal))
+			sb.WriteString(fmt.Sprintf("%s%s = call i8* @GetStdHandle(i32 %s)\n", g.indent(), retReg, whichTrunc))
+			sb.WriteString(fmt.Sprintf("%s%s = ptrtoint i8* %s to i64\n", g.indent(), extReg, retReg))
+		}
+		return extReg
 	}
 
 	// ═══════════════════════════════════════════════
