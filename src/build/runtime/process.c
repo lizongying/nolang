@@ -43,8 +43,9 @@
 #include <time.h>
 #include <sys/socket.h>
 #else
-#include <windows.h>
+// winsock2.h must be included before windows.h to avoid redefinition warnings.
 #include <winsock2.h>
+#include <windows.h>
 #endif
 
 // nolang_net_recv_nb: non-blocking recv used by the WebSocket poll loop
@@ -189,7 +190,16 @@ static char **build_argv(uint8_t *base, int64_t count, int64_t stride,
         uint8_t *elem = base + i * stride;
         uint64_t slen = *(const uint64_t *)elem;            // length at offset 0
         const char *sdata = *(const char *const *)(elem + data_off); // ptr at data_off
+#ifdef _WIN32
+        // strndup is not available on Windows; emulate it.
+        a[i] = (char *)malloc((size_t)slen + 1);
+        if (a[i]) {
+            memcpy(a[i], sdata, (size_t)slen);
+            a[i][slen] = '\0';
+        }
+#else
         a[i] = strndup(sdata, (size_t)slen);
+#endif
     }
     a[count] = NULL;
     return a;
