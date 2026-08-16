@@ -15,7 +15,7 @@ func TestJSONCParse_LineComment(t *testing.T) {
 	if err != nil {
 		t.Fatalf("parse error: %v", err)
 	}
-	m, ok := v.(map[string]interface{})
+	m, ok := v.(map[string]any)
 	if !ok {
 		t.Fatalf("expected map, got %T", v)
 	}
@@ -34,7 +34,7 @@ func TestJSONCParse_BlockComment(t *testing.T) {
 	if err != nil {
 		t.Fatalf("parse error: %v", err)
 	}
-	m := v.(map[string]interface{})
+	m := v.(map[string]any)
 	if m["foo"] != "/foo" {
 		t.Errorf("unexpected value: %v", m["foo"])
 	}
@@ -49,7 +49,7 @@ func TestJSONCParse_TrailingCommaObject(t *testing.T) {
 	if err != nil {
 		t.Fatalf("parse error: %v", err)
 	}
-	m := v.(map[string]interface{})
+	m := v.(map[string]any)
 	if len(m) != 2 {
 		t.Fatalf("expected 2 keys, got %d", len(m))
 	}
@@ -64,7 +64,7 @@ func TestJSONCParse_TrailingCommaArray(t *testing.T) {
 	if err != nil {
 		t.Fatalf("parse error: %v", err)
 	}
-	arr, ok := v.([]interface{})
+	arr, ok := v.([]any)
 	if !ok {
 		t.Fatalf("expected array, got %T", v)
 	}
@@ -171,7 +171,7 @@ func TestJSONCParse_StringEscapes(t *testing.T) {
 	if err != nil {
 		t.Fatalf("parse error: %v", err)
 	}
-	m := v.(map[string]interface{})
+	m := v.(map[string]any)
 	if m["path"] != `C:\Users\test` {
 		t.Errorf("path = %q", m["path"])
 	}
@@ -192,8 +192,8 @@ func TestJSONCParse_NestedObject(t *testing.T) {
 	if err != nil {
 		t.Fatalf("parse error: %v", err)
 	}
-	m := v.(map[string]interface{})
-	outer, ok := m["outer"].(map[string]interface{})
+	m := v.(map[string]any)
+	outer, ok := m["outer"].(map[string]any)
 	if !ok {
 		t.Fatalf("expected nested map, got %T", m["outer"])
 	}
@@ -215,7 +215,7 @@ func TestJSONCParse_BoolAndNull(t *testing.T) {
 	if err != nil {
 		t.Fatalf("parse error: %v", err)
 	}
-	m := v.(map[string]interface{})
+	m := v.(map[string]any)
 	if m["yes"] != true {
 		t.Errorf("yes = %v, want true", m["yes"])
 	}

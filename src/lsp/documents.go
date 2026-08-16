@@ -12,7 +12,7 @@ import (
 	"github.com/lizongying/nolang/builtin"
 	"github.com/lizongying/nolang/checker"
 	"github.com/lizongying/nolang/lexer"
-	"github.com/lizongying/nolang/package"
+	pkg "github.com/lizongying/nolang/package"
 	"github.com/lizongying/nolang/parser"
 )
 
@@ -364,7 +364,7 @@ func (m *DocumentManager) ParseDocument(uri string) (*parser.Program, []string, 
 
 				for _, ts := range targetProg.Statements {
 					var name string
-					var token interface{}
+					var token any
 
 					switch s := ts.(type) {
 					case *parser.FunctionDefinition:
@@ -542,7 +542,7 @@ func (m *DocumentManager) resolveDependencyModuleFile(usePath, docURI string) st
 // from a module file into the symbol index for go-to-definition support.
 func (m *DocumentManager) indexModuleStatement(index *SymbolIndex, stmt parser.Statement, modURI string) {
 	var name string
-	var token interface{}
+	var token any
 	var params []ParamInfo
 	var resultParams []ParamInfo
 	var isVariadic bool

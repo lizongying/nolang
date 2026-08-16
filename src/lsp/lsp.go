@@ -95,7 +95,7 @@ type InitializeParams struct {
 	ClientInfo            *ClientInfo        `json:"clientInfo,omitempty"`
 	Locale                string             `json:"locale,omitempty"`
 	RootURI               *string            `json:"rootUri,omitempty"`
-	InitializationOptions interface{}        `json:"initializationOptions,omitempty"`
+	InitializationOptions any                `json:"initializationOptions,omitempty"`
 	Capabilities          ClientCapabilities `json:"capabilities"`
 	WorkspaceFolders      []WorkspaceFolder  `json:"workspaceFolders,omitempty"`
 	Trace                 string             `json:"trace,omitempty"`
@@ -111,7 +111,7 @@ type ClientCapabilities struct {
 	TextDocument TextDocumentClientCapabilities `json:"textDocument,omitempty"`
 	Window       WindowClientCapabilities       `json:"window,omitempty"`
 	General      GeneralClientCapabilities      `json:"general,omitempty"`
-	Experimental map[string]interface{}         `json:"experimental,omitempty"`
+	Experimental map[string]any                 `json:"experimental,omitempty"`
 }
 
 type WorkspaceClientCapabilities struct {
@@ -281,7 +281,7 @@ type CodeActionLiteralSupportCapabilities struct {
 }
 
 type ValueSetCapabilities struct {
-	ValueSet []interface{} `json:"valueSet,omitempty"`
+	ValueSet []any `json:"valueSet,omitempty"`
 }
 
 type CodeLensCapabilities struct {
@@ -385,8 +385,8 @@ type ExecuteCommandOptions struct {
 // SemanticTokensOptions defines the options for SemanticTokens support.
 type SemanticTokensOptions struct {
 	Legend SemanticTokensLegend `json:"legend"`
-	Full   interface{}          `json:"full"` // bool or { delta: bool }
-	Range  interface{}          `json:"range,omitempty"`
+	Full   any                  `json:"full"` // bool or { delta: bool }
+	Range  any                  `json:"range,omitempty"`
 }
 
 type WorkspaceFoldersOptions struct {
@@ -423,7 +423,7 @@ type WillSaveWaitUntilParams struct {
 }
 
 type DidChangeConfigurationParams struct {
-	Settings interface{} `json:"settings"`
+	Settings any `json:"settings"`
 }
 
 type DidChangeWatchedFilesParams struct {
@@ -449,7 +449,7 @@ type PublishDiagnosticsParams struct {
 type Diagnostic struct {
 	Range              Range                          `json:"range"`
 	Severity           int                            `json:"severity,omitempty"`
-	Code               interface{}                    `json:"code,omitempty"`
+	Code               any                            `json:"code,omitempty"`
 	Source             string                         `json:"source,omitempty"`
 	Message            string                         `json:"message"`
 	Tags               []DiagnosticTag                `json:"tags,omitempty"`
@@ -474,22 +474,22 @@ type CompletionList struct {
 }
 
 type CompletionItem struct {
-	Label               string      `json:"label"`
-	Kind                int         `json:"kind,omitempty"`
-	Tags                []int       `json:"tags,omitempty"`
-	Detail              string      `json:"detail,omitempty"`
-	Documentation       interface{} `json:"documentation,omitempty"`
-	Deprecated          bool        `json:"deprecated,omitempty"`
-	Preselect           bool        `json:"preselect,omitempty"`
-	SortText            string      `json:"sortText,omitempty"`
-	FilterText          string      `json:"filterText,omitempty"`
-	InsertText          string      `json:"insertText,omitempty"`
-	InsertTextFormat    int         `json:"insertTextFormat,omitempty"`
-	TextEdit            *TextEdit   `json:"textEdit,omitempty"`
-	AdditionalTextEdits []TextEdit  `json:"additionalTextEdits,omitempty"`
-	CommitCharacters    []string    `json:"commitCharacters,omitempty"`
-	Command             *Command    `json:"command,omitempty"`
-	Data                interface{} `json:"data,omitempty"`
+	Label               string     `json:"label"`
+	Kind                int        `json:"kind,omitempty"`
+	Tags                []int      `json:"tags,omitempty"`
+	Detail              string     `json:"detail,omitempty"`
+	Documentation       any        `json:"documentation,omitempty"`
+	Deprecated          bool       `json:"deprecated,omitempty"`
+	Preselect           bool       `json:"preselect,omitempty"`
+	SortText            string     `json:"sortText,omitempty"`
+	FilterText          string     `json:"filterText,omitempty"`
+	InsertText          string     `json:"insertText,omitempty"`
+	InsertTextFormat    int        `json:"insertTextFormat,omitempty"`
+	TextEdit            *TextEdit  `json:"textEdit,omitempty"`
+	AdditionalTextEdits []TextEdit `json:"additionalTextEdits,omitempty"`
+	CommitCharacters    []string   `json:"commitCharacters,omitempty"`
+	Command             *Command   `json:"command,omitempty"`
+	Data                any        `json:"data,omitempty"`
 }
 
 type TextEdit struct {
@@ -498,14 +498,14 @@ type TextEdit struct {
 }
 
 type Command struct {
-	Title     string        `json:"title"`
-	Command   string        `json:"command"`
-	Arguments []interface{} `json:"arguments,omitempty"`
+	Title     string `json:"title"`
+	Command   string `json:"command"`
+	Arguments []any  `json:"arguments,omitempty"`
 }
 
 type Hover struct {
-	Contents interface{} `json:"contents"`
-	Range    *Range      `json:"range,omitempty"`
+	Contents any    `json:"contents"`
+	Range    *Range `json:"range,omitempty"`
 }
 
 type SignatureHelp struct {
@@ -581,7 +581,7 @@ type Disabled struct {
 
 type WorkspaceEdit struct {
 	Changes         map[string][]TextEdit `json:"changes,omitempty"`
-	DocumentChanges []interface{}         `json:"documentChanges,omitempty"`
+	DocumentChanges []any                 `json:"documentChanges,omitempty"`
 }
 
 type RenameParams struct {
@@ -603,8 +603,8 @@ type FoldingRange struct {
 }
 
 type ExecuteCommandParams struct {
-	Command   string        `json:"command"`
-	Arguments []interface{} `json:"arguments,omitempty"`
+	Command   string `json:"command"`
+	Arguments []any  `json:"arguments,omitempty"`
 }
 
 type ApplyWorkspaceEditParams struct {
@@ -638,7 +638,7 @@ type WindowShowMessageRequestParams struct {
 }
 
 type CancelParams struct {
-	ID interface{} `json:"id"`
+	ID any `json:"id"`
 }
 
 type DocumentURI string

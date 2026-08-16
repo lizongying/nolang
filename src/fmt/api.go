@@ -53,7 +53,7 @@ func (f *formatter) write(s string) {
 	f.column += len(s)
 }
 
-func (f *formatter) writef(format string, args ...interface{}) {
+func (f *formatter) writef(format string, args ...any) {
 	f.buf.WriteString(fmt.Sprintf(format, args...))
 }
 

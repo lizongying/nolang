@@ -64,7 +64,7 @@ func NewServer() *Server {
 	}
 }
 
-func (s *Server) sendNotification(method string, params interface{}) error {
+func (s *Server) sendNotification(method string, params any) error {
 	return s.conn.Notify(context.Background(), method, params)
 }
 
@@ -75,7 +75,7 @@ func (s *Server) publishDiagnostics(uri string, diagnostics []Diagnostic) error 
 	})
 }
 
-func (s *Server) handleInitialize(params InitializeParams) (interface{}, error) {
+func (s *Server) handleInitialize(params InitializeParams) (any, error) {
 	s.mu.Lock()
 	s.shutdown = false
 	s.mu.Unlock()
@@ -89,14 +89,14 @@ func (s *Server) handleInitialize(params InitializeParams) (interface{}, error) 
 	}, nil
 }
 
-func (s *Server) handleShutdown() (interface{}, error) {
+func (s *Server) handleShutdown() (any, error) {
 	s.mu.Lock()
 	s.shutdown = true
 	s.mu.Unlock()
 	return nil, nil
 }
 
-func (s *Server) handleExit() (interface{}, error) {
+func (s *Server) handleExit() (any, error) {
 	s.mu.RLock()
 	shutdown := s.shutdown
 	s.mu.RUnlock()
@@ -107,7 +107,7 @@ func (s *Server) handleExit() (interface{}, error) {
 	return nil, nil
 }
 
-func (s *Server) handleTextDocumentDidOpen(params DidOpenTextDocumentParams) (interface{}, error) {
+func (s *Server) handleTextDocumentDidOpen(params DidOpenTextDocumentParams) (any, error) {
 	_, err := s.documents.OpenDocument(params.TextDocument.URI, params.TextDocument.Text)
 	if err != nil {
 		return nil, err
@@ -125,7 +125,7 @@ func (s *Server) handleTextDocumentDidOpen(params DidOpenTextDocumentParams) (in
 	return nil, nil
 }
 
-func (s *Server) publishDocumentDiagnostics(uri string, parseErrors []string, ast interface{}) {
+func (s *Server) publishDocumentDiagnostics(uri string, parseErrors []string, ast any) {
 	var diagnostics []Diagnostic
 
 	for _, errMsg := range parseErrors {
@@ -500,7 +500,7 @@ func (s *Server) parseWarningToDiagnostic(warnMsg string) *Diagnostic {
 	}
 }
 
-func (s *Server) handleTextDocumentDidChange(params DidChangeTextDocumentParams) (interface{}, error) {
+func (s *Server) handleTextDocumentDidChange(params DidChangeTextDocumentParams) (any, error) {
 	_, err := s.documents.UpdateDocument(params.TextDocument.URI, params.ContentChanges, params.TextDocument.Version)
 	if err != nil {
 		return nil, err
@@ -518,13 +518,13 @@ func (s *Server) handleTextDocumentDidChange(params DidChangeTextDocumentParams)
 	return nil, nil
 }
 
-func (s *Server) handleTextDocumentDidClose(params DidCloseTextDocumentParams) (interface{}, error) {
+func (s *Server) handleTextDocumentDidClose(params DidCloseTextDocumentParams) (any, error) {
 	s.documents.RemoveDocument(params.TextDocument.URI)
 	s.publishDocumentDiagnostics(params.TextDocument.URI, nil, nil)
 	return nil, nil
 }
 
-func (s *Server) handleTextDocumentCompletion(params TextDocumentPositionParams) (interface{}, error) {
+func (s *Server) handleTextDocumentCompletion(params TextDocumentPositionParams) (any, error) {
 	doc, err := s.documents.GetDocument(params.TextDocument.URI)
 	if err != nil {
 		return CompletionList{IsIncomplete: false, Items: []CompletionItem{}}, nil
@@ -557,12 +557,12 @@ func (s *Server) handleTextDocumentCompletion(params TextDocumentPositionParams)
 	}, nil
 }
 
-func (s *Server) handleCompletionItemResolve(item CompletionItem) (interface{}, error) {
+func (s *Server) handleCompletionItemResolve(item CompletionItem) (any, error) {
 	// Resolve is handled inline now
 	return item, nil
 }
 
-func (s *Server) handleTextDocumentHover(params TextDocumentPositionParams) (interface{}, error) {
+func (s *Server) handleTextDocumentHover(params TextDocumentPositionParams) (any, error) {
 	doc, err := s.documents.GetDocument(params.TextDocument.URI)
 	if err != nil {
 		return nil, nil
@@ -582,7 +582,7 @@ func (s *Server) handleTextDocumentHover(params TextDocumentPositionParams) (int
 	return hover, nil
 }
 
-func (s *Server) handleTextDocumentDefinition(params TextDocumentPositionParams) (interface{}, error) {
+func (s *Server) handleTextDocumentDefinition(params TextDocumentPositionParams) (any, error) {
 	doc, err := s.documents.GetDocument(params.TextDocument.URI)
 	if err != nil {
 		return nil, nil
@@ -602,7 +602,7 @@ func (s *Server) handleTextDocumentDefinition(params TextDocumentPositionParams)
 	return location, nil
 }
 
-func (s *Server) handleTextDocumentReferences(params ReferenceParams) (interface{}, error) {
+func (s *Server) handleTextDocumentReferences(params ReferenceParams) (any, error) {
 	doc, err := s.documents.GetDocument(params.TextDocument.URI)
 	if err != nil {
 		return []Location{}, nil
@@ -619,7 +619,7 @@ func (s *Server) handleTextDocumentReferences(params ReferenceParams) (interface
 	return locations, nil
 }
 
-func (s *Server) handleTextDocumentDocumentHighlight(params TextDocumentPositionParams) (interface{}, error) {
+func (s *Server) handleTextDocumentDocumentHighlight(params TextDocumentPositionParams) (any, error) {
 	doc, err := s.documents.GetDocument(params.TextDocument.URI)
 	if err != nil {
 		return []DocumentHighlight{}, nil
@@ -634,7 +634,7 @@ func (s *Server) handleTextDocumentDocumentHighlight(params TextDocumentPosition
 	return provider.GetHighlights(params.Position), nil
 }
 
-func (s *Server) handleTextDocumentSymbol(params DocumentSymbolParams) (interface{}, error) {
+func (s *Server) handleTextDocumentSymbol(params DocumentSymbolParams) (any, error) {
 	doc, err := s.documents.GetDocument(params.TextDocument.URI)
 	if err != nil {
 		return []SymbolInformation{}, nil
@@ -668,7 +668,7 @@ func (s *Server) handleTextDocumentSymbol(params DocumentSymbolParams) (interfac
 	return results, nil
 }
 
-func (s *Server) handleWorkspaceSymbol(params WorkspaceSymbolParams) (interface{}, error) {
+func (s *Server) handleWorkspaceSymbol(params WorkspaceSymbolParams) (any, error) {
 	var symbols []SymbolInformation
 	documents := s.documents.GetAllDocuments()
 
@@ -705,7 +705,7 @@ func (s *Server) handleWorkspaceSymbol(params WorkspaceSymbolParams) (interface{
 	return symbols, nil
 }
 
-func (s *Server) handleTextDocumentSignatureHelp(params TextDocumentPositionParams) (interface{}, error) {
+func (s *Server) handleTextDocumentSignatureHelp(params TextDocumentPositionParams) (any, error) {
 	doc, err := s.documents.GetDocument(params.TextDocument.URI)
 	if err != nil {
 		return nil, nil
@@ -724,7 +724,7 @@ func (s *Server) handleTextDocumentSignatureHelp(params TextDocumentPositionPara
 	return result, nil
 }
 
-func (s *Server) handleTextDocumentRename(params RenameParams) (interface{}, error) {
+func (s *Server) handleTextDocumentRename(params RenameParams) (any, error) {
 	doc, err := s.documents.GetDocument(params.TextDocument.URI)
 	if err != nil {
 		return nil, nil
@@ -744,7 +744,7 @@ func (s *Server) handleTextDocumentRename(params RenameParams) (interface{}, err
 	return edit, nil
 }
 
-func (s *Server) handleTextDocumentFoldingRange(params FoldingRangeParams) (interface{}, error) {
+func (s *Server) handleTextDocumentFoldingRange(params FoldingRangeParams) (any, error) {
 	doc, err := s.documents.GetDocument(params.TextDocument.URI)
 	if err != nil {
 		return []FoldingRange{}, nil
@@ -754,7 +754,7 @@ func (s *Server) handleTextDocumentFoldingRange(params FoldingRangeParams) (inte
 	return provider.GetFoldingRanges(), nil
 }
 
-func (s *Server) handleTextDocumentSemanticTokensFull(params SemanticTokensParams) (interface{}, error) {
+func (s *Server) handleTextDocumentSemanticTokensFull(params SemanticTokensParams) (any, error) {
 	doc, err := s.documents.GetDocument(params.TextDocument.URI)
 	if err != nil {
 		return nil, nil
@@ -837,7 +837,7 @@ func computeTextEdits(original, formatted string) []TextEdit {
 	}
 }
 
-func (s *Server) handleTextDocumentFormatting(params DocumentFormattingParams) (interface{}, error) {
+func (s *Server) handleTextDocumentFormatting(params DocumentFormattingParams) (any, error) {
 	doc, err := s.documents.GetDocument(params.TextDocument.URI)
 	if err != nil {
 		return nil, err
@@ -857,7 +857,7 @@ func (s *Server) handleTextDocumentFormatting(params DocumentFormattingParams) (
 	return edits, nil
 }
 
-func (s *Server) handleTextDocumentWillSaveWaitUntil(params WillSaveWaitUntilParams) (interface{}, error) {
+func (s *Server) handleTextDocumentWillSaveWaitUntil(params WillSaveWaitUntilParams) (any, error) {
 	doc, err := s.documents.GetDocument(params.TextDocument.URI)
 	if err != nil {
 		return nil, err
@@ -886,7 +886,7 @@ func (s *Server) hasParseErrors(text string) bool {
 	return len(p.Errors()) > 0
 }
 
-func (s *Server) Handle(method string, params json.RawMessage) (interface{}, error) {
+func (s *Server) Handle(method string, params json.RawMessage) (any, error) {
 	switch method {
 	case "initialize":
 		var p InitializeParams

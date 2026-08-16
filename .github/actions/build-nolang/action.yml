@@ -270,7 +270,7 @@ runs:
         wget -qO- https://apt.llvm.org/llvm.sh | sudo bash -s -- "$LLVM_VER"
         sudo apt-get install -y "llvm-$LLVM_VER"
         sudo ln -sf "/usr/lib/llvm-$LLVM_VER/bin/opt" /usr/local/bin/opt
-        sudo ln -sf "/usr/lib/llvm-$LLVM_VER/bin/llc" /usr/local/bin/llc"
+        sudo ln -sf "/usr/lib/llvm-$LLVM_VER/bin/llc" /usr/local/bin/llc
 
     - name: Add LLVM to PATH
       if: inputs.install-toolchain == 'true' && steps.toolchain-needs.outputs.need-llvm == '1'

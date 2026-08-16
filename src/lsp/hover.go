@@ -96,7 +96,7 @@ func (hp *HoverProvider) GetHover(position Position) (*Hover, bool) {
 	}, true
 }
 
-func (hp *HoverProvider) formatHoverContent(entry *IndexEntry) interface{} {
+func (hp *HoverProvider) formatHoverContent(entry *IndexEntry) any {
 	var builder strings.Builder
 
 	builder.WriteString(fmt.Sprintf("**%s**\n\n", entry.Name))

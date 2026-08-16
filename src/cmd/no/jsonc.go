@@ -17,8 +17,8 @@ import (
 // The parser does NOT use encoding/json. It is a hand-written recursive
 // descent parser that produces Go native types directly:
 //
-//	map[string]interface{}  for JSON objects
-//	[]interface{}           for JSON arrays
+//	map[string]any  for JSON objects
+//	[]any           for JSON arrays
 //	string                  for JSON strings
 //	float64                 for JSON numbers
 //	bool                    for JSON booleans
@@ -26,8 +26,8 @@ import (
 
 // ─── Public API ───────────────────────────────────────────────────────────────
 
-// jsoncParse parses JSONC data and returns the result as interface{}.
-func jsoncParse(data []byte) (interface{}, error) {
+// jsoncParse parses JSONC data and returns the result as any.
+func jsoncParse(data []byte) (any, error) {
 	p := &jsoncParser{data: data, line: 1, col: 1}
 	p.skipSpace()
 	if p.pos >= len(p.data) {
@@ -51,7 +51,7 @@ func jsoncParseMap(data []byte) (map[string]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	m, ok := v.(map[string]interface{})
+	m, ok := v.(map[string]any)
 	if !ok {
 		return nil, fmt.Errorf("jsonc: expected object, got %T", v)
 	}
@@ -104,7 +104,7 @@ type jsoncParser struct {
 }
 
 // parseValue dispatches on the first non-whitespace character.
-func (p *jsoncParser) parseValue() (interface{}, error) {
+func (p *jsoncParser) parseValue() (any, error) {
 	p.skipSpace()
 	if p.pos >= len(p.data) {
 		return nil, p.errf("unexpected end of input")
@@ -186,9 +186,9 @@ func (p *jsoncParser) parseString() (string, error) {
 }
 
 // parseObject parses a JSON object. Supports trailing commas and comments.
-func (p *jsoncParser) parseObject() (map[string]interface{}, error) {
+func (p *jsoncParser) parseObject() (map[string]any, error) {
 	p.advance() // skip {
-	result := make(map[string]interface{})
+	result := make(map[string]any)
 
 	p.skipSpace()
 	if p.pos < len(p.data) && p.data[p.pos] == '}' {
@@ -240,9 +240,9 @@ func (p *jsoncParser) parseObject() (map[string]interface{}, error) {
 }
 
 // parseArray parses a JSON array. Supports trailing commas and comments.
-func (p *jsoncParser) parseArray() ([]interface{}, error) {
+func (p *jsoncParser) parseArray() ([]any, error) {
 	p.advance() // skip [
-	var result []interface{}
+	var result []any
 
 	p.skipSpace()
 	if p.pos < len(p.data) && p.data[p.pos] == ']' {
@@ -291,7 +291,7 @@ func (p *jsoncParser) parseBool() (bool, error) {
 }
 
 // parseNull parses null.
-func (p *jsoncParser) parseNull() (interface{}, error) {
+func (p *jsoncParser) parseNull() (any, error) {
 	if p.match("null") {
 		return nil, nil
 	}
@@ -399,7 +399,7 @@ func (p *jsoncParser) advance() {
 }
 
 // errf formats a parser error with position information.
-func (p *jsoncParser) errf(format string, args ...interface{}) error {
+func (p *jsoncParser) errf(format string, args ...any) error {
 	return fmt.Errorf("jsonc: line %d col %d: %s", p.line, p.col, fmt.Sprintf(format, args...))
 }
 
@@ -436,10 +436,10 @@ func jsoncQuote(s string) string {
 }
 
 // ─── Struct extraction helpers ───────────────────────────────────────────────
-// These helpers extract typed values from a parsed map[string]interface{}.
+// These helpers extract typed values from a parsed map[string]any.
 // They are used to replace json.Unmarshal when loading package.jsonc.
 
-func jsoncGetString(m map[string]interface{}, key string) string {
+func jsoncGetString(m map[string]any, key string) string {
 	if v, ok := m[key]; ok {
 		if s, ok := v.(string); ok {
 			return s
@@ -448,7 +448,7 @@ func jsoncGetString(m map[string]interface{}, key string) string {
 	return ""
 }
 
-func jsoncGetBool(m map[string]interface{}, key string) bool {
+func jsoncGetBool(m map[string]any, key string) bool {
 	if v, ok := m[key]; ok {
 		if b, ok := v.(bool); ok {
 			return b
@@ -457,7 +457,7 @@ func jsoncGetBool(m map[string]interface{}, key string) bool {
 	return false
 }
 
-func jsoncGetFloat(m map[string]interface{}, key string) float64 {
+func jsoncGetFloat(m map[string]any, key string) float64 {
 	if v, ok := m[key]; ok {
 		if f, ok := v.(float64); ok {
 			return f
@@ -466,12 +466,12 @@ func jsoncGetFloat(m map[string]interface{}, key string) float64 {
 	return 0
 }
 
-func jsoncGetStringSlice(m map[string]interface{}, key string) []string {
+func jsoncGetStringSlice(m map[string]any, key string) []string {
 	v, ok := m[key]
 	if !ok {
 		return nil
 	}
-	arr, ok := v.([]interface{})
+	arr, ok := v.([]any)
 	if !ok {
 		return nil
 	}
@@ -484,12 +484,12 @@ func jsoncGetStringSlice(m map[string]interface{}, key string) []string {
 	return result
 }
 
-func jsoncGetStringMap(m map[string]interface{}, key string) map[string]string {
+func jsoncGetStringMap(m map[string]any, key string) map[string]string {
 	v, ok := m[key]
 	if !ok {
 		return nil
 	}
-	obj, ok := v.(map[string]interface{})
+	obj, ok := v.(map[string]any)
 	if !ok {
 		return nil
 	}
@@ -509,7 +509,7 @@ func jsoncParseProjectConfig(data []byte) (*ProjectConfig, error) {
 	if err != nil {
 		return nil, err
 	}
-	m, ok := v.(map[string]interface{})
+	m, ok := v.(map[string]any)
 	if !ok {
 		return nil, fmt.Errorf("jsonc: expected object, got %T", v)
 	}
@@ -533,7 +533,7 @@ func jsoncParseProjectConfig(data []byte) (*ProjectConfig, error) {
 	}
 
 	// Parse nested compiler object.
-	if comp, ok := m["compiler"].(map[string]interface{}); ok {
+	if comp, ok := m["compiler"].(map[string]any); ok {
 		cfg.Compiler = CompilerConfig{
 			Version: jsoncGetString(comp, "version"),
 		}

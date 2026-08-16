@@ -92,25 +92,25 @@ func (w *ASTWalker) walkStatement(stmt parser.Statement, scope string) {
 					}
 				}
 			} else {
-			// Prefer the explicit type annotation (e.g. `BLAKE2B-MASK u64 = ...`)
-			// over the inferred type from the value (which would be "i64" for
-			// integer literals, or "f64" for float literals).
-			detail = ""
-			if s.Type != nil {
-				detail = s.Type.String()
-			}
-			if detail == "" {
-				detail = w.getExprType(s.Value)
-			}
-			// If the inferred type is a "call X" placeholder (not a real type)
-			// or empty, preserve the type from the existing declaration so
-			// hover doesn't lose type information (e.g. a parameter `n i64`
-			// reassigned as `n = write(...)` should still show i64).
-			if detail == "" || strings.HasPrefix(detail, "call ") {
-				if existing, exists := w.index.symbols[s.Name.Value]; exists && existing.Type != "" && !strings.HasPrefix(existing.Type, "call ") {
-					detail = existing.Type
+				// Prefer the explicit type annotation (e.g. `BLAKE2B-MASK u64 = ...`)
+				// over the inferred type from the value (which would be "i64" for
+				// integer literals, or "f64" for float literals).
+				detail = ""
+				if s.Type != nil {
+					detail = s.Type.String()
 				}
-			}
+				if detail == "" {
+					detail = w.getExprType(s.Value)
+				}
+				// If the inferred type is a "call X" placeholder (not a real type)
+				// or empty, preserve the type from the existing declaration so
+				// hover doesn't lose type information (e.g. a parameter `n i64`
+				// reassigned as `n = write(...)` should still show i64).
+				if detail == "" || strings.HasPrefix(detail, "call ") {
+					if existing, exists := w.index.symbols[s.Name.Value]; exists && existing.Type != "" && !strings.HasPrefix(existing.Type, "call ") {
+						detail = existing.Type
+					}
+				}
 				value = w.getExprValue(s.Value)
 				entry := &IndexEntry{
 					Name: s.Name.Value,
@@ -330,7 +330,7 @@ func (w *ASTWalker) walkExpression(expr parser.Expression, scope string) {
 	}
 }
 
-func (w *ASTWalker) addFunction(name string, token interface{}, params, results []*parser.Parameter, body *parser.BlockStatement, scope string, isVariadic bool, doc string) {
+func (w *ASTWalker) addFunction(name string, token any, params, results []*parser.Parameter, body *parser.BlockStatement, scope string, isVariadic bool, doc string) {
 	var line, column int
 	switch t := token.(type) {
 	case lexer.Token:
@@ -394,7 +394,7 @@ func (w *ASTWalker) indexSingleParam(p *parser.Parameter, scope string) {
 	}
 }
 
-func (w *ASTWalker) addReference(name string, token interface{}) {
+func (w *ASTWalker) addReference(name string, token any) {
 	var line, column int
 	switch t := token.(type) {
 	case lexer.Token:

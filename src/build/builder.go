@@ -186,7 +186,7 @@ func ClearCaches() {
 //   - darwin    → darwin
 //   - wasi      → wasi   (wasm32-wasi, wasm32-wasi-threads)
 //   - unknown   → wasi   (wasm32-unknown-wasi / wasm32-unknown-unknown;
-//                        保守地將 unknown wasm 目標視為 wasi)
+//     保守地將 unknown wasm 目標視為 wasi)
 //
 // Examples:
 //   - "x86_64-linux-gnu"           → ("linux", "amd64")
@@ -443,7 +443,7 @@ func buildWithPkg(inputPath string, pkg *Package, opts BuildOptions, buffered bo
 }
 
 // vprintf 輸出 verbose 訊息到 sink（若 nil 則寫 os.Stderr）
-func vprintf(sink *bytes.Buffer, format string, args ...interface{}) {
+func vprintf(sink *bytes.Buffer, format string, args ...any) {
 	if sink != nil {
 		fmt.Fprintf(sink, format, args...)
 	} else {

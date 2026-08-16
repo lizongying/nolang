@@ -8,7 +8,7 @@ import (
 	"strings"
 
 	"github.com/lizongying/nolang/builtin"
-	"github.com/lizongying/nolang/package"
+	pkg "github.com/lizongying/nolang/package"
 	"github.com/lizongying/nolang/parser"
 )
 
@@ -190,10 +190,10 @@ type funcState struct {
 	taskResultTypes   map[string]string               // task variable name → result LLVM type
 	futureResultTypes map[string]string               // future variable name → result LLVM type
 	// === 控制流 ===
-	loopExits       []loopExit // 活躍循環退出目標棧
-	currentBlock    string     // current basic block label (for PHI predecessor tracking)
-	blockTerminated bool       // true if current basic block ends with a terminator (ret/br)
-	curCFG          *FuncCFG   // 當前函數的 CFG（數據流分析載體，nil = 未啟用）
+	loopExits       []loopExit            // 活躍循環退出目標棧
+	currentBlock    string                // current basic block label (for PHI predecessor tracking)
+	blockTerminated bool                  // true if current basic block ends with a terminator (ret/br)
+	curCFG          *FuncCFG              // 當前函數的 CFG（數據流分析載體，nil = 未啟用）
 	cfgMovedFacts   map[string]*blockFact // 求解後的 MovedFact（每個 block 的 IN/OUT meet/join）
 	// === 函數上下文 ===
 	curFuncRetType string // 當前函數回傳型別（void/i64/...）
@@ -322,7 +322,7 @@ type coroField struct {
 // emitEntryAlloca writes an alloca instruction to the entry-block buffer if available,
 // otherwise to sb. This hoists literal-argument allocas out of loop bodies to prevent
 // stack overflow when a call inside a loop would otherwise allocate new stack on each iteration.
-func (g *Generator) emitEntryAlloca(sb *strings.Builder, format string, args ...interface{}) {
+func (g *Generator) emitEntryAlloca(sb *strings.Builder, format string, args ...any) {
 	if g.entryAllocaBuf != nil {
 		g.entryAllocaBuf.WriteString(fmt.Sprintf(format, args...))
 	} else {

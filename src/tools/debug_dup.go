@@ -52,7 +52,7 @@ func main() {
 	dumpAST(program, 0)
 }
 
-func dumpAST(node interface{}, indent int) {
+func dumpAST(node any, indent int) {
 	prefix := strings.Repeat("  ", indent)
 	switch n := node.(type) {
 	case *parser.Program:
