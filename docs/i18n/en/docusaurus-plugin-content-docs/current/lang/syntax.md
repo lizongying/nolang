@@ -226,6 +226,9 @@ typed []u8 = [1, 2, 3]
 
 ; Array
 typed [3]u16 = [1, 2, 3]
+
+; Length automatically inferred (i64)
+a [?] = [1, 2, 3]
 ```
 
 ## Regex Literals
@@ -886,7 +889,8 @@ Containers store copies of data; the original variable and the container are ind
 a [3] = [1, 2, 3]    ; fixed-length array of i64 with length 3
 a [3]u16 = [1, 2, 3] ; fixed-length array with explicit type
 
-a [?]u16 = [1, 2, 3] ; length automatically inferred
+a [?]u16 = [1, 2, 3] ; length automatically inferred (explicit type)
+a [?] = [1, 2, 3]    ; length automatically inferred (i64)
 ```
 
 **Variable-length array vec:**

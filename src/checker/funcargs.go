@@ -326,6 +326,17 @@ func checkCallArgsInStmtWithResultParams(stmt parser.Statement, sigs map[string]
 					}
 					if inferred != "" {
 						varTypes[s.Name.Value] = inferred
+					} else if fnName := isLHSInferredBuiltinCall(s.Value); fnName != "" {
+						// LHS-inferred builtin (with-len, with-cap, with-cap-len)
+						// cannot determine its type without an explicit type
+						// annotation. Report an error to prevent silent default
+						// to []i64 (8 bytes/element).
+						valPos := s.Value.Pos()
+						results = append(results, ValidateResult{
+							Line:    valPos.Line,
+							Column:  valPos.Column,
+							Message: fmt.Sprintf("cannot infer type for '%s': %s() requires an explicit type annotation on the left side (e.g. `name []byte = %s(n)`)", s.Name.Value, fnName, fnName),
+						})
 					}
 				}
 				// If variable already exists in varTypes (e.g. declared with

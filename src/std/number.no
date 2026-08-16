@@ -379,7 +379,7 @@ f64-to-str = (x f64) (out str) {
     }
 
     ; 將 m 轉為 6 位數字字串（補前導零）
-    digits = with-cap(6)
+    digits str = with-cap(6)
     tmp = m
     i = 5
     {

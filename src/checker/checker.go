@@ -3173,6 +3173,29 @@ func validateStmtTypes(stmt parser.Statement, funcNames map[string]bool, funcTyp
 			}
 			// 型別推斷
 			inferredType := inferExprType(s.Value, varTypes, funcTypes, selfType)
+			if inferredType == "" {
+				// Type inference failed. Check if the RHS is a LHS-inferred
+				// builtin (with-len, with-cap, with-cap-len) whose result
+				// type depends on the assignment LHS. Without an explicit
+				// type annotation, the type cannot be determined and
+				// defaults to []i64 (8 bytes/element), which is almost
+				// never the intended type. Report an error so the user
+				// adds a type annotation (e.g. `buf []byte = with-len(n)`).
+				if fnName := isLHSInferredBuiltinCall(s.Value); fnName != "" {
+					// Only report if the variable has no real type annotation
+					// and no existing type from a prior declaration (e.g.
+					// function parameter or output parameter).
+					_, hasExistingType := varTypes[s.Name.Value]
+					if !hasRealTypeAnnotation(s) && !hasExistingType {
+						valPos := s.Value.Pos()
+						results = append(results, ValidateResult{
+							Line:    valPos.Line,
+							Column: valPos.Column,
+							Message: fmt.Sprintf("cannot infer type for '%s': %s() requires an explicit type annotation on the left side (e.g. `name []byte = %s(n)`)", s.Name.Value, fnName, fnName),
+						})
+					}
+				}
+			}
 			if inferredType != "" {
 				if existingType, exists := varTypes[s.Name.Value]; exists {
 					// 變數已有型別，檢查是否相容
@@ -3808,6 +3831,42 @@ func isInferredType(t parser.Type) bool {
 		return tt.IsInferred || isInferredType(tt.Elem)
 	}
 	return false
+}
+
+// lhsInferredBuiltins lists builtin functions whose result type is inferred
+// from the assignment LHS (e.g. `buf []byte = with-len(n)`).
+// When the LHS has no type annotation, these functions cannot determine the
+// element type and default to i64 (8 bytes), which is almost never what the
+// user wants. The checker must report an error in this case.
+var lhsInferredBuiltins = map[string]bool{
+	"with-len":     true,
+	"with-cap":     true,
+	"with-cap-len": true,
+}
+
+// isLHSInferredBuiltinCall checks whether expr is a call to a builtin
+// whose type is inferred from the assignment LHS (with-len, with-cap,
+// with-cap-len). Returns the function name if true, "" otherwise.
+func isLHSInferredBuiltinCall(expr parser.Expression) string {
+	call, ok := expr.(*parser.CallExpression)
+	if !ok {
+		return ""
+	}
+	ident, ok := call.Function.(*parser.Identifier)
+	if !ok {
+		return ""
+	}
+	if lhsInferredBuiltins[ident.Value] {
+		return ident.Value
+	}
+	return ""
+}
+
+// hasRealTypeAnnotation reports whether a LetStatement has an explicit,
+// user-written type annotation (not a parser-inferred placeholder).
+func hasRealTypeAnnotation(s *parser.LetStatement) bool {
+	return s.Type != nil && s.Type.String() != "" &&
+		s.Type.String() != s.Name.Value && !isInferredType(s.Type)
 }
 func isBuiltinType(name string) bool {
 	switch name {

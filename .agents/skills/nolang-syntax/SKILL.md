@@ -458,7 +458,7 @@ Configure mirror addresses in the `mirrors` array of `package.jsonc` to accelera
 
 **Base types:** `byte`, `bool` (lowercase only), `char` (character type / rune, double-quoted single character, e.g. `"中"`), `str` (string type, single-quoted `'hello'`, or raw string with backticks), `i8`, `i16`, `i32`, `i64` (default numeric type, architecture-independent), `i128` (128-bit signed integer), `u8`, `u16`, `u32`, `u64`, `u128` (128-bit unsigned integer), `usize` (ffi only), `f32`, `f64`
 
-**Container types:** `obj` (object), `map` (map), `arr` (fixed-length array `[n]t`), `vec` (variable-length array `[]t`), `slice` (slice/view, no independent data structure, must be attached to arr/vec/str)
+**Container types:** `obj` (object), `map` (map), `arr` (fixed-length array `[n]t`, `[?]t` with auto-inferred length, or `[?]` with auto-inferred length and i64 element type), `vec` (variable-length array `[]t`), `slice` (slice/view, no independent data structure, must be attached to arr/vec/str)
 
 **Special types:** `*` (pointer, FFI `#{c}` declarations and standard library only), `any` (any type, standard library only)
 
@@ -589,7 +589,8 @@ u16
 // Arr
 arr [3] = [1, 2, 3]        // i64 array
 typed [3]u16 = [1, 2, 3]   // typed
-a [?]u16 = [1, 2, 3]       // auto-inferred length
+a [?]u16 = [1, 2, 3]       // auto-inferred length (typed)
+a [?] = [1, 2, 3]          // auto-inferred length (i64)
 
 // Vec
 typed []u8 = [1, 2, 3]
