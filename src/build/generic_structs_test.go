@@ -33,9 +33,9 @@ func TestKeyCategory(t *testing.T) {
 
 func TestCollectMapTypeUsagesLetStatement(t *testing.T) {
 	// map[str]i64 出現在兩個 LetStatement，加上 map[i64]bool；測試去重
-	src := `m map[str]i64
-n map[str]i64
-b map[i64]bool
+	src := `m [str]i64
+n [str]i64
+b [i64]bool
 `
 	l := lexer.New(src)
 	p := parser.New(l)
@@ -315,7 +315,7 @@ hashmap-str-tmpl.get = (key str, result v) {
     result = .vals[0]
 }
 
-m map[str]i64
+m [str]i64
 `
 	l := lexer.New(src)
 	p := parser.New(l)
@@ -385,9 +385,9 @@ hashmap-int-tmpl.put = (key k, val v) {
     .keys[0] = key
 }
 
-a map[str]i64
-b map[str]bool
-c map[i64]i64
+a [str]i64
+b [str]bool
+c [i64]i64
 `
 	l := lexer.New(src)
 	p := parser.New(l)

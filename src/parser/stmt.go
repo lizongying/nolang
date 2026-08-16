@@ -219,15 +219,6 @@ func (p *Parser) parseStatement() Statement {
 					return stmt
 				}
 			}
-		} else if p.peekToken.Type == lexer.MAP {
-			// m map[K]V = { ... } — explicit map type annotation
-			stmt := p.parseLetStatement()
-			if stmt != nil {
-				if !p.ctx.contains(CTX_MATCH_ARM) && !p.ctx.contains(CTX_FOR_COND) {
-					p.skipToStatementEnd()
-				}
-				return stmt
-			}
 		}
 
 		if p.peekToken.Type == lexer.QUESTION {
@@ -425,8 +416,8 @@ func (p *Parser) parseUseStatement() Statement {
 	}
 
 	for {
-		// use path 段接受 IDENT，以及可能作為路徑名稱的關鍵字（如 map）
-		if p.currentToken.Type != lexer.IDENT && p.currentToken.Type != lexer.MAP {
+		// use path 段接受 IDENT（map 已不再是關鍵字，自然被當作 IDENT）
+		if p.currentToken.Type != lexer.IDENT {
 			msg := fmt.Sprintf("line %d, column %d: expected identifier in use path, got %s",
 				p.currentToken.Line, p.currentToken.Column, p.currentToken.Type.String())
 			p.saveError(msg)
@@ -747,32 +738,6 @@ func (p *Parser) parseLetStatement() Statement {
 							Token:      bracketToken,
 							Elem:       &NamedType{Token: bracketToken, Value: "i64", IsInferred: true},
 							IsInferred: true,
-						}
-					}
-				}
-			}
-		}
-	} else if p.peekToken.Type == lexer.MAP {
-		// Explicit map type: m map[K]V
-		mapTok := p.peekToken
-		p.nextToken() // skip to map keyword → current = MAP
-		p.nextToken() // skip map → current = [
-		if p.currentToken.Type == lexer.LBRACKET {
-			p.nextToken() // skip [
-			if p.currentToken.Type == lexer.IDENT {
-				keyName := p.currentToken.Literal
-				keyTok := p.currentToken
-				p.nextToken() // skip K → current = ]
-				if p.currentToken.Type == lexer.RBRACKET {
-					p.nextToken() // skip ] → current = V
-					if p.currentToken.Type == lexer.IDENT {
-						valName := p.currentToken.Literal
-						valTok := p.currentToken
-						p.nextToken()
-						stmt.Type = &MapType{
-							Token: mapTok,
-							Key:   &NamedType{Token: keyTok, Value: keyName},
-							Value: &NamedType{Token: valTok, Value: valName},
 						}
 					}
 				}

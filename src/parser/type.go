@@ -525,35 +525,6 @@ func (p *Parser) parseTypeExpression() (Type, bool) {
 	case lexer.LPAREN:
 		// Function type: (params) (results)?
 		return p.parseFunctionType(), true
-	case lexer.MAP:
-		// Explicit map type: map[K]V
-		mapTok := p.currentToken
-		p.nextToken() // skip map
-		if p.currentToken.Type != lexer.LBRACKET {
-			msg := fmt.Sprintf("line %d, column %d: expected '[' after 'map', got %s instead",
-				p.currentToken.Line, p.currentToken.Column, p.currentToken.Type.String())
-			p.saveError(msg)
-			return nil, false
-		}
-		p.nextToken() // skip [
-		// parse key type
-		keyType, ok := p.parseTypeExpression()
-		if !ok {
-			return nil, false
-		}
-		if p.currentToken.Type != lexer.RBRACKET {
-			msg := fmt.Sprintf("line %d, column %d: expected ']' in map type, got %s instead",
-				p.currentToken.Line, p.currentToken.Column, p.currentToken.Type.String())
-			p.saveError(msg)
-			return nil, false
-		}
-		p.nextToken() // skip ]
-		// parse value type
-		valType, ok := p.parseTypeExpression()
-		if !ok {
-			return nil, false
-		}
-		return &MapType{Token: mapTok, Key: keyType, Value: valType}, true
 	case lexer.IDENT:
 		// Could be:
 		//   - NamedType (e.g., "i64")

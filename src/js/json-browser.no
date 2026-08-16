@@ -2,7 +2,7 @@
 ; Actual mapping is in src/build/js/builtin.go
 #{js}
 
-json.parse = (data str) (obj map[str]str) {
+json.parse = (data str) (obj [str]str) {
     obj = {}
 }
 

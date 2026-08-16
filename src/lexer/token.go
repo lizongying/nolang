@@ -255,8 +255,6 @@ func lookupKeyword(s string) TokenType {
 		return CHAN
 	case "use":
 		return USE
-	case "map":
-		return MAP
 	case "run":
 		return RUN
 	case "awy":
