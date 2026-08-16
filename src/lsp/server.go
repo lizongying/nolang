@@ -139,321 +139,48 @@ func (s *Server) publishDocumentDiagnostics(uri string, parseErrors []string, as
 			docPath := strings.TrimPrefix(uri, "file://")
 			docDir := filepath.Dir(docPath)
 
-			typeErrs := checker.ValidateTypes(prog)
-			for _, e := range typeErrs {
-				diagnostic := Diagnostic{
+			// Run all lints via shared entry point — same code path as
+			// `no vet` and `nolang-lsp vet`. Eliminates the ~300 lines of
+			// duplicated Validate* + Diagnostic construction that was here
+			// before (and had duplicate calls to ValidateUninitOutputParams
+			// and ValidateInterfaceImplementation).
+		lints := checker.RunAllLints(prog, checker.LintOptions{
+			SourcePath:      docPath,
+			RootDir:         docDir,
+			LightweightMode: true,
+		})
+			for _, l := range lints {
+				endChar := uint32(l.Column)
+				if l.EndColumn > 0 {
+					endChar = uint32(l.EndColumn - 1)
+				}
+				var sev int
+				var tags []DiagnosticTag
+				switch l.Severity {
+				case checker.LintError:
+					sev = DiagnosticSeverityError
+				case checker.LintWarning:
+					sev = DiagnosticSeverityWarning
+				case checker.LintHint:
+					sev = DiagnosticSeverityHint
+					// Unused variables carry the Unnecessary tag for IDE
+					// strikethrough; RunAllLints marks them as "hint" +
+					// source "nolang-lint" with message containing
+					// "is defined but never used".
+					if strings.Contains(l.Message, "is defined but never used") {
+						tags = []DiagnosticTag{DiagnosticTagUnnecessary}
+					}
+				}
+				diagnostics = append(diagnostics, Diagnostic{
 					Range: Range{
-						Start: Position{Line: uint32(e.Line - 1), Character: uint32(e.Column - 1)},
-						End:   Position{Line: uint32(e.Line - 1), Character: uint32(e.Column)},
+						Start: Position{Line: uint32(l.Line - 1), Character: uint32(l.Column - 1)},
+						End:   Position{Line: uint32(l.Line - 1), Character: endChar},
 					},
-					Severity: DiagnosticSeverityError,
-					Source:   "nolang-type-checker",
-					Message:  e.Message,
-				}
-				diagnostics = append(diagnostics, diagnostic)
-			}
-
-			namingWarnings := checker.ValidateNaming(prog)
-			for _, w := range namingWarnings {
-				diagnostic := Diagnostic{
-					Range: Range{
-						Start: Position{Line: uint32(w.Line - 1), Character: uint32(w.Column - 1)},
-						End:   Position{Line: uint32(w.Line - 1), Character: uint32(w.Column)},
-					},
-					Severity: DiagnosticSeverityWarning,
-					Source:   "nolang-lint",
-					Message:  w.Message,
-				}
-				diagnostics = append(diagnostics, diagnostic)
-			}
-
-			unusedVars := checker.ValidateUnusedVars(prog)
-			for _, u := range unusedVars {
-				endChar := uint32(u.Column)
-				if u.EndColumn > 0 {
-					endChar = uint32(u.EndColumn)
-				}
-				diagnostic := Diagnostic{
-					Range: Range{
-						Start: Position{Line: uint32(u.Line - 1), Character: uint32(u.Column - 1)},
-						End:   Position{Line: uint32(u.Line - 1), Character: endChar},
-					},
-					Severity: DiagnosticSeverityHint,
-					Source:   "nolang-lint",
-					Tags:     []DiagnosticTag{DiagnosticTagUnnecessary},
-					Message:  u.Message,
-				}
-				diagnostics = append(diagnostics, diagnostic)
-			}
-
-			undefinedVars := checker.ValidateUndefinedVars(prog, docDir)
-			for _, u := range undefinedVars {
-				diagnostic := Diagnostic{
-					Range: Range{
-						Start: Position{Line: uint32(u.Line - 1), Character: uint32(u.Column - 1)},
-						End:   Position{Line: uint32(u.Line - 1), Character: uint32(u.Column)},
-					},
-					Severity: DiagnosticSeverityError,
-					Source:   "nolang-lint",
-					Message:  u.Message,
-				}
-				diagnostics = append(diagnostics, diagnostic)
-			}
-
-			uninitOutParams := checker.ValidateUninitOutputParams(prog)
-			for _, u := range uninitOutParams {
-				diagnostic := Diagnostic{
-					Range: Range{
-						Start: Position{Line: uint32(u.Line - 1), Character: uint32(u.Column - 1)},
-						End:   Position{Line: uint32(u.Line - 1), Character: uint32(u.Column)},
-					},
-					Severity: DiagnosticSeverityError,
-					Source:   "nolang-type-checker",
-					Message:  u.Message,
-				}
-				diagnostics = append(diagnostics, diagnostic)
-			}
-
-			ifaceImplWarnings := checker.ValidateInterfaceImplementation(prog)
-			for _, u := range ifaceImplWarnings {
-				diagnostic := Diagnostic{
-					Range: Range{
-						Start: Position{Line: uint32(u.Line - 1), Character: uint32(u.Column - 1)},
-						End:   Position{Line: uint32(u.Line - 1), Character: uint32(u.EndColumn - 1)},
-					},
-					Severity: DiagnosticSeverityWarning,
-					Source:   "nolang-lint",
-					Message:  u.Message,
-				}
-				diagnostics = append(diagnostics, diagnostic)
-			}
-
-			useKeywordHints := checker.ValidateUseKeyword(prog)
-			for _, u := range useKeywordHints {
-				diagnostic := Diagnostic{
-					Range: Range{
-						Start: Position{Line: uint32(u.Line - 1), Character: uint32(u.Column - 1)},
-						End:   Position{Line: uint32(u.Line - 1), Character: uint32(u.Column)},
-					},
-					Severity: DiagnosticSeverityHint,
-					Source:   "nolang-lint",
-					Message:  u.Message,
-				}
-				diagnostics = append(diagnostics, diagnostic)
-			}
-
-			useAliasHints := checker.ValidateUseAlias(prog)
-			for _, u := range useAliasHints {
-				diagnostic := Diagnostic{
-					Range: Range{
-						Start: Position{Line: uint32(u.Line - 1), Character: uint32(u.Column - 1)},
-						End:   Position{Line: uint32(u.Line - 1), Character: uint32(u.Column)},
-					},
-					Severity: DiagnosticSeverityHint,
-					Source:   "nolang-lint",
-					Message:  u.Message,
-				}
-				diagnostics = append(diagnostics, diagnostic)
-			}
-
-			duplicateVars := checker.ValidateDuplicateVars(prog)
-			for _, u := range duplicateVars {
-				diagnostic := Diagnostic{
-					Range: Range{
-						Start: Position{Line: uint32(u.Line - 1), Character: uint32(u.Column - 1)},
-						End:   Position{Line: uint32(u.Line - 1), Character: uint32(u.Column)},
-					},
-					Severity: DiagnosticSeverityError,
-					Source:   "nolang-lint",
-					Message:  u.Message,
-				}
-				diagnostics = append(diagnostics, diagnostic)
-			}
-
-			// Validate URL-style import paths are declared in package.jsonc dependencies
-			depErrs := checker.ValidateDependencyImports(prog, docDir)
-			for _, u := range depErrs {
-				diagnostic := Diagnostic{
-					Range: Range{
-						Start: Position{Line: uint32(u.Line - 1), Character: uint32(u.Column - 1)},
-						End:   Position{Line: uint32(u.Line - 1), Character: uint32(u.Column)},
-					},
-					Severity: DiagnosticSeverityError,
-					Source:   "nolang-lint",
-					Message:  u.Message,
-				}
-				diagnostics = append(diagnostics, diagnostic)
-			}
-
-			// Validate export symbols in lib.no
-			exportErrs := checker.ValidateExportSymbols(prog, docPath)
-			for _, u := range exportErrs {
-				diagnostic := Diagnostic{
-					Range: Range{
-						Start: Position{Line: uint32(u.Line - 1), Character: uint32(u.Column - 1)},
-						End:   Position{Line: uint32(u.Line - 1), Character: uint32(u.Column)},
-					},
-					Severity: DiagnosticSeverityError,
-					Source:   "nolang-lint",
-					Message:  u.Message,
-				}
-				diagnostics = append(diagnostics, diagnostic)
-			}
-
-			stringConcatHints := checker.ValidateStringConcat(prog)
-			for _, u := range stringConcatHints {
-				diagnostic := Diagnostic{
-					Range: Range{
-						Start: Position{Line: uint32(u.Line - 1), Character: uint32(u.Column - 1)},
-						End:   Position{Line: uint32(u.Line - 1), Character: uint32(u.Column)},
-					},
-					Severity: DiagnosticSeverityHint,
-					Source:   "nolang-lint",
-					Message:  u.Message,
-				}
-				diagnostics = append(diagnostics, diagnostic)
-			}
-
-			funcArgErrs := checker.ValidateFuncArgs(prog, docDir)
-			for _, u := range funcArgErrs {
-				diagnostic := Diagnostic{
-					Range: Range{
-						Start: Position{Line: uint32(u.Line - 1), Character: uint32(u.Column - 1)},
-						End:   Position{Line: uint32(u.Line - 1), Character: uint32(u.Column)},
-					},
-					Severity: DiagnosticSeverityError,
-					Source:   "nolang-type-checker",
-					Message:  u.Message,
-				}
-				diagnostics = append(diagnostics, diagnostic)
-			}
-
-			// Print format string validation
-			printFmtErrs := checker.ValidatePrintFormat(prog)
-			for _, u := range printFmtErrs {
-				diagnostic := Diagnostic{
-					Range: Range{
-						Start: Position{Line: uint32(u.Line - 1), Character: uint32(u.Column - 1)},
-						End:   Position{Line: uint32(u.Line - 1), Character: uint32(u.Column)},
-					},
-					Severity: DiagnosticSeverityError,
-					Source:   "nolang-format-checker",
-					Message:  u.Message,
-				}
-				diagnostics = append(diagnostics, diagnostic)
-			}
-
-			// Cross-module type prefix validation
-			crossModuleErrs := checker.ValidateCrossModuleTypeRefs(prog)
-			for _, u := range crossModuleErrs {
-				diagnostic := Diagnostic{
-					Range: Range{
-						Start: Position{Line: uint32(u.Line - 1), Character: uint32(u.Column - 1)},
-						End:   Position{Line: uint32(u.Line - 1), Character: uint32(u.Column)},
-					},
-					Severity: DiagnosticSeverityError,
-					Source:   "nolang-type-checker",
-					Message:  u.Message,
-				}
-				diagnostics = append(diagnostics, diagnostic)
-			}
-
-			// Uppercase hex literal hints
-			hexCaseHints := checker.ValidateHexCase(prog)
-			for _, u := range hexCaseHints {
-				diagnostic := Diagnostic{
-					Range: Range{
-						Start: Position{Line: uint32(u.Line - 1), Character: uint32(u.Column - 1)},
-						End:   Position{Line: uint32(u.Line - 1), Character: uint32(u.Column)},
-					},
-					Severity: DiagnosticSeverityHint,
-					Source:   "nolang-lint",
-					Message:  u.Message,
-				}
-				diagnostics = append(diagnostics, diagnostic)
-			}
-
-			// Async naming warnings
-			asyncNamingWarnings := checker.ValidateAsyncNaming(prog)
-			for _, w := range asyncNamingWarnings {
-				diagnostic := Diagnostic{
-					Range: Range{
-						Start: Position{Line: uint32(w.Line - 1), Character: uint32(w.Column - 1)},
-						End:   Position{Line: uint32(w.Line - 1), Character: uint32(w.Column)},
-					},
-					Severity: DiagnosticSeverityWarning,
-					Source:   "nolang-lint",
-					Message:  w.Message,
-				}
-				diagnostics = append(diagnostics, diagnostic)
-			}
-
-			// Uninitialized nullable output parameters
-			uninitErrs := checker.ValidateUninitOutputParams(prog)
-			for _, u := range uninitErrs {
-				diagnostic := Diagnostic{
-					Range: Range{
-						Start: Position{Line: uint32(u.Line - 1), Character: uint32(u.Column - 1)},
-						End:   Position{Line: uint32(u.Line - 1), Character: uint32(u.Column)},
-					},
-					Severity: DiagnosticSeverityError,
-					Source:   "nolang-type-checker",
-					Message:  u.Message,
-				}
-				diagnostics = append(diagnostics, diagnostic)
-			}
-
-			// Embed annotation validation
-			embedErrs := checker.ValidateEmbedAnnotations(prog, docPath)
-			for _, e := range embedErrs {
-				diagnostic := Diagnostic{
-					Range: Range{
-						Start: Position{Line: uint32(e.Line - 1), Character: uint32(e.Column - 1)},
-						End:   Position{Line: uint32(e.Line - 1), Character: uint32(e.Column)},
-					},
-					Severity: DiagnosticSeverityError,
-					Source:   "nolang-lint",
-					Message:  e.Message,
-				}
-				diagnostics = append(diagnostics, diagnostic)
-			}
-
-			// Interface implementation warnings
-			ifaceWarnings := checker.ValidateInterfaceImplementation(prog)
-			for _, u := range ifaceWarnings {
-				diagnostic := Diagnostic{
-					Range: Range{
-						Start: Position{Line: uint32(u.Line - 1), Character: uint32(u.Column - 1)},
-						End:   Position{Line: uint32(u.Line - 1), Character: uint32(u.Column)},
-					},
-					Severity: DiagnosticSeverityWarning,
-					Source:   "nolang-lint",
-					Message:  u.Message,
-				}
-				diagnostics = append(diagnostics, diagnostic)
-			}
-
-			// Redundant type annotation hints
-			redundantTypeHints := checker.ValidateRedundantTypeAnnotation(prog)
-			for _, u := range redundantTypeHints {
-				diagnostic := Diagnostic{
-					Range: Range{
-						Start: Position{Line: uint32(u.Line - 1), Character: uint32(u.Column - 1)},
-						End:   Position{Line: uint32(u.Line - 1), Character: uint32(u.Column)},
-					},
-					Severity: DiagnosticSeverityHint,
-					Source:   "nolang-lint",
-					Message:  u.Message,
-				}
-				diagnostics = append(diagnostics, diagnostic)
-			}
-
-			// Emit parser warnings (e.g., unreachable enum else arm) as hints
-			for _, warnMsg := range prog.Warnings {
-				diagnostic := s.parseWarningToDiagnostic(warnMsg)
-				if diagnostic != nil {
-					diagnostics = append(diagnostics, *diagnostic)
-				}
+					Severity: sev,
+					Source:   l.Source,
+					Tags:     tags,
+					Message:  l.Message,
+				})
 			}
 		}
 	}
@@ -823,7 +550,7 @@ func computeTextEdits(original, formatted string) []TextEdit {
 	oLines := strings.Split(original, "\n")
 	lastLine := uint32(len(oLines) - 1)
 	lastChar := uint32(0)
-	if lastLine >= 0 && len(oLines) > 0 {
+	if len(oLines) > 0 {
 		lastChar = uint32(len(oLines[lastLine]))
 	}
 	return []TextEdit{

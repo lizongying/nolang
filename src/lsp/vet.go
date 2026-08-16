@@ -10,6 +10,7 @@ import (
 
 	"github.com/lizongying/nolang/checker"
 	"github.com/lizongying/nolang/lexer"
+	pkg "github.com/lizongying/nolang/package"
 	"github.com/lizongying/nolang/parser"
 )
 
@@ -69,258 +70,25 @@ func VetFile(filePath string) []VetResult {
 		return results
 	}
 
-	// 2. Type errors
-	for _, e := range checker.ValidateTypes(prog) {
+	// 2. Run all lints via shared entry point (naming, unused, embed,
+	// interface impl, string concat, hex case, print format, func args,
+	// types, undefined vars, etc.) — same as LSP real-time diagnostics.
+	// LightweightMode=true: also check unresolved module.fn() calls
+	// (no vet doesn't need this — it has build/module_check.go's full
+	// version that works on the merged program).
+	lints := checker.RunAllLints(prog, checker.LintOptions{
+		SourcePath:      absPath,
+		RootDir:         docDir,
+		LightweightMode: true,
+	})
+	for _, l := range lints {
 		results = append(results, VetResult{
 			File:     filePath,
-			Line:     e.Line,
-			Column:   e.Column,
-			Severity: "error",
-			Source:   "nolang-type-checker",
-			Message:  e.Message,
-		})
-	}
-
-	// 3. Naming warnings
-	for _, w := range checker.ValidateNaming(prog) {
-		results = append(results, VetResult{
-			File:     filePath,
-			Line:     w.Line,
-			Column:   w.Column,
-			Severity: "warning",
-			Source:   "nolang-lint",
-			Message:  w.Message,
-		})
-	}
-
-	// 3.5. Async naming warnings
-	for _, w := range checker.ValidateAsyncNaming(prog) {
-		results = append(results, VetResult{
-			File:     filePath,
-			Line:     w.Line,
-			Column:   w.Column,
-			Severity: "warning",
-			Source:   "nolang-lint",
-			Message:  w.Message,
-		})
-	}
-
-	// 4. Unused variables (hint)
-	for _, u := range checker.ValidateUnusedVars(prog) {
-		results = append(results, VetResult{
-			File:     filePath,
-			Line:     u.Line,
-			Column:   u.Column,
-			Severity: "hint",
-			Source:   "nolang-lint",
-			Message:  u.Message,
-		})
-	}
-
-	// 5. Undefined variables
-	for _, u := range checker.ValidateUndefinedVars(prog, docDir) {
-		results = append(results, VetResult{
-			File:     filePath,
-			Line:     u.Line,
-			Column:   u.Column,
-			Severity: "error",
-			Source:   "nolang-lint",
-			Message:  u.Message,
-		})
-	}
-
-	// 5b. Uninitialized nullable output parameters (case6)
-	for _, u := range checker.ValidateUninitOutputParams(prog) {
-		results = append(results, VetResult{
-			File:     filePath,
-			Line:     u.Line,
-			Column:   u.Column,
-			Severity: "error",
-			Source:   "nolang-type-checker",
-			Message:  u.Message,
-		})
-	}
-
-	// 5b2. Unassigned result parameters (warning) — named return params
-	// that are never explicitly assigned will be silently zero-filled.
-	for _, w := range checker.ValidateUnassignedReturns(prog) {
-		results = append(results, VetResult{
-			File:     filePath,
-			Line:     w.Line,
-			Column:   w.Column,
-			Severity: "warning",
-			Source:   "nolang-type-checker",
-			Message:  w.Message,
-		})
-	}
-
-	// 5c. Embed annotation validation
-	for _, e := range checker.ValidateEmbedAnnotations(prog, filePath) {
-		results = append(results, VetResult{
-			File:     filePath,
-			Line:     e.Line,
-			Column:   e.Column,
-			Severity: "error",
-			Source:   "nolang-lint",
-			Message:  e.Message,
-		})
-	}
-
-	// 6. Interface implementation warnings
-	for _, u := range checker.ValidateInterfaceImplementation(prog) {
-		results = append(results, VetResult{
-			File:     filePath,
-			Line:     u.Line,
-			Column:   u.Column,
-			Severity: "warning",
-			Source:   "nolang-lint",
-			Message:  u.Message,
-		})
-	}
-
-	// 7. Use keyword hints
-	for _, u := range checker.ValidateUseKeyword(prog) {
-		results = append(results, VetResult{
-			File:     filePath,
-			Line:     u.Line,
-			Column:   u.Column,
-			Severity: "hint",
-			Source:   "nolang-lint",
-			Message:  u.Message,
-		})
-	}
-
-	// 8. Use alias hints
-	for _, u := range checker.ValidateUseAlias(prog) {
-		results = append(results, VetResult{
-			File:     filePath,
-			Line:     u.Line,
-			Column:   u.Column,
-			Severity: "hint",
-			Source:   "nolang-lint",
-			Message:  u.Message,
-		})
-	}
-
-	// 8b. Redundant type annotation hints
-	for _, u := range checker.ValidateRedundantTypeAnnotation(prog) {
-		results = append(results, VetResult{
-			File:     filePath,
-			Line:     u.Line,
-			Column:   u.Column,
-			Severity: "hint",
-			Source:   "nolang-lint",
-			Message:  u.Message,
-		})
-	}
-
-	// 9. Duplicate variables
-	for _, u := range checker.ValidateDuplicateVars(prog) {
-		results = append(results, VetResult{
-			File:     filePath,
-			Line:     u.Line,
-			Column:   u.Column,
-			Severity: "error",
-			Source:   "nolang-lint",
-			Message:  u.Message,
-		})
-	}
-
-	// 10. Dependency import validation
-	for _, u := range checker.ValidateDependencyImports(prog, docDir) {
-		results = append(results, VetResult{
-			File:     filePath,
-			Line:     u.Line,
-			Column:   u.Column,
-			Severity: "error",
-			Source:   "nolang-lint",
-			Message:  u.Message,
-		})
-	}
-
-	// 11. Export symbol validation
-	for _, u := range checker.ValidateExportSymbols(prog, absPath) {
-		results = append(results, VetResult{
-			File:     filePath,
-			Line:     u.Line,
-			Column:   u.Column,
-			Severity: "error",
-			Source:   "nolang-lint",
-			Message:  u.Message,
-		})
-	}
-
-	// 12. String concatenation hints
-	for _, u := range checker.ValidateStringConcat(prog) {
-		results = append(results, VetResult{
-			File:     filePath,
-			Line:     u.Line,
-			Column:   u.Column,
-			Severity: "hint",
-			Source:   "nolang-lint",
-			Message:  u.Message,
-		})
-	}
-
-	// 12b. Uppercase hex literal hints
-	for _, u := range checker.ValidateHexCase(prog) {
-		results = append(results, VetResult{
-			File:     filePath,
-			Line:     u.Line,
-			Column:   u.Column,
-			Severity: "hint",
-			Source:   "nolang-lint",
-			Message:  u.Message,
-		})
-	}
-
-	// 13. Function argument type checking
-	for _, u := range checker.ValidateFuncArgs(prog, docDir) {
-		results = append(results, VetResult{
-			File:     filePath,
-			Line:     u.Line,
-			Column:   u.Column,
-			Severity: "error",
-			Source:   "nolang-type-checker",
-			Message:  u.Message,
-		})
-	}
-
-	// 14. Print format string validation (named {name:spec} fields)
-	for _, u := range checker.ValidatePrintFormat(prog) {
-		results = append(results, VetResult{
-			File:     filePath,
-			Line:     u.Line,
-			Column:   u.Column,
-			Severity: "error",
-			Source:   "nolang-format-checker",
-			Message:  u.Message,
-		})
-	}
-
-	// 15. Cross-module type prefix validation
-	for _, u := range checker.ValidateCrossModuleTypeRefs(prog) {
-		results = append(results, VetResult{
-			File:     filePath,
-			Line:     u.Line,
-			Column:   u.Column,
-			Severity: "error",
-			Source:   "nolang-type-checker",
-			Message:  u.Message,
-		})
-	}
-
-	// 16. Parser warnings
-	for _, warnMsg := range prog.Warnings {
-		var line, col int
-		fmt.Sscanf(warnMsg, "line %d, column %d:", &line, &col)
-		results = append(results, VetResult{
-			File:     filePath,
-			Line:     line,
-			Column:   col,
-			Severity: "hint",
-			Source:   "nolang-lint",
-			Message:  warnMsg,
+			Line:     l.Line,
+			Column:   l.Column,
+			Severity: string(l.Severity),
+			Source:   l.Source,
+			Message:  l.Message,
 		})
 	}
 
@@ -339,6 +107,20 @@ func VetDir(dirPath string) []VetResult {
 type VetProgressFunc func(path string, diagCount int, elapsed time.Duration)
 
 func VetDirVerbose(dirPath string, progress VetProgressFunc) []VetResult {
+	// 載入 package.jsonc 以套用 ignore 列表 + 解析依賴
+	// （與 no vet CLI 的目錄模式行為對齊）
+	vetPkg, _ := pkg.LoadPackage(dirPath)
+	if vetPkg != nil {
+		if _, err := vetPkg.EnsureDependencies(10); err != nil {
+			return []VetResult{{
+				File:     dirPath,
+				Severity: "error",
+				Source:   "lsp-vet",
+				Message:  fmt.Sprintf("dependency resolution failed: %v", err),
+			}}
+		}
+	}
+
 	var results []VetResult
 	_ = filepath.Walk(dirPath, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
@@ -348,6 +130,10 @@ func VetDirVerbose(dirPath string, progress VetProgressFunc) []VetResult {
 			return nil
 		}
 		if !strings.HasSuffix(path, ".no") {
+			return nil
+		}
+		// 跳過 ignore 列表中匹配的檔案（與 no vet CLI 一致）
+		if vetPkg != nil && vetPkg.IsIgnored(path) {
 			return nil
 		}
 		start := time.Now()

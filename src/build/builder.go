@@ -113,6 +113,7 @@ type BuildOptions struct {
 	UseJS           bool   // use JS backend (emit JavaScript source, no LLVM toolchain)
 	BrowserMode     bool   // when true with UseJS, generate browser-targeted JS + HTML wrapper
 	CompilerVersion string // current compiler version (for package.jsonc compatibility check)
+	Strict          bool   // vet mode: treat all lint warnings/hints as errors
 }
 
 // versionCompatible 檢查 package.jsonc 中聲明的編譯器版本是否與當前編譯器版本兼容。
@@ -290,6 +291,15 @@ func BuildFile(inputPath string, opts BuildOptions) error {
 // VetFile performs syntax and semantic validation on a .no source file without
 // producing any compilation artifacts (no LLVM IR, no binary).
 func VetFile(inputPath string, opts BuildOptions) error {
+	_, err := VetFileWithLints(inputPath, opts)
+	return err
+}
+
+// VetFileWithLints 與 VetFile 相同，但額外返回 vet 模式下收集的 lint 結果。
+// lint 結果包含命名規範、未用變數、embed 校驗、接口實現、字串拼接等
+// 非阻塞性診斷——調用者可選擇輸出為 warning/hint 或在 --strict 模式下
+// 升級為 error。
+func VetFileWithLints(inputPath string, opts BuildOptions) ([]checker.LintResult, error) {
 	// 若指定的是目錄，先找目錄內的 package.jsonc
 	info, err := os.Stat(inputPath)
 	isDir := err == nil && info.IsDir()
@@ -304,7 +314,7 @@ func VetFile(inputPath string, opts BuildOptions) error {
 	pkg, _ := LoadPackage(pkgDir)
 	if pkg != nil && isDir {
 		if _, err := pkg.EnsureDependencies(10); err != nil {
-			return fmt.Errorf("dependency resolution failed: %w", err)
+			return nil, fmt.Errorf("dependency resolution failed: %w", err)
 		}
 		mainFile := pkg.Main
 		if mainFile == "" {
@@ -317,14 +327,14 @@ func VetFile(inputPath string, opts BuildOptions) error {
 	if info, err := os.Stat(inputPath); err == nil && info.IsDir() {
 		mainPath := filepath.Join(inputPath, "main.no")
 		if _, err := os.Stat(mainPath); err != nil {
-			return fmt.Errorf("main.no not found in %s", inputPath)
+			return nil, fmt.Errorf("main.no not found in %s", inputPath)
 		}
 		inputPath = mainPath
 	}
 
 	source, err := os.ReadFile(inputPath)
 	if err != nil {
-		return fmt.Errorf("reading input file: %w", err)
+		return nil, fmt.Errorf("reading input file: %w", err)
 	}
 
 	compiler := NewTranspiler(pkg)
@@ -333,12 +343,60 @@ func VetFile(inputPath string, opts BuildOptions) error {
 	compiler.SetTargetPlatform(goos, goarch)
 	// vet 模式：跳過 LLVM IR 生成，只做前端驗證（語法+型別+模組合併+單態化）
 	compiler.SetVetMode(true)
+	compiler.SetVetStrict(opts.Strict)
 	_, err = compiler.Compile(string(source))
 	if err != nil {
-		return fmt.Errorf("validation error: %w", err)
+		// 將 compile error 解析為結構化 LintResult，避免塌縮成一行
+		// （保留行號/列號/來源），使 no vet 輸出格式與 LSP 一致。
+		structured := parseCompileErrorToLints(err)
+		lints := compiler.VetLints()
+		lints = append(lints, structured...)
+		return lints, nil
 	}
 
-	return nil
+	return compiler.VetLints(), nil
+}
+
+// parseCompileErrorToLints 把 Compile() 返回的 error 字串解析為結構化
+// LintResult 條目。Compile 內部的錯誤格式有兩種：
+//   - "validation errors: line L, column C: msg1; line L, column C: msg2"
+//   - "check error: line L: msg"（來自 checkUnresolvedModuleCalls）
+// 每條提取行號/列號，統一標記為 error 級別。
+func parseCompileErrorToLints(err error) []checker.LintResult {
+	if err == nil {
+		return nil
+	}
+	msg := err.Error()
+	var results []checker.LintResult
+
+	// 去掉外層包裝前綴，保留含行號的原始消息
+	for _, prefix := range []string{"validation error: ", "validation errors: ", "check error: "} {
+		msg = strings.TrimPrefix(msg, prefix)
+	}
+
+	// 按分號分割多條錯誤（validation errors 用 "; " 連接）
+	parts := strings.Split(msg, "; ")
+	for _, part := range parts {
+		part = strings.TrimSpace(part)
+		if part == "" {
+			continue
+		}
+		lr := checker.LintResult{
+			Severity: checker.LintError,
+			Source:   "nolang-compile",
+			Message:  part,
+		}
+		var line, col int
+		// 嘗試解析 "line L, column C: ..." 或 "line L: ..."
+		if n, _ := fmt.Sscanf(part, "line %d, column %d:", &line, &col); n >= 1 {
+			lr.Line = line
+			lr.Column = col
+		} else if n, _ := fmt.Sscanf(part, "line %d:", &line); n >= 1 {
+			lr.Line = line
+		}
+		results = append(results, lr)
+	}
+	return results
 }
 
 // buildWithPkg 是核心編譯邏輯，使用已載入的 Package（可為 nil）。

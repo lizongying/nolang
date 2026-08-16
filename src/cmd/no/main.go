@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -197,10 +198,12 @@ func printUsage() {
 	fmt.Println("      no test -target x86_64-linux-gnu")
 	fmt.Println("      no test -target wasm32-wasi")
 	fmt.Println("")
-	fmt.Println("  no vet [<file|dir>]            Validate source files")
+	fmt.Println("  no vet [--strict] [<file|dir>]  Validate source files + lints")
+	fmt.Println("    --strict               treat warnings/hints as errors")
 	fmt.Println("    Examples:")
 	fmt.Println("      no vet                     validate main.no in current dir")
 	fmt.Println("      no vet main.no             validate main.no")
+	fmt.Println("      no vet --strict src/std/   fail on any lint")
 	fmt.Println("")
 	fmt.Println("  no info               Show environment and source directory info")
 	fmt.Println("")
@@ -1934,16 +1937,23 @@ func vetCommand(args []string) {
 	nbuild.ClearCaches()
 	fs := flag.NewFlagSet("vet", flag.ExitOnError)
 	reuseStdAST := fs.Bool("reuse-std-ast", false, "reuse already-parsed std Program AST for 'no vet src/std' (experimental, skips re-parsing each std module)")
+	strict := fs.Bool("strict", false, "upgrade lint warnings/hints to errors")
 	fs.Usage = func() {
-		fmt.Println("Usage: no vet [<file|dir>]")
+		fmt.Println("Usage: no vet [--strict] [<file|dir>]")
 		fmt.Println("")
 		fmt.Println("Validate Nolang source files without producing output.")
 		fmt.Println("If directory, validates all .no files in that directory.")
+		fmt.Println("Output format: file:line:col: [SEVERITY] source: message")
+		fmt.Println("")
+		fmt.Println("Flags:")
+		fmt.Println("  --strict         upgrade all lint warnings/hints to errors")
+		fmt.Println("  --reuse-std-ast  reuse already-parsed std Program AST (experimental)")
 		fmt.Println("")
 		fmt.Println("Examples:")
 		fmt.Println("  no vet                     validate main.no in current dir")
 		fmt.Println("  no vet main.no             validate main.no")
 		fmt.Println("  no vet src/std/            validate all .no files in src/std/")
+		fmt.Println("  no vet --strict src/std/   fail if any lint warning/hint is found")
 	}
 	_ = fs.Parse(args)
 
@@ -1960,6 +1970,7 @@ func vetCommand(args []string) {
 
 	opts := nbuild.BuildOptions{
 		Verbose: verbose,
+		Strict:  *strict,
 	}
 
 	// 檢查是文件還是目錄
@@ -1969,8 +1980,17 @@ func vetCommand(args []string) {
 		os.Exit(1)
 	}
 
-	// 載入 package 配置以套用 ignore 列表
+	// 載入 package 配置以套用 ignore 列表 + 解析依賴
 	vetPkg, _ := nbuild.LoadPackage(inputPath)
+	if vetPkg != nil && info.IsDir() {
+		if _, err := vetPkg.EnsureDependencies(10); err != nil {
+			fmt.Fprintf(os.Stderr, "Error: dependency resolution failed: %v\n", err)
+			os.Exit(1)
+		}
+	}
+
+	// lintResults 收集所有文件的 lint 結果，最後統一輸出
+	var allLints []nbuild.LintResult
 
 	if info.IsDir() {
 		// 目錄模式：遞迴驗證所有 .no 文件（與 testCommand/fmtProcessDirectory/BuildWorkspace 一致）
@@ -2003,18 +2023,29 @@ func vetCommand(args []string) {
 		sem := make(chan struct{}, runtime.NumCPU())
 		var errMu sync.Mutex
 		var firstErr error
+		var lintMu sync.Mutex
 		for _, file := range files {
 			wg.Add(1)
 			sem <- struct{}{}
 			go func(f string) {
 				defer wg.Done()
 				defer func() { <-sem }()
-				if e := nbuild.VetFile(f, opts); e != nil {
+				lints, e := nbuild.VetFileWithLints(f, opts)
+				if e != nil {
+					// I/O error（讀文件失敗等），作為 fatal error
 					errMu.Lock()
 					if firstErr == nil {
 						firstErr = fmt.Errorf("Error in %s: %w", f, e)
 					}
 					errMu.Unlock()
+				}
+				if len(lints) > 0 {
+					lintMu.Lock()
+					allLints = append(allLints, nbuild.LintResult{
+						File:  f,
+						Lints: lints,
+					})
+					lintMu.Unlock()
 				}
 			}(file)
 		}
@@ -2025,15 +2056,78 @@ func vetCommand(args []string) {
 		}
 	} else {
 		// 文件模式：驗證單個文件
-		if err := nbuild.VetFile(inputPath, opts); err != nil {
+		lints, err := nbuild.VetFileWithLints(inputPath, opts)
+		if err != nil {
 			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 			os.Exit(1)
 		}
+		if len(lints) > 0 {
+			allLints = append(allLints, nbuild.LintResult{
+				File:  inputPath,
+				Lints: lints,
+			})
+		}
+	}
+
+	// 輸出結構化診斷到 stdout（與 LSP vet 格式一致），統計到 stderr
+	errorCount := printLintResults(allLints)
+
+	if errorCount > 0 {
+		os.Exit(1)
 	}
 
 	if verbose {
 		fmt.Println("Validation successful")
 	}
+}
+
+// printLintResults 輸出結構化診斷到 stdout（格式與 LSP vet 一致），
+// 統計摘要到 stderr。返回 error 數量。
+func printLintResults(results []nbuild.LintResult) int {
+	// 按文件、行、列排序
+	sort.Slice(results, func(i, j int) bool {
+		if results[i].File != results[j].File {
+			return results[i].File < results[j].File
+		}
+		if results[i].Lints == nil || len(results[i].Lints) == 0 {
+			return true
+		}
+		if results[j].Lints == nil || len(results[j].Lints) == 0 {
+			return false
+		}
+		return true
+	})
+
+	errorCount := 0
+	warnCount := 0
+	hintCount := 0
+	for _, fileResult := range results {
+		for _, l := range fileResult.Lints {
+			sev := strings.ToUpper(string(l.Severity))
+			if l.Line > 0 {
+				fmt.Printf("%s:%d:%d: [%s] %s: %s\n",
+					fileResult.File, l.Line, l.Column, sev, l.Source, l.Message)
+			} else {
+				fmt.Printf("%s: [%s] %s: %s\n",
+					fileResult.File, sev, l.Source, l.Message)
+			}
+			switch l.Severity {
+			case nbuild.LintError:
+				errorCount++
+			case nbuild.LintWarning:
+				warnCount++
+			case nbuild.LintHint:
+				hintCount++
+			}
+		}
+	}
+	if errorCount > 0 || warnCount > 0 || hintCount > 0 {
+		fmt.Fprintf(os.Stderr, "\n%d error(s), %d warning(s), %d hint(s)\n",
+			errorCount, warnCount, hintCount)
+	} else {
+		fmt.Println("No issues found.")
+	}
+	return errorCount
 }
 
 func pubCommand(args []string) {

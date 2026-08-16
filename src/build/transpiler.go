@@ -557,6 +557,8 @@ type Transpiler struct {
 	sourcePath       string   // 當前編譯的源碼檔案路徑（用於 std 庫檢測）
 	allowAnonymousFn bool     // 是否允許匿名函式型別參數（來自 package.jsonc）
 	vetMode          bool     // vet 模式：只做語法+型別檢查，跳過 LLVM IR 生成
+	vetStrict        bool     // vet 模式下是否將 warning/hint 升級為 error
+	vetLints         []checker.LintResult // vet 模式下收集的 lint 結果
 	// externFuncSigs/externStructFields: 預載入的跨文件函數簽名和 struct 欄位型別，
 	// 注入到所有 parser 實例中以支援 let 型別推斷
 	externFuncSigs     map[string][]string
@@ -601,6 +603,18 @@ func (t *Transpiler) SetNoBoundsCheck(skip bool) {
 // the expensive LLVM codegen step. Used by `no vet`.
 func (t *Transpiler) SetVetMode(vet bool) {
 	t.vetMode = vet
+}
+
+// SetVetStrict 在 vet 模式下啟用嚴格模式：將所有 warning/hint 升級為 error。
+// 必須在 SetVetMode(true) 之後、Compile 之前調用。
+func (t *Transpiler) SetVetStrict(strict bool) {
+	t.vetStrict = strict
+}
+
+// VetLints 返回 vet 模式下收集的 lint 結果。
+// 僅在 vetMode=true 且 Compile 已執行後有效。
+func (t *Transpiler) VetLints() []checker.LintResult {
+	return t.vetLints
 }
 type Target int
 const (
@@ -1849,7 +1863,14 @@ func (t *Transpiler) CompileTarget(source string, _ Target) (string, error) {
 	}
 	// vet 模式：前端驗證（語法+型別+模組合併+單態化）已全部完成，
 	// 跳過 LLVM IR 生成以大幅加速 `no vet`。
+	// 在返回前對 merged 執行全部 lint 校驗（命名、未用變數、embed、
+	// 接口實現、字串拼接等），使 CI 路徑與編輯器診斷保持一致。
 	if t.vetMode {
+		t.vetLints = checker.RunAllLints(merged, checker.LintOptions{
+			SourcePath: t.sourcePath,
+			RootDir:    filepath.Dir(t.sourcePath),
+			Strict:     t.vetStrict,
+		})
 		return "", nil
 	}
 	// 傳播目標平台到 LLVM generator，讓 Generate 內部的平台過濾使用目標平台
