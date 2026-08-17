@@ -300,7 +300,20 @@ func (p *Parser) parseBareMatchExpr() Expression {
 			if !ma.isWildcard {
 				p.ctx.push(CTX_MATCH_ARM)
 			}
+			// peek 預計算可能已將 body 語句同行行尾註釋（如 `return  ; D`）
+			// 收集到 p.comments。若 collectDocComments 直接取走，行尾註釋
+			// 會被誤當 doc comment，導致 formatter 輸出位置錯誤（跑到上一行）。
+			// 這裡先暫存同行註釋，待 parseStatement 解析完 body 後由
+			// attachInlineComment 正確附加為 inline comment。
+			bodyLine := p.currentToken.Line
+			var inlineComments []lexer.Token
+			for len(p.comments) > 0 && p.comments[len(p.comments)-1].Line == bodyLine {
+				inlineComments = append([]lexer.Token{p.comments[len(p.comments)-1]}, inlineComments...)
+				p.comments = p.comments[:len(p.comments)-1]
+			}
 			doc := p.collectDocComments()
+			// 重新放入同行註釋，讓 attachInlineComment 處理
+			p.comments = append(p.comments, inlineComments...)
 			stmt := p.parseStatement()
 			if !ma.isWildcard {
 				p.ctx.pop()
