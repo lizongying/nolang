@@ -56,7 +56,22 @@ func (f *formatter) formatStatement(stmt parser.Statement) {
 		f.formatReturnStatement(s)
 	case *parser.ExpressionStatement:
 		if s.Expression != nil {
-			f.formatExpression(s.Expression)
+			// Standalone if-then with empty block body and no else/comment:
+			// skip the entire `cond -> {}` statement (no-op branch).
+			if ie, ok := s.Expression.(*parser.IfExpression); ok &&
+				f.hasRT(ie, parser.RTStandalone) &&
+				!f.hasRT(ie, parser.RTMatchWildcard) &&
+				ie.Alternative == nil &&
+				ie.Consequence != nil &&
+				len(ie.Consequence.Statements) == 0 &&
+				ie.Consequence.TrailingComments == nil &&
+				ie.Consequence.ClosingBraceComment == nil &&
+				f.obcOf(ie.Consequence) == nil &&
+				(s.Comment == nil || len(s.Comment.List) == 0) {
+				// skip silently
+			} else {
+				f.formatExpression(s.Expression)
+			}
 		}
 		// nil expression = bare { from condition: { body } syntax — skip silently
 	case *parser.FunctionDefinition:

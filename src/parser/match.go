@@ -196,6 +196,21 @@ func (p *Parser) parseBareMatchExpr() Expression {
 			p.nextToken()
 		} else if p.currentToken.Type == lexer.RARROW {
 			ma.isWildcard = true
+		} else if p.currentToken.Type == lexer.IDENT && p.peekToken.Type == lexer.RARROW &&
+			(p.currentToken.Literal == "err" || p.currentToken.Literal == "nil" || p.currentToken.Literal == "ok") {
+			// ok-> → val branch (specific, not catch-all)
+			// err-> / nil-> → option pattern
+			if p.currentToken.Literal == "ok" {
+				ma.isWildcard = true
+				ma.isDotVal = true
+			} else {
+				ma.condition = &Identifier{Token: p.currentToken, Value: p.currentToken.Literal}
+			}
+			p.nextToken()
+		} else if p.currentToken.Type == lexer.NIL && p.peekToken.Type == lexer.RARROW {
+			// nil-> → option pattern
+			ma.condition = &NilLiteral{Token: p.currentToken}
+			p.nextToken()
 		} else {
 			// Parse condition as full boolean expression
 			p.ctx.push(CTX_MATCH_ARM)
@@ -278,7 +293,8 @@ func (p *Parser) parseBareMatchExpr() Expression {
 			// 必為最後一個臂，因此跳過 isArmStart() 檢查，直接解析到 }。
 			checkArmStart := !ma.isWildcard
 			for p.currentToken.Type != lexer.RBRACE && p.currentToken.Type != lexer.EOF &&
-				(!checkArmStart || !p.isArmStart()) {
+				(!checkArmStart || !p.isArmStart()) &&
+				!isOptionPatternStart(p) {
 				if p.currentToken.Type == lexer.NEWLINE {
 					p.nextToken()
 					continue

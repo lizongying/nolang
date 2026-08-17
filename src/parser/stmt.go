@@ -279,6 +279,15 @@ func (p *Parser) parseStatement() Statement {
 					p.restoreState(state)
 					return p.parseColonMethodDefinition(structToken)
 				}
+				// 點號型別宣告：dec.out []byte 或 dec.out []byte = value
+				// 當 IDENT.IDENT 後面是 [ 且符合陣列/切片型別模式時，
+				// 走 parseLetStatement 路徑，但變數名為 DotExpression。
+				if p.currentToken.Type == lexer.IDENT && p.peekToken.Type == lexer.LBRACKET {
+					if p.isDotExprTypeDecl() {
+						p.restoreState(state)
+						return p.parseDotExprLetStatement()
+					}
+				}
 			}
 			p.restoreState(state)
 		}
@@ -1446,6 +1455,143 @@ func (p *Parser) parseExpressionStatement() Statement {
 			Token:      tok,
 			Expression: standaloneIf,
 		}
+	}
+
+	return stmt
+}
+
+// isDotExprTypeDecl 检查当前位置是否为点号表达式后跟类型声明。
+// 前提：currentToken 是 IDENT（属性名），peekToken 是 LBRACKET。
+// 模式：IDENT.IDENT []TYPE 或 IDENT.IDENT []TYPE = value
+// 通过前瞻扫描确认 [ 后面是 ]（空括号）或 [N] 后跟 ]，且 ] 后面是 IDENT（类型名）。
+func (p *Parser) isDotExprTypeDecl() bool {
+	// currentToken = IDENT (property), peekToken = LBRACKET
+	// look(k) returns the (k+2)-th non-comment token after currentToken.
+	// look(0) = first token after peekToken ([), i.e., first token inside []
+	depth := 1
+	for i := 0; i < 20; i++ {
+		t := p.look(i)
+		switch t.Type {
+		case lexer.LBRACKET:
+			depth++
+		case lexer.RBRACKET:
+			depth--
+			if depth == 0 {
+				// ] 后面应该是 IDENT（类型名）
+				next := p.look(i + 1)
+				return next.Type == lexer.IDENT
+			}
+		case lexer.NEWLINE, lexer.EOF, lexer.SEMICOLON:
+			return false
+		}
+	}
+	return false
+}
+
+// parseDotExprLetStatement 解析点号表达式的类型声明，如 dec.out []byte 或 dec.out []byte = value。
+// 变量名为 DotExpression（如 dec.out），类型为 []byte。
+func (p *Parser) parseDotExprLetStatement() Statement {
+	receiverTok := p.currentToken // IDENT (receiver, e.g. dec)
+	p.nextToken()                 // skip receiver → currentToken = DOT
+	p.nextToken()                 // skip DOT → currentToken = IDENT (property)
+	propTok := p.currentToken
+	p.nextToken() // skip property → currentToken = LBRACKET
+
+	// 构建 DotExpression 作为变量名
+	receiver := &Identifier{Token: receiverTok, Value: receiverTok.Literal}
+	dotExpr := &DotExpression{
+		Token:    propTok,
+		Receiver: receiver,
+		Property: propTok.Literal,
+	}
+
+	stmt := &LetStatement{
+		Token: receiverTok,
+		Name:  &Identifier{Token: propTok, Value: receiverTok.Literal + "." + propTok.Literal},
+	}
+	_ = dotExpr // dotExpr 用于类型推断，Name 使用字符串形式
+
+	// 解析 []type 部分（复用 parseLetStatement 的数组/切片类型解析逻辑）
+	if p.currentToken.Type == lexer.LBRACKET {
+		bracketToken := p.currentToken
+		p.nextToken() // skip [ → current = first content token
+
+		if p.currentToken.Type == lexer.IDENT && p.peekToken.Type == lexer.RBRACKET &&
+			(isBuiltinTypeName(p.currentToken.Literal) || p.isRegisteredTypeName(p.currentToken.Literal)) {
+			// Map type: [K]V
+			keyName := p.currentToken.Literal
+			keyTok := p.currentToken
+			p.nextToken() // skip K → current = ]
+			p.nextToken() // skip ] → current = V
+			if p.currentToken.Type == lexer.IDENT {
+				valName := p.currentToken.Literal
+				valTok := p.currentToken
+				p.nextToken()
+				stmt.Type = &MapType{
+					Token: bracketToken,
+					Key:   &NamedType{Token: keyTok, Value: keyName},
+					Value: &NamedType{Token: valTok, Value: valName},
+				}
+			}
+		} else {
+			hasSize := false
+			var sizeExpr Expression
+			if p.currentToken.Type == lexer.QUESTION {
+				hasSize = true
+				p.nextToken()
+			} else if p.currentToken.Type != lexer.RBRACKET {
+				sizeExpr = p.parseExpression(LOWEST)
+				hasSize = true
+				if p.currentToken.Type != lexer.RBRACKET {
+					p.nextToken()
+				}
+			}
+			if p.currentToken.Type == lexer.RBRACKET {
+				p.nextToken()
+				if p.currentToken.Type == lexer.IDENT {
+					elemType := p.currentToken.Literal
+					elem := &NamedType{Token: p.currentToken, Value: elemType}
+					if hasSize {
+						stmt.Type = &ArrayType{Token: bracketToken, Size: sizeExpr, Elem: elem}
+					} else {
+						stmt.Type = &SliceType{Token: bracketToken, Elem: elem}
+					}
+					p.nextToken()
+				} else if p.currentToken.Type == lexer.LBRACKET {
+					elemType, ok := p.parseTypeExpression()
+					if ok {
+						if hasSize {
+							stmt.Type = &ArrayType{Token: bracketToken, Size: sizeExpr, Elem: elemType}
+						} else {
+							stmt.Type = &SliceType{Token: bracketToken, Elem: elemType}
+						}
+					}
+				} else {
+					if hasSize {
+						stmt.Type = &ArrayType{Token: bracketToken, Size: sizeExpr, Elem: &NamedType{Token: bracketToken, Value: "i64", IsInferred: true}, IsInferred: true}
+					} else {
+						stmt.Type = &SliceType{Token: bracketToken, Elem: &NamedType{Token: bracketToken, Value: "i64", IsInferred: true}, IsInferred: true}
+					}
+				}
+			}
+		}
+	}
+
+	// 检查赋值
+	if p.currentToken.Type == lexer.ASSIGN {
+		p.nextToken() // skip =
+		p.ctx.push(CTX_EXPR)
+		stmt.Value = p.parseExpression(LOWEST)
+		p.ctx.pop()
+	} else if p.currentToken.Type == lexer.NEWLINE || p.peekToken.Type == lexer.NEWLINE ||
+		p.currentToken.Type == lexer.RBRACE || p.currentToken.Type == lexer.EOF {
+		if p.currentToken.Type == lexer.IDENT {
+			p.nextToken()
+		}
+		if stmt.Type != nil {
+			p.setVarType(stmt.Name.Value, typeString(stmt.Type))
+		}
+		return stmt
 	}
 
 	return stmt

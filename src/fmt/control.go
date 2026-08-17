@@ -7,6 +7,7 @@ import (
 	"github.com/lizongying/nolang/parser"
 )
 
+
 // formatStandaloneBody formats the body of a standalone if-then (cond -> body).
 // If the body was written inline (single simple statement, no braces), it outputs
 // inline without braces. If the body was written as a block `{ ... }`, it keeps

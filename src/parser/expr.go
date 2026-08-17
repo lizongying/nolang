@@ -1063,7 +1063,8 @@ func (p *Parser) parseMatchExprFrom(matched Expression) Expression {
 			// 必為最後一個臂，因此跳過 isArmStart() 檢查，直接解析到 }。
 			checkArmStart := !ma.isWildcard
 			for p.currentToken.Type != lexer.RBRACE && p.currentToken.Type != lexer.EOF &&
-				(!checkArmStart || !p.isArmStart()) {
+				(!checkArmStart || !p.isArmStart()) &&
+				!isOptionPatternStart(p) {
 				// Skip NEWLINE
 				if p.currentToken.Type == lexer.NEWLINE {
 					p.nextToken()

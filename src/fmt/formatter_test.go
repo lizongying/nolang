@@ -2623,6 +2623,76 @@ func TestFormatRegexLiteral(t *testing.T) {
 			input:    "re = /[a-z]+/",
 			expected: "re = /[a-z]+/\n",
 		},
+		{
+			// regression: standalone if-then with empty block body
+			// `cond -> {}` should be removed entirely (no-op branch).
+			name: "standalone_if_then_empty_block_removed",
+			input: `f = () {
+    ok == true -> {}
+    x = 1
+}
+`,
+			expected: `f = () {
+    x = 1
+}
+`,
+		},
+		{
+			// regression: standalone if-then with empty block body at end of function
+			name: "standalone_if_then_empty_block_at_end",
+			input: `f = () {
+    o, ok = oid-from-hex(hx)
+    ok == true -> {}
+}
+`,
+			expected: `f = () {
+    o, ok = oid-from-hex(hx)
+}
+`,
+		},
+		{
+			// regression: standalone if-then with empty inline body `cond ->`
+			// (wildcard arm with no body) should NOT be removed — it's
+			// semantically meaningful in bare match expressions.
+			name: "standalone_if_then_wildcard_empty_body_kept",
+			input: `f = () {
+    {
+        x == 1 -> {
+            do-something()
+        }
+        ->
+    }
+}
+`,
+			expected: `f = () {
+    {
+        x == 1 -> {
+            do-something()
+        }
+        ->
+    }
+}
+`,
+		},
+		{
+			// regression: standalone if-then with comment in empty block body
+			// should NOT be removed (comment must be preserved).
+			name: "standalone_if_then_empty_block_with_comment_kept",
+			input: `f = () {
+    ok == true -> {
+        ; intentionally empty
+    }
+    x = 1
+}
+`,
+			expected: `f = () {
+    ok == true -> {
+        ; intentionally empty
+    }
+    x = 1
+}
+`,
+		},
 	}
 	for _, tt := range tests {
 		got := FormatFile(tt.input)
