@@ -223,6 +223,46 @@ func TestFormatBasic(t *testing.T) {
 }`,
 		},
 		{
+			// regression: standalone if-then with block consequence and
+			// block else arm (-> on a new line after }).  Before the fix,
+			// the formatter merged `} -> {` onto the same line.
+			name: "standalone_if_then_block_else_newline",
+			input: `f = () {
+    cond -> {
+    }
+    -> {
+        x = 1
+        return
+    }
+}`,
+			expected: `f = () {
+    cond -> {
+    }
+    -> {
+        x = 1
+        return
+    }
+}`,
+		},
+		{
+			// regression: when the user explicitly writes a block body
+			// (cond -> { single stmt }), the formatter must keep the block
+			// form and not collapse it to an inline single line.
+			name: "standalone_if_then_explicit_block_not_collapsed",
+			input: `f = () {
+    bands == 4 -> {
+        tmp.data[dst + 3] = data[row - start + x * 4 + 3] & 255
+    }
+    bands == 4 -> tmp.data[dst + 3] = data[row - start + x * 4 + 3] & 255
+}`,
+			expected: `f = () {
+    bands == 4 -> {
+        tmp.data[dst + 3] = data[row - start + x * 4 + 3] & 255
+    }
+    bands == 4 -> tmp.data[dst + 3] = data[row - start + x * 4 + 3] & 255
+}`,
+		},
+		{
 			// regression: `match` is a keyword but is used as a variable
 			// name in std/fs.no.  Before the fix, the parser skipped the
 			// `match` token (returning nil), so the formatter produced

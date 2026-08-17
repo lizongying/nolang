@@ -51,6 +51,10 @@ const (
 	RTMatchWrapper
 	// RTElif 標記來自 deprecated `elif` desugar 的 IfExpression。
 	RTElif
+	// RTElseNewline 標記 standalone if-then 的 else arm 是在新行上被附加的
+	// （在 parseBlockStatement 循環中），與同行 `cond -> body -> elseBody` 區分。
+	// Formatter 根據此標誌在新行輸出 `->`。
+	RTElseNewline
 )
 
 // SemanticContext 是解析/语义分离后的“副表”。

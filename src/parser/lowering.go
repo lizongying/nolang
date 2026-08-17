@@ -892,5 +892,5 @@ func (p *Parser) prependStmt(body *BlockStatement, stmt Statement) *BlockStateme
 	stmts := make([]Statement, 0, len(body.Statements)+1)
 	stmts = append(stmts, stmt)
 	stmts = append(stmts, body.Statements...)
-	return &BlockStatement{Token: body.Token, Statements: stmts}
+	return &BlockStatement{Token: body.Token, Statements: stmts, IsInline: body.IsInline}
 }

@@ -20,6 +20,13 @@ import (
 // (validators + module/type resolution helpers).
 
 var validationFuncTypes map[string]string
+
+// validationStructNames holds the set of struct type names defined in the
+// current program. Used by ValidateUndefinedVars to distinguish struct type
+// names (e.g. `s` in `s { x i64 }`) from struct instances (e.g. `s0 = s {}`).
+// When a DotExpression like `s.x = 7` appears, if the receiver `s` is a struct
+// type name but not a defined variable (instance), it's an error.
+var validationStructNames map[string]bool
 func inferExprType(expr parser.Expression, varTypes map[string]string, funcTypes map[string]string, selfType string) string {
 	if expr == nil {
 		return ""
@@ -1269,6 +1276,18 @@ func ValidateUndefinedVars(program *parser.Program, rootDir string) []ValidateRe
 			for _, v := range ted.Variants {
 				definedVars[v.Name] = true
 			}
+		}
+	}
+
+	// Collect struct type names so we can distinguish struct type names
+	// (e.g. `s` in `s { x i64 }`) from struct instances (e.g. `s0 = s {}`).
+	// Struct type names are NOT added to definedVars: they are type names,
+	// not variables. Assigning a field on a type name (e.g. `s.x = 7`) is
+	// an error — the user must instantiate first (`s0 = s {}` then `s0.x = 7`).
+	validationStructNames = make(map[string]bool)
+	for _, stmt := range program.Statements {
+		if sd, ok := stmt.(*parser.StructDefinition); ok {
+			validationStructNames[sd.Name] = true
 		}
 	}
 
@@ -3028,7 +3047,26 @@ func checkUndefinedVarsInExpr(expr parser.Expression, definedVars, funcNames map
 			}
 		}
 	case *parser.AssignExpression:
-		// Left side is a target, not a reference — don't check it
+		// Check that the left side's receiver (for DotExpression like s.x = 7)
+		// is a defined variable (instance), not a struct type name.
+		// e.g. `s { x i64 }` defines type `s`; `s.x = 7` is illegal because
+		// `s` is a type, not an instance. Use `s0 = s {}` first, then `s0.x = 7`.
+		// Note: built-in type names like `i8`, `u32`, `f64`, `byte` etc. are
+		// NOT in validationStructNames, so `i8.MIN = -128` is not flagged here.
+		if dot, ok := e.Left.(*parser.DotExpression); ok {
+			if recv, ok := dot.Receiver.(*parser.Identifier); ok {
+				if recv.Value == "self" {
+					// `self` is valid in struct method bodies — skip
+				} else if validationStructNames[recv.Value] {
+					// Receiver is a struct type name, not an instance.
+					results = append(results, ValidateResult{
+						Line:    recv.Token.Line,
+						Column:  recv.Token.Column,
+						Message: fmt.Sprintf("cannot assign field '%s' on struct type '%s': instantiate first (e.g. `%s0 = %s {}`)", dot.Property, recv.Value, recv.Value, recv.Value),
+					})
+				}
+			}
+		}
 		if e.Value != nil {
 			results = append(results, checkUndefinedVarsInExpr(e.Value, definedVars, funcNames, false)...)
 		}

@@ -8,15 +8,11 @@ import (
 )
 
 // formatStandaloneBody formats the body of a standalone if-then (cond -> body).
-// If the body is a single simple statement (expression, let, multi-assign,
-// return, break, continue), it outputs inline without braces.
-// If the body contains multiple statements, it outputs `{ stmts }`.
+// If the body was written inline (single simple statement, no braces), it outputs
+// inline without braces. If the body was written as a block `{ ... }`, it keeps
+// the block form.
 func (f *formatter) formatStandaloneBody(body *parser.BlockStatement) {
-	if len(body.Statements) == 1 &&
-		body.TrailingComments == nil &&
-		body.ClosingBraceComment == nil &&
-		f.obcOf(body) == nil &&
-		!f.hasDocComment(body.Statements[0]) {
+	if f.isStandaloneInline(body) {
 		switch body.Statements[0].(type) {
 		case *parser.ExpressionStatement:
 			f.formatExpression(body.Statements[0].(*parser.ExpressionStatement).Expression)
@@ -28,6 +24,48 @@ func (f *formatter) formatStandaloneBody(body *parser.BlockStatement) {
 		}
 	}
 	f.formatBlockStatement(body)
+}
+
+// isStandaloneInline reports whether a standalone body should be formatted inline
+// (single simple statement without braces) rather than as a block `{ ... }`.
+// Uses the IsInline flag set by the parser: true = inline single-statement body
+// (e.g. `cond -> return`, `cond -> x = 1`), false = explicit block `{ ... }`.
+// Also checks for comments/obc that would force block output.
+// Used to decide whether `->` for the else arm goes on the same line or a new line:
+// inline bodies keep `->` on the same line, block bodies put `->` on a new line.
+func (f *formatter) isStandaloneInline(body *parser.BlockStatement) bool {
+	if !body.IsInline || len(body.Statements) != 1 ||
+		body.TrailingComments != nil ||
+		body.ClosingBraceComment != nil ||
+		f.obcOf(body) != nil ||
+		f.hasDocComment(body.Statements[0]) {
+		return false
+	}
+	switch body.Statements[0].(type) {
+	case *parser.ExpressionStatement, *parser.LetStatement, *parser.MultiAssignStatement,
+		*parser.ReturnStatement, *parser.BreakStatement, *parser.ContinueStatement:
+		return true
+	}
+	return false
+}
+
+// isBareMatchBody reports whether the body contains a single bare match expression.
+// Bare match bodies (e.g. `-> { cond -> body }`) output as `{ ... }` themselves,
+// so inlining them in writeBareMatchArm doesn't change their visual form.
+// This allows `{ }` block bodies containing a bare match to be inlined.
+func (f *formatter) isBareMatchBody(statements []parser.Statement) bool {
+	if len(statements) != 1 {
+		return false
+	}
+	es, ok := statements[0].(*parser.ExpressionStatement)
+	if !ok {
+		return false
+	}
+	ifExpr, ok := es.Expression.(*parser.IfExpression)
+	if !ok {
+		return false
+	}
+	return f.hasRT(ifExpr, parser.RTBareMatch)
 }
 
 func (f *formatter) formatIfExpression(e *parser.IfExpression) {
@@ -47,7 +85,18 @@ func (f *formatter) formatIfExpression(e *parser.IfExpression) {
 		}
 		f.formatStandaloneBody(e.Consequence)
 		if e.Alternative != nil {
-			f.write(" -> ")
+			// Else `->` placement:
+			// - If consequence is a block (not inline), `->` must go on a new line
+			//   to avoid `} -> {` on the same line.
+			// - If RTElseNewline is set (else was on a new line in source),
+			//   `->` must go on a new line even when consequence is inline.
+			// - Otherwise (inline consequence, same-line else), `->` stays inline.
+			if !f.isStandaloneInline(e.Consequence) || f.hasRT(e, parser.RTElseNewline) {
+				f.newline()
+				f.write("-> ")
+			} else {
+				f.write(" -> ")
+			}
 			f.formatStandaloneBody(e.Alternative)
 		}
 		return
@@ -209,7 +258,10 @@ func (f *formatter) writeBareMatchArm(e *parser.IfExpression) {
 	// 判斷是否為可內聯的簡單 body：單語句、無塊級註釋、類型為表達式/let/return/break/continue。
 	// 注意：body 語句的 doc comment（arm 前的註釋，如 `; F grade`）不阻止內聯，
 	// 該註釋會在 arm 條件之前獨立行輸出。
-	canInline := len(statements) == 1 &&
+	// 使用 IsInline 標誌（由 parser 設置）區分用戶寫的 block `{ }` 與 inline 單語句。
+	// 例外：若 body 是 bare match 表達式（本身就是 `{ }` 形式），內聯不改變其輸出形式。
+	canInline := (e.Consequence.IsInline || f.isBareMatchBody(statements)) &&
+		len(statements) == 1 &&
 		e.Consequence.TrailingComments == nil &&
 		e.Consequence.ClosingBraceComment == nil &&
 		f.obcOf(e.Consequence) == nil

@@ -1239,7 +1239,7 @@ func (p *Parser) parseStandaloneBody(tok lexer.Token) *BlockStatement {
 		(p.currentToken.Type == lexer.IDENT && (p.peekToken.Type == lexer.ASSIGN || p.peekToken.Type == lexer.COMMA)) {
 		bodyStmt := p.parseStatement()
 		if bodyStmt != nil {
-			return &BlockStatement{Token: tok, Statements: []Statement{bodyStmt}}
+			return &BlockStatement{Token: tok, Statements: []Statement{bodyStmt}, IsInline: true}
 		}
 		return &BlockStatement{Token: tok}
 	}
@@ -1247,6 +1247,7 @@ func (p *Parser) parseStandaloneBody(tok lexer.Token) *BlockStatement {
 	return &BlockStatement{
 		Token:      tok,
 		Statements: []Statement{&ExpressionStatement{Token: tok, Expression: body}},
+		IsInline: true,
 	}
 }
 
@@ -1274,13 +1275,14 @@ func (p *Parser) wrapStandaloneChain(tok lexer.Token, body *BlockStatement) *Blo
 		}
 		p.sem.SetRTFlag(chained, RTStandalone)
 		body = &BlockStatement{
-			Token: tok,
+			Token:    tok,
 			Statements: []Statement{
 				&ExpressionStatement{
 					Token:      tok,
 					Expression: chained,
 				},
 			},
+			IsInline: true,
 		}
 	}
 	return body
@@ -1544,6 +1546,7 @@ func (p *Parser) parseBlockStatement() *BlockStatement {
 						altBody := p.parseStandaloneBody(tok)
 						altBody = p.wrapStandaloneChain(tok, altBody)
 						ie.Alternative = altBody
+						p.sem.SetRTFlag(ie, RTElseNewline)
 						continue
 					}
 				}

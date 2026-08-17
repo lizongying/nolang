@@ -2859,6 +2859,17 @@ func (g *Generator) generateMainFunction(sb *strings.Builder, program *parser.Pr
 				}
 				sb.WriteString(fmt.Sprintf("%s%s = alloca %s\n", g.indent(), llvmVarRef(name), toLLVMType(varType)))
 				sb.WriteString(fmt.Sprintf("%scall void @llvm.lifetime.start.p0i8(i64 %d, i8* %s)\n", g.indent(), sz, llvmVarRef(name)))
+				// Zero-initialize heap-owning types (str-long, vec, arr, option,
+				// user structs) so that emitHeapFree's null-check on the data
+				// pointer works correctly even when the variable is never
+				// assigned (e.g. in an untaken match/if branch). Without this,
+				// the data field contains stack garbage, and free(garbage)
+				// causes SIGABRT.
+				// Use llvm.memset (not store zeroinitializer) to avoid LLVM opt's
+				// DSE removing the zero-init as a dead store.
+				if g.isHeapOwningType(varType) && sz > 0 {
+					sb.WriteString(fmt.Sprintf("%scall void @llvm.memset.p0.i64(ptr %s, i8 0, i64 %d, i1 false)\n", g.indent(), llvmVarRef(name), sz))
+				}
 			}
 		}
 	}

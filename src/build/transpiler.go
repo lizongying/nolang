@@ -1437,6 +1437,12 @@ func (t *Transpiler) CompileTarget(source string, _ Target) (string, error) {
 			allValidateErrs = append(allValidateErrs, fmt.Sprintf("line %d, column %d: %s", e.Line, e.Column, e.Message))
 		}
 	}
+	// 未定義變數檢查（包括 struct 類型名直接賦值欄位，如 s.x = 7 而非 s0.x = 7）
+	if undefErrs := checker.ValidateUndefinedVars(program, filepath.Dir(t.sourcePath)); len(undefErrs) > 0 {
+		for _, e := range undefErrs {
+			allValidateErrs = append(allValidateErrs, fmt.Sprintf("line %d, column %d: %s", e.Line, e.Column, e.Message))
+		}
+	}
 	// ?T 輸出參數未初始化檢查（case6）
 	if uninitErrs := checker.ValidateUninitOutputParams(program); len(uninitErrs) > 0 {
 		for _, e := range uninitErrs {

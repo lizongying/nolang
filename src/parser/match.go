@@ -264,6 +264,7 @@ func (p *Parser) parseBareMatchExpr() Expression {
 		} else if p.currentToken.Type == lexer.NEWLINE {
 			// Block form (newline-separated statements, no braces)
 			ma.isBlockBody = true
+			bodyBlock.IsInline = true
 			for p.currentToken.Type == lexer.NEWLINE {
 				p.nextToken()
 			}
@@ -295,6 +296,7 @@ func (p *Parser) parseBareMatchExpr() Expression {
 			// 使用 parseStatement 以支援 let 賦值（如 `cond -> a = 1`）與表達式（如 `cond -> print(1)`）
 			// 對 catch-all arm（wildcard，如 `-> cond -> body`），不推送 CTX_MATCH_ARM，
 			// 允許 body 中的 -> 被解析為 standalone if-then，而非 match arm 分隔符。
+			bodyBlock.IsInline = true
 			if !ma.isWildcard {
 				p.ctx.push(CTX_MATCH_ARM)
 			}

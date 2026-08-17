@@ -4265,6 +4265,18 @@ func (g *Generator) generateFieldStr(sb *strings.Builder, field *parser.FormatFi
 	// --- Simple variable path (original) ---
 	varType, ok := g.varTypes[field.Name]
 	if !ok {
+		// The field name was classified as a "simple identifier" by
+		// ParseFormatString (because isValidIdentifier allows '.'),
+		// but it's not a known variable. It might be a dot-expression
+		// like "s0.x" (struct field access). Try evaluating it as an
+		// expression before giving up and emitting an empty string.
+		if strings.Contains(field.Name, ".") {
+			argPtr, exprVarType := g.evalFmtExpr(sb, field.Name)
+			if argPtr != "" {
+				g.dispatchFmtCall(sb, argPtr, exprVarType, specType, specPtr, outBuf)
+				return outBuf
+			}
+		}
 		return g.buildStrLongFromValue(sb, "")
 	}
 

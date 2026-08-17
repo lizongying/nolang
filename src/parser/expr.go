@@ -1045,6 +1045,7 @@ func (p *Parser) parseMatchExprFrom(matched Expression) Expression {
 		} else if p.currentToken.Type == lexer.NEWLINE {
 			// Block form (newline-separated statements, no braces)
 			ma.isBlockBody = true
+			bodyBlock.IsInline = true
 			for p.currentToken.Type == lexer.NEWLINE {
 				p.nextToken()
 			}
@@ -1081,6 +1082,7 @@ func (p *Parser) parseMatchExprFrom(matched Expression) Expression {
 			// 使用 parseStatement 以支援 let 賦值（如 `cond -> a = 1`）與表達式（如 `cond -> print(1)`）
 			// But if the body is actually another option pattern (e.g. "nil -> err -> ok"),
 			// treat the current arm as having an empty body (fallthrough).
+			bodyBlock.IsInline = true
 			if isOptionPatternStart(p) {
 				// Empty body — next token is a new arm pattern
 			} else if p.currentToken.Type == lexer.LBRACE {
