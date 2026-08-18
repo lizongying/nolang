@@ -152,20 +152,69 @@ func (p *Parser) buildBareMatchDesugar(tok lexer.Token, arms []matchArm) Express
 	}
 
 	var ifExpr *IfExpression
+	var defaultBody *BlockStatement // 最內層非 dotVal wildcard body
 	for i := len(arms) - 1; i >= 0; i-- {
 		arm := arms[i]
 		if arm.isWildcard {
 			if ifExpr == nil {
-				ifExpr = &IfExpression{
-					Token:       tok,
-					Condition:   &IntegerLiteral{Token: tok, Value: 1},
-					Consequence: arm.body,
+				if defaultBody != nil && arm.isDotVal {
+					// dotVal arm (ok->) after a regular -> wildcard (else):
+					// treat as conditional arm: if ok { body } else { defaultBody }
+					newIf := &IfExpression{
+						Token:           tok,
+						Condition:       &Identifier{Token: tok, Value: "ok"},
+						Consequence:     arm.body,
+						Alternative:     defaultBody,
+						EqualityPattern: &Identifier{Token: tok, Value: "ok"},
+						DotValBody:      arm.body,
+					}
+					p.sem.SetRTFlag(newIf, RTBareMatch|RTMatchWildcard)
+					ifExpr = newIf
+				} else if arm.isDotVal {
+					// dotVal arm without prior default — treat as standalone ok condition
+					newIf := &IfExpression{
+						Token:           tok,
+						Condition:       &Identifier{Token: tok, Value: "ok"},
+						Consequence:     arm.body,
+						EqualityPattern: &Identifier{Token: tok, Value: "ok"},
+						DotValBody:      arm.body,
+					}
+					p.sem.SetRTFlag(newIf, RTBareMatch|RTMatchWildcard)
+					ifExpr = newIf
+				} else {
+					// Regular wildcard (->): store as defaultBody for next arm's else
+					ifExpr = &IfExpression{
+						Token:       tok,
+						Condition:   &IntegerLiteral{Token: tok, Value: 1},
+						Consequence: arm.body,
+					}
+					p.sem.SetRTFlag(ifExpr, RTBareMatch|RTMatchWildcard)
 				}
-				p.sem.SetRTFlag(ifExpr, RTBareMatch|RTMatchWildcard)
 			} else {
-				if ifExpr.Alternative == nil {
-					ifExpr.Alternative = arm.body
+				if arm.isDotVal {
+					// dotVal arm (ok->) when other arms already processed:
+					// wrap as outer condition
+					newIf := &IfExpression{
+						Token:       tok,
+						Condition:   &Identifier{Token: tok, Value: "ok"},
+						Consequence: arm.body,
+						Alternative: &BlockStatement{
+							Token:      tok,
+							Statements: []Statement{&ExpressionStatement{Token: tok, Expression: ifExpr}},
+						},
+						EqualityPattern: &Identifier{Token: tok, Value: "ok"},
+						DotValBody:      arm.body,
+					}
+					p.sem.SetRTFlag(newIf, RTBareMatch|RTMatchWildcard)
+					ifExpr = newIf
+				} else {
+					if ifExpr.Alternative == nil {
+						ifExpr.Alternative = arm.body
+					}
 				}
+			}
+			if !arm.isDotVal && defaultBody == nil {
+				defaultBody = arm.body
 			}
 		} else {
 			var equalityPattern Expression
@@ -412,7 +461,7 @@ func (p *Parser) buildMatchDesugar(sm *SurfaceMatch) Expression {
 				armType = "ok"
 			}
 			if armType != "" {
-			// Use per-arm position so walker/index can distinguish synthetic bindings
+				// Use per-arm position so walker/index can distinguish synthetic bindings
 				var armTok lexer.Token
 				if arm.condition != nil {
 					pos := arm.condition.Pos()
@@ -465,8 +514,9 @@ func (p *Parser) buildMatchDesugar(sm *SurfaceMatch) Expression {
 						Alternative:     defaultBody,
 						MatchedExpr:     matched,
 						EqualityPattern: &Identifier{Token: tok, Value: "ok"},
+						DotValBody:      arm.body,
 					}
-					p.sem.SetRTFlag(newIf, RTBareMatch)
+					p.sem.SetRTFlag(newIf, RTBareMatch|RTMatchWildcard)
 					ifExpr = newIf
 				} else {
 					// 最內層 wildcard：儲存 body 作為下一個條件 arm 的 else
@@ -495,8 +545,9 @@ func (p *Parser) buildMatchDesugar(sm *SurfaceMatch) Expression {
 						},
 						MatchedExpr:     matched,
 						EqualityPattern: &Identifier{Token: tok, Value: "ok"},
+						DotValBody:      arm.body,
 					}
-					p.sem.SetRTFlag(newIf, RTBareMatch)
+					p.sem.SetRTFlag(newIf, RTBareMatch|RTMatchWildcard)
 					ifExpr = newIf
 				} else {
 					ifExpr.Alternative = arm.body

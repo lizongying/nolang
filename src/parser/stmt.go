@@ -1723,6 +1723,44 @@ func (p *Parser) parseBlockStatement() *BlockStatement {
 	}
 
 	block.TrailingComments = p.collectDocComments()
+	// Filter out comments that are not actually inside this block (between
+	// the opening and closing braces). collectDocComments sweeps all remaining
+	// buffered comments, which may include ones collected before the block's
+	// opening brace was consumed — these belong to the preceding statement or
+	// outer scope, not to this block's trailing comments. Put them back into
+	// p.comments so the caller can pick them up.
+	closeBraceLine := p.currentToken.Line
+	if block.TrailingComments != nil {
+		var outside []*Comment
+		var inside []*Comment
+		for _, c := range block.TrailingComments.List {
+			if c.Pos.Line >= openBraceLine && (closeBraceLine == 0 || c.Pos.Line <= closeBraceLine) {
+				inside = append(inside, c)
+			} else {
+				outside = append(outside, c)
+			}
+		}
+		if len(outside) > 0 {
+			for _, c := range outside {
+				p.comments = append([]lexer.Token{{
+					Type:    lexer.COMMENT,
+					Literal: c.Text,
+					Marker:  c.Marker,
+					Line:    c.Pos.Line,
+					Column:  c.Pos.Column,
+				}}, p.comments...)
+			}
+		}
+		if len(inside) > 0 {
+			block.TrailingComments = &CommentGroup{List: inside}
+		} else {
+			block.TrailingComments = nil
+		}
+	}
+
+	// Record the closing brace position so EndPos() returns an accurate
+	// line number for blank-line detection in the formatter.
+	block.RBrace = posFromToken(p.currentToken)
 
 	return block
 }

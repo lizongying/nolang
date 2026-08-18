@@ -187,6 +187,13 @@ func (p *Parser) parseBareMatchExpr() Expression {
 			break
 		}
 
+		// Collect doc comments before the arm condition. Comments between
+		// arms (or between { and the first arm) are buffered in p.comments
+		// by advanceCollect during nextToken. Without collecting them here,
+		// they would float in p.comments and eventually be mis-attached to
+		// a later arm's body or lost.
+		armDoc := p.collectDocComments()
+
 		var ma matchArm
 		ma.pos = lexer.Position{Line: p.currentToken.Line, Column: p.currentToken.Column}
 		if p.currentToken.Type == lexer.COLON {
@@ -349,6 +356,31 @@ func (p *Parser) parseBareMatchExpr() Expression {
 			bodyBlock.ClosingBraceComment = parsedBlock.ClosingBraceComment
 			p.sem.SetOpeningBraceComment(bodyBlock, p.sem.OpeningBraceCommentOf(parsedBlock))
 			bodyBlock.RBrace = parsedBlock.RBrace
+			// Preserve the actual { token so formatters can check comment
+			// line numbers against the real opening brace position.
+			bodyBlock.Token = parsedBlock.Token
+		}
+		// Attach arm doc comments collected before the arm condition.
+		// For inline bodies (single statement, no braces): set as Doc on
+		// the first statement so the formatter outputs it before the arm
+		// condition via the canInline + hasDocComment path.
+		// For block bodies (explicit { }): store as TrailingComments on
+		// the body block; the formatter checks comment line numbers
+		// against the block's opening brace to decide whether to emit
+		// them before the condition (outside) or inside the block (inside).
+		if armDoc != nil {
+			if bodyBlock.IsInline && len(bodyStmts) > 0 {
+				setDoc(bodyStmts[0], armDoc)
+			} else if bodyBlock.TrailingComments == nil {
+				bodyBlock.TrailingComments = armDoc
+			} else {
+				merged := &CommentGroup{}
+				merged.List = append(merged.List, armDoc.List...)
+				merged.List = append(merged.List, bodyBlock.TrailingComments.List...)
+				merged.Start = armDoc.Start
+				merged.End = bodyBlock.TrailingComments.End
+				bodyBlock.TrailingComments = merged
+			}
 		}
 		ma.body = bodyBlock
 		arms = append(arms, ma)
@@ -861,11 +893,12 @@ func isOptionPatternStart(p *Parser) bool {
 	if p.currentToken.Type == lexer.RARROW {
 		return true // -> (wildcard)
 	}
-	if p.currentToken.Type == lexer.NIL {
+	if p.currentToken.Type == lexer.NIL && p.peekToken.Type == lexer.RARROW {
 		return true
 	}
 	if p.currentToken.Type == lexer.IDENT &&
-		(p.currentToken.Literal == "err" || p.currentToken.Literal == "nil" || p.currentToken.Literal == "ok") {
+		(p.currentToken.Literal == "err" || p.currentToken.Literal == "nil" || p.currentToken.Literal == "ok") &&
+		p.peekToken.Type == lexer.RARROW {
 		return true
 	}
 	if p.currentToken.Type == lexer.NOT && p.peekToken.Type == lexer.RARROW {

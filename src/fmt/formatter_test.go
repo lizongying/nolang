@@ -236,8 +236,7 @@ func TestFormatBasic(t *testing.T) {
     }
 }`,
 			expected: `f = () {
-    cond -> {
-    }
+    cond -> {}
     -> {
         x = 1
         return
@@ -348,8 +347,7 @@ func TestFormatBasic(t *testing.T) {
     x = 1
 }`,
 			expected: `foo = () {
-    diff != 0 -> {
-    }  // comment
+    diff != 0 -> {}  // comment
     return
 
     x = 1
@@ -1501,7 +1499,6 @@ sha512-block = (s str, h0 u64, h1 u64, h2 u64, h3 u64, h4 u64, h5 u64, h6 u64, h
     c = b
     b = a
     a = T1 + T2
-
     // 第 1 輪 (K1 = 0x7137449123EF65CD)
     S1 = ((e >> 14) | (e << 50))
     S1 = S1 ^ ((e >> 18) | (e << 46)) ^ ((e >> 41) | (e << 23))
@@ -1653,6 +1650,98 @@ INVSBOX = '\x52\x09\x6a\xd5\x30\x36\xa5\x38\xbf\x40\xa3\x9e\x81\xf3\xd7\xfb' +
 			name:     "str8",
 			input:    "x = 'line1\\nline2'",
 			expected: "x = 'line1\\nline2'",
+		},
+		{
+			// regression: standalone if-then with empty block body
+			// `cond -> {}` should be removed entirely (no-op branch).
+			name: "standalone_if_then_empty_block_removed",
+			input: `f = () {
+    ok == true -> {}
+    x = 1
+}
+`,
+			expected: `f = () {
+    x = 1
+}`,
+		},
+		{
+			// regression: standalone if-then with empty block body at end of function
+			name: "standalone_if_then_empty_block_at_end",
+			input: `f = () {
+    o, ok = oid-from-hex(hx)
+    ok == true -> {}
+}
+`,
+			expected: `f = () {
+    o, ok = oid-from-hex(hx)
+}`,
+		},
+		{
+			// regression: standalone if-then with empty inline body `cond ->`
+			// (wildcard arm with no body) should NOT be removed.
+			name: "standalone_if_then_wildcard_empty_body_kept",
+			input: `f = () {
+    {
+        x == 1 -> {
+            do-something()
+        }
+        ->
+    }
+}
+`,
+			expected: `f = () {
+    {
+        x == 1 -> {
+            do-something()
+        }
+        ->
+    }
+}`,
+		},
+		{
+			// regression: standalone if-then with comment in empty block body
+			// should NOT be removed (comment must be preserved).
+			name: "standalone_if_then_empty_block_with_comment_kept",
+			input: `f = () {
+    ok == true -> {
+        ; intentionally empty
+    }
+    x = 1
+}
+`,
+			expected: `f = () {
+    ok == true -> {
+        ; intentionally empty
+    }
+    x = 1
+}`,
+		},
+		{
+			// regression: standalone if-then with doc comment before
+			// `cond -> {}` — the doc comment forces the statement to be
+			// kept (not skipped) to avoid orphaning comments.
+			name: "standalone_if_then_empty_block_with_doc_comment",
+			input: `f = () {
+    tg-ok == true -> {
+        ; skip . and .. entries
+        tg-entry == '.' -> {}
+        tg-entry == '..' -> {}
+        tg-entry.len > 0 -> {
+            names = names - tg-entry
+        }
+    }
+}
+`,
+			expected: `f = () {
+    tg-ok == true -> {
+
+        ; skip . and .. entries
+        tg-entry == '.' -> {}
+        tg-entry.len > 0 -> {
+            names = names - tg-entry
+        }
+    }
+}`,
 		},
 	}
 
@@ -2622,76 +2711,6 @@ func TestFormatRegexLiteral(t *testing.T) {
 			name:     "regex with char class",
 			input:    "re = /[a-z]+/",
 			expected: "re = /[a-z]+/\n",
-		},
-		{
-			// regression: standalone if-then with empty block body
-			// `cond -> {}` should be removed entirely (no-op branch).
-			name: "standalone_if_then_empty_block_removed",
-			input: `f = () {
-    ok == true -> {}
-    x = 1
-}
-`,
-			expected: `f = () {
-    x = 1
-}
-`,
-		},
-		{
-			// regression: standalone if-then with empty block body at end of function
-			name: "standalone_if_then_empty_block_at_end",
-			input: `f = () {
-    o, ok = oid-from-hex(hx)
-    ok == true -> {}
-}
-`,
-			expected: `f = () {
-    o, ok = oid-from-hex(hx)
-}
-`,
-		},
-		{
-			// regression: standalone if-then with empty inline body `cond ->`
-			// (wildcard arm with no body) should NOT be removed — it's
-			// semantically meaningful in bare match expressions.
-			name: "standalone_if_then_wildcard_empty_body_kept",
-			input: `f = () {
-    {
-        x == 1 -> {
-            do-something()
-        }
-        ->
-    }
-}
-`,
-			expected: `f = () {
-    {
-        x == 1 -> {
-            do-something()
-        }
-        ->
-    }
-}
-`,
-		},
-		{
-			// regression: standalone if-then with comment in empty block body
-			// should NOT be removed (comment must be preserved).
-			name: "standalone_if_then_empty_block_with_comment_kept",
-			input: `f = () {
-    ok == true -> {
-        ; intentionally empty
-    }
-    x = 1
-}
-`,
-			expected: `f = () {
-    ok == true -> {
-        ; intentionally empty
-    }
-    x = 1
-}
-`,
 		},
 	}
 	for _, tt := range tests {

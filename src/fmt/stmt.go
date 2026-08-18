@@ -12,6 +12,24 @@ func (f *formatter) formatStatement(stmt parser.Statement) {
 	if ls, ok := stmt.(*parser.LetStatement); ok && ls.IsSynthetic {
 		return
 	}
+	// Standalone if-then with empty block body and no else/comment:
+	// skip the entire `cond -> {}` statement (no-op branch).
+	// Must be checked before doc-comment output to avoid orphaning comments.
+	if es, ok := stmt.(*parser.ExpressionStatement); ok && es.Expression != nil {
+		if ie, ok := es.Expression.(*parser.IfExpression); ok &&
+			f.hasRT(ie, parser.RTStandalone) &&
+			!f.hasRT(ie, parser.RTMatchWildcard) &&
+			ie.Alternative == nil &&
+			ie.Consequence != nil &&
+			len(ie.Consequence.Statements) == 0 &&
+			ie.Consequence.TrailingComments == nil &&
+			ie.Consequence.ClosingBraceComment == nil &&
+			f.obcOf(ie.Consequence) == nil &&
+			(es.Comment == nil || len(es.Comment.List) == 0) &&
+			(es.Doc == nil || len(es.Doc.List) == 0) {
+			return
+		}
+	}
 	// Use CommentedNode interface to get Doc comments
 	var doc *parser.CommentGroup
 	if d, ok := stmt.(interface{ GetDoc() *parser.CommentGroup }); ok {
@@ -56,22 +74,7 @@ func (f *formatter) formatStatement(stmt parser.Statement) {
 		f.formatReturnStatement(s)
 	case *parser.ExpressionStatement:
 		if s.Expression != nil {
-			// Standalone if-then with empty block body and no else/comment:
-			// skip the entire `cond -> {}` statement (no-op branch).
-			if ie, ok := s.Expression.(*parser.IfExpression); ok &&
-				f.hasRT(ie, parser.RTStandalone) &&
-				!f.hasRT(ie, parser.RTMatchWildcard) &&
-				ie.Alternative == nil &&
-				ie.Consequence != nil &&
-				len(ie.Consequence.Statements) == 0 &&
-				ie.Consequence.TrailingComments == nil &&
-				ie.Consequence.ClosingBraceComment == nil &&
-				f.obcOf(ie.Consequence) == nil &&
-				(s.Comment == nil || len(s.Comment.List) == 0) {
-				// skip silently
-			} else {
-				f.formatExpression(s.Expression)
-			}
+			f.formatExpression(s.Expression)
 		}
 		// nil expression = bare { from condition: { body } syntax — skip silently
 	case *parser.FunctionDefinition:
@@ -436,6 +439,24 @@ func (f *formatter) formatBlockInner(body *parser.BlockStatement, openBraceLine 
 		if ls, ok := stmt.(*parser.LetStatement); ok && ls.IsSynthetic {
 			continue
 		}
+		// Skip standalone if-then with empty block body (no-op branch like
+		// `cond -> {}`), but only when there are no doc/inline comments to
+		// preserve.
+		if es, ok := stmt.(*parser.ExpressionStatement); ok && es.Expression != nil {
+			if ie, ok := es.Expression.(*parser.IfExpression); ok &&
+				f.hasRT(ie, parser.RTStandalone) &&
+				!f.hasRT(ie, parser.RTMatchWildcard) &&
+				ie.Alternative == nil &&
+				ie.Consequence != nil &&
+				len(ie.Consequence.Statements) == 0 &&
+				ie.Consequence.TrailingComments == nil &&
+				ie.Consequence.ClosingBraceComment == nil &&
+				f.obcOf(ie.Consequence) == nil &&
+				(es.Comment == nil || len(es.Comment.List) == 0) &&
+				(es.Doc == nil || len(es.Doc.List) == 0) {
+				continue
+			}
+		}
 		statements = append(statements, stmt)
 	}
 
@@ -449,13 +470,21 @@ func (f *formatter) formatBlockInner(body *parser.BlockStatement, openBraceLine 
 			} else {
 				prevEndLine := stmtTokenEndLine(statements[i-1])
 				currStartLine := stmtFirstLine(stmt)
-				if f.hasBlankLineBetween(prevEndLine, currStartLine) || f.hasDocComment(stmt) {
+				// When prevEndLine is 0 (AST position not recorded for some
+				// statement types like bare match), fall back to the previous
+				// statement's start line as the end line approximation.
+				if prevEndLine == 0 {
+					prevEndLine = stmtTokenLine(statements[i-1])
+				}
+				if f.hasBlankLineBetween(prevEndLine, currStartLine) {
 					f.write("\n") // blank line (no indent)
 				}
 				f.newline()
 			}
 		} else {
-			// Check for blank line between '{' and first statement
+			// Check for blank line between '{' and first statement.
+			// Also add a blank line when the first statement has a doc comment,
+			// to visually separate the opening brace from the comment block.
 			firstDocStartLine := stmtFirstLine(stmt)
 			if (openBraceLine > 0 && firstDocStartLine > openBraceLine+1) || f.hasDocComment(stmt) {
 				f.write("\n") // blank line (no indent)
@@ -477,6 +506,11 @@ func (f *formatter) formatBlockStatement(s *parser.BlockStatement) {
 		for _, c := range obc.List {
 			f.write(c.Text)
 		}
+	}
+	// Empty block with no comments: output `{}` on one line
+	if len(s.Statements) == 0 && s.TrailingComments == nil && s.ClosingBraceComment == nil {
+		f.write("}")
+		return
 	}
 	f.indent++
 	f.formatBlockInner(s, s.Token.Line)

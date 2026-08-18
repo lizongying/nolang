@@ -298,6 +298,36 @@ func (f *formatter) writeBareMatchArm(e *parser.IfExpression) {
 		f.newline()
 	}
 
+	// If body has TrailingComments that are OUTSIDE the block (collected
+	// before the opening brace), they are arm-level doc comments. Output
+	// them on their own lines BEFORE the condition.
+	// Comments INSIDE the block (between { and }) are real block content
+	// and must stay in the block.
+	if e.Consequence.TrailingComments != nil &&
+		e.Consequence.ClosingBraceComment == nil &&
+		f.obcOf(e.Consequence) == nil {
+		openLine := e.Consequence.Token.Line
+		var outside, inside []*parser.Comment
+		for _, c := range e.Consequence.TrailingComments.List {
+			if c.Pos.Line < openLine {
+				outside = append(outside, c)
+			} else {
+				inside = append(inside, c)
+			}
+		}
+		// Output outside comments before the condition
+		for _, c := range outside {
+			f.writeCommentBody(c)
+			f.newline()
+		}
+		// If there are inside comments, keep them in the block
+		if len(inside) > 0 {
+			e.Consequence.TrailingComments = &parser.CommentGroup{List: inside}
+		} else {
+			e.Consequence.TrailingComments = nil
+		}
+	}
+
 	if f.hasRT(e, parser.RTMatchWildcard) {
 		if e.DotValBody != nil && e.DotValBody == e.Consequence {
 			f.write("ok ->")
@@ -343,10 +373,14 @@ func (f *formatter) writeBareMatchArm(e *parser.IfExpression) {
 		f.write(" ->")
 	}
 
-	// 空 body（如 wildcard `->`）：不輸出任何內容
+	// 空 body（如 wildcard `->`）：不輸出任何內容。
+	// 但當 body 是顯式 block（IsInline=false，如 `cond -> {}`）時，
+	// 保留空 {} 輸出以保持源碼形式。
 	if len(statements) == 0 &&
+		e.Consequence.IsInline &&
 		e.Consequence.TrailingComments == nil &&
-		e.Consequence.ClosingBraceComment == nil {
+		e.Consequence.ClosingBraceComment == nil &&
+		f.obcOf(e.Consequence) == nil {
 		return
 	}
 	// 內聯簡單 body：輸出在同一行
