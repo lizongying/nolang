@@ -1652,20 +1652,22 @@ INVSBOX = '\x52\x09\x6a\xd5\x30\x36\xa5\x38\xbf\x40\xa3\x9e\x81\xf3\xd7\xfb' +
 			expected: "x = 'line1\\nline2'",
 		},
 		{
-			// regression: standalone if-then with empty block body
-			// `cond -> {}` should be removed entirely (no-op branch).
-			name: "standalone_if_then_empty_block_removed",
+			// standalone if-then with empty block body `cond -> {}`
+			// should be preserved as-is (not removed).
+			name: "standalone_if_then_empty_block_preserved",
 			input: `f = () {
     ok == true -> {}
     x = 1
 }
 `,
 			expected: `f = () {
+    ok == true -> {}
     x = 1
 }`,
 		},
 		{
-			// regression: standalone if-then with empty block body at end of function
+			// standalone if-then with empty block body at end of function
+			// should be preserved (not removed).
 			name: "standalone_if_then_empty_block_at_end",
 			input: `f = () {
     o, ok = oid-from-hex(hx)
@@ -1674,6 +1676,7 @@ INVSBOX = '\x52\x09\x6a\xd5\x30\x36\xa5\x38\xbf\x40\xa3\x9e\x81\xf3\xd7\xfb' +
 `,
 			expected: `f = () {
     o, ok = oid-from-hex(hx)
+    ok == true -> {}
 }`,
 		},
 		{
@@ -1717,9 +1720,8 @@ INVSBOX = '\x52\x09\x6a\xd5\x30\x36\xa5\x38\xbf\x40\xa3\x9e\x81\xf3\xd7\xfb' +
 }`,
 		},
 		{
-			// regression: standalone if-then with doc comment before
-			// `cond -> {}` — the doc comment forces the statement to be
-			// kept (not skipped) to avoid orphaning comments.
+			// standalone if-then with doc comment before
+			// `cond -> {}` — all empty branches are preserved now.
 			name: "standalone_if_then_empty_block_with_doc_comment",
 			input: `f = () {
     tg-ok == true -> {
@@ -1737,6 +1739,7 @@ INVSBOX = '\x52\x09\x6a\xd5\x30\x36\xa5\x38\xbf\x40\xa3\x9e\x81\xf3\xd7\xfb' +
 
         ; skip . and .. entries
         tg-entry == '.' -> {}
+        tg-entry == '..' -> {}
         tg-entry.len > 0 -> {
             names = names - tg-entry
         }

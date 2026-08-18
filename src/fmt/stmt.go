@@ -12,24 +12,6 @@ func (f *formatter) formatStatement(stmt parser.Statement) {
 	if ls, ok := stmt.(*parser.LetStatement); ok && ls.IsSynthetic {
 		return
 	}
-	// Standalone if-then with empty block body and no else/comment:
-	// skip the entire `cond -> {}` statement (no-op branch).
-	// Must be checked before doc-comment output to avoid orphaning comments.
-	if es, ok := stmt.(*parser.ExpressionStatement); ok && es.Expression != nil {
-		if ie, ok := es.Expression.(*parser.IfExpression); ok &&
-			f.hasRT(ie, parser.RTStandalone) &&
-			!f.hasRT(ie, parser.RTMatchWildcard) &&
-			ie.Alternative == nil &&
-			ie.Consequence != nil &&
-			len(ie.Consequence.Statements) == 0 &&
-			ie.Consequence.TrailingComments == nil &&
-			ie.Consequence.ClosingBraceComment == nil &&
-			f.obcOf(ie.Consequence) == nil &&
-			(es.Comment == nil || len(es.Comment.List) == 0) &&
-			(es.Doc == nil || len(es.Doc.List) == 0) {
-			return
-		}
-	}
 	// Use CommentedNode interface to get Doc comments
 	var doc *parser.CommentGroup
 	if d, ok := stmt.(interface{ GetDoc() *parser.CommentGroup }); ok {
@@ -438,24 +420,6 @@ func (f *formatter) formatBlockInner(body *parser.BlockStatement, openBraceLine 
 		}
 		if ls, ok := stmt.(*parser.LetStatement); ok && ls.IsSynthetic {
 			continue
-		}
-		// Skip standalone if-then with empty block body (no-op branch like
-		// `cond -> {}`), but only when there are no doc/inline comments to
-		// preserve.
-		if es, ok := stmt.(*parser.ExpressionStatement); ok && es.Expression != nil {
-			if ie, ok := es.Expression.(*parser.IfExpression); ok &&
-				f.hasRT(ie, parser.RTStandalone) &&
-				!f.hasRT(ie, parser.RTMatchWildcard) &&
-				ie.Alternative == nil &&
-				ie.Consequence != nil &&
-				len(ie.Consequence.Statements) == 0 &&
-				ie.Consequence.TrailingComments == nil &&
-				ie.Consequence.ClosingBraceComment == nil &&
-				f.obcOf(ie.Consequence) == nil &&
-				(es.Comment == nil || len(es.Comment.List) == 0) &&
-				(es.Doc == nil || len(es.Doc.List) == 0) {
-				continue
-			}
 		}
 		statements = append(statements, stmt)
 	}
