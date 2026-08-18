@@ -853,7 +853,13 @@ func (p *Parser) parseMatchExprFrom(matched Expression) Expression {
 
 		var ma matchArm
 		ma.pos = lexer.Position{Line: p.currentToken.Line, Column: p.currentToken.Column}
-		if p.currentToken.Type == lexer.COLON {
+		// If the arm starts with `{` classified as blockMatch, treat it as a
+		// wildcard arm whose body is a bare match expression. Without this,
+		// the `{` is parsed as an arm condition (via parseExpression) and the
+		// entire match fails (no `->` separator), causing fallback to while-loop.
+		if p.currentToken.Type == lexer.LBRACE && p.classifyBlockAtCurrent() == blockMatch {
+			ma.isWildcard = true
+		} else if p.currentToken.Type == lexer.COLON {
 			ma.isWildcard = true
 		} else if p.currentToken.Type == lexer.UNDERSCORE {
 			ma.isWildcard = true

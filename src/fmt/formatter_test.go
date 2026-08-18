@@ -2362,6 +2362,42 @@ test-match = () {
     }
 }`,
 		},
+		{
+			// regression: match with nested bare match as wildcard arm body.
+			// Previously the parser failed to parse the arm (no `->` separator)
+			// and fell back to a while-loop `{ } (sec-val)`.
+			name: "match_with_nested_bare_match_body",
+			input: `f = () {
+    sec-val = 1
+    sec-val: {
+        {
+        ok -> {
+            print('up')
+            return
+        }
+        -> {
+            eprint('err')
+            os.exit(1)
+        }
+        }
+    }
+}`,
+			expected: `f = () {
+    sec-val = 1
+    sec-val: {
+        -> {
+            ok -> {
+                print('up')
+                return
+            }
+            -> {
+                eprint('err')
+                os.exit(1)
+            }
+        }
+    }
+}`,
+		},
 	}
 
 	for _, tt := range tests {
