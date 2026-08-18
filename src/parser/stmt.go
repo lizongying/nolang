@@ -1691,6 +1691,12 @@ func (p *Parser) parseBlockStatement() *BlockStatement {
 						p.nextToken() // skip ->
 						altBody := p.parseStandaloneBody(tok)
 						altBody = p.wrapStandaloneChain(tok, altBody)
+						// Attach inline comment to the body statement (e.g. `-> return; comment`).
+						// Without this, the comment is left in p.comments and ends up as
+						// block TrailingComments, causing it to move to the next line on format.
+						if altBody != nil && len(altBody.Statements) > 0 {
+							p.attachInlineComment(altBody.Statements[len(altBody.Statements)-1])
+						}
 						ie.Alternative = altBody
 						p.sem.SetRTFlag(ie, RTElseNewline)
 						continue

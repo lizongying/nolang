@@ -2765,6 +2765,16 @@ func TestFormatScalarSlicePerLine8(t *testing.T) {
 			input: "v []char = [\"a\", \"b\", \"c\", \"d\", \"e\", \"f\", \"g\", \"h\", \"i\", \"j\"]\n",
 			expected: "v []char = [\n    \"a\", \"b\", \"c\", \"d\", \"e\", \"f\", \"g\", \"h\",\n    \"i\", \"j\",\n]\n",
 		},
+		{
+			// regression: inline comment on else-arm body of standalone if-then
+			// (e.g. `-> return; 493 = 0755`) must stay on the same line.
+			// Previously the comment was left unattached in p.comments and
+			// ended up as block TrailingComments, causing it to wrap to the
+			// next line on format.
+			name: "standalone_if_then_else_arm_inline_semicolon_comment",
+			input: "foo = () {\n    bare == false -> {\n        os.mkdir(x, 493) -> {}\n        -> return; 493 = 0755\n    }\n}\n",
+			expected: "foo = () {\n    bare == false -> {\n        os.mkdir(x, 493) -> {}\n        -> return; 493 = 0755\n    }\n}\n",
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
