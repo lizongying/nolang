@@ -125,3 +125,116 @@ func TestValidateFuncArgsWithLenNoTypeAnnotation(t *testing.T) {
 		t.Fatalf("expected error about with-len type inference, got: %+v", results)
 	}
 }
+
+// TestValidateLHSInferredBuiltinsBasic verifies that ValidateLHSInferredBuiltins
+// catches with-len/with-cap/with-cap-len without type annotation in function bodies.
+// This simulates the cross-module scenario where the offending code lives in an
+// imported module file (Bug 22).
+func TestValidateLHSInferredBuiltinsBasic(t *testing.T) {
+	src := `save = (path str) (ok bool) {
+    n = 14
+    buf = with-len(n)
+    buf[0] = 66
+    ok = true
+}
+`
+	l := lexer.New(src)
+	p := parser.New(l)
+	prog := p.ParseProgram()
+	if errs := p.Errors(); len(errs) > 0 {
+		t.Fatalf("parse errors: %v", errs)
+	}
+	results := ValidateLHSInferredBuiltins(prog)
+	found := false
+	for _, r := range results {
+		t.Logf("L%d:C%d %s", r.Line, r.Column, r.Message)
+		if strings.Contains(r.Message, "cannot infer type for 'buf'") &&
+			strings.Contains(r.Message, "with-len") {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("expected error about with-len type inference, got: %+v", results)
+	}
+}
+
+// TestValidateLHSInferredBuiltinsWithTypeAnnotation verifies that
+// ValidateLHSInferredBuiltins does NOT report errors when with-len has
+// an explicit type annotation.
+func TestValidateLHSInferredBuiltinsWithTypeAnnotation(t *testing.T) {
+	src := `save = (path str) (ok bool) {
+    n = 14
+    buf []byte = with-len(n)
+    buf[0] = 66
+    ok = true
+}
+`
+	l := lexer.New(src)
+	p := parser.New(l)
+	prog := p.ParseProgram()
+	if errs := p.Errors(); len(errs) > 0 {
+		t.Fatalf("parse errors: %v", errs)
+	}
+	results := ValidateLHSInferredBuiltins(prog)
+	for _, r := range results {
+		if strings.Contains(r.Message, "with-len") {
+			t.Errorf("unexpected with-len error with type annotation: %s", r.Message)
+		}
+	}
+}
+
+// TestValidateLHSInferredBuiltinsWithCap verifies that with-cap without
+// type annotation is also caught.
+func TestValidateLHSInferredBuiltinsWithCap(t *testing.T) {
+	src := `grow = () (ok bool) {
+    n = 14
+    buf = with-cap(n)
+    ok = true
+}
+`
+	l := lexer.New(src)
+	p := parser.New(l)
+	prog := p.ParseProgram()
+	if errs := p.Errors(); len(errs) > 0 {
+		t.Fatalf("parse errors: %v", errs)
+	}
+	results := ValidateLHSInferredBuiltins(prog)
+	found := false
+	for _, r := range results {
+		t.Logf("L%d:C%d %s", r.Line, r.Column, r.Message)
+		if strings.Contains(r.Message, "cannot infer type for 'buf'") &&
+			strings.Contains(r.Message, "with-cap") {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("expected error about with-cap type inference, got: %+v", results)
+	}
+}
+
+// TestValidateLHSInferredBuiltinsReassignment verifies that reassignment
+// to an existing typed variable does NOT trigger the error (the type is
+// already known from the prior declaration).
+func TestValidateLHSInferredBuiltinsReassignment(t *testing.T) {
+	src := `save = (path str) (ok bool) {
+    n = 14
+    buf []byte = with-len(n)
+    buf[0] = 66
+    m = 20
+    buf = with-len(m)
+    ok = true
+}
+`
+	l := lexer.New(src)
+	p := parser.New(l)
+	prog := p.ParseProgram()
+	if errs := p.Errors(); len(errs) > 0 {
+		t.Fatalf("parse errors: %v", errs)
+	}
+	results := ValidateLHSInferredBuiltins(prog)
+	for _, r := range results {
+		if strings.Contains(r.Message, "with-len") {
+			t.Errorf("unexpected with-len error on reassignment: %s", r.Message)
+		}
+	}
+}

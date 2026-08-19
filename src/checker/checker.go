@@ -3906,6 +3906,87 @@ func hasRealTypeAnnotation(s *parser.LetStatement) bool {
 	return s.Type != nil && s.Type.String() != "" &&
 		s.Type.String() != s.Name.Value && !isInferredType(s.Type)
 }
+
+// ValidateLHSInferredBuiltins checks all statements (including function bodies)
+// for with-len/with-cap/with-cap-len calls without an explicit type annotation
+// on the assignment LHS. This is used as a post-merge validation pass to catch
+// cases that single-file ValidateTypes/ValidateFuncArgs would miss — i.e. when
+// the offending code lives in an imported module file.
+//
+// The function recurses into:
+//   - FunctionDefinition bodies (including method bodies)
+//   - BlockStatement sub-blocks
+//   - IfExpression branches
+func ValidateLHSInferredBuiltins(program *parser.Program) []ValidateResult {
+	var results []ValidateResult
+	varTypes := make(map[string]string)
+	for _, stmt := range program.Statements {
+		results = append(results, checkLHSInferredInStmt(stmt, varTypes)...)
+	}
+	return results
+}
+
+// checkLHSInferredInStmt recursively walks a statement and checks for
+// LHS-inferred builtin calls (with-len, with-cap, with-cap-len) without
+// an explicit type annotation.
+func checkLHSInferredInStmt(stmt parser.Statement, varTypes map[string]string) []ValidateResult {
+	if stmt == nil {
+		return nil
+	}
+	var results []ValidateResult
+	switch s := stmt.(type) {
+	case *parser.FunctionDefinition:
+		// Build local var types from parameters and result params
+		localTypes := make(map[string]string)
+		for k, v := range varTypes {
+			localTypes[k] = v
+		}
+		for _, p := range s.Parameters {
+			if p.Type != nil {
+				localTypes[p.Name] = p.Type.String()
+			}
+		}
+		for _, r := range s.Results {
+			if r.Name != "" && r.Type != nil {
+				localTypes[r.Name] = r.Type.String()
+			}
+		}
+		if s.Body != nil {
+			for _, bs := range s.Body.Statements {
+				results = append(results, checkLHSInferredInStmt(bs, localTypes)...)
+			}
+		}
+	case *parser.BlockStatement:
+		for _, bs := range s.Statements {
+			results = append(results, checkLHSInferredInStmt(bs, varTypes)...)
+		}
+	case *parser.LetStatement:
+		if s.IsSynthetic {
+			break
+		}
+		// Record explicit type annotation
+		if s.Type != nil && s.Type.String() != "" && s.Type.String() != s.Name.Value {
+			if _, exists := varTypes[s.Name.Value]; !exists {
+				varTypes[s.Name.Value] = s.Type.String()
+			}
+		}
+		if s.Value != nil {
+			if fnName := isLHSInferredBuiltinCall(s.Value); fnName != "" {
+				_, hasExistingType := varTypes[s.Name.Value]
+				if !hasRealTypeAnnotation(s) && !hasExistingType {
+					valPos := s.Value.Pos()
+					results = append(results, ValidateResult{
+						Line:    valPos.Line,
+						Column: valPos.Column,
+						Message: fmt.Sprintf("cannot infer type for '%s': %s() requires an explicit type annotation on the left side (e.g. `name []byte = %s(n)`)", s.Name.Value, fnName, fnName),
+					})
+				}
+			}
+		}
+	}
+	return results
+}
+
 func isBuiltinType(name string) bool {
 	switch name {
 	case "i8", "i16", "i32", "i64", "i128",

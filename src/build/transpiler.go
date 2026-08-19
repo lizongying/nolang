@@ -1867,6 +1867,17 @@ func (t *Transpiler) CompileTarget(source string, _ Target) (string, error) {
 	if err := validateLoopScopedVars(merged); err != nil {
 		return "", err
 	}
+	// Bug 22: 跨模組 with-len/with-cap/with-cap-len 無類型標註漏檢。
+	// 單文件時 ValidateTypes/ValidateFuncArgs 會檢查，但模組合併發生在驗證之後，
+	// 導入模組函數體內的 with-len 無類型標註不會被檢查到。
+	// 在模組合併後對 merged 程式執行專門的 LHS-inferred builtin 檢查。
+	if lhsInfErrs := checker.ValidateLHSInferredBuiltins(merged); len(lhsInfErrs) > 0 {
+		var msgs []string
+		for _, e := range lhsInfErrs {
+			msgs = append(msgs, fmt.Sprintf("line %d, column %d: %s", e.Line, e.Column, e.Message))
+		}
+		return "", fmt.Errorf("validation errors: %s", strings.Join(msgs, "; "))
+	}
 	// vet 模式：前端驗證（語法+型別+模組合併+單態化）已全部完成，
 	// 跳過 LLVM IR 生成以大幅加速 `no vet`。
 	// 在返回前對 merged 執行全部 lint 校驗（命名、未用變數、embed、
