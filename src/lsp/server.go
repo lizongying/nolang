@@ -202,18 +202,30 @@ func (s *Server) parseErrorToDiagnostic(errMsg string) Diagnostic {
 }
 
 // parseWarningToDiagnostic converts a parser warning string ("line %d, column %d: message")
-// into an LSP hint diagnostic. Returns nil if parsing fails.
+// or ("filename:line %d, column %d: [CODE] message") into an LSP hint diagnostic.
+// Returns nil if parsing fails.
 func (s *Server) parseWarningToDiagnostic(warnMsg string) *Diagnostic {
+	// Strip optional "filename:" prefix so Sscanf can match "line N, column M:".
+	stripped := warnMsg
+	if idx := strings.Index(stripped, "line "); idx > 0 {
+		stripped = stripped[idx:]
+	}
 	var line, col int
-	if _, err := fmt.Sscanf(warnMsg, "line %d, column %d:", &line, &col); err != nil {
+	if _, err := fmt.Sscanf(stripped, "line %d, column %d:", &line, &col); err != nil {
 		return nil
 	}
 	// Extract message after "line %d, column %d: " prefix
-	msg := warnMsg
+	msg := stripped
 	prefix := fmt.Sprintf("line %d, column %d:", line, col)
-	if strings.HasPrefix(warnMsg, prefix) && len(warnMsg) > len(prefix) {
-		msg = strings.TrimPrefix(warnMsg, prefix)
+	if strings.HasPrefix(msg, prefix) && len(msg) > len(prefix) {
+		msg = strings.TrimPrefix(msg, prefix)
 		msg = strings.TrimPrefix(msg, " ")
+	}
+	// Strip the "[W_CODE] " tag prefix (e.g. "[W_SEMI_EAT] ") for cleaner display.
+	if strings.HasPrefix(msg, "[W_") {
+		if endBracket := strings.Index(msg, "] "); endBracket >= 0 {
+			msg = msg[endBracket+2:]
+		}
 	}
 	return &Diagnostic{
 		Range: Range{

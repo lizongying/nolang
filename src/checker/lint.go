@@ -11,6 +11,7 @@ package checker
 import (
 	"fmt"
 	"sort"
+	"strings"
 
 	"github.com/lizongying/nolang/parser"
 )
@@ -270,11 +271,28 @@ func RunAllLints(program *parser.Program, opts LintOptions) []LintResult {
 	// 21. parser 警告
 	for _, warnMsg := range program.Warnings {
 		var line, col int
-		fmt.Sscanf(warnMsg, "line %d, column %d:", &line, &col)
+		// Strip optional "filename:" prefix so Sscanf can match "line N, column M:"
+		stripped := warnMsg
+		if idx := strings.Index(stripped, "line "); idx > 0 {
+			stripped = stripped[idx:]
+		}
+		fmt.Sscanf(stripped, "line %d, column %d:", &line, &col)
+		// Extract message after "line N, column M: " prefix
+		msg := stripped
+		if prefix := fmt.Sprintf("line %d, column %d:", line, col); strings.HasPrefix(msg, prefix) {
+			msg = strings.TrimPrefix(msg, prefix)
+			msg = strings.TrimPrefix(msg, " ")
+		}
+		// Strip "[W_CODE] " tag prefix for cleaner display
+		if strings.HasPrefix(msg, "[W_") {
+			if endBracket := strings.Index(msg, "] "); endBracket >= 0 {
+				msg = msg[endBracket+2:]
+			}
+		}
 		results = append(results, LintResult{
 			Line: line, Column: col,
-			Severity: LintHint, Source: "nolang-lint",
-			Message: warnMsg,
+			Severity: LintHint, Source: "nolang-parser",
+			Message: msg,
 		})
 	}
 
