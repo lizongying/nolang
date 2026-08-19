@@ -1095,6 +1095,7 @@ func (p *Parser) parseMatchExprFrom(matched Expression) Expression {
 			} else if p.currentToken.Type == lexer.LBRACE {
 				// Block classified as blockMatch but parseStatement failed (e.g. {1} has no ->).
 				// Fall back to parseBlockStatement, mirroring parseBareMatchExpr logic.
+				bodyOpenTok := p.currentToken // arm body's { token
 				armState := p.saveState()
 				p.ctx.push(CTX_MATCH_ARM)
 				doc := p.collectDocComments()
@@ -1114,6 +1115,13 @@ func (p *Parser) parseMatchExprFrom(matched Expression) Expression {
 						bodyStmts = bs.Statements
 					} else {
 						bodyStmts = append(bodyStmts, stmt)
+					}
+					// Record the arm body's { and } positions so the formatter
+					// can correctly determine whether TrailingComments are
+					// inside or outside the block.
+					if parsedBlock == nil {
+						bodyBlock.Token = bodyOpenTok
+						bodyBlock.RBrace = lexer.Position{Line: p.prevToken.Line, Column: p.prevToken.Column}
 					}
 				} else {
 					p.restoreState(armState)

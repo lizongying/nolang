@@ -265,6 +265,7 @@ func (p *Parser) parseBareMatchExpr() Expression {
 				// and call parseBareMatchExpr, which manages its own context.
 				// Pushing CTX_MATCH_ARM here would leak into nested bare match
 				// arm block bodies, breaking standalone if-then (cond -> body).
+				bodyOpenTok := p.currentToken // arm body's { token
 				armState := p.saveState()
 				stmt := p.parseStatement()
 				if stmt != nil {
@@ -280,6 +281,15 @@ func (p *Parser) parseBareMatchExpr() Expression {
 						bodyStmts = bs.Statements
 					} else {
 						bodyStmts = append(bodyStmts, stmt)
+					}
+					// Record the arm body's { and } positions so the formatter
+					// can correctly determine whether TrailingComments are
+					// inside or outside the block. Without this, bodyBlock.Token
+					// retains the outer match's { position, causing comments
+					// before the arm body's { to be misclassified as "inside".
+					if parsedBlock == nil {
+						bodyBlock.Token = bodyOpenTok
+						bodyBlock.RBrace = lexer.Position{Line: p.prevToken.Line, Column: p.prevToken.Column}
 					}
 					if p.currentToken.Type == lexer.RBRACE {
 						p.nextToken()

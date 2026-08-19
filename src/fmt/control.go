@@ -259,6 +259,39 @@ func (f *formatter) writeBareMatchArm(e *parser.IfExpression) {
 		statements = append(statements, stmt)
 	}
 
+	// outsideComments collects arm-level doc comments that were originally
+	// before the arm body's opening brace. They are output before the condition.
+	var outsideComments []*parser.Comment
+
+	// If body has TrailingComments that are OUTSIDE the block (collected
+	// before the opening brace), they are arm-level doc comments. Output
+	// them on their own lines BEFORE the condition.
+	// Comments INSIDE the block (between { and }) are real block content
+	// and must stay in the block.
+	// This must happen BEFORE the canInline check, because outside comments
+	// should not prevent inlining — only inside comments do.
+	if e.Consequence.TrailingComments != nil &&
+		e.Consequence.ClosingBraceComment == nil &&
+		f.obcOf(e.Consequence) == nil {
+		openLine := e.Consequence.Token.Line
+		var outside, inside []*parser.Comment
+		for _, c := range e.Consequence.TrailingComments.List {
+			if c.Pos.Line < openLine {
+				outside = append(outside, c)
+			} else {
+				inside = append(inside, c)
+			}
+		}
+		// Stash outside comments to output before the condition later.
+		// We can't output them yet because we haven't written the newline.
+		e.Consequence.TrailingComments = nil
+		if len(inside) > 0 {
+			e.Consequence.TrailingComments = &parser.CommentGroup{List: inside}
+		}
+		// Store outside comments for output after the newline.
+		outsideComments = outside
+	}
+
 	// 判斷是否為可內聯的簡單 body：單語句、無塊級註釋、類型為表達式/let/return/break/continue。
 	// 注意：body 語句的 doc comment（arm 前的註釋，如 `; F grade`）不阻止內聯，
 	// 該註釋會在 arm 條件之前獨立行輸出。
@@ -301,34 +334,11 @@ func (f *formatter) writeBareMatchArm(e *parser.IfExpression) {
 		f.newline()
 	}
 
-	// If body has TrailingComments that are OUTSIDE the block (collected
-	// before the opening brace), they are arm-level doc comments. Output
-	// them on their own lines BEFORE the condition.
-	// Comments INSIDE the block (between { and }) are real block content
-	// and must stay in the block.
-	if e.Consequence.TrailingComments != nil &&
-		e.Consequence.ClosingBraceComment == nil &&
-		f.obcOf(e.Consequence) == nil {
-		openLine := e.Consequence.Token.Line
-		var outside, inside []*parser.Comment
-		for _, c := range e.Consequence.TrailingComments.List {
-			if c.Pos.Line < openLine {
-				outside = append(outside, c)
-			} else {
-				inside = append(inside, c)
-			}
-		}
-		// Output outside comments before the condition
-		for _, c := range outside {
-			f.writeCommentBody(c)
-			f.newline()
-		}
-		// If there are inside comments, keep them in the block
-		if len(inside) > 0 {
-			e.Consequence.TrailingComments = &parser.CommentGroup{List: inside}
-		} else {
-			e.Consequence.TrailingComments = nil
-		}
+	// Output outside comments (arm-level doc comments collected before the
+	// arm body's opening brace) on their own lines before the condition.
+	for _, c := range outsideComments {
+		f.writeCommentBody(c)
+		f.newline()
 	}
 
 	if f.hasRT(e, parser.RTMatchWildcard) {
