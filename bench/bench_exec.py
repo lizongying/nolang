@@ -3,8 +3,8 @@
 Pre-compiles both, then measures only execution time."""
 import time, subprocess, os, sys
 
-NO_BIN = '/Users/lizongying/IdeaProjects/no/bin/no'
-BENCH_ROOT = '/Users/lizongying/IdeaProjects/benchmarks-no/benchmarks'
+NO_BIN = os.path.join(os.path.dirname(__file__), '..', 'bin', 'no')
+BENCH_ROOT = os.path.join(os.path.dirname(__file__), '..', '..', 'benchmarks-no', 'benchmarks')
 TMP_DIR = '/tmp/no-bench'
 
 os.makedirs(TMP_DIR, exist_ok=True)

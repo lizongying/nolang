@@ -1103,7 +1103,18 @@ func (p *Parser) parseMatchExprFrom(matched Expression) Expression {
 				if stmt != nil {
 					setDoc(stmt, doc)
 					p.attachInlineComment(stmt)
-					bodyStmts = append(bodyStmts, stmt)
+					// When parseStatement returns a BlockStatement, it means the
+					// inner parseBareMatchExpr failed and fell back to
+					// parseBlockStatement. Extract the block's statements
+					// directly instead of nesting the entire block, which
+					// would cause the formatter to wrap the arm body in an
+					// extra layer of braces.
+					if bs, ok := stmt.(*BlockStatement); ok {
+						parsedBlock = bs
+						bodyStmts = bs.Statements
+					} else {
+						bodyStmts = append(bodyStmts, stmt)
+					}
 				} else {
 					p.restoreState(armState)
 					ma.isBlockBody = true
@@ -1213,8 +1224,10 @@ func (p *Parser) parseMatchExprFrom(matched Expression) Expression {
 		}
 	}
 
-	// Skip }
+	// Record } position and skip it
+	rbracePos := lexer.Position{}
 	if p.currentToken.Type == lexer.RBRACE {
+		rbracePos = lexer.Position{Line: p.currentToken.Line, Column: p.currentToken.Column}
 		p.nextToken()
 	}
 
@@ -1225,7 +1238,9 @@ func (p *Parser) parseMatchExprFrom(matched Expression) Expression {
 		}
 	}
 	// 產出表層 AST（SurfaceMatch），desugar 延後到 lowering pass 執行。
-	return p.newSurfaceMatch(tok, matched, arms)
+	sm := p.newSurfaceMatch(tok, matched, arms)
+	sm.RBracePos = rbracePos
+	return sm
 }
 
 func (p *Parser) parseIfExpression() Expression {

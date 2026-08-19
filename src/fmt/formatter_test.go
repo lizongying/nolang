@@ -148,25 +148,25 @@ func TestFormatBasic(t *testing.T) {
 			// 新式 { cond -> body } if/else（包在函數內）
 			name:     "if_else_new_syntax",
 			input:    "foo=(){{\nx>0->a=1\n->a=0\n}}",
-			expected: "foo = () {\n    {\n        x > 0 -> a = 1\n        -> a = 0\n    }\n}",
+			expected: "foo = () {\n    {\n        x > 0 -> a = 1\n\n        -> a = 0\n    }\n}",
 		},
 		{
 			// 新式 if/else 多分支（包在函數內）
 			name:     "if_else_with_multiple_arms",
 			input:    "foo=(){{\nx==1->a=1\nx==2->a=2\n->a=0\n}}",
-			expected: "foo = () {\n    {\n        x == 1 -> a = 1\n        x == 2 -> a = 2\n        -> a = 0\n    }\n}",
+			expected: "foo = () {\n    {\n        x == 1 -> a = 1\n\n        x == 2 -> a = 2\n\n        -> a = 0\n    }\n}",
 		},
 		{
 			// 新式 if/else 多行 body（多語句 body → 用大括號包裹）
 			name:     "if_else_multiline_body",
 			input:    "foo=(){{\nx==1->\na=1\nb=2\n->\nc=0\n}}",
-			expected: "foo = () {\n    {\n        x == 1 -> {\n            a = 1\n            b = 2\n        }\n        -> c = 0\n    }\n}",
+			expected: "foo = () {\n    {\n        x == 1 -> {\n            a = 1\n            b = 2\n        }\n\n        -> c = 0\n    }\n}",
 		},
 		{
 			// 新式 if/else 或條件
 			name:     "if_else_or_condition",
 			input:    "foo=(){{\nx==2||x==3->a=1\n->a=0\n}}",
-			expected: "foo = () {\n    {\n        x == 2 || x == 3 -> a = 1\n        -> a = 0\n    }\n}",
+			expected: "foo = () {\n    {\n        x == 2 || x == 3 -> a = 1\n\n        -> a = 0\n    }\n}",
 		},
 		{
 			// regression: standalone if-then (cond -> return / cond -> x = val)
@@ -211,6 +211,7 @@ func TestFormatBasic(t *testing.T) {
                 bend < 0 -> return
                 boundary = foo.slice(bstart, bend)
             }
+
             -> {
                 bend = foo.index-from(';', bstart)
                 bend < 0 -> bend = foo.len
@@ -218,6 +219,7 @@ func TestFormatBasic(t *testing.T) {
                 boundary = boundary.trim()
             }
         }
+
         -> return
     }
 }`,
@@ -237,6 +239,7 @@ func TestFormatBasic(t *testing.T) {
 }`,
 			expected: `f = () {
     cond -> {}
+
     -> {
         x = 1
         return
@@ -320,11 +323,13 @@ func TestFormatBasic(t *testing.T) {
 			expected: `foo = () {
     {
         c == 46 -> {
-            // 小數點 - 允許
+            ; 小數點 - 允許
         }
+
         c == 101 || c == 69 -> {
-            // 科學記號 e/E - 允許
+            ; 科學記號 e/E - 允許
         }
+
         -> {
             val = err('invalid float')
             return
@@ -347,7 +352,7 @@ func TestFormatBasic(t *testing.T) {
     x = 1
 }`,
 			expected: `foo = () {
-    diff != 0 -> {}  // comment
+    diff != 0 -> {}; comment
     return
 
     x = 1
@@ -370,9 +375,10 @@ func TestFormatBasic(t *testing.T) {
 			expected: `foo = () {
     {
         n == 16 -> t4 = 1
+
         -> {
 
-            // 部分區塊：設置對應位元
+            ; 部分區塊：設置對應位元
             t0 = t0 | (1 << (n * 8))
         }
     }
@@ -405,7 +411,8 @@ func TestFormatBasic(t *testing.T) {
 }`,
 			expected: `foo = () {
     {
-        c == 43 -> out[out.len] = 32  // + comment
+        c == 43 -> out[out.len] = 32; + comment
+
         -> out[out.len] = c
     }
 }`,
@@ -425,9 +432,10 @@ func TestFormatBasic(t *testing.T) {
 }`,
 			expected: `foo = () {
     {
-        cond -> {  // comment
+        cond -> {; comment
             x = 1
         }
+
         -> y = 0
     }
 }`,
@@ -484,11 +492,9 @@ str.len: () (n    i64)      {
     n = .len
 }
 			`),
-			expected: strings.TrimSpace(`
-str.len: () (n i64) {
+			expected: strings.TrimSpace(`str.len: () (n i64) {
     n = .len
-}
-			`),
+}`),
 		},
 
 		{
@@ -503,13 +509,11 @@ for i <- a {
     print(i)
 }
 			`),
-			expected: strings.TrimSpace(`
-a [3] = [1, 2, 3]
+			expected: strings.TrimSpace(`a [3] = [1, 2, 3]
 
 for i <- a: {
     print(i)
-}
-			`),
+}`),
 		},
 
 		{
@@ -521,13 +525,11 @@ for i <- a {
     print(i)
 }
 			`),
-			expected: strings.TrimSpace(`
-a [3] = [1, 2, 3]
+			expected: strings.TrimSpace(`a [3] = [1, 2, 3]
 
 for i <- a: {
     print(i)
-}
-			`),
+}`),
 		},
 
 		{
@@ -537,11 +539,9 @@ max=(a t,b t)(r t){
     r = a > b ? a : b
 }
 			`),
-			expected: strings.TrimSpace(`
-max = (a t, b t) (r t) {
+			expected: strings.TrimSpace(`max = (a t, b t) (r t) {
     r = a > b ? a : b
-}
-			`),
+}`),
 		},
 
 		{
@@ -551,11 +551,9 @@ max     =     (a t,       b t)       (r t)    {
     r = a > b ? a : b
 }
 			`),
-			expected: strings.TrimSpace(`
-max = (a t, b t) (r t) {
+			expected: strings.TrimSpace(`max = (a t, b t) (r t) {
     r = a > b ? a : b
-}
-			`),
+}`),
 		},
 
 		{
@@ -566,13 +564,11 @@ get-env = (key str) (val str) {  // LLVM: call i8* @getenv
 set-env = (k str, v str) {  // LLVM: call i32 @setenv
 }
 			`),
-			expected: strings.TrimSpace(`
-get-env = (key str) (val str) {  // LLVM: call i8* @getenv
+			expected: strings.TrimSpace(`get-env = (key str) (val str) {; LLVM: call i8* @getenv
 }
 
-set-env = (k str, v str) {  // LLVM: call i32 @setenv
-}
-			`),
+set-env = (k str, v str) {; LLVM: call i32 @setenv
+}`),
 		},
 
 		{
@@ -585,15 +581,13 @@ get-env = (key str) (val str) {  // LLVM: call i8* @getenv
 set-env = (k str, v str) {  // LLVM: call i32 @setenv
 }
 			`),
-			expected: strings.TrimSpace(`
-get-env = (key str) (val str) {  // LLVM: call i8* @getenv
+			expected: strings.TrimSpace(`get-env = (key str) (val str) {; LLVM: call i8* @getenv
 }
 
-// 註釋
-// 註釋
-set-env = (k str, v str) {  // LLVM: call i32 @setenv
-}
-			`),
+; 註釋
+; 註釋
+set-env = (k str, v str) {; LLVM: call i32 @setenv
+}`),
 		},
 
 		{
@@ -659,8 +653,7 @@ tar-for-each = (data []byte, idx i64, name str, sz i64, typ str, data-out []byte
     idx = idx + 1
 }
 			`),
-			expected: strings.TrimSpace(`
-tar-for-each = (data []byte, idx i64, name str, sz i64, typ str, data-out []byte) {
+			expected: strings.TrimSpace(`tar-for-each = (data []byte, idx i64, name str, sz i64, typ str, data-out []byte) {
     idx = 0
     n = len(data)
     off = 0
@@ -718,8 +711,7 @@ tar-for-each = (data []byte, idx i64, name str, sz i64, typ str, data-out []byte
     }
     off = off + 512 + blocks * 512
     idx = idx + 1
-}
-			`),
+}`),
 		},
 
 		{
@@ -800,18 +792,18 @@ tar-for-each = (data []byte, idx i64, name str, sz i64, typ str, data-out []byte
         idx = idx + 1
     } (off + 512 <= n)
 }`),
-			expected: strings.TrimSpace(`// ─── 迭代器 ───────────────────────────────────
+			expected: strings.TrimSpace(`; ─── 迭代器 ───────────────────────────────────
 
-// tar-for-each: 遍歷所有條目
-// 每次回呼傳入 (idx, name, sz, typ, data)
-// 返回 0 繼續，非 0 停止
+; tar-for-each: 遍歷所有條目
+; 每次回呼傳入 (idx, name, sz, typ, data)
+; 返回 0 繼續，非 0 停止
 tar-for-each = (data []byte, idx i64, name str, sz i64, typ str, data-out []byte) {
     idx = 0
     n = len(data)
     off = 0
     {
 
-        // 檢查結束
+        ; 檢查結束
         empty = 1
         i = 0
         {
@@ -825,7 +817,7 @@ tar-for-each = (data []byte, idx i64, name str, sz i64, typ str, data-out []byte
             return
         }
 
-        // 讀取名稱
+        ; 讀取名稱
         name = ''
         i = 0
         {
@@ -837,7 +829,7 @@ tar-for-each = (data []byte, idx i64, name str, sz i64, typ str, data-out []byte
             i = i + 1
         } (i < 100)
 
-        // 大小
+        ; 大小
         sz = 0
         i = 0
         {
@@ -848,7 +840,7 @@ tar-for-each = (data []byte, idx i64, name str, sz i64, typ str, data-out []byte
             i = i + 1
         } (i < 12)
 
-        // 類型
+        ; 類型
         c = data[off + 156]
         if c == 48 || c == 0 {
             typ = 'file'
@@ -858,7 +850,7 @@ tar-for-each = (data []byte, idx i64, name str, sz i64, typ str, data-out []byte
             typ = 'unknown'
         }
 
-        // 資料
+        ; 資料
         if sz > 0 {
             i = 0
             {
@@ -867,7 +859,7 @@ tar-for-each = (data []byte, idx i64, name str, sz i64, typ str, data-out []byte
             } (i < sz)
         }
 
-        // 前進到下個條目
+        ; 前進到下個條目
         blocks = (sz + 511) / 512
         if blocks < 0 {
             blocks = 0
@@ -915,22 +907,22 @@ aes-key-expand = (key str, ek str) {
     ek[i * 4 + 3] = w & 255
     i = i + 1
 }`),
-			expected: strings.TrimSpace(`// aes-key-expand: 將 16-byte 金鑰展開為 176-byte 輪金鑰
-// ek: 輸出輪金鑰字串（176 位元組）
+			expected: strings.TrimSpace(`; aes-key-expand: 將 16-byte 金鑰展開為 176-byte 輪金鑰
+; ek: 輸出輪金鑰字串（176 位元組）
 aes-key-expand = (key str, ek str) {
 
-    // 複製原始金鑰（前 16 位元組）
+    ; 複製原始金鑰（前 16 位元組）
     i = 0
     {
         ek[i] = key[i]
         i = i + 1
     } (i < 16)
 
-    // 產生 w[4..43]（共 44 個 32-bit 字 = 176 位元組）
+    ; 產生 w[4..43]（共 44 個 32-bit 字 = 176 位元組）
     i = 4
     {
 
-        // 讀取前一個字
+        ; 讀取前一個字
         off = (i - 1) * 4
         w = (ek[off] << 24) | (ek[off + 1] << 16) | (ek[off + 2] << 8) | ek[off + 3]
         if i % 4 == 0 {
@@ -987,24 +979,23 @@ bn-cmp = (a []i64, an i64, b []i64, bn i64, cmp i64) {
     cmp = 0
 }
 			`),
-			expected: strings.TrimSpace(`
-// rsa — RSA 加解密（多精度整數模冪）
-//
-// 使用多精度整數（base 2^32，little-endian）進行 RSA 模冪運算：
-//   result = base^exp mod modulus
-//
-// 不包含金鑰生成；呼叫者需自行提供 n、e、d。
-// 支援 1024~4096-bit 金鑰（32~128 個 32-bit limbs）。
-//
-// 用法：
-//   // base, exp, mod 為 []i64 切片
-//   // result 為輸出切片（長度 ≥ mod 的長度）
-//   rsa-modpow(base, base-n, exp, exp-n, mod, mod-n, result, result-n)
+			expected: strings.TrimSpace(`; rsa — RSA 加解密（多精度整數模冪）
+;
+; 使用多精度整數（base 2^32，little-endian）進行 RSA 模冪運算：
+;   result = base^exp mod modulus
+;
+; 不包含金鑰生成；呼叫者需自行提供 n、e、d。
+; 支援 1024~4096-bit 金鑰（32~128 個 32-bit limbs）。
+;
+; 用法：
+;   // base, exp, mod 為 []i64 切片
+;   // result 為輸出切片（長度 ≥ mod 的長度）
+;   rsa-modpow(base, base-n, exp, exp-n, mod, mod-n, result, result-n)
 
-// ─── 大數比較 ─────────────────────────────────────
+; ─── 大數比較 ─────────────────────────────────────
 
-// bn-cmp: 比較兩個大數 a 和 b
-// 返回 cmp: 1 = a > b, 0 = a == b, -1 = a < b
+; bn-cmp: 比較兩個大數 a 和 b
+; 返回 cmp: 1 = a > b, 0 = a == b, -1 = a < b
 bn-cmp = (a []i64, an i64, b []i64, bn i64, cmp i64) {
     if an > bn {
         if a[i] > b[i] {
@@ -1018,8 +1009,7 @@ bn-cmp = (a []i64, an i64, b []i64, bn i64, cmp i64) {
         i = i - 1
     }
     cmp = 0
-}
-			`),
+}`),
 		},
 
 		{
@@ -1063,28 +1053,28 @@ aes-128-dec= (in str, n i64, key str, out str) {
     add-round-key(out, ek)
 }
 			`),
-			expected: strings.TrimSpace(`// aes-128-dec: 解密一個 16-byte 區塊
-// in: 輸入密文（16 位元組）
-// n: 固定 16
-// key: 16-byte 金鑰
-// out: 輸出明文（16 位元組）
+			expected: strings.TrimSpace(`; aes-128-dec: 解密一個 16-byte 區塊
+; in: 輸入密文（16 位元組）
+; n: 固定 16
+; key: 16-byte 金鑰
+; out: 輸出明文（16 位元組）
 aes-128-dec = (in str, n i64, key str, out str) {
 
-    // 展開金鑰
+    ; 展開金鑰
     ek = '(16+160 bytes)'
     aes-key-expand(key, ek)
 
-    // 複製輸入到狀態
+    ; 複製輸入到狀態
     i = 0
     {
         out[i] = in[i]
         i = i + 1
     } (i < 16)
 
-    // 初始 AddRoundKey（輪 10）
+    ; 初始 AddRoundKey（輪 10）
     add-round-key(out, ek + 160)
 
-    // 第 9-1 輪
+    ; 第 9-1 輪
     round = 9
     {
         inv-shift-rows(out)
@@ -1095,7 +1085,7 @@ aes-128-dec = (in str, n i64, key str, out str) {
         round = round - 1
     } (round > 0)
 
-    // 第 0 輪
+    ; 第 0 輪
     inv-shift-rows(out)
     inv-sub-bytes(out, 16)
     add-round-key(out, ek)
@@ -1146,44 +1136,44 @@ aes-128-enc = (in str, n i64, key str, out str) {
     shift-rows(out)
     add-round-key(out, ek + 160)
 }`),
-			expected: strings.TrimSpace(`// ─── 單區塊加密/解密 ──────────────────────────────
+			expected: strings.TrimSpace(`; ─── 單區塊加密/解密 ──────────────────────────────
 
-// aes-128-enc: 加密一個 16-byte 區塊
-// in: 輸入明文（16 位元組）
-// n: 固定 16
-// key: 16-byte 金鑰
-// out: 輸出密文（16 位元組）
+; aes-128-enc: 加密一個 16-byte 區塊
+; in: 輸入明文（16 位元組）
+; n: 固定 16
+; key: 16-byte 金鑰
+; out: 輸出密文（16 位元組）
 aes-128-enc = (in str, n i64, key str, out str) {
 
-    // 展開金鑰
+    ; 展開金鑰
     ek = '(16+160 bytes)'
     aes-key-expand(key, ek)
 
-    // 複製輸入到狀態
+    ; 複製輸入到狀態
     i = 0
     {
         out[i] = in[i]
         i = i + 1
     } (i < 16)
 
-    // 初始 AddRoundKey（輪 0）
-    // 輪金鑰 0：ek[0..15]
+    ; 初始 AddRoundKey（輪 0）
+    ; 輪金鑰 0：ek[0..15]
     add-round-key(out, ek)
 
-    // 第 1-9 輪
+    ; 第 1-9 輪
     round = 1
     {
         sub-bytes(out, 16)
         shift-rows(out)
         mix-columns(out)
 
-        // 輪金鑰 round：ek[round*16..round*16+15]
+        ; 輪金鑰 round：ek[round*16..round*16+15]
         rk-off = round * 16
-        add-round-key(out, ek + rk-off)  // 需要 ek 子字串
+        add-round-key(out, ek + rk-off); 需要 ek 子字串
         round = round + 1
     } (round < 10)
 
-    // 第 10 輪（無 MixColumns）
+    ; 第 10 輪（無 MixColumns）
     sub-bytes(out, 16)
     shift-rows(out)
     add-round-key(out, ek + 160)
@@ -1284,36 +1274,36 @@ sha1-block = (s str, h0 u32, h1 u32, h2 u32, h3 u32, h4 u32) {
 }
 
 			`),
-			expected: strings.TrimSpace(`// sha1 — SHA-1 安全哈希算法（160-bit）
-//
-// 提供兩層公開 API 與一層低階 API：
-//   sha1(data []byte) (hash [20]byte) — 完整雜湊，含填充與多區塊處理
-//   sha1-hex(data []byte) (hex str) — 完整雜湊，返回 40 字元 hex 字串
-//   sha1-block(s []u32, h0 u32, h1 u32, h2 u32, h3 u32, h4 u32) — 處理單一 512-bit 區塊（低階）
-//
-// 用法：
-//   h0 = 1732584193
-//   h1 = 4023233417
-//   h2 = 2562383102
-//   h3 = 271733878
-//   h4 = 3285377520
-//   sha1-block(block, h0, h1, h2, h3, h4)
+			expected: strings.TrimSpace(`; sha1 — SHA-1 安全哈希算法（160-bit）
+;
+; 提供兩層公開 API 與一層低階 API：
+;   sha1(data []byte) (hash [20]byte) — 完整雜湊，含填充與多區塊處理
+;   sha1-hex(data []byte) (hex str) — 完整雜湊，返回 40 字元 hex 字串
+;   sha1-block(s []u32, h0 u32, h1 u32, h2 u32, h3 u32, h4 u32) — 處理單一 512-bit 區塊（低階）
+;
+; 用法：
+;   h0 = 1732584193
+;   h1 = 4023233417
+;   h2 = 2562383102
+;   h3 = 271733878
+;   h4 = 3285377520
+;   sha1-block(block, h0, h1, h2, h3, h4)
 
-// sha1-block: 處理一個 512-bit 區塊
-// s []u32: 16 個 32-bit 字 (big-endian)
-// h0 u32, h1 u32, h2 u32, h3 u32, h4 u32: 輸入/輸出 160-bit 哈希狀態
+; sha1-block: 處理一個 512-bit 區塊
+; s []u32: 16 個 32-bit 字 (big-endian)
+; h0 u32, h1 u32, h2 u32, h3 u32, h4 u32: 輸入/輸出 160-bit 哈希狀態
 sha1-block = (s str, h0 u32, h1 u32, h2 u32, h3 u32, h4 u32) {
     MASK = 4294967295
 
-    // 初始狀態
+    ; 初始狀態
     a = h0
     b = h1
     c = h2
     d = h3
     e = h4
 
-    // ---- 第 0-19 輪 (K = 0x5A827999 = 1518500249) ----
-    // f = (b & c) | (~b & d)
+    ; ---- 第 0-19 輪 (K = 0x5A827999 = 1518500249) ----
+    ; f = (b & c) | (~b & d)
 
     f = (b & c) | ((MASK ^ b) & d)
     temp = ((a << 5) | (a >> 27)) & MASK
@@ -1324,9 +1314,9 @@ sha1-block = (s str, h0 u32, h1 u32, h2 u32, h3 u32, h4 u32) {
     b = a
     a = temp
 
-    // 第 16-19 輪 — 擴展訊息，rotl(w_{t-3} ^ w_{t-8} ^ w_{t-14} ^ w_{t-16}, 1)
+    ; 第 16-19 輪 — 擴展訊息，rotl(w_{t-3} ^ w_{t-8} ^ w_{t-14} ^ w_{t-16}, 1)
 
-    // w16 = rotl(w13 ^ w8 ^ w2 ^ w0, 1)
+    ; w16 = rotl(w13 ^ w8 ^ w2 ^ w0, 1)
     w = s[13] ^ s[8] ^ s[2] ^ s[0]
     w = ((w << 1) | (w >> 31)) & MASK
     f = (b & c) | ((MASK ^ b) & d)
@@ -1338,7 +1328,7 @@ sha1-block = (s str, h0 u32, h1 u32, h2 u32, h3 u32, h4 u32) {
     b = a
     a = temp
 
-    // w17 = rotl(w14 ^ w9 ^ w3 ^ w1, 1)
+    ; w17 = rotl(w14 ^ w9 ^ w3 ^ w1, 1)
     w = s[14] ^ s[9] ^ s[3] ^ s[1]
     w = ((w << 1) | (w >> 31)) & MASK
     f = (b & c) | ((MASK ^ b) & d)
@@ -1350,7 +1340,7 @@ sha1-block = (s str, h0 u32, h1 u32, h2 u32, h3 u32, h4 u32) {
     b = a
     a = temp
 
-    // w18 = rotl(w15 ^ w10 ^ w4 ^ w2, 1)
+    ; w18 = rotl(w15 ^ w10 ^ w4 ^ w2, 1)
     w = s[15] ^ s[10] ^ s[4] ^ s[2]
     w = ((w << 1) | (w >> 31)) & MASK
     f = (b & c) | ((MASK ^ b) & d)
@@ -1362,7 +1352,7 @@ sha1-block = (s str, h0 u32, h1 u32, h2 u32, h3 u32, h4 u32) {
     b = a
     a = temp
 
-    // 累加回初始哈希值
+    ; 累加回初始哈希值
     h0 = (h0 + a) & MASK
     h1 = (h1 + b) & MASK
     h2 = (h2 + c) & MASK
@@ -1446,33 +1436,33 @@ sha512-block=(s str, h0 u64, h1 u64, h2 u64, h3 u64, h4 u64, h5 u64, h6 u64, h7 
 
 }
 			`),
-			expected: strings.TrimSpace(`// sha512 — SHA-512 安全哈希算法（512-bit）
-//
-// 提供兩層公開 API 與一層低階 API：
-//   sha512(data []byte) (hash [64]byte) — 完整雜湊，含填充與多區塊處理
-//   sha512-hex(data []byte) (hex str) — 完整雜湊，返回 128 字元 hex 字串
-//   sha512-block(s []u64, h0 u64, h1 u64, h2 u64, h3 u64, h4 u64, h5 u64, h6 u64, h7 u64) — 處理單一 1024-bit 區塊（低階）
-//
-// 用法：
-//   h0 = 7640891576956012808
-//   h1 = 13503953896175478587
-//   h2 = 4354685564936845355
-//   h3 = 11912009170470909681
-//   h4 = 5840696475078001361
-//   h5 = 11170449401992604703
-//   h6 = 2270897969802886507
-//   h7 = 6620516959819538809
-//   sha512-block(block, h0, h1, h2, h3, h4, h5, h6, h7)
+			expected: strings.TrimSpace(`; sha512 — SHA-512 安全哈希算法（512-bit）
+;
+; 提供兩層公開 API 與一層低階 API：
+;   sha512(data []byte) (hash [64]byte) — 完整雜湊，含填充與多區塊處理
+;   sha512-hex(data []byte) (hex str) — 完整雜湊，返回 128 字元 hex 字串
+;   sha512-block(s []u64, h0 u64, h1 u64, h2 u64, h3 u64, h4 u64, h5 u64, h6 u64, h7 u64) — 處理單一 1024-bit 區塊（低階）
+;
+; 用法：
+;   h0 = 7640891576956012808
+;   h1 = 13503953896175478587
+;   h2 = 4354685564936845355
+;   h3 = 11912009170470909681
+;   h4 = 5840696475078001361
+;   h5 = 11170449401992604703
+;   h6 = 2270897969802886507
+;   h7 = 6620516959819538809
+;   sha512-block(block, h0, h1, h2, h3, h4, h5, h6, h7)
 
-// sha512-block: 處理一個 1024-bit 區塊
-// s []u64: 16 個 64-bit 字 (big-endian)
-// h0 u64, h1 u64, h2 u64, h3 u64, h4 u64, h5 u64, h6 u64, h7 u64: 輸入/輸出 512-bit 哈希狀態
+; sha512-block: 處理一個 1024-bit 區塊
+; s []u64: 16 個 64-bit 字 (big-endian)
+; h0 u64, h1 u64, h2 u64, h3 u64, h4 u64, h5 u64, h6 u64, h7 u64: 輸入/輸出 512-bit 哈希狀態
 sha512-block = (s str, h0 u64, h1 u64, h2 u64, h3 u64, h4 u64, h5 u64, h6 u64, h7 u64) {
 
-    // 64-bit 全 1 遮罩（用於位元 NOT）
+    ; 64-bit 全 1 遮罩（用於位元 NOT）
     MASK64 = -1
 
-    // 初始狀態
+    ; 初始狀態
     a = h0
     b = h1
     c = h2
@@ -1482,7 +1472,7 @@ sha512-block = (s str, h0 u64, h1 u64, h2 u64, h3 u64, h4 u64, h5 u64, h6 u64, h
     g = h6
     h = h7
 
-    // 第 0 輪 (K0 = 0x428A2F98D728AE22)
+    ; 第 0 輪 (K0 = 0x428A2F98D728AE22)
     S1 = ((e >> 14) | (e << 50))
     S1 = S1 ^ ((e >> 18) | (e << 46)) ^ ((e >> 41) | (e << 23))
     Ch = (e & f) ^ ((MASK64 ^ e) & g)
@@ -1499,7 +1489,7 @@ sha512-block = (s str, h0 u64, h1 u64, h2 u64, h3 u64, h4 u64, h5 u64, h6 u64, h
     c = b
     b = a
     a = T1 + T2
-    // 第 1 輪 (K1 = 0x7137449123EF65CD)
+    ; 第 1 輪 (K1 = 0x7137449123EF65CD)
     S1 = ((e >> 14) | (e << 50))
     S1 = S1 ^ ((e >> 18) | (e << 46)) ^ ((e >> 41) | (e << 23))
     Ch = (e & f) ^ ((MASK64 ^ e) & g)
@@ -1548,33 +1538,30 @@ x509-rsa-e = (data str, n i64, e i64) {
     der-skip(data, n, p, p)
 }
 			`),
-			expected: strings.TrimSpace(`
-
-// x509-rsa-e: 提取 RSA 公鑰指數（通常為 65537）
-// data: DER 編碼憑證, n: 總長度
-// e: 輸出指數值（0 表示非 RSA 或解析失敗）
+			expected: strings.TrimSpace(`; x509-rsa-e: 提取 RSA 公鑰指數（通常為 65537）
+; data: DER 編碼憑證, n: 總長度
+; e: 輸出指數值（0 表示非 RSA 或解析失敗）
 x509-rsa-e = (data str, n i64, e i64) {
 
-    // spki-start = 跳過 SPKI 的標籤+長度，指向內容
-    // SPKI 內容：
-    //   SEQUENCE (AlgorithmIdentifier)
-    //   BIT STRING (subjectPublicKey)
-    // 跳過 AlgorithmIdentifier SEQUENCE
+    ; spki-start = 跳過 SPKI 的標籤+長度，指向內容
+    ; SPKI 內容：
+    ;   SEQUENCE (AlgorithmIdentifier)
+    ;   BIT STRING (subjectPublicKey)
+    ; 跳過 AlgorithmIdentifier SEQUENCE
     der-skip(data, n, p, p)
 
-    // 跳過 INTEGER（序號）
+    ; 跳過 INTEGER（序號）
     der-skip(data, n, p, p)
 
-    // 跳過 SEQUENCE（簽章演算法）
+    ; 跳過 SEQUENCE（簽章演算法）
     der-skip(data, n, p, p)
 
-    // 跳過 SEQUENCE（發行者）
+    ; 跳過 SEQUENCE（發行者）
     der-skip(data, n, p, p)
 
-    // 跳過 SEQUENCE（有效期）
+    ; 跳過 SEQUENCE（有效期）
     der-skip(data, n, p, p)
-}
-			`),
+}`),
 		},
 
 		{
@@ -1597,8 +1584,7 @@ INVSBOX = '\x52\x09\x6a\xd5\x30\x36\xa5\x38\xbf\x40\xa3\x9e\x81\xf3\xd7\xfb' +
           '\xa0\xe0\x3b\x4d\xae\x2a\xf5\xb0\xc8\xeb\xbb\x3c\x83\x53\x99\x61' +
           '\x17\x2b\x04\x7e\xba\x77\xd6\x26\xe1\x69\x14\x63\x55\x21\x0c\x7d'
 			`),
-			expected: strings.TrimSpace(`
-INVSBOX = '\x52\x09\x6a\xd5\x30\x36\xa5\x38\xbf\x40\xa3\x9e\x81\xf3\xd7\xfb' +
+			expected: strings.TrimSpace(`INVSBOX = '\x52\x09\x6a\xd5\x30\x36\xa5\x38\xbf\x40\xa3\x9e\x81\xf3\xd7\xfb' +
           '\x7c\xe3\x39\x82\x9b\x2f\xff\x87\x34\x8e\x43\x44\xc4\xde\xe9\xcb' +
           '\x54\x7b\x94\x32\xa6\xc2\x23\x3d\xee\x4c\x95\x0b\x42\xfa\xc3\x4e' +
           '\x08\x2e\xa1\x66\x28\xd9\x24\xb2\x76\x5b\xa2\x49\x6d\x8b\xd1\x25' +
@@ -1613,8 +1599,7 @@ INVSBOX = '\x52\x09\x6a\xd5\x30\x36\xa5\x38\xbf\x40\xa3\x9e\x81\xf3\xd7\xfb' +
           '\x1f\xdd\xa8\x33\x88\x07\xc7\x31\xb1\x12\x10\x59\x27\x80\xec\x5f' +
           '\x60\x51\x7f\xa9\x19\xb5\x4a\x0d\x2d\xe5\x7a\x9f\x93\xc9\x9c\xef' +
           '\xa0\xe0\x3b\x4d\xae\x2a\xf5\xb0\xc8\xeb\xbb\x3c\x83\x53\x99\x61' +
-          '\x17\x2b\x04\x7e\xba\x77\xd6\x26\xe1\x69\x14\x63\x55\x21\x0c\x7d'
-			`),
+          '\x17\x2b\x04\x7e\xba\x77\xd6\x26\xe1\x69\x14\x63\x55\x21\x0c\x7d'`),
 		},
 		{
 			name:     "str2",
@@ -1697,6 +1682,7 @@ INVSBOX = '\x52\x09\x6a\xd5\x30\x36\xa5\x38\xbf\x40\xa3\x9e\x81\xf3\xd7\xfb' +
         x == 1 -> {
             do-something()
         }
+
         ->
     }
 }`,
@@ -1921,7 +1907,7 @@ func TestFormatComment(t *testing.T) {
 
             `),
 			expected: strings.TrimSpace(`
-            
+
             `),
 		},
 		{
@@ -1963,28 +1949,28 @@ aes-128-dec = (in str, n i64, key str, out str) {
     inv-sub-bytes(out, 16)
     add-round-key(out, ek)
 }`),
-			expected: strings.TrimSpace(`// aes-128-dec: 解密一個 16-byte 區塊
-// in: 輸入密文（16 位元組）
-// n: 固定 16
-// key: 16-byte 金鑰
-// out: 輸出明文（16 位元組）
+			expected: strings.TrimSpace(`; aes-128-dec: 解密一個 16-byte 區塊
+; in: 輸入密文（16 位元組）
+; n: 固定 16
+; key: 16-byte 金鑰
+; out: 輸出明文（16 位元組）
 aes-128-dec = (in str, n i64, key str, out str) {
 
-    // 展開金鑰
+    ; 展開金鑰
     ek = '(16+160 bytes)'
     aes-key-expand(key, ek)
 
-    // 複製輸入到狀態
+    ; 複製輸入到狀態
     i = 0
     {
         out[i] = in[i]
         i = i + 1
     } (i < 16)
 
-    // 初始 AddRoundKey（輪 10）
+    ; 初始 AddRoundKey（輪 10）
     add-round-key(out, ek + 160)
 
-    // 第 9-1 輪
+    ; 第 9-1 輪
     round = 9
     {
         inv-shift-rows(out)
@@ -1995,7 +1981,7 @@ aes-128-dec = (in str, n i64, key str, out str) {
         round = round - 1
     } (round > 0)
 
-    // 第 0 輪
+    ; 第 0 輪
     inv-shift-rows(out)
     inv-sub-bytes(out, 16)
     add-round-key(out, ek)
@@ -2252,9 +2238,9 @@ func TestFormatTypeAliasBlankLinePreservation(t *testing.T) {
 
 int = i8 | i16
 `
-	expected := `// header comment
-//
-// header 2
+	expected := `; header comment
+;
+; header 2
 
 int = i8 | i16`
 	if got := Format(input); got != expected {
@@ -2270,7 +2256,7 @@ func TestFormatTypeAliasDocAttaches(t *testing.T) {
 	input := `// describes int
 int = i8 | i16
 `
-	expected := `// describes int
+	expected := `; describes int
 int = i8 | i16`
 	if got := Format(input); got != expected {
 		t.Errorf("Format mismatch:\ngot:\n%s\nwant:\n%s", got, expected)
@@ -2334,30 +2320,36 @@ test-match = () {
 			expected: `test-match = () {
     x ?i64
 
-    // 保存的時候會改變，不要變成if/else 修復它
-    // 直接->是else
+    ; 保存的時候會改變，不要變成if/else 修復它
+    ; 直接->是else
     x: {
         err -> log(it)
+
         nil -> log(it)
+
         -> log(it)
     }
 
-    // 全部列舉
+    ; 全部列舉
     x: {
         err -> log(it)
+
         nil -> log(it)
+
         ok -> log(it)
     }
 
-    // 這裡-> 有else的意思
+    ; 這裡-> 有else的意思
     x: {
         ok -> log(it)
+
         -> log(it)
     }
 
-    // 這是if/else
+    ; 這是if/else
     {
         a == 1 -> log('1')
+
         -> log('else')
     }
 }`,
@@ -2390,6 +2382,7 @@ test-match = () {
                 print('up')
                 return
             }
+
             -> {
                 eprint('err')
                 os.exit(1)
@@ -2435,6 +2428,7 @@ func TestFormatCombinedOptionPatterns(t *testing.T) {
             cleanup()
             return
         }
+
         ok -> process(it)
     }
 }`,
@@ -2452,6 +2446,7 @@ func TestFormatCombinedOptionPatterns(t *testing.T) {
     x ?i64
     x: {
         nil || err -> log('failed')
+
         ok -> process(it)
     }
 }`,
@@ -2469,6 +2464,7 @@ func TestFormatCombinedOptionPatterns(t *testing.T) {
     x ?i64
     x: {
         err || nil -> log('failed')
+
         ok -> process(it)
     }
 }`,
@@ -2615,9 +2611,9 @@ func TestFormatSemicolonComment(t *testing.T) {
 		t.Errorf("trailing ';' comment not preserved: %q", file)
 	}
 
-	// '//' comments must remain '//' (formatter uses two-space indent before //).
+	// '//' comments are normalized to ';' on output.
 	input2 := "// line comment\nx = 1 // trailing\n"
-	want2 := "// line comment\nx = 1  // trailing"
+	want2 := "; line comment\nx = 1; trailing"
 	if got2 := Format(input2); got2 != want2 {
 		t.Errorf("Format // comment:\n got:  %q\n want: %q", got2, want2)
 	}
@@ -2810,10 +2806,59 @@ func TestFormatScalarSlicePerLine8(t *testing.T) {
 			// Previously the comment was left unattached in p.comments and
 			// ended up as block TrailingComments, causing it to wrap to the
 			// next line on format.
-			name: "standalone_if_then_else_arm_inline_semicolon_comment",
-			input: "foo = () {\n    bare == false -> {\n        os.mkdir(x, 493) -> {}\n        -> return; 493 = 0755\n    }\n}\n",
-			expected: "foo = () {\n    bare == false -> {\n        os.mkdir(x, 493) -> {}\n        -> return; 493 = 0755\n    }\n}\n",
-		},
+		name: "standalone_if_then_else_arm_inline_semicolon_comment",
+		input: "foo = () {\n    bare == false -> {\n        os.mkdir(x, 493) -> {}\n        -> return; 493 = 0755\n    }\n}\n",
+		expected: "foo = () {\n    bare == false -> {\n        os.mkdir(x, 493) -> {}\n\n        -> return; 493 = 0755\n    }\n}\n",
+	},
+	{
+		// regression: a block containing standalone if-then statements
+		// (cond -> { body }) followed by a nested bare match
+		// ( { pat -> body -> body } ) was mis-classified as blockMatch
+		// by classifyBlockAtCurrent (which saw IDENT -> at depth 0).
+		// parseBareMatchExpr would then fail on the nested bare match
+		// (expecting -> or : after the expression, but seeing }),
+		// returning nil and silently dropping the entire block.
+		// The fix falls back to parseBlockStatement when
+		// parseBareMatchExpr returns nil.
+		name: "mixed_standalone_if_then_and_nested_bare_match",
+		input: `f = () {
+    dry-run = false
+    {
+        dry-run -> {
+            return
+        }
+
+        {
+        a -> {
+            print('a')
+        }
+        -> {
+            print('else')
+        }
+        }
+    }
+}
+`,
+		expected: `f = () {
+    dry-run = false
+    {
+        dry-run -> {
+            return
+        }
+
+        {
+            a -> {
+                print('a')
+            }
+
+            -> {
+                print('else')
+            }
+        }
+    }
+}
+`,
+	},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

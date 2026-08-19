@@ -339,7 +339,7 @@ func (f *formatter) formatFunctionDefinition(s *parser.FunctionDefinition) {
 	// Output inline comment on the same line as the opening brace
 	if s.Comment != nil && len(s.Comment.List) > 0 {
 		c := s.Comment.List[0]
-		f.writef("  // %s", strings.TrimSpace(c.Text))
+		f.writef("; %s", strings.TrimSpace(c.Text))
 	}
 	f.indent++
 	f.formatBlockInner(s.Body, 0) // pass 0 to avoid preserving blank lines after { in function bodies
@@ -466,9 +466,9 @@ func (f *formatter) formatBlockStatement(s *parser.BlockStatement) {
 	f.write("{")
 	// Output opening brace comment on the same line as {
 	if obc := f.obcOf(s); obc != nil && len(obc.List) > 0 {
-		f.write("  //")
+		f.write("; ")
 		for _, c := range obc.List {
-			f.write(c.Text)
+			f.write(strings.TrimSpace(c.Text))
 		}
 	}
 	// Empty block with no comments: output `{}` on one line

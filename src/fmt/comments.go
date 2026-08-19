@@ -83,12 +83,14 @@ func (f *formatter) formatDocComments(doc *parser.CommentGroup) {
 	}
 }
 
-// commentMarker returns the comment start symbol for a comment, defaulting to "//".
+// commentMarker returns the comment start symbol for a comment.
+// `//` comments are normalized to `;` on output.
 
-// commentMarker returns the comment start symbol for a comment, defaulting to "//".
+// commentMarker returns the comment start symbol for a comment.
+// `//` comments are normalized to `;` on output.
 func (f *formatter) commentMarker(c *parser.Comment) string {
-	if c.Marker == "" {
-		return "//"
+	if c.Marker == "" || c.Marker == "//" {
+		return ";"
 	}
 	return c.Marker
 }
@@ -151,8 +153,9 @@ func (f *formatter) formatInlineComment(comment *parser.CommentGroup) {
 		f.write(";;")
 		return
 	}
-	if c.Marker == ";" {
+	if c.Marker == ";" || c.Marker == "" || c.Marker == "//" {
 		// `;` 單行註釋緊貼代碼：a = 1; comment
+		// `//` comments are normalized to `;` on output.
 		f.write("; ")
 	} else if c.Marker == ";;" {
 		// `;;` 單行註釋緊貼代碼：a = 1;; comment

@@ -460,7 +460,16 @@ type BlockStatement struct {
 
 func (bs *BlockStatement) statementNode()         {}
 func (bs *BlockStatement) Pos() lexer.Position    { return posFromToken(bs.Token) }
-func (bs *BlockStatement) EndPos() lexer.Position { return bs.RBrace }
+func (bs *BlockStatement) EndPos() lexer.Position {
+	if bs.RBrace.Line > 0 {
+		return bs.RBrace
+	}
+	// For inline blocks (no RBrace), fall back to the last statement's EndPos
+	if n := len(bs.Statements); n > 0 {
+		return bs.Statements[n-1].EndPos()
+	}
+	return bs.RBrace
+}
 
 type Parameter struct {
 	Token       lexer.Token
@@ -1064,11 +1073,21 @@ type IfExpression struct {
 	// desugar 時 Condition 會被改寫為 `(matched == ok) && cond`，
 	// 此欄位讓 formatter 直接輸出 `ok(cond)`。
 	RawCond Expression
+	// MatchEndPos 保留 bare match 外層 `}` 的位置（由 lowering pass 設置）。
+	// EndPos() 優先返回此位置，讓格式化器能準確判斷 match 塊結束後的空行。
+	MatchEndPos lexer.Position
 }
 
 func (ie *IfExpression) expressionNode()     {}
 func (ie *IfExpression) Pos() lexer.Position { return posFromToken(ie.Token) }
 func (ie *IfExpression) EndPos() lexer.Position {
+	// MatchEndPos 記錄了 bare match 外層 `}` 的位置，優先使用。
+	// 這對格式化器的空行判斷至關重要：沒有它，EndPos 會回退到最後一個
+	// arm body 的最後一條語句，導致 `}` 行號被遺漏，第二次格式化時
+	// 誤判 `}` 與下一條語句之間有空行。
+	if ie.MatchEndPos.Line > 0 {
+		return ie.MatchEndPos
+	}
 	if ie.Alternative != nil {
 		return ie.Alternative.EndPos()
 	}

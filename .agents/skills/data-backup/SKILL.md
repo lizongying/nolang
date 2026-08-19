@@ -13,7 +13,7 @@ Before making any file modifications in a conversation, the working directory mu
 
 At the **start of every conversation**, before any file reads, writes, edits, or tool invocations that could modify files:
 
-1. Detect the workspace root directory (`/Users/lizongying/IdeaProjects/no`)
+1. Detect the workspace root directory (the git repository root)
 2. Check if it's a git repository: verify `.git` exists
 3. Check for any uncommitted changes (modified, staged, or untracked files):
    ```bash

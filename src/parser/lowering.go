@@ -26,11 +26,17 @@ type SurfaceMatch struct {
 
 	// OpeningBraceComment 保留裸 match `{` 同行註釋，lowering 時轉移到 IfExpression。
 	OpeningBraceComment *CommentGroup
+	// RBracePos 保留裸 match 外層 `}` 的位置，lowering 時轉移到 IfExpression.MatchEndPos。
+	RBracePos lexer.Position
 }
 
 func (sm *SurfaceMatch) expressionNode()     {}
 func (sm *SurfaceMatch) Pos() lexer.Position { return posFromToken(sm.Token) }
 func (sm *SurfaceMatch) EndPos() lexer.Position {
+	// RBracePos 記錄了外層 `}` 的位置，優先使用。
+	if sm.RBracePos.Line > 0 {
+		return sm.RBracePos
+	}
 	if n := len(sm.Arms); n > 0 && sm.Arms[n-1].body != nil {
 		return sm.Arms[n-1].body.EndPos()
 	}
@@ -137,10 +143,16 @@ func (l *lowerer) lowerSurfaceMatch(sm *SurfaceMatch) Expression {
 		result := l.p.buildBareMatchDesugar(sm.Token, sm.Arms)
 		if ifExpr, ok := result.(*IfExpression); ok && ifExpr != nil {
 			l.p.sem.SetOpeningBraceComment(ifExpr, sm.OpeningBraceComment)
+			// 轉移外層 `}` 位置到 IfExpression，讓 EndPos() 能準確返回 `}` 行號。
+			ifExpr.MatchEndPos = sm.RBracePos
 		}
 		return result
 	}
-	return l.p.buildMatchDesugar(sm)
+	result := l.p.buildMatchDesugar(sm)
+	if ifExpr, ok := result.(*IfExpression); ok && ifExpr != nil {
+		ifExpr.MatchEndPos = sm.RBracePos
+	}
+	return result
 }
 
 // ---- desugar 構建器（原 desugar.go，現屬 lowering 層） ----

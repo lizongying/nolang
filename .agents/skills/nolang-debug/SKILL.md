@@ -320,7 +320,7 @@ str.path-join(b str, bn i64) (out str, out-n i64)
 join(a, an, b, bn, out) (out-n)
 ```
 
-This follows Nolang's compiler semantics where the hidden `self` parameter enables `GenericUnion` detection and monomorphization (see [nolang-syntax-reference](file:///Users/lizongying/IdeaProjects/no/.agents/skills/nolang-syntax-reference/SKILL.md) for details).
+This follows Nolang's compiler semantics where the hidden `self` parameter enables `GenericUnion` detection and monomorphization (see [nolang-syntax-reference](file://../nolang-syntax/SKILL.md) for details).
 
 ## Anti-Patterns
 
@@ -402,7 +402,7 @@ LSP clients report positions in UTF-16 code units, but Nolang source is ASCII fo
 
 ## See Also
 
-- [nolang-syntax-reference](file:///Users/lizongying/IdeaProjects/no/.agents/skills/nolang-syntax-reference/SKILL.md) — for what valid Nolang syntax looks like
+- [nolang-syntax-reference](file://../nolang-syntax/SKILL.md) — for what valid Nolang syntax looks like
 - `Makefile` — for `make no` / `make lsp` targets
 - `src/parser/parser_test.go` — pattern for parser tests
 - `src/fmt/formatter_test.go` — pattern for formatter tests

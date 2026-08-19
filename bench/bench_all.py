@@ -2,8 +2,8 @@
 """Benchmark all Nolang benchmarks: compare no vs C performance."""
 import time, subprocess, os, sys
 
-NO_BIN = '/Users/lizongying/IdeaProjects/no/bin/no'
-BENCH_ROOT = '/Users/lizongying/IdeaProjects/benchmarks-no/benchmarks'
+NO_BIN = os.path.join(os.path.dirname(__file__), '..', 'bin', 'no')
+BENCH_ROOT = os.path.join(os.path.dirname(__file__), '..', '..', 'benchmarks-no', 'benchmarks')
 
 # (name, c_binary_path, no_source_path, input_path_or_None, args_or_None, expected_output_file_or_None)
 BENCHMARKS = [

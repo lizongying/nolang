@@ -92,10 +92,11 @@ func (f *formatter) formatIfExpression(e *parser.IfExpression) {
 			// - If RTElseNewline is set (else was on a new line in source),
 			//   `->` must go on a new line even when consequence is inline.
 			// - Otherwise (inline consequence, same-line else), `->` stays inline.
-			if !f.isStandaloneInline(e.Consequence) || f.hasRT(e, parser.RTElseNewline) {
-				f.newline()
-				f.write("-> ")
-			} else {
+		if !f.isStandaloneInline(e.Consequence) || f.hasRT(e, parser.RTElseNewline) {
+			f.write("\n")
+			f.newline()
+			f.write("-> ")
+		} else {
 				f.write(" -> ")
 			}
 			f.formatStandaloneBody(e.Alternative)
@@ -193,12 +194,12 @@ func (f *formatter) formatBareMatchExpression(e *parser.IfExpression) {
 	}
 	// Output opening brace comment on the same line as {
 	if obc := f.obcOf(e); obc != nil && len(obc.List) > 0 {
-		f.write("  //")
+		f.write("; ")
 		for _, c := range obc.List {
-			f.write(c.Text)
+			f.write(strings.TrimSpace(c.Text))
 		}
 	}
-	f.indent++
+f.indent++
 	// 輸出當前 arm
 	f.writeBareMatchArm(e)
 	// 處理後續 arm（Alternative 鏈）
@@ -207,6 +208,7 @@ func (f *formatter) formatBareMatchExpression(e *parser.IfExpression) {
 			if es, ok := e.Alternative.Statements[0].(*parser.ExpressionStatement); ok {
 				if next, ok := es.Expression.(*parser.IfExpression); ok && f.hasRT(next, parser.RTBareMatch) {
 					e = next
+					f.write("\n")
 					f.writeBareMatchArm(e)
 					continue
 				}
@@ -227,6 +229,7 @@ func (f *formatter) formatBareMatchExpression(e *parser.IfExpression) {
 		if e.DotValBody == e.Alternative {
 			wildcardIf.DotValBody = e.Alternative
 		}
+		f.write("\n")
 		f.writeBareMatchArm(wildcardIf)
 		break
 	}
@@ -410,9 +413,9 @@ func (f *formatter) writeBareMatchArm(e *parser.IfExpression) {
 	f.write(" {")
 	// Output opening brace comment on the same line as {
 	if obc := f.obcOf(e.Consequence); obc != nil && len(obc.List) > 0 {
-		f.write("  //")
+		f.write("; ")
 		for _, c := range obc.List {
-			f.write(c.Text)
+			f.write(strings.TrimSpace(c.Text))
 		}
 	}
 	f.indent++

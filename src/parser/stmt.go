@@ -354,6 +354,7 @@ func (p *Parser) parseStatement() Statement {
 			// if-then (cond -> body) inside arm block bodies, causing
 			// `bend < 0 -> return` to be mis-parsed as separate statements.
 			// Temporarily strip CTX_MATCH_ARM so the inner bare match starts clean.
+			state := p.saveState()
 			savedCtx := p.ctx.copy()
 			p.ctx = p.ctx.filterOut(CTX_MATCH_ARM)
 			expr := p.parseBareMatchExpr()
@@ -361,7 +362,19 @@ func (p *Parser) parseStatement() Statement {
 			if expr != nil {
 				return &ExpressionStatement{Token: tok, Expression: expr}
 			}
-			return nil
+			// parseBareMatchExpr returned nil — the block was classified as
+			// blockMatch (e.g. `IDENT ->` found at depth 0) but actually contains
+			// mixed content: standalone if-then statements (cond -> { body })
+			// followed by other statements or nested bare matches. Fall back to
+			// parsing as a regular block statement so no content is lost.
+			p.restoreState(state)
+			block := p.parseBlockStatement()
+			// parseBlockStatement stops at } but does not consume it; advance
+			// past so the caller sees the token after the block.
+			if p.currentToken.Type == lexer.RBRACE {
+				p.nextToken()
+			}
+			return block
 		}
 		// 裸條件 : { body } 語法 — 將 { 作為 ForStatement 的主體
 		// 前面的表達式在 parseExpressionStatement 中已解析
