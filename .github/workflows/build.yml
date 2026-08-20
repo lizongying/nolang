@@ -21,9 +21,9 @@ jobs:
         uses: actions/checkout@v7
 
       - name: Setup Golang
-        uses: actions/setup-go@v4
+        uses: actions/setup-go@v7
         with:
-          go-version: "1.25"
+          go-version: "1.26"
 
       - name: Set Version Name
         id: set_version_name
@@ -131,9 +131,9 @@ jobs:
         uses: actions/checkout@v7
 
       - name: Setup Golang
-        uses: actions/setup-go@v4
+        uses: actions/setup-go@v7
         with:
-          go-version: "1.25"
+          go-version: "1.26"
 
       - name: Cache LLVM
         id: llvm-cache
