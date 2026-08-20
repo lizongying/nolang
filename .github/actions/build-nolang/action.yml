@@ -132,7 +132,7 @@ runs:
     # ── 1b. Cache nolang binary + std source by version + platform ──────────
     - name: Cache nolang download
       id: nolang-cache
-      uses: actions/cache@v4
+      uses: actions/cache@v6
       with:
         path: |
           ${{ runner.temp }}/nolang-cache
@@ -220,7 +220,7 @@ runs:
     - name: Cache Zig
       if: inputs.install-toolchain == 'true' && steps.toolchain-needs.outputs.need-zig == '1'
       id: zig-cache
-      uses: actions/cache@v4
+      uses: actions/cache@v6
       with:
         path: |
           ${{ runner.temp }}/zig
@@ -251,7 +251,7 @@ runs:
     - name: Cache LLVM
       if: inputs.install-toolchain == 'true' && steps.toolchain-needs.outputs.need-llvm == '1'
       id: llvm-cache
-      uses: actions/cache@v4
+      uses: actions/cache@v6
       with:
         path: |
           /usr/lib/llvm-${{ inputs.llvm-version }}

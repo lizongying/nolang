@@ -83,7 +83,7 @@ runs:
     # download is skipped entirely.
     - name: Cache nolang download
       id: cache
-      uses: actions/cache@v4
+      uses: actions/cache@v6
       with:
         path: |
           ${{ runner.temp }}/nolang-cache

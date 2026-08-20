@@ -137,7 +137,7 @@ jobs:
 
       - name: Cache LLVM
         id: llvm-cache
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: |
             /usr/lib/llvm-21
@@ -162,7 +162,7 @@ jobs:
 
       - name: Cache Zig
         id: zig-cache
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: |
             /home/runner/zig
@@ -182,7 +182,7 @@ jobs:
 
       - name: Cache wasmtime
         id: wasmtime-cache
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: |
             /home/runner/wasmtime
