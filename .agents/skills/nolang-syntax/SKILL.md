@@ -192,7 +192,7 @@ no run -ld-RELEASE main.no                ; boolean shorthand
 no build --js -ld-VERSION=0.1.2 main.no   ; JS backend also supported
 ```
 
-Injected variables are prepended to the parsed AST. If the source already declares a top-level variable with the same name, the source declaration takes precedence.
+Injected variables interact with source declarations: if the source already declares a top-level variable with the same name, the injected value **replaces** it in-place (common pattern: declare `VERSION = ''` in source, assign at build time with `-ld-VERSION=0.1.2`). If the variable doesn't exist in source, it's prepended as a new global constant.
 
 ### Single-Repo, Multi-Package Layout
 

@@ -1833,5 +1833,22 @@ no build --js -ld-VERSION=0.1.2 main.no
 
 ### Relationship with Source Declarations
 
-`-ld` injected variables are prepended to the parsed AST and participate in all subsequent compilation passes (type inference, validation, module merge, codegen). If the source code already declares a top-level variable with the same name, the source declaration takes precedence (it appears after the injected statement).
+`-ld` injected variables interact with source declarations as follows:
+
+- **Source already declares the same variable**: the injected value **replaces** the source value in-place. A common pattern is to declare a placeholder in source (e.g. `VERSION = ''`) and assign it at build time with `-ld-VERSION=0.1.2`.
+- **Variable does not exist in source**: the injected variable is prepended to the AST as a new global constant declaration, participating in all subsequent compilation passes (type inference, validation, module merge, codegen).
+- **Not injected**: the source declaration remains unchanged.
+
+```no
+; Source declares placeholder variables
+VERSION = ''
+COUNT = 0
+
+print('VERSION:', VERSION)
+print('COUNT:', COUNT)
+
+; no build -ld-VERSION=0.1.2 main.no
+; Output: VERSION: 0.1.2  (injected value replaces source '')
+;         COUNT: 0        (not injected, source value preserved)
+```
 

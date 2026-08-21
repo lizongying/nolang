@@ -116,8 +116,11 @@ Use `ld-flags` to inject compile-time global constants into the Nolang source:
 
 This is equivalent to running `no build -ld-VERSION=1.0.0 -ld-DEBUG=true` for
 every target. The injected variables behave as top-level global constants
-(`VERSION` → `str`, `DEBUG` → `bool`). Boolean shorthand is also supported:
-`-ld-RELEASE` is equivalent to `-ld-RELEASE=true`.
+(`VERSION` → `str`, `DEBUG` → `bool`). If the source already declares a
+top-level variable with the same name, the injected value **replaces** it
+in-place (common pattern: declare `VERSION = ''` in source, assign at build
+time). Boolean shorthand is also supported: `-ld-RELEASE` is equivalent to
+`-ld-RELEASE=true`.
 
 ## Per-target failure handling
 

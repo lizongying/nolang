@@ -641,57 +641,79 @@ func injectLDFlags(program *parser.Program, ldFlags map[string]string) {
 	if len(ldFlags) == 0 {
 		return
 	}
-	// Build synthetic statements in sorted key order for deterministic output.
+	// Build a set of existing top-level variable names so we can replace their
+	// values in-place instead of injecting duplicates (which would trigger
+	// validateDuplicates).
+	existingVars := make(map[string]*parser.LetStatement)
+	for _, stmt := range program.Statements {
+		if ls, ok := stmt.(*parser.LetStatement); ok && ls.Name != nil {
+			existingVars[ls.Name.Value] = ls
+		}
+	}
+
+	// Build the list of variables to inject (sorted for deterministic order).
 	keys := make([]string, 0, len(ldFlags))
 	for k := range ldFlags {
 		keys = append(keys, k)
 	}
 	sort.Strings(keys)
 
-	synthetic := make([]parser.Statement, 0, len(keys))
-	for _, name := range keys {
-		val := ldFlags[name]
-		var expr parser.Expression
-		// Try integer
+	// buildExpr converts a -ld value string into the appropriate literal AST node.
+	buildExpr := func(val string) parser.Expression {
 		if intVal, err := strconv.ParseInt(val, 10, 64); err == nil {
-			expr = &parser.IntegerLiteral{
+			return &parser.IntegerLiteral{
 				Token: lexer.Token{Type: lexer.INT, Literal: val, Line: 0, Column: 0},
 				Value: intVal,
 				Raw:   val,
 			}
 		} else if floatVal, err := strconv.ParseFloat(val, 64); err == nil {
-			expr = &parser.FloatLiteral{
+			return &parser.FloatLiteral{
 				Token: lexer.Token{Type: lexer.FLOAT, Literal: val, Line: 0, Column: 0},
 				Value: floatVal,
 				Raw:   val,
 			}
 		} else if val == "true" {
-			expr = &parser.BooleanLiteral{
+			return &parser.BooleanLiteral{
 				Token: lexer.Token{Type: lexer.TRUE, Literal: val, Line: 0, Column: 0},
 				Value: true,
 			}
 		} else if val == "false" {
-			expr = &parser.BooleanLiteral{
+			return &parser.BooleanLiteral{
 				Token: lexer.Token{Type: lexer.FALSE, Literal: val, Line: 0, Column: 0},
 				Value: false,
 			}
-		} else {
-			// Treat as string literal (single-quoted in Nolang).
-			expr = &parser.StringLiteral{
-				Token: lexer.Token{Type: lexer.STRING, Literal: val, Raw: "'" + val + "'", Line: 0, Column: 0},
-				Value: val,
-				Raw:   "'" + val + "'",
-			}
 		}
-		synthetic = append(synthetic, &parser.LetStatement{
-			Token:       lexer.Token{Type: lexer.IDENT, Literal: name, Line: 0, Column: 0},
-			Name:        &parser.Identifier{Token: lexer.Token{Type: lexer.IDENT, Literal: name, Line: 0, Column: 0}, Value: name},
-			Value:       expr,
-			IsSynthetic: true,
-		})
+		// Treat as string literal (single-quoted in Nolang).
+		return &parser.StringLiteral{
+			Token: lexer.Token{Type: lexer.STRING, Literal: val, Raw: "'" + val + "'", Line: 0, Column: 0},
+			Value: val,
+			Raw:   "'" + val + "'",
+		}
 	}
-	// Prepend synthetic statements before existing statements.
-	program.Statements = append(synthetic, program.Statements...)
+
+	// synthetic accumulates statements for variables that don't exist in source.
+	synthetic := make([]parser.Statement, 0, len(keys))
+	for _, name := range keys {
+		val := ldFlags[name]
+		expr := buildExpr(val)
+		if ls, ok := existingVars[name]; ok {
+			// Source already declares this variable: replace its value in-place.
+			ls.Value = expr
+			ls.IsSynthetic = true
+		} else {
+			// Variable not in source: inject a new synthetic declaration.
+			synthetic = append(synthetic, &parser.LetStatement{
+				Token:       lexer.Token{Type: lexer.IDENT, Literal: name, Line: 0, Column: 0},
+				Name:        &parser.Identifier{Token: lexer.Token{Type: lexer.IDENT, Literal: name, Line: 0, Column: 0}, Value: name},
+				Value:       expr,
+				IsSynthetic: true,
+			})
+		}
+	}
+	// Prepend only genuinely new variables before existing statements.
+	if len(synthetic) > 0 {
+		program.Statements = append(synthetic, program.Statements...)
+	}
 }
 type Target int
 const (
