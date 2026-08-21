@@ -72,15 +72,24 @@ type SemanticContext struct {
 	VarTypes     map[string]string
 	EnumVariants map[string][]string
 	DeclaredVars map[string]bool
+
+	// FuncVarTypes stores per-function-local variable types, keyed by
+	// function name → variable name → type. This prevents same-named
+	// locals in different functions (e.g. `r` in parse-i64 and parse-f64)
+	// from colliding in the global VarTypes map during lowering.
+	FuncVarTypes     map[string]map[string]string
+	FuncDeclaredVars map[string]map[string]bool
 }
 
 // NewSemanticContext 建立空語義副表。
 func NewSemanticContext() *SemanticContext {
 	return &SemanticContext{
-		nodeSem:      make(map[Node]*NodeSemantics),
-		VarTypes:     make(map[string]string),
-		EnumVariants: make(map[string][]string),
-		DeclaredVars: make(map[string]bool),
+		nodeSem:          make(map[Node]*NodeSemantics),
+		VarTypes:         make(map[string]string),
+		EnumVariants:     make(map[string][]string),
+		DeclaredVars:     make(map[string]bool),
+		FuncVarTypes:     make(map[string]map[string]string),
+		FuncDeclaredVars: make(map[string]map[string]bool),
 	}
 }
 
@@ -111,6 +120,24 @@ func (s *SemanticContext) Merge(other *SemanticContext) {
 	}
 	for k := range other.DeclaredVars {
 		s.SetDeclared(k)
+	}
+	// Merge per-function variable types (don't overwrite existing entries).
+	for fn, vars := range other.FuncVarTypes {
+		for vn, vt := range vars {
+			if existing, ok := s.FuncVarTypes[fn]; ok {
+				if _, exists := existing[vn]; !exists {
+					existing[vn] = vt
+				}
+			} else {
+				s.SetFuncVarType(fn, vn, vt)
+			}
+		}
+	}
+	// Merge per-function declared vars.
+	for fn, vars := range other.FuncDeclaredVars {
+		for vn := range vars {
+			s.SetFuncDeclared(fn, vn)
+		}
 	}
 }
 
@@ -260,6 +287,65 @@ func (s *SemanticContext) SetVarType(name, typ string) {
 		s.VarTypes = make(map[string]string)
 	}
 	s.VarTypes[name] = typ
+}
+
+// SetFuncVarType records a function-local variable type in FuncVarTypes.
+// If funcName is empty, falls back to the global VarTypes.
+func (s *SemanticContext) SetFuncVarType(funcName, varName, typ string) {
+	if funcName == "" {
+		s.SetVarType(varName, typ)
+		return
+	}
+	if s.FuncVarTypes == nil {
+		s.FuncVarTypes = make(map[string]map[string]string)
+	}
+	if s.FuncVarTypes[funcName] == nil {
+		s.FuncVarTypes[funcName] = make(map[string]string)
+	}
+	s.FuncVarTypes[funcName][varName] = typ
+}
+
+// FuncVarType queries a function-local variable type. Returns ("", false) if
+// not found in the per-function map, falling back to the global VarTypes.
+func (s *SemanticContext) FuncVarType(funcName, varName string) (string, bool) {
+	if s.FuncVarTypes != nil {
+		if vars, ok := s.FuncVarTypes[funcName]; ok {
+			if t, ok := vars[varName]; ok {
+				return t, true
+			}
+		}
+	}
+	// Fallback to global VarTypes (module-level vars, params, etc.)
+	t, ok := s.VarTypes[varName]
+	return t, ok
+}
+
+// SetFuncDeclared marks a variable as declared within a function scope.
+func (s *SemanticContext) SetFuncDeclared(funcName, varName string) {
+	if funcName == "" {
+		s.SetDeclared(varName)
+		return
+	}
+	if s.FuncDeclaredVars == nil {
+		s.FuncDeclaredVars = make(map[string]map[string]bool)
+	}
+	if s.FuncDeclaredVars[funcName] == nil {
+		s.FuncDeclaredVars[funcName] = make(map[string]bool)
+	}
+	s.FuncDeclaredVars[funcName][varName] = true
+}
+
+// IsFuncDeclared checks if a variable was declared within a function scope.
+// Falls back to the global DeclaredVars if not found in the per-function map.
+func (s *SemanticContext) IsFuncDeclared(funcName, varName string) bool {
+	if s.FuncDeclaredVars != nil {
+		if vars, ok := s.FuncDeclaredVars[funcName]; ok {
+			if vars[varName] {
+				return true
+			}
+		}
+	}
+	return s.IsDeclared(varName)
 }
 
 // VarType 查詢變數型別。

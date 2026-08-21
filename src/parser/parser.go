@@ -27,6 +27,10 @@ type Parser struct {
 	methodStructStack []string                     // 當前方法所屬的 struct 名稱棧
 	typeAliasNames    map[string]bool              // 已定義的類型別名名稱（用於等號語法偵測）
 
+	// curFuncName tracks the current function being parsed, for function-scoped
+	// variable type tracking. Empty when parsing module-level code.
+	curFuncName string
+
 	// pendingAnnotations 暫存待附加到宣告的註解條目
 	pendingAnnotations []*AnnotationEntry
 
@@ -479,6 +483,8 @@ type parserState struct {
 	semVarTypes     map[string]string   // snapshot of variable type table
 	semEnumVariants map[string][]string // snapshot of enum variant table
 	semDeclaredVars map[string]bool     // snapshot of declared variable set
+	semFuncVarTypes     map[string]map[string]string // snapshot of per-function var types
+	semFuncDeclaredVars map[string]map[string]bool   // snapshot of per-function declared vars
 }
 
 func New(lx *lexer.Lexer) *Parser {
@@ -501,8 +507,14 @@ func New(lx *lexer.Lexer) *Parser {
 // setVarType 記錄變數宣告型別到 varDeclTypes。
 // varDeclTypes 在 New() 中已初始化，此處無需 nil 檢查。
 // 集中管理寫入點，避免散佈的 lazy init 模式。
+// When inside a function body (curFuncName != ""), also records in the
+// per-function FuncVarTypes map to prevent same-named locals in different
+// functions from colliding during lowering.
 func (p *Parser) setVarType(name, typ string) {
 	p.sem.SetVarType(name, typ)
+	if p.curFuncName != "" {
+		p.sem.SetFuncVarType(p.curFuncName, name, typ)
+	}
 }
 
 // SetExternSignatures 注入外部（跨文件）函數簽名和 struct 欄位型別，
@@ -541,15 +553,35 @@ func (p *Parser) saveState() parserState {
 	for k, v := range p.sem.DeclaredVars {
 		declaredVarsCopy[k] = v
 	}
+	// Deep copy per-function var types
+	funcVarTypesCopy := make(map[string]map[string]string, len(p.sem.FuncVarTypes))
+	for fn, vars := range p.sem.FuncVarTypes {
+		cp := make(map[string]string, len(vars))
+		for k, v := range vars {
+			cp[k] = v
+		}
+		funcVarTypesCopy[fn] = cp
+	}
+	// Deep copy per-function declared vars
+	funcDeclaredVarsCopy := make(map[string]map[string]bool, len(p.sem.FuncDeclaredVars))
+	for fn, vars := range p.sem.FuncDeclaredVars {
+		cp := make(map[string]bool, len(vars))
+		for k, v := range vars {
+			cp[k] = v
+		}
+		funcDeclaredVarsCopy[fn] = cp
+	}
 	return parserState{
-		cur:          p.cur,
-		peek:         p.peek,
-		prevToken:    p.prevToken,
-		ctx:          p.ctx.copy(),
-		comments:     commentsCopy,
-		semVarTypes:     varDeclTypesCopy,
-		semEnumVariants: enumVariantsCopy,
-		semDeclaredVars: declaredVarsCopy,
+		cur:                 p.cur,
+		peek:                p.peek,
+		prevToken:           p.prevToken,
+		ctx:                 p.ctx.copy(),
+		comments:            commentsCopy,
+		semVarTypes:         varDeclTypesCopy,
+		semEnumVariants:     enumVariantsCopy,
+		semDeclaredVars:     declaredVarsCopy,
+		semFuncVarTypes:     funcVarTypesCopy,
+		semFuncDeclaredVars: funcDeclaredVarsCopy,
 	}
 }
 
@@ -600,6 +632,8 @@ func (p *Parser) restoreState(state parserState) {
 	p.sem.VarTypes = state.semVarTypes
 	p.sem.EnumVariants = state.semEnumVariants
 	p.sem.DeclaredVars = state.semDeclaredVars
+	p.sem.FuncVarTypes = state.semFuncVarTypes
+	p.sem.FuncDeclaredVars = state.semFuncDeclaredVars
 }
 
 func (p *Parser) nextToken() {

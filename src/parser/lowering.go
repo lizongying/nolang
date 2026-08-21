@@ -63,8 +63,9 @@ func (p *Parser) lowerProgram(prog *Program) {
 }
 
 type lowerer struct {
-	p       *Parser
-	visited map[uintptr]bool // 指標去重：AST 有共享節點（如 MatchedExpr），避免重複遍歷
+	p           *Parser
+	visited     map[uintptr]bool // 指標去重：AST 有共享節點（如 MatchedExpr），避免重複遍歷
+	curFuncName string          // current function being lowered, for function-scoped VarType lookup
 }
 
 var surfaceMatchPtrType = reflect.TypeOf((*SurfaceMatch)(nil))
@@ -104,11 +105,25 @@ func (l *lowerer) walk(v reflect.Value) {
 		}
 	case reflect.Struct:
 		t := v.Type()
+		// Detect FunctionDefinition to track current function name for
+		// function-scoped variable type lookups during match desugaring.
+		var savedFuncName string
+		isFuncDef := false
+		if v.CanAddr() {
+			if fd, ok := v.Addr().Interface().(*FunctionDefinition); ok {
+				savedFuncName = l.curFuncName
+				l.curFuncName = fd.Name
+				isFuncDef = true
+			}
+		}
 		for i := 0; i < v.NumField(); i++ {
 			if t.Field(i).PkgPath != "" {
 				continue // 非導出欄位（AST 子節點欄位均導出；matchArm 由 lowerSurfaceMatch 顯式處理）
 			}
 			l.walk(v.Field(i))
+		}
+		if isFuncDef {
+			l.curFuncName = savedFuncName
 		}
 		// 標籤條件迴圈包裝（`#N cond: { body }`）：解析期只掛上 SurfaceMatch，
 		// lowering 後補齊 Body = IfExpression.Consequence（與舊解析期行為一致）。
@@ -140,7 +155,11 @@ func (l *lowerer) lowerSurfaceMatch(sm *SurfaceMatch) Expression {
 	}
 
 	if sm.Matched == nil {
+		// Sync curFuncName to parser for function-scoped VarType lookups.
+		savedFuncName := l.p.curFuncName
+		l.p.curFuncName = l.curFuncName
 		result := l.p.buildBareMatchDesugar(sm.Token, sm.Arms)
+		l.p.curFuncName = savedFuncName
 		if ifExpr, ok := result.(*IfExpression); ok && ifExpr != nil {
 			l.p.sem.SetOpeningBraceComment(ifExpr, sm.OpeningBraceComment)
 			// 轉移外層 `}` 位置到 IfExpression，讓 EndPos() 能準確返回 `}` 行號。
@@ -148,7 +167,11 @@ func (l *lowerer) lowerSurfaceMatch(sm *SurfaceMatch) Expression {
 		}
 		return result
 	}
+	// Sync curFuncName to parser for function-scoped VarType lookups.
+	savedFuncName := l.p.curFuncName
+	l.p.curFuncName = l.curFuncName
 	result := l.p.buildMatchDesugar(sm)
+	l.p.curFuncName = savedFuncName
 	if ifExpr, ok := result.(*IfExpression); ok && ifExpr != nil {
 		ifExpr.MatchEndPos = sm.RBracePos
 	}
@@ -273,11 +296,13 @@ func (p *Parser) buildMatchDesugar(sm *SurfaceMatch) Expression {
 	}
 
 	// 類型推斷結果取自語義副表（Resolver pass 寫入 p.sem），不再依賴解析期快照。
+	// Use function-scoped lookup (curFuncName) to avoid cross-function type
+	// pollution when same-named locals exist in different functions.
 	matchedVarType := ""
 	isEnumType := false
 	var enumVariants []string
 	if ident, ok := matched.(*Identifier); ok {
-		if t, ok := p.sem.VarType(ident.Value); ok {
+		if t, ok := p.sem.FuncVarType(p.curFuncName, ident.Value); ok {
 			matchedVarType = t
 			if vs, ok := p.sem.EnumVariantsOf(t); ok {
 				isEnumType = true

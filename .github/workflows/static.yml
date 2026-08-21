@@ -39,9 +39,9 @@ jobs:
           cache-dependency-path: src/go.sum
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
-          node-version: 20
+          node-version: 26
 
       - name: Setup bun
         uses: oven-sh/setup-bun@v2

@@ -1055,7 +1055,10 @@ func (p *Parser) parseLetStatement() Statement {
 			// 從函數/方法調用推斷返回型別（僅首次宣告，不覆蓋已有型別）
 			// 例外：option 型別（?type）必須始終更新，因為 match desugar 依賴它
 			// 來為 ok arm 生成正確的 it 型別窄化
-			if !p.sem.DeclaredVars[stmt.Name.Value] {
+			// Use function-scoped DeclaredVars to prevent same-named locals
+			// in different functions from interfering with each other.
+			isDeclared := p.sem.IsFuncDeclared(p.curFuncName, stmt.Name.Value)
+			if !isDeclared {
 				if inferred := p.inferTypeFromCallExpr(v); inferred != "" {
 					stmt.Type = markInferred(buildType(inferred, nameToken))
 					p.setVarType(stmt.Name.Value, inferred)
@@ -1071,7 +1074,9 @@ func (p *Parser) parseLetStatement() Statement {
 	}
 
 	// 記錄已宣告的變數（用於避免重複型別推斷）
+	// Also record in per-function scope to prevent cross-function collisions.
 	p.sem.DeclaredVars[stmt.Name.Value] = true
+	p.sem.SetFuncDeclared(p.curFuncName, stmt.Name.Value)
 
 	return stmt
 }

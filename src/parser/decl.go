@@ -479,7 +479,13 @@ func (p *Parser) parseArrayTypeMethodDefinition() Statement {
 		return nil
 	}
 	p.ctx.push(CTX_FUNC_BODY)
+	// Set curFuncName for function-scoped variable type tracking.
+	// This ensures same-named locals in different functions get separate
+	// type entries in FuncVarTypes, preventing cross-function pollution.
+	prevFuncName := p.curFuncName
+	p.curFuncName = def.Name
 	def.Body = p.parseBlockStatement()
+	p.curFuncName = prevFuncName
 	p.ctx.pop()
 
 	// Move inline comment on the same line as { from OpeningBraceComment to
@@ -1502,7 +1508,13 @@ func (p *Parser) parseFunctionBody(def *FunctionDefinition) {
 	}
 
 	p.ctx.push(CTX_FUNC_BODY)
+	// Set curFuncName for function-scoped variable type tracking.
+	// This ensures same-named locals in different functions get separate
+	// type entries in FuncVarTypes, preventing cross-function pollution.
+	prevFuncName := p.curFuncName
+	p.curFuncName = def.Name
 	def.Body = p.parseBlockStatement()
+	p.curFuncName = prevFuncName
 	p.ctx.pop()
 
 	// Move inline comment on the same line as { from OpeningBraceComment to
