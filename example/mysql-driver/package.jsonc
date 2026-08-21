@@ -1,6 +1,5 @@
 {
   "name": "mysql-driver",
-  "version": "0.1.0",
   "description": "MySQL driver for Nolang (pure Nolang, no libmysqlclient)",
   "keywords": [
     "nolang",

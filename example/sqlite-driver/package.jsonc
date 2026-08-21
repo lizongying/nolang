@@ -1,6 +1,5 @@
 {
   "name": "sqlite-driver",
-  "version": "0.1.0",
   "description": "SQLite driver for Nolang using FFI",
   "keywords": [
     "nolang",

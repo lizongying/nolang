@@ -568,6 +568,10 @@ type Transpiler struct {
 	targetGoos    string
 	targetGoarch  string
 	noBoundsCheck bool // skip bounds checks in generated code (unsafe mode)
+	// ldFlags: -ldKEY=VALUE pairs injected as compile-time global constants.
+	// Set via SetLDFlags before Compile; the synthetic LetStatements are
+	// prepended to the parsed program in CompileTarget.
+	ldFlags          map[string]string
 	// fileCache: per-Transpiler AST 解析快取，消除單次 CompileTarget 內的重复解析。
 	// 同一 std 模組檔案在一次編譯中最多被解析 4 次（preload/checker.ValidateFuncArgs/merge/auto-load），
 	// 快取後降至 1 次。安全性：preload 和 checker.ValidateFuncArgs 只讀不修改 AST，
@@ -597,6 +601,14 @@ func (t *Transpiler) SetNoBoundsCheck(skip bool) {
 	t.noBoundsCheck = skip
 }
 
+// SetLDFlags sets the -ldKEY=VALUE pairs to inject as compile-time global constants.
+// Must be called before Compile/CompileTarget. The synthetic LetStatements are
+// prepended to the parsed program so they participate in all subsequent passes
+// (type inference, validation, module merge, codegen).
+func (t *Transpiler) SetLDFlags(ld map[string]string) {
+	t.ldFlags = ld
+}
+
 // SetVetMode configures the transpiler to skip LLVM IR generation.
 // When true, Compile/CompileTarget performs full front-end validation
 // (parse, type-check, module merge, monomorphization) but returns before
@@ -615,6 +627,71 @@ func (t *Transpiler) SetVetStrict(strict bool) {
 // 僅在 vetMode=true 且 Compile 已執行後有效。
 func (t *Transpiler) VetLints() []checker.LintResult {
 	return t.vetLints
+}
+
+// injectLDFlags prepends synthetic LetStatement nodes for each -ldKEY=VALUE pair
+// to the program's statement list. These become compile-time global constants
+// accessible exactly like top-level `name = value` declarations in source code.
+//
+// Value type inference mirrors inferTypeFromExpr:
+//   - numeric → i64 or f64
+//   - `true`/`false` → bool
+//   - everything else → str (single-quoted string literal)
+func injectLDFlags(program *parser.Program, ldFlags map[string]string) {
+	if len(ldFlags) == 0 {
+		return
+	}
+	// Build synthetic statements in sorted key order for deterministic output.
+	keys := make([]string, 0, len(ldFlags))
+	for k := range ldFlags {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+
+	synthetic := make([]parser.Statement, 0, len(keys))
+	for _, name := range keys {
+		val := ldFlags[name]
+		var expr parser.Expression
+		// Try integer
+		if intVal, err := strconv.ParseInt(val, 10, 64); err == nil {
+			expr = &parser.IntegerLiteral{
+				Token: lexer.Token{Type: lexer.INT, Literal: val, Line: 0, Column: 0},
+				Value: intVal,
+				Raw:   val,
+			}
+		} else if floatVal, err := strconv.ParseFloat(val, 64); err == nil {
+			expr = &parser.FloatLiteral{
+				Token: lexer.Token{Type: lexer.FLOAT, Literal: val, Line: 0, Column: 0},
+				Value: floatVal,
+				Raw:   val,
+			}
+		} else if val == "true" {
+			expr = &parser.BooleanLiteral{
+				Token: lexer.Token{Type: lexer.TRUE, Literal: val, Line: 0, Column: 0},
+				Value: true,
+			}
+		} else if val == "false" {
+			expr = &parser.BooleanLiteral{
+				Token: lexer.Token{Type: lexer.FALSE, Literal: val, Line: 0, Column: 0},
+				Value: false,
+			}
+		} else {
+			// Treat as string literal (single-quoted in Nolang).
+			expr = &parser.StringLiteral{
+				Token: lexer.Token{Type: lexer.STRING, Literal: val, Raw: "'" + val + "'", Line: 0, Column: 0},
+				Value: val,
+				Raw:   "'" + val + "'",
+			}
+		}
+		synthetic = append(synthetic, &parser.LetStatement{
+			Token:       lexer.Token{Type: lexer.IDENT, Literal: name, Line: 0, Column: 0},
+			Name:        &parser.Identifier{Token: lexer.Token{Type: lexer.IDENT, Literal: name, Line: 0, Column: 0}, Value: name},
+			Value:       expr,
+			IsSynthetic: true,
+		})
+	}
+	// Prepend synthetic statements before existing statements.
+	program.Statements = append(synthetic, program.Statements...)
 }
 type Target int
 const (
@@ -1320,6 +1397,10 @@ func (t *Transpiler) CompileTarget(source string, _ Target) (string, error) {
 		}
 		// W_SEMI_EAT warnings are handled by LSP diagnostics; build path no longer
 		// emits them to stderr to avoid noise during compilation.
+	}
+	// 注入 -ldKEY=VALUE 全域常量（在 embed 處理之前，使注入變數可被後續 pass 使用）
+	if t.ldFlags != nil {
+		injectLDFlags(program, t.ldFlags)
 	}
 	// 處理 #{embed=...} 註解：編譯期讀取嵌入文件
 	if err := t.processEmbeds(program, t.sourcePath); err != nil {

@@ -2054,3 +2054,50 @@ neural = () {
   "link-libs": ["crypto", "ssl"]
 }
 ```
+
+## 編譯期變數注入（-ld）
+
+`no build`、`no run`、`no test` 支援通過 `-ldKEY=VALUE` 旗標在編譯期注入全域常量。注入的變數等同於在源碼頂部聲明 `KEY = VALUE`，可在程式中直接使用。
+
+### 語法
+
+```bash
+no build -ldKEY=VALUE [更多 -ld...] <file>
+```
+
+- `-ld` 前綴後緊跟變數名和值，用 `=` 分隔
+- 多個 `-ld` 旗標可同時使用
+- 布林簡寫：`-ldDEBUG`（不含 `=VALUE`）等同於 `-ldDEBUG=true`
+
+### 值的型別推斷
+
+| 值的形式 | 推斷型別 | 範例 |
+| --- | --- | --- |
+| 整數 | `i64` | `-ldCOUNT=42` |
+| 浮點數 | `f64` | `-ldPI=3.14` |
+| `true` / `false` | `bool` | `-ldDEBUG=true` |
+| 其他 | `str`（單引號字串字面量） | `-ldVERSION=0.1.2` |
+
+### 範例
+
+```no
+; 假設使用 -ldVERSION=0.1.2 -ldCOUNT=42 -ldDEBUG=true 編譯
+print('VERSION:', VERSION)  ; 輸出: VERSION: 0.1.2
+print('COUNT:', COUNT)      ; 輸出: COUNT: 42
+print('DEBUG:', DEBUG)      ; 輸出: DEBUG: 1 (bool 在原生後端印為 1)
+```
+
+```bash
+; 注入多個變數
+no build -ldVERSION=0.1.2 -ldCOUNT=42 -ldDEBUG=true main.no
+
+; 布林簡寫
+no run -ldRELEASE main.no
+
+; JS 後端也支援
+no build --js -ldVERSION=0.1.2 main.no
+```
+
+### 與源碼聲明的關係
+
+`-ld` 注入的變數會被前置到解析後的 AST 最前面，參與所有後續編譯 pass（型別推斷、驗證、模組合併、codegen）。如果源碼中已有同名頂層變數聲明，注入的值會被源碼中的聲明覆蓋（源碼聲明在後）。

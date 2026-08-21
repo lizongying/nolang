@@ -160,6 +160,7 @@ func printUsage() {
 	fmt.Println("                      x86_64-windows-gnu, wasm32-wasi")
 	fmt.Println("      -js            Use JS backend (emit JavaScript, no LLVM toolchain)")
 	fmt.Println("      -browser       Generate browser-targeted output (HTML + JS, use with -js)")
+	fmt.Println("      -ldKEY=VALUE   Inject a compile-time global constant (see -ld section below)")
 	fmt.Println("    For wasm32-wasi target, set $WASI_SYSROOT to your wasi-sysroot path.")
 	fmt.Println("    Default: build current directory or workspace.jsonc projects")
 	fmt.Println("    Examples:")
@@ -171,6 +172,7 @@ func printUsage() {
 	fmt.Println("      no build -target wasm32-wasi main.no")
 	fmt.Println("      no build --js main.no                     emit JavaScript (type erasure)")
 	fmt.Println("      no build --js --browser main.no           emit browser JS + HTML wrapper")
+	fmt.Println("      no build -ldVERSION=0.1.2 main.no         inject VERSION as a global constant")
 	fmt.Println("")
 	fmt.Println("  no run [<file|dir>]          Build and run")
 	fmt.Println("    If directory, requires main.no (entry point).")
@@ -191,6 +193,7 @@ func printUsage() {
 	fmt.Println("      -target <s>   Target triple for cross-compilation")
 	fmt.Println("                      e.g. x86_64-linux-gnu, aarch64-macos-gnu,")
 	fmt.Println("                      x86_64-windows-gnu, wasm32-wasi")
+	fmt.Println("      -ldKEY=VALUE  Inject a compile-time global constant (see -ld section below)")
 	fmt.Println("    Examples:")
 	fmt.Println("      no test")
 	fmt.Println("      no test tests/my-test.no")
@@ -220,6 +223,24 @@ func printUsage() {
 	fmt.Println("  no sync              Sync/download dependencies")
 	fmt.Println("  no pub               Publish package")
 	fmt.Println("")
+	fmt.Println("  -ldKEY=VALUE  Inject compile-time global constants (build, run, test)")
+	fmt.Println("    Multiple -ld flags can be used. The -ld prefix is stripped, and")
+	fmt.Println("    KEY=VALUE is injected as a top-level global constant in the Nolang")
+	fmt.Println("    source, as if you had written `KEY = VALUE` at the top of main.no.")
+	fmt.Println("")
+	fmt.Println("    Value type inference:")
+	fmt.Println("      - Integers (e.g. 42)         -> i64")
+	fmt.Println("      - Floats   (e.g. 3.14)       -> f64")
+	fmt.Println("      - Booleans (true/false)      -> bool")
+	fmt.Println("      - Other    (e.g. 0.1.2)      -> str (single-quoted string literal)")
+	fmt.Println("")
+	fmt.Println("    Boolean shorthand: -ldDEBUG (no =VALUE) is equivalent to -ldDEBUG=true")
+	fmt.Println("")
+	fmt.Println("    Examples:")
+	fmt.Println("      no build -ldVERSION=0.1.2 -ldNAME='nolang' main.no")
+	fmt.Println("      no run -ldDEBUG=true main.no")
+	fmt.Println("      no run -ldRELEASE main.no")
+	fmt.Println("")
 	fmt.Println("")
 }
 
@@ -231,6 +252,39 @@ var version = "dev"
 
 // buildDate is injected at build time via -ldflags
 var buildDate = ""
+
+// parseLDFlags extracts all -ldKEY=VALUE arguments from the given args slice.
+// It returns a map of KEY→VALUE pairs and a filtered slice with -ld arguments removed.
+// The -ld prefix is stripped: "-ldVERSION=0.1.2" → {"VERSION": "0.1.2"}.
+// Multiple -ld flags are allowed: -ldVERSION=0.1.2 -ldDEBUG=true
+func parseLDFlags(args []string) (map[string]string, []string) {
+	ldFlags := map[string]string{}
+	var filtered []string
+	for _, arg := range args {
+		if strings.HasPrefix(arg, "-ld") {
+			// Strip the "-ld" prefix, parse KEY=VALUE
+			kv := arg[3:] // remove "-ld"
+			if kv == "" {
+				// Just "-ld" with no key, skip
+				continue
+			}
+			idx := strings.IndexByte(kv, '=')
+			if idx < 0 {
+				// No '=' sign: treat as boolean true flag: -ldDEBUG → {"DEBUG": "true"}
+				ldFlags[kv] = "true"
+			} else {
+				key := kv[:idx]
+				val := kv[idx+1:]
+				if key != "" {
+					ldFlags[key] = val
+				}
+			}
+		} else {
+			filtered = append(filtered, arg)
+		}
+	}
+	return ldFlags, filtered
+}
 
 func versionCommand() {
 	if buildDate != "" {
@@ -409,7 +463,6 @@ func createConfigFile(config ProjectConfig) {
 
 	content := fmt.Sprintf(`{
   "name": "%s",
-  "version": "%s",
   "description": "%s",
   "keywords": [],
   "author": "%s",
@@ -427,7 +480,6 @@ func createConfigFile(config ProjectConfig) {
   "ignore": [],
 }`,
 		config.Name,
-		config.Version,
 		config.Description,
 		config.Author,
 		config.Email,
@@ -1269,6 +1321,8 @@ func fmtProcessDirectory(dirname string, writeInPlace bool, diffMode bool) error
 
 func buildCommand(args []string) {
 	nbuild.ClearCaches()
+	// Extract -ldKEY=VALUE pairs before flag parsing
+	ldFlags, args := parseLDFlags(args)
 	fs := flag.NewFlagSet("build", flag.ExitOnError)
 	outputFile := fs.String("o", "", "Output file path")
 	cc := fs.String("cc", "clang", "C compiler: clang (default), zig")
@@ -1342,6 +1396,7 @@ func buildCommand(args []string) {
 		UseJS:           useJS,
 		BrowserMode:     *browserMode,
 		CompilerVersion: version,
+		LDFlags:         ldFlags,
 	}
 
 	// JS 後端路徑：繞過 LLVM 工具鏈，直接發射 JavaScript 原始碼（型別擦除）。
@@ -1470,6 +1525,8 @@ func buildCommand(args []string) {
 
 func runCommand(args []string) {
 	nbuild.ClearCaches()
+	// Extract -ldKEY=VALUE pairs before flag parsing
+	ldFlags, args := parseLDFlags(args)
 	fs := flag.NewFlagSet("run", flag.ExitOnError)
 	cc := fs.String("cc", "clang", "C compiler: clang (default), zig")
 	target := fs.String("target", "", "Target triple (e.g. x86_64-linux-gnu, aarch64-macos-gnu, x86_64-windows-gnu, wasm32-wasi)")
@@ -1690,6 +1747,7 @@ func runCommand(args []string) {
 		NoBoundsCheck:   *unsafe,
 		UseDirectWasm:   *wasmDirect,
 		CompilerVersion: version,
+		LDFlags:         ldFlags,
 	}
 	if err := nbuild.BuildFile(inputPath, opts); err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
@@ -1712,6 +1770,8 @@ func runCommand(args []string) {
 
 func testCommand(args []string) {
 	nbuild.ClearCaches()
+	// Extract -ldKEY=VALUE pairs before flag parsing
+	ldFlags, args := parseLDFlags(args)
 	fs := flag.NewFlagSet("test", flag.ExitOnError)
 	cc := fs.String("cc", "clang", "C compiler: clang (default), zig")
 	target := fs.String("target", "", "Target triple (e.g. x86_64-linux-gnu, aarch64-macos-gnu, x86_64-windows-gnu, wasm32-wasi)")
@@ -1864,6 +1924,7 @@ func testCommand(args []string) {
 					Target:        targetStr,
 					UseDirectWasm: true,
 					Verbose:       false,
+					LDFlags:       ldFlags,
 				})
 				if berr != nil {
 					results[idx] = testBuildResult{testFile: f, tmpDir: tmpDir, err: berr}
@@ -1884,6 +1945,7 @@ func testCommand(args []string) {
 				Output:        outPath,
 				Verbose:       false,
 				UseDirectWasm: *wasmDirect,
+				LDFlags:       ldFlags,
 			}
 			if err := nbuild.BuildFile(f, opts); err != nil {
 				results[idx] = testBuildResult{testFile: f, tmpDir: tmpDir, err: err}

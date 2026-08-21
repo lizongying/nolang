@@ -21,7 +21,7 @@ type CompilerOptions struct {
 // Package 表示 package.jsonc 定義的專案套件
 type Package struct {
 	Name            string            `json:"name"`
-	Version         string            `json:"version"`
+	Version         string            `json:"version,omitempty"`
 	Description     string            `json:"description,omitempty"`
 	Keywords        []string          `json:"keywords,omitempty"`
 	Author          string            `json:"author,omitempty"`

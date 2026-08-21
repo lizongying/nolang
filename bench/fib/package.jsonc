@@ -1,6 +1,5 @@
 {
   "name": "my-project",
-  "version": "1.0.0",
   "description": "A Nolang project",
   "keywords": [
     "nolang"
@@ -11,12 +10,10 @@
   "repository": "https://github.com/lizongying/nolang",
   "homepage": "",
   "license": "MIT",
-  "dependencies": {
+  "dependencies": {},
+  "compiler": {
+    "version": "0.1.0"
   },
-  "dev-dependencies": {
-    "nolang": "^0.1.0"
-  },
-  "ignore": [
-    "dist"
-  ]
+  "output": "/dist",
+  "ignore": []
 }

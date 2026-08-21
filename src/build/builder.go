@@ -104,16 +104,17 @@ func CheckToolchain(cc string) error {
 
 // BuildOptions holds all options for a build operation.
 type BuildOptions struct {
-	CC              string // C compiler: "clang" or "zig"
-	Target          string // target triple (e.g. "x86_64-linux-gnu", "" = auto)
+	CC              string            // C compiler: "clang" or "zig"
+	Target          string            // target triple (e.g. "x86_64-linux-gnu", "" = auto)
 	Verbose         bool
-	Output          string // optional output path ("" = auto)
-	NoBoundsCheck   bool   // skip bounds checks (unsafe mode, for max performance)
-	UseDirectWasm   bool   // use Direct WASM backend (no LLVM toolchain required)
-	UseJS           bool   // use JS backend (emit JavaScript source, no LLVM toolchain)
-	BrowserMode     bool   // when true with UseJS, generate browser-targeted JS + HTML wrapper
-	CompilerVersion string // current compiler version (for package.jsonc compatibility check)
-	Strict          bool   // vet mode: treat all lint warnings/hints as errors
+	Output          string            // optional output path ("" = auto)
+	NoBoundsCheck   bool              // skip bounds checks (unsafe mode, for max performance)
+	UseDirectWasm   bool              // use Direct WASM backend (no LLVM toolchain required)
+	UseJS           bool              // use JS backend (emit JavaScript source, no LLVM toolchain)
+	BrowserMode     bool              // when true with UseJS, generate browser-targeted JS + HTML wrapper
+	CompilerVersion string            // current compiler version (for package.jsonc compatibility check)
+	Strict          bool              // vet mode: treat all lint warnings/hints as errors
+	LDFlags         map[string]string // -ldKEY=VALUE pairs injected as compile-time global constants
 }
 
 // versionCompatible 檢查 package.jsonc 中聲明的編譯器版本是否與當前編譯器版本兼容。
@@ -341,6 +342,7 @@ func VetFileWithLints(inputPath string, opts BuildOptions) ([]checker.LintResult
 	compiler.sourcePath = inputPath
 	goos, goarch := parseTargetPlatform(opts.Target)
 	compiler.SetTargetPlatform(goos, goarch)
+	compiler.SetLDFlags(opts.LDFlags)
 	// vet 模式：跳過 LLVM IR 生成，只做前端驗證（語法+型別+模組合併+單態化）
 	compiler.SetVetMode(true)
 	compiler.SetVetStrict(opts.Strict)
@@ -471,6 +473,7 @@ func buildWithPkg(inputPath string, pkg *Package, opts BuildOptions, buffered bo
 	goos, goarch := parseTargetPlatform(opts.Target)
 	compiler.SetTargetPlatform(goos, goarch)
 	compiler.SetNoBoundsCheck(opts.NoBoundsCheck)
+	compiler.SetLDFlags(opts.LDFlags)
 	code, err := compiler.Compile(string(source))
 	if err != nil {
 		return fmt.Errorf("compilation error: %w", err)
@@ -737,6 +740,9 @@ func BuildDirectWasm(inputPath string, opts BuildOptions) ([]byte, error) {
 		return nil, fmt.Errorf("%s: %v", inputPath, errs)
 	}
 
+	// Inject -ldKEY=VALUE compile-time global constants
+	injectLDFlags(program, opts.LDFlags)
+
 	// 3. 解析目標平台。未指定時預設為 wasi/wasm32（Direct WASM 後端的主要目標）。
 	goos, goarch := parseTargetPlatform(opts.Target)
 	if goos == "" {
@@ -775,6 +781,9 @@ func buildJSPkg(source []byte, inputPath string, pkg *Package, opts BuildOptions
 	if errs := p.Errors(); len(errs) > 0 {
 		return fmt.Errorf("%s: %v", inputPath, errs)
 	}
+
+	// Inject -ldKEY=VALUE compile-time global constants
+	injectLDFlags(program, opts.LDFlags)
 
 	// 解析並合併本地模組導入
 	program, err := resolveAndMergeJSModules(program, inputPath, pkg)
@@ -1032,6 +1041,9 @@ func BuildJS(inputPath string, opts BuildOptions) (string, error) {
 	if errs := p.Errors(); len(errs) > 0 {
 		return "", fmt.Errorf("%s: %v", inputPath, errs)
 	}
+
+	// Inject -ldKEY=VALUE compile-time global constants
+	injectLDFlags(program, opts.LDFlags)
 
 	// 3. 解析並合併本地模組導入
 	pkgConfig, _ := LoadPackage(filepath.Dir(inputPath))

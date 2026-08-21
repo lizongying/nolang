@@ -1787,3 +1787,51 @@ Specifies a list of C libraries to link:
   "link-libs": ["crypto", "ssl"]
 }
 ```
+
+## Compile-time Variable Injection (-ld)
+
+`no build`, `no run`, and `no test` support injecting compile-time global constants via `-ldKEY=VALUE` flags. Injected variables are equivalent to declaring `KEY = VALUE` at the top of the source file and can be used directly in the program.
+
+### Syntax
+
+```bash
+no build -ldKEY=VALUE [more -ld...] <file>
+```
+
+- The `-ld` prefix is immediately followed by the variable name and value, separated by `=`
+- Multiple `-ld` flags can be used simultaneously
+- Boolean shorthand: `-ldDEBUG` (without `=VALUE`) is equivalent to `-ldDEBUG=true`
+
+### Value Type Inference
+
+| Value form | Inferred type | Example |
+| --- | --- | --- |
+| Integer | `i64` | `-ldCOUNT=42` |
+| Float | `f64` | `-ldPI=3.14` |
+| `true` / `false` | `bool` | `-ldDEBUG=true` |
+| Other | `str` (single-quoted string literal) | `-ldVERSION=0.1.2` |
+
+### Examples
+
+```no
+; Assuming compilation with -ldVERSION=0.1.2 -ldCOUNT=42 -ldDEBUG=true
+print('VERSION:', VERSION)  ; Output: VERSION: 0.1.2
+print('COUNT:', COUNT)      ; Output: COUNT: 42
+print('DEBUG:', DEBUG)      ; Output: DEBUG: 1 (bool prints as 1 on native backend)
+```
+
+```bash
+; Inject multiple variables
+no build -ldVERSION=0.1.2 -ldCOUNT=42 -ldDEBUG=true main.no
+
+; Boolean shorthand
+no run -ldRELEASE main.no
+
+; JS backend also supported
+no build --js -ldVERSION=0.1.2 main.no
+```
+
+### Relationship with Source Declarations
+
+`-ld` injected variables are prepended to the parsed AST and participate in all subsequent compilation passes (type inference, validation, module merge, codegen). If the source code already declares a top-level variable with the same name, the source declaration takes precedence (it appears after the injected statement).
+

@@ -1,6 +1,5 @@
 {
   "name": "test1",
-  "version": "0.1.0",
   "dependencies": {
     // 线上包，指定版本
     // "github.com/lizongying/nolang/test1": "v0.1.0",
