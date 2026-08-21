@@ -40,6 +40,10 @@ jobs:
             wasm32/wasi,
             js
           cc: zig
+          # Inject compile-time global constants into all targets:
+          #   VERSION -> str "0.1.0"
+          #   RELEASE -> bool true (boolean shorthand)
+          ld-flags: "-ld-VERSION=0.1.0 -ld-RELEASE"
 
       - name: Upload build artifacts
         uses: actions/upload-artifact@v7

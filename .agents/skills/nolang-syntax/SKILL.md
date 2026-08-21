@@ -142,9 +142,9 @@ Install the Nolang extension from [VS Code Marketplace](https://marketplace.visu
 | `no init`                                                    | Define the workspace (creates workspace.jsonc, no package.jsonc) |
 | `no new <name>`                                              | Create a new package under the workspace (subdir + package.jsonc, registered in workspace.jsonc) |
 | `no fmt [-w] [-d] <file\|dir>`                               | Format source code      |
-| `no build [-o <file>] [-cc <s>] [-target <s>] [-ldKEY=VAL] [<file\|dir>]` | Build (outputs executable) |
-| `no run [-cc <s>] [-target <s>] [-ldKEY=VAL] [<package\|dir\|file>]`        | Build and run (package/dir/file) |
-| `no test [-cc <s>] [-target <s>] [-ldKEY=VAL] [<file>]`                   | Run tests               |
+| `no build [-o <file>] [-cc <s>] [-target <s>] [-ld-KEY=VAL] [<file\|dir>]` | Build (outputs executable) |
+| `no run [-cc <s>] [-target <s>] [-ld-KEY=VAL] [<package\|dir\|file>]`        | Build and run (package/dir/file) |
+| `no test [-cc <s>] [-target <s>] [-ld-KEY=VAL] [<file>]`                   | Run tests               |
 | `no add <pkg>`                                               | Add dependency          |
 | `no remove <pkg>`                                            | Remove dependency       |
 | `no update <pkg>`                                            | Update dependency       |
@@ -157,39 +157,39 @@ Install the Nolang extension from [VS Code Marketplace](https://marketplace.visu
 
 ### Compile-time Variable Injection (-ld)
 
-`no build`, `no run`, and `no test` support injecting compile-time global constants via `-ldKEY=VALUE` flags. Injected variables are equivalent to declaring `KEY = VALUE` at the top of the source file.
+`no build`, `no run`, and `no test` support injecting compile-time global constants via `-ld-KEY=VALUE` flags. Injected variables are equivalent to declaring `KEY = VALUE` at the top of the source file.
 
 **Syntax:**
 
 ```bash
-no build -ldKEY=VALUE [more -ld...] <file>
+no build -ld-KEY=VALUE [more -ld...] <file>
 ```
 
 - Multiple `-ld` flags can be used simultaneously
-- Boolean shorthand: `-ldDEBUG` (without `=VALUE`) is equivalent to `-ldDEBUG=true`
+- Boolean shorthand: `-ld-DEBUG` (without `=VALUE`) is equivalent to `-ld-DEBUG=true`
 
 **Value type inference:**
 
 | Value form | Inferred type | Example |
 | --- | --- | --- |
-| Integer | `i64` | `-ldCOUNT=42` |
-| Float | `f64` | `-ldPI=3.14` |
-| `true` / `false` | `bool` | `-ldDEBUG=true` |
-| Other | `str` (single-quoted string literal) | `-ldVERSION=0.1.2` |
+| Integer | `i64` | `-ld-COUNT=42` |
+| Float | `f64` | `-ld-PI=3.14` |
+| `true` / `false` | `bool` | `-ld-DEBUG=true` |
+| Other | `str` (single-quoted string literal) | `-ld-VERSION=0.1.2` |
 
 **Examples:**
 
 ```no
-; Compiled with: no build -ldVERSION=0.1.2 -ldCOUNT=42 -ldDEBUG=true main.no
+; Compiled with: no build -ld-VERSION=0.1.2 -ld-COUNT=42 -ld-DEBUG=true main.no
 print('VERSION:', VERSION)  ; 0.1.2
 print('COUNT:', COUNT)      ; 42
 print('DEBUG:', DEBUG)      ; 1 (bool prints as 1 on native backend)
 ```
 
 ```bash
-no build -ldVERSION=0.1.2 -ldCOUNT=42 -ldDEBUG=true main.no
-no run -ldRELEASE main.no                ; boolean shorthand
-no build --js -ldVERSION=0.1.2 main.no   ; JS backend also supported
+no build -ld-VERSION=0.1.2 -ld-COUNT=42 -ld-DEBUG=true main.no
+no run -ld-RELEASE main.no                ; boolean shorthand
+no build --js -ld-VERSION=0.1.2 main.no   ; JS backend also supported
 ```
 
 Injected variables are prepended to the parsed AST. If the source already declares a top-level variable with the same name, the source declaration takes precedence.

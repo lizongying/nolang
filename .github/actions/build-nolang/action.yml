@@ -77,6 +77,14 @@ inputs:
       Extra flags appended to every `no build` invocation, e.g. "-unsafe".
     required: false
     default: ""
+  ld-flags:
+    description: >-
+      Space-separated list of -ld-KEY=VALUE pairs injected as compile-time
+      global constants, e.g. "-ld-VERSION=1.0.0 -ld-DEBUG=true".
+      Each pair is passed verbatim to `no build`. Boolean shorthand
+      (-ld-RELEASE) is equivalent to -ld-RELEASE=true.
+    required: false
+    default: ""
 
 outputs:
   output-dir:
@@ -297,6 +305,7 @@ runs:
         CC: ${{ inputs.cc }}
         OUTDIR: ${{ inputs.output-dir }}
         EXTRA: ${{ inputs.extra-flags }}
+        LD_FLAGS: ${{ inputs.ld-flags }}
         TARGETS: ${{ inputs.targets }}
         FAIL_ON_ERROR: ${{ inputs.fail-on-error }}
       run: |
@@ -336,10 +345,10 @@ runs:
 
           if [ "$TRIPLE" = "JS" ]; then
             OUT="$OUTDIR/$NAME.js"
-            BUILD_CMD=(no build --js -o "$OUT" $ENTRY $EXTRA)
+            BUILD_CMD=(no build --js -o "$OUT" $ENTRY $EXTRA $LD_FLAGS)
           else
             OUT="$OUTDIR/$NAME-$(echo "$t" | tr '/' '-')$EXT"
-            BUILD_CMD=(no build -cc "$CC" -target "$TRIPLE" -o "$OUT" $ENTRY $EXTRA)
+            BUILD_CMD=(no build -cc "$CC" -target "$TRIPLE" -o "$OUT" $ENTRY $EXTRA $LD_FLAGS)
           fi
 
           echo ":::: Building $t -> $OUT"

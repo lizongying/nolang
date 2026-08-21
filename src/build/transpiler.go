@@ -568,7 +568,7 @@ type Transpiler struct {
 	targetGoos    string
 	targetGoarch  string
 	noBoundsCheck bool // skip bounds checks in generated code (unsafe mode)
-	// ldFlags: -ldKEY=VALUE pairs injected as compile-time global constants.
+	// ldFlags: -ld-KEY=VALUE pairs injected as compile-time global constants.
 	// Set via SetLDFlags before Compile; the synthetic LetStatements are
 	// prepended to the parsed program in CompileTarget.
 	ldFlags          map[string]string
@@ -601,7 +601,7 @@ func (t *Transpiler) SetNoBoundsCheck(skip bool) {
 	t.noBoundsCheck = skip
 }
 
-// SetLDFlags sets the -ldKEY=VALUE pairs to inject as compile-time global constants.
+// SetLDFlags sets the -ld-KEY=VALUE pairs to inject as compile-time global constants.
 // Must be called before Compile/CompileTarget. The synthetic LetStatements are
 // prepended to the parsed program so they participate in all subsequent passes
 // (type inference, validation, module merge, codegen).
@@ -629,7 +629,7 @@ func (t *Transpiler) VetLints() []checker.LintResult {
 	return t.vetLints
 }
 
-// injectLDFlags prepends synthetic LetStatement nodes for each -ldKEY=VALUE pair
+// injectLDFlags prepends synthetic LetStatement nodes for each -ld-KEY=VALUE pair
 // to the program's statement list. These become compile-time global constants
 // accessible exactly like top-level `name = value` declarations in source code.
 //
@@ -1398,7 +1398,7 @@ func (t *Transpiler) CompileTarget(source string, _ Target) (string, error) {
 		// W_SEMI_EAT warnings are handled by LSP diagnostics; build path no longer
 		// emits them to stderr to avoid noise during compilation.
 	}
-	// 注入 -ldKEY=VALUE 全域常量（在 embed 處理之前，使注入變數可被後續 pass 使用）
+	// 注入 -ld-KEY=VALUE 全域常量（在 embed 處理之前，使注入變數可被後續 pass 使用）
 	if t.ldFlags != nil {
 		injectLDFlags(program, t.ldFlags)
 	}

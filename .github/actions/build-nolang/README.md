@@ -60,6 +60,7 @@ available for workflows that only need the compiler without the build step.
 | `output-dir`       | `dist` | Output directory for binaries. |
 | `fail-on-error`    | `false`| Fail the job if any target fails (else report & continue). |
 | `extra-flags`      | `""`   | Extra flags appended to every `no build` (e.g. `-unsafe`). |
+| `ld-flags`         | `""`   | Space-separated `-ld-KEY=VALUE` pairs injected as compile-time global constants (e.g. `-ld-VERSION=1.0.0 -ld-DEBUG=true`). Boolean shorthand: `-ld-RELEASE`. |
 
 ## Outputs
 
@@ -99,6 +100,24 @@ available for workflows that only need the compiler without the build step.
 See [`../../workflows/build-nolang-app.yml`](../../workflows/build-nolang-app.yml)
 for a full workflow that builds a target matrix and publishes release assets on
 tag push.
+
+### Compile-time variable injection (-ld-flags)
+
+Use `ld-flags` to inject compile-time global constants into the Nolang source:
+
+```yaml
+- uses: ./.github/actions/build-nolang
+  with:
+    entry: main.no
+    name: myapp
+    targets: linux/amd64,darwin/arm64
+    ld-flags: "-ld-VERSION=1.0.0 -ld-DEBUG=true"
+```
+
+This is equivalent to running `no build -ld-VERSION=1.0.0 -ld-DEBUG=true` for
+every target. The injected variables behave as top-level global constants
+(`VERSION` → `str`, `DEBUG` → `bool`). Boolean shorthand is also supported:
+`-ld-RELEASE` is equivalent to `-ld-RELEASE=true`.
 
 ## Per-target failure handling
 

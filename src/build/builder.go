@@ -114,7 +114,7 @@ type BuildOptions struct {
 	BrowserMode     bool              // when true with UseJS, generate browser-targeted JS + HTML wrapper
 	CompilerVersion string            // current compiler version (for package.jsonc compatibility check)
 	Strict          bool              // vet mode: treat all lint warnings/hints as errors
-	LDFlags         map[string]string // -ldKEY=VALUE pairs injected as compile-time global constants
+	LDFlags         map[string]string // -ld-KEY=VALUE pairs injected as compile-time global constants
 }
 
 // versionCompatible 檢查 package.jsonc 中聲明的編譯器版本是否與當前編譯器版本兼容。
@@ -740,7 +740,7 @@ func BuildDirectWasm(inputPath string, opts BuildOptions) ([]byte, error) {
 		return nil, fmt.Errorf("%s: %v", inputPath, errs)
 	}
 
-	// Inject -ldKEY=VALUE compile-time global constants
+	// Inject -ld-KEY=VALUE compile-time global constants
 	injectLDFlags(program, opts.LDFlags)
 
 	// 3. 解析目標平台。未指定時預設為 wasi/wasm32（Direct WASM 後端的主要目標）。
@@ -782,7 +782,7 @@ func buildJSPkg(source []byte, inputPath string, pkg *Package, opts BuildOptions
 		return fmt.Errorf("%s: %v", inputPath, errs)
 	}
 
-	// Inject -ldKEY=VALUE compile-time global constants
+	// Inject -ld-KEY=VALUE compile-time global constants
 	injectLDFlags(program, opts.LDFlags)
 
 	// 解析並合併本地模組導入
@@ -1042,7 +1042,7 @@ func BuildJS(inputPath string, opts BuildOptions) (string, error) {
 		return "", fmt.Errorf("%s: %v", inputPath, errs)
 	}
 
-	// Inject -ldKEY=VALUE compile-time global constants
+	// Inject -ld-KEY=VALUE compile-time global constants
 	injectLDFlags(program, opts.LDFlags)
 
 	// 3. 解析並合併本地模組導入

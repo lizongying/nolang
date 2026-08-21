@@ -2057,31 +2057,31 @@ neural = () {
 
 ## 編譯期變數注入（-ld）
 
-`no build`、`no run`、`no test` 支援通過 `-ldKEY=VALUE` 旗標在編譯期注入全域常量。注入的變數等同於在源碼頂部聲明 `KEY = VALUE`，可在程式中直接使用。
+`no build`、`no run`、`no test` 支援通過 `-ld-KEY=VALUE` 旗標在編譯期注入全域常量。注入的變數等同於在源碼頂部聲明 `KEY = VALUE`，可在程式中直接使用。
 
 ### 語法
 
 ```bash
-no build -ldKEY=VALUE [更多 -ld...] <file>
+no build -ld-KEY=VALUE [更多 -ld...] <file>
 ```
 
 - `-ld` 前綴後緊跟變數名和值，用 `=` 分隔
 - 多個 `-ld` 旗標可同時使用
-- 布林簡寫：`-ldDEBUG`（不含 `=VALUE`）等同於 `-ldDEBUG=true`
+- 布林簡寫：`-ld-DEBUG`（不含 `=VALUE`）等同於 `-ld-DEBUG=true`
 
 ### 值的型別推斷
 
 | 值的形式 | 推斷型別 | 範例 |
 | --- | --- | --- |
-| 整數 | `i64` | `-ldCOUNT=42` |
-| 浮點數 | `f64` | `-ldPI=3.14` |
-| `true` / `false` | `bool` | `-ldDEBUG=true` |
-| 其他 | `str`（單引號字串字面量） | `-ldVERSION=0.1.2` |
+| 整數 | `i64` | `-ld-COUNT=42` |
+| 浮點數 | `f64` | `-ld-PI=3.14` |
+| `true` / `false` | `bool` | `-ld-DEBUG=true` |
+| 其他 | `str`（單引號字串字面量） | `-ld-VERSION=0.1.2` |
 
 ### 範例
 
 ```no
-; 假設使用 -ldVERSION=0.1.2 -ldCOUNT=42 -ldDEBUG=true 編譯
+; 假設使用 -ld-VERSION=0.1.2 -ld-COUNT=42 -ld-DEBUG=true 編譯
 print('VERSION:', VERSION)  ; 輸出: VERSION: 0.1.2
 print('COUNT:', COUNT)      ; 輸出: COUNT: 42
 print('DEBUG:', DEBUG)      ; 輸出: DEBUG: 1 (bool 在原生後端印為 1)
@@ -2089,13 +2089,13 @@ print('DEBUG:', DEBUG)      ; 輸出: DEBUG: 1 (bool 在原生後端印為 1)
 
 ```bash
 ; 注入多個變數
-no build -ldVERSION=0.1.2 -ldCOUNT=42 -ldDEBUG=true main.no
+no build -ld-VERSION=0.1.2 -ld-COUNT=42 -ld-DEBUG=true main.no
 
 ; 布林簡寫
-no run -ldRELEASE main.no
+no run -ld-RELEASE main.no
 
 ; JS 後端也支援
-no build --js -ldVERSION=0.1.2 main.no
+no build --js -ld-VERSION=0.1.2 main.no
 ```
 
 ### 與源碼聲明的關係
