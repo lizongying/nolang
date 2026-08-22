@@ -1,0 +1,28 @@
+; 跨函数返回 str 的双重释放测试
+; 根因：@main 调用 _nolang_main() 时未传递输出参数指针，
+; 导致 LLVM -O3 inline 后 store 到 null → unreachable →
+; 全局变量释放和 ret i32 0 被删除 → SIGTRAP。
+
+; 测试 1：函数返回 str，main 有 (out i64) 返回值
+f = () (out str) {
+    s = 'hello world'
+    out = s
+}
+
+; 测试 2：函数返回 vec，main 有 (out i64) 返回值
+g = () (out []i64) {
+    v []i64 = [10, 20, 30]
+    out = v
+}
+
+main = () (out i64) {
+    a = f()
+    a.len == 11 -> out = 1
+    print(a.len)
+
+    b = g()
+    b.len == 3 -> out = 2
+    print(b.len)
+
+    out = 0
+}

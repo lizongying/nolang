@@ -3177,7 +3177,27 @@ func (g *Generator) generateMainFunction(sb *strings.Builder, program *parser.Pr
 	// 使用者 main 函數必須在所有模組級初始化完成後才呼叫，
 	// 以確保 main 內呼叫的函數能正確存取已初始化的全域變數（如 SBOX）。
 	if hasUserMain {
-		sb.WriteString(fmt.Sprintf("%scall void @_nolang_main()\n", g.indent()))
+		// _nolang_main 的輸出參數（如 main = () (out i64)）以指標形式附加到參數列表。
+		// @main 必須為每個輸出參數分配棧空間並傳遞指標，否則 LLVM -O3 在 inline 後
+		// 會將缺少的參數視為 null（UB），導致 store i64 0, ptr null → unreachable →
+		// 全局變數釋放和 ret i32 0 被優化器刪除，程序在 _nolang_main 返回後立即崩潰。
+		mainArgs := []string{}
+		if g.funcResultLLVMType != nil {
+			if retTypes, ok := g.funcResultLLVMType["main"]; ok && len(retTypes) > 0 {
+				for _, rt := range retTypes {
+					g.tmpIdx++
+					tmpName := fmt.Sprintf("%%main.out.%d", g.tmpIdx)
+					sb.WriteString(fmt.Sprintf("%s%s = alloca %s\n", g.indent(), tmpName, toLLVMType(rt)))
+					sb.WriteString(fmt.Sprintf("%sstore %s zeroinitializer, %s* %s\n", g.indent(), toLLVMType(rt), toLLVMType(rt), tmpName))
+					mainArgs = append(mainArgs, toLLVMType(rt)+"* "+tmpName)
+				}
+			}
+		}
+		if len(mainArgs) > 0 {
+			sb.WriteString(fmt.Sprintf("%scall void @_nolang_main(%s)\n", g.indent(), strings.Join(mainArgs, ", ")))
+		} else {
+			sb.WriteString(fmt.Sprintf("%scall void @_nolang_main()\n", g.indent()))
+		}
 	}
 	// 釋放 top-level 堆變數（模組級 vec/str/arr 等），避免長期運行服務的記憶體泄漏。
 	// 同時釋放 top-level 局部堆變數（非 globalVars 的局部）。
