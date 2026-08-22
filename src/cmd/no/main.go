@@ -475,6 +475,7 @@ func createConfigFile(config ProjectConfig) {
   "dependencies": %s,
   "compiler": {
     "version": "%s",
+	"link-libs": [],
   },
   "output": "%s",
   "ignore": [],

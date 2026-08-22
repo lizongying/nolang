@@ -13,9 +13,11 @@
   "repository": "https://github.com/lizongying/nolang",
   "homepage": "https://lizongying.github.io/nolang",
   "license": "MIT",
+  "mirrors": [],
   "dependencies": {},
   "compiler": {
     "version": "0.1.0",
+    "link-libs": [],
   },
   "output": "/dist",
   "ignore": [],

@@ -50,6 +50,7 @@ const (
 	effRemove                   // MovedFact: var 变为 not-moved（X 重赋值拿到新 data / out 重绑移除旧绑定）
 	effBind                     // OutBindFact: out 参数绑定到 var（或 ⊥/⊤）
 	effInit                     // InitFact: out 参数被显式赋值
+	effAssign                   // AssignedFact: 局部堆變數持有本函數擁有的堆數據（需 free，除非 moved）
 )
 
 // effect 是记录在 BasicBlock 上的单条数据流副作用。
@@ -450,6 +451,19 @@ func initTransfer(in bitsetFact, effects []effect) bitsetFact {
 	for _, e := range effects {
 		if e.Kind == effInit {
 			out.set(e.OutIdx)
+		}
+	}
+	return out
+}
+
+// assignedTransfer 应用 AssignedFact effects：effAssign→set（变量持有本函数拥有的堆数据）。
+// 与 moved 事实正交：移动（effAdd）不改变 assigned（emitHeapFree 优先查 moved，
+// 仅当 moved=triMustNot 才据此直接 free），故此处无需 clear。
+func assignedTransfer(in bitsetFact, effects []effect) bitsetFact {
+	out := in
+	for _, e := range effects {
+		if e.Kind == effAssign {
+			out.set(e.VarIdx)
 		}
 	}
 	return out

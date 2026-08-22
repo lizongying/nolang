@@ -1,5 +1,6 @@
 {
   "name": "test1",
+  "mirrors": [],
   "dependencies": {
     // 线上包，指定版本
     // "github.com/lizongying/nolang/test1": "v0.1.0",
@@ -14,6 +15,7 @@
   },
   "compiler": {
     "version": "0.1.0",
+    "link-libs": [],
     "anonymous-fn-type": false,
   },
 }

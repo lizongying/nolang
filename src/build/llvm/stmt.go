@@ -477,6 +477,145 @@ func (g *Generator) trackLocalHeapVar(name, llvmType string) {
 	}
 }
 
+// computeAssignedSeed 計算 AssignedFact 的入口初值（entry IN）：所有「被寫過
+// （賦值 LHS）/ vec·arr」的局部堆變數在函數入口即標記為 assigned。這保證此類變量
+// 恆為 triMust，絕不會被 Phase 2 誤判為「從未持有堆」而跳過 free。只有「從不寫、
+// 又非 vec·arr」的局部（其 heap data 指針恆為 memset 的 NULL）才可能被判 triMustNot，
+// 而該類變量的 free 本就是 NULL 守衛的 no-op，跳過無洩漏、無崩潰。
+func (g *Generator) computeAssignedSeed(fd *parser.FunctionDefinition) bitsetFact {
+	seed := newBitsetFact(g.nextHeapVarIdx)
+	names := make(map[string]bool)
+	if fd != nil && fd.Body != nil {
+		g.collectAssignLHS(fd.Body.Statements, names)
+	}
+	// 所有被寫過的局部（LHS 名 → varIdx）：
+	for name := range names {
+		if idx, ok := g.heapVarIndex[name]; ok {
+			seed.set(idx)
+		}
+	}
+	// vec·arr 局部（prologue 已 malloc buffer，入口即持有堆；與 entry effAssign 互補）：
+	if g.heapVars != nil {
+		for name, t := range g.heapVars {
+			if t == "%vec" || t == "%arr" {
+				if idx, ok := g.heapVarIndex[name]; ok {
+					seed.set(idx)
+				}
+			}
+		}
+	}
+	return seed
+}
+
+// collectAssignLHS 遞歸收集函數體內所有「賦值 LHS」變量名：LetStatement.Name、
+// MultiAssignStatement.Targets、ForStatement.IterRange.Variable。對表達式位置的
+// 賦值語句（if/match/while 表達式內嵌套語句塊，match 已 desugar 為 IfExpression）
+// 透過 collectAssignLHSExpr 觸達。
+func (g *Generator) collectAssignLHS(stmts []parser.Statement, names map[string]bool) {
+	for _, stmt := range stmts {
+		switch s := stmt.(type) {
+		case *parser.LetStatement:
+			if s.Name != nil {
+				names[s.Name.Value] = true
+			}
+			if s.Value != nil {
+				g.collectAssignLHSExpr(s.Value, names)
+			}
+		case *parser.MultiAssignStatement:
+			for _, t := range s.Targets {
+				if id, ok := t.(*parser.Identifier); ok {
+					names[id.Value] = true
+				}
+			}
+			if s.Value != nil {
+				g.collectAssignLHSExpr(s.Value, names)
+			}
+		case *parser.ExpressionStatement:
+			g.collectAssignLHSExpr(s.Expression, names)
+		case *parser.ForStatement:
+			if s.Init != nil {
+				g.collectAssignLHS([]parser.Statement{s.Init}, names)
+			}
+			if s.Update != nil {
+				g.collectAssignLHS([]parser.Statement{s.Update}, names)
+			}
+			if s.Condition != nil {
+				g.collectAssignLHSExpr(s.Condition, names)
+			}
+			if s.IterRange != nil && s.IterRange.Variable != "" {
+				names[s.IterRange.Variable] = true
+			}
+			if s.Body != nil {
+				g.collectAssignLHS(s.Body.Statements, names)
+			}
+		case *parser.ReturnStatement:
+			if s.ReturnValue != nil {
+				g.collectAssignLHSExpr(s.ReturnValue, names)
+			}
+		}
+	}
+}
+
+// collectAssignLHSExpr 收集表達式內嵌套語句塊中的賦值 LHS，並對 AssignExpression
+// 的左值一併記錄（表達式形式的賦值）。遞歸結構與 collectNestedStmts 對齊，覆蓋
+// if/match/while 表達式內的語句塊（match → IfExpression）。
+func (g *Generator) collectAssignLHSExpr(expr parser.Expression, names map[string]bool) {
+	if expr == nil {
+		return
+	}
+	switch e := expr.(type) {
+	case *parser.AssignExpression:
+		if id, ok := e.Left.(*parser.Identifier); ok {
+			names[id.Value] = true
+		}
+		if e.Left != nil {
+			g.collectAssignLHSExpr(e.Left, names)
+		}
+		if e.Value != nil {
+			g.collectAssignLHSExpr(e.Value, names)
+		}
+	case *parser.IfExpression:
+		if e.Consequence != nil {
+			g.collectAssignLHS(e.Consequence.Statements, names)
+		}
+		if e.Alternative != nil {
+			g.collectAssignLHS(e.Alternative.Statements, names)
+		}
+	case *parser.ConditionalExpression:
+		if e.Condition != nil {
+			g.collectAssignLHSExpr(e.Condition, names)
+		}
+		if e.Consequence != nil {
+			g.collectAssignLHSExpr(e.Consequence, names)
+		}
+		if e.Alternative != nil {
+			g.collectAssignLHSExpr(e.Alternative, names)
+		}
+	case *parser.InfixExpression:
+		if e.Left != nil {
+			g.collectAssignLHSExpr(e.Left, names)
+		}
+		if e.Right != nil {
+			g.collectAssignLHSExpr(e.Right, names)
+		}
+	case *parser.PrefixExpression:
+		if e.Right != nil {
+			g.collectAssignLHSExpr(e.Right, names)
+		}
+	case *parser.CallExpression:
+		if e.Function != nil {
+			g.collectAssignLHSExpr(e.Function, names)
+		}
+		for _, arg := range e.Arguments {
+			g.collectAssignLHSExpr(arg, names)
+		}
+	case *parser.GroupedExpression:
+		if e.Expression != nil {
+			g.collectAssignLHSExpr(e.Expression, names)
+		}
+	}
+}
+
 func (g *Generator) emitHeapFree(sb *strings.Builder) {
 	if g.heapVars == nil || len(g.heapVars) == 0 {
 		return
@@ -511,7 +650,10 @@ func (g *Generator) emitHeapFree(sb *strings.Builder) {
 			reachable := g.computeReachableBlocks()
 			allMeet := newBitsetFact(g.nextHeapVarIdx)
 			allJoin := newBitsetFact(g.nextHeapVarIdx)
+			aMeet := newBitsetFact(g.nextHeapVarIdx)
+			aJoin := newBitsetFact(g.nextHeapVarIdx)
 			first := true
+			aFirst := true
 		for _, label := range g.curCFG.Order {
 			if !reachable[label] {
 				continue
@@ -531,6 +673,19 @@ func (g *Generator) emitHeapFree(sb *strings.Builder) {
 					allMeet = allMeet.meet(bf.outMeet)
 					allJoin = allJoin.join(bf.outJoin)
 				}
+				// 同步聚合 AssignedFact 出口狀態（仅当已求解）
+				if g.cfgAssignedFacts != nil {
+					if abf := g.cfgAssignedFacts[label]; abf != nil {
+						if aFirst {
+							aMeet = abf.outMeet.copy()
+							aJoin = abf.outJoin.copy()
+							aFirst = false
+						} else {
+							aMeet = aMeet.meet(abf.outMeet)
+							aJoin = aJoin.join(abf.outJoin)
+						}
+					}
+				}
 			}
 		}
 			if !first {
@@ -539,6 +694,24 @@ func (g *Generator) emitHeapFree(sb *strings.Builder) {
 				if tri == triMust {
 					// 所有路徑 moved → 靜態跳過 free
 					continue
+				}
+				// AssignedFact 優化：僅當「肯定從不 moved 且 肯定持有堆」時直接 free，
+				// 繞開運行時 NULL 守衛（@free(NULL) 為 안전 no-op，即便誤判亦無害）。
+				// 與 moved 正交：moved=triMay 時不優化（交給 bitmap/NULL 守衛處理，防雙重釋放）。
+				if tri == triMustNot && !aFirst {
+					aTri := classifyMoved(aMeet, aJoin, varIdx)
+				if aTri == triMust {
+					g.emitVarHeapFreeDirect(sb, g.varAddr(name), llvmType, elemType, name)
+					continue
+				}
+				// Phase 2：變量在所有路徑都未持有堆數據（data 恆為 memset 的 NULL）
+				// → 整段 free 都不發。安全依據：入口 seed 已確保所有「被寫過（LHS）
+				// / vec·arr」的局部恆為 assigned=triMust，絕不落入此分支；能落入的
+				// 只有「從不寫、又非 vec·arr」的局部，其 heap data 指針恆為 NULL，
+				// free(NULL) 本就是 no-op，跳過無洩漏、無崩潰。
+				if aTri == triMustNot {
+					continue
+				}
 				}
 			} else {
 				dfStatNoBlock()
@@ -757,6 +930,45 @@ func (g *Generator) emitVarHeapFree(sb *strings.Builder, varPtr, llvmType, elemT
 		return
 	}
 	g.emitShallowDataFree(sb, varPtr, llvmType, info.dataFieldIdx)
+}
+
+// emitVarHeapFreeDirect 与 emitVarHeapFree 類似，但對淺容器（%str-long /
+// 非堆元素 %vec/%arr）跳過運行時 NULL 守衛，直接 call @free。
+// 僅在數據流確認「變量肯定持有堆」(triMust) 時使用：data 必為非 NULL；
+// 即便誤判為 triMust（實際 data=NULL，如賦值 nil），@free(NULL) 亦為安全 no-op。
+// 深容器（堆元素 %vec/%arr）仍走 emitDeepContainerFree 保留長度/data 守衛。
+func (g *Generator) emitVarHeapFreeDirect(sb *strings.Builder, varPtr, llvmType, elemType, name string) {
+	info := g.classifyFieldHeap(llvmType, elemType)
+	switch info.kind {
+	case fieldHeapOption:
+		g.emitOptionHeapFree(sb, varPtr, name)
+		return
+	case fieldHeapUserStruct:
+		g.emitStructFieldsFree(sb, varPtr, info.containerType)
+		return
+	case fieldHeapNone:
+		return
+	}
+	// fieldHeapContainer
+	if llvmType == "%str-long" {
+		g.emitShallowDataFreeDirect(sb, varPtr, llvmType, info.dataFieldIdx)
+		return
+	}
+	if g.isHeapOwningType(elemType) {
+		// 深容器保留守衛（長度=0 / data=NULL 的未初始化語義較複雜，不在本優化範圍）
+		g.emitDeepContainerFree(sb, varPtr, llvmType, info.dataFieldIdx, elemType)
+		return
+	}
+	g.emitShallowDataFreeDirect(sb, varPtr, llvmType, info.dataFieldIdx)
+}
+
+// emitShallowDataFreeDirect 載入 data 指針並直接 call @free，不發出 NULL 守衛分支。
+func (g *Generator) emitShallowDataFreeDirect(sb *strings.Builder, containerPtr, containerType string, dataFieldIdx int) {
+	dataGEP := g.tmpReg("heapfree.gep")
+	sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %s, %s* %s, i32 0, i32 %d\n",
+		g.indent(), dataGEP, containerType, containerType, containerPtr, dataFieldIdx))
+	dataLoad := g.loadDataPtrField(sb, dataGEP)
+	sb.WriteString(fmt.Sprintf("%scall void @free(i8* %s)\n", g.indent(), dataLoad))
 }
 
 // emitOptionHeapFree 釋放 %option 變數持有的堆 box。
@@ -1494,12 +1706,15 @@ func (g *Generator) freeOldHeapValue(sb *strings.Builder, stmt *parser.LetStatem
 			if g.arrayElemTypes != nil {
 				elemType = g.arrayElemTypes[name]
 			}
-			varIdx, hasIdx := g.heapVarIndex[name]
-			if !hasIdx {
-				g.emitVarHeapFree(sb, g.varAddr(name), oldType, elemType, name)
-				return
-			}
-			if g.hasBranchMove && g.movedBitmapBase != "" {
+		varIdx, hasIdx := g.heapVarIndex[name]
+		if !hasIdx {
+			g.emitVarHeapFree(sb, g.varAddr(name), oldType, elemType, name)
+			return
+		}
+		// CFG: 局部堆變數（重）賦值，獲得本函數擁有的堆數據 → 標記 assigned。
+		// 覆盖首次賦值、重賦值、以及 moved 後重新賦值三條路徑（下方分支前統一記錄）。
+		g.cfgAddEffect(effect{Kind: effAssign, VarIdx: varIdx})
+		if g.hasBranchMove && g.movedBitmapBase != "" {
 				// 有運行時 bitmap：生成 IR 檢查 bit
 				// bit=1 → 所有權已轉移，跳過 free（舊 data 不屬於此變數）
 				// bit=0 → 仍擁有數據，free 舊值
@@ -2461,6 +2676,7 @@ func (g *Generator) generateFunctionDefinition(sb *strings.Builder, fd *parser.F
 	g.curCFG.Entry = "entry"
 	g.curCFG.getOrCreateBlock("entry")
 	g.cfgMovedFacts = nil
+	g.cfgAssignedFacts = nil
 
 	// 收集所有變數（一次分配），排除參數（已是指標）
 	localVarTypes := make(map[string]string)
@@ -2596,6 +2812,10 @@ func (g *Generator) generateFunctionDefinition(sb *strings.Builder, fd *parser.F
 			// 若變數從未被賦值，emitHeapFree 會在函數結束時釋放 prologue buffer。
 			// trackLocalHeapVar 跳過參數和輸出參數，所以這裡只追蹤真正的局部變數。
 			g.trackLocalHeapVar(varName, "%vec")
+			// CFG: prologue 已 malloc buffer → 入口即持有堆數據（assigned=true）
+			if idx, ok := g.heapVarIndex[varName]; ok {
+				g.cfgAddEffect(effect{Kind: effAssign, VarIdx: idx})
+			}
 		}
 		// [N]T 局部陣列需分配資料緩衝區並初始化 len/data，否則 arr[i] = val
 		// 會因 data 為未初始化（stack 殘值）而寫入垃圾地址，造成堆損壞。
@@ -2629,6 +2849,10 @@ func (g *Generator) generateFunctionDefinition(sb *strings.Builder, fd *parser.F
 				// 僅 malloc 路徑需要追蹤；棧分配的 arr 無需 free。
 				// 追蹤目的同 %vec：使首次賦值時 freeOldHeapValue 能釋放 prologue buffer。
 				g.trackLocalHeapVar(varName, "%arr")
+				// CFG: prologue 已 malloc buffer → 入口即持有堆數據（assigned=true）
+				if idx, ok := g.heapVarIndex[varName]; ok {
+					g.cfgAddEffect(effect{Kind: effAssign, VarIdx: idx})
+				}
 			}
 			arrLenGEP := g.tmpReg("local.arrlen.gep")
 			sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%arr, %%arr* %s, i32 0, i32 0\n", g.indent(), arrLenGEP, llvmVarRef(varName)))
@@ -2713,6 +2937,16 @@ func (g *Generator) generateFunctionDefinition(sb *strings.Builder, fd *parser.F
 			g.curCFG, g.nextHeapVarIdx,
 			newBitsetFact(g.nextHeapVarIdx),
 			movedTransfer,
+		)
+		// 求解 AssignedFact：局部堆變數在出口是否持有本函數擁有的堆數據。
+		// 入口 seed：所有「被寫過（LHS）/ vec·arr」的局部在入口即標記為 assigned，
+		// 確保它們恆為 triMust，絕不會被 Phase 2 誤判為「從未持有堆」而跳過 free。
+		// vec·arr 由 prologue entry effAssign 覆蓋，此處一併 seed 以求穩健。
+		assignedEntry := g.computeAssignedSeed(fd)
+		g.cfgAssignedFacts = solveBitsetForward(
+			g.curCFG, g.nextHeapVarIdx,
+			assignedEntry,
+			assignedTransfer,
 		)
 	}
 
