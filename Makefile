@@ -15,7 +15,7 @@ NO_WASM   = $(WASM_DIR)/no.wasm
 LSP_WASM  = $(WASM_DIR)/lsp.wasm
 PLAYGROUND_PORT ?= 3000
 
-.PHONY: all no lsp package clean help FORCE no-wasm lsp-wasm playground playground-smoke
+.PHONY: all no lsp package clean help FORCE no-wasm lsp-wasm playground playground-smoke gen
 
 all: $(NO_BIN) $(LSP_BIN)
 
@@ -26,13 +26,24 @@ lsp: $(LSP_BIN)
 $(BINDIR):
 	mkdir -p $(BINDIR)
 
+# ── STDSIG GEN ────────────────────────────────────
+# Generate stdsig_gen.go (baked-in std signature tables) before building no/lsp.
+STDSIG_GEN = src/checker/stdsig_gen.go
+STDSIG_GEN_SRCS := $(wildcard src/checker/genstdsig/*.go) src/checker/checker.go src/checker/stdsig_cache.go
+
+$(STDSIG_GEN): $(STDSIG_GEN_SRCS) $(NO_SOURCES) src/go.mod src/go.sum
+	cd src && $(GO) run ./checker/genstdsig
+
+.PHONY: gen
+gen: $(STDSIG_GEN)
+
 # ── NO ────────────────────────────────
-$(NO_BIN): $(GO_SOURCES) $(NO_SOURCES) src/go.mod src/go.sum | $(BINDIR)
+$(NO_BIN): $(GO_SOURCES) $(NO_SOURCES) $(STDSIG_GEN) src/go.mod src/go.sum | $(BINDIR)
 	cd src && $(GO) build $(LD_FLAGS) -o ../$(NO_BIN) ./cmd/no
 	chmod +x $(NO_BIN)
 
-# ── LSP ────────────────────────────
-$(LSP_BIN): $(GO_SOURCES) $(NO_SOURCES) src/go.mod src/go.sum
+# ── LSP ────────────────────────────────────
+$(LSP_BIN): $(GO_SOURCES) $(NO_SOURCES) $(STDSIG_GEN) src/go.mod src/go.sum
 	mkdir -p $(dir $@)
 	cd src && $(GO) build $(LD_FLAGS) -o ../$@ ./cmd/lsp
 	chmod +x $@
@@ -46,7 +57,7 @@ package: FORCE
 # Requires Go 1.21+ (project uses 1.25.4). Output: docs/static/wasm/no.wasm
 no-wasm: $(NO_WASM)
 
-$(NO_WASM): $(GO_SOURCES) $(NO_SOURCES) src/go.mod src/go.sum | $(WASM_DIR)
+$(NO_WASM): $(GO_SOURCES) $(NO_SOURCES) $(STDSIG_GEN) src/go.mod src/go.sum | $(WASM_DIR)
 	cd src && GOOS=wasip1 GOARCH=wasm $(GO) build $(LD_FLAGS) -o ../$@ ./cmd/no
 
 $(WASM_DIR):
@@ -56,7 +67,7 @@ $(WASM_DIR):
 # Cross-compile LSP server to WebAssembly (wasip1) for the browser playground.
 lsp-wasm: $(LSP_WASM)
 
-$(LSP_WASM): $(GO_SOURCES) $(NO_SOURCES) src/go.mod src/go.sum | $(WASM_DIR)
+$(LSP_WASM): $(GO_SOURCES) $(NO_SOURCES) $(STDSIG_GEN) src/go.mod src/go.sum | $(WASM_DIR)
 	cd src && GOOS=wasip1 GOARCH=wasm $(GO) build $(LD_FLAGS) -o ../$@ ./cmd/lsp
 
 # ── PLAYGROUND ────────────────────────────
@@ -101,6 +112,7 @@ help:
 	@echo "  make            構建所有目標"
 	@echo "  make no         構建 bin/no"
 	@echo "  make lsp        構建 vscode-nolang/server/lsp"
+	@echo "  make gen        gen stdsig_gen.go"
 	@echo "  make package    編譯 LSP 並打包 VSCode 拓展"
 	@echo "  make no-wasm    編譯 no 為 WebAssembly (wasip1) → docs/static/wasm/no.wasm"
 	@echo "  make lsp-wasm   編譯 LSP 為 WebAssembly (wasip1) → docs/static/wasm/lsp.wasm"

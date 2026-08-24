@@ -49,6 +49,17 @@ func NewCached(key string, source string) *Lexer {
 	return l
 }
 
+// GetCachedTokens retrieves a cached token slice by content key.
+// Returns (nil, false) on miss.
+func GetCachedTokens(ck string) ([]Token, bool) {
+	return tokenCache.Get(ck)
+}
+
+// PutCachedTokens stores a token slice under the given content key.
+func PutCachedTokens(ck string, toks []Token) {
+	tokenCache.Put(ck, toks)
+}
+
 // ClearTokenCache 清空全局 token 緩存。
 // 在命令級別（而非每文件級別）調用：一個 no build / no test 命令
 // 開始時清空一次，之後所有文件共享同一份緩存。

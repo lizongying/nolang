@@ -2,6 +2,7 @@ package llvm
 
 import (
 	"fmt"
+	"os"
 	"runtime"
 	"sort"
 	"strconv"
@@ -1720,6 +1721,17 @@ func (g *Generator) Generate(program *parser.Program) string {
 	}
 	scanGlobalReassigns(program.Statements, "")
 
+	// 函數級可達性分析：從入口（main + 頂層語句 + codegen 內建隱式調用）
+	// 做傳遞閉包，只對可達函數生成 IR 定義。不可達函數的簽名/類型仍已
+	// 由預掃描階段全量註冊，不受此過濾影響。等價於把 LLVM opt 的 DCE
+	// 提前到 codegen 之前，大幅削減 IR 體積和 opt 時間。
+	// 保守策略：若 NOLANG_LAZY_CODEGEN 未設置（預設），跳過可達性分析，
+	// 全量 codegen（與舊行為一致，零風險）。
+	reachableFns := map[string]bool{}
+	if os.Getenv("NOLANG_LAZY_CODEGEN") == "1" {
+		reachableFns = g.computeReachableFunctions(program)
+	}
+
 	for _, stmt := range program.Statements {
 		switch s := stmt.(type) {
 		case *parser.EnumDefinition:
@@ -1729,6 +1741,17 @@ func (g *Generator) Generate(program *parser.Program) string {
 			if strings.HasSuffix(s.Name, "_TEMPLATE") {
 				continue
 			}
+			// 惰性 codegen：跳過不可達函數的 IR 生成
+			if os.Getenv("NOLANG_LAZY_CODEGEN") == "1" {
+				fnName := s.Name
+				// clib 衝突名稱在 codegen 中以 "n." 前綴註冊
+				if clibFuncNames[fnName] {
+					fnName = "n." + fnName
+				}
+				if !reachableFns[fnName] {
+					continue
+				}
+			}
 			g.generateFunctionDefinition(&sb, s)
 		case *parser.LetStatement:
 			// 處理 open = (p str, opts file-opts) (f ?file) { ... } 形式的頂層函數定義
@@ -1736,6 +1759,12 @@ func (g *Generator) Generate(program *parser.Program) string {
 				llvmFnName := s.Name.Value
 				if clibFuncNames[llvmFnName] {
 					llvmFnName = "n." + llvmFnName
+				}
+				// 惰性 codegen：跳過不可達函數的 IR 生成
+				if os.Getenv("NOLANG_LAZY_CODEGEN") == "1" {
+					if !reachableFns[llvmFnName] {
+						break
+					}
 				}
 				// 構造一個臨時 FunctionDefinition 用於 generateFunctionDefinition
 				tmpFD := &parser.FunctionDefinition{

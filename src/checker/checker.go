@@ -2,6 +2,7 @@ package checker
 
 import (
 	"fmt"
+	fs "io/fs"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -3559,51 +3560,60 @@ func debugCountHashFns(stage string, merged *parser.Program) {
 	_ = stage
 	_ = merged
 }
-func knownStdModules() []StdModuleInfo {
-	knownStdModulesOnce.Do(func() {
-		var infos []StdModuleInfo
-		seen := make(map[string]bool)
+// listStdModules enumerates every std module under "std/" of the given fs.FS.
+// It is the FS-parameterized core of knownStdModules: the runtime uses
+// nolang.StdFS (embedded), while the signature-table generator uses an
+// os.DirFS over src/ on disk. Both yield identical module lists because the
+// embed source and the disk source are the same files.
+func listStdModules(fsys fs.FS) []StdModuleInfo {
+	var infos []StdModuleInfo
+	seen := make(map[string]bool)
 
-		var walkDir func(dir string)
-		walkDir = func(dir string) {
-			entries, err := nolang.StdFS.ReadDir(dir)
-			if err != nil {
-				return
-			}
-			for _, e := range entries {
-				path := dir + "/" + e.Name()
-				if e.IsDir() {
-					walkDir(path)
-				} else if strings.HasSuffix(e.Name(), ".no") {
-					rel := strings.TrimPrefix(path, "std/")
-					fullPath := strings.TrimSuffix(rel, ".no")
-					if !seen[fullPath] {
-						seen[fullPath] = true
-						shortName := fullPath
-						if idx := strings.LastIndex(fullPath, "/"); idx >= 0 {
-							shortName = fullPath[idx+1:]
-						}
-						// ShortPath: omit the redundant directory name when
-						// file name equals directory name (e.g. "net/net" → "net").
-						shortPath := fullPath
-						if idx := strings.LastIndex(fullPath, "/"); idx >= 0 {
-							dir := fullPath[:idx]
-							file := fullPath[idx+1:]
-							if dir == file {
-								shortPath = file
-							}
-						}
-						infos = append(infos, StdModuleInfo{
-							ShortName: shortName,
-							FullPath:  fullPath,
-							ShortPath: shortPath,
-						})
+	var walkDir func(dir string)
+	walkDir = func(dir string) {
+		entries, err := fs.ReadDir(fsys, dir)
+		if err != nil {
+			return
+		}
+		for _, e := range entries {
+			path := dir + "/" + e.Name()
+			if e.IsDir() {
+				walkDir(path)
+			} else if strings.HasSuffix(e.Name(), ".no") {
+				rel := strings.TrimPrefix(path, "std/")
+				fullPath := strings.TrimSuffix(rel, ".no")
+				if !seen[fullPath] {
+					seen[fullPath] = true
+					shortName := fullPath
+					if idx := strings.LastIndex(fullPath, "/"); idx >= 0 {
+						shortName = fullPath[idx+1:]
 					}
+					// ShortPath: omit the redundant directory name when
+					// file name equals directory name (e.g. "net/net" → "net").
+					shortPath := fullPath
+					if idx := strings.LastIndex(fullPath, "/"); idx >= 0 {
+						dir := fullPath[:idx]
+						file := fullPath[idx+1:]
+						if dir == file {
+							shortPath = file
+						}
+					}
+					infos = append(infos, StdModuleInfo{
+						ShortName: shortName,
+						FullPath:  fullPath,
+						ShortPath: shortPath,
+					})
 				}
 			}
 		}
-		walkDir("std")
-		knownStdModulesList = infos
+	}
+	walkDir("std")
+	return infos
+}
+
+func knownStdModules() []StdModuleInfo {
+	knownStdModulesOnce.Do(func() {
+		knownStdModulesList = listStdModules(nolang.StdFS)
 	})
 	return knownStdModulesList
 }
@@ -3668,155 +3678,208 @@ func knownJsModules() []JsModuleInfo {
 func GetJsModules() []JsModuleInfo {
 	return knownJsModules()
 }
+//go:generate go run ./genstdsig
+
+func setStdSigCaches(funcSigs map[string][]string, structFields map[string]map[string]string, aliases map[string]string, structMod map[string]string) {
+	stdSigsCache = funcSigs
+	stdFieldsCache = structFields
+	stdAliasesCache = aliases
+	stdStructModCache = structMod
+}
+
 func CollectStdModuleSignatures() (map[string][]string, map[string]map[string]string) {
 	stdSigsOnce.Do(func() {
-		funcSigs := make(map[string][]string)
-		structFields := make(map[string]map[string]string)
-		aliases := make(map[string]string)
-		structMod := make(map[string]string) // struct name → module short name
-
-		// PASS 1: 解析所有模組並暫存，同時統計裸 struct 名的跨模組定義數。
-		// 多模組同名結構體（如 server-conn 定義於 server/tls/sse/ws）的裸名
-		// 有歧義：函數簽名快照若記錄裸名（?server-conn），解析期 it 綁定會
-		// 標注錯誤型別，合併後 codegen 解析到錯誤模組的結構體。
-		type parsedMod struct {
-			info StdModuleInfo
-			prog *parser.Program
-		}
-		var mods []parsedMod
-		structCount := make(map[string]int)
-		funcCount := make(map[string]int)
-		// 並行解析：各模組的 lex+parse 相互獨立，僅共用有鎖的 token LRU。
-		// 結果按 knownStdModules() 原順序寫回，保持 last-wins 合併語義不變。
-		known := knownStdModules()
-		parsed := make([]*parser.Program, len(known))
-		parsedCK := make([]string, len(known))
-		{
-			var wg sync.WaitGroup
-			sem := make(chan struct{}, runtime.GOMAXPROCS(0))
-			for i, info := range known {
-				wg.Add(1)
-				go func(i int, info StdModuleInfo) {
-					defer wg.Done()
-					sem <- struct{}{}
-					defer func() { <-sem }()
-					embedPath := "std/" + info.FullPath + ".no"
-					source, err := nolang.StdFS.ReadFile(embedPath)
-					if err != nil {
-						return
-					}
-					l := lexer.NewCached(embedPath, string(source))
-					p := parser.New(l)
-					prog := p.ParseProgram()
-					if len(p.Errors()) > 0 {
-						return
-					}
-					parsed[i] = prog
-					parsedCK[i] = cache.ContentKey(string(source))
-				}(i, info)
+		// ---- embedded signature table (compiled-in Go literals) ----
+		// Preferred path: stdsig_gen.go bakes the four signature tables into
+		// the binary as Go source literals, so PASS1 is skipped on EVERY build
+		// (including the cold first build / cleared disk cache). Only used when
+		// the embedded key matches the current embedded std content; if src/std
+		// changed without regenerating stdsig_gen.go, the keys differ and we
+		// fall through to the disk cache / full collection instead of serving
+		// a stale table.
+		if embeddedStdSigReady {
+			if key, err := computeStdSigKey(); err == nil && embeddedStdSigKey == key {
+				setStdSigCaches(embeddedStdFuncSigs, embeddedStdStructFields, embeddedStdAliases, embeddedStdStructMod)
+				warmStdTokenCache()
+				return
 			}
-			wg.Wait()
 		}
-		stdProgramsCache = make(map[string]*parser.Program)
+
+		// ---- Stage 1: try disk cache first (skips parsing all std modules) ----
+		if os.Getenv("NOLANG_NOCACHE_STD") == "" {
+			if cached, ok := tryLoadStdSigCache(); ok {
+				setStdSigCaches(cached.FuncSigs, cached.Fields, cached.Aliases, cached.StructMod)
+				return
+			}
+		}
+
+		// ---- full collection from embedded StdFS ----
+		funcSigs, structFields, aliases, structMod, _ := collectStdSigsFromFS(nolang.StdFS)
+		setStdSigCaches(funcSigs, structFields, aliases, structMod)
+
+		// ---- persist to disk for next build (best-effort) ----
+		if os.Getenv("NOLANG_NOCACHE_STD") == "" {
+			saveStdSigCache(funcSigs, structFields, aliases, structMod, gatherStdTokens())
+		}
+	})
+	return stdSigsCache, stdFieldsCache
+}
+
+// CollectStdSigsFromFS is the exported, FS-parameterized entry point used by
+// the signature-table generator (genstdsig) to collect the four signature
+// tables from the on-disk src/ tree at `no` build time.
+func CollectStdSigsFromFS(fsys fs.FS) (map[string][]string, map[string]map[string]string, map[string]string, map[string]string, error) {
+	return collectStdSigsFromFS(fsys)
+}
+
+// collectStdSigsFromFS parses every std module under fsys and collects the
+// four signature tables (func return types, struct fields, type aliases,
+// struct→module map) needed by the parser's type inference. It is the
+// FS-parameterized core of CollectStdModuleSignatures: the runtime passes
+// nolang.StdFS, the generator passes an os.DirFS over src/ on disk.
+func collectStdSigsFromFS(fsys fs.FS) (map[string][]string, map[string]map[string]string, map[string]string, map[string]string, error) {
+	funcSigs := make(map[string][]string)
+	structFields := make(map[string]map[string]string)
+	aliases := make(map[string]string)
+	structMod := make(map[string]string) // struct name → module short name
+
+	// PASS 1: 解析所有模組並暫存，同時統計裸 struct 名的跨模組定義數。
+	// 多模組同名結構體（如 server-conn 定義於 server/tls/sse/ws）的裸名
+	// 有歧義：函數簽名快照若記錄裸名（?server-conn），解析期 it 綁定會
+	// 標注錯誤型別，合併後 codegen 解析到錯誤模組的結構體。
+	type parsedMod struct {
+		info StdModuleInfo
+		prog *parser.Program
+	}
+	var mods []parsedMod
+	structCount := make(map[string]int)
+	funcCount := make(map[string]int)
+	// 並行解析：各模組的 lex+parse 相互獨立，僅共用有鎖的 token LRU。
+	// 結果按模組原順序寫回，保持 last-wins 合併語義不變。
+	known := listStdModules(fsys)
+	parsed := make([]*parser.Program, len(known))
+	parsedCK := make([]string, len(known))
+	{
+		var wg sync.WaitGroup
+		sem := make(chan struct{}, runtime.GOMAXPROCS(0))
 		for i, info := range known {
-			prog := parsed[i]
-			if prog == nil {
-				continue
+			wg.Add(1)
+			go func(i int, info StdModuleInfo) {
+				defer wg.Done()
+				sem <- struct{}{}
+				defer func() { <-sem }()
+				embedPath := "std/" + info.FullPath + ".no"
+				source, err := fs.ReadFile(fsys, embedPath)
+				if err != nil {
+					return
+				}
+				l := lexer.NewCached(embedPath, string(source))
+				p := parser.New(l)
+				prog := p.ParseProgram()
+				if len(p.Errors()) > 0 {
+					return
+				}
+				parsed[i] = prog
+				parsedCK[i] = cache.ContentKey(string(source))
+			}(i, info)
+		}
+		wg.Wait()
+	}
+	stdProgramsCache = make(map[string]*parser.Program)
+	for i, info := range known {
+		prog := parsed[i]
+		if prog == nil {
+			continue
+		}
+		stdProgramsCache[parsedCK[i]] = prog
+		mods = append(mods, parsedMod{info, prog})
+		for _, stmt := range prog.Statements {
+			if sd, ok := stmt.(*parser.StructDefinition); ok {
+				structCount[sd.Name]++
 			}
-			stdProgramsCache[parsedCK[i]] = prog
-			mods = append(mods, parsedMod{info, prog})
-			for _, stmt := range prog.Statements {
-				if sd, ok := stmt.(*parser.StructDefinition); ok {
-					structCount[sd.Name]++
-				}
-				if fd, ok := stmt.(*parser.FunctionDefinition); ok && !fd.IsMethodDef && !strings.Contains(fd.Name, ".") {
-					funcCount[fd.Name]++
-				}
+			if fd, ok := stmt.(*parser.FunctionDefinition); ok && !fd.IsMethodDef && !strings.Contains(fd.Name, ".") {
+				funcCount[fd.Name]++
 			}
 		}
+	}
 
-		// qualifyRet: 函數結果型別若引用「本模組定義且跨模組同名歧義」的
-		// struct 裸名，改記為 module.name（與 build 合併後 prefixModuleStatements
-		// 的重命名世界一致）。唯一裸名保持不變（解析期 structFields 查找仍用裸名）。
-		qualifyRet := func(typeStr, modShort string, ownStructs map[string]bool) string {
-			bare := strings.TrimPrefix(typeStr, "?")
-			if bare == typeStr {
-				// 非 option 形式：僅處理裸名
-				if ownStructs[bare] && structCount[bare] > 1 {
-					return modShort + "." + bare
-				}
-				return typeStr
-			}
+	// qualifyRet: 函數結果型別若引用「本模組定義且跨模組同名歧義」的
+	// struct 裸名，改記為 module.name（與 build 合併後 prefixModuleStatements
+	// 的重命名世界一致）。唯一裸名保持不變（解析期 structFields 查找仍用裸名）。
+	qualifyRet := func(typeStr, modShort string, ownStructs map[string]bool) string {
+		bare := strings.TrimPrefix(typeStr, "?")
+		if bare == typeStr {
+			// 非 option 形式：僅處理裸名
 			if ownStructs[bare] && structCount[bare] > 1 {
-				return "?" + modShort + "." + bare
+				return modShort + "." + bare
 			}
 			return typeStr
 		}
+		if ownStructs[bare] && structCount[bare] > 1 {
+			return "?" + modShort + "." + bare
+		}
+		return typeStr
+	}
 
-		// PASS 2: 收集簽名/欄位/別名
-		for _, m := range mods {
-			ownStructs := make(map[string]bool)
-			for _, stmt := range m.prog.Statements {
-				if sd, ok := stmt.(*parser.StructDefinition); ok {
-					ownStructs[sd.Name] = true
+	// PASS 2: 收集簽名/欄位/別名
+	for _, m := range mods {
+		ownStructs := make(map[string]bool)
+		for _, stmt := range m.prog.Statements {
+			if sd, ok := stmt.(*parser.StructDefinition); ok {
+				ownStructs[sd.Name] = true
+			}
+		}
+		for _, stmt := range m.prog.Statements {
+			if fd, ok := stmt.(*parser.FunctionDefinition); ok {
+				if len(fd.Results) > 0 {
+					rets := make([]string, len(fd.Results))
+					for i, r := range fd.Results {
+						rets[i] = qualifyRet(r.Type.String(), m.info.ShortName, ownStructs)
+					}
+					// 跨模組同名頂層函數（dial 定義於 quic/dns/proxy/tls）：
+					// 裸名鍵按載入順序 last-wins，會令 dns.dial() 呼叫在
+					// 解析期被標注成其他模組 dial 的返回型別。歧義名以
+					// "module.fn" 為鍵註冊，裸名鍵不寫入（避免錯誤匹配）；
+					// inferTypeFromCallExpr 對 module.fn() 呼叫優先查
+					// "module.fn" 鍵。唯一名維持裸名鍵。
+					if !fd.IsMethodDef && !strings.Contains(fd.Name, ".") && funcCount[fd.Name] > 1 {
+						funcSigs[m.info.ShortName+"."+fd.Name] = rets
+					} else {
+						funcSigs[fd.Name] = rets
+					}
 				}
 			}
-			for _, stmt := range m.prog.Statements {
-				if fd, ok := stmt.(*parser.FunctionDefinition); ok {
-					if len(fd.Results) > 0 {
-						rets := make([]string, len(fd.Results))
-						for i, r := range fd.Results {
-							rets[i] = qualifyRet(r.Type.String(), m.info.ShortName, ownStructs)
-						}
-						// 跨模組同名頂層函數（dial 定義於 quic/dns/proxy/tls）：
-						// 裸名鍵按載入順序 last-wins，會令 dns.dial() 呼叫在
-						// 解析期被標注成其他模組 dial 的返回型別。歧義名以
-						// "module.fn" 為鍵註冊，裸名鍵不寫入（避免錯誤匹配）；
-						// inferTypeFromCallExpr 對 module.fn() 呼叫優先查
-						// "module.fn" 鍵。唯一名維持裸名鍵。
-						if !fd.IsMethodDef && !strings.Contains(fd.Name, ".") && funcCount[fd.Name] > 1 {
-							funcSigs[m.info.ShortName+"."+fd.Name] = rets
-						} else {
-							funcSigs[fd.Name] = rets
-						}
+			if sd, ok := stmt.(*parser.StructDefinition); ok {
+				fields := make(map[string]string)
+				for _, f := range sd.Fields {
+					if typeStr := structFieldTypeString(f); typeStr != "" {
+						fields[f.Name] = typeStr
 					}
 				}
-				if sd, ok := stmt.(*parser.StructDefinition); ok {
-					fields := make(map[string]string)
-					for _, f := range sd.Fields {
-						if typeStr := structFieldTypeString(f); typeStr != "" {
-							fields[f.Name] = typeStr
-						}
-					}
-					structFields[sd.Name] = fields
-					// 歧義結構體另以 module.name 為 key 註冊一份，使解析期
-					// it 綁定標注 "tls.server-conn" 後仍能解析欄位/方法。
-					if structCount[sd.Name] > 1 {
-						structFields[m.info.ShortName+"."+sd.Name] = fields
-					}
-					// Map struct name → module short name for cross-module prefix validation
-					if _, exists := structMod[sd.Name]; !exists {
-						structMod[sd.Name] = m.info.ShortName
-					}
+				structFields[sd.Name] = fields
+				// 歧義結構體另以 module.name 為 key 註冊一份，使解析期
+				// it 綁定標注 "tls.server-conn" 後仍能解析欄位/方法。
+				if structCount[sd.Name] > 1 {
+					structFields[m.info.ShortName+"."+sd.Name] = fields
 				}
-				// 收集單具體型別別名（name = known-type），使 newtype 語義
-				// 在跨模組場景下也能生效（如 fs.no 定義 fd=i64，io.no 使用 fd）
-				if ta, ok := stmt.(*parser.TypeAlias); ok && ta.Type != nil && ta.Union == nil {
-					if _, ok := ta.Type.(*parser.FunctionType); !ok {
-						if _, exists := aliases[ta.Name]; !exists {
-							aliases[ta.Name] = ta.Type.String()
-						}
+				// Map struct name → module short name for cross-module prefix validation
+				if _, exists := structMod[sd.Name]; !exists {
+					structMod[sd.Name] = m.info.ShortName
+				}
+			}
+			// 收集單具體型別別名（name = known-type），使 newtype 語義
+			// 在跨模組場景下也能生效（如 fs.no 定義 fd=i64，io.no 使用 fd）
+			if ta, ok := stmt.(*parser.TypeAlias); ok && ta.Type != nil && ta.Union == nil {
+				if _, ok := ta.Type.(*parser.FunctionType); !ok {
+					if _, exists := aliases[ta.Name]; !exists {
+						aliases[ta.Name] = ta.Type.String()
 					}
 				}
 			}
 		}
+	}
 
-		stdSigsCache = funcSigs
-		stdFieldsCache = structFields
-		stdAliasesCache = aliases
-		stdStructModCache = structMod
-	})
-	return stdSigsCache, stdFieldsCache
+	return funcSigs, structFields, aliases, structMod, nil
 }
 func CollectStdConcreteAliases() map[string]string {
 	CollectStdModuleSignatures() // 觸發 sync.Once 填充快取
