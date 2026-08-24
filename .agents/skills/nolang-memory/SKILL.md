@@ -120,11 +120,19 @@ cond-move = (flag i64) (out []i64) {
 
 #### 3.2.5 函数结尾释放
 
-`emitHeapFree` 遍历全部堆变量，平铺独立 `if`：
-- 有运行时位图（`hasBranchMove && movedBitmapBase != ""`）：`emitBitCheckFree` 生成 IR 检查 bit — `bit=1` 跳过 free（所有权转移），`bit=0` 走 `emitVarHeapFree`
-- 无运行时位图：编译期检查 `isMovedVar(varIdx)` — moved 则跳过，否则走 `emitVarHeapFree`
+`emitHeapFree` 遍历全部堆变量，按优先级依次尝试以下路径：
 
-**适用所有堆类型**：`vec`/`str-long`/`arr`/用户结构体统一使用 `emitBitCheckFree` / `isMovedVar`。
+1. **CFG 数据流分析**（`cfgMovedFacts != nil && curCFG != nil`）：
+   - 求解 MovedFact 的 `triMust`/`triMay`/`triMustNot` 三態
+   - `triMust`（所有路徑 moved）→ 靜態跳過 free
+   - **安全網**（`triMustNot && isMovedVar(varIdx)` → 跳過 free）：CFG 可能不完整（見 §3.2.7），編譯期 `isMovedVar` 作為兜底
+   - `triMustNot` 且 AssignedFact 確認持有堆 → `emitVarHeapFreeDirect`（繞過 NULL 守衛）
+   - `triMustNot` 且 AssignedFact 確認不持有堆 → 跳過 free（data 恆為 NULL）
+   - `triMay` → 回退到運行時位圖 / 編譯期檢查
+2. **运行时位图**（`hasBranchMove && movedBitmapBase != ""`）：`emitBitCheckFree` 生成 IR 检查 bit — `bit=1` 跳过 free，`bit=0` 走 `emitVarHeapFree`
+3. **编译期检查**（無位圖）：`isMovedVar(varIdx)` — moved 则跳过，否则走 `emitVarHeapFree`
+
+**适用所有堆类型**：`vec`/`str-long`/`arr`/用户结构体统一使用。
 
 #### 3.2.6 分支汇合 outBindState 合并
 
@@ -138,6 +146,16 @@ cond-move = (flag i64) (out []i64) {
    - 不同 → 设为 `-2`（不确定：运行时可能是 then 绑定，也可能是 else 绑定）
 
 `-2` 状态后续传入 `handleMoveToOut` 时触发「不清除旧 bit」例外（§3.2.3），由运行时位图在 `emitHeapFree` 阶段对每个候选变量独立判定。
+
+#### 3.2.7 CFG 不完整性與 isMovedVar 安全網
+
+CFG 數據流分析依賴所有內部代碼生成路徑正確註冊 CFG 邊（`cfgEdge`/`cfgTerm`）。但部分路徑（如 `vec.push` 的 `vp.fast.X`/`vp.expand.X`/`vp.end.X` 塊）創建基本塊但未註冊 CFG 邊，導致這些塊在 `computeReachableBlocks` 中不可達。
+
+當 `handleMoveToOut` 在這些不可達塊中記錄 `effAdd`（moved）effect 時，數據流求解器無法看到該 effect，將變數誤判為 `triMustNot`（從未 moved）。
+
+**安全網**：`emitHeapFree` 中，當 CFG 結果為 `triMustNot` 但編譯期 `isMovedVar(varIdx)` 為 true 時，信任編譯期結果並跳過 free。這作為兜底保護，防止 CFG 不完整導致的雙重釋放。
+
+詳細說明見 §10.6。
 
 ### 3.3 outputParamNames
 `map[string]bool`：当前函数的输出参数名（由调用者管理，本函数不 free）。
@@ -205,6 +223,23 @@ if g.isHeapOwningType(elemType) {
 
 ### 4.3 NULL 检查
 所有 free 前都检查 `icmp eq i8* %ptr, null`，避免 free(NULL) 或 free 未初始化指针。
+
+### 4.4 emitDeepContainerFree 的 CFG back edge 修正
+
+`emitDeepContainerFree` 的循環體內調用 `emitElementFree` → `emitNullCheckFree`，後者創建新的基本塊（`heapfree.free.X` / `heapfree.skip.X`）。返回後 `g.currentBlock` 已不是 `loopBodyLabel`，而是最後一個子塊（如 `heapfree.skip.X`）。
+
+**修復（2026-08）**：back edge 的來源必須使用 `g.cfgBlockLabel()`（實際當前 block），而非 `loopBodyLabel`。否則 CFG 中會記錄不存在的幽靈邊（`loopBodyLabel → loopCondLabel`），導致數據流求解器產生錯誤的 moved-facts。
+
+```go
+// 修正前（錯誤）：
+g.cfgTerm(loopBodyLabel, termBr)
+g.cfgEdge(loopBodyLabel, loopCondLabel) // 幽靈 back edge
+
+// 修正後（正確）：
+backEdgeFrom := g.cfgBlockLabel() // emitElementFree 後的實際當前 block
+g.cfgTerm(backEdgeFrom, termBr)
+g.cfgEdge(backEdgeFrom, loopCondLabel) // 真實 back edge
+```
 
 ## 5. 所有权转移语义
 
@@ -417,7 +452,7 @@ clib 路徑（`generator.go:1763`）用於內建函數（`get-env`、`get-wd`、
 
 ## 9. 已验证的测试案例
 
-位于 `tests/mem-safety/`：
+位于 `tests/mem-safety/`（共 33 個測試，全部 RC=0）：
 
 | 测试文件 | 验证内容 |
 |---------|---------|
@@ -433,18 +468,29 @@ clib 路徑（`generator.go:1763`）用於內建函數（`get-env`、`get-wd`、
 | `if-branch-move-leak.no` | 条件分支中的 move |
 | `ffi-str-return.no` | FFI extern str 返回值安全複製（strchr NULL/非 NULL/重複/傳遞） |
 | `global-heap-free.no` | 模組級堆變數在 main 退出時釋放 |
+| `cross-fn-str-return-dfree.no` | 跨函數返回 str 的雙重釋放（main out 參數正確傳遞指標） |
+| `element-assign-clone.no` | vec[i]=str/struct field=str 深層 clone + 跨函數 vec 返回 move 安全（§3.2.7 安全網） |
+| `map-key-leak.no` | hashmap key/value 深層 free + move/reassign/clone 場景 |
+| `map-tombstone.no` | hashmap tombstone 機制 + str/int key 釋放 |
+| `loop-temp-leak.no` | 循環內臨時變數洩漏（str concat） |
+| `str-concat-leak.no` | 字串拼接臨時變數洩漏 |
+| `option-heap-leak.no` | option 類型堆數據釋放（str/struct/scalar option） |
+| `prologue-buf-leak.no` | 輸出參數 prologue buffer 洩漏（已解決） |
+| `reverse-slice-clone.no` | slice 反轉 clone 獨立性 |
+| `clone-reset-is-moved.no` | clone 後重置 moved 狀態 |
+| `struct-move-is-moved.no` | 結構體 move 後 isMovedVar 正確 |
+| `async-str-result.no` / `async-str-stress.no` / `async-module-awy.no` / `async-shared-race.no` / `async-alloca-escape.no` | async 場景記憶體安全 |
+| `test-minimal-option-str.no` / `test-minimal-str-map.no` / `test-minimal-str-map2.no` / `test-option-str-match.no` | 最小化 option/map str 場景 |
 
 ## 10. 已知未修复的问题
 
-### 10.1 map 容器未实现深层 free
-hashmap 模板（`hashmap-str-tmpl` 等）未实现 key/value 的堆数据释放。
+### 10.1 ~~map 容器未实现深层 free~~（已解決）
 
-### 10.2 循环临时变量泄漏
-```no
-loop {
-    s = 'temp'   ; 每次迭代 malloc 新 data，旧 data 未释放
-}
-```
+hashmap 模板（`hashmap-str-tmpl` 等）已實現 key/value 的堆數據釋放。透過 `collectReferencedStdModules` 正確識別 `MapType`/`MapLiteral`，確保 `collection/map.no` std 模組被載入並觸發模板實例化和 LLVM 類型定義生成。測試見 `map-key-leak.no` 和 `map-tombstone.no`。
+
+### 10.2 ~~循环临时变量泄漏~~（已解決）
+
+循環內臨時變數的舊值在重賦值時由 `freeOldHeapValue` 釋放。測試見 `loop-temp-leak.no` 和 `str-concat-leak.no`。
 
 ### 10.3 ~~slice 视图 + 原数组 move~~（已解決）
 
@@ -476,6 +522,55 @@ arr = [9, 8, 7]    ; free 旧 arr.data → view 悬空
 
 ### 10.5 async 共享数据竞态
 异步线程与主线程共享堆数据时，free 顺序不确定。
+
+### 10.5a ~~main 函數 out 參數 UB 崩潰~~（已解決）
+
+**原問題**：`main = () (out i64) { ... }` 時，`@main` 調用 `_nolang_main()` 缺少輸出參數指標，導致 LLVM UB。`-O3` 優化器將 `_nolang_main` 推斷為 `noreturn`，刪除全局變數釋放和 `ret i32 0`，程序在 `_nolang_main` 返回後立即崩潰（rc=133 SIGTRAP）。
+
+**根因**：`generateMainFunction` 中調用 `_nolang_main()` 時未傳遞輸出參數。`_nolang_main` 的簽名是 `void @_nolang_main()`（無參數），但實際函數體中有 `store i64 0, ptr %out`（out 是參數指標）。缺少參數時 LLVM 將其視為 `null`（UB），`store i64 0, ptr null → unreachable`。
+
+**修復（2026-08）**：`generateMainFunction` 中為每個 `main` 的輸出參數分配棧空間（`alloca` + `store zeroinitializer`），並將指標傳遞給 `_nolang_main()`：
+
+```go
+mainArgs := []string{}
+if g.funcResultLLVMType != nil {
+    if retTypes, ok := g.funcResultLLVMType["main"]; ok && len(retTypes) > 0 {
+        for _, rt := range retTypes {
+            g.tmpIdx++
+            tmpName := fmt.Sprintf("%%main.out.%d", g.tmpIdx)
+            sb.WriteString(fmt.Sprintf("%s%s = alloca %s\n", g.indent(), tmpName, toLLVMType(rt)))
+            sb.WriteString(fmt.Sprintf("%sstore %s zeroinitializer, %s* %s\n", g.indent(), toLLVMType(rt), toLLVMType(rt), tmpName))
+            mainArgs = append(mainArgs, toLLVMType(rt)+"* "+tmpName)
+        }
+    }
+}
+```
+
+測試見 `cross-fn-str-return-dfree.no`。
+
+## 10.6 CFG 數據流分析與內部代碼生成路徑的交互問題
+
+### 問題描述
+
+CFG 數據流分析依賴 `cfgEdge`/`cfgTerm`/`cfgAddEffect` 正確記錄所有基本塊和邊。但部分內部代碼生成路徑（如 `vec.push` 的 `vp.fast.X`/`vp.expand.X`/`vp.end.X` 塊）創建基本塊但未註冊 CFG 邊，導致這些塊在 `computeReachableBlocks` 中不可達。
+
+當 `handleMoveToOut` 在這些不可達塊中記錄 `effAdd`（moved）effect 時，數據流求解器無法看到該 effect，將變數誤判為 `triMustNot`（從未 moved），進而走直接 free 路路徑，繞過編譯期 `isMovedVar` 檢查，導致雙重釋放。
+
+### 已修復的路径
+
+| 路径 | 修复方式 |
+|------|---------|
+| `emitNullCheckFree` | 正確記錄 CFG 邊：`fromBlock → freeLabel`, `fromBlock → skipLabel`, `freeLabel → skipLabel` |
+| `emitDeepContainerFree` | back edge 使用 `cfgBlockLabel()`（實際當前 block）而非 `loopBodyLabel`（§4.4） |
+| `emitOptionHeapFree` | 正確記錄 CFG 邊（與 `emitNullCheckFree` 同模式） |
+
+### 安全網機制
+
+`emitHeapFree` 中新增編譯期 `isMovedVar` 安全網（§3.2.5）：當 CFG 結果為 `triMustNot` 但編譯期 `isMovedVar` 表示已 moved 時，信任編譯期結果並跳過 free。這解決了 CFG 不完整導致的誤判，作為兜底保護。
+
+### 尚未修復的路径
+
+`vec.push`（`call.go`）等內部代碼生成路径仍創建基本塊但未註冊 CFG 邊。安全網機制使其不再導致崩潰，但 CFG 數據流分析在這些場景下可能產生次優結果（如 `triMay` 而非 `triMust`）。未來可考慮為所有內部代碼生成路徑統一添加 CFG 邊。
 
 ## 11. 修改堆释放逻辑的检查清单
 
@@ -513,6 +608,11 @@ arr = [9, 8, 7]    ; free 旧 arr.data → view 悬空
 | **运行时位图 IR** | `src/build/llvm/stmt.go` | `emitSetMovedBitIR`, `emitClearMovedBitIR`, `emitBitCheckFree` |
 | **分支 move 预扫描** | `src/build/llvm/stmt.go` | `detectBranchMoveToOut` — 递迴遍历 AST 检测分支内 move |
 | **位图变量按需分配** | `src/build/llvm/stmt.go` | `generateFunctionDefinition` 中 `hasBranchMove` 为 true 时 alloca `%__mb{block}` |
+| **CFG 數據流分析** | `src/build/llvm/dataflow.go` | `FuncCFG`, `solveBitsetForward`, `movedTransfer`, `classifyMoved`, `computeReachableBlocks` |
+| **CFG 安全網** | `src/build/llvm/stmt.go` | `emitHeapFree` 中 `triMustNot && isMovedVar` 檢查（§3.2.5, §10.6） |
+| **back edge 修正** | `src/build/llvm/stmt.go` | `emitDeepContainerFree` 中 `backEdgeFrom = g.cfgBlockLabel()`（§4.4） |
+| **main out 參數傳遞** | `src/build/llvm/stmt.go` | `generateMainFunction` 中為 main out 參數分配棧空間並傳遞指標（§10.5a） |
+| **hashmap std 模組載入** | `src/build/transpiler.go` | `collectReferencedStdModules` 識別 `MapType`/`MapLiteral`（§10.1） |
 | **模組級堆變數釋放** | `src/build/llvm/stmt.go` | `emitGlobalHeapFree` |
 | 释放路由 | `src/build/llvm/stmt.go` | `emitVarHeapFree` |
 | 深层 free | `src/build/llvm/stmt.go` | `emitDeepContainerFree`, `emitElementFree` |
