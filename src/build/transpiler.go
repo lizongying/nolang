@@ -1123,6 +1123,13 @@ func (t *Transpiler) collectReferencedStdModules(prog *parser.Program) map[strin
 		case *parser.SliceType:
 			walkType(ty.Elem)
 		case *parser.MapType:
+			// [K]V 語法隱含引用 std/collection/map.no 模組（hashmap 模板特化）。
+			// 若不標記為已引用，map.no 不會被載入，hashmap-K-V 結構體類型定義缺失，
+			// 導致 LLVM alloca unsized type 編譯錯誤。
+			// ShortName="map", ShortPath="collection/map"，兩者皆需標記
+			// （collectReferencedStdModules 的查表鍵為 ShortName 或 ShortPath）。
+			addRef("map")
+			addRef("collection/map")
 			walkType(ty.Key)
 			walkType(ty.Value)
 		case *parser.NullableType:
@@ -1255,6 +1262,9 @@ func (t *Transpiler) collectReferencedStdModules(prog *parser.Program) map[strin
 				walkExpr(el)
 			}
 		case *parser.MapLiteral:
+			// MapLiteral 也隱含引用 collection/map 模組（與 MapType 同理）。
+			addRef("map")
+			addRef("collection/map")
 			for _, pr := range ex.Pairs {
 				walkExpr(pr.Key)
 				walkExpr(pr.Value)

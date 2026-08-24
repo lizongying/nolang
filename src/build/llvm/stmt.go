@@ -695,6 +695,17 @@ func (g *Generator) emitHeapFree(sb *strings.Builder) {
 					// 所有路徑 moved → 靜態跳過 free
 					continue
 				}
+				// Safety net: if the compiler already knows the var is moved
+				// (via markMovedVar in handleMoveToOut/handleMoveLocal), trust
+				// that over the CFG dataflow result. The CFG may be incomplete
+				// because internal codegen paths (vec.push, etc.) create basic
+				// blocks without registering CFG edges, making reachable blocks
+				// miss the block where the move effect was recorded. This causes
+				// the dataflow solver to incorrectly conclude triMustNot for a
+				// variable that is actually moved, leading to double-free.
+				if tri == triMustNot && g.isMovedVar(varIdx) {
+					continue
+				}
 				// AssignedFact 優化：僅當「肯定從不 moved 且 肯定持有堆」時直接 free，
 				// 繞開運行時 NULL 守衛（@free(NULL) 為 안전 no-op，即便誤判亦無害）。
 				// 與 moved 正交：moved=triMay 時不優化（交給 bitmap/NULL 守衛處理，防雙重釋放）。
@@ -1011,11 +1022,15 @@ func (g *Generator) emitOptionHeapFree(sb *strings.Builder, optPtr, name string)
 	nilCmp := fmt.Sprintf("%%optfree.nil.%d", tid)
 	skipLabel := fmt.Sprintf("optfree.skip.%d", tid)
 	dataLabel := fmt.Sprintf("optfree.data.%d", tid)
+	fromBlock := g.cfgBlockLabel()
 	sb.WriteString(fmt.Sprintf("%s%s = icmp eq i64 %s, 1\n", g.indent(), nilCmp, tagReg))
 	sb.WriteString(fmt.Sprintf("%sbr i1 %s, label %%%s, label %%%s\n", g.indent(), nilCmp, skipLabel, dataLabel))
+	g.cfgTerm(fromBlock, termCondBr)
 
 	// 3. 非 nil：load data (field 1) i64, inttoptr to i8*
 	g.emitLabel(sb, dataLabel)
+	g.cfgEdge(fromBlock, skipLabel)
+	g.cfgEdge(fromBlock, dataLabel)
 	dataGEP := fmt.Sprintf("%%optfree.data.gep.%d", tid)
 	sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%option, %%option* %s, i32 0, i32 1\n",
 		g.indent(), dataGEP, optPtr))
@@ -1029,9 +1044,12 @@ func (g *Generator) emitOptionHeapFree(sb *strings.Builder, optPtr, name string)
 	freeLabel := fmt.Sprintf("optfree.free.%d", tid)
 	sb.WriteString(fmt.Sprintf("%s%s = icmp eq i8* %s, null\n", g.indent(), nullCmp, boxPtrReg))
 	sb.WriteString(fmt.Sprintf("%sbr i1 %s, label %%%s, label %%%s\n", g.indent(), nullCmp, skipLabel, freeLabel))
+	g.cfgTerm(dataLabel, termCondBr)
 
 	// 5. 非 NULL：先遞迴釋放 inner 的 data
 	g.emitLabel(sb, freeLabel)
+	g.cfgEdge(dataLabel, skipLabel)
+	g.cfgEdge(dataLabel, freeLabel)
 	innerPtrReg := fmt.Sprintf("%%optfree.inner.%d", tid)
 	sb.WriteString(fmt.Sprintf("%s%s = bitcast i8* %s to %s*\n", g.indent(), innerPtrReg, boxPtrReg, innerType))
 	// 遞迴釋放 inner 的 data（不傳 name，inner 不是 option 變數本身）
@@ -1041,8 +1059,10 @@ func (g *Generator) emitOptionHeapFree(sb *strings.Builder, optPtr, name string)
 	// 6. 釋放 box 本身
 	sb.WriteString(fmt.Sprintf("%scall void @free(i8* %s)\n", g.indent(), boxPtrReg))
 	sb.WriteString(fmt.Sprintf("%sbr label %%%s\n", g.indent(), skipLabel))
+	g.cfgTerm(freeLabel, termBr)
 
 	g.emitLabel(sb, skipLabel)
+	g.cfgEdge(freeLabel, skipLabel)
 }
 
 // emitOptionDeepClone 深層 clone option 變數 b = a：
@@ -1509,12 +1529,18 @@ func (g *Generator) emitBitCheckFree(sb *strings.Builder, name string, varIdx in
 	skipLabel := fmt.Sprintf("dc.skip.%d", g.tmpIdx)
 	sb.WriteString(fmt.Sprintf("%sbr i1 %s, label %%%s, label %%%s\n",
 		g.indent(), moved, skipLabel, freeLabel))
+	fromBlock := g.cfgBlockLabel()
+	g.cfgTerm(fromBlock, termCondBr)
 	// free block: move 未發生（bit=0），仍擁有數據，需 free
 	g.emitLabel(sb, freeLabel)
+	g.cfgEdge(fromBlock, freeLabel)
+	g.cfgEdge(fromBlock, skipLabel)
 	g.emitVarHeapFree(sb, g.varAddr(name), llvmType, elemType, name)
 	sb.WriteString(fmt.Sprintf("%sbr label %%%s\n", g.indent(), skipLabel))
+	g.cfgTerm(freeLabel, termBr)
 	// skip block: move 已發生（bit=1），所有權已轉移，跳過 free
 	g.emitLabel(sb, skipLabel)
+	g.cfgEdge(freeLabel, skipLabel)
 }
 
 // ---- move 賦值處理 ----
@@ -1590,12 +1616,22 @@ func (g *Generator) emitNullCheckFree(sb *strings.Builder, dataPtr string) {
 	freeLabel := fmt.Sprintf("heapfree.free.%d", g.tmpIdx)
 	g.tmpIdx++
 	skipLabel := fmt.Sprintf("heapfree.skip.%d", g.tmpIdx)
+	// 記錄當前 block（branch 前的 block），用於 CFG 邊追蹤
+	fromBlock := g.cfgBlockLabel()
 	sb.WriteString(fmt.Sprintf("%s%s = icmp eq i8* %s, null\n", g.indent(), nullCmp, dataPtr))
 	sb.WriteString(fmt.Sprintf("%sbr i1 %s, label %%%s, label %%%s\n", g.indent(), nullCmp, skipLabel, freeLabel))
+	// CFG: branch 前設置 terminator（條件分支：兩個後繼）
+	g.cfgTerm(fromBlock, termCondBr)
 	g.emitLabel(sb, freeLabel)
 	sb.WriteString(fmt.Sprintf("%scall void @free(i8* %s)\n", g.indent(), dataPtr))
 	sb.WriteString(fmt.Sprintf("%sbr label %%%s\n", g.indent(), skipLabel))
+	// CFG: freeLabel → skipLabel（單後繼 branch）
+	g.cfgTerm(freeLabel, termBr)
 	g.emitLabel(sb, skipLabel)
+	// CFG: fromBlock → freeLabel, fromBlock → skipLabel, freeLabel → skipLabel
+	g.cfgEdge(fromBlock, freeLabel)
+	g.cfgEdge(fromBlock, skipLabel)
+	g.cfgEdge(freeLabel, skipLabel)
 }
 
 // emitDeepContainerFree deep-frees a %vec/%arr: iterates elements to free their heap data, then frees the data buffer.
@@ -1619,9 +1655,13 @@ func (g *Generator) emitDeepContainerFree(sb *strings.Builder, containerPtr, con
 	lenZero := fmt.Sprintf("%%df.len.zero.%d", tid)
 	skipLabel := fmt.Sprintf("df.skip.%d", tid)
 	dataLoadLabel := fmt.Sprintf("df.dataload.%d", tid)
+	fromBlock := g.cfgBlockLabel()
 	sb.WriteString(fmt.Sprintf("%s%s = icmp eq i64 %s, 0\n", g.indent(), lenZero, lenReg))
 	sb.WriteString(fmt.Sprintf("%sbr i1 %s, label %%%s, label %%%s\n", g.indent(), lenZero, skipLabel, dataLoadLabel))
+	g.cfgTerm(fromBlock, termCondBr)
 	g.emitLabel(sb, dataLoadLabel)
+	g.cfgEdge(fromBlock, skipLabel)
+	g.cfgEdge(fromBlock, dataLoadLabel)
 
 	dataGEP := fmt.Sprintf("%%df.data.gep.%d", tid)
 	sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %s, %s* %s, i32 0, i32 %d\n",
@@ -1631,13 +1671,18 @@ func (g *Generator) emitDeepContainerFree(sb *strings.Builder, containerPtr, con
 	loopStartLabel := fmt.Sprintf("df.loop.start.%d", tid)
 	sb.WriteString(fmt.Sprintf("%s%s = icmp eq i8* %s, null\n", g.indent(), nullCmp, dataLoad))
 	sb.WriteString(fmt.Sprintf("%sbr i1 %s, label %%%s, label %%%s\n", g.indent(), nullCmp, skipLabel, loopStartLabel))
+	g.cfgTerm(dataLoadLabel, termCondBr)
 	g.emitLabel(sb, loopStartLabel)
+	g.cfgEdge(dataLoadLabel, skipLabel)
+	g.cfgEdge(dataLoadLabel, loopStartLabel)
 	iPtr := fmt.Sprintf("%%df.i.%d", tid)
 	sb.WriteString(fmt.Sprintf("%s%s = alloca i64\n", g.indent(), iPtr))
 	sb.WriteString(fmt.Sprintf("%sstore i64 0, i64* %s\n", g.indent(), iPtr))
 	loopCondLabel := fmt.Sprintf("df.loop.cond.%d", tid)
 	sb.WriteString(fmt.Sprintf("%sbr label %%%s\n", g.indent(), loopCondLabel))
+	g.cfgTerm(loopStartLabel, termBr)
 	g.emitLabel(sb, loopCondLabel)
+	g.cfgEdge(loopStartLabel, loopCondLabel)
 	iVal := fmt.Sprintf("%%df.i.val.%d", tid)
 	sb.WriteString(fmt.Sprintf("%s%s = load i64, i64* %s\n", g.indent(), iVal, iPtr))
 	loopCmp := fmt.Sprintf("%%df.loop.cmp.%d", tid)
@@ -1645,21 +1690,38 @@ func (g *Generator) emitDeepContainerFree(sb *strings.Builder, containerPtr, con
 	loopEndLabel := fmt.Sprintf("df.loop.end.%d", tid)
 	sb.WriteString(fmt.Sprintf("%s%s = icmp slt i64 %s, %s\n", g.indent(), loopCmp, iVal, lenReg))
 	sb.WriteString(fmt.Sprintf("%sbr i1 %s, label %%%s, label %%%s\n", g.indent(), loopCmp, loopBodyLabel, loopEndLabel))
+	g.cfgTerm(loopCondLabel, termCondBr)
 	g.emitLabel(sb, loopBodyLabel)
+	g.cfgEdge(loopCondLabel, loopBodyLabel)
+	g.cfgEdge(loopCondLabel, loopEndLabel)
 	elemArr := fmt.Sprintf("%%df.elemarr.%d", tid)
 	sb.WriteString(fmt.Sprintf("%s%s = bitcast i8* %s to %s*\n", g.indent(), elemArr, dataLoad, elemType))
 	elemGEP := fmt.Sprintf("%%df.elem.gep.%d", tid)
 	sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %s, %s* %s, i64 %s\n",
 		g.indent(), elemGEP, elemType, elemType, elemArr, iVal))
 	g.emitElementFree(sb, elemGEP, elemType)
+	// emitElementFree may create sub-blocks (e.g. heapfree.free.X / heapfree.skip.X
+	// via emitNullCheckFree). After it returns, g.currentBlock is the last sub-block
+	// (e.g. heapfree.skip.X), NOT loopBodyLabel. The back edge and terminator must
+	// be recorded from the actual current block to keep the CFG consistent with
+	// the emitted IR. Using loopBodyLabel here would create phantom edges
+	// (loopBodyLabel → loopCondLabel) that don't exist in the IR, causing the
+	// dataflow solver to produce incorrect moved-facts (e.g. triMustNot for a
+	// variable that is actually moved), which in turn leads to double-free or
+	// infinite-loop bugs under -O3.
+	backEdgeFrom := g.cfgBlockLabel()
 	iNext := fmt.Sprintf("%%df.i.next.%d", tid)
 	sb.WriteString(fmt.Sprintf("%s%s = add i64 %s, 1\n", g.indent(), iNext, iVal))
 	sb.WriteString(fmt.Sprintf("%sstore i64 %s, i64* %s\n", g.indent(), iNext, iPtr))
 	sb.WriteString(fmt.Sprintf("%sbr label %%%s\n", g.indent(), loopCondLabel))
+	g.cfgTerm(backEdgeFrom, termBr)
 	g.emitLabel(sb, loopEndLabel)
+	g.cfgEdge(backEdgeFrom, loopCondLabel) // back edge
 	sb.WriteString(fmt.Sprintf("%scall void @free(i8* %s)\n", g.indent(), dataLoad))
 	sb.WriteString(fmt.Sprintf("%sbr label %%%s\n", g.indent(), skipLabel))
+	g.cfgTerm(loopEndLabel, termBr)
 	g.emitLabel(sb, skipLabel)
+	g.cfgEdge(loopEndLabel, skipLabel)
 }
 
 // emitElementFree frees heap data of a single container element.
@@ -5999,10 +6061,15 @@ func (g *Generator) generateLet(sb *strings.Builder, stmt *parser.LetStatement) 
 	}
 
 	// 切片視圖賦值：view = arr[0..4]
-	// 註冊為 slice view alias，不創建獨立結構體，通過 offset 計算訪問原始數據
-	// 注意：不自動釋放舊值，因為 generateSliceViewAssignment 可能建立引用舊值的視圖（自切片）。
-	// 若 generateSliceViewAssignment 未處理則回退到一般路徑，在那裡釋放舊值。
+	// generateSliceViewAssignment 現在總是 clone（needClone=true），新值獨立擁有 data，
+	// 不引用舊值。因此釋放目標變數的舊 prologue buffer 是安全的，避免內存洩漏。
+	// 注意：舊設計中 generateSliceViewAssignment 可能建立引用舊值的視圖（自切片），
+	// 故不釋放舊值。但新設計下自切片也走 clone 路徑，此擔憂已不適用。
 	if _, isSliceExpr := stmt.Value.(*parser.SliceExpression); isSliceExpr {
+		if !oldValFreed {
+			g.freeOldHeapValue(sb, stmt, name)
+			oldValFreed = true
+		}
 		if g.generateSliceViewAssignment(sb, stmt, name) {
 			return
 		}
