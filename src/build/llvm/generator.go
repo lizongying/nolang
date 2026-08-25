@@ -110,6 +110,20 @@ func (g *Generator) isHeapOwningType(llvmType string) bool {
 	return false
 }
 
+// nestedElemLLVMType 從 AST 型別中提取嵌套容器的內層元素 LLVM 型別。
+// 例如 [][]i64 → elemType="%vec", elemElemType="i64"；
+// [][16]i64 → elemType="%arr", elemElemType="i64"（固定陣列的元素型別）。
+// 若非嵌套容器，返回 ""。
+func (g *Generator) nestedElemLLVMType(elem parser.Type) string {
+	if st, ok := elem.(*parser.SliceType); ok && st.Elem != nil {
+		return g.mapToLLVMType(st.Elem.String())
+	}
+	if at, ok := elem.(*parser.ArrayType); ok && at.Elem != nil {
+		return g.mapToLLVMType(at.Elem.String())
+	}
+	return ""
+}
+
 // isStructLLVMType 判斷 LLVM 型別是否為結構體型別（用戶自定義或內建容器）。
 // 透過 classifyTypeKind 統一分派，取代散佈在 expr.go/call.go 中的 strings.HasPrefix(t, "%") 型別判斷。
 // 包含：用戶結構體、%vec、%str-long、%arr、%option、%task、%future，
@@ -124,9 +138,10 @@ func (g *Generator) isStructLLVMType(llvmType string) bool {
 }
 
 type structField struct {
-	name     string
-	typ      string // LLVM type string
-	elemType string // for %vec fields: LLVM element type (e.g. "i8" for []byte, "i64" for []i64)
+	name         string
+	typ          string // LLVM type string
+	elemType     string // for %vec fields: LLVM element type (e.g. "i8" for []byte, "i64" for []i64)
+	elemElemType string // for nested %vec/%arr fields: inner element type (e.g. [][]str → elemType="%vec", elemElemType="%str-long")
 }
 
 // resolveStructFields looks up struct field definitions by name, trying both the
@@ -176,7 +191,8 @@ type funcState struct {
 	ssaMode           bool                            // true = 使用 SSA 暫存器
 	paramNames        map[string]bool                 // 函數參數名稱（使用 .addr 存取）
 	varFnTypes        map[string]*parser.FunctionType // variable name → FunctionType (for indirect calls)
-	arrayElemTypes    map[string]string               // variable name → element LLVM type for %arr variables
+	arrayElemTypes    map[string]string               // variable name → element LLVM type for %arr/%vec variables
+	elemElemTypes     map[string]string               // variable name → inner element LLVM type for [][]T variables (e.g. [][]i64 → elemType="%vec", elemElemType="i64")
 	arraySizes        map[string]int64                // variable name → declared array size for [N]T locals
 	ssaTypes          map[string]string               // SSA register name → LLVM type (i64/double/%str-long/...)
 	funcLocalNames    map[string]bool                 // local variable names in current function (params + allocas)
@@ -191,11 +207,11 @@ type funcState struct {
 	taskResultTypes   map[string]string               // task variable name → result LLVM type
 	futureResultTypes map[string]string               // future variable name → result LLVM type
 	// === 控制流 ===
-	loopExits       []loopExit            // 活躍循環退出目標棧
-	currentBlock    string                // current basic block label (for PHI predecessor tracking)
-	blockTerminated bool                  // true if current basic block ends with a terminator (ret/br)
-	curCFG          *FuncCFG              // 當前函數的 CFG（數據流分析載體，nil = 未啟用）
-	cfgMovedFacts   map[string]*blockFact // 求解後的 MovedFact（每個 block 的 IN/OUT meet/join）
+	loopExits        []loopExit            // 活躍循環退出目標棧
+	currentBlock     string                // current basic block label (for PHI predecessor tracking)
+	blockTerminated  bool                  // true if current basic block ends with a terminator (ret/br)
+	curCFG           *FuncCFG              // 當前函數的 CFG（數據流分析載體，nil = 未啟用）
+	cfgMovedFacts    map[string]*blockFact // 求解後的 MovedFact（每個 block 的 IN/OUT meet/join）
 	cfgAssignedFacts map[string]*blockFact // 求解後的 AssignedFact（局部堆變數持有堆數據）
 	// === 函數上下文 ===
 	curFuncRetType string // 當前函數回傳型別（void/i64/...）
@@ -268,6 +284,7 @@ type Generator struct {
 	funcRefVars            map[string]bool                 // top-level vars that are function references (value is an Identifier referring to a function)
 	moduleVarTypes         map[string]string               // module-level variable types (preserved across functions)
 	moduleArrayElemTypes   map[string]string               // module-level array/slice element types (preserved across functions)
+	moduleElemElemTypes    map[string]string               // module-level inner element types for [][]T variables (preserved across functions)
 	unionAliases           map[string][]string             // union type alias name → member type names (e.g. "float"→["f32","f64"])
 	moduleOptionInnerTypes map[string]string               // 模組級 option 變數 inner type 備份（避免函數級 map reset 後丟失）
 	moveEligible           map[*parser.LetStatement]bool   // b=a 赋值中，源变量 a 在后续未被引用 → true（可 move）
@@ -362,6 +379,7 @@ func NewGenerator() *Generator {
 		sliceViews:        make(map[string]*sliceViewInfo),
 		varTypes:          make(map[string]string),
 		arrayElemTypes:    make(map[string]string),
+		elemElemTypes:     make(map[string]string),
 		paramNames:        make(map[string]bool),
 		funcLocalNames:    make(map[string]bool),
 		funcParams:        make(map[string]bool),
@@ -390,6 +408,7 @@ func (g *Generator) resetFuncState() {
 	g.funcState = &funcState{
 		varTypes:          make(map[string]string),
 		arrayElemTypes:    make(map[string]string),
+		elemElemTypes:     make(map[string]string),
 		paramNames:        make(map[string]bool),
 		funcLocalNames:    make(map[string]bool),
 		funcParams:        make(map[string]bool),
@@ -416,6 +435,10 @@ func (g *Generator) resetFuncState() {
 	// 恢復模組級陣列/切片元素型別
 	for k, v := range g.moduleArrayElemTypes {
 		g.funcState.arrayElemTypes[k] = v
+	}
+	// 恢復模組級嵌套容器內層元素型別
+	for k, v := range g.moduleElemElemTypes {
+		g.funcState.elemElemTypes[k] = v
 	}
 }
 
@@ -1659,6 +1682,11 @@ func (g *Generator) Generate(program *parser.Program) string {
 	g.moduleArrayElemTypes = make(map[string]string)
 	for k, v := range g.arrayElemTypes {
 		g.moduleArrayElemTypes[k] = v
+	}
+	// 保存模組級嵌套容器內層元素型別備份
+	g.moduleElemElemTypes = make(map[string]string)
+	for k, v := range g.elemElemTypes {
+		g.moduleElemElemTypes[k] = v
 	}
 	// 保存結構體型別到 moduleVarTypes（確保函數內也能識別 struct literal 型別）
 	for name := range g.structTypes {

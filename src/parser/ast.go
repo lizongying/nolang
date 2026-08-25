@@ -148,7 +148,22 @@ func (mt *MapType) String() string {
 // Used by codegen to derive %hashmap-K-V struct names; distinct from String()
 // which returns the spec-mandated [K]V form (ambiguous with [N]T arrays).
 func (mt *MapType) LLVMName() string {
-	return "hashmap-" + mt.Key.String() + "-" + mt.Value.String()
+	return "hashmap-" + mt.Key.String() + "-" + SanitizeLLVMTypeName(mt.Value.String())
+}
+
+// SanitizeLLVMTypeName replaces characters that are invalid in LLVM type names.
+// e.g. "[]str" → "slice_str", "[3]i64" → "arr3_i64"
+func SanitizeLLVMTypeName(s string) string {
+	s = strings.ReplaceAll(s, "[]", "slice_")
+	// Handle remaining [N] patterns
+	if idx := strings.Index(s, "["); idx >= 0 {
+		end := strings.Index(s[idx:], "]")
+		if end > 0 {
+			inner := s[idx+1 : idx+end]
+			s = s[:idx] + "arr" + inner + "_" + s[idx+end+1:]
+		}
+	}
+	return s
 }
 
 // MapPair represents a single key:value pair in a map literal.

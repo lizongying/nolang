@@ -185,20 +185,17 @@ func (p *Parser) parseStatement() Statement {
 					} else if p.currentToken.Type == lexer.ASSIGN && p.peekToken.Type == lexer.LBRACKET {
 						// No element type but RHS is array literal: a [3] = [1, 2, 3]
 						isArrayDecl = true
-					} else if p.currentToken.Type == lexer.LBRACKET {
-						// Nested array type: a [N][M]T = [...]
-						// Skip the inner [M]T to confirm it's a type annotation
-						p.nextToken() // skip inner [
-						if p.currentToken.Type == lexer.INT || p.currentToken.Type == lexer.IDENT {
-							p.nextToken() // skip M
+					} else if p.currentToken.Type == lexer.LBRACKET || p.currentToken.Type == lexer.IDENT {
+						// Nested type: a [N][M]T, a [str][]str, a [][]str, etc.
+						// Skip remaining type tokens to confirm it's a type annotation
+						// Stop at ASSIGN, NEWLINE, EOF, or SEMICOLON
+						for p.currentToken.Type != lexer.ASSIGN &&
+							p.currentToken.Type != lexer.NEWLINE &&
+							p.currentToken.Type != lexer.EOF &&
+							p.currentToken.Type != lexer.SEMICOLON {
+							p.nextToken()
 						}
-						if p.currentToken.Type == lexer.RBRACKET {
-							p.nextToken() // skip inner ]
-							if p.currentToken.Type == lexer.IDENT {
-								p.nextToken() // skip T
-								isArrayDecl = true
-							}
-						}
+						isArrayDecl = true
 					}
 				}
 			}
@@ -697,14 +694,25 @@ func (p *Parser) parseLetStatement() Statement {
 			keyTok := p.currentToken
 			p.nextToken() // skip K → current = ]
 			p.nextToken() // skip ] → current = V
-			if p.currentToken.Type == lexer.IDENT {
-				valName := p.currentToken.Literal
-				valTok := p.currentToken
-				p.nextToken()
+			// Value type can itself be a complex type (e.g. [str][]str, [str][N]byte)
+			valType, ok := p.parseTypeExpression()
+			if ok {
 				stmt.Type = &MapType{
 					Token: bracketToken,
 					Key:   &NamedType{Token: keyTok, Value: keyName},
-					Value: &NamedType{Token: valTok, Value: valName},
+					Value: valType,
+				}
+			} else {
+				// Fallback: treat as NamedType if parseTypeExpression fails
+				if p.currentToken.Type == lexer.IDENT {
+					valName := p.currentToken.Literal
+					valTok := p.currentToken
+					p.nextToken()
+					stmt.Type = &MapType{
+						Token: bracketToken,
+						Key:   &NamedType{Token: keyTok, Value: keyName},
+						Value: &NamedType{Token: valTok, Value: valName},
+					}
 				}
 			}
 		} else {
@@ -1541,14 +1549,24 @@ func (p *Parser) parseDotExprLetStatement() Statement {
 			keyTok := p.currentToken
 			p.nextToken() // skip K → current = ]
 			p.nextToken() // skip ] → current = V
-			if p.currentToken.Type == lexer.IDENT {
-				valName := p.currentToken.Literal
-				valTok := p.currentToken
-				p.nextToken()
+			// Value type can itself be a complex type (e.g. [str][]str)
+			valType, ok := p.parseTypeExpression()
+			if ok {
 				stmt.Type = &MapType{
 					Token: bracketToken,
 					Key:   &NamedType{Token: keyTok, Value: keyName},
-					Value: &NamedType{Token: valTok, Value: valName},
+					Value: valType,
+				}
+			} else {
+				if p.currentToken.Type == lexer.IDENT {
+					valName := p.currentToken.Literal
+					valTok := p.currentToken
+					p.nextToken()
+					stmt.Type = &MapType{
+						Token: bracketToken,
+						Key:   &NamedType{Token: keyTok, Value: keyName},
+						Value: &NamedType{Token: valTok, Value: valName},
+					}
 				}
 			}
 		} else {

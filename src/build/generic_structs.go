@@ -58,7 +58,7 @@ func mapTypeToHashmapName(mapType string) string {
 		return ""
 	}
 	valueType := mapType[closeBracket+1:]
-	return "hashmap-" + keyType + "-" + valueType
+	return "hashmap-" + keyType + "-" + parser.SanitizeLLVMTypeName(valueType)
 }
 
 // scanForMapTypes 遞迴掃描 Type 節點，將所有 MapType 的 (key,value) 收集至 results。
@@ -213,7 +213,7 @@ func isTemplateMethodName(name string, templates map[string]*parser.StructDefini
 // 回傳生成的陳述句列表（結構定義 + 各方法定義）。
 func specializeGenericStruct(keyStr, valueStr string, tmplSD *parser.StructDefinition, tmplMethods []*parser.FunctionDefinition) []parser.Statement {
 	cat := keyCategory(keyStr)
-	concreteName := "hashmap-" + keyStr + "-" + valueStr
+	concreteName := "hashmap-" + keyStr + "-" + parser.SanitizeLLVMTypeName(valueStr)
 
 	// 建立替換表
 	subst := make(map[string]string)

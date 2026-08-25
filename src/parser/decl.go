@@ -3,7 +3,6 @@ package parser
 
 import (
 	"fmt"
-	"strconv"
 	"strings"
 
 	"github.com/lizongying/nolang/lexer"
@@ -1129,32 +1128,17 @@ func (p *Parser) parseStructDefinition() Statement {
 
 		// [N]type 或 []type（陣列/切片）
 		if p.currentToken.Type == lexer.LBRACKET {
-			p.nextToken() // skip [
-			if p.currentToken.Type == lexer.INT {
-				// [N]type
-				val, _ := strconv.ParseInt(p.currentToken.Literal, 10, 64)
-				field.ArraySize = val
-				p.nextToken() // skip N
-			} else {
-				// []type（無數字 = 切片）
-				field.IsSlice = true
-			}
-			if p.currentToken.Type == lexer.RBRACKET {
-				p.nextToken() // skip ]
-			}
-			if p.currentToken.Type == lexer.IDENT {
-				elemType := p.currentToken.Literal
-				p.nextToken() // skip element type
-				// Support dotted/qualified element type: []sql.result
-				for p.currentToken.Type == lexer.DOT {
-					elemType += "."
-					p.nextToken()
-					if p.currentToken.Type == lexer.IDENT {
-						elemType += p.currentToken.Literal
-						p.nextToken()
+			// Use parseTypeExpression to handle nested types like [][]str, [][N]byte, etc.
+			typ, ok := p.parseTypeExpression()
+			if ok {
+				field.Type = typ
+				if at, isArr := typ.(*ArrayType); isArr {
+					if lit, isLit := at.Size.(*IntegerLiteral); isLit {
+						field.ArraySize = lit.Value
 					}
+				} else if _, isSlice := typ.(*SliceType); isSlice {
+					field.IsSlice = true
 				}
-				field.Type = buildType(elemType, p.currentToken)
 			}
 		} else if p.currentToken.Type == lexer.MUL {
 			// Pointer type syntax: *byte, *i64, etc.

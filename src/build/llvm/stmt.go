@@ -937,7 +937,16 @@ func (g *Generator) emitVarHeapFree(sb *strings.Builder, varPtr, llvmType, elemT
 		return
 	}
 	if g.isHeapOwningType(elemType) {
-		g.emitDeepContainerFree(sb, varPtr, llvmType, info.dataFieldIdx, elemType)
+		// 嵌套容器（[][]T）：查詢內層元素型別，傳遞給 emitDeepContainerFree 做遞迴釋放
+		innerType := ""
+		if g.elemElemTypes != nil && name != "" {
+			innerType = g.elemElemTypes[name]
+		}
+		if innerType != "" {
+			g.emitDeepContainerFree(sb, varPtr, llvmType, info.dataFieldIdx, elemType, innerType)
+		} else {
+			g.emitDeepContainerFree(sb, varPtr, llvmType, info.dataFieldIdx, elemType)
+		}
 		return
 	}
 	g.emitShallowDataFree(sb, varPtr, llvmType, info.dataFieldIdx)
@@ -967,7 +976,16 @@ func (g *Generator) emitVarHeapFreeDirect(sb *strings.Builder, varPtr, llvmType,
 	}
 	if g.isHeapOwningType(elemType) {
 		// 深容器保留守衛（長度=0 / data=NULL 的未初始化語義較複雜，不在本優化範圍）
-		g.emitDeepContainerFree(sb, varPtr, llvmType, info.dataFieldIdx, elemType)
+		// 嵌套容器（[][]T）：查詢內層元素型別，傳遞給 emitDeepContainerFree 做遞迴釋放
+		innerType := ""
+		if g.elemElemTypes != nil && name != "" {
+			innerType = g.elemElemTypes[name]
+		}
+		if innerType != "" {
+			g.emitDeepContainerFree(sb, varPtr, llvmType, info.dataFieldIdx, elemType, innerType)
+		} else {
+			g.emitDeepContainerFree(sb, varPtr, llvmType, info.dataFieldIdx, elemType)
+		}
 		return
 	}
 	g.emitShallowDataFreeDirect(sb, varPtr, llvmType, info.dataFieldIdx)
@@ -1635,7 +1653,9 @@ func (g *Generator) emitNullCheckFree(sb *strings.Builder, dataPtr string) {
 }
 
 // emitDeepContainerFree deep-frees a %vec/%arr: iterates elements to free their heap data, then frees the data buffer.
-func (g *Generator) emitDeepContainerFree(sb *strings.Builder, containerPtr, containerType string, dataFieldIdx int, elemType string) {
+// elemElemType 為嵌套容器的內層元素型別（如 [][]i64 的 elemType="%vec", elemElemType="i64"），
+// 為空時表示無嵌套，對 %vec/%arr 元素走淺層 free（與原行為一致）。
+func (g *Generator) emitDeepContainerFree(sb *strings.Builder, containerPtr, containerType string, dataFieldIdx int, elemType string, elemElemType ...string) {
 	g.tmpIdx++
 	tid := g.tmpIdx
 	lenGEP := fmt.Sprintf("%%df.len.gep.%d", tid)
@@ -1699,7 +1719,7 @@ func (g *Generator) emitDeepContainerFree(sb *strings.Builder, containerPtr, con
 	elemGEP := fmt.Sprintf("%%df.elem.gep.%d", tid)
 	sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %s, %s* %s, i64 %s\n",
 		g.indent(), elemGEP, elemType, elemType, elemArr, iVal))
-	g.emitElementFree(sb, elemGEP, elemType)
+	g.emitElementFree(sb, elemGEP, elemType, elemElemType...)
 	// emitElementFree may create sub-blocks (e.g. heapfree.free.X / heapfree.skip.X
 	// via emitNullCheckFree). After it returns, g.currentBlock is the last sub-block
 	// (e.g. heapfree.skip.X), NOT loopBodyLabel. The back edge and terminator must
@@ -1726,15 +1746,26 @@ func (g *Generator) emitDeepContainerFree(sb *strings.Builder, containerPtr, con
 
 // emitElementFree frees heap data of a single container element.
 // 透過 classifyFieldHeap 統一分派，與 emitDeepElementClone 共用型別判斷。
-func (g *Generator) emitElementFree(sb *strings.Builder, elemPtr, elemType string) {
+// elemElemType 為嵌套容器的內層元素型別（如 [][]i64 的 elemType="%vec", elemElemType="i64"），
+// 為空時表示無嵌套（或未知），對 %vec/%arr 元素走淺層 free。
+func (g *Generator) emitElementFree(sb *strings.Builder, elemPtr, elemType string, elemElemType ...string) {
 	info := g.classifyFieldHeap(elemType, "")
 	switch info.kind {
 	case fieldHeapContainer:
-		dataGEP := g.tmpReg("df.elem.data.gep")
-		sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %s, %s* %s, i32 0, i32 %d\n",
-			g.indent(), dataGEP, elemType, elemType, elemPtr, info.dataFieldIdx))
-		dataLoad := g.loadDataPtrField(sb, dataGEP)
-		g.emitNullCheckFree(sb, dataLoad)
+		// 嵌套容器（%vec/%arr 元素為 %vec/%arr）：若有內層元素型別，遞迴釋放內層元素再 free data。
+		innerType := ""
+		if len(elemElemType) > 0 {
+			innerType = elemElemType[0]
+		}
+		if innerType != "" && g.isHeapOwningType(innerType) {
+			g.emitDeepContainerFree(sb, elemPtr, elemType, info.dataFieldIdx, innerType)
+		} else {
+			dataGEP := g.tmpReg("df.elem.data.gep")
+			sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %s, %s* %s, i32 0, i32 %d\n",
+				g.indent(), dataGEP, elemType, elemType, elemPtr, info.dataFieldIdx))
+			dataLoad := g.loadDataPtrField(sb, dataGEP)
+			g.emitNullCheckFree(sb, dataLoad)
+		}
 	case fieldHeapUserStruct:
 		g.emitStructFieldsFree(sb, elemPtr, info.containerType)
 	}
@@ -1839,7 +1870,7 @@ func (g *Generator) emitStructFieldsFree(sb *strings.Builder, structPtr, structT
 		info := g.classifyFieldHeap(f.typ, f.elemType)
 		switch info.kind {
 		case fieldHeapContainer:
-			g.emitStructFieldFree(sb, structPtr, structType, i, info.dataFieldIdx, info.containerType, f.elemType)
+			g.emitStructFieldFree(sb, structPtr, structType, i, info.dataFieldIdx, info.containerType, f.elemType, f.elemElemType)
 		case fieldHeapUserStruct:
 			fieldGEP := g.tmpReg("structfield.gep")
 			sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %s, %s* %s, i32 0, i32 %d\n",
@@ -1849,7 +1880,7 @@ func (g *Generator) emitStructFieldsFree(sb *strings.Builder, structPtr, structT
 			// 內聯固定陣列字段 [N x T]（如 hashmap 的 keys [256]str）：
 			// 遍歷 N 個元素遞迴釋放其堆數據。純量元素（i64/i8/...）無需釋放。
 			if n, elemType, ok := parseInlineArrayType(f.typ); ok && g.isHeapOwningType(elemType) {
-				g.emitInlineArrayFieldFree(sb, structPtr, structType, i, n, elemType, f.typ)
+				g.emitInlineArrayFieldFree(sb, structPtr, structType, i, n, elemType, f.typ, f.elemElemType)
 			}
 		}
 	}
@@ -1881,7 +1912,8 @@ func parseInlineArrayType(s string) (int64, string, bool) {
 // emitInlineArrayFieldFree 釋放結構體內聯固定陣列字段 [N x T] 中每個元素的堆數據。
 // 用於 hashmap 等含 [N]str 鍵字段的場景：遍歷 N 個 slot，對每個非空元素遞迴釋放。
 // fieldIdx 為字段在結構體中的索引，arrayType 為字段的 LLVM 類型字串（如 "[256 x %str-long]"）。
-func (g *Generator) emitInlineArrayFieldFree(sb *strings.Builder, structPtr, structType string, fieldIdx int, n int64, elemType, arrayType string) {
+// elemElemType 為嵌套容器的內層元素型別（如 [N][]str → elemType="%vec", elemElemType="%str-long"）。
+func (g *Generator) emitInlineArrayFieldFree(sb *strings.Builder, structPtr, structType string, fieldIdx int, n int64, elemType, arrayType, elemElemType string) {
 	g.tmpIdx++
 	tid := g.tmpIdx
 	fieldGEP := fmt.Sprintf("%%inlarr.fgep.%d", tid)
@@ -1926,11 +1958,11 @@ func (g *Generator) emitInlineArrayFieldFree(sb *strings.Builder, structPtr, str
 		sb.WriteString(fmt.Sprintf("%s%s = icmp eq i64 %s, 0\n", g.indent(), lenCmp, lenLoad))
 		sb.WriteString(fmt.Sprintf("%sbr i1 %s, label %%%s, label %%%s\n", g.indent(), lenCmp, skipLabel, freeLabel))
 		g.emitLabel(sb, freeLabel)
-		g.emitElementFree(sb, elemGEP, elemType)
+		g.emitElementFree(sb, elemGEP, elemType, elemElemType)
 		sb.WriteString(fmt.Sprintf("%sbr label %%%s\n", g.indent(), skipLabel))
 		g.emitLabel(sb, skipLabel)
 	} else {
-		g.emitElementFree(sb, elemGEP, elemType)
+		g.emitElementFree(sb, elemGEP, elemType, elemElemType)
 	}
 	next := fmt.Sprintf("%%inlarr.next.%d", tid)
 	sb.WriteString(fmt.Sprintf("%s%s = add i64 %s, 1\n", g.indent(), next, iVal))
@@ -1940,7 +1972,7 @@ func (g *Generator) emitInlineArrayFieldFree(sb *strings.Builder, structPtr, str
 }
 
 // emitStructFieldFree frees heap data of struct field (deep free for vec/arr with heap-owning elements).
-func (g *Generator) emitStructFieldFree(sb *strings.Builder, structPtr, structType string, fieldIdx, dataFieldIdx int, fieldType, fieldElemType string) {
+func (g *Generator) emitStructFieldFree(sb *strings.Builder, structPtr, structType string, fieldIdx, dataFieldIdx int, fieldType, fieldElemType, fieldElemElemType string) {
 	fieldGEP := g.tmpReg("structfield.fgep")
 	sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %s, %s* %s, i32 0, i32 %d\n",
 		g.indent(), fieldGEP, structType, structType, structPtr, fieldIdx))
@@ -1969,39 +2001,17 @@ func (g *Generator) emitStructFieldFree(sb *strings.Builder, structPtr, structTy
 		return
 	}
 	if g.isHeapOwningType(fieldElemType) {
-		g.emitDeepContainerFree(sb, fieldGEP, fieldType, dataFieldIdx, fieldElemType)
+		g.emitDeepContainerFree(sb, fieldGEP, fieldType, dataFieldIdx, fieldElemType, fieldElemElemType)
 		return
 	}
 	g.emitShallowDataFree(sb, fieldGEP, fieldType, dataFieldIdx)
 }
 
 // canDeepCloneStruct 遞迴檢查用戶結構體是否可以安全深層 clone。
-// 若任何 %vec/%arr 欄位的 elemType 是 %vec/%arr（巢狀容器），則無法安全 clone
-// （子元素型別未知，無法正確計算 memcpy 大小）。
-// 透過 classifyTypeKind 判斷欄位型別種類，取代字串比較。
+// 在 Nolang 中所有型別都是可 clone 的：嵌套容器（[][]T）透過 elemElemType
+// 機制支持遞迴深拷貝，用戶結構體透過 emitStructClone 遞迴處理。
+// 此函數始終返回 true，保留介面供呼叫端使用。
 func (g *Generator) canDeepCloneStruct(structType string) bool {
-	desc := g.classifyTypeKind(structType)
-	if desc.Kind != KindUserStruct {
-		return true
-	}
-	fields, ok := g.structTypes[desc.StructName]
-	if !ok {
-		return true
-	}
-	for _, f := range fields {
-		fKind := g.classifyTypeKind(f.typ).Kind
-		if fKind == KindVec || fKind == KindArr {
-			elemKind := g.classifyTypeKind(f.elemType).Kind
-			if elemKind == KindVec || elemKind == KindArr {
-				return false
-			}
-		}
-		if fKind == KindUserStruct {
-			if !g.canDeepCloneStruct(f.typ) {
-				return false
-			}
-		}
-	}
 	return true
 }
 
@@ -2010,7 +2020,8 @@ func (g *Generator) canDeepCloneStruct(structType string) bool {
 // 對於 %vec/%arr：malloc 新 data 緩衝區，memcpy，遞迴 clone 元素。
 // 對於 %str-long：malloc 新 data 緩衝區，memcpy（元素為 i8，無需遞迴）。
 // 對於用戶結構體：memcpy 整個結構體，遞迴 clone 含堆數據的欄位。
-func (g *Generator) emitDeepClone(sb *strings.Builder, srcPtr, dstPtr, llvmType, elemType string) {
+// elemElemType 為嵌套容器的內層元素型別（如 [][]i64 的 elemType="%vec", elemElemType="i64"）。
+func (g *Generator) emitDeepClone(sb *strings.Builder, srcPtr, dstPtr, llvmType, elemType string, elemElemType ...string) {
 	info := g.classifyFieldHeap(llvmType, elemType)
 	switch info.kind {
 	case fieldHeapContainer:
@@ -2019,7 +2030,7 @@ func (g *Generator) emitDeepClone(sb *strings.Builder, srcPtr, dstPtr, llvmType,
 		if llvmType == "%str-long" {
 			cloneElem = "i8"
 		}
-		g.emitContainerClone(sb, srcPtr, dstPtr, info.containerType, info.dataFieldIdx, cloneElem)
+		g.emitContainerClone(sb, srcPtr, dstPtr, info.containerType, info.dataFieldIdx, cloneElem, elemElemType...)
 	case fieldHeapUserStruct:
 		g.emitStructClone(sb, srcPtr, dstPtr, info.containerType)
 	}
@@ -2027,7 +2038,8 @@ func (g *Generator) emitDeepClone(sb *strings.Builder, srcPtr, dstPtr, llvmType,
 
 // emitContainerClone 深層 clone %vec/%arr/%str-long：
 // 先 store zeros 到 dst（處理 NULL 源資料），再 malloc+memcpy+遞迴 clone 元素。
-func (g *Generator) emitContainerClone(sb *strings.Builder, srcPtr, dstPtr, containerType string, dataFieldIdx int, elemType string) {
+// elemElemType 為嵌套容器的內層元素型別，傳遞給 emitDeepElementClone 做遞迴 clone。
+func (g *Generator) emitContainerClone(sb *strings.Builder, srcPtr, dstPtr, containerType string, dataFieldIdx int, elemType string, elemElemType ...string) {
 	g.tmpIdx++
 	tid := g.tmpIdx
 
@@ -2097,7 +2109,7 @@ func (g *Generator) emitContainerClone(sb *strings.Builder, srcPtr, dstPtr, cont
 
 	// 若元素是堆擁有型別，遞迴 clone 每個元素的 data
 	if g.isHeapOwningType(elemType) {
-		g.emitDeepElementClone(sb, cloneBuf, srcDataLoad, srcLenReg, elemType)
+		g.emitDeepElementClone(sb, cloneBuf, srcDataLoad, srcLenReg, elemType, elemElemType...)
 	}
 
 	// overwrite dst with actual values
@@ -2115,9 +2127,10 @@ func (g *Generator) emitContainerClone(sb *strings.Builder, srcPtr, dstPtr, cont
 
 // emitDeepElementClone 遍歷容器元素，clone 每個元素的堆 data。
 // 透過 classifyFieldHeap 統一分派，與 emitElementFree 共用型別判斷。
-// 用於 %str-long 元素（clone 每個字串的 data）和用戶結構體元素（遞迴 clone 欄位）。
-// %vec/%arr 元素不應到達此處（canClone 檢查已排除巢狀容器）。
-func (g *Generator) emitDeepElementClone(sb *strings.Builder, dstBuf, srcBuf, lenReg, elemType string) {
+// 用於 %str-long 元素（clone 每個字串的 data）、用戶結構體元素（遞迴 clone 欄位）、
+// 以及嵌套容器元素（%vec/%arr 元素為 %vec/%arr，需遞迴 clone 內層元素）。
+// elemElemType 為嵌套容器的內層元素型別（如 [][]i64 的 elemType="%vec", elemElemType="i64"）。
+func (g *Generator) emitDeepElementClone(sb *strings.Builder, dstBuf, srcBuf, lenReg, elemType string, elemElemType ...string) {
 	info := g.classifyFieldHeap(elemType, "")
 	// 用戶結構體元素：遞迴 clone 每個元素的欄位
 	if info.kind == fieldHeapUserStruct {
@@ -2128,6 +2141,12 @@ func (g *Generator) emitDeepElementClone(sb *strings.Builder, dstBuf, srcBuf, le
 		return // 純量元素，已由 memcpy 複製
 	}
 	dataFieldIdx := info.dataFieldIdx
+
+	// 確定內層元素型別（用於嵌套容器遞迴 clone）
+	innerType := ""
+	if len(elemElemType) > 0 {
+		innerType = elemElemType[0]
+	}
 
 	g.tmpIdx++
 	tid := g.tmpIdx
@@ -2196,10 +2215,16 @@ func (g *Generator) emitDeepElementClone(sb *strings.Builder, dstBuf, srcBuf, le
 	} else {
 		srcElemCap = srcElemLen
 	}
-	// 子元素大小（%str-long=1 byte；其他容器不應到達此處）
+	// 子元素大小：%str-long=1 byte；嵌套容器的內層元素用 llvmTypeSize 計算
 	subElemSize := int64(1)
-	if elemType == "%vec" || elemType == "%arr" {
-		subElemSize = 8 // fallback（不應到達此處，canClone 已排除）
+	if innerType != "" {
+		if s := g.llvmTypeSize(innerType); s > 0 {
+			subElemSize = s
+		} else {
+			subElemSize = 8 // fallback for unknown types
+		}
+	} else if elemType == "%vec" || elemType == "%arr" {
+		subElemSize = 8 // fallback（無內層型別資訊，不應到達此處）
 	}
 	elemBufSize := fmt.Sprintf("%%clonec.bufsize.%d", tid)
 	sb.WriteString(fmt.Sprintf("%s%s = mul i64 %s, %d\n", g.indent(), elemBufSize, srcElemCap, subElemSize))
@@ -2209,6 +2234,10 @@ func (g *Generator) emitDeepElementClone(sb *strings.Builder, dstBuf, srcBuf, le
 	sb.WriteString(fmt.Sprintf("%s%s = mul i64 %s, %d\n", g.indent(), elemCopySize, srcElemLen, subElemSize))
 	sb.WriteString(fmt.Sprintf("%scall void @llvm.memcpy.p0i8.p0i8.i64(i8* %s, i8* %s, i64 %s, i1 false)\n",
 		g.indent(), elemCloneBuf, srcElemData, elemCopySize))
+	// 嵌套容器：遞迴 clone 內層元素的堆 data
+	if innerType != "" && g.isHeapOwningType(innerType) {
+		g.emitDeepElementClone(sb, elemCloneBuf, srcElemData, srcElemLen, innerType)
+	}
 	// store new data to dst 元素
 	dstElemDataGEP := fmt.Sprintf("%%clonec.dstdata.%d", tid)
 	sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %s, %s* %s, i32 0, i32 %d\n",
@@ -2291,7 +2320,7 @@ func (g *Generator) emitStructClone(sb *strings.Builder, srcPtr, dstPtr, structT
 		info := g.classifyFieldHeap(f.typ, f.elemType)
 		switch info.kind {
 		case fieldHeapContainer:
-			g.emitStructFieldClone(sb, srcPtr, dstPtr, structType, i, info.dataFieldIdx, info.containerType, f.elemType)
+			g.emitStructFieldClone(sb, srcPtr, dstPtr, structType, i, info.dataFieldIdx, info.containerType, f.elemType, f.elemElemType)
 		case fieldHeapUserStruct:
 			srcFieldGEP := g.tmpReg("structclone.src.fgep")
 			sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %s, %s* %s, i32 0, i32 %d\n",
@@ -2305,7 +2334,7 @@ func (g *Generator) emitStructClone(sb *strings.Builder, srcPtr, dstPtr, structT
 			// memcpy 已淺拷貝所有元素的 data 指標，需遍歷 N 個元素遞迴 clone，
 			// 覆寫 dst 元素的 data 為獨立 clone，避免 a/b 共享 data 導致 double-free。
 			if n, elemType, ok := parseInlineArrayType(f.typ); ok && g.isHeapOwningType(elemType) {
-				g.emitInlineArrayFieldClone(sb, srcPtr, dstPtr, structType, i, n, elemType, f.typ)
+				g.emitInlineArrayFieldClone(sb, srcPtr, dstPtr, structType, i, n, elemType, f.typ, f.elemElemType)
 			}
 		}
 	}
@@ -2314,7 +2343,8 @@ func (g *Generator) emitStructClone(sb *strings.Builder, srcPtr, dstPtr, structT
 // emitInlineArrayFieldClone 深層 clone 結構體內聯固定陣列字段 [N x T] 的每個元素。
 // 用於 hashmap 等含 [N]str 鍵字段的場景：遍歷 N 個 slot，對每個元素遞迴 clone，
 // 使 dst 擁有獨立的堆數據，避免與 src 共享 data 指標。
-func (g *Generator) emitInlineArrayFieldClone(sb *strings.Builder, srcPtr, dstPtr, structType string, fieldIdx int, n int64, elemType, arrayType string) {
+// elemElemType 為嵌套容器的內層元素型別（如 [N][]str → elemType="%vec", elemElemType="%str-long"）。
+func (g *Generator) emitInlineArrayFieldClone(sb *strings.Builder, srcPtr, dstPtr, structType string, fieldIdx int, n int64, elemType, arrayType, elemElemType string) {
 	g.tmpIdx++
 	tid := g.tmpIdx
 	srcFieldGEP := fmt.Sprintf("%%inlarrc.src.fgep.%d", tid)
@@ -2347,7 +2377,7 @@ func (g *Generator) emitInlineArrayFieldClone(sb *strings.Builder, srcPtr, dstPt
 	sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %s, %s* %s, i64 0, i64 %s\n",
 		g.indent(), dstElemGEP, arrayType, arrayType, dstFieldGEP, iVal))
 	// 遞迴 clone 元素（%str-long → emitContainerClone；用戶結構體 → emitStructClone）
-	g.emitDeepClone(sb, srcElemGEP, dstElemGEP, elemType, "")
+	g.emitDeepClone(sb, srcElemGEP, dstElemGEP, elemType, "", elemElemType)
 	next := fmt.Sprintf("%%inlarrc.next.%d", tid)
 	sb.WriteString(fmt.Sprintf("%s%s = add i64 %s, 1\n", g.indent(), next, iVal))
 	sb.WriteString(fmt.Sprintf("%sstore i64 %s, i64* %s\n", g.indent(), next, iPtr))
@@ -2356,7 +2386,7 @@ func (g *Generator) emitInlineArrayFieldClone(sb *strings.Builder, srcPtr, dstPt
 }
 
 // emitStructFieldClone clone 結構體欄位的堆 data。
-func (g *Generator) emitStructFieldClone(sb *strings.Builder, srcPtr, dstPtr, structType string, fieldIdx, dataFieldIdx int, fieldType, fieldElemType string) {
+func (g *Generator) emitStructFieldClone(sb *strings.Builder, srcPtr, dstPtr, structType string, fieldIdx, dataFieldIdx int, fieldType, fieldElemType, fieldElemElemType string) {
 	srcFieldGEP := g.tmpReg("structclone.src.flg")
 	sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %s, %s* %s, i32 0, i32 %d\n",
 		g.indent(), srcFieldGEP, structType, structType, srcPtr, fieldIdx))
@@ -2367,7 +2397,7 @@ func (g *Generator) emitStructFieldClone(sb *strings.Builder, srcPtr, dstPtr, st
 		g.emitContainerClone(sb, srcFieldGEP, dstFieldGEP, "%str-long", 2, "i8")
 		return
 	}
-	g.emitContainerClone(sb, srcFieldGEP, dstFieldGEP, fieldType, dataFieldIdx, fieldElemType)
+	g.emitContainerClone(sb, srcFieldGEP, dstFieldGEP, fieldType, dataFieldIdx, fieldElemType, fieldElemElemType)
 }
 
 // initVecFieldFromSliceLiteral 在 struct literal 中將 SliceLiteral 初始化到 %vec 欄位。
@@ -2765,6 +2795,12 @@ func (g *Generator) generateFunctionDefinition(sb *strings.Builder, fd *parser.F
 			// causing heap corruption and segfaults in functions like str.split that push to []str results.
 			if st, ok := r.Type.(*parser.SliceType); ok && st.Elem != nil && g.arrayElemTypes != nil {
 				g.arrayElemTypes[r.Name] = g.mapToLLVMType(st.Elem.String())
+				// 嵌套容器（[][]T）：注册内层元素型别
+				if g.elemElemTypes != nil {
+					if innerType := g.nestedElemLLVMType(st.Elem); innerType != "" {
+						g.elemElemTypes[r.Name] = innerType
+					}
+				}
 			}
 		}
 	}
@@ -4181,6 +4217,71 @@ func (g *Generator) inferOptionInnerType(stmt *parser.LetStatement) string {
 	return ""
 }
 
+// inferOptionVecElemType determines the element type of a ?[]T option variable
+// (where the inner type is %vec). Used during var collection so that method calls
+// like v.push() inside match ok arms can determine the correct element type.
+// Returns the LLVM element type (e.g. "%str-long" for ?[]str, "i64" for ?[]i64).
+func (g *Generator) inferOptionVecElemType(stmt *parser.LetStatement) string {
+	// From explicit type annotation (e.g. val ?[]str)
+	if nt, ok := stmt.Type.(*parser.NullableType); ok {
+		if st, ok := nt.Type.(*parser.SliceType); ok && st.Elem != nil {
+			return g.mapToLLVMType(st.Elem.String())
+		}
+	}
+	// From function call return type (e.g. v = m.get(...) returning ?[]str)
+	// We need to check funcResultNolangTypes to get the full ?[]str type string,
+	// then extract the element type from it.
+	if call, ok := stmt.Value.(*parser.CallExpression); ok {
+		fnName := ""
+		if ident, ok := call.Function.(*parser.Identifier); ok {
+			fnName = ident.Value
+		} else if dot, ok := call.Function.(*parser.DotExpression); ok {
+			if recv, ok := dot.Receiver.(*parser.Identifier); ok {
+				if recvType, ok := g.varTypes[recv.Value]; ok {
+					srcType := strings.TrimPrefix(recvType, "%")
+					fnName = srcType + "." + dot.Property
+				} else {
+					fnName = recv.Value + "." + dot.Property
+				}
+			}
+		}
+		// Check funcResultNolangTypes for the full return type (e.g. "?[]str")
+		if fnName != "" && g.funcResultNolangTypes != nil {
+			if nolangTypes, ok := g.funcResultNolangTypes[fnName]; ok && len(nolangTypes) >= 1 {
+				typeStr := nolangTypes[0]
+				if strings.HasPrefix(typeStr, "?") {
+					typeStr = typeStr[1:]
+				}
+				if strings.HasPrefix(typeStr, "[]") {
+					return g.mapToLLVMType(typeStr[2:])
+				}
+			}
+			// Fallback: try short name
+			if idx := strings.Index(fnName, "."); idx >= 0 {
+				shortName := fnName[idx+1:]
+				if nolangTypes, ok := g.funcResultNolangTypes[shortName]; ok && len(nolangTypes) >= 1 {
+					typeStr := nolangTypes[0]
+					if strings.HasPrefix(typeStr, "?") {
+						typeStr = typeStr[1:]
+					}
+					if strings.HasPrefix(typeStr, "[]") {
+						return g.mapToLLVMType(typeStr[2:])
+					}
+				}
+			}
+		}
+	}
+	// From option variable assignment (e.g. it = v where v is ?[]str)
+	if ident, ok := stmt.Value.(*parser.Identifier); ok {
+		if g.arrayElemTypes != nil {
+			if et, ok := g.arrayElemTypes[ident.Value]; ok && et != "" {
+				return et
+			}
+		}
+	}
+	return ""
+}
+
 func (g *Generator) collectRangeVarTypes(stmt parser.Statement, vars map[string]string) {
 	switch s := stmt.(type) {
 	case *parser.ForStatement:
@@ -4369,18 +4470,46 @@ func (g *Generator) collectVarDeclsFromStmtInner(stmt parser.Statement, vars map
 			vars[s.Name.Value] = vt
 			// Update g.varTypes immediately so subsequent lookups work
 			if g.varTypes != nil {
-				g.varTypes[s.Name.Value] = vt
+			g.varTypes[s.Name.Value] = vt
+		}
+		// 變數間賦值（b = a）時傳播 arrayElemTypes 和 elemElemTypes，
+		// 使後續 varLLVMType 能正確推導嵌套容器元素的型別（如 b0 = b[0]）。
+		if ident, ok := s.Value.(*parser.Identifier); ok {
+			if g.arrayElemTypes != nil {
+				if et, ok := g.arrayElemTypes[ident.Value]; ok {
+					g.arrayElemTypes[s.Name.Value] = et
+				}
 			}
-			// Populate optionInnerTypes for ?T variables during collection so that
+			if g.elemElemTypes != nil {
+				if eet, ok := g.elemElemTypes[ident.Value]; ok {
+					g.elemElemTypes[s.Name.Value] = eet
+				}
+			}
+		}
+		// Populate optionInnerTypes for ?T variables during collection so that
 			// subsequent varLLVMType calls can resolve method calls on option
 			// variables (e.g. cl = conn-val.to-lower() where conn-val is ?str).
 			if vt == "%option" && g.optionInnerTypes != nil {
-				if _, exists := g.optionInnerTypes[s.Name.Value]; !exists {
-					if inner := g.inferOptionInnerType(s); inner != "" {
-						g.optionInnerTypes[s.Name.Value] = inner
+			if _, exists := g.optionInnerTypes[s.Name.Value]; !exists {
+				if inner := g.inferOptionInnerType(s); inner != "" {
+					g.optionInnerTypes[s.Name.Value] = inner
+				}
+			}
+			// For ?[]T option variables (inner type %vec), also register the
+			// element type in arrayElemTypes so that method calls like v.push()
+			// inside match ok arms can correctly determine the element type.
+			// Without this, push defaults to i64, causing type mismatches when
+			// pushing str/struct elements.
+			if inner, ok := g.optionInnerTypes[s.Name.Value]; ok && inner == "%vec" {
+				if g.arrayElemTypes != nil {
+					if _, exists := g.arrayElemTypes[s.Name.Value]; !exists {
+						if et := g.inferOptionVecElemType(s); et != "" {
+							g.arrayElemTypes[s.Name.Value] = et
+						}
 					}
 				}
-				// 若 inner 為堆型別，將 option 變數加入 heapVars 追蹤，
+			}
+			// 若 inner 為堆型別，將 option 變數加入 heapVars 追蹤，
 				// 確保 v = m.get(...) 這類經 collectVarDecls 推導型別的 option 變數
 				// 也在函數結束時釋放其持有的 box。
 				if g.heapVars != nil {
@@ -4414,6 +4543,12 @@ func (g *Generator) collectVarDeclsFromStmtInner(stmt parser.Statement, vars map
 			// to find []byte.to-str and infer %str-long instead of defaulting to i64).
 			if st, ok := s.Type.(*parser.SliceType); ok && st.Elem != nil && g.arrayElemTypes != nil {
 				g.arrayElemTypes[s.Name.Value] = g.mapToLLVMType(st.Elem.String())
+				// 嵌套容器（[][]T）：注册内层元素型别
+				if g.elemElemTypes != nil {
+					if innerType := g.nestedElemLLVMType(st.Elem); innerType != "" {
+						g.elemElemTypes[s.Name.Value] = innerType
+					}
+				}
 			}
 			// Propagate element type when assigning a struct field of %vec/%arr type
 			// to a local variable (e.g. `old-keys = .keys` in hashmap.rehash).
@@ -4708,26 +4843,38 @@ func (g *Generator) collectStructTypeFields(sd *parser.StructDefinition) {
 	for _, f := range sd.Fields {
 		llvmType := "i64"
 		elemTy := "" // element type for %vec fields
+		elemElemTy := "" // inner element type for nested container fields (e.g. [][]str)
 		if f.ArraySize > 0 {
 			elemType := "i64"
 			if f.Type != nil {
 				elemType = toLLVMType(g.mapToLLVMType(f.Type.String()))
 			}
 			llvmType = fmt.Sprintf("[%d x %s]", f.ArraySize, elemType)
+			// 嵌套容器（[N][]T）：記錄內層元素型別
+			if elemType == "%vec" || elemType == "%arr" {
+				elemElemTy = g.nestedElemLLVMType(f.Type)
+			}
 		} else if f.IsSlice {
 			// 切片用 %vec 型別
 			llvmType = "%vec"
 			// 記錄元素型別（byte → i8, i64 → i64, 等）
-			if f.Type != nil {
+			// 從 SliceType 中提取元素型別
+			if st, ok := f.Type.(*parser.SliceType); ok {
+				elemTy = g.mapToLLVMType(st.Elem.String())
+			} else if f.Type != nil {
 				elemTy = g.mapToLLVMType(f.Type.String())
 			}
 			if elemTy == "" {
 				elemTy = "i64"
 			}
+			// 嵌套容器（[][]T）：記錄內層元素型別
+			if elemTy == "%vec" || elemTy == "%arr" {
+				elemElemTy = g.nestedElemLLVMType(f.Type)
+			}
 		} else if f.Type != nil {
 			llvmType = g.mapToLLVMType(f.Type.String())
 		}
-		fields = append(fields, structField{name: f.Name, typ: llvmType, elemType: elemTy})
+		fields = append(fields, structField{name: f.Name, typ: llvmType, elemType: elemTy, elemElemType: elemElemTy})
 	}
 	g.structTypes[sd.Name] = fields
 }
@@ -6160,6 +6307,12 @@ func (g *Generator) generateLet(sb *strings.Builder, stmt *parser.LetStatement) 
 		// 記錄切片元素型別，供 IndexExpression 使用正確型別讀取
 		if st, ok := stmt.Type.(*parser.SliceType); ok && st.Elem != nil {
 			g.arrayElemTypes[name] = g.mapToLLVMType(st.Elem.String())
+			// 嵌套容器（[][]T）：注册内层元素型别
+			if g.elemElemTypes != nil {
+				if innerType := g.nestedElemLLVMType(st.Elem); innerType != "" {
+					g.elemElemTypes[name] = innerType
+				}
+			}
 		} else {
 			g.arrayElemTypes[name] = "i64"
 		}
@@ -6433,21 +6586,23 @@ func (g *Generator) generateLet(sb *strings.Builder, stmt *parser.LetStatement) 
 							srcElemType = g.arrayElemTypes[ident.Value]
 						}
 						canClone := true
-						if (srcType == "%vec" || srcType == "%arr") &&
-							(srcElemType == "%vec" || srcElemType == "%arr") {
-							canClone = false
+						srcElemElemType := ""
+						if g.elemElemTypes != nil {
+							srcElemElemType = g.elemElemTypes[ident.Value]
 						}
-						if srcType != "%vec" && srcType != "%arr" && srcType != "%str-long" {
-							if !g.canDeepCloneStruct(srcType) {
-								canClone = false
-							}
-						}
+						// 所有型別均可深層 clone：嵌套容器透過 elemElemType 機制遞迴處理，
+						// 用戶結構體透過 emitStructClone 遞迴處理。
 						if canClone && (isLocal || isOutput || isGlobal) {
 							g.freeOldHeapValue(sb, stmt, name)
-							g.emitDeepClone(sb, g.varAddr(ident.Value), g.varAddr(name), srcType, srcElemType)
+							g.emitDeepClone(sb, g.varAddr(ident.Value), g.varAddr(name), srcType, srcElemType, srcElemElemType)
 							if !isOutput && !isGlobal {
 								g.trackLocalHeapVar(name, srcType)
 							}
+							// 設定變數型別，使後續方法呼叫能正確解析
+							if g.varTypes == nil {
+								g.varTypes = make(map[string]string)
+							}
+							g.varTypes[name] = srcType
 							if srcElemType != "" {
 								if g.arrayElemTypes != nil {
 									g.arrayElemTypes[name] = srcElemType
@@ -6473,21 +6628,23 @@ func (g *Generator) generateLet(sb *strings.Builder, stmt *parser.LetStatement) 
 							srcElemType = g.arrayElemTypes[ident.Value]
 						}
 						canClone := true
-						if (srcType == "%vec" || srcType == "%arr") &&
-							(srcElemType == "%vec" || srcElemType == "%arr") {
-							canClone = false
+						srcElemElemType := ""
+						if g.elemElemTypes != nil {
+							srcElemElemType = g.elemElemTypes[ident.Value]
 						}
-						if srcType != "%vec" && srcType != "%arr" && srcType != "%str-long" {
-							if !g.canDeepCloneStruct(srcType) {
-								canClone = false
-							}
-						}
+						// 所有型別均可深層 clone：嵌套容器透過 elemElemType 機制遞迴處理，
+						// 用戶結構體透過 emitStructClone 遞迴處理。
 						if canClone && (isLocal || isOutput || isGlobal) {
 							g.freeOldHeapValue(sb, stmt, name)
-							g.emitDeepClone(sb, g.varAddr(ident.Value), g.varAddr(name), srcType, srcElemType)
+							g.emitDeepClone(sb, g.varAddr(ident.Value), g.varAddr(name), srcType, srcElemType, srcElemElemType)
 							if !isOutput && !isGlobal {
 								g.trackLocalHeapVar(name, srcType)
 							}
+							// 設定變數型別
+							if g.varTypes == nil {
+								g.varTypes = make(map[string]string)
+							}
+							g.varTypes[name] = srcType
 							if srcElemType != "" {
 								if g.arrayElemTypes != nil {
 									g.arrayElemTypes[name] = srcElemType
@@ -6543,21 +6700,23 @@ func (g *Generator) generateLet(sb *strings.Builder, stmt *parser.LetStatement) 
 						}
 						// clone：深層 clone（源仍需拥有 data）
 						canClone := true
-						if (srcHeapType == "%vec" || srcHeapType == "%arr") &&
-							(srcElemType == "%vec" || srcElemType == "%arr") {
-							canClone = false
+						srcElemElemType := ""
+						if g.elemElemTypes != nil {
+							srcElemElemType = g.elemElemTypes[ident.Value]
 						}
-						if srcHeapType != "%vec" && srcHeapType != "%arr" && srcHeapType != "%str-long" {
-							if !g.canDeepCloneStruct(srcHeapType) {
-								canClone = false
-							}
-						}
+						// 所有型別均可深層 clone：嵌套容器透過 elemElemType 機制遞迴處理，
+						// 用戶結構體透過 emitStructClone 遞迴處理。
 						if canClone {
 							g.freeOldHeapValue(sb, stmt, name)
-							g.emitDeepClone(sb, g.varAddr(ident.Value), g.varAddr(name), srcHeapType, srcElemType)
+							g.emitDeepClone(sb, g.varAddr(ident.Value), g.varAddr(name), srcHeapType, srcElemType, srcElemElemType)
 							if !isOutput && !isGlobal {
 								g.trackLocalHeapVar(name, srcHeapType)
 							}
+							// 設定變數型別
+							if g.varTypes == nil {
+								g.varTypes = make(map[string]string)
+							}
+							g.varTypes[name] = srcHeapType
 							if srcElemType != "" {
 								if g.arrayElemTypes != nil {
 									g.arrayElemTypes[name] = srcElemType
@@ -6566,37 +6725,17 @@ func (g *Generator) generateLet(sb *strings.Builder, stmt *parser.LetStatement) 
 									g.moduleArrayElemTypes[name] = srcElemType
 								}
 							}
+							if srcElemElemType != "" {
+								if g.elemElemTypes != nil {
+									g.elemElemTypes[name] = srcElemElemType
+								}
+								if isGlobal && g.moduleElemElemTypes != nil {
+									g.moduleElemElemTypes[name] = srcElemElemType
+								}
+							}
 							return
 						}
-						// P1-5 退化路径：canClone==false（巢狀容器等無法深層 clone）。
-						// forced move：浅拷贝 + 标记源为 moved，防止 double-free。
-						// 源後續若被引用，值為已 moved 狀態（數據已轉移），但優於 double-free 崩潰。
-						if !isOutput {
-							g.freeOldHeapValue(sb, stmt, name)
-						}
-						fmoveReg := g.tmpReg("fmove.val")
-						sb.WriteString(fmt.Sprintf("%s%s = load %s, %s* %s\n",
-							g.indent(), fmoveReg, srcHeapType, srcHeapType, g.varAddr(ident.Value)))
-						sb.WriteString(fmt.Sprintf("%sstore %s %s, %s* %s\n",
-							g.indent(), srcHeapType, fmoveReg, srcHeapType, g.varAddr(name)))
-						if isOutput {
-							g.handleMoveToOut(sb, ident.Value, name)
-						} else {
-							g.handleMoveLocal(sb, ident.Value)
-							if !isGlobal {
-								g.trackLocalHeapVar(name, srcHeapType)
-							}
-						}
-						if srcElemType != "" {
-							if g.arrayElemTypes != nil {
-								g.arrayElemTypes[name] = srcElemType
-							}
-							if isGlobal && g.moduleArrayElemTypes != nil {
-								g.moduleArrayElemTypes[name] = srcElemType
-							}
-						}
-					return
-				}
+					}
 			}
 			} // close if !skipSynthetic
 		}
@@ -6621,31 +6760,45 @@ func (g *Generator) generateLet(sb *strings.Builder, stmt *parser.LetStatement) 
 					if g.isHeapOwningType(srcElemType) {
 						_, isLocal := g.funcLocalNames[name]
 						isOutput := g.outputParamNames != nil && g.outputParamNames[name]
-						if isLocal && !isOutput && ident.Value != name {
-							// 巢狀容器（[]vec/[]arr）因子元素型別未知，無法安全深層 clone
-							canClone := true
-							if srcElemType == "%vec" || srcElemType == "%arr" {
-								canClone = false
-							}
-							if srcElemType != "%vec" && srcElemType != "%arr" && srcElemType != "%str-long" {
-								if !g.canDeepCloneStruct(srcElemType) {
-									canClone = false
-								}
-							}
-							if canClone {
+					if isLocal && !isOutput && ident.Value != name {
+						// All types are cloneable (including nested containers like [][]i64)
+						canClone := true
+						if canClone {
 								// 釋放目標變數的舊堆值（如有）
 								g.freeOldHeapValue(sb, stmt, name)
 								// 取得 vec/arr 元素指標（含 bounds check）
 								elemPtr := g.generateIndexExprPtr(sb, idxExpr)
 								// 深層 clone 元素到目標變數（malloc 新 data + memcpy）
-								g.emitDeepClone(sb, elemPtr, g.varAddr(name), srcElemType, "")
-								// 追蹤目標變數為堆變數
-								g.trackLocalHeapVar(name, srcElemType)
-								// 傳播 elemType
-								if g.arrayElemTypes != nil {
-									g.arrayElemTypes[name] = srcElemType
+								// 若元素本身是容器（如 [][]str 的 c[0] → %vec），
+								// 需傳遞其元素型別（elemElemType）作為 elemType，
+								// 使 emitContainerClone 正確計算元素大小並遞迴 clone。
+								innerElemType := ""
+								if g.elemElemTypes != nil {
+									if eet, ok := g.elemElemTypes[ident.Value]; ok {
+										innerElemType = eet
+									}
 								}
-								return
+								g.emitDeepClone(sb, elemPtr, g.varAddr(name), srcElemType, innerElemType)
+							// 追蹤目標變數為堆變數
+							g.trackLocalHeapVar(name, srcElemType)
+							// 設定變數型別，使後續方法呼叫能正確解析
+							if g.varTypes == nil {
+								g.varTypes = make(map[string]string)
+							}
+							g.varTypes[name] = srcElemType
+							// 傳播 elemType: 如果源是嵌套容器（如 [][]i64），
+							// 目標變數的元素型別應為源的 elemElemType（如 i64）
+							if g.arrayElemTypes != nil {
+								// 查找源的 elemElemType（嵌套容器的內層元素型別）
+								if ident, ok := idxExpr.Left.(*parser.Identifier); ok {
+									if g.elemElemTypes != nil {
+										if eet, ok := g.elemElemTypes[ident.Value]; ok {
+											g.arrayElemTypes[name] = eet
+										}
+									}
+								}
+							}
+							return
 							}
 						}
 					}
@@ -6666,19 +6819,16 @@ func (g *Generator) generateLet(sb *strings.Builder, stmt *parser.LetStatement) 
 			isOutput := g.outputParamNames != nil && g.outputParamNames[name]
 			if isLocal && !isOutput {
 				canClone := true
-				if fieldType == "%vec" || fieldType == "%arr" {
-					canClone = false
-				}
-				if fieldType != "%vec" && fieldType != "%arr" && fieldType != "%str-long" {
-					if !g.canDeepCloneStruct(fieldType) {
-						canClone = false
-					}
-				}
 				if canClone {
 					g.freeOldHeapValue(sb, stmt, name)
 					fieldPtr := g.generateExprPtr(sb, dotExpr)
 					g.emitDeepClone(sb, fieldPtr, g.varAddr(name), fieldType, "")
 					g.trackLocalHeapVar(name, fieldType)
+				// 設定變數型別，使後續方法呼叫能正確解析
+				if g.varTypes == nil {
+					g.varTypes = make(map[string]string)
+				}
+				g.varTypes[name] = fieldType
 					return
 				}
 			}
@@ -6735,16 +6885,8 @@ func (g *Generator) generateLet(sb *strings.Builder, stmt *parser.LetStatement) 
 					isOutput := g.outputParamNames != nil && g.outputParamNames[name]
 					isGlobal := g.globalVars != nil && g.globalVars[name] && (g.funcLocalNames == nil || !g.funcLocalNames[name])
 					if isLocal || isOutput || isGlobal {
-						// Check if deep clone is possible
+						// All types are cloneable
 						canClone := true
-						if fieldElemType == "%vec" || fieldElemType == "%arr" {
-							canClone = false
-						}
-						if fieldElemType != "%vec" && fieldElemType != "%arr" && fieldElemType != "%str-long" {
-							if !g.canDeepCloneStruct(fieldElemType) {
-								canClone = false
-							}
-						}
 						if canClone {
 							g.freeOldHeapValue(sb, stmt, name)
 							// Get element pointer via generateStructFieldIndexRead
@@ -6752,9 +6894,14 @@ func (g *Generator) generateLet(sb *strings.Builder, stmt *parser.LetStatement) 
 							elemPtr := g.generateExprWithSB(sb, stmt.Value)
 							if elemPtr != "" && elemPtr != "0" {
 								g.emitDeepClone(sb, elemPtr, g.varAddr(name), fieldElemType, "")
-								if !isOutput && !isGlobal {
-									g.trackLocalHeapVar(name, fieldElemType)
-								}
+						if !isOutput && !isGlobal {
+							g.trackLocalHeapVar(name, fieldElemType)
+						}
+						// 設定變數型別，使後續方法呼叫能正確解析
+						if g.varTypes == nil {
+							g.varTypes = make(map[string]string)
+						}
+						g.varTypes[name] = fieldElemType
 								if g.arrayElemTypes != nil {
 									g.arrayElemTypes[name] = fieldElemType
 								}

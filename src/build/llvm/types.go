@@ -55,7 +55,19 @@ func (g *Generator) mapToLLVMType(nolangType string) string {
 		if closeBracket > 0 {
 			keyType := nolangType[4:closeBracket]
 			valueType := nolangType[closeBracket+1:]
-			return "%hashmap-" + keyType + "-" + valueType
+			return "%hashmap-" + keyType + "-" + parser.SanitizeLLVMTypeName(valueType)
+		}
+	}
+	// [K]V → %hashmap-K-V (map type in [K]V form; sanitize value type for LLVM)
+	if strings.HasPrefix(nolangType, "[") {
+		closeBracket := strings.IndexByte(nolangType, ']')
+		if closeBracket > 0 && closeBracket < len(nolangType)-1 {
+			keyStr := nolangType[1:closeBracket]
+			valStr := nolangType[closeBracket+1:]
+			// Only treat as map if key is a builtin type name (not a number or empty)
+			if keyStr != "" && keyStr != "?" && !isNumericStr(keyStr) && isLLVMBuiltinTypeName(keyStr) {
+				return "%hashmap-" + keyStr + "-" + parser.SanitizeLLVMTypeName(valStr)
+			}
 		}
 	}
 	// [N]type → %arr (built-in struct: arr { len i64, data *any })
@@ -457,4 +469,30 @@ func llvmTypeSize(llvmType string) int64 {
 	default:
 		return 8 // 預設 i64
 	}
+}
+
+// isLLVMBuiltinTypeName reports whether name is a builtin type name
+// usable as a map key (mirrors parser.isBuiltinTypeName).
+func isLLVMBuiltinTypeName(name string) bool {
+	switch name {
+	case "str", "i64", "i32", "i16", "i8", "i128",
+		"u64", "u32", "u16", "u8", "u128",
+		"bool", "byte", "char",
+		"f64", "f32":
+		return true
+	}
+	return false
+}
+
+// isNumericStr reports whether s represents a valid integer.
+func isNumericStr(s string) bool {
+	if s == "" {
+		return false
+	}
+	for _, c := range s {
+		if c < '0' || c > '9' {
+			return false
+		}
+	}
+	return true
 }

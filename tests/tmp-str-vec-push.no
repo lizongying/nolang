@@ -1,0 +1,60 @@
+person {
+    name str
+    age i64
+}
+
+group {
+    name str
+    members []str
+    scores []i64
+}
+
+address {
+    street str
+    city str
+}
+
+employee {
+    name str
+    addr address
+}
+
+matrix {
+    rows [][]str
+    name str
+}
+
+make-vec3 = (a i64, b i64, c i64) (v []i64) {
+    v.push(a)
+    v.push(b)
+    v.push(c)
+}
+
+test-nested-clone-str = () (ok bool) {
+    s [][]str
+    sub1 []str
+    sub1.push('hello')
+    sub1.push('world')
+    s.push(sub1)
+    c = s
+    s0 = s[0]
+    c0 = c[0]
+    s0[0] == 'hello' -> ok = true
+    c0[0] == 'hello' -> ok = true
+}
+
+test-struct-clone-vec-field = () (ok bool) {
+    g1 group
+    g1.name = 'team-a'
+    g1.members.push('alice')
+    g1.members.push('bob')
+    g1.scores.push(100)
+    g1.scores.push(200)
+    g2 = g1
+    g2.name == 'team-a' -> ok = true
+    g2.members.len == 2 -> ok = true
+}
+
+main = () {
+    print('hello')
+}

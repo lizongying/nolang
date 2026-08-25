@@ -3336,17 +3336,17 @@ func (g *Generator) inferFieldElemType(dot *parser.DotExpression) string {
 	}
 	for _, f := range fields {
 		if f.name == dot.Property && f.typ == "%vec" {
-			// The field is a vec ([]T). We need to find the element type.
-			// Since %vec is generic, we can't get the element type from the struct field alone.
-			// Try arrayElemTypes with the field key "self.field" or "recvName.field"
+			// The field is a vec ([]T). Return the element type from struct field info.
+			if f.elemType != "" {
+				return f.elemType
+			}
+			// Fallback: try arrayElemTypes with the field key "self.field" or "recvName.field"
 			fieldKey := recvName + "." + dot.Property
 			if g.arrayElemTypes != nil {
 				if et, ok := g.arrayElemTypes[fieldKey]; ok {
-					return strings.TrimPrefix(et, "%")
+					return et
 				}
 			}
-			// Fallback: check if there's a fnName like "[]byte.push" in expr
-			// This is set by the transpiler when rewriting .field.push(val) to []T.push(field, val)
 			return ""
 		}
 	}
@@ -3700,24 +3700,53 @@ func (g *Generator) genForwardFunc(sb *strings.Builder, forwardFunc string, expr
 			g.emitSetRetInitBit(sb, recvName)
 		}
 
-		// Get element type and size
-		elemType := "i64"
-		if g.arrayElemTypes != nil && recvName != "" {
-			if et, ok := g.arrayElemTypes[recvName]; ok {
-				elemType = toLLVMType(et)
+	// Option receiver unwrap: when the receiver is an %option variable whose
+	// inner type is %vec (e.g. v = m.get(...) returns ?[]str), we need to
+	// load the heap-allocated %vec pointer from the option's data field.
+	// Without this, the push code would operate on the option alloca directly
+	// (treating %option* as %vec*), causing type mismatches and corrupt data.
+	if ident, ok := args[0].(*parser.Identifier); ok {
+		if vt, ok := g.varTypes[ident.Value]; ok && vt == "%option" {
+			innerType := "i64"
+			if g.optionInnerTypes != nil {
+				if it, ok := g.optionInnerTypes[ident.Value]; ok && it != "" {
+					innerType = it
+				}
+			}
+			if g.isStructLLVMType(innerType) {
+				// Load the struct pointer from the option's data field
+				g.tmpIdx++
+				optDataGEP := fmt.Sprintf("%%vp.optdata.gep.%d", g.tmpIdx)
+				g.tmpIdx++
+				optDataLoad := fmt.Sprintf("%%vp.optdata.val.%d", g.tmpIdx)
+				g.tmpIdx++
+				optDataPtr := fmt.Sprintf("%%vp.optdata.ptr.%d", g.tmpIdx)
+				sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%option, %%option* %s, i32 0, i32 1\n", g.indent(), optDataGEP, recvAddr))
+				sb.WriteString(fmt.Sprintf("%s%s = load i64, i64* %s\n", g.indent(), optDataLoad, optDataGEP))
+				sb.WriteString(fmt.Sprintf("%s%s = inttoptr i64 %s to %s*\n", g.indent(), optDataPtr, optDataLoad, innerType))
+				recvAddr = optDataPtr
 			}
 		}
-		// For DotExpression receivers, try to infer element type from struct field
-		if dot, ok := args[0].(*parser.DotExpression); ok {
-			if et := g.inferFieldElemType(dot); et != "" {
-				elemType = toLLVMType(et)
-			}
-		}
-		elemSize := llvmTypeSize(elemType)
+	}
 
-		// Load current len (field 0) and cap (field 1)
-		curLen := g.emitVecLenLoad(sb, recvAddr)
-		curCap := g.emitVecCapLoad(sb, recvAddr)
+	// Get element type and size
+	elemType := "i64"
+	if g.arrayElemTypes != nil && recvName != "" {
+		if et, ok := g.arrayElemTypes[recvName]; ok {
+			elemType = toLLVMType(et)
+		}
+	}
+	// For DotExpression receivers, try to infer element type from struct field
+	if dot, ok := args[0].(*parser.DotExpression); ok {
+		if et := g.inferFieldElemType(dot); et != "" {
+			elemType = toLLVMType(et)
+		}
+	}
+	elemSize := llvmTypeSize(elemType)
+
+	// Load current len (field 0) and cap (field 1)
+	curLen := g.emitVecLenLoad(sb, recvAddr)
+	curCap := g.emitVecCapLoad(sb, recvAddr)
 
 		// Evaluate the value to push
 		val := g.generateExprWithSB(sb, args[1])
@@ -3810,7 +3839,16 @@ func (g *Generator) genForwardFunc(sb *strings.Builder, forwardFunc string, expr
 				cloneSrc := fmt.Sprintf("%%vp.csrc.%d", g.tmpIdx)
 				sb.WriteString(fmt.Sprintf("%s%s = alloca %s\n", g.indent(), cloneSrc, elemType))
 				sb.WriteString(fmt.Sprintf("%sstore %s %s, %s* %s\n", g.indent(), elemType, storeVal, elemType, cloneSrc))
-				g.emitDeepClone(sb, cloneSrc, elemGEP, elemType, "")
+				// 嵌套容器（[][]T）：emitDeepClone 的 elemType 參數是容器的元素型別。
+				// 對於 %vec 元素，其元素型別由 elemElemTypes[recvName] 決定。
+				// elemElemType 參數僅用於三層嵌套（如 [][][]T），此處為空。
+				innerElemType := ""
+				if elemType == "%vec" || elemType == "%arr" {
+					if g.elemElemTypes != nil && recvName != "" {
+						innerElemType = g.elemElemTypes[recvName]
+					}
+				}
+				g.emitDeepClone(sb, cloneSrc, elemGEP, elemType, innerElemType)
 			} else {
 				sb.WriteString(fmt.Sprintf("%sstore %s %s, %s* %s\n", g.indent(), elemType, storeVal, elemType, elemGEP))
 			}
@@ -3894,7 +3932,14 @@ func (g *Generator) genForwardFunc(sb *strings.Builder, forwardFunc string, expr
 				cloneSrc2 := fmt.Sprintf("%%vp.csrc2.%d", g.tmpIdx)
 				sb.WriteString(fmt.Sprintf("%s%s = alloca %s\n", g.indent(), cloneSrc2, elemType))
 				sb.WriteString(fmt.Sprintf("%sstore %s %s, %s* %s\n", g.indent(), elemType, storeVal, elemType, cloneSrc2))
-				g.emitDeepClone(sb, cloneSrc2, newElemGEP, elemType, "")
+				// 嵌套容器（[][]T）：emitDeepClone 的 elemType 參數是容器的元素型別。
+				innerElemType2 := ""
+				if elemType == "%vec" || elemType == "%arr" {
+					if g.elemElemTypes != nil && recvName != "" {
+						innerElemType2 = g.elemElemTypes[recvName]
+					}
+				}
+				g.emitDeepClone(sb, cloneSrc2, newElemGEP, elemType, innerElemType2)
 			} else {
 				sb.WriteString(fmt.Sprintf("%sstore %s %s, %s* %s\n", g.indent(), elemType, storeVal, elemType, newElemGEP))
 			}

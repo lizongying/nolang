@@ -92,7 +92,7 @@ func (p *Parser) inferTypeFromCallExpr(call *CallExpression) string {
 				if idx := strings.Index(receiverType, "]"); idx > 0 {
 					keyPart := receiverType[1:idx]
 					valPart := receiverType[idx+1:]
-					receiverType = "hashmap-" + keyPart + "-" + valPart
+					receiverType = "hashmap-" + keyPart + "-" + SanitizeLLVMTypeName(valPart)
 				}
 			}
 			fnName = receiverType + "." + dot.Property
@@ -546,12 +546,13 @@ func (p *Parser) parseTypeExpression() (Type, bool) {
 	case lexer.LBRACKET:
 		p.nextToken() // skip [
 		if p.currentToken.Type == lexer.RBRACKET {
-			// []T
+			// []T — element type can itself be a complex type (e.g. [][]str)
 			p.nextToken() // skip ]
-			elemName := p.currentToken.Literal
-			elemTok := p.currentToken
-			p.nextToken()
-			return &SliceType{Token: startTok, Elem: &NamedType{Token: elemTok, Value: elemName}}, true
+			elemType, ok := p.parseTypeExpression()
+			if !ok {
+				return nil, false
+			}
+			return &SliceType{Token: startTok, Elem: elemType}, true
 		}
 		if p.currentToken.Type == lexer.QUESTION {
 			// [?]T
@@ -570,10 +571,12 @@ func (p *Parser) parseTypeExpression() (Type, bool) {
 			keyTok := p.currentToken
 			p.nextToken() // skip K
 			p.nextToken() // skip ]
-			valName := p.currentToken.Literal
-			valTok := p.currentToken
-			p.nextToken()
-			return &MapType{Token: startTok, Key: &NamedType{Token: keyTok, Value: keyName}, Value: &NamedType{Token: valTok, Value: valName}}, true
+			// Value type can itself be a complex type (e.g. [str][]str)
+			valType, ok := p.parseTypeExpression()
+			if !ok {
+				return nil, false
+			}
+			return &MapType{Token: startTok, Key: &NamedType{Token: keyTok, Value: keyName}, Value: valType}, true
 		}
 		// [N]T
 		sizeTok := p.currentToken
@@ -777,6 +780,7 @@ func (p *Parser) parseParamTypeAfterName() (Type, bool) {
 		p.nextToken()
 	}
 	if p.currentToken.Type == lexer.LBRACKET {
+		// Parse first bracket group: [], [N], [?], or [K]
 		p.nextToken() // skip [
 		if p.currentToken.Type == lexer.INT {
 			paramType = "[" + p.currentToken.Literal + "]"
@@ -793,6 +797,7 @@ func (p *Parser) parseParamTypeAfterName() (Type, bool) {
 		if p.currentToken.Type == lexer.RBRACKET {
 			p.nextToken()
 		}
+		// Parse element type: IDENT (possibly dotted), or nested []/[N] (e.g. [][]str)
 		if p.currentToken.Type == lexer.IDENT {
 			paramType = paramType + p.currentToken.Literal
 			p.nextToken()
@@ -804,6 +809,13 @@ func (p *Parser) parseParamTypeAfterName() (Type, bool) {
 					paramType += p.currentToken.Literal
 					p.nextToken()
 				}
+			}
+			// Support nested brackets after element type: []str -> already handled
+		} else if p.currentToken.Type == lexer.LBRACKET {
+			// Nested slice/array type: [][]str, [N][]str, etc.
+			innerType, ok := p.parseTypeExpression()
+			if ok {
+				paramType = paramType + typeToString(innerType)
 			}
 		}
 	} else if p.currentToken.Type == lexer.IDENT {
@@ -998,5 +1010,35 @@ func parseMapTypeString(s string, tok lexer.Token) *MapType {
 		Token: tok,
 		Key:   &NamedType{Token: tok, Value: keyStr},
 		Value: &NamedType{Token: tok, Value: valStr},
+	}
+}
+
+// typeToString converts a Type node back to its string representation.
+// Used by parseParamTypeAfterName to build type strings for nested types.
+func typeToString(t Type) string {
+	switch typ := t.(type) {
+	case *NamedType:
+		return typ.Value
+	case *SliceType:
+		return "[]" + typeToString(typ.Elem)
+	case *ArrayType:
+		if lit, ok := typ.Size.(*IntegerLiteral); ok {
+			return fmt.Sprintf("[%d]%s", lit.Value, typeToString(typ.Elem))
+		}
+		if ident, ok := typ.Size.(*Identifier); ok {
+			return fmt.Sprintf("[%s]%s", ident.Value, typeToString(typ.Elem))
+		}
+		return "[]" + typeToString(typ.Elem)
+	case *NullableType:
+		return "?" + typeToString(typ.Type)
+	case *PointerType:
+		if strings.HasPrefix(typeToString(typ.Type), "ptr ") {
+			return typeToString(typ.Type)
+		}
+		return "ptr " + typeToString(typ.Type)
+	case *MapType:
+		return fmt.Sprintf("[%s]%s", typeToString(typ.Key), typeToString(typ.Value))
+	default:
+		return ""
 	}
 }

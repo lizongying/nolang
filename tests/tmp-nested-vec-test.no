@@ -1,0 +1,19 @@
+make-vec2 = (a i64, b i64) (v []i64) {
+    v.push(a)
+    v.push(b)
+}
+
+test1 = () (ok bool) {
+    a [][]i64
+    a.push(make-vec2(1, 2))
+    b = a
+    b0 = b[0]
+    b0.push(100)
+    b0.len == 3 -> ok = true
+    b0[2] == 100 -> ok = true
+}
+
+main = () {
+    ok1 = test1()
+    print('test1: {ok1}')
+}
