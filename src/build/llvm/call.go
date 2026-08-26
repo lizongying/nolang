@@ -3052,6 +3052,20 @@ func (g *Generator) generateCallExpression(sb *strings.Builder, expr *parser.Cal
 			}
 		}
 		typedArgs = append(typedArgs, toLLVMType(voidSingleOutputType)+"* "+voidSingleTmp)
+		// Propagate element type from the function's Nolang return type (e.g. []str → %str-long)
+		// so that generateLet's %vec store path can set arrayElemTypes[name] correctly.
+		// Without this, parts = 'a-b-c'.split('-') would store a %vec but leave
+		// arrayElemTypes["parts"] unset, causing parts[0] to be read as i64 instead of %str-long.
+		g.lastVoidSingleOutputElemType = ""
+		if voidSingleOutputType == "%vec" && g.funcResultNolangTypes != nil {
+			if nolangRets, ok := g.funcResultNolangTypes[fnName]; ok && len(nolangRets) == 1 {
+				nt := nolangRets[0]
+				if strings.HasPrefix(nt, "[]") {
+					elemNolang := nt[2:]
+					g.lastVoidSingleOutputElemType = g.mapToLLVMType(elemNolang)
+				}
+			}
+		}
 	}
 
 	// Check if this is a mangled push method call (e.g., @_LB__RB_byte.push)

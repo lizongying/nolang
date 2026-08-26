@@ -1011,8 +1011,8 @@ func (g *Generator) callBuiltin(sb *strings.Builder, fnName string, hasArgs bool
 		return selReg
 	}
 
-	// read-file: read entire file into a string
-	// Returns a %str-long* alloca; empty string on error.
+	// read-file: read entire file into a []byte
+	// Returns a %vec* alloca; empty slice on error.
 	if fnName == "read-file" && hasArgs {
 		a := evalArgs()
 		pathPtr := g.nullTerminateStrArg(sb, a[0], expr.Arguments[0])
@@ -1027,7 +1027,7 @@ func (g *Generator) callBuiltin(sb *strings.Builder, fnName string, hasArgs bool
 		bufReg := g.tmpReg("rf.buf")
 		readRet := g.tmpReg("rf.read")
 		readSel := g.tmpReg("rf.readsel")
-		strReg := g.tmpReg("rf.str")
+		vecReg := g.tmpReg("rf.vec")
 		lenGEP := g.tmpReg("rf.len.gep")
 		dataGEP := g.tmpReg("rf.data.gep")
 		statL := g.statLayout()
@@ -1050,28 +1050,28 @@ func (g *Generator) callBuiltin(sb *strings.Builder, fnName string, hasArgs bool
 			sb.WriteString(fmt.Sprintf("%scall i32 @%s(i32 %s)\n", g.indent(), g.libcFn("close"), openRet))
 			// If open failed OR read returned negative (e.g. reading a directory
 			// returns -1 with EISDIR), use 0 for read count to avoid storing
-			// a negative value as string length (which would be interpreted as
+			// a negative value as slice length (which would be interpreted as
 			// a huge unsigned number, causing buffer overreads and segfaults).
 			readOk := g.tmpReg("rf.readok")
 			readOkAll := g.tmpReg("rf.readokall")
 			sb.WriteString(fmt.Sprintf("%s%s = icmp sge i64 %s, 0\n", g.indent(), readOk, readRet))
 			sb.WriteString(fmt.Sprintf("%s%s = and i1 %s, %s\n", g.indent(), readOkAll, openCmp, readOk))
 			sb.WriteString(fmt.Sprintf("%s%s = select i1 %s, i64 %s, i64 0\n", g.indent(), readSel, readOkAll, readRet))
-			// Construct %str-long {len, cap, data}
-			sb.WriteString(fmt.Sprintf("%s%s = alloca %%str-long\n", g.indent(), strReg))
-			sb.WriteString(fmt.Sprintf("%s%s = getelementptr %%str-long, %%str-long* %s, i32 0, i32 0\n", g.indent(), lenGEP, strReg))
+			// Construct %vec {len, cap, data}
+			sb.WriteString(fmt.Sprintf("%s%s = alloca %%vec\n", g.indent(), vecReg))
+			sb.WriteString(fmt.Sprintf("%s%s = getelementptr %%vec, %%vec* %s, i32 0, i32 0\n", g.indent(), lenGEP, vecReg))
 			sb.WriteString(fmt.Sprintf("%sstore i64 %s, i64* %s\n", g.indent(), readSel, lenGEP))
 			capGEP := g.tmpReg("readfile.cap")
-			sb.WriteString(fmt.Sprintf("%s%s = getelementptr %%str-long, %%str-long* %s, i32 0, i32 1\n", g.indent(), capGEP, strReg))
+			sb.WriteString(fmt.Sprintf("%s%s = getelementptr %%vec, %%vec* %s, i32 0, i32 1\n", g.indent(), capGEP, vecReg))
 			sb.WriteString(fmt.Sprintf("%sstore i64 %s, i64* %s\n", g.indent(), readSel, capGEP))
-			sb.WriteString(fmt.Sprintf("%s%s = getelementptr %%str-long, %%str-long* %s, i32 0, i32 2\n", g.indent(), dataGEP, strReg))
+			sb.WriteString(fmt.Sprintf("%s%s = getelementptr %%vec, %%vec* %s, i32 0, i32 2\n", g.indent(), dataGEP, vecReg))
 			g.storeDataPtrField(sb, bufReg, dataGEP)
 		}
 		// Track for stmt-level free: read-file allocates malloc'd data.
 		// If stored in a variable, generateLet's untrackStmtTemporary + heapVars
 		// takes over. If used directly as an argument, stmtTemporaries frees it.
-		g.trackStrTemporary(strReg)
-		return strReg
+		g.trackStrTemporary(vecReg)
+		return vecReg
 	}
 
 	// write-file: write []byte data to a file (overwrite)

@@ -1031,7 +1031,7 @@ list-all = () (procs []proc-info) {
 
                 ; 讀取 /proc/<pid>/comm 取得進程名
                 comm-path = '/proc/' - name - '/comm'
-                comm = fs.read-file(comm-path)
+                comm = fs.read-file(comm-path).to-str()
                 comm.len > 0 -> p.name = comm.trim()
                 procs.push(p)
             }

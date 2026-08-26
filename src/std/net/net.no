@@ -936,7 +936,7 @@ arp-info {
 
 #{linux-amd64, linux-arm64}
 ifconfig-list = () (ifs []if-info) {
-    content = fs.read-file('/proc/net/dev')
+    content = fs.read-file('/proc/net/dev').to-str()
     content.len == 0 -> return
 
     ; /proc/net/dev 格式（前兩行為標題，第三行起為資料）：
@@ -1000,7 +1000,7 @@ ifconfig-list = () (ifs []if-info) {
 
 #{linux-amd64, linux-arm64}
 route-list = () (routes []route-info) {
-    content = fs.read-file('/proc/net/route')
+    content = fs.read-file('/proc/net/route').to-str()
     content.len == 0 -> return
 
     ; /proc/net/route 格式（首行為標題）：
@@ -1039,7 +1039,7 @@ route-list = () (routes []route-info) {
 
 #{linux-amd64, linux-arm64}
 arp-list = () (arps []arp-info) {
-    content = fs.read-file('/proc/net/arp')
+    content = fs.read-file('/proc/net/arp').to-str()
     content.len == 0 -> return
 
     ; /proc/net/arp 格式（首行為標題）：

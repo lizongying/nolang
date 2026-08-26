@@ -3736,6 +3736,10 @@ func (g *Generator) varLLVMType(stmt *parser.LetStatement) string {
 				if m.Return[0] == parser.TypeStr {
 					return "%str-long"
 				}
+				// Slice-returning builtins (e.g. read-file → []byte)
+				if _, isSlice := m.Return[0].(*parser.SliceType); isSlice {
+					return "%vec"
+				}
 				// Struct-returning builtins (e.g. uname → utsname)
 				if structTy := g.builtinStructReturnType(m); structTy != "" {
 					return structTy
@@ -4889,11 +4893,18 @@ func (g *Generator) collectStructTypeFields(sd *parser.StructDefinition) {
 		llvmType := "i64"
 		elemTy := "" // element type for %vec fields
 		elemElemTy := "" // inner element type for nested container fields (e.g. [][]str)
-		if f.ArraySize > 0 {
-			elemType := "i64"
-			if f.Type != nil {
-				elemType = toLLVMType(g.mapToLLVMType(f.Type.String()))
+	if f.ArraySize > 0 {
+		elemType := "i64"
+		if f.Type != nil {
+			// f.Type is the full ArrayType (e.g. [16]session), but we need the
+			// element type. Extract it from ArrayType.Elem to avoid calling
+			// mapToLLVMType on the full "[16]session" string (which returns %arr).
+			elemTypeStr := f.Type.String()
+			if at, ok := f.Type.(*parser.ArrayType); ok && at.Elem != nil {
+				elemTypeStr = at.Elem.String()
 			}
+			elemType = toLLVMType(g.mapToLLVMType(elemTypeStr))
+		}
 			llvmType = fmt.Sprintf("[%d x %s]", f.ArraySize, elemType)
 			// 嵌套容器（[N][]T）：記錄內層元素型別
 			if elemType == "%vec" || elemType == "%arr" {
@@ -5067,9 +5078,10 @@ func (g *Generator) emitStmtTemporariesFree(sb *strings.Builder) {
 		return
 	}
 	for _, tmp := range g.stmtTemporaries {
-		// %str-long = { i64 len, i64 cap, i8* data }，data 在 field 2
-		// emitShallowDataFree 会 GEP field 2 → load i8* → NULL check → free
-		g.emitShallowDataFree(sb, tmp, "%str-long", 2)
+		// %vec = { i64 len, i64 cap, i64 data }，data 在 field 2
+		// emitShallowDataFree 会 GEP field 2 → load i64 → inttoptr → NULL check → free
+		// %str-long 和 %vec 記憶體佈局相同，統一用 %vec
+		g.emitShallowDataFree(sb, tmp, "%vec", 2)
 	}
 	for _, rawPtr := range g.stmtTempRawPtrs {
 		// raw i8* pointer: NULL check → free
@@ -7807,6 +7819,7 @@ if !alreadyCoerced && g.isIntegerLLVMType(llvmType) && llvmType != "i64" && stri
 			"%slic.",    // generateSliceExpression
 			"%vec.tmp.", // for-range with slice literal
 			"%vvec.",    // variadic call args
+			"%rf.vec.",  // read-file ForwardFunc returns %vec*
 		}
 		isPtr := false
 		for _, p := range vecPtrPrefixes {
@@ -7820,6 +7833,17 @@ if !alreadyCoerced && g.isIntegerLLVMType(llvmType) && llvmType != "i64" && stri
 			sb.WriteString(fmt.Sprintf("%s%s = load %%vec, %%vec* %s\n", g.indent(), copyReg, val))
 			val = copyReg
 		}
+		// Propagate element type from voidSingleOutput path (e.g. parts = 'a-b-c'.split('-')
+		// returns []str, so arrayElemTypes["parts"] must be %str-long for correct indexing).
+		// Also check if arrayElemTypes[name] is already set (e.g. from type annotation `parts []str`).
+		if g.arrayElemTypes != nil {
+			if _, hasElemType := g.arrayElemTypes[name]; !hasElemType {
+				if g.lastVoidSingleOutputElemType != "" {
+					g.arrayElemTypes[name] = g.lastVoidSingleOutputElemType
+				}
+			}
+		}
+		g.lastVoidSingleOutputElemType = "" // clear after use
 		if isGlobal {
 			sb.WriteString(fmt.Sprintf("%sstore %%vec %s, %%vec* %s\n", g.indent(), val, llvmGlobalRef(name)))
 		} else {

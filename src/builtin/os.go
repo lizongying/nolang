@@ -495,13 +495,13 @@ func init() {
 		ForwardFunc:  "stat-mtime",
 	})
 
-	// read-file: read entire file into a string
+	// read-file: read entire file into a []byte
 	BuiltinMethodList = append(BuiltinMethodList, BuiltinMethod{
 		ReceiverType: ReceiverGlobal,
 		MethodName:   "read-file",
 		Params:       []parser.Type{parser.TypeStr},
-		Return:       []parser.Type{parser.TypeStr},
-		Doc:          "Read entire file contents into a string (empty on error)",
+		Return:       []parser.Type{&parser.SliceType{Elem: parser.TypeByte}},
+		Doc:          "Read entire file contents into a []byte (empty on error)",
 		ForwardFunc:  "read-file",
 	})
 

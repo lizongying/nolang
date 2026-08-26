@@ -287,6 +287,7 @@ type funcState struct {
 	lastBuiltinExtra      string           // extra return value from multi-result builtin (e.g. get-line ok)
 	currentTargetType     string           // target type for type-inferred builtins (e.g. with-cap)
 	currentTargetElemType string           // element type for slice builtins (e.g. %str-long for []str)
+	lastVoidSingleOutputElemType string    // element type from voidSingleOutput path (e.g. %str-long for []str)
 	entryAllocaBuf        *strings.Builder // entry-block alloca buffer (hoisted out of loops)
 	stmtTemporaries       []string         // statement-level temporary %str-long* pointers to free at statement end
 	stmtTempRawPtrs       []string         // statement-level temporary raw i8* pointers to free at statement end

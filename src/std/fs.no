@@ -159,8 +159,8 @@
 ; }
 
 ; build-in (ForwardFunc: read-file)
-; read-file: 讀取整個檔案內容為字串
-; read-file = (p str) (content str) {  // LLVM: stat+open+malloc+read+close → %str-long
+; read-file: 讀取整個檔案內容為 []byte
+; read-file = (p str) (content []byte) {  // LLVM: stat+open+malloc+read+close → %vec
 ; }
 
 ; build-in (ForwardFunc: write-file)
@@ -503,6 +503,46 @@ file.read-all = () (content str, n i64) {
     }
 }
 
+; read-str: 讀取整個檔案為字串
+; 返回 content ?str:
+;   ok(str) — 成功，含檔案內容
+;   nil     — 檔案為空
+;   err     — 檔案未開啟或讀取失敗
+file.read-str = () (content ?str) {
+    .fd < 0 -> {
+        content = err('file not open')
+        return
+    }
+    s []byte = read-file(.path)
+    {
+        s.len == 0 -> {
+            content = nil
+            return
+        }
+    }
+    content = s.to-str()
+}
+
+; read-bytes: 讀取整個檔案為 []byte
+; 返回 content ?[]byte:
+;   ok([]byte) — 成功，含檔案內容
+;   nil        — 檔案為空
+;   err        — 檔案未開啟或讀取失敗
+file.read-bytes = () (content ?[]byte) {
+    .fd < 0 -> {
+        content = err('file not open')
+        return
+    }
+    s []byte = read-file(.path)
+    {
+        s.len == 0 -> {
+            content = nil
+            return
+        }
+    }
+    content = s
+}
+
 ; write-all: 將 data 的前 n 位元組寫入檔案（覆寫）
 ; 返回 true=成功, false=失敗
 file.write-all = (data str, n i64) (ok bool) {
@@ -510,6 +550,36 @@ file.write-all = (data str, n i64) (ok bool) {
     .fd < 0 -> return
     written = write(.fd, data, n)
     ok = written == n
+}
+
+; write-str: 將字串寫入檔案（覆寫整個檔案）
+; data str: 要寫入的字串
+; 返回 ok ?bool:
+;   ok(true)  — 成功
+;   err       — 檔案未開啟或寫入失敗
+file.write-str = (data str) (ok ?bool) {
+    .fd < 0 -> {
+        ok = err('file not open')
+        return
+    }
+    written = write(.fd, data, data.len)
+    written == data.len -> ok = true
+}
+
+; write-bytes: 將 []byte 寫入檔案（覆寫整個檔案）
+; data []byte: 要寫入的位元組陣列
+; 返回 ok ?bool:
+;   ok(true)  — 成功
+;   err       — 檔案未開啟或寫入失敗
+file.write-bytes = (data []byte) (ok ?bool) {
+    .fd < 0 -> {
+        ok = err('file not open')
+        return
+    }
+    ; write 的 buf 參數為 str 型別，先將 []byte 轉為 str
+    s = data.to-str()
+    written = write(.fd, s, s.len)
+    written == s.len -> ok = true
 }
 
 ; append: 追加資料到檔案末尾
