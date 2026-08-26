@@ -361,6 +361,38 @@ structPtr = g.varAddr(identName)
 
 **測試**：`tests/mem-safety/bug19-struct-field-corruption.no`。
 
+### 5.10 Builtin 返回 []byte 賦值到 str 變數（bug12 修復）
+
+**原問題**：`data str = fs.read-file(path)` 中 `read-file` 返回 `%vec*` 指標（`%rf.vec.N`），但目標變數 `data` 是 `%str-long`。`varLLVMType` 的 `DotExpression` 路徑（模組前綴 builtin 呼叫，如 `fs.read-file`）只檢查了 `TypeF64` 和 `TypeStr` 返回型別，遺漏了 `SliceType`（如 `[]byte`），導致 `varLLVMType` 回退到預設 `"i64"`。`generateLet` 走入 `default` 分支，生成 `store i64 %rf.vec.N, i64* %data`——將 `%vec*` 指標當作 `i64` 存入 `%str-long*` 變數，產生 LLVM 型別錯誤。
+
+**根因**：
+1. `varLLVMType` 的 `DotExpression` 路徑（行 ~3880）缺少 `SliceType` 返回型別檢查
+2. `generateLet` 的 `%str-long` case 不認識 `%vec*` 指標前綴（如 `%rf.vec.`）
+
+**修復**：
+1. 在 `varLLVMType` 的 `DotExpression` builtin 路徑中新增 `SliceType` 檢查：若 builtin 返回 `[]T`，則 `varLLVMType` 返回 `"%vec"`
+2. 在 `generateLet` 的 `%str-long` case 中新增 `isVecPtrReg` 檢查：若 `val` 是 `%vec*` 指標（如 `%rf.vec.N`），先 `load %str-long, %vec* val`（`%vec` 和 `%str-long` 的 LLVM 結構體布局相同：`{i64, i64, i64}`），再 store 為 `%str-long`
+
+**實現位置**：
+- `src/build/llvm/stmt.go` — `varLLVMType` 中 `DotExpression` builtin 路徑的 `SliceType` 檢查
+- `src/build/llvm/stmt.go` — `generateLet` 的 `%str-long` case 中 `isVecPtrReg` 分支
+- `src/build/llvm/stmt.go` — `isVecPtrReg` 函數實現
+
+**測試**：`tests/mem-safety/bug12-builtin-slice-to-str.no`。
+
+### 5.11 Bool 返回值的型別強轉修復（bug13 修復）
+
+**原問題**：`ok bool = helper.write-ref-sim(...)` 中 `write-ref-sim` 返回 `bool`。`voidSingleOutput` 路徑分配 `alloca i64` + `load i64` 回傳 `i64` 值（因 `resolveOutputParamLLVMType` 將 `i1` 映射為 `i64`）。但 `varLLVMType` 返回 `"i1"`（因 `mapToLLVMType("bool")` = `"i1"`），而 `existingType`（`varTypes[name]`）是 `"i64"`（因 `collectVarDeclsFromStmtInner` 將 `i1` 擴展為 `i64`）。型別強轉邏輯檢測到 `llvmType=i1` < `existingType=i64`，生成 `zext i1 %call.tmp.N to i64`——但 `%call.tmp.N` 實際是 `i64` 型別，LLVM 報錯。
+
+**根因**：型別強轉邏輯假設 `llvmType` 就是 `val` 的實際型別，但 `voidSingleOutput` 路徑中 `val` 的實際型別由 `resolveOutputParamLLVMType` 決定（`i64`），不是 `varLLVMType` 返回的 `i1`。
+
+**修復**：在型別強轉邏輯中，當 `llvmType=i1` 且 `existingType=i64` 時，先檢查 `val` 的 SSA 型別（`g.ssaTypes[val]`）。若 `val` 已經是 `i64`（來自 `voidSingleOutput`），跳過 `zext`，直接使用 `existingType` 作為儲存型別。
+
+**實現位置**：
+- `src/build/llvm/stmt.go` — `generateLet` 中型別強轉邏輯的 `i1/i64` 特殊處理
+
+**測試**：`tests/mem-safety/bug13-bool-coercion.no`。
+
 ## 6. 深層 clone（局部變數間賦值）
 
 ### 6.1 觸發條件
@@ -472,7 +504,7 @@ clib 路徑（`generator.go:1763`）用於內建函數（`get-env`、`get-wd`、
 
 ## 9. 已验证的测试案例
 
-位于 `tests/mem-safety/`（共 33 個測試，全部 RC=0）：
+位于 `tests/mem-safety/`（共 35 個測試，全部 RC=0）：
 
 | 测试文件 | 验证内容 |
 |---------|---------|
@@ -502,6 +534,8 @@ clib 路徑（`generator.go:1763`）用於內建函數（`get-env`、`get-wd`、
 | `async-str-result.no` / `async-str-stress.no` / `async-module-awy.no` / `async-shared-race.no` / `async-alloca-escape.no` | async 場景記憶體安全 |
 | `test-minimal-option-str.no` / `test-minimal-str-map.no` / `test-minimal-str-map2.no` / `test-option-str-match.no` | 最小化 option/map str 場景 |
 | `bug19-struct-field-corruption.no` | 局部結構體 str 字段跨函數傳遞 + str-range clone（§5.9） |
+| `bug12-builtin-slice-to-str.no` | Builtin 返回 []byte 賦值到 str 變數（§5.10） |
+| `bug13-bool-coercion.no` + `bug13-helper.no` | Bool 返回值的型別強轉（§5.11） |
 
 ## 10. 已知未修复的问题
 
@@ -696,3 +730,5 @@ CFG 數據流分析依賴 `cfgEdge`/`cfgTerm`/`cfgAddEffect` 正確記錄所有�
 | **async wrapper 參數容器釋放** | `src/build/llvm/expr.go` | `prepareAsyncCall` wrapper 生成邏輯中 `for i := range argTypes { free }`（§10.5） |
 | **async task 清理** | `src/build/llvm/stmt.go` | `emitLocalTasksFree`, `trackLocalTask`, `untrackLocalTask`（§10.5） |
 | **async task await** | `src/build/llvm/expr.go` | `awaitTaskVar`, `awaitFutureCall`, `awaitFutureVar` |
+| **Builtin []byte → str 賦值** | `src/build/llvm/stmt.go` | `varLLVMType` DotExpression builtin SliceType 檢查 + `isVecPtrReg` + `%str-long` case load 分支（§5.10） |
+| **Bool 型別強轉** | `src/build/llvm/stmt.go` | `generateLet` 中 `i1/i64` 型別強轉的 SSA 型別檢查（§5.11） |

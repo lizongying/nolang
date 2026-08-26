@@ -19,8 +19,8 @@ main = () {
     ; Step 2: Cross-module call with str + i64 params returning bool
     ; This triggers bug13: bool return via voidSingleOutput
     ok bool = helper.use-str-and-bool(ch, 42)
-    print('step2 ok=' - ok)
-    ; Expected: step2 ok=1
+    ok == true -> print('step2 ok=true')
+    -> print('step2 ok=false')
 
     ; Step 3: Access ch again — should still be valid
     print('step3 ch=[' - ch - ']')
