@@ -3877,19 +3877,23 @@ func (g *Generator) varLLVMType(stmt *parser.LetStatement) string {
 							}
 						}
 					}
-					// Then check builtins (strip module prefix)
-					if m := builtin.FindBuiltinMethod(dot.Property); m != nil && len(m.Return) > 0 {
-						if m.Return[0] == parser.TypeF64 {
-							return "double"
-						}
-						if m.Return[0] == parser.TypeStr {
-							return "%str-long"
-						}
-						// Struct-returning builtins (e.g. os.uname → utsname)
-						if structTy := g.builtinStructReturnType(m); structTy != "" {
-							return structTy
-						}
+				// Then check builtins (strip module prefix)
+				if m := builtin.FindBuiltinMethod(dot.Property); m != nil && len(m.Return) > 0 {
+					if m.Return[0] == parser.TypeF64 {
+						return "double"
 					}
+					if m.Return[0] == parser.TypeStr {
+						return "%str-long"
+					}
+					// Slice-returning builtins (e.g. fs.read-file → []byte)
+					if _, isSlice := m.Return[0].(*parser.SliceType); isSlice {
+						return "%vec"
+					}
+					// Struct-returning builtins (e.g. os.uname → utsname)
+					if structTy := g.builtinStructReturnType(m); structTy != "" {
+						return structTy
+					}
+				}
 				}
 			}
 			recvExpr := dot.Receiver
@@ -7671,16 +7675,35 @@ func (g *Generator) generateLet(sb *strings.Builder, stmt *parser.LetStatement) 
 					alreadyCoerced = true
 				} else {
 					// int → int: trunc/zext
-					convReg := g.tmpReg("conv")
-					if llvmIntBitWidth(llvmType) > llvmIntBitWidth(existingType) {
-						sb.WriteString(fmt.Sprintf("%s%s = trunc %s %s to %s\n", g.indent(), convReg, toLLVMType(llvmType), val, toLLVMType(existingType)))
-					} else {
-						op := widenExtOp(llvmType)
-						sb.WriteString(fmt.Sprintf("%s%s = %s %s %s to %s\n", g.indent(), convReg, op, toLLVMType(llvmType), val, toLLVMType(existingType)))
+					// Bug13 fix: when llvmType=i1 (bool) but existingType=i64
+					// (because collectVarDeclsFromStmtInner expands bool→i64),
+					// the val from voidSingleOutput is already i64. Check SSA type
+					// to avoid generating zext i1 (which would be a type error
+					// since val is actually i64, not i1).
+					actualValType := llvmType
+					if g.ssaTypes != nil {
+						if ssaT, ok := g.ssaTypes[val]; ok {
+							actualValType = ssaT
+						}
 					}
-					val = convReg
-					llvmType = existingType
-					alreadyCoerced = true
+					if llvmType == "i1" && existingType == "i64" && actualValType == "i64" {
+						// val is already i64 (e.g. from voidSingleOutput path
+						// where bool output params are mapped to i64).
+						// No conversion needed, just use existingType.
+						llvmType = existingType
+						alreadyCoerced = true
+					} else {
+						convReg := g.tmpReg("conv")
+						if llvmIntBitWidth(llvmType) > llvmIntBitWidth(existingType) {
+							sb.WriteString(fmt.Sprintf("%s%s = trunc %s %s to %s\n", g.indent(), convReg, toLLVMType(llvmType), val, toLLVMType(existingType)))
+						} else {
+							op := widenExtOp(llvmType)
+							sb.WriteString(fmt.Sprintf("%s%s = %s %s %s to %s\n", g.indent(), convReg, op, toLLVMType(llvmType), val, toLLVMType(existingType)))
+						}
+						val = convReg
+						llvmType = existingType
+						alreadyCoerced = true
+					}
 				}
 			} else if existingType == "double" && g.isIntegerLLVMType(llvmType) {
 				// int → double: sitofp
@@ -7873,6 +7896,13 @@ if !alreadyCoerced && g.isIntegerLLVMType(llvmType) && llvmType != "i64" && stri
 			loadReg := g.tmpReg("str-long.load")
 			sb.WriteString(fmt.Sprintf("%s%s = load %%str-long, %%str-long* %s\n", g.indent(), loadReg, val))
 			val = loadReg
+		} else if g.isVecPtrReg(val) {
+			// val is a %vec* pointer (e.g. from read-file builtin returning %rf.vec.N).
+			// %vec and %str-long have the same LLVM struct layout {i64, i64, i64},
+			// so load %vec and store as %str-long (bug12: cross-module str return corruption).
+			loadReg := g.tmpReg("str-long.load")
+			sb.WriteString(fmt.Sprintf("%s%s = load %%str-long, %%vec* %s\n", g.indent(), loadReg, val))
+			val = loadReg
 		} else if !strings.HasPrefix(val, "%") {
 			// 宣告但無初值（如 `dummy str`）：val 為 "0"，使用 zeroinitializer
 			if isGlobal {
@@ -8036,6 +8066,27 @@ func (g *Generator) isStrPtrReg(val string) bool {
 		"%vso.tmp.",            // voidSingleOutput temporary buffer
 	}
 	for _, p := range ptrPatterns {
+		if strings.HasPrefix(val, p) {
+			return true
+		}
+	}
+	return false
+}
+
+// isVecPtrReg checks if a register name is a %vec* pointer (from alloca or builtin).
+// Used when a %vec* pointer needs to be loaded as %str-long (bug12: read-file returns
+// %vec* but target variable is %str-long; both have identical {i64, i64, i64} layout).
+func (g *Generator) isVecPtrReg(val string) bool {
+	if !strings.HasPrefix(val, "%") {
+		return false
+	}
+	vecPtrPatterns := []string{
+		"%rf.vec.",  // read-file builtin returns %vec*
+		"%slic.",    // generateSliceExpression returns %vec*
+		"%vec.tmp.", // for-range with slice literal
+		"%vvec.",    // variadic call args
+	}
+	for _, p := range vecPtrPatterns {
 		if strings.HasPrefix(val, p) {
 			return true
 		}

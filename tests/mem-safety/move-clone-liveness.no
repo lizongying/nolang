@@ -1,0 +1,50 @@
+; ═════════════════════════════════════════════════════════════════
+; 测试：条件分支中的 move vs clone
+; 验证分支场景下 move/clone 的正确性
+; ═════════════════════════════════════════════════════════════════
+
+; 场景 1：条件分支中 move 到输出参数
+cond-move = (flag i64) (out []i64) {
+    x = [1, 2, 3]
+    if flag == 1 {
+        out = x   ; move（条件分支内）
+    }
+    ; flag==0 时 x 仍拥有 data，函数结束需 free
+    ; flag==1 时 x 所有权已转移，函数结束需跳过 free
+}
+
+; 场景 2：同一源变量先 clone 再 move
+clone-then-move = () (a []i64, b []i64) {
+    x = [10, 20, 30]
+    a = x   ; clone（x 后续被引用）
+    b = x   ; move（x 后续未引用）
+}
+
+; 场景 3：三个赋值，前两个 clone，最后一个 move
+multi-assign = () (a []i64, b []i64, c []i64) {
+    x = [100, 200, 300]
+    a = x   ; clone（x 后续被引用）
+    b = x   ; clone（x 后续被引用）
+    c = x   ; move（x 后续未引用）
+}
+
+main = () {
+    ; 测试 1
+    r1 = cond-move(1)
+    print(r1.len)
+    r0 = cond-move(0)
+    print(r0.len)
+
+    ; 测试 2
+    ra, rb = clone-then-move()
+    print(ra.len)
+    print(rb.len)
+
+    ; 测试 3
+    ra2, rb2, rc2 = multi-assign()
+    print(ra2.len)
+    print(rb2.len)
+    print(rc2.len)
+
+    print('done')
+}

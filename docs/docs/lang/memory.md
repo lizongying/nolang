@@ -77,7 +77,14 @@ a, b = get-pair()  ; a 擁有 x 的 data，b 擁有 y 的 data
 
 **處理順序**：按輸出參數在函數簽名的**宣告順序**逐個處理。每個 `out = src` 賦值獨立標記源變數為 moved。
 
-**注意**：若 `a` 和 `b` 引用同一源變數（如 `a = x; b = x`），在被呼叫函數內只 move 一次（x 標記 moved），a 和 b 都獲得 x 的淺拷貝（共享同一 data 指標）。但在上層函數中，a 和 b 是獨立的局部變數，各自被追蹤為堆變數，函數結束時都會執行 free → **double-free**。當前 Nolang 沒有引用/借用語義，b 不會自動成為 a 的別名。**應避免這種模式**。
+**同一源變數多次賦值**：若 `a` 和 `b` 引用同一源變數（如 `a = x; b = x`），編譯器透過 **Liveness 預分析**（`moveEligible`）自動決定 clone 或 move：
+
+- `a = x`：x 在後續被 `b = x` 引用 → **深層 clone**，a 獨立擁有 data
+- `b = x`：x 在後續未再被引用 → **move**，b 接管 x 的 data，x 標記為 moved 跳過 free
+
+這避免了 double-free。規則：**最後一次引用走 move，之前的引用走 clone**。
+
+條件分支場景（如 `if cond { out = x }`）透過運行時位圖追蹤 moved 狀態，見下節。
 
 ### vec.push 的深層 clone
 ```no
@@ -177,10 +184,10 @@ b[0] = 99
 | `%vec` / `%arr`（元素為基本型別） | ✅ | memcpy data 即可 |
 | `%vec` / `%arr`（元素為 %str-long） | ✅ | 逐元素 malloc+memcpy 字串 data |
 | `%vec` / `%arr`（元素為可克隆結構體） | ✅ | 逐元素遞迴 clone 結構體欄位 |
-| `%vec` / `%arr`（元素為 %vec / %arr） | ❌ | 巢狀容器元素型別未知，回退為 move |
+| `%vec` / `%arr`（元素為 %vec / %arr） | ✅ | 透過 `elemElemType` 機制遞迴 clone 內層容器元素 |
 | `%str-long` | ✅ | malloc + memcpy 字串 data |
 | 用戶結構體（無巢狀容器欄位） | ✅ | memcpy 結構體 + 遞迴 clone 堆欄位 |
-| 用戶結構體（含巢狀容器欄位） | ❌ | 回退為 move |
+| 用戶結構體（含巢狀容器欄位） | ✅ | memcpy 結構體 + 遞迴 clone 含巢狀容器的欄位（透過 `elemElemType`） |
 
 ### 與 move 的區別
 - **深層 clone**：源和目標各自獨立擁有 data，函數結束各自 free
@@ -298,6 +305,8 @@ local = [100, 200, 300]                ; 重新賦值為切片（24 字節）
 | `vec-push-leak.no` | vec.push 擴容時釋放舊 buffer + 堆擁有元素深層 clone |
 | `ffi-str-return.no` | FFI extern str 返回值安全複製 |
 | `global-heap-free.no` | 模組級堆變數在 main 退出時釋放 |
+| `double-move-same-source.no` | `a=x; b=x` 同源多賦值：首次 clone + 末次 move |
+| `move-clone-liveness.no` | Liveness 預分析決定 clone/move（含條件分支、三賦值） |
 
 ## 已知限制
 
@@ -319,3 +328,17 @@ arr = [9, 8, 7]    ; 釋放舊 arr.data → view 懸空
 
 ### async 共享數據
 異步線程與主線程共享堆數據時，free 順序不確定。
+
+### 全局變數首次賦值的 free 跳過判斷不夠精確
+
+編譯器使用編譯期 map `globalFirstAssigned` 追蹤全局變數是否已做過首次賦值：首次賦值跳過釋放舊值（舊值是 `zeroinitializer`，非堆數據），後續重賦值才釋放舊堆值。
+
+此 map 在整個編譯過程中只初始化一次，不按函數級別重置，且不區分條件分支路徑。如果全局變數在條件分支中首次賦值，編譯器按 AST 順序處理：第一條賦值語句標記為「首次」（跳過 free），第二條賦值語句（即使在另一分支）走重賦值路徑（嘗試 free 舊值）。若運行時第二條分支先執行，全局仍是 `zeroinitializer`（data=NULL, len=0），會嘗試 free 未初始化的舊值。
+
+**當前緩解措施（有效）**：
+- 淺容器（`%str-long`）：`emitNullCheckFree` 生成運行時 `icmp eq i8* dataPtr, null` 檢查，NULL 時跳過 `call @free`
+- 深容器（`%vec/%arr`）：`emitDeepContainerFree` 額外有 `len == 0` 短路檢查，zeroinitializer 的 len 為 0，直接跳過整個釋放循環
+
+這兩層運行時防護使得即使編譯期判斷不夠精確，實際不會崩潰。但邏輯上依賴運行時 NULL 檢查作為安全網，而非編譯期精確判斷。
+
+**潛在改進方向**：將 `globalFirstAssigned` 從編譯期 map 改為運行時追踪機制（類似 `movedVarBitset` 的 bitmap），但會增加運行時開銷，且當前緩解措施已足夠有效。

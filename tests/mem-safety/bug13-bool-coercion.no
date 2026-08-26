@@ -1,0 +1,32 @@
+; Bug 13 regression test: bool return from cross-module call via voidSingleOutput.
+; Without the fix, the type coercion logic in generateLet incorrectly
+; generated `zext i1 %call.tmp.N to i64` when the val was already i64
+; (because bool output params are mapped to i64 by resolveOutputParamLLVMType).
+;
+; Root cause: when llvmType=i1 (from varLLVMType("bool")) but existingType=i64
+; (from collectVarDeclsFromStmtInner expanding bool→i64), the coercion
+; checked bit widths (1 < 64) and tried to zext i1→i64, but the actual
+; SSA value was i64 (from voidSingleOutput load), not i1 → LLVM type error.
+
+# /tests/mem-safety/bug13-helper
+
+main = () {
+    ; Step 1: Get a str from a cross-module call
+    ch str = helper.compute-str('commit')
+    print('step1 ch=[' - ch - ']')
+    ; Expected: step1 ch=[commit-1234567890abcdef]
+
+    ; Step 2: Cross-module call with str + i64 params returning bool
+    ; This triggers bug13: bool return via voidSingleOutput
+    ok bool = helper.use-str-and-bool(ch, 42)
+    print('step2 ok=' - ok)
+    ; Expected: step2 ok=1
+
+    ; Step 3: Access ch again — should still be valid
+    print('step3 ch=[' - ch - ']')
+    ; Expected: step3 ch=[commit-1234567890abcdef]
+
+    ; Verify correctness
+    ch == 'commit-1234567890abcdef' -> print('bug13: PASS')
+    -> print('bug13: FAIL')
+}

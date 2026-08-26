@@ -1,0 +1,30 @@
+; Bug 12 regression test: builtin returning []byte (e.g. fs.read-file) assigned
+; to a str variable. Without the fix, varLLVMType defaulted to i64 for
+; DotExpression-based builtin calls (missing SliceType check), causing
+; `store i64 %rf.vec.N, i64* %str-var` (ptr stored as i64 → LLVM type error).
+;
+; Root cause: varLLVMType's DotExpression path checked TypeF64 and TypeStr
+; for builtin return types but missed SliceType, so fs.read-file ([]byte)
+; fell through to the default i64.
+;
+; Also tests isVecPtrReg: when %str-long case sees a %vec* pointer (from
+; read-file), it loads %vec and stores as %str-long (same {i64,i64,i64} layout).
+
+main = () {
+    ; Create test file
+    content = 'hello world test' - '\n'
+    fd = fs.open-write('/tmp/bug12-mem-safety-test.txt')
+    fs.write(fd, content, content.len)
+    fs.close(fd)
+
+    ; Direct assignment: data str = fs.read-file(...)
+    ; read-file returns []byte (%vec*) but data is %str-long.
+    ; Without fix: LLVM type error (store i64 %rf.vec.N, i64* %data)
+    data str = fs.read-file('/tmp/bug12-mem-safety-test.txt')
+    print('data=[' - data - ']')
+    ; Expected: data=[hello world test]
+
+    ; Verify correctness
+    data == 'hello world test\n' -> print('bug12: PASS')
+    -> print('bug12: FAIL')
+}
