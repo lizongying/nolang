@@ -76,9 +76,10 @@
 ; 嚴重等級：併發內存安全
 ; ═════════════════════════════════════════════════════════════════
 ;
-; 13. async-shared-race.no
-;     線程間共享堆數據無同步保護（無 mutex/atomic）
-;     src/build/llvm/expr.go:5696-5720
+; 13. async-shared-race.no（已解決）
+;     線程間共享堆數據無同步保護 → 參數深拷貝隔離 + wrapper 釋放參數容器
+;     + emitLocalTasksFree 同步驅動未完成 task 並釋放 args/result
+;     src/build/llvm/expr.go: prepareAsyncCall, stmt.go: emitLocalTasksFree
 ;
 ; ═════════════════════════════════════════════════════════════════
 ; 已規避的問題（設計正確，不需測試）

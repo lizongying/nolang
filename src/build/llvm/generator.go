@@ -2421,13 +2421,21 @@ func (g *Generator) genCLibCall(sb *strings.Builder, m *builtin.BuiltinMethod, e
 			// 1) 調用 C 函數取得 i8*
 			sb.WriteString(fmt.Sprintf("%s%s = call i8*%s @%s(%s)\n", g.indent(), cstrReg, sigStr, fnName, argStr))
 			// 2) 檢查 NULL：若為 NULL 則 data=null/len=0，使 `v == nil` 成立
+			cstrFromBlock := g.cfgBlockLabel()
 			sb.WriteString(fmt.Sprintf("%s%s = icmp eq i8* %s, null\n", g.indent(), nullCmpReg, cstrReg))
 			sb.WriteString(fmt.Sprintf("%sbr i1 %s, label %%%s, label %%%s\n", g.indent(), nullCmpReg, nilLabel, copyLabel))
+			// CFG: conditional branch → nilLabel / copyLabel
+			g.cfgTerm(cstrFromBlock, termCondBr)
+			g.cfgEdge(cstrFromBlock, nilLabel)
+			g.cfgEdge(cstrFromBlock, copyLabel)
 			// nil block: jump directly to merge (PHI picks 0/null)
-			sb.WriteString(nilLabel + ":\n")
+			g.emitLabel(sb, nilLabel)
 			sb.WriteString(fmt.Sprintf("%sbr label %%%s\n", g.indent(), mergeLabel))
+			// CFG: nilLabel → mergeLabel
+			g.cfgTerm(nilLabel, termBr)
+			g.cfgEdge(nilLabel, mergeLabel)
 			// copy block: strlen + malloc + memcpy + null-terminate
-			sb.WriteString(copyLabel + ":\n")
+			g.emitLabel(sb, copyLabel)
 			sb.WriteString(fmt.Sprintf("%s%s = call i64 @nolang.strlen(i8* %s)\n", g.indent(), lenReg, cstrReg))
 			sb.WriteString(fmt.Sprintf("%s%s = add i64 %s, 1\n", g.indent(), bufSizeReg, lenReg))
 			sb.WriteString(fmt.Sprintf("%s%s = call i8* @nolang.malloc(i64 %s)\n", g.indent(), bufReg, bufSizeReg))
@@ -2435,8 +2443,11 @@ func (g *Generator) genCLibCall(sb *strings.Builder, m *builtin.BuiltinMethod, e
 			sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds i8, i8* %s, i64 %s\n", g.indent(), nullPosReg, bufReg, lenReg))
 			sb.WriteString(fmt.Sprintf("%sstore i8 0, i8* %s\n", g.indent(), nullPosReg))
 			sb.WriteString(fmt.Sprintf("%sbr label %%%s\n", g.indent(), mergeLabel))
+			// CFG: copyLabel → mergeLabel
+			g.cfgTerm(copyLabel, termBr)
+			g.cfgEdge(copyLabel, mergeLabel)
 			// merge block: PHI for len and data pointer
-			sb.WriteString(mergeLabel + ":\n")
+			g.emitLabel(sb, mergeLabel)
 			sb.WriteString(fmt.Sprintf("%s%s = phi i64 [0, %%%s], [%s, %%%s]\n", g.indent(), mergeLenReg, nilLabel, lenReg, copyLabel))
 			sb.WriteString(fmt.Sprintf("%s%s = phi i8* [null, %%%s], [%s, %%%s]\n", g.indent(), mergeDataReg, nilLabel, bufReg, copyLabel))
 			sb.WriteString(fmt.Sprintf("%s%s = insertvalue %%str-long zeroinitializer, i64 %s, 0\n", g.indent(), mergeStr1, mergeLenReg))
@@ -2693,11 +2704,19 @@ func (g *Generator) emitFFIExternStrClone(sb *strings.Builder, cstrPtr string) s
 
 	if sb != nil {
 		// NULL 檢查
+		fstrFromBlock := g.cfgBlockLabel()
 		sb.WriteString(fmt.Sprintf("%s%s = icmp eq i8* %s, null\n", g.indent(), nullCmpReg, cstrPtr))
 		sb.WriteString(fmt.Sprintf("%sbr i1 %s, label %%%s, label %%%s\n", g.indent(), nullCmpReg, nilLabel, copyLabel))
+		// CFG: conditional branch → nilLabel / copyLabel
+		g.cfgTerm(fstrFromBlock, termCondBr)
+		g.cfgEdge(fstrFromBlock, nilLabel)
+		g.cfgEdge(fstrFromBlock, copyLabel)
 		// nil block: data=null, len=0（使 `s == nil` 成立）
 		g.emitLabel(sb, nilLabel)
 		sb.WriteString(fmt.Sprintf("%sbr label %%%s\n", g.indent(), mergeLabel))
+		// CFG: nilLabel → mergeLabel
+		g.cfgTerm(nilLabel, termBr)
+		g.cfgEdge(nilLabel, mergeLabel)
 		// copy block: strlen + malloc + memcpy + null 終止
 		g.emitLabel(sb, copyLabel)
 		sb.WriteString(fmt.Sprintf("%s%s = call i64 @nolang.strlen(i8* %s)\n", g.indent(), lenReg, cstrPtr))
@@ -2707,6 +2726,9 @@ func (g *Generator) emitFFIExternStrClone(sb *strings.Builder, cstrPtr string) s
 		sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds i8, i8* %s, i64 %s\n", g.indent(), nullPosReg, bufReg, lenReg))
 		sb.WriteString(fmt.Sprintf("%sstore i8 0, i8* %s\n", g.indent(), nullPosReg))
 		sb.WriteString(fmt.Sprintf("%sbr label %%%s\n", g.indent(), mergeLabel))
+		// CFG: copyLabel → mergeLabel
+		g.cfgTerm(copyLabel, termBr)
+		g.cfgEdge(copyLabel, mergeLabel)
 		// merge block: PHI 合併
 		g.emitLabel(sb, mergeLabel)
 		sb.WriteString(fmt.Sprintf("%s%s = phi i64 [0, %%%s], [%s, %%%s]\n", g.indent(), mergeLenReg, nilLabel, lenReg, copyLabel))

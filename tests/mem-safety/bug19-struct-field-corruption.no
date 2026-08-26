@@ -1,0 +1,90 @@
+; Bug 19 regression test: local struct with str field passed to another function
+; that does str-range on the struct's str field. Without the fix, the str-range
+; result shares the struct's heap data, and when the struct is freed at function
+; exit, the result becomes a dangling pointer → crash on free.
+
+data {
+    raw str
+    n i64
+}
+
+; Bug: creating local struct then passing to another function — crash
+pass-struct = (raw str) (s str) {
+    t = data { raw: raw, n: 5 }
+    s = use-struct(t)
+}
+
+; Access struct field and do str-range — previously crashed
+use-struct = (t data) (s str) {
+    sp i64 = -1
+    i <- [0..t.raw.len): {
+        t.raw[i] == 32 -> {
+            sp = i
+            break
+        }
+    }
+    nl i64 = t.raw.len
+    j <- [sp + 1..t.raw.len): {
+        t.raw[j] == 0 -> {
+            nl = j
+            break
+        }
+    }
+    s = t.raw[sp + 1..nl)
+}
+
+; Safe: directly use parameter — works
+pass-direct = (raw str) (s str) {
+    sp i64 = -1
+    i <- [0..raw.len): {
+        raw[i] == 32 -> {
+            sp = i
+            break
+        }
+    }
+    nl i64 = raw.len
+    j <- [sp + 1..raw.len): {
+        raw[j] == 0 -> {
+            nl = j
+            break
+        }
+    }
+    s = raw[sp + 1..nl)
+}
+
+main = () {
+    ; Build test data: "100644 file1.txt\0<20 bytes>"
+    test-raw str = with-len(37)
+    test-raw[0] = 49   ; 1
+    test-raw[1] = 48   ; 0
+    test-raw[2] = 48   ; 0
+    test-raw[3] = 54   ; 6
+    test-raw[4] = 52   ; 4
+    test-raw[5] = 52   ; 4
+    test-raw[6] = 32   ; space
+    test-raw[7] = 102  ; f
+    test-raw[8] = 105  ; i
+    test-raw[9] = 108  ; l
+    test-raw[10] = 101 ; e
+    test-raw[11] = 49  ; 1
+    test-raw[12] = 46  ; .
+    test-raw[13] = 116 ; t
+    test-raw[14] = 120 ; x
+    test-raw[15] = 116 ; t
+    test-raw[16] = 0   ; null
+
+    ; Safe: directly use parameter
+    good-result = pass-direct(test-raw)
+    print('good: ' - good-result)
+    ; Expected: good: file1.txt
+
+    ; Bug: through struct
+    bad-result = pass-struct(test-raw)
+    print('bad: ' - bad-result)
+    ; Expected: bad: file1.txt
+    ; Without fix: trace/BPT trap (crash)
+
+    ; Verify result correctness
+    bad-result == 'file1.txt' -> print('bug19: PASS')
+    -> print('bug19: FAIL')
+}

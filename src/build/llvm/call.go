@@ -3931,8 +3931,14 @@ func (g *Generator) genForwardFunc(sb *strings.Builder, forwardFunc string, expr
 		g.tmpIdx++
 		spaceCmp := fmt.Sprintf("%%vp.space.%d", g.tmpIdx)
 		if sb != nil {
+			// CFG: record the block before the conditional branch
+			vpFromBlock := g.cfgBlockLabel()
 			sb.WriteString(fmt.Sprintf("%s%s = icmp slt i64 %s, %s\n", g.indent(), spaceCmp, curLen, curCap))
 			sb.WriteString(fmt.Sprintf("%sbr i1 %s, label %%%s, label %%%s\n", g.indent(), spaceCmp, fastLabel, expandLabel))
+			// CFG: conditional branch → two successors
+			g.cfgTerm(vpFromBlock, termCondBr)
+			g.cfgEdge(vpFromBlock, fastLabel)
+			g.cfgEdge(vpFromBlock, expandLabel)
 		}
 
 		// Fast path: len < cap, just store val and increment len
@@ -3983,6 +3989,9 @@ func (g *Generator) genForwardFunc(sb *strings.Builder, forwardFunc string, expr
 			sb.WriteString(fmt.Sprintf("%sstore i64 %s, i64* %s\n", g.indent(), newLen, lenGEP))
 			// Jump to end
 			sb.WriteString(fmt.Sprintf("%sbr label %%%s\n", g.indent(), endLabel))
+			// CFG: fastLabel → endLabel (unconditional branch)
+			g.cfgTerm(fastLabel, termBr)
+			g.cfgEdge(fastLabel, endLabel)
 		}
 
 		// Expand path: len >= cap, need to grow
@@ -4094,6 +4103,9 @@ func (g *Generator) genForwardFunc(sb *strings.Builder, forwardFunc string, expr
 			sb.WriteString(fmt.Sprintf("%sstore i64 %s, i64* %s\n", g.indent(), newLen2, lenGEP2))
 			// Jump to end
 			sb.WriteString(fmt.Sprintf("%sbr label %%%s\n", g.indent(), endLabel))
+			// CFG: expandLabel → endLabel (unconditional branch)
+			g.cfgTerm(expandLabel, termBr)
+			g.cfgEdge(expandLabel, endLabel)
 		}
 
 		// End label

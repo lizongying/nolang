@@ -767,10 +767,19 @@ func (g *Generator) untrackLocalTask(varName string) {
 // emitLocalTasksFree 在函数返回前清理未 awy 的本地 task（SubTask 2.3）。
 // 对每个未 awy 的 task：
 //   - 检查 done 标志（field 2）
-//   - 若 done=true：task 已执行完毕，安全 free task/args/result 容器
-//   - 若 done=false：task 可能仍在事件循环队列中，不可安全 free（跳过，泄漏但无 UAF）
+//   - 若 done=false：同步调用 resume_fn(task) 驱动 task 到完成（与 awaitTaskVar
+//     not_done 路径一致），resume_fn 执行完毕后设置 done=true。
+//   - 释放 args struct 和 result buffer 容器（仅容器，不释放 data）。
+//   - 不释放 task 结构体本身：task 通过 @nolang_async_enqueue 入队后，
+//     就绪队列 @nolang_ready_q 仍持有 task 指针。释放 task 会导致事件循环
+//     调度到该 task 时读取已释放内存（UAF）。task 结构体（24 字节）作为
+//     已知泄漏保留——事件循环取出 task 后，wrapper 检查 done=true 直接返回，
+//     done_handler 调用 nolang_async_done（无等待者时直接返回），安全跳过。
 //
-// 仅 free 容器结构体本身，不 free 容器内 data 指针（与 awaitTaskVar 释放逻辑一致）。
+// 释放的容器：
+//   - result buffer：data 由调用端结果变量接管（经 trackLocalHeapVar 追踪）
+//   - args struct：参数容器（cloneBuf 等）由 wrapper 在目标函数执行后释放，
+//     此处仅释放 args struct 容器本身（{ i8*, ... } 结构体）
 func (g *Generator) emitLocalTasksFree(sb *strings.Builder) {
 	if len(g.localTasks) == 0 {
 		return
@@ -791,10 +800,25 @@ func (g *Generator) emitLocalTasksFree(sb *strings.Builder) {
 
 		// 标签名使用不同前缀避免与寄存器名冲突（LLVM 寄存器和标签共享命名空间）
 		doneLabel := fmt.Sprintf("ltask.dlbl.%d", g.tmpIdx)
-		skipLabel := fmt.Sprintf("ltask.slbl.%d", g.tmpIdx)
-		sb.WriteString(fmt.Sprintf("%sbr i1 %s, label %%%s, label %%%s\n", g.indent(), doneVal, doneLabel, skipLabel))
+		notDoneLabel := fmt.Sprintf("ltask.ndlbl.%d", g.tmpIdx)
+		freeLabel := fmt.Sprintf("ltask.flbl.%d", g.tmpIdx)
+		sb.WriteString(fmt.Sprintf("%sbr i1 %s, label %%%s, label %%%s\n", g.indent(), doneVal, doneLabel, notDoneLabel))
 
-		// done: free task/args/result 容器
+		// not_done: 同步调用 resume_fn(task) 驱动到完成（与 awaitTaskVar 一致）
+		sb.WriteString(notDoneLabel + ":\n")
+		// load resume_fn (field 0)
+		fnGEP := g.tmpReg("ltask.fngep")
+		sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%task, %%task* %s, i32 0, i32 0\n", g.indent(), fnGEP, taskPtr))
+		fnVal := g.tmpReg("ltask.fn")
+		sb.WriteString(fmt.Sprintf("%s%s = load void (i8*)*, void (i8*)** %s\n", g.indent(), fnVal, fnGEP))
+		// bitcast task* to i8*
+		resumeTaskI8 := g.tmpReg("ltask.resume.i8")
+		sb.WriteString(fmt.Sprintf("%s%s = bitcast %%task* %s to i8*\n", g.indent(), resumeTaskI8, taskPtr))
+		// call resume_fn(task) — 同步驱动 task 到完成
+		sb.WriteString(fmt.Sprintf("%scall void %s(i8* %s)\n", g.indent(), fnVal, resumeTaskI8))
+		sb.WriteString(fmt.Sprintf("%sbr label %%%s\n", g.indent(), doneLabel))
+
+		// done: free args/result 容器（不 free task 本身，避免就绪队列 UAF）
 		sb.WriteString(doneLabel + ":\n")
 		// 加载 args_ptr (field 1)
 		argsGEP := g.tmpReg("ltask.agep")
@@ -815,15 +839,16 @@ func (g *Generator) emitLocalTasksFree(sb *strings.Builder) {
 		// free args struct (仅容器)
 		sb.WriteString(fmt.Sprintf("%scall void @free(i8* %s)\n", g.indent(), argsPtr))
 
-		// free task struct (仅容器)
-		freeTaskCast := g.tmpReg("ltask.ftask")
-		sb.WriteString(fmt.Sprintf("%s%s = bitcast %%task* %s to i8*\n", g.indent(), freeTaskCast, taskPtr))
-		sb.WriteString(fmt.Sprintf("%scall void @free(i8* %s)\n", g.indent(), freeTaskCast))
+		// 注意：不 free task 结构体本身。
+		// task 通过 @nolang_async_enqueue 入队后，就绪队列仍持有 task 指针。
+		// 释放 task 会导致事件循环调度到该 task 时 UAF。
+		// task（24 字节）作为已知泄漏保留，事件循环取出后 wrapper 检查 done=true
+		// 直接返回，安全跳过。
 
-		sb.WriteString(fmt.Sprintf("%sbr label %%%s\n", g.indent(), skipLabel))
+		sb.WriteString(fmt.Sprintf("%sbr label %%%s\n", g.indent(), freeLabel))
 
-		// skip: task 未完成，不可安全 free
-		sb.WriteString(skipLabel + ":\n")
+		// free: 继续
+		sb.WriteString(freeLabel + ":\n")
 	}
 }
 
@@ -1128,8 +1153,14 @@ func (g *Generator) emitOptionDeepClone(sb *strings.Builder, srcName, dstName st
 	nilCmp := fmt.Sprintf("%%optclone.nil.%d", tid)
 	skipLabel := fmt.Sprintf("optclone.skip.%d", tid)
 	cloneLabel := fmt.Sprintf("optclone.do.%d", tid)
+	// CFG: record block before conditional branch
+	optFromBlock := g.cfgBlockLabel()
 	sb.WriteString(fmt.Sprintf("%s%s = icmp eq i64 %s, 1\n", g.indent(), nilCmp, srcTagReg))
 	sb.WriteString(fmt.Sprintf("%sbr i1 %s, label %%%s, label %%%s\n", g.indent(), nilCmp, skipLabel, cloneLabel))
+	// CFG: conditional branch → skipLabel / cloneLabel
+	g.cfgTerm(optFromBlock, termCondBr)
+	g.cfgEdge(optFromBlock, skipLabel)
+	g.cfgEdge(optFromBlock, cloneLabel)
 
 	g.emitLabel(sb, cloneLabel)
 
@@ -1147,6 +1178,9 @@ func (g *Generator) emitOptionDeepClone(sb *strings.Builder, srcName, dstName st
 			g.indent(), dstDataGEP, llvmVarRef(dstName)))
 		sb.WriteString(fmt.Sprintf("%sstore i64 %s, i64* %s\n", g.indent(), srcDataReg, dstDataGEP))
 		sb.WriteString(fmt.Sprintf("%sbr label %%%s\n", g.indent(), skipLabel))
+		// CFG: cloneLabel → skipLabel (unconditional branch)
+		g.cfgTerm(cloneLabel, termBr)
+		g.cfgEdge(cloneLabel, skipLabel)
 		g.emitLabel(sb, skipLabel)
 		return
 	}
@@ -1177,8 +1211,14 @@ func (g *Generator) emitOptionDeepClone(sb *strings.Builder, srcName, dstName st
 		// NULL check src inner ptr（src 可能是 nil option 但 tag 非 1 的邊界情況）
 		srcNullCmp := fmt.Sprintf("%%optclone.srcnull.%d", tid)
 		deepCloneLabel := fmt.Sprintf("optclone.deep.%d", tid)
+		// CFG: cloneLabel is the current block for this conditional branch
+		deepFromBlock := g.cfgBlockLabel()
 		sb.WriteString(fmt.Sprintf("%s%s = icmp eq %s* %s, null\n", g.indent(), srcNullCmp, innerType, srcInnerPtrReg))
 		sb.WriteString(fmt.Sprintf("%sbr i1 %s, label %%%s, label %%%s\n", g.indent(), srcNullCmp, skipLabel, deepCloneLabel))
+		// CFG: conditional branch → skipLabel / deepCloneLabel
+		g.cfgTerm(deepFromBlock, termCondBr)
+		g.cfgEdge(deepFromBlock, skipLabel)
+		g.cfgEdge(deepFromBlock, deepCloneLabel)
 
 		// 深層 clone inner
 		g.emitLabel(sb, deepCloneLabel)
@@ -1204,7 +1244,11 @@ func (g *Generator) emitOptionDeepClone(sb *strings.Builder, srcName, dstName st
 		sb.WriteString(fmt.Sprintf("%sstore i64 %s, i64* %s\n", g.indent(), srcDataReg, dstDataGEP))
 	}
 
+	// CFG: current block (deepCloneLabel or cloneLabel) → skipLabel
+	deepEndFromBlock := g.cfgBlockLabel()
 	sb.WriteString(fmt.Sprintf("%sbr label %%%s\n", g.indent(), skipLabel))
+	g.cfgTerm(deepEndFromBlock, termBr)
+	g.cfgEdge(deepEndFromBlock, skipLabel)
 	g.emitLabel(sb, skipLabel)
 }
 
@@ -1472,12 +1516,21 @@ func (g *Generator) emitRetInitZeroFill(sb *strings.Builder) {
 		zfLabel := fmt.Sprintf("ri.zf.fill.%d", g.tmpIdx)
 		g.tmpIdx++
 		skipLabel := fmt.Sprintf("ri.zf.skip.%d", g.tmpIdx)
+		// CFG: record block before conditional branch
+		zfFromBlock := g.cfgBlockLabel()
 		sb.WriteString(fmt.Sprintf("%sbr i1 %s, label %%%s, label %%%s\n",
 			g.indent(), unassigned, zfLabel, skipLabel))
+		// CFG: conditional branch → zfLabel / skipLabel
+		g.cfgTerm(zfFromBlock, termCondBr)
+		g.cfgEdge(zfFromBlock, zfLabel)
+		g.cfgEdge(zfFromBlock, skipLabel)
 		// 補零區塊：bit=0（未賦值），補發零值 store
 		g.emitLabel(sb, zfLabel)
 		g.emitRetInitZeroStore(sb, name, llvmType)
 		sb.WriteString(fmt.Sprintf("%sbr label %%%s\n", g.indent(), skipLabel))
+		// CFG: zfLabel → skipLabel
+		g.cfgTerm(zfLabel, termBr)
+		g.cfgEdge(zfLabel, skipLabel)
 		// 跳過區塊：bit=1（已賦值），直接繼續
 		g.emitLabel(sb, skipLabel)
 	}
@@ -6277,8 +6330,19 @@ func (g *Generator) generateLet(sb *strings.Builder, stmt *parser.LetStatement) 
 		if g.generateSliceViewAssignment(sb, stmt, name) {
 			return
 		}
-		// 若 generateSliceViewAssignment 無法處理（如 base 不是 Identifier），
-		// 則回退到原本的 generateSliceExpression 路徑
+		// generateSliceViewAssignment 無法處理（如 base 不是 Identifier）。
+		// slice 結果共享原始 data（不 clone），若原始 data 在後續被釋放
+		// （如結構體在函數退出時被釋放），目標變數會懸空（use-after-free）。
+		// 因此對輸出參數和局部變數目標，都必須 clone slice 的 data。
+		if g.outputParamNames != nil && g.outputParamNames[name] {
+			g.cloneSliceExprResult(sb, stmt, name)
+			return
+		}
+		if g.funcLocalNames != nil && g.funcLocalNames[name] {
+			g.cloneSliceExprResult(sb, stmt, name)
+			return
+		}
+		// 其他情況：回退到原本的 generateSliceExpression 路徑
 	}
 
 	// 切片視圖變數賦值給輸出參數或顯式 []T 型別：out = view
@@ -7443,6 +7507,19 @@ func (g *Generator) generateLet(sb *strings.Builder, stmt *parser.LetStatement) 
 			sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %s, %s* %s, i32 0, i32 %d, i32 2\n",
 				g.indent(), dataGEP, structTy, structTy, g.varAddr(name), i))
 			g.storeDataPtrField(sb, dataBuf, dataGEP)
+		}
+		// Track struct as heap variable if any field is heap-owning
+		// (str/vec/arr/user struct). This ensures emitHeapFree releases
+		// the struct's heap fields when the function exits.
+		// Without this, t.raw.data would be leaked and any str-range
+		// pointing into t.raw.data+offset would crash on free (bug19).
+		if g.heapVars != nil {
+			for _, f := range fields {
+				if g.isHeapOwningType(f.typ) || g.isHeapOwningType(f.elemType) {
+					g.trackLocalHeapVar(name, structTy)
+					break
+				}
+			}
 		}
 		return
 	}

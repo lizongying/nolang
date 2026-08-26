@@ -6673,6 +6673,17 @@ func (g *Generator) prepareAsyncCall(sb *strings.Builder, call *parser.CallExpre
 	callArgStrs = append(callArgStrs, fmt.Sprintf("%s* %%result.typed.%d", resultType, wrapperNum))
 	// Call target function
 	w.WriteString(fmt.Sprintf("\tcall void @%s(%s)\n", sanitizedFnName, strings.Join(callArgStrs, ", ")))
+	// 释放每个参数的容器（cloneBuf / async.argscalar / malloc temp）。
+	// prepareAsyncCall 中所有参数最终都通过 allocForCoro（malloc）分配独立缓冲区：
+	//   - Identifier + 堆拥有类型 → 深拷贝到 cloneBuf（malloc）
+	//   - 标量参数 → async.argscalar（malloc）
+	//   - 字面量/表达式 → generateCallArg 在 coroInAsyncFunc=true 时用 malloc
+	// 仅 free 容器本身，不 free data：data 可能被目标函数 move 到 out 参数（result buffer），
+	// 释放 data 会导致 out 参数 UAF。data 的释放由 result buffer 的所有者管理
+	// （awy 取回后经 trackLocalHeapVar 追踪，函数结束由 emitHeapFree 释放）。
+	for i := range argTypes {
+		w.WriteString(fmt.Sprintf("\tcall void @free(i8* %%warg.%d.ptr.%d)\n", i, wrapperNum))
+	}
 	// 设置 done = true (field 2) — 复用 entry 块中已定义的 %w.done.gep.N（SSA 全函数可见）
 	w.WriteString(fmt.Sprintf("\tstore i1 true, i1* %%w.done.gep.%d\n", wrapperNum))
 	w.WriteString(fmt.Sprintf("\tbr label %%w_exit.%d\n", wrapperNum))
@@ -6723,8 +6734,9 @@ func (g *Generator) prepareAsyncCall(sb *strings.Builder, call *parser.CallExpre
 		// Identifier + 堆拥有类型参数（如 shared []i64）：深拷贝到独立缓冲区，
 		// 避免调用端与异步任务共享同一 data 指针造成数据竞争。
 		// 非 Identifier 参数（字面量/表达式）由 generateCallArg 分配独立 temp 缓冲区，无共享。
-		// 克隆副本不在 wrapper 内释放：async 函数可能将其 move 到 out 参数，
-		// wrapper 释放会导致 out 参数堆数据 UAF。
+		// cloneBuf 容器由 wrapper 在目标函数执行后释放（见 wrapper 生成逻辑中的 free 循环）。
+		// cloneBuf 的 data 不释放：async 函数可能将其 move 到 out 参数，
+		// data 由 result buffer 的所有者管理（awy 取回后由 emitHeapFree 释放）。
 		if ident, ok := argExpr.(*parser.Identifier); ok && sb != nil {
 			if varType, hasType := g.varTypes[ident.Value]; hasType && g.isHeapOwningType(varType) {
 				elemType := ""
@@ -7237,9 +7249,8 @@ func (g *Generator) awaitTaskVar(sb *strings.Builder, varName string) string {
 	//   - result buffer 内的 data 由调用端结果变量（如 s = awy task 中的 s）接管，
 	//     经 trackLocalHeapVar 追踪，函数结束由 emitHeapFree 释放。
 	//   - args struct 内的 arg 指针指向 cloneBuf（Identifier 堆参数深拷贝）或
-	//     generateCallArg 分配的 temp。cloneBuf 可能被 async 函数 move 到 out 参数，
-	//     释放会导致 out 参数堆数据 UAF（与 prepareAsyncCall 注释一致）。
-	//     故 cloneBuf 不在此释放，作为已知泄漏留待后续处理。
+	//     generateCallArg 分配的 temp。这些参数容器由 wrapper 在目标函数执行后释放
+	//     （见 prepareAsyncCall 中 wrapper 生成逻辑），此处仅释放 args struct 容器本身。
 	// 释放顺序：result buffer → args struct → task struct（先释放被引用者）。
 	if sb != nil {
 		// 1. free result buffer (result_ptr，仅容器)

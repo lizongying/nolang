@@ -528,7 +528,13 @@ func (p *Parser) buildMatchDesugar(sm *SurfaceMatch) Expression {
 					arm.body = p.prependStmt(arm.body, itStmt)
 				}
 				// Sentinel arms with unknown matched type: intentionally bind nothing.
-			} else if !skipItBinding {
+			} else if !skipItBinding && !arm.isWildcard {
+				// Non-wildcard arm: safe to bind shared `it`.
+				// Wildcard arms (->) with unknown matched type must NOT receive
+				// shared `it` binding: when the matched var is an option and the
+				// arm is the else/catch-all, the option may be nil (data=0),
+				// and the shared binding unconditionally dereferences the data
+				// field, causing null pointer dereference / segfault.
 				arm.body = p.prependStmt(arm.body, itStmt)
 			}
 		}
@@ -701,16 +707,34 @@ func (p *Parser) buildMatchDesugar(sm *SurfaceMatch) Expression {
 	// 若所有 arm 都是 wildcard，或只有 wildcard 而無條件 arm
 	if ifExpr == nil {
 		if defaultBody != nil {
-			// 唯一 arm 是 wildcard：用 if 1 {} 包裝（無法避免）
-			ifExpr = &IfExpression{
-				Token:       tok,
-				Condition:   &IntegerLiteral{Token: tok, Value: 1},
-				Consequence: defaultBody,
-				MatchedExpr: matched,
-			}
-			p.sem.SetRTFlag(ifExpr, RTBareMatch|RTMatchWildcard)
+			// 唯一 arm 是 wildcard。
+			// 對 ok-> (dotVal) arm，生成 `matched == ok` 條件而非硬編碼 true。
+			// 否則當 option 為 nil 時仍進入 ok 分支，解引用空指針導致段錯誤。
+			// ok-> 語法本身就表示匹配 option 的 ok 變體，無需依賴類型推斷。
 			if defaultDotValBody == defaultBody {
-				ifExpr.DotValBody = defaultBody
+				ifExpr = &IfExpression{
+					Token: tok,
+					Condition: &InfixExpression{
+						Token:    tok,
+						Left:     matched,
+						Operator: "==",
+						Right:    &Identifier{Token: tok, Value: "ok"},
+					},
+					Consequence:     defaultBody,
+					MatchedExpr:     matched,
+					EqualityPattern: &Identifier{Token: tok, Value: "ok"},
+					DotValBody:       defaultBody,
+				}
+				p.sem.SetRTFlag(ifExpr, RTBareMatch|RTMatchWildcard)
+			} else {
+				// 非 dotVal wildcard：用 if 1 {} 包裝（無法避免）
+				ifExpr = &IfExpression{
+					Token:       tok,
+					Condition:   &IntegerLiteral{Token: tok, Value: 1},
+					Consequence: defaultBody,
+					MatchedExpr: matched,
+				}
+				p.sem.SetRTFlag(ifExpr, RTBareMatch|RTMatchWildcard)
 			}
 		} else {
 			return nil
@@ -878,6 +902,11 @@ func unionElemType(t string) string {
 func isSentinelArmType(armType string) bool {
 	if armType == "" {
 		return false
+	}
+	// "else" denotes the complement of ok (i.e., err | nil) — both are
+	// sentinels with no payload, so it must be treated as sentinel.
+	if strings.TrimSpace(armType) == "else" {
+		return true
 	}
 	for _, part := range strings.Split(armType, "|") {
 		part = strings.TrimSpace(part)

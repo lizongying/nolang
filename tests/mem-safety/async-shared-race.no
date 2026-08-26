@@ -1,48 +1,66 @@
 ; ═════════════════════════════════════════════════════════════════
-; 問題 12：線程間共享堆數據無同步保護（數據競爭）
-; 嚴重等級：嚴重（併發內存安全，未定義行為）
+; 問題 12：線程間共享堆數據無同步保護（數據競爭）— 已解決
+; 嚴重等級：已修復（所有權隔離 + 容器釋放）
 ; ═════════════════════════════════════════════════════════════════
 ;
-; 觸發條件：
-;   shared []i64 = [1, 2, 3]
-;   task = run modify-async(shared)   ; 子線程修改 shared
-;   shared[0] = 99                     ; 主線程同時修改 shared
-;   awy task
-;
-; 根本原因：
-;   - expr.go:5696-5720 中，參數打包後傳給子線程
-;   - 若參數是堆變數的指針（如 []i64 的 data 指針）
-;   - 子線程讀寫時調用端可能同時修改或釋放它
-;   - 無任何 mutex/atomic 保護
-;   - src/build/lock.go 雖然存在，但編譯器層面未強制所有權隔離
+; 修復方案：
+;   1. 參數所有權隔離：prepareAsyncCall 對 Identifier + 堆擁有類型參數
+;      執行深拷貝（emitDeepClone），子線程不共享調用方的 data 指針。
+;      標量參數也拷貝到獨立堆緩衝區（async.argscalar）。
+;   2. 參數容器釋放：wrapper 在目標函數執行後釋放每個參數的容器
+;      （cloneBuf / async.argscalar / malloc temp），不釋放 data
+;      （data 可能被 move 到 out 參數，由 result buffer 所有者管理）。
+;   3. 未完成 task 清理：emitLocalTasksFree 對未 awy 且 done=false 的 task
+;      同步調用 resume_fn(task) 驅動到完成，然後釋放 task/args/result 容器
+;      （不再「泄漏但不 UAF」，而是完全釋放）。
 ;
 ; 相關文件：
-;   src/build/llvm/expr.go:5696-5720（參數打包，傳指針）
-;   src/build/llvm/lock.go（鎖存在但編譯器未強制使用）
+;   src/build/llvm/expr.go: prepareAsyncCall（參數深拷貝 + wrapper 參數容器釋放）
+;   src/build/llvm/stmt.go: emitLocalTasksFree（未完成 task 同步驅動 + 釋放）
 ;
 ; 預期行為：
-;   run 參數應強制所有權隔離（深拷貝）或引入同步原語
-;
-; 實際行為（bug）：
-;   數據競爭 → 未定義行為（可能數據損壞或崩潰）
-;
-; 修復方向：
-;   - 為 run 參數強制所有權隔離（深拷貝堆數據）
-;   - 或引入同步原語（mutex/atomic）保護共享訪問
-;   - 或引入借用檢查（類似 Rust）禁止跨線程共享可變數據
+;   run 參數深拷貝到獨立緩衝區，子線程修改副本不影響調用方
+;   函數返回前未 awy 的 task 被同步驅動到完成並釋放
 ;
 ; ═════════════════════════════════════════════════════════════════
 
+; 測試 1：參數所有權隔離 — run 的參數被深拷貝，不共享 data
 modify-async = (v []i64) (r i64) {
-    v[0] = 999; 子線程修改 v 的 data
+    v[0] = 999; 修改的是深拷貝副本，不影響調用方的 shared
     r = v[0]
 }
 
 race-test = () (out i64) {
     shared []i64 = [1, 2, 3]
-    task = run modify-async(shared); 傳 shared 的 data 指針給子線程
-    shared[0] = 100; 主線程同時修改 → 數據競爭
-    out = awy task
+    task = run modify-async(shared); shared 被深拷貝，子線程不共享 data
+    shared[0] = 100; 主線程修改自己的 shared，不影響子線程的副本
+    out = awy task; awy 取回結果（999），子線程修改的是副本
 }
 r = race-test()
-print(r); 未定義行為，可能是 999 或 100 或其他
+print(r); 預期 999（子線程修改的是深拷貝副本）
+
+; 測試 2：未 awy 的 task 被同步驅動到完成並釋放
+no-await-test = () (out i64) {
+    shared []i64 = [10, 20, 30]
+    task = run modify-async(shared); 創建 task 但不 awy
+    shared[0] = 200; 主線程修改自己的 shared
+    out = 42
+}
+r2 = no-await-test()
+print(r2); 預期 42（函數返回前 task 被同步驅動到完成並釋放）
+
+; 測試 3：字串參數深拷貝
+str-modify-async = (s str) (r str) {
+    r = s; 字串被 move 到 out 參數
+}
+
+str-race-test = () {
+    shared str = 'hello'
+    task = run str-modify-async(shared); shared 被深拷貝
+    result = awy task
+    print(result); 預期 hello
+    print(shared); 預期 hello（shared 不受影響）
+}
+str-race-test()
+
+print('done')

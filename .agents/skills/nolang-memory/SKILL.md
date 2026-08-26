@@ -149,11 +149,11 @@ cond-move = (flag i64) (out []i64) {
 
 #### 3.2.7 CFG 不完整性與 isMovedVar 安全網
 
-CFG 數據流分析依賴所有內部代碼生成路徑正確註冊 CFG 邊（`cfgEdge`/`cfgTerm`）。但部分路徑（如 `vec.push` 的 `vp.fast.X`/`vp.expand.X`/`vp.end.X` 塊）創建基本塊但未註冊 CFG 邊，導致這些塊在 `computeReachableBlocks` 中不可達。
+CFG 數據流分析依賴所有內部代碼生成路徑正確註冊 CFG 邊（`cfgEdge`/`cfgTerm`）。歷史上部分路徑（如 `vec.push` 的 `vp.fast.X`/`vp.expand.X`/`vp.end.X` 塊、`emitFFIExternStrClone`、`RetCStrToStr`、`emitRetInitZeroFill`、`emitOptionDeepClone`）創建基本塊但未註冊 CFG 邊，導致這些塊在 `computeReachableBlocks` 中不可達。
 
-當 `handleMoveToOut` 在這些不可達塊中記錄 `effAdd`（moved）effect 時，數據流求解器無法看到該 effect，將變數誤判為 `triMustNot`（從未 moved）。
+**已修復（2026-08）**：現已為所有已知內部代碼生成路徑統一添加 CFG 邊（見 §10.6），CFG 數據流分析結果不再受此問題影響。
 
-**安全網**：`emitHeapFree` 中，當 CFG 結果為 `triMustNot` 但編譯期 `isMovedVar(varIdx)` 為 true 時，信任編譯期結果並跳過 free。這作為兜底保護，防止 CFG 不完整導致的雙重釋放。
+**安全網**：`emitHeapFree` 中，當 CFG 結果為 `triMustNot` 但編譯期 `isMovedVar(varIdx)` 為 true 時，信任編譯期結果並跳過 free。此安全網仍保留作為兜底保護，防止未來新增的代碼生成路徑遺漏 CFG 邊註冊。
 
 詳細說明見 §10.6。
 
@@ -341,6 +341,26 @@ structPtr = g.varAddr(identName)
 
 **測試**：`tests/vec-range.no`、`tests/arr-range.no`（全局變數 range 迭代）。
 
+### 5.9 DotExpression base slice 表達式 clone（bug19 修復）
+
+**原問題**：`s = t.raw[6..11)` 中 slice 表達式的 base 是 `DotExpression`（`t.raw`），不是 `Identifier`。`generateSliceViewAssignment` 只處理 `Identifier` base（§5.4），對 `DotExpression` base 返回 false，回退到 `generateSliceExpression` 路徑。該路徑只建立指向原始 data 的視圖（不 clone），當原始 data 在後續被釋放時（如結構體在函數退出時被 `emitHeapFree` 釋放），結果變數成為懸空指標（use-after-free）。
+
+**修復**：在 `generateLet` 的 slice 表達式回退路徑中，當目標是輸出參數或局部變數時，呼叫 `cloneSliceExprResult` 執行完全 clone（malloc + memcpy）：
+
+1. 呼叫 `generateSliceExpression` 生成臨時 slice 結果（共享原始 data 的視圖）
+2. 從結果中載入 data 指標和 len
+3. 呼叫 `emitSliceClone`：malloc 新緩衝區 + memcpy，寫入目標變數的 len/cap/data
+4. 呼叫 `trackLocalHeapVar` 追蹤目標為堆變數（僅局部變數，非輸出參數）
+
+**同時修復**：struct literal 賦值（`t = data { raw: raw, n: 5 }`）後，若結構體含堆擁有欄位（str/vec/arr/用戶結構體），呼叫 `trackLocalHeapVar` 追蹤為堆變數。否則 `emitHeapFree` 不會釋放結構體欄位的堆數據，導致洩漏或 use-after-free（str-range 結果指向已釋放的结构体字段 data）。
+
+**實現位置**：
+- `src/build/llvm/stmt.go` — `generateLet` 中 slice 表達式回退路徑的 clone 邏輯
+- `src/build/llvm/stmt.go` — struct literal 賦值後的 `trackLocalHeapVar` 呼叫
+- `src/build/llvm/clone_slice.go` — `cloneSliceExprResult` 函數實現
+
+**測試**：`tests/mem-safety/bug19-struct-field-corruption.no`。
+
 ## 6. 深層 clone（局部變數間賦值）
 
 ### 6.1 觸發條件
@@ -481,6 +501,7 @@ clib 路徑（`generator.go:1763`）用於內建函數（`get-env`、`get-wd`、
 | `struct-move-is-moved.no` | 結構體 move 後 isMovedVar 正確 |
 | `async-str-result.no` / `async-str-stress.no` / `async-module-awy.no` / `async-shared-race.no` / `async-alloca-escape.no` | async 場景記憶體安全 |
 | `test-minimal-option-str.no` / `test-minimal-str-map.no` / `test-minimal-str-map2.no` / `test-option-str-match.no` | 最小化 option/map str 場景 |
+| `bug19-struct-field-corruption.no` | 局部結構體 str 字段跨函數傳遞 + str-range clone（§5.9） |
 
 ## 10. 已知未修复的问题
 
@@ -520,8 +541,35 @@ arr = [9, 8, 7]    ; free 旧 arr.data → view 悬空
 
 測試見 `prologue-buf-leak.no`（涵蓋輸出參數和局部變數兩個場景，多次調用驗證不洩漏）。`leaks` 工具確認 prologue buffer（2048 字節）被正確釋放，僅剩 16 字節基線噪聲。
 
-### 10.5 async 共享数据竞态
-异步线程与主线程共享堆数据时，free 顺序不确定。
+### 10.5 ~~async 共享数据竞态~~（已解決）
+
+**原問題**：異步線程與主線程共享堆數據時，參數指針共享同一 data 緩衝區，子線程讀寫時調用端可能同時修改或釋放它，無同步保護 → 數據競爭（未定義行為）。此外，未 awy 的 task 容器在函數返回前被跳過釋放（泄漏但無 UAF）。
+
+**根因**：
+1. `prepareAsyncCall` 中 Identifier + 堆擁有類型參數直接傳遞調用方的 data 指針給子線程，無所有權隔離。
+2. `emitLocalTasksFree` 對未完成（`done=false`）的 task 選擇「泄漏但不 UAF」策略——跳過釋放所有容器。
+3. `awaitTaskVar` 和 wrapper 不釋放參數容器（cloneBuf），作為已知泄漏。
+
+**修復（2026-08）**：
+
+1. **參數所有權隔離**（`expr.go: prepareAsyncCall`）：對 Identifier + 堆擁有類型參數執行深拷貝（`emitDeepClone`），子線程不共享調用方的 data 指針。標量參數也拷貝到獨立堆緩衝區（`async.argscalar`）。所有參數最終通過 `allocForCoro`（malloc）分配獨立緩衝區。
+
+2. **wrapper 參數容器釋放**（`expr.go: prepareAsyncCall` wrapper 生成邏輯）：wrapper 在目標函數執行後，釋放每個參數的容器（`free(cloneBuf)` / `free(async.argscalar)`），僅釋放容器本身（如 `%vec` 的 24 字節），不釋放 data（data 可能被目標函數 move 到 out 參數/result buffer，由 result buffer 所有者管理）。
+
+3. **emitLocalTasksFree 改進**（`stmt.go: emitLocalTasksFree`）：
+   - `done=false` 的 task：同步調用 `resume_fn(task)` 驅動到完成（與 `awaitTaskVar` not_done 路徑一致），然後釋放 args struct 和 result buffer 容器。
+   - `done=true` 的 task：直接釋放 args struct 和 result buffer 容器。
+   - **不釋放 task 結構體本身**：task 通過 `@nolang_async_enqueue` 入隊後，就緒隊列 `@nolang_ready_q` 仍持有 task 指針。釋放 task 會導致事件循環調度到該 task 時讀取已釋放內存（UAF）。task 結構體（24 字節）作為已知泄漏保留——事件循環取出 task 後，wrapper 檢查 `done=true` 直接返回，`done_handler` 調用 `nolang_async_done`（無等待者時直接返回），安全跳過。
+
+**安全分析**：
+- 單線程事件循環模型下，`run` 只是把 task 入隊，不會真正並發執行。task 在事件循環調度到時才執行。
+- `emitLocalTasksFree` 同步驅動未完成 task 到完成是安全的——`resume_fn` 執行完畢後設置 `done=true`。
+- 釋放 args 和 result 容器不影響就緒隊列（隊列只持有 task 指針，不直接訪問 args/result）。
+- wrapper 釋放參數容器（cloneBuf）不影響 data——data 被 move 到 result buffer 後由其所有者管理。
+
+**殘留泄漏**：task 結構體本身（24 字節）在事件循環場景下泄漏（因就緒隊列持有指針）。在非事件循環場景下（無 `@nolang_async_run`），就緒隊列不會被消費，task 結構體也泄漏。這是保守的安全選擇。
+
+測試見 `async-shared-race.no`（參數所有權隔離 + 未 awy task 清理 + str 參數深拷貝）。
 
 ### 10.5a ~~main 函數 out 參數 UB 崩潰~~（已解決）
 
@@ -563,14 +611,25 @@ CFG 數據流分析依賴 `cfgEdge`/`cfgTerm`/`cfgAddEffect` 正確記錄所有�
 | `emitNullCheckFree` | 正確記錄 CFG 邊：`fromBlock → freeLabel`, `fromBlock → skipLabel`, `freeLabel → skipLabel` |
 | `emitDeepContainerFree` | back edge 使用 `cfgBlockLabel()`（實際當前 block）而非 `loopBodyLabel`（§4.4） |
 | `emitOptionHeapFree` | 正確記錄 CFG 邊（與 `emitNullCheckFree` 同模式） |
+| `vec.push`（`call.go`） | 為 `vp.fast.N`/`vp.expand.N`/`vp.end.N` 塊註冊 CFG 邊：條件分支 `fromBlock → fastLabel`/`expandLabel`，各自 `→ endLabel`（2026-08 修復） |
+| `emitFFIExternStrClone`（`generator.go`） | 為 `fstr.nil.N`/`fstr.copy.N`/`fstr.merge.N` 塊註冊 CFG 邊（2026-08 修復） |
+| `RetCStrToStr`（`generator.go`） | 為 `cstr.nil.N`/`cstr.copy.N`/`cstr.merge.N` 塊註冊 CFG 邊，改用 `emitLabel` 替代手動 `sb.WriteString(label)`（2026-08 修復） |
+| `emitRetInitZeroFill`（`stmt.go`） | 為 `ri.zf.fill.N`/`ri.zf.skip.N` 塊註冊 CFG 邊（2026-08 修復） |
+| `emitOptionDeepClone`（`stmt.go`） | 為 `optclone.do.N`/`optclone.skip.N`/`optclone.deep.N` 塊註冊 CFG 邊，包括內部 NULL check 條件分支（2026-08 修復） |
 
 ### 安全網機制
 
 `emitHeapFree` 中新增編譯期 `isMovedVar` 安全網（§3.2.5）：當 CFG 結果為 `triMustNot` 但編譯期 `isMovedVar` 表示已 moved 時，信任編譯期結果並跳過 free。這解決了 CFG 不完整導致的誤判，作為兜底保護。
 
-### 尚未修復的路径
+### 修復原則
 
-`vec.push`（`call.go`）等內部代碼生成路径仍創建基本塊但未註冊 CFG 邊。安全網機制使其不再導致崩潰，但 CFG 數據流分析在這些場景下可能產生次優結果（如 `triMay` 而非 `triMust`）。未來可考慮為所有內部代碼生成路徑統一添加 CFG 邊。
+所有內部代碼生成路徑（創建基本塊的函數）統一遵循以下模式：
+1. 條件分支前：記錄 `fromBlock = g.cfgBlockLabel()`
+2. 寫 `br` 指令後：`g.cfgTerm(fromBlock, termCondBr/termBr)` + `g.cfgEdge(fromBlock, target1)` + `g.cfgEdge(fromBlock, target2)`
+3. `emitLabel` 後的塊結尾 `br`：`g.cfgTerm(currentLabel, termBr)` + `g.cfgEdge(currentLabel, nextLabel)`
+4. 若塊內調用了可能創建子塊的函數（如 `emitDeepClone`/`emitNullCheckFree`），終結符的 fromBlock 應使用 `g.cfgBlockLabel()`（實際當前塊），而非固定的 label
+
+現已為所有已知內部代碼生成路徑統一添加 CFG 邊，安全網機制仍保留作為兜底保護。
 
 ## 11. 修改堆释放逻辑的检查清单
 
@@ -625,9 +684,15 @@ CFG 數據流分析依賴 `cfgEdge`/`cfgTerm`/`cfgAddEffect` 正確記錄所有�
 | **SliceType fall-through** | `src/build/llvm/stmt.go` | SliceType 區塊僅 `stmt.Value == nil` 時預設初始化（§5.7） |
 | **range 迭代全局變數** | `src/build/llvm/stmt.go` | `generateArrayRange` 中 `structPtr = g.varAddr(identName)`（§5.8） |
 | slice 視圖註冊/克隆 | `src/build/llvm/slice_view.go` | `generateSliceViewAssignment`, `emitSliceClone`, `materializeSliceView`（部分為死代碼） |
+| **DotExpression slice clone** | `src/build/llvm/clone_slice.go` | `cloneSliceExprResult`：對 base 是 DotExpression 的 slice 表達式執行 clone（§5.9） |
+| **struct literal 堆追蹤** | `src/build/llvm/stmt.go` | struct literal 賦值後 `trackLocalHeapVar` 追蹤含堆欄位的結構體（§5.9） |
 | **FFI extern str 安全複製** | `src/build/llvm/generator.go` | `emitFFIExternStrClone` |
 | **FFI extern str 路徑入口** | `src/build/llvm/call.go` | `callExtern` 中的 `case "str"` |
 | vec.push 深層 clone | `src/build/llvm/call.go` | vec-push case（`emitDeepClone` for heap-owning elements，扩容时 `emitNullCheckFree` 旧 buffer） |
 | varAlias | `src/build/llvm/generator.go` | `varAddr` |
 | SliceLiteral 初始化 | `src/build/llvm/stmt.go` | SliceLiteral 路径 |
 | 类型判断 | `src/build/llvm/generator.go` | `isHeapOwningType`, `isUserStructType` |
+| **async 參數所有權隔離** | `src/build/llvm/expr.go` | `prepareAsyncCall` 中 Identifier + 堆擁有類型參數深拷貝（§10.5） |
+| **async wrapper 參數容器釋放** | `src/build/llvm/expr.go` | `prepareAsyncCall` wrapper 生成邏輯中 `for i := range argTypes { free }`（§10.5） |
+| **async task 清理** | `src/build/llvm/stmt.go` | `emitLocalTasksFree`, `trackLocalTask`, `untrackLocalTask`（§10.5） |
+| **async task await** | `src/build/llvm/expr.go` | `awaitTaskVar`, `awaitFutureCall`, `awaitFutureVar` |
