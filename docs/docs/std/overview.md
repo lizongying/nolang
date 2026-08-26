@@ -571,9 +571,9 @@ p.close()                          ; 關閉所有管道並等待
 
 ; 跨平台一次性執行（推薦，扁平參數）：fork/exec + 捕獲 stdout/stderr，帶超時與環境
 ;   入參：program 可執行檔路徑，args 參數切片，dir 工作目錄，input 寫入子進程 stdin 的內容，
-;         env K=V 形式環境變數切片，timeout 毫秒（<=0 表示不限時），merge-err 非 0 時合併 stderr 到 out
-;   出參：out 捕獲的 stdout（stderr 依 merge-err 決定是否合併），code 退出碼（-2=超時殺死，-1=啟動失敗），err 錯誤信息
-out, code, err = process.cmd('echo', ['hello'], '', '', [], 0, 0)
+;         env K=V 形式環境變數切片，timeout 毫秒（<=0 表示不限時），merge-err 為 true 時合併 stderr 到 out
+;   出參：out 捕獲的 stdout（stderr 依 merge-err 決定是否合併），stderr 捕獲的 stderr 輸出，code 退出碼（-2=超時殺死，-1=啟動失敗），err 錯誤信息
+out, stderr, code, err = process.cmd('echo', ['hello'], '', '', [], 0, false)
 
 ; 結構體選項形式（推薦，可讀性更好）：opts 結構體跨模組轉發示範
 ;   cmdopts 定義於本模組，呼叫端在另一模組構造 process.cmdopts{...} 並按引用傳入，
@@ -583,14 +583,14 @@ cmdopts {
     stdin str      ; 寫入子進程 stdin 的內容；空字串 = 不提供 stdin
     env []str      ; 環境變數（["K=V", ...]）；空陣列 = 繼承父進程環境
     timeout i64    ; 超時時間（毫秒），<=0 = 無限等待
-    merge-err i64  ; 非 0 = 將 stderr 合併到捕獲的 out 中
+    merge-err bool  ; true = 將 stderr 合併到捕獲的 out 中
 }
 o = process.cmdopts{
     dir: '',
     stdin: 'piped-data',
     env: ['K=V'],
     timeout: 200,
-    merge-err: 0
+    merge-err: false
 }
 out, code, err = process.exec('echo', ['hello'], o)
 

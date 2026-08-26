@@ -2630,6 +2630,15 @@ func (g *Generator) generateFunctionDefinition(sb *strings.Builder, fd *parser.F
 		if st, ok := p.Type.(*parser.SliceType); ok && st.Elem != nil {
 			g.arrayElemTypes[p.Name] = g.mapToLLVMType(st.Elem.String())
 		}
+		// 泛型替換後的切片型別：substituteType 將 NamedType{Value:"v"} 替換為
+		// NamedType{Value:"[]str"}，但此時 p.Type 是 NamedType 而非 SliceType。
+		// 需從字串表示中解析切片元素型別，否則 arrayElemTypes 不會被註冊，
+		// 導致 put 方法深拷貝 val 時用預設 8 字節元素大小（而非 24），
+		// 造成資料截斷、get 找不到 key → 回傳 nil → match ok arm 空指標崩潰。
+		if nt, ok := p.Type.(*parser.NamedType); ok && strings.HasPrefix(nt.Value, "[]") {
+			elemStr := nt.Value[2:]
+			g.arrayElemTypes[p.Name] = g.mapToLLVMType(elemStr)
+		}
 	}
 	// 結果參數（無論單結果或多結果）皆以 by-reference 形式傳遞，
 	// 與 call.go 的 hasOutputParam / voidSingleOutput 約定保持一致。

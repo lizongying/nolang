@@ -557,9 +557,9 @@ p.close()                          ; Close all pipes and wait
 
 ; Cross-platform one-shot execution (recommended): fork/exec + capture stdout/stderr, with timeout and environment
 ;   Inputs: program path, args slice, dir working directory, input written to child stdin,
-;           env K=V environment-variable slice, timeout in ms (<=0 = no limit), merge-err nonzero merges stderr into out
-;   Outputs: out captured stdout (stderr merged depending on merge-err), code exit code (-2=timeout kill, -1=start failure), err error message
-out, code, err = process.cmd('echo', ['hello'], '', '', [], 0, 0)
+;           env K=V environment-variable slice, timeout in ms (<=0 = no limit), merge-err true merges stderr into out
+;   Outputs: out captured stdout (stderr merged depending on merge-err), stderr captured stderr output, code exit code (-2=timeout kill, -1=start failure), err error message
+out, stderr, code, err = process.cmd('echo', ['hello'], '', '', [], 0, false)
 
 ; Struct-options form (recommended, more readable): demonstrates cross-module
 ; struct forwarding — cmdopts is defined in this module, while the caller
@@ -569,14 +569,14 @@ cmdopts {
     stdin str      ; data written to child stdin; empty = no stdin
     env []str      ; environment variables (["K=V", ...]); empty = inherit parent's
     timeout i64    ; timeout in ms; <=0 = no limit
-    merge-err i64  ; nonzero = merge stderr into captured out
+    merge-err bool  ; true = merge stderr into captured out
 }
 o = process.cmdopts{
     dir: '',
     stdin: 'piped-data',
     env: ['K=V'],
     timeout: 200,
-    merge-err: 0
+    merge-err: false
 }
 out, code, err = process.exec('echo', ['hello'], o)
 

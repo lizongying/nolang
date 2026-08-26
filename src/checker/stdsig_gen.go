@@ -9,7 +9,7 @@ package checker
 func init() {
 	embeddedStdSigReady = true
 	embeddedStdSigVersion = 1
-	embeddedStdSigKey = "07ca1aca2c0ace7b794beabe92dfaea42434ab30c9737646fcffa01a4bfd57f8"
+	embeddedStdSigKey = "076cde64e4225aab3ee00d6374d03c9a69e84bf92f41a91e2b80c66fbcc674fe"
 	embeddedStdFuncSigs = map[string][]string{
 		"[]byte.index":                     {"i64"},
 		"[]byte.index-from":                {"i64"},
@@ -341,13 +341,15 @@ func init() {
 		"pbkdf2.pbkdf2-hmac-sha512":                {"[]byte"},
 		"pem.pem-decode":                           {"?pem-block"},
 		"pem.pem-encode":                           {"str"},
-		"process.cmd":                              {"str", "i64", "str"},
-		"process.exec":                             {"str", "i64", "str"},
+		"process.cmd":                              {"str", "str", "i64", "str"},
+		"process.exec":                             {"exec-result"},
 		"process.find-by-name":                     {"[]i64"},
 		"process.find-match":                       {"bool"},
 		"process.list-all":                         {"[]proc-info"},
 		"process.new":                              {"process"},
 		"process.process-shell":                    {"i64"},
+		"process.shell":                            {"i64"},
+		"process.spawn":                            {"i64"},
 		"process.wait":                             {"i64"},
 		"proxy.connect":                            {"fd"},
 		"proxy.dial":                               {"fd"},
@@ -804,7 +806,6 @@ func init() {
 		"process.process.read":                             {"i64"},
 		"process.process.read-all":                         {"str", "i64"},
 		"process.process.read-line":                        {"?str"},
-		"process.process.spawn":                            {"i64"},
 		"process.process.start":                            {"bool"},
 		"process.process.start-with-opts":                  {"bool"},
 		"process.process.terminate":                        {"bool"},
@@ -1211,7 +1212,7 @@ func init() {
 		"cmdopts": {
 			"dir":       "str",
 			"env":       "[]str",
-			"merge-err": "i64",
+			"merge-err": "bool",
 			"stdin":     "str",
 			"timeout":   "i64",
 		},
@@ -1304,6 +1305,11 @@ func init() {
 			"event": "str",
 			"id":    "str",
 			"retry": "i64",
+		},
+		"exec-result": {
+			"code":   "i64",
+			"stderr": "str",
+			"stdout": "str",
 		},
 		"file": {
 			"fd":   "fd",
@@ -1951,6 +1957,7 @@ func init() {
 		"enc-conn":                 "net",
 		"error":                    "err",
 		"event":                    "sse",
+		"exec-result":              "process",
 		"file":                     "fs",
 		"file-opts":                "fs",
 		"frame":                    "quic",

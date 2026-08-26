@@ -2543,7 +2543,20 @@ func (g *Generator) generateStructFieldIndexAssign(sb *strings.Builder, dot *par
 					sb.WriteString(fmt.Sprintf("%s%s = alloca %s\n", g.indent(), tmpAlloca, vecIRType))
 					sb.WriteString(fmt.Sprintf("%sstore %s %s, %s* %s\n",
 						g.indent(), vecIRType, storeVal, vecIRType, tmpAlloca))
-					g.emitDeepClone(sb, tmpAlloca, elemGEP, vecElemType, "")
+					// 嵌套容器（[][]T）：emitDeepClone 的 elemType 參數是容器的元素型別。
+					// 對於 %vec 元素，其元素型別由 elemElemTypes[recvName] 決定。
+					// 若沒有 recvName（如鏈式 .field[i]=val），嘗試從結構體欄位定義取得。
+					innerElemType := ""
+					if vecElemType == "%vec" || vecElemType == "%arr" {
+						if g.elemElemTypes != nil && recvName != "" {
+							innerElemType = g.elemElemTypes[recvName]
+						}
+						// 回退：從結構體欄位定義取得內層元素型別
+						if innerElemType == "" && fields[fieldIdx].elemElemType != "" {
+							innerElemType = fields[fieldIdx].elemElemType
+						}
+					}
+					g.emitDeepClone(sb, tmpAlloca, elemGEP, vecElemType, innerElemType)
 				} else {
 					sb.WriteString(fmt.Sprintf("%sstore %s %s, %s* %s\n",
 						g.indent(), vecIRType, storeVal, vecIRType, elemGEP))

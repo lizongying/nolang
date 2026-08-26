@@ -368,6 +368,21 @@ return "i64* " + g.varAddr(a.Value)
 		vecName := fmt.Sprintf("%%callvec.%d", g.tmpIdx)
 		if sb != nil {
 			sb.WriteString(fmt.Sprintf("%s%s = alloca %%vec\n", g.indent(), vecName))
+			// Initialize len/cap/data to 0 so empty slices (n==0) have valid
+			// zero values instead of stack garbage (causes segfault when the
+			// callee reads .len and gets a huge garbage value).
+			g.tmpIdx++
+			zeroLenGEP := fmt.Sprintf("%%callvec.zlen.%d", g.tmpIdx)
+			sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%vec, %%vec* %s, i32 0, i32 0\n", g.indent(), zeroLenGEP, vecName))
+			sb.WriteString(fmt.Sprintf("%sstore i64 0, i64* %s\n", g.indent(), zeroLenGEP))
+			g.tmpIdx++
+			zeroCapGEP := fmt.Sprintf("%%callvec.zcap.%d", g.tmpIdx)
+			sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%vec, %%vec* %s, i32 0, i32 1\n", g.indent(), zeroCapGEP, vecName))
+			sb.WriteString(fmt.Sprintf("%sstore i64 0, i64* %s\n", g.indent(), zeroCapGEP))
+			g.tmpIdx++
+			zeroDataGEP := fmt.Sprintf("%%callvec.zdata.%d", g.tmpIdx)
+			sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%vec, %%vec* %s, i32 0, i32 2\n", g.indent(), zeroDataGEP, vecName))
+			sb.WriteString(fmt.Sprintf("%sstore i64 0, i64* %s\n", g.indent(), zeroDataGEP))
 		}
 		if n > 0 {
 			g.tmpIdx++
@@ -2647,6 +2662,21 @@ func (g *Generator) generateCallExpression(sb *strings.Builder, expr *parser.Cal
 			vecName := fmt.Sprintf("%%callvec.%d", g.tmpIdx)
 			if sb != nil {
 				sb.WriteString(fmt.Sprintf("%s%s = alloca %%vec\n", g.indent(), vecName))
+				// Initialize len/cap/data to 0 so empty slices (n==0) have valid
+				// zero values instead of stack garbage (causes segfault when the
+				// callee reads .len and gets a huge garbage value).
+				g.tmpIdx++
+				zeroLenGEP := fmt.Sprintf("%%callvec.zlen.%d", g.tmpIdx)
+				sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%vec, %%vec* %s, i32 0, i32 0\n", g.indent(), zeroLenGEP, vecName))
+				sb.WriteString(fmt.Sprintf("%sstore i64 0, i64* %s\n", g.indent(), zeroLenGEP))
+				g.tmpIdx++
+				zeroCapGEP := fmt.Sprintf("%%callvec.zcap.%d", g.tmpIdx)
+				sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%vec, %%vec* %s, i32 0, i32 1\n", g.indent(), zeroCapGEP, vecName))
+				sb.WriteString(fmt.Sprintf("%sstore i64 0, i64* %s\n", g.indent(), zeroCapGEP))
+				g.tmpIdx++
+				zeroDataGEP := fmt.Sprintf("%%callvec.zdata.%d", g.tmpIdx)
+				sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%vec, %%vec* %s, i32 0, i32 2\n", g.indent(), zeroDataGEP, vecName))
+				sb.WriteString(fmt.Sprintf("%sstore i64 0, i64* %s\n", g.indent(), zeroDataGEP))
 			}
 			if n > 0 {
 				g.tmpIdx++

@@ -18,13 +18,13 @@ noArgs []str = with-len(0)
 args1 []str = with-len(2)
 args1[0] = 'hello'
 args1[1] = 'world'
-out, code, err = process.cmd('echo', args1, '', '', noArgs, 0, 0)
+out, se, code, err = process.cmd('echo', args1, '', '', noArgs, 0, false)
 ok1 = out == 'hello world\n' && code == 0
 ok1 -> print('[1] basic args ................... PASS')
 ok1 == false -> print('[1] basic args ................... FAIL out=' - out.trim() - ' code=' - code.to-str())
 
 ; 2) working directory
-out, code, err = process.cmd('pwd', noArgs, '/tmp', '', noArgs, 0, 0)
+out, se, code, err = process.cmd('pwd', noArgs, '/tmp', '', noArgs, 0, false)
 ok2 = code == 0 && out.contains('/tmp')
 ok2 -> print('[2] working dir .................. PASS')
 ok2 == false -> print('[2] working dir .................. FAIL out=' - out.trim())
@@ -34,13 +34,13 @@ env3 []str = with-len(1)
 env3[0] = 'MY_TEST_VAR=secret'
 printenvArgs []str = with-len(1)
 printenvArgs[0] = 'MY_TEST_VAR'
-out, code, err = process.cmd('printenv', printenvArgs, '', '', env3, 0, 0)
+out, se, code, err = process.cmd('printenv', printenvArgs, '', '', env3, 0, false)
 ok3 = code == 0 && out == 'secret\n'
 ok3 -> print('[3] environment .................. PASS')
 ok3 == false -> print('[3] environment .................. FAIL out=' - out.trim())
 
 ; 4) stdin fed to child
-out, code, err = process.cmd('cat', noArgs, '', 'piped-stdin-data', noArgs, 0, 0)
+out, se, code, err = process.cmd('cat', noArgs, '', 'piped-stdin-data', noArgs, 0, false)
 ok4 = code == 0 && out == 'piped-stdin-data'
 ok4 -> print('[4] stdin ........................ PASS')
 ok4 == false -> print('[4] stdin ........................ FAIL out=' - out)
@@ -49,21 +49,21 @@ ok4 == false -> print('[4] stdin ........................ FAIL out=' - out)
 shArgs []str = with-len(2)
 shArgs[0] = '-c'
 shArgs[1] = 'echo STDOUT_LINE; echo STDERR_LINE 1>&2'
-out, code, err = process.cmd('sh', shArgs, '', '', noArgs, 0, 1)
+out, se, code, err = process.cmd('sh', shArgs, '', '', noArgs, 0, true)
 ok5 = code == 0 && out.contains('STDOUT_LINE') && out.contains('STDERR_LINE')
 ok5 -> print('[5] merge stderr ................. PASS')
 ok5 == false -> print('[5] merge stderr ................. FAIL out=' - out.trim())
 
 ; 5b) without merge, stderr must NOT appear in captured stdout
-out, code, err = process.cmd('sh', shArgs, '', '', noArgs, 0, 0)
-ok5b = code == 0 && out.contains('STDOUT_LINE') && out.contains('STDERR_LINE') == false
+out, se, code, err = process.cmd('sh', shArgs, '', '', noArgs, 0, false)
+ok5b = code == 0 && out.contains('STDOUT_LINE') && out.contains('STDERR_LINE') == false && se.contains('STDERR_LINE')
 ok5b -> print('[5b] separate stderr .............. PASS')
 ok5b == false -> print('[5b] separate stderr .............. FAIL out=' - out.trim())
 
 ; 6) timeout kills the child (status == -2)
 sleepArgs []str = with-len(1)
 sleepArgs[0] = '5'
-out, code, err = process.cmd('sleep', sleepArgs, '', '', noArgs, 200, 0)
+out, se, code, err = process.cmd('sleep', sleepArgs, '', '', noArgs, 200, false)
 ok6 = code == -2
 ok6 -> print('[6] timeout ....................... PASS')
 ok6 == false -> print('[6] timeout ....................... FAIL code=' - code.to-str())
@@ -71,7 +71,7 @@ ok6 == false -> print('[6] timeout ....................... FAIL code=' - code.to
 ; 7) start/exec failure (status == -1, err populated)
 badArgs []str = with-len(1)
 badArgs[0] = 'program-xyz'
-out, code, err = process.cmd('/no/such/program-xyz', badArgs, '', '', noArgs, 0, 0)
+out, se, code, err = process.cmd('/no/such/program-xyz', badArgs, '', '', noArgs, 0, false)
 ok7 = code == -1 && err != ''
 ok7 -> print('[7] start failure ................ PASS')
 ok7 == false -> print('[7] start failure ................ FAIL code=' - code.to-str() - ' err=' - err)
@@ -82,7 +82,7 @@ opts8 = process.cmdopts {
     stdin: ''
     env: noArgs
     timeout: 0
-    merge-err: 0
+    merge-err: false
 }
 out8, code8, err8 = process.exec('echo', args1, opts8)
 ok8 = out8 == 'hello world\n' && code8 == 0 && err8 == ''
@@ -95,7 +95,7 @@ opts9 = process.cmdopts {
     stdin: 'piped-stdin-data'
     env: noArgs
     timeout: 0
-    merge-err: 0
+    merge-err: false
 }
 out9, code9, err9 = process.exec('cat', noArgs, opts9)
 ok9 = out9 == 'piped-stdin-data' && code9 == 0
@@ -108,7 +108,7 @@ opts10 = process.cmdopts {
     stdin: ''
     env: noArgs
     timeout: 200
-    merge-err: 0
+    merge-err: false
 }
 out10, code10, err10 = process.exec('sleep', sleepArgs, opts10)
 ok10 = code10 == -2
