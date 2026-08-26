@@ -23,6 +23,7 @@ type Parser struct {
 	reportedIllegal   map[string]bool              // 已報告的 ILLEGAL token 位置（避免重複）
 	sem               *SemanticContext            // 語義副表（類型推斷 + 註解/平台鍵/embed/泛型）
 	funcSignatures    map[string][]string          // 函數名 → 結果型別字串列表（用於 let 型別推斷）
+	methodSignatures  map[string][]string          // 結構體方法 → 結果型別字串列表（鍵：module.struct.method）
 	structFields      map[string]map[string]string // struct 名 → 欄位名 → 型別字串
 	methodStructStack []string                     // 當前方法所屬的 struct 名稱棧
 	typeAliasNames    map[string]bool              // 已定義的類型別名名稱（用於等號語法偵測）
@@ -519,12 +520,18 @@ func (p *Parser) setVarType(name, typ string) {
 
 // SetExternSignatures 注入外部（跨文件）函數簽名和 struct 欄位型別，
 // 供 parseLetStatement 的型別推斷使用。由 transpiler 在解析前呼叫。
-func (p *Parser) SetExternSignatures(funcSigs map[string][]string, structFields map[string]map[string]string) {
+func (p *Parser) SetExternSignatures(funcSigs map[string][]string, methodSigs map[string][]string, structFields map[string]map[string]string) {
 	if p.funcSignatures == nil {
 		p.funcSignatures = make(map[string][]string)
 	}
 	for k, v := range funcSigs {
 		p.funcSignatures[k] = v
+	}
+	if p.methodSignatures == nil {
+		p.methodSignatures = make(map[string][]string)
+	}
+	for k, v := range methodSigs {
+		p.methodSignatures[k] = v
 	}
 	if p.structFields == nil {
 		p.structFields = make(map[string]map[string]string)

@@ -46,7 +46,8 @@ func VetFile(filePath string) []VetResult {
 
 	// Inject std module signatures so the parser can infer cross-module types
 	funcSigs, structFields := checker.CollectStdModuleSignatures()
-	p.SetExternSignatures(funcSigs, structFields)
+	methodSigs := checker.CollectStdMethodSigs()
+	p.SetExternSignatures(funcSigs, methodSigs, structFields)
 
 	prog := p.ParseProgram()
 

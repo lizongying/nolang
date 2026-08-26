@@ -76,14 +76,29 @@ func (p *Parser) resolveReceiverType(receiver Expression) string {
 // inferTypeFromCallExpr 嘗試從函數/方法調用推斷返回型別。
 // 僅推斷 option 型別（?type），避免泛型/聯合型別的特化問題。
 // 返回空字串表示無法推斷。
+//
+// 查找規則：
+//   - 同檔案函數（裸名 fn）查 p.funcSignatures
+//   - 模組函數（mod.fn）查 p.funcSignatures
+//   - 結構體方法（receiver.method）查 p.methodSignatures
+//     本模組方法以 "struct.method" 為鍵，跨模組 std 方法以 "module.struct.method" 為鍵。
 func (p *Parser) inferTypeFromCallExpr(call *CallExpression) string {
-	if p.funcSignatures == nil {
+	if call.Function == nil {
 		return ""
 	}
-	fnName := ""
 	if ident, ok := call.Function.(*Identifier); ok {
-		fnName = ident.Value
-	} else if dot, ok := call.Function.(*DotExpression); ok {
+		// 同檔案函數調用（如 foo()）：以裸名查找
+		fnName := ident.Value
+		if p.funcSignatures != nil {
+			if rets, ok := p.funcSignatures[fnName]; ok && len(rets) == 1 {
+				if strings.HasPrefix(rets[0], "?") {
+					return rets[0]
+				}
+			}
+		}
+		return ""
+	}
+	if dot, ok := call.Function.(*DotExpression); ok {
 		receiverType := p.resolveReceiverType(dot.Receiver)
 		if receiverType != "" {
 			// Map types are stored as [K]V in varDeclTypes but function
@@ -95,41 +110,47 @@ func (p *Parser) inferTypeFromCallExpr(call *CallExpression) string {
 					receiverType = "hashmap-" + keyPart + "-" + SanitizeLLVMTypeName(valPart)
 				}
 			}
-			fnName = receiverType + "." + dot.Property
-		} else {
-			// Module-path receiver（如 http.do-req(...)）：receiver 是模組
-			// 識別符而非變數。跨模組同名（歧義）std 函數在簽名快取中只以
-			// "module.fn" 為鍵註冊（見 checker qualifyRet 注釋），因此先查
-			// 組合鍵；命中即返回限定型別（如 ?http.response），避免回退到
-			// 裸名鍵拿到未限定的 ?response（codegen 端 mapToLLVMType 會把
-			// 未知裸名映射為 i64，導致 it 綁定型別錯誤、字段訪問級聯崩潰）。
-			modName := ""
-			if ident, ok := dot.Receiver.(*Identifier); ok {
-				modName = ident.Value
-			} else if innerDot, ok := dot.Receiver.(*DotExpression); ok {
-				// Multi-level module path (e.g. encoding.base64.decode):
-				// use the last path segment as the module short name.
-				modName = innerDot.Property
-			}
-			if modName != "" {
-				if rets, ok := p.funcSignatures[modName+"."+dot.Property]; ok && len(rets) == 1 {
+			// 結構體方法：查 methodSignatures
+			if p.methodSignatures != nil {
+				// receiverType 可能是裸名（如 conn，本模組方法）或
+				// "module.struct"（如 tls.conn，跨模組 std 方法），
+				// 兩種鍵均以 receiverType + "." + dot.Property 查找即可。
+				key := receiverType + "." + dot.Property
+				if rets, ok := p.methodSignatures[key]; ok && len(rets) == 1 {
 					if strings.HasPrefix(rets[0], "?") {
 						return rets[0]
 					}
 				}
 			}
-			// Fallback: try matching just the last property name.
-			fnName = dot.Property
+			// array/slice type methods (如 []t.len()) 仍存於 funcSignatures
+			if p.funcSignatures != nil {
+				fnName := receiverType + "." + dot.Property
+				if rets, ok := p.funcSignatures[fnName]; ok && len(rets) == 1 {
+					if strings.HasPrefix(rets[0], "?") {
+						return rets[0]
+					}
+				}
+			}
+			return ""
 		}
-	}
-	if fnName == "" {
+		// Module-path receiver（如 http.do-req(...)）：receiver 是模組
+		// 識別符而非變數。std 模組函數統一以 "module.fn" 為鍵註冊。
+		modName := ""
+		if ident, ok := dot.Receiver.(*Identifier); ok {
+			modName = ident.Value
+		} else if innerDot, ok := dot.Receiver.(*DotExpression); ok {
+			// Multi-level module path (e.g. encoding.base64.decode):
+			// use the last path segment as the module short name.
+			modName = innerDot.Property
+		}
+		if modName != "" && p.funcSignatures != nil {
+			if rets, ok := p.funcSignatures[modName+"."+dot.Property]; ok && len(rets) == 1 {
+				if strings.HasPrefix(rets[0], "?") {
+					return rets[0]
+				}
+			}
+		}
 		return ""
-	}
-	if rets, ok := p.funcSignatures[fnName]; ok && len(rets) == 1 {
-		// 僅推斷 option 型別，避免泛型/聯合型別的特化問題
-		if strings.HasPrefix(rets[0], "?") {
-			return rets[0]
-		}
 	}
 	return ""
 }

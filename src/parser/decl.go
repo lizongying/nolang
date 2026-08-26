@@ -58,6 +58,13 @@ func (p *Parser) parseMethodDefinition(structToken lexer.Token) Statement {
 			p.funcSignatures[fullName] = rets
 		}
 	}
+	// 同樣修復 methodSignatures 鍵
+	if p.methodSignatures != nil {
+		if rets, ok := p.methodSignatures[methodName]; ok {
+			delete(p.methodSignatures, methodName)
+			p.methodSignatures[fullName] = rets
+		}
+	}
 
 	// 插入 self 參數
 	selfParam := &Parameter{
@@ -1522,14 +1529,22 @@ func (p *Parser) parseFunctionBody(def *FunctionDefinition) {
 
 	// 收集函數簽名（結果型別），供後續 let 型別推斷使用
 	if len(def.Results) > 0 {
-		if p.funcSignatures == nil {
-			p.funcSignatures = make(map[string][]string)
-		}
 		rets := make([]string, len(def.Results))
 		for i, r := range def.Results {
 			rets[i] = typeString(r.Type)
 		}
-		p.funcSignatures[def.Name] = rets
+		if def.IsMethodDef && len(def.Name) > 0 && def.Name[0] != '[' {
+			// 結構體方法存入 methodSignatures
+			if p.methodSignatures == nil {
+				p.methodSignatures = make(map[string][]string)
+			}
+			p.methodSignatures[def.Name] = rets
+		} else {
+			if p.funcSignatures == nil {
+				p.funcSignatures = make(map[string][]string)
+			}
+			p.funcSignatures[def.Name] = rets
+		}
 	}
 }
 

@@ -1633,6 +1633,23 @@ func (g *Generator) exprResultLLVMType(expr parser.Expression) string {
 				}
 			}
 		}
+		// struct.field[i] where field is %vec/%arr (e.g. m2.rows[0] where rows is [][]str):
+		// look up the field's element type from the struct definition.
+		if dot, ok := v.Left.(*parser.DotExpression); ok {
+			recvType := g.exprResultLLVMType(dot.Receiver)
+			if g.isStructLLVMType(recvType) {
+				structName := strings.TrimPrefix(recvType, "%")
+				if fields, _ := g.resolveStructFields(structName); fields != nil {
+					for _, f := range fields {
+						if f.name == dot.Property && (f.typ == "%vec" || f.typ == "%arr") {
+							if f.elemType != "" {
+								return f.elemType
+							}
+						}
+					}
+				}
+			}
+		}
 		// %vec / %arr: element type tracked separately
 		if ident, ok := v.Left.(*parser.Identifier); ok {
 			// 必須先檢查變數實際型別是否為 str-long（字串），避免被

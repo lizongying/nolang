@@ -562,6 +562,7 @@ type Transpiler struct {
 	// externFuncSigs/externStructFields: 預載入的跨文件函數簽名和 struct 欄位型別，
 	// 注入到所有 parser 實例中以支援 let 型別推斷
 	externFuncSigs     map[string][]string
+	externMethodSigs   map[string][]string
 	externStructFields map[string]map[string]string
 	// targetGoos/targetGoarch: 編譯目標平台，用於平台變體過濾。
 	// 空字串表示 fallback 到 runtime.GOOS/GOARCH（編譯主機平台）。
@@ -737,7 +738,7 @@ func (t *Transpiler) parseFile(filePath string) (*parser.Program, error) {
 	p.Filename = filepath.Base(filePath)
 	// 注入預載入的跨文件簽名，支援 let 型別推斷
 	if t.externFuncSigs != nil || t.externStructFields != nil {
-		p.SetExternSignatures(t.externFuncSigs, t.externStructFields)
+		p.SetExternSignatures(t.externFuncSigs, t.externMethodSigs, t.externStructFields)
 	}
 	prog := p.ParseProgram()
 	if len(p.Errors()) > 0 {
@@ -765,7 +766,7 @@ func (t *Transpiler) parseEmbeddedProgram(filename string, data []byte) (*parser
 	p.AllowAnonymousFnType = t.allowAnonymousFn
 	p.Filename = filepath.Base(filename)
 	if t.externFuncSigs != nil || t.externStructFields != nil {
-		p.SetExternSignatures(t.externFuncSigs, t.externStructFields)
+		p.SetExternSignatures(t.externFuncSigs, t.externMethodSigs, t.externStructFields)
 	}
 	prog := p.ParseProgram()
 	if len(p.Errors()) > 0 {
@@ -944,8 +945,9 @@ func (t *Transpiler) Compile(source string) (string, error) {
 // preloadModuleSignatures 掃描源碼中的 use 語句，預載入模組的函數簽名和 struct 欄位型別。
 // 這些簽名會注入到 parser 中，使 let 型別推斷能處理跨文件方法調用。
 // 也預載入所有已知 std 模組的簽名，因為 transpiler 會自動載入這些模組。
-func (t *Transpiler) preloadModuleSignatures(source string) (map[string][]string, map[string]map[string]string) {
+func (t *Transpiler) preloadModuleSignatures(source string) (map[string][]string, map[string][]string, map[string]map[string]string) {
 	funcSigs := make(map[string][]string)
+	methodSigs := make(map[string][]string)
 	structFields := make(map[string]map[string]string)
 	loadedPaths := make(map[string]bool) // 避免重複載入同一模組
 	// 0. 合併 std 模組簽名快取，並掛到 t.externFuncSigs：
@@ -961,16 +963,21 @@ func (t *Transpiler) preloadModuleSignatures(source string) (map[string][]string
 	// 真正可省略的 std 工作在第二遍（語義/IR）：見下方自動載入 std 迴圈，
 	// 僅載入程式實際引用到的 std 模組體，其餘略過。
 	stdSigs, stdFields := checker.CollectStdModuleSignatures()
+	stdMethodSigs := checker.CollectStdMethodSigs()
 	for name, sigs := range stdSigs {
 		funcSigs[name] = sigs
+	}
+	for name, sigs := range stdMethodSigs {
+		methodSigs[name] = sigs
 	}
 	for name, fields := range stdFields {
 		structFields[name] = fields
 	}
 	t.externFuncSigs = funcSigs
+	t.externMethodSigs = methodSigs
 	t.externStructFields = structFields
 	// collectSignaturesFromProg 從已解析的 Program 中收集函數簽名和 struct 欄位
-	collectSignaturesFromProg := func(modProg *parser.Program) {
+	collectSignaturesFromProg := func(modProg *parser.Program, modShort string) {
 		for _, stmt := range modProg.Statements {
 			if fd, ok := stmt.(*parser.FunctionDefinition); ok {
 				if len(fd.Results) > 0 {
@@ -978,7 +985,14 @@ func (t *Transpiler) preloadModuleSignatures(source string) (map[string][]string
 					for i, r := range fd.Results {
 						rets[i] = r.Type.String()
 					}
+				if fd.IsMethodDef && len(fd.Name) > 0 && fd.Name[0] != '[' {
+					methodSigs[modShort+"."+fd.Name] = rets
+				} else if len(fd.Name) > 0 && fd.Name[0] != '[' {
+					funcSigs[modShort+"."+fd.Name] = rets
+				} else {
+					// 陣列/切片型別方法（如 []t.method）：以裸名存入 funcSigs
 					funcSigs[fd.Name] = rets
+				}
 				}
 			}
 			if sd, ok := stmt.(*parser.StructDefinition); ok {
@@ -1015,6 +1029,7 @@ func (t *Transpiler) preloadModuleSignatures(source string) (map[string][]string
 			candidates = append(candidates, rawPath[:idx])
 		}
 		var modProg *parser.Program
+		var matchedPath string
 		for _, usePath := range candidates {
 			if loadedPaths[usePath] {
 				modProg = nil
@@ -1024,16 +1039,25 @@ func (t *Transpiler) preloadModuleSignatures(source string) (map[string][]string
 			prog, err := t.resolveUse(fakeUse)
 			if err == nil && prog != nil {
 				modProg = prog
+				matchedPath = usePath
 				loadedPaths[usePath] = true
 				break
 			}
 		}
 		if modProg != nil {
-			collectSignaturesFromProg(modProg)
+			// modShort = matchedPath 的最後一段（如 /src/tail.tail → tail）
+			modShort := matchedPath
+			if idx := strings.LastIndex(matchedPath, "/"); idx >= 0 {
+				modShort = matchedPath[idx+1:]
+			}
+			if idx := strings.LastIndex(modShort, "."); idx > 0 {
+				modShort = modShort[:idx]
+			}
+			collectSignaturesFromProg(modProg, modShort)
 		}
 	}
 	// std 簽名已於步驟 0 合入（本地模組簽名在步驟 1 直接覆蓋同名鍵）。
-	return funcSigs, structFields
+	return funcSigs, methodSigs, structFields
 }
 
 // stdModuleLookup 建立 std 模組 shortName/shortPath → info 的查表。
@@ -1397,9 +1421,10 @@ func (t *Transpiler) collectReferencedStdModules(prog *parser.Program) map[strin
 
 func (t *Transpiler) CompileTarget(source string, _ Target) (string, error) {
 	// 預載入跨文件模組簽名，供 parser 型別推斷使用
-	externFuncSigs, externStructFields := t.preloadModuleSignatures(source)
+	externFuncSigs, externMethodSigs, externStructFields := t.preloadModuleSignatures(source)
 	// 存儲到 Transpiler 中，使 parseFile（用於解析自動載入的模組）也能注入簽名
 	t.externFuncSigs = externFuncSigs
+	t.externMethodSigs = externMethodSigs
 	t.externStructFields = externStructFields
 
 	// B（開關 NOLANG_REUSE_STD_AST）：no vet src/std 時，target 即某個 std 模組，
@@ -1421,7 +1446,7 @@ func (t *Transpiler) CompileTarget(source string, _ Target) (string, error) {
 		}
 		// 注入外部簽名
 		if len(externFuncSigs) > 0 || len(externStructFields) > 0 {
-			p.SetExternSignatures(externFuncSigs, externStructFields)
+			p.SetExternSignatures(externFuncSigs, externMethodSigs, externStructFields)
 		}
 		program = p.ParseProgram()
 		if len(p.Errors()) > 0 {

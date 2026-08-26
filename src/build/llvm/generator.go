@@ -116,12 +116,61 @@ func (g *Generator) isHeapOwningType(llvmType string) bool {
 // 若非嵌套容器，返回 ""。
 func (g *Generator) nestedElemLLVMType(elem parser.Type) string {
 	if st, ok := elem.(*parser.SliceType); ok && st.Elem != nil {
+		// 遞迴處理多層嵌套容器（如 [][]str → st.Elem 是 []str）。
+		// 若 st.Elem 本身也是 SliceType/ArrayType，需再深入一層取得最內層元素型別。
+		if innerSt, ok := st.Elem.(*parser.SliceType); ok && innerSt.Elem != nil {
+			return g.nestedElemLLVMType(st.Elem)
+		}
+		if innerAt, ok := st.Elem.(*parser.ArrayType); ok && innerAt.Elem != nil {
+			return g.nestedElemLLVMType(st.Elem)
+		}
+		// st.Elem 可能是 NamedType（如泛型特化後 vals [][]str 的 st.Elem 是 NamedType{Value: "[]str"}）。
+		// 此時需透過字串解析取得內層元素型別。
+		if nt, ok := st.Elem.(*parser.NamedType); ok {
+			return g.nestedElemTypeFromString(nt.Value)
+		}
 		return g.mapToLLVMType(st.Elem.String())
 	}
 	if at, ok := elem.(*parser.ArrayType); ok && at.Elem != nil {
+		if innerSt, ok := at.Elem.(*parser.SliceType); ok && innerSt.Elem != nil {
+			return g.nestedElemLLVMType(at.Elem)
+		}
+		if innerAt, ok := at.Elem.(*parser.ArrayType); ok && innerAt.Elem != nil {
+			return g.nestedElemLLVMType(at.Elem)
+		}
+		if nt, ok := at.Elem.(*parser.NamedType); ok {
+			return g.nestedElemTypeFromString(nt.Value)
+		}
 		return g.mapToLLVMType(at.Elem.String())
 	}
 	return ""
+}
+
+// nestedElemTypeFromString 從型別字串（如 "[]str"、"[][]i64"）解析內層元素型別。
+// 用於泛型特化後 NamedType{Value: "[]str"} 的場景：substituteType 將泛型參數 v
+// 替換為型別字串 "[]str"，產生 NamedType 而非 SliceType，需透過字串解析取得內層型別。
+func (g *Generator) nestedElemTypeFromString(typeStr string) string {
+	// 處理嵌套切片："[][]str" → 剝離一層 [] 後遞迴
+	if strings.HasPrefix(typeStr, "[]") {
+		inner := typeStr[2:]
+		if strings.HasPrefix(inner, "[]") || strings.HasPrefix(inner, "[") {
+			// 仍是容器類型，遞迴解析
+			return g.nestedElemTypeFromString(inner)
+		}
+		return g.mapToLLVMType(inner)
+	}
+	// 處理固定大小陣列："[N]T" → 剝離 [N] 後返回 T
+	if strings.HasPrefix(typeStr, "[") {
+		closeIdx := strings.IndexByte(typeStr, ']')
+		if closeIdx > 0 && closeIdx+1 < len(typeStr) {
+			inner := typeStr[closeIdx+1:]
+			if strings.HasPrefix(inner, "[]") || strings.HasPrefix(inner, "[") {
+				return g.nestedElemTypeFromString(inner)
+			}
+			return g.mapToLLVMType(inner)
+		}
+	}
+	return g.mapToLLVMType(typeStr)
 }
 
 // isStructLLVMType 判斷 LLVM 型別是否為結構體型別（用戶自定義或內建容器）。

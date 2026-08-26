@@ -68,7 +68,7 @@ func init() {
 
 	// process-run-capture: legacy subprocess runner (now a stub).
 	// Previously delegated to @nolang_process_run in process.c C runtime.
-	// Now replaced by pure Nolang implementations of process.cmd in process.no
+	// Now replaced by pure Nolang implementations of cmd in process.no
 	// (POSIX: process-fork/pipe/dup2/exec-shell/waitpid; Windows: Win32 API builtins).
 	// This builtin is kept as a stub returning ("", -1) for backward compatibility.
 	BuiltinMethodList = append(BuiltinMethodList, BuiltinMethod{

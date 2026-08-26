@@ -41,7 +41,7 @@ func main() {
 	srcDir := filepath.Join(repoRoot, "src")
 	fsys := os.DirFS(srcDir)
 
-	funcSigs, structFields, aliases, structMod, err := checker.CollectStdSigsFromFS(fsys)
+	funcSigs, methodSigs, structFields, aliases, structMod, err := checker.CollectStdSigsFromFS(fsys)
 	if err != nil {
 		fatal(fmt.Sprintf("genstdsig: collect failed: %v", err))
 	}
@@ -58,6 +58,8 @@ func main() {
 	fmt.Fprintf(&buf, "\tembeddedStdSigKey = %s\n", strconv.Quote(key))
 	buf.WriteString("\tembeddedStdFuncSigs = ")
 	writeMapStringSliceInline(&buf, funcSigs)
+	buf.WriteString("\tembeddedStdMethodSigs = ")
+	writeMapStringSliceInline(&buf, methodSigs)
 	buf.WriteString("\tembeddedStdStructFields = ")
 	writeMapStringMapInline(&buf, structFields)
 	buf.WriteString("\tembeddedStdAliases = ")
@@ -80,8 +82,8 @@ func main() {
 	if err := os.WriteFile(outPath, formatted, 0o644); err != nil {
 		fatal(fmt.Sprintf("genstdsig: write %s: %v", outPath, err))
 	}
-	fmt.Printf("genstdsig: wrote %s (%d funcSigs, %d structs, %d aliases)\n",
-		outPath, len(funcSigs), len(structFields), len(aliases))
+	fmt.Printf("genstdsig: wrote %s (%d funcSigs, %d methodSigs, %d structs, %d aliases)\n",
+		outPath, len(funcSigs), len(methodSigs), len(structFields), len(aliases))
 }
 
 func writeMapStringSliceInline(buf *bytes.Buffer, m map[string][]string) {

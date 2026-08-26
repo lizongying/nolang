@@ -263,10 +263,20 @@ func specializeGenericStruct(keyStr, valueStr string, tmplSD *parser.StructDefin
 	// 複製結構定義（保留 ArraySize/IsSlice，替換元素型別）
 	newFields := make([]*parser.StructField, len(tmplSD.Fields))
 	for i, f := range tmplSD.Fields {
+		newType := substituteType(f.Type, subst)
+		// 當 ArraySize > 0 時，Type 應只存元素型別（如 "i64"），
+		// ArraySize 獨立保留陣列大小。若 substituteType 返回了
+		// ArrayType（因解析器將 [N]type 同時存入 Type 和 ArraySize），
+		// 則提取 Elem 作為 Type。
+		if f.ArraySize > 0 {
+			if at, ok := newType.(*parser.ArrayType); ok {
+				newType = at.Elem
+			}
+		}
 		newFields[i] = &parser.StructField{
 			Token:     f.Token,
 			Name:      f.Name,
-			Type:      substituteType(f.Type, subst),
+			Type:      newType,
 			ArraySize: f.ArraySize,
 			IsSlice:   f.IsSlice,
 			Value:     f.Value,

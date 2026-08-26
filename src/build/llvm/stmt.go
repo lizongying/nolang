@@ -2,6 +2,7 @@ package llvm
 
 import (
 	"fmt"
+	"os"
 	"sort"
 	"strings"
 
@@ -2236,6 +2237,9 @@ func (g *Generator) emitDeepElementClone(sb *strings.Builder, dstBuf, srcBuf, le
 		g.indent(), elemCloneBuf, srcElemData, elemCopySize))
 	// 嵌套容器：遞迴 clone 內層元素的堆 data
 	if innerType != "" && g.isHeapOwningType(innerType) {
+		if os.Getenv("NOLANG_DEBUG_CLONE") != "" {
+			fmt.Fprintf(os.Stderr, "[debug-clone] emitDeepElementClone recurse: elemType=%q innerType=%q elemElemType=%v\n", elemType, innerType, elemElemType)
+		}
 		g.emitDeepElementClone(sb, elemCloneBuf, srcElemData, srcElemLen, innerType)
 	}
 	// store new data to dst 元素
@@ -2318,6 +2322,9 @@ func (g *Generator) emitStructClone(sb *strings.Builder, srcPtr, dstPtr, structT
 	}
 	for i, f := range fields {
 		info := g.classifyFieldHeap(f.typ, f.elemType)
+		if os.Getenv("NOLANG_DEBUG_CLONE") != "" && info.kind == fieldHeapContainer {
+			fmt.Fprintf(os.Stderr, "[debug-clone] emitStructClone %s field[%d] %q: typ=%q elemType=%q elemElemType=%q\n", structName, i, f.name, f.typ, f.elemType, f.elemElemType)
+		}
 		switch info.kind {
 		case fieldHeapContainer:
 			g.emitStructFieldClone(sb, srcPtr, dstPtr, structType, i, info.dataFieldIdx, info.containerType, f.elemType, f.elemElemType)
@@ -2642,7 +2649,18 @@ func (g *Generator) generateFunctionDefinition(sb *strings.Builder, fd *parser.F
 		}
 			g.varTypes[r.Name] = g.resolveOutputParamLLVMType(r.Type)
 			if strings.HasPrefix(typeStr, "?") {
-				g.optionInnerTypes[r.Name] = g.mapToLLVMType(typeStr[1:])
+				innerTypeStr := typeStr[1:] // strip '?'
+				g.optionInnerTypes[r.Name] = g.mapToLLVMType(innerTypeStr)
+				// ?[]T: option inner type is %vec; also register the vec element type
+				// so that copyToData can correctly deep-clone the vec when boxing
+				// (e.g. result = .vals[idx] where result is ?[]str).
+				if strings.HasPrefix(innerTypeStr, "[]") {
+					elemTy := g.mapToLLVMType(innerTypeStr[2:])
+					if g.arrayElemTypes == nil {
+						g.arrayElemTypes = make(map[string]string)
+					}
+					g.arrayElemTypes[r.Name] = elemTy
+				}
 			}
 			// 陣列型結果參數的 LLVM 簽名為 [N x T]*（resolveParamLLVMType 回傳 [N x T]）。
 			// 註冊元素型別與大小，供索引賦值/讀取及 IndexExpression 使用正確型別。
@@ -4430,6 +4448,24 @@ func (g *Generator) collectVarDeclsFromStmtInner(stmt parser.Statement, vars map
 				vars[s.Name.Value] = vt
 				if g.varTypes != nil {
 					g.varTypes[s.Name.Value] = vt
+				}
+			}
+		}
+		// Propagate arrayElemTypes and elemElemTypes from the source option
+		// variable to `it` so that emitDeepClone in generateLet uses the
+		// correct element size (e.g. 24 for %str-long instead of 8 for i64).
+		// Without this, the synthetic path returns early and skips the
+		// propagation at line ~4495, causing deep clone to use the default
+		// i64 element size for ?[]T option unwrapping.
+		if ident, ok := s.Value.(*parser.Identifier); ok {
+			if g.arrayElemTypes != nil {
+				if et, ok := g.arrayElemTypes[ident.Value]; ok && et != "" {
+					g.arrayElemTypes[s.Name.Value] = et
+				}
+			}
+			if g.elemElemTypes != nil {
+				if eet, ok := g.elemElemTypes[ident.Value]; ok && eet != "" {
+					g.elemElemTypes[s.Name.Value] = eet
 				}
 			}
 		}
@@ -6806,6 +6842,56 @@ func (g *Generator) generateLet(sb *strings.Builder, stmt *parser.LetStatement) 
 	}
 }
 
+	// 深層 clone 路徑：x = struct.field[i]，其中 field 是 %vec/%arr 且元素為堆擁有型別。
+	// 例如 r0 = m2.rows[0]，其中 m2.rows 是 [][]str，rows[0] 是 []str（%vec）。
+	// 需深層 clone 以避免 data 指標共享，並傳播 elemType/elemElemType。
+	if idxExpr, ok := stmt.Value.(*parser.IndexExpression); ok {
+		if dot, ok := idxExpr.Left.(*parser.DotExpression); ok {
+			fieldType := g.exprResultLLVMType(dot)
+			if fieldType == "%vec" || fieldType == "%arr" {
+				// 從 struct 定義中取得 field 的 elemType 和 elemElemType
+				srcElemType := ""
+				srcElemElemType := ""
+				recvType := g.exprResultLLVMType(dot.Receiver)
+				if g.isStructLLVMType(recvType) {
+					structName := strings.TrimPrefix(recvType, "%")
+					if fields, _ := g.resolveStructFields(structName); fields != nil {
+						for _, f := range fields {
+							if f.name == dot.Property && (f.typ == "%vec" || f.typ == "%arr") {
+								srcElemType = f.elemType
+								srcElemElemType = f.elemElemType
+								break
+							}
+						}
+					}
+				}
+				if srcElemType == "" {
+					srcElemType = "i64"
+				}
+				// 僅對堆擁有型別元素深層 clone
+				if g.isHeapOwningType(srcElemType) {
+					_, isLocal := g.funcLocalNames[name]
+					isOutput := g.outputParamNames != nil && g.outputParamNames[name]
+					if isLocal && !isOutput {
+						g.freeOldHeapValue(sb, stmt, name)
+						elemPtr := g.generateIndexExprPtr(sb, idxExpr)
+						g.emitDeepClone(sb, elemPtr, g.varAddr(name), srcElemType, srcElemElemType)
+						g.trackLocalHeapVar(name, srcElemType)
+						if g.varTypes == nil {
+							g.varTypes = make(map[string]string)
+						}
+						g.varTypes[name] = srcElemType
+						// 傳播 elemType/elemElemType
+						if g.arrayElemTypes != nil {
+							g.arrayElemTypes[name] = srcElemElemType
+						}
+						return
+					}
+				}
+			}
+		}
+	}
+
 	// Deep clone path for struct field read: x = s.field
 	// where field is a heap-owning type (%str-long, %vec, user struct).
 	// generateDotExpression loads the field value (shallow copy of {len, cap, data}),
@@ -7035,35 +7121,53 @@ func (g *Generator) generateLet(sb *strings.Builder, stmt *parser.LetStatement) 
 					// When srcInnerType is "" (unknown, e.g. tls.conn.send returns ?i64 but
 					// optionInnerTypes is not populated), treat as primitive to avoid loading
 					// from a raw i64 value as if it were a pointer (which causes trace/BPT trap).
-				if srcInnerType != "" && g.isStructLLVMType(srcInnerType) {
-					// Source option holds a struct pointer — load the struct value.
-					// This is a SHALLOW copy: the struct's str/vec fields share data
-					// pointers with the option's heap box. The option owns the data.
-					// We must return after the store to prevent heap tracking (which
-					// would double-free the borrowed data at function exit).
+			if srcInnerType != "" && g.isStructLLVMType(srcInnerType) {
+				// Source option holds a struct pointer — load the struct value,
+				// then DEEP CLONE it into `it` so `it` owns independent heap data.
+				// Previously this was a shallow copy (store struct value directly),
+				// which shared data pointers with the option's heap box. When `it`
+				// was freed at function exit, the option box's data became dangling,
+				// causing use-after-free / double-free / SIGSEGV.
+				// Deep clone allocates new data buffers, so `it` and the option box
+				// each own independent heap data and can be freed independently.
 				loadType := srcInnerType
 				loadReg := g.tmpReg("it.syn.load")
 				sb.WriteString(fmt.Sprintf("%s%s = load %s, %s* %s\n", g.indent(), loadReg, loadType, loadType, val))
-				val = loadReg
 				// If the load type differs from llvmType (it's allocated type),
 				// bitcast the alloca pointer so the store uses the correct type.
+				dstPtr := g.varAddr(name)
 				if loadType != llvmType {
 					castReg := g.tmpReg("it.syn.cast")
-					sb.WriteString(fmt.Sprintf("%s%s = bitcast %s* %s to %s*\n", g.indent(), castReg, llvmType, g.varAddr(name), loadType))
-					sb.WriteString(fmt.Sprintf("%sstore %s %s, %s* %s\n", g.indent(), loadType, val, loadType, castReg))
-					// Update varTypes so reads of `it` in this arm use the correct type
-					if g.varTypes != nil {
-						g.varTypes[name] = loadType
-					}
-					return
+					sb.WriteString(fmt.Sprintf("%s%s = bitcast %s* %s to %s*\n", g.indent(), castReg, llvmType, dstPtr, loadType))
+					dstPtr = castReg
 				}
-				// loadType == llvmType: store directly and return.
-				// Without this return, the code falls through to the general store
-				// path which tracks `it` as a heap variable → double-free at exit.
-				sb.WriteString(fmt.Sprintf("%sstore %s %s, %s* %s\n", g.indent(), loadType, val, loadType, g.varAddr(name)))
+				// Stage loaded value into a temp alloca for emitDeepClone
+				// (which requires pointers, not SSA values).
+				srcTmp := g.tmpReg("it.syn.src")
+				sb.WriteString(fmt.Sprintf("%s%s = alloca %s\n", g.indent(), srcTmp, loadType))
+				sb.WriteString(fmt.Sprintf("%sstore %s %s, %s* %s\n", g.indent(), loadType, loadReg, loadType, srcTmp))
+				// Determine element type for container types (%vec/%arr/%str-long)
+				// so emitDeepClone recursively clones elements.
+				elemType := ""
+				if loadType == "%vec" || loadType == "%arr" {
+					if g.arrayElemTypes != nil {
+						if et, ok := g.arrayElemTypes[name]; ok && et != "" {
+							elemType = et
+						}
+					}
+				} else if loadType == "%str-long" {
+					elemType = "i8"
+				}
+				g.emitDeepClone(sb, srcTmp, dstPtr, loadType, elemType)
 				// Update varTypes so reads of `it` in this arm use the correct type
 				if g.varTypes != nil {
 					g.varTypes[name] = loadType
+				}
+				// Track `it` as a heap variable (it now owns independent heap data)
+				g.trackLocalHeapVar(name, loadType)
+				// Propagate element type for container types
+				if elemType != "" && g.arrayElemTypes != nil {
+					g.arrayElemTypes[name] = elemType
 				}
 				return
 			} else {
@@ -8050,6 +8154,9 @@ func (g *Generator) generateOptionAssign(sb *strings.Builder, stmt *parser.LetSt
 				innerType = it
 			}
 		}
+		if os.Getenv("NOLANG_DEBUG_CLONE") != "" {
+			fmt.Fprintf(os.Stderr, "[debug-clone] copyToData ENTER name=%q val=%q innerType=%q\n", name, val, innerType)
+		}
 		if innerType == "double" {
 			copyF64ToData(val)
 		} else if innerType == "float" {
@@ -8082,7 +8189,20 @@ func (g *Generator) generateOptionAssign(sb *strings.Builder, stmt *parser.LetSt
 			// like fd/i64 directly) then recursively clones heap-owned fields
 			// (vec.data → malloc+memcpy, str-long.data → malloc+memcpy, nested
 			// structs → emitStructClone) so the box owns independent heap data.
-			g.emitDeepClone(sb, srcTmp, heapCast, innerType, "")
+			// For %vec inner type, pass the element type (from arrayElemTypes) so
+			// emitContainerClone correctly calculates element sizes and recursively
+			// clones elements (e.g. []str → elements are %str-long, need 24-byte
+			// malloc per element, not 8-byte i64 default).
+			vecElemType := ""
+			if innerType == "%vec" && g.arrayElemTypes != nil {
+				if et, ok := g.arrayElemTypes[name]; ok && et != "" {
+					vecElemType = et
+				}
+			}
+			if os.Getenv("NOLANG_DEBUG_CLONE") != "" {
+				fmt.Fprintf(os.Stderr, "[debug-clone] copyToData name=%q innerType=%q vecElemType=%q arrayElemTypes=%v\n", name, innerType, vecElemType, g.arrayElemTypes)
+			}
+			g.emitDeepClone(sb, srcTmp, heapCast, innerType, vecElemType)
 			ptrInt := g.tmpReg("opt.ptr.int")
 			sb.WriteString(fmt.Sprintf("%s%s = ptrtoint i8* %s to i64\n", g.indent(), ptrInt, heapPtr))
 			dataGEP := g.tmpReg("opt.data.gep")

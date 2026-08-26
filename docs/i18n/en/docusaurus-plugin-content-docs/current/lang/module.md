@@ -172,6 +172,25 @@ Whether a method call requires a prefix depends on the **method owner**:
 
 In `fs.fil()`, `fs` is the module's ShortName, and `fil` is the module-level function name. The `fs.` prefix cannot be omitted because `fs` here is not a variable name but a module path.
 
+### `Name.Function` — Two different semantics
+
+`process.cmd(...)` and `p.start(...)` look identical (`xxx.yyy()`), but have completely different semantics:
+
+| Form | `xxx` | `yyy` | Meaning |
+| --- | --- | --- | --- |
+| `process.cmd(...)` | Module ShortName | Module-level function | `xxx` is a module path, `yyy` is a standalone function defined in that module |
+| `p.start(...)` | Instance variable | Struct method | `xxx` is a variable of type `process`, `yyy` is a method defined as `process.start = ...` |
+
+**Definition differences**:
+- Module-level functions are defined **without prefix**: inside the module, write `cmd = (program str, ...) { ... }`
+- Struct methods are defined **with `struct.` prefix**: `process.start = (program str, ...) { ... }`
+
+**Call differences**:
+- Module-level functions are called externally as `ModuleName.function()`: `process.cmd(...)`
+- Struct methods are called via an instance: `p = process.new()` → `p.start(...)`
+
+> **Important**: Even within the same module, calling a same-module module-level function uses no prefix (`cmd(...)`), while struct methods are invoked via the implicit `self` or `.method()` syntax.
+
 ## Complete Example
 
 ```no

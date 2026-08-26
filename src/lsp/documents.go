@@ -223,7 +223,8 @@ func (m *DocumentManager) ParseDocument(uri string) (*parser.Program, []string, 
 	// the parser can infer types from cross-module method calls (e.g.
 	// tls-c.send() → ?i64), which enables option-match `it` binding injection.
 	funcSigs, structFields := checker.CollectStdModuleSignatures()
-	p.SetExternSignatures(funcSigs, structFields)
+	methodSigs := checker.CollectStdMethodSigs()
+	p.SetExternSignatures(funcSigs, methodSigs, structFields)
 	ast := p.ParseProgram()
 
 	errs := p.Errors()

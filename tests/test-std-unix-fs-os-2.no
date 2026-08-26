@@ -133,14 +133,14 @@ sc-ok == false -> print('WARN: sysctl failed (may not be available on this platf
 print('SKIP: get-domain-name test')
 
 ; ═══════════════════════════════════════════════
-; 10. process-spawn / process-wait — 創建子進程並等待
+; 10. process.spawn / wait — 創建子進程並等待
 ; ═══════════════════════════════════════════════
-spawn-pid = process-spawn('echo hello_spawn')
+spawn-pid = process.spawn('echo hello_spawn')
 eprint('spawn pid = ')
 print(spawn-pid.to-str())
 spawn-pid > 0 -> {
     print('PASS: spawn returned positive pid')
-    status = process-wait(spawn-pid)
+    status = wait(spawn-pid)
     eprint('wait status = ')
     print(status.to-str())
 }

@@ -538,13 +538,13 @@ process {
 }
 
 ; 進程創建
-p = process{}
-ok = p.start(program, arg)          ; fork + exec，捕獲 stdout
-ok = p.start-with-stdin(program, arg) ; fork + exec，捕獲 stdin + stdout
+p = process.new()
+ok = p.start-with-opts(program, args, dir, input, merge-err) ; 啟動子進程（不等待）
+ok = p.start(program, arg)          ; 便捷方法：fork + exec，捕獲 stdout
 
 ; 進程等待
-ok = p.wait()                       ; 阻塞等待子進程結束
-ok = p.wait-nohang()                ; 非阻塞輪詢
+status = p.wait()                   ; 阻塞等待子進程結束
+status = p.wait-nohang()            ; 非阻塞輪詢；nil=仍在執行
 
 ; 進程控制
 ok = p.kill(sig)                    ; 發送信號
@@ -596,7 +596,7 @@ out, code, err = process.exec('echo', ['hello'], o)
 
 ; 便捷函數（舊，後續取捨）
 status = process.process-run(cmd)           ; 執行 shell 命令
-content, code = process.process-output(program, arg) ; 執行並捕獲輸出
+content, code = process.new().output(program, arg) ; 執行並捕獲輸出
 ```
 
 ### net — 網路操作

@@ -3540,11 +3540,12 @@ var (
 	// Cache for CollectStdModuleSignatures: parsing all std modules is
 	// expensive (~0.5s). VetFile is called once per .no file, so without
 	// caching a full std vet spends ~95% of its time re-parsing modules.
-	stdSigsOnce       sync.Once
-	stdSigsCache      map[string][]string
-	stdFieldsCache    map[string]map[string]string
-	stdAliasesCache   map[string]string // 單具體型別別名快取（如 "fd" → "i64"）
-	stdStructModCache map[string]string // struct name → module short name（如 "conn" → "tls"）
+	stdSigsOnce        sync.Once
+	stdSigsCache       map[string][]string          // 模塊函數簽名（鍵：module.fn 或裸名 fn）
+	stdMethodSigsCache map[string][]string          // 結構體方法簽名（鍵：module.struct.method）
+	stdFieldsCache     map[string]map[string]string
+	stdAliasesCache    map[string]string // 單具體型別別名快取（如 "fd" → "i64"）
+	stdStructModCache  map[string]string // struct name → module short name（如 "conn" → "tls"）
 	// stdProgramsCache 緩存 CollectStdModuleSignatures PASS1 已解析的 std 模組
 	// Program，按「內容哈希」(cache.ContentKey) 索引。no vet src/std 的第二遍
 	// 可直接復用，跳過磁盤文件的重新 parse；內容與 embed 不一致時自然不命中，
@@ -3680,8 +3681,9 @@ func GetJsModules() []JsModuleInfo {
 }
 //go:generate go run ./genstdsig
 
-func setStdSigCaches(funcSigs map[string][]string, structFields map[string]map[string]string, aliases map[string]string, structMod map[string]string) {
+func setStdSigCaches(funcSigs map[string][]string, methodSigs map[string][]string, structFields map[string]map[string]string, aliases map[string]string, structMod map[string]string) {
 	stdSigsCache = funcSigs
+	stdMethodSigsCache = methodSigs
 	stdFieldsCache = structFields
 	stdAliasesCache = aliases
 	stdStructModCache = structMod
@@ -3690,7 +3692,7 @@ func setStdSigCaches(funcSigs map[string][]string, structFields map[string]map[s
 func CollectStdModuleSignatures() (map[string][]string, map[string]map[string]string) {
 	stdSigsOnce.Do(func() {
 		// ---- embedded signature table (compiled-in Go literals) ----
-		// Preferred path: stdsig_gen.go bakes the four signature tables into
+		// Preferred path: stdsig_gen.go bakes the five signature tables into
 		// the binary as Go source literals, so PASS1 is skipped on EVERY build
 		// (including the cold first build / cleared disk cache). Only used when
 		// the embedded key matches the current embedded std content; if src/std
@@ -3699,7 +3701,7 @@ func CollectStdModuleSignatures() (map[string][]string, map[string]map[string]st
 		// a stale table.
 		if embeddedStdSigReady {
 			if key, err := computeStdSigKey(); err == nil && embeddedStdSigKey == key {
-				setStdSigCaches(embeddedStdFuncSigs, embeddedStdStructFields, embeddedStdAliases, embeddedStdStructMod)
+				setStdSigCaches(embeddedStdFuncSigs, embeddedStdMethodSigs, embeddedStdStructFields, embeddedStdAliases, embeddedStdStructMod)
 				warmStdTokenCache()
 				return
 			}
@@ -3708,37 +3710,38 @@ func CollectStdModuleSignatures() (map[string][]string, map[string]map[string]st
 		// ---- Stage 1: try disk cache first (skips parsing all std modules) ----
 		if os.Getenv("NOLANG_NOCACHE_STD") == "" {
 			if cached, ok := tryLoadStdSigCache(); ok {
-				setStdSigCaches(cached.FuncSigs, cached.Fields, cached.Aliases, cached.StructMod)
+				setStdSigCaches(cached.FuncSigs, cached.MethodSigs, cached.Fields, cached.Aliases, cached.StructMod)
 				return
 			}
 		}
 
 		// ---- full collection from embedded StdFS ----
-		funcSigs, structFields, aliases, structMod, _ := collectStdSigsFromFS(nolang.StdFS)
-		setStdSigCaches(funcSigs, structFields, aliases, structMod)
+		funcSigs, methodSigs, structFields, aliases, structMod, _ := collectStdSigsFromFS(nolang.StdFS)
+		setStdSigCaches(funcSigs, methodSigs, structFields, aliases, structMod)
 
 		// ---- persist to disk for next build (best-effort) ----
 		if os.Getenv("NOLANG_NOCACHE_STD") == "" {
-			saveStdSigCache(funcSigs, structFields, aliases, structMod, gatherStdTokens())
+			saveStdSigCache(funcSigs, methodSigs, structFields, aliases, structMod, gatherStdTokens())
 		}
 	})
 	return stdSigsCache, stdFieldsCache
 }
 
 // CollectStdSigsFromFS is the exported, FS-parameterized entry point used by
-// the signature-table generator (genstdsig) to collect the four signature
+// the signature-table generator (genstdsig) to collect the five signature
 // tables from the on-disk src/ tree at `no` build time.
-func CollectStdSigsFromFS(fsys fs.FS) (map[string][]string, map[string]map[string]string, map[string]string, map[string]string, error) {
+func CollectStdSigsFromFS(fsys fs.FS) (map[string][]string, map[string][]string, map[string]map[string]string, map[string]string, map[string]string, error) {
 	return collectStdSigsFromFS(fsys)
 }
 
 // collectStdSigsFromFS parses every std module under fsys and collects the
-// four signature tables (func return types, struct fields, type aliases,
-// struct→module map) needed by the parser's type inference. It is the
-// FS-parameterized core of CollectStdModuleSignatures: the runtime passes
+// five signature tables (func return types, method return types, struct fields,
+// type aliases, struct→module map) needed by the parser's type inference. It is
+// the FS-parameterized core of CollectStdModuleSignatures: the runtime passes
 // nolang.StdFS, the generator passes an os.DirFS over src/ on disk.
-func collectStdSigsFromFS(fsys fs.FS) (map[string][]string, map[string]map[string]string, map[string]string, map[string]string, error) {
+func collectStdSigsFromFS(fsys fs.FS) (map[string][]string, map[string][]string, map[string]map[string]string, map[string]string, map[string]string, error) {
 	funcSigs := make(map[string][]string)
+	methodSigs := make(map[string][]string)
 	structFields := make(map[string]map[string]string)
 	aliases := make(map[string]string)
 	structMod := make(map[string]string) // struct name → module short name
@@ -3753,7 +3756,6 @@ func collectStdSigsFromFS(fsys fs.FS) (map[string][]string, map[string]map[strin
 	}
 	var mods []parsedMod
 	structCount := make(map[string]int)
-	funcCount := make(map[string]int)
 	// 並行解析：各模組的 lex+parse 相互獨立，僅共用有鎖的 token LRU。
 	// 結果按模組原順序寫回，保持 last-wins 合併語義不變。
 	known := listStdModules(fsys)
@@ -3797,9 +3799,6 @@ func collectStdSigsFromFS(fsys fs.FS) (map[string][]string, map[string]map[strin
 			if sd, ok := stmt.(*parser.StructDefinition); ok {
 				structCount[sd.Name]++
 			}
-			if fd, ok := stmt.(*parser.FunctionDefinition); ok && !fd.IsMethodDef && !strings.Contains(fd.Name, ".") {
-				funcCount[fd.Name]++
-			}
 		}
 	}
 
@@ -3836,16 +3835,25 @@ func collectStdSigsFromFS(fsys fs.FS) (map[string][]string, map[string]map[strin
 					for i, r := range fd.Results {
 						rets[i] = qualifyRet(r.Type.String(), m.info.ShortName, ownStructs)
 					}
-					// 跨模組同名頂層函數（dial 定義於 quic/dns/proxy/tls）：
-					// 裸名鍵按載入順序 last-wins，會令 dns.dial() 呼叫在
-					// 解析期被標注成其他模組 dial 的返回型別。歧義名以
-					// "module.fn" 為鍵註冊，裸名鍵不寫入（避免錯誤匹配）；
-					// inferTypeFromCallExpr 對 module.fn() 呼叫優先查
-					// "module.fn" 鍵。唯一名維持裸名鍵。
-					if !fd.IsMethodDef && !strings.Contains(fd.Name, ".") && funcCount[fd.Name] > 1 {
-						funcSigs[m.info.ShortName+"."+fd.Name] = rets
+					// Nolang 強制要求模組函數以 "module.fn" 形式調用
+					//（全局函數 print/eprint/format/with-cap/with-len/with-cap-len
+					// 除外，但它們由編譯器內建實現，不在 std .no 中定義，
+					// 不會被收集到簽名表）。因此模組函數統一以
+					// "module.fn" 為鍵，不再存儲裸名鍵。
+					if fd.IsMethodDef {
+						// 方法定義：fd.Name 形如 "struct.method" 或
+						// "[n]t.method"/"[]t.method"（陣列/切片型別方法）。
+						// 結構體方法以 "module.struct.method" 為鍵存入 methodSigs。
+						// 陣列/切片型別方法仍存入 funcSigs（鍵為 fd.Name），
+						// 因為 receiverType 是型別字串（如 [n]t、[]t）而非
+						// 模組限定的結構體名，無法以 module.type.method 查找。
+						if len(fd.Name) > 0 && fd.Name[0] == '[' {
+							funcSigs[fd.Name] = rets
+						} else {
+							methodSigs[m.info.ShortName+"."+fd.Name] = rets
+						}
 					} else {
-						funcSigs[fd.Name] = rets
+						funcSigs[m.info.ShortName+"."+fd.Name] = rets
 					}
 				}
 			}
@@ -3879,7 +3887,7 @@ func collectStdSigsFromFS(fsys fs.FS) (map[string][]string, map[string]map[strin
 		}
 	}
 
-	return funcSigs, structFields, aliases, structMod, nil
+	return funcSigs, methodSigs, structFields, aliases, structMod, nil
 }
 func CollectStdConcreteAliases() map[string]string {
 	CollectStdModuleSignatures() // 觸發 sync.Once 填充快取
@@ -3888,6 +3896,13 @@ func CollectStdConcreteAliases() map[string]string {
 func CollectStdStructModules() map[string]string {
 	CollectStdModuleSignatures() // 觸發 sync.Once 填充快取
 	return stdStructModCache
+}
+
+// CollectStdMethodSigs 返回結構體方法簽名表（鍵：module.struct.method）。
+// 與 CollectStdModuleSignatures（模組函數簽名）分離存放，避免同名衝突。
+func CollectStdMethodSigs() map[string][]string {
+	CollectStdModuleSignatures() // 觸發 sync.Once 填充快取
+	return stdMethodSigsCache
 }
 
 // StdProgramForContent 返回與內容哈希相對應、在 CollectStdModuleSignatures
@@ -4627,6 +4642,13 @@ func structFieldTypeString(f *parser.StructField) string {
 		return ""
 	}
 	typeStr := f.Type.String()
+	// If f.Type is already an ArrayType or SliceType, its String() already
+	// includes the [N] or [] prefix. Only apply the prefix for legacy fields
+	// where Type is a plain named type with separate ArraySize/IsSlice flags.
+	switch f.Type.(type) {
+	case *parser.ArrayType, *parser.SliceType:
+		return typeStr
+	}
 	if f.ArraySize > 0 {
 		return fmt.Sprintf("[%d]%s", f.ArraySize, typeStr)
 	}

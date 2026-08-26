@@ -2140,6 +2140,25 @@ Whether a method call requires a prefix depends on the **method owner**:
 
 In `fs.fil()`, `fs` is the module's ShortName, and `fil` is the module-level function name. The `fs.` prefix cannot be omitted because `fs` here is not a variable name but a module path.
 
+#### `Name.Function` — Two different semantics
+
+`process.cmd(...)` and `p.start(...)` look identical (`xxx.yyy()`), but have completely different semantics:
+
+| Form | `xxx` | `yyy` | Meaning |
+| --- | --- | --- | --- |
+| `process.cmd(...)` | Module ShortName | Module-level function | `xxx` is a module path, `yyy` is a standalone function defined in that module |
+| `p.start(...)` | Instance variable | Struct method | `xxx` is a variable of type `process`, `yyy` is a method defined as `process.start = ...` |
+
+**Definition differences**:
+- Module-level functions are defined **without prefix**: inside the module, write `cmd = (program str, ...) { ... }`
+- Struct methods are defined **with `struct.` prefix**: `process.start = (program str, ...) { ... }`
+
+**Call differences**:
+- Module-level functions are called externally as `ModuleName.function()`: `process.cmd(...)`
+- Struct methods are called via an instance: `p = process.new()` → `p.start(...)`
+
+> **Important**: Even within the same module, calling a same-module module-level function uses no prefix (`cmd(...)`), while struct methods are invoked via the implicit `self` or `.method()` syntax.
+
 #### Cross-Module Type References
 
 When referencing **types** (structs, interfaces, enums) defined in **other modules**, you must use the `ShortName.` prefix. This applies to:
@@ -3350,13 +3369,13 @@ process {
 }
 
 // Process creation
-p = process{}
-ok = p.start(program, arg)          // fork + exec, capture stdout
-ok = p.start-with-stdin(program, arg) // fork + exec, capture stdin + stdout
+p = process.new()
+ok = p.start-with-opts(program, args, dir, input, merge-err) // Start child process (no wait)
+ok = p.start(program, arg)          // Convenience: fork + exec, capture stdout
 
 // Process waiting
-ok = p.wait()                       // Block waiting for child process to end
-ok = p.wait-nohang()                // Non-blocking polling
+status = p.wait()                   // Block waiting for child process to end
+status = p.wait-nohang()            // Non-blocking polling; nil=still running
 
 // Process control
 ok = p.kill(sig)                    // Send signal
@@ -3383,7 +3402,7 @@ p.close()                          // Close all pipes and wait
 
 // Convenience functions
 status = process.process-run(cmd)           // Execute shell command
-content, code = process.process-output(program, arg) // Execute and capture output
+content, code = process.new().output(program, arg) // Execute and capture output
 ```
 
 #### net — Network Operations

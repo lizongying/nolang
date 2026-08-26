@@ -204,6 +204,25 @@ p.exists()                 ; path.exists 是結構體方法，不需前綴
 
 `fs.fil()` 中 `fs` 是模組的 ShortName，`fil` 是模組級函數名。`fs.` 前綴不可省略，因為 `fs` 在此處不是變數名，而是模組路徑。
 
+### `Name.Function` 的兩種語義
+
+`process.cmd(...)` 和 `p.start(...)` 寫法都是 `xxx.yyy()`，但語義完全不同：
+
+| 寫法 | `xxx` | `yyy` | 語義 |
+| --- | --- | --- | --- |
+| `process.cmd(...)` | 模組 ShortName | 模組級函數 | `xxx` 是模組路徑，`yyy` 是該模組定義的獨立函數 |
+| `p.start(...)` | 實例變數 | 結構體方法 | `xxx` 是 `process` 類型的變數，`yyy` 是定義為 `process.start = ...` 的方法 |
+
+**定義時的差異**：
+- 模組級函數定義時**不加前綴**：在模組內部直接寫 `cmd = (program str, ...) { ... }`
+- 結構體方法定義時**必須加 `struct.` 前綴：`process.start = (program str, ...) { ... }`
+
+**調用時的差異**：
+- 模組級函數在外部調用時用 `ModuleName.function()`：`process.cmd(...)`
+- 結構體方法通過實例調用：`p = process.new()` → `p.start(...)`
+
+> **注意**：即使在模組內部，調用同模組的模組級函數也不加前綴（`cmd(...)`），而調用結構體方法則通過 `self` 隱含或 `.method()` 語法。
+
 ## 跨模組型別引用
 
 引用**其他模組**定義的型別（結構體、介面、列舉等）時，必須使用 `ShortName.` 前綴。這適用於：

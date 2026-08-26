@@ -524,13 +524,13 @@ process {
 }
 
 ; Process creation
-p = process{}
-ok = p.start(program, arg)          ; fork + exec, captures stdout
-ok = p.start-with-stdin(program, arg) ; fork + exec, captures stdin + stdout
+p = process.new()
+ok = p.start-with-opts(program, args, dir, input, merge-err) ; Start child process (no wait)
+ok = p.start(program, arg)          ; Convenience: fork + exec, captures stdout
 
 ; Process waiting
-ok = p.wait()                       ; Block waiting for child process to end
-ok = p.wait-nohang()                ; Non-blocking poll
+status = p.wait()                   ; Block waiting for child process to end
+status = p.wait-nohang()            ; Non-blocking poll; nil=still running
 
 ; Process control
 ok = p.kill(sig)                    ; Send signal
@@ -582,7 +582,7 @@ out, code, err = process.exec('echo', ['hello'], o)
 
 ; Convenience functions (legacy, pending decision)
 status = process.process-run(cmd)           ; Execute shell command
-content, code = process.process-output(program, arg) ; Execute and capture output
+content, code = process.new().output(program, arg) ; Execute and capture output
 ```
 
 ### net — Network Operations
