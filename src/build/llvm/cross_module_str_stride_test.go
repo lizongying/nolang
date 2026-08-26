@@ -59,23 +59,20 @@ main = () {
 }
 
 // TestBuiltinStrResultAsArgEnsuresStrLong verifies that builtin function
-// results (like fs.read-file) passed directly as function arguments are
-// typed as %str-long* and not i64*.
+// results that return str (like get-env) passed directly as function
+// arguments are typed as %str-long* and not i64*.
 //
-// Bug: builtin results (e.g. %rf.str.N from read-file) were not detected
-// by isStringExpr or exprResultLLVMType in genTypedArg's default case,
-// causing them to fall through to i64* handling. The callee would then
-// treat the parameter as i64 instead of %str-long, using stride=8.
+// Bug: builtin results were not detected by isStringExpr or
+// exprResultLLVMType in genTypedArg's default case, causing them to
+// fall through to i64* handling. The callee would then treat the
+// parameter as i64 instead of %str-long, using stride=8.
 func TestBuiltinStrResultAsArgEnsuresStrLong(t *testing.T) {
 	src := `
-find-byte = (s str, c i64) (pos i64) {
-    pos = 0
+print-str = (s str) {
 }
 
 main = () {
-    content = read-file('test.txt')
-    p = find-byte(content, 0)
-    print(p)
+    print-str(get-env('HOME'))
 }
 `
 	l := lexer.New(src)
@@ -88,23 +85,21 @@ main = () {
 	g := NewGenerator()
 	ir := g.Generate(prog)
 
-	// The call to find-byte should pass %str-long* for the content argument.
-	// Check that the call instruction uses %str-long* and not i64* for the
-	// first argument.
+	// The call to print-str should pass %str-long* for the argument.
 	callLines := []string{}
 	for _, line := range strings.Split(ir, "\n") {
 		trimmed := strings.TrimSpace(line)
-		if strings.Contains(trimmed, "call void @find-byte") {
+		if strings.Contains(trimmed, "call void @print-str") {
 			callLines = append(callLines, trimmed)
 		}
 	}
 	if len(callLines) == 0 {
-		t.Fatalf("expected call to find-byte, got IR:\n%s", ir)
+		t.Fatalf("expected call to print-str, got IR:\n%s", ir)
 	}
 	for _, callLine := range callLines {
 		// The first argument should be %str-long*
 		if !strings.Contains(callLine, "%str-long*") {
-			t.Errorf("find-byte call should pass %%str-long* for str argument, got: %s", callLine)
+			t.Errorf("print-str call should pass %%str-long* for str argument, got: %s", callLine)
 		}
 	}
 }
@@ -280,7 +275,7 @@ main = () {
 func TestBuiltinStrStoredInVarNoDoubleFree(t *testing.T) {
 	src := `
 main = () {
-    content = read-file('test.txt')
+    content = get-env('HOME')
     print(content)
 }
 `
@@ -294,7 +289,7 @@ main = () {
 	g := NewGenerator()
 	ir := g.Generate(prog)
 
-	// When read-file result is stored in 'content', the stmtTemporaries
+	// When get-env result is stored in 'content', the stmtTemporaries
 	// entry should be removed by untrackStmtTemporary. The variable 'content'
 	// is tracked by heapVars instead.
 	//
@@ -304,7 +299,7 @@ main = () {
 	// indicate both stmtTemporaries and heapVars freeing → double-free).
 	//
 	// Additionally, there may be 1 @free for the null-terminated buffer
-	// allocated by makeNullTerminatedStr for the 'test.txt' argument
+	// allocated by makeNullTerminatedStr for the 'HOME' argument
 	// (tracked via stmtTempRawPtrs and freed at statement end). This is
 	// a different pointer and does not constitute a double-free.
 	contentFreeCount := 0

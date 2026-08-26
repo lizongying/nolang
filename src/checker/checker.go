@@ -1231,21 +1231,23 @@ func ValidateUndefinedVars(program *parser.Program, rootDir string) []ValidateRe
 	// 3b. Collect symbols from local module imports (paths starting with /)
 	//     These include FFI declarations (#c), functions, and constants from
 	//     imported files like `# /sqlite-driver/sqlite`.
+	//
+	//     Transitive imports are handled via a worklist: when a module is
+	//     loaded, its own UseStatements are added to the worklist so that
+	//     transitively imported modules are also processed. This ensures
+	//     that entry files can use functions from transitively imported
+	//     modules without explicitly importing them (bug08 fix).
 	if rootDir != "" {
 		pkg, _ := pkg.LoadPackage(rootDir)
-		for _, stmt := range program.Statements {
-			use, ok := stmt.(*parser.UseStatement)
-			if !ok {
-				continue
-			}
-			// Only handle module-level imports (no specific function)
-			// Function-specific imports are already handled in step 3.
-			if use.Function != "" {
-				continue
-			}
-			modProg := resolveUseModule(use, pkg)
+
+		// collectModuleSymbols processes a single module's statements,
+		// adding defined names.
+		var collectModuleSymbols func(modProg *parser.Program)
+		visitedModules := make(map[string]bool) // dedup by module path
+
+		collectModuleSymbols = func(modProg *parser.Program) {
 			if modProg == nil {
-				continue
+				return
 			}
 			for _, ms := range modProg.Statements {
 				if es, ok := ms.(*parser.ExternStatement); ok && es.Name != nil {
@@ -1261,6 +1263,45 @@ func ValidateUndefinedVars(program *parser.Program, rootDir string) []ValidateRe
 				}
 				if ls, ok := ms.(*parser.LetStatement); ok && ls.Name != nil {
 					definedVars[ls.Name.Value] = true
+				}
+			}
+		}
+
+		// Build initial worklist from the entry program's UseStatements.
+		var worklist []*parser.UseStatement
+		for _, stmt := range program.Statements {
+			use, ok := stmt.(*parser.UseStatement)
+			if !ok {
+				continue
+			}
+			worklist = append(worklist, use)
+		}
+
+		// Process the worklist, draining transitively.
+		for len(worklist) > 0 {
+			use := worklist[0]
+			worklist = worklist[1:]
+
+			// Dedup: skip modules we've already processed
+			if visitedModules[use.Path] {
+				continue
+			}
+			visitedModules[use.Path] = true
+
+			modProg := resolveUseModule(use, pkg, rootDir)
+			if modProg == nil {
+				continue
+			}
+
+			// Collect this module's symbols
+			collectModuleSymbols(modProg)
+
+			// Collect nested UseStatements for transitive processing.
+			for _, ms := range modProg.Statements {
+				if nestedUse, ok := ms.(*parser.UseStatement); ok {
+					if !visitedModules[nestedUse.Path] {
+						worklist = append(worklist, nestedUse)
+					}
 				}
 			}
 		}

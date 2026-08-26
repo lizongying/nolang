@@ -3736,10 +3736,10 @@ func (g *Generator) varLLVMType(stmt *parser.LetStatement) string {
 				if m.Return[0] == parser.TypeStr {
 					return "%str-long"
 				}
-				// Slice-returning builtins (e.g. read-file → []byte)
-				if _, isSlice := m.Return[0].(*parser.SliceType); isSlice {
-					return "%vec"
-				}
+			// Slice-returning builtins (e.g. read-file → []byte)
+			if _, isSlice := m.Return[0].(*parser.SliceType); isSlice {
+				return "%vec"
+			}
 				// Struct-returning builtins (e.g. uname → utsname)
 				if structTy := g.builtinStructReturnType(m); structTy != "" {
 					return structTy

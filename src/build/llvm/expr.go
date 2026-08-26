@@ -554,6 +554,18 @@ func (g *Generator) generateConditionAsI1(sb *strings.Builder, cond parser.Expre
 	}
 	// Check the expression type — only truncate integer types
 	condType := g.intExprLLVMType(cond)
+	// For option variables, read the tag (field 0) directly instead of extracting data.
+	if ident, ok := cond.(*parser.Identifier); ok && g.varTypes != nil {
+		if t, isVar := g.varTypes[ident.Value]; isVar && t == "%option" {
+			tagGEP := g.tmpReg("opt.tag.gep")
+			tagLoad := g.tmpReg("opt.tag")
+			sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%option, %%option* %s, i32 0, i32 0\n", g.indent(), tagGEP, llvmVarRef(ident.Value)))
+			sb.WriteString(fmt.Sprintf("%s%s = load i64, i64* %s\n", g.indent(), tagLoad, tagGEP))
+			reg := g.tmpReg("opt.trunc")
+			sb.WriteString(fmt.Sprintf("%s%s = trunc i64 %s to i1\n", g.indent(), reg, tagLoad))
+			return reg
+		}
+	}
 	condVal := g.generateExprWithSB(sb, cond)
 	// Non-integer types (e.g. %vec, %str-long): treat as truthy (i1 = 1)
 	if !g.isIntegerLLVMType(condType) && condType != "" {
@@ -4950,23 +4962,23 @@ func (g *Generator) generateInfixI1(sb *strings.Builder, expr *parser.InfixExpre
 				// nil is parsed as NilLiteral, not Identifier
 				tag = 1
 			}
-			if tag >= 0 {
-				if t, ok := g.varTypes[leftIdent.Value]; ok && t == "%option" {
-					tagGEP := g.tmpReg("opt.cmp.gep")
-					tagLoad := g.tmpReg("opt.cmp.load")
-					cmpReg := g.tmpReg("cmp.i1")
-					cmpOp := "eq"
-					if expr.Operator == "!=" {
-						cmpOp = "ne"
-					}
-					if sb != nil {
-						sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%option, %%option* %%%s, i32 0, i32 0\n", g.indent(), tagGEP, leftIdent.Value))
-						sb.WriteString(fmt.Sprintf("%s%s = load i64, i64* %s\n", g.indent(), tagLoad, tagGEP))
-						sb.WriteString(fmt.Sprintf("%s%s = icmp %s i64 %s, %d\n", g.indent(), cmpReg, cmpOp, tagLoad, tag))
-					}
-					return cmpReg
+		if tag >= 0 {
+			if t, ok := g.varTypes[leftIdent.Value]; ok && t == "%option" {
+				tagGEP := g.tmpReg("opt.cmp.gep")
+				tagLoad := g.tmpReg("opt.cmp.load")
+				cmpReg := g.tmpReg("cmp.i1")
+				cmpOp := "eq"
+				if expr.Operator == "!=" {
+					cmpOp = "ne"
 				}
-				// str-long == nil: compare data pointer (field 2) to 0 (null).
+				if sb != nil {
+					sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%option, %%option* %%%s, i32 0, i32 0\n", g.indent(), tagGEP, leftIdent.Value))
+					sb.WriteString(fmt.Sprintf("%s%s = load i64, i64* %s\n", g.indent(), tagLoad, tagGEP))
+					sb.WriteString(fmt.Sprintf("%s%s = icmp %s i64 %s, %d\n", g.indent(), cmpReg, cmpOp, tagLoad, tag))
+				}
+return cmpReg
+}
+// str-long == nil: compare data pointer (field 2) to 0 (null).
 				// A %str-long with data == 0 is considered "nil" (e.g. getenv
 				// returning NULL, or an uninitialized string).
 				if t, ok := g.varTypes[leftIdent.Value]; ok && t == "%str-long" && tag == 1 {

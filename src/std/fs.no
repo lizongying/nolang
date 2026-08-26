@@ -582,6 +582,67 @@ file.write-bytes = (data []byte) (ok ?bool) {
     written == s.len -> ok = true
 }
 
+; ═══════════════════════════════════════════════
+; 全域快捷函數（等價 open + file 方法）
+; ═══════════════════════════════════════════════
+
+; read-bytes: 讀取整個檔案為 []byte
+; p str: 檔案路徑
+; 返回 content ?[]byte:
+;   ok([]byte) — 成功，含檔案內容
+;   nil        — 檔案為空
+;   err        — 讀取失敗
+read-bytes = (p str) (content ?[]byte) {
+    data []byte = read-file(p)
+    {
+        data.len == 0 -> {
+            content = nil
+            return
+        }
+    }
+    content = data
+}
+
+; read-str: 讀取整個檔案為字串
+; p str: 檔案路徑
+; 返回 content ?str:
+;   ok(str) — 成功，含檔案內容
+;   nil     — 檔案為空
+;   err     — 讀取失敗
+read-str = (p str) (content ?str) {
+    data []byte = read-file(p)
+    {
+        data.len == 0 -> {
+            content = nil
+            return
+        }
+    }
+    content = data.to-str()
+}
+
+; write-str: 將字串寫入檔案（覆寫）
+; p str: 檔案路徑
+; data str: 要寫入的字串
+; 返回 ok ?bool:
+;   ok(true) — 成功
+;   err      — 寫入失敗
+write-str = (p str, data str) (ok ?bool) {
+    bytes []byte = data.to-bytes()
+    success = write-file(p, bytes)
+    success -> ok = true
+}
+
+; write-bytes: 將 []byte 寫入檔案（覆寫）
+; p str: 檔案路徑
+; data []byte: 要寫入的位元組陣列
+; 返回 ok ?bool:
+;   ok(true) — 成功
+;   err      — 寫入失敗
+write-bytes = (p str, data []byte) (ok ?bool) {
+    success = write-file(p, data)
+    success -> ok = true
+}
+
 ; append: 追加資料到檔案末尾
 ; 簡化實作：先讀取現有內容再合併寫入
 file.append = (data str, n i64) (ok bool) {

@@ -295,3 +295,64 @@ func TestTransitiveImportDiamond(t *testing.T) {
 		t.Errorf("shared-fn not found in LLVM IR at all")
 	}
 }
+
+// TestTransitiveImportEntryUsesDeepFn reproduces bug08:
+// "入口文件 A 必須顯式導入 C，否則 C 的函數無法使用"
+//
+// Module graph:  main.no  ->  a.no  ->  c.no
+//
+// main.no imports a-fn from a.no.
+// a.no imports c-fn from c.no and calls c-fn inside a-fn.
+// c.no defines c-fn.
+//
+// The key difference from TestTransitiveImportLLVM:
+// main.no ALSO directly calls c-fn() — but does NOT explicitly import c.no.
+// The transitive import through a.no should make c-fn available to main.no too.
+func TestTransitiveImportEntryUsesDeepFn(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	if err := os.WriteFile(filepath.Join(tmpDir, "workspace.jsonc"),
+		[]byte(`{"test":"."}`), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	// c.no — defines c-fn
+	if err := os.WriteFile(filepath.Join(tmpDir, "c.no"),
+		[]byte("c-fn = (x i64) (r i64) {\n    r = x + 1\n}\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	// a.no — imports c-fn, calls it inside a-fn
+	if err := os.WriteFile(filepath.Join(tmpDir, "a.no"),
+		[]byte("# /c.c-fn\n"+
+			"a-fn = (x i64) (r i64) {\n    r = c-fn(x)\n}\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	// main.no — imports a-fn only, but ALSO directly calls c-fn
+	// without explicitly importing c.no.
+	// This should work because a.no's import of c.no is transitive.
+	mainSrc := "# /a.a-fn\n" +
+		"result1 = a-fn(10)\n" +
+		"result2 = c-fn(20)\n" +
+		"print(result1)\n" +
+		"print(result2)\n"
+	mainPath := filepath.Join(tmpDir, "main.no")
+	if err := os.WriteFile(mainPath, []byte(mainSrc), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	trans := NewTranspiler(nil)
+	trans.sourcePath = mainPath
+	llvmIR, err := trans.Compile(mainSrc)
+	if err != nil {
+		t.Fatalf("compile error: %v\n--- LLVM IR ---\n%s", err, llvmIR)
+	}
+
+	// Both a-fn and c-fn must be in the IR.
+	for _, fn := range []string{"@a-fn", "@c-fn"} {
+		if !strings.Contains(llvmIR, fn) {
+			t.Errorf("LLVM IR does not contain %s — transitive import not visible to entry file (bug08)", fn)
+		}
+	}
+}

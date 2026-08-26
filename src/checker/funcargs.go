@@ -104,7 +104,7 @@ func ValidateFuncArgs(program *parser.Program, rootDir string) []ValidateResult 
 			if _, exists := sigs[funcName]; exists {
 				continue // already defined locally or via another import
 			}
-			modProg := resolveUseModule(use, pkg)
+			modProg := resolveUseModule(use, pkg, rootDir)
 			if modProg == nil {
 				continue
 			}
@@ -154,17 +154,28 @@ func ValidateFuncArgs(program *parser.Program, rootDir string) []ValidateResult 
 
 // resolveUseModule resolves a UseStatement to its module program.
 // It handles local paths (/path), std paths, and dependency paths (domain/...).
-func resolveUseModule(use *parser.UseStatement, pkg *pkg.Package) *parser.Program {
+// rootDir is the directory of the entry source file, used as a fallback
+// for workspace root resolution when pkg is nil (no package.jsonc found).
+func resolveUseModule(use *parser.UseStatement, p *pkg.Package, rootDir string) *parser.Program {
 	path := use.Path
 	var prog *parser.Program
 	var filePath string
 	// Local module paths (starting with /)
 	if strings.HasPrefix(path, "/") {
-		if pkg == nil {
+		var baseDir string
+		if p != nil {
+			baseDir = p.WorkspaceRoot()
+		}
+		// Fallback: if pkg is nil or has no workspace root, use FindWorkspaceRoot
+		if baseDir == "" && rootDir != "" {
+			if ws, ok := pkg.FindWorkspaceRoot(rootDir); ok {
+				baseDir = ws
+			}
+		}
+		if baseDir == "" {
 			return nil
 		}
 		relPath := strings.TrimPrefix(path, "/")
-		baseDir := pkg.WorkspaceRoot()
 		filePath = filepath.Join(baseDir, relPath) + ".no"
 		prog = parseProgramFile(filePath)
 	} else if strings.HasPrefix(path, "std/") || path == "std" {
@@ -178,10 +189,10 @@ func resolveUseModule(use *parser.UseStatement, pkg *pkg.Package) *parser.Progra
 			return nil
 		}
 		prog = parseProgramFile(filePath)
-	} else if pkg != nil {
+	} else if p != nil {
 		// Dependency paths (domain/org/repo/...)
 		var err error
-		filePath, err = pkg.ResolveDependencyModule(path)
+		filePath, err = p.ResolveDependencyModule(path)
 		if err == nil && filePath != "" {
 			prog = parseProgramFile(filePath)
 		}
