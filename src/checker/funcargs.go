@@ -1354,8 +1354,15 @@ func lookupReturnCount(callExpr *parser.CallExpression, sigs map[string]*funcSig
 					return len(rets)
 				}
 			} else {
-				// Receiver is a module name (e.g. math.sin, os.stat-size)
-				// Look up by bare method name in builtins
+				// Receiver is a module name (e.g. math.sin, os.stat-size, dep.resolve)
+				// 0. User-defined function with module prefix (e.g. "dep.resolve")
+				//    Must be checked BEFORE std sigs to avoid false positives when
+				//    a user function name collides with a std bare name.
+				fullName := recv.Value + "." + methodName
+				if sig, ok := sigs[fullName]; ok {
+					return len(sig.ResultTypes)
+				}
+				// 1. Look up by bare method name in builtins
 				if bi := builtin.FindBuiltinMethod(methodName); bi != nil {
 					return len(bi.Return)
 				}
@@ -1364,7 +1371,6 @@ func lookupReturnCount(callExpr *parser.CallExpression, sigs map[string]*funcSig
 					return len(rets)
 				}
 				// Also try module.method form
-				fullName := recv.Value + "." + methodName
 				if rets, ok := stdSigs[fullName]; ok {
 					return len(rets)
 				}

@@ -164,9 +164,9 @@ func (g *Generator) generateCallArg(sb *strings.Builder, arg parser.Expression) 
 			// 所有整數類型（包括 bool）都以 i64 存儲。函數參數使用 resolveOutputParamLLVMType
 			// 將 i1 映射為 i64，若呼叫端傳遞 i1* 會導致類型不匹配（UB），使 LLVM 優化器
 			// 在內聯後錯誤地常量傳播 bool 輸出參數的值。
-if t, ok := g.varTypes[a.Value]; ok && t == "i1" {
-return "i64* " + g.varAddr(a.Value)
-}
+			if t, ok := g.varTypes[a.Value]; ok && t == "i1" {
+				return "i64* " + g.varAddr(a.Value)
+			}
 			// i32 / i16 / i8 等純量型別 — 使用實際型別而非預設 i64*
 			if t, ok := g.varTypes[a.Value]; ok {
 				return toLLVMType(t) + "* " + g.varAddr(a.Value)
@@ -313,8 +313,8 @@ return "i64* " + g.varAddr(a.Value)
 					if sb != nil {
 						g.tmpIdx++
 						loadReg := fmt.Sprintf("%%ref.st.fload.%d", g.tmpIdx)
-					sb.WriteString(fmt.Sprintf("%s%s = load %s, %s* %s\n", g.indent(), loadReg, toLLVMType(fieldType), toLLVMType(fieldType), fieldVal))
-					sb.WriteString(fmt.Sprintf("%sstore %s %s, %s* %s\n", g.indent(), toLLVMType(fieldType), loadReg, toLLVMType(fieldType), gepReg))
+						sb.WriteString(fmt.Sprintf("%s%s = load %s, %s* %s\n", g.indent(), loadReg, toLLVMType(fieldType), toLLVMType(fieldType), fieldVal))
+						sb.WriteString(fmt.Sprintf("%sstore %s %s, %s* %s\n", g.indent(), toLLVMType(fieldType), loadReg, toLLVMType(fieldType), gepReg))
 					}
 				} else if sb != nil {
 					sb.WriteString(fmt.Sprintf("%sstore %s %s, %s* %s\n", g.indent(), toLLVMType(fieldType), fieldVal, toLLVMType(fieldType), gepReg))
@@ -582,8 +582,8 @@ return "i64* " + g.varAddr(a.Value)
 			}
 			elemType := strings.TrimSuffix(ptrType, "*")
 			if sb != nil {
-			sb.WriteString(fmt.Sprintf("%s%s = alloca %s\n", g.indent(), tmpName, toLLVMType(elemType)))
-			sb.WriteString(fmt.Sprintf("%sstore %s %s, %s %s\n", g.indent(), toLLVMType(elemType), ev, toLLVMType(elemType)+"*", tmpName))
+				sb.WriteString(fmt.Sprintf("%s%s = alloca %s\n", g.indent(), tmpName, toLLVMType(elemType)))
+				sb.WriteString(fmt.Sprintf("%sstore %s %s, %s %s\n", g.indent(), toLLVMType(elemType), ev, toLLVMType(elemType)+"*", tmpName))
 			}
 			return ptrType + " " + tmpName
 		} else if strings.Contains(ev, ".") {
@@ -602,9 +602,9 @@ return "i64* " + g.varAddr(a.Value)
 				sb.WriteString(fmt.Sprintf("%s%s = alloca i64\n", g.indent(), tmpName))
 				sb.WriteString(fmt.Sprintf("%sstore i64 %s, i64* %s\n", g.indent(), ev, tmpName))
 			}
-		return "i64* " + tmpName
-	}
-	return ev
+			return "i64* " + tmpName
+		}
+		return ev
 	}
 }
 
@@ -975,7 +975,7 @@ func (g *Generator) generateCallExpression(sb *strings.Builder, expr *parser.Cal
 				case "f64", "f32":
 					storeType = "double"
 				case "bool":
-				storeType = "i1"
+					storeType = "i1"
 				}
 				// Slice return types (e.g. []i64 from getgroups) use %vec.
 				// The builtin returns a %vec* (alloca); we load it to %vec below.
@@ -1032,21 +1032,21 @@ func (g *Generator) generateCallExpression(sb *strings.Builder, expr *parser.Cal
 							curStoreType = "i1"
 						}
 					}
-			sb.WriteString(fmt.Sprintf("%sstore %s %s, %s* %%%s\n", g.indent(), curStoreType, curVal, curStoreType, varName))
-				// 当第一个返回值是字符串/切片类型并存储到变量时，
-				// 从 stmtTemporaries 中移除临时指针，避免语句结束时
-				// 释放变量引用的堆内存（use-after-free）。
-				// 变量通过 heapVars/trackLocalHeapVar 接管 data 所有权。
-				if outIdx == 0 && (curStoreType == "%str-long" || curStoreType == "%vec") {
-					g.untrackStmtTemporary(retReg)
-					// 标记变量为堆变量，以便后续赋值时释放旧值
-					g.trackLocalHeapVar(varName, curStoreType)
+					sb.WriteString(fmt.Sprintf("%sstore %s %s, %s* %%%s\n", g.indent(), curStoreType, curVal, curStoreType, varName))
+					// 当第一个返回值是字符串/切片类型并存储到变量时，
+					// 从 stmtTemporaries 中移除临时指针，避免语句结束时
+					// 释放变量引用的堆内存（use-after-free）。
+					// 变量通过 heapVars/trackLocalHeapVar 接管 data 所有权。
+					if outIdx == 0 && (curStoreType == "%str-long" || curStoreType == "%vec") {
+						g.untrackStmtTemporary(retReg)
+						// 标记变量为堆变量，以便后续赋值时释放旧值
+						g.trackLocalHeapVar(varName, curStoreType)
+					}
 				}
+				outIdx++
 			}
-			outIdx++
-		}
-		g.lastBuiltinExtra = ""
-		return retReg
+			g.lastBuiltinExtra = ""
+			return retReg
 		}
 
 		// 生成內層調用的參數（receiver 作為第一個參數）
@@ -1168,36 +1168,36 @@ func (g *Generator) generateCallExpression(sb *strings.Builder, expr *parser.Cal
 							continue
 						}
 					}
-				allArgs = append(allArgs, g.generateCallArg(sb, outArg))
-			}
-			// Guard against empty function name: if innerFnName is empty,
-			// skip the call to avoid generating malformed IR `call void @(...)`.
-			if innerFnName != "" {
-				sb.WriteString(fmt.Sprintf("%scall void @%s(%s)\n", g.indent(), sanitizeLLVMName(innerFnName), strings.Join(allArgs, ", ")))
-				// The called function wrote elements via pointer; without updating len,
-				// subsequent reads (fields[0]) would fail bounds check (len still 0).
-				for _, lu := range lenUpdates {
-					g.emitVecLenAutoUpdate(sb, lu.varName, lu.idxReg, lu.isConst)
+					allArgs = append(allArgs, g.generateCallArg(sb, outArg))
 				}
+				// Guard against empty function name: if innerFnName is empty,
+				// skip the call to avoid generating malformed IR `call void @(...)`.
+				if innerFnName != "" {
+					sb.WriteString(fmt.Sprintf("%scall void @%s(%s)\n", g.indent(), sanitizeLLVMName(innerFnName), strings.Join(allArgs, ", ")))
+					// The called function wrote elements via pointer; without updating len,
+					// subsequent reads (fields[0]) would fail bounds check (len still 0).
+					for _, lu := range lenUpdates {
+						g.emitVecLenAutoUpdate(sb, lu.varName, lu.idxReg, lu.isConst)
+					}
+				}
+				return ""
+			}
+			// 純 void（無輸出參數）：直接調用
+			if innerFnName != "" {
+				sb.WriteString(fmt.Sprintf("%scall void @%s(%s)\n", g.indent(), sanitizeLLVMName(innerFnName), strings.Join(innerArgs, ", ")))
 			}
 			return ""
 		}
-		// 純 void（無輸出參數）：直接調用
-		if innerFnName != "" {
-			sb.WriteString(fmt.Sprintf("%scall void @%s(%s)\n", g.indent(), sanitizeLLVMName(innerFnName), strings.Join(innerArgs, ", ")))
-		}
-		return ""
-	}
 
-	// 有返回值：生成 call 並捕獲結果
-	g.tmpIdx++
-	retReg := fmt.Sprintf("%%callret.%d", g.tmpIdx)
-	if innerFnName != "" {
-		sb.WriteString(fmt.Sprintf("%s%s = call %s @%s(%s)\n", g.indent(), retReg, retType, sanitizeLLVMName(innerFnName), strings.Join(innerArgs, ", ")))
-	} else {
-		fmt.Fprintf(os.Stderr, "codegen warning: skipping call with empty function name\n")
-		return ""
-	}
+		// 有返回值：生成 call 並捕獲結果
+		g.tmpIdx++
+		retReg := fmt.Sprintf("%%callret.%d", g.tmpIdx)
+		if innerFnName != "" {
+			sb.WriteString(fmt.Sprintf("%s%s = call %s @%s(%s)\n", g.indent(), retReg, retType, sanitizeLLVMName(innerFnName), strings.Join(innerArgs, ", ")))
+		} else {
+			fmt.Fprintf(os.Stderr, "codegen warning: skipping call with empty function name\n")
+			return ""
+		}
 
 		// 將返回值存入輸出參數變數
 		for _, outArg := range expr.Arguments {
@@ -1487,7 +1487,7 @@ func (g *Generator) generateCallExpression(sb *strings.Builder, expr *parser.Cal
 								}
 							}
 							for _, ct := range candTypes {
-								if builtin.FindBuiltinMethod(ct + "." + shortName) != nil {
+								if builtin.FindBuiltinMethod(ct+"."+shortName) != nil {
 									shouldStrip = false
 									break
 								}
@@ -1496,6 +1496,39 @@ func (g *Generator) generateCallExpression(sb *strings.Builder, expr *parser.Cal
 						if shouldStrip {
 							m = m2
 							fnName = shortName
+						}
+					}
+				}
+			}
+		}
+		// Chained method calls (e.g. .data.truncate(1), .name.clear()) had their
+		// fnName reduced to the bare method name by the code at ~L1259 above. If
+		// the receiver expression's type has a type-specific builtin
+		// (vec.truncate, str.clear, ...), prefer it over a same-named global C
+		// lib call (e.g. POSIX truncate(path, len)): otherwise the CLibCall would
+		// receive garbage arguments and produce invalid IR. This mirrors the
+		// ReceiverGlobal guard at ~L1462, which only protects the case where
+		// fnName still carries a "var." prefix.
+		if m != nil && m.CLibCall != nil {
+			if dot, isDot := expr.Function.(*parser.DotExpression); isDot {
+				recv := dot.Receiver
+				if ge, ok := recv.(*parser.GroupedExpression); ok {
+					recv = ge.Expression
+				}
+				if _, isIdent := recv.(*parser.Identifier); !isIdent {
+					if elemType := g.exprResultLLVMType(recv); elemType != "" {
+						srcType := strings.TrimPrefix(elemType, "%")
+						candTypes := []string{srcType}
+						if aliases, ok2 := llvmTypeToNolang[srcType]; ok2 {
+							candTypes = append(candTypes, aliases...)
+						}
+						for _, ct := range candTypes {
+							if m2 := builtin.FindBuiltinMethod(ct + "." + fnName); m2 != nil {
+								m = m2
+								fnName = m2.MethodName
+								maybeRenableLLVMName()
+								break
+							}
 						}
 					}
 				}
@@ -1550,8 +1583,43 @@ func (g *Generator) generateCallExpression(sb *strings.Builder, expr *parser.Cal
 				var fwdReceiver parser.Expression = nil
 				if dot, isDot := expr.Function.(*parser.DotExpression); isDot && !isModuleQualified {
 					fwdReceiver = dot.Receiver
+					// Unwrap GroupedExpression: (self.data).push(x) → self.data.push(x),
+					// matching the unwrap the method-resolution path performs below.
+					if ge, ok := fwdReceiver.(*parser.GroupedExpression); ok {
+						fwdReceiver = ge.Expression
+					}
 				}
-				if r := g.genForwardFunc(sb, m.ForwardFunc, expr, fwdReceiver); r != "" || m.ForwardFunc == "memcpy" || m.ForwardFunc == "memset" || m.ForwardFunc == "str-clear" || m.ForwardFunc == "str-truncate" {
+				// vec-push writes the push expansion directly into sb and returns ""
+				// on success. For receiver forms the expansion supports (a variable or
+				// a struct field), "" means "handled": return early so the
+				// method-resolution dispatch site below does not emit the expansion
+				// a SECOND time. Bug 07 (struct-field-push-broken): without this,
+				// .data.push(val) on a struct field appended every element twice
+				// (len grew by 2 per push). Unsupported receiver forms (index/call/
+				// slice results) still fall through to method resolution as before.
+				vecPushHandled := false
+				if m.ForwardFunc == "vec-push" {
+					recv := fwdReceiver
+					if recv == nil && len(expr.Arguments) > 0 {
+						recv = expr.Arguments[0]
+					}
+					if ge, ok := recv.(*parser.GroupedExpression); ok {
+						recv = ge.Expression
+					}
+					switch recv.(type) {
+					case *parser.Identifier, *parser.DotExpression:
+						vecPushHandled = true
+					}
+				}
+				// vec-clear/str-clear/vec-truncate/str-truncate write their expansion
+				// directly into sb and return "" on success — same as vec-push on the
+				// receiver forms it supports (vecPushHandled). Return early so the
+				// method-resolution dispatch site below does not emit the expansion
+				// a SECOND time (bug 07 family: struct-field push/clear/truncate were
+				// either silently no-ops, emitted twice, or got mis-dispatched to a
+				// same-named POSIX call).
+				fwdHandled := vecPushHandled || m.ForwardFunc == "memcpy" || m.ForwardFunc == "memset" || m.ForwardFunc == "str-clear" || m.ForwardFunc == "str-truncate" || m.ForwardFunc == "vec-clear" || m.ForwardFunc == "vec-truncate"
+				if r := g.genForwardFunc(sb, m.ForwardFunc, expr, fwdReceiver); r != "" || fwdHandled {
 					return r
 				}
 				// If genForwardFunc didn't handle it, try callBuiltin with the
@@ -1882,77 +1950,77 @@ func (g *Generator) generateCallExpression(sb *strings.Builder, expr *parser.Cal
 				}
 			}
 		} else if _, ok := receiverExpr.(*parser.DotExpression); ok {
-		// 結構欄位接收者（如 c.name.trim()、self.buf.len、it.status-code.to-str()）
-		// 透過 exprResultLLVMType 推導欄位型別，再映射到 nolang 型別名查找方法
-		elemType := g.exprResultLLVMType(receiverExpr)
-		srcType := strings.TrimPrefix(elemType, "%")
-		// 先嘗試聯合型別別名（如 i64 → int.to-str），與 Identifier 接收者路徑保持一致
-		if g.unionAliases != nil {
-			unionSrcType := srcType
-			if unionSrcType == "double" {
-				unionSrcType = "f64"
-			} else if unionSrcType == "float" {
-				unionSrcType = "f32"
-			}
-			for aliasName := range g.unionAliases {
-				if !g.isMemberOfUnionTransitive(unionSrcType, aliasName, make(map[string]bool)) {
-					continue
+			// 結構欄位接收者（如 c.name.trim()、self.buf.len、it.status-code.to-str()）
+			// 透過 exprResultLLVMType 推導欄位型別，再映射到 nolang 型別名查找方法
+			elemType := g.exprResultLLVMType(receiverExpr)
+			srcType := strings.TrimPrefix(elemType, "%")
+			// 先嘗試聯合型別別名（如 i64 → int.to-str），與 Identifier 接收者路徑保持一致
+			if g.unionAliases != nil {
+				unionSrcType := srcType
+				if unionSrcType == "double" {
+					unionSrcType = "f64"
+				} else if unionSrcType == "float" {
+					unionSrcType = "f32"
 				}
-				// Try monomorphized name first: unionAlias.methodName__memberType
-				monoName := aliasName + "." + dot.Property + "__" + unionSrcType
-				if _, exists := g.funcRetTypes[monoName]; exists {
-					fnName = monoName
-					methodReceiver = receiverExpr
-					break
-				}
-				// Try non-monomorphized name: unionAlias.methodName
-				unionName := aliasName + "." + dot.Property
-				if _, exists := g.funcRetTypes[unionName]; exists {
-					fnName = unionName
-					methodReceiver = receiverExpr
-					break
-				}
-			}
-		}
-		candidates := []string{srcType}
-		if primAliases, ok := llvmTypeToNolang[srcType]; ok {
-			candidates = append(candidates, primAliases...)
-		}
-		// vec/arr fields: construct []T candidates (e.g., decoder.out.push)
-		if srcType == "vec" || srcType == "arr" {
-			// For DotExpression receivers, we already have elemType from exprResultLLVMType
-			// which returns the field's LLVM type. We need to construct []T candidates.
-			// But we need the element type of the vec/arr, not the vec/arr itself.
-			// Skip this for now - the vec.push builtin will handle it directly
-		}
-		for _, cand := range candidates {
-			shortName := cand + "." + dot.Property
-			if g.funcRetTypes != nil {
-				if _, ok := g.funcRetTypes[shortName]; ok {
-					fnName = shortName
-					methodReceiver = receiverExpr
-					break
-				}
-			}
-			if methodReceiver == nil {
-				if m := builtin.FindBuiltinMethod(shortName); m != nil {
-					fnName = shortName
-					methodReceiver = receiverExpr
-					break
-				}
-			}
-			// For vec types, also check just the method name
-			if srcType == "vec" || srcType == "arr" {
-				if methodReceiver == nil {
-					if m := builtin.FindBuiltinMethod(dot.Property); m != nil {
-						fnName = dot.Property
+				for aliasName := range g.unionAliases {
+					if !g.isMemberOfUnionTransitive(unionSrcType, aliasName, make(map[string]bool)) {
+						continue
+					}
+					// Try monomorphized name first: unionAlias.methodName__memberType
+					monoName := aliasName + "." + dot.Property + "__" + unionSrcType
+					if _, exists := g.funcRetTypes[monoName]; exists {
+						fnName = monoName
+						methodReceiver = receiverExpr
+						break
+					}
+					// Try non-monomorphized name: unionAlias.methodName
+					unionName := aliasName + "." + dot.Property
+					if _, exists := g.funcRetTypes[unionName]; exists {
+						fnName = unionName
 						methodReceiver = receiverExpr
 						break
 					}
 				}
 			}
-		}
-	} else if _, ok := receiverExpr.(*parser.SliceExpression); ok {
+			candidates := []string{srcType}
+			if primAliases, ok := llvmTypeToNolang[srcType]; ok {
+				candidates = append(candidates, primAliases...)
+			}
+			// vec/arr fields: construct []T candidates (e.g., decoder.out.push)
+			if srcType == "vec" || srcType == "arr" {
+				// For DotExpression receivers, we already have elemType from exprResultLLVMType
+				// which returns the field's LLVM type. We need to construct []T candidates.
+				// But we need the element type of the vec/arr, not the vec/arr itself.
+				// Skip this for now - the vec.push builtin will handle it directly
+			}
+			for _, cand := range candidates {
+				shortName := cand + "." + dot.Property
+				if g.funcRetTypes != nil {
+					if _, ok := g.funcRetTypes[shortName]; ok {
+						fnName = shortName
+						methodReceiver = receiverExpr
+						break
+					}
+				}
+				if methodReceiver == nil {
+					if m := builtin.FindBuiltinMethod(shortName); m != nil {
+						fnName = shortName
+						methodReceiver = receiverExpr
+						break
+					}
+				}
+				// For vec types, also check just the method name
+				if srcType == "vec" || srcType == "arr" {
+					if methodReceiver == nil {
+						if m := builtin.FindBuiltinMethod(dot.Property); m != nil {
+							fnName = dot.Property
+							methodReceiver = receiverExpr
+							break
+						}
+					}
+				}
+			}
+		} else if _, ok := receiverExpr.(*parser.SliceExpression); ok {
 			// 切片結果接收者（如 buf[pos..end].to-str()）
 			// 透過 exprResultLLVMType 推導切片結果型別，再映射到 nolang 型別名查找方法
 			elemType := g.exprResultLLVMType(receiverExpr)
@@ -2129,19 +2197,19 @@ func (g *Generator) generateCallExpression(sb *strings.Builder, expr *parser.Cal
 							paramCount = pc
 						}
 					}
-				if methodReceiver != nil {
-					// Method call: self is implicit, so effective args = len+1.
-					// Use > (not >=): when effective args == paramCount, the caller
-					// provided exactly the input params (self + args), NOT the output.
-					// The output param is only present when effective args > paramCount.
-					// Using >= would misidentify the last input arg (e.g. `end` in
-					// s.slice(0, end)) as the output param, causing the call to be
-					// treated as statement-form (void return) instead of expression-form
-					// (voidSingleOutput), producing empty store values in codegen.
-					if len(expr.Arguments)+1 > paramCount {
-						hasOutputParam = true
-					}
-				} else {
+					if methodReceiver != nil {
+						// Method call: self is implicit, so effective args = len+1.
+						// Use > (not >=): when effective args == paramCount, the caller
+						// provided exactly the input params (self + args), NOT the output.
+						// The output param is only present when effective args > paramCount.
+						// Using >= would misidentify the last input arg (e.g. `end` in
+						// s.slice(0, end)) as the output param, causing the call to be
+						// treated as statement-form (void return) instead of expression-form
+						// (voidSingleOutput), producing empty store values in codegen.
+						if len(expr.Arguments)+1 > paramCount {
+							hasOutputParam = true
+						}
+					} else {
 						if len(expr.Arguments) > paramCount {
 							hasOutputParam = true
 						}
@@ -2490,9 +2558,9 @@ func (g *Generator) generateCallExpression(sb *strings.Builder, expr *parser.Cal
 			}
 			if strings.Contains(ev, ".gep.") || strings.Contains(ev, ".elem.") {
 				// GEP result is a pointer
-			return toLLVMType(elemLLVMType) + "* " + ev
-		}
-		// generateIndexExpression always zexts/sexts narrow integer elements
+				return toLLVMType(elemLLVMType) + "* " + ev
+			}
+			// generateIndexExpression always zexts/sexts narrow integer elements
 			// (i8/i16/i32) to i64, so the SSA value type is i64 regardless of
 			// elemLLVMType. Use i64 for the alloca and store to ensure the
 			// pointer type is i64*. This is safe because:
@@ -2513,7 +2581,7 @@ func (g *Generator) generateCallExpression(sb *strings.Builder, expr *parser.Cal
 				sb.WriteString(fmt.Sprintf("%sstore %s %s, %s* %s\n", g.indent(), toLLVMType(argType), storeVal, toLLVMType(argType), tmpName))
 			}
 			return toLLVMType(argType) + "* " + tmpName
-	case *parser.SliceExpression:
+		case *parser.SliceExpression:
 			ev := g.generateExprWithSB(sb, arg)
 			ptrType := "%vec*"
 			if ident, ok := a.Left.(*parser.Identifier); ok {
@@ -2597,14 +2665,14 @@ func (g *Generator) generateCallExpression(sb *strings.Builder, expr *parser.Cal
 						if sb != nil {
 							g.tmpIdx++
 							loadReg := fmt.Sprintf("%%ref.st.fload.%d", g.tmpIdx)
-					sb.WriteString(fmt.Sprintf("%s%s = load %s, %s* %s\n", g.indent(), loadReg, toLLVMType(fieldType), toLLVMType(fieldType), fieldVal))
-					sb.WriteString(fmt.Sprintf("%sstore %s %s, %s* %s\n", g.indent(), toLLVMType(fieldType), loadReg, toLLVMType(fieldType), gepReg))
+							sb.WriteString(fmt.Sprintf("%s%s = load %s, %s* %s\n", g.indent(), loadReg, toLLVMType(fieldType), toLLVMType(fieldType), fieldVal))
+							sb.WriteString(fmt.Sprintf("%sstore %s %s, %s* %s\n", g.indent(), toLLVMType(fieldType), loadReg, toLLVMType(fieldType), gepReg))
 						}
+					} else if sb != nil {
+						sb.WriteString(fmt.Sprintf("%sstore %s %s, %s* %s\n", g.indent(), toLLVMType(fieldType), fieldVal, toLLVMType(fieldType), gepReg))
+					}
 				} else if sb != nil {
 					sb.WriteString(fmt.Sprintf("%sstore %s %s, %s* %s\n", g.indent(), toLLVMType(fieldType), fieldVal, toLLVMType(fieldType), gepReg))
-				}
-			} else if sb != nil {
-				sb.WriteString(fmt.Sprintf("%sstore %s %s, %s* %s\n", g.indent(), toLLVMType(fieldType), fieldVal, toLLVMType(fieldType), gepReg))
 				}
 			}
 			// 為未明確設定的 %vec 欄位分配 data 緩衝區
@@ -2681,39 +2749,39 @@ func (g *Generator) generateCallExpression(sb *strings.Builder, expr *parser.Cal
 			if n > 0 {
 				g.tmpIdx++
 				tmpArr := fmt.Sprintf("%%callvec.arr.%d", g.tmpIdx)
-			arrType := fmt.Sprintf("[%d x %s]", n, toLLVMType(elemType))
-			if sb != nil {
-				sb.WriteString(fmt.Sprintf("%s%s = alloca %s\n", g.indent(), tmpArr, arrType))
-			for i, elem := range a.Elements {
-				ev := g.generateExprWithSB(sb, elem)
-				ev = g.stripLLVMType(ev)
-				// Defensive fallback: if generateExprWithSB returned empty
-				// (e.g. void function call), use 0 to avoid invalid IR
-				// "store i64 , i64* ...".
-				if ev == "" {
-					ev = "0"
-				}
-				g.tmpIdx++
-				gepReg := fmt.Sprintf("%%callvec.gep.%d", g.tmpIdx)
-				sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %s, %s* %s, i32 0, i32 %d\n",
-					g.indent(), gepReg, arrType, arrType, tmpArr, i))
-			storeVal := ev
-					if g.isStructLLVMType(elemType) {
-						// StringLiteral returns an alloca pointer; load the value.
-						if strings.HasPrefix(ev, "%str-longlit") {
-							g.tmpIdx++
-							loadReg := fmt.Sprintf("%%callvec.load.%d", g.tmpIdx)
-							sb.WriteString(fmt.Sprintf("%s%s = load %s, %s* %s\n", g.indent(), loadReg, toLLVMType(elemType), toLLVMType(elemType), ev))
-							storeVal = loadReg
+				arrType := fmt.Sprintf("[%d x %s]", n, toLLVMType(elemType))
+				if sb != nil {
+					sb.WriteString(fmt.Sprintf("%s%s = alloca %s\n", g.indent(), tmpArr, arrType))
+					for i, elem := range a.Elements {
+						ev := g.generateExprWithSB(sb, elem)
+						ev = g.stripLLVMType(ev)
+						// Defensive fallback: if generateExprWithSB returned empty
+						// (e.g. void function call), use 0 to avoid invalid IR
+						// "store i64 , i64* ...".
+						if ev == "" {
+							ev = "0"
 						}
-					} else if g.isIntegerLLVMType(elemType) && elemType != "i64" && strings.HasPrefix(ev, "%") {
 						g.tmpIdx++
-						truncReg := fmt.Sprintf("%%callvec.trunc.%d", g.tmpIdx)
-						sb.WriteString(fmt.Sprintf("%s%s = trunc i64 %s to %s\n", g.indent(), truncReg, ev, toLLVMType(elemType)))
-						storeVal = truncReg
+						gepReg := fmt.Sprintf("%%callvec.gep.%d", g.tmpIdx)
+						sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %s, %s* %s, i32 0, i32 %d\n",
+							g.indent(), gepReg, arrType, arrType, tmpArr, i))
+						storeVal := ev
+						if g.isStructLLVMType(elemType) {
+							// StringLiteral returns an alloca pointer; load the value.
+							if strings.HasPrefix(ev, "%str-longlit") {
+								g.tmpIdx++
+								loadReg := fmt.Sprintf("%%callvec.load.%d", g.tmpIdx)
+								sb.WriteString(fmt.Sprintf("%s%s = load %s, %s* %s\n", g.indent(), loadReg, toLLVMType(elemType), toLLVMType(elemType), ev))
+								storeVal = loadReg
+							}
+						} else if g.isIntegerLLVMType(elemType) && elemType != "i64" && strings.HasPrefix(ev, "%") {
+							g.tmpIdx++
+							truncReg := fmt.Sprintf("%%callvec.trunc.%d", g.tmpIdx)
+							sb.WriteString(fmt.Sprintf("%s%s = trunc i64 %s to %s\n", g.indent(), truncReg, ev, toLLVMType(elemType)))
+							storeVal = truncReg
+						}
+						sb.WriteString(fmt.Sprintf("%sstore %s %s, %s* %s\n", g.indent(), toLLVMType(elemType), storeVal, toLLVMType(elemType), gepReg))
 					}
-					sb.WriteString(fmt.Sprintf("%sstore %s %s, %s* %s\n", g.indent(), toLLVMType(elemType), storeVal, toLLVMType(elemType), gepReg))
-				}
 					g.tmpIdx++
 					ptrReg := fmt.Sprintf("%%callvec.ptr.%d", g.tmpIdx)
 					sb.WriteString(fmt.Sprintf("%s%s = bitcast %s* %s to i8*\n", g.indent(), ptrReg, arrType, tmpArr))
@@ -2826,11 +2894,11 @@ func (g *Generator) generateCallExpression(sb *strings.Builder, expr *parser.Cal
 										for _, f := range fields {
 											if f.name == dot.Property {
 												fieldType := f.typ
-											if fieldType != "i64" {
-												sb.WriteString(fmt.Sprintf("%s%s = alloca %s\n", g.indent(), tmpName, toLLVMType(fieldType)))
-												sb.WriteString(fmt.Sprintf("%sstore %s %s, %s* %s\n", g.indent(), toLLVMType(fieldType), ev, toLLVMType(fieldType), tmpName))
-												return toLLVMType(fieldType) + "* " + tmpName
-											}
+												if fieldType != "i64" {
+													sb.WriteString(fmt.Sprintf("%s%s = alloca %s\n", g.indent(), tmpName, toLLVMType(fieldType)))
+													sb.WriteString(fmt.Sprintf("%sstore %s %s, %s* %s\n", g.indent(), toLLVMType(fieldType), ev, toLLVMType(fieldType), tmpName))
+													return toLLVMType(fieldType) + "* " + tmpName
+												}
 												break
 											}
 										}
@@ -3693,11 +3761,20 @@ func (g *Generator) genForwardFunc(sb *strings.Builder, forwardFunc string, expr
 		if len(args) < 1 {
 			return ""
 		}
-		ident, ok := args[0].(*parser.Identifier)
-		if !ok {
+		var recvAddr string
+		if ident, ok := args[0].(*parser.Identifier); ok {
+			recvAddr = g.varAddr(ident.Value)
+		} else if dot, ok := args[0].(*parser.DotExpression); ok {
+			// Struct field receiver (e.g. self.data): generate the field address.
+			// Bug 07 follow-up: without this, .data.clear() inside a struct method
+			// was a silent no-op (only Identifier receivers were supported).
+			recvAddr = g.generateExprPtr(sb, dot)
+			if recvAddr == "" {
+				return ""
+			}
+		} else {
 			return ""
 		}
-		recvAddr := g.varAddr(ident.Value)
 		g.tmpIdx++
 		lenGEP := fmt.Sprintf("%%vc.len.gep.%d", g.tmpIdx)
 		if sb != nil {
@@ -3744,53 +3821,53 @@ func (g *Generator) genForwardFunc(sb *strings.Builder, forwardFunc string, expr
 			g.emitSetRetInitBit(sb, recvName)
 		}
 
-	// Option receiver unwrap: when the receiver is an %option variable whose
-	// inner type is %vec (e.g. v = m.get(...) returns ?[]str), we need to
-	// load the heap-allocated %vec pointer from the option's data field.
-	// Without this, the push code would operate on the option alloca directly
-	// (treating %option* as %vec*), causing type mismatches and corrupt data.
-	if ident, ok := args[0].(*parser.Identifier); ok {
-		if vt, ok := g.varTypes[ident.Value]; ok && vt == "%option" {
-			innerType := "i64"
-			if g.optionInnerTypes != nil {
-				if it, ok := g.optionInnerTypes[ident.Value]; ok && it != "" {
-					innerType = it
+		// Option receiver unwrap: when the receiver is an %option variable whose
+		// inner type is %vec (e.g. v = m.get(...) returns ?[]str), we need to
+		// load the heap-allocated %vec pointer from the option's data field.
+		// Without this, the push code would operate on the option alloca directly
+		// (treating %option* as %vec*), causing type mismatches and corrupt data.
+		if ident, ok := args[0].(*parser.Identifier); ok {
+			if vt, ok := g.varTypes[ident.Value]; ok && vt == "%option" {
+				innerType := "i64"
+				if g.optionInnerTypes != nil {
+					if it, ok := g.optionInnerTypes[ident.Value]; ok && it != "" {
+						innerType = it
+					}
+				}
+				if g.isStructLLVMType(innerType) {
+					// Load the struct pointer from the option's data field
+					g.tmpIdx++
+					optDataGEP := fmt.Sprintf("%%vp.optdata.gep.%d", g.tmpIdx)
+					g.tmpIdx++
+					optDataLoad := fmt.Sprintf("%%vp.optdata.val.%d", g.tmpIdx)
+					g.tmpIdx++
+					optDataPtr := fmt.Sprintf("%%vp.optdata.ptr.%d", g.tmpIdx)
+					sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%option, %%option* %s, i32 0, i32 1\n", g.indent(), optDataGEP, recvAddr))
+					sb.WriteString(fmt.Sprintf("%s%s = load i64, i64* %s\n", g.indent(), optDataLoad, optDataGEP))
+					sb.WriteString(fmt.Sprintf("%s%s = inttoptr i64 %s to %s*\n", g.indent(), optDataPtr, optDataLoad, innerType))
+					recvAddr = optDataPtr
 				}
 			}
-			if g.isStructLLVMType(innerType) {
-				// Load the struct pointer from the option's data field
-				g.tmpIdx++
-				optDataGEP := fmt.Sprintf("%%vp.optdata.gep.%d", g.tmpIdx)
-				g.tmpIdx++
-				optDataLoad := fmt.Sprintf("%%vp.optdata.val.%d", g.tmpIdx)
-				g.tmpIdx++
-				optDataPtr := fmt.Sprintf("%%vp.optdata.ptr.%d", g.tmpIdx)
-				sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%option, %%option* %s, i32 0, i32 1\n", g.indent(), optDataGEP, recvAddr))
-				sb.WriteString(fmt.Sprintf("%s%s = load i64, i64* %s\n", g.indent(), optDataLoad, optDataGEP))
-				sb.WriteString(fmt.Sprintf("%s%s = inttoptr i64 %s to %s*\n", g.indent(), optDataPtr, optDataLoad, innerType))
-				recvAddr = optDataPtr
+		}
+
+		// Get element type and size
+		elemType := "i64"
+		if g.arrayElemTypes != nil && recvName != "" {
+			if et, ok := g.arrayElemTypes[recvName]; ok {
+				elemType = toLLVMType(et)
 			}
 		}
-	}
-
-	// Get element type and size
-	elemType := "i64"
-	if g.arrayElemTypes != nil && recvName != "" {
-		if et, ok := g.arrayElemTypes[recvName]; ok {
-			elemType = toLLVMType(et)
+		// For DotExpression receivers, try to infer element type from struct field
+		if dot, ok := args[0].(*parser.DotExpression); ok {
+			if et := g.inferFieldElemType(dot); et != "" {
+				elemType = toLLVMType(et)
+			}
 		}
-	}
-	// For DotExpression receivers, try to infer element type from struct field
-	if dot, ok := args[0].(*parser.DotExpression); ok {
-		if et := g.inferFieldElemType(dot); et != "" {
-			elemType = toLLVMType(et)
-		}
-	}
-	elemSize := llvmTypeSize(elemType)
+		elemSize := llvmTypeSize(elemType)
 
-	// Load current len (field 0) and cap (field 1)
-	curLen := g.emitVecLenLoad(sb, recvAddr)
-	curCap := g.emitVecCapLoad(sb, recvAddr)
+		// Load current len (field 0) and cap (field 1)
+		curLen := g.emitVecLenLoad(sb, recvAddr)
+		curCap := g.emitVecCapLoad(sb, recvAddr)
 
 		// Evaluate the value to push
 		val := g.generateExprWithSB(sb, args[1])
@@ -4033,12 +4110,19 @@ func (g *Generator) genForwardFunc(sb *strings.Builder, forwardFunc string, expr
 		if len(args) < 1 {
 			return ""
 		}
-		ident, ok := args[0].(*parser.Identifier)
-		if !ok {
+		var recvAddr string
+		if ident, ok := args[0].(*parser.Identifier); ok {
+			recvAddr = g.varAddr(ident.Value)
+		} else if dot, ok := args[0].(*parser.DotExpression); ok {
+			// Struct field receiver (e.g. self.name): generate the field address.
+			// Bug 07 follow-up: without this, .name.clear() was a silent no-op.
+			recvAddr = g.generateExprPtr(sb, dot)
+			if recvAddr == "" {
+				return ""
+			}
+		} else {
 			return ""
 		}
-		recvName := ident.Value
-		recvAddr := g.varAddr(recvName)
 		// str-long: field 0 is i64 len
 		g.tmpIdx++
 		lenGEP := fmt.Sprintf("%%sc.len.gep.%d", g.tmpIdx)
@@ -4054,12 +4138,20 @@ func (g *Generator) genForwardFunc(sb *strings.Builder, forwardFunc string, expr
 		if len(args) < 2 {
 			return ""
 		}
-		ident, ok := args[0].(*parser.Identifier)
-		if !ok {
+		var recvAddr string
+		if ident, ok := args[0].(*parser.Identifier); ok {
+			recvAddr = g.varAddr(ident.Value)
+		} else if dot, ok := args[0].(*parser.DotExpression); ok {
+			// Struct field receiver (e.g. self.name): generate the field address.
+			// Bug 07 follow-up: without this, .name.truncate(n) was a silent
+			// no-op — or worse, got mis-dispatched to the POSIX truncate CLibCall.
+			recvAddr = g.generateExprPtr(sb, dot)
+			if recvAddr == "" {
+				return ""
+			}
+		} else {
 			return ""
 		}
-		recvName := ident.Value
-		recvAddr := g.varAddr(recvName)
 		nVal := g.evalI64Arg(sb, args[1])
 		g.tmpIdx++
 		lenGEP := fmt.Sprintf("%%st.len.gep.%d", g.tmpIdx)
@@ -4092,12 +4184,20 @@ func (g *Generator) genForwardFunc(sb *strings.Builder, forwardFunc string, expr
 		if len(args) < 2 {
 			return ""
 		}
-		ident, ok := args[0].(*parser.Identifier)
-		if !ok {
+		var recvAddr string
+		if ident, ok := args[0].(*parser.Identifier); ok {
+			recvAddr = g.varAddr(ident.Value)
+		} else if dot, ok := args[0].(*parser.DotExpression); ok {
+			// Struct field receiver (e.g. self.data): generate the field address.
+			// Bug 07 follow-up: without this, .data.truncate(n) was a silent
+			// no-op — or worse, got mis-dispatched to the POSIX truncate CLibCall.
+			recvAddr = g.generateExprPtr(sb, dot)
+			if recvAddr == "" {
+				return ""
+			}
+		} else {
 			return ""
 		}
-		recvName := ident.Value
-		recvAddr := g.varAddr(recvName)
 		nVal := g.evalI64Arg(sb, args[1])
 		g.tmpIdx++
 		lenGEP := fmt.Sprintf("%%vt.len.gep.%d", g.tmpIdx)
@@ -4138,14 +4238,14 @@ func (g *Generator) genForwardFunc(sb *strings.Builder, forwardFunc string, expr
 		targetType := g.currentTargetType
 		switch targetType {
 		case "%str-long", "str":
-		// malloc(cap) — stride-1 (each element is 1 byte, i8)
-		g.tmpIdx++
-		bufReg := fmt.Sprintf("%%wc.sbuf.%d", g.tmpIdx)
-		if sb != nil {
-			sb.WriteString(fmt.Sprintf("%s%s = call i8* @nolang.malloc(i64 %s)\n", g.indent(), bufReg, capVal))
-			// Zero-initialize the buffer to prevent garbage data.
-			sb.WriteString(fmt.Sprintf("%scall void @llvm.memset.p0i8.i64(i8* %s, i8 0, i64 %s, i1 false)\n", g.indent(), bufReg, capVal))
-		}
+			// malloc(cap) — stride-1 (each element is 1 byte, i8)
+			g.tmpIdx++
+			bufReg := fmt.Sprintf("%%wc.sbuf.%d", g.tmpIdx)
+			if sb != nil {
+				sb.WriteString(fmt.Sprintf("%s%s = call i8* @nolang.malloc(i64 %s)\n", g.indent(), bufReg, capVal))
+				// Zero-initialize the buffer to prevent garbage data.
+				sb.WriteString(fmt.Sprintf("%scall void @llvm.memset.p0i8.i64(i8* %s, i8 0, i64 %s, i1 false)\n", g.indent(), bufReg, capVal))
+			}
 			// Build %str-long { len=0, cap=cap, data=buf } via insertvalue
 			g.tmpIdx++
 			s1 := fmt.Sprintf("%%wc.s1.%d", g.tmpIdx)
@@ -4181,14 +4281,14 @@ func (g *Generator) genForwardFunc(sb *strings.Builder, forwardFunc string, expr
 			g.tmpIdx++
 			v2 := fmt.Sprintf("%%wc.v2.%d", g.tmpIdx)
 			g.tmpIdx++
-		v3 := fmt.Sprintf("%%wc.v3.%d", g.tmpIdx)
-		if sb != nil {
-			sb.WriteString(fmt.Sprintf("%s%s = mul i64 %s, %d\n", g.indent(), bytesReg, capVal, elemSize))
-			sb.WriteString(fmt.Sprintf("%s%s = call i8* @nolang.malloc(i64 %s)\n", g.indent(), bufReg, bytesReg))
-			// Zero the element array so element-assignment's "free old value" path
-			// loads defined len=0/data=null (not undef) and never calls free(undef).
-			// (load undef -> icmp -> free(undef) is UB that SCCP deletes the whole fn.)
-			sb.WriteString(fmt.Sprintf("%scall void @llvm.memset.p0i8.i64(i8* %s, i8 0, i64 %s, i1 false)\n", g.indent(), bufReg, bytesReg))
+			v3 := fmt.Sprintf("%%wc.v3.%d", g.tmpIdx)
+			if sb != nil {
+				sb.WriteString(fmt.Sprintf("%s%s = mul i64 %s, %d\n", g.indent(), bytesReg, capVal, elemSize))
+				sb.WriteString(fmt.Sprintf("%s%s = call i8* @nolang.malloc(i64 %s)\n", g.indent(), bufReg, bytesReg))
+				// Zero the element array so element-assignment's "free old value" path
+				// loads defined len=0/data=null (not undef) and never calls free(undef).
+				// (load undef -> icmp -> free(undef) is UB that SCCP deletes the whole fn.)
+				sb.WriteString(fmt.Sprintf("%scall void @llvm.memset.p0i8.i64(i8* %s, i8 0, i64 %s, i1 false)\n", g.indent(), bufReg, bytesReg))
 				sb.WriteString(fmt.Sprintf("%s%s = insertvalue %%vec zeroinitializer, i64 0, 0\n", g.indent(), v1))
 				sb.WriteString(fmt.Sprintf("%s%s = insertvalue %%vec %s, i64 %s, 1\n", g.indent(), v2, v1, capVal))
 				_p2i_v3 := g.ptrToIntVal(sb, bufReg)
@@ -4257,13 +4357,13 @@ func (g *Generator) genForwardFunc(sb *strings.Builder, forwardFunc string, expr
 			g.tmpIdx++
 			v2 := fmt.Sprintf("%%wl.v2.%d", g.tmpIdx)
 			g.tmpIdx++
-		v3 := fmt.Sprintf("%%wl.v3.%d", g.tmpIdx)
-		if sb != nil {
-			sb.WriteString(fmt.Sprintf("%s%s = mul i64 %s, %d\n", g.indent(), bytesReg, lenVal, elemSize))
-			sb.WriteString(fmt.Sprintf("%s%s = call i8* @nolang.malloc(i64 %s)\n", g.indent(), bufReg, bytesReg))
-			// Zero the element array so element-assignment's "free old value" path
-			// loads defined len=0/data=null (not undef) and never calls free(undef).
-			sb.WriteString(fmt.Sprintf("%scall void @llvm.memset.p0i8.i64(i8* %s, i8 0, i64 %s, i1 false)\n", g.indent(), bufReg, bytesReg))
+			v3 := fmt.Sprintf("%%wl.v3.%d", g.tmpIdx)
+			if sb != nil {
+				sb.WriteString(fmt.Sprintf("%s%s = mul i64 %s, %d\n", g.indent(), bytesReg, lenVal, elemSize))
+				sb.WriteString(fmt.Sprintf("%s%s = call i8* @nolang.malloc(i64 %s)\n", g.indent(), bufReg, bytesReg))
+				// Zero the element array so element-assignment's "free old value" path
+				// loads defined len=0/data=null (not undef) and never calls free(undef).
+				sb.WriteString(fmt.Sprintf("%scall void @llvm.memset.p0i8.i64(i8* %s, i8 0, i64 %s, i1 false)\n", g.indent(), bufReg, bytesReg))
 				// len=len, cap=len (both set to the argument value)
 				sb.WriteString(fmt.Sprintf("%s%s = insertvalue %%vec zeroinitializer, i64 %s, 0\n", g.indent(), v1, lenVal))
 				sb.WriteString(fmt.Sprintf("%s%s = insertvalue %%vec %s, i64 %s, 1\n", g.indent(), v2, v1, lenVal))
@@ -4333,13 +4433,13 @@ func (g *Generator) genForwardFunc(sb *strings.Builder, forwardFunc string, expr
 			g.tmpIdx++
 			v2 := fmt.Sprintf("%%wcl.v2.%d", g.tmpIdx)
 			g.tmpIdx++
-		v3 := fmt.Sprintf("%%wcl.v3.%d", g.tmpIdx)
-		if sb != nil {
-			sb.WriteString(fmt.Sprintf("%s%s = mul i64 %s, %d\n", g.indent(), bytesReg, capVal, elemSize))
-			sb.WriteString(fmt.Sprintf("%s%s = call i8* @nolang.malloc(i64 %s)\n", g.indent(), bufReg, bytesReg))
-			// Zero the element array so element-assignment's "free old value" path
-			// loads defined len=0/data=null (not undef) and never calls free(undef).
-			sb.WriteString(fmt.Sprintf("%scall void @llvm.memset.p0i8.i64(i8* %s, i8 0, i64 %s, i1 false)\n", g.indent(), bufReg, bytesReg))
+			v3 := fmt.Sprintf("%%wcl.v3.%d", g.tmpIdx)
+			if sb != nil {
+				sb.WriteString(fmt.Sprintf("%s%s = mul i64 %s, %d\n", g.indent(), bytesReg, capVal, elemSize))
+				sb.WriteString(fmt.Sprintf("%s%s = call i8* @nolang.malloc(i64 %s)\n", g.indent(), bufReg, bytesReg))
+				// Zero the element array so element-assignment's "free old value" path
+				// loads defined len=0/data=null (not undef) and never calls free(undef).
+				sb.WriteString(fmt.Sprintf("%scall void @llvm.memset.p0i8.i64(i8* %s, i8 0, i64 %s, i1 false)\n", g.indent(), bufReg, bytesReg))
 				// len=len, cap=cap (independent values)
 				sb.WriteString(fmt.Sprintf("%s%s = insertvalue %%vec zeroinitializer, i64 %s, 0\n", g.indent(), v1, lenVal))
 				sb.WriteString(fmt.Sprintf("%s%s = insertvalue %%vec %s, i64 %s, 1\n", g.indent(), v2, v1, capVal))
@@ -4392,12 +4492,12 @@ func (g *Generator) genForwardFunc(sb *strings.Builder, forwardFunc string, expr
 		// Determine the integer width from the first argument's type
 		argType := g.intExprLLVMType(args[0])
 		if argType == "" {
-		// intExprLLVMType intentionally does not handle IndexExpression
-		// (because generateIndexExpression zexts to i64). For rotate-left
-		// on u32 array elements (e.g. rotate-left(w[i-15], 25) where w is
-		// []u32), look up the element type directly from arrayElemTypes so
-		// the correct llvm.fshl.i32 intrinsic is selected.
-		if idx, ok := args[0].(*parser.IndexExpression); ok {
+			// intExprLLVMType intentionally does not handle IndexExpression
+			// (because generateIndexExpression zexts to i64). For rotate-left
+			// on u32 array elements (e.g. rotate-left(w[i-15], 25) where w is
+			// []u32), look up the element type directly from arrayElemTypes so
+			// the correct llvm.fshl.i32 intrinsic is selected.
+			if idx, ok := args[0].(*parser.IndexExpression); ok {
 				if ident, ok := idx.Left.(*parser.Identifier); ok && g.arrayElemTypes != nil {
 					if et, ok := g.arrayElemTypes[ident.Value]; ok {
 						switch toLLVMType(et) {
