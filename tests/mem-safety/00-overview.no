@@ -73,6 +73,25 @@
 ;     src/build/llvm/stmt.go:4745-4754, 299-321
 ;
 ; ═════════════════════════════════════════════════════════════════
+; 嚴重等級：I/O 正確性（fs.read / copy-file / process.cmd）
+; ═════════════════════════════════════════════════════════════════
+;
+; 14. bug15-read-dowhile-copyfile.no（已解決）
+;     三個根因導致 fs.read、copy-file、process.cmd 無法正確工作：
+;     a) fs.read 的 CLibCall 使用 FixedArgGlobals 將 buf 硬編碼為 @.os-buf，
+;        資料讀入全域緩衝區而非用戶傳入的 buf → buf 內容為空。
+;        修復：改用 StrDataArg 傳遞 buf 的資料指針。
+;        src/builtin/os.go: read builtin
+;     b) process.cmd 的讀取循環使用 } (n > 0) 前測循環（while 語義），
+;        但 n 在循環體內定義，循環外未初始化（預設 0），條件首次為 false → 循環不執行。
+;        修復：改為 } (true) 無限循環 + n <= 0 -> break。
+;        src/std/process.no: cmd 函數 POSIX/Windows 版 stdout/stderr 讀取循環
+;     c) copy-file/append/copy-to 使用 [4096]byte 定長陣列作為 read/write 緩衝區，
+;        write 的 StrDataArg 僅支援 str 類型，無法從 [N]byte 提取資料指針。
+;        修復：改用 str = with-len(4096) 替代 [4096]byte。
+;        src/std/fs.no: copy-file, file.append, file.copy-to
+;
+; ═════════════════════════════════════════════════════════════════
 ; 嚴重等級：併發內存安全
 ; ═════════════════════════════════════════════════════════════════
 ;
@@ -111,4 +130,4 @@
 ; - 併發所有權隔離或同步原語
 ;
 print('Nolang 內存安全測試套件索引')
-print('共 13 個測試案例，詳見各 .no 文件註釋')
+print('共 14 個測試案例，詳見各 .no 文件註釋')

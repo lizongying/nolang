@@ -1,0 +1,115 @@
+; Bug 15: fs.read 不將資料寫入 buf（FixedArgGlobals 問題）
+; 以及 process.cmd 中 } (n > 0) 前測循環引用循環體內變數導致循環不執行
+; 以及 copy-file 使用 [N]byte 導致 write 無法正確傳遞資料指針
+;
+; 三個根因：
+;   1. fs.read 的 CLibCall 使用 FixedArgGlobals 將 buf 硬編碼為 @.os-buf，
+;      導致資料讀入全域緩衝區而非用戶傳入的 buf。
+;   2. process.cmd 的讀取循環使用 } (n > 0) 前測循環，
+;      但 n 在循環體內定義，循環外未初始化（預設 0），條件首次為 false → 循環不執行。
+;      修復：改為 } (true) 無限循環 + n <= 0 -> break。
+;   3. copy-file 使用 [4096]byte 定長陣列，write 的 StrDataArg 僅支援 str 類型。
+
+; ── 測試 1: fs.read 正確讀入 buf ──
+test-read-into-buf = () (ok bool) {
+    ; 建立測試檔案
+    fs.write-file('/tmp/bug15_test.txt', 'Hello World'.to-bytes())
+
+    ; 讀取檔案
+    fd = fs.open-read('/tmp/bug15_test.txt')
+    fd < 0 -> return
+    buf str = with-len(4096)
+    n = fs.read(fd, buf, 4096)
+    fs.close(fd)
+
+    ; 驗證讀取結果
+    n == 11 -> {
+        content = buf.slice(0, n)
+        content == 'Hello World' -> ok = true
+    }
+}
+
+; ── 測試 2: copy-file 正確複製內容 ──
+test-copy-file = () (ok bool) {
+    ; 建立測試檔案
+    fs.write-file('/tmp/bug15_src.txt', 'Hello Nolang'.to-bytes())
+
+    ; 複製檔案
+    ok2 = copy-file('/tmp/bug15_src.txt', '/tmp/bug15_dst.txt')
+    ok2 != true -> return
+
+    ; 讀取複製後的檔案驗證內容
+    fd = fs.open-read('/tmp/bug15_dst.txt')
+    fd < 0 -> return
+    buf str = with-len(4096)
+    n = fs.read(fd, buf, 4096)
+    fs.close(fd)
+
+    n > 0 -> {
+        content = buf.slice(0, n)
+        content == 'Hello Nolang' -> ok = true
+    }
+}
+
+; ── 測試 3: process.cmd 正確捕獲 stdout ──
+test-cmd-capture = () (ok bool) {
+    ; echo（無參數）輸出一個換行符 \n
+    args = []str{}
+    out, stderr, code, err = process.cmd('echo', args, '', '', args, 0, false)
+
+    ; 驗證捕獲的 stdout
+    code == 0 -> {
+        out.len > 0 -> ok = true
+    }
+}
+
+; ── 測試 4: { body } (true) 無限循環 + break ──
+test-infinite-break = () (ok bool) {
+    count = 0
+    {
+        count = count + 1
+        count >= 10 -> break
+    } (true)
+
+    count == 10 -> ok = true
+}
+
+; ── 測試 5: 前測循環 } (cond) 正確工作（條件變數在循環外初始化）──
+test-pretest-loop = () (ok bool) {
+    ; n 在循環外初始化為 5，前測循環應執行 5 次
+    n = 5
+    sum = 0
+    {
+        sum = sum + n
+        n = n - 1
+    } (n > 0)
+
+    sum == 15 -> ok = true
+}
+
+main = () {
+    ; 測試 1: fs.read
+    ok1 = test-read-into-buf()
+    ok1 == true -> print('test-read-into-buf: PASS')
+    ok1 != true -> print('test-read-into-buf: FAIL')
+
+    ; 測試 2: copy-file
+    ok2 = test-copy-file()
+    ok2 == true -> print('test-copy-file: PASS')
+    ok2 != true -> print('test-copy-file: FAIL')
+
+    ; 測試 3: process.cmd
+    ok3 = test-cmd-capture()
+    ok3 == true -> print('test-cmd-capture: PASS')
+    ok3 != true -> print('test-cmd-capture: FAIL')
+
+    ; 測試 4: 無限循環 + break
+    ok4 = test-infinite-break()
+    ok4 == true -> print('test-infinite-break: PASS')
+    ok4 != true -> print('test-infinite-break: FAIL')
+
+    ; 測試 5: 前測循環
+    ok5 = test-pretest-loop()
+    ok5 == true -> print('test-pretest-loop: PASS')
+    ok5 != true -> print('test-pretest-loop: FAIL')
+}

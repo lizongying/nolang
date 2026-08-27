@@ -653,7 +653,7 @@ file.append = (data str, n i64) (ok bool) {
 
     rd-fd = open-read(save-path)
     rd-fd < 0 -> return
-    existing [4096]byte
+    existing str = with-len(4096)
     exist-n = 0
     size = stat-size(save-path)
     size > 0 -> size > 4096 -> exist-n = read(rd-fd, existing, 4096) -> exist-n = read(rd-fd, existing, size)
@@ -674,7 +674,7 @@ file.copy-to = (dst-path str) (ok bool) {
     .fd < 0 -> return
     fd-w = open-file(dst-path, 1537, 420)
     fd-w < 0 -> return
-    buf [4096]byte
+    buf str = with-len(4096)
     {
         n = read(.fd, buf, 4096)
         n <= 0 -> *
@@ -698,7 +698,7 @@ copy-file = (src str, dst str) (ok bool) {
         close(fd-r)
         return
     }
-    buf [4096]byte
+    buf str = with-len(4096)
     {
         n = read(fd-r, buf, 4096)
         n <= 0 -> break

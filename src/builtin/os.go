@@ -252,7 +252,9 @@ func init() {
 		CLibCall:     &CLibCall{FuncName: closeFn, ArgTypes: []LLVMArgType{LLVMI32}, RetType: LLVMI32, RetExt: &i64Type, TruncArgs: map[int]LLVMArgType{0: LLVMI32}},
 	})
 
-	// read: read from a file descriptor (uses @.os-buf)
+	// read: read from a file descriptor into buf
+	// Uses StrDataArg to pass the buf's data pointer directly to C read(),
+	// so data is written into the caller's buffer (not a global @.os-buf).
 	readFn := "read"
 	if runtime.GOOS == "windows" {
 		readFn = "_read"
@@ -263,7 +265,7 @@ func init() {
 		Params:       []parser.Type{parser.TypeFd, parser.TypeStr, parser.TypeI64},
 		Return:       []parser.Type{parser.TypeI64},
 		Doc:          "Read n bytes from a file descriptor into buf",
-		CLibCall:     &CLibCall{FuncName: readFn, ArgTypes: []LLVMArgType{LLVMI32, LLVMI8Ptr, LLVMI64}, RetType: LLVMI64, TruncArgs: map[int]LLVMArgType{0: LLVMI32}, FixedArgGlobals: map[int]string{1: "i8* getelementptr inbounds ([1024 x i8], [1024 x i8]* @.os-buf, i64 0, i64 0)"}},
+		CLibCall:     &CLibCall{FuncName: readFn, ArgTypes: []LLVMArgType{LLVMI32, LLVMI8Ptr, LLVMI64}, RetType: LLVMI64, TruncArgs: map[int]LLVMArgType{0: LLVMI32}, StrDataArg: map[int]bool{1: true}},
 	})
 
 	// write: write to a file descriptor

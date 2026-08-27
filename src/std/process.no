@@ -711,10 +711,9 @@ cmd = (program str, args []str, dir str, input str, env []str, timeout i64, merg
     buf str = with-len(4096)
     {
         n = fs.read(out-read, buf, 4096)
-        n > 0 -> {
-            out = out - buf.slice(0, n)
-        }
-    } (n > 0)
+        n <= 0 -> break
+        out = out - buf.slice(0, n)
+    } (true)
 
     ; 等待進程結束
     {
@@ -738,10 +737,9 @@ cmd = (program str, args []str, dir str, input str, env []str, timeout i64, merg
                 err-read >= 0 -> {
                     {
                         n = fs.read(err-read, buf, 4096)
-                        n > 0 -> {
-                            stderr = stderr - buf.slice(0, n)
-                        }
-                    } (n > 0)
+                        n <= 0 -> break
+                        stderr = stderr - buf.slice(0, n)
+                    } (true)
                     fs.close(err-read)
                 }
             }
@@ -911,10 +909,9 @@ cmd = (program str, args []str, dir str, input str, env []str, timeout i64, merg
             chunk-n i64 = 0
             {
                 chunk, chunk-n = win-read-pipe(out-read, 4096)
-                chunk-n > 0 -> {
-                    out = out - chunk
-                }
-            } (chunk-n > 0)
+                chunk-n <= 0 -> break
+                out = out - chunk
+            } (true)
         }
     }
     win-close-handle(out-read)
@@ -928,10 +925,9 @@ cmd = (program str, args []str, dir str, input str, env []str, timeout i64, merg
                     chunk-n i64 = 0
                     {
                         chunk, chunk-n = win-read-pipe(err-read, 4096)
-                        chunk-n > 0 -> {
-                            stderr = stderr - chunk
-                        }
-                    } (chunk-n > 0)
+                        chunk-n <= 0 -> break
+                        stderr = stderr - chunk
+                    } (true)
                     win-close-handle(err-read)
                 }
             }
