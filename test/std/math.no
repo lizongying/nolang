@@ -1,0 +1,112 @@
+; std-math.no — math 模組測試
+;
+; 執行：no test test/std/math.no
+; 覆蓋：abs / sqrt / pow / hypot / sin / cos / tan / fmod /
+;       degrees / radians / cbrt / ceil / floor / round / trunc
+; 未測：clamp / max / min（預存編譯器 bug，見下方註解）
+; 注意：函數內極小浮點字面量（≤1e-5）會觸發預存 codegen bug
+;       （IR 科學記號常數非法），eps 一律以除法計算。
+
+# /test/runner
+
+t-abs = () {
+    a f64 = math.abs(-5.5)
+    runner.f64-eq(a, 5.5, 0.000001, 'abs(-5.5) == 5.5')
+    b f64 = math.abs(3.25)
+    runner.f64-eq(b, 3.25, 0.000001, 'abs(3.25) == 3.25')
+}
+
+t-sqrt = () {
+    r f64 = math.sqrt(4.0)
+    runner.f64-eq(r, 2.0, 0.000001, 'sqrt(4) == 2')
+    r2 f64 = math.sqrt(2.0)
+    runner.f64-eq(r2, 1.4142135623730951, 0.000001, 'sqrt(2)')
+}
+
+t-pow = () {
+    r f64 = math.pow(2.0, 10.0)
+    runner.f64-eq(r, 1024.0, 0.000001, 'pow(2,10) == 1024')
+    r2 f64 = math.pow(10.0, 0.0)
+    runner.f64-eq(r2, 1.0, 0.000001, 'pow(10,0) == 1')
+}
+
+t-hypot = () {
+    r f64 = math.hypot(3.0, 4.0)
+    runner.f64-eq(r, 5.0, 0.000001, 'hypot(3,4) == 5')
+}
+
+t-trig = () {
+    z = 0.0
+    s f64 = math.sin(z)
+    runner.f64-eq(s, 0.0, 0.000001, 'sin(0) == 0')
+    c f64 = math.cos(z)
+    runner.f64-eq(c, 1.0, 0.000001, 'cos(0) == 1')
+    t f64 = math.tan(z)
+    runner.f64-eq(t, 0.0, 0.000001, 'tan(0) == 0')
+    ; sin(pi/2) == 1
+    half = 3.141592653589793 / 2.0
+    s2 f64 = math.sin(half)
+    runner.f64-eq(s2, 1.0, 0.000001, 'sin(pi/2) == 1')
+}
+
+t-fmod = () {
+    r f64 = math.fmod(7.0, 3.0)
+    runner.f64-eq(r, 1.0, 0.000001, 'fmod(7,3) == 1')
+    r2 f64 = math.fmod(9.5, 2.0)
+    runner.f64-eq(r2, 1.5, 0.000001, 'fmod(9.5,2) == 1.5')
+}
+
+t-deg-rad = () {
+    pi = 3.141592653589793
+    d f64 = math.degrees(pi)
+    runner.f64-eq(d, 180.0, 0.000001, 'degrees(pi) == 180')
+    r f64 = math.radians(180.0)
+    runner.f64-eq(r, pi, 0.000001, 'radians(180) == pi')
+    d2 f64 = math.degrees(0.0)
+    runner.f64-eq(d2, 0.0, 0.000001, 'degrees(0) == 0')
+}
+
+; math.clamp 有預存 bug（@math.clamp 未定義），暫不測試。
+
+t-cbrt = () {
+    r f64 = math.cbrt(27.0)
+    runner.f64-eq(r, 3.0, 0.000001, 'cbrt(27) == 3')
+    n f64 = math.cbrt(-8.0)
+    runner.f64-eq(n, -2.0, 0.000001, 'cbrt(-8) == -2')
+}
+
+t-rounding = () {
+    c f64 = math.ceil(2.1)
+    runner.f64-eq(c, 3.0, 0.000001, 'ceil(2.1) == 3')
+    f f64 = math.floor(2.9)
+    runner.f64-eq(f, 2.0, 0.000001, 'floor(2.9) == 2')
+    r f64 = math.round(2.5)
+    runner.f64-eq(r, 3.0, 0.000001, 'round(2.5) == 3')
+    r2 f64 = math.round(2.4)
+    runner.f64-eq(r2, 2.0, 0.000001, 'round(2.4) == 2')
+    t f64 = math.trunc(2.9)
+    runner.f64-eq(t, 2.0, 0.000001, 'trunc(2.9) == 2')
+    n f64 = math.trunc(-2.9)
+    runner.f64-eq(n, -2.0, 0.000001, 'trunc(-2.9) == -2')
+}
+
+; math.max/min 有預存 bug（variadic 誤打包：store i64 3.0），暫不測試。
+
+; ── 執行 ──────────────────────────────────────
+
+p1, f1 = runner.test('math.abs', t-abs)
+p2, f2 = runner.test('math.sqrt', t-sqrt)
+p3, f3 = runner.test('math.pow', t-pow)
+p4, f4 = runner.test('math.hypot', t-hypot)
+p5, f5 = runner.test('math.sin/cos/tan', t-trig)
+p6, f6 = runner.test('math.fmod', t-fmod)
+p7, f7 = runner.test('math.degrees/radians', t-deg-rad)
+p9, f9 = runner.test('math.cbrt', t-cbrt)
+p10, f10 = runner.test('math.ceil/floor/round/trunc', t-rounding)
+
+total = runner.summary()
+f = runner.failed-count()
+{
+    f > 0 -> os.exit(1)
+    -> os.exit(0)
+}

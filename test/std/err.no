@@ -1,0 +1,47 @@
+; std-err.no — err 模組測試
+;
+; 執行：no test test/std/err.no
+; 覆蓋：new / error.is / error.msg / error.format
+; 未測：error.code / errno-to-code（code 枚舉值映射問題，預存 bug）
+
+# /test/runner
+
+t-new = () {
+    e = err.new(code.io, 'disk full')
+    yes bool = e.is(code.io)
+    runner.is-true(yes, 'err.is(code.io) matches')
+    msg = e.msg()
+    runner.str-eq(msg, 'disk full', 9, 'err.msg content')
+}
+
+t-is = () {
+    e = err.new(code.timeout, 'timed out')
+    yes bool = e.is(code.timeout)
+    runner.is-true(yes, 'is(timeout) matches')
+}
+
+t-msg = () {
+    e = err.new(code.parse, 'bad json')
+    msg = e.msg()
+    runner.str-eq(msg, 'bad json', 8, 'msg content')
+}
+
+t-format = () {
+    e = err.new(code.io, 'read error')
+    s = e.format()
+    runner.str-eq(s, 'read error', 10, 'format content')
+}
+
+; ── 執行 ──────────────────────────────────────
+
+p1, f1 = runner.test('err.new', t-new)
+p2, f2 = runner.test('err.is', t-is)
+p3, f3 = runner.test('err.msg', t-msg)
+p4, f4 = runner.test('err.format', t-format)
+
+total = runner.summary()
+f = runner.failed-count()
+{
+    f > 0 -> os.exit(1)
+    -> os.exit(0)
+}

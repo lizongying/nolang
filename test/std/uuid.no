@@ -1,0 +1,100 @@
+; std-uuid.no — uuid 模組測試
+;
+; 執行：no test test/std/uuid.no
+; 覆蓋：new-v4 / to-str / from-str / validate / version / variant /
+;       is-nil / eq / cmp / nil-uuid
+
+# /test/runner
+
+t-new-v4 = () {
+    u = uuid.new-v4(12345)
+    v i64 = u.version()
+    runner.eq(v, 4, 'new-v4 version == 4')
+    var i64 = u.variant()
+    runner.eq(var, 2, 'new-v4 variant == 2 (RFC4122)')
+}
+
+t-to-str = () {
+    u = uuid.new-v4(42)
+    s = u.to-str()
+    runner.eq(s.len, 36, 'to-str len == 36')
+    ; 檢查連字號位置
+    dash0 i64 = s[8]
+    runner.eq(dash0, 45, 'to-str [8] == dash')
+    dash1 i64 = s[13]
+    runner.eq(dash1, 45, 'to-str [13] == dash')
+    dash2 i64 = s[18]
+    runner.eq(dash2, 45, 'to-str [18] == dash')
+    dash3 i64 = s[23]
+    runner.eq(dash3, 45, 'to-str [23] == dash')
+}
+
+t-validate = () {
+    u = uuid.new-v4(99)
+    ok bool = u.validate()
+    runner.is-true(ok, 'new-v4 validate ok')
+}
+
+t-from-str = () {
+    u = uuid.new-v4(77)
+    s = u.to-str()
+    u2 uuid
+    ok bool = uuid.from-str(s, u2)
+    runner.is-true(ok, 'from-str ok')
+    yes bool = u.eq(u2)
+    runner.is-true(yes, 'from-str roundtrip eq')
+}
+
+t-from-str-dashes = () {
+    u uuid
+    ok bool = uuid.from-str('550e8400-e29b-41d4-a716-446655440000', u)
+    runner.is-true(ok, 'from-str with dashes ok')
+    v i64 = u.version()
+    runner.eq(v, 4, 'parsed version == 4')
+}
+
+t-is-nil = () {
+    u uuid
+    uuid.nil-uuid(u)
+    yes bool = u.is-nil()
+    runner.is-true(yes, 'nil-uuid is-nil')
+    u2 = uuid.new-v4(55)
+    no bool = u2.is-nil()
+    runner.is-false(no, 'new-v4 not nil')
+}
+
+t-eq = () {
+    u1 = uuid.new-v4(11)
+    u2 = uuid.new-v4(11)
+    yes bool = u1.eq(u2)
+    runner.is-true(yes, 'same seed eq')
+    u3 = uuid.new-v4(22)
+    no bool = u1.eq(u3)
+    runner.is-false(no, 'different seed not eq')
+}
+
+t-cmp = () {
+    u1 uuid
+    uuid.nil-uuid(u1)
+    u2 = uuid.new-v4(99)
+    r i64 = u1.cmp(u2)
+    runner.lt(r, 0, 'nil < non-nil')
+}
+
+; ── 執行 ──────────────────────────────────────
+
+p1, f1 = runner.test('uuid.new-v4', t-new-v4)
+p2, f2 = runner.test('uuid.to-str', t-to-str)
+p3, f3 = runner.test('uuid.validate', t-validate)
+p4, f4 = runner.test('uuid.from-str', t-from-str)
+p5, f5 = runner.test('uuid.from-str-dashes', t-from-str-dashes)
+p6, f6 = runner.test('uuid.is-nil', t-is-nil)
+p7, f7 = runner.test('uuid.eq', t-eq)
+p8, f8 = runner.test('uuid.cmp', t-cmp)
+
+total = runner.summary()
+f = runner.failed-count()
+{
+    f > 0 -> os.exit(1)
+    -> os.exit(0)
+}

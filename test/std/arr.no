@@ -1,0 +1,39 @@
+; std-arr.no — arr（固定大小陣列）模組測試
+;
+; 執行：no test test/std/arr.no
+; 覆蓋：len / 手動元素存取
+; 未測：所有 [n]t 泛型方法（特化問題，預存 codegen bug）
+
+# /test/runner
+
+t-len = () {
+    a [5]i64 = [1, 2, 3, 4, 5]
+    runner.eq(a.len, 5, 'arr.len == 5')
+}
+
+t-element-access = () {
+    a [3]i64 = [10, 20, 30]
+    runner.eq(a[0], 10, 'a[0] == 10')
+    runner.eq(a[1], 20, 'a[1] == 20')
+    runner.eq(a[2], 30, 'a[2] == 30')
+}
+
+t-mutate = () {
+    a [3]i64 = [1, 2, 3]
+    a[1] = 99
+    runner.eq(a[1], 99, 'mutated a[1] == 99')
+    runner.eq(a[0], 1, 'a[0] unchanged')
+}
+
+; ── 執行 ──────────────────────────────────────
+
+p1, f1 = runner.test('arr.len', t-len)
+p2, f2 = runner.test('arr.element-access', t-element-access)
+p3, f3 = runner.test('arr.mutate', t-mutate)
+
+total = runner.summary()
+f = runner.failed-count()
+{
+    f > 0 -> os.exit(1)
+    -> os.exit(0)
+}

@@ -1,0 +1,143 @@
+; std-heap.no — heap 模組測試
+;
+; 執行：no test test/std/heap.no
+; 覆蓋：init / push / pop / peek / size / empty
+
+# /test/runner
+
+t-init = () {
+    data []i64 = with-len(32)
+    h = heap.init(data)
+    sz i64 = h.size()
+    runner.eq(sz, 0, 'init size == 0')
+    yes bool = h.empty()
+    runner.is-true(yes, 'init empty == true')
+}
+
+t-push-pop = () {
+    data []i64 = with-len(32)
+    h = heap.init(data)
+    h.push(5)
+    h.push(3)
+    h.push(7)
+    h.push(1)
+    sz i64 = h.size()
+    runner.eq(sz, 4, 'push 4 size == 4')
+
+    ; 最小堆：pop 順序應為 1, 3, 5, 7
+    ok1 bool = false
+    v1 = h.pop()
+    v1: {
+        nil -> ok1 = false
+        -> ok1 = v1 == 1
+    }
+    runner.is-true(ok1, 'pop 1st == 1')
+
+    ok2 bool = false
+    v2 = h.pop()
+    v2: {
+        nil -> ok2 = false
+        -> ok2 = v2 == 3
+    }
+    runner.is-true(ok2, 'pop 2nd == 3')
+
+    ok3 bool = false
+    v3 = h.pop()
+    v3: {
+        nil -> ok3 = false
+        -> ok3 = v3 == 5
+    }
+    runner.is-true(ok3, 'pop 3rd == 5')
+
+    ok4 bool = false
+    v4 = h.pop()
+    v4: {
+        nil -> ok4 = false
+        -> ok4 = v4 == 7
+    }
+    runner.is-true(ok4, 'pop 4th == 7')
+
+    yes bool = h.empty()
+    runner.is-true(yes, 'after pop all empty == true')
+}
+
+t-peek = () {
+    data []i64 = with-len(32)
+    h = heap.init(data)
+    h.push(10)
+    h.push(2)
+    h.push(8)
+
+    ok bool = false
+    p = h.peek()
+    p: {
+        nil -> ok = false
+        -> ok = p == 2
+    }
+    runner.is-true(ok, 'peek == 2 (minimum)')
+
+    sz i64 = h.size()
+    runner.eq(sz, 3, 'peek does not remove, size == 3')
+}
+
+t-pop-empty = () {
+    data []i64 = with-len(32)
+    h = heap.init(data)
+    is-nil bool = false
+    v = h.pop()
+    v: {
+        nil -> is-nil = true
+        -> is-nil = false
+    }
+    runner.is-true(is-nil, 'pop empty == nil')
+
+    is-nil2 bool = false
+    p = h.peek()
+    p: {
+        nil -> is-nil2 = true
+        -> is-nil2 = false
+    }
+    runner.is-true(is-nil2, 'peek empty == nil')
+}
+
+t-duplicates = () {
+    data []i64 = with-len(32)
+    h = heap.init(data)
+    h.push(5)
+    h.push(5)
+    h.push(5)
+
+    ok1 bool = false
+    v1 = h.pop()
+    v1: {
+        nil -> ok1 = false
+        -> ok1 = v1 == 5
+    }
+    runner.is-true(ok1, 'dup pop 1st == 5')
+
+    ok2 bool = false
+    v2 = h.pop()
+    v2: {
+        nil -> ok2 = false
+        -> ok2 = v2 == 5
+    }
+    runner.is-true(ok2, 'dup pop 2nd == 5')
+
+    sz i64 = h.size()
+    runner.eq(sz, 1, 'after 2 pops size == 1')
+}
+
+; ── 執行 ──────────────────────────────────────
+
+p1, f1 = runner.test('heap.init', t-init)
+p2, f2 = runner.test('heap.push/pop', t-push-pop)
+p3, f3 = runner.test('heap.peek', t-peek)
+p4, f4 = runner.test('heap.pop-empty', t-pop-empty)
+p5, f5 = runner.test('heap.duplicates', t-duplicates)
+
+total = runner.summary()
+f = runner.failed-count()
+{
+    f > 0 -> os.exit(1)
+    -> os.exit(0)
+}

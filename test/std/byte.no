@@ -1,0 +1,94 @@
+; std-byte.no — byte 模組測試
+;
+; 執行：no test test/std/byte.no
+; 覆蓋：[]byte.to-i64-be / []byte.to-i64-le /
+;       []byte.to-hex / []byte.to-hex-lower /
+;       []byte.index / []byte.index-from / []byte.slice
+; 未測：i64.to-bytes-be/le（[?]byte 返回類型 codegen 問題）
+;       []byte.to-str（與 str.eq 交互有問題，預存 bug）
+
+# /test/runner
+
+; ── 位元組與整數轉換 ─────────────────────────
+
+t-to-i64-be = () {
+    data []byte = [0x00, 0x00, 0x00, 0x00, 0x00, 0x12, 0x34, 0x56]
+    v i64 = data.to-i64-be()
+    runner.eq(v, 0x123456, 'to-i64-be == 0x123456')
+}
+
+t-to-i64-le = () {
+    data []byte = [0x56, 0x34, 0x12, 0x00, 0x00, 0x00, 0x00, 0x00]
+    v i64 = data.to-i64-le()
+    runner.eq(v, 0x123456, 'to-i64-le == 0x123456')
+}
+
+t-to-i64-le-short = () {
+    data []byte = [0x34, 0x12]
+    v i64 = data.to-i64-le()
+    runner.eq(v, 0x1234, 'to-i64-le 2 bytes == 0x1234')
+}
+
+; ── 十六進制編碼 ─────────────────────────────
+
+t-to-hex = () {
+    data []byte = [0x12, 0xAB, 0xCD]
+    s = data.to-hex()
+    runner.eq(s.len, 6, 'to-hex len == 6')
+    runner.str-eq(s, '12ABCD', 6, 'to-hex content')
+}
+
+t-to-hex-lower = () {
+    data []byte = [0xFF, 0x00, 0x0a]
+    s = data.to-hex-lower()
+    runner.eq(s.len, 6, 'to-hex-lower len == 6')
+    runner.str-eq(s, 'ff000a', 6, 'to-hex-lower content')
+}
+
+; ── 查找與切片 ───────────────────────────────
+
+t-index = () {
+    data []byte = [72, 73, 0, 72, 73]
+    pos i64 = data.index('HI')
+    runner.eq(pos, 0, 'index HI == 0')
+    pos2 i64 = data.index('xyz')
+    runner.eq(pos2, -1, 'index xyz == -1')
+}
+
+t-index-from = () {
+    data []byte = [65, 66, 65, 66]
+    pos i64 = data.index-from('AB', 1)
+    runner.eq(pos, 2, 'index-from AB@1 == 2')
+    pos2 i64 = data.index-from('AB', 0)
+    runner.eq(pos2, 0, 'index-from AB@0 == 0')
+}
+
+t-slice = () {
+    data []byte = [10, 20, 30, 40, 50]
+    sub = data.slice(1, 4)
+    runner.eq(sub.len, 3, 'slice len == 3')
+    b0 i64 = sub[0]
+    runner.eq(b0, 20, 'slice [0] == 20')
+    b1 i64 = sub[1]
+    runner.eq(b1, 30, 'slice [1] == 30')
+    b2 i64 = sub[2]
+    runner.eq(b2, 40, 'slice [2] == 40')
+}
+
+; ── 執行 ──────────────────────────────────────
+
+p1, f1 = runner.test('byte.to-i64-be', t-to-i64-be)
+p2, f2 = runner.test('byte.to-i64-le', t-to-i64-le)
+p3, f3 = runner.test('byte.to-i64-le short', t-to-i64-le-short)
+p4, f4 = runner.test('byte.to-hex', t-to-hex)
+p5, f5 = runner.test('byte.to-hex-lower', t-to-hex-lower)
+p6, f6 = runner.test('byte.index', t-index)
+p7, f7 = runner.test('byte.index-from', t-index-from)
+p8, f8 = runner.test('byte.slice', t-slice)
+
+total = runner.summary()
+f = runner.failed-count()
+{
+    f > 0 -> os.exit(1)
+    -> os.exit(0)
+}

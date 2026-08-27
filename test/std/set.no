@@ -1,0 +1,138 @@
+; std-set.no — set 模組測試
+;
+; 執行：no test test/std/set.no
+; 覆蓋：add / remove / contains / union / intersection / difference /
+;       to-vec / size / empty
+
+# /test/runner
+
+t-add-contains = () {
+    s []i64 = with-cap(16)
+    n i64 = set.add(s, 0, 1)
+    n = set.add(s, n, 2)
+    n = set.add(s, n, 3)
+    runner.eq(n, 3, 'add 3 unique size == 3')
+
+    yes1 bool = set.contains(s, n, 2)
+    runner.is-true(yes1, 'contains 2')
+    no1 bool = set.contains(s, n, 99)
+    runner.is-false(no1, 'not contains 99')
+}
+
+t-add-duplicate = () {
+    s []i64 = with-cap(16)
+    n i64 = set.add(s, 0, 5)
+    n = set.add(s, n, 5)
+    n = set.add(s, n, 5)
+    runner.eq(n, 1, 'add duplicate 3x size == 1')
+}
+
+t-remove = () {
+    s []i64 = with-cap(16)
+    n i64 = set.add(s, 0, 1)
+    n = set.add(s, n, 2)
+    n = set.add(s, n, 3)
+    n = set.set-remove(s, n, 2)
+    runner.eq(n, 2, 'remove 1, size == 2')
+    no bool = set.contains(s, n, 2)
+    runner.is-false(no, 'removed 2 not found')
+    yes bool = set.contains(s, n, 1)
+    runner.is-true(yes, 'still contains 1')
+}
+
+t-size-empty = () {
+    s []i64 = with-cap(16)
+    yes bool = set.set-empty(s, 0)
+    runner.is-true(yes, 'empty set == true')
+    sz i64 = set.set-size(s, 0)
+    runner.eq(sz, 0, 'empty size == 0')
+    n i64 = set.add(s, 0, 7)
+    yes2 bool = set.set-empty(s, n)
+    runner.is-false(yes2, 'non-empty == false')
+    sz2 i64 = set.set-size(s, n)
+    runner.eq(sz2, 1, 'size after 1 add == 1')
+}
+
+t-union = () {
+    a []i64 = with-cap(16)
+    b []i64 = with-cap(16)
+    an i64 = set.add(a, 0, 1)
+    an = set.add(a, an, 2)
+    an = set.add(a, an, 3)
+    bn i64 = set.add(b, 0, 3)
+    bn = set.add(b, bn, 4)
+    bn = set.add(b, bn, 5)
+    new-an i64 = set.union(a, an, b, bn)
+    runner.eq(new-an, 5, 'union size == 5 (1,2,3,4,5)')
+    yes1 bool = set.contains(a, new-an, 4)
+    runner.is-true(yes1, 'union contains 4')
+    yes2 bool = set.contains(a, new-an, 5)
+    runner.is-true(yes2, 'union contains 5')
+}
+
+t-intersection = () {
+    a []i64 = with-cap(16)
+    b []i64 = with-cap(16)
+    an i64 = set.add(a, 0, 1)
+    an = set.add(a, an, 2)
+    an = set.add(a, an, 3)
+    bn i64 = set.add(b, 0, 2)
+    bn = set.add(b, bn, 3)
+    bn = set.add(b, bn, 4)
+    out, out-n = set.intersection(a, an, b, bn)
+    runner.eq(out-n, 2, 'intersection size == 2 (2,3)')
+    yes1 bool = set.contains(out, out-n, 2)
+    runner.is-true(yes1, 'intersection contains 2')
+    yes2 bool = set.contains(out, out-n, 3)
+    runner.is-true(yes2, 'intersection contains 3')
+    no bool = set.contains(out, out-n, 1)
+    runner.is-false(no, 'intersection not contains 1')
+}
+
+t-difference = () {
+    a []i64 = with-cap(16)
+    b []i64 = with-cap(16)
+    an i64 = set.add(a, 0, 1)
+    an = set.add(a, an, 2)
+    an = set.add(a, an, 3)
+    bn i64 = set.add(b, 0, 2)
+    bn = set.add(b, bn, 4)
+    out, out-n = set.difference(a, an, b, bn)
+    runner.eq(out-n, 2, 'difference size == 2 (1,3)')
+    yes1 bool = set.contains(out, out-n, 1)
+    runner.is-true(yes1, 'difference contains 1')
+    yes2 bool = set.contains(out, out-n, 3)
+    runner.is-true(yes2, 'difference contains 3')
+    no bool = set.contains(out, out-n, 2)
+    runner.is-false(no, 'difference not contains 2')
+}
+
+t-to-vec = () {
+    s []i64 = with-cap(16)
+    n i64 = set.add(s, 0, 10)
+    n = set.add(s, n, 20)
+    n = set.add(s, n, 30)
+    v = set.to-vec(s, n)
+    runner.eq(v.len, 3, 'to-vec len == 3')
+    runner.eq(v[0], 10, 'to-vec [0] == 10')
+    runner.eq(v[1], 20, 'to-vec [1] == 20')
+    runner.eq(v[2], 30, 'to-vec [2] == 30')
+}
+
+; ── 執行 ──────────────────────────────────────
+
+p1, f1 = runner.test('set.add/contains', t-add-contains)
+p2, f2 = runner.test('set.add-duplicate', t-add-duplicate)
+p3, f3 = runner.test('set.remove', t-remove)
+p4, f4 = runner.test('set.size/empty', t-size-empty)
+p5, f5 = runner.test('set.union', t-union)
+p6, f6 = runner.test('set.intersection', t-intersection)
+p7, f7 = runner.test('set.difference', t-difference)
+p8, f8 = runner.test('set.to-vec', t-to-vec)
+
+total = runner.summary()
+f = runner.failed-count()
+{
+    f > 0 -> os.exit(1)
+    -> os.exit(0)
+}

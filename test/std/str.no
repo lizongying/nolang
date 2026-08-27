@@ -1,0 +1,177 @@
+; std-str.no — str 模組測試
+;
+; 執行：no test test/std/str.no
+; 覆蓋：len / index / index-from / contains / starts-with / ends-with /
+;       to-upper / to-lower / trim / repeat / slice / to-bytes / to-i64 /
+;       eq / copy / fill
+
+# /test/runner
+
+; ── 基礎操作 ──────────────────────────────────
+
+t-len = () {
+    s = 'hello'
+    runner.eq(s.len, 5, 'str.len hello == 5')
+    e = ''
+    runner.eq(e.len, 0, 'str.len empty == 0')
+}
+
+t-index = () {
+    s = 'hello world'
+    runner.eq(s.index('world'), 6, 'index world == 6')
+    runner.eq(s.index('xyz'), -1, 'index xyz == -1')
+    runner.eq(s.index(''), 0, 'index empty == 0')
+    runner.eq(s.index('l'), 2, 'index l first occurrence')
+}
+
+t-index-from = () {
+    s = 'abcabc'
+    runner.eq(s.index-from('b', 0), 1, 'index-from b@0 == 1')
+    runner.eq(s.index-from('b', 2), 4, 'index-from b@2 == 4')
+    runner.eq(s.index-from('z', 0), -1, 'index-from z == -1')
+}
+
+t-contains = () {
+    s = 'hello world'
+    runner.is-true(s.contains('world'), 'contains world')
+    runner.is-false(s.contains('xyz'), 'not contains xyz')
+    runner.is-true(s.contains('lo wo'), 'contains middle substring')
+}
+
+t-starts-ends = () {
+    s = 'hello world'
+    runner.is-true(s.starts-with('hello'), 'starts-with hello')
+    runner.is-false(s.starts-with('world'), 'not starts-with world')
+    runner.is-true(s.ends-with('world'), 'ends-with world')
+    runner.is-false(s.ends-with('hello'), 'not ends-with hello')
+}
+
+; ── 轉換 ──────────────────────────────────────
+
+t-case = () {
+    s = 'Hello42'
+    up = s.to-upper()
+    runner.str-eq(up, 'HELLO42', 7, 'to-upper')
+    low = s.to-lower()
+    runner.str-eq(low, 'hello42', 7, 'to-lower')
+}
+
+t-trim = () {
+    s1 = '  hi  '
+    t1 = s1.trim()
+    runner.eq(t1.len, 2, 'trim both sides len')
+    runner.str-eq(t1, 'hi', 2, 'trim both sides content')
+    s2 = 'hi'
+    t2 = s2.trim()
+    runner.eq(t2.len, 2, 'trim no-space unchanged')
+}
+
+t-repeat = () {
+    space = ' '
+    buf = space.repeat(8)
+    runner.eq(buf.len, 8, 'repeat len')
+    ab = 'ab'
+    r = ab.repeat(3)
+    runner.eq(r.len, 6, 'repeat ab x3 len')
+    runner.str-eq(r, 'ababab', 6, 'repeat ab x3 content')
+}
+
+t-slice = () {
+    s = 'hello world'
+    v = s.slice(6, 11)
+    runner.eq(v.len, 5, 'slice len')
+    runner.str-eq(v, 'world', 5, 'slice content')
+    v2 = s.slice(0, 5)
+    runner.str-eq(v2, 'hello', 5, 'slice from 0')
+}
+
+t-to-bytes = () {
+    s = 'hello'
+    b = s.to-bytes()
+    runner.eq(b.len, 5, 'to-bytes len')
+    b0 i64 = b[0]
+    runner.eq(b0, 104, 'to-bytes 0 == h')
+    b4 i64 = b[4]
+    runner.eq(b4, 111, 'to-bytes 4 == o')
+}
+
+t-to-i64 = () {
+    ; 注意：option 值需在 match 分支內比較（跨分支傳遞會產生
+    ; option 特化，為預存 codegen 問題），故以 bool 中轉。
+    ok bool = false
+    v = '123'.to-i64()
+    v: {
+        nil -> ok = false
+        -> ok = v == 123
+    }
+    runner.is-true(ok, 'to-i64 123 == 123')
+
+    ok2 bool = false
+    n = '-45'.to-i64()
+    n: {
+        nil -> ok2 = false
+        -> ok2 = n == -45
+    }
+    runner.is-true(ok2, 'to-i64 -45 == -45')
+
+    ; 非數字 → err（nil 僅用於空字串）
+    bad-state i64 = 0
+    bad = 'abc'.to-i64()
+    bad: {
+        nil -> bad-state = 1
+        err -> bad-state = 2
+        -> bad-state = 3
+    }
+    runner.eq(bad-state, 2, 'to-i64 abc == err')
+}
+
+; ── 比較與複製 ────────────────────────────────
+
+t-eq = () {
+    a = 'nolang'
+    b = 'nolang'
+    c = 'golang'
+    runner.is-true(a.eq(b, 6), 'eq same')
+    runner.is-false(a.eq(c, 6), 'eq different')
+    runner.is-true(a.eq('nol', 3), 'eq first 3 bytes')
+}
+
+t-copy = () {
+    s = 'abc'
+    d = s.copy()
+    runner.eq(d.len, 3, 'copy len')
+    runner.is-true(d.eq(s, 3), 'copy content equal')
+    d[0] = 120
+    runner.eq(s[0], 97, 'copy is independent (source unchanged)')
+}
+
+t-fill = () {
+    s = 'abc'
+    s.fill(122)
+    runner.eq(s.len, 3, 'fill keeps len')
+    runner.str-eq(s, 'zzz', 3, 'fill with z')
+}
+
+; ── 執行 ──────────────────────────────────────
+
+p1, f1 = runner.test('str.len', t-len)
+p2, f2 = runner.test('str.index', t-index)
+p3, f3 = runner.test('str.index-from', t-index-from)
+p4, f4 = runner.test('str.contains', t-contains)
+p5, f5 = runner.test('str.starts-with/ends-with', t-starts-ends)
+p6, f6 = runner.test('str.to-upper/to-lower', t-case)
+p7, f7 = runner.test('str.trim', t-trim)
+p8, f8 = runner.test('str.repeat', t-repeat)
+p9, f9 = runner.test('str.slice', t-slice)
+p10, f10 = runner.test('str.to-bytes', t-to-bytes)
+p11, f11 = runner.test('str.to-i64', t-to-i64)
+p12, f12 = runner.test('str.eq', t-eq)
+p13, f13 = runner.test('str.copy', t-copy)
+p14, f14 = runner.test('str.fill', t-fill)
+
+total = runner.summary()
+f = runner.failed-count()
+{
+    f > 0 -> os.exit(1)
+    -> os.exit(0)
+}

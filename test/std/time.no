@@ -1,0 +1,172 @@
+; std-time.no — time 模組測試
+;
+; 執行：no test test/std/time.no
+; 覆蓋：now-s / duration-between / is-leap / days-in-month-fn /
+;       unix-to-date / date-to-unix / format-date / format-time-str / parse-date / timer
+; 未測：format-duration（字串插值觸發 BPT trap，預存 codegen bug）
+
+# /test/runner
+
+; ── 時間戳 ────────────────────────────────────
+
+t-now-s = () {
+    ts = time.now-s()
+    runner.gt(ts, 1000000000, 'now-s > 1e9 (post-2001)')
+}
+
+t-duration-between = () {
+    d i64 = time.duration-between(100, 150)
+    runner.eq(d, 50, 'duration-between 100..150 == 50')
+    d2 i64 = time.duration-between(200, 100)
+    runner.eq(d2, -100, 'duration-between reversed == -100')
+}
+
+; ── 閏年 ──────────────────────────────────────
+
+t-is-leap = () {
+    yes2000 bool = time.is-leap(2000)
+    runner.is-true(yes2000, '2000 is leap')
+    no1900 bool = time.is-leap(1900)
+    runner.is-false(no1900, '1900 not leap')
+    yes2024 bool = time.is-leap(2024)
+    runner.is-true(yes2024, '2024 is leap')
+    no2023 bool = time.is-leap(2023)
+    runner.is-false(no2023, '2023 not leap')
+}
+
+t-days-in-month = () {
+    d1 i64 = time.days-in-month-fn(2024, 2)
+    runner.eq(d1, 29, '2024 Feb has 29 days')
+    d2 i64 = time.days-in-month-fn(2023, 2)
+    runner.eq(d2, 28, '2023 Feb has 28 days')
+    d3 i64 = time.days-in-month-fn(2024, 1)
+    runner.eq(d3, 31, '2024 Jan has 31 days')
+    d4 i64 = time.days-in-month-fn(2024, 4)
+    runner.eq(d4, 30, '2024 Apr has 30 days')
+}
+
+; ── 日期轉換 ──────────────────────────────────
+
+t-unix-to-date = () {
+    d date
+    d = time.unix-to-date(0)
+    runner.eq(d.year, 1970, 'unix-to-date(0) year == 1970')
+    runner.eq(d.month, 1, 'unix-to-date(0) month == 1')
+    runner.eq(d.day, 1, 'unix-to-date(0) day == 1')
+    runner.eq(d.hour, 0, 'unix-to-date(0) hour == 0')
+    runner.eq(d.min, 0, 'unix-to-date(0) min == 0')
+    runner.eq(d.sec, 0, 'unix-to-date(0) sec == 0')
+    runner.eq(d.wday, 4, 'unix-to-date(0) wday == 4 (Thursday)')
+}
+
+t-date-to-unix = () {
+    d date
+    d.year = 1970
+    d.month = 1
+    d.day = 1
+    d.hour = 0
+    d.min = 0
+    d.sec = 0
+    ts i64 = time.date-to-unix(d)
+    runner.eq(ts, 0, 'date-to-unix 1970-01-01 == 0')
+
+    d2 date
+    d2.year = 2024
+    d2.month = 1
+    d2.day = 1
+    d2.hour = 0
+    d2.min = 0
+    d2.sec = 0
+    ts2 i64 = time.date-to-unix(d2)
+    runner.gt(ts2, 1700000000, 'date-to-unix 2024-01-01 > 1.7e9')
+}
+
+t-roundtrip = () {
+    orig = 1700000000
+    d date
+    d = time.unix-to-date(orig)
+    back i64 = time.date-to-unix(d)
+    runner.eq(back, orig, 'unix-to-date/date-to-unix roundtrip')
+}
+
+; ── 格式化 ────────────────────────────────────
+
+t-format-date = () {
+    d date
+    d.year = 2024
+    d.month = 1
+    d.day = 15
+    d.hour = 12
+    d.min = 30
+    d.sec = 45
+    s = time.format-date(d)
+    runner.str-eq(s, '2024-01-15 12:30:45', 19, 'format-date')
+}
+
+t-format-time-str = () {
+    s = time.format-time-str(0)
+    runner.str-eq(s, '1970-01-01 00:00:00', 19, 'format-time-str(0)')
+}
+
+; ── 解析 ──────────────────────────────────────
+
+t-parse-date = () {
+    ok bool = false
+    ts = time.parse-date('2024-01-15 12:30:45')
+    ts: {
+        nil -> ok = false
+        -> ok = ts == 1705321845
+    }
+    runner.is-true(ok, 'parse-date 2024-01-15 12:30:45 == 1705324245')
+
+    ok2 bool = false
+    ts2 = time.parse-date('2024-01-15')
+    ts2: {
+        nil -> ok2 = false
+        -> ok2 = ts2 == 1705276800
+    }
+    runner.is-true(ok2, 'parse-date 2024-01-15 == 1705276800')
+
+    ; 無效格式
+    is-nil bool = false
+    ts3 = time.parse-date('invalid')
+    ts3: {
+        nil -> is-nil = true
+        -> is-nil = false
+    }
+    runner.is-true(is-nil, 'parse-date invalid == nil')
+}
+
+; ── 計時器 ────────────────────────────────────
+
+t-timer = () {
+    tm = time.timer {
+        start-ts: 1000
+        end-ts: 1500
+    }
+    ms i64 = tm.elapsed-ms()
+    runner.eq(ms, 500, 'timer elapsed-ms == 500')
+    s i64 = tm.elapsed-s()
+    runner.eq(s, 0, 'timer elapsed-s == 0')
+}
+
+; ── 執行 ──────────────────────────────────────
+
+p1, f1 = runner.test('time.now-s', t-now-s)
+p2, f2 = runner.test('time.duration-between', t-duration-between)
+p3, f3 = runner.test('time.is-leap', t-is-leap)
+p4, f4 = runner.test('time.days-in-month', t-days-in-month)
+p5, f5 = runner.test('time.unix-to-date', t-unix-to-date)
+p6, f6 = runner.test('time.date-to-unix', t-date-to-unix)
+p7, f7 = runner.test('time.roundtrip', t-roundtrip)
+p8, f8 = runner.test('time.format-date', t-format-date)
+p9, f9 = runner.test('time.format-time-str', t-format-time-str)
+p10, f10 = runner.test('time.parse-date', t-parse-date)
+p11, f11 = runner.test('time.timer', t-timer)
+
+total = runner.summary()
+f = runner.failed-count()
+{
+    f > 0 -> os.exit(1)
+    -> os.exit(0)
+}

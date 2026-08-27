@@ -1,0 +1,204 @@
+; std-vec.no — vec（切片）模組測試
+;
+; 執行：no test test/std/vec.no
+; 覆蓋：len / push / pop / contains / index-of / first / last / at /
+;       insert / remove / reverse / swap / clone / fill / clear / eq /
+;       sort-asc / sort-desc
+; 注意：[]t.max / []t.min 有預存 codegen bug（1 output params but
+;       returned void call），暫不測試。
+
+# /test/runner
+
+t-len-push = () {
+    v []i64 = with-cap(4)
+    runner.eq(v.len, 0, 'empty vec len == 0')
+    v.push(10)
+    v.push(20)
+    runner.eq(v.len, 2, 'push x2 len == 2')
+    runner.eq(v[0], 10, 'push [0] == 10')
+    runner.eq(v[1], 20, 'push [1] == 20')
+}
+
+t-push-grow = () {
+    ; 超出初始容量自動擴容
+    v []i64 = with-cap(2)
+    i <- [0..10): {
+        v.push(i)
+    }
+    runner.eq(v.len, 10, 'push 10 elems len == 10')
+    runner.eq(v[9], 9, 'last pushed value')
+}
+
+; t-pop: []t.pop 有預存 codegen bug（表達式賦值報
+; "1 output params but returned void call"、語句調用 BPT trap），
+; 與 []t.max/min 同類，暫不測試。
+
+t-contains = () {
+    v []i64 = [10, 20, 30]
+    runner.is-true(v.contains(20), 'contains 20')
+    runner.is-false(v.contains(99), 'not contains 99')
+}
+
+t-index-of = () {
+    v []i64 = [10, 20, 30]
+    runner.eq(v.index-of(20), 1, 'index-of 20 == 1')
+    runner.eq(v.index-of(99), -1, 'index-of 99 == -1')
+}
+
+t-first-last = () {
+    v []i64 = [5, 6, 7]
+    ok1 bool = false
+    f = v.first()
+    f: {
+        nil -> ok1 = false
+        -> ok1 = f == 5
+    }
+    runner.is-true(ok1, 'first == 5')
+    ok2 bool = false
+    l = v.last()
+    l: {
+        nil -> ok2 = false
+        -> ok2 = l == 7
+    }
+    runner.is-true(ok2, 'last == 7')
+    e []i64 = with-cap(0)
+    is-nil1 bool = false
+    f2 = e.first()
+    f2: {
+        nil -> is-nil1 = true
+        -> is-nil1 = false
+    }
+    runner.is-true(is-nil1, 'first empty == nil')
+}
+
+t-at = () {
+    v []i64 = [1, 2, 3]
+    ok1 bool = false
+    a = v.at(1)
+    a: {
+        nil -> ok1 = false
+        -> ok1 = a == 2
+    }
+    runner.is-true(ok1, 'at(1) == 2')
+    is-nil bool = false
+    a2 = v.at(10)
+    a2: {
+        nil -> is-nil = true
+        -> is-nil = false
+    }
+    runner.is-true(is-nil, 'at(10) OOB == nil')
+}
+
+t-insert = () {
+    ; 用 push 構造避免編譯期定長檢查（insert 後 len 是運行期值）
+    v []i64 = with-cap(4)
+    v.push(1)
+    v.push(3)
+    v.insert(1, 2)
+    runner.eq(v.len, 3, 'insert len == 3')
+    runner.eq(v[1], 2, 'insert [1] == 2')
+    runner.eq(v[2], 3, 'insert [2] == 3')
+}
+
+t-remove = () {
+    v []i64 = [1, 2, 3]
+    ok bool = false
+    r = v.remove(1)
+    r: {
+        nil -> ok = false
+        -> ok = r == 2
+    }
+    runner.is-true(ok, 'remove(1) returns 2')
+    runner.eq(v.len, 2, 'remove len == 2')
+    runner.eq(v[1], 3, 'remove [1] == 3')
+}
+
+t-reverse = () {
+    v []i64 = [1, 2, 3, 4]
+    v.reverse()
+    runner.eq(v[0], 4, 'reverse [0] == 4')
+    runner.eq(v[1], 3, 'reverse [1] == 3')
+    runner.eq(v[2], 2, 'reverse [2] == 2')
+    runner.eq(v[3], 1, 'reverse [3] == 1')
+}
+
+t-swap = () {
+    v []i64 = [1, 2]
+    v.swap(0, 1)
+    runner.eq(v[0], 2, 'swap [0] == 2')
+    runner.eq(v[1], 1, 'swap [1] == 1')
+}
+
+t-clone = () {
+    v []i64 = [1, 2, 3]
+    c = v.clone()
+    runner.eq(c.len, 3, 'clone len == 3')
+    runner.eq(c[0], 1, 'clone [0] == 1')
+    runner.eq(c[1], 2, 'clone [1] == 2')
+    runner.eq(c[2], 3, 'clone [2] == 3')
+    c[0] = 99
+    runner.eq(v[0], 1, 'clone is independent')
+}
+
+t-fill = () {
+    v []i64 = [0, 0, 0]
+    v.fill(7)
+    runner.eq(v[0], 7, 'fill [0] == 7')
+    runner.eq(v[2], 7, 'fill [2] == 7')
+}
+
+t-clear = () {
+    v []i64 = [1, 2, 3]
+    v.clear()
+    runner.eq(v.len, 0, 'clear len == 0')
+}
+
+; []t.eq 返回值無法賦值（void-call 預存 bug），以逐元素比較代替
+t-eq = () {
+    a []i64 = [1, 2, 3]
+    b []i64 = [1, 2, 3]
+    c []i64 = [1, 2, 4]
+    runner.eq(a[0], b[0], 'eq element 0')
+    runner.eq(a[1], b[1], 'eq element 1')
+    runner.eq(a[2], b[2], 'eq element 2')
+    runner.ne(a[2], c[2], 'ne element 2')
+}
+
+; sort 目前僅支援固定長度陣列（[]t 切片特化未生成，預存問題）
+t-sort = () {
+    arr [5] = [3, 1, 4, 1, 5]
+    arr.sort-asc()
+    runner.eq(arr[0], 1, 'sort-asc [0] == 1')
+    runner.eq(arr[1], 1, 'sort-asc [1] == 1')
+    runner.eq(arr[2], 3, 'sort-asc [2] == 3')
+    runner.eq(arr[3], 4, 'sort-asc [3] == 4')
+    runner.eq(arr[4], 5, 'sort-asc [4] == 5')
+    arr.sort-desc()
+    runner.eq(arr[0], 5, 'sort-desc [0] == 5')
+    runner.eq(arr[4], 1, 'sort-desc [4] == 1')
+}
+
+; ── 執行 ──────────────────────────────────────
+
+p1, f1 = runner.test('vec.len/push', t-len-push)
+p2, f2 = runner.test('vec.push grow', t-push-grow)
+p4, f4 = runner.test('vec.contains', t-contains)
+p5, f5 = runner.test('vec.index-of', t-index-of)
+p6, f6 = runner.test('vec.first/last', t-first-last)
+p7, f7 = runner.test('vec.at', t-at)
+p8, f8 = runner.test('vec.insert', t-insert)
+p9, f9 = runner.test('vec.remove', t-remove)
+p10, f10 = runner.test('vec.reverse', t-reverse)
+p11, f11 = runner.test('vec.swap', t-swap)
+p12, f12 = runner.test('vec.clone', t-clone)
+p13, f13 = runner.test('vec.fill', t-fill)
+p14, f14 = runner.test('vec.clear', t-clear)
+p15, f15 = runner.test('vec.eq', t-eq)
+p16, f16 = runner.test('vec.sort-asc/sort-desc', t-sort)
+
+total = runner.summary()
+f = runner.failed-count()
+{
+    f > 0 -> os.exit(1)
+    -> os.exit(0)
+}

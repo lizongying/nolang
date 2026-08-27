@@ -1,0 +1,120 @@
+; std-base64.no — encoding/base64 模組測試
+;
+; 執行：no test test/std/base64.no
+; 覆蓋：encode-std / encode-url / decode
+
+# /test/runner
+
+; ── 標準編碼 ──────────────────────────────────
+
+t-encode-std-3bytes = () {
+    ; 3 bytes -> 4 chars, no padding
+    data []byte = [65, 66, 67]
+    s = base64.encode-std(data)
+    runner.eq(s.len, 4, 'encode-std 3 bytes len == 4')
+    runner.str-eq(s, 'QUJD', 4, 'encode-std ABC')
+}
+
+t-encode-std-1byte = () {
+    ; 1 byte -> 4 chars with 2 padding
+    data []byte = [65]
+    s = base64.encode-std(data)
+    runner.eq(s.len, 4, 'encode-std 1 byte len == 4')
+    runner.str-eq(s, 'QQ==', 4, 'encode-std A')
+}
+
+t-encode-std-2bytes = () {
+    ; 2 bytes -> 4 chars with 1 padding
+    data []byte = [65, 66]
+    s = base64.encode-std(data)
+    runner.eq(s.len, 4, 'encode-std 2 bytes len == 4')
+    runner.str-eq(s, 'QUI=', 4, 'encode-std AB')
+}
+
+t-encode-std-empty = () {
+    data []byte = with-cap(0)
+    s = base64.encode-std(data)
+    runner.eq(s.len, 0, 'encode-std empty len == 0')
+}
+
+; ── URL 安全編碼 ──────────────────────────────
+
+t-encode-url-3bytes = () {
+    data []byte = [0xFB, 0xFF, 0xBF]
+    s = base64.encode-url(data)
+    runner.eq(s.len, 4, 'encode-url 3 bytes len == 4')
+    runner.str-eq(s, '-_-_', 4, 'encode-url 0xFBFFBF')
+}
+
+; ── 解碼 ──────────────────────────────────────
+
+t-decode-std = () {
+    s = 'QUJD'
+    result = base64.decode(s, base64.BASE64-STD)
+    ok bool = false
+    result: {
+        ok -> {
+            ok = it.len == 3
+        }
+        nil -> ok = false
+        err -> ok = false
+    }
+    runner.is-true(ok, 'decode QUJD len == 3')
+    ; 驗證解碼內容
+    ok2 bool = false
+    result: {
+        ok -> ok2 = it[0] == 65 && it[1] == 66 && it[2] == 67
+        nil -> ok2 = false
+        err -> ok2 = false
+    }
+    runner.is-true(ok2, 'decode QUJD content == ABC')
+}
+
+t-decode-padding = () {
+    s = 'QQ=='
+    result = base64.decode(s, base64.BASE64-STD)
+    ok bool = false
+    result: {
+        ok -> ok = it.len == 1 && it[0] == 65
+        nil -> ok = false
+        err -> ok = false
+    }
+    runner.is-true(ok, 'decode QQ== == A')
+}
+
+; ── 往返測試 ──────────────────────────────────
+
+t-roundtrip = () {
+    data []byte = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+    encoded = base64.encode-std(data)
+    result = base64.decode(encoded, base64.BASE64-STD)
+    ok bool = false
+    result: {
+        ok -> {
+            match = it.len == 10
+            match2 = it[0] == 1 && it[9] == 10
+            ok = match && match2
+        }
+        nil -> ok = false
+        err -> ok = false
+    }
+    runner.is-true(ok, 'roundtrip 10 bytes')
+}
+
+; ── 執行 ──────────────────────────────────────
+
+p1, f1 = runner.test('base64.encode-std 3 bytes', t-encode-std-3bytes)
+p2, f2 = runner.test('base64.encode-std 1 byte', t-encode-std-1byte)
+p3, f3 = runner.test('base64.encode-std 2 bytes', t-encode-std-2bytes)
+p4, f4 = runner.test('base64.encode-std empty', t-encode-std-empty)
+p5, f5 = runner.test('base64.encode-url', t-encode-url-3bytes)
+p6, f6 = runner.test('base64.decode-std', t-decode-std)
+p7, f7 = runner.test('base64.decode-padding', t-decode-padding)
+p8, f8 = runner.test('base64.roundtrip', t-roundtrip)
+
+total = runner.summary()
+f = runner.failed-count()
+{
+    f > 0 -> os.exit(1)
+    -> os.exit(0)
+}

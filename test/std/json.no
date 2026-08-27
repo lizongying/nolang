@@ -1,0 +1,305 @@
+; std-json.no — json 模組測試
+;
+; 執行：no test test/std/json.no
+; 覆蓋：parse / stringify / is-null / is-obj / is-arr / is-str / is-num / is-bool /
+;       get-str / get-num / get-i64 / get-bool / get / arr-len / arr-get /
+;       set-str / set-num / set-bool / set-i64
+
+# /test/runner
+
+; ── 解析 ──────────────────────────────────────
+
+t-parse-obj = () {
+    j = json.parse('{"name":"Alice","age":30}')
+    ok bool = false
+    j: {
+        ok -> ok = true
+        nil -> ok = false
+        err -> ok = false
+    }
+    runner.is-true(ok, 'parse obj ok')
+
+    is-obj bool = false
+    j: {
+        ok -> is-obj = it.is-obj()
+        nil -> is-obj = false
+        err -> is-obj = false
+    }
+    runner.is-true(is-obj, 'parsed is-obj')
+}
+
+t-parse-arr = () {
+    j = json.parse('[1, 2, 3]')
+    ok bool = false
+    j: {
+        ok -> ok = true
+        nil -> ok = false
+        err -> ok = false
+    }
+    runner.is-true(ok, 'parse arr ok')
+
+    is-arr bool = false
+    j: {
+        ok -> is-arr = it.is-arr()
+        nil -> is-arr = false
+        err -> is-arr = false
+    }
+    runner.is-true(is-arr, 'parsed is-arr')
+}
+
+t-parse-str = () {
+    j = json.parse('"hello"')
+    ok bool = false
+    j: {
+        ok -> ok = j.is-str()
+        nil -> ok = false
+        err -> ok = false
+    }
+    runner.is-true(ok, 'parse str ok')
+}
+
+t-parse-num = () {
+    j = json.parse('42.5')
+    ok bool = false
+    j: {
+        ok -> ok = j.is-num()
+        nil -> ok = false
+        err -> ok = false
+    }
+    runner.is-true(ok, 'parse num ok')
+}
+
+t-parse-bool = () {
+    j = json.parse('true')
+    ok bool = false
+    j: {
+        ok -> ok = j.is-bool()
+        nil -> ok = false
+        err -> ok = false
+    }
+    runner.is-true(ok, 'parse bool ok')
+}
+
+t-parse-null = () {
+    j = json.parse('null')
+    ok bool = false
+    j: {
+        ok -> ok = j.is-null()
+        nil -> ok = false
+        err -> ok = false
+    }
+    runner.is-true(ok, 'parse null ok')
+}
+
+t-parse-error = () {
+    j = json.parse('')
+    is-err bool = false
+    j: {
+        ok -> is-err = false
+        nil -> is-err = false
+        err -> is-err = true
+    }
+    runner.is-true(is-err, 'parse empty -> err')
+}
+
+; ── 物件存取 ──────────────────────────────────
+
+t-get-str = () {
+    j = json.parse('{"name":"Alice","age":30}')
+    ok bool = false
+    val str
+    j: {
+        ok -> val, ok = it.get-str('name')
+        nil -> ok = false
+        err -> ok = false
+    }
+    runner.is-true(ok, 'get-str ok')
+    runner.str-eq(val, 'Alice', 5, 'get-str content')
+}
+
+t-get-num = () {
+    j = json.parse('{"pi":3.14}')
+    ok bool = false
+    val f64 = 0.0
+    j: {
+        ok -> val, ok = it.get-num('pi')
+        nil -> ok = false
+        err -> ok = false
+    }
+    runner.is-true(ok, 'get-num ok')
+    eps f64 = 0.001 / 1000.0
+    runner.f64-eq(val, 3.14, eps, 'get-num 3.14')
+}
+
+t-get-i64 = () {
+    j = json.parse('{"count":42}')
+    ok bool = false
+    val i64 = 0
+    j: {
+        ok -> val, ok = it.get-i64('count')
+        nil -> ok = false
+        err -> ok = false
+    }
+    runner.is-true(ok, 'get-i64 ok')
+    runner.eq(val, 42, 'get-i64 value')
+}
+
+t-get-bool = () {
+    j = json.parse('{"active":true}')
+    ok bool = false
+    val bool = false
+    j: {
+        ok -> val, ok = it.get-bool('active')
+        nil -> ok = false
+        err -> ok = false
+    }
+    runner.is-true(ok, 'get-bool ok')
+    runner.is-true(val, 'get-bool value')
+}
+
+; ── 陣列操作 ──────────────────────────────────
+
+t-arr-len = () {
+    j = json.parse('[1, 2, 3, 4, 5]')
+    n i64 = 0
+    j: {
+        ok -> n = it.arr-len()
+        nil -> n = 0
+        err -> n = 0
+    }
+    runner.eq(n, 5, 'arr-len == 5')
+}
+
+t-arr-get = () {
+    j = json.parse('["a", "b", "c"]')
+    ok bool = false
+    val str
+    j: {
+        ok -> {
+            elem = it.arr-get(1)
+            elem: {
+                ok -> val, ok = it.get-str('') 
+                nil -> {}
+                err -> {}
+            }
+        }
+        nil -> {}
+        err -> {}
+    }
+    ; arr-get 返回 ?json，對 string 元素用 str() 取值
+    ok2 bool = false
+    val2 str
+    j: {
+        ok -> {
+            elem = it.arr-get(0)
+            elem: {
+                ok -> val2, ok2 = it.str()
+                nil -> ok2 = false
+                err -> ok2 = false
+            }
+        }
+        nil -> ok2 = false
+        err -> ok2 = false
+    }
+    runner.is-true(ok2, 'arr-get(0) str ok')
+    runner.str-eq(val2, 'a', 1, 'arr-get(0) content')
+}
+
+; ── 序列化 ────────────────────────────────────
+
+t-stringify-obj = () {
+    j = json.parse('{"a":1}')
+    s = ''
+    j: {
+        ok -> s = it.stringify()
+        nil -> {}
+        err -> {}
+    }
+    runner.gt(s.len, 5, 'stringify obj len > 5')
+    runner.str-eq(s, '{"a":1}', 7, 'stringify obj content')
+}
+
+t-stringify-arr = () {
+    j = json.parse('[1, 2, 3]')
+    s = ''
+    j: {
+        ok -> s = it.stringify()
+        nil -> {}
+        err -> {}
+    }
+    runner.str-eq(s, '[1,2,3]', 7, 'stringify arr content')
+}
+
+; ── 構建與設定 ────────────────────────────────
+
+t-set-str = () {
+    j = json.new()
+    j.set-str('name', 'Bob')
+    s = j.stringify()
+    runner.str-eq(s, '{"name":"Bob"}', 14, 'set-str stringify')
+}
+
+t-set-num = () {
+    j = json.new()
+    j.set-num('val', 3.14)
+    s = j.stringify()
+    runner.str-eq(s, '{"val":3.14}', 11, 'set-num stringify')
+}
+
+t-set-i64 = () {
+    j = json.new()
+    j.set-i64('count', 42)
+    s = j.stringify()
+    runner.str-eq(s, '{"count":42}', 12, 'set-i64 stringify')
+}
+
+t-set-bool = () {
+    j = json.new()
+    j.set-bool('ok', true)
+    s = j.stringify()
+    runner.str-eq(s, '{"ok":true}', 10, 'set-bool true stringify')
+}
+
+; ── 往返測試 ──────────────────────────────────
+
+t-roundtrip = () {
+    src = '{"x":1,"y":"abc","z":true}'
+    j = json.parse(src)
+    s = ''
+    j: {
+        ok -> s = it.stringify()
+        nil -> {}
+        err -> {}
+    }
+    runner.str-eq(s, '{"x":1,"y":"abc","z":true}', 25, 'roundtrip')
+}
+
+; ── 執行 ──────────────────────────────────────
+
+p1, f1 = runner.test('json.parse-obj', t-parse-obj)
+p2, f2 = runner.test('json.parse-arr', t-parse-arr)
+p3, f3 = runner.test('json.parse-str', t-parse-str)
+p4, f4 = runner.test('json.parse-num', t-parse-num)
+p5, f5 = runner.test('json.parse-bool', t-parse-bool)
+p6, f6 = runner.test('json.parse-null', t-parse-null)
+p7, f7 = runner.test('json.parse-error', t-parse-error)
+p8, f8 = runner.test('json.get-str', t-get-str)
+p9, f9 = runner.test('json.get-num', t-get-num)
+p10, f10 = runner.test('json.get-i64', t-get-i64)
+p11, f11 = runner.test('json.get-bool', t-get-bool)
+p12, f12 = runner.test('json.arr-len', t-arr-len)
+p13, f13 = runner.test('json.arr-get', t-arr-get)
+p14, f14 = runner.test('json.stringify-obj', t-stringify-obj)
+p15, f15 = runner.test('json.stringify-arr', t-stringify-arr)
+p16, f16 = runner.test('json.set-str', t-set-str)
+p17, f17 = runner.test('json.set-num', t-set-num)
+p18, f18 = runner.test('json.set-i64', t-set-i64)
+p19, f19 = runner.test('json.set-bool', t-set-bool)
+p20, f20 = runner.test('json.roundtrip', t-roundtrip)
+
+total = runner.summary()
+f = runner.failed-count()
+{
+    f > 0 -> os.exit(1)
+    -> os.exit(0)
+}

@@ -98,20 +98,9 @@ new-pool = () (p json-pool) {
     p.init()
 }
 
-; init: 初始化節點池
+; init: 初始化節點池（延遲初始化，不預先清零所有節點）
 json-pool.init = () {
     .count = 0
-    i <- [0..JSON-MAX-NODES): {
-        .nodes[i].count = 0
-        .nodes[i].kind = json-kind.null
-        .nodes[i].str-val.len = 0
-        .nodes[i].num-val = 0.0
-        .nodes[i].bool-val = false
-        j <- [0..JSON-MAX-CHILDREN): {
-            .nodes[i].children[j] = -1
-            .nodes[i].keys[j].len = 0
-        }
-    }
 }
 
 ; alloc: 分配新節點，返回索引（-1=池滿）
@@ -236,6 +225,7 @@ json-pool.parse = (s str, pos i64) (node-idx i64, next-pos i64, ok bool) {
 
             ; parse elements
             {
+                p >= sn -> return
                 p = .skip-ws(s, p)
                 p >= sn -> return
                 child-idx, child-next, child-ok = .parse(s, p)
@@ -257,7 +247,7 @@ json-pool.parse = (s str, pos i64) (node-idx i64, next-pos i64, ok bool) {
                     c2 == 44 -> p = p + 1
                     -> return
                 }
-            } (true)
+            } (p < sn)
         }
         c == 123 -> {
 
@@ -278,6 +268,7 @@ json-pool.parse = (s str, pos i64) (node-idx i64, next-pos i64, ok bool) {
 
             ; parse key-value pairs
             {
+                p >= sn -> return
                 p = .skip-ws(s, p)
                 p >= sn -> return
 
@@ -321,7 +312,7 @@ json-pool.parse = (s str, pos i64) (node-idx i64, next-pos i64, ok bool) {
                     c2 == 44 -> p = p + 1
                     -> return
                 }
-            } (true)
+            } (p < sn)
         }
     }
 }
@@ -341,9 +332,12 @@ json-pool.parse-str = (node-idx i64, s str, pos i64) (next-pos i64, ok bool) {
     j = 0
     c = 0
 
-    ; 分配足夠容量的緩衝區（s.len 足過任何子字串長度）
-    .nodes[node-idx].str-val = with-cap(s.len)
+    ; 預估容量：掃描到閉引號的距離（不超過 s.len - pos）
+    est-cap = s.len - pos
+    est-cap < 1 -> est-cap = 1
+    .nodes[node-idx].str-val = with-cap(est-cap)
     {
+        i >= s.len -> return
         c = s[i]
         {
             c == 34 -> {
@@ -389,6 +383,7 @@ json-pool.parse-num = (node-idx i64, s str, pos i64) (next-pos i64, ok bool) {
 
     ; 整數部分
     {
+        i >= s.len -> break
         c = s[i]
         c < 48 || c > 57 -> break
         .nodes[node-idx].num-val = .nodes[node-idx].num-val * 10.0 + (c - 48)
@@ -402,6 +397,7 @@ json-pool.parse-num = (node-idx i64, s str, pos i64) (next-pos i64, ok bool) {
             i = i + 1
             frac = 0.1
             {
+                i >= s.len -> break
                 c = s[i]
                 c < 48 || c > 57 -> break
                 .nodes[node-idx].num-val = .nodes[node-idx].num-val + frac * (c - 48)
@@ -421,13 +417,9 @@ json-pool.parse-num = (node-idx i64, s str, pos i64) (next-pos i64, ok bool) {
 ; ═══════════════════════════════════════════════
 
 ; str-eq: 比較兩個 str 是否相等
+; 使用 str.eq-full 統一實作
 json-pool.str-eq = (a str, b str) (eq i64) {
-    eq = 0
-    a.len != b.len -> return
-    i <- [0..a.len): {
-        a[i] != b[i] -> return
-    }
-    eq = 1
+    a.eq-full(b) -> eq = 1
 }
 
 ; get-key: 從物件節點取得鍵對應的子節點索引
@@ -757,9 +749,9 @@ json.stringify = () (out str) {
     out = ''
     .root < 0 -> return
 
-    ; 預估容量：每個節點平均 32 位元組
-    cap = .pool.count * 32
-    cap < 16 -> cap = 16
+    ; 預估容量：每個節點平均 64 位元組（含 key/value/結構開銷）
+    cap = .pool.count * 64
+    cap < 32 -> cap = 32
     out = with-cap(cap)
     n = .pool.stringify(.root, out, 0)
     out.truncate(n)

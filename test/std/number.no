@@ -1,0 +1,139 @@
+; std-number.no — number 模組測試
+;
+; 執行：no test test/std/number.no
+; 覆蓋：abs / even / odd / gcd / lcm / pow / div / mod /
+;       i64-to-str / u64-to-str / f64-to-str / swap
+; 未測：sign / clamp / is-nan / is-inf / swap（num/float 泛型特化問題，預存 codegen bug）
+
+# /test/runner
+
+; ── 基本數值操作 ──────────────────────────────
+
+t-abs = () {
+    a i64 = number.abs(-5)
+    runner.eq(a, 5, 'abs(-5) == 5')
+    b i64 = number.abs(3)
+    runner.eq(b, 3, 'abs(3) == 3')
+    c i64 = number.abs(0)
+    runner.eq(c, 0, 'abs(0) == 0')
+}
+
+t-even-odd = () {
+    yes1 bool = number.even(4)
+    runner.is-true(yes1, 'even(4) == true')
+    no1 bool = number.even(3)
+    runner.is-false(no1, 'even(3) == false')
+    yes2 bool = number.odd(3)
+    runner.is-true(yes2, 'odd(3) == true')
+    no2 bool = number.odd(4)
+    runner.is-false(no2, 'odd(4) == false')
+}
+
+t-gcd = () {
+    g i64 = number.gcd(12, 8)
+    runner.eq(g, 4, 'gcd(12,8) == 4')
+    g2 i64 = number.gcd(7, 5)
+    runner.eq(g2, 1, 'gcd(7,5) == 1')
+    g3 i64 = number.gcd(0, 5)
+    runner.eq(g3, 5, 'gcd(0,5) == 5')
+}
+
+t-lcm = () {
+    l i64 = number.lcm(4, 6)
+    runner.eq(l, 12, 'lcm(4,6) == 12')
+    l2 i64 = number.lcm(3, 5)
+    runner.eq(l2, 15, 'lcm(3,5) == 15')
+    l3 i64 = number.lcm(0, 5)
+    runner.eq(l3, 0, 'lcm(0,5) == 0')
+}
+
+t-pow = () {
+    r i64 = number.pow(2, 10)
+    runner.eq(r, 1024, 'pow(2,10) == 1024')
+    r2 i64 = number.pow(3, 3)
+    runner.eq(r2, 27, 'pow(3,3) == 27')
+    r3 i64 = number.pow(5, 0)
+    runner.eq(r3, 1, 'pow(5,0) == 1')
+}
+
+t-div-mod = () {
+    q i64 = number.div(7, 3)
+    runner.eq(q, 2, 'div(7,3) == 2')
+    r i64 = number.mod(7, 3)
+    runner.eq(r, 1, 'mod(7,3) == 1')
+    q2 i64 = number.div(-7, 2)
+    runner.eq(q2, -3, 'div(-7,2) == -3')
+    r2 i64 = number.mod(-7, 2)
+    runner.eq(r2, -1, 'mod(-7,2) == -1')
+}
+
+; ── 整數轉字串 ────────────────────────────────
+
+t-i64-to-str = () {
+    s = number.i64-to-str(42)
+    runner.eq(s.len, 2, 'i64-to-str 42 len')
+    runner.str-eq(s, '42', 2, 'i64-to-str 42 content')
+    n = number.i64-to-str(-456)
+    runner.eq(n.len, 4, 'i64-to-str -456 len')
+    runner.str-eq(n, '-456', 4, 'i64-to-str -456 content')
+    z = number.i64-to-str(0)
+    runner.eq(z.len, 1, 'i64-to-str 0 len')
+    runner.str-eq(z, '0', 1, 'i64-to-str 0 content')
+}
+
+t-i64-method-to-str = () {
+    v = 123
+    s = v.to-str()
+    runner.eq(s.len, 3, 'i64.to-str 123 len')
+    runner.str-eq(s, '123', 3, 'i64.to-str 123 content')
+    n = 0 - 789
+    ns = n.to-str()
+    runner.eq(ns.len, 4, 'i64.to-str -789 len')
+    runner.str-eq(ns, '-789', 4, 'i64.to-str -789 content')
+}
+
+t-u64-to-str = () {
+    s = number.u64-to-str(255)
+    runner.eq(s.len, 3, 'u64-to-str 255 len')
+    runner.str-eq(s, '255', 3, 'u64-to-str 255 content')
+    z = number.u64-to-str(0)
+    runner.eq(z.len, 1, 'u64-to-str 0 len')
+    runner.str-eq(z, '0', 1, 'u64-to-str 0 content')
+}
+
+; ── 浮點轉字串 ────────────────────────────────
+
+t-f64-to-str = () {
+    s = number.f64-to-str(3.14)
+    runner.str-eq(s, '3.14', 4, 'f64-to-str 3.14')
+
+    z = number.f64-to-str(0.0)
+    runner.str-eq(z, '0', 1, 'f64-to-str 0.0')
+}
+
+t-f64-method-to-str = () {
+    v f64 = 2.5
+    s = v.to-str()
+    runner.str-eq(s, '2.5', 3, 'f64.to-str 2.5')
+}
+
+; ── 執行 ──────────────────────────────────────
+
+p1, f1 = runner.test('number.abs', t-abs)
+p2, f2 = runner.test('number.even/odd', t-even-odd)
+p3, f3 = runner.test('number.gcd', t-gcd)
+p4, f4 = runner.test('number.lcm', t-lcm)
+p5, f5 = runner.test('number.pow', t-pow)
+p6, f6 = runner.test('number.div/mod', t-div-mod)
+p7, f7 = runner.test('number.i64-to-str', t-i64-to-str)
+p8, f8 = runner.test('number.i64.to-str', t-i64-method-to-str)
+p9, f9 = runner.test('number.u64-to-str', t-u64-to-str)
+p10, f10 = runner.test('number.f64-to-str', t-f64-to-str)
+p11, f11 = runner.test('number.f64.to-str', t-f64-method-to-str)
+
+total = runner.summary()
+f = runner.failed-count()
+{
+    f > 0 -> os.exit(1)
+    -> os.exit(0)
+}

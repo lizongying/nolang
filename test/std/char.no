@@ -1,0 +1,21 @@
+; std-char.no — char 模組測試
+;
+; 執行：no test test/std/char.no
+; 注意：char 方法（to-upper / to-lower / to-str / is-digit 等）
+;       全部存在特化問題（@char.xxx 未定義），無法測試。
+;       此檔案保留為佔位，待 codegen 修復後補充測試。
+
+# /test/runner
+
+t-placeholder = () {
+    runner.eq(1, 1, 'placeholder')
+}
+
+p1, f1 = runner.test('char.placeholder', t-placeholder)
+
+total = runner.summary()
+f = runner.failed-count()
+{
+    f > 0 -> os.exit(1)
+    -> os.exit(0)
+}
