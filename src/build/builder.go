@@ -743,6 +743,11 @@ func BuildDirectWasm(inputPath string, opts BuildOptions) ([]byte, error) {
 	// Inject -ld-KEY=VALUE compile-time global constants
 	injectLDFlags(program, opts.LDFlags)
 
+	// 型別校驗（與 LLVM 路徑一致，避免型別錯誤延遲到執行期才炸）
+	if err := validateProgram(program, inputPath); err != nil {
+		return nil, err
+	}
+
 	// 3. 解析目標平台。未指定時預設為 wasi/wasm32（Direct WASM 後端的主要目標）。
 	goos, goarch := parseTargetPlatform(opts.Target)
 	if goos == "" {
@@ -789,6 +794,11 @@ func buildJSPkg(source []byte, inputPath string, pkg *Package, opts BuildOptions
 	program, err := resolveAndMergeJSModules(program, inputPath, pkg)
 	if err != nil {
 		return fmt.Errorf("module resolution: %w", err)
+	}
+
+	// 型別校驗（與 LLVM 路徑一致）
+	if err := validateProgram(program, inputPath); err != nil {
+		return err
 	}
 
 	// JS 後端 codegen（型別擦除）
@@ -1012,6 +1022,27 @@ func resolveAndMergeJSModules(program *parser.Program, inputPath string, pkgConf
 	return merged, nil
 }
 
+// validateProgram runs the same four semantic-validation passes that the LLVM
+// backend runs inside CompileTarget, so that the JS and Direct-WASM backends
+// are held to the same type-checking standard instead of deferring every error
+// to runtime. Without this, type errors the LLVM path rejects at compile time
+// would only surface as opaque JS/WASM runtime failures.
+func validateProgram(program *parser.Program, inputPath string) error {
+	var errs []checker.ValidateResult
+	errs = append(errs, checker.ValidateTypes(program)...)
+	errs = append(errs, checker.ValidateFuncArgs(program, filepath.Dir(inputPath))...)
+	errs = append(errs, checker.ValidateUndefinedVars(program, filepath.Dir(inputPath))...)
+	errs = append(errs, checker.ValidateUninitOutputParams(program)...)
+	if len(errs) == 0 {
+		return nil
+	}
+	var b strings.Builder
+	for _, e := range errs {
+		fmt.Fprintf(&b, "  %s:%d:%d: %s\n", filepath.Base(inputPath), e.Line, e.Column, e.Message)
+	}
+	return fmt.Errorf("%s: validation failed:\n%s", inputPath, b.String())
+}
+
 // BuildJS 使用 JS 後端從 Nolang 源碼直接產生 JavaScript 原始碼字串。
 // 當 opts.UseJS 為 true 時呼叫。輸出的 JS 可由 node 直接執行。
 //
@@ -1050,6 +1081,11 @@ func BuildJS(inputPath string, opts BuildOptions) (string, error) {
 	program, err = resolveAndMergeJSModules(program, inputPath, pkgConfig)
 	if err != nil {
 		return "", fmt.Errorf("module resolution: %w", err)
+	}
+
+	// 3.5 型別校驗（與 LLVM 路徑一致，避免型別錯誤延遲到執行期才炸）
+	if err := validateProgram(program, inputPath); err != nil {
+		return "", err
 	}
 
 	// 4. JS 後端 codegen（型別擦除）

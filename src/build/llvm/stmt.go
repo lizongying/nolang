@@ -3059,8 +3059,11 @@ func (g *Generator) generateFunctionDefinition(sb *strings.Builder, fd *parser.F
 		}
 		// %vec (slice) 局部變數需要 malloc 資料緩衝區，否則 buf[i] = val 會因 data 為 null 而崩潰。
 		// 使用 malloc（而非 alloca）使得資料在函數返回後仍然有效（例如函數輸出 []byte 給呼叫者）。
+		// 預分配容量為 4（而非 256）：減少記憶體浪費。push 時自動擴容（cap==0→4, cap<1024→cap*2）。
+		// 若變數隨後被 SliceLiteral 賦值（如 v = [1,2,3]），舊 buffer 由 freeOldHeapValue 釋放，
+		// 每次函數調用僅浪費 4*elemSize 字節（而非 256*elemSize）。
 		if varType == "%vec" {
-			vecCap := int64(256)
+			vecCap := int64(4)
 			elemSize := int64(8) // default i64
 			if g.arrayElemTypes != nil {
 				if et, ok := g.arrayElemTypes[varName]; ok {

@@ -393,6 +393,33 @@ structPtr = g.varAddr(identName)
 
 **測試**：`tests/mem-safety/bug13-bool-coercion.no`。
 
+### 5.12 DotExpression 賦值到 out/global 的深層 clone（UAF 修復）
+
+**原問題**：`out = c.field`（c 是結構體，field 是堆擁有型別如 `[]T`/`str`）執行淺拷貝——`generateDotExpression` 載入欄位值（`{len, cap, data}` 結構體的淺拷貝），使 `out` 與 `c.field` 共享同一 data 指標。當 `c.field` 後續被重新賦值（釋放舊 data）或 `c` 被釋放時，`out` 的 data 指標懸空 → **use-after-free**。
+
+**根因**：`generateLet` 中 DotExpression 的深層 clone 路徑僅對局部變數生效（`isLocal && !isOutput`），輸出參數和全域變數被排除，回退到淺拷貝路徑。
+
+**修復**：將深層 clone 條件從 `isLocal && !isOutput` 改為 `isLocal || isOutput || isGlobal`，與 `IndexExpression + DotExpression` 路徑（§7156）保持一致。輸出參數和全域變數不走 `trackLocalHeapVar`（由呼叫者 / `emitGlobalHeapFree` 管理）。
+
+```go
+// 修改前（錯誤）：
+if isLocal && !isOutput {
+
+// 修改後（正確）：
+isGlobal := g.globalVars != nil && g.globalVars[name] && (g.funcLocalNames == nil || !g.funcLocalNames[name])
+if isLocal || isOutput || isGlobal {
+    // ... 深層 clone ...
+    if !isOutput && !isGlobal {
+        g.trackLocalHeapVar(name, fieldType)
+    }
+}
+```
+
+**實現位置**：
+- `src/build/llvm/stmt.go` — `generateLet` 中 DotExpression 深層 clone 路徑
+
+**測試**：`tests/mem-safety/struct-field-uaf-bug.no`（UAF 驗證）、`tests/mem-safety/struct-field-shallow-copy-bug.no`（別名獨立性驗證）。
+
 ## 6. 深層 clone（局部變數間賦值）
 
 ### 6.1 觸發條件
@@ -536,6 +563,9 @@ clib 路徑（`generator.go:1763`）用於內建函數（`get-env`、`get-wd`、
 | `bug19-struct-field-corruption.no` | 局部結構體 str 字段跨函數傳遞 + str-range clone（§5.9） |
 | `bug12-builtin-slice-to-str.no` | Builtin 返回 []byte 賦值到 str 變數（§5.10） |
 | `bug13-bool-coercion.no` + `bug13-helper.no` | Bool 返回值的型別強轉（§5.11） |
+| `struct-field-uaf-bug.no` | `out = struct.field` 淺拷貝 UAF 修復（§5.12） |
+| `struct-field-shallow-copy-bug.no` | `out = struct.field` 別名共享修復（§5.12） |
+| `struct-field-move-test.no` | 結構體字段 move 到 out 參數（§5.12） |
 
 ## 10. 已知未修复的问题
 
@@ -572,6 +602,11 @@ arr = [9, 8, 7]    ; free 旧 arr.data → view 悬空
 3. **刪除 `freeOutputParamPrologueBuf` 函數及調用點**：不再有 prologue buffer 需要釋放，該函數成為死代碼已移除。
 
 局部變數的 prologue 預分配保留（局部變數沒有「調用方」概念，prologue 分配是合理的），並在 malloc 後呼叫 `trackLocalHeapVar` 追蹤，使 `freeOldHeapValue`/`emitHeapFree` 能正確釋放。
+
+**預分配容量優化（2026-08）**：vec 局部變數的 prologue 預分配容量從 256 降為 4。原因：
+1. 若變數隨後被 SliceLiteral 賦值（如 `v = [1,2,3]`），prologue buffer 被覆蓋丟棄，每次函數調用浪費 `256*elemSize` 字節。降為 4 後浪費僅 `4*elemSize` 字節。
+2. `vec.push` 的擴容策略（`cap==0→4, cap<1024→cap*2, cap>=1024→cap*5/4`）會自動處理容量增長。
+3. 對 `with-cap(N)` 語法不受影響（使用者顯式指定容量）。
 
 測試見 `prologue-buf-leak.no`（涵蓋輸出參數和局部變數兩個場景，多次調用驗證不洩漏）。`leaks` 工具確認 prologue buffer（2048 字節）被正確釋放，僅剩 16 字節基線噪聲。
 

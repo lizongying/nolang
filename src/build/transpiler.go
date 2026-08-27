@@ -1074,16 +1074,34 @@ func stdModuleLookup() map[string]checker.StdModuleInfo {
 }
 
 // alwaysAutoLoadStd 是 codegen 內建路徑（print/格式化等）無條件引用、但源碼
-// AST 無顯式 module.fn() 的 std 模組，必須始終自動載入（靜態掃描無法捕捉）。
+// AST 無顯式 module.fn() 的 std 模組。fmt/io/str 被 print 等內建無條件需要，
+// 始終載入；byte/vec 則改為「程式實際用到 []byte / vec 才載入」（見 auto-load
+// 區塊的 scanByteVecUsage 判斷），避免為不相關程式強制 codegen 整個模組
+// （R1：整模組 codegen 死代碼）。
 //   - fmt：@fmt-int/@fmt-uint/@fmt-f64/@fmt-str/@fmt-bool 等（print/格式化內建）
 //   - io ：@out/@err（emitOutCall 直接發出的裸呼叫，對應 io.out/io.err）
+//   - str：字串格式化/子串（@str.sub 等）被 print/格式化內建依賴
 //   - byte：[]byte.to-str / []byte.to-hex 等類型方法經 transpiler 重寫為
 //     []byte.fn(receiver) 識別碼呼叫，collectReferencedStdModules 無法偵測
 //     （它只掃描 module.fn() DotExpression，不掃描 Type.method Identifier）。
-//     byte 模組體積小且 []byte 方法被廣泛使用（net/crypto/encoding 等），
-//     始終載入避免未定義函式呼叫。
-// 若未來 codegen 新增其他隱式 std 依賴，在此追加即可。
+//     byte/vec 僅在程式（含已載入模組）確實使用 []byte / vec 時載入。
+// 若未來 codegen 新增其他隱式 std 依賴，在此追加，並於 auto-load 區塊同步處理。
 var alwaysAutoLoadStd = []string{"fmt", "io", "byte", "str", "vec"}
+
+// pathHasComponent reports whether any slash-separated component of p equals
+// comp. It is used to decide whether a path belongs to the std library by an
+// exact component match, replacing the old substring heuristic
+// (strings.Contains(root, "std")) that wrongly classified user projects whose
+// path merely contained the "std" substring (e.g. ~/code/my-std-utils).
+func pathHasComponent(p, comp string) bool {
+	p = filepath.ToSlash(filepath.Clean(p))
+	for _, c := range strings.Split(p, "/") {
+		if c == comp {
+			return true
+		}
+	}
+	return false
+}
 
 // dotModulePath 從 DotExpression 提取模組路徑（如 array.map → "array"，
 // hash/sha256.sum → "hash/sha256"），與 checker.extractModulePathAndFunc 同義
@@ -1465,17 +1483,12 @@ func (t *Transpiler) CompileTarget(source string, _ Target) (string, error) {
 	}
 	// 驗證：僅標準庫能使用的功能
 	isUserCode := true
-	if t.pkg != nil {
-		root := t.pkg.RootDir
-		if strings.Contains(root, "src/std") || strings.Contains(root, "std") {
-			isUserCode = false
-		}
+	if t.pkg != nil && pathHasComponent(t.pkg.RootDir, "std") {
+		isUserCode = false
 	}
 	// 如果 pkg 為 nil，檢查源碼檔案路徑是否為標準庫
-	if isUserCode && t.sourcePath != "" {
-		if strings.Contains(t.sourcePath, "src/std") || strings.Contains(t.sourcePath, "/std/") {
-			isUserCode = false
-		}
+	if isUserCode && t.sourcePath != "" && pathHasComponent(t.sourcePath, "std") {
+		isUserCode = false
 	}
 	// 合併 PASS 1+2+3+4：單次遍歷同時執行：
 	// (1) ..any 標準庫限制檢查
@@ -1766,6 +1779,9 @@ func (t *Transpiler) CompileTarget(source string, _ Target) (string, error) {
 		}
 	}
 	// 始終自動載入 codegen 內建隱式依賴的 std 模組（見 alwaysAutoLoadStd 註解）。
+	// 註：byte/vec 的方法經由 slice/值呼叫（如 v.push、[]byte.to-str），接收者
+	// 並非 vec./byte. 模組前綴，靜態掃描與型別掃描皆無法可靠偵測；若改為「用到才
+	// 載入」會漏判導致 undefined-function（實測 test-vec.no 回歸），故維持無條件載入。
 	for _, name := range alwaysAutoLoadStd {
 		if _, ok := stdModuleLookup()[name]; ok && !loadedStd[name] {
 			loadedStd[name] = true
