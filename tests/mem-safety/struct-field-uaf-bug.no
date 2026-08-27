@@ -1,0 +1,37 @@
+; ═════════════════════════════════════════════════════════════════
+; 测试：结构体字段赋值到 out 参数后的 use-after-free
+;
+; 问题：out = c.data 执行浅拷贝，out 与 c.data 共享 data 指针。
+; 当函数返回后，c 在调用方函数结束时被 emitStructFieldsFree 释放，
+; 此时 out（已返回给调用者）的 data 指针悬空。
+;
+; 此测试通过将 c.data 替换为新数组来触发 free 旧 data，
+; 验证 out 是否已悬空。
+; ═════════════════════════════════════════════════════════════════
+
+container {
+    data []i64
+    name str
+}
+
+extract-data = (c container) (out []i64) {
+    out = c.data   ; 浅拷贝！out 与 c.data 共享 data 指针
+}
+
+main = () {
+    c container
+    c.data = [100, 200, 300, 400, 500]
+    c.name = 'test'
+    d = extract-data(c)
+    ; 此时 d 和 c.data 共享 data 指针
+    print(d[0])   ; 应该是 100
+
+    ; 重新赋值 c.data，释放旧 data 缓冲区
+    c.data = [999, 888, 777]
+
+    ; 此时 d 的 data 指针已悬空（旧缓冲区已被 free）
+    ; 访问 d 可能读到垃圾数据或崩溃
+    print(d[0])   ; 如果 data 被 free，可能读到垃圾值或崩溃
+
+    print('done')
+}

@@ -7075,24 +7075,37 @@ func (g *Generator) generateLet(sb *strings.Builder, stmt *parser.LetStatement) 
 		}
 	}
 
-	// Deep clone path for struct field read: x = s.field
+	// Deep clone path for struct field read: x = s.field  /  out = s.field
 	// where field is a heap-owning type (%str-long, %vec, user struct).
 	// generateDotExpression loads the field value (shallow copy of {len, cap, data}),
 	// making x.data share the same buffer as s.field.data. At function exit,
 	// emitHeapFree would free x.data, corrupting s.field.data → use-after-free.
-	// Fix: deep clone the field so x owns an independent data buffer.
+	// Fix: deep clone the field so the target owns an independent data buffer.
+	//
+	// This applies to local variables, output parameters, and global variables.
+	// For output parameters (out = s.field), shallow copy would share the data
+	// pointer with the struct field. When the struct is later freed or the field
+	// is reassigned, the output parameter's data pointer becomes dangling
+	// (use-after-free). Deep clone ensures the output parameter owns independent
+	// data, which the caller then manages.
 	if dotExpr, ok := stmt.Value.(*parser.DotExpression); ok {
 		fieldType := g.exprResultLLVMType(dotExpr)
 		if fieldType != "" && g.isHeapOwningType(fieldType) {
 			_, isLocal := g.funcLocalNames[name]
 			isOutput := g.outputParamNames != nil && g.outputParamNames[name]
-			if isLocal && !isOutput {
+			isGlobal := g.globalVars != nil && g.globalVars[name] && (g.funcLocalNames == nil || !g.funcLocalNames[name])
+			if isLocal || isOutput || isGlobal {
 				canClone := true
 				if canClone {
 					g.freeOldHeapValue(sb, stmt, name)
 					fieldPtr := g.generateExprPtr(sb, dotExpr)
 					g.emitDeepClone(sb, fieldPtr, g.varAddr(name), fieldType, "")
-					g.trackLocalHeapVar(name, fieldType)
+					// Only track local (non-output, non-global) variables as heap vars.
+					// Output parameters are managed by the caller; globals are freed
+					// by emitGlobalHeapFree.
+					if !isOutput && !isGlobal {
+						g.trackLocalHeapVar(name, fieldType)
+					}
 				// 設定變數型別，使後續方法呼叫能正確解析
 				if g.varTypes == nil {
 					g.varTypes = make(map[string]string)

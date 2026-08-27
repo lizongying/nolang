@@ -1,0 +1,26 @@
+; ═════════════════════════════════════════════════════════════════
+; 测试：结构体字段 move 到 out 参数后，结构体本身的释放
+; 验证结构体字段被 move 后，emitStructFieldsFree 是否会 double-free
+; ═════════════════════════════════════════════════════════════════
+
+container {
+    data []i64
+    name str
+}
+
+extract-data = (c container) (out []i64) {
+    out = c.data   ; move: c.data 的所有权转移给 out
+    ; c.name 仍由 c 拥有，函数结束时应 free c.name
+    ; c.data 已 move，emitStructFieldsFree 应跳过 c.data 的 free
+}
+
+main = () {
+    c container
+    c.data = [1, 2, 3, 4, 5]
+    c.name = 'test'
+    d = extract-data(c)
+    print(d.len)
+    print(d[0])
+    print(d[4])
+    print('done')
+}

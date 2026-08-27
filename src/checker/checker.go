@@ -563,7 +563,7 @@ func ValidateTypes(program *parser.Program) []ValidateResult {
 			}
 		}
 	}
-	for _, stmt := range program.Statements {
+	for i, stmt := range program.Statements {
 		// 判斷是否為 struct 方法
 		selfType := ""
 		if fd, ok := stmt.(*parser.FunctionDefinition); ok {
@@ -576,7 +576,7 @@ func ValidateTypes(program *parser.Program) []ValidateResult {
 		for k, v := range topLevelVarTypes {
 			localVarTypes[k] = v
 		}
-		errs := validateStmtTypes(stmt, funcNames, funcTypes, selfType, localVarTypes)
+		errs := validateStmtTypes(stmt, funcNames, funcTypes, selfType, localVarTypes, i == len(program.Statements)-1)
 		results = append(results, errs...)
 	}
 
@@ -3151,7 +3151,37 @@ func checkUndefinedVarsInExpr(expr parser.Expression, definedVars, funcNames map
 	}
 	return results
 }
-func validateStmtTypes(stmt parser.Statement, funcNames map[string]bool, funcTypes map[string]string, selfType string, varTypes map[string]string) []ValidateResult {
+
+// checkBareExprStatement rejects expression statements that have no observable
+// effect — a function/builtin used as a bare value without being called, or a
+// literal used as a statement. For example `print 'hi'` parses as two
+// statements: the bare identifier `print` then the bare string literal `'hi'`;
+// both are meaningless on their own and previously leaked broken IR to the
+// backend. A bare *variable* (e.g. `x`) is left to other checks.
+func checkBareExprStatement(expr parser.Expression, funcNames map[string]bool) *ValidateResult {
+	switch e := expr.(type) {
+	case *parser.Identifier:
+		if funcNames[e.Value] || builtin.FindBuiltinMethod(e.Value) != nil {
+			return &ValidateResult{
+				Line:    e.Token.Line,
+				Column:  e.Token.Column,
+				Message: fmt.Sprintf("'%s' is a function and must be called; did you mean %s(...)?", e.Value, e.Value),
+			}
+		}
+		return nil
+	case *parser.StringLiteral, *parser.IntegerLiteral, *parser.FloatLiteral,
+		*parser.CharLiteral, *parser.BooleanLiteral, *parser.ByteLiteral, *parser.NilLiteral:
+		pos := expr.Pos()
+		return &ValidateResult{
+			Line:    pos.Line,
+			Column:  pos.Column,
+			Message: "a statement cannot be just a literal value; call a function or assign it to a variable",
+		}
+	}
+	return nil
+}
+
+func validateStmtTypes(stmt parser.Statement, funcNames map[string]bool, funcTypes map[string]string, selfType string, varTypes map[string]string, isBlockValue bool) []ValidateResult {
 	var results []ValidateResult
 
 	switch s := stmt.(type) {
@@ -3176,8 +3206,8 @@ func validateStmtTypes(stmt parser.Statement, funcNames map[string]bool, funcTyp
 			methodSelfType = s.Parameters[0].Type.String()
 		}
 		if s.Body != nil {
-			for _, bStmt := range s.Body.Statements {
-				errs := validateStmtTypes(bStmt, funcNames, funcTypes, methodSelfType, localTypes)
+			for i, bStmt := range s.Body.Statements {
+				errs := validateStmtTypes(bStmt, funcNames, funcTypes, methodSelfType, localTypes, i == len(s.Body.Statements)-1)
 				results = append(results, errs...)
 			}
 		}
@@ -3373,6 +3403,16 @@ func validateStmtTypes(stmt parser.Statement, funcNames map[string]bool, funcTyp
 		}
 
 	case *parser.ExpressionStatement:
+		// Reject bare expression statements with no effect (e.g. `print 'hi'`
+		// parses as the bare identifier `print` then the bare literal `'hi'`).
+		// A bare expression that is the LAST statement of its block is the
+		// block's value (e.g. `r = if 1 { 'hello' }`), so it is allowed.
+		if !isBlockValue {
+			if res := checkBareExprStatement(s.Expression, funcNames); res != nil {
+				results = append(results, *res)
+				break
+			}
+		}
 		// val(x) 作為構造器已廢棄：檢查語句表達式中的 val() 呼叫
 		if call, ok := s.Expression.(*parser.CallExpression); ok {
 			if cid, ok2 := call.Function.(*parser.Identifier); ok2 && cid.Value == "val" {
@@ -3390,14 +3430,14 @@ func validateStmtTypes(stmt parser.Statement, funcNames map[string]bool, funcTyp
 			// match 脫糖後 if 條件可能含 `matched == val(v)`，此處 val 可能是
 			// 用戶自定義枚舉的 variant，不能簡單當作廢棄的 Option 構造器報錯。
 			if ifExpr.Consequence != nil {
-				for _, bStmt := range ifExpr.Consequence.Statements {
-					errs := validateStmtTypes(bStmt, funcNames, funcTypes, selfType, varTypes)
+				for i, bStmt := range ifExpr.Consequence.Statements {
+					errs := validateStmtTypes(bStmt, funcNames, funcTypes, selfType, varTypes, i == len(ifExpr.Consequence.Statements)-1)
 					results = append(results, errs...)
 				}
 			}
 			if ifExpr.Alternative != nil {
-				for _, bStmt := range ifExpr.Alternative.Statements {
-					errs := validateStmtTypes(bStmt, funcNames, funcTypes, selfType, varTypes)
+				for i, bStmt := range ifExpr.Alternative.Statements {
+					errs := validateStmtTypes(bStmt, funcNames, funcTypes, selfType, varTypes, i == len(ifExpr.Alternative.Statements)-1)
 					results = append(results, errs...)
 				}
 			}
@@ -3500,15 +3540,15 @@ func validateStmtTypes(stmt parser.Statement, funcNames map[string]bool, funcTyp
 
 	case *parser.ForStatement:
 		if s.Body != nil {
-			for _, bStmt := range s.Body.Statements {
-				errs := validateStmtTypes(bStmt, funcNames, funcTypes, selfType, varTypes)
+			for i, bStmt := range s.Body.Statements {
+				errs := validateStmtTypes(bStmt, funcNames, funcTypes, selfType, varTypes, i == len(s.Body.Statements)-1)
 				results = append(results, errs...)
 			}
 		}
 
 	case *parser.BlockStatement:
-		for _, bStmt := range s.Statements {
-			errs := validateStmtTypes(bStmt, funcNames, funcTypes, selfType, varTypes)
+		for i, bStmt := range s.Statements {
+			errs := validateStmtTypes(bStmt, funcNames, funcTypes, selfType, varTypes, i == len(s.Statements)-1)
 			results = append(results, errs...)
 		}
 

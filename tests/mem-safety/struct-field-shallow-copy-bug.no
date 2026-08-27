@@ -1,0 +1,33 @@
+; ═════════════════════════════════════════════════════════════════
+; 测试：结构体字段 move 到 out 参数后的 use-after-free
+;
+; 问题：out = c.data 执行浅拷贝（load %vec + store %vec），
+; out 与 c.data 共享 data 指针。当 c 在调用方被释放后，
+; out 的 data 指针悬空 → use-after-free。
+;
+; 此测试在 c 被释放前先访问 out，验证数据正确；
+; 然后在 c 被释放后再访问 out，验证是否会读到错误数据。
+; ═════════════════════════════════════════════════════════════════
+
+container {
+    data []i64
+    name str
+}
+
+extract-data = (c container) (out []i64) {
+    out = c.data   ; 浅拷贝！out 与 c.data 共享 data 指针
+}
+
+main = () {
+    c container
+    c.data = [100, 200, 300, 400, 500]
+    c.name = 'test'
+    d = extract-data(c)
+    ; 此时 d 和 c.data 共享 data 指针
+    print(d[0])   ; 应该是 100
+    print(d[4])   ; 应该是 500
+    ; 修改 d 不应影响 c.data（但如果是共享 data，会影响）
+    d[0] = 999
+    print(c.data[0])  ; 如果共享 data，会是 999；如果独立，应是 100
+    print('done')
+}
