@@ -6,6 +6,9 @@
 
 # /test/runner
 
+passed = 0
+failed = 0
+
 t-len = () {
     a [5]i64 = [1, 2, 3, 4, 5]
     runner.eq(a.len, 5, 'arr.len == 5')
@@ -28,12 +31,17 @@ t-mutate = () {
 ; ── 執行 ──────────────────────────────────────
 
 p1, f1 = runner.test('arr.len', t-len)
+passed = passed + p1
+failed = failed + f1
 p2, f2 = runner.test('arr.element-access', t-element-access)
+passed = passed + p2
+failed = failed + f2
 p3, f3 = runner.test('arr.mutate', t-mutate)
+passed = passed + p3
+failed = failed + f3
 
-total = runner.summary()
-f = runner.failed-count()
+total = runner.summary(passed, failed)
 {
-    f > 0 -> os.exit(1)
+    failed > 0 -> os.exit(1)
     -> os.exit(0)
 }

@@ -102,7 +102,7 @@ decode = (s str, table str) (out ?[]byte) {
     }
     i = 0
     j = 0
-    out = with-cap(n * 3 / 4)
+    buf []byte = with-cap(n * 3 / 4)
     {
         v0 = b64-val(s[i], table)
         v1 = b64-val(s[i + 1], table)
@@ -112,25 +112,26 @@ decode = (s str, table str) (out ?[]byte) {
             out = err('invalid base64 character')
             return
         }
-        out[j] = (v0 << 2) | (v1 >> 4)
+        buf[j] = (v0 << 2) | (v1 >> 4)
         s[i + 2] != 61 -> {
             v2 < 0 -> {
                 out = err('invalid base64 character')
                 return
             }
-            out[j + 1] = ((v1 & 15) << 4) | (v2 >> 2)
+            buf[j + 1] = ((v1 & 15) << 4) | (v2 >> 2)
         }
         s[i + 3] != 61 -> {
             v3 < 0 -> {
                 out = err('invalid base64 character')
                 return
             }
-            out[j + 2] = ((v2 & 3) << 6) | v3
+            buf[j + 2] = ((v2 & 3) << 6) | v3
         }
         j = j + 3
         i = i + 4
     } (i + 4 <= n)
-    out.truncate(j - pad-count)
+    buf.truncate(j - pad-count)
+    out = buf
 }
 
 ; ═══════════════════════════════════════════════

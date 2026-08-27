@@ -7,15 +7,19 @@
 
 # /test/runner
 
+passed = 0
+failed = 0
+
 t-placeholder = () {
     runner.eq(1, 1, 'placeholder')
 }
 
 p1, f1 = runner.test('char.placeholder', t-placeholder)
+passed = passed + p1
+failed = failed + f1
 
-total = runner.summary()
-f = runner.failed-count()
+total = runner.summary(passed, failed)
 {
-    f > 0 -> os.exit(1)
+    failed > 0 -> os.exit(1)
     -> os.exit(0)
 }

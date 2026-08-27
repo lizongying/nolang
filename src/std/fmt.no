@@ -116,12 +116,14 @@ fmt-parse-spec = (spec str) (fill i64, align i64, sign i64, alt i64, zero i64, w
     ; width: 連續數字
     ; 注意：do-while 迴圈的 -> else 分支始終被執行（編譯器 bug），
     ; 改用 for-loop + break 模式
+    last-wi = i
     wi <- [i..n): {
         c = spec[wi]
         c < 48 || c > 57 -> break
         width-v = width-v * 10 + c - 48
-        i = i + 1
+        last-wi = wi + 1
     }
+    i = last-wi
 
     ; grouping: , 或 _
     {
@@ -139,12 +141,14 @@ fmt-parse-spec = (spec str) (fill i64, align i64, sign i64, alt i64, zero i64, w
 
                 i = i + 1
                 precision-v = 0
+                last-pi = i
                 pi <- [i..n): {
                     c = spec[pi]
                     c < 48 || c > 57 -> break
                     precision-v = precision-v * 10 + c - 48
-                    i = i + 1
+                    last-pi = pi + 1
                 }
+                i = last-pi
             }
         }
         i < n -> {

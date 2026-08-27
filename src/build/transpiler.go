@@ -1897,6 +1897,21 @@ func (t *Transpiler) CompileTarget(source string, _ Target) (string, error) {
 	// module.fn 並改寫模組內裸呼叫。必須在 prefixMethodNames 之後執行，
 	// 否則 path.join 之類的新名字會被誤認成 struct path 的方法。
 	prefixedFns := prefixCollidingFunctions(merged, stmtOwner)
+	// 掃描合併後的程序，找出被重新賦值的全局變量（Type==nil 的 LetStatement），
+	// 從 moduleConstants 中移除它們，避免被常量傳播替換為字面量。
+	// 這些可變全局變量在 codegen 中應從 @VAR 載入實際值，而非使用初始常量。
+	// 必須在第一次 ResolveModuleConstants 之前執行，否則函數體中的裸名 COUNTER
+	// 會被替換為字面量 0，破壞可變全局變量的語意。
+	reassignedGlobals := make(map[string]bool)
+	for _, stmt := range merged.Statements {
+		collectReassignedGlobals(stmt, reassignedGlobals)
+	}
+	for name := range reassignedGlobals {
+		if _, ok := moduleConstants[name]; ok {
+			fmt.Fprintf(os.Stderr, "[DBG-CONST] removing %s from moduleConstants (reassigned)\n", name)
+			delete(moduleConstants, name)
+		}
+	}
 	// 常量傳播：將模組常量替換為字面值，使 module functions 可以直接使用常量
 	checker.ResolveModuleConstants(merged, moduleConstants)
 	checker.DebugCountHashFns("after-resolveModuleConstants", merged)
@@ -1970,6 +1985,8 @@ func (t *Transpiler) CompileTarget(source string, _ Target) (string, error) {
 	// 再次傳播模組常量：頂層語句此時已加入 merged，且 module.CONST 已被
 	// ResolveModuleCalls 改寫為裸名（如 math.PI → PI），需要再次將裸名
 	// 常量替換為字面值。否則頂層代碼中的模組常量會殘留為變數引用。
+	// reassignedGlobals 已在前面收集並從 moduleConstants 中移除，
+	// 可變全局變量不會被常量傳播替換。
 	checker.ResolveModuleConstants(merged, moduleConstants)
 	// 解析 Type.method(args) 靜態方法呼叫：將 bigint.cmp(d, d2) 重寫為
 	// bigint.bigint.cmp(d, d2)，與 prefixMethodNames 重命名後的方法定義對齊。
@@ -2046,12 +2063,121 @@ func (t *Transpiler) CompileTarget(source string, _ Target) (string, error) {
 	// 傳遞主檔案名稱集合，讓 generator 能區分主檔案全域變數的合法重新賦值
 	// 與導入模組函數中的同名局部變數（如 bigint.cmp 中的 result 不應誤寫到 @result）
 	t.llvmGenerator.SetMainFileNames(mainVarNames)
+	// 構建全局變量和函數的模組歸屬映射，用於精確判斷跨模組全局變量賦值。
+	// globalVarOwner: 全局變量名 → 模組短名（"" = 主檔案）
+	// funcOwner: 函數名 → 模組短名（"" = 主檔案）
+	globalVarOwner := make(map[string]string)
+	funcOwner := make(map[string]string)
+	for _, stmt := range merged.Statements {
+		switch s := stmt.(type) {
+		case *parser.LetStatement:
+			if s.Name == nil {
+				continue
+			}
+			// 只記錄非函數的全局變量
+			if _, isFn := s.Value.(*parser.FunctionLiteral); isFn {
+				if owner, ok := stmtOwner[stmt]; ok {
+					funcOwner[s.Name.Value] = owner
+				} else {
+					funcOwner[s.Name.Value] = ""
+				}
+			} else {
+				if owner, ok := stmtOwner[stmt]; ok {
+					globalVarOwner[s.Name.Value] = owner
+				} else {
+					globalVarOwner[s.Name.Value] = ""
+				}
+			}
+		case *parser.FunctionDefinition:
+			if owner, ok := stmtOwner[stmt]; ok {
+				funcOwner[s.Name] = owner
+			} else {
+				funcOwner[s.Name] = ""
+			}
+		}
+	}
+	t.llvmGenerator.SetGlobalVarOwners(globalVarOwner, funcOwner)
 	ir := t.llvmGenerator.Generate(merged)
 	if errs := t.llvmGenerator.CodegenErrors(); len(errs) > 0 {
 		return "", fmt.Errorf("codegen errors: %v", errs)
 	}
 	return ir, nil
 }
+
+// collectReassignedGlobals 掃描語句，找出 Type==nil 的 LetStatement（賦值），
+// 記錄被重新賦值的變量名到 reassignedGlobals。
+// 這些變量是可變全局變量，不應被常量傳播替換為初始值。
+func collectReassignedGlobals(stmt parser.Statement, reassignedGlobals map[string]bool) {
+	if stmt == nil {
+		return
+	}
+	switch s := stmt.(type) {
+	case *parser.LetStatement:
+		if s.Type == nil && s.Name != nil {
+			reassignedGlobals[s.Name.Value] = true
+		}
+		if s.Value != nil {
+			collectReassignedGlobalsInExpr(s.Value, reassignedGlobals)
+		}
+	case *parser.FunctionDefinition:
+		if s.Body != nil {
+			for _, bs := range s.Body.Statements {
+				collectReassignedGlobals(bs, reassignedGlobals)
+			}
+		}
+	case *parser.ExpressionStatement:
+		if s.Expression != nil {
+			collectReassignedGlobalsInExpr(s.Expression, reassignedGlobals)
+		}
+	case *parser.ForStatement:
+		if s.Init != nil {
+			collectReassignedGlobals(s.Init, reassignedGlobals)
+		}
+		if s.Body != nil {
+			for _, bs := range s.Body.Statements {
+				collectReassignedGlobals(bs, reassignedGlobals)
+			}
+		}
+	case *parser.BlockStatement:
+		for _, bs := range s.Statements {
+			collectReassignedGlobals(bs, reassignedGlobals)
+		}
+	}
+}
+
+func collectReassignedGlobalsInExpr(expr parser.Expression, reassignedGlobals map[string]bool) {
+	if expr == nil {
+		return
+	}
+	switch e := expr.(type) {
+	case *parser.FunctionLiteral:
+		// 遞迴掃描函數體內的賦值語句
+		if e.Body != nil {
+			for _, bs := range e.Body.Statements {
+				collectReassignedGlobals(bs, reassignedGlobals)
+			}
+		}
+	case *parser.IfExpression:
+		if e.Consequence != nil {
+			for _, bs := range e.Consequence.Statements {
+				collectReassignedGlobals(bs, reassignedGlobals)
+			}
+		}
+		if e.Alternative != nil {
+			for _, bs := range e.Alternative.Statements {
+				collectReassignedGlobals(bs, reassignedGlobals)
+			}
+		}
+	case *parser.CallExpression:
+		for _, arg := range e.Arguments {
+			collectReassignedGlobalsInExpr(arg, reassignedGlobals)
+		}
+	case *parser.InfixExpression:
+		collectReassignedGlobalsInExpr(e.Left, reassignedGlobals)
+		collectReassignedGlobalsInExpr(e.Right, reassignedGlobals)
+	}
+}
+
 // monomorphizeGenerics 對泛型函數進行單態化
 func monomorphizeGenerics(program *parser.Program, varTypes map[string]string, typeOwner map[string]string) {
 	// 收集所有泛型函數定義

@@ -2,21 +2,85 @@
 ;
 ; 提供測試計數與結果彙總，簡化測試檔案結構。
 ;
+; 注意：由於 Nolang 跨模組全域變數不共享、跨模組 bool 返回值有 codegen bug，
+; 本模組的斷言函數不返回值、不使用全域計數器。
+; 斷言失敗時印出 FAIL 訊息；測試結果由測試檔案自行用局部變數計數。
+;
 ; 用法：
-;   # github.com/lizongying/nolang/test/runner
-;   # github.com/lizongying/nolang/test/assert
+;   # /test/runner
 ;
 ;   passed = 0
 ;   failed = 0
-;   ok = assert-eq(1, 1, 'test 1')
-;   ok == false -> failed = runner.fail(failed)
-;   -> passed = runner.pass(passed)
+;   ; 斷言函數不返回值，僅印出 FAIL 訊息
+;   runner.eq(1, 1, 'test 1')
+;   ; 用 test 函數執行測試（返回 passed/failed）
+;   p, f = runner.test('name', t-func)
+;   passed = passed + p
+;   failed = failed + f
 ;   runner.summary(passed, failed)
-;   failed > 0 -> 1
-;   0
+;   failed > 0 -> os.exit(1)
+;   os.exit(0)
 
 ; ═══════════════════════════════════════════════
-; 輔助函數
+; i64 斷言（不返回值，僅印出 FAIL）
+; ═══════════════════════════════════════════════
+
+; eq: i64 相等斷言 a == b
+eq = (a i64, b i64, msg str) {
+    a != b -> print('FAIL: eq -', msg)
+}
+
+; ne: i64 不等斷言 a != b
+ne = (a i64, b i64, msg str) {
+    a == b -> print('FAIL: ne -', msg)
+}
+
+; gt: 大於斷言 a > b
+gt = (a i64, b i64, msg str) {
+    a <= b -> print('FAIL: gt -', msg)
+}
+
+; lt: 小於斷言 a < b
+lt = (a i64, b i64, msg str) {
+    a >= b -> print('FAIL: lt -', msg)
+}
+
+; ═══════════════════════════════════════════════
+; 布林斷言
+; ═══════════════════════════════════════════════
+
+; is-true: 布林值為 true
+is-true = (val bool, msg str) {
+    val == false -> print('FAIL: is-true -', msg)
+}
+
+; is-false: 布林值為 false
+is-false = (val bool, msg str) {
+    val == true -> print('FAIL: is-false -', msg)
+}
+
+; ═══════════════════════════════════════════════
+; 字串斷言
+; ═══════════════════════════════════════════════
+
+; str-eq: 字串相等（比較前 n 個字節）
+str-eq = (a str, b str, n i64, msg str) {
+    a.eq(b, n) == false -> print('FAIL: str-eq -', msg)
+}
+
+; ═══════════════════════════════════════════════
+; 浮點斷言
+; ═══════════════════════════════════════════════
+
+; f64-eq: 浮點近似相等 |a - b| < eps
+f64-eq = (a f64, b f64, eps f64, msg str) {
+    diff = a - b
+    diff < 0.0 -> diff = 0.0 - diff
+    diff >= eps -> print('FAIL: f64-eq -', msg)
+}
+
+; ═══════════════════════════════════════════════
+; 計數與彙總
 ; ═══════════════════════════════════════════════
 
 ; pass: 記錄一筆測試通過
@@ -42,11 +106,16 @@ summary = (passed i64, failed i64) (total i64) {
     }
 }
 
+; ═══════════════════════════════════════════════
+; 具名回呼測試
+; ═══════════════════════════════════════════════
+
 ; callback: 具名函式型別（無參無返回）
 callback = ()
 
-; test: 執行一個無參數回呼函式並計數
-; 印出 'TEST:' + name，呼叫 cb()，若執行完成則 passed=1, failed=0
+; test: 執行一個無參數回呼函式，印出名稱，返回 passed/failed
+; 注意：由於斷言函數不返回值，test 只能報告測試是否成功執行，
+; 不能知道測試是否真正通過。passed=1 表示成功執行。
 test = (name str, cb callback) (passed i64, failed i64) {
     print('TEST:', name)
     cb()

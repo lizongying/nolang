@@ -9,7 +9,7 @@ package checker
 func init() {
 	embeddedStdSigReady = true
 	embeddedStdSigVersion = 1
-	embeddedStdSigKey = "fa462de3f3722a2cecd446672fc0d94728910f7a6ca1ab8b43617ae95e9dcd9b"
+	embeddedStdSigKey = "1f680543ff8abed00d0b01a753b0c812330fb30dc846e63bb219720741f30bd4"
 	embeddedStdFuncSigs = map[string][]string{
 		"[]byte.index":                     {"i64"},
 		"[]byte.index-from":                {"i64"},
@@ -20,8 +20,6 @@ func init() {
 		"[]byte.to-i64-be":                 {"i64"},
 		"[]byte.to-i64-le":                 {"i64"},
 		"[]byte.to-str":                    {"str"},
-		"[]ord.ast":                        {"[]ord"},
-		"[]ord.desc":                       {"[]ord"},
 		"[]str.join":                       {"str"},
 		"[]t.at":                           {"?t"},
 		"[]t.clone":                        {"[]t"},
@@ -38,8 +36,6 @@ func init() {
 		"[]t.sum":                          {"t"},
 		"[]t.to-arr":                       {"[?]t"},
 		"[]t.to-str":                       {"str"},
-		"[n]ord.ast":                       {"[n]ord"},
-		"[n]ord.desc":                      {"[n]ord"},
 		"[n]t.arr-stack-init":              {"arr-stack"},
 		"[n]t.arr-stack-peek":              {"?t"},
 		"[n]t.arr-stack-pop":               {"?t"},
@@ -456,6 +452,7 @@ func init() {
 		"time.duration-ms-between":                 {"i64"},
 		"time.duration-us-between":                 {"i64"},
 		"time.format-date":                         {"str"},
+		"time.format-duration":                     {"str"},
 		"time.format-time-str":                     {"str"},
 		"time.is-leap":                             {"bool"},
 		"time.now-date":                            {"date"},
@@ -974,6 +971,7 @@ func init() {
 		"str.str.contains":                                 {"bool"},
 		"str.str.copy":                                     {"str"},
 		"str.str.count":                                    {"i64"},
+		"str.str.decode-cp":                                {"i64", "i64"},
 		"str.str.empty":                                    {"bool"},
 		"str.str.ends-with":                                {"bool"},
 		"str.str.eq-full":                                  {"bool"},

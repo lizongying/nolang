@@ -92,7 +92,16 @@ func (g *Generator) generateExprWithSB(sb *strings.Builder, expr parser.Expressi
 		if !isLocalVar && g.enumVariantIndex != nil {
 			if g.reassignedVars == nil || !g.reassignedVars[e.Value] {
 				if tagIdx, ok := g.enumVariantIndex[e.Value]; ok {
+					// Debug: check if COUNTER should be reassigned
+					if e.Value == "COUNTER" {
+						fmt.Fprintf(os.Stderr, "[DBG-COUNTER] enumVariantIndex hit: COUNTER → %d, reassigned=%v\n", tagIdx, g.reassignedVars[e.Value])
+					}
 					return fmt.Sprintf("%d", tagIdx)
+				}
+			} else {
+				// Debug: COUNTER is reassigned, skipping enumVariantIndex
+				if e.Value == "COUNTER" {
+					fmt.Fprintf(os.Stderr, "[DBG-COUNTER] reassigned=true, skipping enumVariantIndex\n")
 				}
 			}
 		}
@@ -1872,6 +1881,61 @@ func (g *Generator) generateDotExpression(sb *strings.Builder, expr *parser.DotE
 	if g.enumVariantIndex != nil && varName == "" {
 		if val, ok := g.enumVariantIndex[fieldName]; ok {
 			return fmt.Sprintf("%d", val)
+		}
+	}
+
+	// 跨模組全局變量引用：module.VAR
+	// 當 receiver 是模組名（非局部變數、非 struct 變量），且 property 是全局變量時，
+	// 解析為全局變量 @VAR 的引用。
+	// 例如：mod_globals.COUNTER → 從 @COUNTER 載入值
+	if varName != "" && g.globalVars != nil && g.globalVars[fieldName] {
+		// 確認 receiver 不是局部變量或 struct 變量
+		isLocalVar := g.funcLocalNames != nil && g.funcLocalNames[varName]
+		_, isTypedVar := g.varTypes[varName]
+		if !isLocalVar && !isTypedVar {
+			// 這是跨模組全局變量引用 module.VAR
+			g.tmpIdx++
+			reg := llvmSSAReg(fieldName, fmt.Sprintf(".modgv.%d", g.tmpIdx))
+			if sb != nil {
+				llvmType := "i64"
+				if g.varTypes != nil {
+					if t, ok := g.varTypes[fieldName]; ok {
+						llvmType = t
+					}
+				}
+				// 檢查是否為 reassigned 變量（非常量），如果是則從全局變量載入
+				if g.reassignedVars != nil && g.reassignedVars[fieldName] {
+					irType := toLLVMType(llvmType)
+					ptrType := irType + "*"
+					sb.WriteString(fmt.Sprintf("%s%s = load %s, %s %s\n", g.indent(), reg, irType, ptrType, llvmGlobalRef(fieldName)))
+					if g.ssaTypes != nil {
+						g.ssaTypes[reg] = llvmType
+					}
+					return reg
+				}
+			}
+			// 非 reassigned 的常量全局變量：返回常量值
+			if g.enumVariantIndex != nil {
+				if val, ok := g.enumVariantIndex[fieldName]; ok {
+					return fmt.Sprintf("%d", val)
+				}
+			}
+			// Fallback: 載入全局變量值
+			if sb != nil {
+				llvmType := "i64"
+				if g.varTypes != nil {
+					if t, ok := g.varTypes[fieldName]; ok {
+						llvmType = t
+					}
+				}
+				irType := toLLVMType(llvmType)
+				ptrType := irType + "*"
+				sb.WriteString(fmt.Sprintf("%s%s = load %s, %s %s\n", g.indent(), reg, irType, ptrType, llvmGlobalRef(fieldName)))
+				if g.ssaTypes != nil {
+					g.ssaTypes[reg] = llvmType
+				}
+			}
+			return reg
 		}
 	}
 

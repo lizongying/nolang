@@ -69,7 +69,7 @@ reader.read-line = () (line ?str) {
     .fd < 0 -> return
     buf str = with-cap(4096)
     n = fs.read(.fd, buf, 4096)
-    n > 0 -> line = buf
+    n > 0 -> line = buf.slice(0, n)
 }
 
 ; read-all: 讀取全部內容到 buf（最多 size 位元組）

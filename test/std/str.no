@@ -1,11 +1,14 @@
 ; std-str.no — str 模組測試
 ;
-; 執行：no test test/std/str.no
+; 執行：no run test/std/str.no
 ; 覆蓋：len / index / index-from / contains / starts-with / ends-with /
 ;       to-upper / to-lower / trim / repeat / slice / to-bytes / to-i64 /
 ;       eq / copy / fill
 
 # /test/runner
+
+passed = 0
+failed = 0
 
 ; ── 基礎操作 ──────────────────────────────────
 
@@ -96,8 +99,7 @@ t-to-bytes = () {
 }
 
 t-to-i64 = () {
-    ; 注意：option 值需在 match 分支內比較（跨分支傳遞會產生
-    ; option 特化，為預存 codegen 問題），故以 bool 中轉。
+    ; 注意：option 值需在 match 分支內比較
     ok bool = false
     v = '123'.to-i64()
     v: {
@@ -114,7 +116,7 @@ t-to-i64 = () {
     }
     runner.is-true(ok2, 'to-i64 -45 == -45')
 
-    ; 非數字 → err（nil 僅用於空字串）
+    ; 非數字 → err
     bad-state i64 = 0
     bad = 'abc'.to-i64()
     bad: {
@@ -155,23 +157,50 @@ t-fill = () {
 ; ── 執行 ──────────────────────────────────────
 
 p1, f1 = runner.test('str.len', t-len)
+passed = passed + p1
+failed = failed + f1
 p2, f2 = runner.test('str.index', t-index)
+passed = passed + p2
+failed = failed + f2
 p3, f3 = runner.test('str.index-from', t-index-from)
+passed = passed + p3
+failed = failed + f3
 p4, f4 = runner.test('str.contains', t-contains)
+passed = passed + p4
+failed = failed + f4
 p5, f5 = runner.test('str.starts-with/ends-with', t-starts-ends)
+passed = passed + p5
+failed = failed + f5
 p6, f6 = runner.test('str.to-upper/to-lower', t-case)
+passed = passed + p6
+failed = failed + f6
 p7, f7 = runner.test('str.trim', t-trim)
+passed = passed + p7
+failed = failed + f7
 p8, f8 = runner.test('str.repeat', t-repeat)
+passed = passed + p8
+failed = failed + f8
 p9, f9 = runner.test('str.slice', t-slice)
+passed = passed + p9
+failed = failed + f9
 p10, f10 = runner.test('str.to-bytes', t-to-bytes)
+passed = passed + p10
+failed = failed + f10
 p11, f11 = runner.test('str.to-i64', t-to-i64)
+passed = passed + p11
+failed = failed + f11
 p12, f12 = runner.test('str.eq', t-eq)
+passed = passed + p12
+failed = failed + f12
 p13, f13 = runner.test('str.copy', t-copy)
+passed = passed + p13
+failed = failed + f13
 p14, f14 = runner.test('str.fill', t-fill)
+passed = passed + p14
+failed = failed + f14
 
-total = runner.summary()
-f = runner.failed-count()
+total = runner.summary(passed, failed)
 {
-    f > 0 -> os.exit(1)
+    failed > 0 -> os.exit(1)
     -> os.exit(0)
 }

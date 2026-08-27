@@ -95,15 +95,17 @@ since-us = (start i64) (diff i64) {
 ; 格式化
 ; ═══════════════════════════════════════════════
 
-; format-duration: 將秒數格式化為人類可讀輸出
-; 例：3661 → '1h1m1s'（輸出至 stdout）
-; 因 sprintf builtin 未註冊，改以 print 輸出各部分
-format-duration = (seconds i64) {
+; format-duration: 將秒數格式化為人類可讀字串
+; 例：3661 → '1h1m1s'
+format-duration = (seconds i64) (out str) {
     h i64 = seconds / 3600
     rem i64 = seconds % 3600
     m i64 = rem / 60
     sec i64 = rem % 60
-    print('{h}h{m}m{sec}s')
+    h-s = number.i64-to-str(h)
+    m-s = number.i64-to-str(m)
+    sec-s = number.i64-to-str(sec)
+    out = h-s - 'h' - m-s - 'm' - sec-s - 's'
 }
 
 ; ═══════════════════════════════════════════════
@@ -263,45 +265,51 @@ date-to-unix = (d date) (ts i64) {
 }
 
 ; format-date: 將 date 結構體格式化為字串
-; 格式：YYYY-MM-DD HH:MM:SS
+; 格式：YYYY-MM-DD HH:MM:SS（負年份加前綴 '-'）
 format-date = (d date) (out str) {
-    out = with-cap(19)
-
-    ; 年
+    neg = 0
     yr = d.year
     yr < 0 -> {
-        out[0] = 45
+        neg = 1
         yr = 0 - yr
     }
-    out[0] = (yr / 1000) % 10 + 48
-    out[1] = (yr / 100) % 10 + 48
-    out[2] = (yr / 10) % 10 + 48
-    out[3] = yr % 10 + 48
-    out[4] = 45
+    out-len = 19
+    neg == 1 -> out-len = 20
+    out = with-len(out-len)
+    pos = 0
+    neg == 1 -> {
+        out[0] = 45
+        pos = 1
+    }
+    out[pos] = (yr / 1000) % 10 + 48
+    out[pos + 1] = (yr / 100) % 10 + 48
+    out[pos + 2] = (yr / 10) % 10 + 48
+    out[pos + 3] = yr % 10 + 48
+    out[pos + 4] = 45
 
     ; 月
-    out[5] = d.month / 10 + 48
-    out[6] = d.month % 10 + 48
-    out[7] = 45
+    out[pos + 5] = d.month / 10 + 48
+    out[pos + 6] = d.month % 10 + 48
+    out[pos + 7] = 45
 
     ; 日
-    out[8] = d.day / 10 + 48
-    out[9] = d.day % 10 + 48
-    out[10] = 32
+    out[pos + 8] = d.day / 10 + 48
+    out[pos + 9] = d.day % 10 + 48
+    out[pos + 10] = 32
 
     ; 時
-    out[11] = d.hour / 10 + 48
-    out[12] = d.hour % 10 + 48
-    out[13] = 58
+    out[pos + 11] = d.hour / 10 + 48
+    out[pos + 12] = d.hour % 10 + 48
+    out[pos + 13] = 58
 
     ; 分
-    out[14] = d.min / 10 + 48
-    out[15] = d.min % 10 + 48
-    out[16] = 58
+    out[pos + 14] = d.min / 10 + 48
+    out[pos + 15] = d.min % 10 + 48
+    out[pos + 16] = 58
 
     ; 秒
-    out[17] = d.sec / 10 + 48
-    out[18] = d.sec % 10 + 48
+    out[pos + 17] = d.sec / 10 + 48
+    out[pos + 18] = d.sec % 10 + 48
 }
 
 ; format-time-str: 將 Unix 時間戳格式化為可讀字串

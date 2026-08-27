@@ -407,6 +407,42 @@ json-pool.parse-num = (node-idx i64, s str, pos i64) (next-pos i64, ok bool) {
         }
     }
 
+    ; 指數部分（e/E [+/-] digits）
+    i < s.len -> {
+        c = s[i]
+        c == 101 || c == 69 -> {
+            i = i + 1
+            exp-sign = 1
+            i < s.len -> {
+                c = s[i]
+                c == 45 -> {
+                    exp-sign = 0 - 1
+                    i = i + 1
+                }
+                c == 43 -> i = i + 1
+            }
+            exp-val = 0
+            {
+                i >= s.len -> break
+                c = s[i]
+                c < 48 || c > 57 -> break
+                exp-val = exp-val * 10 + (c - 48)
+                i = i + 1
+            } (i < s.len)
+            ; 計算 10^exp-val（exp-val 始終為非負值）
+            exp-base = 10.0
+            exp-r = 1.0
+            ev = exp-val
+            {
+                ev & 1 == 1 -> exp-r = exp-r * exp-base
+                exp-base = exp-base * exp-base
+                ev = ev >> 1
+            } (ev > 0)
+            exp-sign < 0 -> .nodes[node-idx].num-val = .nodes[node-idx].num-val / exp-r
+            exp-sign >= 0 -> .nodes[node-idx].num-val = .nodes[node-idx].num-val * exp-r
+        }
+    }
+
     ; 處理負數
     negative == 1 -> .nodes[node-idx].num-val = 0.0 - .nodes[node-idx].num-val
     next-pos = i

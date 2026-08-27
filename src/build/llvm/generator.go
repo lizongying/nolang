@@ -327,6 +327,8 @@ type Generator struct {
 	globalFirstAssigned    map[string]bool                 // 全局变量是否已做过首次（初始化）赋值；首次不释放旧值（旧值是字面量/zeroinitializer，非堆）
 	embedVars              map[string]bool                 // module-level embed vars (read-only, excluded from heap free)
 	mainFileNames          map[string]bool                 // names (vars+funcs) from the main file being compiled (not imported modules)
+	globalVarOwner         map[string]string               // global var name → module short name ("" = main file); used to determine if a function can write to a global
+	funcOwner             map[string]string               // function name → module short name ("" = main file); used to determine if a function belongs to the same module as a global var
 	reassignedVars         map[string]bool                 // module-level vars that are reassigned (not constants)
 	rangeLoopVars          map[string]bool                 // top-level vars used as range loop variables (must be locals)
 	rangeLoopBounds        map[string]int64                // range loop variable name → upper bound (for bounds check elimination)
@@ -846,6 +848,16 @@ func (g *Generator) SetNoBoundsCheck(skip bool) {
 // 應為局部變數，不應誤寫到全域 @result。
 func (g *Generator) SetMainFileNames(names map[string]bool) {
 	g.mainFileNames = names
+}
+
+// SetGlobalVarOwners 設定全局變量的模組歸屬映射和函數的模組歸屬映射。
+// globalVarOwner: 全局變數名 → 模組短名（"" = 主檔案）
+// funcOwner: 函數名 → 模組短名（"" = 主檔案）
+// 用於修正跨模組全局變量賦值的判斷：只有當函數與全局變量來自同一模組時，
+// 函數內的賦值才應寫入全局變量 @name，否則應創建局部變數。
+func (g *Generator) SetGlobalVarOwners(globalVarOwner, funcOwner map[string]string) {
+	g.globalVarOwner = globalVarOwner
+	g.funcOwner = funcOwner
 }
 
 // goos 返回當前編譯目標的 GOOS（如 "darwin"/"linux"/"windows"/"wasi"）。
@@ -1761,17 +1773,41 @@ func (g *Generator) Generate(program *parser.Program) string {
 			switch s := st.(type) {
 			case *parser.LetStatement:
 				// Type==nil 表示賦值（非宣告），若目標是全域變數則標記為 reassigned。
-				// 但僅限主檔案函數。
+				// 只有當函數與全局變量來自同一模組時才標記。
 				if s.Type == nil && g.globalVars != nil && g.globalVars[s.Name.Value] &&
-					curFunc != "" && g.mainFileNames != nil && g.mainFileNames[curFunc] {
-					g.reassignedVars[s.Name.Value] = true
+					curFunc != "" {
+					// 檢查函數與全局變量是否來自同一模組
+					sameModule := true
+					if g.globalVarOwner != nil && g.funcOwner != nil {
+						varOwner := g.globalVarOwner[s.Name.Value]
+						fo, ok := g.funcOwner[curFunc]
+						if !ok {
+							// 函數名可能帶模組前綴，嘗試提取前綴
+							if idx := strings.LastIndex(curFunc, "."); idx >= 0 {
+								fo, ok = g.funcOwner[curFunc[:idx]]
+							}
+						}
+						if ok {
+							sameModule = (varOwner == fo)
+						}
+						// 若 funcOwner 中找不到該函數，默認為主檔案函數（sameModule = true）
+					}
+					if sameModule {
+						g.reassignedVars[s.Name.Value] = true
+					}
 				}
-				// 遞迴走訪 RHS 表達式中的內嵌語句（如 IfExpression、區塊表達式）
-				if s.Value != nil {
-					scanGlobalReassignsExpr(s.Value, func(stmts2 []parser.Statement) {
-						scanGlobalReassigns(stmts2, curFunc)
-					})
+			// 遞迴走訪 RHS 表達式中的內嵌語句（如 IfExpression、區塊表達式）
+			if s.Value != nil {
+				// 處理 LetStatement with FunctionLiteral value（如 inc = () { ... }）
+				// 這些函數定義需要以變量名作為 curFunc 遞迴掃描函數體，
+				// 才能找到對全局變量的重新賦值（如 COUNTER = COUNTER + 1）。
+				if fl, ok := s.Value.(*parser.FunctionLiteral); ok && fl.Body != nil {
+					scanGlobalReassigns(fl.Body.Statements, s.Name.Value)
 				}
+				scanGlobalReassignsExpr(s.Value, func(stmts2 []parser.Statement) {
+					scanGlobalReassigns(stmts2, curFunc)
+				})
+			}
 			case *parser.FunctionDefinition:
 				if s.Body != nil {
 					scanGlobalReassigns(s.Body.Statements, s.Name)
@@ -1785,11 +1821,27 @@ func (g *Generator) Generate(program *parser.Program) string {
 					scanGlobalReassigns(stmts2, curFunc)
 				})
 			case *parser.MultiAssignStatement:
-				if curFunc != "" && g.mainFileNames != nil && g.mainFileNames[curFunc] {
+				if curFunc != "" {
 					for _, t := range s.Targets {
 						if ident, ok := t.(*parser.Identifier); ok {
 							if g.globalVars != nil && g.globalVars[ident.Value] {
-								g.reassignedVars[ident.Value] = true
+								// 檢查函數與全局變量是否來自同一模組
+								sameModule := true
+								if g.globalVarOwner != nil && g.funcOwner != nil {
+									varOwner := g.globalVarOwner[ident.Value]
+									fo, ok := g.funcOwner[curFunc]
+									if !ok {
+										if idx := strings.LastIndex(curFunc, "."); idx >= 0 {
+											fo, ok = g.funcOwner[curFunc[:idx]]
+										}
+									}
+									if ok {
+										sameModule = (varOwner == fo)
+									}
+								}
+								if sameModule {
+									g.reassignedVars[ident.Value] = true
+								}
 							}
 						}
 					}

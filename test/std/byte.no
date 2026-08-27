@@ -9,6 +9,9 @@
 
 # /test/runner
 
+passed = 0
+failed = 0
+
 ; ── 位元組與整數轉換 ─────────────────────────
 
 t-to-i64-be = () {
@@ -78,17 +81,32 @@ t-slice = () {
 ; ── 執行 ──────────────────────────────────────
 
 p1, f1 = runner.test('byte.to-i64-be', t-to-i64-be)
+passed = passed + p1
+failed = failed + f1
 p2, f2 = runner.test('byte.to-i64-le', t-to-i64-le)
+passed = passed + p2
+failed = failed + f2
 p3, f3 = runner.test('byte.to-i64-le short', t-to-i64-le-short)
+passed = passed + p3
+failed = failed + f3
 p4, f4 = runner.test('byte.to-hex', t-to-hex)
+passed = passed + p4
+failed = failed + f4
 p5, f5 = runner.test('byte.to-hex-lower', t-to-hex-lower)
+passed = passed + p5
+failed = failed + f5
 p6, f6 = runner.test('byte.index', t-index)
+passed = passed + p6
+failed = failed + f6
 p7, f7 = runner.test('byte.index-from', t-index-from)
+passed = passed + p7
+failed = failed + f7
 p8, f8 = runner.test('byte.slice', t-slice)
+passed = passed + p8
+failed = failed + f8
 
-total = runner.summary()
-f = runner.failed-count()
+total = runner.summary(passed, failed)
 {
-    f > 0 -> os.exit(1)
+    failed > 0 -> os.exit(1)
     -> os.exit(0)
 }

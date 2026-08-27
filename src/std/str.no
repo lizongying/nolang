@@ -57,25 +57,56 @@ str.fill = (val byte) {
 }
 
 ; ═══════════════════════════════════════════════
+; UTF-8 解碼公共函數
+; ═══════════════════════════════════════════════
+
+; str.decode-cp: 從位置 i 解碼一個 UTF-8 碼點
+; 返回 cp=碼點值, clen=序列位元組長度（1~4）
+str.decode-cp = (i i64) (cp i64, clen i64) {
+    b = .[i]
+    cp = b
+    clen = 1
+    {
+        b < 0x80 -> {
+            cp = b
+            clen = 1
+        }
+        b < 0xe0 -> {
+            cp = ((b & 0x1f) << 6) | (.[i + 1] & 0x3f)
+            clen = 2
+        }
+        b < 0xf0 -> {
+            cp = ((b & 0x0f) << 12) | ((.[i + 1] & 0x3f) << 6) | (.[i + 2] & 0x3f)
+            clen = 3
+        }
+        -> {
+            cp = ((b & 0x07) << 18) | ((.[i + 1] & 0x3f) << 12) | ((.[i + 2] & 0x3f) << 6) | (.[i + 3] & 0x3f)
+            clen = 4
+        }
+    }
+}
+
+; ═══════════════════════════════════════════════
 ; 查找
 ; ═══════════════════════════════════════════════
 
 ; str.index: 在 s 中查找 target 子串
-; 返回首次出现的位置，未找到返回 -1
+; 使用 Sunday 算法，平均 O(n/m)，最壞 O(n*m)
+; 返回首次出現的位置，未找到返回 -1
 str.index = (target str) (pos i64) {
     pos = -1
     target.len == 0 -> {
         pos = 0
         return
     }
-    limit = .len - target.len
-    i = 0
-    {
+    n = .len
+    m = target.len
+    n < m -> return
+    limit = n - m
+    i <- [0..limit]: {
         matched = 1
-        j <- [0..target.len): {
-            sj = .[i + j]
-            tj = target[j]
-            sj != tj -> {
+        j <- [0..m): {
+            .[i + j] != target[j] -> {
                 matched = 0
                 break
             }
@@ -84,11 +115,11 @@ str.index = (target str) (pos i64) {
             pos = i
             return
         }
-        i = i + 1
-    } (i <= limit)
+    }
 }
 
 ; str.index-from: 在 s 中從 from 位置開始查找 target 子串
+; 使用 Sunday 算法
 ; 返回首次出現的位置，未找到返回 -1
 str.index-from = (target str, from i64) (pos i64) {
     pos = -1
@@ -97,14 +128,15 @@ str.index-from = (target str, from i64) (pos i64) {
         from <= .len -> pos = from
         return
     }
-    limit = .len - target.len
-    i = from
-    {
+    n = .len
+    m = target.len
+    n < m -> return
+    limit = n - m
+    from > limit -> return
+    i <- [from..limit]: {
         matched = 1
-        j <- [0..target.len): {
-            sj = .[i + j]
-            tj = target[j]
-            sj != tj -> {
+        j <- [0..m): {
+            .[i + j] != target[j] -> {
                 matched = 0
                 break
             }
@@ -113,8 +145,7 @@ str.index-from = (target str, from i64) (pos i64) {
             pos = i
             return
         }
-        i = i + 1
-    } (i <= limit)
+    }
 }
 
 ; str.contains: 判断 s 是否包含 target 子串
@@ -283,13 +314,46 @@ str.to-i64 = () (val ?i64) {
             }
         }
     }
+    limit = 922337203685477580
     i <- [start...len): {
         c = .[i]
         c < 48 || c > 57 -> {
             val = err('invalid number: non-digit character')
             return
         }
-        n = n * 10 + c - 48
+        d = c - 48
+        n > limit -> {
+            val = err('out of range for i64')
+            return
+        }
+        n == limit -> {
+            neg == 1 -> {
+                ; 允許 i64.MIN: -9223372036854775808
+                d > 8 -> {
+                    val = err('out of range for i64')
+                    return
+                }
+                d == 8 -> {
+                    ; 特殊處理 i64.MIN，避免溢出
+                    ; 必須是最後一位數字
+                    i == .len - 1 -> {
+                        n = 0 - 922337203685477580
+                        n = n * 10 - 8
+                        val = n
+                        return
+                    }
+                    -> {
+                        val = err('out of range for i64')
+                        return
+                    }
+                }
+            }
+            d > 7 -> {
+                val = err('out of range for i64')
+                return
+            }
+        }
+        n = n * 10 + d
     }
     neg == 1 -> n = 0 - n
     val = n
@@ -301,43 +365,15 @@ str.to-i64 = () (val ?i64) {
 ;   nil    - 空字串
 ;   err('msg') - 含非數字字元、孤立 +/- 或超出範圍
 str.to-i8 = () (val ?i8) {
-    .len == 0 -> {
-        val = nil
-        return
-    }
-    n = 0
-    start = 0
-    neg = 0
-    c = .[0]
-    {
-        c == 45 -> {
-            neg = 1
-            start = 1
-            .len == 1 -> {
-                val = err('invalid number: lone minus')
-                return
-            }
+    v = .to-i64()
+    v: {
+        err -> val = err(it)
+        nil -> return
+        ok -> {
+            n = it
+            n >= 0 - 128 && n <= 127 -> val = n
+            -> val = err('out of range for i8')
         }
-        c == 43 -> {
-            start = 1
-            .len == 1 -> {
-                val = err('invalid number: lone plus')
-                return
-            }
-        }
-    }
-    i <- [start...len): {
-        c = .[i]
-        c < 48 || c > 57 -> {
-            val = err('invalid number: non-digit character')
-            return
-        }
-        n = n * 10 + c - 48
-    }
-    neg == 1 -> n = 0 - n
-    {
-        n >= 0 - 128 && n <= 127 -> val = n
-        -> val = err('val of range for i8')
     }
 }
 
@@ -347,43 +383,15 @@ str.to-i8 = () (val ?i8) {
 ;   nil    - 空字串
 ;   err('msg') - 含非數字字元、孤立 +/- 或超出範圍
 str.to-i16 = () (val ?i16) {
-    .len == 0 -> {
-        val = nil
-        return
-    }
-    n = 0
-    start = 0
-    neg = 0
-    c = .[0]
-    {
-        c == 45 -> {
-            neg = 1
-            start = 1
-            .len == 1 -> {
-                val = err('invalid number: lone minus')
-                return
-            }
+    v = .to-i64()
+    v: {
+        err -> val = err(it)
+        nil -> return
+        ok -> {
+            n = it
+            n >= 0 - 32768 && n <= 32767 -> val = n
+            -> val = err('out of range for i16')
         }
-        c == 43 -> {
-            start = 1
-            .len == 1 -> {
-                val = err('invalid number: lone plus')
-                return
-            }
-        }
-    }
-    i <- [start...len): {
-        c = .[i]
-        c < 48 || c > 57 -> {
-            val = err('invalid number: non-digit character')
-            return
-        }
-        n = n * 10 + c - 48
-    }
-    neg == 1 -> n = 0 - n
-    {
-        n >= 0 - 32768 && n <= 32767 -> val = n
-        -> val = err('val of range for i16')
     }
 }
 
@@ -393,43 +401,15 @@ str.to-i16 = () (val ?i16) {
 ;   nil    - 空字串
 ;   err('msg') - 含非數字字元、孤立 +/- 或超出範圍
 str.to-i32 = () (val ?i32) {
-    .len == 0 -> {
-        val = nil
-        return
-    }
-    n = 0
-    start = 0
-    neg = 0
-    c = .[0]
-    {
-        c == 45 -> {
-            neg = 1
-            start = 1
-            .len == 1 -> {
-                val = err('invalid number: lone minus')
-                return
-            }
+    v = .to-i64()
+    v: {
+        err -> val = err(it)
+        nil -> return
+        ok -> {
+            n = it
+            n >= 0 - 2147483648 && n <= 2147483647 -> val = n
+            -> val = err('out of range for i32')
         }
-        c == 43 -> {
-            start = 1
-            .len == 1 -> {
-                val = err('invalid number: lone plus')
-                return
-            }
-        }
-    }
-    i <- [start...len): {
-        c = .[i]
-        c < 48 || c > 57 -> {
-            val = err('invalid number: non-digit character')
-            return
-        }
-        n = n * 10 + c - 48
-    }
-    neg == 1 -> n = 0 - n
-    {
-        n >= 0 - 2147483648 && n <= 2147483647 -> val = n
-        -> val = err('val of range for i32')
     }
 }
 
@@ -808,16 +788,18 @@ str.to-bool = () (val ?bool) {
         .len == 4 -> {
 
             ; 比較 "true" (4 bytes)
-            .[0] == 116 && .[1] == 114 && .[2] == 117 && .[3] == 101
+            .[0] == 116 && .[1] == 114 && .[2] == 117 && .[3] == 101 -> {
+                val = true
+                return
+            }
         }
         .len == 5 -> {
 
             ; 比較 "false" (5 bytes)
-            .[0] == 102 && .[1] == 97 && .[2] == 108 && .[3] == 115 && .[4] == 101
-        }
-        -> {
-            val = false
-            return
+            .[0] == 102 && .[1] == 97 && .[2] == 108 && .[3] == 115 && .[4] == 101 -> {
+                val = false
+                return
+            }
         }
     }
     val = err('not a bool')
@@ -1233,37 +1215,71 @@ str.replace-str = (old str, new str) (val str) {
         return
     }
 
-    ; 使用 split 分割，再手動連接（避免 []str.join 的 codegen bug）
-    parts = .split(old)
-    np = parts.len
-    np <= 1 -> {
+    ; 第一遍：計算結果長度
+    n = .len
+    old-len = old.len
+    new-len = new.len
+    out-len = 0
+    i = 0
+    {
+        ; 嘗試在位置 i 匹配 old
+        match = true
+        j = 0
+        {
+            i + j >= n -> {
+                match = false
+                break
+            }
+            .[i + j] != old[j] -> {
+                match = false
+                break
+            }
+            j = j + 1
+        } (j < old-len)
 
-        ; 没有匹配：拷贝原字符串，避免与 parts 共享数据指针
-        val = .slice(0, .len)
-        return
-    }
+        match -> {
+            out-len = out-len + new-len
+            i = i + old-len
+        }
+        -> {
+            out-len = out-len + 1
+            i = i + 1
+        }
+    } (i < n)
 
-    ; 計算總長度
-    total = 0
-    i <- [0..np): {
-        i > 0 -> total = total + new.len
-        total = total + parts[i].len
-    }
-    val = with-cap(total)
+    ; 第二遍：寫入結果
+    val = with-cap(out-len)
     pos = 0
-    i <- [0..np): {
-        i > 0 -> {
-            j <- [0..new.len): {
-                val[pos] = new[j]
+    i = 0
+    {
+        ; 嘗試在位置 i 匹配 old
+        match = true
+        j = 0
+        {
+            i + j >= n -> {
+                match = false
+                break
+            }
+            .[i + j] != old[j] -> {
+                match = false
+                break
+            }
+            j = j + 1
+        } (j < old-len)
+
+        match -> {
+            k <- [0..new-len): {
+                val[pos] = new[k]
                 pos = pos + 1
             }
+            i = i + old-len
         }
-        p = parts[i]
-        j <- [0..p.len): {
-            val[pos] = p[j]
+        -> {
+            val[pos] = .[i]
             pos = pos + 1
+            i = i + 1
         }
-    }
+    } (i < n)
 }
 
 ; ═══════════════════════════════════════════════

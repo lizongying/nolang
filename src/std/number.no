@@ -126,11 +126,14 @@ lcm = (a int, b int) (r int) {
 }
 
 ; pow: 整數冪 a^n（n ≥ 0）— 對所有整數型別通用
+; 使用快速冪算法 O(log n)
 pow = (a int, n int) (r int) {
     r = 1
+    base = a
     {
-        r = r * a
-        n = n - 1
+        n & 1 == 1 -> r = r * base
+        base = base * base
+        n = n >> 1
     } (n > 0)
 }
 

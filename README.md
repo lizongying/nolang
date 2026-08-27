@@ -130,7 +130,7 @@ make help       # 查看所有構建目標
 
 修改代碼前，請先閱讀 [.agents/skills/nolang-syntax/SKILL.md](.agents/skills/nolang-syntax/SKILL.md) 了解 Nolang 語法規範。
 
-> ⚠️ **嚴禁使用 `git checkout`**，任何時候都不得使用，以防止覆蓋他人正在修改的代碼。
+> ⚠️ **嚴禁使用 `git checkout` 和 `git reset`**，任何時候都不得使用，以防止覆蓋他人正在修改的代碼。
 
 修改後需執行以下檢查：
 

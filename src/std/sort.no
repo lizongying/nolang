@@ -54,14 +54,60 @@ str.gt = (b str) (res bool) {
     res = . > b
 }
 
-[n]ord.ast = () (res [n]ord) {
+; [n]ord.sort-asc: 升序原地排序（插入排序）
+[n]ord.sort-asc = () {
+    i <- [1..n): {
+        key = .[i]
+        j = i - 1
+        {
+            .[j] <= key -> break
+            .[j + 1] = .[j]
+            j = j - 1
+        } (j >= 0)
+        .[j + 1] = key
+    }
 }
 
-[n]ord.desc = () (res [n]ord) {
+; [n]ord.sort-desc: 降序原地排序（插入排序）
+[n]ord.sort-desc = () {
+    i <- [1..n): {
+        key = .[i]
+        j = i - 1
+        {
+            .[j] >= key -> break
+            .[j + 1] = .[j]
+            j = j - 1
+        } (j >= 0)
+        .[j + 1] = key
+    }
 }
 
-[]ord.ast = () (res []ord) {
+; []ord.sort-asc: 升序原地排序（插入排序）
+[]ord.sort-asc = () {
+    sz = .len
+    i <- [1..sz): {
+        key = .[i]
+        j = i - 1
+        {
+            .[j] <= key -> break
+            .[j + 1] = .[j]
+            j = j - 1
+        } (j >= 0)
+        .[j + 1] = key
+    }
 }
 
-[]ord.desc = () (res []ord) {
+; []ord.sort-desc: 降序原地排序（插入排序）
+[]ord.sort-desc = () {
+    sz = .len
+    i <- [1..sz): {
+        key = .[i]
+        j = i - 1
+        {
+            .[j] >= key -> break
+            .[j + 1] = .[j]
+            j = j - 1
+        } (j >= 0)
+        .[j + 1] = key
+    }
 }

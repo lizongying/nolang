@@ -4644,21 +4644,51 @@ func (g *Generator) collectVarDeclsFromStmtInner(stmt parser.Statement, vars map
 			// 不應創建本地 alloca 覆蓋全域變數。例如 gen-random 中的
 			// `LAST = (LAST * IA + IC) % IM` 必須更新全域 @LAST，
 			// 否則每次呼叫都從未初始化的本地 LAST 開始，破壞 RNG 狀態。
-			// 但僅限主檔案函數：導入模組的函數（如 bigint.cmp、abs-add）
-			// 若有名為 result 的局部變數，不應誤寫到主檔案的全域 @result。
+			//
+			// 修正跨模組全局變量賦值：只有當函數與全局變量來自同一模組時，
+			// 函數內的賦值才應寫入全局 @name。否則應創建局部變數。
+			// 例如：mod_globals 模組定義了全局變量 COUNTER 和函數 inc，
+			// inc 中的 COUNTER = COUNTER + 1 應寫入 @COUNTER。
+			// 但 bigint.cmp 中的 result = .abs-cmp(b) 不應寫到主檔案的 @result。
+			//
+			// 判斷邏輯：
+			// 1. globalVarOwner 記錄全局變量屬於哪個模組（"" = 主檔案）
+			// 2. funcOwner 記錄當前函數屬於哪個模組（"" = 主檔案）
+			// 3. 若兩者歸屬相同，則允許寫入全局變量
+			// 4. 若 funcOwner 為空（主檔案函數），也允許寫入（向後相容）
 			// 例外：若同名變數是當前函數的參數（如 make-repeat-fasta 的參數 n
 			// 與模組級 n i64 = 1000 同名），參數應遮蔽全域變數，不可刪除
-		// funcLocalNames 中的記錄，否則 varAddr 會錯誤返回 @n 而非 %n。
-		if s.Type == nil && g.globalVars != nil && g.globalVars[s.Name.Value] &&
-				g.curFuncName != "" && g.mainFileNames != nil && g.mainFileNames[g.curFuncName] &&
-				(g.funcParams == nil || !g.funcParams[s.Name.Value]) {
-				if g.funcLocalNames != nil {
-					delete(g.funcLocalNames, s.Name.Value)
+			// funcLocalNames 中的記錄，否則 varAddr 會錯誤返回 @n 而非 %n。
+			if s.Type == nil && g.globalVars != nil && g.globalVars[s.Name.Value] &&
+				g.curFuncName != "" && (g.funcParams == nil || !g.funcParams[s.Name.Value]) {
+				// 檢查函數與全局變量是否來自同一模組
+				sameModule := true
+				if g.globalVarOwner != nil && g.funcOwner != nil {
+					varOwner := g.globalVarOwner[s.Name.Value]
+					// 模組函數名可能帶模組前綴（如 bigint.cmp），也可能不帶（無衝突時）
+					// 先嘗試裸名查找，再嘗試帶前綴的變體
+					fo, ok := g.funcOwner[g.curFuncName]
+					if !ok {
+						// 函數名可能帶模組前綴，嘗試提取前綴
+						// 嘗試用點號分割查找
+						if idx := strings.LastIndex(g.curFuncName, "."); idx >= 0 {
+							fo, ok = g.funcOwner[g.curFuncName[:idx]]
+						}
+					}
+					if ok {
+						sameModule = (varOwner == fo)
+					}
+					// 若 funcOwner 中找不到該函數，默認為主檔案函數（sameModule = true）
 				}
-				if s.Value != nil {
-					g.collectVarDeclsFromExpr(s.Value, vars)
+				if sameModule {
+					if g.funcLocalNames != nil {
+						delete(g.funcLocalNames, s.Name.Value)
+					}
+					if s.Value != nil {
+						g.collectVarDeclsFromExpr(s.Value, vars)
+					}
+					return
 				}
-				return
 			}
 			// 切片表達式（view = arr[0..4]）總是走 clone 路徑（malloc + memcpy），
 			// 變量需要獨立的 alloca 存儲空間。不再跳過 alloca。
