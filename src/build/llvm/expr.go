@@ -92,16 +92,7 @@ func (g *Generator) generateExprWithSB(sb *strings.Builder, expr parser.Expressi
 		if !isLocalVar && g.enumVariantIndex != nil {
 			if g.reassignedVars == nil || !g.reassignedVars[e.Value] {
 				if tagIdx, ok := g.enumVariantIndex[e.Value]; ok {
-					// Debug: check if COUNTER should be reassigned
-					if e.Value == "COUNTER" {
-						fmt.Fprintf(os.Stderr, "[DBG-COUNTER] enumVariantIndex hit: COUNTER → %d, reassigned=%v\n", tagIdx, g.reassignedVars[e.Value])
-					}
 					return fmt.Sprintf("%d", tagIdx)
-				}
-			} else {
-				// Debug: COUNTER is reassigned, skipping enumVariantIndex
-				if e.Value == "COUNTER" {
-					fmt.Fprintf(os.Stderr, "[DBG-COUNTER] reassigned=true, skipping enumVariantIndex\n")
 				}
 			}
 		}

@@ -1109,12 +1109,19 @@ func (g *Generator) Generate(program *parser.Program) string {
 	// 同時收集模組級 i64 整數常量，支援命名空間風格存取（如 FileMode.WRITE）
 	// 含負整數常量（如 FNV-OFFSET = -3750763034362895579）
 	// 只收集大寫命名的識別符（常量命名慣例），小寫命名為變數不應被常量摺疊
+	// 跳過被重新賦值的可變全局變量（如 COUNTER = 0 後又有 COUNTER = COUNTER + 1）
+	reassignedEarly := make(map[string]bool)
+	for _, stmt := range program.Statements {
+		collectReassignedGlobalNames(stmt, reassignedEarly)
+	}
 	for _, stmt := range program.Statements {
 		if ls, ok := stmt.(*parser.LetStatement); ok {
 			if v, ok := intConstValue(ls.Value); ok {
 				name := ls.Name.Value
 				if len(name) > 0 && name[0] >= 'A' && name[0] <= 'Z' {
-					g.enumVariantIndex[name] = v
+					if !reassignedEarly[name] {
+						g.enumVariantIndex[name] = v
+					}
 				}
 			}
 		}
@@ -1439,11 +1446,19 @@ func (g *Generator) Generate(program *parser.Program) string {
 	// 2. %str-long 字串變數（如 SBOX 表）
 	// 先收集所有 i64 整數常量的值，以便別名（如 o-append = FileMode.APPEND）能解析
 	// 含負整數常量（如 FNV-OFFSET = -3750763034362895579）
+	// 跳過被重新賦值（Type==nil 的 LetStatement）的可變全局變量，
+	// 這些變量不應被視為常量，需要在 codegen 中從 @VAR 載入實際值。
 	moduleIntConsts := make(map[string]int64)
+	reassignedIntGlobals := make(map[string]bool)
+	for _, stmt := range program.Statements {
+		collectReassignedGlobalNames(stmt, reassignedIntGlobals)
+	}
 	for _, stmt := range program.Statements {
 		if ls, ok := stmt.(*parser.LetStatement); ok {
 			if v, ok := intConstValue(ls.Value); ok {
-				moduleIntConsts[ls.Name.Value] = v
+				if !reassignedIntGlobals[ls.Name.Value] {
+					moduleIntConsts[ls.Name.Value] = v
+				}
 			}
 		}
 	}
@@ -1659,8 +1674,8 @@ func (g *Generator) Generate(program *parser.Program) string {
 					sb.WriteString(fmt.Sprintf("%s = global %s %d\n", llvmGlobalRef(name), toLLVMType(llvmType), v))
 					g.globalVars[name] = true
 				}
-			} else if llvmType == "i64" && ls.Value != nil {
-				if v, ok := intConstValue(ls.Value); ok {
+		} else if llvmType == "i64" && ls.Value != nil {
+			if v, ok := intConstValue(ls.Value); ok {
 					initVal := fmt.Sprintf("%d", v)
 					sb.WriteString(fmt.Sprintf("%s = global i64 %s\n", llvmGlobalRef(name), initVal))
 					g.globalVars[name] = true
@@ -1963,6 +1978,79 @@ func scanGlobalReassignsExpr(expr parser.Expression, scan func([]parser.Statemen
 		scanGlobalReassignsExpr(e.Right, scan)
 	case *parser.PrefixExpression:
 		scanGlobalReassignsExpr(e.Right, scan)
+	}
+}
+
+// collectReassignedGlobalNames 掃描語句（含函數體），找出 Type==nil 的
+// LetStatement（賦值），記錄被重新賦值的變量名。這些變量是可變全局變量，
+// 不應被視為常量（moduleIntConsts / enumVariantIndex）。
+func collectReassignedGlobalNames(stmt parser.Statement, result map[string]bool) {
+	if stmt == nil {
+		return
+	}
+	switch s := stmt.(type) {
+	case *parser.LetStatement:
+		if s.Type == nil && s.Name != nil {
+			result[s.Name.Value] = true
+		}
+		if s.Value != nil {
+			collectReassignedGlobalNamesInExpr(s.Value, result)
+		}
+	case *parser.FunctionDefinition:
+		if s.Body != nil {
+			for _, bs := range s.Body.Statements {
+				collectReassignedGlobalNames(bs, result)
+			}
+		}
+	case *parser.ExpressionStatement:
+		if s.Expression != nil {
+			collectReassignedGlobalNamesInExpr(s.Expression, result)
+		}
+	case *parser.ForStatement:
+		if s.Init != nil {
+			collectReassignedGlobalNames(s.Init, result)
+		}
+		if s.Body != nil {
+			for _, bs := range s.Body.Statements {
+				collectReassignedGlobalNames(bs, result)
+			}
+		}
+	case *parser.BlockStatement:
+		for _, bs := range s.Statements {
+			collectReassignedGlobalNames(bs, result)
+		}
+	}
+}
+
+func collectReassignedGlobalNamesInExpr(expr parser.Expression, result map[string]bool) {
+	if expr == nil {
+		return
+	}
+	switch e := expr.(type) {
+	case *parser.FunctionLiteral:
+		if e.Body != nil {
+			for _, bs := range e.Body.Statements {
+				collectReassignedGlobalNames(bs, result)
+			}
+		}
+	case *parser.IfExpression:
+		if e.Consequence != nil {
+			for _, bs := range e.Consequence.Statements {
+				collectReassignedGlobalNames(bs, result)
+			}
+		}
+		if e.Alternative != nil {
+			for _, bs := range e.Alternative.Statements {
+				collectReassignedGlobalNames(bs, result)
+			}
+		}
+	case *parser.CallExpression:
+		for _, arg := range e.Arguments {
+			collectReassignedGlobalNamesInExpr(arg, result)
+		}
+	case *parser.InfixExpression:
+		collectReassignedGlobalNamesInExpr(e.Left, result)
+		collectReassignedGlobalNamesInExpr(e.Right, result)
 	}
 }
 

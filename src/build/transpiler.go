@@ -1907,10 +1907,7 @@ func (t *Transpiler) CompileTarget(source string, _ Target) (string, error) {
 		collectReassignedGlobals(stmt, reassignedGlobals)
 	}
 	for name := range reassignedGlobals {
-		if _, ok := moduleConstants[name]; ok {
-			fmt.Fprintf(os.Stderr, "[DBG-CONST] removing %s from moduleConstants (reassigned)\n", name)
-			delete(moduleConstants, name)
-		}
+		delete(moduleConstants, name)
 	}
 	// 常量傳播：將模組常量替換為字面值，使 module functions 可以直接使用常量
 	checker.ResolveModuleConstants(merged, moduleConstants)

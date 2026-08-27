@@ -767,3 +767,44 @@ CFG 數據流分析依賴 `cfgEdge`/`cfgTerm`/`cfgAddEffect` 正確記錄所有�
 | **async task await** | `src/build/llvm/expr.go` | `awaitTaskVar`, `awaitFutureCall`, `awaitFutureVar` |
 | **Builtin []byte → str 賦值** | `src/build/llvm/stmt.go` | `varLLVMType` DotExpression builtin SliceType 檢查 + `isVecPtrReg` + `%str-long` case load 分支（§5.10） |
 | **Bool 型別強轉** | `src/build/llvm/stmt.go` | `generateLet` 中 `i1/i64` 型別強轉的 SSA 型別檢查（§5.11） |
+| **跨模組全局變量所有權** | `src/build/transpiler.go`, `src/build/llvm/generator.go` | `collectReassignedGlobals`, `collectReassignedGlobalNames`, `SetGlobalVarOwners`, `scanGlobalReassigns`（§12） |
+| **跨模組全局變量 codegen** | `src/build/llvm/stmt.go`, `src/build/llvm/expr.go` | `collectVarDeclsFromStmtInner` 模組歸屬判斷, `generateDotExpression` module.VAR 解析（§12） |
+
+## 12. 跨模組全局變量
+
+### 12.1 問題背景
+
+Nolang 模組（`# /path/to/module`）可以定義全局變量（如 `COUNTER = 0`）。其他模組的函數可以通過 `module.VAR` 語法讀取這些變量，同模組的函數可以直接用裸名 `VAR` 讀寫。
+
+**歷史 bug**：跨模組全局變量不共享狀態——模組函數內的賦值（如 `COUNTER = COUNTER + 1`）被誤當作局部變量，創建了 `alloca` 而非寫入 `@COUNTER`，導致全局變量值永遠為初始值。
+
+### 12.2 修復設計
+
+修復分為三個層面：
+
+1. **常量傳播排除**（`src/build/transpiler.go`）
+   - `collectReassignedGlobals` 掃描合併後的程序（含函數體），找出 `Type==nil` 的 LetStatement（賦值）
+   - 遞迴進入 `FunctionLiteral` body（`inc = () { COUNTER = COUNTER + 1 }`）
+   - 從 `moduleConstants` 中刪除這些可變全局變量，避免被常量傳播替換為初始值
+   - **必須在第一次 `ResolveModuleConstants` 之前執行**
+
+2. **codegen 常量摺疊排除**（`src/build/llvm/generator.go`）
+   - `collectReassignedGlobalNames` 在 `Generate` 方法早期掃描，收集被重新賦值的變量名
+   - 從 `enumVariantIndex` 和 `moduleIntConsts` 中排除這些變量
+   - 避免 `generateIdentifier` 將 `COUNTER` 常量摺疊為 `0`
+
+3. **模組歸屬追蹤**（`src/build/transpiler.go` + `src/build/llvm/generator.go`）
+   - `globalVarOwner`: 全局變量名 → 模組短名
+   - `funcOwner`: 函數名 → 模組短名
+   - `SetGlobalVarOwners` 在 `Generate` 之前設定
+   - `scanGlobalReassigns` 使用這些映射判斷函數與全局變量是否來自同一模組
+   - `collectVarDeclsFromStmtInner` 使用這些映射決定是否寫入全局 `@name`
+
+### 12.3 別名機制
+
+Nolang 的 `#` 導入語句支援別名：
+```
+# /path/to/module.VAR ALIAS   ; 導入 module 的全局變量 VAR，重命名為 ALIAS
+```
+
+這可用於解決跨模組變量名衝突。導入後可直接使用 `ALIAS` 訪問，無需模組前綴。
