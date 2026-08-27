@@ -226,19 +226,52 @@ func (g *Generator) flushOutputBindings(sb *strings.Builder) {
 //	%arr:       field 1 (i64 data)
 
 // ---- Liveness 预分析：判定 b=a 中源变量 a 是否在后续被引用 ----
+//
+// 改进版 liveness 分析（替代旧的 flattenStmts + stmtContainsVarRef 线性扫描）：
+//
+// 1. 读写区分：只有「读引用」才阻止 move。纯赋值目标（如 a = [1,2,3]）不阻止 move，
+//    因为 freeOldHeapValue 会正确检测 moved 状态并跳过 free。但 a = f(a) 这种 RHS
+//    引用源变量的情况仍会阻止 move（通过 exprContainsVarRead 检查 RHS）。
+//
+// 2. 分支感知：当 out=a 在某个 if/else 分支内（move 到输出参数）时，
+//    互斥分支中的读引用不阻止 move。输出参数的 move 有运行时位图追踪
+//    （detectBranchMoveToOut + hasBranchMove），可以安全跳过互斥分支。
+//    对局部变量间 b=a（move-to-local），无运行时位图追踪，
+//    互斥分支中的读引用仍阻止 move（保守，正确）。
+//
+// 3. 循环体引用：for 循环体内的读引用阻止 move（循环体可能多次执行，
+//    move 后源变量不再拥有 data，读取会 use-after-free）。
+
+// branchNode 标识语句所在的分支上下文节点。
+// 多个 branchNode 组成 chain，从外到内表示嵌套的分支路径。
+type branchNode struct {
+	nodeID    int // 分支节点的唯一 ID（对应 IfExpression/ConditionalExpression）
+	branchIdx int // 0 = then/consequence, 1 = else/alternative
+}
+
+// flatStmtEntry 是展平后的语句条目，携带分支上下文信息。
+type flatStmtEntry struct {
+	stmt      parser.Statement
+	branchCtx []branchNode // nil = 顶层；非空 = 在分支内
+}
 
 // computeMoveEligibility 遍历函数体，对每个 b=a（LetStatement，RHS 为 Identifier）
-// 判定源变量 a 是否在后续语句中被引用。若未被引用 → moveEligible[stmt]=true（可 move）。
-// 保守策略：若 a 出现在后续任何表达式位置（包括赋值目标，因为重赋值会触发 freeOldHeapValue
-// 读取旧值），则视为"被引用"，不可 move。
+// 判定源变量 a 是否在后续语句中被**读取**引用。
+// 若未被读取引用 → moveEligible[stmt]=true（可 move）。
+//
+// 三项改进（相比旧版 flattenStmts + stmtContainsVarRef）：
+// 1. 读写区分：纯赋值目标（a = expr）不视为读引用
+// 2. 分支感知：互斥分支中的读引用不阻止 move
+// 3. 循环体：循环体内的读引用阻止 move（保守，正确）
 func (g *Generator) computeMoveEligibility(body *parser.BlockStatement) {
 	g.moveEligible = make(map[*parser.LetStatement]bool)
 	if body == nil {
 		return
 	}
-	stmts := flattenStmts(body.Statements)
-	for i, stmt := range stmts {
-		ls, ok := stmt.(*parser.LetStatement)
+	branchNodeCounter = 0 // 重置分支节点计数器，确保每个函数的分支 ID 从 0 开始
+	entries := flattenStmtsWithCtx(body.Statements, nil)
+	for i, entry := range entries {
+		ls, ok := entry.stmt.(*parser.LetStatement)
 		if !ok || ls.IsSynthetic {
 			continue
 		}
@@ -246,9 +279,20 @@ func (g *Generator) computeMoveEligibility(body *parser.BlockStatement) {
 		if !ok {
 			continue
 		}
+		// 分支感知改进仅对 move-to-out（输出参数）安全：
+		// - move-to-out 有运行时位图追踪（detectBranchMoveToOut + hasBranchMove），
+		//   可以安全地跳过互斥分支中的读引用。
+		// - move-to-local（局部变量间 b=a）无运行时位图追踪，
+		//   编译期 movedVarBitset 无法区分运行时分支，
+		//   互斥分支中的读引用必须仍然阻止 move（保守）。
+		canUseBranchAware := g.outputParamNames != nil && ls.Name != nil && g.outputParamNames[ls.Name.Value]
 		usedAfter := false
-		for j := i + 1; j < len(stmts); j++ {
-			if stmtContainsVarRef(stmts[j], ident.Value) {
+		for j := i + 1; j < len(entries); j++ {
+			// 仅对 move-to-out 跳过互斥分支
+			if canUseBranchAware && branchesMutuallyExclusive(entry.branchCtx, entries[j].branchCtx) {
+				continue
+			}
+			if stmtContainsVarRead(entries[j].stmt, ident.Value) {
 				usedAfter = true
 				break
 			}
@@ -257,24 +301,48 @@ func (g *Generator) computeMoveEligibility(body *parser.BlockStatement) {
 	}
 }
 
-// flattenStmts 将语句列表递归展开为一维列表（DFS 顺序），
-// 展开 if/for/while 体内的语句，保留执行顺序。
-func flattenStmts(stmts []parser.Statement) []parser.Statement {
-	var result []parser.Statement
+// branchesMutuallyExclusive 判定两个分支上下文是否互斥。
+// 互斥条件：两条 chain 共享公共前缀，但在相同分支节点处分叉到不同分支。
+// 例：[{1,0}]（then）和 [{1,1}]（else）互斥；
+//      [{1,0}] 和 nil（顶层）不互斥（then 汇合后回到顶层）。
+func branchesMutuallyExclusive(ctx1, ctx2 []branchNode) bool {
+	minLen := len(ctx1)
+	if len(ctx2) < minLen {
+		minLen = len(ctx2)
+	}
+	for k := 0; k < minLen; k++ {
+		if ctx1[k].nodeID == ctx2[k].nodeID && ctx1[k].branchIdx != ctx2[k].branchIdx {
+			// 在同一分支节点处分叉到不同分支 → 互斥
+			return true
+		}
+		if ctx1[k].nodeID != ctx2[k].nodeID {
+			// 分支节点不同 → 不是同一分支层次，不互斥
+			break
+		}
+	}
+	return false
+}
+
+// flattenStmtsWithCtx 将语句列表递归展开为一维列表，同时追踪分支上下文。
+// branchCtx 是当前语句列表所在的分支上下文链（nil = 顶层）。
+func flattenStmtsWithCtx(stmts []parser.Statement, branchCtx []branchNode) []flatStmtEntry {
+	var result []flatStmtEntry
 	for _, stmt := range stmts {
-		result = append(result, stmt)
+		result = append(result, flatStmtEntry{stmt: stmt, branchCtx: branchCtx})
 		switch s := stmt.(type) {
 		case *parser.ExpressionStatement:
-			result = append(result, flattenExprStmts(s.Expression)...)
+			result = append(result, flattenExprStmtsWithCtx(s.Expression, branchCtx)...)
 		case *parser.ForStatement:
 			if s.Init != nil {
-				result = append(result, flattenStmts([]parser.Statement{s.Init})...)
+				result = append(result, flattenStmtsWithCtx([]parser.Statement{s.Init}, branchCtx)...)
 			}
 			if s.Update != nil {
-				result = append(result, flattenStmts([]parser.Statement{s.Update})...)
+				result = append(result, flattenStmtsWithCtx([]parser.Statement{s.Update}, branchCtx)...)
 			}
 			if s.Body != nil {
-				result = append(result, flattenStmts(s.Body.Statements)...)
+				// 循环体不是分支互斥的（循环体在循环条件成立时执行），
+				// 用同一 branchCtx（不加新分支节点）
+				result = append(result, flattenStmtsWithCtx(s.Body.Statements, branchCtx)...)
 			}
 		case *parser.MultiAssignStatement:
 			// MultiAssign targets are expressions, not statements
@@ -283,72 +351,95 @@ func flattenStmts(stmts []parser.Statement) []parser.Statement {
 	return result
 }
 
-// flattenExprStmts 展开表达式语句中嵌套的块（if 表达式的 then/else 体）。
-func flattenExprStmts(expr parser.Expression) []parser.Statement {
-	var result []parser.Statement
-	collectNestedStmts(expr, &result)
+// flattenExprStmtsWithCtx 展开表达式语句中嵌套的块（if 表达式的 then/else 体），
+// 同时追踪分支上下文。
+func flattenExprStmtsWithCtx(expr parser.Expression, branchCtx []branchNode) []flatStmtEntry {
+	var result []flatStmtEntry
+	collectNestedStmtsWithCtx(expr, branchCtx, &result)
 	return result
 }
 
-func collectNestedStmts(expr parser.Expression, result *[]parser.Statement) {
+var branchNodeCounter int // 用于生成唯一分支节点 ID
+
+func collectNestedStmtsWithCtx(expr parser.Expression, branchCtx []branchNode, result *[]flatStmtEntry) {
 	switch e := expr.(type) {
 	case *parser.IfExpression:
+		// 为此 IfExpression 分配唯一 nodeID
+		nodeID := branchNodeCounter
+		branchNodeCounter++
+		// condition 在分支之前，沿用当前 branchCtx
+		if e.Condition != nil {
+			collectNestedStmtsWithCtx(e.Condition, branchCtx, result)
+		}
 		if e.Consequence != nil {
-			*result = append(*result, flattenStmts(e.Consequence.Statements)...)
+			thenCtx := append([]branchNode(nil), branchCtx...)
+			thenCtx = append(thenCtx, branchNode{nodeID: nodeID, branchIdx: 0})
+			*result = append(*result, flattenStmtsWithCtx(e.Consequence.Statements, thenCtx)...)
 		}
 		if e.Alternative != nil {
-			*result = append(*result, flattenStmts(e.Alternative.Statements)...)
+			elseCtx := append([]branchNode(nil), branchCtx...)
+			elseCtx = append(elseCtx, branchNode{nodeID: nodeID, branchIdx: 1})
+			*result = append(*result, flattenStmtsWithCtx(e.Alternative.Statements, elseCtx)...)
 		}
 	case *parser.InfixExpression:
-		collectNestedStmts(e.Left, result)
-		collectNestedStmts(e.Right, result)
+		collectNestedStmtsWithCtx(e.Left, branchCtx, result)
+		collectNestedStmtsWithCtx(e.Right, branchCtx, result)
 	case *parser.PrefixExpression:
-		collectNestedStmts(e.Right, result)
+		collectNestedStmtsWithCtx(e.Right, branchCtx, result)
 	case *parser.CallExpression:
-		collectNestedStmts(e.Function, result)
+		collectNestedStmtsWithCtx(e.Function, branchCtx, result)
 		for _, arg := range e.Arguments {
-			collectNestedStmts(arg, result)
+			collectNestedStmtsWithCtx(arg, branchCtx, result)
 		}
 	case *parser.GroupedExpression:
-		collectNestedStmts(e.Expression, result)
+		collectNestedStmtsWithCtx(e.Expression, branchCtx, result)
 	case *parser.ConditionalExpression:
-		collectNestedStmts(e.Condition, result)
-		collectNestedStmts(e.Consequence, result)
-		collectNestedStmts(e.Alternative, result)
+		// ConditionalExpression（三元条件）也是互斥分支
+		nodeID := branchNodeCounter
+		branchNodeCounter++
+		collectNestedStmtsWithCtx(e.Condition, branchCtx, result)
+		thenCtx := append([]branchNode(nil), branchCtx...)
+		thenCtx = append(thenCtx, branchNode{nodeID: nodeID, branchIdx: 0})
+		collectNestedStmtsWithCtx(e.Consequence, thenCtx, result)
+		elseCtx := append([]branchNode(nil), branchCtx...)
+		elseCtx = append(elseCtx, branchNode{nodeID: nodeID, branchIdx: 1})
+		collectNestedStmtsWithCtx(e.Alternative, elseCtx, result)
 	case *parser.AssignExpression:
 		if e.Left != nil {
-			collectNestedStmts(e.Left, result)
+			collectNestedStmtsWithCtx(e.Left, branchCtx, result)
 		}
 		if e.Value != nil {
-			collectNestedStmts(e.Value, result)
+			collectNestedStmtsWithCtx(e.Value, branchCtx, result)
 		}
 	}
 }
 
-// stmtContainsVarRef 检查语句中是否引用了指定变量名。
-// 赋值目标也视为引用（因为重赋值触发 freeOldHeapValue 读取旧值）。
-func stmtContainsVarRef(stmt parser.Statement, varName string) bool {
+// stmtContainsVarRead 检查语句中是否**读取**引用了指定变量名。
+// 与旧版 stmtContainsVarRef 的区别：纯赋值目标（如 a = [1,2,3]）不视为读引用，
+// 因为 freeOldHeapValue 会正确检测 moved 状态并跳过 free，move 是安全的。
+// 但 a = f(a) 这种 RHS 引用源变量的情况仍会返回 true（通过 exprContainsVarRead 检查 RHS）。
+func stmtContainsVarRead(stmt parser.Statement, varName string) bool {
 	switch s := stmt.(type) {
 	case *parser.LetStatement:
-		// 赋值目标视为引用（freeOldHeapValue 会读取旧值）
-		if s.Name != nil && s.Name.Value == varName {
-			return true
-		}
+		// 赋值目标（LHS）不视为读引用：
+		// freeOldHeapValue 在 move 后会检测 moved 状态并跳过 free，
+		// 所以 a = [1,2,3] 这种纯重赋值不会 use-after-move。
+		// 但 RHS 引用源变量（如 a = f(a)）仍然是读引用。
 		if s.Value != nil {
-			return exprContainsVarRef(s.Value, varName)
+			return exprContainsVarRead(s.Value, varName)
 		}
 	case *parser.ExpressionStatement:
-		return exprContainsVarRef(s.Expression, varName)
+		return exprContainsVarRead(s.Expression, varName)
 	case *parser.ForStatement:
-		if s.Condition != nil && exprContainsVarRef(s.Condition, varName) {
+		if s.Condition != nil && exprContainsVarRead(s.Condition, varName) {
 			return true
 		}
-		if s.CountExpr != nil && exprContainsVarRef(s.CountExpr, varName) {
+		if s.CountExpr != nil && exprContainsVarRead(s.CountExpr, varName) {
 			return true
 		}
 		if s.Body != nil {
 			for _, ss := range s.Body.Statements {
-				if stmtContainsVarRef(ss, varName) {
+				if stmtContainsVarRead(ss, varName) {
 					return true
 				}
 			}
@@ -356,12 +447,14 @@ func stmtContainsVarRef(stmt parser.Statement, varName string) bool {
 	case *parser.ReturnStatement:
 		// ReturnValue 始终为 nil
 	case *parser.MultiAssignStatement:
+		// MultiAssign targets（如 a, b = f()）不视为读引用，
+		// 但 targets 中的表达式可能引用变量（如 a[i], x = f()）
 		for _, t := range s.Targets {
-			if exprContainsVarRef(t, varName) {
+			if exprContainsVarRead(t, varName) {
 				return true
 			}
 		}
-		if s.Value != nil && exprContainsVarRef(s.Value, varName) {
+		if s.Value != nil && exprContainsVarRead(s.Value, varName) {
 			return true
 		}
 	case *parser.BreakStatement:
@@ -370,82 +463,83 @@ func stmtContainsVarRef(stmt parser.Statement, varName string) bool {
 	return false
 }
 
-// exprContainsVarRef 递归检查表达式中是否引用了指定变量名。
-func exprContainsVarRef(expr parser.Expression, varName string) bool {
+// exprContainsVarRead 递归检查表达式中是否**读取**引用了指定变量名。
+// 与旧版 exprContainsVarRef 的区别：在 AssignExpression 中，
+// 左值（赋值目标）不视为读引用。
+func exprContainsVarRead(expr parser.Expression, varName string) bool {
 	switch e := expr.(type) {
 	case *parser.Identifier:
 		return e.Value == varName
 	case *parser.InfixExpression:
-		return exprContainsVarRef(e.Left, varName) || exprContainsVarRef(e.Right, varName)
+		return exprContainsVarRead(e.Left, varName) || exprContainsVarRead(e.Right, varName)
 	case *parser.PrefixExpression:
-		return exprContainsVarRef(e.Right, varName)
+		return exprContainsVarRead(e.Right, varName)
 	case *parser.CallExpression:
-		if exprContainsVarRef(e.Function, varName) {
+		if exprContainsVarRead(e.Function, varName) {
 			return true
 		}
 		for _, arg := range e.Arguments {
-			if exprContainsVarRef(arg, varName) {
+			if exprContainsVarRead(arg, varName) {
 				return true
 			}
 		}
 	case *parser.DotExpression:
-		return exprContainsVarRef(e.Receiver, varName)
+		return exprContainsVarRead(e.Receiver, varName)
 	case *parser.IndexExpression:
-		return exprContainsVarRef(e.Left, varName) || exprContainsVarRef(e.Index, varName)
+		return exprContainsVarRead(e.Left, varName) || exprContainsVarRead(e.Index, varName)
 	case *parser.IfExpression:
-		if e.Condition != nil && exprContainsVarRef(e.Condition, varName) {
+		if e.Condition != nil && exprContainsVarRead(e.Condition, varName) {
 			return true
 		}
 		if e.Consequence != nil {
 			for _, ss := range e.Consequence.Statements {
-				if stmtContainsVarRef(ss, varName) {
+				if stmtContainsVarRead(ss, varName) {
 					return true
 				}
 			}
 		}
 		if e.Alternative != nil {
 			for _, ss := range e.Alternative.Statements {
-				if stmtContainsVarRef(ss, varName) {
+				if stmtContainsVarRead(ss, varName) {
 					return true
 				}
 			}
 		}
 	case *parser.SliceExpression:
-		if exprContainsVarRef(e.Left, varName) {
+		if exprContainsVarRead(e.Left, varName) {
 			return true
 		}
 		if e.Range != nil {
-			if e.Range.Start != nil && exprContainsVarRef(e.Range.Start, varName) {
+			if e.Range.Start != nil && exprContainsVarRead(e.Range.Start, varName) {
 				return true
 			}
-			if e.Range.End != nil && exprContainsVarRef(e.Range.End, varName) {
+			if e.Range.End != nil && exprContainsVarRead(e.Range.End, varName) {
 				return true
 			}
 		}
 	case *parser.SliceLiteral:
 		for _, elem := range e.Elements {
-			if exprContainsVarRef(elem, varName) {
+			if exprContainsVarRead(elem, varName) {
 				return true
 			}
 		}
 	case *parser.GroupedExpression:
-		return exprContainsVarRef(e.Expression, varName)
+		return exprContainsVarRead(e.Expression, varName)
 	case *parser.ConditionalExpression:
-		return exprContainsVarRef(e.Condition, varName) ||
-			exprContainsVarRef(e.Consequence, varName) ||
-			exprContainsVarRef(e.Alternative, varName)
+		return exprContainsVarRead(e.Condition, varName) ||
+			exprContainsVarRead(e.Consequence, varName) ||
+			exprContainsVarRead(e.Alternative, varName)
 	case *parser.AssignExpression:
-		if e.Left != nil && exprContainsVarRef(e.Left, varName) {
-			return true
-		}
-		if e.Value != nil && exprContainsVarRef(e.Value, varName) {
+		// 左值（赋值目标）不视为读引用
+		// 但右值（Value）中的引用仍然是读引用
+		if e.Value != nil && exprContainsVarRead(e.Value, varName) {
 			return true
 		}
 	case *parser.RangeExpression:
-		if e.Start != nil && exprContainsVarRef(e.Start, varName) {
+		if e.Start != nil && exprContainsVarRead(e.Start, varName) {
 			return true
 		}
-		if e.End != nil && exprContainsVarRef(e.End, varName) {
+		if e.End != nil && exprContainsVarRead(e.End, varName) {
 			return true
 		}
 	// Literals (Integer, Float, String, Char, Byte, Boolean, Nil) — no refs

@@ -1177,6 +1177,8 @@ func CollectDefinedVars(program *parser.Program) map[string]bool {
 	return definedVars
 }
 func ValidateUndefinedVars(program *parser.Program, rootDir string) []ValidateResult {
+	validationMu.Lock()
+	defer validationMu.Unlock()
 	var results []ValidateResult
 
 	// 1. Collect all defined names (shared first pass)
@@ -1833,6 +1835,8 @@ func ValidateUseAlias(program *parser.Program) []ValidateResult {
 	return results
 }
 func ValidateRedundantTypeAnnotation(program *parser.Program) []ValidateResult {
+	validationMu.Lock()
+	defer validationMu.Unlock()
 	var results []ValidateResult
 	// Build funcTypes for inferExprType
 	validationFuncTypes = make(map[string]string)
@@ -2339,6 +2343,8 @@ func checkHexCaseInExpr(expr parser.Expression) []ValidateResult {
 	return results
 }
 func ValidatePrintFormat(program *parser.Program) []ValidateResult {
+	validationMu.Lock()
+	defer validationMu.Unlock()
 	var results []ValidateResult
 
 	// 收集 struct 欄位型別資訊，用於解析結構欄位存取
@@ -5193,10 +5199,11 @@ type funcSig struct {
 }
 var validationStructFields map[string]map[string]string
 
-// validationMu protects validationStructFields and validationConcreteTypeAliases
-// from concurrent writes during parallel vet/build. ValidateTypes writes these
-// globals; ValidateFuncArgs reads them. Without the mutex, parallel goroutines
-// racing on the map writes cause "concurrent map writes" fatal panics.
+// validationMu protects validationStructFields, validationConcreteTypeAliases,
+// validationFuncTypes, and validationStructNames from concurrent writes during
+// parallel vet/build (e.g. LSP server processes multiple documents concurrently).
+// Without the mutex, parallel goroutines racing on the map writes cause
+// "concurrent map writes" fatal panics.
 var validationMu sync.Mutex
 func isValidationIntType(t string) bool {
 	switch t {

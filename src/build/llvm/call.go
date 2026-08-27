@@ -3465,6 +3465,41 @@ func (g *Generator) inferFieldElemType(dot *parser.DotExpression) string {
 	return ""
 }
 
+// inferFieldElemElemType looks up the inner element type (elemElemType) for
+// nested container fields like [][]str (where elemType="%vec" and elemElemType="%str-long")
+// from the struct field definition in structTypes.
+// Returns the LLVM type string (e.g. "%str-long", "i64") or "" if not found.
+func (g *Generator) inferFieldElemElemType(dot *parser.DotExpression) string {
+	if dot == nil {
+		return ""
+	}
+	// Try to get the struct name from the receiver
+	recvName := ""
+	if ident, ok := dot.Receiver.(*parser.Identifier); ok {
+		recvName = ident.Value
+	}
+	if recvName == "" {
+		return ""
+	}
+	structName := ""
+	if t, ok := g.varTypes[recvName]; ok {
+		structName = strings.TrimPrefix(t, "%")
+	}
+	if structName == "" {
+		return ""
+	}
+	fields, ok := g.structTypes[structName]
+	if !ok {
+		return ""
+	}
+	for _, f := range fields {
+		if f.name == dot.Property && (f.typ == "%vec" || f.typ == "%arr") {
+			return f.elemElemType
+		}
+	}
+	return ""
+}
+
 // genForwardFunc handles ForwardFunc builtins: memcpy (str.copy), memcmp (str.eq), memset (str-fill).
 // receiver is non-nil for method-style calls (e.g. a.eq(b, n)); nil for global function calls.
 // Returns the SSA register for the result, or "" for void functions.
@@ -3966,16 +4001,24 @@ func (g *Generator) genForwardFunc(sb *strings.Builder, forwardFunc string, expr
 				cloneSrc := fmt.Sprintf("%%vp.csrc.%d", g.tmpIdx)
 				sb.WriteString(fmt.Sprintf("%s%s = alloca %s\n", g.indent(), cloneSrc, elemType))
 				sb.WriteString(fmt.Sprintf("%sstore %s %s, %s* %s\n", g.indent(), elemType, storeVal, elemType, cloneSrc))
-				// 嵌套容器（[][]T）：emitDeepClone 的 elemType 參數是容器的元素型別。
-				// 對於 %vec 元素，其元素型別由 elemElemTypes[recvName] 決定。
-				// elemElemType 參數僅用於三層嵌套（如 [][][]T），此處為空。
-				innerElemType := ""
-				if elemType == "%vec" || elemType == "%arr" {
-					if g.elemElemTypes != nil && recvName != "" {
-						innerElemType = g.elemElemTypes[recvName]
+			// 嵌套容器（[][]T）：emitDeepClone 的 elemType 參數是容器的元素型別。
+			// 對於 %vec 元素，其元素型別由 elemElemTypes[recvName] 決定。
+			// 對於 struct field 接收者（如 m1.rows），elemElemTypes 不含 "m1.rows" 鍵，
+			// 需從 structTypes 的欄位定義中推導（inferFieldElemElemType）。
+			// elemElemType 參數僅用於三層嵌套（如 [][][]T），此處為空。
+			innerElemType := ""
+			if elemType == "%vec" || elemType == "%arr" {
+				if g.elemElemTypes != nil && recvName != "" {
+					innerElemType = g.elemElemTypes[recvName]
+				}
+				// Fallback for DotExpression receivers: look up from struct field definition
+				if innerElemType == "" {
+					if dot, ok := args[0].(*parser.DotExpression); ok {
+						innerElemType = g.inferFieldElemElemType(dot)
 					}
 				}
-				g.emitDeepClone(sb, cloneSrc, elemGEP, elemType, innerElemType)
+			}
+			g.emitDeepClone(sb, cloneSrc, elemGEP, elemType, innerElemType)
 			} else {
 				sb.WriteString(fmt.Sprintf("%sstore %s %s, %s* %s\n", g.indent(), elemType, storeVal, elemType, elemGEP))
 			}
@@ -4062,14 +4105,20 @@ func (g *Generator) genForwardFunc(sb *strings.Builder, forwardFunc string, expr
 				cloneSrc2 := fmt.Sprintf("%%vp.csrc2.%d", g.tmpIdx)
 				sb.WriteString(fmt.Sprintf("%s%s = alloca %s\n", g.indent(), cloneSrc2, elemType))
 				sb.WriteString(fmt.Sprintf("%sstore %s %s, %s* %s\n", g.indent(), elemType, storeVal, elemType, cloneSrc2))
-				// 嵌套容器（[][]T）：emitDeepClone 的 elemType 參數是容器的元素型別。
-				innerElemType2 := ""
-				if elemType == "%vec" || elemType == "%arr" {
-					if g.elemElemTypes != nil && recvName != "" {
-						innerElemType2 = g.elemElemTypes[recvName]
+			// 嵌套容器（[][]T）：emitDeepClone 的 elemType 參數是容器的元素型別。
+			innerElemType2 := ""
+			if elemType == "%vec" || elemType == "%arr" {
+				if g.elemElemTypes != nil && recvName != "" {
+					innerElemType2 = g.elemElemTypes[recvName]
+				}
+				// Fallback for DotExpression receivers: look up from struct field definition
+				if innerElemType2 == "" {
+					if dot, ok := args[0].(*parser.DotExpression); ok {
+						innerElemType2 = g.inferFieldElemElemType(dot)
 					}
 				}
-				g.emitDeepClone(sb, cloneSrc2, newElemGEP, elemType, innerElemType2)
+			}
+			g.emitDeepClone(sb, cloneSrc2, newElemGEP, elemType, innerElemType2)
 			} else {
 				sb.WriteString(fmt.Sprintf("%sstore %s %s, %s* %s\n", g.indent(), elemType, storeVal, elemType, newElemGEP))
 			}
