@@ -631,9 +631,18 @@ func (p *Parser) parseTypeExpression() (Type, bool) {
 			}
 			return nil, false
 		}
+		// Element type after [N]: could be "net.conn" (dotted) or "i64" (simple).
 		elemName := p.currentToken.Literal
 		elemTok := p.currentToken
 		p.nextToken()
+		// Support dotted/qualified type names: net.conn, tls.conn, sql.result, etc.
+		for p.currentToken.Type == lexer.DOT {
+			p.nextToken() // skip DOT
+			if p.currentToken.Type == lexer.IDENT {
+				elemName += "." + p.currentToken.Literal
+				p.nextToken() // skip IDENT part
+			}
+		}
 		return &ArrayType{Token: startTok, Size: sizeExpr, Elem: &NamedType{Token: elemTok, Value: elemName}}, true
 	case lexer.QUESTION:
 		// ?T

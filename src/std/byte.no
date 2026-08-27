@@ -13,6 +13,12 @@
 ;
 ;   [n]byte 與 []byte 互轉請使用 arr.to-vec() / []byte.to-arr()
 
+; []byte.len: 回傳位元組切片長度
+; byte 是獨立類型，非 u8 別名，因此 []byte.len 不會從 []t.len 自動實例化。
+[]byte.len = () (out i64) {
+    out = .len
+}
+
 ; i64.to-bytes-be: 將 int64 轉為大端序 8 位元組
 i64.to-bytes-be = () (out [?]byte) {
     out[0] = (. >> 56) & 255

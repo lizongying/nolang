@@ -9,10 +9,11 @@ package checker
 func init() {
 	embeddedStdSigReady = true
 	embeddedStdSigVersion = 1
-	embeddedStdSigKey = "8b6432cce9c0958f875ae130b602cd7b8b7b4b1a1cf00e3cf23baf774805937d"
+	embeddedStdSigKey = "fa462de3f3722a2cecd446672fc0d94728910f7a6ca1ab8b43617ae95e9dcd9b"
 	embeddedStdFuncSigs = map[string][]string{
 		"[]byte.index":                     {"i64"},
 		"[]byte.index-from":                {"i64"},
+		"[]byte.len":                       {"i64"},
 		"[]byte.slice":                     {"[]byte"},
 		"[]byte.to-hex":                    {"str"},
 		"[]byte.to-hex-lower":              {"str"},
@@ -358,6 +359,8 @@ func init() {
 		"pbkdf2.pbkdf2-hmac-sha512":                {"[]byte"},
 		"pem.pem-decode":                           {"?pem-block"},
 		"pem.pem-encode":                           {"str"},
+		"pool.create":                              {"pool"},
+		"pool.with-size":                           {"pool"},
 		"process.cmd":                              {"str", "str", "i64", "str"},
 		"process.exec":                             {"exec-result"},
 		"process.find-by-name":                     {"[]i64"},
@@ -830,6 +833,10 @@ func init() {
 		"path.path.rename":                                 {"bool"},
 		"path.path.size":                                   {"i64"},
 		"path.path.split":                                  {"str"},
+		"pool.pool.active-count":                           {"i64"},
+		"pool.pool.get":                                    {"?net.conn"},
+		"pool.pool.idle-count":                             {"i64"},
+		"pool.pool.total-count":                            {"i64"},
 		"process.process.exit-code-of":                     {"i64"},
 		"process.process.force-kill":                       {"bool"},
 		"process.process.is-running":                       {"bool"},
@@ -1593,6 +1600,14 @@ func init() {
 			"data":  "[]byte",
 			"label": "str",
 		},
+		"pool": {
+			"conns":    "[32]net.conn",
+			"count":    "i64",
+			"host":     "str",
+			"in-use":   "[32]bool",
+			"max-size": "i64",
+			"port":     "i64",
+		},
 		"proc-info": {
 			"name": "str",
 			"pid":  "i64",
@@ -2056,6 +2071,7 @@ func init() {
 		"multipart-writer":         "multipart",
 		"path":                     "path",
 		"pem-block":                "pem",
+		"pool":                     "pool",
 		"proc-info":                "process",
 		"process":                  "process",
 		"queue":                    "queue",
