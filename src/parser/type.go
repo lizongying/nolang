@@ -563,6 +563,14 @@ func (p *Parser) parseTypeExpression() (Type, bool) {
 		name := p.currentToken.Literal
 		t := p.currentToken
 		p.nextToken()
+		// Support dotted/qualified type names: net.conn, tls.conn, sql.result, etc.
+		for p.currentToken.Type == lexer.DOT {
+			p.nextToken() // skip DOT
+			if p.currentToken.Type == lexer.IDENT {
+				name += "." + p.currentToken.Literal
+				p.nextToken() // skip IDENT part
+			}
+		}
 		return &NamedType{Token: t, Value: name}, true
 	case lexer.LBRACKET:
 		p.nextToken() // skip [

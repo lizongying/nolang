@@ -20,14 +20,28 @@ func (f *formatter) formatStructDefinition(s *parser.StructDefinition) {
 		f.write(field.Name)
 		f.write(" ")
 		if field.IsSlice {
-			f.write("[]")
-			if field.Type != nil {
+			// When the field type is itself a SliceType (e.g. [][]i64), Type.String()
+			// already includes the leading "[]". Writing an extra "[]" here would
+			// cause non-idempotent formatting: [][]i64 → [][][]i64 → [][][][]i64.
+			if _, isSliceType := field.Type.(*parser.SliceType); isSliceType {
 				f.write(field.Type.String())
+			} else {
+				f.write("[]")
+				if field.Type != nil {
+					f.write(field.Type.String())
+				}
 			}
 		} else if field.ArraySize > 0 {
-			f.writef("[%d]", field.ArraySize)
-			if field.Type != nil {
+			// When the field type is itself an ArrayType (e.g. [16][16]byte),
+			// Type.String() already includes the leading "[N]". Writing an extra
+			// "[N]" would cause non-idempotent formatting.
+			if _, isArrayType := field.Type.(*parser.ArrayType); isArrayType {
 				f.write(field.Type.String())
+			} else {
+				f.writef("[%d]", field.ArraySize)
+				if field.Type != nil {
+					f.write(field.Type.String())
+				}
 			}
 		} else {
 			if field.Type != nil {

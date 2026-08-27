@@ -2873,3 +2873,100 @@ func TestFormatScalarSlicePerLine8(t *testing.T) {
 		})
 	}
 }
+
+// TestFormatMultidimTypeRegression tests that multi-dimensional slice and array
+// types in struct fields are formatted idempotently. Previously, [][]i64 would
+// become [][][]i64 on each format pass because the formatter wrote an extra "[]"
+// before the full type string (which already included "[]").
+func TestFormatMultidimTypeRegression(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		expected string
+	}{
+		{
+			name:     "struct field [][]i64",
+			input:    "heap {\n    data [][]i64\n    n i64\n}",
+			expected: "heap {\n    data [][]i64\n    n i64\n}",
+		},
+		{
+			name:     "struct field [16][16]byte",
+			input:    "grid {\n    cells [16][16]byte\n}",
+			expected: "grid {\n    cells [16][16]byte\n}",
+		},
+		{
+			name:     "struct field [][][]str",
+			input:    "cube {\n    data [][][]str\n}",
+			expected: "cube {\n    data [][][]str\n}",
+		},
+		{
+			name:     "struct field [8][8][8]i64",
+			input:    "tensor {\n    data [8][8][8]i64\n}",
+			expected: "tensor {\n    data [8][8][8]i64\n}",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := Format(tt.input)
+			if result != tt.expected {
+				t.Errorf("Format(%q) = %q, want %q", tt.input, result, tt.expected)
+			}
+			// Idempotency: second format must match
+			result2 := Format(result)
+			if result2 != result {
+				t.Errorf("not idempotent:\nfirst:\n%s\nsecond:\n%s", result, result2)
+			}
+		})
+	}
+}
+
+// TestFormatMultiIndexAssignRegression tests that multi-dimensional index
+// assignment like names[count][j] = value is correctly parsed and formatted
+// (not misidentified as a nested type annotation).
+func TestFormatMultiIndexAssignRegression(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		expected string
+	}{
+		{
+			name: "double index assignment",
+			input: `copy-data = (src []str, dst [][]str, count i64) {
+    j <- [0..src.len): {
+        dst[count][j] = src[j]
+    }
+}`,
+			expected: `copy-data = (src []str, dst [][]str, count i64) {
+    j <- [0..src.len): {
+        dst[count][j] = src[j]
+    }
+}`,
+		},
+		{
+			name: "double index with dot method",
+			input: `test = () {
+    names[count].len = 5
+    values[count][j] = data[j]
+}`,
+			expected: `test = () {
+    names[count].len = 5
+    values[count][j] = data[j]
+}`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := Format(tt.input)
+			if result != tt.expected {
+				t.Errorf("Format(%q) = %q, want %q", tt.input, result, tt.expected)
+			}
+			// Idempotency
+			result2 := Format(result)
+			if result2 != result {
+				t.Errorf("not idempotent:\nfirst:\n%s\nsecond:\n%s", result, result2)
+			}
+		})
+	}
+}

@@ -153,9 +153,16 @@ func (p *Parser) parseStatement() Statement {
 			}
 		} else if p.peekToken.Type == lexer.LBRACKET {
 			// 检查是否为索引 a[i]、切片 a[..] 或数组类型标注 a [3] / a [3]u16
+			// Nolang 类型标注使用 "name [N]T"（name 和 [ 之间有空格），
+			// 而索引使用 "name[i]"（name 和 [ 紧连）。
+			// 通过比较 IDENT 结束列和 LBRACKET 列来区分。
 			state := p.saveState()
-			p.nextToken() // skip IDENT
-			p.nextToken() // skip LBRACKET
+			identTok := p.currentToken // save IDENT before skipping
+			p.nextToken()              // skip IDENT
+			lbracketTok := p.currentToken // save LBRACKET position
+			p.nextToken()              // skip LBRACKET
+			// hasSpaceBetweenIdentAndBracket: true when "name [" (type annotation form)
+			hasSpaceBeforeBracket := lbracketTok.Column > identTok.Column+len(identTok.Literal)
 			isRange := p.currentToken.Type == lexer.ELLIPSIS ||
 				((p.currentToken.Type == lexer.INT || p.currentToken.Type == lexer.IDENT) && p.peekToken.Type == lexer.ELLIPSIS)
 			// Check for array declaration: [N]type followed by =, or [N] followed by = [...]
@@ -186,16 +193,23 @@ func (p *Parser) parseStatement() Statement {
 						// No element type but RHS is array literal: a [3] = [1, 2, 3]
 						isArrayDecl = true
 					} else if p.currentToken.Type == lexer.LBRACKET || p.currentToken.Type == lexer.IDENT {
-						// Nested type: a [N][M]T, a [str][]str, a [][]str, etc.
-						// Skip remaining type tokens to confirm it's a type annotation
-						// Stop at ASSIGN, NEWLINE, EOF, or SEMICOLON
-						for p.currentToken.Type != lexer.ASSIGN &&
-							p.currentToken.Type != lexer.NEWLINE &&
-							p.currentToken.Type != lexer.EOF &&
-							p.currentToken.Type != lexer.SEMICOLON {
-							p.nextToken()
+						// Could be nested type: a [N][M]T, a [str][]str, a [][]str, etc.
+						// OR multi-dimensional index: a[idx][j] = value
+						// Distinguish: type annotation has space before bracket
+						// (e.g. "data [][]i64"), while index access does not
+						// (e.g. "names[count][j]").
+						if hasSpaceBeforeBracket {
+							// Skip remaining type tokens to confirm it's a type annotation
+							// Stop at ASSIGN, NEWLINE, EOF, or SEMICOLON
+							for p.currentToken.Type != lexer.ASSIGN &&
+								p.currentToken.Type != lexer.NEWLINE &&
+								p.currentToken.Type != lexer.EOF &&
+								p.currentToken.Type != lexer.SEMICOLON {
+								p.nextToken()
+							}
+							isArrayDecl = true
 						}
-						isArrayDecl = true
+						// else: treat as index expression, not array decl
 					}
 				}
 			}
