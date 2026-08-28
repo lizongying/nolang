@@ -3917,31 +3917,21 @@ func collectStdSigsFromFS(fsys fs.FS) (map[string][]string, map[string][]string,
 		}
 		for _, stmt := range m.prog.Statements {
 			if fd, ok := stmt.(*parser.FunctionDefinition); ok {
-				if len(fd.Results) > 0 {
-					rets := make([]string, len(fd.Results))
-					for i, r := range fd.Results {
-						rets[i] = qualifyRet(r.Type.String(), m.info.ShortName, ownStructs)
-					}
-					// Nolang 強制要求模組函數以 "module.fn" 形式調用
-					//（全局函數 print/eprint/format/with-cap/with-len/with-cap-len
-					// 除外，但它們由編譯器內建實現，不在 std .no 中定義，
-					// 不會被收集到簽名表）。因此模組函數統一以
-					// "module.fn" 為鍵，不再存儲裸名鍵。
-					if fd.IsMethodDef {
-						// 方法定義：fd.Name 形如 "struct.method" 或
-						// "[n]t.method"/"[]t.method"（陣列/切片型別方法）。
-						// 結構體方法以 "module.struct.method" 為鍵存入 methodSigs。
-						// 陣列/切片型別方法仍存入 funcSigs（鍵為 fd.Name），
-						// 因為 receiverType 是型別字串（如 [n]t、[]t）而非
-						// 模組限定的結構體名，無法以 module.type.method 查找。
-						if len(fd.Name) > 0 && fd.Name[0] == '[' {
-							funcSigs[fd.Name] = rets
-						} else {
-							methodSigs[m.info.ShortName+"."+fd.Name] = rets
-						}
+				// 收集所有函數/方法的簽名，包括無返回值的方法
+				// （如 sort 的 [n]ord.sort-asc / []ord.sort-asc）。
+				// 無 results 時存入空 slice，使 type inference 能正確識別。
+				rets := make([]string, 0)
+				for _, r := range fd.Results {
+					rets = append(rets, qualifyRet(r.Type.String(), m.info.ShortName, ownStructs))
+				}
+				if fd.IsMethodDef {
+					if len(fd.Name) > 0 && fd.Name[0] == '[' {
+						funcSigs[fd.Name] = rets
 					} else {
-						funcSigs[m.info.ShortName+"."+fd.Name] = rets
+						methodSigs[m.info.ShortName+"."+fd.Name] = rets
 					}
+				} else {
+					funcSigs[m.info.ShortName+"."+fd.Name] = rets
 				}
 			}
 			if sd, ok := stmt.(*parser.StructDefinition); ok {

@@ -75,41 +75,37 @@ fmt-parse-spec = (spec str) (fill i64, align i64, sign i64, alt i64, zero i64, w
             i = 2
         }
     }
-    {
-        i == 0 && n > 0 -> {
-            c0 = spec[0]
-            c0 == 60 || c0 == 62 || c0 == 61 || c0 == 94 -> {
-                align-v = c0
-                i = 1
-            }
+    ; align only (no fill)
+    i == 0 && n > 0 -> {
+        c0 = spec[0]
+        c0 == 60 || c0 == 62 || c0 == 61 || c0 == 94 -> {
+            align-v = c0
+            i = 1
         }
-        i < n -> {
+    }
 
-            ; sign: + - 或空格
-
-            c = spec[i]
-            c == 43 || c == 45 || c == 32 -> {
-                sign-v = c
-                i = i + 1
-            }
+    ; sign: + - 或空格
+    i < n -> {
+        c = spec[i]
+        c == 43 || c == 45 || c == 32 -> {
+            sign-v = c
+            i = i + 1
         }
-        i < n -> {
-            spec[i] == 35 -> {
+    }
 
-                ; alt: #
-
-                alt-v = 1
-                i = i + 1
-            }
+    ; alt: #
+    i < n -> {
+        spec[i] == 35 -> {
+            alt-v = 1
+            i = i + 1
         }
-        i < n -> {
-            spec[i] == 48 -> {
+    }
 
-                ; zero: 0
-
-                zero-v = 1
-                i = i + 1
-            }
+    ; zero: 0
+    i < n -> {
+        spec[i] == 48 -> {
+            zero-v = 1
+            i = i + 1
         }
     }
 
@@ -126,36 +122,33 @@ fmt-parse-spec = (spec str) (fill i64, align i64, sign i64, alt i64, zero i64, w
     i = last-wi
 
     ; grouping: , 或 _
-    {
-        i < n -> {
-            c = spec[i]
-            c == 44 || c == 95 -> {
-                grouping-v = c
-                i = i + 1
+    i < n -> {
+        c = spec[i]
+        c == 44 || c == 95 -> {
+            grouping-v = c
+            i = i + 1
+        }
+    }
+
+    ; precision: . 後接連續數字
+    i < n -> {
+        spec[i] == 46 -> {
+            i = i + 1
+            precision-v = 0
+            last-pi = i
+            pi <- [i..n): {
+                c = spec[pi]
+                c < 48 || c > 57 -> break
+                precision-v = precision-v * 10 + c - 48
+                last-pi = pi + 1
             }
+            i = last-pi
         }
-        i < n -> {
-            spec[i] == 46 -> {
+    }
 
-                ; precision: . 後接連續數字
-
-                i = i + 1
-                precision-v = 0
-                last-pi = i
-                pi <- [i..n): {
-                    c = spec[pi]
-                    c < 48 || c > 57 -> break
-                    precision-v = precision-v * 10 + c - 48
-                    last-pi = pi + 1
-                }
-                i = last-pi
-            }
-        }
-        i < n -> {
-
-            ; type: 剩餘單一字元
-            typ-v = spec[i]
-        }
+    ; type: 剩餘單一字元
+    i < n -> {
+        typ-v = spec[i]
     }
 
     ; 最終指派（頂層，output param 指派在此生效）
@@ -273,6 +266,13 @@ fmt-int = (n i64, spec str) (out str) {
         body str = with-cap(1)
         body[0] = n & 255
         out = fmt-apply-spec(body, fill, align, width)
+        return
+    }
+
+    ; hex/oct/bin 類型：委託 fmt-uint 處理（將 i64 位模式轉為 u64）
+    typ == 98 || typ == 111 || typ == 120 || typ == 88 -> {
+        u u64 = n
+        out = fmt-uint(u, spec)
         return
     }
 

@@ -538,6 +538,21 @@ func (g *Generator) generateCallArg(sb *strings.Builder, arg parser.Expression) 
 			//    Handles Identifier receivers (cfg.field) and chained access
 			//    (a.b.field) by using exprResultLLVMType as fallback.
 			if dot, ok := arg.(*parser.DotExpression); ok {
+				// For struct-typed fields, generate the GEP pointer directly
+				// instead of load+alloca+store. This is critical for method
+				// call receivers (e.g. j.pool.parse()): the method modifies the
+				// struct in-place via the self pointer. A value copy would
+				// discard all mutations and may contain uninitialized data.
+				fieldElemType := g.exprResultLLVMType(arg)
+				if fieldElemType != "" && fieldElemType != "i64" && g.isStructLLVMType(fieldElemType) {
+					ptrType = fieldElemType + "*"
+					if sb != nil {
+						ptrAddr := g.generateExprPtr(sb, arg)
+						if ptrAddr != "" {
+							return ptrType + " " + ptrAddr
+						}
+					}
+				}
 				if ident, ok := dot.Receiver.(*parser.Identifier); ok {
 					if g.varTypes != nil {
 						if t, ok := g.varTypes[ident.Value]; ok && g.isStructLLVMType(t) {
@@ -918,6 +933,25 @@ func (g *Generator) generateCallExpression(sb *strings.Builder, expr *parser.Cal
 			} else if _, ok := dot.Receiver.(*parser.IndexExpression); ok {
 				// 陣列元素接收者（如 names[i].slice(0, nlen)）
 				// 透過 exprResultLLVMType 推導元素型別，再映射到 nolang 型別名查找方法
+				elemType := g.exprResultLLVMType(dot.Receiver)
+				srcType := strings.TrimPrefix(elemType, "%")
+				candidates := []string{srcType}
+				if primAliases, ok := llvmTypeToNolang[srcType]; ok {
+					candidates = append(candidates, primAliases...)
+				}
+				for _, cand := range candidates {
+					shortName := cand + "." + dot.Property
+					if g.funcRetTypes != nil {
+						if _, ok := g.funcRetTypes[shortName]; ok {
+							innerFnName = shortName
+							innerMethodRecv = dot.Receiver
+							break
+						}
+					}
+				}
+			} else if _, ok := dot.Receiver.(*parser.DotExpression); ok {
+				// 結構欄位接收者（如 j.pool.parse(s, 0)）
+				// 透過 exprResultLLVMType 推導欄位型別，再映射到 nolang 型別名查找方法
 				elemType := g.exprResultLLVMType(dot.Receiver)
 				srcType := strings.TrimPrefix(elemType, "%")
 				candidates := []string{srcType}

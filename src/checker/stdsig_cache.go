@@ -36,7 +36,7 @@ import (
 // the normal `no build` path never reads stdProgramsCache (it is only consumed
 // by `no vet --reuse-std-ast`, which safely falls back to re-parse).
 
-const stdSigCacheVersion = 2
+const stdSigCacheVersion = 3
 
 // stdSigCachePayload is the on-disk representation of the four signature tables
 // produced by CollectStdModuleSignatures, plus the lexed token sequences of all

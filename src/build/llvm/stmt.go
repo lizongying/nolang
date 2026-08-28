@@ -2949,6 +2949,14 @@ func (g *Generator) generateFunctionDefinition(sb *strings.Builder, fd *parser.F
 	// Reset itAllocTypes per function to prevent type leakage from prior functions
 	g.itAllocTypes = make(map[string]string)
 	g.collectVarDeclsFromStmt(fd.Body, localVarTypes)
+	// Post-pass: re-evaluate synthetic `it` variable types now that all
+	// optionInnerTypes have been populated. During the initial pass, synthetic
+	// `it = source` bindings may have been processed before `source`'s
+	// optionInnerType was set (e.g. `s = json.parse(...)` appears after the
+	// match desugar's `it = s`). This causes `it` to default to i64 (8 bytes)
+	// while the actual struct (e.g. %json.json = 10000 bytes) overflows the
+	// alloca during deep clone.
+	g.recollectSyntheticItTypes(fd.Body, localVarTypes)
 	for k, v := range localVarTypes {
 		g.varTypes[k] = v
 		g.funcLocalNames[k] = true
@@ -3897,6 +3905,9 @@ func (g *Generator) varLLVMType(stmt *parser.LetStatement) string {
 			}
 			// Check funcRetTypes for non-builtin functions (e.g. module functions like degrees)
 			if g.funcRetTypes != nil {
+				if os.Getenv("NOLANG_DEBUG_IT") != "" {
+					fmt.Fprintf(os.Stderr, "[debug-it] CallExpression ident name=%q funcRetTypes[name]=%q exists=%v\n", name, g.funcRetTypes[name], func() bool { _, ok := g.funcRetTypes[name]; return ok }())
+				}
 				if t, ok := g.funcRetTypes[name]; ok && t != "void" {
 					return t
 				}
@@ -3918,14 +3929,27 @@ func (g *Generator) varLLVMType(stmt *parser.LetStatement) string {
 					lookupNames = append(lookupNames, name[idx+1:])
 				}
 				for _, lookupName := range lookupNames {
+					if os.Getenv("NOLANG_DEBUG_IT") != "" {
+						_, ok1 := g.funcNumResults[lookupName]
+						fmt.Fprintf(os.Stderr, "[debug-it]   lookupName=%q funcNumResults exists=%v\n", lookupName, ok1)
+					}
 					if n, ok := g.funcNumResults[lookupName]; ok && n == 1 {
 						if g.funcResultLLVMType != nil {
-							if ts, ok := g.funcResultLLVMType[lookupName]; ok && len(ts) == 1 {
+							if ts, ok2 := g.funcResultLLVMType[lookupName]; ok2 && len(ts) == 1 {
 								retType := ts[0]
+								if os.Getenv("NOLANG_DEBUG_IT") != "" {
+									fmt.Fprintf(os.Stderr, "[debug-it]   funcResultLLVMType[%q]=%q returning\n", lookupName, retType)
+								}
 								if retType == "i1" {
 									retType = "i64"
 								}
 								return retType
+							} else if os.Getenv("NOLANG_DEBUG_IT") != "" {
+								if ok2 {
+									fmt.Fprintf(os.Stderr, "[debug-it]   funcResultLLVMType[%q] found but len=%d\n", lookupName, len(ts))
+								} else {
+									fmt.Fprintf(os.Stderr, "[debug-it]   funcResultLLVMType[%q] NOT FOUND\n", lookupName)
+								}
 							}
 						}
 					}
@@ -3964,6 +3988,25 @@ func (g *Generator) varLLVMType(stmt *parser.LetStatement) string {
 							if n, ok := g.funcNumResults[lookupName]; ok && n == 1 {
 								if g.funcResultLLVMType != nil {
 									if ts, ok := g.funcResultLLVMType[lookupName]; ok && len(ts) == 1 {
+										retType := ts[0]
+										if retType == "i1" {
+											retType = "i64"
+										}
+										return retType
+									}
+								}
+							}
+						}
+						// Fallback: module merge may have renamed the function
+						// (e.g. "json.parse" → "json.json.parse"). Try matching by suffix:
+						// find a key in funcResultLLVMType that ends with "." + property
+						// and whose prefix starts with the receiver name.
+						suffix := "." + dot.Property
+						for key, ts := range g.funcResultLLVMType {
+							if strings.HasSuffix(key, suffix) && len(ts) == 1 {
+								prefix := key[:len(key)-len(suffix)]
+								if strings.HasPrefix(prefix, recvIdent.Value) {
+									if n, ok := g.funcNumResults[key]; ok && n == 1 {
 										retType := ts[0]
 										if retType == "i1" {
 											retType = "i64"
@@ -4394,15 +4437,35 @@ func (g *Generator) inferOptionInnerType(stmt *parser.LetStatement) string {
 				fnName = "str." + dot.Property
 			}
 		}
-	if fnName != "" && g.funcResultInnerTypes != nil {
-		if innerTypes, ok := g.funcResultInnerTypes[fnName]; ok && len(innerTypes) >= 1 && innerTypes[0] != "" {
-			return innerTypes[0]
-		}
-		// Fallback: try short name without module prefix (e.g. "http.do-req" → "do-req")
-		if idx := strings.Index(fnName, "."); idx >= 0 {
-			shortName := fnName[idx+1:]
-			if innerTypes, ok := g.funcResultInnerTypes[shortName]; ok && len(innerTypes) >= 1 && innerTypes[0] != "" {
+		if fnName != "" && g.funcResultInnerTypes != nil {
+			if innerTypes, ok := g.funcResultInnerTypes[fnName]; ok && len(innerTypes) >= 1 && innerTypes[0] != "" {
 				return innerTypes[0]
+			}
+			// Fallback: try short name without module prefix (e.g. "http.do-req" → "do-req")
+			if idx := strings.Index(fnName, "."); idx >= 0 {
+				shortName := fnName[idx+1:]
+				if innerTypes, ok := g.funcResultInnerTypes[shortName]; ok && len(innerTypes) >= 1 && innerTypes[0] != "" {
+					return innerTypes[0]
+				}
+			}
+			// Fallback: module merge may have renamed the function (e.g. "json.parse" → "json.json.parse").
+			// Try matching by suffix: find a key in funcResultInnerTypes that ends with "." + property.
+			// This handles cases where the module name was doubled during merge (json → json.json).
+			if dot, ok := stmt.Value.(*parser.CallExpression); ok {
+				if dotExpr, ok := dot.Function.(*parser.DotExpression); ok {
+				suffix := "." + dotExpr.Property
+				for key, innerTypes := range g.funcResultInnerTypes {
+					if strings.HasSuffix(key, suffix) && len(innerTypes) >= 1 && innerTypes[0] != "" {
+						// Verify the prefix before the suffix matches the receiver name
+						// (e.g. key="json.json.parse", suffix=".parse", prefix="json.json" starts with "json")
+						prefix := key[:len(key)-len(suffix)]
+						if dotRecv, ok := dotExpr.Receiver.(*parser.Identifier); ok {
+							if strings.HasPrefix(prefix, dotRecv.Value) {
+									return innerTypes[0]
+								}
+						}
+					}
+				}
 			}
 		}
 	}
@@ -4495,6 +4558,110 @@ func (g *Generator) collectRangeVarTypes(stmt parser.Statement, vars map[string]
 	}
 }
 
+// recollectSyntheticItTypes re-evaluates synthetic `it = source` bindings after
+// all variable types and optionInnerTypes have been populated. During the initial
+// collectVarDeclsFromStmt pass, synthetic `it` bindings (from match desugar) may
+// be processed before the source variable's optionInnerType was set (e.g. when
+// `s = json.parse(...)` appears after the match's `it = s`). This causes `it`
+// to default to i64 (8 bytes) while the actual struct (e.g. %json.json = 10000
+// bytes) overflows the alloca during deep clone, causing stack overflow segfaults.
+func (g *Generator) recollectSyntheticItTypes(stmt parser.Statement, vars map[string]string) {
+	if os.Getenv("NOLANG_DEBUG_IT") != "" {
+		fmt.Fprintf(os.Stderr, "[debug-it] recollectSyntheticItTypes: %T\n", stmt)
+	}
+	switch s := stmt.(type) {
+	case *parser.LetStatement:
+		if os.Getenv("NOLANG_DEBUG_IT") != "" {
+			fmt.Fprintf(os.Stderr, "[debug-it] recollect LetStatement: name=%s IsSynthetic=%v\n", s.Name.Value, s.IsSynthetic)
+		}
+		if !s.IsSynthetic {
+			return
+		}
+		if s.Name == nil {
+			return
+		}
+		ident, ok := s.Value.(*parser.Identifier)
+		if !ok {
+			if os.Getenv("NOLANG_DEBUG_IT") != "" {
+				fmt.Fprintf(os.Stderr, "[debug-it]   value is not Identifier: %T\n", s.Value)
+			}
+			return
+		}
+		// Only process if source is an option variable with known inner type
+		if g.varTypes == nil {
+			return
+		}
+		srcType, ok := g.varTypes[ident.Value]
+		if !ok || srcType != "%option" {
+			if os.Getenv("NOLANG_DEBUG_IT") != "" {
+				fmt.Fprintf(os.Stderr, "[debug-it]   src %q type=%q (not %%option)\n", ident.Value, srcType)
+			}
+			return
+		}
+		if g.optionInnerTypes == nil {
+			return
+		}
+		innerType, ok := g.optionInnerTypes[ident.Value]
+		if !ok || innerType == "" {
+			if os.Getenv("NOLANG_DEBUG_IT") != "" {
+				fmt.Fprintf(os.Stderr, "[debug-it]   optionInnerTypes[%q] NOT FOUND\n", ident.Value)
+			}
+			return
+		}
+		if !g.isStructLLVMType(innerType) {
+			if os.Getenv("NOLANG_DEBUG_IT") != "" {
+				fmt.Fprintf(os.Stderr, "[debug-it]   innerType=%q is not struct\n", innerType)
+			}
+			return
+		}
+		// Update `it`'s type to the struct inner type if it's currently i64
+		// or a smaller struct. Use max-size logic to handle shared `it` allocas.
+		existing, exists := vars[s.Name.Value]
+		if !exists || existing == "i64" || g.llvmTypeSize(innerType) > g.llvmTypeSize(existing) {
+			if os.Getenv("NOLANG_DEBUG_IT") != "" {
+				fmt.Fprintf(os.Stderr, "[debug-it]   UPDATING: %s from %q to %q (%d bytes)\n", s.Name.Value, existing, innerType, g.llvmTypeSize(innerType))
+			}
+			vars[s.Name.Value] = innerType
+			g.varTypes[s.Name.Value] = innerType
+			if g.itAllocTypes != nil {
+				g.itAllocTypes[s.Name.Value] = innerType
+			}
+		}
+	case *parser.BlockStatement:
+		for _, ss := range s.Statements {
+			g.recollectSyntheticItTypes(ss, vars)
+		}
+	case *parser.ExpressionStatement:
+		// Match desugar wraps `it = source` in ExpressionStatement → IfExpression
+		g.recollectSyntheticItTypesFromExpr(s.Expression, vars)
+	case *parser.ForStatement:
+		if s.Body != nil {
+			g.recollectSyntheticItTypes(s.Body, vars)
+		}
+	}
+}
+
+// recollectSyntheticItTypesFromExpr recursively traverses expressions to find
+// synthetic `it = source` LetStatements embedded in IfExpression consequences
+// (from match desugar).
+func (g *Generator) recollectSyntheticItTypesFromExpr(expr parser.Expression, vars map[string]string) {
+	if expr == nil {
+		return
+	}
+	if os.Getenv("NOLANG_DEBUG_IT") != "" {
+		fmt.Fprintf(os.Stderr, "[debug-it] recollectSyntheticItTypesFromExpr: %T\n", expr)
+	}
+	switch e := expr.(type) {
+	case *parser.IfExpression:
+		if e.Consequence != nil {
+			g.recollectSyntheticItTypes(e.Consequence, vars)
+		}
+		if e.Alternative != nil {
+			g.recollectSyntheticItTypes(e.Alternative, vars)
+		}
+	}
+}
+
 func (g *Generator) collectVarDecls(program *parser.Program) map[string]string {
 	vars := make(map[string]string)
 	for _, stmt := range program.Statements {
@@ -4517,16 +4684,39 @@ func (g *Generator) collectVarDecls(program *parser.Program) map[string]string {
 						g.arrayElemTypes[s.Name.Value] = g.mapToLLVMType(at.Elem.String())
 					}
 				}
-				// Register slice element type for module-level []T globals
-				if st, ok := s.Type.(*parser.SliceType); ok && st.Elem != nil && g.arrayElemTypes != nil {
-					g.arrayElemTypes[s.Name.Value] = g.mapToLLVMType(st.Elem.String())
+			// Register slice element type for module-level []T globals
+			if st, ok := s.Type.(*parser.SliceType); ok && st.Elem != nil && g.arrayElemTypes != nil {
+				g.arrayElemTypes[s.Name.Value] = g.mapToLLVMType(st.Elem.String())
+			}
+			// Populate optionInnerTypes for module-level ?T variables (e.g.
+			// s = json.parse(...) returning ?json). Without this, the synthetic
+			// `it = s` binding in a match ok arm cannot resolve the inner type,
+			// causing `it` to default to i64 (8 bytes) while the actual struct
+			// (e.g. %json.json = ~10KB) overflows the alloca during deep clone,
+			// causing stack overflow segfaults.
+			// This mirrors the logic in collectVarDeclsFromStmtInner (L4920-4925).
+			if t == "%option" && g.optionInnerTypes != nil {
+				if _, exists := g.optionInnerTypes[s.Name.Value]; !exists {
+					if inner := g.inferOptionInnerType(s); inner != "" {
+						g.optionInnerTypes[s.Name.Value] = inner
+						// For ?[]T option variables (inner type %vec), also register the
+						// element type in arrayElemTypes (same as collectVarDeclsFromStmtInner).
+						if inner == "%vec" && g.arrayElemTypes != nil {
+							if _, exists := g.arrayElemTypes[s.Name.Value]; !exists {
+								if et := g.inferOptionVecElemType(s); et != "" {
+									g.arrayElemTypes[s.Name.Value] = et
+								}
+							}
+						}
+					}
 				}
 			}
-			// Recurse into value expression to collect inner variables
-			// (e.g. synthetic `it` injected by match desugar inside if-expression branches)
-			if s.Value != nil {
-				g.collectVarDeclsFromExpr(s.Value, vars)
-			}
+		}
+		// Recurse into value expression to collect inner variables
+		// (e.g. synthetic `it` injected by match desugar inside if-expression branches)
+		if s.Value != nil {
+			g.collectVarDeclsFromExpr(s.Value, vars)
+		}
 		case *parser.FunctionDefinition:
 		// Skip function bodies - variables inside functions are collected
 		// in generateFunctionDefinition via collectVarDeclsFromStmt.
@@ -4546,6 +4736,9 @@ func (g *Generator) collectVarDeclsFromStmt(stmt parser.Statement, vars map[stri
 func (g *Generator) collectVarDeclsFromStmtInner(stmt parser.Statement, vars map[string]string, isModuleLevel bool) {
 	switch s := stmt.(type) {
 	case *parser.LetStatement:
+		if os.Getenv("NOLANG_DEBUG_IT") != "" {
+			fmt.Fprintf(os.Stderr, "[debug-it] collectVarDeclsFromStmtInner LetStatement: name=%s IsSynthetic=%v\n", s.Name.Value, s.IsSynthetic)
+		}
 		// Skip synthetic let statements with "err"/"nil" type sentinels.
 		// 這些是 match 對應 err/nil arm 注入的 `it = matched`，
 		// 變數型別語意上是 err/nil（無值），LLVM 端以 i64 佔位即可。
@@ -4586,7 +4779,21 @@ func (g *Generator) collectVarDeclsFromStmtInner(stmt parser.Statement, vars map
 			// （如 ?str → %str-long, ?client → %client），必須每次更新以確保
 			// 方法呼叫解析（it.close()）能正確找到型別前綴。
 			vt := g.varLLVMType(s)
-			// 診斷輸出走 NOLANG_DEBUG_IT 環境變量（默認關閉）
+			if os.Getenv("NOLANG_DEBUG_IT") != "" {
+				fmt.Fprintf(os.Stderr, "[debug-it] synthetic let: name=%s vt=%q s.Name.Value=%q\n", s.Name.Value, vt, s.Name.Value)
+				if ident, ok := s.Value.(*parser.Identifier); ok {
+					if srcType, ok := g.varTypes[ident.Value]; ok {
+						fmt.Fprintf(os.Stderr, "[debug-it]   src var %q type=%q\n", ident.Value, srcType)
+					}
+					if g.optionInnerTypes != nil {
+						if inner, ok := g.optionInnerTypes[ident.Value]; ok {
+							fmt.Fprintf(os.Stderr, "[debug-it]   optionInnerTypes[%q]=%q\n", ident.Value, inner)
+						} else {
+							fmt.Fprintf(os.Stderr, "[debug-it]   optionInnerTypes[%q] NOT FOUND\n", ident.Value)
+						}
+					}
+				}
+			}
 			// Fallback: if the source is an option variable with a struct inner type,
 			// use the struct inner type as vt. This handles cases where:
 			// - mapToLLVMType couldn't resolve a bare struct name (e.g. "server-conn")
@@ -4701,6 +4908,9 @@ func (g *Generator) collectVarDeclsFromStmtInner(stmt parser.Statement, vars map
 			// 切片表達式（view = arr[0..4]）總是走 clone 路徑（malloc + memcpy），
 			// 變量需要獨立的 alloca 存儲空間。不再跳過 alloca。
 			vt := g.varLLVMType(s)
+			if os.Getenv("NOLANG_DEBUG_IT") != "" {
+				fmt.Fprintf(os.Stderr, "[debug-it] non-synthetic let: name=%s vt=%q\n", s.Name.Value, vt)
+			}
 			// bool (i1) 局部變量擴展為 i64：Nolang 的引用傳遞模型中，函數參數使用
 			// resolveOutputParamLLVMType 將 i1 映射為 i64。若局部變量使用 i1 alloca
 			// （1 byte），但函數寫入 i64（8 bytes），會覆蓋相鄰變量的內存。
@@ -6067,6 +6277,9 @@ func (g *Generator) generateRangeFor(sb *strings.Builder, stmt *parser.ForStatem
 			iInitVal = iInitReg
 		}
 		sb.WriteString(fmt.Sprintf("%sstore i64 %s, i64* %%%s\n", g.indent(), iInitVal, varName))
+		// If the loop variable is also an output parameter, mark it as assigned
+		// to prevent ret_init_zero_fill from resetting it to 0 on return.
+		g.emitSetRetInitBit(sb, varName)
 		preheaderBlock := g.cfgBlockLabel()
 		sb.WriteString(fmt.Sprintf("%sbr label %%rng.cond.%d\n", g.indent(), lbl))
 		// CFG: preheader → cond
@@ -6157,6 +6370,9 @@ func (g *Generator) generateRangeFor(sb *strings.Builder, stmt *parser.ForStatem
 	if startIsLit && startLit.Value == 0 && r.LeftInc && !r.RightInc {
 		// i = 0 (left-inclusive)
 		sb.WriteString(fmt.Sprintf("%sstore i64 0, i64* %%%s\n", g.indent(), varName))
+		// If the loop variable is also an output parameter, mark it as assigned
+		// to prevent ret_init_zero_fill from resetting it to 0 on return.
+		g.emitSetRetInitBit(sb, varName)
 		preheaderBlock := g.cfgBlockLabel()
 		sb.WriteString(fmt.Sprintf("%sbr label %%rng.cond.%d\n", g.indent(), lbl))
 		// CFG: preheader → cond
@@ -6251,6 +6467,9 @@ func (g *Generator) generateRangeFor(sb *strings.Builder, stmt *parser.ForStatem
 		sb.WriteString(fmt.Sprintf("%s%s = add i64 %s, %s\n", g.indent(), iInit, startVal, stepReg))
 	}
 	sb.WriteString(fmt.Sprintf("%sstore i64 %s, i64* %%%s\n", g.indent(), iInit, varName))
+	// If the loop variable is also an output parameter, mark it as assigned
+	// to prevent ret_init_zero_fill from resetting it to 0 on return.
+	g.emitSetRetInitBit(sb, varName)
 
 	// Single condition block: uses select to choose asc/desc comparison.
 	// No per-iteration branch on dirCmp needed.
@@ -7359,30 +7578,20 @@ func (g *Generator) generateLet(sb *strings.Builder, stmt *parser.LetStatement) 
 					// optionInnerTypes is not populated), treat as primitive to avoid loading
 					// from a raw i64 value as if it were a pointer (which causes trace/BPT trap).
 			if srcInnerType != "" && g.isStructLLVMType(srcInnerType) {
-				// Source option holds a struct pointer — load the struct value,
-				// then DEEP CLONE it into `it` so `it` owns independent heap data.
-				// Previously this was a shallow copy (store struct value directly),
-				// which shared data pointers with the option's heap box. When `it`
-				// was freed at function exit, the option box's data became dangling,
-				// causing use-after-free / double-free / SIGSEGV.
-				// Deep clone allocates new data buffers, so `it` and the option box
-				// each own independent heap data and can be freed independently.
+				// Source option holds a struct pointer — DEEP CLONE it into `it`
+				// so `it` owns independent heap data.
+				// `val` is already a pointer to the struct (via inttoptr from
+				// the option's data field). We pass it directly to emitDeepClone
+				// as the source pointer, avoiding a large stack alloca + memcpy
+				// that would overflow the stack for big structs (e.g. json.json
+				// is ~10KB with 32 nodes × 312 bytes each).
 				loadType := srcInnerType
-				loadReg := g.tmpReg("it.syn.load")
-				sb.WriteString(fmt.Sprintf("%s%s = load %s, %s* %s\n", g.indent(), loadReg, loadType, loadType, val))
-				// If the load type differs from llvmType (it's allocated type),
-				// bitcast the alloca pointer so the store uses the correct type.
 				dstPtr := g.varAddr(name)
 				if loadType != llvmType {
 					castReg := g.tmpReg("it.syn.cast")
 					sb.WriteString(fmt.Sprintf("%s%s = bitcast %s* %s to %s*\n", g.indent(), castReg, llvmType, dstPtr, loadType))
 					dstPtr = castReg
 				}
-				// Stage loaded value into a temp alloca for emitDeepClone
-				// (which requires pointers, not SSA values).
-				srcTmp := g.tmpReg("it.syn.src")
-				sb.WriteString(fmt.Sprintf("%s%s = alloca %s\n", g.indent(), srcTmp, loadType))
-				sb.WriteString(fmt.Sprintf("%sstore %s %s, %s* %s\n", g.indent(), loadType, loadReg, loadType, srcTmp))
 				// Determine element type for container types (%vec/%arr/%str-long)
 				// so emitDeepClone recursively clones elements.
 				elemType := ""
@@ -7395,7 +7604,7 @@ func (g *Generator) generateLet(sb *strings.Builder, stmt *parser.LetStatement) 
 				} else if loadType == "%str-long" {
 					elemType = "i8"
 				}
-				g.emitDeepClone(sb, srcTmp, dstPtr, loadType, elemType)
+				g.emitDeepClone(sb, val, dstPtr, loadType, elemType)
 				// Update varTypes so reads of `it` in this arm use the correct type
 				if g.varTypes != nil {
 					g.varTypes[name] = loadType

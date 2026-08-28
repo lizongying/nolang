@@ -36,10 +36,10 @@ json-kind {
 }
 
 ; 池最大節點數
-JSON-MAX-NODES = 64
+JSON-MAX-NODES = 32
 
 ; 每節點最大子元素數
-JSON-MAX-CHILDREN = 16
+JSON-MAX-CHILDREN = 8
 
 ; ═══════════════════════════════════════════════
 ; 結構
@@ -51,14 +51,14 @@ json-value {
     str-val str
     num-val f64
     bool-val bool
-    children [16]i64
-    keys [16]str
+    children [8]i64
+    keys [8]str
     count i64
 }
 
 ; json-pool: JSON 節點池
 json-pool {
-    nodes [64]json-value
+    nodes [32]json-value
     count i64
 }
 

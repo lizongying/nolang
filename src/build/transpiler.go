@@ -1086,7 +1086,7 @@ func stdModuleLookup() map[string]checker.StdModuleInfo {
 //     （它只掃描 module.fn() DotExpression，不掃描 Type.method Identifier）。
 //     byte/vec 僅在程式（含已載入模組）確實使用 []byte / vec 時載入。
 // 若未來 codegen 新增其他隱式 std 依賴，在此追加，並於 auto-load 區塊同步處理。
-var alwaysAutoLoadStd = []string{"fmt", "io", "byte", "str", "vec"}
+var alwaysAutoLoadStd = []string{"fmt", "io", "byte", "str", "vec", "sort"}
 
 // pathHasComponent reports whether any slash-separated component of p equals
 // comp. It is used to decide whether a path belongs to the std library by an
@@ -1226,6 +1226,17 @@ func (t *Transpiler) collectReferencedStdModules(prog *parser.Program) map[strin
 						addRef(ident.Value)
 					}
 				}
+				// 函數名前綴匹配：若函數名為 "module-fn" 形式
+				// （如 regexp-match、regexp-find），且前綴對應某個 std 模組的
+				// ShortName，則標記為被引用。這使得僅透過裸函數呼叫
+				// （無結構體字面量或 module.fn() 語法）引用的 std 模組
+				// 也能被正確載入。
+				if idx := strings.IndexByte(ident.Value, '-'); idx > 0 {
+					prefix := ident.Value[:idx]
+					if _, ok := lookup[prefix]; ok {
+						addRef(prefix)
+					}
+				}
 			}
 			walkExpr(ex.Function)
 			for _, a := range ex.GenericArgs {
@@ -1322,6 +1333,11 @@ func (t *Transpiler) collectReferencedStdModules(prog *parser.Program) map[strin
 				walkExpr(el)
 			}
 		case *parser.StructLiteral:
+			// 結構體字面量的類型名（如 regexp{}）若對應某個 std 模組的
+			// ShortName，則標記為被引用，使該 std 模組（含結構體定義）
+			// 被自動載入。否則結構體類型定義缺失，LLVM alloca 報
+			// "Cannot allocate unsized type" 錯誤。
+			addRef(ex.Type)
 			for _, f := range ex.Fields {
 				walkExpr(f.Value)
 			}
@@ -2318,13 +2334,26 @@ func scanIfExpressionForGenericCalls(ie *parser.IfExpression, genericFns map[str
 		scanExprForGenericCalls(ie.Condition, genericFns, varTypes, program, newStmts, typeOwner)
 	}
 	if ie.Consequence != nil {
+		// Build block-scoped varTypes so that local variables declared inside
+		// the top-level {} block are visible for generic method resolution
+		// (e.g. arr.sort-asc() where arr is a local []i64).
+		blockVarTypes := make(map[string]string)
+		for k, v := range varTypes {
+			blockVarTypes[k] = v
+		}
+		collectVarTypesFromBody(ie.Consequence, blockVarTypes)
 		for _, s := range ie.Consequence.Statements {
-			scanStmtForGenericCalls(s, genericFns, varTypes, program, newStmts, typeOwner)
+			scanStmtForGenericCalls(s, genericFns, blockVarTypes, program, newStmts, typeOwner)
 		}
 	}
 	if ie.Alternative != nil {
+		altVarTypes := make(map[string]string)
+		for k, v := range varTypes {
+			altVarTypes[k] = v
+		}
+		collectVarTypesFromBody(ie.Alternative, altVarTypes)
 		for _, s := range ie.Alternative.Statements {
-			scanStmtForGenericCalls(s, genericFns, varTypes, program, newStmts, typeOwner)
+			scanStmtForGenericCalls(s, genericFns, altVarTypes, program, newStmts, typeOwner)
 		}
 	}
 }
@@ -3012,10 +3041,12 @@ func resolveMethodCall(dot *parser.DotExpression, ce *parser.CallExpression,
 		return false
 	}
 	recvType, ok := varTypes[recvIdent.Value]
+	fmt.Fprintf(os.Stderr, "[DBG-resolveMethodCall] recv=%s recvType=%s ok=%v varTypes has %d keys\n", recvIdent.Value, recvType, ok, len(varTypes))
 	if !ok {
 		return false
 	}
 	methodName := dot.Property
+	fmt.Fprintf(os.Stderr, "[DBG-resolveMethodCall] methodName=%s recvType=%s genericFns has %d keys\n", methodName, recvType, len(genericFns))
 	// Search for matching generic method
 	for name, fd := range genericFns {
 		dotIdx := strings.LastIndex(name, ".")
@@ -3029,6 +3060,7 @@ func resolveMethodCall(dot *parser.DotExpression, ce *parser.CallExpression,
 		}
 		// Try to match typePrefix (e.g., "[n]t") against recvType (e.g., "[4]i64")
 		genericArgs := matchTypePattern(typePrefix, recvType, fd)
+		fmt.Fprintf(os.Stderr, "[DBG-resolveMethodCall] matching %s against %s -> genericArgs=%d\n", typePrefix, recvType, len(genericArgs))
 		if len(genericArgs) == 0 {
 			continue
 		}
