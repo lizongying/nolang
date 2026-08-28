@@ -9,7 +9,7 @@ package checker
 func init() {
 	embeddedStdSigReady = true
 	embeddedStdSigVersion = 1
-	embeddedStdSigKey = "1f680543ff8abed00d0b01a753b0c812330fb30dc846e63bb219720741f30bd4"
+	embeddedStdSigKey = "26932af155ca2612b59374786bcea5cfb99fad4691e507d0fe80c8d778eec5b8"
 	embeddedStdFuncSigs = map[string][]string{
 		"[]byte.index":                     {"i64"},
 		"[]byte.index-from":                {"i64"},
@@ -546,6 +546,11 @@ func init() {
 		"xz.xz-decompress":                         {"[]byte"},
 		"zip.u16le":                                {"i64"},
 		"zip.u32le":                                {"i64"},
+		"zlib.adler-32":                            {"i64"},
+		"zlib.zlib-compress":                       {"[]byte"},
+		"zlib.zlib-consumed-stored":                {"i64"},
+		"zlib.zlib-decompress":                     {"[]byte", "bool"},
+		"zlib.zlib-decompress-stored":              {"[]byte", "bool"},
 		"zstd.bits-for-count":                      {"i64"},
 		"zstd.zstd-compress":                       {"[]byte"},
 		"zstd.zstd-decompress":                     {"[]byte"},

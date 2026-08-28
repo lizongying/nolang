@@ -1457,8 +1457,21 @@ func (g *Generator) generateCallExpression(sb *strings.Builder, expr *parser.Cal
 				m2 := builtin.FindBuiltinMethod(shortName)
 				if m2 != nil {
 					if !isVar {
-						m = m2
-						fnName = shortName
+						// Don't strip if fnName itself is a registered user function
+						// (e.g. []t.max is a user-defined generic method, not the
+						// global math.max builtin). Stripping would incorrectly
+						// dispatch to the builtin, ignoring the user's definition.
+						if g.funcRetTypes != nil {
+							if _, isUserFn := g.funcRetTypes[fnName]; isUserFn {
+								// fnName is a user function; skip builtin dispatch
+							} else {
+								m = m2
+								fnName = shortName
+							}
+						} else {
+							m = m2
+							fnName = shortName
+						}
 					} else if m2.ReceiverType == builtin.ReceiverGlobal {
 						// For ReceiverGlobal builtins (e.g. sqrt, abs), stripping
 						// the prefix is normally safe. BUT: if the variable has a
