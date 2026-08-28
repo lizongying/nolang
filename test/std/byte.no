@@ -105,8 +105,9 @@ p8, f8 = runner.test('byte.slice', t-slice)
 passed = passed + p8
 failed = failed + f8
 
-total = runner.summary(passed, failed)
+total = runner.summary()
+f = runner.failed-count()
 {
-    failed > 0 -> os.exit(1)
+    f > 0 -> os.exit(1)
     -> os.exit(0)
 }

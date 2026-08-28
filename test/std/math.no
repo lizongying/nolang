@@ -2,10 +2,7 @@
 ;
 ; 執行：no test test/std/math.no
 ; 覆蓋：abs / sqrt / pow / hypot / sin / cos / tan / fmod /
-;       degrees / radians / cbrt / ceil / floor / round / trunc
-; 未測：clamp / max / min（預存編譯器 bug，見下方註解）
-; 注意：函數內極小浮點字面量（≤1e-5）會觸發預存 codegen bug
-;       （IR 科學記號常數非法），eps 一律以除法計算。
+;       degrees / radians / cbrt / ceil / floor / round / trunc / clamp / max / min
 
 # /test/runner
 
@@ -66,7 +63,14 @@ t-deg-rad = () {
     runner.f64-eq(d2, 0.0, 0.000001, 'degrees(0) == 0')
 }
 
-; math.clamp 有預存 bug（@math.clamp 未定義），暫不測試。
+t-clamp = () {
+    r1 i64 = math.clamp(10, 0, 5)
+    runner.eq(r1, 5, 'clamp(10,0,5) == 5')
+    r2 i64 = math.clamp(-3, 0, 5)
+    runner.eq(r2, 0, 'clamp(-3,0,5) == 0')
+    r3 i64 = math.clamp(3, 0, 5)
+    runner.eq(r3, 3, 'clamp(3,0,5) == 3')
+}
 
 t-cbrt = () {
     r f64 = math.cbrt(27.0)
@@ -90,7 +94,12 @@ t-rounding = () {
     runner.f64-eq(n, -2.0, 0.000001, 'trunc(-2.9) == -2')
 }
 
-; math.max/min 有預存 bug（variadic 誤打包：store i64 3.0），暫不測試。
+t-max-min = () {
+    mx i64 = math.max(3, 7)
+    runner.eq(mx, 7, 'max(3,7) == 7')
+    mn i64 = math.min(3, 7)
+    runner.eq(mn, 3, 'min(3,7) == 3')
+}
 
 ; ── 執行 ──────────────────────────────────────
 
@@ -103,6 +112,8 @@ p6, f6 = runner.test('math.fmod', t-fmod)
 p7, f7 = runner.test('math.degrees/radians', t-deg-rad)
 p9, f9 = runner.test('math.cbrt', t-cbrt)
 p10, f10 = runner.test('math.ceil/floor/round/trunc', t-rounding)
+p11, f11 = runner.test('math.clamp', t-clamp)
+p12, f12 = runner.test('math.max/min', t-max-min)
 
 total = runner.summary()
 f = runner.failed-count()

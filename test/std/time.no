@@ -2,8 +2,7 @@
 ;
 ; 執行：no test test/std/time.no
 ; 覆蓋：now-s / duration-between / is-leap / days-in-month-fn /
-;       unix-to-date / date-to-unix / format-date / format-time-str / parse-date / timer
-; 未測：format-duration（字串插值觸發 BPT trap，預存 codegen bug）
+;       unix-to-date / date-to-unix / format-date / format-time-str / format-duration / parse-date / timer
 
 # /test/runner
 
@@ -150,6 +149,15 @@ t-timer = () {
     runner.eq(s, 0, 'timer elapsed-s == 0')
 }
 
+t-format-duration = () {
+    s1 = time.format-duration(3661)
+    runner.str-eq(s1, '1h1m1s', 7, 'format-duration(3661) == 1h1m1s')
+    s2 = time.format-duration(0)
+    runner.str-eq(s2, '0h0m0s', 7, 'format-duration(0) == 0h0m0s')
+    s3 = time.format-duration(90061)
+    runner.str-eq(s3, '25h1m1s', 7, 'format-duration(90061) == 25h1m1s')
+}
+
 ; ── 執行 ──────────────────────────────────────
 
 p1, f1 = runner.test('time.now-s', t-now-s)
@@ -163,6 +171,7 @@ p8, f8 = runner.test('time.format-date', t-format-date)
 p9, f9 = runner.test('time.format-time-str', t-format-time-str)
 p10, f10 = runner.test('time.parse-date', t-parse-date)
 p11, f11 = runner.test('time.timer', t-timer)
+p12, f12 = runner.test('time.format-duration', t-format-duration)
 
 total = runner.summary()
 f = runner.failed-count()

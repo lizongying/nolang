@@ -18,8 +18,9 @@ p1, f1 = runner.test('char.placeholder', t-placeholder)
 passed = passed + p1
 failed = failed + f1
 
-total = runner.summary(passed, failed)
+total = runner.summary()
+f = runner.failed-count()
 {
-    failed > 0 -> os.exit(1)
+    f > 0 -> os.exit(1)
     -> os.exit(0)
 }

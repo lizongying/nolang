@@ -4768,6 +4768,86 @@ func (g *Generator) genForwardFunc(sb *strings.Builder, forwardFunc string, expr
 			g.emitSetRetInitBit(sb, storeOutParam)
 		}
 		return "0"
+
+	case "math-max":
+		// math.max(a, b) → icmp sgt a, b → select
+		if len(args) < 2 {
+			return "0"
+		}
+		aVal := g.evalI64Arg(sb, args[0])
+		bVal := g.evalI64Arg(sb, args[1])
+		g.tmpIdx++
+		cmpReg := fmt.Sprintf("%%maxcmp.%d", g.tmpIdx)
+		g.tmpIdx++
+		selReg := fmt.Sprintf("%%maxsel.%d", g.tmpIdx)
+		if sb != nil {
+			sb.WriteString(fmt.Sprintf("%s%s = icmp sgt i64 %s, %s\n", g.indent(), cmpReg, aVal, bVal))
+			sb.WriteString(fmt.Sprintf("%s%s = select i1 %s, i64 %s, i64 %s\n", g.indent(), selReg, cmpReg, aVal, bVal))
+		}
+		return selReg
+
+	case "math-min":
+		// math.min(a, b) → icmp slt a, b → select
+		if len(args) < 2 {
+			return "0"
+		}
+		aVal := g.evalI64Arg(sb, args[0])
+		bVal := g.evalI64Arg(sb, args[1])
+		g.tmpIdx++
+		cmpReg := fmt.Sprintf("%%mincmp.%d", g.tmpIdx)
+		g.tmpIdx++
+		selReg := fmt.Sprintf("%%minsel.%d", g.tmpIdx)
+		if sb != nil {
+			sb.WriteString(fmt.Sprintf("%s%s = icmp slt i64 %s, %s\n", g.indent(), cmpReg, aVal, bVal))
+			sb.WriteString(fmt.Sprintf("%s%s = select i1 %s, i64 %s, i64 %s\n", g.indent(), selReg, cmpReg, aVal, bVal))
+		}
+		return selReg
+
+	case "math-abs":
+		// math.abs(a) → sub 0, a if negative → select
+		if len(args) < 1 {
+			return "0"
+		}
+		aVal := g.evalI64Arg(sb, args[0])
+		g.tmpIdx++
+		subReg := fmt.Sprintf("%%abssub.%d", g.tmpIdx)
+		g.tmpIdx++
+		cmpReg := fmt.Sprintf("%%abscmp.%d", g.tmpIdx)
+		g.tmpIdx++
+		selReg := fmt.Sprintf("%%abssel.%d", g.tmpIdx)
+		if sb != nil {
+			sb.WriteString(fmt.Sprintf("%s%s = icmp slt i64 %s, 0\n", g.indent(), cmpReg, aVal))
+			sb.WriteString(fmt.Sprintf("%s%s = sub i64 0, %s\n", g.indent(), subReg, aVal))
+			sb.WriteString(fmt.Sprintf("%s%s = select i1 %s, i64 %s, i64 %s\n", g.indent(), selReg, cmpReg, subReg, aVal))
+		}
+		return selReg
+
+	case "math-clamp":
+		// math.clamp(val, min, max) → clamp(val, min, max)
+		// result = max(min, min(val, max))
+		if len(args) < 3 {
+			return "0"
+		}
+		valArg := g.evalI64Arg(sb, args[0])
+		minArg := g.evalI64Arg(sb, args[1])
+		maxArg := g.evalI64Arg(sb, args[2])
+		g.tmpIdx++
+		cmpHi := fmt.Sprintf("%%clamphi.%d", g.tmpIdx)
+		g.tmpIdx++
+		selHi := fmt.Sprintf("%%clampselhi.%d", g.tmpIdx)
+		g.tmpIdx++
+		cmpLo := fmt.Sprintf("%%clamplo.%d", g.tmpIdx)
+		g.tmpIdx++
+		selLo := fmt.Sprintf("%%clampsello.%d", g.tmpIdx)
+		if sb != nil {
+			// min(val, max)
+			sb.WriteString(fmt.Sprintf("%s%s = icmp sgt i64 %s, %s\n", g.indent(), cmpHi, valArg, maxArg))
+			sb.WriteString(fmt.Sprintf("%s%s = select i1 %s, i64 %s, i64 %s\n", g.indent(), selHi, cmpHi, maxArg, valArg))
+			// max(result, min)
+			sb.WriteString(fmt.Sprintf("%s%s = icmp slt i64 %s, %s\n", g.indent(), cmpLo, selHi, minArg))
+			sb.WriteString(fmt.Sprintf("%s%s = select i1 %s, i64 %s, i64 %s\n", g.indent(), selLo, cmpLo, minArg, selHi))
+		}
+		return selLo
 	}
 
 	return ""

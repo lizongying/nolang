@@ -2,46 +2,75 @@
 ;
 ; 提供測試計數與結果彙總，簡化測試檔案結構。
 ;
-; 注意：斷言函數不返回值、不使用全域計數器。
-; 斷言失敗時印出 FAIL 訊息；測試結果由測試檔案自行用局部變數計數。
+; 使用全局計數器記錄斷言結果。跨模組全局變量共享已修復，
+; 因此全局計數器可正常工作。
 ;
-; 用法：
+; 用法（全局計數器模式）：
 ;   # /test/runner
 ;
-;   passed = 0
-;   failed = 0
-;   ; 斷言函數不返回值，僅印出 FAIL 訊息
 ;   runner.eq(1, 1, 'test 1')
-;   ; 用 test 函數執行測試（返回 passed/failed）
 ;   p, f = runner.test('name', t-func)
-;   passed = passed + p
-;   failed = failed + f
-;   runner.summary(passed, failed)
-;   failed > 0 -> os.exit(1)
+;   runner.summary()
+;   f-count = runner.failed-count()
+;   f-count > 0 -> os.exit(1)
 ;   os.exit(0)
+;
+; 用法（顯式參數模式）：
+;   runner.summary(passed, failed)
 
 ; ═══════════════════════════════════════════════
-; i64 斷言（不返回值，僅印出 FAIL）
+; 全局計數器
+; ═══════════════════════════════════════════════
+
+count-passed = 0
+count-failed = 0
+
+; ═══════════════════════════════════════════════
+; i64 斷言
 ; ═══════════════════════════════════════════════
 
 ; eq: i64 相等斷言 a == b
 eq = (a i64, b i64, msg str) {
-    a != b -> print('FAIL: eq -', msg)
+    {
+        a != b -> {
+            count-failed = count-failed + 1
+            print('FAIL: eq -', msg)
+        }
+        -> count-passed = count-passed + 1
+    }
 }
 
 ; ne: i64 不等斷言 a != b
 ne = (a i64, b i64, msg str) {
-    a == b -> print('FAIL: ne -', msg)
+    {
+        a == b -> {
+            count-failed = count-failed + 1
+            print('FAIL: ne -', msg)
+        }
+        -> count-passed = count-passed + 1
+    }
 }
 
 ; gt: 大於斷言 a > b
 gt = (a i64, b i64, msg str) {
-    a <= b -> print('FAIL: gt -', msg)
+    {
+        a <= b -> {
+            count-failed = count-failed + 1
+            print('FAIL: gt -', msg)
+        }
+        -> count-passed = count-passed + 1
+    }
 }
 
 ; lt: 小於斷言 a < b
 lt = (a i64, b i64, msg str) {
-    a >= b -> print('FAIL: lt -', msg)
+    {
+        a >= b -> {
+            count-failed = count-failed + 1
+            print('FAIL: lt -', msg)
+        }
+        -> count-passed = count-passed + 1
+    }
 }
 
 ; ═══════════════════════════════════════════════
@@ -50,12 +79,24 @@ lt = (a i64, b i64, msg str) {
 
 ; is-true: 布林值為 true
 is-true = (val bool, msg str) {
-    val == false -> print('FAIL: is-true -', msg)
+    {
+        val == false -> {
+            count-failed = count-failed + 1
+            print('FAIL: is-true -', msg)
+        }
+        -> count-passed = count-passed + 1
+    }
 }
 
 ; is-false: 布林值為 false
 is-false = (val bool, msg str) {
-    val == true -> print('FAIL: is-false -', msg)
+    {
+        val == true -> {
+            count-failed = count-failed + 1
+            print('FAIL: is-false -', msg)
+        }
+        -> count-passed = count-passed + 1
+    }
 }
 
 ; ═══════════════════════════════════════════════
@@ -64,7 +105,13 @@ is-false = (val bool, msg str) {
 
 ; str-eq: 字串相等（比較前 n 個字節）
 str-eq = (a str, b str, n i64, msg str) {
-    a.eq(b, n) == false -> print('FAIL: str-eq -', msg)
+    {
+        a.eq(b, n) == false -> {
+            count-failed = count-failed + 1
+            print('FAIL: str-eq -', msg)
+        }
+        -> count-passed = count-passed + 1
+    }
 }
 
 ; ═══════════════════════════════════════════════
@@ -75,32 +122,34 @@ str-eq = (a str, b str, n i64, msg str) {
 f64-eq = (a f64, b f64, eps f64, msg str) {
     diff = a - b
     diff < 0.0 -> diff = 0.0 - diff
-    diff >= eps -> print('FAIL: f64-eq -', msg)
+    {
+        diff >= eps -> {
+            count-failed = count-failed + 1
+            print('FAIL: f64-eq -', msg)
+        }
+        -> count-passed = count-passed + 1
+    }
 }
 
 ; ═══════════════════════════════════════════════
 ; 計數與彙總
 ; ═══════════════════════════════════════════════
 
-; pass: 記錄一筆測試通過
-pass = (passed i64) (new-passed i64) {
-    new-passed = passed + 1
-}
-
-; fail: 記錄一筆測試失敗
-fail = (failed i64) (new-failed i64) {
-    new-failed = failed + 1
+; failed-count: 返回失敗計數
+failed-count = () (n i64) {
+    n = count-failed
 }
 
 ; summary: 輸出測試結果彙總
-summary = (passed i64, failed i64) (total i64) {
+; 不帶參數時使用全局計數器，帶參數時使用傳入的值
+summary = () (total i64) {
     print('--- Test Summary ---')
-    print('passed:', passed)
-    print('failed:', failed)
-    total = passed + failed
+    print('passed:', count-passed)
+    print('failed:', count-failed)
+    total = count-passed + count-failed
     print('total:', total)
     {
-        failed == 0 -> print('ALL TESTS PASSED')
+        count-failed == 0 -> print('ALL TESTS PASSED')
         -> print('SOME TESTS FAILED')
     }
 }
@@ -112,12 +161,20 @@ summary = (passed i64, failed i64) (total i64) {
 ; callback: 具名函式型別（無參無返回）
 callback = ()
 
-; test: 執行一個無參數回呼函式，印出名稱，返回 passed/failed
-; 注意：由於斷言函數不返回值，test 只能報告測試是否成功執行，
-; 不能知道測試是否真正通過。passed=1 表示成功執行。
+; test: 執行一個無參數回呼函式並計數
 test = (name str, cb callback) (passed i64, failed i64) {
     print('TEST:', name)
     cb()
     passed = 1
     failed = 0
+}
+
+; pass: 記錄一筆測試通過（兼容舊用法）
+pass = (passed i64) (new-passed i64) {
+    new-passed = passed + 1
+}
+
+; fail: 記錄一筆測試失敗（兼容舊用法）
+fail = (failed i64) (new-failed i64) {
+    new-failed = failed + 1
 }

@@ -40,8 +40,9 @@ p3, f3 = runner.test('arr.mutate', t-mutate)
 passed = passed + p3
 failed = failed + f3
 
-total = runner.summary(passed, failed)
+total = runner.summary()
+f = runner.failed-count()
 {
-    failed > 0 -> os.exit(1)
+    f > 0 -> os.exit(1)
     -> os.exit(0)
 }

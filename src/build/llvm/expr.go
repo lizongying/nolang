@@ -64,6 +64,12 @@ func (g *Generator) generateExprWithSB(sb *strings.Builder, expr parser.Expressi
 		if !strings.ContainsAny(s, ".eE") {
 			s += ".0"
 		}
+		// LLVM IR requires a decimal point before 'e'/'E' in scientific notation
+		// (e.g., "1e-06" is invalid; must be "1.0e-06").
+		if strings.ContainsAny(s, "eE") && !strings.Contains(s, ".") {
+			s = strings.Replace(s, "e", ".0e", 1)
+			s = strings.Replace(s, "E", ".0E", 1)
+		}
 		return s
 	case *parser.ByteLiteral:
 		return fmt.Sprintf("%d", e.Value)
