@@ -443,9 +443,7 @@ process.read-all = () (content str, n i64) {
     {
         chunk-n = fs.read(.stdout-fd, buf, 4096)
         chunk-n <= 0 -> *
-        i <- [0..chunk-n): {
-            content[n + i] = buf[i]
-        }
+        content = content - buf.slice(0, chunk-n)
         n = n + chunk-n
     } (true)
 }
