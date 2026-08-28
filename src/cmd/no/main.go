@@ -17,7 +17,10 @@ import (
 	nbuild "github.com/lizongying/nolang/build"
 	"github.com/lizongying/nolang/checker"
 	nfmt "github.com/lizongying/nolang/fmt"
+	"github.com/lizongying/nolang/lexer"
 	"github.com/lizongying/nolang/package"
+	"github.com/lizongying/nolang/parser"
+	"github.com/lizongying/nolang/parser/dump"
 )
 
 type ProjectConfig struct {
@@ -113,6 +116,8 @@ func main() {
 		testCommand(os.Args[2:])
 	case "vet":
 		vetCommand(os.Args[2:])
+	case "ast":
+		astCommand(os.Args[2:])
 	case "info":
 		infoCommand()
 	default:
@@ -207,6 +212,11 @@ func printUsage() {
 	fmt.Println("      no vet                     validate main.no in current dir")
 	fmt.Println("      no vet main.no             validate main.no")
 	fmt.Println("      no vet --strict src/std/   fail on any lint")
+	fmt.Println("")
+	fmt.Println("  no ast <file>          Print the parsed AST for debugging")
+	fmt.Println("    Examples:")
+	fmt.Println("      no ast main.no             print AST for main.no")
+	fmt.Println("      no ast src/std/vec.no      print AST for vec.no")
 	fmt.Println("")
 	fmt.Println("  no info               Show environment and source directory info")
 	fmt.Println("")
@@ -2208,4 +2218,45 @@ func pubCommand(args []string) {
 	fmt.Println("no pub: publishing is not yet implemented.")
 	fmt.Printf("  token: %s\n", *token)
 	fmt.Printf("  registry: %s\n", *registry)
+}
+
+func astCommand(args []string) {
+	fs := flag.NewFlagSet("ast", flag.ExitOnError)
+	fs.Usage = func() {
+		fmt.Println("Usage: no ast <file>")
+		fmt.Println("")
+		fmt.Println("Parse a Nolang source file and print its AST to stdout.")
+		fmt.Println("This is useful for debugging parser output.")
+		fmt.Println("")
+		fmt.Println("Examples:")
+		fmt.Println("  no ast main.no           print AST for main.no")
+		fmt.Println("  no ast src/std/vec.no    print AST for vec.no")
+	}
+	_ = fs.Parse(args)
+
+	if len(fs.Args()) == 0 {
+		fs.Usage()
+		os.Exit(1)
+	}
+
+	inputPath := fs.Args()[0]
+	source, err := os.ReadFile(inputPath)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		os.Exit(1)
+	}
+
+	l := lexer.New(string(source))
+	p := parser.New(l)
+	p.Filename = filepath.Base(inputPath)
+	program := p.ParseProgram()
+
+	if errs := p.Errors(); len(errs) > 0 {
+		for _, e := range errs {
+			fmt.Fprintf(os.Stderr, "Parse error: %s\n", e)
+		}
+		os.Exit(1)
+	}
+
+	fmt.Println(dump.Dump(program))
 }

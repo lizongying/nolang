@@ -4029,6 +4029,14 @@ func (g *Generator) varLLVMType(stmt *parser.LetStatement) string {
 										}
 									}
 								}
+								// For vec (slice) receivers, construct _x<elem> mangled name
+								// candidates (e.g. _xi64.max) to match transpiler's
+								// cloneAndSubstitute output for slice generics.
+								if srcType == "vec" {
+									for _, alias := range elemAliases {
+										candidates = append(candidates, "_x"+alias)
+									}
+								}
 							}
 						}
 					}
@@ -8603,6 +8611,19 @@ func (g *Generator) generateOptionAssign(sb *strings.Builder, stmt *parser.LetSt
 						// Map LLVM struct names to Nolang type names for function lookup
 						if srcType == "str-long" {
 							candidates = append(candidates, "str")
+						}
+						// vec/arr receivers: add []T and _x<T> mangled name candidates
+						// so monomorphized slice methods (e.g. _xi64.max) are found.
+						if (srcType == "vec" || srcType == "arr") && g.arrayElemTypes != nil {
+							if et, ok := g.arrayElemTypes[recvIdent.Value]; ok {
+								et = strings.TrimPrefix(et, "%")
+								if elemAliases, ok := llvmTypeToNolang[et]; ok {
+									for _, alias := range elemAliases {
+										candidates = append(candidates, "[]"+alias)
+										candidates = append(candidates, "_x"+alias)
+									}
+								}
+							}
 						}
 						for _, cand := range candidates {
 							candName := cand + "." + dot.Property

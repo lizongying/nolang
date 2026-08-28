@@ -3343,6 +3343,11 @@ func cloneAndSubstitute(fd *parser.FunctionDefinition, genericArgs []parser.Expr
 			if isLowerLetter(string(mangledName[1])) && isLowerLetter(string(mangledName[closeB+1])) {
 				mangledName = "_" + sizeVal + "x" + elemVal + mangledName[dotIdx:]
 			}
+			// Handle slice generics ([]t.method): mangledName starts with "[]",
+			// so mangledName[1] is ']' (not a lower letter). Produce _x<elem>.method.
+			if mangledName[0] == '[' && mangledName[1] == ']' && elemVal != "" {
+				mangledName = "_x" + elemVal + mangledName[dotIdx:]
+			}
 		}
 	} else {
 		// Regular generic function: append args to name

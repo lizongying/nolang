@@ -1745,6 +1745,14 @@ func (g *Generator) generateCallExpression(sb *strings.Builder, expr *parser.Cal
 											}
 										}
 									}
+									// For vec (slice) receivers, construct _x<elem> mangled name
+									// candidates (e.g. _xi64.max) to match transpiler's
+									// cloneAndSubstitute output for slice generics.
+									if srcType == "vec" {
+										for _, alias := range elemAliases {
+											candidates = append(candidates, "_x"+alias)
+										}
+									}
 								}
 							}
 						}
