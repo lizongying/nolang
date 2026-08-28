@@ -1161,8 +1161,14 @@ func (t *Transpiler) collectReferencedStdModules(prog *parser.Program) map[strin
 				addRef(ty.Value[:idx])
 			}
 		case *parser.ArrayType:
+			// [N]T 語法隱含引用 std/arr.no 模組（[n]t 泛型方法特化）。
+			// 若不標記為已引用，arr.no 不會被載入，[n]t.max / [n]t.clone 等
+			// 泛型方法無法被 monomorphizeGenerics 特化，導致 a.max() 回傳零值。
+			addRef("arr")
 			walkType(ty.Elem)
 		case *parser.SliceType:
+			// []T 語法隱含引用 std/vec.no 模組（[]t 泛型方法特化）。
+			addRef("vec")
 			walkType(ty.Elem)
 		case *parser.MapType:
 			// [K]V 語法隱含引用 std/collection/map.no 模組（hashmap 模板特化）。

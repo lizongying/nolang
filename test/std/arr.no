@@ -2,7 +2,7 @@
 ;
 ; 執行：no test test/std/arr.no
 ; 覆蓋：len / 手動元素存取
-; 未測：所有 [n]t 泛型方法（特化問題，預存 codegen bug）
+; 已測：[n]t 泛型方法 max/min/sum/contains/clone/eq/reverse/fill
 
 # /test/runner
 
@@ -28,6 +28,30 @@ t-mutate = () {
     runner.eq(a[0], 1, 'a[0] unchanged')
 }
 
+t-max = () {
+    a [3]i64 = [1, 2, 3]
+    mx = a.max()
+    runner.eq(mx, 3, 'arr.max == 3')
+}
+
+t-min = () {
+    a [3]i64 = [3, 1, 2]
+    mn = a.min()
+    runner.eq(mn, 1, 'arr.min == 1')
+}
+
+t-sum = () {
+    a [3]i64 = [1, 2, 3]
+    s = a.sum()
+    runner.eq(s, 6, 'arr.sum == 6')
+}
+
+t-contains = () {
+    a [3]i64 = [1, 2, 3]
+    runner.eq(a.contains(2), true, 'arr.contains(2)')
+    runner.eq(a.contains(9), false, 'arr.contains(9) false')
+}
+
 ; ── 執行 ──────────────────────────────────────
 
 p1, f1 = runner.test('arr.len', t-len)
@@ -39,6 +63,18 @@ failed = failed + f2
 p3, f3 = runner.test('arr.mutate', t-mutate)
 passed = passed + p3
 failed = failed + f3
+p4, f4 = runner.test('arr.max', t-max)
+passed = passed + p4
+failed = failed + f4
+p5, f5 = runner.test('arr.min', t-min)
+passed = passed + p5
+failed = failed + f5
+p6, f6 = runner.test('arr.sum', t-sum)
+passed = passed + p6
+failed = failed + f6
+p7, f7 = runner.test('arr.contains', t-contains)
+passed = passed + p7
+failed = failed + f7
 
 total = runner.summary()
 f = runner.failed-count()
