@@ -1,0 +1,172 @@
+; std-fs.no — fs 模組測試
+;
+; 執行：no test test/std/fs.no
+; 覆蓋：open / file.write / file.read / file.close / file.is-open /
+;       is-file / is-dir / stat-size /
+;       open-read / open-write / read / write / close /
+;       copy-file / list-dir / dir-entries
+
+# /test/runner
+
+TMP-FILE = '/tmp/nolang_fs_test_file.txt'
+TMP-FILE2 = '/tmp/nolang_fs_test_file2.txt'
+
+; ── 檔案存在性檢查 ────────────────────────────
+
+t-is-file = () {
+    ; /tmp should be a directory, not a file
+    yes bool = fs.is-file('/tmp')
+    runner.is-false(yes, 'is-file /tmp == false')
+}
+
+t-is-dir = () {
+    yes bool = fs.is-dir('/tmp')
+    runner.is-true(yes, 'is-dir /tmp == true')
+    yes2 bool = fs.is-dir('/nonexistent_xyz')
+    runner.is-false(yes2, 'is-dir nonexistent == false')
+}
+
+; ── open + write + read + close ──────────────
+
+t-open-write-read = () {
+    ; 清理可能殘留的檔案
+    fs.remove(TMP-FILE)
+
+    ; 開啟檔案寫入
+    f = fs.open(TMP-FILE, {
+        mode: file-mode.write
+        perm: file-perm.perm-644
+        excl: false
+        truncate: false
+        append: false
+    })
+    ok-write bool = false
+    f: {
+        err -> ok-write = false
+        nil -> ok-write = false
+        -> {
+            ok-write = true
+            n = it.write('hello fs', 8)
+            it.close()
+        }
+    }
+    runner.is-true(ok-write, 'open write succeeded')
+
+    ; 驗證檔案存在
+    yes bool = fs.is-file(TMP-FILE)
+    runner.is-true(yes, 'written file exists')
+
+    ; 讀取檔案
+    f-r = fs.open(TMP-FILE, {
+        mode: file-mode.read
+        perm: file-perm.perm-644
+        excl: false
+        truncate: false
+        append: false
+    })
+    ok-read bool = false
+    read-content = ''
+    f-r: {
+        err -> ok-read = false
+        nil -> ok-read = false
+        -> {
+            ok-read = true
+            buf str = with-cap(64)
+            n = it.read(buf, 64)
+            read-content = buf
+            it.close()
+        }
+    }
+    runner.is-true(ok-read, 'open read succeeded')
+
+    ; 清理
+    fs.remove(TMP-FILE)
+}
+
+; ── stat-size ────────────────────────────────
+
+t-stat-size = () {
+    ; 建立檔案並檢查大小
+    fs.remove(TMP-FILE)
+    f = fs.open(TMP-FILE, {
+        mode: file-mode.write
+        perm: file-perm.perm-644
+        excl: false
+        truncate: false
+        append: false
+    })
+    f: {
+        err ->
+        nil ->
+        -> {
+            it.write('0123456789', 10)
+            it.close()
+        }
+    }
+    sz = fs.stat-size(TMP-FILE)
+    runner.eq(sz, 10, 'stat-size == 10')
+    fs.remove(TMP-FILE)
+}
+
+; ── copy-file ────────────────────────────────
+
+t-copy-file = () {
+    fs.remove(TMP-FILE)
+    fs.remove(TMP-FILE2)
+
+    ; 建立來源檔案
+    f = fs.open(TMP-FILE, {
+        mode: file-mode.write
+        perm: file-perm.perm-644
+        excl: false
+        truncate: false
+        append: false
+    })
+    f: {
+        err ->
+        nil ->
+        -> {
+            it.write('copy me', 7)
+            it.close()
+        }
+    }
+
+    ; 複製
+    ok bool = fs.copy-file(TMP-FILE, TMP-FILE2)
+    runner.is-true(ok, 'copy-file returns true')
+
+    ; 驗證目標檔案存在
+    yes bool = fs.is-file(TMP-FILE2)
+    runner.is-true(yes, 'copied file exists')
+
+    ; 驗證目標檔案大小
+    sz = fs.stat-size(TMP-FILE2)
+    runner.eq(sz, 7, 'copied file size == 7')
+
+    ; 清理
+    fs.remove(TMP-FILE)
+    fs.remove(TMP-FILE2)
+}
+
+; ── list-dir ────────────────────────────────
+
+t-list-dir = () {
+    entries = fs.list-dir('/tmp')
+    runner.gt(entries.len, 0, 'list-dir /tmp has entries')
+}
+
+; ── 執行 ──────────────────────────────────────
+
+p1, f1 = runner.test('fs.is-file', t-is-file)
+p2, f2 = runner.test('fs.is-dir', t-is-dir)
+p3, f3 = runner.test('fs.open-write-read', t-open-write-read)
+p4, f4 = runner.test('fs.stat-size', t-stat-size)
+p5, f5 = runner.test('fs.copy-file', t-copy-file)
+p6, f6 = runner.test('fs.list-dir', t-list-dir)
+
+total = runner.summary()
+f = runner.failed-count()
+{
+    f > 0 -> os.exit(1)
+    -> os.exit(0)
+}

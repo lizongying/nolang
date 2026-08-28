@@ -1,0 +1,60 @@
+; std-queue.no — collection/queue 模組測試
+;
+; 執行：no test test/std/queue.no
+; 覆蓋：size / empty / full / clear
+; 注意：queue 的泛型方法 [n]t.queue-init/push/pop/peek 在跨模組
+;       場景下無法被正確單態化（編譯器限制），因此僅測試
+;       定義在 queue 結構體上的非泛型狀態方法。
+
+# /test/runner
+
+t-init-empty = () {
+    q = queue { cap: 16, head: 0, tail: 0 }
+    sz i64 = q.size()
+    runner.eq(sz, 0, 'init size == 0')
+    yes bool = q.empty()
+    runner.is-true(yes, 'init empty == true')
+    no bool = q.full()
+    runner.is-false(no, 'init not full')
+}
+
+t-size-after-enqueue = () {
+    ; 模擬 push 3 個元素：tail 前進 3
+    q = queue { cap: 16, head: 0, tail: 3 }
+    sz i64 = q.size()
+    runner.eq(sz, 3, 'after 3 pushes size == 3')
+    yes bool = q.empty()
+    runner.is-false(yes, 'not empty after pushes')
+}
+
+t-full = () {
+    ; cap=4, 容量為 cap-1=3，push 3 個元素後已滿
+    q = queue { cap: 4, head: 0, tail: 3 }
+    yes bool = q.full()
+    runner.is-true(yes, 'queue full when tail-head == cap-1')
+    no bool = q.empty()
+    runner.is-false(no, 'full queue not empty')
+}
+
+t-clear = () {
+    q = queue { cap: 16, head: 5, tail: 10 }
+    q.clear()
+    sz i64 = q.size()
+    runner.eq(sz, 0, 'after clear size == 0')
+    yes bool = q.empty()
+    runner.is-true(yes, 'after clear empty == true')
+}
+
+; ── 執行 ──────────────────────────────────────
+
+p1, f1 = runner.test('queue.init/empty', t-init-empty)
+p2, f2 = runner.test('queue.size', t-size-after-enqueue)
+p3, f3 = runner.test('queue.full', t-full)
+p4, f4 = runner.test('queue.clear', t-clear)
+
+total = runner.summary()
+f = runner.failed-count()
+{
+    f > 0 -> os.exit(1)
+    -> os.exit(0)
+}

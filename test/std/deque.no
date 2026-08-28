@@ -1,0 +1,147 @@
+; std-deque.no — collection/deque 模組測試
+;
+; 執行：no test test/std/deque.no
+; 覆蓋：push-front / push-back / pop-front / pop-back /
+;       peek-front / peek-back / size / empty / clear
+; 注意：deque 使用 []i64 切片作為底層儲存，需預分配容量
+
+# /test/runner
+
+t-init-empty = () {
+    buf []i64 = with-len(16)
+    d = deque { buf: buf, cap: 16, head: 0, tail: 0 }
+    sz i64 = d.size()
+    runner.eq(sz, 0, 'init size == 0')
+    yes bool = d.empty()
+    runner.is-true(yes, 'init empty == true')
+}
+
+t-push-back-pop-front = () {
+    buf []i64 = with-len(16)
+    d = deque { buf: buf, cap: 16, head: 0, tail: 0 }
+    d.push-back(10)
+    d.push-back(20)
+    d.push-back(30)
+    sz i64 = d.size()
+    runner.eq(sz, 3, 'push-back x3 size == 3')
+
+    ok1 bool = false
+    v1 = d.pop-front()
+    v1: {
+        nil -> ok1 = false
+        -> ok1 = v1 == 10
+    }
+    runner.is-true(ok1, 'pop-front 1st == 10')
+
+    ok2 bool = false
+    v2 = d.pop-front()
+    v2: {
+        nil -> ok2 = false
+        -> ok2 = v2 == 20
+    }
+    runner.is-true(ok2, 'pop-front 2nd == 20')
+
+    sz2 i64 = d.size()
+    runner.eq(sz2, 1, 'after 2 pops size == 1')
+}
+
+t-push-front-pop-back = () {
+    buf []i64 = with-len(16)
+    d = deque { buf: buf, cap: 16, head: 0, tail: 0 }
+    d.push-front(10)
+    d.push-front(20)
+    d.push-front(30)
+    sz i64 = d.size()
+    runner.eq(sz, 3, 'push-front x3 size == 3')
+
+    ok1 bool = false
+    v1 = d.pop-back()
+    v1: {
+        nil -> ok1 = false
+        -> ok1 = v1 == 10
+    }
+    runner.is-true(ok1, 'pop-back 1st == 10')
+
+    ok2 bool = false
+    v2 = d.pop-back()
+    v2: {
+        nil -> ok2 = false
+        -> ok2 = v2 == 20
+    }
+    runner.is-true(ok2, 'pop-back 2nd == 20')
+}
+
+t-peek = () {
+    buf []i64 = with-len(16)
+    d = deque { buf: buf, cap: 16, head: 0, tail: 0 }
+    d.push-back(100)
+    d.push-back(200)
+
+    ok1 bool = false
+    pf = d.peek-front()
+    pf: {
+        nil -> ok1 = false
+        -> ok1 = pf == 100
+    }
+    runner.is-true(ok1, 'peek-front == 100')
+
+    ok2 bool = false
+    pb = d.peek-back()
+    pb: {
+        nil -> ok2 = false
+        -> ok2 = pb == 200
+    }
+    runner.is-true(ok2, 'peek-back == 200')
+
+    sz i64 = d.size()
+    runner.eq(sz, 2, 'peek does not remove, size == 2')
+}
+
+t-pop-empty = () {
+    buf []i64 = with-len(16)
+    d = deque { buf: buf, cap: 16, head: 0, tail: 0 }
+    is-nil1 bool = false
+    v1 = d.pop-front()
+    v1: {
+        nil -> is-nil1 = true
+        -> is-nil1 = false
+    }
+    runner.is-true(is-nil1, 'pop-front empty == nil')
+
+    is-nil2 bool = false
+    v2 = d.pop-back()
+    v2: {
+        nil -> is-nil2 = true
+        -> is-nil2 = false
+    }
+    runner.is-true(is-nil2, 'pop-back empty == nil')
+}
+
+t-clear = () {
+    buf []i64 = with-len(16)
+    d = deque { buf: buf, cap: 16, head: 0, tail: 0 }
+    d.push-back(1)
+    d.push-back(2)
+    d.push-back(3)
+    d.clear()
+    sz i64 = d.size()
+    runner.eq(sz, 0, 'after clear size == 0')
+    yes bool = d.empty()
+    runner.is-true(yes, 'after clear empty == true')
+}
+
+; ── 執行 ──────────────────────────────────────
+
+p1, f1 = runner.test('deque.init/empty', t-init-empty)
+p2, f2 = runner.test('deque.push-back/pop-front', t-push-back-pop-front)
+p3, f3 = runner.test('deque.push-front/pop-back', t-push-front-pop-back)
+p4, f4 = runner.test('deque.peek', t-peek)
+p5, f5 = runner.test('deque.pop-empty', t-pop-empty)
+p6, f6 = runner.test('deque.clear', t-clear)
+
+total = runner.summary()
+f = runner.failed-count()
+{
+    f > 0 -> os.exit(1)
+    -> os.exit(0)
+}

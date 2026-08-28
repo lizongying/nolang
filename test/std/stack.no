@@ -1,0 +1,119 @@
+; std-stack.no — collection/stack 模組測試
+;
+; 執行：no test test/std/stack.no
+; 覆蓋：push / pop / peek / size / empty / clear
+
+# /test/runner
+
+t-init-empty = () {
+    buf []i64 = with-len(32)
+    s = stack { data: buf, n: 0 }
+    sz i64 = s.size()
+    runner.eq(sz, 0, 'init size == 0')
+    yes bool = s.empty()
+    runner.is-true(yes, 'init empty == true')
+}
+
+t-push-pop = () {
+    buf []i64 = with-len(32)
+    s = stack { data: buf, n: 0 }
+    s.push(10)
+    s.push(20)
+    s.push(30)
+    sz i64 = s.size()
+    runner.eq(sz, 3, 'push x3 size == 3')
+
+    ; LIFO: pop 順序應為 30, 20, 10
+    ok1 bool = false
+    v1 = s.pop()
+    v1: {
+        nil -> ok1 = false
+        -> ok1 = v1 == 30
+    }
+    runner.is-true(ok1, 'pop 1st == 30')
+
+    ok2 bool = false
+    v2 = s.pop()
+    v2: {
+        nil -> ok2 = false
+        -> ok2 = v2 == 20
+    }
+    runner.is-true(ok2, 'pop 2nd == 20')
+
+    ok3 bool = false
+    v3 = s.pop()
+    v3: {
+        nil -> ok3 = false
+        -> ok3 = v3 == 10
+    }
+    runner.is-true(ok3, 'pop 3rd == 10')
+
+    yes bool = s.empty()
+    runner.is-true(yes, 'after pop all empty == true')
+}
+
+t-peek = () {
+    buf []i64 = with-len(32)
+    s = stack { data: buf, n: 0 }
+    s.push(10)
+    s.push(20)
+
+    ok bool = false
+    p = s.peek()
+    p: {
+        nil -> ok = false
+        -> ok = p == 20
+    }
+    runner.is-true(ok, 'peek == 20 (top)')
+
+    sz i64 = s.size()
+    runner.eq(sz, 2, 'peek does not remove, size == 2')
+}
+
+t-pop-empty = () {
+    buf []i64 = with-len(32)
+    s = stack { data: buf, n: 0 }
+    is-nil bool = false
+    v = s.pop()
+    v: {
+        nil -> is-nil = true
+        -> is-nil = false
+    }
+    runner.is-true(is-nil, 'pop empty == nil')
+
+    is-nil2 bool = false
+    p = s.peek()
+    p: {
+        nil -> is-nil2 = true
+        -> is-nil2 = false
+    }
+    runner.is-true(is-nil2, 'peek empty == nil')
+}
+
+t-clear = () {
+    buf []i64 = with-len(32)
+    s = stack { data: buf, n: 0 }
+    s.push(1)
+    s.push(2)
+    s.push(3)
+    s.clear()
+    sz i64 = s.size()
+    runner.eq(sz, 0, 'after clear size == 0')
+    yes bool = s.empty()
+    runner.is-true(yes, 'after clear empty == true')
+}
+
+; ── 執行 ──────────────────────────────────────
+
+p1, f1 = runner.test('stack.init/empty', t-init-empty)
+p2, f2 = runner.test('stack.push/pop', t-push-pop)
+p3, f3 = runner.test('stack.peek', t-peek)
+p4, f4 = runner.test('stack.pop-empty', t-pop-empty)
+p5, f5 = runner.test('stack.clear', t-clear)
+
+total = runner.summary()
+f = runner.failed-count()
+{
+    f > 0 -> os.exit(1)
+    -> os.exit(0)
+}

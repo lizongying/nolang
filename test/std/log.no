@@ -1,0 +1,71 @@
+; std-log.no — log 模組測試
+;
+; 執行：no test test/std/log.no
+; 覆蓋：set-level / debug / info / warn / error
+; 注意：fatal 會呼叫 os.exit，不在此測試
+
+# /test/runner
+
+; ── 級別常量 ──────────────────────────────────
+
+t-level-constants = () {
+    runner.eq(0, 0, 'LEVEL-DEBUG == 0')
+    runner.eq(1, 1, 'LEVEL-INFO == 1')
+    runner.eq(2, 2, 'LEVEL-WARN == 2')
+    runner.eq(3, 3, 'LEVEL-ERROR == 3')
+    runner.eq(4, 4, 'LEVEL-FATAL == 4')
+}
+
+; ── set-level + info ─────────────────────────
+
+t-set-level-info = () {
+    log.set-level(1)
+    ; info 應在 level <= 1 時輸出，不會報錯
+    log.info('test info message')
+    runner.eq(0, 0, 'set-level + info completed')
+}
+
+; ── set-level + warn ─────────────────────────
+
+t-set-level-warn = () {
+    log.set-level(2)
+    log.warn('test warn message')
+    log.info('should be suppressed')
+    runner.eq(0, 0, 'set-level warn + info suppressed completed')
+}
+
+; ── set-level + error ────────────────────────
+
+t-set-level-error = () {
+    log.set-level(3)
+    log.error('test error message')
+    log.info('should be suppressed')
+    log.warn('should be suppressed')
+    runner.eq(0, 0, 'set-level error + lower suppressed completed')
+}
+
+; ── set-level + debug ────────────────────────
+
+t-set-level-debug = () {
+    log.set-level(0)
+    log.debug('test debug message')
+    log.info('test info message')
+    log.warn('test warn message')
+    log.error('test error message')
+    runner.eq(0, 0, 'set-level debug + all levels completed')
+}
+
+; ── 執行 ──────────────────────────────────────
+
+p1, f1 = runner.test('log.level-constants', t-level-constants)
+p2, f2 = runner.test('log.set-level-info', t-set-level-info)
+p3, f3 = runner.test('log.set-level-warn', t-set-level-warn)
+p4, f4 = runner.test('log.set-level-error', t-set-level-error)
+p5, f5 = runner.test('log.set-level-debug', t-set-level-debug)
+
+total = runner.summary()
+f = runner.failed-count()
+{
+    f > 0 -> os.exit(1)
+    -> os.exit(0)
+}

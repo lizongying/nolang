@@ -1,0 +1,58 @@
+; std-os.no — os 模組測試
+;
+; 執行：no test test/std/os.no
+; 覆蓋：get-env / get-wd / get-pid / host-name / num-cpu
+; 未測：now（預存 codegen bug: i1/i64 類型衝突）
+;       mkdir / strerror（預存 codegen bug: CLibCall bool 返回值問題）
+;       exit / signal 等危險操作
+
+# /test/runner
+
+; ── 環境變數 ──────────────────────────────────
+
+t-get-env = () {
+    os.set-env('NOLANG_OS_TEST', 'xyz')
+    val = os.get-env('NOLANG_OS_TEST')
+    runner.str-eq(val, 'xyz', 3, 'get-env after set-env')
+}
+
+; ── 工作目錄 ──────────────────────────────────
+
+t-get-wd = () {
+    dir = os.get-wd()
+    runner.gt(dir.len, 0, 'get-wd len > 0')
+}
+
+; ── 進程 ──────────────────────────────────────
+
+t-get-pid = () {
+    pid = os.get-pid()
+    runner.gt(pid, 0, 'get-pid > 0')
+}
+
+; ── 系統資訊 ──────────────────────────────────
+
+t-host-name = () {
+    name = os.host-name()
+    runner.gt(name.len, 0, 'host-name len > 0')
+}
+
+t-num-cpu = () {
+    n = os.num-cpu()
+    runner.gt(n, 0, 'num-cpu > 0')
+}
+
+; ── 執行 ──────────────────────────────────────
+
+p1, f1 = runner.test('os.get-env', t-get-env)
+p2, f2 = runner.test('os.get-wd', t-get-wd)
+p3, f3 = runner.test('os.get-pid', t-get-pid)
+p4, f4 = runner.test('os.host-name', t-host-name)
+p5, f5 = runner.test('os.num-cpu', t-num-cpu)
+
+total = runner.summary()
+f = runner.failed-count()
+{
+    f > 0 -> os.exit(1)
+    -> os.exit(0)
+}

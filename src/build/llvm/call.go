@@ -1168,22 +1168,61 @@ func (g *Generator) generateCallExpression(sb *strings.Builder, expr *parser.Cal
 						// would pass a `void(...)**` slot holding @out/@err, leaving the
 						// real %out/%err locals unwritten and corrupting the call's
 						// output parameters (opt -O2/-O3 then mis-schedules and crashes).
-						if g.funcLocalNames == nil {
-							g.funcLocalNames = make(map[string]bool)
-						}
-						g.funcLocalNames[ident.Value] = true
-						_, exists := g.varTypes[ident.Value]
-						if !exists {
+							_, exists := g.varTypes[ident.Value]
+							// Only register as local name when the variable is NOT a global.
+							// If it's a global var (exists in globalVars), setting funcLocalNames
+							// would cause varAddr to emit %"name" instead of @"name", producing
+							// an undefined-value error in LLVM IR.
+							isGlobal := g.globalVars != nil && g.globalVars[ident.Value]
+								isParam := (g.paramNames != nil && g.paramNames[ident.Value]) ||
+									(g.funcParams != nil && g.funcParams[ident.Value])
+								// Check if the variable already has an alloca (pre-allocated by
+								// generateMainFunction or registered as a function parameter).
+								// Use emittedAlloca to track our own allocations; use funcLocalNames
+								// to detect pre-existing allocas. But we must check funcLocalNames
+								// BEFORE we set it below.
+								alreadyAllocated := (g.funcLocalNames != nil && g.funcLocalNames[ident.Value]) ||
+									(g.emittedAlloca != nil && g.emittedAlloca[ident.Value])
+								if !isGlobal {
+									if g.funcLocalNames == nil {
+										g.funcLocalNames = make(map[string]bool)
+									}
+									g.funcLocalNames[ident.Value] = true
+								}
+								// If the variable exists in varTypes but is neither a global nor
+								// a function parameter nor an already-allocated local (e.g. a
+								// module-level variable that was skipped from globalVars
+								// registration because it is also a multi-assign target), allocate
+								// a local slot now so varAddr's %"name" reference has a backing
+								// alloca.
+								if exists && !isGlobal && !isParam && !alreadyAllocated {
+										if g.emittedAlloca == nil {
+											g.emittedAlloca = make(map[string]bool)
+										}
+										g.emittedAlloca[ident.Value] = true
+										outType := g.varTypes[ident.Value]
+										g.tmpIdx++
+										g.funcVars = append(g.funcVars, varInfo{Name: ident.Value, Type: outType, Size: 8})
+										if sb != nil {
+											sb.WriteString(fmt.Sprintf("%s%s = alloca %s\n", g.indent(), llvmVarRef(ident.Value), outType))
+											sb.WriteString(fmt.Sprintf("%scall void @llvm.lifetime.start.p0i8(i64 8, i8* %s)\n", g.indent(), llvmVarRef(ident.Value)))
+										}
+									}
+								if !exists {
 							outType := "i64"
 							if outIdx < len(outTypes) {
 								outType = outTypes[outIdx]
 							}
 							g.varTypes[ident.Value] = outType
+							if g.emittedAlloca == nil {
+								g.emittedAlloca = make(map[string]bool)
+							}
+							g.emittedAlloca[ident.Value] = true
 							g.tmpIdx++
 							g.funcVars = append(g.funcVars, varInfo{Name: ident.Value, Type: outType, Size: 8})
 							if sb != nil {
-								sb.WriteString(fmt.Sprintf("%s%%%s = alloca %s\n", g.indent(), ident.Value, outType))
-								sb.WriteString(fmt.Sprintf("%scall void @llvm.lifetime.start.p0i8(i64 8, i8* %%%s)\n", g.indent(), ident.Value))
+								sb.WriteString(fmt.Sprintf("%s%s = alloca %s\n", g.indent(), llvmVarRef(ident.Value), outType))
+								sb.WriteString(fmt.Sprintf("%scall void @llvm.lifetime.start.p0i8(i64 8, i8* %s)\n", g.indent(), llvmVarRef(ident.Value)))
 							}
 						}
 						allArgs = append(allArgs, g.generateCallArg(sb, outArg))

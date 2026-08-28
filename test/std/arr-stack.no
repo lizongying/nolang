@@ -1,0 +1,59 @@
+; std-arr-stack.no — collection/arr-stack 模組測試
+;
+; 執行：no test test/std/arr-stack.no
+; 覆蓋：size / empty / full / clear
+; 注意：arr-stack 的泛型方法 [n]t.arr-stack-init/push/pop/peek 在
+;       跨模組場景下無法被正確單態化（編譯器限制），因此僅測試
+;       定義在 arr-stack 結構體上的非泛型狀態方法。
+
+# /test/runner
+
+t-init-empty = () {
+    s = arr-stack { cap: 16, top: 0 }
+    sz i64 = s.size()
+    runner.eq(sz, 0, 'init size == 0')
+    yes bool = s.empty()
+    runner.is-true(yes, 'init empty == true')
+    no bool = s.full()
+    runner.is-false(no, 'init not full')
+}
+
+t-size-after-push = () {
+    ; 模擬 push 3 個元素：top = 3
+    s = arr-stack { cap: 16, top: 3 }
+    sz i64 = s.size()
+    runner.eq(sz, 3, 'after 3 pushes size == 3')
+    yes bool = s.empty()
+    runner.is-false(yes, 'not empty after pushes')
+}
+
+t-full = () {
+    s = arr-stack { cap: 4, top: 4 }
+    yes bool = s.full()
+    runner.is-true(yes, 'arr-stack full when top == cap')
+    no bool = s.empty()
+    runner.is-false(no, 'full stack not empty')
+}
+
+t-clear = () {
+    s = arr-stack { cap: 16, top: 5 }
+    s.clear()
+    sz i64 = s.size()
+    runner.eq(sz, 0, 'after clear size == 0')
+    yes bool = s.empty()
+    runner.is-true(yes, 'after clear empty == true')
+}
+
+; ── 執行 ──────────────────────────────────────
+
+p1, f1 = runner.test('arr-stack.init/empty', t-init-empty)
+p2, f2 = runner.test('arr-stack.size', t-size-after-push)
+p3, f3 = runner.test('arr-stack.full', t-full)
+p4, f4 = runner.test('arr-stack.clear', t-clear)
+
+total = runner.summary()
+f = runner.failed-count()
+{
+    f > 0 -> os.exit(1)
+    -> os.exit(0)
+}

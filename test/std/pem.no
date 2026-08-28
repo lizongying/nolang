@@ -1,0 +1,43 @@
+; std-pem.no — encoding/pem 模組測試
+;
+; 執行：no test test/std/pem.no
+; 覆蓋：pem.pem-encode / pem.pem-decode
+
+# /test/runner
+
+t-encode = () {
+    data []byte = [65, 66, 67]
+    s = pem.pem-encode('TEST', data)
+    runner.gt(s.len, 10, 'encoded len > 10')
+}
+
+t-encode-decode = () {
+    data []byte = [1, 2, 3, 4, 5]
+    encoded = pem.pem-encode('CERTIFICATE', data)
+    runner.gt(encoded.len, 0, 'encoded len > 0')
+
+    ok bool = false
+    result = pem.pem-decode(encoded)
+    result: {
+        ok -> {
+            match = it.data.len == 5
+            match2 = it.data[0] == 1 && it.data[4] == 5
+            ok = match && match2
+        }
+        nil -> ok = false
+        err -> ok = false
+    }
+    runner.is-true(ok, 'roundtrip decode matches original')
+}
+
+; ── 執行 ──────────────────────────────────────
+
+p1, f1 = runner.test('pem.encode', t-encode)
+p2, f2 = runner.test('pem.encode/decode roundtrip', t-encode-decode)
+
+total = runner.summary()
+f = runner.failed-count()
+{
+    f > 0 -> os.exit(1)
+    -> os.exit(0)
+}

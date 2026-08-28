@@ -245,6 +245,7 @@ type funcState struct {
 	arraySizes        map[string]int64                // variable name → declared array size for [N]T locals
 	ssaTypes          map[string]string               // SSA register name → LLVM type (i64/double/%str-long/...)
 	funcLocalNames    map[string]bool                 // local variable names in current function (params + allocas)
+emittedAlloca     map[string]bool                 // track variables that already have an alloca emitted (avoid duplicates)
 	funcParams        map[string]bool                 // current function's parameter names (to distinguish from globals)
 	optionInnerTypes  map[string]string               // option variable name → inner LLVM type (e.g. "f"→"double" for ?f64)
 	itAllocTypes      map[string]string               // synthetic `it` variable name → allocated LLVM type
@@ -434,6 +435,7 @@ func NewGenerator() *Generator {
 		elemElemTypes:     make(map[string]string),
 		paramNames:        make(map[string]bool),
 		funcLocalNames:    make(map[string]bool),
+		emittedAlloca:     make(map[string]bool),
 		funcParams:        make(map[string]bool),
 		optionInnerTypes:  make(map[string]string),
 		ssaTypes:          make(map[string]string),
@@ -463,6 +465,7 @@ func (g *Generator) resetFuncState() {
 		elemElemTypes:     make(map[string]string),
 		paramNames:        make(map[string]bool),
 		funcLocalNames:    make(map[string]bool),
+		emittedAlloca:     make(map[string]bool),
 		funcParams:        make(map[string]bool),
 		optionInnerTypes:  make(map[string]string),
 		ssaTypes:          make(map[string]string),
@@ -572,6 +575,25 @@ func (g *Generator) varAddr(name string) string {
 	if g.varAlias != nil {
 		if alias, ok := g.varAlias[name]; ok {
 			name = alias
+		}
+	}
+	// Remove debug code and fix the actual issue:
+	// When a variable is in BOTH funcLocalNames AND globalVars (which happens
+	// when a global variable is also a multi-assign target, causing
+	// funcLocalNames to be set during statement generation), prefer the global
+	// reference since there is no corresponding local alloca.
+	// This is safe because:
+	// - Function parameters have local allocas but are NOT in globalVars
+	// - True local variables are NOT in globalVars
+	// - The only case where both are true is a global var erroneously marked
+	//   as local by downstream code (e.g., generateLet's vec/arr paths)
+	if g.globalVars != nil && g.globalVars[name] {
+		// Verify there's no local alloca for this name. If there is one
+		// (via emittedAlloca or it's a function parameter), use local ref.
+		isLocalAllocated := (g.emittedAlloca != nil && g.emittedAlloca[name]) ||
+			(g.paramNames != nil && g.paramNames[name])
+		if !isLocalAllocated {
+			return llvmGlobalRef(name)
 		}
 	}
 	if g.funcLocalNames != nil && g.funcLocalNames[name] {

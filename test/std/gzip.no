@@ -1,0 +1,30 @@
+; std-gzip.no — archive/gzip 模組測試
+;
+; 執行：no test test/std/gzip.no
+; 覆蓋：gzip.inflate-decompress (stored block 解壓)
+; 未測：gzip.gzip-compress / gzip.gzip-decompress / gzip.deflate-stored
+;       （跨模組 []byte 返回值觸發 BPT trap，預存編譯器 bug）
+
+# /test/runner
+
+; 手動構造一個 DEFLATE stored block：
+; BFINAL=1, BTYPE=00, LEN=5, NLEN=~5, data=1,2,3,4,5
+; 位元組：01 05 00 FA FF 01 02 03 04 05
+t-inflate-stored = () {
+    deflate-data []byte = [0x01, 0x05, 0x00, 0xFA, 0xFF, 1, 2, 3, 4, 5]
+    inflated = gzip.inflate-decompress(deflate-data, 5)
+    runner.eq(inflated.len, 5, 'inflated len == 5')
+    runner.eq(inflated[0], 1, 'inflated[0] == 1')
+    runner.eq(inflated[4], 5, 'inflated[4] == 5')
+}
+
+; ── 執行 ──────────────────────────────────────
+
+p1, f1 = runner.test('gzip.inflate stored', t-inflate-stored)
+
+total = runner.summary()
+f = runner.failed-count()
+{
+    f > 0 -> os.exit(1)
+    -> os.exit(0)
+}

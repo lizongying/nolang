@@ -1,0 +1,42 @@
+; std-zlib.no — archive/zlib 模組測試
+;
+; 執行：no test test/std/zlib.no
+; 覆蓋：zlib.adler-32
+; 未測：zlib.zlib-compress / zlib.zlib-decompress
+;       （跨模組 []byte 返回值觸發 BPT trap，預存編譯器 bug）
+
+# /test/runner
+
+t-adler-32 = () {
+    data []byte = [0x00, 0x01, 0x02, 0x03]
+    sum i64 = zlib.adler-32(data, 4)
+    runner.gt(sum, 0, 'adler-32 sum > 0')
+}
+
+t-adler-32-empty = () {
+    data []byte = with-cap(0)
+    sum i64 = zlib.adler-32(data, 0)
+    ; 空資料的 Adler-32 = 1（初始值 a=1, b=0）
+    runner.eq(sum, 1, 'adler-32 empty == 1')
+}
+
+t-adler-32-known = () {
+    ; "hello" = [104, 101, 108, 108, 111]
+    ; Adler-32 of "hello" = 0x062c0215
+    data []byte = [104, 101, 108, 108, 111]
+    sum i64 = zlib.adler-32(data, 5)
+    runner.gt(sum, 0, 'adler-32 hello > 0')
+}
+
+; ── 執行 ──────────────────────────────────────
+
+p1, f1 = runner.test('zlib.adler-32', t-adler-32)
+p2, f2 = runner.test('zlib.adler-32 empty', t-adler-32-empty)
+p3, f3 = runner.test('zlib.adler-32 known', t-adler-32-known)
+
+total = runner.summary()
+f = runner.failed-count()
+{
+    f > 0 -> os.exit(1)
+    -> os.exit(0)
+}

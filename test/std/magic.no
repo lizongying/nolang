@@ -1,0 +1,88 @@
+; std-magic.no — magic 模組測試
+;
+; 執行：no test test/std/magic.no
+; 覆蓋：get-extension / detect-by-extension / detect-type
+; 注意：detect-by-magic 需要實際檔案，使用臨時檔案測試
+
+# /test/runner
+
+; ── get-extension ─────────────────────────────
+
+t-get-extension = () {
+    ext = magic.get-extension('file.txt')
+    runner.str-eq(ext, 'txt', 3, 'get-extension file.txt == txt')
+    ext2 = magic.get-extension('/path/to/file.json')
+    runner.str-eq(ext2, 'json', 4, 'get-extension file.json == json')
+    ext3 = magic.get-extension('noext')
+    runner.eq(ext3.len, 0, 'get-extension noext len == 0')
+    ext4 = magic.get-extension('/a/b.c/d')
+    runner.eq(ext4.len, 0, 'get-extension /a/b.c/d len == 0 (dir-like)')
+}
+
+; ── detect-by-extension ──────────────────────
+
+t-detect-by-extension = () {
+    kind = magic.detect-by-extension('txt')
+    runner.str-eq(kind, 'ASCII text', 10, 'detect ext txt == ASCII text')
+    kind2 = magic.detect-by-extension('json')
+    runner.str-eq(kind2, 'JSON data', 9, 'detect ext json == JSON data')
+    kind3 = magic.detect-by-extension('no')
+    runner.str-eq(kind3, 'Nolang source', 13, 'detect ext no == Nolang source')
+    kind4 = magic.detect-by-extension('unknown')
+    runner.eq(kind4.len, 0, 'detect ext unknown len == 0')
+}
+
+; ── detect-type (extension-based, via temp file) ──
+
+t-detect-type-txt = () {
+    ; 使用 open/write 建立臨時檔案
+    tmp = '/tmp/nolang_magic_test.txt'
+    fs.remove(tmp)
+    f = fs.open(tmp, {
+        mode: file-mode.write
+        perm: file-perm.perm-644
+        excl: false
+        truncate: false
+        append: false
+    })
+    f: {
+        err -> runner.is-true(false, 'detect-type-txt: open failed')
+        nil -> runner.is-true(false, 'detect-type-txt: open nil')
+        -> {
+            it.write('hello', 5)
+            it.close()
+        }
+    }
+    kind = magic.detect-type(tmp)
+    runner.str-eq(kind, 'ASCII text', 10, 'detect-type .txt == ASCII text')
+    fs.remove(tmp)
+}
+
+; ── detect-type (directory) ──────────────────
+
+t-detect-type-dir = () {
+    kind = magic.detect-type('/tmp')
+    runner.str-eq(kind, 'directory', 9, 'detect-type /tmp == directory')
+}
+
+; ── detect-type (nonexistent) ────────────────
+
+t-detect-type-nonexistent = () {
+    kind = magic.detect-type('/nonexistent/path/xyz123')
+    runner.str-eq(kind, 'unknown (not found)', 19, 'detect-type nonexistent')
+}
+
+; ── 執行 ──────────────────────────────────────
+
+p1, f1 = runner.test('magic.get-extension', t-get-extension)
+p2, f2 = runner.test('magic.detect-by-extension', t-detect-by-extension)
+p3, f3 = runner.test('magic.detect-type-txt', t-detect-type-txt)
+p4, f4 = runner.test('magic.detect-type-dir', t-detect-type-dir)
+p5, f5 = runner.test('magic.detect-type-nonexistent', t-detect-type-nonexistent)
+
+total = runner.summary()
+f = runner.failed-count()
+{
+    f > 0 -> os.exit(1)
+    -> os.exit(0)
+}

@@ -1338,6 +1338,19 @@ func (t *Transpiler) collectReferencedStdModules(prog *parser.Program) map[strin
 			// 被自動載入。否則結構體類型定義缺失，LLVM alloca 報
 			// "Cannot allocate unsized type" 錯誤。
 			addRef(ex.Type)
+			// 若結構體名本身不是模組名（如 json-pool 不是任何 std 模組的
+			// ShortName），嘗試用連字符前綴匹配 std 模組。例如 json-pool
+			// 的前綴 "json" 對應 std/json.no，json-value 的前綴 "json"
+			// 同樣匹配。這使得 test-json.no 中 json-pool {} 字面量能
+			// 正確觸發 json 模組的自動載入，避免結構體類型定義缺失。
+			if _, ok := lookup[ex.Type]; !ok {
+				if idx := strings.IndexByte(ex.Type, '-'); idx > 0 {
+					prefix := ex.Type[:idx]
+					if _, ok := lookup[prefix]; ok {
+						addRef(prefix)
+					}
+				}
+			}
 			for _, f := range ex.Fields {
 				walkExpr(f.Value)
 			}

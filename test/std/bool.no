@@ -1,0 +1,31 @@
+; std-bool.no — bool 模組測試
+;
+; 執行：no test test/std/bool.no
+; 覆蓋：to-str（true/false 字串轉換）
+; 注意：bool 僅有 to-str 一個方法（內建 ForwardFunc）
+
+# /test/runner
+
+t-to-str-true = () {
+    s1 = true.to-str()
+    runner.eq(s1.len, 4, 'true.to-str len == 4')
+    runner.str-eq(s1, 'true', 4, 'true.to-str content')
+}
+
+t-to-str-false = () {
+    s2 = false.to-str()
+    runner.eq(s2.len, 5, 'false.to-str len == 5')
+    runner.str-eq(s2, 'false', 5, 'false.to-str content')
+}
+
+; ── 執行 ──────────────────────────────────────
+
+p1, f1 = runner.test('bool.to-str true', t-to-str-true)
+p2, f2 = runner.test('bool.to-str false', t-to-str-false)
+
+total = runner.summary()
+f = runner.failed-count()
+{
+    f > 0 -> os.exit(1)
+    -> os.exit(0)
+}

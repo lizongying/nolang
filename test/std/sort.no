@@ -1,0 +1,106 @@
+; std-sort.no — sort 模組測試
+;
+; 執行：no test test/std/sort.no
+; 覆蓋：[]i64.sort-asc / []i64.sort-desc /
+;       [n]i64.sort-asc / [n]i64.sort-desc /
+;       i64.gt / str.gt
+
+# /test/runner
+
+; ── 切片排序 ──────────────────────────────────
+
+t-slice-sort-asc = () {
+    v []i64 = [5, 3, 8, 1, 9, 2, 7]
+    v.sort-asc()
+    runner.eq(v[0], 1, 'sort-asc [0] == 1')
+    runner.eq(v[1], 2, 'sort-asc [1] == 2')
+    runner.eq(v[2], 3, 'sort-asc [2] == 3')
+    runner.eq(v[3], 5, 'sort-asc [3] == 5')
+    runner.eq(v[4], 7, 'sort-asc [4] == 7')
+    runner.eq(v[5], 8, 'sort-asc [5] == 8')
+    runner.eq(v[6], 9, 'sort-asc [6] == 9')
+}
+
+t-slice-sort-desc = () {
+    v []i64 = [5, 3, 8, 1, 9, 2, 7]
+    v.sort-desc()
+    runner.eq(v[0], 9, 'sort-desc [0] == 9')
+    runner.eq(v[1], 8, 'sort-desc [1] == 8')
+    runner.eq(v[2], 7, 'sort-desc [2] == 7')
+    runner.eq(v[3], 5, 'sort-desc [3] == 5')
+    runner.eq(v[6], 1, 'sort-desc [6] == 1')
+}
+
+t-slice-sort-two = () {
+    v []i64 = [2, 1]
+    v.sort-asc()
+    runner.eq(v[0], 1, 'sort-asc two [0] == 1')
+    runner.eq(v[1], 2, 'sort-asc two [1] == 2')
+}
+
+t-slice-sort-single = () {
+    v []i64 = [42]
+    v.sort-asc()
+    runner.eq(v[0], 42, 'sort-asc single == 42')
+}
+
+t-slice-sort-duplicates = () {
+    v []i64 = [3, 1, 3, 1, 3]
+    v.sort-asc()
+    runner.eq(v[0], 1, 'sort-asc dup [0] == 1')
+    runner.eq(v[1], 1, 'sort-asc dup [1] == 1')
+    runner.eq(v[2], 3, 'sort-asc dup [2] == 3')
+    runner.eq(v[3], 3, 'sort-asc dup [3] == 3')
+    runner.eq(v[4], 3, 'sort-asc dup [4] == 3')
+}
+
+; ── 固定陣列排序 ──────────────────────────────
+
+t-array-sort-asc = () {
+    a [8]i64 = [5, 3, 8, 1, 9, 2, 7, 4]
+    a.sort-asc()
+    runner.eq(a[0], 1, 'array sort-asc [0] == 1')
+    runner.eq(a[1], 2, 'array sort-asc [1] == 2')
+    runner.eq(a[2], 3, 'array sort-asc [2] == 3')
+    runner.eq(a[3], 4, 'array sort-asc [3] == 4')
+    runner.eq(a[4], 5, 'array sort-asc [4] == 5')
+    runner.eq(a[5], 7, 'array sort-asc [5] == 7')
+    runner.eq(a[6], 8, 'array sort-asc [6] == 8')
+    runner.eq(a[7], 9, 'array sort-asc [7] == 9')
+}
+
+t-array-sort-desc = () {
+    a [8]i64 = [5, 3, 8, 1, 9, 2, 7, 4]
+    a.sort-desc()
+    runner.eq(a[0], 9, 'array sort-desc [0] == 9')
+    runner.eq(a[7], 1, 'array sort-desc [7] == 1')
+}
+
+; ── i64.gt 比較 ────────────────────────────────
+
+t-i64-gt = () {
+    yes1 bool = (5).gt(3)
+    runner.is-true(yes1, '5.gt(3) == true')
+    yes2 bool = (3).gt(5)
+    runner.is-false(yes2, '3.gt(5) == false')
+    yes3 bool = (5).gt(5)
+    runner.is-false(yes3, '5.gt(5) == false')
+}
+
+; ── 執行 ──────────────────────────────────────
+
+p1, f1 = runner.test('sort.slice-asc', t-slice-sort-asc)
+p2, f2 = runner.test('sort.slice-desc', t-slice-sort-desc)
+p3, f3 = runner.test('sort.slice-two', t-slice-sort-two)
+p4, f4 = runner.test('sort.slice-single', t-slice-sort-single)
+p5, f5 = runner.test('sort.slice-duplicates', t-slice-sort-duplicates)
+p6, f6 = runner.test('sort.array-asc', t-array-sort-asc)
+p7, f7 = runner.test('sort.array-desc', t-array-sort-desc)
+p8, f8 = runner.test('sort.i64-gt', t-i64-gt)
+
+total = runner.summary()
+f = runner.failed-count()
+{
+    f > 0 -> os.exit(1)
+    -> os.exit(0)
+}

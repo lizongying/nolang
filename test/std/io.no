@@ -1,0 +1,90 @@
+; std-io.no — io 模組測試
+;
+; 執行：no test test/std/io.no
+; 覆蓋：io.out / io.outln / io.err / io.errln /
+;       writer.from-stdout / writer.write-str /
+;       writer.write-byte / writer.write-line /
+;       reader.from-stdin (僅驗證建構)
+; 注意：io.read-line 依賴 stdin，不在此測試
+
+# /test/runner
+
+; ── 標準輸出 ──────────────────────────────────
+
+t-out = () {
+    n i64 = io.out('A')
+    runner.gt(n, 0, 'out returns > 0')
+}
+
+t-outln = () {
+    n i64 = io.outln('B')
+    runner.gt(n, 0, 'outln returns > 0')
+}
+
+; ── 標準錯誤 ──────────────────────────────────
+
+t-err = () {
+    n i64 = io.err('E')
+    ok bool = n >= 0
+    runner.is-true(ok, 'err returns >= 0')
+}
+
+t-errln = () {
+    n i64 = io.errln('F')
+    runner.gt(n, 0, 'errln returns > 0')
+}
+
+; ── writer ────────────────────────────────────
+
+t-writer-stdout = () {
+    w = writer.from-stdout()
+    n i64 = w.write-str('hello')
+    runner.gt(n, 0, 'writer.write-str returns > 0')
+}
+
+t-writer-write-byte = () {
+    w = writer.from-stdout()
+    n i64 = w.write-byte(65)
+    runner.gt(n, 0, 'writer.write-byte(65) returns > 0')
+}
+
+t-writer-write-line = () {
+    w = writer.from-stdout()
+    n i64 = w.write-line('test')
+    runner.gt(n, 0, 'writer.write-line returns > 0')
+}
+
+; ── writer.stderr ─────────────────────────────
+
+t-writer-stderr = () {
+    w = writer.from-stderr()
+    n i64 = w.write-str('error-msg')
+    runner.gt(n, 0, 'writer.stderr write-str returns > 0')
+}
+
+; ── reader 建構 ───────────────────────────────
+
+t-reader-stdin = () {
+    r = reader.from-stdin()
+    ; 只驗證 fd 是否為 0 (STDIN)
+    runner.eq(r.fd, 0, 'reader.from-stdin fd == 0')
+}
+
+; ── 執行 ──────────────────────────────────────
+
+p1, f1 = runner.test('io.out', t-out)
+p2, f2 = runner.test('io.outln', t-outln)
+p3, f3 = runner.test('io.err', t-err)
+p4, f4 = runner.test('io.errln', t-errln)
+p5, f5 = runner.test('io.writer-stdout', t-writer-stdout)
+p6, f6 = runner.test('io.writer-write-byte', t-writer-write-byte)
+p7, f7 = runner.test('io.writer-write-line', t-writer-write-line)
+p8, f8 = runner.test('io.writer-stderr', t-writer-stderr)
+p9, f9 = runner.test('io.reader-stdin', t-reader-stdin)
+
+total = runner.summary()
+f = runner.failed-count()
+{
+    f > 0 -> os.exit(1)
+    -> os.exit(0)
+}

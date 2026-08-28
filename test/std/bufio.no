@@ -1,0 +1,104 @@
+; std-bufio.no — bufio 模組測試
+;
+; 執行：no test test/std/bufio.no
+; 覆蓋：reader.init / reader.fill / reader.read-byte / reader.close
+
+# /test/runner
+
+TMP-FILE = '/tmp/nolang_bufio_test.txt'
+
+; ── reader.init ──────────────────────────────
+
+t-reader-init = () {
+    ; 先建立臨時檔案
+    fs.remove(TMP-FILE)
+    f = fs.open(TMP-FILE, {
+        mode: file-mode.write
+        perm: file-perm.perm-644
+        excl: false
+        truncate: false
+        append: false
+    })
+    f: {
+        err ->
+        nil ->
+        -> {
+            it.write('ABC', 3)
+            it.close()
+        }
+    }
+
+    ; 用 open-read 取得 fd
+    fd = fs.open-read(TMP-FILE)
+    runner.gt(fd, 0, 'open-read fd > 0')
+
+    buf []byte = with-cap(64)
+    r = bufio.reader.init(fd, buf)
+    runner.eq(r.pos, 0, 'reader.pos == 0')
+    runner.eq(r.avail, 0, 'reader.avail == 0')
+
+    fs.close(fd)
+    fs.remove(TMP-FILE)
+}
+
+; ── reader.fill + read-byte ──────────────────
+
+t-reader-read-byte = () {
+    fs.remove(TMP-FILE)
+    f = fs.open(TMP-FILE, {
+        mode: file-mode.write
+        perm: file-perm.perm-644
+        excl: false
+        truncate: false
+        append: false
+    })
+    f: {
+        err ->
+        nil ->
+        -> {
+            it.write('XYZ', 3)
+            it.close()
+        }
+    }
+
+    fd = fs.open-read(TMP-FILE)
+    buf []byte = with-cap(64)
+    r = bufio.reader.init(fd, buf)
+
+    ; fill 緩衝區
+    ok bool = r.fill()
+    runner.is-true(ok, 'fill returns true')
+
+    ; 讀取第一個位元組
+    ok1 bool = false
+    b1 = r.read-byte()
+    b1: {
+        nil -> ok1 = false
+        -> ok1 = b1 == 88
+    }
+    runner.is-true(ok1, 'read-byte 1st == X (88)')
+
+    ; 讀取第二個位元組
+    ok2 bool = false
+    b2 = r.read-byte()
+    b2: {
+        nil -> ok2 = false
+        -> ok2 = b2 == 89
+    }
+    runner.is-true(ok2, 'read-byte 2nd == Y (89)')
+
+    r.close()
+    fs.remove(TMP-FILE)
+}
+
+; ── 執行 ──────────────────────────────────────
+
+p1, f1 = runner.test('bufio.reader-init', t-reader-init)
+p2, f2 = runner.test('bufio.reader-read-byte', t-reader-read-byte)
+
+total = runner.summary()
+f = runner.failed-count()
+{
+    f > 0 -> os.exit(1)
+    -> os.exit(0)
+}

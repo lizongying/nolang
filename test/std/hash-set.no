@@ -1,0 +1,68 @@
+; std-hash-set.no — collection/hash-set 模組測試
+;
+; 執行：no test test/std/hash-set.no
+; 覆蓋：init / add / contains / remove / size / is-empty
+; 注意：hash-set.len 和 hash-set.is-empty 可能存在跨模組解析問題
+
+# /test/runner
+
+t-init = () {
+    s = hash-set {}
+    s.init()
+    runner.eq(s.size, 0, 'init size == 0')
+    yes bool = s.is-empty()
+    runner.is-true(yes, 'init is-empty == true')
+}
+
+t-add-contains = () {
+    s = hash-set {}
+    s.init()
+    is-new1 bool = s.add(42)
+    runner.is-true(is-new1, 'add 42 is-new')
+    is-new2 bool = s.add(7)
+    runner.is-true(is-new2, 'add 7 is-new')
+    is-new3 bool = s.add(42)
+    runner.is-false(is-new3, 'add 42 again not new')
+
+    runner.eq(s.size, 2, 'after 2 unique, size == 2')
+
+    yes1 bool = s.contains(42)
+    runner.is-true(yes1, 'contains 42')
+    yes2 bool = s.contains(7)
+    runner.is-true(yes2, 'contains 7')
+    no bool = s.contains(99)
+    runner.is-false(no, 'not contains 99')
+}
+
+t-remove = () {
+    s = hash-set {}
+    s.init()
+    s.add(10)
+    s.add(20)
+    s.add(30)
+
+    removed bool = s.remove(20)
+    runner.is-true(removed, 'remove 20 ok')
+    runner.eq(s.size, 2, 'after remove, size == 2')
+
+    no bool = s.contains(20)
+    runner.is-false(no, 'removed 20 not found')
+    yes bool = s.contains(10)
+    runner.is-true(yes, 'still contains 10')
+
+    not-removed bool = s.remove(999)
+    runner.is-false(not-removed, 'remove non-existent returns false')
+}
+
+; ── 執行 ──────────────────────────────────────
+
+p1, f1 = runner.test('hash-set.init', t-init)
+p2, f2 = runner.test('hash-set.add/contains', t-add-contains)
+p3, f3 = runner.test('hash-set.remove', t-remove)
+
+total = runner.summary()
+f = runner.failed-count()
+{
+    f > 0 -> os.exit(1)
+    -> os.exit(0)
+}

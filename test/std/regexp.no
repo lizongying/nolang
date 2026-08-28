@@ -1,0 +1,153 @@
+; std-regexp.no — regexp 模組測試
+;
+; 執行：no test test/std/regexp.no
+; 覆蓋：regexp.matches / regexp.find /
+;       regexp-match / regexp-find /
+;       字元匹配 / 量詞 / 字元類別 / 錨點
+
+# /test/runner
+
+; ── 基本匹配 ──────────────────────────────────
+
+t-match-literal = () {
+    matched bool = regexp-match('hello', 'hello world')
+    runner.is-true(matched, 'match literal hello')
+    matched2 bool = regexp-match('hello', 'world hello')
+    runner.is-true(matched2, 'match literal from middle')
+    matched3 bool = regexp-match('xyz', 'hello world')
+    runner.is-false(matched3, 'no match xyz')
+}
+
+t-find-literal = () {
+    result = regexp-find('world', 'hello world')
+    runner.eq(result.len, 5, 'find world len == 5')
+    runner.str-eq(result, 'world', 5, 'find world content')
+    result2 = regexp-find('xyz', 'hello world')
+    runner.eq(result2.len, 0, 'find not found len == 0')
+}
+
+; ── 量詞 ──────────────────────────────────────
+
+t-star = () {
+    matched bool = regexp-match('ab*c', 'ac')
+    runner.is-true(matched, 'star: ab*c matches ac')
+    matched3 bool = regexp-match('ab*c', 'abc')
+    runner.is-true(matched3, 'star: ab*c matches abc')
+}
+
+t-plus = () {
+    matched bool = regexp-match('ab+c', 'ac')
+    runner.is-false(matched, 'plus: ab+c not match ac')
+    matched2 bool = regexp-match('ab+c', 'abbc')
+    runner.is-true(matched2, 'plus: ab+c matches abbc')
+}
+
+t-question = () {
+    matched bool = regexp-match('ab?c', 'ac')
+    runner.is-true(matched, 'question: ab?c matches ac')
+    matched2 bool = regexp-match('ab?c', 'abc')
+    runner.is-true(matched2, 'question: ab?c matches abc')
+    matched3 bool = regexp-match('ab?c', 'abbc')
+    runner.is-false(matched3, 'question: ab?c not match abbc')
+}
+
+; ── 任意字元 ──────────────────────────────────
+
+t-dot = () {
+    matched bool = regexp-match('h.llo', 'hello')
+    runner.is-true(matched, 'dot: h.llo matches hello')
+    matched2 bool = regexp-match('h.llo', 'hallo')
+    runner.is-true(matched2, 'dot: h.llo matches hallo')
+    matched3 bool = regexp-match('h.llo', 'hxo')
+    runner.is-false(matched3, 'dot: h.llo not match hxo')
+}
+
+; ── 字元類別 ──────────────────────────────────
+
+t-char-class = () {
+    matched bool = regexp-match('[abc]', 'a')
+    runner.is-true(matched, 'class: [abc] matches a')
+    matched2 bool = regexp-match('[abc]', 'd')
+    runner.is-false(matched2, 'class: [abc] not match d')
+    matched3 bool = regexp-match('[a-z]', 'm')
+    runner.is-true(matched3, 'class: [a-z] matches m')
+    matched4 bool = regexp-match('[a-z]', '5')
+    runner.is-false(matched4, 'class: [a-z] not match 5')
+}
+
+t-negated-class = () {
+    matched bool = regexp-match('[^abc]', 'd')
+    runner.is-true(matched, 'negated: [^abc] matches d')
+    matched2 bool = regexp-match('[^abc]', 'a')
+    runner.is-false(matched2, 'negated: [^abc] not match a')
+}
+
+t-digit-class = () {
+    matched bool = regexp-match('\\d+', 'abc123def')
+    runner.is-true(matched, 'digit: \\d+ matches in abc123')
+    matched2 bool = regexp-match('\\d+', 'abcdef')
+    runner.is-false(matched2, 'digit: \\d+ not match in abcdef')
+    result = regexp-find('\\d+', 'abc123def456')
+    runner.eq(result.len, 3, 'digit find len == 3')
+    runner.str-eq(result, '123', 3, 'digit find content == 123')
+}
+
+t-word-class = () {
+    matched bool = regexp-match('\\w+', 'hello')
+    runner.is-true(matched, 'word: \\w+ matches hello')
+    matched2 bool = regexp-match('\\w+', '  ')
+    runner.is-false(matched2, 'word: \\w+ not match spaces')
+}
+
+; ── 錨點 ──────────────────────────────────────
+
+t-start-anchor = () {
+    matched bool = regexp-match('^hello', 'hello world')
+    runner.is-true(matched, 'anchor: ^hello matches at start')
+    matched2 bool = regexp-match('^hello', 'world hello')
+    runner.is-false(matched2, 'anchor: ^hello not match at end')
+}
+
+t-end-anchor = () {
+    matched bool = regexp-match('world$', 'hello world')
+    runner.is-true(matched, 'anchor: world$ matches at end')
+    matched2 bool = regexp-match('world$', 'world hello')
+    runner.is-false(matched2, 'anchor: world$ not match at start')
+}
+
+; ── 便捷函數 find ─────────────────────────────
+
+t-find-digits = () {
+    result = regexp-find('[0-9]+', 'abc123def456')
+    runner.eq(result.len, 3, 'find [0-9]+ len == 3')
+    runner.str-eq(result, '123', 3, 'find [0-9]+ content == 123')
+}
+
+t-find-not-found = () {
+    result = regexp-find('xyz', 'hello world')
+    runner.eq(result.len, 0, 'find not found len == 0')
+}
+
+; ── 執行 ──────────────────────────────────────
+
+p1, f1 = runner.test('regexp.match-literal', t-match-literal)
+p2, f2 = runner.test('regexp.find-literal', t-find-literal)
+p3, f3 = runner.test('regexp.star', t-star)
+p4, f4 = runner.test('regexp.plus', t-plus)
+p5, f5 = runner.test('regexp.question', t-question)
+p6, f6 = runner.test('regexp.dot', t-dot)
+p7, f7 = runner.test('regexp.char-class', t-char-class)
+p8, f8 = runner.test('regexp.negated-class', t-negated-class)
+p9, f9 = runner.test('regexp.digit-class', t-digit-class)
+p10, f10 = runner.test('regexp.word-class', t-word-class)
+p11, f11 = runner.test('regexp.start-anchor', t-start-anchor)
+p12, f12 = runner.test('regexp.end-anchor', t-end-anchor)
+p13, f13 = runner.test('regexp.find-digits', t-find-digits)
+p14, f14 = runner.test('regexp.find-not-found', t-find-not-found)
+
+total = runner.summary()
+f = runner.failed-count()
+{
+    f > 0 -> os.exit(1)
+    -> os.exit(0)
+}

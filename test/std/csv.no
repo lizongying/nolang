@@ -1,0 +1,85 @@
+; std-csv.no — encoding/csv 模組測試
+;
+; 執行：no test test/std/csv.no
+; 覆蓋：parse-line / parse-field / encode-field
+
+# /test/runner
+
+; ── parse-line ────────────────────────────────
+
+t-parse-simple = () {
+    fields = csv.parse-line('a,b,c', 16)
+    runner.eq(fields.len, 3, 'parse a,b,c len == 3')
+    runner.str-eq(fields[0], 'a', 1, 'field 0 == a')
+    runner.str-eq(fields[1], 'b', 1, 'field 1 == b')
+    runner.str-eq(fields[2], 'c', 1, 'field 2 == c')
+}
+
+t-parse-empty-fields = () {
+    fields = csv.parse-line('a,,c', 16)
+    runner.eq(fields.len, 3, 'parse a,,c len == 3')
+    runner.str-eq(fields[0], 'a', 1, 'field 0 == a')
+    runner.eq(fields[1].len, 0, 'field 1 empty')
+    runner.str-eq(fields[2], 'c', 1, 'field 2 == c')
+}
+
+t-parse-quoted = () {
+    fields = csv.parse-line('"hello,world","test"', 16)
+    runner.eq(fields.len, 2, 'parse quoted len == 2')
+    runner.str-eq(fields[0], 'hello,world', 11, 'quoted field 0 == hello,world')
+    runner.str-eq(fields[1], 'test', 4, 'quoted field 1 == test')
+}
+
+t-parse-escaped-quote = () {
+    fields = csv.parse-line('"say ""hi"""', 16)
+    runner.eq(fields.len, 1, 'parse escaped quote len == 1')
+    runner.str-eq(fields[0], 'say "hi"', 8, 'escaped quote field == say "hi"')
+}
+
+t-parse-single = () {
+    fields = csv.parse-line('only', 16)
+    runner.eq(fields.len, 1, 'parse single len == 1')
+    runner.str-eq(fields[0], 'only', 4, 'single field == only')
+}
+
+t-parse_empty_line = () {
+    fields = csv.parse-line('', 16)
+    runner.eq(fields.len, 0, 'parse empty line len == 0')
+}
+
+; ── encode-field ─────────────────────────────
+
+t-encode-simple = () {
+    out = csv.encode-field('hello')
+    runner.str-eq(out, 'hello', 5, 'encode simple == hello')
+}
+
+t-encode-comma = () {
+    out = csv.encode-field('a,b')
+    runner.eq(out.len, 5, 'encode comma len == 5')
+    runner.str-eq(out, '"a,b"', 5, 'encode comma == "a,b"')
+}
+
+t-encode-quote = () {
+    out = csv.encode-field('say "hi"')
+    runner.str-eq(out, '"say ""hi"""', 11, 'encode quote == "say ""hi"""')
+}
+
+; ── 執行 ──────────────────────────────────────
+
+p1, f1 = runner.test('csv.parse-simple', t-parse-simple)
+p2, f2 = runner.test('csv.parse-empty-fields', t-parse-empty-fields)
+p3, f3 = runner.test('csv.parse-quoted', t-parse-quoted)
+p4, f4 = runner.test('csv.parse-escaped-quote', t-parse-escaped-quote)
+p5, f5 = runner.test('csv.parse-single', t-parse-single)
+p6, f6 = runner.test('csv.parse-empty-line', t-parse_empty_line)
+p7, f7 = runner.test('csv.encode-simple', t-encode-simple)
+p8, f8 = runner.test('csv.encode-comma', t-encode-comma)
+p9, f9 = runner.test('csv.encode-quote', t-encode-quote)
+
+total = runner.summary()
+f = runner.failed-count()
+{
+    f > 0 -> os.exit(1)
+    -> os.exit(0)
+}

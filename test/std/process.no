@@ -1,0 +1,66 @@
+; std-process.no — process 模組測試
+;
+; 執行：no test test/std/process.no
+; 覆蓋：process.new / process.start / process.wait /
+;       process.output / process.parent-pid / process.shell
+; 注意：fork/exec 測試需要 POSIX 環境
+
+# /test/runner
+
+; ── process.new ───────────────────────────────
+
+t-new = () {
+    p = process.new()
+    runner.eq(p.pid, 0, 'new process pid == 0')
+    yes bool = p.is-running()
+    runner.is-false(yes, 'new process not running')
+}
+
+; ── process.shell ────────────────────────────
+
+t-shell = () {
+    code = process.shell('true')
+    runner.eq(code, 0, 'shell true exit 0')
+    code2 = process.shell('false')
+    runner.ne(code2, 0, 'shell false exit != 0')
+}
+
+; ── process.spawn + wait ─────────────────────
+
+t-spawn-wait = () {
+    pid = process.spawn('true')
+    runner.gt(pid, 0, 'spawn pid > 0')
+    status = process.wait(pid)
+    runner.eq(status, 0, 'wait true status == 0')
+}
+
+; ── process.parent-pid ───────────────────────
+
+t-parent-pid = () {
+    pid = process.parent-pid()
+    runner.gt(pid, 0, 'parent-pid > 0')
+}
+
+; ── process.cmd (替代 output，因 output 有 codegen bug) ──
+
+t-cmd = () {
+    args []str = ['hello']
+    out, stderr, code, err = process.cmd('echo', args, '', '', [], 0, false)
+    runner.eq(code, 0, 'cmd echo exit 0')
+    runner.gt(out.len, 0, 'cmd echo out len > 0')
+}
+
+; ── 執行 ──────────────────────────────────────
+
+p1, f1 = runner.test('process.new', t-new)
+p2, f2 = runner.test('process.shell', t-shell)
+p3, f3 = runner.test('process.spawn-wait', t-spawn-wait)
+p4, f4 = runner.test('process.parent-pid', t-parent-pid)
+p5, f5 = runner.test('process.cmd', t-cmd)
+
+total = runner.summary()
+f = runner.failed-count()
+{
+    f > 0 -> os.exit(1)
+    -> os.exit(0)
+}

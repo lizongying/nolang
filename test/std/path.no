@@ -1,0 +1,96 @@
+; std-path.no — path 模組測試
+;
+; 執行：no test test/std/path.no
+; 覆蓋：path.base / path.dir / path.ext / path.is-abs / path.split
+; 未測：path.join / path.clean（原地修改字串導致 BPT trap，預存 codegen bug）
+;       path.current / path.exists / path.is-dir / path.is-file（依賴檔案系統）
+
+# /test/runner
+
+; ── path.base ─────────────────────────────────
+
+t-base = () {
+    p = path {
+        p: '/a/b/c.txt'
+    }
+    b = p.base()
+    runner.str-eq(b, 'c.txt', 5, 'base /a/b/c.txt == c.txt')
+}
+
+t-base-no-slash = () {
+    p = path {
+        p: 'file.txt'
+    }
+    b = p.base()
+    runner.str-eq(b, 'file.txt', 8, 'base file.txt == file.txt')
+}
+
+t-base-root = () {
+    p = path {
+        p: '/'
+    }
+    b = p.base()
+    runner.eq(b.len, 0, 'base / len == 0')
+}
+
+; ── path.ext ──────────────────────────────────
+
+t-ext = () {
+    p = path {
+        p: '/a/b/c.txt'
+    }
+    e = p.ext()
+    runner.str-eq(e, '.txt', 4, 'ext /a/b/c.txt == .txt')
+}
+
+t-ext-no-ext = () {
+    p = path {
+        p: '/a/b/c'
+    }
+    e = p.ext()
+    runner.eq(e.len, 0, 'ext /a/b/c len == 0')
+}
+
+; ── path.is-abs ───────────────────────────────
+
+t-is-abs = () {
+    p = path {
+        p: '/a/b'
+    }
+    yes bool = p.is-abs()
+    runner.is-true(yes, 'is-abs /a/b == true')
+}
+
+t-is-abs-relative = () {
+    p = path {
+        p: 'a/b'
+    }
+    yes bool = p.is-abs()
+    runner.is-false(yes, 'is-abs a/b == false')
+}
+
+t-is-abs-empty = () {
+    p = path {
+        p: ''
+    }
+    yes bool = p.is-abs()
+    runner.is-false(yes, 'is-abs empty == false')
+}
+
+; ── 執行 ──────────────────────────────────────
+
+p1, f1 = runner.test('path.base', t-base)
+p2, f2 = runner.test('path.base-no-slash', t-base-no-slash)
+p3, f3 = runner.test('path.base-root', t-base-root)
+p4, f4 = runner.test('path.ext', t-ext)
+p5, f5 = runner.test('path.ext-no-ext', t-ext-no-ext)
+p6, f6 = runner.test('path.is-abs', t-is-abs)
+p7, f7 = runner.test('path.is-abs-relative', t-is-abs-relative)
+p8, f8 = runner.test('path.is-abs-empty', t-is-abs-empty)
+
+total = runner.summary()
+f = runner.failed-count()
+{
+    f > 0 -> os.exit(1)
+    -> os.exit(0)
+}
