@@ -7796,8 +7796,34 @@ func (g *Generator) generateLet(sb *strings.Builder, stmt *parser.LetStatement) 
 						// 決定實際的 source str 型別
 						sourceStrType := g.inferSourceStrType(f.Value)
 						if sourceStrType == "" {
-							// 非 str 值，直接 store（已是 struct 值）
-							sb.WriteString(fmt.Sprintf("%sstore %s %s, %s* %s\n", g.indent(), toLLVMType(fieldType), fieldVal, toLLVMType(fieldType), gepReg))
+							// 非 str 值。對 %vec/%arr 類型欄位，若源是函數參數
+							// 或局部堆變數，直接 store 只做淺拷貝——結構體欄位
+							// 與源共享同一 data 指標。當結構體在函數退出時被
+							// emitStructFieldsFree 釋放欄位，會 double-free 源
+							// 變數的 data（與 bug19 同類問題，但影響 []byte 等
+							// vec 類型）。修復：對來自參數/局部堆變數的 vec/arr
+							// 值執行深層 clone。
+							needClone := false
+							if ident, ok := f.Value.(*parser.Identifier); ok {
+								if g.funcParams != nil && g.funcParams[ident.Value] {
+									needClone = true
+								}
+								if g.heapVars != nil {
+									if _, isHeap := g.heapVars[ident.Value]; isHeap {
+										needClone = true
+									}
+								}
+							}
+							if needClone && (toLLVMType(fieldType) == "%vec" || toLLVMType(fieldType) == "%arr") {
+								srcIdent := f.Value.(*parser.Identifier)
+								dataFieldIdx := 2
+								if toLLVMType(fieldType) == "%arr" {
+									dataFieldIdx = 1
+								}
+								g.emitContainerClone(sb, g.varAddr(srcIdent.Value), gepReg, toLLVMType(fieldType), dataFieldIdx, "")
+							} else {
+								sb.WriteString(fmt.Sprintf("%sstore %s %s, %s* %s\n", g.indent(), toLLVMType(fieldType), fieldVal, toLLVMType(fieldType), gepReg))
+							}
 					} else if sourceStrType == fieldType {
 						// 同型別。若源是函數參數或局部堆變數（如 Identifier
 						// 指向 str 參數），直接 store 只做淺拷貝——結構體欄位

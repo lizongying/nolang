@@ -51,7 +51,7 @@ t-parse-str = () {
     j = json.parse('"hello"')
     ok bool = false
     j: {
-        ok -> ok = j.is-str()
+        ok -> ok = it.is-str()
         nil -> ok = false
         err -> ok = false
     }
@@ -62,7 +62,7 @@ t-parse-num = () {
     j = json.parse('42.5')
     ok bool = false
     j: {
-        ok -> ok = j.is-num()
+        ok -> ok = it.is-num()
         nil -> ok = false
         err -> ok = false
     }
@@ -73,7 +73,7 @@ t-parse-bool = () {
     j = json.parse('true')
     ok bool = false
     j: {
-        ok -> ok = j.is-bool()
+        ok -> ok = it.is-bool()
         nil -> ok = false
         err -> ok = false
     }
@@ -84,7 +84,7 @@ t-parse-null = () {
     j = json.parse('null')
     ok bool = false
     j: {
-        ok -> ok = j.is-null()
+        ok -> ok = it.is-null()
         nil -> ok = false
         err -> ok = false
     }

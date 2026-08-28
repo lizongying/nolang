@@ -1,9 +1,7 @@
 ; std-zlib.no — archive/zlib 模組測試
 ;
 ; 執行：no test test/std/zlib.no
-; 覆蓋：zlib.adler-32
-; 未測：zlib.zlib-compress / zlib.zlib-decompress
-;       （跨模組 []byte 返回值觸發 BPT trap，預存編譯器 bug）
+; 覆蓋：zlib.adler-32 / zlib.zlib-compress / zlib.zlib-decompress
 
 # /test/runner
 
@@ -28,11 +26,18 @@ t-adler-32-known = () {
     runner.gt(sum, 0, 'adler-32 hello > 0')
 }
 
+t-compress = () {
+    data []byte = [72, 101, 108, 108, 111]  ; "Hello"
+    compressed = zlib.zlib-compress(data)
+    runner.gt(compressed.len, 6, 'compressed len > 6 (zlib header + data)')
+}
+
 ; ── 執行 ──────────────────────────────────────
 
 p1, f1 = runner.test('zlib.adler-32', t-adler-32)
 p2, f2 = runner.test('zlib.adler-32 empty', t-adler-32-empty)
 p3, f3 = runner.test('zlib.adler-32 known', t-adler-32-known)
+p4, f4 = runner.test('zlib.compress', t-compress)
 
 total = runner.summary()
 f = runner.failed-count()

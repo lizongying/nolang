@@ -1088,6 +1088,14 @@ func stdModuleLookup() map[string]checker.StdModuleInfo {
 // 若未來 codegen 新增其他隱式 std 依賴，在此追加，並於 auto-load 區塊同步處理。
 var alwaysAutoLoadStd = []string{"fmt", "io", "byte", "str", "vec", "sort", "char"}
 
+// stdModuleMethodPrefixes lists std module short names whose generic [n]t
+// methods are called via variable.method() form (e.g. buf.queue-init()).
+// collectReferencedStdModules cannot detect these because the receiver is
+// a variable, not a module name. When a method call's property starts with
+// one of these prefixes followed by '-', the corresponding std module is
+// auto-loaded so its [n]t generic methods can be monomorphized.
+var stdModuleMethodPrefixes = []string{"queue", "arr-stack"}
+
 // pathHasComponent reports whether any slash-separated component of p equals
 // comp. It is used to decide whether a path belongs to the std library by an
 // exact component match, replacing the old substring heuristic
@@ -1215,6 +1223,21 @@ func (t *Transpiler) collectReferencedStdModules(prog *parser.Program) map[strin
 		case *parser.CallExpression:
 			if dot, ok := ex.Function.(*parser.DotExpression); ok {
 				addRef(dotModulePath(dot))
+				// 偵測 [n]t 泛型方法呼叫（如 buf.queue-init()）：
+				// receiver 是變數（非模組名），方法名以 std 模組的
+				// 泛型方法前綴開頭時，自動標記對應模組為已引用。
+				// 這確保 collection/queue.no、collection/arr-stack.no
+				// 等子目錄模組的泛型方法能被正確載入和單態化。
+				if recv, ok := dot.Receiver.(*parser.Identifier); ok {
+					if _, isMod := lookup[recv.Value]; !isMod {
+						for _, modName := range stdModuleMethodPrefixes {
+							if strings.HasPrefix(dot.Property, modName + "-") || dot.Property == modName {
+								addRef(modName)
+								break
+							}
+						}
+					}
+				}
 			} else if ident, ok := ex.Function.(*parser.Identifier); ok {
 				// 裸函數呼叫：若函數名恰好為某個 std 模組的 ShortName，
 				// 且該模組確實定義了同名頂層函數（如 crypto/rand.no 的 rand），

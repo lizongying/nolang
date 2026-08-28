@@ -9,7 +9,7 @@ package checker
 func init() {
 	embeddedStdSigReady = true
 	embeddedStdSigVersion = 1
-	embeddedStdSigKey = "deb2db96743837488cfe282835084f1616213e981e2b4e924a8ec819a824af27"
+	embeddedStdSigKey = "729707df537095e4fb7e2113c2659e7b32662e3d08b83681ed4f9c85e0b01a83"
 	embeddedStdFuncSigs = map[string][]string{
 		"[]byte.index":                     {"i64"},
 		"[]byte.index-from":                {"i64"},
@@ -793,7 +793,7 @@ func init() {
 		"json.json-pool.arr-len":                           {"i64"},
 		"json.json-pool.get-bool":                          {"bool", "bool"},
 		"json.json-pool.get-key":                           {"i64", "bool"},
-		"json.json-pool.get-kind":                          {"json-kind"},
+		"json.json-pool.get-kind":                          {"i64"},
 		"json.json-pool.get-num":                           {"f64", "bool"},
 		"json.json-pool.get-str":                           {"str", "bool"},
 		"json.json-pool.init":                              {},
@@ -804,6 +804,7 @@ func init() {
 		"json.json-pool.skip-ws":                           {"i64"},
 		"json.json-pool.str-eq":                            {"i64"},
 		"json.json-pool.stringify":                         {"i64"},
+		"json.json.alloc-node":                             {"i64"},
 		"json.json.arr-get":                                {"?json"},
 		"json.json.arr-len":                                {"i64"},
 		"json.json.arr-push":                               {"bool"},
@@ -823,7 +824,7 @@ func init() {
 		"json.json.is-num":                                 {"bool"},
 		"json.json.is-obj":                                 {"bool"},
 		"json.json.is-str":                                 {"bool"},
-		"json.json.kind":                                   {"json-kind"},
+		"json.json.kind":                                   {"i64"},
 		"json.json.num":                                    {"f64", "bool"},
 		"json.json.parse":                                  {"?json"},
 		"json.json.set":                                    {"bool"},
@@ -1763,7 +1764,7 @@ func init() {
 			"children": "[8]i64",
 			"count":    "i64",
 			"keys":     "[8]str",
-			"kind":     "json-kind",
+			"kind":     "i64",
 			"num-val":  "f64",
 			"str-val":  "str",
 		},
