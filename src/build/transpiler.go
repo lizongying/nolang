@@ -1086,7 +1086,7 @@ func stdModuleLookup() map[string]checker.StdModuleInfo {
 //     （它只掃描 module.fn() DotExpression，不掃描 Type.method Identifier）。
 //     byte/vec 僅在程式（含已載入模組）確實使用 []byte / vec 時載入。
 // 若未來 codegen 新增其他隱式 std 依賴，在此追加，並於 auto-load 區塊同步處理。
-var alwaysAutoLoadStd = []string{"fmt", "io", "byte", "str", "vec", "sort"}
+var alwaysAutoLoadStd = []string{"fmt", "io", "byte", "str", "vec", "sort", "char"}
 
 // pathHasComponent reports whether any slash-separated component of p equals
 // comp. It is used to decide whether a path belongs to the std library by an
@@ -3041,12 +3041,10 @@ func resolveMethodCall(dot *parser.DotExpression, ce *parser.CallExpression,
 		return false
 	}
 	recvType, ok := varTypes[recvIdent.Value]
-	fmt.Fprintf(os.Stderr, "[DBG-resolveMethodCall] recv=%s recvType=%s ok=%v varTypes has %d keys\n", recvIdent.Value, recvType, ok, len(varTypes))
 	if !ok {
 		return false
 	}
 	methodName := dot.Property
-	fmt.Fprintf(os.Stderr, "[DBG-resolveMethodCall] methodName=%s recvType=%s genericFns has %d keys\n", methodName, recvType, len(genericFns))
 	// Search for matching generic method
 	for name, fd := range genericFns {
 		dotIdx := strings.LastIndex(name, ".")
@@ -3060,7 +3058,6 @@ func resolveMethodCall(dot *parser.DotExpression, ce *parser.CallExpression,
 		}
 		// Try to match typePrefix (e.g., "[n]t") against recvType (e.g., "[4]i64")
 		genericArgs := matchTypePattern(typePrefix, recvType, fd)
-		fmt.Fprintf(os.Stderr, "[DBG-resolveMethodCall] matching %s against %s -> genericArgs=%d\n", typePrefix, recvType, len(genericArgs))
 		if len(genericArgs) == 0 {
 			continue
 		}
@@ -3190,16 +3187,13 @@ func matchTypePattern(pattern, concrete string, fd *parser.FunctionDefinition) [
 					argSize := concrete[1:argClose]
 					argElem := concrete[argClose+1:]
 					// [n]t pattern is for fixed-size arrays only.
-					// If argSize is empty, concrete is a slice ([]T), not an array,
-					// and must be handled by the []t slice pattern below.
-					// Without this guard, both [n]t and []t patterns would match
-					// []i64, and non-deterministic map iteration could dispatch
-					// vec calls to arr specializations (causing wrong results/segfaults).
-					if argSize == "" {
+					// If sizeParam is empty, pattern is []t (slice) — skip to
+					// the []t matching logic below, don't return nil here.
+					if sizeParam != "" && argSize == "" {
 						return nil
 					}
 					var args []parser.Expression
-					if isLowerLetter(sizeParam) {
+					if sizeParam != "" && isLowerLetter(sizeParam) {
 						// [n]t pattern requires a numeric size; non-numeric argSize
 						// (e.g. MapType [str]i64 where argSize="str") must not match.
 						val, err := strconv.ParseInt(argSize, 10, 64)
@@ -3279,7 +3273,15 @@ func inferGenericArgs(fd *parser.FunctionDefinition, call *parser.CallExpression
 	return args
 }
 func isLowerLetter(s string) bool {
-	return len(s) == 1 && s[0] >= 'a' && s[0] <= 'z'
+	if s == "" {
+		return false
+	}
+	for _, c := range s {
+		if c < 'a' || c > 'z' {
+			return false
+		}
+	}
+	return true
 }
 func inferArgType(expr parser.Expression, program *parser.Program) string {
 	switch e := expr.(type) {

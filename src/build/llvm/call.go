@@ -1609,6 +1609,14 @@ func (g *Generator) generateCallExpression(sb *strings.Builder, expr *parser.Cal
 					}
 					argStr += "double " + v
 				}
+				// LLVM intrinsics like @llvm.log.f64 require at least one
+				// double argument. When called with zero arguments (e.g.
+				// `log()` in test code), emit 0.0 as a placeholder to avoid
+				// generating invalid IR that causes "Intrinsic called with
+				// incompatible signature" during LLVM optimization.
+				if len(args) == 0 {
+					argStr = "double 0.0"
+				}
 				return fmt.Sprintf("call double @%s(%s)", m.LLVMIntrinsic, argStr)
 			}
 			if m.CLibCall != nil {
@@ -3598,6 +3606,14 @@ func (g *Generator) genForwardFunc(sb *strings.Builder, forwardFunc string, expr
 			sb.WriteString(fmt.Sprintf("%s%s = call i32 @nolang.memcmp(i8* %s, i8* %s, i64 %s)\n", g.indent(), cmpReg, aPtr, bPtr, nVal))
 			sb.WriteString(fmt.Sprintf("%s%s = icmp eq i32 %s, 0\n", g.indent(), eqReg, cmpReg))
 			sb.WriteString(fmt.Sprintf("%s%s = zext i1 %s to i64\n", g.indent(), zextReg, eqReg))
+		}
+		// Register the SSA type as i64 so that downstream type coercion
+		// (generateLet's int→int path) knows the value is already i64,
+		// not i1. Without this, generateLet sees llvmType="i1" (from the
+		// bool return type) and generates a spurious `zext i1 %eqzext to i64`
+		// on an already-i64 value, causing an LLVM type mismatch error.
+		if g.ssaTypes != nil {
+			g.ssaTypes[zextReg] = "i64"
 		}
 		return zextReg
 
