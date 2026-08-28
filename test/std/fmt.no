@@ -6,9 +6,7 @@
 
 # /test/runner
 
-; 注意：fmt-parse-spec 目前僅正確解析 fill/align 前綴與單純寬度數字，
-; sign/zero/precision/typ 因 match 臂級聯問題未被解析（預存 std bug），
-; 故僅測試可用部分。
+; 注意：fmt-parse-spec 已正確解析 fill/align/sign/zero/width/precision/typ。
 t-parse-spec = () {
     fill, align, sign, alt, zero, width, grouping, precision, typ = fmt.fmt-parse-spec('<5')
     runner.eq(fill, 32, 'parse-spec fill default space')
@@ -45,10 +43,9 @@ t-int = () {
     runner.str-eq(b, '   42', 5, 'fmt-int width 5 right')
     c = fmt.fmt-int(42, '<5')
     runner.str-eq(c, '42   ', 5, 'fmt-int left align')
-    ; zero/符號旗標目前未被 fmt-parse-spec 解析（預存 bug），
-    ; '05' 實際行為為空白右對齊。
+    ; zero 旗標現在被正確解析，'05' 產生零填充
     d = fmt.fmt-int(42, '05')
-    runner.str-eq(d, '   42', 5, 'fmt-int zero-leading width')
+    runner.str-eq(d, '00042', 5, 'fmt-int zero-leading width')
     e = fmt.fmt-int(-42, '5')
     runner.str-eq(e, '  -42', 5, 'fmt-int negative width')
     g = fmt.fmt-int(0, '')

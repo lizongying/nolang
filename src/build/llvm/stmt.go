@@ -8069,6 +8069,16 @@ func (g *Generator) generateLet(sb *strings.Builder, stmt *parser.LetStatement) 
 							actualValType = ssaT
 						}
 					}
+					// Also check value name pattern: comparison operators (==, !=, <, >, etc.)
+					// and logical operators (&&, ||) generate zext i1→i64 results with names
+					// ending in .ext or .zext. ForwardFunc builtins like is-dir/is-file
+					// also produce zext'd i64 results. These are already i64, not i1.
+					if llvmType == "i1" && existingType == "i64" && actualValType != "i64" {
+						if strings.Contains(val, ".ext") || strings.Contains(val, ".zext") ||
+							strings.Contains(val, "land.tmp") || strings.Contains(val, "lor.tmp") {
+							actualValType = "i64"
+						}
+					}
 					if llvmType == "i1" && existingType == "i64" && actualValType == "i64" {
 						// val is already i64 (e.g. from voidSingleOutput path
 						// where bool output params are mapped to i64).

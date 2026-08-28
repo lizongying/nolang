@@ -1,0 +1,46 @@
+# /test/runner
+
+t-flags = () {
+    flags = 0
+    m file-mode = file-mode.write
+    m: {
+        m.read -> flags = 0
+        m.write -> flags = 1 | 512 | 1024
+        m.append -> flags = 1 | 512 | 8
+        m.read-write -> flags = 2 | 512 | 1024
+    }
+    runner.eq(flags, 1537, 'write flags == 1537')
+}
+
+t-open-via-opts = () {
+    flags = 0
+    m file-mode = file-mode.write
+    m: {
+        m.read -> flags = 0
+        m.write -> flags = 1 | 512 | 1024
+        m.append -> flags = 1 | 512 | 8
+        m.read-write -> flags = 2 | 512 | 1024
+    }
+    perm-val = 420
+    pv file-perm = file-perm.perm-644
+    pv: {
+        pv.perm-600 -> perm-val = 384
+        pv.perm-644 -> perm-val = 420
+        pv.perm-664 -> perm-val = 436
+        pv.perm-666 -> perm-val = 438
+        pv.perm-755 -> perm-val = 493
+        pv.perm-777 -> perm-val = 511
+    }
+    fd = fs.open-file('/tmp/nolang_test_opts.txt', flags, perm-val)
+    runner.gt(fd, 0, 'open-file via computed flags')
+    fd > 0 -> fs.close(fd)
+}
+
+p1, f1 = runner.test('fs.flags', t-flags)
+p2, f2 = runner.test('fs.open-via-opts', t-open-via-opts)
+total = runner.summary()
+f = runner.failed-count()
+{
+    f > 0 -> os.exit(1)
+    -> os.exit(0)
+}

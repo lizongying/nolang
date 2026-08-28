@@ -1,0 +1,30 @@
+# /test/runner
+
+t-open-simple = () {
+    f = fs.open('/tmp/nolang_test_simple.txt', {
+        mode: file-mode.write
+        perm: file-perm.perm-644
+        excl: false
+        truncate: false
+        append: false
+    })
+    ok bool = false
+    f: {
+        err -> ok = false
+        nil -> ok = false
+        -> {
+            ok = true
+            it.write('hello', 5)
+            it.close()
+        }
+    }
+    runner.is-true(ok, 'open write succeeded')
+}
+
+p1, f1 = runner.test('fs.open-simple', t-open-simple)
+total = runner.summary()
+f = runner.failed-count()
+{
+    f > 0 -> os.exit(1)
+    -> os.exit(0)
+}
