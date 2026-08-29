@@ -4886,16 +4886,44 @@ func resolveSelfInExpr(expr parser.Expression, selfType string, structFields map
 		if dot, ok := e.Function.(*parser.DotExpression); ok {
 			// Case 1: self.method(args) → StructType.method(self, args)
 			if recv, ok := dot.Receiver.(*parser.Identifier); ok && recv.Value == "self" {
-				concreteName := selfType + "." + dot.Property
-				e.Function = &parser.Identifier{
-					Token: lexer.Token{Type: lexer.IDENT, Literal: concreteName},
-					Value: concreteName,
+				// Don't rewrite builtin methods on builtin types (e.g. []byte.len,
+				// []i64.len, str.len). Builtins are handled by the codegen via
+				// DotExpression dispatch + ForwardFunc. Rewriting them to
+				// Type.method(self, ...) would create undefined function calls
+				// (e.g. _LB__RB_byte.len) or bypass the inline field-access path.
+				isBuiltinMethodOnBuiltinType := false
+				if strings.HasPrefix(selfType, "[]") {
+					if builtin.FindBuiltinMethod("vec."+dot.Property) != nil ||
+						builtin.FindBuiltinMethod(dot.Property) != nil ||
+						builtin.FindBuiltinMethod(selfType+"."+dot.Property) != nil {
+						isBuiltinMethodOnBuiltinType = true
+					}
+				} else if strings.HasPrefix(selfType, "[") {
+					if builtin.FindBuiltinMethod("arr."+dot.Property) != nil ||
+						builtin.FindBuiltinMethod(selfType+"."+dot.Property) != nil {
+						isBuiltinMethodOnBuiltinType = true
+					}
+				} else if selfType == "str" || selfType == "byte" || selfType == "char" || selfType == "bool" ||
+					selfType == "i64" || selfType == "u64" || selfType == "i32" || selfType == "u32" ||
+					selfType == "i16" || selfType == "u16" || selfType == "i8" || selfType == "u8" ||
+					selfType == "f64" || selfType == "f32" {
+					if builtin.FindBuiltinMethod(selfType+"."+dot.Property) != nil ||
+						builtin.FindBuiltinMethod(dot.Property) != nil {
+						isBuiltinMethodOnBuiltinType = true
+					}
 				}
-				receiverArg := &parser.Identifier{
-					Token: recv.Token,
-					Value: "self",
+				if !isBuiltinMethodOnBuiltinType {
+					concreteName := selfType + "." + dot.Property
+					e.Function = &parser.Identifier{
+						Token: lexer.Token{Type: lexer.IDENT, Literal: concreteName},
+						Value: concreteName,
+					}
+					receiverArg := &parser.Identifier{
+						Token: recv.Token,
+						Value: "self",
+					}
+					e.Arguments = append([]parser.Expression{receiverArg}, e.Arguments...)
 				}
-				e.Arguments = append([]parser.Expression{receiverArg}, e.Arguments...)
 			}
 			// Case 2: .field.method(args) → FieldType.method(.field, args)
 			// where .field is self.field (DotExpression with Receiver=Identifier{"self"})

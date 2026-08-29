@@ -35,8 +35,20 @@ func TestSliceMethodLenCall(t *testing.T) {
 
 	// The LLVM IR should NOT contain a call to the non-existent []byte.len function.
 	// In LLVM IR, "[]" is mangled to "_LB__RB_", so []byte.len becomes _LB__RB_byte.len
-	if strings.Contains(llvmIR, "_LB__RB_byte.len") {
-		t.Errorf("LLVM IR contains call to non-existent []byte.len function:\n%s", llvmIR)
+	// Note: []byte.len may exist as a function definition (from byte.no), so we only
+	// check that the test-len function body does not contain a CALL to it.
+	// (Like TestSliceMethodLenCallOnStr, we check the function body, not the whole IR.)
+	testLenIdx2 := strings.Index(llvmIR, "test-len")
+	if testLenIdx2 < 0 {
+		t.Fatalf("test-len function not found in LLVM IR (pre-check)")
+	}
+	endIdx2 := strings.Index(llvmIR[testLenIdx2:], "}")
+	if endIdx2 < 0 {
+		endIdx2 = len(llvmIR) - testLenIdx2
+	}
+	fnBodyCheck := llvmIR[testLenIdx2 : testLenIdx2+endIdx2]
+	if strings.Contains(fnBodyCheck, "call") && strings.Contains(fnBodyCheck, "_LB__RB_byte.len") {
+		t.Errorf("test-len function body contains call to []byte.len function:\n%s", fnBodyCheck)
 	}
 
 	// The test-len function should load the len field from the %vec struct

@@ -4331,6 +4331,24 @@ func (g *Generator) varLLVMType(stmt *parser.LetStatement) string {
 							}
 						}
 					}
+					// CallExpression receiver (e.g. buf.slice(0, n).to-str()):
+					// derive element type from the inner method call's receiver.
+					if callExpr, ok := recvExpr.(*parser.CallExpression); ok {
+						if dotFn, ok := callExpr.Function.(*parser.DotExpression); ok {
+							if ident, ok := dotFn.Receiver.(*parser.Identifier); ok {
+								if g.arrayElemTypes != nil {
+									if et, ok := g.arrayElemTypes[ident.Value]; ok {
+										et = strings.TrimPrefix(et, "%")
+										if elemAliases, ok := llvmTypeToNolang[et]; ok {
+											for _, alias := range elemAliases {
+												candidates = append(candidates, "[]"+alias)
+											}
+										}
+									}
+								}
+							}
+						}
+					}
 				}
 				for _, cand := range candidates {
 					shortName := cand + "." + dot.Property

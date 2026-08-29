@@ -195,11 +195,35 @@ func loadStdSigCache(path string) (*stdSigCachePayload, bool) {
 }
 
 // decodeStdSigCache decodes a gob-encoded payload.
+//
+// gob decodes a non-nil empty slice as a nil slice, which breaks
+// reflect.DeepEqual (nil != []T{}).  We normalise nil slices back to
+// non-nil empty slices so the round-trip is byte-for-byte faithful.
 func decodeStdSigCache(data []byte) (*stdSigCachePayload, bool) {
 	dec := gob.NewDecoder(bytes.NewReader(data))
 	var p stdSigCachePayload
 	if err := dec.Decode(&p); err != nil {
 		return nil, false
+	}
+	for k, v := range p.FuncSigs {
+		if v == nil {
+			p.FuncSigs[k] = []string{}
+		}
+	}
+	for k, v := range p.MethodSigs {
+		if v == nil {
+			p.MethodSigs[k] = []string{}
+		}
+	}
+	for k, v := range p.EnumVariants {
+		if v == nil {
+			p.EnumVariants[k] = []string{}
+		}
+	}
+	for k, v := range p.Tokens {
+		if v == nil {
+			p.Tokens[k] = []lexer.Token{}
+		}
 	}
 	return &p, true
 }

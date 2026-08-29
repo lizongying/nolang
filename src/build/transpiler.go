@@ -1578,13 +1578,6 @@ func (t *Transpiler) CompileTarget(source string, _ Target) (string, error) {
 		importedModules = append(importedModules, info.ShortName)
 	}
 	for _, stmt := range program.Statements {
-		// Debug: check if filename/raw/data/archive leaked into program.Statements
-		if ls, ok := stmt.(*parser.LetStatement); ok && ls.Name != nil {
-			n := ls.Name.Value
-			if n == "filename" || n == "raw" || n == "data" || n == "archive" || n == "n" {
-				fmt.Fprintf(os.Stderr, "[DBG-PROG] %s LetStatement found in program.Statements, Type=%v, Value=%T\n", n, ls.Type, ls.Value)
-			}
-		}
 		// (1) ..any 標準庫限制檢查
 		if fd, ok := stmt.(*parser.FunctionDefinition); ok && isUserCode {
 			if fd.IsVariadic {
@@ -3095,6 +3088,18 @@ func fnExistsInProgram(program *parser.Program, name string) bool {
 	}
 	return false
 }
+// isBuiltinType reports whether name is a builtin primitive type (str, i64, etc.)
+func isBuiltinType(name string) bool {
+	switch name {
+	case "i8", "i16", "i32", "i64", "i128",
+		"u8", "u16", "u32", "u64", "u128",
+		"f32", "f64",
+		"byte", "bool", "str":
+		return true
+	}
+	return false
+}
+
 // resolveMethodCall resolves a DotExpression-based method call.
 // Returns true if the call was resolved and rewritten.
 func resolveMethodCall(dot *parser.DotExpression, ce *parser.CallExpression,
@@ -3110,6 +3115,23 @@ func resolveMethodCall(dot *parser.DotExpression, ce *parser.CallExpression,
 		return false
 	}
 	methodName := dot.Property
+	// Early exit: if the method is a builtin (e.g. "len"), don't attempt
+	// generic or non-generic rewriting — the codegen handles builtin method
+	// calls via DotExpression dispatch + ForwardFunc / inline field access.
+	// This prevents .len() inside method bodies from being rewritten to
+	// _xbyte.len(self) (generic) or str.len(self) (non-generic), which
+	// would generate a function call instead of inline field access.
+	// Builtins like str.len are registered with MethodName="len" (no type
+	// prefix), so we check the bare method name.
+	if builtin.FindBuiltinMethod(methodName) != nil {
+		// Only skip if the receiver is a builtin type (str, []T, [N]T, i64, etc.)
+		isBuiltinRecv := isBuiltinType(recvType) ||
+			strings.HasPrefix(recvType, "[]") ||
+			(strings.HasPrefix(recvType, "[") && strings.Contains(recvType, "]"))
+		if isBuiltinRecv {
+			return false
+		}
+	}
 	// Search for matching generic method
 	for name, fd := range genericFns {
 		dotIdx := strings.LastIndex(name, ".")
@@ -3180,6 +3202,13 @@ func resolveMethodCall(dot *parser.DotExpression, ce *parser.CallExpression,
 		if builtin.FindBuiltinMethod(concreteName) != nil {
 			return false
 		}
+		// Also check the bare method name (e.g. "len") — builtins like
+		// str.len are registered with MethodName="len" (no type prefix),
+		// so FindBuiltinMethod("vec.len") returns nil but
+		// FindBuiltinMethod("len") finds it.
+		if builtin.FindBuiltinMethod(methodName) != nil {
+			return false
+		}
 	}
 	if strings.HasPrefix(recvType, "[") && !strings.HasPrefix(recvType, "[]") {
 		// Array types ([N]T) map to "arr" builtins
@@ -3196,10 +3225,25 @@ func resolveMethodCall(dot *parser.DotExpression, ce *parser.CallExpression,
 				return false
 			}
 		}
+		// Also check the bare method name for the same reason as slices.
+		if builtin.FindBuiltinMethod(methodName) != nil {
+			return false
+		}
 	}
 	// Check concrete name for other types (str, i64, etc.)
 	if builtin.FindBuiltinMethod(concreteName) != nil {
 		return false
+	}
+	// Also check the bare method name (e.g. "len") — some builtins like
+	// str.len are registered with MethodName="len" (no type prefix), so
+	// FindBuiltinMethod("str.len") returns nil but FindBuiltinMethod("len")
+	// finds it. Without this check, .len() inside method bodies would be
+	// rewritten to str.len(self), generating a function call instead of
+	// inline field access.
+	if isBuiltinType(recvType) {
+		if builtin.FindBuiltinMethod(methodName) != nil {
+			return false
+		}
 	}
 	// Check if recvType is a member of a union type alias
 	// If so, use the union alias prefix instead of the concrete type —

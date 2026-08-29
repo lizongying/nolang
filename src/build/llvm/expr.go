@@ -1794,26 +1794,39 @@ func (g *Generator) exprResultLLVMType(expr parser.Expression) string {
 			}
 			// Method calls on variables (e.g. base.slice(0, n)): resolve
 			// receiver type and look up method return type.
-			if g.ssaTypes != nil {
-				if recv, ok := dot.Receiver.(*parser.Identifier); ok {
-					if g.varTypes != nil {
-						if recvType, ok := g.varTypes[recv.Value]; ok {
-							srcType := strings.TrimPrefix(recvType, "%")
-							candidates := []string{srcType}
-							if primAliases, ok := llvmTypeToNolang[srcType]; ok {
-								candidates = append(candidates, primAliases...)
-							}
-							for _, cand := range candidates {
-								shortName := cand + "." + dot.Property
-								if g.funcRetTypes != nil {
-									if t, ok := g.funcRetTypes[shortName]; ok && t != "void" {
-										return t
+			if recv, ok := dot.Receiver.(*parser.Identifier); ok {
+				if g.varTypes != nil {
+					if recvType, ok := g.varTypes[recv.Value]; ok {
+						srcType := strings.TrimPrefix(recvType, "%")
+						candidates := []string{srcType}
+						if primAliases, ok := llvmTypeToNolang[srcType]; ok {
+							candidates = append(candidates, primAliases...)
+						}
+						// vec/arr receiver: construct []T and _x<T> candidates
+						// (e.g. buf.slice(0, n) where buf is []byte → []byte.slice)
+						if (srcType == "vec" || srcType == "arr") && g.arrayElemTypes != nil {
+							if et, ok := g.arrayElemTypes[recv.Value]; ok {
+								et = strings.TrimPrefix(et, "%")
+								if elemAliases, ok := llvmTypeToNolang[et]; ok {
+									for _, alias := range elemAliases {
+										candidates = append(candidates, "[]"+alias)
+									}
+									for _, alias := range elemAliases {
+										candidates = append(candidates, "_x"+alias)
 									}
 								}
-								if g.funcResultLLVMType != nil {
-									if ts, ok := g.funcResultLLVMType[shortName]; ok && len(ts) == 1 {
-										return ts[0]
-									}
+							}
+						}
+						for _, cand := range candidates {
+							shortName := cand + "." + dot.Property
+							if g.funcRetTypes != nil {
+								if t, ok := g.funcRetTypes[shortName]; ok && t != "void" {
+									return t
+								}
+							}
+							if g.funcResultLLVMType != nil {
+								if ts, ok := g.funcResultLLVMType[shortName]; ok && len(ts) == 1 {
+									return ts[0]
 								}
 							}
 						}
