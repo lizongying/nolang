@@ -342,6 +342,7 @@ type Generator struct {
 	moduleOptionInnerTypes map[string]string               // 模組級 option 變數 inner type 備份（避免函數級 map reset 後丟失）
 	moveEligible           map[*parser.LetStatement]bool   // b=a 赋值中，源变量 a 在后续未被引用 → true（可 move）
 	funcResultInnerTypes   map[string][]string             // function name → inner LLVM types of ?T results
+	funcHasBody            map[string]bool                 // function name → true if the function has a non-empty body (not a ForwardFunc stub)
 	enumVariantIndex       map[string]int64                // enum variant name → tag index (e.g. status1→0, status2→1)
 	enumVariants           map[string]map[string]int64     // enum type name → variant name → value (e.g. "FileMode"→{"WRITE":1,"CREATE":64})
 	fnTypeAliases          map[string]*parser.FunctionType // named function type alias name → FunctionType
@@ -1017,6 +1018,7 @@ func (g *Generator) Generate(program *parser.Program) string {
 	g.optionInnerTypes = make(map[string]string)
 	g.itAllocTypes = make(map[string]string)
 	g.funcResultInnerTypes = make(map[string][]string)
+	g.funcHasBody = make(map[string]bool)
 	g.enumVariantIndex = make(map[string]int64)
 	g.enumVariants = make(map[string]map[string]int64)
 	g.fnTypeAliases = make(map[string]*parser.FunctionType)
@@ -1279,6 +1281,11 @@ func (g *Generator) Generate(program *parser.Program) string {
 			g.funcRetTypes[fd.Name] = retType
 			g.funcNumResults[fd.Name] = len(fd.Results)
 			g.funcDeclaredResults[fd.Name] = len(fd.Results)
+			// Track whether the function has a real body (non-empty statements).
+			// ForwardFunc builtins in stdlib are commented out (disabled),
+			// so a function in funcRetTypes with a body is a user-defined function
+			// that must take precedence over the builtin.
+			g.funcHasBody[fd.Name] = fd.Body != nil
 			// 收集每個輸出參數的 LLVM 型別，供多賦值推斷變數型別使用
 			if len(fd.Results) > 0 {
 				rets := make([]string, len(fd.Results))
@@ -1333,6 +1340,7 @@ func (g *Generator) Generate(program *parser.Program) string {
 					g.funcRetTypes[name] = retType
 					g.funcNumResults[name] = len(fl.Results)
 					g.funcDeclaredResults[name] = len(fl.Results)
+					g.funcHasBody[name] = fl.Body != nil
 					if len(fl.Results) > 0 {
 						rets := make([]string, len(fl.Results))
 						nolangRets := make([]string, len(fl.Results))
@@ -1380,28 +1388,29 @@ func (g *Generator) Generate(program *parser.Program) string {
 					if len(fl.Results) == 1 && fl.Results[0].Name == "" {
 						retType = g.mapToLLVMType(fl.Results[0].Type.String())
 					}
-					g.funcRetTypes[name] = retType
-					g.funcNumResults[name] = len(fl.Results)
-					g.funcDeclaredResults[name] = len(fl.Results)
-					if len(fl.Results) > 0 {
-						rets := make([]string, len(fl.Results))
-						nolangRets := make([]string, len(fl.Results))
-						innerRets := make([]string, len(fl.Results))
-						for i, r := range fl.Results {
-							typeStr := r.Type.String()
-							rets[i] = g.resolveOutputParamLLVMType(r.Type)
-							nolangRets[i] = typeStr
-							if nt, ok := r.Type.(*parser.NullableType); ok {
-								innerRets[i] = g.resolveParamLLVMType(nt.Type)
-							} else if strings.HasPrefix(typeStr, "?") {
-								innerRets[i] = g.mapToLLVMType(typeStr[1:])
-							}
+				g.funcRetTypes[name] = retType
+				g.funcNumResults[name] = len(fl.Results)
+				g.funcDeclaredResults[name] = len(fl.Results)
+				g.funcHasBody[name] = fl.Body != nil
+				if len(fl.Results) > 0 {
+					rets := make([]string, len(fl.Results))
+					nolangRets := make([]string, len(fl.Results))
+					innerRets := make([]string, len(fl.Results))
+					for i, r := range fl.Results {
+						typeStr := r.Type.String()
+						rets[i] = g.resolveOutputParamLLVMType(r.Type)
+						nolangRets[i] = typeStr
+						if nt, ok := r.Type.(*parser.NullableType); ok {
+							innerRets[i] = g.resolveParamLLVMType(nt.Type)
+						} else if strings.HasPrefix(typeStr, "?") {
+							innerRets[i] = g.mapToLLVMType(typeStr[1:])
 						}
-						g.funcResultLLVMType[name] = rets
-						g.funcResultNolangTypes[name] = nolangRets
-						g.funcResultInnerTypes[name] = innerRets
 					}
-					g.funcIsVariadic[name] = fl.IsVariadic
+					g.funcResultLLVMType[name] = rets
+					g.funcResultNolangTypes[name] = nolangRets
+					g.funcResultInnerTypes[name] = innerRets
+				}
+				g.funcIsVariadic[name] = fl.IsVariadic
 					if fl.IsVariadic && len(fl.Parameters) > 0 {
 						g.funcParamCount[name] = len(fl.Parameters) - 1
 					} else {

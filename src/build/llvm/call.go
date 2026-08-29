@@ -1453,49 +1453,70 @@ func (g *Generator) generateCallExpression(sb *strings.Builder, expr *parser.Cal
 		// transpiler 已將 .method() 改寫為 method()，fnName 含 "." 時視為方法呼叫
 		if strings.Contains(fnName, ".") && g.funcRetTypes != nil {
 			if _, hasNolang := g.funcRetTypes[fnName]; hasNolang {
-				// ForwardFunc built-ins (e.g. gzip-decompress, gzip-compress) have
-				// special LLVM code generation in callBuiltin that must be used.
-				// The Nolang function definition has an empty body — the real
-				// implementation is the built-in LLVM intrinsic.
-				//
-				// ⚠️ Only check the FULL function name (e.g. "gzip-decompress") as a
-				// builtin. Do NOT strip the prefix and check the short name (e.g. "max"
-				// from "[]t.max"), because a user-defined method like []t.max has a
-				// full Nolang body and shares its short name "max" with the unrelated
-				// math-max ForwardFunc builtin. Stripping would incorrectly classify
-				// []t.max as a ForwardFunc, leaving skipBuiltin=false and causing the
-				// prefix-stripping at ~L1295 to mangle fnName to "max", which then
-				// fails all funcRetTypes/funcNumResults/funcResultLLVMType lookups,
-				// so voidSingleOutput is never triggered and the call loses its
-				// output parameter.
-				isForwardBuiltin := false
-				m := builtin.FindBuiltinMethod(fnName)
-				if m == nil && strings.Contains(fnName, ".") {
-					if idx := strings.Index(fnName, "."); idx >= 0 {
-						m = builtin.FindBuiltinMethod(fnName[idx+1:])
+					// ForwardFunc built-ins (e.g. gzip-decompress, gzip-compress) have
+					// special LLVM code generation in callBuiltin that must be used.
+					// The Nolang function definition has an empty body — the real
+					// implementation is the built-in LLVM intrinsic.
+					//
+					// ⚠️ Only check the FULL function name (e.g. "gzip-decompress") as a
+					// builtin. Do NOT strip the prefix and check the short name (e.g. "max"
+					// from "[]t.max"), because a user-defined method like []t.max has a
+					// full Nolang body and shares its short name "max" with the unrelated
+					// math-max ForwardFunc builtin. Stripping would incorrectly classify
+					// []t.max as a ForwardFunc, leaving skipBuiltin=false and causing the
+					// prefix-stripping at ~L1295 to mangle fnName to "max", which then
+					// fails all funcRetTypes/funcNumResults/funcResultLLVMType lookups,
+					// so voidSingleOutput is never triggered and the call loses its
+					// output parameter.
+					//
+					// IMPORTANT: All ForwardFunc builtins in the standard library are
+					// defined as comments (disabled). Therefore, if funcRetTypes[fnName]
+					// exists, it means a user has defined a real function with a body —
+					// the user function must take precedence over the ForwardFunc builtin.
+					// Without this check, user-defined write-file/read-file etc. would
+					// be incorrectly dispatched to the builtin (which uses %vec for []byte
+					// instead of %str-long for str), causing LLVM type mismatch errors.
+					isForwardBuiltin := false
+					m := builtin.FindBuiltinMethod(fnName)
+					if m == nil && strings.Contains(fnName, ".") {
+						if idx := strings.Index(fnName, "."); idx >= 0 {
+							m = builtin.FindBuiltinMethod(fnName[idx+1:])
+						}
 					}
-				}
-				if m != nil && m.ForwardFunc != "" {
-					isForwardBuiltin = true
-				}
-				if !isForwardBuiltin {
-					skipBuiltin = true
-				}
+					if m != nil && m.ForwardFunc != "" {
+						isForwardBuiltin = true
+					}
+					// If the user function has a real body, it takes precedence over
+					// the ForwardFunc builtin (which would have an empty body in stdlib).
+					if isForwardBuiltin && g.funcHasBody[fnName] {
+						isForwardBuiltin = false
+					}
+					if !isForwardBuiltin {
+						skipBuiltin = true
+					}
 			}
 		}
 		// 用戶自定義頂層函數（包含 std 模組內的 fs.open / fs.open-write 等）
 		// 優先於同名 builtin：使用者呼叫 `open(path)` 時若存在用戶自定義函數，
 		// 應優先使用，否則 fs 構造函數會被 clib 系統調用遮蔽。
-		if !skipBuiltin && g.funcRetTypes != nil {
-			if _, hasNolang := g.funcRetTypes[fnName]; hasNolang {
-				// Same ForwardFunc check as above for non-dotted names.
-				// For dotted names (e.g. "str.len"), strip the prefix to find
-				// the builtin by its short name ("len"), matching the logic
-				// in the first skipBuiltin check above. Without this, the
-				// second check would override the first check's decision for
-				// dotted ForwardFunc builtins like str.len.
-				isForwardBuiltin := false
-				m := builtin.FindBuiltinMethod(fnName)
+	if !skipBuiltin && g.funcRetTypes != nil {
+		if _, hasNolang := g.funcRetTypes[fnName]; hasNolang {
+		// Same ForwardFunc check as above for non-dotted names.
+		// For dotted names (e.g. "str.len"), strip the prefix to find
+		// the builtin by its short name ("len"), matching the logic
+		// in the first skipBuiltin check above. Without this, the
+		// second check would override the first check's decision for
+		// dotted ForwardFunc builtins like str.len.
+		//
+		// IMPORTANT: All ForwardFunc builtins in the standard library are
+		// defined as comments (disabled). So if funcRetTypes[fnName] exists,
+		// it means a user has defined a real function with a body — the user
+		// function must take precedence over the ForwardFunc builtin.
+		// Without this, user-defined write-file/read-file etc. would be
+		// incorrectly dispatched to the builtin (which uses %vec for []byte
+		// instead of %str-long for str), causing LLVM type mismatch errors.
+		isForwardBuiltin := false
+		m := builtin.FindBuiltinMethod(fnName)
 				if m == nil && strings.Contains(fnName, ".") {
 					if idx := strings.Index(fnName, "."); idx >= 0 {
 						m = builtin.FindBuiltinMethod(fnName[idx+1:])
@@ -1503,6 +1524,11 @@ func (g *Generator) generateCallExpression(sb *strings.Builder, expr *parser.Cal
 				}
 				if m != nil && m.ForwardFunc != "" {
 					isForwardBuiltin = true
+				}
+				// If the user function has a real body, it takes precedence over
+				// the ForwardFunc builtin (which would have an empty body in stdlib).
+				if isForwardBuiltin && g.funcHasBody[fnName] {
+					isForwardBuiltin = false
 				}
 				if !isForwardBuiltin {
 					skipBuiltin = true
@@ -1726,15 +1752,17 @@ func (g *Generator) generateCallExpression(sb *strings.Builder, expr *parser.Cal
 		}
 	}
 
-	// 嘗試各 domain handler
-	if r := g.callFmt(sb, fnName, hasArgs, len(expr.Arguments), evalArgs, strArg, llvmArg, expr); r != "" {
-		return r
-	}
-	if r := g.callStrconv(sb, fnName, hasArgs, len(expr.Arguments), evalArgs, strArg, llvmArg); r != "" {
-		return r
-	}
-	if r := g.callBuiltin(sb, fnName, hasArgs, len(expr.Arguments), evalArgs, strArg, llvmArg, expr); r != "" {
-		return r
+	// 嘗試各 domain handler — skip if user defined a function with the same name
+	if !skipBuiltin {
+		if r := g.callFmt(sb, fnName, hasArgs, len(expr.Arguments), evalArgs, strArg, llvmArg, expr); r != "" {
+			return r
+		}
+		if r := g.callStrconv(sb, fnName, hasArgs, len(expr.Arguments), evalArgs, strArg, llvmArg); r != "" {
+			return r
+		}
+		if r := g.callBuiltin(sb, fnName, hasArgs, len(expr.Arguments), evalArgs, strArg, llvmArg, expr); r != "" {
+			return r
+		}
 	}
 	// sort-asc / sort-desc 直接在 call.go 處理（無需 call_stdlib 函數）
 	if (fnName == "sort-asc" || fnName == "sort-desc") && hasArgs && len(expr.Arguments) >= 2 {
