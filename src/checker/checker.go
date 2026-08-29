@@ -28,6 +28,7 @@ var validationFuncTypes map[string]string
 // When a DotExpression like `s.x = 7` appears, if the receiver `s` is a struct
 // type name but not a defined variable (instance), it's an error.
 var validationStructNames map[string]bool
+
 func inferExprType(expr parser.Expression, varTypes map[string]string, funcTypes map[string]string, selfType string) string {
 	if expr == nil {
 		return ""
@@ -154,20 +155,20 @@ func inferExprType(expr parser.Expression, varTypes map[string]string, funcTypes
 						return m.Return[0].String()
 					}
 				}
-			// typeName 已知但方法定義在 std 模組中（vet 階段尚未 merge），
-			// 無法推斷回傳型別；返回空字串跳過型別檢查，由 LLVM 端驗證
-			// 例外：slice/array/str 的常用方法直接推斷，避免格式字串檢查誤報
-			if strings.HasPrefix(typeName, "[]") || (strings.HasPrefix(typeName, "[") && strings.Contains(typeName, "]")) {
-				switch dot.Property {
-				case "len", "cap", "index", "index-from":
-					return "i64"
-				case "slice", "copy", "repeat":
-					return typeName
-				case "to-str":
-					return "str"
+				// typeName 已知但方法定義在 std 模組中（vet 階段尚未 merge），
+				// 無法推斷回傳型別；返回空字串跳過型別檢查，由 LLVM 端驗證
+				// 例外：slice/array/str 的常用方法直接推斷，避免格式字串檢查誤報
+				if strings.HasPrefix(typeName, "[]") || (strings.HasPrefix(typeName, "[") && strings.Contains(typeName, "]")) {
+					switch dot.Property {
+					case "len", "cap", "index", "index-from":
+						return "i64"
+					case "slice", "copy", "repeat":
+						return typeName
+					case "to-str":
+						return "str"
+					}
 				}
-			}
-			return ""
+				return ""
 			}
 			// typeName 為空：可能是模組限定的內建呼叫（如 number.char-to-str(13)）。
 			// 此時接收者是模組名（非本作用域變數），對應裸內建回傳 str。
@@ -204,18 +205,18 @@ func inferExprType(expr parser.Expression, varTypes map[string]string, funcTypes
 			if leftType != "" {
 				return leftType
 			}
-		return ""
-	case "&", "|", "^", "<<", ">>":
-		// 位元/移位運算：僅當左運算元為具體整數型別時回傳該型別，
-		// 否則返回空字串（未知型別），跳過型別檢查
-		leftType := inferExprType(e.Left, varTypes, funcTypes, selfType)
-		if leftType != "" && intTypeBits(leftType) > 0 {
-			return leftType
+			return ""
+		case "&", "|", "^", "<<", ">>":
+			// 位元/移位運算：僅當左運算元為具體整數型別時回傳該型別，
+			// 否則返回空字串（未知型別），跳過型別檢查
+			leftType := inferExprType(e.Left, varTypes, funcTypes, selfType)
+			if leftType != "" && intTypeBits(leftType) > 0 {
+				return leftType
+			}
+			return ""
+		default:
+			return ""
 		}
-		return ""
-	default:
-		return ""
-	}
 	case *parser.CastExpression:
 		// 強轉表達式的型別即目標型別
 		if e.Type != nil {
@@ -291,19 +292,19 @@ func inferExprType(expr parser.Expression, varTypes map[string]string, funcTypes
 		// Array literal v[1, 2, ...] → infer type from elements
 		if len(e.Elements) > 0 {
 			elemType := inferExprType(e.Elements[0], varTypes, funcTypes, selfType)
-		if elemType != "" {
-			return fmt.Sprintf("[%d]%s", len(e.Elements), elemType)
+			if elemType != "" {
+				return fmt.Sprintf("[%d]%s", len(e.Elements), elemType)
+			}
 		}
-	}
 		return ""
 	case *parser.SliceLiteral:
 		// Slice literal [1, 2, ...] → infer type from elements
 		if len(e.Elements) > 0 {
 			elemType := inferExprType(e.Elements[0], varTypes, funcTypes, selfType)
-		if elemType != "" {
-			return fmt.Sprintf("[]%s", elemType)
+			if elemType != "" {
+				return fmt.Sprintf("[]%s", elemType)
+			}
 		}
-	}
 		return ""
 	case *parser.FunctionLiteral:
 		// Phase 1: anonymous function literals are typed with the simplified "fn" marker.
@@ -327,12 +328,15 @@ func inferExprType(expr parser.Expression, varTypes map[string]string, funcTypes
 		return "i64"
 	}
 }
+
 type ValidateResult struct {
 	Line      int
 	Column    int
 	EndColumn int
 	Message   string
+	TraceID   string
 }
+
 func ValidateEmbedAnnotations(program *parser.Program, sourcePath string) []ValidateResult {
 	var results []ValidateResult
 	for _, stmt := range program.Statements {
@@ -364,6 +368,7 @@ func ValidateEmbedAnnotations(program *parser.Program, sourcePath string) []Vali
 		// 規則 2：不能與顯式 Value 共存
 		if ls.Value != nil {
 			results = append(results, ValidateResult{
+				TraceID: "6qca9xu4",
 				Line:    line,
 				Column:  col,
 				Message: "embed: cannot combine with explicit value",
@@ -373,6 +378,7 @@ func ValidateEmbedAnnotations(program *parser.Program, sourcePath string) []Vali
 		// 規則 1：必須是 []byte / [N]byte / fs.embed 類型
 		if ls.Type == nil {
 			results = append(results, ValidateResult{
+				TraceID: "238u1xr7",
 				Line:    line,
 				Column:  col,
 				Message: "embed: only []byte / [N]byte / fs.embed declarations are supported, got untyped declaration",
@@ -404,6 +410,7 @@ func ValidateEmbedAnnotations(program *parser.Program, sourcePath string) []Vali
 			}
 			if !isByteSlice && !isFsEmbed {
 				results = append(results, ValidateResult{
+					TraceID: "4y6hz2la",
 					Line:    line,
 					Column:  col,
 					Message: fmt.Sprintf("embed: only []byte / [N]byte / fs.embed declarations are supported, got %s", typeStr),
@@ -419,6 +426,7 @@ func ValidateEmbedAnnotations(program *parser.Program, sourcePath string) []Vali
 			info, err := os.Stat(resolvedPath)
 			if err != nil {
 				results = append(results, ValidateResult{
+					TraceID: "14ki3f1w",
 					Line:    line,
 					Column:  col,
 					Message: fmt.Sprintf("embed: file not found: %s (resolved: %s)", embedPath, resolvedPath),
@@ -431,6 +439,7 @@ func ValidateEmbedAnnotations(program *parser.Program, sourcePath string) []Vali
 				}
 				if isFsEmbedType && !info.IsDir() {
 					results = append(results, ValidateResult{
+						TraceID: "nwtpvei9",
 						Line:    line,
 						Column:  col,
 						Message: fmt.Sprintf("embed: fs.embed requires a directory, got file: %s (resolved: %s)", embedPath, resolvedPath),
@@ -438,6 +447,7 @@ func ValidateEmbedAnnotations(program *parser.Program, sourcePath string) []Vali
 				}
 				if !isFsEmbedType && info.IsDir() {
 					results = append(results, ValidateResult{
+						TraceID: "vr0eh0yz",
 						Line:    line,
 						Column:  col,
 						Message: fmt.Sprintf("embed: []byte requires a file, got directory: %s (resolved: %s). Use fs.embed type for directory embedding", embedPath, resolvedPath),
@@ -525,6 +535,7 @@ func ValidateTypes(program *parser.Program) []ValidateResult {
 			}
 			if firstConflictLine >= 0 {
 				results = append(results, ValidateResult{
+					TraceID: "uvws00l4",
 					Line:    fd.Token.Line,
 					Column:  fd.Token.Column,
 					Message: fmt.Sprintf("duplicate function definition '%s' (first defined at line %d)", sig, firstConflictLine),
@@ -607,6 +618,7 @@ func ValidateUnionTypes(program *parser.Program) (map[string]*parser.TypeAlias, 
 		}
 		if _, exists := aliases[ta.Name]; exists {
 			results = append(results, ValidateResult{
+				TraceID: "2trc49mk",
 				Line:    ta.Token.Line,
 				Column:  ta.Token.Column,
 				Message: fmt.Sprintf("duplicate type alias %q", ta.Name),
@@ -792,6 +804,7 @@ func checkNaming(stmt parser.Statement, globalVars map[string]bool) []ValidateRe
 		}
 		if !isValidVarName(nameToCheck) {
 			results = append(results, ValidateResult{
+				TraceID: "x6swm2kk",
 				Line:    s.Token.Line,
 				Column:  s.Token.Column,
 				Message: fmt.Sprintf("'%s' should use only lowercase letters and hyphens", s.Name),
@@ -810,6 +823,7 @@ func checkNaming(stmt parser.Statement, globalVars map[string]bool) []ValidateRe
 		}
 		if s.Name != nil && !isValidVarName(s.Name.Value) {
 			results = append(results, ValidateResult{
+				TraceID: "2dhoris2",
 				Line:    s.Name.Token.Line,
 				Column:  s.Name.Token.Column,
 				Message: fmt.Sprintf("'%s' should use only lowercase letters and hyphens", s.Name.Value),
@@ -888,6 +902,7 @@ func checkRunAsyncNaming(expr parser.Expression, results *[]ValidateResult) {
 	}
 	if !strings.HasSuffix(fnName, "-async") {
 		*results = append(*results, ValidateResult{
+			TraceID: "y7964ox1",
 			Line:    runExpr.Token.Line,
 			Column:  runExpr.Token.Column,
 			Message: fmt.Sprintf("function '%s' called by 'run' should end with '-async'", fnName),
@@ -937,6 +952,7 @@ func ValidateUnusedVars(program *parser.Program) []ValidateResult {
 		if !usedVars[name] {
 			def := topLevelVars[name]
 			results = append(results, ValidateResult{
+				TraceID: "6kryrbsq",
 				Line:      def.line,
 				Column:    def.column,
 				EndColumn: def.column + len(name) - 1,
@@ -1394,6 +1410,7 @@ func ValidateUninitOutputParams(program *parser.Program) []ValidateResult {
 		for _, p := range nullableParams {
 			if read[p.name] && !assigned[p.name] {
 				results = append(results, ValidateResult{
+					TraceID: "wdk3k728",
 					Line:    p.line,
 					Column:  p.col,
 					Message: fmt.Sprintf("output parameter '%s' (?T) is read but never assigned in function body — uninitialized use of nullable output parameter", p.name),
@@ -1450,6 +1467,7 @@ func ValidateUnassignedReturns(program *parser.Program) []ValidateResult {
 		for _, p := range retParams {
 			if !assigned[p.name] {
 				results = append(results, ValidateResult{
+					TraceID: "i3k422u3",
 					Line:    p.line,
 					Column:  p.col,
 					Message: fmt.Sprintf("result parameter '%s' (%s) is never assigned in function body — will be zero-filled on return", p.name, p.typ),
@@ -1754,6 +1772,7 @@ func ValidateInterfaceImplementation(program *parser.Program) []ValidateResult {
 				}
 				if len(implParams) != len(m.Params) {
 					results = append(results, ValidateResult{
+						TraceID: "m5klw1rq",
 						Line:      fd.Token.Line,
 						Column:    fd.Token.Column,
 						EndColumn: fd.Token.Column + len(fd.Name),
@@ -1770,6 +1789,7 @@ func ValidateInterfaceImplementation(program *parser.Program) []ValidateResult {
 					expected := strings.ReplaceAll(m.Params[i], m.Receiver, implType)
 					if paramType != expected {
 						results = append(results, ValidateResult{
+							TraceID: "i933a48e",
 							Line:      p.Token.Line,
 							Column:    p.Token.Column,
 							EndColumn: p.Token.Column + len(p.Name),
@@ -1780,6 +1800,7 @@ func ValidateInterfaceImplementation(program *parser.Program) []ValidateResult {
 				}
 				if len(implResults) != len(m.Results) {
 					results = append(results, ValidateResult{
+						TraceID: "iky4xsx4",
 						Line:      fd.Token.Line,
 						Column:    fd.Token.Column,
 						EndColumn: fd.Token.Column + len(fd.Name),
@@ -1795,6 +1816,7 @@ func ValidateInterfaceImplementation(program *parser.Program) []ValidateResult {
 						expected := strings.ReplaceAll(m.Results[i], m.Receiver, implType)
 						if resType != expected {
 							results = append(results, ValidateResult{
+								TraceID: "9741sawd",
 								Line:      r.Token.Line,
 								Column:    r.Token.Column,
 								EndColumn: r.Token.Column + len(r.Name),
@@ -1826,6 +1848,7 @@ func ValidateUseKeyword(program *parser.Program) []ValidateResult {
 	for _, stmt := range program.Statements {
 		if us, ok := stmt.(*parser.UseStatement); ok && us.Token.Literal == "use" {
 			results = append(results, ValidateResult{
+				TraceID: "8yiio0ut",
 				Line:    us.Token.Line,
 				Column:  us.Token.Column,
 				Message: "'use' keyword is deprecated, use '#' instead (e.g., '# " + us.Path + "')",
@@ -1839,6 +1862,7 @@ func ValidateUseAlias(program *parser.Program) []ValidateResult {
 	for _, stmt := range program.Statements {
 		if us, ok := stmt.(*parser.UseStatement); ok && us.Token.Literal == "#" && us.AsKeyword {
 			results = append(results, ValidateResult{
+				TraceID: "tgutu5g0",
 				Line:    us.Token.Line,
 				Column:  us.Token.Column,
 				Message: fmt.Sprintf("use '# %s.%s %s' instead of '# %s.%s as %s'", us.Path, us.Function, us.Alias, us.Path, us.Function, us.Alias),
@@ -1883,6 +1907,7 @@ func checkRedundantTypeInStmt(stmt parser.Statement, varTypes map[string]string)
 			inferredType := inferExprType(s.Value, varTypes, validationFuncTypes, "")
 			if inferredType != "" && inferredType == annotatedType {
 				results = append(results, ValidateResult{
+					TraceID: "tcpoxtfd",
 					Line:    s.Type.Pos().Line,
 					Column:  s.Type.Pos().Column,
 					Message: fmt.Sprintf("type annotation '%s' can be omitted (inferred from value)", annotatedType),
@@ -1963,6 +1988,7 @@ func checkStmtDuplicateVars(sem *parser.SemanticContext, stmt parser.Statement, 
 			for _, k := range compositeKeys {
 				if _, exists := seen[k]; exists {
 					return []ValidateResult{{
+						TraceID: "379z4njd",
 						Line:    s.Token.Line,
 						Column:  s.Token.Column,
 						Message: fmt.Sprintf("'%s' already declared in this scope", s.Name.Value),
@@ -2033,6 +2059,7 @@ func ValidateDependencyImports(program *parser.Program, rootDir string) []Valida
 		// Check if declared in dependencies
 		if _, _, matched := pkg.MatchDependency(path); !matched {
 			results = append(results, ValidateResult{
+				TraceID: "tmqnqq9x",
 				Line:    us.Token.Line,
 				Column:  us.Token.Column,
 				Message: fmt.Sprintf("dependency not found: %q is not declared in package.jsonc dependencies", path),
@@ -2076,6 +2103,7 @@ func ValidateExportSymbols(program *parser.Program, docPath string) []ValidateRe
 		source, err := os.ReadFile(modFile)
 		if err != nil {
 			results = append(results, ValidateResult{
+				TraceID: "8dbrd5fk",
 				Line:    es.Token.Line,
 				Column:  es.Token.Column,
 				Message: fmt.Sprintf("module file not found: %s", modFile),
@@ -2123,6 +2151,7 @@ func ValidateExportSymbols(program *parser.Program, docPath string) []ValidateRe
 
 		if !found {
 			results = append(results, ValidateResult{
+				TraceID: "lr3c6kg5",
 				Line:    es.Token.Line,
 				Column:  es.Token.Column,
 				Message: fmt.Sprintf("export references undefined symbol %q (not found in %s)", es.Function, modFile),
@@ -2195,6 +2224,7 @@ func checkStringConcatInExpr(expr parser.Expression) []ValidateResult {
 			}
 			if isStrConcat {
 				results = append(results, ValidateResult{
+					TraceID: "a3yrogp1",
 					Line:    e.Token.Line,
 					Column:  e.Token.Column,
 					Message: "string concatenation: use '-' instead of '+'",
@@ -2296,6 +2326,7 @@ func checkHexCaseInExpr(expr parser.Expression) []ValidateResult {
 	case *parser.IntegerLiteral:
 		if hasUpperHex(e.Token.Literal) {
 			results = append(results, ValidateResult{
+				TraceID: "lkiy53ow",
 				Line:    e.Token.Line,
 				Column:  e.Token.Column,
 				Message: fmt.Sprintf("hex literal '%s' uses uppercase; format will convert to lowercase (e.g. 0xff)", e.Token.Literal),
@@ -2304,6 +2335,7 @@ func checkHexCaseInExpr(expr parser.Expression) []ValidateResult {
 	case *parser.ByteLiteral:
 		if hasUpperHex(e.Token.Literal) {
 			results = append(results, ValidateResult{
+				TraceID: "ucj09vyi",
 				Line:    e.Token.Line,
 				Column:  e.Token.Column,
 				Message: fmt.Sprintf("byte literal '%s' uses uppercase hex; format will convert to lowercase (e.g. xff)", e.Token.Literal),
@@ -2390,7 +2422,7 @@ func ValidatePrintFormat(program *parser.Program) []ValidateResult {
 		"str.to-upper":     "str",
 		"str.to-lower":     "str",
 		"str.trim":         "str",
-		"str.trim-left":   "str",
+		"str.trim-left":    "str",
 		"str.trim-right":   "str",
 		"str.repeat":       "str",
 		"str.copy":         "str",
@@ -2635,6 +2667,7 @@ func validatePrintFormatCall(e *parser.CallExpression, varTypes map[string]strin
 	segments, err := parser.ParseFormatString(strLit.Value)
 	if err != nil {
 		return []ValidateResult{{
+			TraceID: "dpcwdbng",
 			Line:    strLit.Token.Line,
 			Column:  strLit.Token.Column,
 			Message: fmt.Sprintf("format string error: %v", err),
@@ -2663,6 +2696,7 @@ func validatePrintFormatCall(e *parser.CallExpression, varTypes map[string]strin
 		}
 		if !inScope {
 			results = append(results, ValidateResult{
+				TraceID: "mzwb28br",
 				Line:    strLit.Token.Line,
 				Column:  strLit.Token.Column,
 				Message: fmt.Sprintf("undefined variable '%s' in format string", field.Name),
@@ -2680,6 +2714,7 @@ func validatePrintFormatCall(e *parser.CallExpression, varTypes map[string]strin
 		// 3. 檢查規格類型字元與變數型別相容性
 		if msg := checkFormatSpecTypeCompat(field.Parsed.Type, varType, field.Spec); msg != "" {
 			results = append(results, ValidateResult{
+				TraceID: "xr3x7p5q",
 				Line:    strLit.Token.Line,
 				Column:  strLit.Token.Column,
 				Message: msg,
@@ -2748,15 +2783,18 @@ func collectModuleNames(program *parser.Program) []string {
 
 	return names
 }
+
 type ModuleExport struct {
 	Name  string
 	Value string
 	Type  string
 }
+
 var (
 	moduleExportsCacheMu sync.Mutex
 	moduleExportsCache   = make(map[string][]ModuleExport)
 )
+
 func GetModuleExports(moduleNames []string) []ModuleExport {
 	seen := make(map[string]bool)
 	var exports []ModuleExport
@@ -3058,12 +3096,14 @@ func checkUndefinedVarsInExpr(expr parser.Expression, definedVars, funcNames map
 			// Special hint for 'self' (.) used outside struct methods
 			if e.Value == "self" {
 				results = append(results, ValidateResult{
+					TraceID: "iyn3rgtm",
 					Line:    e.Token.Line,
 					Column:  e.Token.Column,
 					Message: "'self' (.) can only be used inside struct methods; if you meant the match value, use 'it'",
 				})
 			} else {
 				results = append(results, ValidateResult{
+					TraceID: "4bek3xc6",
 					Line:    e.Token.Line,
 					Column:  e.Token.Column,
 					Message: fmt.Sprintf("'%s' is not defined", e.Value),
@@ -3145,6 +3185,7 @@ func checkUndefinedVarsInExpr(expr parser.Expression, definedVars, funcNames map
 				} else if validationStructNames[recv.Value] {
 					// Receiver is a struct type name, not an instance.
 					results = append(results, ValidateResult{
+						TraceID: "fxdzclp6",
 						Line:    recv.Token.Line,
 						Column:  recv.Token.Column,
 						Message: fmt.Sprintf("cannot assign field '%s' on struct type '%s': instantiate first (e.g. `%s0 = %s {}`)", dot.Property, recv.Value, recv.Value, recv.Value),
@@ -3200,6 +3241,7 @@ func checkBareExprStatement(expr parser.Expression, funcNames map[string]bool) *
 	case *parser.Identifier:
 		if funcNames[e.Value] || builtin.FindBuiltinMethod(e.Value) != nil {
 			return &ValidateResult{
+				TraceID: "k9179drd",
 				Line:    e.Token.Line,
 				Column:  e.Token.Column,
 				Message: fmt.Sprintf("'%s' is a function and must be called; did you mean %s(...)?", e.Value, e.Value),
@@ -3210,6 +3252,7 @@ func checkBareExprStatement(expr parser.Expression, funcNames map[string]bool) *
 		*parser.CharLiteral, *parser.BooleanLiteral, *parser.ByteLiteral, *parser.NilLiteral:
 		pos := expr.Pos()
 		return &ValidateResult{
+			TraceID: "yf6kxdmz",
 			Line:    pos.Line,
 			Column:  pos.Column,
 			Message: "a statement cannot be just a literal value; call a function or assign it to a variable",
@@ -3286,6 +3329,7 @@ func validateStmtTypes(stmt parser.Statement, funcNames map[string]bool, funcTyp
 				_, isOption := s.Type.(*parser.NullableType)
 				if !isOption {
 					results = append(results, ValidateResult{
+						TraceID: "aih7e3j0",
 						Line:    s.Token.Line,
 						Column:  s.Token.Column,
 						Message: fmt.Sprintf("cannot assign nil to non-option variable '%s'", s.Name.Value),
@@ -3299,6 +3343,7 @@ func validateStmtTypes(stmt parser.Statement, funcNames map[string]bool, funcTyp
 			if existingType, exists := varTypes[s.Name.Value]; exists {
 				if existingType != "" && !strings.HasPrefix(existingType, "?") {
 					results = append(results, ValidateResult{
+						TraceID: "p2epl19k",
 						Line:    s.Token.Line,
 						Column:  s.Token.Column,
 						Message: fmt.Sprintf("cannot assign nil to non-option variable '%s'", s.Name.Value),
@@ -3308,6 +3353,7 @@ func validateStmtTypes(stmt parser.Statement, funcNames map[string]bool, funcTyp
 			}
 			// 新變數從 nil 推斷不出型別
 			results = append(results, ValidateResult{
+				TraceID: "170bewkb",
 				Line:    s.Token.Line,
 				Column:  s.Token.Column,
 				Message: fmt.Sprintf("cannot infer type from nil for variable '%s'", s.Name.Value),
@@ -3329,6 +3375,7 @@ func validateStmtTypes(stmt parser.Statement, funcNames map[string]bool, funcTyp
 					if cid.Value == "val" {
 						callPos := call.Pos()
 						results = append(results, ValidateResult{
+							TraceID: "irjygycv",
 							Line:    callPos.Line,
 							Column:  callPos.Column,
 							Message: "val() constructor is deprecated; use ok(x) for explicit construction or `name = expr` for implicit assignment",
@@ -3354,8 +3401,9 @@ func validateStmtTypes(stmt parser.Statement, funcNames map[string]bool, funcTyp
 					if !hasRealTypeAnnotation(s) && !hasExistingType {
 						valPos := s.Value.Pos()
 						results = append(results, ValidateResult{
+							TraceID: "nnqq67ko",
 							Line:    valPos.Line,
-							Column: valPos.Column,
+							Column:  valPos.Column,
 							Message: fmt.Sprintf("cannot infer type for '%s': %s() requires an explicit type annotation on the left side (e.g. `name []byte = %s(n)`)", s.Name.Value, fnName, fnName),
 						})
 					}
@@ -3385,6 +3433,7 @@ func validateStmtTypes(stmt parser.Statement, funcNames map[string]bool, funcTyp
 								if elemInferred != "" && elemInferred != elemType &&
 									!isArgTypeCompatible(elemType, elemInferred, elem) {
 									results = append(results, ValidateResult{
+										TraceID: "os0j8ix4",
 										Line:    s.Token.Line,
 										Column:  s.Token.Column,
 										Message: fmt.Sprintf("cannot assign %s value to %s element in array '%s'%s", elemInferred, elemType, s.Name.Value, narrowingHint(elemInferred, elemType)),
@@ -3412,6 +3461,7 @@ func validateStmtTypes(stmt parser.Statement, funcNames map[string]bool, funcTyp
 								// val(x) 作為構造器已廢棄：應改用 ok(x) 或隱式賦值 val = n
 								callPos := call.Pos()
 								results = append(results, ValidateResult{
+									TraceID: "f0p0dfha",
 									Line:    callPos.Line,
 									Column:  callPos.Column,
 									Message: "val() constructor is deprecated; use ok(x) for explicit construction or `name = expr` for implicit assignment",
@@ -3439,6 +3489,7 @@ func validateStmtTypes(stmt parser.Statement, funcNames map[string]bool, funcTyp
 						!isArgTypeCompatible(existingType, inferredType, s.Value) {
 						valPos := s.Value.Pos()
 						results = append(results, ValidateResult{
+							TraceID: "15w45dqk",
 							Line:    valPos.Line,
 							Column:  valPos.Column,
 							Message: fmt.Sprintf("cannot assign %s value to %s variable '%s'%s", inferredType, existingType, s.Name.Value, narrowingHint(inferredType, existingType)),
@@ -3467,6 +3518,7 @@ func validateStmtTypes(stmt parser.Statement, funcNames map[string]bool, funcTyp
 			if cid, ok2 := call.Function.(*parser.Identifier); ok2 && cid.Value == "val" {
 				callPos := call.Pos()
 				results = append(results, ValidateResult{
+					TraceID: "7c5fbvp4",
 					Line:    callPos.Line,
 					Column:  callPos.Column,
 					Message: "val() constructor is deprecated; use ok(x) for explicit construction or `name = expr` for implicit assignment",
@@ -3497,6 +3549,7 @@ func validateStmtTypes(stmt parser.Statement, funcNames map[string]bool, funcTyp
 				// 檢查是否對函式名稱賦值
 				if funcNames[ident.Value] {
 					results = append(results, ValidateResult{
+						TraceID: "2ls7kxqp",
 						Line:    ident.Token.Line,
 						Column:  ident.Token.Column,
 						Message: fmt.Sprintf("cannot reassign function name '%s'", ident.Value),
@@ -3509,6 +3562,7 @@ func validateStmtTypes(stmt parser.Statement, funcNames map[string]bool, funcTyp
 					if existingType, exists := varTypes[ident.Value]; exists {
 						if !strings.HasPrefix(existingType, "?") {
 							results = append(results, ValidateResult{
+								TraceID: "b6fjj9ka",
 								Line:    ident.Token.Line,
 								Column:  ident.Token.Column,
 								Message: fmt.Sprintf("cannot assign nil to non-option variable '%s'", ident.Value),
@@ -3518,8 +3572,8 @@ func validateStmtTypes(stmt parser.Statement, funcNames map[string]bool, funcTyp
 				}
 				// 型別不匹配檢查
 				if !isNilAssign {
-			if existingType, exists := varTypes[ident.Value]; exists {
-				valType := inferExprType(assign.Value, varTypes, funcTypes, selfType)
+					if existingType, exists := varTypes[ident.Value]; exists {
+						valType := inferExprType(assign.Value, varTypes, funcTypes, selfType)
 						// Option 建構子：err(x) / ok(x) 可指派給任何 ?T 變數
 						// 注意：val(x) 已廢棄作為構造器，應改用 ok(x)
 						isOptionCtor := false
@@ -3533,6 +3587,7 @@ func validateStmtTypes(stmt parser.Statement, funcNames map[string]bool, funcTyp
 								if cid.Value == "val" {
 									callPos := call.Pos()
 									results = append(results, ValidateResult{
+										TraceID: "96o13ee6",
 										Line:    callPos.Line,
 										Column:  callPos.Column,
 										Message: "val() constructor is deprecated; use ok(x) for explicit construction or `name = expr` for implicit assignment",
@@ -3561,6 +3616,7 @@ func validateStmtTypes(stmt parser.Statement, funcNames map[string]bool, funcTyp
 										if elemInferred != "" && elemInferred != elemType &&
 											!isArgTypeCompatible(elemType, elemInferred, elem) {
 											results = append(results, ValidateResult{
+												TraceID: "3b9bxfnt",
 												Line:    assign.Token.Line,
 												Column:  assign.Token.Column,
 												Message: fmt.Sprintf("cannot assign %s value to %s element in array '%s'%s", elemInferred, elemType, ident.Value, narrowingHint(elemInferred, elemType)),
@@ -3570,6 +3626,7 @@ func validateStmtTypes(stmt parser.Statement, funcNames map[string]bool, funcTyp
 								}
 							} else {
 								results = append(results, ValidateResult{
+									TraceID: "1mf3x79l",
 									Line:    assign.Token.Line,
 									Column:  assign.Token.Column,
 									Message: fmt.Sprintf("cannot assign %s value to %s variable '%s'%s", valType, existingType, ident.Value, narrowingHint(valType, existingType)),
@@ -3641,6 +3698,7 @@ func validateStmtTypes(stmt parser.Statement, funcNames map[string]bool, funcTyp
 								isConcreteType(existingType) &&
 								!isArgTypeCompatible(existingType, inferredType, nil) {
 								results = append(results, ValidateResult{
+									TraceID: "35gh0yw4",
 									Line:    s.Token.Line,
 									Column:  s.Token.Column,
 									Message: fmt.Sprintf("cannot assign %s value to %s variable '%s'", inferredType, existingType, ident.Value),
@@ -3669,6 +3727,7 @@ func moduleShortName(path string) string {
 	}
 	return path
 }
+
 var (
 	knownStdModulesOnce sync.Once
 	knownStdModulesList []StdModuleInfo
@@ -3676,12 +3735,12 @@ var (
 	// Cache for CollectStdModuleSignatures: parsing all std modules is
 	// expensive (~0.5s). VetFile is called once per .no file, so without
 	// caching a full std vet spends ~95% of its time re-parsing modules.
-	stdSigsOnce        sync.Once
-	stdSigsCache       map[string][]string          // 模塊函數簽名（鍵：module.fn 或裸名 fn）
-	stdMethodSigsCache map[string][]string          // 結構體方法簽名（鍵：module.struct.method）
-	stdFieldsCache     map[string]map[string]string
-	stdAliasesCache    map[string]string // 單具體型別別名快取（如 "fd" → "i64"）
-	stdStructModCache  map[string]string // struct name → module short name（如 "conn" → "tls"）
+	stdSigsOnce          sync.Once
+	stdSigsCache         map[string][]string // 模塊函數簽名（鍵：module.fn 或裸名 fn）
+	stdMethodSigsCache   map[string][]string // 結構體方法簽名（鍵：module.struct.method）
+	stdFieldsCache       map[string]map[string]string
+	stdAliasesCache      map[string]string   // 單具體型別別名快取（如 "fd" → "i64"）
+	stdStructModCache    map[string]string   // struct name → module short name（如 "conn" → "tls"）
 	stdEnumVariantsCache map[string][]string // enum type name → variant names (如 "file-mode" → ["read","write","append","read-write"])
 	// stdProgramsCache 緩存 CollectStdModuleSignatures PASS1 已解析的 std 模組
 	// Program，按「內容哈希」(cache.ContentKey) 索引。no vet src/std 的第二遍
@@ -3689,15 +3748,18 @@ var (
 	// 安全回退到正常 parse。僅在 NOLANG_REUSE_STD_AST 開關開啟時由 build 端查詢。
 	stdProgramsCache map[string]*parser.Program
 )
+
 type StdModuleInfo struct {
 	ShortName string // last path segment of FullPath, e.g. "rand", "math"
 	FullPath  string // relative to std/, e.g. "hash/rand", "net/net", "math"
 	ShortPath string // FullPath with redundant dir omitted when dir==file, e.g. "net", "hash/hmac", "math"
 }
+
 func debugCountHashFns(stage string, merged *parser.Program) {
 	_ = stage
 	_ = merged
 }
+
 // listStdModules enumerates every std module under "std/" of the given fs.FS.
 // It is the FS-parameterized core of knownStdModules: the runtime uses
 // nolang.StdFS (embedded), while the signature-table generator uses an
@@ -3758,15 +3820,18 @@ func knownStdModules() []StdModuleInfo {
 func GetStdModules() []StdModuleInfo {
 	return knownStdModules()
 }
+
 type JsModuleInfo struct {
 	ShortName string // 檔名去掉 .no 與目錄前綴，如 "console-log"
 	FullPath  string // 相對於 js/，如 "console-log"
 	ShortPath string // 與 FullPath 相同（JS 相容層目前無子目錄，dir==file 的情況不適用）
 }
+
 var (
 	knownJsModulesOnce sync.Once
 	knownJsModulesList []JsModuleInfo
 )
+
 func knownJsModules() []JsModuleInfo {
 	knownJsModulesOnce.Do(func() {
 		var infos []JsModuleInfo
@@ -3816,6 +3881,7 @@ func knownJsModules() []JsModuleInfo {
 func GetJsModules() []JsModuleInfo {
 	return knownJsModules()
 }
+
 //go:generate go run ./genstdsig
 
 func setStdSigCaches(funcSigs map[string][]string, methodSigs map[string][]string, structFields map[string]map[string]string, aliases map[string]string, structMod map[string]string, enumVariants map[string][]string) {
@@ -3882,7 +3948,7 @@ func collectStdSigsFromFS(fsys fs.FS) (map[string][]string, map[string][]string,
 	methodSigs := make(map[string][]string)
 	structFields := make(map[string]map[string]string)
 	aliases := make(map[string]string)
-	structMod := make(map[string]string) // struct name → module short name
+	structMod := make(map[string]string)      // struct name → module short name
 	enumVariants := make(map[string][]string) // enum type name → variant names
 
 	// PASS 1: 解析所有模組並暫存，同時統計裸 struct 名的跨模組定義數。
@@ -4199,8 +4265,9 @@ func checkLHSInferredInStmt(stmt parser.Statement, varTypes map[string]string) [
 				if !hasRealTypeAnnotation(s) && !hasExistingType {
 					valPos := s.Value.Pos()
 					results = append(results, ValidateResult{
+						TraceID: "p56zjfhi",
 						Line:    valPos.Line,
-						Column: valPos.Column,
+						Column:  valPos.Column,
 						Message: fmt.Sprintf("cannot infer type for '%s': %s() requires an explicit type annotation on the left side (e.g. `name []byte = %s(n)`)", s.Name.Value, fnName, fnName),
 					})
 				}
@@ -4280,6 +4347,7 @@ func ValidateCrossModuleTypeRefs(program *parser.Program) []ValidateResult {
 			}
 		}
 		results = append(results, ValidateResult{
+			TraceID: "ol0l3ova",
 			Line:    line,
 			Column:  col,
 			Message: fmt.Sprintf("type '%s' not found; did you mean '%s.%s'?", baseName, modName, baseName),
@@ -5319,10 +5387,12 @@ func funcSigFirstReturnType(sig *funcSig) string {
 	}
 	return sig.ResultTypes[0].Type
 }
+
 type funcSig struct {
 	ParamTypes  []paramInfo
 	ResultTypes []paramInfo
 }
+
 var validationStructFields map[string]map[string]string
 
 // validationMu protects validationStructFields, validationConcreteTypeAliases,
@@ -5331,6 +5401,7 @@ var validationStructFields map[string]map[string]string
 // Without the mutex, parallel goroutines racing on the map writes cause
 // "concurrent map writes" fatal panics.
 var validationMu sync.Mutex
+
 func isValidationIntType(t string) bool {
 	switch t {
 	case "i8", "i16", "i32", "i64", "i128", "u8", "u16", "u32", "u64", "u128":
@@ -5338,11 +5409,13 @@ func isValidationIntType(t string) bool {
 	}
 	return false
 }
+
 type paramInfo struct {
 	Name       string
 	Type       string
 	HasDefault bool // 參數是否有默認值
 }
+
 func intTypeBits(t string) int {
 	switch t {
 	case "i8", "u8", "byte":

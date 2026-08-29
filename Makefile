@@ -15,7 +15,16 @@ NO_WASM   = $(WASM_DIR)/no.wasm
 LSP_WASM  = $(WASM_DIR)/lsp.wasm
 PLAYGROUND_PORT ?= 3000
 
-.PHONY: all no lsp package clean help FORCE no-wasm lsp-wasm playground playground-smoke gen
+# ── TRACE ID ────────────────────────────────────
+# Each ValidateResult{} literal in the checker source carries
+#   TraceID: "PLACEHOLDER"
+# The `stamp-traceid` target replaces every PLACEHOLDER with a
+# unique 8-char random base36 string via perl.  If a real ID is
+# already in place, it is a no-op so repeated `make` keeps the
+# same IDs.
+TRACE_ID_FILES = src/checker/checker.go src/checker/funcargs.go src/checker/unresolved.go src/lsp/vet.go
+
+.PHONY: all no lsp package clean help FORCE no-wasm lsp-wasm playground playground-smoke gen stamp-traceid
 
 all: $(NO_BIN) $(LSP_BIN)
 
@@ -37,13 +46,23 @@ $(STDSIG_GEN): $(STDSIG_GEN_SRCS) $(NO_SOURCES) src/go.mod src/go.sum
 .PHONY: gen
 gen: $(STDSIG_GEN)
 
+# ── STAMP TRACE ID ────────────────────────────────
+# Replace every PLACEHOLDER in checker source files with a unique
+# 8-char random base36 string.  Only replaces when placeholders are
+# still present; once real IDs are in place, repeated `make` is a no-op.
+.PHONY: stamp-traceid
+stamp-traceid: FORCE
+	@bash scripts/stamp_traceid.sh $(TRACE_ID_FILES)
+
 # ── NO ────────────────────────────────
 $(NO_BIN): $(GO_SOURCES) $(NO_SOURCES) $(STDSIG_GEN) src/go.mod src/go.sum | $(BINDIR)
+	$(MAKE) stamp-traceid
 	cd src && $(GO) build $(LD_FLAGS) -o ../$(NO_BIN) ./cmd/no
 	chmod +x $(NO_BIN)
 
 # ── LSP ────────────────────────────────────
 $(LSP_BIN): $(GO_SOURCES) $(NO_SOURCES) $(STDSIG_GEN) src/go.mod src/go.sum
+	$(MAKE) stamp-traceid
 	mkdir -p $(dir $@)
 	cd src && $(GO) build $(LD_FLAGS) -o ../$@ ./cmd/lsp
 	chmod +x $@
@@ -58,6 +77,7 @@ package: FORCE
 no-wasm: $(NO_WASM)
 
 $(NO_WASM): $(GO_SOURCES) $(NO_SOURCES) $(STDSIG_GEN) src/go.mod src/go.sum | $(WASM_DIR)
+	$(MAKE) stamp-traceid
 	cd src && GOOS=wasip1 GOARCH=wasm $(GO) build $(LD_FLAGS) -o ../$@ ./cmd/no
 
 $(WASM_DIR):
@@ -68,6 +88,7 @@ $(WASM_DIR):
 lsp-wasm: $(LSP_WASM)
 
 $(LSP_WASM): $(GO_SOURCES) $(NO_SOURCES) $(STDSIG_GEN) src/go.mod src/go.sum | $(WASM_DIR)
+	$(MAKE) stamp-traceid
 	cd src && GOOS=wasip1 GOARCH=wasm $(GO) build $(LD_FLAGS) -o ../$@ ./cmd/lsp
 
 # ── PLAYGROUND ────────────────────────────
@@ -113,16 +134,17 @@ help:
 	@echo "  make no         構建 bin/no"
 	@echo "  make lsp        構建 vscode-nolang/server/lsp"
 	@echo "  make gen        gen stdsig_gen.go"
-	@echo "  make package    編譯 LSP 並打包 VSCode 拓展"
-	@echo "  make no-wasm    編譯 no 為 WebAssembly (wasip1) → docs/static/wasm/no.wasm"
-	@echo "  make lsp-wasm   編譯 LSP 為 WebAssembly (wasip1) → docs/static/wasm/lsp.wasm"
+	@echo "  make stamp-traceid  替換 checker 源碼中的占位符為各自唯一的隨機 base36 ID"
+	@echo "  make package    跨譯 LSP 並打包 VSCode 拓展"
+	@echo "  make no-wasm    跨譯 no 為 WebAssembly (wasip1) → docs/static/wasm/no.wasm"
+	@echo "  make lsp-wasm   跨譯 LSP 為 WebAssembly (wasip1) → docs/static/wasm/lsp.wasm"
 	@echo "  make playground 建構 no.wasm + lsp.wasm + Docusaurus 站點"
 	@echo "  make playground-smoke 啟動 dev server 並驗證 playground + wasm 資源可訪問"
 	@echo "  make clean      清理"
 	@echo "  make help       幫助"
 	@echo ""
 	@echo "環境變量："
-	@echo "  GO=go           指定 Go 編譯器（默認 go）"
+	@echo "  GO=go           指定 Go 跨譯器（默認 go）"
 	@echo "  BINDIR=bin      指定輸出目錄（默認 bin）"
 	@echo "  LD_FLAGS=...    自定義鏈接標誌（內建注入 Git commit）"
 	@echo "  WASI_SYSROOT=path  wasi-sysroot 路徑（no build -target wasm32-wasi 時需要）"

@@ -22,6 +22,7 @@ type VetResult struct {
 	Severity string
 	Source   string
 	Message  string
+	TraceID  string
 }
 
 // VetFile runs the full LSP validation pipeline on a single .no file
@@ -33,6 +34,7 @@ func VetFile(filePath string) []VetResult {
 			File:     filePath,
 			Severity: "error",
 			Source:   "lsp-vet",
+			TraceID: "ulcnkg06",
 			Message:  fmt.Sprintf("cannot read file: %v", err),
 		}}
 	}
@@ -63,6 +65,7 @@ func VetFile(filePath string) []VetResult {
 			Column:   col,
 			Severity: "error",
 			Source:   "nolang-parser",
+			TraceID: "jjhyd5re",
 			Message:  errMsg,
 		})
 	}
@@ -90,6 +93,7 @@ func VetFile(filePath string) []VetResult {
 			Severity: string(l.Severity),
 			Source:   l.Source,
 			Message:  l.Message,
+			TraceID:  l.TraceID,
 		})
 	}
 
@@ -117,6 +121,7 @@ func VetDirVerbose(dirPath string, progress VetProgressFunc) []VetResult {
 				File:     dirPath,
 				Severity: "error",
 				Source:   "lsp-vet",
+				TraceID: "4r8qabpu",
 				Message:  fmt.Sprintf("dependency resolution failed: %v", err),
 			}}
 		}
@@ -163,6 +168,7 @@ func VetPathVerbose(path string, progress VetProgressFunc) []VetResult {
 			File:     path,
 			Severity: "error",
 			Source:   "lsp-vet",
+			TraceID: "tynafhwy",
 			Message:  fmt.Sprintf("cannot access path: %v", err),
 		}}
 	}
@@ -193,9 +199,9 @@ func FormatVetResults(results []VetResult) int {
 			errorCount++
 		}
 		if r.Line > 0 {
-			fmt.Printf("%s:%d:%d: [%s] %s: %s\n", r.File, r.Line, r.Column, sev, r.Source, r.Message)
+			fmt.Printf("%s:%d:%d: [%s] %s: %s [%s]\n", r.File, r.Line, r.Column, sev, r.Source, r.Message, r.TraceID)
 		} else {
-			fmt.Printf("%s: [%s] %s: %s\n", r.File, sev, r.Source, r.Message)
+			fmt.Printf("%s: [%s] %s: %s [%s]\n", r.File, sev, r.Source, r.Message, r.TraceID)
 		}
 	}
 	return errorCount

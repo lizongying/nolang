@@ -51,7 +51,7 @@ func CheckUnresolvedModuleCalls(program *parser.Program) []ValidateResult {
 	}
 
 	// 3. 收集本地函數定義名和方法名
-	localFns := make(map[string]bool) // 裸名 + module.fn 形式
+	localFns := make(map[string]bool)     // 裸名 + module.fn 形式
 	localMethods := make(map[string]bool) // 方法名（最後一段）
 	for _, stmt := range program.Statements {
 		if fd, ok := stmt.(*parser.FunctionDefinition); ok {
@@ -90,6 +90,7 @@ func CheckUnresolvedModuleCalls(program *parser.Program) []ValidateResult {
 							!localMethods[fnName] && !propNames[fnName] {
 							pos := dot.Pos()
 							results = append(results, ValidateResult{
+								TraceID: "ckaj3355",
 								Line:    pos.Line,
 								Column:  pos.Column,
 								Message: fmt.Sprintf("unknown function '%s.%s': module '%s' has no top-level function '%s'", modName, fnName, modName, fnName),

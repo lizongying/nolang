@@ -383,10 +383,20 @@ func parseCompileErrorToLints(err error) []checker.LintResult {
 		if part == "" {
 			continue
 		}
+		// 提取並移除 [xxx] 後綴（由 transpiler.go 格式化注入）
+		tid := ""
+		if idx := strings.LastIndex(part, " ["); idx >= 0 {
+			suffix := part[idx:]
+			if strings.HasSuffix(suffix, "]") {
+				tid = suffix[8 : len(suffix)-1]
+				part = strings.TrimSpace(part[:idx])
+			}
+		}
 		lr := checker.LintResult{
 			Severity: checker.LintError,
 			Source:   "nolang-compile",
 			Message:  part,
+			TraceID:  tid,
 		}
 		var line, col int
 		// 嘗試解析 "line L, column C: ..." 或 "line L: ..."
@@ -1038,7 +1048,7 @@ func validateProgram(program *parser.Program, inputPath string) error {
 	}
 	var b strings.Builder
 	for _, e := range errs {
-		fmt.Fprintf(&b, "  %s:%d:%d: %s\n", filepath.Base(inputPath), e.Line, e.Column, e.Message)
+		fmt.Fprintf(&b, "  %s:%d:%d: %s [%s]\n", filepath.Base(inputPath), e.Line, e.Column, e.Message, e.TraceID)
 	}
 	return fmt.Errorf("%s: validation failed:\n%s", inputPath, b.String())
 }

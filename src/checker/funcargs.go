@@ -156,6 +156,7 @@ func checkArgCountInExpr(expr parser.Expression, sigs map[string]*funcSig) []Val
 				// Allow more args than params (could be output param), only flag too few
 				if len(e.Arguments) < minArgs {
 					results = append(results, ValidateResult{
+						TraceID: "j7dzteja",
 						Line:    e.Token.Line,
 						Column:  e.Token.Column,
 						Message: fmt.Sprintf("function '%s' expects at least %d argument(s), got %d", ident.Value, minArgs, len(e.Arguments)),
@@ -483,6 +484,7 @@ func checkCallArgsInStmtWithResultParams(stmt parser.Statement, sigs map[string]
 						// to []i64 (8 bytes/element).
 						valPos := s.Value.Pos()
 						results = append(results, ValidateResult{
+							TraceID: "2e14k5et",
 							Line:    valPos.Line,
 							Column:  valPos.Column,
 							Message: fmt.Sprintf("cannot infer type for '%s': %s() requires an explicit type annotation on the left side (e.g. `name []byte = %s(n)`)", s.Name.Value, fnName, fnName),
@@ -521,6 +523,7 @@ func checkCallArgsInStmtWithResultParams(stmt parser.Statement, sigs map[string]
 				expectedReturns := lookupReturnCount(callExpr, sigs, varTypes)
 				if expectedReturns >= 0 && len(s.Targets) != expectedReturns {
 					results = append(results, ValidateResult{
+						TraceID: "rfzrw1nh",
 						Line:    s.Token.Line,
 						Column:  s.Token.Column,
 						Message: fmt.Sprintf("function returns %d value(s) but %d target(s) provided", expectedReturns, len(s.Targets)),
@@ -906,9 +909,9 @@ func isArgTypeCompatible(expectedType, argType string, arg parser.Expression) bo
 				if val < 0 && min == 0 {
 					if uval, ok := uint64FromLiteral(arg); ok {
 						// For u64, any uint64 value is in range.
-					if expectedType == "u64" || expectedType == "u128" {
-						return true
-					}
+						if expectedType == "u64" || expectedType == "u128" {
+							return true
+						}
 						return uval <= uint64(max)
 					}
 				}
@@ -1047,6 +1050,7 @@ func checkCallArgsInExpr(expr parser.Expression, sigs map[string]*funcSig, varTy
 					// More args than params: last arg might be output param, check up to param count
 				} else if len(e.Arguments) < minArgs {
 					results = append(results, ValidateResult{
+						TraceID: "haahhq7o",
 						Line:    e.Token.Line,
 						Column:  e.Token.Column,
 						Message: fmt.Sprintf("function '%s' expects at least %d argument(s), got %d", ident.Value, minArgs, len(e.Arguments)),
@@ -1061,6 +1065,7 @@ func checkCallArgsInExpr(expr parser.Expression, sigs map[string]*funcSig, varTy
 						expectedType := sig.ParamTypes[i].Type
 						if expectedType != "" && argType != "" && !isArgTypeCompatible(expectedType, argType, arg) {
 							results = append(results, ValidateResult{
+								TraceID: "6fgg3htw",
 								Line:    e.Token.Line,
 								Column:  e.Token.Column,
 								Message: fmt.Sprintf("argument %d of '%s': expected '%s', got '%s'", i+1, ident.Value, expectedType, argType),
@@ -1286,7 +1291,7 @@ func filterByExports(prog *parser.Program, libPath string, modFilePath string) *
 		switch tt := t.(type) {
 		case *parser.NamedType:
 			if structs[tt.Value] || enums[tt.Value] || interfaces[tt.Value] {
-			result[tt.Value] = true
+				result[tt.Value] = true
 			}
 		case *parser.ArrayType:
 			collectTypes(tt.Elem, result)

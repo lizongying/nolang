@@ -1640,25 +1640,25 @@ func (t *Transpiler) CompileTarget(source string, _ Target) (string, error) {
 	var allValidateErrs []string
 	if typeErrs := checker.ValidateTypes(program); len(typeErrs) > 0 {
 		for _, e := range typeErrs {
-			allValidateErrs = append(allValidateErrs, fmt.Sprintf("line %d, column %d: %s", e.Line, e.Column, e.Message))
+			allValidateErrs = append(allValidateErrs, fmt.Sprintf("line %d, column %d: %s [%s]", e.Line, e.Column, e.Message, e.TraceID))
 		}
 	}
 	// 函數呼叫引數型別檢查（包括 newtype 語義：fd 變量不能傳給 i64 參數）
 	if funcArgErrs := checker.ValidateFuncArgs(program, filepath.Dir(t.sourcePath)); len(funcArgErrs) > 0 {
 		for _, e := range funcArgErrs {
-			allValidateErrs = append(allValidateErrs, fmt.Sprintf("line %d, column %d: %s", e.Line, e.Column, e.Message))
+			allValidateErrs = append(allValidateErrs, fmt.Sprintf("line %d, column %d: %s [%s]", e.Line, e.Column, e.Message, e.TraceID))
 		}
 	}
 	// 未定義變數檢查（包括 struct 類型名直接賦值欄位，如 s.x = 7 而非 s0.x = 7）
 	if undefErrs := checker.ValidateUndefinedVars(program, filepath.Dir(t.sourcePath)); len(undefErrs) > 0 {
 		for _, e := range undefErrs {
-			allValidateErrs = append(allValidateErrs, fmt.Sprintf("line %d, column %d: %s", e.Line, e.Column, e.Message))
+			allValidateErrs = append(allValidateErrs, fmt.Sprintf("line %d, column %d: %s [%s]", e.Line, e.Column, e.Message, e.TraceID))
 		}
 	}
 	// ?T 輸出參數未初始化檢查（case6）
 	if uninitErrs := checker.ValidateUninitOutputParams(program); len(uninitErrs) > 0 {
 		for _, e := range uninitErrs {
-			allValidateErrs = append(allValidateErrs, fmt.Sprintf("line %d, column %d: %s", e.Line, e.Column, e.Message))
+			allValidateErrs = append(allValidateErrs, fmt.Sprintf("line %d, column %d: %s [%s]", e.Line, e.Column, e.Message, e.TraceID))
 		}
 	}
 	if len(allValidateErrs) > 0 {
@@ -2103,7 +2103,7 @@ func (t *Transpiler) CompileTarget(source string, _ Target) (string, error) {
 	if lhsInfErrs := checker.ValidateLHSInferredBuiltins(merged); len(lhsInfErrs) > 0 {
 		var msgs []string
 		for _, e := range lhsInfErrs {
-			msgs = append(msgs, fmt.Sprintf("line %d, column %d: %s", e.Line, e.Column, e.Message))
+			msgs = append(msgs, fmt.Sprintf("line %d, column %d: %s [%s]", e.Line, e.Column, e.Message, e.TraceID))
 		}
 		return "", fmt.Errorf("validation errors: %s", strings.Join(msgs, "; "))
 	}
@@ -2117,7 +2117,7 @@ func (t *Transpiler) CompileTarget(source string, _ Target) (string, error) {
 	if mergedArgCountErrs := checker.ValidateFuncArgCount(merged); len(mergedArgCountErrs) > 0 {
 		var msgs []string
 		for _, e := range mergedArgCountErrs {
-			msgs = append(msgs, fmt.Sprintf("line %d, column %d: %s", e.Line, e.Column, e.Message))
+			msgs = append(msgs, fmt.Sprintf("line %d, column %d: %s [%s]", e.Line, e.Column, e.Message, e.TraceID))
 		}
 		return "", fmt.Errorf("function argument errors: %s", strings.Join(msgs, "; "))
 	}

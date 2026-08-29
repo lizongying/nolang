@@ -33,6 +33,7 @@ type LintResult struct {
 	Severity  LintSeverity
 	Source    string
 	Message   string
+	TraceID   string
 }
 
 // LintOptions 控制 RunAllLints 的行為。
@@ -72,7 +73,7 @@ func RunAllLints(program *parser.Program, opts LintOptions) []LintResult {
 		results = append(results, LintResult{
 			Line: e.Line, Column: e.Column,
 			Severity: LintError, Source: "nolang-type-checker",
-			Message: e.Message,
+			Message: e.Message, TraceID: e.TraceID,
 		})
 	}
 
@@ -81,7 +82,7 @@ func RunAllLints(program *parser.Program, opts LintOptions) []LintResult {
 		results = append(results, LintResult{
 			Line: w.Line, Column: w.Column,
 			Severity: LintWarning, Source: "nolang-lint",
-			Message: w.Message,
+			Message: w.Message, TraceID: w.TraceID,
 		})
 	}
 
@@ -90,7 +91,7 @@ func RunAllLints(program *parser.Program, opts LintOptions) []LintResult {
 		results = append(results, LintResult{
 			Line: w.Line, Column: w.Column,
 			Severity: LintWarning, Source: "nolang-lint",
-			Message: w.Message,
+			Message: w.Message, TraceID: w.TraceID,
 		})
 	}
 
@@ -103,7 +104,7 @@ func RunAllLints(program *parser.Program, opts LintOptions) []LintResult {
 		results = append(results, LintResult{
 			Line: u.Line, Column: u.Column, EndColumn: endCol,
 			Severity: LintHint, Source: "nolang-lint",
-			Message: u.Message,
+			Message: u.Message, TraceID: u.TraceID,
 		})
 	}
 
@@ -112,7 +113,7 @@ func RunAllLints(program *parser.Program, opts LintOptions) []LintResult {
 		results = append(results, LintResult{
 			Line: u.Line, Column: u.Column,
 			Severity: LintError, Source: "nolang-lint",
-			Message: u.Message,
+			Message: u.Message, TraceID: u.TraceID,
 		})
 	}
 
@@ -121,7 +122,7 @@ func RunAllLints(program *parser.Program, opts LintOptions) []LintResult {
 		results = append(results, LintResult{
 			Line: u.Line, Column: u.Column,
 			Severity: LintError, Source: "nolang-type-checker",
-			Message: u.Message,
+			Message: u.Message, TraceID: u.TraceID,
 		})
 	}
 
@@ -130,7 +131,7 @@ func RunAllLints(program *parser.Program, opts LintOptions) []LintResult {
 		results = append(results, LintResult{
 			Line: w.Line, Column: w.Column,
 			Severity: LintWarning, Source: "nolang-type-checker",
-			Message: w.Message,
+			Message: w.Message, TraceID: w.TraceID,
 		})
 	}
 
@@ -139,7 +140,7 @@ func RunAllLints(program *parser.Program, opts LintOptions) []LintResult {
 		results = append(results, LintResult{
 			Line: e.Line, Column: e.Column,
 			Severity: LintError, Source: "nolang-lint",
-			Message: e.Message,
+			Message: e.Message, TraceID: e.TraceID,
 		})
 	}
 
@@ -152,7 +153,7 @@ func RunAllLints(program *parser.Program, opts LintOptions) []LintResult {
 		results = append(results, LintResult{
 			Line: u.Line, Column: u.Column, EndColumn: endCol,
 			Severity: LintWarning, Source: "nolang-lint",
-			Message: u.Message,
+			Message: u.Message, TraceID: u.TraceID,
 		})
 	}
 
@@ -161,7 +162,7 @@ func RunAllLints(program *parser.Program, opts LintOptions) []LintResult {
 		results = append(results, LintResult{
 			Line: u.Line, Column: u.Column,
 			Severity: LintHint, Source: "nolang-lint",
-			Message: u.Message,
+			Message: u.Message, TraceID: u.TraceID,
 		})
 	}
 
@@ -170,7 +171,7 @@ func RunAllLints(program *parser.Program, opts LintOptions) []LintResult {
 		results = append(results, LintResult{
 			Line: u.Line, Column: u.Column,
 			Severity: LintHint, Source: "nolang-lint",
-			Message: u.Message,
+			Message: u.Message, TraceID: u.TraceID,
 		})
 	}
 
@@ -179,7 +180,7 @@ func RunAllLints(program *parser.Program, opts LintOptions) []LintResult {
 		results = append(results, LintResult{
 			Line: u.Line, Column: u.Column,
 			Severity: LintHint, Source: "nolang-lint",
-			Message: u.Message,
+			Message: u.Message, TraceID: u.TraceID,
 		})
 	}
 
@@ -188,7 +189,7 @@ func RunAllLints(program *parser.Program, opts LintOptions) []LintResult {
 		results = append(results, LintResult{
 			Line: u.Line, Column: u.Column,
 			Severity: LintError, Source: "nolang-lint",
-			Message: u.Message,
+			Message: u.Message, TraceID: u.TraceID,
 		})
 	}
 
@@ -197,7 +198,7 @@ func RunAllLints(program *parser.Program, opts LintOptions) []LintResult {
 		results = append(results, LintResult{
 			Line: u.Line, Column: u.Column,
 			Severity: LintError, Source: "nolang-lint",
-			Message: u.Message,
+			Message: u.Message, TraceID: u.TraceID,
 		})
 	}
 
@@ -206,7 +207,7 @@ func RunAllLints(program *parser.Program, opts LintOptions) []LintResult {
 		results = append(results, LintResult{
 			Line: u.Line, Column: u.Column,
 			Severity: LintError, Source: "nolang-lint",
-			Message: u.Message,
+			Message: u.Message, TraceID: u.TraceID,
 		})
 	}
 
@@ -215,7 +216,7 @@ func RunAllLints(program *parser.Program, opts LintOptions) []LintResult {
 		results = append(results, LintResult{
 			Line: u.Line, Column: u.Column,
 			Severity: LintHint, Source: "nolang-lint",
-			Message: u.Message,
+			Message: u.Message, TraceID: u.TraceID,
 		})
 	}
 
@@ -224,7 +225,7 @@ func RunAllLints(program *parser.Program, opts LintOptions) []LintResult {
 		results = append(results, LintResult{
 			Line: u.Line, Column: u.Column,
 			Severity: LintHint, Source: "nolang-lint",
-			Message: u.Message,
+			Message: u.Message, TraceID: u.TraceID,
 		})
 	}
 
@@ -233,7 +234,7 @@ func RunAllLints(program *parser.Program, opts LintOptions) []LintResult {
 		results = append(results, LintResult{
 			Line: u.Line, Column: u.Column,
 			Severity: LintError, Source: "nolang-type-checker",
-			Message: u.Message,
+			Message: u.Message, TraceID: u.TraceID,
 		})
 	}
 
@@ -242,7 +243,7 @@ func RunAllLints(program *parser.Program, opts LintOptions) []LintResult {
 		results = append(results, LintResult{
 			Line: u.Line, Column: u.Column,
 			Severity: LintError, Source: "nolang-format-checker",
-			Message: u.Message,
+			Message: u.Message, TraceID: u.TraceID,
 		})
 	}
 
@@ -251,7 +252,7 @@ func RunAllLints(program *parser.Program, opts LintOptions) []LintResult {
 		results = append(results, LintResult{
 			Line: u.Line, Column: u.Column,
 			Severity: LintError, Source: "nolang-type-checker",
-			Message: u.Message,
+			Message: u.Message, TraceID: u.TraceID,
 		})
 	}
 
@@ -263,7 +264,7 @@ func RunAllLints(program *parser.Program, opts LintOptions) []LintResult {
 			results = append(results, LintResult{
 				Line: u.Line, Column: u.Column,
 				Severity: LintError, Source: "nolang-lint",
-				Message: u.Message,
+				Message: u.Message, TraceID: u.TraceID,
 			})
 		}
 	}

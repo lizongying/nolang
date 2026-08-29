@@ -2180,11 +2180,11 @@ func printLintResults(results []nbuild.LintResult) int {
 		for _, l := range fileResult.Lints {
 			sev := strings.ToUpper(string(l.Severity))
 			if l.Line > 0 {
-				fmt.Printf("%s:%d:%d: [%s] %s: %s\n",
-					fileResult.File, l.Line, l.Column, sev, l.Source, l.Message)
+				fmt.Printf("%s:%d:%d: [%s] %s: %s [%s]\n",
+					fileResult.File, l.Line, l.Column, sev, l.Source, l.Message, l.TraceID)
 			} else {
-				fmt.Printf("%s: [%s] %s: %s\n",
-					fileResult.File, sev, l.Source, l.Message)
+				fmt.Printf("%s: [%s] %s: %s [%s]\n",
+					fileResult.File, sev, l.Source, l.Message, l.TraceID)
 			}
 			switch l.Severity {
 			case nbuild.LintError:
