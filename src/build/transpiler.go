@@ -2114,6 +2114,20 @@ func (t *Transpiler) CompileTarget(source string, _ Target) (string, error) {
 		}
 		return "", fmt.Errorf("validation errors: %s", strings.Join(msgs, "; "))
 	}
+	// 問題 8: 模組合併後重新執行函數引數數量檢查。
+	// ValidateFuncArgs 在模組合併前（line 1654）執行，此時標準庫函數（如
+	// sha1.sha1-hex）的函數定義尚未被合併到 program 中，sigs 中沒有它們的
+	// 簽名，因此參數數量不匹配（如 sha1-hex() 缺少參數）不會被檢測到。
+	// 在模組合併後對 merged 程式重新執行參數數量檢查，使標準庫函數的
+	// 參數數量也能被檢查。只檢查數量不檢查型別，避免標準庫內部複雜型別
+	// 推斷（泛型、單態化）產生的誤報。
+	if mergedArgCountErrs := checker.ValidateFuncArgCount(merged); len(mergedArgCountErrs) > 0 {
+		var msgs []string
+		for _, e := range mergedArgCountErrs {
+			msgs = append(msgs, fmt.Sprintf("line %d, column %d: %s", e.Line, e.Column, e.Message))
+		}
+		return "", fmt.Errorf("function argument errors: %s", strings.Join(msgs, "; "))
+	}
 	// vet 模式：前端驗證（語法+型別+模組合併+單態化）已全部完成，
 	// 跳過 LLVM IR 生成以大幅加速 `no vet`。
 	// 在返回前對 merged 執行全部 lint 校驗（命名、未用變數、embed、

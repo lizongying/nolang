@@ -5925,6 +5925,10 @@ func (g *Generator) generateInfix(sb *strings.Builder, expr *parser.InfixExpress
 		rc := g.coerceToInt(sb, right, expr.Right, cmpType)
 		cmpReg := g.tmpReg("eq.cmp")
 		extReg := g.tmpReg("eq.ext")
+		if os.Getenv("NOLANG_DEBUG_IT") != "" {
+			fmt.Fprintf(os.Stderr, "[debug-it] == cmp: left=%s right=%s cmpType=%q lc=%s rc=%s leftType=%q rightType=%q\n",
+				left, right, cmpType, lc, rc, g.intExprLLVMType(expr.Left), g.intExprLLVMType(expr.Right))
+		}
 		if sb != nil {
 			sb.WriteString(fmt.Sprintf("%s%s = icmp eq %s %s, %s\n", g.indent(), cmpReg, toLLVMType(cmpType), lc, rc))
 			sb.WriteString(fmt.Sprintf("%s%s = zext i1 %s to i64\n", g.indent(), extReg, cmpReg))

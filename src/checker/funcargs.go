@@ -76,6 +76,135 @@ func extractArrayElemType(typeStr string) string {
 // are also registered but treated as transparent (no newtype enforcement).
 var validationConcreteTypeAliases map[string]string
 
+// ValidateFuncArgCount checks only argument counts against function signatures.
+// Unlike ValidateFuncArgs, it does NOT check argument types, making it safe
+// to run on merged programs that include standard library functions with
+// complex type inference (generics, monomorphization) that would cause
+// false-positive type errors.
+//
+// This is called after module merging to catch missing-argument errors for
+// standard library functions (e.g. sha1-hex() with 0 args) that were not
+// visible to ValidateFuncArgs (which runs before module merging).
+func ValidateFuncArgCount(program *parser.Program) []ValidateResult {
+	validationMu.Lock()
+	defer validationMu.Unlock()
+	// Collect function signatures from the merged program
+	sigs := make(map[string]*funcSig)
+	for _, stmt := range program.Statements {
+		if fd, ok := stmt.(*parser.FunctionDefinition); ok {
+			sigs[fd.Name] = funcSigFromDef(fd)
+		}
+	}
+	var results []ValidateResult
+	for _, stmt := range program.Statements {
+		results = append(results, checkArgCountInStmt(stmt, sigs)...)
+	}
+	return results
+}
+
+// checkArgCountInStmt walks a statement and checks CallExpression argument counts.
+func checkArgCountInStmt(stmt parser.Statement, sigs map[string]*funcSig) []ValidateResult {
+	if stmt == nil {
+		return nil
+	}
+	switch s := stmt.(type) {
+	case *parser.ExpressionStatement:
+		if s.Expression != nil {
+			return checkArgCountInExpr(s.Expression, sigs)
+		}
+	case *parser.LetStatement:
+		if s.Value != nil {
+			return checkArgCountInExpr(s.Value, sigs)
+		}
+	case *parser.FunctionDefinition:
+		var results []ValidateResult
+		if s.Body != nil {
+			for _, bs := range s.Body.Statements {
+				results = append(results, checkArgCountInStmt(bs, sigs)...)
+			}
+		}
+		return results
+	}
+	return nil
+}
+
+// checkArgCountInExpr walks an expression and checks CallExpression argument counts.
+func checkArgCountInExpr(expr parser.Expression, sigs map[string]*funcSig) []ValidateResult {
+	if expr == nil {
+		return nil
+	}
+	switch e := expr.(type) {
+	case *parser.CallExpression:
+		var results []ValidateResult
+		if ident, ok := e.Function.(*parser.Identifier); ok {
+			if sig, ok := sigs[ident.Value]; ok {
+				// Compute minimum required arguments (excluding params with defaults)
+				minArgs := len(sig.ParamTypes)
+				// Method calls (e.g. ec.init(c, key) rewritten to net.enc-conn.init(c, key))
+				// have an implicit self receiver as the first parameter in the signature,
+				// but it is NOT in expr.Arguments. Subtract 1 for the implicit self.
+				if len(sig.ParamTypes) > 0 && sig.ParamTypes[0].Name == "self" {
+					minArgs--
+				}
+				for j := len(sig.ParamTypes) - 1; j >= 0; j-- {
+					if sig.ParamTypes[j].HasDefault {
+						minArgs = j
+					} else {
+						break
+					}
+				}
+				// Allow more args than params (could be output param), only flag too few
+				if len(e.Arguments) < minArgs {
+					results = append(results, ValidateResult{
+						Line:    e.Token.Line,
+						Column:  e.Token.Column,
+						Message: fmt.Sprintf("function '%s' expects at least %d argument(s), got %d", ident.Value, minArgs, len(e.Arguments)),
+					})
+				}
+			}
+		}
+		// Recurse into arguments for nested calls
+		for _, arg := range e.Arguments {
+			results = append(results, checkArgCountInExpr(arg, sigs)...)
+		}
+		return results
+	case *parser.InfixExpression:
+		var results []ValidateResult
+		if e.Left != nil {
+			results = append(results, checkArgCountInExpr(e.Left, sigs)...)
+		}
+		if e.Right != nil {
+			results = append(results, checkArgCountInExpr(e.Right, sigs)...)
+		}
+		return results
+	case *parser.PrefixExpression:
+		if e.Right != nil {
+			return checkArgCountInExpr(e.Right, sigs)
+		}
+	case *parser.GroupedExpression:
+		if e.Expression != nil {
+			return checkArgCountInExpr(e.Expression, sigs)
+		}
+	case *parser.IfExpression:
+		var results []ValidateResult
+		if e.Condition != nil {
+			results = append(results, checkArgCountInExpr(e.Condition, sigs)...)
+		}
+		if e.Consequence != nil {
+			for _, bs := range e.Consequence.Statements {
+				results = append(results, checkArgCountInStmt(bs, sigs)...)
+			}
+		}
+		if e.Alternative != nil {
+			for _, bs := range e.Alternative.Statements {
+				results = append(results, checkArgCountInStmt(bs, sigs)...)
+			}
+		}
+		return results
+	}
+	return nil
+}
+
 func ValidateFuncArgs(program *parser.Program, rootDir string) []ValidateResult {
 	validationMu.Lock()
 	defer validationMu.Unlock()
