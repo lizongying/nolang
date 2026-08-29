@@ -493,7 +493,7 @@ gcd = (a bigint, b bigint) (g bigint) {
     y.sign = 1
     yz = y.is-zero()
     {
-        x = mod(x, y)
+        x = bigint.mod(x, y)
         tmp = bigint {}
         tmp = y.copy()
         y = x.copy()

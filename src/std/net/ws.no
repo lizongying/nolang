@@ -630,10 +630,8 @@ server-conn.recv = () (msg ?message) {
 
         ; 提取 mask key（如有）
         actual-extra = 0
-        (b1 & 127) == 126 -> actual-extra
-        2
-        (b1 & 127) == 127 -> actual-extra
-        8
+        (b1 & 127) == 126 -> actual-extra = 2
+        (b1 & 127) == 127 -> actual-extra = 8
         mask-start = 2 + actual-extra
         mask-key = ''
         masked -> {
@@ -1080,10 +1078,8 @@ client.recv = () (msg ?message) {
         mask-key = ''
         mask-start = 2
         actual-extra = 0
-        (b1 & 127) == 126 -> actual-extra
-        2
-        (b1 & 127) == 127 -> actual-extra
-        8
+        (b1 & 127) == 126 -> actual-extra = 2
+        (b1 & 127) == 127 -> actual-extra = 8
         mask-start = 2 + actual-extra
         masked -> {
             mask-key str = with-len(4)

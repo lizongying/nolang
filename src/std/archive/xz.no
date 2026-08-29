@@ -153,8 +153,8 @@ lzma-decoder {
     pos-slot [256]i64
     spec-pos [128]i64
     align [16]i64
-    len-coder i64
-    rep-len-coder i64
+    len-coder []i64
+    rep-len-coder []i64
     literal i64
     state i64
     rep0 i64

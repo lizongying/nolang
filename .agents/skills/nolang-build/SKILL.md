@@ -84,18 +84,23 @@ make playground  # Build everything + Docusaurus site
 - ❌ **Never run `cd src && go build` manually** — the Makefile handles this with correct flags and paths.
 - ❌ **Never hardcode output paths** — use `make` targets which respect `BINDIR` and other variables.
 
-## Post-Build Verification
+## Post-Build Verification (Mandatory)
+
+> **强制规则**：每次修改完代码后，必须运行 `no vet src/std` 检查标准库，**不允许出现 ERROR**。详见 [nolang-vet](file://../nolang-vet/SKILL.md)。
 
 After building, run vet checks on the standard library:
 
 ```bash
-./vscode-nolang/server/lsp vet src/std   # LSP vet check
-./bin/no vet src/std                     # Nolang vet check
+./bin/no vet src/std                     # Nolang vet check — 不允许 ERROR
+./vscode-nolang/server/lsp vet src/std   # LSP vet check (可选，检查诊断级错误)
 ```
+
+如果 `no vet` 报告 ERROR，必须修复后才能继续。其他项目的标准库目录可能不同，需根据实际项目结构调整 vet 路径。
 
 ## See Also — Nolang References
 
 - [nolang-syntax](file://../nolang-syntax/SKILL.md) — Nolang syntax, grammar, types, operators, and language features
 - [nolang-std](file://../nolang-std/SKILL.md) — Standard library API reference (60+ modules)
+- [nolang-vet](file://../nolang-vet/SKILL.md) — 修改后强制验证规则：`no vet src/std` 不允许 ERROR
 - [nolang-debug](file://../nolang-debug/SKILL.md) — Debugging guide for compiler and LSP issues
 - [nolang-memory](file://../nolang-memory/SKILL.md) — Memory design and ownership model

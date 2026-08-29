@@ -20,9 +20,8 @@
 ; 標準檔案描述符
 ; ═══════════════════════════════════════════════
 
-STDIN-FD fd = 0
-STDOUT-FD fd = 1
-STDERR-FD fd = 2
+; STDIN-FD/STDOUT-FD/STDERR-FD 定義在 fs.no 中（fd 類型也在 fs.no）
+; 此處不再重複宣告，避免合併時 ValidateDuplicateVars 報重複
 
 ; ═══════════════════════════════════════════════
 ; reader 結構體：封裝讀取來源

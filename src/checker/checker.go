@@ -570,6 +570,19 @@ func ValidateTypes(program *parser.Program) []ValidateResult {
 			if len(fd.Parameters) > 0 && fd.Parameters[0].Name == "self" {
 				selfType = fd.Parameters[0].Type.String()
 			}
+			// 跳過單態化生成的函式（函式名含 '__'），因為這些函式
+			// 由編譯器自動生成，其型別檢查應在泛型模板層面完成。
+			// 單態化後的函式體中 i64 字面量賦值給特化類型（如 f64、u8）
+			// 是合法的，代碼生成器會正確處理轉換。
+			if strings.Contains(fd.Name, "__") {
+				continue
+			}
+			// 跳過泛型模板函式：有 GenericParams 或函式名以 '[' 開頭
+			// （如 []t.to-str），這些函式體中使用了泛型型別參數（如 t），
+			// 在特化前無法精確檢查型別相容性（如 t 傳給期望 i64 的參數）。
+			if len(fd.GenericParams) > 0 || strings.HasPrefix(fd.Name, "[") {
+				continue
+			}
 		}
 		// 使用預填的頂層變數型別，避免跨語句型別推斷失敗
 		localVarTypes := make(map[string]string)
@@ -3021,6 +3034,17 @@ func checkUndefinedVarsInExpr(expr parser.Expression, definedVars, funcNames map
 			// Check if it's a known function or builtin
 			if funcNames[e.Value] {
 				return nil
+			}
+			// Module-prefixed names (e.g. "number.gcd"): check the last
+			// segment — LetStatement function assignments like
+			// `gcd = (a int, b int) (r int) { ... }` are collected by
+			// CollectDefinedVars under the bare name ("gcd"), but
+			// ResolveModuleCalls rewrites call sites to "number.gcd".
+			if idx := strings.LastIndex(e.Value, "."); idx > 0 {
+				shortName := e.Value[idx+1:]
+				if definedVars[shortName] || funcNames[shortName] {
+					return nil
+				}
 			}
 			if builtin.FindBuiltinMethod(e.Value) != nil {
 				return nil

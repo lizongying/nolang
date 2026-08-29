@@ -141,7 +141,9 @@ cd src && go test ./pkg/
 cd src && go test ./...
 ```
 
-### 5. Validate the standard library with `no vet`
+### 5. Validate the standard library with `no vet` (Mandatory)
+
+> **强制规则**：修改完代码后，必须运行 `no vet src/std` 检查标准库，**不允许出现 ERROR**。详见 [nolang-vet](file://../nolang-vet/SKILL.md)。
 
 After the Go tests are green, rebuild the compiler and run `no vet` on the standard library to ensure no syntax or semantic errors were introduced:
 
@@ -150,7 +152,7 @@ make no                 # rebuild the compiler
 no vet src/std/         # validate all standard library files
 ```
 
-This step catches issues that Go unit tests might miss. If `no vet` reports errors, fix them before proceeding.
+This step catches issues that Go unit tests might miss. If `no vet` reports errors, fix them before proceeding. 其他项目的标准库目录可能不同，需根据实际项目结构调整 vet 路径。
 
 ### 5b. Validate the standard library with `nolang-lsp vet`
 
@@ -402,6 +404,7 @@ LSP clients report positions in UTF-16 code units, but Nolang source is ASCII fo
 
 ## See Also — Nolang References
 
+- [nolang-vet](file://../nolang-vet/SKILL.md) — 修改后强制验证规则：`no vet src/std` 不允许 ERROR
 - [nolang-syntax](file://../nolang-syntax/SKILL.md) — Nolang syntax, grammar, types, operators, and language features
 - [nolang-std](file://../nolang-std/SKILL.md) — Standard library API reference (60+ modules)
 - [nolang-build](file://../nolang-build/SKILL.md) — Building the Nolang project with `make`

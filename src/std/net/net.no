@@ -633,7 +633,7 @@ enc-dial = (host str, port i64, key [32]byte) (ec ?enc-conn) {
         err -> return
         ok -> {
             e enc-conn
-            e.init(key)
+            e.init(c, key)
             ec = e
         }
     }

@@ -873,9 +873,8 @@ ecdsa-verify = (pub [65]byte, msg []byte, sig [64]byte) (ok i64) {
         ok = 0
         return
     }
-}
 
-; h = SHA-256(msg)
+    ; h = SHA-256(msg)
 h [32]byte
 h = sha256.sha256(msg)
 h-le [32]byte

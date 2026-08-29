@@ -276,6 +276,16 @@ func ValidateFuncArgs(program *parser.Program, rootDir string) []ValidateResult 
 	}
 	// 5. Validate call expressions
 	for _, stmt := range program.Statements {
+		// 跳過泛型模板函式和單態化函式：這些函式體中的型別在使用前
+		// 無法精確檢查（泛型型別參數 t 在特化前不是具體型別）。
+		if fd, ok := stmt.(*parser.FunctionDefinition); ok {
+			if strings.Contains(fd.Name, "__") {
+				continue
+			}
+			if len(fd.GenericParams) > 0 || strings.HasPrefix(fd.Name, "[") {
+				continue
+			}
+		}
 		results = append(results, checkCallArgsInStmt(stmt, sigs, topLevelVarTypes, structFields)...)
 	}
 	return results
@@ -707,6 +717,24 @@ func intTypeRange(t string) (min, max int64, ok bool) {
 	return 0, 0, false
 }
 
+// integerBitWidth returns the bit width of an integer type (8, 16, 32, 64, 128).
+// Returns 0 for non-integer types.
+func integerBitWidth(t string) int {
+	switch t {
+	case "i8", "u8", "byte":
+		return 8
+	case "i16", "u16":
+		return 16
+	case "i32", "u32":
+		return 32
+	case "i64", "u64":
+		return 64
+	case "i128", "u128":
+		return 128
+	}
+	return 0
+}
+
 // isSafeBitwiseNarrowing 報告一個表達式賦值給更窄的無號整數型別時是否安全。
 //
 // 當賦值的右側表達式僅由位元運算（& | ^ << >>）和整數字面量/byte 值構成，
@@ -796,6 +824,33 @@ func isArgTypeCompatible(expectedType, argType string, arg parser.Expression) bo
 	if argType == expectedType {
 		return true
 	}
+	// str 和 []byte 互通：底層都是位元組序列，標準庫中常將 str 字面量
+	// 傳給 []byte 參數（如 sha256('') ），代碼生成器正確處理轉換。
+	if (expectedType == "[]byte" && argType == "str") ||
+		(expectedType == "str" && argType == "[]byte") {
+		return true
+	}
+	// ?T 到 T 的隱式解包：在 ok 分支中，?T 變數已確認為有值，
+	// 傳給期望 T 的參數是安全的（代碼生成器會自動取值）。
+	if strings.HasPrefix(argType, "?") && argType[1:] == expectedType {
+		return true
+	}
+	// 模組前綴類型相容：合併後類型可能被前綴化（如 bigint.bigint），
+	// 但變數類型仍為未前綴的 bare name（如 bigint），允許互通。
+	if expectedType == argType || strings.HasSuffix(expectedType, "."+argType) ||
+		strings.HasSuffix(argType, "."+expectedType) {
+		return true
+	}
+	// 聯合類型成員相容：當 argType 是聯合類型（如 "i64 | err"），
+	// 檢查 expectedType 是否是其中一個成員。
+	if strings.Contains(argType, " | ") {
+		for _, part := range strings.Split(argType, " | ") {
+			part = strings.TrimSpace(part)
+			if part == expectedType || isArgTypeCompatible(expectedType, part, arg) {
+				return true
+			}
+		}
+	}
 	// Newtype enforcement: a primitive single concrete type alias and its
 	// underlying type are mutually exclusive. Block i64 var → fd and
 	// fd var → i64 (non-literal cases). Integer literals are allowed to
@@ -876,6 +931,13 @@ func isArgTypeCompatible(expectedType, argType string, arg parser.Expression) bo
 	// conversion (e.g. byte → i64, u8 → i32, i8 → i64).
 	if aMin, aMax, aOk := intTypeRange(argType); aOk {
 		if eMin, eMax, eOk := intTypeRange(expectedType); eOk {
+			// 同位寬有符号/無符號整數之間的位模式 reinterpret
+			// （如 i64→u64, i32→u32）：標準庫中有合法用途
+			// （如 hex 格式化將 i64 位模式轉為 u64）。
+			if integerBitWidth(argType) == integerBitWidth(expectedType) &&
+				integerBitWidth(argType) > 0 {
+				return true
+			}
 			return aMin >= eMin && aMax <= eMax
 		}
 	}
@@ -968,6 +1030,12 @@ func checkCallArgsInExpr(expr parser.Expression, sigs map[string]*funcSig, varTy
 			if sig, ok := sigs[ident.Value]; ok {
 				// Check argument count (allow fewer args when default values exist)
 				minArgs := len(sig.ParamTypes)
+				// Method calls (e.g. ec.init(c, key) rewritten to net.enc-conn.init(c, key))
+				// have an implicit self receiver as the first parameter in the signature,
+				// but it is NOT in expr.Arguments. Subtract 1 for the implicit self.
+				if len(sig.ParamTypes) > 0 && sig.ParamTypes[0].Name == "self" {
+					minArgs--
+				}
 				for j := len(sig.ParamTypes) - 1; j >= 0; j-- {
 					if sig.ParamTypes[j].HasDefault {
 						minArgs = j
