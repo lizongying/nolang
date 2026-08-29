@@ -336,13 +336,15 @@ func (s *SemanticContext) SetFuncDeclared(funcName, varName string) {
 }
 
 // IsFuncDeclared checks if a variable was declared within a function scope.
-// Falls back to the global DeclaredVars if not found in the per-function map.
+// Falls back to the global DeclaredVars only when the function is not tracked
+// in FuncDeclaredVars (e.g. empty funcName or module-level code).
+// When the function IS tracked, only per-function scope is checked — this
+// prevents same-named locals in different functions (e.g. `r` in t-reader-init
+// and `r` in t-reader-read-byte) from interfering with type inference.
 func (s *SemanticContext) IsFuncDeclared(funcName, varName string) bool {
-	if s.FuncDeclaredVars != nil {
+	if funcName != "" && s.FuncDeclaredVars != nil {
 		if vars, ok := s.FuncDeclaredVars[funcName]; ok {
-			if vars[varName] {
-				return true
-			}
+			return vars[varName]
 		}
 	}
 	return s.IsDeclared(varName)

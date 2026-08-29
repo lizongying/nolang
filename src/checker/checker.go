@@ -2812,6 +2812,19 @@ func parseModuleExportsFromSource(source []byte) []ModuleExport {
 			}
 			exports = append(exports, ModuleExport{Name: es.Name.Value, Value: ""})
 		}
+		// Collect enum variant names as exported constants so that
+		// ValidateUndefinedVars recognizes cross-module enum variants
+		// (e.g. file-mode.read-write from fs.no).
+		if ed, ok := stmt.(*parser.EnumDefinition); ok {
+			for _, v := range ed.Values {
+				exports = append(exports, ModuleExport{Name: v.Name, Value: ""})
+			}
+		}
+		if ted, ok := stmt.(*parser.TaggedEnumDefinition); ok {
+			for _, v := range ted.Variants {
+				exports = append(exports, ModuleExport{Name: v.Name, Value: ""})
+			}
+		}
 	}
 	return exports
 }
@@ -3633,6 +3646,7 @@ var (
 	stdFieldsCache     map[string]map[string]string
 	stdAliasesCache    map[string]string // 單具體型別別名快取（如 "fd" → "i64"）
 	stdStructModCache  map[string]string // struct name → module short name（如 "conn" → "tls"）
+	stdEnumVariantsCache map[string][]string // enum type name → variant names (如 "file-mode" → ["read","write","append","read-write"])
 	// stdProgramsCache 緩存 CollectStdModuleSignatures PASS1 已解析的 std 模組
 	// Program，按「內容哈希」(cache.ContentKey) 索引。no vet src/std 的第二遍
 	// 可直接復用，跳過磁盤文件的重新 parse；內容與 embed 不一致時自然不命中，
@@ -3768,12 +3782,13 @@ func GetJsModules() []JsModuleInfo {
 }
 //go:generate go run ./genstdsig
 
-func setStdSigCaches(funcSigs map[string][]string, methodSigs map[string][]string, structFields map[string]map[string]string, aliases map[string]string, structMod map[string]string) {
+func setStdSigCaches(funcSigs map[string][]string, methodSigs map[string][]string, structFields map[string]map[string]string, aliases map[string]string, structMod map[string]string, enumVariants map[string][]string) {
 	stdSigsCache = funcSigs
 	stdMethodSigsCache = methodSigs
 	stdFieldsCache = structFields
 	stdAliasesCache = aliases
 	stdStructModCache = structMod
+	stdEnumVariantsCache = enumVariants
 }
 
 func CollectStdModuleSignatures() (map[string][]string, map[string]map[string]string) {
@@ -3788,7 +3803,7 @@ func CollectStdModuleSignatures() (map[string][]string, map[string]map[string]st
 		// a stale table.
 		if embeddedStdSigReady {
 			if key, err := computeStdSigKey(); err == nil && embeddedStdSigKey == key {
-				setStdSigCaches(embeddedStdFuncSigs, embeddedStdMethodSigs, embeddedStdStructFields, embeddedStdAliases, embeddedStdStructMod)
+				setStdSigCaches(embeddedStdFuncSigs, embeddedStdMethodSigs, embeddedStdStructFields, embeddedStdAliases, embeddedStdStructMod, embeddedStdEnumVariants)
 				warmStdTokenCache()
 				return
 			}
@@ -3797,18 +3812,18 @@ func CollectStdModuleSignatures() (map[string][]string, map[string]map[string]st
 		// ---- Stage 1: try disk cache first (skips parsing all std modules) ----
 		if os.Getenv("NOLANG_NOCACHE_STD") == "" {
 			if cached, ok := tryLoadStdSigCache(); ok {
-				setStdSigCaches(cached.FuncSigs, cached.MethodSigs, cached.Fields, cached.Aliases, cached.StructMod)
+				setStdSigCaches(cached.FuncSigs, cached.MethodSigs, cached.Fields, cached.Aliases, cached.StructMod, cached.EnumVariants)
 				return
 			}
 		}
 
 		// ---- full collection from embedded StdFS ----
-		funcSigs, methodSigs, structFields, aliases, structMod, _ := collectStdSigsFromFS(nolang.StdFS)
-		setStdSigCaches(funcSigs, methodSigs, structFields, aliases, structMod)
+		funcSigs, methodSigs, structFields, aliases, structMod, enumVariants, _ := collectStdSigsFromFS(nolang.StdFS)
+		setStdSigCaches(funcSigs, methodSigs, structFields, aliases, structMod, enumVariants)
 
 		// ---- persist to disk for next build (best-effort) ----
 		if os.Getenv("NOLANG_NOCACHE_STD") == "" {
-			saveStdSigCache(funcSigs, methodSigs, structFields, aliases, structMod, gatherStdTokens())
+			saveStdSigCache(funcSigs, methodSigs, structFields, aliases, structMod, enumVariants, gatherStdTokens())
 		}
 	})
 	return stdSigsCache, stdFieldsCache
@@ -3817,7 +3832,7 @@ func CollectStdModuleSignatures() (map[string][]string, map[string]map[string]st
 // CollectStdSigsFromFS is the exported, FS-parameterized entry point used by
 // the signature-table generator (genstdsig) to collect the five signature
 // tables from the on-disk src/ tree at `no` build time.
-func CollectStdSigsFromFS(fsys fs.FS) (map[string][]string, map[string][]string, map[string]map[string]string, map[string]string, map[string]string, error) {
+func CollectStdSigsFromFS(fsys fs.FS) (map[string][]string, map[string][]string, map[string]map[string]string, map[string]string, map[string]string, map[string][]string, error) {
 	return collectStdSigsFromFS(fsys)
 }
 
@@ -3826,12 +3841,13 @@ func CollectStdSigsFromFS(fsys fs.FS) (map[string][]string, map[string][]string,
 // type aliases, struct→module map) needed by the parser's type inference. It is
 // the FS-parameterized core of CollectStdModuleSignatures: the runtime passes
 // nolang.StdFS, the generator passes an os.DirFS over src/ on disk.
-func collectStdSigsFromFS(fsys fs.FS) (map[string][]string, map[string][]string, map[string]map[string]string, map[string]string, map[string]string, error) {
+func collectStdSigsFromFS(fsys fs.FS) (map[string][]string, map[string][]string, map[string]map[string]string, map[string]string, map[string]string, map[string][]string, error) {
 	funcSigs := make(map[string][]string)
 	methodSigs := make(map[string][]string)
 	structFields := make(map[string]map[string]string)
 	aliases := make(map[string]string)
 	structMod := make(map[string]string) // struct name → module short name
+	enumVariants := make(map[string][]string) // enum type name → variant names
 
 	// PASS 1: 解析所有模組並暫存，同時統計裸 struct 名的跨模組定義數。
 	// 多模組同名結構體（如 server-conn 定義於 server/tls/sse/ws）的裸名
@@ -3961,10 +3977,18 @@ func collectStdSigsFromFS(fsys fs.FS) (map[string][]string, map[string][]string,
 					}
 				}
 			}
+			// 收集枚舉定義的變體名列表，使跨模組 match desugar 能識別枚舉類型
+			if ed, ok := stmt.(*parser.EnumDefinition); ok {
+				if _, exists := enumVariants[ed.Name]; !exists {
+					for _, ev := range ed.Values {
+						enumVariants[ed.Name] = append(enumVariants[ed.Name], ev.Name)
+					}
+				}
+			}
 		}
 	}
 
-	return funcSigs, methodSigs, structFields, aliases, structMod, nil
+	return funcSigs, methodSigs, structFields, aliases, structMod, enumVariants, nil
 }
 func CollectStdConcreteAliases() map[string]string {
 	CollectStdModuleSignatures() // 觸發 sync.Once 填充快取
@@ -3980,6 +4004,14 @@ func CollectStdStructModules() map[string]string {
 func CollectStdMethodSigs() map[string][]string {
 	CollectStdModuleSignatures() // 觸發 sync.Once 填充快取
 	return stdMethodSigsCache
+}
+
+// CollectStdEnumVariants 返回 std 模組中所有枚舉型別的變體名列表。
+// 鍵為枚舉型別名（如 "file-mode"），值為變體名列表（如 ["read","write","append","read-write"]）。
+// 供 parser 的 match desugar 使用，使跨模組枚舉 match 能正確識別型別。
+func CollectStdEnumVariants() map[string][]string {
+	CollectStdModuleSignatures() // 觸發 sync.Once 填充快取
+	return stdEnumVariantsCache
 }
 
 // StdProgramForContent 返回與內容哈希相對應、在 CollectStdModuleSignatures

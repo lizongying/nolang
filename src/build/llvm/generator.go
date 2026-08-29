@@ -1119,9 +1119,23 @@ func (g *Generator) Generate(program *parser.Program) string {
 			if g.enumVariants[ed.Name] == nil {
 				g.enumVariants[ed.Name] = make(map[string]int64)
 			}
+			// 同時以裸名（去掉模組前綴）作為 key 存儲一份，
+			// 使跨模組引用 file-mode.write 時能透過裸名 "file-mode" 查找到。
+			bareName := ed.Name
+			if idx := strings.LastIndex(ed.Name, "."); idx > 0 {
+				bareName = ed.Name[idx+1:]
+			}
+			if bareName != ed.Name {
+				if g.enumVariants[bareName] == nil {
+					g.enumVariants[bareName] = make(map[string]int64)
+				}
+			}
 			for _, v := range ed.Values {
 				g.enumVariantIndex[v.Name] = v.Value
 				g.enumVariants[ed.Name][v.Name] = v.Value
+				if bareName != ed.Name {
+					g.enumVariants[bareName][v.Name] = v.Value
+				}
 				if g.varTypes != nil {
 					g.varTypes[v.Name] = "i64"
 				}

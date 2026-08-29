@@ -74,7 +74,7 @@ func (p *Parser) resolveReceiverType(receiver Expression) string {
 }
 
 // inferTypeFromCallExpr 嘗試從函數/方法調用推斷返回型別。
-// 僅推斷 option 型別（?type），避免泛型/聯合型別的特化問題。
+// 推斷 option 型別（?type）和結構體型別（如 bufio.reader），避免泛型/聯合型別的特化問題。
 // 返回空字串表示無法推斷。
 //
 // 查找規則：
@@ -91,9 +91,7 @@ func (p *Parser) inferTypeFromCallExpr(call *CallExpression) string {
 		fnName := ident.Value
 		if p.funcSignatures != nil {
 			if rets, ok := p.funcSignatures[fnName]; ok && len(rets) == 1 {
-				if strings.HasPrefix(rets[0], "?") {
-					return rets[0]
-				}
+				return p.filterInferableType(rets[0])
 			}
 		}
 		return ""
@@ -117,18 +115,14 @@ func (p *Parser) inferTypeFromCallExpr(call *CallExpression) string {
 				// 兩種鍵均以 receiverType + "." + dot.Property 查找即可。
 				key := receiverType + "." + dot.Property
 				if rets, ok := p.methodSignatures[key]; ok && len(rets) == 1 {
-					if strings.HasPrefix(rets[0], "?") {
-						return rets[0]
-					}
+					return p.filterInferableType(rets[0])
 				}
 			}
 			// array/slice type methods (如 []t.len()) 仍存於 funcSignatures
 			if p.funcSignatures != nil {
 				fnName := receiverType + "." + dot.Property
 				if rets, ok := p.funcSignatures[fnName]; ok && len(rets) == 1 {
-					if strings.HasPrefix(rets[0], "?") {
-						return rets[0]
-					}
+					return p.filterInferableType(rets[0])
 				}
 			}
 			return ""
@@ -136,23 +130,73 @@ func (p *Parser) inferTypeFromCallExpr(call *CallExpression) string {
 		// Module-path receiver（如 http.do-req(...)）：receiver 是模組
 		// 識別符而非變數。std 模組函數統一以 "module.fn" 為鍵註冊。
 		modName := ""
+		fullPath := "" // 完整點分路徑（如 bufio.reader.init）
 		if ident, ok := dot.Receiver.(*Identifier); ok {
 			modName = ident.Value
+			fullPath = modName + "." + dot.Property
 		} else if innerDot, ok := dot.Receiver.(*DotExpression); ok {
 			// Multi-level module path (e.g. encoding.base64.decode):
 			// use the last path segment as the module short name.
 			modName = innerDot.Property
+			// 同時構建完整路徑（如 bufio.reader.init），
+			// 用於查找 stdsig 中的 "module.struct.method" 鍵。
+			if innerIdent, ok := innerDot.Receiver.(*Identifier); ok {
+				fullPath = innerIdent.Value + "." + innerDot.Property + "." + dot.Property
+			}
+		}
+		// 先用完整路徑查找（如 bufio.reader.init），
+		// 再回退到 "module.fn" 格式（如 reader.init）。
+		// 方法簽名（methodSigs）以 "module.struct.method" 為鍵存儲，
+		// 函數簽名（funcSigs）以 "module.fn" 為鍵存儲。
+		if fullPath != "" {
+			// 先查方法簽名（如 bufio.reader.init 在 methodSigs 中）
+			if p.methodSignatures != nil {
+				if rets, ok := p.methodSignatures[fullPath]; ok && len(rets) == 1 {
+					return p.filterInferableType(rets[0])
+				}
+			}
+			if p.funcSignatures != nil {
+				if rets, ok := p.funcSignatures[fullPath]; ok && len(rets) == 1 {
+					return p.filterInferableType(rets[0])
+				}
+			}
 		}
 		if modName != "" && p.funcSignatures != nil {
 			if rets, ok := p.funcSignatures[modName+"."+dot.Property]; ok && len(rets) == 1 {
-				if strings.HasPrefix(rets[0], "?") {
-					return rets[0]
-				}
+				return p.filterInferableType(rets[0])
 			}
 		}
 		return ""
 	}
 	return ""
+}
+
+// filterInferableType 判斷返回型別是否可安全地從函數/方法調用推斷。
+// 可推斷的型別：
+//   - option 型別（?type）：match desugar 依賴它生成正確的 it 型別窄化
+//   - 結構體型別（如 bufio.reader）：使 codegen 能正確分配結構體記憶體
+// 不可推斷的型別：基本型別（i64/str/bool 等），因為整數字面量已有
+// 專用推斷路徑，且基本型別的推斷可能與已有的顯式型別衝突。
+func (p *Parser) filterInferableType(retType string) string {
+	if retType == "" {
+		return ""
+	}
+	// option 型別：始終推斷
+	if strings.HasPrefix(retType, "?") {
+		return retType
+	}
+	// 排除基本型別
+	switch retType {
+	case "i64", "i32", "i16", "i8", "u64", "u32", "u16", "u8",
+		"f64", "f32", "str", "bool", "byte", "char", "fd":
+		return ""
+	}
+	// 排除聯合型別（含 | ）和陣列/切片型別
+	if strings.Contains(retType, "|") || strings.HasPrefix(retType, "[") {
+		return ""
+	}
+	// 剩餘視為結構體型別，可安全推斷
+	return retType
 }
 
 // isTypeName checks if the given literal is a known type name.

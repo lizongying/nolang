@@ -207,6 +207,8 @@ var tokenNames = map[TokenType]string{
 	SHR_ASSIGN:     "SHR_ASSIGN(>>=)",
 	AND_NOT_ASSIGN: "AND_NOT_ASSIGN(&^=)",
 	TILDE:          "TILDE(~)",
+	RUN:            "RUN",
+	AWY:            "AWY",
 }
 
 // lookupKeyword 以 switch 實現關鍵字查找，替代原 map[string]TokenType。

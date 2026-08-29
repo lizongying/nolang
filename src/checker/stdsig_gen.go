@@ -2367,4 +2367,9 @@ func init() {
 		"zs-frame":                 "zstd",
 		"zs-huffman":               "zstd",
 	}
+	embeddedStdEnumVariants = map[string][]string{
+		"code":      {"ok", "not-found", "permission", "io", "timeout", "parse", "invalid", "overflow"},
+		"file-mode": {"read", "write", "append", "read-write"},
+		"file-perm": {"perm-600", "perm-644", "perm-664", "perm-666", "perm-755", "perm-777"},
+	}
 }

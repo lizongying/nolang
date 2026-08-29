@@ -740,6 +740,11 @@ func (t *Transpiler) parseFile(filePath string) (*parser.Program, error) {
 	if t.externFuncSigs != nil || t.externStructFields != nil {
 		p.SetExternSignatures(t.externFuncSigs, t.externMethodSigs, t.externStructFields)
 	}
+	// 注入跨模組枚舉變體，使 match desugar 能識別枚舉型別
+	stdEnumVariants := checker.CollectStdEnumVariants()
+	if len(stdEnumVariants) > 0 {
+		p.SetExternEnumVariants(stdEnumVariants)
+	}
 	prog := p.ParseProgram()
 	if len(p.Errors()) > 0 {
 		return nil, fmt.Errorf("%s: %v", filePath, p.Errors())
@@ -767,6 +772,11 @@ func (t *Transpiler) parseEmbeddedProgram(filename string, data []byte) (*parser
 	p.Filename = filepath.Base(filename)
 	if t.externFuncSigs != nil || t.externStructFields != nil {
 		p.SetExternSignatures(t.externFuncSigs, t.externMethodSigs, t.externStructFields)
+	}
+	// 注入跨模組枚舉變體，使 match desugar 能識別枚舉型別
+	stdEnumVariants := checker.CollectStdEnumVariants()
+	if len(stdEnumVariants) > 0 {
+		p.SetExternEnumVariants(stdEnumVariants)
 	}
 	prog := p.ParseProgram()
 	if len(p.Errors()) > 0 {
@@ -1523,6 +1533,11 @@ func (t *Transpiler) CompileTarget(source string, _ Target) (string, error) {
 		// 注入外部簽名
 		if len(externFuncSigs) > 0 || len(externStructFields) > 0 {
 			p.SetExternSignatures(externFuncSigs, externMethodSigs, externStructFields)
+		}
+		// 注入跨模組枚舉變體，使 match desugar 能識別枚舉型別
+		stdEnumVariants := checker.CollectStdEnumVariants()
+		if len(stdEnumVariants) > 0 {
+			p.SetExternEnumVariants(stdEnumVariants)
 		}
 		program = p.ParseProgram()
 		if len(p.Errors()) > 0 {

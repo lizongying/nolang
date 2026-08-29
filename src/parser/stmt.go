@@ -449,8 +449,8 @@ func (p *Parser) parseUseStatement() Statement {
 	}
 
 	for {
-		// use path 段接受 IDENT（map 已不再是關鍵字，自然被當作 IDENT）
-		if p.currentToken.Type != lexer.IDENT {
+		// use path 段接受 IDENT 及關鍵字 token（如 run、chan 等）
+		if !isPathIdent(p.currentToken.Type) {
 			msg := fmt.Sprintf("line %d, column %d: expected identifier in use path, got %s",
 				p.currentToken.Line, p.currentToken.Column, p.currentToken.Type.String())
 			p.saveError(msg)
@@ -465,16 +465,16 @@ func (p *Parser) parseUseStatement() Statement {
 			parts = append(parts, "/")
 			p.nextToken()
 		} else if p.currentToken.Type == lexer.DOT {
-			// DOT 後面是 IDENT + (NEWLINE/EOF/IDENT) → 函數名分隔符
+			// DOT 後面是 IDENT/關鍵字 + (NEWLINE/EOF/IDENT) → 函數名分隔符
 			// 否則（DOT + IDENT + /）→ 路徑的一部分（如 github.com）
-			if p.peekToken.Type == lexer.IDENT {
+			if isPathIdent(p.peekToken.Type) {
 				// 向後看第二個 token
 				state := p.saveState()
 				p.nextToken() // skip .
 				p.nextToken() // skip potential func name
 				isFn := p.currentToken.Type == lexer.NEWLINE ||
 					p.currentToken.Type == lexer.EOF ||
-					p.currentToken.Type == lexer.IDENT ||
+					isPathIdent(p.currentToken.Type) ||
 					p.currentToken.Type == lexer.AS ||
 					p.currentToken.Type == lexer.RBRACE
 				p.restoreState(state)
@@ -485,12 +485,12 @@ func (p *Parser) parseUseStatement() Statement {
 					stmt.Function = p.currentToken.Literal
 					p.nextToken() // skip funcName
 					// 可選別名
-					if p.currentToken.Type == lexer.IDENT || p.currentToken.Type == lexer.AS {
+					if isPathIdent(p.currentToken.Type) || p.currentToken.Type == lexer.AS {
 						if p.currentToken.Type == lexer.AS {
 							stmt.AsKeyword = true
 							// # module.fn as alias → skip "as" and use next IDENT
 							p.nextToken()
-							if p.currentToken.Type == lexer.IDENT {
+							if isPathIdent(p.currentToken.Type) {
 								stmt.Alias = p.currentToken.Literal
 								p.nextToken()
 							}
@@ -534,7 +534,7 @@ func (p *Parser) parseExportStatement() Statement {
 	}
 
 	for {
-		if p.currentToken.Type != lexer.IDENT {
+		if !isPathIdent(p.currentToken.Type) {
 			msg := fmt.Sprintf("line %d, column %d: expected identifier in export path, got %s",
 				p.currentToken.Line, p.currentToken.Column, p.currentToken.Type.String())
 			p.saveError(msg)
@@ -549,14 +549,14 @@ func (p *Parser) parseExportStatement() Statement {
 			parts = append(parts, "/")
 			p.nextToken()
 		} else if p.currentToken.Type == lexer.DOT {
-			// DOT 後面是 IDENT + (NEWLINE/EOF/IDENT) → 函數名分隔符
-			if p.peekToken.Type == lexer.IDENT {
+			// DOT 後面是 IDENT/關鍵字 + (NEWLINE/EOF/IDENT) → 函數名分隔符
+			if isPathIdent(p.peekToken.Type) {
 				state := p.saveState()
 				p.nextToken() // skip .
 				p.nextToken() // skip potential func name
 				isFn := p.currentToken.Type == lexer.NEWLINE ||
 					p.currentToken.Type == lexer.EOF ||
-					p.currentToken.Type == lexer.IDENT ||
+					isPathIdent(p.currentToken.Type) ||
 					p.currentToken.Type == lexer.AS ||
 					p.currentToken.Type == lexer.RBRACE
 				p.restoreState(state)
@@ -565,11 +565,11 @@ func (p *Parser) parseExportStatement() Statement {
 					stmt.Function = p.currentToken.Literal
 					p.nextToken() // skip funcName
 					// 可選別名
-					if p.currentToken.Type == lexer.IDENT || p.currentToken.Type == lexer.AS {
+					if isPathIdent(p.currentToken.Type) || p.currentToken.Type == lexer.AS {
 						if p.currentToken.Type == lexer.AS {
 							stmt.AsKeyword = true
 							p.nextToken()
-							if p.currentToken.Type == lexer.IDENT {
+							if isPathIdent(p.currentToken.Type) {
 								stmt.Alias = p.currentToken.Literal
 								p.nextToken()
 							}
@@ -608,6 +608,27 @@ func joinPathParts(parts []string) string {
 		sb.WriteString(part)
 	}
 	return sb.String()
+}
+
+// isPathIdent returns true if the token type can serve as an identifier in a
+// use/export path. This includes the normal IDENT token as well as keyword
+// tokens (RUN, CHAN, PTR, AS, MATCH, etc.) whose spelling may legitimately
+// appear as a module or function name (e.g. `# /nonpm/src/run`).
+func isPathIdent(t lexer.TokenType) bool {
+	if t == lexer.IDENT {
+		return true
+	}
+	// Keywords that may appear as path segments. We accept all keyword tokens
+	// whose lexical form is a plain identifier (letters/digits/underscores).
+	switch t {
+	case lexer.RUN, lexer.AWY, lexer.CHAN, lexer.PTR, lexer.AS,
+		lexer.SWITCH, lexer.CASE, lexer.DEFAULT, lexer.MATCH, lexer.MAP,
+		lexer.IF, lexer.ELIF, lexer.ELSE, lexer.FOR, lexer.IN, lexer.BREAK,
+		lexer.CONTINUE, lexer.RETURN, lexer.TRUE, lexer.FALSE, lexer.NIL,
+		lexer.SUPER, lexer.SELF, lexer.IT, lexer.USE:
+		return true
+	}
+	return false
 }
 
 // parseMultiAssignStatement parses multi-variable assignment:
@@ -1086,9 +1107,21 @@ func (p *Parser) parseLetStatement() Statement {
 					p.setVarType(stmt.Name.Value, inferred)
 				}
 			} else {
-				// 已宣告過，但仍需更新 option 型別以支援 match desugar 的型別窄化
-				if inferred := p.inferTypeFromCallExpr(v); inferred != "" && strings.HasPrefix(inferred, "?") {
-					p.setVarType(stmt.Name.Value, inferred)
+				// 已宣告過，但仍需更新型別以支援 match desugar 和 codegen
+				// 對 option 型別（?type）必須始終更新，以支援 match desugar 的型別窄化
+				// 對結構體型別也需更新：當同名變數在不同函數中出現時，
+				// 全局 DeclaredVars 可能導致 isDeclared 誤判為已宣告，
+				// 使結構體型別推斷被跳過，codegen 使用預設 i64 導致類型不匹配。
+				if inferred := p.inferTypeFromCallExpr(v); inferred != "" {
+					if strings.HasPrefix(inferred, "?") {
+						p.setVarType(stmt.Name.Value, inferred)
+					} else {
+						// 非Option 型別（如結構體）：僅在當前無型別或型別為 i64 時更新
+						if existing, ok := p.sem.FuncVarType(p.curFuncName, stmt.Name.Value); !ok || existing == "" || existing == "i64" {
+							p.setVarType(stmt.Name.Value, inferred)
+							stmt.Type = markInferred(buildType(inferred, nameToken))
+						}
+					}
 				}
 			}
 

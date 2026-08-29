@@ -17,6 +17,8 @@ func TestStdSigCacheLifecycle(t *testing.T) {
 	funcSigs, fields := CollectStdModuleSignatures()
 	aliases := CollectStdConcreteAliases()
 	structMod := CollectStdStructModules()
+	methodSigs := CollectStdMethodSigs()
+	enumVariants := CollectStdEnumVariants()
 	if len(funcSigs) == 0 || len(fields) == 0 {
 		t.Fatal("collected signatures are empty")
 	}
@@ -27,11 +29,13 @@ func TestStdSigCacheLifecycle(t *testing.T) {
 
 	// (2) in-memory encode/decode preserves data exactly
 	payload := &stdSigCachePayload{
-		FuncSigs:  funcSigs,
-		Fields:    fields,
-		Aliases:   aliases,
-		StructMod: structMod,
-		Tokens:    tokens,
+		FuncSigs:     funcSigs,
+		MethodSigs:   methodSigs,
+		Fields:       fields,
+		Aliases:      aliases,
+		StructMod:    structMod,
+		EnumVariants: enumVariants,
+		Tokens:       tokens,
 	}
 	data, err := encodeStdSigCache(payload)
 	if err != nil {
@@ -41,11 +45,13 @@ func TestStdSigCacheLifecycle(t *testing.T) {
 	if !ok {
 		t.Fatal("decodeStdSigCache failed on valid payload")
 	}
-	if !reflect.DeepEqual(dec.FuncSigs, funcSigs) ||
-		!reflect.DeepEqual(dec.Fields, fields) ||
-		!reflect.DeepEqual(dec.Aliases, aliases) ||
-		!reflect.DeepEqual(dec.StructMod, structMod) ||
-		!reflect.DeepEqual(dec.Tokens, tokens) {
+	if !reflect.DeepEqual(dec.FuncSigs, payload.FuncSigs) ||
+		!reflect.DeepEqual(dec.MethodSigs, payload.MethodSigs) ||
+		!reflect.DeepEqual(dec.Fields, payload.Fields) ||
+		!reflect.DeepEqual(dec.Aliases, payload.Aliases) ||
+		!reflect.DeepEqual(dec.StructMod, payload.StructMod) ||
+		!reflect.DeepEqual(dec.EnumVariants, payload.EnumVariants) ||
+		!reflect.DeepEqual(dec.Tokens, payload.Tokens) {
 		t.Fatal("payload not preserved through encode/decode")
 	}
 
@@ -66,7 +72,7 @@ func TestStdSigCacheLifecycle(t *testing.T) {
 	os.Remove(path)
 	defer os.Remove(path)
 
-	saveStdSigCache(funcSigs, fields, aliases, structMod, tokens)
+	saveStdSigCache(funcSigs, methodSigs, fields, aliases, structMod, enumVariants, tokens)
 	loaded, ok := tryLoadStdSigCache()
 	if !ok {
 		t.Fatal("tryLoadStdSigCache missed after save")
@@ -76,8 +82,10 @@ func TestStdSigCacheLifecycle(t *testing.T) {
 			len(loaded.FuncSigs), len(funcSigs))
 	}
 	if !reflect.DeepEqual(loaded.Fields, fields) ||
+		!reflect.DeepEqual(loaded.MethodSigs, methodSigs) ||
 		!reflect.DeepEqual(loaded.Aliases, aliases) ||
 		!reflect.DeepEqual(loaded.StructMod, structMod) ||
+		!reflect.DeepEqual(loaded.EnumVariants, enumVariants) ||
 		!reflect.DeepEqual(loaded.Tokens, tokens) {
 		t.Fatal("file round-trip mismatch on Fields/Aliases/StructMod/Tokens")
 	}

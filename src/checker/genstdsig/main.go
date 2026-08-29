@@ -41,7 +41,7 @@ func main() {
 	srcDir := filepath.Join(repoRoot, "src")
 	fsys := os.DirFS(srcDir)
 
-	funcSigs, methodSigs, structFields, aliases, structMod, err := checker.CollectStdSigsFromFS(fsys)
+	funcSigs, methodSigs, structFields, aliases, structMod, enumVariants, err := checker.CollectStdSigsFromFS(fsys)
 	if err != nil {
 		fatal(fmt.Sprintf("genstdsig: collect failed: %v", err))
 	}
@@ -66,6 +66,8 @@ func main() {
 	writeMapStringInline(&buf, aliases)
 	buf.WriteString("\tembeddedStdStructMod = ")
 	writeMapStringInline(&buf, structMod)
+	buf.WriteString("\tembeddedStdEnumVariants = ")
+	writeMapStringSliceInline(&buf, enumVariants)
 	buf.WriteString("}\n")
 
 	formatted, err := goformat.Source(buf.Bytes())
@@ -82,8 +84,8 @@ func main() {
 	if err := os.WriteFile(outPath, formatted, 0o644); err != nil {
 		fatal(fmt.Sprintf("genstdsig: write %s: %v", outPath, err))
 	}
-	fmt.Printf("genstdsig: wrote %s (%d funcSigs, %d methodSigs, %d structs, %d aliases)\n",
-		outPath, len(funcSigs), len(methodSigs), len(structFields), len(aliases))
+	fmt.Printf("genstdsig: wrote %s (%d funcSigs, %d methodSigs, %d structs, %d aliases, %d enumTypes)\n",
+		outPath, len(funcSigs), len(methodSigs), len(structFields), len(aliases), len(enumVariants))
 }
 
 func writeMapStringSliceInline(buf *bytes.Buffer, m map[string][]string) {

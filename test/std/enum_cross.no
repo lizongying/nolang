@@ -1,0 +1,36 @@
+# /test/runner
+
+t-cross-enum = () {
+    m file-mode = file-mode.write
+    flags = 0
+    m: {
+        read -> flags = 0
+        write -> flags = 1537
+        append -> flags = 521
+        read-write -> flags = 1538
+    }
+    runner.eq(flags, 1537, 'cross-module enum match write == 1537')
+}
+
+t-cross-perm = () {
+    pv file-perm = file-perm.perm-644
+    perm-val = 0
+    pv: {
+        perm-600 -> perm-val = 384
+        perm-644 -> perm-val = 420
+        perm-664 -> perm-val = 436
+        perm-666 -> perm-val = 438
+        perm-755 -> perm-val = 493
+        perm-777 -> perm-val = 511
+    }
+    runner.eq(perm-val, 420, 'cross-module enum match perm-644 == 420')
+}
+
+p1, f1 = runner.test('cross-enum', t-cross-enum)
+p2, f2 = runner.test('cross-perm', t-cross-perm)
+total = runner.summary()
+f = runner.failed-count()
+{
+    f > 0 -> os.exit(1)
+    -> os.exit(0)
+}

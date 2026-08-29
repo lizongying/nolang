@@ -36,7 +36,7 @@ import (
 // the normal `no build` path never reads stdProgramsCache (it is only consumed
 // by `no vet --reuse-std-ast`, which safely falls back to re-parse).
 
-const stdSigCacheVersion = 3
+const stdSigCacheVersion = 4
 
 // stdSigCachePayload is the on-disk representation of the four signature tables
 // produced by CollectStdModuleSignatures, plus the lexed token sequences of all
@@ -44,12 +44,13 @@ const stdSigCacheVersion = 3
 // modules during codegen auto-load (which re-parses modules from source), so the
 // std parse cost is not simply shifted into the Compile phase.
 type stdSigCachePayload struct {
-	FuncSigs   map[string][]string
-	MethodSigs map[string][]string
-	Fields     map[string]map[string]string
-	Aliases    map[string]string
-	StructMod  map[string]string
-	Tokens     map[string][]lexer.Token
+	FuncSigs    map[string][]string
+	MethodSigs  map[string][]string
+	Fields      map[string]map[string]string
+	Aliases     map[string]string
+	StructMod   map[string]string
+	EnumVariants map[string][]string
+	Tokens      map[string][]lexer.Token
 }
 
 // ---- embedded signature table variables (populated by stdsig_gen.go) ----
@@ -68,6 +69,7 @@ var (
 	embeddedStdStructFields  = map[string]map[string]string{}
 	embeddedStdAliases       = map[string]string{}
 	embeddedStdStructMod     = map[string]string{}
+	embeddedStdEnumVariants = map[string][]string{}
 )
 
 // computeStdSigKey returns a stable hash over all std module sources.
@@ -213,7 +215,7 @@ func encodeStdSigCache(p *stdSigCachePayload) ([]byte, error) {
 }
 
 // saveStdSigCache writes the payload to the cache file atomically (best-effort).
-func saveStdSigCache(funcSigs map[string][]string, methodSigs map[string][]string, structFields map[string]map[string]string, aliases map[string]string, structMod map[string]string, tokens map[string][]lexer.Token) {
+func saveStdSigCache(funcSigs map[string][]string, methodSigs map[string][]string, structFields map[string]map[string]string, aliases map[string]string, structMod map[string]string, enumVariants map[string][]string, tokens map[string][]lexer.Token) {
 	key, err := computeStdSigKey()
 	if err != nil {
 		return
@@ -223,12 +225,13 @@ func saveStdSigCache(funcSigs map[string][]string, methodSigs map[string][]strin
 		return
 	}
 	data, err := encodeStdSigCache(&stdSigCachePayload{
-		FuncSigs:   funcSigs,
-		MethodSigs: methodSigs,
-		Fields:     structFields,
-		Aliases:    aliases,
-		StructMod:  structMod,
-		Tokens:     tokens,
+		FuncSigs:    funcSigs,
+		MethodSigs:  methodSigs,
+		Fields:      structFields,
+		Aliases:     aliases,
+		StructMod:   structMod,
+		EnumVariants: enumVariants,
+		Tokens:      tokens,
 	})
 	if err != nil {
 		return

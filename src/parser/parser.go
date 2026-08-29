@@ -541,6 +541,20 @@ func (p *Parser) SetExternSignatures(funcSigs map[string][]string, methodSigs ma
 	}
 }
 
+// SetExternEnumVariants 注入外部（跨文件）枚舉型別的變體名列表，
+// 供 match desugar 使用，使跨模組枚舉 match 能正確識別型別。
+// 由 transpiler 在解析前呼叫。
+func (p *Parser) SetExternEnumVariants(enumVariants map[string][]string) {
+	if p.sem.EnumVariants == nil {
+		p.sem.EnumVariants = make(map[string][]string)
+	}
+	for k, v := range enumVariants {
+		if _, exists := p.sem.EnumVariants[k]; !exists {
+			p.sem.EnumVariants[k] = v
+		}
+	}
+}
+
 func (p *Parser) saveState() parserState {
 	commentsCopy := make([]lexer.Token, len(p.comments))
 	copy(commentsCopy, p.comments)

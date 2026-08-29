@@ -22,6 +22,14 @@ func TestUseSyntax(t *testing.T) {
 		{"# /utils/math.add", "/utils/math", "add", "", false},
 		{"# fab.fib", "fab", "fib", "", false},
 		{"# fmt", "fmt", "", "", false},
+		// regression: keyword as path segment should be accepted
+		// `run` and `chan` are keyword tokens but should be valid path segments.
+		// `# /nonpm/src/run` imports the module `/nonpm/src/run` (no function name).
+		{"# /nonpm/src/run", "/nonpm/src/run", "", "", false},
+		{"# mymod.run", "mymod", "run", "", false},
+		{"# /path/to/chan", "/path/to/chan", "", "", false},
+		{"# /nonpm/src.run", "/nonpm/src", "run", "", false},
+		{"# /nonpm/src.run as runner", "/nonpm/src", "run", "runner", true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.input, func(t *testing.T) {
