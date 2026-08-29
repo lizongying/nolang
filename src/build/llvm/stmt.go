@@ -2014,6 +2014,22 @@ func (g *Generator) emitStructFieldsFree(sb *strings.Builder, structPtr, structT
 	if !ok {
 		return
 	}
+	// Cycle detection: if this struct type is already being freed (self-referential
+	// or mutually recursive struct), the Go compiler would infinitely recurse and
+	// stack-overflow. Instead of inlining, emit a `call` to a helper function.
+	// The helper function is generated at the end of Generate() with complete
+	// deep-free logic (runtime recursion via self-call). This preserves full
+	// deep-free semantics in the generated IR without Go-compiler stack overflow.
+	if g.freeVisitSet[structName] {
+		fnName := g.recursiveFreeFnName(structType)
+		sb.WriteString(fmt.Sprintf("%scall void %s(%s* %s)\n",
+			g.indent(), fnName, structType, structPtr))
+		// Mark this struct type as needing a helper function, generated at end of Generate()
+		g.recursiveFreeEmitted[structName] = true
+		return
+	}
+	g.freeVisitSet[structName] = true
+	defer delete(g.freeVisitSet, structName)
 	for i, f := range fields {
 		info := g.classifyFieldHeap(f.typ, f.elemType)
 		switch info.kind {
@@ -2467,6 +2483,22 @@ func (g *Generator) emitStructClone(sb *strings.Builder, srcPtr, dstPtr, structT
 	if !ok {
 		return
 	}
+	// Cycle detection: if this struct type is already being cloned (self-referential
+	// or mutually recursive struct), the Go compiler would infinitely recurse and
+	// stack-overflow. Instead of inlining, emit a `call` to a helper function.
+	// The helper function is generated at the end of Generate() with complete
+	// deep-clone logic (runtime recursion via self-call). This preserves full
+	// deep-clone semantics in the generated IR without Go-compiler stack overflow.
+	if g.cloneVisitSet[structName] {
+		fnName := g.recursiveCloneFnName(structType)
+		sb.WriteString(fmt.Sprintf("%scall void %s(%s* %s, %s* %s)\n",
+			g.indent(), fnName, structType, srcPtr, structType, dstPtr))
+		// Mark this struct type as needing a helper function, generated at end of Generate()
+		g.recursiveCloneEmitted[structName] = true
+		return
+	}
+	g.cloneVisitSet[structName] = true
+	defer delete(g.cloneVisitSet, structName)
 	for i, f := range fields {
 		info := g.classifyFieldHeap(f.typ, f.elemType)
 		if os.Getenv("NOLANG_DEBUG_CLONE") != "" && info.kind == fieldHeapContainer {
@@ -8204,10 +8236,17 @@ if !alreadyCoerced && g.isIntegerLLVMType(llvmType) && llvmType != "i64" && stri
 		}
 		if allocType != "" && allocType != llvmType {
 			// Bitcast pointer when allocated type differs from actual type
-			// (e.g. allocated as %http2-frame* but storing/loading i64)
-			castReg := g.tmpReg("it.cast")
-			sb.WriteString(fmt.Sprintf("%s%s = bitcast %s* %s to %s*\n", g.indent(), castReg, allocType, storeAddr, llvmType))
-			storeAddr = castReg
+			// (e.g. allocated as %http2-frame* but storing/loading i64).
+			// Use toLLVMType() to convert Nolang type names (u8, u16, etc.)
+			// to LLVM IR type names (i8, i16, etc.) — LLVM does not recognize
+			// unsigned variants in pointer bitcast instructions.
+			irAlloc := toLLVMType(allocType)
+			irActual := toLLVMType(llvmType)
+			if irAlloc != irActual {
+				castReg := g.tmpReg("it.cast")
+				sb.WriteString(fmt.Sprintf("%s%s = bitcast %s* %s to %s*\n", g.indent(), castReg, irAlloc, storeAddr, irActual))
+				storeAddr = castReg
+			}
 		}
 		// Update varTypes so reads of `it` in this arm use the correct type
 		if g.varTypes != nil {
@@ -9119,5 +9158,124 @@ func (g *Generator) generateEnumDefinition(sb *strings.Builder, ed *parser.EnumD
 	for _, v := range ed.Values {
 		g.tmpIdx++
 		sb.WriteString(fmt.Sprintf("%s@%s = constant i64 %d\n", g.indent(), v.Name, v.Value))
+	}
+}
+
+// recursiveCloneFnName returns the LLVM function name for the deep-clone helper
+// of a self-referential struct type.
+func (g *Generator) recursiveCloneFnName(structType string) string {
+	name := strings.TrimPrefix(structType, "%")
+	return "@__nolang_deepclone_" + sanitizeLLVMName(name)
+}
+
+// recursiveFreeFnName returns the LLVM function name for the deep-free helper
+// of a self-referential struct type.
+func (g *Generator) recursiveFreeFnName(structType string) string {
+	name := strings.TrimPrefix(structType, "%")
+	return "@__nolang_deepfree_" + sanitizeLLVMName(name)
+}
+
+// emitRecursiveCloneHelpers generates deep-clone helper functions for all
+// self-referential struct types encountered during code generation. Each helper
+// function contains the complete deep-clone logic: memcpy + field traversal,
+// where []self elements call the helper itself (runtime recursion).
+//
+// Called at the end of Generate(), after all function bodies have been emitted.
+// At this point cloneVisitSet is empty, so emitStructClone will fully expand
+// fields. When it re-encounters the same struct type (via []self field), the
+// second entry hits cloneVisitSet and emits a `call` to this helper — forming
+// correct runtime recursion in the IR.
+// emitRecursiveCloneHelpers generates deep-clone helper functions for all
+// self-referential struct types encountered during code generation. Each helper
+// function contains the complete deep-clone logic: memcpy + field traversal,
+// where []self elements call the helper itself (runtime recursion).
+//
+// Called at the end of Generate(), after all function bodies have been emitted.
+// At this point cloneVisitSet is empty, so emitStructClone will fully expand
+// fields. When it re-encounters the same struct type (via []self field), the
+// second entry hits cloneVisitSet and emits a `call` to this helper — forming
+// correct runtime recursion in the IR.
+//
+// Trap 1 prevention: We snapshot the keys before iterating and use a
+// separate `generated` set to guarantee each struct gets exactly one `define`.
+// During helper-body generation, emitStructClone's cycle detection may add
+// NEW entries to recursiveCloneEmitted (mutual recursion: A→[]B→A where B
+// was not hit during phase A). Those new entries are picked up in the loop
+// because we re-check the snapshot at the end of each iteration. The
+// `generated` set prevents duplicate defines.
+func (g *Generator) emitRecursiveCloneHelpers() {
+	generated := make(map[string]bool)
+	for {
+		// Snapshot current pending set
+		pending := make([]string, 0, len(g.recursiveCloneEmitted))
+		for name := range g.recursiveCloneEmitted {
+			if !generated[name] {
+				pending = append(pending, name)
+			}
+		}
+		if len(pending) == 0 {
+			break
+		}
+		for _, structName := range pending {
+			if generated[structName] {
+				continue
+			}
+			generated[structName] = true
+			structType := "%" + structName
+			fnName := g.recursiveCloneFnName(structType)
+			var sb strings.Builder
+			sb.WriteString(fmt.Sprintf("define internal void %s(%s* %%src, %s* %%dst) {\n", fnName, structType, structType))
+			sb.WriteString("entry:\n")
+			// Save and restore indent level (helper body uses tab indentation)
+			savedIndent := g.indentLevel
+			g.indentLevel = 1
+			g.emitStructClone(&sb, "%src", "%dst", structType)
+			g.indentLevel = savedIndent
+			sb.WriteString("\tret void\n")
+		sb.WriteString("}\n\n")
+			g.recursiveCloneFns.WriteString(sb.String())
+		}
+	}
+}
+
+// emitRecursiveFreeHelpers generates deep-free helper functions for all
+// self-referential struct types encountered during code generation.
+// Same approach as emitRecursiveCloneHelpers but for freeing.
+// emitRecursiveFreeHelpers generates deep-free helper functions for all
+// self-referential struct types encountered during code generation.
+// Same approach as emitRecursiveCloneHelpers but for freeing.
+// Trap 2 prevention: uses the same snapshot + generated-set pattern as
+// emitRecursiveCloneHelpers to guarantee no duplicate defines and no
+// missed helpers for mutual recursion discovered during helper generation.
+func (g *Generator) emitRecursiveFreeHelpers() {
+	generated := make(map[string]bool)
+	for {
+		pending := make([]string, 0, len(g.recursiveFreeEmitted))
+		for name := range g.recursiveFreeEmitted {
+			if !generated[name] {
+				pending = append(pending, name)
+			}
+		}
+		if len(pending) == 0 {
+			break
+		}
+		for _, structName := range pending {
+			if generated[structName] {
+				continue
+			}
+			generated[structName] = true
+			structType := "%" + structName
+			fnName := g.recursiveFreeFnName(structType)
+			var sb strings.Builder
+			sb.WriteString(fmt.Sprintf("define internal void %s(%s* %%ptr) {\n", fnName, structType))
+			sb.WriteString("entry:\n")
+			savedIndent := g.indentLevel
+			g.indentLevel = 1
+			g.emitStructFieldsFree(&sb, "%ptr", structType)
+			g.indentLevel = savedIndent
+			sb.WriteString("\tret void\n")
+			sb.WriteString("}\n\n")
+			g.recursiveFreeFns.WriteString(sb.String())
+		}
 	}
 }

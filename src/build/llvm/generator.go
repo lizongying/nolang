@@ -363,10 +363,38 @@ type Generator struct {
 	coroTaskHandles       map[string]int      // 持有协程任务句柄的变量名 → coro 编号（供 awy/run 识别协程任务并从其 coro_state 取回结果）
 	coroStateSizes        map[int]int64       // coro 编号 → coro_state 字节大小（供 run 异步启动时堆分配，避免栈帧销毁后悬垂）
 	codegenErrors         []string            // codegen 阶段收集的错误（如 with-cap 类型推断失败）
+
+	// cloneVisitSet tracks struct types currently being cloned (for cycle detection).
+	// When a self-referential struct (e.g. `node { children []node }`) is cloned,
+	// the Go compiler would infinitely recurse and stack-overflow. On cycle
+	// detection (second entry for same struct type), we emit a `call` to a
+	// helper function instead of inlining. The helper function is generated at
+	// the end of Generate() with complete deep-clone logic (runtime recursion).
+	cloneVisitSet map[string]bool
+	// freeVisitSet tracks struct types currently being freed (for cycle detection).
+	// Same approach: emit `call` to helper function on second entry.
+	freeVisitSet map[string]bool
+	// recursiveCloneFns accumulates helper function definitions for self-referential
+	// structs' deep clone, to be emitted at the end of Generate().
+	recursiveCloneFns strings.Builder
+	// recursiveFreeFns accumulates helper function definitions for self-referential
+	// structs' deep free, to be emitted at the end of Generate().
+	recursiveFreeFns strings.Builder
+	// recursiveCloneEmitted tracks which struct types already have a clone helper
+	// generated, to avoid duplicates.
+	recursiveCloneEmitted map[string]bool
+	// recursiveFreeEmitted tracks which struct types already have a free helper
+	// generated, to avoid duplicates.
+	recursiveFreeEmitted map[string]bool
 }
 
-// AddCodegenError 添加一个 codegen 错误。
+// AddCodegenError 添加一个 codegen 错误（去重，避免同一错误在多个函数中重复报告）。
 func (g *Generator) AddCodegenError(msg string) {
+	for _, e := range g.codegenErrors {
+		if e == msg {
+			return
+		}
+	}
 	g.codegenErrors = append(g.codegenErrors, msg)
 }
 
@@ -452,6 +480,10 @@ func NewGenerator() *Generator {
 		futureResultTypes: make(map[string]string),
 		itAllocTypes:      make(map[string]string),
 	}
+	g.cloneVisitSet = make(map[string]bool)
+	g.freeVisitSet = make(map[string]bool)
+	g.recursiveCloneEmitted = make(map[string]bool)
+	g.recursiveFreeEmitted = make(map[string]bool)
 	return g
 }
 
@@ -948,6 +980,12 @@ func (g *Generator) Generate(program *parser.Program) string {
 	g.stringIdx = 0
 	g.tmpIdx = 0
 	g.asyncWrappers.Reset()
+	g.recursiveCloneFns.Reset()
+	g.recursiveFreeFns.Reset()
+	g.recursiveCloneEmitted = make(map[string]bool)
+	g.recursiveFreeEmitted = make(map[string]bool)
+	g.cloneVisitSet = make(map[string]bool)
+	g.freeVisitSet = make(map[string]bool)
 	g.coroStateBuilders = nil
 	g.coroFuncNum = 0
 	g.coroInAsyncFunc = false
@@ -1980,6 +2018,12 @@ func (g *Generator) Generate(program *parser.Program) string {
 
 	// 无栈协程：coro_state 结构体定义已由 transformAsyncFunction 直接写入 sb（在使用前定义），
 	// 此处无需再统一输出。
+
+	// Recursive struct clone/free helper functions (for self-referential structs)
+	g.emitRecursiveCloneHelpers()
+	g.emitRecursiveFreeHelpers()
+	sb.WriteString(g.recursiveCloneFns.String())
+	sb.WriteString(g.recursiveFreeFns.String())
 
 	// malloc/read/write 符號已在生成時透過 g.mallocSymbol()/g.readSymbol()/
 	// g.writeSymbol() 直接 emit 正確符號（呼叫端使用 @nolang.malloc(i64 ...)，
