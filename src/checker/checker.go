@@ -3218,9 +3218,22 @@ func validateStmtTypes(stmt parser.Statement, funcNames map[string]bool, funcTyp
 		if len(s.Parameters) > 0 && s.Parameters[0].Name == "self" {
 			methodSelfType = s.Parameters[0].Type.String()
 		}
+		// 建立局部 funcNames 副本，排除當前函式的參數和輸出參數名，
+		// 避免與全域函式同名時（如 io.out）對輸出參數賦值被誤報為
+		// "cannot reassign function name"。
+		localFuncNames := make(map[string]bool, len(funcNames))
+		for k, v := range funcNames {
+			localFuncNames[k] = v
+		}
+		for _, p := range s.Parameters {
+			delete(localFuncNames, p.Name)
+		}
+		for _, p := range s.Results {
+			delete(localFuncNames, p.Name)
+		}
 		if s.Body != nil {
 			for i, bStmt := range s.Body.Statements {
-				errs := validateStmtTypes(bStmt, funcNames, funcTypes, methodSelfType, localTypes, i == len(s.Body.Statements)-1)
+				errs := validateStmtTypes(bStmt, localFuncNames, funcTypes, methodSelfType, localTypes, i == len(s.Body.Statements)-1)
 				results = append(results, errs...)
 			}
 		}
@@ -3234,14 +3247,13 @@ func validateStmtTypes(stmt parser.Statement, funcNames map[string]bool, funcTyp
 			}
 			break
 		}
-		// 檢查是否對函式名稱賦值
-		if funcNames[s.Name.Value] {
-			results = append(results, ValidateResult{
-				Line:    s.Token.Line,
-				Column:  s.Token.Column,
-				Message: fmt.Sprintf("cannot reassign function name '%s'", s.Name.Value),
-			})
-		}
+		// 宣告局部變數後，從 funcNames 中移除該名稱，
+		// 使後續 AssignExpression 對同名局部變數賦值不會誤報。
+		// funcNames 在 FunctionDefinition 分支中已是 localFuncNames 副本，
+		// 修改不影響全域 funcNames。
+		// 注意：不在 LetStatement 中檢查 funcNames，因為在函式體內
+		// 聲明與全域函式同名的局部變數（如 sha3-224 中的 out）是合法的遮蔽。
+		delete(funcNames, s.Name.Value)
 
 		// 檢查 nil 賦值到非可空變數
 		if _, isNil := s.Value.(*parser.NilLiteral); isNil {
