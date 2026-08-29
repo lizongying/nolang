@@ -14,7 +14,8 @@ main = () {
     ; Create test file
     content = 'hello world test' - '\n'
     fd = fs.open-write('/tmp/bug12-mem-safety-test.txt')
-    fs.write(fd, content, content.len)
+    b = content.to-bytes()
+    fs.write(fd, b, b.len)
     fs.close(fd)
 
     ; Direct assignment: data str = fs.read-file(...)

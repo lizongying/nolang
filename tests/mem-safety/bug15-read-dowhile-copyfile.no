@@ -18,13 +18,13 @@ test-read-into-buf = () (ok bool) {
     ; 讀取檔案
     fd = fs.open-read('/tmp/bug15_test.txt')
     fd < 0 -> return
-    buf str = with-len(4096)
+    buf []byte = with-len(4096)
     n = fs.read(fd, buf, 4096)
     fs.close(fd)
 
     ; 驗證讀取結果
     n == 11 -> {
-        content = buf.slice(0, n)
+        content = buf.slice(0, n).to-str()
         content == 'Hello World' -> ok = true
     }
 }
@@ -41,12 +41,12 @@ test-copy-file = () (ok bool) {
     ; 讀取複製後的檔案驗證內容
     fd = fs.open-read('/tmp/bug15_dst.txt')
     fd < 0 -> return
-    buf str = with-len(4096)
+    buf []byte = with-len(4096)
     n = fs.read(fd, buf, 4096)
     fs.close(fd)
 
     n > 0 -> {
-        content = buf.slice(0, n)
+        content = buf.slice(0, n).to-str()
         content == 'Hello Nolang' -> ok = true
     }
 }

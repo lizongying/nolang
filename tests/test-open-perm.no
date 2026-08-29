@@ -14,7 +14,7 @@ f: {
     err -> print('fail')
     nil -> print('fail')
     -> {
-        .write('x', 1)
+        .write-str('x')
 
         .close()
         print('ok')

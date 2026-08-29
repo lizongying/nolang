@@ -11,12 +11,12 @@
 ;       truncate: false
 ;       append: false
 ;   })
-;   f.write('hello', 5)                     // 方法呼叫
+;   f.write('hello'.to-bytes(), 5)         // 方法呼叫
 ;   f.close()
 ;
 ;   line = stdin.read-line()              // 從標準輸入讀取一行，返回 ?str
-;   n = stdout.write('hello', 5)             // 寫入標準輸出
-;   n = stderr.write('error', 5)             // 寫入標準錯誤
+;   n = stdout.write('hello'.to-bytes(), 5)  // 寫入標準輸出
+;   n = stderr.write('error'.to-bytes(), 5)  // 寫入標準錯誤
 ;
 ;   p = path{
 ;       p: '/tmp'
@@ -194,12 +194,12 @@
 
 ; build-in (ForwardFunc: read)
 ; read: 從檔案描述符讀取最多 n 位元組到 buf
-; read = (fd fd, buf str, n i64) (n i64) {  // LLVM: call i64 @read(fd, buf, n)
+; read = (fd fd, buf []byte, n i64) (n i64) {  // LLVM: call i64 @read(fd, buf, n)
 ; }
 
 ; build-in (ForwardFunc: write)
 ; write: 將 data 的前 n 位元組寫入檔案描述符
-; write = (fd fd, data str, n i64) (written i64) {  // LLVM: call i64 @write(fd, data, n)
+; write = (fd fd, data []byte, n i64) (written i64) {  // LLVM: call i64 @write(fd, data, n)
 ; }
 
 ; build-in (ForwardFunc: close)
@@ -437,7 +437,7 @@ open = (p str, opts file-opts) (f ?file) {
 }
 
 ; read: 從檔案讀取最多 n 位元組到 buf
-file.read = (buf str, n i64) (read-n i64) {
+file.read = (buf []byte, n i64) (read-n i64) {
     read-n = 0
     .fd < 0 -> return
     read-n = read(.fd, buf, n)
@@ -448,13 +448,13 @@ file.read = (buf str, n i64) (read-n i64) {
 file.read-line = () (line ?str) {
     line = nil
     .fd < 0 -> return
-    buf str = with-cap(4096)
+    buf []byte = with-cap(4096)
     n = read(.fd, buf, 4096)
-    n > 0 -> line = buf
+    n > 0 -> line = buf.to-str()
 }
 
 ; write: 將 data 的前 n 位元組寫入檔案
-file.write = (data str, n i64) (written i64) {
+file.write = (data []byte, n i64) (written i64) {
     written = 0
     .fd < 0 -> return
     written = write(.fd, data, n)
@@ -487,20 +487,6 @@ file.is-open = () (yes bool) {
 ; size: 取得開啟中檔案的大小（透過 .path 取得原始路徑）
 file.size = () (sz i64) {
     sz = stat-size(.path)
-}
-
-; read-all: 讀取整個檔案（依據 .path 取得大小）
-file.read-all = () (content str, n i64) {
-    n = 0
-    .fd < 0 -> return
-    size = stat-size(.path)
-    size > 0 -> {
-        buf str = with-len(size)
-        n = read(.fd, buf, size)
-        i <- [0..n): {
-            content[i] = buf[i]
-        }
-    }
 }
 
 ; read-str: 讀取整個檔案為字串
@@ -543,15 +529,6 @@ file.read-bytes = () (content ?[]byte) {
     content = s
 }
 
-; write-all: 將 data 的前 n 位元組寫入檔案（覆寫）
-; 返回 true=成功, false=失敗
-file.write-all = (data str, n i64) (ok bool) {
-    ok = false
-    .fd < 0 -> return
-    written = write(.fd, data, n)
-    ok = written == n
-}
-
 ; write-str: 將字串寫入檔案（覆寫整個檔案）
 ; data str: 要寫入的字串
 ; 返回 ok ?bool:
@@ -562,8 +539,9 @@ file.write-str = (data str) (ok ?bool) {
         ok = err('file not open')
         return
     }
-    written = write(.fd, data, data.len)
-    written == data.len -> ok = true
+    s = data.to-bytes()
+    written = write(.fd, s, s.len)
+    written == s.len -> ok = true
 }
 
 ; write-bytes: 將 []byte 寫入檔案（覆寫整個檔案）
@@ -576,10 +554,8 @@ file.write-bytes = (data []byte) (ok ?bool) {
         ok = err('file not open')
         return
     }
-    ; write 的 buf 參數為 str 型別，先將 []byte 轉為 str
-    s = data.to-str()
-    written = write(.fd, s, s.len)
-    written == s.len -> ok = true
+    written = write(.fd, data, data.len)
+    written == data.len -> ok = true
 }
 
 ; ═══════════════════════════════════════════════
@@ -653,7 +629,7 @@ file.append = (data str, n i64) (ok bool) {
 
     rd-fd = open-read(save-path)
     rd-fd < 0 -> return
-    existing str = with-len(4096)
+    existing []byte = with-len(4096)
     exist-n = 0
     size = stat-size(save-path)
     size > 0 -> size > 4096 -> exist-n = read(rd-fd, existing, 4096) -> exist-n = read(rd-fd, existing, size)
@@ -663,7 +639,8 @@ file.append = (data str, n i64) (ok bool) {
     wr-fd < 0 -> return
     .fd = wr-fd
     exist-n > 0 -> write(.fd, existing, exist-n)
-    written = write(.fd, data, n)
+    b = data.to-bytes()
+    written = write(.fd, b, n)
     ok = written == n
 }
 
@@ -674,7 +651,7 @@ file.copy-to = (dst-path str) (ok bool) {
     .fd < 0 -> return
     fd-w = open-file(dst-path, 1537, 420)
     fd-w < 0 -> return
-    buf str = with-len(4096)
+    buf []byte = with-len(4096)
     {
         n = read(.fd, buf, 4096)
         n <= 0 -> *
@@ -698,7 +675,7 @@ copy-file = (src str, dst str) (ok bool) {
         close(fd-r)
         return
     }
-    buf str = with-len(4096)
+    buf []byte = with-len(4096)
     {
         n = read(fd-r, buf, 4096)
         n <= 0 -> break

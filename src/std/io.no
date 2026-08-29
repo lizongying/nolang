@@ -46,7 +46,7 @@ reader.from-stdin = () (r reader) {
 
 ; read: 從讀取器讀取最多 n 位元組到 buf
 ; 返回實際讀取的位元組數，0 表示 EOF 或錯誤
-reader.read = (buf str, n i64) (read-n i64) {
+reader.read = (buf []byte, n i64) (read-n i64) {
     read-n = 0
     .fd < 0 -> return
     read-n = fs.read(.fd, buf, n)
@@ -57,7 +57,7 @@ reader.read = (buf str, n i64) (read-n i64) {
 reader.read-byte = () (b ?i64) {
     b = nil
     .fd < 0 -> return
-    buf = ' '
+    buf []byte = with-len(1)
     n = fs.read(.fd, buf, 1)
     n > 0 -> b = buf[0]
 }
@@ -67,14 +67,14 @@ reader.read-byte = () (b ?i64) {
 reader.read-line = () (line ?str) {
     line = nil
     .fd < 0 -> return
-    buf str = with-cap(4096)
+    buf []byte = with-cap(4096)
     n = fs.read(.fd, buf, 4096)
-    n > 0 -> line = buf.slice(0, n)
+    n > 0 -> line = buf.slice(0, n).to-str()
 }
 
 ; read-all: 讀取全部內容到 buf（最多 size 位元組）
 ; 需要呼叫者傳入大小
-reader.read-all = (buf str, size i64) (total i64) {
+reader.read-all = (buf []byte, size i64) (total i64) {
     total = 0
     .fd < 0 -> return
     total = fs.read(.fd, buf, size)
@@ -107,7 +107,7 @@ writer.from-stderr = () (w writer) {
 
 ; write: 將 data 的前 n 位元組寫入
 ; 返回實際寫入的位元組數
-writer.write = (data str, n i64) (written i64) {
+writer.write = (data []byte, n i64) (written i64) {
     written = 0
     .fd < 0 -> return
     written = fs.write(.fd, data, n)
@@ -118,7 +118,8 @@ writer.write = (data str, n i64) (written i64) {
 writer.write-str = (s str) (written i64) {
     written = 0
     .fd < 0 -> return
-    written = fs.write(.fd, s, s.len)
+    b = s.to-bytes()
+    written = fs.write(.fd, b, b.len)
 }
 
 ; write-byte: 寫入一個位元組
@@ -126,7 +127,7 @@ writer.write-str = (s str) (written i64) {
 writer.write-byte = (b i64) (written i64) {
     written = 0
     .fd < 0 -> return
-    buf = ' '
+    buf []byte = with-len(1)
     buf[0] = b & 255
     written = fs.write(.fd, buf, 1)
 }
@@ -136,8 +137,10 @@ writer.write-byte = (b i64) (written i64) {
 writer.write-line = (s str) (written i64) {
     written = 0
     .fd < 0 -> return
-    n = fs.write(.fd, s, s.len)
-    nl = '\n'
+    b = s.to-bytes()
+    n = fs.write(.fd, b, b.len)
+    nl []byte = with-len(1)
+    nl[0] = 10
     written = fs.write(.fd, nl, 1)
     written = written + n
 }
@@ -148,26 +151,32 @@ writer.write-line = (s str) (written i64) {
 
 ; out: 寫入字串到標準輸出（不換行）
 out = (s str) (n i64) {
-    n = fs.write(STDOUT-FD, s, s.len)
+    b = s.to-bytes()
+    n = fs.write(STDOUT-FD, b, b.len)
 }
 
 ; outln: 寫入字串到標準輸出並換行
 outln = (s str) (n i64) {
-    n = fs.write(STDOUT-FD, s, s.len)
-    nl = '\n'
+    b = s.to-bytes()
+    n = fs.write(STDOUT-FD, b, b.len)
+    nl []byte = with-len(1)
+    nl[0] = 10
     m = fs.write(STDOUT-FD, nl, 1)
     n = n + m
 }
 
 ; err: 寫入字串到標準錯誤（不換行）
 err = (s str) (n i64) {
-    n = fs.write(STDERR-FD, s, s.len)
+    b = s.to-bytes()
+    n = fs.write(STDERR-FD, b, b.len)
 }
 
 ; errln: 寫入字串到標準錯誤並換行
 errln = (s str) (n i64) {
-    n = fs.write(STDERR-FD, s, s.len)
-    nl = '\n'
+    b = s.to-bytes()
+    n = fs.write(STDERR-FD, b, b.len)
+    nl []byte = with-len(1)
+    nl[0] = 10
     m = fs.write(STDERR-FD, nl, 1)
     n = n + m
 }

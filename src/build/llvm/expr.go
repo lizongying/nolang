@@ -1291,6 +1291,21 @@ func (g *Generator) intExprLLVMType(expr parser.Expression) string {
 				switch t {
 				case "i1", "i8", "i16", "i32", "i64", "i128", "u8", "u16", "u32", "u64", "u128":
 					return t
+				case "%option":
+					// Option variable: the actual value type is the inner type
+					// (e.g. ?byte → u8, ?i64 → i64). Without this, intExprLLVMType
+					// falls through to the default "i64", causing type mismatches
+					// when the option's inner type is a narrower integer (e.g. u8).
+					// generateExprWithSB already extracts and truncs the data to
+					// the inner type, so the SSA value matches the inner type.
+					if g.optionInnerTypes != nil {
+						if inner, ok := g.optionInnerTypes[v.Value]; ok && inner != "" {
+							switch inner {
+							case "i1", "i8", "i16", "i32", "i64", "i128", "u8", "u16", "u32", "u64", "u128":
+								return inner
+							}
+						}
+					}
 				}
 			}
 		}
@@ -5925,10 +5940,6 @@ func (g *Generator) generateInfix(sb *strings.Builder, expr *parser.InfixExpress
 		rc := g.coerceToInt(sb, right, expr.Right, cmpType)
 		cmpReg := g.tmpReg("eq.cmp")
 		extReg := g.tmpReg("eq.ext")
-		if os.Getenv("NOLANG_DEBUG_IT") != "" {
-			fmt.Fprintf(os.Stderr, "[debug-it] == cmp: left=%s right=%s cmpType=%q lc=%s rc=%s leftType=%q rightType=%q\n",
-				left, right, cmpType, lc, rc, g.intExprLLVMType(expr.Left), g.intExprLLVMType(expr.Right))
-		}
 		if sb != nil {
 			sb.WriteString(fmt.Sprintf("%s%s = icmp eq %s %s, %s\n", g.indent(), cmpReg, toLLVMType(cmpType), lc, rc))
 			sb.WriteString(fmt.Sprintf("%s%s = zext i1 %s to i64\n", g.indent(), extReg, cmpReg))

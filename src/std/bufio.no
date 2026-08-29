@@ -25,10 +25,11 @@ reader.fill = () (ok bool) {
         ok = true
         return
     }
-    n = fs.read(.fd, .buf, .buf.len)
+    n = fs.read(.fd, .buf, .buf.cap)
     n > 0 -> {
         .pos = 0
         .avail = n
+        .buf.len = n
         ok = true
     }
 }

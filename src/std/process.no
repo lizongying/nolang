@@ -332,7 +332,8 @@ process.start-with-opts = (program str, args []str, dir str, input str, merge-er
     ; 寫入 stdin
     {
         in-write >= 0 -> {
-            fs.write(in-write, input, input.len)
+            b = input.to-bytes()
+            fs.write(in-write, b, b.len)
             fs.close(in-write)
         }
     }
@@ -418,7 +419,7 @@ process.force-kill = () (ok bool) {
 
 ; read: 從子進程的 stdout 讀取資料
 ; 返回 read-n=實際讀取位元組數
-process.read = (buf str, n i64) (read-n i64) {
+process.read = (buf []byte, n i64) (read-n i64) {
     read-n = 0
     .stdout-fd < 0 -> return
     read-n = fs.read(.stdout-fd, buf, n)
@@ -429,9 +430,9 @@ process.read = (buf str, n i64) (read-n i64) {
 process.read-line = () (line ?str) {
     line = nil
     .stdout-fd < 0 -> return
-    buf str = with-cap(4096)
+    buf []byte = with-cap(4096)
     n = fs.read(.stdout-fd, buf, 4096)
-    n > 0 -> line = buf
+    n > 0 -> line = buf.to-str()
 }
 
 ; read-all: 讀取子進程的所有 stdout 輸出
@@ -439,11 +440,11 @@ process.read-line = () (line ?str) {
 process.read-all = () (content str, n i64) {
     n = 0
     .stdout-fd < 0 -> return
-    buf str = with-len(4096)
+    buf []byte = with-len(4096)
     {
         chunk-n = fs.read(.stdout-fd, buf, 4096)
         chunk-n <= 0 -> *
-        content = content - buf.slice(0, chunk-n)
+        content = content - buf.slice(0, chunk-n).to-str()
         n = n + chunk-n
     } (true)
 }
@@ -453,7 +454,8 @@ process.read-all = () (content str, n i64) {
 process.write = (data str, n i64) (written i64) {
     written = 0
     .stdin-fd < 0 -> return
-    written = fs.write(.stdin-fd, data, n)
+    b = data.to-bytes()
+    written = fs.write(.stdin-fd, b, n)
 }
 
 ; close-stdin: 關閉子進程的 stdin 管道
@@ -700,17 +702,18 @@ cmd = (program str, args []str, dir str, input str, env []str, timeout i64, merg
     ; 寫入 stdin
     {
         in-write >= 0 -> {
-            fs.write(in-write, input, input.len)
+            b = input.to-bytes()
+            fs.write(in-write, b, b.len)
             fs.close(in-write)
         }
     }
 
     ; 讀取 stdout 輸出（在 waitpid 之前讀取以避免管道死鎖）
-    buf str = with-len(4096)
+    buf []byte = with-len(4096)
     {
         n = fs.read(out-read, buf, 4096)
         n <= 0 -> break
-        out = out - buf.slice(0, n)
+        out = out - buf.slice(0, n).to-str()
     } (true)
 
     ; 等待進程結束
@@ -736,7 +739,7 @@ cmd = (program str, args []str, dir str, input str, env []str, timeout i64, merg
                     {
                         n = fs.read(err-read, buf, 4096)
                         n <= 0 -> break
-                        stderr = stderr - buf.slice(0, n)
+                        stderr = stderr - buf.slice(0, n).to-str()
                     } (true)
                     fs.close(err-read)
                 }

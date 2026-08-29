@@ -2520,8 +2520,52 @@ func (g *Generator) genCLibCall(sb *strings.Builder, m *builtin.BuiltinMethod, e
 
 		if clib.StrDataArg != nil && clib.StrDataArg[i] {
 			if evIdx < len(a) {
-				dataPtr := g.extractStrFromEvalArg(sb, a[evIdx])
-				argStr += "i8* " + dataPtr
+				// StrDataArg supports both str (%str-long) and []byte (%vec)
+				// arguments. Both types have the same layout {i64 len, i64 cap, i64 data},
+				// but LLVM treats them as distinct named structs, so we must use
+				// the correct GEP type when extracting the data pointer.
+				argType := ""
+				if origExprs != nil && evIdx < len(origExprs) {
+					argType = g.exprResultLLVMType(origExprs[evIdx])
+				}
+				if argType == "%vec" {
+					// []byte: extract data pointer from vec field 2
+					vecPtr := g.sliceEvalArgToPtr(sb, a[evIdx])
+					dataGEP := g.tmpReg("clib.vec.datagep")
+					var dataPtr string
+					if sb != nil {
+						sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%vec, %%vec* %s, i32 0, i32 2\n", g.indent(), dataGEP, vecPtr))
+						dataPtr = g.loadDataPtrField(sb, dataGEP)
+					} else {
+						dataPtr = g.loadDataPtrField(nil, dataGEP)
+					}
+					argStr += "i8* " + dataPtr
+				} else if argType == "%arr" {
+					// [n]byte: extract data pointer from arr field 1
+					arrEval := a[evIdx]
+					arrPtr := arrEval
+					if idx := strings.Index(arrEval, ".val."); idx > 0 {
+						tmpAlloca := g.tmpReg("clib.arr.tmp")
+						if sb != nil {
+							sb.WriteString(fmt.Sprintf("%s%s = alloca %%arr\n", g.indent(), tmpAlloca))
+							sb.WriteString(fmt.Sprintf("%sstore %%arr %s, %%arr* %s\n", g.indent(), arrEval, tmpAlloca))
+						}
+						arrPtr = tmpAlloca
+					}
+					dataGEP := g.tmpReg("clib.arr.datagep")
+					var dataPtr string
+					if sb != nil {
+						sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%arr, %%arr* %s, i32 0, i32 1\n", g.indent(), dataGEP, arrPtr))
+						dataPtr = g.loadDataPtrField(sb, dataGEP)
+					} else {
+						dataPtr = g.loadDataPtrField(nil, dataGEP)
+					}
+					argStr += "i8* " + dataPtr
+				} else {
+					// str: use existing path
+					dataPtr := g.extractStrFromEvalArg(sb, a[evIdx])
+					argStr += "i8* " + dataPtr
+				}
 			} else {
 				argStr += "i8* null"
 			}
@@ -2764,6 +2808,12 @@ func (g *Generator) extractStrFromEvalArg(sb *strings.Builder, evalResult string
 			}
 		}
 		return g.extractStrDataPtr(sb, baseRef)
+	}
+	// When evalResult is not a pointer (doesn't start with %), it may be "0"
+	// (from NilLiteral or uninitialized variable). Return "null" to produce
+	// valid LLVM IR (i8* null) instead of invalid i8* 0.
+	if evalResult == "" || evalResult == "0" {
+		return "null"
 	}
 	return evalResult
 }

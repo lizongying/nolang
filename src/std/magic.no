@@ -144,7 +144,7 @@ detect-by-magic = (path str) (kind str) {
     fd < 0 -> return
 
     ; 讀取魔數（使用 with-len 確保可安全索引）
-    buf str = with-len(64)
+    buf []byte = with-len(64)
     n = fs.read(fd, buf, 64)
     fs.close(fd)
 

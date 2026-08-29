@@ -43,7 +43,7 @@ f3: {
     -> {
         print('  结果: 文件已打开成功')
 
-        .write('hello', 5)
+        .write-str('hello')
 
         .close()
     }

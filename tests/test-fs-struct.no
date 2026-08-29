@@ -18,7 +18,7 @@ f-w: {
     err -> print('fail: open-write err')
     nil -> print('fail: open-write nil')
     -> {
-        it.write(payload, payload.len)
+        it.write-str(payload)
         it.close()
         print('ok: open write')
     }
@@ -47,11 +47,18 @@ f-r: {
     nil -> print('fail: open-read nil')
     -> {
         buf [256]byte
-        n = it.read(buf, 256)
-        it.close()
-        {
-            n == payload.len -> print('ok: read length matches')
-            -> print('fail: read length mismatch')
+        r = it.read-bytes()
+        r: {
+            err -> print('fail: read err')
+            nil -> print('fail: read nil')
+            -> {
+                n = r.len
+                it.close()
+                {
+                    n == payload.len -> print('ok: read length matches')
+                    -> print('fail: read length mismatch')
+                }
+            }
         }
     }
 }

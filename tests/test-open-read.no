@@ -16,7 +16,7 @@ f-w: {
     err -> print('fail: write err')
     nil -> print('fail: write nil')
     -> {
-        it.write(payload, payload.len)
+        it.write-str(payload)
         it.close()
         print('ok: write')
     }
@@ -34,10 +34,13 @@ f-r: {
     err -> print('fail: read err')
     nil -> print('fail: read nil')
     -> {
-        buf [256]byte
-        n = it.read(buf, 256)
+        r = it.read-str()
+        r: {
+            err -> print('fail: read-str err')
+            nil -> print('ok: read empty')
+            -> print('ok: read')
+        }
         it.close()
-        print('ok: read')
     }
 }
 fs.remove(tmp)

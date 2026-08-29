@@ -808,3 +808,10 @@ Nolang 的 `#` 導入語句支援別名：
 ```
 
 這可用於解決跨模組變量名衝突。導入後可直接使用 `ALIAS` 訪問，無需模組前綴。
+
+## See Also — Nolang References
+
+- [nolang-syntax](file://../nolang-syntax/SKILL.md) — Nolang syntax, grammar, types, operators, and language features
+- [nolang-std](file://../nolang-std/SKILL.md) — Standard library API reference (60+ modules)
+- [nolang-build](file://../nolang-build/SKILL.md) — Building the Nolang project with `make`
+- [nolang-debug](file://../nolang-debug/SKILL.md) — Debugging guide for compiler and LSP issues

@@ -400,9 +400,12 @@ Add a regression test in `src/lsp/hover_test.go` and `src/lsp/completion_test.go
 
 LSP clients report positions in UTF-16 code units, but Nolang source is ASCII for syntax tokens. Off-by-one errors are common when the cursor is at the very end of a line. Use `Position{Line, Character: N}` with N = column index (0-based) to match editor display.
 
-## See Also
+## See Also — Nolang References
 
-- [nolang-syntax-reference](file://../nolang-syntax/SKILL.md) — for what valid Nolang syntax looks like
+- [nolang-syntax](file://../nolang-syntax/SKILL.md) — Nolang syntax, grammar, types, operators, and language features
+- [nolang-std](file://../nolang-std/SKILL.md) — Standard library API reference (60+ modules)
+- [nolang-build](file://../nolang-build/SKILL.md) — Building the Nolang project with `make`
+- [nolang-memory](file://../nolang-memory/SKILL.md) — Memory design and ownership model
 - `Makefile` — for `make no` / `make lsp` targets
 - `src/parser/parser_test.go` — pattern for parser tests
 - `src/fmt/formatter_test.go` — pattern for formatter tests

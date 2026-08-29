@@ -4,7 +4,7 @@ sidebar_position: 3
 
 # 標準庫
 
-Nolang 標準庫（`src/std/`）包含 60+ 個模組，涵蓋格式化、數學、字串、資料結構、編解碼、加密、壓縮、檔案操作、I/O 抽象等。
+Nolang 標準庫（`src/std/`）包含 80+ 個模組，涵蓋格式化、數學、字串、資料結構、編解碼、加密、壓縮、檔案操作、I/O 抽象、異步協程、檔案類型檢測等。
 
 使用方式：`# std/xxx`（核心模組無需導入）。
 
@@ -1282,6 +1282,54 @@ yes = l.empty()
 yes = l.full()
 ```
 
+### collection/map — 泛型動態雜湊映射表
+
+動態容量泛型雜湊映射表，裝載因子 > 0.75 時自動 rehash 擴容（容量加倍）。三個模板按鍵型別特化：
+
+```no
+; str 鍵映射表（V 泛型）
+m = hashmap-str-tmpl{}
+m.init()
+m.put('key', val)
+result = m.get('key')   ; ?V，nil=未找到
+found = m.contains('key')
+m.remove('key')
+n = m.size()
+yes = m.empty()
+m.clear()
+
+; int 鍵映射表（K, V 均泛型）
+m2 = hashmap-int-tmpl{}
+m2.init()
+m2.put(k, v)
+
+; bool 鍵映射表（V 泛型）
+m3 = hashmap-bool-tmpl{}
+m3.init()
+m3.put(flag, v)
+```
+
+### collection/static-hashmap — 泛型固定容量雜湊映射表
+
+固定容量（256 槽）泛型雜湊映射表，線性探測。三個模板按鍵型別特化：
+
+```no
+; str 鍵靜態映射表（V 泛型）
+m = static-hashmap-str-tmpl{}
+m.init()
+m.put('key', val)
+result = m.get('key')   ; ?V，nil=未找到
+found = m.contains('key')
+m.remove('key')
+n = m.size()
+
+; int 鍵靜態映射表（K, V 均泛型）
+m2 = static-hashmap-int-tmpl{}
+
+; bool 鍵靜態映射表（V 泛型，2 槽）
+m3 = static-hashmap-bool-tmpl{}
+```
+
 ---
 
 ## 資料庫
@@ -1361,6 +1409,25 @@ n = csv.parse-line(s, sn, fields, max)             ; 解析一行
 out-n = csv.encode-field(field, fn, out)           ; 編碼欄位
 ```
 
+### encoding/pem — PEM 編解碼（RFC 7468）
+
+PEM 格式廣泛用於 X.509 憑證、RSA/ECDSA 金鑰等。
+
+```no
+; 結構體
+pem-block {
+    label str
+    data []byte
+}
+
+; 編碼
+out = pem.pem-encode(label, data)                  ; 將原始位元組編碼為 PEM 字串
+
+; 解碼
+result = pem.pem-decode(pem-str)                    ; 解析 PEM 字串（?pem-block，nil=解析失敗）
+; 成功時可存取 result.label 和 result.data
+```
+
 ---
 
 ## 歸檔
@@ -1427,6 +1494,41 @@ out = e.extract()
 out = gzip.gzip-compress(data)                      ; zlib 壓縮
 out = gzip.gzip-decompress(data)                    ; zlib 解壓縮
 out = gzip.inflate-decompress(data, out-size)       ; 原始 DEFLATE 解壓縮（ZIP method 8）
+```
+
+### archive/bzip2 — BZIP2 解壓縮（純 Nolang 實現）
+
+純 Nolang 實現 BZIP2 解壓縮，包含 BWT 反變換、MTF 反變換、Huffman 解碼與 RLE 解碼：
+
+```no
+out = bzip2.bzip2-decompress(data)                   ; 解壓 .bz2 資料
+```
+
+### archive/xz — XZ/LZMA 解壓縮（純 Nolang 實現）
+
+純 Nolang 實現 LZMA2 解壓縮，支援 .xz 容器與傳統 .lzma 格式：
+
+```no
+out = xz.xz-decompress(data)                        ; 解壓 .xz 格式
+out = xz.lzma-decompress(data)                      ; 解壓傳統 .lzma 格式
+```
+
+### archive/zlib — zlib 壓縮/解壓縮（RFC 1950，純 Nolang 實現）
+
+zlib 串流格式：2-byte 標頭 + 原始 DEFLATE + 4-byte Adler-32 校驗碼：
+
+```no
+out = zlib.zlib-compress(data)                       ; 壓縮為 zlib 格式（stored blocks）
+out = zlib.zlib-decompress(data)                     ; 解壓 zlib 格式
+sum = zlib.adler-32(data, n)                        ; 計算 Adler-32 校驗碼
+```
+
+### archive/zstd — Zstandard 解壓縮（純 Nolang 實現）
+
+純 Nolang 實現 Zstandard (zstd) 解壓縮，包含 FSE 解碼、Huffman 解碼、LZ77 序列解碼：
+
+```no
+out = zstd.zstd-decompress(data)                     ; 解壓 .zst 格式
 ```
 
 ---
@@ -1874,6 +1976,58 @@ leave {
 }     
 ```
 
+### async — 異步協程與取消原語
+
+Nolang 提供協作式、單執行緒、無棧的異步協程模型：
+
+```no
+; 啟動 -async 函數為後台任務，返回不透明 task 句柄
+h = run worker-async(args)
+
+; 等待後台任務完成，返回結果
+r = awy h
+
+; 取消後台任務（協作式）
+async.async-cancel(h)                    ; 設置任務 h 的取消標誌
+
+; 協作式自我取消檢查（在異步函數內調用）
+yes = async.async-cancelled()            ; 返回當前任務是否已被取消
+```
+
+> **注意：** 取消是協作式而非搶占式。長阻塞調用（如網路請求）無法被強制中斷。任務會在下一個協作檢查點（`async-cancelled()` 調用或事件迴圈下次調度）真正停止。
+
+### global — 全域內建函數
+
+無需模組前綴即可調用的函數。僅有以下 6 個全域函數，其餘跨模組調用都必須加模組前綴。
+
+```no
+; 容量/長度構造（型別由賦值左側推斷）
+s str = with-cap(256)                   ; 預分配 256 位元組 str（len=0）
+v []i64 = with-cap(100)                 ; 預分配 100 元素切片（len=0）
+s str = with-len(10)                    ; 長度為 10 的 str
+v []i64 = with-len(100)                 ; 長度為 100 的切片
+v []i64 = with-cap-len(200, 100)        ; 容量 200、長度 100 的切片
+
+; 也可作為 str/vec 方法調用：
+s = ''.with-cap(256)
+v = [].with-cap(100)
+v = [].with-len-cap(100, 200)           ; 長度 100，容量 200
+
+; 輸出/格式化
+print('x={x}')                          ; 具名格式，stdout + 換行
+eprint('err {x}')                       ; 具名格式，stderr + 換行
+s = format('x={x}')                      ; 返回格式化字串
+```
+
+### magic — 檔案類型檢測
+
+基於副檔名與魔數（magic bytes）判斷檔案類型，不依賴 libmagic：
+
+```no
+kind = magic.detect-type(path)                  ; 檢測檔案類型
+; 返回類型描述字串，如 'PNG image'、'ELF executable'、'ASCII text'、'directory'、'unknown'、'data'
+```
+
 ---
 
 ## 模組一覽
@@ -1914,6 +2068,9 @@ leave {
 | err                 | 核心   | 錯誤處理         |
 | enter               | 核心   | 啟動鉤子         |
 | leave               | 核心   | 退出鉤子         |
+| async               | 核心   | 異步協程/取消     |
+| global              | 核心   | 全域內建函數     |
+| magic               | 核心   | 檔案類型檢測     |
 | net                 | 核心   | TCP 網路操作     |
 | net/http            | 子模組 | HTTP/1.1 客戶端  |
 | net/http2           | 子模組 | HTTP/2.0 客戶端  |
@@ -1936,9 +2093,14 @@ leave {
 | encoding/hex        | 子模組 | 十六進制編解碼   |
 | encoding/base64     | 子模組 | Base64 編解碼    |
 | encoding/csv        | 子模組 | CSV 解析         |
+| encoding/pem        | 子模組 | PEM 編解碼       |
 | archive/tar         | 子模組 | TAR 歸檔         |
 | archive/zip         | 子模組 | ZIP 歸檔         |
 | archive/gzip        | 子模組 | GZIP 壓縮        |
+| archive/bzip2       | 子模組 | BZIP2 解壓縮     |
+| archive/xz          | 子模組 | XZ/LZMA 解壓縮   |
+| archive/zlib        | 子模組 | zlib 壓縮（RFC 1950）|
+| archive/zstd        | 子模組 | Zstandard 解壓縮  |
 | map/linked-hash-map | 子模組 | 有序哈希表       |
 | map/hash-set        | 子模組 | i64 哈希集合     |
 | map/str-map         | 子模組 | str→str 哈希映射 |
@@ -1948,6 +2110,8 @@ leave {
 | collection/queue    | 子模組 | 泛型佇列         |
 | collection/arr-stack| 子模組 | 泛型堆疊         |
 | collection/link     | 子模組 | 泛型雙向鏈結串列 |
+| collection/map      | 子模組 | 泛型動態哈希映射 |
+| collection/static-hashmap | 子模組 | 泛型固定容量哈希映射 |
 | database/sql        | 子模組 | 資料庫存取介面   |
 | hash/aes            | 子模組 | AES-128 加解密   |
 | hash/aes-128-enc    | 子模組 | AES-128 加密     |

@@ -262,9 +262,9 @@ func init() {
 	BuiltinMethodList = append(BuiltinMethodList, BuiltinMethod{
 		ReceiverType: ReceiverGlobal,
 		MethodName:   "read",
-		Params:       []parser.Type{parser.TypeFd, parser.TypeStr, parser.TypeI64},
-		Return:       []parser.Type{parser.TypeI64},
-		Doc:          "Read n bytes from a file descriptor into buf",
+	Params:       []parser.Type{parser.TypeFd, &parser.SliceType{Elem: parser.TypeByte}, parser.TypeI64},
+	Return:       []parser.Type{parser.TypeI64},
+	Doc:          "Read n bytes from a file descriptor into buf ([]byte)",
 		CLibCall:     &CLibCall{FuncName: readFn, ArgTypes: []LLVMArgType{LLVMI32, LLVMI8Ptr, LLVMI64}, RetType: LLVMI64, TruncArgs: map[int]LLVMArgType{0: LLVMI32}, StrDataArg: map[int]bool{1: true}},
 	})
 
@@ -276,9 +276,9 @@ func init() {
 	BuiltinMethodList = append(BuiltinMethodList, BuiltinMethod{
 		ReceiverType: ReceiverGlobal,
 		MethodName:   "write",
-		Params:       []parser.Type{parser.TypeFd, parser.TypeStr, parser.TypeI64},
-		Return:       []parser.Type{parser.TypeI64},
-		Doc:          "Write n bytes to a file descriptor",
+	Params:       []parser.Type{parser.TypeFd, &parser.SliceType{Elem: parser.TypeByte}, parser.TypeI64},
+	Return:       []parser.Type{parser.TypeI64},
+	Doc:          "Write n bytes ([]byte) to a file descriptor",
 		CLibCall:     &CLibCall{FuncName: writeFn, ArgTypes: []LLVMArgType{LLVMI32, LLVMI8Ptr, LLVMI64}, RetType: LLVMI64, TruncArgs: map[int]LLVMArgType{0: LLVMI32}, StrDataArg: map[int]bool{1: true}},
 	})
 

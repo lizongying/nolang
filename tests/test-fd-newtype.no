@@ -20,7 +20,8 @@ bad-fd < 0 -> print('ok: fd < 0 negative')
 bad-fd == -1 -> print('ok: fd == -1 negative')
 
 ; ── 3. fd 作為 fd 參數傳遞（write 內建函數） ──
-n = fs.write(my-stdout, 'hello fd\n', 9)
+msg = 'hello fd\n'.to-bytes()
+n = fs.write(my-stdout, msg, msg.len)
 n == 9 -> print('ok: write fd param')
 
 ; ── 4. fd 變量之間賦值（同類型賦值） ──
@@ -28,6 +29,6 @@ copy-fd fd = my-stdin
 copy-fd == 0 -> print('ok: fd-to-fd assignment')
 
 ; ── 5. STDOUT-FD 標準常量使用 ──
-n2 = fs.write(STDOUT-FD, 'std-ok\n', 7)
+n2 = fs.write(STDOUT-FD, 'std-ok\n'.to-bytes(), 7)
 n2 == 7 -> print('ok: STDOUT-FD standard constant')
 print('all fd newtype positive tests passed')

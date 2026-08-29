@@ -92,3 +92,10 @@ After building, run vet checks on the standard library:
 ./vscode-nolang/server/lsp vet src/std   # LSP vet check
 ./bin/no vet src/std                     # Nolang vet check
 ```
+
+## See Also — Nolang References
+
+- [nolang-syntax](file://../nolang-syntax/SKILL.md) — Nolang syntax, grammar, types, operators, and language features
+- [nolang-std](file://../nolang-std/SKILL.md) — Standard library API reference (60+ modules)
+- [nolang-debug](file://../nolang-debug/SKILL.md) — Debugging guide for compiler and LSP issues
+- [nolang-memory](file://../nolang-memory/SKILL.md) — Memory design and ownership model
