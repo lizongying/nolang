@@ -294,16 +294,19 @@ val = os.arg(idx)
 
 ### fs — 檔案系統工具
 
-以 `file` 結構體封裝開啟中的檔案，以 `path` 結構體封裝路徑。
+以 `file` 結構體封裝開啟中的檔案，以 `path` 結構體封裝路徑。定義 `fd` newtype（`fd = i64`），防止檔案描述符與任意 `i64` 混淆。另提供 `embed` 結構體用於編譯期嵌入檔案系統（透過 `#{embed='dir/path'}`）。
 
 ```no
+; fd newtype（底層 i64，與 i64 在型別系統中互斥）
+fd = i64
+
 ; 檔案結構體
 file {
-    fd i64
+    fd fd
     path str
 }
 
-; 標準檔案
+; 標準檔案（整數字面量可用於 fd 初始化）
 stdin = file{
     fd: 0
     path: '<stdin>'
@@ -316,6 +319,11 @@ stderr = file{
     fd: 2
     path: '<stderr>'
 }
+
+; 標準檔案描述符
+STDIN-FD fd = 0
+STDOUT-FD fd = 1
+STDERR-FD fd = 2
 
 ; 開啟檔案（帶選項）
 file-mode {
@@ -339,39 +347,121 @@ file-opts {
     truncate bool
     append bool
 }
-f = fs.open(path, opts)             ; 開啟檔案，失敗返回 nil
+f = fs.open(path, opts)             ; 開啟檔案，成功返回 ?file，失敗返回 err
 
 ; file 方法
-read-n = f.read(buf, n)          ; 讀取最多 n 位元組
-line = f.read-line()              ; 讀取一行（?str, nil=EOF）
-content, n = f.read-all()        ; 讀取整個檔案
-written = f.write(data, n)       ; 寫入 n 位元組
-ok = f.write-all(data, n)        ; 寫入全部（覆寫）
-ok = f.append(data, n)           ; 追加資料
-ok = f.copy-to(dst-path)         ; 複製到目標路徑
-ok = f.close()                   ; 關閉（標準檔案不自動關閉）
-yes = f.is-open()                ; 是否已開啟
-sz = f.size()                    ; 檔案大小
+read-n = f.read(buf, n)              ; 讀取最多 n 位元組到 buf
+line = f.read-line()                  ; 讀取一行（?str, nil=EOF 或錯誤）
+content = f.read-bytes()             ; 讀取整個檔案為 ?[]byte（nil=空, err=失敗）
+content = f.read-str()               ; 讀取整個檔案為 ?str（nil=空, err=失敗）
+written = f.write(data, n)           ; 寫入 n 位元組
+ok = f.write-str(data)               ; 寫入字串（覆寫），返回 ?bool
+ok = f.write-bytes(data)             ; 寫入 []byte（覆寫），返回 ?bool
+ok = f.append(data, n)               ; 追加資料
+ok = f.copy-to(dst-path)             ; 複製到目標路徑
+ok = f.close()                       ; 關閉（標準檔案 stdin/stdout/stderr 不關閉）
+yes = f.is-open()                    ; 檢查是否已開啟（fd >= 0）
+sz = f.size()                        ; 檔案大小（透過 fstat(fd)，消除 TOCTOU）
 
-; 內建函數
-fd = fs.open-read(path)             ; 唯讀開啟
-fd = fs.open-write(path)            ; 寫入開啟（O_CREAT|O_TRUNC, 0644）
-fd = fs.open-file(path, flags, mode) ; 自訂旗標開啟
+; 內建函數（註冊於 src/builtin/os.go，以註釋形式記錄於 fs.no）
+; 這些是 ForwardFunc/CLibCall 內建函數——無需 .no 實作。
+
+; 檔案讀寫（已廢棄，建議改用 read-bytes/write-bytes 以支援錯誤處理）
+; [deprecated] read-file: 改用 read-bytes（支援錯誤處理、TOCTOU 安全、循環 read）
+;   空切片表示失敗，無法區分空檔案與錯誤
+; [deprecated] write-file: 改用 write-bytes（支援錯誤處理、循環 write）
+;   無法區分部分寫入與完全失敗
+data = fs.read-file(path)           ; [deprecated] 讀取整個檔案為 []byte（空切片表示失敗）
+ok = fs.write-file(path, data)      ; [deprecated] 寫入 []byte 到檔案（覆寫）。成功返回 true
+fd = fs.open-read(path)             ; 唯讀開啟（O_RDONLY）
+fd = fs.open-write(path)            ; 寫入開啟（O_WRONLY|O_CREAT|O_TRUNC, 0644）
+fd = fs.open-file(path, flags, mode) ; 自訂旗標和權限開啟
 n = fs.read(fd, buf, n)             ; 底層讀取
 written = fs.write(fd, data, n)     ; 底層寫入
 ok = fs.close(fd)                   ; 底層關閉
-ok = fs.remove(path)                ; 刪除檔案
-ok = fs.rename(old, new)            ; 重新命名
-ok = fs.is-file(path)               ; 判斷是否為檔案
-ok = fs.is-dir(path)                ; 判斷是否為目錄
-sz = fs.stat-size(path)             ; 取得檔案大小
-sz = fs.file-size(path)             ; 同 stat-size
-line = fs.get-line()                ; 從標準輸入讀取一行（?str, nil=EOF）
-ok = fs.copy-file(src, dst)         ; 複製檔案
 
-; macOS open() 旗標常量
-O-RDONLY = 0, O-WRONLY = 1, O-RDWR = 2
-O-CREAT = 512, O-TRUNC = 1024, O-APPEND = 8, O-EXCL = 2048
+; 檔案管理
+ok = fs.remove(path)                ; 刪除檔案（unlink）
+ok = fs.rename(old, new)            ; 重新命名
+ok = fs.symlink(target, linkpath)   ; 建立符號連結
+ok = fs.link(oldpath, newpath)      ; 建立硬連結
+ok = fs.copy-file(src, dst)         ; 複製檔案內容
+
+; 檔案資訊
+ok = fs.exists(path)                ; 判斷路徑是否存在（跟隨符號連結）
+ok = fs.is-file(path)               ; 判斷是否為普通檔案
+ok = fs.is-dir(path)                ; 判斷是否為目錄
+sz = fs.stat-size(path)             ; 取得檔案大小（返回 ?i64）
+sz = fs.file-size(path)             ; 同 stat-size（返回 ?i64）
+sz = fs.fstat-size(fd)              ; 透過 fstat(fd) 取得大小，消除 TOCTOU（返回 ?i64）
+mode = fs.stat-mode(path)           ; 取得檔案模式（st_mode，返回 i64）
+uid = fs.stat-uid(path)             ; 取得檔案所有者 uid（返回 i64）
+gid = fs.stat-gid(path)             ; 取得檔案群組 gid（返回 i64）
+mtime = fs.stat-mtime(path)         ; 取得修改時間（Unix 秒，返回 i64）
+ok = fs.lstat(path)                 ; 取得符號連結資訊（不跟隨連結目標）
+
+; 目錄操作
+dirp = fs.open-dir(path)             ; 開啟目錄（返回控制代碼，0=失敗）
+name = fs.read-dir(dirp)             ; 讀取下一個目錄條目（返回 str, ok bool）
+ok = fs.close-dir(dirp)              ; 關閉目錄控制代碼
+names = fs.list-dir(path)            ; 列出所有條目名稱（包含 . 和 ..）
+names = fs.dir-entries(path)          ; 列出條目（不含 . 和 ..）
+paths = fs.walk(root)                ; 遞迴遍歷目錄樹
+
+; 路徑解析
+abs = fs.realpath(path)              ; 解析為絕對規範路徑
+target = fs.readlink(path)           ; 讀取符號連結目標（返回 str, ok bool）
+
+; 臨時檔案/目錄
+name, fd = fs.mkstemp(tmpl)          ; 建立臨時檔案（模板末尾為 XXXXXX）
+name = fs.mkdtemp(tmpl)             ; 建立臨時目錄（模板末尾為 XXXXXX）
+
+; 特殊檔案
+ok = fs.mkfifo(path, mode)          ; 建立命名管道（FIFO）
+ok = fs.mknod(path, mode, dev)      ; 建立特殊檔案（裝置節點）
+ok = fs.truncate(path, length)      ; 截斷或擴展檔案到指定大小
+fs.sync()                           ; 將檔案系統緩衝區排清到磁碟
+ok = fs.touch-file(path)            ; 更新檔案時間戳為當前時間
+ok = fs.utime(path, atime, mtime)   ; 設定存取與修改時間
+ok = fs.rmdir(path)                 ; 刪除空目錄
+
+; 標準輸入
+line = fs.get-line()                ; 從標準輸入讀取一行（?str, nil=EOF）
+
+; 便捷封裝函數（Nolang 實作於 fs.no，內部呼叫內建函數）
+content = fs.read-str(path)          ; 讀取整個檔案為 ?str（nil=空, err=失敗）
+content = fs.read-bytes(path)        ; 讀取整個檔案為 ?[]byte（nil=空, err=失敗）
+ok = fs.write-str(path, data)        ; 寫入字串到檔案（覆寫），返回 ?bool
+ok = fs.write-bytes(path, data)      ; 寫入 []byte 到檔案（覆寫），返回 ?bool
+
+; embed: 編譯期嵌入的檔案系統（由 #{embed='dir/path'} 初始化）
+;   #{embed='../frontend/dist'}
+;   DIST fs.embed
+;   data = DIST.read('index.html')   ; 讀取嵌入檔案，返回 ([]byte, bool)
+;   ok = DIST.exists('css/style.css') ; 檢查嵌入檔案是否存在
+embed {
+    count i64
+    paths str                        ; 所有路徑拼接（用 \0 分隔）
+    pathStarts []i64                 ; 每個路徑在 paths 中的起始偏移
+    pathLens []i64                   ; 每個路徑的長度
+    blob []byte                      ; 所有檔案內容拼接
+    dataStarts []i64                 ; 每個檔案在 blob 中的起始偏移
+    dataLens []i64                   ; 每個檔案的長度
+}
+
+; Windows 平台特定（僅 win-amd64/win-arm64 可用）
+bufptr = fs.win-find-first-file(path) ; FindFirstFileA，返回控制代碼（0=失敗）
+name = fs.win-find-next-file(bufptr)  ; FindNextFileA，返回 (name, ok)
+ok = fs.win-find-close(bufptr)        ; FindClose
+
+; open() 旗標常量（平台特定，此處顯示 macOS 值）
+O-RDONLY = 0
+O-WRONLY = 1
+O-RDWR = 2
+O-CREAT = 512       ; macOS=512, Linux=64, Windows=256
+O-TRUNC = 1024      ; macOS=1024, Linux=512, Windows=512
+O-APPEND = 8        ; macOS=8, Linux=1024, Windows=8
+O-EXCL = 2048       ; macOS=2048, Linux=128, Windows=1024
 ```
 
 ### env — 環境變數（簡化封裝）

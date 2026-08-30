@@ -682,3 +682,9 @@ workspace/               ← 工作區目錄（workspace.jsonc 所在此處）
 ```
 
 > **注意**：導入路徑以**工作區根目錄**（`workspace.jsonc` 所在目錄）為準，而非包的 `package.jsonc` 目錄。包子目錄中若存在嵌套的 `package.jsonc`，`LoadPackage` 會向上搜索找到最近的 `package.jsonc` 並將其作為包根目錄，但導入解析統一以工作區根為基準。
+
+---
+
+## 應用案例
+
+- [notools](https://github.com/lizongying/notools) — 使用 Nolang 語言實現的 Unix 常用命令行工具集，涵蓋 cat、ls、grep、wc、head、tail 等經典工具，展示了 Nolang 在系統編程領域的實際應用能力。

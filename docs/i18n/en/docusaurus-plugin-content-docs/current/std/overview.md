@@ -294,16 +294,19 @@ val = os.arg(idx)
 
 ### fs — File System Utilities
 
-Wraps an open file with the `file` struct and a path with the `path` struct.
+Wraps an open file with the `file` struct and a path with the `path` struct. Defines the `fd` newtype (`fd = i64`) to prevent file descriptors from being confused with arbitrary `i64` values. Also provides an `embed` struct for compile-time embedded filesystems (via `#{embed='dir/path'}`).
 
 ```no
+; fd newtype (underlying i64, type-distinct from i64)
+fd = i64
+
 ; File struct
 file {
-    fd i64
+    fd fd
     path str
 }
 
-; Standard files
+; Standard files (integer literals are allowed for fd initialization)
 stdin = file{
     fd: 0
     path: '<stdin>'
@@ -316,6 +319,11 @@ stderr = file{
     fd: 2
     path: '<stderr>'
 }
+
+; Standard file descriptors
+STDIN-FD fd = 0
+STDOUT-FD fd = 1
+STDERR-FD fd = 2
 
 ; Open file (with options)
 file-mode {
@@ -339,39 +347,121 @@ file-opts {
     truncate bool
     append bool
 }
-f = fs.open(path, opts)             ; Open file, returns nil on failure
+f = fs.open(path, opts)             ; Open file, returns ?file on success, err on failure
 
 ; file methods
-read-n = f.read(buf, n)          ; Read up to n bytes
-line = f.read-line()              ; Read one line (?str, nil=EOF)
-content, n = f.read-all()        ; Read entire file
-written = f.write(data, n)       ; Write n bytes
-ok = f.write-all(data, n)        ; Write all (overwrite)
-ok = f.append(data, n)           ; Append data
-ok = f.copy-to(dst-path)         ; Copy to target path
-ok = f.close()                   ; Close (standard files are not auto-closed)
-yes = f.is-open()                ; Whether it is open
-sz = f.size()                    ; File size
+read-n = f.read(buf, n)              ; Read up to n bytes into buf
+line = f.read-line()                  ; Read one line (?str, nil=EOF or error)
+content = f.read-bytes()             ; Read entire file as ?[]byte (nil=empty, err=failure)
+content = f.read-str()               ; Read entire file as ?str (nil=empty, err=failure)
+written = f.write(data, n)           ; Write n bytes from data
+ok = f.write-str(data)               ; Write string to file (overwrite), returns ?bool
+ok = f.write-bytes(data)             ; Write []byte to file (overwrite), returns ?bool
+ok = f.append(data, n)               ; Append data to file
+ok = f.copy-to(dst-path)             ; Copy file to target path
+ok = f.close()                       ; Close (standard files stdin/stdout/stderr are not closed)
+yes = f.is-open()                    ; Check if file is open (fd >= 0)
+sz = f.size()                        ; File size via fstat(fd), eliminates TOCTOU
 
-; Built-in functions
-fd = fs.open-read(path)             ; Open read-only
-fd = fs.open-write(path)            ; Open for writing (O_CREAT|O_TRUNC, 0644)
-fd = fs.open-file(path, flags, mode) ; Open with custom flags
-n = fs.read(fd, buf, n)             ; Low-level read
-written = fs.write(fd, data, n)     ; Low-level write
+; Built-in functions (registered in src/builtin/os.go, documented as comments in fs.no)
+; These are ForwardFunc/CLibCall builtins — no .no implementation needed.
+
+; File read/write (deprecated, prefer read-bytes/write-bytes for error handling)
+; [deprecated] read-file: use read-bytes instead (supports error handling, TOCTOU safe, loop read)
+;   empty slice means failure, cannot distinguish empty file from error
+; [deprecated] write-file: use write-bytes instead (supports error handling, loop write)
+;   cannot distinguish partial write from total failure
+data = fs.read-file(path)           ; [deprecated] Read entire file as []byte (empty on error)
+ok = fs.write-file(path, data)      ; [deprecated] Write []byte to file (overwrite). Returns true on success
+fd = fs.open-read(path)             ; Open read-only (O_RDONLY)
+fd = fs.open-write(path)            ; Open for writing (O_WRONLY|O_CREAT|O_TRUNC, 0644)
+fd = fs.open-file(path, flags, mode) ; Open with custom flags and permissions
+n = fs.read(fd, buf, n)             ; Low-level read from fd into buf
+written = fs.write(fd, data, n)     ; Low-level write to fd
 ok = fs.close(fd)                   ; Low-level close
-ok = fs.remove(path)                ; Delete file
-ok = fs.rename(old, new)            ; Rename
-ok = fs.is-file(path)               ; Check if it is a file
-ok = fs.is-dir(path)                ; Check if it is a directory
-sz = fs.stat-size(path)             ; Get file size
-sz = fs.file-size(path)             ; Same as stat-size
-line = fs.get-line()                ; Read a line from standard input (?str, nil=EOF)
-ok = fs.copy-file(src, dst)         ; Copy file
 
-; macOS open() flag constants
-O-RDONLY = 0, O-WRONLY = 1, O-RDWR = 2
-O-CREAT = 512, O-TRUNC = 1024, O-APPEND = 8, O-EXCL = 2048
+; File management
+ok = fs.remove(path)                ; Delete file (unlink)
+ok = fs.rename(old, new)            ; Rename file
+ok = fs.symlink(target, linkpath)   ; Create symbolic link
+ok = fs.link(oldpath, newpath)      ; Create hard link
+ok = fs.copy-file(src, dst)         ; Copy file content
+
+; File information
+ok = fs.exists(path)                ; Check if path exists (follows symlinks)
+ok = fs.is-file(path)               ; Check if regular file
+ok = fs.is-dir(path)                ; Check if directory
+sz = fs.stat-size(path)             ; Get file size (returns ?i64)
+sz = fs.file-size(path)             ; Same as stat-size (returns ?i64)
+sz = fs.fstat-size(fd)              ; Get file size via fstat(fd), eliminates TOCTOU (returns ?i64)
+mode = fs.stat-mode(path)           ; Get file mode (st_mode, returns i64)
+uid = fs.stat-uid(path)             ; Get file owner uid (returns i64)
+gid = fs.stat-gid(path)             ; Get file group gid (returns i64)
+mtime = fs.stat-mtime(path)         ; Get file modification time (Unix seconds, returns i64)
+ok = fs.lstat(path)                 ; Get symlink info (does not follow link target)
+
+; Directory operations
+dirp = fs.open-dir(path)             ; Open directory (returns handle, 0 on failure)
+name = fs.read-dir(dirp)             ; Read next dir entry (returns str, ok bool)
+ok = fs.close-dir(dirp)              ; Close directory handle
+names = fs.list-dir(path)            ; List all entry names (includes . and ..)
+names = fs.dir-entries(path)          ; List entries (excludes . and ..)
+paths = fs.walk(root)                ; Recursively walk directory tree
+
+; Path resolution
+abs = fs.realpath(path)              ; Resolve to absolute canonical path
+target = fs.readlink(path)           ; Read symbolic link target (returns str, ok bool)
+
+; Temp file/directory
+name, fd = fs.mkstemp(tmpl)          ; Create temp file (template ending XXXXXX)
+name = fs.mkdtemp(tmpl)             ; Create temp directory (template ending XXXXXX)
+
+; Special files
+ok = fs.mkfifo(path, mode)          ; Create named pipe (FIFO)
+ok = fs.mknod(path, mode, dev)      ; Create special file (device node)
+ok = fs.truncate(path, length)      ; Truncate/extend file to length
+fs.sync()                           ; Flush filesystem buffers to disk
+ok = fs.touch-file(path)            ; Update file timestamps to current time
+ok = fs.utime(path, atime, mtime)   ; Set file access and modification times
+ok = fs.rmdir(path)                 ; Remove empty directory
+
+; Standard input
+line = fs.get-line()                ; Read one line from stdin (?str, nil=EOF)
+
+; Convenience wrappers (Nolang-implemented in fs.no, call builtins internally)
+content = fs.read-str(path)          ; Read entire file as ?str (nil=empty, err=failure)
+content = fs.read-bytes(path)        ; Read entire file as ?[]byte (nil=empty, err=failure)
+ok = fs.write-str(path, data)        ; Write string to file (overwrite), returns ?bool
+ok = fs.write-bytes(path, data)      ; Write []byte to file (overwrite), returns ?bool
+
+; embed: compile-time embedded filesystem (initialized by #{embed='dir/path'})
+;   #{embed='../frontend/dist'}
+;   DIST fs.embed
+;   data = DIST.read('index.html')   ; Read embedded file, returns ([]byte, bool)
+;   ok = DIST.exists('css/style.css') ; Check if embedded file exists
+embed {
+    count i64
+    paths str                        ; All paths concatenated (\0 separated)
+    pathStarts []i64                 ; Start offset of each path in paths
+    pathLens []i64                   ; Length of each path
+    blob []byte                      ; All file contents concatenated
+    dataStarts []i64                 ; Start offset of each file in blob
+    dataLens []i64                   ; Length of each file
+}
+
+; Windows-specific (only available on win-amd64/win-arm64)
+bufptr = fs.win-find-first-file(path) ; FindFirstFileA, returns handle (0=failure)
+name = fs.win-find-next-file(bufptr)  ; FindNextFileA, returns (name, ok)
+ok = fs.win-find-close(bufptr)        ; FindClose
+
+; open() flag constants (platform-specific, shown for macOS)
+O-RDONLY = 0
+O-WRONLY = 1
+O-RDWR = 2
+O-CREAT = 512       ; macOS=512, Linux=64, Windows=256
+O-TRUNC = 1024      ; macOS=1024, Linux=512, Windows=512
+O-APPEND = 8        ; macOS=8, Linux=1024, Windows=8
+O-EXCL = 2048       ; macOS=2048, Linux=128, Windows=1024
 ```
 
 ### env — Environment Variables (Simplified Wrapper)
@@ -1268,6 +1358,40 @@ yes = l.empty()
 yes = l.full()
 ```
 
+### collection/map — Generic Dynamic Hash Map
+
+Generic dynamic-capacity hash map, using vec fields for keys/vals/occ. Supports str keys (hashmap-str-tmpl), int keys (hashmap-int-tmpl), and bool keys (hashmap-bool-tmpl). Initial capacity 16, auto-rehash when load factor > 0.75:
+
+```no
+m = hashmap-str-tmpl{}
+m.init()
+m.put('key', val)                   ; Insert or update
+v = m.get('key')                    ; Lookup (?v, nil=not found)
+yes = m.contains('key')             ; Check whether key exists
+m.remove('key')                     ; Delete key
+m.clear()
+n = m.len()
+yes = m.is-empty()
+m.for-each(key, val)                ; Traverse all entries
+```
+
+### collection/static-hashmap — Generic Fixed-capacity Hash Map
+
+Generic fixed-capacity hash map (256 slots for str/int, 2 slots for bool), using linear probing and FNV-1a hashing. Recommended ≤ 192 entries (load factor ≤ 0.75):
+
+```no
+m = static-hashmap-str-tmpl{}
+m.init()
+m.put('key', val)                   ; Insert or update
+v = m.get('key')                    ; Lookup (?v, nil=not found)
+yes = m.contains('key')             ; Check whether key exists
+m.remove('key')                     ; Delete key
+m.clear()
+n = m.len()
+yes = m.is-empty()
+m.for-each(key, val)                ; Traverse all entries
+```
+
 ---
 
 ## Database
@@ -1347,6 +1471,29 @@ n = csv.parse-line(s, sn, fields, max)             ; Parse one line
 out-n = csv.encode-field(field, fn, out)           ; Encode field
 ```
 
+### encoding/pem — PEM Encoding/Decoding (RFC 7468)
+
+PEM (Privacy-Enhanced Mail) format encoding/decoding, widely used for X.509 certificates, RSA/ECDSA keys, etc.:
+
+```no
+; Constants
+PEM-LINE-LEN = 64                    ; Max Base64 characters per line
+
+; Struct
+pem-block {
+    label str                         ; PEM label (e.g. 'CERTIFICATE', 'RSA PRIVATE KEY')
+    data []byte                       ; Raw binary data
+}
+
+; Encoding
+pem-str = pem.pem-encode(label, data)              ; Encode raw bytes to PEM string
+
+; Decoding
+result = pem.pem-decode(pem-str)                    ; Decode PEM string (?pem-block)
+;   ok -> result.label, result.data
+;   nil -> invalid format
+```
+
 ---
 
 ## Archives
@@ -1413,6 +1560,41 @@ out = e.extract()
 out = gzip.gzip-compress(data)                      ; zlib compression
 out = gzip.gzip-decompress(data)                    ; zlib decompression
 out = gzip.inflate-decompress(data, out-size)       ; Raw DEFLATE decompression (ZIP method 8)
+```
+
+### archive/bzip2 — BZIP2 Decompression (Pure Nolang)
+
+Pure Nolang implementation of BZIP2 decompression, including BWT inverse transform, MTF inverse transform, Huffman decoding, and RLE decoding:
+
+```no
+out = bzip2.bzip2-decompress(data)                  ; Decompress .bz2 data
+```
+
+### archive/xz — XZ/LZMA Decompression (Pure Nolang)
+
+Pure Nolang implementation of LZMA2 decompression, supporting both .xz container format and legacy .lzma format:
+
+```no
+out = xz.xz-decompress(data)                        ; Decompress .xz data
+out = xz.lzma-decompress(data)                      ; Decompress legacy .lzma data
+```
+
+### archive/zlib — zlib Compression/Decompression (RFC 1950, Pure Nolang)
+
+Pure Nolang implementation of RFC 1950 zlib compression and decompression, using stored blocks (BTYPE=00) for compression and supporting full DEFLATE for decompression:
+
+```no
+out = zlib.zlib-compress(data)                      ; Compress to zlib stream
+out = zlib.zlib-decompress(data)                    ; Decompress zlib stream (returns []byte, ok bool)
+sum = zlib.adler-32(data, n)                        ; Adler-32 checksum
+```
+
+### archive/zstd — Zstandard Decompression (Pure Nolang)
+
+Pure Nolang implementation of Zstandard (zstd) decompression, including FSE decoding, Huffman decoding, LZ77 sequence decoding, and Zstandard frame format parsing:
+
+```no
+out = zstd.zstd-decompress(data)                    ; Decompress .zst data
 ```
 
 ---
@@ -1725,7 +1907,73 @@ json.set-key(v json-value, key, val)    ; Set object property
 
 ---
 
+## Async
+
+### async — Coroutines / Async Tasks and Cancellation
+
+Nolang provides a cooperative, single-threaded, stackless async coroutine model:
+
+```no
+; Await an -async function (can suspend current task within a coroutine)
+r = awy f-async(args)
+
+; Start an -async function as a background task, returns an opaque task handle (i8*)
+h = run f-async(args)
+
+; Await a background task
+r = awy h
+
+; Cancellation primitives
+async-cancel(h)                     ; Cancel task h (sets cancelled flag, returns void)
+yes = async-cancelled()              ; Check if current task has been cancelled (returns bool)
+```
+
+:::note
+Cancellation is cooperative: long-blocking calls (e.g. a network request) cannot be force-interrupted. After `async-cancel` sets the flag, the task stops at the next cooperative checkpoint (`async-cancelled()` call or next event loop dispatch). Cancellation is "timely" not "instantaneous" — this is inherent to cooperative scheduling.
+:::
+
+---
+
+## Global
+
+### global — Global Built-in Functions
+
+Declares built-in functions that can be called without a module prefix. Only the following 6 functions may be called without a module name; all other cross-module calls require a module prefix (e.g. `fs.read`, `os.exit`):
+
+```no
+; Capacity/length constructors (type inferred from left-hand side)
+s str = with-cap(256)               ; Pre-allocate 256-byte string (len=0)
+v []i64 = with-cap(100)             ; Pre-allocate 100-element slice (len=0)
+s str = with-len(10)               ; Create string of length 10
+v []i64 = with-len(100)            ; Create slice of length 100
+v []i64 = with-cap-len(200, 100)   ; Capacity 200, length 100
+
+; Also available as methods on str and vec:
+s str = ''.with-cap(256)
+s str = ''.with-len(10)
+s str = ''.with-len-cap(10, 256)
+v []i64 = [].with-cap(100)
+v []i64 = [].with-len(100)
+v []i64 = [].with-len-cap(100, 200)
+
+; Output/formatting (named format strings {name:spec})
+print('hello {name}')              ; Output to stdout with newline
+eprint('error: {msg}')             ; Output to stderr with newline
+s = format('x={x}')               ; Returns formatted string (no newline)
+```
+
+---
+
 ## Others
+
+### magic — File Type Detection
+
+Simplified file type detection based on file extension and magic bytes (no libmagic dependency). Checks extension first, then magic bytes:
+
+```no
+kind = magic.detect-type('/path/to/file')    ; Returns type string
+;   e.g. 'PNG image', 'ELF executable', 'ASCII text', 'directory', 'unknown'
+```
 
 ### unicode — Unicode Support
 
@@ -1893,6 +2141,9 @@ leave {
 | stack               | Core   | Stack (struct)                               |
 | regexp              | Core   | Regular expressions                          |
 | process             | Core   | Process operations                           |
+| async              | Core   | Async coroutines/cancellation                |
+| global             | Core   | Global built-in functions                    |
+| magic              | Core   | File type detection                          |
 | unicode             | Core   | Unicode documentation                        |
 | uuid                | Core   | UUID v4                                      |
 | bigint              | Core   | Arbitrary precision integer                  |
@@ -1922,9 +2173,14 @@ leave {
 | encoding/hex        | Submodule | Hexadecimal encoding/decoding           |
 | encoding/base64     | Submodule | Base64 encoding/decoding                |
 | encoding/csv        | Submodule | CSV parsing                             |
+| encoding/pem        | Submodule | PEM encoding/decoding (RFC 7468)         |
 | archive/tar         | Submodule | TAR archive                             |
 | archive/zip         | Submodule | ZIP archive                             |
 | archive/gzip        | Submodule | GZIP compression                        |
+| archive/bzip2       | Submodule | BZIP2 decompression                     |
+| archive/xz          | Submodule | XZ/LZMA decompression                   |
+| archive/zlib        | Submodule | zlib compression (RFC 1950)              |
+| archive/zstd        | Submodule | Zstandard decompression                 |
 | map/linked-hash-map | Submodule | Ordered hash map                        |
 | map/hash-set        | Submodule | i64 hash set                            |
 | map/str-map         | Submodule | str→str hash map                        |
@@ -1934,6 +2190,8 @@ leave {
 | collection/queue    | Submodule | Generic queue                           |
 | collection/arr-stack| Submodule | Generic stack                           |
 | collection/link     | Submodule | Generic doubly linked list              |
+| collection/map      | Submodule | Generic dynamic hash map                |
+| collection/static-hashmap | Submodule | Generic fixed-capacity hash map   |
 | database/sql        | Submodule | Database access interface               |
 | hash/aes            | Submodule | AES-128 encryption/decryption           |
 | hash/aes-128-enc    | Submodule | AES-128 encryption                      |

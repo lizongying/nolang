@@ -5,10 +5,10 @@
 ; http-put / http-delete / http-patch 便捷函數、http-do-req、
 ; http.response.parse-headers / get-header。
 
-; # std/net/http
+# std/net/http
 
 ; ── 測試 1: http-request 結構體與 init ──
-req http-request = http-request {}
+req = http.request {}
 req.init('PUT', 'http://example.com/api/item', '{"name":"test"}')
 {
     req.method == 'PUT' -> print('ok: http-request.init method')
@@ -46,7 +46,7 @@ ok2 bool = req.add-header('Authorization', 'Bearer token123')
 }
 
 ; ── 測試 3: http.response 擴充欄位 ──
-r http.response = http.response {}
+r = http.response {}
 r.status-code = 200
 r.status-text = 'OK'
 r.headers = 'Content-Type: text/html\r\nContent-Length: 13'
@@ -123,7 +123,7 @@ resp3: {
 }
 
 ; ── 測試 9: http-do-req（自訂標頭）
-req2 http-request = http-request {}
+req2 = http.request {}
 req2.init('POST', 'http://example.com/api/auth', '{"user":"admin"}')
 req2.add-header('Content-Type', 'application/json')
 req2.add-header('X-Request-Id', 'abc123')

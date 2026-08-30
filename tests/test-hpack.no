@@ -227,10 +227,7 @@ test-decode-headers = () {
     enc2 = t.encode-header(':path', '/')
 
     ; 合併
-    i <- [0..enc2.len): {
-        enc-out[enc-out.len + i] = enc2[i]
-    }
-    enc-out.len = enc-out.len + enc2.len
+    enc-out = enc-out - enc2
 
     ; 解碼
     names [128]str

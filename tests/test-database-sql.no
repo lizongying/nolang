@@ -3,10 +3,8 @@
 ; 測試 open/exec/query/scan/prepare/bind 完整流程。
 ; 需系統安裝 libsqlite3（macOS/Linux 通常已內建）。
 
-# /example/sqlite-driver/src/sqlite
-
 ; 測試 1: 開啟記憶體資料庫
-d db = sqlite.open(':memory:')
+d db = fs.open(':memory:')
 d.handle == 0 -> {
     print('fail: open database')
     return

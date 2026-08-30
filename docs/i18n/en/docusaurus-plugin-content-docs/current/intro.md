@@ -56,3 +56,7 @@ user.greet = () {
 
 u.greet()
 ```
+
+## Projects
+
+- [notools](https://github.com/lizongying/notools) — A collection of common Unix command-line tools implemented in Nolang, including cat, ls, grep, wc, head, tail, and more. Demonstrates Nolang's real-world system programming capabilities.

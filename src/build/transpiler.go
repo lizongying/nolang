@@ -1767,17 +1767,20 @@ func (t *Transpiler) CompileTarget(source string, _ Target) (string, error) {
 				} else {
 					// 如果主程序已有同名變量，跳過以避免衝突
 					if !mainVarNames[ls.Name.Value] {
-						// 跨模組同名常量去重（與自動載入路徑同理）
 						isConst := checker.IsConstantExpr(ls.Value)
-						if isConst && mergedGlobalConsts[ls.Name.Value] {
+						// 跨模組同名常量去重（與自動載入路徑同理）
+						// 例外：帶平台註解的常量不參與去重，由 FilterByPlatform 選取。
+						platformKeys := modProg.Sem.PlatformKeysOf(ls)
+						hasPlatformAnnotation := len(platformKeys) > 0
+						if isConst && mergedGlobalConsts[ls.Name.Value] && !hasPlatformAnnotation {
 							continue
 						}
-						if isConst {
+						if isConst && !hasPlatformAnnotation {
 							mergedGlobalConsts[ls.Name.Value] = true
 						}
 						merged.Statements = append(merged.Statements, ls)
 						stmtOwner[ls] = useModShort
-						if isConst && checker.MatchesTargetPlatform(modProg.Sem.PlatformKeysOf(ls), t.targetGoos, t.targetGoarch) {
+						if isConst && checker.MatchesTargetPlatform(platformKeys, t.targetGoos, t.targetGoarch) {
 							moduleConstants[ls.Name.Value] = ls.Value
 						}
 					}
@@ -1910,19 +1913,24 @@ func (t *Transpiler) CompileTarget(source string, _ Target) (string, error) {
 			if ls, ok := ms.(*parser.LetStatement); ok && ls.Name != nil {
 				// 如果主程序已有同名變量，跳過以避免衝突
 				if !mainVarNames[ls.Name.Value] {
+					isConst := checker.IsConstantExpr(ls.Value)
 					// 跨模組同名常量去重：多個 std 模組可能定義相同常量
 					// （如 FNV-OFFSET 在 map.no 和 static-hashmap.no 中都有定義）。
 					// 僅保留第一個，後續重複的跳過，避免 ValidateDuplicateVars 報錯。
-					isConst := checker.IsConstantExpr(ls.Value)
-					if isConst && mergedGlobalConsts[ls.Name.Value] {
+					// 例外：帶平台註解的常量（如 #{mac-arm64} O-CREAT = 512）
+					// 不參與去重，因為不同平台變體需要共存，由 FilterByPlatform
+					// 在 codegen 階段選取匹配平台的定義。
+					platformKeys := modProg.Sem.PlatformKeysOf(ls)
+					hasPlatformAnnotation := len(platformKeys) > 0
+					if isConst && mergedGlobalConsts[ls.Name.Value] && !hasPlatformAnnotation {
 						continue
 					}
-					if isConst {
+					if isConst && !hasPlatformAnnotation {
 						mergedGlobalConsts[ls.Name.Value] = true
 					}
 					merged.Statements = append(merged.Statements, ls)
 					stmtOwner[ls] = info.ShortName
-					if isConst && checker.MatchesTargetPlatform(modProg.Sem.PlatformKeysOf(ls), t.targetGoos, t.targetGoarch) {
+					if isConst && checker.MatchesTargetPlatform(platformKeys, t.targetGoos, t.targetGoarch) {
 						moduleConstants[ls.Name.Value] = ls.Value
 					}
 				}

@@ -555,3 +555,9 @@ workspace/               ← workspace directory (workspace.jsonc lives here)
 ```
 
 > **Note**: Import paths are resolved relative to the **workspace root** (directory containing `workspace.jsonc`), not the package's `package.jsonc` directory. If a nested `package.jsonc` exists in a subdirectory within a package, `LoadPackage` searches upward and uses the nearest `package.jsonc` as the package root, but import resolution is uniformly based on the workspace root.
+
+---
+
+## Projects
+
+- [notools](https://github.com/lizongying/notools) — A collection of common Unix command-line tools implemented in Nolang, including cat, ls, grep, wc, head, tail, and more. Demonstrates Nolang's real-world system programming capabilities.

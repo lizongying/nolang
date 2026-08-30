@@ -56,3 +56,7 @@ user.greet = () {
 
 u.greet()
 ```
+
+## 應用案例
+
+- [notools](https://github.com/lizongying/notools) — 使用 Nolang 語言實現的 Unix 常用命令行工具集，涵蓋 cat、ls、grep、wc、head、tail 等經典工具，展示了 Nolang 在系統編程領域的實際應用能力。

@@ -99,6 +99,72 @@ O-EXCL = 1024
 	})
 }
 
+// TestPlatformVariantMultiKey verifies that multiple platform-specific
+// constants with the same name (e.g. #{mac-arm64} O-APPEND = 8 and
+// #{linux-amd64} O-APPEND = 1024) are NOT deduplicated by FilterByPlatform.
+// Each platform variant must survive filtering so that the correct value
+// is retained for the target platform.
+func TestPlatformVariantMultiKey(t *testing.T) {
+	src := `#{mac-amd64}
+O-APPEND = 8
+
+#{mac-arm64}
+O-APPEND = 8
+
+#{linux-amd64}
+O-APPEND = 1024
+
+#{linux-arm64}
+O-APPEND = 1024
+
+#{win-amd64}
+O-APPEND = 8
+
+#{win-arm64}
+O-APPEND = 8
+
+#{wasi-wasm32}
+O-APPEND = 8
+`
+	l := lexer.New(src)
+	p := parser.New(l)
+	prog := p.ParseProgram()
+	if len(p.Errors()) > 0 {
+		t.Fatalf("parse errors: %v", p.Errors())
+	}
+
+	// Before filtering: all 7 platform variants should be present
+	if len(prog.Statements) != 7 {
+		t.Fatalf("expected 7 statements before filtering, got %d", len(prog.Statements))
+	}
+
+	// After filtering for darwin/arm64: only the mac-arm64 variant should remain
+	filtered := FilterByPlatform(prog.Sem, prog.Statements, "darwin", "arm64")
+	if len(filtered) != 1 {
+		t.Fatalf("expected 1 statement for darwin/arm64, got %d", len(filtered))
+	}
+	letStmt, ok := filtered[0].(*parser.LetStatement)
+	if !ok {
+		t.Fatalf("expected *LetStatement, got %T", filtered[0])
+	}
+	if intLit, ok := letStmt.Value.(*parser.IntegerLiteral); !ok || intLit.Value != 8 {
+		t.Errorf("expected mac-arm64 variant with value 8, got %v", letStmt.Value)
+	}
+
+	// After filtering for linux/amd64: only the linux-amd64 variant should remain
+	filtered = FilterByPlatform(prog.Sem, prog.Statements, "linux", "amd64")
+	if len(filtered) != 1 {
+		t.Fatalf("expected 1 statement for linux/amd64, got %d", len(filtered))
+	}
+	letStmt, ok = filtered[0].(*parser.LetStatement)
+	if !ok {
+		t.Fatalf("expected *LetStatement, got %T", filtered[0])
+	}
+	if intLit, ok := letStmt.Value.(*parser.IntegerLiteral); !ok || intLit.Value != 1024 {
+		t.Errorf("expected linux-amd64 variant with value 1024, got %v", letStmt.Value)
+	}
+}
+
 // TestTargetDatalayoutAndTriple 驗證 targetDatalayoutAndTriple 對 6 個原生平台
 // + wasi/wasm32 回傳正確的 datalayout 與 triple，以及空字串回退到歷史預設。
 func TestTargetDatalayoutAndTriple(t *testing.T) {

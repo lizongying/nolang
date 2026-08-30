@@ -145,7 +145,9 @@ make help       # 查看所有構建目標
 
 - [Benchmarks Game — Nolang vs C vs Rust 性能對比報告](https://github.com/lizongying/no-benchmarks/results/report.md)
 
-- [Unix 常用命令行工具集，使用 Nolang 语言实现。](https://github.com/lizongying/notools)
+- [notools — 使用 Nolang 實現的 Unix 命令行工具集](https://github.com/lizongying/notools)
+
+  Nolang 應用案例：使用 Nolang 語言實現的 Unix 常用命令行工具集，涵蓋 cat、ls、grep、wc、head、tail 等經典工具，展示了 Nolang 在系統編程領域的實際應用能力。
 
 ---
 

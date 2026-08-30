@@ -511,7 +511,7 @@ ok = os.win-wsa-startup()              // Initialize Winsock 2.2 (Windows only)
 
 #### fs — File System Tools
 
-Wraps open files with the `file` struct and paths with the `path` struct. Defines the `fd` newtype (`fd = i64`) to prevent file descriptors from being confused with arbitrary `i64` values.
+Wraps open files with the `file` struct and paths with the `path` struct. Defines the `fd` newtype (`fd = i64`) to prevent file descriptors from being confused with arbitrary `i64` values. Also provides an `embed` struct for compile-time embedded filesystems (via `#{embed='dir/path'}`).
 
 ```no
 // fd newtype (underlying i64, type-distinct from i64)
@@ -559,29 +559,35 @@ file-opts {
     truncate bool
     append bool
 }
-f = fs.open(path, opts)             // Open file, returns nil on failure
+f = fs.open(path, opts)             // Open file, returns ?file on success, err on failure
 
 // file methods
-read-n = f.read(buf, n)          // Read up to n bytes
-line = f.read-line()              // Read one line (?str, nil=EOF)
-content, n = f.read-all()        // Read entire file
-written = f.write(data, n)       // Write n bytes
-ok = f.write-all(data, n)        // Write all (overwrite)
-ok = f.append(data, n)           // Append data
-ok = f.copy-to(dst-path)         // Copy to target path
-ok = f.close()                   // Close (standard files are not auto-closed)
-yes = f.is-open()                // Is open
-sz = f.size()                    // File size
+read-n = f.read(buf, n)              // Read up to n bytes into buf
+line = f.read-line()                  // Read one line (?str, nil=EOF or error)
+content = f.read-bytes()             // Read entire file as ?[]byte (nil=empty, err=failure)
+content = f.read-str()               // Read entire file as ?str (nil=empty, err=failure)
+written = f.write(data, n)           // Write n bytes from data
+ok = f.write-str(data)               // Write string to file (overwrite), returns ?bool
+ok = f.write-bytes(data)             // Write []byte to file (overwrite), returns ?bool
+ok = f.append(data, n)               // Append data to file
+ok = f.copy-to(dst-path)             // Copy file to target path
+ok = f.close()                       // Close (standard files stdin/stdout/stderr are not closed)
+yes = f.is-open()                    // Check if file is open (fd >= 0)
+sz = f.size()                        // File size via fstat(fd), eliminates TOCTOU
 
 // Built-in functions (registered in src/builtin/os.go, documented as comments in fs.no)
 // These are ForwardFunc/CLibCall builtins — no .no implementation needed.
 
-// File read/write
-data = fs.read-file(path)           // Read entire file as []byte (empty on error)
-ok = fs.write-file(path, data)      // Write []byte to file (overwrite). Returns true on success
-fd = fs.open-read(path)             // Open read-only
-fd = fs.open-write(path)            // Open for writing (O_CREAT|O_TRUNC, 0644)
-fd = fs.open-file(path, flags, mode) // Open with custom flags
+// File read/write (deprecated, prefer read-bytes/write-bytes for error handling)
+// [deprecated] read-file: 改用 read-bytes（支援錯誤處理、TOCTOU 安全、循環 read）
+//   空切片表示失敗，無法區分空檔案與錯誤
+// [deprecated] write-file: 改用 write-bytes（支援錯誤處理、循環 write）
+//   無法區分部分寫入與完全失敗
+data = fs.read-file(path)           // [deprecated] Read entire file as []byte (empty on error, cannot distinguish empty from failure)
+ok = fs.write-file(path, data)      // [deprecated] Write []byte to file (overwrite). Returns true on success
+fd = fs.open-read(path)             // Open read-only (O_RDONLY)
+fd = fs.open-write(path)            // Open for writing (O_WRONLY|O_CREAT|O_TRUNC, 0644)
+fd = fs.open-file(path, flags, mode) // Open with custom flags and permissions
 n = fs.read(fd, buf, n)             // Low-level read from fd into buf
 written = fs.write(fd, data, n)     // Low-level write to fd
 ok = fs.close(fd)                   // Low-level close
@@ -597,13 +603,14 @@ ok = fs.copy-file(src, dst)         // Copy file content
 ok = fs.exists(path)                // Check if path exists (follows symlinks)
 ok = fs.is-file(path)               // Check if regular file
 ok = fs.is-dir(path)                // Check if directory
-sz = fs.stat-size(path)             // Get file size (returns i64, may be 0)
-sz = fs.file-size(path)             // Same as stat-size
+sz = fs.stat-size(path)             // Get file size (returns ?i64)
+sz = fs.file-size(path)             // Same as stat-size (returns ?i64)
+sz = fs.fstat-size(fd)              // Get file size via fstat(fd), eliminates TOCTOU (returns ?i64)
 mode = fs.stat-mode(path)           // Get file mode (st_mode, returns i64)
-uid = fs.stat-uid(path)             // Get file owner uid
-gid = fs.stat-gid(path)             // Get file group gid
-mtime = fs.stat-mtime(path)         // Get file modification time (Unix seconds)
-ok = fs.lstat(path)                 // Get symlink info (does not follow)
+uid = fs.stat-uid(path)             // Get file owner uid (returns i64)
+gid = fs.stat-gid(path)             // Get file group gid (returns i64)
+mtime = fs.stat-mtime(path)         // Get file modification time (Unix seconds, returns i64)
+ok = fs.lstat(path)                 // Get symlink info (does not follow link target)
 
 // Directory operations
 dirp = fs.open-dir(path)             // Open directory (returns handle, 0 on failure)
@@ -635,9 +642,24 @@ line = fs.get-line()                // Read one line from stdin (?str, nil=EOF)
 
 // Convenience wrappers (Nolang-implemented in fs.no, call builtins internally)
 content = fs.read-str(path)          // Read entire file as ?str (nil=empty, err=failure)
-content = fs.read-bytes(path)        // Read entire file as ?[]byte
-ok = fs.write-str(path, data)        // Write string to file (overwrite)
-ok = fs.write-bytes(path, data)      // Write []byte to file (overwrite)
+content = fs.read-bytes(path)        // Read entire file as ?[]byte (nil=empty, err=failure)
+ok = fs.write-str(path, data)        // Write string to file (overwrite), returns ?bool
+ok = fs.write-bytes(path, data)      // Write []byte to file (overwrite), returns ?bool
+
+// embed: compile-time embedded filesystem (initialized by #{embed='dir/path'})
+//   #{embed='../frontend/dist'}
+//   DIST fs.embed
+//   data = DIST.read('index.html')   // Read embedded file, returns ([]byte, bool)
+//   ok = DIST.exists('css/style.css') // Check if embedded file exists
+embed {
+    count i64
+    paths str                        // All paths concatenated (\0 separated)
+    pathStarts []i64                 // Start offset of each path in paths
+    pathLens []i64                   // Length of each path
+    blob []byte                      // All file contents concatenated
+    dataStarts []i64                 // Start offset of each file in blob
+    dataLens []i64                   // Length of each file
+}
 
 // Windows-specific (only available on win-amd64/win-arm64)
 bufptr = fs.win-find-first-file(path) // FindFirstFileA, returns handle (0=failure)
