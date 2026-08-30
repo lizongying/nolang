@@ -818,7 +818,15 @@ func (p *Parser) parseLetStatement() Statement {
 		}
 	}
 
-	if stmt.Type == nil && slices.Contains([]string{"byte", "bool", "char", "str", "i8", "i16", "i32", "i64", "u8", "u16", "u32", "u64", "f32", "f64"}, stmt.Name.Value) {
+	// If variable name matches a builtin type name (e.g. i64 i64, i8 i8 = 3),
+	// only set the implicit type when there is NO explicit type annotation
+	// following (i.e. peek/current is not an IDENT type). This allows
+	// `i64 i64` (redundant explicit annotation) and `i8 i8 = 3` to parse
+	// correctly — the second IDENT is consumed as a type annotation below.
+	if stmt.Type == nil &&
+		p.peekToken.Type != lexer.IDENT &&
+		p.currentToken.Type != lexer.IDENT &&
+		slices.Contains([]string{"byte", "bool", "char", "str", "i8", "i16", "i32", "i64", "i128", "u8", "u16", "u32", "u64", "u128", "f32", "f64"}, stmt.Name.Value) {
 		stmt.Type = &NamedType{
 			Token: nameToken,
 			Value: nameToken.Literal,

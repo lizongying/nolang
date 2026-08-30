@@ -85,12 +85,14 @@ if goos == "windows" {
 		// routed to nolang.win_* stubs (see writeWindowsStubs).
 		sb.WriteString("declare i32 @_unlink(i8*)\n")
 		sb.WriteString("declare i32 @_stat64(i8*, i8*)\n")
+		sb.WriteString("declare i32 @_fstat64(i32, i8*)\n")
 	} else if goos == "wasi" {
 		// WASI: single-user — skip chown/getuid/getgid (no concept of users).
 		sb.WriteString("declare i32 @mkdir(i8*, i32)\n")
 		sb.WriteString("declare i32 @chmod(i8*, i32)\n")
 		sb.WriteString("declare i32 @unlink(i8*)\n")
 		sb.WriteString("declare i32 @stat(i8*, i8*)\n")
+		sb.WriteString("declare i32 @fstat(i32, i8*)\n")
 	} else {
 		sb.WriteString("declare i32 @mkdir(i8*, i32)\n")
 		sb.WriteString("declare i32 @chmod(i8*, i32)\n")
@@ -99,6 +101,7 @@ if goos == "windows" {
 		sb.WriteString("declare i32 @getgid()\n")
 		sb.WriteString("declare i32 @unlink(i8*)\n")
 		sb.WriteString("declare i32 @stat(i8*, i8*)\n")
+		sb.WriteString("declare i32 @fstat(i32, i8*)\n")
 	}
 	sb.WriteString("declare i32 @rename(i8*, i8*)\n")
 	if goos == "windows" {
@@ -1218,6 +1221,8 @@ func libcFnFor(goos, posixName string) string {
 		switch posixName {
 		case "stat":
 			return "_stat64"
+		case "fstat":
+			return "_fstat64"
 		case "waitpid":
 			return "_cwait"
 		case "open", "read", "write", "close", "mkdir", "chmod", "unlink",

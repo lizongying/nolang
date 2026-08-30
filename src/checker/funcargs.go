@@ -827,6 +827,21 @@ func isArgTypeCompatible(expectedType, argType string, arg parser.Expression) bo
 	if argType == expectedType {
 		return true
 	}
+	// Map type ↔ hashmap specialization compatibility:
+	// [K]V (map type syntax) and hashmap-K-V (specialized struct name)
+	// refer to the same underlying type. The type checker sees the
+	// variable type as [K]V but function signatures use hashmap-K-V.
+	mapHashExpected := checkerMapTypeToHashmapName(expectedType)
+	mapHashArg := checkerMapTypeToHashmapName(argType)
+	if mapHashExpected != "" && mapHashExpected == mapHashArg {
+		return true
+	}
+	if mapHashExpected != "" && mapHashExpected == argType {
+		return true
+	}
+	if mapHashArg != "" && mapHashArg == expectedType {
+		return true
+	}
 	// str 和 []byte 互通：底層都是位元組序列，標準庫中常將 str 字面量
 	// 傳給 []byte 參數（如 sha256('') ），代碼生成器正確處理轉換。
 	if (expectedType == "[]byte" && argType == "str") ||
@@ -1595,4 +1610,38 @@ func baseTypeNameForMethod(typeStr string) string {
 		return "array"
 	}
 	return typeStr
+}
+
+// checkerKeyCategory 根據鍵型別名稱回傳其分類："str" / "int" / "bool"；
+// 不支援的鍵型別回傳空字串。與 build.keyCategory 邏輯一致。
+func checkerKeyCategory(keyType string) string {
+	switch keyType {
+	case "str":
+		return "str"
+	case "bool":
+		return "bool"
+	case "i8", "i16", "i32", "i64", "i128", "u8", "u16", "u32", "u64", "u128":
+		return "int"
+	default:
+		return ""
+	}
+}
+
+// checkerMapTypeToHashmapName 將 map 型別字串（如 "[str]i64"）轉換為特化結構名稱
+// （如 "hashmap-str-i64"）。若輸入不是 map 型別，回傳空字串。
+// 與 build.mapTypeToHashmapName 邏輯一致，供 checker 包獨立使用（避免循環依賴）。
+func checkerMapTypeToHashmapName(mapType string) string {
+	if !strings.HasPrefix(mapType, "[") {
+		return ""
+	}
+	closeBracket := strings.IndexByte(mapType, ']')
+	if closeBracket <= 1 {
+		return ""
+	}
+	keyType := mapType[1:closeBracket]
+	if checkerKeyCategory(keyType) == "" {
+		return ""
+	}
+	valueType := mapType[closeBracket+1:]
+	return "hashmap-" + keyType + "-" + parser.SanitizeLLVMTypeName(valueType)
 }

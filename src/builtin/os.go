@@ -457,6 +457,16 @@ func init() {
 		ForwardFunc:  "stat-size",
 	})
 
+	// fstat-size: get file size via fstat(fd) — uses open fd, no TOCTOU
+	BuiltinMethodList = append(BuiltinMethodList, BuiltinMethod{
+		ReceiverType: ReceiverGlobal,
+		MethodName:   "fstat-size",
+		Params:       []parser.Type{parser.TypeFd},
+		Return:       []parser.Type{parser.TypeI64, parser.TypeBool}, // size, ok
+		Doc:          "Get the size of an open file via fstat(fd) (returns size, ok)",
+		ForwardFunc:  "fstat-size",
+	})
+
 	// stat-mode: get file mode (st_mode) via stat
 	BuiltinMethodList = append(BuiltinMethodList, BuiltinMethod{
 		ReceiverType: ReceiverGlobal,

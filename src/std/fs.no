@@ -158,6 +158,12 @@
 ; stat-size = (p str) (size ?i64) {  // LLVM: call @stat → st-size
 ; }
 
+; build-in (ForwardFunc: fstat-size)
+; fstat-size: 取得已開啟檔案的大小（用 fstat(fd)，消除 TOCTOU）
+; fd: 已開啟的檔案描述符
+; fstat-size = (fd fd) (size ?i64) {  // LLVM: call @fstat(fd) → st-size
+; }
+
 ; build-in (ForwardFunc: read-file)
 ; read-file: 讀取整個檔案內容為 []byte
 ; read-file = (p str) (content []byte) {  // LLVM: stat+open+malloc+read+close → %vec
@@ -484,9 +490,9 @@ file.is-open = () (yes bool) {
     yes = .fd >= 0
 }
 
-; size: 取得開啟中檔案的大小（透過 .path 取得原始路徑）
+; size: 取得開啟中檔案的大小（透過 fstat(fd)，消除 TOCTOU）
 file.size = () (sz i64) {
-    sz = stat-size(.path)
+    sz = fstat-size(.fd)
 }
 
 ; read-str: 讀取整個檔案為字串
@@ -495,21 +501,15 @@ file.size = () (sz i64) {
 ;   nil     — 檔案為空
 ;   err     — 檔案未開啟或讀取失敗
 file.read-str = () (content ?str) {
-    .fd < 0 -> {
-        content = err('file not open')
-        return
+    b = .read-bytes()
+    b: {
+        err -> content = err(it)
+        nil -> return
+        -> content = it.to-str()
     }
-    s []byte = read-file(.path)
-    {
-        s.len == 0 -> {
-            content = nil
-            return
-        }
-    }
-    content = s.to-str()
 }
 
-; read-bytes: 讀取整個檔案為 []byte
+; read-bytes: 讀取整個檔案為 []byte（Rust 混合策略）
 ; 返回 content ?[]byte:
 ;   ok([]byte) — 成功，含檔案內容
 ;   nil        — 檔案為空
@@ -519,14 +519,29 @@ file.read-bytes = () (content ?[]byte) {
         content = err('file not open')
         return
     }
-    s []byte = read-file(.path)
-    {
-        s.len == 0 -> {
-            content = nil
-            return
-        }
+    ; 用 fstat(fd) 取得大小 — 消除 TOCTOU
+    size = fstat-size(.fd)
+    size == 0 -> {
+        content = nil
+        return
     }
-    content = s
+    ; 精確分配 buffer（len=size, cap=size）
+    buf []byte = with-len(size)
+    ; 循環 read 直到讀完或 EOF
+    total = 0
+    {
+        total >= size -> break
+        n = read(.fd, buf[total..], size - total)
+        n <= 0 -> break
+        total = total + n
+    } (total < size)
+    ; 截斷到實際讀取長度
+    buf.truncate(total)
+    total == 0 -> {
+        content = nil
+        return
+    }
+    content = buf
 }
 
 ; write-str: 將字串寫入檔案（覆寫整個檔案）
@@ -569,14 +584,21 @@ file.write-bytes = (data []byte) (ok ?bool) {
 ;   nil        — 檔案為空
 ;   err        — 讀取失敗
 read-bytes = (p str) (content ?[]byte) {
-    data []byte = read-file(p)
-    {
-        data.len == 0 -> {
-            content = nil
-            return
+    f = open(p, {
+        mode: read
+        perm: perm-644
+        excl: false
+        truncate: false
+        append: false
+    })
+    f: {
+        err -> content = err('open failed')
+        nil -> return
+        -> {
+            content = it.read-bytes()
+            it.close()
         }
     }
-    content = data
 }
 
 ; read-str: 讀取整個檔案為字串
@@ -586,14 +608,21 @@ read-bytes = (p str) (content ?[]byte) {
 ;   nil     — 檔案為空
 ;   err     — 讀取失敗
 read-str = (p str) (content ?str) {
-    data []byte = read-file(p)
-    {
-        data.len == 0 -> {
-            content = nil
-            return
+    f = open(p, {
+        mode: read
+        perm: perm-644
+        excl: false
+        truncate: false
+        append: false
+    })
+    f: {
+        err -> content = err('open failed')
+        nil -> return
+        -> {
+            content = it.read-str()
+            it.close()
         }
     }
-    content = data.to-str()
 }
 
 ; write-str: 將字串寫入檔案（覆寫）
@@ -603,9 +632,20 @@ read-str = (p str) (content ?str) {
 ;   ok(true) — 成功
 ;   err      — 寫入失敗
 write-str = (p str, data str) (ok ?bool) {
-    bytes []byte = data.to-bytes()
-    success = write-file(p, bytes)
-    success -> ok = true
+    f = open(p, {
+        mode: write
+        perm: perm-644
+        excl: false
+        truncate: false
+        append: false
+    })
+    f: {
+        err -> ok = err('open failed')
+        -> {
+            ok = it.write-str(data)
+            it.close()
+        }
+    }
 }
 
 ; write-bytes: 將 []byte 寫入檔案（覆寫）
@@ -615,8 +655,20 @@ write-str = (p str, data str) (ok ?bool) {
 ;   ok(true) — 成功
 ;   err      — 寫入失敗
 write-bytes = (p str, data []byte) (ok ?bool) {
-    success = write-file(p, data)
-    success -> ok = true
+    f = open(p, {
+        mode: write
+        perm: perm-644
+        excl: false
+        truncate: false
+        append: false
+    })
+    f: {
+        err -> ok = err('open failed')
+        -> {
+            ok = it.write-bytes(data)
+            it.close()
+        }
+    }
 }
 
 ; append: 追加資料到檔案末尾

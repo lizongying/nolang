@@ -1202,6 +1202,27 @@ func CollectDefinedVars(program *parser.Program) map[string]bool {
 		if ta, ok := stmt.(*parser.TypeAlias); ok {
 			definedVars[ta.Name] = true
 		}
+		// MultiAssignStatement targets (e.g. `a, b = func()`) define
+		// variables at the top level. Collect them so that after the
+		// transpiler rewrites MultiAssign to nested-call syntax
+		// (bar(a, b)), the targets are still recognized as defined.
+		if mas, ok := stmt.(*parser.MultiAssignStatement); ok {
+			for _, target := range mas.Targets {
+				if ident, ok := target.(*parser.Identifier); ok {
+					definedVars[ident.Value] = true
+				}
+			}
+		}
+	}
+	// Also pick up variables registered in the semantic context's
+	// DeclaredVars map. The transpiler registers MultiAssignStatement
+	// targets here before converting them to nested-call syntax, so
+	// the merged program (where MultiAssignStatement no longer exists)
+	// still has the variable names available.
+	if program.Sem != nil {
+		for name := range program.Sem.DeclaredVars {
+			definedVars[name] = true
+		}
 	}
 	return definedVars
 }

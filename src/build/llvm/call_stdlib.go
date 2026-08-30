@@ -917,6 +917,30 @@ func (g *Generator) callBuiltin(sb *strings.Builder, fnName string, hasArgs bool
 		return selReg
 	}
 
+	// fstat-size: 用 fstat(fd) 獲取已開啟檔案的大小（消除 TOCTOU）
+	if fnName == "fstat-size" && hasArgs {
+		a := evalArgs()
+		// 參數是 fd (i64)，需 trunc to i32 for fstat 的 int fd 參數
+		fdReg := g.tmpReg("fstat.fd")
+		statBuf := g.tmpReg("fstat.statbuf")
+		statRet := g.tmpReg("fstat.ret")
+		cmpReg := g.tmpReg("fstat.cmp")
+		sizeGEP := g.tmpReg("fstat.size")
+		sizeLoad := g.tmpReg("fstat.size.ld")
+		selReg := g.tmpReg("fstat.sel")
+		statL := g.statLayout()
+		if sb != nil {
+			sb.WriteString(fmt.Sprintf("%s%s = trunc i64 %s to i32\n", g.indent(), fdReg, a[0]))
+			sb.WriteString(fmt.Sprintf("%s%s = alloca i8, i64 %d\n", g.indent(), statBuf, statL.Size))
+			sb.WriteString(fmt.Sprintf("%s%s = call i32 @%s(i32 %s, i8* %s)\n", g.indent(), statRet, g.libcFn("fstat"), fdReg, statBuf))
+			sb.WriteString(fmt.Sprintf("%s%s = icmp eq i32 %s, 0\n", g.indent(), cmpReg, statRet))
+			sb.WriteString(fmt.Sprintf("%s%s = getelementptr i8, i8* %s, i64 %d\n", g.indent(), sizeGEP, statBuf, statL.SizeOff))
+			sb.WriteString(fmt.Sprintf("%s%s = load i64, i64* %s\n", g.indent(), sizeLoad, sizeGEP))
+			sb.WriteString(fmt.Sprintf("%s%s = select i1 %s, i64 %s, i64 0\n", g.indent(), selReg, cmpReg, sizeLoad))
+		}
+		return selReg
+	}
+
 	// stat-mode: 獲取文件模式 (st_mode)
 	if (fnName == "stat-mode") && hasArgs {
 		a := evalArgs()

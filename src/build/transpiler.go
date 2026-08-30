@@ -1678,6 +1678,12 @@ func (t *Transpiler) CompileTarget(source string, _ Target) (string, error) {
 	// 記錄已顯式導入的模組路徑，避免重複載入
 	explicitStdModules := make(map[string]bool)
 	moduleConstants := make(map[string]parser.Expression)
+	// mergedGlobalConsts tracks uppercase constant names already added to
+	// merged from any module (std or user). Prevents duplicate-declaration
+	// errors when multiple std modules define the same constant (e.g.
+	// FNV-OFFSET/FNV-PRIME in both collection/map.no and
+	// collection/static-hashmap.no). Only the first occurrence is kept.
+	mergedGlobalConsts := make(map[string]bool)
 	// typeOwner 記錄跨模組型別定義的歸屬（bareName → moduleShortName），
 	// 用於將導入模組的 struct/interface/enum 等型別定義加上模組前綴
 	// （如 result → sql.result），避免與主檔案變數或型別衝突。
@@ -1761,9 +1767,17 @@ func (t *Transpiler) CompileTarget(source string, _ Target) (string, error) {
 				} else {
 					// 如果主程序已有同名變量，跳過以避免衝突
 					if !mainVarNames[ls.Name.Value] {
+						// 跨模組同名常量去重（與自動載入路徑同理）
+						isConst := checker.IsConstantExpr(ls.Value)
+						if isConst && mergedGlobalConsts[ls.Name.Value] {
+							continue
+						}
+						if isConst {
+							mergedGlobalConsts[ls.Name.Value] = true
+						}
 						merged.Statements = append(merged.Statements, ls)
 						stmtOwner[ls] = useModShort
-						if checker.IsConstantExpr(ls.Value) && checker.MatchesTargetPlatform(modProg.Sem.PlatformKeysOf(ls), t.targetGoos, t.targetGoarch) {
+						if isConst && checker.MatchesTargetPlatform(modProg.Sem.PlatformKeysOf(ls), t.targetGoos, t.targetGoarch) {
 							moduleConstants[ls.Name.Value] = ls.Value
 						}
 					}
@@ -1872,6 +1886,14 @@ func (t *Transpiler) CompileTarget(source string, _ Target) (string, error) {
 		if explicitStdModules[path] {
 			continue
 		}
+		// Prevent loading the same module file twice: the same module can
+		// be referenced by both ShortName (e.g. "map") and ShortPath
+		// (e.g. "collection/map"), but they resolve to the same file
+		// (std/collection/map.no). Track by path, not by sp.
+		if loadedStd[path] {
+			continue
+		}
+		loadedStd[path] = true
 		use := &parser.UseStatement{Path: path, Function: ""}
 		modProg, err := t.resolveUse(use)
 		if err != nil {
@@ -1888,9 +1910,19 @@ func (t *Transpiler) CompileTarget(source string, _ Target) (string, error) {
 			if ls, ok := ms.(*parser.LetStatement); ok && ls.Name != nil {
 				// 如果主程序已有同名變量，跳過以避免衝突
 				if !mainVarNames[ls.Name.Value] {
+					// 跨模組同名常量去重：多個 std 模組可能定義相同常量
+					// （如 FNV-OFFSET 在 map.no 和 static-hashmap.no 中都有定義）。
+					// 僅保留第一個，後續重複的跳過，避免 ValidateDuplicateVars 報錯。
+					isConst := checker.IsConstantExpr(ls.Value)
+					if isConst && mergedGlobalConsts[ls.Name.Value] {
+						continue
+					}
+					if isConst {
+						mergedGlobalConsts[ls.Name.Value] = true
+					}
 					merged.Statements = append(merged.Statements, ls)
 					stmtOwner[ls] = info.ShortName
-					if checker.IsConstantExpr(ls.Value) && checker.MatchesTargetPlatform(modProg.Sem.PlatformKeysOf(ls), t.targetGoos, t.targetGoarch) {
+					if isConst && checker.MatchesTargetPlatform(modProg.Sem.PlatformKeysOf(ls), t.targetGoos, t.targetGoarch) {
 						moduleConstants[ls.Name.Value] = ls.Value
 					}
 				}
@@ -2005,6 +2037,15 @@ func (t *Transpiler) CompileTarget(source string, _ Target) (string, error) {
 		}
 		// Convert MultiAssignStatement to old nested-call syntax for codegen
 		if mas, ok := stmt.(*parser.MultiAssignStatement); ok {
+			// Before converting, register all Identifier targets as declared
+			// in the merged program's semantic context. After conversion to
+			// nested-call syntax (bar(a, b)), the targets become call arguments
+			// and would otherwise be reported as undefined by CollectDefinedVars.
+			for _, target := range mas.Targets {
+				if ident, ok := target.(*parser.Identifier); ok {
+					merged.Sem.SetDeclared(ident.Value)
+				}
+			}
 			if innerCall, ok := mas.Value.(*parser.CallExpression); ok {
 				// Create: innerCall(outerArgs) with outerArgs being the target expressions
 				outerCall := &parser.CallExpression{
@@ -4841,9 +4882,21 @@ func validateStmtArrayBounds(stmt parser.Statement, arraySizes map[string]int64,
 		funcStringSizes := make(map[string]int64)
 		funcSliceSizes := make(map[string]int64)
 		funcArraySizes := make(map[string]int64)
+		// Build a per-function varTypes: start empty, then add this function's
+		// params, results, and local variables. We intentionally do NOT copy
+		// from the global varTypes (which contains local variables from ALL
+		// merged functions, causing cross-function type leakage such as
+		// fs.open's local 'm file-mode' shadowing a test file's 'm [str]i64').
+		// However, we do need top-level constants for resolving global refs
+		// inside function bodies, so we pass the global varTypes separately
+		// and fall back to it for unknown variables.
+		funcVarTypes := make(map[string]string)
 		for _, p := range s.Parameters {
-			if p.Type != nil && (p.Type.String() == "str") {
-				funcStringSizes[p.Name] = 0
+			if p.Type != nil {
+				funcVarTypes[p.Name] = p.Type.String()
+				if p.Type.String() == "str" {
+					funcStringSizes[p.Name] = 0
+				}
 			}
 			// Track slice-typed parameters ([]T and ?[]T) so that .len =
 			// assignments are rejected. Skip 'self' to allow vec.truncate/extend
@@ -4853,21 +4906,25 @@ func validateStmtArrayBounds(stmt parser.Statement, arraySizes map[string]int64,
 			}
 		}
 		for _, p := range s.Results {
-			if p.Type != nil && (p.Type.String() == "str") {
-				funcStringSizes[p.Name] = 0
+			if p.Type != nil {
+				funcVarTypes[p.Name] = p.Type.String()
+				if p.Type.String() == "str" {
+					funcStringSizes[p.Name] = 0
+				}
 			}
 			if isSliceTypeOrOptionSlice(p.Type) {
 				funcSliceSizes[p.Name] = 0
 			}
 		}
 		if s.Body != nil {
+			collectVarTypesFromBody(s.Body, funcVarTypes)
 			for _, ss := range s.Body.Statements {
 				collectStringSizeMapFromStmt(ss, funcStringSizes)
 				collectSliceSizeMapFromStmt(ss, funcSliceSizes)
 				collectArraySizesFromStmt(ss, funcArraySizes)
 			}
 			for _, ss := range s.Body.Statements {
-				if err := validateStmtArrayBounds(ss, funcArraySizes, funcSliceSizes, funcStringSizes, varTypes); err != nil {
+				if err := validateStmtArrayBounds(ss, funcArraySizes, funcSliceSizes, funcStringSizes, funcVarTypes); err != nil {
 					return err
 				}
 			}
