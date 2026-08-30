@@ -51,6 +51,19 @@ type LintOptions struct {
 	// 應設為 true；no vet 路徑已有 build/module_check.go 的完整版，
 	// 應設為 false（預設）。
 	LightweightMode bool
+	// MainFileVarNames 記錄主程式（非導入模組）的頂層變數名集合。
+	// 用於 ValidateUnusedVars：當 program 是合併了導入模組的 merged
+	// program 時（no vet 路徑），只檢查主程式的變數是否未使用，
+	// 跳過導入模組的常量（如 std/log 的 LEVEL-ERROR）。
+	// 為 nil 時（LSP 路徑），program 未合併模組，檢查所有頂層變數。
+	MainFileVarNames map[string]bool
+	// SkipTypeChecks 為 true 時跳過 ValidateTypes 和 ValidateFuncArgs。
+	// 用於 no vet 路徑：這兩項檢查已在模組合併前作為 hard error 執行過
+	// （transpiler.go line 1641/1647），合併後對 merged program 重複執行
+	// 會因標準庫模組函數體內的局部型別推斷不完整而產生誤報（如
+	// rand(kp-state) 被誤判為 []byte 而非 i64）。
+	// LSP 路徑不做模組合併，program 是原始的，需要執行這兩項檢查。
+	SkipTypeChecks bool
 }
 
 // RunAllLints 對 program 執行全部 lint 校驗，返回匯總結果。
@@ -68,13 +81,15 @@ func RunAllLints(program *parser.Program, opts LintOptions) []LintResult {
 
 	var results []LintResult
 
-	// 1. 型別錯誤
-	for _, e := range ValidateTypes(program) {
-		results = append(results, LintResult{
-			Line: e.Line, Column: e.Column,
-			Severity: LintError, Source: "nolang-type-checker",
-			Message: e.Message, TraceID: e.TraceID,
-		})
+	// 1. 型別錯誤（no vet 路徑已在合併前執行，跳過以避免 merged program 誤報）
+	if !opts.SkipTypeChecks {
+		for _, e := range ValidateTypes(program) {
+			results = append(results, LintResult{
+				Line: e.Line, Column: e.Column,
+				Severity: LintError, Source: "nolang-type-checker",
+				Message: e.Message, TraceID: e.TraceID,
+			})
+		}
 	}
 
 	// 2. 命名規範
@@ -96,7 +111,7 @@ func RunAllLints(program *parser.Program, opts LintOptions) []LintResult {
 	}
 
 	// 4. 未使用變數
-	for _, u := range ValidateUnusedVars(program) {
+	for _, u := range ValidateUnusedVars(program, opts.MainFileVarNames) {
 		endCol := u.Column
 		if u.EndColumn > 0 {
 			endCol = u.EndColumn
@@ -229,13 +244,15 @@ func RunAllLints(program *parser.Program, opts LintOptions) []LintResult {
 		})
 	}
 
-	// 18. 函數引數型別校驗
-	for _, u := range ValidateFuncArgs(program, opts.RootDir) {
-		results = append(results, LintResult{
-			Line: u.Line, Column: u.Column,
-			Severity: LintError, Source: "nolang-type-checker",
-			Message: u.Message, TraceID: u.TraceID,
-		})
+	// 18. 函數引數型別校驗（no vet 路徑已在合併前執行，跳過以避免 merged program 誤報）
+	if !opts.SkipTypeChecks {
+		for _, u := range ValidateFuncArgs(program, opts.RootDir) {
+			results = append(results, LintResult{
+				Line: u.Line, Column: u.Column,
+				Severity: LintError, Source: "nolang-type-checker",
+				Message: u.Message, TraceID: u.TraceID,
+			})
+		}
 	}
 
 	// 19. print 格式字串校驗

@@ -128,7 +128,7 @@ print('pi = {pi:.2f}')
 		if len(p.Errors()) > 0 {
 			t.Fatalf("parse errors: %v", p.Errors())
 		}
-		results := ValidateUnusedVars(prog)
+		results := ValidateUnusedVars(prog, nil)
 		for _, r := range results {
 			if strings.Contains(r.Message, "'pi'") {
 				t.Errorf("expected pi to be marked used by format string, got: %s", r.Message)
@@ -146,7 +146,7 @@ print('hello {name}')
 		if len(p.Errors()) > 0 {
 			t.Fatalf("parse errors: %v", p.Errors())
 		}
-		results := ValidateUnusedVars(prog)
+		results := ValidateUnusedVars(prog, nil)
 		for _, r := range results {
 			if strings.Contains(r.Message, "'name'") {
 				t.Errorf("expected name to be marked used by format string, got: %s", r.Message)
@@ -164,7 +164,7 @@ print('hello')
 		if len(p.Errors()) > 0 {
 			t.Fatalf("parse errors: %v", p.Errors())
 		}
-		results := ValidateUnusedVars(prog)
+		results := ValidateUnusedVars(prog, nil)
 		found := false
 		for _, r := range results {
 			if strings.Contains(r.Message, "'unused'") {

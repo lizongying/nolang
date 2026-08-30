@@ -2176,9 +2176,11 @@ func (t *Transpiler) CompileTarget(source string, _ Target) (string, error) {
 	// 接口實現、字串拼接等），使 CI 路徑與編輯器診斷保持一致。
 	if t.vetMode {
 		t.vetLints = checker.RunAllLints(merged, checker.LintOptions{
-			SourcePath: t.sourcePath,
-			RootDir:    filepath.Dir(t.sourcePath),
-			Strict:     t.vetStrict,
+			SourcePath:       t.sourcePath,
+			RootDir:          filepath.Dir(t.sourcePath),
+			Strict:           t.vetStrict,
+			MainFileVarNames: mainVarNames,
+			SkipTypeChecks:   true,
 		})
 		return "", nil
 	}

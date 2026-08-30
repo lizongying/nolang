@@ -953,7 +953,7 @@ func asyncCallFunctionName(call *parser.CallExpression) string {
 	}
 	return ""
 }
-func ValidateUnusedVars(program *parser.Program) []ValidateResult {
+func ValidateUnusedVars(program *parser.Program, mainVarNames map[string]bool) []ValidateResult {
 	var results []ValidateResult
 
 	// Collect top-level LetStatement names
@@ -963,6 +963,12 @@ func ValidateUnusedVars(program *parser.Program) []ValidateResult {
 	for _, stmt := range program.Statements {
 		if ls, ok := stmt.(*parser.LetStatement); ok {
 			if ls.Name != nil && ls.Name.Value != "_" {
+				// When mainVarNames is provided (no vet path with merged program),
+				// skip variables that belong to imported modules — only check
+				// variables defined in the main source file.
+				if mainVarNames != nil && !mainVarNames[ls.Name.Value] {
+					continue
+				}
 				topLevelVars[ls.Name.Value] = struct{ line, column int }{
 					line:   ls.Name.Token.Line,
 					column: ls.Name.Token.Column,

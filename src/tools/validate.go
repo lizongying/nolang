@@ -65,7 +65,7 @@ func main() {
 		fmt.Fprintf(os.Stderr, "TYPE: Line %d, Col %d: %s\n", t.Line, t.Column, t.Message)
 	}
 
-	unusedVars := build.ValidateUnusedVars(prog)
+	unusedVars := build.ValidateUnusedVars(prog, nil)
 	for _, u := range unusedVars {
 		fmt.Fprintf(os.Stderr, "UNUSED: Line %d, Col %d: %s\n", u.Line, u.Column, u.Message)
 	}
