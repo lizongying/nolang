@@ -253,6 +253,7 @@ type branchNode struct {
 type flatStmtEntry struct {
 	stmt      parser.Statement
 	branchCtx []branchNode // nil = 顶层；非空 = 在分支内
+	inLoop    bool       // true = 在循环体内（需考虑循环回边）
 }
 
 // computeMoveEligibility 遍历函数体，对每个 b=a（LetStatement，RHS 为 Identifier）
@@ -297,6 +298,28 @@ func (g *Generator) computeMoveEligibility(body *parser.BlockStatement) {
 				break
 			}
 		}
+		// 循环回边处理：如果 LetStatement 在循环体内，循环回边会导致
+		// 循环体开始处的语句在逻辑上"在此之后"执行。因此需要检查
+		// 从循环体开始到当前 LetStatement 之间的语句是否引用了源变量。
+		// 这对于 MultiAssignStatement target（如 v, ok = f()）特别重要：
+		// 变量作为输出参数通过指针传递，被调用函数可能修改/释放其堆字段。
+		// 如果 move 了源变量，共享的 data 指针会在下一次迭代中被释放，
+		// 导致 use-after-free / double-free。
+		if !usedAfter && entry.inLoop {
+			for j := 0; j < i; j++ {
+				if !entries[j].inLoop {
+					continue
+				}
+				// 仅检查同一循环层级的语句（branchCtx 相同或包含的）
+				if canUseBranchAware && branchesMutuallyExclusive(entry.branchCtx, entries[j].branchCtx) {
+					continue
+				}
+				if stmtContainsVarRead(entries[j].stmt, ident.Value) {
+					usedAfter = true
+					break
+				}
+			}
+		}
 		g.moveEligible[ls] = !usedAfter
 	}
 }
@@ -326,23 +349,27 @@ func branchesMutuallyExclusive(ctx1, ctx2 []branchNode) bool {
 // flattenStmtsWithCtx 将语句列表递归展开为一维列表，同时追踪分支上下文。
 // branchCtx 是当前语句列表所在的分支上下文链（nil = 顶层）。
 func flattenStmtsWithCtx(stmts []parser.Statement, branchCtx []branchNode) []flatStmtEntry {
+	return flattenStmtsWithCtxLoop(stmts, branchCtx, false)
+}
+
+func flattenStmtsWithCtxLoop(stmts []parser.Statement, branchCtx []branchNode, inLoop bool) []flatStmtEntry {
 	var result []flatStmtEntry
 	for _, stmt := range stmts {
-		result = append(result, flatStmtEntry{stmt: stmt, branchCtx: branchCtx})
+		result = append(result, flatStmtEntry{stmt: stmt, branchCtx: branchCtx, inLoop: inLoop})
 		switch s := stmt.(type) {
 		case *parser.ExpressionStatement:
-			result = append(result, flattenExprStmtsWithCtx(s.Expression, branchCtx)...)
+			result = append(result, flattenExprStmtsWithCtxLoop(s.Expression, branchCtx, inLoop)...)
 		case *parser.ForStatement:
 			if s.Init != nil {
-				result = append(result, flattenStmtsWithCtx([]parser.Statement{s.Init}, branchCtx)...)
+				result = append(result, flattenStmtsWithCtxLoop([]parser.Statement{s.Init}, branchCtx, inLoop)...)
 			}
 			if s.Update != nil {
-				result = append(result, flattenStmtsWithCtx([]parser.Statement{s.Update}, branchCtx)...)
+				result = append(result, flattenStmtsWithCtxLoop([]parser.Statement{s.Update}, branchCtx, inLoop)...)
 			}
 			if s.Body != nil {
 				// 循环体不是分支互斥的（循环体在循环条件成立时执行），
 				// 用同一 branchCtx（不加新分支节点）
-				result = append(result, flattenStmtsWithCtx(s.Body.Statements, branchCtx)...)
+				result = append(result, flattenStmtsWithCtxLoop(s.Body.Statements, branchCtx, true)...)
 			}
 		case *parser.MultiAssignStatement:
 			// MultiAssign targets are expressions, not statements
@@ -354,14 +381,22 @@ func flattenStmtsWithCtx(stmts []parser.Statement, branchCtx []branchNode) []fla
 // flattenExprStmtsWithCtx 展开表达式语句中嵌套的块（if 表达式的 then/else 体），
 // 同时追踪分支上下文。
 func flattenExprStmtsWithCtx(expr parser.Expression, branchCtx []branchNode) []flatStmtEntry {
+	return flattenExprStmtsWithCtxLoop(expr, branchCtx, false)
+}
+
+func flattenExprStmtsWithCtxLoop(expr parser.Expression, branchCtx []branchNode, inLoop bool) []flatStmtEntry {
 	var result []flatStmtEntry
-	collectNestedStmtsWithCtx(expr, branchCtx, &result)
+	collectNestedStmtsWithCtxLoop(expr, branchCtx, inLoop, &result)
 	return result
 }
 
 var branchNodeCounter int // 用于生成唯一分支节点 ID
 
 func collectNestedStmtsWithCtx(expr parser.Expression, branchCtx []branchNode, result *[]flatStmtEntry) {
+	collectNestedStmtsWithCtxLoop(expr, branchCtx, false, result)
+}
+
+func collectNestedStmtsWithCtxLoop(expr parser.Expression, branchCtx []branchNode, inLoop bool, result *[]flatStmtEntry) {
 	switch e := expr.(type) {
 	case *parser.IfExpression:
 		// 为此 IfExpression 分配唯一 nodeID
@@ -369,47 +404,47 @@ func collectNestedStmtsWithCtx(expr parser.Expression, branchCtx []branchNode, r
 		branchNodeCounter++
 		// condition 在分支之前，沿用当前 branchCtx
 		if e.Condition != nil {
-			collectNestedStmtsWithCtx(e.Condition, branchCtx, result)
+			collectNestedStmtsWithCtxLoop(e.Condition, branchCtx, inLoop, result)
 		}
 		if e.Consequence != nil {
 			thenCtx := append([]branchNode(nil), branchCtx...)
 			thenCtx = append(thenCtx, branchNode{nodeID: nodeID, branchIdx: 0})
-			*result = append(*result, flattenStmtsWithCtx(e.Consequence.Statements, thenCtx)...)
+			*result = append(*result, flattenStmtsWithCtxLoop(e.Consequence.Statements, thenCtx, inLoop)...)
 		}
 		if e.Alternative != nil {
 			elseCtx := append([]branchNode(nil), branchCtx...)
 			elseCtx = append(elseCtx, branchNode{nodeID: nodeID, branchIdx: 1})
-			*result = append(*result, flattenStmtsWithCtx(e.Alternative.Statements, elseCtx)...)
+			*result = append(*result, flattenStmtsWithCtxLoop(e.Alternative.Statements, elseCtx, inLoop)...)
 		}
 	case *parser.InfixExpression:
-		collectNestedStmtsWithCtx(e.Left, branchCtx, result)
-		collectNestedStmtsWithCtx(e.Right, branchCtx, result)
+		collectNestedStmtsWithCtxLoop(e.Left, branchCtx, inLoop, result)
+		collectNestedStmtsWithCtxLoop(e.Right, branchCtx, inLoop, result)
 	case *parser.PrefixExpression:
-		collectNestedStmtsWithCtx(e.Right, branchCtx, result)
+		collectNestedStmtsWithCtxLoop(e.Right, branchCtx, inLoop, result)
 	case *parser.CallExpression:
-		collectNestedStmtsWithCtx(e.Function, branchCtx, result)
+		collectNestedStmtsWithCtxLoop(e.Function, branchCtx, inLoop, result)
 		for _, arg := range e.Arguments {
-			collectNestedStmtsWithCtx(arg, branchCtx, result)
+			collectNestedStmtsWithCtxLoop(arg, branchCtx, inLoop, result)
 		}
 	case *parser.GroupedExpression:
-		collectNestedStmtsWithCtx(e.Expression, branchCtx, result)
+		collectNestedStmtsWithCtxLoop(e.Expression, branchCtx, inLoop, result)
 	case *parser.ConditionalExpression:
 		// ConditionalExpression（三元条件）也是互斥分支
 		nodeID := branchNodeCounter
 		branchNodeCounter++
-		collectNestedStmtsWithCtx(e.Condition, branchCtx, result)
+		collectNestedStmtsWithCtxLoop(e.Condition, branchCtx, inLoop, result)
 		thenCtx := append([]branchNode(nil), branchCtx...)
 		thenCtx = append(thenCtx, branchNode{nodeID: nodeID, branchIdx: 0})
-		collectNestedStmtsWithCtx(e.Consequence, thenCtx, result)
+		collectNestedStmtsWithCtxLoop(e.Consequence, thenCtx, inLoop, result)
 		elseCtx := append([]branchNode(nil), branchCtx...)
 		elseCtx = append(elseCtx, branchNode{nodeID: nodeID, branchIdx: 1})
-		collectNestedStmtsWithCtx(e.Alternative, elseCtx, result)
+		collectNestedStmtsWithCtxLoop(e.Alternative, elseCtx, inLoop, result)
 	case *parser.AssignExpression:
 		if e.Left != nil {
-			collectNestedStmtsWithCtx(e.Left, branchCtx, result)
+			collectNestedStmtsWithCtxLoop(e.Left, branchCtx, inLoop, result)
 		}
 		if e.Value != nil {
-			collectNestedStmtsWithCtx(e.Value, branchCtx, result)
+			collectNestedStmtsWithCtxLoop(e.Value, branchCtx, inLoop, result)
 		}
 	}
 }
@@ -447,9 +482,19 @@ func stmtContainsVarRead(stmt parser.Statement, varName string) bool {
 	case *parser.ReturnStatement:
 		// ReturnValue 始终为 nil
 	case *parser.MultiAssignStatement:
-		// MultiAssign targets（如 a, b = f()）不视为读引用，
-		// 但 targets 中的表达式可能引用变量（如 a[i], x = f()）
+		// MultiAssign targets（如 a, b = f()）通常不视为读引用，
+		// 但 targets 中的表达式可能引用变量（如 a[i], x = f()）。
+		// 例外：当 target 是纯 Identifier 且名称匹配时，变量作为输出参数
+		// 通过指针传递给被调用函数。被调用函数可能通过指针修改或释放变量的
+		// 堆字段（如 str.data），因此这构成隐式读引用——如果之前对该变量
+		// 执行了 move（浅拷贝），被调用函数释放旧字段 data 会导致目标悬空
+		// （use-after-free / double-free）。
 		for _, t := range s.Targets {
+			if ident, ok := t.(*parser.Identifier); ok {
+				if ident.Value == varName {
+					return true
+				}
+			}
 			if exprContainsVarRead(t, varName) {
 				return true
 			}
