@@ -972,6 +972,28 @@ func (g *Generator) generateCallExpression(sb *strings.Builder, expr *parser.Cal
 				}
 			}
 		}
+		// Module prefix stripping: when the inner call is a module-qualified call
+		// (e.g. semver.parse), funcRetTypes/funcNumResults are registered under the
+		// short name (e.g. "parse") without the module prefix. Strip the prefix so
+		// lookups succeed and the correct LLVM function name is generated (@parse,
+		// not @semver.parse which doesn't exist). This mirrors the main path logic
+		// at ~L1317.
+		if strings.Contains(innerFnName, ".") && g.varTypes != nil {
+			if idx := strings.Index(innerFnName, "."); idx >= 0 {
+				firstSegment := innerFnName[:idx]
+				if _, isVar := g.varTypes[firstSegment]; !isVar {
+					shortName := innerFnName[idx+1:]
+					if g.funcRetTypes != nil {
+						if _, hasUserFn := g.funcRetTypes[shortName]; hasUserFn {
+							innerFnName = shortName
+						}
+					}
+				}
+			}
+		}
+		if os.Getenv("NOLANG_DEBUG_MULTI") != "" {
+			fmt.Fprintf(os.Stderr, "[debug-multi] after strip innerFnName=%q retType=%q\n", innerFnName, retType)
+		}
 		if g.funcRetTypes != nil {
 			if t, ok := g.funcRetTypes[innerFnName]; ok {
 				retType = t
@@ -1139,6 +1161,9 @@ func (g *Generator) generateCallExpression(sb *strings.Builder, expr *parser.Cal
 					}
 				}
 			}
+			if os.Getenv("NOLANG_DEBUG_MULTI") != "" {
+				fmt.Fprintf(os.Stderr, "[debug-multi] void branch innerFnName=%q numResults=%d args=%d\n", innerFnName, numResults, len(expr.Arguments))
+			}
 			if numResults >= 1 {
 				// 帶輸出參數：將輸出參數附加到呼叫，傳遞指標
 				// 先取得輸出型別（用於 auto-allocate 未宣告的輸出變數）
@@ -1254,6 +1279,9 @@ func (g *Generator) generateCallExpression(sb *strings.Builder, expr *parser.Cal
 					for _, lu := range lenUpdates {
 						g.emitVecLenAutoUpdate(sb, lu.varName, lu.idxReg, lu.isConst)
 					}
+				}
+				if os.Getenv("NOLANG_DEBUG_MULTI") != "" {
+					fmt.Fprintf(os.Stderr, "[debug-multi] multi-output path returning empty, innerFnName=%q\n", innerFnName)
 				}
 				return ""
 			}
@@ -3398,6 +3426,9 @@ func (g *Generator) generateCallExpression(sb *strings.Builder, expr *parser.Cal
 			g.ssaTypes[callReg] = retType
 		}
 		return callReg
+	}
+	if os.Getenv("NOLANG_DEBUG_MULTI") != "" {
+		fmt.Fprintf(os.Stderr, "[debug-multi] main path returning callStr=%q fnName=%q retType=%q hasOutputParam=%v voidSingleOutput=%v\n", callStr, fnName, retType, hasOutputParam, voidSingleOutput)
 	}
 
 	return callStr

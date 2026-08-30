@@ -10,9 +10,10 @@
 ; 執行前需建立資料庫 testdb 並設定 root/secret 帳密。
 
 # /example/mysql-driver/src/mysql
+# std/database/sql
 
 ; 測試 1: 以 DSN 連線
-d db = fs.open('root:secret@localhost/testdb')
+d db = fs.open('root:secret@localhost/testdb', { mode: file-mode.read-write })
 d.handle == 0 -> {
     print('fail: open database')
     return

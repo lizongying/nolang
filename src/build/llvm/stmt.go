@@ -8874,13 +8874,6 @@ func (g *Generator) generateOptionAssign(sb *strings.Builder, stmt *parser.LetSt
 				// x = err(expr) → tag=2, copy expr to data
 				storeTag(2)
 				arg := v.Arguments[0]
-				if os.Getenv("NOLANG_DEBUG_IT") != "" {
-					fmt.Fprintf(os.Stderr, "[debug-it] generateOptionAssign err(): arg=%T", arg)
-					if id, ok := arg.(*parser.Identifier); ok {
-						fmt.Fprintf(os.Stderr, " ident=%q varTypes=%q", id.Value, g.varTypes[id.Value])
-					}
-					fmt.Fprintf(os.Stderr, " name=%q optionInnerTypes=%q\n", name, g.optionInnerTypes[name])
-				}
 				if _, isStr := arg.(*parser.StringLiteral); isStr {
 					srcPtr := g.generateExprWithSB(sb, arg)
 					copyStrToData(srcPtr)

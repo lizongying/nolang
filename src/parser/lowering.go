@@ -932,8 +932,38 @@ func (p *Parser) buildItBindingForArm(tok lexer.Token, matched Expression, armTy
 		return nil
 	}
 	t := matchedVarType
+
+	// When matchedVarType is unknown at parse time (e.g., variable assigned from
+	// a method call whose return type is resolved later), we still need to create
+	// `it` bindings for err and nil arms so the codegen can unwrap the error
+	// message at runtime. Without this, the err arm body (e.g. `content = err(it)`)
+	// would reference `it` from the ok arm's collectVarDecls, causing a type
+	// mismatch (e.g., %vec instead of %str-long).
+	// For ok arms (armType "ok", "else", "ok_err", etc.) with unknown type,
+	// return nil so the caller falls back to the shared `it` binding (safe,
+	// because the option is non-nil in ok arms, so the struct-deref is guarded
+	// by the live variant).
 	if t == "" {
-		return nil
+		switch armType {
+		case "err":
+			return &LetStatement{
+				Token:       tok,
+				Name:        &Identifier{Token: tok, Value: "it"},
+				Value:       matched,
+				Type:        &NamedType{Value: "err"},
+				IsSynthetic: true,
+			}
+		case "nil":
+			return &LetStatement{
+				Token:       tok,
+				Name:        &Identifier{Token: tok, Value: "it"},
+				Value:       matched,
+				Type:        &NamedType{Value: "nil"},
+				IsSynthetic: true,
+			}
+		default:
+			return nil
+		}
 	}
 
 	var typeStr string
@@ -948,12 +978,12 @@ func (p *Parser) buildItBindingForArm(tok lexer.Token, matched Expression, armTy
 			typeStr = elemType
 		case "else":
 			typeStr = "err | nil"
-		case "ok_err":
-			typeStr = elemType + " | err"
-		case "ok_nil":
-			typeStr = elemType + " | nil"
-		case "ok_err_nil":
-			typeStr = elemType + " | err | nil"
+		case "ok_err", "ok_nil", "ok_err_nil":
+			// For codegen, `it` in ok-containing arms is the payload type.
+			// The union type (e.g. "file | nil") is only meaningful for the
+			// type checker; using it in codegen causes method dispatch to
+			// generate invalid function names with `|` characters.
+			typeStr = elemType
 		default:
 			return nil
 		}
@@ -976,12 +1006,9 @@ func (p *Parser) buildItBindingForArm(tok lexer.Token, matched Expression, armTy
 			typeStr = elemType
 		case "else":
 			typeStr = remStr
-		case "ok_err":
-			typeStr = elemType + " | err"
-		case "ok_nil":
-			typeStr = elemType + " | nil"
-		case "ok_err_nil":
-			typeStr = elemType + " | " + remStr
+		case "ok_err", "ok_nil", "ok_err_nil":
+			// For codegen, `it` in ok-containing arms is the payload type.
+			typeStr = elemType
 		default:
 			return nil
 		}

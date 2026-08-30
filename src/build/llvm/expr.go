@@ -382,12 +382,18 @@ func (g *Generator) generateExprWithSB(sb *strings.Builder, expr parser.Expressi
 				// 仅當函數「源碼顯式聲明了回傳值」(funcDeclaredResults > 0) 卻生成了 void 呼叫時，
 				// 才表示回傳值被遺失（真實 bug）。void 函數（如 fe-copy/fe-neg）即便被啟發式
 				// 標記為單輸出，其 void 呼叫也是正確的，不應報錯。
-				fnName := flattenDottedExpr(e.Function)
-				if fnName == "" {
-					if dot, ok := e.Function.(*parser.DotExpression); ok {
-						fnName = dot.Property
+			fnName := flattenDottedExpr(e.Function)
+			if fnName == "" {
+				if dot, ok := e.Function.(*parser.DotExpression); ok {
+					fnName = dot.Property
+				} else if inner, ok := e.Function.(*parser.CallExpression); ok {
+					if ident, ok := inner.Function.(*parser.Identifier); ok {
+						fnName = ident.Value
+					} else if dot2, ok := inner.Function.(*parser.DotExpression); ok {
+						fnName = dot2.Property
 					}
 				}
+			}
 				if fnName != "" && g.funcDeclaredResults != nil {
 					if n, ok := g.funcDeclaredResults[fnName]; ok && n > 0 {
 						if m, ok2 := g.funcNumResults[fnName]; ok2 && m > 0 {
@@ -1603,6 +1609,30 @@ func (g *Generator) exprResultLLVMType(expr parser.Expression) string {
 		if v.Property == "len" && (recvType == "%str-long") {
 			return "i64"
 		}
+		// Method call on a value (e.g. v.major.to-str where v.major is i64):
+		// resolve the method's return type by looking up the type-prefixed
+		// method name in funcResultLLVMType / funcRetTypes.
+		// This prevents method calls like i64.to-str() from being misclassified
+		// as non-string expressions (which would trigger byte arithmetic instead
+		// of string operations).
+		srcType := strings.TrimPrefix(recvType, "%")
+		candidates := []string{srcType}
+		if primAliases, ok := llvmTypeToNolang[srcType]; ok {
+			candidates = append(candidates, primAliases...)
+		}
+		for _, cand := range candidates {
+			methodName := cand + "." + v.Property
+			if g.funcResultLLVMType != nil {
+				if ts, ok := g.funcResultLLVMType[methodName]; ok && len(ts) > 0 {
+					return ts[0]
+				}
+			}
+			if g.funcRetTypes != nil {
+				if t, ok := g.funcRetTypes[methodName]; ok && t != "void" {
+					return t
+				}
+			}
+		}
 	case *parser.IndexExpression:
 		leftType := g.exprResultLLVMType(v.Left)
 		if strings.HasPrefix(leftType, "[") {
@@ -1829,6 +1859,31 @@ func (g *Generator) exprResultLLVMType(expr parser.Expression) string {
 									return ts[0]
 								}
 							}
+						}
+					}
+				}
+			}
+			// Non-Identifier receivers (e.g. struct field f.x.to-str(),
+			// array element arr[i].to-str(), chained method result):
+			// resolve receiver type via exprResultLLVMType, then look up
+			// method return type by type-prefixed name.
+			if _, isIdent := dot.Receiver.(*parser.Identifier); !isIdent {
+				recvType := g.exprResultLLVMType(dot.Receiver)
+				srcType := strings.TrimPrefix(recvType, "%")
+				candidates := []string{srcType}
+				if primAliases, ok := llvmTypeToNolang[srcType]; ok {
+					candidates = append(candidates, primAliases...)
+				}
+				for _, cand := range candidates {
+					shortName := cand + "." + dot.Property
+					if g.funcRetTypes != nil {
+						if t, ok := g.funcRetTypes[shortName]; ok && t != "void" {
+							return t
+						}
+					}
+					if g.funcResultLLVMType != nil {
+						if ts, ok := g.funcResultLLVMType[shortName]; ok && len(ts) == 1 {
+							return ts[0]
 						}
 					}
 				}

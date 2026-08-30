@@ -54,7 +54,7 @@ test-copy-file = () (ok bool) {
 ; ── 測試 3: process.cmd 正確捕獲 stdout ──
 test-cmd-capture = () (ok bool) {
     ; echo（無參數）輸出一個換行符 \n
-    args = []str{}
+    args []str = with-len(0)
     out, stderr, code, err = process.cmd('echo', args, '', '', args, 0, false)
 
     ; 驗證捕獲的 stdout

@@ -5,9 +5,10 @@
 ; 驅動包 example/sqlite-driver 使用 #{c} FFI 註解直接呼叫 SQLite C API。
 
 # /example/sqlite-driver/src/sqlite
+# std/database/sql
 
 ; 測試 1: 開啟記憶體資料庫
-d db = fs.open(':memory:')
+d db = fs.open(':memory:', { mode: file-mode.read-write })
 d.handle == 0 -> {
     print('fail: open database')
     return

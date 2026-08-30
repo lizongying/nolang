@@ -42,17 +42,17 @@ func TestVerifyItBindingTypes(t *testing.T) {
 		{
 			name:     "wildcard-only",
 			input:    "x ?i64\nx: { -> log(it) }",
-			expected: []string{"i64 | err | nil"},
+			expected: []string{"i64"},
 		},
 		{
 			name:     "nil+wildcard",
 			input:    "x ?i64\nx: { nil -> log(it)\n-> log(it) }",
-			expected: []string{"nil", "i64 | err"},
+			expected: []string{"nil", "i64"},
 		},
 		{
 			name:     "err+wildcard",
 			input:    "x ?i64\nx: { err -> log(it)\n-> log(it) }",
-			expected: []string{"err", "i64 | nil"},
+			expected: []string{"err", "i64"},
 		},
 		// Enum type test cases
 		{
@@ -69,6 +69,22 @@ func TestVerifyItBindingTypes(t *testing.T) {
 			name:     "enum_partial_wildcard",
 			input:    "f = () { status {s1, s2, s3}\nx status\nx: { s1 -> log(it)\n-> log(it) } }",
 			expected: []string{"s1", "s2 | s3"},
+		},
+		// When matchedVarType is unknown (e.g., b = .read-bytes() where
+		// read-bytes returns ?[]byte, resolved only at codegen time),
+		// err and nil arms must still receive `it` bindings so the
+		// codegen can unwrap the error message at runtime.
+		// ok arms with unknown type fall back to the shared binding
+		// (no per-arm binding created, so not in the expected list).
+		{
+			name:     "unknown_type_err_nil_ok",
+			input:    "f = () { b = .read-bytes()\nb: { err -> log(it)\nnil -> log(it)\n-> log(it) } }",
+			expected: []string{"err", "nil"},
+		},
+		{
+			name:     "unknown_type_err_only",
+			input:    "f = () { b = .read-bytes()\nb: { err -> log(it)\n-> log(it) } }",
+			expected: []string{"err"},
 		},
 	}
 

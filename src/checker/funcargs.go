@@ -297,60 +297,59 @@ func ValidateFuncArgs(program *parser.Program, rootDir string) []ValidateResult 
 // rootDir is the directory of the entry source file, used as a fallback
 // for workspace root resolution when pkg is nil (no package.jsonc found).
 func resolveUseModule(use *parser.UseStatement, p *pkg.Package, rootDir string) *parser.Program {
+	filePath := resolveModuleFilePath(use, p, rootDir)
+	if filePath == "" {
+		return nil
+	}
+	prog := parseProgramFile(filePath)
+	if prog == nil {
+		return nil
+	}
+	// Apply lib.no export filtering
+	pkgRoot := findPackageRootFromFile(filePath)
+	if pkgRoot != "" {
+		libPath := filepath.Join(pkgRoot, "lib.no")
+		if _, err := os.Stat(libPath); err == nil {
+			prog = filterByExports(prog, libPath, filePath)
+		}
+	}
+	return prog
+}
+
+// resolveModuleFilePath resolves a UseStatement to its source file path
+// without parsing or filtering. Used by collectRawModuleSymbols to parse
+// the raw module file directly (bypassing lib.no export filtering).
+func resolveModuleFilePath(use *parser.UseStatement, p *pkg.Package, rootDir string) string {
 	path := use.Path
-	var prog *parser.Program
-	var filePath string
 	// Local module paths (starting with /)
 	if strings.HasPrefix(path, "/") {
 		var baseDir string
 		if p != nil {
 			baseDir = p.WorkspaceRoot()
 		}
-		// Fallback: if pkg is nil or has no workspace root, use FindWorkspaceRoot
 		if baseDir == "" && rootDir != "" {
 			if ws, ok := pkg.FindWorkspaceRoot(rootDir); ok {
 				baseDir = ws
 			}
 		}
 		if baseDir == "" {
-			return nil
+			return ""
 		}
 		relPath := strings.TrimPrefix(path, "/")
-		filePath = filepath.Join(baseDir, relPath) + ".no"
-		prog = parseProgramFile(filePath)
+		return filepath.Join(baseDir, relPath) + ".no"
 	} else if strings.HasPrefix(path, "std/") || path == "std" {
-		// std/ paths — strip "std/" prefix to get module path relative to std/
 		relPath := strings.TrimPrefix(path, "std/")
 		if path == "std" {
 			relPath = ""
 		}
-		filePath = resolveModulePath(relPath)
-		if filePath == "" {
-			return nil
-		}
-		prog = parseProgramFile(filePath)
+		return resolveModulePath(relPath)
 	} else if p != nil {
-		// Dependency paths (domain/org/repo/...)
-		var err error
-		filePath, err = p.ResolveDependencyModule(path)
+		filePath, err := p.ResolveDependencyModule(path)
 		if err == nil && filePath != "" {
-			prog = parseProgramFile(filePath)
+			return filePath
 		}
 	}
-	if prog == nil {
-		return nil
-	}
-	// Apply lib.no export filtering
-	if filePath != "" {
-		pkgRoot := findPackageRootFromFile(filePath)
-		if pkgRoot != "" {
-			libPath := filepath.Join(pkgRoot, "lib.no")
-			if _, err := os.Stat(libPath); err == nil {
-				prog = filterByExports(prog, libPath, filePath)
-			}
-		}
-	}
-	return prog
+	return ""
 }
 
 // parseProgramFileCache: 包級 AST 解析快取，供 standalone 函數 parseProgramFile 使用。
@@ -685,6 +684,12 @@ func intTypeRange(t string) (min, max int64, ok bool) {
 		if underlying, exists := validationConcreteTypeAliases[t]; exists {
 			return intTypeRange(underlying)
 		}
+		// Try with module prefix stripped (e.g. "fs.fd" → "fd")
+		if short := stripModulePrefix(t); short != t {
+			if underlying, exists := validationConcreteTypeAliases[short]; exists {
+				return intTypeRange(underlying)
+			}
+		}
 	}
 	switch t {
 	case "i8":
@@ -940,8 +945,19 @@ func isArgTypeCompatible(expectedType, argType string, arg parser.Expression) bo
 		if underlying, ok := validationConcreteTypeAliases[expectedType]; ok && underlying == argType {
 			return true
 		}
+		// Try with module prefix stripped (e.g. "fs.fd" → "fd")
+		if expectedShort := stripModulePrefix(expectedType); expectedShort != expectedType {
+			if underlying, ok := validationConcreteTypeAliases[expectedShort]; ok && underlying == argType {
+				return true
+			}
+		}
 		if underlying, ok := validationConcreteTypeAliases[argType]; ok && underlying == expectedType {
 			return true
+		}
+		if argShort := stripModulePrefix(argType); argShort != argType {
+			if underlying, ok := validationConcreteTypeAliases[argShort]; ok && underlying == expectedType {
+				return true
+			}
 		}
 	}
 	// Implicit widening: if both types are integer types and the argType's
@@ -983,15 +999,38 @@ func isAliasPair(a, b string) bool {
 	if validationConcreteTypeAliases == nil {
 		return false
 	}
-	// a is alias, b is underlying
+	// Strip module prefix for lookup (e.g. "fs.fd" → "fd")
+	aShort := stripModulePrefix(a)
+	bShort := stripModulePrefix(b)
+	// a is alias, b is underlying (try both short and full forms)
 	if underlying, ok := validationConcreteTypeAliases[a]; ok && underlying == b {
 		return isSimplePrimitiveTypeName(underlying)
 	}
-	// b is alias, a is underlying
+	if aShort != a {
+		if underlying, ok := validationConcreteTypeAliases[aShort]; ok && underlying == b {
+			return isSimplePrimitiveTypeName(underlying)
+		}
+	}
+	// b is alias, a is underlying (try both short and full forms)
 	if underlying, ok := validationConcreteTypeAliases[b]; ok && underlying == a {
 		return isSimplePrimitiveTypeName(underlying)
 	}
+	if bShort != b {
+		if underlying, ok := validationConcreteTypeAliases[bShort]; ok && underlying == a {
+			return isSimplePrimitiveTypeName(underlying)
+		}
+	}
 	return false
+}
+
+// stripModulePrefix removes a module prefix from a type name.
+// e.g. "fs.fd" → "fd", "http.request" → "request".
+// If there is no prefix (no "." or only leading "."), returns the original.
+func stripModulePrefix(typeName string) string {
+	if idx := strings.LastIndex(typeName, "."); idx > 0 {
+		return typeName[idx+1:]
+	}
+	return typeName
 }
 
 // integerLiteralValue extracts the int64 value from an integer literal,
@@ -1045,6 +1084,20 @@ func checkCallArgsInExpr(expr parser.Expression, sigs map[string]*funcSig, varTy
 	case *parser.CallExpression:
 		var results []ValidateResult
 		if ident, ok := e.Function.(*parser.Identifier); ok {
+			// Skip type checking for built-in option constructors err(x) and ok(x).
+			// These are language keywords that accept any type (str for error
+			// messages, or any value for ok wrapping). Without this skip, when
+			// the std library module io.no defines a function named `err` (writing
+			// to stderr), the merged-module vet would incorrectly type-check
+			// `err(it)` in match arms where `it` is an `err` variant, producing
+			// false positives like "expected 'str', got 'err'".
+			if ident.Value == "err" || ident.Value == "ok" {
+				// Still recurse into arguments for nested call checking
+				for _, arg := range e.Arguments {
+					results = append(results, checkCallArgsInExpr(arg, sigs, varTypes, structFields)...)
+				}
+				return results
+			}
 			if sig, ok := sigs[ident.Value]; ok {
 				// Check argument count (allow fewer args when default values exist)
 				minArgs := len(sig.ParamTypes)

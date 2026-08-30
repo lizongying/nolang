@@ -1202,6 +1202,15 @@ func CollectDefinedVars(program *parser.Program) map[string]bool {
 		if ta, ok := stmt.(*parser.TypeAlias); ok {
 			definedVars[ta.Name] = true
 		}
+		// Collect interface method names as "InterfaceName.methodName"
+		// (e.g. "db.query", "rows.scan-int") so that vet doesn't flag
+		// calls to interface methods as undefined after module merging
+		// rewrites them to "module.InterfaceName.methodName".
+		if id, ok := stmt.(*parser.InterfaceDefinition); ok {
+			for _, m := range id.Methods {
+				definedVars[id.Name+"."+m.Name] = true
+			}
+		}
 		// MultiAssignStatement targets (e.g. `a, b = func()`) define
 		// variables at the top level. Collect them so that after the
 		// transpiler rewrites MultiAssign to nested-call syntax
@@ -1303,11 +1312,36 @@ func ValidateUndefinedVars(program *parser.Program, rootDir string) []ValidateRe
 			}
 			for _, ms := range modProg.Statements {
 				if es, ok := ms.(*parser.ExternStatement); ok && es.Name != nil {
-					// Skip private FFI declarations (underscore-prefixed)
-					if !strings.HasPrefix(es.Name.Value, "_") {
-						definedVars[es.Name.Value] = true
-						funcNames[es.Name.Value] = true
-					}
+					definedVars[es.Name.Value] = true
+					funcNames[es.Name.Value] = true
+				}
+				if fd, ok := ms.(*parser.FunctionDefinition); ok {
+					definedVars[fd.Name] = true
+					funcNames[fd.Name] = true
+				}
+				if ls, ok := ms.(*parser.LetStatement); ok && ls.Name != nil {
+					definedVars[ls.Name.Value] = true
+				}
+			}
+		}
+
+		// collectRawModuleSymbols parses the raw module file directly
+		// (bypassing lib.no export filtering) to collect ALL symbols
+		// including unexported ones (e.g. _sqlite3-open, SQLITE-OK).
+		// This is needed because the merged program includes full method
+		// bodies that reference internal FFI functions and constants.
+		collectRawModuleSymbols := func(filePath string) {
+			if filePath == "" {
+				return
+			}
+			rawProg := parseProgramFile(filePath)
+			if rawProg == nil {
+				return
+			}
+			for _, ms := range rawProg.Statements {
+				if es, ok := ms.(*parser.ExternStatement); ok && es.Name != nil {
+					definedVars[es.Name.Value] = true
+					funcNames[es.Name.Value] = true
 				}
 				if fd, ok := ms.(*parser.FunctionDefinition); ok {
 					definedVars[fd.Name] = true
@@ -1345,8 +1379,15 @@ func ValidateUndefinedVars(program *parser.Program, rootDir string) []ValidateRe
 				continue
 			}
 
-			// Collect this module's symbols
+			// Collect this module's symbols (from filtered exports)
 			collectModuleSymbols(modProg)
+
+			// Also collect ALL symbols (including unexported) from the
+			// raw module file, because the merged program includes full
+			// method bodies that reference internal FFI functions and
+			// constants not in the lib.no export list.
+			rawFilePath := resolveModuleFilePath(use, pkg, rootDir)
+			collectRawModuleSymbols(rawFilePath)
 
 			// Collect nested UseStatements for transitive processing.
 			for _, ms := range modProg.Statements {
@@ -3103,6 +3144,16 @@ func checkUndefinedVarsInExpr(expr parser.Expression, definedVars, funcNames map
 				shortName := e.Value[idx+1:]
 				if definedVars[shortName] || funcNames[shortName] {
 					return nil
+				}
+				// For method calls with module prefix (e.g.
+				// "sqlite.db-sqlite.query"), also try the last two
+				// segments ("db-sqlite.query") as the method name,
+				// since methods are registered as "Type.method".
+				if idx2 := strings.LastIndex(e.Value[:idx], "."); idx2 >= 0 {
+					twoSeg := e.Value[idx2+1:]
+					if definedVars[twoSeg] || funcNames[twoSeg] {
+						return nil
+					}
 				}
 			}
 			if builtin.FindBuiltinMethod(e.Value) != nil {
