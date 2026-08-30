@@ -165,12 +165,14 @@
 ; }
 
 ; build-in (ForwardFunc: read-file)
-; read-file: 讀取整個檔案內容為 []byte
+; [deprecated] read-file: 改用 read-bytes（支援錯誤處理、TOCTOU 安全、循環 read）
+; read-file: 讀取整個檔案內容為 []byte（空 slice 表示失敗，無法區分空檔案與錯誤）
 ; read-file = (p str) (content []byte) {  // LLVM: stat+open+malloc+read+close → %vec
 ; }
 
 ; build-in (ForwardFunc: write-file)
-; write-file: 將 []byte 寫入檔案（覆寫）
+; [deprecated] write-file: 改用 write-bytes（支援錯誤處理、循環 write）
+; write-file: 將 []byte 寫入檔案（覆寫，無法區分部分寫入與完全失敗）
 ; write-file = (p str, data []byte) (ok bool) {  // LLVM: open+write+close → icmp
 ; }
 
@@ -256,16 +258,22 @@ O-RDWR = 2
 
 #{mac-amd64}
 O-CREAT = 512
+
 #{mac-arm64}
 O-CREAT = 512
+
 #{linux-amd64}
 O-CREAT = 64
+
 #{linux-arm64}
 O-CREAT = 64
+
 #{win-amd64}
 O-CREAT = 256
+
 #{win-arm64}
 O-CREAT = 256
+
 #{wasi-wasm32}
 O-CREAT = 512
 
@@ -273,16 +281,22 @@ O-CREAT = 512
 
 #{mac-amd64}
 O-TRUNC = 1024
+
 #{mac-arm64}
 O-TRUNC = 1024
+
 #{linux-amd64}
 O-TRUNC = 512
+
 #{linux-arm64}
 O-TRUNC = 512
+
 #{win-amd64}
 O-TRUNC = 512
+
 #{win-arm64}
 O-TRUNC = 512
+
 #{wasi-wasm32}
 O-TRUNC = 1024
 
@@ -290,16 +304,22 @@ O-TRUNC = 1024
 
 #{mac-amd64}
 O-APPEND = 8
+
 #{mac-arm64}
 O-APPEND = 8
+
 #{linux-amd64}
 O-APPEND = 1024
+
 #{linux-arm64}
 O-APPEND = 1024
+
 #{win-amd64}
 O-APPEND = 8
+
 #{win-arm64}
 O-APPEND = 8
+
 #{wasi-wasm32}
 O-APPEND = 8
 
@@ -307,16 +327,22 @@ O-APPEND = 8
 
 #{mac-amd64}
 O-EXCL = 2048
+
 #{mac-arm64}
 O-EXCL = 2048
+
 #{linux-amd64}
 O-EXCL = 128
+
 #{linux-arm64}
 O-EXCL = 128
+
 #{win-amd64}
 O-EXCL = 1024
+
 #{win-arm64}
 O-EXCL = 1024
+
 #{wasi-wasm32}
 O-EXCL = 2048
 
@@ -406,8 +432,11 @@ open = (p str, opts file-opts) (f ?file) {
     m file-mode = opts.mode
     m: {
         read -> flags = O-RDONLY
+
         write -> flags = O-WRONLY | O-CREAT | O-TRUNC
+
         append -> flags = O-WRONLY | O-CREAT | O-APPEND
+
         read-write -> flags = O-RDWR | O-CREAT | O-TRUNC
     }
 
@@ -421,10 +450,15 @@ open = (p str, opts file-opts) (f ?file) {
     pv file-perm = opts.perm
     pv: {
         perm-600 -> perm-val = 384
+
         perm-644 -> perm-val = 420
+
         perm-664 -> perm-val = 436
+
         perm-666 -> perm-val = 438
+
         perm-755 -> perm-val = 493
+
         perm-777 -> perm-val = 511
     }
     fd = open-file(p, flags, perm-val)
@@ -475,6 +509,7 @@ file.close = () (ok bool) {
             ok = false
             return
         }
+
         .fd <= 2 -> {
             ok = true
             return
@@ -504,7 +539,9 @@ file.read-str = () (content ?str) {
     b = .read-bytes()
     b: {
         err -> content = err(it)
+
         nil -> return
+
         -> content = it.to-str()
     }
 }
@@ -555,8 +592,14 @@ file.write-str = (data str) (ok ?bool) {
         return
     }
     s = data.to-bytes()
-    written = write(.fd, s, s.len)
-    written == s.len -> ok = true
+    total = 0
+    {
+        total >= s.len -> break
+        n = write(.fd, s[total..], s.len - total)
+        n <= 0 -> break
+        total = total + n
+    } (total < s.len)
+    total == s.len -> ok = true
 }
 
 ; write-bytes: 將 []byte 寫入檔案（覆寫整個檔案）
@@ -569,8 +612,14 @@ file.write-bytes = (data []byte) (ok ?bool) {
         ok = err('file not open')
         return
     }
-    written = write(.fd, data, data.len)
-    written == data.len -> ok = true
+    total = 0
+    {
+        total >= data.len -> break
+        n = write(.fd, data[total..], data.len - total)
+        n <= 0 -> break
+        total = total + n
+    } (total < data.len)
+    total == data.len -> ok = true
 }
 
 ; ═══════════════════════════════════════════════
@@ -584,7 +633,7 @@ file.write-bytes = (data []byte) (ok ?bool) {
 ;   nil        — 檔案為空
 ;   err        — 讀取失敗
 read-bytes = (p str) (content ?[]byte) {
-    f = open(p, {
+    f = open(p,  {
         mode: read
         perm: perm-644
         excl: false
@@ -593,7 +642,9 @@ read-bytes = (p str) (content ?[]byte) {
     })
     f: {
         err -> content = err('open failed')
+
         nil -> return
+
         -> {
             content = it.read-bytes()
             it.close()
@@ -608,7 +659,7 @@ read-bytes = (p str) (content ?[]byte) {
 ;   nil     — 檔案為空
 ;   err     — 讀取失敗
 read-str = (p str) (content ?str) {
-    f = open(p, {
+    f = open(p,  {
         mode: read
         perm: perm-644
         excl: false
@@ -617,7 +668,9 @@ read-str = (p str) (content ?str) {
     })
     f: {
         err -> content = err('open failed')
+
         nil -> return
+
         -> {
             content = it.read-str()
             it.close()
@@ -632,7 +685,7 @@ read-str = (p str) (content ?str) {
 ;   ok(true) — 成功
 ;   err      — 寫入失敗
 write-str = (p str, data str) (ok ?bool) {
-    f = open(p, {
+    f = open(p,  {
         mode: write
         perm: perm-644
         excl: false
@@ -641,6 +694,7 @@ write-str = (p str, data str) (ok ?bool) {
     })
     f: {
         err -> ok = err('open failed')
+
         -> {
             ok = it.write-str(data)
             it.close()
@@ -655,7 +709,7 @@ write-str = (p str, data str) (ok ?bool) {
 ;   ok(true) — 成功
 ;   err      — 寫入失敗
 write-bytes = (p str, data []byte) (ok ?bool) {
-    f = open(p, {
+    f = open(p,  {
         mode: write
         perm: perm-644
         excl: false
@@ -664,6 +718,7 @@ write-bytes = (p str, data []byte) (ok ?bool) {
     })
     f: {
         err -> ok = err('open failed')
+
         -> {
             ok = it.write-bytes(data)
             it.close()
@@ -684,7 +739,11 @@ file.append = (data str, n i64) (ok bool) {
     existing []byte = with-len(4096)
     exist-n = 0
     size = stat-size(save-path)
-    size > 0 -> size > 4096 -> exist-n = read(rd-fd, existing, 4096) -> exist-n = read(rd-fd, existing, size)
+    {
+        size > 4096 -> exist-n = read(rd-fd, existing, 4096)
+
+        size > 0 -> exist-n = read(rd-fd, existing, size)
+    }
     close(rd-fd)
 
     wr-fd = open-file(save-path, 1537, 420)
@@ -873,12 +932,14 @@ walk-collect = (dirpath str, paths []str) (out []str) {
                 last == sep -> fullpath = dirpath - name
                 last != sep -> fullpath = dirpath - '/' - name
             }
+
             dirpath.len == 0 -> fullpath = name
         }
         is-d = is-dir(fullpath)
 
         {
             is-d -> out = walk-collect(fullpath, out)
+
             is-d == false -> out.push(fullpath)
         }
     }

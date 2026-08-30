@@ -224,6 +224,12 @@ func (f *formatter) attachedAnnotations(stmt parser.Statement) []*parser.Annotat
 	return nil
 }
 
+// hasAttachedAnnotations reports whether the statement has attached annotations
+// that will be rendered as a #{...} line before the statement body.
+func (f *formatter) hasAttachedAnnotations(stmt parser.Statement) bool {
+	return len(f.attachedAnnotations(stmt)) > 0
+}
+
 // lowerHexLiteral converts an uppercase hex literal to lowercase.
 // Handles two forms:
 //   - "0xFF" / "0XFF" → "0xff"  (integer hex literal)

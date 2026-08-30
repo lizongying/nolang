@@ -440,10 +440,10 @@ func (f *formatter) formatBlockInner(body *parser.BlockStatement, openBraceLine 
 				if prevEndLine == 0 {
 					prevEndLine = stmtTokenLine(statements[i-1])
 				}
-				if f.hasBlankLineBetween(prevEndLine, currStartLine) {
-					f.write("\n") // blank line (no indent)
-				}
-				f.newline()
+			if f.hasBlankLineBetween(prevEndLine, currStartLine) || f.hasAttachedAnnotations(stmt) {
+				f.write("\n") // blank line (no indent)
+			}
+			f.newline()
 			}
 		} else {
 			// Check for blank line between '{' and first statement.

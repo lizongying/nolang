@@ -79,7 +79,7 @@ func (f *formatter) formatProgram(p *parser.Program) {
 			} else if prevIsUse || currIsUse {
 				// 導入語句和其他語句之間保留空行
 				f.newline()
-			} else if f.hasBlankLineBetween(prevEndLine, currStartLine) || (prevIsFunc && currIsFunc) || f.hasDocComment(stmt) {
+			} else if f.hasBlankLineBetween(prevEndLine, currStartLine) || (prevIsFunc && currIsFunc) || f.hasDocComment(stmt) || f.hasAttachedAnnotations(stmt) {
 				f.newline()
 			}
 			f.newline()

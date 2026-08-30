@@ -51,16 +51,18 @@ test-struct-field = () (pass bool) {
         eprint(' ')
         eprint(kh.pub[i])
     }
-    1
+    match-val i64 = 1
     i <- [0..32): {
         (kh.pub[i]) != expected[i] -> {
-            0
+            match-val = 0
             break
         }
     }
-    0 -> {
-        print('FAIL: struct field scalarmult-base mismatch')
-        return
+    match-val: {
+        0 -> {
+            print('FAIL: struct field scalarmult-base mismatch')
+            return
+        }
     }
     pass = true
 }
@@ -115,16 +117,18 @@ test-func-output = () (pass bool) {
         eprint(' ')
         eprint(alice-pub[i])
     }
-    1
+    match-val i64 = 1
     i <- [0..32): {
         (alice-pub[i]) != expected[i] -> {
-            0
+            match-val = 0
             break
         }
     }
-    0 -> {
-        print('FAIL: func output scalarmult-base mismatch')
-        return
+    match-val: {
+        0 -> {
+            print('FAIL: func output scalarmult-base mismatch')
+            return
+        }
     }
     pass = true
 }

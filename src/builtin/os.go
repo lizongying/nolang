@@ -507,6 +507,7 @@ func init() {
 		ForwardFunc:  "stat-mtime",
 	})
 
+	// [deprecated] read-file: use read-bytes instead (supports error handling, TOCTOU safety, loop read)
 	// read-file: read entire file into a []byte
 	BuiltinMethodList = append(BuiltinMethodList, BuiltinMethod{
 		ReceiverType: ReceiverGlobal,
@@ -517,6 +518,7 @@ func init() {
 		ForwardFunc:  "read-file",
 	})
 
+	// [deprecated] write-file: use write-bytes instead (supports error handling, loop write)
 	// write-file: write []byte data to a file (overwrite)
 	BuiltinMethodList = append(BuiltinMethodList, BuiltinMethod{
 		ReceiverType: ReceiverGlobal,

@@ -218,7 +218,7 @@ process.start-with-opts = (program str, args []str, dir str, input str, merge-er
     err-read i64 = -1
     err-write i64 = -1
     {
-        !merge-err -> {
+        ! merge-err -> {
             err-fds = process-pipe()
             {
                 err-fds < 0 -> {
@@ -243,7 +243,7 @@ process.start-with-opts = (program str, args []str, dir str, input str, merge-er
                     fs.close(out-read)
                     fs.close(out-write)
                     {
-                        !merge-err -> {
+                        ! merge-err -> {
                             fs.close(err-read)
                             fs.close(err-write)
                         }
@@ -261,13 +261,15 @@ process.start-with-opts = (program str, args []str, dir str, input str, merge-er
 
     {
         pid == 0 -> {
+
             ; 子進程：重定向標準流
             process-dup2(out-write, 1)
             {
                 merge-err -> {
                     process-dup2(out-write, 2)
                 }
-                !merge-err -> {
+
+                ! merge-err -> {
                     process-dup2(err-write, 2)
                 }
             }
@@ -277,7 +279,7 @@ process.start-with-opts = (program str, args []str, dir str, input str, merge-er
             fs.close(out-read)
             fs.close(out-write)
             {
-                !merge-err -> {
+                ! merge-err -> {
                     fs.close(err-read)
                     fs.close(err-write)
                 }
@@ -299,11 +301,12 @@ process.start-with-opts = (program str, args []str, dir str, input str, merge-er
         }
 
         pid < 0 -> {
+
             ; fork 失敗
             fs.close(out-read)
             fs.close(out-write)
             {
-                !merge-err -> {
+                ! merge-err -> {
                     fs.close(err-read)
                     fs.close(err-write)
                 }
@@ -321,7 +324,7 @@ process.start-with-opts = (program str, args []str, dir str, input str, merge-er
     ; 父進程：關閉子進程端的 fd
     fs.close(out-write)
     {
-        !merge-err -> {
+        ! merge-err -> {
             err-write >= 0 -> fs.close(err-write)
         }
     }
@@ -342,7 +345,7 @@ process.start-with-opts = (program str, args []str, dir str, input str, merge-er
     .pid = pid
     .stdout-fd = out-read
     .stdin-fd = -1
-    .stderr-fd = !merge-err ? err-read : -1
+    .stderr-fd = ! merge-err ? err-read : -1
     .exit-code = 0
     .running = 1
     ok = true
@@ -557,6 +560,7 @@ process-shell = (cmd str) (status i64) {
 
 ; POSIX 版本：使用純 Nolang 實現（process-fork/pipe/dup2/exec-shell/waitpid）。
 ; 不依賴 process.c C runtime，與 Windows 版本對稱。
+
 #{mac-amd64, mac-arm64, linux-amd64, linux-arm64, wasi-wasm32}
 cmd = (program str, args []str, dir str, input str, env []str, timeout i64, merge-err bool) (out str, stderr str, code i64, err str) {
     out = ''
@@ -585,7 +589,7 @@ cmd = (program str, args []str, dir str, input str, env []str, timeout i64, merg
     err-read i64 = -1
     err-write i64 = -1
     {
-        !merge-err -> {
+        ! merge-err -> {
             err-fds = process-pipe()
             {
                 err-fds < 0 -> {
@@ -611,7 +615,7 @@ cmd = (program str, args []str, dir str, input str, env []str, timeout i64, merg
                     fs.close(out-read)
                     fs.close(out-write)
                     {
-                        !merge-err -> {
+                        ! merge-err -> {
                             fs.close(err-read)
                             fs.close(err-write)
                         }
@@ -630,13 +634,15 @@ cmd = (program str, args []str, dir str, input str, env []str, timeout i64, merg
 
     {
         pid == 0 -> {
+
             ; 子進程：重定向標準流
             process-dup2(out-write, 1)
             {
                 merge-err -> {
                     process-dup2(out-write, 2)
                 }
-                !merge-err -> {
+
+                ! merge-err -> {
                     process-dup2(err-write, 2)
                 }
             }
@@ -646,7 +652,7 @@ cmd = (program str, args []str, dir str, input str, env []str, timeout i64, merg
             fs.close(out-read)
             fs.close(out-write)
             {
-                !merge-err -> {
+                ! merge-err -> {
                     fs.close(err-read)
                     fs.close(err-write)
                 }
@@ -668,11 +674,12 @@ cmd = (program str, args []str, dir str, input str, env []str, timeout i64, merg
         }
 
         pid < 0 -> {
+
             ; fork 失敗
             fs.close(out-read)
             fs.close(out-write)
             {
-                !merge-err -> {
+                ! merge-err -> {
                     fs.close(err-read)
                     fs.close(err-write)
                 }
@@ -691,7 +698,7 @@ cmd = (program str, args []str, dir str, input str, env []str, timeout i64, merg
     ; 父進程：關閉子進程端的 fd
     fs.close(out-write)
     {
-        !merge-err -> {
+        ! merge-err -> {
             err-write >= 0 -> fs.close(err-write)
         }
     }
@@ -719,11 +726,14 @@ cmd = (program str, args []str, dir str, input str, env []str, timeout i64, merg
     ; 等待進程結束
     {
         timeout > 0 -> {
+
             ; TODO: 超時功能需要 alarm/SIGALRM 或非阻塞 waitpid 支援
             ; 目前直接阻塞等待（與 stdbuf.no 一致）
             code = process-waitpid(pid, 0)
         }
+
         timeout <= 0 -> {
+
             ; 無限等待
             code = process-waitpid(pid, 0)
         }
@@ -733,16 +743,14 @@ cmd = (program str, args []str, dir str, input str, env []str, timeout i64, merg
 
     ; 讀取 stderr 輸出（如果不 merge-err，捕獲）
     {
-        !merge-err -> {
-            {
-                err-read >= 0 -> {
-                    {
-                        n = fs.read(err-read, buf, 4096)
-                        n <= 0 -> break
-                        stderr = stderr - buf.slice(0, n).to-str()
-                    } (true)
-                    fs.close(err-read)
-                }
+        ! merge-err -> {
+            err-read >= 0 -> {
+                {
+                    n = fs.read(err-read, buf, 4096)
+                    n <= 0 -> break
+                    stderr = stderr - buf.slice(0, n).to-str()
+                } (true)
+                fs.close(err-read)
             }
         }
     }
@@ -752,6 +760,7 @@ cmd = (program str, args []str, dir str, input str, env []str, timeout i64, merg
 ; Windows 版本：使用 Win32 API（CreateProcessA、CreatePipe 等）以純 Nolang 實現。
 ; 不依賴 process.c C runtime，所有進程創建、管道管理、輸出捕獲均透過
 ; win-create-process、win-create-pipe、win-read-pipe 等 ForwardFunc 內建完成。
+
 #{win-amd64, win-arm64}
 cmd = (program str, args []str, dir str, input str, env []str, timeout i64, merge-err bool) (out str, stderr str, code i64, err str) {
     out = ''
@@ -767,7 +776,8 @@ cmd = (program str, args []str, dir str, input str, env []str, timeout i64, merg
         has-space = arg.contains(' ')
         has-space != 0 -> {
             cmdline = cmdline - ' "' - arg - '"'
-        } has-space == 0 -> {
+        }
+        has-space == 0 -> {
             cmdline = cmdline - ' ' - arg
         }
     }
@@ -787,7 +797,7 @@ cmd = (program str, args []str, dir str, input str, env []str, timeout i64, merg
     err-read i64 = 0
     err-write i64 = 0
     {
-        !merge-err -> {
+        ! merge-err -> {
             err-fds = win-create-pipe()
             {
                 err-fds == 0 -> {
@@ -813,7 +823,7 @@ cmd = (program str, args []str, dir str, input str, env []str, timeout i64, merg
                     win-close-handle(out-read)
                     win-close-handle(out-write)
                     {
-                        !merge-err -> {
+                        ! merge-err -> {
                             win-close-handle(err-read)
                             win-close-handle(err-write)
                         }
@@ -846,7 +856,7 @@ cmd = (program str, args []str, dir str, input str, env []str, timeout i64, merg
     ; 父進程關閉子進程端的 handle
     win-close-handle(out-write)
     {
-        !merge-err -> {
+        ! merge-err -> {
             err-write != 0 -> win-close-handle(err-write)
         }
     }
@@ -858,7 +868,7 @@ cmd = (program str, args []str, dir str, input str, env []str, timeout i64, merg
         proc-handle == 0 -> {
             win-close-handle(out-read)
             {
-                !merge-err -> {
+                ! merge-err -> {
                     err-read != 0 -> win-close-handle(err-read)
                 }
             }
@@ -884,18 +894,25 @@ cmd = (program str, args []str, dir str, input str, env []str, timeout i64, merg
             wait-status = win-wait-process(proc-handle, timeout)
             {
                 wait-status == 0 -> {
+
                     ; 超時，終止進程
                     win-terminate-process(proc-handle, 1)
                     win-wait-process(proc-handle, 0)
                     code = -2
                     err = 'process timed out'
-                } !wait-status == 0 -> {
+                }
+
+                ! wait-status == 0 -> {
+
                     ; 已退出
                     exit-code, ok = win-get-exit-code(proc-handle)
                     code = exit-code
                 }
             }
-        } timeout <= 0 -> {
+        }
+
+        timeout <= 0 -> {
+
             ; 無限等待
             win-wait-process(proc-handle, 0)
             exit-code, ok = win-get-exit-code(proc-handle)
@@ -919,18 +936,16 @@ cmd = (program str, args []str, dir str, input str, env []str, timeout i64, merg
 
     ; 讀取 stderr 輸出（如果不 merge-err，捕獲）
     {
-        !merge-err -> {
-            {
-                err-read != 0 -> {
-                    chunk str = ''
-                    chunk-n i64 = 0
-                    {
-                        chunk, chunk-n = win-read-pipe(err-read, 4096)
-                        chunk-n <= 0 -> break
-                        stderr = stderr - chunk
-                    } (true)
-                    win-close-handle(err-read)
-                }
+        ! merge-err -> {
+            err-read != 0 -> {
+                chunk str = ''
+                chunk-n i64 = 0
+                {
+                    chunk, chunk-n = win-read-pipe(err-read, 4096)
+                    chunk-n <= 0 -> break
+                    stderr = stderr - chunk
+                } (true)
+                win-close-handle(err-read)
             }
         }
     }
@@ -1032,7 +1047,9 @@ list-all = () (procs []proc-info) {
                 comm.len > 0 -> p.name = comm.trim()
                 procs.push(p)
             }
+
             nil ->
+
             err ->
         }
     }
@@ -1091,6 +1108,7 @@ spawn = (cmd str) (pid i64) {
             ; exec 失敗，退出
             os.exit(127)
         }
+
         pid < 0 -> {
 
             ; fork 失敗
@@ -1113,6 +1131,7 @@ shell = (cmd str) (code i64) {
     pid = spawn(cmd)
     {
         pid > 0 -> code = process-waitpid(pid, 0)
+
         pid < 0 -> code = -1
     }
 }

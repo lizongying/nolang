@@ -2970,3 +2970,59 @@ func TestFormatMultiIndexAssignRegression(t *testing.T) {
 		})
 	}
 }
+
+// TestFormatAnnotationBlankLine verifies that a blank line is inserted before
+// attached annotations (#{...}) when there is a preceding statement.
+func TestFormatAnnotationBlankLine(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		expected string
+	}{
+		{
+			name: "annotation after statement gets blank line",
+			input: `x = 1
+#{mac-amd64}
+x = 2`,
+			expected: `x = 1
+
+#{mac-amd64}
+x = 2`,
+		},
+		{
+			name: "annotation as first statement no blank line",
+			input: `#{mac-amd64}
+x = 1`,
+			expected: `#{mac-amd64}
+x = 1`,
+		},
+		{
+			name: "multiple annotations each get blank line",
+			input: `x = 1
+#{mac-amd64}
+x = 2
+#{linux-amd64}
+x = 3`,
+			expected: `x = 1
+
+#{mac-amd64}
+x = 2
+
+#{linux-amd64}
+x = 3`,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := Format(tt.input)
+			if result != tt.expected {
+				t.Errorf("Format(%q) = %q, want %q", tt.input, result, tt.expected)
+			}
+			// Idempotency
+			result2 := Format(result)
+			if result2 != result {
+				t.Errorf("not idempotent:\nfirst:\n%s\nsecond:\n%s", result, result2)
+			}
+		})
+	}
+}

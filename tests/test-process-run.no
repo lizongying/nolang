@@ -84,10 +84,10 @@ opts8 = process.cmdopts {
     timeout: 0
     merge-err: false
 }
-out8, code8, err8 = process.exec('echo', args1, opts8)
-ok8 = out8 == 'hello world\n' && code8 == 0 && err8 == ''
+res8 = process.exec('echo', args1, opts8)
+ok8 = res8.stdout == 'hello world\n' && res8.code == 0 && res8.stderr == ''
 ok8 -> print('[8] struct opts .................. PASS')
-ok8 == false -> print('[8] struct opts .................. FAIL out=' - out8.trim() - ' code=' - code8.to-str())
+ok8 == false -> print('[8] struct opts .................. FAIL out=' - res8.stdout.trim() - ' code=' - res8.code.to-str())
 
 ; 9) struct-options with stdin
 opts9 = process.cmdopts {
@@ -97,10 +97,10 @@ opts9 = process.cmdopts {
     timeout: 0
     merge-err: false
 }
-out9, code9, err9 = process.exec('cat', noArgs, opts9)
-ok9 = out9 == 'piped-stdin-data' && code9 == 0
+res9 = process.exec('cat', noArgs, opts9)
+ok9 = res9.stdout == 'piped-stdin-data' && res9.code == 0
 ok9 -> print('[9] struct opts + stdin .......... PASS')
-ok9 == false -> print('[9] struct opts + stdin .......... FAIL out=' - out9)
+ok9 == false -> print('[9] struct opts + stdin .......... FAIL out=' - res9.stdout)
 
 ; 10) struct-options with timeout (status == -2)
 opts10 = process.cmdopts {
@@ -110,10 +110,10 @@ opts10 = process.cmdopts {
     timeout: 200
     merge-err: false
 }
-out10, code10, err10 = process.exec('sleep', sleepArgs, opts10)
-ok10 = code10 == -2
+res10 = process.exec('sleep', sleepArgs, opts10)
+ok10 = res10.code == -2
 ok10 -> print('[10] struct opts + timeout ......... PASS')
-ok10 == false -> print('[10] struct opts + timeout ......... FAIL code=' - code10.to-str())
+ok10 == false -> print('[10] struct opts + timeout ......... FAIL code=' - res10.code.to-str())
 all = ok1 && ok2 && ok3 && ok4 && ok5 && ok5b && ok6 && ok7 && ok8 && ok9 && ok10
 all -> print('ALL PASS')
 all == false -> {

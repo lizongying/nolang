@@ -154,16 +154,18 @@ test-scalarmult-base = () (pass bool) {
         eprint(' ')
         eprint(expected[i])
     }
-    1
+    match-val i64 = 1
     i <- [0..32): {
         (pub[i]) != expected[i] -> {
-            0
+            match-val = 0
             break
         }
     }
-    0 -> {
-        print('FAIL: scalarmult-base does not match expected')
-        return
+    match-val: {
+        0 -> {
+            print('FAIL: scalarmult-base does not match expected')
+            return
+        }
     }
     pass = true
 }

@@ -167,19 +167,22 @@ test-quic-derive-initial-keys = () {
     expected-key[14] = 0x68
     expected-key[15] = 0xa1
 
-    1
+    match-val i64 = 1
     i <- [0..16): {
         key[i] != expected-key[i] -> {
+            match-val = 0
+            break
         }
-        0
     }
-    0 -> {
-        print('FAIL: quic-derive-initial-keys client key mismatch')
-        i <- [0..16): {
-            print(key[i].to-hex())
+    match-val: {
+        0 -> {
+            print('FAIL: quic-derive-initial-keys client key mismatch')
+            i <- [0..16): {
+                print(key[i].to-hex())
+            }
+            print('')
+            return
         }
-        print('')
-        return
     }
     print('PASS: quic-derive-initial-keys')
 }

@@ -12,7 +12,7 @@
 # /example/mysql-driver/src/mysql
 
 ; 測試 1: 以 DSN 連線
-d db = fs.open('root:secret@localhost/testdb')
+d db = mysql.open('root:secret@localhost/testdb')
 d.handle == 0 -> {
     print('fail: open database')
     return
