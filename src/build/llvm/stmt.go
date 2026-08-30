@@ -3096,6 +3096,12 @@ func (g *Generator) generateFunctionDefinition(sb *strings.Builder, fd *parser.F
 			// 堆擁有欄位在函數返回時 data 指標為 NULL，emitHeapFree 的 NULL 檢查
 			// 能安全跳過 free。
 			sb.WriteString(fmt.Sprintf("%scall void @llvm.memset.p0.i64(ptr %s, i8 0, i64 %d, i1 false)\n", g.indent(), llvmVarRef(varName), sz))
+			// Track user struct local variables as heap variables so that:
+			// 1. emitHeapFree releases their heap-owning fields at function exit
+			// 2. `b = a` (local-to-local assignment) triggers deep clone instead of
+			//    shallow copy, preventing shared data pointers between source and target
+			//    (which causes double-free when one is freed and the other is reused)
+			g.trackLocalHeapVar(varName, varType)
 		}
 		// %vec (slice) 局部變數需要 malloc 資料緩衝區，否則 buf[i] = val 會因 data 為 null 而崩潰。
 		// 使用 malloc（而非 alloca）使得資料在函數返回後仍然有效（例如函數輸出 []byte 給呼叫者）。
@@ -7289,7 +7295,13 @@ func (g *Generator) generateLet(sb *strings.Builder, stmt *parser.LetStatement) 
 					if g.isHeapOwningType(srcElemType) {
 						_, isLocal := g.funcLocalNames[name]
 						isOutput := g.outputParamNames != nil && g.outputParamNames[name]
-					if isLocal && !isOutput && ident.Value != name {
+						isGlobal := g.globalVars != nil && g.globalVars[name] && (g.funcLocalNames == nil || !g.funcLocalNames[name])
+						// Deep clone for locals, output params, and globals.
+						// For output params (out = vec[i]), shallow copy would share
+						// the data pointer with the vec element. When the output
+						// is later freed or reassigned, the vec element's data
+						// gets double-freed. Deep clone ensures independent ownership.
+						if (isLocal || isOutput || isGlobal) && ident.Value != name {
 						// All types are cloneable (including nested containers like [][]i64)
 						canClone := true
 						if canClone {
@@ -7308,30 +7320,32 @@ func (g *Generator) generateLet(sb *strings.Builder, stmt *parser.LetStatement) 
 									}
 								}
 								g.emitDeepClone(sb, elemPtr, g.varAddr(name), srcElemType, innerElemType)
-							// 追蹤目標變數為堆變數
+						// 追蹤目標變數為堆變數（僅局部變數，輸出參數和全域變數由呼叫方/emitGlobalHeapFree 管理）
+						if !isOutput && !isGlobal {
 							g.trackLocalHeapVar(name, srcElemType)
-							// 設定變數型別，使後續方法呼叫能正確解析
-							if g.varTypes == nil {
-								g.varTypes = make(map[string]string)
-							}
-							g.varTypes[name] = srcElemType
-							// 傳播 elemType: 如果源是嵌套容器（如 [][]i64），
-							// 目標變數的元素型別應為源的 elemElemType（如 i64）
-							if g.arrayElemTypes != nil {
-								// 查找源的 elemElemType（嵌套容器的內層元素型別）
-								if ident, ok := idxExpr.Left.(*parser.Identifier); ok {
-									if g.elemElemTypes != nil {
-										if eet, ok := g.elemElemTypes[ident.Value]; ok {
-											g.arrayElemTypes[name] = eet
-										}
+						}
+						// 設定變數型別，使後續方法呼叫能正確解析
+						if g.varTypes == nil {
+							g.varTypes = make(map[string]string)
+						}
+						g.varTypes[name] = srcElemType
+						// 傳播 elemType: 如果源是嵌套容器（如 [][]i64），
+						// 目標變數的元素型別應為源的 elemElemType（如 i64）
+						if g.arrayElemTypes != nil {
+							// 查找源的 elemElemType（嵌套容器的內層元素型別）
+							if ident, ok := idxExpr.Left.(*parser.Identifier); ok {
+								if g.elemElemTypes != nil {
+									if eet, ok := g.elemElemTypes[ident.Value]; ok {
+										g.arrayElemTypes[name] = eet
 									}
 								}
 							}
-							return
-							}
+						}
+						return
 						}
 					}
 				}
+			}
 	}
 }
 
@@ -7365,11 +7379,15 @@ func (g *Generator) generateLet(sb *strings.Builder, stmt *parser.LetStatement) 
 				if g.isHeapOwningType(srcElemType) {
 					_, isLocal := g.funcLocalNames[name]
 					isOutput := g.outputParamNames != nil && g.outputParamNames[name]
-					if isLocal && !isOutput {
+					isGlobal := g.globalVars != nil && g.globalVars[name] && (g.funcLocalNames == nil || !g.funcLocalNames[name])
+					// Deep clone for locals, output params, and globals (same fix as §5.12).
+					if isLocal || isOutput || isGlobal {
 						g.freeOldHeapValue(sb, stmt, name)
 						elemPtr := g.generateIndexExprPtr(sb, idxExpr)
 						g.emitDeepClone(sb, elemPtr, g.varAddr(name), srcElemType, srcElemElemType)
-						g.trackLocalHeapVar(name, srcElemType)
+						if !isOutput && !isGlobal {
+							g.trackLocalHeapVar(name, srcElemType)
+						}
 						if g.varTypes == nil {
 							g.varTypes = make(map[string]string)
 						}

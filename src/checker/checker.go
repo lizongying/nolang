@@ -249,6 +249,17 @@ func inferExprType(expr parser.Expression, varTypes map[string]string, funcTypes
 				}
 			}
 		}
+		// Array/slice/str .len and .cap property access returns i64
+		if recv, ok := e.Receiver.(*parser.Identifier); ok {
+			if t, exists := varTypes[recv.Value]; exists {
+				if strings.HasPrefix(t, "[]") || (strings.HasPrefix(t, "[") && strings.Contains(t, "]")) || t == "str" {
+					switch e.Property {
+					case "len", "cap":
+						return "i64"
+					}
+				}
+			}
+		}
 		return ""
 	case *parser.IndexExpression:
 		// Array/slice element access: cannot reliably infer element type here
@@ -761,6 +772,30 @@ func FlattenUnion(name string, aliases map[string]*parser.TypeAlias) []parser.Ty
 	}
 	return nil
 }
+// isAllCapsConst returns true if the name looks like an ALL-CAPS constant
+// (e.g. SQLITE-OK, MYSQL-RECV-BUF, CLIENT-PROTOCOL-41). Used to skip
+// undefined-variable checks for constants from externally imported modules
+// that were filtered out by lib.no during module merging.
+func isAllCapsConst(name string) bool {
+	if name == "" {
+		return false
+	}
+	hasUpper := false
+	for _, ch := range name {
+		switch {
+		case ch >= 'A' && ch <= 'Z':
+			hasUpper = true
+		case ch >= '0' && ch <= '9':
+			// digits allowed
+		case ch == '-':
+			// hyphens allowed
+		default:
+			return false
+		}
+	}
+	return hasUpper
+}
+
 func isValidVarName(name string) bool {
 	if name == "" {
 		return true
@@ -3155,8 +3190,30 @@ func checkUndefinedVarsInExpr(expr parser.Expression, definedVars, funcNames map
 						return nil
 					}
 				}
+				// If the first segment is a known imported module name
+				// (e.g. "sqlite" in "sqlite._sqlite3-open"), skip the
+				// check. vet cannot resolve internal symbols (FFI
+				// functions, constants) from externally imported modules
+				// that are filtered by lib.no export declarations.
+				firstSeg := e.Value[:idx]
+				if idx2 := strings.Index(firstSeg, "."); idx2 > 0 {
+					firstSeg = firstSeg[:idx2]
+				}
+				if definedVars[firstSeg] {
+					return nil
+				}
 			}
 			if builtin.FindBuiltinMethod(e.Value) != nil {
+				return nil
+			}
+			// Skip private FFI functions (underscore-prefixed like
+			// _sqlite3-open) and ALL-CAPS constants (like SQLITE-OK,
+			// MYSQL-RECV-BUF) that are defined in externally imported
+			// modules but filtered out by lib.no. These symbols are
+			// used inside method bodies that get merged into the
+			// program, but their definitions don't survive the
+			// lib.no export filtering applied during module merging.
+			if strings.HasPrefix(e.Value, "_") || isAllCapsConst(e.Value) {
 				return nil
 			}
 			// Option constructors: val, err, ok are not real functions
