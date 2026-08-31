@@ -464,6 +464,12 @@ func (g *Generator) generateCallArg(sb *strings.Builder, arg parser.Expression) 
 		// Cross-module string stride safety: detect %str-long SSA values
 		// (from with-len, with-cap, etc.) via ssaTypes.
 		// Track the temp alloca for stmt-level free to prevent memory leak.
+		// BUT: when arg is a DotExpression (e.g., a.pre-release), the SSA value
+		// is a shallow copy of a struct field — its data pointer is shared with
+		// the original struct. Tracking it for free would free the struct's
+		// data pointer, causing a double-free when the struct is later freed
+		// (e.g., in freeOldHeapValue during best-v = v). Skip tracking for
+		// DotExpression to avoid this.
 		if strings.HasPrefix(ev, "%") && g.ssaTypes != nil {
 			if ssaType, ok := g.ssaTypes[ev]; ok && ssaType == "%str-long" {
 				g.tmpIdx++
@@ -472,7 +478,9 @@ func (g *Generator) generateCallArg(sb *strings.Builder, arg parser.Expression) 
 					sb.WriteString(fmt.Sprintf("%s%s = alloca %%str-long\n", g.indent(), tmpName))
 					sb.WriteString(fmt.Sprintf("%sstore %%str-long %s, %%str-long* %s\n", g.indent(), ev, tmpName))
 				}
-				g.trackStrTemporary(tmpName)
+				if _, isDot := arg.(*parser.DotExpression); !isDot {
+					g.trackStrTemporary(tmpName)
+				}
 				return "%str-long* " + tmpName
 			}
 		}
@@ -545,14 +553,36 @@ func (g *Generator) generateCallArg(sb *strings.Builder, arg parser.Expression) 
 				// struct in-place via the self pointer. A value copy would
 				// discard all mutations and may contain uninitialized data.
 			fieldElemType := g.exprResultLLVMType(arg)
-			fmt.Fprintf(os.Stderr, "[DBG-DOT-ARG] DotExpression arg: fieldElemType=%q isStruct=%v\n", fieldElemType, g.isStructLLVMType(fieldElemType))
 			if fieldElemType != "" && fieldElemType != "i64" && g.isStructLLVMType(fieldElemType) {
 				ptrType = fieldElemType + "*"
 				if sb != nil {
 					ptrAddr := g.generateExprPtr(sb, arg)
-					fmt.Fprintf(os.Stderr, "[DBG-DOT-ARG] generateExprPtr returned: %q\n", ptrAddr)
 					if ptrAddr != "" {
 						return ptrType + " " + ptrAddr
+					}
+					// generateExprPtr failed (e.g. cross-module struct field).
+					// For heap-owning types (%str-long, %vec), we must deep-clone
+					// the field value instead of shallow-copying it. A shallow
+					// copy would share the data pointer with the original struct
+					// field, and the stmt-level temporary free would release it
+					// prematurely (double-free / use-after-free).
+					if fieldElemType == "%str-long" || fieldElemType == "%vec" {
+						// Step 1: alloca temp + store (shallow copy of the struct value)
+						g.tmpIdx++
+						shallowName := fmt.Sprintf("%%ref.shallow.%d", g.tmpIdx)
+						sb.WriteString(fmt.Sprintf("%s%s = alloca %s\n", g.indent(), shallowName, fieldElemType))
+						sb.WriteString(fmt.Sprintf("%sstore %s %s, %s* %s\n", g.indent(), fieldElemType, ev, fieldElemType, shallowName))
+						// Step 2: deep-clone into a separate temp (independent data)
+						g.tmpIdx++
+						cloneName := fmt.Sprintf("%%ref.clone.%d", g.tmpIdx)
+						sb.WriteString(fmt.Sprintf("%s%s = alloca %s\n", g.indent(), cloneName, fieldElemType))
+						cloneElem := "i8"
+						if fieldElemType == "%vec" {
+							cloneElem = "i64"
+						}
+						g.emitDeepClone(sb, shallowName, cloneName, fieldElemType, cloneElem)
+						g.trackStrTemporary(cloneName)
+						return ptrType + " " + cloneName
 					}
 				}
 			}

@@ -2522,6 +2522,24 @@ func (g *Generator) emitStructClone(sb *strings.Builder, srcPtr, dstPtr, structT
 	sb.WriteString(fmt.Sprintf("%scall void @llvm.memcpy.p0i8.p0i8.i64(i8* %s, i8* %s, i64 %d, i1 false)\n",
 		g.indent(), dstI8, srcI8, structSize))
 
+	// Prevent LLVM DSE from shrinking the memcpy. The optimizer sees that
+	// the subsequent per-field clone overwrites the str/vec data pointers
+	// copied by memcpy, and concludes that copying those bytes is a dead
+	// store — shrinking memcpy 72 to memcpy 24. However, the freeOldHeapValue
+	// code that runs BEFORE the next assignment reads those same data
+	// pointers to free them; with the shrunken memcpy, stale/uninitialized
+	// pointer values survive and free() receives an invalid address.
+	// A volatile load of the last byte forces the entire memcpy to be
+	// preserved, because LLVM cannot prove the volatile load reads
+	// the same value regardless of the memcpy.
+	if structSize > 1 {
+		lastByteGEP := g.tmpReg("structclone.volgep")
+		sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds i8, i8* %s, i64 %d\n",
+			g.indent(), lastByteGEP, dstI8, structSize-1))
+		volLoad := g.tmpReg("structclone.vol")
+		sb.WriteString(fmt.Sprintf("%s%s = load volatile i8, i8* %s, align 1\n", g.indent(), volLoad, lastByteGEP))
+	}
+
 	// 遞迴 clone 含堆數據的欄位（覆寫 data 指標為獨立的 clone）
 	structName := strings.TrimPrefix(structType, "%")
 	fields, ok := g.structTypes[structName]
@@ -2753,6 +2771,54 @@ func (g *Generator) hasInlineArrayStructParam(fd *parser.FunctionDefinition) boo
 		llvmType := g.resolveParamLLVMType(r.Type)
 		if checkType(llvmType) {
 			return true
+		}
+	}
+	return false
+}
+
+// hasHeapStructResult checks if a function has results that are user struct
+// types with heap-owning fields (e.g., semver with str fields, or nested
+// structs containing str/vec fields). Such structs trigger deep clone/free
+// patterns in callers that can be mis-optimized by LLVM -O3.
+func (g *Generator) hasHeapStructResult(fd *parser.FunctionDefinition) bool {
+	checkType := func(llvmType string) bool {
+		if !g.isStructLLVMType(llvmType) {
+			return false
+		}
+		structName := strings.TrimPrefix(llvmType, "%")
+		return g.structHasHeapField(structName, map[string]bool{})
+	}
+	// Check results
+	for _, r := range fd.Results {
+		llvmType := g.resolveParamLLVMType(r.Type)
+		if checkType(llvmType) {
+			return true
+		}
+	}
+	return false
+}
+
+// structHasHeapField recursively checks if a struct type contains any
+// heap-owning fields (%str-long, %vec, %arr, or user structs with such fields).
+func (g *Generator) structHasHeapField(structName string, visited map[string]bool) bool {
+	if visited[structName] {
+		return false
+	}
+	visited[structName] = true
+	fields, ok := g.structTypes[structName]
+	if !ok {
+		return false
+	}
+	for _, f := range fields {
+		info := g.classifyFieldHeap(f.typ, f.elemType)
+		switch info.kind {
+		case fieldHeapContainer, fieldHeapUserStruct:
+			return true
+		case fieldHeapNone:
+			// Check inline array fields (e.g., [N x %str-long])
+			if _, elemType, ok := parseInlineArrayType(f.typ); ok && g.isHeapOwningType(elemType) {
+				return true
+			}
 		}
 	}
 	return false
@@ -3008,6 +3074,17 @@ func (g *Generator) generateFunctionDefinition(sb *strings.Builder, fd *parser.F
 	if g.hasInlineArrayStructParam(fd) {
 		sb.WriteString(" noinline optnone")
 	}
+	// Add optnone noinline for functions whose results include user struct types
+	// with heap-owning fields (e.g., semver with str fields). The deep clone/free
+	// patterns in callers (e.g., best-v = v triggering freeOldHeapValue + emitStructClone)
+	// trigger LLVM -O3 mis-optimization: memcpy 72 is shrunk to memcpy 24, and
+	// subsequent GVN/DSE corrupts the cap/data field ordering, causing free() to
+	// receive an invalid pointer (e.g., cap value instead of data pointer).
+	// optnone prevents inlining and per-function optimization, while llc still
+	// generates optimized machine code.
+	if g.hasHeapStructResult(fd) {
+		sb.WriteString(" noinline optnone")
+	}
 	sb.WriteString(" {\n")
 	g.indentLevel++
 	g.emitLabel(sb, "entry")
@@ -3077,13 +3154,23 @@ func (g *Generator) generateFunctionDefinition(sb *strings.Builder, fd *parser.F
 	// out 參數已加入 heapVars，函數內首次賦值（如 resp = nil）會觸發
 	// freeOldHeapValue 釋放舊值。若舊值為呼叫者的棧殘值，free 會釋放垃圾指標
 	// 導致 heap corruption，後續 malloc 偵測到 corruption 時觸發 trace/BPT trap。
+	//
+	// 在 memset 清零之前，先釋放 out 參數可能持有的舊堆數據。
+	// 場景：函數在循環中被重複調用（如 semver.max-satisfying 中的
+	// best = parse(v)），調用者傳入的 out 指針可能已持有上一次調用
+	// 分配的堆數據。若直接 memset 清零，堆指針丟失且未釋放，導致
+	// 內存洩漏；更嚴重的是，若舊值為非堆的棧殘值（未初始化），
+	// memset 後 data 為 NULL，後續 freeOldHeapValue 的 NULL 檢查可安全跳過。
+	// emitVarHeapFree 內部有 NULL 守衛，對未初始化的棧殘值也安全。
 	for _, r := range fd.Results {
 		if r.Name == "" {
 			continue
 		}
 		llvmType := g.varTypes[r.Name]
 		if llvmType == "%option" {
-			// option: tag=1 (nil), data=0
+			// option: 先釋放舊的堆 box（若 tag != nil 且 inner 為堆型別），
+			// 再設置 tag=1 (nil), data=0
+			g.emitOptionHeapFree(sb, llvmVarRef(r.Name), r.Name)
 			tagGEP := g.tmpReg("outzero.tag.gep")
 			sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%option, %%option* %s, i32 0, i32 0\n", g.indent(), tagGEP, llvmVarRef(r.Name)))
 			sb.WriteString(fmt.Sprintf("%sstore i64 1, i64* %s\n", g.indent(), tagGEP))
@@ -3091,7 +3178,12 @@ func (g *Generator) generateFunctionDefinition(sb *strings.Builder, fd *parser.F
 			sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%option, %%option* %s, i32 0, i32 1\n", g.indent(), dataGEP, llvmVarRef(r.Name)))
 			sb.WriteString(fmt.Sprintf("%sstore i64 0, i64* %s\n", g.indent(), dataGEP))
 		} else if g.isHeapOwningType(llvmType) {
-			// 用戶結構體/%vec/%str-long/%arr: memset 確保所有 data 指標為 NULL
+			// 用戶結構體/%vec/%str-long/%arr: 先釋放舊堆數據，再 memset 確保所有 data 指標為 NULL
+			elemType := ""
+			if g.arrayElemTypes != nil {
+				elemType = g.arrayElemTypes[r.Name]
+			}
+			g.emitVarHeapFree(sb, llvmVarRef(r.Name), llvmType, elemType, r.Name)
 			sz := g.llvmTypeSize(llvmType)
 			if sz > 0 {
 				sb.WriteString(fmt.Sprintf("%scall void @llvm.memset.p0.i64(ptr %s, i8 0, i64 %d, i1 false)\n", g.indent(), llvmVarRef(r.Name), sz))

@@ -1,0 +1,50 @@
+; 测试 json.parse 返回 ?json option 类型的内存管理
+; Issue #16: json.parse 返回 %option 类型的内存管理问题
+
+print('start')
+
+; 测试 1: 基本 parse + get-str
+j = json.parse('{"name":"Alice","age":30}')
+j: {
+    ok -> {
+        name, found = it.get-str('name')
+        found -> print('ok: name=' - name)
+        -> print('fail: name not found')
+        
+        age, found2 = it.get-num('age')
+        found2 -> print('ok: age found')
+        -> print('fail: age not found')
+    }
+    nil -> {
+        print('fail: parse returned nil')
+    }
+    err -> {
+        print('fail: parse returned error')
+    }
+}
+
+; 测试 2: parse 空字符串
+j2 = json.parse('')
+j2: {
+    ok -> print('fail: empty string should not be ok')
+    nil -> print('ok: empty string returns nil')
+    err -> print('ok: empty string returns err')
+}
+
+; 测试 3: parse 无效 JSON
+j3 = json.parse('{invalid}')
+j3: {
+    ok -> print('fail: invalid json should not be ok')
+    nil -> print('ok: invalid json returns nil')
+    err -> print('ok: invalid json returns err')
+}
+
+; 测试 4: parse 数组
+j4 = json.parse('[1,2,3]')
+j4: {
+    ok -> print('ok: array parsed')
+    nil -> print('fail: array returns nil')
+    err -> print('fail: array returns err')
+}
+
+print('end')

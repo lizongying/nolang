@@ -1,0 +1,24 @@
+; 最简单的 option match 测试
+
+main = () {
+    print('start')
+    v ?str = 'hello'
+    print('assigned')
+    {
+        v: {
+            ok -> {
+                print('ok branch')
+                print(it)
+            }
+            nil -> {
+                print('nil branch')
+            }
+            err -> {
+                print('err branch')
+            }
+        }
+    }
+    print('end')
+}
+
+main()

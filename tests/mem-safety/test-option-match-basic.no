@@ -1,0 +1,29 @@
+; 测试 option match 是否正常工作
+
+test-fn = () (result ?str) {
+    result = nil
+    result = 'hello'
+}
+
+main = () {
+    print('start')
+    v1 = test-fn()
+    print('got result')
+    {
+        v1: {
+            ok -> {
+                print('ok branch')
+                print(it)
+            }
+            nil -> {
+                print('FAIL: nil')
+            }
+            err -> {
+                print('FAIL: err')
+            }
+        }
+    }
+    print('end')
+}
+
+main()

@@ -1,0 +1,24 @@
+; 测试嵌套 match 中 it 类型推断
+; Issue #16: 嵌套 json.parse option match 中 it.get-str 失败
+
+print('start')
+
+j = json.parse('{"outer":{"inner":"value"}}')
+j: {
+    ok -> {
+        child = it.get('outer')
+        child: {
+            ok -> {
+                val, found2 = it.get-str('inner')
+                found2 -> print('ok: nested=' - val)
+                -> print('fail: nested not found')
+            }
+            nil -> print('fail: child nil')
+            err -> print('fail: child err')
+        }
+    }
+    nil -> print('fail: parse nil')
+    err -> print('fail: parse err')
+}
+
+print('end')
