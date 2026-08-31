@@ -47,8 +47,16 @@ func ResolveMethodCalls(program *parser.Program, typeOwner map[string]string) {
 // ResolveSelfMethodCalls 改寫 self.field.method() 形式的接收者方法呼叫。
 func ResolveSelfMethodCalls(program *parser.Program) { resolveSelfMethodCalls(program) }
 
-// ResolveModuleConstants 以 constants 表替換 program 中的模組常量引用。
-func ResolveModuleConstants(program *parser.Program, constants map[string]parser.Expression) {
+// ResolveModuleConstants 替換 program 中的模組常量引用。
+// 遍歷 program 語句，從帶有 IsModuleConst 標記的 LetStatement 收集常量名→值
+// 映射，然後替換表達式中對常量名的引用為字面值。
+func ResolveModuleConstants(program *parser.Program) {
+	constants := make(map[string]parser.Expression)
+	for _, stmt := range program.Statements {
+		if ls, ok := stmt.(*parser.LetStatement); ok && ls.IsModuleConst && ls.Name != nil {
+			constants[ls.Name.Value] = ls.Value
+		}
+	}
 	resolveModuleConstants(program, constants)
 }
 

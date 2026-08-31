@@ -809,6 +809,48 @@ func (t *Transpiler) workspaceRoot() string {
 	return ""
 }
 
+// resolveModuleFile resolves a module path (e.g. "std/byte", "/example/test1/src/utils")
+// to its source file path on disk. For std/ modules it uses GetStdSourceFile;
+// for user modules it resolves relative to the workspace root.
+// Returns empty string if the path cannot be resolved (best-effort).
+func resolveModuleFile(modPath, workspaceRoot string) string {
+	if strings.HasPrefix(modPath, "std/") || modPath == "std" {
+		relPath := strings.TrimPrefix(modPath, "std/")
+		if modPath == "std" {
+			relPath = ""
+		}
+		// Try direct path first
+		if relPath != "" {
+			if p := GetStdSourceFile(relPath); p != "" {
+				if _, err := os.Stat(p); err == nil {
+					return p
+				}
+			}
+		}
+		// Try lookup table (e.g. "net" → "net/net")
+		for _, info := range checker.KnownStdModules() {
+			if info.ShortPath == relPath {
+				if p := GetStdSourceFile(info.FullPath); p != "" {
+					if _, err := os.Stat(p); err == nil {
+						return p
+					}
+				}
+			}
+		}
+		return ""
+	}
+	// User module: resolve relative to workspace root
+	relPath := strings.TrimPrefix(modPath, "/")
+	fullPath := filepath.Join(workspaceRoot, relPath)
+	if !strings.HasSuffix(fullPath, ".no") {
+		fullPath = fullPath + ".no"
+	}
+	if _, err := os.Stat(fullPath); err == nil {
+		return fullPath
+	}
+	return ""
+}
+
 func (t *Transpiler) resolveUse(use *parser.UseStatement) (*parser.Program, error) {
 	// use path.fn → 載入 path.no 並取出 fn 函數
 	path := use.Path
@@ -1677,7 +1719,9 @@ func (t *Transpiler) CompileTarget(source string, _ Target) (string, error) {
 	merged.Sem.Merge(program.Sem)
 	// 記錄已顯式導入的模組路徑，避免重複載入
 	explicitStdModules := make(map[string]bool)
-	moduleConstants := make(map[string]parser.Expression)
+	// moduleConstants 的功能已下沉到 LetStatement.IsModuleConst 欄位。
+	// 合併模組時直接在 LetStatement 上標記 IsModuleConst = true，
+	// resolveModuleConstants 改為遍歷 program 語句從帶標記的節點收集常量。
 	// mergedGlobalConsts tracks uppercase constant names already added to
 	// merged from any module (std or user). Prevents duplicate-declaration
 	// errors when multiple std modules define the same constant (e.g.
@@ -1688,10 +1732,14 @@ func (t *Transpiler) CompileTarget(source string, _ Target) (string, error) {
 	// 用於將導入模組的 struct/interface/enum 等型別定義加上模組前綴
 	// （如 result → sql.result），避免與主檔案變數或型別衝突。
 	typeOwner := make(map[string]string)
-	// stmtOwner 記錄 merged 中每條模組語句的來源模組短名（主程序語句無記錄）。
+	// stmtOwner 的功能已下沉到 CommentedNode.ModuleOwner 欄位。
+	// 語句的來源模組短名直接存儲在 AST 節點上（parser.SetModuleOwner），
 	// 供 prefixCollidingFunctions 判定：同名頂層函數衝突時，只有模組側定義
 	// 改名為 module.fn，主程序定義永不改名。
-	stmtOwner := make(map[parser.Statement]string)
+	// stmtFileMap 的功能已下沉到 CommentedNode.SourceFile 欄位。
+	// 語句的源碼檔案路徑直接存儲在 AST 節點上（parser.SetSourceFile），
+	// 供 vet 模式的 RunAllLints 填充 LintResult.File，使 lint 診斷歸因到
+	// 正確的源檔而非一律使用輸入檔路徑。
 	// loadedUserModules tracks non-std module paths that have already been
 	// imported (when use.Alias == ""). Prevents duplicate FunctionDefinition
 	// pointers from being appended when the same module is referenced by
@@ -1715,6 +1763,9 @@ func (t *Transpiler) CompileTarget(source string, _ Target) (string, error) {
 		if err != nil {
 			return fmt.Errorf("loading module %s: %w", use.Path, err)
 		}
+		// 解析模組的源碼檔案路徑，供 vet lint 歸因使用。
+		// std/ 模組 → GetStdSourceFile；用戶模組 → workspace 根目錄解析。
+		modFile := resolveModuleFile(use.Path, t.workspaceRoot())
 		merged.Sem.Merge(modProg.Sem)
 		if use.Alias == "" {
 			loadedUserModules[use.Path] = true
@@ -1741,12 +1792,14 @@ func (t *Transpiler) CompileTarget(source string, _ Target) (string, error) {
 					if use.Function != "" && fd.Name == use.Function {
 						fd.Name = use.Alias
 						merged.Statements = append(merged.Statements, fd)
+						parser.SetSourceFile(fd, modFile)
 						// alias 導入按用戶指定名，不參與衝突前綴
 					}
 					// Skip other functions when alias is used
 				} else {
 					merged.Statements = append(merged.Statements, fd)
-					stmtOwner[fd] = useModShort
+					parser.SetModuleOwner(fd, useModShort)
+					parser.SetSourceFile(fd, modFile)
 				}
 			}
 			if ls, ok := ms.(*parser.LetStatement); ok && ls.Name != nil {
@@ -1758,8 +1811,9 @@ func (t *Transpiler) CompileTarget(source string, _ Target) (string, error) {
 						}
 						if !mainVarNames[ls.Name.Value] {
 							merged.Statements = append(merged.Statements, ls)
+							parser.SetSourceFile(ls, modFile)
 							if checker.IsConstantExpr(ls.Value) && checker.MatchesTargetPlatform(modProg.Sem.PlatformKeysOf(ls), t.targetGoos, t.targetGoarch) {
-								moduleConstants[ls.Name.Value] = ls.Value
+								ls.IsModuleConst = true
 							}
 						}
 					}
@@ -1779,9 +1833,10 @@ func (t *Transpiler) CompileTarget(source string, _ Target) (string, error) {
 							mergedGlobalConsts[ls.Name.Value] = true
 						}
 						merged.Statements = append(merged.Statements, ls)
-						stmtOwner[ls] = useModShort
+						parser.SetModuleOwner(ls, useModShort)
+						parser.SetSourceFile(ls, modFile)
 						if isConst && checker.MatchesTargetPlatform(platformKeys, t.targetGoos, t.targetGoarch) {
-							moduleConstants[ls.Name.Value] = ls.Value
+							ls.IsModuleConst = true
 						}
 					}
 				}
@@ -1789,23 +1844,29 @@ func (t *Transpiler) CompileTarget(source string, _ Target) (string, error) {
 			if use.Alias == "" {
 				if sd, ok := ms.(*parser.StructDefinition); ok {
 					merged.Statements = append(merged.Statements, sd)
+					parser.SetSourceFile(sd, modFile)
 				}
 				if id, ok := ms.(*parser.InterfaceDefinition); ok {
 					merged.Statements = append(merged.Statements, id)
+					parser.SetSourceFile(id, modFile)
 				}
 				if ta, ok := ms.(*parser.TypeAlias); ok {
 					merged.Statements = append(merged.Statements, ta)
+					parser.SetSourceFile(ta, modFile)
 				}
 				if ed, ok := ms.(*parser.EnumDefinition); ok {
 					merged.Statements = append(merged.Statements, ed)
+					parser.SetSourceFile(ed, modFile)
 				}
 				if ted, ok := ms.(*parser.TaggedEnumDefinition); ok {
 					merged.Statements = append(merged.Statements, ted)
+					parser.SetSourceFile(ted, modFile)
 				}
 				// FFI extern 宣告必須隨模組一起合併，否則 codegen 的 externFuncs
 				// 會缺少條目，導致 extern 呼叫走 Nolang by-reference 路徑而非 FFI 路徑。
 				if es, ok := ms.(*parser.ExternStatement); ok {
 					merged.Statements = append(merged.Statements, es)
+					parser.SetSourceFile(es, modFile)
 				}
 			}
 		}
@@ -1820,10 +1881,12 @@ func (t *Transpiler) CompileTarget(source string, _ Target) (string, error) {
 		}
 		if _, ok := stmt.(*parser.FunctionDefinition); ok {
 			merged.Statements = append(merged.Statements, stmt)
+			parser.SetSourceFile(stmt, t.sourcePath)
 		}
 		if es, ok := stmt.(*parser.ExternStatement); ok {
 			// FFI extern 宣告 — 收集至 merged 供後續 codegen 使用（目前尚未實作）
 			merged.Statements = append(merged.Statements, es)
+			parser.SetSourceFile(es, t.sourcePath)
 		}
 	}
 	// Process transitive imports: drain the pendingUses worklist.
@@ -1902,13 +1965,15 @@ func (t *Transpiler) CompileTarget(source string, _ Target) (string, error) {
 		if err != nil {
 			return "", fmt.Errorf("auto-loading module %s: %w", path, err)
 		}
+		modFile := resolveModuleFile(path, t.workspaceRoot())
 		merged.Sem.Merge(modProg.Sem)
 		// 為自動載入模組的型別定義加上模組前綴（如 result → sql.result）
 		prefixModuleStatements(modProg.Statements, info.ShortName, typeOwner)
 		for _, ms := range modProg.Statements {
 			if fd, ok := ms.(*parser.FunctionDefinition); ok {
 				merged.Statements = append(merged.Statements, fd)
-				stmtOwner[fd] = info.ShortName
+				parser.SetModuleOwner(fd, info.ShortName)
+				parser.SetSourceFile(fd, modFile)
 			}
 			if ls, ok := ms.(*parser.LetStatement); ok && ls.Name != nil {
 				// 如果主程序已有同名變量，跳過以避免衝突
@@ -1929,26 +1994,32 @@ func (t *Transpiler) CompileTarget(source string, _ Target) (string, error) {
 						mergedGlobalConsts[ls.Name.Value] = true
 					}
 					merged.Statements = append(merged.Statements, ls)
-					stmtOwner[ls] = info.ShortName
+					parser.SetModuleOwner(ls, info.ShortName)
+					parser.SetSourceFile(ls, modFile)
 					if isConst && checker.MatchesTargetPlatform(platformKeys, t.targetGoos, t.targetGoarch) {
-						moduleConstants[ls.Name.Value] = ls.Value
+						ls.IsModuleConst = true
 					}
 				}
 			}
 			if sd, ok := ms.(*parser.StructDefinition); ok {
 				merged.Statements = append(merged.Statements, sd)
+				parser.SetSourceFile(sd, modFile)
 			}
 			if id, ok := ms.(*parser.InterfaceDefinition); ok {
 				merged.Statements = append(merged.Statements, id)
+				parser.SetSourceFile(id, modFile)
 			}
 			if ta, ok := ms.(*parser.TypeAlias); ok {
 				merged.Statements = append(merged.Statements, ta)
+				parser.SetSourceFile(ta, modFile)
 			}
 			if ed, ok := ms.(*parser.EnumDefinition); ok {
 				merged.Statements = append(merged.Statements, ed)
+				parser.SetSourceFile(ed, modFile)
 			}
 			if ted, ok := ms.(*parser.TaggedEnumDefinition); ok {
 				merged.Statements = append(merged.Statements, ted)
+				parser.SetSourceFile(ted, modFile)
 			}
 		}
 		// 傳遞閉包：掃描本模組體內的 std 引用（module.fn()/use std/...），
@@ -2002,9 +2073,9 @@ func (t *Transpiler) CompileTarget(source string, _ Target) (string, error) {
 	// 函數衝突前綴：多模組同名頂層函數（connect×4、get×5 …）改名為
 	// module.fn 並改寫模組內裸呼叫。必須在 prefixMethodNames 之後執行，
 	// 否則 path.join 之類的新名字會被誤認成 struct path 的方法。
-	prefixedFns := prefixCollidingFunctions(merged, stmtOwner)
+	prefixedFns := prefixCollidingFunctions(merged)
 	// 掃描合併後的程序，找出被重新賦值的全局變量（Type==nil 的 LetStatement），
-	// 從 moduleConstants 中移除它們，避免被常量傳播替換為字面量。
+	// 從常量標記中移除可變全局變量，避免被常量傳播替換為字面量。
 	// 這些可變全局變量在 codegen 中應從 @VAR 載入實際值，而非使用初始常量。
 	// 必須在第一次 ResolveModuleConstants 之前執行，否則函數體中的裸名 COUNTER
 	// 會被替換為字面量 0，破壞可變全局變量的語意。
@@ -2012,11 +2083,15 @@ func (t *Transpiler) CompileTarget(source string, _ Target) (string, error) {
 	for _, stmt := range merged.Statements {
 		collectReassignedGlobals(stmt, reassignedGlobals)
 	}
-	for name := range reassignedGlobals {
-		delete(moduleConstants, name)
+	for _, stmt := range merged.Statements {
+		if ls, ok := stmt.(*parser.LetStatement); ok && ls.Name != nil {
+			if reassignedGlobals[ls.Name.Value] {
+				ls.IsModuleConst = false
+			}
+		}
 	}
 	// 常量傳播：將模組常量替換為字面值，使 module functions 可以直接使用常量
-	checker.ResolveModuleConstants(merged, moduleConstants)
+	checker.ResolveModuleConstants(merged)
 	checker.DebugCountHashFns("after-resolveModuleConstants", merged)
 	// 解析 module.fn() 呼叫：將 DotExpression 重寫為 Identifier
 	// 必須在 monomorphizeGenerics 之前執行，以便泛型模組函數也能被正確處理
@@ -2097,9 +2172,9 @@ func (t *Transpiler) CompileTarget(source string, _ Target) (string, error) {
 	// 再次傳播模組常量：頂層語句此時已加入 merged，且 module.CONST 已被
 	// ResolveModuleCalls 改寫為裸名（如 math.PI → PI），需要再次將裸名
 	// 常量替換為字面值。否則頂層代碼中的模組常量會殘留為變數引用。
-	// reassignedGlobals 已在前面收集並從 moduleConstants 中移除，
+	// reassignedGlobals 已在前面處理（清除 IsModuleConst 標記），
 	// 可變全局變量不會被常量傳播替換。
-	checker.ResolveModuleConstants(merged, moduleConstants)
+	checker.ResolveModuleConstants(merged)
 	// 解析 Type.method(args) 靜態方法呼叫：將 bigint.cmp(d, d2) 重寫為
 	// bigint.bigint.cmp(d, d2)，與 prefixMethodNames 重命名後的方法定義對齊。
 	// 必須在 resolveSelfMethodCalls 之後執行（該 pass 已用正確的 module 前綴
@@ -2110,7 +2185,7 @@ func (t *Transpiler) CompileTarget(source string, _ Target) (string, error) {
 	// 以前這類錯誤會落到 LLVM opt 才報 `use of undefined value`，難以定位。
 	// 必須在 ResolveModuleCalls + ResolveMethodCalls 之後執行：合法的
 	// module.fn / Type.method 呼叫此時都已被改寫，殘留的模組點呼叫即非法。
-	if err := checkUnresolvedModuleCalls(merged, stmtOwner, importedModules); err != nil {
+	if err := checkUnresolvedModuleCalls(merged, importedModules); err != nil {
 		return "", fmt.Errorf("check error: %v", err)
 	}
 	// 泛型結構體單態化：掃描 map[K]V 使用點，自 hashmap-*-tmpl 模板生成具體結構與方法。
@@ -2204,24 +2279,12 @@ func (t *Transpiler) CompileTarget(source string, _ Target) (string, error) {
 			}
 			// 只記錄非函數的全局變量
 			if _, isFn := s.Value.(*parser.FunctionLiteral); isFn {
-				if owner, ok := stmtOwner[stmt]; ok {
-					funcOwner[s.Name.Value] = owner
-				} else {
-					funcOwner[s.Name.Value] = ""
-				}
+				funcOwner[s.Name.Value] = parser.GetModuleOwner(stmt)
 			} else {
-				if owner, ok := stmtOwner[stmt]; ok {
-					globalVarOwner[s.Name.Value] = owner
-				} else {
-					globalVarOwner[s.Name.Value] = ""
-				}
+				globalVarOwner[s.Name.Value] = parser.GetModuleOwner(stmt)
 			}
 		case *parser.FunctionDefinition:
-			if owner, ok := stmtOwner[stmt]; ok {
-				funcOwner[s.Name] = owner
-			} else {
-				funcOwner[s.Name] = ""
-			}
+			funcOwner[s.Name] = parser.GetModuleOwner(stmt)
 		}
 	}
 	t.llvmGenerator.SetGlobalVarOwners(globalVarOwner, funcOwner)

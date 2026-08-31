@@ -2179,12 +2179,18 @@ func printLintResults(results []nbuild.LintResult) int {
 	for _, fileResult := range results {
 		for _, l := range fileResult.Lints {
 			sev := strings.ToUpper(string(l.Severity))
+			// 優先使用 lint 結果攜帶的 File（來自 merged 程式中語句的原始檔案路徑），
+			// 為空時回退到 fileResult.File（vet 命令遍歷的輸入檔案路徑）。
+			filePath := l.File
+			if filePath == "" {
+				filePath = fileResult.File
+			}
 			if l.Line > 0 {
 				fmt.Printf("%s:%d:%d: [%s] %s: %s [%s]\n",
-					fileResult.File, l.Line, l.Column, sev, l.Source, l.Message, l.TraceID)
+					filePath, l.Line, l.Column, sev, l.Source, l.Message, l.TraceID)
 			} else {
 				fmt.Printf("%s: [%s] %s: %s [%s]\n",
-					fileResult.File, sev, l.Source, l.Message, l.TraceID)
+					filePath, sev, l.Source, l.Message, l.TraceID)
 			}
 			switch l.Severity {
 			case nbuild.LintError:

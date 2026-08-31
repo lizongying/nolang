@@ -313,19 +313,19 @@ var cExternNames = map[string]bool{
 // 設計原則（與型別的 typeOwner 機制對稱，但只處理衝突名）：
 //   - 唯一的裸名保持不變 —— codegen 內部按裸名合成大量 std 呼叫
 //     （@fmt-int、@fmt-str 等），全量加前綴會破壞這些內建通道。
-//   - 主程序函數永不改名（stmtOwner 無記錄 → owner 為空），只有模組側的
+//   - 主程序函數永不改名（ModuleOwner 無記錄 → owner 為空），只有模組側的
 //     衝突定義改為 module.fn。主程序與模組同名時，模組側讓位。
 //   - C extern 名稱也視同主程序佔位（owner = ""），模組側讓位。
 //   - 改名後的呼叫方式與方法一致：扁平帶點 Identifier（"proxy.connect"），
 //     codegen 原生支援帶點函數名。
 //
-// 參數 stmtOwner 記錄 merged 中每條模組語句的來源模組短名。
+// ModuleOwner 欄位記錄 merged 中每條模組語句的來源模組短名。
 // 返回值 prefixedFns 的 key 為 "module.fn"，供 resolveModuleCalls 將
 // `module.fn()` DotExpression 呼叫改寫為扁平帶點 Identifier（而非裸名）。
 //
 // 必須在 prefixMethodNames 之後執行：若先把 `join` 改為 `path.join`，
 // prefixMethodNames 會把它誤認成 struct `path` 的方法再改成 `path.path.join`。
-func prefixCollidingFunctions(merged *parser.Program, stmtOwner map[parser.Statement]string) map[string]bool {
+func prefixCollidingFunctions(merged *parser.Program) map[string]bool {
 	// --- Pass 1: count bare top-level function names (module + main) ---
 	type fnDef struct {
 		stmt  parser.Statement
@@ -345,7 +345,7 @@ func prefixCollidingFunctions(merged *parser.Program, stmtOwner map[parser.State
 			if s.IsMethodDef || strings.Contains(s.Name, ".") {
 				continue
 			}
-			defs = append(defs, fnDef{stmt, s.Name, stmtOwner[stmt]})
+			defs = append(defs, fnDef{stmt, s.Name, parser.GetModuleOwner(stmt)})
 			counts[s.Name]++
 		case *parser.LetStatement:
 			if s.Name == nil || strings.Contains(s.Name.Value, ".") {
@@ -354,7 +354,7 @@ func prefixCollidingFunctions(merged *parser.Program, stmtOwner map[parser.State
 			if _, isFn := s.Value.(*parser.FunctionLiteral); !isFn {
 				continue
 			}
-			defs = append(defs, fnDef{stmt, s.Name.Value, stmtOwner[stmt]})
+			defs = append(defs, fnDef{stmt, s.Name.Value, parser.GetModuleOwner(stmt)})
 			counts[s.Name.Value]++
 		}
 	}
@@ -388,7 +388,7 @@ func prefixCollidingFunctions(merged *parser.Program, stmtOwner map[parser.State
 	// `M.connect(...)`（扁平帶點 Identifier）。模組內裸呼叫必屬本模組
 	// （跨模組呼叫依語言規範必須帶模組前綴），無歧義。
 	for _, stmt := range merged.Statements {
-		owner := stmtOwner[stmt]
+		owner := parser.GetModuleOwner(stmt)
 		if owner == "" {
 			continue
 		}

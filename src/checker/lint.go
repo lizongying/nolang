@@ -34,6 +34,10 @@ type LintResult struct {
 	Source    string
 	Message   string
 	TraceID   string
+	// File 是該診斷所屬的源碼檔案路徑。在 vet 合併模式下，merged 程式
+	// 包含來自多個模組的語句，File 用於區分每條 lint 歸屬哪個檔案。
+	// 為空時由調用者使用默認路徑（如輸入檔案路徑）。
+	File string
 }
 
 // LintOptions 控制 RunAllLints 的行為。
@@ -64,6 +68,10 @@ type LintOptions struct {
 	// rand(kp-state) 被誤判為 []byte 而非 i64）。
 	// LSP 路徑不做模組合併，program 是原始的，需要執行這兩項檢查。
 	SkipTypeChecks bool
+	// StmtFileMap 的功能已下沉到 CommentedNode.SourceFile 欄位。
+	// 語句的源碼檔案路徑直接存儲在 AST 節點上，RunAllLints 通過
+	// parser.GetSourceFile(stmt) 讀取。此欄位保留為向後相容佔位，
+	// 不再被讀取。
 }
 
 // RunAllLints 對 program 執行全部 lint 校驗，返回匯總結果。
@@ -314,6 +322,46 @@ func RunAllLints(program *parser.Program, opts LintOptions) []LintResult {
 		})
 	}
 
+	// 用語句的 SourceFile 欄位填充每條結果的 File 欄位。
+	// 構建行號範圍 → 檔案路徑的映射：對 FunctionDefinition 記錄
+	// [startLine, endLine]；對其他語句記錄單行 startLine。
+	// 當沒有語句帶有 SourceFile（LSP 路徑）時跳過，File 留空。
+	{
+		type lineRange struct {
+			startLine int
+			endLine   int
+			file      string
+		}
+		var ranges []lineRange
+		for _, stmt := range program.Statements {
+			file := parser.GetSourceFile(stmt)
+			if file == "" {
+				continue
+			}
+			startLine := stmt.Pos().Line
+			endLine := stmt.EndPos().Line
+			if endLine < startLine {
+				endLine = startLine
+			}
+			ranges = append(ranges, lineRange{startLine, endLine, file})
+		}
+		if len(ranges) > 0 {
+			for i := range results {
+				if results[i].File != "" {
+					continue
+				}
+				line := results[i].Line
+				// 在行號範圍中查找匹配的檔案
+				for _, r := range ranges {
+					if line >= r.startLine && line <= r.endLine {
+						results[i].File = r.file
+						break
+					}
+				}
+			}
+		}
+	}
+
 	// --strict：升級 warning/hint 為 error
 	if opts.Strict {
 		for i := range results {
@@ -323,8 +371,11 @@ func RunAllLints(program *parser.Program, opts LintOptions) []LintResult {
 		}
 	}
 
-	// 按 line, column 排序，方便閱讀
+	// 按 file, line, column 排序，方便閱讀
 	sort.SliceStable(results, func(i, j int) bool {
+		if results[i].File != results[j].File {
+			return results[i].File < results[j].File
+		}
 		if results[i].Line != results[j].Line {
 			return results[i].Line < results[j].Line
 		}

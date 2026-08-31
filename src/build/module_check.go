@@ -18,12 +18,12 @@ import (
 // 出人類可讀的錯誤（含行號與候選建議）。
 //
 // 誤報防護（寧可漏報、不可誤報）：
-//   - 只檢查主程式語句（stmtOwner[stmt] == ""），std 模組內部不查；
+//   - 只檢查主程式語句（parser.GetModuleOwner(stmt) == ""），std 模組內部不查；
 //   - receiver 鏈必須整體匹配某個已導入模組路徑（modSet）；
 //   - fnName 若是任何已知符號（裸頂層函數、module.fn 平點名、任何型別的
 //     方法名、builtin 方法名、結構欄位名、模組常量）即放行 —— 這樣同名
 //     變數遮蔽模組名（如變數 path 上的 .join()）不會誤報。
-func checkUnresolvedModuleCalls(merged *parser.Program, stmtOwner map[parser.Statement]string, importedModules []string) error {
+func checkUnresolvedModuleCalls(merged *parser.Program, importedModules []string) error {
 	if len(importedModules) == 0 {
 		return nil
 	}
@@ -39,13 +39,13 @@ func checkUnresolvedModuleCalls(merged *parser.Program, stmtOwner map[parser.Sta
 	for _, stmt := range merged.Statements {
 		switch s := stmt.(type) {
 		case *parser.FunctionDefinition:
-			registerKnownFn(s.Name, stmtOwner[stmt], known, propNames, moduleFnsOf)
+			registerKnownFn(s.Name, parser.GetModuleOwner(stmt), known, propNames, moduleFnsOf)
 		case *parser.LetStatement:
 			if s.Name == nil {
 				continue
 			}
 			if _, isFn := s.Value.(*parser.FunctionLiteral); isFn {
-				registerKnownFn(s.Name.Value, stmtOwner[stmt], known, propNames, moduleFnsOf)
+				registerKnownFn(s.Name.Value, parser.GetModuleOwner(stmt), known, propNames, moduleFnsOf)
 			} else {
 				// 模組常量（module.CONST 讀取也走 DotExpression）
 				known[s.Name.Value] = true
@@ -248,7 +248,7 @@ func checkUnresolvedModuleCalls(merged *parser.Program, stmtOwner map[parser.Sta
 	}
 
 	for _, stmt := range merged.Statements {
-		if stmtOwner[stmt] != "" {
+		if parser.GetModuleOwner(stmt) != "" {
 			continue // 只檢查主程式
 		}
 		checkStmt(stmt)

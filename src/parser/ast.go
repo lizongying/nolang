@@ -310,11 +310,99 @@ type CommentGroup struct {
 type CommentedNode struct {
 	Doc     *CommentGroup // standalone line(s) above the node
 	Comment *CommentGroup // inline comment on the same line
+	// SourceFile records the source file path from which this statement
+	// originated after module merging. Empty for the main program's own
+	// statements before merging (filled by the transpiler's merge pass).
+	// Replaces the external map[Statement]string stmtFileMap.
+	SourceFile string
+	// ModuleOwner records the source module short name for statements
+	// imported from a module (e.g. "sql", "path"). Empty for the main
+	// program's own statements. Replaces the external
+	// map[Statement]string stmtOwner.
+	ModuleOwner string
 }
 
 func (cn *CommentedNode) GetDoc() *CommentGroup     { return cn.Doc }
 func (cn *CommentedNode) GetComment() *CommentGroup { return cn.Comment }
 func (cn *CommentedNode) SetDoc(d *CommentGroup)    { cn.Doc = d }
+
+// SetModuleOwner sets the module short name on a statement that embeds
+// CommentedNode. Only FunctionDefinition and LetStatement participate in
+// module ownership tracking.
+func SetModuleOwner(stmt Statement, owner string) {
+	switch s := stmt.(type) {
+	case *LetStatement:
+		s.ModuleOwner = owner
+	case *FunctionDefinition:
+		s.ModuleOwner = owner
+	}
+}
+
+// GetModuleOwner retrieves the module short name from a statement that embeds
+// CommentedNode. Returns "" if the statement type does not embed CommentedNode
+// or the field was never set (e.g. main program statements).
+func GetModuleOwner(stmt Statement) string {
+	switch s := stmt.(type) {
+	case *LetStatement:
+		return s.ModuleOwner
+	case *FunctionDefinition:
+		return s.ModuleOwner
+	}
+	return ""
+}
+
+// SetSourceFile sets the source file path on a statement that embeds CommentedNode.
+// Panics if the statement does not embed CommentedNode (should never happen for
+// the statement types that participate in module merging).
+func SetSourceFile(stmt Statement, file string) {
+	switch s := stmt.(type) {
+	case *LetStatement:
+		s.SourceFile = file
+	case *FunctionDefinition:
+		s.SourceFile = file
+	case *StructDefinition:
+		s.SourceFile = file
+	case *InterfaceDefinition:
+		s.SourceFile = file
+	case *TypeAlias:
+		s.SourceFile = file
+	case *EnumDefinition:
+		s.SourceFile = file
+	case *TaggedEnumDefinition:
+		s.SourceFile = file
+	case *ExternStatement:
+		s.SourceFile = file
+	case *ExpressionStatement:
+		s.SourceFile = file
+	}
+}
+
+// GetSourceFile retrieves the source file path from a statement that embeds
+// CommentedNode. Returns "" if the statement type does not embed CommentedNode
+// or the field was never set.
+func GetSourceFile(stmt Statement) string {
+	switch s := stmt.(type) {
+	case *LetStatement:
+		return s.SourceFile
+	case *FunctionDefinition:
+		return s.SourceFile
+	case *StructDefinition:
+		return s.SourceFile
+	case *InterfaceDefinition:
+		return s.SourceFile
+	case *TypeAlias:
+		return s.SourceFile
+	case *EnumDefinition:
+		return s.SourceFile
+	case *TaggedEnumDefinition:
+		return s.SourceFile
+	case *ExternStatement:
+		return s.SourceFile
+	case *ExpressionStatement:
+		return s.SourceFile
+	}
+	return ""
+}
 
 // ---- Program ----
 
@@ -400,6 +488,12 @@ type LetStatement struct {
 	// ItArmType 標記 match 派生 it 綁定的 arm 類型（ok/err/nil/else 等），
 	// 供校驗器在 matched 變數型別於解析期未知（跨模組回傳型別）時收窄 it。
 	ItArmType     string
+	// IsModuleConst marks this LetStatement as a module-level constant
+	// eligible for constant propagation. Set by the transpiler's module
+	// merge pass when the value is a compile-time constant expression
+	// (checker.IsConstantExpr) and matches the target platform.
+	// Replaces the external map[string]Expression moduleConstants.
+	IsModuleConst bool
 	CommentedNode
 }
 
