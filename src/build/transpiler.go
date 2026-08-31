@@ -3112,6 +3112,14 @@ func processCallExpression(ce *parser.CallExpression, genericFns map[string]*par
 				ce.GenericArgs = nil
 			}
 		}
+		// Check format string for :v spec on container variables.
+		// When {var:v} is used with a container type (vec, arr, map, struct),
+		// ensure the .to-str() method is monomorphized by synthesizing a
+		// dummy call to var.to-str().
+		isFmtFn := isFmtFunctionName(fnName.Value)
+		if isFmtFn && len(ce.Arguments) > 0 {
+			triggerToStrForFormatSpec(ce.Arguments[0], varTypes, genericFns, newStmts, program, typeOwner)
+		}
 	}
 	// Method call: receiver.method(args)
 	if dot, ok := ce.Function.(*parser.DotExpression); ok {
@@ -3123,6 +3131,72 @@ func processCallExpression(ce *parser.CallExpression, genericFns map[string]*par
 			processCallExpression(innerCe, genericFns, varTypes, program, newStmts, typeOwner)
 		}
 	}
+}
+
+// isFmtFunctionName reports whether the function name is a format string
+// function (print, println, printf, eprint, eprintln, eprintf, sprintf, format).
+func isFmtFunctionName(name string) bool {
+	switch name {
+	case "print", "println", "printf", "eprint", "eprintln", "eprintf", "sprintf", "format":
+		return true
+	}
+	return false
+}
+
+// triggerToStrForFormatSpec scans a format string literal for {name:v} patterns
+// and triggers .to-str() monomorphization for container-typed variables.
+func triggerToStrForFormatSpec(formatArg parser.Expression,
+	varTypes map[string]string, genericFns map[string]*parser.FunctionDefinition,
+	newStmts *[]parser.Statement, program *parser.Program, typeOwner map[string]string) {
+	sl, ok := formatArg.(*parser.StringLiteral)
+	if !ok || sl.Value == "" {
+		return
+	}
+	// Parse format string for {name:spec} patterns where spec ends with 'v'
+	segments, err := parser.ParseFormatString(sl.Value)
+	if err != nil {
+		return
+	}
+	for _, seg := range segments {
+		if seg.Field == nil || seg.Field.Name == "" {
+			continue
+		}
+		if seg.Field.Parsed == nil || seg.Field.Parsed.Type != 'v' {
+			continue
+		}
+		varType, ok := varTypes[seg.Field.Name]
+		if !ok {
+			continue
+		}
+		// Check if the variable is a container type
+		if isContainerTypeNolang(varType) {
+			// Synthesize a dummy method call: var.to-str() to trigger
+			// monomorphization of the generic to-str method.
+			recv := &parser.Identifier{Value: seg.Field.Name}
+			dot := &parser.DotExpression{Receiver: recv, Property: "to-str"}
+			dummyCe := &parser.CallExpression{Function: dot}
+			resolveMethodCall(dot, dummyCe, genericFns, varTypes, newStmts, program, typeOwner)
+		}
+	}
+}
+
+// isContainerTypeNolang reports whether a Nolang type string (from varTypes)
+// represents a container type that has a .to-str() method.
+func isContainerTypeNolang(typeStr string) bool {
+	// Slice: []T
+	if strings.HasPrefix(typeStr, "[]") {
+		return true
+	}
+	// Array: [N]T — skip for now as [n]t.to-str has a known codegen issue
+	// Map: map[K]V or hashmap-K-V
+	if strings.HasPrefix(typeStr, "map[") || strings.HasPrefix(typeStr, "hashmap-") {
+		return true
+	}
+	// Struct: user-defined type name (not a builtin primitive)
+	if !isBuiltinType(typeStr) && typeStr != "" && !strings.HasPrefix(typeStr, "?") {
+		return true
+	}
+	return false
 }
 // fnExistsInProgram checks if a function or method with the given name exists
 // in the program's top-level statements. Method definitions (e.g. f64.to-str,

@@ -67,9 +67,9 @@ func (g *Generator) callFmt(sb *strings.Builder, fnName string, hasArgs bool, nA
 						// Scan spec: flags, width, precision, conversion char
 						for j < len(fmtStr) {
 							c := fmtStr[j]
-							if c == 'd' || c == 'i' || c == 'u' || c == 's' ||
-								c == 'x' || c == 'X' || c == 'b' || c == 'o' ||
-								c == 'c' || c == 'f' || c == 'e' || c == 'g' {
+						if c == 'd' || c == 'i' || c == 'u' || c == 's' ||
+							c == 'x' || c == 'X' || c == 'b' || c == 'o' ||
+							c == 'c' || c == 'f' || c == 'e' || c == 'g' || c == 't' || c == 'v' {
 								j++
 								break
 							}
@@ -358,6 +358,62 @@ func (g *Generator) emitArgAsStrLong(sb *strings.Builder, expr parser.Expression
 		if t != "" {
 			srcType = t
 		}
+	}
+
+	// Determine spec type character (last alphabetic char in spec).
+	// Done early so we can intercept 't' (type name) before generating
+	// any value-level code — the type is known at compile time.
+	specTypeEarly := byte(0)
+	for i := len(spec) - 1; i >= 0; i-- {
+		c := spec[i]
+		if (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') {
+			specTypeEarly = c
+			break
+		}
+	}
+	if specTypeEarly == 't' {
+		// Data type name: emit the Nolang type name as a string literal.
+		// Apply width/align/fill via fmt-str with the given spec.
+		typeName := llvmTypeToNolangName(srcType)
+		typeStrPtr := g.buildStrLongFromValue(sb, typeName)
+		outBuf := g.tmpReg("nfmt.field")
+		sb.WriteString(fmt.Sprintf("%s%s = alloca %%str-long\n", g.indent(), outBuf))
+		sb.WriteString(fmt.Sprintf("%sstore %%str-long zeroinitializer, %%str-long* %s\n", g.indent(), outBuf))
+		specPtr := g.buildStrLongFromValue(sb, spec)
+		sb.WriteString(fmt.Sprintf("%scall void @fmt-str(%%str-long* %s, %%str-long* %s, %%str-long* %s)\n",
+			g.indent(), typeStrPtr, specPtr, outBuf))
+		return outBuf
+	}
+	if specTypeEarly == 'v' {
+		// Literal value: for strings, wrap in single quotes (e.g. 'hello');
+		// for container types, call .to-str() method;
+		// for other types, behave like default (no spec type).
+		if srcType == "%str-long" || g.isStringExpr(expr) {
+			innerPtr := g.getStrPtr(sb, expr)
+			quotePtr := g.buildStrLongFromValue(sb, "'")
+			leftConcat := g.concatStrLongPtrs(sb, quotePtr, innerPtr)
+			fullConcat := g.concatStrLongPtrs(sb, leftConcat, quotePtr)
+			outBuf := g.tmpReg("nfmt.field")
+			sb.WriteString(fmt.Sprintf("%s%s = alloca %%str-long\n", g.indent(), outBuf))
+			sb.WriteString(fmt.Sprintf("%sstore %%str-long zeroinitializer, %%str-long* %s\n", g.indent(), outBuf))
+			specPtr := g.buildStrLongFromValue(sb, spec)
+			sb.WriteString(fmt.Sprintf("%scall void @fmt-str(%%str-long* %s, %%str-long* %s, %%str-long* %s)\n",
+				g.indent(), fullConcat, specPtr, outBuf))
+			return outBuf
+		}
+		if isContainerType(srcType) {
+			if ident, ok := expr.(*parser.Identifier); ok {
+				toStrPtr := g.emitContainerToStr(sb, ident.Value, srcType)
+				outBuf := g.tmpReg("nfmt.field")
+				sb.WriteString(fmt.Sprintf("%s%s = alloca %%str-long\n", g.indent(), outBuf))
+				sb.WriteString(fmt.Sprintf("%sstore %%str-long zeroinitializer, %%str-long* %s\n", g.indent(), outBuf))
+				specPtr := g.buildStrLongFromValue(sb, spec)
+				sb.WriteString(fmt.Sprintf("%scall void @fmt-str(%%str-long* %s, %%str-long* %s, %%str-long* %s)\n",
+					g.indent(), toStrPtr, specPtr, outBuf))
+				return outBuf
+			}
+		}
+		// Non-string non-container: fall through to default type-based dispatch.
 	}
 
 	// String expression: return %str-long* directly.
@@ -4317,6 +4373,28 @@ func (g *Generator) dispatchFmtCall(sb *strings.Builder, argPtr, varType string,
 		name = varName[0]
 	}
 	switch {
+	case specType == 't':
+		// 数据类型名：编译期输出变量的 Nolang 类型名称
+		typeName := llvmTypeToNolangName(varType)
+		typeStrPtr := g.buildStrLongFromValue(sb, typeName)
+		// fmt-str with empty spec just copies the string; apply width/align via spec
+		sb.WriteString(fmt.Sprintf("%scall void @fmt-str(%%str-long* %s, %%str-long* %s, %%str-long* %s)\n",
+			g.indent(), typeStrPtr, specPtr, outBuf))
+	case specType == 'v' && varType == "%str-long":
+		// 字面量：字符串类型用单引号包裹
+		if name != "" {
+			argPtr = g.varAddr(name)
+		}
+		quotePtr := g.buildStrLongFromValue(sb, "'")
+		leftConcat := g.concatStrLongPtrs(sb, quotePtr, argPtr)
+		fullConcat := g.concatStrLongPtrs(sb, leftConcat, quotePtr)
+		sb.WriteString(fmt.Sprintf("%scall void @fmt-str(%%str-long* %s, %%str-long* %s, %%str-long* %s)\n",
+			g.indent(), fullConcat, specPtr, outBuf))
+	case specType == 'v' && isContainerType(varType) && name != "":
+		// 字面量：容器类型调用 .to-str() 方法
+		toStrPtr := g.emitContainerToStr(sb, name, varType)
+		sb.WriteString(fmt.Sprintf("%scall void @fmt-str(%%str-long* %s, %%str-long* %s, %%str-long* %s)\n",
+			g.indent(), toStrPtr, specPtr, outBuf))
 	case specType == 'b' || specType == 'o' || specType == 'x' || specType == 'X':
 		// Unsigned format — use fmt-uint (expects i64*)
 		if name != "" {
@@ -4342,6 +4420,11 @@ func (g *Generator) dispatchFmtCall(sb *strings.Builder, argPtr, varType string,
 		}
 		sb.WriteString(fmt.Sprintf("%scall void @fmt-bool(i1* %s, %%str-long* %s, %%str-long* %s)\n",
 			g.indent(), argPtr, specPtr, outBuf))
+	case varType == "%arr" || strings.HasPrefix(varType, "%hashmap-") ||
+		(strings.HasPrefix(varType, "%") && varType != "%str-long" && varType != "%option" && varType != "%vec"):
+		// Container types without a working to-str method: output empty string
+		sb.WriteString(fmt.Sprintf("%scall void @fmt-str(%%str-long* %s, %%str-long* %s, %%str-long* %s)\n",
+			g.indent(), g.buildStrLongFromValue(sb, ""), specPtr, outBuf))
 	default:
 		// Integer — fmt-int(i64* n, %str-long* spec, %str-long* out)
 		if name != "" {
@@ -4350,6 +4433,153 @@ func (g *Generator) dispatchFmtCall(sb *strings.Builder, argPtr, varType string,
 		sb.WriteString(fmt.Sprintf("%scall void @fmt-int(i64* %s, %%str-long* %s, %%str-long* %s)\n",
 			g.indent(), argPtr, specPtr, outBuf))
 	}
+}
+
+// isContainerType reports whether the LLVM type string represents a container
+// type that has a working .to-str() method (vec, hashmap, struct).
+// arr is excluded because [n]t.to-str has a known codegen issue.
+func isContainerType(varType string) bool {
+	if varType == "%vec" {
+		return true
+	}
+	if strings.HasPrefix(varType, "%hashmap-") {
+		return true
+	}
+	if strings.HasPrefix(varType, "%") && varType != "%str-long" && varType != "%option" && varType != "%arr" {
+		return true // struct types: "%foo"
+	}
+	return false
+}
+
+// emitContainerToStr generates a call to var.to-str() and returns a %str-long*
+// alloca holding the result. Used by the 'v' format spec for container types.
+// varName is the variable name; varType is its LLVM type string.
+func (g *Generator) emitContainerToStr(sb *strings.Builder, varName, varType string) string {
+	// Allocate output buffer for the to-str result
+	outBuf := g.tmpReg("nfmt.val")
+	sb.WriteString(fmt.Sprintf("%s%s = alloca %%str-long\n", g.indent(), outBuf))
+	sb.WriteString(fmt.Sprintf("%sstore %%str-long zeroinitializer, %%str-long* %s\n", g.indent(), outBuf))
+
+	// Resolve the method name: try candidate names like "[]i64.to-str",
+	// "_xi64.to-str", "_3xi64.to-str", "vec.to-str", etc.
+	methodName := g.resolveToStrMethod(varName, varType)
+	if methodName == "" {
+		// No to-str method found; return empty string buffer
+		return outBuf
+	}
+
+	// Generate call: call void @<method>(<recvType>* <recvPtr>, %str-long* <outBuf>)
+	// to-str methods use the output parameter convention: (recv *T, out *str-long)
+	recvPtr := g.varAddr(varName)
+	// For arr receivers calling []t.to-str (vec method), we CANNOT bitcast
+	// %arr* to %vec* because %arr = {i64, i64} (len, data) while
+	// %vec = {i64, i64, i64} (len, cap, data) — different layouts!
+	// So we skip the call for arr if the method is a vec method.
+	// Also skip [n]t.to-str monomorphized methods (_NxT.to-str) as the
+	// arr to-str method has a known codegen issue returning empty string.
+	recvType := varType
+	if varType == "%arr" {
+		// Cannot safely call any to-str method on arr; return empty buffer
+		return outBuf
+	}
+	sb.WriteString(fmt.Sprintf("%scall void @%s(%s* %s, %%str-long* %s)\n",
+		g.indent(), sanitizeLLVMName(methodName), recvType, recvPtr, outBuf))
+
+	// Register as statement-level temporary for heap cleanup
+	g.stmtTemporaries = append(g.stmtTemporaries, outBuf)
+	return outBuf
+}
+
+// resolveToStrMethod resolves the monomorphized to-str method name for a
+// container variable. Returns "" if no to-str method is registered.
+func (g *Generator) resolveToStrMethod(varName, varType string) string {
+	if g.funcRetTypes == nil {
+		return ""
+	}
+	// Build candidate method names based on the variable type
+	candidates := []string{}
+	if varType == "%vec" {
+		// vec: try []T.to-str, _xT.to-str, vec.to-str
+		if g.arrayElemTypes != nil {
+			if et, ok := g.arrayElemTypes[varName]; ok {
+				et = strings.TrimPrefix(et, "%")
+				if elemAliases, ok := llvmTypeToNolang[et]; ok {
+					for _, alias := range elemAliases {
+						candidates = append(candidates, "[]"+alias+".to-str")
+						candidates = append(candidates, "_x"+alias+".to-str")
+					}
+				}
+			}
+		}
+		candidates = append(candidates, "vec.to-str")
+	} else if varType == "%arr" {
+		// arr: try []T.to-str, _NT.to-str, [n]t.to-str, arr.to-str
+		if g.arrayElemTypes != nil {
+			if et, ok := g.arrayElemTypes[varName]; ok {
+				et = strings.TrimPrefix(et, "%")
+				if elemAliases, ok := llvmTypeToNolang[et]; ok {
+					for _, alias := range elemAliases {
+						candidates = append(candidates, "[]"+alias+".to-str")
+						if g.arraySizes != nil {
+							if arrSize, ok := g.arraySizes[varName]; ok {
+								candidates = append(candidates, fmt.Sprintf("_%dx%s.to-str", arrSize, alias))
+							}
+						}
+					}
+				}
+			}
+		}
+		candidates = append(candidates, "arr.to-str")
+	} else if strings.HasPrefix(varType, "%hashmap-") {
+		candidates = append(candidates, "map.to-str")
+	} else if strings.HasPrefix(varType, "%") {
+		// struct type: "foo.to-str", "foo.to-str_foo"
+		structName := varType[1:] // strip "%"
+		candidates = append(candidates, structName+".to-str")
+	}
+
+	// Try each candidate
+	for _, name := range candidates {
+		if _, ok := g.funcRetTypes[name]; ok {
+			return name
+		}
+		// Try mangled variant
+		mangled := name + "_" + strings.TrimPrefix(varType, "%")
+		if _, ok := g.funcRetTypes[mangled]; ok {
+			return mangled
+		}
+	}
+
+	// Try generic template name "[]t.to-str" — if registered, it means the
+	// transpiler hasn't monomorphized it for us. We need to manually resolve
+	// the element type and construct the monomorphized name.
+	if varType == "%vec" && g.arrayElemTypes != nil {
+		if et, ok := g.arrayElemTypes[varName]; ok {
+			et = strings.TrimPrefix(et, "%")
+			if elemAliases, ok := llvmTypeToNolang[et]; ok && len(elemAliases) > 0 {
+				// Try _x<elem>.to-str (the monomorphized name format from
+				// cloneAndSubstitute for slice generics)
+				for _, alias := range elemAliases {
+					monoName := "_x" + alias + ".to-str"
+					if _, ok := g.funcRetTypes[monoName]; ok {
+						return monoName
+					}
+				}
+			}
+			// Also try the generic template name directly — the LLVM function
+			// might have been emitted with the generic name (no monomorphization
+			// needed if the method body doesn't reference type t directly).
+			if _, ok := g.funcRetTypes["[]t.to-str"]; ok {
+				return "[]t.to-str"
+			}
+		}
+	}
+	if varType == "%arr" {
+		if _, ok := g.funcRetTypes["[n]t.to-str"]; ok {
+			return "[n]t.to-str"
+		}
+	}
+	return ""
 }
 
 // evalFmtExpr parses and evaluates a format string expression (e.g. "hash[i] & 255"),

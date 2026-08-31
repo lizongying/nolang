@@ -326,7 +326,7 @@ func isAlignChar(c byte) bool {
 // isValidTypeChar 判断是否为有效的类型字符
 func isValidTypeChar(c byte) bool {
 	switch c {
-	case 'b', 'c', 'd', 'e', 'E', 'f', 'F', 'g', 'G', 'o', 's', 'x', 'X', '%':
+	case 'b', 'c', 'd', 'e', 'E', 'f', 'F', 'g', 'G', 'o', 's', 't', 'v', 'x', 'X', '%':
 		return true
 	}
 	return false

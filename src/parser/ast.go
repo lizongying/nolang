@@ -517,6 +517,11 @@ type FunctionDefinition struct {
 	// parser 在方法定義位置顯式設定此欄位，formatter 直接讀取以跳過隱式 self 參數，
 	// 避免依賴 `strings.Contains(Name, ".")` 的字串子串啟發式。
 	IsMethodDef bool
+	// IsSkipNamingCheck 為 true 時跳過 checkNaming 命名規範檢查。
+	// 用於標記編譯器自動生成的函式（如單態化、重載 mangling），
+	// 這些函式名包含下劃線等特殊字元，不受命名規範約束。
+	// 目前先不設定（預設 false），為未來標準庫統一過濾預留。
+	IsSkipNamingCheck bool
 	CommentedNode
 }
 

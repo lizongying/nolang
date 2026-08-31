@@ -544,16 +544,18 @@ func (g *Generator) generateCallArg(sb *strings.Builder, arg parser.Expression) 
 				// call receivers (e.g. j.pool.parse()): the method modifies the
 				// struct in-place via the self pointer. A value copy would
 				// discard all mutations and may contain uninitialized data.
-				fieldElemType := g.exprResultLLVMType(arg)
-				if fieldElemType != "" && fieldElemType != "i64" && g.isStructLLVMType(fieldElemType) {
-					ptrType = fieldElemType + "*"
-					if sb != nil {
-						ptrAddr := g.generateExprPtr(sb, arg)
-						if ptrAddr != "" {
-							return ptrType + " " + ptrAddr
-						}
+			fieldElemType := g.exprResultLLVMType(arg)
+			fmt.Fprintf(os.Stderr, "[DBG-DOT-ARG] DotExpression arg: fieldElemType=%q isStruct=%v\n", fieldElemType, g.isStructLLVMType(fieldElemType))
+			if fieldElemType != "" && fieldElemType != "i64" && g.isStructLLVMType(fieldElemType) {
+				ptrType = fieldElemType + "*"
+				if sb != nil {
+					ptrAddr := g.generateExprPtr(sb, arg)
+					fmt.Fprintf(os.Stderr, "[DBG-DOT-ARG] generateExprPtr returned: %q\n", ptrAddr)
+					if ptrAddr != "" {
+						return ptrType + " " + ptrAddr
 					}
 				}
+			}
 				if ident, ok := dot.Receiver.(*parser.Identifier); ok {
 					if g.varTypes != nil {
 						if t, ok := g.varTypes[ident.Value]; ok && g.isStructLLVMType(t) {

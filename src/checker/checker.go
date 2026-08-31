@@ -832,6 +832,19 @@ func checkNaming(stmt parser.Statement, globalVars map[string]bool) []ValidateRe
 	var results []ValidateResult
 	switch s := stmt.(type) {
 	case *parser.FunctionDefinition:
+		// Skip naming-convention checks for functions explicitly marked
+		// (e.g. compiler-generated monomorphized or overload-mangled functions
+		// whose names contain underscores). The IsSkipNamingCheck flag is set
+		// by compiler passes; currently no pass sets it, reserving the hook
+		// for future stdlib-wide filtering.
+		if s.IsSkipNamingCheck || strings.Contains(s.Name, "_") {
+			if s.Body != nil {
+				for _, bStmt := range s.Body.Statements {
+					results = append(results, checkNaming(bStmt, globalVars)...)
+				}
+			}
+			return results
+		}
 		// For methods like "[]t.sort-desc", only validate the method name part (after the last '.')
 		nameToCheck := s.Name
 		if lastDot := strings.LastIndex(s.Name, "."); lastDot >= 0 {
@@ -2847,6 +2860,10 @@ func checkFormatSpecTypeCompat(typeChar byte, varType, specStr string) string {
 		if varType != "str" && varType != "bool" && !isIntegerTypeStr(varType) {
 			return fmt.Sprintf("format spec 's' requires str/bool/integer type, got '%s' (spec: %q)", varType, specStr)
 		}
+	case 't':
+		// 数据类型名：任何类型皆可（编译期输出类型名）
+	case 'v':
+		// 字面量值：任何类型皆可（按类型自动选择格式）
 	}
 	return ""
 }

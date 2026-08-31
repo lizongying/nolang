@@ -16,7 +16,7 @@
 ;   align:  <(左) >(右) =(符號後填充) ^(置中)
 ;   sign:   + -(空格)
 ;   grouping: ,(逗號) _(底線)
-;   type:   b o d x X e E f F g G s
+;   type:   b o d x X e E f F g G s t v
 ;
 ; 實現注意事項（編譯器限制 workaround）：
 ;   1. 純量 i64 output parameter 在條件區塊內指派時不會生效（編譯器 bug），

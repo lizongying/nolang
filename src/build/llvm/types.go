@@ -496,3 +496,62 @@ func isNumericStr(s string) bool {
 	}
 	return true
 }
+
+// llvmTypeToNolangName maps an internal LLVM type string (as stored in
+// varTypes) back to a human-readable Nolang type name. Used by the 't'
+// format spec (print('{x:t}') → prints the type name of x).
+func llvmTypeToNolangName(llvmType string) string {
+	switch llvmType {
+	case "i64":
+		return "i64"
+	case "i32":
+		return "i32"
+	case "i16":
+		return "i16"
+	case "i8":
+		return "i8"
+	case "i128":
+		return "i128"
+	case "u64":
+		return "u64"
+	case "u32":
+		return "u32"
+	case "u16":
+		return "u16"
+	case "u8":
+		return "u8"
+	case "u128":
+		return "u128"
+	case "double":
+		return "f64"
+	case "float":
+		return "f32"
+	case "i1":
+		return "bool"
+	case "%str-long":
+		return "str"
+	case "%vec":
+		return "[]T"
+	case "%arr":
+		return "[N]T"
+	case "%option":
+		return "?T"
+	case "i8*":
+		return "ptr"
+	default:
+		// Struct types: "%foo" → "foo"
+		if strings.HasPrefix(llvmType, "%") {
+			return llvmType[1:]
+		}
+		// HashMap types: "%hashmap-str-i64" → "[str]i64"
+		if strings.HasPrefix(llvmType, "%hashmap-") {
+			rest := llvmType[len("%hashmap-"):]
+			parts := strings.SplitN(rest, "-", 2)
+			if len(parts) == 2 {
+				return "[" + parts[0] + "]" + parts[1]
+			}
+			return rest
+		}
+		return llvmType
+	}
+}
