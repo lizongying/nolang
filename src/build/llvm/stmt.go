@@ -5577,6 +5577,13 @@ func (g *Generator) generateStatement(sb *strings.Builder, stmt parser.Statement
 	case *parser.StructDefinition:
 		// type already emitted in Generate()
 	// struct definition 本身不生成 IR（type 已由 Generate 發出）
+	case *parser.BlockStatement:
+		// Generate statements inside a block (e.g. { v: { ... } } wrapping
+		// a match expression). Without this, statements inside block
+		// statements at function body level would be silently dropped.
+		for _, ss := range s.Statements {
+			g.generateStatement(sb, ss)
+		}
 	case *parser.MultiAssignStatement:
 		if innerCall, ok := s.Value.(*parser.CallExpression); ok {
 			// 註冊左側目標變數為局部名，避免與同名全局函數（如標準庫的 out/err

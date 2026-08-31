@@ -4703,20 +4703,35 @@ func resolveModuleCallsInExpr(expr parser.Expression, modSet map[string]bool, mo
 				if idx := strings.LastIndex(short, "/"); idx >= 0 {
 					short = short[idx+1:]
 				}
-				if full := short + "." + fnName; prefixedFns[full] {
-					// 衝突函數已改名為 module.fn：改寫為扁平帶點 Identifier
-					// （與方法呼叫同通道），保持與定義名精確對齊。
-					e.Function = &parser.Identifier{
-						Token: lexer.Token{Type: lexer.IDENT, Literal: full},
-						Value: full,
-					}
-				} else if moduleFns[fnName] {
+			if full := short + "." + fnName; prefixedFns[full] {
+				// 衝突函數已改名為 module.fn：改寫為扁平帶點 Identifier
+				// （與方法呼叫同通道），保持與定義名精確對齊。
+				e.Function = &parser.Identifier{
+					Token: lexer.Token{Type: lexer.IDENT, Literal: full},
+					Value: full,
+				}
+			} else if moduleFns[fnName] {
+				// Before rewriting module.fn() → fn(), check if the
+				// module also defines a std struct method named
+				// module.module.fn (e.g. json.json.parse). If so, the
+				// user explicitly wrote module.fn() to call the std
+				// library function, NOT the user-defined fn from a
+				// different module. Rewriting to fn() would cause the
+				// wrong function to be called (infinite recursion → segfault).
+				stdMethodKey := short + "." + short + "." + fnName
+				methodSigs := CollectStdMethodSigs()
+				if _, isStdMethod := methodSigs[stdMethodKey]; isStdMethod {
+					// Keep as module.fn() DotExpression — codegen will
+					// resolve it to module.module.fn via the std struct
+					// method dispatch path.
+				} else {
 					// Rewrite to direct function call
 					e.Function = &parser.Identifier{
 						Token: lexer.Token{Type: lexer.IDENT, Literal: fnName},
 						Value: fnName,
 					}
 				}
+			}
 			}
 		}
 		// Recurse into arguments

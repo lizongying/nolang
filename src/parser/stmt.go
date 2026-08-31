@@ -357,6 +357,32 @@ func (p *Parser) parseStatement() Statement {
 		}
 		bt := p.classifyBlockAtCurrent()
 		if bt == blockMatch {
+			// Check if the block is { name: { ... } } — a match expression
+			// wrapped in a block statement. classifyBlock returns blockMatch
+			// for this pattern (because { IDENT: looks like a match arm), but
+			// it should be parsed as a block containing a match expression
+			// statement, not as a bare match where IDENT is a condition.
+			// currentToken is the outer {, peekToken is the first token after.
+			// Skip NEWLINEs between { and the first real token.
+			// look(k) returns the (k+2)th non-COMMENT token from currentToken.
+			// peekToken is the 1st, look(0) is the 2nd, look(1) is the 3rd, etc.
+			skip1 := 0
+			// Find the first non-NEWLINE token after {
+			for p.look(skip1).Type == lexer.NEWLINE {
+				skip1++
+			}
+			t1 := p.look(skip1)
+			if t1.Type == lexer.IDENT {
+				t2 := p.look(skip1 + 1)
+				t3 := p.look(skip1 + 2)
+				if t2.Type == lexer.COLON && t3.Type == lexer.LBRACE {
+					block := p.parseBlockStatement()
+					if p.currentToken.Type == lexer.RBRACE {
+						p.nextToken()
+					}
+					return block
+				}
+			}
 			tok := p.currentToken
 			// parseBareMatchExpr manages its own CTX_MATCH_ARM context (pushing
 			// it for arm conditions and inline bodies, but NOT for block bodies).
