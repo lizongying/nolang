@@ -3103,15 +3103,24 @@ func (g *Generator) generateFunctionDefinition(sb *strings.Builder, fd *parser.F
 			break
 		}
 	}
-	if entryLabel == "entry" {
-		for _, r := range fd.Results {
-			if r.Name == "entry" {
-				entryLabel = "nolang.entry"
-				break
-			}
-		}
-	}
-	g.emitLabel(sb, entryLabel)
+if entryLabel == "entry" {
+for _, r := range fd.Results {
+if r.Name == "entry" {
+entryLabel = "nolang.entry"
+break
+}
+}
+}
+// 也檢查函數體內是否有局部變數名為 "entry"（如 entry = entries[i]），
+// 避免 LLVM alloca 生成 %entry 與 entry 基本塊標籤衝突。
+if entryLabel == "entry" && fd.Body != nil {
+lhsNames := make(map[string]bool)
+g.collectAssignLHS(fd.Body.Statements, lhsNames)
+if lhsNames["entry"] {
+entryLabel = "nolang.entry"
+}
+}
+g.emitLabel(sb, entryLabel)
 	g.indentLevel++
 
 	// 初始化 CFG 用于数据流分析（MovedFact must/may 分析）。
@@ -5397,24 +5406,48 @@ func (g *Generator) collectVarDeclsFromStmtInner(stmt parser.Statement, vars map
 			// Determine the return types for each target position
 			var retTypes []string
 			if fnName != "" {
+			if os.Getenv("NOLANG_DEBUG_MULTI") != "" {
+				fmt.Fprintf(os.Stderr, "[debug-multi] collectVarDecls fnName=%q targets=%d\n", fnName, len(s.Targets))
 				if g.funcResultLLVMType != nil {
-					if rets, ok := g.funcResultLLVMType[fnName]; ok && len(rets) >= len(s.Targets) {
-						for _, t := range rets {
-							if t == "i1" {
-								t = "i64"
-							}
-							retTypes = append(retTypes, t)
+					if rets, ok := g.funcResultLLVMType[fnName]; ok {
+						fmt.Fprintf(os.Stderr, "[debug-multi]   funcResultLLVMType[%q]=%v len=%d\n", fnName, rets, len(rets))
+					} else {
+						fmt.Fprintf(os.Stderr, "[debug-multi]   funcResultLLVMType[%q] NOT FOUND\n", fnName)
+					}
+				}
+			}
+			if g.funcResultLLVMType != nil {
+				if rets, ok := g.funcResultLLVMType[fnName]; ok && len(rets) >= len(s.Targets) {
+					for _, t := range rets {
+						if t == "i1" {
+							t = "i64"
 						}
-					} else if m := builtin.FindBuiltinMethod(fnName); m != nil && len(m.Return) >= len(s.Targets) {
-						for _, r := range m.Return {
-							t := g.mapToLLVMType(r.String())
-							if t == "i1" {
-								t = "i64"
-							}
-							retTypes = append(retTypes, t)
-						}
+						retTypes = append(retTypes, t)
 					}
 				} else if m := builtin.FindBuiltinMethod(fnName); m != nil && len(m.Return) >= len(s.Targets) {
+					for _, r := range m.Return {
+						t := g.mapToLLVMType(r.String())
+						if t == "i1" {
+							t = "i64"
+						}
+						retTypes = append(retTypes, t)
+					}
+				} else {
+					// Fallback: 裸名查不到時，嘗試用 module.fn 形式查找
+					suffix := "." + fnName
+					for fullName, rets := range g.funcResultLLVMType {
+						if strings.HasSuffix(fullName, suffix) && len(rets) >= len(s.Targets) {
+							for _, t := range rets {
+								if t == "i1" {
+									t = "i64"
+								}
+								retTypes = append(retTypes, t)
+							}
+							break
+						}
+					}
+				}
+			} else if m := builtin.FindBuiltinMethod(fnName); m != nil && len(m.Return) >= len(s.Targets) {
 					for _, r := range m.Return {
 						t := g.mapToLLVMType(r.String())
 						if t == "i1" {
@@ -5427,6 +5460,9 @@ func (g *Generator) collectVarDeclsFromStmtInner(stmt parser.Statement, vars map
 		// Register each Identifier target with the corresponding return type
 		for i, target := range s.Targets {
 			if ident, ok := target.(*parser.Identifier); ok {
+				if os.Getenv("NOLANG_DEBUG_MULTI") != "" {
+					fmt.Fprintf(os.Stderr, "[debug-multi] registering target[%d] name=%q exists=%v\n", i, ident.Value, func() bool { _, e := vars[ident.Value]; return e }())
+				}
 				// 多賦值左側變數屬於當前作用域（main 或函數體），必須註冊為
 				// 局部名，否則會與同名全局函數（如標準庫的 out/err 打印函數）
 				// 衝突：作為返回槽指標傳遞時被誤判成函數指標 void(...)**，
@@ -5626,6 +5662,12 @@ func (g *Generator) inferMultiAssignTypes(callExpr *parser.CallExpression, targe
 						}
 					}
 				}
+			} else {
+				// recvType 為空：receiver 可能是模組名（如 rand.rand）
+				moduleFullName := recv.Value + "." + dot.Property
+				if _, ok := g.funcResultLLVMType[moduleFullName]; ok {
+					fnName = moduleFullName
+				}
 			}
 		}
 	}
@@ -5634,7 +5676,17 @@ func (g *Generator) inferMultiAssignTypes(callExpr *parser.CallExpression, targe
 	}
 	rets, ok := g.funcResultLLVMType[fnName]
 	if !ok || len(rets) < len(targets) {
-		return
+		// Fallback: 裸名查不到時，嘗試用 module.fn 形式查找
+		for k, v := range g.funcResultLLVMType {
+			if strings.HasSuffix(k, "."+fnName) && len(v) >= len(targets) {
+				rets = v
+				ok = true
+				break
+			}
+		}
+		if !ok || len(rets) < len(targets) {
+			return
+		}
 	}
 	for i, target := range targets {
 		ident, ok := target.(*parser.Identifier)

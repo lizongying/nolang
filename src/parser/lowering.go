@@ -66,9 +66,11 @@ type lowerer struct {
 	p           *Parser
 	visited     map[uintptr]bool // 指標去重：AST 有共享節點（如 MatchedExpr），避免重複遍歷
 	curFuncName string          // current function being lowered, for function-scoped VarType lookup
+	curFuncDef  *FunctionDefinition // current function definition, for result param lookup
 }
 
 var surfaceMatchPtrType = reflect.TypeOf((*SurfaceMatch)(nil))
+var unwrapAssignPtrType = reflect.TypeOf((*UnwrapAssignStatement)(nil))
 
 // walk 遞迴遍歷任意 AST 值。替換點是「介面欄位/介面切片元素中裝的 *SurfaceMatch」——
 // AST 中 Expression/Statement 均以介面持有，且所有節點實作皆為指標，
@@ -98,6 +100,15 @@ func (l *lowerer) walk(v reflect.Value) {
 			}
 			return
 		}
+		if v.Elem().Type() == unwrapAssignPtrType && v.CanSet() {
+			uas := v.Interface().(*UnwrapAssignStatement)
+			if lowered := l.lowerUnwrapAssign(uas); lowered != nil {
+				v.Set(reflect.ValueOf(lowered))
+			} else {
+				v.Set(reflect.Zero(v.Type()))
+			}
+			return
+		}
 		l.walk(v.Elem())
 	case reflect.Slice, reflect.Array:
 		for i := 0; i < v.Len(); i++ {
@@ -108,11 +119,14 @@ func (l *lowerer) walk(v reflect.Value) {
 		// Detect FunctionDefinition to track current function name for
 		// function-scoped variable type lookups during match desugaring.
 		var savedFuncName string
+		var savedFuncDef *FunctionDefinition
 		isFuncDef := false
 		if v.CanAddr() {
 			if fd, ok := v.Addr().Interface().(*FunctionDefinition); ok {
 				savedFuncName = l.curFuncName
+				savedFuncDef = l.curFuncDef
 				l.curFuncName = fd.Name
+				l.curFuncDef = fd
 				isFuncDef = true
 			}
 		}
@@ -124,6 +138,7 @@ func (l *lowerer) walk(v reflect.Value) {
 		}
 		if isFuncDef {
 			l.curFuncName = savedFuncName
+			l.curFuncDef = savedFuncDef
 		}
 		// 標籤條件迴圈包裝（`#N cond: { body }`）：解析期只掛上 SurfaceMatch，
 		// lowering 後補齊 Body = IfExpression.Consequence（與舊解析期行為一致）。
@@ -1037,4 +1052,141 @@ func (p *Parser) prependStmt(body *BlockStatement, stmt Statement) *BlockStateme
 	stmts = append(stmts, stmt)
 	stmts = append(stmts, body.Statements...)
 	return &BlockStatement{Token: body.Token, Statements: stmts, IsInline: body.IsInline}
+}
+
+// lowerUnwrapAssign desugars `v ?= expr` into a match/if chain:
+//
+//	__unwrap_N = expr
+//	__unwrap_N: {
+//	    nil || err -> {
+//	        result = __unwrap_N
+//	        return
+//	    }
+//	    -> v = it
+//	}
+//
+// The result param name is found from the current function definition's Results.
+// If no option-typed result param is found, the desugar produces a parse error
+// (the checker will report it).
+func (l *lowerer) lowerUnwrapAssign(uas *UnwrapAssignStatement) Statement {
+	tok := uas.Token
+
+	// First, walk into the Value expression to lower any nested SurfaceMatch.
+	l.walk(reflect.ValueOf(&uas.Value))
+
+	// Find the option-typed result param name from the current function def.
+	resultName := ""
+	if l.curFuncDef != nil {
+		for _, res := range l.curFuncDef.Results {
+			if res.Type != nil {
+				ts := typeString(res.Type)
+				if strings.HasPrefix(ts, "?") {
+					resultName = res.Name
+					break
+				}
+			}
+		}
+	}
+
+	// Create a unique temporary variable name for the option value.
+	tmpName := fmt.Sprintf("__unwrap_%d", tok.Line)
+	tmpIdent := &Identifier{Token: tok, Value: tmpName}
+
+	// Infer the type of the temp variable from the RHS expression.
+	// This allows buildMatchDesugar to resolve elemType for `it` bindings.
+	savedFuncName2 := l.p.curFuncName
+	l.p.curFuncName = l.curFuncName
+	if call, ok := uas.Value.(*CallExpression); ok {
+		if inferred := l.p.inferTypeFromCallExpr(call); inferred != "" {
+			l.p.setVarType(tmpName, inferred)
+		}
+	}
+	l.p.curFuncName = savedFuncName2
+
+	// Build the temporary variable assignment: __unwrap_N = expr
+	tmpAssign := &LetStatement{
+		Token: tok,
+		Name:  tmpIdent,
+		Value: uas.Value,
+	}
+
+	// Build match arms.
+	var arms []matchArm
+
+	if resultName != "" {
+		// nil || err -> { result = __unwrap_N; return }
+		nilErrBody := &BlockStatement{
+			Token: tok,
+			Statements: []Statement{
+				&ExpressionStatement{
+					Token: tok,
+					Expression: &AssignExpression{
+						Token: tok,
+						Left:  &Identifier{Token: tok, Value: resultName},
+						Value: tmpIdent,
+					},
+				},
+				&ReturnStatement{Token: tok},
+			},
+		}
+		arms = append(arms, matchArm{
+			condition:           &Identifier{Token: tok, Value: "nil"},
+			multiOptionPatterns: []string{"nil", "err"},
+			body:                nilErrBody,
+			isBlockBody:         true,
+			pos:                 posFromToken(tok),
+		})
+	} else {
+		// No option result param — emit a parse error placeholder body.
+		l.p.saveError(fmt.Sprintf("line %d, column %d: `?=` can only be used inside a function with an option-typed result param", tok.Line, tok.Column))
+		arms = append(arms, matchArm{
+			condition:           &Identifier{Token: tok, Value: "nil"},
+			multiOptionPatterns: []string{"nil", "err"},
+			body:                &BlockStatement{Token: tok, Statements: []Statement{&ReturnStatement{Token: tok}}},
+			isBlockBody:         true,
+			pos:                 posFromToken(tok),
+		})
+	}
+
+	// -> v = it (wildcard / ok arm: unwrap and assign)
+	okBody := &BlockStatement{
+		Token: tok,
+		Statements: []Statement{
+			&LetStatement{
+				Token: tok,
+				Name:  uas.Name,
+				Value: &Identifier{Token: tok, Value: "it"},
+			},
+		},
+	}
+	arms = append(arms, matchArm{
+		isWildcard:  true,
+		body:        okBody,
+		isBlockBody: true,
+		pos:         posFromToken(tok),
+	})
+
+	// Build SurfaceMatch and desugar it.
+	sm := &SurfaceMatch{
+		Token:   tok,
+		Matched: tmpIdent,
+		Arms:    arms,
+	}
+
+	// Set the var type for the temp variable so buildMatchDesugar can infer elemType.
+	// Try to infer from the Value expression (e.g. function call returning ?T).
+	savedFuncName := l.p.curFuncName
+	l.p.curFuncName = l.curFuncName
+	lowered := l.p.buildMatchDesugar(sm)
+	l.p.curFuncName = savedFuncName
+
+	if lowered == nil {
+		return nil
+	}
+
+	// Wrap in a block: { __unwrap_N = expr; <lowered match> }
+	return &BlockStatement{
+		Token:      tok,
+		Statements: []Statement{tmpAssign, &ExpressionStatement{Token: tok, Expression: lowered}},
+	}
 }

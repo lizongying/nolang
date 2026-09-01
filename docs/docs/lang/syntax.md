@@ -1521,6 +1521,70 @@ val: {
 }
 ```
 
+### 錯誤上拋（`?=` 運算子）
+
+當函數返回 option 類型時，可以使用 `?=` 運算子自動解包 option 並向上拋錯誤，簡化錯誤處理流程。
+
+**語法：**
+
+```no
+v ?= expr
+```
+
+**語義：**
+- 如果 `expr` 返回 `ok(value)`，則 `v` 被賦值為解包後的內部值（自動解包）
+- 如果 `expr` 返回 `nil` 或 `err`，則將當前函數的 option 結果參數設為該值，並執行 `return`（自動上拋）
+
+**限制：** `?=` 只能在具有 option 類型結果參數的函數中使用。如果當前函數沒有 option 結果參數，編譯器會報錯。
+
+**示例：**
+
+```no
+; 逐行讀取檔案並處理 — 使用 ?= 簡化錯誤傳播
+process-file = (path str) (result ?str) {
+    result = nil
+    f ?= open(path)             ; 失敗時自動 result = f; return
+    line ?= f.read-line()      ; EOF 或錯誤時自動上拋
+    result = line
+}
+```
+
+等價的展開形式（編譯器自動生成的 match 鏈）：
+
+```no
+process-file = (path str) (result ?str) {
+    result = nil
+    __tmp = open(path)
+    __tmp: {
+        nil || err -> {
+            result = __tmp
+            return
+        }
+        -> f = it
+    }
+    __tmp2 = f.read-line()
+    __tmp2: {
+        nil || err -> {
+            result = __tmp2
+            return
+        }
+        -> line = it
+    }
+    result = line
+}
+```
+
+**鏈式使用：** 多個 `?=` 可以串聯使用，實現管道式錯誤傳播：
+
+```no
+pipeline = (input str) (result ?str) {
+    result = nil
+    a ?= step1(input)     ; 失敗則上拋
+    b ?= step2(a)         ; 失敗則上拋
+    result = b
+}
+```
+
 **適用場景：**
 - `pop` / `peek` 等可能為空的容器操作 → `?t`（`nil` = 空）
 - `read-line` / `read-byte` 等 I/O 操作 → `?str` / `?i64`（`nil` = EOF，`err` = 錯誤）

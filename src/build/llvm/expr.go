@@ -1944,6 +1944,43 @@ func (g *Generator) exprResultLLVMType(expr parser.Expression) string {
 				if primAliases, ok := llvmTypeToNolang[srcType]; ok {
 					candidates = append(candidates, primAliases...)
 				}
+				// For vec/arr receivers without a variable name (e.g. chained
+				// method call fs.read-file(path).to-str()), construct []T
+				// candidates from common element types. This is needed because
+				// methods like []byte.to-str are registered under their nolang
+				// type name, not under "vec.to-str".
+				if srcType == "vec" || srcType == "arr" {
+					// Try to infer element type from the receiver expression.
+					// For CallExpression receivers (e.g. fs.read-file → []byte),
+					// check builtin return types.
+					if call, ok := dot.Receiver.(*parser.CallExpression); ok {
+						callType := g.exprResultLLVMType(call)
+						// If the call returns %vec, check the builtin method's
+						// return type for element type info.
+						if callType == "%vec" {
+							if dotFn, ok := call.Function.(*parser.DotExpression); ok {
+								fullName := flattenDottedExpr(dotFn)
+								if m := builtin.FindBuiltinMethod(fullName); m != nil && len(m.Return) == 1 {
+									if slice, ok := m.Return[0].(*parser.SliceType); ok {
+										elemStr := slice.Elem.String()
+										candidates = append(candidates, "[]"+elemStr)
+									}
+								}
+								if idx := strings.Index(fullName, "."); idx >= 0 {
+									shortName := fullName[idx+1:]
+									if m := builtin.FindBuiltinMethod(shortName); m != nil && len(m.Return) == 1 {
+										if slice, ok := m.Return[0].(*parser.SliceType); ok {
+											elemStr := slice.Elem.String()
+											candidates = append(candidates, "[]"+elemStr)
+										}
+									}
+								}
+							}
+						}
+					}
+					// Fallback: try common element types
+					candidates = append(candidates, "[]byte", "[]str", "[]i64", "[]u8")
+				}
 				for _, cand := range candidates {
 					shortName := cand + "." + dot.Property
 					if g.funcRetTypes != nil {
@@ -1954,6 +1991,20 @@ func (g *Generator) exprResultLLVMType(expr parser.Expression) string {
 					if g.funcResultLLVMType != nil {
 						if ts, ok := g.funcResultLLVMType[shortName]; ok && len(ts) == 1 {
 							return ts[0]
+						}
+					}
+					// Also try sanitized name (e.g. []byte.to-str → _LB__RB_byte.to-str)
+					sanitizedName := sanitizeLLVMName(shortName)
+					if sanitizedName != shortName {
+						if g.funcRetTypes != nil {
+							if t, ok := g.funcRetTypes[sanitizedName]; ok && t != "void" {
+								return t
+							}
+						}
+						if g.funcResultLLVMType != nil {
+							if ts, ok := g.funcResultLLVMType[sanitizedName]; ok && len(ts) == 1 {
+								return ts[0]
+							}
 						}
 					}
 				}
@@ -3637,14 +3688,29 @@ func (g *Generator) generateAssignExpression(sb *strings.Builder, expr *parser.A
 			}
 			storeVal := val
 			if fieldIdx >= 0 && sb != nil {
-				// String literal is %str-long* pointer (alloca), load the value.
-				if fieldType == "%str-long" {
-					if _, ok := expr.Value.(*parser.StringLiteral); ok {
+		// String literal is %str-long* pointer (alloca), load the value.
+			if fieldType == "%str-long" {
+				if _, ok := expr.Value.(*parser.StringLiteral); ok {
+					loadReg := g.tmpReg("set.fld.strload")
+					sb.WriteString(fmt.Sprintf("%s%s = load %%str-long, %%str-long* %s\n", g.indent(), loadReg, val))
+					val = loadReg
+				} else if g.isStrPtrReg(val) {
+					// Builtin results (e.g. args-get, read-file) return %str-long*
+					// pointers (alloca), need to load the value before storing.
+					// Skip InfixExpression (string concat) and IndexExpression
+					// (slice/array element) — they are handled by the load logic below.
+					_, isInfix := expr.Value.(*parser.InfixExpression)
+					_, isIdx := expr.Value.(*parser.IndexExpression)
+					if !isInfix && !isIdx {
+						if os.Getenv("NOLANG_DEBUG_STRPTR") != "" {
+							fmt.Fprintf(os.Stderr, "[debug-strptr] set.fld.strload: val=%q expr.Value=%T\n", val, expr.Value)
+						}
 						loadReg := g.tmpReg("set.fld.strload")
 						sb.WriteString(fmt.Sprintf("%s%s = load %%str-long, %%str-long* %s\n", g.indent(), loadReg, val))
 						val = loadReg
 					}
 				}
+			}
 				// Struct field assignment from a pointer-producing expression (e.g.,
 				// rec.value = a - b, rec.field = .names[i]): generateExprWithSB returns
 				// a %str-long* pointer (alloca from concat/repeat, or GEP from array

@@ -359,6 +359,9 @@ func TestLexerBitwiseAssignOperators(t *testing.T) {
 		{name: "greater equals still works", input: "x >= y", tokens: []TokenType{IDENT, GREATER_EQUALS, IDENT, EOF}},
 		{name: "land still works", input: "x && y", tokens: []TokenType{IDENT, LAND, IDENT, EOF}},
 		{name: "lor still works", input: "x || y", tokens: []TokenType{IDENT, LOR, IDENT, EOF}},
+		{name: "question assign", input: "v ?= expr", tokens: []TokenType{IDENT, QUESTION_ASSIGN, IDENT, EOF}},
+		{name: "question still works", input: "x ? 1 : 2", tokens: []TokenType{IDENT, QUESTION, INT, COLON, INT, EOF}},
+		{name: "question nil still works", input: "x = ?", tokens: []TokenType{IDENT, ASSIGN, QUESTION, EOF}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

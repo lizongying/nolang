@@ -79,6 +79,10 @@ func (f *formatter) formatStatement(stmt parser.Statement) {
 		f.formatStructDefinition(s)
 	case *parser.MultiAssignStatement:
 		f.formatMultiAssignStatement(s)
+	case *parser.UnwrapAssignStatement:
+		f.formatExpression(s.Name)
+		f.write(" ?= ")
+		f.formatExpression(s.Value)
 	case *parser.ExternStatement:
 		f.formatExternStatement(s)
 	case *parser.AnnotationStatement:

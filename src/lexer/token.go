@@ -91,7 +91,8 @@ const (
 	XOR_ASSIGN     // ^=
 	SHL_ASSIGN     // <<=
 	SHR_ASSIGN     // >>=
-	AND_NOT_ASSIGN // &^=
+	AND_NOT_ASSIGN   // &^=
+	QUESTION_ASSIGN // ?=
 
 	LPAREN     // (
 	RPAREN     // )
@@ -205,8 +206,9 @@ var tokenNames = map[TokenType]string{
 	XOR_ASSIGN:     "XOR_ASSIGN(^=)",
 	SHL_ASSIGN:     "SHL_ASSIGN(<<=)",
 	SHR_ASSIGN:     "SHR_ASSIGN(>>=)",
-	AND_NOT_ASSIGN: "AND_NOT_ASSIGN(&^=)",
-	TILDE:          "TILDE(~)",
+	AND_NOT_ASSIGN:   "AND_NOT_ASSIGN(&^=)",
+	QUESTION_ASSIGN:  "QUESTION_ASSIGN(?=)",
+	TILDE:            "TILDE(~)",
 	RUN:            "RUN",
 	AWY:            "AWY",
 }

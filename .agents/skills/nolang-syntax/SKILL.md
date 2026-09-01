@@ -1019,6 +1019,52 @@ val: {
 
 **Exception:** when a function needs to return multiple independent values (e.g. `(name str, value str, ok bool)`), the multi-return pattern is acceptable.
 
+#### Error Propagation with `?=` (錯誤上拋)
+
+Use the `?=` operator to automatically unwrap an option or propagate the error to the caller.
+
+**Syntax:** `v ?= expr`
+
+- If `expr` returns `ok(value)`, `v` is assigned the unwrapped inner value (auto-unwrap).
+- If `expr` returns `nil` or `err`, the current function's option result param is set to the option value and `return` is executed (auto-propagate).
+
+**Constraint:** `?=` is only valid inside a function that has an option-typed result param. Using `?=` in a function without an option result param is a compile error.
+
+```no
+// ✅ Error propagation with ?= — concise and readable
+process-file = (path str) (result ?str) {
+    result = nil
+    f ?= open(path)             // fails → result = f; return
+    line ?= f.read-line()       // EOF or error → auto-propagate
+    result = line
+}
+
+// ✅ Chaining multiple ?= — pipeline error propagation
+pipeline = (input str) (result ?str) {
+    result = nil
+    a ?= step1(input)           // fails → propagate
+    b ?= step2(a)               // fails → propagate
+    result = b
+}
+```
+
+Equivalent desugared form (compiler-generated match chain):
+
+```no
+process-file = (path str) (result ?str) {
+    result = nil
+    __tmp = open(path)
+    __tmp: {
+        nil || err -> {
+            result = __tmp
+            return
+        }
+        -> f = it
+    }
+    // ... same for f.read-line()
+}
+```
+
 #### Deferred Zero-Init for Return Values (返回值變數延遲零值)
 
 Function prologue does **NOT** zero-initialize out parameters. The compiler tracks explicit assignments to each out parameter via a bitmap `%__ret_init_bitmap` (parallel to the `%__move_bitmap` used for deferred move/free). At return time, any out parameter whose bit is still 0 is automatically zero-filled: integers → `0`, str-long → `zeroinitializer`, struct → `zeroinitializer`, option → `nil`.
@@ -2394,7 +2440,8 @@ External packages can only access exports declared in `lib.no` when importing vi
 
 #### Others
 
-- `?` // ternary operator (e.g. `c = flag ? 1 : 2`)
+- `?` // ternary operator (e.g. `c = flag ? 1 : 2`); also `?` standalone = nil literal
+- `?=` // unwrap-and-propagate: auto-unwrap option or propagate error to caller (e.g. `v ?= open(path)`)
 - `as` // FFI pointer type conversion (e.g. `y = x as *byte`)
 - `..` // slice range (e.g. `arr[1..3]`, `arr[1..]`, `arr[..3]`)
 

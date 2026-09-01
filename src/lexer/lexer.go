@@ -853,8 +853,14 @@ func (l *Lexer) scanToken() (tok Token) {
 		tok.Type = USE
 		tok.Literal = "#"
 	case '?':
-		tok.Type = QUESTION
-		tok.Literal = charLits[l.ch]
+		if l.peekChar() == '=' {
+			l.readChar()
+			tok.Type = QUESTION_ASSIGN
+			tok.Literal = "?="
+		} else {
+			tok.Type = QUESTION
+			tok.Literal = charLits[l.ch]
+		}
 	case '\'':
 		tok.Type = STRING
 		tok.Literal, tok.Raw = l.readString()

@@ -121,6 +121,15 @@ func (p *Parser) parseStatement() Statement {
 				}
 				return stmt
 			}
+		} else if p.peekToken.Type == lexer.QUESTION_ASSIGN {
+			// v ?= expr — unwrap-and-propagate assignment
+			stmt := p.parseUnwrapAssignStatement()
+			if stmt != nil {
+				if !p.ctx.contains(CTX_MATCH_ARM) && !p.ctx.contains(CTX_FOR_COND) {
+					p.skipToStatementEnd()
+				}
+				return stmt
+			}
 		} else if p.peekToken.Type == lexer.ASSIGN {
 			// 先檢查是否為函數定義：name = (params) { ... }
 			if p.isFunctionDefinition() {
@@ -719,6 +728,28 @@ func (p *Parser) parseAssignTarget() Expression {
 		return &IndexExpression{Token: tok, Left: ident, Index: index}
 	}
 	return ident
+}
+
+func (p *Parser) parseUnwrapAssignStatement() Statement {
+	// currentToken = IDENT (variable name), peekToken = QUESTION_ASSIGN (?=)
+	nameTok := p.currentToken
+	p.nextToken() // skip IDENT → current = ?=
+	tok := p.currentToken
+	p.nextToken() // skip ?= → current = start of expr
+
+	p.ctx.push(CTX_EXPR)
+	val := p.parseExpression(LOWEST)
+	p.ctx.pop()
+
+	if val == nil {
+		return nil
+	}
+
+	return &UnwrapAssignStatement{
+		Token: tok,
+		Name:  &Identifier{Token: nameTok, Value: nameTok.Literal},
+		Value: val,
+	}
 }
 
 func (p *Parser) parseLetStatement() Statement {

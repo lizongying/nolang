@@ -477,6 +477,28 @@ func (mas *MultiAssignStatement) statementNode()         {}
 func (mas *MultiAssignStatement) Pos() lexer.Position    { return posFromToken(mas.Token) }
 func (mas *MultiAssignStatement) EndPos() lexer.Position { return mas.Value.EndPos() }
 
+// UnwrapAssignStatement represents an unwrap-and-propagate assignment:
+//
+//	v ?= expr
+//
+// If expr evaluates to ok(value), v is assigned the unwrapped inner value.
+// If expr evaluates to nil or err, the current function's option result param
+// is set to the option value and an early return is executed (error propagation).
+// This is only valid inside a function that has an option-typed result param.
+type UnwrapAssignStatement struct {
+	Token lexer.Token // the ?= token
+	Name  *Identifier
+	Value Expression
+	CommentedNode
+}
+
+func (uas *UnwrapAssignStatement) statementNode()         {}
+func (uas *UnwrapAssignStatement) Pos() lexer.Position    { return posFromToken(uas.Token) }
+func (uas *UnwrapAssignStatement) EndPos() lexer.Position { return uas.Value.EndPos() }
+func (uas *UnwrapAssignStatement) String() string {
+	return uas.Name.Value + " ?= " + exprToString(uas.Value)
+}
+
 // a u8 = 8
 type LetStatement struct {
 	Token         lexer.Token
