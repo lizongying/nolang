@@ -747,6 +747,22 @@ json-pool.stringify = (node-idx i64, out str, start i64) (out-n i64) {
 ;           name, found = it.get-str('name')
 ;       }
 ;   }
+; json.get-key: 全局函数 — 从 json 对象中按键获取子节点
+; 返回 child ?json: 子节点（nil 表示不存在）
+json.get-key = (obj json, key str) (child ?json) {
+    child = nil
+    obj.root < 0 -> return
+    k i64 = obj.pool.get-kind(obj.root)
+    k != JSON-KIND-OBJ -> return
+    val-idx, found = obj.pool.get-key(obj.root, key)
+    found == true -> {
+        child = json{
+            pool: obj.pool,
+            root: val-idx,
+        }
+    }
+}
+
 json.parse = (s str) (result ?json) {
     result = nil
     s.len == 0 -> {
@@ -1276,4 +1292,25 @@ json.delete-key = (key str) (ok bool) {
 ; 返回 ok bool: ok=成功
 json.set-key = (key str, val json) (ok bool) {
     ok = .pool.set-key(.root, key, val.root)
+}
+
+; json.obj-keys-str: 取得物件所有鍵，以換行分隔的字串返回
+; 返回 keys str: 所有鍵拼接成的字串
+json.obj-keys-str = () (keys str) {
+    keys = ''
+    .root < 0 -> return
+    k i64 = .pool.get-kind(.root)
+    k != JSON-KIND-OBJ -> return
+    cnt i64 = .pool.nodes[.root].count
+    i <- [0..cnt): {
+        key = .pool.nodes[.root].keys[i]
+        keys = keys - key - '\n'
+    }
+}
+
+; json.str-val: 取得字串節點的值
+; 返回 val str: 字串值
+json.str-val = () (val str) {
+    val, ok = .pool.get-str(.root)
+    ok == false -> val = ''
 }

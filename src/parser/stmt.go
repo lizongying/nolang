@@ -3,6 +3,7 @@ package parser
 
 import (
 	"fmt"
+	"os"
 	"slices"
 	"strconv"
 	"strings"
@@ -1397,8 +1398,17 @@ func (p *Parser) parseBreakStatement() Statement {
 // let/multi-assign bodies, and single expressions.
 func (p *Parser) parseStandaloneBody(tok lexer.Token) *BlockStatement {
 	if p.currentToken.Type == lexer.LBRACE {
+		if os.Getenv("NOLANG_DEBUG_IT") != "" {
+			fmt.Fprintf(os.Stderr, "[debug-it] parseStandaloneBody: LBRACE, calling parseBlockStatement\n")
+		}
 		bs := p.parseBlockStatement()
+		if os.Getenv("NOLANG_DEBUG_IT") != "" {
+			fmt.Fprintf(os.Stderr, "[debug-it] parseStandaloneBody: parseBlockStatement returned, cur=%s(%s)\n", p.currentToken.Type.String(), p.currentToken.Literal)
+		}
 		p.nextToken() // skip body's }
+		if os.Getenv("NOLANG_DEBUG_IT") != "" {
+			fmt.Fprintf(os.Stderr, "[debug-it] parseStandaloneBody: after nextToken, cur=%s(%s)\n", p.currentToken.Type.String(), p.currentToken.Literal)
+		}
 		return bs
 	}
 	if p.currentToken.Type == lexer.NEWLINE || p.currentToken.Type == lexer.RBRACE ||

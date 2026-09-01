@@ -715,6 +715,13 @@ func (g *Generator) generateIfExpression(sb *strings.Builder, expr *parser.IfExp
 			savedSSA[k] = v
 		}
 	}
+	// Save varTypes snapshot: synthetic `it` in err/nil arms may change
+	// g.varTypes["it"] to %str-long or i64, leaking to sibling/outer scopes
+	// and breaking method resolution (e.g. it.get() after a match with err arm).
+	savedItVarType := ""
+	if g.varTypes != nil {
+		savedItVarType = g.varTypes["it"]
+	}
 	// Save outBindState before entering branch: branch 內的 move-to-out 不應污染其他分支。
 	// 分支匯合時取並集：兩分支綁定相同 → 保持；不同 → -2（不確定）。
 	savedOutBindState := make([]int, len(g.outBindState))
@@ -799,6 +806,11 @@ func (g *Generator) generateIfExpression(sb *strings.Builder, expr *parser.IfExp
 			g.ssaVersion[k] = v
 		}
 	}
+	// Restore varTypes: else branch starts from pre-then state (synthetic
+	// `it` type changes in then branch must not leak).
+	if g.varTypes != nil && savedItVarType != "" {
+		g.varTypes["it"] = savedItVarType
+	}
 	// Restore outBindState: else 分支從進入 if 前的狀態開始，不受 then 分支 move 污染
 	copy(g.outBindState, savedOutBindState)
 	elseVal := defaultZero
@@ -868,6 +880,11 @@ func (g *Generator) generateIfExpression(sb *strings.Builder, expr *parser.IfExp
 		for k, v := range savedSSA {
 			g.ssaVersion[k] = v
 		}
+	}
+	// Restore varTypes after if-else: synthetic `it` type changes in branches
+	// must not leak to subsequent code (e.g. it.get() after a match).
+	if g.varTypes != nil && savedItVarType != "" {
+		g.varTypes["it"] = savedItVarType
 	}
 	endLabel = fmt.Sprintf("if.end.%d", labelId)
 	g.emitLabel(sb, endLabel)

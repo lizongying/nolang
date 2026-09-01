@@ -3,6 +3,7 @@ package parser
 
 import (
 	"fmt"
+	"os"
 	"strconv"
 	"strings"
 
@@ -849,6 +850,11 @@ func (p *Parser) parseGroupedExpression() Expression {
 // parseMatchExprFrom 從既有表達式開始解析 match（不用 match 關鍵字）
 // 用於 expr { pattern: body } 形式
 func (p *Parser) parseMatchExprFrom(matched Expression) Expression {
+	if os.Getenv("NOLANG_DEBUG_IT") != "" {
+		if ident, ok := matched.(*Identifier); ok {
+			fmt.Fprintf(os.Stderr, "[debug-it] parseMatchExprFrom: matched=%q\n", ident.Value)
+		}
+	}
 	tok := p.currentToken // LBRACE
 	p.nextToken()         // skip {
 
@@ -861,6 +867,10 @@ func (p *Parser) parseMatchExprFrom(matched Expression) Expression {
 		}
 		if p.currentToken.Type == lexer.RBRACE || p.currentToken.Type == lexer.EOF {
 			break
+		}
+
+		if os.Getenv("NOLANG_DEBUG_IT") != "" {
+			fmt.Fprintf(os.Stderr, "[debug-it] parseMatchExprFrom: arm loop start cur=%s(%s) peek=%s\n", p.currentToken.Type.String(), p.currentToken.Literal, p.peekToken.Type.String())
 		}
 
 		var ma matchArm
@@ -1040,6 +1050,9 @@ func (p *Parser) parseMatchExprFrom(matched Expression) Expression {
 		} else if p.currentToken.Type == lexer.COLON {
 			p.nextToken()
 		} else if !ma.isWildcard {
+			if os.Getenv("NOLANG_DEBUG_IT") != "" {
+				fmt.Fprintf(os.Stderr, "[debug-it] parseMatchExprFrom: not wildcard and no ->/: cur=%s peek=%s\n", p.currentToken.Type.String(), p.peekToken.Type.String())
+			}
 			return nil
 		}
 
@@ -1182,10 +1195,27 @@ func (p *Parser) parseMatchExprFrom(matched Expression) Expression {
 			bodyBlock.RBrace = parsedBlock.RBrace
 		}
 		ma.body = bodyBlock
+		if os.Getenv("NOLANG_DEBUG_IT") != "" {
+			condStr := "nil"
+			if ma.condition != nil {
+				if ident, ok := ma.condition.(*Identifier); ok {
+					condStr = ident.Value
+				} else {
+					condStr = "expr"
+				}
+			}
+			if ma.isWildcard {
+				condStr += "(wildcard)"
+			}
+			fmt.Fprintf(os.Stderr, "[debug-it] parseMatchExprFrom: arm parsed cond=%s cur=%s\n", condStr, p.currentToken.Type.String())
+		}
 		arms = append(arms, ma)
 	}
 
 	if len(arms) == 0 {
+		if os.Getenv("NOLANG_DEBUG_IT") != "" {
+			fmt.Fprintf(os.Stderr, "[debug-it] parseMatchExprFrom: arms==0 returning nil\n")
+		}
 		return nil
 	}
 
@@ -1260,6 +1290,11 @@ func (p *Parser) parseMatchExprFrom(matched Expression) Expression {
 	// 產出表層 AST（SurfaceMatch），desugar 延後到 lowering pass 執行。
 	sm := p.newSurfaceMatch(tok, matched, arms)
 	sm.RBracePos = rbracePos
+	if os.Getenv("NOLANG_DEBUG_IT") != "" {
+		if ident, ok := matched.(*Identifier); ok {
+			fmt.Fprintf(os.Stderr, "[debug-it] parseMatchExprFrom RETURNING SurfaceMatch for matched=%q arms=%d\n", ident.Value, len(arms))
+		}
+	}
 	return sm
 }
 

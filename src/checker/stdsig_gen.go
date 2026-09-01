@@ -9,7 +9,7 @@ package checker
 func init() {
 	embeddedStdSigReady = true
 	embeddedStdSigVersion = 1
-	embeddedStdSigKey = "18fa0b3e90ec67af6dcfb3f0b0ab2bb2e274d92209c3a9c616ecb4164d5cdcb9"
+	embeddedStdSigKey = "518dc45d7cee6fb0464626fb24850b394af68ae15136970dace14b27a16d9795"
 	embeddedStdFuncSigs = map[string][]string{
 		"[]byte.index":                     {"i64"},
 		"[]byte.index-from":                {"i64"},
@@ -1068,6 +1068,7 @@ func init() {
 		"json.get":                                         {"?json"},
 		"json.get-bool":                                    {"bool", "bool"},
 		"json.get-i64":                                     {"i64", "bool"},
+		"json.get-key":                                     {"?json"},
 		"json.get-num":                                     {"f64", "bool"},
 		"json.get-str":                                     {"str", "bool"},
 		"json.i64":                                         {"i64", "bool"},
@@ -1105,6 +1106,7 @@ func init() {
 		"json.json.get":                                    {"?json"},
 		"json.json.get-bool":                               {"bool", "bool"},
 		"json.json.get-i64":                                {"i64", "bool"},
+		"json.json.get-key":                                {"?json"},
 		"json.json.get-num":                                {"f64", "bool"},
 		"json.json.get-str":                                {"str", "bool"},
 		"json.json.i64":                                    {"i64", "bool"},
@@ -1117,6 +1119,7 @@ func init() {
 		"json.json.kind":                                   {"i64"},
 		"json.json.num":                                    {"f64", "bool"},
 		"json.json.obj-key":                                {"str", "bool"},
+		"json.json.obj-keys-str":                           {"str"},
 		"json.json.obj-len":                                {"i64"},
 		"json.json.parse":                                  {"?json"},
 		"json.json.set":                                    {"bool"},
@@ -1127,10 +1130,12 @@ func init() {
 		"json.json.set-num":                                {"bool"},
 		"json.json.set-str":                                {"bool"},
 		"json.json.str":                                    {"str", "bool"},
+		"json.json.str-val":                                {"str"},
 		"json.json.stringify":                              {"str"},
 		"json.kind":                                        {"i64"},
 		"json.num":                                         {"f64", "bool"},
 		"json.obj-key":                                     {"str", "bool"},
+		"json.obj-keys-str":                                {"str"},
 		"json.obj-len":                                     {"i64"},
 		"json.parse":                                       {"?json"},
 		"json.set":                                         {"bool"},
@@ -1141,6 +1146,7 @@ func init() {
 		"json.set-num":                                     {"bool"},
 		"json.set-str":                                     {"bool"},
 		"json.str":                                         {"str", "bool"},
+		"json.str-val":                                     {"str"},
 		"json.stringify":                                   {"str"},
 		"link.empty":                                       {"bool"},
 		"link.full":                                        {"bool"},

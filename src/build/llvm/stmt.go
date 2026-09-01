@@ -10,6 +10,14 @@ import (
 	"github.com/lizongying/nolang/parser"
 )
 
+// stmtName returns the name of a LetStatement or a placeholder for other types.
+func stmtName(s parser.Statement) string {
+	if ls, ok := s.(*parser.LetStatement); ok && ls.Name != nil {
+		return ls.Name.Value
+	}
+	return ""
+}
+
 // llvmTypeAlign 返回 LLVM 類型的對齊字節數（與 LLVM ABI 對齊規則一致）。
 // 透過 classifyTypeKind 區分內聯陣列、結構體與純量，取代字串前綴判斷。
 // 注意：%vec、%str-long、%arr 雖然是內建型別，但也在 structTypes 中註冊了欄位定義，
@@ -4571,6 +4579,33 @@ func (g *Generator) varLLVMType(stmt *parser.LetStatement) string {
 										}
 									}
 								}
+							// Fallback: derive element type from the builtin
+							// method's return type (e.g. fs.read-file → []byte).
+							// This handles module-prefixed builtin calls where
+							// the receiver is a module name (not a variable),
+							// so arrayElemTypes lookup above fails.
+							fullName := ident.Value + "." + dotFn.Property
+							bnName := fullName
+							if m := builtin.FindBuiltinMethod(bnName); m == nil {
+								if idx := strings.Index(fullName, "."); idx >= 0 {
+									bnName = fullName[idx+1:]
+								}
+							}
+							if m := builtin.FindBuiltinMethod(bnName); m != nil && len(m.Return) > 0 {
+									if _, isSlice := m.Return[0].(*parser.SliceType); isSlice {
+										elemStr := m.Return[0].String()
+										if rbracket := strings.Index(elemStr, "]"); rbracket > 0 {
+											elemTypeStr := elemStr[rbracket+1:]
+											etLLVM := g.mapToLLVMType(elemTypeStr)
+											etLLVM = strings.TrimPrefix(etLLVM, "%")
+											if elemAliases, ok := llvmTypeToNolang[etLLVM]; ok {
+												for _, alias := range elemAliases {
+													candidates = append(candidates, "[]"+alias)
+												}
+											}
+										}
+									}
+								}
 							}
 						}
 					}
@@ -4846,9 +4881,9 @@ func (g *Generator) recollectSyntheticItTypes(stmt parser.Statement, vars map[st
 	}
 	switch s := stmt.(type) {
 	case *parser.LetStatement:
-		if os.Getenv("NOLANG_DEBUG_IT") != "" {
-			fmt.Fprintf(os.Stderr, "[debug-it] recollect LetStatement: name=%s IsSynthetic=%v\n", s.Name.Value, s.IsSynthetic)
-		}
+	if os.Getenv("NOLANG_DEBUG_IT") != "" {
+		fmt.Fprintf(os.Stderr, "[debug-it] recollect LetStatement: name=%s IsSynthetic=%v value=%T\n", s.Name.Value, s.IsSynthetic, s.Value)
+	}
 		if !s.IsSynthetic {
 			return
 		}
@@ -4862,12 +4897,16 @@ func (g *Generator) recollectSyntheticItTypes(stmt parser.Statement, vars map[st
 			}
 			return
 		}
-		// Only process if source is an option variable with known inner type
-		if g.varTypes == nil {
-			return
-		}
-		srcType, ok := g.varTypes[ident.Value]
-		if !ok || srcType != "%option" {
+	// Only process if source is an option variable with known inner type
+	if g.varTypes == nil {
+		return
+	}
+	srcType, ok := g.varTypes[ident.Value]
+	if os.Getenv("NOLANG_DEBUG_IT") != "" {
+		innerIt, _ := g.optionInnerTypes[ident.Value]
+		fmt.Fprintf(os.Stderr, "[debug-it]   src %q type=%q ok=%v inner=%q (it name=%s)\n", ident.Value, srcType, ok, innerIt, s.Name.Value)
+	}
+	if !ok || srcType != "%option" {
 			if os.Getenv("NOLANG_DEBUG_IT") != "" {
 				fmt.Fprintf(os.Stderr, "[debug-it]   src %q type=%q (not %%option)\n", ident.Value, srcType)
 			}
@@ -4884,8 +4923,21 @@ func (g *Generator) recollectSyntheticItTypes(stmt parser.Statement, vars map[st
 			return
 		}
 		if !g.isStructLLVMType(innerType) {
-			if os.Getenv("NOLANG_DEBUG_IT") != "" {
-				fmt.Fprintf(os.Stderr, "[debug-it]   innerType=%q is not struct\n", innerType)
+			// innerType is a primitive (e.g. i64, f64). The `it` alloca may
+			// have been polluted to %str-long by an err arm's it binding
+			// (err message is a string). Overwrite it with the correct
+			// primitive inner type so that subsequent variable assignments
+			// from `it` (e.g. `e-retry = it`) don't inherit the wrong type.
+			existing, exists := vars[s.Name.Value]
+			if !exists || (existing != innerType && g.isStructLLVMType(existing)) {
+				if os.Getenv("NOLANG_DEBUG_IT") != "" {
+					fmt.Fprintf(os.Stderr, "[debug-it]   UPDATING (non-struct): %s from %q to %q\n", s.Name.Value, existing, innerType)
+				}
+				vars[s.Name.Value] = innerType
+				g.varTypes[s.Name.Value] = innerType
+				if g.itAllocTypes != nil {
+					g.itAllocTypes[s.Name.Value] = innerType
+				}
 			}
 			return
 		}
@@ -4910,6 +4962,23 @@ func (g *Generator) recollectSyntheticItTypes(stmt parser.Statement, vars map[st
 		// Match desugar wraps `it = source` in ExpressionStatement → IfExpression
 		g.recollectSyntheticItTypesFromExpr(s.Expression, vars)
 	case *parser.ForStatement:
+		if os.Getenv("NOLANG_DEBUG_IT") != "" {
+			fmt.Fprintf(os.Stderr, "[debug-it] recollect ForStatement: IsCondWrapper=%v Body=%v Cond=%T\n", s.IsCondWrapper, s.Body != nil, s.Condition)
+		}
+		if s.IsCondWrapper && s.Condition != nil {
+			// CondWrapper ForStatement: Condition holds the original IfExpression.
+			// The Body is the IfExpression's Consequence, but synthetic `it`
+			// bindings are in the Consequence, and the Alternative holds the
+			// remaining arms. Recurse into both.
+			if ifExpr, ok := s.Condition.(*parser.IfExpression); ok {
+				if ifExpr.Consequence != nil {
+					g.recollectSyntheticItTypes(ifExpr.Consequence, vars)
+				}
+				if ifExpr.Alternative != nil {
+					g.recollectSyntheticItTypes(ifExpr.Alternative, vars)
+				}
+			}
+		}
 		if s.Body != nil {
 			g.recollectSyntheticItTypes(s.Body, vars)
 		}
@@ -4929,11 +4998,36 @@ func (g *Generator) recollectSyntheticItTypesFromExpr(expr parser.Expression, va
 	switch e := expr.(type) {
 	case *parser.IfExpression:
 		if e.Consequence != nil {
+			if os.Getenv("NOLANG_DEBUG_IT") != "" {
+				fmt.Fprintf(os.Stderr, "[debug-it] IfExpr Consequence has %d statements\n", len(e.Consequence.Statements))
+				for i, s := range e.Consequence.Statements {
+					fmt.Fprintf(os.Stderr, "[debug-it]   stmt[%d] %T name=%v\n", i, s, stmtName(s))
+				}
+			}
 			g.recollectSyntheticItTypes(e.Consequence, vars)
 		}
 		if e.Alternative != nil {
 			g.recollectSyntheticItTypes(e.Alternative, vars)
 		}
+	case *parser.CallExpression:
+		// Match desugar may wrap `it = source` inside an IfExpression nested
+		// in a CallExpression (e.g. resp: { ok -> ... } parsed as expression).
+		// Recurse into the function expression and arguments to find any
+		// embedded IfExpression with synthetic it bindings.
+		g.recollectSyntheticItTypesFromExpr(e.Function, vars)
+		for _, arg := range e.Arguments {
+			g.recollectSyntheticItTypesFromExpr(arg, vars)
+		}
+	case *parser.DotExpression:
+		g.recollectSyntheticItTypesFromExpr(e.Receiver, vars)
+	case *parser.InfixExpression:
+		g.recollectSyntheticItTypesFromExpr(e.Left, vars)
+		g.recollectSyntheticItTypesFromExpr(e.Right, vars)
+	case *parser.GroupedExpression:
+		g.recollectSyntheticItTypesFromExpr(e.Expression, vars)
+	case *parser.ConditionalExpression:
+		g.recollectSyntheticItTypesFromExpr(e.Consequence, vars)
+		g.recollectSyntheticItTypesFromExpr(e.Alternative, vars)
 	}
 }
 
@@ -5138,7 +5232,16 @@ func (g *Generator) collectVarDeclsFromStmtInner(stmt parser.Statement, vars map
 			vt = "i64"
 		}
 		existingVT, exists := vars[s.Name.Value]
-		if !exists || g.llvmTypeSize(existingVT) < g.llvmTypeSize(vt) {
+		// When the value is an Identifier pointing to `it` (a synthetic match
+		// variable), the derived type may be polluted by an err arm's %str-long
+		// binding. Don't let this struct type overwrite an existing primitive
+		// type (e.g. `e-retry i64 = -1` should not become %str-long from `e-retry = it`).
+		// The recollectSyntheticItTypes pass will fix `it`'s type afterwards,
+		// but we must prevent the contamination from spreading to other vars.
+		if ident, ok := s.Value.(*parser.Identifier); ok && ident.Value == "it" &&
+			exists && !g.isStructLLVMType(existingVT) && g.isStructLLVMType(vt) {
+			// Keep existing primitive type; skip size-based overwrite
+		} else if !exists || g.llvmTypeSize(existingVT) < g.llvmTypeSize(vt) {
 			// 對模組級全域變數的重新賦值（Type==nil 表示賦值而非宣告），
 			// 不應創建本地 alloca 覆蓋全域變數。例如 gen-random 中的
 			// `LAST = (LAST * IA + IC) % IM` 必須更新全域 @LAST，
@@ -7409,6 +7512,10 @@ func (g *Generator) generateLet(sb *strings.Builder, stmt *parser.LetStatement) 
 		}
 		// Track inner type for ?T option variables
 		if g.optionInnerTypes != nil {
+			if os.Getenv("NOLANG_DEBUG_OPT") != "" {
+				inner, hasInner := g.optionInnerTypes[name]
+				fmt.Fprintf(os.Stderr, "[debug-opt] optionInner entry name=%q hasInner=%v inner=%q stmt.Type=%T stmt.Value=%T\n", name, hasInner, inner, stmt.Type, stmt.Value)
+			}
 			if _, exists := g.optionInnerTypes[name]; !exists {
 				// From explicit type annotation (e.g. val ?f64)
 				if nt, ok := stmt.Type.(*parser.NullableType); ok {
@@ -7446,6 +7553,10 @@ func (g *Generator) generateLet(sb *strings.Builder, stmt *parser.LetStatement) 
 						}
 					}
 				if fnName != "" && g.funcResultInnerTypes != nil {
+					if os.Getenv("NOLANG_DEBUG_OPT") != "" {
+						_, hasFn := g.funcResultInnerTypes[fnName]
+						fmt.Fprintf(os.Stderr, "[debug-opt] optionInner lookup name=%q fnName=%q hasEntry=%v\n", name, fnName, hasFn)
+					}
 					if innerTypes, ok := g.funcResultInnerTypes[fnName]; ok && len(innerTypes) >= 1 && innerTypes[0] != "" {
 						g.optionInnerTypes[name] = innerTypes[0]
 					} else if idx := strings.Index(fnName, "."); idx >= 0 {
@@ -7453,6 +7564,16 @@ func (g *Generator) generateLet(sb *strings.Builder, stmt *parser.LetStatement) 
 						shortName := fnName[idx+1:]
 						if innerTypes, ok := g.funcResultInnerTypes[shortName]; ok && len(innerTypes) >= 1 && innerTypes[0] != "" {
 							g.optionInnerTypes[name] = innerTypes[0]
+						} else {
+							// Fallback 2: match by suffix — find a key in funcResultInnerTypes
+							// that ends with "." + shortName (e.g. "do-req" matches "http.do-req")
+							suffix := "." + shortName
+							for key, innerTypes := range g.funcResultInnerTypes {
+								if strings.HasSuffix(key, suffix) && len(innerTypes) >= 1 && innerTypes[0] != "" {
+									g.optionInnerTypes[name] = innerTypes[0]
+									break
+								}
+							}
 						}
 					}
 				}

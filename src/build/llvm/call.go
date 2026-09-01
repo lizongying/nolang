@@ -1859,7 +1859,7 @@ func (g *Generator) generateCallExpression(sb *strings.Builder, expr *parser.Cal
 		if recv, ok := receiverExpr.(*parser.Identifier); ok {
 			if os.Getenv("NOLANG_DEBUG_IT") != "" {
 				rt, has := g.varTypes[recv.Value]
-				fmt.Fprintf(os.Stderr, "[debug-it] call.go method-resolve: recv=%q varTypes=%v(%q) prop=%q\n", recv.Value, has, rt, dot.Property)
+				fmt.Fprintf(os.Stderr, "[debug-it] call.go method-resolve: func=%s recv=%q varTypes=%v(%q) prop=%q\n", g.curFuncName, recv.Value, has, rt, dot.Property)
 			}
 			if recvType, ok := g.varTypes[recv.Value]; ok && g.unionAliases != nil {
 				// Map LLVM type name back to source type name
@@ -1949,15 +1949,19 @@ func (g *Generator) generateCallExpression(sb *strings.Builder, expr *parser.Cal
 							}
 						}
 					}
-					for _, cand := range candidates {
-						shortName := cand + "." + dot.Property
-						if g.funcRetTypes != nil {
-							// 接受任何已註冊的用戶方法（含 void 無輸出參數的方法，如 process.close）。
-							if _, ok := g.funcRetTypes[shortName]; ok {
-								fnName = shortName
-								methodReceiver = recv
-								break
-							}
+				for _, cand := range candidates {
+					shortName := cand + "." + dot.Property
+					if os.Getenv("NOLANG_DEBUG_IT") != "" {
+						_, ok1 := g.funcRetTypes[shortName]
+						fmt.Fprintf(os.Stderr, "[debug-it]   call.go cand=%q shortName=%q funcRetTypes=%v\n", cand, shortName, ok1)
+					}
+					if g.funcRetTypes != nil {
+						// 接受任何已註冊的用戶方法（含 void 無輸出參數的方法，如 process.close）。
+						if _, ok := g.funcRetTypes[shortName]; ok {
+							fnName = shortName
+							methodReceiver = recv
+							break
+						}
 							// Fallback: try mangled name from mangleOverloads.
 							// When duplicate method definitions exist (e.g. user code + auto-imported
 							// std module), mangleOverloads appends parameter type suffixes:
@@ -3413,6 +3417,9 @@ func (g *Generator) generateCallExpression(sb *strings.Builder, expr *parser.Cal
 	}
 
 	// Make the call
+	if os.Getenv("NOLANG_DEBUG_IT") != "" && strings.Contains(llvmFnName, "nil.") {
+		fmt.Fprintf(os.Stderr, "[debug-it] call.go make-call: fnName=%q llvmFnName=%q retType=%q methodReceiver=%v\n", fnName, llvmFnName, retType, methodReceiver != nil)
+	}
 	callStr := fmt.Sprintf("call %s @%s(%s)", retType, sanitizeLLVMName(llvmFnName), strings.Join(typedArgs, ", "))
 
 	// If has output param, store return value into output variable

@@ -9,6 +9,7 @@ package parser
 
 import (
 	"fmt"
+	"os"
 	"reflect"
 	"strings"
 
@@ -157,6 +158,15 @@ func (l *lowerer) walk(v reflect.Value) {
 // lowerSurfaceMatch 將單個表層 match 節點展開為核心 AST。
 // 先自底向上處理 matched 與各 arm 內部（嵌套 match），再建 if 鏈。
 func (l *lowerer) lowerSurfaceMatch(sm *SurfaceMatch) Expression {
+	if os.Getenv("NOLANG_DEBUG_IT") != "" {
+		if ident, ok := sm.Matched.(*Identifier); ok {
+			fmt.Fprintf(os.Stderr, "[debug-it] lowerSurfaceMatch: matched=%q curFuncName=%q\n", ident.Value, l.curFuncName)
+		} else if sm.Matched == nil {
+			fmt.Fprintf(os.Stderr, "[debug-it] lowerSurfaceMatch: matched=nil (bare match) curFuncName=%q\n", l.curFuncName)
+		} else {
+			fmt.Fprintf(os.Stderr, "[debug-it] lowerSurfaceMatch: matched=%T curFuncName=%q\n", sm.Matched, l.curFuncName)
+		}
+	}
 	l.walk(reflect.ValueOf(&sm.Matched))
 	for i := range sm.Arms {
 		a := &sm.Arms[i]
@@ -322,6 +332,13 @@ func (p *Parser) buildMatchDesugar(sm *SurfaceMatch) Expression {
 			if vs, ok := p.sem.EnumVariantsOf(t); ok {
 				isEnumType = true
 				enumVariants = vs
+			}
+			if os.Getenv("NOLANG_DEBUG_IT") != "" {
+				fmt.Fprintf(os.Stderr, "[debug-it] buildMatchDesugar: matched=%q matchedVarType=%q\n", ident.Value, matchedVarType)
+			}
+		} else {
+			if os.Getenv("NOLANG_DEBUG_IT") != "" {
+				fmt.Fprintf(os.Stderr, "[debug-it] buildMatchDesugar: matched=%q FuncVarType NOT FOUND\n", ident.Value)
 			}
 		}
 	}
