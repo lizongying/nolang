@@ -1243,3 +1243,37 @@ json.obj-key = (idx i64) (key str, ok bool) {
     key = .pool.nodes[.root].keys[idx]
     ok = true
 }
+
+; json.delete-key: 從物件中刪除指定鍵
+; 返回 ok bool: ok=成功（鍵存在且已刪除）
+json.delete-key = (key str) (ok bool) {
+    ok = false
+    .root < 0 -> return
+    k i64 = .pool.get-kind(.root)
+    k != JSON-KIND-OBJ -> return
+    cnt i64 = .pool.nodes[.root].count
+    i <- [0..cnt): {
+        found-eq = 0
+        found-eq = .pool.str-eq(.pool.nodes[.root].keys[i], key)
+        found-eq == 1 -> {
+            ; 向前移動後續鍵值
+            jj <- [i + 1..cnt): {
+                .pool.nodes[.root].keys[jj - 1] = .pool.nodes[.root].keys[jj]
+                .pool.nodes[.root].children[jj - 1] = .pool.nodes[.root].children[jj]
+            }
+            .pool.nodes[.root].count = cnt - 1
+            ; 清空最後一個槽位
+            last i64 = cnt - 1
+            .pool.nodes[.root].keys[last].len = 0
+            .pool.nodes[.root].children[last] = -1
+            ok = true
+            return
+        }
+    }
+}
+
+; json.set-key: 設定物件鍵值（語意糖，接受 json 值作為 val）
+; 返回 ok bool: ok=成功
+json.set-key = (key str, val json) (ok bool) {
+    ok = .pool.set-key(.root, key, val.root)
+}

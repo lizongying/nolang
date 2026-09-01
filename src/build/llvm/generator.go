@@ -2929,7 +2929,7 @@ func (g *Generator) genLLVMConv(sb *strings.Builder, m *builtin.BuiltinMethod, e
 // Emits ptrtoint i8* → i64, then store i64.
 // ptrVal may include an "i8* " type prefix (e.g. from GEP expressions), which is stripped.
 func (g *Generator) storeDataPtrField(sb *strings.Builder, ptrVal string, fieldGEP string) {
-	if ptrVal == "null" {
+	if ptrVal == "null" || ptrVal == "0" {
 		sb.WriteString(fmt.Sprintf("%sstore i64 0, i64* %s\n", g.indent(), fieldGEP))
 		return
 	}

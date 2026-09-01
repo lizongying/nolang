@@ -4049,12 +4049,10 @@ func CollectStdModuleSignatures() (map[string][]string, map[string]map[string]st
 	stdSigsOnce.Do(func() {
 		// ---- embedded signature table (compiled-in Go literals) ----
 		// Preferred path: stdsig_gen.go bakes the five signature tables into
-		// the binary as Go source literals, so PASS1 is skipped on EVERY build
-		// (including the cold first build / cleared disk cache). Only used when
-		// the embedded key matches the current embedded std content; if src/std
-		// changed without regenerating stdsig_gen.go, the keys differ and we
-		// fall through to the disk cache / full collection instead of serving
-		// a stale table.
+		// the binary as Go source literals, so PASS1 is skipped on EVERY build.
+		// Only used when the embedded key matches the current embedded std
+		// content; if src/std changed without regenerating stdsig_gen.go, the
+		// keys differ and we fall through to full collection.
 		if embeddedStdSigReady {
 			if key, err := computeStdSigKey(); err == nil && embeddedStdSigKey == key {
 				setStdSigCaches(embeddedStdFuncSigs, embeddedStdMethodSigs, embeddedStdStructFields, embeddedStdAliases, embeddedStdStructMod, embeddedStdEnumVariants)
@@ -4063,22 +4061,10 @@ func CollectStdModuleSignatures() (map[string][]string, map[string]map[string]st
 			}
 		}
 
-		// ---- Stage 1: try disk cache first (skips parsing all std modules) ----
-		if os.Getenv("NOLANG_NOCACHE_STD") == "" {
-			if cached, ok := tryLoadStdSigCache(); ok {
-				setStdSigCaches(cached.FuncSigs, cached.MethodSigs, cached.Fields, cached.Aliases, cached.StructMod, cached.EnumVariants)
-				return
-			}
-		}
-
 		// ---- full collection from embedded StdFS ----
 		funcSigs, methodSigs, structFields, aliases, structMod, enumVariants, _ := collectStdSigsFromFS(nolang.StdFS)
 		setStdSigCaches(funcSigs, methodSigs, structFields, aliases, structMod, enumVariants)
-
-		// ---- persist to disk for next build (best-effort) ----
-		if os.Getenv("NOLANG_NOCACHE_STD") == "" {
-			saveStdSigCache(funcSigs, methodSigs, structFields, aliases, structMod, enumVariants, gatherStdTokens())
-		}
+		warmStdTokenCache()
 	})
 	return stdSigsCache, stdFieldsCache
 }

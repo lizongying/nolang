@@ -2079,6 +2079,19 @@ func vetCommand(args []string) {
 				if vetPkg != nil && vetPkg.IsIgnored(path) {
 					return nil
 				}
+				// 檢查檔案名是否符合變量名規則：小寫字母、數字、中劃線
+				base := strings.TrimSuffix(filepath.Base(path), ".no")
+				if !isValidFileName(base) {
+					allLints = append(allLints, nbuild.LintResult{
+						File: path,
+						Lints: []checker.LintResult{{
+							Severity: checker.LintError,
+							Source:   "nolang-lint",
+							Message:  fmt.Sprintf("file name '%s.no' does not match naming convention: lowercase letters, digits, and hyphens only", base),
+							TraceID:  "fn-rule",
+						}},
+					})
+				}
 				files = append(files, path)
 			}
 			return nil
@@ -2131,6 +2144,19 @@ func vetCommand(args []string) {
 		}
 	} else {
 		// 文件模式：驗證單個文件
+		// 檢查檔案名是否符合變量名規則
+		base := strings.TrimSuffix(filepath.Base(inputPath), ".no")
+		if !isValidFileName(base) {
+			allLints = append(allLints, nbuild.LintResult{
+				File: inputPath,
+				Lints: []checker.LintResult{{
+					Severity: checker.LintError,
+					Source:   "nolang-lint",
+					Message:  fmt.Sprintf("file name '%s.no' does not match naming convention: lowercase letters, digits, and hyphens only", base),
+					TraceID:  "fn-rule",
+				}},
+			})
+		}
 		lints, err := nbuild.VetFileWithLints(inputPath, opts)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
@@ -2267,4 +2293,26 @@ func astCommand(args []string) {
 	}
 
 	fmt.Println(dump.Dump(program))
+}
+
+// isValidFileName 檢查檔案名（不含 .no 副檔名）是否符合變量名規則：
+// 只允許小寫字母 (a-z)、數字 (0-9) 和中劃線 (-)，且不以中劃線開頭或結尾。
+func isValidFileName(name string) bool {
+	if name == "" {
+		return false
+	}
+	// 不以中劃線開頭或結尾
+	if name[0] == '-' || name[len(name)-1] == '-' {
+		return false
+	}
+	// 不允許連續中劃線
+	if strings.Contains(name, "--") {
+		return false
+	}
+	for _, c := range name {
+		if !((c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '-') {
+			return false
+		}
+	}
+	return true
 }

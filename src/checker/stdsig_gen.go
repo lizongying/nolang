@@ -9,7 +9,7 @@ package checker
 func init() {
 	embeddedStdSigReady = true
 	embeddedStdSigVersion = 1
-	embeddedStdSigKey = "b0440c891d09401bbe8173fd51ebf7240ba84c947c7cae3c266884aff1694eb8"
+	embeddedStdSigKey = "18fa0b3e90ec67af6dcfb3f0b0ab2bb2e274d92209c3a9c616ecb4164d5cdcb9"
 	embeddedStdFuncSigs = map[string][]string{
 		"[]byte.index":                     {"i64"},
 		"[]byte.index-from":                {"i64"},
@@ -1064,6 +1064,7 @@ func init() {
 		"json.arr-push-num":                                {"bool"},
 		"json.arr-push-str":                                {"bool"},
 		"json.bool":                                        {"bool", "bool"},
+		"json.delete-key":                                  {"bool"},
 		"json.get":                                         {"?json"},
 		"json.get-bool":                                    {"bool", "bool"},
 		"json.get-i64":                                     {"i64", "bool"},
@@ -1100,6 +1101,7 @@ func init() {
 		"json.json.arr-push-num":                           {"bool"},
 		"json.json.arr-push-str":                           {"bool"},
 		"json.json.bool":                                   {"bool", "bool"},
+		"json.json.delete-key":                             {"bool"},
 		"json.json.get":                                    {"?json"},
 		"json.json.get-bool":                               {"bool", "bool"},
 		"json.json.get-i64":                                {"i64", "bool"},
@@ -1120,6 +1122,7 @@ func init() {
 		"json.json.set":                                    {"bool"},
 		"json.json.set-bool":                               {"bool"},
 		"json.json.set-i64":                                {"bool"},
+		"json.json.set-key":                                {"bool"},
 		"json.json.set-null":                               {"bool"},
 		"json.json.set-num":                                {"bool"},
 		"json.json.set-str":                                {"bool"},
@@ -1133,6 +1136,7 @@ func init() {
 		"json.set":                                         {"bool"},
 		"json.set-bool":                                    {"bool"},
 		"json.set-i64":                                     {"bool"},
+		"json.set-key":                                     {"bool"},
 		"json.set-null":                                    {"bool"},
 		"json.set-num":                                     {"bool"},
 		"json.set-str":                                     {"bool"},

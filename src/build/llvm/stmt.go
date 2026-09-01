@@ -3908,6 +3908,29 @@ func (g *Generator) varLLVMType(stmt *parser.LetStatement) string {
 				return g.intExprLLVMType(v)
 			}
 		}
+	// If one side is a string-typed variable (e.g. x with type %str-long from
+	// max-size widening) and the other is a pure integer literal, treat as
+	// integer arithmetic, not string concatenation. This handles cases like
+	// `x = i64-fn-call(); ... x = parts[0]; ... xb = x + 1` where x's type
+	// was widened to %str-long but the actual value in this branch is i64.
+	// Note: an IntegerLiteral can never be a string, so if the other side is
+	// NOT a StringLiteral (e.g. it's an Identifier whose type was widened to
+	// %str-long by max-size), this is integer arithmetic, not string concat.
+	// String concat only applies when the other side is a real StringLiteral
+	// or a string-producing expression (e.g. function call returning str).
+	if (v.Operator == "+" || v.Operator == "-") {
+		_, leftIsInt := v.Left.(*parser.IntegerLiteral)
+		_, rightIsInt := v.Right.(*parser.IntegerLiteral)
+		_, leftIsStrLit := v.Left.(*parser.StringLiteral)
+		_, rightIsStrLit := v.Right.(*parser.StringLiteral)
+		if (leftIsInt && !rightIsStrLit) ||
+			(rightIsInt && !leftIsStrLit) {
+			if ft := g.floatLLVMType(v); ft != "" {
+				return ft
+			}
+			return g.intExprLLVMType(v)
+		}
+	}
 		if (v.Operator == "-" || v.Operator == "+" || v.Operator == "*") && (g.isStringExpr(v.Left) || g.isStringExpr(v.Right)) {
 			return "%str-long"
 		}
@@ -4255,6 +4278,9 @@ func (g *Generator) varLLVMType(stmt *parser.LetStatement) string {
 		if recv, ok := recvExpr.(*parser.Identifier); ok {
 			if recvType, ok := g.varTypes[recv.Value]; ok {
 					srcType := strings.TrimPrefix(recvType, "%")
+					if os.Getenv("NOLANG_DEBUG_IT") != "" && stmt.Name != nil {
+						fmt.Fprintf(os.Stderr, "[debug-it] varLLVMType DotExpr: var=%s recv=%s recvType=%q srcType=%q prop=%q\n", stmt.Name.Value, recv.Value, recvType, srcType, dot.Property)
+					}
 					candidates := []string{srcType}
 					// 基本型別可能對應多個 nolang 型別名稱（如 i32 → char, i32, u32）
 					if primAliases, ok := llvmTypeToNolang[srcType]; ok {
@@ -4321,16 +4347,25 @@ func (g *Generator) varLLVMType(stmt *parser.LetStatement) string {
 				lookupNames = append(lookupNames, mc, sanitizeLLVMName(mc))
 			}
 			for _, ln := range lookupNames {
+						if os.Getenv("NOLANG_DEBUG_IT") != "" && stmt.Name != nil {
+							_, ok1 := g.funcRetTypes[ln]
+							var rt, rnm string
+							if ok1 { rt = g.funcRetTypes[ln] }
+							if g.funcResultLLVMType != nil {
+								if ts, ok2 := g.funcResultLLVMType[ln]; ok2 && len(ts) > 0 { rnm = ts[0] }
+							}
+							fmt.Fprintf(os.Stderr, "[debug-it]   lookup ln=%q funcRetTypes=%v(%q) funcResultLLVMType=%q\n", ln, ok1, rt, rnm)
+						}
 						if g.funcRetTypes != nil {
 							if t, ok := g.funcRetTypes[ln]; ok {
 								if t != "void" {
 									return t
 								}
-								// void + 單輸出函數（如 str.empty 返回 i1）：
+								// void + 輸出函數（如 str.empty 返回 i1）：
 								// 使用 funcResultLLVMType 中的輸出型別
 								// Nolang bools are stored as i64, not i1
 								if g.funcResultLLVMType != nil {
-									if ts, ok := g.funcResultLLVMType[ln]; ok && len(ts) == 1 {
+									if ts, ok := g.funcResultLLVMType[ln]; ok && len(ts) >= 1 {
 										retType := ts[0]
 										if retType == "i1" {
 											retType = "i64"
@@ -8938,6 +8973,25 @@ func (g *Generator) isIntegerLLVMType(t string) bool {
 		return true
 	}
 	return false
+}
+
+// llvmIntBits returns the bit width of an LLVM integer type string.
+func llvmIntBits(t string) int {
+	switch t {
+	case "i1", "u1":
+		return 1
+	case "i8", "u8":
+		return 8
+	case "i16", "u16":
+		return 16
+	case "i32", "u32":
+		return 32
+	case "i64", "u64":
+		return 64
+	case "i128", "u128":
+		return 128
+	}
+	return 64
 }
 
 // isStrPtrReg checks if a register name is a %str-long* pointer (from alloca).

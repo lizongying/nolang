@@ -1374,16 +1374,19 @@ func (g *Generator) generateCallExpression(sb *strings.Builder, expr *parser.Cal
 		// variable in varTypes, treat it as a module name. Strip the prefix
 		// when the short name is a user function (registered without the
 		// module prefix in funcRetTypes, e.g. char-to-str, i64-to-str).
-		if strings.Contains(fnName, ".") && g.varTypes != nil {
-			if idx := strings.Index(fnName, "."); idx >= 0 {
-				firstSegment := fnName[:idx]
-				if _, isVar := g.varTypes[firstSegment]; !isVar {
-					shortName := fnName[idx+1:]
-					// Check if shortName is a user function (without module prefix)
-					if g.funcRetTypes != nil {
-						if _, hasUserFn := g.funcRetTypes[shortName]; hasUserFn {
-							fnName = shortName
-							isModuleQualified = true
+	if strings.Contains(fnName, ".") && g.varTypes != nil {
+		if idx := strings.Index(fnName, "."); idx >= 0 {
+			firstSegment := fnName[:idx]
+			if _, isVar := g.varTypes[firstSegment]; !isVar {
+				shortName := fnName[idx+1:]
+				if os.Getenv("NOLANG_DEBUG_IT") != "" {
+					fmt.Fprintf(os.Stderr, "[debug-it] call.go module-qualified: fnName=%q firstSegment=%q shortName=%q isVar=false\n", fnName, firstSegment, shortName)
+				}
+				// Check if shortName is a user function (without module prefix)
+				if g.funcRetTypes != nil {
+					if _, hasUserFn := g.funcRetTypes[shortName]; hasUserFn {
+						fnName = shortName
+						isModuleQualified = true
 						} else if _, hasFullFn := g.funcRetTypes[fnName]; !hasFullFn {
 							// Full name not registered either — could be a
 							// module-qualified builtin (e.g. number.rotate-left).
@@ -1854,6 +1857,10 @@ func (g *Generator) generateCallExpression(sb *strings.Builder, expr *parser.Cal
 			receiverExpr = ge.Expression
 		}
 		if recv, ok := receiverExpr.(*parser.Identifier); ok {
+			if os.Getenv("NOLANG_DEBUG_IT") != "" {
+				rt, has := g.varTypes[recv.Value]
+				fmt.Fprintf(os.Stderr, "[debug-it] call.go method-resolve: recv=%q varTypes=%v(%q) prop=%q\n", recv.Value, has, rt, dot.Property)
+			}
 			if recvType, ok := g.varTypes[recv.Value]; ok && g.unionAliases != nil {
 				// Map LLVM type name back to source type name
 				srcType := recvType

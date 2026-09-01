@@ -1587,6 +1587,23 @@ func (g *Generator) coerceToInt(sb *strings.Builder, v string, exprForType parse
 	if _, err := fmt.Sscanf(v, "%d", new(int64)); err == nil && !strings.HasPrefix(v, "%") {
 		return v
 	}
+	// When a variable's alloca type was widened to %str-long by the max-size
+	// strategy (e.g. x = i64-call() in one branch, x = parts[0] in another),
+	// the SSA value from generateExprWithSB is %str-long, but in integer
+	// arithmetic context we need to reload it as i64.
+	if ident, ok := exprForType.(*parser.Identifier); ok && sb != nil {
+		if g.varTypes != nil {
+			if t, ok := g.varTypes[ident.Value]; ok && t == "%str-long" {
+				addr := g.varAddr(ident.Value)
+				if addr != "" {
+					reloadReg := g.tmpReg("i64.reload")
+					sb.WriteString(fmt.Sprintf("%s%s = load i64, i64* %s\n", g.indent(), reloadReg, addr))
+					// Now the value is i64, proceed with normal coercion below
+					v = reloadReg
+				}
+			}
+		}
+	}
 	// SSA 暫存器：若來源型別與目標型別不同，進行轉換
 	if strings.HasPrefix(v, "%") {
 		srcType := g.intExprLLVMType(exprForType)
@@ -4039,34 +4056,42 @@ func (g *Generator) generateAssignExpression(sb *strings.Builder, expr *parser.A
 						g.indent(), dataTyped, dataLoad, llvmElemType))
 				}
 
-				// Coerce val to element type if needed (e.g., i64 → i32, i32 → i64, i32 → i32)
-				storeVal := val
-				if strings.HasPrefix(val, "%") {
-					srcType := g.intExprLLVMType(expr.Value)
-					// Only convert between integer types; skip for struct types (e.g. %str-long)
-					if srcType != "" && g.isIntegerLLVMType(srcType) && g.isIntegerLLVMType(llvmElemType) && llvmElemType != "i64" {
-						// Determine actual LLVM register type.
-						actualType := ""
-						if g.ssaTypes != nil {
-							if ssaType, ok := g.ssaTypes[val]; ok && ssaType != "" {
-								actualType = toLLVMType(ssaType)
-							}
-						}
-						if actualType == "" {
-							actualType = toLLVMType(srcType)
-						}
-						if actualType == "" {
-							actualType = "i64"
-						}
-						if actualType != llvmElemType {
-							convReg := g.tmpReg("vec.set.conv")
-							if sb != nil {
-								sb.WriteString(fmt.Sprintf("%s%s = trunc %s %s to %s\n", g.indent(), convReg, actualType, val, llvmElemType))
-							}
-							storeVal = convReg
+			// Coerce val to element type if needed (e.g., i64 → i32, i8 → i64, i32 → i64)
+			storeVal := val
+			if strings.HasPrefix(val, "%") {
+				srcType := g.intExprLLVMType(expr.Value)
+				// Only convert between integer types; skip for struct types (e.g. %str-long)
+				if srcType != "" && g.isIntegerLLVMType(srcType) && g.isIntegerLLVMType(llvmElemType) {
+					// Determine actual LLVM register type.
+					actualType := ""
+					if g.ssaTypes != nil {
+						if ssaType, ok := g.ssaTypes[val]; ok && ssaType != "" {
+							actualType = toLLVMType(ssaType)
 						}
 					}
+					if actualType == "" {
+						actualType = toLLVMType(srcType)
+					}
+					if actualType == "" {
+						actualType = "i64"
+					}
+					if actualType != llvmElemType {
+						convReg := g.tmpReg("vec.set.conv")
+						if sb != nil {
+							srcBits := llvmIntBits(actualType)
+							dstBits := llvmIntBits(llvmElemType)
+							if dstBits > srcBits {
+								sb.WriteString(fmt.Sprintf("%s%s = zext %s %s to %s\n", g.indent(), convReg, actualType, val, llvmElemType))
+							} else if dstBits < srcBits {
+								sb.WriteString(fmt.Sprintf("%s%s = trunc %s %s to %s\n", g.indent(), convReg, actualType, val, llvmElemType))
+							} else {
+								sb.WriteString(fmt.Sprintf("%s%s = bitcast %s %s to %s\n", g.indent(), convReg, actualType, val, llvmElemType))
+							}
+						}
+						storeVal = convReg
+					}
 				}
+			}
 
 				// GEP to element index and store
 				elemGEP := g.tmpReg("vec.set.elem")
@@ -6029,8 +6054,19 @@ func (g *Generator) generateInfix(sb *strings.Builder, expr *parser.InfixExpress
 		}
 		return "0"
 	case "+":
-		// String concatenation: detect if either operand is a string
-		if g.isStringExpr(expr.Left) || g.isStringExpr(expr.Right) {
+		// String concatenation: detect if either operand is a string.
+		// However, if one side is a pure integer literal and the other is
+		// NOT a StringLiteral (e.g. `x + 1` where x is a string-typed
+		// variable from max-size widening), treat as integer arithmetic.
+		_, leftIsIntLit := expr.Left.(*parser.IntegerLiteral)
+		_, rightIsIntLit := expr.Right.(*parser.IntegerLiteral)
+		_, leftIsStrLit := expr.Left.(*parser.StringLiteral)
+		_, rightIsStrLit := expr.Right.(*parser.StringLiteral)
+		isStrConcat := g.isStringExpr(expr.Left) || g.isStringExpr(expr.Right)
+		if (leftIsIntLit && !rightIsStrLit) || (rightIsIntLit && !leftIsStrLit) {
+			isStrConcat = false
+		}
+		if isStrConcat {
 			if sb == nil {
 				return "%str-longconcat.null"
 			}
@@ -6055,7 +6091,16 @@ func (g *Generator) generateInfix(sb *strings.Builder, expr *parser.InfixExpress
 		return reg
 	case "-":
 		// String concatenation: detect if either operand is a string
-		if g.isStringExpr(expr.Left) || g.isStringExpr(expr.Right) {
+		// (same integer literal exception as + operator)
+		_, leftIsStrLitSub := expr.Left.(*parser.StringLiteral)
+		_, rightIsStrLitSub := expr.Right.(*parser.StringLiteral)
+		_, leftIsIntLitSub := expr.Left.(*parser.IntegerLiteral)
+		_, rightIsIntLitSub := expr.Right.(*parser.IntegerLiteral)
+		isStrConcatSub := g.isStringExpr(expr.Left) || g.isStringExpr(expr.Right)
+		if (leftIsIntLitSub && !rightIsStrLitSub) || (rightIsIntLitSub && !leftIsStrLitSub) {
+			isStrConcatSub = false
+		}
+		if isStrConcatSub {
 			if sb == nil {
 				return "%str-longconcat.null"
 			}

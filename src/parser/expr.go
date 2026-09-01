@@ -301,13 +301,25 @@ func (p *Parser) parseExpression(precedence int) Expression {
 		leftExp = p.parseIfExpression()
 
 	case lexer.RUN:
-		tok := p.currentToken
-		p.nextToken() // consume 'run'
-		// Parse the following expression — should be a CallExpression
-		callExpr := p.parseExpression(LOWEST)
-		leftExp = &RunExpression{
-			Token: tok,
-			Call:  callExpr,
+		// When `run` is followed by `.`, it's a module-qualified call
+		// (e.g. `run.list-scripts(...)` where `run` is a module name),
+		// not the async `run <expr>` keyword. Treat `run` as a plain
+		// identifier so parseIdentifier + DOT path handles it correctly.
+		if p.peekToken.Type == lexer.DOT {
+			leftExp = &Identifier{
+				Token:  p.currentToken,
+				Value: p.currentToken.Literal,
+			}
+			p.nextToken()
+		} else {
+			tok := p.currentToken
+			p.nextToken() // consume 'run'
+			// Parse the following expression — should be a CallExpression
+			callExpr := p.parseExpression(LOWEST)
+			leftExp = &RunExpression{
+				Token: tok,
+				Call:  callExpr,
+			}
 		}
 
 	case lexer.AWY:
