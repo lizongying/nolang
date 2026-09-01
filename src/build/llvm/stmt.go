@@ -2977,6 +2977,13 @@ func (g *Generator) generateFunctionDefinition(sb *strings.Builder, fd *parser.F
 			if st, ok := r.Type.(*parser.SliceType); ok && st.Elem != nil {
 				g.arrayElemTypes[r.Name] = g.mapToLLVMType(st.Elem.String())
 			}
+			// 泛型替換後的切片型別：NamedType{Value:"[]str"} 等，
+			// 需從字串表示中解析切片元素型別，否則 arrayElemTypes 不會被註冊，
+			// 導致 push 方法深拷貝時用預設 8 字節元素大小（而非 24）。
+			if nt, ok := r.Type.(*parser.NamedType); ok && strings.HasPrefix(nt.Value, "[]") {
+				elemStr := nt.Value[2:]
+				g.arrayElemTypes[r.Name] = g.mapToLLVMType(elemStr)
+			}
 			// out 參數加入 heapVars（用於 freeOldHeapValue 釋放賦值時的舊值）。
 			// 不加入 heapVarIndex（不參與 move bitmap），函數結束 emitHeapFree 仍跳過 out。
 			if llvmType := g.varTypes[r.Name]; g.isHeapOwningType(llvmType) || llvmType == "%option" {
@@ -3935,11 +3942,14 @@ func (g *Generator) varLLVMType(stmt *parser.LetStatement) string {
 				if actualType, ok := g.varTypes[ident.Value]; ok && actualType == "%str-long" {
 					return "i64"
 				}
-				if g.arrayElemTypes != nil {
-					if elemType, ok := g.arrayElemTypes[ident.Value]; ok {
-						if g.isStructLLVMType(elemType) {
-							return elemType
-						}
+			if g.arrayElemTypes != nil {
+				if elemType, ok := g.arrayElemTypes[ident.Value]; ok {
+					if os.Getenv("NOLANG_DEBUG_OPT") != "" {
+						fmt.Fprintf(os.Stderr, "[debug-opt] IndexExpression varLLVMType left=%q varType=%q elemType=%q isStruct=%v\n", ident.Value, g.varTypes[ident.Value], elemType, g.isStructLLVMType(elemType))
+					}
+					if g.isStructLLVMType(elemType) {
+						return elemType
+					}
 						// 浮點數陣列元素（如 [15]f64 → double）必須返回 double/float，
 						// 否則 generateLet 會誤判為 i64 並套用 sitofp 於已是 double 的值
 						if elemType == "double" || elemType == "float" {
@@ -4286,11 +4296,22 @@ func (g *Generator) varLLVMType(stmt *parser.LetStatement) string {
 							}
 						}
 					}
-				for _, cand := range candidates {
-					shortName := cand + "." + dot.Property
-					// Try both the raw name and the sanitized name (e.g. []byte.to-str → _LB__RB_byte.to-str)
-					lookupNames := []string{shortName, sanitizeLLVMName(shortName)}
-					for _, ln := range lookupNames {
+		for _, cand := range candidates {
+			shortName := cand + "." + dot.Property
+			// 嘗試模組前綴（如 json.json.obj-key → json.obj-key）
+			// 標準庫方法註冊為 "json.obj-key" 而非 "json.json.obj-key"
+			moduleCandidates := []string{shortName}
+			if dotIdx := strings.IndexByte(cand, '.'); dotIdx > 0 {
+				moduleName := cand[:dotIdx]
+				moduleFullName := moduleName + "." + dot.Property
+				moduleCandidates = append(moduleCandidates, moduleFullName)
+			}
+			// Try both the raw name and the sanitized name (e.g. []byte.to-str → _LB__RB_byte.to-str)
+			var lookupNames []string
+			for _, mc := range moduleCandidates {
+				lookupNames = append(lookupNames, mc, sanitizeLLVMName(mc))
+			}
+			for _, ln := range lookupNames {
 						if g.funcRetTypes != nil {
 							if t, ok := g.funcRetTypes[ln]; ok {
 								if t != "void" {
@@ -5064,7 +5085,16 @@ func (g *Generator) collectVarDeclsFromStmtInner(stmt parser.Statement, vars map
 			return
 		}
 		// Don't overwrite existing type (e.g. %option declared with ?type)
-		if _, exists := vars[s.Name.Value]; !exists {
+		// 例外：當現有型別比新推導型別更小時（如 u8 < i64），
+		// 使用較大的型別以容納所有可能的值（如 label-len = i - label-start 為 i64，
+		// 但 AST 遍歷順序可能先處理 label-len = len-byte 註冊為 u8）。
+		vt := g.varLLVMType(s)
+		// bool (i1) 局部变量擴展為 i64
+		if vt == "i1" {
+			vt = "i64"
+		}
+		existingVT, exists := vars[s.Name.Value]
+		if !exists || g.llvmTypeSize(existingVT) < g.llvmTypeSize(vt) {
 			// 對模組級全域變數的重新賦值（Type==nil 表示賦值而非宣告），
 			// 不應創建本地 alloca 覆蓋全域變數。例如 gen-random 中的
 			// `LAST = (LAST * IA + IC) % IM` 必須更新全域 @LAST，
@@ -5117,16 +5147,8 @@ func (g *Generator) collectVarDeclsFromStmtInner(stmt parser.Statement, vars map
 			}
 			// 切片表達式（view = arr[0..4]）總是走 clone 路徑（malloc + memcpy），
 			// 變量需要獨立的 alloca 存儲空間。不再跳過 alloca。
-			vt := g.varLLVMType(s)
 			if os.Getenv("NOLANG_DEBUG_IT") != "" {
-				fmt.Fprintf(os.Stderr, "[debug-it] non-synthetic let: name=%s vt=%q\n", s.Name.Value, vt)
-			}
-			// bool (i1) 局部變量擴展為 i64：Nolang 的引用傳遞模型中，函數參數使用
-			// resolveOutputParamLLVMType 將 i1 映射為 i64。若局部變量使用 i1 alloca
-			// （1 byte），但函數寫入 i64（8 bytes），會覆蓋相鄰變量的內存。
-			// 將所有 bool 局部變量統一使用 i64 存儲，避免此問題。
-			if vt == "i1" {
-				vt = "i64"
+				fmt.Fprintf(os.Stderr, "[debug-it] non-synthetic let: name=%s vt=%q value_type=%T\n", s.Name.Value, vt, s.Value)
 			}
 			vars[s.Name.Value] = vt
 			// Update g.varTypes immediately so subsequent lookups work
@@ -5350,10 +5372,23 @@ func (g *Generator) collectVarDeclsFromStmtInner(stmt parser.Statement, vars map
 						}
 					}
 					if recvType != "" {
+						// 嘗試完整型別名（如 str.to-upper → str.to-upper）
 						fullName := recvType + "." + dot.Property
 						if g.funcResultLLVMType != nil {
 							if _, ok := g.funcResultLLVMType[fullName]; ok {
 								fnName = fullName
+							}
+						}
+						// 如果完整型別名找不到，嘗試模組前綴
+						// （如 json.json.obj-key → json.obj-key）
+						if fnName == dot.Property && g.funcResultLLVMType != nil {
+							dotIdx := strings.IndexByte(recvType, '.')
+							if dotIdx > 0 {
+								moduleName := recvType[:dotIdx]
+								moduleFullName := moduleName + "." + dot.Property
+								if _, ok := g.funcResultLLVMType[moduleFullName]; ok {
+									fnName = moduleFullName
+								}
 							}
 						}
 					}
@@ -5449,6 +5484,14 @@ func (g *Generator) collectVarDeclsFromExpr(expr parser.Expression, vars map[str
 			for _, ss := range e.Alternative.Statements {
 				g.collectVarDeclsFromStmt(ss, vars)
 			}
+		}
+	case *parser.ConditionalExpression:
+		// match 表達式：遞迴收集各分支中的變數宣告
+		if e.Consequence != nil {
+			g.collectVarDeclsFromExpr(e.Consequence, vars)
+		}
+		if e.Alternative != nil {
+			g.collectVarDeclsFromExpr(e.Alternative, vars)
 		}
 	case *parser.CallExpression:
 		// 註冊輸出參數變數（函調用的最後一個參數為 Identifier 時）
@@ -5547,6 +5590,86 @@ func (g *Generator) collectStructTypeFields(sd *parser.StructDefinition) {
 	g.structTypes[sd.Name] = fields
 }
 
+// inferMultiAssignTypes 推斷多賦值左側變數的型別（從被調用函數的返回型別）。
+// collectVarDeclsFromStmt 的預掃描可能遺漏某些情況（如 for-range body 中的
+// 多賦值），此處在實際生成調用前補推斷型別，確保 alloca 大小正確。
+func (g *Generator) inferMultiAssignTypes(callExpr *parser.CallExpression, targets []parser.Expression) {
+	if g.funcResultLLVMType == nil || len(targets) == 0 {
+		return
+	}
+	fnName := ""
+	if ident, ok := callExpr.Function.(*parser.Identifier); ok {
+		fnName = ident.Value
+	} else if dot, ok := callExpr.Function.(*parser.DotExpression); ok {
+		fnName = dot.Property
+		if recv, ok := dot.Receiver.(*parser.Identifier); ok {
+			recvType := ""
+			if g.varTypes != nil {
+				if t, ok := g.varTypes[recv.Value]; ok {
+					recvType = strings.TrimPrefix(t, "%")
+				}
+			}
+			if recvType != "" {
+				// 嘗試完整型別名（如 str.to-upper）
+				fullName := recvType + "." + dot.Property
+				if _, ok := g.funcResultLLVMType[fullName]; ok {
+					fnName = fullName
+				}
+				// 嘗試模組前綴（如 json.json.obj-key → json.obj-key）
+				if fnName == dot.Property {
+					dotIdx := strings.IndexByte(recvType, '.')
+					if dotIdx > 0 {
+						moduleName := recvType[:dotIdx]
+						moduleFullName := moduleName + "." + dot.Property
+						if _, ok := g.funcResultLLVMType[moduleFullName]; ok {
+							fnName = moduleFullName
+						}
+					}
+				}
+			}
+		}
+	}
+	if fnName == "" {
+		return
+	}
+	rets, ok := g.funcResultLLVMType[fnName]
+	if !ok || len(rets) < len(targets) {
+		return
+	}
+	for i, target := range targets {
+		ident, ok := target.(*parser.Identifier)
+		if !ok {
+			continue
+		}
+		t := rets[i]
+		if t == "i1" {
+			t = "i64"
+		}
+		// 僅在尚未註冊或仍是預設 i64 時更新
+		if cur, exists := g.varTypes[ident.Value]; !exists || cur == "i64" {
+			g.varTypes[ident.Value] = t
+			// 註冊切片元素型別
+			if t == "%vec" {
+				if g.arrayElemTypes == nil {
+					g.arrayElemTypes = make(map[string]string)
+				}
+				if _, exists := g.arrayElemTypes[ident.Value]; !exists {
+					// 從 funcResultNolangTypes 獲取元素型別
+					if g.funcResultNolangTypes != nil {
+						if nolangType, ok := g.funcResultNolangTypes[fnName]; ok && i < len(nolangType) {
+							nt := nolangType[i]
+							if strings.HasPrefix(nt, "[]") {
+								elemStr := nt[2:]
+								g.arrayElemTypes[ident.Value] = g.mapToLLVMType(elemStr)
+							}
+						}
+					}
+				}
+			}
+		}
+	}
+}
+
 func (g *Generator) generateStatement(sb *strings.Builder, stmt parser.Statement) {
 	// 清空语句级临时堆对象列表：每个语句独立管理自己的临时对象，
 	// 循环体内每次迭代的语句都会清空+注册+释放，不会累积。
@@ -5603,6 +5726,10 @@ func (g *Generator) generateStatement(sb *strings.Builder, stmt parser.Statement
 		}
 	case *parser.MultiAssignStatement:
 		if innerCall, ok := s.Value.(*parser.CallExpression); ok {
+			// 推斷多賦值左側變數的型別（從被調用函數的返回型別）
+			// collectVarDeclsFromStmt 可能遺漏某些情況（如 for-range body
+			// 中的多賦值），此處在實際生成調用前補推斷型別。
+			g.inferMultiAssignTypes(innerCall, s.Targets)
 			// 註冊左側目標變數為局部名，避免與同名全局函數（如標準庫的 out/err
 			// 打印函數）衝突：否則在將其作為返回槽指標傳遞時會被誤判成函數指標
 			// void(...)**，導致呼叫方傳參型別錯亂、opt 把形參表重排、運行時空指標崩潰。
@@ -6465,6 +6592,11 @@ func (g *Generator) generateRangeFor(sb *strings.Builder, stmt *parser.ForStatem
 	startVal := g.generateExprWithSB(sb, r.Start)
 	endVal := g.generateExprWithSB(sb, r.End)
 
+	// Widen start/end to i64 if they are smaller integer types (e.g. i8, i16, i32).
+	// Range loop comparisons and arithmetic use i64.
+	startVal = g.widenToInt64(sb, startVal, r.Start)
+	endVal = g.widenToInt64(sb, endVal, r.End)
+
 	// Check if both start and end are compile-time constants.
 	// If so, the loop direction is known at compile time and we can
 	// generate a simple loop with NO per-iteration select instructions.
@@ -6784,6 +6916,17 @@ func (g *Generator) generateLet(sb *strings.Builder, stmt *parser.LetStatement) 
 	//   it 僅為借用視圖（淺拷貝，不 track heap），box 所有權仍屬 option。
 	// - "nil" / "err | nil"：語意上無確定值，維持 i64 佔位符。
 	if stmt.IsSynthetic {
+		if os.Getenv("NOLANG_DEBUG_OPT") != "" {
+			ntStr := ""
+			if nt, ok := stmt.Type.(*parser.NamedType); ok {
+				ntStr = nt.Value
+			}
+			srcName := ""
+			if ident, ok := stmt.Value.(*parser.Identifier); ok {
+				srcName = ident.Value
+			}
+			fmt.Fprintf(os.Stderr, "[debug-opt] generateLet synthetic name=%q type=%q(%T) src=%q srcVarType=%q\n", name, ntStr, stmt.Type, srcName, g.varTypes[srcName])
+		}
 		if nt, ok := stmt.Type.(*parser.NamedType); ok {
 			// 判斷型別字串是否僅由 err/nil 組成（如 "err"、"nil"、"err | nil"），
 			// 不含任何具體元素型別（如 "[]byte | err" 仍需綁定 it = inner value）。
@@ -6798,9 +6941,13 @@ func (g *Generator) generateLet(sb *strings.Builder, stmt *parser.LetStatement) 
 			}
 			if onlyErrNil {
 				// 純 err 臂且 matched 是 option 變數：解箱錯誤消息到 it。
-				if nt.Value == "err" {
-					if srcIdent, ok := stmt.Value.(*parser.Identifier); ok && g.varTypes != nil {
-						if srcType, ok := g.varTypes[srcIdent.Value]; ok && srcType == "%option" {
+			if nt.Value == "err" {
+				if srcIdent, ok := stmt.Value.(*parser.Identifier); ok && g.varTypes != nil {
+					srcType, srcOk := g.varTypes[srcIdent.Value]
+					if os.Getenv("NOLANG_DEBUG_OPT") != "" {
+						fmt.Fprintf(os.Stderr, "[debug-opt] synthetic err arm name=%q src=%q srcType=%q srcOk=%v\n", name, srcIdent.Value, srcType, srcOk)
+					}
+					if srcOk && srcType == "%option" {
 							// 確保 it 有 alloca（模組級/函數級皆由 collectVarDecls 註冊；
 							// 若缺失則就地分配 %str-long）。
 							if _, exists := g.varTypes[name]; !exists {
@@ -6847,16 +6994,24 @@ func (g *Generator) generateLet(sb *strings.Builder, stmt *parser.LetStatement) 
 						}
 					}
 				}
-				if g.varTypes != nil {
-					if _, exists := g.varTypes[name]; !exists {
-						g.varTypes[name] = "i64"
-						g.funcLocalNames[name] = true
-						sb.WriteString(fmt.Sprintf("%s%s = alloca i64\n", g.indent(), llvmVarRef(name)))
-						sb.WriteString(fmt.Sprintf("%scall void @llvm.lifetime.start.p0i8(i64 8, i8* %s)\n", g.indent(), llvmVarRef(name)))
-						sb.WriteString(fmt.Sprintf("%sstore i64 0, i64* %s\n", g.indent(), llvmVarRef(name)))
+			if g.varTypes != nil {
+				if _, exists := g.varTypes[name]; !exists {
+					// Try to infer type from the source variable (e.g., it = b
+					// where b is %option → it should be %option, not i64).
+					inferredType := "i64"
+					if srcIdent, ok := stmt.Value.(*parser.Identifier); ok {
+						if srcType, ok := g.varTypes[srcIdent.Value]; ok {
+							inferredType = srcType
+						}
 					}
+					g.varTypes[name] = inferredType
+					g.funcLocalNames[name] = true
+					sb.WriteString(fmt.Sprintf("%s%s = alloca %s\n", g.indent(), llvmVarRef(name), inferredType))
+					sb.WriteString(fmt.Sprintf("%scall void @llvm.lifetime.start.p0i8(i64 8, i8* %s)\n", g.indent(), llvmVarRef(name)))
+					sb.WriteString(fmt.Sprintf("%sstore %s zeroinitializer, %s* %s\n", g.indent(), inferredType, inferredType, llvmVarRef(name)))
 				}
-				return
+			}
+			return
 			}
 		}
 	}
@@ -7002,14 +7157,24 @@ func (g *Generator) generateLet(sb *strings.Builder, stmt *parser.LetStatement) 
 		}
 		// 記錄切片元素型別，供 IndexExpression 使用正確型別讀取
 		if st, ok := stmt.Type.(*parser.SliceType); ok && st.Elem != nil {
-			g.arrayElemTypes[name] = g.mapToLLVMType(st.Elem.String())
+			// 如果是輸出參數且已註冊元素型別（來自函數簽名），不要覆蓋。
+			// 推斷的 SliceType 元素型別可能是 i64（預設），而簽名中的是正確的（如 str）。
+			if g.outputParamNames != nil && g.outputParamNames[name] {
+				if _, exists := g.arrayElemTypes[name]; !exists {
+					g.arrayElemTypes[name] = g.mapToLLVMType(st.Elem.String())
+				}
+			} else {
+				g.arrayElemTypes[name] = g.mapToLLVMType(st.Elem.String())
+			}
 			// 嵌套容器（[][]T）：注册内层元素型别
 			if g.elemElemTypes != nil {
 				if innerType := g.nestedElemLLVMType(st.Elem); innerType != "" {
 					g.elemElemTypes[name] = innerType
 				}
 			}
-		} else {
+		} else if _, exists := g.arrayElemTypes[name]; !exists {
+			// 僅在尚未註冊元素型別時才設為預設 i64，
+			// 避免覆蓋輸出參數已註冊的元素型別（如 []str → %str-long）。
 			g.arrayElemTypes[name] = "i64"
 		}
 		if isSliceLit {
@@ -7142,6 +7307,10 @@ func (g *Generator) generateLet(sb *strings.Builder, stmt *parser.LetStatement) 
 		}
 	}
 	if llvmTypeCheck == "%option" {
+		if os.Getenv("NOLANG_DEBUG_OPT") != "" {
+			fmt.Fprintf(os.Stderr, "[debug-opt] ENTER generateOptionAssign name=%q stmt.IsSynthetic=%v stmt.Type=%T stmt.Value=%T varTypes[%s]=%q\n",
+				name, stmt.IsSynthetic, stmt.Type, stmt.Value, name, g.varTypes[name])
+		}
 		// Ensure variable is allocated (needed for `it = x` injected in match arm bodies)
 		if g.varTypes != nil {
 			if _, exists := g.varTypes[name]; !exists {
@@ -8278,6 +8447,9 @@ func (g *Generator) generateLet(sb *strings.Builder, stmt *parser.LetStatement) 
 
 	// Coerce value to declared type if variable was already typed (e.g., a i8; a = 2)
 	alreadyCoerced := false
+	if os.Getenv("NOLANG_DEBUG_OPT") != "" {
+		fmt.Fprintf(os.Stderr, "[debug-opt] coerce check name=%q existingType=%q llvmType=%q val=%q\n", name, g.varTypes[name], llvmType, val)
+	}
 	if existingType, ok := g.varTypes[name]; ok && existingType != llvmType {
 		if strings.HasPrefix(val, "%") {
 			if g.isIntegerLLVMType(existingType) && g.isIntegerLLVMType(llvmType) {
@@ -8308,7 +8480,14 @@ func (g *Generator) generateLet(sb *strings.Builder, stmt *parser.LetStatement) 
 							actualValType = "i64"
 						}
 					}
-					if llvmType == "i1" && existingType == "i64" && actualValType == "i64" {
+					// When llvmType is a small integer (i1/i8/u8/i16/u16/i32/u32) but
+					// the actual SSA value is already i64 (because generateExprWithSB
+					// zext'd it), skip the unnecessary second zext/trunc conversion.
+					// Previously only i1 was handled; this also fixes []byte indexing
+					// where llvmType=i8 (from varLLVMType) but the value is already
+					// zext'd to i64 by generateIndexExpression.
+					if g.isIntegerLLVMType(llvmType) && existingType == "i64" && actualValType == "i64" &&
+						llvmIntBitWidth(llvmType) < llvmIntBitWidth(existingType) {
 						// val is already i64 (e.g. from voidSingleOutput path
 						// where bool output params are mapped to i64).
 						// No conversion needed, just use existingType.
@@ -9009,6 +9188,30 @@ func (g *Generator) generateOptionAssign(sb *strings.Builder, stmt *parser.LetSt
 			sb.WriteString(fmt.Sprintf("%s%s = call i8* @nolang.malloc(i64 %d)\n", g.indent(), heapPtr, structSize))
 			heapCast := g.tmpReg("opt.heap.cast")
 			sb.WriteString(fmt.Sprintf("%s%s = bitcast i8* %s to %s*\n", g.indent(), heapCast, heapPtr, innerType))
+
+			// Type mismatch handling: val may be an SSA register of a different
+			// struct type (e.g. %vec) than innerType (e.g. %str-long). Both are
+			// {i64,i64,i64} but LLVM named structs are type-name-sensitive.
+			// Convert via alloca + store (original type) + bitcast + load (target type).
+			actualType := innerType
+			if strings.HasPrefix(val, "%") && g.ssaTypes != nil {
+				if ssaType, ok := g.ssaTypes[val]; ok && ssaType != "" && ssaType != innerType && g.isStructLLVMType(ssaType) {
+					actualType = ssaType
+				}
+			}
+
+			if actualType != innerType {
+				// alloca actualType, store val as actualType, bitcast ptr, load as innerType
+				cvtTmp := g.tmpReg("opt.cvt.tmp")
+				sb.WriteString(fmt.Sprintf("%s%s = alloca %s\n", g.indent(), cvtTmp, actualType))
+				sb.WriteString(fmt.Sprintf("%sstore %s %s, %s* %s\n", g.indent(), actualType, val, actualType, cvtTmp))
+				cvtBc := g.tmpReg("opt.cvt.bc")
+				sb.WriteString(fmt.Sprintf("%s%s = bitcast %s* %s to %s*\n", g.indent(), cvtBc, actualType, cvtTmp, innerType))
+				cvtLoad := g.tmpReg("opt.cvt.load")
+				sb.WriteString(fmt.Sprintf("%s%s = load %s, %s* %s\n", g.indent(), cvtLoad, innerType, innerType, cvtBc))
+				val = cvtLoad
+			}
+
 			// Stage the loaded value into a temp alloca so emitDeepClone has a
 			// source pointer to read from (it requires pointers, not SSA values).
 			srcTmp := g.tmpReg("opt.src.tmp")
@@ -9102,8 +9305,12 @@ func (g *Generator) generateOptionAssign(sb *strings.Builder, stmt *parser.LetSt
 					srcPtr := g.generateExprWithSB(sb, arg)
 					copyStrToData(srcPtr)
 				} else if argIdent, isIdent := arg.(*parser.Identifier); isIdent {
-					if t, ok := g.varTypes[argIdent.Value]; ok && t == "%str-long" {
-						// （共享 it alloca 型別不同時由 strPtrOf bitcast）
+					if t, ok := g.varTypes[argIdent.Value]; ok && (t == "%str-long" || g.isStructLLVMType(t)) {
+						// err() always takes a str argument; when the identifier
+						// is a struct-typed variable (e.g. shared `it` from an
+						// err arm of ?[]byte, where it is alloca'd as %vec but
+						// holds a %str-long error message), use strPtrOf to
+						// bitcast the pointer and copyStrToData to deep-clone.
 						copyStrToData(strPtrOf(argIdent.Value))
 					} else {
 						val := g.generateExprWithSB(sb, arg)
@@ -9151,11 +9358,19 @@ func (g *Generator) generateOptionAssign(sb *strings.Builder, stmt *parser.LetSt
 								}
 							}
 						}
+						if os.Getenv("NOLANG_DEBUG_OPT") != "" {
+							fmt.Fprintf(os.Stderr, "[debug-opt] dot-call check name=%q recv=%q recvType=%q property=%q candidates=%v\n", name, recvIdent.Value, recvType, dot.Property, candidates)
+						}
 						for _, cand := range candidates {
 							candName := cand + "." + dot.Property
 							if ts, ok := g.funcResultLLVMType[candName]; ok && len(ts) == 1 && ts[0] == "%option" {
 								isNolangOptionCall = true
 								break
+							}
+							if os.Getenv("NOLANG_DEBUG_OPT") != "" {
+								if ts, ok := g.funcResultLLVMType[candName]; ok {
+									fmt.Fprintf(os.Stderr, "[debug-opt]   cand=%q funcResultLLVMType=%v (not option)\n", candName, ts)
+								}
 							}
 						}
 					} else {
@@ -9200,11 +9415,17 @@ func (g *Generator) generateOptionAssign(sb *strings.Builder, stmt *parser.LetSt
 			// 呼叫函數並複製 %option 結構
 			val := g.generateExprWithSB(sb, v)
 			// val 是 %option 的 load 暫存器，需儲存到 name
+			if os.Getenv("NOLANG_DEBUG_OPT") != "" {
+				fmt.Fprintf(os.Stderr, "[debug-opt] isNolangOptionCall name=%q val=%q func=%T\n", name, val, v.Function)
+			}
 			sb.WriteString(fmt.Sprintf("%sstore %%option %s, %%option* %%%s\n", g.indent(), val, name))
 			return
 		}
 		storeTag(0)
 		val := g.generateExprWithSB(sb, v)
+		if os.Getenv("NOLANG_DEBUG_OPT") != "" {
+			fmt.Fprintf(os.Stderr, "[debug-opt] option fallback name=%q val=%q innerType=%v func=%T\n", name, val, g.optionInnerTypes[name], v.Function)
+		}
 		copyToData(val)
 
 	case *parser.Identifier:

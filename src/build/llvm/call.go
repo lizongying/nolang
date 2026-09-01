@@ -18,7 +18,7 @@ import (
 // method is registered under its nolang type name (e.g. char.is-alpha).
 var llvmTypeToNolang = map[string][]string{
 	"i1":       {"bool"},
-	"i8":       {"i8"},
+	"i8":       {"byte", "i8", "u8"},
 	"u8":       {"byte", "u8"},
 	"i16":      {"i16", "u16"},
 	"u16":      {"u16"},
@@ -1486,6 +1486,9 @@ func (g *Generator) generateCallExpression(sb *strings.Builder, expr *parser.Cal
 						if primAliases, ok := llvmTypeToNolang[srcType]; ok {
 							candidates = append(candidates, primAliases...)
 						}
+						if srcType == "vec" {
+							candidates = append(candidates, "[]byte")
+						}
 						for _, cand := range candidates {
 							candName := cand + "." + dot.Property
 							if _, hasNolang := g.funcRetTypes[candName]; hasNolang {
@@ -1754,9 +1757,6 @@ func (g *Generator) generateCallExpression(sb *strings.Builder, expr *parser.Cal
 			}
 			// ForwardFunc: str-copy→memcpy, str-eq→memcmp, str-fill→memset
 			if m.ForwardFunc != "" {
-				if os.Getenv("NOLANG_DEBUG_PUSH") != "" && m.ForwardFunc == "vec-push" {
-					fmt.Fprintf(os.Stderr, "[debug-push] reached ForwardFunc dispatch, fnName=%q, ForwardFunc=%q, args=%d\n", fnName, m.ForwardFunc, len(expr.Arguments))
-				}
 				// When a method call (e.g. buf.load-le-u32(0)) is dispatched via
 				// the global builtin form (prefix stripped at line ~1014), the
 				// receiver must be extracted from the DotExpression and passed to
@@ -1849,10 +1849,6 @@ func (g *Generator) generateCallExpression(sb *strings.Builder, expr *parser.Cal
 	var methodReceiver parser.Expression = nil
 	if dot, ok := expr.Function.(*parser.DotExpression); ok {
 		receiverExpr := dot.Receiver
-		// Debug: log receiver type for push calls
-		if dot.Property == "push" && os.Getenv("NOLANG_DEBUG_PUSH") != "" {
-			fmt.Fprintf(os.Stderr, "[debug-push] receiverExpr type=%T value=%v property=%q\n", receiverExpr, receiverExpr, dot.Property)
-		}
 		// Unwrap GroupedExpression: (123).to-str() → 123.to-str()
 		if ge, ok := receiverExpr.(*parser.GroupedExpression); ok {
 			receiverExpr = ge.Expression
@@ -1902,11 +1898,16 @@ func (g *Generator) generateCallExpression(sb *strings.Builder, expr *parser.Cal
 							}
 						}
 					}
-					// Primitive LLVM types may correspond to multiple nolang type names.
-					// For example, i32 can be char, i32, or u32. Try all candidates.
-					if primAliases, ok := llvmTypeToNolang[srcType]; ok {
-						candidates = append(candidates, primAliases...)
-					}
+				// Primitive LLVM types may correspond to multiple nolang type names.
+				// For example, i32 can be char, i32, or u32. Try all candidates.
+				if primAliases, ok := llvmTypeToNolang[srcType]; ok {
+					candidates = append(candidates, primAliases...)
+				}
+				// Fallback: for %vec receivers without known element type,
+				// add []byte as a default candidate (most common case).
+				if srcType == "vec" {
+					candidates = append(candidates, "[]byte")
+				}
 					// vec/arr 變數：依元素型別構造 []T 候選（如 opened.to-str → []byte.to-str）
 					// Also handle raw LLVM array types like "[32 x i8]" (fixed-size array
 					// result parameters typed directly as [N x T] rather than %arr struct).

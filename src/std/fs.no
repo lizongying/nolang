@@ -224,6 +224,47 @@
 ; get-line = () (line ?str) {  // LLVM: call i8* @fgets(buf, size, stdin)
 ; }
 
+; read-stdin: 循環讀取 stdin 全部內容為 []byte（不依賴 stat/fstat，對管道安全）
+; 返回 content ?[]byte:
+;   ok([]byte) — 成功，含 stdin 內容
+;   nil        — stdin 為空
+;   err        — 讀取失敗
+read-stdin = () (content ?[]byte) {
+    buf []byte
+    tmp []byte = with-len(4096)
+    {
+        n = read(STDIN-FD, tmp, 4096)
+        n <= 0 -> break
+        i <- [0..n): {
+            buf.push(tmp[i])
+        }
+    } (true)
+    buf.len == 0 -> {
+        content = nil
+        return
+    }
+    content = buf
+}
+
+; read-stdin-str: 循環讀取 stdin 全部內容為 str（不依賴 stat/fstat，對管道安全）
+; 返回 content ?str:
+;   ok(str) — 成功，含 stdin 內容
+;   nil     — stdin 為空
+;   err     — 讀取失敗
+read-stdin-str = () (content ?str) {
+    b = read-stdin()
+    b: {
+        err -> content = err(it)
+
+        nil -> return
+
+        -> {
+            s = it.to-str()
+            content = s
+        }
+    }
+}
+
 ; ═══════════════════════════════════════════════
 ; 目錄操作（內建函數）
 ; ═══════════════════════════════════════════════
@@ -542,11 +583,7 @@ file.read-str = () (content ?str) {
 
         nil -> return
 
-        -> {
-            ; it is []byte from read-bytes, convert to str
-            s = it.to-str()
-            content = s
-        }
+        -> content = it.to-str()
     }
 }
 

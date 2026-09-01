@@ -14,6 +14,42 @@ func (g *Generator) generateExpression(expr parser.Expression) string {
 	return g.generateExprWithSB(nil, expr)
 }
 
+// widenToInt64 ensures that a value used as a range loop bound is i64.
+// If the value is a smaller integer type (i8, i16, i32), it emits a zext
+// to widen it to i64. Constants and already-i64 values are returned as-is.
+func (g *Generator) widenToInt64(sb *strings.Builder, val string, expr parser.Expression) string {
+	// Integer literals are already i64 in LLVM IR.
+	if _, ok := expr.(*parser.IntegerLiteral); ok {
+		return val
+	}
+	// Byte literals are emitted as decimal constants (i64).
+	if _, ok := expr.(*parser.ByteLiteral); ok {
+		return val
+	}
+	// If the value is not an SSA register, assume it's already i64.
+	if !strings.HasPrefix(val, "%") {
+		return val
+	}
+	// Check SSA type of the register.
+	if g.ssaTypes != nil {
+		if ssaType, ok := g.ssaTypes[val]; ok && ssaType != "" {
+			irType := toLLVMType(ssaType)
+			if g.isIntegerLLVMType(irType) && irType != "i64" {
+				g.tmpIdx++
+				zextReg := g.tmpReg("rng.zext")
+				if sb != nil {
+					sb.WriteString(fmt.Sprintf("%s%s = zext %s %s to i64\n", g.indent(), zextReg, irType, val))
+				}
+				if g.ssaTypes != nil {
+					g.ssaTypes[zextReg] = "i64"
+				}
+				return zextReg
+			}
+		}
+	}
+	return val
+}
+
 // inferSSAType 從 SSA 暫存器名稱或字面量推斷 LLVM 型別
 // 用於 if 表達式 phi 節點的型別推斷（當函數返回型別為 void 時）
 func (g *Generator) inferSSAType(val string) string {
@@ -4472,6 +4508,12 @@ func (g *Generator) generateIndexExpression(sb *strings.Builder, expr *parser.In
 					sb.WriteString(fmt.Sprintf("%s%s = %s %s %s to i64\n",
 						g.indent(), extReg, op, llvmIRType, elemLoad))
 				}
+				// Record the SSA type as i64 so that generateLet's coercion
+				// logic can detect the value is already i64 and skip a
+				// redundant second zext (which would use the wrong source type).
+				if g.ssaTypes != nil {
+					g.ssaTypes[extReg] = "i64"
+				}
 				return extReg
 			}
 			// float/double：直接返回元素值（與 %arr 路徑一致）。
@@ -5358,7 +5400,7 @@ func (g *Generator) coerceToFloatReg(sb *strings.Builder, v string, exprForType 
 		}
 		// 整數 → 浮點
 		if sb != nil {
-			intType := g.intExprLLVMType(exprForType)
+			intType := toLLVMType(g.intExprLLVMType(exprForType))
 			cvtReg := g.tmpReg("sitofp")
 			sb.WriteString(fmt.Sprintf("%s%s = sitofp %s %s to %s\n", g.indent(), cvtReg, intType, v, targetType))
 			return cvtReg
@@ -5833,7 +5875,7 @@ func (g *Generator) generateInfix(sb *strings.Builder, expr *parser.InfixExpress
 			}
 			// 整數 → 浮點
 			if sb != nil {
-				intType := g.intExprLLVMType(exprForType)
+				intType := toLLVMType(g.intExprLLVMType(exprForType))
 				cvtReg := g.tmpReg("sitofp")
 				sb.WriteString(fmt.Sprintf("%s%s = sitofp %s %s to %s\n", g.indent(), cvtReg, intType, v, targetType))
 				return cvtReg

@@ -9,7 +9,7 @@ package checker
 func init() {
 	embeddedStdSigReady = true
 	embeddedStdSigVersion = 1
-	embeddedStdSigKey = "d4ab20c78579c6836cbf58ed83ca020bf6d2a09d99a47fa5b2b351bf90dac5c7"
+	embeddedStdSigKey = "c8846f5fba2fe6ade060954033b04f348b271bcb155f7d9f38997e81babed0ff"
 	embeddedStdFuncSigs = map[string][]string{
 		"[]byte.index":                     {"i64"},
 		"[]byte.index-from":                {"i64"},
@@ -271,6 +271,8 @@ func init() {
 		"fs.open":                                  {"?file"},
 		"fs.read-bytes":                            {"?[]byte"},
 		"fs.read-file":                             {"[]byte"},
+		"fs.read-stdin":                            {"?[]byte"},
+		"fs.read-stdin-str":                        {"?str"},
 		"fs.read-str":                              {"?str"},
 		"fs.walk":                                  {"[]str"},
 		"fs.walk-collect":                          {"[]str"},

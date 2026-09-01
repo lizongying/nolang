@@ -1119,6 +1119,31 @@ func (p *Parser) parseLetStatement() Statement {
 			// 切片表達式總是走 clone 路徑（generateSliceViewAssignment needClone=true），
 			// 不再推斷 SliceType。型別由 varLLVMType 從 RHS 推導（%vec 或 %str-long）。
 
+		case *IndexExpression:
+			// 陣列/切片索引：lines[i] → 元素型別
+			// 從 receiver 的 varType 推導元素型別
+			// 僅在變數首次宣告時推導，不覆蓋已有的顯式型別
+			// （如 ct i64 = buf[0] 不應被覆蓋為 byte/u8）
+			if leftIdent, ok := v.Left.(*Identifier); ok {
+				if recvType, ok := p.sem.VarTypes[leftIdent.Value]; ok {
+					elemType := ""
+					if strings.HasPrefix(recvType, "[]") {
+						elemType = recvType[2:]
+					} else if strings.HasPrefix(recvType, "[") {
+						if idx := strings.Index(recvType, "]"); idx >= 0 && idx+1 < len(recvType) {
+							elemType = recvType[idx+1:]
+						}
+					}
+					if elemType != "" {
+						// 僅在變數尚未有型別時設定（避免覆蓋已有的顯式型別如 i64）
+						if existing, ok := p.sem.FuncVarType(p.curFuncName, stmt.Name.Value); !ok || existing == "" {
+							stmt.Type = markInferred(buildType(elemType, nameToken))
+							p.setVarType(stmt.Name.Value, elemType)
+						}
+					}
+				}
+			}
+
 		case *ArrayLiteral:
 		case *StructLiteral:
 			// Struct literal: record struct type in varDeclTypes so that
@@ -2630,4 +2655,29 @@ func (p *Parser) parseCondLoopBlockFirst() Statement {
 	}
 	p.nextToken() // skip )
 	return stmt
+}
+
+// indexElementType 從陣列/切片/字串型別字串推導索引元素型別。
+// "[]str" → "str"；"[]byte" → "byte"；"[]i64" → "i64"；"str" → "str"（字串索引返回單字元字串）。
+// 無法推導時返回空字串。
+func indexElementType(recvType string) string {
+	recvType = strings.TrimSpace(recvType)
+	if recvType == "" {
+		return ""
+	}
+	// str 索引返回 str（Nolang 語義：str[i] 返回單字元字串）
+	if recvType == "str" {
+		return "str"
+	}
+	// []T 索引返回 T
+	if strings.HasPrefix(recvType, "[]") {
+		return strings.TrimPrefix(recvType, "[]")
+	}
+	// [N]T 索引返回 T
+	if strings.HasPrefix(recvType, "[") {
+		if idx := strings.Index(recvType, "]"); idx > 0 {
+			return recvType[idx+1:]
+		}
+	}
+	return ""
 }
