@@ -133,6 +133,12 @@ itAllocTypes      map[string]string  //  13 处      → it 的 alloca 类型
 声明一个 `[][]str` 要**手工同步写 3~4 张 map**，漏写一张不报错，只会在某个下游分支
 静默退化成 `i64`——这正是"类型信息莫名其妙丢了"类 bug 的来源。
 
+> **全包口径**（非仅 stmt.go，覆盖 42 个文件 / 35359 行非测试代码）：
+> 7 张并行 map 被引用 **728 次**（`varTypes` 322 / `arrayElemTypes` 162 /
+> `structTypes` 68 / `optionInnerTypes` 69 / `elemElemTypes` 37 / `arraySizes` 26 /
+> `heapVars` 26 / `itAllocTypes` 18）；字符串类型字面量比较 **877 处**
+> （`i64` 285 / `%str-long` 175 / `%vec` 136 / `double` 88 / `%arr` 75 / `i1` 57 / `%option` 52）。
+
 由此还派生出两个噪声：
 
 - **nil map 防御**：`g.arrayElemTypes != nil` 出现 40 次（其中 19 次守卫的是**读**，
@@ -203,19 +209,90 @@ stmt.go 里的 clone/free 助手函数族：
    `varTypes[name]` 是"这个变量现在是什么类型"（流敏感、随作用域变化）。
    后者塞进 AST 节点，等于把数据流分析的结果固化到语法树上。
 
-✅ **替代方案：Sema sidecar（旁路表）**
+✅ **替代方案：Sema sidecar（旁路表）—— 而且它已经存在**
+
+> **修正（2026-08-31 复核）**：我最初把 sidecar 当作"新提案"，这是错的。
+> 本仓库**早已有 sidecar**，且架构原则就写在源码注释里：
+>
+> - `src/parser/resolver.go:68` `type SemanticContext struct`
+> - parser 持有 `sem *SemanticContext`（`parser.go:24`，注释原文即「語義副表」）
+> - `nodeSem map[Node]*NodeSemantics` —— 正是指针键旁路表
+> - `resolver.go:60-67` 明文原则：**「語義結果集中存放、AST 節點零語義字段」**
+> - 已有 `Merge()` 处理模块合并（按节点指针键，不冲突）
+> - codegen 已在消费：`stmt.go:3596` `g.sem.EmbedDataOf(ls)`
+> - 旁证：表层语法标志位 `RTFlag uint8`（裸 match / wildcard / standalone if / elif）
+>   放在 sidecar 里，**不在 AST 上**
+>
+> 唯一缺失：`NodeSemantics` 目前只有 annotations / platformKeys / genericParams /
+> embedData / RTFlags，**没有类型信息**。类型仍在 `VarTypes map[string]string`，
+> 且同样是 stringly-typed。
+
+所以 Stage 2 **不是新建 sidecar，而是把 `TypeRef` 挂到已有的 `nodeSem` 上**：
 
 ```go
-// checker 写、codegen 只读。按节点身份索引，不污染 AST。
-type Sema struct {
-    TypeOf   map[parser.Expression]TypeRef   // 每个表达式的已解析类型
-    DeclOf   map[*parser.Identifier]*Binding // 变量 → 绑定（类型/是否 out/是否全局/是否合成）
-    VarType  map[string]TypeRef              // 变量名 → 完整类型（取代那 7 张并行 map）
+// 扩展已有的 NodeSemantics，不新建结构
+type NodeSemantics struct {
+    // ... 既有字段 ...
+    Type TypeRef   // 该节点的已解析类型（取代 g.varTypes 等 7 张 map 的查表）
 }
 ```
 
-收益与"放 AST 字段"完全相同（消除 codegen 侧重新推导），但没有耦合代价，
-且天然支持"同一变量名在不同作用域有不同类型"。
+这同时说明：AST 上那 16 个 `Is*` 字段是**偏离项**，不是规范；
+`IsModuleConst`（由数据流 pass 写入且可翻转）正是违反本项目自身原则的实例。
+
+---
+
+## 三·五、那要不要直接上 MIR？
+
+症状清单（728 次并行 map 引用、877 处字符串类型比较、35 处分散的所有权决策、
+181 次 churn 中 26 次内存安全）确实指向"该有 MIR 了"。但复核后发现，
+**这个问题的性质不是"要不要新建 MIR"，而是"有一个没有指令的 MIR 已经躺在仓库里"。**
+
+### 已有的 MIR 骨架
+
+| 组件 | 位置 | 状态 |
+|---|---|---|
+| `BasicBlock`（label / Preds / Succs / Terminator / Order） | `dataflow.go:31` | ✅ 已有 |
+| `FuncCFG`（Entry / Blocks / Order） | `dataflow.go:95` | ✅ 已有 |
+| `effect` 副作用流（move / reassign / bind / init / assign） | `dataflow.go:60` | ✅ 已有 |
+| `freeSite` 释放决策点 | `dataflow.go:83` | ✅ 已有 |
+| bitset 数据流求解器（must / may / mustNot 三态） | `dataflow.go` | ✅ 已有 |
+| **指令（Instr）** | — | ❌ **缺失** |
+
+**`BasicBlock` 只存 label、边、terminator、effects、freeSites，不存指令。**
+指令是 `strings.Builder` 里的文本（`stmt.go:3589` / `3643` 的两阶段 `bodyBuf` 发射）。
+也就是说：CFG 是一张**挂在字符串打印机旁边的影子图**，不是程序的主表示。
+
+两个佐证：
+
+- `freeSite.Marker string` 注释写着"在 bodyBuf 中的占位标记"，但**全仓无人赋值、无人读取**
+  → 死字段，是被放弃的"文本占位符回填"设计留下的化石。
+- `freeSite.LLVMType` / `ElemType` 仍是 `string`
+  → stringly-typed 已经从 codegen 泄漏进了数据流层。
+
+### 成本面
+
+llvm 包非测试 **35359 行**（`stmt` 9494 / `expr` 7543 / `call` 5306 /
+`call_stdlib` 4710 / `generator` 3055 / `decl` 1272）。
+MIR 真正昂贵的不是"写 IR 结构"，而是**把这 35359 行的发射器从遍历 AST 改为遍历 MIR**。
+
+### 结论：不要 big-bang，要让 MIR 从 Stage 2 里长出来
+
+| 做法 | 判断 |
+|---|---|
+| 现在停工重写成 MIR | ❌ 35359 行发射器 + 零单测 + 无 IR 黄金基线 = 不可控 |
+| Stage 1~4 增量重构 | ✅ 拿下 MIR 约 70% 的收益，每步都有 IR 逐字节门禁 |
+| 然后补上指令层 = 完整 MIR | ✅ 到那时只剩"把字符串换成 Instr 结构"这一步 |
+
+**关键在于 Stage 2 与 Stage 4 的落地方式**：
+
+- **Stage 2 的 `TypeRef` 不是"为重构做准备"，它就是 MIR 的类型系统。**
+  把它挂到已有的 `nodeSem` 上（而非新建结构），MIR 的地基就铺好了。
+- **Stage 4 的所有权单一决策点，就是 MIR 上的 drop-elaboration pass。**
+  复用已有的 `FuncCFG` + bitset 求解器，把 `freeSite.Marker` 这个死字段
+  复活为真正的指令插入点，而不是继续往字符串里塞文本。
+
+走完这两步之后，"要不要 MIR"会变成一个很小的增量决策，而不是一场赌博。
 
 ---
 
@@ -258,10 +335,11 @@ type Sema struct {
 
 | 项 | 内容 |
 |---|---|
-| 目标 | 消灭 288 处字符串类型比较，让类型分支可被编译器检查 |
-| 动作 | 1. 引入 `TypeRef` 值类型（见下方代码块），`Kind` 为枚举<br>2. 把 7 张并行 map 合并为 `varTypes map[string]TypeRef`<br>3. 所有 `if llvmType == "%str-long"` → `if t.Kind == TyStr`<br>4. `switch t.Kind` 配 `default: panic("unhandled")` 做穷举检查 |
+| 目标 | 消灭全包 877 处字符串类型比较，让类型分支可被编译器检查 |
+| 动作 | 1. 引入 `TypeRef` 值类型（见下方代码块），`Kind` 为枚举<br>2. **挂到已有的 `parser.SemanticContext.nodeSem` 上**（扩展 `NodeSemantics`，不新建结构），逐步取代 7 张并行 map<br>3. 所有 `if llvmType == "%str-long"` → `if t.Kind == TyStr`<br>4. `switch t.Kind` 配 `default: panic("unhandled")` 做穷举检查 |
 | 验收 | IR 零差异；单测覆盖 `TypeRef` 的构造/渲染/嵌套 |
 | 风险 | 中。`TypeRef.LLVM` 的字符串渲染必须与旧拼写**完全一致**，否则 IR 对不上 |
+| 备注 | **这一步不是"为重构做准备"，它就是 MIR 的类型系统。** 详见「三·五」 |
 
 ```go
 type TyKind uint8
@@ -331,9 +409,10 @@ type assignCtx struct {
 | 项 | 内容 |
 |---|---|
 | 目标 | 12 个 free 变体 + 8 个 clone 变体 → 各 1 个按 `TyKind` 分派的函数 |
-| 动作 | 1. `decideOwnership(ctx assignCtx) ownershipAction`：**唯一**回答"要不要 clone/move"的地方<br>2. `emitFree(ptr, TypeRef)` / `emitClone(dst, src, TypeRef)` 内部 `switch t.Kind` 递归<br>3. 删掉 `oldValFreed` / `alreadyCoerced` 等横穿分支的裸布尔，改为 `assignCtx` 的字段<br>4. `emitHeapFree` 退化为"对函数内所有 heap vars 调 `emitFree`" |
+| 动作 | 1. `decideOwnership(ctx assignCtx) ownershipAction`：**唯一**回答"要不要 clone/move"的地方<br>2. `emitFree(ptr, TypeRef)` / `emitClone(dst, src, TypeRef)` 内部 `switch t.Kind` 递归<br>3. 删掉 `oldValFreed` / `alreadyCoerced` 等横穿分支的裸布尔，改为 `assignCtx` 的字段<br>4. `emitHeapFree` 退化为"对函数内所有 heap vars 调 `emitFree`"<br>5. **做成 drop-elaboration pass**：复用已有的 `FuncCFG` + bitset 求解器（三态 must/may/mustNot），把 `freeSite.Marker` 这个死字段复活为真正的插入点，而不是继续往字符串里塞文本 |
 | 验收 | IR 零差异；`tests/mem-safety/` 全绿；新增所有权决策表的单测（真值表形式） |
 | 风险 | 高，但这是**根治内存安全回归**的一步，26 次 fix 提交的成本都在这里 |
+| 备注 | **这一步就是 MIR 上的 drop elaboration。** 详见「三·五」 |
 
 ```go
 type ownershipAction uint8

@@ -70,6 +70,12 @@ func (p *Parser) resolveReceiverType(receiver Expression) string {
 			}
 		}
 	}
+	// CallExpression receiver (e.g., fs.read-file(path).to-str()):
+	// recursively infer the return type of the inner call, then use it
+	// as the receiver type for the outer method call.
+	if innerCall, ok := receiver.(*CallExpression); ok {
+		return p.inferTypeFromCallExpr(innerCall)
+	}
 	return ""
 }
 
@@ -175,8 +181,9 @@ func (p *Parser) inferTypeFromCallExpr(call *CallExpression) string {
 // 可推斷的型別：
 //   - option 型別（?type）：match desugar 依賴它生成正確的 it 型別窄化
 //   - 結構體型別（如 bufio.reader）：使 codegen 能正確分配結構體記憶體
-// 不可推斷的型別：基本型別（i64/str/bool 等），因為整數字面量已有
-// 專用推斷路徑，且基本型別的推斷可能與已有的顯式型別衝突。
+//   - str 型別：方法調用（如 deps.split）依賴正確的 receiver 型別
+//   - 切片型別（[]byte, []str 等）：同上
+// 不可推斷的型別：整數和浮點數型別，因為整數字面量已有專用推斷路徑。
 func (p *Parser) filterInferableType(retType string) string {
 	if retType == "" {
 		return ""
@@ -185,17 +192,19 @@ func (p *Parser) filterInferableType(retType string) string {
 	if strings.HasPrefix(retType, "?") {
 		return retType
 	}
-	// 排除基本型別
+	// 排除整數和浮點數基本型別
 	switch retType {
 	case "i64", "i32", "i16", "i8", "u64", "u32", "u16", "u8",
-		"f64", "f32", "str", "bool", "byte", "char", "fd":
+		"f64", "f32", "bool", "byte", "char", "fd":
 		return ""
 	}
-	// 排除聯合型別（含 | ）和陣列/切片型別
-	if strings.Contains(retType, "|") || strings.HasPrefix(retType, "[") {
+	// 排除聯合型別（含 | ）
+	if strings.Contains(retType, "|") {
 		return ""
 	}
-	// 剩餘視為結構體型別，可安全推斷
+	// str 和切片型別（[]byte, []str 等）可安全推斷，
+	// 因為方法調用依賴正確的 receiver 型別（如 raw.split, line.trim）。
+	// parseLetStatement 僅在變數未宣告時才推斷，不會覆蓋已有的顯式型別。
 	return retType
 }
 

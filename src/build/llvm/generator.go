@@ -2854,10 +2854,22 @@ func (g *Generator) sliceEvalArgToPtr(sb *strings.Builder, evalResult string) st
 		// If the variable is a known %vec, the loaded value is the struct value;
 		// store it into a temp alloca to get a pointer.
 		if g.varTypes != nil {
-			if t, ok := g.varTypes[varName]; ok && t == "%vec" {
+			if t, ok := g.varTypes[varName]; ok && (t == "%vec" || t == "%str-long") {
 				g.tmpIdx++
 				tmpAlloca := fmt.Sprintf("%%vec.tmp.%d", g.tmpIdx)
 				if sb != nil {
+					// %str-long and %vec have identical layout {i64,i64,i64} but
+					// are distinct LLVM named types. Use the variable's actual
+					// type for alloca/store, then bitcast the pointer to %vec*
+					// so downstream %vec GEP/load operations type-check correctly.
+					if t == "%str-long" {
+						sb.WriteString(fmt.Sprintf("%s%s = alloca %%str-long\n", g.indent(), tmpAlloca))
+						sb.WriteString(fmt.Sprintf("%sstore %%str-long %s, %%str-long* %s\n", g.indent(), evalResult, tmpAlloca))
+						g.tmpIdx++
+						bitcastReg := fmt.Sprintf("%%vec.bc.%d", g.tmpIdx)
+						sb.WriteString(fmt.Sprintf("%s%s = bitcast %%str-long* %s to %%vec*\n", g.indent(), bitcastReg, tmpAlloca))
+						return bitcastReg
+					}
 					sb.WriteString(fmt.Sprintf("%s%s = alloca %%vec\n", g.indent(), tmpAlloca))
 					sb.WriteString(fmt.Sprintf("%sstore %%vec %s, %%vec* %s\n", g.indent(), evalResult, tmpAlloca))
 				}

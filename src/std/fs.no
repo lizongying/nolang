@@ -542,7 +542,11 @@ file.read-str = () (content ?str) {
 
         nil -> return
 
-        -> content = it.to-str()
+        -> {
+            ; it is []byte from read-bytes, convert to str
+            s = it.to-str()
+            content = s
+        }
     }
 }
 

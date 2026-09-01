@@ -3087,14 +3087,31 @@ func (g *Generator) generateFunctionDefinition(sb *strings.Builder, fd *parser.F
 	}
 	sb.WriteString(" {\n")
 	g.indentLevel++
-	g.emitLabel(sb, "entry")
+	// LLVM IR 中参数名和基本块标签共享同一命名空间。
+	// 若参数名为 "entry"，则使用 "nolang.entry" 作为 entry block 标签以避免冲突。
+	entryLabel := "entry"
+	for _, p := range fd.Parameters {
+		if p.Name == "entry" {
+			entryLabel = "nolang.entry"
+			break
+		}
+	}
+	if entryLabel == "entry" {
+		for _, r := range fd.Results {
+			if r.Name == "entry" {
+				entryLabel = "nolang.entry"
+				break
+			}
+		}
+	}
+	g.emitLabel(sb, entryLabel)
 	g.indentLevel++
 
 	// 初始化 CFG 用于数据流分析（MovedFact must/may 分析）。
 	// entry block 已由 emitLabel 注册，设置 Entry 指向它。
 	g.curCFG = newFuncCFG()
-	g.curCFG.Entry = "entry"
-	g.curCFG.getOrCreateBlock("entry")
+	g.curCFG.Entry = entryLabel
+	g.curCFG.getOrCreateBlock(entryLabel)
 	g.cfgMovedFacts = nil
 	g.cfgAssignedFacts = nil
 
@@ -3943,21 +3960,21 @@ func (g *Generator) varLLVMType(stmt *parser.LetStatement) string {
 			}
 			if recvName != "" && g.varTypes != nil {
 				if t, ok := g.varTypes[recvName]; ok {
-					structName := strings.TrimPrefix(t, "%")
-					if fields, ok := g.structTypes[structName]; ok {
+				structName := strings.TrimPrefix(t, "%")
+				if fields, ok := g.structTypes[structName]; ok {
 						for _, f := range fields {
 							if f.name != dot.Property {
-								continue
-							}
-							// Inline array field: [N x T]
+							continue
+						}
+						// Inline array field: [N x T]
 							if strings.HasPrefix(f.typ, "[") {
 								closeB := strings.IndexByte(f.typ, ']')
 								if closeB > 0 {
 									inner := f.typ[1:closeB]
 									xIdx := strings.LastIndex(inner, " x ")
 									if xIdx >= 0 {
-										elemType := inner[xIdx+3:]
-										if g.isStructLLVMType(elemType) {
+								elemType := inner[xIdx+3:]
+								if g.isStructLLVMType(elemType) {
 											return elemType
 										}
 										return "i64"
@@ -5136,7 +5153,7 @@ func (g *Generator) collectVarDeclsFromStmtInner(stmt parser.Statement, vars map
 			if vt == "%option" && g.optionInnerTypes != nil {
 			if _, exists := g.optionInnerTypes[s.Name.Value]; !exists {
 				if inner := g.inferOptionInnerType(s); inner != "" {
-					g.optionInnerTypes[s.Name.Value] = inner
+						g.optionInnerTypes[s.Name.Value] = inner
 				}
 			}
 			// For ?[]T option variables (inner type %vec), also register the
@@ -8495,6 +8512,16 @@ if !alreadyCoerced && g.isIntegerLLVMType(llvmType) && llvmType != "i64" && stri
 		// Copy %str-long struct: load from source, store to dest
 		// String literal produces %str-long* pointer (alloca).
 		// Function call results are already %%str-long values and can be stored directly.
+		// Handle zero/empty initialization: use zeroinitializer instead of 0.
+		if val == "0" || val == "" {
+			isGlobal := g.globalVars != nil && g.globalVars[name] && !(g.funcLocalNames != nil && g.funcLocalNames[name])
+			if isGlobal {
+				sb.WriteString(fmt.Sprintf("%sstore %%str-long zeroinitializer, %%str-long* %s\n", g.indent(), llvmGlobalRef(name)))
+			} else {
+				sb.WriteString(fmt.Sprintf("%sstore %%str-long zeroinitializer, %%str-long* %s\n", g.indent(), storeAddr))
+			}
+			return
+		}
 		isGlobal := g.globalVars != nil && g.globalVars[name] && !(g.funcLocalNames != nil && g.funcLocalNames[name])
 		if strings.HasPrefix(val, "%str-longlit.") {
 			// All string literals are now %str-long* alloca pointers.
@@ -8515,6 +8542,25 @@ if !alreadyCoerced && g.isIntegerLLVMType(llvmType) && llvmType != "i64" && stri
 			loadReg := g.tmpReg("str-long.load")
 			sb.WriteString(fmt.Sprintf("%s%s = load %%str-long, %%vec* %s\n", g.indent(), loadReg, val))
 			val = loadReg
+		} else if g.ssaTypes != nil && strings.HasPrefix(val, "%") {
+			// val is an SSA register whose actual LLVM type may differ from %str-long
+			// (e.g. voidSingleOutput from read-file returns a %vec value, not a pointer).
+			// %vec and %str-long have identical struct layout {i64, i64, i64} but LLVM
+			// treats them as distinct named types, so a direct store causes a type error.
+			// Fix: alloca %vec, store the %vec value, bitcast pointer to %str-long*,
+			// then load as %str-long.
+			if ssaType, ok := g.ssaTypes[val]; ok && ssaType == "%vec" {
+				g.tmpIdx++
+				tmpAlloca := fmt.Sprintf("%%str.vec.cvt.%d", g.tmpIdx)
+				sb.WriteString(fmt.Sprintf("%s%s = alloca %%vec\n", g.indent(), tmpAlloca))
+				sb.WriteString(fmt.Sprintf("%sstore %%vec %s, %%vec* %s\n", g.indent(), val, tmpAlloca))
+				g.tmpIdx++
+				bitcastReg := fmt.Sprintf("%%str.vec.bc.%d", g.tmpIdx)
+				sb.WriteString(fmt.Sprintf("%s%s = bitcast %%vec* %s to %%str-long*\n", g.indent(), bitcastReg, tmpAlloca))
+				loadReg := g.tmpReg("str-long.load")
+				sb.WriteString(fmt.Sprintf("%s%s = load %%str-long, %%str-long* %s\n", g.indent(), loadReg, bitcastReg))
+				val = loadReg
+			}
 		} else if !strings.HasPrefix(val, "%") {
 			// 宣告但無初值（如 `dummy str`）：val 為 "0"，使用 zeroinitializer
 			if isGlobal {
@@ -8551,6 +8597,22 @@ if !alreadyCoerced && g.isIntegerLLVMType(llvmType) && llvmType != "i64" && stri
 			copyReg := g.tmpReg("vec.copy")
 			sb.WriteString(fmt.Sprintf("%s%s = load %%vec, %%vec* %s\n", g.indent(), copyReg, val))
 			val = copyReg
+		}
+		// %str-long and %vec have identical layout {i64,i64,i64} but are distinct
+		// named types in LLVM IR. When a function returns %str-long (e.g. fs.read-file)
+		// and the target variable is []byte (%vec), we must bitcast through a pointer:
+		// store to %str-long* alloca, then load from %vec* (via bitcast).
+		if strings.HasPrefix(val, "%") && g.ssaTypes != nil {
+			if ssaType, ok := g.ssaTypes[val]; ok && ssaType == "%str-long" {
+				tmpAlloca := g.tmpReg("vec.bc.alloca")
+				sb.WriteString(fmt.Sprintf("%s%s = alloca %%str-long\n", g.indent(), tmpAlloca))
+				sb.WriteString(fmt.Sprintf("%sstore %%str-long %s, %%str-long* %s\n", g.indent(), val, tmpAlloca))
+				bcReg := g.tmpReg("vec.bc.cast")
+				sb.WriteString(fmt.Sprintf("%s%s = bitcast %%str-long* %s to %%vec*\n", g.indent(), bcReg, tmpAlloca))
+				loadReg := g.tmpReg("vec.bc.load")
+				sb.WriteString(fmt.Sprintf("%s%s = load %%vec, %%vec* %s\n", g.indent(), loadReg, bcReg))
+				val = loadReg
+			}
 		}
 		// Propagate element type from voidSingleOutput path (e.g. parts = 'a-b-c'.split('-')
 		// returns []str, so arrayElemTypes["parts"] must be %str-long for correct indexing).

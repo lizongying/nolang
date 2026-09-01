@@ -382,18 +382,18 @@ func (g *Generator) generateExprWithSB(sb *strings.Builder, expr parser.Expressi
 				// 仅當函數「源碼顯式聲明了回傳值」(funcDeclaredResults > 0) 卻生成了 void 呼叫時，
 				// 才表示回傳值被遺失（真實 bug）。void 函數（如 fe-copy/fe-neg）即便被啟發式
 				// 標記為單輸出，其 void 呼叫也是正確的，不應報錯。
-			fnName := flattenDottedExpr(e.Function)
-			if fnName == "" {
-				if dot, ok := e.Function.(*parser.DotExpression); ok {
-					fnName = dot.Property
-				} else if inner, ok := e.Function.(*parser.CallExpression); ok {
-					if ident, ok := inner.Function.(*parser.Identifier); ok {
-						fnName = ident.Value
-					} else if dot2, ok := inner.Function.(*parser.DotExpression); ok {
-						fnName = dot2.Property
+				fnName := flattenDottedExpr(e.Function)
+				if fnName == "" {
+					if dot, ok := e.Function.(*parser.DotExpression); ok {
+						fnName = dot.Property
+					} else if inner, ok := e.Function.(*parser.CallExpression); ok {
+						if ident, ok := inner.Function.(*parser.Identifier); ok {
+							fnName = ident.Value
+						} else if dot2, ok := inner.Function.(*parser.DotExpression); ok {
+							fnName = dot2.Property
+						}
 					}
 				}
-			}
 				if fnName != "" && g.funcDeclaredResults != nil {
 					if n, ok := g.funcDeclaredResults[fnName]; ok && n > 0 {
 						if m, ok2 := g.funcNumResults[fnName]; ok2 && m > 0 {
@@ -558,6 +558,37 @@ func (g *Generator) generateCastExpression(sb *strings.Builder, e *parser.CastEx
 // ensuring the result is of type i1. If the expression already produces i1
 // (e.g. bool variable, bool struct field, bool method call), no trunc is needed.
 func (g *Generator) generateConditionAsI1(sb *strings.Builder, cond parser.Expression) string {
+	// Handle bare err/ok/nil identifiers used as if-conditions (from match
+	// desugar of bare match arms like `err -> { ... }`). These are option
+	// tag sentinels, not real variables — they must never reach
+	// generateExprWithSB, which would emit `load i64, i64* %err` referencing
+	// an undefined LLVM value.
+	if ident, ok := cond.(*parser.Identifier); ok {
+		if ident.Value == "err" || ident.Value == "ok" || ident.Value == "nil" {
+			// If it's a real variable in varTypes (e.g. user-named "ok"),
+			// fall through to the normal path below.
+			isRealVar := false
+			if g.varTypes != nil {
+				if _, exists := g.varTypes[ident.Value]; exists {
+					isRealVar = true
+				}
+			}
+			if !isRealVar {
+				// err → false (error condition is never true as a bare value)
+				// ok → true  (ok condition is always true)
+				// nil → false (nil condition is never true as a bare value)
+				reg := g.tmpReg("optconst.i1")
+				if sb != nil {
+					if ident.Value == "ok" {
+						sb.WriteString(fmt.Sprintf("%s%s = icmp eq i1 1, 1\n", g.indent(), reg))
+					} else {
+						sb.WriteString(fmt.Sprintf("%s%s = icmp eq i1 0, 0\n", g.indent(), reg))
+					}
+				}
+				return reg
+			}
+		}
+	}
 	// Use intExprLLVMType to detect i1 conditions across all expression kinds:
 	// Identifier (bool var), DotExpression (bool field, incl. chained access like
 	// self.value.b), CallExpression (bool-returning function), etc.
@@ -591,6 +622,9 @@ func (g *Generator) generateConditionAsI1(sb *strings.Builder, cond parser.Expre
 		if actualType != "" && !g.isIntegerLLVMType(actualType) {
 			return "1"
 		}
+	}
+	if condVal == "" {
+		condVal = "0"
 	}
 	reg := g.tmpReg("if.trunc")
 	sb.WriteString(fmt.Sprintf("%s%s = trunc i64 %s to i1\n", g.indent(), reg, condVal))
@@ -5106,23 +5140,29 @@ func (g *Generator) generateInfixI1(sb *strings.Builder, expr *parser.InfixExpre
 				// nil is parsed as NilLiteral, not Identifier
 				tag = 1
 			}
-		if tag >= 0 {
-			if t, ok := g.varTypes[leftIdent.Value]; ok && t == "%option" {
-				tagGEP := g.tmpReg("opt.cmp.gep")
-				tagLoad := g.tmpReg("opt.cmp.load")
-				cmpReg := g.tmpReg("cmp.i1")
-				cmpOp := "eq"
-				if expr.Operator == "!=" {
-					cmpOp = "ne"
+			if tag >= 0 {
+				if os.Getenv("NOLANG_DEBUG_OPTCMP") != "" {
+					if ri, ok := expr.Right.(*parser.Identifier); ok && ri.Value == "err" {
+						t, _ := g.varTypes[leftIdent.Value]
+						fmt.Fprintf(os.Stderr, "[debug-optcmp] ERR CMP left=%s tag=%d varType=%q isOption=%v\n", leftIdent.Value, tag, t, t == "%option")
+					}
 				}
-				if sb != nil {
-					sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%option, %%option* %%%s, i32 0, i32 0\n", g.indent(), tagGEP, leftIdent.Value))
-					sb.WriteString(fmt.Sprintf("%s%s = load i64, i64* %s\n", g.indent(), tagLoad, tagGEP))
-					sb.WriteString(fmt.Sprintf("%s%s = icmp %s i64 %s, %d\n", g.indent(), cmpReg, cmpOp, tagLoad, tag))
+				if t, ok := g.varTypes[leftIdent.Value]; ok && t == "%option" {
+					tagGEP := g.tmpReg("opt.cmp.gep")
+					tagLoad := g.tmpReg("opt.cmp.load")
+					cmpReg := g.tmpReg("cmp.i1")
+					cmpOp := "eq"
+					if expr.Operator == "!=" {
+						cmpOp = "ne"
+					}
+					if sb != nil {
+						sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%option, %%option* %%%s, i32 0, i32 0\n", g.indent(), tagGEP, leftIdent.Value))
+						sb.WriteString(fmt.Sprintf("%s%s = load i64, i64* %s\n", g.indent(), tagLoad, tagGEP))
+						sb.WriteString(fmt.Sprintf("%s%s = icmp %s i64 %s, %d\n", g.indent(), cmpReg, cmpOp, tagLoad, tag))
+					}
+					return cmpReg
 				}
-return cmpReg
-}
-// str-long == nil: compare data pointer (field 2) to 0 (null).
+				// str-long == nil: compare data pointer (field 2) to 0 (null).
 				// A %str-long with data == 0 is considered "nil" (e.g. getenv
 				// returning NULL, or an uninitialized string).
 				if t, ok := g.varTypes[leftIdent.Value]; ok && t == "%str-long" && tag == 1 {

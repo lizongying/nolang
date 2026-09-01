@@ -1219,3 +1219,27 @@ json.i64 = () (val i64, ok bool) {
     val = f
     ok = true
 }
+
+; json.obj-len: 取得物件 key 數量
+; 返回 n i64: key 數量（非物件返回 0）
+json.obj-len = () (n i64) {
+    n = 0
+    .root < 0 -> return
+    k i64 = .pool.get-kind(.root)
+    k != JSON-KIND-OBJ -> return
+    n = .pool.nodes[.root].count
+}
+
+; json.obj-key: 取得物件指定索引的 key
+; 返回 key str: key 字串
+; 返回 ok bool: 是否成功
+json.obj-key = (idx i64) (key str, ok bool) {
+    ok = false
+    .root < 0 -> return
+    k i64 = .pool.get-kind(.root)
+    k != JSON-KIND-OBJ -> return
+    cnt i64 = .pool.nodes[.root].count
+    idx < 0 || idx >= cnt -> return
+    key = .pool.nodes[.root].keys[idx]
+    ok = true
+}

@@ -4194,13 +4194,19 @@ func collectStdSigsFromFS(fsys fs.FS) (map[string][]string, map[string][]string,
 				for _, r := range fd.Results {
 					rets = append(rets, qualifyRet(r.Type.String(), m.info.ShortName, ownStructs))
 				}
-				if fd.IsMethodDef {
-					if len(fd.Name) > 0 && fd.Name[0] == '[' {
-						funcSigs[fd.Name] = rets
-					} else {
-						methodSigs[m.info.ShortName+"."+fd.Name] = rets
-					}
-				} else {
+		if fd.IsMethodDef {
+			if len(fd.Name) > 0 && fd.Name[0] == '[' {
+				funcSigs[fd.Name] = rets
+			} else {
+				methodSigs[m.info.ShortName+"."+fd.Name] = rets
+				// Also register with fd.Name as key (e.g., "str.starts-with")
+				// so type inference can find it via receiverType + "." + dot.Property
+				// where receiverType is just the type name (e.g., "str"), not "module.struct".
+				if strings.Contains(fd.Name, ".") {
+					methodSigs[fd.Name] = rets
+				}
+			}
+		} else {
 					funcSigs[m.info.ShortName+"."+fd.Name] = rets
 				}
 			}

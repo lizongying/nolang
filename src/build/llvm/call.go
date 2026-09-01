@@ -4215,6 +4215,26 @@ func (g *Generator) genForwardFunc(sb *strings.Builder, forwardFunc string, expr
 			}
 		}
 
+		// If storeVal is a %vec SSA value but elemType is %str-long (e.g. pushing
+		// a fs.read-file result into []str), convert via alloca+bitcast+load.
+		// This must happen before the fast/expand branch so the converted value
+		// dominates both paths.
+		if elemType == "%str-long" && g.ssaTypes != nil && strings.HasPrefix(storeVal, "%") {
+			if ssaType, ok := g.ssaTypes[storeVal]; ok && ssaType == "%vec" {
+				g.tmpIdx++
+				tmpAlloca := fmt.Sprintf("%%vp.vec.cvt.%d", g.tmpIdx)
+				sb.WriteString(fmt.Sprintf("%s%s = alloca %%vec\n", g.indent(), tmpAlloca))
+				sb.WriteString(fmt.Sprintf("%sstore %%vec %s, %%vec* %s\n", g.indent(), storeVal, tmpAlloca))
+				g.tmpIdx++
+				bitcastReg := fmt.Sprintf("%%vp.vec.bc.%d", g.tmpIdx)
+				sb.WriteString(fmt.Sprintf("%s%s = bitcast %%vec* %s to %%str-long*\n", g.indent(), bitcastReg, tmpAlloca))
+				g.tmpIdx++
+				loadReg := fmt.Sprintf("%%vp.str.load.%d", g.tmpIdx)
+				sb.WriteString(fmt.Sprintf("%s%s = load %%str-long, %%str-long* %s\n", g.indent(), loadReg, bitcastReg))
+				storeVal = loadReg
+			}
+		}
+
 		// Generate labels for basic blocks
 		lbl := g.tmpIdx
 		g.tmpIdx += 3 // reserve 3 label numbers

@@ -1038,7 +1038,14 @@ func (t *Transpiler) preloadModuleSignatures(source string) (map[string][]string
 						rets[i] = r.Type.String()
 					}
 				if fd.IsMethodDef && len(fd.Name) > 0 && fd.Name[0] != '[' {
-					methodSigs[modShort+"."+fd.Name] = rets
+					fullKey := modShort + "." + fd.Name
+					methodSigs[fullKey] = rets
+					// Also register with fd.Name as key (e.g., "str.starts-with")
+					// so that type inference can find it via receiverType + "." + dot.Property
+					// where receiverType is just the type name (e.g., "str"), not "module.struct".
+					if strings.Contains(fd.Name, ".") {
+						methodSigs[fd.Name] = rets
+					}
 				} else if len(fd.Name) > 0 && fd.Name[0] != '[' {
 					funcSigs[modShort+"."+fd.Name] = rets
 				} else {
