@@ -153,12 +153,12 @@ The `-cc` parameter specifies the C compiler backend:
 
 - **main.no** — Program entry point
 - **lib.no** — Library entry point, exports functions (see [Export documentation](lang/export))
-- **All .no files under test/ directory** — Contains test assertions
+- **All .no files under tests/ directory** — Contains test assertions
 
 ## Testing
 
 ```bash
-# Test all .no files in the test/ directory
+# Test all .no files in the tests/ directory
 no test
 
 # Run a single test file
@@ -171,7 +171,7 @@ no test -target x86_64-windows-gnu
 
 Test notes:
 
-- Test files are placed in the test/ directory
+- Test files are placed in the tests/ directory
 - Each test file is built independently
 - If any test fails, a non-zero exit code is returned
 

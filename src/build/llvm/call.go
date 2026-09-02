@@ -1383,10 +1383,28 @@ func (g *Generator) generateCallExpression(sb *strings.Builder, expr *parser.Cal
 					fmt.Fprintf(os.Stderr, "[debug-it] call.go module-qualified: fnName=%q firstSegment=%q shortName=%q isVar=false\n", fnName, firstSegment, shortName)
 				}
 				// Check if shortName is a user function (without module prefix)
+				// BUT: if shortName is also a builtin method (e.g. is-file,
+				// is-dir, exists), the module-qualified call (e.g. fs.is-file)
+				// should NOT be rewritten to the user-defined function — it must
+				// dispatch to the builtin. Otherwise, a user function like
+				// utils.is-file that calls fs.is-file internally would infinitely
+				// recurse into itself.
 				if g.funcRetTypes != nil {
 					if _, hasUserFn := g.funcRetTypes[shortName]; hasUserFn {
-						fnName = shortName
-						isModuleQualified = true
+						isBuiltinShortName := builtin.FindBuiltinMethod(shortName) != nil
+						if isBuiltinShortName && (firstSegment == "fs" || firstSegment == "os" || firstSegment == "time" || firstSegment == "str" || firstSegment == "math" || firstSegment == "number" || firstSegment == "io" || firstSegment == "bufio" || firstSegment == "encoding" || firstSegment == "crypto" || firstSegment == "path" || firstSegment == "os" || firstSegment == "net" || firstSegment == "process" || firstSegment == "log" || firstSegment == "sort" || firstSegment == "regexp" || firstSegment == "uuid" || firstSegment == "bigint" || firstSegment == "err" || firstSegment == "types" || firstSegment == "byte" || firstSegment == "char") {
+							// module-qualified builtin calls (e.g. fs.is-file,
+							// os.now-ms, time.now-ms) → keep fnName as-is so it
+							// dispatches to the builtin path (callBuiltin),
+							// not a user-defined function with the same short
+							// name. Otherwise, a user function like utils.is-file
+							// or utils.now-ms that calls the builtin internally
+							// would infinitely recurse into itself.
+							isModuleQualified = true
+						} else {
+							fnName = shortName
+							isModuleQualified = true
+						}
 						} else if _, hasFullFn := g.funcRetTypes[fnName]; !hasFullFn {
 							// Full name not registered either — could be a
 							// module-qualified builtin (e.g. number.rotate-left).
@@ -2487,12 +2505,15 @@ func (g *Generator) generateCallExpression(sb *strings.Builder, expr *parser.Cal
 	// 函數定義已將其作為常規 LLVM 參數生成。當調用方已傳遞所有參數（語句形式）時不加返回槽；
 	// 但當調用方未傳遞輸出參數（表達式形式，如 resp = http.get(url)）時，
 	// 仍需分配臨時 buffer 並作為最後一個參數傳遞，否則會生成缺少參數的 void call。
+	// 支援多輸出參數（如 json.get-str 有 val str, ok bool）的表達式形式：
+	// 為所有輸出參數分配臨時空間，調用後載入第一個作為返回值。
 	voidSingleOutput := false
 	voidSingleOutputType := ""
+	voidMultiOutputTypes := []string{}
 	triggerVoidSingle := (retType == "void" || isNolangSingleResult) && g.funcNumResults != nil && g.funcResultLLVMType != nil
 	if triggerVoidSingle {
-		if n, ok := g.funcNumResults[fnName]; ok && n == 1 {
-			if ts, ok := g.funcResultLLVMType[fnName]; ok && len(ts) == 1 {
+		if n, ok := g.funcNumResults[fnName]; ok && n >= 1 {
+			if ts, ok := g.funcResultLLVMType[fnName]; ok && len(ts) >= 1 {
 				if h, ok := g.funcHeuristicOutput[fnName]; ok && h {
 					// 啟發式輸出：輸出參數已在 fd.Parameters 中。
 					// 區分語句形式（調用方已傳遞所有參數）和表達式形式（缺少輸出參數）。
@@ -2511,6 +2532,7 @@ func (g *Generator) generateCallExpression(sb *strings.Builder, expr *parser.Cal
 						// 表達式形式：調用方未傳遞輸出參數，需分配臨時 buffer
 						voidSingleOutput = true
 						voidSingleOutputType = ts[0]
+						voidMultiOutputTypes = ts
 					}
 					// 否則：語句形式，調用方已傳遞所有參數，不加返回槽
 					// 但僅當 hasOutputParam 已捕獲輸出參數時跳過；
@@ -2519,6 +2541,7 @@ func (g *Generator) generateCallExpression(sb *strings.Builder, expr *parser.Cal
 					if !hasOutputParam {
 						voidSingleOutput = true
 						voidSingleOutputType = ts[0]
+						voidMultiOutputTypes = ts
 					}
 				}
 			}
@@ -3077,23 +3100,46 @@ func (g *Generator) generateCallExpression(sb *strings.Builder, expr *parser.Cal
 				g.trackStrTemporary(ev)
 				return "%str-long* " + ev
 			}
-			// Cross-module string stride safety: detect %str-long SSA values
-			// (from with-len, with-cap, etc.) via ssaTypes. Without this,
-			// with-len results passed as function arguments fall through to
-			// i64* handling, causing stride mismatch.
-			// Track the temp alloca for stmt-level free to prevent memory leak.
-			if strings.HasPrefix(ev, "%") && g.ssaTypes != nil {
-				if ssaType, ok := g.ssaTypes[ev]; ok && ssaType == "%str-long" {
+		// Cross-module string stride safety: detect %str-long SSA values
+		// (from with-len, with-cap, etc.) via ssaTypes. Without this,
+		// with-len results passed as function arguments fall through to
+		// i64* handling, causing stride mismatch.
+		// Track the temp alloca for stmt-level free to prevent memory leak.
+		// BUT: when arg is a DotExpression (e.g., a.pre-release), the SSA value
+		// is a shallow copy of a struct field — its data pointer is shared with
+		// the original struct. Tracking it for free would free the struct's
+		// data pointer, causing a double-free when the struct is later freed.
+		// For DotExpression, deep-clone the field value instead.
+		if strings.HasPrefix(ev, "%") && g.ssaTypes != nil {
+			if ssaType, ok := g.ssaTypes[ev]; ok && ssaType == "%str-long" {
+				if _, isDot := arg.(*parser.DotExpression); isDot {
+					// Deep-clone the field value: alloca shallow copy, then clone
+					// into a separate temp with independent data pointer.
 					g.tmpIdx++
-					tmpName := fmt.Sprintf("%%ref.tmp.%d", g.tmpIdx)
+					shallowName := fmt.Sprintf("%%ref.shallow.%d", g.tmpIdx)
 					if sb != nil {
-						sb.WriteString(fmt.Sprintf("%s%s = alloca %%str-long\n", g.indent(), tmpName))
-						sb.WriteString(fmt.Sprintf("%sstore %%str-long %s, %%str-long* %s\n", g.indent(), ev, tmpName))
+						sb.WriteString(fmt.Sprintf("%s%s = alloca %%str-long\n", g.indent(), shallowName))
+						sb.WriteString(fmt.Sprintf("%sstore %%str-long %s, %%str-long* %s\n", g.indent(), ev, shallowName))
 					}
-					g.trackStrTemporary(tmpName)
-					return "%str-long* " + tmpName
+					g.tmpIdx++
+					cloneName := fmt.Sprintf("%%ref.clone.%d", g.tmpIdx)
+					if sb != nil {
+						sb.WriteString(fmt.Sprintf("%s%s = alloca %%str-long\n", g.indent(), cloneName))
+						g.emitDeepClone(sb, shallowName, cloneName, "%str-long", "i8")
+					}
+					g.trackStrTemporary(cloneName)
+					return "%str-long* " + cloneName
 				}
+				g.tmpIdx++
+				tmpName := fmt.Sprintf("%%ref.tmp.%d", g.tmpIdx)
+				if sb != nil {
+					sb.WriteString(fmt.Sprintf("%s%s = alloca %%str-long\n", g.indent(), tmpName))
+					sb.WriteString(fmt.Sprintf("%sstore %%str-long %s, %%str-long* %s\n", g.indent(), ev, tmpName))
+				}
+				g.trackStrTemporary(tmpName)
+				return "%str-long* " + tmpName
 			}
+		}
 			// String concat / string method call results: ev is a %str-long* SSA register.
 			// Detect via isStringExpr so InfixExpression (- for concat) and other string
 			// expressions are passed as %str-long* instead of being truncated to i64.
@@ -3324,70 +3370,65 @@ func (g *Generator) generateCallExpression(sb *strings.Builder, expr *parser.Cal
 	}
 
 	// void + 單輸出：分配臨時輸出空間並附加指標到參數列表
+	// 支援多輸出參數：為所有輸出參數分配臨時空間，調用後載入第一個作為返回值
 	voidSingleTmp := ""
 	voidSingleSp := ""
+	voidMultiTmps := []string{}
 	if voidSingleOutput {
 		g.tmpIdx++
-		voidSingleTmp = fmt.Sprintf("%%vso.tmp.%d", g.tmpIdx)
+		voidSingleSp = fmt.Sprintf("%%vso.sp.%d", g.tmpIdx)
 		if sb != nil {
-			// Save stack pointer to prevent stack growth when called inside loops
-			g.tmpIdx++
-			voidSingleSp = fmt.Sprintf("%%vso.sp.%d", g.tmpIdx)
 			sb.WriteString(fmt.Sprintf("%s%s = call ptr @llvm.stacksave.p0()\n", g.indent(), voidSingleSp))
-			sb.WriteString(fmt.Sprintf("%s%s = alloca %s\n", g.indent(), voidSingleTmp, toLLVMType(voidSingleOutputType)))
-			sb.WriteString(fmt.Sprintf("%scall void @llvm.lifetime.start.p0i8(i64 %d, i8* %s)\n", g.indent(), g.llvmTypeSize(voidSingleOutputType), voidSingleTmp))
-			if voidSingleOutputType == "%arr" {
-				// 固定數組 [N]T：調用方分配 N*elemSize 空間並設置 len/data。
-				// 固定數組大小已知，不同於可變切片，需預分配空間供 out[i] = val 寫入。
-				// %arr 類型（如 [8]u8）需初始化 len 與 data 指標，否則方法體 out[i] = val 會崩潰。
-				// 緩衝區由調用方負責分配，被調用函數 prologue 不再預分配。
-				arrSize := int64(0)
-				elemSize := int64(1)
-				if g.funcResultNolangTypes != nil {
-					if nolangRets, ok := g.funcResultNolangTypes[fnName]; ok && len(nolangRets) == 1 {
-						nt := nolangRets[0]
-						if strings.HasPrefix(nt, "[") {
-							if rb := strings.Index(nt, "]"); rb > 0 {
-								sizeStr := nt[1:rb]
-								if v, err := strconv.ParseInt(sizeStr, 10, 64); err == nil {
-									arrSize = v
+		}
+		for mi, mt := range voidMultiOutputTypes {
+			g.tmpIdx++
+			mtmpName := fmt.Sprintf("%%vso.tmp.%d", g.tmpIdx)
+			voidMultiTmps = append(voidMultiTmps, mtmpName)
+			if mi == 0 {
+				voidSingleTmp = mtmpName
+			}
+			if sb != nil {
+				sb.WriteString(fmt.Sprintf("%s%s = alloca %s\n", g.indent(), mtmpName, toLLVMType(mt)))
+				sb.WriteString(fmt.Sprintf("%scall void @llvm.lifetime.start.p0i8(i64 %d, i8* %s)\n", g.indent(), g.llvmTypeSize(mt), mtmpName))
+				if mt == "%arr" {
+					arrSize := int64(0)
+					elemSize := int64(1)
+					if g.funcResultNolangTypes != nil {
+						if nolangRets, ok := g.funcResultNolangTypes[fnName]; ok && mi < len(nolangRets) {
+							nt := nolangRets[mi]
+							if strings.HasPrefix(nt, "[") {
+								if rb := strings.Index(nt, "]"); rb > 0 {
+									sizeStr := nt[1:rb]
+									if v, err := strconv.ParseInt(sizeStr, 10, 64); err == nil {
+										arrSize = v
+									}
+									elemSize = llvmTypeSize(g.mapToLLVMType(nt[rb+1:]))
 								}
-								elemSize = llvmTypeSize(g.mapToLLVMType(nt[rb+1:]))
 							}
 						}
 					}
+					totalSize := arrSize * elemSize
+					g.tmpIdx++
+					arrDataBuf := fmt.Sprintf("%%vso.arrdata.%d", g.tmpIdx)
+					sb.WriteString(fmt.Sprintf("%s%s = call i8* @nolang.malloc(i64 %d)\n", g.indent(), arrDataBuf, totalSize))
+					g.tmpIdx++
+					arrLenGEP := fmt.Sprintf("%%vso.arrlen.gep.%d", g.tmpIdx)
+					sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%arr, %%arr* %s, i32 0, i32 0\n", g.indent(), arrLenGEP, mtmpName))
+					sb.WriteString(fmt.Sprintf("%sstore i64 %d, i64* %s\n", g.indent(), arrSize, arrLenGEP))
+					g.tmpIdx++
+					arrDataGEP := fmt.Sprintf("%%vso.arrdata.gep.%d", g.tmpIdx)
+					sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%arr, %%arr* %s, i32 0, i32 1\n", g.indent(), arrDataGEP, mtmpName))
+					g.storeDataPtrField(sb, arrDataBuf, arrDataGEP)
+				} else {
+					sb.WriteString(fmt.Sprintf("%sstore %s zeroinitializer, %s* %s\n", g.indent(), toLLVMType(mt), toLLVMType(mt), mtmpName))
 				}
-				totalSize := arrSize * elemSize
-				g.tmpIdx++
-				arrDataBuf := fmt.Sprintf("%%vso.arrdata.%d", g.tmpIdx)
-				sb.WriteString(fmt.Sprintf("%s%s = call i8* @nolang.malloc(i64 %d)\n", g.indent(), arrDataBuf, totalSize))
-				g.tmpIdx++
-				arrLenGEP := fmt.Sprintf("%%vso.arrlen.gep.%d", g.tmpIdx)
-				sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%arr, %%arr* %s, i32 0, i32 0\n", g.indent(), arrLenGEP, voidSingleTmp))
-				sb.WriteString(fmt.Sprintf("%sstore i64 %d, i64* %s\n", g.indent(), arrSize, arrLenGEP))
-				g.tmpIdx++
-				arrDataGEP := fmt.Sprintf("%%vso.arrdata.gep.%d", g.tmpIdx)
-				sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%arr, %%arr* %s, i32 0, i32 1\n", g.indent(), arrDataGEP, voidSingleTmp))
-				g.storeDataPtrField(sb, arrDataBuf, arrDataGEP)
-			} else {
-				// 其他類型（i64/[]i64/str/?T/struct）零初始化：
-				//   i64 → 0
-				//   []i64 (%vec) → 空容器 {len=0, cap=0, data=null}
-				//   str (%str-long) → 空容器 {len=0, cap=0, data=null}
-				//   ?T (%option) → nil
-				//   struct → {} 零值
-				// 函數內需自行用 with-len/with-cap/[] 初始化後才能 out[i] = val
-				sb.WriteString(fmt.Sprintf("%sstore %s zeroinitializer, %s* %s\n", g.indent(), toLLVMType(voidSingleOutputType), toLLVMType(voidSingleOutputType), voidSingleTmp))
 			}
+			typedArgs = append(typedArgs, toLLVMType(mt)+"* "+mtmpName)
 		}
-		typedArgs = append(typedArgs, toLLVMType(voidSingleOutputType)+"* "+voidSingleTmp)
-		// Propagate element type from the function's Nolang return type (e.g. []str → %str-long)
-		// so that generateLet's %vec store path can set arrayElemTypes[name] correctly.
-		// Without this, parts = 'a-b-c'.split('-') would store a %vec but leave
-		// arrayElemTypes["parts"] unset, causing parts[0] to be read as i64 instead of %str-long.
+		// Propagate element type from the function's Nolang return type
 		g.lastVoidSingleOutputElemType = ""
 		if voidSingleOutputType == "%vec" && g.funcResultNolangTypes != nil {
-			if nolangRets, ok := g.funcResultNolangTypes[fnName]; ok && len(nolangRets) == 1 {
+			if nolangRets, ok := g.funcResultNolangTypes[fnName]; ok && len(nolangRets) >= 1 {
 				nt := nolangRets[0]
 				if strings.HasPrefix(nt, "[]") {
 					elemNolang := nt[2:]

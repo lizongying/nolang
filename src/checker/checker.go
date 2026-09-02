@@ -2845,8 +2845,8 @@ func checkFormatSpecTypeCompat(typeChar byte, varType, specStr string) string {
 		return ""
 	}
 	switch typeChar {
-	case 'b', 'c', 'd', 'o', 'x', 'X':
-		// 整數類型
+	case 'b', 'c', 'd', 'o', 'p', 'x', 'X':
+		// 整數類型（p = 指針地址，亦為整數）
 		if !isIntegerTypeStr(varType) {
 			return fmt.Sprintf("format spec '%c' requires integer type, got '%s' (spec: %q)", typeChar, varType, specStr)
 		}
@@ -4710,6 +4710,16 @@ func resolveModuleCallsInExpr(expr parser.Expression, modSet map[string]bool, mo
 				// library function, NOT the user-defined fn from a
 				// different module. Rewriting to fn() would cause the
 				// wrong function to be called (infinite recursion → segfault).
+				// Also check if fnName is a builtin method (e.g. is-file,
+				// is-dir, exists). If so, the module-qualified call (e.g.
+				// fs.is-file) should NOT be rewritten to the user-defined
+				// function — it must dispatch to the builtin. Otherwise,
+				// a user function like utils.is-file that calls fs.is-file
+				// internally would infinitely recurse into itself.
+				if builtin.FindBuiltinMethod(fnName) != nil {
+					// Keep as module.fn() DotExpression — codegen will
+					// dispatch it to the builtin path (callBuiltin).
+				} else {
 				stdMethodKey := short + "." + short + "." + fnName
 				methodSigs := CollectStdMethodSigs()
 				if _, isStdMethod := methodSigs[stdMethodKey]; isStdMethod {
@@ -4722,6 +4732,7 @@ func resolveModuleCallsInExpr(expr parser.Expression, modSet map[string]bool, mo
 						Token: lexer.Token{Type: lexer.IDENT, Literal: fnName},
 						Value: fnName,
 					}
+				}
 				}
 			}
 			}

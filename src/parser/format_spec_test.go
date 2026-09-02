@@ -428,6 +428,7 @@ func TestParseFormatSpec(t *testing.T) {
 		{name: "type_b", spec: "b", want: newSpec(0, 0, 0, false, false, 0, 0, -1, 'b')},
 		{name: "type_o", spec: "o", want: newSpec(0, 0, 0, false, false, 0, 0, -1, 'o')},
 		{name: "type_c", spec: "c", want: newSpec(0, 0, 0, false, false, 0, 0, -1, 'c')},
+		{name: "type_p", spec: "p", want: newSpec(0, 0, 0, false, false, 0, 0, -1, 'p')},
 		{name: "type_percent", spec: "%", want: newSpec(0, 0, 0, false, false, 0, 0, -1, '%')},
 
 		// 宽度 + 精度 + 类型

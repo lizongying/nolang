@@ -69,7 +69,7 @@ func (g *Generator) callFmt(sb *strings.Builder, fnName string, hasArgs bool, nA
 							c := fmtStr[j]
 						if c == 'd' || c == 'i' || c == 'u' || c == 's' ||
 							c == 'x' || c == 'X' || c == 'b' || c == 'o' ||
-							c == 'c' || c == 'f' || c == 'e' || c == 'g' || c == 't' || c == 'v' {
+							c == 'c' || c == 'f' || c == 'e' || c == 'g' || c == 't' || c == 'v' || c == 'p' {
 								j++
 								break
 							}
@@ -504,8 +504,9 @@ func (g *Generator) emitArgAsStrLong(sb *strings.Builder, expr parser.Expression
 
 	// Dispatch based on spec type and source type (mirrors generateFieldStr).
 	switch {
-	case specType == 'b' || specType == 'o' || specType == 'x' || specType == 'X':
+	case specType == 'b' || specType == 'o' || specType == 'p' || specType == 'x' || specType == 'X':
 		// Unsigned format — use fmt-uint (expects i64*).
+		// 'p' (pointer) also uses fmt-uint: hex with forced 0x prefix.
 		// Coerce narrow integers to i64 with zext (unsigned semantics).
 		if srcType == "i8" || srcType == "u8" || srcType == "i16" || srcType == "u16" || srcType == "i32" || srcType == "u32" || srcType == "i1" {
 			extReg := g.tmpReg("arg.ext")
@@ -4395,8 +4396,10 @@ func (g *Generator) dispatchFmtCall(sb *strings.Builder, argPtr, varType string,
 		toStrPtr := g.emitContainerToStr(sb, name, varType)
 		sb.WriteString(fmt.Sprintf("%scall void @fmt-str(%%str-long* %s, %%str-long* %s, %%str-long* %s)\n",
 			g.indent(), toStrPtr, specPtr, outBuf))
-	case specType == 'b' || specType == 'o' || specType == 'x' || specType == 'X':
+	case specType == 'b' || specType == 'o' || specType == 'p' || specType == 'x' || specType == 'X':
 		// Unsigned format — use fmt-uint (expects i64*)
+		// 'p' (pointer) also uses fmt-uint: the value is treated as an
+		// unsigned integer and printed as hex with a forced 0x prefix.
 		if name != "" {
 			argPtr = g.emitFmtArgPtr(sb, name, varType, "i64")
 		}

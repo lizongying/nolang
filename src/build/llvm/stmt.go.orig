@@ -857,12 +857,7 @@ func (g *Generator) emitHeapFree(sb *strings.Builder) {
 				// AssignedFact 優化：僅當「肯定從不 moved 且 肯定持有堆」時直接 free，
 				// 繞開運行時 NULL 守衛（@free(NULL) 為 안전 no-op，即便誤判亦無害）。
 				// 與 moved 正交：moved=triMay 時不優化（交給 bitmap/NULL 守衛處理，防雙重釋放）。
-				// When hasBranchMove is true and a runtime bitmap is available,
-			// the CFG may be incomplete (e.g., option match arms where move
-			// happens inside an if-branch). In that case, do NOT use the
-			// AssignedFact direct-free shortcut — fall through to the runtime
-			// bitmap check instead, which accurately tracks move state.
-			if tri == triMustNot && !aFirst && !(g.hasBranchMove && g.movedBitmapBase != "") {
+				if tri == triMustNot && !aFirst {
 					aTri := classifyMoved(aMeet, aJoin, varIdx)
 				if aTri == triMust {
 					g.emitVarHeapFreeDirect(sb, g.varAddr(name), llvmType, elemType, name)
@@ -4180,12 +4175,12 @@ func (g *Generator) varLLVMType(stmt *parser.LetStatement) string {
 						_, ok1 := g.funcNumResults[lookupName]
 						fmt.Fprintf(os.Stderr, "[debug-it]   lookupName=%q funcNumResults exists=%v\n", lookupName, ok1)
 					}
-					if n, ok := g.funcNumResults[lookupName]; ok && n >= 1 {
+					if n, ok := g.funcNumResults[lookupName]; ok && n == 1 {
 						if g.funcResultLLVMType != nil {
-							if ts, ok2 := g.funcResultLLVMType[lookupName]; ok2 && len(ts) >= 1 {
+							if ts, ok2 := g.funcResultLLVMType[lookupName]; ok2 && len(ts) == 1 {
 								retType := ts[0]
 								if os.Getenv("NOLANG_DEBUG_IT") != "" {
-									fmt.Fprintf(os.Stderr, "[debug-it]   funcResultLLVMType[%q]=%q (n=%d) returning\n", lookupName, retType, n)
+									fmt.Fprintf(os.Stderr, "[debug-it]   funcResultLLVMType[%q]=%q returning\n", lookupName, retType)
 								}
 								if retType == "i1" {
 									retType = "i64"
@@ -4231,37 +4226,37 @@ func (g *Generator) varLLVMType(stmt *parser.LetStatement) string {
 					// causing type mismatches when the option value is used.
 					if g.funcNumResults != nil {
 						// Try full name first, then short name
-					for _, lookupName := range []string{fullName, shortName} {
-						if n, ok := g.funcNumResults[lookupName]; ok && n >= 1 {
-							if g.funcResultLLVMType != nil {
-								if ts, ok := g.funcResultLLVMType[lookupName]; ok && len(ts) >= 1 {
-									retType := ts[0]
-									if retType == "i1" {
-										retType = "i64"
+						for _, lookupName := range []string{fullName, shortName} {
+							if n, ok := g.funcNumResults[lookupName]; ok && n == 1 {
+								if g.funcResultLLVMType != nil {
+									if ts, ok := g.funcResultLLVMType[lookupName]; ok && len(ts) == 1 {
+										retType := ts[0]
+										if retType == "i1" {
+											retType = "i64"
+										}
+										return retType
 									}
-									return retType
 								}
 							}
 						}
-					}
 						// Fallback: module merge may have renamed the function
 						// (e.g. "json.parse" → "json.json.parse"). Try matching by suffix:
 						// find a key in funcResultLLVMType that ends with "." + property
 						// and whose prefix starts with the receiver name.
 						suffix := "." + dot.Property
-					for key, ts := range g.funcResultLLVMType {
-						if strings.HasSuffix(key, suffix) && len(ts) >= 1 {
-						prefix := key[:len(key)-len(suffix)]
-						if strings.HasPrefix(prefix, recvIdent.Value) {
-							if n, ok := g.funcNumResults[key]; ok && n >= 1 {
-								retType := ts[0]
-								if retType == "i1" {
-									retType = "i64"
+						for key, ts := range g.funcResultLLVMType {
+							if strings.HasSuffix(key, suffix) && len(ts) == 1 {
+								prefix := key[:len(key)-len(suffix)]
+								if strings.HasPrefix(prefix, recvIdent.Value) {
+									if n, ok := g.funcNumResults[key]; ok && n == 1 {
+										retType := ts[0]
+										if retType == "i1" {
+											retType = "i64"
+										}
+										return retType
+									}
 								}
-								return retType
 							}
-						}
-					}
 						}
 					}
 				// Then check builtins (strip module prefix)
@@ -8379,9 +8374,6 @@ func (g *Generator) generateLet(sb *strings.Builder, stmt *parser.LetStatement) 
 									g.indent(), nfGEP, toLLVMType(fieldType), toLLVMType(fieldType), gepReg, nfIdx))
 								// StringLiteral 和某些表达式返回 %str-long* 指针，需要 load
 								// Identifier 返回 %str-long 值（已 load），直接 store
-								// 但對來自參數/局部堆變數的 str/vec/arr 值需要深層 clone，
-								// 否則結構體欄位與源變數共享同一 data 指標，
-								// 函數退出時 emitStructFieldsFree 和 emitHeapFree 會 double-free。
 								if _, isStrLit := nsf.Value.(*parser.StringLiteral); isStrLit {
 									nfVal := g.generateExprWithSB(sb, nsf.Value)
 									nfVal = g.stripLLVMType(nfVal)
@@ -8389,33 +8381,9 @@ func (g *Generator) generateLet(sb *strings.Builder, stmt *parser.LetStatement) 
 									sb.WriteString(fmt.Sprintf("%s%s = load %s, %s* %s\n", g.indent(), loadReg, toLLVMType(nfType), toLLVMType(nfType), nfVal))
 									sb.WriteString(fmt.Sprintf("%sstore %s %s, %s* %s\n", g.indent(), toLLVMType(nfType), loadReg, toLLVMType(nfType), nfGEP))
 								} else {
-									// Check if the value is an Identifier pointing to a
-									// heap-owning local/param; if so, deep-clone str/vec/arr
-									// to avoid double-free on function exit.
-									needClone := false
-									if ident, ok := nsf.Value.(*parser.Identifier); ok {
-										if g.funcParams != nil && g.funcParams[ident.Value] {
-											needClone = true
-										}
-										if g.heapVars != nil {
-											if _, isHeap := g.heapVars[ident.Value]; isHeap {
-												needClone = true
-											}
-										}
-									}
-									irFieldType := toLLVMType(nfType)
-									if needClone && (irFieldType == "%str-long" || irFieldType == "%vec" || irFieldType == "%arr") {
-										srcIdent := nsf.Value.(*parser.Identifier)
-										dataFieldIdx := 2
-										if irFieldType == "%arr" {
-											dataFieldIdx = 1
-										}
-										g.emitContainerClone(sb, g.varAddr(srcIdent.Value), nfGEP, irFieldType, dataFieldIdx, "")
-									} else {
-										nfVal := g.generateExprWithSB(sb, nsf.Value)
-										nfVal = g.stripLLVMType(nfVal)
-										sb.WriteString(fmt.Sprintf("%sstore %s %s, %s* %s\n", g.indent(), toLLVMType(nfType), nfVal, toLLVMType(nfType), nfGEP))
-									}
+									nfVal := g.generateExprWithSB(sb, nsf.Value)
+									nfVal = g.stripLLVMType(nfVal)
+									sb.WriteString(fmt.Sprintf("%sstore %s %s, %s* %s\n", g.indent(), toLLVMType(nfType), nfVal, toLLVMType(nfType), nfGEP))
 								}
 							}
 						}

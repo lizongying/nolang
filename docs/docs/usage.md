@@ -280,12 +280,12 @@ print('running on macOS ARM64')
 
 - **main.no** — 程序入口
 - **lib.no** — 庫入口，導出函數（詳見[導出文檔](lang/export)）
-- **test/ 目錄下所有 .no 文件** — 包含測試斷言
+- **tests/ 目錄下所有 .no 文件** — 包含測試斷言
 
 ## 測試
 
 ```bash
-# 測試test目錄下所有 .no 文件
+# 測試tests目錄下所有 .no 文件
 no test
 
 # 執行單個測試文件
@@ -298,7 +298,7 @@ no test -target x86_64-windows-gnu
 
 測試說明：
 
-- 测试文件统一放在 test/ 目录下
+- 测试文件统一放在 tests/ 目录下
 - 每個測試文件獨立構建
 - 若任一測試失敗，返回非零退出碼
 

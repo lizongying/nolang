@@ -9,7 +9,7 @@ package checker
 func init() {
 	embeddedStdSigReady = true
 	embeddedStdSigVersion = 1
-	embeddedStdSigKey = "518dc45d7cee6fb0464626fb24850b394af68ae15136970dace14b27a16d9795"
+	embeddedStdSigKey = "2f77ec7740c09d8020ffa5817e7c30ffb5cd5afe6b392705cca01ee84d8ce8ed"
 	embeddedStdFuncSigs = map[string][]string{
 		"[]byte.index":                     {"i64"},
 		"[]byte.index-from":                {"i64"},
@@ -1055,7 +1055,7 @@ func init() {
 		"json-pool.set-key":                                {"bool"},
 		"json-pool.skip-ws":                                {"i64"},
 		"json-pool.str-eq":                                 {"i64"},
-		"json-pool.stringify":                              {"i64"},
+		"json-pool.stringify":                              {"str"},
 		"json.alloc-node":                                  {"i64"},
 		"json.arr-get":                                     {"?json"},
 		"json.arr-len":                                     {"i64"},
@@ -1093,7 +1093,7 @@ func init() {
 		"json.json-pool.set-key":                           {"bool"},
 		"json.json-pool.skip-ws":                           {"i64"},
 		"json.json-pool.str-eq":                            {"i64"},
-		"json.json-pool.stringify":                         {"i64"},
+		"json.json-pool.stringify":                         {"str"},
 		"json.json.alloc-node":                             {"i64"},
 		"json.json.arr-get":                                {"?json"},
 		"json.json.arr-len":                                {"i64"},
@@ -2553,13 +2553,13 @@ func init() {
 		},
 		"json-pool": {
 			"count": "i64",
-			"nodes": "[32]json-value",
+			"nodes": "[64]json-value",
 		},
 		"json-value": {
 			"bool-val": "bool",
-			"children": "[8]i64",
+			"children": "[16]i64",
 			"count":    "i64",
-			"keys":     "[8]str",
+			"keys":     "[16]str",
 			"kind":     "i64",
 			"num-val":  "f64",
 			"str-val":  "str",
