@@ -725,8 +725,14 @@ func (t *Transpiler) parseFile(filePath string) (*parser.Program, error) {
 	// 快取命中：同一檔案在單次編譯中可能被 resolveUse 調用多次
 	if t.fileCache != nil {
 		if cached, ok := t.fileCache[filePath]; ok {
+			if os.Getenv("NOLANG_DEBUG_IT") != "" {
+				fmt.Fprintf(os.Stderr, "[debug-it] parseFile CACHE HIT: %s\n", filePath)
+			}
 			return cached, nil
 		}
+	}
+	if os.Getenv("NOLANG_DEBUG_IT") != "" {
+		fmt.Fprintf(os.Stderr, "[debug-it] parseFile NEW PARSE: %s externFuncSigs=%v externMethodSigs=%v\n", filePath, t.externFuncSigs != nil, t.externMethodSigs != nil)
 	}
 	source, err := os.ReadFile(filePath)
 	if err != nil {

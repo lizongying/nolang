@@ -59,6 +59,9 @@ func (p *Parser) lowerProgram(prog *Program) {
 	if prog == nil {
 		return
 	}
+	if os.Getenv("NOLANG_DEBUG_IT") != "" {
+		fmt.Fprintf(os.Stderr, "[debug-it] lowerProgram called, %d top-level statements\n", len(prog.Statements))
+	}
 	l := &lowerer{p: p, visited: map[uintptr]bool{}}
 	l.walk(reflect.ValueOf(prog))
 }
@@ -336,11 +339,19 @@ func (p *Parser) buildMatchDesugar(sm *SurfaceMatch) Expression {
 			if os.Getenv("NOLANG_DEBUG_IT") != "" {
 				fmt.Fprintf(os.Stderr, "[debug-it] buildMatchDesugar: matched=%q matchedVarType=%q\n", ident.Value, matchedVarType)
 			}
-		} else {
-			if os.Getenv("NOLANG_DEBUG_IT") != "" {
-				fmt.Fprintf(os.Stderr, "[debug-it] buildMatchDesugar: matched=%q FuncVarType NOT FOUND\n", ident.Value)
+	} else {
+		if os.Getenv("NOLANG_DEBUG_IT") != "" {
+			fmt.Fprintf(os.Stderr, "[debug-it] buildMatchDesugar: matched=%q FuncVarType NOT FOUND curFunc=%q\n", ident.Value, p.curFuncName)
+			// Dump FuncVarTypes for curFuncName to see what's registered
+			if vars, ok := p.sem.FuncVarTypes[p.curFuncName]; ok {
+				for k, v := range vars {
+					fmt.Fprintf(os.Stderr, "[debug-it]   FuncVarTypes[%q][%q]=%q\n", p.curFuncName, k, v)
+				}
+			} else {
+				fmt.Fprintf(os.Stderr, "[debug-it]   FuncVarTypes[%q] map not found\n", p.curFuncName)
 			}
 		}
+	}
 	}
 
 	// Determine element type from option type for per-arm `it` type inference.

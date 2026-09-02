@@ -1,6 +1,9 @@
 package parser
 
 import (
+	"fmt"
+	"os"
+
 	"github.com/lizongying/nolang/lexer"
 )
 
@@ -950,6 +953,9 @@ func (p *Parser) ParseProgram() *Program {
 	// Lowering pass：將解析期產出的表層 match 節點（SurfaceMatch）展開為核心
 	// AST（IfExpression 鏈）。必須在 Resolver 之後執行，因為 desugar 需要
 	// sem 中的類型推斷結果；也必須在拷貝 Warnings 之前執行。
+	if os.Getenv("NOLANG_DEBUG_IT") != "" {
+		fmt.Fprintf(os.Stderr, "[debug-it] ParseProgram about to lower: %d statements, filename=%s\n", len(program.Statements), p.Filename)
+	}
 	p.lowerProgram(program)
 
 	program.TrailingComments = p.collectDocComments()
