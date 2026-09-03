@@ -319,94 +319,7 @@ func (g *Generator) generateExprWithSB(sb *strings.Builder, expr parser.Expressi
 		}
 		return fmt.Sprintf("%%str-longlit.%d", g.tmpIdx)
 	case *parser.PrefixExpression:
-		right := g.generateExprWithSB(sb, e.Right)
-		if e.Operator == "-" {
-			if strings.HasPrefix(right, "%") {
-				reg := g.tmpReg("neg.tmp")
-				if sb != nil {
-					// 判斷浮點型別：支援 float (f32) 與 double (f64)
-					if ft := g.floatLLVMType(e.Right); ft != "" {
-						sb.WriteString(fmt.Sprintf("%s%s = fneg %s %s\n", g.indent(), reg, ft, right))
-					} else {
-						negType := g.intExprLLVMType(e.Right)
-						rc := g.coerceToInt(sb, right, e.Right, negType)
-						sb.WriteString(fmt.Sprintf("%s%s = sub %s 0, %s\n", g.indent(), reg, toLLVMType(negType), rc))
-					}
-				}
-				return reg
-			}
-			return "-" + right
-		}
-		if e.Operator == "!" {
-			// Logical NOT: Nolang bools are i64 (0=false, non-zero=true)
-			// !x  =>  icmp eq i64 x, 0  =>  zext i1 result to i64
-			rc := right
-			if !strings.HasPrefix(right, "%") {
-				// Literal or constant — handle directly
-				if right == "0" {
-					return "1"
-				}
-				return "0"
-			}
-			// Ensure operand is i64
-			operandType := g.intExprLLVMType(e.Right)
-			if operandType == "" {
-				operandType = "i64"
-			}
-			if operandType == "i1" {
-				zextReg := g.tmpReg("not.zext")
-				if sb != nil {
-					sb.WriteString(fmt.Sprintf("%s%s = zext i1 %s to i64\n", g.indent(), zextReg, right))
-				}
-				rc = zextReg
-			} else if operandType != "i64" {
-				extReg := g.tmpReg("not.ext")
-				if sb != nil {
-					op := widenExtOp(operandType)
-					sb.WriteString(fmt.Sprintf("%s%s = %s %s %s to i64\n", g.indent(), extReg, op, toLLVMType(operandType), right))
-				}
-				rc = extReg
-			}
-			cmpReg := g.tmpReg("not.cmp")
-			if sb != nil {
-				sb.WriteString(fmt.Sprintf("%s%s = icmp eq i64 %s, 0\n", g.indent(), cmpReg, rc))
-			}
-			reg := g.tmpReg("not.result")
-			if sb != nil {
-				sb.WriteString(fmt.Sprintf("%s%s = zext i1 %s to i64\n", g.indent(), reg, cmpReg))
-			}
-			return reg
-		}
-		if e.Operator == "~" {
-			// Bitwise NOT: ~x  =>  xor type, -1, x
-			// -1 is all-ones in two's complement, so XOR flips all bits.
-			notType := g.intExprLLVMType(e.Right)
-			if notType == "" {
-				// Fallback: derive from expression result type
-				notType = g.exprResultLLVMType(e.Right)
-				if notType == "" || notType == "i64" {
-					notType = "i64"
-				}
-			}
-			rc := g.coerceToInt(sb, right, e.Right, notType)
-			if strings.HasPrefix(rc, "%") {
-				reg := g.tmpReg("bnot.tmp")
-				if sb != nil {
-					sb.WriteString(fmt.Sprintf("%s%s = xor %s %s, -1\n", g.indent(), reg, toLLVMType(notType), rc))
-				}
-				return reg
-			}
-			// Literal/constant operand — compute at compile time
-			if v, err := strconv.ParseInt(rc, 10, 64); err == nil {
-				return fmt.Sprintf("%d", ^v)
-			}
-			reg := g.tmpReg("bnot.tmp")
-			if sb != nil {
-				sb.WriteString(fmt.Sprintf("%s%s = xor %s %s, -1\n", g.indent(), reg, toLLVMType(notType), rc))
-			}
-			return reg
-		}
-		return right
+		return g.generatePrefix(sb, e)
 	case *parser.CallExpression:
 		result := g.generateCallExpression(sb, e)
 		if strings.HasPrefix(result, "call ") {
@@ -549,6 +462,16 @@ func (g *Generator) generateExprWithSB(sb *strings.Builder, expr parser.Expressi
 // return the underlying expression unchanged.
 func (g *Generator) generateCastExpression(sb *strings.Builder, e *parser.CastExpression) string {
 	val := g.generateExprWithSB(sb, e.Expr)
+	return g.generateCastCore(sb, e, val)
+}
+
+// generateCastCore emits the `expr as Type` cast operator. `val` is the already
+// emitted SSA value (or literal/constant) of the operand; `e.Expr` is the AST
+// operand node and is used only for the source-type decision (intExprLLVMType).
+// Splitting it out lets the HIR path (generateHIRCast) emit the operand natively
+// through generateHIRExpr while reusing the exact same cast logic, keeping output
+// byte-identical.
+func (g *Generator) generateCastCore(sb *strings.Builder, e *parser.CastExpression, val string) string {
 	if e.Type == nil || sb == nil {
 		return val
 	}
@@ -5887,6 +5810,12 @@ func (g *Generator) generateSliceLiteral(sb *strings.Builder, slice *parser.Slic
 }
 
 func (g *Generator) generateInfix(sb *strings.Builder, expr *parser.InfixExpression) string {
+	left := g.generateExprWithSB(sb, expr.Left)
+	right := g.generateExprWithSB(sb, expr.Right)
+	return g.generateInfixCore(sb, expr, left, right)
+}
+
+func (g *Generator) generateInfixCore(sb *strings.Builder, expr *parser.InfixExpression, left, right string) string {
 	// 檢查是否為條件語境（for/if 的條件表達式），是則直接輸出 i1
 	// 由調用方負責在 generateForStatement / generateIfExpression 中處理
 
@@ -5943,8 +5872,6 @@ func (g *Generator) generateInfix(sb *strings.Builder, expr *parser.InfixExpress
 		}
 	}
 
-	left := g.generateExprWithSB(sb, expr.Left)
-	right := g.generateExprWithSB(sb, expr.Right)
 
 	// coerceToFloat 將值轉換為目標浮點型別（"float" 或 "double"）。
 	// - 浮點字面常量保持原樣（LLVM 會在上下文中自動處理）
@@ -7740,4 +7667,101 @@ func (g *Generator) generateAwaitExpression(sb *strings.Builder, expr *parser.Aw
 	}
 
 	return resultVal
+}
+
+
+
+// generatePrefix is the surface-AST entry for unary prefix expressions: it emits
+// the operand through the shared expression engine and then delegates the
+// operator emission to generatePrefixCore. Splitting it out lets the HIR path
+// (generateHIRPrefix) emit the operand natively through generateHIRExpr while
+// reusing the exact same operator-emission logic, keeping output byte-identical.
+func (g *Generator) generatePrefix(sb *strings.Builder, e *parser.PrefixExpression) string {
+	right := g.generateExprWithSB(sb, e.Right)
+	return g.generatePrefixCore(sb, e, right)
+}
+
+// generatePrefixCore emits the unary prefix operator. right is the already
+// emitted SSA value (or literal/constant) of the operand; e.Right is the AST
+// operand node and is used only for type-driven decisions (float vs int
+// negation, bool/i1 extent for logical NOT, integer width for bitwise NOT).
+func (g *Generator) generatePrefixCore(sb *strings.Builder, e *parser.PrefixExpression, right string) string {
+	if e.Operator == "-" {
+		if strings.HasPrefix(right, "%") {
+			reg := g.tmpReg("neg.tmp")
+			if sb != nil {
+				if ft := g.floatLLVMType(e.Right); ft != "" {
+					sb.WriteString(fmt.Sprintf("%s%s = fneg %s %s\n", g.indent(), reg, ft, right))
+				} else {
+					negType := g.intExprLLVMType(e.Right)
+					rc := g.coerceToInt(sb, right, e.Right, negType)
+					sb.WriteString(fmt.Sprintf("%s%s = sub %s 0, %s\n", g.indent(), reg, toLLVMType(negType), rc))
+				}
+			}
+			return reg
+		}
+		return "-" + right
+	}
+	if e.Operator == "!" {
+		rc := right
+		if !strings.HasPrefix(right, "%") {
+			if right == "0" {
+				return "1"
+			}
+			return "0"
+		}
+		operandType := g.intExprLLVMType(e.Right)
+		if operandType == "" {
+			operandType = "i64"
+		}
+		if operandType == "i1" {
+			zextReg := g.tmpReg("not.zext")
+			if sb != nil {
+				sb.WriteString(fmt.Sprintf("%s%s = zext i1 %s to i64\n", g.indent(), zextReg, right))
+			}
+			rc = zextReg
+		} else if operandType != "i64" {
+			extReg := g.tmpReg("not.ext")
+			if sb != nil {
+				op := widenExtOp(operandType)
+				sb.WriteString(fmt.Sprintf("%s%s = %s %s %s to i64\n", g.indent(), extReg, op, toLLVMType(operandType), right))
+			}
+			rc = extReg
+		}
+		cmpReg := g.tmpReg("not.cmp")
+		if sb != nil {
+			sb.WriteString(fmt.Sprintf("%s%s = icmp eq i64 %s, 0\n", g.indent(), cmpReg, rc))
+		}
+		reg := g.tmpReg("not.result")
+		if sb != nil {
+			sb.WriteString(fmt.Sprintf("%s%s = zext i1 %s to i64\n", g.indent(), reg, cmpReg))
+		}
+		return reg
+	}
+	if e.Operator == "~" {
+		notType := g.intExprLLVMType(e.Right)
+		if notType == "" {
+			notType = g.exprResultLLVMType(e.Right)
+			if notType == "" || notType == "i64" {
+				notType = "i64"
+			}
+		}
+		rc := g.coerceToInt(sb, right, e.Right, notType)
+		if strings.HasPrefix(rc, "%") {
+			reg := g.tmpReg("bnot.tmp")
+			if sb != nil {
+				sb.WriteString(fmt.Sprintf("%s%s = xor %s %s, -1\n", g.indent(), reg, toLLVMType(notType), rc))
+			}
+			return reg
+		}
+		if v, err := strconv.ParseInt(rc, 10, 64); err == nil {
+			return fmt.Sprintf("%d", ^v)
+		}
+		reg := g.tmpReg("bnot.tmp")
+		if sb != nil {
+			sb.WriteString(fmt.Sprintf("%s%s = xor %s %s, -1\n", g.indent(), reg, toLLVMType(notType), rc))
+		}
+		return reg
+	}
+	return right
 }

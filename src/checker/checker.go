@@ -12,6 +12,7 @@ import (
 	nolang "github.com/lizongying/nolang"
 	"github.com/lizongying/nolang/builtin"
 	"github.com/lizongying/nolang/cache"
+	"github.com/lizongying/nolang/hir"
 	"github.com/lizongying/nolang/lexer"
 	"github.com/lizongying/nolang/package"
 	"github.com/lizongying/nolang/parser"
@@ -2956,6 +2957,24 @@ func parseModuleExports(moduleName string) []ModuleExport {
 	return nil
 }
 func parseModuleExportsFromSource(source []byte) []ModuleExport {
+	// Route through the cached HIR arena: one lower, zero re-parse, and the
+	// arena is reused across every export query for the same module. This is the
+	// HIR migration's stage-2 redirect of the module-export collection that
+	// ValidateUndefinedVars performs on every build. Falls back to the legacy
+	// AST walk if the HIR path cannot produce a result.
+	if pkg := stdHirForSource(source); pkg != nil {
+		var exports []ModuleExport
+		for _, e := range hir.ExportedSymbols(pkg) {
+			exports = append(exports, ModuleExport{Name: e.Name, Value: e.Value, Type: e.Type})
+		}
+		return exports
+	}
+	return parseModuleExportsFromSourceAST(source)
+}
+
+// parseModuleExportsFromSourceAST is the legacy AST-walk implementation of
+// parseModuleExportsFromSource, retained as a fallback.
+func parseModuleExportsFromSourceAST(source []byte) []ModuleExport {
 	l := lexer.New(string(source))
 	p := parser.New(l)
 	modProg := p.ParseProgram()
@@ -3901,6 +3920,49 @@ var (
 	stdProgramsCache map[string]*parser.Program
 )
 
+// stdHirCache caches the immutable HIR arena of each std module, keyed by
+// content hash. Signature collection (collectStdSigsFromFS PASS 1) and export
+// collection (parseModuleExportsFromSource) both route through it, so a module
+// is parsed and lowered to HIR exactly once per process instead of being
+// re-parsed on every build. It is the HIR twin of stdProgramsCache (which keeps
+// the AST); see the HIR migration plan (stage 2: signature/export extraction
+// consumes HIR, AST path retained as the proven oracle + equivalence oracle).
+var (
+	stdHirCacheMu sync.Mutex
+	stdHirCache   map[string]*hir.Package
+)
+
+func stdHirStore(ck string, pkg *hir.Package) {
+	stdHirCacheMu.Lock()
+	if stdHirCache == nil {
+		stdHirCache = make(map[string]*hir.Package)
+	}
+	stdHirCache[ck] = pkg
+	stdHirCacheMu.Unlock()
+}
+
+// stdHirForSource parses and lowers source into its HIR arena, caching the
+// result by content hash. A nil return means the source failed to parse.
+func stdHirForSource(source []byte) *hir.Package {
+	ck := cache.ContentKey(string(source))
+	stdHirCacheMu.Lock()
+	if p, ok := stdHirCache[ck]; ok {
+		stdHirCacheMu.Unlock()
+		return p
+	}
+	stdHirCacheMu.Unlock()
+
+	l := lexer.New(string(source))
+	p := parser.New(l)
+	prog := p.ParseProgram()
+	if len(p.Errors()) > 0 {
+		return nil
+	}
+	pkg := parser.ASTToHIR(prog)
+	stdHirStore(ck, pkg)
+	return pkg
+}
+
 type StdModuleInfo struct {
 	ShortName string // last path segment of FullPath, e.g. "rand", "math"
 	FullPath  string // relative to std/, e.g. "hash/rand", "net/net", "math"
@@ -4082,28 +4144,22 @@ func CollectStdSigsFromFS(fsys fs.FS) (map[string][]string, map[string][]string,
 // the FS-parameterized core of CollectStdModuleSignatures: the runtime passes
 // nolang.StdFS, the generator passes an os.DirFS over src/ on disk.
 func collectStdSigsFromFS(fsys fs.FS) (map[string][]string, map[string][]string, map[string]map[string]string, map[string]string, map[string]string, map[string][]string, error) {
-	funcSigs := make(map[string][]string)
-	methodSigs := make(map[string][]string)
-	structFields := make(map[string]map[string]string)
-	aliases := make(map[string]string)
-	structMod := make(map[string]string)      // struct name → module short name
-	enumVariants := make(map[string][]string) // enum type name → variant names
-
 	// PASS 1: 解析所有模組並暫存，同時統計裸 struct 名的跨模組定義數。
 	// 多模組同名結構體（如 server-conn 定義於 server/tls/sse/ws）的裸名
 	// 有歧義：函數簽名快照若記錄裸名（?server-conn），解析期 it 綁定會
 	// 標注錯誤型別，合併後 codegen 解析到錯誤模組的結構體。
 	type parsedMod struct {
-		info StdModuleInfo
-		prog *parser.Program
+		info   StdModuleInfo
+		prog   *parser.Program
+		hirPkg *hir.Package
 	}
 	var mods []parsedMod
-	structCount := make(map[string]int)
 	// 並行解析：各模組的 lex+parse 相互獨立，僅共用有鎖的 token LRU。
 	// 結果按模組原順序寫回，保持 last-wins 合併語義不變。
 	known := listStdModules(fsys)
 	parsed := make([]*parser.Program, len(known))
 	parsedCK := make([]string, len(known))
+	hirPkgs := make([]*hir.Package, len(known))
 	{
 		var wg sync.WaitGroup
 		sem := make(chan struct{}, runtime.GOMAXPROCS(0))
@@ -4126,6 +4182,14 @@ func collectStdSigsFromFS(fsys fs.FS) (map[string][]string, map[string][]string,
 				}
 				parsed[i] = prog
 				parsedCK[i] = cache.ContentKey(string(source))
+				// Build and cache the HIR arena for this module so export
+				// collection (parseModuleExportsFromSource) and signature
+				// collection (PASS 2 below) reuse it instead of re-parsing.
+				// This is the entry point of the HIR pipeline: every std
+				// module is lowered exactly once per process.
+				hp := parser.ASTToHIR(prog)
+				hirPkgs[i] = hp
+				stdHirStore(parsedCK[i], hp)
 			}(i, info)
 		}
 		wg.Wait()
@@ -4137,104 +4201,25 @@ func collectStdSigsFromFS(fsys fs.FS) (map[string][]string, map[string][]string,
 			continue
 		}
 		stdProgramsCache[parsedCK[i]] = prog
-		mods = append(mods, parsedMod{info, prog})
-		for _, stmt := range prog.Statements {
-			if sd, ok := stmt.(*parser.StructDefinition); ok {
-				structCount[sd.Name]++
-			}
-		}
+		mods = append(mods, parsedMod{info, prog, hirPkgs[i]})
 	}
 
-	// qualifyRet: 函數結果型別若引用「本模組定義且跨模組同名歧義」的
-	// struct 裸名，改記為 module.name（與 build 合併後 prefixModuleStatements
-	// 的重命名世界一致）。唯一裸名保持不變（解析期 structFields 查找仍用裸名）。
-	qualifyRet := func(typeStr, modShort string, ownStructs map[string]bool) string {
-		bare := strings.TrimPrefix(typeStr, "?")
-		if bare == typeStr {
-			// 非 option 形式：僅處理裸名
-			if ownStructs[bare] && structCount[bare] > 1 {
-				return modShort + "." + bare
-			}
-			return typeStr
-		}
-		if ownStructs[bare] && structCount[bare] > 1 {
-			return "?" + modShort + "." + bare
-		}
-		return typeStr
-	}
-
-	// PASS 2: 收集簽名/欄位/別名
+	// PASS 2: 收集簽名/欄位/別名 —— 直接走 HIR。每個模組的 HIR arena 已在
+	// PASS 1 生成並緩存，hir.CollectModuleSignatures 只遍歷已構建的 HIR 切片，
+	// 不再 lex/parse 任何源碼。其產出與上方 AST 遍歷 byte 級一致
+	// （見 hir/golden_test.go 的 TestSignatureTablesMatchChecker）。
+	modulePkgs := make([]hir.ModulePackage, 0, len(mods))
 	for _, m := range mods {
-		ownStructs := make(map[string]bool)
-		for _, stmt := range m.prog.Statements {
-			if sd, ok := stmt.(*parser.StructDefinition); ok {
-				ownStructs[sd.Name] = true
-			}
+		if m.hirPkg == nil {
+			// Fall back to lowering on demand; should not happen because PASS 1
+			// always builds the arena, but keeps the function total-safe.
+			m.hirPkg = parser.ASTToHIR(m.prog)
 		}
-		for _, stmt := range m.prog.Statements {
-			if fd, ok := stmt.(*parser.FunctionDefinition); ok {
-				// 收集所有函數/方法的簽名，包括無返回值的方法
-				// （如 sort 的 [n]ord.sort-asc / []ord.sort-asc）。
-				// 無 results 時存入空 slice，使 type inference 能正確識別。
-				rets := make([]string, 0)
-				for _, r := range fd.Results {
-					rets = append(rets, qualifyRet(r.Type.String(), m.info.ShortName, ownStructs))
-				}
-		if fd.IsMethodDef {
-			if len(fd.Name) > 0 && fd.Name[0] == '[' {
-				funcSigs[fd.Name] = rets
-			} else {
-				methodSigs[m.info.ShortName+"."+fd.Name] = rets
-				// Also register with fd.Name as key (e.g., "str.starts-with")
-				// so type inference can find it via receiverType + "." + dot.Property
-				// where receiverType is just the type name (e.g., "str"), not "module.struct".
-				if strings.Contains(fd.Name, ".") {
-					methodSigs[fd.Name] = rets
-				}
-			}
-		} else {
-					funcSigs[m.info.ShortName+"."+fd.Name] = rets
-				}
-			}
-			if sd, ok := stmt.(*parser.StructDefinition); ok {
-				fields := make(map[string]string)
-				for _, f := range sd.Fields {
-					if typeStr := structFieldTypeString(f); typeStr != "" {
-						fields[f.Name] = typeStr
-					}
-				}
-				structFields[sd.Name] = fields
-				// 歧義結構體另以 module.name 為 key 註冊一份，使解析期
-				// it 綁定標注 "tls.server-conn" 後仍能解析欄位/方法。
-				if structCount[sd.Name] > 1 {
-					structFields[m.info.ShortName+"."+sd.Name] = fields
-				}
-				// Map struct name → module short name for cross-module prefix validation
-				if _, exists := structMod[sd.Name]; !exists {
-					structMod[sd.Name] = m.info.ShortName
-				}
-			}
-			// 收集單具體型別別名（name = known-type），使 newtype 語義
-			// 在跨模組場景下也能生效（如 fs.no 定義 fd=i64，io.no 使用 fd）
-			if ta, ok := stmt.(*parser.TypeAlias); ok && ta.Type != nil && ta.Union == nil {
-				if _, ok := ta.Type.(*parser.FunctionType); !ok {
-					if _, exists := aliases[ta.Name]; !exists {
-						aliases[ta.Name] = ta.Type.String()
-					}
-				}
-			}
-			// 收集枚舉定義的變體名列表，使跨模組 match desugar 能識別枚舉類型
-			if ed, ok := stmt.(*parser.EnumDefinition); ok {
-				if _, exists := enumVariants[ed.Name]; !exists {
-					for _, ev := range ed.Values {
-						enumVariants[ed.Name] = append(enumVariants[ed.Name], ev.Name)
-					}
-				}
-			}
-		}
+		modulePkgs = append(modulePkgs, hir.ModulePackage{Short: m.info.ShortName, Pkg: m.hirPkg})
 	}
+	st := hir.CollectModuleSignatures(modulePkgs)
 
-	return funcSigs, methodSigs, structFields, aliases, structMod, enumVariants, nil
+	return st.Funcs, st.Methods, st.Structs, st.Aliases, st.StructMod, st.Enums, nil
 }
 func CollectStdConcreteAliases() map[string]string {
 	CollectStdModuleSignatures() // 觸發 sync.Once 填充快取

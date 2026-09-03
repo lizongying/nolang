@@ -874,6 +874,61 @@ func (g *Generator) generateIndirectCall(sb *strings.Builder, expr *parser.CallE
 	return ""
 }
 
+// builtinDispatchNames is the set of function names that the wrapper in
+// generateCallExpression routes to a dedicated builtin/domain/FFI handler
+// (callFmt, callStrconv, callBuiltin, genForwardFunc, or a hardcoded fnName
+// case) INSTEAD of falling through to generateCallEmit. It is consolidated
+// here so that generateHIRCall can decide, for a flat-identifier callee,
+// whether the wrapper would reach generateCallEmit (safe to emit natively)
+// or take a special path (must fall back to the full AST-driven call).
+//
+// This mirrors the hardcoded dispatch that already exists in call.go /
+// call_stdlib.go / transpiler.go; new builtin functions must be added here as
+// well as to their handler.
+var builtinDispatchNames = map[string]bool{
+	"print": true, "println": true, "println-empty": true, "printf": true,
+	"eprint": true, "eprintln": true, "eprintf": true,
+	"sprintf": true, "format": true, "fmt.print": true, "fmt.println": true,
+	"fmt.eprint": true, "fmt.format": true, "fmt.sprintf": true,
+	"val": true, "ok": true, "err": true,
+	"len": true, "cap": true, "str": true, "ptr": true,
+	"bool": true, "i8": true, "i16": true, "i32": true, "i64": true, "f32": true, "f64": true,
+	"char-to-str": true, "bool-to-str": true, "i64-to-str": true, "f64-to-str": true,
+	"byte-to-str": true, "str-to-bool": true,
+	"bool.to-str": true, "str.to-bool": true, "i64.to-str": true, "f64.to-str": true,
+	"with-len": true, "with-cap": true, "with-cap-len": true,
+	"memcpy": true, "memset": true, "vec-push": true, "vec-clear": true,
+	"vec-truncate": true, "str-clear": true, "str-truncate": true,
+	"sort-asc": true, "sort-desc": true,
+	"args-get": true, "args-count": true,
+	"arr-zero": true,
+	"async-cancel": true, "async-cancelled": true, "async-yield": true,
+	"eq-raw": true, "ppptr": true, "pptr": true,
+	"read-file": true, "read-dir": true, "readlink": true, "realpath": true,
+	"write-file": true, "touch-file": true, "sync": true, "syslog": true,
+	"open-dir": true, "close-dir": true, "get-line": true, "file-size": true,
+	"is-dir": true, "is-file": true, "exists": true,
+	"stat-exists": true, "stat-file": true, "stat-size": true, "stat-mode": true,
+	"stat-mtime": true, "stat-uid": true, "stat-gid": true, "fstat-size": true,
+	"lstat": true, "uname": true, "get-arch": true, "num-cpu": true,
+	"get-errno": true, "get-priority": true, "getlogin": true, "getdomainname": true,
+	"getgroups": true, "ttyname": true, "sysctl": true, "utime": true,
+	"mkdtemp": true, "mkstemp": true,
+	"load-le-u16": true, "load-le-u32": true, "load-le-u64": true, "store-le-u32": true,
+	"net-dial": true, "net-listen": true, "net-accept": true, "net-accept-nb": true,
+	"net-recv": true, "net-recv-nb": true, "net-send": true, "net-set-recv-timeout": true,
+	"net-icmp-open": true, "net-udp-open": true, "net-udp-recvfrom": true, "net-udp-sendto": true,
+	"unix-dial": true, "unix-listen": true,
+	"ffi-cstr-at": true, "ffi-cstr-at-int": true, "ffi-cstr-at-float": true,
+	"process-exec": true, "process-exec-shell": true, "process-fork": true,
+	"process-pipe": true, "process-run-capture": true, "process-waitpid": true,
+	"win-wsa-startup": true, "win-create-process": true, "win-terminate-process": true,
+	"win-wait-process": true, "win-get-exit-code": true, "win-get-std-handle": true,
+	"win-create-pipe": true, "win-read-pipe": true, "win-write-pipe": true,
+	"win-find-first-file": true, "win-find-next-file": true, "win-find-close": true,
+	"math-abs": true, "math-min": true, "math-max": true, "math-clamp": true,
+}
+
 func (g *Generator) generateCallExpression(sb *strings.Builder, expr *parser.CallExpression) string {
 	
 	// -async 函数调用：返回 %future（惰性，不执行）
@@ -1392,7 +1447,7 @@ func (g *Generator) generateCallExpression(sb *strings.Builder, expr *parser.Cal
 				if g.funcRetTypes != nil {
 					if _, hasUserFn := g.funcRetTypes[shortName]; hasUserFn {
 						isBuiltinShortName := builtin.FindBuiltinMethod(shortName) != nil
-						if isBuiltinShortName && (firstSegment == "fs" || firstSegment == "os" || firstSegment == "time" || firstSegment == "str" || firstSegment == "math" || firstSegment == "number" || firstSegment == "io" || firstSegment == "bufio" || firstSegment == "encoding" || firstSegment == "crypto" || firstSegment == "path" || firstSegment == "os" || firstSegment == "net" || firstSegment == "process" || firstSegment == "log" || firstSegment == "sort" || firstSegment == "regexp" || firstSegment == "uuid" || firstSegment == "bigint" || firstSegment == "err" || firstSegment == "types" || firstSegment == "byte" || firstSegment == "char") {
+						if isBuiltinShortName && (firstSegment == "fs" || firstSegment == "os" || firstSegment == "time" || firstSegment == "str" || firstSegment == "math" || firstSegment == "number" || firstSegment == "io" || firstSegment == "bufio" || firstSegment == "encoding" || firstSegment == "crypto" || firstSegment == "path" || firstSegment == "net" || firstSegment == "process" || firstSegment == "log" || firstSegment == "sort" || firstSegment == "regexp" || firstSegment == "uuid" || firstSegment == "bigint" || firstSegment == "err" || firstSegment == "types" || firstSegment == "byte" || firstSegment == "char") {
 							// module-qualified builtin calls (e.g. fs.is-file,
 							// os.now-ms, time.now-ms) → keep fnName as-is so it
 							// dispatches to the builtin path (callBuiltin),
@@ -2415,6 +2470,10 @@ func (g *Generator) generateCallExpression(sb *strings.Builder, expr *parser.Cal
 		}
 	}
 
+	return g.generateCallEmit(sb, expr, fnName, llvmFnName, methodReceiver)
+}
+
+func (g *Generator) generateCallEmit(sb *strings.Builder, expr *parser.CallExpression, fnName, llvmFnName string, methodReceiver parser.Expression) string {
 	// Intercept .zero() calls that were rewritten by the transpiler
 	// (e.g. [4]i64.zero(data) → _LB_4_RB_i64.zero). If the function doesn't
 	// exist in funcRetTypes, generate llvm.memset directly.

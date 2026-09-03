@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/lizongying/nolang/builtin"
+	"github.com/lizongying/nolang/hir"
 	pkg "github.com/lizongying/nolang/package"
 	"github.com/lizongying/nolang/parser"
 )
@@ -306,6 +307,10 @@ type Generator struct {
 
 	// === 模組級狀態（跨函數保持，不隨 resetFuncState 重置）===
 	sem                    *parser.SemanticContext // 語義 side-table（來自 program.Sem，可為 nil）
+	hirPkg                 *hir.Package            // 非 nil 僅在 HIR codegen 模式；驅動「語義查找 HIR-id 鍵控」
+	hirOf                  map[parser.Node]int32   // AST 節點 -> HIR id（hirToAST 的 astOf 反查表）；使 embed/annotation 查找能按 HIR id 解析而不依賴重建 AST 的指標身份
+	hirStmtOf              map[int32]parser.Statement // HIR id -> 重建 AST 頂層語句（prepare 的 HIR 路徑）；emitTopLevelHIR 的「重構委派」回退用
+	hirAstOf               map[int32]parser.Node      // HIR id -> 重建 AST 節點（hirToAST 的 astOf，含語句與表達式）；generateHIRExpr 的「重構委派」回退用
 	indentLevel            int
 	fmtStrIdx              int
 	stringIdx              int
@@ -610,25 +615,21 @@ func (g *Generator) varAddr(name string) string {
 			name = alias
 		}
 	}
-	// Remove debug code and fix the actual issue:
-	// When a variable is in BOTH funcLocalNames AND globalVars (which happens
-	// when a global variable is also a multi-assign target, causing
-	// funcLocalNames to be set during statement generation), prefer the global
-	// reference since there is no corresponding local alloca.
-	// This is safe because:
-	// - Function parameters have local allocas but are NOT in globalVars
-	// - True local variables are NOT in globalVars
-	// - The only case where both are true is a global var erroneously marked
-	//   as local by downstream code (e.g., generateLet's vec/arr paths)
-	if g.globalVars != nil && g.globalVars[name] {
-		// Verify there's no local alloca for this name. If there is one
-		// (via emittedAlloca or it's a function parameter), use local ref.
-		isLocalAllocated := (g.emittedAlloca != nil && g.emittedAlloca[name]) ||
-			(g.paramNames != nil && g.paramNames[name])
-		if !isLocalAllocated {
-			return llvmGlobalRef(name)
-		}
-	}
+	// 詞法作用域優先：若 name 在當前函數被宣告為局部變數（funcLocalNames），
+	// 即使它同時是模組級全域變數（globalVars），也應解析為局部引用（%name）。
+	//
+	// 這與 freeOldHeapValue 的語義一致：該函數以
+	//   g.globalVars[name] && !g.funcLocalNames[name]
+	// 作為「這是全域變數」的判斷（見 stmt.go:1994 / 2046），亦即當
+	// funcLocalNames[name] 為真時，無論是否同時在 globalVars 中，都被視為局部。
+	//
+	// 若不優先局部，則 std 函數的局部變數（如 @out 的暫存 b）會與使用者全域 b
+	// 碰撞：@out 內部 alloca 出 %b，但釋放路徑經由 varAddr 取回 @b 並對其 data
+	// 發出 free，導致釋放錯誤的儲存（double-free / 堆損壞）。這正是
+	// arr-slice.no 崩潰（exit 133, SIGTRAP in mfm_free.cold）的根本原因。
+	//
+	// slice-literal 路徑（stmt.go:7349）明確對全域變數不設定 funcLocalNames，
+	// 故不存在「應解析為全域卻被標記為局部」的合法場景。
 	if g.funcLocalNames != nil && g.funcLocalNames[name] {
 		return llvmVarRef(name)
 	}
@@ -831,6 +832,380 @@ func stmtAnnotations(sem *parser.SemanticContext, stmt parser.Statement) []*pars
 	return nil
 }
 
+// embedDataFor returns the compile-time single-file embed bytes for n. In HIR
+// codegen mode the bytes are keyed by the node's HIR id (pkg.Embeds), which
+// survives the move to native HIR emitters that no longer reconstruct an AST
+// node; in AST mode it falls back to the semantic side-table keyed by AST
+// pointer identity. The two sources carry identical data (lowering re-keys the
+// AST side-table onto HIR ids), so the emitted IR is unchanged.
+func (g *Generator) embedDataFor(n parser.Node) []byte {
+	if g.hirPkg != nil {
+		if id, ok := g.hirOf[n]; ok {
+			return g.hirPkg.EmbedDataOf(id)
+		}
+		return nil
+	}
+	return g.sem.EmbedDataOf(n)
+}
+
+// embedFilesFor returns the directory embed map for n (see embedDataFor).
+func (g *Generator) embedFilesFor(n parser.Node) map[string][]byte {
+	if g.hirPkg != nil {
+		if id, ok := g.hirOf[n]; ok {
+			return g.hirPkg.EmbedFilesOf(id)
+		}
+		return nil
+	}
+	return g.sem.EmbedFilesOf(n)
+}
+
+// annotationsFor returns the annotation entries for n (see embedDataFor). It
+// mirrors stmtAnnotations' type restriction so only the four statement kinds the
+// platform filter inspects are considered.
+func (g *Generator) annotationsFor(n parser.Node) []*parser.AnnotationEntry {
+	switch n.(type) {
+	case *parser.LetStatement, *parser.FunctionDefinition, *parser.StructDefinition, *parser.ExpressionStatement:
+		if g.hirPkg != nil {
+			if id, ok := g.hirOf[n]; ok {
+				return hirAnnotationEntries(g.hirPkg, id)
+			}
+			return nil
+		}
+		return g.sem.AnnotationsOf(n)
+	}
+	return nil
+}
+
+// filterByPlatformG is the Generator-aware variant of FilterByPlatform used in
+// HIR codegen mode: it resolves annotations through the HIR-id-keyed lookup
+// instead of the reconstructed-AST semantic side-table.
+func (g *Generator) filterByPlatformG(stmts []parser.Statement, goos, goarch string) []parser.Statement {
+	out := make([]parser.Statement, 0, len(stmts))
+	for _, stmt := range stmts {
+		if matchesPlatform(g.annotationsFor(stmt), goos, goarch) {
+			out = append(out, stmt)
+		}
+	}
+	return out
+}
+
+// generateHIRExpr emits an expression from its HIR node id, returning the LLVM
+// value reference (a %register, a literal, or a pointer) — mirroring the string
+// returned by generateExpression / generateExprWithSB.
+//
+// This is the strangler-fig seam for the expression engine: leaf literal kinds
+// are emitted natively straight from the HIR node (no reconstruction), while all
+// other kinds fall back to the proven AST emitter on the reconstructed node
+// (g.hirAstOf). Each subsequent cut ports one more compound kind to native HIR
+// emission (infix, call, index, …), shrinking then eliminating the fallback.
+// The equivalence oracle (TestGenerateHIRMatchesGenerate) and the focused
+// TestGenerateHIRExprLiterals guard that native emission stays byte-identical.
+func (g *Generator) generateHIRExpr(sb *strings.Builder, id int32) string {
+	n := g.hirPkg.Node(id)
+	if n == nil {
+		return ""
+	}
+	switch n.Kind {
+	case hir.KIntLit:
+		return fmt.Sprintf("%d", n.Val)
+	case hir.KByteLit:
+		return fmt.Sprintf("%d", n.Val)
+	case hir.KFloatLit:
+		s := strconv.FormatFloat(n.Float(), 'g', -1, 64)
+		if !strings.ContainsAny(s, ".eE") {
+			s += ".0"
+		}
+		if strings.ContainsAny(s, "eE") && !strings.Contains(s, ".") {
+			s = strings.Replace(s, "e", ".0e", 1)
+			s = strings.Replace(s, "E", ".0E", 1)
+		}
+		return s
+	case hir.KCharLit:
+		runes := []rune(g.hirPkg.Str(n.S))
+		if len(runes) == 1 {
+			return fmt.Sprintf("%d", runes[0])
+		}
+		return "0"
+	case hir.KNilLit:
+		return "0"
+	case hir.KBoolLit:
+		if n.Val != 0 {
+			return "1"
+		}
+		return "0"
+	case hir.KIdent:
+		return g.generateHIRIdent(sb, id)
+	case hir.KInfix:
+		return g.generateHIRInfix(sb, id)
+	case hir.KPrefix:
+		return g.generateHIRPrefix(sb, id)
+	case hir.KGrouped:
+		// A grouped expression `(x)` contributes no IR of its own; it simply
+		// forwards the value of its single child. Emitting the child through the
+		// HIR seam is byte-identical to the surface-AST path (which returns
+		// generateExprWithSB(e.Expression)).
+		if n.First != 0 {
+			return g.generateHIRExpr(sb, n.First)
+		}
+		return ""
+	case hir.KCast:
+		return g.generateHIRCast(sb, id)
+	case hir.KCall:
+		return g.generateHIRCall(sb, id)
+	}
+	// Fallback: emit the reconstructed AST expression. This preserves byte-identical
+	// output for every kind not yet ported to native HIR emission.
+	if g.hirAstOf != nil {
+		if e, ok := g.hirAstOf[id].(parser.Expression); ok {
+			return g.generateExprWithSB(sb, e)
+		}
+	}
+	return ""
+}
+
+// generateHIRIdent emits an HIR identifier (KIdent) natively. The common case —
+// a load of a local or global variable's current value — is emitted directly
+// from the HIR node's interned name and is byte-identical to the surface-AST
+// Identifier case in generateExprWithSB. The compound cases that require
+// non-trivial IR (enum-variant tag constants, %option data extraction, slice-view
+// materialization) fall back to the reconstructed AST identifier so output stays
+// identical until those kinds are ported natively.
+func (g *Generator) generateHIRIdent(sb *strings.Builder, id int32) string {
+	n := g.hirPkg.Node(id)
+	if n == nil {
+		return ""
+	}
+	name := g.hirPkg.Str(n.S)
+	if name == "" {
+		return ""
+	}
+	// Special cases that need the AST-path IR: fall back to the reconstructed node.
+	isLocalVar := g.funcLocalNames != nil && g.funcLocalNames[name]
+	if !isLocalVar && g.enumVariantIndex != nil {
+		if g.reassignedVars == nil || !g.reassignedVars[name] {
+			if _, ok := g.enumVariantIndex[name]; ok {
+				return g.generateHIRIdentAST(sb, id)
+			}
+		}
+	}
+	if g.varTypes != nil {
+		if t, ok := g.varTypes[name]; ok && t == "%option" {
+			return g.generateHIRIdentAST(sb, id)
+		}
+	}
+	if g.isSliceViewVar(name) {
+		return g.generateHIRIdentAST(sb, id)
+	}
+	// Common case: load the variable's current value from its alloca.
+	g.tmpIdx++
+	reg := llvmSSAReg(name, fmt.Sprintf(".val.%d", g.tmpIdx))
+	if sb != nil {
+		llvmType := "i64"
+		if g.varTypes != nil {
+			if t, ok := g.varTypes[name]; ok {
+				llvmType = t
+			}
+		}
+		irType := toLLVMType(llvmType)
+		ptrType := irType + "*"
+		varAddr := g.varAddr(name)
+		if g.itAllocTypes != nil {
+			if allocType, ok := g.itAllocTypes[name]; ok && allocType != llvmType {
+				castReg := g.tmpReg("it.rcast")
+				sb.WriteString(fmt.Sprintf("%s%s = bitcast %s* %s to %s*\n", g.indent(), castReg, allocType, varAddr, irType))
+				varAddr = castReg
+			}
+		}
+		sb.WriteString(fmt.Sprintf("%s%s = load %s, %s %s\n", g.indent(), reg, irType, ptrType, varAddr))
+		if g.ssaTypes != nil {
+			g.ssaTypes[reg] = llvmType
+		}
+	}
+	return reg
+}
+
+// generateHIRIdentAST falls back to the reconstructed AST identifier node for the
+// compound cases (enum variant / %option / slice view) that generate non-trivial
+// IR. The node is stored in g.hirAstOf during hirToAST, keyed by HIR id.
+func (g *Generator) generateHIRIdentAST(sb *strings.Builder, id int32) string {
+	if g.hirAstOf != nil {
+		if e, ok := g.hirAstOf[id].(*parser.Identifier); ok {
+			return g.generateExprWithSB(sb, e)
+		}
+	}
+	return ""
+}
+
+// generateHIRInfix emits an HIR infix expression (KInfix) natively: it emits the
+// two operands through the HIR expression seam (so identifiers, literals and
+// nested expressions inside go native) and then reuses the proven
+// operator-emission logic in generateInfixCore. The reconstructed AST
+// sub-expressions (from g.hirAstOf) are supplied as expr.Left/expr.Right so the
+// type-driven pre-checks (string concatenation, byte↔char comparison,
+// option-tag comparison) and the arith/coercion helpers behave identically to the
+// surface-AST path. This avoids re-emitting operands for the arithmetic/comparison
+// subset while keeping the complex cases byte-identical.
+func (g *Generator) generateHIRInfix(sb *strings.Builder, id int32) string {
+	n := g.hirPkg.Node(id)
+	if n == nil {
+		return ""
+	}
+	kids := g.hirPkg.Children(id)
+	if len(kids) < 2 {
+		return ""
+	}
+	leftID, rightID := kids[0], kids[1]
+	var leftAST, rightAST parser.Expression
+	if g.hirAstOf != nil {
+		leftAST, _ = g.hirAstOf[leftID].(parser.Expression)
+		rightAST, _ = g.hirAstOf[rightID].(parser.Expression)
+	}
+	left := g.generateHIRExpr(sb, leftID)
+	right := g.generateHIRExpr(sb, rightID)
+	return g.generateInfixCore(sb, &parser.InfixExpression{
+		Operator: g.hirPkg.Str(n.S),
+		Left:     leftAST,
+		Right:    rightAST,
+	}, left, right)
+}
+
+// generateHIRPrefix emits an HIR prefix expression (KPrefix) natively: it emits
+// the operand through the HIR expression seam (so identifiers, literals and
+// nested expressions inside go native) and then reuses the proven
+// operator-emission logic in generatePrefixCore. The reconstructed AST operand
+// node (from g.hirAstOf) is supplied as e.Right so the type-driven pre-checks
+// (float vs int negation, bool/i1 extent for logical NOT, integer width for
+// bitwise NOT) behave identically to the surface-AST path. This keeps the
+// complex cases byte-identical while the operand itself goes native.
+func (g *Generator) generateHIRPrefix(sb *strings.Builder, id int32) string {
+	n := g.hirPkg.Node(id)
+	if n == nil || n.First == 0 {
+		return ""
+	}
+	rightID := n.First
+	var rightAST parser.Expression
+	if g.hirAstOf != nil {
+		rightAST, _ = g.hirAstOf[rightID].(parser.Expression)
+	}
+	right := g.generateHIRExpr(sb, rightID)
+	return g.generatePrefixCore(sb, &parser.PrefixExpression{
+		Operator: g.hirPkg.Str(n.S),
+		Right:    rightAST,
+	}, right)
+}
+
+// generateHIRCast emits an HIR cast expression (KCast) natively: it emits the
+// operand through the HIR expression seam (so identifiers, literals, infix and
+// nested expressions inside go native) and then reuses the proven operator
+// emission in generateCastCore. The reconstructed AST cast node (from g.hirAstOf)
+// supplies e.Type and e.Expr: e.Type drives the target-type decision and e.Expr is
+// used only for the source-type check (intExprLLVMType), so output stays
+// byte-identical to the surface-AST path.
+func (g *Generator) generateHIRCast(sb *strings.Builder, id int32) string {
+	n := g.hirPkg.Node(id)
+	if n == nil || n.First == 0 {
+		return ""
+	}
+	operandID := n.First
+	var castAST *parser.CastExpression
+	if g.hirAstOf != nil {
+		castAST, _ = g.hirAstOf[id].(*parser.CastExpression)
+	}
+	val := g.generateHIRExpr(sb, operandID)
+	if castAST == nil {
+		return val
+	}
+	return g.generateCastCore(sb, castAST, val)
+}
+
+// generateHIRCall emits an HIR call expression (KCall) natively for the common
+// subset: a flat-identifier callee that resolves to a Nolang user function
+// (registered in funcResultLLVMType, which marks the void + output-parameter
+// calling convention). For this subset the LLVM function name is derived directly
+// from the interned HIR identifier, so we can skip the ~850-line callee-resolution
+// monolith (union-alias / method-receiver / builtin / FFI dispatch) inside
+// generateCallExpression and jump straight to generateCallEmit, which performs the
+// by-reference argument typing (genTypedArg) and emits the call instruction.
+//
+// Why a subset and not the whole KCall: Nolang uses pass-by-reference, so call
+// arguments are passed as pointers whose types are computed by genTypedArg from
+// the original parser.Expression nodes. Porting genTypedArg to HIR is the large,
+// separate refactor that would let arguments be emitted without the reconstructed
+// AST; until then the per-argument AST nodes are still sourced from g.hirAstOf,
+// exactly like the infix/prefix/cast seams do for their operand type-checks.
+//
+// Every non-subset shape (async, indirect via fn-typed var, coroutine, generic,
+// builtin method, FFI) falls back to the full AST-driven generateCallExpression so
+// output stays byte-identical.
+func (g *Generator) generateHIRCall(sb *strings.Builder, id int32) string {
+	n := g.hirPkg.Node(id)
+	if n == nil {
+		return ""
+	}
+	kids := g.hirPkg.Children(id)
+	if len(kids) == 0 {
+		return ""
+	}
+	calleeID := kids[0]
+	calleeNode := g.hirPkg.Node(calleeID)
+	if calleeNode == nil || calleeNode.Kind != hir.KIdent {
+		return g.generateHIRCallFallback(sb, id)
+	}
+	fnName := g.hirPkg.Str(calleeNode.S)
+	if fnName == "" {
+		return g.generateHIRCallFallback(sb, id)
+	}
+	// Reconstructed AST call is still needed for the argument list (by-reference
+	// typing relies on per-argument parser.Expression nodes).
+	astCall, ok := g.hirAstOf[id].(*parser.CallExpression)
+	if !ok {
+		return ""
+	}
+	// Conservatively restrict to the safe subset; everything else falls back.
+	if len(astCall.GenericArgs) > 0 || g.isAsyncCall(astCall) {
+		return g.generateHIRCallFallback(sb, id)
+	}
+	if g.varFnTypes != nil {
+		if _, isIndirect := g.varFnTypes[fnName]; isIndirect {
+			return g.generateHIRCallFallback(sb, id)
+		}
+	}
+	if g.asyncFuncCoroNum != nil {
+		if _, isCoro := g.asyncFuncCoroNum[fnName]; isCoro && !g.coroInAsyncFunc {
+			return g.generateHIRCallFallback(sb, id)
+		}
+	}
+	if builtin.FindBuiltinMethod(fnName) != nil {
+		return g.generateHIRCallFallback(sb, id)
+	}
+	// Builtin/FFI/domain functions are hardcoded by name and routed to dedicated
+	// handlers (callFmt/callStrconv/callBuiltin/genForwardFunc) in
+	// generateCallExpression instead of generateCallEmit. Exclude them so the
+	// wrapper's special handling is preserved. (Registry mirrors the hardcoded
+	// dispatch in call.go.)
+	if builtinDispatchNames[fnName] {
+		return g.generateHIRCallFallback(sb, id)
+	}
+	// Only go native for registered regular functions (user-defined or clib).
+	if g.funcRetTypes == nil || g.funcRetTypes[fnName] == "" {
+		return g.generateHIRCallFallback(sb, id)
+	}
+	llvmFnName := fnName
+	if clibFuncNames[fnName] {
+		llvmFnName = "n." + fnName
+	}
+	return g.generateCallEmit(sb, astCall, fnName, llvmFnName, nil)
+}
+
+func (g *Generator) generateHIRCallFallback(sb *strings.Builder, id int32) string {
+	if g.hirAstOf != nil {
+		if e, ok := g.hirAstOf[id].(parser.Expression); ok {
+			return g.generateExprWithSB(sb, e)
+		}
+	}
+	return ""
+}
+
 // matchesPlatform returns true if any platform annotation key matches the
 // target (goos, goarch). Multiple keys are OR'd — any match includes the code.
 //
@@ -964,8 +1339,20 @@ func (g *Generator) goarch() string {
 	return runtime.GOARCH
 }
 
-func (g *Generator) Generate(program *parser.Program) string {
-	defer DFStatDump()
+// prepare runs all pre-emission setup (map initialization, type/var/function
+// scans, declaration/global emission) and writes the module header, type
+// declarations and function definitions into sb. It is the shared front-end for
+// both the AST path (Generate) and the HIR path (GenerateHIR); extracting it
+// lets the HIR seam reuse the exact same setup the surface AST path relies on,
+// so a future native-HIR walker only has to replace the source of the maps,
+// not re-derive them. The actual top-level logic emission (main / entry) is
+// performed by the caller via generateMainFunction after prepare returns.
+// prepare builds all codegen state maps (g.moduleVarTypes, g.globalVars, ...)
+// and emits module-level declarations (functions, structs, aliases, extern,
+// globals) from a list of top-level statements. It is decoupled from
+// *parser.Program so both the surface-AST path (Generate) and the HIR path
+// (GenerateHIR, which supplies HIR-reconstructed statements) can drive it.
+func (g *Generator) prepare(stmts []parser.Statement, sem *parser.SemanticContext, sb *strings.Builder) {
 	// Filter out statements that don't match the target platform
 	// (#{mac-arm64}, #{linux-amd64}, etc.). If SetTargetPlatform was not
 	// called (empty fields), fall back to the host runtime platform.
@@ -973,8 +1360,18 @@ func (g *Generator) Generate(program *parser.Program) string {
 	if goos == "" || goarch == "" {
 		goos, goarch = runtime.GOOS, runtime.GOARCH
 	}
-	g.sem = program.Sem
-	program.Statements = FilterByPlatform(program.Sem, program.Statements, goos, goarch)
+	g.sem = sem
+	if g.hirPkg != nil {
+		// HIR codegen mode: resolve annotations by HIR id (pkg.Anns) rather than
+		// the reconstructed-AST semantic side-table.
+		stmts = g.filterByPlatformG(stmts, goos, goarch)
+	} else {
+		stmts = FilterByPlatform(sem, stmts, goos, goarch)
+	}
+	// Local program view over the (platform-filtered) statement slice, for the
+	// few helpers that still take *parser.Program. Keeps prepare decoupled
+	// from the caller's original program object.
+	prog := &parser.Program{Statements: stmts, Sem: sem}
 
 	g.fmtGlobals = nil
 	g.fmtStrIdx = 0
@@ -1030,7 +1427,7 @@ func (g *Generator) Generate(program *parser.Program) string {
 	// 這些變數不應被常量摺疊（enumVariantIndex 機制），必須從全局變數載入實際值
 	letCount := make(map[string]int)
 	g.multiAssignVars = make(map[string]bool)
-	for _, stmt := range program.Statements {
+	for _, stmt := range stmts {
 		if ls, ok := stmt.(*parser.LetStatement); ok {
 			letCount[ls.Name.Value]++
 		}
@@ -1066,7 +1463,7 @@ func (g *Generator) Generate(program *parser.Program) string {
 	// 掃描所有 ForStatement (含巢狀)，標記 range loop 變數
 	// 這些變數不應被視為常量全局變數，必須是局部變數以便 range loop 寫入
 	g.funcRefVars = make(map[string]bool)
-	for _, stmt := range program.Statements {
+	for _, stmt := range stmts {
 		if ls, ok := stmt.(*parser.LetStatement); ok {
 			if ident, ok := ls.Value.(*parser.Identifier); ok {
 				if _, isFn := g.funcRetTypes[ident.Value]; isFn {
@@ -1119,10 +1516,10 @@ func (g *Generator) Generate(program *parser.Program) string {
 			}
 		}
 	}
-	collectRangeVars(program.Statements)
+	collectRangeVars(stmts)
 
 	// 收集聯合型別別名，用於解析 receiver method call
-	for _, stmt := range program.Statements {
+	for _, stmt := range stmts {
 		if ta, ok := stmt.(*parser.TypeAlias); ok && ta.Union != nil {
 			members := make([]string, 0, len(ta.Union.Types))
 			for _, m := range ta.Union.Types {
@@ -1146,7 +1543,7 @@ func (g *Generator) Generate(program *parser.Program) string {
 	}
 
 	// 收集標籤枚舉 & 簡單枚舉變體名稱 → 索引
-	for _, stmt := range program.Statements {
+	for _, stmt := range stmts {
 		if ted, ok := stmt.(*parser.TaggedEnumDefinition); ok {
 			for i, v := range ted.Variants {
 				g.enumVariantIndex[v.Name] = int64(i)
@@ -1187,10 +1584,10 @@ func (g *Generator) Generate(program *parser.Program) string {
 	// 只收集大寫命名的識別符（常量命名慣例），小寫命名為變數不應被常量摺疊
 	// 跳過被重新賦值的可變全局變量（如 COUNTER = 0 後又有 COUNTER = COUNTER + 1）
 	reassignedEarly := make(map[string]bool)
-	for _, stmt := range program.Statements {
+	for _, stmt := range stmts {
 		collectReassignedGlobalNames(stmt, reassignedEarly)
 	}
-	for _, stmt := range program.Statements {
+	for _, stmt := range stmts {
 		if ls, ok := stmt.(*parser.LetStatement); ok {
 			if v, ok := intConstValue(ls.Value); ok {
 				name := ls.Name.Value
@@ -1202,8 +1599,6 @@ func (g *Generator) Generate(program *parser.Program) string {
 			}
 		}
 	}
-
-	var sb strings.Builder
 
 	sb.WriteString("; ModuleID = 'nolang'\n")
 	sb.WriteString("source_filename = \"nolang\"\n")
@@ -1218,7 +1613,7 @@ func (g *Generator) Generate(program *parser.Program) string {
 
 	// 預掃描 FFI extern 宣告，收集型別資訊。
 	// 必須在 emit declare 之前完成（declare 緊隨 writeDeclarations 之後發出）。
-	for _, stmt := range program.Statements {
+	for _, stmt := range stmts {
 		if es, ok := stmt.(*parser.ExternStatement); ok && es.Name != nil {
 			name := es.Name.Value
 			paramTypes := make([]string, 0, len(es.Parameters))
@@ -1245,7 +1640,7 @@ func (g *Generator) Generate(program *parser.Program) string {
 	// args_ptr/result_ptr 均為 i64（存指針整數值），通過 storeDataPtrField/loadDataPtrField 轉換
 	sb.WriteString("%future = type { void (i8*)*, i64, i64 }\n")
 
-	g.writeDeclarations(&sb)
+	g.writeDeclarations(sb)
 
 	// Emit extern function declarations
 	for _, name := range g.sortedExternNames() {
@@ -1255,7 +1650,7 @@ func (g *Generator) Generate(program *parser.Program) string {
 	// 預掃描結構體欄位型別，確保函數回傳型別預掃描時 mapToLLVMType
 	// 能正確解析用戶自定義結構體（如 open() (d db) 的 db 型別）。
 	// 僅填充 g.structTypes，不汙染 g.varTypes（後者由 collectStructType 負責）。
-	for _, stmt := range program.Statements {
+	for _, stmt := range stmts {
 		if sd, ok := stmt.(*parser.StructDefinition); ok {
 			g.collectStructTypeFields(sd)
 		}
@@ -1263,7 +1658,7 @@ func (g *Generator) Generate(program *parser.Program) string {
 
 	// 預掃描：收集所有函數的回傳型別和函數名
 	funcNames := make(map[string]bool)
-	for _, stmt := range program.Statements {
+	for _, stmt := range stmts {
 		switch s := stmt.(type) {
 		case *parser.FunctionDefinition:
 			// Skip union monomorphization templates (e.g. max__num_TEMPLATE)
@@ -1438,7 +1833,7 @@ func (g *Generator) Generate(program *parser.Program) string {
 
 	// 對於 0 個顯式結果的函數，掃描 body 找出被賦值的參數，這些參數實際上是輸出參數。
 	// 例如 str.to-i64 = (val i64) { val = 0; ... } 中的 val 是輸出。
-	g.detectOutputParamsFromBody(program, funcNames)
+	g.detectOutputParamsFromBody(prog, funcNames)
 
 	// Pre-register built-in arr type (used for all fixed-size arrays)
 	// data is i64 (address value) instead of i8* to keep IR type-uniform.
@@ -1463,7 +1858,7 @@ func (g *Generator) Generate(program *parser.Program) string {
 	}
 
 	// 收集結構體定義並生成 LLVM struct type
-	for _, stmt := range program.Statements {
+	for _, stmt := range stmts {
 		if sd, ok := stmt.(*parser.StructDefinition); ok {
 			g.collectStructType(sd)
 		}
@@ -1512,7 +1907,7 @@ func (g *Generator) Generate(program *parser.Program) string {
 
 	// 預先收集所有變數型別（包括模組級常量）
 	// 必須在生成函數定義之前執行，以便函數內的變數引用（如 SBOX）能正確識別型別
-	varDecls := g.collectVarDecls(program)
+	varDecls := g.collectVarDecls(prog)
 	for k, v := range varDecls {
 		g.varTypes[k] = v
 	}
@@ -1533,10 +1928,10 @@ func (g *Generator) Generate(program *parser.Program) string {
 	// 這些變量不應被視為常量，需要在 codegen 中從 @VAR 載入實際值。
 	moduleIntConsts := make(map[string]int64)
 	reassignedIntGlobals := make(map[string]bool)
-	for _, stmt := range program.Statements {
+	for _, stmt := range stmts {
 		collectReassignedGlobalNames(stmt, reassignedIntGlobals)
 	}
-	for _, stmt := range program.Statements {
+	for _, stmt := range stmts {
 		if ls, ok := stmt.(*parser.LetStatement); ok {
 			if v, ok := intConstValue(ls.Value); ok {
 				if !reassignedIntGlobals[ls.Name.Value] {
@@ -1545,7 +1940,7 @@ func (g *Generator) Generate(program *parser.Program) string {
 			}
 		}
 	}
-	for _, stmt := range program.Statements {
+	for _, stmt := range stmts {
 		if ls, ok := stmt.(*parser.LetStatement); ok {
 			name := ls.Name.Value
 			// Skip if already emitted as global (e.g., multiple let stmts with same name)
@@ -1569,7 +1964,7 @@ func (g *Generator) Generate(program *parser.Program) string {
 				continue
 			}
 			// 處理 #{embed=...} 變數：發出私有常量 + 初始化的 %vec 全局
-			if data := g.sem.EmbedDataOf(ls); data != nil {
+			if data := g.embedDataFor(ls); data != nil {
 				name := ls.Name.Value
 				n := len(data)
 
@@ -1597,7 +1992,7 @@ func (g *Generator) Generate(program *parser.Program) string {
 				continue
 			}
 			// 處理 #{embed='dir'} 文件夾嵌入變數
-			if files := g.sem.EmbedFilesOf(ls); files != nil {
+			if files := g.embedFilesFor(ls); files != nil {
 				name := ls.Name.Value
 				// 收集排序後的文件列表
 				type entry struct {
@@ -1947,7 +2342,7 @@ func (g *Generator) Generate(program *parser.Program) string {
 			}
 		}
 	}
-	scanGlobalReassigns(program.Statements, "")
+	scanGlobalReassigns(stmts, "")
 
 	// 函數級可達性分析：從入口（main + 頂層語句 + codegen 內建隱式調用）
 	// 做傳遞閉包，只對可達函數生成 IR 定義。不可達函數的簽名/類型仍已
@@ -1957,10 +2352,10 @@ func (g *Generator) Generate(program *parser.Program) string {
 	// 全量 codegen（與舊行為一致，零風險）。
 	reachableFns := map[string]bool{}
 	if os.Getenv("NOLANG_LAZY_CODEGEN") == "1" {
-		reachableFns = g.computeReachableFunctions(program)
+		reachableFns = g.computeReachableFunctions(prog)
 	}
 
-	for _, stmt := range program.Statements {
+	for _, stmt := range stmts {
 		switch s := stmt.(type) {
 		case *parser.EnumDefinition:
 			// Enums are emitted via their own pass; nothing to do at module-level generation.
@@ -1980,7 +2375,7 @@ func (g *Generator) Generate(program *parser.Program) string {
 					continue
 				}
 			}
-			g.generateFunctionDefinition(&sb, s)
+			g.generateFunctionDefinition(sb, s)
 		case *parser.LetStatement:
 			// 處理 open = (p str, opts file-opts) (f ?file) { ... } 形式的頂層函數定義
 			if fl, ok := s.Value.(*parser.FunctionLiteral); ok && s.Name != nil {
@@ -2005,16 +2400,37 @@ func (g *Generator) Generate(program *parser.Program) string {
 					},
 					Body: fl.Body,
 				}
-				g.generateFunctionDefinition(&sb, tmpFD)
+				g.generateFunctionDefinition(sb, tmpFD)
 			}
 		case *parser.ExternStatement:
 			// FFI extern 宣告：型別資訊已於預掃描階段收集至 g.externFuncs，
 			// declare 已緊隨 writeDeclarations 之後發出，此處無需再產生 IR。
 		}
 	}
+}
 
-	g.generateMainFunction(&sb, program)
+// Generate emits LLVM IR from a surface *parser.Program. It is a thin wrapper
+// around prepare + generateMainFunction: prepare performs all setup and emits the
+// module header, type declarations and function definitions; generateMainFunction
+// emits the top-level statement logic (the program entry). Splitting prepare out
+// of Generate lets the HIR codegen seam (GenerateHIR) reuse the identical setup
+// without going through the surface AST twice.
+func (g *Generator) Generate(program *parser.Program) string {
+	g.hirPkg = nil
+	g.hirOf = nil
+	defer DFStatDump()
+	var sb strings.Builder
+	g.prepare(program.Statements, program.Sem, &sb)
+	g.generateMainFunction(&sb, program, nil)
+	g.finishModule(&sb)
+	return sb.String()
+}
 
+// finishModule appends the trailing declarations (format-string constants,
+// async wrappers, recursive clone/free helpers) after the main emission pass.
+// Shared by the AST path (Generate) and the HIR path (GenerateHIR) so both
+// produce identical trailing IR.
+func (g *Generator) finishModule(sb *strings.Builder) {
 	if len(g.fmtGlobals) > 0 {
 		sb.WriteString("\n; Format string constants\n")
 		for _, fg := range g.fmtGlobals {
@@ -2025,9 +2441,6 @@ func (g *Generator) Generate(program *parser.Program) string {
 	// Async wrapper functions generated by run expressions
 	sb.WriteString(g.asyncWrappers.String())
 
-	// 无栈协程：coro_state 结构体定义已由 transformAsyncFunction 直接写入 sb（在使用前定义），
-	// 此处无需再统一输出。
-
 	// Recursive struct clone/free helper functions (for self-referential structs)
 	g.emitRecursiveCloneHelpers()
 	g.emitRecursiveFreeHelpers()
@@ -2037,7 +2450,6 @@ func (g *Generator) Generate(program *parser.Program) string {
 	// malloc/read/write 符號已在生成時透過 g.mallocSymbol()/g.readSymbol()/
 	// g.writeSymbol() 直接 emit 正確符號（呼叫端使用 @nolang.malloc(i64 ...)，
 	// WASI 平台的 read/write 使用 @nolang.read/@nolang.write），無需後處理替換。
-	return sb.String()
 }
 
 // scanGlobalReassignsExpr 遞迴走訪表達式中內嵌的語句區塊（如 IfExpression 的

@@ -2301,7 +2301,17 @@ func (t *Transpiler) CompileTarget(source string, _ Target) (string, error) {
 		}
 	}
 	t.llvmGenerator.SetGlobalVarOwners(globalVarOwner, funcOwner)
-	ir := t.llvmGenerator.Generate(merged)
+	// HIR codegen seam: when NOLANG_HIR=1, the checked AST is lowered to HIR
+	// and the generator consumes the HIR package (restoring inferred types from
+	// the side-table) instead of the surface AST. Default path is unchanged.
+	var ir string
+	if os.Getenv("NOLANG_HIR") == "1" {
+		hirPkg, idMap := parser.ASTToHIRWithMap(merged)
+		parser.PopulateInferredTypes(hirPkg, idMap)
+		ir = t.llvmGenerator.GenerateHIR(hirPkg)
+	} else {
+		ir = t.llvmGenerator.Generate(merged)
+	}
 	if errs := t.llvmGenerator.CodegenErrors(); len(errs) > 0 {
 		return "", fmt.Errorf("codegen errors: %v", errs)
 	}

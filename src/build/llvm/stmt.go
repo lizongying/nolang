@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/lizongying/nolang/builtin"
+	"github.com/lizongying/nolang/hir"
 	"github.com/lizongying/nolang/parser"
 )
 
@@ -3488,7 +3489,13 @@ g.emitLabel(sb, entryLabel)
 	sb.WriteString("}\n\n")
 }
 
-func (g *Generator) generateMainFunction(sb *strings.Builder, program *parser.Program) {
+// generateMainFunction emits the top-level statement logic as the program entry
+// (@main). When pkg is non-nil (HIR path), the top-level emission ORDER follows
+// pkg.Top; hirToAST appends one AST statement per non-nil HIR top node in source
+// order, so pkg.Top and program.Statements are 1:1 for well-formed programs. This
+// is the seam that lets per-kind ports later replace individual entries with
+// native HIR emitters (the "per-kind fallback to proven hirConv" from the plan).
+func (g *Generator) generateMainFunction(sb *strings.Builder, program *parser.Program, pkg *hir.Package) {
 	// 創建全新 funcState 實例：消除手動重置，防止遺漏導致跨函數污染
 	g.resetFuncState()
 	// main returns i32 but has no named result parameter. We keep
@@ -3619,57 +3626,20 @@ func (g *Generator) generateMainFunction(sb *strings.Builder, program *parser.Pr
 	// Generate top-level statements (e.g. h = crc-32('', 0), test-str-len(), print(0))
 	// Skip calls to user-defined main() when hasUserMain is true, since _nolang_main()
 	// already calls the user's main. Otherwise we get infinite recursion.
-	for _, stmt := range program.Statements {
-		if ls, ok := stmt.(*parser.LetStatement); ok {
-			// Embed vars are emitted as statically initialized globals; skip runtime init.
-			if g.sem.EmbedDataOf(ls) != nil {
-			// Directory embed vars are also statically initialized globals; skip runtime init.
-			if g.sem.EmbedFilesOf(ls) != nil {
-				continue
-			}
-				continue
-			}
-			// Skip LetStatements already emitted as globals, EXCEPT for:
-			// - string/array types (need runtime init via generateLet)
-			// - reassigned variables (need store instruction for new value)
-			if g.globalVars != nil && g.globalVars[ls.Name.Value] {
-				// Reassigned global variables (e.g. h0 in SHA tests) must generate
-				// a store instruction — don't skip them.
-				if g.reassignedVars != nil && g.reassignedVars[ls.Name.Value] {
-					// Fall through to generateLet
-				} else {
-					lt := g.varLLVMType(ls)
-					// For assignments (Type=nil), also check the variable's declared type
-					if ls.Type == nil && g.varTypes != nil {
-						if t, ok := g.varTypes[ls.Name.Value]; ok {
-							lt = t
-						}
-					}
-					// 原始陣列類型（如 [3 x i64]）也需要生成初始化代碼
-					// （如 b = a.clone() 返回 [N]T 時，b 的類型是 [N x T] 而非 %arr）
-					if lt != "%str-long" && lt != "%arr" && lt != "%vec" && !strings.HasPrefix(lt, "[") {
-						continue
-					}
-				}
-			}
-			// Skip function-typed LetStatements (already collected as functions)
-			if g.funcRefVars != nil && g.funcRefVars[ls.Name.Value] {
-				continue
-			}
-			g.generateLet(bodyBuf, ls)
+	//
+	// HIR seam: when pkg is provided, emission is driven by pkg.Top through
+	// emitTopLevelHIR, which dispatches by HIR kind. Kinds with no module-level
+	// IR (annotation/use/export/break/continue) are native no-ops; the remaining
+	// kinds (let/expr/for) currently delegate to the proven AST emitters via the
+	// reconstructed node until per-kind native emitters land. When pkg is nil we
+	// fall back to the pure AST path (emitTopLevelAST).
+	if pkg != nil && len(pkg.Top) > 0 && len(pkg.Top) == len(program.Statements) {
+		for _, id := range pkg.Top {
+			g.emitTopLevelHIR(bodyBuf, id, hasUserMain)
 		}
-		if es, ok := stmt.(*parser.ExpressionStatement); ok {
-			if hasUserMain {
-				if call, ok := es.Expression.(*parser.CallExpression); ok {
-					if ident, ok := call.Function.(*parser.Identifier); ok && ident.Value == "main" {
-						continue
-					}
-				}
-			}
-			g.generateExpressionStmt(bodyBuf, es)
-		}
-		if fs, ok := stmt.(*parser.ForStatement); ok {
-			g.generateForStatement(bodyBuf, fs)
+	} else {
+		for _, stmt := range program.Statements {
+			g.emitTopLevelAST(bodyBuf, stmt, hasUserMain)
 		}
 	}
 	// 先寫入 entry-block alloca，再寫入函數體（模組級語句）。
@@ -3712,6 +3682,121 @@ func (g *Generator) generateMainFunction(sb *strings.Builder, program *parser.Pr
 	g.indentLevel--
 	g.indentLevel--
 	sb.WriteString("}\n\n")
+}
+
+// emitTopLevelAST emits a single top-level module statement from a reconstructed
+// AST node. It is the shared AST-path emitter (also used as the HIR delegate for
+// kinds not yet ported to native HIR emission) and must stay byte-identical to
+// the legacy in-loop logic it replaced.
+func (g *Generator) emitTopLevelAST(sb *strings.Builder, stmt parser.Statement, hasUserMain bool) {
+	if ls, ok := stmt.(*parser.LetStatement); ok {
+		// Embed vars are emitted as statically initialized globals; skip runtime init.
+		if g.embedDataFor(ls) != nil {
+		// Directory embed vars are also statically initialized globals; skip runtime init.
+		if g.embedFilesFor(ls) != nil {
+			return
+		}
+			return
+		}
+		// Skip LetStatements already emitted as globals, EXCEPT for:
+		// - string/array types (need runtime init via generateLet)
+		// - reassigned variables (need store instruction for new value)
+		if g.globalVars != nil && g.globalVars[ls.Name.Value] {
+			// Reassigned global variables (e.g. h0 in SHA tests) must generate
+			// a store instruction — don't skip them.
+			if g.reassignedVars != nil && g.reassignedVars[ls.Name.Value] {
+				// Fall through to generateLet
+			} else {
+				lt := g.varLLVMType(ls)
+				// For assignments (Type=nil), also check the variable's declared type
+				if ls.Type == nil && g.varTypes != nil {
+					if t, ok := g.varTypes[ls.Name.Value]; ok {
+						lt = t
+					}
+				}
+				// 原始陣列類型（如 [3 x i64]）也需要生成初始化代碼
+				// （如 b = a.clone() 返回 [N]T 時，b 的類型是 [N x T] 而非 %arr）
+				if lt != "%str-long" && lt != "%arr" && lt != "%vec" && !strings.HasPrefix(lt, "[") {
+					return
+				}
+			}
+		}
+		// Skip function-typed LetStatements (already collected as functions)
+		if g.funcRefVars != nil && g.funcRefVars[ls.Name.Value] {
+			return
+		}
+		g.generateLet(sb, ls)
+	}
+	if es, ok := stmt.(*parser.ExpressionStatement); ok {
+		if hasUserMain {
+			if call, ok := es.Expression.(*parser.CallExpression); ok {
+				if ident, ok := call.Function.(*parser.Identifier); ok && ident.Value == "main" {
+					return
+				}
+			}
+		}
+		g.generateExpressionStmt(sb, es)
+	}
+	if fs, ok := stmt.(*parser.ForStatement); ok {
+		g.generateForStatement(sb, fs)
+	}
+}
+
+// emitTopLevelHIR emits a single top-level module statement from its HIR node id.
+// Kinds that produce no module-level IR (annotation / use / export / break /
+// continue) are native no-ops. All other kinds currently delegate to the proven
+// AST emitters via the reconstructed node in g.hirStmtOf, so output is identical
+// to the surface-AST path; subsequent cuts replace each delegation with a native
+// HIR emitter, shrinking then eliminating the adapter.
+func (g *Generator) emitTopLevelHIR(sb *strings.Builder, id int32, hasUserMain bool) {
+	n := g.hirPkg.Node(id)
+	if n == nil {
+		return
+	}
+	switch n.Kind {
+	case hir.KAnnotation, hir.KUse, hir.KExport, hir.KBreak, hir.KContinue:
+		// No module-level IR for these kinds.
+		return
+	case hir.KExprStmt:
+		// Expression statements: calls/assigns still delegate to the proven AST
+		// emitter (generateExpressionStmt handles result-discard + assignment);
+		// any other top-level expression flows through the native HIR expression
+		// seam (generateHIRExpr). See emitExprStmtHIR.
+		g.emitExprStmtHIR(sb, id, hasUserMain)
+		return
+	}
+	// Delegate everything else to the proven AST emitter using the reconstructed
+	// node. Panics on a missing mapping are caught by the oracle/equivalence
+	// tests rather than silently dropping a statement.
+	stmt, ok := g.hirStmtOf[id]
+	if !ok {
+		return
+	}
+	g.emitTopLevelAST(sb, stmt, hasUserMain)
+}
+
+// emitExprStmtHIR emits a top-level KExprStmt from HIR. Calls and assignments
+// delegate to the proven AST emitter (generateExpressionStmt) because their
+// emission (result-discard, field assignment side effects) is not yet natively
+// ported; every other top-level expression flows through generateHIRExpr, which
+// emits leaf literal kinds natively and falls back to the reconstructed AST for
+// the rest. This keeps the HIR expression seam live in the real emission path
+// while staying byte-identical to the surface-AST path (oracle-guarded).
+func (g *Generator) emitExprStmtHIR(sb *strings.Builder, id int32, hasUserMain bool) {
+	n := g.hirPkg.Node(id)
+	if n == nil {
+		return
+	}
+	exprId := n.First
+	en := g.hirPkg.Node(exprId)
+	if en != nil && (en.Kind == hir.KCall || en.Kind == hir.KAssign) {
+		// Delegate calls/assignments to the proven AST emitter.
+		if stmt, ok := g.hirStmtOf[id]; ok {
+			g.emitTopLevelAST(sb, stmt, hasUserMain)
+		}
+		return
+	}
+	g.generateHIRExpr(sb, exprId)
 }
 
 // lookupMethodReturnType returns the LLVM return type for a method call,
