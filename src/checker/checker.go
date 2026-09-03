@@ -4688,23 +4688,20 @@ func resolveModuleCallsInExpr(expr parser.Expression, modSet map[string]bool, mo
 					Value: full,
 				}
 			} else if moduleFns[fnName] {
-				// Before rewriting module.fn() → fn(), check if the
+				// We are in this branch because fnName is a real top-level
+				// module function (moduleFns[fnName] == true). For a
+				// module.fn() call the module function is the correct target
+				// even when fnName also names a builtin method — e.g.
+				// math.degrees is the std function (def @degrees), NOT the
+				// f64 value method. Rewriting to the bare name lets the call
+				// resolve to the (unprefixed) definition. The previous
+				// builtin-method short-circuit here wrongly kept
+				// math.degrees as a DotExpression, which codegen emitted as
+				// @math.degrees while the def was @degrees → undefined symbol.
+				// Before rewriting module.fn() → fn(), still check if the
 				// module also defines a std struct method named
-				// module.module.fn (e.g. json.json.parse). If so, the
-				// user explicitly wrote module.fn() to call the std
-				// library function, NOT the user-defined fn from a
-				// different module. Rewriting to fn() would cause the
-				// wrong function to be called (infinite recursion → segfault).
-				// Also check if fnName is a builtin method (e.g. is-file,
-				// is-dir, exists). If so, the module-qualified call (e.g.
-				// fs.is-file) should NOT be rewritten to the user-defined
-				// function — it must dispatch to the builtin. Otherwise,
-				// a user function like utils.is-file that calls fs.is-file
-				// internally would infinitely recurse into itself.
-				if builtin.FindBuiltinMethod(fnName) != nil {
-					// Keep as module.fn() DotExpression — codegen will
-					// dispatch it to the builtin path (callBuiltin).
-				} else {
+				// module.module.fn (e.g. json.json.parse); if so keep the
+				// DotExpression so codegen routes it to module.module.fn.
 				stdMethodKey := short + "." + short + "." + fnName
 				methodSigs := CollectStdMethodSigs()
 				if _, isStdMethod := methodSigs[stdMethodKey]; isStdMethod {
@@ -4717,7 +4714,6 @@ func resolveModuleCallsInExpr(expr parser.Expression, modSet map[string]bool, mo
 						Token: lexer.Token{Type: lexer.IDENT, Literal: fnName},
 						Value: fnName,
 					}
-				}
 				}
 			}
 			}

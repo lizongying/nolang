@@ -354,8 +354,14 @@ func (g *Generator) emitArgAsStrLong(sb *strings.Builder, expr parser.Expression
 			}
 		}
 	} else {
-		t := g.intExprLLVMType(expr)
-		if t != "" {
+		// Robust type inference for non-identifier expressions (slice,
+		// call, index, etc.). exprResultLLVMType resolves container/string
+		// result types that intExprLLVMType cannot — the latter returns
+		// "ptr" for a slice expression, which would otherwise miss the
+		// %str-long / container dispatch below and fall through to fmt-int.
+		if t := g.exprResultLLVMType(expr); t != "" {
+			srcType = t
+		} else if t := g.intExprLLVMType(expr); t != "" {
 			srcType = t
 		}
 	}
@@ -384,9 +390,38 @@ func (g *Generator) emitArgAsStrLong(sb *strings.Builder, expr parser.Expression
 			g.indent(), typeStrPtr, specPtr, outBuf))
 		return outBuf
 	}
+	// Containers (vec / arr-slice / hashmap / struct) must always be rendered
+	// via their .to-str() method — for both plain print (empty spec) and the
+	// explicit %v spec. The container branch can no longer be gated behind
+	// specTypeEarly=='v' alone, because plain print() passes spec="" and would
+	// otherwise fall through to fmt-int (treating a %vec pointer as i64 →
+	// "defined with type 'ptr' but expected 'i64'").
+	if isContainerType(srcType) && (specTypeEarly == 0 || specTypeEarly == 'v') {
+		if ident, ok := expr.(*parser.Identifier); ok {
+			toStrPtr := g.emitContainerToStr(sb, ident.Value, srcType)
+			outBuf := g.tmpReg("nfmt.field")
+			sb.WriteString(fmt.Sprintf("%s%s = alloca %%str-long\n", g.indent(), outBuf))
+			sb.WriteString(fmt.Sprintf("%sstore %%str-long zeroinitializer, %%str-long* %s\n", g.indent(), outBuf))
+			specPtr := g.buildStrLongFromValue(sb, spec)
+			sb.WriteString(fmt.Sprintf("%scall void @fmt-str(%%str-long* %s, %%str-long* %s, %%str-long* %s)\n",
+				g.indent(), toStrPtr, specPtr, outBuf))
+			return outBuf
+		}
+		// Non-identifier container expression (e.g. v[1..3]): generate the
+		// expression (a pointer to the container value) and call .to-str() on
+		// it rather than loading the struct value and printing it as i64.
+		toStrPtr := g.emitContainerExprToStr(sb, expr, srcType)
+		outBuf := g.tmpReg("nfmt.field")
+		sb.WriteString(fmt.Sprintf("%s%s = alloca %%str-long\n", g.indent(), outBuf))
+		sb.WriteString(fmt.Sprintf("%sstore %%str-long zeroinitializer, %%str-long* %s\n", g.indent(), outBuf))
+		specPtr := g.buildStrLongFromValue(sb, spec)
+		sb.WriteString(fmt.Sprintf("%scall void @fmt-str(%%str-long* %s, %%str-long* %s, %%str-long* %s)\n",
+			g.indent(), toStrPtr, specPtr, outBuf))
+		return outBuf
+	}
+
 	if specTypeEarly == 'v' {
 		// Literal value: for strings, wrap in single quotes (e.g. 'hello');
-		// for container types, call .to-str() method;
 		// for other types, behave like default (no spec type).
 		if srcType == "%str-long" || g.isStringExpr(expr) {
 			innerPtr := g.getStrPtr(sb, expr)
@@ -400,18 +435,6 @@ func (g *Generator) emitArgAsStrLong(sb *strings.Builder, expr parser.Expression
 			sb.WriteString(fmt.Sprintf("%scall void @fmt-str(%%str-long* %s, %%str-long* %s, %%str-long* %s)\n",
 				g.indent(), fullConcat, specPtr, outBuf))
 			return outBuf
-		}
-		if isContainerType(srcType) {
-			if ident, ok := expr.(*parser.Identifier); ok {
-				toStrPtr := g.emitContainerToStr(sb, ident.Value, srcType)
-				outBuf := g.tmpReg("nfmt.field")
-				sb.WriteString(fmt.Sprintf("%s%s = alloca %%str-long\n", g.indent(), outBuf))
-				sb.WriteString(fmt.Sprintf("%sstore %%str-long zeroinitializer, %%str-long* %s\n", g.indent(), outBuf))
-				specPtr := g.buildStrLongFromValue(sb, spec)
-				sb.WriteString(fmt.Sprintf("%scall void @fmt-str(%%str-long* %s, %%str-long* %s, %%str-long* %s)\n",
-					g.indent(), toStrPtr, specPtr, outBuf))
-				return outBuf
-			}
 		}
 		// Non-string non-container: fall through to default type-based dispatch.
 	}
@@ -4489,6 +4512,50 @@ func (g *Generator) emitContainerToStr(sb *strings.Builder, varName, varType str
 		g.indent(), sanitizeLLVMName(methodName), recvType, recvPtr, outBuf))
 
 	// Register as statement-level temporary for heap cleanup
+	g.stmtTemporaries = append(g.stmtTemporaries, outBuf)
+	return outBuf
+}
+
+// emitContainerExprToStr renders a non-identifier container expression (e.g. a
+// slice like v[1..3] or a[0..2]) via its .to-str() method. Unlike
+// emitContainerToStr (which resolves the receiver by variable name), this
+// generates the expression into a pointer register and calls .to-str() on that
+// pointer. Used by emitArgAsStrLong for container arguments that are not plain
+// identifiers (plain print() passes an empty spec, so the container branch can
+// no longer be gated behind the %v spec alone).
+func (g *Generator) emitContainerExprToStr(sb *strings.Builder, expr parser.Expression, containerType string) string {
+	outBuf := g.tmpReg("nfmt.val")
+	sb.WriteString(fmt.Sprintf("%s%s = alloca %%str-long\n", g.indent(), outBuf))
+	sb.WriteString(fmt.Sprintf("%sstore %%str-long zeroinitializer, %%str-long* %s\n", g.indent(), outBuf))
+
+	// Resolve the monomorphized .to-str method. For slices the element type
+	// lives on the base variable (v in v[1..3]); reuse resolveToStrMethod.
+	var methodName string
+	switch e := expr.(type) {
+	case *parser.Identifier:
+		methodName = g.resolveToStrMethod(e.Value, containerType)
+	case *parser.SliceExpression:
+		if id, ok := e.Left.(*parser.Identifier); ok {
+			methodName = g.resolveToStrMethod(id.Value, containerType)
+		}
+	}
+	if methodName == "" {
+		// No to-str method found; return empty string buffer.
+		return outBuf
+	}
+	if containerType == "%arr" {
+		// Cannot safely call any to-str method on arr; return empty buffer.
+		return outBuf
+	}
+
+	v := g.generateExprWithSB(sb, expr)
+	if v == "" {
+		return outBuf
+	}
+	sb.WriteString(fmt.Sprintf("%scall void @%s(%s* %s, %%str-long* %s)\n",
+		g.indent(), sanitizeLLVMName(methodName), containerType, v, outBuf))
+
+	// Register as statement-level temporary for heap cleanup.
 	g.stmtTemporaries = append(g.stmtTemporaries, outBuf)
 	return outBuf
 }

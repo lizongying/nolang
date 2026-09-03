@@ -3748,7 +3748,7 @@ func (g *Generator) emitTopLevelAST(sb *strings.Builder, stmt parser.Statement, 
 				}
 				// 原始陣列類型（如 [3 x i64]）也需要生成初始化代碼
 				// （如 b = a.clone() 返回 [N]T 時，b 的類型是 [N x T] 而非 %arr）
-				if lt != "%str-long" && lt != "%arr" && lt != "%vec" && !strings.HasPrefix(lt, "[") {
+				if lt != "%str-long" && lt != "%arr" && lt != "%vec" && lt != "%txt" && !strings.HasPrefix(lt, "[") {
 					return
 				}
 			}

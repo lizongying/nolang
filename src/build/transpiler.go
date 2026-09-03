@@ -3342,7 +3342,7 @@ func resolveMethodCall(dot *parser.DotExpression, ce *parser.CallExpression,
 	// would generate a function call instead of inline field access.
 	// Builtins like str.len are registered with MethodName="len" (no type
 	// prefix), so we check the bare method name.
-	if builtin.FindBuiltinMethod(methodName) != nil {
+	if bi := builtin.FindBuiltinMethod(methodName); bi != nil && bi.ReceiverType != builtin.ReceiverGlobal {
 		// Only skip if the receiver is a builtin type (str, []T, [N]T, i64, etc.)
 		isBuiltinRecv := isBuiltinType(recvType) ||
 			strings.HasPrefix(recvType, "[]") ||
