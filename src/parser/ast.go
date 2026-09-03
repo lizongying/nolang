@@ -238,6 +238,7 @@ var (
 	TypeBool = &NamedType{Value: "bool"}
 	TypeChar = &NamedType{Value: "char"}
 	TypeStr  = &NamedType{Value: "str"}
+	TypeTxt  = &NamedType{Value: "txt"}
 	TypeI8   = &NamedType{Value: "i8"}
 	TypeI16  = &NamedType{Value: "i16"}
 	TypeI32  = &NamedType{Value: "i32"}

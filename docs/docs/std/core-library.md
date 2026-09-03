@@ -124,10 +124,12 @@ i8.MIN / MAX                  ; -128 / 127
 i16.MIN / MAX                 ; -32768 / 32767
 i32.MIN / MAX                 ; -2147483648 / 2147483647
 i64.MIN / MAX                 ; -2^63 / 2^63-1
+i128.MIN / MAX                ; -2^127 / 2^127-1
 u8.MIN / MAX                  ; 0 / 255
 u16.MIN / MAX                 ; 0 / 65535
 u32.MIN / MAX                 ; 0 / 4294967295
 u64.MIN / MAX                 ; 0 / 2^64-1
+u128.MIN / MAX                ; 0 / 2^128-1
 ```
 
 ### byte — 位元組操作
@@ -141,6 +143,34 @@ s = []byte.to-str()             ; []byte 轉 str（方法）
 s = []byte.to-hex()             ; []byte → 大寫十六進制字串
 s = []byte.to-hex-lower()       ; []byte → 小寫十六進制字串
 s = byte.to-str()               ; byte 轉 str（方法）
+```
+
+### txt — 固定長度文字類型
+
+`txt` 是固定 256 字節的文字類型，適合短文字場景：
+- 前 255 字節存儲數據（`data [255]byte`）
+- 最後 1 字節存儲長度（`len byte`，範圍 0-255）
+- 無需堆分配，全部在棧上
+- 必須類型標註
+
+```no
+t txt = 'hello'              ; 必須類型標註
+n = t.len()                  ; 返回長度（i64）
+c = t[0]                     ; 索引存取（byte）
+ok = t.eq(b txt)             ; 相等比較
+dst = t.copy()               ; 複製
+s = t.to-str()              ; 轉 str
+out = t.to-bytes()           ; 轉 []byte
+pos = t.index(sub txt)       ; 查找子串
+ok = t.contains(sub txt)     ; 是否包含
+ok = t.starts-with(sub txt)  ; 前綴檢查
+ok = t.ends-with(sub txt)    ; 後綴檢查
+t.append(b byte)            ; 追加單字節
+t.append-str(s str)          ; 追加 str
+t.append-txt(t2 txt)         ; 追加 txt
+out = t.reverse()            ; 反轉
+out = t.slice(start, end)   ; 截取 [start, end)
+r = t.compare(b txt)        ; 字典序比較 (-1/0/1)
 ```
 
 ### vec — 切片操作

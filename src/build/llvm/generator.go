@@ -28,6 +28,7 @@ const (
 	KindScalar      TypeKind = iota // 純量型別（i1/i8/i16/i32/i64/float/double/i8* 等）
 	KindVec                         // %vec：動態切片容器
 	KindStr                         // %str-long：堆分配字串
+	KindTxt                         // %txt：固定 256 字節字串
 	KindArr                         // %arr：固定容量陣列
 	KindOption                      // %option：可選值盒
 	KindTask                        // %task：非同步任務控制物件
@@ -66,6 +67,8 @@ func (g *Generator) classifyTypeKind(llvmType string) TypeDesc {
 		return TypeDesc{Kind: KindVec, LLVMType: llvmType}
 	case "%str-long":
 		return TypeDesc{Kind: KindStr, LLVMType: llvmType}
+	case "%txt":
+		return TypeDesc{Kind: KindTxt, LLVMType: llvmType}
 	case "%arr":
 		return TypeDesc{Kind: KindArr, LLVMType: llvmType}
 	case "%option":
@@ -181,7 +184,7 @@ func (g *Generator) nestedElemTypeFromString(typeStr string) string {
 // 注意：此方法僅用於型別字串判斷，不用於 LLVM 值（register）判斷。
 func (g *Generator) isStructLLVMType(llvmType string) bool {
 	switch g.classifyTypeKind(llvmType).Kind {
-	case KindUserStruct, KindVec, KindStr, KindArr, KindOption, KindTask, KindFuture, KindUnknown:
+	case KindUserStruct, KindVec, KindStr, KindTxt, KindArr, KindOption, KindTask, KindFuture, KindUnknown:
 		return true
 	}
 	return false
@@ -952,6 +955,12 @@ func (g *Generator) generateHIRExpr(sb *strings.Builder, id int32) string {
 		return g.generateHIRCast(sb, id)
 	case hir.KCall:
 		return g.generateHIRCall(sb, id)
+	case hir.KIndex:
+		return g.generateHIRIndex(sb, id)
+	case hir.KSlice:
+		return g.generateHIRSlice(sb, id)
+	case hir.KSliceLit:
+		return g.generateHIRSliceLit(sb, id)
 	}
 	// Fallback: emit the reconstructed AST expression. This preserves byte-identical
 	// output for every kind not yet ported to native HIR emission.
@@ -1194,7 +1203,24 @@ func (g *Generator) generateHIRCall(sb *strings.Builder, id int32) string {
 	if clibFuncNames[fnName] {
 		llvmFnName = "n." + fnName
 	}
-	return g.generateCallEmit(sb, astCall, fnName, llvmFnName, nil)
+	// For the strict safe subset (no receiver / variadic / defaults), the HIR arg
+	// child ids align positionally with the callee's argument list, so we can type
+	// each KIdent argument natively via generateTypedArgHIR instead of reconstructing
+	// the AST. generateTypedArgHIR falls back to the rebuilt AST node for any
+	// non-KIdent argument, so output stays byte-identical regardless.
+	hirArgIDs := g.hirPkg.Children(id)[1:] // skip fn slot; safe subset has no generics
+	useHIRArgs := false
+	if !g.funcIsVariadic[fnName] {
+		if g.funcParamDefaults == nil || len(g.funcParamDefaults[fnName]) == 0 {
+			if len(hirArgIDs) == len(astCall.Arguments) {
+				useHIRArgs = true
+			}
+		}
+	}
+	if useHIRArgs {
+		return g.generateCallEmit(sb, astCall, fnName, llvmFnName, nil, hirArgIDs)
+	}
+	return g.generateCallEmit(sb, astCall, fnName, llvmFnName, nil, nil)
 }
 
 func (g *Generator) generateHIRCallFallback(sb *strings.Builder, id int32) string {
@@ -1204,6 +1230,146 @@ func (g *Generator) generateHIRCallFallback(sb *strings.Builder, id int32) strin
 		}
 	}
 	return ""
+}
+
+// generateHIRIndex emits an HIR index expression (KIndex) natively. The index
+// operand is emitted through the seam (so nested identifiers/literals/infix go
+// native), and the left operand's handling is driven by its HIR kind:
+//   - KIdent: take the variable name from n.S and drive generateIndexCore (the
+//     same var-type logic as the AST path), so s[i]/arr[i]/vec[i] indexing is
+//     fully native.
+//   - KDot / KStringLit / KSlice / KIndex (nested): fall back to the
+//     reconstructed AST node so the dedicated sub-readers (struct-field /
+//     string-literal / slice-expr / nested-str index) run unchanged and
+//     byte-identical.
+func (g *Generator) generateHIRIndex(sb *strings.Builder, id int32) string {
+	n := g.hirPkg.Node(id)
+	if n == nil {
+		return ""
+	}
+	kids := g.hirPkg.Children(id)
+	if len(kids) < 2 {
+		return ""
+	}
+	leftID := kids[0]
+	idxID := kids[1]
+	leftNode := g.hirPkg.Node(leftID)
+	if leftNode == nil {
+		return ""
+	}
+	// Reconstructed AST is still needed for the bounds-check helper
+	// (canSkipBoundsCheck uses expr.Index) and for the non-ident fallbacks.
+	astIdx, ok := g.hirAstOf[id].(*parser.IndexExpression)
+	if !ok {
+		return ""
+	}
+	if leftNode.Kind == hir.KIdent {
+		varName := g.hirPkg.Str(leftNode.S)
+		idxVal := g.generateHIRExpr(sb, idxID)
+		// Mirror the AST path's i64 zext of the index.
+		if strings.HasPrefix(idxVal, "%") {
+			idxType := g.intExprLLVMType(astIdx.Index)
+			if toLLVMType(idxType) != "i64" {
+				zextReg := g.tmpReg("idx.zext")
+				if sb != nil {
+					sb.WriteString(fmt.Sprintf("%s%s = zext %s %s to i64\n", g.indent(), zextReg, toLLVMType(idxType), idxVal))
+				}
+				idxVal = zextReg
+			}
+		}
+		return g.generateIndexCore(sb, astIdx, varName, idxVal)
+	}
+	// Non-ident left: route to the reconstructed AST emitter (byte-identical).
+	return g.generateExprWithSB(sb, astIdx)
+}
+
+// generateHIRSlice emits an HIR slice expression (KSlice) natively. The slice
+// range's start/end sub-expressions are still emitted through the reconstructed
+// AST node (so nested identifiers/literals/infix go through the proven AST
+// emitters), while the left operand's handling is driven by its HIR kind:
+//   - KIdent: take the variable name from n.S and drive generateSliceCore (the
+//     same var-type logic as the AST path), so s[1..3] / arr[0..2] / vec[1..]
+//     slicing is fully native for named variables.
+//   - KDot / KIndex / KSlice (nested) / other: fall back to the reconstructed
+//     AST node so the dedicated sub-readers (struct-field / nested-index /
+//     nested-slice) run unchanged and byte-identical.
+func (g *Generator) generateHIRSlice(sb *strings.Builder, id int32) string {
+	n := g.hirPkg.Node(id)
+	if n == nil {
+		return ""
+	}
+	kids := g.hirPkg.Children(id)
+	if len(kids) < 2 {
+		return ""
+	}
+	leftID := kids[0]
+	leftNode := g.hirPkg.Node(leftID)
+	if leftNode == nil {
+		return ""
+	}
+	// Reconstructed AST is still needed for the range sub-expression emitters
+	// (generateSliceCore calls generateExprWithSB on r.Start/r.End) and for the
+	// non-ident fallbacks.
+	astSlice, ok := g.hirAstOf[id].(*parser.SliceExpression)
+	if !ok {
+		return ""
+	}
+	if leftNode.Kind == hir.KIdent {
+		varName := g.hirPkg.Str(leftNode.S)
+		// Mirror the AST path: it emits the left operand load (leftVal) as a
+		// side effect before deriving varType/recvPtr, so the native path must
+		// emit it too to stay byte-identical.
+		leftVal := g.generateHIRExpr(sb, leftID)
+		recvType := ""
+		if g.varTypes != nil {
+			if t, ok := g.varTypes[varName]; ok {
+				recvType = t
+			}
+		}
+		recvPtr := ""
+		if g.isSliceViewVar(varName) && sb != nil {
+			recvPtr = g.materializeSliceView(sb, varName)
+		} else {
+			recvPtr = g.varAddr(varName)
+		}
+		return g.generateSliceCore(sb, astSlice, leftVal, varName, recvType, recvPtr)
+	}
+	// Non-ident left: route to the reconstructed AST emitter (byte-identical).
+	return g.generateExprWithSB(sb, astSlice)
+}
+
+// generateHIRSliceLit emits a slice literal ([1, 2, 3]) natively. The AST
+// generator (generateSliceLiteral) is a thin wrapper that iterates the element
+// list, emits each sub-expression, strips its LLVM type suffix, and assembles a
+// bare "[i64 v0, i64 v1, ...]" array-constructor string. The HIR form stores
+// the elements as First children, so we emit each child through the HIR seam
+// (which falls back to the reconstructed AST for unported element kinds) and
+// assemble the identical constructor string. Element type is hard-coded to i64
+// to match the AST path exactly.
+func (g *Generator) generateHIRSliceLit(sb *strings.Builder, id int32) string {
+	n := g.hirPkg.Node(id)
+	if n == nil {
+		return ""
+	}
+	kids := g.hirPkg.Children(id)
+	elemType := "i64"
+	var sb2 strings.Builder
+	sb2.WriteString("[")
+	for i, elemID := range kids {
+		if i > 0 {
+			sb2.WriteString(", ")
+		}
+		ev := g.generateHIRExpr(sb, elemID)
+		ev = g.stripLLVMType(ev)
+		// Defensive fallback: if emission returned empty (e.g. void call),
+		// use 0 to avoid invalid IR — mirrors generateSliceLiteral.
+		if ev == "" {
+			ev = "0"
+		}
+		sb2.WriteString(fmt.Sprintf("%s %s", elemType, ev))
+	}
+	sb2.WriteString("]")
+	return sb2.String()
 }
 
 // matchesPlatform returns true if any platform annotation key matches the
@@ -1857,6 +2023,14 @@ func (g *Generator) prepare(stmts []parser.Statement, sem *parser.SemanticContex
 		{name: "data", typ: "i64"},
 	}
 
+	// Pre-register built-in txt type (fixed 256-byte string)
+	// { data [255 x i8], len i8 } — 255 bytes data + 1 byte length = 256 bytes total.
+	// len field stores the actual content length (0-255).
+	g.structTypes["txt"] = []structField{
+		{name: "data", typ: "[255 x i8]"},
+		{name: "len", typ: "i8"},
+	}
+
 	// 收集結構體定義並生成 LLVM struct type
 	for _, stmt := range stmts {
 		if sd, ok := stmt.(*parser.StructDefinition); ok {
@@ -1868,13 +2042,14 @@ func (g *Generator) prepare(stmts []parser.Statement, sem *parser.SemanticContex
 	// Always emit built-in string types
 	// 運行時 move 標記改用函數級 u64 位圖變數（%__move_bitmap），不佔用結構體欄位。
 	sb.WriteString("%str-long = type { i64, i64, i64 }\n")
+	sb.WriteString("%txt = type { [255 x i8], i8 }\n")
 	sb.WriteString("%option = type { i64, i64 }\n")
 	sb.WriteString("%arr = type { i64, i64 }\n")
 	sb.WriteString("%vec = type { i64, i64, i64 }\n")
 	// Sort struct type names for deterministic IR output (Go map iteration is randomized).
 	sortedStructs := make([]string, 0, len(g.structTypes))
 	for name := range g.structTypes {
-		if name == "str-long" || name == "arr" || name == "vec" {
+		if name == "str-long" || name == "txt" || name == "arr" || name == "vec" {
 			continue
 		}
 		sortedStructs = append(sortedStructs, name)
@@ -2110,14 +2285,18 @@ func (g *Generator) prepare(stmts []parser.Statement, sem *parser.SemanticContex
 						}
 					}
 				}
-				if ls.Value == nil || isStrLit || isWithAlloc {
-					sb.WriteString(fmt.Sprintf("%s = global %s zeroinitializer\n", llvmGlobalRef(name), llvmType))
-					g.globalVars[name] = true
-				}
-			} else if llvmType == "%arr" {
+			if ls.Value == nil || isStrLit || isWithAlloc {
 				sb.WriteString(fmt.Sprintf("%s = global %s zeroinitializer\n", llvmGlobalRef(name), llvmType))
 				g.globalVars[name] = true
-			} else if llvmType == "%vec" {
+			}
+		} else if llvmType == "%txt" {
+			// txt global variables: emit as zeroinitializer (runtime init in main)
+			sb.WriteString(fmt.Sprintf("%s = global %s zeroinitializer\n", llvmGlobalRef(name), llvmType))
+			g.globalVars[name] = true
+		} else if llvmType == "%arr" {
+			sb.WriteString(fmt.Sprintf("%s = global %s zeroinitializer\n", llvmGlobalRef(name), llvmType))
+			g.globalVars[name] = true
+		} else if llvmType == "%vec" {
 				// Top-level slice (vec) variables are emitted as globals so that
 				// functions can reference them via @name (e.g. binary-trees arena).
 				sb.WriteString(fmt.Sprintf("%s = global %s zeroinitializer\n", llvmGlobalRef(name), llvmType))

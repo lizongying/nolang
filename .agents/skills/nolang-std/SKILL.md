@@ -27,6 +27,7 @@ Usage: `# std/xxx` (core modules do not need to be imported).
   - [str — String Operations](#str--string-operations)
   - [number — Numeric Operations](#number--numeric-operations)
   - [byte — Byte Operations](#byte--byte-operations)
+  - [txt — Fixed-length Text Type](#txt--fixed-length-text-type)
   - [vec — Slice Operations](#vec--slice-operations)
   - [arr — Array Operations](#arr--array-operations)
   - [sort — Sort Constants](#sort--sort-constants)
@@ -368,6 +369,42 @@ s = byte.to-str()               // byte to str (method)
 // Constants
 HEX-UPPER = '0123456789ABCDEF'
 HEX-LOWER = '0123456789abcdef'
+```
+
+#### txt — Fixed-length Text Type
+
+`txt` is a fixed 256-byte string type:
+- Layout: `{ [255]byte data, byte len }` — 255 bytes data + 1 byte length = 256 bytes total
+- No heap allocation (all on stack)
+- Must use type annotation: `t txt = 'abc'`
+- Max content length: 255 bytes
+
+```no
+t txt = 'hello'              // Must use type annotation
+n = t.len()                  // Return length (i64)
+c = t[0]                     // Index access (byte)
+ok = t.eq(b txt)             // Equality comparison
+dst = t.copy()               // Copy
+t.fill(val byte)             // Fill with byte value
+t.clear()                    // Clear (len=0)
+ok = t.empty()               // Is empty
+s = t.to-str()               // Convert to str
+out = t.to-bytes()           // Convert to []byte
+hex = t.to-hex()             // Convert to hex string
+out = txt.from-str(s str)   // Create txt from str (truncate to 255)
+out = txt.from-bytes(b []byte) // Create txt from []byte (truncate to 255)
+pos = t.index(sub txt)       // Find substring position
+ok = t.contains(sub txt)     // Contains
+ok = t.starts-with(sub txt)  // Prefix check
+ok = t.ends-with(sub txt)    // Suffix check
+t.append(b byte)            // Append single byte
+t.append-str(s str)          // Append str
+t.append-txt(t2 txt)         // Append txt
+t.truncate(n i64)            // Truncate to n bytes
+out = t.reverse()            // Reverse content
+out = t.slice(start, end)   // Slice [start, end)
+r = t.compare(b txt)        // Lexicographic comparison (-1/0/1)
+b = t.at(idx i64)           // Safe index access
 ```
 
 #### vec — Slice Operations

@@ -179,8 +179,11 @@ func (g *Generator) generateExprWithSB(sb *strings.Builder, expr parser.Expressi
 					sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%option, %%option* %s, i32 0, i32 1\n", g.indent(), dataGEP, llvmVarRef(e.Value)))
 					sb.WriteString(fmt.Sprintf("%s%s = load i64, i64* %s\n", g.indent(), dataLoad, dataGEP))
 				}
-				// If inner type is a smaller integer, trunc i64 → inner type
-				if innerType != "i64" && g.isIntegerLLVMType(innerType) {
+				// If inner type is a smaller integer, trunc i64 → inner type.
+				// Guard on the LLVM width (not the nolang name) so u64 — whose
+				// LLVM type is also i64 — does not emit a no-op `trunc i64 to i64`
+				// (which LLVM rejects).
+				if g.isIntegerLLVMType(innerType) && toLLVMType(innerType) != "i64" {
 					g.tmpIdx++
 					truncReg := llvmSSAReg(e.Value, fmt.Sprintf(".data.trunc.%d", g.tmpIdx))
 					if sb != nil {
@@ -3721,8 +3724,8 @@ func (g *Generator) generateAssignExpression(sb *strings.Builder, expr *parser.A
 				if val == "0" && g.isHeapOwningType(fieldType) {
 					storeVal = "zeroinitializer"
 				}
-				if storeVal == "zeroinitializer" || !g.isHeapOwningType(fieldType) {
-					sb.WriteString(fmt.Sprintf("%sstore %s %s, %s* %s\n", g.indent(), toLLVMType(fieldType), storeVal, toLLVMType(fieldType), reg))
+			if storeVal == "zeroinitializer" || !g.isHeapOwningType(fieldType) {
+				g.emitTypedStore(sb, toLLVMType(fieldType), storeVal, reg)
 				} else {
 					if fieldType == "%str-long" || fieldType == "%vec" || fieldType == "%arr" {
 						oldLenGEP := g.tmpReg("set.fld.oldlen.gep")
@@ -4332,7 +4335,18 @@ func (g *Generator) generateIndexExpression(sb *strings.Builder, expr *parser.In
 			idx = zextReg
 		}
 	}
+	return g.generateIndexCore(sb, expr, varName, idx)
+}
 
+// generateIndexCore is the type-driven core of generateIndexExpression. Given the
+// left operand's variable name (varName) and the already-emitted index value
+// (idx), it performs all the per-variable-type (str-long/%arr/%vec/slice-view/
+// []byte/[]T/raw array) GEP/load/zext logic. Extracting it lets the HIR native
+// path (generateHIRIndex) drive the identical core using the variable name taken
+// from the HIR KIdent node (n.S) and the index emitted through the seam, keeping
+// AST and HIR output byte-identical. expr is still used only for the compile-time
+// bounds-check decision canSkipBoundsCheck(varName, expr.Index).
+func (g *Generator) generateIndexCore(sb *strings.Builder, expr *parser.IndexExpression, varName, idx string) string {
 	// Slice view indexing: view[i] → use adjusted data pointer + offset, no struct access
 	if varName != "" && g.isSliceViewVar(varName) {
 		view := g.sliceViews[varName]
@@ -5452,7 +5466,6 @@ func (g *Generator) generateArrayLiteral(sb *strings.Builder, arr *parser.ArrayL
 }
 
 func (g *Generator) generateSliceExpression(sb *strings.Builder, expr *parser.SliceExpression) string {
-	r := expr.Range
 	leftVal := g.generateExprWithSB(sb, expr.Left)
 
 	// Determine if the left expression is a vec, arr, or str by resolving its name
@@ -5480,6 +5493,10 @@ func (g *Generator) generateSliceExpression(sb *strings.Builder, expr *parser.Sl
 		recvPtr = g.generateExprPtr(sb, expr.Left)
 	}
 
+	return g.generateSliceCore(sb, expr, leftVal, varName, recvType, recvPtr)
+}
+func (g *Generator) generateSliceCore(sb *strings.Builder, expr *parser.SliceExpression, leftVal, varName, recvType, recvPtr string) string {
+	r := expr.Range
 	isVec := recvType == "%vec"
 	isArr := recvType == "%arr"
 	isStr := recvType == "%str-long"
@@ -5780,6 +5797,7 @@ func (g *Generator) generateSliceExpression(sb *strings.Builder, expr *parser.Sl
 	return resultReg
 }
 
+
 func (g *Generator) rangeBoundStr(expr parser.Expression) string {
 	if expr == nil {
 		return ""
@@ -5807,6 +5825,21 @@ func (g *Generator) generateSliceLiteral(sb *strings.Builder, slice *parser.Slic
 	sb2.WriteString("]")
 	// 返回未定型別的陣列值，由呼叫端決定型別
 	return sb2.String()
+}
+
+// emitIntArith emits an integer binary op and records the result SSA type in
+// g.ssaTypes. Downstream stores (emitTypedStore) consult ssaTypes to insert the
+// proper trunc/zext when the value is written into a slot of a different width.
+// The register name is op+".tmp" to preserve existing debug-friendly names.
+func (g *Generator) emitIntArith(sb *strings.Builder, op, arithType, lc, rc string) string {
+	reg := g.tmpReg(op + ".tmp")
+	if sb != nil {
+		sb.WriteString(fmt.Sprintf("%s%s = %s %s %s, %s\n", g.indent(), reg, op, toLLVMType(arithType), lc, rc))
+	}
+	if g.ssaTypes != nil {
+		g.ssaTypes[reg] = toLLVMType(arithType)
+	}
+	return reg
 }
 
 func (g *Generator) generateInfix(sb *strings.Builder, expr *parser.InfixExpression) string {
@@ -6028,11 +6061,7 @@ func (g *Generator) generateInfixCore(sb *strings.Builder, expr *parser.InfixExp
 		arithType := g.arithLLVMType(expr.Left, expr.Right)
 		lc := g.coerceToInt(sb, left, expr.Left, arithType)
 		rc := g.coerceToInt(sb, right, expr.Right, arithType)
-		reg := g.tmpReg("add.tmp")
-		if sb != nil {
-			sb.WriteString(fmt.Sprintf("%s%s = add %s %s, %s\n", g.indent(), reg, toLLVMType(arithType), lc, rc))
-		}
-		return reg
+		return g.emitIntArith(sb, "add", arithType, lc, rc)
 	case "-":
 		// String concatenation: detect if either operand is a string
 		// (same integer literal exception as + operator)
@@ -6062,11 +6091,7 @@ func (g *Generator) generateInfixCore(sb *strings.Builder, expr *parser.InfixExp
 		arithType := g.arithLLVMType(expr.Left, expr.Right)
 		lc := g.coerceToInt(sb, left, expr.Left, arithType)
 		rc := g.coerceToInt(sb, right, expr.Right, arithType)
-		reg := g.tmpReg("sub.tmp")
-		if sb != nil {
-			sb.WriteString(fmt.Sprintf("%s%s = sub %s %s, %s\n", g.indent(), reg, toLLVMType(arithType), lc, rc))
-		}
-		return reg
+		return g.emitIntArith(sb, "sub", arithType, lc, rc)
 	case "*":
 		// String repetition: 'str' * n
 		if g.isStringExpr(expr.Left) {
@@ -6087,11 +6112,7 @@ func (g *Generator) generateInfixCore(sb *strings.Builder, expr *parser.InfixExp
 		arithType := g.arithLLVMType(expr.Left, expr.Right)
 		lc := g.coerceToInt(sb, left, expr.Left, arithType)
 		rc := g.coerceToInt(sb, right, expr.Right, arithType)
-		reg := g.tmpReg("mul.tmp")
-		if sb != nil {
-			sb.WriteString(fmt.Sprintf("%s%s = mul %s %s, %s\n", g.indent(), reg, toLLVMType(arithType), lc, rc))
-		}
-		return reg
+		return g.emitIntArith(sb, "mul", arithType, lc, rc)
 	case "/":
 		if ft := floatArithType(expr.Left, expr.Right); ft != "" {
 			ld := coerceToFloat(left, expr.Left, ft)
@@ -6105,11 +6126,7 @@ func (g *Generator) generateInfixCore(sb *strings.Builder, expr *parser.InfixExp
 		arithType := g.arithLLVMType(expr.Left, expr.Right)
 		lc := g.coerceToInt(sb, left, expr.Left, arithType)
 		rc := g.coerceToInt(sb, right, expr.Right, arithType)
-		reg := g.tmpReg("div.tmp")
-		if sb != nil {
-			sb.WriteString(fmt.Sprintf("%s%s = %s %s %s, %s\n", g.indent(), reg, divOp(arithType), toLLVMType(arithType), lc, rc))
-		}
-		return reg
+		return g.emitIntArith(sb, divOp(arithType), arithType, lc, rc)
 	case "%":
 		if ft := floatArithType(expr.Left, expr.Right); ft != "" {
 			ld := coerceToFloat(left, expr.Left, ft)
@@ -6123,11 +6140,7 @@ func (g *Generator) generateInfixCore(sb *strings.Builder, expr *parser.InfixExp
 		arithType := g.arithLLVMType(expr.Left, expr.Right)
 		lc := g.coerceToInt(sb, left, expr.Left, arithType)
 		rc := g.coerceToInt(sb, right, expr.Right, arithType)
-		reg := g.tmpReg("mod.tmp")
-		if sb != nil {
-			sb.WriteString(fmt.Sprintf("%s%s = %s %s %s, %s\n", g.indent(), reg, remOp(arithType), toLLVMType(arithType), lc, rc))
-		}
-		return reg
+		return g.emitIntArith(sb, remOp(arithType), arithType, lc, rc)
 	case "==":
 		if ft := floatArithType(expr.Left, expr.Right); ft != "" {
 			lc := coerceToFloat(left, expr.Left, ft)
@@ -6264,47 +6277,27 @@ func (g *Generator) generateInfixCore(sb *strings.Builder, expr *parser.InfixExp
 		arithType := g.arithLLVMType(expr.Left, expr.Right)
 		lc := g.coerceToInt(sb, left, expr.Left, arithType)
 		rc := g.coerceToInt(sb, right, expr.Right, arithType)
-		reg := g.tmpReg("or.tmp")
-		if sb != nil {
-			sb.WriteString(fmt.Sprintf("%s%s = or %s %s, %s\n", g.indent(), reg, toLLVMType(arithType), lc, rc))
-		}
-		return reg
+		return g.emitIntArith(sb, "or", arithType, lc, rc)
 	case "&":
 		arithType := g.arithLLVMType(expr.Left, expr.Right)
 		lc := g.coerceToInt(sb, left, expr.Left, arithType)
 		rc := g.coerceToInt(sb, right, expr.Right, arithType)
-		reg := g.tmpReg("and.tmp")
-		if sb != nil {
-			sb.WriteString(fmt.Sprintf("%s%s = and %s %s, %s\n", g.indent(), reg, toLLVMType(arithType), lc, rc))
-		}
-		return reg
+		return g.emitIntArith(sb, "and", arithType, lc, rc)
 	case "^":
 		arithType := g.arithLLVMType(expr.Left, expr.Right)
 		lc := g.coerceToInt(sb, left, expr.Left, arithType)
 		rc := g.coerceToInt(sb, right, expr.Right, arithType)
-		reg := g.tmpReg("xor.tmp")
-		if sb != nil {
-			sb.WriteString(fmt.Sprintf("%s%s = xor %s %s, %s\n", g.indent(), reg, toLLVMType(arithType), lc, rc))
-		}
-		return reg
+		return g.emitIntArith(sb, "xor", arithType, lc, rc)
 	case "<<":
 		arithType := g.arithLLVMType(expr.Left, expr.Right)
 		lc := g.coerceToInt(sb, left, expr.Left, arithType)
 		rc := g.coerceToInt(sb, right, expr.Right, arithType)
-		reg := g.tmpReg("shl.tmp")
-		if sb != nil {
-			sb.WriteString(fmt.Sprintf("%s%s = shl %s %s, %s\n", g.indent(), reg, toLLVMType(arithType), lc, rc))
-		}
-		return reg
+		return g.emitIntArith(sb, "shl", arithType, lc, rc)
 	case ">>":
 		arithType := g.arithLLVMType(expr.Left, expr.Right)
 		lc := g.coerceToInt(sb, left, expr.Left, arithType)
 		rc := g.coerceToInt(sb, right, expr.Right, arithType)
-		reg := g.tmpReg("shr.tmp")
-		if sb != nil {
-			sb.WriteString(fmt.Sprintf("%s%s = lshr %s %s, %s\n", g.indent(), reg, toLLVMType(arithType), lc, rc))
-		}
-		return reg
+		return g.emitIntArith(sb, "lshr", arithType, lc, rc)
 	case "&&":
 		// 邏輯 AND：將 i1 運算元 zext 到 i64（如 str.empty() 返回 i1），
 		// 比較結果已是 i64，保持不變。然後使用 and 指令。

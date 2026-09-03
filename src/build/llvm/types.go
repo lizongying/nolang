@@ -127,6 +127,8 @@ func (g *Generator) mapToLLVMType(nolangType string) string {
 		return "i1"
 	case "str":
 		return "%str-long"
+	case "txt":
+		return "%txt"
 	case "ptr":
 		return "i8*"
 	case "byte":
@@ -460,6 +462,9 @@ func llvmTypeSize(llvmType string) int64 {
 	case "%str-long", "%vec":
 		// { i64, i64, i64 } = 8 + 8 + 8 = 24 bytes
 		return 24
+	case "%txt":
+		// { [255 x i8], i8 } = 255 + 1 = 256 bytes
+		return 256
 	case "%option":
 		// { i64, i64 } = 8 + 8 = 16 bytes
 		return 16
@@ -475,7 +480,7 @@ func llvmTypeSize(llvmType string) int64 {
 // usable as a map key (mirrors parser.isBuiltinTypeName).
 func isLLVMBuiltinTypeName(name string) bool {
 	switch name {
-	case "str", "i64", "i32", "i16", "i8", "i128",
+	case "str", "txt", "i64", "i32", "i16", "i8", "i128",
 		"u64", "u32", "u16", "u8", "u128",
 		"bool", "byte", "char",
 		"f64", "f32":
@@ -530,6 +535,8 @@ func llvmTypeToNolangName(llvmType string) string {
 		return "bool"
 	case "%str-long":
 		return "str"
+	case "%txt":
+		return "txt"
 	case "%vec":
 		return "[]T"
 	case "%arr":

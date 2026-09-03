@@ -4,7 +4,7 @@ sidebar_position: 3
 
 # Strings
 
-Nolang strings (`str`) are a union type (short ≤127 bytes stored on stack / long stored on heap), supporting various operators and methods.
+Nolang strings (`str`) are a heap-allocated byte sequence `{*byte, i64, i64}` (data, len, cap), supporting various operators and methods.
 
 ## String Operators
 

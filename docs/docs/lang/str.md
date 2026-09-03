@@ -4,7 +4,7 @@ sidebar_position: 3
 
 # 字串
 
-Nolang 字串（`str`）為 union 型別（short ≤127 byte 存棧上 / long 存堆上），支援多種運算符與方法。
+Nolang 字串（`str`）為堆分配的位元組序列 `{*byte, i64, i64}`（data, len, cap），支援多種運算符與方法。
 
 ## 字串運算符
 

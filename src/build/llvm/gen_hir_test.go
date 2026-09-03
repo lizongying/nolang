@@ -263,6 +263,49 @@ get-os = () (out str) { out = 'win' }
 print(get-os())
 `,
 		},
+		{
+			// Fixed-size array literal (KArrayLit) — emitted through
+			// generateLet from the reconstructed AST. Locks the KArrayLit
+			// reconstruction (size slot + element slots) byte-for-byte.
+			name: "fixed-array-literal",
+			src: `a [3]i64 = [10, 20, 30]
+print(a[0])
+print(a[2])
+`,
+		},
+		{
+			// Map literal (KMapLit) — emitted through generateLet's MapLiteral
+			// branch (allocate + put() per pair). Locks the KMapLit / KMapPair
+			// reconstruction (Type + key/value children) byte-for-byte.
+			name: "map-literal",
+			src: `m [str]i64 = { 'a': 1, 'b': 2 }
+c = m.contains('a')
+print(c)
+`,
+		},
+		{
+			// Conditional expression (KCond) — the ternary `c ? a : b`, emitted
+			// as a CFG/PHI monolith through generateConditionalExpression from
+			// the reconstructed AST. Locks the KCond reconstruction (cond/cons/
+			// alt children) byte-for-byte.
+			name: "conditional-expr",
+			src: `n = 7
+r = n > 0 ? n : 0
+print(r)
+`,
+		},
+		{
+			// Coroutine spawn/await (KRun / KAwait) — `run f()` returns a
+			// handle, `awy h` awaits it. Emitted through generateRunExpression /
+			// generateAwaitExpression from the reconstructed AST. Locks the
+			// KRun / KAwait reconstruction (Call / Right children) byte-for-byte.
+			name: "run-await",
+			src: `compute = (n i64) (r i64) { r = n * 2 }
+h = run compute(21)
+r = awy h
+print(r)
+`,
+		},
 	}
 
 	for _, tc := range cases {
@@ -828,6 +871,203 @@ main()
 	}
 	if found == 0 {
 		t.Fatal("no call expression nodes found in reconstructed program; test fixture is ineffective")
+	}
+}
+
+// TestGenerateHIRExprIndex drives the native KIndex emitter (Generator.generateHIRIndex)
+// through the generateHIRExpr seam: every index expression node must emit
+// byte-identical LLVM IR when read natively from HIR versus the surface-AST
+// generateIndexExpression. The index operand is emitted through the seam (so
+// nested identifiers / literals / infix go native); the left operand routes by
+// HIR kind — KIdent takes the variable name from n.S and drives generateIndexCore
+// (same var-type logic), while KDot / KStringLit / KSlice / KIndex fall back to
+// the reconstructed AST node. Both paths converge on the identical core, so the
+// comparison must hold. (Real native indexing with populated varTypes is also
+// guarded end-to-end by TestGenerateHIRMatchesGenerate.)
+func TestGenerateHIRExprIndex(t *testing.T) {
+	src := `main = () () {
+  s = 'Hello, World'
+  a = [10, 20, 30, 40]
+  print(s[0])
+  print(a[1])
+  b = s[7..]
+  print(b[0])
+  v = [1, 2, 3]
+  print(v[2])
+  print(a[a[0]])
+  u = user { x: 5, y: 7 }
+  print(u.x)
+}
+user {
+  x i64
+  y i64
+}
+main()
+`
+	l := lexer.New(src)
+	p := parser.New(l)
+	prog := p.ParseProgram()
+	if errs := p.Errors(); len(errs) > 0 {
+		t.Fatalf("parse errors: %v", errs)
+	}
+	pkg := parser.ASTToHIR(prog)
+	if pkg == nil {
+		t.Fatal("ASTToHIR returned nil")
+	}
+	_, astOf, err := hirToAST(pkg)
+	if err != nil {
+		t.Fatalf("hirToAST failed: %v", err)
+	}
+	g := NewGenerator()
+	g.hirPkg = pkg
+	g.hirAstOf = astOf
+
+	found := 0
+	for id, node := range astOf {
+		idx, ok := node.(*parser.IndexExpression)
+		if !ok {
+			continue
+		}
+		// Reset SSA temp-reg and string-literal counters between the two runs so
+		// emitted @%N register names and @.str.N constant indices are comparable.
+		var sbA, sbB strings.Builder
+		g.tmpIdx = 0
+		g.stringIdx = 0
+		regA := g.generateHIRExpr(&sbA, id)
+		g.tmpIdx = 0
+		g.stringIdx = 0
+		regB := g.generateExprWithSB(&sbB, idx)
+		if regA != regB || sbA.String() != sbB.String() {
+			t.Errorf("index (HIR id %d): native reg=%q ast reg=%q\nnative IR:\n%s\nast IR:\n%s",
+				id, regA, regB, sbA.String(), sbB.String())
+		}
+		found++
+	}
+	if found == 0 {
+		t.Fatal("no index expression nodes found in reconstructed program; test fixture is ineffective")
+	}
+}
+
+// TestGenerateHIRExprSlice drives the native KSlice emitter (Generator.generateHIRSlice)
+// and asserts byte-identical IR against the surface-AST path for every slice
+// expression node in the reconstructed program.
+func TestGenerateHIRExprSlice(t *testing.T) {
+	src := `main = () () {
+  s = 'Hello, World'
+  a [5]i64 = [10, 20, 30, 40, 50]
+  v = [1, 2, 3]
+  print(s[1..3])
+  print(s[..3])
+  print(s[1..])
+  print(a[0..2])
+  print(v[1..3])
+  b = s[2..5]
+  print(b[0])
+}
+main()
+`
+	l := lexer.New(src)
+	p := parser.New(l)
+	prog := p.ParseProgram()
+	if errs := p.Errors(); len(errs) > 0 {
+		t.Fatalf("parse errors: %v", errs)
+	}
+	pkg := parser.ASTToHIR(prog)
+	if pkg == nil {
+		t.Fatal("ASTToHIR returned nil")
+	}
+	_, astOf, err := hirToAST(pkg)
+	if err != nil {
+		t.Fatalf("hirToAST failed: %v", err)
+	}
+	g := NewGenerator()
+	g.hirPkg = pkg
+	g.hirAstOf = astOf
+
+	found := 0
+	for id, node := range astOf {
+		sl, ok := node.(*parser.SliceExpression)
+		if !ok {
+			continue
+		}
+		// Reset SSA temp-reg and string-literal counters between the two runs so
+		// emitted @%N register names and @.str.N constant indices are comparable.
+		var sbA, sbB strings.Builder
+		g.tmpIdx = 0
+		g.stringIdx = 0
+		regA := g.generateHIRExpr(&sbA, id)
+		g.tmpIdx = 0
+		g.stringIdx = 0
+		regB := g.generateExprWithSB(&sbB, sl)
+		if regA != regB || sbA.String() != sbB.String() {
+			t.Errorf("slice (HIR id %d): native reg=%q ast reg=%q\nnative IR:\n%s\nast IR:\n%s",
+				id, regA, regB, sbA.String(), sbB.String())
+		}
+		found++
+	}
+	if found == 0 {
+		t.Fatal("no slice expression nodes found in reconstructed program; test fixture is ineffective")
+	}
+}
+
+// TestGenerateHIRExprSliceLit drives the native KSliceLit emitter
+// (Generator.generateHIRSliceLit) through the generateHIRExpr seam: every slice
+// literal node ([1, 2, 3]) must emit byte-identical LLVM IR when read natively
+// from HIR versus the surface-AST generateSliceLiteral. Elements are emitted
+// through the seam (so nested identifiers / literals / infix go native) and
+// assembled into the identical "[i64 v0, i64 v1, ...]" constructor string.
+func TestGenerateHIRExprSliceLit(t *testing.T) {
+	src := `main = () () {
+  a = [1, 2, 3]
+  b = [10, 20, 30, 40]
+  print(a[0])
+  print(b[2])
+  c = [a[0], b[1], 7]
+  print(c[0])
+}
+main()
+`
+	l := lexer.New(src)
+	p := parser.New(l)
+	prog := p.ParseProgram()
+	if errs := p.Errors(); len(errs) > 0 {
+		t.Fatalf("parse errors: %v", errs)
+	}
+	pkg := parser.ASTToHIR(prog)
+	if pkg == nil {
+		t.Fatal("ASTToHIR returned nil")
+	}
+	_, astOf, err := hirToAST(pkg)
+	if err != nil {
+		t.Fatalf("hirToAST failed: %v", err)
+	}
+	g := NewGenerator()
+	g.hirPkg = pkg
+	g.hirAstOf = astOf
+
+	found := 0
+	for id, node := range astOf {
+		sl, ok := node.(*parser.SliceLiteral)
+		if !ok {
+			continue
+		}
+		// Reset SSA temp-reg and string-literal counters between the two runs so
+		// emitted @%N register names and @.str.N constant indices are comparable.
+		var sbA, sbB strings.Builder
+		g.tmpIdx = 0
+		g.stringIdx = 0
+		regA := g.generateHIRExpr(&sbA, id)
+		g.tmpIdx = 0
+		g.stringIdx = 0
+		regB := g.generateExprWithSB(&sbB, sl)
+		if regA != regB || sbA.String() != sbB.String() {
+			t.Errorf("slice-literal (HIR id %d): native reg=%q ast reg=%q\nnative IR:\n%s\nast IR:\n%s",
+				id, regA, regB, sbA.String(), sbB.String())
+		}
+		found++
+	}
+	if found == 0 {
+		t.Fatal("no slice literal nodes found in reconstructed program; test fixture is ineffective")
 	}
 }
 

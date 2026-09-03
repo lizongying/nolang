@@ -1233,6 +1233,13 @@ func (t *Transpiler) collectReferencedStdModules(prog *parser.Program) map[strin
 			if idx := strings.Index(ty.Value, "."); idx > 0 {
 				addRef(ty.Value[:idx])
 			}
+			// txt 內建型別隱含引用 std/txt.no 模組（型別方法特化）。
+			// txt 的方法（如 t.to-str()、t.eq()）經由變數呼叫，接收者
+			// 並非 txt. 模組前綴，靜態掃描無法偵測；透過掃描型別注解
+			// （如 `t txt = 'abc'`）能正確偵測 txt 模組依賴並按需載入。
+			if ty.Value == "txt" {
+				addRef("txt")
+			}
 		case *parser.ArrayType:
 			// [N]T 語法隱含引用 std/arr.no 模組（[n]t 泛型方法特化）。
 			// 若不標記為已引用，arr.no 不會被載入，[n]t.max / [n]t.clone 等
@@ -2301,16 +2308,17 @@ func (t *Transpiler) CompileTarget(source string, _ Target) (string, error) {
 		}
 	}
 	t.llvmGenerator.SetGlobalVarOwners(globalVarOwner, funcOwner)
-	// HIR codegen seam: when NOLANG_HIR=1, the checked AST is lowered to HIR
-	// and the generator consumes the HIR package (restoring inferred types from
-	// the side-table) instead of the surface AST. Default path is unchanged.
+	// HIR is the default codegen path. The checked AST is lowered to HIR and the
+	// generator consumes the HIR package (restoring inferred types from the
+	// side-table). The legacy surface-AST codegen is retained only as an escape
+	// hatch selected with NOLANG_HIR=0 (for bisecting regressions).
 	var ir string
-	if os.Getenv("NOLANG_HIR") == "1" {
+	if os.Getenv("NOLANG_HIR") == "0" {
+		ir = t.llvmGenerator.Generate(merged)
+	} else {
 		hirPkg, idMap := parser.ASTToHIRWithMap(merged)
 		parser.PopulateInferredTypes(hirPkg, idMap)
 		ir = t.llvmGenerator.GenerateHIR(hirPkg)
-	} else {
-		ir = t.llvmGenerator.Generate(merged)
 	}
 	if errs := t.llvmGenerator.CodegenErrors(); len(errs) > 0 {
 		return "", fmt.Errorf("codegen errors: %v", errs)
@@ -3305,7 +3313,7 @@ func isBuiltinType(name string) bool {
 	case "i8", "i16", "i32", "i64", "i128",
 		"u8", "u16", "u32", "u64", "u128",
 		"f32", "f64",
-		"byte", "bool", "str":
+		"byte", "bool", "str", "txt":
 		return true
 	}
 	return false

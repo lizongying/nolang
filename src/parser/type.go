@@ -225,7 +225,7 @@ func isTypeName(literal string) bool {
 // map key or value type (e.g. [str]i64).
 func isBuiltinTypeName(name string) bool {
 	switch name {
-	case "str", "i64", "i32", "i16", "i8", "i128",
+	case "str", "txt", "i64", "i32", "i16", "i8", "i128",
 		"u64", "u32", "u16", "u8", "u128",
 		"bool", "byte", "char",
 		"f64", "f32":

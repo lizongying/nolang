@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/lizongying/nolang/builtin"
+	"github.com/lizongying/nolang/hir"
 	"github.com/lizongying/nolang/lexer"
 	"github.com/lizongying/nolang/parser"
 )
@@ -2470,10 +2471,15 @@ func (g *Generator) generateCallExpression(sb *strings.Builder, expr *parser.Cal
 		}
 	}
 
-	return g.generateCallEmit(sb, expr, fnName, llvmFnName, methodReceiver)
+	return g.generateCallEmit(sb, expr, fnName, llvmFnName, methodReceiver, nil)
 }
 
-func (g *Generator) generateCallEmit(sb *strings.Builder, expr *parser.CallExpression, fnName, llvmFnName string, methodReceiver parser.Expression) string {
+// generateCallEmit emits a function call. hirArgIDs (when non-nil) is the
+// native HIR child-id list of the call's arguments (Children(id)[1:], the safe
+// subset with no generics/receiver); when provided and positionally aligned, the
+// generic argument loop types each KIdent argument via generateTypedArgHIR
+// instead of the reconstructed AST node, keeping output byte-identical.
+func (g *Generator) generateCallEmit(sb *strings.Builder, expr *parser.CallExpression, fnName, llvmFnName string, methodReceiver parser.Expression, hirArgIDs []int32) string {
 	// Intercept .zero() calls that were rewritten by the transpiler
 	// (e.g. [4]i64.zero(data) → _LB_4_RB_i64.zero). If the function doesn't
 	// exist in funcRetTypes, generate llvm.memset directly.
@@ -3318,6 +3324,65 @@ func (g *Generator) generateCallEmit(sb *strings.Builder, expr *parser.CallExpre
 		}
 	}
 
+	// generateTypedArgHIR types a single argument from its native HIR node id
+	// (the safe-subset path driven by generateHIRCall). It reuses the existing
+	// genTypedArg closure so emitted IR stays byte-identical to the AST path:
+	//   - KIdent: take the name from n.S and delegate to genTypedArg with a
+	//     reconstructed Identifier (cheap; genTypedArg only reads g.varTypes /
+	//     g.funcLocalNames / g.enumVariantIndex / g.funcRetTypes, emitting
+	//     nothing extra for plain variables).
+	//   - anything else: fall back to the reconstructed AST node (g.hirAstOf),
+	//     so nested calls / literals / dot-expressions emit exactly as before.
+	generateTypedArgHIR := func(argID int32, argIdx int) string {
+		node := g.hirPkg.Node(argID)
+		if node == nil {
+			return ""
+		}
+		switch node.Kind {
+		case hir.KIdent:
+			name := g.hirPkg.Str(node.S)
+			if name != "" {
+				return genTypedArg(&parser.Identifier{Value: name}, argIdx)
+			}
+		case hir.KIntLit, hir.KByteLit:
+			// Integer/byte literal argument: mirror genTypedArg's
+			// *parser.IntegerLiteral branch — alloca i64 (or i32 when the
+			// parameter expects i32) and store the immediate. Returns
+			// "<type>* tmpName", identical to the AST path.
+			g.tmpIdx++
+			tmpName := fmt.Sprintf("%%ref.tmp.%d", g.tmpIdx)
+			elemType := "i64"
+			if g.funcParamLLVMTypes != nil {
+				if types, ok := g.funcParamLLVMTypes[fnName]; ok && argIdx < len(types) {
+					if types[argIdx] == "i32" {
+						elemType = "i32"
+					}
+				}
+			}
+			if sb != nil {
+				g.emitEntryAlloca(sb, "%s = alloca %s\n", tmpName, elemType)
+				sb.WriteString(fmt.Sprintf("%sstore %s %d, %s* %s\n", g.indent(), elemType, node.Val, elemType, tmpName))
+			}
+			return elemType + "* " + tmpName
+		case hir.KFloatLit:
+			// Float literal argument: mirror genTypedArg's *parser.FloatLiteral
+			// branch — alloca double and store the value.
+			g.tmpIdx++
+			tmpName := fmt.Sprintf("%%ref.tmp.%d", g.tmpIdx)
+			if sb != nil {
+				g.emitEntryAlloca(sb, "%s = alloca double\n", tmpName)
+				sb.WriteString(fmt.Sprintf("%sstore double %s, double* %s\n", g.indent(), fmt.Sprintf("%f", node.Float()), tmpName))
+			}
+			return "double* " + tmpName
+		}
+		if g.hirAstOf != nil {
+			if arg, ok := g.hirAstOf[argID].(parser.Expression); ok {
+				return genTypedArg(arg, argIdx)
+			}
+		}
+		return ""
+	}
+
 	// Generate typed arguments for non-variadic params
 	// Propagate parameter type to currentTargetType so that type-inferred
 	// builtins (with-len, with-cap, with-cap-len) produce the correct LLVM
@@ -3351,7 +3416,11 @@ func (g *Generator) generateCallEmit(sb *strings.Builder, expr *parser.CallExpre
 				g.currentTargetType = pts[i]
 			}
 		}
-		typedArgs = append(typedArgs, genTypedArg(arg, i))
+		if hirArgIDs != nil && i < len(hirArgIDs) {
+			typedArgs = append(typedArgs, generateTypedArgHIR(hirArgIDs[i], i))
+		} else {
+			typedArgs = append(typedArgs, genTypedArg(arg, i))
+		}
 	}
 	g.currentTargetType = savedTargetType
 	g.currentTargetElemType = savedTargetElemType
@@ -3715,6 +3784,37 @@ func (g *Generator) evalI64Arg(sb *strings.Builder, arg parser.Expression) strin
 				}
 				return loadReg
 			}
+		}
+	}
+	// Any other expression (infix arithmetic, narrow-returning call, dot-field
+	// of a narrow int, option inner value, etc.). Nolang widens integer
+	// *locals* to i64, but the generators emit narrow arithmetic (e.g.
+	// `mul i8`) when the operands are explicitly-typed narrow locals. Consumers
+	// of evalI64Arg (malloc sizes, slice/vec indices, rotate counts, …) all
+	// require a true i64. Zero/sign-extend when the produced SSA value is a
+	// narrow integer. This mirrors the Identifier branch above.
+	if strings.HasPrefix(val, "%") {
+		et := ""
+		if g.ssaTypes != nil {
+			if t, ok := g.ssaTypes[val]; ok {
+				et = t
+			}
+		}
+		if et == "" {
+			et = g.intExprLLVMType(arg)
+		}
+		switch et {
+		case "i1", "i8", "i16", "i32", "u8", "u16", "u32":
+			g.tmpIdx++
+			extReg := fmt.Sprintf("%%fwd.i64.ext.%d", g.tmpIdx)
+			extOp := "zext"
+			if !isUnsignedIntType(et) && et != "i1" {
+				extOp = "sext"
+			}
+			if sb != nil {
+				sb.WriteString(fmt.Sprintf("%s%s = %s %s %s to i64\n", g.indent(), extReg, extOp, toLLVMType(et), val))
+			}
+			return extReg
 		}
 	}
 	return val

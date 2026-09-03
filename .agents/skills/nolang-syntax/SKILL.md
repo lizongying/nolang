@@ -483,7 +483,7 @@ Configure mirror addresses in the `mirrors` array of `package.jsonc` to accelera
 
 ### Data Types
 
-**Base types:** `byte`, `bool` (lowercase only), `char` (character type / rune, double-quoted single character, e.g. `"中"`), `str` (string type, single-quoted `'hello'`, or raw string with backticks), `i8`, `i16`, `i32`, `i64` (default numeric type, architecture-independent), `i128` (128-bit signed integer), `u8`, `u16`, `u32`, `u64`, `u128` (128-bit unsigned integer), `usize` (ffi only), `f32`, `f64`
+**Base types:** `byte`, `bool` (lowercase only), `char` (character type / rune, double-quoted single character, e.g. `"中"`), `str` (string type, single-quoted `'hello'`, or raw string with backticks), `txt` (fixed 256-byte string type, max 255 bytes data, must use type annotation: `t txt = 'abc'`), `i8`, `i16`, `i32`, `i64` (default numeric type, architecture-independent), `i128` (128-bit signed integer), `u8`, `u16`, `u32`, `u64`, `u128` (128-bit unsigned integer), `usize` (ffi only), `f32`, `f64`
 
 **Container types:** `obj` (object), `map` (map), `arr` (fixed-length array `[n]t`, `[?]t` with auto-inferred length, or `[?]` with auto-inferred length and i64 element type), `vec` (variable-length array `[]t`), `slice` (slice/view, no independent data structure, must be attached to arr/vec/str)
 

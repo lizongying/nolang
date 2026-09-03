@@ -3518,6 +3518,38 @@ func (g *Generator) generateMainFunction(sb *strings.Builder, program *parser.Pr
 		}
 	}
 
+	// 重新登記模組級 option 變數的 inner type。
+	// 早期 var 收集（collectVarDeclsFromStmtInner，stmt.go:5176）登記 optionInnerTypes 時，
+	// funcResultInnerTypes 尚未就緒（函數簽名收集在 prepare 後期才完成，generator.go:1867），
+	// 導致推斷型 option 變數（如 client = sse.connect(...) 返回 ?sse.client）的 inner type
+	// 未被登記。此處在 funcResultInnerTypes 已就緒後補登記，使後續 recollectSyntheticItTypes
+	// 能為合成 `it` 繫結解析出正確的 struct inner type。
+	if g.optionInnerTypes != nil {
+		for _, stmt := range program.Statements {
+			ls, ok := stmt.(*parser.LetStatement)
+			if !ok || ls.Name == nil {
+				continue
+			}
+			if _, exists := g.optionInnerTypes[ls.Name.Value]; exists {
+				continue
+			}
+			if inner := g.inferOptionInnerType(ls); inner != "" {
+				g.optionInnerTypes[ls.Name.Value] = inner
+			}
+		}
+	}
+
+	// 重新收集 top-level（模組級）synthetic `it` 繫結的型別。
+	// generateFunctionDefinition 對每個函數體呼叫 recollectSyntheticItTypes
+	// （stmt.go:3160），但 main 函數的 top-level 語句從未被覆蓋，
+	// 導致模組級 option match（例如 `client: { ... -> { c = it } }` 其中
+	// client 為 ?sse.client）的 `it` 預設成 i64 / %str-long，
+	// 產生型別不符的 IR（undefined @c.next-event、對 struct 做 load i64）。
+	// 此處在 moduleOptionInnerTypes 已還原後執行，使 `it` 取得正確的 struct inner type。
+	for _, stmt := range program.Statements {
+		g.recollectSyntheticItTypes(stmt, g.moduleVarTypes)
+	}
+
 	hasTopLevel := false
 	for _, stmt := range program.Statements {
 		switch stmt.(type) {
@@ -3897,11 +3929,13 @@ func (g *Generator) varLLVMType(stmt *parser.LetStatement) string {
 	}
 	// struct 欄位讀取 (e.g. p-local = fp.path)：依 receiver 型別與欄位名稱查詢 LLVM 型別
 	// 支援鏈式存取：非 Identifier receiver 透過 exprResultLLVMType 推導
+	// 注意：若 stmt 有顯式型別標注（如 `n i64 = .len`），顯式標注已在上方
+	// 「顯式型別註釋」分支處理並返回，不會走到此處。
 	if dot, ok := stmt.Value.(*parser.DotExpression); ok {
 		recvType := g.exprResultLLVMType(dot.Receiver)
-		// .len on str → i64 (must check before struct field lookup,
-		// but .len should always return i64)
-		if dot.Property == "len" && (recvType == "%str-long") {
+		// .len on str/txt → i64 (txt.len is byte field but .len access
+		// should return i64 for consistency with str.len semantics)
+		if dot.Property == "len" && (recvType == "%str-long" || recvType == "%txt") {
 			return "i64"
 		}
 		if g.isStructLLVMType(recvType) {
@@ -4996,22 +5030,25 @@ func (g *Generator) recollectSyntheticItTypes(stmt parser.Statement, vars map[st
 		innerIt, _ := g.optionInnerTypes[ident.Value]
 		fmt.Fprintf(os.Stderr, "[debug-it]   src %q type=%q ok=%v inner=%q (it name=%s)\n", ident.Value, srcType, ok, innerIt, s.Name.Value)
 	}
-	if !ok || srcType != "%option" {
-			if os.Getenv("NOLANG_DEBUG_IT") != "" {
-				fmt.Fprintf(os.Stderr, "[debug-it]   src %q type=%q (not %%option)\n", ident.Value, srcType)
-			}
-			return
+	if !ok {
+		if os.Getenv("NOLANG_DEBUG_IT") != "" {
+			fmt.Fprintf(os.Stderr, "[debug-it]   src %q not in varTypes\n", ident.Value)
 		}
-		if g.optionInnerTypes == nil {
-			return
+		return
+	}
+	if g.optionInnerTypes == nil {
+		return
+	}
+	innerType, ok := g.optionInnerTypes[ident.Value]
+	// 推斷型 option 變數（如 client = sse.connect(...)）其 varType 為 i64（預設），
+	// 而非字面 %option。只要 optionInnerTypes 已登記其 inner type，就允許 `it`
+	// 取用該 inner type；否則會因 srcType != "%option" 提前返回，導致 `it` 永遠是 i64。
+	if !ok || innerType == "" {
+		if os.Getenv("NOLANG_DEBUG_IT") != "" {
+			fmt.Fprintf(os.Stderr, "[debug-it]   src %q type=%q optionInnerTypes NOT FOUND\n", ident.Value, srcType)
 		}
-		innerType, ok := g.optionInnerTypes[ident.Value]
-		if !ok || innerType == "" {
-			if os.Getenv("NOLANG_DEBUG_IT") != "" {
-				fmt.Fprintf(os.Stderr, "[debug-it]   optionInnerTypes[%q] NOT FOUND\n", ident.Value)
-			}
-			return
-		}
+		return
+	}
 		if !g.isStructLLVMType(innerType) {
 			// innerType is a primitive (e.g. i64, f64). The `it` alloca may
 			// have been polluted to %str-long by an err arm's it binding
@@ -5147,14 +5184,22 @@ func (g *Generator) collectVarDecls(program *parser.Program) map[string]string {
 			if st, ok := s.Type.(*parser.SliceType); ok && st.Elem != nil && g.arrayElemTypes != nil {
 				g.arrayElemTypes[s.Name.Value] = g.mapToLLVMType(st.Elem.String())
 			}
-			// Populate optionInnerTypes for module-level ?T variables (e.g.
-			// s = json.parse(...) returning ?json). Without this, the synthetic
-			// `it = s` binding in a match ok arm cannot resolve the inner type,
-			// causing `it` to default to i64 (8 bytes) while the actual struct
-			// (e.g. %json.json = ~10KB) overflows the alloca during deep clone,
-			// causing stack overflow segfaults.
-			// This mirrors the logic in collectVarDeclsFromStmtInner (L4920-4925).
-			if t == "%option" && g.optionInnerTypes != nil {
+		// Populate optionInnerTypes for module-level ?T variables (e.g.
+		// s = json.parse(...) returning ?json). Without this, the synthetic
+		// `it = s` binding in a match ok arm cannot resolve the inner type,
+		// causing `it` to default to i64 (8 bytes) while the actual struct
+		// (e.g. %json.json = ~10KB) overflows the alloca during deep clone,
+		// causing stack overflow segfaults.
+		// This mirrors the logic in collectVarDeclsFromStmtInner (L4920-4925).
+		//
+		// NOTE: do NOT gate on `t == "%option"`. varLLVMType() returns "i64"
+		// (the default) for a `let x = optionReturningCall()` with NO explicit
+		// `?T` annotation, so the option inner type would never be registered,
+		// and the match `it` binding would silently default to i64 — producing
+		// type-mismatched IR (e.g. client = sse.connect(...) : ?sse.client, or
+		// s = json.parse(...) : ?json). inferOptionInnerType() already returns
+		// "" for non-option values, so running it unconditionally is safe.
+		if g.optionInnerTypes != nil {
 				if _, exists := g.optionInnerTypes[s.Name.Value]; !exists {
 					if inner := g.inferOptionInnerType(s); inner != "" {
 						g.optionInnerTypes[s.Name.Value] = inner
@@ -8576,10 +8621,10 @@ func (g *Generator) generateLet(sb *strings.Builder, stmt *parser.LetStatement) 
 								dataFieldIdx = 1
 							}
 							g.emitContainerClone(sb, g.varAddr(srcIdent.Value), gepReg, toLLVMType(fieldType), dataFieldIdx, "")
-						} else {
-							sb.WriteString(fmt.Sprintf("%sstore %s %s, %s* %s\n", g.indent(), toLLVMType(fieldType), fieldVal, toLLVMType(fieldType), gepReg))
-						}
-						} else {
+					} else {
+						g.emitTypedStore(sb, toLLVMType(fieldType), fieldVal, gepReg)
+					}
+					} else {
 							// 不同型別：先取得 source 指標，轉換為目標型別的指標，再 load + store
 							sourcePtr := g.materializeStrPtr(sb, f.Value, sourceStrType, fieldVal)
 							convertedPtr := sourcePtr
@@ -8590,7 +8635,12 @@ func (g *Generator) generateLet(sb *strings.Builder, stmt *parser.LetStatement) 
 					}
 				}
 		} else {
-			sb.WriteString(fmt.Sprintf("%sstore %s %s, %s* %s\n", g.indent(), toLLVMType(fieldType), fieldVal, toLLVMType(fieldType), gepReg))
+			fType := toLLVMType(fieldType)
+			// 窄整數約定：局部整數一律為 i64，但 struct field 保留真實寬度
+			// (i1/i8/i16/i32)。當值的實際 IR 型別是 i64 而欄位是窄整數時，
+			// 必須先 trunc i64→窄型別再 store，否則 opt 報型別不匹配
+			// （例如 %use-tls.val 是 i64 但欄位是 i1）。
+			g.emitTypedStore(sb, fType, fieldVal, gepReg)
 		}
 	}
 	// 為未明確設定的 %vec 欄位分配 data 緩衝區
@@ -9012,6 +9062,83 @@ if !alreadyCoerced && g.isIntegerLLVMType(llvmType) && llvmType != "i64" && stri
 	}
 
 	switch llvmType {
+	case "%txt":
+		// txt is a fixed 256-byte struct: { [255 x i8] data, i8 len }
+		// String literal produces %str-long* pointer (alloca), need to convert.
+		if val == "0" || val == "" {
+			sb.WriteString(fmt.Sprintf("%sstore %%txt zeroinitializer, %%txt* %s\n", g.indent(), storeAddr))
+			return
+		}
+		// String literal → txt: copy string bytes into txt.data[0..len], set txt.len
+		if strings.HasPrefix(val, "%str-longlit.") {
+			if strLit, ok := stmt.Value.(*parser.StringLiteral); ok {
+				strLen := len(strLit.Value)
+				if strLen > 255 {
+					strLen = 255
+				}
+				// Load the str-long value to get its data pointer
+				loadReg := g.tmpReg("txt.src.strload")
+				sb.WriteString(fmt.Sprintf("%s%s = load %%str-long, %%str-long* %s\n", g.indent(), loadReg, val))
+				// Get data pointer from str-long (field 2 = data, which is i64 address)
+				dataGEP := g.tmpReg("txt.src.datagep")
+				sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%str-long, %%str-long* %s, i32 0, i32 2\n", g.indent(), dataGEP, val))
+				dataPtrInt := g.tmpReg("txt.src.dataval")
+				sb.WriteString(fmt.Sprintf("%s%s = load i64, i64* %s\n", g.indent(), dataPtrInt, dataGEP))
+				dataPtr := g.tmpReg("txt.src.dataptr")
+				sb.WriteString(fmt.Sprintf("%s%s = inttoptr i64 %s to i8*\n", g.indent(), dataPtr, dataPtrInt))
+				// GEP to txt.data[0] (field 0, first element of [255 x i8])
+				txtDataGEP := g.tmpReg("txt.dst.datagep")
+				sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%txt, %%txt* %s, i32 0, i32 0, i64 0\n", g.indent(), txtDataGEP, storeAddr))
+				// memcpy string data to txt.data
+				if strLen > 0 {
+					sb.WriteString(fmt.Sprintf("%scall void @llvm.memcpy.p0i8.p0i8.i64(i8* %s, i8* %s, i64 %d, i1 false)\n",
+						g.indent(), txtDataGEP, dataPtr, strLen))
+				}
+				// Store length in txt.len (field 1, i8)
+				txtLenGEP := g.tmpReg("txt.dst.lengep")
+				sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%txt, %%txt* %s, i32 0, i32 1\n", g.indent(), txtLenGEP, storeAddr))
+				sb.WriteString(fmt.Sprintf("%sstore i8 %d, i8* %s\n", g.indent(), strLen, txtLenGEP))
+				return
+			}
+		}
+		// str pointer reg → txt: load str-long value, then convert
+		if g.isStrPtrReg(val) {
+			loadReg := g.tmpReg("txt.src.strload")
+			sb.WriteString(fmt.Sprintf("%s%s = load %%str-long, %%str-long* %s\n", g.indent(), loadReg, val))
+			// Get str length (field 0)
+			strLenGEP := g.tmpReg("txt.src.lengep")
+			sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%str-long, %%str-long* %s, i32 0, i32 0\n", g.indent(), strLenGEP, val))
+			strLenReg := g.tmpReg("txt.src.lenval")
+			sb.WriteString(fmt.Sprintf("%s%s = load i64, i64* %s\n", g.indent(), strLenReg, strLenGEP))
+			// Truncate to i8 (max 255)
+			txtLenReg := g.tmpReg("txt.dst.len")
+			sb.WriteString(fmt.Sprintf("%s%s = trunc i64 %s to i8\n", g.indent(), txtLenReg, strLenReg))
+			// Get data pointer
+			dataGEP := g.tmpReg("txt.src.datagep")
+			sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%str-long, %%str-long* %s, i32 0, i32 2\n", g.indent(), dataGEP, val))
+			dataPtrInt := g.tmpReg("txt.src.dataval")
+			sb.WriteString(fmt.Sprintf("%s%s = load i64, i64* %s\n", g.indent(), dataPtrInt, dataGEP))
+			dataPtr := g.tmpReg("txt.src.dataptr")
+			sb.WriteString(fmt.Sprintf("%s%s = inttoptr i64 %s to i8*\n", g.indent(), dataPtr, dataPtrInt))
+			// GEP to txt.data[0]
+			txtDataGEP := g.tmpReg("txt.dst.datagep")
+			sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%txt, %%txt* %s, i32 0, i32 0, i64 0\n", g.indent(), txtDataGEP, storeAddr))
+			// memcpy (use strLen but capped at 255)
+			// Create a condition: if strLen > 255, use 255
+			cappedLen := g.tmpReg("txt.dst.caplen")
+			sb.WriteString(fmt.Sprintf("%s%s = icmp ult i64 %s, 256\n", g.indent(), cappedLen, strLenReg))
+			txtLenVal := g.tmpReg("txt.dst.lenval")
+			sb.WriteString(fmt.Sprintf("%s%s = select i1 %s, i64 %s, i64 255\n", g.indent(), txtLenVal, cappedLen, strLenReg))
+			sb.WriteString(fmt.Sprintf("%scall void @llvm.memcpy.p0i8.p0i8.i64(i8* %s, i8* %s, i64 %s, i1 false)\n",
+				g.indent(), txtDataGEP, dataPtr, txtLenVal))
+			// Store length
+			txtLenGEP := g.tmpReg("txt.dst.lengep")
+			sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%txt, %%txt* %s, i32 0, i32 1\n", g.indent(), txtLenGEP, storeAddr))
+			sb.WriteString(fmt.Sprintf("%sstore i8 %s, i8* %s\n", g.indent(), txtLenReg, txtLenGEP))
+			return
+		}
+		// Default: store zeroinitializer
+		sb.WriteString(fmt.Sprintf("%sstore %%txt zeroinitializer, %%txt* %s\n", g.indent(), storeAddr))
 	case "%str-long":
 		// Copy %str-long struct: load from source, store to dest
 		// String literal produces %str-long* pointer (alloca).
@@ -10085,4 +10212,43 @@ func (g *Generator) emitRecursiveFreeHelpers() {
 			g.recursiveFreeFns.WriteString(sb.String())
 		}
 	}
+}
+
+// isNarrowIntLLVM reports whether t is a narrow integer LLVM type
+// (i1/i8/i16/i32). Nolang widens all integer locals to i64, but struct fields
+// and array/vec elements keep their declared width. The unsigned variants
+// (u8/u16/u32) map to the same i8/i16/i32 LLVM types.
+func isNarrowIntLLVM(t string) bool {
+	switch t {
+	case "i1", "i8", "i16", "i32":
+		return true
+	}
+	return false
+}
+
+// emitTypedStore writes val into the slot pointed by ptrReg, whose LLVM type is
+// targetType. Nolang widens integer locals to i64, so when val is an i64
+// register but the destination slot is a narrow integer (i1/i8/i16/i32), an
+// explicit trunc must be emitted; otherwise `opt` rejects the IR as a type
+// mismatch (e.g. `store i8 %i64reg`). This only ever *adds* a trunc to IR that
+// was previously ill-typed, so it cannot change already-valid code paths.
+func (g *Generator) emitTypedStore(sb *strings.Builder, targetType, val, ptrReg string) {
+	if isNarrowIntLLVM(targetType) && strings.HasPrefix(val, "%") {
+		// Nolang widens integer locals to i64. When storing into a narrow
+		// integer field (i1/i8/i16/i32), check the SSA type to decide if
+		// a trunc is needed. If ssaTypes has no record, default to i64
+		// (the standard Nolang integer width) and emit trunc unconditionally.
+		actualType := "i64"
+		if g.ssaTypes != nil {
+			if at, ok := g.ssaTypes[val]; ok && at != "" {
+				actualType = at
+			}
+		}
+		if actualType != targetType {
+			trunc := g.tmpReg("narrow.trunc")
+			sb.WriteString(fmt.Sprintf("%s%s = trunc %s %s to %s\n", g.indent(), trunc, actualType, val, targetType))
+			val = trunc
+		}
+	}
+	sb.WriteString(fmt.Sprintf("%sstore %s %s, %s* %s\n", g.indent(), targetType, val, targetType, ptrReg))
 }

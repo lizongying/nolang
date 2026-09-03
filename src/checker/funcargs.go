@@ -39,7 +39,7 @@ func StructFieldTypeString(f *parser.StructField) string {
 func isConcreteType(typeName string) bool {
 	switch typeName {
 	case "i8", "i16", "i32", "i64", "i128", "u8", "u16", "u32", "u64", "u128",
-		"byte", "f64", "str", "bool", "char", "void":
+		"byte", "f64", "str", "txt", "bool", "char", "void":
 		return true
 	}
 	// 複合型別：切片、陣列、可空、指針
@@ -851,6 +851,12 @@ func isArgTypeCompatible(expectedType, argType string, arg parser.Expression) bo
 	// 傳給 []byte 參數（如 sha256('') ），代碼生成器正確處理轉換。
 	if (expectedType == "[]byte" && argType == "str") ||
 		(expectedType == "str" && argType == "[]byte") {
+		return true
+	}
+	// txt 和 str 互通：txt 是固定 256 字節字串，str 字面量可賦值給 txt
+	// （如 t txt = 'abc'），代碼生成器處理轉換。
+	if (expectedType == "txt" && argType == "str") ||
+		(expectedType == "str" && argType == "txt") {
 		return true
 	}
 	// ?T 到 T 的隱式解包：在 ok 分支中，?T 變數已確認為有值，

@@ -13,17 +13,19 @@ Mapping of Nolang types to LLVM:
 | `bool`           | `i1`                                               |
 | `byte`           | `i8`                                               |
 | `char`           | `i32`                                              |
-| `i8/i16/i32/i64` | `i8/i16/i32/i64`                                   |
-| `u8/u16/u32/u64` | `i8/i16/i32/i64`                                   |
+| `i8/i16/i32/i64/i128` | `i8/i16/i32/i64/i128`                             |
+| `u8/u16/u32/u64/u128` | `i8/i16/i32/i64/i128`                          |
 | `f32`            | `float`                                            |
 | `f64`            | `double`                                           |
-| `str`            | union (short: `[127]byte` / long: `{*byte, i64}`) |
+| `str`            | `{*byte, i64, i64}` (data, len, cap, heap-allocated) |
+| `txt`            | `{ [255 x i8], i8 }` (fixed 256 bytes) |
 
 **Composite types:**
 
 - **Variable-length array `[]t`**: underlying `{ t*, i64 }` (data, len)
 - **Fixed-length array `[n]t`**: LLVM fixed-size array
-- **String `str`**: union type (short ≤127 bytes stored on stack / long stored on heap), supports `s[i]`, `s[i..j]`, `s + t`
+- **String `str`**: heap-allocated byte sequence `{*byte, i64, i64}` (data, len, cap), supports `s[i]`, `s[i..j]`, `s + t`
+- **Fixed string `txt`**: fixed 256-byte struct `{ [255]byte data, byte len }`, 255 bytes data + 1 byte length (0-255), no heap allocation, requires type annotation (`t txt = 'abc'`)
 - **Enum/Union**: `option` tagged enum (`ok t` / `nil` / `err str`)
 - **Struct**: must be defined across multiple lines; fields are not comma-separated
 - **Map**: underlying linked-hash-map

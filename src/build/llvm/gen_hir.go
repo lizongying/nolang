@@ -249,6 +249,7 @@ func (c *hirASTConv) stmt(id int32) (parser.Statement, error) {
 			ItArmType:     c.pkg.Str(n.S2),
 			IsSynthetic:   n.Has(hir.FlagSynthetic),
 			IsModuleConst: n.Has(hir.FlagModuleConst),
+			Type:          parseHIRType(c.pkg.Type(n.Type)),
 			Value:         c.expr(n.First),
 		}
 	case hir.KReturn:

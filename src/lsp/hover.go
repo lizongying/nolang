@@ -36,6 +36,7 @@ var builtinTypeDoc = map[string]string{
 	"f64":  "**型別**: `f64` (64-bit float)\n\n- **Range(dec)**: `-1.7976931348623157e+308` .. `1.7976931348623157e+308`",
 	"bool": "**型別**: `bool` (boolean)\n\n- **Values**: `true` | `false`",
 	"str":  "**型別**: `str` (string, immutable byte sequence)",
+	"txt":  "**型別**: `txt` (fixed 256-byte string, max 255 bytes data)\n\n- **Layout**: `{ [255]byte data, byte len }`\n- **Total size**: 256 bytes\n- **Max content**: 255 bytes\n- **Usage**: `t txt = 'hello'`",
 	"char": "**型別**: `char` (single Unicode code point, stored as i64)",
 	"fd":   "**型別**: `fd` (file descriptor, stored as i64)",
 }

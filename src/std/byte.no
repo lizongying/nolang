@@ -179,3 +179,18 @@ HEX-LOWER = '0123456789abcdef'
 ; byte.to-str = () (out str) {
 ;     // LLVM: zext i8 to i64 → sprintf(buf, "%hhu", .)
 ; }
+
+; ═══════════════════════════════════════════════
+; txt 转换
+; ═══════════════════════════════════════════════
+
+; []byte.to-txt: 将 []byte 转换为 txt（截断至 255 字节）
+; 返回 out txt: 固定 256 字节的 txt 结构
+[]byte.to-txt = () (out txt) {
+    n = .len()
+    n > 255 -> n = 255
+    i <- [0..n): {
+        out[i] = .[i]
+    }
+    out.len = n
+}
