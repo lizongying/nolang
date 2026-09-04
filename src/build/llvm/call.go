@@ -1298,12 +1298,12 @@ func (g *Generator) generateCallExpression(sb *strings.Builder, expr *parser.Cal
 								// BEFORE we set it below.
 								alreadyAllocated := (g.funcLocalNames != nil && g.funcLocalNames[ident.Value]) ||
 									(g.emittedAlloca != nil && g.emittedAlloca[ident.Value])
-								if !isGlobal {
-									if g.funcLocalNames == nil {
-										g.funcLocalNames = make(map[string]bool)
-									}
-									g.funcLocalNames[ident.Value] = true
+							if !isGlobal {
+								if g.funcLocalNames == nil {
+									g.funcLocalNames = make(map[string]bool)
 								}
+								g.funcLocalNames[ident.Value] = true
+							}
 								// If the variable exists in varTypes but is neither a global nor
 								// a function parameter nor an already-allocated local (e.g. a
 								// module-level variable that was skipped from globalVars
@@ -1340,7 +1340,8 @@ func (g *Generator) generateCallExpression(sb *strings.Builder, expr *parser.Cal
 								sb.WriteString(fmt.Sprintf("%scall void @llvm.lifetime.start.p0i8(i64 8, i8* %s)\n", g.indent(), llvmVarRef(ident.Value)))
 							}
 						}
-						allArgs = append(allArgs, g.generateCallArg(sb, outArg))
+						argStr := g.generateCallArg(sb, outArg)
+						allArgs = append(allArgs, argStr)
 						continue
 					}
 					// IndexExpression output target (e.g. fields[n] = f()): generate write
@@ -2120,6 +2121,22 @@ func (g *Generator) generateCallExpression(sb *strings.Builder, expr *parser.Cal
 			// 布爾字面量接收者（如 true.to-str()）
 			// 布爾字面量預設為 bool 型別
 			shortName := "bool." + dot.Property
+			if g.funcRetTypes != nil {
+				if _, ok := g.funcRetTypes[shortName]; ok {
+					fnName = shortName
+					methodReceiver = receiverExpr
+				}
+			}
+			if methodReceiver == nil {
+				if m := builtin.FindBuiltinMethod(shortName); m != nil {
+					fnName = shortName
+					methodReceiver = receiverExpr
+				}
+			}
+		} else if _, ok := receiverExpr.(*parser.CharLiteral); ok {
+			// 字元字面量接收者（如 "中".to-str()、"a".to-upper()）
+			// 字元字面量永遠是 char 型別，直接嘗試 char.<property>
+			shortName := "char." + dot.Property
 			if g.funcRetTypes != nil {
 				if _, ok := g.funcRetTypes[shortName]; ok {
 					fnName = shortName

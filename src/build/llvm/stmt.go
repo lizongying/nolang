@@ -3618,6 +3618,14 @@ func (g *Generator) generateMainFunction(sb *strings.Builder, program *parser.Pr
 		sort.Strings(sortedNames)
 		for _, name := range sortedNames {
 			varType := g.moduleVarTypes[name]
+			// Module-level `let` declarations that are ALSO used as multi-assign
+			// targets (e.g. `elem-idx i64 = -1` then `elem-idx, ok = p.arr-get(...)`)
+			// are emitted as globals by the emission loop below; do NOT allocate a
+			// local alloca for them. The decision is made by globalVars[name]
+			// (set by the emission loop), which is authoritative: a module-level
+			// let stays a global. (funcLocalNames is intentionally NOT consulted
+			// here — collectVarDeclsFromStmtInner no longer marks module-level lets
+			// as local, so funcLocalNames[name] is correctly false for them.)
 			if g.globalVars != nil && g.globalVars[name] {
 				continue
 			}
@@ -3891,6 +3899,21 @@ func (g *Generator) builtinStructReturnType(m *builtin.BuiltinMethod) string {
 	return ""
 }
 
+// regexpLLVMType returns the LLVM type name for a /pattern/ regex literal.
+// The regexp struct is auto-renamed to "regexp.regexp" when the std/regexp
+// module is loaded (prefixModuleStatements always prefixes the module's
+// struct definitions). A regex literal always forces that load via
+// addRef("regexp") in collectReferencedStdModules, so the registered name is
+// "regexp.regexp"; using the bare "%regexp" would emit an undefined IR type
+// ("Cannot allocate unsized type"). Fall back to "%regexp" only if the module
+// was somehow not loaded.
+func (g *Generator) regexpLLVMType() string {
+	if t, ok := g.varTypes["regexp.regexp"]; ok {
+		return t
+	}
+	return "%regexp"
+}
+
 func (g *Generator) varLLVMType(stmt *parser.LetStatement) string {
 	// 單具體型別別名解析：若顯式型別為已註冊的具體型別別名，用底層 Type 遞迴解析
 	// 使 ArrayType/SliceType 等特殊路徑也能正確套用到底層型別
@@ -3899,6 +3922,30 @@ func (g *Generator) varLLVMType(stmt *parser.LetStatement) string {
 			unwrapped := *stmt
 			unwrapped.Type = underlying
 			return g.varLLVMType(&unwrapped)
+		}
+	}
+	// Module-prefixed (or bare) struct type annotation, e.g. `conn http2.conn`
+	// or `c tls.conn`. Without this, varLLVMType fell through to the primitive
+	// mapToLLVMType path (which returns "" for struct names) and ultimately
+	// defaulted to i64, emitting `alloca i64` for a struct-typed variable and
+	// cascading into a misnamed `.init()` call (e.g. @http2-conn.init instead
+	// of @http2.conn.init). Resolve the registered struct LLVM type here.
+	// Primitives (i64, i32, …) are not present in structTypes, so they fall
+	// through unchanged to the existing explicit-annotation handling below.
+	if nt, ok := stmt.Type.(*parser.NamedType); ok {
+		if t, ok := g.varTypes[nt.Value]; ok {
+			return t
+		}
+		if _, ok := g.structTypes[nt.Value]; ok {
+			return "%" + nt.Value
+		}
+		// Module-prefixed variant (e.g. "conn" → "server.conn") when the bare
+		// name is not directly registered but a prefixed version exists.
+		suffix := "." + nt.Value
+		for name := range g.structTypes {
+			if strings.HasSuffix(name, suffix) {
+				return "%" + name
+			}
 		}
 	}
 	// Option type: ?type
@@ -4026,7 +4073,7 @@ func (g *Generator) varLLVMType(stmt *parser.LetStatement) string {
 	case *parser.CharLiteral:
 		return "i32"
 	case *parser.RegexLiteral:
-		return "%regexp"
+		return g.regexpLLVMType()
 	case *parser.InfixExpression:
 		// 位元組算術（單字元 StringLiteral 配非字串運算元，如 c - 'A'）應推導為整數
 		// 型別，而非 %str-long。需在字串相接檢查之前判斷。
@@ -4657,12 +4704,20 @@ func (g *Generator) varLLVMType(stmt *parser.LetStatement) string {
 						}
 					}
 				}
-				if m := builtin.FindBuiltinMethod(shortName); m != nil && len(m.Return) > 0 {
-					return g.mapToLLVMType(m.Return[0].String())
-				}
+			if m := builtin.FindBuiltinMethod(shortName); m != nil && len(m.Return) > 0 {
+				return g.mapToLLVMType(m.Return[0].String())
 			}
-			// 結構欄位 / 陣列元素 / 切片結果 / 函數呼叫結果接收者
-			// （如 c.name.trim()、names[i].slice()、buf[..].to-str()、foo().trim()）
+		}
+		// CharLiteral receiver (e.g., "中".to-str()、"a".to-upper()、"界".to-lower())
+		// 与 StringLiteral/IntegerLiteral 等字面量接收者分支對齊，避免落到末尾的 i64 預設。
+		if _, ok := recvExpr.(*parser.CharLiteral); ok {
+			shortName := "char." + dot.Property
+			if t := g.lookupMethodReturnType(shortName); t != "" {
+				return t
+			}
+		}
+		// 結構欄位 / 陣列元素 / 切片結果 / 函數呼叫結果接收者
+		// （如 c.name.trim()、names[i].slice()、buf[..].to-str()、foo().trim()）
 			// 透過 exprResultLLVMType 推導接收者型別，再映射到 nolang 型別名查找方法返回型別
 			switch recvExpr.(type) {
 			case *parser.DotExpression, *parser.IndexExpression, *parser.SliceExpression, *parser.CallExpression:
@@ -5740,10 +5795,15 @@ func (g *Generator) collectVarDeclsFromStmtInner(stmt parser.Statement, vars map
 				// 局部名，否則會與同名全局函數（如標準庫的 out/err 打印函數）
 				// 衝突：作為返回槽指標傳遞時被誤判成函數指標 void(...)**，
 				// 導致呼叫方傳參型別錯亂、opt 把形參表重排、運行時空指標崩潰。
-				if g.funcLocalNames != nil {
-					g.funcLocalNames[ident.Value] = true
-				}
-				if _, exists := vars[ident.Value]; !exists {
+			// 例外：模組級 let 宣告（如 `elem-idx i64 = -1`）即使同時是多賦值
+			// 目標，也必須保持為全域變數 @"name"（由 emission loop 發出），
+			// 不可標記為局部；否則 varAddr 回傳 %"name" 區域引用但該 alloca
+			// 不存在，導致 "use of undefined value '%name'"。此類名稱記錄於
+			// g.moduleLetNames（prepare 預掃描 top-level LetStatement）。
+			if g.funcLocalNames != nil && !(g.moduleLetNames != nil && g.moduleLetNames[ident.Value]) {
+				g.funcLocalNames[ident.Value] = true
+			}
+			if _, exists := vars[ident.Value]; !exists {
 						var vt string
 						if i < len(retTypes) {
 							vt = retTypes[i]
@@ -6058,13 +6118,18 @@ func (g *Generator) generateStatement(sb *strings.Builder, stmt parser.Statement
 			// 註冊左側目標變數為局部名，避免與同名全局函數（如標準庫的 out/err
 			// 打印函數）衝突：否則在將其作為返回槽指標傳遞時會被誤判成函數指標
 			// void(...)**，導致呼叫方傳參型別錯亂、opt 把形參表重排、運行時空指標崩潰。
-			for _, target := range s.Targets {
-				if ident, ok := target.(*parser.Identifier); ok {
-					if g.funcLocalNames != nil {
-						g.funcLocalNames[ident.Value] = true
-					}
+		for _, target := range s.Targets {
+			if ident, ok := target.(*parser.Identifier); ok {
+				// 模組級 let 宣告即使同時是多賦值目標（如 `elem-idx i64 = -1` 後接
+				// `elem-idx, ok = p.arr-get(...)`）也必須保持為全域變數 @"name"，
+				// 不可標記為局部：否則 varAddr 回傳 %"name" 區域引用但該 alloca
+				// 不存在，導致 "use of undefined value '%name'"。記錄於
+				// g.moduleLetNames（prepare 預掃描 top-level LetStatement）。
+				if g.funcLocalNames != nil && !(g.moduleLetNames != nil && g.moduleLetNames[ident.Value]) {
+					g.funcLocalNames[ident.Value] = true
 				}
 			}
+		}
 			outerCall := &parser.CallExpression{
 				Token:     innerCall.Token,
 				Function:  innerCall,
@@ -7323,12 +7388,20 @@ func (g *Generator) generateLet(sb *strings.Builder, stmt *parser.LetStatement) 
 				if _, exists := g.varTypes[name]; !exists {
 					// Try to infer type from the source variable (e.g., it = b
 					// where b is %option → it should be %option, not i64).
-					inferredType := "i64"
-					if srcIdent, ok := stmt.Value.(*parser.Identifier); ok {
-						if srcType, ok := g.varTypes[srcIdent.Value]; ok {
-							inferredType = srcType
-						}
+				inferredType := "i64"
+				if srcIdent, ok := stmt.Value.(*parser.Identifier); ok {
+					if srcType, ok := g.varTypes[srcIdent.Value]; ok {
+						inferredType = srcType
 					}
+				} else if call, ok := stmt.Value.(*parser.CallExpression); ok {
+					// Infer the variable's type from a call/method return value
+					// so that struct-returning calls (e.g. `s = x.to-str()`) are
+					// allocated with the correct (non-i64) LLVM type instead of i64,
+					// which would otherwise produce a type-mismatch opt error.
+					if rt := g.callResultLLVMType(call); rt != "" {
+						inferredType = rt
+					}
+				}
 					g.varTypes[name] = inferredType
 					g.funcLocalNames[name] = true
 					sb.WriteString(fmt.Sprintf("%s%s = alloca %s\n", g.indent(), llvmVarRef(name), inferredType))
@@ -10251,4 +10324,77 @@ func (g *Generator) emitTypedStore(sb *strings.Builder, targetType, val, ptrReg 
 		}
 	}
 	sb.WriteString(fmt.Sprintf("%sstore %s %s, %s* %s\n", g.indent(), targetType, val, targetType, ptrReg))
+}
+
+// methodReceiverNolangType returns the Nolang type name of a method-call receiver
+// expression, used to construct the type-prefixed method name (e.g. "char.to-str").
+// Handles all receiver forms: Identifier (looked up in varTypes, with primitive
+// LLVM→Nolang alias resolution, e.g. i32 → char, str-long → str), CharLiteral,
+// StringLiteral, IntegerLiteral, FloatLiteral, BooleanLiteral, and compound
+// receivers (IndexExpression / DotExpression) resolved via exprResultLLVMType.
+// Returns "" for module-qualified receivers (e.g. tls.accept) which are not
+// method calls on a value.
+func (g *Generator) methodReceiverNolangType(receiver parser.Expression) string {
+	switch r := receiver.(type) {
+	case *parser.CharLiteral:
+		return "char"
+	case *parser.StringLiteral:
+		return "str"
+	case *parser.IntegerLiteral:
+		return "i64"
+	case *parser.FloatLiteral:
+		return "f64"
+	case *parser.BooleanLiteral:
+		return "bool"
+	case *parser.Identifier:
+		if rt, ok := g.varTypes[r.Value]; ok {
+			t := strings.TrimPrefix(rt, "%")
+			if aliases, ok := llvmTypeToNolang[t]; ok && len(aliases) > 0 {
+				return aliases[0]
+			}
+			return t
+		}
+	default:
+		rt := g.exprResultLLVMType(receiver)
+		if rt != "" {
+			t := strings.TrimPrefix(rt, "%")
+			if aliases, ok := llvmTypeToNolang[t]; ok && len(aliases) > 0 {
+				return aliases[0]
+			}
+			return t
+		}
+	}
+	return ""
+}
+
+// callResultLLVMType infers the LLVM result type of a CallExpression RHS, used to
+// type a freshly-declared variable assigned from a call (e.g. `s = x.to-str()`
+// where s has no explicit type). Returns "" if the type cannot be determined,
+// in which case the caller falls back to i64.
+func (g *Generator) callResultLLVMType(call *parser.CallExpression) string {
+	fnName := ""
+	if ident, ok := call.Function.(*parser.Identifier); ok {
+		fnName = ident.Value
+	} else if dot, ok := call.Function.(*parser.DotExpression); ok {
+		if nl := g.methodReceiverNolangType(dot.Receiver); nl != "" {
+			fnName = nl + "." + dot.Property
+		} else if recvIdent, ok := dot.Receiver.(*parser.Identifier); ok {
+			// module-qualified call (e.g. tls.accept) — keep module prefix
+			fnName = recvIdent.Value + "." + dot.Property
+		}
+	}
+	if fnName == "" {
+		return ""
+	}
+	if g.funcResultLLVMType != nil {
+		if ts, ok := g.funcResultLLVMType[fnName]; ok && len(ts) > 0 && ts[0] != "" {
+			return ts[0]
+		}
+	}
+	if g.funcRetTypes != nil {
+		if t, ok := g.funcRetTypes[fnName]; ok && t != "void" && t != "" {
+			return t
+		}
+	}
+	return ""
 }

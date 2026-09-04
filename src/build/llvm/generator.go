@@ -344,6 +344,7 @@ type Generator struct {
 	multiAssignVars        map[string]bool                 // top-level vars used as multi-assign targets (must be locals)
 	funcRefVars            map[string]bool                 // top-level vars that are function references (value is an Identifier referring to a function)
 	moduleVarTypes         map[string]string               // module-level variable types (preserved across functions)
+	moduleLetNames         map[string]bool                 // module-level `let` declaration names (used to keep module-level lets as globals even when also used as multi-assign targets)
 	moduleArrayElemTypes   map[string]string               // module-level array/slice element types (preserved across functions)
 	moduleElemElemTypes    map[string]string               // module-level inner element types for [][]T variables (preserved across functions)
 	unionAliases           map[string][]string             // union type alias name → member type names (e.g. "float"→["f32","f64"])
@@ -2078,6 +2079,18 @@ func (g *Generator) prepare(stmts []parser.Statement, sem *parser.SemanticContex
 			g.varTypes = make(map[string]string)
 		}
 		g.varTypes[name] = "%" + name
+	}
+
+	// 預先收集所有模組級 `let` 宣告名稱，供 collectVarDeclsFromStmtInner 判斷
+	// 多賦值目標是否為模組級全域變數。若某個模組級 let（如 `elem-idx i64 = -1`）
+	// 同時作為多賦值目標（如 `elem-idx, ok = p.arr-get(...)`），它必須保持為全域
+	// `@"elem-idx"`，絕不能被標記為 funcLocalNames（否則 varAddr 會回傳區域
+	// %"elem-idx" 引用，而該區域 alloca 不存在，導致 "use of undefined value"）。
+	g.moduleLetNames = make(map[string]bool)
+	for _, stmt := range prog.Statements {
+		if ls, ok := stmt.(*parser.LetStatement); ok {
+			g.moduleLetNames[ls.Name.Value] = true
+		}
 	}
 
 	// 預先收集所有變數型別（包括模組級常量）

@@ -18,7 +18,7 @@ test-frame-parse = () {
     data[6] = 0
     data[7] = 0
     data[8] = 1
-    f http2-frame
+    f http2.frame
     np = f.parse(data, 0)
     np == nil -> {
         print('FAIL: parse returned error')
@@ -46,7 +46,7 @@ test-frame-parse = () {
 ; test-frame-serialize: 影格標頭序列化
 test-frame-serialize = () {
     space str = ' '
-    f http2-frame
+    f http2.frame
     f.length = 10
     f.frame-type = 1
     f.flags = 4
@@ -87,7 +87,7 @@ test-frame-serialize = () {
 
 ; test-conn-init: 連線初始化
 test-conn-init = () {
-    conn http2-conn
+    conn http2.conn
     conn.init()
     conn.fd != -1 -> {
         print('FAIL: expected fd=-1')

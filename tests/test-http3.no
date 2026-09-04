@@ -178,7 +178,7 @@ test-quic-derive-initial-keys = () {
         0 -> {
             print('FAIL: quic-derive-initial-keys client key mismatch')
             i <- [0..16): {
-                print(key[i].to-hex())
+                print((key[i]).to-str())
             }
             print('')
             return

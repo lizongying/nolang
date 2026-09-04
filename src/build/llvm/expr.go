@@ -1607,6 +1607,23 @@ func (g *Generator) zextBoolToI64(sb *strings.Builder, v string, expr parser.Exp
 // 用於鏈式 DotExpression / IndexExpression 的型別推導，
 // 例如 .nodes[idx].str-val 中 .nodes[idx] 回傳 %json-value*，
 // 需由此函式推導出 "json-value" 以解析後續 .str-val 欄位。
+// indexElemResultLLVMType maps an array element type to the LLVM type that
+// index code generation actually returns for it. generateIndexExpression /
+// generateIndexCore always zext/sext narrow integer elements (i1/i8/i16/i32/
+// u8/u16/u32) to i64, so the SSA value it returns is i64, not the narrow
+// element type. Returning the narrow type (e.g. "u8") would make consumers
+// (print/eprint/format/fmt-*, bitwise `and i8 %x, 255`, `store i8 %x`) emit a
+// second narrow operation on an i64 register, which opt rejects
+// ("defined with type 'i64' but expected 'i8'"). Struct elements (and i64
+// elements) are returned unchanged because they are loaded directly.
+func (g *Generator) indexElemResultLLVMType(elem string) string {
+	switch elem {
+	case "i1", "i8", "i16", "i32", "u8", "u16", "u32":
+		return "i64"
+	}
+	return elem
+}
+
 func (g *Generator) exprResultLLVMType(expr parser.Expression) string {
 	switch v := expr.(type) {
 	case *parser.Identifier:
@@ -1663,6 +1680,30 @@ func (g *Generator) exprResultLLVMType(expr parser.Expression) string {
 				}
 			}
 		}
+		// Builtin methods (e.g. i64.to-str, bool.to-str, f64.to-str) are not
+		// recorded in funcResultLLVMType/funcRetTypes (they are registered via
+		// builtin.FindBuiltinMethod). Without this, exprResultLLVMType returns ""
+		// for string-returning builtin method calls, causing getStrPtr to treat
+		// the %str-long value as a raw SSA register and emit a type-invalid
+		// `getelementptr %str-long, %str-long* <value>` (value used as pointer).
+		// Mirror the builtin lookup already done in varLLVMType.
+		for _, cand := range candidates {
+			methodName := cand + "." + v.Property
+			if m := builtin.FindBuiltinMethod(methodName); m != nil && len(m.Return) > 0 {
+				if m.Return[0] == parser.TypeStr {
+					return "%str-long"
+				}
+				if m.Return[0] == parser.TypeF64 {
+					return "double"
+				}
+				if _, isSlice := m.Return[0].(*parser.SliceType); isSlice {
+					return "%vec"
+				}
+				if structTy := g.builtinStructReturnType(m); structTy != "" {
+					return structTy
+				}
+			}
+		}
 	case *parser.IndexExpression:
 		leftType := g.exprResultLLVMType(v.Left)
 		if strings.HasPrefix(leftType, "[") {
@@ -1671,7 +1712,7 @@ func (g *Generator) exprResultLLVMType(expr parser.Expression) string {
 				inner := leftType[1:closeB]
 				xIdx := strings.LastIndex(inner, " x ")
 				if xIdx >= 0 {
-					return inner[xIdx+3:]
+					return g.indexElemResultLLVMType(inner[xIdx+3:])
 				}
 			}
 		}
@@ -1695,11 +1736,11 @@ func (g *Generator) exprResultLLVMType(expr parser.Expression) string {
 							if f.name == dot.Property && strings.HasPrefix(f.typ, "[") {
 								closeB := strings.IndexByte(f.typ, ']')
 								if closeB > 0 {
-									inner := f.typ[1:closeB]
-									xIdx := strings.LastIndex(inner, " x ")
-									if xIdx >= 0 {
-										return inner[xIdx+3:]
-									}
+								inner := f.typ[1:closeB]
+								xIdx := strings.LastIndex(inner, " x ")
+								if xIdx >= 0 {
+									return g.indexElemResultLLVMType(inner[xIdx+3:])
+								}
 								}
 							}
 						}
@@ -1714,11 +1755,11 @@ func (g *Generator) exprResultLLVMType(expr parser.Expression) string {
 							if f.name == dot.Property && strings.HasPrefix(f.typ, "[") {
 								closeB := strings.IndexByte(f.typ, ']')
 								if closeB > 0 {
-									inner := f.typ[1:closeB]
-									xIdx := strings.LastIndex(inner, " x ")
-									if xIdx >= 0 {
-										return inner[xIdx+3:]
-									}
+								inner := f.typ[1:closeB]
+								xIdx := strings.LastIndex(inner, " x ")
+								if xIdx >= 0 {
+									return g.indexElemResultLLVMType(inner[xIdx+3:])
+								}
 								}
 							}
 						}
@@ -1736,7 +1777,7 @@ func (g *Generator) exprResultLLVMType(expr parser.Expression) string {
 					for _, f := range fields {
 						if f.name == dot.Property && (f.typ == "%vec" || f.typ == "%arr") {
 							if f.elemType != "" {
-								return f.elemType
+								return g.indexElemResultLLVMType(f.elemType)
 							}
 						}
 					}
@@ -1757,6 +1798,19 @@ func (g *Generator) exprResultLLVMType(expr parser.Expression) string {
 			}
 			if g.arrayElemTypes != nil {
 				if et, ok := g.arrayElemTypes[ident.Value]; ok {
+					// generateIndexExpression always zexts/sexts narrow
+					// integer elements (i8/i16/i32/u8/u16/u32/i1) to i64, so
+					// the SSA value it returns is i64, not the narrow element
+					// type. Returning the narrow type here (e.g. "u8") would make
+					// consumers (print/eprint/format/fmt-*) emit a second
+					// `zext i8 <i64-reg> to i64`, which opt rejects
+					// ("defined with type 'i64' but expected 'i8'"). For struct
+					// elements (and i64 elements) the returned type is already
+					// correct, so pass them through unchanged.
+					switch et {
+					case "i1", "i8", "i16", "i32", "u8", "u16", "u32":
+						return "i64"
+					}
 					return et
 				}
 			}
@@ -1770,11 +1824,11 @@ func (g *Generator) exprResultLLVMType(expr parser.Expression) string {
 			}
 			if recvType == "%vec" || recvType == "%arr" {
 				if ident, ok := sliceExpr.Left.(*parser.Identifier); ok {
-					if g.arrayElemTypes != nil {
-						if et, ok := g.arrayElemTypes[ident.Value]; ok {
-							return et
-						}
+				if g.arrayElemTypes != nil {
+					if et, ok := g.arrayElemTypes[ident.Value]; ok {
+						return g.indexElemResultLLVMType(et)
 					}
+				}
 				}
 				return "i64"
 			}
@@ -1889,6 +1943,27 @@ func (g *Generator) exprResultLLVMType(expr parser.Expression) string {
 									return ts[0]
 								}
 							}
+							// Builtin methods (e.g. bool.to-str, i64.to-str) are
+							// not recorded in funcRetTypes/funcResultLLVMType.
+							// Without this, exprResultLLVMType returns "" for
+							// string-returning builtin method calls, causing
+							// getStrPtr to treat the %str-long value as a raw
+							// SSA register and emit a type-invalid
+							// `getelementptr %str-long, %str-long* <value>`.
+							if m := builtin.FindBuiltinMethod(shortName); m != nil && len(m.Return) > 0 {
+								if m.Return[0] == parser.TypeStr {
+									return "%str-long"
+								}
+								if m.Return[0] == parser.TypeF64 {
+									return "double"
+								}
+								if _, isSlice := m.Return[0].(*parser.SliceType); isSlice {
+									return "%vec"
+								}
+								if structTy := g.builtinStructReturnType(m); structTy != "" {
+									return structTy
+								}
+							}
 						}
 					}
 				}
@@ -1897,13 +1972,24 @@ func (g *Generator) exprResultLLVMType(expr parser.Expression) string {
 			// array element arr[i].to-str(), chained method result):
 			// resolve receiver type via exprResultLLVMType, then look up
 			// method return type by type-prefixed name.
-			if _, isIdent := dot.Receiver.(*parser.Identifier); !isIdent {
-				recvType := g.exprResultLLVMType(dot.Receiver)
-				srcType := strings.TrimPrefix(recvType, "%")
-				candidates := []string{srcType}
-				if primAliases, ok := llvmTypeToNolang[srcType]; ok {
-					candidates = append(candidates, primAliases...)
-				}
+		if _, isIdent := dot.Receiver.(*parser.Identifier); !isIdent {
+			recvType := g.exprResultLLVMType(dot.Receiver)
+			srcType := strings.TrimPrefix(recvType, "%")
+			candidates := []string{srcType}
+			if primAliases, ok := llvmTypeToNolang[srcType]; ok {
+				candidates = append(candidates, primAliases...)
+			}
+			// String literal receiver (e.g. 'x'.to-bytes(), 'x'.to-str()):
+			// the nolang type is "str" (LLVM type is "%str-long"). exprResultLLVMType
+			// on the literal yields "%str-long", so the candidate would be
+			// "str-long.to-bytes" which misses the registered "str.to-bytes".
+			// Mirror varLLVMType's StringLiteral branch by adding "str" so the
+			// method return type (e.g. []byte → %vec) resolves correctly. Without
+			// this, 'x'.to-bytes() passed to a []byte parameter is treated as
+			// %str-long and opt rejects `getelementptr %str-long, %str-long* <vec>`.
+			if _, isStrLit := dot.Receiver.(*parser.StringLiteral); isStrLit {
+				candidates = append(candidates, "str")
+			}
 				// For vec/arr receivers without a variable name (e.g. chained
 				// method call fs.read-file(path).to-str()), construct []T
 				// candidates from common element types. This is needed because
@@ -1996,8 +2082,10 @@ func (g *Generator) exprResultLLVMType(expr parser.Expression) string {
 		}
 		return "i64"
 	case *parser.RegexLiteral:
-		// /pattern/ desugars to regexp-compile('pattern') which returns %regexp
-		return "%regexp"
+		// /pattern/ desugars to regexp-compile('pattern') which returns the
+		// regexp struct. The struct is auto-renamed to "regexp.regexp" when the
+		// std/regexp module is loaded, so resolve the canonical LLVM name.
+		return g.regexpLLVMType()
 	}
 	return ""
 }

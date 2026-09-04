@@ -87,7 +87,7 @@ test-https-server-struct = () (pass bool) {
 run-https-e2e-client = (host str, port i64) (ok bool) {
     ok = false
 
-    tls-opt = dial(host, port)
+    tls-opt = tls.dial(host, port)
     tls-opt: {
         nil -> {
             print('FAIL: e2e dial nil')

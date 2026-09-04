@@ -1289,6 +1289,14 @@ func (t *Transpiler) collectReferencedStdModules(prog *parser.Program) map[strin
 			return
 		}
 		switch ex := e.(type) {
+		case *parser.RegexLiteral:
+			// /pattern/flags 正則字面量在 codegen 階段（expr.go）才脫糖為
+			// regexp-compile('pattern') 呼叫，故此刻 AST 仍是 RegexLiteral 節點。
+			// 若不在引用掃描期標記 regexp 模組，該模組（含 %regexp 結構體定義
+			// 與 regexp-compile/matches 函數）永遠不會被自動載入，最終 alloca
+			// %regexp 報 "Cannot allocate unsized type"。這與 StructLiteral
+			// （line 1430 的 addRef(ex.Type)）處理 regexp{} 的邏輯對稱。
+			addRef("regexp")
 		case *parser.DotExpression:
 			addRef(dotModulePath(ex))
 			walkExpr(ex.Receiver)
@@ -3334,24 +3342,14 @@ func resolveMethodCall(dot *parser.DotExpression, ce *parser.CallExpression,
 		return false
 	}
 	methodName := dot.Property
-	// Early exit: if the method is a builtin (e.g. "len"), don't attempt
-	// generic or non-generic rewriting — the codegen handles builtin method
-	// calls via DotExpression dispatch + ForwardFunc / inline field access.
-	// This prevents .len() inside method bodies from being rewritten to
-	// _xbyte.len(self) (generic) or str.len(self) (non-generic), which
-	// would generate a function call instead of inline field access.
-	// Builtins like str.len are registered with MethodName="len" (no type
-	// prefix), so we check the bare method name.
-	if bi := builtin.FindBuiltinMethod(methodName); bi != nil && bi.ReceiverType != builtin.ReceiverGlobal {
-		// Only skip if the receiver is a builtin type (str, []T, [N]T, i64, etc.)
-		isBuiltinRecv := isBuiltinType(recvType) ||
-			strings.HasPrefix(recvType, "[]") ||
-			(strings.HasPrefix(recvType, "[") && strings.Contains(recvType, "]"))
-		if isBuiltinRecv {
-			return false
-		}
-	}
-	// Search for matching generic method
+	// Search for matching generic method FIRST, so that generic methods whose
+	// name collides with a builtin (e.g. "[n]t.sort-asc" on a fixed array
+	// [N]T) are monomorphized before the builtin early-exit below can skip
+	// them. The builtin early-exit previously ran first and skipped
+	// monomorphization of sort-asc for fixed arrays, leaving an undefined
+	// '@sort-asc' reference. vec.sort-asc is unaffected because the generic
+	// pattern [n]t only matches fixed arrays, not []T slice receivers, so it
+	// still falls through to the builtin dispatch.
 	for name, fd := range genericFns {
 		dotIdx := strings.LastIndex(name, ".")
 		if dotIdx < 0 {
@@ -3382,6 +3380,23 @@ func resolveMethodCall(dot *parser.DotExpression, ce *parser.CallExpression,
 		}
 		ce.Arguments = append([]parser.Expression{receiverArg}, ce.Arguments...)
 		return true
+	}
+	// Early exit: if the method is a builtin (e.g. "len") and no generic method
+	// matched above, don't attempt non-generic rewriting — the codegen handles
+	// builtin method calls via DotExpression dispatch + ForwardFunc / inline
+	// field access. This prevents .len() inside method bodies from being
+	// rewritten to _xbyte.len(self) (generic) or str.len(self) (non-generic),
+	// which would generate a function call instead of inline field access.
+	// Builtins like str.len are registered with MethodName="len" (no type
+	// prefix), so we check the bare method name.
+	if bi := builtin.FindBuiltinMethod(methodName); bi != nil && bi.ReceiverType != builtin.ReceiverGlobal {
+		// Only skip if the receiver is a builtin type (str, []T, [N]T, i64, etc.)
+		isBuiltinRecv := isBuiltinType(recvType) ||
+			strings.HasPrefix(recvType, "[]") ||
+			(strings.HasPrefix(recvType, "[") && strings.Contains(recvType, "]"))
+		if isBuiltinRecv {
+			return false
+		}
 	}
 	// Try non-generic method: type.method already exists
 	// Rewrite to direct call with receiver prepended
