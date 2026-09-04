@@ -14,6 +14,7 @@ import (
 	"github.com/lizongying/nolang/cache"
 	"github.com/lizongying/nolang/checker"
 	"github.com/lizongying/nolang/lexer"
+	"github.com/lizongying/nolang/mir"
 	"github.com/lizongying/nolang/package"
 	"github.com/lizongying/nolang/parser"
 )
@@ -2326,7 +2327,51 @@ func (t *Transpiler) CompileTarget(source string, _ Target) (string, error) {
 	} else {
 		hirPkg, idMap := parser.ASTToHIRWithMap(merged)
 		parser.PopulateInferredTypes(hirPkg, idMap)
-		ir = t.llvmGenerator.GenerateHIR(hirPkg)
+		// MIR pipeline. NOLANG_MIR=1: verification mode — run HIR->MIR lowering +
+		// memory analysis, dump the module + report to a temp file, then fall back
+		// to the proven HIR codegen (no behavioral change). NOLANG_MIR=2: actually
+		// emit LLVM IR from the MIR (MIR->LLVM direct emission, item 2) and run it;
+		// if any construct is outside the v1 subset the codegen returns an error and
+		// we fall back to the legacy HIR path (strangler-fig: MIR can never break
+		// the build while it matures).
+		mirMode := os.Getenv("NOLANG_MIR")
+		if mirMode == "1" || mirMode == "2" {
+			mod, rep, ldiags := mir.LowerHIR(hirPkg)
+			if mirMode == "1" {
+				if mod != nil {
+					if f, err := os.CreateTemp("", "nolang-mir-*.txt"); err == nil {
+						fmt.Fprintf(f, "=== NOLANG_MIR verification for %s ===\n", t.sourcePath)
+						fmt.Fprintf(f, "--- lowered MIR ---\n%s\n", mod.String())
+						fmt.Fprintf(f, "--- memory analysis ---\n")
+						fmt.Fprintf(f, "drops inserted: %d\n", rep.DropsInserted)
+						for _, d := range rep.Diagnostics {
+							fmt.Fprintf(f, "[mem-diag] %s: %s (func=%s)\n", d.Kind, d.Msg, d.Func)
+						}
+						for _, d := range ldiags {
+							fmt.Fprintf(f, "[lower-gap] %s/%s: %s\n", d.Func, d.Kind, d.Msg)
+						}
+						f.Close()
+					}
+				}
+				ir = t.llvmGenerator.GenerateHIR(hirPkg)
+			} else {
+				// NOLANG_MIR == "2": emit from MIR directly, fall back on any gap.
+				if mod != nil {
+					if ll, err := mod.EmitLLVM(); err == nil {
+						ir = ll
+					} else {
+						if os.Getenv("NOLANG_MIR_DEBUG") != "" {
+							fmt.Fprintf(os.Stderr, "[MIR] EmitLLVM fell back to legacy: %v\n", err)
+						}
+						ir = t.llvmGenerator.GenerateHIR(hirPkg)
+					}
+				} else {
+					ir = t.llvmGenerator.GenerateHIR(hirPkg)
+				}
+			}
+		} else {
+			ir = t.llvmGenerator.GenerateHIR(hirPkg)
+		}
 	}
 	if errs := t.llvmGenerator.CodegenErrors(); len(errs) > 0 {
 		return "", fmt.Errorf("codegen errors: %v", errs)
