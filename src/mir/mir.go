@@ -70,6 +70,7 @@ const (
 	OpGetField  // struct field read
 	OpSetField  // struct field write
 	OpIndex     // array/slice element read
+	OpIndexStore // array/slice element write
 	OpSliceOp   // slice sub-range
 
 	// arithmetic / logic
@@ -125,6 +126,7 @@ var opNames = [opCount]string{
 	OpGetField:  "getfield",
 	OpSetField:  "setfield",
 	OpIndex:     "index",
+	OpIndexStore: "indexstore",
 	OpSliceOp:   "sliceop",
 	OpAdd:       "add", OpSub: "sub", OpMul: "mul", OpDiv: "div", OpMod: "mod",
 	OpNeg: "neg", OpNot: "not", OpAnd: "and", OpOr: "or", OpXor: "xor", OpShl: "shl", OpShr: "shr",
@@ -147,7 +149,7 @@ func (o Op) String() string {
 // pure side-effecting stores, and Drop/SetField do not.
 func producesValue(op Op) bool {
 	switch op {
-	case OpReturn, OpBr, OpCondBr, OpSwitch, OpStore, OpDrop, OpSetField:
+	case OpReturn, OpBr, OpCondBr, OpSwitch, OpStore, OpDrop, OpSetField, OpIndexStore:
 		return false
 	}
 	return true
@@ -187,6 +189,13 @@ const (
 
 // Type is an interned type. Raw is the nolang type string; Owned marks a type
 // that owns heap memory and therefore needs exactly one Drop.
+// FieldInfo describes one field of a struct type: its source name and nolang
+// type string. The order within a struct's []FieldInfo is the GEP index order.
+type FieldInfo struct {
+	Name    string
+	TypeRaw string
+}
+
 type Type struct {
 	ID    TypeID
 	Raw   string
@@ -349,6 +358,12 @@ type Module struct {
 	// memory (contain an owned field). Lowering consults it; without an entry a
 	// named/struct type is treated as non-owned for v1 (defer to emitter).
 	OwnedStructs map[string]bool
+
+	// StructFields maps a struct raw-type name to its ordered fields (name +
+	// nolang type string), extracted from HIR struct definitions during
+	// lowering. It drives OpGetField/OpSetField index resolution and the
+	// emission of LLVM struct type declarations.
+	StructFields map[string][]FieldInfo
 }
 
 // NewModule allocates an empty module with reserved nil slots at index 0.
@@ -359,6 +374,7 @@ func NewModule(name string) *Module {
 		FuncByName:   map[string]FuncID{},
 		Lowered:      map[string]bool{},
 		OwnedStructs: map[string]bool{},
+		StructFields: map[string][]FieldInfo{},
 	}
 	// reserve index 0 of each slice as a nil element
 	m.Funcs = append(m.Funcs, Function{})
@@ -372,6 +388,55 @@ func NewModule(name string) *Module {
 // MarkOwnedStruct records that a struct raw type owns heap memory.
 func (m *Module) MarkOwnedStruct(raw string) {
 	m.OwnedStructs[raw] = true
+}
+
+// internType interns a type by its raw nolang string, deriving Kind and
+// Ownership, and parsing composite element types / array dimensions. It is the
+// shared implementation behind both Builder.Type and codegen's on-the-fly
+// interning (e.g. when emitting struct type declarations).
+func (m *Module) internType(raw string) TypeID {
+	if id, ok := m.TypeMap[raw]; ok {
+		return id
+	}
+	kind := KindOfRaw(raw)
+	owned := ClassifyOwnership(raw)
+	if kind == KindStruct && m.OwnedStructs[raw] {
+		owned = true
+	}
+	tid := TypeID(len(m.Types))
+	m.Types = append(m.Types, Type{ID: tid, Raw: raw, Kind: kind, Owned: owned})
+	t := &m.Types[tid]
+	if kind == KindArray {
+		if n, elemRaw, ok := parseArray(raw); ok {
+			t.Sizes = []int64{n}
+			t.Elem = m.internType(elemRaw)
+		}
+	} else if kind == KindSlice {
+		if elemRaw, ok := parseSliceElem(raw); ok {
+			t.Elem = m.internType(elemRaw)
+		}
+	} else if kind == KindOption {
+		if elemRaw, ok := parseOptionElem(raw); ok {
+			t.Elem = m.internType(elemRaw)
+		}
+	}
+	m.TypeMap[raw] = tid
+	return tid
+}
+
+// FieldIndex returns the GEP index of a named field within a struct type, and
+// whether the field exists.
+func (m *Module) FieldIndex(structRaw, fieldName string) (int, bool) {
+	fields, ok := m.StructFields[structRaw]
+	if !ok {
+		return 0, false
+	}
+	for i, f := range fields {
+		if f.Name == fieldName {
+			return i, true
+		}
+	}
+	return 0, false
 }
 
 // Type returns a pointer into the type slice.

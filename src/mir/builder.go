@@ -49,23 +49,63 @@ func (b *Builder) newTypeID() TypeID {
 // ---- Types ----
 
 // Type interns a type by its raw nolang string, deriving Kind and Ownership.
+// The interning logic lives on Module.internType so codegen can reuse it.
 func (b *Builder) Type(raw string) TypeID {
-	if id, ok := b.Mod.TypeMap[raw]; ok {
-		return id
+	return b.Mod.internType(raw)
+}
+
+// parseArray parses a fixed array type "[N]Elem" and returns (N, Elem, true).
+func parseArray(raw string) (int64, string, bool) {
+	if len(raw) < 3 || raw[0] != '[' {
+		return 0, "", false
 	}
-	kind := KindOfRaw(raw)
-	owned := ClassifyOwnership(raw)
-	if kind == KindStruct && b.Mod.OwnedStructs[raw] {
-		owned = true
+	end := -1
+	for i := 1; i < len(raw); i++ {
+		if raw[i] == ']' {
+			end = i
+			break
+		}
 	}
-	tid := b.newTypeID()
-	t := &b.Mod.Types[tid]
-	t.ID = tid
-	t.Raw = raw
-	t.Kind = kind
-	t.Owned = owned
-	b.Mod.TypeMap[raw] = tid
-	return tid
+	if end < 0 {
+		return 0, "", false
+	}
+	n := int64(0)
+	for i := 1; i < end; i++ {
+		c := raw[i]
+		if c < '0' || c > '9' {
+			return 0, "", false
+		}
+		n = n*10 + int64(c-'0')
+	}
+	elem := raw[end+1:]
+	if elem == "" {
+		return 0, "", false
+	}
+	return n, elem, true
+}
+
+// parseSliceElem returns the element type of a slice type "[]Elem".
+func parseSliceElem(raw string) (string, bool) {
+	if len(raw) < 3 || raw[0:2] != "[]" {
+		return "", false
+	}
+	elem := raw[2:]
+	if elem == "" {
+		return "", false
+	}
+	return elem, true
+}
+
+// parseOptionElem returns the wrapped type of an option type "?Elem".
+func parseOptionElem(raw string) (string, bool) {
+	if len(raw) < 2 || raw[0] != '?' {
+		return "", false
+	}
+	elem := raw[1:]
+	if elem == "" {
+		return "", false
+	}
+	return elem, true
 }
 
 // TypeExplicit interns a type with explicit kind/owned/elem, bypassing the

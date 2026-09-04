@@ -76,7 +76,20 @@ func supportedLLVM(lt string) bool {
 	case "i64", "double", "i1", "void", "%str-long":
 		return true
 	}
+	// Fixed arrays of supported element types are emitted as [N x elem]; the
+	// element type check is enforced at index/store emission time (owned-element
+	// arrays fall back to the legacy path there).
+	if len(lt) > 0 && lt[0] == '[' {
+		return true
+	}
 	return false
+}
+
+func sizeOfArray(t *Type) int64 {
+	if len(t.Sizes) > 0 {
+		return t.Sizes[0]
+	}
+	return 0
 }
 
 // EmitLLVM lowers the analyzed MIR module into a complete, linkable LLVM IR
@@ -106,6 +119,7 @@ func (m *Module) EmitLLVM() (string, error) {
 	}
 	c.collectStrings()
 	c.emitPrelude()
+	c.emitStructTypes()
 	c.emitGlobals()
 	for i := range m.Funcs {
 		f := &m.Funcs[i]
@@ -167,11 +181,24 @@ func (c *codegen) llvmTypeOf(t *Type) string {
 		return "%vec"
 	case KindOption:
 		return "%option"
+	case KindArray:
+		// Fixed array: LLVM [N x elem]. Element type is required for the layout.
+		if t.Elem != NoType && c.mod.Type(t.Elem) != nil {
+			return fmt.Sprintf("[%d x %s]", sizeOfArray(t), c.llvmTypeOf(c.mod.Type(t.Elem)))
+		}
+		return "[0 x i64]"
 	case KindPtr:
 		return "i8*"
 	default:
 		if t.Raw != "" {
-			return "%" + sanitize(t.Raw)
+			// Only emit a named struct reference for types that are *real*
+			// structs (a KStructDef was collected into StructFields). Qualified
+			// names like `fs.fd` may be primitive type aliases (e.g. fd = i64),
+			// in which case emitting `%fs_fd` would reference an undefined type.
+			if _, ok := c.mod.StructFields[t.Raw]; ok {
+				return "%" + sanitize(t.Raw)
+			}
+			return "i64"
 		}
 		return "i64"
 	}
@@ -402,13 +429,19 @@ func (c *codegen) emitFunc(f *Function) error {
 	}
 
 	// Build LLVM parameter declarations (f.Params order). Owned -> pointer param.
+	// Result (out-) parameters are ALWAYS passed as pointers regardless of
+	// ownership: the caller provides an out-pointer that emitReturn writes back
+	// into, so declaring them by-value (as the non-owned branch would) clashes
+	// with the `store ...* %pp` in emitReturn.
 	var decls []string
 	c.paramPtr = map[ValueID]string{}
 	idx := 0
 	for _, p := range f.Params {
 		lt, owned := c.ptype(p)
 		pn := fmt.Sprintf("%%p%d", idx)
-		if owned {
+		if c.resultParam[p] {
+			decls = append(decls, lt+"* "+pn)
+		} else if owned {
 			decls = append(decls, lt+"* "+pn)
 		} else {
 			decls = append(decls, lt+" "+pn)
@@ -561,6 +594,14 @@ func (c *codegen) emitInst(f *Function, inst *Inst, allocaFor func(ValueID) stri
 		return c.emitMove(inst)
 	case OpClone:
 		return c.emitClone(inst)
+	case OpIndex:
+		return c.emitIndex(inst)
+	case OpIndexStore:
+		return c.emitIndexStore(inst)
+	case OpGetField:
+		return c.emitGetField(inst)
+	case OpSetField:
+		return c.emitSetField(inst)
 	case OpCall:
 		return c.emitCall(f, inst)
 	case OpReturn:
@@ -568,7 +609,7 @@ func (c *codegen) emitInst(f *Function, inst *Inst, allocaFor func(ValueID) stri
 		return nil
 	default:
 		c.fail("unsupported op %s in func %s", inst.Op, f.Name)
-		return fmt.Errorf("unsupported")
+		return fmt.Errorf("MIR->LLVM: %s", strings.Join(c.errs, "; "))
 	}
 }
 
@@ -751,6 +792,165 @@ func (c *codegen) emitClone(inst *Inst) error {
 		return nil
 	}
 	return c.emitMove(inst)
+}
+
+func (c *codegen) emitIndex(inst *Inst) error {
+	arrT, _ := c.ptype(inst.Args[0])
+	elemT, _ := c.ptype(inst.Dst)
+	arrSlot := c.valSlot[inst.Args[0]]
+	if arrSlot == "" {
+		c.fail("index of value with no slot in func %d", c.cf)
+		return fmt.Errorf("index slot")
+	}
+	_, idxV := c.loadVal(inst.Args[1])
+	dstSlot := c.valSlot[inst.Dst]
+	if dstSlot == "" {
+		c.fail("index result has no slot in func %d", c.cf)
+		return fmt.Errorf("index dst slot")
+	}
+	c.loadSeq++
+	gep := fmt.Sprintf("%%gp%d", c.loadSeq)
+	c.sb.WriteString(fmt.Sprintf("  %s = getelementptr %s, %s* %s, i64 0, i64 %s\n", gep, arrT, arrT, arrSlot, idxV))
+	c.loadSeq++
+	lv := fmt.Sprintf("%%lx%d", c.loadSeq)
+	c.sb.WriteString(fmt.Sprintf("  %s = load %s, %s* %s\n", lv, elemT, elemT, gep))
+	c.sb.WriteString(fmt.Sprintf("  store %s %s, %s* %s\n", elemT, lv, elemT, dstSlot))
+	return nil
+}
+
+// emitIndexStore lowers `a[i] = v`: compute the element address via GEP and store
+// v there. For owned element types the previous element is dropped first (memory
+// safety: the overwritten buffer must be freed exactly once, and the new value is
+// moved in — not cloned — so it is exempt from the array's own (non-existent)
+// drop).
+func (c *codegen) emitIndexStore(inst *Inst) error {
+	arrT, _ := c.ptype(inst.Args[0])
+	elemT, owned := c.ptype(inst.Args[2])
+	arrSlot := c.valSlot[inst.Args[0]]
+	if arrSlot == "" {
+		c.fail("index-store of value with no slot in func %d", c.cf)
+		return fmt.Errorf("indexstore slot")
+	}
+	_, idxV := c.loadVal(inst.Args[1])
+	_, valV := c.loadVal(inst.Args[2])
+	c.loadSeq++
+	gep := fmt.Sprintf("%%gp%d", c.loadSeq)
+	c.sb.WriteString(fmt.Sprintf("  %s = getelementptr %s, %s* %s, i64 0, i64 %s\n", gep, arrT, arrT, arrSlot, idxV))
+	if owned {
+		c.loadSeq++
+		old := fmt.Sprintf("%%old%d", c.loadSeq)
+		c.sb.WriteString(fmt.Sprintf("  %s = load %s, %s* %s\n", old, elemT, elemT, gep))
+		c.sb.WriteString(fmt.Sprintf("  call void @str_free(%s %s)\n", elemT, old))
+	}
+	c.sb.WriteString(fmt.Sprintf("  store %s %s, %s* %s\n", elemT, valV, elemT, gep))
+	return nil
+}
+
+// emitGetField lowers `recv.field`: compute the field address via GEP into the
+// receiver's struct slot, load the field, and store it in the result slot. The
+// field index comes from the module's StructFields layout (keyed by the
+// receiver's struct raw name); the field name lives in inst.Str.
+func (c *codegen) emitGetField(inst *Inst) error {
+	recvSlot := c.valSlot[inst.Args[0]]
+	if recvSlot == "" {
+		c.fail("getfield receiver has no slot in func %d", c.cf)
+		return fmt.Errorf("getfield slot")
+	}
+	recvRaw := ""
+	recvLT := ""
+	if val := c.mod.Value(inst.Args[0]); val != nil {
+		if t := c.mod.Type(val.Type); t != nil {
+			recvRaw = t.Raw
+			recvLT = c.llvmTypeOf(t)
+		}
+	}
+	if recvLT == "" {
+		recvLT = "%" + sanitize(recvRaw)
+	}
+	idx, ok := c.mod.FieldIndex(recvRaw, inst.Str)
+	if !ok {
+		c.fail("getfield: field %q not found on %q in func %d", inst.Str, recvRaw, c.cf)
+		return fmt.Errorf("getfield field")
+	}
+	structLT := recvLT
+	fieldLT, _ := c.ptype(inst.Dst)
+	if fieldLT == "" {
+		fieldLT = "i64"
+	}
+	c.loadSeq++
+	gep := fmt.Sprintf("%%gp%d", c.loadSeq)
+	c.sb.WriteString(fmt.Sprintf("  %s = getelementptr inbounds %s, %s* %s, i32 0, i32 %d\n", gep, structLT, structLT, recvSlot, idx))
+	c.loadSeq++
+	lv := fmt.Sprintf("%%lx%d", c.loadSeq)
+	c.sb.WriteString(fmt.Sprintf("  %s = load %s, %s* %s\n", lv, fieldLT, fieldLT, gep))
+	c.sb.WriteString(fmt.Sprintf("  store %s %s, %s* %s\n", fieldLT, lv, fieldLT, c.valSlot[inst.Dst]))
+	return nil
+}
+
+// emitSetField lowers `recv.field = v`: compute the field address via GEP into
+// the receiver's struct slot and store v there.
+func (c *codegen) emitSetField(inst *Inst) error {
+	recvSlot := c.valSlot[inst.Args[0]]
+	if recvSlot == "" {
+		c.fail("setfield receiver has no slot in func %d", c.cf)
+		return fmt.Errorf("setfield slot")
+	}
+	recvRaw := ""
+	recvLT := ""
+	if val := c.mod.Value(inst.Args[0]); val != nil {
+		if t := c.mod.Type(val.Type); t != nil {
+			recvRaw = t.Raw
+			recvLT = c.llvmTypeOf(t)
+		}
+	}
+	if recvLT == "" {
+		recvLT = "%" + sanitize(recvRaw)
+	}
+	idx, ok := c.mod.FieldIndex(recvRaw, inst.Str)
+	if !ok {
+		c.fail("setfield: field %q not found on %q in func %d", inst.Str, recvRaw, c.cf)
+		return fmt.Errorf("setfield field")
+	}
+	structLT := recvLT
+	fieldLT, _ := c.ptype(inst.Args[1])
+	if fieldLT == "" {
+		fieldLT = "i64"
+	}
+	_, valV := c.loadVal(inst.Args[1])
+	c.loadSeq++
+	gep := fmt.Sprintf("%%gp%d", c.loadSeq)
+	c.sb.WriteString(fmt.Sprintf("  %s = getelementptr inbounds %s, %s* %s, i32 0, i32 %d\n", gep, structLT, structLT, recvSlot, idx))
+	c.sb.WriteString(fmt.Sprintf("  store %s %s, %s* %s\n", fieldLT, valV, fieldLT, gep))
+	return nil
+}
+
+// emitStructTypes emits LLVM struct type declarations for every user/std struct
+// encountered (builtins %str-long/%vec/%option are declared in the prelude). The
+// field layout comes from the module's StructFields so GEP indices stay
+// consistent with the declared type.
+func (c *codegen) emitStructTypes() {
+	// Pass 1: forward-declare every struct as opaque so later references (in
+	// other structs' field lists) resolve even if emitted out of order.
+	for raw := range c.mod.StructFields {
+		if raw == "str" || raw == "vec" {
+			continue // declared in the prelude
+		}
+		lt := "%" + sanitize(raw)
+		c.sb.WriteString(fmt.Sprintf("%s = type opaque\n", lt))
+	}
+	// Pass 2: emit the concrete field layouts.
+	for raw, fields := range c.mod.StructFields {
+		if raw == "str" || raw == "vec" {
+			continue // declared in the prelude
+		}
+		lt := "%" + sanitize(raw)
+		parts := make([]string, 0, len(fields))
+		for _, f := range fields {
+			tid := c.mod.internType(f.TypeRaw)
+			parts = append(parts, c.llvmTypeOf(c.mod.Type(tid)))
+		}
+		c.sb.WriteString(fmt.Sprintf("%s = type { %s }\n", lt, strings.Join(parts, ", ")))
+	}
 }
 
 func (c *codegen) emitCall(f *Function, inst *Inst) error {
