@@ -200,9 +200,13 @@ func (l *lowerer) synthesizeMainForTopLevel(pkg *hir.Package) {
 		}
 		stmts = append(stmts, id)
 	}
-	if len(stmts) == 0 {
-		return
-	}
+	// NOTE: an empty statement list must still synthesize `main`. A script whose
+	// top level is nothing but definitions (or whose every top-level `let` is a
+	// module constant, e.g. `a = 1`) has no runnable statements, yet the link
+	// step still needs a `_main` symbol. Returning early here used to produce an
+	// object file with no entry point at all -> `Undefined symbols: "_main"`.
+	// The synthetic body is a bare block, and lowerFunction/ensureReturn give it
+	// the `ret void` terminator it needs.
 
 	// KBlock body node.
 	bodyID := int32(len(pkg.Nodes))
@@ -339,6 +343,14 @@ func LowerHIR(pkg *hir.Package) (*Module, *Report, []LowerDiag) {
 	// back to picking a *random* function from funcNames as entry, yielding
 	// non-deterministic (sometimes-wrong) output.
 	l.synthesizeMainForTopLevel(pkg)
+
+	// Record every HIR function name so emitCall can prefer a real Nolang
+	// function over a builtin matched only via the bare-name fallback
+	// (e.g. module function `fs.read-dir` vs the global builtin `read-dir`).
+	l.mod.KnownFuncs = make(map[string]bool, len(l.funcNames))
+	for name := range l.funcNames {
+		l.mod.KnownFuncs[name] = true
+	}
 
 	entry := "main"
 	if _, ok := l.funcNames[entry]; !ok {
@@ -1546,6 +1558,13 @@ func (l *lowerer) lowerExpr(id int32) ValueID {
 		if isCmp {
 			resTyp = l.b.Type("bool")
 		}
+		// String concatenation (`a - b` / `a + b` on str operands) yields a
+		// str, never void. Without this the infix result value is typed void
+		// and emitArith emits an illegal `add void` (or `sub void`) on the
+		// %str-long operands. Detect it from the operand raw types.
+		if !isCmp && l.valueRaw(lv) == "str" && l.valueRaw(rv) == "str" {
+			resTyp = l.b.Type("str")
+		}
 		// String equality/inequality cannot be a direct `icmp` (str is a struct),
 		// so route it through the runtime @str_eq helper via OpStrEq. `!=` negates
 		// the equality result with a boolean icmp.
@@ -1749,6 +1768,20 @@ func (l *lowerer) lowerDotRead(n *hir.Node) ValueID {
 	}
 	fields, ok := l.mod.StructFields[recvRaw]
 	if !ok {
+		// std structs are registered under their module-qualified raw name
+		// (e.g. `os.utsname`), but a field read on a local binding only knows
+		// the bare type name (`utsname`). Resolve the bare name to its
+		// qualified key by suffix so `uts.sysname` finds `os.utsname`, matching
+		// the structKeyOf resolution already done in emitGetField.
+		for k := range l.mod.StructFields {
+			if k == recvRaw || strings.HasSuffix(k, "."+recvRaw) {
+				recvRaw = k
+				fields, ok = l.mod.StructFields[k]
+				break
+			}
+		}
+	}
+	if !ok {
 		l.unsupported(l.curFuncName(), "dot", "no struct layout for "+recvRaw+" (field "+fieldName+")")
 		return NoVal
 	}
@@ -1835,7 +1868,7 @@ func (l *lowerer) resolveCallee(n *hir.Node) (callee string, recvV ValueID) {
 						recvT := l.valueTypeOf(l.curRecv)
 						recvTypeName := recvName
 						if ty := l.mod.Type(recvT); ty != nil && ty.Raw != "" {
-							recvTypeName = ty.Raw
+							recvTypeName = strings.TrimPrefix(ty.Raw, "?")
 						}
 						if os.Getenv("NOLANG_MIR_DEBUG") != "" {
 							fmt.Fprintf(os.Stderr, "[mir-dbg] resolveCallee IMPLICIT-SELF recvName=%q recvTypeName=%q curRecv=%d recvT=%d\n", recvName, recvTypeName, l.curRecv, recvT)
@@ -1865,6 +1898,13 @@ func (l *lowerer) resolveCallee(n *hir.Node) (callee string, recvV ValueID) {
 		if ty := l.mod.Type(recvT); ty != nil && ty.Raw != "" {
 			recvTypeName = ty.Raw
 		}
+		// Optionals wrap their inner type with a leading '?'
+		// (e.g. `?i64`). A method call on the unwrapped value of an optional
+		// (`v.to-str()` where v: ?i64) would otherwise form the callee
+		// "?i64.to-str", which does not exist — the method table holds
+		// "i64.to-str". Strip the marker so the callee matches the legacy
+		// backend, which resolves optional receivers to their inner type.
+		recvTypeName = strings.TrimPrefix(recvTypeName, "?")
 		return recvTypeName + "." + method, rv
 	}
 	return "", NoVal
@@ -1872,6 +1912,21 @@ func (l *lowerer) resolveCallee(n *hir.Node) (callee string, recvV ValueID) {
 
 func (l *lowerer) lowerCall(n *hir.Node) ValueID {
 	callee, recvV := l.resolveCallee(n)
+	if callee == "" {
+		// Multi-assign shape: nolang lowers `a, b = f()` to a KCall whose
+		// `fn` slot is the inner call and whose `arg` slots are the LHS target
+		// identifiers (`tmp-name, tmp-fd = fs.mkstemp(...)`). resolveCallee
+		// reads the `fn` slot as a callee and finds a call node, not an
+		// ident/dot, so it returns "". Redirect to the multi-assign path
+		// instead of emitting a call with an empty callee (which crashes codegen
+		// with "no callee").
+		if fnID := l.slot(n.Id, "fn"); fnID != hir.NoID {
+			if fnn := l.pkg.Node(fnID); fnn != nil && (fnn.Kind == hir.KCall || fnn.Kind == hir.KDot) {
+				return l.lowerMultiAssignCall(n, fnID)
+			}
+		}
+		return NoVal
+	}
 	// reachability: enqueue the referenced function for lowering
 	l.enqueueCallee(callee)
 
@@ -1894,6 +1949,28 @@ func (l *lowerer) lowerCall(n *hir.Node) ValueID {
 			case br.LHSInferred && l.typeHint != NoType && l.typeHint != l.voidType:
 				resTyp = l.typeHint
 			}
+		}
+	}
+	// Multi-result builtins (`stat-size` -> (i64, bool), `readlink` ->
+	// (str, bool), `mkstemp` -> (str, fd)) declare more than one Return entry.
+	// Allocate a destination per entry so `path, ok = fs.readlink(p)` binds both
+	// names; a single-destination lowering leaves the second reading an
+	// uninitialized slot.
+	if resTyp != l.voidType {
+		var brs []string
+		if _, inHIR := l.funcNames[callee]; !inHIR {
+			brs = builtinResultTypes(callee)
+		}
+		if len(brs) > 1 {
+			types := make([]TypeID, 0, len(brs))
+			for _, raw := range brs {
+				types = append(types, l.b.Type(raw))
+			}
+			dsts := l.b.EmitCallMulti(types, argv, callee)
+			if len(dsts) == 0 {
+				return NoVal
+			}
+			return dsts[0]
 		}
 	}
 	if resTyp == l.voidType {
@@ -2022,6 +2099,17 @@ func (l *lowerer) lowerMultiAssign(id int32) {
 
 	resTypes := l.resultTypesOfCallee(callee)
 	if len(resTypes) == 0 {
+		// Builtins have no HIR definition, so resultTypesOfCallee finds nothing.
+		// Their signature lives in the builtin table instead: consult it before
+		// giving up, or every `size, ok = fs.stat-size(p)` would bind both
+		// targets to zero placeholders and silently produce wrong numbers.
+		if _, inHIR := l.funcNames[callee]; !inHIR {
+			for _, raw := range builtinResultTypes(callee) {
+				resTypes = append(resTypes, l.b.Type(raw))
+			}
+		}
+	}
+	if len(resTypes) == 0 {
 		// Unknown/void callee: emit a plain void call and give each target a
 		// zero-initialized placeholder so later reads still resolve.
 		l.lowerCallArgs(vn, recvV)
@@ -2039,6 +2127,54 @@ func (l *lowerer) lowerMultiAssign(id int32) {
 		}
 		l.bindTarget(t, dsts[i])
 	}
+}
+
+// lowerMultiAssignCall lowers the `a, b = f()` KCall shape: `n` is the outer
+// call whose `fn` slot (innerCallID) is the actual callee and whose `arg`
+// slots are the LHS target identifiers. It emits the inner call once with one
+// result per declared return and binds each target to its result — identical to
+// lowerMultiAssign, but for the KCall representation (lowerMultiAssign handles
+// the KMultiAssign statement kind, which this program does not always produce).
+func (l *lowerer) lowerMultiAssignCall(n *hir.Node, innerCallID int32) ValueID {
+	inner := l.pkg.Node(innerCallID)
+	if inner == nil {
+		return NoVal
+	}
+	callee, recvV := l.resolveCallee(inner)
+	if callee == "" {
+		return NoVal
+	}
+	l.enqueueCallee(callee)
+
+	targets := l.slotArgs(n.Id, "arg")
+	argv := l.lowerCallArgs(inner, recvV)
+
+	resTypes := l.resultTypesOfCallee(callee)
+	if len(resTypes) == 0 {
+		// Builtins have no HIR definition; consult the builtin table before
+		// giving up, or `name, ok = fs.mkdtemp(p)` would bind both targets to
+		// zero placeholders.
+		if _, inHIR := l.funcNames[callee]; !inHIR {
+			for _, raw := range builtinResultTypes(callee) {
+				resTypes = append(resTypes, l.b.Type(raw))
+			}
+		}
+	}
+	if len(resTypes) == 0 {
+		l.lowerCallArgs(inner, recvV)
+		for _, t := range targets {
+			l.bindPlaceholder(t)
+		}
+		return NoVal
+	}
+	dsts := l.b.EmitCallMulti(resTypes, argv, callee)
+	for i, t := range targets {
+		if i >= len(dsts) {
+			break
+		}
+		l.bindTarget(t, dsts[i])
+	}
+	return NoVal
 }
 
 // lowerCallArgs lowers the `arg` slots of a call node and prepends an explicit

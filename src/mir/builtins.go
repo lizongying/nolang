@@ -52,24 +52,59 @@ type builtinResult struct {
 // registered both qualified ("str.eq") and bare ("len", with a ReceiverType).
 // Lowering always builds the qualified form (`recvType.method`), so we try the
 // exact name first and then fall back to the bare method name.
-func lookupBuiltin(callee string) (*builtin.BuiltinMethod, bool) {
+//
+// The second return, exact, reports whether the match used the fully-qualified
+// name. A fallback match (`fs.read-dir` -> bare `read-dir`) must NOT shadow a
+// real Nolang function that happens to share the bare name: `fs.read-dir` is a
+// module function, while the global builtin `read-dir` is a different thing.
+// emitCall consults exact to prefer a real function over a fallback-shadowed
+// builtin (see codegen.go emitCall).
+func lookupBuiltin(callee string) (*builtin.BuiltinMethod, bool, bool) {
 	if callee == "" {
-		return nil, false
+		return nil, false, false
 	}
 	if bm := builtin.FindBuiltinMethod(callee); bm != nil {
-		return bm, true
+		return bm, true, true
 	}
 	if i := strings.LastIndex(callee, "."); i >= 0 && i+1 < len(callee) {
 		if bm := builtin.FindBuiltinMethod(callee[i+1:]); bm != nil {
-			return bm, true
+			return bm, false, true
 		}
 	}
-	return nil, false
+	return nil, false, false
+}
+
+// builtinResultTypes returns the nolang type string of EVERY declared result of
+// a builtin, in declaration order.
+//
+// Multi-result builtins are far from exotic: `stat-size` yields (i64, bool),
+// `readlink` yields (str, bool), `mkstemp` yields (str, fd). Lowering only the
+// first (as builtinResultOf does) silently drops the second — `path, ok =
+// fs.readlink(p)` would leave `ok` reading an uninitialized slot. It also
+// starves the C-call emitter of the result count it needs to know how many
+// destinations to fill.
+func builtinResultTypes(callee string) []string {
+	bm, _, ok := lookupBuiltin(callee)
+	if !ok || len(bm.Return) == 0 {
+		return nil
+	}
+	var out []string
+	for _, r := range bm.Return {
+		if r == nil {
+			continue
+		}
+		raw := r.String()
+		if raw == "" {
+			continue
+		}
+		out = append(out, raw)
+	}
+	return out
 }
 
 // builtinResultOf reports what a call to `callee` yields.
 func builtinResultOf(callee string) builtinResult {
-	bm, ok := lookupBuiltin(callee)
+	bm, _, ok := lookupBuiltin(callee)
 	if !ok {
 		return builtinResult{}
 	}

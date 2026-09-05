@@ -67,29 +67,43 @@ func clibZero(t builtin.LLVMArgType) string {
 // signature, e.g. write with a different fd width, tripping opt's "invalid
 // redefinition" error). Skip them in decl().
 var runtimeFns = map[string]bool{
-	"write":                          true,
-	"malloc":                        true,
-	"free":                          true,
-	"memcmp":                        true,
-	"llvm.memcpy.p0i8.p0i8.i64":     true,
-	"str_free":                      true,
-	"str_eq":                        true,
-	"vec_free":                      true,
-	"str_from_const":                true,
-	"str_concat":                    true,
-	"digits":                        true,
-	"print_str":                     true,
-	"print_i64":                     true,
-	"print_double":                  true,
-	"print_bool":                    true,
-	"print_space":                   true,
-	"print_option":                  true,
-	"eprint_str":                    true,
-	"eprint_i64":                    true,
-	"eprint_double":                 true,
-	"eprint_bool":                  true,
-	"eprint_space":                  true,
-	"eprint_nl":                     true,
+	"write":                     true,
+	"malloc":                    true,
+	"free":                      true,
+	"memcmp":                    true,
+	"llvm.memcpy.p0i8.p0i8.i64": true,
+	"str_free":                  true,
+	"str_eq":                    true,
+	"vec_free":                  true,
+	"str_from_const":            true,
+	"str_concat":                true,
+	"digits":                    true,
+	"print_str":                 true,
+	"print_i64":                 true,
+	"print_double":              true,
+	"print_bool":                true,
+	"print_space":               true,
+	"print_option":              true,
+	"eprint_str":                true,
+	"eprint_i64":                true,
+	"eprint_double":             true,
+	"eprint_bool":               true,
+	"eprint_space":              true,
+	"eprint_nl":                 true,
+	// nolang.* runtime helpers are DEFINED in the prelude (see emitPrelude).
+	// The generic C-forwarder must not re-declare them or LLVM rejects the
+	// module with "invalid redefinition of function 'nolang.now_ms'".
+	"nolang.now_s":    true,
+	"nolang.now_ms":   true,
+	"nolang.now_us":   true,
+	"nolang.now_ns":   true,
+	"nolang.sleep_s":  true,
+	"nolang.sleep_us": true,
+	"nolang.sleep_ns": true,
+	"gettimeofday":    true,
+	"clock_gettime":   true,
+	"usleep":          true,
+	"nanosleep":       true,
 }
 
 // declFuncName extracts the callee name from a `declare ... @name(...)` line.
@@ -124,6 +138,41 @@ func (c *codegen) decl(line string) {
 	}
 	c.extDecls[line] = true
 	c.extDeclOrder = append(c.extDeclOrder, line)
+}
+
+// structLLVMType resolves the LLVM type name of a Nolang struct definition by
+// its (possibly module-qualified) name suffix. Structs from std dependencies
+// are registered module-qualified (e.g. os.utsname), but builtin result types
+// often carry only the bare name, so ptype cannot resolve them directly. The
+// suffix match keeps the lookup robust to the module prefix.
+func (c *codegen) structLLVMType(suffix string) string {
+	for raw := range c.mod.StructFields {
+		if strings.HasSuffix(raw, suffix) {
+			return "%" + sanitize(raw)
+		}
+	}
+	return ""
+}
+
+// structKeyOf resolves a (possibly unqualified) struct raw name to the key
+// under which it is actually registered in StructFields. std structs are
+// module-qualified (e.g. `os.utsname`), so a bare reference like `utsname`
+// won't hit the exact key; this falls back to a suffix match. Used by
+// emitGetField/emitSetField so `uts.sysname` resolves its field layout even
+// though the receiver type is recorded as the bare `utsname`.
+func (c *codegen) structKeyOf(raw string) string {
+	if raw == "" {
+		return ""
+	}
+	if _, ok := c.mod.StructFields[raw]; ok {
+		return raw
+	}
+	for k := range c.mod.StructFields {
+		if k == raw || strings.HasSuffix(k, "."+raw) {
+			return k
+		}
+	}
+	return ""
 }
 
 // treg mints a unique virtual register with a readable prefix.
@@ -470,6 +519,24 @@ func (c *codegen) emitBuiltinForward(f *Function, inst *Inst, bm *builtin.Builti
 		return c.emitBuiltinBoolToStr(inst)
 	case "vec-push":
 		return c.emitBuiltinVecPush(inst)
+	case "uname":
+		return c.emitBuiltinUname(inst)
+	case "utime":
+		return c.emitBuiltinUtime(inst)
+	case "get-priority":
+		return c.emitBuiltinGetPriority(inst)
+	case "sysctl":
+		return c.emitBuiltinSysctl(inst)
+	case "process-waitpid":
+		return c.emitBuiltinWaitpid(inst)
+	case "process-exec-shell":
+		return c.emitBuiltinExecShell(inst)
+	}
+	// Generic C call: the whole point of forward_call.go. Consulted LAST so a
+	// bespoke handler always wins, but it turns "add a POSIX builtin" from a new
+	// emitter into a single table entry.
+	if spec := forwardCSpecOf(bm.ForwardFunc); spec != nil {
+		return c.emitCCall(inst, spec)
 	}
 	c.fail("unsupported builtin %s (ForwardFunc=%q) in func %s", inst.Sym, bm.ForwardFunc, f.Name)
 	return fmt.Errorf("unsupported builtin %s", inst.Sym)
@@ -790,5 +857,287 @@ func (c *codegen) emitBuiltinVecPush(inst *Inst) error {
 	s2 := c.treg("vps2")
 	c.sb.WriteString(fmt.Sprintf("  %s = insertvalue %%vec %s, i64 %s, 2\n", s2, s1, dataI64))
 	c.sb.WriteString(fmt.Sprintf("  store %%vec %s, %%vec* %s\n", s2, slot))
+	return nil
+}
+
+// emitBuiltinUname lowers `os.uname()` -> utsname. The C struct utsname is a
+// packed array of five NUL-terminated char fields (sysname, nodename, release,
+// version, machine), each _UTSNAME_LENGTH bytes wide (256 on macOS, 65 on
+// Linux). We alloca the C buffer, call uname(buf), then adopt each field as an
+// owned %str-long via @str_from_cstr and store it into the result %utsname
+// struct. This mirrors the legacy call_stdlib.go uname inliner exactly.
+func (c *codegen) emitBuiltinUname(inst *Inst) error {
+	dstSlot := c.valSlot[inst.Dst]
+	if dstSlot == "" {
+		return fmt.Errorf("uname: no result slot")
+	}
+	// The result struct is registered under its module-qualified name
+	// (e.g. os.utsname -> %os_utsname); resolve it from the collected struct
+	// fields rather than ptype, which only sees the unqualified result type
+	// "utsname" and would miss the lookup.
+	dstLT := c.structLLVMType("utsname")
+	if dstLT == "" {
+		return fmt.Errorf("uname: utsname struct type not collected")
+	}
+
+	fieldLen := int64(256)
+	if runtime.GOOS == "linux" {
+		fieldLen = 65
+	}
+	totalSize := fieldLen * 5
+	offsets := [5]int64{0, fieldLen, fieldLen * 2, fieldLen * 3, fieldLen * 4}
+
+	// declare i32 @uname(i8*)
+	c.decl("declare i32 @uname(i8*)")
+
+	unBuf := c.treg("unbuf")
+	c.sb.WriteString(fmt.Sprintf("  %s = alloca [%d x i8]\n", unBuf, totalSize))
+	unBufPtr := c.treg("unbufp")
+	c.sb.WriteString(fmt.Sprintf("  %s = getelementptr inbounds [%d x i8], [%d x i8]* %s, i64 0, i64 0\n", unBufPtr, totalSize, totalSize, unBuf))
+	unRet := c.treg("unret")
+	c.sb.WriteString(fmt.Sprintf("  %s = call i32 @uname(i8* %s)\n", unRet, unBufPtr))
+
+	for i := 0; i < 5; i++ {
+		fldGEP := c.treg("unfld")
+		c.sb.WriteString(fmt.Sprintf("  %s = getelementptr inbounds [%d x i8], [%d x i8]* %s, i64 0, i64 %d\n", fldGEP, totalSize, totalSize, unBuf, offsets[i]))
+		strReg := c.treg("unstr")
+		c.sb.WriteString(fmt.Sprintf("  %s = call %%str-long @str_from_cstr(i8* %s)\n", strReg, fldGEP))
+		dstGEP := c.treg("undst")
+		c.sb.WriteString(fmt.Sprintf("  %s = getelementptr inbounds %s, %s* %s, i32 0, i32 %d\n", dstGEP, dstLT, dstLT, dstSlot, i))
+		c.sb.WriteString(fmt.Sprintf("  store %%str-long %s, %%str-long* %s\n", strReg, dstGEP))
+	}
+	return nil
+}
+
+// emitBuiltinUtime lowers `os.utime(path, atime, mtime)` -> ok bool. The C
+// entry point is utimes(2), which takes a struct timeval[2]; tv_sec holds the
+// Unix seconds and tv_usec is zeroed. icmp eq ret 0 yields the success bool,
+// matching the legacy call_stdlib.go utime inliner.
+func (c *codegen) emitBuiltinUtime(inst *Inst) error {
+	if len(inst.Args) < 3 {
+		return fmt.Errorf("utime: needs path, atime, mtime")
+	}
+	dstSlot := c.valSlot[inst.Dst]
+	if dstSlot == "" {
+		return fmt.Errorf("utime: no result slot")
+	}
+	pathV, err := c.argIndex(inst, 0)
+	if err != nil {
+		return err
+	}
+	pathPtr := c.cstrOf(pathV)
+	if pathPtr == "" {
+		return fmt.Errorf("utime: cannot marshal path as C string")
+	}
+	atimeT, atimeV := c.loadVal(inst.Args[1])
+	atime := c.coerce(atimeT, atimeV, "i64")
+	if atime == "" {
+		atime = "0"
+	}
+	mtimeT, mtimeV := c.loadVal(inst.Args[2])
+	mtime := c.coerce(mtimeT, mtimeV, "i64")
+	if mtime == "" {
+		mtime = "0"
+	}
+
+	c.decl("declare i32 @utimes(i8*, i8*)")
+
+	utBuf := c.treg("utbuf")
+	c.sb.WriteString(fmt.Sprintf("  %s = alloca [32 x i8]\n", utBuf))
+	atimeGEP := c.treg("utat")
+	c.sb.WriteString(fmt.Sprintf("  %s = getelementptr inbounds [32 x i8], [32 x i8]* %s, i64 0, i64 0\n", atimeGEP, utBuf))
+	c.sb.WriteString(fmt.Sprintf("  store i64 %s, i64* %s\n", atime, atimeGEP))
+	usec0GEP := c.treg("utus0")
+	c.sb.WriteString(fmt.Sprintf("  %s = getelementptr inbounds [32 x i8], [32 x i8]* %s, i64 0, i64 8\n", usec0GEP, utBuf))
+	c.sb.WriteString(fmt.Sprintf("  store i64 0, i64* %s\n", usec0GEP))
+	mtimeGEP := c.treg("utmt")
+	c.sb.WriteString(fmt.Sprintf("  %s = getelementptr inbounds [32 x i8], [32 x i8]* %s, i64 0, i64 16\n", mtimeGEP, utBuf))
+	c.sb.WriteString(fmt.Sprintf("  store i64 %s, i64* %s\n", mtime, mtimeGEP))
+	usec1GEP := c.treg("utus1")
+	c.sb.WriteString(fmt.Sprintf("  %s = getelementptr inbounds [32 x i8], [32 x i8]* %s, i64 0, i64 24\n", usec1GEP, utBuf))
+	c.sb.WriteString(fmt.Sprintf("  store i64 0, i64* %s\n", usec1GEP))
+	timesPtr := c.treg("uttimes")
+	c.sb.WriteString(fmt.Sprintf("  %s = getelementptr inbounds [32 x i8], [32 x i8]* %s, i64 0, i64 0\n", timesPtr, utBuf))
+	utRet := c.treg("utret")
+	c.sb.WriteString(fmt.Sprintf("  %s = call i32 @utimes(i8* %s, i8* %s)\n", utRet, pathPtr, timesPtr))
+	cmp := c.treg("utcmp")
+	c.sb.WriteString(fmt.Sprintf("  %s = icmp eq i32 %s, 0\n", cmp, utRet))
+	c.sb.WriteString(fmt.Sprintf("  store i1 %s, i1* %s\n", cmp, dstSlot))
+	c.sb.WriteString(fmt.Sprintf("  call void @free(i8* %s)\n", pathPtr))
+	return nil
+}
+
+// errnoFnName returns the platform-specific C function that yields a pointer to
+// the thread-local errno. macOS/BSD use __error(); glibc uses __errno_location.
+func (c *codegen) errnoFnName() string {
+	if runtime.GOOS == "linux" {
+		return "__errno_location"
+	}
+	return "__error"
+}
+
+// emitBuiltinGetPriority lowers `os.get-priority(which, who)` -> (prio i64, ok bool).
+// getpriority(2) returns the negated priority on success but -1 on *both* success
+// and failure, so the only reliable success signal is errno == 0: clear errno,
+// call getpriority, then ok = (errno == 0). This mirrors call_stdlib.go exactly.
+func (c *codegen) emitBuiltinGetPriority(inst *Inst) error {
+	if len(inst.Args) < 2 {
+		return fmt.Errorf("get-priority: needs which, who")
+	}
+	which, err := c.marshalScalar(inst, 0, "i32")
+	if err != nil {
+		return err
+	}
+	who, err := c.marshalScalar(inst, 1, "i32")
+	if err != nil {
+		return err
+	}
+	efn := c.errnoFnName()
+	c.decl(fmt.Sprintf("declare i32* @%s()", efn))
+	c.decl("declare i32 @getpriority(i32, i32)")
+	ePtr := c.treg("gp.err")
+	c.sb.WriteString(fmt.Sprintf("  %s = call i32* @%s()\n", ePtr, efn))
+	c.sb.WriteString(fmt.Sprintf("  store i32 0, i32* %s\n", ePtr))
+	ret := c.treg("gp.ret")
+	c.sb.WriteString(fmt.Sprintf("  %s = call i32 @getpriority(i32 %s, i32 %s)\n", ret, which, who))
+	ext := c.treg("gp.ext")
+	c.sb.WriteString(fmt.Sprintf("  %s = sext i32 %s to i64\n", ext, ret))
+	if err := c.storeResult(inst, 0, ext, "i64"); err != nil {
+		return err
+	}
+	eLoad := c.treg("gp.eld")
+	c.sb.WriteString(fmt.Sprintf("  %s = load i32, i32* %s\n", eLoad, ePtr))
+	ok := c.treg("gp.ok")
+	c.sb.WriteString(fmt.Sprintf("  %s = icmp eq i32 %s, 0\n", ok, eLoad))
+	return c.storeResult(inst, 1, ok, "i1")
+}
+
+// emitBuiltinSysctl lowers `os.sysctl(name)` -> (val str, ok bool) on macOS/BSD
+// via sysctlbyname(3). Two calls: first with NULL buf to learn the size, then
+// malloc(size+1) and refill. ok = (second call returned 0). The value adopts the
+// malloc'd buffer as an owned %str-long (len = returned size, cap = size+1),
+// matching call_stdlib.go's scLen2/scBufSize2 usage so the printed value agrees.
+func (c *codegen) emitBuiltinSysctl(inst *Inst) error {
+	if len(inst.Args) < 1 {
+		return fmt.Errorf("sysctl: needs a name")
+	}
+	nameV, err := c.argIndex(inst, 0)
+	if err != nil {
+		return err
+	}
+	namePtr := c.cstrOf(nameV)
+	if namePtr == "" {
+		return fmt.Errorf("sysctl: cannot marshal name as C string")
+	}
+	c.decl("declare i32 @sysctlbyname(i8*, i8*, i64*, i8*, i64)")
+	lenBuf := c.treg("sc.len")
+	c.sb.WriteString(fmt.Sprintf("  %s = alloca i64\n", lenBuf))
+	c.sb.WriteString(fmt.Sprintf("  store i64 0, i64* %s\n", lenBuf))
+	ret1 := c.treg("sc.ret")
+	c.sb.WriteString(fmt.Sprintf("  %s = call i32 @sysctlbyname(i8* %s, i8* null, i64* %s, i8* null, i64 0)\n", ret1, namePtr, lenBuf))
+	sz := c.treg("sc.sz")
+	c.sb.WriteString(fmt.Sprintf("  %s = load i64, i64* %s\n", sz, lenBuf))
+	capR := c.treg("sc.cap")
+	c.sb.WriteString(fmt.Sprintf("  %s = add i64 %s, 1\n", capR, sz))
+	buf := c.treg("sc.buf")
+	c.sb.WriteString(fmt.Sprintf("  %s = call i8* @malloc(i64 %s)\n", buf, capR))
+	ret2 := c.treg("sc.ret2")
+	c.sb.WriteString(fmt.Sprintf("  %s = call i32 @sysctlbyname(i8* %s, i8* %s, i64* %s, i8* null, i64 0)\n", ret2, namePtr, buf, lenBuf))
+	cmp2 := c.treg("sc.cmp2")
+	c.sb.WriteString(fmt.Sprintf("  %s = icmp eq i32 %s, 0\n", cmp2, ret2))
+	if err := c.storeResult(inst, 1, cmp2, "i1"); err != nil {
+		return err
+	}
+	len2 := c.treg("sc.len2")
+	c.sb.WriteString(fmt.Sprintf("  %s = load i64, i64* %s\n", len2, lenBuf))
+	c.sb.WriteString(fmt.Sprintf("  call void @free(i8* %s)\n", namePtr))
+	return c.storeRawStr(inst, 0, len2, capR, buf)
+}
+
+// storeRawStr builds an owned %str-long {len, cap, data} directly into the slot
+// of result i, bypassing a NUL-terminated copy. Used when the backing bytes are
+// already heap-owned (e.g. a freshly malloc'd sysctl buffer). The drop pass frees
+// the data pointer exactly like any other owned %str-long result.
+func (c *codegen) storeRawStr(inst *Inst, i int, lenReg, capReg, dataReg string) error {
+	lt, ok := c.resultType(inst, i)
+	if !ok {
+		return nil
+	}
+	if lt != "%str-long" {
+		return fmt.Errorf("builtin %s: raw str stored into %s slot", inst.Sym, lt)
+	}
+	slot := c.valSlot[inst.Results[i]]
+	if slot == "" {
+		return fmt.Errorf("builtin %s: result %d has no slot", inst.Sym, i)
+	}
+	lg := c.treg("rsl")
+	c.sb.WriteString(fmt.Sprintf("  %s = getelementptr %%str-long, %%str-long* %s, i32 0, i32 0\n", lg, slot))
+	c.sb.WriteString(fmt.Sprintf("  store i64 %s, i64* %s\n", lenReg, lg))
+	cg := c.treg("rsc")
+	c.sb.WriteString(fmt.Sprintf("  %s = getelementptr %%str-long, %%str-long* %s, i32 0, i32 1\n", cg, slot))
+	c.sb.WriteString(fmt.Sprintf("  store i64 %s, i64* %s\n", capReg, cg))
+	dg := c.treg("rsd")
+	c.sb.WriteString(fmt.Sprintf("  %s = getelementptr %%str-long, %%str-long* %s, i32 0, i32 2\n", dg, slot))
+	c.sb.WriteString(fmt.Sprintf("  store i8* %s, i8** %s\n", dataReg, dg))
+	return nil
+}
+
+// emitBuiltinWaitpid lowers `process.waitpid(pid, options)` -> status i64.
+// Returns WEXITSTATUS: (status >> 8) & 0xFF, where status is the i32 written by
+// libc waitpid into an out-parameter. Mirrors call_stdlib.go process-waitpid.
+func (c *codegen) emitBuiltinWaitpid(inst *Inst) error {
+	if len(inst.Args) < 2 {
+		return fmt.Errorf("waitpid: needs pid, options")
+	}
+	pid, err := c.marshalScalar(inst, 0, "i32")
+	if err != nil {
+		return err
+	}
+	opt, err := c.marshalScalar(inst, 1, "i32")
+	if err != nil {
+		return err
+	}
+	c.decl("declare i32 @waitpid(i32, i32*, i32)")
+	st := c.treg("wp.st")
+	c.sb.WriteString(fmt.Sprintf("  %s = alloca i32\n", st))
+	ret := c.treg("wp.ret")
+	c.sb.WriteString(fmt.Sprintf("  %s = call i32 @waitpid(i32 %s, i32* %s, i32 %s)\n", ret, pid, st, opt))
+	ld := c.treg("wp.ld")
+	c.sb.WriteString(fmt.Sprintf("  %s = load i32, i32* %s\n", ld, st))
+	sh := c.treg("wp.sh")
+	c.sb.WriteString(fmt.Sprintf("  %s = lshr i32 %s, 8\n", sh, ld))
+	code := c.treg("wp.code")
+	c.sb.WriteString(fmt.Sprintf("  %s = and i32 %s, 255\n", code, sh))
+	ext := c.treg("wp.ext")
+	c.sb.WriteString(fmt.Sprintf("  %s = sext i32 %s to i64\n", ext, code))
+	return c.storeResult(inst, 0, ext, "i64")
+}
+
+// emitBuiltinExecShell lowers `process.exec-shell(cmd)` -> replaces the current
+// process image with `sh -c cmd` via execlp(3). It returns only on failure
+// (parent never sees a usable value because the child's image is replaced); the
+// Nolang `spawn` uses it inside the child branch and calls os.exit(127) after,
+// so the result is ignored. The "sh" and "-c" literals are emitted as private
+// module constants.
+func (c *codegen) emitBuiltinExecShell(inst *Inst) error {
+	if len(inst.Args) < 1 {
+		return fmt.Errorf("exec-shell: needs a command")
+	}
+	cmdV, err := c.argIndex(inst, 0)
+	if err != nil {
+		return err
+	}
+	cmdPtr := c.cstrOf(cmdV)
+	if cmdPtr == "" {
+		return fmt.Errorf("exec-shell: cannot marshal command as C string")
+	}
+	c.global("@.mir.str.sh = private constant [3 x i8] c\"sh\\00\"")
+	c.global("@.mir.str.dashc = private constant [3 x i8] c\"-c\\00\"")
+	c.decl("declare i32 @execlp(i8*, i8*, ...)") // variadic
+	sh := "getelementptr inbounds ([3 x i8], [3 x i8]* @.mir.str.sh, i64 0, i64 0)"
+	dc := "getelementptr inbounds ([3 x i8], [3 x i8]* @.mir.str.dashc, i64 0, i64 0)"
+	ret := c.treg("es.ret")
+	c.sb.WriteString(fmt.Sprintf("  %s = call i32 (i8*, i8*, ...) @execlp(i8* %s, i8* %s, i8* %s, i8* %s, i8* null)\n", ret, sh, sh, dc, cmdPtr))
+	c.sb.WriteString(fmt.Sprintf("  call void @free(i8* %s)\n", cmdPtr))
 	return nil
 }

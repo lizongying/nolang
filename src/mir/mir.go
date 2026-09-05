@@ -450,6 +450,13 @@ type Module struct {
 	Globals   []GlobalDecl
 	FuncByName map[string]FuncID
 
+	// KnownFuncs is the set of every Nolang function name present in the HIR
+	// package (populated during lowering from the HIR func table). emitCall
+	// uses it to prefer a real function over a builtin that was only matched
+	// via the bare-name fallback (e.g. module function `fs.read-dir` vs the
+	// global builtin `read-dir`).
+	KnownFuncs map[string]bool
+
 	// Lowered records which function names have already been lowered during
 	// reachability-driven HIR->MIR lowering (user functions pull in only the
 	// std functions they reference).

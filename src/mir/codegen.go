@@ -250,6 +250,15 @@ func (c *codegen) llvmTypeOf(t *Type) string {
 			if _, ok := c.mod.StructFields[t.Raw]; ok {
 				return "%" + sanitize(t.Raw)
 			}
+			// std structs are registered module-qualified (e.g. `os.utsname` ->
+			// `%os_utsname`); a bare reference like `utsname` won't hit the
+			// exact-key check above. Resolve it via suffix so the result slot is
+			// allocated with the real struct type instead of i64 (allocating the
+			// wrong type made `getelementptr %os_utsname, i64* slot` UB ->
+			// trace/BPT trap on every `os.uname` return).
+			if s := c.structLLVMType(t.Raw); s != "" {
+				return s
+			}
 			return "i64"
 		}
 		return "i64"
@@ -631,6 +640,132 @@ copy:
   %s1 = insertvalue %str-long %s0, i64 %len, 1
   %s2 = insertvalue %str-long %s1, i8* %buf, 2
   ret %str-long %s2
+}
+
+; str_clone: deep-copy a %str-long onto the heap. Used when an owned string
+; field is READ out of a struct (emitGetField): the read is a by-value copy of
+; the {len,cap,data} triple that shares the underlying heap buffer with the
+; field. Without an independent copy, the read temp and the struct field would
+; both be freed by the drop pass -> double free. Cloning gives the read its own
+; buffer, matching nolang copy-on-read string semantics and keeping the field's
+; drop independent.
+define %str-long @str_clone(%str-long %s) {
+entry:
+  %len = extractvalue %str-long %s, 0
+  %data = extractvalue %str-long %s, 2
+  %isnull = icmp eq i8* %data, null
+  br i1 %isnull, label %nil, label %copy
+nil:
+  %z = insertvalue %str-long { i64 0, i64 0, i8* null }, i64 0, 0
+  ret %str-long %z
+copy:
+  %sz = add i64 %len, 1
+  %buf = call i8* @malloc(i64 %sz)
+  call void @llvm.memcpy.p0i8.p0i8.i64(i8* %buf, i8* %data, i64 %len, i1 0)
+  %s0 = insertvalue %str-long { i64 0, i64 0, i8* null }, i64 %len, 0
+  %s1 = insertvalue %str-long %s0, i64 %len, 1
+  %s2 = insertvalue %str-long %s1, i8* %buf, 2
+  ret %str-long %s2
+}
+
+; --- nolang.* runtime helpers ------------------------------------------------
+; The builtin table refers to these names as if they were plain libc symbols
+; (CLibCall{FuncName: "nolang.now_ms"}), but libc has never provided them: the
+; legacy backend defines them in its prelude (build/llvm/decl.go). MIR used to
+; only *declare* them, so every program touching the clock or sleeping linked
+; against symbols nobody defined -> "Undefined symbols for architecture arm64".
+; Defining them here (matching the rest of this prelude) makes the CLibCall
+; path work unchanged.
+
+declare i32 @gettimeofday(i8*, i8*)
+declare i32 @clock_gettime(i32, i8*)
+declare i32 @usleep(i32)
+declare i32 @nanosleep(i8*, i8*)
+
+define i64 @nolang.now_s() {
+entry:
+  %tv = alloca [16 x i8]
+  %tv.ptr = bitcast [16 x i8]* %tv to i8*
+  call i32 @gettimeofday(i8* %tv.ptr, i8* null)
+  %sec.ptr = bitcast [16 x i8]* %tv to i64*
+  %sec = load i64, i64* %sec.ptr
+  ret i64 %sec
+}
+
+define i64 @nolang.now_ms() {
+entry:
+  %tv = alloca [16 x i8]
+  %tv.ptr = bitcast [16 x i8]* %tv to i8*
+  call i32 @gettimeofday(i8* %tv.ptr, i8* null)
+  %sec.ptr = bitcast [16 x i8]* %tv to i64*
+  %sec = load i64, i64* %sec.ptr
+  %usec.ptr = getelementptr i64, i64* %sec.ptr, i64 1
+  %usec = load i64, i64* %usec.ptr
+  %sec.ms = mul i64 %sec, 1000
+  %usec.ms = sdiv i64 %usec, 1000
+  %result = add i64 %sec.ms, %usec.ms
+  ret i64 %result
+}
+
+define i64 @nolang.now_us() {
+entry:
+  %tv = alloca [16 x i8]
+  %tv.ptr = bitcast [16 x i8]* %tv to i8*
+  call i32 @gettimeofday(i8* %tv.ptr, i8* null)
+  %sec.ptr = bitcast [16 x i8]* %tv to i64*
+  %sec = load i64, i64* %sec.ptr
+  %usec.ptr = getelementptr i64, i64* %sec.ptr, i64 1
+  %usec = load i64, i64* %usec.ptr
+  %sec.us = mul i64 %sec, 1000000
+  %result = add i64 %sec.us, %usec
+  ret i64 %result
+}
+
+define i64 @nolang.now_ns() {
+entry:
+  %ts = alloca [16 x i8]
+  %ts.ptr = bitcast [16 x i8]* %ts to i8*
+  call i32 @clock_gettime(i32 0, i8* %ts.ptr)
+  %sec.ptr = bitcast [16 x i8]* %ts to i64*
+  %sec = load i64, i64* %sec.ptr
+  %nsec.ptr = getelementptr i64, i64* %sec.ptr, i64 1
+  %nsec = load i64, i64* %nsec.ptr
+  %sec.ns = mul i64 %sec, 1000000000
+  %result = add i64 %sec.ns, %nsec
+  ret i64 %result
+}
+
+define void @nolang.sleep_us(i64 %us) {
+entry:
+  %us.trunc = trunc i64 %us to i32
+  call i32 @usleep(i32 %us.trunc)
+  ret void
+}
+
+define i64 @nolang.sleep_s(i64 %sec) {
+entry:
+  %req = alloca [16 x i8]
+  %sec.ptr = bitcast [16 x i8]* %req to i64*
+  store i64 %sec, i64* %sec.ptr
+  %nsec.ptr = getelementptr i64, i64* %sec.ptr, i64 1
+  store i64 0, i64* %nsec.ptr
+  %req.ptr = bitcast [16 x i8]* %req to i8*
+  call i32 @nanosleep(i8* %req.ptr, i8* null)
+  ret i64 0
+}
+
+define void @nolang.sleep_ns(i64 %ns) {
+entry:
+  %req = alloca [16 x i8]
+  %sec = sdiv i64 %ns, 1000000000
+  %nsec = srem i64 %ns, 1000000000
+  %sec.ptr = bitcast [16 x i8]* %req to i64*
+  store i64 %sec, i64* %sec.ptr
+  %nsec.ptr = getelementptr i64, i64* %sec.ptr, i64 1
+  store i64 %nsec, i64* %nsec.ptr
+  %req.ptr = bitcast [16 x i8]* %req to i8*
+  call i32 @nanosleep(i8* %req.ptr, i8* null)
+  ret void
 }
 `)
 }
@@ -1293,9 +1428,36 @@ func (c *codegen) elemAddr(arrSlot, idxV, arrT, elemT string) string {
 	}
 }
 
+// elemTypeOfReceiver returns the LLVM *element* type for indexing/store into a
+// slice/array/str receiver. The byte-addressed backing store of a %vec (slice)
+// or %str-long means the element type is the slice's declared element — i8 for
+// []byte, i64 for []i64 — and NEVER the value being stored or the destination
+// variable's type. Writing d0:i64 into a []byte must store ONE byte (truncating
+// to i8) at offset i; using the value's i64 type would instead store 8 bytes at
+// offset i*8 and overrun the array (the AES stack-corruption crash).
+func (c *codegen) elemTypeOfReceiver(recv ValueID) string {
+	if val := c.mod.Value(recv); val != nil {
+		if t := c.mod.Type(val.Type); t != nil {
+			switch t.Kind {
+			case KindSlice, KindArray:
+				if t.Elem != NoType {
+					if et := c.mod.Type(t.Elem); et != nil {
+						return c.llvmTypeOf(et)
+					}
+				}
+				return "i8"
+			case KindStr:
+				return "i8"
+			}
+		}
+	}
+	return "i8"
+}
+
 func (c *codegen) emitIndex(inst *Inst) error {
 	arrT, _ := c.ptype(inst.Args[0])
-	elemT, _ := c.ptype(inst.Dst)
+	elemT := c.elemTypeOfReceiver(inst.Args[0])
+	dstT, _ := c.ptype(inst.Dst)
 	arrSlot := c.valSlot[inst.Args[0]]
 	if arrSlot == "" {
 		return fmt.Errorf("index slot: value id %d (type %s) has no slot in func %d; elemT=%s", inst.Args[0], arrT, c.cf, elemT)
@@ -1312,7 +1474,12 @@ func (c *codegen) emitIndex(inst *Inst) error {
 	c.loadSeq++
 	lv := fmt.Sprintf("%%lx%d", c.loadSeq)
 	c.sb.WriteString(fmt.Sprintf("  %s = load %s, %s* %s\n", lv, elemT, elemT, ep))
-	c.sb.WriteString(fmt.Sprintf("  store %s %s, %s* %s\n", elemT, lv, elemT, dstSlot))
+	// Coerce the loaded element to the destination variable's type (e.g. i8 ->
+	// i64 for `x = slice[i]` where x is i64).
+	if cv := c.coerce(elemT, lv, dstT); cv != "" {
+		lv = cv
+	}
+	c.sb.WriteString(fmt.Sprintf("  store %s %s, %s* %s\n", dstT, lv, dstT, dstSlot))
 	return nil
 }
 
@@ -1323,7 +1490,13 @@ func (c *codegen) emitIndex(inst *Inst) error {
 // drop).
 func (c *codegen) emitIndexStore(inst *Inst) error {
 	arrT, _ := c.ptype(inst.Args[0])
-	elemT, owned := c.ptype(inst.Args[2])
+	// The element type is the receiver's declared element (i8 for []byte), NOT the
+	// value's type — writing a wider value into a byte slice must truncate to one
+	// byte (see elemTypeOfReceiver). Using the value's type here stores 8 bytes
+	// per index and overruns the array.
+	elemT := c.elemTypeOfReceiver(inst.Args[0])
+	valT, valV := c.loadVal(inst.Args[2])
+	_, owned := c.ptype(inst.Args[2])
 	arrSlot := c.valSlot[inst.Args[0]]
 	if arrSlot == "" {
 		c.fail("index-store of value with no slot in func %d", c.cf)
@@ -1332,13 +1505,17 @@ func (c *codegen) emitIndexStore(inst *Inst) error {
 	_, idxV := c.loadVal(inst.Args[1])
 	idxVT, _ := c.ptype(inst.Args[1])
 	idxV = c.coerceIndex(idxVT, idxV)
-	_, valV := c.loadVal(inst.Args[2])
 	ep := c.elemAddr(arrSlot, idxV, arrT, elemT)
 	if owned {
 		c.loadSeq++
 		old := fmt.Sprintf("%%old%d", c.loadSeq)
 		c.sb.WriteString(fmt.Sprintf("  %s = load %s, %s* %s\n", old, elemT, elemT, ep))
 		c.sb.WriteString(fmt.Sprintf("  call void @str_free(%s %s)\n", elemT, old))
+	}
+	// Truncate/extend the stored value to the element type (e.g. i64 -> i8 for a
+	// []byte, which keeps the store to a single byte at offset i).
+	if cv := c.coerce(valT, valV, elemT); cv != "" {
+		valV = cv
 	}
 	c.sb.WriteString(fmt.Sprintf("  store %s %s, %s* %s\n", elemT, valV, elemT, ep))
 	if arrT == "%str-long" {
@@ -1388,13 +1565,17 @@ func (c *codegen) emitGetField(inst *Inst) error {
 	if recvLT == "" {
 		recvLT = "%" + sanitize(recvRaw)
 	}
-	idx, ok := c.mod.FieldIndex(recvRaw, inst.Str)
+	structKey := c.structKeyOf(recvRaw)
+	if structKey == "" {
+		structKey = recvRaw
+	}
+	idx, ok := c.mod.FieldIndex(structKey, inst.Str)
 	if !ok {
 		c.fail("getfield: field %q not found on %q in func %d", inst.Str, recvRaw, c.cf)
 		return fmt.Errorf("getfield field")
 	}
 	structLT := recvLT
-	fieldLT, _ := c.ptype(inst.Dst)
+	fieldLT, owned := c.ptype(inst.Dst)
 	if fieldLT == "" {
 		fieldLT = "i64"
 	}
@@ -1404,6 +1585,15 @@ func (c *codegen) emitGetField(inst *Inst) error {
 	c.loadSeq++
 	lv := fmt.Sprintf("%%lx%d", c.loadSeq)
 	c.sb.WriteString(fmt.Sprintf("  %s = load %s, %s* %s\n", lv, fieldLT, fieldLT, gep))
+	// Owned string fields are read by value (the triple is copied, sharing the
+	// heap buffer with the field). Clone so the read temp owns its own buffer
+	// and the field's later drop can't double-free it.
+	if owned && fieldLT == "%str-long" {
+		c.loadSeq++
+		cl := fmt.Sprintf("%%lc%d", c.loadSeq)
+		c.sb.WriteString(fmt.Sprintf("  %s = call %s @str_clone(%s %s)\n", cl, fieldLT, fieldLT, lv))
+		lv = cl
+	}
 	c.sb.WriteString(fmt.Sprintf("  store %s %s, %s* %s\n", fieldLT, lv, fieldLT, c.valSlot[inst.Dst]))
 	return nil
 }
@@ -1427,7 +1617,11 @@ func (c *codegen) emitSetField(inst *Inst) error {
 	if recvLT == "" {
 		recvLT = "%" + sanitize(recvRaw)
 	}
-	idx, ok := c.mod.FieldIndex(recvRaw, inst.Str)
+	structKey := c.structKeyOf(recvRaw)
+	if structKey == "" {
+		structKey = recvRaw
+	}
+	idx, ok := c.mod.FieldIndex(structKey, inst.Str)
 	if !ok {
 		c.fail("setfield: field %q not found on %q in func %d", inst.Str, recvRaw, c.cf)
 		return fmt.Errorf("setfield field")
@@ -1661,6 +1855,27 @@ func (c *codegen) emitSliceOp(inst *Inst) error {
 	srcBase := c.treg("sosb")
 	c.sb.WriteString(fmt.Sprintf("  %s = getelementptr inbounds i8, i8* %s, i64 %s\n", srcBase, srcPtr, off))
 
+	// Aliasing view for a fixed-array receiver sliced into a %vec: nolang treats
+	// slice-of-array as a VIEW over the array's own storage, so mutations through
+	// the slice reach the original array (e.g. sub-bytes(out[..]) mutating out).
+	// The view owns no backing buffer, so it must never be vec_free'd — and the
+	// HIR does not emit a drop for slice-of-array temporaries (verified: the AES
+	// IR contains no vec_free calls), so this is safe.
+	if isFixedArray && dstLT == "%vec" {
+		dp := c.treg("sodp")
+		c.sb.WriteString(fmt.Sprintf("  %s = ptrtoint i8* %s to i64\n", dp, srcBase))
+		capV := c.treg("socap")
+		c.sb.WriteString(fmt.Sprintf("  %s = sub i64 %s, %s\n", capV, rlen, loV))
+		s0 := c.treg("sos0")
+		c.sb.WriteString(fmt.Sprintf("  %s = insertvalue %%vec { i64 0, i64 0, i64 0 }, i64 %s, 0\n", s0, newLen))
+		s1 := c.treg("sos1")
+		c.sb.WriteString(fmt.Sprintf("  %s = insertvalue %%vec %s, i64 %s, 1\n", s1, s0, capV))
+		s2 := c.treg("sos2")
+		c.sb.WriteString(fmt.Sprintf("  %s = insertvalue %%vec %s, i64 %s, 2\n", s2, s1, dp))
+		c.sb.WriteString(fmt.Sprintf("  store %%vec %s, %%vec* %s\n", s2, dstSlot))
+		return nil
+	}
+
 	// Fresh backing buffer + copy the sub-range (uniform ownership model: the
 	// slice gets its own copy and never aliases the source).
 	newBuf := c.treg("sonb2")
@@ -1816,7 +2031,7 @@ func (c *codegen) emitCall(f *Function, inst *Inst) error {
 	callee := inst.Sym
 	if callee == "" {
 		c.fail("call without callee in func %s", f.Name)
-		return fmt.Errorf("no callee")
+		return fmt.Errorf("no callee in %s", f.Name)
 	}
 	// `print` is special-cased (not a regular builtin dispatch) and must be
 	// checked BEFORE lookupBuiltin, because `print` is also registered in the
@@ -1897,11 +2112,19 @@ func (c *codegen) emitCall(f *Function, inst *Inst) error {
 	// builtins, LLVM intrinsics, FFI-free forwards — rather than as a regular
 	// module function call. This clears the whole `callee:<name>` gap class
 	// (with-cap / with-len / eprint / sqrt / ...).
-	if bm, ok := lookupBuiltin(callee); ok {
-		if err := c.emitBuiltin(f, inst, bm); err != nil {
-			return err
+	bm, exact, ok := lookupBuiltin(callee)
+	if ok {
+		// A fallback (bare-name) match must not shadow a real Nolang function
+		// that merely shares the bare builtin name. `fs.read-dir` is a module
+		// function; the global builtin `read-dir` would otherwise be emitted
+		// for it and fail. When the qualified callee is a known function,
+		// route it to the normal function-call path below.
+		if exact || !c.mod.KnownFuncs[callee] {
+			if err := c.emitBuiltin(f, inst, bm); err != nil {
+				return err
+			}
+			return nil
 		}
-		return nil
 	}
 	cid, ok := c.mod.FuncByName[callee]
 	if !ok {
