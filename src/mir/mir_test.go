@@ -82,8 +82,13 @@ func TestAnalyzeUseAfterMoveDetected(t *testing.T) {
 	strT := b.Type("str")
 	v := b.EmitStr(OpConst, strT, "hi", "")
 	w := b.Emit(OpMove, strT, []ValueID{v}, "")
-	// reading v AFTER it was moved is a use-after-move
-	b.Emit(OpCall, b.Type("void"), []ValueID{v}, "print-moved")
+	// nolang's OpMove is a BITWISE COPY: reading v after the move is SAFE (its
+	// bytes stay valid), so only a SECOND DROP of v is a real hazard — it frees
+	// the same heap pointer that w now owns -> double-free. That is what we must
+	// catch (the legacy read-after-move check was a false positive that blocked
+	// test-std-hash.no, where md5 reads its `data` []byte many times after
+	// moving it in).
+	b.Emit(OpDrop, b.Type("void"), []ValueID{v}, "")
 	b.Emit(OpCall, b.Type("void"), []ValueID{w}, "print")
 	b.Terminate(OpReturn, nil, nil, "")
 

@@ -166,12 +166,39 @@ func (m *Module) insertDrops(f *Function, rep *Report) {
 		}
 	}
 
+	// Loop headers: a block that can reach one of its own predecessors via a
+	// back-edge. Dropping a value at a loop-header's START (or END) is unsafe
+	// because the header executes on EVERY iteration: a value that merely dies
+	// entering the header (e.g. a pre-loop local last used before the loop) would
+	// be freed once per iteration -> multi-free / use-after-free. For such edges
+	// we drop at the SOURCE block's END instead (the pre-loop block runs once),
+	// and only fall back to dropping at the TARGET's START when the SOURCE itself
+	// is a loop header (header -> exit edge), which also runs once per exit.
+	isHeader := map[BlockID]bool{}
+	for _, bid := range f.Blocks {
+		blk := m.Block(bid)
+		if blk == nil {
+			continue
+		}
+		for _, p := range blk.Preds {
+			if m.blockReaches(bid, p) {
+				isHeader[bid] = true
+				break
+			}
+		}
+	}
+
 	// (A) edge drops: live into b, dead entering successor s.
-	type dropKey struct {
+	type startKey struct {
 		v ValueID
 		s BlockID
 	}
-	seenStart := map[dropKey]bool{}
+	type endKey struct {
+		v ValueID
+		b BlockID
+	}
+	seenStart := map[startKey]bool{}
+	seenEnd := map[endKey]bool{}
 	dropAtStart := map[BlockID][]ValueID{}
 	for _, bid := range f.Blocks {
 		blk := m.Block(bid)
@@ -204,13 +231,27 @@ func (m *Module) insertDrops(f *Function, rep *Report) {
 				}
 				if s == NoBlock {
 					dropAtEnd[bid] = append(dropAtEnd[bid], v)
-				} else {
-					k := dropKey{v, s}
+					continue
+				}
+				if isHeader[bid] {
+					// Source is a loop header: its END runs every iteration, so
+					// drop at the TARGET's START (executed once on the exit edge).
+					k := startKey{v, s}
 					if seenStart[k] {
 						continue
 					}
 					seenStart[k] = true
 					dropAtStart[s] = append(dropAtStart[s], v)
+				} else {
+					// Normal / pre-loop edge: drop at the SOURCE's END (runs
+					// once, before/outside the loop) so a value dead entering a
+					// loop header is NOT freed on every iteration.
+					k := endKey{v, bid}
+					if seenEnd[k] {
+						continue
+					}
+					seenEnd[k] = true
+					dropAtEnd[bid] = append(dropAtEnd[bid], v)
 				}
 			}
 		}
@@ -300,10 +341,14 @@ func equalSet(a, b valueSet) bool {
 	return true
 }
 
-// checkMoves flags use-after-move: a value read after it has been moved (its
-// ownership transferred elsewhere) is a memory bug. Move destinations and drops
-// of the moved value are exempt (the destination owns it now, and the source is
-// no longer dropped).
+// checkMoves flags use-after-move in nolang's sense: a value DROPPED after it
+// has been moved (its ownership transferred to the move destination) is a
+// double-free — the destination already owns the heap pointer, so dropping the
+// source frees the same pointer twice. nolang's OpMove is a BITWISE COPY
+// (emitMove does load+store), NOT a C++-style move that invalidates the source,
+// so a plain READ of a moved value is always SAFE and is deliberately NOT
+// flagged. Flagging reads was a false positive that blocked the MIR backend on
+// test-std-hash.no (md5 reads its `data` []byte many times after moving it in).
 //
 // The analysis is path-sensitive. The original implementation kept a single
 // module-wide "moved at inst X" map, which falsely flagged a value moved on one
@@ -311,7 +356,7 @@ func equalSet(a, b valueSet) bool {
 // (e.g. o-match: each arm reads the scrutinee, but only one arm may move it).
 // We instead compute, for every program point, the set of values moved on ALL
 // paths reaching that point (must-moved), via a forward dataflow fixpoint with
-// INTERSECTION merge at join points. Only reads of must-moved values are
+// INTERSECTION merge at join points. Only DROPS of must-moved values are
 // reported, which is SOUND: it never produces a false positive. It may
 // under-report a genuine partial-move across a merge, but under-reporting is
 // safe for a strangler-fig backend (it does not disable a valid program), and
@@ -391,7 +436,16 @@ func (m *Module) checkMoves(f *Function, rep *Report) {
 		}
 	}
 
-	// Flagging pass: a read of a must-moved value is a use-after-move.
+	// Flagging pass. nolang's OpMove is a BITWISE COPY (emitMove does
+	// load+store), not a C++-style move that invalidates the source. So a
+	// plain READ of a moved value is always safe — its bytes remain valid and
+	// only its DROP responsibility transfers to the move destination. The real
+	// memory hazard is a SECOND DROP of a moved value (the destination already
+	// owns it, so dropping the source too frees the same heap pointer twice).
+	// We therefore flag OpDrop of a moved value, and never flag reads of one.
+	// This matches the legacy backend, where md5 passes its `data` []byte to
+	// `load-le-u32` many times without moving it — flagging the reads there was
+	// a false positive that blocked the MIR backend on test-std-hash.no.
 	for _, bid := range f.Blocks {
 		blk := m.Block(bid)
 		if blk == nil {
@@ -403,19 +457,17 @@ func (m *Module) checkMoves(f *Function, rep *Report) {
 			if inst == nil {
 				continue
 			}
-			// OpMove defines the move (its own source is not a "read"); OpDrop of a
-			// moved source is exempt (the source is no longer owned here).
-			if inst.Op != OpMove && inst.Op != OpDrop {
-				for _, a := range inst.Args {
-					if a > NoVal && cur[a] {
-						rep.Diagnostics = append(rep.Diagnostics, Diagnostic{
-							Kind:  "use-after-move",
-							Func:  f.Name,
-							Block: bid,
-							Inst:  iid,
-							Msg:   fmt.Sprintf("value %d read after move at inst %d", a, iid),
-						})
-					}
+			// A moved value dropped again is a double-free. OpMove defines the
+			// move (its source is not a drop) and is excluded here.
+			if inst.Op == OpDrop {
+				if len(inst.Args) > 0 && inst.Args[0] > NoVal && cur[inst.Args[0]] {
+					rep.Diagnostics = append(rep.Diagnostics, Diagnostic{
+						Kind:  "use-after-move",
+						Func:  f.Name,
+						Block: bid,
+						Inst:  iid,
+						Msg:   fmt.Sprintf("value %d dropped after move at inst %d (double-free risk)", inst.Args[0], iid),
+					})
 				}
 			}
 			if inst.Op == OpMove && len(inst.Args) > 0 && inst.Args[0] > NoVal {
@@ -562,6 +614,35 @@ func (m *Module) Liveness(f *Function) (liveIn, liveOut map[BlockID]map[ValueID]
 		}
 	}
 	return
+}
+
+// blockReaches reports whether there is a control-flow path from `from` to
+// `target` (following block successors). Used to detect loop headers: a block
+// is a loop header iff it can reach one of its own predecessors.
+func (m *Module) blockReaches(from, target BlockID) bool {
+	seen := map[BlockID]bool{}
+	stack := []BlockID{from}
+	for len(stack) > 0 {
+		b := stack[len(stack)-1]
+		stack = stack[:len(stack)-1]
+		if b == target {
+			return true
+		}
+		if seen[b] {
+			continue
+		}
+		seen[b] = true
+		blk := m.Block(b)
+		if blk == nil {
+			continue
+		}
+		for _, s := range blk.Succs {
+			if !seen[s] {
+				stack = append(stack, s)
+			}
+		}
+	}
+	return false
 }
 
 func sameSet(a, b map[ValueID]bool) bool {

@@ -239,7 +239,7 @@ for each function f:
   各分支最后使用分别插入 ⇒ 消除 UAF/漏释放。
 
 ### 8.4 Move / Borrow 检查器（诊断，不直接改 IR）
-- use-after-move：moved 值在其后被 read ⇒ 诊断。
+- use-after-move：moved 值在其后被 **drop** ⇒ 诊断（double-free：目标已拥有该堆指针，源再 drop 即二次释放）。nolang 的 `OpMove` 是**按位拷贝**（emitMove 做 load+store），源字节保持有效，因此 moved 值在其后被 **read 是安全的、不诊断**；把 read 当 use-after-move 是误报（曾因此阻塞 test-std-hash.no：md5 把 `data` []byte move 进函数后多次读取）。
 - duplicate-drop / missing-drop：分析后某 owned 值 0 或 >1 次 drop ⇒ 诊断。
 - borrow-escape：borrow 被存入超出 owner 支配域的位置 ⇒ 诊断。
 - 这些诊断直接对应“大量内存问题”，是修复前的系统性定位工具。

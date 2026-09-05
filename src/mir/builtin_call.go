@@ -531,6 +531,12 @@ func (c *codegen) emitBuiltinForward(f *Function, inst *Inst, bm *builtin.Builti
 		return c.emitBuiltinWaitpid(inst)
 	case "process-exec-shell":
 		return c.emitBuiltinExecShell(inst)
+	case "load-le-u16", "load-le-u32", "load-le-u64":
+		return c.emitBuiltinLoadLE(f, inst, bm.ForwardFunc)
+	case "store-le-u32":
+		return c.emitBuiltinStoreLE(f, inst)
+	case "rotate-left", "rotate-right":
+		return c.emitBuiltinRotate(f, inst, bm.ForwardFunc)
 	}
 	// Generic C call: the whole point of forward_call.go. Consulted LAST so a
 	// bespoke handler always wins, but it turns "add a POSIX builtin" from a new
@@ -540,6 +546,217 @@ func (c *codegen) emitBuiltinForward(f *Function, inst *Inst, bm *builtin.Builti
 	}
 	c.fail("unsupported builtin %s (ForwardFunc=%q) in func %s", inst.Sym, bm.ForwardFunc, f.Name)
 	return fmt.Errorf("unsupported builtin %s", inst.Sym)
+}
+
+// declareIntrinsic records a module-level `declare` for an LLVM intrinsic so it
+// is emitted once (deduped by exact string) after the function bodies. MIR has
+// no separate declaration pass, so builtins that need an intrinsic (e.g. the
+// rotate-left/right fshl/fshr) register it lazily here.
+func (c *codegen) declareIntrinsic(decl string) {
+	if c.extDecls == nil {
+		c.extDecls = map[string]bool{}
+	}
+	if !c.extDecls[decl] {
+		c.extDecls[decl] = true
+		c.extDeclOrder = append(c.extDeclOrder, decl)
+	}
+}
+
+// rawTypeOf returns the nolang raw type string of a value (e.g. "u32", "i64",
+// "[]byte", "[16]byte"), used to pick the correct integer width for operations
+// whose LLVM representation (always i64 in MIR) does not carry the original
+// width. Falls back to "" when the value/type is unavailable.
+func (c *codegen) rawTypeOf(v ValueID) string {
+	if val := c.mod.Value(v); val != nil {
+		if t := c.mod.Type(val.Type); t != nil {
+			return t.Raw
+		}
+	}
+	return ""
+}
+
+// byteDataPtr returns an i8* register pointing at the backing bytes of a
+// byte-array receiver, for the load-le-uXX / store-le-u32 builtins. The receiver
+// may be a %vec ([]byte) — whose data pointer is field 2, stored as an i64
+// intptr — or a fixed [N x i8] array — whose slot bitcasts directly to i8*. The
+// legacy byteArrDataPtr handles both shapes identically.
+func (c *codegen) byteDataPtr(v ValueID) (string, error) {
+	slot := c.valSlot[v]
+	if slot == "" {
+		return "", fmt.Errorf("byte-array receiver has no slot")
+	}
+	lt, _ := c.ptype(v)
+	switch {
+	case lt == "%vec":
+		g := c.treg("bd.g")
+		c.sb.WriteString(fmt.Sprintf("  %s = getelementptr inbounds %%vec, %%vec* %s, i32 0, i32 2\n", g, slot))
+		l := c.treg("bd.l")
+		c.sb.WriteString(fmt.Sprintf("  %s = load i64, i64* %s\n", l, g))
+		r := c.treg("bd.p")
+		c.sb.WriteString(fmt.Sprintf("  %s = inttoptr i64 %s to i8*\n", r, l))
+		return r, nil
+	case strings.HasPrefix(lt, "["):
+		r := c.treg("bd.p")
+		c.sb.WriteString(fmt.Sprintf("  %s = bitcast %s* %s to i8*\n", r, lt, slot))
+		return r, nil
+	default:
+		c.fail("load-le/store-le: unsupported receiver type %s", lt)
+		return "", fmt.Errorf("unsupported receiver type %s", lt)
+	}
+}
+
+// emitBuiltinLoadLE lowers `arr.load-le-uXX(off)` / `load-le-uXX(arr, off)`:
+// read a little-endian uXX integer from the byte array's data at offset and
+// zero-extend it to i64 (MIR's representation of u16/u32/u64). Mirrors the
+// legacy call.go load-le-uXX inliner exactly: GEP to the offset, bitcast to the
+// narrow type, load, zext to i64. The receiver is always inst.Args[0] (the
+// method receiver is prepended by lowerCall, matching vec.push).
+func (c *codegen) emitBuiltinLoadLE(f *Function, inst *Inst, ff string) error {
+	dstSlot := c.valSlot[inst.Dst]
+	if dstSlot == "" {
+		return fmt.Errorf("load-le-%s: no dst slot", ff)
+	}
+	if len(inst.Args) < 2 {
+		c.sb.WriteString(fmt.Sprintf("  store i64 0, i64* %s\n", dstSlot))
+		return nil
+	}
+	dataPtr, err := c.byteDataPtr(inst.Args[0])
+	if err != nil {
+		return err
+	}
+	offT, offV := c.loadVal(inst.Args[1])
+	off := offV
+	if offT != "i64" {
+		if r := c.coerce(offT, offV, "i64"); r != "" {
+			off = r
+		}
+	}
+	gep := c.treg("le.g")
+	c.sb.WriteString(fmt.Sprintf("  %s = getelementptr inbounds i8, i8* %s, i64 %s\n", gep, dataPtr, off))
+	lt := "i64"
+	switch ff {
+	case "load-le-u16":
+		lt = "i16"
+	case "load-le-u32":
+		lt = "i32"
+	default:
+		lt = "i64"
+	}
+	typed := c.treg("le.t")
+	c.sb.WriteString(fmt.Sprintf("  %s = bitcast i8* %s to %s*\n", typed, gep, lt))
+	val := c.treg("le.v")
+	c.sb.WriteString(fmt.Sprintf("  %s = load %s, %s* %s\n", val, lt, lt, typed))
+	if lt != "i64" {
+		z := c.treg("le.z")
+		c.sb.WriteString(fmt.Sprintf("  %s = zext %s %s to i64\n", z, lt, val))
+		c.sb.WriteString(fmt.Sprintf("  store i64 %s, i64* %s\n", z, dstSlot))
+	} else {
+		c.sb.WriteString(fmt.Sprintf("  store i64 %s, i64* %s\n", val, dstSlot))
+	}
+	return nil
+}
+
+// emitBuiltinStoreLE lowers `arr.store-le-u32(off, val)`: store val as a
+// little-endian u32 into the byte array's data at offset. Mirrors the legacy
+// call.go store-le-u32 inliner: truncate val to i32, GEP to the offset, bitcast
+// to i32*, store. The receiver is inst.Args[0]; the result slot is unused (the
+// builtin returns nothing).
+func (c *codegen) emitBuiltinStoreLE(f *Function, inst *Inst) error {
+	if len(inst.Args) < 3 {
+		return nil
+	}
+	dataPtr, err := c.byteDataPtr(inst.Args[0])
+	if err != nil {
+		return err
+	}
+	offT, offV := c.loadVal(inst.Args[1])
+	off := offV
+	if offT != "i64" {
+		if r := c.coerce(offT, offV, "i64"); r != "" {
+			off = r
+		}
+	}
+	valT, valV := c.loadVal(inst.Args[2])
+	valI32 := valV
+	if valT != "i32" {
+		if r := c.coerce(valT, valV, "i32"); r != "" {
+			valI32 = r
+		} else {
+			tr := c.treg("ls.tr")
+			c.sb.WriteString(fmt.Sprintf("  %s = trunc %s %s to i32\n", tr, valT, valV))
+			valI32 = tr
+		}
+	}
+	gep := c.treg("ls.g")
+	c.sb.WriteString(fmt.Sprintf("  %s = getelementptr inbounds i8, i8* %s, i64 %s\n", gep, dataPtr, off))
+	typed := c.treg("ls.t")
+	c.sb.WriteString(fmt.Sprintf("  %s = bitcast i8* %s to i32*\n", typed, gep))
+	c.sb.WriteString(fmt.Sprintf("  store i32 %s, i32* %s\n", valI32, typed))
+	return nil
+}
+
+// emitBuiltinRotate lowers `number.rotate-left(x, n)` / `number.rotate-right(x,
+// n)` via the LLVM funnel-shift intrinsics llvm.fshl / llvm.fshr. The rotation
+// width follows the FIRST argument's nolang raw type (u16→i16, u32→i32, else
+// i64), matching the legacy call.go select of i32 vs i64. Because MIR stores
+// every integer as i64, the operand is coerced to the narrow width before the
+// intrinsic (discarding the garbage high bits that 64-bit arithmetic may have
+// produced) and the narrow result is zero-extended back to i64 for the
+// destination — exactly the legacy 32-bit-wrap semantics.
+func (c *codegen) emitBuiltinRotate(f *Function, inst *Inst, ff string) error {
+	if inst.Dst <= NoVal || len(inst.Args) < 2 {
+		return nil
+	}
+	dstSlot := c.valSlot[inst.Dst]
+	if dstSlot == "" {
+		return fmt.Errorf("rotate: no dst slot")
+	}
+	xT, xV := c.loadVal(inst.Args[0])
+	nT, nV := c.loadVal(inst.Args[1])
+	raw := c.rawTypeOf(inst.Args[0])
+	w := "i64"
+	switch {
+	case raw == "u8" || raw == "i8":
+		w = "i8"
+	case raw == "u16" || raw == "i16":
+		w = "i16"
+	case raw == "u32" || raw == "i32":
+		w = "i32"
+	default:
+		w = "i64"
+	}
+	toW := func(fromT, fromV string) string {
+		if fromT == w {
+			return fromV
+		}
+		if r := c.coerce(fromT, fromV, w); r != "" {
+			return r
+		}
+		tr := c.treg("rot.cv")
+		if w == "i64" {
+			c.sb.WriteString(fmt.Sprintf("  %s = zext %s %s to i64\n", tr, fromT, fromV))
+		} else {
+			c.sb.WriteString(fmt.Sprintf("  %s = trunc %s %s to %s\n", tr, fromT, fromV, w))
+		}
+		return tr
+	}
+	xw := toW(xT, xV)
+	nw := toW(nT, nV)
+	intrin := "llvm.fshl"
+	if ff == "rotate-right" {
+		intrin = "llvm.fshr"
+	}
+	c.declareIntrinsic(fmt.Sprintf("declare %s @%s.%s(%s, %s, %s)", w, intrin, w, w, w, w))
+	res := c.treg("rot.r")
+	c.sb.WriteString(fmt.Sprintf("  %s = call %s @%s.%s(%s %s, %s %s, %s %s)\n", res, w, intrin, w, w, xw, w, xw, w, nw))
+	if w != "i64" {
+		z := c.treg("rot.z")
+		c.sb.WriteString(fmt.Sprintf("  %s = zext %s %s to i64\n", z, w, res))
+		c.sb.WriteString(fmt.Sprintf("  store i64 %s, i64* %s\n", z, dstSlot))
+	} else {
+		c.sb.WriteString(fmt.Sprintf("  store i64 %s, i64* %s\n", res, dstSlot))
+	}
+	return nil
 }
 
 // emitBuiltinMath lowers the scalar math forwards (math-max / math-min /

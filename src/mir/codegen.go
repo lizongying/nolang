@@ -392,6 +392,13 @@ done:
 ; and needs no free.
 define void @vec_free(%vec %v) {
 entry:
+  ; Borrowed slice views (over string constants or stack arrays) carry cap=0 and
+  ; must NOT be freed: their backing store is not heap-owned. Only real heap vecs
+  ; (cap>0) own their buffer. Mirrors the legacy @vec_free cap==0 skip.
+  %cap = extractvalue %vec %v, 1
+  %cap0 = icmp eq i64 %cap, 0
+  br i1 %cap0, label %done, label %check
+check:
   %data = extractvalue %vec %v, 2
   %ptr = inttoptr i64 %data to i8*
   %null = icmp eq i8* %ptr, null
@@ -797,10 +804,21 @@ func (c *codegen) emitGlobals() {
 
 // dataStr converts a go string to an LLVM char-array initializer where every
 // byte is a \XX hex escape (always safe, no interpretation surprises).
+//
+// IMPORTANT: it must iterate over BYTES, not runes. A Nolang string holds raw
+// UTF-8 bytes (e.g. the DES test vector '\x01\x23\x45\x67\x89\xab\xcd\xef', or
+// arbitrary Chinese text). If we ranged over runes, each byte ≥0x80 that is not
+// valid UTF-8 would be decoded to U+FFFD, and `dataStr` would emit a 4-hex-digit
+// \FFFD escape that LLVM stores as THREE bytes — while the surrounding constant
+// array is sized by len(s) (the raw byte count). The dimension (byte count)
+// would then disagree with the emitted content (runes expanded to bytes), and
+// `opt` rejects the module ("constant expression type mismatch"). Ranging over
+// bytes keeps the escape count equal to len(s), so the array size and content
+// always agree.
 func dataStr(s string) string {
 	var b strings.Builder
-	for _, r := range s {
-		b.WriteString(fmt.Sprintf(`\%02X`, r))
+	for i := 0; i < len(s); i++ {
+		b.WriteString(fmt.Sprintf(`\%02X`, s[i]))
 	}
 	return b.String()
 }
@@ -884,7 +902,7 @@ func (c *codegen) emitFunc(f *Function) error {
 		if s, ok := c.valSlot[v]; ok {
 			return s
 		}
-		lt, _ := c.ptype(v)
+		lt, owned := c.ptype(v)
 		if lt == "void" {
 			// Void values carry no data; never allocate a slot (LLVM rejects
 			// `alloca void`). They are dead bindings such as `let x = voidFn()`
@@ -894,6 +912,18 @@ func (c *codegen) emitFunc(f *Function) error {
 		s := fmt.Sprintf("%%v%d.s", slotIdx)
 		slotIdx++
 		c.sb.WriteString(fmt.Sprintf("  %s = alloca %s\n", s, lt))
+		// Zero-initialize heap-owning slots so a value that is never written
+		// (most notably an OUT-parameter left untouched by an empty function
+		// body, e.g. the macOS `net.ifconfig-list` stub that returns an empty
+		// list) is a valid, free-able "empty" value rather than uninitialized
+		// garbage. A %vec/%str-long/%option left as garbage and later freed by
+		// emitDrop/@vec_free/@str_free would free a random pointer and abort
+		// (trace/BPT trap). Legacy zero-initializes locals, so this is required
+		// for parity. Written Dst/params overwrite the zero below, so this is
+		// safe.
+		if owned {
+			c.sb.WriteString(fmt.Sprintf("  store %s zeroinitializer, %s* %s\n", lt, lt, s))
+		}
 		c.valSlot[v] = s
 		return s
 	}
@@ -2167,39 +2197,69 @@ func (c *codegen) emitCall(f *Function, inst *Inst) error {
 		if owned {
 			if plt == "%vec" && strings.HasPrefix(argT, "[") {
 				// Fixed array argument passed to a slice (vec) parameter: build a
-				// %vec{len=N, cap=N, ptr=&arr[0]} so the callee sees a slice view
-				// of the array in place (writes through the slice mutate the
-				// array, matching nolang [N]T -> []T coercion). N comes from the
-				// array type; the data pointer is the address of element 0.
-				arrSlot := c.valSlot[inst.Args[i]]
-				var n int64
-				if at := c.mod.Value(inst.Args[i]); at != nil {
-					if mtt := c.mod.Type(at.Type); mtt != nil && len(mtt.Sizes) > 0 {
-						n = mtt.Sizes[0]
-					}
+			// %vec{len=N, cap=0, ptr=&arr[0]} so the callee sees a slice view
+			// of the array in place (writes through the slice mutate the
+			// array, matching nolang [N]T -> []T coercion). cap is 0 because the
+			// backing store is stack memory, not a heap allocation: its drop must
+			// NOT free the borrowed buffer (legacy @vec_free skips cap==0). N
+			// comes from the array type; the data pointer is the address of
+			// element 0.
+			arrSlot := c.valSlot[inst.Args[i]]
+			var n int64
+			if at := c.mod.Value(inst.Args[i]); at != nil {
+				if mtt := c.mod.Type(at.Type); mtt != nil && len(mtt.Sizes) > 0 {
+					n = mtt.Sizes[0]
 				}
-				if n == 0 {
-					if m, ok := arraySizeOf(argT); ok {
-						n = m
-					}
+			}
+			if n == 0 {
+				if m, ok := arraySizeOf(argT); ok {
+					n = m
 				}
-				c.loadSeq++
-				dataPtr := fmt.Sprintf("%%cav%d", c.loadSeq)
-				c.sb.WriteString(fmt.Sprintf("  %s = getelementptr inbounds %s, %s* %s, i64 0, i64 0\n", dataPtr, argT, argT, arrSlot))
-				c.loadSeq++
-				pt := fmt.Sprintf("%%cav%d", c.loadSeq)
-				c.sb.WriteString(fmt.Sprintf("  %s = ptrtoint i8* %s to i64\n", pt, dataPtr))
-				c.loadSeq++
-				s0 := fmt.Sprintf("%%cav%d", c.loadSeq)
-				c.sb.WriteString(fmt.Sprintf("  %s = insertvalue %%vec { i64 0, i64 0, i64 0 }, i64 %d, 0\n", s0, n))
-				c.loadSeq++
-				s1 := fmt.Sprintf("%%cav%d", c.loadSeq)
-				c.sb.WriteString(fmt.Sprintf("  %s = insertvalue %%vec %s, i64 %d, 1\n", s1, s0, n))
-				c.loadSeq++
-				s2 := fmt.Sprintf("%%cav%d", c.loadSeq)
-				c.sb.WriteString(fmt.Sprintf("  %s = insertvalue %%vec %s, i64 %s, 2\n", s2, s1, pt))
+			}
+			c.loadSeq++
+			dataPtr := fmt.Sprintf("%%cav%d", c.loadSeq)
+			c.sb.WriteString(fmt.Sprintf("  %s = getelementptr inbounds %s, %s* %s, i64 0, i64 0\n", dataPtr, argT, argT, arrSlot))
+			c.loadSeq++
+			pt := fmt.Sprintf("%%cav%d", c.loadSeq)
+			c.sb.WriteString(fmt.Sprintf("  %s = ptrtoint i8* %s to i64\n", pt, dataPtr))
+			c.loadSeq++
+			s0 := fmt.Sprintf("%%cav%d", c.loadSeq)
+			c.sb.WriteString(fmt.Sprintf("  %s = insertvalue %%vec { i64 0, i64 0, i64 0 }, i64 %d, 0\n", s0, n))
+			c.loadSeq++
+			s1 := fmt.Sprintf("%%cav%d", c.loadSeq)
+			c.sb.WriteString(fmt.Sprintf("  %s = insertvalue %%vec %s, i64 0, 1\n", s1, s0))
+			c.loadSeq++
+			s2 := fmt.Sprintf("%%cav%d", c.loadSeq)
+			c.sb.WriteString(fmt.Sprintf("  %s = insertvalue %%vec %s, i64 %s, 2\n", s2, s1, pt))
 				c.loadSeq++
 				slot := fmt.Sprintf("%%carg%d", c.loadSeq)
+				c.sb.WriteString(fmt.Sprintf("  %s = alloca %%vec\n", slot))
+				c.sb.WriteString(fmt.Sprintf("  store %%vec %s, %%vec* %s\n", s2, slot))
+				callArgs = append(callArgs, "%vec* "+slot)
+				continue
+			}
+			if plt == "%vec" && argT == "%str-long" {
+				// string -> []byte view: a %str-long passed to a []byte parameter
+				// becomes a %vec{ len, len, data-as-intptr } so the callee reads
+				// the string's bytes. len is field 0; data (i8*) is field 2 and
+				// must be cast to the %vec's i64 intptr. Mirrors the legacy
+				// str->vec coercion in genForwardFunc / call args.
+				strLen := c.treg("csv.l")
+				c.sb.WriteString(fmt.Sprintf("  %s = extractvalue %%str-long %s, 0\n", strLen, av))
+				strData := c.treg("csv.d")
+				c.sb.WriteString(fmt.Sprintf("  %s = extractvalue %%str-long %s, 2\n", strData, av))
+			strPt := c.treg("csv.p")
+			c.sb.WriteString(fmt.Sprintf("  %s = ptrtoint i8* %s to i64\n", strPt, strData))
+			s0 := c.treg("csv0")
+			c.sb.WriteString(fmt.Sprintf("  %s = insertvalue %%vec { i64 0, i64 0, i64 0 }, i64 %s, 0\n", s0, strLen))
+			s1 := c.treg("csv1")
+			// cap is 0: this is a borrowed view over the string constant's data,
+			// not a heap allocation. Its drop must NOT free the constant memory
+			// (legacy @vec_free skips cap==0). len is still correct for reads.
+			c.sb.WriteString(fmt.Sprintf("  %s = insertvalue %%vec %s, i64 0, 1\n", s1, s0))
+			s2 := c.treg("csv2")
+			c.sb.WriteString(fmt.Sprintf("  %s = insertvalue %%vec %s, i64 %s, 2\n", s2, s1, strPt))
+				slot := c.treg("carg")
 				c.sb.WriteString(fmt.Sprintf("  %s = alloca %%vec\n", slot))
 				c.sb.WriteString(fmt.Sprintf("  store %%vec %s, %%vec* %s\n", s2, slot))
 				callArgs = append(callArgs, "%vec* "+slot)
