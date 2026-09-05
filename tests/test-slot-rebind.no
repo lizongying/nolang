@@ -1,0 +1,81 @@
+// test-slot-rebind: 栈类型 move 的 can_slot_rebind 约束验证
+// 覆盖：i64/u64/i128/u128/txt 的栈槽重绑定（rebind）、
+//      降级为完整 copy（源后续被引用）、目标重新赋值后别名失效、
+//      参数 move（源是参数 → 禁用重绑定）、consume 传参。
+// 期望输出（每行一个）:
+// 42 7 1 1 17 5 5 10 100 99 84
+
+pm_fn = (val i64) (ret i64) {
+    local = val         // val 是参数 → 禁用重绑定 → 降级 copy
+    ret = local
+}
+
+rr_fn = () (ret i64) {
+    a = 1
+    b = a               // rebind b->a（a 后续无引用）
+    b = 99              // 重新赋值目标，旧别名失效
+    ret = b
+}
+
+consume = (x i64) (ret i64) {
+    ret = x + 42
+}
+
+main = () {
+    // 1. i64 栈槽重绑定
+    n = 42
+    m = n
+    print(m)            // 42
+
+    // 2. u64 栈槽重绑定
+    wu u64 = 7
+    v = wu
+    print(v)            // 7
+
+    // 3. i128 栈槽重绑定 → 比较验证值正确
+    pi i128 = 123
+    qi = pi
+    ri i128 = 123
+    x1 = qi == ri ? 1 : 0
+    print(x1)           // 1
+
+    // 4. u128 栈槽重绑定 → 比较验证值正确
+    ps u128 = 456
+    qs = ps
+    rs u128 = 456
+    x2 = qs == rs ? 1 : 0
+    print(x2)           // 1
+
+    // 5. txt 栈槽重绑定 → .len 验证
+    tx txt = 'hello-slot-rebind'
+    tx2 = tx
+    print(tx2.len)      // 17
+
+    // 6/7. 降级为完整 copy：源后续被引用 → 不可重绑定
+    da = 5
+    db = da             // da 后续被引用（dc = da）→ copy
+    dc = da
+    a2 = db
+    c = db
+    print(a2)           // 5
+    print(c)            // 5
+
+    // 8. 重绑定后目标被重新赋值（别名必须失效）
+    ra_a = 10
+    ra_b = ra_a         // rebind ra_b->ra_a
+    ra = ra_b           // ra = 10
+    ra_b = 5            // 重新赋值目标，别名失效，ra 不受影响
+    print(ra)           // 10
+
+    // 9. 参数 move：源是参数 → 禁用重绑定 → 降级 copy
+    pm = pm_fn(100)
+    print(pm)           // 100
+
+    // 10. 重绑定后重新赋值（rebind-reassign）
+    rr = rr_fn()
+    print(rr)           // 99
+
+    // 11. consume(m)：m 经重绑定后传参正确
+    cm = consume(m)
+    print(cm)           // 84
+}

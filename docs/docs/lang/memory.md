@@ -16,10 +16,43 @@ Nolang 是**無 GC** 語言，記憶體安全由編譯器自動插入 `free` 保
 
 | 語義 | 觸發條件 | 行為 |
 |------|---------|------|
-| **值拷貝** | 基本型別（i64/f64/bool 等） | 直接拷貝數值，無堆數據 |
+| **值拷貝** | 基本型別（i64/f64/bool 等）且不滿足 can_slot_rebind | 直接拷貝數值，無堆數據 |
+| **棧槽重綁定** | 局部變數間 `b = a`，a 為棧類型（i64/u64/i128/u128/txt）且滿足 can_slot_rebind | `g.varAlias[b] = a`，b 與 a 共享同一棧槽，0 拷貝（優於值拷貝）；否則降級為值拷貝 |
 | **深層 clone** | 局部變數間 `b = a`，a 為堆擁有型別（vec/arr/str/可克隆結構體） | malloc 新 data + memcpy + 遞迴 clone 元素；a 和 b 各自獨立擁有 data，函數結束各自 free |
 | **move** | 輸出參數 `out = x` | 淺拷貝結構體 + 標記源為 moved；源跳過 free |
 | **深層 clone** | `vec.push(x)`（x 為堆擁有型別） | malloc 新 data + memcpy + 遞迴 clone 元素；源仍擁有獨立 data，函數結束各自 free |
+
+## 棧類型 move（棧槽重綁定 / slot-rebind）
+
+`i64/u64/i128/u128/txt` 雖然都是**棧類型**（值直接存在 alloca 棧槽，無堆 data），但 `b = a` 在語義上仍預設走「值拷貝」（把 a 的棧值 memcpy 到 b 的棧槽）。為減少不必要的拷貝，編譯器對滿足 **can_slot_rebind** 約束的棧類型 `b = a` 執行**棧槽重綁定**：令 `g.varAlias[b] = a`，使 b 與 a 共享同一棧槽（0 拷貝，優於值拷貝）。
+
+### can_slot_rebind 約束（保守正確）
+重綁定後 b 與 a 指向同一棧槽，因此 a 後續任何對 b 的讀都會讀到「a 的存儲」。為避免語義錯誤，重綁定僅在源 a **後續「完全無引用（讀或寫）」**時允許；否則**降級為完整值拷貝**（語義不變，僅多一次 memcpy）。
+
+- 安全性由 `computeSlotRebindSafety`（主函數）/`computeMoveEligibility`（用戶函數）透過 `stmtContainsVarRefAny` / `exprContainsVarRefAny` 靜態求解：掃描 move 之後的所有語句（含分支/迴圈回邊），若源變數仍被任何方式引用則 `slotRebindSafe[stmt] = false` → 走拷貝。
+- 引用掃描必須窮舉**所有能引用變數的 AST 節點**，否則未覆蓋的寫引用會導致不安全的重綁定（別名槽被污染 → 錯誤輸出甚至無限迴圈）。已覆蓋：語句層 `LetStatement` / `ExpressionStatement` / `ForStatement`（含 `Init`/`Update`/`Condition`/`CountExpr`/`Body` 與 **`IterRange` 迭代集合**）/ `ReturnStatement` / `MultiAssignStatement` / **`UnwrapAssignStatement`（`?=` 解包賦值）** / **`BlockStatement`（裸區塊）**；表達式層 `Identifier` / `AssignExpression` / `Infix` / `Prefix` / `Call` / `Dot` / `Index` / `IfExpression`（含分支體）/ `Slice` / `Conditional` / `Grouped` / **`AwaitExpression`** / **`CastExpression`** / **`RangeExpression`** / **`RunExpression`（協程 spawn，防禦性；整函數禁用仍由 `curHasUnsafeConstruct` 負責）**。任何新增的變數引用構造都必須同步加入這兩個掃描函數。
+- `match` 已 desugar 為 `IfExpression`，其分支體內的引用由上述分析遍歷覆蓋，故 **match 不觸發禁用**（經 `tests/match.no` / `tests/option.no` 驗證與基線一致）。
+
+### 禁用場景（一律降級為值拷貝）
+| 禁用條件 | 原因 |
+|---------|------|
+| 目標為輸出參數 / 全域變數 / 堆類型變數 | 輸出參數由指標傳遞、全域跨函數可見、堆類型需深層 free，重綁定破壞所有權 |
+| 源為參數 / 全域變數 | 參數按引用傳遞，重綁定會破壞呼叫方棧幀 |
+| **stdlib 函數**（`curIsStdLib`，由 `SetStdModules` 判定） | stdlib 內部 alias 綁定（如 fmt 的 `it` 別名到局部 `n`）與引用分析難以完全建模 |
+| **用戶函數體含閉包（`FunctionLiteral`）或協程 spawn（`RunExpression`）**（`curHasUnsafeConstruct`，由 `bodyHasUnsafeConstruct` 遞歸掃描） | 閉包捕獲變數在「獨立函數上下文」求值，協程跨線程執行，二者變數生命週期超出當前函數的 `g.varAlias` 單函數別名作用域，重綁定會破壞共享棧槽 |
+
+> 設計取捨：閉包/協程採「整函數禁用」而非「逐變數精算」，因為單函數別名分析本質上無法建模跨函數/跨線程的存儲共享。整函數禁用只損失優化（降級為拷貝），絕不引入錯誤，符合「保守正確」原則。
+
+### 別名失效（alias invalidation）
+- 目標被重新賦值時，先 `delete(g.varAlias, name)` 清掉殘留舊別名，否則通用賦值路徑 `varAddr(name)` 仍指向舊源棧槽，污染舊源。
+- 重綁定執行傳遞性解析：沿 `g.varAlias` 鏈找到最終源棧槽（`a → c → …`），避免多跳別名錯位；並同步 `g.varTypes[name]` 使後續型別查詢一致。
+
+### 與堆類型 move 的正交性
+棧槽重綁定只作用在棧類型 `b = a` 的**值拷貝**語義上，與堆擁有型別的「深層 clone / move（輸出參數）」完全正交；堆類型路徑不受 `slotRebindSafe` 影響。
+
+### 測試參考
+- `tests/test-slot-rebind.no`：i64/u64 重綁定、i128/u128 經 `==` 比較、txt 經 `.len`、降級拷貝（`da` 複用 → `db`/`dc` 拷貝）、重賦值後（`ra`=10）、參數 move（`pm_fn` 源為參數 → 拷貝）、重綁定後重賦值（`rr_fn` → `rr`=99）、消費（`consume(m)` → `cm`=84）。期望輸出 `42 7 1 1 17 5 5 10 100 99 84`。
+- `tests/test-slot-rebind-unsafe.no`：協程（`run`/`awy`）capture 棧變數，驗證 `curHasUnsafeConstruct` 禁用重綁定後輸出與基線一致。
 
 ### 編譯器插入 free
 - 函數結束時：釋放所有未 moved 的局部堆變數
@@ -199,6 +232,42 @@ b[0] = 99
 3. 否則值拷貝
 
 `vec.push(x)` 不在此判斷規則內：push 是方法調用，不論 x 是否堆擁有型別，都對堆擁有元素執行深層 clone（見前節）。
+
+## 棧類型 move（棧槽重綁定 / slot-rebind）
+
+`i64`/`u64`/`i128`/`u128`/`txt` 雖是棧類型（非堆擁有），但 `b = a`（RHS 為變數）在源 `a` 後續無引用時，不再做值拷貝，而是執行**棧槽重綁定**（stack-slot rebind）：令 `g.varAlias[b] = a`，使 `b` 與 `a` 共享同一棧槽（0 拷貝）。這優於值拷貝（值拷貝仍要 emit load+store），對大棧類型（如 256 位元組的 `%txt`）收益尤其明顯。
+
+### can_slot_rebind 約束（保守正確性）
+
+棧槽重綁定比堆 move 的 `moveEligible` **更嚴格**：
+
+- `moveEligible`：源 `a` 後續**未讀**即允許 move（適用於堆類型，move 後源跳過 free，不影響目標）。
+- `can_slot_rebind`（`slotRebindSafe`）：源 `a` 後續**無任何引用（讀或寫）**才允許重綁定。因為重綁定後 `b` 與 `a` 共享同一棧槽，若 `a` 後續被寫會破壞 `b` 的值。
+
+計算：`generateFunctionDefinition` 呼叫 `computeMoveEligibility`（同時填充 `moveEligible` 與 `slotRebindSafe`）；`generateMainFunction` 呼叫 `computeSlotRebindSafety`（**僅**填充 `slotRebindSafe`，不觸碰 `moveEligible`——HEAD 的主函數不啟用堆 move，保持關閉以免 SEGFAULT）。兩者均透過 `stmtContainsVarRefAny` 做分支/迴圈感知的引用掃描（含 `AssignExpression` 左值、迴圈回邊）。
+
+當 `can_slot_rebind` 不滿足（源後續仍有引用）→ **降級為完整值拷貝**，絕不退化為不安全行為。
+
+### 禁用場景（必須走普通賦值路徑）
+
+| 場景 | 原因 |
+|------|------|
+| stdlib 函數（`curIsStdLib`） | stdlib 含 match/closure/coroutine 等引用分析無法完全建模的構造，重綁定會破壞共享棧槽（如 fmt 內部 `it` 被別名綁定到局部 `n`）。檢測：`g.stdModules`（由 `transpiler.go` `SetStdModules` 從 `checker.KnownStdModules()` 注入），回退 `g.funcOwner[fd.Name]` |
+| 目標是輸出參數 | 輸出參數由呼叫方傳指標，重綁定使其指向局部源棧槽，呼叫方讀不到 |
+| 目標是全域變數 | 重綁定使全域名解析到局部源棧槽，破壞全域語義 |
+| 目標是堆類型變數 | 棧槽重綁定僅適用於棧類型 |
+| 源是參數 | 參數按引用傳遞，重綁定破壞呼叫方棧幀 |
+| 源是全域變數 | 全域位址被別名到局部源，語義錯誤 |
+
+### 重新賦值後別名失效
+
+變數被重新賦值時（`b = ...`），先 `delete(g.varAlias, name)` 清除可能殘留的舊別名，避免通用賦值路徑經 `varAddr(name)` 仍指向舊源棧槽、污染舊源。設定新別名時沿別名鏈做**傳遞性解析**（`src := ident.Value; for { if n2,ok := g.varAlias[src]; ok { src = n2 } else break }`），找到最終源棧槽，避免多跳別名錯位。
+
+### 與堆 move 的正交性
+
+棧槽重綁定僅作用於棧類型，不涉及所有權轉移或 `free`，與堆類型的 clone/move 機制完全獨立。
+
+**測試**：`tests/test-slot-rebind.no`（覆蓋 i64/u64/i128/u128/txt 重綁定、降級為 copy、目標重賦值後別名失效、參數 move 降級、consume 傳參，期望輸出 `42 7 1 1 17 5 5 10 100 99 84`）。
 
 ## FFI extern str 返回值
 

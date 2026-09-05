@@ -19,7 +19,8 @@ Nolang 是**无 GC** 语言，内存安全完全依赖编译器在正确位置�
 
 | 语义 | 触发条件 | 行为 |
 |------|---------|------|
-| **值拷贝** | 基本型别（i64/f64/bool 等） | 直接拷贝数值，无堆数据 |
+| **值拷贝** | 基本型别（i64/f64/bool 等）且不满足 can_slot_rebind | 直接拷贝数值，无堆数据 |
+| **栈槽重绑定** | 局部变量间 `b = a`，a 为栈类型（i64/u64/i128/u128/txt）且满足 can_slot_rebind | `g.varAlias[b] = a`，b 与 a 共享同一栈槽，0 拷贝（优于值拷贝）；否则降级为值拷贝 |
 | **深層 clone** | 局部变量间 `b = a`，a 为堆拥有型别（vec/arr/str/可克隆结构体） | malloc 新 data + memcpy + 递回 clone 元素；a 和 b 各自独立拥有 data，函数结束各自 free |
 | **move** | 输出参数 `out = x` | 浅拷贝结构体 + 标记源为 moved；源跳过 free |
 | **深層 clone** | `vec.push(x)`（x 为堆拥有型别） | malloc 新 data + memcpy + 递回 clone 元素；源仍拥有独立 data，函数结束各自 free |
@@ -480,6 +481,31 @@ if srcHeapType != "%vec" && srcHeapType != "%arr" && srcHeapType != "%str-long" 
 - **深層 clone**：源和目標各自獨立擁有 data，函數結束各自 free
 - **move**：源放棄所有權（標記 moved），目標接管 data，源跳過 free
 
+### 6.7 栈类型 move（栈槽重绑定 / slot-rebind）
+
+`i64`/`u64`/`i128`/`u128`/`txt` 是栈类型（非堆拥有）。`b = a`（RHS 为 `*parser.Identifier`）在满足 `can_slot_rebind`（`slotRebindSafe[stmt]` 为 true）时走**栈槽重绑定**：`g.varAlias[b] = src`（src 沿 `varAlias` 链做传递性解析到最终源栈槽），`b` 与 `a` 共享同一栈槽，0 拷贝。否则降级为值拷贝。
+
+**can_slot_rebind 约束（比 `moveEligible` 更严格）**：
+- `moveEligible`：源后续**未读**即允许 move（堆类型，move 后源跳过 free）。
+- `can_slot_rebind`：源后续**无任何引用（读或写）**才允许重绑定——重绑定后 b 与 a 共享同一栈槽，源后续被写会破坏 b 的值。
+- 计算：`computeMoveEligibility`（用户函数，同时填充 `moveEligible`+`slotRebindSafe`）+ `computeSlotRebindSafety`（主函数，**仅**填充 `slotRebindSafe`，不碰 `moveEligible`）。两者均经 `stmtContainsVarRefAny`/`exprContainsVarRefAny` 做分支/循环感知引用扫描（含 `AssignExpression` 左值、循环回边）。
+- **引用扫描必须穷举所有能引用变量的 AST 节点**（否则未覆盖的写引用 → 不安全重绑定 → 错误输出甚至无限循环）。已覆盖：语句层 `LetStatement`/`ExpressionStatement`/`ForStatement`（`Init`/`Update`/`Condition`/`CountExpr`/`Body` + **`IterRange` 迭代集合**）/`ReturnStatement`/`MultiAssignStatement`/**`UnwrapAssignStatement`（`?=` 解包）**/**`BlockStatement`（裸区块）**；表达式层 `Identifier`/`AssignExpression`/`Infix`/`Prefix`/`Call`/`Dot`/`Index`/`IfExpression`(分支体)/`Slice`/`Conditional`/`Grouped`/**`AwaitExpression`**/**`CastExpression`**/**`RangeExpression`**/**`RunExpression`(协程 spawn，防御性；整函数禁用仍由 `curHasUnsafeConstruct` 负责)**。新增任何变量引用构造都必须同步加入这两个扫描函数，否则会重新引入 BROKEN 行为。
+
+**禁用场景**（必须走普通赋值路径）：
+- stdlib 函数（`curIsStdLib`）：stdlib 含 match/closure/coroutine 等引用分析无法完全建模的构造，重绑定会破坏共享栈槽（如 fmt 内部 `it` 别名到局部 `n`）。检测：`g.stdModules`（`SetStdModules` 由 `transpiler.go` 从 `checker.KnownStdModules()` 注入）+ 回退 `g.funcOwner[fd.Name]`。
+- **用户函数含闭包（`FunctionLiteral`）或协程 spawn（`RunExpression`）**（`curHasUnsafeConstruct`，由 `bodyHasUnsafeConstruct` 递迴扫描函数体设置）：闭包捕获变量在「独立函数上下文」求值，协程跨线程执行，二者变量生命周期超出当前函数 `g.varAlias` 单函数别名作用域，重绑定会破坏共享栈槽。采用「整函数禁用」（保守正确，只损失优化，绝不引入错误）。
+- **match 不禁用**：match 已 desugar 为 `IfExpression`，其分支体内引用由 `stmtContainsVarRefAny`/`exprContainsVarRefAny` 遍历覆盖，故无需禁用（经 `tests/match.no`/`tests/option.no` 验证与基线一致）。
+- 目标 = 输出参数 / 全局变量 / 堆类型变量。
+- 源 = 参数 / 全局变量（参数按引用传递，重绑定破坏调用方栈帧）。
+
+**别名失效**：变量重新赋值时（`b = ...`）先 `delete(g.varAlias, name)`，避免通用赋值路径经 `varAddr(name)` 仍指向旧源栈槽污染旧源；设置新别名前沿 `varAlias` 链传递性解析。
+
+**关键限制**：主函数（`generateMainFunction`）绝不能调用 `computeMoveEligibility`（会启用堆 move 导致 SEGFAULT），只能用 `computeSlotRebindSafety`。
+
+**调试**：设 `NOLANG_DEBUG_OPT=1` 可见 `[debug-opt] slot-rebind <name> -> <src> (type=...)`；含闭包/协程的函数该函数内不应出现此行（证明 `curHasUnsafeConstruct` 已禁用）。
+
+**测试**：`tests/test-slot-rebind.no`（期望输出 `42 7 1 1 17 5 5 10 100 99 84`）；`tests/test-slot-rebind-unsafe.no`（协程 capture 栈变量，验证 `curHasUnsafeConstruct` 禁用后输出与基线一致）；`tests/test-slot-rebind-gaps.no`（覆盖引用扫描边界：`BlockStatement` 写源、`?=`、裸区块——期望 `5 42 9`，且与 `no-baseline` 一致；注意该测试**故意不用 for-range**，因 in-tree 的 on-demand-std transpiler 重构当前对 for-range 体内的 `print` 会漏加载 `fmt` 而 `@fmt-int` 未定义，属 transpiler WIP 非 slot-rebind 范畴）。
+
 ## 7. %arr → %vec 轉换（varAlias）
 
 ### 问题
@@ -748,6 +774,10 @@ CFG 數據流分析依賴 `cfgEdge`/`cfgTerm`/`cfgAddEffect` 正確記錄所有�
 | 重新赋值释放 | `src/build/llvm/stmt.go` | `freeOldHeapValue` |
 | **深層 clone** | `src/build/llvm/stmt.go` | `emitDeepClone`, `emitContainerClone`, `emitDeepElementClone`, `emitStructElementsClone`, `emitStructClone`, `emitStructFieldClone`, `canDeepCloneStruct` |
 | **`b = a` clone 路徑** | `src/build/llvm/stmt.go` | `generateLet` 中的 Identifier + heapVars 深層 clone 路徑 |
+| **棧類型 move（棧槽重綁定）** | `src/build/llvm/stmt.go` | `generateLet` 中的 `slotRebindSafe` 棧槽重綁定區塊；`computeMoveEligibility`/`computeSlotRebindSafety` 計算 `slotRebindSafe`；`stmtContainsVarRefAny`/`exprContainsVarRefAny` 引用掃描 |
+| **stdlib 排除（curIsStdLib）** | `src/build/llvm/generator.go`, `src/build/llvm/stmt.go` | `funcState.curIsStdLib`；`Generator.stdModules` + `SetStdModules`；`generateFunctionDefinition`/`generateMainFunction` 中設定 |
+| **用户代码闭包/协程排除（curHasUnsafeConstruct）** | `src/build/llvm/generator.go`, `src/build/llvm/stmt.go` | `funcState.curHasUnsafeConstruct`；`bodyHasUnsafeConstruct`/`stmtHasUnsafeConstruct`/`exprHasUnsafeConstruct` 递迴扫描函数体，命中 `FunctionLiteral`/`RunExpression` 即禁用栈槽重绑定（整函数降级为拷贝） |
+| **std 模組集合注入** | `src/build/transpiler.go` | `t.llvmGenerator.SetStdModules(stdModSet)`（來自 `checker.KnownStdModules()`） |
 | **slice view Identifier clone** | `src/build/llvm/stmt.go` | `generateLet` 中的 `isSliceViewVar` + needClone 路徑（§5.5，保留但不觸發） |
 | **slice 總是 clone** | `src/build/llvm/slice_view.go` | `generateSliceViewAssignment` needClone 始終 true；`emitSliceClone`、`generateChainedSliceViewClone` 的 `trackLocalHeapVar`（§5.4, §5.6） |
 | **SliceType fall-through** | `src/build/llvm/stmt.go` | SliceType 區塊僅 `stmt.Value == nil` 時預設初始化（§5.7） |

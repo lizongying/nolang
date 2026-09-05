@@ -16,9 +16,42 @@ Each heap `data` buffer has **exactly one owner**. Ownership can be transferred 
 
 | Semantic | Trigger | Behavior |
 |----------|---------|----------|
-| **Value copy** | Primitive types (i64/f64/bool, etc.) | Direct value copy, no heap data |
+| **Value copy** | Primitive types (i64/f64/bool, etc.) and `can_slot_rebind` not satisfied | Direct value copy, no heap data |
+| **Stack-slot rebind** | local `b = a`, a is a stack type (i64/u64/i128/u128/txt) and `can_slot_rebind` satisfied | `g.varAlias[b] = a`, b and a share the same stack slot, 0-copy (better than value copy); otherwise degrades to value copy |
 | **Deep clone** | `b = a` between locals, a is heap-owning (vec/arr/str/cloneable struct) | malloc new data + memcpy + recursively clone elements; a and b independently own data, each freed at function exit |
 | **move** | Output param `out = x`, `vec.push(x)` | Shallow copy struct + mark source as moved; source skips free |
+
+## Stack-type move (stack-slot rebind / slot-rebind)
+
+`i64/u64/i128/u128/txt` are all **stack types** (values live directly in the alloca stack slot, no heap `data`), yet `b = a` still defaults to **value copy** (memcpy a's stack value into b's stack slot). To avoid pointless copies, the compiler performs a **stack-slot rebind** for stack-type `b = a` that satisfies the **can_slot_rebind** constraint: set `g.varAlias[b] = a` so b and a share the same stack slot (0-copy, better than value copy).
+
+### can_slot_rebind constraint (conservative correctness)
+After rebind, b and a point to the same stack slot, so any later read of b observes "a's storage". The rebind is therefore only allowed when the source `a` has **no subsequent reference (read or write) at all**; otherwise it **degrades to a full value copy** (semantics unchanged, just one extra memcpy).
+
+- Safety is solved statically by `computeSlotRebindSafety` (main) / `computeMoveEligibility` (user functions) via `stmtContainsVarRefAny` / `exprContainsVarRefAny`: scan every statement after the move (including branch / loop back-edges); if the source is referenced in any way, `slotRebindSafe[stmt] = false` → take the copy path.
+- The reference scan must enumerate **every AST node that can reference a variable**; an uncovered write reference would cause an unsafe rebind (corrupted alias slot → wrong output or even an infinite loop). Covered: statement-level `LetStatement` / `ExpressionStatement` / `ForStatement` (incl. `Init`/`Update`/`Condition`/`CountExpr`/`Body` and the **`IterRange` iteration collection**) / `ReturnStatement` / `MultiAssignStatement` / **`UnwrapAssignStatement` (`?=` unwrap)** / **`BlockStatement` (bare block)**; expression-level `Identifier` / `AssignExpression` / `Infix` / `Prefix` / `Call` / `Dot` / `Index` / `IfExpression` (arm bodies) / `Slice` / `Conditional` / `Grouped` / **`AwaitExpression`** / **`CastExpression`** / **`RangeExpression`** / **`RunExpression` (coroutine spawn, defensive; whole-function disable still handled by `curHasUnsafeConstruct`)**. Any new variable-referencing construct must be added to both scanners.
+- `match` is desugared into `IfExpression`; references inside its arm bodies are covered by the analysis above, so **match does not trigger a disable** (verified against baseline on `tests/match.no` / `tests/option.no`).
+
+### Disable scenarios (always degrade to value copy)
+| Disable condition | Reason |
+|-------------------|--------|
+| Target is output param / global / heap-type variable | Output params are passed by pointer, globals are cross-function visible, heap types need deep free — rebind breaks ownership |
+| Source is a param / global | Params are passed by reference; rebind would corrupt the caller's stack frame |
+| **stdlib function** (`curIsStdLib`, set via `SetStdModules`) | stdlib internal alias bindings (e.g. fmt's `it` aliased to local `n`) are hard for the reference analysis to fully model |
+| **User function body contains a closure (`FunctionLiteral`) or coroutine spawn (`RunExpression`)** (`curHasUnsafeConstruct`, scanned recursively by `bodyHasUnsafeConstruct`) | A closure evaluates captured variables in a *separate function context*; a coroutine runs on another thread. Both have variable lifetimes beyond the current function's single-function `g.varAlias` alias scope, so rebind would corrupt the shared stack slot |
+
+> Design trade-off: closures/coroutines use a **whole-function disable** rather than per-variable precision, because single-function alias analysis fundamentally cannot model cross-function / cross-thread storage sharing. A whole-function disable only forfeits the optimization (degrades to copy) and never introduces a bug — consistent with the "conservative correctness" principle.
+
+### Alias invalidation
+- When the target is reassigned, `delete(g.varAlias, name)` first clears any stale alias, otherwise the generic assignment path `varAddr(name)` still points at the old source slot and pollutes the old source.
+- The rebind performs transitive resolution along the `g.varAlias` chain to find the final source slot (`a → c → …`), avoiding multi-hop alias misalignment; `g.varTypes[name]` is synced so later type queries stay consistent.
+
+### Orthogonality with heap-type move
+Stack-slot rebind only affects the **value copy** semantics of stack-type `b = a`; it is fully orthogonal to the deep-clone / move (output param) paths of heap-owning types, which are unaffected by `slotRebindSafe`.
+
+### Test references
+- `tests/test-slot-rebind.no`: i64/u64 rebind, i128/u128 via `==`, txt via `.len`, degrade-to-copy (`da` reused → `db`/`dc` copy), reassign-after (`ra`=10), param-move (`pm_fn` source is a param → copy), rebind-then-reassign (`rr_fn` → `rr`=99), consume (`consume(m)` → `cm`=84). Expected output: `42 7 1 1 17 5 5 10 100 99 84`.
+- `tests/test-slot-rebind-unsafe.no`: coroutine (`run`/`awy`) capturing a stack variable, verifying `curHasUnsafeConstruct` disables rebind and output matches baseline.
 
 ### Compiler-Inserted Free
 - Function exit: free all non-moved local heap variables
@@ -166,6 +199,41 @@ Decision rules for `b = a`:
 2. If a is the source of vec.push → move
 3. Otherwise, if a is a heap-owning type and deep-cloneable → deep clone
 4. Otherwise value copy
+
+## Stack-type move (stack-slot rebind / slot-rebind)
+
+`i64`/`u64`/`i128`/`u128`/`txt` are stack types (non-heap-owning). When `b = a` (RHS is a variable) and the source `a` is not referenced afterward, instead of a value copy the compiler performs a **stack-slot rebind**: `g.varAlias[b] = a` makes `b` and `a` share the same stack slot (0-copy). This beats a value copy (which still emits load+store), and is especially beneficial for large stack types such as the 256-byte `%txt`.
+
+### can_slot_rebind constraint (conservative correctness)
+
+Stack-slot rebind is **stricter** than the heap-move `moveEligible`:
+- `moveEligible`: source `a` not **read** afterward → move allowed (heap types; after move the source skips free, target unaffected).
+- `can_slot_rebind` (`slotRebindSafe`): source `a` has **no subsequent reference (read or write)** → rebind allowed. After rebind, `b` and `a` share the same slot, so a later write to `a` would corrupt `b`'s value.
+
+Computation: `generateFunctionDefinition` calls `computeMoveEligibility` (fills both `moveEligible` and `slotRebindSafe`); `generateMainFunction` calls `computeSlotRebindSafety` (**only** fills `slotRebindSafe`, never touches `moveEligible` — HEAD's main does not enable heap moves, kept disabled to avoid SEGFAULT). Both scan via `stmtContainsVarRefAny` (branch/loop-aware, including `AssignExpression` LHS and loop back-edges).
+
+When `can_slot_rebind` is not satisfied (source referenced later) → **degrade to a full value copy**; never unsafe.
+
+### Disabled scenarios (must use the normal assignment path)
+
+| Scenario | Reason |
+|----------|-------|
+| stdlib function (`curIsStdLib`) | stdlib contains match/closure/coroutine constructs the reference analysis cannot fully model; rebinding would corrupt shared stack slots (e.g. fmt's internal `it` aliased to a local `n`). Detected via `g.stdModules` (`SetStdModules` from `checker.KnownStdModules()` in `transpiler.go`), falling back to `g.funcOwner[fd.Name]` |
+| target is an output param | output param is a caller-passed pointer; rebinding would point it at the local source slot, caller can't read it |
+| target is a global var | rebinding makes the global name resolve to a local source slot, breaking global semantics |
+| target is a heap-type var | stack-slot rebind only applies to stack types |
+| source is a param | params are pass-by-reference; rebinding corrupts the caller's stack frame |
+| source is a global var | global address aliased to a local source, semantically wrong |
+
+### Alias invalidation on reassignment
+
+When a variable is reassigned (`b = ...`), `delete(g.varAlias, name)` clears any stale alias first, so the generic assignment path does not write through the old alias into the source's slot via `varAddr(name)`. When setting a new alias, follow the `varAlias` chain for **transitive resolution** (`src := ident.Value; for { if n2,ok := g.varAlias[src]; ok { src = n2 } else break }`) to the ultimate source slot, avoiding multi-hop misalignment.
+
+### Orthogonality with heap move
+
+Stack-slot rebind only affects stack types; it does not involve ownership transfer or `free`, and is fully independent of the heap clone/move machinery.
+
+**Test**: `tests/test-slot-rebind.no` (covers i64/u64/i128/u128/txt rebind, degrade-to-copy, alias invalidation after target reassignment, param-move degrade, consume passthrough; expected output `42 7 1 1 17 5 5 10 100 99 84`).
 
 ## FFI extern str Return Values
 

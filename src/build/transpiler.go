@@ -1143,20 +1143,18 @@ func stdModuleLookup() map[string]checker.StdModuleInfo {
 	return m
 }
 
-// alwaysAutoLoadStd 是 codegen 內建路徑（print/格式化等）無條件引用、但源碼
-// AST 無顯式 module.fn() 的 std 模組。fmt/io/str 被 print 等內建無條件需要，
-// 始終載入；byte/vec 則改為「程式實際用到 []byte / vec 才載入」（見 auto-load
-// 區塊的 scanByteVecUsage 判斷），避免為不相關程式強制 codegen 整個模組
-// （R1：整模組 codegen 死代碼）。
-//   - fmt：@fmt-int/@fmt-uint/@fmt-f64/@fmt-str/@fmt-bool 等（print/格式化內建）
-//   - io ：@out/@err（emitOutCall 直接發出的裸呼叫，對應 io.out/io.err）
-//   - str：字串格式化/子串（@str.sub 等）被 print/格式化內建依賴
-//   - byte：[]byte.to-str / []byte.to-hex 等類型方法經 transpiler 重寫為
-//     []byte.fn(receiver) 識別碼呼叫，collectReferencedStdModules 無法偵測
-//     （它只掃描 module.fn() DotExpression，不掃描 Type.method Identifier）。
-//     byte/vec 僅在程式（含已載入模組）確實使用 []byte / vec 時載入。
-// 若未來 codegen 新增其他隱式 std 依賴，在此追加，並於 auto-load 區塊同步處理。
-var alwaysAutoLoadStd = []string{"fmt", "io", "byte", "str", "vec", "sort", "char"}
+// std 模組按需載入（on-demand reachability），不再有 alwaysAutoLoadStd 這種
+// 「無條件整模組載入」的概念。是否引入某個 std 模組完全由推斷決定：
+//   - 顯式引用：程式（含已合併模組）中的 module.fn() DotExpression 呼叫，
+//     以及 use std/... 語句（collectReferencedStdModules 掃描）。
+//   - 型別隱含：[]T → vec、[N]T → arr、[K]V → map、txt、regexp 等（同函數內
+//     的 walkType 掃描，見 collectReferencedStdModules）。
+//   - 內建隱含：print/格式化內建（legacy codegen 路徑會發出 @fmt-int/@out/@err
+//     等裸呼叫）隱含需要 fmt/io/str 模組——此為「根據用法推斷」，不是「總是引入」。
+//     MIR 的 print builtin 是自包含的（直接發 @print_*，不依賴 fmt 模組），
+//     故對 MIR 路徑而言載入 fmt/io/str 只是 LowerHIR 會過濾掉的死代碼，無副作用。
+// 泛型實例化動態新增的依賴不在此層處理，而是由 monomorphizeGenerics 之後的
+// HIR 內部待處理佇列迭代收斂（見下方 auto-load 區塊末尾的 pending 循環）。
 
 // stdModuleMethodPrefixes lists std module short names whose generic [n]t
 // methods are called via variable.method() form (e.g. buf.queue-init()).
@@ -1199,6 +1197,263 @@ func dotModulePath(dot *parser.DotExpression) string {
 		}
 	}
 	return strings.Join(segments, "/")
+}
+
+// programUsesPrint 報告程式（或其已合併模組）是否呼叫了 print/格式化類內建
+// （print / println / print-str / sprintf 等）。legacy codegen 路徑會為這些內建
+// 發出 @fmt-int/@out/@err 等裸呼叫，故需要 fmt/io/str std 模組；這是「根據用法
+// 推斷」的按需載入依據，取代舊的 alwaysAutoLoadStd 無條件引入。
+// 註：MIR 路徑的 print builtin 自包含，不依賴 fmt 模組，載入亦無副作用。
+func (t *Transpiler) programUsesPrint(progs ...*parser.Program) bool {
+	// print 家族（含 eprint/eprintln 標準錯誤變體）都需要 fmt/io/str/byte
+	// 模組：fmt 做格式化、io 做輸出、str/byte 做型別特化。on-demand 推斷下
+	// 必須把 eprint 也納入，否則使用 eprint 的程式（如 test-diff-debug.no）
+	// 不會載入 str 模組，導致 str.slice 等方法的函式本體缺失、codegen
+	// 誤判為 void 回傳而產生畸形 IR。
+	printBuiltins := map[string]bool{
+		"print":    true,
+		"println":  true,
+		"eprint":   true,
+		"eprintln": true,
+		"fprint":   true,
+		"fprintln": true,
+	}
+	for _, prog := range progs {
+		if prog == nil {
+			continue
+		}
+		used := false
+		var walkExpr func(e parser.Expression)
+		var walkStmt func(s parser.Statement)
+		walkExpr = func(e parser.Expression) {
+			if e == nil {
+				return
+			}
+			if v := reflect.ValueOf(e); v.Kind() == reflect.Ptr && v.IsNil() {
+				return
+			}
+			switch ex := e.(type) {
+			case *parser.CallExpression:
+				if ident, ok := ex.Function.(*parser.Identifier); ok {
+					if printBuiltins[ident.Value] {
+						used = true
+						return
+					}
+				}
+				if dot, ok := ex.Function.(*parser.DotExpression); ok {
+					// print 也可能以 io.out / fmt.x 等形式間接出現；此處只偵測
+					// 直接 print 內建（最穩健的信號）。
+					_ = dot
+				}
+				if used {
+					return
+				}
+				if walkExpr != nil {
+					walkExpr(ex.Function)
+				}
+				for _, a := range ex.Arguments {
+					if used {
+						return
+					}
+					walkExpr(a)
+				}
+			case *parser.PrefixExpression:
+				walkExpr(ex.Right)
+			case *parser.InfixExpression:
+				walkExpr(ex.Left)
+				walkExpr(ex.Right)
+			case *parser.GroupedExpression:
+				walkExpr(ex.Expression)
+			case *parser.IfExpression:
+				walkExpr(ex.Condition)
+				if ex.Consequence != nil {
+					for _, st := range ex.Consequence.Statements {
+						if used {
+							return
+						}
+						walkStmt(st)
+					}
+				}
+				if ex.Alternative != nil {
+					for _, st := range ex.Alternative.Statements {
+						if used {
+							return
+						}
+						walkStmt(st)
+					}
+				}
+			case *parser.FunctionLiteral:
+				if ex.Body != nil {
+					for _, st := range ex.Body.Statements {
+						if used {
+							return
+						}
+						walkStmt(st)
+					}
+				}
+			}
+		}
+		walkStmt = func(s parser.Statement) {
+			if s == nil {
+				return
+			}
+			if v := reflect.ValueOf(s); v.Kind() == reflect.Ptr && v.IsNil() {
+				return
+			}
+			switch st := s.(type) {
+			case *parser.ExpressionStatement:
+				walkExpr(st.Expression)
+			case *parser.LetStatement:
+				walkExpr(st.Value)
+		case *parser.FunctionDefinition:
+			for _, st2 := range st.Body.Statements {
+				if used {
+					return
+				}
+				walkStmt(st2)
+			}
+		}
+	}
+	for _, st := range prog.Statements {
+		if used {
+			break
+		}
+		walkStmt(st)
+	}
+	if used {
+		return true
+	}
+}
+return false
+}
+
+// loadStdModuleBody 解析並合併單個 std 模組體到 merged 程式（按推斷載入的
+// 函數/結構/常量等），並回傳本模組體內引用的、尚未載入的 std 模組依賴
+// （傳遞閉包種子）。呼叫方負責將回傳的依賴加入 loadedStd / worklist 繼續收斂。
+//
+// 此函數是「按需 std 載入」的核心：無論是初次 auto-load worklist，還是泛型
+// 單態化後的 HIR 內部待處理佇列（見 CompileTarget 中 monomorphizeGenerics
+// 之後的收斂循環），都透過它批次合併 std 函數體；MIR 的 LowerHIR 只拿到
+// 已合併好的 HIR Package，不回碰 HIR，也不負責發現新依賴。
+//
+// 與舊 alwaysAutoLoadStd 的「整模組無條件載入」不同，這裡只合併被推斷引入的
+// 模組。同一模組檔可能被 ShortName（如 "map"）與 ShortPath（如 "collection/map"）
+// 同時引用，皆指向同一份 std/collection/map.no，故以 path 去重避免重複合併。
+func (t *Transpiler) loadStdModuleBody(sp string, merged *parser.Program, typeOwner map[string]string, mainVarNames map[string]bool, mergedGlobalConsts map[string]bool, globalVarTypes map[string]string, loadedStd map[string]bool, explicitStdModules map[string]bool) ([]string, error) {
+	info, ok := stdModuleLookup()[sp]
+	if !ok {
+		return nil, nil
+	}
+	// 頂層變量名與模塊名衝突 → 跳過自動載入（與原全量自動載入邏輯一致）。
+	// 註：必須用 globalVarTypes（僅頂層變數），不能用 varTypes（含函數體內的局部變數），
+	// 否則函數內的局部變數（如 test-arr-reverse 中的 arr [4] = ...）會導致
+	// arr 模組被錯誤跳過，使 [n]t 方法無法載入。
+	if _, isVar := globalVarTypes[info.ShortName]; isVar {
+		return nil, nil
+	}
+	path := "std/" + info.ShortPath
+	if explicitStdModules[path] {
+		return nil, nil
+	}
+	// 同一模組檔以 path 去重（ShortName/ShortPath 可能指向同一份 .no）。
+	if loadedStd[path] {
+		return nil, nil
+	}
+	loadedStd[path] = true
+	use := &parser.UseStatement{Path: path, Function: ""}
+	modProg, err := t.resolveUse(use)
+	if err != nil {
+		return nil, fmt.Errorf("auto-loading module %s: %w", path, err)
+	}
+	modFile := resolveModuleFile(path, t.workspaceRoot())
+	merged.Sem.Merge(modProg.Sem)
+	// 為自動載入模組的型別定義加上模組前綴（如 result → sql.result）
+	prefixModuleStatements(modProg.Statements, info.ShortName, typeOwner)
+	for _, ms := range modProg.Statements {
+		if fd, ok := ms.(*parser.FunctionDefinition); ok {
+			merged.Statements = append(merged.Statements, fd)
+			parser.SetModuleOwner(fd, info.ShortName)
+			parser.SetSourceFile(fd, modFile)
+		}
+		if ls, ok := ms.(*parser.LetStatement); ok && ls.Name != nil {
+			// 如果主程序已有同名變量，跳過以避免衝突
+			if !mainVarNames[ls.Name.Value] {
+				isConst := checker.IsConstantExpr(ls.Value)
+				// 跨模組同名常量去重：多個 std 模組可能定義相同常量
+				// （如 FNV-OFFSET 在 map.no 和 static-hashmap.no 中都有定義）。
+				// 僅保留第一個，後續重複的跳過，避免 ValidateDuplicateVars 報錯。
+				// 例外：帶平台註解的常量（如 #{mac-arm64} O-CREAT = 512）
+				// 不參與去重，因為不同平台變體需要共存，由 FilterByPlatform
+				// 在 codegen 階段選取匹配平台的定義。
+				platformKeys := modProg.Sem.PlatformKeysOf(ls)
+				hasPlatformAnnotation := len(platformKeys) > 0
+				if isConst && mergedGlobalConsts[ls.Name.Value] && !hasPlatformAnnotation {
+					continue
+				}
+				if isConst && !hasPlatformAnnotation {
+					mergedGlobalConsts[ls.Name.Value] = true
+				}
+				merged.Statements = append(merged.Statements, ls)
+				parser.SetModuleOwner(ls, info.ShortName)
+				parser.SetSourceFile(ls, modFile)
+				if isConst && checker.MatchesTargetPlatform(platformKeys, t.targetGoos, t.targetGoarch) {
+					ls.IsModuleConst = true
+				}
+			}
+		}
+		if sd, ok := ms.(*parser.StructDefinition); ok {
+			merged.Statements = append(merged.Statements, sd)
+			parser.SetSourceFile(sd, modFile)
+		}
+		if id, ok := ms.(*parser.InterfaceDefinition); ok {
+			merged.Statements = append(merged.Statements, id)
+			parser.SetSourceFile(id, modFile)
+		}
+		if ta, ok := ms.(*parser.TypeAlias); ok {
+			merged.Statements = append(merged.Statements, ta)
+			parser.SetSourceFile(ta, modFile)
+		}
+		if ed, ok := ms.(*parser.EnumDefinition); ok {
+			merged.Statements = append(merged.Statements, ed)
+			parser.SetSourceFile(ed, modFile)
+		}
+		if ted, ok := ms.(*parser.TaggedEnumDefinition); ok {
+			merged.Statements = append(merged.Statements, ted)
+			parser.SetSourceFile(ted, modFile)
+		}
+	}
+	// 傳遞閉包：掃描本模組體內的 std 引用（module.fn()/use std/...），
+	// 回傳尚未載入的依賴種子，由呼叫方加入 worklist 繼續收斂。
+	var newDeps []string
+	for dep := range t.collectReferencedStdModules(modProg) {
+		if !loadedStd[dep] {
+			newDeps = append(newDeps, dep)
+		}
+	}
+	return newDeps, nil
+}
+
+// stdLoadTier 回傳 std 模組的載入優先級：輕量型別/標量模組為 0（先載入），
+// 重型模組（I/O、網路、加密、系統等）為 1（後載入）。用於固定 std 模組體
+// 的合併順序，避免 legacy codegen 的簽名解析因載入順序不確定而出錯
+// （例如 process.exec 回傳 exec-result 的 str 欄位 sret 型別依賴 str 模組
+// 先就位，否則會把 str 回傳誤判為 i64，見 test-tcp-fork.no 回歸）。
+func stdLoadTier(name string) int {
+	switch name {
+	// tier 0：旧 alwaysAutoLoadStd 集（fmt/io/byte/str/vec/sort/char）+ txt。
+	// 这些「基础/标量/型别」模块必须优先于类型推断的「容器」模块（map/arr/vec）
+	// 加载，否则容器模块（如 [str]i64 → collection/map）的函数签名解析时 str
+	// 等型别尚未就位，会被误判为 i64，产生畸形 IR → 运行时 index out of bounds
+	// （见 test-map.no 回归；以及 process.exec 的 str 字段误判，见 test-tcp-fork.no）。
+	case "fmt", "io", "byte", "str", "vec", "sort", "char", "txt":
+		return 0
+	// tier 1：类型推断的容器模块（[K]V→map、[N]T→arr、[]T→vec 等），
+	// 依赖 tier 0 的基础型别模块先就位。
+	case "arr", "map", "collection/map":
+		return 1
+	}
+	// tier 2：其余重型模块（net/crypto/fs/os/json 等）最后加载。
+	return 2
 }
 
 // collectReferencedStdModules 掃描程式，收集被顯式引用到的 std 模組 short path：
@@ -1244,6 +1499,31 @@ func (t *Transpiler) collectReferencedStdModules(prog *parser.Program) map[strin
 			// （如 `t txt = 'abc'`）能正確偵測 txt 模組依賴並按需載入。
 			if ty.Value == "txt" {
 				addRef("txt")
+			}
+			// 裸 str 型別注解（如 `content str`）隱含引用 std/str.no 模組：
+			// str 的方法（str.slice、str.compare）經由變數呼叫（接收者
+			// 非 str. 模組前綴）靜態掃描無法偵測。alwaysAutoLoadStd 時代
+			// str 被無條件載入；on-demand 下必須由型別注解觸發，否則
+			// 方法本體缺失會讓 codegen 把 str.slice 等誤判為 void 回傳，
+			// 產生缺值的畸形 store（如 test-diff-debug.no 的回歸）。
+			if ty.Value == "str" {
+				addRef("str")
+			}
+			// 裸 char / byte 型別注解（如 `c char`、`b byte`）隱含引用對應
+			// std 模組：char/byte 的方法（char.to-str、byte.to-str 等）經由
+			// 變數或字面量呼叫，接收者並非 char./byte. 模組前綴，靜態掃描
+			// 無法偵測。alwaysAutoLoadStd 時代 char/byte 被無條件載入；
+			// on-demand 下必須由型別注解觸發，否則方法本體缺失會讓 codegen
+			// 把 to-str 等誤判為裸 @to-str（缺接收者/回傳欄位），報
+			// "use of undefined value '@to-str'"（如 test_char_*.no 系列回歸）。
+			// 注意：本段在 test-tcp-fork.no 回歸排查中曾被暫時移除，但該回歸
+			// 的真正根因是 pending-queue 對 prefixMethodNames 的非安全冪等重跑
+			// （已由 newStmts 收窄修復），與本段無關，故恢復之。
+			if ty.Value == "char" {
+				addRef("char")
+			}
+			if ty.Value == "byte" {
+				addRef("byte")
 			}
 		case *parser.ArrayType:
 			// [N]T 語法隱含引用 std/arr.no 模組（[n]t 泛型方法特化）。
@@ -1302,6 +1582,21 @@ func (t *Transpiler) collectReferencedStdModules(prog *parser.Program) map[strin
 			// %regexp 報 "Cannot allocate unsized type"。這與 StructLiteral
 			// （line 1430 的 addRef(ex.Type)）處理 regexp{} 的邏輯對稱。
 			addRef("regexp")
+		case *parser.CharLiteral:
+			// char 字面量（如 "A"、"中"）隱含引用 std/char.no 模組：
+			// char 的方法（to-str、is-upper、to-upper 等）經由字面量或
+			// 推論變數呼叫（接收者並非 char. 模組前綴），靜態掃描無法偵測。
+			// alwaysAutoLoadStd 時代 char 被無條件載入；on-demand 下必須由
+			// 字面量觸發，否則方法本體缺失會讓 codegen 把 to-str 誤判為裸
+			// @to-str（缺接收者/回傳欄位），報 "use of undefined value '@to-str'"
+			// （如 test_char_*.no 系列回歸）。
+			addRef("char")
+		case *parser.ByteLiteral:
+			// byte 字面量（如 0x41）隱含引用 std/byte.no 模組：byte 的方法
+			// （byte.to-str 等）經由推論變數呼叫，靜態掃描無法偵測。雖然
+			// print 家族推斷集（fmt/io/str/byte）在大多數情況已覆蓋 byte，
+			// 但純 byte 運算（不含 print）的程式仍需由字面量觸發載入。
+			addRef("byte")
 		case *parser.DotExpression:
 			addRef(dotModulePath(ex))
 			walkExpr(ex.Receiver)
@@ -1957,107 +2252,44 @@ func (t *Transpiler) CompileTarget(source string, _ Target) (string, error) {
 			stdWorklist = append(stdWorklist, sp)
 		}
 	}
-	// 始終自動載入 codegen 內建隱式依賴的 std 模組（見 alwaysAutoLoadStd 註解）。
-	// 註：byte/vec 的方法經由 slice/值呼叫（如 v.push、[]byte.to-str），接收者
-	// 並非 vec./byte. 模組前綴，靜態掃描與型別掃描皆無法可靠偵測；若改為「用到才
-	// 載入」會漏判導致 undefined-function（實測 test-vec.no 回歸），故維持無條件載入。
-	for _, name := range alwaysAutoLoadStd {
-		if _, ok := stdModuleLookup()[name]; ok && !loadedStd[name] {
-			loadedStd[name] = true
-			stdWorklist = append(stdWorklist, name)
+	// 內建隱含的 std 模組：print/格式化內建（legacy codegen 路徑會發出
+	// @fmt-int/@out/@err 等裸呼叫）隱含需要 fmt/io/str 模組。這是「根據用法推斷」
+	// （只有用到 print 才引入），不再是 alwaysAutoLoadStd 的「總是引入」。
+	// MIR 的 print builtin 自包含、不依賴 fmt 模組，故對 MIR 路徑只是被 LowerHIR
+	// 過濾掉的死代碼，無副作用。
+	// 此外：io 模組的 out/outln/err/errln 內部依賴 fmt/str/byte（同樣發出裸
+	// @fmt-int/@out/@err 呼叫），故只要引用 io 就視同 print 家族推斷，一併引入
+	// fmt/io/str/byte，與 alwaysAutoLoadStd 時期行為對齊（避免 io.errln 等呼叫
+	// 缺 fmt/str/byte 本體而編譯失敗）。
+	usesPrint := t.programUsesPrint(merged) || t.programUsesPrint(program)
+	usesIO := refs["io"]
+	if usesPrint || usesIO {
+		for _, name := range []string{"fmt", "io", "str", "byte"} {
+			if _, ok := stdModuleLookup()[name]; ok && !loadedStd[name] {
+				loadedStd[name] = true
+				stdWorklist = append(stdWorklist, name)
+			}
 		}
 	}
+	// 決定性載入順序：輕量型別/標量模組（tier 0）必須先於重型模組（tier 1）
+	// 載入。legacy codegen 的簽名解析依賴型別模組（str 等）先就位，否則會把
+	// str 回傳誤判為 i64（test-tcp-fork.no 回歸）。Go map 迭代順序不確定，故
+	// 顯式排序 worklist 以固定順序。
+	sort.Slice(stdWorklist, func(i, j int) bool {
+		pi, pj := stdLoadTier(stdWorklist[i]), stdLoadTier(stdWorklist[j])
+		if pi != pj {
+			return pi < pj
+		}
+		return stdWorklist[i] < stdWorklist[j]
+	})
 	for len(stdWorklist) > 0 {
 		sp := stdWorklist[0]
 		stdWorklist = stdWorklist[1:]
-		info, ok := stdModuleLookup()[sp]
-		if !ok {
-			continue
-		}
-		// 頂層變量名與模塊名衝突 → 跳過自動載入（與原全量自動載入邏輯一致）。
-		// 註：必須用 globalVarTypes（僅頂層變數），不能用 varTypes（含函數體內的局部變數），
-		// 否則函數內的局部變數（如 test-arr-reverse 中的 arr [4] = ...）會導致
-		// arr 模組被錯誤跳過，使 [n]t 方法無法載入。
-		if _, isVar := globalVarTypes[info.ShortName]; isVar {
-			continue
-		}
-		path := "std/" + info.ShortPath
-		if explicitStdModules[path] {
-			continue
-		}
-		// Prevent loading the same module file twice: the same module can
-		// be referenced by both ShortName (e.g. "map") and ShortPath
-		// (e.g. "collection/map"), but they resolve to the same file
-		// (std/collection/map.no). Track by path, not by sp.
-		if loadedStd[path] {
-			continue
-		}
-		loadedStd[path] = true
-		use := &parser.UseStatement{Path: path, Function: ""}
-		modProg, err := t.resolveUse(use)
+		newDeps, err := t.loadStdModuleBody(sp, merged, typeOwner, mainVarNames, mergedGlobalConsts, globalVarTypes, loadedStd, explicitStdModules)
 		if err != nil {
-			return "", fmt.Errorf("auto-loading module %s: %w", path, err)
+			return "", err
 		}
-		modFile := resolveModuleFile(path, t.workspaceRoot())
-		merged.Sem.Merge(modProg.Sem)
-		// 為自動載入模組的型別定義加上模組前綴（如 result → sql.result）
-		prefixModuleStatements(modProg.Statements, info.ShortName, typeOwner)
-		for _, ms := range modProg.Statements {
-			if fd, ok := ms.(*parser.FunctionDefinition); ok {
-				merged.Statements = append(merged.Statements, fd)
-				parser.SetModuleOwner(fd, info.ShortName)
-				parser.SetSourceFile(fd, modFile)
-			}
-			if ls, ok := ms.(*parser.LetStatement); ok && ls.Name != nil {
-				// 如果主程序已有同名變量，跳過以避免衝突
-				if !mainVarNames[ls.Name.Value] {
-					isConst := checker.IsConstantExpr(ls.Value)
-					// 跨模組同名常量去重：多個 std 模組可能定義相同常量
-					// （如 FNV-OFFSET 在 map.no 和 static-hashmap.no 中都有定義）。
-					// 僅保留第一個，後續重複的跳過，避免 ValidateDuplicateVars 報錯。
-					// 例外：帶平台註解的常量（如 #{mac-arm64} O-CREAT = 512）
-					// 不參與去重，因為不同平台變體需要共存，由 FilterByPlatform
-					// 在 codegen 階段選取匹配平台的定義。
-					platformKeys := modProg.Sem.PlatformKeysOf(ls)
-					hasPlatformAnnotation := len(platformKeys) > 0
-					if isConst && mergedGlobalConsts[ls.Name.Value] && !hasPlatformAnnotation {
-						continue
-					}
-					if isConst && !hasPlatformAnnotation {
-						mergedGlobalConsts[ls.Name.Value] = true
-					}
-					merged.Statements = append(merged.Statements, ls)
-					parser.SetModuleOwner(ls, info.ShortName)
-					parser.SetSourceFile(ls, modFile)
-					if isConst && checker.MatchesTargetPlatform(platformKeys, t.targetGoos, t.targetGoarch) {
-						ls.IsModuleConst = true
-					}
-				}
-			}
-			if sd, ok := ms.(*parser.StructDefinition); ok {
-				merged.Statements = append(merged.Statements, sd)
-				parser.SetSourceFile(sd, modFile)
-			}
-			if id, ok := ms.(*parser.InterfaceDefinition); ok {
-				merged.Statements = append(merged.Statements, id)
-				parser.SetSourceFile(id, modFile)
-			}
-			if ta, ok := ms.(*parser.TypeAlias); ok {
-				merged.Statements = append(merged.Statements, ta)
-				parser.SetSourceFile(ta, modFile)
-			}
-			if ed, ok := ms.(*parser.EnumDefinition); ok {
-				merged.Statements = append(merged.Statements, ed)
-				parser.SetSourceFile(ed, modFile)
-			}
-			if ted, ok := ms.(*parser.TaggedEnumDefinition); ok {
-				merged.Statements = append(merged.Statements, ted)
-				parser.SetSourceFile(ted, modFile)
-			}
-		}
-		// 傳遞閉包：掃描本模組體內的 std 引用（module.fn()/use std/...），
-		// 加入 worklist，處理 std 模組間的相互呼叫。
-		for dep := range t.collectReferencedStdModules(modProg) {
+		for _, dep := range newDeps {
 			if !loadedStd[dep] {
 				loadedStd[dep] = true
 				stdWorklist = append(stdWorklist, dep)
@@ -2180,25 +2412,114 @@ func (t *Transpiler) CompileTarget(source string, _ Target) (string, error) {
 	// 傳入 typeOwner 以便 resolveMethodCall 為跨模組型別補上模組前綴
 	// typeOwner 用剔除主程序本地型別的版本：globalVarTypes 只含主程序頂層變數，
 	// 其裸名型別若由主程序自行定義，方法呼叫不得被加上模組前綴。
-	monomorphizeGenerics(merged, globalVarTypes, mainLocalOwner)
-	checker.DebugCountHashFns("after-monomorphizeGenerics", merged)
-	// 過濾：移除尚未具現化的泛型函數定義（只有具體版本才能產生 LLVM IR）
-	filtered := make([]parser.Statement, 0, len(merged.Statements))
-	for _, stmt := range merged.Statements {
-		if fd, ok := stmt.(*parser.FunctionDefinition); ok {
-			if len(fd.GenericParams) > 0 {
-				continue // 跳過泛型函數（GenericParams 未被清空說明尚未具現化）
+	// 泛型實例化待處理佇列（HIR 側收斂）：monomorphizeGenerics 動態新增的具體
+	// 函數體可能帶入先前未載入的 std 模組依賴（例如泛型 T 實例化為 map<K,V>
+	// 後，參數型別註解暴露 collection/map 依賴；或實例化後引用 vec/str 內部函數）。
+	// 這類依賴不交給 MIR 處理（mir.LowerHIR 是純一次性 lowering，不回碰 HIR），
+	// 而是在 HIR（build）側維護待處理佇列：反覆掃描合併後的 merged、批次合併新
+	// 引用的 std 模組體、重新執行必要的前綴/解析/單態化步驟，直到不再出現新的
+	// std 模組引用（迭代收斂）。
+	for {
+		monomorphizeGenerics(merged, globalVarTypes, mainLocalOwner)
+		checker.DebugCountHashFns("after-monomorphizeGenerics", merged)
+		// 過濾：移除尚未具現化的泛型函數定義（只有具體版本才能產生 LLVM IR）
+		filtered := make([]parser.Statement, 0, len(merged.Statements))
+		for _, stmt := range merged.Statements {
+			if fd, ok := stmt.(*parser.FunctionDefinition); ok {
+				if len(fd.GenericParams) > 0 {
+					continue // 跳過泛型函數（GenericParams 未被清空說明尚未具現化）
+				}
+			}
+			filtered = append(filtered, stmt)
+		}
+		merged.Statements = filtered
+		checker.DebugCountHashFns("after-filter-generic", merged)
+		// 掃描合併後程式，找出泛型實例化新引入的 std 模組引用
+		pendingRefs := t.collectReferencedStdModules(merged)
+		if t.programUsesPrint(merged) || t.programUsesPrint(program) || pendingRefs["io"] {
+			for _, name := range []string{"fmt", "io", "str", "byte"} {
+				if _, ok := stdModuleLookup()[name]; ok {
+					pendingRefs[name] = true
+				}
 			}
 		}
-		filtered = append(filtered, stmt)
+		var newRefs []string
+		for ref := range pendingRefs {
+			if !loadedStd[ref] {
+				newRefs = append(newRefs, ref)
+			}
+		}
+		if len(newRefs) == 0 {
+			break
+		}
+		// 決定性載入順序（與主 worklist 一致）：輕量型別模組先於重型模組，
+		// 避免泛型實例化新引入的依賴因 map 迭代順序不確定而打亂 str 等型別
+		// 模組的就位次序，導致 legacy codegen 簽名解析錯誤。
+		sort.Slice(newRefs, func(i, j int) bool {
+			pi, pj := stdLoadTier(newRefs[i]), stdLoadTier(newRefs[j])
+			if pi != pj {
+				return pi < pj
+			}
+			return newRefs[i] < newRefs[j]
+		})
+		// 批次合併新引用的 std 模組體（含其傳遞閉包）
+		before := len(merged.Statements)
+		for _, ref := range newRefs {
+			loadedStd[ref] = true
+			if _, err := t.loadStdModuleBody(ref, merged, typeOwner, mainVarNames, mergedGlobalConsts, globalVarTypes, loadedStd, explicitStdModules); err != nil {
+				return "", err
+			}
+		}
+		newStmts := merged.Statements[before:]
+		// 僅對「新合併」的陳述句重跑前綴/型別參考重寫 pass。對整個 merged 程式
+		// 重跑 prefixMethodNames 並非安全冪等：已處理的函數（如 process.exec 回傳
+		// exec-result 的 str 欄位）會被錯誤重命名/重寫，導致 str 回傳的 sret
+		// 暫存器型別被誤判為 i64（test-tcp-fork.no 回歸）。只處理新增陳述句可避免
+		// 污染既有程式，同時仍讓泛型實例化新引入的 std 模組函數正確接入。
+		if len(typeOwner) > 0 && len(newStmts) > 0 {
+			localMainSet := make(map[parser.Statement]bool, len(program.Statements))
+			for _, mainStmt := range program.Statements {
+				localMainSet[mainStmt] = true
+			}
+			for _, ns := range newStmts {
+				if localMainSet[ns] {
+					rewriteTypeRefsInStmt(ns, mainLocalOwner)
+				} else {
+					rewriteTypeRefsInStmt(ns, typeOwner)
+				}
+			}
+			prefixMethodNames(newStmts, typeOwner, mainLocalTypes)
+		}
+		// 注意：下面的整程式（whole-merged）解析 pass（prefixCollidingFunctions /
+		// ResolveModuleConstants / ResolveModuleCalls / ResolveSelfMethodCalls /
+		// rewriteTypeRefs / ResolveMethodCalls）刻意「不」在迴圈內每輪重跑。
+		// 對整個 merged 程式重跑這些 pass 並非安全冪等：已處理的函數會被錯誤
+		// 重命名 / 重寫（如 process.exec 回傳 exec-result 的 str 欄位 sret 暫存器
+		// 被誤判為 i64，見 test-tcp-fork.no；以及 static-hashmap.put 的 insert-idx
+		// 局部變數被誤併入 first-tomb，見 test-map.no）。正確做法是：迴圈內只對
+		// 「新合併」的陳述句做前綴 / 型別參考重寫（上方 newStmts 區塊），待待處理
+		// 佇列收斂、所有 std 模組就位後，由下方第二階段（rewriteTypeRefs /
+		// ResolveModuleCalls / ResolveMethodCalls）在「完整程式」上統一解析一次。
+		// 重新過濾已具現化的泛型定義，避免下一輪 monomorphizeGenerics 重複處理
+		filtered2 := make([]parser.Statement, 0, len(merged.Statements))
+		for _, stmt := range merged.Statements {
+			if fd, ok := stmt.(*parser.FunctionDefinition); ok {
+				if len(fd.GenericParams) > 0 {
+					continue
+				}
+			}
+			filtered2 = append(filtered2, stmt)
+		}
+		merged.Statements = filtered2
 	}
-	merged.Statements = filtered
-	checker.DebugCountHashFns("after-filter-generic", merged)
 	// 第二階段型別參考改寫：主檔案的頂層語句（struct 定義、let 宣告等）
 	// 在此時才加入 merged，需要再次改寫以處理主檔案中對導入模組型別的引用。
 	// 已改寫過的型別名（含 "."）會被 prefixTypeName 自動跳過，安全無副作用。
 	// 使用剔除主程序本地型別後的表：主程序自定義型別與模組同名時，裸名引用
 	// 必須保持指向本地定義（與 prefixMethodNames 的本地優先語義一致）。
+	// 待處理佇列收斂、所有 std 模組就位後，在「完整程式」上重跑一次名稱修飾
+	// （僅此一次，不在迴圈內每輪重跑，避免對已處理函數的非冪等破壞）。
+	prefixedFns = prefixCollidingFunctions(merged)
 	rewriteTypeRefs(merged.Statements, mainLocalOwner)
 	// 解析頂層代碼中的 module.fn() 呼叫
 	checker.ResolveModuleCalls(merged, importedModules, prefixedFns)
@@ -3588,7 +3909,21 @@ func resolveMethodCall(dot *parser.DotExpression, ce *parser.CallExpression,
 		if len(genericArgs) == 0 {
 			continue
 		}
-		// Create concrete version
+		// If the receiver is itself generic (e.g. self.foo() inside a generic
+		// function whose receiver is `[]t`), the codegen cannot resolve the
+		// method call, so we MUST monomorphize at HIR and flatten it into a
+		// concrete function call (self becomes a by-value first argument).
+		//
+		// For a CONCRETE receiver (e.g. v : []i64) we must NOT flatten: leaving
+		// the call as a method call lets the codegen resolve it and pass the
+		// receiver by reference. Flattening would demote `self` from a method
+		// receiver to a plain by-value parameter, so mutations such as
+		// `self.len++` / `data[i] = val` would not propagate to the caller —
+		// breaking mutating generic methods like vec.insert / vec.reverse.
+		// This matches the alwaysAutoLoadStd baseline, which never pre-
+		// monomorphizes std module methods and relies on the codegen to do it
+		// per call site (with the receiver passed by reference).
+		// Create concrete version and flatten the call.
 		concrete := cloneAndSubstitute(fd, genericArgs)
 		*newStmts = append(*newStmts, concrete)
 		// Rewrite call: replace DotExpression with Identifier, prepend receiver
@@ -3789,6 +4124,46 @@ func matchTypePattern(pattern, concrete string, fd *parser.FunctionDefinition) [
 		}
 	}
 	return nil
+}
+// isGenericReceiver reports whether the genericArgs resolved by matchTypePattern
+// indicate that the method receiver itself is generic (e.g. a call to
+// self.foo() inside a generic function whose receiver is `[]t`). In that case the
+// codegen cannot resolve the method call, so HIR-level monomorphization must
+// flatten it into a concrete function call. If the receiver is a CONCRETE type
+// (e.g. `[]i64`), isGenericReceiver returns false and the call should be left as
+// a method call so the codegen resolves it and passes the receiver by reference.
+func isGenericReceiver(pattern string, args []parser.Expression) bool {
+	var params []string
+	if strings.HasPrefix(pattern, "[]") {
+		params = append(params, pattern[2:])
+	} else if len(pattern) > 3 && pattern[0] == '[' {
+		closeB := strings.IndexByte(pattern, ']')
+		if closeB > 0 && closeB+1 < len(pattern) {
+			sizeP := pattern[1:closeB]
+			elemP := pattern[closeB+1:]
+			if isLowerLetter(sizeP) {
+				params = append(params, sizeP)
+			}
+			if isLowerLetter(elemP) {
+				params = append(params, elemP)
+			}
+		}
+	}
+	if len(params) == 0 {
+		return false
+	}
+	for _, a := range args {
+		sl, ok := a.(*parser.StringLiteral)
+		if !ok {
+			return false
+		}
+		for _, p := range params {
+			if sl.Value == p {
+				return true
+			}
+		}
+	}
+	return false
 }
 // inferGenericArgs 從函數呼叫的引數型別推斷泛型參數
 // 例如 fn(arr [n]t) 被以 [8]byte 引數呼叫 → n=8, t=byte
