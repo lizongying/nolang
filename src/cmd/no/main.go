@@ -1771,11 +1771,37 @@ func runCommand(args []string) {
 		fmt.Fprintln(os.Stderr, "Error: running compiled binary not supported in browser playground")
 		os.Exit(1)
 	}
-	cmd := exec.Command(outPath, fs.Args()[1:]...)
-	cmd.Stdin = os.Stdin
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	if err := cmd.Run(); err != nil {
+	runBuiltBinary := func() error {
+		cmd := exec.Command(outPath, fs.Args()[1:]...)
+		cmd.Stdin = os.Stdin
+		cmd.Stdout = os.Stdout
+		cmd.Stderr = os.Stderr
+		return cmd.Run()
+	}
+	if err := runBuiltBinary(); err != nil {
+		// Strangler-fig safety net for `no run`: if the MIR backend emitted this
+		// binary and it exited non-zero — e.g. a latent double-free / UAF the v1
+		// MIR memory analysis did not catch — transparently rebuild with the proven
+		// legacy HIR path and re-run, so the user never observes a worse result
+		// than legacy. This is the runtime counterpart of the compile-time MIR
+		// fallback and is what makes NOLANG_MIR=2 safe to leave on by default.
+		if nbuild.LastMIREmitted {
+			if verbose {
+				fmt.Fprintln(os.Stderr, "[MIR] run failed under MIR backend; retrying with legacy HIR path")
+			}
+			prevMIR := os.Getenv("NOLANG_MIR")
+			os.Setenv("NOLANG_MIR", "0")
+			defer os.Setenv("NOLANG_MIR", prevMIR)
+			if berr := nbuild.BuildFile(inputPath, opts); berr != nil {
+				fmt.Fprintf(os.Stderr, "Error: %v\n", berr)
+				os.Exit(1)
+			}
+			if rerr := runBuiltBinary(); rerr != nil {
+				fmt.Fprintf(os.Stderr, "Error: %v\n", rerr)
+				os.Exit(1)
+			}
+			return
+		}
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
 	}

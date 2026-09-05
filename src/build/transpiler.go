@@ -1,7 +1,10 @@
 package build
+
 import (
+	"bytes"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"reflect"
 	"regexp"
@@ -13,6 +16,7 @@ import (
 	"github.com/lizongying/nolang/builtin"
 	"github.com/lizongying/nolang/cache"
 	"github.com/lizongying/nolang/checker"
+	"github.com/lizongying/nolang/hir"
 	"github.com/lizongying/nolang/lexer"
 	"github.com/lizongying/nolang/mir"
 	"github.com/lizongying/nolang/package"
@@ -2335,38 +2339,46 @@ func (t *Transpiler) CompileTarget(source string, _ Target) (string, error) {
 		// we fall back to the legacy HIR path (strangler-fig: MIR can never break
 		// the build while it matures).
 		mirMode := os.Getenv("NOLANG_MIR")
-		if mirMode == "1" || mirMode == "2" {
-			mod, rep, ldiags := mir.LowerHIR(hirPkg)
+		if mirMode == "1" || mirMode == "2" || mirMode == "3" {
 			if mirMode == "1" {
-				if mod != nil {
-					if f, err := os.CreateTemp("", "nolang-mir-*.txt"); err == nil {
-						fmt.Fprintf(f, "=== NOLANG_MIR verification for %s ===\n", t.sourcePath)
-						fmt.Fprintf(f, "--- lowered MIR ---\n%s\n", mod.String())
-						fmt.Fprintf(f, "--- memory analysis ---\n")
-						fmt.Fprintf(f, "drops inserted: %d\n", rep.DropsInserted)
-						for _, d := range rep.Diagnostics {
-							fmt.Fprintf(f, "[mem-diag] %s: %s (func=%s)\n", d.Kind, d.Msg, d.Func)
+				// Verification / dump mode: run MIR lowering + analysis, dump the
+				// module + report to a temp file, then ALWAYS fall back to the
+				// proven HIR codegen (no behavioral change). Wrapped in recover so
+				// an unexpected lowering panic can never crash the build.
+				func() {
+					defer func() { recover() }()
+					mod, rep, ldiags := mir.LowerHIR(hirPkg)
+					if mod != nil {
+						if f, err := os.CreateTemp("", "nolang-mir-*.txt"); err == nil {
+							fmt.Fprintf(f, "=== NOLANG_MIR verification for %s ===\n", t.sourcePath)
+							fmt.Fprintf(f, "--- lowered MIR ---\n%s\n", mod.String())
+							fmt.Fprintf(f, "--- memory analysis ---\n")
+							fmt.Fprintf(f, "drops inserted: %d\n", rep.DropsInserted)
+							for _, d := range rep.Diagnostics {
+								fmt.Fprintf(f, "[mem-diag] %s: %s (func=%s)\n", d.Kind, d.Msg, d.Func)
+							}
+							for _, d := range ldiags {
+								fmt.Fprintf(f, "[lower-gap] %s/%s: %s\n", d.Func, d.Kind, d.Msg)
+							}
+							f.Close()
 						}
-						for _, d := range ldiags {
-							fmt.Fprintf(f, "[lower-gap] %s/%s: %s\n", d.Func, d.Kind, d.Msg)
-						}
-						f.Close()
 					}
-				}
+				}()
 				ir = t.llvmGenerator.GenerateHIR(hirPkg)
 			} else {
-				// NOLANG_MIR == "2": emit from MIR directly, fall back on any gap.
-				if mod != nil {
-					if ll, err := mod.EmitLLVM(); err == nil {
-						ir = ll
-					} else {
-						if os.Getenv("NOLANG_MIR_DEBUG") != "" {
-							fmt.Fprintf(os.Stderr, "[MIR] EmitLLVM fell back to legacy: %v\n", err)
-						}
-						ir = t.llvmGenerator.GenerateHIR(hirPkg)
+				// NOLANG_MIR == "2": emit from MIR directly with strangler-fig
+				// fallback to the legacy HIR path on any gap / panic / opt-verify
+				// failure. NOLANG_MIR == "3": emit from MIR directly with NO
+				// fallback (Stage 3 full-corpus gate) — any gap fails the build so
+				// coverage gaps are surfaced rather than silently hidden.
+				if mirMode == "3" {
+					mout, mreason := t.emitMIR(hirPkg, false)
+					if mout == "" {
+						return "", fmt.Errorf("NOLANG_MIR=3: MIR codegen could not handle %s (no fallback): %s", t.sourcePath, mreason)
 					}
+					ir = mout
 				} else {
-					ir = t.llvmGenerator.GenerateHIR(hirPkg)
+					ir, _ = t.emitMIR(hirPkg, true)
 				}
 			}
 		} else {
@@ -2377,6 +2389,172 @@ func (t *Transpiler) CompileTarget(source string, _ Target) (string, error) {
 		return "", fmt.Errorf("codegen errors: %v", errs)
 	}
 	return ir, nil
+}
+
+// verifyMIRIRViaOpt runs the LLVM optimizer over MIR-emitted IR (NOLANG_MIR=2).
+//
+// MIR is still maturing; some constructs produce IR that only the optimizer's
+// verifier rejects — e.g. register type mismatches, undefined callees, or a
+// void value used where a result is expected. Because `opt` runs *after*
+// CompileTarget has already committed to the MIR IR (inside buildLLVMInternal),
+// we pre-flight it here so a failing MIR IR is caught and the caller can fall
+// back to the proven legacy HIR path. This is the strangler-fig guarantee:
+// MIR can never break the build while it matures — it only ever degrades to the
+// legacy codegen.
+//
+// If `opt` is unavailable we cannot verify and assume the IR is sound (mirroring
+// buildLLVMInternal's own opt-unavailable handling, which skips optimization).
+func verifyMIRIRViaOpt(ll string) error {
+	dir, err := os.MkdirTemp("", "nolang-mir-opt")
+	if err != nil {
+		return nil // cannot verify; do not break the build
+	}
+	defer os.RemoveAll(dir)
+	inPath := filepath.Join(dir, "m.ll")
+	if err := os.WriteFile(inPath, []byte(ll), 0644); err != nil {
+		return nil
+	}
+	// Stage 1: optimizer verification. MIR-emitted IR may only fail the
+	// optimizer's verifier (register type mismatches, undefined callees, void in
+	// the wrong place). opt runs *after* CompileTarget returns, so we pre-flight
+	// it here.
+	if _, err := exec.LookPath("opt"); err == nil {
+		outPath := filepath.Join(dir, "m_opt.ll")
+		optLevel := os.Getenv("NOLANG_OPT_LEVEL")
+		if optLevel == "" {
+			optLevel = "-O3"
+		}
+		cmd := exec.Command("opt", optLevel, inPath, "-S", "-o", outPath)
+		var buf bytes.Buffer
+		cmd.Stdout = &buf
+		cmd.Stderr = &buf
+		if err := cmd.Run(); err != nil {
+			if os.Getenv("NOLANG_MIR_DUMP_BAD") != "" {
+				_ = os.WriteFile("/tmp/mirb/failed.ll", []byte(ll), 0644)
+			}
+			return fmt.Errorf("MIR IR failed LLVM verification: %v: %s", err, buf.String())
+		}
+		inPath = outPath
+	}
+	// Stage 2: assembly. opt can pass while llc still rejects the IR (e.g. an
+	// instruction the codegen emitted that the assembler lowers incorrectly). This
+	// is the next build stage after opt, so verify it too.
+	if _, err := exec.LookPath("llc"); err == nil {
+		sPath := filepath.Join(dir, "m.s")
+		cmd := exec.Command("llc", "--fp-contract=fast", inPath, "-o", sPath)
+		var buf bytes.Buffer
+		cmd.Stdout = &buf
+		cmd.Stderr = &buf
+		if err := cmd.Run(); err != nil {
+			return fmt.Errorf("MIR IR failed LLVM assembly: %v: %s", err, buf.String())
+		}
+	}
+	return nil
+}
+
+// LastMIREmitted records whether the most recent NOLANG_MIR=2 build actually
+// emitted MIR IR (true) or fell back to the legacy HIR path (false). `no run`
+// consults it to decide whether a non-zero runtime exit should trigger a
+// legacy rebuild+rerun (strangler-fig: MIR must never produce a worse result
+// than legacy). It is a single-build signal and is only meaningful for the
+// single-file native build path; concurrent builders (e.g. `no test`) should not
+// rely on it.
+var LastMIREmitted bool
+
+// emitMIR is the NOLANG_MIR=2/3 codegen path. It lowers HIR -> MIR, analyzes
+// memory, emits LLVM IR, and pre-flights it through the optimizer. It returns
+// MIR-emitted IR only when every stage succeeds.
+//
+// allowFallback (NOLANG_MIR=2) enables the strangler-fig guarantee: on ANY
+// failure — an unsupported construct, an optimizer verification error, or an
+// unexpected panic anywhere in the MIR pipeline — it degrades to the proven
+// legacy HIR codegen. MIR can never break the build while it matures; it only
+// ever silently falls back. The deferred recover() catches panics that neither
+// EmitLLVM's own recovery nor opt verification would (e.g. a nil dereference
+// during HIR->MIR lowering).
+//
+// allowFallback=false (NOLANG_MIR=3) disables the fallback: on any failure the
+// build fails instead (returns empty IR for the caller to reject). This is the
+// Stage 3 full-corpus gate used to surface and quantify MIR coverage gaps.
+func (t *Transpiler) emitMIR(hirPkg *hir.Package, allowFallback bool) (out string, reason string) {
+	debug := os.Getenv("NOLANG_MIR_DEBUG") != ""
+	// LastMIREmitted records whether the MIR path actually emitted IR for the most
+	// recent NOLANG_MIR=2 build (vs. fell back to legacy). `no run` reads it after
+	// a build to decide whether a non-zero runtime exit warrants a legacy
+	// rebuild+rerun (strangler-fig: MIR must never produce a worse result than
+	// legacy). Unused in NOLANG_MIR=3 mode.
+	LastMIREmitted = false
+	defer func() {
+		if r := recover(); r != nil {
+			if debug {
+				fmt.Fprintf(os.Stderr, "[MIR] recovered panic: %v\n", r)
+			}
+			if allowFallback {
+				// On a panic, no explicit return ran, so `out` is still its zero
+				// value. Override it with the proven legacy IR so the build never
+				// breaks (strangler-fig).
+				out = t.llvmGenerator.GenerateHIR(hirPkg)
+			} else {
+				out = ""  // propagate empty; caller rejects the build
+				reason = fmt.Sprintf("panic: %v", r)
+			}
+		}
+	}()
+	mod, rep, _ := mir.LowerHIR(hirPkg)
+	if mod == nil {
+		if allowFallback {
+			return t.llvmGenerator.GenerateHIR(hirPkg), ""
+		}
+		return "", "lowering produced nil module"
+	}
+	if os.Getenv("NOLANG_MIR_DUMP_MIR") != "" {
+		fmt.Fprintf(os.Stderr, "[MIR-DUMP]\n%s\n", mod.DumpAnnotated())
+	}
+	// Strangler-fig memory-safety gate: only emit MIR when the analysis is CLEAN.
+	// If the analyzer found any unsafe construct (use-after-move, missing/duplicate
+	// drop, borrow-escape, unsupported), the MIR codegen would produce IR with a
+	// double-free / UAF / leak — exactly the "lots of memory problems" class. Those
+	// always surface as rep.Diagnostics, so a non-empty report means "MIR cannot
+	// guarantee safety here" and we degrade to the proven legacy HIR path rather
+	// than emit a binary that aborts at runtime.
+	if rep != nil && rep.HasErrors() {
+		if debug {
+			fmt.Fprintf(os.Stderr, "[MIR] memory analysis found unsafe constructs: %v\n", rep.Error())
+		}
+		if allowFallback {
+			return t.llvmGenerator.GenerateHIR(hirPkg), ""
+		}
+		return "", rep.Error()
+	}
+	ll, err := mod.EmitLLVM()
+	if err != nil {
+		if debug {
+			fmt.Fprintf(os.Stderr, "[MIR] EmitLLVM failed: %v\n", err)
+		}
+		if allowFallback {
+			return t.llvmGenerator.GenerateHIR(hirPkg), ""
+		}
+		return "", fmt.Sprintf("EmitLLVM: %v", err)
+	}
+	if os.Getenv("NOLANG_MIR_DUMP_LL") != "" {
+		if f, e := os.CreateTemp("", "nolang-mir-emit-*.ll"); e == nil {
+			_ = os.WriteFile(f.Name(), []byte(ll), 0644)
+			fmt.Fprintf(os.Stderr, "[MIR] emitted LLVM -> %s\n", f.Name())
+		}
+	}
+	if verr := verifyMIRIRViaOpt(ll); verr != nil {
+		if debug {
+			fmt.Fprintf(os.Stderr, "[MIR] opt verification failed: %v\n", verr)
+		}
+		if allowFallback {
+			return t.llvmGenerator.GenerateHIR(hirPkg), ""
+		}
+		return "", fmt.Sprintf("opt-verify: %v", verr)
+	}
+	if allowFallback {
+		LastMIREmitted = true
+	}
+	return ll, ""
 }
 
 // collectReassignedGlobals 掃描語句，找出 Type==nil 的 LetStatement（賦值），

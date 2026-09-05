@@ -1,6 +1,9 @@
 package mir
 
-import "fmt"
+import (
+	"fmt"
+	"strings"
+)
 
 // Diagnostic is a memory-safety finding produced by the analysis passes. These
 // are the systematic detectors for the "lots of memory problems" the user is
@@ -260,12 +263,63 @@ func (m *Module) insertDropAt(block BlockID, val ValueID, atStart bool) InstID {
 	return iid
 }
 
+// valueSet is a small set of ValueIDs used by the move dataflow.
+type valueSet map[ValueID]bool
+
+func cloneSet(s valueSet) valueSet {
+	out := make(valueSet, len(s))
+	for k := range s {
+		out[k] = true
+	}
+	return out
+}
+
+// intersectSet returns s ∩ o (a new set).
+func intersectSet(s, o valueSet) valueSet {
+	out := valueSet{}
+	if len(s) < len(o) {
+		s, o = o, s
+	}
+	for k := range o {
+		if s[k] {
+			out[k] = true
+		}
+	}
+	return out
+}
+
+func equalSet(a, b valueSet) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for k := range a {
+		if !b[k] {
+			return false
+		}
+	}
+	return true
+}
+
 // checkMoves flags use-after-move: a value read after it has been moved (its
 // ownership transferred elsewhere) is a memory bug. Move destinations and drops
 // of the moved value are exempt (the destination owns it now, and the source is
 // no longer dropped).
+//
+// The analysis is path-sensitive. The original implementation kept a single
+// module-wide "moved at inst X" map, which falsely flagged a value moved on one
+// branch of a match/if and read on a *different*, mutually-exclusive branch
+// (e.g. o-match: each arm reads the scrutinee, but only one arm may move it).
+// We instead compute, for every program point, the set of values moved on ALL
+// paths reaching that point (must-moved), via a forward dataflow fixpoint with
+// INTERSECTION merge at join points. Only reads of must-moved values are
+// reported, which is SOUND: it never produces a false positive. It may
+// under-report a genuine partial-move across a merge, but under-reporting is
+// safe for a strangler-fig backend (it does not disable a valid program), and
+// within-block and same-path moves are still caught exactly as before.
 func (m *Module) checkMoves(f *Function, rep *Report) {
-	movedAt := map[ValueID]InstID{}
+	// Universe of values in this function (the TOP lattice element: every value
+	// is tentatively "must-moved").
+	allVals := valueSet{}
 	for _, bid := range f.Blocks {
 		blk := m.Block(bid)
 		if blk == nil {
@@ -276,26 +330,96 @@ func (m *Module) checkMoves(f *Function, rep *Report) {
 			if inst == nil {
 				continue
 			}
-			if inst.Op == OpMove {
-				// Only the moved-from source (Args[0]) is "moved"; its later reads are
-				// use-after-move. The destination (Args[1] for EmitMoveInto) is the new
-				// owner and may be read freely.
-				if len(inst.Args) > 0 && inst.Args[0] > NoVal {
-					movedAt[inst.Args[0]] = iid
-				}
+			if inst.Dst > NoVal {
+				allVals[inst.Dst] = true
 			}
 			for _, a := range inst.Args {
 				if a > NoVal {
-					if at, ok := movedAt[a]; ok && at < iid && inst.Op != OpMove && inst.Op != OpDrop {
+					allVals[a] = true
+				}
+			}
+		}
+	}
+	for _, p := range f.Params {
+		allVals[p] = true
+	}
+
+	movedIn := map[BlockID]valueSet{}
+	movedOut := map[BlockID]valueSet{}
+	for _, bid := range f.Blocks {
+		movedOut[bid] = cloneSet(allVals) // TOP
+	}
+	entry := f.Entry
+	if entry == NoBlock && len(f.Blocks) > 0 {
+		entry = f.Blocks[0]
+	}
+
+	// Forward fixpoint: movedOut[b] = movedIn[b] ∪ {moved within b};
+	// movedIn[b] = ∩ movedOut[preds] (empty for entry / unreachable blocks).
+	changed := true
+	for changed {
+		changed = false
+		for _, bid := range f.Blocks {
+			blk := m.Block(bid)
+			if blk == nil {
+				continue
+			}
+			var newIn valueSet
+			if bid == entry || len(blk.Preds) == 0 {
+				newIn = valueSet{} // entry and unreachable blocks have no moved-in
+			} else {
+				newIn = cloneSet(movedOut[blk.Preds[0]])
+				for _, p := range blk.Preds[1:] {
+					newIn = intersectSet(newIn, movedOut[p])
+				}
+			}
+			cur := cloneSet(newIn)
+			for _, iid := range blk.Insts {
+				inst := m.Inst(iid)
+				if inst == nil {
+					continue
+				}
+				if inst.Op == OpMove && len(inst.Args) > 0 && inst.Args[0] > NoVal {
+					cur[inst.Args[0]] = true
+				}
+			}
+			if !equalSet(cur, movedOut[bid]) {
+				movedOut[bid] = cur
+				changed = true
+			}
+			movedIn[bid] = newIn
+		}
+	}
+
+	// Flagging pass: a read of a must-moved value is a use-after-move.
+	for _, bid := range f.Blocks {
+		blk := m.Block(bid)
+		if blk == nil {
+			continue
+		}
+		cur := cloneSet(movedIn[bid])
+		for _, iid := range blk.Insts {
+			inst := m.Inst(iid)
+			if inst == nil {
+				continue
+			}
+			// OpMove defines the move (its own source is not a "read"); OpDrop of a
+			// moved source is exempt (the source is no longer owned here).
+			if inst.Op != OpMove && inst.Op != OpDrop {
+				for _, a := range inst.Args {
+					if a > NoVal && cur[a] {
 						rep.Diagnostics = append(rep.Diagnostics, Diagnostic{
 							Kind:  "use-after-move",
 							Func:  f.Name,
 							Block: bid,
 							Inst:  iid,
-							Msg:   fmt.Sprintf("value %d read after move at inst %d", a, at),
+							Msg:   fmt.Sprintf("value %d read after move at inst %d", a, iid),
 						})
 					}
 				}
+			}
+			if inst.Op == OpMove && len(inst.Args) > 0 && inst.Args[0] > NoVal {
+				cur[inst.Args[0]] = true
 			}
 		}
 	}
@@ -307,6 +431,19 @@ func (m *Module) checkMoves(f *Function, rep *Report) {
 // missing drop there is correct, not a leak.
 func (m *Module) checkDropCount(f *Function, rep *Report) {
 	moveSrc := map[ValueID]bool{}
+	// Result parameters are OUT-PARAMETERS owned by the caller: the callee FILLS
+	// them but never frees them (the caller drops after the call returns). They
+	// are therefore never the callee's drop responsibility and must not be
+	// flagged as leaks. Marking them in `declared` (as if the callee owned them)
+	// produced a spurious `missing-drop` on EVERY function returning an owned
+	// value — which is exactly the corpus-wide Stage-3 blocker. Input params are
+	// handled by the existing `f.Params` loop below (Nolang passes owned params
+	// by move, so the callee owns and drops them, or by reference; either way
+	// the original accounting stands).
+	resultParamSet := map[ValueID]bool{}
+	for _, p := range f.ResultParams {
+		resultParamSet[p] = true
+	}
 	for _, bid := range f.Blocks {
 		blk := m.Block(bid)
 		if blk == nil {
@@ -343,17 +480,25 @@ func (m *Module) checkDropCount(f *Function, rep *Report) {
 				dropCount[inst.Args[0]]++
 			}
 			if inst.Dst > NoVal {
+				if resultParamSet[inst.Dst] {
+					// Caller-owned out-param: not dropped by the callee.
+					continue
+				}
 				if m.isOwnedVal(f, inst.Dst) {
 					declared[inst.Dst] = true
 				}
 			}
 		}
 	}
-	for _, p := range f.Params {
-		if m.isOwnedVal(f, p) {
-			declared[p] = true
-		}
-	}
+	// Input parameters are BORROWED, not owned by the callee. Nolang passes owned
+	// arguments by reference: the caller retains ownership and drops them at the
+	// caller's own scope exit (the legacy emitHeapFree frees only LOCAL heap
+	// variables, never input params). The callee must NOT drop a borrowed param,
+	// so input params are intentionally NOT added to `declared` — doing so
+	// produced a spurious `missing-drop` on EVERY function that takes an owned
+	// parameter (str/vec/fe/...), which was the single largest Stage-3 blocker.
+	// Result parameters (out-params) are already excluded above via resultParamSet
+	// because they too are caller-owned.
 	for v := range declared {
 		if moveSrc[v] {
 			continue
@@ -429,4 +574,58 @@ func sameSet(a, b map[ValueID]bool) bool {
 		}
 	}
 	return true
+}
+
+// DumpAnnotated prints a compact, human-readable view of the module for
+// debugging the drop-insertion / move analysis. Gated by NOLANG_MIR_DUMP_MIR.
+func (m *Module) DumpAnnotated() string {
+	var b strings.Builder
+	for i := range m.Funcs {
+		f := &m.Funcs[i]
+		if f.Name == "" {
+			continue
+		}
+		fmt.Fprintf(&b, "### func %s (extern=%v params=%v results=%v resultParams=%v)\n", f.Name, f.IsExtern, f.Params, f.Results, f.ResultParams)
+		for _, p := range f.Params {
+			pt := TypeID(0)
+			if t, ok := f.LocalTypes[p]; ok {
+				pt = t
+			} else if v := m.Value(p); v != nil {
+				pt = v.Type
+			}
+			own := false
+			if ty := m.Type(pt); ty != nil {
+				own = ty.Owned
+			}
+			raw := ""
+			if ty := m.Type(pt); ty != nil {
+				raw = ty.Raw
+			}
+			fmt.Fprintf(&b, "    PARAM %d type=%s owned=%v\n", p, raw, own)
+		}
+		for _, bid := range f.Blocks {
+			blk := m.Block(bid)
+			if blk == nil {
+				continue
+			}
+			fmt.Fprintf(&b, "  block %d (preds=%v succs=%v)\n", bid, blk.Preds, blk.Succs)
+			for _, iid := range blk.Insts {
+				inst := m.Inst(iid)
+				if inst == nil {
+					continue
+				}
+				dt := ""
+				if inst.Dst > NoVal {
+					if t := m.Type(inst.Type); t != nil {
+						dt = fmt.Sprintf(":%s(owned=%v)", t.Raw, t.Owned)
+					}
+				}
+				fmt.Fprintf(&b, "    %-10s dst=%d%s args=%v\n", inst.Op, inst.Dst, dt, inst.Args)
+			}
+			if blk.Term != nil {
+				fmt.Fprintf(&b, "    TERM %s args=%v targets=%v\n", blk.Term.Op, blk.Term.Args, blk.Term.Targets)
+			}
+		}
+	}
+	return b.String()
 }

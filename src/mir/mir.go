@@ -69,9 +69,12 @@ const (
 	OpConst     // integer/float/bool/string literal
 	OpGetField  // struct field read
 	OpSetField  // struct field write
+	OpStructLit // struct literal: allocate the struct; fields stored by OpSetField
 	OpIndex     // array/slice element read
 	OpIndexStore // array/slice element write
 	OpSliceOp   // slice sub-range
+	OpLen       // container length (str/vec/slice/array/map) — see lowerDotRead
+	OpCap       // container capacity (str/vec/slice/array)
 
 	// arithmetic / logic
 	OpAdd
@@ -83,6 +86,8 @@ const (
 	OpNot
 	OpAnd
 	OpOr
+	OpBitAnd // bitwise AND  (&)
+	OpBitOr  // bitwise OR   (|)
 	OpXor
 	OpShl
 	OpShr
@@ -94,6 +99,9 @@ const (
 	OpLe
 	OpGt
 	OpGe
+	OpStrEq // string equality: `a == b` on %str-long operands -> i1 (routes
+	//   through @str_eq; emits an `icmp` directly would be illegal since str is
+	//   a struct, not an integer)
 
 	// control value
 	OpPhi
@@ -105,6 +113,7 @@ const (
 
 	// conversion
 	OpCast
+	OpTxtFromStr // str -> txt: copy string bytes into the fixed 256-byte txt buffer, set len (<=255)
 
 	opCount
 )
@@ -125,17 +134,21 @@ var opNames = [opCount]string{
 	OpConst:     "const",
 	OpGetField:  "getfield",
 	OpSetField:  "setfield",
+	OpStructLit: "structlit",
 	OpIndex:     "index",
 	OpIndexStore: "indexstore",
 	OpSliceOp:   "sliceop",
+	OpLen:       "len",
+	OpCap:       "cap",
 	OpAdd:       "add", OpSub: "sub", OpMul: "mul", OpDiv: "div", OpMod: "mod",
-	OpNeg: "neg", OpNot: "not", OpAnd: "and", OpOr: "or", OpXor: "xor", OpShl: "shl", OpShr: "shr",
-	OpEq: "eq", OpNe: "ne", OpLt: "lt", OpLe: "le", OpGt: "gt", OpGe: "ge",
+	OpNeg: "neg", OpNot: "not", OpAnd: "and", OpOr: "or", OpBitAnd: "bitand", OpBitOr: "bitor", OpXor: "xor", OpShl: "shl", OpShr: "shr",
+	OpEq: "eq", OpNe: "ne", OpLt: "lt", OpLe: "le", OpGt: "gt", OpGe: "ge", OpStrEq: "streq",
 	OpPhi:  "phi",
 	OpCall:      "call",
 	OpCallExtern: "call-extern",
 	OpCallFFI:   "call-ffi",
 	OpCast:      "cast",
+	OpTxtFromStr: "txt-from-str",
 }
 
 func (o Op) String() string {
@@ -187,6 +200,42 @@ const (
 	KindVoid
 )
 
+// String returns a readable name for a TypeKind, used by diagnostics, the MIR
+// printer, and codegen error messages.
+func (k TypeKind) String() string {
+	switch k {
+	case KindUnknown:
+		return "unknown"
+	case KindInt:
+		return "int"
+	case KindFloat:
+		return "float"
+	case KindBool:
+		return "bool"
+	case KindChar:
+		return "char"
+	case KindStr:
+		return "str"
+	case KindSlice:
+		return "slice"
+	case KindArray:
+		return "array"
+	case KindMap:
+		return "map"
+	case KindOption:
+		return "option"
+	case KindPtr:
+		return "ptr"
+	case KindStruct:
+		return "struct"
+	case KindFunc:
+		return "func"
+	case KindVoid:
+		return "void"
+	}
+	return "TypeKind?"
+}
+
 // Type is an interned type. Raw is the nolang type string; Owned marks a type
 // that owns heap memory and therefore needs exactly one Drop.
 // FieldInfo describes one field of a struct type: its source name and nolang
@@ -205,6 +254,47 @@ type Type struct {
 	Sizes []int64 // for KindArray: dimensions
 }
 
+// parseMapTypes splits a nolang map type string "[Key]Value" into its key and
+// value type strings.
+//
+// Maps are spelled with a TYPE in the brackets (`[str]i64`), which is
+// syntactically ambiguous with a fixed array (`[32]byte`) — only the content
+// distinguishes them. Earlier code keyed off a "map[" prefix, which no real
+// type string ever has, so every map was misclassified as a fixed array (and
+// therefore as non-owned, and with a bogus element type). Detection is now:
+// bracket content that is not a plain integer => a key type => map.
+func parseMapTypes(raw string) (key, val string, ok bool) {
+	if len(raw) < 4 || raw[0] != '[' || raw[1] == ']' {
+		return "", "", false
+	}
+	end := strings.Index(raw, "]")
+	if end < 0 || end+1 >= len(raw) {
+		return "", "", false
+	}
+	inner := raw[1:end]
+	if inner == "" {
+		return "", "", false
+	}
+	// A fixed array has a (possibly digit-only) size; anything else is a key type.
+	allDigits := true
+	for i := 0; i < len(inner); i++ {
+		if inner[i] < '0' || inner[i] > '9' {
+			allDigits = false
+			break
+		}
+	}
+	if allDigits {
+		return "", "", false // [32]byte -> fixed array, not a map
+	}
+	return inner, raw[end+1:], true
+}
+
+// isMapRaw reports whether raw is a nolang map type ("[Key]Value").
+func isMapRaw(raw string) bool {
+	_, _, ok := parseMapTypes(raw)
+	return ok
+}
+
 // ClassifyOwnership derives whether a nolang type string owns heap memory.
 // Scalars, pointers (borrows), and unannotated structs are not owned; str,
 // slices (vec/[]T), maps, and options-of-owned are owned.
@@ -217,7 +307,7 @@ func ClassifyOwnership(raw string) bool {
 		return true
 	case strings.HasPrefix(raw, "[]"):
 		return true
-	case strings.HasPrefix(raw, "map["):
+	case isMapRaw(raw):
 		return true
 	case strings.HasPrefix(raw, "?"):
 		return ClassifyOwnership(strings.TrimPrefix(raw, "?"))
@@ -237,7 +327,7 @@ func KindOfRaw(raw string) TypeKind {
 		return KindStr
 	case strings.HasPrefix(raw, "[]"):
 		return KindSlice
-	case strings.HasPrefix(raw, "map["):
+	case isMapRaw(raw):
 		return KindMap
 	case strings.HasPrefix(raw, "?"):
 		return KindOption
@@ -251,6 +341,8 @@ func KindOfRaw(raw string) TypeKind {
 		return KindFloat
 	case raw == "bool":
 		return KindBool
+	case raw == "byte":
+		return KindInt
 	case raw == "char":
 		return KindChar
 	case raw == "":
@@ -275,6 +367,10 @@ type Inst struct {
 	ID    InstID
 	Op    Op
 	Dst   ValueID // result; NoVal when op yields nothing
+	// Results holds every result value of a multi-result call
+	// (`x, y = f()`). Results[0] always equals Dst, so all single-result
+	// consumers can keep reading Dst unchanged.
+	Results []ValueID
 	Args  []ValueID
 	Type  TypeID
 	Block BlockID
@@ -334,6 +430,11 @@ type GlobalDecl struct {
 	Name  string
 	Type  TypeID
 	Init  ValueID
+	// ConstText is the LLVM constant initializer text (e.g. `[256 x i8] [..]`).
+	// Empty means the initializer could not be constant-folded; the reference
+	// then resolves to an undefined @Name, which the verifier rejects and the
+	// caller falls back to the legacy codegen (never emits wrong data).
+	ConstText string
 }
 
 type Module struct {
@@ -364,6 +465,32 @@ type Module struct {
 	// lowering. It drives OpGetField/OpSetField index resolution and the
 	// emission of LLVM struct type declarations.
 	StructFields map[string][]FieldInfo
+}
+
+// blockEmpty reports whether b has no instructions and no terminator — i.e. it
+// is a freshly-created merge/continuation block that no code has been lowered
+// into yet. Such a block must be wired to its enclosing continuation (see
+// lowerIf) rather than left for ensureReturn to terminate with `ret void`.
+func (m *Module) blockEmpty(b BlockID) bool {
+	blk := m.Block(b)
+	return blk != nil && len(blk.Insts) == 0 && blk.Term == nil
+}
+
+// redirectTermTargets rewrites every terminator edge that targets `from` to
+// instead target `to`. Used to splice an orphaned (empty) merge block out of the
+// CFG by redirecting its predecessors to the enclosing continuation.
+func (m *Module) redirectTermTargets(from, to BlockID) {
+	for i := range m.Blocks {
+		blk := &m.Blocks[i]
+		if blk.Term == nil {
+			continue
+		}
+		for j := range blk.Term.Targets {
+			if blk.Term.Targets[j] == from {
+				blk.Term.Targets[j] = to
+			}
+		}
+	}
 }
 
 // NewModule allocates an empty module with reserved nil slots at index 0.

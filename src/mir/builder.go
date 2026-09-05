@@ -156,6 +156,15 @@ func (b *Builder) Param(name string, typ TypeID) ValueID {
 	return b.newValueID(typ, name)
 }
 
+// Global declares a module-level constant and returns its ValueID. The caller
+// fills mod.Globals[i].ConstText with the LLVM initializer; codegen emits
+// `@name = constant <type> <ConstText>` and resolves references to `@name`.
+func (b *Builder) Global(name string, typ TypeID) ValueID {
+	id := b.newValueID(typ, name)
+	b.Mod.Globals = append(b.Mod.Globals, GlobalDecl{Name: name, Type: typ, Init: id})
+	return id
+}
+
 // NewBlock creates a block and appends it to the current function's block list.
 func (b *Builder) NewBlock(name string) BlockID {
 	bid := b.newBlockID()
@@ -231,6 +240,42 @@ func (b *Builder) EmitVoid(op Op, args []ValueID, sym string) InstID {
 		b.Mod.Blocks[b.CurBlock].Insts = append(b.Mod.Blocks[b.CurBlock].Insts, iid)
 	}
 	return iid
+}
+
+// EmitCallMulti emits a call that produces MORE THAN ONE result value
+// (`x, y = f()`), creating one destination per result type. Results[0] is also
+// stored in Dst so every single-result consumer keeps working unchanged.
+//
+// A function returning N values is lowered with N out-parameters (see
+// Function.ResultParams), so one call instruction yields all N results — the
+// call must NOT be emitted once per result.
+func (b *Builder) EmitCallMulti(resTypes []TypeID, args []ValueID, sym string) []ValueID {
+	if len(resTypes) == 0 {
+		b.EmitVoid(OpCall, args, sym)
+		return nil
+	}
+	iid := b.newInstID()
+	dsts := make([]ValueID, 0, len(resTypes))
+	for _, rt := range resTypes {
+		v := b.newValueID(rt, "")
+		if f := b.Mod.Func(b.CurFunc); f != nil {
+			f.LocalTypes[v] = rt
+		}
+		dsts = append(dsts, v)
+	}
+	inst := &b.Mod.Insts[iid]
+	inst.ID = iid
+	inst.Op = OpCall
+	inst.Dst = dsts[0]
+	inst.Results = dsts
+	inst.Args = args
+	inst.Type = resTypes[0]
+	inst.Block = b.CurBlock
+	inst.Sym = sym
+	if f := b.Mod.Func(b.CurFunc); f != nil {
+		b.Mod.Blocks[b.CurBlock].Insts = append(b.Mod.Blocks[b.CurBlock].Insts, iid)
+	}
+	return dsts
 }
 
 // Terminate sets the terminator of the current block. Calling it twice on the

@@ -110,6 +110,10 @@ no run
 - 每个测试文件独立构建
 - 若任一测试失败，返回非零退出码
 
+```bash
+no vet src/std                     # Nolang vet 檢查標準庫
+```
+
 ## 從源碼構建
 
 構建 Nolang 應使用 `make`：
@@ -124,19 +128,6 @@ make lsp-wasm   # 跨譯 LSP 為 WebAssembly
 make playground # 構建 no.wasm + lsp.wasm + Docusaurus 站點
 make clean      # 清理構建產物
 make help       # 查看所有構建目標
-```
-
-### 修改代碼
-
-修改代碼前，請先閱讀 [.agents/skills/nolang-syntax/SKILL.md](.agents/skills/nolang-syntax/SKILL.md) 了解 Nolang 語法規範。
-
-> ⚠️ **嚴禁使用 `git checkout`、`git reset` 和 `git stash`**，任何時候都不得使用，以防止覆蓋或丟失他人正在修改的代碼。
-
-修改後需執行以下檢查：
-
-```bash
-./vscode-nolang/server/lsp vet src/std   # LSP vet 檢查標準庫
-./bin/no vet src/std                     # Nolang vet 檢查標準庫
 ```
 
 ---

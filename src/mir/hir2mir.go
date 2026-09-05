@@ -3,9 +3,27 @@ package mir
 import (
 	"fmt"
 	"os"
+	"regexp"
+	"sort"
+	"strconv"
+	"strings"
 
 	"github.com/lizongying/nolang/hir"
 )
+
+// debugLower reports whether MIR lowering tracing is enabled. It is read on
+// every call so a long-lived process (the LSP server) picks up a change without
+// a restart; the cost is a map lookup on a hot-ish path only in debug builds.
+func debugLower() bool { return os.Getenv("NOLANG_MIR_DEBUG") != "" }
+
+// byteArrayRe matches a `[N]byte` / `[N]i8` nolang global type, used to fold
+// module byte-array constants (SBOX, INV-SBOX) into compact c"..." data globals.
+var byteArrayRe = regexp.MustCompile(`^\[(\d+)\](byte|i8)$`)
+
+// formatFloat renders an f64 constant in a form LLVM's textual IR accepts.
+func formatFloat(f float64) string {
+	return strconv.FormatFloat(f, 'g', -1, 64)
+}
 
 // Diagnostic (MIR-lowering-level) records a construct the current lowering subset
 // does not yet handle. Unlike the memory Diagnostics in analysis.go, these are
@@ -35,6 +53,40 @@ type lowerer struct {
 	curRecv   ValueID // current method's implicit `self` receiver value (first param)
 	diags     []LowerDiag
 	loopStack []loopCtx // active for-loops, for break/continue targets
+
+	// contStack is the chain of "merge"/continuation blocks for enclosing
+	// control-flow constructs (if/for). When an if's merge block ends up empty
+	// (the if is the LAST statement inside its enclosing block — exactly what a
+	// desugared match produces: nested if/elif/else), its then/else branches
+	// must redirect to the enclosing continuation instead of being orphaned and
+	// terminated with `ret void` by ensureReturn (which used to drop every
+	// statement after a nested match arm). See lowerIf.
+	contStack []BlockID
+
+	// typeHint is the declared type of the binding currently being lowered.
+	// Some builtins (with-len / with-cap / with-cap-len) declare an EMPTY
+	// return list because their result type is inferred from the assignment's
+	// left-hand side. Lowering consults this hint to give such a call a real
+	// result type instead of treating it as void — otherwise the variable is
+	// never bound and every later read of it becomes an "unresolved
+	// identifier" gap. It is set for the duration of a KLet's value expression
+	// and cleared immediately afterwards.
+	typeHint TypeID
+
+	// globals maps a package-level binding name to its MIR value. Top-level
+	// `let`s and constants (SBOX, TLS-FINISHED-SIZE, ...) live outside every
+	// function, so l.locals (per-function) never contains them; without this
+	// table every reference from inside a function was an unresolved
+	// identifier. Values are created lazily on first reference.
+	globals map[string]ValueID
+
+	// globalTypes records the declared/inferred nolang type string of each
+	// top-level binding, so a lazily created global value gets the right type.
+	globalTypes map[string]string
+
+	// globalNodes records the HIR node id of each top-level KLet so the global's
+	// constant initializer can be folded on first reference.
+	globalNodes map[string]int32
 }
 
 // collectStructFields scans the HIR package for struct definitions and records
@@ -72,7 +124,128 @@ func (l *lowerer) collectStructFields() {
 		if len(fields) > 0 {
 			l.mod.StructFields[name] = fields
 		}
+		if os.Getenv("NOLANG_MIR_DEBUG") != "" {
+			fmt.Fprintf(os.Stderr, "[mir-dbg] collectStructFields: name=%q nfields=%d fields=%+v\n", name, len(fields), fields)
+		}
 	}
+}
+
+// synthesizeMainForTopLevel builds a synthetic `main` function that wraps the
+// package's top-level statements (every pkg.Top node that is not a definition:
+// KLet / KExprStmt / KFor / KIf / KBlock / KReturn / ...). Top-level-statement
+// programs are the common Nolang form and have no explicit `fn main`; without
+// this wrapper the MIR lowering has no entry point and used to fall back to
+// picking a *random* function from funcNames as entry — producing
+// non-deterministic, sometimes-wrong output. Wrapping the top-level statements
+// makes the entry deterministic and correct.
+//
+// The wrapper is constructed directly in the HIR arena: a KFuncDef("main") whose
+// only child is a KSlot("body") pointing at a KBlock whose children are the
+// top-level statements in source order. lowerFunction handles this shape exactly
+// like any user-defined function body, so all existing statement/expression
+// lowerers apply unchanged.
+func (l *lowerer) synthesizeMainForTopLevel(pkg *hir.Package) {
+	if _, ok := l.funcNames["main"]; ok {
+		return // explicit fn main already present; nothing to synthesize
+	}
+	var stmts []int32
+	for _, id := range pkg.Top {
+		n := pkg.Node(id)
+		if n == nil {
+			continue
+		}
+		switch n.Kind {
+		case hir.KStructDef, hir.KFuncDef, hir.KExtern, hir.KEnumDef,
+			hir.KTypeAlias, hir.KTaggedEnumDef, hir.KInterfaceDef,
+			hir.KUse, hir.KExport, hir.KAnnotation:
+			continue // definitions are not top-level statements
+		case hir.KLet:
+			// Module constants (FlagModuleConst) and any top-level `let` with a
+			// constant initializer (int/float/bool/byte-array/fixed-array literal)
+			// are registered as lazily-materialized globals by the registration
+			// loop above and must NOT be inlined into the synthetic `main` — doing
+			// so would shadow the global binding and drop the constant. Skip them
+			// here so only true script-local `let`s are inlined.
+			if n.Has(hir.FlagModuleConst) {
+				continue
+			}
+			raw := l.letTypeRaw(n)
+			if raw != "" && l.foldConstText(n, raw) != "" {
+				continue
+			}
+			// Only inline top-level `let` bindings whose type the v1 codegen can
+			// emit as a statement. Std prelude constants (fs.file structlits for
+			// <stdin>/<stdout>/<stderr>, qualified names like fs.fd/err.code)
+			// would otherwise be inlined into main and produce malformed IR
+			// (undeclared struct types) -> whole-module fallback. They stay
+			// resolvable as lazily-materialized module globals when referenced
+			// (modules only). User literals (i64/byte/str/txt/fixed arrays)
+			// inline normally. A KLet whose type cannot be recovered at all is
+			// assumed NON-inlineable and skipped, unless its value is a plain
+			// literal (int/float/str/char/bool) the v1 codegen emits directly.
+			if raw != "" && !l.isInlineableLetType(raw) {
+				continue
+			}
+		case hir.KStructLit:
+			// Top-level struct literals are std prelude inits (e.g. fs.file
+			// structlits for <stdin>/<stdout>/<stderr>). They reference struct
+			// types the v1 codegen does not emit, so lowerStructLit would produce
+			// an undeclared `%fs.file` type -> malformed IR -> whole-module
+			// fallback. MIR's `print` writes directly to fd 1 and never references
+			// these globals, so they are dead for the MIR path; skip them. Only
+			// inlineable struct literals (e.g. txt) are kept.
+			if !l.isInlineableLetType(l.pkg.Str(n.S)) {
+				continue
+			}
+		}
+		stmts = append(stmts, id)
+	}
+	if len(stmts) == 0 {
+		return
+	}
+
+	// KBlock body node.
+	bodyID := int32(len(pkg.Nodes))
+	pkg.Nodes = append(pkg.Nodes, hir.Node{Kind: hir.KBlock, Id: bodyID})
+	// Link the top-level statements as the block's children. We set Next
+	// explicitly so we never accidentally inherit a prior sibling chain that
+	// might pull a definition node into the body.
+	for i, id := range stmts {
+		if i == 0 {
+			pkg.Nodes[bodyID].First = id
+		} else {
+			pkg.Nodes[stmts[i-1]].Next = id
+		}
+		if i == len(stmts)-1 {
+			pkg.Nodes[id].Next = hir.NoID
+		}
+	}
+
+	// KSlot("body") -> bodyID
+	slotID := int32(len(pkg.Nodes))
+	pkg.Nodes = append(pkg.Nodes, hir.Node{
+		Kind: hir.KSlot, Id: slotID,
+		S: internStrPkg(pkg, "body"), First: bodyID,
+	})
+	// KFuncDef("main") -> slotID
+	mainID := int32(len(pkg.Nodes))
+	pkg.Nodes = append(pkg.Nodes, hir.Node{
+		Kind: hir.KFuncDef, Id: mainID,
+		S: internStrPkg(pkg, "main"), First: slotID,
+	})
+	l.funcNames["main"] = mainID
+}
+
+// internStrPkg interns s into the package's string table, returning its id.
+func internStrPkg(pkg *hir.Package, s string) int32 {
+	for i, x := range pkg.Strings {
+		if x == s {
+			return int32(i)
+		}
+	}
+	id := int32(len(pkg.Strings))
+	pkg.Strings = append(pkg.Strings, s)
+	return id
 }
 
 // LowerHIR lowers a HIR package into a MIR module. It is reachability-driven:
@@ -88,6 +261,9 @@ func LowerHIR(pkg *hir.Package) (*Module, *Report, []LowerDiag) {
 		funcNames: map[string]int32{},
 		lowered:   map[string]bool{},
 		locals:    map[string]ValueID{},
+		globals:   map[string]ValueID{},
+		globalTypes: map[string]string{},
+		globalNodes: map[string]int32{},
 	}
 	l.b = NewBuilder("hir")
 	l.mod = l.b.Module()
@@ -98,8 +274,13 @@ func LowerHIR(pkg *hir.Package) (*Module, *Report, []LowerDiag) {
 	// HIR KStructDef nodes (field order = child order).
 	l.mod.StructFields["str"] = []FieldInfo{{Name: "len", TypeRaw: "i64"}, {Name: "cap", TypeRaw: "i64"}, {Name: "data", TypeRaw: "str"}}
 	l.mod.StructFields["vec"] = []FieldInfo{{Name: "len", TypeRaw: "i64"}, {Name: "cap", TypeRaw: "i64"}, {Name: "data", TypeRaw: "vec"}}
+	// txt: fixed 256-byte stack buffer { [255 x i8] data, i8 len } (capped at
+	// 255 bytes). Field order MUST match emitStructTypes' %txt layout so GEP
+	// indices stay consistent: data = field 0, len = field 1.
+	l.mod.StructFields["txt"] = []FieldInfo{{Name: "data", TypeRaw: "byte"}, {Name: "len", TypeRaw: "byte"}}
 	l.collectStructFields()
 
+	hasExplicitMain := false
 	for _, id := range pkg.Top {
 		n := pkg.Node(id)
 		if n == nil {
@@ -108,9 +289,56 @@ func LowerHIR(pkg *hir.Package) (*Module, *Report, []LowerDiag) {
 		switch n.Kind {
 		case hir.KFuncDef, hir.KExtern:
 			name := pkg.Str(n.S)
+			if name == "main" {
+				hasExplicitMain = true
+			}
 			l.funcNames[name] = id
+		case hir.KLet:
+			if os.Getenv("NOLANG_MIR_DEBUG") != "" {
+				fmt.Fprintf(os.Stderr, "[mir-dbg] top KLet name=%q moduleConst=%v\n", pkg.Str(n.S), n.Has(hir.FlagModuleConst))
+			}
+			// A top-level `let` is registered as a lazily-materialized module
+			// global when EITHER:
+			//   (a) the package is a real module (explicit `fn main`), so every
+			//       top-level `let` is a module-level binding (original behavior);
+			//       OR
+			//   (b) the `let` is a compile-time constant initializer (int/float/
+			//       bool/byte-array/fixed-array literal) OR carries FlagModuleConst.
+			//       This covers library-module constants whose initializer is a
+			//       byte/fixed array (e.g. crypto/aes.SBOX = [256]byte{...}) which
+			//       the FlagModuleConst flag does NOT mark (only scalar literals
+			//       get that flag), yet which MUST resolve to a global rather than
+			//       a void `const` placeholder. The legacy codegen likewise emits
+			// every top-level constant `let` as a module global, so this matches
+			// proven behavior.
+			// Non-constant script top-level `let`s (e.g. `x = someFn()`) are NOT
+			// registered here; synthesizeMainForTopLevel inlines the inlineable
+			// ones as locals.
+			if !hasExplicitMain {
+				if !n.Has(hir.FlagModuleConst) {
+					raw := l.letTypeRaw(n)
+					if raw == "" || l.foldConstText(n, raw) == "" {
+						continue
+					}
+				}
+			}
+			gname := pkg.Str(n.S)
+			if gname != "" {
+				if dt := l.typeOfNode(n); dt != NoType && dt != l.voidType {
+					l.globalTypes[gname] = l.mod.Types[dt].Raw
+				}
+				l.globals[gname] = NoVal // marker: declared, not yet materialized
+				l.globalNodes[gname] = id
+			}
 		}
 	}
+
+	// Top-level-statement programs (the common Nolang form) have no explicit
+	// `fn main`. Synthesize one that wraps the package's top-level statements so
+	// the MIR entry is deterministic and correct; without this, LowerHIR fell
+	// back to picking a *random* function from funcNames as entry, yielding
+	// non-deterministic (sometimes-wrong) output.
+	l.synthesizeMainForTopLevel(pkg)
 
 	entry := "main"
 	if _, ok := l.funcNames[entry]; !ok {
@@ -121,6 +349,14 @@ func LowerHIR(pkg *hir.Package) (*Module, *Report, []LowerDiag) {
 	}
 	if entry != "" {
 		l.worklist = append(l.worklist, entry)
+	}
+	if debugLower() {
+		names := make([]string, 0, len(l.funcNames))
+		for n := range l.funcNames {
+			names = append(names, n)
+		}
+		sort.Strings(names)
+		fmt.Fprintf(os.Stderr, "[MIR] %d top-level funcs: %v\n", len(names), names)
 	}
 	for len(l.worklist) > 0 {
 		name := l.worklist[0]
@@ -173,6 +409,16 @@ func (l *lowerer) typeOfNode(n *hir.Node) TypeID {
 	// integer literals/comparisons from collapsing to void (which previously
 	// produced `alloca void` and broke the module).
 	switch n.Kind {
+	case hir.KLet:
+		// A top-level `let` binding (`SBOX [256]byte = [...]`, perm-600, ...) —
+		// derive its type from the declared annotation so module-level constants
+		// in imported library modules register as lazily-materialized globals
+		// (without this they resolve to void here and never become globals, so a
+		// helper fn referencing them hits the unresolved-identifier placeholder).
+		if raw := l.letTypeRaw(n); raw != "" && raw != "void" {
+			return l.b.Type(raw)
+		}
+		return l.inferredTypeOf(n)
 	case hir.KIntLit, hir.KCharLit, hir.KByteLit:
 		return l.b.Type("i64")
 	case hir.KFloatLit:
@@ -186,17 +432,53 @@ func (l *lowerer) typeOfNode(n *hir.Node) TypeID {
 			return l.b.Type("bool")
 		}
 		if c := n.First; c != hir.NoID {
-			return l.typeOfNode(l.pkg.Node(c))
+			if t := l.typeOfNode(l.pkg.Node(c)); t != l.voidType {
+				return t
+			}
 		}
-		return l.voidType
+		return l.inferredTypeOf(n)
 	case hir.KPrefix:
 		if l.pkg.Str(n.S) == "!" {
 			return l.b.Type("bool")
 		}
 		if c := n.First; c != hir.NoID {
-			return l.typeOfNode(l.pkg.Node(c))
+			if t := l.typeOfNode(l.pkg.Node(c)); t != l.voidType {
+				return t
+			}
 		}
-		return l.voidType
+		return l.inferredTypeOf(n)
+	case hir.KGrouped:
+		// Parenthesized expression: strip the grouping and resolve the inner
+		// node's type (mirrors lowerExpr's KGrouped handling). Without this,
+		// `(i+1) & 255` resolved the infix result type from the group wrapper,
+		// which fell through to void and produced `and void`.
+		if c := n.First; c != hir.NoID {
+			if t := l.typeOfNode(l.pkg.Node(c)); t != l.voidType {
+				return t
+			}
+		}
+		for _, c := range l.pkg.Children(n.Id) {
+			if t := l.typeOfNode(l.pkg.Node(c)); t != l.voidType {
+				return t
+			}
+		}
+		return l.inferredTypeOf(n)
+	case hir.KCast:
+		// `(x as i64)` — derive the cast target from the node's declared/resolved
+		// type before falling back to the source operand.
+		raw := l.pkg.InferredType(n.Id)
+		if raw == "" {
+			raw = l.pkg.Type(n.Type)
+		}
+		if raw != "" && raw != "void" {
+			return l.b.Type(raw)
+		}
+		if c := n.First; c != hir.NoID {
+			if t := l.typeOfNode(l.pkg.Node(c)); t != l.voidType {
+				return t
+			}
+		}
+		return l.inferredTypeOf(n)
 	case hir.KIdent:
 		if v, ok := l.locals[l.pkg.Str(n.S)]; ok {
 			if f := l.mod.Func(l.curFunc); f != nil {
@@ -205,7 +487,86 @@ func (l *lowerer) typeOfNode(n *hir.Node) TypeID {
 				}
 			}
 		}
+	case hir.KIndex:
+		// array/vec/str element read `a[i]`. The element type is the indexed
+		// value's element type (vec -> i64, [N]T -> T, str -> i8) — exactly what
+		// lowerExpr's KIndex computes via elementTypeOf. Without this, arithmetic
+		// on vec elements (e.g. fe-mul) resolved the infix result type from the
+		// index read, which fell through to void and produced `add void`.
+		var arrID int32
+		for _, c := range l.pkg.Children(n.Id) {
+			arrID = c
+			break
+		}
+		if arrV := l.lowerExpr(arrID); arrV != NoVal {
+			if t := l.elementTypeOf(arrV); t != l.voidType {
+				return t
+			}
+		}
+		return l.inferredTypeOf(n)
+	case hir.KSlice:
+		// sub-slice `a[lo:hi]` yields the same (slice) type as its base.
+		var arrID int32
+		for _, c := range l.pkg.Children(n.Id) {
+			arrID = c
+			break
+		}
+		if arrV := l.lowerExpr(arrID); arrV != NoVal {
+			if t := l.typeOfNode(l.pkg.Node(arrID)); t != l.voidType {
+				return t
+			}
+		}
+		return l.inferredTypeOf(n)
+	case hir.KCall:
+		// A call expression's type is the callee's (first) result type. Resolve
+		// the callee name and look up its signature; nolang calls return a single
+		// value (or the first of a multi-return), which is what the infix/operand
+		// context needs.
+		callee := ""
+		for _, c := range l.pkg.Children(n.Id) {
+			if cn := l.pkg.Node(c); cn != nil {
+				callee = l.pkg.Str(cn.S)
+			}
+			break
+		}
+		if callee != "" {
+			if cid, ok := l.mod.FuncByName[callee]; ok {
+				if cf := l.mod.Func(cid); cf != nil && len(cf.Results) > 0 {
+					return cf.Results[0]
+				}
+			}
+		}
+		return l.inferredTypeOf(n)
+	case hir.KDot:
+		// recv.field: derive the field type from the receiver's struct layout
+		// (StructFields). Without this, `p.x + p.y` resolved the infix type from
+		// the field-read operand (a KDot), which fell through to void and produced
+		// `print unsupported arg type void`.
+		fieldName := l.pkg.Str(n.S)
+		var recvID int32
+		for _, c := range l.pkg.Children(n.Id) {
+			recvID = c
+			break
+		}
+		recvT := l.typeOfNode(l.pkg.Node(recvID))
+		if rt := l.mod.Type(recvT); rt != nil && rt.Raw != "" {
+			if fields, ok := l.mod.StructFields[rt.Raw]; ok {
+				for _, fld := range fields {
+					if fld.Name == fieldName {
+						return l.b.Type(fld.TypeRaw)
+					}
+				}
+			}
+		}
 	}
+	return l.inferredTypeOf(n)
+}
+
+// inferredTypeOf resolves a node's type from HIR-inferred/declared type info. It
+// is the universal fallback used when structural derivation (typeOfNode of a
+// child) yields void — without it, arithmetic on vec elements / indexes / other
+// node kinds collapsed to void and produced `add void` / `and void` IR.
+func (l *lowerer) inferredTypeOf(n *hir.Node) TypeID {
 	raw := l.pkg.InferredType(n.Id)
 	if raw == "" {
 		raw = l.pkg.Type(n.Type)
@@ -218,6 +579,98 @@ func (l *lowerer) typeOfNode(n *hir.Node) TypeID {
 
 func (l *lowerer) unsupported(funcName, kind, msg string) {
 	l.diags = append(l.diags, LowerDiag{Func: funcName, Kind: kind, Msg: msg})
+}
+
+// valueRaw returns the nolang raw type string of a lowered value, or "" if the
+// value is invalid/unknown. Used to special-case operations whose legality
+// depends on the operand type (e.g. string equality must route through @str_eq
+// rather than a direct icmp).
+func (l *lowerer) valueRaw(v ValueID) string {
+	if v <= NoVal {
+		return ""
+	}
+	val := l.mod.Value(v)
+	if val == nil {
+		return ""
+	}
+	if t := l.mod.Type(val.Type); t != nil {
+		return t.Raw
+	}
+	return ""
+}
+
+// isInlineableLetType reports whether a top-level `let` of the given nolang type
+// can be lowered as an executable statement in the synthesized `main`. Types the
+// v1 codegen cannot emit (structs, qualified std prelude names like fs.file) are
+// excluded so they are not inlined into main (which would produce malformed IR).
+func (l *lowerer) isInlineableLetType(raw string) bool {
+	switch raw {
+	case "i64", "i32", "i16", "i8", "u64", "u32", "u16", "u8", "byte",
+		"bool", "f64", "f32", "double", "str", "txt":
+		return true
+	}
+	if len(raw) > 0 && raw[0] == '[' {
+		return true // fixed array
+	}
+	if len(raw) > 0 && raw[0] == '?' {
+		return true // option (?i64, ?str, ?vec, ...) — elided to its inner value
+	}
+	// Registered struct types (user structs + std structs) lower cleanly as
+	// inlineable top-level `let` statements: lowerStructLit allocates the local
+	// and stores its field initializers, and any unused prelude struct (fs.file
+	// for <stdin>/<stdout>/<stderr>) is dead code for the MIR path (print writes
+	// to fd 1 directly). vec/option are excluded — their drop is a no-op and
+	// their element codegen is incomplete in v1.
+	if raw != "vec" && raw != "option" && raw != "%vec" && raw != "%option" {
+		base := strings.TrimPrefix(raw, "%")
+		if _, ok := l.mod.StructFields[base]; ok {
+			// Std prelude structs are namespaced (fs.file, io.reader,
+			// err.error, os.utsname, path.path). Their top-level inits
+			// (<stdin> = fs.file{...}) carry EMPTY field names in HIR and are
+			// dead for the MIR path, so skip them (they stay resolvable as
+			// module globals). User structs are unqualified and inline normally.
+			if strings.Contains(base, ".") {
+				return false
+			}
+			return true
+		}
+	}
+	return false
+}
+
+// letTypeRaw recovers the static type of a top-level KLet so the synthesizer
+// can decide whether to inline it into the synthetic `main`. n.Type / the
+// inferred type cover most cases, but std prelude lets (e.g. <stdin> =
+// fs.file{...}) carry NO recoverable type on the KLet node — only the
+// value expression knows (a KStructLit whose n.S is the struct name, or a
+// plain literal). Recovering it lets us skip non-inlineable prelude lets
+// instead of inlining a malformed `%fs_file` into main.
+func (l *lowerer) letTypeRaw(n *hir.Node) string {
+	if raw := l.pkg.Type(n.Type); raw != "" {
+		return raw
+	}
+	if raw := l.pkg.InferredType(n.Id); raw != "" {
+		return raw
+	}
+	for _, c := range l.pkg.Children(n.Id) {
+		cn := l.pkg.Node(c)
+		if cn == nil {
+			continue
+		}
+		switch cn.Kind {
+		case hir.KStructLit:
+			return l.pkg.Str(cn.S) // struct name, e.g. "fs.file"
+		case hir.KStrLit, hir.KCharLit:
+			return "str"
+		case hir.KIntLit, hir.KByteLit:
+			return "i64"
+		case hir.KFloatLit:
+			return "f64"
+		case hir.KBoolLit:
+			return "bool"
+		}
+	}
+	return ""
 }
 
 // ---- function lowering ----
@@ -343,26 +796,67 @@ func (l *lowerer) lowerStmt(id int32) {
 		name := l.pkg.Str(n.S)
 		var val ValueID = NoVal
 		var childID int32
+		// Publish the binding's declared type as a hint while lowering the
+		// value expression. Builtins like with-len/with-cap declare an empty
+		// return list (the result type comes from the LHS), so without this
+		// hint their call lowers to void, the variable never gets bound, and
+		// every later read of it cascades into "unresolved identifier".
+		l.typeHint = l.typeOfNode(n)
+		// A re-assignment to an already-declared binding (e.g. a result
+		// parameter like `val = with-cap(.len)` inside a std method) carries
+		// NO declared type on the KLet node. Fall back to the existing
+		// local's type so the LHS-inferred builtin still gets a real result
+		// type instead of lowering to void and dropping the assignment.
+		if (l.typeHint == NoType || l.typeHint == l.voidType) && name != "" {
+			if slot, ok := l.locals[name]; ok {
+				if t := l.valueTypeOf(slot); t != NoType && t != l.voidType {
+					l.typeHint = t
+				}
+			}
+		}
 		for _, c := range l.pkg.Children(id) {
 			childID = c
 			val = l.lowerExpr(c)
 			break
 		}
-		if os.Getenv("NOLANG_MIR_DEBUG") != "" {
-			fmt.Fprintf(os.Stderr, "[mir-dbg] LET name=%q val=%d childKind=%v\n", name, val, l.pkg.Node(childID).Kind)
+		l.typeHint = NoType
+		if val == NoVal {
+			// Declaration with NO initializer: `blk [16]byte` / `buf str`.
+			// Nolang zero-initializes these. Lowering used to skip binding
+			// entirely (there is no value to bind), so every later read of the
+			// variable cascaded into "unresolved identifier" — one of the two
+			// largest remaining sources of that diagnostic. Emit an explicit
+			// zero-initialized value of the declared type and bind it.
+			if dt := l.typeOfNode(n); dt != NoType && dt != l.voidType {
+				val = l.b.EmitInt(OpConst, dt, 0, "")
+				childID = id
+			}
+		}
+		if os.Getenv("NOLANG_MIR_DEBUG") != "" && childID != hir.NoID {
+			if cn := l.pkg.Node(childID); cn != nil {
+				fmt.Fprintf(os.Stderr, "[mir-dbg] LET name=%q val=%d childKind=%v\n", name, val, cn.Kind)
+			}
 		}
 		if val != NoVal {
+			// txt is a fixed 256-byte stack struct ({ [255 x i8] data, i8 len }),
+			// distinct from the heap-backed %str-long. When a `let x:txt = <str>`
+			// is lowered, the RHS lowers to a %str-long value; convert it into a
+			// %txt (bounded memcpy + len byte) so the binding carries the declared
+			// txt type end-to-end. Without this, x would silently become a str and
+			// print/.len would use str semantics (no 255 cap, heap not stack).
+			if l.pkg.Type(n.Type) == "txt" {
+				val = l.b.Emit(OpTxtFromStr, l.b.Type("txt"), []ValueID{val}, "")
+			}
 			if existing, ok := l.locals[name]; ok {
 				// Re-binding an already-declared variable (e.g. assigning to a
 				// result parameter like `out = a + b`, or a reassignment). Move the
 				// rhs into the EXISTING slot so the name keeps pointing at the same
-				// (borrowed) slot; this also makes result params get written back
-				// correctly. Owned reassignment would leak the previous value, so
-				// only allow it for borrowed locals (params / result params); flag
-				// the rest so the caller can fall back to the proven legacy path.
+				// slot; this also makes result params get written back correctly.
+				// Owned reassignment frees the old value exactly once (drop) then
+				// transfers ownership of the new value via move; the memory analysis
+				// inserts the slot's exit drop, which frees the NEW content.
 				if l.isOwnedLocal(existing) {
-					l.unsupported(l.curFuncName(), "let-reassign", "owned reassignment of "+name+" not yet supported in MIR")
-					return
+					l.b.EmitVoid(OpDrop, []ValueID{existing}, "")
 				}
 				l.b.EmitMoveInto(existing, val)
 				break
@@ -411,6 +905,8 @@ func (l *lowerer) lowerStmt(id int32) {
 		l.b.Terminate(OpReturn, vals, nil, "")
 	case hir.KAssign:
 		l.lowerAssignNode(id)
+	case hir.KMultiAssign:
+		l.lowerMultiAssign(id)
 	case hir.KIf:
 		l.lowerIf(n)
 	case hir.KFor:
@@ -446,9 +942,22 @@ func (l *lowerer) lowerIf(n *hir.Node) {
 		fmt.Fprintf(os.Stderr, "[mir-dbg] LOWERIF cond=%d then=%d else=%d curFunc=%s\n", condID, thenID, elseID, l.curFuncName())
 	}
 
+	// Enclosing continuation: the merge block of the nearest enclosing
+	// control-flow construct (pushed by the caller's lowerIf/lowerFor). When
+	// THIS if's merge block ends up empty (the if is the last statement in its
+	// enclosing block — the exact shape a desugared match yields: nested
+	// if/elif/else), its then/else branches must redirect to enclosingCont
+	// rather than be orphaned and terminated with `ret void` (which used to
+	// drop every statement after a nested match arm).
+	enclosingCont := NoBlock
+	if len(l.contStack) > 0 {
+		enclosingCont = l.contStack[len(l.contStack)-1]
+	}
+
 	thenBlk := l.b.NewBlock("if.then")
 	elseBlk := l.b.NewBlock("if.else")
 	mergeBlk := l.b.NewBlock("if.merge")
+	l.contStack = append(l.contStack, mergeBlk)
 	if condID != hir.NoID {
 		c := l.lowerExpr(condID)
 		if c != NoVal {
@@ -476,7 +985,20 @@ func (l *lowerer) lowerIf(n *hir.Node) {
 		l.b.Terminate(OpBr, nil, []BlockID{mergeBlk}, "")
 	}
 
-	l.b.SetBlock(mergeBlk)
+	// Pop OUR merge before deciding its fate so that any nested construct that
+	// already redirected its empty merge to mergeBlk sees the correct block.
+	l.contStack = l.contStack[:len(l.contStack)-1]
+
+	if l.mod.blockEmpty(mergeBlk) && enclosingCont != NoBlock {
+		// This if was the last statement in its enclosing block. Splice the
+		// empty merge out of the CFG: redirect then/else (and any nested
+		// merges already redirected here) to the enclosing continuation.
+		l.mod.redirectTermTargets(mergeBlk, enclosingCont)
+	} else {
+		// Either the merge has post-if code, or this is a top-level if whose
+		// merge legitimately ends the function. Continue lowering into it.
+		l.b.SetBlock(mergeBlk)
+	}
 }
 
 func (l *lowerer) lowerFor(n *hir.Node) {
@@ -508,6 +1030,16 @@ func (l *lowerer) lowerFor(n *hir.Node) {
 	l.loopStack = append(l.loopStack, loopCtx{exit: exit, update: update})
 	defer func() { l.loopStack = l.loopStack[:len(l.loopStack)-1] }()
 
+	// Register the loop continuation (the increment/update block) as the
+	// enclosing continuation for any control-flow construct lowered inside the
+	// body. Without this, an `if` that is the LAST statement of the loop body
+	// sees no enclosing continuation, leaves its merge block unterminated, and
+	// ensureReturn appends `ret void` — which terminates the WHOLE function
+	// after the first iteration (e.g. str.to-upper emitting only the first
+	// char). Pushing `update` makes the empty if-merge redirect here instead.
+	l.contStack = append(l.contStack, update)
+	defer func() { l.contStack = l.contStack[:len(l.contStack)-1] }()
+
 	l.b.SetBlock(pre)
 	l.b.Terminate(OpBr, nil, []BlockID{header}, "")
 
@@ -528,6 +1060,13 @@ func (l *lowerer) lowerFor(n *hir.Node) {
 		l.lowerBlock(bodyID)
 	}
 	if l.mod.Block(body).Term == nil {
+		l.b.Terminate(OpBr, nil, []BlockID{update}, "")
+	}
+	// Safety net: if the body fell off the end into a dangling (unterminated)
+	// nested merge block — e.g. a non-terminal last statement after an `if`
+	// whose merge stayed the current block — route it to the loop continuation
+	// rather than leaving it orphaned for ensureReturn to patch with `ret void`.
+	if cur := l.b.CurrentBlock(); cur != NoBlock && l.mod.Block(cur).Term == nil {
 		l.b.Terminate(OpBr, nil, []BlockID{update}, "")
 	}
 
@@ -593,7 +1132,12 @@ func (l *lowerer) lowerRangeFor(n *hir.Node, iterID int32, bodyID int32, pre Blo
 		leftInc := rn.Has(hir.FlagLeftInc)  // '[' -> start inclusive
 		rightInc := rn.Has(hir.FlagRightInc) // ']' -> end inclusive
 		elemT := l.b.Type("i64")
-		iSlot := l.b.Param(varName, elemT)
+		// Allocate the loop variable as a local with its own alloca slot. Using
+		// b.Param would mint a value id WITHOUT a slot (params are only slotted
+		// when registered into f.Params, which loop vars are not) -> the init
+		// move would hit "move destination has no slot". Emitting a zero const
+		// gives it a Dst-backed slot; the init move below overwrites it.
+		iSlot := l.b.EmitInt(OpConst, elemT, 0, varName)
 		l.locals[varName] = iSlot
 		// init v = lo  (or lo+1 when the left bound is open '(')
 		l.b.SetBlock(pre)
@@ -610,6 +1154,10 @@ func (l *lowerer) lowerRangeFor(n *hir.Node, iterID int32, bodyID int32, pre Blo
 		exit := l.b.NewBlock("for.exit")
 		l.loopStack = append(l.loopStack, loopCtx{exit: exit, update: update})
 		defer func() { l.loopStack = l.loopStack[:len(l.loopStack)-1] }()
+		// Register the loop continuation as the enclosing continuation so an
+		// empty if-merge inside the body redirects here (see lowerFor).
+		l.contStack = append(l.contStack, update)
+		defer func() { l.contStack = l.contStack[:len(l.contStack)-1] }()
 		l.b.Terminate(OpBr, nil, []BlockID{header}, "")
 		l.b.SetBlock(header)
 		// '<=' for an inclusive right bound (']'), '<' for an open one (')').
@@ -624,6 +1172,9 @@ func (l *lowerer) lowerRangeFor(n *hir.Node, iterID int32, bodyID int32, pre Blo
 			l.lowerBlock(bodyID)
 		}
 		if l.mod.Block(body).Term == nil {
+			l.b.Terminate(OpBr, nil, []BlockID{update}, "")
+		}
+		if cur := l.b.CurrentBlock(); cur != NoBlock && l.mod.Block(cur).Term == nil {
 			l.b.Terminate(OpBr, nil, []BlockID{update}, "")
 		}
 		l.b.SetBlock(update)
@@ -664,7 +1215,9 @@ func (l *lowerer) lowerRangeFor(n *hir.Node, iterID int32, bodyID int32, pre Blo
 	}
 
 	idxT := l.b.Type("i64")
-	idxSlot := l.b.Param(varName+"#idx", idxT)
+	// Same slot-allocation rationale as the integer-range form: emit a zero
+	// const so the index variable gets a Dst-backed alloca slot.
+	idxSlot := l.b.EmitInt(OpConst, idxT, 0, varName+"#idx")
 	// pre: idx = 0
 	l.b.SetBlock(pre)
 	l.b.EmitMoveInto(idxSlot, l.b.EmitInt(OpConst, idxT, 0, ""))
@@ -675,6 +1228,10 @@ func (l *lowerer) lowerRangeFor(n *hir.Node, iterID int32, bodyID int32, pre Blo
 	exit := l.b.NewBlock("for.exit")
 	l.loopStack = append(l.loopStack, loopCtx{exit: exit, update: update})
 	defer func() { l.loopStack = l.loopStack[:len(l.loopStack)-1] }()
+	// Register the loop continuation as the enclosing continuation so an empty
+	// if-merge inside the body redirects here (see lowerFor).
+	l.contStack = append(l.contStack, update)
+	defer func() { l.contStack = l.contStack[:len(l.contStack)-1] }()
 	l.b.Terminate(OpBr, nil, []BlockID{header}, "")
 
 	l.b.SetBlock(header)
@@ -691,6 +1248,9 @@ func (l *lowerer) lowerRangeFor(n *hir.Node, iterID int32, bodyID int32, pre Blo
 		l.lowerBlock(bodyID)
 	}
 	if l.mod.Block(body).Term == nil {
+		l.b.Terminate(OpBr, nil, []BlockID{update}, "")
+	}
+	if cur := l.b.CurrentBlock(); cur != NoBlock && l.mod.Block(cur).Term == nil {
 		l.b.Terminate(OpBr, nil, []BlockID{update}, "")
 	}
 
@@ -745,6 +1305,118 @@ func (l *lowerer) lowerArrayElems(elems []int32) ValueID {
 		l.b.EmitVoid(OpIndexStore, []ValueID{arrV, idxV, ev}, "")
 	}
 	return arrV
+}
+
+// lowerGlobalRef resolves a reference to a module-level binding (SBOX,
+// TLS-FINISHED-SIZE, perm-600, ...) that lives outside every function. The
+// global value is created lazily on first reference and its LLVM constant
+// initializer is folded from the top-level KLet's expression. If the
+// initializer cannot be constant-folded (ConstText == ""), the resulting
+// `@name` is emitted as an external declaration; the LLVM verifier then rejects
+// it, the function falls back to the proven legacy codegen, and — critically —
+// we never emit wrong data for a crypto constant.
+func (l *lowerer) lowerGlobalRef(name string) ValueID {
+	if v, ok := l.globals[name]; ok && v != NoVal {
+		return v
+	}
+	gtype := l.globalTypes[name]
+	if gtype == "" {
+		gtype = "i64"
+	}
+	typ := l.b.Type(gtype)
+	gv := l.b.Global(name, typ)
+	// Fold the constant initializer from the recorded top-level node.
+	if nid, ok := l.globalNodes[name]; ok {
+		if nn := l.pkg.Node(nid); nn != nil {
+			ct := l.foldConstText(nn, gtype)
+			for i := range l.mod.Globals {
+				if l.mod.Globals[i].Init == gv {
+					l.mod.Globals[i].ConstText = ct
+					break
+				}
+			}
+		}
+	}
+	l.globals[name] = gv
+	return gv
+}
+
+// foldConstText folds an HIR constant expression into LLVM constant-initializer
+// text (e.g. `i64 12`, `[256 x i8] c"\63\7c..."`). Returns "" when the
+// expression is not a compile-time constant (caller then emits an external
+// global and falls back to legacy — never wrong data).
+func (l *lowerer) foldConstText(n *hir.Node, gtype string) string {
+	if n == nil {
+		return ""
+	}
+	switch n.Kind {
+	case hir.KLet:
+		// A module-level `let` constant (`SBOX [256]byte = [...]`): descend to
+		// its initializer expression so the global folds to a real LLVM constant
+		// (e.g. `[256 x i8] c"..."`) instead of an unresolvable external
+		// declaration (which would make the referencing function fall back to
+		// legacy codegen).
+		for _, c := range l.pkg.Children(n.Id) {
+			return l.foldConstText(l.pkg.Node(c), gtype)
+		}
+		return ""
+	case hir.KIntLit:
+		return fmt.Sprintf("i64 %d", n.Val)
+	case hir.KCharLit:
+		return fmt.Sprintf("i64 %d", n.Val)
+	case hir.KBoolLit:
+		if n.Bool() {
+			return "i1 1"
+		}
+		return "i1 0"
+	case hir.KFloatLit:
+		return fmt.Sprintf("double %s", formatFloat(n.Float()))
+	case hir.KArrayLit:
+		var elems []int32
+		// HIR array literals carry a leading KSlot("size") plus one KSlot("elem")
+		// per element; unwrap the "elem" slots to the actual element expressions
+		// and ignore the "size" slot.
+		for _, c := range l.pkg.Children(n.Id) {
+			cn := l.pkg.Node(c)
+			if cn == nil || cn.Kind != hir.KSlot || l.pkg.Str(cn.S) != "elem" {
+				continue
+			}
+			elems = append(elems, cn.First)
+		}
+		if len(elems) == 0 {
+			return ""
+		}
+		// Byte arrays fold to a compact c"..." data global (used by SBOX /
+		// INV-SBOX substitution boxes). Match on the declared global type to
+		// be robust against element-literal type inference defaults.
+		if m := byteArrayRe.FindStringSubmatch(gtype); m != nil {
+			n2 := len(elems)
+			var data strings.Builder
+			for _, e := range elems {
+				ev := l.pkg.Node(e)
+				// Byte-array elements are emitted as KByteLit in HIR; accept both
+				// KByteLit and KIntLit (some array literals use i64 element
+				// literals) so substitution boxes ([256]byte) fold correctly.
+				if ev == nil || (ev.Kind != hir.KIntLit && ev.Kind != hir.KByteLit) {
+					return ""
+				}
+				data.WriteString(fmt.Sprintf(`\%02X`, ev.Val&0xff))
+			}
+			_ = n2
+			return fmt.Sprintf("[%d x i8] c\"%s\"", len(elems), data.String())
+		}
+		// Generic integer/float array: [N x i64] [i64 .., ...].
+		var parts []string
+		for _, e := range elems {
+			ct := l.foldConstText(l.pkg.Node(e), "")
+			if ct == "" {
+				return ""
+			}
+			parts = append(parts, ct)
+		}
+		return fmt.Sprintf("[%d x i64] [%s]", len(elems), strings.Join(parts, ", "))
+	}
+	return ""
 }
 
 // ---- expressions ----
@@ -810,6 +1482,16 @@ func (l *lowerer) lowerExpr(id int32) ValueID {
 		if v, ok := l.locals[name]; ok {
 			return v
 		}
+		// A top-level module binding (SBOX, TLS-FINISHED-SIZE, perm-600, ...)
+		// lives outside every function; resolve it as a module global. This is
+		// the last resort before declaring the identifier unresolved, so it
+		// must come AFTER the locals lookup above (a local shadow wins).
+		if _, isGlobal := l.globals[name]; isGlobal {
+			if os.Getenv("NOLANG_MIR_DEBUG") != "" {
+				fmt.Fprintf(os.Stderr, "[mir-dbg] KIdent %q -> global, gtype=%q\n", name, l.globalTypes[name])
+			}
+			return l.lowerGlobalRef(name)
+		}
 		// unresolved: create a placeholder value of the inferred type so later
 		// instructions can still reference it; flag for diagnostics.
 		l.unsupported(l.curFuncName(), "ident", "unresolved identifier "+name)
@@ -828,6 +1510,14 @@ func (l *lowerer) lowerExpr(id int32) ValueID {
 		return l.b.EmitInt(OpConst, l.typeOfNode(n), val, "")
 	case hir.KStrLit:
 		return l.b.EmitStr(OpConst, l.b.Type("str"), l.pkg.Str(n.S), "")
+	case hir.KCharLit:
+		return l.lowerCharLit(n)
+	case hir.KNilLit:
+		return l.lowerNilLit(n)
+	case hir.KStructLit:
+		return l.lowerStructLit(n)
+	case hir.KSlice:
+		return l.lowerSlice(n)
 	case hir.KPrefix:
 		var operand int32
 		for _, c := range l.pkg.Children(id) {
@@ -850,8 +1540,22 @@ func (l *lowerer) lowerExpr(id int32) ValueID {
 		rv := l.lowerExpr(lr[1])
 		op, isCmp := infixOp(l.pkg.Str(n.S))
 		resTyp := l.typeOfNode(n)
+		if os.Getenv("NOLANG_MIR_DEBUG") != "" {
+			fmt.Fprintf(os.Stderr, "[mir-dbg] INFIX op=%v resTyp=%v lv=%d rv=%d\n", op, resTyp, lv, rv)
+		}
 		if isCmp {
 			resTyp = l.b.Type("bool")
+		}
+		// String equality/inequality cannot be a direct `icmp` (str is a struct),
+		// so route it through the runtime @str_eq helper via OpStrEq. `!=` negates
+		// the equality result with a boolean icmp.
+		if (op == OpEq || op == OpNe) && l.valueRaw(lv) == "str" {
+			eq := l.b.Emit(OpStrEq, l.b.Type("bool"), []ValueID{lv, rv}, "")
+			if op == OpEq {
+				return eq
+			}
+			fals := l.b.EmitInt(OpConst, l.b.Type("bool"), 0, "")
+			return l.b.Emit(OpNe, l.b.Type("bool"), []ValueID{eq, fals}, "")
 		}
 		return l.b.Emit(op, resTyp, []ValueID{lv, rv}, "")
 	case hir.KCall:
@@ -871,6 +1575,118 @@ func (l *lowerer) lowerExpr(id int32) ValueID {
 }
 
 // lowerDotRead lowers a standalone field/property access `recv.field` to an
+// lowerCharLit lowers a character literal `'a'` to an i64 constant holding its
+// codepoint (Nolang char is a 64-bit codepoint, matching KindChar -> i64 in
+// codegen).
+func (l *lowerer) lowerCharLit(n *hir.Node) ValueID {
+	s := strings.Trim(l.pkg.Str(n.S), "'")
+	var cp int64
+	for _, r := range s {
+		cp = int64(r)
+		break
+	}
+	return l.b.EmitInt(OpConst, l.b.Type("char"), cp, "")
+}
+
+// lowerNilLit lowers `nil` to a zero constant of the inferred (option) type. The
+// type is usually absent on the node itself; when present (e.g. a typed `?T`
+// context) it is used so later field/use analysis has a concrete type to work
+// with. v1 emits a zero value; option-layout codegen falls back to legacy.
+func (l *lowerer) lowerNilLit(n *hir.Node) ValueID {
+	t := l.typeOfNode(n)
+	if t == NoType || t == l.voidType {
+		t = l.b.Type("i64")
+	}
+	return l.b.EmitInt(OpConst, t, 0, "")
+}
+
+// lowerStructLit lowers `T{ f: v, ... }` into a struct value: allocate the
+// struct, then store each field initializer into it via OpSetField. The result
+// value is the (addressable) struct slot, so later field reads GEP into it.
+func (l *lowerer) lowerStructLit(n *hir.Node) ValueID {
+	raw := l.pkg.Str(n.S)
+	typ := l.b.Type(raw)
+	res := l.b.Emit(OpStructLit, typ, nil, raw)
+	for _, fID := range l.pkg.Children(n.Id) {
+		fn := l.pkg.Node(fID)
+		if fn == nil || fn.Kind != hir.KStructField {
+			continue
+		}
+		fieldName := l.pkg.Str(fn.S)
+		var valID int32
+		for _, c := range l.pkg.Children(fID) {
+			valID = c
+			break
+		}
+		vv := l.lowerExpr(valID)
+		if vv == NoVal {
+			continue
+		}
+		// Store the field name in inst.Str (not inst.Sym) so emitSetField's
+		// FieldIndex lookup matches the GETFIELD convention in lowerDotRead.
+		sid := l.b.EmitVoid(OpSetField, []ValueID{res, vv}, "")
+		l.mod.Insts[sid].Str = fieldName
+	}
+	return res
+}
+
+// lowerSlice lowers `a[lo:hi]` (KSlice: First = [array, RangeExpression]) into an
+// OpSliceOp. Open bounds (missing start/end) lower to NoVal operands; codegen
+// lowers the sub-range for vec/array receivers and falls back to legacy for types
+// it does not yet lay out.
+func (l *lowerer) lowerSlice(n *hir.Node) ValueID {
+	var leftID, rangeID int32
+	i := 0
+	for _, c := range l.pkg.Children(n.Id) {
+		if i == 0 {
+			leftID = c
+		} else {
+			rangeID = c
+			break
+		}
+		i++
+	}
+	arrV := l.lowerExpr(leftID)
+	if arrV == NoVal {
+		return NoVal
+	}
+	var loV, hiV ValueID = NoVal, NoVal
+	if rangeID != hir.NoID {
+		rn := l.pkg.Node(rangeID)
+		if rn != nil {
+			for _, c := range l.pkg.Children(rangeID) {
+				cn := l.pkg.Node(c)
+				if cn == nil {
+					continue
+				}
+				switch l.pkg.Str(cn.S) {
+				case "start":
+					loV = l.lowerExpr(cn.First)
+				case "end":
+					hiV = l.lowerExpr(cn.First)
+				}
+			}
+		}
+	}
+	args := []ValueID{arrV}
+	if loV != NoVal {
+		args = append(args, loV)
+	} else {
+		args = append(args, l.b.EmitInt(OpConst, l.b.Type("i64"), 0, ""))
+	}
+	if hiV != NoVal {
+		args = append(args, hiV)
+	} else {
+		// open upper bound: use the container length
+		args = append(args, l.b.Emit(OpLen, l.b.Type("i64"), []ValueID{arrV}, ""))
+	}
+	resTyp := l.typeOfNode(n)
+	if resTyp == NoType || resTyp == l.voidType {
+		resTyp = l.b.Type("i64")
+	}
+	return l.b.Emit(OpSliceOp, resTyp, args, "")
+}
+
 // OpGetField instruction. The receiver is either the KDot's single child (explicit
 // `recv.field`) or, when the KDot has no child, the enclosing method's implicit
 // `self` (captured as l.curRecv / the `self` local). The field name is the KDot's
@@ -900,12 +1716,36 @@ func (l *lowerer) lowerDotRead(n *hir.Node) ValueID {
 	}
 
 	recvRaw := ""
-	if t := l.mod.Type(l.valueTypeOf(recvV)); t != nil {
+	recvT := l.valueTypeOf(recvV)
+	if t := l.mod.Type(recvT); t != nil {
 		recvRaw = t.Raw
 	}
 	if recvRaw == "" {
 		l.unsupported(l.curFuncName(), "dot", "field "+fieldName+": cannot determine receiver type")
 		return NoVal
+	}
+
+	// Container builtin properties: `.len` / `.cap` are properties of the
+	// container itself, not struct fields. There is one such layout per
+	// element type (`[]byte`, `[]i64`, `[3]i64`, ...), so a name-keyed
+	// StructFields lookup can never resolve them — that mismatch alone
+	// accounted for every "no struct layout for []byte (field len)" gap on the
+	// corpus. Dispatch on the type KIND and emit a dedicated op instead.
+	if ty := l.mod.Type(recvT); ty != nil {
+		if fieldName == "len" || fieldName == "cap" {
+			switch {
+			case ty.Kind == KindStr || ty.Kind == KindSlice || ty.Kind == KindArray || ty.Kind == KindMap:
+				op := OpLen
+				if fieldName == "cap" {
+					op = OpCap
+				}
+				return l.b.Emit(op, l.b.Type("i64"), []ValueID{recvV}, "")
+			case recvRaw == "txt" && fieldName == "len":
+				// txt.len reads the i8 len byte and zero-extends to i64 (legacy
+				// semantics); cap is not meaningful for a fixed buffer.
+				return l.b.Emit(OpLen, l.b.Type("i64"), []ValueID{recvV}, "")
+			}
+		}
 	}
 	fields, ok := l.mod.StructFields[recvRaw]
 	if !ok {
@@ -926,89 +1766,155 @@ func (l *lowerer) lowerDotRead(n *hir.Node) ValueID {
 		return NoVal
 	}
 	fieldT := l.b.Type(fieldTypeRaw)
+	if os.Getenv("NOLANG_MIR_DEBUG") != "" {
+		fmt.Fprintf(os.Stderr, "[mir-dbg] GETFIELD recvRaw=%q field=%q fieldTypeRaw=%q fieldT=%v\n", recvRaw, fieldName, fieldTypeRaw, fieldT)
+	}
 	v := l.b.Emit(OpGetField, fieldT, []ValueID{recvV}, "")
 	// carry the field name on the instruction for codegen index resolution
 	l.mod.Insts[len(l.mod.Insts)-1].Str = fieldName
 	return v
 }
 
-func (l *lowerer) lowerCall(n *hir.Node) ValueID {
+// resolveCallee determines the callee symbol and (for a method call) the
+// receiver value of a KCall node. Shared by the single-result expression path
+// and the multi-assign statement path.
+func (l *lowerer) resolveCallee(n *hir.Node) (callee string, recvV ValueID) {
 	// callee: fn slot (KIdent or KDot)
 	fnID := l.slot(n.Id, "fn")
-	callee := ""
-	var recvV ValueID // for method calls: the receiver value, passed as first arg
-	if fnID != hir.NoID {
-		fnn := l.pkg.Node(fnID)
-		if fnn != nil {
-			switch fnn.Kind {
-			case hir.KIdent:
-				callee = l.pkg.Str(fnn.S)
-			case hir.KDot:
-				// Method call: `obj.method(args)` lowers to `ReceiverType.method`
-				// with the receiver passed as the FIRST argument (by pointer for
-				// owned/struct receivers, matching the legacy ABI:
-				//   call @str.to-bytes(%str-long* %recv, ...)).
-				method := l.pkg.Str(fnn.S) // property name, e.g. "to-bytes"
-				// The receiver is the KDot's single child (e.Receiver).
-				var recvID int32
-				for _, c := range l.pkg.Children(fnID) {
-					recvID = c
-					break
+	if fnID == hir.NoID {
+		return "", NoVal
+	}
+	fnn := l.pkg.Node(fnID)
+	if fnn == nil {
+		return "", NoVal
+	}
+	switch fnn.Kind {
+	case hir.KIdent:
+		name := l.pkg.Str(fnn.S)
+		// Implicit-self method call. nolang lowers `.emit(...)` (called from
+		// inside `regexp.regexp.compile`) to a bare KIdent `regexp.regexp.emit`
+		// with NO receiver child. The MIR function `regexp.regexp.emit`, however,
+		// is a method on the module instance and declares a `self` first param.
+		// Inside a method (`self` = l.curRecv), a bare qualified call
+		// `Type.method` whose Type prefix matches the receiver's type is that
+		// same `self.method(args)` — prepend the current receiver as the first
+		// argument. Free functions like `fmt.int` / `u64-to-str` have a Type
+		// prefix that never equals a value's receiver type, so they are left
+		// receiverless.
+		if l.curRecv != NoVal {
+			if dot := strings.LastIndex(name, "."); dot > 0 {
+				tname := name[:dot]
+				recvRaw := ""
+				if ty := l.mod.Type(l.valueTypeOf(l.curRecv)); ty != nil && ty.Raw != "" {
+					recvRaw = ty.Raw
 				}
-				rv := l.lowerExpr(recvID)
-				if rv == NoVal {
-					return NoVal
+				if recvRaw != "" && tname == recvRaw {
+					return name, l.curRecv
 				}
-				recvV = rv
-				// Receiver type name: use the nolang type of the receiver value.
-				// For a `str` receiver this is "str"; for `io.writer` it is
-				// "io.writer", etc. The callee is then "str.to-bytes".
-				recvT := l.valueTypeOf(recvV)
-				recvTypeName := "str"
-				if ty := l.mod.Type(recvT); ty != nil && ty.Raw != "" {
-					recvTypeName = ty.Raw
-				}
-				callee = recvTypeName + "." + method
 			}
 		}
-	}
-	// reachability: enqueue the referenced function for lowering
-	if callee != "" {
-		if id, ok := l.funcNames[callee]; ok && !l.lowered[callee] {
-			already := false
-			for _, w := range l.worklist {
-				if w == callee {
-					already = true
-					break
+		return name, NoVal
+	case hir.KDot:
+		method := l.pkg.Str(fnn.S) // property name, e.g. "to-bytes"
+		// The receiver is the KDot's single child (e.Receiver).
+		var recvID int32
+		for _, c := range l.pkg.Children(fnID) {
+			recvID = c
+			break
+		}
+		// A bare identifier that is NOT a bound local is a MODULE namespace,
+		// not a value: `number.rotate-left(t, 7)`, `net.send(fd, buf, n)`,
+		// `fs.open(path)`. Lowering those as a method call tried to evaluate
+		// the module name as a value and reported "unresolved identifier
+		// <module>" — a large share of the remaining ident gaps. They lower to
+		// a plain qualified call with NO receiver argument.
+		if rn := l.pkg.Node(recvID); rn != nil && rn.Kind == hir.KIdent {
+			if recvName := l.pkg.Str(rn.S); recvName != "" {
+				if _, bound := l.locals[recvName]; !bound {
+					if l.curRecv != NoVal {
+						recvT := l.valueTypeOf(l.curRecv)
+						recvTypeName := recvName
+						if ty := l.mod.Type(recvT); ty != nil && ty.Raw != "" {
+							recvTypeName = ty.Raw
+						}
+						if os.Getenv("NOLANG_MIR_DEBUG") != "" {
+							fmt.Fprintf(os.Stderr, "[mir-dbg] resolveCallee IMPLICIT-SELF recvName=%q recvTypeName=%q curRecv=%d recvT=%d\n", recvName, recvTypeName, l.curRecv, recvT)
+						}
+						return recvTypeName + "." + method, l.curRecv
+					}
+					if os.Getenv("NOLANG_MIR_DEBUG") != "" {
+						fmt.Fprintf(os.Stderr, "[mir-dbg] resolveCallee RECEIVERLESS recvName=%q\n", recvName)
+					}
+					return recvName + "." + method, NoVal
 				}
 			}
-			if !already {
-				l.worklist = append(l.worklist, callee)
-				_ = id
-			}
 		}
+		// Method call: `obj.method(args)` lowers to `ReceiverType.method` with
+		// the receiver passed as the FIRST argument (by pointer for
+		// owned/struct receivers, matching the legacy ABI:
+		//   call @str.to-bytes(%str-long* %recv, ...)).
+		rv := l.lowerExpr(recvID)
+		if rv == NoVal {
+			return "", NoVal
+		}
+		// Receiver type name: use the nolang type of the receiver value. For a
+		// `str` receiver this is "str"; for `io.writer` it is "io.writer",
+		// etc. The callee is then "str.to-bytes".
+		recvT := l.valueTypeOf(rv)
+		recvTypeName := "str"
+		if ty := l.mod.Type(recvT); ty != nil && ty.Raw != "" {
+			recvTypeName = ty.Raw
+		}
+		return recvTypeName + "." + method, rv
 	}
+	return "", NoVal
+}
 
-	args := l.slotArgs(n.Id, "arg")
-	var argv []ValueID
-	if recvV != NoVal {
-		argv = append(argv, recvV)
-	}
-	for _, a := range args {
-		argv = append(argv, l.lowerExpr(a))
-	}
+func (l *lowerer) lowerCall(n *hir.Node) ValueID {
+	callee, recvV := l.resolveCallee(n)
+	// reachability: enqueue the referenced function for lowering
+	l.enqueueCallee(callee)
+
+	argv := l.lowerCallArgs(n, recvV)
 	// The KCall node carries NO type — the AST CallExpression has no Type field,
 	// so InferredType/KType are both empty for it. Derive the result type from
-	// the callee's signature instead (its KResult child carries the declared
-	// type). Builtins/unknowns fall back to voidType (NoVal), which is correct
-	// for void calls such as print.
+	// the callee's signature, in three tiers:
+	//   1. a KFuncDef/KExtern in the HIR package (its KResult child),
+	//   2. the builtin signature table (print/sqrt/str.to-bytes/...), which is
+	//      authoritative for the ~190 builtins that have no HIR definition,
+	//   3. the LHS type hint, for builtins whose result type is inferred from
+	//      the assignment (with-len/with-cap/with-cap-len).
+	// Only when all three come up empty is the call genuinely void.
 	resTyp := l.resultTypeOfCallee(callee)
+	if resTyp == l.voidType {
+		if br := builtinResultOf(callee); br.Known {
+			switch {
+			case br.Raw != "":
+				resTyp = l.b.Type(br.Raw)
+			case br.LHSInferred && l.typeHint != NoType && l.typeHint != l.voidType:
+				resTyp = l.typeHint
+			}
+		}
+	}
 	if resTyp == l.voidType {
 		// void call: emit without a destination value (statement, not expression)
 		l.b.EmitVoid(OpCall, argv, callee)
 		return NoVal
 	}
-	return l.b.Emit(OpCall, resTyp, argv, callee)
+	// A single-result call uses the SAME out-parameter convention as a
+	// multi-result call: the callee writes its result into a caller-passed
+	// out-pointer (Function.ResultParams). EmitCallMulti allocates the result
+	// value(s) and records them in inst.Results so emitCall (codegen) can load
+	// the out-pointer back into the result slot. Using bare Emit() would set
+	// inst.Dst but leave inst.Results empty, so emitCall would never store the
+	// returned value — every `x = f()` would read an uninitialized slot (0 /
+	// garbage). Routing through EmitCallMulti keeps the single- and multi-result
+	// paths identical and correct.
+	dsts := l.b.EmitCallMulti([]TypeID{resTyp}, argv, callee)
+	if len(dsts) == 0 {
+		return NoVal
+	}
+	return dsts[0]
 }
 
 // resultTypeOfCallee derives the return type of a called function from its
@@ -1039,6 +1945,209 @@ func (l *lowerer) resultTypeOfCallee(callee string) TypeID {
 		}
 	}
 	return l.voidType
+}
+
+// resultTypesOfCallee returns EVERY declared result type of a called function,
+// in declaration order. A Nolang function may return several values
+// (`f = () (a i64, b i64)`), which the caller receives via a multi-assign
+// (`x, y = f()`); each result becomes an out-parameter at the LLVM level.
+func (l *lowerer) resultTypesOfCallee(callee string) []TypeID {
+	if callee == "" {
+		return nil
+	}
+	id, ok := l.funcNames[callee]
+	if !ok {
+		return nil
+	}
+	var out []TypeID
+	for _, c := range l.pkg.Children(id) {
+		cn := l.pkg.Node(c)
+		if cn != nil && cn.Kind == hir.KResult {
+			out = append(out, l.typeOfNode(cn))
+		}
+	}
+	return out
+}
+
+// lowerMultiAssign lowers `a, b = f()` — a statement with one `value` slot and
+// N `target` slots. It is how Nolang receives a multi-value return.
+//
+// The call itself is emitted ONCE with one result value per declared result;
+// each target name is then bound to its corresponding result. Lowering this
+// statement used to be unsupported, which left every target unbound and turned
+// each later read of `a` / `b` into an "unresolved identifier" gap.
+func (l *lowerer) lowerMultiAssign(id int32) {
+	var valueID int32 = hir.NoID
+	var targets []int32
+	for _, c := range l.pkg.Children(id) {
+		cn := l.pkg.Node(c)
+		if cn == nil || cn.Kind != hir.KSlot {
+			continue
+		}
+		switch l.pkg.Str(cn.S) {
+		case "value":
+			valueID = cn.First
+		case "target":
+			if cn.First != hir.NoID {
+				targets = append(targets, cn.First)
+			}
+		}
+	}
+	if valueID == hir.NoID || len(targets) == 0 {
+		l.unsupported(l.curFuncName(), "multi-assign", "malformed multi-assign")
+		return
+	}
+	vn := l.pkg.Node(valueID)
+	if vn == nil {
+		l.unsupported(l.curFuncName(), "multi-assign", "missing value node")
+		return
+	}
+	if vn.Kind != hir.KCall {
+		// Not a call: only a single value is available, so a 1-target form can
+		// reuse the plain assignment path (`a = <expr>`).
+		if len(targets) == 1 {
+			l.lowerAssignTargets([]int32{valueID}, targets)
+			return
+		}
+		l.unsupported(l.curFuncName(), "multi-assign", "unsupported value kind "+hir.KindNames[vn.Kind])
+		return
+	}
+
+	callee, recvV := l.resolveCallee(vn)
+	if callee == "" {
+		l.unsupported(l.curFuncName(), "multi-assign", "unresolved callee")
+		return
+	}
+	l.enqueueCallee(callee)
+
+	resTypes := l.resultTypesOfCallee(callee)
+	if len(resTypes) == 0 {
+		// Unknown/void callee: emit a plain void call and give each target a
+		// zero-initialized placeholder so later reads still resolve.
+		l.lowerCallArgs(vn, recvV)
+		for _, t := range targets {
+			l.bindPlaceholder(t)
+		}
+		return
+	}
+
+	argv := l.lowerCallArgs(vn, recvV)
+	dsts := l.b.EmitCallMulti(resTypes, argv, callee)
+	for i, t := range targets {
+		if i >= len(dsts) {
+			break
+		}
+		l.bindTarget(t, dsts[i])
+	}
+}
+
+// lowerCallArgs lowers the `arg` slots of a call node and prepends an explicit
+// receiver when the call is a method call.
+func (l *lowerer) lowerCallArgs(n *hir.Node, recvV ValueID) []ValueID {
+	args := l.slotArgs(n.Id, "arg")
+	var argv []ValueID
+	if recvV != NoVal {
+		// nolang's implicit-self convention: a bare `.method(args)` call inside a
+		// method already lists the receiver as the FIRST argument node (an ident
+		// named "self") in the HIR call args. Prepending recvV again would
+		// double the receiver (e.g. `regexp.regexp.emit` would get [self, self,
+		// op, arg1, arg2]). Only prepend when the HIR has NOT already supplied
+		// the receiver — i.e. explicit-receiver calls (`obj.method()`) whose
+		// first arg node is a real value, not the synthetic "self" ident.
+		firstIsSelf := false
+		if len(args) > 0 {
+			if an := l.pkg.Node(args[0]); an != nil && an.Kind == hir.KIdent && l.pkg.Str(an.S) == "self" {
+				firstIsSelf = true
+			}
+		}
+		if !firstIsSelf {
+			argv = append(argv, recvV)
+		}
+	}
+	for _, a := range args {
+		argv = append(argv, l.lowerExpr(a))
+	}
+	return argv
+}
+
+// bindTarget binds a multi-assign target node (normally a KIdent) to the given
+// MIR value. An already-bound name is written into its existing slot (a
+// reassignment) rather than rebound, matching the single-assign path.
+func (l *lowerer) bindTarget(targetID int32, v ValueID) {
+	tn := l.pkg.Node(targetID)
+	if tn == nil {
+		return
+	}
+	if tn.Kind != hir.KIdent {
+		l.unsupported(l.curFuncName(), "multi-assign", "unsupported target kind "+hir.KindNames[tn.Kind])
+		return
+	}
+	nm := l.pkg.Str(tn.S)
+	if v == NoVal {
+		l.bindPlaceholder(targetID)
+		return
+	}
+	if existing, ok := l.locals[nm]; ok {
+		if l.isOwnedLocal(existing) {
+			// Owned reassignment: free the old value, move the new one in. See
+			// lowerAssignNode for the memory-safety rationale.
+			l.b.EmitVoid(OpDrop, []ValueID{existing}, "")
+		}
+		l.b.EmitMoveInto(existing, v)
+		return
+	}
+	l.locals[nm] = v
+}
+
+// bindPlaceholder binds a target name to a zero-initialized value of its
+// declared type. Used when a multi-assign's callee has no known result types,
+// so the target still resolves for later reads instead of cascading into
+// "unresolved identifier" for the rest of the function.
+func (l *lowerer) bindPlaceholder(targetID int32) {
+	tn := l.pkg.Node(targetID)
+	if tn == nil || tn.Kind != hir.KIdent {
+		return
+	}
+	nm := l.pkg.Str(tn.S)
+	if _, ok := l.locals[nm]; ok {
+		return
+	}
+	t := l.typeOfNode(tn)
+	if t == NoType || t == l.voidType {
+		t = l.b.Type("i64")
+	}
+	l.locals[nm] = l.b.EmitInt(OpConst, t, 0, "")
+}
+
+// lowerAssignTargets binds N target nodes from N value expressions. Used for
+// the non-call form of a multi-assign.
+func (l *lowerer) lowerAssignTargets(valueIDs, targets []int32) {
+	for i, t := range targets {
+		if i >= len(valueIDs) {
+			break
+		}
+		l.bindTarget(t, l.lowerExpr(valueIDs[i]))
+	}
+}
+
+// enqueueCallee schedules a referenced function for lowering (reachability).
+func (l *lowerer) enqueueCallee(callee string) {
+	if callee == "" {
+		return
+	}
+	if id, ok := l.funcNames[callee]; ok && !l.lowered[callee] {
+		already := false
+		for _, w := range l.worklist {
+			if w == callee {
+				already = true
+				break
+			}
+		}
+		if !already {
+			l.worklist = append(l.worklist, callee)
+			_ = id
+		}
+	}
 }
 
 // isOwnedLocal reports whether v is an owned (heap-owning) value that is local to
@@ -1082,8 +2191,17 @@ func (l *lowerer) elementTypeOf(v ValueID) TypeID {
 		return l.voidType
 	}
 	ty := l.mod.Type(t)
-	if ty != nil && ty.Elem != NoType {
-		return ty.Elem
+	if ty != nil {
+		// A str is `{len, cap, i8* data}`; indexing a str yields a single byte
+		// (i8), not a struct element. Without this, `s[i]` lowered to void and
+		// every string-builder idiom (to-upper / replace / repeat / ...) that
+		// writes bytes in place produced `store void` IR that opt rejected.
+		if ty.Raw == "str" {
+			return l.b.Type("i8")
+		}
+		if ty.Elem != NoType {
+			return ty.Elem
+		}
 	}
 	return l.voidType
 }
@@ -1110,7 +2228,25 @@ func (l *lowerer) lowerAssignNode(assignID int32) ValueID {
 		l.unsupported(l.curFuncName(), "assign", "assignment with no target")
 		return NoVal
 	}
+	// Publish the assignment TARGET's type as a hint while lowering the RHS.
+	// Builtins like with-len/with-cap leave the result type to the LHS, and the
+	// dominant std idiom is an assignment rather than a declaration:
+	//
+	//	str.to-upper = () (val str) { val = with-cap(.len) ... }
+	//
+	// Without the hint the call lowers to void, the assignment binds nothing and
+	// every later read of `val` cascades into "unresolved identifier".
+	if tn.Kind == hir.KIdent {
+		if nm := l.pkg.Str(tn.S); nm != "" {
+			if slot, ok := l.locals[nm]; ok {
+				if t := l.valueTypeOf(slot); t != NoType && t != l.voidType {
+					l.typeHint = t
+				}
+			}
+		}
+	}
 	v := l.lowerExpr(value)
+	l.typeHint = NoType
 	if v == NoVal {
 		return NoVal
 	}
@@ -1123,8 +2259,13 @@ func (l *lowerer) lowerAssignNode(assignID int32) ValueID {
 			return NoVal
 		}
 		if l.isOwnedLocal(slot) {
-			l.unsupported(l.curFuncName(), "assign", "owned reassignment of "+nm+" not yet supported in MIR")
-			return NoVal
+			// Owned reassignment: the old value must be freed exactly once, then
+			// the new value is moved into the existing slot (ownership transfer,
+			// so the new value is exempt from the slot's own drop). The memory
+			// analysis inserts a drop for the slot at every exit path, which frees
+			// the NEW content; the manual drop here frees the OLD content. So each
+			// physical allocation is freed exactly once.
+			l.b.EmitVoid(OpDrop, []ValueID{slot}, "")
 		}
 		l.b.EmitMoveInto(slot, v)
 		return v
@@ -1147,6 +2288,30 @@ func (l *lowerer) lowerAssignNode(assignID int32) ValueID {
 			return NoVal
 		}
 		l.b.EmitVoid(OpIndexStore, []ValueID{arrV, idxV, v}, "")
+		return v
+	case hir.KDot:
+		// obj.field = v  -> set field of struct/option receiver.
+		if os.Getenv("NOLANG_MIR_DEBUG") != "" {
+			var rc int32
+			for _, c := range l.pkg.Children(target) {
+				rc = c
+				break
+			}
+			fmt.Fprintf(os.Stderr, "[mir-dbg] ASSIGN-KDot tn.S=%q tnKind=%v recvChild=%d\n", l.pkg.Str(tn.S), tn.Kind, rc)
+		}
+		var recvID int32
+		for _, c := range l.pkg.Children(target) {
+			recvID = c
+			break
+		}
+		recvV := l.lowerExpr(recvID)
+		if recvV == NoVal {
+			return NoVal
+		}
+		// Store the field name in inst.Str (not inst.Sym) so emitSetField's
+		// FieldIndex lookup matches the GETFIELD convention in lowerDotRead.
+		sid := l.b.EmitVoid(OpSetField, []ValueID{recvV, v}, "")
+		l.mod.Insts[sid].Str = l.pkg.Str(tn.S)
 		return v
 	default:
 		l.unsupported(l.curFuncName(), "assign", "unsupported assign target kind "+hir.KindNames[tn.Kind])
@@ -1196,6 +2361,16 @@ func infixOp(s string) (Op, bool) {
 		op, cmp = OpAnd, false
 	case "||":
 		op, cmp = OpOr, false
+	case "&":
+		op, cmp = OpBitAnd, false
+	case "|":
+		op, cmp = OpBitOr, false
+	case "^":
+		op, cmp = OpXor, false
+	case "<<":
+		op, cmp = OpShl, false
+	case ">>":
+		op, cmp = OpShr, false
 	default:
 		op, cmp = OpInvalid, false
 	}
