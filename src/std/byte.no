@@ -79,51 +79,6 @@ i64.to-bytes-le = () (out [?]byte) {
     out = cs
 }
 
-; []char.to-str: 将字符切片转为字符串（按 UTF-8 编码每个码点）
-; 每个码点按 UTF-8 写成 1~4 字节，push 进一个 []byte 临时切片；最后用循环下标
-; 把临时字节切片一次性拷入 out（out[j] = tmp[j]，下标用循环变量 j）。
-;
-; ⚠️ 注意：截至 2026-09-06，nolang 编译器对 []char 切片类型的支持不完整，本方法尚不可用：
-;   - legacy 后端：[]char 的 with-cap/push 对 len/cap 的单位（元素数 vs 字节数）处理有误，
-;     导致 .len() 返回的元素数偏大，[]char.to-str 会越界读取产生乱码（实测单个 push(72)
-;     也输出 "H"+乱码）。[]char 字面量与索引读取本身是 i32 stride 正确的，但 push 构造出的
-;     切片 len 字段被破坏。
-;   - MIR=3 门禁：编译器对 []char 元素类型与新增的 []t.to-chars 泛型方法均无支持，
-;     直接报 "unknown callee []t.to-chars"，无法编译通过。
-; 在编译器修复 []char 切片支持前，请勿依赖 to-chars / []char.to-str。
-[]char.to-str = () (out str) {
-    n = .len()
-    tmp []byte = with-cap(n * 4)
-    i <- [0..n): {
-        cp = .[i]
-        {
-            cp < 0x80 -> tmp.push(cp & 0xff)
-
-            cp < 0x800 -> {
-                tmp.push(0xc0 | ((cp >> 6) & 0x1f))
-                tmp.push(0x80 | (cp & 0x3f))
-            }
-
-            cp < 0x10000 -> {
-                tmp.push(0xe0 | ((cp >> 12) & 0x0f))
-                tmp.push(0x80 | ((cp >> 6) & 0x3f))
-                tmp.push(0x80 | (cp & 0x3f))
-            }
-
-            -> {
-                tmp.push(0xf0 | ((cp >> 18) & 0x07))
-                tmp.push(0x80 | ((cp >> 12) & 0x3f))
-                tmp.push(0x80 | ((cp >> 6) & 0x3f))
-                tmp.push(0x80 | (cp & 0x3f))
-            }
-        }
-    }
-    m = tmp.len
-    out = with-len(m)
-    j <- [0..m): {
-        out[j] = tmp[j]
-    }
-}
 
 ; []byte.to-str: 将字节切片按「先 to-chars 再 to-str」语义转成字符串。
 ; 每个字节被当作一个 0~255 的 Unicode 码点，再按 UTF-8 编码成 1~4 字节。
@@ -141,9 +96,9 @@ i64.to-bytes-le = () (out [?]byte) {
 ; （例如磁盘上读到的 0xC3 0xA9 会被当成码点 0xC3、0xA9 各自重编码）。若需「原样拷贝
 ; 合法 UTF-8 字节流」（文件 / 子进程读取场景），请改用保留了 1:1 拷贝语义的
 ; b.to-bytes-str()（见下方），或直接使用底层切片。
-[]byte.to-str = () (out str) {
+[]byte.to-str = () (out ?str) {
     n = .len()
-    out = with-len(0)
+    r str = with-len(0)
     i <- [0..n): {
         cp = .[i] & 0xff
         seg str = with-cap(4)
@@ -162,8 +117,9 @@ i64.to-bytes-le = () (out [?]byte) {
             seg[2] = 0x80 | ((cp >> 6) & 0x3f)
             seg[3] = 0x80 | (cp & 0x3f)
         }
-        out = out - seg
+        r = r - seg
     }
+    out = r
 }
 
 ; []byte.to-bytes-str: 1:1 逐字节拷贝（保留原 []byte.to-str 语义）。

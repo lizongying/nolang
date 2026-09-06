@@ -320,3 +320,1023 @@ txt.at = (idx i64) (b byte) {
     idx >= cur-len -> return
     b = .[idx]
 }
+
+; ═══════════════════════════════════════════════
+; UTF-8 解碼
+; ═══════════════════════════════════════════════
+
+; txt.decode-cp: 從位置 i 解碼一個 UTF-8 碼點
+; 返回 cp=碼點值, clen=序列位元組長度（1~4）
+txt.decode-cp = (i i64) (cp i64, clen i64) {
+    b = .[i]
+    cp = b
+    clen = 1
+    {
+        b < 0x80 -> {
+            cp = b
+            clen = 1
+        }
+        b < 0xe0 -> {
+            cp = ((b & 0x1f) << 6) | (.[i + 1] & 0x3f)
+            clen = 2
+        }
+        b < 0xf0 -> {
+            cp = ((b & 0x0f) << 12) | ((.[i + 1] & 0x3f) << 6) | (.[i + 2] & 0x3f)
+            clen = 3
+        }
+        -> {
+            cp = ((b & 0x07) << 18) | ((.[i + 1] & 0x3f) << 12) | ((.[i + 2] & 0x3f) << 6) | (.[i + 3] & 0x3f)
+            clen = 4
+        }
+    }
+}
+
+; ═══════════════════════════════════════════════
+; 大小寫轉換
+; ═══════════════════════════════════════════════
+
+; txt.to-upper: 將文字轉為大寫（ASCII）
+; 返回新 txt
+txt.to-upper = () (val txt) {
+    n i64 = .len
+    i <- [0..n): {
+        c = .[i]
+        {
+            c >= 97 && c <= 122 -> val[i] = c - 32
+            -> val[i] = c
+        }
+    }
+    val.len = n
+}
+
+; txt.to-lower: 將文字轉為小寫（ASCII）
+; 返回新 txt
+txt.to-lower = () (val txt) {
+    n i64 = .len
+    i <- [0..n): {
+        c = .[i]
+        {
+            c >= 65 && c <= 90 -> val[i] = c + 32
+            -> val[i] = c
+        }
+    }
+    val.len = n
+}
+
+; ═══════════════════════════════════════════════
+; 裁剪
+; ═══════════════════════════════════════════════
+
+; txt.trim: 去除首尾空白字元
+; 返回新 txt
+txt.trim = () (val txt) {
+    n i64 = .len
+    start <- [0..n): {
+        c = .[start]
+        c != 32 && c != 9 && c != 10 && c != 13 -> break
+    }
+    end = n - 1
+    {
+        c = .[end]
+        c != 32 && c != 9 && c != 10 && c != 13 -> break
+        end = end - 1
+    } (end >= start)
+    m = end - start + 1
+    m < 0 -> return
+    i <- [0..m): {
+        val[i] = .[start + i]
+    }
+    val.len = m
+}
+
+; txt.trim-char: 去除首尾指定字元（UTF-8 碼點）
+; 返回新 txt
+txt.trim-char = (ch char) (val txt) {
+    n i64 = .len
+    start = 0
+    {
+        b = .[start]
+        cp i64 = b
+        clen = 1
+        {
+            b < 0x80 -> {
+                cp = b
+                clen = 1
+            }
+            b < 0xe0 -> {
+                cp = ((b & 0x1f) << 6) | (.[start + 1] & 0x3f)
+                clen = 2
+            }
+            b < 0xf0 -> {
+                cp = ((b & 0x0f) << 12) | ((.[start + 1] & 0x3f) << 6) | (.[start + 2] & 0x3f)
+                clen = 3
+            }
+            -> {
+                cp = ((b & 0x07) << 18) | ((.[start + 1] & 0x3f) << 12) | ((.[start + 2] & 0x3f) << 6) | (.[start + 3] & 0x3f)
+                clen = 4
+            }
+        }
+        cp != ch -> break
+        start = start + clen
+    } (start < n)
+    end = start
+    i = start
+    {
+        b = .[i]
+        cp = b
+        clen = 1
+        {
+            b < 0x80 -> {
+                cp = b
+                clen = 1
+            }
+            b < 0xe0 -> {
+                cp = ((b & 0x1f) << 6) | (.[i + 1] & 0x3f)
+                clen = 2
+            }
+            b < 0xf0 -> {
+                cp = ((b & 0x0f) << 12) | ((.[i + 1] & 0x3f) << 6) | (.[i + 2] & 0x3f)
+                clen = 3
+            }
+            -> {
+                cp = ((b & 0x07) << 18) | ((.[i + 1] & 0x3f) << 12) | ((.[i + 2] & 0x3f) << 6) | (.[i + 3] & 0x3f)
+                clen = 4
+            }
+        }
+        cp != ch -> end = i + clen
+        i = i + clen
+    } (i < n)
+    m = end - start
+    m < 0 -> return
+    j <- [0..m): {
+        val[j] = .[start + j]
+    }
+    val.len = m
+}
+
+; ═══════════════════════════════════════════════
+; 重複
+; ═══════════════════════════════════════════════
+
+; txt.repeat: 將內容重複 times 次（上限 255 位元組）
+; 返回新 txt
+txt.repeat = (times i64) (val txt) {
+    n i64 = .len
+    cap = 255
+    pos = 0
+    i <- [0..times): {
+        j <- [0..n): {
+            pos < cap -> {
+                val[pos] = .[j]
+                pos = pos + 1
+            }
+        }
+    }
+    val.len = pos
+}
+
+; ═══════════════════════════════════════════════
+; 統計
+; ═══════════════════════════════════════════════
+
+; txt.count: 統計 code point 數量
+txt.count = () (cnt i64) {
+    cnt = 0
+    n i64 = .len
+    i = 0
+    {
+        b = .[i]
+        {
+            b < 0x80 -> i = i + 1
+            b < 0xe0 -> i = i + 2
+            b < 0xf0 -> i = i + 3
+            -> i = i + 4
+        }
+        cnt = cnt + 1
+    } (i < n)
+}
+
+; ═══════════════════════════════════════════════
+; 反向 / 限定查找
+; ═══════════════════════════════════════════════
+
+; txt.index-from: 從 from 位置開始查找子串
+; 返回首次出現位置，未找到返回 -1
+txt.index-from = (target txt, from i64) (pos i64) {
+    pos = -1
+    from < 0 -> from = 0
+    target.len == 0 -> {
+        from <= .len -> pos = from
+        return
+    }
+    n i64 = .len
+    m i64 = target.len
+    n < m -> return
+    limit = n - m
+    from > limit -> return
+    i <- [from..limit]: {
+        matched = 1
+        j <- [0..m): {
+            .[i + j] != target[j] -> {
+                matched = 0
+                break
+            }
+        }
+        matched == 1 -> {
+            pos = i
+            return
+        }
+    }
+}
+
+; txt.rindex: 反向查找子串最後出現位置
+; 返回位置，未找到 -1
+txt.rindex = (target txt) (pos i64) {
+    pos = -1
+    {
+        target.len == 0 -> {
+            pos = .len
+            return
+        }
+        target.len > .len -> return
+    }
+    n i64 = .len
+    m i64 = target.len
+    limit = n - m
+    i = limit
+    {
+        matched = 1
+        j <- [0..m): {
+            .[i + j] != target[j] -> {
+                matched = 0
+                break
+            }
+        }
+        matched == 1 -> {
+            pos = i
+            return
+        }
+        i = i - 1
+    } (i >= 0)
+}
+
+; txt.last-index: rindex 別名
+txt.last-index = (target txt) (pos i64) {
+    pos = .rindex(target)
+}
+
+; txt.rindex-from: 從 from 位置反向查找子串
+txt.rindex-from = (target txt, from i64) (pos i64) {
+    pos = -1
+    from < 0 -> from = 0
+    {
+        target.len == 0 -> {
+            from <= .len -> pos = .len
+            return
+        }
+        target.len > .len -> return
+    }
+    n i64 = .len
+    m i64 = target.len
+    limit = n - m
+    from > limit -> return
+    i = limit
+    {
+        matched = 1
+        j <- [0..m): {
+            .[i + j] != target[j] -> {
+                matched = 0
+                break
+            }
+        }
+        matched == 1 -> {
+            pos = i
+            return
+        }
+        i = i - 1
+    } (i >= from)
+}
+
+; ═══════════════════════════════════════════════
+; 數值解析
+; ═══════════════════════════════════════════════
+
+; txt.to-i64: 將文字解析為有號 64 位整數
+; 返回 Option：ok(n) / nil（空）/ err('msg')
+txt.to-i64 = () (val ?i64) {
+    .len == 0 -> {
+        val = nil
+        return
+    }
+    n = 0
+    start = 0
+    neg = 0
+    c = .[0]
+    {
+        c == 45 -> {
+            neg = 1
+            start = 1
+            .len == 1 -> {
+                val = err('invalid number: lone minus')
+                return
+            }
+        }
+        c == 43 -> {
+            start = 1
+            .len == 1 -> {
+                val = err('invalid number: lone plus')
+                return
+            }
+        }
+    }
+    limit = 922337203685477580
+    i <- [start..n): {
+        c = .[i]
+        c < 48 || c > 57 -> {
+            val = err('invalid number: non-digit character')
+            return
+        }
+        d = c - 48
+        n > limit -> {
+            val = err('out of range for i64')
+            return
+        }
+        n == limit -> {
+            neg == 1 -> {
+                d > 8 -> {
+                    val = err('out of range for i64')
+                    return
+                }
+                d == 8 -> {
+                    i == n - 1 -> {
+                        n = 0 - 922337203685477580
+                        n = n * 10 - 8
+                        val = n
+                        return
+                    }
+                    -> {
+                        val = err('out of range for i64')
+                        return
+                    }
+                }
+            }
+            d > 7 -> {
+                val = err('out of range for i64')
+                return
+            }
+        }
+        n = n * 10 + d
+    }
+    neg == 1 -> n = 0 - n
+    val = n
+}
+
+; txt.to-i8: 解析為 i8（範圍 -128~127）
+txt.to-i8 = () (val ?i8) {
+    v = .to-i64()
+    v: {
+        err -> val = err(it)
+        nil -> return
+        ok -> {
+            n = it
+            n >= 0 - 128 && n <= 127 -> val = n
+            -> val = err('out of range for i8')
+        }
+    }
+}
+
+; txt.to-i16: 解析為 i16（範圍 -32768~32767）
+txt.to-i16 = () (val ?i16) {
+    v = .to-i64()
+    v: {
+        err -> val = err(it)
+        nil -> return
+        ok -> {
+            n = it
+            n >= 0 - 32768 && n <= 32767 -> val = n
+            -> val = err('out of range for i16')
+        }
+    }
+}
+
+; txt.to-i32: 解析為 i32（範圍 -2147483648~2147483647）
+txt.to-i32 = () (val ?i32) {
+    v = .to-i64()
+    v: {
+        err -> val = err(it)
+        nil -> return
+        ok -> {
+            n = it
+            n >= 0 - 2147483648 && n <= 2147483647 -> val = n
+            -> val = err('out of range for i32')
+        }
+    }
+}
+
+; txt.to-u8: 解析為 u8（範圍 0~255）
+txt.to-u8 = () (val ?u8) {
+    .len == 0 -> {
+        val = nil
+        return
+    }
+    n = 0
+    start = 0
+    c = .[0]
+    {
+        c == 45 -> {
+            val = err('invalid u8: negative sign not allowed')
+            return
+        }
+        c == 43 -> {
+            start = 1
+            .len == 1 -> {
+                val = err('invalid number: lone plus')
+                return
+            }
+        }
+    }
+    i <- [start..n): {
+        c = .[i]
+        c < 48 || c > 57 -> {
+            val = err('invalid number: non-digit character')
+            return
+        }
+        n = n * 10 + c - 48
+    }
+    {
+        n >= 0 && n <= 255 -> val = n
+        -> val = err('out of range for u8')
+    }
+}
+
+; txt.to-u16: 解析為 u16（範圍 0~65535）
+txt.to-u16 = () (val ?u16) {
+    .len == 0 -> {
+        val = nil
+        return
+    }
+    n = 0
+    start = 0
+    c = .[0]
+    {
+        c == 45 -> {
+            val = err('invalid u16: negative sign not allowed')
+            return
+        }
+        c == 43 -> {
+            start = 1
+            .len == 1 -> {
+                val = err('invalid number: lone plus')
+                return
+            }
+        }
+    }
+    i <- [start..n): {
+        c = .[i]
+        c < 48 || c > 57 -> {
+            val = err('invalid number: non-digit character')
+            return
+        }
+        n = n * 10 + c - 48
+    }
+    {
+        n >= 0 && n <= 65535 -> val = n
+        -> val = err('out of range for u16')
+    }
+}
+
+; txt.to-u32: 解析為 u32（範圍 0~4294967295）
+txt.to-u32 = () (val ?u32) {
+    .len == 0 -> {
+        val = nil
+        return
+    }
+    n = 0
+    start = 0
+    c = .[0]
+    {
+        c == 45 -> {
+            val = err('invalid u32: negative sign not allowed')
+            return
+        }
+        c == 43 -> {
+            start = 1
+            .len == 1 -> {
+                val = err('invalid number: lone plus')
+                return
+            }
+        }
+    }
+    i <- [start..n): {
+        c = .[i]
+        c < 48 || c > 57 -> {
+            val = err('invalid number: non-digit character')
+            return
+        }
+        n = n * 10 + c - 48
+    }
+    {
+        n >= 0 && n <= 4294967295 -> val = n
+        -> val = err('out of range for u32')
+    }
+}
+
+; txt.to-u64: 解析為 u64（拒絕負號）
+txt.to-u64 = () (val ?u64) {
+    .len == 0 -> {
+        val = nil
+        return
+    }
+    c = .[0]
+    c == 45 -> {
+        val = err('invalid u64: negative sign not allowed')
+        return
+    }
+    n = 0
+    start = 0
+    c == 43 -> start = 1
+    i <- [start..n): {
+        c = .[i]
+        c < 48 || c > 57 -> {
+            val = err('invalid number: non-digit character')
+            return
+        }
+        n = n * 10 + c - 48
+    }
+    val = n
+}
+
+; txt.to-byte: 解析為 byte（與 u8 等價）
+txt.to-byte = () (val ?byte) {
+    .len == 0 -> {
+        val = nil
+        return
+    }
+    n = 0
+    start = 0
+    c = .[0]
+    {
+        c == 45 -> {
+            val = err('invalid byte: negative sign not allowed')
+            return
+        }
+        c == 43 -> {
+            start = 1
+            .len == 1 -> {
+                val = err('invalid number: lone plus')
+                return
+            }
+        }
+    }
+    i <- [start..n): {
+        c = .[i]
+        c < 48 || c > 57 -> {
+            val = err('invalid number: non-digit character')
+            return
+        }
+        n = n * 10 + c - 48
+    }
+    {
+        n >= 0 && n <= 255 -> val = n
+        -> val = err('out of range for byte')
+    }
+}
+
+; txt.to-f64: 將文字解析為 f64（回傳 ?f64，空字串→nil，非數字→err）
+; 複用 str 的解析邏輯（先轉 str 再呼叫 str.to-f64）
+txt.to-f64 = () (val ?f64) {
+    s = .to-str()
+    val = s.to-f64()
+}
+
+; txt.to-f32: 將文字解析為 f32
+txt.to-f32 = () (val ?f32) {
+    f ?f64 = .to-f64()
+    {
+        f == nil -> {
+            val = nil
+            return
+        }
+        f == err -> {
+            val = err('txt.to-f32: parse error')
+            return
+        }
+    }
+    val = number.f64-to-f32(f)
+}
+
+; txt.to-bool: 將 "true"/"false" 解析為 bool
+txt.to-bool = () (val ?bool) {
+    {
+        .len == 0 -> {
+            val = nil
+            return
+        }
+        .len == 4 -> {
+            .[0] == 116 && .[1] == 114 && .[2] == 117 && .[3] == 101 -> {
+                val = true
+                return
+            }
+        }
+        .len == 5 -> {
+            .[0] == 102 && .[1] == 97 && .[2] == 108 && .[3] == 115 && .[4] == 101 -> {
+                val = false
+                return
+            }
+        }
+    }
+    val = err('not a bool')
+}
+
+; ═══════════════════════════════════════════════
+; 替換
+; ═══════════════════════════════════════════════
+
+; txt.replace-char: 將所有 old-ch 替換為 new-ch（UTF-8 碼點）
+; 返回新 txt（超過 255 位元組則截斷）
+txt.replace-char = (old-ch char, new-ch char) (val txt) {
+    n i64 = .len
+    cap = 255
+    pos = 0
+    i = 0
+    {
+        b = .[i]
+        cp i64 = b
+        clen = 1
+        {
+            b < 0x80 -> {
+                cp = b
+                clen = 1
+            }
+            b < 0xe0 -> {
+                cp = ((b & 0x1f) << 6) | (.[i + 1] & 0x3f)
+                clen = 2
+            }
+            b < 0xf0 -> {
+                cp = ((b & 0x0f) << 12) | ((.[i + 1] & 0x3f) << 6) | (.[i + 2] & 0x3f)
+                clen = 3
+            }
+            -> {
+                cp = ((b & 0x07) << 18) | ((.[i + 1] & 0x3f) << 12) | ((.[i + 2] & 0x3f) << 6) | (.[i + 3] & 0x3f)
+                clen = 4
+            }
+        }
+        {
+            cp == old-ch -> {
+                new-ch < 0x80 -> {
+                    pos < cap -> {
+                        val[pos] = new-ch
+                        pos = pos + 1
+                    }
+                }
+                new-ch < 0x800 -> {
+                    pos < cap -> {
+                        val[pos] = 0xc0 | ((new-ch >> 6) & 0x1f)
+                        pos = pos + 1
+                    }
+                    pos < cap -> {
+                        val[pos] = 0x80 | (new-ch & 0x3f)
+                        pos = pos + 1
+                    }
+                }
+                new-ch < 0x10000 -> {
+                    pos < cap -> {
+                        val[pos] = 0xe0 | ((new-ch >> 12) & 0x0f)
+                        pos = pos + 1
+                    }
+                    pos < cap -> {
+                        val[pos] = 0x80 | ((new-ch >> 6) & 0x3f)
+                        pos = pos + 1
+                    }
+                    pos < cap -> {
+                        val[pos] = 0x80 | (new-ch & 0x3f)
+                        pos = pos + 1
+                    }
+                }
+                -> {
+                    pos < cap -> {
+                        val[pos] = 0xf0 | ((new-ch >> 18) & 0x07)
+                        pos = pos + 1
+                    }
+                    pos < cap -> {
+                        val[pos] = 0x80 | ((new-ch >> 12) & 0x3f)
+                        pos = pos + 1
+                    }
+                    pos < cap -> {
+                        val[pos] = 0x80 | ((new-ch >> 6) & 0x3f)
+                        pos = pos + 1
+                    }
+                    pos < cap -> {
+                        val[pos] = 0x80 | (new-ch & 0x3f)
+                        pos = pos + 1
+                    }
+                }
+            }
+            -> {
+                k <- [0..clen): {
+                    pos < cap -> {
+                        val[pos] = .[i + k]
+                        pos = pos + 1
+                    }
+                }
+            }
+        }
+        i = i + clen
+    } (i < n)
+    val.len = pos
+}
+
+; txt.replace-str: 將所有 old 子串替換為 new 子串
+; 返回新 txt（超過 255 位元組則截斷）
+txt.replace-str = (old txt, new txt) (val txt) {
+    old.len == 0 -> {
+        val = .slice(0, .len)
+        return
+    }
+    n i64 = .len
+    old-len i64 = old.len
+    new-len i64 = new.len
+    cap = 255
+    pos = 0
+    i = 0
+    {
+        match = 1
+        j = 0
+        {
+            i + j >= n -> {
+                match = 0
+                break
+            }
+            .[i + j] != old[j] -> {
+                match = 0
+                break
+            }
+            j = j + 1
+        } (j < old-len)
+        match -> {
+            k <- [0..new-len): {
+                pos < cap -> {
+                    val[pos] = new[k]
+                    pos = pos + 1
+                }
+            }
+            i = i + old-len
+        }
+        -> {
+            pos < cap -> {
+                val[pos] = .[i]
+                pos = pos + 1
+            }
+            i = i + 1
+        }
+    } (i < n)
+    val.len = pos
+}
+
+; txt.replace-n: 限定替換次數
+; old txt, new txt, n i64: 最大替換次數（n<=0 不替換）
+txt.replace-n = (old txt, new txt, n i64) (val txt) {
+    n <= 0 -> {
+        val = .slice(0, .len)
+        return
+    }
+    old.len == 0 -> {
+        val = .slice(0, .len)
+        return
+    }
+    parts = .split(old)
+    np = parts.len
+    np <= 1 -> {
+        val = .slice(0, .len)
+        return
+    }
+    repl = np - 1
+    repl > n -> repl = n
+    total = 0
+    i <- [0..np): {
+        i > 0 -> {
+            i <= repl -> total = total + new.len -> total = total + old.len
+        }
+        total = total + parts[i].len
+    }
+    total > 255 -> total = 255
+    cap = 255
+    pos = 0
+    i <- [0..np): {
+        i > 0 -> {
+            sep = new
+            i > repl -> sep = old
+            j <- [0..sep.len): {
+                pos < cap -> {
+                    val[pos] = sep[j]
+                    pos = pos + 1
+                }
+            }
+        }
+        s = parts[i]
+        j <- [0..s.len): {
+            pos < cap -> {
+                val[pos] = s[j]
+                pos = pos + 1
+            }
+        }
+    }
+    val.len = pos
+}
+
+; ═══════════════════════════════════════════════
+; 分割與連接
+; ═══════════════════════════════════════════════
+
+; txt.split: 用分隔符分割為 []txt
+txt.split = (sep txt) (out []txt) {
+    result []txt
+    sep.len == 0 -> {
+        result.push(.slice(0, .len))
+        out = result
+        return
+    }
+    start = 0
+    pos = .index-from(sep, start)
+    {
+        result.push(.slice(start, pos))
+        start = pos + sep.len
+        pos = .index-from(sep, start)
+    } (pos >= 0)
+    result.push(.slice(start, .len))
+    out = result
+}
+
+; txt.split-n: 限定分割次數
+; sep txt, maxsplit i64: 最大分割次數（<=0 不限制）
+txt.split-n = (sep txt, maxsplit i64) (out []txt) {
+    result []txt
+    sep.len == 0 -> {
+        result.push(.slice(0, .len))
+        out = result
+        return
+    }
+    maxsplit <= 0 -> {
+        out = .split(sep)
+        return
+    }
+    start = 0
+    pos = .index-from(sep, start)
+    count = 0
+    {
+        count >= maxsplit -> {
+            result.push(.slice(start, .len))
+            out = result
+            return
+        }
+        result.push(.slice(start, pos))
+        start = pos + sep.len
+        count = count + 1
+        pos = .index-from(sep, start)
+    } (pos >= 0)
+    result.push(.slice(start, .len))
+    out = result
+}
+
+; txt-join: 用分隔符連接 txt 切片（超過 255 位元組則截斷）
+; parts []txt: 待連接的 txt 切片
+; sep txt: 分隔符
+; 返回 out txt: 連接結果
+; 注意：編譯器目前不支援 []txt 切片方法，故以全域函數提供
+txt-join = (parts []txt, sep txt) (out txt) {
+    n = parts.len
+    n == 0 -> return
+    cap = 255
+    pos = 0
+    i <- [0..n): {
+        i > 0 -> {
+            sj <- [0..sep.len): {
+                pos < cap -> {
+                    out[pos] = sep[sj]
+                    pos = pos + 1
+                }
+            }
+        }
+        s = parts[i]
+        sl i64 = s.len
+        sj <- [0..sl): {
+            pos < cap -> {
+                out[pos] = s[sj]
+                pos = pos + 1
+            }
+        }
+    }
+    out.len = pos
+}
+
+; txt.fields: 按空白分割為 []txt（連續空白視為單一分隔符）
+txt.fields = () (out []txt) {
+    n i64 = .len
+    n == 0 -> return
+    result []txt
+    start = -1
+    i <- [0..n): {
+        b = .[i]
+        {
+            b != 32 && b != 9 && b != 10 && b != 13 -> {
+                start < 0 -> start = i
+            }
+            start >= 0 -> {
+                result.push(.slice(start, i))
+                start = -1
+            }
+            ->
+        }
+    }
+    start >= 0 -> result.push(.slice(start, n))
+    out = result
+}
+
+; txt.lines: 按換行符分割為 []txt（支援 \n 與 \r\n）
+txt.lines = () (out []txt) {
+    n i64 = .len
+    n == 0 -> return
+    result []txt
+    start = 0
+    i = 0
+    {
+        c = .[i]
+        c == 10 -> {
+            end = i
+            i > start -> {
+                prev = .[i - 1]
+                prev == 13 -> end = i - 1
+            }
+            result.push(.slice(start, end))
+            start = i + 1
+        }
+        i = i + 1
+    } (i < n)
+    start < n -> result.push(.slice(start, n))
+    out = result
+}
+
+; ═══════════════════════════════════════════════
+; 十六進制解碼
+; ═══════════════════════════════════════════════
+
+; txt-hex-val: 單個十六進制字元轉數值（無效字元回傳 -1）
+txt-hex-val = (c i64) (v i64) {
+    v = -1
+    {
+        c >= 48 && c <= 57 -> {
+            v = c - 48
+            return
+        }
+        c >= 65 && c <= 70 -> {
+            v = c - 65 + 10
+            return
+        }
+        c >= 97 && c <= 102 -> v = c - 97 + 10
+    }
+}
+
+; txt.from-hex: 將十六進制文字解碼為 txt
+; 返回 Option：ok(txt) / nil（空）/ err('msg')
+txt.from-hex = () (out ?txt) {
+    {
+        .len == 0 -> {
+            out = nil
+            return
+        }
+        .len % 2 != 0 -> {
+            out = err('odd-length hex string')
+            return
+        }
+    }
+    n i64 = .len / 2
+    out2 txt
+    i <- [0..n): {
+        hi = txt-hex-val(.[i * 2])
+        lo = txt-hex-val(.[i * 2 + 1])
+        hi < 0 || lo < 0 -> {
+            out = err('invalid hex character')
+            return
+        }
+        out2[i] = (hi << 4) | lo
+    }
+    out2.len = n
+    out = out2
+}
+
+; ═══════════════════════════════════════════════
+; 全等比較
+; ═══════════════════════════════════════════════
+
+; txt.eq-full: 全等比較兩個 txt（長度 + 逐位元組）
+txt.eq-full = (b txt) (yes bool) {
+    .len != b.len -> return
+    yes = true
+    n i64 = .len
+    i <- [0..n): {
+        .[i] != b[i] -> {
+            yes = false
+            return
+        }
+    }
+}

@@ -240,6 +240,7 @@ type funcState struct {
 	// === 變數追蹤 ===
 	funcVars          []varInfo                       // current function's variables for lifetime.end
 	varTypes          map[string]string               // variable name → LLVM type
+	varNolangTypes    map[string]string               // variable name → nolang 宣告型別（char/i32/byte…），用於方法分派優先選 nolang 型別前綴（2026-09-06 修：char 變數誤分派 i32.to-str）
 	varSSA            map[string]int                  // variable name → current SSA version
 	ssaMode           bool                            // true = 使用 SSA 暫存器
 	paramNames        map[string]bool                 // 函數參數名稱（使用 .addr 存取）
@@ -347,6 +348,7 @@ type Generator struct {
 	moduleLetNames         map[string]bool                 // module-level `let` declaration names (used to keep module-level lets as globals even when also used as multi-assign targets)
 	moduleArrayElemTypes   map[string]string               // module-level array/slice element types (preserved across functions)
 	moduleElemElemTypes    map[string]string               // module-level inner element types for [][]T variables (preserved across functions)
+	moduleNolangTypes      map[string]string               // module-level + loop-body nolang 宣告型別備份（char/i32/byte…，2026-09-06 修：resetFuncState 會清空 funcState.varNolangTypes，main 函數不再重新收集，導致 char 變數誤分派 i32.to-str）
 	unionAliases           map[string][]string             // union type alias name → member type names (e.g. "float"→["f32","f64"])
 	moduleOptionInnerTypes map[string]string               // 模組級 option 變數 inner type 備份（避免函數級 map reset 後丟失）
 	moveEligible           map[*parser.LetStatement]bool   // b=a 赋值中，源变量 a 在后续未被引用 → true（可 move）
@@ -469,6 +471,7 @@ func NewGenerator() *Generator {
 	g.funcState = &funcState{
 		sliceViews:        make(map[string]*sliceViewInfo),
 		varTypes:          make(map[string]string),
+		varNolangTypes:    make(map[string]string),
 		arrayElemTypes:    make(map[string]string),
 		elemElemTypes:     make(map[string]string),
 		paramNames:        make(map[string]bool),
@@ -503,6 +506,7 @@ func NewGenerator() *Generator {
 func (g *Generator) resetFuncState() {
 	g.funcState = &funcState{
 		varTypes:          make(map[string]string),
+		varNolangTypes:    make(map[string]string),
 		arrayElemTypes:    make(map[string]string),
 		elemElemTypes:     make(map[string]string),
 		paramNames:        make(map[string]bool),
@@ -528,6 +532,13 @@ func (g *Generator) resetFuncState() {
 	// 恢復模組級變數的型別資訊
 	for k, v := range g.moduleVarTypes {
 		g.funcState.varTypes[k] = v
+	}
+	// 恢復模組級 + 循環體 nolang 宣告型別（char/i32/byte…），避免 main 函數
+	// resetFuncState 後 varNolangTypes 被清空，導致 char 變數誤分派 i32.to-str。
+	if g.moduleNolangTypes != nil {
+		for k, v := range g.moduleNolangTypes {
+			g.funcState.varNolangTypes[k] = v
+		}
 	}
 	// 恢復模組級陣列/切片元素型別
 	for k, v := range g.moduleArrayElemTypes {
@@ -2098,6 +2109,15 @@ func (g *Generator) prepare(stmts []parser.Statement, sem *parser.SemanticContex
 	varDecls := g.collectVarDecls(prog)
 	for k, v := range varDecls {
 		g.varTypes[k] = v
+	}
+	// 備份模組級 + 循環體 nolang 宣告型別（collectVarDecls 已經登記 c0/loop-local c 等）。
+	// resetFuncState 會重建 funcState 並清空 varNolangTypes，而 main 函數不會重新收集，
+	// 若不備份還原，char 變數將誤分派到 i32.to-str（十進位）而非 char.to-str（字元）。
+	if g.varNolangTypes != nil {
+		g.moduleNolangTypes = make(map[string]string, len(g.varNolangTypes))
+		for k, v := range g.varNolangTypes {
+			g.moduleNolangTypes[k] = v
+		}
 	}
 	// 備份模組級 option 變數的 inner type（collectVarDecls 已推導），
 	// 避免後續 generateFunctionDefinition reset optionInnerTypes 時丟失，

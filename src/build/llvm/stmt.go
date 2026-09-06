@@ -3914,6 +3914,23 @@ func (g *Generator) regexpLLVMType() string {
 	return "%regexp"
 }
 
+// registerVarNolangType records a variable's declared nolang type (e.g. "char",
+// "i32", "byte") so that method dispatch can prefer the nolang type prefix over
+// the raw LLVM alias. This matters because multiple nolang types map to the same
+// LLVM type (char/i32/u32 → i32); without the declared type we cannot tell a
+// `char` variable from an `i32` variable at dispatch time, causing `c.to-str()`
+// to wrongly resolve to i32.to-str (decimal) instead of char.to-str (character).
+// Only primitive NamedType declarations are recorded; struct types and inferred
+// (Type==nil) reassignments leave any previously-registered type intact.
+func (g *Generator) registerVarNolangType(name string, typ parser.Type) {
+	if g.varNolangTypes == nil {
+		return
+	}
+	if nt, ok := typ.(*parser.NamedType); ok {
+		g.varNolangTypes[name] = nt.Value
+	}
+}
+
 func (g *Generator) varLLVMType(stmt *parser.LetStatement) string {
 	// 單具體型別別名解析：若顯式型別為已註冊的具體型別別名，用底層 Type 遞迴解析
 	// 使 ArrayType/SliceType 等特殊路徑也能正確套用到底層型別
@@ -5223,6 +5240,7 @@ func (g *Generator) collectVarDecls(program *parser.Program) map[string]string {
 				t := g.varLLVMType(s)
 				vars[s.Name.Value] = t
 				g.varTypes[s.Name.Value] = t // register immediately for later varLLVMType calls
+				g.registerVarNolangType(s.Name.Value, s.Type)
 				// Register array element type for module-level [N]T globals (e.g. SBOX [256]byte)
 				// so that IndexExpression codegen uses the correct element type instead of
 				// defaulting to i64.
@@ -5390,6 +5408,9 @@ func (g *Generator) collectVarDeclsFromStmtInner(stmt parser.Statement, vars map
 				if g.varTypes != nil {
 					g.varTypes[s.Name.Value] = vt
 				}
+				// 仅注册非合成 let 的 nolang 宣告型別（char/i32/byte…），
+				// 讓方法分派優先選 nolang 型別前綴（2026-09-06）。
+				g.registerVarNolangType(s.Name.Value, s.Type)
 			}
 		}
 		// Propagate arrayElemTypes and elemElemTypes from the source option
@@ -5492,6 +5513,7 @@ func (g *Generator) collectVarDeclsFromStmtInner(stmt parser.Statement, vars map
 			if g.varTypes != nil {
 			g.varTypes[s.Name.Value] = vt
 		}
+			g.registerVarNolangType(s.Name.Value, s.Type)
 		// 變數間賦值（b = a）時傳播 arrayElemTypes 和 elemElemTypes，
 		// 使後續 varLLVMType 能正確推導嵌套容器元素的型別（如 b0 = b[0]）。
 		if ident, ok := s.Value.(*parser.Identifier); ok {
@@ -7289,6 +7311,9 @@ func (g *Generator) generateRangeFor(sb *strings.Builder, stmt *parser.ForStatem
 
 func (g *Generator) generateLet(sb *strings.Builder, stmt *parser.LetStatement) {
 	name := stmt.Name.Value
+	if os.Getenv("NOLANG_DEBUG_LET") != "" {
+		fmt.Fprintf(os.Stderr, "[debug-let-top] name=%q valueType=%T isSynthetic=%v\n", name, stmt.Value, stmt.IsSynthetic)
+	}
 
 	// 追踪通过 `task = run ...` 创建的本地 task 变量（SubTask 2.3）。
 	// 仅追踪非合成 let（合成为 match arm 注入，不含 run）。
@@ -8306,6 +8331,9 @@ func (g *Generator) generateLet(sb *strings.Builder, stmt *parser.LetStatement) 
 
 	val := g.generateExprWithSB(sb, stmt.Value)
 	val = g.stripLLVMType(val)
+	if os.Getenv("NOLANG_DEBUG_LET") != "" && name == "u" {
+		fmt.Fprintf(os.Stderr, "[debug-let-mid] name=%q val=%q llvmType-now=%q\n", name, val, g.varLLVMType(stmt))
+	}
 
 	// 若 RHS 求值产生了语句级临时堆对象（如 str 拼接结果），
 	// 变量将通过 trackLocalHeapVar/heapVars 接管 data 所有权，
@@ -9204,14 +9232,32 @@ if !alreadyCoerced && g.isIntegerLLVMType(llvmType) && llvmType != "i64" && stri
 			sb.WriteString(fmt.Sprintf("%s%s = select i1 %s, i64 %s, i64 255\n", g.indent(), txtLenVal, cappedLen, strLenReg))
 			sb.WriteString(fmt.Sprintf("%scall void @llvm.memcpy.p0i8.p0i8.i64(i8* %s, i8* %s, i64 %s, i1 false)\n",
 				g.indent(), txtDataGEP, dataPtr, txtLenVal))
-			// Store length
-			txtLenGEP := g.tmpReg("txt.dst.lengep")
-			sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%txt, %%txt* %s, i32 0, i32 1\n", g.indent(), txtLenGEP, storeAddr))
-			sb.WriteString(fmt.Sprintf("%sstore i8 %s, i8* %s\n", g.indent(), txtLenReg, txtLenGEP))
-			return
+		// Store length
+		txtLenGEP := g.tmpReg("txt.dst.lengep")
+		sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%txt, %%txt* %s, i32 0, i32 1\n", g.indent(), txtLenGEP, storeAddr))
+		sb.WriteString(fmt.Sprintf("%sstore i8 %s, i8* %s\n", g.indent(), txtLenReg, txtLenGEP))
+		return
+	}
+	// val is already a %txt value (SSA register) or a %txt* pointer (alloca).
+	// This happens for function calls returning txt via the voidSingleOutput
+	// convention (e.g. `u = t.to-upper()`), identifier reads, or field reads.
+	// %txt has no heap fields, so a plain load+store is a correct full copy.
+	if strings.HasPrefix(val, "%") {
+		if ssaType, ok := g.ssaTypes[val]; ok {
+			if ssaType == "%txt" {
+				sb.WriteString(fmt.Sprintf("%sstore %%txt %s, %%txt* %s\n", g.indent(), val, storeAddr))
+				return
+			}
+			if ssaType == "%txt*" {
+				loadReg := g.tmpReg("txt.load")
+				sb.WriteString(fmt.Sprintf("%s%s = load %%txt, %%txt* %s\n", g.indent(), loadReg, val))
+				sb.WriteString(fmt.Sprintf("%sstore %%txt %s, %%txt* %s\n", g.indent(), loadReg, storeAddr))
+				return
+			}
 		}
-		// Default: store zeroinitializer
-		sb.WriteString(fmt.Sprintf("%sstore %%txt zeroinitializer, %%txt* %s\n", g.indent(), storeAddr))
+	}
+	// Default: store zeroinitializer
+	sb.WriteString(fmt.Sprintf("%sstore %%txt zeroinitializer, %%txt* %s\n", g.indent(), storeAddr))
 	case "%str-long":
 		// Copy %str-long struct: load from source, store to dest
 		// String literal produces %str-long* pointer (alloca).
@@ -9396,6 +9442,9 @@ if !alreadyCoerced && g.isIntegerLLVMType(llvmType) && llvmType != "i64" && stri
 	default:
 		irType := toLLVMType(llvmType)
 		ptrType := irType + "*"
+		if os.Getenv("NOLANG_DEBUG_LET") != "" {
+			fmt.Fprintf(os.Stderr, "[debug-let] name=%q llvmType=%q val=%q storeAddr=%q isStruct=%v\n", name, llvmType, val, storeAddr, g.isStructLLVMType(llvmType))
+		}
 		// 宣告但無初值（如 `f http2-frame`）：val 為 "0"，struct 需用 zeroinitializer
 		if g.isStructLLVMType(llvmType) && !strings.HasPrefix(val, "%") {
 			sb.WriteString(fmt.Sprintf("%sstore %s zeroinitializer, %s %s\n", g.indent(), irType, ptrType, storeAddr))

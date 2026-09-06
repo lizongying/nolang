@@ -53,7 +53,20 @@ func (g *Generator) isNonVoidCall(expr *parser.CallExpression) bool {
 	if ident, ok := expr.Function.(*parser.Identifier); ok {
 		if g.funcRetTypes != nil {
 			if t, ok := g.funcRetTypes[ident.Value]; ok {
-				return t != "void"
+				if t != "void" {
+					return true
+				}
+				// LLVM "void" but the function has by-reference out-param
+				// results (e.g. char.to-str returns a %str-long via an out
+				// parameter). Such calls DO produce a printable value, so we
+				// must treat them as non-void — otherwise print(f()) drops the
+				// call result and prints nothing (only a newline). 2026-09-06.
+				if g.funcNumResults != nil {
+					if n, ok := g.funcNumResults[ident.Value]; ok && n > 0 {
+						return true
+					}
+				}
+				return false
 			}
 		}
 		// Builtin methods are always non-void
@@ -931,7 +944,6 @@ var builtinDispatchNames = map[string]bool{
 }
 
 func (g *Generator) generateCallExpression(sb *strings.Builder, expr *parser.CallExpression) string {
-	
 	// -async 函数调用：返回 %future（惰性，不执行）
 	if g.isAsyncCall(expr) {
 		return g.generateFutureCreation(sb, expr)
@@ -1558,15 +1570,32 @@ func (g *Generator) generateCallExpression(sb *strings.Builder, expr *parser.Cal
 				// 例如 archive.read(i) → archive 型別為 %tar → 查找 tar.read
 				if g.varTypes != nil {
 					recvVarName := recv.Value
-					if recvType, ok := g.varTypes[recvVarName]; ok {
-						srcType := strings.TrimPrefix(recvType, "%")
-						candidates := []string{srcType}
-						if primAliases, ok := llvmTypeToNolang[srcType]; ok {
-							candidates = append(candidates, primAliases...)
+				if recvType, ok := g.varTypes[recvVarName]; ok {
+					srcType := strings.TrimPrefix(recvType, "%")
+					candidates := []string{}
+					// 優先使用變數的 nolang 宣告型別（如 "char"）作為分派候選，
+					// 避免多個 nolang 型別共用同一 LLVM 型別（char/i32/u32 → i32）
+					// 時，`c char` 誤分派到 i32.to-str（十進位）而非 char.to-str（字元）。
+					// 僅當該 nolang 型別自身有註冊方法體（funcRetTypes）時才優先，
+					// 避免改變 i32/u32 變數既有的 i32.* 分派（u32 仍走 i32.to-str，
+					// 而非不存在的 u32.to-str），把影響範圍收斂到本任務的 char 場景
+					// （2026-09-06 修）。
+				if g.varNolangTypes != nil {
+					if nl, ok := g.varNolangTypes[recvVarName]; ok && nl != "" && nl != srcType {
+						if g.funcRetTypes != nil {
+							if _, ok := g.funcRetTypes[nl+"."+dot.Property]; ok {
+								candidates = append(candidates, nl)
+							}
 						}
-						if srcType == "vec" {
-							candidates = append(candidates, "[]byte")
-						}
+					}
+				}
+				candidates = append(candidates, srcType)
+					if primAliases, ok := llvmTypeToNolang[srcType]; ok {
+						candidates = append(candidates, primAliases...)
+					}
+					if srcType == "vec" {
+						candidates = append(candidates, "[]byte")
+					}
 						for _, cand := range candidates {
 							candName := cand + "." + dot.Property
 							if _, hasNolang := g.funcRetTypes[candName]; hasNolang {
@@ -1968,7 +1997,17 @@ func (g *Generator) generateCallExpression(sb *strings.Builder, expr *parser.Cal
 			if methodReceiver == nil {
 				if recvType, ok := g.varTypes[recv.Value]; ok {
 					srcType := strings.TrimPrefix(recvType, "%")
-					candidates := []string{srcType}
+					candidates := []string{}
+					// 優先使用變數的 nolang 宣告型別（如 "char"），避免多個 nolang 型別
+					// 共用同一 LLVM 型別（char/i32/u32 → i32）時，`c char` 誤分派到
+					// i32.to-str（十進位）而非 char.to-str（字元）。若無宣告型別，退回
+					// 原 srcType 優先邏輯（2026-09-06 修，對齊第一分派器）。
+					if g.varNolangTypes != nil {
+						if nl, ok := g.varNolangTypes[recv.Value]; ok && nl != "" {
+							candidates = append(candidates, nl)
+						}
+					}
+					candidates = append(candidates, srcType)
 					// Option type (?T): try the inner type as a candidate
 					// (e.g. conn-val is ?str → try str.to-lower)
 					if srcType == "option" && g.optionInnerTypes != nil {
@@ -2359,11 +2398,56 @@ func (g *Generator) generateCallExpression(sb *strings.Builder, expr *parser.Cal
 			}
 		}
 		} else if _, ok := receiverExpr.(*parser.CallExpression); ok {
-			// 函數呼叫結果接收者（如 foo().trim()、buf.slice(0, n).to-str()）
-			// 透過 exprResultLLVMType 推導返回型別，再映射到 nolang 型別名查找方法
+			// 函數呼叫結果接收者（如 foo().trim()、buf.slice(0, n).to-str()、c0.to-upper().to-str()）
+			// 透過 exprResultLLVMType 推導返回型別，再映射到 nolang 型別名查找方法。
+			// 當 receiver 是函數呼叫結果（如 c0.to-upper()）時，其 LLVM 型別與多個 nolang 型別
+			// 共用（char/i32/u32 → i32）。優先以 receiver 呼叫結果的 nolang 型別作為首候選，
+			// 避免 c0.to-upper().to-str() 誤分派到 i32.to-str（十進位）而非 char.to-str（字元）。
+			callNolangRet := ""
+			if callExpr, ok := receiverExpr.(*parser.CallExpression); ok {
+				if innerDot, ok := callExpr.Function.(*parser.DotExpression); ok {
+					if ir, ok := innerDot.Receiver.(*parser.Identifier); ok {
+						innerName := ""
+						if g.varNolangTypes != nil {
+							if nl, ok := g.varNolangTypes[ir.Value]; ok && nl != "" {
+								innerName = nl + "." + innerDot.Property
+							}
+						}
+						if innerName == "" {
+							innerLLVM := g.exprResultLLVMType(innerDot.Receiver)
+							innerSrc := strings.TrimPrefix(innerLLVM, "%")
+							if primAliases, ok2 := llvmTypeToNolang[innerSrc]; ok2 {
+								for _, a := range primAliases {
+									if g.funcResultNolangTypes != nil {
+										if _, ok3 := g.funcResultNolangTypes[a+"."+innerDot.Property]; ok3 {
+											innerName = a + "." + innerDot.Property
+											break
+										}
+									}
+								}
+							}
+						}
+						if innerName != "" && g.funcResultNolangTypes != nil {
+							if nolangRets, ok := g.funcResultNolangTypes[innerName]; ok && len(nolangRets) >= 1 {
+								callNolangRet = nolangRets[0]
+							}
+						}
+					}
+				} else if innerIdent, ok := callExpr.Function.(*parser.Identifier); ok {
+					if g.funcResultNolangTypes != nil {
+						if nolangRets, ok := g.funcResultNolangTypes[innerIdent.Value]; ok && len(nolangRets) >= 1 {
+							callNolangRet = nolangRets[0]
+						}
+					}
+				}
+			}
 			elemType := g.exprResultLLVMType(receiverExpr)
 			srcType := strings.TrimPrefix(elemType, "%")
-			candidates := []string{srcType}
+			candidates := []string{}
+			if callNolangRet != "" {
+				candidates = append(candidates, callNolangRet)
+			}
+			candidates = append(candidates, srcType)
 			if primAliases, ok := llvmTypeToNolang[srcType]; ok {
 				candidates = append(candidates, primAliases...)
 			}
@@ -2870,21 +2954,62 @@ func (g *Generator) generateCallEmit(sb *strings.Builder, expr *parser.CallExpre
 			// 對 by-reference 函數呼叫，先將引數值存到暫存變數，
 			// 避免被呼叫函數修改原始變數（例如 gcd 會修改 a, b）
 			// Nolang 帶 result parameter 的函數 retType 也是 "void"，需額外檢查 isNolangSingleResult
-			if (retType != "void" || isNolangSingleResult) && g.isIntegerLLVMType(argType) {
-				g.tmpIdx++
-				tmpName := fmt.Sprintf("%%arg.save.%d", g.tmpIdx)
-				g.tmpIdx++
-				tmpVal := fmt.Sprintf("%%arg.val.%d", g.tmpIdx)
-				irArgType := toLLVMType(argType)
-				if sb != nil {
-					// alloca 提升至 entry block，避免循環體內每次迭代增長棧（與 FloatLiteral 相同策略）
-					g.emitEntryAlloca(sb, "%s = alloca %s\n", tmpName, irArgType)
-					sb.WriteString(fmt.Sprintf("%s%s = load %s, %s* %s\n", g.indent(), tmpVal, irArgType, irArgType, g.varAddr(a.Value)))
-					sb.WriteString(fmt.Sprintf("%sstore %s %s, %s* %s\n", g.indent(), irArgType, tmpVal, irArgType, tmpName))
+		irArgType := toLLVMType(argType)
+		// 參數寬化：若被呼叫函數的參數宣告型別比引數實際型別寬（如 i32 引數傳給 i64 參數），
+		// 需將引數 zext/sext 到參數型別後再傳指標。否則被呼叫方以較寬型別 load
+		// （如 load i64 自 i32* alloca）會讀到相鄰位元組，產生 2³² 偏移
+		// （char/i32/i16/i8/u32/u16 → to-str 的預存 bug，2026-09-06 修）。
+		effectiveArgType := irArgType
+		if g.funcParamLLVMTypes != nil {
+			if ptypes, ok := g.funcParamLLVMTypes[fnName]; ok && argIdx < len(ptypes) {
+				pt := ptypes[argIdx]
+				if g.isIntegerLLVMType(pt) && g.isIntegerLLVMType(irArgType) {
+					if llvmIntBitWidth(pt) > llvmIntBitWidth(irArgType) {
+						// 轉為正規 LLVM 整數型別（i64/i32…，去掉 u/i 符號前綴），
+						// 因為 alloca/load/store 指令只接受純 IR 型別（i64 而非 u64）。
+						effectiveArgType = fmt.Sprintf("i%d", llvmIntBitWidth(pt))
+					}
 				}
-				return irArgType + "* " + tmpName
 			}
-			return toLLVMType(argType) + "* " + g.varAddr(a.Value)
+		}
+		if (retType != "void" || isNolangSingleResult) && g.isIntegerLLVMType(irArgType) {
+			g.tmpIdx++
+			tmpName := fmt.Sprintf("%%arg.save.%d", g.tmpIdx)
+			g.tmpIdx++
+			tmpVal := fmt.Sprintf("%%arg.val.%d", g.tmpIdx)
+			if sb != nil {
+				// alloca 提升至 entry block，避免循環體內每次迭代增長棧（與 FloatLiteral 相同策略）
+				g.emitEntryAlloca(sb, "%s = alloca %s\n", tmpName, effectiveArgType)
+				sb.WriteString(fmt.Sprintf("%s%s = load %s, %s* %s\n", g.indent(), tmpVal, irArgType, irArgType, g.varAddr(a.Value)))
+				if effectiveArgType != irArgType {
+					extOp := widenExtOp(argType)
+					g.tmpIdx++
+					tmpExt := fmt.Sprintf("%%arg.ext.%d", g.tmpIdx)
+					sb.WriteString(fmt.Sprintf("%s%s = %s %s %s to %s\n", g.indent(), tmpExt, extOp, irArgType, tmpVal, effectiveArgType))
+					tmpVal = tmpExt
+				}
+				sb.WriteString(fmt.Sprintf("%sstore %s %s, %s* %s\n", g.indent(), effectiveArgType, tmpVal, effectiveArgType, tmpName))
+			}
+			return effectiveArgType + "* " + tmpName
+		}
+		if effectiveArgType != irArgType {
+			// 窄引數傳給寬參數：寬化後傳指標
+			g.tmpIdx++
+			wTmp := fmt.Sprintf("%%widened.arg.%d", g.tmpIdx)
+			g.tmpIdx++
+			wVal := fmt.Sprintf("%%widened.val.%d", g.tmpIdx)
+			g.tmpIdx++
+			wExt := fmt.Sprintf("%%widened.ext.%d", g.tmpIdx)
+			if sb != nil {
+				g.emitEntryAlloca(sb, "%s = alloca %s\n", wTmp, effectiveArgType)
+				sb.WriteString(fmt.Sprintf("%s%s = load %s, %s* %s\n", g.indent(), wVal, irArgType, irArgType, g.varAddr(a.Value)))
+				extOp := widenExtOp(argType)
+				sb.WriteString(fmt.Sprintf("%s%s = %s %s %s to %s\n", g.indent(), wExt, extOp, irArgType, wVal, effectiveArgType))
+				sb.WriteString(fmt.Sprintf("%sstore %s %s, %s* %s\n", g.indent(), effectiveArgType, wExt, effectiveArgType, wTmp))
+			}
+			return effectiveArgType + "* " + wTmp
+		}
+		return irArgType + "* " + g.varAddr(a.Value)
 		case *parser.FloatLiteral:
 			g.tmpIdx++
 			tmpName := fmt.Sprintf("%%ref.tmp.%d", g.tmpIdx)

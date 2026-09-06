@@ -263,7 +263,13 @@ func inferExprType(expr parser.Expression, varTypes map[string]string, funcTypes
 		}
 		return ""
 	case *parser.IndexExpression:
-		// Array/slice element access: cannot reliably infer element type here
+		// Array/slice element access: str 下标返回 char（2026-09-06）。
+		if e.Left != nil {
+			if lt := inferExprType(e.Left, varTypes, funcTypes, selfType); lt == "str" {
+				return "char"
+			}
+		}
+		// 其他下标（数组/切片）无法在此可靠推断元素类型
 		return ""
 	case *parser.SliceExpression:
 		// Slicing [N]T returns []T; slicing str returns str
