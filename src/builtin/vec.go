@@ -128,4 +128,22 @@ func init() {
 		Doc:          "Truncate slice in-place to at most n elements (len = min(len, n))",
 		ForwardFunc:  "vec-truncate",
 	})
+
+	// Generic []t.* keys used by the MIR backend. resolveCallee canonicalizes
+	// every slice/array receiver method call to the generic "[]t.<method>" form
+	// (element-type-independent), so these entries route push/clear/pop/reverse/
+	// insert/remove/sort/truncate to their hand-written MIR emitters regardless
+	// of the concrete element type. The ForwardFunc targets match the existing
+	// vec.*/bare builtins so the legacy path is unaffected.
+	BuiltinMethodList = append(BuiltinMethodList,
+		BuiltinMethod{ReceiverType: ReceiverVec, MethodName: "[]t.push", Params: []parser.Type{parser.TypeI64}, Return: []parser.Type{}, Doc: "Push an element to the end of the slice (auto-grow)", ForwardFunc: "vec-push"},
+		BuiltinMethod{ReceiverType: ReceiverVec, MethodName: "[]t.clear", Params: []parser.Type{}, Return: []parser.Type{}, Doc: "Clear slice in-place (set len=0, cap/data unchanged)", ForwardFunc: "vec-clear"},
+		BuiltinMethod{ReceiverType: ReceiverVec, MethodName: "[]t.pop", Params: []parser.Type{}, Return: []parser.Type{parser.TypeI64}, Doc: "Pop the last element from the slice", ForwardFunc: "vec-pop"},
+		BuiltinMethod{ReceiverType: ReceiverVec, MethodName: "[]t.reverse", Params: []parser.Type{}, Return: []parser.Type{}, Doc: "Reverse the slice in-place", ForwardFunc: "vec-reverse"},
+		BuiltinMethod{ReceiverType: ReceiverVec, MethodName: "[]t.insert", Params: []parser.Type{parser.TypeI64, parser.TypeI64}, Return: []parser.Type{}, Doc: "Insert element at index (shifts right)", ForwardFunc: "vec-insert"},
+		BuiltinMethod{ReceiverType: ReceiverVec, MethodName: "[]t.remove", Params: []parser.Type{parser.TypeI64}, Return: []parser.Type{parser.TypeI64}, Doc: "Remove element at index (shifts left, returns it)", ForwardFunc: "vec-remove"},
+		BuiltinMethod{ReceiverType: ReceiverVec, MethodName: "[]t.sort-asc", Params: []parser.Type{}, Return: []parser.Type{}, Doc: "Sort the slice in ascending order in-place (insertion sort)", ForwardFunc: "vec-sort-asc"},
+		BuiltinMethod{ReceiverType: ReceiverVec, MethodName: "[]t.sort-desc", Params: []parser.Type{}, Return: []parser.Type{}, Doc: "Sort the slice in descending order in-place (insertion sort)", ForwardFunc: "vec-sort-desc"},
+		BuiltinMethod{ReceiverType: ReceiverVec, MethodName: "[]t.truncate", Params: []parser.Type{parser.TypeI64}, Return: []parser.Type{}, Doc: "Truncate slice in-place to at most n elements (len = min(len, n))", ForwardFunc: "vec-truncate"},
+	)
 }

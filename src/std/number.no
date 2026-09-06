@@ -171,7 +171,16 @@ i64-to-str = (n i64) (out str) {
         return
     }
     neg = 0
-    n < 0 -> neg = 1
+    ; Flip the sign up-front (outside the digit loop) so the loop body has
+    ; NO guarded statement followed by more statements. The MIR lowerer
+    ; mis-routes a `cond -> stmt` guard that sits inside a loop body and is
+    ; followed by trailing statements into the guard's else branch, which
+    ; would skip `n = n / 10` for negative input and loop forever. Handling
+    ; the sign here keeps the loop body a plain straight-line sequence.
+    n < 0 -> {
+        neg = 1
+        n = 0 - n
+    }
     digits = 0
     tmp = n
     {
@@ -185,7 +194,6 @@ i64-to-str = (n i64) (out str) {
     neg == 1 -> pos = digits
     {
         d = n % 10
-        neg == 1 -> d = 0 - d
         out[pos] = d + 48
         n = n / 10
         pos = pos - 1

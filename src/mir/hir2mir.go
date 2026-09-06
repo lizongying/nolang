@@ -593,6 +593,21 @@ func (l *lowerer) unsupported(funcName, kind, msg string) {
 	l.diags = append(l.diags, LowerDiag{Func: funcName, Kind: kind, Msg: msg})
 }
 
+// interpPreview returns a short, safe-to-log snippet of an interpolated string
+// literal (the first ~40 runes around the first `{...}`), used in diagnostics
+// so a failure is debuggable without dumping huge string constants.
+func interpPreview(s string) string {
+	i := strings.Index(s, "{")
+	if i < 0 {
+		return s
+	}
+	end := i + 40
+	if end > len(s) {
+		end = len(s)
+	}
+	return s[i:end]
+}
+
 // valueRaw returns the nolang raw type string of a lowered value, or "" if the
 // value is invalid/unknown. Used to special-case operations whose legality
 // depends on the operand type (e.g. string equality must route through @str_eq
@@ -703,6 +718,7 @@ func (l *lowerer) lowerFunction(name string, hirID int32) {
 
 	var params []ValueID
 	var paramNames []string
+	var paramTypes []TypeID
 	var results []TypeID
 	var resultNames []string
 	var resultVals []ValueID
@@ -717,6 +733,7 @@ func (l *lowerer) lowerFunction(name string, hirID int32) {
 			pv := l.b.Param(l.pkg.Str(cn.S), pt)
 			params = append(params, pv)
 			paramNames = append(paramNames, l.pkg.Str(cn.S))
+			paramTypes = append(paramTypes, pt)
 		case hir.KResult:
 			rt := l.typeOfNode(cn)
 			rv := l.b.Param(l.pkg.Str(cn.S), rt)
@@ -744,6 +761,14 @@ func (l *lowerer) lowerFunction(name string, hirID int32) {
 	f := l.mod.Func(fid)
 	if f != nil {
 		f.ResultParams = resultVals
+		// Mark method functions so codegen passes the receiver by reference
+		// (aliases the caller's self pointer instead of copying into a local
+		// alloca). Without this, mutating std methods (vec.insert/remove/…)
+		// silently discard self mutations under the MIR backend.
+		if n.Has(hir.FlagMethod) && len(paramTypes) > 0 {
+			f.IsMethod = true
+			f.Receiver = paramTypes[0]
+		}
 	}
 	for i, rn := range resultNames {
 		l.locals[rn] = resultVals[i]
@@ -873,6 +898,44 @@ func (l *lowerer) lowerStmt(id int32) {
 				l.b.EmitMoveInto(existing, val)
 				break
 			}
+		// New binding. If the initializer is a direct reference to an
+		// existing NON-OWNED local (e.g. `tmp = n`), binding `name` to that
+		// local's value id would ALIAS the two names onto one slot. A later
+		// reassignment of `name` (a loop-carried variable such as
+		// `tmp = tmp/10`) would then write back into the SHARED slot and
+		// corrupt the original local — the bug behind `number.i64-to-str`
+		// returning "" for multi-digit input (n was divided to 0 by the
+		// digit-counting loop, so the second loop never ran). Give `name`
+		// its OWN slot and COPY the value in, so the two names stay
+		// independent. This also restores correct value semantics: a plain
+		// `let x = y` (scalar) is a copy, not a live view of `y`. Owned
+		// values keep the alias (view) semantics the memory analysis already
+		// handles with a single drop for the shared slot.
+		if os.Getenv("NOLANG_MIR_DEBUG") != "" {
+			if dbgcn := l.pkg.Node(childID); dbgcn != nil {
+				_, dbgIsLocal := l.locals[l.pkg.Str(dbgcn.S)]
+				fmt.Fprintf(os.Stderr, "[mir-dbg] NEWBIND name=%q childKind=%v childName=%q isLocal=%v val=%d owned=%v\n",
+					name, hir.KindNames[dbgcn.Kind], l.pkg.Str(dbgcn.S), dbgIsLocal, val, l.isOwnedLocal(val))
+			}
+		}
+		if cn := l.pkg.Node(childID); cn != nil && cn.Kind == hir.KIdent {
+				if _, isLocal := l.locals[l.pkg.Str(cn.S)]; isLocal && !l.isOwnedLocal(val) {
+					typ := l.valueTypeOf(val)
+					if typ == NoType || typ == l.voidType {
+						typ = l.typeOfNode(cn)
+					}
+					if typ != NoType && typ != l.voidType {
+						fresh := l.b.Emit(OpMove, typ, []ValueID{val}, "")
+						l.locals[name] = fresh
+						if f := l.mod.Func(l.curFunc); f != nil {
+							if _, ok := f.LocalTypes[fresh]; !ok {
+								f.LocalTypes[fresh] = typ
+							}
+						}
+						break
+					}
+				}
+			}
 			l.locals[name] = val
 			if f := l.mod.Func(l.curFunc); f != nil {
 				// Preserve the type Emit already assigned to val (authoritative for
@@ -910,10 +973,22 @@ func (l *lowerer) lowerStmt(id int32) {
 			break
 		}
 	case hir.KReturn:
+		// Surface the function's option result type so `return nil` lowers to an
+		// %option constant (the "none" discriminant) rather than a bare i64 that
+		// the %option codegen would misread as some(0).
+		savedHint := l.typeHint
+		if rf := l.mod.Func(l.curFunc); rf != nil && len(rf.ResultParams) == 1 {
+			if rt := l.valueTypeOf(rf.ResultParams[0]); rt != NoType {
+				if tt := l.mod.Type(rt); tt != nil && tt.Kind == KindOption {
+					l.typeHint = rt
+				}
+			}
+		}
 		var vals []ValueID
 		for _, c := range l.pkg.Children(id) {
 			vals = append(vals, l.lowerExpr(c))
 		}
+		l.typeHint = savedHint
 		l.b.Terminate(OpReturn, vals, nil, "")
 	case hir.KAssign:
 		l.lowerAssignNode(id)
@@ -1030,6 +1105,20 @@ func (l *lowerer) lowerFor(n *hir.Node) {
 	updateID := l.slot(n.Id, "update")
 	bodyID := l.slot(n.Id, "body")
 
+	// Enclosing continuation: the merge block of the nearest enclosing
+	// control-flow construct (pushed by the caller's lowerIf/lowerFor). We
+	// terminate THIS loop's exit block to it when the loop is NOT the last
+	// statement of its block — otherwise the exit block stays unterminated,
+	// ensureReturn patches it with `ret void` (dropping every statement after
+	// the loop), and the malformed CFG lets `opt` mangle the loop header into a
+	// constant condition / infinite loop (e.g. `for v in [0..n)` inside an `if`
+	// arm, and the fixed-array `to-str` method). At top level this is NoBlock,
+	// so the fix is a no-op and ensureReturn still applies `ret` correctly.
+	enclosingCont := NoBlock
+	if len(l.contStack) > 0 {
+		enclosingCont = l.contStack[len(l.contStack)-1]
+	}
+
 	pre := l.b.CurrentBlock()
 	if initID != hir.NoID {
 		l.lowerStmt(initID)
@@ -1091,6 +1180,9 @@ func (l *lowerer) lowerFor(n *hir.Node) {
 	}
 
 	l.b.SetBlock(exit)
+	if enclosingCont != NoBlock && l.mod.Block(exit).Term == nil {
+		l.b.Terminate(OpBr, nil, []BlockID{enclosingCont}, "")
+	}
 }
 
 // lowerRangeFor lowers a range-for: `for v in COLLECTION { body }` where v is
@@ -1100,6 +1192,17 @@ func (l *lowerer) lowerFor(n *hir.Node) {
 // inserted into l.locals so body expressions resolve it instead of cascading into
 // unresolved-identifier lower-gaps.
 func (l *lowerer) lowerRangeFor(n *hir.Node, iterID int32, bodyID int32, pre BlockID) {
+	// Enclosing continuation: the merge block of the nearest enclosing
+	// control-flow construct (pushed by the caller's lowerIf/lowerFor). Same
+	// rationale as lowerFor: terminate this range-for's exit block to it when
+	// the loop is not the last statement of its block, so the loop exit is not
+	// left unterminated (which mangles the CFG into a constant-condition /
+	// infinite loop once `opt` sees it). At top level this is NoBlock.
+	enclosingCont := NoBlock
+	if len(l.contStack) > 0 {
+		enclosingCont = l.contStack[len(l.contStack)-1]
+	}
+
 	iterNode := l.pkg.Node(iterID)
 	if iterNode == nil {
 		l.unsupported(l.curFuncName(), "for-range", "missing iter node")
@@ -1194,9 +1297,12 @@ func (l *lowerer) lowerRangeFor(n *hir.Node, iterID int32, bodyID int32, pre Blo
 		nextV := l.b.Emit(OpAdd, elemT, []ValueID{iSlot, one}, "")
 		l.b.EmitMoveInto(iSlot, nextV)
 		l.b.Terminate(OpBr, nil, []BlockID{header}, "")
-		l.b.SetBlock(exit)
-		return
+	l.b.SetBlock(exit)
+	if enclosingCont != NoBlock && l.mod.Block(exit).Term == nil {
+		l.b.Terminate(OpBr, nil, []BlockID{enclosingCont}, "")
 	}
+	return
+}
 
 	// --- collection form: for v in [a, b, c]  (v is the element) ---
 	if rangeExprID == hir.NoID {
@@ -1273,6 +1379,9 @@ func (l *lowerer) lowerRangeFor(n *hir.Node, iterID int32, bodyID int32, pre Blo
 	l.b.Terminate(OpBr, nil, []BlockID{header}, "")
 
 	l.b.SetBlock(exit)
+	if enclosingCont != NoBlock && l.mod.Block(exit).Term == nil {
+		l.b.Terminate(OpBr, nil, []BlockID{enclosingCont}, "")
+	}
 }
 
 // valueTypeOf returns the static type id of a value, consulting the current
@@ -1521,7 +1630,19 @@ func (l *lowerer) lowerExpr(id int32) ValueID {
 		}
 		return l.b.EmitInt(OpConst, l.typeOfNode(n), val, "")
 	case hir.KStrLit:
-		return l.b.EmitStr(OpConst, l.b.Type("str"), l.pkg.Str(n.S), "")
+		s := l.pkg.Str(n.S)
+		if strings.Contains(s, "{") && strings.Contains(s, "}") {
+			// Nolang string interpolation (`'x={expr}'`) is not yet lowered by
+			// the v1 MIR backend: it would emit the raw literal with the
+			// UNSUBSTITUTED `{expr}` text, producing WRONG output that still
+			// exits 0 — a silent correctness regression versus the legacy path
+			// (which substitutes). Record a FATAL lower diagnostic (kind
+			// "interp") so emitMIR falls back to the legacy HIR codegen for the
+			// whole module. Shipping unsubstituted output is strictly worse than
+			// using the legacy backend, so we never let MIR emit it.
+			l.unsupported(l.curFuncName(), "interp", "string interpolation not lowered: "+interpPreview(s))
+		}
+		return l.b.EmitStr(OpConst, l.b.Type("str"), s, "")
 	case hir.KCharLit:
 		return l.lowerCharLit(n)
 	case hir.KNilLit:
@@ -1538,7 +1659,32 @@ func (l *lowerer) lowerExpr(id int32) ValueID {
 		}
 		ov := l.lowerExpr(operand)
 		op := prefixOp(l.pkg.Str(n.S))
-		return l.b.Emit(op, l.typeOfNode(n), []ValueID{ov}, "")
+		if l.pkg.Str(n.S) == "~" {
+			// Bitwise complement (`~x`): x XOR all-ones. Nolang `~` is NOT logical
+			// NOT — mapping it to OpNot (which emits `xor 1`) gives 100^1=101
+			// instead of the legacy ~100 = 4294967195. Route through OpXor with an
+			// all-ones constant of the operand's (integer) type.
+			rt := l.typeOfNode(n)
+			if rt == l.voidType || rt == NoType {
+				if ot := l.valueTypeOf(ov); ot != l.voidType && ot != NoType && l.valueRaw(ov) != "str" {
+					rt = ot
+				}
+			}
+			if rt == l.voidType || rt == NoType {
+				rt = l.b.Type("i64")
+			}
+			allOnes := l.b.EmitInt(OpConst, rt, -1, "")
+			return l.b.Emit(OpXor, rt, []ValueID{ov, allOnes}, "")
+		}
+		rt := l.typeOfNode(n)
+		if rt == l.voidType || rt == NoType {
+			// Unary result type unknown here (e.g. `!x` where x is a global) —
+			// derive it from the operand value type so we don't emit `xor void`.
+			if ot := l.valueTypeOf(ov); ot != l.voidType && ot != NoType && l.valueRaw(ov) != "str" {
+				rt = ot
+			}
+		}
+		return l.b.Emit(op, rt, []ValueID{ov}, "")
 	case hir.KInfix:
 		var lr [2]int32
 		i := 0
@@ -1548,15 +1694,63 @@ func (l *lowerer) lowerExpr(id int32) ValueID {
 				i++
 			}
 		}
-		lv := l.lowerExpr(lr[0])
-		rv := l.lowerExpr(lr[1])
 		op, isCmp := infixOp(l.pkg.Str(n.S))
+		// Option/nil pattern matching (`it == nil`): the nil operand must lower
+		// to the option's "none" discriminant (%option {tag=1, val=0}), never a
+		// bare i64 0. Publish the *sibling* operand's actual type as a hint so
+		// lowerNilLit emits the option constant; emitCmp then extracts the tag
+		// from BOTH sides and compares tag==1 (the meaning of `== nil`). Without
+		// the hint, nil stays i64 0, emitCmp checks tag==0, and the match INVERTS
+		// (some(x) falls into the nil arm, nil falls into the default arm) — the
+		// bug behind `a.at(0)` matching nil and `?i64 = nil` matching default.
+		var lv, rv ValueID
+		if i == 2 && (op == OpEq || op == OpNe) {
+			ln := l.pkg.Node(lr[0])
+			rn := l.pkg.Node(lr[1])
+			if ln != nil && rn != nil {
+				switch {
+				case ln.Kind == hir.KNilLit && rn.Kind != hir.KNilLit:
+					rv = l.lowerExpr(lr[1])
+					saved := l.typeHint
+					l.typeHint = l.valueTypeOf(rv)
+					lv = l.lowerExpr(lr[0])
+					l.typeHint = saved
+				case rn.Kind == hir.KNilLit && ln.Kind != hir.KNilLit:
+					lv = l.lowerExpr(lr[0])
+					saved := l.typeHint
+					l.typeHint = l.valueTypeOf(lv)
+					rv = l.lowerExpr(lr[1])
+					l.typeHint = saved
+				default:
+					lv = l.lowerExpr(lr[0])
+					rv = l.lowerExpr(lr[1])
+				}
+			} else {
+				lv = l.lowerExpr(lr[0])
+				rv = l.lowerExpr(lr[1])
+			}
+		} else {
+			lv = l.lowerExpr(lr[0])
+			rv = l.lowerExpr(lr[1])
+		}
 		resTyp := l.typeOfNode(n)
 		if os.Getenv("NOLANG_MIR_DEBUG") != "" {
 			fmt.Fprintf(os.Stderr, "[mir-dbg] INFIX op=%v resTyp=%v lv=%d rv=%d\n", op, resTyp, lv, rv)
 		}
 		if isCmp {
 			resTyp = l.b.Type("bool")
+		} else if resTyp == l.voidType || resTyp == NoType {
+			// Arithmetic result type unknown here (e.g. an operand is a
+			// module-level global whose KIdent type resolves to void, or a
+			// char-code expression `c + 1`). Derive it from the lowered operand
+			// value types so we never emit an illegal `add void` / `sub void`.
+			// Skip str operands — `str + str` is handled just below, and
+			// `str + int` must not be forced to a str result type.
+			if lt := l.valueTypeOf(lv); lt != l.voidType && lt != NoType && l.valueRaw(lv) != "str" {
+				resTyp = lt
+			} else if rt := l.valueTypeOf(rv); rt != l.voidType && rt != NoType && l.valueRaw(rv) != "str" {
+				resTyp = rt
+			}
 		}
 		// String concatenation (`a - b` / `a + b` on str operands) yields a
 		// str, never void. Without this the infix result value is typed void
@@ -1615,6 +1809,18 @@ func (l *lowerer) lowerNilLit(n *hir.Node) ValueID {
 	t := l.typeOfNode(n)
 	if t == NoType || t == l.voidType {
 		t = l.b.Type("i64")
+	}
+	// nolang `nil` assigned to an option-typed binding (`val = nil`, val : ?T,
+	// or `return nil` from an ?T function) is the option's "none" discriminant.
+	// Emit it as an %option constant so the later move/store is type-correct: a
+	// bare i64 would be misread as the tag field by the %option load/store
+	// codegen, turning none into some(0). Only switch when the surrounding
+	// context is an option type, so non-option `nil` (e.g. for %err_error) keeps
+	// its own representation.
+	if ht := l.typeHint; ht != NoType && ht != l.voidType {
+		if tt := l.mod.Type(ht); tt != nil && tt.Kind == KindOption {
+			t = ht
+		}
 	}
 	return l.b.EmitInt(OpConst, t, 0, "")
 }
@@ -1808,6 +2014,33 @@ func (l *lowerer) lowerDotRead(n *hir.Node) ValueID {
 	return v
 }
 
+// canonSliceRecv maps a concrete slice/array receiver type name (e.g.
+// "[]i64", "[3]i64", "[]byte", "?[]i64") to the generic "[]t" used to key
+// slice-method builtins and the generated `[]t.*` HIR funcs. Non-slice names
+// pass through unchanged.
+//
+// Why: method calls on a slice must resolve to the SAME symbol regardless of the
+// element type, because the slice methods are element-type-generic. The legacy
+// backend resolves `data.clear()` / `data.push(x)` against the `vec.*` builtins;
+// the MIR table mirrors that under the canonical `[]t.<method>` key, so any
+// `[]i64.clear` / `[3]i64.reverse` / `[]byte.push` call lowers to `[]t.clear`
+// / `[]t.reverse` / `[]t.push` and finds its builtin.
+func canonSliceRecv(name string) string {
+	dot := strings.LastIndex(name, ".")
+	if dot < 0 {
+		return name
+	}
+	recv := strings.TrimPrefix(name[:dot], "?")
+	meth := name[dot:] // includes the leading "."
+	if strings.HasPrefix(recv, "[]") {
+		return "[]t" + meth
+	}
+	if strings.HasPrefix(recv, "[") && strings.Contains(recv, "]") {
+		return "[]t" + meth
+	}
+	return name
+}
+
 // resolveCallee determines the callee symbol and (for a method call) the
 // receiver value of a KCall node. Shared by the single-result expression path
 // and the multi-assign statement path.
@@ -1841,12 +2074,12 @@ func (l *lowerer) resolveCallee(n *hir.Node) (callee string, recvV ValueID) {
 				if ty := l.mod.Type(l.valueTypeOf(l.curRecv)); ty != nil && ty.Raw != "" {
 					recvRaw = ty.Raw
 				}
-				if recvRaw != "" && tname == recvRaw {
-					return name, l.curRecv
-				}
+			if recvRaw != "" && tname == recvRaw {
+				return canonSliceRecv(name), l.curRecv
 			}
 		}
-		return name, NoVal
+	}
+	return canonSliceRecv(name), NoVal
 	case hir.KDot:
 		method := l.pkg.Str(fnn.S) // property name, e.g. "to-bytes"
 		// The receiver is the KDot's single child (e.Receiver).
@@ -1898,14 +2131,14 @@ func (l *lowerer) resolveCallee(n *hir.Node) (callee string, recvV ValueID) {
 		if ty := l.mod.Type(recvT); ty != nil && ty.Raw != "" {
 			recvTypeName = ty.Raw
 		}
-		// Optionals wrap their inner type with a leading '?'
-		// (e.g. `?i64`). A method call on the unwrapped value of an optional
-		// (`v.to-str()` where v: ?i64) would otherwise form the callee
-		// "?i64.to-str", which does not exist — the method table holds
-		// "i64.to-str". Strip the marker so the callee matches the legacy
-		// backend, which resolves optional receivers to their inner type.
-		recvTypeName = strings.TrimPrefix(recvTypeName, "?")
-		return recvTypeName + "." + method, rv
+	// Optionals wrap their inner type with a leading '?'
+	// (e.g. `?i64`). A method call on the unwrapped value of an optional
+	// (`v.to-str()` where v: ?i64) would otherwise form the callee
+	// "?i64.to-str", which does not exist — the method table holds
+	// "i64.to-str". Strip the marker so the callee matches the legacy
+	// backend, which resolves optional receivers to their inner type.
+	recvTypeName = strings.TrimPrefix(recvTypeName, "?")
+	return canonSliceRecv(recvTypeName + "." + method), rv
 	}
 	return "", NoVal
 }

@@ -519,6 +519,22 @@ func (c *codegen) emitBuiltinForward(f *Function, inst *Inst, bm *builtin.Builti
 		return c.emitBuiltinBoolToStr(inst)
 	case "vec-push":
 		return c.emitBuiltinVecPush(inst)
+	case "vec-clear":
+		return c.emitBuiltinVecClear(inst)
+	case "vec-pop":
+		return c.emitBuiltinVecPop(inst)
+	case "vec-reverse":
+		return c.emitBuiltinVecReverse(inst)
+	case "vec-insert":
+		return c.emitBuiltinVecInsert(inst)
+	case "vec-remove":
+		return c.emitBuiltinVecRemove(inst)
+	case "vec-sort-asc":
+		return c.emitBuiltinVecSort(inst, true)
+	case "vec-sort-desc":
+		return c.emitBuiltinVecSort(inst, false)
+	case "vec-truncate":
+		return c.emitBuiltinVecTruncate(inst)
 	case "uname":
 		return c.emitBuiltinUname(inst)
 	case "utime":
@@ -1074,6 +1090,507 @@ func (c *codegen) emitBuiltinVecPush(inst *Inst) error {
 	s2 := c.treg("vps2")
 	c.sb.WriteString(fmt.Sprintf("  %s = insertvalue %%vec %s, i64 %s, 2\n", s2, s1, dataI64))
 	c.sb.WriteString(fmt.Sprintf("  store %%vec %s, %%vec* %s\n", s2, slot))
+	return nil
+}
+
+// label mints a fresh, %-free basic-block label name (labels are written
+// without a leading %, unlike value registers).
+func (c *codegen) label(prefix string) string {
+	c.loadSeq++
+	return fmt.Sprintf("%s%d", prefix, c.loadSeq)
+}
+
+// elemInfoOfVec returns the LLVM element type and byte stride for a %vec
+// receiver, derived from its nolang element type. Used by the in-place slice
+// mutators (reverse/insert/remove/sort) to index individual elements.
+func (c *codegen) elemInfoOfVec(recv ValueID) (elemLL string, stride int64) {
+	raw := c.rawTypeOf(recv)
+	elem := strings.TrimPrefix(raw, "[]")
+	elem = strings.TrimPrefix(elem, "?")
+	switch elem {
+	case "i8", "u8", "byte", "bool":
+		return "i8", 1
+	case "i16", "u16":
+		return "i16", 2
+	case "i32", "u32":
+		return "i32", 4
+	case "i64", "u64":
+		return "i64", 8
+	case "i128", "u128":
+		return "i128", 16
+	case "f32":
+		return "float", 4
+	case "f64":
+		return "double", 8
+	case "str":
+		return "%str-long", 24
+	default:
+		return "i64", 8
+	}
+}
+
+// emitLessThan emits `a < b` for two values of element LLVM type elemLL and
+// returns the i1 register. Signed/unsigned/float/str are handled per type.
+func (c *codegen) emitLessThan(a, b, elemLL string) string {
+	r := c.treg("lt")
+	switch elemLL {
+	case "i8", "i16", "i32", "i64", "i128":
+		c.sb.WriteString(fmt.Sprintf("  %s = icmp slt %s %s, %s\n", r, elemLL, a, b))
+	case "u8", "u16", "u32", "u64":
+		c.sb.WriteString(fmt.Sprintf("  %s = icmp ult %s %s, %s\n", r, elemLL, a, b))
+	case "float", "double":
+		c.sb.WriteString(fmt.Sprintf("  %s = fcmp olt %s %s, %s\n", r, elemLL, a, b))
+	case "%str-long":
+		cmp := c.treg("slc")
+		c.sb.WriteString(fmt.Sprintf("  %s = call i64 @str_cmp(%s %s, %s %s)\n", cmp, elemLL, a, elemLL, b))
+		c.sb.WriteString(fmt.Sprintf("  %s = icmp slt i64 %s, 0\n", r, cmp))
+	default:
+		c.sb.WriteString(fmt.Sprintf("  %s = icmp slt i64 %s, %s\n", r, a, b))
+	}
+	return r
+}
+
+// emitBuiltinVecClear lowers `vec.clear()`: set len=0 in place. cap/data are
+// left unchanged, so the backing buffer is reused; only the logical length is
+// reset. The receiver is read/written through its alloca slot, so the caller
+// observes the mutation (this is the by-reference contract the by-ref fix
+// restored for method receivers).
+func (c *codegen) emitBuiltinVecClear(inst *Inst) error {
+	if len(inst.Args) < 1 {
+		return fmt.Errorf("vec.clear: needs receiver")
+	}
+	slot := c.valSlot[inst.Args[0]]
+	if slot == "" {
+		return fmt.Errorf("vec.clear: no receiver slot")
+	}
+	vv := c.treg("clv")
+	c.sb.WriteString(fmt.Sprintf("  %s = load %%vec, %%vec* %s\n", vv, slot))
+	z := c.treg("clz")
+	c.sb.WriteString(fmt.Sprintf("  %s = insertvalue %%vec %s, i64 0, 0\n", z, vv))
+	c.sb.WriteString(fmt.Sprintf("  store %%vec %s, %%vec* %s\n", z, slot))
+	return nil
+}
+
+// emitBuiltinVecTruncate lowers `vec.truncate(n)`: len = min(len, n). The
+// backing buffer (cap/data) is preserved.
+func (c *codegen) emitBuiltinVecTruncate(inst *Inst) error {
+	if len(inst.Args) < 2 {
+		return nil
+	}
+	recv := inst.Args[0]
+	slot := c.valSlot[recv]
+	if slot == "" {
+		return fmt.Errorf("vec.truncate: no receiver slot")
+	}
+	nT, nV := c.loadVal(inst.Args[1])
+	n := nV
+	if r := c.coerce(nT, nV, "i64"); r != "" {
+		n = r
+	}
+	vv := c.treg("tgv")
+	c.sb.WriteString(fmt.Sprintf("  %s = load %%vec, %%vec* %s\n", vv, slot))
+	lenG := c.treg("tgl")
+	c.sb.WriteString(fmt.Sprintf("  %s = extractvalue %%vec %s, 0\n", lenG, vv))
+	cmp := c.treg("tgc")
+	c.sb.WriteString(fmt.Sprintf("  %s = icmp ult i64 %s, %s\n", cmp, n, lenG))
+	newLen := c.treg("tgn")
+	c.sb.WriteString(fmt.Sprintf("  %s = select i1 %s, i64 %s, i64 %s\n", newLen, cmp, n, lenG))
+	s0 := c.treg("tgs")
+	c.sb.WriteString(fmt.Sprintf("  %s = insertvalue %%vec %s, i64 %s, 0\n", s0, vv, newLen))
+	c.sb.WriteString(fmt.Sprintf("  store %%vec %s, %%vec* %s\n", s0, slot))
+	return nil
+}
+
+// emitBuiltinVecPop lowers `vec.pop()`: remove and return the last element.
+// On an empty slice the result is the element zero value and len stays 0.
+func (c *codegen) emitBuiltinVecPop(inst *Inst) error {
+	if len(inst.Args) < 1 {
+		return fmt.Errorf("vec.pop: needs receiver")
+	}
+	recv := inst.Args[0]
+	slot := c.valSlot[recv]
+	if slot == "" {
+		return fmt.Errorf("vec.pop: no receiver slot")
+	}
+	elemLL, _ := c.elemInfoOfVec(recv)
+	vv := c.treg("ppv")
+	c.sb.WriteString(fmt.Sprintf("  %s = load %%vec, %%vec* %s\n", vv, slot))
+	lenG := c.treg("ppl")
+	c.sb.WriteString(fmt.Sprintf("  %s = extractvalue %%vec %s, 0\n", lenG, vv))
+	dataG := c.treg("ppd")
+	c.sb.WriteString(fmt.Sprintf("  %s = extractvalue %%vec %s, 2\n", dataG, vv))
+	base := c.treg("ppb")
+	c.sb.WriteString(fmt.Sprintf("  %s = inttoptr i64 %s to %s*\n", base, dataG, elemLL))
+	last := c.treg("ppla")
+	c.sb.WriteString(fmt.Sprintf("  %s = sub i64 %s, 1\n", last, lenG))
+	z := c.treg("ppz")
+	c.sb.WriteString(fmt.Sprintf("  %s = icmp eq i64 %s, 0\n", z, lenG))
+	maxIdx := c.treg("ppmi")
+	c.sb.WriteString(fmt.Sprintf("  %s = select i1 %s, i64 0, i64 %s\n", maxIdx, z, last))
+	eptr := c.treg("ppep")
+	c.sb.WriteString(fmt.Sprintf("  %s = getelementptr inbounds %s, %s* %s, i64 %s\n", eptr, elemLL, elemLL, base, maxIdx))
+	elemV := c.treg("ppev")
+	c.sb.WriteString(fmt.Sprintf("  %s = load %s, %s* %s\n", elemV, elemLL, elemLL, eptr))
+	dstV := c.treg("ppdv")
+	c.sb.WriteString(fmt.Sprintf("  %s = select i1 %s, %s zeroinitializer, %s %s\n", dstV, z, elemLL, elemLL, elemV))
+	if inst.Dst > NoVal {
+		if ds := c.valSlot[inst.Dst]; ds != "" {
+			c.sb.WriteString(fmt.Sprintf("  store %s %s, %s* %s\n", elemLL, dstV, elemLL, ds))
+		}
+	}
+	newLen := c.treg("ppnl")
+	c.sb.WriteString(fmt.Sprintf("  %s = select i1 %s, i64 0, i64 %s\n", newLen, z, last))
+	s0 := c.treg("pps")
+	c.sb.WriteString(fmt.Sprintf("  %s = insertvalue %%vec %s, i64 %s, 0\n", s0, vv, newLen))
+	c.sb.WriteString(fmt.Sprintf("  store %%vec %s, %%vec* %s\n", s0, slot))
+	return nil
+}
+
+// emitBuiltinVecReverse lowers `vec.reverse()`: swap elements in place via a
+// single forward loop (i from 0 while i < len-1-i). The backing buffer is
+// mutated through its inttoptr'd element pointer; len/cap/data are unchanged.
+func (c *codegen) emitBuiltinVecReverse(inst *Inst) error {
+	if len(inst.Args) < 1 {
+		return fmt.Errorf("vec.reverse: needs receiver")
+	}
+	recv := inst.Args[0]
+	slot := c.valSlot[recv]
+	if slot == "" {
+		return fmt.Errorf("vec.reverse: no receiver slot")
+	}
+	elemLL, _ := c.elemInfoOfVec(recv)
+	vv := c.treg("rvv")
+	c.sb.WriteString(fmt.Sprintf("  %s = load %%vec, %%vec* %s\n", vv, slot))
+	lenG := c.treg("rvl")
+	c.sb.WriteString(fmt.Sprintf("  %s = extractvalue %%vec %s, 0\n", lenG, vv))
+	dataG := c.treg("rvd")
+	c.sb.WriteString(fmt.Sprintf("  %s = extractvalue %%vec %s, 2\n", dataG, vv))
+	base := c.treg("rvb")
+	c.sb.WriteString(fmt.Sprintf("  %s = inttoptr i64 %s to %s*\n", base, dataG, elemLL))
+	skip := c.treg("rvs")
+	c.sb.WriteString(fmt.Sprintf("  %s = icmp ult i64 %s, 2\n", skip, lenG))
+	lDone := c.label("rvd")
+	lBody := c.label("rvb")
+	lHead := c.label("rvh")
+	lSwap := c.label("rvs")
+	lTail := c.label("rvt")
+	iNext := c.treg("rvn")
+	c.sb.WriteString(fmt.Sprintf("  br i1 %s, label %%%s, label %%%s\n", skip, lDone, lBody))
+	c.sb.WriteString(fmt.Sprintf("%s:\n", lBody))
+	c.sb.WriteString(fmt.Sprintf("  br label %%%s\n", lHead))
+	c.sb.WriteString(fmt.Sprintf("%s:\n", lHead))
+	iR := c.treg("rvi")
+	c.sb.WriteString(fmt.Sprintf("  %s = phi i64 [ 0, %%%s ], [ %s, %%%s ]\n", iR, lBody, iNext, lTail))
+	jR := c.treg("rvj")
+	c.sb.WriteString(fmt.Sprintf("  %s = sub i64 %s, %s, 1\n", jR, lenG, iR))
+	cmpI := c.treg("rvci")
+	c.sb.WriteString(fmt.Sprintf("  %s = icmp ult i64 %s, %s\n", cmpI, iR, jR))
+	c.sb.WriteString(fmt.Sprintf("  br i1 %s, label %%%s, label %%%s\n", cmpI, lSwap, lDone))
+	c.sb.WriteString(fmt.Sprintf("%s:\n", lSwap))
+	pa := c.treg("rvpa")
+	c.sb.WriteString(fmt.Sprintf("  %s = getelementptr inbounds %s, %s* %s, i64 %s\n", pa, elemLL, elemLL, base, iR))
+	pb := c.treg("rvpb")
+	c.sb.WriteString(fmt.Sprintf("  %s = getelementptr inbounds %s, %s* %s, i64 %s\n", pb, elemLL, elemLL, base, jR))
+	va := c.treg("rvva")
+	c.sb.WriteString(fmt.Sprintf("  %s = load %s, %s* %s\n", va, elemLL, elemLL, pa))
+	vb := c.treg("rvvb")
+	c.sb.WriteString(fmt.Sprintf("  %s = load %s, %s* %s\n", vb, elemLL, elemLL, pb))
+	c.sb.WriteString(fmt.Sprintf("  store %s %s, %s* %s\n", elemLL, vb, elemLL, pa))
+	c.sb.WriteString(fmt.Sprintf("  store %s %s, %s* %s\n", elemLL, va, elemLL, pb))
+	c.sb.WriteString(fmt.Sprintf("  br label %%%s\n", lTail))
+	c.sb.WriteString(fmt.Sprintf("%s:\n", lTail))
+	iNext = c.treg("rvn")
+	c.sb.WriteString(fmt.Sprintf("  %s = add i64 %s, 1\n", iNext, iR))
+	c.sb.WriteString(fmt.Sprintf("  br label %%%s\n", lHead))
+	c.sb.WriteString(fmt.Sprintf("%s:\n", lDone))
+	return nil
+}
+
+// emitBuiltinVecInsert lowers `vec.insert(idx, x)`: grow (mirroring push) if the
+// backing buffer is full, then copy [0..idx) and [idx..len) around the new
+// element via two memcpy's. idx is clamped to [0, len].
+func (c *codegen) emitBuiltinVecInsert(inst *Inst) error {
+	if len(inst.Args) < 3 {
+		return fmt.Errorf("vec.insert: needs receiver, index, element")
+	}
+	recv := inst.Args[0]
+	slot := c.valSlot[recv]
+	if slot == "" {
+		return fmt.Errorf("vec.insert: no receiver slot")
+	}
+	elemLL, stride := c.elemInfoOfVec(recv)
+	idxT, idxV := c.loadVal(inst.Args[1])
+	idx := idxV
+	if r := c.coerce(idxT, idxV, "i64"); r != "" {
+		idx = r
+	}
+	_, elemV := c.loadVal(inst.Args[2])
+	vv := c.treg("ivv")
+	c.sb.WriteString(fmt.Sprintf("  %s = load %%vec, %%vec* %s\n", vv, slot))
+	lenG := c.treg("ivl")
+	c.sb.WriteString(fmt.Sprintf("  %s = extractvalue %%vec %s, 0\n", lenG, vv))
+	capG := c.treg("ivc")
+	c.sb.WriteString(fmt.Sprintf("  %s = extractvalue %%vec %s, 1\n", capG, vv))
+	dataG := c.treg("ivd")
+	c.sb.WriteString(fmt.Sprintf("  %s = extractvalue %%vec %s, 2\n", dataG, vv))
+	capZero := c.treg("ivcz")
+	c.sb.WriteString(fmt.Sprintf("  %s = icmp eq i64 %s, 0\n", capZero, capG))
+	capDouble := c.treg("ivcd")
+	c.sb.WriteString(fmt.Sprintf("  %s = mul i64 %s, 2\n", capDouble, capG))
+	growCap := c.treg("ivgc")
+	c.sb.WriteString(fmt.Sprintf("  %s = select i1 %s, i64 1, i64 %s\n", growCap, capZero, capDouble))
+	needGrow := c.treg("ivng")
+	c.sb.WriteString(fmt.Sprintf("  %s = icmp eq i64 %s, %s\n", needGrow, lenG, capG))
+	newCap := c.treg("ivnc")
+	c.sb.WriteString(fmt.Sprintf("  %s = select i1 %s, i64 %s, i64 %s\n", newCap, needGrow, growCap, capG))
+	newLen := c.treg("ivnl")
+	c.sb.WriteString(fmt.Sprintf("  %s = add i64 %s, 1\n", newLen, lenG))
+	sz := c.treg("ivsz")
+	c.sb.WriteString(fmt.Sprintf("  %s = mul i64 %s, %d\n", sz, newCap, stride))
+	newBuf := c.treg("ivnb")
+	c.sb.WriteString(fmt.Sprintf("  %s = call i8* @malloc(i64 %s)\n", newBuf, sz))
+	srcPtr := c.treg("ivsp")
+	c.sb.WriteString(fmt.Sprintf("  %s = inttoptr i64 %s to i8*\n", srcPtr, dataG))
+	idxLo := c.treg("ivil")
+	c.sb.WriteString(fmt.Sprintf("  %s = icmp slt i64 %s, 0\n", idxLo, idx))
+	idxClamp := c.treg("ivic")
+	c.sb.WriteString(fmt.Sprintf("  %s = select i1 %s, i64 0, i64 %s\n", idxClamp, idxLo, idx))
+	idxHi := c.treg("ivih")
+	c.sb.WriteString(fmt.Sprintf("  %s = icmp sgt i64 %s, %s\n", idxHi, idxClamp, lenG))
+	idxClamp2 := c.treg("ivic2")
+	c.sb.WriteString(fmt.Sprintf("  %s = select i1 %s, i64 %s, i64 %s\n", idxClamp2, idxHi, lenG, idxClamp))
+	bytes1 := c.treg("ivb1")
+	c.sb.WriteString(fmt.Sprintf("  %s = mul i64 %s, %d\n", bytes1, idxClamp2, stride))
+	c.sb.WriteString(fmt.Sprintf("  call void @llvm.memcpy.p0i8.p0i8.i64(i8* %s, i8* %s, i64 %s, i1 false)\n", newBuf, srcPtr, bytes1))
+	ebase := c.treg("iveb")
+	c.sb.WriteString(fmt.Sprintf("  %s = bitcast i8* %s to %s*\n", ebase, newBuf, elemLL))
+	eptr := c.treg("ivep")
+	c.sb.WriteString(fmt.Sprintf("  %s = getelementptr inbounds %s, %s* %s, i64 %s\n", eptr, elemLL, elemLL, ebase, idxClamp2))
+	c.sb.WriteString(fmt.Sprintf("  store %s %s, %s* %s\n", elemLL, elemV, elemLL, eptr))
+	restOff := c.treg("ivro")
+	c.sb.WriteString(fmt.Sprintf("  %s = add i64 %s, 1\n", restOff, idxClamp2))
+	srcRestOff := c.treg("ivsr")
+	c.sb.WriteString(fmt.Sprintf("  %s = mul i64 %s, %d\n", srcRestOff, idxClamp2, stride))
+	dstRestOff := c.treg("ivdr")
+	c.sb.WriteString(fmt.Sprintf("  %s = mul i64 %s, %d\n", dstRestOff, restOff, stride))
+	restCount := c.treg("ivrc")
+	c.sb.WriteString(fmt.Sprintf("  %s = sub i64 %s, %s\n", restCount, lenG, idxClamp2))
+	restBytes := c.treg("ivrb")
+	c.sb.WriteString(fmt.Sprintf("  %s = mul i64 %s, %d\n", restBytes, restCount, stride))
+	srcRest := c.treg("ivsr2")
+	c.sb.WriteString(fmt.Sprintf("  %s = getelementptr inbounds i8, i8* %s, i64 %s\n", srcRest, srcPtr, srcRestOff))
+	dstRest := c.treg("ivdr2")
+	c.sb.WriteString(fmt.Sprintf("  %s = getelementptr inbounds i8, i8* %s, i64 %s\n", dstRest, newBuf, dstRestOff))
+	c.sb.WriteString(fmt.Sprintf("  call void @llvm.memcpy.p0i8.p0i8.i64(i8* %s, i8* %s, i64 %s, i1 false)\n", dstRest, srcRest, restBytes))
+	c.sb.WriteString(fmt.Sprintf("  call void @free(i8* %s)\n", srcPtr))
+	dataI64 := c.treg("ivdi")
+	c.sb.WriteString(fmt.Sprintf("  %s = ptrtoint i8* %s to i64\n", dataI64, newBuf))
+	s0 := c.treg("ivs0")
+	c.sb.WriteString(fmt.Sprintf("  %s = insertvalue %%vec { i64 0, i64 0, i64 0 }, i64 %s, 0\n", s0, newLen))
+	s1 := c.treg("ivs1")
+	c.sb.WriteString(fmt.Sprintf("  %s = insertvalue %%vec %s, i64 %s, 1\n", s1, s0, newCap))
+	s2 := c.treg("ivs2")
+	c.sb.WriteString(fmt.Sprintf("  %s = insertvalue %%vec %s, i64 %s, 2\n", s2, s1, dataI64))
+	c.sb.WriteString(fmt.Sprintf("  store %%vec %s, %%vec* %s\n", s2, slot))
+	return nil
+}
+
+// emitBuiltinVecRemove lowers `vec.remove(idx)`: copy [0..idx) and [idx+1..len)
+// around the removed element, free the old buffer, and return the element.
+// idx is clamped to [0, len]; newLen = max(0, len-1).
+func (c *codegen) emitBuiltinVecRemove(inst *Inst) error {
+	if len(inst.Args) < 2 {
+		return fmt.Errorf("vec.remove: needs receiver, index")
+	}
+	recv := inst.Args[0]
+	slot := c.valSlot[recv]
+	if slot == "" {
+		return fmt.Errorf("vec.remove: no receiver slot")
+	}
+	elemLL, stride := c.elemInfoOfVec(recv)
+	idxT, idxV := c.loadVal(inst.Args[1])
+	idx := idxV
+	if r := c.coerce(idxT, idxV, "i64"); r != "" {
+		idx = r
+	}
+	vv := c.treg("rmv")
+	c.sb.WriteString(fmt.Sprintf("  %s = load %%vec, %%vec* %s\n", vv, slot))
+	lenG := c.treg("rml")
+	c.sb.WriteString(fmt.Sprintf("  %s = extractvalue %%vec %s, 0\n", lenG, vv))
+	dataG := c.treg("rmd")
+	c.sb.WriteString(fmt.Sprintf("  %s = extractvalue %%vec %s, 2\n", dataG, vv))
+	base := c.treg("rmb")
+	c.sb.WriteString(fmt.Sprintf("  %s = inttoptr i64 %s to %s*\n", base, dataG, elemLL))
+	eptr := c.treg("rmep")
+	c.sb.WriteString(fmt.Sprintf("  %s = getelementptr inbounds %s, %s* %s, i64 %s\n", eptr, elemLL, elemLL, base, idx))
+	removed := c.treg("rmrv")
+	c.sb.WriteString(fmt.Sprintf("  %s = load %s, %s* %s\n", removed, elemLL, elemLL, eptr))
+	if inst.Dst > NoVal {
+		if ds := c.valSlot[inst.Dst]; ds != "" {
+			c.sb.WriteString(fmt.Sprintf("  store %s %s, %s* %s\n", elemLL, removed, elemLL, ds))
+		}
+	}
+	z := c.treg("rmz")
+	c.sb.WriteString(fmt.Sprintf("  %s = icmp eq i64 %s, 0\n", z, lenG))
+	dec := c.treg("rmd2")
+	c.sb.WriteString(fmt.Sprintf("  %s = sub i64 %s, 1\n", dec, lenG))
+	newLen := c.treg("rmnl")
+	c.sb.WriteString(fmt.Sprintf("  %s = select i1 %s, i64 0, i64 %s\n", newLen, z, dec))
+	srcPtr := c.treg("rmsp")
+	c.sb.WriteString(fmt.Sprintf("  %s = inttoptr i64 %s to i8*\n", srcPtr, dataG))
+	sz := c.treg("rmsz")
+	c.sb.WriteString(fmt.Sprintf("  %s = mul i64 %s, %d\n", sz, newLen, stride))
+	newBuf := c.treg("rmnb")
+	c.sb.WriteString(fmt.Sprintf("  %s = call i8* @malloc(i64 %s)\n", newBuf, sz))
+	idxLo := c.treg("rmil")
+	c.sb.WriteString(fmt.Sprintf("  %s = icmp slt i64 %s, 0\n", idxLo, idx))
+	idxClamp := c.treg("rmic")
+	c.sb.WriteString(fmt.Sprintf("  %s = select i1 %s, i64 0, i64 %s\n", idxClamp, idxLo, idx))
+	idxHi := c.treg("rmih")
+	c.sb.WriteString(fmt.Sprintf("  %s = icmp sgt i64 %s, %s\n", idxHi, idxClamp, lenG))
+	idxClamp2 := c.treg("rmic2")
+	c.sb.WriteString(fmt.Sprintf("  %s = select i1 %s, i64 %s, i64 %s\n", idxClamp2, idxHi, lenG, idxClamp))
+	bytes1 := c.treg("rmb1")
+	c.sb.WriteString(fmt.Sprintf("  %s = mul i64 %s, %d\n", bytes1, idxClamp2, stride))
+	c.sb.WriteString(fmt.Sprintf("  call void @llvm.memcpy.p0i8.p0i8.i64(i8* %s, i8* %s, i64 %s, i1 false)\n", newBuf, srcPtr, bytes1))
+	restCount := c.treg("rmrc")
+	c.sb.WriteString(fmt.Sprintf("  %s = sub i64 %s, %s, 1\n", restCount, lenG, idxClamp2))
+	restNeg := c.treg("rmrn")
+	c.sb.WriteString(fmt.Sprintf("  %s = icmp slt i64 %s, 0\n", restNeg, restCount))
+	restCountC := c.treg("rmrcc")
+	c.sb.WriteString(fmt.Sprintf("  %s = select i1 %s, i64 0, i64 %s\n", restCountC, restNeg, restCount))
+	restBytes := c.treg("rmrb")
+	c.sb.WriteString(fmt.Sprintf("  %s = mul i64 %s, %d\n", restBytes, restCountC, stride))
+	srcRestIdx := c.treg("rmsri")
+	c.sb.WriteString(fmt.Sprintf("  %s = add i64 %s, 1\n", srcRestIdx, idxClamp2))
+	srcRestOff := c.treg("rmsr")
+	c.sb.WriteString(fmt.Sprintf("  %s = mul i64 %s, %d\n", srcRestOff, srcRestIdx, stride))
+	srcRest := c.treg("rmsr2")
+	c.sb.WriteString(fmt.Sprintf("  %s = getelementptr inbounds i8, i8* %s, i64 %s\n", srcRest, srcPtr, srcRestOff))
+	dstRestOff := c.treg("rmdr")
+	c.sb.WriteString(fmt.Sprintf("  %s = mul i64 %s, %d\n", dstRestOff, idxClamp2, stride))
+	dstRest := c.treg("rmdr2")
+	c.sb.WriteString(fmt.Sprintf("  %s = getelementptr inbounds i8, i8* %s, i64 %s\n", dstRest, newBuf, dstRestOff))
+	c.sb.WriteString(fmt.Sprintf("  call void @llvm.memcpy.p0i8.p0i8.i64(i8* %s, i8* %s, i64 %s, i1 false)\n", dstRest, srcRest, restBytes))
+	c.sb.WriteString(fmt.Sprintf("  call void @free(i8* %s)\n", srcPtr))
+	dataI64 := c.treg("rmdi")
+	c.sb.WriteString(fmt.Sprintf("  %s = ptrtoint i8* %s to i64\n", dataI64, newBuf))
+	s0 := c.treg("rms0")
+	c.sb.WriteString(fmt.Sprintf("  %s = insertvalue %%vec { i64 0, i64 0, i64 0 }, i64 %s, 0\n", s0, newLen))
+	s1 := c.treg("rms1")
+	c.sb.WriteString(fmt.Sprintf("  %s = insertvalue %%vec %s, i64 %s, 1\n", s1, s0, newLen))
+	s2 := c.treg("rms2")
+	c.sb.WriteString(fmt.Sprintf("  %s = insertvalue %%vec %s, i64 %s, 2\n", s2, s1, dataI64))
+	c.sb.WriteString(fmt.Sprintf("  store %%vec %s, %%vec* %s\n", s2, slot))
+	return nil
+}
+
+// emitBuiltinVecSort lowers `vec.sort-asc`/`vec.sort-desc`: an in-place bubble
+// sort over the backing buffer. Elements are compared via c.emitLessThan and
+// swapped with element-sized llvm.memcpy moves through a stack temp, so
+// ownership is preserved for any element type (including %str-long). len/cap/data
+// are unchanged (the buffer is merely reordered in place). asc=true yields
+// ascending order.
+func (c *codegen) emitBuiltinVecSort(inst *Inst, asc bool) error {
+	if len(inst.Args) < 1 {
+		return fmt.Errorf("vec.sort: needs receiver")
+	}
+	recv := inst.Args[0]
+	slot := c.valSlot[recv]
+	if slot == "" {
+		return fmt.Errorf("vec.sort: no receiver slot")
+	}
+	elemLL, stride := c.elemInfoOfVec(recv)
+	vv := c.treg("stv")
+	c.sb.WriteString(fmt.Sprintf("  %s = load %%vec, %%vec* %s\n", vv, slot))
+	lenG := c.treg("stl")
+	c.sb.WriteString(fmt.Sprintf("  %s = extractvalue %%vec %s, 0\n", lenG, vv))
+	dataG := c.treg("std")
+	c.sb.WriteString(fmt.Sprintf("  %s = extractvalue %%vec %s, 2\n", dataG, vv))
+	base := c.treg("stb")
+	c.sb.WriteString(fmt.Sprintf("  %s = inttoptr i64 %s to i8*\n", base, dataG))
+	tmp := c.treg("stt")
+	c.sb.WriteString(fmt.Sprintf("  %s = alloca i8, i64 %d\n", tmp, stride))
+	nMinus1 := c.treg("stn1")
+	c.sb.WriteString(fmt.Sprintf("  %s = sub i64 %s, 1\n", nMinus1, lenG))
+	small := c.treg("sts")
+	c.sb.WriteString(fmt.Sprintf("  %s = icmp ult i64 %s, 2\n", small, lenG))
+	// Pre-allocate the loop-increment register names so the phi nodes below can
+	// reference them before their textual definition (matches the forward-phi
+	// pattern used by emitBuiltinVecReverse).
+	iInc := c.treg("stii")
+	jInc := c.treg("stji")
+	lSmall := c.label("sts")
+	lOuterInit := c.label("sto")
+	lOuterHead := c.label("sth")
+	lInnerInit := c.label("sti")
+	lInnerHead := c.label("stj")
+	lInnerBody := c.label("stB")
+	lInnerSwap := c.label("stS")
+	lInnerTail := c.label("stT")
+	lOuterLatch := c.label("stL")
+	lDone := c.label("stD")
+	c.sb.WriteString(fmt.Sprintf("  br i1 %s, label %%%s, label %%%s\n", small, lSmall, lOuterInit))
+	c.sb.WriteString(fmt.Sprintf("%s:\n", lSmall))
+	c.sb.WriteString(fmt.Sprintf("  br label %%%s\n", lDone))
+	c.sb.WriteString(fmt.Sprintf("%s:\n", lOuterInit))
+	c.sb.WriteString(fmt.Sprintf("  br label %%%s\n", lOuterHead))
+	c.sb.WriteString(fmt.Sprintf("%s:\n", lOuterHead))
+	iPhi := c.treg("sti")
+	c.sb.WriteString(fmt.Sprintf("  %s = phi i64 [ 0, %%%s ], [ %s, %%%s ]\n", iPhi, lOuterInit, iInc, lOuterLatch))
+	outerDone := c.treg("stod")
+	c.sb.WriteString(fmt.Sprintf("  %s = icmp uge i64 %s, %s\n", outerDone, iPhi, nMinus1))
+	c.sb.WriteString(fmt.Sprintf("  br i1 %s, label %%%s, label %%%s\n", outerDone, lDone, lInnerInit))
+	c.sb.WriteString(fmt.Sprintf("%s:\n", lInnerInit))
+	c.sb.WriteString(fmt.Sprintf("  br label %%%s\n", lInnerHead))
+	c.sb.WriteString(fmt.Sprintf("%s:\n", lInnerHead))
+	jPhi := c.treg("stj")
+	c.sb.WriteString(fmt.Sprintf("  %s = phi i64 [ 0, %%%s ], [ %s, %%%s ]\n", jPhi, lInnerInit, jInc, lInnerTail))
+	maxJ := c.treg("stmj")
+	c.sb.WriteString(fmt.Sprintf("  %s = sub i64 %s, %s\n", maxJ, nMinus1, iPhi))
+	jOk := c.treg("stjo")
+	c.sb.WriteString(fmt.Sprintf("  %s = icmp ult i64 %s, %s\n", jOk, jPhi, maxJ))
+	c.sb.WriteString(fmt.Sprintf("  br i1 %s, label %%%s, label %%%s\n", jOk, lInnerBody, lOuterLatch))
+	c.sb.WriteString(fmt.Sprintf("%s:\n", lInnerBody))
+	tbase := c.treg("sttb")
+	c.sb.WriteString(fmt.Sprintf("  %s = bitcast i8* %s to %s*\n", tbase, base, elemLL))
+	jOff := c.treg("stof")
+	c.sb.WriteString(fmt.Sprintf("  %s = mul i64 %s, %d\n", jOff, jPhi, stride))
+	j1Off := c.treg("stof1")
+	c.sb.WriteString(fmt.Sprintf("  %s = add i64 %s, %d\n", j1Off, jOff, stride))
+	addrJ := c.treg("staj")
+	c.sb.WriteString(fmt.Sprintf("  %s = getelementptr inbounds i8, i8* %s, i64 %s\n", addrJ, base, jOff))
+	addrJ1 := c.treg("staj1")
+	c.sb.WriteString(fmt.Sprintf("  %s = getelementptr inbounds i8, i8* %s, i64 %s\n", addrJ1, base, j1Off))
+	jPlus1 := c.treg("stjp")
+	c.sb.WriteString(fmt.Sprintf("  %s = add i64 %s, 1\n", jPlus1, jPhi))
+	pa := c.treg("stpa")
+	c.sb.WriteString(fmt.Sprintf("  %s = getelementptr inbounds %s, %s* %s, i64 %s\n", pa, elemLL, elemLL, tbase, jPhi))
+	pb := c.treg("stpb")
+	c.sb.WriteString(fmt.Sprintf("  %s = getelementptr inbounds %s, %s* %s, i64 %s\n", pb, elemLL, elemLL, tbase, jPlus1))
+	aEl := c.treg("stea")
+	c.sb.WriteString(fmt.Sprintf("  %s = load %s, %s* %s\n", aEl, elemLL, elemLL, pa))
+	bEl := c.treg("steb")
+	c.sb.WriteString(fmt.Sprintf("  %s = load %s, %s* %s\n", bEl, elemLL, elemLL, pb))
+	var cond string
+	if asc {
+		cond = c.emitLessThan(bEl, aEl, elemLL)
+	} else {
+		cond = c.emitLessThan(aEl, bEl, elemLL)
+	}
+	c.sb.WriteString(fmt.Sprintf("  br i1 %s, label %%%s, label %%%s\n", cond, lInnerSwap, lInnerTail))
+	c.sb.WriteString(fmt.Sprintf("%s:\n", lInnerSwap))
+	c.sb.WriteString(fmt.Sprintf("  call void @llvm.memcpy.p0i8.p0i8.i64(i8* %s, i8* %s, i64 %d, i1 false)\n", tmp, addrJ, stride))
+	c.sb.WriteString(fmt.Sprintf("  call void @llvm.memcpy.p0i8.p0i8.i64(i8* %s, i8* %s, i64 %d, i1 false)\n", addrJ, addrJ1, stride))
+	c.sb.WriteString(fmt.Sprintf("  call void @llvm.memcpy.p0i8.p0i8.i64(i8* %s, i8* %s, i64 %d, i1 false)\n", addrJ1, tmp, stride))
+	c.sb.WriteString(fmt.Sprintf("  br label %%%s\n", lInnerTail))
+	c.sb.WriteString(fmt.Sprintf("%s:\n", lInnerTail))
+	c.sb.WriteString(fmt.Sprintf("  %s = add i64 %s, 1\n", jInc, jPhi))
+	c.sb.WriteString(fmt.Sprintf("  br label %%%s\n", lInnerHead))
+	c.sb.WriteString(fmt.Sprintf("%s:\n", lOuterLatch))
+	c.sb.WriteString(fmt.Sprintf("  %s = add i64 %s, 1\n", iInc, iPhi))
+	c.sb.WriteString(fmt.Sprintf("  br label %%%s\n", lOuterHead))
+	c.sb.WriteString(fmt.Sprintf("%s:\n", lDone))
 	return nil
 }
 

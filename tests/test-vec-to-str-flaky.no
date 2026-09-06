@@ -1,0 +1,27 @@
+; regression: multi-element []i64.to-str must be deterministic & correct
+;
+; Historically, []byte.to-str (defined in src/std/byte.no) could be matched
+; against a []i64 receiver NONDETERMINISTICALLY: matchTypePattern treated the
+; concrete element type `byte` as a generic type variable because
+; isLowerLetter("byte") == true. When the generic-method map iteration order
+; let []byte.to-str win over []t.to-str, the body byte-copied each i64 element
+; (truncating to its low byte) and embedded the raw bytes in the string — so
+; `[1, 2, 3, 10, 20, 256]` became garbage like `[1, 2, 3\n\x14\x00\x01`.
+;
+; Fixed in src/build/transpiler.go resolveMethodCall: candidates are collected
+; and the EXACT (non-generic) match is preferred deterministically. See the
+; "flaky vec to-str" root-cause note.
+;
+; The leading 256 forces truncation to be visible even if the wrong body runs.
+
+main = () {
+    v []i64 = with-cap(8)
+    v.push(1)
+    v.push(2)
+    v.push(3)
+    v.push(10)
+    v.push(20)
+    v.push(256)
+    s = v.to-str()
+    print(s)
+}

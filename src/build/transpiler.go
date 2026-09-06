@@ -2821,12 +2821,24 @@ func (t *Transpiler) emitMIR(hirPkg *hir.Package, allowFallback bool) (out strin
 			}
 		}
 	}()
-	mod, rep, _ := mir.LowerHIR(hirPkg)
+	mod, rep, diags := mir.LowerHIR(hirPkg)
 	if mod == nil {
 		if allowFallback {
 			return t.llvmGenerator.GenerateHIR(hirPkg), ""
 		}
 		return "", "lowering produced nil module"
+	}
+	// Lowering gaps that produce WRONG-but-exit-0 output (e.g. string
+	// interpolation `'x={expr}'`, which the v1 MIR backend cannot lower and would
+	// emit unsubstituted) must fall back to legacy even though opt/llc accept the
+	// IR. Shipping silently-wrong output is worse than using the legacy backend,
+	// so these fatal lower diagnostics (kind "interp") trigger a fallback when
+	// allowed, and a hard error under NOLANG_MIR=3 (Stage-3 coverage gate).
+	if hasFatalLowerDiag(diags) {
+		if allowFallback {
+			return t.llvmGenerator.GenerateHIR(hirPkg), ""
+		}
+		return "", "unsupported construct (string interpolation) in MIR backend"
 	}
 	if os.Getenv("NOLANG_MIR_DUMP_MIR") != "" {
 		fmt.Fprintf(os.Stderr, "[MIR-DUMP]\n%s\n", mod.DumpAnnotated())
@@ -2876,6 +2888,21 @@ func (t *Transpiler) emitMIR(hirPkg *hir.Package, allowFallback bool) (out strin
 		LastMIREmitted = true
 	}
 	return ll, ""
+}
+
+// hasFatalLowerDiag reports whether any lowering diagnostic represents a
+// construct the v1 MIR backend cannot emit correctly (producing wrong-but-exit-0
+// output). Such constructs must fall back to legacy even though the IR passes
+// opt/llc. Currently only string interpolation (kind "interp") qualifies;
+// benign lower gaps (ident/dot) are intentionally NOT fatal — they emit a
+// best-effort form that works for the v1 subset.
+func hasFatalLowerDiag(diags []mir.LowerDiag) bool {
+	for _, d := range diags {
+		if d.Kind == "interp" {
+			return true
+		}
+	}
+	return false
 }
 
 // collectReassignedGlobals 掃描語句，找出 Type==nil 的 LetStatement（賦值），
@@ -3894,6 +3921,9 @@ func resolveMethodCall(dot *parser.DotExpression, ce *parser.CallExpression,
 	// '@sort-asc' reference. vec.sort-asc is unaffected because the generic
 	// pattern [n]t only matches fixed arrays, not []T slice receivers, so it
 	// still falls through to the builtin dispatch.
+	var candNames []string
+	var candFds []*parser.FunctionDefinition
+	var candArgs [][]parser.Expression
 	for name, fd := range genericFns {
 		dotIdx := strings.LastIndex(name, ".")
 		if dotIdx < 0 {
@@ -3908,6 +3938,33 @@ func resolveMethodCall(dot *parser.DotExpression, ce *parser.CallExpression,
 		genericArgs := matchTypePattern(typePrefix, recvType, fd)
 		if len(genericArgs) == 0 {
 			continue
+		}
+		// COLLECT ALL matching generic methods (diagnostic: detect collisions
+		// where >1 generic method matches the same receiver+method; map
+		// iteration order then decides the winner nondeterministically).
+		candNames = append(candNames, name)
+		candFds = append(candFds, fd)
+		candArgs = append(candArgs, genericArgs)
+	}
+	// All matching generic methods collected. Map iteration order is
+	// nondeterministic, so if >1 candidate matched, the "first" (index 0)
+	// winner varies run-to-run — a latent source of flaky/incorrect
+	// monomorphization. Diagnose and deterministically pick the BEST match.
+	if len(candNames) > 0 {
+		// Deterministic selection: Go map iteration order is nondeterministic,
+		// so if >1 generic method matched the same receiver+method the
+		// original "first match wins" picked a random winner -> flaky/incorrect
+		// monomorphization (e.g. []byte.to-str winning over []t.to-str for a
+		// []i64 receiver). Prefer an EXACT type-prefix match (no generic type
+		// variable) over a generic one; ties within a class keep insertion order.
+		fd := candFds[0]
+		genericArgs := candArgs[0]
+		for i, cn := range candNames {
+			if isExactTypePrefix(cn) {
+				fd = candFds[i]
+				genericArgs = candArgs[i]
+				break
+			}
 		}
 		// If the receiver is itself generic (e.g. self.foo() inside a generic
 		// function whose receiver is `[]t`), the codegen cannot resolve the
@@ -4093,22 +4150,36 @@ func matchTypePattern(pattern, concrete string, fd *parser.FunctionDefinition) [
 					if sizeParam != "" && argSize == "" {
 						return nil
 					}
-					var args []parser.Expression
-					if sizeParam != "" && isLowerLetter(sizeParam) {
-						// [n]t pattern requires a numeric size; non-numeric argSize
-						// (e.g. MapType [str]i64 where argSize="str") must not match.
+				var args []parser.Expression
+				if sizeParam != "" {
+					if isLowerLetter(sizeParam) {
+						// [n]t pattern requires a numeric size; non-numeric
+						// argSize (e.g. MapType [str]i64 where argSize="str")
+						// must not match.
 						val, err := strconv.ParseInt(argSize, 10, 64)
 						if err != nil {
 							return nil
 						}
 						args = append(args, &parser.IntegerLiteral{Value: val})
+					} else if sizeParam != argSize {
+						// Concrete size (e.g. "4"): must match exactly.
+						return nil
 					}
-					if isLowerLetter(elemParam) {
+				}
+				if elemParam != "" {
+					if len(elemParam) == 1 && isLowerLetter(elemParam) {
+						// Generic element variable (e.g. `t`): bind any concrete type.
 						args = append(args, &parser.StringLiteral{Value: argElem})
+					} else if elemParam == argElem {
+						// Concrete element type: exact match only.
+						args = append(args, &parser.StringLiteral{Value: argElem})
+					} else {
+						return nil
 					}
-					if len(args) > 0 {
-						return args
-					}
+				}
+				if len(args) > 0 {
+					return args
+				}
 				}
 			}
 		}
@@ -4118,7 +4189,18 @@ func matchTypePattern(pattern, concrete string, fd *parser.FunctionDefinition) [
 		elemParam := pattern[2:]
 		if strings.HasPrefix(concrete, "[]") {
 			argElem := concrete[2:]
-			if isLowerLetter(elemParam) {
+			if len(elemParam) == 1 && isLowerLetter(elemParam) {
+				// Generic element variable (e.g. `t`): bind to any concrete
+				// element type. ([]t.to-str matches []i64, []byte, ...)
+				return []parser.Expression{&parser.StringLiteral{Value: argElem}}
+			}
+			// Concrete element type (e.g. `byte`, `str`): must match EXACTLY.
+			// Without this, isLowerLetter("byte") is true (because 'b' is a
+			// lower letter) and []byte.to-str wrongly matches a []i64 receiver
+			// (binding byte->i64), causing nondeterministic/incorrect
+			// monomorphization when map iteration order flips the winning
+			// candidate. See zz_multi flaky vec-to-str bug.
+			if elemParam == argElem {
 				return []parser.Expression{&parser.StringLiteral{Value: argElem}}
 			}
 		}
@@ -4222,6 +4304,47 @@ func isLowerLetter(s string) bool {
 			return false
 		}
 	}
+	return true
+}
+
+// isExactTypePrefix reports whether the receiver type prefix of a method name
+// (the part before the final '.') is a CONCRETE type with no generic type
+// variable. Generic params are always single lowercase letters (t, n, e, ...),
+// so a prefix is generic iff it embeds one. This lets resolveMethodCall prefer
+// an exact match over a generic one when several generic methods match the
+// same receiver — making candidate selection deterministic instead of depending
+// on Go map iteration order (which caused the flaky []i64.to-str bug).
+func isExactTypePrefix(name string) bool {
+	dotIdx := strings.LastIndex(name, ".")
+	if dotIdx < 0 {
+		return false
+	}
+	prefix := name[:dotIdx]
+	// Bare generic variable, e.g. `t.method`.
+	if len(prefix) == 1 && isLowerLetter(prefix) {
+		return false
+	}
+	if strings.HasPrefix(prefix, "[]") {
+		elem := prefix[2:]
+		if elem == "" {
+			return true
+		}
+		// []t is generic; []byte / []str are concrete.
+		return !(len(elem) == 1 && isLowerLetter(elem))
+	}
+	if len(prefix) > 3 && prefix[0] == '[' {
+		closeB := strings.IndexByte(prefix, ']')
+		if closeB > 0 && closeB+1 < len(prefix) {
+			sizeP := prefix[1:closeB]
+			elemP := prefix[closeB+1:]
+			// [n]t is generic; [4]i64 is concrete.
+			if (len(sizeP) == 1 && isLowerLetter(sizeP)) || (len(elemP) == 1 && isLowerLetter(elemP)) {
+				return false
+			}
+			return true
+		}
+	}
+	// Plain concrete receiver (str, vec, i64, tls.conn, ...).
 	return true
 }
 func inferArgType(expr parser.Expression, program *parser.Program) string {

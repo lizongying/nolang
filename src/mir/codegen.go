@@ -105,6 +105,34 @@ func supportedLLVM(lt string) bool {
 	return false
 }
 
+// byPointerLLVM reports whether a parameter / argument of LLVM type lt must be
+// passed BY POINTER in the function signature rather than by value. Scalars and
+// already-pointer types are passed by value; every aggregate (fixed array
+// `[N x T]`, struct / %vec / %option / named struct) is passed by pointer so the
+// MIR body — which GEPs c.valSlot / c.paramPtr as a pointer for indexing and
+// field access — always sees a legal pointer. Owned values are already passed by
+// pointer (the caller owns the buffer); this extends that to non-owned aggregates.
+//
+// Without this, a non-owned fixed-array receiver (e.g. `[3 x i64] %p0`) is
+// declared by value while the body emits `getelementptr [3 x i64], [3 x i64]*
+// %p0`, and opt rejects it ("%p0 defined with type '[3 x i64]' but expected
+// 'ptr'"). See tests/test-arr.no.
+func byPointerLLVM(lt string, owned bool) bool {
+	if owned {
+		return true
+	}
+	if strings.HasSuffix(lt, "*") {
+		return false // already a pointer; pass by value
+	}
+	if strings.HasPrefix(lt, "[") {
+		return true // fixed array aggregate
+	}
+	if strings.HasPrefix(lt, "%") {
+		return true // struct / %vec / %option / named struct aggregate
+	}
+	return false
+}
+
 func sizeOfArray(t *Type) int64 {
 	if len(t.Sizes) > 0 {
 		return t.Sizes[0]
@@ -139,17 +167,47 @@ func (m *Module) EmitLLVM() (out string, err error) {
 		strGlobals:   map[ValueID]strGlobal{},
 		extDecls:     map[string]bool{},
 	}
+	// Sanitize LLVM symbol names, disambiguating collisions. Nolang method
+	// names embed their receiver type (e.g. `[]t.len`, `vec.reverse`,
+	// `fs.file.close`); `[` `]` `<` `>` `*` are reserved tokens in LLVM IR, so a
+	// raw `define void @[]t.len` is rejected by opt ("expected value token").
+	// sanitize() maps every non-[a-zA-Z0-9_] char to `_`, yielding a legal
+	// symbol. The SAME sanitized name is used at every call site (c.fname[cid])
+	// and in FuncByName lookups, so definitions and references stay consistent.
+	//
+	// Two DISTINCT Nolang functions can sanitize to the SAME symbol — the
+	// classic case is the method `i64.to_str` (HIR name `i64.to_str`) and the
+	// free helper `i64_to_str` (HIR name `i64_to_str`): both become `i64_to_str`.
+	// Emitting two `define @i64_to_str` is rejected by opt ("redefinition of
+	// '@i64_to_str'"). When a sanitized name is already taken we suffix it with a
+	// numeric index. Crucially, FuncByName is keyed by the RAW HIR name (which
+	// still distinguishes `i64.to_str` from `i64_to_str`), so each call resolves
+	// to the correct FuncID; c.fname[that FuncID] then yields the (suffixed,
+	// unique) symbol used by both the definition and the call site. The call
+	// graph is therefore preserved and no two definitions collide.
+	usedFname := map[string]bool{}
 	for i := range m.Funcs {
 		f := &m.Funcs[i]
 		if f.ID == NoFunc {
 			continue
 		}
 		// user `main` collides with the C entry `i32 @main`; rename it.
+		var base string
 		if f.Name == "main" {
-			c.fname[f.ID] = "_nolang_main"
+			base = "_nolang_main"
 		} else {
-			c.fname[f.ID] = f.Name
+			base = sanitize(f.Name)
 		}
+		name := base
+		if usedFname[name] {
+			k := 1
+			for usedFname[fmt.Sprintf("%s_%d", base, k)] {
+				k++
+			}
+			name = fmt.Sprintf("%s_%d", base, k)
+		}
+		usedFname[name] = true
+		c.fname[f.ID] = name
 	}
 	c.collectStrings()
 	c.emitPrelude()
@@ -876,7 +934,7 @@ func (c *codegen) emitFunc(f *Function) error {
 		pn := fmt.Sprintf("%%p%d", idx)
 		if c.resultParam[p] {
 			decls = append(decls, lt+"* "+pn)
-		} else if owned {
+		} else if byPointerLLVM(lt, owned) {
 			decls = append(decls, lt+"* "+pn)
 		} else {
 			decls = append(decls, lt+" "+pn)
@@ -927,6 +985,33 @@ func (c *codegen) emitFunc(f *Function) error {
 		c.valSlot[v] = s
 		return s
 	}
+	// By-pointer parameters (owned values, aggregates `[N x T]`, structs /
+	// %vec / %option, and already-pointer types) are passed by reference. Alias
+	// their slot directly to the incoming param pointer so the body reads AND
+	// writes THROUGH the caller's storage — matching the legacy codegen and
+	// Nolang's reference semantics for arrays/structs. This is essential for
+	// mutation propagation: `inner-write(s [32]byte) { s[i] = ... }` must modify
+	// the caller's array, and `self.field = ...` inside a method must update the
+	// caller's receiver. Copying the param into a fresh local alloca (the old
+	// behaviour) silently discards those writes — the test-arr-param "first 8
+	// bytes zero" bug, and the by-value-vs-by-reference bug that broke mutating
+	// std methods (vec.insert / vec.remove / vec.reverse …).
+	//
+	// Only by-pointer params are aliased. Scalar (non-owned, non-pointer) params
+	// are declared by value (`i64 %p0`); their `paramPtr` is a by-value name, so
+	// aliasing valSlot to it and then `load i64, i64* %p0` would be a type error
+	// opt rejects ("%p0 defined with type 'i64' but expected 'ptr'"). Scalars are
+	// copied into a normal slot below. The receiver is just a (usually
+	// by-pointer) param, so it is covered by this same loop — no special case.
+	for _, p := range f.Params {
+		if c.resultParam[p] {
+			continue // out-params are written back by emitReturn, not aliased
+		}
+		plt, powned := c.ptype(p)
+		if powned || byPointerLLVM(plt, powned) || strings.HasSuffix(plt, "*") {
+			c.valSlot[p] = c.paramPtr[p]
+		}
+	}
 	// params
 	for _, p := range f.Params {
 		allocaFor(p)
@@ -956,24 +1041,26 @@ func (c *codegen) emitFunc(f *Function) error {
 			}
 		}
 	}
-	// store incoming params into slots (skip out-params)
+	// store incoming params into slots (skip out-params and by-pointer params)
 	for _, p := range f.Params {
 		if c.resultParam[p] {
-			continue
+			continue // out-param: written back by emitReturn
 		}
 		lt, owned := c.ptype(p)
 		slot := c.valSlot[p]
 		if lt == "void" || slot == "" {
 			continue
 		}
-		pin := c.paramPtr[p]
-		if owned {
-			// owned params arrive as pointers; load the struct value, then store.
-			c.sb.WriteString(fmt.Sprintf("  %%p2v%d = load %s, %s* %s\n", p, lt, lt, pin))
-			c.sb.WriteString(fmt.Sprintf("  store %s %%p2v%d, %s* %s\n", lt, p, lt, slot))
-		} else {
-			c.sb.WriteString(fmt.Sprintf("  store %s %s, %s* %s\n", lt, pin, lt, slot))
+		// By-pointer params were aliased to the caller's pointer above, so their
+		// slot IS that pointer; the body reads/writes through it. Do NOT copy
+		// into a local slot (that would discard the caller's writes). Scalar
+		// (by-value) params are aliased to nothing, so their slot is a fresh
+		// alloca; store the incoming value into it here.
+		if owned || byPointerLLVM(lt, owned) || strings.HasSuffix(lt, "*") {
+			continue
 		}
+		pin := c.paramPtr[p]
+		c.sb.WriteString(fmt.Sprintf("  store %s %s, %s* %s\n", lt, pin, lt, slot))
 	}
 
 	// Assign LLVM labels for EVERY block BEFORE emitting any of them. LLVM text
@@ -1138,6 +1225,12 @@ func (c *codegen) emitConst(inst *Inst, allocaFor func(ValueID) string) error {
 	case "double":
 		bits := math.Float64bits(inst.Flt)
 		c.sb.WriteString(fmt.Sprintf("  store double 0x%016X, double* %s\n", bits, slot))
+	case "%option":
+		// `nil` is the only %option constant the MIR subset emits. It is the
+		// option's "none" discriminant: tag=1, val=0. A bare zeroinitializer
+		// would be misread as some(0) by the %option load/store codegen, turning
+		// a `nil` into a non-nil some(0).
+		c.sb.WriteString(fmt.Sprintf("  store %%option { i64 1, i64 0 }, %%option* %s\n", slot))
 	default:
 		c.sb.WriteString(fmt.Sprintf("  store %s zeroinitializer, %s* %s\n", lt, lt, slot))
 	}
@@ -1401,6 +1494,35 @@ func (c *codegen) emitMove(inst *Inst) error {
 		c.fail("move source has no slot in func %d", c.cf)
 		return fmt.Errorf("move src slot")
 	}
+	srcT, _ := c.ptype(inst.Args[0])
+	// Option-aware move. nolang `x ?t = y` wraps a scalar y into some(y); the
+	// MIR subset models every option as %option { i64 tag, i64 val }, so a
+	// non-option source becomes { tag=0, val=src }. Conversely `x = opt` (an
+	// %option source into a scalar dst) extracts the val field (field 1). A
+	// plain `load %option, %option* srcSlot` would misread the scalar's bits as
+	// the discriminant and turn some(v) into nil / none into some(0).
+	if dstT == "%option" && srcT != "%option" {
+		_, sv := c.loadVal(inst.Args[0])
+		if cv := c.coerce(srcT, sv, "i64"); cv != "" {
+			sv = cv
+		}
+		c.loadSeq++
+		w1 := fmt.Sprintf("%%mvw%d", c.loadSeq)
+		c.sb.WriteString(fmt.Sprintf("  %s = insertvalue %%option { i64 0, i64 0 }, i64 0, 0\n", w1))
+		c.loadSeq++
+		w2 := fmt.Sprintf("%%mvw%d", c.loadSeq)
+		c.sb.WriteString(fmt.Sprintf("  %s = insertvalue %%option %s, i64 %s, 1\n", w2, w1, sv))
+		c.sb.WriteString(fmt.Sprintf("  store %%option %s, %%option* %s\n", w2, dstSlot))
+		return nil
+	}
+	if dstT != "%option" && srcT == "%option" {
+		_, sv := c.loadVal(inst.Args[0])
+		c.loadSeq++
+		u1 := fmt.Sprintf("%%mvu%d", c.loadSeq)
+		c.sb.WriteString(fmt.Sprintf("  %s = extractvalue %%option %s, 1\n", u1, sv))
+		c.sb.WriteString(fmt.Sprintf("  store %s %s, %s* %s\n", dstT, u1, dstT, dstSlot))
+		return nil
+	}
 	// Use a unique temp name (%mv<instID>) because Dst is an existing variable
 	// slot already defined by its original binding, so reusing %c<Dst> would
 	// collide.
@@ -1628,6 +1750,22 @@ func (c *codegen) emitGetField(inst *Inst) error {
 	return nil
 }
 
+// containerFieldIndex maps a container pseudo-field name (len/cap/data) to its
+// GEP index within the slice/str aggregate. These are layout-derived, not
+// StructFields entries, so emitSetField handles them directly (mirroring
+// emitLenCap's read path). The aggregate layout is { len:i64, cap:i64, data:ptr }.
+func containerFieldIndex(name string) (int, bool) {
+	switch name {
+	case "len":
+		return 0, true
+	case "cap":
+		return 1, true
+	case "data":
+		return 2, true
+	}
+	return 0, false
+}
+
 // emitSetField lowers `recv.field = v`: compute the field address via GEP into
 // the receiver's struct slot and store v there.
 func (c *codegen) emitSetField(inst *Inst) error {
@@ -1638,14 +1776,34 @@ func (c *codegen) emitSetField(inst *Inst) error {
 	}
 	recvRaw := ""
 	recvLT := ""
+	var recvTy *Type
 	if val := c.mod.Value(inst.Args[0]); val != nil {
 		if t := c.mod.Type(val.Type); t != nil {
 			recvRaw = t.Raw
 			recvLT = c.llvmTypeOf(t)
+			recvTy = t
 		}
 	}
 	if recvLT == "" {
 		recvLT = "%" + sanitize(recvRaw)
+	}
+	_, valV := c.loadVal(inst.Args[1])
+	fieldLT, _ := c.ptype(inst.Args[1])
+	if fieldLT == "" {
+		fieldLT = "i64"
+	}
+	// Container pseudo-fields (len/cap/data) for slice/str are layout-derived
+	// and have no StructFields entry. Handle them via GEP into the aggregate,
+	// exactly mirroring emitLenCap's read path. This is what lets std methods
+	// like vec.push write `self.len = self.len + 1` under pure MIR.
+	if recvTy != nil && (recvTy.Kind == KindSlice || recvTy.Kind == KindStr) {
+		if idx, ok := containerFieldIndex(inst.Str); ok {
+			c.loadSeq++
+			gep := fmt.Sprintf("%%gp%d", c.loadSeq)
+			c.sb.WriteString(fmt.Sprintf("  %s = getelementptr inbounds %s, %s* %s, i32 0, i32 %d\n", gep, recvLT, recvLT, recvSlot, idx))
+			c.sb.WriteString(fmt.Sprintf("  store %s %s, %s* %s\n", fieldLT, valV, fieldLT, gep))
+			return nil
+		}
 	}
 	structKey := c.structKeyOf(recvRaw)
 	if structKey == "" {
@@ -1657,11 +1815,6 @@ func (c *codegen) emitSetField(inst *Inst) error {
 		return fmt.Errorf("setfield field")
 	}
 	structLT := recvLT
-	fieldLT, _ := c.ptype(inst.Args[1])
-	if fieldLT == "" {
-		fieldLT = "i64"
-	}
-	_, valV := c.loadVal(inst.Args[1])
 	c.loadSeq++
 	gep := fmt.Sprintf("%%gp%d", c.loadSeq)
 	c.sb.WriteString(fmt.Sprintf("  %s = getelementptr inbounds %s, %s* %s, i32 0, i32 %d\n", gep, structLT, structLT, recvSlot, idx))
@@ -2194,6 +2347,31 @@ func (c *codegen) emitCall(f *Function, inst *Inst) error {
 			continue
 		}
 		argT, av := c.loadVal(inst.Args[i])
+		// Method receiver (first input parameter): pass the receiver's *real slot
+		// address* by reference so self mutations (len/cap fields, elements)
+		// propagate to the caller, matching legacy codegen (which GEPs the
+		// %self pointer in place). The default owned-param path below copies the
+		// value into a fresh alloca and passes that address, which silently
+		// discards self mutations for container methods (vec.insert / vec.remove
+		// / …) under the MIR backend — the element writes still hit the shared
+		// backing buffer, but the caller's len/cap never update, corrupting
+		// subsequent indexing.
+		if cf.IsMethod && i == 0 && (owned || byPointerLLVM(plt, owned)) {
+			// The receiver slot (c.valSlot[receiver]) is the address of the
+			// caller's container/aggregate (a pointer to the alloca). Pass it
+			// directly — `plt` is the value type and the "*" makes the argument a
+			// pointer matching the callee's by-reference receiver param — so the
+			// method writes through to the caller's value (self mutations
+			// propagate). This is exactly the normal owned-param call form
+			// (`%vec* %slot`) except we reuse the existing caller slot instead of
+			// copying into a fresh %carg alloca (which would discard self
+			// mutations). Covers non-owned aggregate receivers (fixed arrays,
+			// non-owned structs) that are now also passed by pointer.
+			if rs, ok := c.valSlot[inst.Args[0]]; ok && rs != "" {
+				callArgs = append(callArgs, plt+"* "+rs)
+				continue
+			}
+		}
 		if owned {
 			if plt == "%vec" && strings.HasPrefix(argT, "[") {
 				// Fixed array argument passed to a slice (vec) parameter: build a
@@ -2270,6 +2448,18 @@ func (c *codegen) emitCall(f *Function, inst *Inst) error {
 			c.sb.WriteString(fmt.Sprintf("  %s = alloca %s\n", slot, plt))
 			c.sb.WriteString(fmt.Sprintf("  store %s %s, %s* %s\n", plt, av, plt, slot))
 			callArgs = append(callArgs, plt+"* "+slot)
+		} else if byPointerLLVM(plt, owned) {
+			// Non-owned aggregate parameter (fixed array / non-owned struct):
+			// pass the address of the argument's local slot so the callee's
+			// by-pointer param is satisfied. The argument is copied by value
+			// (call-by-value semantics), matching the prologue's load-into-slot.
+			argSlot := c.valSlot[inst.Args[i]]
+			if argSlot == "" {
+				c.fail("aggregate arg has no slot in func %s", f.Name)
+				callArgs = append(callArgs, plt+" zeroinitializer")
+			} else {
+				callArgs = append(callArgs, plt+"* "+argSlot)
+			}
 		} else {
 			// Coerce the actual argument to the callee's parameter type. nolang
 			// ints are i64 by default but byte/i8 values may be passed to an i64

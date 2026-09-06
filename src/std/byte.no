@@ -61,8 +61,115 @@ i64.to-bytes-le = () (out [?]byte) {
     }
 }
 
-; []byte.to-str: 将字节切片转为字符串
+; []byte.to-chars: 将字节切片转为字符切片（每个字节当作一个 char 码点，0~255）
+; 返回 []char。char 在 nolang 中是 32 位码点类型；byte（0~255）被当作单字节码点，
+; 故推送前用 &0xff 拓宽为 0~255 的码点值，保证 []char 槽被完整填充。
+;
+; ⚠️ 编译器限制：当前 legacy 与 MIR 后端对 []char（i32 元素）切片的支持均不完整
+; （与 []byte / []i64 不同，[]char 的 len/cap/stride 在 codegen 中存在隐性错误，
+; 构造成的 []char 运行期会越界损坏），故本方法暂不可用。
+; 若只需要「byte→码点→UTF-8 字符串」的最终结果，直接用 b.to-str() 即可——
+; []byte.to-str 已内联本语义（每个 byte 当 0~255 码点重新 UTF-8 编码），无需经过 []char。
+[]byte.to-chars = () (out []char) {
+    n = .len()
+    cs []char = with-cap(n)
+    i <- [0..n): {
+        cs.push(.[i] & 0xff)
+    }
+    out = cs
+}
+
+; []char.to-str: 将字符切片转为字符串（按 UTF-8 编码每个码点）
+; 每个码点按 UTF-8 写成 1~4 字节，push 进一个 []byte 临时切片；最后用循环下标
+; 把临时字节切片一次性拷入 out（out[j] = tmp[j]，下标用循环变量 j）。
+;
+; ⚠️ 注意：截至 2026-09-06，nolang 编译器对 []char 切片类型的支持不完整，本方法尚不可用：
+;   - legacy 后端：[]char 的 with-cap/push 对 len/cap 的单位（元素数 vs 字节数）处理有误，
+;     导致 .len() 返回的元素数偏大，[]char.to-str 会越界读取产生乱码（实测单个 push(72)
+;     也输出 "H"+乱码）。[]char 字面量与索引读取本身是 i32 stride 正确的，但 push 构造出的
+;     切片 len 字段被破坏。
+;   - MIR=3 门禁：编译器对 []char 元素类型与新增的 []t.to-chars 泛型方法均无支持，
+;     直接报 "unknown callee []t.to-chars"，无法编译通过。
+; 在编译器修复 []char 切片支持前，请勿依赖 to-chars / []char.to-str。
+[]char.to-str = () (out str) {
+    n = .len()
+    tmp []byte = with-cap(n * 4)
+    i <- [0..n): {
+        cp = .[i]
+        {
+            cp < 0x80 -> tmp.push(cp & 0xff)
+
+            cp < 0x800 -> {
+                tmp.push(0xc0 | ((cp >> 6) & 0x1f))
+                tmp.push(0x80 | (cp & 0x3f))
+            }
+
+            cp < 0x10000 -> {
+                tmp.push(0xe0 | ((cp >> 12) & 0x0f))
+                tmp.push(0x80 | ((cp >> 6) & 0x3f))
+                tmp.push(0x80 | (cp & 0x3f))
+            }
+
+            -> {
+                tmp.push(0xf0 | ((cp >> 18) & 0x07))
+                tmp.push(0x80 | ((cp >> 12) & 0x3f))
+                tmp.push(0x80 | ((cp >> 6) & 0x3f))
+                tmp.push(0x80 | (cp & 0x3f))
+            }
+        }
+    }
+    m = tmp.len
+    out = with-len(m)
+    j <- [0..m): {
+        out[j] = tmp[j]
+    }
+}
+
+; []byte.to-str: 将字节切片按「先 to-chars 再 to-str」语义转成字符串。
+; 每个字节被当作一个 0~255 的 Unicode 码点，再按 UTF-8 编码成 1~4 字节。
+; 即本方法等价于 b.to-chars().to-str()：byte 0xC3 → 码点 0xC3 → UTF-8 字节 0xC3 0x83。
+;
+; 实现说明（2026-09-06）：legacy 后端对「返回字符串 out 做变量下标赋值 out[pos]=」不会
+; 维护字符串长度（会带出尾部空字节），但对「字面下标 s[0]/s[1]/…」会正确维护长度（见
+; char.to-str：with-cap(4) + 字面下标，返回长度正确）。故本实现逐字节构造一个
+; with-cap(4) 的局部 seg（用字面下标写入 UTF-8 字节），再用字符串拼接 out = out - seg
+; 累积（拼接模式与 vec.no 的 []t.to-str 一致，已验证可靠）。不使用变量下标，规避长度 bug。
+;
+; ⚠️ 语义变更（2026-09-06，应需求方要求）：此前本方法是「1:1 逐字节拷贝」，是
+; buf.to-str()（读取文件 / 子进程输出，buf 已是合法 UTF-8 字节流）所依赖的契约。
+; 改为「byte→码点→UTF-8 重新编码」后，对合法的多字节 UTF-8 字节流会做二次编码而损坏
+; （例如磁盘上读到的 0xC3 0xA9 会被当成码点 0xC3、0xA9 各自重编码）。若需「原样拷贝
+; 合法 UTF-8 字节流」（文件 / 子进程读取场景），请改用保留了 1:1 拷贝语义的
+; b.to-bytes-str()（见下方），或直接使用底层切片。
 []byte.to-str = () (out str) {
+    n = .len()
+    out = with-len(0)
+    i <- [0..n): {
+        cp = .[i] & 0xff
+        seg str = with-cap(4)
+        cp < 0x80 -> seg[0] = cp
+
+        -> cp < 0x800 -> {
+            seg[0] = 0xc0 | ((cp >> 6) & 0x1f)
+            seg[1] = 0x80 | (cp & 0x3f)
+        } -> cp < 0x10000 -> {
+            seg[0] = 0xe0 | ((cp >> 12) & 0x0f)
+            seg[1] = 0x80 | ((cp >> 6) & 0x3f)
+            seg[2] = 0x80 | (cp & 0x3f)
+        } -> {
+            seg[0] = 0xf0 | ((cp >> 18) & 0x07)
+            seg[1] = 0x80 | ((cp >> 12) & 0x3f)
+            seg[2] = 0x80 | ((cp >> 6) & 0x3f)
+            seg[3] = 0x80 | (cp & 0x3f)
+        }
+        out = out - seg
+    }
+}
+
+; []byte.to-bytes-str: 1:1 逐字节拷贝（保留原 []byte.to-str 语义）。
+; 用于 buf 已经是合法 UTF-8 字节流的场景（读取文件 / 子进程输出），不需要按码点重编码。
+; 该函数等价于旧版 []byte.to-str。
+[]byte.to-bytes-str = () (out str) {
     n = .len()
     out = with-len(n)
     i <- [0..n): {
@@ -174,6 +281,7 @@ HEX-LOWER = '0123456789abcdef'
         out[i * 2 + 1] = HEX-LOWER[b & 15]
     }
 }
+
 ; byte.to-str: 將 byte 轉為字串（"65" → "65"）
 ; build-in (CLibCall: sprintf "%hhu")
 ; byte.to-str = () (out str) {
