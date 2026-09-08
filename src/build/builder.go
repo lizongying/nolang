@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"strconv"
 	"strings"
@@ -74,12 +75,6 @@ func CheckToolchain(cc string) error {
   macOS: brew install llvm
   Ubuntu: sudo apt install llvm-dev clang
   Windows: winget install LLVM.LLVM`)
-	}
-
-	// 讀取版本僅用於顯示，不強制特定版本
-	out, _ := exec.Command("llvm-config", "--version").Output()
-	if verStr := strings.TrimSpace(string(out)); verStr != "" {
-		fmt.Fprintf(os.Stderr, "llvm-config version: %s\n", verStr)
 	}
 
 	switch cc {
@@ -485,6 +480,13 @@ func buildWithPkg(inputPath string, pkg *Package, opts BuildOptions, buffered bo
 	compiler.SetNoBoundsCheck(opts.NoBoundsCheck)
 	compiler.SetLDFlags(opts.LDFlags)
 	code, err := compiler.Compile(string(source))
+
+	// 打印主程序中链式 -> 条件的 lint 提示（仅主程序，不含 std 库，避免噪音）。
+	// 即便后续 codegen/链接失败，parse 阶段已收集的提示仍有价值，故在 err 检查前打印。
+	for _, hint := range compiler.ChainedIfHints() {
+		fmt.Fprintln(os.Stderr, hint)
+	}
+
 	if err != nil {
 		return fmt.Errorf("compilation error: %w", err)
 	}
@@ -522,6 +524,28 @@ func vprintf(sink *bytes.Buffer, format string, args ...any) {
 	}
 }
 
+// ─── 型別指標 → opaque pointer 遷移 ───────────────────────────────────────────
+// nolang 的程式碼產生器原本輸出 LLVM <17 的「型別化指標」IR（例如 i8*、%str-long*、
+// [5 x i8]*）。LLVM 17+ 徹底移除了型別化指標，只接受 opaque pointer（ptr）。
+// 本機安裝的 opt/llc 已是 LLVM 21，會拒絕舊語法。為在不改動上千處 IR 字串的情況下
+// 讓編譯器繼續工作，這裡在 IR 寫檔前做一次「純文字」重寫：把所有指標型別 token 轉成 ptr。
+// 這是語意等價的（opaque pointer 只是丟棄指標所載的元素型別，load/store/getelementptr
+// 的值/元素型別仍保留），且對已經是 ptr 的 IR 是冪等的。
+// 註：僅影響編譯管線輸出的 LLVM IR；Go 原始碼不受影響。
+var (
+	reOpaqueArr   = regexp.MustCompile(`\[[0-9]+ x [^\]]+\]\*+`)
+	reOpaquePrim  = regexp.MustCompile(`(?:void|i1|i8|i16|i32|i64|f16|f32|f64|half|double|fp128|x86_fp80|ppc_fp128)\*+`)
+	reOpaqueNamed = regexp.MustCompile(`%+[A-Za-z][A-Za-z0-9_]*\*+`)
+)
+
+// toOpaquePointers 把型別化指標語法重寫為 opaque pointer（ptr）。
+func toOpaquePointers(code string) string {
+	code = reOpaqueArr.ReplaceAllString(code, "ptr")
+	code = reOpaquePrim.ReplaceAllString(code, "ptr")
+	code = reOpaqueNamed.ReplaceAllString(code, "ptr")
+	return code
+}
+
 // buildLLVMInternal writes LLVM IR and compiles it to an executable via opt + llc + cc.
 // If sink is non-nil, output is buffered to avoid interleaving in parallel builds.
 func buildLLVMInternal(code string, fileName string, outPath string, cc string, target string, verbose bool, linkLibs []string, sink *bytes.Buffer) error {
@@ -547,6 +571,8 @@ func buildLLVMInternal(code string, fileName string, outPath string, cc string, 
 	}
 
 	llPath := filepath.Join(tempDir, fileName+".ll")
+	// 將型別化指標 IR 重寫為 opaque pointer，兼容 LLVM 17+（本機 opt/llc 為 21）。
+	code = toOpaquePointers(code)
 	err = os.WriteFile(llPath, []byte(code), 0644)
 	if err != nil {
 		return fmt.Errorf("writing LLVM IR file: %w", err)

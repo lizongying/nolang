@@ -564,6 +564,9 @@ type Transpiler struct {
 	vetMode          bool     // vet 模式：只做語法+型別檢查，跳過 LLVM IR 生成
 	vetStrict        bool     // vet 模式下是否將 warning/hint 升級為 error
 	vetLints         []checker.LintResult // vet 模式下收集的 lint 結果
+	// chainedIfHints 收集主程序（非 std 库）中链式 -> 条件的 lint 提示，
+	// 由 buildWithPkg 在编译成功后打印到 stderr，提醒用户改用合并条件或 { } 块。
+	chainedIfHints []string
 	// externFuncSigs/externStructFields: 預載入的跨文件函數簽名和 struct 欄位型別，
 	// 注入到所有 parser 實例中以支援 let 型別推斷
 	externFuncSigs     map[string][]string
@@ -633,6 +636,12 @@ func (t *Transpiler) SetVetStrict(strict bool) {
 // 僅在 vetMode=true 且 Compile 已執行後有效。
 func (t *Transpiler) VetLints() []checker.LintResult {
 	return t.vetLints
+}
+
+// ChainedIfHints 返回主程序中链式 -> 条件的 lint 提示（编译成功后有效）。
+// 仅包含用户主程序（不含自动载入的 std 库），由 build 命令打印到 stderr。
+func (t *Transpiler) ChainedIfHints() []string {
+	return t.chainedIfHints
 }
 
 // injectLDFlags prepends synthetic LetStatement nodes for each -ld-KEY=VALUE pair
@@ -900,6 +909,25 @@ func (t *Transpiler) resolveUse(use *parser.UseStatement) (*parser.Program, erro
 		relPath := strings.TrimPrefix(path, "std/")
 		if path == "std" {
 			relPath = ""
+		}
+		// DEV ONLY (NO_STD_DISK): load std modules from src/std on disk so
+		// migration tooling can read/write real files during the .len deprecation
+		// migration. No effect in production.
+		if os.Getenv("NO_STD_DISK") != "" {
+			cands := []string{}
+			if relPath != "" {
+				cands = append(cands, filepath.Join(t.workspaceRoot(), "src", "std", relPath+".no"))
+			}
+			for _, info := range checker.KnownStdModules() {
+				if info.ShortPath == relPath {
+					cands = append(cands, filepath.Join(t.workspaceRoot(), "src", "std", info.FullPath+".no"))
+				}
+			}
+			for _, c := range cands {
+				if data, err := os.ReadFile(c); err == nil {
+					return t.parseEmbeddedProgram(c, data)
+				}
+			}
 		}
 		// 1. 直接路徑：std/<relPath>.no
 		if relPath != "" {
@@ -1913,6 +1941,9 @@ func (t *Transpiler) CompileTarget(source string, _ Target) (string, error) {
 		if len(p.Errors()) > 0 {
 			return "", fmt.Errorf("parser errors: %v", p.Errors())
 		}
+		// 收集主程序中链式 -> 条件的 lint 提示（仅主程序，不含自动载入的 std 库，
+		// 避免库代码触发噪音）。buildWithPkg 会在编译成功后打印。
+		t.chainedIfHints = p.WarningsByCode(parser.WarnChainedIf)
 		// W_SEMI_EAT warnings are handled by LSP diagnostics; build path no longer
 		// emits them to stderr to avoid noise during compilation.
 	}
@@ -2668,7 +2699,7 @@ func (t *Transpiler) CompileTarget(source string, _ Target) (string, error) {
 				// an unexpected lowering panic can never crash the build.
 				func() {
 					defer func() { recover() }()
-					mod, rep, ldiags := mir.LowerHIR(hirPkg)
+					mod, rep, ldiags := mir.LowerHIR(hirPkg, checker.CollectStdEnumVariants())
 					if mod != nil {
 						if f, err := os.CreateTemp("", "nolang-mir-*.txt"); err == nil {
 							fmt.Fprintf(f, "=== NOLANG_MIR verification for %s ===\n", t.sourcePath)
@@ -2732,7 +2763,8 @@ func verifyMIRIRViaOpt(ll string) error {
 	}
 	defer os.RemoveAll(dir)
 	inPath := filepath.Join(dir, "m.ll")
-	if err := os.WriteFile(inPath, []byte(ll), 0644); err != nil {
+	// 將型別化指標 IR 重寫為 opaque pointer，兼容 LLVM 17+（本機 opt/llc 為 21）。
+	if err := os.WriteFile(inPath, []byte(toOpaquePointers(ll)), 0644); err != nil {
 		return nil
 	}
 	// Stage 1: optimizer verification. MIR-emitted IR may only fail the
@@ -2821,7 +2853,10 @@ func (t *Transpiler) emitMIR(hirPkg *hir.Package, allowFallback bool) (out strin
 			}
 		}
 	}()
-	mod, rep, diags := mir.LowerHIR(hirPkg)
+	mod, rep, diags := mir.LowerHIR(hirPkg, checker.CollectStdEnumVariants())
+	if os.Getenv("NOLANG_MIR_DUMP_HIR") != "" {
+		fmt.Fprintf(os.Stderr, "[HIR-DUMP]\n%s\n", hirPkg.Dump())
+	}
 	if mod == nil {
 		if allowFallback {
 			return t.llvmGenerator.GenerateHIR(hirPkg), ""
@@ -3236,6 +3271,13 @@ func monomorphizeUnions(program *parser.Program) {
 				continue
 			}
 			concrete := cloneUnionVariant(p.fd, nt.Value, aliases)
+			// 攜帶模板函數的註解（如 #{overflow = wrap}）到單態化複本，
+			// 否則 generic/union 方法體內的有符號相減會遺失溢出模式而誤用預設 option 路徑。
+			if program.Sem != nil {
+				if ents := program.Sem.AnnotationsOf(p.fd); len(ents) > 0 {
+					program.Sem.SetRawAnnotations(concrete, ents)
+				}
+			}
 			newStmts = append(newStmts, concrete)
 		}
 		// 標記原函數為「範本」：在 name 末尾加 __TEMPLATE 使其不與生成版本衝突
@@ -3635,6 +3677,9 @@ func cloneUnionVariant(fd *parser.FunctionDefinition, memberType string, aliases
 	// 重設 union 標記：實例化後該函數就是具體的
 	clone.VariadicUnion = ""
 	clone.GenericUnion = ""
+	// 繼承模板函數的溢出模式（#{overflow = wrap|clamp0}），使複本方法體內的
+	// 有符號相減沿用正確模式（HIR 模式下 side-table 註解拷貝無效，必須以欄位攜帶）。
+	clone.OverflowMode = fd.OverflowMode
 	// 深拷貝 Body
 	clone.Body = cloneBlockForUnion(fd.Body, fd.Name, clone.Name, memberType)
 	return &clone
@@ -3778,12 +3823,19 @@ func processCallExpression(ce *parser.CallExpression, genericFns map[string]*par
 			if len(genericArgs) == 0 {
 				genericArgs = inferGenericArgs(fd, ce, program)
 			}
-			if len(genericArgs) > 0 {
-				concrete := cloneAndSubstitute(fd, genericArgs)
-				*newStmts = append(*newStmts, concrete)
-				fnName.Value = concrete.Name
-				ce.GenericArgs = nil
+		if len(genericArgs) > 0 {
+			concrete := cloneAndSubstitute(fd, genericArgs)
+			// 攜帶模板函數的註解（如 #{overflow = wrap}）到單態化複本，
+			// 否則 generic 方法體內的有符號相減會遺失溢出模式而誤用預設 option 路徑。
+			if program.Sem != nil {
+				if ents := program.Sem.AnnotationsOf(fd); len(ents) > 0 {
+					program.Sem.SetRawAnnotations(concrete, ents)
+				}
 			}
+			*newStmts = append(*newStmts, concrete)
+			fnName.Value = concrete.Name
+			ce.GenericArgs = nil
+		}
 		}
 		// Check format string for :v spec on container variables.
 		// When {var:v} is used with a container type (vec, arr, map, struct),
@@ -3912,6 +3964,19 @@ func resolveMethodCall(dot *parser.DotExpression, ce *parser.CallExpression,
 	if !ok {
 		return false
 	}
+	// Option receivers (?T): a method on ?T is a method on the inner type T
+	// (e.g. ?[]byte.to-str is []byte.to-str, ?i64.to-str is i64.to-str). The
+	// synthetic match binding `it` (it = <option>) is typed as the inner
+	// element (e.g. []byte) by buildItBindingForArm, but varTypes still carries
+	// the option type (?[]byte) from the original `let it = b`. Without stripping
+	// the '?', matchTypePattern("[]t", "?[]byte") fails (concrete doesn't start
+	// with "[]"), the builtin/slice prefix checks (HasPrefix(recvType,"[]")) also
+	// miss, and the call collapses to the generic []t.to-str instance instead of
+	// the concrete []byte.to-str monomorph — producing a type-mismatched
+	// receiver and a runtime crash for `it.to-str()` on an option payload.
+	// Stripping here mirrors the existing non-generic branch (recvTypeForMethod)
+	// and is semantically correct: methods on ?T dispatch on T.
+	recvType = strings.TrimPrefix(recvType, "?")
 	methodName := dot.Property
 	// Search for matching generic method FIRST, so that generic methods whose
 	// name collides with a builtin (e.g. "[n]t.sort-asc" on a fixed array
@@ -3982,6 +4047,13 @@ func resolveMethodCall(dot *parser.DotExpression, ce *parser.CallExpression,
 		// per call site (with the receiver passed by reference).
 		// Create concrete version and flatten the call.
 		concrete := cloneAndSubstitute(fd, genericArgs)
+		// 攜帶模板函數的註解（如 #{overflow = wrap}）到單態化複本，
+		// 否則 generic 方法體內的有符號相減會遺失溢出模式而誤用預設 option 路徑。
+		if program.Sem != nil {
+			if ents := program.Sem.AnnotationsOf(fd); len(ents) > 0 {
+				program.Sem.SetRawAnnotations(concrete, ents)
+			}
+		}
 		*newStmts = append(*newStmts, concrete)
 		// Rewrite call: replace DotExpression with Identifier, prepend receiver
 		ce.Function = &parser.Identifier{
@@ -4493,6 +4565,7 @@ func cloneAndSubstitute(fd *parser.FunctionDefinition, genericArgs []parser.Expr
 		},
 		Body:        newBody,
 		IsMethodDef: fd.IsMethodDef,
+		OverflowMode: fd.OverflowMode,
 	}
 }
 // substituteBody 遞迴替換函數體中的泛型參數
@@ -5921,6 +5994,13 @@ func checkConstIndexBounds(idxExpr parser.Expression, size int64, varName string
 	}
 	return nil
 }
+// isArrOrSliceTypeName reports whether a resolved type name denotes a fixed array
+// ([N x T]), a slice ([]T), or a vec (%vec). These are the container types whose
+// .len property is being deprecated in favour of the .len() method.
+func isArrOrSliceTypeName(t string) bool {
+	return strings.HasPrefix(t, "[]") || strings.HasPrefix(t, "[") || strings.HasPrefix(t, "%vec")
+}
+
 func validateExprArrayBounds(expr parser.Expression, arraySizes map[string]int64, sliceSizes map[string]int64, stringSizes map[string]int64, varTypes map[string]string) error {
 	switch e := expr.(type) {
 	case *parser.IndexExpression:
@@ -5990,20 +6070,17 @@ func validateExprArrayBounds(expr parser.Expression, arraySizes map[string]int64
 					// will rewrite it to Type.len(self), which the codegen handles as
 					// a builtin field access. Skip validation for the implicit receiver.
 					if ident.Value != "self" {
-						if _, exists := arraySizes[ident.Value]; exists {
-							return fmt.Errorf("array '%s' has no method 'len', use '%s.len' instead", ident.Value, ident.Value)
-						}
-						if _, exists := sliceSizes[ident.Value]; exists {
-							return fmt.Errorf("slice '%s' has no method 'len', use '%s.len' instead", ident.Value, ident.Value)
-						}
 						if _, exists := stringSizes[ident.Value]; exists {
 							return fmt.Errorf("string '%s' has no method 'len', use '%s.len' instead", ident.Value, ident.Value)
 						}
-						// For any other typed variable, also reject .len() method
-						// Exception: map types (hashmap-K-V or [K]V) have a legitimate len() method
+						// array/slice .len() is now ALLOWED (returns the element count).
+						// The .len *property* (no parens) is deprecated instead; the
+						// codegen rejects it and tells the user to call recv.len().
 						if typeName, exists := varTypes[ident.Value]; exists {
 							if strings.Contains(typeName, "hashmap-") || isMapTypeString(typeName) {
 								// map types have a len() method — skip rejection
+							} else if isArrOrSliceTypeName(typeName) {
+								// array/slice .len() is allowed — skip rejection
 							} else {
 								return fmt.Errorf("%s '%s' has no method 'len', use '%s.len' instead", typeName, ident.Value, ident.Value)
 							}

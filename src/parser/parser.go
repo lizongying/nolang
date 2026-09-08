@@ -35,6 +35,13 @@ type Parser struct {
 	// variable type tracking. Empty when parsing module-level code.
 	curFuncName string
 
+	// idxLocalTypes 是「安全索引專用」的解析器本地型別表（函數作用域）：
+	// lowering 預掃描區域變數容器型別（如 `av = a.to-vec()`）後寫入此處，
+	// 僅供 isSafeIndexBase / inferIndexElemType 查詢。刻意不寫入
+	// sem.FuncVarTypes / VarTypes，避免 `a`/`av` 等常見名竄改 std 函式
+	// 區域變數型別（跨函數型別污染會讓 str.to-i8 等 std 函式 codegen 崩潰）。
+	idxLocalTypes map[string]map[string]string
+
 	// pendingAnnotations 暫存待附加到宣告的註解條目
 	pendingAnnotations []*AnnotationEntry
 
@@ -1012,12 +1019,31 @@ func (p *Parser) saveWarning(msg string) {
 	})
 }
 
+// saveWarningWithCode 记录一条带指定诊断码的警告（与 saveWarning 相同，但允许
+// 指定 Code，便于按码过滤/选择性输出，如高风险的 W_CHAIN_IF）。
+func (p *Parser) saveWarningWithCode(code, msg string) {
+	pos, clean := stripLocPrefix(msg)
+	p.diags = append(p.diags, Diagnostic{
+		Filename: p.Filename,
+		Pos:      pos,
+		Severity: SeverityWarning,
+		Code:     code,
+		Message:  clean,
+	})
+}
+
 func (p *Parser) Warnings() []string {
 	return formatDiags(p.diags, SeverityWarning)
 }
 
 // WarnSemiSwallow 是「單個 ; 行尾註釋疑似吞掉代碼」警告的穩定診斷碼。
 const WarnSemiSwallow = "W_SEMI_EAT"
+
+// WarnChainedIf 是「链式 -> 条件（a -> b -> c）」不推荐写法的警告诊断码。
+// 链式 if 容易产生微妙的缩域/作用域问题（曾导致 str.replace-n 静默生成错误
+// 代码：尾部语句被错误并入条件块），建议把多个条件用 &&/|| 合并，或改用 { }
+// 块写法。lint 提示，不影响编译（修复 parser/lowering 后链式 -> 已能正确嵌套）。
+const WarnChainedIf = "W_CHAIN_IF"
 
 // WarningsByCode 返回指定診斷碼的警告訊息（格式化後）。
 // 供編譯入口（transpiler/builder）選擇性輸出高危警告（如 W_SEMI_EAT）。

@@ -46,7 +46,7 @@ func (p *Parser) parseStatement() Statement {
 		return p.parseLabeledStatement()
 	case lexer.AT:
 		return p.parseExportStatement()
-	case lexer.IDENT, lexer.TRUE, lexer.FALSE, lexer.NIL, lexer.MATCH:
+	case lexer.IDENT, lexer.TRUE, lexer.FALSE, lexer.NIL, lexer.MATCH, lexer.UNDERSCORE:
 		// `match` keyword followed by an expression is the deprecated
 		// `match expr { ... }` syntax — skip the keyword and let the
 		// expression be parsed normally (same as the old default path).
@@ -1437,7 +1437,26 @@ func (p *Parser) parseStandaloneBody(tok lexer.Token) *BlockStatement {
 // When the body is a single expression and -> follows on the same line,
 // the expression becomes the condition of a nested standalone if-then.
 // e.g., a -> b -> c -> d is parsed as if(a){if(b){if(c){d}}}
+//
+// The recursion builds correctly nested IfExpressions: each link's condition
+// becomes the consequent of the previous link, and the tail (last link) becomes
+// the innermost body. The previous non-recursive single-level wrap produced a
+// malformed structure where the last link was wrongly attached as an else branch
+// of the previous one, silently generating incorrect code (see str.replace-n).
 func (p *Parser) wrapStandaloneChain(tok lexer.Token, body *BlockStatement) *BlockStatement {
+	return p.wrapStandaloneChainDepth(tok, body, 1)
+}
+
+// wrapStandaloneChainDepth 递归构建嵌套 if，正确实现 `a -> b -> c -> d` 的语义：
+// if(a){if(b){if(c){d}}}。
+//
+// 注意：wrapStandaloneChain 由 parseExpressionStatement 在首个 `->` 之后调用，因此
+// 传入的 body 已是「第 2 个条件」起的部分（例如 `a -> b -> c` 中传入的是 `b -> c`）。
+// 故 linkIdx 是本子链的 1 基索引：b=1、c=2、d=3、…。当 linkIdx==2 时，意味着整条
+// 链已达到第 3 个条件（总长度 >= 3），此时给出一次 lint 提示，提醒链式 if 容易引发
+// 微妙的作用域/缩域问题（单条 `a -> b` 只是普通 if-then，不告警）。每条链只在此处
+// 告警一次，与链长（3/4/5…）无关。
+func (p *Parser) wrapStandaloneChainDepth(tok lexer.Token, body *BlockStatement, linkIdx int) *BlockStatement {
 	for len(body.Statements) == 1 {
 		es, ok := body.Statements[0].(*ExpressionStatement)
 		if !ok {
@@ -1447,9 +1466,18 @@ func (p *Parser) wrapStandaloneChain(tok lexer.Token, body *BlockStatement) *Blo
 			break
 		}
 
+		// 链式 if（a -> b -> c -> ...）：本子链达到第 2 个条件（linkIdx==2，即整条链
+		// 第 3 个条件，总长度 >= 3）时给出一次 lint 提示。
+		if linkIdx == 2 {
+			p.saveWarningWithCode(WarnChainedIf,
+				fmt.Sprintf("line %d, column %d: chained '->' conditions (a -> b -> c) are discouraged; merge conditions with &&/|| or use '{ }' blocks to avoid subtle scoping bugs",
+					tok.Line, tok.Column))
+		}
+
 		innerCond := es.Expression
 		p.nextToken() // skip ->
 		nextBody := p.parseStandaloneBody(tok)
+		nextBody = p.wrapStandaloneChainDepth(tok, nextBody, linkIdx+1)
 		chained := &IfExpression{
 			Token:       tok,
 			Condition:   innerCond,
@@ -1893,6 +1921,14 @@ func (p *Parser) parseBlockStatement() *BlockStatement {
 		if stmt != nil {
 			setDoc(stmt, doc)
 			p.attachInlineComment(stmt)
+			// 尾隨註解：`stmt #{...}`（同一行 stmt 之後的 #{...}）附加到剛解析的
+			// stmt，支援 `x = v[5] #{index-out=0}` 這類語法。前置註解由
+			// parseAnnotationStatement 附加到後續 stmt，此處僅處理尾隨。
+			if p.currentToken.Type == lexer.HASH_LBRACE {
+				if trailing := p.parseTrailingAnnotation(); len(trailing) > 0 {
+					p.attachAnnotations(stmt, trailing)
+				}
+			}
 			block.Statements = append(block.Statements, stmt)
 		} else {
 			// 當陳述句為 nil（例如 NEWLINE）時，將 Doc 註釋還原供下一個陳述句使用
