@@ -28,16 +28,16 @@
 ; 內建函數（底層實作）
 ; ═══════════════════════════════════════════════
 
-#{buildin=unix-listen}
 ; unix-listen: 建立 Unix Domain Socket 監聽
 ; 執行 unlink + socket(AF_UNIX) + bind + listen
 ; 返回 fd（-1=失敗）
+#{buildin=unix-listen}
 unix-listen = (path str) (fd fd) { }
 
-#{buildin=unix-dial}
 ; unix-dial: 連接到 Unix Domain Socket
 ; 執行 socket(AF_UNIX) + connect
 ; 返回 fd（-1=失敗）
+#{buildin=unix-dial}
 unix-dial = (path str) (fd fd) { }
 
 ; ═══════════════════════════════════════════════

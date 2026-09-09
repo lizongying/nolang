@@ -19,6 +19,10 @@ import (
 //	}
 //
 // All strings are heap-allocated (no SSO).
+//
+// 注意：str.len 屬性已被移除（`len-depr`），長度必須走方法呼叫：
+//   - s.len-bytes() → 位元組長度
+//   - s.len()        → 碼點數量
 func TestStrTypeLayout(t *testing.T) {
 	// 128 bytes → str (heap)
 	longStr := strings.Repeat("a", 128)
@@ -26,13 +30,15 @@ func TestStrTypeLayout(t *testing.T) {
 // Test str: small string on heap
 test-smal = () {
 	s = 'hello'
-	n = s.len
+	n = s.len()
+	m = s.len-bytes()
 }
 
 // Test str: long string on heap
 test-str = () {
 	s = '%s'
-	n = s.len
+	n = s.len()
+	m = s.len-bytes()
 }
 `, longStr)
 	l := lexer.New(src)

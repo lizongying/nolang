@@ -617,6 +617,32 @@ func TestHoverFunctionParameterNotOverwrittenByBodyVariable(t *testing.T) {
 	}
 }
 
+// TestHoverVariableAssignedFromCallShowsReturnType verifies that a variable
+// assigned from a function call shows the function's return type, not a generic
+// "call X" placeholder. Regression for: `rd-fd = open-read(save-path)` should
+// show type `fd` (open-read returns `(fd fd)`), not `call open-read`.
+func TestHoverVariableAssignedFromCallShowsReturnType(t *testing.T) {
+	text := `open-read = (path str) (fd fd) {
+}
+main = () () {
+    rd-fd = open-read("save.bin")
+}`
+	doc := createTestDocument(text)
+	program := createTestProgram(text)
+	index := createTestIndex(doc, program)
+
+	entry, ok := index.GetDefinition("rd-fd")
+	if !ok {
+		t.Fatal("expected to find rd-fd in definitions")
+	}
+	if entry.Type != "fd" {
+		t.Errorf("expected rd-fd to have type 'fd', got '%s'", entry.Type)
+	}
+	if strings.HasPrefix(entry.Type, "call") {
+		t.Errorf("rd-fd type should not be a 'call' placeholder, got: %s", entry.Type)
+	}
+}
+
 // TestGetHoverOverflowAnnotationKey 驗證懸浮在 `#{overflow = ...}` 註解行的
 // `overflow` 鍵上時，會回傳「什麼是整數溢出」的說明。
 func TestGetHoverOverflowAnnotationKey(t *testing.T) {

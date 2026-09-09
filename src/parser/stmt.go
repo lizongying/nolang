@@ -2000,6 +2000,11 @@ func (p *Parser) parseBlockStatement() *BlockStatement {
 			}
 			p.nextToken()
 		}
+		// 交付多載掃描中已消費的後續同名定義（見 parseAnnotationStatement）。
+		if len(p.pendingOverloadDefs) > 0 {
+			block.Statements = append(block.Statements, p.pendingOverloadDefs...)
+			p.pendingOverloadDefs = nil
+		}
 	}
 
 	block.TrailingComments = p.collectDocComments()

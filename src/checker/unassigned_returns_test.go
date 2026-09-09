@@ -256,6 +256,101 @@ main = () {
 	}
 }
 
+// TestBuiltinAnnotationSuppressesUnassigned verifies that a function marked
+// with #{buildin=NAME} is exempt from the i3k422u3 "never assigned" check.
+// Builtin stubs are declared with empty bodies in std (the real implementation
+// lives in the Go runtime), so their named result parameters are intentionally
+// never assigned in the nolang source — the check must not fire on them.
+func TestBuiltinAnnotationSuppressesUnassigned(t *testing.T) {
+	src := `#{buildin=abs}
+abs = (x f64) (res f64) { }
+
+main = () {
+    x = abs(1.0)
+}
+`
+	l := lexer.New(src)
+	p := parser.New(l)
+	prog := p.ParseProgram()
+	if errs := p.Errors(); len(errs) > 0 {
+		t.Fatalf("parse errors: %v", errs)
+	}
+	results := ValidateUnassignedReturns(prog)
+	for _, r := range results {
+		t.Logf("L%d:C%d %s", r.Line, r.Column, r.Message)
+	}
+	if len(results) != 0 {
+		t.Fatalf("expected #{buildin=NAME} to suppress the unassigned-returns warning, got %d: %v", len(results), results)
+	}
+}
+
+// TestBuiltinAnnotationSuppressesUninitOutput verifies that a builtin stub
+// with a nullable (?T) result parameter is also exempt from the uninitialized
+// output-parameter check (ValidateUninitOutputParams).
+func TestBuiltinAnnotationSuppressesUninitOutput(t *testing.T) {
+	src := `#{buildin=maybe}
+maybe = (x str) (out ?str) { }
+
+main = () {
+    x = maybe('a')
+}
+`
+	l := lexer.New(src)
+	p := parser.New(l)
+	prog := p.ParseProgram()
+	if errs := p.Errors(); len(errs) > 0 {
+		t.Fatalf("parse errors: %v", errs)
+	}
+	results := ValidateUninitOutputParams(prog)
+	for _, r := range results {
+		t.Logf("L%d:C%d %s", r.Line, r.Column, r.Message)
+	}
+	if len(results) != 0 {
+		t.Fatalf("expected #{buildin=NAME} to suppress the uninit-output check, got %d: %v", len(results), results)
+	}
+}
+
+// TestBuiltinOverloadContinuationSuppressed verifies that a builtin/intrinsic
+// annotation attached to the FIRST of several consecutive same-name overload
+// definitions also suppresses the unassigned-returns check for the LATER
+// overloads. nolang expresses arity overloads as consecutive `name = ...`
+// definitions, and the #{buildin=...} / #{intrinsic} annotation only sits
+// above the first one (e.g. global.no's `format`). Without overload
+// propagation the second definition (`format = (s str) (out str) { }`) would
+// be falsely flagged with i3k422u3.
+func TestBuiltinOverloadContinuationSuppressed(t *testing.T) {
+	src := `#{buildin=format, intrinsic}
+format = () (out str) { }
+format = (s str) (out str) { }
+
+main = () {
+    x = format()
+    y = format('{x}')
+}
+`
+	l := lexer.New(src)
+	p := parser.New(l)
+	prog := p.ParseProgram()
+	if errs := p.Errors(); len(errs) > 0 {
+		t.Fatalf("parse errors: %v", errs)
+	}
+	results := ValidateUnassignedReturns(prog)
+	for _, r := range results {
+		t.Logf("L%d:C%d %s", r.Line, r.Column, r.Message)
+	}
+	if len(results) != 0 {
+		t.Fatalf("expected overload continuation of a builtin to be suppressed, got %d: %v", len(results), results)
+	}
+	// Same for the uninit-output check.
+	results2 := ValidateUninitOutputParams(prog)
+	for _, r := range results2 {
+		t.Logf("L%d:C%d %s", r.Line, r.Column, r.Message)
+	}
+	if len(results2) != 0 {
+		t.Fatalf("expected overload continuation of a builtin to be suppressed (uninit-output), got %d: %v", len(results2), results2)
+	}
+}
+
 // TestMultiAssignReturnsAssigned verifies that result parameters assigned
 // via multi-assignment (e.g. a, b = func()) are recognized as assigned.
 func TestMultiAssignReturnsAssigned(t *testing.T) {

@@ -33,40 +33,40 @@
 ; 內建函數（底層實作）
 ; ═══════════════════════════════════════════════
 
-#{buildin=net-listen}
 ; net-listen: 建立 TCP 監聽 socket
 ; 執行 socket + setsockopt(SO_REUSEADDR) + bind + listen
 ; 返回 fd（-1=失敗）
+#{buildin=net-listen}
 net-listen = (host str, port i64) (fd fd) { }
 
-#{buildin=net-dial}
 ; net-dial: 建立 TCP 客戶端連接
 ; 執行 socket + connect
 ; 返回 fd（-1=失敗）
+#{buildin=net-dial}
 net-dial = (host str, port i64) (fd fd) { }
 
-#{buildin=net-accept}
 ; net-accept: 接受 TCP 連接
 ; 返回客戶端 fd（-1=失敗）
+#{buildin=net-accept}
 net-accept = (listen-fd fd) (fd fd) { }
 
-#{buildin=net-accept-nb}
 ; net-accept-nb: 非阻塞接受 TCP 連接（監聽 socket 設為非阻塞）
 ; 返回客戶端 fd：>=0=成功, -2=暫無連接（would-block）, -1=失敗
+#{buildin=net-accept-nb}
 net-accept-nb = (listen-fd fd) (fd fd) { }
 
-#{buildin=net-send}
 ; net-send: 發送資料
 ; 返回實際發送位元組數（-1=錯誤）
+#{buildin=net-send}
 net-send = (fd fd, data str, n i64) (written i64) { }
 
-#{buildin=net-recv}
 ; net-recv: 接收資料
 ; 返回實際接收位元組數（-1=錯誤, 0=連接關閉）
+#{buildin=net-recv}
 net-recv = (fd fd, buf str, n i64) (read-n i64) { }
 
-#{buildin=close}
 ; close: 關閉檔案描述符（來自 fs 模組）
+#{buildin=close}
 close = (fd fd) (ok i64) { }
 
 ; ═══════════════════════════════════════════════
@@ -262,24 +262,24 @@ dial-to = (host str, port i64) (c ?conn) {
 ; UDP 結構體與方法
 ; ═══════════════════════════════════════════════
 
-#{buildin=net-udp-open}
 ; net-udp-open: 建立 UDP socket
 ; 返回 fd（-1=失敗）
+#{buildin=net-udp-open}
 net-udp-open = () (fd fd) { }
 
-#{buildin=net-udp-sendto}
 ; net-udp-sendto: 發送 UDP 資料到指定位址
 ; 返回實際發送位元組數（-1=錯誤）
+#{buildin=net-udp-sendto}
 net-udp-sendto = (fd fd, data str, n i64, host str, port i64) (written i64) { }
 
-#{buildin=net-udp-recvfrom}
 ; net-udp-recvfrom: 接收 UDP 資料
 ; 返回實際接收位元組數（-1=錯誤, 0=逾時）
+#{buildin=net-udp-recvfrom}
 net-udp-recvfrom = (fd fd, buf str, n i64) (read-n i64) { }
 
-#{buildin=net-set-recv-timeout}
 ; net-set-recv-timeout: 設定 socket 接收逾時
 ; 返回 0=成功, -1=錯誤
+#{buildin=net-set-recv-timeout}
 net-set-recv-timeout = (fd fd, timeout-ms i64) (ok i64) { }
 
 ; socket 類型（UDP）
@@ -676,9 +676,9 @@ enc-accept = (c conn, key [32]byte) (ec enc-conn) {
 ;   ; 多次 ping
 ;   icmp-conn.ping-host('8.8.8.8', 4)
 
-#{buildin=net-icmp-open}
 ; net-icmp-open: 建立 ICMP socket
 ; 返回 fd fd（-1=失敗）
+#{buildin=net-icmp-open}
 net-icmp-open = () (fd fd) { }
 
 ; ICMP 常量

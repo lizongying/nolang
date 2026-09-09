@@ -474,8 +474,29 @@ func (w *ASTWalker) getExprType(expr parser.Expression) string {
 	case *parser.FunctionLiteral:
 		return w.formatFuncLitDetail(e)
 	case *parser.CallExpression:
-		if ident, ok := e.Function.(*parser.Identifier); ok {
-			return "call " + ident.Value
+		// Resolve the function's real return type so that `x = foo(...)` infers
+		// `x`'s type as foo's return type (e.g. `fd`) instead of a generic
+		// "call foo" placeholder. Mirrors the resolution already done for
+		// MultiAssignStatement (walker.go:153-162).
+		var fnName string
+		switch fn := e.Function.(type) {
+		case *parser.Identifier:
+			fnName = fn.Value
+		case *parser.DotExpression:
+			fnName = fn.Property
+		}
+		if fnName != "" {
+			if entry, ok := w.index.functions[fnName]; ok && len(entry.ResultParams) > 0 {
+				if len(entry.ResultParams) == 1 {
+					return entry.ResultParams[0].Type
+				}
+				parts := make([]string, len(entry.ResultParams))
+				for i, p := range entry.ResultParams {
+					parts[i] = p.Type
+				}
+				return "(" + strings.Join(parts, ", ") + ")"
+			}
+			return "call " + fnName
 		}
 		return "call"
 	case *parser.InfixExpression:

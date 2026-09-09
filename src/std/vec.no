@@ -388,20 +388,20 @@ vec-clear = () { }
 ; 內建比較/排序函數
 ; ═══════════════════════════════════════════════
 
-#{buildin=vec-eq}
 ; vec-eq: 比較兩個切片是否相等
+#{buildin=vec-eq}
 vec-eq = (a []t, b []t, elem-size i64) (eq i64) { }
 
-#{buildin=arr-eq}
 ; arr-eq: 比較兩個固定大小陣列是否相等
+#{buildin=arr-eq}
 arr-eq = (a i64, b i64, n i64) (eq i64) { }
 
-#{buildin=vec-sort}
 ; vec-sort: 升序排序切片（原地）
+#{buildin=vec-sort}
 vec-sort = (a i64) { }
 
-#{buildin=vec-reverse}
 ; vec-reverse: 反轉切片（原地）
+#{buildin=vec-reverse}
 vec-reverse = (a i64) { }
 
 ; []t.to-str: 字串表示

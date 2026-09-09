@@ -31,16 +31,16 @@
 ; 全局函数 print / eprint / format 的声明已移至 global.no
 ; 以下为需要模块前缀的 fmt 模块函数
 
-#{buildin=printf}
 ; printf: 已廢棄，請改用 print（自動換行）或 io.out（不換行）
+#{buildin=printf}
 printf = (s str) { }
 
-#{buildin=sprintf}
 ; sprintf: 已廢棄，請改用 format
+#{buildin=sprintf}
 sprintf = (s str) (out str) { }
 
-#{buildin=eprintf}
 ; eprintf: 輸出格式化字串到標準錯誤（不換行），支援 {name:spec}
+#{buildin=eprintf}
 eprintf = (s str) { }
 
 ; ═══════════════════════════════════════════════

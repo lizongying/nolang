@@ -1923,6 +1923,12 @@ func stripBuiltinStubs(prog *parser.Program) {
 	kept := prog.Statements[:0]
 	for _, stmt := range prog.Statements {
 		if fd, ok := stmt.(*parser.FunctionDefinition); ok && fd.BuiltinStub {
+			// 記錄被剝離的內建樁函式名稱，使後續校驗（RunAllLints）即便在
+			// 同名多載延續定義仍保留的情況下，仍能依名稱跳過其返回值校驗。
+			if prog.BuiltinFuncNames == nil {
+				prog.BuiltinFuncNames = make(map[string]bool)
+			}
+			prog.BuiltinFuncNames[fd.Name] = true
 			continue
 		}
 		kept = append(kept, stmt)

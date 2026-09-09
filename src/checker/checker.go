@@ -15,7 +15,7 @@ import (
 	"github.com/lizongying/nolang/cache"
 	"github.com/lizongying/nolang/hir"
 	"github.com/lizongying/nolang/lexer"
-	"github.com/lizongying/nolang/package"
+	pkg "github.com/lizongying/nolang/package"
 	"github.com/lizongying/nolang/parser"
 )
 
@@ -243,21 +243,21 @@ func inferExprType(expr parser.Expression, varTypes map[string]string, funcTypes
 					typeName = t
 				}
 			}
-		if typeName != "" {
-			// Unwrap optional `?T` to its inner struct type so field access
-			// on an option value (`opt.field`) resolves against T's fields.
-			// Handles both Nolang-style `?test-conn` and LLVM-style `%test-conn`.
-			unwrapped := typeName
-			if strings.HasPrefix(unwrapped, "?") {
-				unwrapped = unwrapped[1:]
-			}
-			unwrapped = strings.TrimPrefix(unwrapped, "%")
-			if fields, ok := validationStructFields[unwrapped]; ok {
-				if fieldType, ok := fields[e.Property]; ok {
-					return fieldType
+			if typeName != "" {
+				// Unwrap optional `?T` to its inner struct type so field access
+				// on an option value (`opt.field`) resolves against T's fields.
+				// Handles both Nolang-style `?test-conn` and LLVM-style `%test-conn`.
+				unwrapped := typeName
+				if strings.HasPrefix(unwrapped, "?") {
+					unwrapped = unwrapped[1:]
+				}
+				unwrapped = strings.TrimPrefix(unwrapped, "%")
+				if fields, ok := validationStructFields[unwrapped]; ok {
+					if fieldType, ok := fields[e.Property]; ok {
+						return fieldType
+					}
 				}
 			}
-		}
 		}
 		// Array/slice/str .len and .cap property access returns i64.
 		// str .len-bytes is the byte-length property (compiler builtin, mirrors old .len).
@@ -491,6 +491,7 @@ func ValidateEmbedAnnotations(program *parser.Program, sourcePath string) []Vali
 	}
 	return results
 }
+
 // ValidateDeprecatedLen reports deprecated bare `.len` property reads on
 // str / array / slice / vec receivers. The property form is being phased out
 // in favor of the `.len()` method (containers) and `.len-bytes()` / `.len()`
@@ -1062,6 +1063,7 @@ func FlattenUnion(name string, aliases map[string]*parser.TypeAlias) []parser.Ty
 	}
 	return nil
 }
+
 // isAllCapsConst returns true if the name looks like an ALL-CAPS constant
 // (e.g. SQLITE-OK, MYSQL-RECV-BUF, CLIENT-PROTOCOL-41). Used to skip
 // undefined-variable checks for constants from externally imported modules
@@ -1296,7 +1298,7 @@ func ValidateUnusedVars(program *parser.Program, mainVarNames map[string]bool) [
 		if !usedVars[name] {
 			def := topLevelVars[name]
 			results = append(results, ValidateResult{
-				TraceID: "6kryrbsq",
+				TraceID:   "6kryrbsq",
 				Line:      def.line,
 				Column:    def.column,
 				EndColumn: def.column + len(name) - 1,
@@ -1779,9 +1781,17 @@ func ValidateUndefinedVars(program *parser.Program, rootDir string) []ValidateRe
 }
 func ValidateUninitOutputParams(program *parser.Program) []ValidateResult {
 	var results []ValidateResult
+	// 預計算應跳過校驗的內建樁（含同名多載延續定義）。
+	suppressed := builtinSuppressedDefs(program)
 	for _, stmt := range program.Statements {
 		fd, ok := stmt.(*parser.FunctionDefinition)
 		if !ok || fd.Body == nil {
+			continue
+		}
+		// #{buildin=NAME} / #{intrinsic} 內建樁函式及其同名多載：真實實作位於
+		// Go runtime，nolang 函式體不參與校驗，其 ?T 返回參數的讀取/賦值亦由
+		// runtime 保證，故跳過檢查。
+		if suppressed[fd] {
 			continue
 		}
 		// Collect ?T output parameter names
@@ -1835,15 +1845,18 @@ func ValidateUninitOutputParams(program *parser.Program) []ValidateResult {
 // blocking compilation, since zero-default returns are sometimes intentional.
 func ValidateUnassignedReturns(program *parser.Program) []ValidateResult {
 	var results []ValidateResult
+	// 預計算應跳過校驗的內建樁（含同名多載延續定義）。
+	suppressed := builtinSuppressedDefs(program)
 	for _, stmt := range program.Statements {
 		fd, ok := stmt.(*parser.FunctionDefinition)
 		if !ok || fd.Body == nil {
 			continue
 		}
-		// #{intrinsic} 註解標記的函式：其命名返回參數由 codegen / 内建 /
-		// 出參引用等方式在 nolang 源碼之外賦值，靜態檢查無法追蹤，故跳過
-		// 「未賦值」檢查，避免對空體平台樁 / 内建包裝 / 出參引用函式誤報。
-		if functionIsIntrinsic(program, fd) {
+		// #{intrinsic} / #{buildin=NAME} 註解標記的函式（及其同名多載延續定義）：
+		// 命名返回參數由 codegen / 内建 / 出參引用在 nolang 源碼之外賦值，
+		// 靜態檢查無法追蹤，故跳過「未賦值」檢查，避免對空體內建樁誤報
+		// "result parameter 'X' is never assigned" (i3k422u3)。
+		if suppressed[fd] {
 			continue
 		}
 		// Collect named result parameters (non-nullable only; nullable
@@ -1906,6 +1919,77 @@ func functionIsIntrinsic(program *parser.Program, fd *parser.FunctionDefinition)
 		}
 	}
 	return false
+}
+
+// functionIsBuiltin 回報函式是否被 #{buildin=NAME} 註解標記（內建樁函式）。
+// 優先讀取 FunctionDefinition.BuiltinStub 節點欄位（解析期由 attachAnnotations
+// 填寫）；若該欄位因單態化/HIR 重建遺失，再以 program.Sem 註解副表兜底。
+// 內建樁的真實實作位於 Go runtime，nolang 函式體不參與校驗與 codegen，故其
+// 命名返回參數在 nolang 源碼中必然「未賦值」，相關返回值校驗應跳過。
+func functionIsBuiltin(program *parser.Program, fd *parser.FunctionDefinition) bool {
+	if fd.BuiltinStub {
+		return true
+	}
+	if program.Sem != nil {
+		for _, e := range program.Sem.AnnotationsOf(fd) {
+			if e.Key == "buildin" {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// builtinSuppressedDefs 預計算一組「應跳過返回值校驗」的函式定義指標集合。
+// 包含兩類：
+//  1. 自身被 #{buildin=...} / #{intrinsic} 註解標記的內建樁函式；
+//  2. 與上述函式「同名」的其餘多載定義。nolang 以連續同名 `name = ...`
+//     表達 arity 多載，註解（#{buildin=...} / #{intrinsic}）只掛在首個
+//     定義上，其餘多載體同為空樁、命名返回參數同樣「未賦值」，故一併跳過
+//     校驗，避免對內建多載（如 global.no 的 format 第二個多載
+//     `format = (s str) (out str) { }`）誤報
+//     "result parameter 'X' is never assigned" (i3k422u3)。
+//
+// 採用「同名群組」而非「緊鄰序列」判斷：no vet / lsp vet 在 std 重整或
+// 多模組合併（merged program）後，多載陳述未必仍相鄰，但同名關係不變，
+// 故以名稱聚類可穩定覆蓋整個多載群組。
+//
+// 重要：此集合僅用於校驗跳過，完全不影響 codegen。多載延續定義仍照常
+// 編譯為一般函式（不會被標記為 builtin stub 而缺失符號定義），因此不會
+// 引入「@format() 未定義」之類的 codegen 回歸。
+func builtinSuppressedDefs(program *parser.Program) map[*parser.FunctionDefinition]bool {
+	// 第一遍：收集所有「自身為 builtin/intrinsic」的函式名稱。
+	// 來源有二：(a) 直接標記的函式定義（未經 strip 的場景，如單元測試）；
+	// (b) program.BuiltinFuncNames，由 stripBuiltinStubs 在剝離內建樁時記錄，
+	// 覆蓋「樁函式已被剝離、但同名多載延續定義仍在」的編譯/vet 管線場景。
+	builtinNames := make(map[string]bool)
+	for _, stmt := range program.Statements {
+		fd, ok := stmt.(*parser.FunctionDefinition)
+		if !ok {
+			continue
+		}
+		if functionIsBuiltin(program, fd) || functionIsIntrinsic(program, fd) || fd.BuiltinGroup {
+			builtinNames[fd.Name] = true
+		}
+	}
+	for name := range program.BuiltinFuncNames {
+		builtinNames[name] = true
+	}
+	// 第二遍：同名的全部定義（含多載延續）一併跳過校驗。nolang 以連續同名
+	// `name = ...` 表達 arity 多載，註解只掛在首個定義上；std 重整 / 多模組
+	// 合併（merged program）後多載陳述未必仍相鄰，故以名稱聚類穩定覆蓋整個
+	// 多載群組，避免對內建多載誤報 "result parameter 'X' is never assigned"。
+	suppressed := make(map[*parser.FunctionDefinition]bool)
+	for _, stmt := range program.Statements {
+		fd, ok := stmt.(*parser.FunctionDefinition)
+		if !ok {
+			continue
+		}
+		if builtinNames[fd.Name] {
+			suppressed[fd] = true
+		}
+	}
+	return suppressed
 }
 
 func collectAssignedNames(stmts []parser.Statement, assigned map[string]bool) {
@@ -2256,7 +2340,7 @@ func ValidateInterfaceImplementation(program *parser.Program) []ValidateResult {
 				}
 				if len(implParams) != len(m.Params) {
 					results = append(results, ValidateResult{
-						TraceID: "m5klw1rq",
+						TraceID:   "m5klw1rq",
 						Line:      fd.Token.Line,
 						Column:    fd.Token.Column,
 						EndColumn: fd.Token.Column + len(fd.Name),
@@ -2273,7 +2357,7 @@ func ValidateInterfaceImplementation(program *parser.Program) []ValidateResult {
 					expected := strings.ReplaceAll(m.Params[i], m.Receiver, implType)
 					if paramType != expected {
 						results = append(results, ValidateResult{
-							TraceID: "i933a48e",
+							TraceID:   "i933a48e",
 							Line:      p.Token.Line,
 							Column:    p.Token.Column,
 							EndColumn: p.Token.Column + len(p.Name),
@@ -2284,7 +2368,7 @@ func ValidateInterfaceImplementation(program *parser.Program) []ValidateResult {
 				}
 				if len(implResults) != len(m.Results) {
 					results = append(results, ValidateResult{
-						TraceID: "iky4xsx4",
+						TraceID:   "iky4xsx4",
 						Line:      fd.Token.Line,
 						Column:    fd.Token.Column,
 						EndColumn: fd.Token.Column + len(fd.Name),
@@ -2300,7 +2384,7 @@ func ValidateInterfaceImplementation(program *parser.Program) []ValidateResult {
 						expected := strings.ReplaceAll(m.Results[i], m.Receiver, implType)
 						if resType != expected {
 							results = append(results, ValidateResult{
-								TraceID: "9741sawd",
+								TraceID:   "9741sawd",
 								Line:      r.Token.Line,
 								Column:    r.Token.Column,
 								EndColumn: r.Token.Column + len(r.Name),
@@ -2712,7 +2796,7 @@ func overflowAnnotatedNode(sem *parser.SemanticContext, n parser.Node) bool {
 //   - "signed"  確定為有號整數，或無法確定（保守假定為有號整數）；
 //   - "unsigned" 確定為無號整數；
 //   - ""        確定為非整數（float / str / char / bool / byte / rune 等），
-//              這些算術不回傳 option，不應提示 #{overflow}。
+//     這些算術不回傳 option，不應提示 #{overflow}。
 //
 // 僅當運算元確定為非整數型別時傳回 ""，避免對 float / str 算術誤報（它們不回傳
 // option，無 #{overflow} 之說）。
@@ -2760,7 +2844,7 @@ var overflowArithOps = map[string]bool{
 // walkExprForIntOverflow 遞迴收集表達式內所有「未標註且可能溢出的整數運算」InfixExpression。
 // 規則（與 codegen 預設 option-on-overflow 語意一致）：
 //   - + - *：左右運算元皆為整數（有號或無號，含未知型別）時提示；任一侧確定為
-//            非整數（str / float 等）則跳過（該運算非整數算術）。
+//     非整數（str / float 等）則跳過（該運算非整數算術）。
 //   - /：僅當至少一側為有號整數時提示（無號除法永不溢出；有號除法 INT_MIN / -1 溢出）。
 //
 // line 為包容此表達式的「葉」語句所在行（插入註解的位置）；sem 用於遞迴進入 if
@@ -3063,6 +3147,7 @@ func checkStringConcatInExpr(expr parser.Expression) []ValidateResult {
 	}
 	return results
 }
+
 // ─────────────────────────────────────────────────────────────
 // s[i] 性能告警（str/txt 码点下标 O(n)）
 // ─────────────────────────────────────────────────────────────
@@ -3449,7 +3534,7 @@ func checkStrIndexInExpr(e parser.Expression, sem *parser.SemanticContext, ascii
 						Line:    x.Token.Line,
 						Column:  x.Token.Column,
 						File:    file,
-						Message: "在循环里对 str/txt 使用 s[i] 取下标为 O(n²)：每次下标都要从串首前向迭代 UTF-8 取第 i 个码点，循环会被重复执行。建议：(1) 若需遍历字符，直接用 for c <- s（内部按码点迭代，O(n)）；(2) 若只需字节访问，用 s.byte(i)；(3) 若该串可证明为纯 ASCII（声明加 #{ascii} 或赋 ASCII 字面量），s[i] 为 O(1)。",
+						Message: "在循环里对 str/txt 使用 s[i] 取下标为 O(n²)：每次下标都要从串首前向迭代 UTF-8 取第 i 个码点，循环会被重复执行。建议：(1) 若需遍历字符，直接用 c <- s（内部按码点迭代，O(n)）；(2) 若只需字节访问，用 s.byte(i)；(3) 若该串可证明为纯 ASCII（声明加 #{ascii} 或赋 ASCII 字面量），s[i] 为 O(1)。",
 						TraceID: "STR_INDEX_COMPLEXITY",
 					})
 				}
@@ -4758,20 +4843,20 @@ func validateStmtTypes(stmt parser.Statement, funcNames map[string]bool, funcTyp
 			}
 			// 型別推斷
 			inferredType := inferExprType(s.Value, varTypes, funcTypes, selfType)
-		// 有符號整數相減溢位：未標註 #{overflow} 時預設回傳 option<int>
-		// （溢出 err，永不 panic）；標註 wrap/clamp0 時回傳 int。
-		// i128 因 %option 無法容納，維持回傳 i128（codegen 退化為回繞）。
-		if inferredType != "" {
-			if inf, ok := s.Value.(*parser.InfixExpression); ok && inf.Operator == "-" &&
-				isSignedIntType(inferredType) && inferredType != "i128" {
-				effMode := overflowModeFromSem(sem, s)
-				if effMode == "" {
-					effMode = overflowMode
-				}
-								// 預設有符號相減維持 plain int（2's 補數回繞）；option<int> 回傳路徑暫停用（codegen 已改為 plain sub）。
+			// 有符號整數相減溢位：未標註 #{overflow} 時預設回傳 option<int>
+			// （溢出 err，永不 panic）；標註 wrap/clamp0 時回傳 int。
+			// i128 因 %option 無法容納，維持回傳 i128（codegen 退化為回繞）。
+			if inferredType != "" {
+				if inf, ok := s.Value.(*parser.InfixExpression); ok && inf.Operator == "-" &&
+					isSignedIntType(inferredType) && inferredType != "i128" {
+					effMode := overflowModeFromSem(sem, s)
+					if effMode == "" {
+						effMode = overflowMode
+					}
+					// 預設有符號相減維持 plain int（2's 補數回繞）；option<int> 回傳路徑暫停用（codegen 已改為 plain sub）。
 
+				}
 			}
-		}
 			if inferredType == "" {
 				// Type inference failed. Check if the RHS is a LHS-inferred
 				// builtin (with-len, with-cap, with-cap-len) whose result
@@ -4872,8 +4957,8 @@ func validateStmtTypes(stmt parser.Statement, funcNames map[string]bool, funcTyp
 							}
 						}
 					}
-				if inferredType != "" && inferredType != existingType && isConcreteType(existingType) && !isArrayAssign && !isOptionCtor &&
-					!isArgTypeCompatible(existingType, inferredType, s.Value) && !optionTypesCompatible(inferredType, existingType) {
+					if inferredType != "" && inferredType != existingType && isConcreteType(existingType) && !isArrayAssign && !isOptionCtor &&
+						!isArgTypeCompatible(existingType, inferredType, s.Value) && !optionTypesCompatible(inferredType, existingType) {
 						valPos := s.Value.Pos()
 						results = append(results, ValidateResult{
 							TraceID: "15w45dqk",
@@ -4970,7 +5055,7 @@ func validateStmtTypes(stmt parser.Statement, funcNames map[string]bool, funcTyp
 								if effMode == "" {
 									effMode = overflowMode
 								}
-																// 預設有符號相減維持 plain int（2's 補數回繞）；option<int> 回傳路徑暫停用。
+								// 預設有符號相減維持 plain int（2's 補數回繞）；option<int> 回傳路徑暫停用。
 
 							}
 						}
@@ -4996,8 +5081,8 @@ func validateStmtTypes(stmt parser.Statement, funcNames map[string]bool, funcTyp
 								}
 							}
 						}
-					if valType != "" && valType != existingType && isConcreteType(existingType) && !isOptionCtor &&
-						!isArgTypeCompatible(existingType, valType, assign.Value) && !optionTypesCompatible(valType, existingType) {
+						if valType != "" && valType != existingType && isConcreteType(existingType) && !isOptionCtor &&
+							!isArgTypeCompatible(existingType, valType, assign.Value) && !optionTypesCompatible(valType, existingType) {
 							// Check if this is an array/slice literal assignment to a typed array variable
 							_, isSlice := assign.Value.(*parser.SliceLiteral)
 							_, isArrayLit := assign.Value.(*parser.ArrayLiteral)
@@ -5024,38 +5109,38 @@ func validateStmtTypes(stmt parser.Statement, funcNames map[string]bool, funcTyp
 										}
 									}
 								}
-						} else {
-							msg := fmt.Sprintf("cannot assign %s value to %s variable '%s'%s", valType, existingType, ident.Value, narrowingHint(valType, existingType))
-							if subDefaultOpt && !strings.HasPrefix(existingType, "?") {
-								msg = fmt.Sprintf("signed subtraction may overflow: result is option<%s> but '%s' is declared %s. Add `#{overflow = wrap}` or `#{overflow = clamp0}` (e.g. above this statement), or declare '%s' as ?%s", strings.TrimPrefix(valType, "?"), ident.Value, existingType, ident.Value, strings.TrimPrefix(valType, "?"))
+							} else {
+								msg := fmt.Sprintf("cannot assign %s value to %s variable '%s'%s", valType, existingType, ident.Value, narrowingHint(valType, existingType))
+								if subDefaultOpt && !strings.HasPrefix(existingType, "?") {
+									msg = fmt.Sprintf("signed subtraction may overflow: result is option<%s> but '%s' is declared %s. Add `#{overflow = wrap}` or `#{overflow = clamp0}` (e.g. above this statement), or declare '%s' as ?%s", strings.TrimPrefix(valType, "?"), ident.Value, existingType, ident.Value, strings.TrimPrefix(valType, "?"))
+								}
+								results = append(results, ValidateResult{
+									TraceID: "1mf3x79l",
+									Line:    assign.Token.Line,
+									Column:  assign.Token.Column,
+									Message: msg,
+								})
 							}
-							results = append(results, ValidateResult{
-								TraceID: "1mf3x79l",
-								Line:    assign.Token.Line,
-								Column:  assign.Token.Column,
-								Message: msg,
-							})
 						}
-						}
-				} else if !exists {
-					// 首次賦值，記錄推斷型別
-					valType := inferExprType(assign.Value, varTypes, funcTypes, selfType)
-					// 有符號整數相減溢位：未標註時預設回傳 option<int>。
-					if valType != "" {
-						if inf, ok := assign.Value.(*parser.InfixExpression); ok && inf.Operator == "-" &&
-							isSignedIntType(valType) && valType != "i128" {
-							effMode := overflowModeFromSem(sem, s)
-							if effMode == "" {
-								effMode = overflowMode
-							}
-														// 預設有符號相減維持 plain int（2's 補數回繞）；option<int> 回傳路徑暫停用。
+					} else if !exists {
+						// 首次賦值，記錄推斷型別
+						valType := inferExprType(assign.Value, varTypes, funcTypes, selfType)
+						// 有符號整數相減溢位：未標註時預設回傳 option<int>。
+						if valType != "" {
+							if inf, ok := assign.Value.(*parser.InfixExpression); ok && inf.Operator == "-" &&
+								isSignedIntType(valType) && valType != "i128" {
+								effMode := overflowModeFromSem(sem, s)
+								if effMode == "" {
+									effMode = overflowMode
+								}
+								// 預設有符號相減維持 plain int（2's 補數回繞）；option<int> 回傳路徑暫停用。
 
+							}
+						}
+						if valType != "" {
+							varTypes[ident.Value] = valType
 						}
 					}
-					if valType != "" {
-						varTypes[ident.Value] = valType
-					}
-				}
 				}
 			}
 		}
@@ -5935,42 +6020,42 @@ func resolveModuleCallsInExpr(expr parser.Expression, modSet map[string]bool, mo
 				if idx := strings.LastIndex(short, "/"); idx >= 0 {
 					short = short[idx+1:]
 				}
-			if full := short + "." + fnName; prefixedFns[full] {
-				// 衝突函數已改名為 module.fn：改寫為扁平帶點 Identifier
-				// （與方法呼叫同通道），保持與定義名精確對齊。
-				e.Function = &parser.Identifier{
-					Token: lexer.Token{Type: lexer.IDENT, Literal: full},
-					Value: full,
-				}
-			} else if moduleFns[fnName] {
-				// We are in this branch because fnName is a real top-level
-				// module function (moduleFns[fnName] == true). For a
-				// module.fn() call the module function is the correct target
-				// even when fnName also names a builtin method — e.g.
-				// math.degrees is the std function (def @degrees), NOT the
-				// f64 value method. Rewriting to the bare name lets the call
-				// resolve to the (unprefixed) definition. The previous
-				// builtin-method short-circuit here wrongly kept
-				// math.degrees as a DotExpression, which codegen emitted as
-				// @math.degrees while the def was @degrees → undefined symbol.
-				// Before rewriting module.fn() → fn(), still check if the
-				// module also defines a std struct method named
-				// module.module.fn (e.g. json.json.parse); if so keep the
-				// DotExpression so codegen routes it to module.module.fn.
-				stdMethodKey := short + "." + short + "." + fnName
-				methodSigs := CollectStdMethodSigs()
-				if _, isStdMethod := methodSigs[stdMethodKey]; isStdMethod {
-					// Keep as module.fn() DotExpression — codegen will
-					// resolve it to module.module.fn via the std struct
-					// method dispatch path.
-				} else {
-					// Rewrite to direct function call
+				if full := short + "." + fnName; prefixedFns[full] {
+					// 衝突函數已改名為 module.fn：改寫為扁平帶點 Identifier
+					// （與方法呼叫同通道），保持與定義名精確對齊。
 					e.Function = &parser.Identifier{
-						Token: lexer.Token{Type: lexer.IDENT, Literal: fnName},
-						Value: fnName,
+						Token: lexer.Token{Type: lexer.IDENT, Literal: full},
+						Value: full,
+					}
+				} else if moduleFns[fnName] {
+					// We are in this branch because fnName is a real top-level
+					// module function (moduleFns[fnName] == true). For a
+					// module.fn() call the module function is the correct target
+					// even when fnName also names a builtin method — e.g.
+					// math.degrees is the std function (def @degrees), NOT the
+					// f64 value method. Rewriting to the bare name lets the call
+					// resolve to the (unprefixed) definition. The previous
+					// builtin-method short-circuit here wrongly kept
+					// math.degrees as a DotExpression, which codegen emitted as
+					// @math.degrees while the def was @degrees → undefined symbol.
+					// Before rewriting module.fn() → fn(), still check if the
+					// module also defines a std struct method named
+					// module.module.fn (e.g. json.json.parse); if so keep the
+					// DotExpression so codegen routes it to module.module.fn.
+					stdMethodKey := short + "." + short + "." + fnName
+					methodSigs := CollectStdMethodSigs()
+					if _, isStdMethod := methodSigs[stdMethodKey]; isStdMethod {
+						// Keep as module.fn() DotExpression — codegen will
+						// resolve it to module.module.fn via the std struct
+						// method dispatch path.
+					} else {
+						// Rewrite to direct function call
+						e.Function = &parser.Identifier{
+							Token: lexer.Token{Type: lexer.IDENT, Literal: fnName},
+							Value: fnName,
+						}
 					}
 				}
-			}
 			}
 		}
 		// Recurse into arguments

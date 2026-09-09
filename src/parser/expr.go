@@ -1937,10 +1937,22 @@ func (p *Parser) parseFunctionLiteral() Expression {
 
 			p.nextToken()
 
-			// Optional type annotation: (a i64, b str)
+			// Optional type annotation: (a i64, b str, c i8*)
 			if p.currentToken.Type == lexer.IDENT {
-				param.Type = buildType(p.currentToken.Literal, p.currentToken)
+				typeTok := p.currentToken
+				typeLit := p.currentToken.Literal
 				p.nextToken()
+				// 指標後綴：i8*（MUL）或 i8**（STAR_STAR），正規化為 buildType
+				// 的 * 前綴形式。參數列表中型別後不可能是乘法運算，無歧義。
+				for p.currentToken.Type == lexer.MUL {
+					typeLit = "*" + typeLit
+					p.nextToken()
+				}
+				if p.currentToken.Type == lexer.STAR_STAR {
+					typeLit = "**" + typeLit
+					p.nextToken()
+				}
+				param.Type = buildType(typeLit, typeTok)
 			}
 
 			lit.Parameters = append(lit.Parameters, param)

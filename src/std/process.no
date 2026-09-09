@@ -37,53 +37,53 @@
 ; 內建函數（底層實作）
 ; ═══════════════════════════════════════════════
 
-#{buildin=process-fork}
 ; process-fork: fork 當前進程
 ; 返回 0=子進程, >0=父進程(子PID), -1=錯誤
+#{buildin=process-fork}
 process-fork = () (pid i64) { }
 
-#{buildin=process-pipe}
 ; process-pipe: 建立管道
 ; 返回打包值 (read_fd << 32) | write_fd
+#{buildin=process-pipe}
 process-pipe = () (fds i64) { }
 
-#{buildin=process-waitpid}
 ; process-waitpid: 等待子進程
 ; 返回退出碼 (WEXITSTATUS)
+#{buildin=process-waitpid}
 process-waitpid = (pid i64, options i64) (code i64) { }
 
-#{buildin=process-waitpid-nohang}
 ; process-waitpid-nohang: 非阻塞等待子進程 (WNOHANG)
 ; 子進程仍在執行時返回 -1；已退出時返回其退出碼；錯誤時返回 -1。
 ; 用於 timeout 看門狗輪詢。
+#{buildin=process-waitpid-nohang}
 process-waitpid-nohang = (pid i64) (code i64) { }
 
-#{buildin=process-exec}
 ; process-exec: 替換當前進程
 ; 呼叫 execlp(program, program, arg, NULL)
 ; 僅在失敗時返回
+#{buildin=process-exec}
 process-exec = (program str, arg str) (err i64) { }
 
-#{buildin=process-kill}
 ; process-kill: 發送信號給進程
+#{buildin=process-kill}
 process-kill = (pid i64, sig i64) (ok bool) { }
 
-#{buildin=process-dup2}
 ; process-dup2: 複製檔案描述符
+#{buildin=process-dup2}
 process-dup2 = (oldfd i64, newfd i64) (newfd i64) { }
 
-#{buildin=process-getppid}
 ; process-getppid: 取得父進程 ID
+#{buildin=process-getppid}
 process-getppid = () (pid i64) { }
 
-#{buildin=process-system}
 ; process-system: 執行 shell 命令
+#{buildin=process-system}
 process-system = (cmd str) (status i64) { }
 
-#{buildin=process-exec-shell}
 ; process-exec-shell: 用 sh -c 執行命令字串（替換當前進程）
 ; cmd: 完整命令字串
 ; 僅在失敗時返回 errno
+#{buildin=process-exec-shell}
 process-exec-shell = (cmd str) (err i64) { }
 
 ; ═══════════════════════════════════════════════
@@ -91,51 +91,51 @@ process-exec-shell = (cmd str) (err i64) { }
 ; 這些取代 process.c 的 C runtime，以純 Nolang 實現 cmd
 ; ═══════════════════════════════════════════════
 
-#{buildin=win-create-pipe}
 ; win-create-pipe: 建立匿名管道（CreatePipe）
 ; 返回打包值 (read_handle << 32) | write_handle，0=失敗
+#{buildin=win-create-pipe}
 win-create-pipe = () (handles i64) { }
 
-#{buildin=win-close-handle}
 ; win-close-handle: 關閉 Windows handle（CloseHandle）
+#{buildin=win-close-handle}
 win-close-handle = (handle i64) (ok bool) { }
 
-#{buildin=win-write-pipe}
 ; win-write-pipe: 寫入資料到管道/handle（WriteFile）
 ; 返回寫入位元組數，-1=錯誤
+#{buildin=win-write-pipe}
 win-write-pipe = (handle i64, data str) (written i64) { }
 
-#{buildin=win-read-pipe}
 ; win-read-pipe: 從管道/handle 讀取資料（ReadFile）
 ; 返回 (data, n)：n=讀取位元組數，-1=錯誤
+#{buildin=win-read-pipe}
 win-read-pipe = (handle i64, max-bytes i64) (data str, n i64) { }
 
-#{buildin=win-create-process}
 ; win-create-process: 創建子進程（CreateProcessA）
 ; cmdline: 完整命令列字串
 ; dir: 工作目錄（空=繼承）
 ; stdin-handle, stdout-handle, stderr-handle: 標準流 handle（0=繼承父進程）
 ; 返回 (proc-handle, status)：proc-handle>0=成功, 0=失敗
+#{buildin=win-create-process}
 win-create-process = (cmdline str, dir str, stdin-handle i64, stdout-handle i64, stderr-handle i64) (proc-handle i64, status i64) { }
 
-#{buildin=win-wait-process}
 ; win-wait-process: 等待進程結束（WaitForSingleObject）
 ; timeout-ms: 超時毫秒（0=無限等待）
 ; 返回 0=超時, 1=已退出, -1=錯誤
+#{buildin=win-wait-process}
 win-wait-process = (proc-handle i64, timeout-ms i64) (status i64) { }
 
-#{buildin=win-get-exit-code}
 ; win-get-exit-code: 取得進程退出碼（GetExitCodeProcess）
 ; 返回 (exit-code, ok)：ok=false 表示仍在執行
+#{buildin=win-get-exit-code}
 win-get-exit-code = (proc-handle i64) (exit-code i64, ok bool) { }
 
-#{buildin=win-terminate-process}
 ; win-terminate-process: 終止進程（TerminateProcess）
+#{buildin=win-terminate-process}
 win-terminate-process = (proc-handle i64, exit-code i64) (ok bool) { }
 
-#{buildin=win-get-std-handle}
 ; win-get-std-handle: 取得標準 handle（GetStdHandle）
 ; which: 0=stdin, 1=stdout, 2=stderr
+#{buildin=win-get-std-handle}
 win-get-std-handle = (which i64) (handle i64) { }
 
 ; ═══════════════════════════════════════════════

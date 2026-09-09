@@ -413,6 +413,12 @@ type Program struct {
 	TrailingComments *CommentGroup
 	Warnings         []string // parser warnings (e.g., dead code, deprecation)
 	Sem              *SemanticContext // 語義副表：註解/平台鍵/embed/泛型參數/類型推斷結果（解析/语义分离）
+	// BuiltinFuncNames 記錄被 #{buildin=...} / #{intrinsic} 標記的函式名稱集合。
+	// 由 stripBuiltinStubs（編譯/ vet 管線）在移除內建樁函式時填寫，使後續
+	// 校驗（RunAllLints）即便在樁函式被剝離、同名多載延續定義仍保留的情況下，
+	// 仍能依名稱辨識並跳過其返回值校驗，避免對內建多載誤報
+	// "result parameter 'X' is never assigned" (i3k422u3)。
+	BuiltinFuncNames map[string]bool
 }
 
 func (p *Program) Pos() lexer.Position {
@@ -685,6 +691,14 @@ type FunctionDefinition struct {
 	BuiltinStub bool
 	// BuiltinName 攜帶 #{buildin=NAME} 中的 NAME（即 Go 側 BuiltinMethod 的鍵）。
 	BuiltinName string
+	// BuiltinGroup 標記此函式是某個 #{buildin=...} / #{intrinsic} 內建樁的「同名
+	// 多載延續定義」。nolang 以連續同名 `name = ...` 表達 arity 多載，註解只掛在
+	// 首個定義上，其餘多載體同為空樁、命名返回參數同樣「未賦值」。此欄位由 parser
+	// 在解析時為緊隨其後的同名多載補上，使校驗器能跳過其返回值校驗。它刻意「不」
+	// 等同於 BuiltinStub：BuiltinStub 會觸發 stripBuiltinStubs 跳過 codegen，而
+	// BuiltinGroup 僅供校驗跳過，對應的多載延續定義仍照常編譯為一般函式（不會因
+	// 缺失符號定義而回歸）。
+	BuiltinGroup bool
 	CommentedNode
 }
 

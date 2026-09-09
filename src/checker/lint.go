@@ -272,6 +272,18 @@ func RunAllLints(program *parser.Program, opts LintOptions) []LintResult {
 		}
 	}
 
+	// 19b. option match 穷尽性（缺 nil/err 且无通配 -> 时静默 fall through）
+	// 与 parser 层 [RAL] 互补：[RAL] 只在解析期能证明主语是 option（裸 Identifier
+	// 且 sem.VarTypes 有 ? 前缀）时才报；主语为函数调用等形态时 [RAL] 沉默，
+	// 只有本规则能兜住。详见 checker/match_exhaustive.go 的注释。
+	for _, u := range ValidateNonExhaustiveMatch(program) {
+		results = append(results, LintResult{
+			Line: u.Line, Column: u.Column,
+			Severity: LintError, Source: "nolang-type-checker",
+			Message: u.Message, TraceID: u.TraceID,
+		})
+	}
+
 	// 19. print 格式字串校驗
 	for _, u := range ValidatePrintFormat(program) {
 		results = append(results, LintResult{

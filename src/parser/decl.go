@@ -631,6 +631,8 @@ func (p *Parser) isFunctionDefinition() bool {
 			p.currentToken.Type != lexer.DOT &&
 			p.currentToken.Type != lexer.LBRACKET && p.currentToken.Type != lexer.RBRACKET &&
 			p.currentToken.Type != lexer.ELLIPSIS &&
+			// 指標型別後綴：i8*（MUL）、i8**（STAR_STAR）
+			p.currentToken.Type != lexer.MUL && p.currentToken.Type != lexer.STAR_STAR &&
 			p.currentToken.Type != lexer.NEWLINE &&
 			!(p.currentToken.Type == lexer.LPAREN && prevIdent) &&
 			!(p.currentToken.Type == lexer.LPAREN && allowFnResultsParen) &&

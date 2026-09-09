@@ -46,6 +46,13 @@ type Parser struct {
 	// pendingAnnotations 暫存待附加到宣告的註解條目
 	pendingAnnotations []*AnnotationEntry
 
+	// pendingOverloadDefs 收集被 #{...} 註解修飾、緊接其後的「同名多載」函式
+	// 定義（nolang 以連續 `name = ...` 表達 arity 多載）。parseAnnotationStatement
+	// 解析首個定義後，會繼續掃描並解析後續同名定義、為其標記 BuiltinGroup，
+	// 暫存於此；呼叫方（ParseProgram / parseBlockStatement）在取得註解陳述後
+	// 將其接續附加到陳述序列，確保多載群組的每個定義都進入 AST。
+	pendingOverloadDefs []Statement
+
 	// Filename is the source file name (e.g. "sqlite.no").
 	// Used for diagnostics and error reporting.
 	Filename string
@@ -979,6 +986,11 @@ func (p *Parser) ParseProgram() *Program {
 				}())
 			}
 			program.Statements = append(program.Statements, stmt)
+		}
+		// 交付多載掃描中已消費的後續同名定義（見 parseAnnotationStatement）。
+		if len(p.pendingOverloadDefs) > 0 {
+			program.Statements = append(program.Statements, p.pendingOverloadDefs...)
+			p.pendingOverloadDefs = nil
 		}
 
 		if stmt == nil {

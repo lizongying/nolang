@@ -1028,6 +1028,19 @@ func (p *Parser) parseParamTypeAfterName() (Type, bool) {
 		return nil, false
 	}
 
+	// 指標型別後綴：`name T*`（如 `task i8*`）。
+	// 與 struct 欄位的前綴形式 `*T`（decl.go）及 typeString 的 `*T` 表示一致，
+	// 統一交給 buildType 轉成 PointerType。`*` 綁定在基礎型別上（先於 ? 包裹），
+	// 故 `?T*` 解讀為 ?(*T)。支援多層：`T**` → `*(*T)`。
+	for p.currentToken.Type == lexer.MUL {
+		p.nextToken()
+		paramType = "*" + paramType
+	}
+	if p.currentToken.Type == lexer.STAR_STAR {
+		p.nextToken()
+		paramType = "**" + paramType
+	}
+
 	if isOption {
 		paramType = "?" + paramType
 	}

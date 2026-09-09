@@ -128,6 +128,41 @@ func (p *Parser) parseAnnotationStatement() Statement {
 		if stmt != nil {
 			p.attachAnnotations(stmt, entries)
 			p.pendingAnnotations = nil
+			// 將註解同時標記到緊接其後的「同名多載」函式定義。nolang 以連續
+			// `name = ...` 表達 arity 多載（如 global.no 的
+			//   #{buildin=format, intrinsic}
+			//   format = () { }
+			//   format = (s str) (out str) { }
+			// ），若只標記首個定義，其餘多載（帶命名返回參數的變體）會被當成
+			// 普通函式，誤觸發「返回值未賦值」等校驗。這裡掃描後續同名 IDENT
+			// 定義並為其標記 BuiltinGroup（僅供校驗跳過，不設 BuiltinStub，
+			// 以免 stripBuiltinStubs 將其從 codegen 移除而缺失符號定義）。
+			if fd, ok := stmt.(*FunctionDefinition); ok {
+				for {
+					for p.currentToken.Type == lexer.NEWLINE {
+						p.nextToken()
+					}
+					if p.currentToken.Type != lexer.IDENT || p.currentToken.Literal != fd.Name {
+						break
+					}
+					ov := p.parseStatement()
+					if ov == nil {
+						break
+					}
+					// 僅當後續同名陳述確實是同名函式定義時才視為多載並繼承標記
+					// （BuiltinGroup 僅供校驗跳過，不設 BuiltinStub，以免
+					// stripBuiltinStubs 將其從 codegen 移除而缺失符號定義）。
+					if ovd, isFn := ov.(*FunctionDefinition); isFn && ovd.Name == fd.Name {
+						ovd.BuiltinGroup = true
+						p.pendingOverloadDefs = append(p.pendingOverloadDefs, ov)
+						continue
+					}
+					// 非同名函式定義（如同名呼叫陳述 `format(...)`）：已消費的
+					// 語句原樣保留交付，避免語句遺失；並終止多載掃描。
+					p.pendingOverloadDefs = append(p.pendingOverloadDefs, ov)
+					break
+				}
+			}
 			return stmt
 		}
 		p.pendingAnnotations = nil
