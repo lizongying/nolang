@@ -9,24 +9,29 @@
 ; ── i64 型別的「泛型」函式 ──
 
 gen-add-i64 = (a i64, b i64) (r i64) {
+    #{overflow = wrap}
     r = a + b
 }
 
 gen-sub-i64 = (a i64, b i64) (d i64) {
+    #{overflow = wrap}
     d = a - b
 }
 
 gen-mul-i64 = (a i64, b i64) (r i64) {
+    #{overflow = wrap}
     r = a * b
 }
 
 ; ── i32 型別的「泛型」函式 ──
 
 gen-add-i32 = (a i32, b i32) (r i32) {
+    #{overflow = wrap}
     r = a + b
 }
 
 gen-sub-i32 = (a i32, b i32) (d i32) {
+    #{overflow = wrap}
     d = a - b
 }
 

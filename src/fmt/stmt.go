@@ -1,16 +1,33 @@
 package fmt
 
 import (
+	"fmt"
+	"os"
 	"strings"
 
 	"github.com/lizongying/nolang/lexer"
 	"github.com/lizongying/nolang/parser"
 )
 
-func (f *formatter) formatStatement(stmt parser.Statement) {
+// formatStatement formats a single statement. It returns true if it wrote any
+// visible output, false if the statement is a no-op (synthetic `let`, bare `;`
+// expression, or a block-scoped overflow annotation that was already active and
+// thus emitted nothing). The caller uses this to skip the inter-statement gap so
+// a no-op statement produces zero output (no blank line) — essential for idempotency.
+func (f *formatter) formatStatement(stmt parser.Statement) bool {
+	if as, ok := stmt.(*parser.AnnotationStatement); ok {
+		bf, _ := os.OpenFile("/tmp/dbg_annot.txt", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+		doc := as.GetDoc()
+		docStr := "<nil>"
+		if doc != nil && len(doc.List) > 0 {
+			docStr = doc.List[0].Text
+		}
+		fmt.Fprintf(bf, "ANNOT fmt: doc=%q emits=%v\n", docStr, f.statementEmitsSomething(stmt))
+		bf.Close()
+	}
 	// Skip compiler-injected synthetic statements (e.g., `it = matched`)
 	if ls, ok := stmt.(*parser.LetStatement); ok && ls.IsSynthetic {
-		return
+		return false
 	}
 	// Use CommentedNode interface to get Doc comments
 	var doc *parser.CommentGroup
@@ -22,27 +39,59 @@ func (f *formatter) formatStatement(stmt parser.Statement) {
 	if doc != nil && len(doc.List) > 0 {
 		lastDocLine := doc.List[len(doc.List)-1].Pos.Line
 		stmtLine := stmtTokenLine(stmt)
-		if lastDocLine > 0 && stmtLine > lastDocLine+1 {
+		// 用 hasBlankLineBetween 偵測「語句前是否真的有空行」，而非單純行號落差：
+		// 區塊級 #{overflow=...} 經 attachedAnnotations 合併到每個陳述、又由
+		// propagateBlockScopedOverflow 以獨立註解陳述形式存在，formatter 會把註解
+		// 印在 Doc 與陳述本體之間的一行上；若用 stmtLine > lastDocLine+1，二次
+		// 格式化時陳述 token 行號被這一行推後，會誤判「有空行」而插入空行、再被
+		// 偵測、再插入（非冪等）。hasBlankLineBetween 會略過 overflow 註解行，
+		// 正確反映「用戶究竟有無在 Doc 與陳述間留空行」。
+		if lastDocLine > 0 && f.hasBlankLineBetween(lastDocLine, stmtLine) {
 			// Preserve blank line between last Doc comment and statement
 			f.write("\n") // bare blank line (no indent)
 		}
 		f.newline() // indent for statement
 	}
 
-	// Output attached annotations (e.g. #{mac-arm64}, #{linux-amd64}) before the statement.
-	// These are platform annotations or generic annotations attached by the parser.
+	// Output attached annotations before the statement.
+	// 平台/泛型註解（如 #{mac-arm64}）是陳述級附加，每次都輸出；overflow 註解則是
+	// 區塊級：parser 的 propagateBlockScopedOverflow 已將其合併進區塊內每個陳述的
+	// side-table，若在此對每個陳述都輸出會重複印 N 次。故 overflow 走 activeOverflow
+	// 去重（模式不變則跳過），平台/泛型註解不受影響照常輸出。兩者分屬不同行。
 	if anns := f.attachedAnnotations(stmt); len(anns) > 0 {
-		f.write("#{")
-		for i, e := range anns {
-			if i > 0 {
-				f.write(", ")
-			}
-			f.write(e.String())
+		if os.Getenv("NOLANG_FMTDBG") != "" {
+			fmt.Fprintf(os.Stderr, "[DBG] formatStatement attached-overflow on %T\n", stmt)
 		}
-		f.write("}")
-		f.newline()
+		var others []*parser.AnnotationEntry
+		var overflowModes []string
+		seenMode := make(map[string]bool)
+		for _, e := range anns {
+			if e.Key == "overflow" {
+				if m := overflowModeStringOf(e); m != "" && !seenMode[m] {
+					seenMode[m] = true
+					overflowModes = append(overflowModes, m)
+				}
+			} else {
+				others = append(others, e)
+			}
+		}
+		if len(others) > 0 {
+			f.write("#{")
+			for i, e := range others {
+				if i > 0 {
+					f.write(", ")
+				}
+				f.write(e.String())
+			}
+			f.write("}")
+			f.newline()
+		}
+		if len(overflowModes) > 0 {
+			f.emitOverflowAnnotation(strings.Join(overflowModes, ","), true)
+		}
 	}
 
+	emitted := true
 	switch s := stmt.(type) {
 	case *parser.UseStatement:
 		f.formatUseStatement(s)
@@ -57,8 +106,10 @@ func (f *formatter) formatStatement(stmt parser.Statement) {
 	case *parser.ExpressionStatement:
 		if s.Expression != nil {
 			f.formatExpression(s.Expression)
+		} else {
+			// nil expression = bare { from condition: { body } syntax — skip silently
+			emitted = false
 		}
-		// nil expression = bare { from condition: { body } syntax — skip silently
 	case *parser.FunctionDefinition:
 		f.formatFunctionDefinition(s)
 	case *parser.ForStatement:
@@ -80,13 +131,19 @@ func (f *formatter) formatStatement(stmt parser.Statement) {
 	case *parser.MultiAssignStatement:
 		f.formatMultiAssignStatement(s)
 	case *parser.UnwrapAssignStatement:
-		f.formatExpression(s.Name)
+		if s.Target != nil {
+			f.formatExpression(s.Target)
+		} else {
+			f.formatExpression(s.Name)
+		}
 		f.write(" ?= ")
 		f.formatExpression(s.Value)
 	case *parser.ExternStatement:
 		f.formatExternStatement(s)
 	case *parser.AnnotationStatement:
-		f.formatAnnotationStatement(s)
+		if !f.formatAnnotationStatement(s) {
+			emitted = false
+		}
 	}
 
 	// For FunctionDefinition and ForStatement, inline comment is handled inside the specific formatter.
@@ -98,6 +155,42 @@ func (f *formatter) formatStatement(stmt parser.Statement) {
 		}
 		f.formatInlineComment(comment)
 	}
+	return emitted
+}
+
+// statementEmitsSomething reports whether formatting this statement will produce
+// any visible output. It mirrors the emit logic of formatStatement without
+// side effects (except reading the read-only f.activeOverflow for overflow
+// de-duplication), so callers can decide whether to insert the inter-statement
+// gap. Synthetic `let`s, bare `;` expressions, and block-scoped overflow
+// annotations that are already active emit nothing.
+func (f *formatter) statementEmitsSomething(stmt parser.Statement) bool {
+	switch s := stmt.(type) {
+	case *parser.AnnotationStatement:
+		return f.annotationStatementEmits(s)
+	case *parser.LetStatement:
+		return !s.IsSynthetic
+	case *parser.ExpressionStatement:
+		return s.Expression != nil
+	}
+	return true
+}
+
+// annotationStatementEmits reports whether a standalone #{...} annotation
+// statement will actually emit output. It returns true if there is any
+// non-overflow entry, or an overflow entry whose normalized mode differs from
+// the currently active overflow (so it would be re-emitted).
+func (f *formatter) annotationStatementEmits(s *parser.AnnotationStatement) bool {
+	for _, e := range s.Entries {
+		if e.Key == "overflow" {
+			if m := overflowModeStringOf(e); m != "" && m != f.activeOverflow {
+				return true
+			}
+		} else {
+			return true
+		}
+	}
+	return false
 }
 
 func (f *formatter) formatUseStatement(s *parser.UseStatement) {
@@ -181,16 +274,22 @@ func (f *formatter) formatLetStatement(s *parser.LetStatement) {
 	f.formatExpression(s.Name)
 	// Render array/slice type: a [3]u16, v []u8, a [?]u16
 	if at, ok := s.Type.(*parser.ArrayType); ok {
-		f.write(" [")
-		if at.Size != nil {
-			f.formatExpression(at.Size)
+		if at.IsInferred {
+			// 推斷型別：checker 合成、原始碼未書寫，不渲染。否則會把合成型別
+			// （其 size/elem 的 token literal 可能為合成值，如複用變數名 "hash"）
+			// 印出，且二次格式化無法還原 → 非冪等。原始碼沒寫型別就不印。
 		} else {
-			f.write("?") // [?] — infer size from literal
-		}
-		f.write("]")
-		// Only output element type if explicitly written (not inferred default i64)
-		if at.Elem != nil && !at.IsInferred && !elemTypeInferred(at.Elem) {
-			f.write(at.Elem.String())
+			f.write(" [")
+			if at.Size != nil {
+				f.formatExpression(at.Size)
+			} else {
+				f.write("?") // [?] — infer size from literal
+			}
+			f.write("]")
+			// Only output element type if explicitly written (not inferred default i64)
+			if at.Elem != nil && !elemTypeInferred(at.Elem) {
+				f.write(at.Elem.String())
+			}
 		}
 	} else if st, ok := s.Type.(*parser.SliceType); ok && !st.IsInferred {
 		f.write(" []")
@@ -346,6 +445,13 @@ func (f *formatter) formatFunctionDefinition(s *parser.FunctionDefinition) {
 		f.writef("; %s", strings.TrimSpace(c.Text))
 	}
 	f.indent++
+	if strings.Contains(s.Name, "decode-block") {
+		bf, _ := os.Create("/tmp/dbg_body.txt")
+		for di, ds := range s.Body.Statements {
+			fmt.Fprintf(bf, "body[%d] %T\n", di, ds)
+		}
+		bf.Close()
+	}
 	f.formatBlockInner(s.Body, 0) // pass 0 to avoid preserving blank lines after { in function bodies
 	f.indent--
 	f.newline()
@@ -416,6 +522,12 @@ func (f *formatter) formatParameters(params []*parser.Parameter, isVariadic bool
 // and doc-comment spacing. The caller is responsible for writing braces and
 // managing indent. openBraceLine is the source line of '{' (0 if unknown).
 func (f *formatter) formatBlockInner(body *parser.BlockStatement, openBraceLine int) {
+	// 區塊級 overflow 註解為區塊作用域：進入區塊時保存目前生效模式，離開時恢復，
+	// 使區塊內已輸出的 overflow 不會外洩到外層，且跨區塊/跨函式能正確重新輸出
+	//（避免把 activeOverflow 誤判為「模式未變」而漏印）。
+	savedOverflow := f.activeOverflow
+	defer func() { f.activeOverflow = savedOverflow }()
+
 	// 過濾掉 ; 分隔符產生的空表達式語句及 compiler 注入的合成語句
 	statements := make([]parser.Statement, 0, len(body.Statements))
 	for _, stmt := range body.Statements {
@@ -428,38 +540,53 @@ func (f *formatter) formatBlockInner(body *parser.BlockStatement, openBraceLine 
 		statements = append(statements, stmt)
 	}
 
+	// 追踪上一個「有輸出」的陳述，使無輸出的陳述（如已生效的區塊級
+	// overflow 註解）不會產生空白行，且空白行保留以最後一個有輸出的陳述為基準。
+	lastEmitEndLine := 0
+	prevEmitted := false
 	for i, stmt := range statements {
+		emits := f.statementEmitsSomething(stmt)
 		if i > 0 {
-			prevTokenLine := stmtTokenLine(statements[i-1])
-			currTokenLine := stmtTokenLine(stmt)
-			if prevTokenLine > 0 && prevTokenLine == currTokenLine {
-				// Same line: never emit ';' (reserved for comments); split onto a new line.
-				f.newline()
-			} else {
-				prevEndLine := stmtTokenEndLine(statements[i-1])
-				currStartLine := stmtFirstLine(stmt)
-				// When prevEndLine is 0 (AST position not recorded for some
-				// statement types like bare match), fall back to the previous
-				// statement's start line as the end line approximation.
-				if prevEndLine == 0 {
-					prevEndLine = stmtTokenLine(statements[i-1])
+			if emits {
+				prevTokenLine := stmtTokenLine(statements[i-1])
+				currTokenLine := stmtTokenLine(stmt)
+				if prevEmitted && prevTokenLine > 0 && prevTokenLine == currTokenLine {
+					// Same line: never emit ';' (reserved for comments); split onto a new line.
+					f.newline()
+				} else {
+					prevEndLine := lastEmitEndLine
+					// When the last emitting statement's end line is unknown,
+					// fall back to the block's opening brace line.
+					if prevEndLine == 0 {
+						prevEndLine = openBraceLine
+					}
+					currStartLine := stmtFirstLine(stmt)
+					if f.hasBlankLineBetween(prevEndLine, currStartLine) || f.attachedAnnotationsWillEmit(stmt) {
+						f.write("\n") // blank line (no indent)
+					}
+					f.newline()
 				}
-			if f.hasBlankLineBetween(prevEndLine, currStartLine) || f.hasAttachedAnnotations(stmt) {
-				f.write("\n") // blank line (no indent)
 			}
-			f.newline()
-			}
+			// else: current statement emits nothing — skip the gap entirely so
+			// it produces zero output (no leading newline, no blank line).
 		} else {
-			// Check for blank line between '{' and first statement.
-			// Also add a blank line when the first statement has a doc comment,
-			// to visually separate the opening brace from the comment block.
-			firstDocStartLine := stmtFirstLine(stmt)
-			if (openBraceLine > 0 && firstDocStartLine > openBraceLine+1) || f.hasDocComment(stmt) {
-				f.write("\n") // blank line (no indent)
+			// Preserve an actual blank line between '{' and the first statement.
+			// 用 hasBlankLineBetween 偵測「真實空白行」而非單純行號落差：後者會因
+			// formatter 自身輸出的註解（如區塊級 #{overflow=wrap}）推移首陳述行號，
+			// 導致二次格式化時誤插入空白行而非冪等。
+			if emits {
+				firstDocStartLine := stmtFirstLine(stmt)
+				if (openBraceLine > 0 && f.hasBlankLineBetween(openBraceLine, firstDocStartLine)) || f.hasDocComment(stmt) {
+					f.write("\n") // blank line (no indent)
+				}
+				f.newline()
 			}
-			f.newline()
 		}
 		f.formatStatement(stmt)
+		if emits {
+			lastEmitEndLine = stmtTokenEndLine(stmt)
+		}
+		prevEmitted = emits
 	}
 
 	// 輸出尾隨註釋
@@ -567,15 +694,54 @@ func (f *formatter) formatExternStatement(s *parser.ExternStatement) {
 	}
 }
 
-func (f *formatter) formatAnnotationStatement(s *parser.AnnotationStatement) {
-	f.write("#{")
-	for i, e := range s.Entries {
-		if i > 0 {
-			f.write(", ")
-		}
-		f.write(e.String())
+// formatAnnotationStatement 輸出獨立 #{...} 註解陳述。overflow 條目走 activeOverflow
+// 去重（與 formatStatement 的附加註解路徑共用同一機制），避免區塊級 overflow 既以
+// 獨立節點輸出、又經 side-table 合併到各陳述而重複印；平台/泛型條目則每次都輸出。
+// formatAnnotationStatement 輸出獨立 #{...} 註解陳述。overflow 條目走 activeOverflow
+// 去重（與 formatStatement 的附加註解路徑共用同一機制），避免區塊級 overflow 既以
+// 獨立節點輸出、又經 side-table 合併到各陳述而重複印；平台/泛型條目則每次都輸出。
+// 回傳是否實際輸出任何內容（區塊級 overflow 已生效時為 false，供上層跳過間隙不產生空行）。
+func (f *formatter) formatAnnotationStatement(s *parser.AnnotationStatement) bool {
+	if os.Getenv("NOLANG_FMTDBG") != "" {
+		fmt.Fprintf(os.Stderr, "[DBG] formatAnnotationStatement standalone node, doc=%v\n", s.GetDoc() != nil)
 	}
-	f.write("}")
+		var others []*parser.AnnotationEntry
+	var overflowModes []string
+	seenMode := make(map[string]bool)
+	for _, e := range s.Entries {
+		if e.Key == "overflow" {
+			if m := overflowModeStringOf(e); m != "" && !seenMode[m] {
+				seenMode[m] = true
+				overflowModes = append(overflowModes, m)
+			}
+		} else {
+			others = append(others, e)
+		}
+	}
+	emitted := false
+	if len(others) > 0 {
+		f.write("#{")
+		for i, e := range others {
+			if i > 0 {
+				f.write(", ")
+			}
+			f.write(e.String())
+		}
+		f.write("}")
+		emitted = true
+	}
+	if len(overflowModes) > 0 {
+		// 與 others 分屬不同行：若已印過 others 先換行。
+		if emitted {
+			f.newline()
+		}
+		// 獨立註解陳述：不帶尾隨換行，換行由間隙邏輯統一負責（避免與下一
+		// 陳述的間隙 newline 疊加產生空行、破壞冪等）。
+		if f.emitOverflowAnnotation(strings.Join(overflowModes, ","), false) {
+			emitted = true
+		}
+	}
+	return emitted
 }
 
 // attachedAnnotations returns annotations attached to a statement by the parser

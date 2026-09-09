@@ -95,7 +95,7 @@ parse-set = (set-cookie-str str) (c cookie) {
     c.http-only = false
     c.same-site = ''
 
-    set-cookie-str.len == 0 -> return
+    set-cookie-str.len-bytes() == 0 -> return
 
     ; 第一個分號前為 name=value
     semi-pos = set-cookie-str.index(';')
@@ -103,7 +103,8 @@ parse-set = (set-cookie-str str) (c cookie) {
     rest = ''
     semi-pos >= 0 -> {
         first-pair = set-cookie-str.slice(0, semi-pos)
-        rest = set-cookie-str.slice(semi-pos + 1, set-cookie-str.len)
+        #{overflow = wrap}
+        rest = set-cookie-str.slice(semi-pos + 1, set-cookie-str.len-bytes())
     }
 
     ; 解析 name=value
@@ -113,10 +114,11 @@ parse-set = (set-cookie-str str) (c cookie) {
 
     ; 去除前後空格
     c.name = c.name.trim()
-    c.value = first-pair.slice(eq-pos + 1, first-pair.len)
+    #{overflow = wrap}
+    c.value = first-pair.slice(eq-pos + 1, first-pair.len-bytes())
     c.value = c.value.trim()
 
-    c.name.len == 0 -> return
+    c.name.len-bytes() == 0 -> return
     c.valid = true
 
     ; 解析屬性
@@ -125,14 +127,15 @@ parse-set = (set-cookie-str str) (c cookie) {
 
         ; 跳過前導空格
         {
+            #{overflow = wrap}
             pos = pos + 1
-        } (pos < rest.len && rest[pos] == 32)
-        pos >= rest.len -> *
+        } (pos < rest.len-bytes() && rest[pos] == 32)
+        pos >= rest.len-bytes() -> *
 
         ; 找下一個分號
         next-semi = rest.index-from(';', pos)
         attr-end = next-semi
-        attr-end < 0 -> attr-end = rest.len
+        attr-end < 0 -> attr-end = rest.len-bytes()
         attr = rest.slice(pos, attr-end)
         attr = attr.trim()
 
@@ -143,7 +146,8 @@ parse-set = (set-cookie-str str) (c cookie) {
                 attr-name = attr.slice(0, attr-eq)
                 attr-name = attr-name.trim()
                 attr-name-lower = attr-name.to-lower()
-                attr-val = attr.slice(attr-eq + 1, attr.len)
+                #{overflow = wrap}
+                attr-val = attr.slice(attr-eq + 1, attr.len-bytes())
                 attr-val = attr-val.trim()
 
                 {
@@ -152,12 +156,13 @@ parse-set = (set-cookie-str str) (c cookie) {
                     attr-name-lower == 'max-age' -> {
                         ma = 0
                         valid = true
-                        j <- [0..attr-val.len): {
+                        j <- [0..attr-val.len-bytes()): {
                             ch = attr-val[j]
                             ch < 48 || ch > 57 -> {
                                 valid = false
                                 break
                             }
+                            #{overflow = wrap}
                             ma = ma * 10 + ch - 48
                         }
                         valid -> c.max-age = ma
@@ -181,6 +186,7 @@ parse-set = (set-cookie-str str) (c cookie) {
             }
         }
         next-semi < 0 -> *
+        #{overflow = wrap}
         pos = next-semi + 1
     } (true)
 }
@@ -192,29 +198,33 @@ parse-set = (set-cookie-str str) (c cookie) {
 ; 返回 count i64: 解析出的 Cookie 數量
 parse-header = (cookie-header str) (names [16]str, values [16]str, count i64) {
     count = 0
-    cookie-header.len == 0 -> return
+    cookie-header.len-bytes() == 0 -> return
     pos = 0
     {
 
         ; 跳過空格
         {
+            #{overflow = wrap}
             pos = pos + 1
-        } (pos < cookie-header.len && cookie-header[pos] == 32)
-        pos >= cookie-header.len -> *
+        } (pos < cookie-header.len-bytes() && cookie-header[pos] == 32)
+        pos >= cookie-header.len-bytes() -> *
 
         ; 找下一個分號
         next-semi = cookie-header.index-from(';', pos)
         pair-end = next-semi
-        pair-end < 0 -> pair-end = cookie-header.len
+        pair-end < 0 -> pair-end = cookie-header.len-bytes()
         pair = cookie-header.slice(pos, pair-end)
         pair = pair.trim()
         eq-pos = pair.index('=')
         eq-pos >= 0 && count < 16 -> {
             names[count] = pair.slice(0, eq-pos)
-            values[count] = pair.slice(eq-pos + 1, pair.len)
+            #{overflow = wrap}
+            values[count] = pair.slice(eq-pos + 1, pair.len-bytes())
+            #{overflow = wrap}
             count = count + 1
         }
         next-semi < 0 -> *
+        #{overflow = wrap}
         pos = next-semi + 1
     } (true)
 }
@@ -227,16 +237,23 @@ parse-header = (cookie-header str) (names [16]str, values [16]str, count i64) {
 ; c cookie: Cookie 結構體
 ; 返回 out str: Set-Cookie 標頭值
 build-set = (c cookie) (out str) {
+    #{overflow = wrap}
     out = c.name - '=' - c.value
-    c.path.len > 0 -> out = out - '; Path=' - c.path
-    c.domain.len > 0 -> out = out - '; Domain=' - c.domain
+    #{overflow = wrap}
+    c.path.len-bytes() > 0 -> out = out - '; Path=' - c.path
+    #{overflow = wrap}
+    c.domain.len-bytes() > 0 -> out = out - '; Domain=' - c.domain
     c.max-age >= 0 -> {
         ma-s = c.max-age.to-str()
+        #{overflow = wrap}
         out = out - '; Max-Age=' - ma-s
     }
+    #{overflow = wrap}
     c.secure -> out = out - '; Secure'
+    #{overflow = wrap}
     c.http-only -> out = out - '; HttpOnly'
-    c.same-site.len > 0 -> out = out - '; SameSite=' - c.same-site
+    #{overflow = wrap}
+    c.same-site.len-bytes() > 0 -> out = out - '; SameSite=' - c.same-site
 }
 
 ; build-header: 建構 Cookie 請求標頭
@@ -247,7 +264,9 @@ build-set = (c cookie) (out str) {
 build-header = (names [16]str, values [16]str, count i64) (out str) {
     out = ''
     i <- [0..count): {
-        out.len > 0 -> out = out - '; '
+        #{overflow = wrap}
+        out.len-bytes() > 0 -> out = out - '; '
+        #{overflow = wrap}
         out = out - names[i] - '=' - values[i]
     }
 }
@@ -278,6 +297,7 @@ jar.set = (name str, value str, domain str, path str, max-age i64) {
         .values[.count] = value
         .domains[.count] = domain
         .paths[.count] = path
+        #{overflow = wrap}
         .count = .count + 1
     }
 }
@@ -296,10 +316,11 @@ jar.get = (name str, domain str, path str) (val ?str) {
             domain-match = false
             {
                 .domains[i] == domain -> domain-match = true
-                .domains[i].len > 0 -> {
+                .domains[i].len-bytes() > 0 -> {
+                    #{overflow = wrap}
                     domain.ends-with('.' - .domains[i]) -> domain-match = true
                 }
-                .domains[i].len == 0 -> domain-match = true
+                .domains[i].len-bytes() == 0 -> domain-match = true
             }
 
             ; 路徑匹配（簡化：前綴匹配）
@@ -325,6 +346,7 @@ jar.delete = (name str, domain str, path str) {
         .names[i] == name && .domains[i] == domain && .paths[i] == path -> {
 
             ; 將最後一個移到當前位置
+            #{overflow = wrap}
             last = .count - 1
             i != last -> {
                 .names[i] = .names[last]
@@ -332,6 +354,7 @@ jar.delete = (name str, domain str, path str) {
                 .domains[i] = .domains[last]
                 .paths[i] = .paths[last]
             }
+            #{overflow = wrap}
             .count = .count - 1
             return
         }
@@ -349,8 +372,9 @@ jar.build-header = (domain str, path str) (out str) {
         ; 域名匹配
         domain-match = false
         {
-            .domains[i].len == 0 -> domain-match = true
+            .domains[i].len-bytes() == 0 -> domain-match = true
             .domains[i] == domain -> domain-match = true
+            #{overflow = wrap}
             domain.ends-with('.' - .domains[i]) -> domain-match = true
         }
 
@@ -361,7 +385,9 @@ jar.build-header = (domain str, path str) (out str) {
             path.starts-with(.paths[i]) -> path-match = true
         }
         domain-match && path-match -> {
-            out.len > 0 -> out = out - '; '
+            #{overflow = wrap}
+            out.len-bytes() > 0 -> out = out - '; '
+            #{overflow = wrap}
             out = out - .names[i] - '=' - .values[i]
         }
     }
@@ -377,20 +403,23 @@ jar.parse-response = (set-cookie-str str, domain str, path str) {
     c.valid == false -> return
 
     ; 如果 Cookie 未指定 domain，使用回應的 domain
-    c.domain.len == 0 -> c.domain = domain
+    c.domain.len-bytes() == 0 -> c.domain = domain
 
     ; 如果 Cookie 未指定 path，使用回應的 path 的目錄
-    c.path.len == 0 -> {
+    c.path.len-bytes() == 0 -> {
         slash-pos = -1
-        i = path.len - 1
+        #{overflow = wrap}
+        i = path.len-bytes() - 1
         {
             path[i] == 47 -> {
                 slash-pos = i
                 break
             }
+            #{overflow = wrap}
             i = i - 1
         } (i >= 0)
         {
+            #{overflow = wrap}
             slash-pos >= 0 -> c.path = path.slice(0, slash-pos + 1)
             -> c.path = '/'
         }
@@ -421,6 +450,7 @@ jar.count-of = () (n i64) {
 sign = (name str, value str, key []byte) (signed str) {
 
     ; 簽名內容 = name=value
+    #{overflow = wrap}
     msg-str = name - '=' - value
     msg []byte = msg-str.to-bytes()
     mac [32]byte = hmac.hmac-sha256(key, msg)
@@ -429,9 +459,12 @@ sign = (name str, value str, key []byte) (signed str) {
     hex-chars = '0123456789abcdef'
     hex-str str = with-len(64)
     i <- [0..32): {
+        #{overflow = wrap}
         hex-str[i * 2] = hex-chars[(mac[i] >> 4) & 15]
+        #{overflow = wrap}
         hex-str[i * 2 + 1] = hex-chars[mac[i] & 15]
     }
+    #{overflow = wrap}
     signed = value - '.' - hex-str
 }
 
@@ -447,33 +480,37 @@ verify = (name str, signed-value str, key []byte) (ok bool, value str) {
 
     ; 尋找最後一個 '.'
     dot-pos = -1
-    i = signed-value.len - 1
+    #{overflow = wrap}
+    i = signed-value.len-bytes() - 1
     {
         signed-value[i] == 46 -> {
             dot-pos = i
             break
         }
+        #{overflow = wrap}
         i = i - 1
     } (i >= 0)
     dot-pos < 0 -> return
 
     ; 提取原始值和簽名
     value = signed-value.slice(0, dot-pos)
-    provided-hex = signed-value.slice(dot-pos + 1, signed-value.len)
+    #{overflow = wrap}
+    provided-hex = signed-value.slice(dot-pos + 1, signed-value.len-bytes())
 
     ; 計算期望的簽名
     expected-signed = sign(name, value, key)
 
     ; 提取期望的 hex 部分
-    expected-hex = expected-signed.slice(value.len + 1, expected-signed.len)
+    #{overflow = wrap}
+    expected-hex = expected-signed.slice(value.len-bytes() + 1, expected-signed.len-bytes())
 
     ; 比較簽名（常數時間比較）
-    provided-hex.len != expected-hex.len -> {
+    provided-hex.len-bytes() != expected-hex.len-bytes() -> {
         value = ''
         return
     }
     diff = 0
-    i <- [0..provided-hex.len): {
+    i <- [0..provided-hex.len-bytes()): {
         diff = diff | (provided-hex[i] ^ expected-hex[i])
     }
     {

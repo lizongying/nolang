@@ -113,7 +113,7 @@ t-to-vec = () {
     n = set.add(s, n, 20)
     n = set.add(s, n, 30)
     v = set.to-vec(s, n)
-    runner.eq(v.len, 3, 'to-vec len == 3')
+    runner.eq(v.len(), 3, 'to-vec len == 3')
     runner.eq(v[0], 10, 'to-vec [0] == 10')
     runner.eq(v[1], 20, 'to-vec [1] == 20')
     runner.eq(v[2], 30, 'to-vec [2] == 30')

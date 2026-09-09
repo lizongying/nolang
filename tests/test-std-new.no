@@ -40,7 +40,7 @@ print('=== str.fields ===')
 fstr str = '  hello   world  nolang  '
 fields []str
 fields = fstr.fields()
-n = fields.len
+n = fields.len()
 print('field count:' - n.to-str())
 i <- [0..n): {
     print('  [' - i.to-str() - '] ' - fields[i])
@@ -49,12 +49,12 @@ i <- [0..n): {
 ; 空字串
 fstr = ''
 fields = fstr.fields()
-print('empty fields:' - fields.len.to-str())
+print('empty fields:' - fields.len().to-str())
 
 ; 純空白
 fstr = '   '
 fields = fstr.fields()
-print('whitespace fields:' - fields.len.to-str())
+print('whitespace fields:' - fields.len().to-str())
 
 ; ═══════════════════════════════════════════════
 ; 3. time 日期解析/格式化
@@ -121,11 +121,11 @@ decoded: {
     ok -> {
         blk = it
         print('label:' - blk.label)
-        print('data-len:' - blk.data.len.to-str())
+        print('data-len:' - blk.data.len().to-str())
 
         ; 驗證資料
         ok2 = true
-        j <- [0..blk.data.len): {
+        j <- [0..blk.data.len()): {
             blk.data[j] != raw[j] -> ok2 = false
         }
         {
@@ -143,7 +143,7 @@ decoded: {
 print('=== fs.read-dir ===')
 
 entries []str = fs.read-dir('.')
-n = entries.len
+n = entries.len()
 print('entry count:' - n.to-str())
 i <- [0..n): {
     print('  ' - entries[i])

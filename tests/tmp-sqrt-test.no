@@ -1,5 +1,0 @@
-z f64 = 2.0
-a f64 = z * z
-print('a = {a:.15f}')
-b f64 = z * z + 3.0
-print('b = {b:.15f}')

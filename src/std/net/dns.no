@@ -78,40 +78,53 @@ record {
 ; 返回 query []byte: DNS 查詢封包
 build-query = (domain str, qtype i64) (query []byte, qlen i64) {
 
-    ; Pre-allocate: header(12) + domain labels(domain.len+1) + qtype(2) + qclass(2)
-    max-len = domain.len + 20
+    ; Pre-allocate: header(12) + domain labels(domain.len()+1) + qtype(2) + qclass(2)
+    #{overflow = wrap}
+    max-len = domain.len-bytes() + 20
     query = with-len(max-len)
     qlen = 0
     pos = 0
 
     ; Transaction ID（固定為 1，簡化實作）
     query[pos] = 0
+    #{overflow = wrap}
     query[pos + 1] = 1
+    #{overflow = wrap}
     pos = pos + 2
 
     ; Flags: 標準查詢（RD=1）
     query[pos] = 0x01
+    #{overflow = wrap}
     query[pos + 1] = 0x00
+    #{overflow = wrap}
     pos = pos + 2
 
     ; QDCOUNT = 1
     query[pos] = 0
+    #{overflow = wrap}
     query[pos + 1] = 1
+    #{overflow = wrap}
     pos = pos + 2
 
     ; ANCOUNT = 0
     query[pos] = 0
+    #{overflow = wrap}
     query[pos + 1] = 0
+    #{overflow = wrap}
     pos = pos + 2
 
     ; NSCOUNT = 0
     query[pos] = 0
+    #{overflow = wrap}
     query[pos + 1] = 0
+    #{overflow = wrap}
     pos = pos + 2
 
     ; ARCOUNT = 0
     query[pos] = 0
+    #{overflow = wrap}
     query[pos + 1] = 0
+    #{overflow = wrap}
     pos = pos + 2
 
     ; QNAME: 將域名編碼為長度前綴標籤
@@ -120,36 +133,47 @@ build-query = (domain str, qtype i64) (query []byte, qlen i64) {
     {
         is-dot = false
         {
-            i == domain.len -> is-dot = true
+            i == domain.len-bytes() -> is-dot = true
             domain[i] == 46 -> is-dot = true
         }
         is-dot -> {
+            #{overflow = wrap}
             label-len = i - label-start
             label-len > 0 -> {
                 query[pos] = label-len & 255
+                #{overflow = wrap}
                 pos = pos + 1
                 j <- [0..label-len): {
+                    #{overflow = wrap}
                     query[pos] = domain[label-start + j]
+                    #{overflow = wrap}
                     pos = pos + 1
                 }
             }
+            #{overflow = wrap}
             label-start = i + 1
         }
+        #{overflow = wrap}
         i = i + 1
-    } (i <= domain.len)
+    } (i <= domain.len-bytes())
 
     ; 終止零標籤
     query[pos] = 0
+    #{overflow = wrap}
     pos = pos + 1
 
     ; QTYPE
     query[pos] = (qtype >> 8) & 255
+    #{overflow = wrap}
     query[pos + 1] = qtype & 255
+    #{overflow = wrap}
     pos = pos + 2
 
     ; QCLASS = IN (1)
     query[pos] = 0
+    #{overflow = wrap}
     query[pos + 1] = 1
+    #{overflow = wrap}
     pos = pos + 2
 
     qlen = pos
@@ -171,9 +195,10 @@ parse-name = (data []byte, offset i64) (name str, next-pos i64) {
     end-pos = 0
 
     {
-        pos >= data.len -> *
+        pos >= data.len() -> *
         len-byte = data[pos]
         len-byte == 0 -> {
+            #{overflow = wrap}
             pos = pos + 1
             jumped == false -> end-pos = pos
             *
@@ -182,26 +207,34 @@ parse-name = (data []byte, offset i64) (name str, next-pos i64) {
         ; 檢查是否為壓縮指標（前兩位為 11）
         {
             (len-byte & 0xc0) == 0xc0 -> {
+                #{overflow = wrap}
                 jumped == false -> end-pos = pos + 2
+                #{overflow = wrap}
                 pointer = ((len-byte & 0x3f) << 8) | (data[pos + 1])
                 pos = pointer
                 jumped = true
             }
             (len-byte & 0xc0) == 0 -> {
                 label-len = len-byte
+                #{overflow = wrap}
                 pos = pos + 1
                 i <- [0..label-len): {
+                    #{overflow = wrap}
                     buf[buf-pos] = data[pos + i]
+                    #{overflow = wrap}
                     buf-pos = buf-pos + 1
                 }
                 buf[buf-pos] = 46
+                #{overflow = wrap}
                 buf-pos = buf-pos + 1
+                #{overflow = wrap}
                 pos = pos + label-len
             }
         }
     } (true)
 
     ; 移除末尾的點
+    #{overflow = wrap}
     buf-pos > 0 -> buf[buf-pos - 1] == 46 -> buf-pos = buf-pos - 1
 
     ; Convert buffer to string and trim to actual length
@@ -218,7 +251,7 @@ parse-name = (data []byte, offset i64) (name str, next-pos i64) {
 ; 返回 ip ?str: ok=IP 地址, nil=未找到 A 記錄
 parse-response = (data []byte) (ip ?str) {
     ip = nil
-    data.len < 12 -> return
+    data.len() < 12 -> return
 
     ; 檢查回應碼
     flags-hi = data[2]
@@ -240,6 +273,7 @@ parse-response = (data []byte) (ip ?str) {
         qname, pos = parse-name(data, pos)
 
         ; 跳過 QTYPE(2) + QCLASS(2)
+        #{overflow = wrap}
         pos = pos + 4
     }
 
@@ -247,34 +281,47 @@ parse-response = (data []byte) (ip ?str) {
     i <- [0..ancount): {
         rname = ''
         rname, pos = parse-name(data, pos)
-        pos + 10 > data.len -> return
+        #{overflow = wrap}
+        pos + 10 > data.len() -> return
+        #{overflow = wrap}
         rtype = ((data[pos]) << 8) | (data[pos + 1])
+        #{overflow = wrap}
         pos = pos + 2
 
         ; CLASS (2 bytes)
+        #{overflow = wrap}
         pos = pos + 2
 
         ; TTL (4 bytes)
+        #{overflow = wrap}
         pos = pos + 4
 
         ; RDLENGTH (2 bytes)
+        #{overflow = wrap}
         rdlength = ((data[pos]) << 8) | (data[pos + 1])
+        #{overflow = wrap}
         pos = pos + 2
-        pos + rdlength > data.len -> return
+        #{overflow = wrap}
+        pos + rdlength > data.len() -> return
 
         ; A 記錄（4 bytes IPv4）
         rtype == DNS-TYPE-A && rdlength == 4 -> {
             a = data[pos]
+            #{overflow = wrap}
             b = data[pos + 1]
+            #{overflow = wrap}
             c = data[pos + 2]
+            #{overflow = wrap}
             d = data[pos + 3]
             sa = a.to-str()
             sb = b.to-str()
             sc = c.to-str()
             sd = d.to-str()
+            #{overflow = wrap}
             ip = sa - '.' - sb - '.' - sc - '.' - sd
             return
         }
+        #{overflow = wrap}
         pos = pos + rdlength
     }
 }

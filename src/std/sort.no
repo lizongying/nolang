@@ -58,12 +58,16 @@ str.gt = (b str) (res bool) {
 [n]ord.sort-asc = () {
     i <- [1..n): {
         key = .[i]
+        #{overflow = wrap}
         j = i - 1
         {
             .[j] <= key -> break
+            #{overflow = wrap}
             .[j + 1] = .[j]
+            #{overflow = wrap}
             j = j - 1
         } (j >= 0)
+        #{overflow = wrap}
         .[j + 1] = key
     }
 }
@@ -72,42 +76,54 @@ str.gt = (b str) (res bool) {
 [n]ord.sort-desc = () {
     i <- [1..n): {
         key = .[i]
+        #{overflow = wrap}
         j = i - 1
         {
             .[j] >= key -> break
+            #{overflow = wrap}
             .[j + 1] = .[j]
+            #{overflow = wrap}
             j = j - 1
         } (j >= 0)
+        #{overflow = wrap}
         .[j + 1] = key
     }
 }
 
 ; []ord.sort-asc: 升序原地排序（插入排序）
 []ord.sort-asc = () {
-    sz = .len
+    sz = .len()
     i <- [1..sz): {
         key = .[i]
+        #{overflow = wrap}
         j = i - 1
         {
             .[j] <= key -> break
+            #{overflow = wrap}
             .[j + 1] = .[j]
+            #{overflow = wrap}
             j = j - 1
         } (j >= 0)
+        #{overflow = wrap}
         .[j + 1] = key
     }
 }
 
 ; []ord.sort-desc: 降序原地排序（插入排序）
 []ord.sort-desc = () {
-    sz = .len
+    sz = .len()
     i <- [1..sz): {
         key = .[i]
+        #{overflow = wrap}
         j = i - 1
         {
             .[j] >= key -> break
+            #{overflow = wrap}
             .[j + 1] = .[j]
+            #{overflow = wrap}
             j = j - 1
         } (j >= 0)
+        #{overflow = wrap}
         .[j + 1] = key
     }
 }

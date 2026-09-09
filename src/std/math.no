@@ -3,22 +3,18 @@ PI = 3.141592653589793
 E = 2.718281828459045
 
 ; 基础
-; build-in (LLVMIntrinsic: llvm.fabs.f64)
-; abs = (x f64) (res f64) {  // LLVM: @llvm.fabs.f64
-; }
+#{buildin=abs}
+abs = (x f64) (res f64) { }
 
-; build-in (LLVMIntrinsic: llvm.maxnum.f64)
-; max = (a f64, b f64) (res f64) {  // LLVM: @llvm.maxnum.f64
-; }
+#{buildin=max}
+max = (a f64, b f64) (res f64) { }
 
-; build-in (LLVMIntrinsic: llvm.minnum.f64)
-; min = (a f64, b f64) (res f64) {  // LLVM: @llvm.minnum.f64
-; }
+#{buildin=min}
+min = (a f64, b f64) (res f64) { }
 
 ; 幂与根
-; build-in (LLVMIntrinsic: llvm.sqrt.f64)
-; sqrt = (x f64) (res f64) {  // LLVM: @llvm.sqrt.f64
-; }
+#{buildin=sqrt}
+sqrt = (x f64) (res f64) { }
 
 ; cbrt: 立方根
 ; 使用 exp(log(|x|) / 3) 實現，避開與 number.no / bigint.no 中整數 pow 的名稱衝突
@@ -29,126 +25,118 @@ cbrt = (x f64) (res f64) {
     }
     {
         x < 0.0 -> {
+            #{overflow = wrap}
             ax f64 = 0.0 - x
             l f64 = log(ax)
+            #{overflow = wrap}
             res = 0.0 - exp(l / 3.0)
         }
         -> {
             l f64 = log(x)
+            #{overflow = wrap}
             res = exp(l / 3.0)
         }
     }
 }
 
-; build-in (LLVMIntrinsic: llvm.pow.f64)
-; pow = (x f64, y f64) (res f64) {  // LLVM: @llvm.pow.f64
-; }
+#{buildin=pow}
+pow = (x f64, y f64) (res f64) { }
 
 ; hypot: 歐幾里得範數 sqrt(x*x + y*y)
 hypot = (x f64, y f64) (res f64) {
+    #{overflow = wrap}
     res = sqrt(x * x + y * y)
 }
 
 ; 三角函数（弧度）
-; build-in (LLVMIntrinsic: llvm.sin.f64)
-; sin = (x f64) (res f64) {  // LLVM: @llvm.sin.f64
-; }
+#{buildin=sin}
+sin = (x f64) (res f64) { }
 
-; build-in (LLVMIntrinsic: llvm.cos.f64)
-; cos = (x f64) (res f64) {  // LLVM: @llvm.cos.f64
-; }
+#{buildin=cos}
+cos = (x f64) (res f64) { }
 
 ; tan: tangent = sin/cos
 tan = (x f64) (res f64) {
+    #{overflow = wrap}
     res = sin(x) / cos(x)
 }
 
-; build-in (ForwardFunc: asin)
-; asin = (x f64) (res f64) {  // LLVM: @llvm.asin.f64
-; }
+#{buildin=asin}
+asin = (x f64) (res f64) { }
 
-; build-in (ForwardFunc: acos)
-; acos = (x f64) (res f64) {  // LLVM: @llvm.acos.f64
-; }
+#{buildin=acos}
+acos = (x f64) (res f64) { }
 
-; build-in (ForwardFunc: atan)
-; atan = (x f64) (res f64) {  // LLVM: @llvm.atan.f64
-; }
+#{buildin=atan}
+atan = (x f64) (res f64) { }
 
-; build-in (ForwardFunc: atan2)
-; atan2 = (y f64, x f64) (res f64) {  // LLVM: @llvm.atan2.f64
-; }
+#{buildin=atan2}
+atan2 = (y f64, x f64) (res f64) { }
 
 ; 双曲函数
-; build-in (ForwardFunc: sinh)
-; sinh = (x f64) (res f64) {  // LLVM: @llvm.sinh.f64
-; }
+#{buildin=sinh}
+sinh = (x f64) (res f64) { }
 
-; build-in (ForwardFunc: cosh)
-; cosh = (x f64) (res f64) {  // LLVM: @llvm.cosh.f64
-; }
+#{buildin=cosh}
+cosh = (x f64) (res f64) { }
 
-; build-in (ForwardFunc: tanh)
-; tanh = (x f64) (res f64) {  // LLVM: @llvm.tanh.f64
-; }
+#{buildin=tanh}
+tanh = (x f64) (res f64) { }
 
 ; 取整
-; build-in (LLVMIntrinsic: llvm.ceil.f64)
-; ceil = (x f64) (res f64) {  // LLVM: @llvm.ceil.f64
-; }
+#{buildin=ceil}
+ceil = (x f64) (res f64) { }
 
-; build-in (LLVMIntrinsic: llvm.floor.f64)
-; floor = (x f64) (res f64) {  // LLVM: @llvm.floor.f64
-; }
+#{buildin=floor}
+floor = (x f64) (res f64) { }
 
-; build-in (LLVMIntrinsic: llvm.round.f64)
-; round = (x f64) (res f64) {  // LLVM: @llvm.round.f64
-; }
+#{buildin=round}
+round = (x f64) (res f64) { }
 
-; build-in (LLVMIntrinsic: llvm.trunc.f64)
-; trunc = (x f64) (res f64) {  // LLVM: @llvm.trunc.f64
-; }
+#{buildin=trunc}
+trunc = (x f64) (res f64) { }
 
 ; 指数对数
-; build-in (LLVMIntrinsic: llvm.exp.f64)
-; exp = (x f64) (res f64) {  // LLVM: @llvm.exp.f64
-; }
+#{buildin=exp}
+exp = (x f64) (res f64) { }
 
-; build-in (LLVMIntrinsic: llvm.log.f64)
-; log = (x f64) (res f64) {  // LLVM: @llvm.log.f64
-; }
+#{buildin=log}
+log = (x f64) (res f64) { }
 
-; build-in (LLVMIntrinsic: llvm.log10.f64)
-; log10 = (x f64) (res f64) {  // LLVM: @llvm.log10.f64
-; }
+#{buildin=log10}
+log10 = (x f64) (res f64) { }
 
-; build-in (LLVMIntrinsic: llvm.log2.f64)
-; log2 = (x f64) (res f64) {  // LLVM: @llvm.log2.f64
-; }
+#{buildin=log2}
+log2 = (x f64) (res f64) { }
 
 ; 杂项
 ; fmod: 浮點取餘
 fmod = (x f64, y f64) (res f64) {
     y == 0.0 -> {
+        #{overflow = wrap}
         res = 0.0 / 0.0
         return
     }
+    #{overflow = wrap}
     q f64 = x / y
+    #{overflow = wrap}
     res = x - trunc(q) * y
 }
 
 ; degrees: 弧度转角度
 degrees = (r f64) (res f64) {
+    #{overflow = wrap}
     res = r * 180.0 / PI
 }
 
 ; radians: 角度转弧度
 radians = (d f64) (res f64) {
+    #{overflow = wrap}
     res = d * PI / 180.0
 }
 ; ═══════════════════════════════════════════════
 ; 整數數學函數（內建）
 ; ═══════════════════════════════════════════════
-; build-in (ForwardFunc: math-clamp)
+#{buildin=clamp}
 ; clamp: 將值限制在 [min, max] 範圍內
-; clamp = (val i64, min i64, max i64) (result i64) { }
+clamp = (val i64, min i64, max i64) (result i64) { }

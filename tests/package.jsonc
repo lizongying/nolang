@@ -10,7 +10,7 @@
   "organization": "",
   "repository": "https://github.com/lizongying/nolang",
   "homepage": "",
-  "license": "MIT",
+  "license": "Apache-2.0",
   "dependencies": {
   },
   "dev-dependencies": {

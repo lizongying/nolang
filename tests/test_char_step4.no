@@ -21,7 +21,7 @@ up = e.to-upper()
 print(up)
 
 s = "中".to-str()
-print(s.len)
+print(s.len-bytes())
 print(s)
 
 print('done')

@@ -2,5 +2,6 @@
 main = () {
     s = 'hello,world'
     pos = s.index-from(',', 0)
+    #{overflow = wrap}
     print('pos: ' + pos.to-str())
 }

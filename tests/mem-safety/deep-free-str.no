@@ -6,7 +6,7 @@ test-local-str-vec = () {
     s.push('hello')
     s.push('world')
     s.push('nolang')
-    print(s.len)
+    print(s.len())
     ; s 離開作用域時應深層 free 每個 string 的 data
 }
 test-local-str-vec()

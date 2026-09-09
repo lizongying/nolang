@@ -19,7 +19,7 @@ main = () {
     c.data = [1, 2, 3, 4, 5]
     c.name = 'test'
     d = extract-data(c)
-    print(d.len)
+    print(d.len())
     print(d[0])
     print(d[4])
     print('done')

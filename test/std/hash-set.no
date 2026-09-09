@@ -2,7 +2,7 @@
 ;
 ; 執行：no test test/std/hash-set.no
 ; 覆蓋：init / add / contains / remove / size / is-empty
-; 注意：hash-set.len 和 hash-set.is-empty 可能存在跨模組解析問題
+; 注意：hash-set.len() 和 hash-set.is-empty 可能存在跨模組解析問題
 
 # /test/runner
 

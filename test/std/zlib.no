@@ -29,7 +29,7 @@ t-adler-32-known = () {
 t-compress = () {
     data []byte = [72, 101, 108, 108, 111]  ; "Hello"
     compressed = zlib.zlib-compress(data)
-    runner.gt(compressed.len, 6, 'compressed len > 6 (zlib header + data)')
+    runner.gt(compressed.len(), 6, 'compressed len > 6 (zlib header + data)')
 }
 
 ; ── 執行 ──────────────────────────────────────

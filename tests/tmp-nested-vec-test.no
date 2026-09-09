@@ -9,7 +9,7 @@ test1 = () (ok bool) {
     b = a
     b0 = b[0]
     b0.push(100)
-    b0.len == 3 -> ok = true
+    b0.len() == 3 -> ok = true
     b0[2] == 100 -> ok = true
 }
 

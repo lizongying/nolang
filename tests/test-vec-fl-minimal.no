@@ -5,7 +5,7 @@ test-fl = () {
     v.push(20)
     v.push(30)
     print('len:')
-    print(v.len)
+    print(v.len())
     f = v.first()
     print('first:')
     f: {

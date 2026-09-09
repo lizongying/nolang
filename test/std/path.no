@@ -30,7 +30,7 @@ t-base-root = () {
         p: '/'
     }
     b = p.base()
-    runner.eq(b.len, 0, 'base / len == 0')
+    runner.eq(b.len(), 0, 'base / len == 0')
 }
 
 ; ── path.ext ──────────────────────────────────
@@ -48,7 +48,7 @@ t-ext-no-ext = () {
         p: '/a/b/c'
     }
     e = p.ext()
-    runner.eq(e.len, 0, 'ext /a/b/c len == 0')
+    runner.eq(e.len(), 0, 'ext /a/b/c len == 0')
 }
 
 ; ── path.is-abs ───────────────────────────────

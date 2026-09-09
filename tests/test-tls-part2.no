@@ -13,7 +13,7 @@ b[0] = 4
 b[1] = 5
 out []byte
 out = tls.bytes-cat(a, b)
-out.len != 5 -> {
+out.len() != 5 -> {
     print('FAIL: bytes-cat len')
     return
 }
@@ -35,7 +35,7 @@ data[2] = 0x03
 data[3] = 0x04
 bn-out []i64
 bn-out = tls.bytes-to-bn(data)
-bn-out.len != 1 -> {
+bn-out.len() != 1 -> {
     print('FAIL: bytes-to-bn n')
     return
 }
@@ -50,7 +50,7 @@ num []i64 = with-cap(1)
 num[0] = 0x01020304
 bb-out []byte
 bb-out = tls.bn-to-bytes(num)
-bb-out.len != 4 -> {
+bb-out.len() != 4 -> {
     print('FAIL: bn-to-bytes n')
     return
 }

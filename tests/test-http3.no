@@ -194,9 +194,9 @@ test-quic-derive-initial-keys = () {
 ; test-quic-gen-cid: 測試 Connection ID 生成
 test-quic-gen-cid = () {
     cid = quic.gen-cid(8)
-    cid.len != 8 -> {
+    cid.len() != 8 -> {
         print('FAIL: quic-gen-cid expected len=8, got ')
-        print(cid.len.to-str())
+        print(cid.len().to-str())
         return
     }
 
@@ -262,6 +262,7 @@ test-qpack-encode-decode = () {
     names [16]str
     values [16]str
     names[0] = 'content-type'
+    #{overflow = wrap}
     values[0] = 'text/plain'
     buf []byte
     n = 0
@@ -285,6 +286,7 @@ test-qpack-encode-decode = () {
         print(name)
         return
     }
+    #{overflow = wrap}
     value != 'text/plain' -> {
         print('FAIL: decode-header value mismatch: ')
         print(value)
@@ -319,6 +321,7 @@ test-http3-parse-url = () {
     port i64 = 0
     path = ''
     ok = false
+    #{overflow = wrap}
     host, port, path, ok = http3.parse-url('https://example.com:8443/api/v1')
     ok == false -> {
         print('FAIL: http3-parse-url returned ok=false')
@@ -334,6 +337,7 @@ test-http3-parse-url = () {
         print(port.to-str())
         return
     }
+    #{overflow = wrap}
     path != '/api/v1' -> {
         print('FAIL: http3-parse-url path mismatch: ')
         print(path)

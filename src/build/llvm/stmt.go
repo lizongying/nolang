@@ -3,6 +3,7 @@ package llvm
 import (
 	"fmt"
 	"os"
+	"runtime"
 	"sort"
 	"strings"
 
@@ -108,18 +109,21 @@ func (g *Generator) llvmTypeSize(llvmType string) int64 {
 		}
 	}
 	// 純量與其他內建型別（%option 等）
+	// 注意：必須包含所有無符號變體（u8/u16/u32/u64/u128），否則會落入
+	// default → 8，使 [N]byte（byte→u8）等無符號陣列的元素大小被錯算為 8，
+	// 导致 memcpy/堆分配大小膨脹 8 倍（如 [32]byte 算出 256 而非 32）並寫穿緩衝區。
 	switch llvmType {
-	case "i1":
+	case "i1", "u1":
 		return 1
-	case "i8":
+	case "i8", "u8":
 		return 1
-	case "i16":
+	case "i16", "u16":
 		return 2
-	case "i32":
+	case "i32", "u32":
 		return 4
-	case "i64", "i8*", "double":
+	case "i64", "u64", "i8*", "double":
 		return 8
-	case "i128":
+	case "i128", "u128":
 		return 16
 	case "%option":
 		return 24
@@ -1177,6 +1181,10 @@ func (g *Generator) emitShallowDataFreeDirect(sb *strings.Builder, containerPtr,
 		g.indent(), dataGEP, containerType, containerType, containerPtr, dataFieldIdx))
 	dataLoad := g.loadDataPtrField(sb, dataGEP)
 	sb.WriteString(fmt.Sprintf("%scall void @free(i8* %s)\n", g.indent(), dataLoad))
+	// Reset the data field to 0 (null pointer) so the slot does not retain the
+	// just-freed address. A reassignment overwrites it immediately; an
+	// un-reassigned drop leaves a valid null that emitHeapFree's guard skips.
+	sb.WriteString(fmt.Sprintf("%sstore i64 0, i64* %s\n", g.indent(), dataGEP))
 }
 
 // emitOptionHeapFree 釋放 %option 變數持有的堆 box。
@@ -1831,11 +1839,19 @@ func (g *Generator) emitShallowDataFree(sb *strings.Builder, containerPtr, conta
 	sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %s, %s* %s, i32 0, i32 %d\n",
 		g.indent(), dataGEP, containerType, containerType, containerPtr, dataFieldIdx))
 	dataLoad := g.loadDataPtrField(sb, dataGEP)
-	g.emitNullCheckFree(sb, dataLoad)
+	g.emitNullCheckFree(sb, dataLoad, dataGEP)
 }
 
 // emitNullCheckFree frees an i8* pointer with NULL check.
-func (g *Generator) emitNullCheckFree(sb *strings.Builder, dataPtr string) {
+// dataGEP is the getelementptr to the container's data field; after the free it
+// is reset to 0 (null pointer) so the slot no longer holds a dangling pointer.
+// Without this reset, a slot dropped via reassignment (e.g. `s = ''`, or
+// `s = s - x` between two loops) keeps the freed address; a later read+free of
+// that slot double-frees / frees a dangling pointer → SIGTRAP ("pointer being
+// freed was not allocated"). A reassignment immediately overwrites the field,
+// so the reset is harmless there; for an un-reassigned drop it leaves the slot
+// in a valid null state that emitHeapFree's NULL guard skips safely.
+func (g *Generator) emitNullCheckFree(sb *strings.Builder, dataPtr, dataGEP string) {
 	nullCmp := g.tmpReg("heapfree.null")
 	g.tmpIdx++
 	freeLabel := fmt.Sprintf("heapfree.free.%d", g.tmpIdx)
@@ -1849,6 +1865,9 @@ func (g *Generator) emitNullCheckFree(sb *strings.Builder, dataPtr string) {
 	g.cfgTerm(fromBlock, termCondBr)
 	g.emitLabel(sb, freeLabel)
 	sb.WriteString(fmt.Sprintf("%scall void @free(i8* %s)\n", g.indent(), dataPtr))
+	// Reset the data field to 0 (null pointer) so the slot does not retain the
+	// just-freed address. See emitNullCheckFree's doc comment for the rationale.
+	sb.WriteString(fmt.Sprintf("%sstore i64 0, i64* %s\n", g.indent(), dataGEP))
 	sb.WriteString(fmt.Sprintf("%sbr label %%%s\n", g.indent(), skipLabel))
 	// CFG: freeLabel → skipLabel（單後繼 branch）
 	g.cfgTerm(freeLabel, termBr)
@@ -1971,7 +1990,7 @@ func (g *Generator) emitElementFree(sb *strings.Builder, elemPtr, elemType strin
 			sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %s, %s* %s, i32 0, i32 %d\n",
 				g.indent(), dataGEP, elemType, elemType, elemPtr, info.dataFieldIdx))
 			dataLoad := g.loadDataPtrField(sb, dataGEP)
-			g.emitNullCheckFree(sb, dataLoad)
+			g.emitNullCheckFree(sb, dataLoad, dataGEP)
 		}
 	case fieldHeapUserStruct:
 		g.emitStructFieldsFree(sb, elemPtr, info.containerType)
@@ -2896,6 +2915,15 @@ func (g *Generator) generateFunctionDefinition(sb *strings.Builder, fd *parser.F
 	g.resetFuncState()
 	g.curFuncName = fd.Name
 	g.inMainFunction = false
+	// 函數級溢出處理模式：#{overflow = wrap|clamp0} 註解驅動；預設 ""（回傳 option）。
+	// fd 本身無註解（如方法定義的內層合成 FunctionDefinition）時，繼承呼叫方設定的
+	// pendingOverflowMode（由方法迴圈從外層 let 註解讀取）。消費後清除，避免跨函數污染。
+	fdMode := g.overflowModeFromNode(fd)
+	if fdMode == "" {
+		fdMode = g.pendingOverflowMode
+	}
+	g.pendingOverflowMode = ""
+	g.curOverflowMode = fdMode
 	// 无栈协程：检测含 awy 的函数，变换为状态机。
 	// 含 awy 的函数不再生成原始函数体，而是生成 coro_resume.N 状态机函数。
 	if fd.Body != nil && len(fd.Body.Statements) > 0 {
@@ -3005,6 +3033,28 @@ func (g *Generator) generateFunctionDefinition(sb *strings.Builder, fd *parser.F
 					g.heapVars = make(map[string]string)
 				}
 				g.heapVars[r.Name] = llvmType
+			}
+		}
+	}
+
+	// 重新登記函數級 option 變數的 inner type（與 main 函數對稱，stmt.go:3527）。
+	// 早期 var 收集（collectVarDeclsFromStmtInner）登記 optionInnerTypes 時 funcResultInnerTypes
+	// 尚未就緒，導致函數體內 `opt = make-conn()` 這類推斷型 option 變數的 inner type 未被登記，
+	// 進而 varLLVMType（`p = opt.path` 的 RHS）退回 i64，使目標變數 p 被錯誤分配為 i64
+	// （應為 %str-long）→ emitDeepClone 把 24 字節 %str-long 寫入 8 字節 alloca 越界 →
+	// 運行期崩潰 / 輸出 NUL。此處在 funcResultInnerTypes 已就緒後補登記，使後續
+	// varLLVMType 能從 optionInnerTypes 推斷出正確欄位型別。
+	if g.optionInnerTypes != nil && fd.Body != nil {
+		for _, stmt := range fd.Body.Statements {
+			ls, ok := stmt.(*parser.LetStatement)
+			if !ok || ls.Name == nil {
+				continue
+			}
+			if _, exists := g.optionInnerTypes[ls.Name.Value]; exists {
+				continue
+			}
+			if inner := g.inferOptionInnerType(ls); inner != "" {
+				g.optionInnerTypes[ls.Name.Value] = inner
 			}
 		}
 	}
@@ -3661,6 +3711,28 @@ func (g *Generator) generateMainFunction(sb *strings.Builder, program *parser.Pr
 
 	// 生成 top-level 語句到獨立緩衝區，同時收集 entry-block alloca。
 	// 與 generateFunctionDefinition 相同的修復：避免循環體內 call 參數的 alloca 每次迭代增長棧。
+	if os.Getenv("NOLANG_DEBUG_SELF") != "" {
+		fmt.Fprintf(os.Stderr, "[debug-self] generateMainFunction: pkg!=nil=%v len(pkg.Top)=%d len(program.Statements)=%d\n",
+			pkg != nil, func() int { if pkg != nil { return len(pkg.Top) }; return -1 }(), len(program.Statements))
+		for i, st := range program.Statements {
+			fn := ""
+			if fd, ok := st.(*parser.FunctionDefinition); ok {
+				fn = fd.Name
+			}
+			fmt.Fprintf(os.Stderr, "[debug-self]   prog.Stmt[%d] %T name=%q\n", i, st, stmtName(st))
+			_ = fn
+		}
+		if pkg != nil {
+			for i, id := range pkg.Top {
+				n := g.hirPkg.Node(id)
+				kn := "?"
+				if n != nil {
+					kn = n.Kind.String()
+				}
+				fmt.Fprintf(os.Stderr, "[debug-self]   pkg.Top[%d] id=%d kind=%s\n", i, id, kn)
+			}
+		}
+	}
 	g.entryAllocaBuf = &strings.Builder{}
 	bodyBuf := &strings.Builder{}
 	// Generate top-level statements (e.g. h = crc-32('', 0), test-str-len(), print(0))
@@ -3729,6 +3801,15 @@ func (g *Generator) generateMainFunction(sb *strings.Builder, program *parser.Pr
 // kinds not yet ported to native HIR emission) and must stay byte-identical to
 // the legacy in-loop logic it replaced.
 func (g *Generator) emitTopLevelAST(sb *strings.Builder, stmt parser.Statement, hasUserMain bool) {
+	// TEMP DEBUG: capture what statement in main context emits a function body
+	if os.Getenv("NOLANG_DEBUG_SELF") != "" && g.curFuncName == "" {
+		fmt.Fprintf(os.Stderr, "[debug-self] emitTopLevelAST: stmtType=%T name=%q\n", stmt, stmtName(stmt))
+		if ls, ok := stmt.(*parser.LetStatement); ok && ls.Name != nil && ls.Name.Value == "out2" {
+			buf := make([]byte, 4096)
+			n := runtime.Stack(buf, false)
+			fmt.Fprintf(os.Stderr, "[debug-self] *** out2 emitted into main! stack:\n%s\n", buf[:n])
+		}
+	}
 	if ls, ok := stmt.(*parser.LetStatement); ok {
 		// Embed vars are emitted as statically initialized globals; skip runtime init.
 		if g.embedDataFor(ls) != nil {
@@ -3997,6 +4078,28 @@ func (g *Generator) varLLVMType(stmt *parser.LetStatement) string {
 	// 「顯式型別註釋」分支處理並返回，不會走到此處。
 	if dot, ok := stmt.Value.(*parser.DotExpression); ok {
 		recvType := g.exprResultLLVMType(dot.Receiver)
+		// ?T receiver: strip %option wrapper to reach inner struct field type.
+		// `p = opt.path` 必須把 p 分配為欄位的真實型別（如 %str-long），否則
+		// varLLVMType 退回 i64 會使 emitDeepClone 把 24 字節 %str-long 寫入 8 字節
+		// alloca → 越界 / NUL 污染（與 print(opt.path) 直接讀取不同，賦值需要
+		// 目標變數的正確 alloca 型別）。邏輯與 exprResultLLVMType 的 %option 分支對稱。
+		if recvType == "%option" {
+			if recvIdent, ok := dot.Receiver.(*parser.Identifier); ok {
+				if inner := g.optionInnerTypes[recvIdent.Value]; inner != "" {
+					innerStructTy := strings.TrimPrefix(inner, "%")
+					if fields, _ := g.resolveStructFields(innerStructTy); fields != nil {
+						for _, f := range fields {
+							if f.name == dot.Property {
+								if strings.HasPrefix(f.typ, "[") {
+									return "%arr"
+								}
+								return f.typ
+							}
+						}
+					}
+				}
+			}
+		}
 		// .len on str/txt → i64 (txt.len is byte field but .len access
 		// should return i64 for consistency with str.len semantics)
 		if dot.Property == "len" && (recvType == "%str-long" || recvType == "%txt") {
@@ -5123,12 +5226,16 @@ func (g *Generator) recollectSyntheticItTypes(stmt parser.Statement, vars map[st
 	}
 		if !g.isStructLLVMType(innerType) {
 			// innerType is a primitive (e.g. i64, f64). The `it` alloca may
-			// have been polluted to %str-long by an err arm's it binding
-			// (err message is a string). Overwrite it with the correct
-			// primitive inner type so that subsequent variable assignments
-			// from `it` (e.g. `e-retry = it`) don't inherit the wrong type.
+			// have been set to %str-long by an err arm's it binding (the err
+			// message is a 24-byte %str-long). If `it` is a shared alloca used
+			// by BOTH an ok arm (holding the small payload) and an err arm
+			// (holding the %str-long error message), it must stay at the LARGER
+			// size so the err-arm store doesn't overflow a 1-byte alloca and
+			// crash opt with a malformed bitcast. Hence max-size semantics:
+			// only overwrite when unset or when the new primitive is strictly
+			// larger — never shrink a struct/larger alloca down to a primitive.
 			existing, exists := vars[s.Name.Value]
-			if !exists || (existing != innerType && g.isStructLLVMType(existing)) {
+			if !exists || g.llvmTypeSize(innerType) > g.llvmTypeSize(existing) {
 				if os.Getenv("NOLANG_DEBUG_IT") != "" {
 					fmt.Fprintf(os.Stderr, "[debug-it]   UPDATING (non-struct): %s from %q to %q\n", s.Name.Value, existing, innerType)
 				}
@@ -5254,10 +5361,11 @@ func (g *Generator) collectVarDecls(program *parser.Program) map[string]string {
 					}
 				}
 			// Register slice element type for module-level []T globals
-			if st, ok := s.Type.(*parser.SliceType); ok && st.Elem != nil && g.arrayElemTypes != nil {
-				g.arrayElemTypes[s.Name.Value] = g.mapToLLVMType(st.Elem.String())
-			}
-		// Populate optionInnerTypes for module-level ?T variables (e.g.
+		if st, ok := s.Type.(*parser.SliceType); ok && st.Elem != nil && g.arrayElemTypes != nil {
+			g.arrayElemTypes[s.Name.Value] = g.mapToLLVMType(st.Elem.String())
+		}
+		g.registerLocalSliceElemType(s.Name.Value, s)
+	// Populate optionInnerTypes for module-level ?T variables (e.g.
 		// s = json.parse(...) returning ?json). Without this, the synthetic
 		// `it = s` binding in a match ok arm cannot resolve the inner type,
 		// causing `it` to default to i64 (8 bytes) while the actual struct
@@ -5304,6 +5412,156 @@ func (g *Generator) collectVarDecls(program *parser.Program) map[string]string {
 		}
 	}
 	return vars
+}
+
+// registerLocalSliceElemType records the element LLVM type of a slice/array
+// local (or module-global) variable into g.arrayElemTypes so that subsequent
+// IndexExpression / method-dispatch type inference can resolve `parts[i]` to
+// its element type (e.g. %str-long / %txt) instead of "".
+//
+// This is the missing half of the element-type tracking that stmt.go already
+// does for function PARAMETERS/RESULTS (stmt.go:2952-3027). Without it, a local
+// `let parts = .split(old)` (a []txt) never registers its element type, so
+// `parts[i].len()` cannot resolve to txt.len and falls into the container `len`
+// inline, emitting malformed IR for a by-value str/txt struct (the
+// txt-len-dispatch regression introduced by the .len -> .len() migration).
+func (g *Generator) registerLocalSliceElemType(name string, s *parser.LetStatement) {
+	if name == "" || s == nil || g.arrayElemTypes == nil {
+		return
+	}
+	if _, exists := g.arrayElemTypes[name]; exists {
+		return
+	}
+	elem := g.inferSliceElemLLVMType(s)
+	if elem != "" {
+		g.arrayElemTypes[name] = elem
+	}
+}
+
+// inferSliceElemLLVMType derives the element LLVM type of a slice/array let
+// from its explicit type, its initializer expression, or the Nolang return
+// type of a call that produces it.
+func (g *Generator) inferSliceElemLLVMType(s *parser.LetStatement) string {
+	// 1. 显式类型标注（与参数处理逻辑一致）
+	switch t := s.Type.(type) {
+	case *parser.SliceType:
+		if t.Elem != nil {
+			return g.mapToLLVMType(t.Elem.String())
+		}
+	case *parser.ArrayType:
+		if t.Elem != nil {
+			if inner, ok := t.Elem.(*parser.ArrayType); ok {
+				return g.arrayTypeToLLVM(inner)
+			}
+			return g.mapToLLVMType(t.Elem.String())
+		}
+	case *parser.NamedType:
+		if strings.HasPrefix(t.Value, "[]") {
+			return g.mapToLLVMType(t.Value[2:])
+		}
+	}
+	// 2. 从初始化表达式推导
+	return g.inferSliceElemFromValue(s.Value)
+}
+
+func (g *Generator) inferSliceElemFromValue(val parser.Expression) string {
+	switch v := val.(type) {
+	case *parser.SliceLiteral:
+		if len(v.Elements) > 0 {
+			if e := g.literalElemLLVMType(v.Elements[0]); e != "" {
+				return e
+			}
+		}
+		return ""
+	case *parser.ArrayLiteral:
+		if len(v.Elements) > 0 {
+			if e := g.literalElemLLVMType(v.Elements[0]); e != "" {
+				return e
+			}
+		}
+		return ""
+	case *parser.CallExpression:
+		return g.callReturnSliceElemLLVMType(v)
+	}
+	return ""
+}
+
+// literalElemLLVMType returns the LLVM type of the first element of a
+// slice/array literal (enough to seed arrayElemTypes; element zext/struct
+// handling downstream is type-driven).
+func (g *Generator) literalElemLLVMType(e parser.Expression) string {
+	switch e.(type) {
+	case *parser.StringLiteral:
+		return "%str-long"
+	case *parser.CharLiteral:
+		return "i32"
+	case *parser.IntegerLiteral:
+		return "i64"
+	case *parser.FloatLiteral:
+		return "double"
+	case *parser.BooleanLiteral:
+		return "i1"
+	case *parser.IndexExpression, *parser.DotExpression, *parser.CallExpression:
+		return g.exprResultLLVMType(e)
+	case *parser.Identifier:
+		if g.varTypes != nil {
+			if t, ok := g.varTypes[e.(*parser.Identifier).Value]; ok {
+				return t
+			}
+		}
+	}
+	return ""
+}
+
+// callReturnSliceElemLLVMType resolves the element type of a slice produced by
+// a call / method call, using the recorded Nolang return types.
+func (g *Generator) callReturnSliceElemLLVMType(call *parser.CallExpression) string {
+	if call == nil || call.Function == nil || g.funcResultNolangTypes == nil {
+		return ""
+	}
+	if dot, ok := call.Function.(*parser.DotExpression); ok {
+		recvType := g.exprResultLLVMType(dot.Receiver)
+		srcType := strings.TrimPrefix(recvType, "%")
+		candidates := []string{srcType}
+		if primAliases, ok := llvmTypeToNolang[srcType]; ok {
+			candidates = append(candidates, primAliases...)
+		}
+		for _, cand := range candidates {
+			if e := g.nolangRetSliceElem(cand + "." + dot.Property); e != "" {
+				return e
+			}
+		}
+		return ""
+	}
+	if ident, ok := call.Function.(*parser.Identifier); ok {
+		return g.nolangRetSliceElem(ident.Value)
+	}
+	return ""
+}
+
+func (g *Generator) nolangRetSliceElem(fnName string) string {
+	if g.funcResultNolangTypes == nil {
+		return ""
+	}
+	rets, ok := g.funcResultNolangTypes[fnName]
+	if !ok || len(rets) == 0 {
+		return ""
+	}
+	rt := rets[0]
+	if strings.HasPrefix(rt, "[]") {
+		return g.mapToLLVMType(rt[2:])
+	}
+	if strings.HasPrefix(rt, "[") {
+		closeB := strings.IndexByte(rt, ']')
+		if closeB > 0 {
+			elem := strings.TrimSpace(rt[1:closeB])
+			if idx := strings.LastIndex(elem, " x "); idx >= 0 {
+				elem = strings.TrimSpace(elem[idx+3:])
+			}
+			return g.mapToLLVMType(elem)
+		}
+	}
+	return ""
 }
 
 func (g *Generator) collectVarDeclsFromStmt(stmt parser.Statement, vars map[string]string) {
@@ -5437,9 +5695,14 @@ func (g *Generator) collectVarDeclsFromStmtInner(stmt parser.Statement, vars map
 		// 例外：當現有型別比新推導型別更小時（如 u8 < i64），
 		// 使用較大的型別以容納所有可能的值（如 label-len = i - label-start 為 i64，
 		// 但 AST 遍歷順序可能先處理 label-len = len-byte 註冊為 u8）。
-		vt := g.varLLVMType(s)
-		// bool (i1) 局部变量擴展為 i64
-		if vt == "i1" {
+	vt := g.varLLVMType(s)
+	// 註冊本地切片/陣列變數的元素型別，供 IndexExpression / 方法分派推導
+	// parts[i] 的元素型別（如 %str-long / %txt），修復 txt-len-dispatch 回歸。
+	if !s.IsSynthetic {
+		g.registerLocalSliceElemType(s.Name.Value, s)
+	}
+	// bool (i1) 局部变量擴展為 i64
+	if vt == "i1" {
 			vt = "i64"
 		}
 		existingVT, exists := vars[s.Name.Value]
@@ -5449,10 +5712,26 @@ func (g *Generator) collectVarDeclsFromStmtInner(stmt parser.Statement, vars map
 		// type (e.g. `e-retry i64 = -1` should not become %str-long from `e-retry = it`).
 		// The recollectSyntheticItTypes pass will fix `it`'s type afterwards,
 		// but we must prevent the contamination from spreading to other vars.
+		// 顯式宣告的窄整數型別（u8/u16/u32/i8/i16/i32）不應被推導值提升為更寬型別。
+		// 例如 md5 的 h0..h3 / a/b/c/d/t 以 `u32` 宣告，若被重賦值（如 `h0 = h0 + a`）
+		// 推導為 i64 後提升為 i64，則 rotate-left 會改用 fshl.i64 而非 fshl.i32，且
+		// 溢出 wrap-mask 失效，導致雜湊結果錯誤。只有「推導型」（未顯式宣告，如
+		// label-len = len-byte 推導為 u8）才允許向上擴展到 i64。
+		// 用 varNolangTypes 判斷是否為顯式宣告：僅 NamedType 宣告會寫入，
+		// 推導型重賦值（Type==nil）不會改寫，故可安全區分兩者。
+		skipNarrowWiden := false
+		if g.varNolangTypes != nil {
+			if dv, ok := g.varNolangTypes[s.Name.Value]; ok {
+				switch dv {
+				case "u8", "u16", "u32", "i8", "i16", "i32":
+					skipNarrowWiden = true
+				}
+			}
+		}
 		if ident, ok := s.Value.(*parser.Identifier); ok && ident.Value == "it" &&
 			exists && !g.isStructLLVMType(existingVT) && g.isStructLLVMType(vt) {
 			// Keep existing primitive type; skip size-based overwrite
-		} else if !exists || g.llvmTypeSize(existingVT) < g.llvmTypeSize(vt) {
+		} else if !exists || (g.llvmTypeSize(existingVT) < g.llvmTypeSize(vt) && !skipNarrowWiden) {
 			// 對模組級全域變數的重新賦值（Type==nil 表示賦值而非宣告），
 			// 不應創建本地 alloca 覆蓋全域變數。例如 gen-random 中的
 			// `LAST = (LAST * IA + IC) % IM` 必須更新全域 @LAST，
@@ -6082,6 +6361,13 @@ func (g *Generator) generateStatement(sb *strings.Builder, stmt parser.Statement
 	// 循环体内每次迭代的语句都会清空+注册+释放，不会累积。
 	g.stmtTemporaries = nil
 	g.stmtTempRawPtrs = nil
+	// 語句級溢出處理模式：若本語句帶 #{overflow = ...} 註解則覆寫函數級模式，
+	// 否則繼承（如 for/block 體內的相減沿用外層函數模式）。結束時還原。
+	if stmtMode := g.overflowModeFromNode(stmt); stmtMode != "" {
+		prevOverflow := g.curOverflowMode
+		g.curOverflowMode = stmtMode
+		defer func() { g.curOverflowMode = prevOverflow }()
+	}
 	switch s := stmt.(type) {
 	case *parser.LetStatement:
 		g.generateLet(sb, s)
@@ -6292,6 +6578,16 @@ func (g *Generator) generateForStatement(sb *strings.Builder, stmt *parser.ForSt
 		g.generateRangeFor(sb, stmt)
 		return
 	}
+
+	// 迴圈體繼承迴圈陳述作用域內的 #{overflow = ...} 模式（parser 區塊作用域傳播
+	// 已把生效模式合併到 ForStatement 節點，並經 HIR 重建保留）。這確保迴圈體內
+	// 未自帶 overflow 註解的整數運算（如 out[pos] = d + 48、pos = pos + 1）也走
+	// wrap，而非預設 option 模式產生 %option 被後續 trunc/store 誤用而導致 LLVM 報錯。
+	prevForOverflow := g.curOverflowMode
+	if m := g.overflowModeFromNode(stmt); m != "" {
+		g.curOverflowMode = m
+	}
+	defer func() { g.curOverflowMode = prevForOverflow }()
 
 	// Push loop exit target
 	g.tmpIdx++
@@ -7001,6 +7297,12 @@ func (g *Generator) generateRangeFor(sb *strings.Builder, stmt *parser.ForStatem
 	}()
 
 	// 計算 start 和 end 值
+	// 迴圈邊界必須是 plain int：強制 wrap 溢位模式，避免有號相減在預設
+	// （option）模式下回傳 %option struct，被後續 `store i64 ..., i64* %limit`
+	// 誤存成 i64 而觸發 LLVM 型別錯誤（compiler regression）。
+	prevRangeOverflow := g.curOverflowMode
+	g.curOverflowMode = "wrap"
+	defer func() { g.curOverflowMode = prevRangeOverflow }()
 	startVal := g.generateExprWithSB(sb, r.Start)
 	endVal := g.generateExprWithSB(sb, r.End)
 
@@ -7311,9 +7613,6 @@ func (g *Generator) generateRangeFor(sb *strings.Builder, stmt *parser.ForStatem
 
 func (g *Generator) generateLet(sb *strings.Builder, stmt *parser.LetStatement) {
 	name := stmt.Name.Value
-	if os.Getenv("NOLANG_DEBUG_LET") != "" {
-		fmt.Fprintf(os.Stderr, "[debug-let-top] name=%q valueType=%T isSynthetic=%v\n", name, stmt.Value, stmt.IsSynthetic)
-	}
 
 	// 追踪通过 `task = run ...` 创建的本地 task 变量（SubTask 2.3）。
 	// 仅追踪非合成 let（合成为 match arm 注入，不含 run）。
@@ -7322,6 +7621,34 @@ func (g *Generator) generateLet(sb *strings.Builder, stmt *parser.LetStatement) 
 			g.trackLocalTask(name)
 		}
 	}
+
+	// 溢出模式推導（codegen 端兜底，位於所有值生成之前）：
+	// 函式級註解（curOverflowMode 已由進入函式時設定）優先，保持不變；
+	// 否則依接收端型別推導整數算術的溢出處理：
+	//   - ?T / ?= 接收端 → option（溢出 err，由呼叫方傳播，永不 panic）。
+	//   - 普通 int 接收端（有號/無號，或型別推導尚不明）→ 靜默回繞（plain op），
+	//     與既有行為一致；lint 會提示加 #{overflow} 註解。
+	// 說明：頂層函式已由 migrateoverflow 統一標註 #{overflow = wrap}，故函式體內
+	// 算術繼承 wrap；此處兜底僅針對遺失註解（如 generic 單態化後）或無註解的上下文。
+	ovfPrevMode := g.curOverflowMode
+	if ovfPrevMode == "" {
+		ovfIsOption := false
+		if stmt.Type != nil {
+			if _, ok := stmt.Type.(*parser.NullableType); ok {
+				ovfIsOption = true
+			}
+		} else if t, ok := g.varTypes[name]; ok {
+			if strings.HasPrefix(t, "?") || t == "%option" {
+				ovfIsOption = true
+			}
+		}
+		if ovfIsOption {
+			g.curOverflowMode = "" // option（溢出 err，永不 panic）
+		} else {
+			g.curOverflowMode = "wrap"
+		}
+	}
+	defer func() { g.curOverflowMode = ovfPrevMode }()
 
 	// 處理 match 對應 err/nil arm 注入的合成 let 陳述句（`it = matched`）。
 	// 這些 let 的 Type 為 "err" / "nil" / "err | nil" 哨兵字串。
@@ -7810,6 +8137,27 @@ func (g *Generator) generateLet(sb *strings.Builder, stmt *parser.LetStatement) 
 						}
 					}
 				}
+				}
+			}
+		}
+		// 溢出模式推導已上移至 generateLet 頂部（覆蓋所有賦值路徑），
+		// 此處不再重複；curOverflowMode 在進入本區塊前已依接收端型別設定。
+		// 一般表達式產出 %option 值（如有符號相減溢出檢查回傳的 %option、
+		// 或任何回傳 ?T 的運算結果）直接存入 ?T 變數的 alloca，
+		// 而非走 ok()/err() 建構器路徑。
+		//
+		// 安全索引例外：RHS 為 IndexExpression（v[i]，v 為 arr/vec/slice）
+		// 時，絕不能在此處先行 eager 求值——一般索引求值會 emit 終止型
+		// bounds_check（越界直接 runtime abort），而安全索引語意要求越界
+		// 回傳 None（tag=1）而非崩潰。此類 RHS 一律交由 generateOptionAssign
+		// 的 IndexExpression 分支產生 none/ok 分支（它用自己的 len 比較做
+		// 越界判斷，不依賴會 abort 的 bounds_check）。若在此處先求值，abort
+		// 會發生在 safe 分支之前，導致「安全索引」實際上仍崩潰。
+		if _, isIndexExpr := stmt.Value.(*parser.IndexExpression); !isIndexExpr {
+			if r := g.generateExprWithSB(sb, stmt.Value); r != "" {
+				if rt, ok := g.ssaTypes[r]; ok && rt == "%option" {
+					sb.WriteString(fmt.Sprintf("%sstore %%option %s, %%option* %s\n", g.indent(), r, llvmVarRef(name)))
+					return
 				}
 			}
 		}
@@ -8529,6 +8877,15 @@ func (g *Generator) generateLet(sb *strings.Builder, stmt *parser.LetStatement) 
 	// 結構體儲存
 	if sl, ok := stmt.Value.(*parser.StructLiteral); ok {
 		structName := sl.Type
+		// 當結構體字面量沒有型別前綴（如 `let c client.client = {}`），
+		// sl.Type 為空字串。若不補足 structName，下方 structTy 會變成 "%"，
+		// 發出非法 IR `store % zeroinitializer, %* %c`（opt 報 "expected type"）。
+		// 此時改從變數已知的型別（alloca 預處理階段已設定 g.varTypes[name]）推導。
+		if structName == "" {
+			if t, ok := g.varTypes[name]; ok && t != "" {
+				structName = strings.TrimPrefix(t, "%")
+			}
+		}
 		fields := g.structTypes[structName]
 		// If bare type name not found, try module-prefixed variant
 		// (e.g. "server" → "server.server") to avoid unsized type errors.
@@ -8541,6 +8898,12 @@ func (g *Generator) generateLet(sb *strings.Builder, stmt *parser.LetStatement) 
 					break
 				}
 			}
+		}
+		// 仍無法解析結構體型別（例如空字面量且變數也沒有已知型別）：
+		// 變數已在 alloca 預處理階段被 memset 清零，無需再發出任何 store，
+		// 直接返回即可，避免發出 `store % zeroinitializer` 這類非法 IR。
+		if fields == nil {
+			return
 		}
 		structTy := "%" + structName
 		// Ensure variable is allocated (needed for top-level LetStatements in main function)
@@ -8865,11 +9228,67 @@ func (g *Generator) generateLet(sb *strings.Builder, stmt *parser.LetStatement) 
 			g.arraySizes[name] = arraySize
 		}
 
+		// [N]byte 輸出參數修復（X25519 DH 測試 Alice/Bob pub mismatch 根因）：
+		// [N]byte 結果參數的 LLVM 簽名是 [N x i8]*（raw inline buffer），不是 %arr 結構。
+		// 若走下方 %arr 結構分支，會把 {len=32, data 指標} 寫入 32 位元組緩衝區，
+		// 呼叫者讀到「首 byte=32、其餘為指標/0」的錯誤結果。
+		// 故當 name 是輸出參數時，直接把 val（[N x i8] SSA 值）memcpy 進 [N x i8]* 緩衝區。
+		// 與 storeVar 的 %arr 輸出參數分支（stmt.go:9520）保持一致的處理。
+		if g.outputParamNames != nil && g.outputParamNames[name] {
+			totalSize := arraySize * elemSize
+			if totalSize == 0 {
+				totalSize = arraySize * 8
+			}
+			rawArrType := fmt.Sprintf("[%d x %s]", arraySize, toLLVMType(llvmElemType))
+			dstPtr := g.tmpReg("arr.out.dst")
+			sb.WriteString(fmt.Sprintf("%s%s = bitcast %s* %s to i8*\n", g.indent(), dstPtr, rawArrType, g.varAddr(name)))
+			srcPtr := g.tmpReg("arr.out.src")
+			if g.ssaTypes != nil && g.ssaTypes[val] == "%arr" {
+				srcData := g.tmpReg("arr.out.srcdata")
+				sb.WriteString(fmt.Sprintf("%s%s = extractvalue %%arr %s, 1\n", g.indent(), srcData, val))
+				sb.WriteString(fmt.Sprintf("%s%s = inttoptr i64 %s to i8*\n", g.indent(), srcPtr, srcData))
+			} else {
+				tmpArr := g.tmpReg("arr.out.tmp")
+				sb.WriteString(fmt.Sprintf("%s%s = alloca %s\n", g.indent(), tmpArr, rawArrType))
+				sb.WriteString(fmt.Sprintf("%sstore %s %s, %s* %s\n", g.indent(), rawArrType, val, rawArrType, tmpArr))
+				sb.WriteString(fmt.Sprintf("%s%s = bitcast %s* %s to i8*\n", g.indent(), srcPtr, rawArrType, tmpArr))
+			}
+			sb.WriteString(fmt.Sprintf("%scall void @llvm.memcpy.p0i8.p0i8.i64(i8* %s, i8* %s, i64 %d, i1 false)\n",
+				g.indent(), dstPtr, srcPtr, totalSize))
+			return
+		}
+
 		// Store len field
 		lenGEP := g.tmpReg("arr.len.gep")
 		sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%arr, %%arr* %s, i32 0, i32 0\n",
 			g.indent(), lenGEP, g.varAddr(name)))
 		sb.WriteString(fmt.Sprintf("%sstore i64 %d, i64* %s\n", g.indent(), arraySize, lenGEP))
+
+		// 2D 固定陣列行提取：s = arr2d[i]
+		// 當 RHS 是對二維陣列的索引（如 blake2 的 s = BLAKE2B-SIGMA[round]），
+		// generateExprWithSB 已返回行指標 [N x T]*（見 expr.go 嵌套陣列分支，
+		// 不 load 而是回傳 GEP 指標）。此時 val 是指標而非陣列值，不能當作
+		// 陣列值 store；應把指標直接存入 %arr 的 data 欄位，形成指向唯讀常數
+		// 行的視圖（等同 slice 視圖，不拷貝）。此路徑只對「二維陣列索引賦值給
+		// 一維陣列變數」觸發，不影響一維陣列的既有賦值行為。
+		if idxExpr, ok := stmt.Value.(*parser.IndexExpression); ok {
+			if baseIdent, ok := idxExpr.Left.(*parser.Identifier); ok {
+				if bt, ok := g.varTypes[baseIdent.Value]; ok {
+					if et := extractArrayElemType(bt); et != "" && strings.HasPrefix(et, "[") {
+						// val 是 generateExprWithSB 回傳的二維陣列行指標（opaque ptr）。
+						// 直接 bitcast 為 i8* 存入 %arr.data 欄位，形成唯讀常數行視圖。
+						rowPtr := g.tmpReg("arr.row.ptr")
+						sb.WriteString(fmt.Sprintf("%s%s = bitcast ptr %s to i8*\n",
+							g.indent(), rowPtr, val))
+						dataGEP := g.tmpReg("arr.data.gep")
+						sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%arr, %%arr* %s, i32 0, i32 1\n",
+							g.indent(), dataGEP, g.varAddr(name)))
+						g.storeDataPtrField(sb, rowPtr, dataGEP)
+						return
+					}
+				}
+			}
+		}
 
 		// Allocate data buffer: arraySize * elemSize
 		totalSize := arraySize * elemSize
@@ -9052,6 +9471,9 @@ if !alreadyCoerced && g.isIntegerLLVMType(llvmType) && llvmType != "i64" && stri
 					if valType == "i64" && toLLVMType(llvmType) != "i64" {
 						truncReg := g.tmpReg("trunc")
 						sb.WriteString(fmt.Sprintf("%s%s = trunc i64 %s to %s\n", g.indent(), truncReg, val, toLLVMType(llvmType)))
+						if g.ssaTypes != nil {
+							g.ssaTypes[truncReg] = toLLVMType(llvmType)
+						}
 						val = truncReg
 					}
 				}
@@ -9066,6 +9488,60 @@ if !alreadyCoerced && g.isIntegerLLVMType(llvmType) && llvmType != "i64" && stri
 			op := widenExtOp(valActualType)
 			sb.WriteString(fmt.Sprintf("%s%s = %s %s %s to %s\n", g.indent(), zextReg, op, toLLVMType(valActualType), val, toLLVMType(llvmType)))
 			val = zextReg
+		}
+	}
+
+	// 窄整型（u8/u16/u32/i8/i16/i32）在 wrap 模式下按型別位寬做 2's complement 回繞：
+	// nolang 將窄整型暫存為 i64 運算、但變數以窄 LLVM 型別（i8/i16/i32）配置 alloca；
+	// 而 u32/u16/u8 算術在 i64 上「不會」自動回繞（僅 print 末端遮罩），導致 MD5/SHA
+	// 等依賴 mod 2^N 回繞的演算法（number.rotate-left 為寬度敏感）算錯。
+	// 參見 test-std-hash.no 的 md5/sha 錯誤（pre-fix: md5("")=cd a4 d8… 應為 d41d8cd…）。
+	// 整數加法低 N 位只取決於操作數低 N 位，故鏈式加法的中間高位不影響最終低 N 位；
+	// 只要在此（賦值存入窄 alloca 前）把 i64 暫存值遮罩成 2^N 回繞並 trunc 到窄型別，
+	// 後續旋轉 / 比較等寬度敏感運算拿到的就是正確的窄值。
+	// 僅對 i64 SSA 值遮罩；若已被上游 trunc 成 i8/i16/i32 則跳過（ssaTypes 已登記窄型別）。
+	if !alreadyCoerced && g.curOverflowMode == "wrap" {
+		vt := ""
+		if g.varTypes != nil {
+			if t, ok := g.varTypes[name]; ok {
+				vt = t
+			}
+		}
+		if vt == "" {
+			vt = llvmType
+		}
+		if vt != "" {
+			bits := llvmIntBitWidth(vt)
+			if bits >= 8 && bits < 64 {
+				narrowLLVM := toLLVMType(vt)
+				actualValType := "i64"
+				if g.ssaTypes != nil {
+					if t, ok := g.ssaTypes[val]; ok {
+						actualValType = t
+					}
+				}
+				if actualValType == "i64" {
+					mask := (uint64(1) << uint(bits)) - 1
+					maskReg := g.tmpReg("narrow.wrap")
+					sb.WriteString(fmt.Sprintf("%s%s = and i64 %s, %d\n", g.indent(), maskReg, val, mask))
+					if narrowLLVM != "i64" {
+						// 變數以窄型別配置 alloca（store 需要窄 LLVM 型別），故將
+						// 遮罩後的 i64 值 trunc 到窄型別；trunc 取低位 bits 位元，
+						// 無號/有號結果皆正確（後續載入會依型別 zext/sext 回 i64）。
+						truncReg := g.tmpReg("narrow.wrapt")
+						sb.WriteString(fmt.Sprintf("%s%s = trunc i64 %s to %s\n", g.indent(), truncReg, maskReg, narrowLLVM))
+						if g.ssaTypes != nil {
+							g.ssaTypes[truncReg] = narrowLLVM
+						}
+						val = truncReg
+					} else {
+						if g.ssaTypes != nil {
+							g.ssaTypes[maskReg] = "i64"
+						}
+						val = maskReg
+					}
+				}
+			}
 		}
 	}
 
@@ -9394,6 +9870,38 @@ if !alreadyCoerced && g.isIntegerLLVMType(llvmType) && llvmType != "i64" && stri
 		// use-after-free, manifesting as trace/BPT trap on macOS.
 		if val == "0" || val == "" {
 			sb.WriteString(fmt.Sprintf("%sstore %%arr zeroinitializer, %%arr* %s\n", g.indent(), storeAddr))
+		} else if g.outputParamNames != nil && g.outputParamNames[name] {
+			// [N]byte 輸出參數以 [N x i8]* 傳遞（inline buffer），並非 %arr 結構；
+			// 直接將來源位元組 memcpy 進該緩衝區即可。
+			arraySize := int64(0)
+			if s, ok := g.arraySizes[name]; ok {
+				arraySize = s
+			}
+		llvmElemType := "i8"
+		if et, ok := g.arrayElemTypes[name]; ok && et != "" {
+			llvmElemType = et
+		}
+		elemSize := g.llvmTypeSize(llvmElemType)
+		if elemSize == 0 {
+			elemSize = 8
+		}
+		totalSize := arraySize * elemSize
+			rawArrType := fmt.Sprintf("[%d x %s]", arraySize, toLLVMType(llvmElemType))
+			dstPtr := g.tmpReg("arr.out.dst")
+			sb.WriteString(fmt.Sprintf("%s%s = bitcast %s* %s to i8*\n", g.indent(), dstPtr, rawArrType, storeAddr))
+			srcPtr := g.tmpReg("arr.out.src")
+			if g.ssaTypes != nil && g.ssaTypes[val] == "%arr" {
+				srcData := g.tmpReg("arr.out.srcdata")
+				sb.WriteString(fmt.Sprintf("%s%s = extractvalue %%arr %s, 1\n", g.indent(), srcData, val))
+				sb.WriteString(fmt.Sprintf("%s%s = inttoptr i64 %s to i8*\n", g.indent(), srcPtr, srcData))
+			} else {
+				tmpArr := g.tmpReg("arr.out.tmp")
+				sb.WriteString(fmt.Sprintf("%s%s = alloca %s\n", g.indent(), tmpArr, rawArrType))
+				sb.WriteString(fmt.Sprintf("%sstore %s %s, %s* %s\n", g.indent(), rawArrType, val, rawArrType, tmpArr))
+				sb.WriteString(fmt.Sprintf("%s%s = bitcast %s* %s to i8*\n", g.indent(), srcPtr, rawArrType, tmpArr))
+			}
+			sb.WriteString(fmt.Sprintf("%scall void @llvm.memcpy.p0i8.p0i8.i64(i8* %s, i8* %s, i64 %d, i1 false)\n",
+				g.indent(), dstPtr, srcPtr, totalSize))
 		} else {
 			arraySize := int64(0)
 			llvmElemType := "i64"
@@ -9709,6 +10217,20 @@ func (g *Generator) generateOptionAssign(sb *strings.Builder, stmt *parser.LetSt
 
 	// Helper: store an i64 value directly into data field (fits in 8 bytes)
 	copyI64ToData := func(val string) {
+		// 防禦：data 字段固定為 i64。若傳入的是窄整數 SSA 寄存器（i8/i16/i32），
+		// 直接 `store i64 %val` 會產生非法 IR（opt -O3 拒絕
+		// "defined with type 'i8' but expected 'i64'"）。先 zero-extend 到 i64。
+		// 絕大多數窄整數來源為無號（u8/u16/u32，如安全索引的字節），zext 正確；
+		// 有號窄整數選項（?i8/?i16/?i32）極罕見，此處以 zext 兜底避免崩潰。
+		if strings.HasPrefix(val, "%") && g.ssaTypes != nil {
+			if ssaT, ok := g.ssaTypes[val]; ok && g.isIntegerLLVMType(ssaT) && ssaT != "i64" {
+				extReg := g.tmpReg("opt.i64.zext")
+				if sb != nil {
+					sb.WriteString(fmt.Sprintf("%s%s = zext %s %s to i64\n", g.indent(), extReg, ssaT, val))
+				}
+				val = extReg
+			}
+		}
 		dataGEP := g.tmpReg("opt.data.gep")
 		sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%option, %%option* %%%s, i32 0, i32 1\n", g.indent(), dataGEP, name))
 		sb.WriteString(fmt.Sprintf("%sstore i64 %s, i64* %s\n", g.indent(), val, dataGEP))
@@ -9793,17 +10315,35 @@ func (g *Generator) generateOptionAssign(sb *strings.Builder, stmt *parser.LetSt
 				}
 			}
 
-			if actualType != innerType {
-				// alloca actualType, store val as actualType, bitcast ptr, load as innerType
-				cvtTmp := g.tmpReg("opt.cvt.tmp")
-				sb.WriteString(fmt.Sprintf("%s%s = alloca %s\n", g.indent(), cvtTmp, actualType))
-				sb.WriteString(fmt.Sprintf("%sstore %s %s, %s* %s\n", g.indent(), actualType, val, actualType, cvtTmp))
-				cvtBc := g.tmpReg("opt.cvt.bc")
-				sb.WriteString(fmt.Sprintf("%s%s = bitcast %s* %s to %s*\n", g.indent(), cvtBc, actualType, cvtTmp, innerType))
-				cvtLoad := g.tmpReg("opt.cvt.load")
-				sb.WriteString(fmt.Sprintf("%s%s = load %s, %s* %s\n", g.indent(), cvtLoad, innerType, innerType, cvtBc))
-				val = cvtLoad
-			}
+		if actualType == "%option" {
+			// %option is a {i64 tag, i64 data} box: field 1 (data) is an i64 that
+			// points to the heap-allocated inner struct (e.g. a %str-long box for
+			// ?str, or a %vec box for ?[]T). Extract the inner struct correctly via
+			// extractvalue + inttoptr + load. The naive bitcast of a 16-byte %option
+			// to a 24-byte %str-long reads 8 bytes past the allocation, yielding a
+			// garbage data pointer that is later free()d → the runtime crash
+			// (double-free / abort trap) seen in test-x25519-keypair-diff.
+			// emitDeepClone below copies the inner struct's heap data into an
+			// independent box owned by this option variable (no shared pointers),
+			// so the source option's cleanup frees only its own box — no double-free.
+			boxPtr := g.tmpReg("opt.box.ptr")
+			sb.WriteString(fmt.Sprintf("%s%s = extractvalue %%option %s, 1\n", g.indent(), boxPtr, val))
+			boxCast := g.tmpReg("opt.box.cast")
+			sb.WriteString(fmt.Sprintf("%s%s = inttoptr i64 %s to %s*\n", g.indent(), boxCast, boxPtr, innerType))
+			innerLoad := g.tmpReg("opt.inner.load")
+			sb.WriteString(fmt.Sprintf("%s%s = load %s, %s* %s\n", g.indent(), innerLoad, innerType, innerType, boxCast))
+			val = innerLoad
+		} else if actualType != innerType {
+			// alloca actualType, store val as actualType, bitcast ptr, load as innerType
+			cvtTmp := g.tmpReg("opt.cvt.tmp")
+			sb.WriteString(fmt.Sprintf("%s%s = alloca %s\n", g.indent(), cvtTmp, actualType))
+			sb.WriteString(fmt.Sprintf("%sstore %s %s, %s* %s\n", g.indent(), actualType, val, actualType, cvtTmp))
+			cvtBc := g.tmpReg("opt.cvt.bc")
+			sb.WriteString(fmt.Sprintf("%s%s = bitcast %s* %s to %s*\n", g.indent(), cvtBc, actualType, cvtTmp, innerType))
+			cvtLoad := g.tmpReg("opt.cvt.load")
+			sb.WriteString(fmt.Sprintf("%s%s = load %s, %s* %s\n", g.indent(), cvtLoad, innerType, innerType, cvtBc))
+			val = cvtLoad
+		}
 
 			// Stage the loaded value into a temp alloca so emitDeepClone has a
 			// source pointer to read from (it requires pointers, not SSA values).
@@ -9859,6 +10399,123 @@ func (g *Generator) generateOptionAssign(sb *strings.Builder, stmt *parser.LetSt
 		// x = nil → tag=1, zero data
 		storeTag(1)
 		zeroData()
+
+	case *parser.IndexExpression:
+		// 安全索引：`v[i]` 越界回傳 None（tag=1）；否則回傳 some(元素)。
+		// 僅處理 arr/vec/slice（基底為識別符）的索引；str/txt 索引回傳 char，
+		// 不走此路徑。
+		ident, ok := v.Left.(*parser.Identifier)
+		if !ok {
+			// 非識別符基底（如 .field[i]）：退回一般處理（不應發生於 ?= 安全索引）
+			break
+		}
+		varName := ident.Value
+		idx := g.generateExprWithSB(sb, v.Index)
+		if strings.HasPrefix(idx, "%") {
+			idxType := g.intExprLLVMType(v.Index)
+			if toLLVMType(idxType) != "i64" {
+				zr := g.tmpReg("idx.zext")
+				if sb != nil {
+					sb.WriteString(fmt.Sprintf("%s%s = zext %s %s to i64\n", g.indent(), zr, toLLVMType(idxType), idx))
+				}
+				idx = zr
+			}
+		}
+		// 若索引本身是 %option 值（如 option-overflow 加法 `off + 1` 產生的
+		// `%addopt.final`），必須先 extractvalue 解包成 i64，bounds-check 與
+		// 後續 GEP 才能使用 i64；否則 `icmp slt i64 %option, 0` 是非法 IR，
+		// 被 opt 驗證器拒絕（"%option = type { i64, i64 } but expected 'i64'"）。
+		// 注意：generateIndexCore 內部也有同款解包（用於 ok 分支的元素載入），
+		// 此處先解包可讓 bounds-check 與 GEP 共用同一 i64 索引，避免重複。
+		if strings.HasPrefix(idx, "%") && g.ssaTypes != nil {
+			if t, ok := g.ssaTypes[idx]; ok && t == "%option" {
+				uw := g.tmpReg("idx.opt.unwrap")
+				if sb != nil {
+					sb.WriteString(fmt.Sprintf("%s%s = extractvalue %%option %s, 1\n", g.indent(), uw, idx))
+				}
+				idx = uw
+			}
+		}
+		// 取得容器長度
+		var lenReg string
+		if g.isSliceViewVar(varName) {
+			lenReg = g.sliceViews[varName].viewLen
+		} else if t, ok := g.varTypes[varName]; ok {
+			base := llvmVarRef(varName)
+			if g.globalVars != nil && g.globalVars[varName] && !(g.funcLocalNames != nil && g.funcLocalNames[varName]) {
+				base = llvmGlobalRef(varName)
+			}
+			switch t {
+			case "%arr":
+				lenReg = g.emitArrLenLoad(sb, base)
+			case "%vec":
+				lenReg = g.emitVecLenLoad(sb, base)
+			}
+		}
+		// 注意：此處必須產生全新的 block label，不能用 g.cfgBlockLabel()
+		// （後者回傳 currentBlock；當本賦值嵌套在 if/match 區塊內時，
+		// 三個 label 都會與外層 block 撞名，導致 "label already defined"
+		// 的非法 IR，被 opt -O3 拒絕）。
+		g.tmpIdx++
+		noneLabel := fmt.Sprintf("idx.none.%d", g.tmpIdx)
+		okLabel := fmt.Sprintf("idx.ok.%d", g.tmpIdx)
+		doneLabel := fmt.Sprintf("idx.done.%d", g.tmpIdx)
+		if lenReg != "" {
+			negCmp := g.tmpReg("idx.neg")
+			hiCmp := g.tmpReg("idx.hi")
+			oob := g.tmpReg("idx.oob")
+			if sb != nil {
+				sb.WriteString(fmt.Sprintf("%s%s = icmp slt i64 %s, 0\n", g.indent(), negCmp, idx))
+				sb.WriteString(fmt.Sprintf("%s%s = icmp sge i64 %s, %s\n", g.indent(), hiCmp, idx, lenReg))
+				sb.WriteString(fmt.Sprintf("%s%s = or i1 %s, %s\n", g.indent(), oob, negCmp, hiCmp))
+				sb.WriteString(fmt.Sprintf("%sbr i1 %s, label %%%s, label %%%s\n", g.indent(), oob, noneLabel, okLabel))
+			}
+		} else {
+			if sb != nil {
+				sb.WriteString(fmt.Sprintf("%sbr label %%%s\n", g.indent(), okLabel))
+			}
+		}
+		// none: 越界 → None
+		if sb != nil {
+			sb.WriteString(fmt.Sprintf("%s%s:\n", g.indent(), noneLabel))
+		}
+		storeTag(1)
+		zeroData()
+		if sb != nil {
+			sb.WriteString(fmt.Sprintf("%sbr label %%%s\n", g.indent(), doneLabel))
+		}
+		// ok: some(元素)
+		if sb != nil {
+			sb.WriteString(fmt.Sprintf("%s%s:\n", g.indent(), okLabel))
+		}
+		elem := g.generateIndexCore(sb, v, varName, idx)
+		// 記錄 option 內部型別，供 copyToData 選擇正確的存放路徑。
+		if g.optionInnerTypes == nil {
+			g.optionInnerTypes = make(map[string]string)
+		}
+		if et, ok := g.arrayElemTypes[varName]; ok {
+			g.optionInnerTypes[name] = et
+		} else if g.isSliceViewVar(varName) {
+			g.optionInnerTypes[name] = g.sliceViews[varName].elemType
+		}
+		storeTag(0)
+		copyToData(elem)
+		if sb != nil {
+			sb.WriteString(fmt.Sprintf("%sbr label %%%s\n", g.indent(), doneLabel))
+		}
+		// done
+		if sb != nil {
+			sb.WriteString(fmt.Sprintf("%s%s:\n", g.indent(), doneLabel))
+			// 同步 currentBlock：安全索引插入 idx.none/idx.ok/idx.done 三段 block，
+			// 並把本賦值所在 block（如 if.then）的 terminator 改寫為跳轉到
+			// idx.ok/idx.none；真正出口 block 是 doneLabel。若不同步 g.currentBlock，
+			// 外層 if/match 的匯合 PHI 仍以舊的 currentBlock（if.then）作為 incoming
+			// block，而該 block 已不再是 merge block 的直接前驅 → opt 報
+			// "PHI node entries do not match predecessors!"。故必須把 currentBlock
+			// 更新為 doneLabel（與 emitLabel 的語意一致）。
+			g.currentBlock = doneLabel
+		}
+		return
 
 	case *parser.CallExpression:
 		if ident, ok := v.Function.(*parser.Identifier); ok {
@@ -9989,6 +10646,35 @@ func (g *Generator) generateOptionAssign(sb *strings.Builder, stmt *parser.LetSt
 					if srcType == "str-long" {
 						candidates = append(candidates, "str")
 					}
+					// IndexExpression receiver (e.g. arr[i].to-str()): the element
+					// type of the indexed container is the lookup key for
+					// monomorphized slice methods (e.g. _xbyte.to-str / []byte.to-str).
+					// Mirror the DotExpression branch above so option-returning slice
+					// methods are recognized and copied directly (via the store-%option
+					// path) instead of being bitcast through copyToData — which
+					// misreads the %option struct ({tag,i64 data}) as a %str-long
+					// ({len,cap,data}) and double-frees the inner heap string on
+					// cleanup (the x25519-keypair-diff runtime crash).
+					// NOTE: the element's own LLVM type may be a scalar (e.g. %i8 for
+					// a byte element), so we key off the BASE container's
+					// arrayElemTypes entry rather than srcType.
+					if _, ok := recv.(*parser.IndexExpression); ok {
+						if ix, ok := recv.(*parser.IndexExpression); ok {
+							if baseIdent, ok := ix.Left.(*parser.Identifier); ok {
+								if g.arrayElemTypes != nil {
+									if et, ok := g.arrayElemTypes[baseIdent.Value]; ok && et != "" {
+										et = strings.TrimPrefix(et, "%")
+										if elemAliases, ok := llvmTypeToNolang[et]; ok {
+											for _, alias := range elemAliases {
+												candidates = append(candidates, "[]"+alias)
+												candidates = append(candidates, "_x"+alias)
+											}
+										}
+									}
+								}
+							}
+						}
+					}
 					for _, cand := range candidates {
 						candName := cand + "." + dot.Property
 						if ts, ok := g.funcResultLLVMType[candName]; ok && len(ts) == 1 && ts[0] == "%option" {
@@ -10104,6 +10790,38 @@ func (g *Generator) generateOptionAssign(sb *strings.Builder, stmt *parser.LetSt
 			val := g.generateExprWithSB(sb, stmt.Value)
 			// option 接管 data 所有权（copyToData 会 load 并存储到 heap box），移除临时追踪
 			g.untrackStmtTemporary(val)
+			// 选项 data 字段固定为 64 位（i64）。当来源是窄整数（例如 `it` 绑定到
+			// 安全索引 `buf[0]` 的 `u8` 字节）时，generateExprWithSB 产出的是 i8/i16/i32
+			// 的 SSA 寄存器；若直接以 i64 存入会产生非法 IR，被 opt -O3 拒絕
+			// （"%it.val defined with type 'i8' but expected 'i64'"）。
+			// 因此按来源的 nolang 型別选择 zero/sign-extend 到 i64 再存入。
+			if strings.HasPrefix(val, "%") {
+				srcNL := ""
+				if t, ok := g.varTypes[v.Value]; ok && t != "" {
+					srcNL = strings.TrimPrefix(t, "%")
+				}
+				if srcNL == "" {
+					if et := g.intExprLLVMType(stmt.Value); et != "" {
+						srcNL = strings.TrimPrefix(et, "%")
+					}
+				}
+				if srcNL != "" && g.isIntegerLLVMType(srcNL) && llvmIntBitWidth(srcNL) < 64 {
+					extReg := g.tmpReg("opt.val.ext")
+					if sb != nil {
+						sb.WriteString(fmt.Sprintf("%s%s = %s %s %s to i64\n", g.indent(), extReg, widenExtOp(srcNL), toLLVMType(srcNL), val))
+					}
+					val = extReg
+				} else if g.ssaTypes != nil {
+					// 兜底：依据 SSA 寄存器实际 LLVM 型别扩展（默认 zext，适用于无号窄型别）。
+					if ssaT, ok := g.ssaTypes[val]; ok && g.isIntegerLLVMType(ssaT) && ssaT != "i64" {
+						extReg := g.tmpReg("opt.val.ext")
+						if sb != nil {
+							sb.WriteString(fmt.Sprintf("%s%s = zext %s %s to i64\n", g.indent(), extReg, ssaT, val))
+						}
+						val = extReg
+					}
+				}
+			}
 			copyToData(val)
 		}
 

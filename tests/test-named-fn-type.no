@@ -30,6 +30,7 @@ my-teardown = () {
 }
 
 my-compute = (n i64) (r i64) {
+    #{overflow = wrap}
     r = n + 1
 }
 

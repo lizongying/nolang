@@ -23,6 +23,41 @@ func init() {
 		ForwardFunc:  "str-len",
 	})
 
+	// str.len-bytes: return the BYTE length of the underlying UTF-8 buffer.
+	// This is a compiler built-in (the same value as the old .len struct field);
+	// it is intercepted by the codegen and never lowered as a real std function.
+	// NOTE: str.len() (codepoint count) is a real std function that calls
+	// .len-bytes() internally — keep this entry separate from "str-len" which
+	// the compiler must NOT route s.len() to (that would return byte length).
+	BuiltinMethodList = append(BuiltinMethodList, BuiltinMethod{
+		ReceiverType: ReceiverStr,
+		MethodName:   "len-bytes",
+		Params:       []parser.Type{},
+		Return:       []parser.Type{parser.TypeI64},
+		Doc:          "Return the byte length of the string",
+		ForwardFunc:  "str-len-bytes",
+	})
+
+	// str.byte / txt.byte: raw-byte accessors (`s.byte(i)` / `t.byte(i)`).
+	// NOT real functions — intercepted by the codegen (legacy generateRawByteAt
+	// and MIR emitBuiltinRawByteAt) and expanded inline to a GEP+load+zext on the
+	// underlying byte buffer. Registered here SOLELY so the MIR lowerer
+	// (hir2mir.lowerCall) learns the result type is i64 and allocates a
+	// destination value; without this entry `resultTypeOfCallee` returns void and
+	// the call is emitted with Dst=0, discarding the result (the f64↔str
+	// conversions in str.no depend on mstr.byte(j) and were broken under MIR=3).
+	// ReceiverType is ReceiverStr only for table-matching purposes: FindBuiltinMethod
+	// matches by bare MethodName "byte", and lookupBuiltin's bare-name fallback
+	// makes this entry resolve both "str.byte" and "txt.byte".
+	BuiltinMethodList = append(BuiltinMethodList, BuiltinMethod{
+		ReceiverType: ReceiverStr,
+		MethodName:   "byte",
+		Params:       []parser.Type{parser.TypeI64},
+		Return:       []parser.Type{parser.TypeI64},
+		Doc:          "Return the byte at index i of the underlying UTF-8 buffer (raw byte access)",
+		Intercepted:  true,
+	})
+
 	// str.clear: clear string in-place (set len=0, no storage switch)
 	// SSO: store 0x80 (0 | SSO tag) to len byte
 	// Long: store i64 0 to len field, cap/ptr unchanged

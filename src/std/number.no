@@ -67,6 +67,7 @@ min = (a ..num) (r num) {
 
 abs = (a num) (r num) {
     {
+        #{overflow = wrap}
         a < 0 -> r = 0 - a
         -> r = a
     }
@@ -86,6 +87,7 @@ num.clamp = (lo num, hi num) (r num) {
 num.sign = () (r num) {
     {
         . > 0 -> r = 1
+        #{overflow = wrap}
         . < 0 -> r = 0 - 1
         -> r = 0
     }
@@ -105,7 +107,9 @@ odd = (a int) (yes bool) {
 
 ; gcd: 最大公因數（輾轉相除法）
 gcd = (a int, b int) (r int) {
+    #{overflow = wrap}
     a < 0 -> a = 0 - a
+    #{overflow = wrap}
     b < 0 -> b = 0 - b
     {
         t = b
@@ -122,6 +126,7 @@ lcm = (a int, b int) (r int) {
         return
     }
     g = gcd(a, b)
+    #{overflow = wrap}
     r = a / g * b
 }
 
@@ -131,39 +136,41 @@ pow = (a int, n int) (r int) {
     r = 1
     base = a
     {
+        #{overflow = wrap}
         n & 1 == 1 -> r = r * base
+        #{overflow = wrap}
         base = base * base
         n = n >> 1
     } (n > 0)
 }
 
 ; i64-to-f64: 整數轉浮點
-; build-in (sitofp)
-; i64-to-f64 = (a i64) (r f64) {
+#{buildin=i64-to-f64}
+i64-to-f64 = (a i64) (r f64) { }
 ;     r = a
 ; }
 
 ; f64-to-i64: 浮點轉整數（截斷）
-; build-in (fptosi)
-; f64-to-i64 = (a f64) (r i64) {
+#{buildin=f64-to-i64}
+f64-to-i64 = (a f64) (r i64) { }
 ;     r = a
 ; }
 
 ; f32-to-f64: 將 f32 提升為 f64
-; build-in (LLVMConv: F32ToF64)
-; f32-to-f64 = (a f32) (r f64) { }
+#{buildin=f32-to-f64}
+f32-to-f64 = (a f32) (r f64) { }
 
 ; f64-to-f32: 將 f64 降為 f32（可能損失精度）
-; build-in (LLVMConv: F64ToF32)
-; f64-to-f32 = (a f64) (r f32) { }
+#{buildin=f64-to-f32}
+f64-to-f32 = (a f64) (r f32) { }
 
 ; ═══════════════════════════════════════════════
 ; 整數轉字串（Nolang 實現，取代 sprintf CLibCall）
 ; ═══════════════════════════════════════════════
 
 ; i64-to-str: 將 i64 轉為字串
-; 處理 0、正數、負數。不取絕對值（避免 i64.MIN 溢出），
-; 直接對負數做 srem/sdiv（向零截斷），再將負餘數映射到 [0, 9]。
+; 處理 0、正數、負數。負數的絕對值以 u64 表示（2's 補數 0 - (u64)n），
+; 避免 n = 0 - n 在 i64.MIN 時溢出（i64.MIN 的絕對值 2^63 超出 i64 範圍）。
 i64-to-str = (n i64) (out str) {
     n == 0 -> {
         out = with-cap(1)
@@ -171,33 +178,43 @@ i64-to-str = (n i64) (out str) {
         return
     }
     neg = 0
-    ; Flip the sign up-front (outside the digit loop) so the loop body has
-    ; NO guarded statement followed by more statements. The MIR lowerer
-    ; mis-routes a `cond -> stmt` guard that sits inside a loop body and is
-    ; followed by trailing statements into the guard's else branch, which
-    ; would skip `n = n / 10` for negative input and loop forever. Handling
-    ; the sign here keeps the loop body a plain straight-line sequence.
+    mag u64 = 0
+    ; 負數：以 u64 取絕對值，避開 i64.MIN 溢出。
+    ; 隱式 i64 -> u64（位元組重新詮釋）後做 0 - mag（u64 回繞）即得絕對值。
     n < 0 -> {
         neg = 1
-        n = 0 - n
+        mag = n
+        #{overflow = wrap}
+        mag = 0 - mag
+    }
+    -> {
+        mag = n
     }
     digits = 0
-    tmp = n
+    tmp u64 = mag
     {
+        #{overflow = wrap}
         digits = digits + 1
+        #{overflow = wrap}
         tmp = tmp / 10
     } (tmp != 0)
     total = digits
+    #{overflow = wrap}
     neg == 1 -> total = total + 1
     out = with-cap(total)
+    #{overflow = wrap}
     pos = digits - 1
     neg == 1 -> pos = digits
     {
-        d = n % 10
-        out[pos] = d + 48
-        n = n / 10
+        d = mag % 10
+        #{overflow = wrap}
+        ascii = d + 48
+        out[pos] = ascii
+        #{overflow = wrap}
+        mag = mag / 10
+        #{overflow = wrap}
         pos = pos - 1
-    } (n != 0)
+    } (mag != 0)
     neg == 1 -> out[0] = 45
 }
 
@@ -211,15 +228,22 @@ u64-to-str = (u u64) (out str) {
     tmp u64 = u
     digits = 0
     {
+        #{overflow = wrap}
         digits = digits + 1
+        #{overflow = wrap}
         tmp = tmp / 10
     } (tmp > 0)
     out = with-cap(digits)
+    #{overflow = wrap}
     pos = digits - 1
     {
         d = u % 10
-        out[pos] = d + 48
+        #{overflow = wrap}
+        ascii = d + 48
+        out[pos] = ascii
+        #{overflow = wrap}
         u = u / 10
+        #{overflow = wrap}
         pos = pos - 1
     } (u > 0)
 }
@@ -265,19 +289,28 @@ int.to-str = () (out str) {
     digits = 0
     tmp = n
     {
+        #{overflow = wrap}
         digits = digits + 1
+        #{overflow = wrap}
         tmp = tmp / 10
     } (tmp != 0)
     total = digits
+    #{overflow = wrap}
     neg == 1 -> total = total + 1
     out = with-cap(total)
+    #{overflow = wrap}
     pos = digits - 1
     neg == 1 -> pos = digits
     {
         d = n % 10
+        #{overflow = wrap}
         neg == 1 -> d = 0 - d
-        out[pos] = d + 48
+        #{overflow = wrap}
+        ascii = d + 48
+        out[pos] = ascii
+        #{overflow = wrap}
         n = n / 10
+        #{overflow = wrap}
         pos = pos - 1
     } (n != 0)
     neg == 1 -> out[0] = 45
@@ -364,6 +397,7 @@ f64-to-str = (x f64) (out str) {
     ax f64 = x
     x < 0.0 -> {
         neg = 1
+        #{overflow = wrap}
         ax = 0.0 - x
     }
 
@@ -371,21 +405,29 @@ f64-to-str = (x f64) (out str) {
     e i64 = f64-to-i64(math.floor(math.log10(ax)))
 
     ; 邊界調整：若 ax >= 10^(e+1)，則 e++
+    #{overflow = wrap}
     upper f64 = math.exp(i64-to-f64(e + 1) * LN10)
+    #{overflow = wrap}
     ax >= upper -> e = e + 1
 
     ; 計算 6 位有效數字的整數尾數
     ; m = round(ax / 10^e * 100000)
+    #{overflow = wrap}
     base f64 = math.exp(i64-to-f64(e) * LN10)
     ax < base -> {
+        #{overflow = wrap}
         e = e - 1
+        #{overflow = wrap}
         base = math.exp(i64-to-f64(e) * LN10)
     }
+    #{overflow = wrap}
     m i64 = f64-to-i64(ax / base * 100000.0 + 0.5)
 
     ; 四捨五入溢出處理
     m >= 1000000 -> {
+        #{overflow = wrap}
         m = m / 10
+        #{overflow = wrap}
         e = e + 1
     }
 
@@ -394,8 +436,11 @@ f64-to-str = (x f64) (out str) {
     tmp = m
     i = 5
     {
+        #{overflow = wrap}
         digits[i] = (tmp % 10) + 48
+        #{overflow = wrap}
         tmp = tmp / 10
+        #{overflow = wrap}
         i = i - 1
     } (i >= 0)
 
@@ -407,6 +452,7 @@ f64-to-str = (x f64) (out str) {
             last-nz = i
             i = -1
         }
+        #{overflow = wrap}
         i = i - 1
     } (i >= 0)
 
@@ -423,76 +469,98 @@ f64-to-str = (x f64) (out str) {
         pos = 0
         neg == 1 -> {
             out[pos] = 45
+            #{overflow = wrap}
             pos = pos + 1
         }
         out[pos] = digits[0]
+        #{overflow = wrap}
         pos = pos + 1
         last-nz >= 1 -> {
             out[pos] = 46
+            #{overflow = wrap}
             pos = pos + 1
             j = 1
             {
                 out[pos] = digits[j]
+                #{overflow = wrap}
                 pos = pos + 1
+                #{overflow = wrap}
                 j = j + 1
             } (j <= last-nz)
         }
         out[pos] = 101
+        #{overflow = wrap}
         pos = pos + 1
         ae i64 = e
         {
             ae < 0 -> {
                 out[pos] = 45
+                #{overflow = wrap}
                 pos = pos + 1
+                #{overflow = wrap}
                 ae = 0 - ae
             }
             -> {
                 out[pos] = 43
+                #{overflow = wrap}
                 pos = pos + 1
             }
         }
         estr = i64-to-str(ae)
-        estr.len == 1 -> {
+        estr.len-bytes() == 1 -> {
             out[pos] = 48
+            #{overflow = wrap}
             pos = pos + 1
         }
         j = 0
         {
             out[pos] = estr[j]
+            #{overflow = wrap}
             pos = pos + 1
+            #{overflow = wrap}
             j = j + 1
-        } (j < estr.len)
+        } (j < estr.len-bytes())
         return
     }
 
     ; 固定記號
     e >= 0 -> {
+        #{overflow = wrap}
         int-digits = e + 1
         total = int-digits
+        #{overflow = wrap}
         neg == 1 -> total = total + 1
         last-nz >= int-digits -> {
+            #{overflow = wrap}
             total = total + 1
+            #{overflow = wrap}
             total = total + (last-nz - int-digits + 1)
         }
         out = with-cap(total)
         pos = 0
         neg == 1 -> {
             out[pos] = 45
+            #{overflow = wrap}
             pos = pos + 1
         }
         j = 0
         {
             out[pos] = digits[j]
+            #{overflow = wrap}
             pos = pos + 1
+            #{overflow = wrap}
             j = j + 1
         } (j < int-digits)
         last-nz >= int-digits -> {
             out[pos] = 46
+            #{overflow = wrap}
             pos = pos + 1
             j = int-digits
             {
                 out[pos] = digits[j]
+                #{overflow = wrap}
                 pos = pos + 1
+                #{overflow = wrap}
                 j = j + 1
             } (j <= last-nz)
         }
@@ -500,29 +568,39 @@ f64-to-str = (x f64) (out str) {
     }
 
     ; e < 0: 0.00dddd
+    #{overflow = wrap}
     lead-zeros = 0 - e - 1
+    #{overflow = wrap}
     total = 2 + lead-zeros + last-nz + 1
+    #{overflow = wrap}
     neg == 1 -> total = total + 1
     out = with-cap(total)
     pos = 0
     neg == 1 -> {
         out[pos] = 45
+        #{overflow = wrap}
         pos = pos + 1
     }
     out[pos] = 48
+    #{overflow = wrap}
     pos = pos + 1
     out[pos] = 46
+    #{overflow = wrap}
     pos = pos + 1
     j = 0
     {
         out[pos] = 48
+        #{overflow = wrap}
         pos = pos + 1
+        #{overflow = wrap}
         j = j + 1
     } (j < lead-zeros)
     j = 0
     {
         out[pos] = digits[j]
+        #{overflow = wrap}
         pos = pos + 1
+        #{overflow = wrap}
         j = j + 1
     } (j <= last-nz)
 }
@@ -547,6 +625,7 @@ f32.to-str = () (out str) {
 ; div: 整數除法，回傳商（a ÷ b）
 ; b 為 0 時行為未定義（執行時期錯誤）
 div = (a int, b int) (q int) {
+    #{overflow = wrap}
     q = a / b
 }
 
@@ -570,13 +649,14 @@ float.is-nan = () (yes bool) {
 
 ; is-inf: 判斷是否為無窮大
 float.is-inf = () (yes bool) {
+    #{overflow = wrap}
     yes = . + . == .
 }
 ; [n]num.zero / []num.zero — 使用 llvm.memset 置零
-; build-in (ForwardFunc: arr-zero → @llvm.memset.p0i8.i64)
+#{buildin=arr-zero}
 ; 定長陣列：總位元組 = n * sizeof(num) 編譯期常量
 ; 堆切片：運行時取 .len() * sizeof(num) 傳入 llvm.memset
-; [n]num.zero = () {
+arr-zero = () { }
 ;     i = 0
 ;     for i < n {
 ;         .[i] = 0
@@ -594,12 +674,12 @@ float.is-inf = () (yes bool) {
 ; ═══════════════════════════════════════════════
 ; 位元操作（內建）
 ; ═══════════════════════════════════════════════
-; build-in (ForwardFunc: rotate-left)
+#{buildin=rotate-left}
 ; rotate-left: 整數左旋 n 位元（映射到 ARM64 ROR via llvm.fshl）
-; rotate-left = (x i64, n i64) (r i64) { }
-; build-in (ForwardFunc: rotate-right)
+rotate-left = (x i64, n i64) (r i64) { }
+#{buildin=rotate-right}
 ; rotate-right: 整數右旋 n 位元（映射到 ARM64 ROR via llvm.fshr）
-; rotate-right = (x i64, n i64) (r i64) { }
-; build-in (ForwardFunc: store-le-u32)
+rotate-right = (x i64, n i64) (r i64) { }
+#{buildin=store-le-u32}
 ; store-le-u32: 將 u32 值以小端序寫入位元組陣列指定偏移位置
-; store-le-u32 = (arr i64, offset i64, val u32) { }
+store-le-u32 = (arr i64, offset i64, val u32) { }

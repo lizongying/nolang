@@ -817,9 +817,64 @@ func (g *Generator) callBuiltin(sb *strings.Builder, fnName string, hasArgs bool
 				}
 			}
 		}
-		// Default fallback: generic i64* load (for raw pointers)
+		// Expression-result arguments (IndexExpression like parts[i], CallExpression,
+		// etc.): evaluate to an SSA value and dispatch on its LLVM type. The old
+		// default fallback blindly did `load i64, i64* <value>` which mis-treats a
+		// loaded struct value (e.g. a vec element of %txt) as an i64 pointer,
+		// producing malformed IR that opt rejects (and garbage if tolerated).
 		a := evalArgs()
-		arg := a[0]
+		arg := ""
+		if len(a) > 0 {
+			arg = a[0]
+		}
+		if arg != "" && g.ssaTypes != nil {
+			if t, ok := g.ssaTypes[arg]; ok && t != "" {
+				isPtr := strings.HasSuffix(t, "*")
+				base := strings.TrimSuffix(t, "*")
+				switch base {
+				case "%str-long":
+					lenReg := g.tmpReg("builtin.len")
+					if isPtr {
+						lenGEP := g.tmpReg("builtin.len.gep")
+						if sb != nil {
+							sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%str-long, %%str-long* %s, i32 0, i32 0\n", g.indent(), lenGEP, arg))
+							sb.WriteString(fmt.Sprintf("%s%s = load i64, i64* %s\n", g.indent(), lenReg, lenGEP))
+						}
+					} else if sb != nil {
+						sb.WriteString(fmt.Sprintf("%s%s = extractvalue %%str-long %s, 0\n", g.indent(), lenReg, arg))
+					}
+					return lenReg
+				case "%txt":
+					evReg := g.tmpReg("builtin.len.ev")
+					lenReg := g.tmpReg("builtin.len")
+					if isPtr {
+						lenGEP := g.tmpReg("builtin.len.gep")
+						if sb != nil {
+							sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%txt, %%txt* %s, i32 0, i32 1\n", g.indent(), lenGEP, arg))
+							sb.WriteString(fmt.Sprintf("%s%s = load i8, i8* %s\n", g.indent(), evReg, lenGEP))
+							sb.WriteString(fmt.Sprintf("%s%s = zext i8 %s to i64\n", g.indent(), lenReg, evReg))
+						}
+					} else if sb != nil {
+						sb.WriteString(fmt.Sprintf("%s%s = extractvalue %%txt %s, 1\n", g.indent(), evReg, arg))
+						sb.WriteString(fmt.Sprintf("%s%s = zext i8 %s to i64\n", g.indent(), lenReg, evReg))
+					}
+					return lenReg
+				case "%vec", "%arr":
+					lenReg := g.tmpReg("builtin.len")
+					if isPtr {
+						lenGEP := g.tmpReg("builtin.len.gep")
+						if sb != nil {
+							sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %s, %s* %s, i32 0, i32 0\n", g.indent(), lenGEP, base, base, arg))
+							sb.WriteString(fmt.Sprintf("%s%s = load i64, i64* %s\n", g.indent(), lenReg, lenGEP))
+						}
+					} else if sb != nil {
+						sb.WriteString(fmt.Sprintf("%s%s = extractvalue %s %s, 0\n", g.indent(), lenReg, base, arg))
+					}
+					return lenReg
+				}
+			}
+		}
+		// Default fallback: generic i64* load (for raw pointers)
 		lenReg := g.tmpReg("builtin.len")
 		if sb != nil {
 			sb.WriteString(fmt.Sprintf("%s%s = load i64, i64* %s\n", g.indent(), lenReg, arg))
@@ -2744,6 +2799,51 @@ func (g *Generator) callBuiltin(sb *strings.Builder, fnName string, hasArgs bool
 		return waitExt
 	}
 
+	// process-waitpid-nohang: non-blocking waitpid (WNOHANG)
+	// Args: pid i64
+	// Returns -1 if the child is still running (waitpid returned 0),
+	// else the exit code (WEXITSTATUS). Errors (waitpid < 0) also return -1.
+	if fnName == "process-waitpid-nohang" && hasArgs && nArgs >= 1 {
+		a := evalArgs()
+		pidVal := a[0]
+		waitStatus := g.tmpReg("proc.wnohang.status")
+		waitPidTrunc := g.tmpReg("proc.wnohang.pid")
+		waitRet := g.tmpReg("proc.wnohang.ret")
+		waitRetExt := g.tmpReg("proc.wnohang.retext")
+		// WNOHANG = 1 (POSIX). Used to poll without blocking.
+		waitOptConst := g.tmpReg("proc.wnohang.opt")
+		waitLd := g.tmpReg("proc.wnohang.ld")
+		waitShift := g.tmpReg("proc.wnohang.shift")
+		waitCode := g.tmpReg("proc.wnohang.code")
+		waitCodeExt := g.tmpReg("proc.wnohang.codeext")
+		// still running if waitpid returned <= 0 (0 = no state change, <0 = error).
+		stillRunning := g.tmpReg("proc.wnohang.still")
+		negOne := g.tmpReg("proc.wnohang.neg1")
+		result := g.tmpReg("proc.wnohang.result")
+		waitpidFn := libcFnFor(g.goos(), "waitpid")
+		if g.goos() == "windows" {
+			waitpidFn = "nolang.win_waitpid"
+		}
+		if sb != nil {
+			sb.WriteString(fmt.Sprintf("%s%s = alloca i32\n", g.indent(), waitStatus))
+			sb.WriteString(fmt.Sprintf("%s%s = trunc i64 %s to i32\n", g.indent(), waitPidTrunc, pidVal))
+			sb.WriteString(fmt.Sprintf("%s%s = add i32 0, 1\n", g.indent(), waitOptConst))
+			sb.WriteString(fmt.Sprintf("%s%s = call i32 @%s(i32 %s, i32* %s, i32 %s)\n", g.indent(), waitRet, waitpidFn, waitPidTrunc, waitStatus, waitOptConst))
+			sb.WriteString(fmt.Sprintf("%s%s = sext i32 %s to i64\n", g.indent(), waitRetExt, waitRet))
+			// still running if waitpid returned <= 0 (0 = no state change, <0 = error: keep polling).
+			sb.WriteString(fmt.Sprintf("%s%s = icmp sle i64 %s, 0\n", g.indent(), stillRunning, waitRetExt))
+			// compute exit code from status (WEXITSTATUS: (status >> 8) & 0xFF).
+			sb.WriteString(fmt.Sprintf("%s%s = load i32, i32* %s\n", g.indent(), waitLd, waitStatus))
+			sb.WriteString(fmt.Sprintf("%s%s = lshr i32 %s, 8\n", g.indent(), waitShift, waitLd))
+			sb.WriteString(fmt.Sprintf("%s%s = and i32 %s, 255\n", g.indent(), waitCode, waitShift))
+			sb.WriteString(fmt.Sprintf("%s%s = sext i32 %s to i64\n", g.indent(), waitCodeExt, waitCode))
+			sb.WriteString(fmt.Sprintf("%s%s = add i64 0, -1\n", g.indent(), negOne))
+			// final: stillRunning -> -1 (sentinel) else exit code.
+			sb.WriteString(fmt.Sprintf("%s%s = select i1 %s, i64 %s, i64 %s\n", g.indent(), result, stillRunning, negOne, waitCodeExt))
+		}
+		return result
+	}
+
 	// process-exec: replace current process with new program
 	// Args: program str, arg str
 	// Calls execlp(program, program, arg, NULL)
@@ -4511,7 +4611,40 @@ func (g *Generator) emitContainerToStr(sb *strings.Builder, varName, varType str
 	sb.WriteString(fmt.Sprintf("%scall void @%s(%s* %s, %%str-long* %s)\n",
 		g.indent(), sanitizeLLVMName(methodName), recvType, recvPtr, outBuf))
 
-	// Register as statement-level temporary for heap cleanup
+	return g.emitToStrResult(sb, outBuf, methodName)
+}
+
+// emitToStrResult finalizes a .to-str() call: it returns the %str-long* pointer
+// the caller should treat as the formatted string, and registers it for heap
+// cleanup at statement end.
+//
+// Ownership subtlety (P0 double-free root cause): some .to-str methods return
+// ?str — i.e. an %option box whose data field (offset 8) holds a heap-allocated
+// inner %str-long, not a bare string. A scalar byte is represented as %vec in
+// LLVM and is resolved to the []byte.to-str variant, so a scalar `b.to-str()`
+// also hits this path. In that case `outBuf` is the option shell: reading
+// outBuf.data as string bytes yields garbage, and freeing outBuf.data frees the
+// option box (the wrong object) → UAF / double-free of the shared heap.
+//
+// Fix: when the resolved .to-str method returns %option, extract the inner
+// %str-long from the box and return THAT. Its data is freed once at statement
+// end (the 24-byte box struct may leak, which is harmless and far safer than a
+// double-free). For methods that return a bare %str-long the previous behavior
+// is preserved.
+func (g *Generator) emitToStrResult(sb *strings.Builder, outBuf, methodName string) string {
+	if g.funcRetTypes != nil {
+		if outLLVM, ok := g.funcRetTypes[methodName]; ok && outLLVM == "%option" {
+			boxGEP := g.tmpReg("tostr.box.gep")
+			sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%option, %%option* %s, i32 0, i32 1\n",
+				g.indent(), boxGEP, outBuf))
+			boxLoad := g.tmpReg("tostr.box")
+			sb.WriteString(fmt.Sprintf("%s%s = load i64, i64* %s\n", g.indent(), boxLoad, boxGEP))
+			innerPtr := g.tmpReg("tostr.inner")
+			sb.WriteString(fmt.Sprintf("%s%s = inttoptr i64 %s to %%str-long*\n", g.indent(), innerPtr, boxLoad))
+			g.stmtTemporaries = append(g.stmtTemporaries, innerPtr)
+			return innerPtr
+		}
+	}
 	g.stmtTemporaries = append(g.stmtTemporaries, outBuf)
 	return outBuf
 }
@@ -4555,9 +4688,7 @@ func (g *Generator) emitContainerExprToStr(sb *strings.Builder, expr parser.Expr
 	sb.WriteString(fmt.Sprintf("%scall void @%s(%s* %s, %%str-long* %s)\n",
 		g.indent(), sanitizeLLVMName(methodName), containerType, v, outBuf))
 
-	// Register as statement-level temporary for heap cleanup.
-	g.stmtTemporaries = append(g.stmtTemporaries, outBuf)
-	return outBuf
+	return g.emitToStrResult(sb, outBuf, methodName)
 }
 
 // resolveToStrMethod resolves the monomorphized to-str method name for a
@@ -4569,32 +4700,36 @@ func (g *Generator) resolveToStrMethod(varName, varType string) string {
 	// Build candidate method names based on the variable type
 	candidates := []string{}
 	if varType == "%vec" {
-		// vec: try []T.to-str, _xT.to-str, vec.to-str
+		// vec: try _xT.to-str (monomorphized slice method), []T.to-str, vec.to-str.
+		// The monomorphized name (_x<elem>.to-str) is the ACTUAL emitted LLVM
+		// function — the source `[]<elem>.to-str` is rewritten to `_x<elem>.to-str`
+		// by the slice-generic monomorphizer (transpiler.go), so we must prefer it.
 		if g.arrayElemTypes != nil {
 			if et, ok := g.arrayElemTypes[varName]; ok {
 				et = strings.TrimPrefix(et, "%")
 				if elemAliases, ok := llvmTypeToNolang[et]; ok {
 					for _, alias := range elemAliases {
-						candidates = append(candidates, "[]"+alias+".to-str")
 						candidates = append(candidates, "_x"+alias+".to-str")
+						candidates = append(candidates, "[]"+alias+".to-str")
 					}
 				}
 			}
 		}
 		candidates = append(candidates, "vec.to-str")
 	} else if varType == "%arr" {
-		// arr: try []T.to-str, _NT.to-str, [n]t.to-str, arr.to-str
+		// arr: try _NT.to-str / []T.to-str, [n]t.to-str, arr.to-str.
+		// Prefer the monomorphized _Nx<elem>.to-str name (actual emitted function).
 		if g.arrayElemTypes != nil {
 			if et, ok := g.arrayElemTypes[varName]; ok {
 				et = strings.TrimPrefix(et, "%")
 				if elemAliases, ok := llvmTypeToNolang[et]; ok {
 					for _, alias := range elemAliases {
-						candidates = append(candidates, "[]"+alias+".to-str")
 						if g.arraySizes != nil {
 							if arrSize, ok := g.arraySizes[varName]; ok {
 								candidates = append(candidates, fmt.Sprintf("_%dx%s.to-str", arrSize, alias))
 							}
 						}
+						candidates = append(candidates, "[]"+alias+".to-str")
 					}
 				}
 			}

@@ -3,6 +3,7 @@ package parser
 import (
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/lizongying/nolang/lexer"
 )
@@ -54,6 +55,13 @@ type Parser struct {
 	// named function type aliases (e.g. `test-cb = ()` then
 	// `f = (cb test-cb) {}`) are accepted. Defaults to false (zero value).
 	AllowAnonymousFnType bool
+
+	// SkipUnwrapLowering 控制是否跳過 UnwrapAssignStatement 的 lowering
+	//（展開為 __unwrap_N 區塊）。預設 false：編譯器需要展開後的 IR。
+	// `no fmt` 設定為 true，使 formatter 取得 surface AST 中的
+	// UnwrapAssignStatement 節點，直接渲染 `?=` / `=`，避免輸出不可重解析的
+	// __unwrap_N 區塊（見 src/fmt 與 no fmt 的 reparse/idempotency 測試）。
+	SkipUnwrapLowering bool
 }
 
 // blockType — { body } 內部的型別分類
@@ -911,6 +919,11 @@ func setDoc(stmt Statement, doc *CommentGroup) {
 		s.Doc = doc
 	case *TypeAlias:
 		s.Doc = doc
+	case *AnnotationStatement:
+		s.Doc = doc
+		if os.Getenv("NOLANG_FMTDBG") != "" && doc != nil {
+			fmt.Fprintf(os.Stderr, "[DBG setDoc] AnnotationStatement got doc=%q\n", doc.List[0].Text)
+		}
 	}
 }
 
@@ -924,6 +937,22 @@ func (p *Parser) peekError(t lexer.TokenType) {
 		t.String(), p.peekToken.Type.String())
 }
 
+func dbgLeakState(tag string, prog *Program) {
+	bodyLen := -1
+	topLets := 0
+	for _, st := range prog.Statements {
+		if fd, ok := st.(*FunctionDefinition); ok && fd.Name == "txt.from-hex" && fd.Body != nil {
+			bodyLen = len(fd.Body.Statements)
+		}
+		if ls, ok := st.(*LetStatement); ok && ls.Name != nil {
+			if ls.Name.Value == "n" || ls.Name.Value == "out2" || ls.Name.Value == "out" {
+				topLets++
+			}
+		}
+	}
+	fmt.Fprintf(os.Stderr, "[debug-self][%s] from-hex bodyLen=%d topLeakedLets=%d totalTop=%d\n", tag, bodyLen, topLets, len(prog.Statements))
+}
+
 func (p *Parser) ParseProgram() *Program {
 	program := &Program{Statements: []Statement{}}
 	for p.currentToken.Type != lexer.EOF {
@@ -932,6 +961,23 @@ func (p *Parser) ParseProgram() *Program {
 		if stmt != nil {
 			setDoc(stmt, doc)
 			p.attachInlineComment(stmt)
+			if os.Getenv("NOLANG_DEBUG_SELF") != "" && strings.Contains(p.Filename, "txt") {
+				nm := ""
+				switch v := stmt.(type) {
+				case *FunctionDefinition:
+					nm = v.Name
+				case *LetStatement:
+					if v.Name != nil {
+						nm = v.Name.Value
+					}
+				}
+				fmt.Fprintf(os.Stderr, "[debug-self][parseLoop] %T name=%q bodyLen=%d\n", stmt, nm, func() int {
+					if fd, ok := stmt.(*FunctionDefinition); ok && fd.Body != nil {
+						return len(fd.Body.Statements)
+					}
+					return -1
+				}())
+			}
 			program.Statements = append(program.Statements, stmt)
 		}
 
@@ -955,7 +1001,13 @@ func (p *Parser) ParseProgram() *Program {
 	// 語義副表：連接 parser 增量推斷結果，並執行獨立 Resolver pass
 	// （平台鍵/泛型參數/embed 由註解收尾計算），實現解析/语义分离。
 	program.Sem = p.sem
+	if os.Getenv("NOLANG_DEBUG_SELF") != "" && strings.Contains(p.Filename, "txt") {
+		dbgLeakState("PRE-Resolve", program)
+	}
 	ResolveProgram(program)
+	if os.Getenv("NOLANG_DEBUG_SELF") != "" && strings.Contains(p.Filename, "txt") {
+		dbgLeakState("POST-Resolve", program)
+	}
 
 	// Lowering pass：將解析期產出的表層 match 節點（SurfaceMatch）展開為核心
 	// AST（IfExpression 鏈）。必須在 Resolver 之後執行，因為 desugar 需要
@@ -964,6 +1016,9 @@ func (p *Parser) ParseProgram() *Program {
 		fmt.Fprintf(os.Stderr, "[debug-it] ParseProgram about to lower: %d statements, filename=%s\n", len(program.Statements), p.Filename)
 	}
 	p.lowerProgram(program)
+	if os.Getenv("NOLANG_DEBUG_SELF") != "" && strings.Contains(p.Filename, "txt") {
+		dbgLeakState("POST-lower", program)
+	}
 
 	program.TrailingComments = p.collectDocComments()
 	program.Warnings = append([]string{}, p.Warnings()...)

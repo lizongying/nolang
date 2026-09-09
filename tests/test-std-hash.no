@@ -6,6 +6,7 @@
 ; # std/crypto/des
 ; # std/crypto/crc-32
 ; # std/crypto/fnv-1a-32
+; # std/crypto/blake2
 ; # std/io
 
 ; test-std-hash.no — 標準庫 hash 模組測試
@@ -21,20 +22,20 @@
 ; crc32("")=00000000
 h = crc-32.crc-32('', 0)
 io.out('crc32("")=')
-print('{h:08x}')
+io.out(format('{h:08x}'))
 print('')
 
 ; crc32("hello")=3610a686
 h = crc-32.crc-32('hello', 5)
 io.out('crc32("hello")=')
-print('{h:08x}')
+io.out(format('{h:08x}'))
 print('')
 
 ; crc32("fox")=414fa339
 s = 'The quick brown fox jumps over the lazy dog'
 h = crc-32.crc-32(s, 43)
 io.out('crc32("fox")=')
-print('{h:08x}')
+io.out(format('{h:08x}'))
 print('')
 
 ; ═══════════════════════════════════════════
@@ -44,19 +45,19 @@ print('')
 ; fnv1a32("")=811c9dc5
 h = fnv-1a-32.fnv-1a-32('', 0)
 io.out('fnv1a32("")=')
-print('{h:08x}')
+io.out(format('{h:08x}'))
 print('')
 
 ; fnv1a32("hello")=4f9f2cab
 h = fnv-1a-32.fnv-1a-32('hello', 5)
 io.out('fnv1a32("hello")=')
-print('{h:08x}')
+io.out(format('{h:08x}'))
 print('')
 
 ; fnv1a32("fox")=048fff90
 h = fnv-1a-32.fnv-1a-32(s, 43)
 io.out('fnv1a32("fox")=')
-print('{h:08x}')
+io.out(format('{h:08x}'))
 print('')
 
 ; ═══════════════════════════════════════════
@@ -69,7 +70,7 @@ md5-out [16]byte
 md5-out = md5.md5('')
 io.out('md5("")=')
 i <- [0..16): {
-    print('{md5-out[i]:02x}')
+    io.out(format('{md5-out[i]:02x}'))
 }
 print('')
 
@@ -77,7 +78,7 @@ print('')
 md5-out = md5.md5('hello')
 io.out('md5("hello")=')
 i <- [0..16): {
-    print('{md5-out[i]:02x}')
+    io.out(format('{md5-out[i]:02x}'))
 }
 print('')
 
@@ -85,7 +86,7 @@ print('')
 md5-out = md5.md5(s)
 io.out('md5("fox")=')
 i <- [0..16): {
-    print('{md5-out[i]:02x}')
+    io.out(format('{md5-out[i]:02x}'))
 }
 print('')
 
@@ -113,11 +114,11 @@ h3 = 271733878
 h4 = 3285377520
 h0, h1, h2, h3, h4 = sha1.sha1-block(block1, h0, h1, h2, h3, h4)
 io.out('sha1-zero-block=')
-print('{h0:08x}')
-print('{h1:08x}')
-print('{h2:08x}')
-print('{h3:08x}')
-print('{h4:08x}')
+io.out(format('{h0:08x}'))
+io.out(format('{h1:08x}'))
+io.out(format('{h2:08x}'))
+io.out(format('{h3:08x}'))
+io.out(format('{h4:08x}'))
 print('')
 
 ; ═══════════════════════════════════════════
@@ -136,11 +137,11 @@ h3 = 271733878
 h4 = 3285377520
 h0, h1, h2, h3, h4 = sha1.sha1-block(block1empty, h0, h1, h2, h3, h4)
 io.out('sha1-empty=')
-print('{h0:08x}')
-print('{h1:08x}')
-print('{h2:08x}')
-print('{h3:08x}')
-print('{h4:08x}')
+io.out(format('{h0:08x}'))
+io.out(format('{h1:08x}'))
+io.out(format('{h2:08x}'))
+io.out(format('{h3:08x}'))
+io.out(format('{h4:08x}'))
 print('')
 
 ; ═══════════════════════════════════════════
@@ -159,11 +160,11 @@ h3 = 271733878
 h4 = 3285377520
 h0, h1, h2, h3, h4 = sha1.sha1-block(block1abc, h0, h1, h2, h3, h4)
 io.out('sha1-abc=')
-print('{h0:08x}')
-print('{h1:08x}')
-print('{h2:08x}')
-print('{h3:08x}')
-print('{h4:08x}')
+io.out(format('{h0:08x}'))
+io.out(format('{h1:08x}'))
+io.out(format('{h2:08x}'))
+io.out(format('{h3:08x}'))
+io.out(format('{h4:08x}'))
 print('')
 
 ; ═══════════════════════════════════════════
@@ -177,11 +178,11 @@ h3 = 271733878
 h4 = 3285377520
 h0, h1, h2, h3, h4 = sha1.sha1-block(block1empty, h0, h1, h2, h3, h4)
 io.out('sha1("")=')
-print('{h0:08x}')
-print('{h1:08x}')
-print('{h2:08x}')
-print('{h3:08x}')
-print('{h4:08x}')
+io.out(format('{h0:08x}'))
+io.out(format('{h1:08x}'))
+io.out(format('{h2:08x}'))
+io.out(format('{h3:08x}'))
+io.out(format('{h4:08x}'))
 print('')
 
 ; ═══════════════════════════════════════════
@@ -200,11 +201,11 @@ h3 = 271733878
 h4 = 3285377520
 h0, h1, h2, h3, h4 = sha1.sha1-block(block1hello, h0, h1, h2, h3, h4)
 io.out('sha1("hello")=')
-print('{h0:08x}')
-print('{h1:08x}')
-print('{h2:08x}')
-print('{h3:08x}')
-print('{h4:08x}')
+io.out(format('{h0:08x}'))
+io.out(format('{h1:08x}'))
+io.out(format('{h2:08x}'))
+io.out(format('{h3:08x}'))
+io.out(format('{h4:08x}'))
 print('')
 
 ; ═══════════════════════════════════════════
@@ -223,11 +224,11 @@ h3 = 271733878
 h4 = 3285377520
 h0, h1, h2, h3, h4 = sha1.sha1-block(block1fox, h0, h1, h2, h3, h4)
 io.out('sha1("fox")=')
-print('{h0:08x}')
-print('{h1:08x}')
-print('{h2:08x}')
-print('{h3:08x}')
-print('{h4:08x}')
+io.out(format('{h0:08x}'))
+io.out(format('{h1:08x}'))
+io.out(format('{h2:08x}'))
+io.out(format('{h3:08x}'))
+io.out(format('{h4:08x}'))
 print('')
 
 ; ═══════════════════════════════════════════
@@ -254,14 +255,14 @@ h6 = 528734635
 h7 = 1541459225
 h0, h1, h2, h3, h4, h5, h6, h7 = sha256.sha256-block(block256, h0, h1, h2, h3, h4, h5, h6, h7)
 io.out('sha256-zero-block=')
-print('{h0:08x}')
-print('{h1:08x}')
-print('{h2:08x}')
-print('{h3:08x}')
-print('{h4:08x}')
-print('{h5:08x}')
-print('{h6:08x}')
-print('{h7:08x}')
+io.out(format('{h0:08x}'))
+io.out(format('{h1:08x}'))
+io.out(format('{h2:08x}'))
+io.out(format('{h3:08x}'))
+io.out(format('{h4:08x}'))
+io.out(format('{h5:08x}'))
+io.out(format('{h6:08x}'))
+io.out(format('{h7:08x}'))
 print('')
 
 ; ═══════════════════════════════════════════
@@ -283,14 +284,14 @@ h6 = 528734635
 h7 = 1541459225
 h0, h1, h2, h3, h4, h5, h6, h7 = sha256.sha256-block(block256empty, h0, h1, h2, h3, h4, h5, h6, h7)
 io.out('sha256-empty=')
-print('{h0:08x}')
-print('{h1:08x}')
-print('{h2:08x}')
-print('{h3:08x}')
-print('{h4:08x}')
-print('{h5:08x}')
-print('{h6:08x}')
-print('{h7:08x}')
+io.out(format('{h0:08x}'))
+io.out(format('{h1:08x}'))
+io.out(format('{h2:08x}'))
+io.out(format('{h3:08x}'))
+io.out(format('{h4:08x}'))
+io.out(format('{h5:08x}'))
+io.out(format('{h6:08x}'))
+io.out(format('{h7:08x}'))
 print('')
 
 ; ═══════════════════════════════════════════
@@ -312,14 +313,14 @@ h6 = 528734635
 h7 = 1541459225
 h0, h1, h2, h3, h4, h5, h6, h7 = sha256.sha256-block(block256abc, h0, h1, h2, h3, h4, h5, h6, h7)
 io.out('sha256-abc=')
-print('{h0:08x}')
-print('{h1:08x}')
-print('{h2:08x}')
-print('{h3:08x}')
-print('{h4:08x}')
-print('{h5:08x}')
-print('{h6:08x}')
-print('{h7:08x}')
+io.out(format('{h0:08x}'))
+io.out(format('{h1:08x}'))
+io.out(format('{h2:08x}'))
+io.out(format('{h3:08x}'))
+io.out(format('{h4:08x}'))
+io.out(format('{h5:08x}'))
+io.out(format('{h6:08x}'))
+io.out(format('{h7:08x}'))
 print('')
 
 ; ═══════════════════════════════════════════
@@ -336,14 +337,14 @@ h6 = 528734635
 h7 = 1541459225
 h0, h1, h2, h3, h4, h5, h6, h7 = sha256.sha256-block(block256empty, h0, h1, h2, h3, h4, h5, h6, h7)
 io.out('sha256("")=')
-print('{h0:08x}')
-print('{h1:08x}')
-print('{h2:08x}')
-print('{h3:08x}')
-print('{h4:08x}')
-print('{h5:08x}')
-print('{h6:08x}')
-print('{h7:08x}')
+io.out(format('{h0:08x}'))
+io.out(format('{h1:08x}'))
+io.out(format('{h2:08x}'))
+io.out(format('{h3:08x}'))
+io.out(format('{h4:08x}'))
+io.out(format('{h5:08x}'))
+io.out(format('{h6:08x}'))
+io.out(format('{h7:08x}'))
 print('')
 
 ; ═══════════════════════════════════════════
@@ -365,14 +366,14 @@ h6 = 528734635
 h7 = 1541459225
 h0, h1, h2, h3, h4, h5, h6, h7 = sha256.sha256-block(block256hello, h0, h1, h2, h3, h4, h5, h6, h7)
 io.out('sha256("hello")=')
-print('{h0:08x}')
-print('{h1:08x}')
-print('{h2:08x}')
-print('{h3:08x}')
-print('{h4:08x}')
-print('{h5:08x}')
-print('{h6:08x}')
-print('{h7:08x}')
+io.out(format('{h0:08x}'))
+io.out(format('{h1:08x}'))
+io.out(format('{h2:08x}'))
+io.out(format('{h3:08x}'))
+io.out(format('{h4:08x}'))
+io.out(format('{h5:08x}'))
+io.out(format('{h6:08x}'))
+io.out(format('{h7:08x}'))
 print('')
 
 ; ═══════════════════════════════════════════
@@ -394,14 +395,14 @@ h6 = 528734635
 h7 = 1541459225
 h0, h1, h2, h3, h4, h5, h6, h7 = sha256.sha256-block(block256fox, h0, h1, h2, h3, h4, h5, h6, h7)
 io.out('sha256("fox")=')
-print('{h0:08x}')
-print('{h1:08x}')
-print('{h2:08x}')
-print('{h3:08x}')
-print('{h4:08x}')
-print('{h5:08x}')
-print('{h6:08x}')
-print('{h7:08x}')
+io.out(format('{h0:08x}'))
+io.out(format('{h1:08x}'))
+io.out(format('{h2:08x}'))
+io.out(format('{h3:08x}'))
+io.out(format('{h4:08x}'))
+io.out(format('{h5:08x}'))
+io.out(format('{h6:08x}'))
+io.out(format('{h7:08x}'))
 print('')
 
 ; ═══════════════════════════════════════════
@@ -434,14 +435,14 @@ test-sha512 = () {
     h7 = 6620516959819538809
     h0, h1, h2, h3, h4, h5, h6, h7 = sha512.sha512-block(block512, h0, h1, h2, h3, h4, h5, h6, h7)
     io.out('sha512-zero-block=')
-    print('{h0:016x}')
-    print('{h1:016x}')
-    print('{h2:016x}')
-    print('{h3:016x}')
-    print('{h4:016x}')
-    print('{h5:016x}')
-    print('{h6:016x}')
-    print('{h7:016x}')
+    io.out(format('{h0:016x}'))
+    io.out(format('{h1:016x}'))
+    io.out(format('{h2:016x}'))
+    io.out(format('{h3:016x}'))
+    io.out(format('{h4:016x}'))
+    io.out(format('{h5:016x}'))
+    io.out(format('{h6:016x}'))
+    io.out(format('{h7:016x}'))
     print('')
 
     ; ═══════════════════════════════════════════
@@ -463,14 +464,14 @@ test-sha512 = () {
     h7 = 6620516959819538809
     h0, h1, h2, h3, h4, h5, h6, h7 = sha512.sha512-block(block512empty, h0, h1, h2, h3, h4, h5, h6, h7)
     io.out('sha512-empty=')
-    print('{h0:016x}')
-    print('{h1:016x}')
-    print('{h2:016x}')
-    print('{h3:016x}')
-    print('{h4:016x}')
-    print('{h5:016x}')
-    print('{h6:016x}')
-    print('{h7:016x}')
+    io.out(format('{h0:016x}'))
+    io.out(format('{h1:016x}'))
+    io.out(format('{h2:016x}'))
+    io.out(format('{h3:016x}'))
+    io.out(format('{h4:016x}'))
+    io.out(format('{h5:016x}'))
+    io.out(format('{h6:016x}'))
+    io.out(format('{h7:016x}'))
     print('')
 
     ; ═══════════════════════════════════════════
@@ -492,14 +493,14 @@ test-sha512 = () {
     h7 = 6620516959819538809
     h0, h1, h2, h3, h4, h5, h6, h7 = sha512.sha512-block(block512abc, h0, h1, h2, h3, h4, h5, h6, h7)
     io.out('sha512-abc=')
-    print('{h0:016x}')
-    print('{h1:016x}')
-    print('{h2:016x}')
-    print('{h3:016x}')
-    print('{h4:016x}')
-    print('{h5:016x}')
-    print('{h6:016x}')
-    print('{h7:016x}')
+    io.out(format('{h0:016x}'))
+    io.out(format('{h1:016x}'))
+    io.out(format('{h2:016x}'))
+    io.out(format('{h3:016x}'))
+    io.out(format('{h4:016x}'))
+    io.out(format('{h5:016x}'))
+    io.out(format('{h6:016x}'))
+    io.out(format('{h7:016x}'))
     print('')
 
     ; ═══════════════════════════════════════════
@@ -516,14 +517,14 @@ test-sha512 = () {
     h7 = 6620516959819538809
     h0, h1, h2, h3, h4, h5, h6, h7 = sha512.sha512-block(block512empty, h0, h1, h2, h3, h4, h5, h6, h7)
     io.out('sha512("")=')
-    print('{h0:016x}')
-    print('{h1:016x}')
-    print('{h2:016x}')
-    print('{h3:016x}')
-    print('{h4:016x}')
-    print('{h5:016x}')
-    print('{h6:016x}')
-    print('{h7:016x}')
+    io.out(format('{h0:016x}'))
+    io.out(format('{h1:016x}'))
+    io.out(format('{h2:016x}'))
+    io.out(format('{h3:016x}'))
+    io.out(format('{h4:016x}'))
+    io.out(format('{h5:016x}'))
+    io.out(format('{h6:016x}'))
+    io.out(format('{h7:016x}'))
     print('')
 
     ; ═══════════════════════════════════════════
@@ -545,14 +546,14 @@ test-sha512 = () {
     h7 = 6620516959819538809
     h0, h1, h2, h3, h4, h5, h6, h7 = sha512.sha512-block(block512hello, h0, h1, h2, h3, h4, h5, h6, h7)
     io.out('sha512("hello")=')
-    print('{h0:016x}')
-    print('{h1:016x}')
-    print('{h2:016x}')
-    print('{h3:016x}')
-    print('{h4:016x}')
-    print('{h5:016x}')
-    print('{h6:016x}')
-    print('{h7:016x}')
+    io.out(format('{h0:016x}'))
+    io.out(format('{h1:016x}'))
+    io.out(format('{h2:016x}'))
+    io.out(format('{h3:016x}'))
+    io.out(format('{h4:016x}'))
+    io.out(format('{h5:016x}'))
+    io.out(format('{h6:016x}'))
+    io.out(format('{h7:016x}'))
     print('')
 
     ; ═══════════════════════════════════════════
@@ -574,14 +575,14 @@ test-sha512 = () {
     h7 = 6620516959819538809
     h0, h1, h2, h3, h4, h5, h6, h7 = sha512.sha512-block(block512fox, h0, h1, h2, h3, h4, h5, h6, h7)
     io.out('sha512("fox")=')
-    print('{h0:016x}')
-    print('{h1:016x}')
-    print('{h2:016x}')
-    print('{h3:016x}')
-    print('{h4:016x}')
-    print('{h5:016x}')
-    print('{h6:016x}')
-    print('{h7:016x}')
+    io.out(format('{h0:016x}'))
+    io.out(format('{h1:016x}'))
+    io.out(format('{h2:016x}'))
+    io.out(format('{h3:016x}'))
+    io.out(format('{h4:016x}'))
+    io.out(format('{h5:016x}'))
+    io.out(format('{h6:016x}'))
+    io.out(format('{h7:016x}'))
     print('')
 }
 test-sha512()
@@ -604,7 +605,7 @@ aes-out = aes.aes-128-enc(aes-plain, aes-key)
 
 io.out('aes-enc=')
 i <- [0..16): {
-    print('{aes-out[i]:02x}')
+    io.out(format('{aes-out[i]:02x}'))
 }
 print('')
 
@@ -613,7 +614,7 @@ aes-dec = aes.aes-128-dec(aes-out, aes-key)
 
 io.out('aes-dec=')
 i <- [0..16): {
-    print('{aes-dec[i]:02x}')
+    io.out(format('{aes-dec[i]:02x}'))
 }
 print('')
 
@@ -629,7 +630,7 @@ des-out = des.des-enc(des-plain, 8, des-key)
 
 io.out('des-enc=')
 i <- [0..8): {
-    print('{des-out[i]:02x}')
+    io.out(format('{des-out[i]:02x}'))
 }
 print('')
 
@@ -638,6 +639,89 @@ des-decrypted = des.des-dec(des-out, 8, des-key)
 
 io.out('des-dec=')
 i <- [0..8): {
-    print('{des-decrypted[i]:02x}')
+    io.out(format('{des-decrypted[i]:02x}'))
+}
+print('')
+
+; ═══════════════════════════════════════════
+; BLAKE2（RFC 7693 已知答案測試 / KAT）
+; ═══════════════════════════════════════════
+
+b2-empty []byte = with-len(0)
+b2-abc []byte = 'abc'.to-bytes()
+b2-fox []byte = 'The quick brown fox jumps over the lazy dog'.to-bytes()
+
+; blake2b("")=786a02f742015903c6c6fd852552d272912f4740e15847618a86e217f71f5419d25e1031afee585313896444934eb04b903a685b1448b755d56f701afe9be2ce
+b2-out [64]byte
+b2-out = blake2.blake2b(b2-empty)
+io.out('blake2b("")=')
+i <- [0..64): {
+    io.out(format('{b2-out[i]:02x}'))
+}
+print('')
+
+; blake2b("abc")=ba80a53f981c4d0d6a2797b69f12f6e94c212f14685ac4b74b12bb6fdbffa2d17d87c5392aab792dc252d5de4533cc9518d38aa8dbf1925ab92386edd4009923
+b2-out = blake2.blake2b(b2-abc)
+io.out('blake2b("abc")=')
+i <- [0..64): {
+    io.out(format('{b2-out[i]:02x}'))
+}
+print('')
+
+; blake2b("fox")=a8add4bdddfd93e4877d2746e62817b116364a1fa7bc148d95090bc7333b3673f82401cf7aa2e4cb1ecd90296e3f14cb5413f8ed77be73045b13914cdcd6a918
+b2-out = blake2.blake2b(b2-fox)
+io.out('blake2b("fox")=')
+i <- [0..64): {
+    io.out(format('{b2-out[i]:02x}'))
+}
+print('')
+
+; blake2b-256("")=0e5751c026e543b2e8ab2eb06099daa1d1e5df47778f7787faab45cdf12fe3a8
+b2-256-out [32]byte
+b2-256-out = blake2.blake2b-256(b2-empty)
+io.out('blake2b-256("")=')
+i <- [0..32): {
+    io.out(format('{b2-256-out[i]:02x}'))
+}
+print('')
+
+; blake2b-256("abc")=bddd813c634239723171ef3fee98579b94964e3bb1cb3e427262c8c068d52319
+b2-256-out = blake2.blake2b-256(b2-abc)
+io.out('blake2b-256("abc")=')
+i <- [0..32): {
+    io.out(format('{b2-256-out[i]:02x}'))
+}
+print('')
+
+; blake2b-256("fox")=01718cec35cd3d796dd00020e0bfecb473ad23457d063b75eff29c0ffa2e58a9
+b2-256-out = blake2.blake2b-256(b2-fox)
+io.out('blake2b-256("fox")=')
+i <- [0..32): {
+    io.out(format('{b2-256-out[i]:02x}'))
+}
+print('')
+
+; blake2s("")=69217a3079908094e11121d042354a7c1f55b6482ca1a51e1b250dfd1ed0eef9
+b2s-out [32]byte
+b2s-out = blake2.blake2s(b2-empty)
+io.out('blake2s("")=')
+i <- [0..32): {
+    io.out(format('{b2s-out[i]:02x}'))
+}
+print('')
+
+; blake2s("abc")=508c5e8c327c14e2e1a72ba34eeb452f37458b209ed63a294d999b4c86675982
+b2s-out = blake2.blake2s(b2-abc)
+io.out('blake2s("abc")=')
+i <- [0..32): {
+    io.out(format('{b2s-out[i]:02x}'))
+}
+print('')
+
+; blake2s("fox")=606beeec743ccbeff6cbcdf5d5302aa855c256c29b88c8ed331ea1a6bf3c8812
+b2s-out = blake2.blake2s(b2-fox)
+io.out('blake2s("fox")=')
+i <- [0..32): {
+    io.out(format('{b2s-out[i]:02x}'))
 }
 print('')

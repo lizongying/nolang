@@ -1478,6 +1478,14 @@ func (p *Parser) parseFunctionBody(def *FunctionDefinition) {
 		detectImplicitGeneric(param.Type, def)
 	}
 
+	// 在註冊參數/結果型別「之前」設定 curFuncName，使 setVarType 將其寫入
+	// 正確的函數作用域 FuncVarTypes[def.Name]，而非上一個函數的作用域或全域
+	// VarTypes 快照。否則同名參數（如各函數的 `arr`）會互相污染全域 VarTypes，
+	// 導致安全索引降級時 inferIndexElemType 取到錯誤的元素型別（見 lowering.go
+	// 的 maybeIndexOutAssign）。body 解析沿用此 curFuncName，結束時還原。
+	prevFuncName := p.curFuncName
+	p.curFuncName = def.Name
+
 	// 註冊參數與結果型別到 varDeclTypes，使 match desugar 能為 option 型別參數
 	// 生成正確的 `it` 綁定（如 `x ?i64` 在 `x: { ok -> result = it }` 中需要 it: i64）。
 	for _, param := range def.Parameters {
@@ -1499,11 +1507,7 @@ func (p *Parser) parseFunctionBody(def *FunctionDefinition) {
 	}
 
 	p.ctx.push(CTX_FUNC_BODY)
-	// Set curFuncName for function-scoped variable type tracking.
-	// This ensures same-named locals in different functions get separate
-	// type entries in FuncVarTypes, preventing cross-function pollution.
-	prevFuncName := p.curFuncName
-	p.curFuncName = def.Name
+	// curFuncName 已於參數註冊前設定為 def.Name（見上方），body 解析沿用。
 	def.Body = p.parseBlockStatement()
 	p.curFuncName = prevFuncName
 	p.ctx.pop()

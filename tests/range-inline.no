@@ -4,5 +4,6 @@ foo = () {
     base = 2
     off = 0
     copy-rem = 2
+    #{overflow = wrap}
     k <- [0..copy-rem): buf[base + k] = data[off + base + k]
 }

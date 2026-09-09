@@ -6,6 +6,7 @@ test-ascending = () (r i64) {
     sum i64 = 0
     n i64 = 5
     i <- [0..n): {
+        #{overflow = wrap}
         sum = sum + i
     }
     r = sum
@@ -16,6 +17,7 @@ test-descending = () (r i64) {
     sum i64 = 0
     n i64 = 0
     i <- [5..n): {
+        #{overflow = wrap}
         sum = sum + i
     }
     r = sum
@@ -25,6 +27,7 @@ test-descending = () (r i64) {
 test-constant = () (r i64) {
     sum i64 = 0
     i <- [0..10): {
+        #{overflow = wrap}
         sum = sum + i
     }
     r = sum
@@ -34,6 +37,7 @@ test-constant = () (r i64) {
 test-constant-desc = () (r i64) {
     sum i64 = 0
     i <- [5..0): {
+        #{overflow = wrap}
         sum = sum + i
     }
     r = sum
@@ -46,6 +50,7 @@ test-nested = () (r i64) {
     m i64 = 4
     i <- [0..n): {
         j <- [0..m): {
+            #{overflow = wrap}
             sum = sum + i * 10 + j
         }
     }
@@ -58,6 +63,7 @@ test-break = () (r i64) {
     n i64 = 100
     i <- [0..n): {
         i >= 5 -> break
+        #{overflow = wrap}
         sum = sum + i
     }
     r = sum

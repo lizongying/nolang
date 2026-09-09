@@ -1,0 +1,26 @@
+; regression: []str.to-str must format each element by its LENGTH (legacy
+; behavior) and must NOT crash. Single quotes denote `str` in nolang, so
+; ['a','b','c'] is a [3]str (a fixed array of 3 strings), NOT []char.
+;
+; Two distinct MIR=3 bugs were fixed here:
+;   1. opt-verify type mismatch: the generic [n]t.to-str template calls
+;      number.i64-to-str(.[i]); for a str element elemToStrMethod returns ""
+;      so @i64_to_str was handed a whole %str-long. Fixed by intercepting
+;      %str-long and extracting field 0 (length) -> [1, 1, 1].
+;   2. runtime trace/BPT trap: emitIndex lowers a container element read by
+;      GEP+load with NO clone (the local BORROWS the element); the drop
+;      analysis then emitted @str_free on the borrowed constant string.
+;      Fixed by exempting OpIndex-owned-result borrow reads from dropping
+;      (src/mir/analysis.go isBorrowRead).
+;
+; Both backends must agree on the length-based formatting.
+
+main = () {
+    ; fixed-array str literal -> [3]str
+    a = ['a', 'b', 'c']
+    print(a.to-str())
+    ; heap vec[str]: v[0] reads the owned element by borrow; to-str formats lengths
+    v = ['hello', 'world', 'foo']
+    print(v[0])
+    print(v.to-str())
+}

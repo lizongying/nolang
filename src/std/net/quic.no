@@ -116,37 +116,55 @@ varint-encode = (val i64) (buf []byte, n i64) {
 varint-decode = (buf []byte, pos i64) (val i64, next-pos i64) {
     next-pos = -1
     val = 0
-    pos >= buf.len -> return
+    pos >= buf.len() -> return
     first = buf[pos]
     prefix = first >> 6
     {
         prefix == 0 -> {
             val = first & 63
+            #{overflow = wrap}
             next-pos = pos + 1
         }
         prefix == 1 -> {
-            pos + 1 >= buf.len -> return
+            #{overflow = wrap}
+            pos + 1 >= buf.len() -> return
+            #{overflow = wrap}
             val = ((first & 63) << 8) | (buf[pos + 1])
+            #{overflow = wrap}
             next-pos = pos + 2
         }
         prefix == 2 -> {
-            pos + 3 >= buf.len -> return
+            #{overflow = wrap}
+            pos + 3 >= buf.len() -> return
             val = ((first & 63) << 24)
+            #{overflow = wrap}
             val = val | ((buf[pos + 1]) << 16)
+            #{overflow = wrap}
             val = val | ((buf[pos + 2]) << 8)
+            #{overflow = wrap}
             val = val | (buf[pos + 3])
+            #{overflow = wrap}
             next-pos = pos + 4
         }
         -> {
-            pos + 7 >= buf.len -> return
+            #{overflow = wrap}
+            pos + 7 >= buf.len() -> return
             val = ((first & 63) << 56)
+            #{overflow = wrap}
             val = val | ((buf[pos + 1]) << 48)
+            #{overflow = wrap}
             val = val | ((buf[pos + 2]) << 40)
+            #{overflow = wrap}
             val = val | ((buf[pos + 3]) << 32)
+            #{overflow = wrap}
             val = val | ((buf[pos + 4]) << 24)
+            #{overflow = wrap}
             val = val | ((buf[pos + 5]) << 16)
+            #{overflow = wrap}
             val = val | ((buf[pos + 6]) << 8)
+            #{overflow = wrap}
             val = val | (buf[pos + 7])
+            #{overflow = wrap}
             next-pos = pos + 8
         }
     }
@@ -214,9 +232,12 @@ parse-frames = (buf []byte, pos i64, end i64) (frames [32]frame, count i64) {
         ; 複製資料
         data-len = frames[count].length
         i <- [0..data-len): {
+            #{overflow = wrap}
             frames[count].data[i] = buf[pos + i]
         }
+        #{overflow = wrap}
         pos = pos + frames[count].length
+        #{overflow = wrap}
         count = count + 1
     } (pos < end)
 
@@ -248,8 +269,10 @@ parse-frames = (buf []byte, pos i64, end i64) (frames [32]frame, count i64) {
                 count = -1
                 return
             }
+            #{overflow = wrap}
             pos = rl-np + rl-val
             frames[count].length = 0
+            #{overflow = wrap}
             count = count + 1
         }
         ft == QUIC-FRAME-CONNECTION-CLOSE-APP -> {
@@ -271,8 +294,10 @@ parse-frames = (buf []byte, pos i64, end i64) (frames [32]frame, count i64) {
                 count = -1
                 return
             }
+            #{overflow = wrap}
             pos = rl-np + rl-val
             frames[count].length = 0
+            #{overflow = wrap}
             count = count + 1
         }
         ft == QUIC-FRAME-HANDSHAKE-DONE -> {
@@ -280,6 +305,7 @@ parse-frames = (buf []byte, pos i64, end i64) (frames [32]frame, count i64) {
             ; HANDSHAKE_DONE
 
             frames[count].length = 0
+            #{overflow = wrap}
             count = count + 1
         }
         ft == QUIC-FRAME-NEW-TOKEN -> {
@@ -293,8 +319,10 @@ parse-frames = (buf []byte, pos i64, end i64) (frames [32]frame, count i64) {
                 count = -1
                 return
             }
+            #{overflow = wrap}
             pos = tl-np + tl-val
             frames[count].length = 0
+            #{overflow = wrap}
             count = count + 1
         }
         ft == QUIC-FRAME-MAX-DATA || ft == QUIC-FRAME-MAX-STREAMS-BIDI || ft == QUIC-FRAME-DATA-BLOCKED || ft == QUIC-FRAME-STREAM-DATA-BLOCKED -> {
@@ -310,6 +338,7 @@ parse-frames = (buf []byte, pos i64, end i64) (frames [32]frame, count i64) {
             }
             pos = mv-np
             frames[count].length = 0
+            #{overflow = wrap}
             count = count + 1
         }
     }
@@ -377,11 +406,13 @@ derive-initial-keys = (dst-cid []byte, is-client bool) (key [16]byte, iv [12]byt
 ; hp [16]byte: 標頭保護金鑰
 ; is-long-header bool: 是否為 Long Header
 apply-header-protection = (packet []byte, pn-offset i64, hp [16]byte, is-long-header bool) {
-    pn-offset + 4 > packet.len -> return
+    #{overflow = wrap}
+    pn-offset + 4 > packet.len() -> return
 
     ; 取取 16 位元組樣本（從 pn-offset + 4 開始）
     sample [16]byte
     i <- [0..16): {
+        #{overflow = wrap}
         sample[i] = packet[pn-offset + 4 + i]
     }
 
@@ -398,7 +429,9 @@ apply-header-protection = (packet []byte, pn-offset i64, hp [16]byte, is-long-he
     ; XOR 封包號碼的 4 位元組
     j = 0
     {
-        pn-offset + j < packet.len -> packet[pn-offset + j] = packet[pn-offset + j] ^ mask[mask-offset + j]
+        #{overflow = wrap}
+        pn-offset + j < packet.len() -> packet[pn-offset + j] = packet[pn-offset + j] ^ mask[mask-offset + j]
+        #{overflow = wrap}
         j = j + 1
     } (j < 4)
 }
@@ -422,13 +455,16 @@ decode-packet-number = (packet []byte, pn-offset i64, largest-pn i64) (pn i64, p
     pn = 0
     pn-len = 0
 
-    pn-offset >= packet.len -> return
+    pn-offset >= packet.len() -> return
     first = packet[pn-offset]
+    #{overflow = wrap}
     pn-len = (first & 3) + 1
 
-    pn-offset + pn-len > packet.len -> return
+    #{overflow = wrap}
+    pn-offset + pn-len > packet.len() -> return
     truncated-pn = 0
     i <- [0..pn-len): {
+        #{overflow = wrap}
         truncated-pn = (truncated-pn << 8) | (packet[pn-offset + i])
     }
 
@@ -443,6 +479,7 @@ decode-packet-number = (packet []byte, pn-offset i64, largest-pn i64) (pn i64, p
     truncated-pn = truncated-pn & mask
 
     ; 期望封包號碼
+    #{overflow = wrap}
     expected-pn = largest-pn + 1
 
     ; 計算位元寬度
@@ -453,13 +490,18 @@ decode-packet-number = (packet []byte, pn-offset i64, largest-pn i64) (pn i64, p
         pn-len == 3 -> pn-win = 8388608
         -> pn-win = 2147483648
     }
+    #{overflow = wrap}
     pn-hwin = pn-win / 2
+    #{overflow = wrap}
     pn-mask = pn-win - 1
 
     ; 恢復完整封包號碼
+    #{overflow = wrap}
     candidate-pn = (expected-pn & (-1 - pn-mask)) | truncated-pn
     {
+        #{overflow = wrap}
         candidate-pn <= expected-pn - pn-hwin && candidate-pn < (1 << 62) - pn-win -> candidate-pn = candidate-pn + pn-win
+        #{overflow = wrap}
         candidate-pn > expected-pn + pn-hwin && candidate-pn >= pn-win -> candidate-pn = candidate-pn - pn-win
     }
     pn = candidate-pn
@@ -554,58 +596,78 @@ conn.build-initial-packet = (crypto-data []byte) (packet []byte, ok bool) {
     packet = with-cap(QUIC-MAX-PACKET-SIZE)
 
     ; 1. 第一位元組: Fixed bit + Long header + Initial type
+    #{overflow = wrap}
     packet[0] = QUIC-LONG-HEADER-FIXED-BIT | QUIC-PACKET-INITIAL | (pn-len - 1)
     pos = 1
 
     ; 2. Version (4 bytes, big-endian)
     packet[pos] = 0
+    #{overflow = wrap}
     packet[pos + 1] = 0
+    #{overflow = wrap}
     packet[pos + 2] = 0
+    #{overflow = wrap}
     packet[pos + 3] = 1
+    #{overflow = wrap}
     pos = pos + 4
 
     ; 3. Destination CID length + CID
-    dcid-len = .remote-cid.len
+    dcid-len = .remote-cid.len()
     packet[pos] = dcid-len & 255
+    #{overflow = wrap}
     pos = pos + 1
     i <- [0..dcid-len): {
+        #{overflow = wrap}
         packet[pos + i] = .remote-cid[i]
     }
+    #{overflow = wrap}
     pos = pos + dcid-len
 
     ; 4. Source CID length + CID
-    scid-len = .local-cid.len
+    scid-len = .local-cid.len()
     packet[pos] = scid-len & 255
+    #{overflow = wrap}
     pos = pos + 1
     i <- [0..scid-len): {
+        #{overflow = wrap}
         packet[pos + i] = .local-cid[i]
     }
+    #{overflow = wrap}
     pos = pos + scid-len
 
     ; 5. Token length (0 for client Initial)
     packet[pos] = 0
+    #{overflow = wrap}
     pos = pos + 1
 
     ; 6. Length (varint) — 預留位置，稍後填入
     length-pos = pos
 
     ; 加密後的 payload 長度 = pn_len + crypto_frame + 16(tag)
-    crypto-frame-len = 1 + 2 + crypto-data.len
+    #{overflow = wrap}
+    crypto-frame-len = 1 + 2 + crypto-data.len()
+    #{overflow = wrap}
     payload-len = pn-len + crypto-frame-len + 16
     len-buf []byte
     len-n = 0
     len-buf, len-n = varint-encode(payload-len)
     i <- [0..len-n): {
+        #{overflow = wrap}
         packet[pos + i] = len-buf[i]
     }
+    #{overflow = wrap}
     pos = pos + len-n
 
     ; 7. Packet Number (4 bytes, big-endian)
     pn-offset = pos
     packet[pos] = (pn >> 24) & 255
+    #{overflow = wrap}
     packet[pos + 1] = (pn >> 16) & 255
+    #{overflow = wrap}
     packet[pos + 2] = (pn >> 8) & 255
+    #{overflow = wrap}
     packet[pos + 3] = pn & 255
+    #{overflow = wrap}
     pos = pos + pn-len
 
     ; 8. CRYPTO frame
@@ -616,8 +678,10 @@ conn.build-initial-packet = (crypto-data []byte) (packet []byte, ok bool) {
     crypto-ft-n = 0
     crypto-ft, crypto-ft-n = varint-encode(QUIC-FRAME-CRYPTO)
     i <- [0..crypto-ft-n): {
+        #{overflow = wrap}
         packet[pos + i] = crypto-ft[i]
     }
+    #{overflow = wrap}
     pos = pos + crypto-ft-n
 
     ; Offset = 0
@@ -625,28 +689,35 @@ conn.build-initial-packet = (crypto-data []byte) (packet []byte, ok bool) {
     off-n = 0
     off-buf, off-n = varint-encode(0)
     i <- [0..off-n): {
+        #{overflow = wrap}
         packet[pos + i] = off-buf[i]
     }
+    #{overflow = wrap}
     pos = pos + off-n
 
     ; Length
     data-len-buf []byte
     data-len-n = 0
-    data-len-buf, data-len-n = varint-encode(crypto-data.len)
+    data-len-buf, data-len-n = varint-encode(crypto-data.len())
     i <- [0..data-len-n): {
+        #{overflow = wrap}
         packet[pos + i] = data-len-buf[i]
     }
+    #{overflow = wrap}
     pos = pos + data-len-n
 
     ; Data
-    i <- [0..crypto-data.len): {
+    i <- [0..crypto-data.len()): {
+        #{overflow = wrap}
         packet[pos + i] = crypto-data[i]
     }
-    pos = pos + crypto-data.len
+    #{overflow = wrap}
+    pos = pos + crypto-data.len()
 
     ; PADDING to reach 1200 bytes
     {
         packet[pos] = 0
+        #{overflow = wrap}
         pos = pos + 1
     } (pos < QUIC-MAX-PACKET-SIZE - 16)
 
@@ -657,6 +728,7 @@ conn.build-initial-packet = (crypto-data []byte) (packet []byte, ok bool) {
         nonce[i] = .client-initial-iv[i]
     }
     i <- [0..8): {
+        #{overflow = wrap}
         nonce[4 + i] = nonce[4 + i] ^ ((pn >> ((7 - i) * 8)) & 255)
     }
 
@@ -668,8 +740,10 @@ conn.build-initial-packet = (crypto-data []byte) (packet []byte, ok bool) {
 
     ; Plaintext = packet[pn_offset..pos]
     plain []byte
+    #{overflow = wrap}
     plain-len = pos - pn-offset
     i <- [0..plain-len): {
+        #{overflow = wrap}
         plain[i] = packet[pn-offset + i]
     }
 
@@ -679,16 +753,19 @@ conn.build-initial-packet = (crypto-data []byte) (packet []byte, ok bool) {
 
     ; 組合: header + sealed
     final-pos = pn-offset
-    i <- [0..sealed.len): {
+    i <- [0..sealed.len()): {
+        #{overflow = wrap}
         packet[final-pos + i] = sealed[i]
     }
-    final-pos = final-pos + sealed.len
+    #{overflow = wrap}
+    final-pos = final-pos + sealed.len()
 
     ; 調整 packet 長度（透過設定返回值）
     ; packet 資料從 0 到 final-pos
     ; ── 標頭保護 ──
     apply-header-protection(packet, pn-offset, .client-initial-hp, true)
 
+    #{overflow = wrap}
     .initial-pn = .initial-pn + 1
     ok = true
 }
@@ -721,16 +798,19 @@ conn.recv-initial = () (frames [32]frame, count i64, ok bool) {
     pos = 1
 
     ; 跳過 Version (4 bytes)
+    #{overflow = wrap}
     pos = pos + 4
 
     ; Destination CID
     pos >= end -> return
     dcid-len = buf[pos]
+    #{overflow = wrap}
     pos = pos + 1 + dcid-len
 
     ; Source CID
     pos >= end -> return
     scid-len = buf[pos]
+    #{overflow = wrap}
     pos = pos + 1 + scid-len
 
     ; Token length (varint)
@@ -738,6 +818,7 @@ conn.recv-initial = () (frames [32]frame, count i64, ok bool) {
     token-np = 0
     token-len, token-np = varint-decode(buf, pos)
     token-np < 0 -> return
+    #{overflow = wrap}
     pos = token-np + token-len
 
     ; Length (varint)
@@ -766,6 +847,7 @@ conn.recv-initial = () (frames [32]frame, count i64, ok bool) {
         nonce[i] = .server-initial-iv[i]
     }
     i <- [0..8): {
+        #{overflow = wrap}
         nonce[4 + i] = nonce[4 + i] ^ ((pn >> ((7 - i) * 8)) & 255)
     }
 
@@ -778,14 +860,15 @@ conn.recv-initial = () (frames [32]frame, count i64, ok bool) {
     ; Ciphertext = buf[pn_offset..pn_offset+length_val]
     sealed []byte
     i <- [0..length-val): {
+        #{overflow = wrap}
         sealed[i] = buf[pn-offset + i]
     }
 
     ; 解密
     plain []byte
     plain = aes-gcm.aes-128-gcm-open(.server-initial-key, nonce, aad, sealed)
-    plain.len == 0 -> return
-    frames, count = parse-frames(plain, 0, plain.len)
+    plain.len() == 0 -> return
+    frames, count = parse-frames(plain, 0, plain.len())
     count < 0 -> return
     ok = true
 }

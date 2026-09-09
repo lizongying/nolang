@@ -56,6 +56,47 @@ func isConcreteType(typeName string) bool {
 	return false
 }
 
+// arithmeticOps are infix operators whose result is option-bearing in nolang
+// (arithmetic/bitwise operations can raise overflow, modeled as ?T). Comparison
+// and logical operators produce bool and are intentionally excluded.
+var arithmeticOps = map[string]bool{
+	"+": true, "-": true, "*": true, "/": true, "%": true,
+	"&": true, "|": true, "^": true, "<<": true, ">>": true,
+}
+
+// isArithmeticExpr reports whether expr is a bare arithmetic/bitwise expression
+// (option-producing). Grouped expressions are unwrapped; prefix negation (`-x`)
+// and bitwise-not (`~x`) are also treated as arithmetic.
+func isArithmeticExpr(expr parser.Expression) bool {
+	if expr == nil {
+		return false
+	}
+	switch e := expr.(type) {
+	case *parser.GroupedExpression:
+		return isArithmeticExpr(e.Expression)
+	case *parser.InfixExpression:
+		return arithmeticOps[e.Operator]
+	case *parser.PrefixExpression:
+		return e.Operator == "-" || e.Operator == "~"
+	}
+	return false
+}
+
+// funcSigReturnsOption reports whether a function signature has at least one
+// result parameter of option type (?T). Such functions must have their result
+// (or, per the Phase-2 rule, their bare arithmetic arguments) unwrapped with `?=`.
+func funcSigReturnsOption(sig *funcSig) bool {
+	if sig == nil {
+		return false
+	}
+	for _, r := range sig.ResultTypes {
+		if strings.HasPrefix(r.Type, "?") {
+			return true
+		}
+	}
+	return false
+}
+
 // extractArrayElemType extracts the element type from an array/slice type string.
 // e.g. "[]byte" → "byte", "[16]byte" → "byte", "[4]i64" → "i64".
 // Returns "" if the type has no element type (e.g. "[4]").
@@ -389,37 +430,37 @@ func parseProgramFile(filePath string) *parser.Program {
 }
 
 func checkCallArgsInStmt(stmt parser.Statement, sigs map[string]*funcSig, varTypes map[string]string, structFields map[string]map[string]string) []ValidateResult {
-	return checkCallArgsInStmtWithResultParams(stmt, sigs, varTypes, nil, structFields)
+	return checkCallArgsInStmtWithResultParams(stmt, sigs, varTypes, nil, structFields, false)
 }
 
 // checkCallArgsInIfExpr descends into an IfExpression's branches.
-func checkCallArgsInIfExpr(s *parser.IfExpression, sigs map[string]*funcSig, varTypes map[string]string, resultParamNames map[string]bool, structFields map[string]map[string]string) []ValidateResult {
+func checkCallArgsInIfExpr(s *parser.IfExpression, sigs map[string]*funcSig, varTypes map[string]string, resultParamNames map[string]bool, structFields map[string]map[string]string, underUnwrap bool) []ValidateResult {
 	var results []ValidateResult
 	if s.Condition != nil {
-		results = append(results, checkCallArgsInExpr(s.Condition, sigs, varTypes, structFields)...)
+		results = append(results, checkCallArgsInExpr(s.Condition, sigs, varTypes, structFields, underUnwrap)...)
 	}
 	if s.Consequence != nil {
 		for _, bs := range s.Consequence.Statements {
-			results = append(results, checkCallArgsInStmtWithResultParams(bs, sigs, varTypes, resultParamNames, structFields)...)
+			results = append(results, checkCallArgsInStmtWithResultParams(bs, sigs, varTypes, resultParamNames, structFields, underUnwrap)...)
 		}
 	}
 	if s.Alternative != nil {
 		for _, bs := range s.Alternative.Statements {
-			results = append(results, checkCallArgsInStmtWithResultParams(bs, sigs, varTypes, resultParamNames, structFields)...)
+			results = append(results, checkCallArgsInStmtWithResultParams(bs, sigs, varTypes, resultParamNames, structFields, underUnwrap)...)
 		}
 	}
 	return results
 }
-func checkCallArgsInStmtWithResultParams(stmt parser.Statement, sigs map[string]*funcSig, varTypes map[string]string, resultParamNames map[string]bool, structFields map[string]map[string]string) []ValidateResult {
+func checkCallArgsInStmtWithResultParams(stmt parser.Statement, sigs map[string]*funcSig, varTypes map[string]string, resultParamNames map[string]bool, structFields map[string]map[string]string, underUnwrap bool) []ValidateResult {
 	switch s := stmt.(type) {
 	case *parser.ExpressionStatement:
 		if s.Expression != nil {
 			// If-as-statement: ExpressionStatement wraps an IfExpression.
 			// Descend into both branches so result-param types propagate.
 			if ifExpr, ok := s.Expression.(*parser.IfExpression); ok {
-				return checkCallArgsInIfExpr(ifExpr, sigs, varTypes, resultParamNames, structFields)
+				return checkCallArgsInIfExpr(ifExpr, sigs, varTypes, resultParamNames, structFields, underUnwrap)
 			}
-			return checkCallArgsInExpr(s.Expression, sigs, varTypes, structFields)
+			return checkCallArgsInExpr(s.Expression, sigs, varTypes, structFields, underUnwrap)
 		}
 	case *parser.LetStatement:
 		// Compiler-injected synthetic let statements (e.g. match arm `it` bindings).
@@ -429,7 +470,7 @@ func checkCallArgsInStmtWithResultParams(stmt parser.Statement, sigs map[string]
 		// because `it` in a match arm always represents the unwrapped inner value.
 		if s.IsSynthetic {
 			if s.Value != nil {
-				results := checkCallArgsInExpr(s.Value, sigs, varTypes, structFields)
+				results := checkCallArgsInExpr(s.Value, sigs, varTypes, structFields, underUnwrap)
 				if s.Name != nil && !resultParamNames[s.Name.Value] {
 					if s.Type != nil && s.Type.String() != "" {
 						varTypes[s.Name.Value] = s.Type.String()
@@ -451,7 +492,14 @@ func checkCallArgsInStmtWithResultParams(stmt parser.Statement, sigs map[string]
 			return nil
 		}
 		if s.Value != nil {
-			results := checkCallArgsInExpr(s.Value, sigs, varTypes, structFields)
+			// A `?=` unwrap desugars to `__unwrap_N = <expr>`; calls within that
+			// RHS are exempt from the bare-arithmetic-argument rule because the
+			// `?=` itself is the required explicit unwrap.
+			uw := underUnwrap
+			if s.Name != nil && strings.HasPrefix(s.Name.Value, "__unwrap_") {
+				uw = true
+			}
+			results := checkCallArgsInExpr(s.Value, sigs, varTypes, structFields, uw)
 			// Register the variable type from assignment for subsequent checks.
 			// Prefer the user-defined function's first return type over the
 			// generic "i64" default of inferExprType for CallExpression.
@@ -514,7 +562,7 @@ func checkCallArgsInStmtWithResultParams(stmt parser.Statement, sigs map[string]
 	case *parser.MultiAssignStatement:
 		var results []ValidateResult
 		if s.Value != nil {
-			results = append(results, checkCallArgsInExpr(s.Value, sigs, varTypes, structFields)...)
+			results = append(results, checkCallArgsInExpr(s.Value, sigs, varTypes, structFields, underUnwrap)...)
 			// #5: Validate that the number of assignment targets matches the
 			// number of return values of the called function.  A mismatch
 			// causes silent memory corruption / SIGTRAP at runtime.
@@ -555,36 +603,36 @@ func checkCallArgsInStmtWithResultParams(stmt parser.Statement, sigs map[string]
 		if s.Body != nil {
 			var results []ValidateResult
 			for _, bs := range s.Body.Statements {
-				results = append(results, checkCallArgsInStmtWithResultParams(bs, sigs, localTypes, innerResultParams, structFields)...)
+				results = append(results, checkCallArgsInStmtWithResultParams(bs, sigs, localTypes, innerResultParams, structFields, false)...)
 			}
 			return results
 		}
 	case *parser.BlockStatement:
 		var results []ValidateResult
 		for _, bs := range s.Statements {
-			results = append(results, checkCallArgsInStmtWithResultParams(bs, sigs, varTypes, resultParamNames, structFields)...)
+			results = append(results, checkCallArgsInStmtWithResultParams(bs, sigs, varTypes, resultParamNames, structFields, underUnwrap)...)
 		}
 		return results
 	case *parser.ForStatement:
 		var results []ValidateResult
 		if s.Init != nil {
-			results = append(results, checkCallArgsInStmtWithResultParams(s.Init, sigs, varTypes, resultParamNames, structFields)...)
+			results = append(results, checkCallArgsInStmtWithResultParams(s.Init, sigs, varTypes, resultParamNames, structFields, underUnwrap)...)
 		}
 		if s.Condition != nil {
-			results = append(results, checkCallArgsInExpr(s.Condition, sigs, varTypes, structFields)...)
+			results = append(results, checkCallArgsInExpr(s.Condition, sigs, varTypes, structFields, underUnwrap)...)
 		}
 		if s.Update != nil {
-			results = append(results, checkCallArgsInStmtWithResultParams(s.Update, sigs, varTypes, resultParamNames, structFields)...)
+			results = append(results, checkCallArgsInStmtWithResultParams(s.Update, sigs, varTypes, resultParamNames, structFields, underUnwrap)...)
 		}
 		if s.Body != nil {
 			for _, bs := range s.Body.Statements {
-				results = append(results, checkCallArgsInStmtWithResultParams(bs, sigs, varTypes, resultParamNames, structFields)...)
+				results = append(results, checkCallArgsInStmtWithResultParams(bs, sigs, varTypes, resultParamNames, structFields, underUnwrap)...)
 			}
 		}
 		return results
 	case *parser.ReturnStatement:
 		if s.ReturnValue != nil {
-			return checkCallArgsInExpr(s.ReturnValue, sigs, varTypes, structFields)
+			return checkCallArgsInExpr(s.ReturnValue, sigs, varTypes, structFields, underUnwrap)
 		}
 	}
 	return nil
@@ -1088,7 +1136,7 @@ func uint64FromLiteral(expr parser.Expression) (uint64, bool) {
 	}
 	return 0, false
 }
-func checkCallArgsInExpr(expr parser.Expression, sigs map[string]*funcSig, varTypes map[string]string, structFields map[string]map[string]string) []ValidateResult {
+func checkCallArgsInExpr(expr parser.Expression, sigs map[string]*funcSig, varTypes map[string]string, structFields map[string]map[string]string, underUnwrap bool) []ValidateResult {
 	if expr == nil {
 		return nil
 	}
@@ -1106,7 +1154,7 @@ func checkCallArgsInExpr(expr parser.Expression, sigs map[string]*funcSig, varTy
 			if ident.Value == "err" || ident.Value == "ok" {
 				// Still recurse into arguments for nested call checking
 				for _, arg := range e.Arguments {
-					results = append(results, checkCallArgsInExpr(arg, sigs, varTypes, structFields)...)
+					results = append(results, checkCallArgsInExpr(arg, sigs, varTypes, structFields, underUnwrap)...)
 				}
 				return results
 			}
@@ -1143,7 +1191,37 @@ func checkCallArgsInExpr(expr parser.Expression, sigs map[string]*funcSig, varTy
 						}
 						argType := resolveExprType(arg, varTypes, structFields)
 						expectedType := sig.ParamTypes[i].Type
-						if expectedType != "" && argType != "" && !isArgTypeCompatible(expectedType, argType, arg) {
+						if expectedType == "" || argType == "" {
+							continue
+						}
+					// Phase-2 rule: a bare option argument (?T passed where T is
+					// expected) must be rejected. Implicit unwrap of option
+					// arguments is not allowed. Provably-non-option expressions
+					// (e.g. a constant like `10+20`, or an `it` binding inside a
+					// match arm) already resolve to the plain T type and never
+					// reach this branch, so they pass. Genuine ?T values (a ?i64
+					// variable, a ?i64-returning call, etc.) cannot be proven
+					// non-option at compile time and are rejected here, forcing
+					// the caller to unwrap explicitly (match on the value and call
+					// inside the `-> it` arm, or force-unwrap).
+					//
+					// Exemption: when the call is the RHS of a `?=` unwrap
+					// (underUnwrap == true, set by the desugared `__unwrap_N` let
+					// in the statement checker), the `?=` itself is the required
+					// explicit unwrap — the same exemption already granted to the
+					// bare-arithmetic-argument rule (f10x20nf) below. Inside a `?=`
+					// RHS, a ?T argument is auto-unwrapped and any none propagates
+					// upward, which is exactly `?=`'s purpose.
+					if !underUnwrap && strings.HasPrefix(argType, "?") && strings.TrimPrefix(argType, "?") == expectedType {
+							results = append(results, ValidateResult{
+								TraceID: "fxxoptarg",
+								Line:    e.Token.Line,
+								Column:  e.Token.Column,
+								Message: fmt.Sprintf("argument %d of '%s': passing a bare option value of type '%s' where '%s' is expected requires explicit unwrap (match on the value and call inside the `-> it` arm); implicit unwrap of option arguments is not allowed", i+1, ident.Value, argType, expectedType),
+							})
+							continue
+						}
+						if !isArgTypeCompatible(expectedType, argType, arg) {
 							results = append(results, ValidateResult{
 								TraceID: "6fgg3htw",
 								Line:    e.Token.Line,
@@ -1153,34 +1231,55 @@ func checkCallArgsInExpr(expr parser.Expression, sigs map[string]*funcSig, varTy
 						}
 					}
 				}
+				// Phase-2 rule: an option-returning function called with a bare
+				// arithmetic argument must be explicitly unwrapped with `?=`.
+				// A bare arithmetic expression (e.g. `10+20`) is option-bearing in
+				// nolang (overflow can be raised), so passing it directly to a
+				// function that returns an option (?T) without `?=` is rejected to
+				// force the caller to acknowledge the option. The call is exempt
+				// when it is the RHS of a `?=` unwrap (underUnwrap == true, set by
+				// the desugared `__unwrap_N` let in the statement checker).
+				if !underUnwrap && funcSigReturnsOption(sig) {
+					for _, arg := range e.Arguments {
+						if isArithmeticExpr(arg) {
+							results = append(results, ValidateResult{
+								TraceID: "f10x20nf",
+								Line:    e.Token.Line,
+								Column:  e.Token.Column,
+								Message: fmt.Sprintf("call to option-returning function '%s' with a bare arithmetic argument requires explicit unwrap: use 'x ?= %s(...)' to unwrap the argument first, or unwrap the result (e.g. 'y ?= %s(...)')", ident.Value, ident.Value, ident.Value),
+							})
+							break
+						}
+					}
+				}
 			}
 		}
 		// Recurse into arguments for nested calls
 		for _, arg := range e.Arguments {
-			results = append(results, checkCallArgsInExpr(arg, sigs, varTypes, structFields)...)
+			results = append(results, checkCallArgsInExpr(arg, sigs, varTypes, structFields, underUnwrap)...)
 		}
 		return results
 	case *parser.InfixExpression:
 		var results []ValidateResult
 		if e.Left != nil {
-			results = append(results, checkCallArgsInExpr(e.Left, sigs, varTypes, structFields)...)
+			results = append(results, checkCallArgsInExpr(e.Left, sigs, varTypes, structFields, underUnwrap)...)
 		}
 		if e.Right != nil {
-			results = append(results, checkCallArgsInExpr(e.Right, sigs, varTypes, structFields)...)
+			results = append(results, checkCallArgsInExpr(e.Right, sigs, varTypes, structFields, underUnwrap)...)
 		}
 		return results
 	case *parser.PrefixExpression:
 		if e.Right != nil {
-			return checkCallArgsInExpr(e.Right, sigs, varTypes, structFields)
+			return checkCallArgsInExpr(e.Right, sigs, varTypes, structFields, underUnwrap)
 		}
 	case *parser.GroupedExpression:
 		if e.Expression != nil {
-			return checkCallArgsInExpr(e.Expression, sigs, varTypes, structFields)
+			return checkCallArgsInExpr(e.Expression, sigs, varTypes, structFields, underUnwrap)
 		}
 	case *parser.IfExpression:
 		var results []ValidateResult
 		if e.Condition != nil {
-			results = append(results, checkCallArgsInExpr(e.Condition, sigs, varTypes, structFields)...)
+			results = append(results, checkCallArgsInExpr(e.Condition, sigs, varTypes, structFields, underUnwrap)...)
 		}
 		if e.Consequence != nil {
 			for _, is := range e.Consequence.Statements {
@@ -1196,45 +1295,45 @@ func checkCallArgsInExpr(expr parser.Expression, sigs map[string]*funcSig, varTy
 	case *parser.IndexExpression:
 		var results []ValidateResult
 		if e.Left != nil {
-			results = append(results, checkCallArgsInExpr(e.Left, sigs, varTypes, structFields)...)
+			results = append(results, checkCallArgsInExpr(e.Left, sigs, varTypes, structFields, underUnwrap)...)
 		}
 		if e.Index != nil {
-			results = append(results, checkCallArgsInExpr(e.Index, sigs, varTypes, structFields)...)
+			results = append(results, checkCallArgsInExpr(e.Index, sigs, varTypes, structFields, underUnwrap)...)
 		}
 		return results
 	case *parser.AssignExpression:
 		if e.Value != nil {
-			return checkCallArgsInExpr(e.Value, sigs, varTypes, structFields)
+			return checkCallArgsInExpr(e.Value, sigs, varTypes, structFields, underUnwrap)
 		}
 	case *parser.ConditionalExpression:
 		var results []ValidateResult
 		if e.Condition != nil {
-			results = append(results, checkCallArgsInExpr(e.Condition, sigs, varTypes, structFields)...)
+			results = append(results, checkCallArgsInExpr(e.Condition, sigs, varTypes, structFields, underUnwrap)...)
 		}
 		if e.Consequence != nil {
-			results = append(results, checkCallArgsInExpr(e.Consequence, sigs, varTypes, structFields)...)
+			results = append(results, checkCallArgsInExpr(e.Consequence, sigs, varTypes, structFields, underUnwrap)...)
 		}
 		if e.Alternative != nil {
-			results = append(results, checkCallArgsInExpr(e.Alternative, sigs, varTypes, structFields)...)
+			results = append(results, checkCallArgsInExpr(e.Alternative, sigs, varTypes, structFields, underUnwrap)...)
 		}
 		return results
 	case *parser.ArrayLiteral:
 		var results []ValidateResult
 		for _, elem := range e.Elements {
-			results = append(results, checkCallArgsInExpr(elem, sigs, varTypes, structFields)...)
+			results = append(results, checkCallArgsInExpr(elem, sigs, varTypes, structFields, underUnwrap)...)
 		}
 		return results
 	case *parser.SliceLiteral:
 		var results []ValidateResult
 		for _, elem := range e.Elements {
-			results = append(results, checkCallArgsInExpr(elem, sigs, varTypes, structFields)...)
+			results = append(results, checkCallArgsInExpr(elem, sigs, varTypes, structFields, underUnwrap)...)
 		}
 		return results
 	case *parser.StructLiteral:
 		var results []ValidateResult
 		for _, f := range e.Fields {
 			if f.Value != nil {
-				results = append(results, checkCallArgsInExpr(f.Value, sigs, varTypes, structFields)...)
+				results = append(results, checkCallArgsInExpr(f.Value, sigs, varTypes, structFields, underUnwrap)...)
 			}
 		}
 		return results

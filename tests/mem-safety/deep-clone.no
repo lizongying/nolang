@@ -19,16 +19,16 @@ test-clone-str-vec = () (ok bool) {
     c[0] == 'hello' -> ok = true
     s[1] == 'world' -> ok = true
     c[1] == 'world' -> ok = true
-    s.len == 2 -> ok = true
-    c.len == 2 -> ok = true
+    s.len() == 2 -> ok = true
+    c.len() == 2 -> ok = true
 }
 
 ; 測試 3：str 深層 clone
 test-clone-str = () (ok bool) {
     s = 'hello'
     c = s
-    s.len == 5 -> ok = true
-    c.len == 5 -> ok = true
+    s.len-bytes() == 5 -> ok = true
+    c.len-bytes() == 5 -> ok = true
 }
 
 ; 測試 4：用戶結構體深層 clone

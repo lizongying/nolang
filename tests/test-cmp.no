@@ -3,7 +3,7 @@
 ; # std/str
 
 fstr str = '  hello   world  nolang  '
-n = fstr.len
+n = fstr.len-bytes()
 
 i <- [0..n): {
     b = fstr[i]

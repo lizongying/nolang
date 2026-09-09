@@ -34,19 +34,19 @@ test-tls-server-init = () (pass bool) {
             c = it
 
             ; 驗證憑證已生成
-            c.cert.len == 0 -> {
+            c.cert.len() == 0 -> {
                 print('FAIL: cert not generated')
                 c.close()
                 return
             }
 
             ; 驗證 RSA 金鑰已設定
-            c.n-bytes.len != 256 -> {
+            c.n-bytes.len() != 256 -> {
                 print('FAIL: n-bytes wrong size')
                 c.close()
                 return
             }
-            c.d-bytes.len != 256 -> {
+            c.d-bytes.len() != 256 -> {
                 print('FAIL: d-bytes wrong size')
                 c.close()
                 return
@@ -76,7 +76,7 @@ test-https-server-struct = () (pass bool) {
         recv-buf: buf
         recv-buf-len: 0
     }
-    conn.method.len == 0 -> pass = true
+    conn.method.len-bytes() == 0 -> pass = true
 }
 
 ; run-https-e2e-client: 父進程客戶端邏輯
@@ -103,7 +103,9 @@ run-https-e2e-client = (host str, port i64) (ok bool) {
             ; 發送 HTTP GET 請求
             cr = char-to-str(13)
             lf = char-to-str(10)
+            #{overflow = wrap}
             crlf = cr - lf
+            #{overflow = wrap}
             req = 'GET / HTTP/1.1' - crlf - 'Host: 127.0.0.1' - crlf - 'Connection: close' - crlf - crlf
 
             send-ok = false
@@ -138,8 +140,10 @@ run-https-e2e-client = (host str, port i64) (ok bool) {
                 rn = tc.recv(tmp, 2048)
                 rn <= 0 -> *
                 i <- [0..rn): {
+                    #{overflow = wrap}
                     recv-buf[recv-total + i] = tmp[i]
                 }
+                #{overflow = wrap}
                 recv-total = recv-total + rn
 
                 pos = recv-buf.index-from('hello from nolang https', 0)
@@ -224,7 +228,9 @@ run-https-e2e-client-12 = (host str, port i64) (ok bool) {
             ; 發送 HTTP GET 請求
             cr = char-to-str(13)
             lf = char-to-str(10)
+            #{overflow = wrap}
             crlf = cr - lf
+            #{overflow = wrap}
             req = 'GET / HTTP/1.1' - crlf - 'Host: 127.0.0.1' - crlf - 'Connection: close' - crlf - crlf
 
             send-ok = false
@@ -259,8 +265,10 @@ run-https-e2e-client-12 = (host str, port i64) (ok bool) {
                 rn = tc.recv(tmp, 2048)
                 rn <= 0 -> *
                 i <- [0..rn): {
+                    #{overflow = wrap}
                     recv-buf[recv-total + i] = tmp[i]
                 }
+                #{overflow = wrap}
                 recv-total = recv-total + rn
 
                 pos = recv-buf.index-from('hello from nolang https 1.2', 0)

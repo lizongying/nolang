@@ -13,28 +13,28 @@ failed = 0
 t-encode-std-3bytes = () {
     data []byte = [65, 66, 67]
     s = base64.encode-std(data)
-    runner.eq(s.len, 4, 'encode-std 3 bytes len == 4')
+    runner.eq(s.len(), 4, 'encode-std 3 bytes len == 4')
     runner.str-eq(s, 'QUJD', 4, 'encode-std ABC')
 }
 
 t-encode-std-1byte = () {
     data []byte = [65]
     s = base64.encode-std(data)
-    runner.eq(s.len, 4, 'encode-std 1 byte len == 4')
+    runner.eq(s.len(), 4, 'encode-std 1 byte len == 4')
     runner.str-eq(s, 'QQ==', 4, 'encode-std A')
 }
 
 t-encode-std-2bytes = () {
     data []byte = [65, 66]
     s = base64.encode-std(data)
-    runner.eq(s.len, 4, 'encode-std 2 bytes len == 4')
+    runner.eq(s.len(), 4, 'encode-std 2 bytes len == 4')
     runner.str-eq(s, 'QUI=', 4, 'encode-std AB')
 }
 
 t-encode-std-empty = () {
     data []byte = with-cap(0)
     s = base64.encode-std(data)
-    runner.eq(s.len, 0, 'encode-std empty len == 0')
+    runner.eq(s.len(), 0, 'encode-std empty len == 0')
 }
 
 ; ── URL 安全編碼 ──────────────────────────────
@@ -42,7 +42,7 @@ t-encode-std-empty = () {
 t-encode-url-3bytes = () {
     data []byte = [0xFB, 0xFF, 0xBF]
     s = base64.encode-url(data)
-    runner.eq(s.len, 4, 'encode-url 3 bytes len == 4')
+    runner.eq(s.len(), 4, 'encode-url 3 bytes len == 4')
     runner.str-eq(s, '-_-_', 4, 'encode-url 0xFBFFBF')
 }
 
@@ -54,7 +54,7 @@ t-decode-std = () {
     ok bool = false
     result: {
         ok -> {
-            ok = it.len == 3
+            ok = it.len() == 3
         }
         nil -> ok = false
         err -> ok = false
@@ -74,7 +74,7 @@ t-decode-padding = () {
     result = base64.decode(s, base64.BASE64-STD)
     ok bool = false
     result: {
-        ok -> ok = it.len == 1 && it[0] == 65
+        ok -> ok = it.len() == 1 && it[0] == 65
         nil -> ok = false
         err -> ok = false
     }
@@ -90,7 +90,7 @@ t-roundtrip = () {
     ok bool = false
     result: {
         ok -> {
-            match = it.len == 10
+            match = it.len() == 10
             match2 = it[0] == 1 && it[9] == 10
             ok = match && match2
         }

@@ -14,7 +14,7 @@ get-pair = () (a []i64, b []i64) {
 
 main = () {
     ra, rb = get-pair()
-    print(ra.len)
-    print(rb.len)
+    print(ra.len())
+    print(rb.len())
     print('done')
 }

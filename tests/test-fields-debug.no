@@ -3,7 +3,7 @@
 ; # std/str
 
 fstr str = '  hello   world  nolang  '
-n = fstr.len
+n = fstr.len-bytes()
 print('len:' - n.to-str())
 
 ; 打印每個 byte

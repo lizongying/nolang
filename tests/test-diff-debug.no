@@ -11,31 +11,39 @@ diff-op {
 
 ; diff-split-lines: split content into lines
 diff-split-lines = (content str) (lines []str) {
-    eprint('SPLIT: entered, content.len={content.len}')
+    eprint('SPLIT: entered, content.len={content.len-bytes()}')
     start = 0
-    i <- [0..content.len): {
+    i <- [0..content.len-bytes()): {
         content[i] == 10 -> {
             lines.push(content.slice(start, i))
+            #{overflow = wrap}
             start = i + 1
         }
     }
-    start < content.len -> lines.push(content.slice(start, content.len))
-    ll = lines.len
+    start < content.len-bytes() -> lines.push(content.slice(start, content.len-bytes()))
+    ll = lines.len()
     eprint('SPLIT: done, lines.len={ll}')
 }
 
 ; diff-engine-lcs: full LCS-based diff
 diff-engine-lcs = (a []str, b []str) (ops []diff-op) {
-    na = a.len
-    nb = b.len
+    na = a.len()
+    nb = b.len()
+    #{overflow = wrap}
     cols = nb + 1
+    #{overflow = wrap}
     total = (na + 1) * cols
     dp []i64 = with-len(total)
 
+    #{overflow = wrap}
     ai <- [na - 1..0]: {
+        #{overflow = wrap}
         aj <- [nb - 1..0]: {
+            #{overflow = wrap}
             a[ai].compare(b[aj]) == 0 -> dp[ai * cols + aj] = dp[(ai + 1) * cols + (aj + 1)] + 1
+            #{overflow = wrap}
             dp[ai * cols + aj] < dp[(ai + 1) * cols + aj] -> dp[ai * cols + aj] = dp[(ai + 1) * cols + aj]
+            #{overflow = wrap}
             dp[ai * cols + aj] < dp[ai * cols + (aj + 1)] -> dp[ai * cols + aj] = dp[ai * cols + (aj + 1)]
         }
     }
@@ -43,10 +51,14 @@ diff-engine-lcs = (a []str, b []str) (ops []diff-op) {
     ; Debug: print dp table
     eprint('DEBUG dp table:')
     eprint('  na={na} nb={nb} cols={cols} total={total}')
+    #{overflow = wrap}
     ai <- [0..na + 1): {
         row = ''
+        #{overflow = wrap}
         aj <- [0..nb + 1): {
+            #{overflow = wrap}
             v = dp[ai * cols + aj]
+            #{overflow = wrap}
             row = row - ' ' - v.to-str()
         }
         eprint('  {row}')
@@ -60,28 +72,38 @@ diff-engine-lcs = (a []str, b []str) (ops []diff-op) {
                 op.kind = 0
                 tmp-line = a[i]
                 op.line = tmp-line
+                #{overflow = wrap}
                 op.a-no = i + 1
+                #{overflow = wrap}
                 op.b-no = j + 1
                 ops.push(op)
+                #{overflow = wrap}
                 i = i + 1
+                #{overflow = wrap}
                 j = j + 1
             }
+            #{overflow = wrap}
             dp[(i + 1) * cols + j] >= dp[i * cols + (j + 1)] -> {
                 op = diff-op {}
                 op.kind = 1
                 tmp-line = a[i]
                 op.line = tmp-line
+                #{overflow = wrap}
                 op.a-no = i + 1
                 ops.push(op)
+                #{overflow = wrap}
                 i = i + 1
             }
+            #{overflow = wrap}
             dp[(i + 1) * cols + j] < dp[i * cols + (j + 1)] -> {
                 op = diff-op {}
                 op.kind = 2
                 tmp-line = b[j]
                 op.line = tmp-line
+                #{overflow = wrap}
                 op.b-no = j + 1
                 ops.push(op)
+                #{overflow = wrap}
                 j = j + 1
             }
         }
@@ -90,8 +112,10 @@ diff-engine-lcs = (a []str, b []str) (ops []diff-op) {
             op.kind = 1
             tmp-line = a[i]
             op.line = tmp-line
+            #{overflow = wrap}
             op.a-no = i + 1
             ops.push(op)
+            #{overflow = wrap}
             i = i + 1
         }
         j < nb -> {
@@ -99,8 +123,10 @@ diff-engine-lcs = (a []str, b []str) (ops []diff-op) {
             op.kind = 2
             tmp-line = b[j]
             op.line = tmp-line
+            #{overflow = wrap}
             op.b-no = j + 1
             ops.push(op)
+            #{overflow = wrap}
             j = j + 1
         }
     } (i < na || j < nb)
@@ -119,11 +145,11 @@ c'
     diff-split-lines(c1, lines1)
     diff-split-lines(c2, lines2)
 
-    n1 = lines1.len
-    n2 = lines2.len
+    n1 = lines1.len()
+    n2 = lines2.len()
     eprint('lines1.len={n1}')
     eprint('lines2.len={n2}')
-    cl = c1.len
+    cl = c1.len-bytes()
     eprint('c1.len={cl}')
     i <- [0..cl): {
         b = c1[i]
@@ -140,7 +166,7 @@ c'
     ops []diff-op
     ops = diff-engine-lcs(lines1, lines2)
 
-    on = ops.len
+    on = ops.len()
     eprint('ops.len={on}')
     i <- [0..on): {
         op = ops[i]

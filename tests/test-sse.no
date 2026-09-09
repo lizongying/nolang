@@ -78,7 +78,7 @@ client: {
                 -> {
                     print('event: ' - ev.event)
                     print('data: ' - ev.data)
-                    ev.id.len > 0 -> print('id: ' - ev.id)
+                    ev.id.len() > 0 -> print('id: ' - ev.id)
                     ev.retry >= 0 -> {
                         r = ev.retry.to-str()
                         print('retry: ' - r)

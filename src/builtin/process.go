@@ -42,6 +42,18 @@ func init() {
 		ForwardFunc:  "process-waitpid",
 	})
 
+	// process-waitpid-nohang: non-blocking waitpid (WNOHANG).
+	// Returns -1 if the child is still running, else its exit code (WEXITSTATUS).
+	// Used to implement process.cmd timeout (poll + kill on deadline).
+	BuiltinMethodList = append(BuiltinMethodList, BuiltinMethod{
+		ReceiverType: ReceiverGlobal,
+		MethodName:   "process-waitpid-nohang",
+		Params:       []parser.Type{parser.TypeI64},
+		Return:       []parser.Type{parser.TypeI64},
+		Doc:          "Non-blocking waitpid (WNOHANG). Returns -1 if still running, else exit code",
+		ForwardFunc:  "process-waitpid-nohang",
+	})
+
 	// process-exec: replace current process with new program
 	// Calls execlp(program, program, arg, NULL)
 	// Returns only on failure (errno)

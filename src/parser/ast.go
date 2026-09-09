@@ -488,15 +488,39 @@ func (mas *MultiAssignStatement) EndPos() lexer.Position { return mas.Value.EndP
 // This is only valid inside a function that has an option-typed result param.
 type UnwrapAssignStatement struct {
 	Token lexer.Token // the ?= token
-	Name  *Identifier
-	Value Expression
+	Name  *Identifier // 簡單變數目標（IDENT ?= expr）；欄位/索引目標時為 nil
+	// Target 為廣義指派目標表達式（欄位 `d.year`、索引 `a[i]`），與 Name 互斥：
+	// 簡單變數走 Name，欄位/索引走 Target。lowering 的 ok 臂依此產生 `v = it`
+	// 或 `target = it`（AssignExpression）。
+	Target Expression
+	Value  Expression
+	// IsAutoPropagated 標記此節點由 lowering 的 maybeAutoPropagateIndex 從
+	// 普通 `x = v[5]` 自動改寫而來（非來源中的顯式 `?=`）。formatter 據此
+	// 渲染為 `=` 以忠實還原來源（跳過展開的格式化場景）。
+	IsAutoPropagated bool
 	CommentedNode
 }
 
+// TargetName 傳回指派目標的字串表示：簡單變數取 Name.Value，欄位/索引則取
+// 表達式字串。用於 lowering 中對局部變數的型別標註與 formatter 渲染。
+func (uas *UnwrapAssignStatement) TargetName() string {
+	if uas.Name != nil {
+		return uas.Name.Value
+	}
+	if uas.Target != nil {
+		return exprToString(uas.Target)
+	}
+	return ""
+}
+
 func (uas *UnwrapAssignStatement) statementNode()         {}
+func (uas *UnwrapAssignStatement) expressionNode()         {}
 func (uas *UnwrapAssignStatement) Pos() lexer.Position    { return posFromToken(uas.Token) }
 func (uas *UnwrapAssignStatement) EndPos() lexer.Position { return uas.Value.EndPos() }
 func (uas *UnwrapAssignStatement) String() string {
+	if uas.Target != nil {
+		return exprToString(uas.Target) + " ?= " + exprToString(uas.Value)
+	}
 	return uas.Name.Value + " ?= " + exprToString(uas.Value)
 }
 
@@ -566,6 +590,9 @@ func (rs *ReturnStatement) EndPos() lexer.Position {
 type ExpressionStatement struct {
 	Token        lexer.Token
 	Expression   Expression
+	// OverflowMode 攜帶區塊級/語句級 #{overflow = ...} 模式（if/match 臂體與臂條件）。
+	// 貫穿 HIR 重建；HIR 模式下 g.sem 為 nil，若無此欄位臂體整數運算會退回預設 option 模式。
+	OverflowMode string
 	CommentedNode
 }
 
@@ -639,6 +666,25 @@ type FunctionDefinition struct {
 	// 這些函式名包含下劃線等特殊字元，不受命名規範約束。
 	// 目前先不設定（預設 false），為未來標準庫統一過濾預留。
 	IsSkipNamingCheck bool
+	// OverflowMode 攜帶 #{overflow = wrap|clamp0} 註解指定的「有符號整數相減溢位」
+	// 處理模式；"" 表示未標註（預設回傳 option<int>）。此欄位由 parser 在解析
+	// 註解時填寫，並由單態化複本（cloneAndSubstitute / cloneUnionVariant）繼承，
+	// 使 generic/union 複本的方法體內相減不遺失模式（HIR 模式下註解只存於
+	// hirPkg.Anns，side-table 拷貝無效，故必須以 AST 節點欄位攜帶）。
+	OverflowMode string
+	// Intrinsic 標記此函式被 #{intrinsic} 註解修飾：其命名返回參數由 codegen /
+	// 内建 / 出參引用等方式在 nolang 源碼之外賦值，靜態檢查無法追蹤，故跳過
+	// ValidateUnassignedReturns 的「未賦值」檢查。此欄位由 parser 在解析註解時
+	// 填寫（見 attachAnnotations），與 OverflowMode 同機制。
+	Intrinsic bool
+	// BuiltinStub 標記此函式被 #{buildin=NAME} 註解修飾：它只是標準庫內建函式的
+	// 簽名聲明（真實實作位於 Go runtime 的 BuiltinMethod 表，透過 ForwardFunc /
+	// CLibCall / LLVMIntrinsic 等接線），nolang 源碼中的函式體（通常為空 {}）不會
+	// 被校驗或 codegen，遇到此標記編譯器直接跳過「不處理」。此欄位由 parser 在解析
+	// 註解時填寫（見 attachAnnotations），與 OverflowMode / Intrinsic 同機制。
+	BuiltinStub bool
+	// BuiltinName 攜帶 #{buildin=NAME} 中的 NAME（即 Go 側 BuiltinMethod 的鍵）。
+	BuiltinName string
 	CommentedNode
 }
 
@@ -1374,6 +1420,11 @@ type ForStatement struct {
 	// formatter/transpiler 直接讀取此欄位識別合成包裝，
 	// 避免依賴 `s.Body == ifExpr.Consequence` 指標相等啟發式。
 	IsCondWrapper bool
+	// OverflowMode 攜帶區塊級/語句級 #{overflow = wrap|clamp0|min|max|saturate}
+	// 註解指定的「整數算術溢位」處理模式。parser 於 propagateBlockScopedOverflow
+	// 寫入；貫穿 HIR 重建（parser -> hir -> AST），使 HIR codegen 路徑在 g.sem 為 nil
+	// 時仍能解析模式，不依賴語意 side-table。空 = 未標註（預設回傳 option<int>）。
+	OverflowMode string
 	CommentedNode
 }
 

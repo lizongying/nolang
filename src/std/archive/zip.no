@@ -32,8 +32,11 @@ zip-entry {
 
 ; u32le: 讀取 4 位元組小端序無號整數
 u32le = (data []byte, off i64) (v i64) {
+    #{overflow = wrap}
     off1 = off + 1
+    #{overflow = wrap}
     off2 = off + 2
+    #{overflow = wrap}
     off3 = off + 3
     b0 = data[off]
     b1 = data[off1]
@@ -44,6 +47,7 @@ u32le = (data []byte, off i64) (v i64) {
 
 ; u16le: 讀取 2 位元組小端序無號整數
 u16le = (data []byte, off i64) (v i64) {
+    #{overflow = wrap}
     off1 = off + 1
     b0 = data[off]
     b1 = data[off1]
@@ -57,8 +61,11 @@ zip.find-eocd = () (off i64) {
     off = -1
     n = len(.data)
     ! n >= 22 -> return
+    #{overflow = wrap}
     start = n - 22
+    #{overflow = wrap}
     i <- [0..start + 1): {
+        #{overflow = wrap}
         idx = start - i
         sig = u32le(.data, idx)
         ! sig == 101010256 -> continue
@@ -74,6 +81,7 @@ zip.get-cd-off = () (cd-off i64) {
         cd-off = 0
         return
     }
+    #{overflow = wrap}
     off16 = eocd + 16
     cd-off = u32le(.data, off16)
 }
@@ -85,6 +93,7 @@ zip.get-total = () (total i64) {
         total = 0
         return
     }
+    #{overflow = wrap}
     off8 = eocd + 8
     total = u16le(.data, off8)
 }
@@ -96,13 +105,18 @@ zip.entry-off = (idx i64) (off i64) {
     cur = cd-off
     j <- [0..idx): {
         j >= total -> break
+        #{overflow = wrap}
         off28 = cur + 28
+        #{overflow = wrap}
         off30 = cur + 30
+        #{overflow = wrap}
         off32 = cur + 32
         name-len = u16le(.data, off28)
         extra-len = u16le(.data, off30)
         comment-len = u16le(.data, off32)
+        #{overflow = wrap}
         skip = 46 + name-len + extra-len + comment-len
+        #{overflow = wrap}
         cur = cur + skip
     }
     off = cur
@@ -122,12 +136,16 @@ zip.entry = (idx i64) (e zip-entry) {
 ; name: 第 idx 個條目的檔名
 zip.name = (idx i64) (name str) {
     off = .entry-off(idx)
+    #{overflow = wrap}
     off28 = off + 28
     name-len = u16le(.data, off28)
+    #{overflow = wrap}
     off46 = off + 46
     result = ''
     i <- [0..name-len): {
+        #{overflow = wrap}
         idx2 = off46 + i
+        #{overflow = wrap}
         result = result - number.char-to-str(.data[idx2])
     }
     name = result
@@ -136,6 +154,7 @@ zip.name = (idx i64) (name str) {
 ; size: 原始大小
 zip.size = (idx i64) (sz i64) {
     off = .entry-off(idx)
+    #{overflow = wrap}
     off24 = off + 24
     sz = u32le(.data, off24)
 }
@@ -143,6 +162,7 @@ zip.size = (idx i64) (sz i64) {
 ; compressed-size: 壓縮後大小
 zip.compressed-size = (idx i64) (csz i64) {
     off = .entry-off(idx)
+    #{overflow = wrap}
     off20 = off + 20
     csz = u32le(.data, off20)
 }
@@ -150,6 +170,7 @@ zip.compressed-size = (idx i64) (csz i64) {
 ; method: 壓縮方式（0=stored, 8=deflate）
 zip.method = (idx i64) (method i64) {
     off = .entry-off(idx)
+    #{overflow = wrap}
     off10 = off + 10
     method = u16le(.data, off10)
 }
@@ -157,9 +178,13 @@ zip.method = (idx i64) (method i64) {
 ; extract: 提取第 idx 個條目的內容（stored 和 deflate）
 zip.extract = (idx i64) (out []byte) {
     off = .entry-off(idx)
+    #{overflow = wrap}
     off24 = off + 24
+    #{overflow = wrap}
     off10 = off + 10
+    #{overflow = wrap}
     off42 = off + 42
+    #{overflow = wrap}
     off20 = off + 20
     sz = u32le(.data, off24)
     csz = u32le(.data, off20)
@@ -167,16 +192,21 @@ zip.extract = (idx i64) (out []byte) {
     local-off = u32le(.data, off42)
 
     ; local file header: 30 + name-len + extra-len
+    #{overflow = wrap}
     off26 = local-off + 26
+    #{overflow = wrap}
     off28 = local-off + 28
+    #{overflow = wrap}
     off30 = local-off + 30
     name-len2 = u16le(.data, off26)
     extra-len2 = u16le(.data, off28)
+    #{overflow = wrap}
     data-off = off30 + name-len2 + extra-len2
     result []byte
     {
         method == 0 && sz > 0 -> {
             i <- [0..sz): {
+                #{overflow = wrap}
                 src-off = data-off + i
                 result.push(.data[src-off])
             }
@@ -186,6 +216,7 @@ zip.extract = (idx i64) (out []byte) {
             ; 提取壓縮資料
             compressed []byte
             i <- [0..csz): {
+                #{overflow = wrap}
                 compressed.push(.data[data-off + i])
             }
 
@@ -201,12 +232,16 @@ zip.extract = (idx i64) (out []byte) {
 ; name: 讀取條目檔名
 zip-entry.name = () (name str) {
     off = .off
+    #{overflow = wrap}
     off28 = off + 28
     name-len = u16le(.data, off28)
+    #{overflow = wrap}
     off46 = off + 46
     result = ''
     i <- [0..name-len): {
+        #{overflow = wrap}
         idx2 = off46 + i
+        #{overflow = wrap}
         result = result - number.char-to-str(.data[idx2])
     }
     name = result
@@ -214,18 +249,21 @@ zip-entry.name = () (name str) {
 
 ; size: 讀取條目原始大小
 zip-entry.size = () (sz i64) {
+    #{overflow = wrap}
     off24 = .off + 24
     sz = u32le(.data, off24)
 }
 
 ; compressed-size: 讀取條目壓縮後大小
 zip-entry.compressed-size = () (csz i64) {
+    #{overflow = wrap}
     off20 = .off + 20
     csz = u32le(.data, off20)
 }
 
 ; method: 讀取條目壓縮方式（0=stored, 8=deflate）
 zip-entry.method = () (method i64) {
+    #{overflow = wrap}
     off10 = .off + 10
     method = u16le(.data, off10)
 }
@@ -233,9 +271,13 @@ zip-entry.method = () (method i64) {
 ; extract: 提取條目內容（stored 和 deflate）
 zip-entry.extract = () (out []byte) {
     off = .off
+    #{overflow = wrap}
     off24 = off + 24
+    #{overflow = wrap}
     off10 = off + 10
+    #{overflow = wrap}
     off42 = off + 42
+    #{overflow = wrap}
     off20 = off + 20
     sz = u32le(.data, off24)
     csz = u32le(.data, off20)
@@ -243,16 +285,21 @@ zip-entry.extract = () (out []byte) {
     local-off = u32le(.data, off42)
 
     ; local file header: 30 + name-len + extra-len
+    #{overflow = wrap}
     off26 = local-off + 26
+    #{overflow = wrap}
     off28 = local-off + 28
+    #{overflow = wrap}
     off30 = local-off + 30
     name-len2 = u16le(.data, off26)
     extra-len2 = u16le(.data, off28)
+    #{overflow = wrap}
     data-off = off30 + name-len2 + extra-len2
     result []byte
     {
         method == 0 && sz > 0 -> {
             i <- [0..sz): {
+                #{overflow = wrap}
                 src-off = data-off + i
                 result.push(.data[src-off])
             }
@@ -262,6 +309,7 @@ zip-entry.extract = () (out []byte) {
             ; 提取壓縮資料
             compressed []byte
             i <- [0..csz): {
+                #{overflow = wrap}
                 compressed.push(.data[data-off + i])
             }
 
@@ -291,21 +339,24 @@ zip-writer {
 
 ; add-file: 添加檔案到歸檔（自動計算 CRC32）
 zip-writer.add-file = (name str, content []byte) {
-    crc = crc-32.crc-32(content, content.len)
-    off = .data.len
+    crc = crc-32.crc-32(content, content.len())
+    off = .data.len()
     .write-local-file(name, content, crc)
-    .write-cd-entry(name, off, content.len, content.len, crc)
+    .write-cd-entry(name, off, content.len(), content.len(), crc)
+    #{overflow = wrap}
     .count = .count + 1
 }
 
 ; add-dir: 添加目錄條目
 zip-writer.add-dir = (name str) {
     dname = name
+    #{overflow = wrap}
     dname.ends-with('/') == false -> dname = dname - '/'
     empty []byte
-    off = .data.len
+    off = .data.len()
     .write-local-file(dname, empty, 0)
     .write-cd-entry(dname, off, 0, 0, 0)
+    #{overflow = wrap}
     .count = .count + 1
 }
 
@@ -327,14 +378,14 @@ zip-writer.cd-put = (b i64) {
 
 ; finalize: 寫入中央目錄和 EOCD，返回完整歸檔資料
 zip-writer.finalize = () (out []byte) {
-    cd-offset = .data.len
-    cd-size = .cd-data.len
+    cd-offset = .data.len()
+    cd-size = .cd-data.len()
     i <- [0..cd-size): {
         .put(.cd-data[i])
     }
     .write-eocd(cd-offset, cd-size)
-    dlen = .data.len
-    out = with-cap(.data.len)
+    dlen = .data.len()
+    out = with-cap(.data.len())
     i <- [0..dlen): {
         out[i] = .data[i]
     }
@@ -380,13 +431,13 @@ zip-writer.write-local-file = (name str, content []byte, crc i64) {
     .write-u32(crc)
 
     ; 壓縮後大小
-    .write-u32(content.len)
+    .write-u32(content.len())
 
     ; 原始大小
-    .write-u32(content.len)
+    .write-u32(content.len())
 
     ; 檔名長度
-    name-len = name.len
+    name-len = name.len-bytes()
     .write-u16(name-len)
 
     ; 額外欄位長度 (0)
@@ -398,7 +449,7 @@ zip-writer.write-local-file = (name str, content []byte, crc i64) {
     }
 
     ; 檔案內容
-    i <- [0..content.len): {
+    i <- [0..content.len()): {
         .put(content[i])
     }
 }
@@ -452,7 +503,7 @@ zip-writer.write-cd-entry = (name str, offset i64, size i64, compressed-size i64
     .cd-write-u32(size)
 
     ; 檔名長度
-    name-len = name.len
+    name-len = name.len-bytes()
     .cd-write-u16(name-len)
 
     ; 額外欄位長度 (0)

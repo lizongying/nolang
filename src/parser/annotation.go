@@ -23,6 +23,32 @@ import (
 //
 // 對於非 FFI 註解，若後續為宣告（let、struct definition、function definition），
 // 註解條目會附加到該宣告上；否則作為獨立 AnnotationStatement 保留。
+// parseTrailingAnnotation 解析緊跟在陳述句之後的尾隨 #{...} 註解（同一行），
+// 回傳註解條目。呼叫方負責將其附加到剛解析的陳述句（parseBlockStatement 會
+// 在解析完 stmt 後呼叫）。這支援 `x = v[5] #{index-out=0}` 這類尾隨註解語法，
+// 否則尾隨 #{...} 會被 parseAnnotationStatement 當成孤立註解陳述句而遺失。
+// 連續的尾隨 #{...}（以空白分隔）會合併為同一組條目。
+func (p *Parser) parseTrailingAnnotation() []*AnnotationEntry {
+	// currentToken 應為 HASH_LBRACE (#{)
+	if p.currentToken.Type != lexer.HASH_LBRACE {
+		return nil
+	}
+	var entries []*AnnotationEntry
+	for p.currentToken.Type == lexer.HASH_LBRACE {
+		p.nextToken() // skip #{
+		more := p.parseAnnotationBody()
+		if p.currentToken.Type != lexer.RBRACE {
+			msg := fmt.Sprintf("line %d, column %d: expected '}' to close annotation, got %s instead",
+				p.currentToken.Line, p.currentToken.Column, p.currentToken.Type.String())
+			p.saveError(msg)
+			return entries
+		}
+		p.nextToken() // skip }
+		entries = append(entries, more...)
+	}
+	return entries
+}
+
 func (p *Parser) parseAnnotationStatement() Statement {
 	// currentToken 為 HASH_LBRACE (#{)
 	annotToken := p.currentToken
@@ -90,8 +116,13 @@ func (p *Parser) parseAnnotationStatement() Statement {
 	}
 
 	// 若後續為 IDENT 開頭的宣告，附加註解
-	if p.currentToken.Type == lexer.IDENT {
-		// 暫存註解條目，解析下一個語句後附加
+	if p.currentToken.Type == lexer.IDENT ||
+		p.currentToken.Type == lexer.RARROW ||
+		(p.currentToken.Type == lexer.LBRACKET && p.isArrayTypeMethodDefinition()) {
+		// RARROW 分支處理 wildcard 裸配對臂（`-> body`）：
+		// 形如 `#{overflow = wrap}\n -> out[pos] = d - 10 + 97` 的註解
+		// 必須附加到後方的 `-> body` 陳述，否則該臂整數運算會退回預設
+		// option 模式，產生 %option 後被 trunc 到窄型別而讓 LLVM 報錯。
 		p.pendingAnnotations = entries
 		stmt := p.parseStatement()
 		if stmt != nil {
@@ -111,6 +142,263 @@ func (p *Parser) parseAnnotationStatement() Statement {
 // （ResolveProgram）收尾計算並存入 side-table。
 func (p *Parser) attachAnnotations(stmt Statement, entries []*AnnotationEntry) {
 	p.sem.SetRawAnnotations(stmt, entries)
+	// 同步將 #{overflow = wrap|clamp0} 攜帶到 FunctionDefinition 節點欄位，
+	// 使單態化複本能繼承（HIR 模式下 side-table 拷貝無效）。
+	if fd, ok := stmt.(*FunctionDefinition); ok {
+		for _, e := range entries {
+			switch {
+			case e.Key == "overflow" && e.Value != nil:
+				var raw string
+				switch v := e.Value.(type) {
+				case *AnnotationIdentValue:
+					raw = v.Value
+				case *AnnotationStringValue:
+					raw = v.Value
+				}
+				if m := NormalizeOverflowMode(raw); m != "" {
+					fd.OverflowMode = m
+				}
+		case e.Key == "intrinsic":
+			// #{intrinsic} 標記函式的命名返回參數由 codegen / 内建 /
+			// 出參引用在 nolang 源碼之外賦值，跳過未賦值檢查。
+			fd.Intrinsic = true
+		case e.Key == "buildin":
+			// #{buildin=NAME} 標記此函式為標準庫內建聲明：真實實作位於 Go
+			// runtime，nolang 函式體不參與校驗與 codegen（編譯器遇到此標記直接
+			// 跳過）。NAME 為 Go 側 BuiltinMethod 的鍵。
+			fd.BuiltinStub = true
+			if v, ok := e.Value.(*AnnotationIdentValue); ok {
+				fd.BuiltinName = v.Value
+			} else if v, ok := e.Value.(*AnnotationStringValue); ok {
+				fd.BuiltinName = v.Value
+			}
+		}
+		}
+	}
+}
+
+// overflowEntries 從一組註解條目中挑出 overflow 鍵的條目（std 函式普遍以
+// `#{overflow = wrap}` 一次性涵蓋整個區塊的整數運算）。回傳 nil 表示無 overflow 註解。
+func (p *Parser) overflowEntries(entries []*AnnotationEntry) []*AnnotationEntry {
+	if len(entries) == 0 {
+		return nil
+	}
+	var out []*AnnotationEntry
+	for _, e := range entries {
+		if e.Key == "overflow" {
+			out = append(out, e)
+		}
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
+// propagateBlockScopedOverflow 將區塊內的 #{overflow = ...} 註解沿用到其後、直到
+// 被下一個 #{overflow = ...} 覆寫為止的所有陳述（含巢狀區塊），使溢出模式在區塊
+// 範圍內生效。std 函式普遍以「區塊前置一次 #{overflow = wrap}」涵蓋該區塊內所有
+// 整數運算（如迴圈索引 self[i + j]、裸配對臂條件 n >= 0 - 128），而非逐條陳述標註。
+// 這讓 codegen 的 generateStatement 逐條陳述讀取溢出模式時仍能正確套用，避免整數
+// 運算退回預設 option 模式產生 %option 後被 trunc 到窄型別而讓 LLVM 報錯。
+func (p *Parser) propagateBlockScopedOverflow(block *BlockStatement) {
+	if block == nil {
+		return
+	}
+	p.propagateOverflowInStmts(block.Statements, nil)
+}
+
+func (p *Parser) propagateOverflowInStmts(stmts []Statement, cur []*AnnotationEntry) {
+	// std 慣例：區塊內一次性 `#{overflow = wrap}` 本意涵蓋「整個區塊」的整數運算，
+	// 與註解置於區塊頭/中/尾無關。若本區塊直接陳述中僅出現「單一」溢出模式
+	// （所有獨立 overflow 註解同模式），則雙向作用域：該模式套用到區塊內所有
+	// 未自帶 overflow 註解的陳述（含註解之前的），消除「註解置於運算之後」漏 wrap
+	// 的整類 bug（如 path.ext 的 `last-dot == .p.len-bytes() - 1`）。
+	// 若出現「多種」溢出模式（需 override 語意），退回原有前向傳播 + override，避免歧義。
+	if blockMode := p.blockLevelOverflowMode(stmts); blockMode != nil {
+		for _, s := range stmts {
+			if _, ok := s.(*AnnotationStatement); ok {
+				continue
+			}
+			if own := p.overflowEntries(p.sem.AnnotationsOf(s)); own == nil {
+				p.mergeAnnotations(s, blockMode)
+				setStmtOverflowMode(s, p.overflowModeString(blockMode))
+			} else {
+				setStmtOverflowMode(s, p.overflowModeString(own))
+			}
+			if fs, ok := s.(*ForStatement); ok && fs.Body != nil {
+				p.propagateOverflowInStmts(fs.Body.Statements, blockMode)
+			}
+			if bs, ok := s.(*BlockStatement); ok {
+				p.propagateOverflowInStmts(bs.Statements, blockMode)
+			}
+		}
+		return
+	}
+	// 多模式或無區塊級註解：維持原有前向傳播 + override。
+	for _, s := range stmts {
+		// 獨立註解陳述：更新目前生效的溢出模式（即便其本身不產生 IR）。
+		if as, ok := s.(*AnnotationStatement); ok {
+			if e := p.overflowEntries(as.Entries); e != nil {
+				cur = e
+			}
+			continue
+		}
+		// 目前生效的溢出模式沿用到本陳述（若本陳述尚未自帶 overflow 註解）。
+		if cur != nil && p.overflowEntries(p.sem.AnnotationsOf(s)) == nil {
+			p.mergeAnnotations(s, cur)
+			setStmtOverflowMode(s, p.overflowModeString(cur))
+		}
+		// 巢狀區塊/迴圈體繼承目前模式（其內部的自帶註解只影響自身，不向外層洩漏）。
+		if fs, ok := s.(*ForStatement); ok && fs.Body != nil {
+			p.propagateOverflowInStmts(fs.Body.Statements, cur)
+		}
+		if bs, ok := s.(*BlockStatement); ok {
+			p.propagateOverflowInStmts(bs.Statements, cur)
+		}
+		// 本陳述自帶 overflow 註解則以此覆寫後續生效模式。
+		if own := p.overflowEntries(p.sem.AnnotationsOf(s)); own != nil {
+			cur = own
+			setStmtOverflowMode(s, p.overflowModeString(own))
+		}
+	}
+}
+
+// blockLevelOverflowMode 回傳本區塊「直接陳述」中「單一」溢出模式的註解條目；
+// 若無 overflow 註解、或出現兩種以上不同模式（需 override 語意），回傳 nil。
+// 只統計獨立 AnnotationStatement（語句自帶的 overflow 註解不算區塊級）。
+func (p *Parser) blockLevelOverflowMode(stmts []Statement) []*AnnotationEntry {
+	seenMode := ""
+	var single []*AnnotationEntry
+	for _, s := range stmts {
+		as, ok := s.(*AnnotationStatement)
+		if !ok {
+			continue
+		}
+		e := p.overflowEntries(as.Entries)
+		if e == nil {
+			continue
+		}
+		mode := p.overflowModeString(e)
+		if mode == "" {
+			continue // 無法識別的模式不計入單模式判定
+		}
+		if seenMode == "" {
+			seenMode = mode
+			single = e
+		} else if mode != seenMode {
+			return nil // 多模式：退回前向 override
+		}
+	}
+	if seenMode == "" {
+		return nil
+	}
+	return single
+}
+
+// overflowModeString 從一組 overflow 註解條目取出正規化模式字串（"wrap"/"clamp0"/...）。
+func (p *Parser) overflowModeString(entries []*AnnotationEntry) string {
+	for _, e := range entries {
+		if e.Key != "overflow" || e.Value == nil {
+			continue
+		}
+		switch v := e.Value.(type) {
+		case *AnnotationIdentValue:
+			return NormalizeOverflowMode(v.Value)
+		case *AnnotationStringValue:
+			return NormalizeOverflowMode(v.Value)
+		}
+	}
+	return ""
+}
+
+// setStmtOverflowMode 將溢出模式寫入陳述節點的 OverflowMode 欄位（ForStatement / ExpressionStatement 需要），
+// 使 HIR 重建後仍能還原模式（不依賴語意 side-table）。HIR 模式下 g.sem 為 nil，
+// 若無此欄位，迴圈體 / if·match 臂體整數運算會退回預設 option 模式，產生 %option 後被 trunc 到窄型別而報錯。
+func setStmtOverflowMode(s Statement, mode string) {
+	if mode == "" {
+		return
+	}
+	switch n := s.(type) {
+	case *ForStatement:
+		n.OverflowMode = mode
+	case *ExpressionStatement:
+		n.OverflowMode = mode
+	}
+}
+
+// mergeAnnotations 將 entries 合併（無則直接設定）到節點 n 的註解副表。
+// 合併時按 (key, value 字串) 去重，避免區塊級 overflow 傳播與語句自帶的同名
+// 註解疊加成 [wrap, wrap]（會讓 `no fmt` 非冪等：每格式化一輪多印一次）。
+func (p *Parser) mergeAnnotations(n Node, entries []*AnnotationEntry) {
+	if isNil(n) || len(entries) == 0 {
+		return
+	}
+	if existing := p.sem.AnnotationsOf(n); len(existing) > 0 {
+		seen := make(map[string]bool, len(existing))
+		merged := make([]*AnnotationEntry, 0, len(existing)+len(entries))
+		for _, e := range existing {
+			seen[annoKey(e)] = true
+			merged = append(merged, e)
+		}
+		for _, e := range entries {
+			k := annoKey(e)
+			if seen[k] {
+				continue
+			}
+			seen[k] = true
+			merged = append(merged, e)
+		}
+		p.sem.SetRawAnnotations(n, merged)
+	} else {
+		p.sem.SetRawAnnotations(n, entries)
+	}
+}
+
+// annoKey 回傳註解條目的去重鍵（key + value 字串）。
+func annoKey(e *AnnotationEntry) string {
+	if e == nil {
+		return ""
+	}
+	if e.Value == nil {
+		return e.Key
+	}
+	return e.Key + "=" + e.Value.String()
+}
+
+// NormalizeOverflowMode 將 #{overflow = ...} 的值正規化為內部模式名：
+//   - 通用：wrap / clamp0 / min / max / saturate。
+//   - 型別前綴形式（如 i8-min、u8-max、i16-saturate）：擷取方向尾碼
+//     （min/max/saturate），忽略型別前綴——箝位邊界由運算結果的實際型別決定。
+//
+// 無法辨識的值回傳空字串（非溢出註解，忽略）。
+func NormalizeOverflowMode(s string) string {
+	switch s {
+	case "wrap", "clamp0", "min", "max", "saturate":
+		return s
+	}
+	// 型別前綴：<u?i\d+>-(min|max|saturate)
+	if len(s) > 4 && s[0] == 'i' || (len(s) > 4 && s[0] == 'u') {
+		// 找尋最後一個 '-'
+		idx := strings.LastIndex(s, "-")
+		if idx > 0 && idx < len(s)-1 {
+			typ := s[:idx]
+			dir := s[idx+1:]
+			if isIntTypeName(typ) && (dir == "min" || dir == "max" || dir == "saturate") {
+				return dir
+			}
+		}
+	}
+	return ""
+}
+
+// isIntTypeName 報告名稱是否為整數型別名（i8..i128 / u8..u128）。
+func isIntTypeName(s string) bool {
+	switch s {
+	case "i8", "i16", "i32", "i64", "i128", "u8", "u16", "u32", "u64", "u128":
+		return true
+	}
+	return false
 }
 
 // extractGenericParams 從註解條目中找出 generic 鍵的陣列值，提取型別參數名稱列表。

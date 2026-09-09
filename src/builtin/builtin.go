@@ -50,6 +50,12 @@ type BuiltinMethod struct {
 	LLVMIntrinsic string
 	CLibCall      *CLibCall
 	LLVMConv      *LLVMConvKind
+	// Intercepted marks a pseudo-builtin that is never emitted as a real call:
+	// the codegen intercepts the call site and expands it inline (e.g. str.byte /
+	// txt.byte raw-byte accessors become a GEP+load+zext). It exists solely so the
+	// MIR lowerer can learn the result type; such entries intentionally carry no
+	// ForwardFunc / LLVMIntrinsic / CLibCall / LLVMConv.
+	Intercepted bool
 }
 
 var BuiltinMethodList = []BuiltinMethod{}

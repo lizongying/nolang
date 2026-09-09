@@ -8,7 +8,7 @@ stress = () {
     i <- [0..100): {
         task = run str-producer-async()
         s = awy task
-        s.len == 5 -> print('ok ', i)
+        s.len-bytes() == 5 -> print('ok ', i)
     }
 }
 stress()

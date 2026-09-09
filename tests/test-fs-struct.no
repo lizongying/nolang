@@ -52,10 +52,10 @@ f-r: {
             err -> print('fail: read err')
             nil -> print('fail: read nil')
             -> {
-                n = r.len
+                n = r.len()
                 it.close()
                 {
-                    n == payload.len -> print('ok: read length matches')
+                    n == payload.len-bytes() -> print('ok: read length matches')
                     -> print('fail: read length mismatch')
                 }
             }

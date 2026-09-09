@@ -9,22 +9,22 @@
 ; ═══════════════════════════════════════════════
 ifs = net.ifconfig-list()
 eprint('ifconfig-list returned ')
-print(ifs.len.to-str() + ' interfaces')
-ifs.len >= 0 -> print('PASS: ifconfig-list returned non-negative count')
+print(ifs.len().to-str() + ' interfaces')
+ifs.len() >= 0 -> print('PASS: ifconfig-list returned non-negative count')
 
 ; ═══════════════════════════════════════════════
 ; 2. route-list — 列出路由表
 ; ═══════════════════════════════════════════════
 routes = net.route-list()
 eprint('route-list returned ')
-print(routes.len.to-str() + ' routes')
-routes.len >= 0 -> print('PASS: route-list returned non-negative count')
+print(routes.len().to-str() + ' routes')
+routes.len() >= 0 -> print('PASS: route-list returned non-negative count')
 
 ; ═══════════════════════════════════════════════
 ; 3. arp-list — 列出 ARP 表
 ; ═══════════════════════════════════════════════
 arps = net.arp-list()
 eprint('arp-list returned ')
-print(arps.len.to-str() + ' entries')
-arps.len >= 0 -> print('PASS: arp-list returned non-negative count')
+print(arps.len().to-str() + ' entries')
+arps.len() >= 0 -> print('PASS: arp-list returned non-negative count')
 print('--- All tests done ---')

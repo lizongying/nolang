@@ -1,0 +1,4 @@
+v []str
+s str = 'hello'
+v.push(s)
+print(v[0])

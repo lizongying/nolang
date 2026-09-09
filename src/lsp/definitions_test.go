@@ -515,33 +515,34 @@ func TestIsValidIdent(t *testing.T) {
 // so that go-to-definition on their short names works across modules.
 //
 // Per the language spec, these functions can be called without module prefix.
-// They are declared in global.no as comment declarations, serving as the
-// single documentation hub for global built-in functions.
+// They are declared in global.no as #{buildin=NAME} annotation declarations
+// followed by a real `NAME = (params) (results) { }` signature line, serving
+// as the single documentation hub for global built-in functions.
 func TestGlobalBuiltinShortNameResolution(t *testing.T) {
-	// Simulate global.no with comment declarations for all 6 global functions
+	// Simulate global.no with annotation declarations for all 6 global functions
 	globalSource := `; with-cap: create with capacity
-; build-in (ForwardFunc: with-cap)
-; with-cap = (cap i64) { }
+#{buildin=with-cap}
+with-cap = (cap i64) { }
 
 ; with-len: create with length
-; build-in (ForwardFunc: with-len)
-; with-len = (len i64) { }
+#{buildin=with-len}
+with-len = (len i64) { }
 
 ; with-cap-len: create with capacity and length
-; build-in (ForwardFunc: with-cap-len)
-; with-cap-len = (cap i64, len i64) { }
+#{buildin=with-cap-len}
+with-cap-len = (cap i64, len i64) { }
 
 ; print: output to stdout with newline
-; build-in (ForwardFunc: print)
-; print = (s str) { }
+#{buildin=print}
+print = (s str) { }
 
 ; eprint: output to stderr with newline
-; build-in (ForwardFunc: eprint)
-; eprint = (s str) { }
+#{buildin=eprint}
+eprint = (s str) { }
 
 ; format: return formatted string
-; build-in (ForwardFunc: format)
-; format = (s str) (out str) { }
+#{buildin=format}
+format = (s str) (out str) { }
 `
 	index := NewSymbolIndex("file:///test.no", 1)
 	index.AddBuiltinSymbols()

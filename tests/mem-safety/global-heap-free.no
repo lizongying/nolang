@@ -12,8 +12,8 @@ print('GLOBAL-STR: {GLOBAL-STR}')
 GLOBAL-STR == 'hello from global' -> print('test-global-str: ok')
 
 ; 測試 2：模組級 vec 可讀取
-gvlen = GLOBAL-VEC.len
-print('GLOBAL-VEC.len: {gvlen}')
+gvlen = GLOBAL-VEC.len()
+print('GLOBAL-VEC.len(): {gvlen}')
 gv0 = GLOBAL-VEC[0]
 print('GLOBAL-VEC[0]: {gv0}')
 GLOBAL-VEC[0] == 100 -> print('test-global-vec: ok')
@@ -28,7 +28,7 @@ local-str = 'local string'
 print('local-str: {local-str}')
 local-str == 'local string' -> print('test-local-str: ok')
 local-vec = [1, 2, 3]
-lvlen = local-vec.len
-print('local-vec.len: {lvlen}')
-local-vec.len == 3 -> print('test-local-vec: ok')
+lvlen = local-vec.len()
+print('local-vec.len(): {lvlen}')
+local-vec.len() == 3 -> print('test-local-vec: ok')
 print('done')

@@ -1,6 +1,8 @@
 package fmt
 
 import (
+	"fmt"
+	"os"
 	"strings"
 
 	"github.com/lizongying/nolang/parser"
@@ -20,7 +22,17 @@ func docStartLine(stmt parser.Statement) int {
 // stmtFirstLine returns the first source line of a statement (including Doc comments).
 
 // stmtFirstLine returns the first source line of a statement (including Doc comments).
+// For a standalone AnnotationStatement, we deliberately ignore its Doc comment when
+// computing the gap: the parser re-attaches a preceding line comment as the
+// annotation's Doc on every re-parse (so the comment survives a round-trip), but the
+// comment is emitted *above* the `#{...}` token. Treating the Doc as the statement's
+// start would shift the gap calculation upward and inject a spurious blank line
+// between the previous statement and the annotation — breaking idempotency. The gap
+// is therefore measured to the `#{...}` token line, which is stable across passes.
 func stmtFirstLine(stmt parser.Statement) int {
+	if _, ok := stmt.(*parser.AnnotationStatement); ok {
+		return stmtTokenLine(stmt)
+	}
 	if l := docStartLine(stmt); l > 0 {
 		return l
 	}
@@ -182,15 +194,37 @@ func (f *formatter) formatTrailingComments(tc *parser.CommentGroup) {
 // hasBlankLineBetween checks if there is a blank line between two source positions.
 
 // hasBlankLineBetween checks if there is a blank line between two source positions.
+// A blank line that immediately follows an overflow annotation (e.g. the line left
+// after `#{overflow=wrap}`) is part of the formatter's own emitted layout, not a
+// genuine separative blank between two statements: the formatter re-emits the
+// annotation and such a following blank on every pass, so counting it would make
+// blank detection non-idempotent (a blank would be added, then re-detected, then
+// added again). We therefore skip blank lines directly after an overflow annotation.
 func (f *formatter) hasBlankLineBetween(prevEndLine, currStartLine int) bool {
 	if prevEndLine <= 0 || currStartLine <= 0 || currStartLine <= prevEndLine+1 {
 		return false
 	}
+	prevWasOverflow := false
 	for lineNum := prevEndLine + 1; lineNum < currStartLine; lineNum++ {
 		idx := lineNum - 1
-		if idx < len(f.sourceLines) && strings.TrimSpace(f.sourceLines[idx]) == "" {
+		if idx >= len(f.sourceLines) {
+			continue
+		}
+		trimmed := strings.TrimSpace(f.sourceLines[idx])
+		// overflow 註解行（#{...overflow...}）本身不算分隔空白，且其後緊鄰的空白行
+		// 屬 formatter 自身輸出佈局，亦不計入。
+		if strings.HasPrefix(trimmed, "#{") && strings.Contains(trimmed, "overflow") {
+			prevWasOverflow = true
+			continue
+		}
+		if trimmed == "" {
+			if prevWasOverflow {
+				prevWasOverflow = false
+				continue
+			}
 			return true
 		}
+		prevWasOverflow = false
 	}
 	return false
 }
@@ -228,6 +262,77 @@ func (f *formatter) attachedAnnotations(stmt parser.Statement) []*parser.Annotat
 // that will be rendered as a #{...} line before the statement body.
 func (f *formatter) hasAttachedAnnotations(stmt parser.Statement) bool {
 	return len(f.attachedAnnotations(stmt)) > 0
+}
+
+// attachedAnnotationsWillEmit reports whether formatting this statement will emit
+// at least one #{...} annotation line before its body (either a non-overflow
+// entry, or an overflow entry whose normalized mode differs from the currently
+// active overflow). It is used by the gap logic to decide whether to insert a
+// separating blank line: a block-scoped overflow annotation merged onto *every*
+// statement by propagateBlockScopedOverflow must NOT trigger a gap (otherwise a
+// blank line would be inserted before every statement and break idempotency).
+// Only annotations that will actually be emitted count.
+func (f *formatter) attachedAnnotationsWillEmit(stmt parser.Statement) bool {
+	for _, e := range f.attachedAnnotations(stmt) {
+		if e.Key == "overflow" {
+			if m := overflowModeStringOf(e); m != "" && m != f.activeOverflow {
+				return true
+			}
+		} else {
+			return true
+		}
+	}
+	return false
+}
+
+// overflowModeStringOf 從一個 overflow 註解條目取出正規化模式字串
+//（wrap/clamp0/min/max/saturate）；非 overflow 條目、無值或無法識別時回傳 ""。
+// 用於 formatter 對區塊級 #{overflow=...} 去重輸出（見 formatStatement /
+// formatAnnotationStatement 的 activeOverflow 機制）。
+func overflowModeStringOf(e *parser.AnnotationEntry) string {
+	if e == nil || e.Key != "overflow" || e.Value == nil {
+		return ""
+	}
+	switch v := e.Value.(type) {
+	case *parser.AnnotationIdentValue:
+		return parser.NormalizeOverflowMode(v.Value)
+	case *parser.AnnotationStringValue:
+		return parser.NormalizeOverflowMode(v.Value)
+	}
+	return ""
+}
+
+// emitOverflowAnnotation 輸出一個去重後的 overflow 註解行（若模式與
+// f.activeOverflow 相同則跳過）。回傳是否實際輸出。overflow 與平台/泛型註解
+// 分屬不同行：本函式只負責 overflow 行，呼叫方處理 others 行。
+//
+// trailingNewline 控制是否在註解行末輸出換行：
+//   - 附加路徑（formatStatement 中已掛載到某陳述的 overflow）：設 true，
+//     使該陳述自身的內容（如 `key = .[i]`）落在下一行。
+//   - 獨立註解陳述路徑（formatAnnotationStatement）：設 false，使註解以
+//     「結尾即內容」形式結束（不帶尾隨換行），由後續的間隙邏輯統一負責換行。
+//     若此處帶尾隨換行，則下一個陳述的間隙邏輯又會補一個 newline，造成
+//     「註解行與下一陳述之間多出一個空行」且每次格式化累加（非冪等）。
+func (f *formatter) emitOverflowAnnotation(mode string, trailingNewline bool) bool {
+	if os.Getenv("NOLANG_FMTDBG") != "" {
+		buf := f.buf.String()
+		last := buf
+		if len(buf) > 80 {
+			last = "..." + buf[len(buf)-80:]
+		}
+		fmt.Fprintf(os.Stderr, "[DBG] emitOverflow mode=%q active=%q trail=%v bufTail=%q\n", mode, f.activeOverflow, trailingNewline, last)
+	}
+	if mode == "" || mode == f.activeOverflow {
+		return false
+	}
+	f.write("#{overflow=")
+	f.write(mode)
+	f.write("}")
+	if trailingNewline {
+		f.newline()
+	}
+	f.activeOverflow = mode
+	return true
 }
 
 // lowerHexLiteral converts an uppercase hex literal to lowercase.

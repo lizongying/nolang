@@ -18,6 +18,7 @@ add = (s []i64, n i64, val i64) (new-n i64) {
         s[i] == val -> return
     }
     s[n] = val
+    #{overflow = wrap}
     new-n = n + 1
 }
 
@@ -29,7 +30,9 @@ set-remove = (s []i64, n i64, val i64) (new-n i64) {
         s[i] == val -> {
 
             ; 將最後一個元素移到該位置
+            #{overflow = wrap}
             s[i] = s[n - 1]
+            #{overflow = wrap}
             new-n = n - 1
             return
         }
@@ -63,6 +66,7 @@ union = (a []i64, an i64, b []i64, bn i64) (new-an i64) {
         }
         found == false -> {
             a[new-an] = v
+            #{overflow = wrap}
             new-an = new-an + 1
         }
     }
@@ -79,6 +83,7 @@ intersection = (a []i64, an i64, b []i64, bn i64) (out []i64, out-n i64) {
         j <- [0..bn): {
             b[j] == v -> {
                 out[out-n] = v
+                #{overflow = wrap}
                 out-n = out-n + 1
                 break
             }
@@ -102,6 +107,7 @@ difference = (a []i64, an i64, b []i64, bn i64) (out []i64, out-n i64) {
         }
         found == false -> {
             out[out-n] = v
+            #{overflow = wrap}
             out-n = out-n + 1
         }
     }

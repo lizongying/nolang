@@ -76,12 +76,13 @@ path.current = () (out path) {
 ; 處理尾綴/首綴 '/' 的各種組合
 ; 原地修改 .p，將 b 拼接到 .p 末尾
 path.join = (b str) {
-    bn = b.len
-    out-n = .p.len
+    bn = b.len-bytes()
+    out-n = .p.len-bytes()
 
     ; 如果 a 不以 '/' 結尾且 b 不以 '/' 開頭，加入 '/'
     need-sep = 1
     out-n > 0 -> {
+        #{overflow = wrap}
         last-a = .p[out-n - 1]
         last-a == SEP -> need-sep = 0
     }
@@ -92,6 +93,7 @@ path.join = (b str) {
     out-n == 0 -> need-sep = 0
     need-sep == 1 -> {
         .p[out-n] = SEP
+        #{overflow = wrap}
         out-n = out-n + 1
     }
 
@@ -105,6 +107,7 @@ path.join = (b str) {
     ; 複製 b
     j <- [start-b..bn): {
         .p[out-n] = b[j]
+        #{overflow = wrap}
         out-n = out-n + 1
     }
 }
@@ -119,14 +122,17 @@ path.base = () (out str) {
 
     ; 找最右邊的 '/'
     last-sep = -1
-    i <- [0...p.len): {
+    i <- [0...p.len-bytes()): {
         c = .p[i]
         c == SEP -> last-sep = i
     }
+    #{overflow = wrap}
     start = last-sep + 1
-    out-n = .p.len - start
-    out = with-cap(.p.len)
+    #{overflow = wrap}
+    out-n = .p.len-bytes() - start
+    out = with-cap(.p.len-bytes())
     i <- [0..out-n): {
+        #{overflow = wrap}
         out[i] = .p[start + i]
     }
 }
@@ -137,7 +143,7 @@ path.dir = () {
 
     ; 找最右邊的 '/'
     last-sep = -1
-    i <- [0...p.len): {
+    i <- [0...p.len-bytes()): {
         c = .p[i]
         c == SEP -> last-sep = i
     }
@@ -171,7 +177,7 @@ path.ext = () (out str) {
     ; 找最右邊的 '/' 之後的 '.'
     last-sep = -1
     last-dot = -1
-    i <- [0...p.len): {
+    i <- [0...p.len-bytes()): {
         c = .p[i]
         {
             c == SEP -> last-sep = i
@@ -182,16 +188,19 @@ path.ext = () (out str) {
     ; '.' 必須在 '/' 之後
     {
         last-dot <= last-sep -> return
-        last-dot == .p.len - 1 -> {
+        last-idx = .p.len-bytes() - 1 #{overflow = wrap}
+        last-dot == last-idx -> {
 
             ; 副檔名不能是路徑的最後一個字元（排除 '.' 和 '..'）
             return
         }
     }
     start = last-dot
-    out-n = .p.len - start
-    out = with-cap(.p.len)
+    #{overflow = wrap}
+    out-n = .p.len-bytes() - start
+    out = with-cap(.p.len-bytes())
     i <- [0..out-n): {
+        #{overflow = wrap}
         out[i] = .p[start + i]
     }
 }
@@ -203,7 +212,7 @@ path.ext = () (out str) {
 ; path.is-abs: 判斷路徑是否為絕對路徑
 ; 返回 true=是, false=否
 path.is-abs = () (yes bool) {
-    .p.len > 0 -> {
+    .p.len-bytes() > 0 -> {
         c = .p[0]
         c == SEP -> yes = true
     }
@@ -218,7 +227,7 @@ path.is-abs = () (yes bool) {
 path.clean = () {
     out-n = 0
     dot-count = 0
-    i <- [0...p.len): {
+    i <- [0...p.len-bytes()): {
         c = .p[i]
         {
             c == SEP -> {
@@ -230,9 +239,11 @@ path.clean = () {
 
                         ; 回退 '..'
                         ; 找 .p 中前一個 '/'
+                        #{overflow = wrap}
                         j = out-n - 1
                         {
                             .p[j] == SEP -> break
+                            #{overflow = wrap}
                             j = j - 1
                         } (j >= 0)
                         {
@@ -241,29 +252,35 @@ path.clean = () {
                         }
                     }
                     out-n > 0 -> {
+                        #{overflow = wrap}
                         prev = .p[out-n - 1]
                         prev != SEP -> {
                             .p[out-n] = SEP
+                            #{overflow = wrap}
                             out-n = out-n + 1
                         }
                     }
                     -> {
                         .p[out-n] = SEP
+                        #{overflow = wrap}
                         out-n = out-n + 1
                     }
                 }
                 dot-count = 0
             }
+            #{overflow = wrap}
             c == DOT -> dot-count = dot-count + 1
             -> {
 
                 ; 寫入之前積累的 '.' 字元
                 j <- [0..dot-count): {
                     .p[out-n] = DOT
+                    #{overflow = wrap}
                     out-n = out-n + 1
                 }
                 dot-count = 0
                 .p[out-n] = c
+                #{overflow = wrap}
                 out-n = out-n + 1
             }
         }
@@ -273,9 +290,11 @@ path.clean = () {
     {
         dot-count == 1 ->
         dot-count == 2 -> {
+            #{overflow = wrap}
             j = out-n - 1
             {
                 .p[j] == SEP -> break
+                #{overflow = wrap}
                 j = j - 1
             } (j >= 0)
             {
@@ -287,7 +306,9 @@ path.clean = () {
 
     ; 移除末尾 '/'
     out-n > 1 -> {
+        #{overflow = wrap}
         prev = .p[out-n - 1]
+        #{overflow = wrap}
         prev == SEP -> out-n = out-n - 1
     }
     .p.len = out-n
@@ -305,16 +326,19 @@ path.split = () (f str) {
 
     ; 找最右邊的 '/'
     last-sep = -1
-    i <- [0...p.len): {
+    i <- [0...p.len-bytes()): {
         c = .p[i]
         c == SEP -> last-sep = i
     }
 
     ; 提取檔名
+    #{overflow = wrap}
     start = last-sep + 1
-    out-n = .p.len - start
+    #{overflow = wrap}
+    out-n = .p.len-bytes() - start
     f = with-len(out-n)
     i <- [0..out-n): {
+        #{overflow = wrap}
         f[i] = .p[start + i]
     }
 

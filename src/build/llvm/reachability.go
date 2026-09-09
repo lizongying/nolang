@@ -99,22 +99,36 @@ func (g *Generator) computeReachableFunctions(program *parser.Program) map[strin
 	var worklist []string
 
 	// addReachable 將一個函數名加入可達集合（若它是已註冊的用戶/std 函數）
+	//
+	// 注意：registeredFns 的 key 是「註冊期（AST / 預掃描）使用的名稱」，其形式
+	// 並不統一——多數泛型/單態化實例使用已 sanitize 的形式（如 `_xbyte.to-str`、
+	// `process.cmd_str_slice...`），但 slice/array 的 `[]T.method` 方法仍保留括號
+	// 形式（如 `[]byte.slice`）。因此必須同時嘗試「原名」與「sanitize 後」兩種形
+	// 式再查表：盲目先 sanitize 會把 `[]byte.slice` 變成 `_LB__RB_byte.slice`，與
+	// registeredFns 中的 key 不符，導致該方法被錯誤剪枝（連結期 undefined symbol）。
+	// 過近似是安全的：多匹配只會多包含函數（僅損速度），不會漏包含。
 	addReachable := func(name string) {
-		name = sanitizeLLVMName(name)
 		if name == "" {
 			return
 		}
-		if registeredFns[name] {
-			if !reachable[name] {
-				reachable[name] = true
-				worklist = append(worklist, name)
+		// 候選查表形式：原名 + sanitize 後；兩者都試，命中任一即標記可達。
+		cands := []string{name, sanitizeLLVMName(name)}
+		for _, cand := range cands {
+			if cand == "" {
+				continue
 			}
-		}
-		// 也嘗試 "n." 前綴版本（clibFuncNames 衝突時，函數定義名為 "n.read" 等）
-		if registeredFns["n."+name] {
-			if !reachable["n."+name] {
-				reachable["n."+name] = true
-				worklist = append(worklist, "n."+name)
+			if registeredFns[cand] {
+				if !reachable[cand] {
+					reachable[cand] = true
+					worklist = append(worklist, cand)
+				}
+			}
+			// 也嘗試 "n." 前綴版本（clibFuncNames 衝突時，函數定義名為 "n.read" 等）
+			if registeredFns["n."+cand] {
+				if !reachable["n."+cand] {
+					reachable["n."+cand] = true
+					worklist = append(worklist, "n."+cand)
+				}
 			}
 		}
 	}
@@ -169,6 +183,9 @@ func (g *Generator) computeReachableFunctions(program *parser.Program) map[strin
 		// LetStatement / ExpressionStatement / ForStatement / MultiAssignStatement 等
 		// 是頂層可執行語句，其中的調用是入口調用
 		for _, callee := range collectCallTargets(stmt, registeredFns, methodSuffixIndex) {
+			if os.Getenv("NOLANG_DEBUG_REACH2") == "1" {
+				fmt.Fprintf(os.Stderr, "[reach2] toplevel callee=%q\n", callee)
+			}
 			addReachable(callee)
 		}
 	}
@@ -188,7 +205,11 @@ func (g *Generator) computeReachableFunctions(program *parser.Program) map[strin
 		}
 
 		// 掃描函數體，收集被調用的函數
-		for _, callee := range collectCallTargetsFromBlock(fd.Body, registeredFns, methodSuffixIndex) {
+		callees := collectCallTargetsFromBlock(fd.Body, registeredFns, methodSuffixIndex)
+		if os.Getenv("NOLANG_DEBUG_REACH2") == "1" {
+			fmt.Fprintf(os.Stderr, "[reach2] fn=%s callees=%v\n", fnName, callees)
+		}
+		for _, callee := range callees {
 			addReachable(callee)
 		}
 	}
@@ -451,6 +472,29 @@ func collectCallTargetsFromBlock(body *parser.BlockStatement, registeredFns map[
 	return targets
 }
 
+// mangledInstances 返回所有「以 bare 呼叫名為基底的單態化實例」的已註冊函數名。
+// 一個直接的完全限定泛型呼叫（如 `process.cmd`）在 funcRetTypes 中沒有
+// `process.cmd` 這個 key——只有單態化實例（如 `process.cmd_str_slice...`）被註冊。
+// 若不做解析，直接呼叫會發出 `@process.cmd_str_slice...` 但定義永遠不會被生成
+// → 連結期 undefined symbol。此處掃描以 `base_` / `base.` 為前綴的已註冊 key。
+// 這是安全的過近似：分隔符保證不會誤匹配（例如 `process.cmd_` 不會匹配
+// `process.command`，因後者前綴是 `process.command_`）。
+func mangledInstances(base string, registeredFns map[string]bool) []string {
+	var out []string
+	if base == "" {
+		return out
+	}
+	for _, sep := range []string{"_", "."} {
+		prefix := base + sep
+		for k := range registeredFns {
+			if strings.HasPrefix(k, prefix) {
+				out = append(out, k)
+			}
+		}
+	}
+	return out
+}
+
 // extractCalleeNames 從 CallExpression 的 Function 表達式中提取所有可能的
 // 被調用函數名稱。返回一個候選列表（保守過近似：可能多包含一些未實際調用的函數，
 // 但不會遺漏任何被調用的函數）。
@@ -464,11 +508,24 @@ func extractCalleeNames(fnExpr parser.Expression, registeredFns map[string]bool,
 	case *parser.Identifier:
 		var result []string
 		name := fn.Value
+		if os.Getenv("NOLANG_DEBUG_REACH2") == "1" && (strings.Contains(name, "cmd") || strings.Contains(name, "process")) {
+			fmt.Fprintf(os.Stderr, "[reach2] extract Identifier name=%q direct=%v\n", name, registeredFns[name])
+		}
 		if registeredFns[name] {
 			result = append(result, name)
 		}
 		if registeredFns["n."+name] {
 			result = append(result, "n."+name)
+		}
+		// Fallback: a direct call to a generic/overloaded fn (e.g. the bare
+		// `process.cmd`) has no registered bare key — only its mangled instance
+		// (e.g. `process.cmd_str_slice...`) is. Without this the definition is
+		// never generated → link error. Safe over-approximation.
+		for _, inst := range mangledInstances(name, registeredFns) {
+			result = append(result, inst)
+		}
+		if os.Getenv("NOLANG_DEBUG_REACH2") == "1" && name == "process.cmd" {
+			fmt.Fprintf(os.Stderr, "[reach2] extractCalleeNames process.cmd -> %v (direct=%v)\n", result, registeredFns[name])
 		}
 		return result
 
@@ -508,6 +565,19 @@ func extractCalleeNames(fnExpr parser.Expression, registeredFns map[string]bool,
 				if registeredFns[candidate] {
 					result = append(result, candidate)
 				}
+			}
+		}
+
+		// Fallback: a fully-qualified generic call (e.g. `process.cmd`) has no
+		// registered `process.cmd` key — only its mangled instance
+		// (e.g. `process.cmd_str_slice...`) is. The method-suffix path above
+		// cannot resolve it (the call name `cmd` is not a method). Scan for a
+		// mangle-derived variant using the full dotted path as the base. This is
+		// a safe over-approximation; without it the definition is never generated
+		// (direct top-level call) → link error.
+		if fullPath != "" {
+			for _, inst := range mangledInstances(fullPath, registeredFns) {
+				result = append(result, inst)
 			}
 		}
 

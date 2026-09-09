@@ -48,17 +48,21 @@ keccak-f1600 = (state []u64) {
         ; θ (theta)
         c [5]u64
         x <- [0..5): {
+            #{overflow = wrap}
             c[x] = state[x] ^ state[x + 5] ^ state[x + 10] ^ state[x + 15] ^ state[x + 20]
         }
         d [5]u64
         x <- [0..5): {
+            #{overflow = wrap}
             x1 = (x + 1) % 5
+            #{overflow = wrap}
             x4 = (x + 4) % 5
             d[x] = c[x1] ^ ((c[x4] << 1) | (c[x4] >> 63))
             d[x] = d[x] & SHA3-MASK64
         }
         x <- [0..5): {
             y <- [0..5): {
+                #{overflow = wrap}
                 state[x + 5 * y] = state[x + 5 * y] ^ d[x]
             }
         }
@@ -67,14 +71,19 @@ keccak-f1600 = (state []u64) {
         b [25]u64
         x <- [0..5): {
             y <- [0..5): {
+                #{overflow = wrap}
                 rc = KECCAK-RC[x + 5 * y]
+                #{overflow = wrap}
                 val = state[x + 5 * y]
+                #{overflow = wrap}
                 rotated = ((val << rc) | (val >> (64 - rc))) & SHA3-MASK64
                 rc == 0 -> rotated = val
 
                 ; π: new[x'][y'] where x' = y, y' = (2x+3y) % 5
                 nx = y
+                #{overflow = wrap}
                 ny = (2 * x + 3 * y) % 5
+                #{overflow = wrap}
                 b[nx + 5 * ny] = rotated
             }
         }
@@ -82,8 +91,11 @@ keccak-f1600 = (state []u64) {
         ; χ (chi)
         x <- [0..5): {
             y <- [0..5): {
+                #{overflow = wrap}
                 x1 = (x + 1) % 5
+                #{overflow = wrap}
                 x2 = (x + 2) % 5
+                #{overflow = wrap}
                 state[x + 5 * y] = b[x + 5 * y] ^ ((SHA3-MASK64 ^ b[x1 + 5 * y]) & b[x2 + 5 * y])
             }
         }
@@ -112,7 +124,7 @@ keccak-sponge = (data []byte, rate i64, capacity i64, out-len i64, suffix byte) 
     i <- [0..25): {
         state[i] = 0
     }
-    dlen = data.len
+    dlen = data.len()
 
     ; 吸收階段（absorbing）
     ; 按 rate 位元組分塊處理
@@ -121,13 +133,17 @@ keccak-sponge = (data []byte, rate i64, capacity i64, out-len i64, suffix byte) 
 
         ; 將 rate 位元組 XOR 到狀態中（little-endian lane 方式）
         i <- [0..rate): {
+            #{overflow = wrap}
             absorbed + i < dlen -> {
+                #{overflow = wrap}
                 lane-idx = i / 8
                 byte-idx = i % 8
+                #{overflow = wrap}
                 state[lane-idx] = state[lane-idx] ^ (data[absorbed + i] << (byte-idx * 8))
             }
         }
         keccak-f1600(state)
+        #{overflow = wrap}
         absorbed = absorbed + rate
     } (absorbed < dlen)
 
@@ -141,15 +157,20 @@ keccak-sponge = (data []byte, rate i64, capacity i64, out-len i64, suffix byte) 
     pad-byte-idx = remaining
 
     ; 對最後一個區塊的填充位元組進行 XOR
+    #{overflow = wrap}
     lane-idx = pad-byte-idx / 8
     byte-idx = pad-byte-idx % 8
 
     ; 添加 suffix
+    #{overflow = wrap}
     state[lane-idx] = state[lane-idx] ^ (suffix << (byte-idx * 8))
 
     ; 在 rate 末尾添加 0x80
+    #{overflow = wrap}
     last-lane-idx = (rate - 1) / 8
+    #{overflow = wrap}
     last-byte-idx = (rate - 1) % 8
+    #{overflow = wrap}
     state[last-lane-idx] = state[last-lane-idx] ^ (128 << (last-byte-idx * 8))
     keccak-f1600(state)
 
@@ -157,13 +178,18 @@ keccak-sponge = (data []byte, rate i64, capacity i64, out-len i64, suffix byte) 
     squeezed = 0
     {
         i <- [0..rate): {
+            #{overflow = wrap}
             squeezed + i < out-len -> {
+                #{overflow = wrap}
                 lane-idx = i / 8
                 byte-idx = i % 8
+                #{overflow = wrap}
                 out[squeezed + i] = (state[lane-idx] >> (byte-idx * 8)) & 255
             }
         }
+        #{overflow = wrap}
         squeezed + rate < out-len -> keccak-f1600(state)
+        #{overflow = wrap}
         squeezed = squeezed + rate
     } (squeezed < out-len)
 }
@@ -224,7 +250,9 @@ sha3-224-hex = (data []byte) (hex str) {
     hex-chars = '0123456789abcdef'
     hex str = with-len(56)
     i <- [0..28): {
+        #{overflow = wrap}
         hex[i * 2] = hex-chars[(hash[i] >> 4) & 15]
+        #{overflow = wrap}
         hex[i * 2 + 1] = hex-chars[hash[i] & 15]
     }
 }
@@ -237,7 +265,9 @@ sha3-256-hex = (data []byte) (hex str) {
     hex-chars = '0123456789abcdef'
     hex str = with-len(64)
     i <- [0..32): {
+        #{overflow = wrap}
         hex[i * 2] = hex-chars[(hash[i] >> 4) & 15]
+        #{overflow = wrap}
         hex[i * 2 + 1] = hex-chars[hash[i] & 15]
     }
 }
@@ -250,7 +280,9 @@ sha3-384-hex = (data []byte) (hex str) {
     hex-chars = '0123456789abcdef'
     hex str = with-len(96)
     i <- [0..48): {
+        #{overflow = wrap}
         hex[i * 2] = hex-chars[(hash[i] >> 4) & 15]
+        #{overflow = wrap}
         hex[i * 2 + 1] = hex-chars[hash[i] & 15]
     }
 }
@@ -263,7 +295,9 @@ sha3-512-hex = (data []byte) (hex str) {
     hex-chars = '0123456789abcdef'
     hex str = with-len(128)
     i <- [0..64): {
+        #{overflow = wrap}
         hex[i * 2] = hex-chars[(hash[i] >> 4) & 15]
+        #{overflow = wrap}
         hex[i * 2 + 1] = hex-chars[hash[i] & 15]
     }
 }

@@ -5,5 +5,5 @@
 s str = 'hello world hello'
 parts []str
 parts = s.split(' ')
-n = parts.len
+n = parts.len()
 print('parts:' - n.to-str())

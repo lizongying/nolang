@@ -58,6 +58,7 @@ arr-stack {
     ok = false
     s.top >= s.cap -> return
     .[s.top] = val
+    #{overflow = wrap}
     s.top = s.top + 1
     ok = true
 }
@@ -70,6 +71,7 @@ arr-stack {
         val = nil
         return
     }
+    #{overflow = wrap}
     s.top = s.top - 1
     val = .[s.top]
 }
@@ -82,6 +84,7 @@ arr-stack {
         val = nil
         return
     }
+    #{overflow = wrap}
     val = .[s.top - 1]
 }
 

@@ -1,8 +1,8 @@
 s = 'hello world'
-print(s.len)
+print(s.len-bytes())
 
 s.clear()
-print(s.len)
+print(s.len-bytes())
 
 s = ''
-print(s.len)
+print(s.len-bytes())

@@ -5,6 +5,7 @@
   "version": "0.2.10",
   "icon": "icon.png",
   "publisher": "lizongying",
+  "license": "Apache-2.0",
   "repository": {
     "type": "git",
     "url": "https://github.com/lizongying/nolang"

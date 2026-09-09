@@ -13,9 +13,11 @@
 ; ── 測試 1: fs.read 正確讀入 buf ──
 test-read-into-buf = () (ok bool) {
     ; 建立測試檔案
+    #{overflow = wrap}
     fs.write-file('/tmp/bug15_test.txt', 'Hello World'.to-bytes())
 
     ; 讀取檔案
+    #{overflow = wrap}
     fd = fs.open-read('/tmp/bug15_test.txt')
     fd < 0 -> return
     buf []byte = with-len(4096)
@@ -32,13 +34,16 @@ test-read-into-buf = () (ok bool) {
 ; ── 測試 2: copy-file 正確複製內容 ──
 test-copy-file = () (ok bool) {
     ; 建立測試檔案
+    #{overflow = wrap}
     fs.write-file('/tmp/bug15_src.txt', 'Hello Nolang'.to-bytes())
 
     ; 複製檔案
+    #{overflow = wrap}
     ok2 = copy-file('/tmp/bug15_src.txt', '/tmp/bug15_dst.txt')
     ok2 != true -> return
 
     ; 讀取複製後的檔案驗證內容
+    #{overflow = wrap}
     fd = fs.open-read('/tmp/bug15_dst.txt')
     fd < 0 -> return
     buf []byte = with-len(4096)
@@ -59,7 +64,7 @@ test-cmd-capture = () (ok bool) {
 
     ; 驗證捕獲的 stdout
     code == 0 -> {
-        out.len > 0 -> ok = true
+        out.len-bytes() > 0 -> ok = true
     }
 }
 
@@ -67,6 +72,7 @@ test-cmd-capture = () (ok bool) {
 test-infinite-break = () (ok bool) {
     count = 0
     {
+        #{overflow = wrap}
         count = count + 1
         count >= 10 -> break
     } (true)
@@ -80,7 +86,9 @@ test-pretest-loop = () (ok bool) {
     n = 5
     sum = 0
     {
+        #{overflow = wrap}
         sum = sum + n
+        #{overflow = wrap}
         n = n - 1
     } (n > 0)
 

@@ -7,7 +7,7 @@ test-found = () (ok bool) {
 
     ; 尋找 'o'（ASCII 111），返回指向第一個 'o' 的指標
     r = strchr(s, 111)
-    r.len > 0 -> ok = true
+    r.len-bytes() > 0 -> ok = true
 }
 
 ; 測試 2：strchr 找不到字元，返回 NULL
@@ -24,7 +24,7 @@ test-repeat = () (ok bool) {
     s = 'abcabc'
     i <- [0..10): {
         r = strchr(s, 97)
-        r.len > 0 -> ok = true
+        r.len-bytes() > 0 -> ok = true
     }
 }
 
@@ -36,7 +36,7 @@ find-char = (s str, c i64) (r str) {
 test-pass-str = () (ok bool) {
     s = 'hello'
     r = find-char(s, 108)
-    r.len > 0 -> ok = true
+    r.len-bytes() > 0 -> ok = true
 }
 
 main = () {

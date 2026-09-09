@@ -26,7 +26,7 @@ make-struct-vec = () {
         items: [4, 5, 6]
     }
     v.push(m2)
-    print(v.len)
+    print(v.len())
     ; v 離開作用域時：
     ;   深層 free → 遍歷 2 個 MyType 元素，各遞迴釋放 name.data 和 items.data，再 free v.data ✓
 }

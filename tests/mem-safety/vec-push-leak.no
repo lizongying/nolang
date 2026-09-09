@@ -37,6 +37,6 @@ grow-vec = () (out []i64) {
     ; 每次擴容的舊 buffer 全部洩漏
 }
 v = grow-vec()
-print(v.len)
+print(v.len())
 print(v[0])
 print(v[99])

@@ -1,0 +1,14 @@
+; 回歸測試：%option（可空型別）作為陣列索引值。
+; Bug：a[off + 1] 的結果 res 為 ?i64（%option），
+;      codegen 取 a[res] 時未對 %option 索引解包，
+;      導致 "defined with type '%option' but expected 'i64'"。
+; 修復後應輸出 x=3。
+main = () () {
+    a [4]i64 = [1, 2, 3, 4]
+    off i64 = 0
+    res ?i64 = a[off + 1]
+    x = a[res]
+    io.out('x=')
+    io.out(x)
+    print('')
+}

@@ -40,6 +40,7 @@ json-pool.alloc = () (idx i64) {
     idx = -1
     .count >= 4 -> return
     idx = .count
+    #{overflow = wrap}
     .count = .count + 1
     .nodes[idx].count = 0
     .nodes[idx].kind = json-kind.null
@@ -62,9 +63,9 @@ p.nodes[key-idx].str-val[0] = 97
 print('before copy')
 
 cnt i64 = 0
-p.nodes[node-idx].keys[cnt].len = p.nodes[key-idx].str-val.len
+p.nodes[node-idx].keys[cnt].len = p.nodes[key-idx].str-val.len-bytes()
 print('set len ok')
-j <- [0..p.nodes[key-idx].str-val.len): {
+j <- [0..p.nodes[key-idx].str-val.len-bytes()): {
     p.nodes[node-idx].keys[cnt][j] = p.nodes[key-idx].str-val[j]
 }
 print('copy ok')

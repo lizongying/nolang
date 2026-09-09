@@ -565,9 +565,9 @@ type DocumentSymbol struct {
 }
 
 type CodeAction struct {
-	Title       string         `json:"title"`
-	Kind        int            `json:"kind,omitempty"`
-	Tags        []int          `json:"tags,omitempty"`
+	Title       string          `json:"title"`
+	Kind        CodeActionKind  `json:"kind,omitempty"`
+	Tags        []int           `json:"tags,omitempty"`
 	Diagnostics []Diagnostic   `json:"diagnostics,omitempty"`
 	IsPreferred bool           `json:"isPreferred,omitempty"`
 	Disabled    *Disabled      `json:"disabled,omitempty"`
@@ -583,6 +583,30 @@ type WorkspaceEdit struct {
 	Changes         map[string][]TextEdit `json:"changes,omitempty"`
 	DocumentChanges []any                 `json:"documentChanges,omitempty"`
 }
+
+// CodeActionParams 是 textDocument/codeAction 請求的參數。
+type CodeActionParams struct {
+	TextDocument TextDocumentIdentifier `json:"textDocument"`
+	Range        Range                  `json:"range"`
+	Context      CodeActionContext      `json:"context"`
+}
+
+// CodeActionContext 攜帶觸發 code action 時的上下文診斷。
+type CodeActionContext struct {
+	Diagnostics []Diagnostic     `json:"diagnostics"`
+	Only        []CodeActionKind `json:"only,omitempty"`
+}
+
+// CodeActionKind 對齊 LSP 規範：是「字串」型別（如 "quickfix"、"refactor"、"source"），
+// 不是整數。VS Code 在 textDocument/codeAction 的 context.only 中傳遞字串陣列；
+// 若把 Only/Kind 定成 int，會導致 json.Unmarshal 失敗（本 bug 根因）。
+type CodeActionKind string
+
+const (
+	CodeActionKindQuickFix CodeActionKind = "quickfix"
+	CodeActionKindRefactor CodeActionKind = "refactor"
+	CodeActionKindSource   CodeActionKind = "source"
+)
 
 type RenameParams struct {
 	TextDocument TextDocumentIdentifier `json:"textDocument"`

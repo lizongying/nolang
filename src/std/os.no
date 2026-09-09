@@ -7,62 +7,53 @@
 ; 環境變數
 ; ═══════════════════════════════════════════════
 
-; build-in (ForwardFunc: getenv)
+#{buildin=get-env}
 ; get-env: 取得環境變數
-; get-env = (key str) (val str) {  // LLVM: call i8* @getenv
-; }
+get-env = (key str) (val str) { }
 
-; build-in (ForwardFunc: setenv)
+#{buildin=set-env}
 ; set-env: 設定環境變數
-; set-env = (k str, v str) (ok bool) {  // LLVM: call i32 @setenv
-; }
+set-env = (k str, v str) (ok bool) { }
 
 ; ═══════════════════════════════════════════════
 ; 目錄與路徑
 ; ═══════════════════════════════════════════════
 
-; build-in (ForwardFunc: getcwd)
+#{buildin=get-wd}
 ; get-wd: 取得當前工作目錄
-; get-wd = () (dir str) {  // LLVM: call i8* @getcwd → @.os-buf
-; }
+get-wd = () (dir str) { }
 
-; build-in (ForwardFunc: chdir)
+#{buildin=ch-dir}
 ; ch-dir: 切換工作目錄
-; ch-dir = (d str) (ok bool) {  // LLVM: call i32 @chdir
-; }
+ch-dir = (d str) (ok bool) { }
 
-; build-in (ForwardFunc: mkdir)
+#{buildin=mkdir}
 ; mkdir: 建立目錄
-; mkdir = (p str, mode i64) (ok bool) {  // LLVM: call i32 @mkdir → zext
-; }
+mkdir = (p str, mode i64) (ok bool) { }
 
 ; ═══════════════════════════════════════════════
 ; 行程
 ; ═══════════════════════════════════════════════
 
-; build-in (ForwardFunc: exit)
+#{buildin=exit}
 ; exit: 結束行程
-; exit = (c i64) {  // LLVM: call void @exit(i32)
-; }
+exit = (c i64) { }
 
-; build-in (ForwardFunc: getpid)
+#{buildin=get-pid}
 ; get-pid: 取得行程 ID
-; get-pid = () (pid i64) {  // LLVM: call i32 @getpid → zext
-; }
+get-pid = () (pid i64) { }
 
 ; ═══════════════════════════════════════════════
 ; 系統資訊
 ; ═══════════════════════════════════════════════
 
-; build-in (ForwardFunc: gethostname)
+#{buildin=host-name}
 ; host-name: 取得主機名稱
-; host-name = () (name str) {  // LLVM: call i32 @gethostname → @.os-buf
-; }
+host-name = () (name str) { }
 
-; build-in (ForwardFunc: get-arch)
+#{buildin=get-arch}
 ; get-arch: 取得當前 CPU 架構（編譯期常數，如 arm64、amd64）
-; get-arch = () (arch str) {  // LLVM: compile-time constant string from runtime.GOARCH
-; }
+get-arch = () (arch str) { }
 
 ; strerror: 將 POSIX errno 轉為人類可讀的錯誤訊息
 ; 以 Nolang 查表實現，取代 libc @strerror CLibCall
@@ -117,69 +108,65 @@ strerror = (errnum i64) (msg str) {
         errnum == 110 -> msg = 'Connection timed out'
         errnum == 111 -> msg = 'Connection refused'
         errnum == 113 -> msg = 'No route to host'
+        #{overflow = wrap}
         -> msg = 'Unknown error: ' + errnum.to-str()
     }
 }
 
-; build-in (ForwardFunc: get-errno)
+#{buildin=get-errno}
 ; get-errno: 取得最後的 errno 值
-; get-errno = () (errno i64) {  // LLVM: call i32* @__errno_location() → load → sext
-; }
+get-errno = () (errno i64) { }
 
 ; ═══════════════════════════════════════════════
 ; 權限與檔案資訊
 ; ═══════════════════════════════════════════════
 
-; build-in (CLibCall: chmod)
+#{buildin=ch-mod}
 ; ch-mod: 變更檔案權限
-; ch-mod = (path str, mode i64) (ok bool) { }
+ch-mod = (path str, mode i64) (ok bool) { }
 
-; build-in (CLibCall: chown)
+#{buildin=chown}
 ; chown: 變更檔案擁有者與群組（uid, gid）
-; chown = (path str, uid i64, gid i64) (ok bool) { }
+chown = (path str, uid i64, gid i64) (ok bool) { }
 
-; build-in (ForwardFunc: getuid)
+#{buildin=getuid}
 ; getuid: 取得當前使用者 ID
-; getuid = () (uid i64) { }
+getuid = () (uid i64) { }
 
-; build-in (ForwardFunc: getgid)
+#{buildin=getgid}
 ; getgid: 取得當前群組 ID
-; getgid = () (gid i64) { }
+getgid = () (gid i64) { }
 
-; build-in (CLibCall: geteuid)
+#{buildin=geteuid}
 ; geteuid: 取得當前有效使用者 ID
-; geteuid = () (euid i64) { }
+geteuid = () (euid i64) { }
 
-; build-in (CLibCall: getegid)
+#{buildin=getegid}
 ; getegid: 取得當前有效群組 ID
-; getegid = () (egid i64) { }
+getegid = () (egid i64) { }
 
-; build-in (ForwardFunc: getgroups)
+#{buildin=getgroups}
 ; getgroups: 取得當前使用者所屬群組 ID 列表
 ; 成功返回群組 ID 陣列與數量 n，失敗返回空陣列與 n=0
-; getgroups = () (gids []i64, n i64) {  // LLVM: call i32 @getgroups(0, NULL) → alloca → call @getgroups(n, buf) → 讀取 gids
-; }
+getgroups = () (gids []i64, n i64) { }
 
-; build-in (CLibCall: sysconf)
+#{buildin=sysconf}
 ; sysconf: 查詢系統配置限制值
 ; name: 配置項名稱（POSIX _SC_* 常數，注意各平台數值不同）
 ;   _SC_NPROCESSORS_ONLN: macOS=58, Linux=84
 ;   _SC_NPROCESSORS_CONF:  macOS=57, Linux=83
 ; 成功返回值，失敗返回 -1
-; sysconf = (name i64) (val i64) {  // LLVM: call i64 @sysconf(name)
-; }
+sysconf = (name i64) (val i64) { }
 
-; build-in (ForwardFunc: num-cpu)
+#{buildin=num-cpu}
 ; num-cpu: 取得在線 CPU 核數
 ; 等價於 sysconf(_SC_NPROCESSORS_ONLN)，跨平台常數由編譯器處理
-; num-cpu = () (n i64) {  // LLVM: call i64 @sysconf(_SC_NPROCESSORS_ONLN)
-; }
+num-cpu = () (n i64) { }
 
-; build-in (ForwardFunc: uname)
+#{buildin=uname}
 ; uname: 取得核心與架構資訊
 ; 返回 utsname 結構體，含 sysname/nodename/release/version/machine 五個欄位
-; uname = () (u utsname) {  // LLVM: alloca [256 x i8] buf → call i32 @uname(buf) → 讀取各欄位
-; }
+uname = () (u utsname) { }
 
 ; utsname: 作業系統資訊結構體（uname 系統呼叫結果）
 ; 各欄位為 null-terminated 字串（最长 64 字元）
@@ -190,157 +177,138 @@ utsname {
     version str
     machine str
 }
-; build-in (CLibCall: signal)
+#{buildin=signal}
 ; signal: 設定信號處理函數（簡化版，僅支援 SIG_IGN=1 / SIG_DFL=0）
 ; sig: 信號編號
 ; handler: 處理常數（0=SIG_DFL 預設, 1=SIG_IGN 忽略）
 ; 返回先前的處理值
-; signal = (sig i64, handler i64) (prev i64) {  // LLVM: call i64 (i32, ...)* @signal(sig, handler)
-; }
-; build-in (ForwardFunc: ttyname)
+signal = (sig i64, handler i64) (prev i64) { }
+#{buildin=ttyname}
 ; ttyname: 取得終端機名稱
 ; fd: 檔案描述符
 ; 成功返回終端機路徑字串，失敗返回空串
-; ttyname = (fd fd) (name str) {  // LLVM: call i8* @ttyname(fd) → emitStrLongFromCStr
-; }
-; build-in (ForwardFunc: stat-mode)
+ttyname = (fd fd) (name str) { }
+#{buildin=stat-mode}
 ; stat-mode: 取得檔案模式（包含權限與類型位元）
-; stat-mode = (path str) (mode i64, ok bool) { }
-; build-in (ForwardFunc: stat-uid)
+stat-mode = (path str) (mode i64, ok bool) { }
+#{buildin=stat-uid}
 ; stat-uid: 取得檔案擁有者 uid
-; stat-uid = (path str) (uid i64, ok bool) { }
-; build-in (ForwardFunc: stat-gid)
+stat-uid = (path str) (uid i64, ok bool) { }
+#{buildin=stat-gid}
 ; stat-gid: 取得檔案群組 gid
-; stat-gid = (path str) (gid i64, ok bool) { }
-; build-in (ForwardFunc: stat-mtime)
+stat-gid = (path str) (gid i64, ok bool) { }
+#{buildin=stat-mtime}
 ; stat-mtime: 取得檔案修改時間（Unix 秒）
-; stat-mtime = (path str) (mtime i64, ok bool) { }
+stat-mtime = (path str) (mtime i64, ok bool) { }
 ; ═══════════════════════════════════════════════
 ; 使用者與系統資訊擴充
 ; ═══════════════════════════════════════════════
-; build-in (ForwardFunc: getlogin)
+#{buildin=get-login}
 ; get-login: 取得當前登入使用者名稱
 ; 成功返回使用者名稱字串，失敗返回空串
-; get-login = () (name str) {  // LLVM: call i8* @getlogin → emitStrLongFromCStr
-; }
-; build-in (CLibCall: gethostid)
+get-login = () (name str) { }
+#{buildin=get-host-id}
 ; get-host-id: 取得主機識別碼（32 位元整數）
 ; 返回主機 ID（非負整數；錯誤時平台行為不同）
-; get-host-id = () (id i64) {  // LLVM: call i32 @gethostid → zext
-; }
-; build-in (CLibCall: setpriority)
+get-host-id = () (id i64) { }
+#{buildin=set-priority}
 ; set-priority: 設定行程優先級
 ; which: 來源類型（0=PRIO_PROCESS, 1=PRIO_PGRP, 2=PRIO_USER）
 ; who: 目標 ID（0 表示當前行程/群組/使用者）
 ; prio: 優先級值（-20 最高 ~ 19 最低）
 ; 成功返回 true，失敗返回 false
-; set-priority = (which i64, who i64, prio i64) (ok bool) {  // LLVM: call i32 @setpriority → icmp eq 0 → zext
-; }
-; build-in (CLibCall: getpriority)
+set-priority = (which i64, who i64, prio i64) (ok bool) { }
+#{buildin=get-priority}
 ; get-priority: 取得行程優先級
 ; which: 來源類型（0=PRIO_PROCESS, 1=PRIO_PGRP, 2=PRIO_USER）
 ; who: 目標 ID（0 表示當前行程/群組/使用者）
 ; 成功返回優先級值（-20 ~ 19）與 ok=true，失敗返回 0 與 ok=false
 ; 注意：libc 約定返回 -1 並設定 errno 表示錯誤，但因優先級也可能為 -1，
 ;       需以 errno==0 區分。這裡以 ok bool 明確表達。
-; get-priority = (which i64, who i64) (prio i64, ok bool) {  // LLVM: call i32 @getpriority → check errno
-; }
-; build-in (ForwardFunc: setsid)
+get-priority = (which i64, who i64) (prio i64, ok bool) { }
+#{buildin=set-sid}
 ; set-sid: 建立新對話並脫離控制終端
 ; 成功返回新的行程群組 ID（>0），失敗返回 -1
-; set-sid = () (pid i64) {  // LLVM: call i32 @setsid → sext
-; }
-; build-in (CLibCall: flock)
+set-sid = () (pid i64) { }
+#{buildin=flock}
 ; flock: 對檔案描述符施加或釋放建議性鎖
 ; fd: 檔案描述符
 ; op: 鎖操作（1=LOCK_SH 共享, 2=LOCK_EX 獨佔, 4=LOCK_UN 解鎖, 8=LOCK_NB 非阻塞）
 ; 成功返回 true，失敗返回 false
-; flock = (fd fd, op i64) (ok bool) {  // LLVM: call i32 @flock → icmp eq 0 → zext
-; }
-; build-in (ForwardFunc: sysctl)
+flock = (fd fd, op i64) (ok bool) { }
+#{buildin=sysctl}
 ; sysctl: 查詢系統控制參數（讀取字串值）
 ; name: 參數名稱（如 'kern.ostype'、'hw.model'）
 ; 成功返回值字串與 ok=true，失敗返回空串與 ok=false
 ; 注意：Linux 上 /proc/sys 對應；macOS/BSD 走 sysctl(2) syscall
-; sysctl = (name str) (val str, ok bool) {  // LLVM: platform-specific impl
-; }
-; build-in (ForwardFunc: getdomainname)
+sysctl = (name str) (val str, ok bool) { }
+#{buildin=get-domain-name}
 ; get-domain-name: 取得 NIS 網域名稱
 ; 成功返回網域字串，失敗返回空串
-; get-domain-name = () (name str) {  // LLVM: call i32 @getdomainname(buf, 256) → emitStrLongFromCStr
-; }
-; build-in (ForwardFunc: syslog)
+get-domain-name = () (name str) { }
+#{buildin=syslog}
 ; syslog: 寫入一筆系統日誌
 ; priority: 日誌優先級（0=EMERG ~ 7=DEBUG，常見 6=INFO）
 ; msg: 日誌訊息內容
-; syslog = (priority i64, msg str) {  // LLVM: call void @syslog(prio, "%s", msg)
-; }
+syslog = (priority i64, msg str) { }
 ; ═══════════════════════════════════════════════
 ; 根目錄切換
 ; ═══════════════════════════════════════════════
-; build-in (CLibCall: chroot)
+#{buildin=chroot}
 ; chroot: 切換根目錄（POSIX chroot(2)）
 ; path: 新的根目錄路徑
 ; 成功返回 true，失敗返回 false
 ; 注意：需要 root 權限；呼叫後應配合 ch-dir('/') 設定工作目錄
-; chroot = (path str) (ok bool) {  // LLVM: call i32 @chroot → icmp eq 0 → zext
-; }
+chroot = (path str) (ok bool) { }
 ; ═══════════════════════════════════════════════
 ; 時間
 ; ═══════════════════════════════════════════════
-; build-in (CLibCall: nolang.now_s)
+#{buildin=now}
 ; now: 取得當前 Unix 時間戳（秒）
-; now = () (ts i64) {  // LLVM: call i64 @nolang.now_s（gettimeofday → tv_sec）
-; }
-; build-in (CLibCall: nolang.now_ms)
+now = () (ts i64) { }
+#{buildin=now-ms}
 ; now-ms: 取得當前 Unix 時間戳（毫秒）
-; now-ms = () (ts i64) {  // LLVM: call i64 @nolang.now_ms
-; }
-; build-in (CLibCall: nolang.now_us)
+now-ms = () (ts i64) { }
+#{buildin=now-us}
 ; now-us: 取得當前 Unix 時間戳（微秒）
-; now-us = () (ts i64) {  // LLVM: call i64 @nolang.now_us
-; }
-; build-in (CLibCall: nolang.now_ns)
+now-us = () (ts i64) { }
+#{buildin=now-ns}
 ; now-ns: 取得當前時間戳（奈秒）
-; now-ns = () (ts i64) {  // LLVM: call i64 @nolang.now_ns
-; }
-; build-in (CLibCall: nolang.sleep_s)
+now-ns = () (ts i64) { }
+#{buildin=sleep}
 ; sleep: 睡眠 n 秒
-; sleep = (s i64) (ok i64) {  // LLVM: call i64 @nolang.sleep_s（nanosleep）→ 0
-; }
-; build-in (CLibCall: nolang.sleep_us)
+sleep = (s i64) (ok i64) { }
+#{buildin=sleep-us}
 ; sleep-us: 睡眠 n 微秒
-; sleep-us = (us i64) {  // LLVM: call i32 @nolang.sleep_us
-; }
-; build-in (CLibCall: nolang.sleep_ns)
+sleep-us = (us i64) { }
+#{buildin=sleep-ns}
 ; sleep-ns: 睡眠 n 奈秒
-; sleep-ns = (ns i64) {  // LLVM: call i32 @nolang.sleep_ns
-; }
+sleep-ns = (ns i64) { }
 ; ═══════════════════════════════════════════════
 ; 命令列參數
 ; ═══════════════════════════════════════════════
-; build-in (ForwardFunc: args-count)
+#{buildin=args}
 ; args: 命令列參數數量（含程式名）
-; args = () (count i64) {
+args = () (count i64) { }
 ;     // LLVM: access argc from main
 ; }
-; build-in (ForwardFunc: args-get)
+#{buildin=arg}
 ; arg: 取得第 i 個命令列參數
-; arg = (idx i64) (val str) {
+arg = (idx i64) (val str) { }
 ;     // LLVM: access argv[idx]
 ; }
 ; ═══════════════════════════════════════════════
 ; Windows 平台專用（內建）
 ; ═══════════════════════════════════════════════
-; build-in (CLibCall: FindFirstFileA)
+#{buildin=win-find-first-file}
 ; win-find-first-file: Windows 目錄搜尋（FindFirstFileA），返回 bufPtr（0=失敗）
-; win-find-first-file = (path str) (bufptr i64) { }
-; build-in (CLibCall: FindNextFileA)
+win-find-first-file = (path str) (bufptr i64) { }
+#{buildin=win-find-next-file}
 ; win-find-next-file: 讀取下一個 Windows 目錄條目名稱，返回 (name, ok)
-; win-find-next-file = (bufptr i64) (name str, ok bool) { }
-; build-in (CLibCall: FindClose)
+win-find-next-file = (bufptr i64) (name str, ok bool) { }
+#{buildin=win-find-close}
 ; win-find-close: 關閉 Windows 目錄搜尋 handle
-; win-find-close = (bufptr i64) (ok bool) { }
-; build-in (CLibCall: WSAStartup)
+win-find-close = (bufptr i64) (ok bool) { }
+#{buildin=win-wsa-startup}
 ; win-wsa-startup: 初始化 Winsock 2.2（僅 Windows），返回 true=成功
-; win-wsa-startup = () (ok bool) { }
+win-wsa-startup = () (ok bool) { }

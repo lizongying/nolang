@@ -14,9 +14,9 @@ t-get-extension = () {
     ext2 = magic.get-extension('/path/to/file.json')
     runner.str-eq(ext2, 'json', 4, 'get-extension file.json == json')
     ext3 = magic.get-extension('noext')
-    runner.eq(ext3.len, 0, 'get-extension noext len == 0')
+    runner.eq(ext3.len(), 0, 'get-extension noext len == 0')
     ext4 = magic.get-extension('/a/b.c/d')
-    runner.eq(ext4.len, 0, 'get-extension /a/b.c/d len == 0 (dir-like)')
+    runner.eq(ext4.len(), 0, 'get-extension /a/b.c/d len == 0 (dir-like)')
 }
 
 ; ── detect-by-extension ──────────────────────
@@ -29,7 +29,7 @@ t-detect-by-extension = () {
     kind3 = magic.detect-by-extension('no')
     runner.str-eq(kind3, 'Nolang source', 13, 'detect ext no == Nolang source')
     kind4 = magic.detect-by-extension('unknown')
-    runner.eq(kind4.len, 0, 'detect ext unknown len == 0')
+    runner.eq(kind4.len(), 0, 'detect ext unknown len == 0')
 }
 
 ; ── detect-type (extension-based, via temp file) ──

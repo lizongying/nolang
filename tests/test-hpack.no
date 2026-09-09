@@ -13,8 +13,9 @@ test-encode-int-small = () {
         print(out[0])
         return
     }
-    out.len != 1 -> {
-        print('FAIL: expected out.len=1')
+    ol = out.len-bytes()
+    ol != 1 -> {
+        print('FAIL: expected out.len-bytes()=1')
         return
     }
     print('PASS: encode-int-small')
@@ -31,8 +32,9 @@ test-encode-int-multi = () {
     ;   10 & 127 = 10, 10 >> 7 = 0
     ; So: out[0] = 31, out[1] = 42 | 128 = 170, out[2] = 10
     out = hpack.encode-int(1337, 5, 0)
-    out.len != 3 -> {
-        print('FAIL: expected out.len=3')
+    ol = out.len-bytes()
+    ol != 3 -> {
+        print('FAIL: expected out.len-bytes()=3')
         return
     }
     out[0] != 31 -> {
@@ -95,8 +97,9 @@ test-encode-str = () {
     out = hpack.encode-str('abc')
 
     ; H=0, length=3 (fits in 7-bit prefix), then 'a','b','c'
-    out.len != 4 -> {
-        print('FAIL: expected out.len=4')
+    ol = out.len-bytes()
+    ol != 4 -> {
+        print('FAIL: expected out.len-bytes()=4')
         return
     }
     out[0] != 3 -> {
@@ -125,8 +128,9 @@ test-decode-str = () {
         print('FAIL: expected next=4')
         return
     }
-    out.len != 3 -> {
-        print('FAIL: expected out.len=3')
+    ol = out.len-bytes()
+    ol != 3 -> {
+        print('FAIL: expected out.len-bytes()=3')
         return
     }
     out[0] != 97 -> {
@@ -182,12 +186,14 @@ test-dyn-table = () {
         print('FAIL: lookup not found')
         return
     }
-    name.len != 8 -> {
-        print('FAIL: expected name.len=8')
+    nl = name.len-bytes()
+    nl != 8 -> {
+        print('FAIL: expected name.len-bytes()=8')
         return
     }
-    value.len != 5 -> {
-        print('FAIL: expected value.len=5')
+    vl = value.len-bytes()
+    vl != 5 -> {
+        print('FAIL: expected value.len-bytes()=5')
         return
     }
     print('PASS: dyn-table')
@@ -202,8 +208,9 @@ test-encode-header-indexed = () {
     ; :method GET 是靜態表索引 2 → indexed representation
     ; 格式: 1xxxxxxx (高 bit=1), 7-bit index = 2
     ; out[0] = 128 | 2 = 130
-    out.len != 1 -> {
-        print('FAIL: expected out.len=1')
+    ol = out.len-bytes()
+    ol != 1 -> {
+        print('FAIL: expected out.len-bytes()=1')
         return
     }
     out[0] != 130 -> {
@@ -227,6 +234,7 @@ test-decode-headers = () {
     enc2 = t.encode-header(':path', '/')
 
     ; 合併
+    #{overflow = wrap}
     enc-out = enc-out - enc2
 
     ; 解碼
@@ -245,12 +253,14 @@ test-decode-headers = () {
     }
 
     ; 第一個應該是 :method GET
-    names[0].len != 7 -> {
-        print('FAIL: expected names[0].len=7')
+    n0l = names[0].len-bytes()
+    n0l != 7 -> {
+        print('FAIL: expected names[0].len-bytes()=7')
         return
     }
-    values[0].len != 3 -> {
-        print('FAIL: expected values[0].len=3')
+    v0l = values[0].len-bytes()
+    v0l != 3 -> {
+        print('FAIL: expected values[0].len-bytes()=3')
         return
     }
     print('PASS: decode-headers')

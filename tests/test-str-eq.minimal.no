@@ -17,7 +17,7 @@ test-str-eq-2 = () {
 
 test-str-len = () {
     s = 'true'
-    print(s.len)
+    print(s.len-bytes())
 }
 test-str-eq()
 test-str-eq-2()

@@ -10,7 +10,7 @@
 ; 返回 crc i64: 16-bit 校驗和
 crc-16 = (data []byte) (crc i64) {
     crc = 65535
-    i <- [0..data.len): {
+    i <- [0..data.len()): {
         crc = crc ^ ((data[i]) << 8)
         j <- [0..8): {
             {

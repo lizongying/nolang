@@ -114,4 +114,4 @@ make lsp
 
 ## 许可证
 
-MIT License - 详见 [LICENSE](LICENSE) 文件
+Apache-2.0

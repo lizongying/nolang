@@ -5,6 +5,7 @@ import (
 	fs "io/fs"
 	"os"
 	"path/filepath"
+	"reflect"
 	"runtime"
 	"strings"
 	"sync"
@@ -242,22 +243,35 @@ func inferExprType(expr parser.Expression, varTypes map[string]string, funcTypes
 					typeName = t
 				}
 			}
-			if typeName != "" {
-				if fields, ok := validationStructFields[typeName]; ok {
-					if fieldType, ok := fields[e.Property]; ok {
-						return fieldType
-					}
+		if typeName != "" {
+			// Unwrap optional `?T` to its inner struct type so field access
+			// on an option value (`opt.field`) resolves against T's fields.
+			// Handles both Nolang-style `?test-conn` and LLVM-style `%test-conn`.
+			unwrapped := typeName
+			if strings.HasPrefix(unwrapped, "?") {
+				unwrapped = unwrapped[1:]
+			}
+			unwrapped = strings.TrimPrefix(unwrapped, "%")
+			if fields, ok := validationStructFields[unwrapped]; ok {
+				if fieldType, ok := fields[e.Property]; ok {
+					return fieldType
 				}
 			}
 		}
-		// Array/slice/str .len and .cap property access returns i64
+		}
+		// Array/slice/str .len and .cap property access returns i64.
+		// str .len-bytes is the byte-length property (compiler builtin, mirrors old .len).
 		if recv, ok := e.Receiver.(*parser.Identifier); ok {
-			if t, exists := varTypes[recv.Value]; exists {
-				if strings.HasPrefix(t, "[]") || (strings.HasPrefix(t, "[") && strings.Contains(t, "]")) || t == "str" {
-					switch e.Property {
-					case "len", "cap":
-						return "i64"
-					}
+			t := ""
+			if recv.Value == "self" {
+				t = selfType
+			} else if tt, exists := varTypes[recv.Value]; exists {
+				t = tt
+			}
+			if t != "" && (strings.HasPrefix(t, "[]") || (strings.HasPrefix(t, "[") && strings.Contains(t, "]")) || t == "str") {
+				switch e.Property {
+				case "len", "cap", "len-bytes":
+					return "i64"
 				}
 			}
 		}
@@ -351,6 +365,7 @@ type ValidateResult struct {
 	Line      int
 	Column    int
 	EndColumn int
+	File      string // 来源文件（节点级，用于合併模式下跳过 std）；空则由 RunAllLints 回退归因
 	Message   string
 	TraceID   string
 }
@@ -476,6 +491,271 @@ func ValidateEmbedAnnotations(program *parser.Program, sourcePath string) []Vali
 	}
 	return results
 }
+// ValidateDeprecatedLen reports deprecated bare `.len` property reads on
+// str / array / slice / vec receivers. The property form is being phased out
+// in favor of the `.len()` method (containers) and `.len-bytes()` / `.len()`
+// (str). vec.no and byte.no are exempt because they implement the container
+// types and legitimately read the backing `len` field.
+//
+// The results are collected like other ValidateTypes results: `no vet`
+// surfaces them as diagnostics (non-fatal), while `no build` treats them as
+// errors. This lets the diagnostic drive the migration and, once the codebase
+// is fully migrated, enforce the deprecation.
+func ValidateDeprecatedLen(program *parser.Program) []ValidateResult {
+	var results []ValidateResult
+
+	funcTypes := make(map[string]string)
+	for _, stmt := range program.Statements {
+		if fd, ok := stmt.(*parser.FunctionDefinition); ok {
+			if len(fd.Results) > 0 && fd.Results[0].Type != nil {
+				funcTypes[fd.Name] = fd.Results[0].Type.String()
+			}
+		}
+	}
+
+	for _, stmt := range program.Statements {
+		// Skip monomorphized instances (generated, not source).
+		if fd, ok := stmt.(*parser.FunctionDefinition); ok {
+			if strings.Contains(fd.Name, "__") {
+				continue
+			}
+		}
+		// Exempt the builtin type implementations: they read the backing `len`
+		// field. str.no's `str.len-bytes` reads it for byte length; vec.no /
+		// byte.no's `[...].len` / `[]byte.len` read it for element count.
+		// Match by full path under src/std, NOT just basename — otherwise test
+		// files that reuse the impl names (e.g. test/std/str.no,
+		// test/std/vec.no) would be wrongly exempted and left un-migrated.
+		srcFile := parser.GetSourceFile(stmt)
+		if strings.Contains(srcFile, "src/std/") {
+			base := srcFile
+			if i := strings.LastIndex(base, "/"); i >= 0 {
+				base = base[i+1:]
+			}
+			if base == "vec.no" || base == "byte.no" || base == "str.no" {
+				continue
+			}
+		}
+
+		var selfType string
+		varTypes := make(map[string]string)
+		if fd, ok := stmt.(*parser.FunctionDefinition); ok {
+			if len(fd.Parameters) > 0 && fd.Parameters[0].Name == "self" && fd.Parameters[0].Type != nil {
+				selfType = fd.Parameters[0].Type.String()
+			}
+			for _, p := range fd.Parameters {
+				if p.Type != nil && p.Type.String() != "" {
+					varTypes[p.Name] = p.Type.String()
+				}
+			}
+			if fd.Body != nil {
+				walkStmtForLen(fd.Body, varTypes, funcTypes, selfType, &results)
+			}
+			continue
+		}
+		walkStmtForLen(stmt, varTypes, funcTypes, selfType, &results)
+	}
+	return results
+}
+
+// lenKind classifies a receiver type for the `.len` deprecation.
+//
+//	"str"       → str / str-long  (use .len-bytes() / .len())
+//	"container" → array / slice / vec (use .len())
+//	"skip"      → not a builtin container/str (e.g. a struct with a len field)
+//	""          → unknown (still reported; default to container migration)
+func lenKind(t string) string {
+	switch t {
+	case "str", "str-long":
+		return "str"
+	}
+	if t == "" {
+		return ""
+	}
+	if strings.HasPrefix(t, "[") || strings.HasPrefix(t, "vec") || strings.HasPrefix(t, "[]") {
+		return "container"
+	}
+	return "skip"
+}
+
+// isStructLenField reports whether `t` names a user struct that declares a real
+// `len` FIELD. A bare `recv.len` on such a struct is a legitimate field access,
+// not the deprecated container/str `.len` property, and must not be flagged.
+func isStructLenField(t string) bool {
+	if t == "" {
+		return false
+	}
+	unwrapped := strings.TrimPrefix(t, "?")
+	unwrapped = strings.TrimPrefix(unwrapped, "%")
+	if fields, ok := validationStructFields[unwrapped]; ok {
+		if _, has := fields["len"]; has {
+			return true
+		}
+	}
+	return false
+}
+
+func walkStmtForLen(stmt parser.Statement, varTypes, funcTypes map[string]string, selfType string, results *[]ValidateResult) {
+	if stmt == nil {
+		return
+	}
+	switch s := stmt.(type) {
+	case *parser.LetStatement:
+		if s.Value != nil {
+			if t := inferExprType(s.Value, varTypes, funcTypes, selfType); t != "" {
+				if _, exists := varTypes[s.Name.Value]; !exists {
+					varTypes[s.Name.Value] = t
+				}
+			}
+			walkExprForLen(s.Value, varTypes, funcTypes, selfType, results)
+		}
+	case *parser.MultiAssignStatement:
+		// Targets are identifiers/index expressions (assignment, not a read);
+		// only the RHS is a value read.
+		walkExprForLen(s.Value, varTypes, funcTypes, selfType, results)
+	case *parser.UnwrapAssignStatement:
+		walkExprForLen(s.Value, varTypes, funcTypes, selfType, results)
+	case *parser.ReturnStatement:
+		walkExprForLen(s.ReturnValue, varTypes, funcTypes, selfType, results)
+	case *parser.ExpressionStatement:
+		walkExprForLen(s.Expression, varTypes, funcTypes, selfType, results)
+	case *parser.BlockStatement:
+		for _, sub := range s.Statements {
+			walkStmtForLen(sub, varTypes, funcTypes, selfType, results)
+		}
+	case *parser.ForStatement:
+		walkStmtForLen(s.Init, varTypes, funcTypes, selfType, results)
+		walkExprForLen(s.Condition, varTypes, funcTypes, selfType, results)
+		walkStmtForLen(s.Update, varTypes, funcTypes, selfType, results)
+		if s.IterRange != nil {
+			walkExprForLen(s.IterRange.Range, varTypes, funcTypes, selfType, results)
+			walkExprForLen(s.IterRange.RangeExpr, varTypes, funcTypes, selfType, results)
+		}
+		if s.Body != nil {
+			walkStmtForLen(s.Body, varTypes, funcTypes, selfType, results)
+		}
+	case *parser.FunctionDefinition:
+		if s.Body != nil {
+			walkStmtForLen(s.Body, varTypes, funcTypes, selfType, results)
+		}
+	default:
+		// Other statement kinds carry no nested `.len` reads we care about.
+	}
+}
+
+func walkBlockForLen(b *parser.BlockStatement, varTypes, funcTypes map[string]string, selfType string, results *[]ValidateResult) {
+	if b == nil {
+		return
+	}
+	for _, sub := range b.Statements {
+		walkStmtForLen(sub, varTypes, funcTypes, selfType, results)
+	}
+}
+
+func walkExprForLen(expr parser.Expression, varTypes, funcTypes map[string]string, selfType string, results *[]ValidateResult) {
+	if expr == nil {
+		return
+	}
+	// A nil *parser.X stored inside an Expression interface is a *typed-nil*
+	// value: it evades the `expr == nil` check above and still matches a case
+	// in the type switch below, where dereferencing e.Field then panics
+	// (e.g. a RangeExpression with a missing bound holds a typed-nil child).
+	// Guard against it so `no vet <dir>` / `no build` never crash on such ASTs.
+	if rv := reflect.ValueOf(expr); rv.Kind() == reflect.Ptr && rv.IsNil() {
+		return
+	}
+	switch e := expr.(type) {
+	case *parser.DotExpression:
+		if e.Property == "len" {
+			recvType := inferExprType(e.Receiver, varTypes, funcTypes, selfType)
+			// Flag the deprecated `.len` *property* read on every builtin
+			// container / str receiver, PLUS unknown-typed receivers (we
+			// cannot always statically resolve `awy`/function-return types,
+			// but a bare `.len` there is still the deprecated property).
+			// The only legitimate bare `.len` is a real field access on a
+			// user struct that actually declares a `len` field — skip those.
+			if !isStructLenField(recvType) {
+				kind := lenKind(recvType)
+				if kind == "" {
+					// Unknown receiver: default to the container form
+					// (recv.len() is valid for both containers and str
+					// codepoint count; str.byte-length callers are detected
+					// when the type is statically known as str below).
+					kind = "container"
+				}
+				msg := ""
+				switch kind {
+				case "str":
+					msg = "deprecated: str.len property is removed; use s.len-bytes() for byte length or s.len() for codepoint count"
+				default:
+					msg = "deprecated: recv.len property is removed; use recv.len() for element count"
+				}
+				*results = append(*results, ValidateResult{
+					Line:    e.Token.Line,
+					Column:  e.Token.Column,
+					Message: msg,
+					TraceID: "len-depr",
+				})
+			}
+		}
+		// Always recurse into receiver (e.g. a.b.len → walk a.b).
+		walkExprForLen(e.Receiver, varTypes, funcTypes, selfType, results)
+	case *parser.CallExpression:
+		// A method call `recv.len()` must NOT be flagged: only walk the
+		// receiver. A bare `.len` passed as an argument IS a read and is
+		// reached through the argument walk below.
+		if dot, ok := e.Function.(*parser.DotExpression); ok {
+			walkExprForLen(dot.Receiver, varTypes, funcTypes, selfType, results)
+		} else {
+			walkExprForLen(e.Function, varTypes, funcTypes, selfType, results)
+		}
+		for _, a := range e.Arguments {
+			walkExprForLen(a, varTypes, funcTypes, selfType, results)
+		}
+		for _, a := range e.GenericArgs {
+			walkExprForLen(a, varTypes, funcTypes, selfType, results)
+		}
+	case *parser.InfixExpression:
+		walkExprForLen(e.Left, varTypes, funcTypes, selfType, results)
+		walkExprForLen(e.Right, varTypes, funcTypes, selfType, results)
+	case *parser.PrefixExpression:
+		walkExprForLen(e.Right, varTypes, funcTypes, selfType, results)
+	case *parser.IndexExpression:
+		walkExprForLen(e.Left, varTypes, funcTypes, selfType, results)
+		walkExprForLen(e.Index, varTypes, funcTypes, selfType, results)
+	case *parser.SliceExpression:
+		walkExprForLen(e.Left, varTypes, funcTypes, selfType, results)
+		walkExprForLen(e.Range, varTypes, funcTypes, selfType, results)
+	case *parser.RangeExpression:
+		walkExprForLen(e.Start, varTypes, funcTypes, selfType, results)
+		walkExprForLen(e.End, varTypes, funcTypes, selfType, results)
+	case *parser.ConditionalExpression:
+		walkExprForLen(e.Condition, varTypes, funcTypes, selfType, results)
+		walkExprForLen(e.Consequence, varTypes, funcTypes, selfType, results)
+		walkExprForLen(e.Alternative, varTypes, funcTypes, selfType, results)
+	case *parser.CastExpression:
+		walkExprForLen(e.Expr, varTypes, funcTypes, selfType, results)
+	case *parser.RunExpression:
+		walkExprForLen(e.Call, varTypes, funcTypes, selfType, results)
+	case *parser.AwaitExpression:
+		walkExprForLen(e.Right, varTypes, funcTypes, selfType, results)
+	case *parser.ArrayLiteral:
+		for _, el := range e.Elements {
+			walkExprForLen(el, varTypes, funcTypes, selfType, results)
+		}
+	case *parser.AssignExpression:
+		// Left is a DotExpression write target; only walk the value.
+		walkExprForLen(e.Value, varTypes, funcTypes, selfType, results)
+	case *parser.IfExpression:
+		walkExprForLen(e.Condition, varTypes, funcTypes, selfType, results)
+		walkExprForLen(e.MatchedExpr, varTypes, funcTypes, selfType, results)
+		walkBlockForLen(e.Consequence, varTypes, funcTypes, selfType, results)
+		walkBlockForLen(e.Alternative, varTypes, funcTypes, selfType, results)
+	default:
+		// literals, identifiers, function literals, etc.: nothing to recurse
+	}
+}
+
 func ValidateTypes(program *parser.Program) []ValidateResult {
 	validationMu.Lock()
 	defer validationMu.Unlock()
@@ -618,9 +898,12 @@ func ValidateTypes(program *parser.Program) []ValidateResult {
 		for k, v := range topLevelVarTypes {
 			localVarTypes[k] = v
 		}
-		errs := validateStmtTypes(stmt, funcNames, funcTypes, selfType, localVarTypes, i == len(program.Statements)-1)
+		errs := validateStmtTypes(stmt, funcNames, funcTypes, selfType, localVarTypes, i == len(program.Statements)-1, program.Sem, "")
 		results = append(results, errs...)
 	}
+
+	// Deprecated `.len` property pass (drives + enforces the .len() migration).
+	results = append(results, ValidateDeprecatedLen(program)...)
 
 	return results
 }
@@ -1557,6 +1840,12 @@ func ValidateUnassignedReturns(program *parser.Program) []ValidateResult {
 		if !ok || fd.Body == nil {
 			continue
 		}
+		// #{intrinsic} 註解標記的函式：其命名返回參數由 codegen / 内建 /
+		// 出參引用等方式在 nolang 源碼之外賦值，靜態檢查無法追蹤，故跳過
+		// 「未賦值」檢查，避免對空體平台樁 / 内建包裝 / 出參引用函式誤報。
+		if functionIsIntrinsic(program, fd) {
+			continue
+		}
 		// Collect named result parameters (non-nullable only; nullable
 		// ones are already handled by ValidateUninitOutputParams).
 		type retParam struct {
@@ -1600,6 +1889,25 @@ func ValidateUnassignedReturns(program *parser.Program) []ValidateResult {
 	}
 	return results
 }
+
+// functionIsIntrinsic 回報函式是否被 #{intrinsic} 註解標記。
+// 優先讀取 FunctionDefinition.Intrinsic 節點欄位（解析期由 attachAnnotations
+// 填寫，與 OverflowMode 同機制）；若該欄位因單態化/HIR 重建遺失，再以
+// program.Sem 註解副表作為權威來源兜底。
+func functionIsIntrinsic(program *parser.Program, fd *parser.FunctionDefinition) bool {
+	if fd.Intrinsic {
+		return true
+	}
+	if program.Sem != nil {
+		for _, e := range program.Sem.AnnotationsOf(fd) {
+			if e.Key == "intrinsic" {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 func collectAssignedNames(stmts []parser.Statement, assigned map[string]bool) {
 	for _, stmt := range stmts {
 		if stmt == nil {
@@ -1615,10 +1923,9 @@ func collectAssignedNames(stmts []parser.Statement, assigned map[string]bool) {
 			}
 		case *parser.MultiAssignStatement:
 			for _, target := range s.Targets {
-				if ident, ok := target.(*parser.Identifier); ok {
-					assigned[ident.Value] = true
+				if name := assignTargetBaseName(target); name != "" {
+					assigned[name] = true
 				}
-				// IndexExpression/DotExpression targets: not direct assignments
 			}
 			if s.Value != nil {
 				collectAssignedNamesInExpr(s.Value, assigned)
@@ -1628,6 +1935,14 @@ func collectAssignedNames(stmts []parser.Statement, assigned map[string]bool) {
 		case *parser.ForStatement:
 			if s.Init != nil {
 				collectAssignedNames([]parser.Statement{s.Init}, assigned)
+			}
+			// A range-for loop variable (i <- [a..b): {...}) is always
+			// assigned by the iteration, so it must not be flagged as
+			// unassigned. This also covers the common idiom of using the
+			// named result parameter itself as the loop variable
+			// (e.g. `p <- [pos..n): {...}` populating result param `p`).
+			if s.IterRange != nil && s.IterRange.Variable != "" {
+				assigned[s.IterRange.Variable] = true
 			}
 			if s.Body != nil {
 				collectAssignedNames(s.Body.Statements, assigned)
@@ -1657,7 +1972,53 @@ func collectAssignedNamesInExpr(expr parser.Expression, assigned map[string]bool
 		}
 	case *parser.ConditionalExpression:
 		// ternary cond ? a : b — no statements, just expressions
+	case *parser.AssignExpression:
+		// Nested assignment used as an expression (e.g. inside a loop body:
+		// `dst[i] = i`, `dst.len = n`). The left side is the write target.
+		if name := assignTargetBaseName(e.Left); name != "" {
+			assigned[name] = true
+		}
+		if e.Value != nil {
+			collectAssignedNamesInExpr(e.Value, assigned)
+		}
+	case *parser.CallExpression:
+		// A method call mutates its receiver: `out.init(c, key)`,
+		// `entries.push(name)`, `p.init(...)`. If the receiver is a result
+		// parameter, that parameter is effectively assigned, so it must not
+		// be flagged as "never assigned". This is the same mutating-assignment
+		// class as element/field writes (recall assignTargetBaseName resolves
+		// `out.field` / `out[i]` to the base identifier `out`).
+		if dot, ok := e.Function.(*parser.DotExpression); ok {
+			if name := assignTargetBaseName(dot.Receiver); name != "" {
+				assigned[name] = true
+			}
+		}
+		collectAssignedNamesInExpr(e.Function, assigned)
+		for _, a := range e.Arguments {
+			collectAssignedNamesInExpr(a, assigned)
+		}
 	}
+}
+
+// assignTargetBaseName returns the root variable name an assignment target
+// writes to. For `x = ...` it is "x"; for `x[i] = ...` / `x.field = ...` it
+// resolves to "x" (the element/field write still mutates x, so x is assigned);
+// nested forms (e.g. `a.b[i] = ...`) resolve to the leftmost identifier "a".
+// Returns "" when the target has no identifiable base identifier.
+//
+// This matters for ValidateUnassignedReturns: a named result parameter that is
+// populated via element or field assignment (out[i] = ..., out.field = ...) is
+// genuinely assigned, so it must not be flagged as "never assigned".
+func assignTargetBaseName(target parser.Expression) string {
+	switch t := target.(type) {
+	case *parser.Identifier:
+		return t.Value
+	case *parser.IndexExpression:
+		return assignTargetBaseName(t.Left)
+	case *parser.DotExpression:
+		return assignTargetBaseName(t.Receiver)
+	}
+	return ""
 }
 func collectReadNames(stmts []parser.Statement, read map[string]bool) {
 	for _, stmt := range stmts {
@@ -2290,6 +2651,335 @@ func ValidateStringConcat(program *parser.Program) []ValidateResult {
 	}
 	return results
 }
+
+// ---------------------------------------------------------------------------
+// 整數四則運算溢出 lint（#{overflow} 註解提示）
+//
+// 自 nolang「永不 panic」的設計約束出發，整數四則運算（有號與無號的 + - *，以及有號
+// /）預設在溢出時回傳 option<int>（溢出 → err，正常 → ok(value)），與 codegen 的
+// option-on-overflow 預設語意一致（見 src/build/llvm/expr.go 的 emitOverflowArith /
+// emitOverflowDivOption）。本 lint 在 LSP / no vet 路徑對「未標註 #{overflow} 的整數
+// 運算」發出 Hint，提示使用者可加：
+//
+//	#{overflow = wrap}    無聲 2's complement 回繞，回傳普通 int
+//	#{overflow = clamp0}  下溢歸零，回傳普通 int
+//	#{overflow = min}     飽和箝位到型別最小值
+//	#{overflow = max}     飽和箝位到型別最大值
+//	#{overflow = saturate} 飽和箝位到型別區間（min/max 取決於方向）
+//
+// 亦可用型別前綴形式指定具體型別，如 `#{overflow = u8-max}`、`#{overflow = i8-min}`，
+// 精確控制某個窄型別的飽和界限。LSP 據此 Hint 的 Code（"overflow-wrap"）提供對應
+// quickfix 插入註解。
+//
+// 為避免誤報，只有當左右運算元都可能為整數時才提示：整數字面量，或宣告型別為
+// i*/u*/int 的識別字；確定為非整數（float / str / char / bool / byte / rune）的運算
+// 元直接跳過。無法確定的運算元（如函式呼叫結果）保守視為有號整數（可能多提示，但不
+// 會漏標註導致運行期 err 未被預期）。已標註的函式（FunctionDefinition.OverflowMode !=
+// ""）或語句（語義副表 overflow 註解）整體跳過。
+// ---------------------------------------------------------------------------
+
+var signedIntTypeNames = map[string]bool{
+	"int": true, "i8": true, "i16": true, "i32": true, "i64": true, "i128": true,
+}
+
+// unsignedIntTypeNames 是確定為「無號整數」的型別集合；這些型別的 + - * 同樣會因
+// 溢出而（預設）回傳 option<int>，故也應提示 #{overflow} 註解。
+var unsignedIntTypeNames = map[string]bool{
+	"u8": true, "u16": true, "u32": true, "u64": true, "u128": true,
+}
+
+// nonIntTypeNames 是確定「非整數」（float / str / char / bool / byte / rune）的
+// 型別集合；這些型別的算術不回傳 option，故不應提示 #{overflow} 註解（避免誤報）。
+var nonIntTypeNames = map[string]bool{
+	"f32": true, "f64": true,
+	"str": true, "char": true, "bool": true, "byte": true, "rune": true,
+}
+
+// overflowAnnotatedNode 報告節點是否攜帶 #{overflow = ...} 註解。
+func overflowAnnotatedNode(sem *parser.SemanticContext, n parser.Node) bool {
+	if sem == nil || n == nil {
+		return false
+	}
+	for _, e := range sem.AnnotationsOf(n) {
+		if e != nil && e.Key == "overflow" {
+			return true
+		}
+	}
+	return false
+}
+
+// operandIntKind 啟發式判斷運算元「是否為整數」，回傳三者之一：
+//   - "signed"  確定為有號整數，或無法確定（保守假定為有號整數）；
+//   - "unsigned" 確定為無號整數；
+//   - ""        確定為非整數（float / str / char / bool / byte / rune 等），
+//              這些算術不回傳 option，不應提示 #{overflow}。
+//
+// 僅當運算元確定為非整數型別時傳回 ""，避免對 float / str 算術誤報（它們不回傳
+// option，無 #{overflow} 之說）。
+func operandIntKind(e parser.Expression, declared map[string]string) string {
+	switch x := e.(type) {
+	case *parser.IntegerLiteral:
+		return "signed" // 整數字面量預設為有號
+	case *parser.FloatLiteral:
+		return "" // float 算術不回傳 option
+	case *parser.PrefixExpression:
+		// 一元負號修飾整數字面量，如 -1
+		if x.Operator == "-" {
+			if _, ok := x.Right.(*parser.IntegerLiteral); ok {
+				return "signed"
+			}
+		}
+		return ""
+	}
+	if id, ok := e.(*parser.Identifier); ok {
+		t, ok := declared[id.Value]
+		if !ok {
+			return "signed" // 未知型別：保守視為有號整數
+		}
+		if signedIntTypeNames[t] {
+			return "signed"
+		}
+		if unsignedIntTypeNames[t] {
+			return "unsigned"
+		}
+		if nonIntTypeNames[t] {
+			return ""
+		}
+		return "signed" // 其他已宣告型別（如 struct 別名）：保守視為有號
+	}
+	return "signed" // 呼叫 / 索引 / 成員等：保守視為可能是有號整數
+}
+
+// overflowArithOps 是會因整數溢出而（預設）回傳 option<int> 的二元運算子。
+// 對應 codegen 的 option-on-overflow 預設語意：+ - * 對有號與無號皆適用；
+// 有號 / 只有 INT_MIN / -1 會溢出，無號 / 因 a/b <= a 永不溢出。
+var overflowArithOps = map[string]bool{
+	"+": true, "-": true, "*": true, "/": true,
+}
+
+// walkExprForIntOverflow 遞迴收集表達式內所有「未標註且可能溢出的整數運算」InfixExpression。
+// 規則（與 codegen 預設 option-on-overflow 語意一致）：
+//   - + - *：左右運算元皆為整數（有號或無號，含未知型別）時提示；任一侧確定為
+//            非整數（str / float 等）則跳過（該運算非整數算術）。
+//   - /：僅當至少一側為有號整數時提示（無號除法永不溢出；有號除法 INT_MIN / -1 溢出）。
+//
+// line 為包容此表達式的「葉」語句所在行（插入註解的位置）；sem 用於遞迴進入 if
+// 分支區塊時對其中的子語句做註解感知掃描。
+func walkExprForIntOverflow(e parser.Expression, line int, sem *parser.SemanticContext, declared map[string]string, emit func(line, col int)) {
+	if e == nil {
+		return
+	}
+	switch x := e.(type) {
+	case *parser.InfixExpression:
+		if overflowArithOps[x.Operator] {
+			lk := operandIntKind(x.Left, declared)
+			rk := operandIntKind(x.Right, declared)
+			if lk != "" && rk != "" {
+				prompt := false
+				if x.Operator == "/" {
+					// 無號除法永不溢出：僅有號（含未知型別）一側才提示。
+					if lk == "signed" || rk == "signed" {
+						prompt = true
+					}
+				} else {
+					prompt = true
+				}
+				if prompt {
+					emit(line, x.Token.Column)
+				}
+			}
+		}
+		walkExprForIntOverflow(x.Left, line, sem, declared, emit)
+		walkExprForIntOverflow(x.Right, line, sem, declared, emit)
+	case *parser.PrefixExpression:
+		walkExprForIntOverflow(x.Right, line, sem, declared, emit)
+	case *parser.CallExpression:
+		walkExprForIntOverflow(x.Function, line, sem, declared, emit)
+		for _, a := range x.Arguments {
+			walkExprForIntOverflow(a, line, sem, declared, emit)
+		}
+	case *parser.IfExpression:
+		walkExprForIntOverflow(x.Condition, line, sem, declared, emit)
+		if x.Consequence != nil {
+			for _, s := range x.Consequence.Statements {
+				walkStmtForOverflow(s, sem, declared, emit)
+			}
+		}
+		if x.Alternative != nil {
+			for _, s := range x.Alternative.Statements {
+				walkStmtForOverflow(s, sem, declared, emit)
+			}
+		}
+	case *parser.IndexExpression:
+		walkExprForIntOverflow(x.Left, line, sem, declared, emit)
+		walkExprForIntOverflow(x.Index, line, sem, declared, emit)
+	case *parser.AssignExpression:
+		walkExprForIntOverflow(x.Left, line, sem, declared, emit)
+		walkExprForIntOverflow(x.Value, line, sem, declared, emit)
+	case *parser.ArrayLiteral:
+		for _, el := range x.Elements {
+			walkExprForIntOverflow(el, line, sem, declared, emit)
+		}
+	}
+}
+
+// walkStmtForOverflow 註解感知地遍歷語句樹，對每個未標註的「葉」語句掃描其表達式
+// 內的有號整數相減，並以該語句所在行（插入註解的位置）呼叫 emit(line, col)。
+// col 為「-」運算子的欄位，供 LSP 高亮。
+func walkStmtForOverflow(stmt parser.Statement, sem *parser.SemanticContext, declared map[string]string, emit func(line, col int)) {
+	if stmt == nil {
+		return
+	}
+	// 函式定義：受函式級註解管轄；以本函數自身作用域的宣告型別掃描。
+	if fn, ok := stmt.(*parser.FunctionDefinition); ok {
+		if fn.OverflowMode == "" && fn.Body != nil {
+			fnDeclared := collectFuncDeclared(fn)
+			for _, b := range fn.Body.Statements {
+				walkStmtForOverflow(b, sem, fnDeclared, emit)
+			}
+		}
+		return
+	}
+	// 語句級註解：整條語句內的相減都受此註解管轄，跳過
+	if overflowAnnotatedNode(sem, stmt) {
+		return
+	}
+	emitSubs := func(e parser.Expression) {
+		if e != nil {
+			walkExprForIntOverflow(e, stmt.Pos().Line, sem, declared, emit)
+		}
+	}
+	switch s := stmt.(type) {
+	case *parser.LetStatement:
+		emitSubs(s.Value)
+	case *parser.ReturnStatement:
+		emitSubs(s.ReturnValue)
+	case *parser.ExpressionStatement:
+		emitSubs(s.Expression)
+	case *parser.MultiAssignStatement:
+		emitSubs(s.Value)
+	case *parser.UnwrapAssignStatement:
+		emitSubs(s.Value)
+	case *parser.ForStatement:
+		emitSubs(s.Condition)
+		if s.Init != nil {
+			walkStmtForOverflow(s.Init, sem, declared, emit)
+		}
+		if s.Update != nil {
+			walkStmtForOverflow(s.Update, sem, declared, emit)
+		}
+		if s.Body != nil {
+			for _, b := range s.Body.Statements {
+				walkStmtForOverflow(b, sem, declared, emit)
+			}
+		}
+	case *parser.BlockStatement:
+		for _, b := range s.Statements {
+			walkStmtForOverflow(b, sem, declared, emit)
+		}
+	}
+}
+
+// collectFuncDeclared 收集單一函數體內可見的參數與 let 顯式型別，作用域限定在該
+// 函數（不與其他函數 / std 模組的參數名撞名）。nolang vet 會把 std 模組合併進同一
+// 個 program；若用全域 name→type map，使用者函數的 `a`/`b` 會被 std 中同名參數（多為
+// u8/byte 等無號型別）覆寫，導致誤判（如把有號相減誤當無號、或把 float 相減誤報 /
+// 漏報）。故必須按函數作用域收集。
+func collectFuncDeclared(fn *parser.FunctionDefinition) map[string]string {
+	types := map[string]string{}
+	for _, p := range fn.FuncSignature.Parameters {
+		if p.Type != nil {
+			if nt, ok := p.Type.(*parser.NamedType); ok {
+				types[p.Name] = nt.Value
+			}
+		}
+	}
+	if fn.Body != nil {
+		collectLetsInStmts(fn.Body.Statements, types)
+	}
+	return types
+}
+
+// collectLetsInStmts 遞迴收集區塊 / for / 巢狀函數體內的 let 顯式型別，寫入 types。
+// 巢狀函數的參數作用域獨立，不寫入外層 types（由各自 collectFuncDeclared 處理）。
+func collectLetsInStmts(stmts []parser.Statement, types map[string]string) {
+	for _, stmt := range stmts {
+		switch s := stmt.(type) {
+		case *parser.LetStatement:
+			if s.Name != nil && s.Type != nil {
+				if nt, ok := s.Type.(*parser.NamedType); ok {
+					types[s.Name.Value] = nt.Value
+				}
+			}
+		case *parser.FunctionDefinition:
+			if s.Body != nil {
+				collectLetsInStmts(s.Body.Statements, types)
+			}
+		case *parser.ForStatement:
+			if s.Init != nil {
+				collectLetsInStmts([]parser.Statement{s.Init}, types)
+			}
+			if s.Body != nil {
+				collectLetsInStmts(s.Body.Statements, types)
+			}
+		case *parser.BlockStatement:
+			collectLetsInStmts(s.Statements, types)
+		}
+	}
+}
+
+// collectTopLevelLets 收集模組頂層 let 的顯式型別，供頂層（非函數）語句掃描使用。
+func collectTopLevelLets(program *parser.Program) map[string]string {
+	types := map[string]string{}
+	if program == nil {
+		return types
+	}
+	for _, stmt := range program.Statements {
+		if ls, ok := stmt.(*parser.LetStatement); ok {
+			if ls.Name != nil && ls.Type != nil {
+				if nt, ok := ls.Type.(*parser.NamedType); ok {
+					types[ls.Name.Value] = nt.Value
+				}
+			}
+		}
+	}
+	return types
+}
+
+// ValidateIntOverflow 對未標註 #{overflow} 的整數四則運算（有號與無號的 + - *，
+// 以及有號 /）發出 Hint，提示可加 #{overflow = wrap|clamp0|min|max|saturate} 註解
+// （亦支援型別前綴形式如 u8-max / i8-min）。
+func ValidateIntOverflow(program *parser.Program) []ValidateResult {
+	if program == nil {
+		return nil
+	}
+	sem := program.Sem
+	var results []ValidateResult
+	emit := func(line, col int) {
+		results = append(results, ValidateResult{
+			Line:    line,
+			Column:  col,
+			Message: "整數運算 `a OP b` 預設在溢出時回傳 option<int>（永不 panic）。若希望回傳普通 int，可加註解 `#{overflow = wrap}`（無聲回繞）/`clamp0`（下溢歸零）/`min`/`max`/`saturate`（飽和箝位）；亦可用型別前綴形式如 `#{overflow = u8-max}` 或 `#{overflow = i8-min}`。",
+			TraceID: "ovf-int-default",
+		})
+	}
+	for _, stmt := range program.Statements {
+		if fn, ok := stmt.(*parser.FunctionDefinition); ok {
+			if fn.OverflowMode == "" && fn.Body != nil {
+				// 作用域限定：僅用本函數自身的參數 / let 型別，避免與 std 模組
+				// 同名參數互相污染（nolang vet 會合併 std 進同一 program）。
+				declared := collectFuncDeclared(fn)
+				for _, b := range fn.Body.Statements {
+					walkStmtForOverflow(b, sem, declared, emit)
+				}
+			}
+			continue
+		}
+		declared := collectTopLevelLets(program)
+		walkStmtForOverflow(stmt, sem, declared, emit)
+	}
+	return results
+}
 func checkStringConcatInStmt(stmt parser.Statement) []ValidateResult {
 	var results []ValidateResult
 	switch s := stmt.(type) {
@@ -2373,6 +3063,448 @@ func checkStringConcatInExpr(expr parser.Expression) []ValidateResult {
 	}
 	return results
 }
+// ─────────────────────────────────────────────────────────────
+// s[i] 性能告警（str/txt 码点下标 O(n)）
+// ─────────────────────────────────────────────────────────────
+
+// ValidateStrIndexComplexity 针对 str/txt 的 s[i] 码点下标给出性能告警。
+//
+// nolang 中 s[i] 的语义是「第 i 个码点（字符）」：当编译器无法证明 s 为纯 ASCII
+// （0-127）时，每次下标都必须从串首前向迭代 UTF-8 才能定位第 i 个码点，时间复杂度
+// O(n)。只有当 s 可被证明为纯 ASCII（字节数 == 码点数）时，下标退化为一次直接定址 O(1)。
+//
+// 本 lint 不禁止语法（warning 而非 error），仅提示：
+//   - 若该串确实只会是 ASCII，声明时加 #{ascii} 或赋值为 ASCII 字面量即可获 O(1)；
+//   - 若实际需要的是「第 i 个字节」，请用 s.byte(i)（永远 O(1)，供 UTF-8 编解码等使用）；
+//   - 若需要遍历每个字符，直接 for c in s 即可（s[i] 本身已是码点）。
+//
+// 与 build/llvm/strchar_at.go 的 collectAsciiVars 证明规则保持一致，
+// 使告警与实际生成的 O(1)/O(n) 路径一致。
+// ValidateStrIndexComplexity 检查「在 for 循环体内对未证明为纯 ASCII 的 str/txt
+// 使用 s[i] 下标」这一 O(n²) 反模式，给出 WARNING 级静态告警（不禁止语法）。
+//
+// 设计要点：
+//   - 仅在循环体内告警。单独一次 s[i]（如 s[5]）只是 O(n)，不是性能灾难；真正反模式
+//     是手动按码点下标遍历（for i <- [0..s.count()): { s[i] }），每次下标都从串首前向
+//     迭代 UTF-8，整体退化为 O(n²)。
+//   - 用节点级 file（从顶层语句的 SourceFile 继承、进入函数体时更新为该函数 SourceFile）
+//     判定是否位于标准库 src/std/*，从而跳过 std 内部代码。合併模式下 std 与用户代码
+//     行号都以 1 为基准相互重叠，行号→文件单映射会误判，故一律走节点级判定。
+//   - 与 build/llvm/strchar_at.go 的 collectAsciiVars 证明规则保持一致，使告警与实际
+//     生成的 O(1)/O(n) 路径一致：可证明 ASCII 时 s[i] 为 O(1)，不告警。
+func ValidateStrIndexComplexity(program *parser.Program) []ValidateResult {
+	var results []ValidateResult
+	if program == nil {
+		return nil
+	}
+	sem := program.Sem
+
+	// 第一遍：收集可证明为纯 ASCII 的变量名，规则与 codegen 一致；同时自建
+	// 类型表（scopeTypes[funcName][varName]）与函数返回类型表。自建类型表避免依赖
+	// SemanticContext.VarTypes / FuncVarTypes —— 那些 map 会被全程序（含 std）污染，
+	// 在 no vet 合併模式下查到的类型不可靠。
+	asciiVars := map[string]bool{}
+	scopeTypes := map[string]map[string]string{}
+	funcReturns := map[string]string{}
+	collectStrIndexTypes(program.Statements, sem, "", scopeTypes, funcReturns, asciiVars)
+
+	for _, stmt := range program.Statements {
+		results = append(results, checkStrIndexInStmt(stmt, sem, asciiVars, scopeTypes, "", false, parser.GetSourceFile(stmt))...)
+	}
+	return results
+}
+
+// collectStrIndexAscii 收集可证明为纯 ASCII 的字符串变量，规则镜像 codegen 的
+// collectAsciiVars：显式 #{ascii} 注解、字符串字面量、标识符传播、- 拼接两侧均 ASCII。
+func collectStrIndexAscii(stmts []parser.Statement, sem *parser.SemanticContext, asciiVars map[string]bool) {
+	for _, s := range stmts {
+		switch st := s.(type) {
+		case *parser.LetStatement:
+			noteStrIndexASCIILet(st, sem, asciiVars)
+			scanStrIndexExpr(st.Value, sem, asciiVars)
+		case *parser.FunctionDefinition:
+			if st.Body != nil {
+				collectStrIndexAscii(st.Body.Statements, sem, asciiVars)
+			}
+		case *parser.BlockStatement:
+			collectStrIndexAscii(st.Statements, sem, asciiVars)
+		case *parser.ExpressionStatement:
+			scanStrIndexExpr(st.Expression, sem, asciiVars)
+		case *parser.ReturnStatement:
+			scanStrIndexExpr(st.ReturnValue, sem, asciiVars)
+		}
+	}
+}
+
+// collectStrIndexTypes 自建类型表（scopeTypes）与函数返回类型表（funcReturns），
+// 从 AST 直接抽取，绕过被全程序污染的 SemanticContext.VarTypes。
+//   - 显式类型注解 let x: str = ... → "str"
+//   - 字符串字面量 let x = '...' → "str"
+//   - 标识符传播 let x = y → 沿用 y 的类型
+//   - 函数调用 let x = f() → 沿用 f 的返回类型
+//   - 函数参数与返回类型也一并记录
+//
+// 同时顺带收集 asciiVars（调用 noteStrIndexASCIILet / scanStrIndexExpr）。
+func collectStrIndexTypes(stmts []parser.Statement, sem *parser.SemanticContext, funcName string, scopeTypes map[string]map[string]string, funcReturns map[string]string, asciiVars map[string]bool) {
+	ensureScope := func(fn string) map[string]string {
+		if scopeTypes[fn] == nil {
+			scopeTypes[fn] = map[string]string{}
+		}
+		return scopeTypes[fn]
+	}
+	for _, s := range stmts {
+		switch st := s.(type) {
+		case *parser.LetStatement:
+			if st.Name != nil {
+				scope := ensureScope(funcName)
+				scope[st.Name.Value] = exprTypeString(st.Type, st.Value, scopeTypes, funcName, funcReturns)
+			}
+			noteStrIndexASCIILet(st, sem, asciiVars)
+			scanStrIndexExpr(st.Value, sem, asciiVars)
+		case *parser.FunctionDefinition:
+			scope := ensureScope(st.Name)
+			for _, p := range st.FuncSignature.Parameters {
+				scope[p.Name] = typeNodeString(p.Type)
+			}
+			if len(st.FuncSignature.Results) > 0 {
+				funcReturns[st.Name] = typeNodeString(st.FuncSignature.Results[0].Type)
+			}
+			if st.Body != nil {
+				collectStrIndexTypes(st.Body.Statements, sem, st.Name, scopeTypes, funcReturns, asciiVars)
+			}
+		case *parser.BlockStatement:
+			collectStrIndexTypes(st.Statements, sem, funcName, scopeTypes, funcReturns, asciiVars)
+		case *parser.ExpressionStatement:
+			scanStrIndexExpr(st.Expression, sem, asciiVars)
+		case *parser.ReturnStatement:
+			scanStrIndexExpr(st.ReturnValue, sem, asciiVars)
+		}
+	}
+}
+
+// exprTypeString 推断一个 let 绑定的类型字符串。
+func exprTypeString(typ parser.Type, val parser.Expression, scopeTypes map[string]map[string]string, funcName string, funcReturns map[string]string) string {
+	if typ != nil {
+		return typeNodeString(typ)
+	}
+	switch v := val.(type) {
+	case *parser.StringLiteral:
+		return "str"
+	case *parser.Identifier:
+		if t := lookupVarType(scopeTypes, funcName, v.Value); t != "" {
+			return t
+		}
+	case *parser.CallExpression:
+		if fname := callName(v.Function); fname != "" {
+			if r, ok := funcReturns[fname]; ok {
+				return r
+			}
+		}
+	}
+	return ""
+}
+
+// typeNodeString 将 AST 类型节点转为规范类型名（如 "str" / "txt"）。
+func typeNodeString(t parser.Type) string {
+	if t == nil {
+		return ""
+	}
+	if nt, ok := t.(*parser.NamedType); ok {
+		return nt.Value
+	}
+	return t.String()
+}
+
+// callName 提取调用表达式的函数名（Identifier 或 DotExpression 的 property）。
+func callName(fn parser.Expression) string {
+	switch f := fn.(type) {
+	case *parser.Identifier:
+		return f.Value
+	case *parser.DotExpression:
+		return f.Property
+	}
+	return ""
+}
+
+// lookupVarType 在自建类型表中按 (funcName, name) 查找变量类型，回退到全局作用域。
+// 返回 "" 表示无法确定类型（调用方应跳过告警以避免误报）。
+func lookupVarType(scopeTypes map[string]map[string]string, funcName, name string) string {
+	if funcName != "" {
+		if m, ok := scopeTypes[funcName]; ok {
+			if t, ok := m[name]; ok {
+				return t
+			}
+		}
+	}
+	if m, ok := scopeTypes[""]; ok {
+		if t, ok := m[name]; ok {
+			return t
+		}
+	}
+	return ""
+}
+
+func noteStrIndexASCIILet(st *parser.LetStatement, sem *parser.SemanticContext, asciiVars map[string]bool) {
+	if st == nil || st.Name == nil {
+		return
+	}
+	proven := hasStrIndexASCIIAnnotation(sem, st)
+	if !proven {
+		switch v := st.Value.(type) {
+		case *parser.StringLiteral:
+			proven = isASCIIString(v.Value)
+		case *parser.Identifier:
+			proven = asciiVars[v.Value]
+		case *parser.InfixExpression:
+			if v.Operator == "-" {
+				l, lok := v.Left.(*parser.Identifier)
+				r, rok := v.Right.(*parser.Identifier)
+				if lok && rok {
+					proven = asciiVars[l.Value] && asciiVars[r.Value]
+				}
+				if lr, ok := v.Left.(*parser.StringLiteral); ok {
+					lok = isASCIIString(lr.Value)
+				}
+				if rr, ok := v.Right.(*parser.StringLiteral); ok {
+					rok = isASCIIString(rr.Value)
+				}
+				if lok && rok {
+					proven = true
+				}
+			}
+		}
+	}
+	if proven {
+		asciiVars[st.Name.Value] = true
+	}
+}
+
+func hasStrIndexASCIIAnnotation(sem *parser.SemanticContext, n parser.Node) bool {
+	if sem == nil || n == nil {
+		return false
+	}
+	for _, e := range sem.AnnotationsOf(n) {
+		if e != nil && e.Key == "ascii" {
+			return true
+		}
+	}
+	return false
+}
+
+func scanStrIndexExpr(e parser.Expression, sem *parser.SemanticContext, asciiVars map[string]bool) {
+	switch x := e.(type) {
+	case *parser.IfExpression:
+		if x.Consequence != nil {
+			collectStrIndexAscii(x.Consequence.Statements, sem, asciiVars)
+		}
+		if x.Alternative != nil {
+			collectStrIndexAscii(x.Alternative.Statements, sem, asciiVars)
+		}
+	case *parser.FunctionLiteral:
+		if x.Body != nil {
+			collectStrIndexAscii(x.Body.Statements, sem, asciiVars)
+		}
+	case *parser.CallExpression:
+		scanStrIndexExpr(x.Function, sem, asciiVars)
+		for _, a := range x.Arguments {
+			scanStrIndexExpr(a, sem, asciiVars)
+		}
+	}
+}
+
+func isASCIIString(s string) bool {
+	for i := 0; i < len(s); i++ {
+		if s[i] >= 0x80 {
+			return false
+		}
+	}
+	return true
+}
+
+// isStrLikeType 报告 surface 类型是否为 str/txt 系列。
+// 同时兼容未来 str.ascii / txt.ascii 声明类型（含 ascii 字样）。
+func isStrLikeType(t string) bool {
+	switch t {
+	case "str", "txt":
+		return true
+	}
+	return strings.Contains(t, "ascii")
+}
+
+// isStdSourceFile 报告路径是否属于标准库（src/std/*）。no vet 合併模式会把 std 语句
+// 并入 program，为避免对 std 内部代码刷屏告警，遇到 std 文件直接跳过。
+func isStdSourceFile(path string) bool {
+	if path == "" {
+		return false
+	}
+	clean := filepath.ToSlash(path)
+	for _, seg := range strings.Split(clean, "/") {
+		if seg == "std" {
+			return true
+		}
+	}
+	return false
+}
+
+// checkStrIndexInStmt 递归遍历语句，收集其中的 IndexExpression 进行告警判定。
+// funcName 为当前所在函数名（用于 scopeTypes 解析函数局部变量类型），顶层为 ""。
+// scopeTypes 为自建类型表（见 collectStrIndexTypes）；sem 仍保留以兼容调用方。
+// inLoop 表示当前是否处于某个 for 循环体内部 —— 仅在循环体里对 str/txt 做 s[i]
+// 下标才告警（即手动按码点下标遍历的 O(n²) 反模式），单独一次下标（如 s[5]）或
+// 直接 for c <- s 遍历不告警。
+// checkStrIndexInStmt 递归遍历语句，收集其中的 IndexExpression 进行告警判定。
+// funcName 为当前所在函数名（用于 scopeTypes 解析函数局部变量类型），顶层为 ""。
+// scopeTypes 为自建类型表（见 collectStrIndexTypes）；sem 仍保留以兼容调用方。
+// inLoop 表示当前是否处于某个 for 循环体内部 —— 仅在循环体里对 str/txt 做 s[i]
+// 下标才告警（即手动按码点下标遍历的 O(n²) 反模式），单独一次下标（如 s[5]）或
+// 直接 for c <- s 遍历不告警。
+// file 为当前节点所属来源文件（从顶层语句的 SourceFile 继承，进入函数体时更新为该
+// 函数的 SourceFile）。合併模式下 std 与用户代码的行号都以 1 为基准相互重叠，无法用
+// 「行号→文件」单映射区分，故改用节点级 file 判定 —— std 文件（src/std/*）直接跳过。
+func checkStrIndexInStmt(stmt parser.Statement, sem *parser.SemanticContext, asciiVars map[string]bool, scopeTypes map[string]map[string]string, funcName string, inLoop bool, file string) []ValidateResult {
+	var results []ValidateResult
+	if stmt == nil {
+		return results
+	}
+	switch s := stmt.(type) {
+	case *parser.ExpressionStatement:
+		if s.Expression != nil {
+			results = append(results, checkStrIndexInExpr(s.Expression, sem, asciiVars, scopeTypes, funcName, inLoop, file)...)
+		}
+	case *parser.LetStatement:
+		if s.Value != nil {
+			results = append(results, checkStrIndexInExpr(s.Value, sem, asciiVars, scopeTypes, funcName, inLoop, file)...)
+		}
+	case *parser.MultiAssignStatement:
+		for _, t := range s.Targets {
+			results = append(results, checkStrIndexInExpr(t, sem, asciiVars, scopeTypes, funcName, inLoop, file)...)
+		}
+		if s.Value != nil {
+			results = append(results, checkStrIndexInExpr(s.Value, sem, asciiVars, scopeTypes, funcName, inLoop, file)...)
+		}
+	case *parser.UnwrapAssignStatement:
+		if s.Value != nil {
+			results = append(results, checkStrIndexInExpr(s.Value, sem, asciiVars, scopeTypes, funcName, inLoop, file)...)
+		}
+	case *parser.ReturnStatement:
+		if s.ReturnValue != nil {
+			results = append(results, checkStrIndexInExpr(s.ReturnValue, sem, asciiVars, scopeTypes, funcName, inLoop, file)...)
+		}
+	case *parser.FunctionDefinition:
+		// 函数体沿用该函数自身的来源文件（std 函数 → src/std/*，据此跳过其内部代码）。
+		fnFile := parser.GetSourceFile(s)
+		if fnFile == "" {
+			fnFile = file
+		}
+		if s.Body != nil {
+			for _, b := range s.Body.Statements {
+				results = append(results, checkStrIndexInStmt(b, sem, asciiVars, scopeTypes, s.Name, false, fnFile)...)
+			}
+		}
+	case *parser.BlockStatement:
+		for _, b := range s.Statements {
+			results = append(results, checkStrIndexInStmt(b, sem, asciiVars, scopeTypes, funcName, inLoop, file)...)
+		}
+	case *parser.ForStatement:
+		// 循环头（Init/Condition/Update）不算「遍历体」，沿用当前 inLoop；
+		// 仅循环体进入 inLoop=true，使 s[i] 在循环体内才触发告警。
+		if s.Init != nil {
+			results = append(results, checkStrIndexInStmt(s.Init, sem, asciiVars, scopeTypes, funcName, false, file)...)
+		}
+		if s.Condition != nil {
+			results = append(results, checkStrIndexInExpr(s.Condition, sem, asciiVars, scopeTypes, funcName, false, file)...)
+		}
+		if s.Update != nil {
+			results = append(results, checkStrIndexInStmt(s.Update, sem, asciiVars, scopeTypes, funcName, false, file)...)
+		}
+		if s.Body != nil {
+			for _, b := range s.Body.Statements {
+				results = append(results, checkStrIndexInStmt(b, sem, asciiVars, scopeTypes, funcName, true, file)...)
+			}
+		}
+	}
+	return results
+}
+
+// checkStrIndexInExpr 递归遍历表达式，对循环体内 str/txt 的 s[i] 下标（未证明 ASCII）
+// 发出告警 —— 即手动按码点下标遍历的 O(n²) 反模式。
+// checkStrIndexInExpr 递归遍历表达式，对循环体内 str/txt 的 s[i] 下标（未证明 ASCII）
+// 发出告警 —— 即手动按码点下标遍历的 O(n²) 反模式。
+// funcName 含义同 checkStrIndexInStmt；scopeTypes 为自建类型表；file 为当前节点所属
+// 来源文件（节点级，避开合併模式下 std/用户行号重叠）；inLoop 表示当前是否处于 for
+// 循环体内部，仅此时才告警。
+func checkStrIndexInExpr(e parser.Expression, sem *parser.SemanticContext, asciiVars map[string]bool, scopeTypes map[string]map[string]string, funcName string, inLoop bool, file string) []ValidateResult {
+	var results []ValidateResult
+	if e == nil {
+		return results
+	}
+	switch x := e.(type) {
+	case *parser.IndexExpression:
+		if inLoop && !isStdSourceFile(file) {
+			if id, ok := x.Left.(*parser.Identifier); ok {
+				dt := lookupVarType(scopeTypes, funcName, id.Value)
+				dok := dt != ""
+				if dok && isStrLikeType(dt) && !asciiVars[id.Value] {
+					results = append(results, ValidateResult{
+						Line:    x.Token.Line,
+						Column:  x.Token.Column,
+						File:    file,
+						Message: "在循环里对 str/txt 使用 s[i] 取下标为 O(n²)：每次下标都要从串首前向迭代 UTF-8 取第 i 个码点，循环会被重复执行。建议：(1) 若需遍历字符，直接用 for c <- s（内部按码点迭代，O(n)）；(2) 若只需字节访问，用 s.byte(i)；(3) 若该串可证明为纯 ASCII（声明加 #{ascii} 或赋 ASCII 字面量），s[i] 为 O(1)。",
+						TraceID: "STR_INDEX_COMPLEXITY",
+					})
+				}
+			}
+		}
+		results = append(results, checkStrIndexInExpr(x.Left, sem, asciiVars, scopeTypes, funcName, inLoop, file)...)
+		results = append(results, checkStrIndexInExpr(x.Index, sem, asciiVars, scopeTypes, funcName, inLoop, file)...)
+	case *parser.InfixExpression:
+		results = append(results, checkStrIndexInExpr(x.Left, sem, asciiVars, scopeTypes, funcName, inLoop, file)...)
+		results = append(results, checkStrIndexInExpr(x.Right, sem, asciiVars, scopeTypes, funcName, inLoop, file)...)
+	case *parser.PrefixExpression:
+		results = append(results, checkStrIndexInExpr(x.Right, sem, asciiVars, scopeTypes, funcName, inLoop, file)...)
+	case *parser.GroupedExpression:
+		results = append(results, checkStrIndexInExpr(x.Expression, sem, asciiVars, scopeTypes, funcName, inLoop, file)...)
+	case *parser.DotExpression:
+		results = append(results, checkStrIndexInExpr(x.Receiver, sem, asciiVars, scopeTypes, funcName, inLoop, file)...)
+	case *parser.AssignExpression:
+		results = append(results, checkStrIndexInExpr(x.Left, sem, asciiVars, scopeTypes, funcName, inLoop, file)...)
+		results = append(results, checkStrIndexInExpr(x.Value, sem, asciiVars, scopeTypes, funcName, inLoop, file)...)
+	case *parser.CallExpression:
+		results = append(results, checkStrIndexInExpr(x.Function, sem, asciiVars, scopeTypes, funcName, inLoop, file)...)
+		for _, a := range x.Arguments {
+			results = append(results, checkStrIndexInExpr(a, sem, asciiVars, scopeTypes, funcName, inLoop, file)...)
+		}
+	case *parser.IfExpression:
+		if x.Condition != nil {
+			results = append(results, checkStrIndexInExpr(x.Condition, sem, asciiVars, scopeTypes, funcName, inLoop, file)...)
+		}
+		if x.Consequence != nil {
+			for _, b := range x.Consequence.Statements {
+				results = append(results, checkStrIndexInStmt(b, sem, asciiVars, scopeTypes, funcName, inLoop, file)...)
+			}
+		}
+		if x.Alternative != nil {
+			for _, b := range x.Alternative.Statements {
+				results = append(results, checkStrIndexInStmt(b, sem, asciiVars, scopeTypes, funcName, inLoop, file)...)
+			}
+		}
+	case *parser.FunctionLiteral:
+		// 闭包体是独立作用域，不再视为「循环遍历体内」，重置 inLoop；
+		// 闭包体是独立作用域，不再视为「循环遍历体内」，重置 inLoop；
+		// 来源文件沿用外层 file（闭包无独立 SourceFile）。
+		if x.Body != nil {
+			for _, b := range x.Body.Statements {
+				results = append(results, checkStrIndexInStmt(b, sem, asciiVars, scopeTypes, funcName, false, file)...)
+			}
+		}
+	case *parser.ArrayLiteral:
+		for _, el := range x.Elements {
+			results = append(results, checkStrIndexInExpr(el, sem, asciiVars, scopeTypes, funcName, inLoop, file)...)
+		}
+	}
+	return results
+}
+
 func ValidateHexCase(program *parser.Program) []ValidateResult {
 	var results []ValidateResult
 	for _, stmt := range program.Statements {
@@ -2536,6 +3668,7 @@ func ValidatePrintFormat(program *parser.Program) []ValidateResult {
 	// 覆蓋 str、slice/array 的常用方法，避免 inferExprType 回傳空字串
 	stdlibMethodTypes := map[string]string{
 		"str.len":          "i64",
+		"str.len-bytes":    "i64",
 		"str.index":        "i64",
 		"str.index-from":   "i64",
 		"str.slice":        "str",
@@ -2999,6 +4132,11 @@ func parseModuleExportsFromSourceAST(source []byte) []ModuleExport {
 			exports = append(exports, ModuleExport{Name: ls.Name.Value, Value: val, Type: typeStr})
 		}
 		if fd, ok := stmt.(*parser.FunctionDefinition); ok {
+			// 內建樁函式（#{buildin=...}）僅為宣告，真實實作位於 Go runtime，
+			// 不應作為模組匯出符號（否則會改變內建解析路徑）。
+			if fd.BuiltinStub {
+				continue
+			}
 			exports = append(exports, ModuleExport{Name: fd.Name, Value: ""})
 		}
 		if es, ok := stmt.(*parser.ExternStatement); ok && es.Name != nil {
@@ -3438,7 +4576,60 @@ func checkBareExprStatement(expr parser.Expression, funcNames map[string]bool) *
 	return nil
 }
 
-func validateStmtTypes(stmt parser.Statement, funcNames map[string]bool, funcTypes map[string]string, selfType string, varTypes map[string]string, isBlockValue bool) []ValidateResult {
+// isSignedIntType 判斷內部型別字串是否為有符號整數（i8/i16/i32/i64/i128）。
+func isSignedIntType(t string) bool {
+	switch t {
+	case "i8", "i16", "i32", "i64", "i128":
+		return true
+	}
+	return false
+}
+
+// overflowModeFromSem 讀取節點的 #{overflow = wrap|clamp0} 註解，回傳處理模式。
+// "" = 未標註（預設有符號相減回傳 option<int>）；"wrap" 靜默回繞；"clamp0" 溢出歸零。
+// sem 為 nil 時安全回傳 ""。
+func overflowModeFromSem(sem *parser.SemanticContext, n parser.Node) string {
+	if sem == nil || n == nil {
+		return ""
+	}
+	for _, e := range sem.AnnotationsOf(n) {
+		if e.Key != "overflow" || e.Value == nil {
+			continue
+		}
+		switch v := e.Value.(type) {
+		case *parser.AnnotationIdentValue:
+			if v.Value == "wrap" || v.Value == "clamp0" {
+				return v.Value
+			}
+		case *parser.AnnotationStringValue:
+			if v.Value == "wrap" || v.Value == "clamp0" {
+				return v.Value
+			}
+		}
+	}
+	return ""
+}
+
+// optionTypesCompatible 判斷兩個 option 型別（?T / ?U）是否可互相賦值：
+// 內部型別相同或皆為整數型別（允許窄化）。
+func optionTypesCompatible(inferred, existing string) bool {
+	if !strings.HasPrefix(inferred, "?") || !strings.HasPrefix(existing, "?") {
+		return false
+	}
+	it := inferred[1:]
+	et := existing[1:]
+	if it == et {
+		return true
+	}
+	if _, _, ok1 := intTypeRange(it); ok1 {
+		if _, _, ok2 := intTypeRange(et); ok2 {
+			return true
+		}
+	}
+	return false
+}
+
+func validateStmtTypes(stmt parser.Statement, funcNames map[string]bool, funcTypes map[string]string, selfType string, varTypes map[string]string, isBlockValue bool, sem *parser.SemanticContext, overflowMode string) []ValidateResult {
 	var results []ValidateResult
 
 	switch s := stmt.(type) {
@@ -3476,8 +4667,13 @@ func validateStmtTypes(stmt parser.Statement, funcNames map[string]bool, funcTyp
 			delete(localFuncNames, p.Name)
 		}
 		if s.Body != nil {
+			// 函數級溢出處理模式：#{overflow = ...} 註解優先，否則繼承外層模式。
+			fdMode := overflowModeFromSem(sem, s)
+			if fdMode == "" {
+				fdMode = overflowMode
+			}
 			for i, bStmt := range s.Body.Statements {
-				errs := validateStmtTypes(bStmt, localFuncNames, funcTypes, methodSelfType, localTypes, i == len(s.Body.Statements)-1)
+				errs := validateStmtTypes(bStmt, localFuncNames, funcTypes, methodSelfType, localTypes, i == len(s.Body.Statements)-1, sem, fdMode)
 				results = append(results, errs...)
 			}
 		}
@@ -3562,6 +4758,20 @@ func validateStmtTypes(stmt parser.Statement, funcNames map[string]bool, funcTyp
 			}
 			// 型別推斷
 			inferredType := inferExprType(s.Value, varTypes, funcTypes, selfType)
+		// 有符號整數相減溢位：未標註 #{overflow} 時預設回傳 option<int>
+		// （溢出 err，永不 panic）；標註 wrap/clamp0 時回傳 int。
+		// i128 因 %option 無法容納，維持回傳 i128（codegen 退化為回繞）。
+		if inferredType != "" {
+			if inf, ok := s.Value.(*parser.InfixExpression); ok && inf.Operator == "-" &&
+				isSignedIntType(inferredType) && inferredType != "i128" {
+				effMode := overflowModeFromSem(sem, s)
+				if effMode == "" {
+					effMode = overflowMode
+				}
+								// 預設有符號相減維持 plain int（2's 補數回繞）；option<int> 回傳路徑暫停用（codegen 已改為 plain sub）。
+
+			}
+		}
 			if inferredType == "" {
 				// Type inference failed. Check if the RHS is a LHS-inferred
 				// builtin (with-len, with-cap, with-cap-len) whose result
@@ -3662,8 +4872,8 @@ func validateStmtTypes(stmt parser.Statement, funcNames map[string]bool, funcTyp
 							}
 						}
 					}
-					if inferredType != "" && inferredType != existingType && isConcreteType(existingType) && !isArrayAssign && !isOptionCtor &&
-						!isArgTypeCompatible(existingType, inferredType, s.Value) {
+				if inferredType != "" && inferredType != existingType && isConcreteType(existingType) && !isArrayAssign && !isOptionCtor &&
+					!isArgTypeCompatible(existingType, inferredType, s.Value) && !optionTypesCompatible(inferredType, existingType) {
 						valPos := s.Value.Pos()
 						results = append(results, ValidateResult{
 							TraceID: "15w45dqk",
@@ -3709,13 +4919,13 @@ func validateStmtTypes(stmt parser.Statement, funcNames map[string]bool, funcTyp
 			// 用戶自定義枚舉的 variant，不能簡單當作廢棄的 Option 構造器報錯。
 			if ifExpr.Consequence != nil {
 				for i, bStmt := range ifExpr.Consequence.Statements {
-					errs := validateStmtTypes(bStmt, funcNames, funcTypes, selfType, varTypes, i == len(ifExpr.Consequence.Statements)-1)
+					errs := validateStmtTypes(bStmt, funcNames, funcTypes, selfType, varTypes, i == len(ifExpr.Consequence.Statements)-1, sem, overflowMode)
 					results = append(results, errs...)
 				}
 			}
 			if ifExpr.Alternative != nil {
 				for i, bStmt := range ifExpr.Alternative.Statements {
-					errs := validateStmtTypes(bStmt, funcNames, funcTypes, selfType, varTypes, i == len(ifExpr.Alternative.Statements)-1)
+					errs := validateStmtTypes(bStmt, funcNames, funcTypes, selfType, varTypes, i == len(ifExpr.Alternative.Statements)-1, sem, overflowMode)
 					results = append(results, errs...)
 				}
 			}
@@ -3751,6 +4961,19 @@ func validateStmtTypes(stmt parser.Statement, funcNames map[string]bool, funcTyp
 				if !isNilAssign {
 					if existingType, exists := varTypes[ident.Value]; exists {
 						valType := inferExprType(assign.Value, varTypes, funcTypes, selfType)
+						// 有符號整數相減溢位：未標註時預設回傳 option<int>。
+						subDefaultOpt := false
+						if valType != "" {
+							if inf, ok := assign.Value.(*parser.InfixExpression); ok && inf.Operator == "-" &&
+								isSignedIntType(valType) && valType != "i128" {
+								effMode := overflowModeFromSem(sem, s)
+								if effMode == "" {
+									effMode = overflowMode
+								}
+																// 預設有符號相減維持 plain int（2's 補數回繞）；option<int> 回傳路徑暫停用。
+
+							}
+						}
 						// Option 建構子：err(x) / ok(x) 可指派給任何 ?T 變數
 						// 注意：val(x) 已廢棄作為構造器，應改用 ok(x)
 						isOptionCtor := false
@@ -3773,8 +4996,8 @@ func validateStmtTypes(stmt parser.Statement, funcNames map[string]bool, funcTyp
 								}
 							}
 						}
-						if valType != "" && valType != existingType && isConcreteType(existingType) && !isOptionCtor &&
-							!isArgTypeCompatible(existingType, valType, assign.Value) {
+					if valType != "" && valType != existingType && isConcreteType(existingType) && !isOptionCtor &&
+						!isArgTypeCompatible(existingType, valType, assign.Value) && !optionTypesCompatible(valType, existingType) {
 							// Check if this is an array/slice literal assignment to a typed array variable
 							_, isSlice := assign.Value.(*parser.SliceLiteral)
 							_, isArrayLit := assign.Value.(*parser.ArrayLiteral)
@@ -3801,22 +5024,38 @@ func validateStmtTypes(stmt parser.Statement, funcNames map[string]bool, funcTyp
 										}
 									}
 								}
-							} else {
-								results = append(results, ValidateResult{
-									TraceID: "1mf3x79l",
-									Line:    assign.Token.Line,
-									Column:  assign.Token.Column,
-									Message: fmt.Sprintf("cannot assign %s value to %s variable '%s'%s", valType, existingType, ident.Value, narrowingHint(valType, existingType)),
-								})
+						} else {
+							msg := fmt.Sprintf("cannot assign %s value to %s variable '%s'%s", valType, existingType, ident.Value, narrowingHint(valType, existingType))
+							if subDefaultOpt && !strings.HasPrefix(existingType, "?") {
+								msg = fmt.Sprintf("signed subtraction may overflow: result is option<%s> but '%s' is declared %s. Add `#{overflow = wrap}` or `#{overflow = clamp0}` (e.g. above this statement), or declare '%s' as ?%s", strings.TrimPrefix(valType, "?"), ident.Value, existingType, ident.Value, strings.TrimPrefix(valType, "?"))
 							}
+							results = append(results, ValidateResult{
+								TraceID: "1mf3x79l",
+								Line:    assign.Token.Line,
+								Column:  assign.Token.Column,
+								Message: msg,
+							})
 						}
-					} else if !exists {
-						// 首次賦值，記錄推斷型別
-						valType := inferExprType(assign.Value, varTypes, funcTypes, selfType)
-						if valType != "" {
-							varTypes[ident.Value] = valType
+						}
+				} else if !exists {
+					// 首次賦值，記錄推斷型別
+					valType := inferExprType(assign.Value, varTypes, funcTypes, selfType)
+					// 有符號整數相減溢位：未標註時預設回傳 option<int>。
+					if valType != "" {
+						if inf, ok := assign.Value.(*parser.InfixExpression); ok && inf.Operator == "-" &&
+							isSignedIntType(valType) && valType != "i128" {
+							effMode := overflowModeFromSem(sem, s)
+							if effMode == "" {
+								effMode = overflowMode
+							}
+														// 預設有符號相減維持 plain int（2's 補數回繞）；option<int> 回傳路徑暫停用。
+
 						}
 					}
+					if valType != "" {
+						varTypes[ident.Value] = valType
+					}
+				}
 				}
 			}
 		}
@@ -3824,14 +5063,14 @@ func validateStmtTypes(stmt parser.Statement, funcNames map[string]bool, funcTyp
 	case *parser.ForStatement:
 		if s.Body != nil {
 			for i, bStmt := range s.Body.Statements {
-				errs := validateStmtTypes(bStmt, funcNames, funcTypes, selfType, varTypes, i == len(s.Body.Statements)-1)
+				errs := validateStmtTypes(bStmt, funcNames, funcTypes, selfType, varTypes, i == len(s.Body.Statements)-1, sem, overflowMode)
 				results = append(results, errs...)
 			}
 		}
 
 	case *parser.BlockStatement:
 		for i, bStmt := range s.Statements {
-			errs := validateStmtTypes(bStmt, funcNames, funcTypes, selfType, varTypes, i == len(s.Statements)-1)
+			errs := validateStmtTypes(bStmt, funcNames, funcTypes, selfType, varTypes, i == len(s.Statements)-1, sem, overflowMode)
 			results = append(results, errs...)
 		}
 
@@ -3964,6 +5203,16 @@ func stdHirForSource(source []byte) *hir.Package {
 	if len(p.Errors()) > 0 {
 		return nil
 	}
+	// 移除標準庫內建樁函式（#{buildin=...}）：其真實實作位於 Go runtime，
+	// 不應作為模組匯出符號（否則會改變內建解析路徑）。
+	kept := prog.Statements[:0]
+	for _, stmt := range prog.Statements {
+		if fd, ok := stmt.(*parser.FunctionDefinition); ok && fd.BuiltinStub {
+			continue
+		}
+		kept = append(kept, stmt)
+	}
+	prog.Statements = kept
 	pkg := parser.ASTToHIR(prog)
 	stdHirStore(ck, pkg)
 	return pkg
@@ -4837,10 +6086,40 @@ func resolveSelfMethodCalls(program *parser.Program) {
 		if !ok {
 			continue
 		}
-		if len(fd.Parameters) == 0 || fd.Parameters[0].Name != "self" {
+		// Only method definitions carry a `self` receiver that needs the
+		// `self.method(args)` → `Type.method(self, args)` desugaring below.
+		if !fd.IsMethodDef {
 			continue
 		}
-		selfType := fd.Parameters[0].Type.String()
+		// Derive the receiver type.
+		//
+		//   • Explicit-self methods declare `self` as their first parameter:
+		//       txt.to-hex = (self txt, ...) (...)  → selfType = "txt"
+		//   • Implicit-self methods omit the parameter but encode the receiver
+		//     type in the method-name prefix (Type.method = ()):
+		//       txt.from-hex = () (...)  → selfType = "txt"
+		//       mypkg.mystruct.do = () (...)  → selfType = "mypkg.mystruct"
+		//
+		// Historically only the explicit-self form was handled, so every
+		// `Type.method = ()` method (the dominant std style) left its bare
+		// `.method()` calls as `DotExpression{self, prop}`. Codegen dispatches
+		// those correctly *only* when the call is a direct CallExpression; when
+		// a bare `.method()` is nested (e.g. the LHS of a binary op, or after
+		// the method is inlined into a non-method function) the dispatch is
+		// lost and codegen emits a malformed `call void @self.method()` with an
+		// empty receiver — producing invalid IR such as `sdiv i64 , 2`.
+		// Desugaring here converts them to explicit `Type.method(self, args)`
+		// calls, which survive inlining and every expression context uniformly.
+		var selfType string
+		if len(fd.Parameters) > 0 && fd.Parameters[0].Name == "self" && fd.Parameters[0].Type != nil {
+			selfType = fd.Parameters[0].Type.String()
+		} else if parts := strings.Split(fd.Name, "."); len(parts) >= 2 {
+			// Receiver type is every segment except the final method name.
+			selfType = strings.Join(parts[:len(parts)-1], ".")
+		}
+		if selfType == "" {
+			continue
+		}
 		if fd.Body != nil {
 			for _, bodyStmt := range fd.Body.Statements {
 				resolveSelfInStmt(bodyStmt, selfType, structFields)

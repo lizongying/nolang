@@ -47,10 +47,8 @@ tables.init = () {
     .dyn-size = 0
     .dyn-max = 4096
     i <- [0..HPACK-DYN-MAX): {
-        .dyn-names[i] = ' '
-        .dyn-names[i].len = 0
-        .dyn-values[i] = ' '
-        .dyn-values[i].len = 0
+        .dyn-names[i] = ''
+        .dyn-values[i] = ''
     }
     .static-init -> return
     .static-init = true
@@ -194,34 +192,45 @@ tables.dyn-add = (name str, value str) {
     {
 
         ; 用 slice 複製（CallExpression 正確載入 str-long value）
-        prev-name-len = .dyn-names[i - 1].len
-        prev-val-len = .dyn-values[i - 1].len
+        #{overflow = wrap}
+        prev-name-len = .dyn-names[i - 1].len-bytes()
+        #{overflow = wrap}
+        prev-val-len = .dyn-values[i - 1].len-bytes()
 
         ; 逐 byte 複製 name
-        .dyn-names[i].len = prev-name-len
+        dn-tmp str = ''.with-len(prev-name-len)
         j <- [0..prev-name-len): {
-            .dyn-names[i][j] = .dyn-names[i - 1][j]
+            #{overflow = wrap}
+            dn-tmp[j] = .dyn-names[i - 1][j]
         }
+        .dyn-names[i] = dn-tmp
 
         ; 逐 byte 複製 value
-        .dyn-values[i].len = prev-val-len
+        dv-tmp str = ''.with-len(prev-val-len)
         j <- [0..prev-val-len): {
-            .dyn-values[i][j] = .dyn-values[i - 1][j]
+            #{overflow = wrap}
+            dv-tmp[j] = .dyn-values[i - 1][j]
         }
+        .dyn-values[i] = dv-tmp
+        #{overflow = wrap}
         i = i - 1
     } (i > 0)
 
     ; 新項放索引 0
-    .dyn-names[0].len = name.len
-    j <- [0..name.len): {
-        .dyn-names[0][j] = name[j]
+    dn0-tmp str = ''.with-len(name.len-bytes())
+    j <- [0..name.len-bytes()): {
+        dn0-tmp[j] = name[j]
     }
-    .dyn-values[0].len = value.len
-    j <- [0..value.len): {
-        .dyn-values[0][j] = value[j]
+    .dyn-names[0] = dn0-tmp
+    dv0-tmp str = ''.with-len(value.len-bytes())
+    j <- [0..value.len-bytes()): {
+        dv0-tmp[j] = value[j]
     }
+    .dyn-values[0] = dv0-tmp
+    #{overflow = wrap}
     .dyn-count = .dyn-count + 1
-    .dyn-size = .dyn-size + name.len + value.len + 32
+    #{overflow = wrap}
+    .dyn-size = .dyn-size + name.len-bytes() + value.len-bytes() + 32
 }
 
 ; ═══════════════════════════════════════════════
@@ -234,26 +243,33 @@ tables.find = (name str, value str) (idx i64) {
     idx = 0
 
     ; 查靜態表（1-61，靜態表內部從 0 開始存）
+    nm-len = name.len-bytes()
+    vm-len = value.len-bytes()
     i <- [0..HPACK-STATIC-COUNT): {
-        .static-names[i].len == name.len -> {
+        sn-len = .static-names[i].len-bytes()
+        sn-len == nm-len -> {
             matched = 1
-            j <- [0..name.len): {
+            j <- [0..nm-len): {
                 .static-names[i][j] != name[j] -> {
                     matched = 0
                     break
                 }
             }
-            matched == 1 -> .static-values[i].len == value.len -> {
-                v-matched = 1
-                j <- [0..value.len): {
-                    .static-values[i][j] != value[j] -> {
-                        v-matched = 0
-                        break
+            matched == 1 -> {
+                sv-len = .static-values[i].len-bytes()
+                sv-len == vm-len -> {
+                    v-matched = 1
+                    j <- [0..vm-len): {
+                        .static-values[i][j] != value[j] -> {
+                            v-matched = 0
+                            break
+                        }
                     }
-                }
-                v-matched == 1 -> {
-                    idx = i + 1
-                    return
+                    v-matched == 1 -> {
+                        #{overflow = wrap}
+                        idx = i + 1
+                        return
+                    }
                 }
             }
         }
@@ -261,25 +277,30 @@ tables.find = (name str, value str) (idx i64) {
 
     ; 查動態表（索引從 62 開始）
     i <- [0...dyn-count): {
-        .dyn-names[i].len == name.len -> {
+        dn-len = .dyn-names[i].len-bytes()
+        dn-len == nm-len -> {
             matched = 1
-            j <- [0..name.len): {
+            j <- [0..nm-len): {
                 .dyn-names[i][j] != name[j] -> {
                     matched = 0
                     break
                 }
             }
-            matched == 1 -> .dyn-values[i].len == value.len -> {
-                v-matched = 1
-                j <- [0..value.len): {
-                    .dyn-values[i][j] != value[j] -> {
-                        v-matched = 0
-                        break
+            matched == 1 -> {
+                dv-len = .dyn-values[i].len-bytes()
+                dv-len == vm-len -> {
+                    v-matched = 1
+                    j <- [0..vm-len): {
+                        .dyn-values[i][j] != value[j] -> {
+                            v-matched = 0
+                            break
+                        }
                     }
-                }
-                v-matched == 1 -> {
-                    idx = HPACK-STATIC-COUNT + i + 1
-                    return
+                    v-matched == 1 -> {
+                        #{overflow = wrap}
+                        idx = HPACK-STATIC-COUNT + i + 1
+                        return
+                    }
                 }
             }
         }
@@ -290,31 +311,36 @@ tables.find = (name str, value str) (idx i64) {
 ; 返回 idx=0=未找到，idx>0=索引
 tables.find-name = (name str) (idx i64) {
     idx = 0
+    nm-len = name.len-bytes()
     i <- [0..HPACK-STATIC-COUNT): {
-        .static-names[i].len == name.len -> {
+        sn-len = .static-names[i].len-bytes()
+        sn-len == nm-len -> {
             matched = 1
-            j <- [0..name.len): {
+            j <- [0..nm-len): {
                 .static-names[i][j] != name[j] -> {
                     matched = 0
                     break
                 }
             }
             matched == 1 -> {
+                #{overflow = wrap}
                 idx = i + 1
                 return
             }
         }
     }
     i <- [0...dyn-count): {
-        .dyn-names[i].len == name.len -> {
+        dn-len = .dyn-names[i].len-bytes()
+        dn-len == nm-len -> {
             matched = 1
-            j <- [0..name.len): {
+            j <- [0..nm-len): {
                 .dyn-names[i][j] != name[j] -> {
                     matched = 0
                     break
                 }
             }
             matched == 1 -> {
+                #{overflow = wrap}
                 idx = HPACK-STATIC-COUNT + i + 1
                 return
             }
@@ -332,21 +358,23 @@ tables.lookup = (idx i64) (name str, value str, ok bool) {
         idx <= HPACK-STATIC-COUNT -> {
 
             ; 靜態表（內部從 0 開始）
+            #{overflow = wrap}
             arr-idx = idx - 1
-            n-len = .static-names[arr-idx].len
-            v-len = .static-values[arr-idx].len
-            name = .static-names[arr-idx].slice(0, n-len)
-            v-len > 0 -> value = .static-values[arr-idx].slice(0, v-len)
+            n-len = .static-names[arr-idx].len-bytes()
+            v-len = .static-values[arr-idx].len-bytes()
+            name = .static-names[arr-idx].slice-bytes(0, n-len)
+            v-len > 0 -> value = .static-values[arr-idx].slice-bytes(0, v-len)
             ok = true
             return
         }
     }
+    #{overflow = wrap}
     dyn-idx = idx - HPACK-STATIC-COUNT - 1
     dyn-idx < .dyn-count -> {
-        n-len = .dyn-names[dyn-idx].len
-        v-len = .dyn-values[dyn-idx].len
-        name = .dyn-names[dyn-idx].slice(0, n-len)
-        v-len > 0 -> value = .dyn-values[dyn-idx].slice(0, v-len)
+        n-len = .dyn-names[dyn-idx].len-bytes()
+        v-len = .dyn-values[dyn-idx].len-bytes()
+        name = .dyn-names[dyn-idx].slice-bytes(0, n-len)
+        v-len > 0 -> value = .dyn-values[dyn-idx].slice-bytes(0, v-len)
         ok = true
         return
     }
@@ -363,6 +391,7 @@ tables.lookup = (idx i64) (name str, value str, ok bool) {
 ; 返回 out=編碼後的字串
 encode-int = (val i64, prefix-bits i64, prefix-byte i64) (out str) {
     out = with-cap(10)
+    #{overflow = wrap}
     max-prefix = (1 << prefix-bits) - 1
     val < max-prefix -> {
         out[0] = prefix-byte | val
@@ -372,9 +401,11 @@ encode-int = (val i64, prefix-bits i64, prefix-byte i64) (out str) {
     ; 第一個 byte: prefix 全 1
     out[0] = prefix-byte | max-prefix
     n = 1
+    #{overflow = wrap}
     val = val - max-prefix
     {
         out[n] = (val & 127) | 128
+        #{overflow = wrap}
         n = n + 1
         val = val >> 7
     } (val >= 128)
@@ -387,26 +418,31 @@ encode-int = (val i64, prefix-bits i64, prefix-byte i64) (out str) {
 decode-int = (data str, pos i64, prefix-bits i64) (val i64, next-pos i64) {
     val = 0
     next-pos = pos
-    pos >= data.len -> {
+    pos >= data.len-bytes() -> {
         next-pos = -1
         return
     }
+    #{overflow = wrap}
     max-prefix = (1 << prefix-bits) - 1
     first = data[pos] & max-prefix
     val = first
+    #{overflow = wrap}
     next-pos = pos + 1
     first < max-prefix -> return
 
     ; 多 byte 編碼
     m = 0
     {
-        next-pos >= data.len -> {
+        next-pos >= data.len-bytes() -> {
             next-pos = -1
             *
         }
         b = data[next-pos]
+        #{overflow = wrap}
         next-pos = next-pos + 1
+        #{overflow = wrap}
         val = val + ((b & 127) << m)
+        #{overflow = wrap}
         m = m + 7
         (b & 128) == 0 -> *
         m >= 35 -> {
@@ -423,20 +459,22 @@ decode-int = (data str, pos i64, prefix-bits i64) (val i64, next-pos i64) {
 ; encode-str: 編碼字串（literal，H=0）
 ; 返回 out=編碼後字串
 encode-str = (s str) (out str) {
-    out = with-cap(s.len + 8)
+    #{overflow = wrap}
+    out = with-cap(s.len-bytes() + 8)
 
     ; H bit=0, 長度用 7-bit prefix 編碼
     len-out = ' '
-    len-out = encode-int(s.len, 7, 0)
+    len-out = encode-int(s.len-bytes(), 7, 0)
 
     ; 複製長度編碼到 out
-    i <- [0..len-out.len): {
+    i <- [0..len-out.len-bytes()): {
         out[i] = len-out[i]
     }
-    out-n = len-out.len
+    out-n = len-out.len-bytes()
 
     ; 複製字串內容
-    i <- [0..s.len): {
+    i <- [0..s.len-bytes()): {
+        #{overflow = wrap}
         out[out-n + i] = s[i]
     }
 }
@@ -444,7 +482,7 @@ encode-str = (s str) (out str) {
 ; decode-str: 從 data 的 pos 位置解碼字串
 ; 返回 out=解碼字串, next-pos=下一個位置（-1=錯誤）
 decode-str = (data str, pos i64) (out str, next-pos i64) {
-    pos >= data.len -> {
+    pos >= data.len-bytes() -> {
         next-pos = -1
         return
     }
@@ -460,7 +498,7 @@ decode-str = (data str, pos i64) (out str, next-pos i64) {
             next-pos = -1
             return
         }
-        p + len > data.len -> {
+        p + len > data.len-bytes() -> {
             next-pos = -1
             return
         }
@@ -469,8 +507,10 @@ decode-str = (data str, pos i64) (out str, next-pos i64) {
     ; 複製字串內容
     out = with-cap(len)
     i <- [0..len): {
+        #{overflow = wrap}
         out[i] = data[p + i]
     }
+    #{overflow = wrap}
     next-pos = p + len
 }
 
@@ -493,7 +533,8 @@ tables.encode-header = (name str, value str) (out str) {
         out = encode-int(full-idx, 7, 128)
         return
     }
-    out = with-cap(name.len + value.len + 8)
+    #{overflow = wrap}
+    out = with-cap(name.len-bytes() + value.len-bytes() + 8)
 
     ; 2. name 匹配 → Literal with Incremental Indexing（6.2.1），name 用索引
     name-idx = 0
@@ -505,15 +546,16 @@ tables.encode-header = (name str, value str) (out str) {
         idx-out = encode-int(name-idx, 6, 64)
 
         ; 複製到 out
-        i <- [0..idx-out.len): {
+        i <- [0..idx-out.len-bytes()): {
             out[i] = idx-out[i]
         }
-        out-n = idx-out.len
+        out-n = idx-out.len-bytes()
 
         ; 編碼 value
         val-out = ' '
         val-out = encode-str(value)
-        i <- [0..val-out.len): {
+        i <- [0..val-out.len-bytes()): {
+            #{overflow = wrap}
             out[out-n + i] = val-out[i]
         }
 
@@ -530,15 +572,18 @@ tables.encode-header = (name str, value str) (out str) {
     ; 編碼 name
     name-out = ' '
     name-out = encode-str(name)
-    i <- [0..name-out.len): {
+    i <- [0..name-out.len-bytes()): {
+        #{overflow = wrap}
         out[out-n + i] = name-out[i]
     }
-    out-n = out-n + name-out.len
+    #{overflow = wrap}
+    out-n = out-n + name-out.len-bytes()
 
     ; 編碼 value
     val-out = ' '
     val-out = encode-str(value)
-    i <- [0..val-out.len): {
+    i <- [0..val-out.len-bytes()): {
+        #{overflow = wrap}
         out[out-n + i] = val-out[i]
     }
 
@@ -555,12 +600,10 @@ tables.decode-headers = (data str) (names [128]str, values [128]str, count i64, 
 
     ; 初始化輸出陣列
     i <- [0..128): {
-        names[i] = ' '
-        names[i].len = 0
-        values[i] = ' '
-        values[i].len = 0
+        names[i] = ''
+        values[i] = ''
     }
-    n = data.len
+    n = data.len-bytes()
     n == 0 -> {
         ok = true
         return
@@ -585,14 +628,17 @@ tables.decode-headers = (data str) (names [128]str, values [128]str, count i64, 
                 found == false -> return
 
                 ; 複製到輸出
-                j <- [0..lk-name.len): {
-                    names[count][j] = lk-name[j]
+                ln-tmp str = ''.with-len(lk-name.len-bytes())
+                j <- [0..lk-name.len-bytes()): {
+                    ln-tmp[j] = lk-name[j]
                 }
-                names[count].len = lk-name.len
-                j <- [0..lk-val.len): {
-                    values[count][j] = lk-val[j]
+                names[count] = ln-tmp
+                lv-tmp str = ''.with-len(lk-val.len-bytes())
+                j <- [0..lk-val.len-bytes()): {
+                    lv-tmp[j] = lk-val[j]
                 }
-                values[count].len = lk-val.len
+                values[count] = lv-tmp
+                #{overflow = wrap}
                 count = count + 1
                 pos = next
             }
@@ -625,14 +671,17 @@ tables.decode-headers = (data str) (names [128]str, values [128]str, count i64, 
                 pos < 0 -> return
 
                 ; 複製到輸出
-                j <- [0..name.len): {
-                    names[count][j] = name[j]
+                nb-tmp str = ''.with-len(name.len-bytes())
+                j <- [0..name.len-bytes()): {
+                    nb-tmp[j] = name[j]
                 }
-                names[count].len = name.len
-                j <- [0..value.len): {
-                    values[count][j] = value[j]
+                names[count] = nb-tmp
+                vb-tmp str = ''.with-len(value.len-bytes())
+                j <- [0..value.len-bytes()): {
+                    vb-tmp[j] = value[j]
                 }
-                values[count].len = value.len
+                values[count] = vb-tmp
+                #{overflow = wrap}
                 count = count + 1
 
                 ; 加入動態表
@@ -665,14 +714,17 @@ tables.decode-headers = (data str) (names [128]str, values [128]str, count i64, 
                 }
                 value, pos = decode-str(data, pos)
                 pos < 0 -> return
-                j <- [0..name.len): {
-                    names[count][j] = name[j]
+                nb-tmp str = ''.with-len(name.len-bytes())
+                j <- [0..name.len-bytes()): {
+                    nb-tmp[j] = name[j]
                 }
-                names[count].len = name.len
-                j <- [0..value.len): {
-                    values[count][j] = value[j]
+                names[count] = nb-tmp
+                vb-tmp str = ''.with-len(value.len-bytes())
+                j <- [0..value.len-bytes()): {
+                    vb-tmp[j] = value[j]
                 }
-                values[count].len = value.len
+                values[count] = vb-tmp
+                #{overflow = wrap}
                 count = count + 1
             }
             (b & 240) == 16 -> {
@@ -702,14 +754,17 @@ tables.decode-headers = (data str) (names [128]str, values [128]str, count i64, 
                 }
                 value, pos = decode-str(data, pos)
                 pos < 0 -> return
-                j <- [0..name.len): {
-                    names[count][j] = name[j]
+                nb-tmp str = ''.with-len(name.len-bytes())
+                j <- [0..name.len-bytes()): {
+                    nb-tmp[j] = name[j]
                 }
-                names[count].len = name.len
-                j <- [0..value.len): {
-                    values[count][j] = value[j]
+                names[count] = nb-tmp
+                vb-tmp str = ''.with-len(value.len-bytes())
+                j <- [0..value.len-bytes()): {
+                    vb-tmp[j] = value[j]
                 }
-                values[count].len = value.len
+                values[count] = vb-tmp
+                #{overflow = wrap}
                 count = count + 1
             }
             -> return

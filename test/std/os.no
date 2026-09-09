@@ -20,7 +20,7 @@ t-get-env = () {
 
 t-get-wd = () {
     dir = os.get-wd()
-    runner.gt(dir.len, 0, 'get-wd len > 0')
+    runner.gt(dir.len(), 0, 'get-wd len > 0')
 }
 
 ; ── 進程 ──────────────────────────────────────
@@ -34,7 +34,7 @@ t-get-pid = () {
 
 t-host-name = () {
     name = os.host-name()
-    runner.gt(name.len, 0, 'host-name len > 0')
+    runner.gt(name.len(), 0, 'host-name len > 0')
 }
 
 t-num-cpu = () {

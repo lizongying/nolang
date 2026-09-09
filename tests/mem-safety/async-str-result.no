@@ -28,7 +28,7 @@ consumer = () {
 
     task3 = run vec-producer-async()
     v = awy task3
-    print(v.len)
+    print(v.len())
     print(v[0])
     print(v[1])
     print(v[2])

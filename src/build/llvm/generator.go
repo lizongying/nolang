@@ -272,6 +272,10 @@ emittedAlloca     map[string]bool                 // track variables that alread
 	curFuncRetType string // 當前函數回傳型別（void/i64/...）
 	curFuncRetName string // 當前函數輸出參數名稱（為空表示 void）
 	curFuncName    string // 當前函數名稱（debug 用）
+	// curOverflowMode：當前函數/語句的「有符號整數相減溢位」處理模式。
+	// "" = 回傳 option<int>（溢出即 err，永不 panic）；"wrap" = 靜默回繞（two's complement）；
+	// "clamp0" = 溢出時歸零（saturate to 0）。由 #{overflow = wrap|clamp0} 註解驅動。
+	curOverflowMode string
 	inMainFunction bool   // true when generating the synthetic @main wrapper
 	// === 輸出參數綁定 ===
 	outputParamNames map[string]bool                  // 當前函數的輸出參數名稱集合
@@ -315,6 +319,11 @@ type Generator struct {
 	hirOf                  map[parser.Node]int32   // AST 節點 -> HIR id（hirToAST 的 astOf 反查表）；使 embed/annotation 查找能按 HIR id 解析而不依賴重建 AST 的指標身份
 	hirStmtOf              map[int32]parser.Statement // HIR id -> 重建 AST 頂層語句（prepare 的 HIR 路徑）；emitTopLevelHIR 的「重構委派」回退用
 	hirAstOf               map[int32]parser.Node      // HIR id -> 重建 AST 節點（hirToAST 的 astOf，含語句與表達式）；generateHIRExpr 的「重構委派」回退用
+	// pendingOverflowMode：方法定義（LetStatement + FunctionLiteral）的溢出模式。
+	// 方法註解位於外層 let 語句，而 generateFunctionDefinition 接收的是內層合成 FunctionDefinition
+	// （無註解），故由方法迴圈先從 let 讀取模式存入此欄，generateFunctionDefinition 消費後清除。
+	// 置於 funcState 之外，避免被 resetFuncState 重置而遺失。
+	pendingOverflowMode string
 	indentLevel            int
 	fmtStrIdx              int
 	stringIdx              int
@@ -375,6 +384,13 @@ type Generator struct {
 	coroTaskHandles       map[string]int      // 持有协程任务句柄的变量名 → coro 编号（供 awy/run 识别协程任务并从其 coro_state 取回结果）
 	coroStateSizes        map[int]int64       // coro 编号 → coro_state 字节大小（供 run 异步启动时堆分配，避免栈帧销毁后悬垂）
 	codegenErrors         []string            // codegen 阶段收集的错误（如 with-cap 类型推断失败）
+
+	// asciiVars：可證明純 ASCII 的字串變數集合（str 索引語義優化，見 strchar_at.go）。
+	// 由 collectAsciiVars 在 codegen 前期填充；未被證明的變數走 @nolang.str_char_at O(n) 路徑。
+	asciiVars map[string]bool
+	// mutatedVars：曾被下標賦值（s[i]=...）寫過的變數；其位元組內容執行期可能變非 ASCII，
+	// 故自動 ASCII 證明失效（保守否決）。每次 collectAsciiVars 重建（見 strchar_at.go:158）。
+	mutatedVars map[string]bool
 
 	// cloneVisitSet tracks struct types currently being cloned (for cycle detection).
 	// When a self-referential struct (e.g. `node { children []node }`) is cloned,
@@ -879,7 +895,7 @@ func (g *Generator) embedFilesFor(n parser.Node) map[string][]byte {
 // platform filter inspects are considered.
 func (g *Generator) annotationsFor(n parser.Node) []*parser.AnnotationEntry {
 	switch n.(type) {
-	case *parser.LetStatement, *parser.FunctionDefinition, *parser.StructDefinition, *parser.ExpressionStatement:
+	case *parser.LetStatement, *parser.FunctionDefinition, *parser.StructDefinition, *parser.ExpressionStatement, *parser.BlockStatement, *parser.IfExpression, *parser.ForStatement:
 		if g.hirPkg != nil {
 			if id, ok := g.hirOf[n]; ok {
 				return hirAnnotationEntries(g.hirPkg, id)
@@ -894,6 +910,49 @@ func (g *Generator) annotationsFor(n parser.Node) []*parser.AnnotationEntry {
 // filterByPlatformG is the Generator-aware variant of FilterByPlatform used in
 // HIR codegen mode: it resolves annotations through the HIR-id-keyed lookup
 // instead of the reconstructed-AST semantic side-table.
+// overflowModeFromNode 讀取節點的 #{overflow = ...} 註解，回傳處理模式。
+// 支援 wrap / clamp0 / min / max / saturate 五種，以及型別前綴形式
+// （如 u8-max、i8-min、i16-saturate，方向尾碼由 NormalizeOverflowMode 萃取）。
+// 回傳 "" 表示未標註（預設回傳 option<int>）；其餘為對應的箝位/回繞模式。
+// 語意 side-table 不存在（如 HIR 模式 g.sem 為 nil）時安全回傳 ""。
+func (g *Generator) overflowModeFromNode(n parser.Node) string {
+	if n == nil {
+		return ""
+	}
+	// FunctionDefinition 節點若已攜帶 #{overflow} 欄位（parser 於解析期填寫、
+	// 單態化複本繼承），優先採用——此路徑在 HIR 模式下亦可靠（不依賴 side-table）。
+	if fd, ok := n.(*parser.FunctionDefinition); ok && fd.OverflowMode != "" {
+		return fd.OverflowMode
+	}
+	// ForStatement 攜帶迴圈體的溢出模式（HIR 重建後寫入 OverflowMode 欄位），
+	// 使 HIR 模式下 g.sem 為 nil 時仍能解析；迴圈體整數運算繼承此模式。
+	if fs, ok := n.(*parser.ForStatement); ok && fs.OverflowMode != "" {
+		return fs.OverflowMode
+	}
+	// ExpressionStatement 攜帶 if/match 臂體與臂條件的溢出模式（HIR 重建後寫入），
+	// 使 HIR 模式下 g.sem 為 nil 時仍能解析；臂體整數運算繼承此模式。
+	if es, ok := n.(*parser.ExpressionStatement); ok && es.OverflowMode != "" {
+		return es.OverflowMode
+	}
+	resolved := ""
+	for _, e := range g.annotationsFor(n) {
+		if e.Key != "overflow" || e.Value == nil {
+			continue
+		}
+		switch v := e.Value.(type) {
+		case *parser.AnnotationIdentValue:
+			if m := parser.NormalizeOverflowMode(v.Value); m != "" {
+				resolved = m
+			}
+		case *parser.AnnotationStringValue:
+			if m := parser.NormalizeOverflowMode(v.Value); m != "" {
+				resolved = m
+			}
+		}
+	}
+	return resolved
+}
+
 func (g *Generator) filterByPlatformG(stmts []parser.Statement, goos, goarch string) []parser.Statement {
 	out := make([]parser.Statement, 0, len(stmts))
 	for _, stmt := range stmts {
@@ -2327,6 +2386,46 @@ func (g *Generator) prepare(stmts []parser.Statement, sem *parser.SemanticContex
 			sb.WriteString(fmt.Sprintf("%s = global %s zeroinitializer\n", llvmGlobalRef(name), llvmType))
 			g.globalVars[name] = true
 		} else if llvmType == "%arr" {
+			// 模組級固定陣列常量（如 blake2 的 SIGMA 表）：若有 ArrayLiteral 初值，
+			// 必須發出實際初始化資料，否則 @name = global %arr zeroinitializer 會把
+			// 所有元素清零，導致密碼學常量表全 0、hash 結果錯誤。
+			// 做法：把資料發為私有常量陣列 @.arr.<name>.data = constant [N x T] [...]，
+			// 再讓 %arr 結構的 data 欄位指向它（與 embed/%vec 常量同構，data 為
+			// ptrtoint 後的 i64 指標）。讀取時走 %arr 索引路徑（load data → bitcast
+			// → GEP → load）即可取到唯讀常量。
+			if at, ok := ls.Type.(*parser.ArrayType); ok {
+				if arrLit, ok := ls.Value.(*parser.ArrayLiteral); ok && len(arrLit.Elements) > 0 {
+					var llvmElemType string
+					if inner, ok := at.Elem.(*parser.ArrayType); ok {
+						llvmElemType = g.arrayTypeToLLVM(inner)
+					} else {
+						elemType := "i64"
+						if at.Elem != nil {
+							elemType = at.Elem.String()
+						}
+						llvmElemType = toLLVMType(g.mapToLLVMType(elemType))
+					}
+					n := len(arrLit.Elements)
+					dataGlobal := "@.arr." + name + ".data"
+					sb.WriteString(fmt.Sprintf("%s = private constant [%d x %s] [", dataGlobal, n, llvmElemType))
+					for i, e := range arrLit.Elements {
+						if i > 0 {
+							sb.WriteString(", ")
+						}
+						if v, ok := intConstValue(e); ok {
+							sb.WriteString(fmt.Sprintf("%s %d", llvmElemType, v))
+						} else {
+							// 非常量元素（極少見）：退而求其次用 0，保證 IR 合法
+							sb.WriteString(fmt.Sprintf("%s 0", llvmElemType))
+						}
+					}
+					sb.WriteString("]\n")
+					sb.WriteString(fmt.Sprintf("%s = global %%arr { i64 %d, i64 ptrtoint ([%d x %s]* %s to i64) }\n",
+						llvmGlobalRef(name), n, n, llvmElemType, dataGlobal))
+					g.globalVars[name] = true
+					continue
+				}
+			}
 			sb.WriteString(fmt.Sprintf("%s = global %s zeroinitializer\n", llvmGlobalRef(name), llvmType))
 			g.globalVars[name] = true
 		} else if llvmType == "%vec" {
@@ -2404,7 +2503,7 @@ func (g *Generator) prepare(stmts []parser.Statement, sem *parser.SemanticContex
 					if floatStr == "" {
 						// %v would produce "1" for 1.0, which is invalid LLVM IR;
 						// %f always includes a decimal point (e.g., "1.000000")
-						floatStr = fmt.Sprintf("%f", fl.Value)
+						floatStr = formatDoubleConst(fl.Value)
 					}
 					sb.WriteString(fmt.Sprintf("%s = global double %s\n", llvmGlobalRef(name), floatStr))
 					g.globalVars[name] = true
@@ -2560,10 +2659,12 @@ func (g *Generator) prepare(stmts []parser.Statement, sem *parser.SemanticContex
 	// 做傳遞閉包，只對可達函數生成 IR 定義。不可達函數的簽名/類型仍已
 	// 由預掃描階段全量註冊，不受此過濾影響。等價於把 LLVM opt 的 DCE
 	// 提前到 codegen 之前，大幅削減 IR 體積和 opt 時間。
-	// 保守策略：若 NOLANG_LAZY_CODEGEN 未設置（預設），跳過可達性分析，
-	// 全量 codegen（與舊行為一致，零風險）。
+	// 預設啟用（消除自動載入 std 模組後的 99%+ 死代碼，建構從數分鐘降到秒級）。
+	// 設 NOLANG_LAZY_CODEGEN=0 可退回全量 codegen（舊行為，零風險、用於對照）。
+	// 保守過近似保證：任何誤判只會「多包含」函數（僅損速度），不會漏包含；
+	// 極端情況若真漏包含，連結期會報 undefined symbol，可立即設 0 回退。
 	reachableFns := map[string]bool{}
-	if os.Getenv("NOLANG_LAZY_CODEGEN") == "1" {
+	if os.Getenv("NOLANG_LAZY_CODEGEN") != "0" {
 		reachableFns = g.computeReachableFunctions(prog)
 	}
 
@@ -2577,7 +2678,7 @@ func (g *Generator) prepare(stmts []parser.Statement, sem *parser.SemanticContex
 				continue
 			}
 			// 惰性 codegen：跳過不可達函數的 IR 生成
-			if os.Getenv("NOLANG_LAZY_CODEGEN") == "1" {
+			if os.Getenv("NOLANG_LAZY_CODEGEN") != "0" {
 				fnName := s.Name
 				// clib 衝突名稱在 codegen 中以 "n." 前綴註冊
 				if clibFuncNames[fnName] {
@@ -2595,24 +2696,29 @@ func (g *Generator) prepare(stmts []parser.Statement, sem *parser.SemanticContex
 				if clibFuncNames[llvmFnName] {
 					llvmFnName = "n." + llvmFnName
 				}
-				// 惰性 codegen：跳過不可達函數的 IR 生成
-				if os.Getenv("NOLANG_LAZY_CODEGEN") == "1" {
-					if !reachableFns[llvmFnName] {
-						break
-					}
+			// 惰性 codegen：跳過不可達函數的 IR 生成
+			if os.Getenv("NOLANG_LAZY_CODEGEN") != "0" {
+				if !reachableFns[llvmFnName] {
+					break
 				}
-				// 構造一個臨時 FunctionDefinition 用於 generateFunctionDefinition
-				tmpFD := &parser.FunctionDefinition{
-					Token: s.Token,
-					Name:  llvmFnName,
-					FuncSignature: parser.FuncSignature{
-						Parameters: fl.Parameters,
-						Results:    fl.Results,
-						IsVariadic: fl.IsVariadic,
-					},
-					Body: fl.Body,
-				}
-				g.generateFunctionDefinition(sb, tmpFD)
+			}
+			// 構造一個臨時 FunctionDefinition 用於 generateFunctionDefinition
+			tmpFD := &parser.FunctionDefinition{
+				Token: s.Token,
+				Name:  llvmFnName,
+				FuncSignature: parser.FuncSignature{
+					Parameters: fl.Parameters,
+					Results:    fl.Results,
+					IsVariadic: fl.IsVariadic,
+				},
+				Body: fl.Body,
+			}
+			// 方法註解位於外層 let 語句（#{overflow = wrap|clamp0}），而 tmpFD 無註解；
+			// 先從 let 讀取模式存入 pendingOverflowMode，並同步到 tmpFD 欄位，
+			// 供 generateFunctionDefinition 消費。
+			g.pendingOverflowMode = g.overflowModeFromNode(s)
+			tmpFD.OverflowMode = g.pendingOverflowMode
+			g.generateFunctionDefinition(sb, tmpFD)
 			}
 		case *parser.ExternStatement:
 			// FFI extern 宣告：型別資訊已於預掃描階段收集至 g.externFuncs，

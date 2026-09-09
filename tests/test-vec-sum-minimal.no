@@ -6,7 +6,7 @@ test-sum-min = () {
     v.push(3)
     v.push(4)
     print('len:')
-    print(v.len)
+    print(v.len())
     print('elems:')
     print(v[0])
     print(v[1])

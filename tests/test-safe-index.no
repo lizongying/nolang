@@ -1,0 +1,193 @@
+; 安全索引特性測試：v[i] 越界不再靜默崩潰。
+;  1) x ?= v[i]            -> 越界向上傳播錯誤（option 函式）
+;  2) #{index-out=DEF} x=v[i] -> 越界用預設值替代（DEF 必須是字面量）
+;  3) option 函式內裸 x = v[i] -> 自動轉為 x ?= v[i]
+;  4) 範圍內取值正確（含各元素型別）
+
+safe-get = (arr []i64, i i64) (res ?i64) {
+    x ?= arr[i]
+}
+
+get-default = (arr []i64, i i64) (res i64) {
+    res = arr[i]  #{index-out=0}
+}
+
+auto-prop = (arr []i64, i i64) (res ?i64) {
+    x = arr[i]
+}
+
+; 顯式識別符 RHS 的 ?= 解箱（inner ?= res 形）：驗證 Identifier-RHS 路徑
+; 不會因 elemType 未推導而把 inner 誤型別成被污染的全域同名型別（預存崩潰）。
+unwrap-ident = (v i64) (res ?i64) {
+    res = v
+    inner ?= res
+    io.out('unwrap-ident inner -> ')
+    io.out(inner)
+    print('')
+}
+
+; 廣義 ?T RHS 的 ?= 解箱（CallExpression / InfixExpression / 識別符變數 RHS）。
+; 這三條路徑原為預存 codegen 缺陷（新變數 LHS 被污染成全域同名型別 → 非法 IR
+; `%a.val defined with type '%str-long' but expected 'i64'`；含 option 子表達式
+; 的算術 RHS 未解箱）。現經 lowerUnwrapAssign 對 *CallExpression / *InfixExpression
+; 設 elemType + SetFuncVarType 修復，並由本節迴歸鎖定。
+opt-f = (n i64) (r ?i64) {
+    r = nil
+    n > 0 -> r = n
+}
+
+; A) 新變數 LHS + 函式呼叫 RHS：預期 21
+unwrap-call-rhs = (n i64) (r ?i64) {
+    r = nil
+    a ?= opt-f(n)
+    io.out('unwrap-call-rhs a = ')
+    io.out(a)
+    print('')
+    r = a
+}
+
+; B) 變數 RHS（?i64 變數）：預期 21
+unwrap-var-rhs = (n i64) (r ?i64) {
+    r = nil
+    v ?i64 = opt-f(n)
+    res ?= v
+    io.out('unwrap-var-rhs res = ')
+    io.out(res)
+    print('')
+    r = res
+}
+
+; C) 算術 RHS 含 option 子表達式：自動解箱各項後相加，預期 63
+unwrap-infix-rhs = (n i64) (r ?i64) {
+    r = nil
+    b ?i64 = opt-f(n)
+    c ?i64 = opt-f(n)
+    d ?i64 = opt-f(n)
+    a ?= b + c + d
+    io.out('unwrap-infix-rhs a = ')
+    io.out(a)
+    print('')
+    r = a
+}
+
+; float 元素 + 浮點預設值
+get-default-f = (arr []f64, i i64) (res f64) {
+    res = arr[i]  #{index-out=1.5}
+}
+
+; str 元素 + 字串預設值
+get-default-str = (arr []str, i i64) (res str) {
+    res = arr[i]  #{index-out='-'}
+}
+
+; bool 元素 + 布林預設值
+get-default-bool = (arr []bool, i i64) (res bool) {
+    res = arr[i]  #{index-out=true}
+}
+
+; byte(u8) 元素 + 整數預設值
+get-default-byte = (arr []u8, i i64) (res u8) {
+    res = arr[i]  #{index-out=0}
+}
+
+; char 元素 + 字元預設值（字面量）
+get-default-char = (arr []char, i i64) (res char) {
+    res = arr[i]  #{index-out='x'}
+}
+
+main = () () {
+    a []i64 = [10, 20, 30]
+
+    ; 1) ?= 傳播：越界回傳 none/err，不崩潰
+    safe-get(a, 5)
+    io.out('safe-get OOB: no-crash')
+    print('')
+
+    ; 2) #{index-out} 預設值：越界回傳 0
+    d = get-default(a, 5)
+    io.out('get-default OOB -> ')
+    io.out(d)
+    print('')
+
+    ; 3) 自動傳播：越界回傳 none/err，不崩潰
+    auto-prop(a, 5)
+    io.out('auto-prop OOB: no-crash')
+    print('')
+
+    ; 3b) 顯式識別符 RHS 的 ?= 解箱（inner ?= res）：範圍內解箱為 42，不崩潰
+    unwrap-ident(42)
+
+    ; 3c) 廣義 ?T RHS 的 ?= 解箱（CallExpression / 變數 / InfixExpression）：
+    ;     預期 unwrap-call-rhs a = 21 / unwrap-var-rhs res = 21 / unwrap-infix-rhs a = 63
+    unwrap-call-rhs(21)
+    unwrap-var-rhs(21)
+    unwrap-infix-rhs(21)
+
+    ; 4a) #{index-out} 範圍內取值正確（i64）
+    ok = get-default(a, 1)
+    io.out('get-default in-bounds[1] -> ')
+    io.out(ok)
+    print('')
+
+    ; 4b) ?= 範圍內取值正確（解箱後印字元碼）
+    v = safe-get(a, 2)
+    match v:
+        nil -> io.out('safe-get in-bounds: none')
+        -> io.out('safe-get in-bounds: some')
+    print('')
+
+    ; 5) float 預設值 + 範圍內
+    fa []f64 = [1.0, 2.0, 3.0]
+    fdef = get-default-f(fa, 9)
+    io.out('get-default-f OOB -> ')
+    io.out(fdef)
+    print('')
+    fok = get-default-f(fa, 1)
+    io.out('get-default-f in-bounds[1] -> ')
+    io.out(fok)
+    print('')
+
+    ; 6) str 預設值 + 範圍內
+    sa []str = ['a', 'b', 'c']
+    sdef = get-default-str(sa, 9)
+    io.out('get-default-str OOB -> ')
+    io.out(sdef)
+    print('')
+    sok = get-default-str(sa, 1)
+    io.out('get-default-str in-bounds[1] -> ')
+    io.out(sok)
+    print('')
+
+    ; 7) bool 預設值 + 範圍內
+    ba []bool = [false, true, false]
+    bdef = get-default-bool(ba, 9)
+    io.out('get-default-bool OOB -> ')
+    io.out(bdef)
+    print('')
+    bok = get-default-bool(ba, 1)
+    io.out('get-default-bool in-bounds[1] -> ')
+    io.out(bok)
+    print('')
+
+    ; 8) byte 預設值 + 範圍內
+    xa []u8 = [1, 2, 3]
+    xdef = get-default-byte(xa, 9)
+    io.out('get-default-byte OOB -> ')
+    io.out(xdef)
+    print('')
+    xok = get-default-byte(xa, 2)
+    io.out('get-default-byte in-bounds[2] -> ')
+    io.out(xok)
+    print('')
+
+    ; 9) char 預設值 + 範圍內
+    ca []char = ["p", "q", "r"]
+    cdef = get-default-char(ca, 9)
+    io.out('get-default-char OOB -> ')
+    io.out(cdef)
+    print('')
+    cok = get-default-char(ca, 1)
+    io.out('get-default-char in-bounds[1] -> ')
+    io.out(cok)
+    print('')
+}

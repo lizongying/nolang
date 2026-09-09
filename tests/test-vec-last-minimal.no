@@ -4,7 +4,7 @@ test-last-minimal = () {
     v.push(10)
     v.push(20)
     v.push(30)
-    print(v.len)
+    print(v.len())
     l = v.last()
     l: {
         nil -> print('nil')

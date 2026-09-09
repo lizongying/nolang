@@ -4,15 +4,15 @@
 ; 运行: ../dist/test_str
 
 ; ═══════════════════════════════════════════════
-; 测试 str.len
+; 测试字符串字节长度 (.len-bytes() 方法)
 ; ═══════════════════════════════════════════════
 test-str-len = () {
     s = 'hello'
-    n = s.len
+    n = s.len-bytes()
     print(n); expect: 5
 
     empty = ''
-    m = empty.len
+    m = empty.len-bytes()
     print(m); expect: 0
 }
 test-str-len()
@@ -176,19 +176,19 @@ print(8)
 test-str-trim = () {
     s1 = '  hello  '
     t1 = s1.trim()
-    print(t1.len); expect: 5
+    print(t1.len-bytes()); expect: 5
 
     s2 = 'hello'
     t2 = s2.trim()
-    print(t2.len); expect: 5
+    print(t2.len-bytes()); expect: 5
 
     s3 = '   '
     t3 = s3.trim()
-    print(t3.len); expect: 0
+    print(t3.len-bytes()); expect: 0
 
     s4 = '\thello\n'
     t4 = s4.trim()
-    print(t4.len); expect: 5
+    print(t4.len-bytes()); expect: 5
 }
 test-str-trim()
 print(9)
@@ -213,7 +213,7 @@ test-str-case = () {
 
     s3 = 'Hello123'
     u2 = s3.to-upper()
-    print(u2.len); expect: 8
+    print(u2.len-bytes()); expect: 8
     c10 = u2[5]
     print(c10); expect: 49 (1, unchanged)
 }
@@ -226,7 +226,7 @@ print(10)
 test-str-repeat = () {
     s = 'ab'
     r1 = s.repeat(3)
-    print(r1.len); expect: 6
+    print(r1.len-bytes()); expect: 6
 
     c0 = r1[0]
     c1 = r1[1]
@@ -250,17 +250,17 @@ print(11)
 test-str-slice = () {
     s = 'hello world'
     sl1 = s.slice(0, 5)
-    print(sl1.len); expect: 5
+    print(sl1.len-bytes()); expect: 5
     sl2 = s.slice(6, 11)
-    print(sl2.len); expect: 5
+    print(sl2.len-bytes()); expect: 5
     sl3 = s.slice(3, 8)
-    print(sl3.len); expect: 5
+    print(sl3.len-bytes()); expect: 5
     sl4 = s.slice(0, 11)
-    print(sl4.len); expect: 11
+    print(sl4.len-bytes()); expect: 11
     sl5 = s.slice(5, 5)
-    print(sl5.len); expect: 0
+    print(sl5.len-bytes()); expect: 0
     sl6 = s.slice(10, 11)
-    print(sl6.len); expect: 1
+    print(sl6.len-bytes()); expect: 1
 }
 test-str-slice()
 print(12)
@@ -293,13 +293,13 @@ print(13)
 ; ═══════════════════════════════════════════════
 test-i64-to-str = () {
     s1 = (123).to-str()
-    print(s1.len); expect: 3
+    print(s1.len-bytes()); expect: 3
     s2 = (0).to-str()
-    print(s2.len); expect: 1
+    print(s2.len-bytes()); expect: 1
     s3 = (-42).to-str()
-    print(s3.len); expect: 3
+    print(s3.len-bytes()); expect: 3
     s4 = (9999).to-str()
-    print(s4.len); expect: 4
+    print(s4.len-bytes()); expect: 4
 }
 test-i64-to-str()
 print(14)
@@ -310,7 +310,7 @@ print(14)
 test-str-bytes = () {
     s = 'abc'
     out = s.to-bytes()
-    print(out.len); expect: 3
+    print(out.len()); expect: 3
 
     b0 = out[0]
     b1 = out[1]
@@ -328,7 +328,7 @@ print(15)
 test-str-reverse = () {
     s1 = 'abc'
     r1 = s1.reverse()
-    print(r1.len); expect: 3
+    print(r1.len-bytes()); expect: 3
     c0 = r1[0]
     c1 = r1[1]
     c2 = r1[2]
@@ -338,7 +338,7 @@ test-str-reverse = () {
 
     s2 = 'a'
     r2 = s2.reverse()
-    print(r2.len); expect: 1
+    print(r2.len-bytes()); expect: 1
     c3 = r2[0]
     print(c3); expect: 97 (a)
 
@@ -402,7 +402,7 @@ print(18)
 test-str-replace-char = () {
     s = 'hello'
     r1 = s.replace-char(101, 120)
-    print(r1.len); expect: 5
+    print(r1.len-bytes()); expect: 5
     c0 = r1[0]
     c1 = r1[1]
     c2 = r1[2]
@@ -417,7 +417,7 @@ test-str-replace-char = () {
     ; 多字節 UTF-8：'a' (0x61) → '中' (0x4E2D, 3 bytes UTF-8)
     s2 = 'aTa'
     r2 = s2.replace-char(0x61, 0x4e2d)
-    print(r2.len); expect: 7 (3+1+3)
+    print(r2.len-bytes()); expect: 7 (3+1+3)
 }
 test-str-replace-char()
 print(19)
@@ -428,24 +428,24 @@ print(19)
 test-str-trim-char = () {
     s1 = '///hello///'
     tc1 = s1.trim-char(47)
-    print(tc1.len); expect: 5
+    print(tc1.len-bytes()); expect: 5
 
     s2 = 'hello'
     tc2 = s2.trim-char(47)
-    print(tc2.len); expect: 5
+    print(tc2.len-bytes()); expect: 5
 
     s3 = '//////'
     tc3 = s3.trim-char(47)
-    print(tc3.len); expect: 0
+    print(tc3.len-bytes()); expect: 0
 
     s4 = '-hello-'
     tc4 = s4.trim-char(45)
-    print(tc4.len); expect: 5
+    print(tc4.len-bytes()); expect: 5
 
     ; 多字節 UTF-8：trim '中' (0x4E2D)
     s5 = '中hello中'
     tc5 = s5.trim-char(0x4e2d)
-    print(tc5.len); expect: 5 (hello)
+    print(tc5.len-bytes()); expect: 5 (hello)
 }
 test-str-trim-char()
 print(20)
@@ -473,8 +473,9 @@ print(21)
 ; 综合测试：字符串拼接后操作
 ; ═══════════════════════════════════════════════
 test-integration = () {
+    #{overflow = wrap}
     s = 'Hello' - ' ' - 'World'
-    n = s.len
+    n = s.len-bytes()
     print(n); expect: 11
 
     contains = s.contains('World')
@@ -585,19 +586,19 @@ print('---')
 ; ═══════════════════════════════════════════════
 test-split-n = () {
     parts1 = 'a-b-c'.split-n('-', 1)
-    n1 = parts1.len
+    n1 = parts1.len()
     print(n1); expect: 2
     i <- [0..n1): {
         print(parts1[i])
     }
     parts2 = 'a-b-c'.split-n('-', 0)
-    n2 = parts2.len
+    n2 = parts2.len()
     print(n2); expect: 3 (unlimited)
     i <- [0..n2): {
         print(parts2[i])
     }
     parts3 = 'abc'.split-n('-', 1)
-    n3 = parts3.len
+    n3 = parts3.len()
     print(n3); expect: 1 (no sep found)
     i <- [0..n3): {
         print(parts3[i])
@@ -611,23 +612,23 @@ print('---')
 ; ═══════════════════════════════════════════════
 test-lines = () {
     lines1 = 'a\nb\nc'.lines()
-    n1 = lines1.len
+    n1 = lines1.len()
     print(n1); expect: 3
     i <- [0..n1): {
         print(lines1[i])
     }
     lines2 = 'a\r\nb'.lines()
-    n2 = lines2.len
+    n2 = lines2.len()
     print(n2); expect: 2
     i <- [0..n2): {
         print(lines2[i])
     }
     lines3 = 'a\nb\n'.lines()
-    n3 = lines3.len
+    n3 = lines3.len()
     print(n3); expect: 2 (no trailing empty)
 
     lines4 = ''.lines()
-    n4 = lines4.len
+    n4 = lines4.len()
     print(n4); expect: 0
 }
 test-lines()
@@ -643,7 +644,7 @@ test-to-hex = () {
     print(h1)
 
     h2 = ''.to-hex()
-    print(h2.len); expect: 0
+    print(h2.len-bytes()); expect: 0
 
     h3 = '\x00\xff'.to-hex()
     ok3 = h3.eq-full('00ff')

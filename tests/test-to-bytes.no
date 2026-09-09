@@ -4,7 +4,7 @@
 print('start')
 s str = 'test label'
 print('before len')
-n i64 = s.len
+n i64 = s.len-bytes()
 print('after len')
 print(n)
 print('before to-bytes')

@@ -60,14 +60,18 @@ queue {
 ; 返回 ok bool: true=成功, false=佇列已滿
 [n]t.queue-push = (q queue, val t) (ok bool) {
     ok = false
+    #{overflow = wrap}
     sz = q.tail - q.head
+    #{overflow = wrap}
     sz >= q.cap - 1 -> return
     idx = q.tail
     {
         idx >= 0 -> idx = idx % q.cap
+        #{overflow = wrap}
         -> idx = q.cap - ((-idx) % q.cap)
     }
     .[idx] = val
+    #{overflow = wrap}
     q.tail = q.tail + 1
     ok = true
 }
@@ -76,6 +80,7 @@ queue {
 ; q queue: 佇列狀態
 ; 返回 val ?t: ok=彈出值, nil=佇列為空
 [n]t.queue-pop = (q queue) (val ?t) {
+    #{overflow = wrap}
     sz = q.tail - q.head
     sz <= 0 -> {
         val = nil
@@ -84,9 +89,11 @@ queue {
     idx = q.head
     {
         idx >= 0 -> idx = idx % q.cap
+        #{overflow = wrap}
         -> idx = q.cap - ((-idx) % q.cap)
     }
     val = .[idx]
+    #{overflow = wrap}
     q.head = q.head + 1
 }
 
@@ -94,6 +101,7 @@ queue {
 ; q queue: 佇列狀態
 ; 返回 val ?t: ok=隊首值, nil=佇列為空
 [n]t.queue-peek = (q queue) (val ?t) {
+    #{overflow = wrap}
     sz = q.tail - q.head
     sz <= 0 -> {
         val = nil
@@ -102,6 +110,7 @@ queue {
     idx = q.head
     {
         idx >= 0 -> idx = idx % q.cap
+        #{overflow = wrap}
         -> idx = q.cap - ((-idx) % q.cap)
     }
     val = .[idx]
@@ -114,6 +123,7 @@ queue {
 ; size: 返回佇列中元素數量
 ; 返回 sz i64: 元素數量
 queue.size = () (sz i64) {
+    #{overflow = wrap}
     sz = .tail - .head
 }
 
@@ -126,6 +136,7 @@ queue.empty = () (yes bool) {
 ; full: 判斷佇列是否已滿
 ; 返回 yes bool: true=已滿, false=未滿
 queue.full = () (yes bool) {
+    #{overflow = wrap}
     yes = .tail - .head >= .cap - 1
 }
 

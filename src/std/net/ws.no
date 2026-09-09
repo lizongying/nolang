@@ -153,6 +153,7 @@ client {
 ; 返回 accept str: base64(sha1(key - WS-GUID))
 compute-accept = (key str) (accept str) {
     guid = '258EAFA5-E914-47DA-95CA-C5AB0DC85B11'
+    #{overflow = wrap}
     combined = key - guid
     cb []byte = combined.to-bytes()
     hash = sha1.sha1(cb)
@@ -173,10 +174,12 @@ compute-accept = (key str) (accept str) {
 ; next-rand: 產生下一個偽隨機 i64
 ; 以全域計數器與簡單 LCG 組合
 next-rand = () (r i64) {
+    #{overflow = wrap}
     RAND-COUNTER = RAND-COUNTER + 1
     c = RAND-COUNTER
 
     ; LCG: r = (c * 1103515245 + 12345) & 0x7fffffff
+    #{overflow = wrap}
     r = (c * 1103515245 + 12345) & 2147483647
 }
 
@@ -197,7 +200,9 @@ gen-mask-key = (seed i64) (key str) {
 gen-client-key = (seed i64) (key str) {
     raw str = with-len(16)
     i <- [0..16): {
+        #{overflow = wrap}
         s = seed + i * 31
+        #{overflow = wrap}
         raw[i] = (s * 1103515245 + 12345) & 255
     }
     rv = raw.to-bytes()
@@ -211,13 +216,15 @@ gen-client-key = (seed i64) (key str) {
 ; mask-key str: 4-byte mask key（mask=true 時使用）
 ; 返回 frame str: 完整的 frame 字串
 build-frame = (opcode i64, data str, mask bool, mask-key str) (frame str) {
-    dlen = data.len
+    dlen = data.len-bytes()
     header-len = 2
     {
         dlen > 125 && dlen <= 65535 -> header-len = 4
         dlen > 65535 -> header-len = 10
     }
+    #{overflow = wrap}
     mask -> header-len = header-len + 4
+    #{overflow = wrap}
     total = header-len + dlen
 
     frame str = with-len(total)
@@ -238,6 +245,7 @@ build-frame = (opcode i64, data str, mask bool, mask-key str) (frame str) {
         dlen > 65535 -> {
             frame[1] = mask-bit | 127
             i <- [0..8): {
+                #{overflow = wrap}
                 frame[2 + i] = (dlen >> (56 - i * 8)) & 255
             }
         }
@@ -252,11 +260,13 @@ build-frame = (opcode i64, data str, mask bool, mask-key str) (frame str) {
     {
         mask -> {
             i <- [0..4): {
+                #{overflow = wrap}
                 frame[mk-start + i] = mask-key[i]
             }
 
             ; masked payload
             i <- [0..dlen): {
+                #{overflow = wrap}
                 frame[header-len + i] = (data[i] ^ mask-key[i % 4]) & 255
             }
         }
@@ -264,6 +274,7 @@ build-frame = (opcode i64, data str, mask bool, mask-key str) (frame str) {
 
             ; unmasked payload
             i <- [0..dlen): {
+                #{overflow = wrap}
                 frame[header-len + i] = data[i]
             }
         }
@@ -331,7 +342,9 @@ server-conn.handshake = () {
     .fd < 0 -> return
     cr = number.char-to-str(13)
     lf = number.char-to-str(10)
+    #{overflow = wrap}
     crlf = cr - lf
+    #{overflow = wrap}
     separator = crlf - crlf
 
     ; 讀取 HTTP 請求（直到 \r\n\r\n）
@@ -340,13 +353,16 @@ server-conn.handshake = () {
     sep-pos i64 = -1
 
     {
+        #{overflow = wrap}
         total + WS-RECV-SIZE > WS-BUF-SIZE -> return
         tmp str = with-len(WS-RECV-SIZE)
         n = net.net-recv(.fd, tmp, WS-RECV-SIZE)
         n <= 0 -> return
         i <- [0..n): {
+            #{overflow = wrap}
             raw[total + i] = tmp[i]
         }
+        #{overflow = wrap}
         total = total + n
         data = raw.slice(0, total)
         sep-pos = data.index(separator)
@@ -362,11 +378,15 @@ server-conn.handshake = () {
     sp1 < 0 -> return
     method = request-line.slice(0, sp1)
     method != 'GET' -> {
+        #{overflow = wrap}
         resp = 'HTTP/1.1 405 Method Not Allowed' - crlf
+        #{overflow = wrap}
         resp = resp - 'Content-Length: 0' - crlf
+        #{overflow = wrap}
         resp = resp - 'Allow: GET' - crlf
+        #{overflow = wrap}
         resp = resp - crlf
-        net.net-send(.fd, resp, resp.len)
+        net.net-send(.fd, resp, resp.len-bytes())
         return
     }
 
@@ -380,15 +400,17 @@ server-conn.handshake = () {
         }
         key-pos < 0 -> return
     }
-    val-start = key-pos + key-marker.len
+    #{overflow = wrap}
+    val-start = key-pos + key-marker.len-bytes()
 
     ; 跳過空白
     {
-        val-start < head.len && head[val-start] == 32 -> val-start = val-start + 1
+        #{overflow = wrap}
+        val-start < head.len-bytes() && head[val-start] == 32 -> val-start = val-start + 1
         ->
     }
     val-end = head.index-from(crlf, val-start)
-    val-end < 0 -> val-end = head.len
+    val-end < 0 -> val-end = head.len-bytes()
     client-key = head.slice(val-start, val-end)
 
     ; 驗證 Upgrade: websocket
@@ -401,13 +423,15 @@ server-conn.handshake = () {
         }
         up-pos < 0 -> return
     }
-    up-val-start = up-pos + up-marker.len
+    #{overflow = wrap}
+    up-val-start = up-pos + up-marker.len-bytes()
     {
-        up-val-start < head.len && head[up-val-start] == 32 -> up-val-start = up-val-start + 1
+        #{overflow = wrap}
+        up-val-start < head.len-bytes() && head[up-val-start] == 32 -> up-val-start = up-val-start + 1
         ->
     }
     up-val-end = head.index-from(crlf, up-val-start)
-    up-val-end < 0 -> up-val-end = head.len
+    up-val-end < 0 -> up-val-end = head.len-bytes()
     up-val = head.slice(up-val-start, up-val-end)
     up-low = up-val.to-lower()
     up-low != 'websocket' -> return
@@ -416,22 +440,28 @@ server-conn.handshake = () {
     accept-val = compute-accept(client-key)
 
     ; 發送 101 回應
+    #{overflow = wrap}
     resp = 'HTTP/1.1 101 Switching Protocols' - crlf
+    #{overflow = wrap}
     resp = resp - 'Upgrade: websocket' - crlf
+    #{overflow = wrap}
     resp = resp - 'Connection: Upgrade' - crlf
+    #{overflow = wrap}
     resp = resp - 'Sec-WebSocket-Accept: ' - accept-val - crlf
+    #{overflow = wrap}
     resp = resp - crlf
-    written = net.net-send(.fd, resp, resp.len)
+    written = net.net-send(.fd, resp, resp.len-bytes())
     written < 0 -> return
 
     ; 儲存標頭後的剩餘資料（可能包含第一個 frame）
-    body-start = sep-pos + separator.len
+    #{overflow = wrap}
+    body-start = sep-pos + separator.len-bytes()
     total > body-start -> {
         remaining = raw.slice(body-start, total)
-        i <- [0..remaining.len): {
+        i <- [0..remaining.len-bytes()): {
             .recv-buf[i] = remaining[i]
         }
-        .recv-buf-len = remaining.len
+        .recv-buf-len = remaining.len-bytes()
     }
     .connected = true
 }
@@ -445,7 +475,7 @@ server-conn.send = (opcode i64, data str) (ok bool) {
     .connected == false -> return
     empty-key = ''
     frame = build-frame(opcode, data, false, empty-key)
-    written = net.net-send(.fd, frame, frame.len)
+    written = net.net-send(.fd, frame, frame.len-bytes())
     written < 0 -> {
         .connected = false
         return
@@ -490,10 +520,12 @@ server-conn.send-close = (close-code i64, reason str) (ok bool) {
     .connected == false -> return
 
     ; payload: 2-byte big-endian code + reason
-    payload str = with-len(2 + reason.len)
+    #{overflow = wrap}
+    payload str = with-len(2 + reason.len-bytes())
     payload[0] = (close-code >> 8) & 255
     payload[1] = close-code & 255
-    i <- [0..reason.len): {
+    i <- [0..reason.len-bytes()): {
+        #{overflow = wrap}
         payload[2 + i] = reason[i]
     }
     ok = .send(WS-OP-CLOSE, payload)
@@ -514,6 +546,7 @@ server-conn.recv = () (msg ?message) {
     }
     cr = number.char-to-str(13)
     lf = number.char-to-str(10)
+    #{overflow = wrap}
     crlf = cr - lf
 
     ; 收集分片訊息
@@ -536,8 +569,10 @@ server-conn.recv = () (msg ?message) {
                 return
             }
             i <- [0..n): {
+                #{overflow = wrap}
                 .recv-buf[.recv-buf-len + i] = tmp[i]
             }
+            #{overflow = wrap}
             .recv-buf-len = .recv-buf-len + n
         }
 
@@ -557,7 +592,9 @@ server-conn.recv = () (msg ?message) {
             ->
         }
         masked -> extra-len
+        #{overflow = wrap}
         extra-len + 4
+        #{overflow = wrap}
         header-total = 2 + extra-len
 
         ; 若 payload-len == 127，讀取 8-byte 長度
@@ -566,6 +603,7 @@ server-conn.recv = () (msg ?message) {
 
                 ; 確保 recv-buf 有足夠資料
                 .recv-buf-len < header-total -> {
+                    #{overflow = wrap}
                     need = header-total - .recv-buf-len
                     tmp str = with-len(WS-RECV-SIZE)
                     n = net.net-recv(.fd, tmp, need)
@@ -575,14 +613,17 @@ server-conn.recv = () (msg ?message) {
                         return
                     }
                     i <- [0..n): {
+                        #{overflow = wrap}
                         .recv-buf[.recv-buf-len + i] = tmp[i]
                     }
+                    #{overflow = wrap}
                     .recv-buf-len = .recv-buf-len + n
                 }
 
                 ; 讀取 8-byte big-endian（僅使用低 56-bit，假設 < 2^56）
                 payload-len = 0
                 i <- [0..8): {
+                    #{overflow = wrap}
                     payload-len = (payload-len << 8) | .recv-buf[2 + i]
                 }
             }
@@ -590,6 +631,7 @@ server-conn.recv = () (msg ?message) {
 
                 ; 確保 recv-buf 有足夠資料
                 .recv-buf-len < header-total -> {
+                    #{overflow = wrap}
                     need = header-total - .recv-buf-len
                     tmp str = with-len(WS-RECV-SIZE)
                     n = net.net-recv(.fd, tmp, need)
@@ -599,8 +641,10 @@ server-conn.recv = () (msg ?message) {
                         return
                     }
                     i <- [0..n): {
+                        #{overflow = wrap}
                         .recv-buf[.recv-buf-len + i] = tmp[i]
                     }
+                    #{overflow = wrap}
                     .recv-buf-len = .recv-buf-len + n
                 }
                 payload-len = (.recv-buf[2] << 8) | .recv-buf[3]
@@ -608,8 +652,10 @@ server-conn.recv = () (msg ?message) {
         }
 
         ; 確保 recv-buf 有完整 frame
+        #{overflow = wrap}
         frame-total = header-total + payload-len
         .recv-buf-len < frame-total -> {
+            #{overflow = wrap}
             need = frame-total - .recv-buf-len
             tmp str = with-len(WS-RECV-SIZE)
             {
@@ -621,9 +667,12 @@ server-conn.recv = () (msg ?message) {
                     return
                 }
                 i <- [0..n): {
+                    #{overflow = wrap}
                     .recv-buf[.recv-buf-len + i] = tmp[i]
                 }
+                #{overflow = wrap}
                 .recv-buf-len = .recv-buf-len + n
+                #{overflow = wrap}
                 need = frame-total - .recv-buf-len
             } (true)
         }
@@ -632,21 +681,26 @@ server-conn.recv = () (msg ?message) {
         actual-extra = 0
         (b1 & 127) == 126 -> actual-extra = 2
         (b1 & 127) == 127 -> actual-extra = 8
+        #{overflow = wrap}
         mask-start = 2 + actual-extra
         mask-key = ''
         masked -> {
             mask-key str = with-len(4)
             i <- [0..4): {
+                #{overflow = wrap}
                 mask-key[i] = .recv-buf[mask-start + i]
             }
         }
 
         ; 提取 payload 並 demask
+        #{overflow = wrap}
         payload-start = 2 + actual-extra
         masked -> payload-start
+        #{overflow = wrap}
         2 + actual-extra + 4
         payload str = with-len(payload-len)
         i <- [0..payload-len): {
+            #{overflow = wrap}
             b = .recv-buf[payload-start + i]
             masked -> b
             b ^ mask-key[i % 4]
@@ -655,8 +709,10 @@ server-conn.recv = () (msg ?message) {
 
         ; 從 recv-buf 移除已消費的 frame
         remaining-start = frame-total
+        #{overflow = wrap}
         remaining-len = .recv-buf-len - remaining-start
         i <- [0..remaining-len): {
+            #{overflow = wrap}
             .recv-buf[i] = .recv-buf[remaining-start + i]
         }
         .recv-buf-len = remaining-len
@@ -684,6 +740,7 @@ server-conn.recv = () (msg ?message) {
                     msg = err('unexpected continuation')
                     return
                 }
+                #{overflow = wrap}
                 acc-data = acc-data - payload
             }
         }
@@ -721,6 +778,7 @@ server-conn.recv-nb = () (msg ?message) {
     }
     cr = number.char-to-str(13)
     lf = number.char-to-str(10)
+    #{overflow = wrap}
     crlf = cr - lf
 
     ; 1) 非阻塞填充 recv-buf，直到 would-block（-2）或緩衝區已滿
@@ -742,8 +800,10 @@ server-conn.recv-nb = () (msg ?message) {
                 }
             }
             i <- [0..n): {
+                #{overflow = wrap}
                 .recv-buf[.recv-buf-len + i] = tmp[i]
             }
+            #{overflow = wrap}
             .recv-buf-len = .recv-buf-len + n
         } -> fill = false
     } (fill)
@@ -765,6 +825,7 @@ server-conn.recv-nb = () (msg ?message) {
     }
     mask-bytes = 0
     masked -> mask-bytes = 4
+    #{overflow = wrap}
     header-total = 2 + extra-len + mask-bytes
 
     .recv-buf-len < header-total -> return
@@ -772,11 +833,13 @@ server-conn.recv-nb = () (msg ?message) {
         payload-len == 127 -> {
             payload-len = 0
             j <- [0..8): {
+                #{overflow = wrap}
                 payload-len = (payload-len << 8) | .recv-buf[2 + j]
             }
         }
         payload-len == 126 -> payload-len = (.recv-buf[2] << 8) | .recv-buf[3]
     }
+    #{overflow = wrap}
     frame-total = header-total + payload-len
     .recv-buf-len < frame-total -> return
     actual-extra = 0
@@ -784,18 +847,22 @@ server-conn.recv-nb = () (msg ?message) {
         payload-len == 126 -> actual-extra = 2
         payload-len == 127 -> actual-extra = 8
     }
+    #{overflow = wrap}
     mask-start = 2 + actual-extra
     mask-key = ''
     masked -> {
         mask-key str = with-len(4)
         k <- [0..4): {
+            #{overflow = wrap}
             mask-key[k] = .recv-buf[mask-start + k]
         }
     }
     payload-start = mask-start
+    #{overflow = wrap}
     masked -> payload-start = mask-start + 4
     payload str = with-len(payload-len)
     p <- [0..payload-len): {
+        #{overflow = wrap}
         b = .recv-buf[payload-start + p]
         masked -> b
         b ^ mask-key[p % 4]
@@ -804,8 +871,10 @@ server-conn.recv-nb = () (msg ?message) {
 
     ; 從 recv-buf 移除已消費的 frame
     remaining-start = frame-total
+    #{overflow = wrap}
     remaining-len = .recv-buf-len - remaining-start
     r <- [0..remaining-len): {
+        #{overflow = wrap}
         .recv-buf[r] = .recv-buf[remaining-start + r]
     }
     .recv-buf-len = remaining-len
@@ -858,7 +927,9 @@ server-conn.close = () {
 client.send = (opcode i64, data str) (ok bool) {
     ok = false
     .connected == false -> return
+    #{overflow = wrap}
     .send-counter = .send-counter + 1
+    #{overflow = wrap}
     seed = next-rand() + .send-counter
     mask-key = gen-mask-key(seed)
     frame = build-frame(opcode, data, true, mask-key)
@@ -878,7 +949,7 @@ client.send = (opcode i64, data str) (ok bool) {
             }
         }
         -> {
-            written = net.net-send(.fd, frame, frame.len)
+            written = net.net-send(.fd, frame, frame.len-bytes())
             written < 0 -> {
                 .connected = false
                 return
@@ -915,10 +986,12 @@ client.send-pong = (data str) (ok bool) {
 client.send-close = (close-code i64, reason str) (ok bool) {
     ok = false
     .connected == false -> return
-    payload str = with-len(2 + reason.len)
+    #{overflow = wrap}
+    payload str = with-len(2 + reason.len-bytes())
     payload[0] = (close-code >> 8) & 255
     payload[1] = close-code & 255
-    i <- [0..reason.len): {
+    i <- [0..reason.len-bytes()): {
+        #{overflow = wrap}
         payload[2 + i] = reason[i]
     }
     ok = .send(WS-OP-CLOSE, payload)
@@ -964,8 +1037,10 @@ client.recv = () (msg ?message) {
                 return
             }
             i <- [0..n): {
+                #{overflow = wrap}
                 .recv-buf[.recv-buf-len + i] = tmp[i]
             }
+            #{overflow = wrap}
             .recv-buf-len = .recv-buf-len + n
         }
         b0 = .recv-buf[0]
@@ -981,10 +1056,13 @@ client.recv = () (msg ?message) {
             ->
         }
         masked -> extra-len
+        #{overflow = wrap}
         extra-len + 4
+        #{overflow = wrap}
         header-total = 2 + extra-len
         payload-len == 127 -> {
             .recv-buf-len < header-total -> {
+                #{overflow = wrap}
                 need = header-total - .recv-buf-len
                 tmp str = with-len(WS-RECV-SIZE)
                 n = 0
@@ -1006,17 +1084,21 @@ client.recv = () (msg ?message) {
                     return
                 }
                 i <- [0..n): {
+                    #{overflow = wrap}
                     .recv-buf[.recv-buf-len + i] = tmp[i]
                 }
+                #{overflow = wrap}
                 .recv-buf-len = .recv-buf-len + n
             }
             payload-len = 0
             i <- [0..8): {
+                #{overflow = wrap}
                 payload-len = (payload-len << 8) | .recv-buf[2 + i]
             }
         }
         payload-len == 126 -> {
             .recv-buf-len < header-total -> {
+                #{overflow = wrap}
                 need = header-total - .recv-buf-len
                 tmp str = with-len(WS-RECV-SIZE)
                 n = 0
@@ -1038,14 +1120,18 @@ client.recv = () (msg ?message) {
                     return
                 }
                 i <- [0..n): {
+                    #{overflow = wrap}
                     .recv-buf[.recv-buf-len + i] = tmp[i]
                 }
+                #{overflow = wrap}
                 .recv-buf-len = .recv-buf-len + n
             }
             payload-len = (.recv-buf[2] << 8) | .recv-buf[3]
         }
+        #{overflow = wrap}
         frame-total = header-total + payload-len
         .recv-buf-len < frame-total -> {
+            #{overflow = wrap}
             need = frame-total - .recv-buf-len
             tmp str = with-len(WS-RECV-SIZE)
             {
@@ -1069,9 +1155,12 @@ client.recv = () (msg ?message) {
                     return
                 }
                 i <- [0..n): {
+                    #{overflow = wrap}
                     .recv-buf[.recv-buf-len + i] = tmp[i]
                 }
+                #{overflow = wrap}
                 .recv-buf-len = .recv-buf-len + n
+                #{overflow = wrap}
                 need = frame-total - .recv-buf-len
             } (true)
         }
@@ -1080,26 +1169,33 @@ client.recv = () (msg ?message) {
         actual-extra = 0
         (b1 & 127) == 126 -> actual-extra = 2
         (b1 & 127) == 127 -> actual-extra = 8
+        #{overflow = wrap}
         mask-start = 2 + actual-extra
         masked -> {
             mask-key str = with-len(4)
             i <- [0..4): {
+                #{overflow = wrap}
                 mask-key[i] = .recv-buf[mask-start + i]
             }
         }
+        #{overflow = wrap}
         payload-start = 2 + actual-extra
         masked -> payload-start
+        #{overflow = wrap}
         2 + actual-extra + 4
         payload str = with-len(payload-len)
         i <- [0..payload-len): {
+            #{overflow = wrap}
             b = .recv-buf[payload-start + i]
             masked -> b
             b ^ mask-key[i % 4]
             payload[i] = b & 255
         }
         remaining-start = frame-total
+        #{overflow = wrap}
         remaining-len = .recv-buf-len - remaining-start
         i <- [0..remaining-len): {
+            #{overflow = wrap}
             .recv-buf[i] = .recv-buf[remaining-start + i]
         }
         .recv-buf-len = remaining-len
@@ -1121,6 +1217,7 @@ client.recv = () (msg ?message) {
                 msg = err('unexpected continuation')
                 return
             }
+            #{overflow = wrap}
             acc-data = acc-data - payload
         }
         has-acc && fin -> {
@@ -1196,33 +1293,35 @@ connect = (url str) (c ?client) {
         c = err('invalid URL: must start with ws:// or wss://')
         return
     }
-    rest = url.slice(scheme.len, url.len)
+    rest = url.slice(scheme.len-bytes(), url.len-bytes())
 
     slash-pos = rest.index('/')
     {
         slash-pos < 0 -> host = rest
         slash-pos >= 0 -> {
             host = rest.slice(0, slash-pos)
-            path = rest.slice(slash-pos, rest.len)
+            path = rest.slice(slash-pos, rest.len-bytes())
         }
     }
     colon-pos = host.index(':')
     colon-pos >= 0 -> {
         host-only = host.slice(0, colon-pos)
-        port-str = host.slice(colon-pos + 1, host.len)
+        #{overflow = wrap}
+        port-str = host.slice(colon-pos + 1, host.len-bytes())
         p = 0
-        i <- [0..port-str.len): {
+        i <- [0..port-str.len-bytes()): {
             ch = port-str[i]
             ch < 48 || ch > 57 -> {
                 c = err('invalid port')
                 return
             }
+            #{overflow = wrap}
             p = p * 10 + ch - 48
         }
         port = p
         host = host-only
     }
-    host.len == 0 -> {
+    host.len-bytes() == 0 -> {
         c = err('empty host')
         return
     }
@@ -1251,20 +1350,30 @@ connect = (url str) (c ?client) {
     }
 
     ; 產生 Sec-WebSocket-Key
+    #{overflow = wrap}
     seed = next-rand() + fd
     client-key = gen-client-key(seed)
 
     ; 建構 HTTP 升級請求
     cr = number.char-to-str(13)
     lf = number.char-to-str(10)
+    #{overflow = wrap}
     crlf = cr - lf
+    #{overflow = wrap}
     req = 'GET ' - path - ' HTTP/1.1' - crlf
+    #{overflow = wrap}
     req = req - 'Host: ' - host - crlf
+    #{overflow = wrap}
     req = req - 'Upgrade: websocket' - crlf
+    #{overflow = wrap}
     req = req - 'Connection: Upgrade' - crlf
+    #{overflow = wrap}
     req = req - 'Sec-WebSocket-Key: ' - client-key - crlf
+    #{overflow = wrap}
     req = req - 'Sec-WebSocket-Version: 13' - crlf
+    #{overflow = wrap}
     req = req - 'User-Agent: nolang-ws/1.0' - crlf
+    #{overflow = wrap}
     req = req - crlf
 
     ; 發送請求
@@ -1286,7 +1395,7 @@ connect = (url str) (c ?client) {
             }
         }
         -> {
-            written = net.net-send(fd, req, req.len)
+            written = net.net-send(fd, req, req.len-bytes())
             written < 0 -> {
                 fs.close(fd)
                 c = err('send failed')
@@ -1300,9 +1409,11 @@ connect = (url str) (c ?client) {
     tmp str = with-len(WS-RECV-SIZE)
     total = 0
     sep-pos i64 = -1
+    #{overflow = wrap}
     separator = crlf - crlf
 
     {
+        #{overflow = wrap}
         total + WS-RECV-SIZE > WS-BUF-SIZE -> {
             {
                 use-tls -> tc.close()
@@ -1336,8 +1447,10 @@ connect = (url str) (c ?client) {
             return
         }
         i <- [0..n): {
+            #{overflow = wrap}
             raw[total + i] = tmp[i]
         }
+        #{overflow = wrap}
         total = total + n
         data = raw.slice(0, total)
         sep-pos = data.index(separator)
@@ -1358,12 +1471,13 @@ connect = (url str) (c ?client) {
         c = err('invalid status line')
         return
     }
-    after-code = status-line.slice(sp1 + 1, status-line.len)
+    #{overflow = wrap}
+    after-code = status-line.slice(sp1 + 1, status-line.len-bytes())
     sp2 = after-code.index(' ')
     code-str = after-code
     sp2 >= 0 -> code-str = after-code.slice(0, sp2)
     status-code = 0
-    i <- [0..code-str.len): {
+    i <- [0..code-str.len-bytes()): {
         ch = code-str[i]
         ch < 48 || ch > 57 -> {
             {
@@ -1373,6 +1487,7 @@ connect = (url str) (c ?client) {
             c = err('invalid status code')
             return
         }
+        #{overflow = wrap}
         status-code = status-code * 10 + ch - 48
     }
     status-code != 101 -> {
@@ -1381,6 +1496,7 @@ connect = (url str) (c ?client) {
             -> fs.close(fd)
         }
         code-s = status-code.to-str()
+        #{overflow = wrap}
         c = err('server returned status ' - code-s)
         return
     }
@@ -1402,13 +1518,15 @@ connect = (url str) (c ?client) {
             return
         }
     }
-    val-start = accept-pos + accept-marker.len
+    #{overflow = wrap}
+    val-start = accept-pos + accept-marker.len-bytes()
     {
-        val-start < head.len && head[val-start] == 32 -> val-start = val-start + 1
+        #{overflow = wrap}
+        val-start < head.len-bytes() && head[val-start] == 32 -> val-start = val-start + 1
         ->
     }
     val-end = head.index-from(crlf, val-start)
-    val-end < 0 -> val-end = head.len
+    val-end < 0 -> val-end = head.len-bytes()
     server-accept = head.slice(val-start, val-end)
     expected-accept = compute-accept(client-key)
     server-accept != expected-accept -> {
@@ -1421,11 +1539,12 @@ connect = (url str) (c ?client) {
     }
 
     ; 建立客戶端，儲存標頭後的剩餘資料
-    body-start = sep-pos + separator.len
+    #{overflow = wrap}
+    body-start = sep-pos + separator.len-bytes()
     remaining-len = 0
     total > body-start -> {
         remaining = raw.slice(body-start, total)
-        remaining-len = remaining.len
+        remaining-len = remaining.len-bytes()
     }
     rb str = with-len(WS-BUF-SIZE)
     remaining-len > 0 -> {

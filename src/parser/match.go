@@ -191,6 +191,27 @@ func (p *Parser) parseBareMatchExpr() Expression {
 			break
 		}
 
+		// 消费臂首的 #{...} 前置註解（例如臂條件前的 `#{overflow = wrap}`）。
+		// 若在此不消費，parseExpression 會把 HASH_LBRACE 當成臂條件而解析失敗，
+		// 進而讓整個 bare match 錯位，最終使外層區塊的 } 未被消費，造成
+		// "expected '(' after block in loop" 這類下游錯誤。註解條目暫存於
+		// armAnnots，待臂 body 解析完成後附加到 body 區塊（保留 overflow 語意）。
+		var armAnnots []*AnnotationEntry
+		for p.currentToken.Type == lexer.HASH_LBRACE {
+			p.nextToken() // skip #{
+			armAnnots = append(armAnnots, p.parseAnnotationBody()...)
+			if p.currentToken.Type != lexer.RBRACE {
+				p.saveError(fmt.Sprintf("line %d, column %d: expected '}' to close annotation, got %s",
+					p.currentToken.Line, p.currentToken.Column, p.currentToken.Type.String()))
+				break
+			}
+			p.nextToken() // skip }
+			// 跳過註解後的行尾換行，避免影響後續臂首判定
+			for p.currentToken.Type == lexer.NEWLINE {
+				p.nextToken()
+			}
+		}
+
 		// Collect doc comments before the arm condition. Comments between
 		// arms (or between { and the first arm) are buffered in p.comments
 		// by advanceCollect during nextToken. Without collecting them here,
@@ -200,6 +221,18 @@ func (p *Parser) parseBareMatchExpr() Expression {
 
 		var ma matchArm
 		ma.pos = lexer.Position{Line: p.currentToken.Line, Column: p.currentToken.Column}
+		// An arm may be written with an explicit leading `->` separator before its
+		// condition, e.g. `-> c == 92 -> body`. This is equivalent to the canonical
+		// `c == 92 -> body`; the leading `->` is just an optional arm separator.
+		// Only treat a leading `->` as a catch-all wildcard arm (`-> body`) when it
+		// is NOT followed by `cond ->`. Otherwise we consume the separator here and
+		// let the condition be parsed normally below. This prevents the previous
+		// behaviour where `-> cond -> body` was misread as a wildcard arm whose body
+		// happened to be a standalone if-then, silently dropping every intermediate
+		// conditional arm.
+		if p.currentToken.Type == lexer.RARROW && p.leadingArrowIsSeparator() {
+			p.nextToken()
+		}
 		if p.currentToken.Type == lexer.COLON {
 			ma.isWildcard = true
 		} else if p.currentToken.Type == lexer.UNDERSCORE {
@@ -374,6 +407,29 @@ func (p *Parser) parseBareMatchExpr() Expression {
 		}
 
 		bodyBlock.Statements = bodyStmts
+		// 將臂首前置註解（如 #{overflow = wrap}）附加到 body 區塊，
+		// 使臂體內的整數運算繼承對應的溢出模式。
+		if len(armAnnots) > 0 {
+			// 同時附加到臂體內的每一條陳述（無論 inline 單句或區塊體），
+			// 因為 codegen 的 overflowModeFromNode 只從「陳述層級」節點
+			// （ExpressionStatement / LetStatement 等，不含 BlockStatement）
+			// 讀取 #{overflow = ...}。若只掛在 bodyBlock 上，inline 臂體
+			// （如 `cond -> out[pos] = d + 48`）的整數運算會退回預設
+			// option 模式，產生 %option 後被 trunc 到 i8 而讓 LLVM 報錯。
+			for _, s := range bodyStmts {
+				if existing := p.sem.AnnotationsOf(s); len(existing) > 0 {
+					merged := make([]*AnnotationEntry, 0, len(existing)+len(armAnnots))
+					merged = append(merged, existing...)
+					merged = append(merged, armAnnots...)
+					p.sem.SetRawAnnotations(s, merged)
+				} else {
+					p.sem.SetRawAnnotations(s, armAnnots)
+				}
+			}
+			if bodyBlock != nil {
+				p.sem.SetRawAnnotations(bodyBlock, armAnnots)
+			}
+		}
 		// Preserve comments (TrailingComments) from the parsed block so that
 		// comment-only block bodies (e.g. `c == 46 -> { // 允許 }`) are not lost.
 		if parsedBlock != nil {
@@ -475,6 +531,44 @@ func (p *Parser) parseBareMatchExpr() Expression {
 	sm.OpeningBraceComment = openingComments
 	sm.RBracePos = rbracePos
 	return sm
+}
+
+// leadingArrowIsSeparator reports whether the current RARROW is an explicit arm
+// separator (i.e. the arm is written `-> cond -> body`) rather than a wildcard
+// arm (`-> body`). It returns true iff, starting from the token immediately
+// after this RARROW, there is another RARROW at parenthesis/bracket/brace depth
+// 0 before a NEWLINE or RBRACE. A block body (`-> { ... }`) is never treated as
+// a separator, because that `->` introduces a wildcard arm whose body is a block.
+func (p *Parser) leadingArrowIsSeparator() bool {
+	if p.currentToken.Type != lexer.RARROW {
+		return false
+	}
+	depth := 0
+	skip := -1 // peekToken: the token right after the current RARROW
+	for {
+		var tok lexer.Token
+		if skip < 0 {
+			tok = p.peekToken
+		} else {
+			tok = p.look(skip)
+		}
+		switch tok.Type {
+		case lexer.NEWLINE, lexer.SEMICOLON, lexer.EOF:
+			return false
+		case lexer.LPAREN, lexer.LBRACKET, lexer.LBRACE:
+			depth++
+		case lexer.RPAREN, lexer.RBRACKET, lexer.RBRACE:
+			depth--
+			if depth < 0 {
+				return false
+			}
+		case lexer.RARROW:
+			if depth == 0 {
+				return true
+			}
+		}
+		skip++
+	}
 }
 
 // isArmStart checks if the current token starts a new match arm
@@ -608,6 +702,10 @@ type matchArm struct {
 	pos                 lexer.Position // position of condition or -> for diagnostic use
 	multiOptionPatterns []string       // nil || err → ["nil", "err"]; combined option patterns joined by ||
 	multiValuePatterns  []Expression   // 1 || 3 || 5 → [1, 3, 5]; combined value patterns joined by ||
+	skipItBinding       bool           // generated arms that never reference `it` (e.g. ?= / #{index-out}
+	// sentinel arms that just return or substitute a default) opt out of the
+	// synthetic `it` binding, so a sentinel arm's %str-long/nil `it` type can't
+	// clobber the ok arm's element-type `it` (which would corrupt codegen).
 }
 
 func (p *Parser) parseMatchExpression() Expression {

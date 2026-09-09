@@ -1,0 +1,102 @@
+; test-x25519-fe-diag — 隔離診斷每個 fe-* 原語（無 for 循環版本，避開 codegen 迴歸）
+; 直接餵 []i64 / [32]byte，打印輸出 limb，供 Python 以「域值 mod p」獨立對照。
+; # std/crypto/x25519
+
+main = () {
+    A []i64 = with-len(10)
+    A[0] = 11111
+    A[1] = 22222
+    A[2] = 33333
+    A[3] = 44444
+    A[4] = 55555
+    A[5] = 66666
+    A[6] = 77777
+    A[7] = 88888
+    A[8] = 99999
+    A[9] = 101010
+
+    B []i64 = with-len(10)
+    B[0] = 10007
+    B[1] = 20017
+    B[2] = 30037
+    B[3] = 40057
+    B[4] = 50077
+    B[5] = 60097
+    B[6] = 70117
+    B[7] = 80137
+    B[8] = 90157
+    B[9] = 100177
+
+    S []i64 = with-len(10)
+    S[0] = 12345
+
+    OUT []i64 = with-len(10)
+
+    BYTES [32]byte
+    BYTES[0] = 133
+    BYTES[1] = 32
+    BYTES[2] = 240
+    BYTES[3] = 9
+    BYTES[4] = 137
+    BYTES[5] = 48
+    BYTES[6] = 167
+    BYTES[7] = 84
+    BYTES[8] = 116
+    BYTES[9] = 139
+    BYTES[10] = 125
+    BYTES[11] = 220
+    BYTES[12] = 180
+    BYTES[13] = 62
+    BYTES[14] = 247
+    BYTES[15] = 90
+    BYTES[16] = 13
+    BYTES[17] = 191
+    BYTES[18] = 58
+    BYTES[19] = 13
+    BYTES[20] = 38
+    BYTES[21] = 56
+    BYTES[22] = 26
+    BYTES[23] = 244
+    BYTES[24] = 235
+    BYTES[25] = 164
+    BYTES[26] = 152
+    BYTES[27] = 234
+    BYTES[28] = 169
+    BYTES[29] = 180
+    BYTES[30] = 230
+    BYTES[31] = 106
+
+    OUTB [32]byte
+
+    x25519.x25519-test-fe-add(A, B, OUT)
+    print('FEADD')
+    print(OUT[0]); print(' '); print(OUT[1]); print(' '); print(OUT[2]); print(' '); print(OUT[3]); print(' '); print(OUT[4]); print(' '); print(OUT[5]); print(' '); print(OUT[6]); print(' '); print(OUT[7]); print(' '); print(OUT[8]); print(' '); print(OUT[9]); print(' ')
+
+    x25519.x25519-test-fe-sub(A, B, OUT)
+    print('FESUB')
+    print(OUT[0]); print(' '); print(OUT[1]); print(' '); print(OUT[2]); print(' '); print(OUT[3]); print(' '); print(OUT[4]); print(' '); print(OUT[5]); print(' '); print(OUT[6]); print(' '); print(OUT[7]); print(' '); print(OUT[8]); print(' '); print(OUT[9]); print(' ')
+
+    x25519.x25519-test-fe-mul(A, B, OUT)
+    print('FEMUL')
+    print(OUT[0]); print(' '); print(OUT[1]); print(' '); print(OUT[2]); print(' '); print(OUT[3]); print(' '); print(OUT[4]); print(' '); print(OUT[5]); print(' '); print(OUT[6]); print(' '); print(OUT[7]); print(' '); print(OUT[8]); print(' '); print(OUT[9]); print(' ')
+
+    x25519.x25519-test-fe-sq(A, OUT)
+    print('FESQ')
+    print(OUT[0]); print(' '); print(OUT[1]); print(' '); print(OUT[2]); print(' '); print(OUT[3]); print(' '); print(OUT[4]); print(' '); print(OUT[5]); print(' '); print(OUT[6]); print(' '); print(OUT[7]); print(' '); print(OUT[8]); print(' '); print(OUT[9]); print(' ')
+
+    x25519.x25519-test-fe-mul121665(A, OUT)
+    print('FEMUL121665')
+    print(OUT[0]); print(' '); print(OUT[1]); print(' '); print(OUT[2]); print(' '); print(OUT[3]); print(' '); print(OUT[4]); print(' '); print(OUT[5]); print(' '); print(OUT[6]); print(' '); print(OUT[7]); print(' '); print(OUT[8]); print(' '); print(OUT[9]); print(' ')
+
+    x25519.x25519-test-fe-frombytes(BYTES, OUT)
+    print('FEFROMBYTES')
+    print(OUT[0]); print(' '); print(OUT[1]); print(' '); print(OUT[2]); print(' '); print(OUT[3]); print(' '); print(OUT[4]); print(' '); print(OUT[5]); print(' '); print(OUT[6]); print(' '); print(OUT[7]); print(' '); print(OUT[8]); print(' '); print(OUT[9]); print(' ')
+
+    x25519.x25519-test-fe-tobytes(S, OUTB)
+    print('FETOBYTES_S')
+    print(OUTB[0]); print(' '); print(OUTB[1]); print(' '); print(OUTB[2]); print(' '); print(OUTB[3]); print(' '); print(OUTB[4]); print(' '); print(OUTB[5]); print(' '); print(OUTB[6]); print(' '); print(OUTB[7]); print(' '); print(OUTB[8]); print(' '); print(OUTB[9]); print(' '); print(OUTB[10]); print(' '); print(OUTB[11]); print(' '); print(OUTB[12]); print(' '); print(OUTB[13]); print(' '); print(OUTB[14]); print(' '); print(OUTB[15]); print(' '); print(OUTB[16]); print(' '); print(OUTB[17]); print(' '); print(OUTB[18]); print(' '); print(OUTB[19]); print(' '); print(OUTB[20]); print(' '); print(OUTB[21]); print(' '); print(OUTB[22]); print(' '); print(OUTB[23]); print(' '); print(OUTB[24]); print(' '); print(OUTB[25]); print(' '); print(OUTB[26]); print(' '); print(OUTB[27]); print(' '); print(OUTB[28]); print(' '); print(OUTB[29]); print(' '); print(OUTB[30]); print(' '); print(OUTB[31]); print(' ')
+
+    x25519.x25519-test-fe-tobytes(A, OUTB)
+    print('FETOBYTES_A')
+    print(OUTB[0]); print(' '); print(OUTB[1]); print(' '); print(OUTB[2]); print(' '); print(OUTB[3]); print(' '); print(OUTB[4]); print(' '); print(OUTB[5]); print(' '); print(OUTB[6]); print(' '); print(OUTB[7]); print(' '); print(OUTB[8]); print(' '); print(OUTB[9]); print(' '); print(OUTB[10]); print(' '); print(OUTB[11]); print(' '); print(OUTB[12]); print(' '); print(OUTB[13]); print(' '); print(OUTB[14]); print(' '); print(OUTB[15]); print(' '); print(OUTB[16]); print(' '); print(OUTB[17]); print(' '); print(OUTB[18]); print(' '); print(OUTB[19]); print(' '); print(OUTB[20]); print(' '); print(OUTB[21]); print(' '); print(OUTB[22]); print(' '); print(OUTB[23]); print(' '); print(OUTB[24]); print(' '); print(OUTB[25]); print(' '); print(OUTB[26]); print(' '); print(OUTB[27]); print(' '); print(OUTB[28]); print(' '); print(OUTB[29]); print(' '); print(OUTB[30]); print(' '); print(OUTB[31]); print(' ')
+}

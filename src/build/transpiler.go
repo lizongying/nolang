@@ -910,25 +910,6 @@ func (t *Transpiler) resolveUse(use *parser.UseStatement) (*parser.Program, erro
 		if path == "std" {
 			relPath = ""
 		}
-		// DEV ONLY (NO_STD_DISK): load std modules from src/std on disk so
-		// migration tooling can read/write real files during the .len deprecation
-		// migration. No effect in production.
-		if os.Getenv("NO_STD_DISK") != "" {
-			cands := []string{}
-			if relPath != "" {
-				cands = append(cands, filepath.Join(t.workspaceRoot(), "src", "std", relPath+".no"))
-			}
-			for _, info := range checker.KnownStdModules() {
-				if info.ShortPath == relPath {
-					cands = append(cands, filepath.Join(t.workspaceRoot(), "src", "std", info.FullPath+".no"))
-				}
-			}
-			for _, c := range cands {
-				if data, err := os.ReadFile(c); err == nil {
-					return t.parseEmbeddedProgram(c, data)
-				}
-			}
-		}
 		// 1. 直接路徑：std/<relPath>.no
 		if relPath != "" {
 			embedPath := "std/" + relPath + ".no"
@@ -1393,12 +1374,38 @@ func (t *Transpiler) loadStdModuleBody(sp string, merged *parser.Program, typeOw
 	if err != nil {
 		return nil, fmt.Errorf("auto-loading module %s: %w", path, err)
 	}
+	if os.Getenv("NOLANG_DEBUG_SELF") != "" && strings.Contains(path, "txt") {
+		f, _ := os.OpenFile("/tmp/modprog_dump.txt", os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+		fmt.Fprintf(f, "=== MODPROG for %s (stmts=%d) ===\n", path, len(modProg.Statements))
+		for i, ms := range modProg.Statements {
+			nm := ""
+			blen := -1
+			switch v := ms.(type) {
+			case *parser.FunctionDefinition:
+				nm = v.Name
+				if v.Body != nil {
+					blen = len(v.Body.Statements)
+				}
+			case *parser.LetStatement:
+				if v.Name != nil {
+					nm = v.Name.Value
+				}
+			}
+			fmt.Fprintf(f, "  MOD[%d] %T name=%q bodyLen=%d\n", i, ms, nm, blen)
+		}
+		f.Close()
+	}
 	modFile := resolveModuleFile(path, t.workspaceRoot())
 	merged.Sem.Merge(modProg.Sem)
 	// 為自動載入模組的型別定義加上模組前綴（如 result → sql.result）
 	prefixModuleStatements(modProg.Statements, info.ShortName, typeOwner)
 	for _, ms := range modProg.Statements {
 		if fd, ok := ms.(*parser.FunctionDefinition); ok {
+			// 內建樁函式（#{buildin=...}）僅為聲明，真實實作位於 Go runtime，
+			// 不加入合併程式（否則會被當成普通模組函式而嘗試 codegen 並與 Go 實作衝突）。
+			if fd.BuiltinStub {
+				continue
+			}
 			merged.Statements = append(merged.Statements, fd)
 			parser.SetModuleOwner(fd, info.ShortName)
 			parser.SetSourceFile(fd, modFile)
@@ -1903,6 +1910,26 @@ func (t *Transpiler) collectReferencedStdModules(prog *parser.Program) map[strin
 	return refs
 }
 
+// stripBuiltinStubs removes FunctionDefinitions marked with the #{buildin=...}
+// annotation from the program. Such stubs are documentation-only declarations for
+// standard-library builtins whose real implementation lives in the Go runtime; their
+// nolang body (typically empty `{}`) must not be validated or codegen'd. The compiler
+// simply skips them ("遇到這個註解不處理"). The real builtin resolution always goes
+// through the Go BuiltinMethod table, so dropping the stub from the program is safe.
+func stripBuiltinStubs(prog *parser.Program) {
+	if prog == nil {
+		return
+	}
+	kept := prog.Statements[:0]
+	for _, stmt := range prog.Statements {
+		if fd, ok := stmt.(*parser.FunctionDefinition); ok && fd.BuiltinStub {
+			continue
+		}
+		kept = append(kept, stmt)
+	}
+	prog.Statements = kept
+}
+
 func (t *Transpiler) CompileTarget(source string, _ Target) (string, error) {
 	// 預載入跨文件模組簽名，供 parser 型別推斷使用
 	externFuncSigs, externMethodSigs, externStructFields := t.preloadModuleSignatures(source)
@@ -1941,6 +1968,9 @@ func (t *Transpiler) CompileTarget(source string, _ Target) (string, error) {
 		if len(p.Errors()) > 0 {
 			return "", fmt.Errorf("parser errors: %v", p.Errors())
 		}
+		// 移除標準庫內建樁函式（#{buildin=...}）：其真實實作位於 Go runtime，
+		// nolang 函式體僅為聲明，編譯器不處理（不校驗、不 codegen）。
+		stripBuiltinStubs(program)
 		// 收集主程序中链式 -> 条件的 lint 提示（仅主程序，不含自动载入的 std 库，
 		// 避免库代码触发噪音）。buildWithPkg 会在编译成功后打印。
 		t.chainedIfHints = p.WarningsByCode(parser.WarnChainedIf)
@@ -2035,6 +2065,14 @@ func (t *Transpiler) CompileTarget(source string, _ Target) (string, error) {
 	// 編譯期重複變數檢查
 	if err := validateDuplicates(program); err != nil {
 		return "", err
+	}
+	// Tag top-level statements with their source path BEFORE type-checking so
+	// validation passes (e.g. the .len deprecation check) can exempt builtin
+	// implementation files (vec.no / byte.no / str.no) by filename. SourceFile
+	// is otherwise only set later (after module merge), which is too late for
+	// the validation phase.
+	for _, stmt := range program.Statements {
+		parser.SetSourceFile(stmt, t.sourcePath)
 	}
 	// 型別檢查（收集所有錯誤後統一報告，而非遇錯即返）
 	// 這樣用戶在 no build 時能一次看到所有型別錯誤，而非逐個修復後才能看到下一個。
@@ -2223,16 +2261,17 @@ func (t *Transpiler) CompileTarget(source string, _ Target) (string, error) {
 				}
 				// FFI extern 宣告必須隨模組一起合併，否則 codegen 的 externFuncs
 				// 會缺少條目，導致 extern 呼叫走 Nolang by-reference 路徑而非 FFI 路徑。
-				if es, ok := ms.(*parser.ExternStatement); ok {
-					merged.Statements = append(merged.Statements, es)
-					parser.SetSourceFile(es, modFile)
-				}
+			if es, ok := ms.(*parser.ExternStatement); ok {
+				merged.Statements = append(merged.Statements, es)
+				parser.SetSourceFile(es, modFile)
 			}
 		}
-		return nil
 	}
-	for _, stmt := range program.Statements {
-		if use, ok := stmt.(*parser.UseStatement); ok {
+	return nil
+}
+
+for _, stmt := range program.Statements {
+	if use, ok := stmt.(*parser.UseStatement); ok {
 			if err := processUseAndMerge(use); err != nil {
 				return "", err
 			}
@@ -2681,8 +2720,43 @@ func (t *Transpiler) CompileTarget(source string, _ Target) (string, error) {
 	if os.Getenv("NOLANG_HIR") == "0" {
 		ir = t.llvmGenerator.Generate(merged)
 	} else {
+		if os.Getenv("NOLANG_DEBUG_SELF") != "" {
+			f, _ := os.Create("/tmp/merged_dump.txt")
+			for i, st := range merged.Statements {
+				nm := ""
+				blen := -1
+				var bfirst string
+				switch v := st.(type) {
+				case *parser.FunctionDefinition:
+					nm = v.Name
+					if v.Body != nil {
+						blen = len(v.Body.Statements)
+						if blen > 0 {
+							bfirst = fmt.Sprintf("%T", v.Body.Statements[0])
+						}
+					}
+				case *parser.LetStatement:
+					if v.Name != nil {
+						nm = v.Name.Value
+					}
+				}
+				fmt.Fprintf(f, "MERGED[%d] %T name=%q bodyLen=%d firstBody=%q\n", i, st, nm, blen, bfirst)
+			}
+			f.Close()
+		}
 		hirPkg, idMap := parser.ASTToHIRWithMap(merged)
 		parser.PopulateInferredTypes(hirPkg, idMap)
+		if os.Getenv("NOLANG_DEBUG_SELF") != "" {
+			for _, id := range hirPkg.Top {
+				n := hirPkg.Node(id)
+				if n == nil {
+					continue
+				}
+				if n.Kind == hir.KLet || n.Kind == hir.KFuncDef {
+					fmt.Fprintf(os.Stderr, "[debug-self] pkg.Top[%d] kind=%v name=%q\n", id, n.Kind, hirPkg.Str(n.S))
+				}
+			}
+		}
 		// MIR pipeline. NOLANG_MIR=1: verification mode — run HIR->MIR lowering +
 		// memory analysis, dump the module + report to a temp file, then fall back
 		// to the proven HIR codegen (no behavioral change). NOLANG_MIR=2: actually
@@ -6062,33 +6136,6 @@ func validateExprArrayBounds(expr parser.Expression, arraySizes map[string]int64
 	case *parser.PrefixExpression:
 		return validateExprArrayBounds(e.Right, arraySizes, sliceSizes, stringSizes, varTypes)
 	case *parser.CallExpression:
-		// array.len() / slice.len() / string.len() → 沒有 len() 方法
-		if dot, ok := e.Function.(*parser.DotExpression); ok {
-			if dot.Property == "len" {
-				if ident, ok := dot.Receiver.(*parser.Identifier); ok {
-					// self.len() inside method bodies is valid — resolveSelfMethodCalls
-					// will rewrite it to Type.len(self), which the codegen handles as
-					// a builtin field access. Skip validation for the implicit receiver.
-					if ident.Value != "self" {
-						if _, exists := stringSizes[ident.Value]; exists {
-							return fmt.Errorf("string '%s' has no method 'len', use '%s.len' instead", ident.Value, ident.Value)
-						}
-						// array/slice .len() is now ALLOWED (returns the element count).
-						// The .len *property* (no parens) is deprecated instead; the
-						// codegen rejects it and tells the user to call recv.len().
-						if typeName, exists := varTypes[ident.Value]; exists {
-							if strings.Contains(typeName, "hashmap-") || isMapTypeString(typeName) {
-								// map types have a len() method — skip rejection
-							} else if isArrOrSliceTypeName(typeName) {
-								// array/slice .len() is allowed — skip rejection
-							} else {
-								return fmt.Errorf("%s '%s' has no method 'len', use '%s.len' instead", typeName, ident.Value, ident.Value)
-							}
-						}
-					}
-				}
-			}
-		}
 		if e.Function != nil {
 			if err := validateExprArrayBounds(e.Function, arraySizes, sliceSizes, stringSizes, varTypes); err != nil {
 				return err
@@ -10676,4 +10723,26 @@ func findPackageRootFromFile(filePath string) string {
 		}
 		dir = parent
 	}
+}
+
+func dumpMergedLeak(merged *parser.Program, stage string) {
+	if os.Getenv("NOLANG_DEBUG_SELF") == "" {
+		return
+	}
+	out2 := 0
+	fdBody := -1
+	total := len(merged.Statements)
+	for _, stmt := range merged.Statements {
+		if ls, ok := stmt.(*parser.LetStatement); ok && ls.Name != nil && ls.Name.Value == "out2" {
+			out2++
+		}
+		if fd, ok := stmt.(*parser.FunctionDefinition); ok && fd.Name == "txt.from-hex" {
+			if fd.Body != nil {
+				fdBody = len(fd.Body.Statements)
+			} else {
+				fdBody = -2
+			}
+		}
+	}
+	fmt.Fprintf(os.Stderr, "[debug-self][%s] total=%d top-level out2=%d txt.from-hex fdBody=%d\n", stage, total, out2, fdBody)
 }

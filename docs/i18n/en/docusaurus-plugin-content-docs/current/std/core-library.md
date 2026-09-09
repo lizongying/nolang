@@ -68,7 +68,7 @@ s.to-upper()                  ; Convert to uppercase
 s.to-lower()                  ; Convert to lowercase
 out = s.trim()                ; Trim leading/trailing whitespace
 out = s.repeat(n)             ; Repeat
-out = s.slice(start, end)     ; Slice
+out = s.slice(start, end)     ; Slice (code-point indices)
 b = s.to-bytes()              ; Convert to []byte
 s = b.to-str()                ; []byte to str (method)
 v = s.to-i64()                ; String to i64 (returns ?i64)

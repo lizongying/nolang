@@ -11,7 +11,7 @@
   "organization": "nolang",
   "repository": "https://github.com/lizongying/nolang",
   "homepage": "https://lizongying.github.io/nolang",
-  "license": "MIT",
+  "license": "Apache-2.0",
   "mirrors": [],
   "dependencies": {},
   "compiler": {

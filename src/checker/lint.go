@@ -243,6 +243,15 @@ func RunAllLints(program *parser.Program, opts LintOptions) []LintResult {
 		})
 	}
 
+	// 16b. str/txt 的 s[i] 码点下标 O(n) 性能告警（不禁止语法，建议 #{ascii}/s.byte(i)/for c in s）
+	for _, u := range ValidateStrIndexComplexity(program) {
+		results = append(results, LintResult{
+			Line: u.Line, Column: u.Column, File: u.File,
+			Severity: LintWarning, Source: "nolang-lint",
+			Message: u.Message, TraceID: u.TraceID,
+		})
+	}
+
 	// 17. hex 字面量大寫提示
 	for _, u := range ValidateHexCase(program) {
 		results = append(results, LintResult{
@@ -292,6 +301,15 @@ func RunAllLints(program *parser.Program, opts LintOptions) []LintResult {
 				Message: u.Message, TraceID: u.TraceID,
 			})
 		}
+	}
+
+	// 20c. 整數四則運算溢出提示（#{overflow = wrap|clamp0|min|max|saturate} 註解）
+	for _, u := range ValidateIntOverflow(program) {
+		results = append(results, LintResult{
+			Line: u.Line, Column: u.Column,
+			Severity: LintHint, Source: "nolang-overflow",
+			Message: u.Message, TraceID: u.TraceID,
+		})
 	}
 
 	// 21. parser 警告

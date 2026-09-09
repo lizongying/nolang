@@ -36,17 +36,19 @@ str-map.init = () {
 ; hash: FNV-1a 字串雜湊
 str-map.hash = (key str) (idx i64) {
     h = FNV-OFFSET
-    i <- [0..key.len): {
+    i <- [0..key.len-bytes()): {
         h = h ^ (key[i])
+        #{overflow = wrap}
         h = h * FNV-PRIME
     }
+    #{overflow = wrap}
     idx = h & (.cap - 1)
 }
 
 ; str-eq: 比較兩個 str 是否相等
 str-map.str-eq = (a str, b str) (eq bool) {
-    a.len != b.len -> return
-    i <- [0..a.len): {
+    a.len-bytes() != b.len-bytes() -> return
+    i <- [0..a.len-bytes()): {
         a[i] != b[i] -> return
     }
     eq = true
@@ -60,29 +62,31 @@ str-map.put = (key str, val str) (is-new bool) {
         eq = .str-eq(.keys[idx], key)
         eq -> {
             .vals[idx] = val
-            .vals[idx].len = val.len
-            i <- [0..val.len): {
+            .vals[idx].len = val.len-bytes()
+            i <- [0..val.len-bytes()): {
                 .vals[idx][i] = val[i]
             }
             is-new = false
             return
         }
+        #{overflow = wrap}
         idx = idx + 1
         idx >= .cap -> idx = 0
     } (.occ[idx] == 1)
 
     ; 複製 key
-    .keys[idx].len = key.len
-    i <- [0..key.len): {
+    .keys[idx].len = key.len-bytes()
+    i <- [0..key.len-bytes()): {
         .keys[idx][i] = key[i]
     }
 
     ; 複製 val
-    .vals[idx].len = val.len
-    i <- [0..val.len): {
+    .vals[idx].len = val.len-bytes()
+    i <- [0..val.len-bytes()): {
         .vals[idx][i] = val[i]
     }
     .occ[idx] = 1
+    #{overflow = wrap}
     .size = .size + 1
     is-new = true
 }
@@ -98,6 +102,7 @@ str-map.get = (key str) (result ?str) {
             result = .vals[idx]
             return
         }
+        #{overflow = wrap}
         idx = idx + 1
         idx >= .cap -> idx = 0
     } (.occ[idx] == 1)
@@ -124,10 +129,12 @@ str-map.remove = (key str) (removed bool) {
             .occ[idx] = 0
             .keys[idx].len = 0
             .vals[idx].len = 0
+            #{overflow = wrap}
             .size = .size - 1
             removed = true
             return
         }
+        #{overflow = wrap}
         idx = idx + 1
         idx >= .cap -> idx = 0
     } (.occ[idx] == 1)

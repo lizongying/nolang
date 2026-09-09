@@ -39,7 +39,7 @@
 ; 返回 true=相等, false=不相等
 []t.eq = (b []t) (eq bool) {
     eq = true
-    i <- [0...len): {
+    i <- [0...len()): {
         .[i] != b[i] -> {
             eq = false
             return
@@ -59,14 +59,14 @@
 ;   // data == [1, 1, 3, 4, 5]
 
 ; sort-asc: 升序排序 data[0..n)
-; build-in (ForwardFunc: vec-sort-asc)
-; sort-asc = (data []i64, n i64) { }
+#{buildin=sort-asc}
+sort-asc = (data []i64, n i64) { }
 ; []t.sort-asc = () {
 ; }
 
 ; sort-desc: 降序排序 data[0..n)
-; build-in (ForwardFunc: vec-sort-desc)
-; sort-desc = (data []i64, n i64) { }
+#{buildin=sort-desc}
+sort-desc = (data []i64, n i64) { }
 ; []t.sort-desc = () {
 ; }
 
@@ -95,7 +95,7 @@
 
 ; []t.len: 回傳切片長度
 []t.len = () (out i64) {
-    out = .len
+    out = .len()
 }
 
 ; []t.push: 在末尾追加元素（自動擴容）
@@ -103,9 +103,9 @@
 ;   cap == 0 → new-cap = 4
 ;   cap < 1024 → new-cap = cap * 2
 ;   cap >= 1024 → new-cap = cap * 5 / 4
-; build-in (ForwardFunc: vec-push)
-; []t.push = (val t) {
-;     n = .len
+#{buildin=vec-push}
+vec-push = (val t) { }
+;     n = .len()
 ;     .len = n + 1
 ;     .[n] = val
 ; }
@@ -113,9 +113,8 @@
 ; []t.clear: 清空切片（原地修改長度為 0）
 ; 不 free 堆、不縮 cap，data 指標完全不變
 ; 只有寫入帶長度新內容時才走擴容邏輯
-; build-in (ForwardFunc: vec-clear)
-; []t.clear = () {
-; }
+#{buildin=vec-clear}
+vec-clear = () { }
 
 ; 全局函数 with-cap / with-len / with-cap-len 的声明已移至 global.no
 
@@ -123,8 +122,9 @@
 ; 空切片返回 nil
 []t.pop = () (val ?t) {
     {
-        .len > 0 -> {
-            idx = .len
+        .len() > 0 -> {
+            idx = .len()
+            #{overflow = wrap}
             idx = idx - 1
             val = .[idx]
             .len = idx
@@ -134,12 +134,12 @@
 }
 
 ; []t.contains: 是否包含值 val
-; 注意：sz = .len 強制 vec self 類型，避免錯誤特化為 arr 方法
+; 注意：sz = .len() 強制 vec self 類型，避免錯誤特化為 arr 方法
 ; 注意：range-for 上界必須用 len（.len 字段），不能用局部變量 sz，
 ; 否則編譯器生成錯誤循環條件 i < 0 導致循環不執行
 []t.contains = (val t) (found bool) {
-    sz = .len
-    i <- [0...len): {
+    sz = .len()
+    i <- [0...len()): {
         v = .[i]
         v == val -> {
             found = true
@@ -151,64 +151,73 @@
 ; []t.reverse: 反轉
 []t.reverse = () {
     i = 0
-    j = .len
+    j = .len()
+    #{overflow = wrap}
     j = j - 1
     {
         tmp = .[i]
         .[i] = .[j]
         .[j] = tmp
+        #{overflow = wrap}
         i = i + 1
+        #{overflow = wrap}
         j = j - 1
     } (i < j)
 }
 
 ; []t.clone: 複製切片
 []t.clone = () (dst []t) {
-    dst = with-len(.len)
-    i <- [0...len): {
+    dst = with-len(.len())
+    i <- [0...len()): {
         dst[i] = .[i]
     }
 }
 
 ; []t.fill: 填充為 val
 []t.fill = (val t) {
-    i <- [0...len): {
+    i <- [0...len()): {
         .[i] = val
     }
 }
 
 ; []t.to-arr: 切片方法，轉為 [n]t 陣列
 []t.to-arr = () (out [?]t) {
-    i <- [0...len): {
+    i <- [0...len()): {
         out[i] = .[i]
     }
 }
 
 ; []t.insert: 在 i 位置插入元素 val
-; i >= .len 時等同 push
+; i >= .len() 時等同 push
 ; 注意：內聯 push 邏輯（.len = cur + 1; .[cur] = val）以規避方法內呼叫 .push()
 ; 觸發的預存在 LLVM bug（_LB__RB_t.push 未定義）。調用方需確保容量足夠。
 []t.insert = (i i64, val t) {
     {
-        i >= .len -> {
-            cur = .len
+        i >= .len() -> {
+            cur = .len()
+            #{overflow = wrap}
             .len = cur + 1
             .[cur] = val
         }
         -> {
 
             ; 先在末尾增長一格作為佔位（內聯 push）
-            last = .len
+            last = .len()
+            #{overflow = wrap}
             last = last - 1
-            cur = .len
+            cur = .len()
+            #{overflow = wrap}
             .len = cur + 1
             .[cur] = .[last]
 
             ; 從末尾向前平移元素到 i+1
-            k = .len
+            k = .len()
+            #{overflow = wrap}
             k = k - 2
             {
+                #{overflow = wrap}
                 .[k + 1] = .[k]
+                #{overflow = wrap}
                 k = k - 1
             } (k >= i)
             .[i] = val
@@ -221,17 +230,21 @@
 []t.remove = (i i64) (val ?t) {
     {
         i < 0 -> val = nil
-        i >= .len -> val = nil
+        i >= .len() -> val = nil
         -> {
             val = .[i]
-            bound = .len
+            bound = .len()
+            #{overflow = wrap}
             bound = bound - 1
             j = i
             {
+                #{overflow = wrap}
                 j = j + 1
+                #{overflow = wrap}
                 .[j - 1] = .[j]
             } (j < bound)
-            newlen = .len
+            newlen = .len()
+            #{overflow = wrap}
             newlen = newlen - 1
             .len = newlen
         }
@@ -239,12 +252,12 @@
 }
 
 ; []t.index-of: 找到值返回索引，否則 -1
-; 注意：sz = .len 強制 vec self 類型，避免錯誤特化為 arr 方法
+; 注意：sz = .len() 強制 vec self 類型，避免錯誤特化為 arr 方法
 ; 注意：range-for 上界必須用 len（.len 字段），不能用局部變量 sz
 []t.index-of = (val t) (idx i64) {
-    sz = .len
+    sz = .len()
     idx = -1
-    i <- [0...len): {
+    i <- [0...len()): {
         v = .[i]
         v == val -> {
             idx = i
@@ -254,9 +267,9 @@
 }
 
 ; []t.first: 第一個元素，空切片返回 nil
-; 注意：sz = .len 強制 vec self 類型，避免錯誤特化為 arr 方法
+; 注意：sz = .len() 強制 vec self 類型，避免錯誤特化為 arr 方法
 []t.first = () (val ?t) {
-    sz = .len
+    sz = .len()
     {
         sz == 0 -> val = nil
         -> val = .[0]
@@ -264,12 +277,13 @@
 }
 
 ; []t.last: 最後一個元素，空切片返回 nil
-; 注意：sz = .len 強制 vec self 類型，避免錯誤特化為 arr 方法
+; 注意：sz = .len() 強制 vec self 類型，避免錯誤特化為 arr 方法
 []t.last = () (val ?t) {
-    sz = .len
+    sz = .len()
     {
         sz == 0 -> val = nil
         -> {
+            #{overflow = wrap}
             v = .[sz - 1]
             val = v
         }
@@ -277,9 +291,9 @@
 }
 
 ; []t.at: 安全索引訪問，越界返回 nil
-; 注意：sz = .len 強制 vec self 類型，避免錯誤特化為 arr 方法
+; 注意：sz = .len() 強制 vec self 類型，避免錯誤特化為 arr 方法
 []t.at = (i i64) (val ?t) {
-    sz = .len
+    sz = .len()
     {
         i < 0 -> val = nil
         i >= sz -> val = nil
@@ -288,24 +302,24 @@
 }
 
 ; []t.swap: 交換兩位置元素
-; 注意：sz = .len 強制 vec self 類型，避免錯誤特化為 arr 方法
+; 注意：sz = .len() 強制 vec self 類型，避免錯誤特化為 arr 方法
 []t.swap = (i i64, j i64) {
-    sz = .len
+    sz = .len()
     tmp = .[i]
     .[i] = .[j]
     .[j] = tmp
 }
 
 ; []t.max: 最大值，空切片返回 nil
-; 注意：sz = .len 強制 vec self 類型，避免錯誤特化為 arr 方法
+; 注意：sz = .len() 強制 vec self 類型，避免錯誤特化為 arr 方法
 ; 注意：range-for 上界必須用 len（.len 字段），不能用局部變量 sz
 []t.max = () (max ?t) {
-    sz = .len
+    sz = .len()
     {
         sz == 0 -> max = nil
         -> {
             cur = .[0]
-            i <- [1...len): {
+            i <- [1...len()): {
                 v = .[i]
                 v > cur -> cur = v
             }
@@ -315,15 +329,15 @@
 }
 
 ; []t.min: 最小值，空切片返回 nil
-; 注意：sz = .len 強制 vec self 類型，避免錯誤特化為 arr 方法
+; 注意：sz = .len() 強制 vec self 類型，避免錯誤特化為 arr 方法
 ; 注意：range-for 上界必須用 len（.len 字段），不能用局部變量 sz
 []t.min = () (min ?t) {
-    sz = .len
+    sz = .len()
     {
         sz == 0 -> min = nil
         -> {
             cur = .[0]
-            i <- [1...len): {
+            i <- [1...len()): {
                 v = .[i]
                 v < cur -> cur = v
             }
@@ -333,12 +347,13 @@
 }
 
 ; []t.sum: 求和
-; 注意：sz = .len 強制 vec self 類型，避免錯誤特化為 arr 方法
+; 注意：sz = .len() 強制 vec self 類型，避免錯誤特化為 arr 方法
 ; 注意：range-for 上界必須用 len（.len 字段），不能用局部變量 sz
 []t.sum = () (sum t) {
-    sz = .len
+    sz = .len()
     acc = 0
-    i <- [0...len): {
+    i <- [0...len()): {
+        #{overflow = wrap}
         acc = acc + .[i]
     }
     sum = acc
@@ -348,7 +363,7 @@
 []t.truncate = (cnt i64) {
     {
         cnt < 0 -> cnt = 0
-        cnt < .len -> .len = cnt
+        cnt < .len() -> .len = cnt
     }
 }
 
@@ -356,13 +371,15 @@
 ; 注意：內聯 push 邏輯以規避方法內呼叫 .push() 的預存在 LLVM bug。
 ; 調用方需確保容量足夠。
 []t.extend = (b []t) {
-    blen = b.len
+    blen = b.len()
     i = 0
     {
         i >= blen -> break
-        cur = .len
+        cur = .len()
+        #{overflow = wrap}
         .len = cur + 1
         .[cur] = b[i]
+        #{overflow = wrap}
         i = i + 1
     } (i < blen)
 }
@@ -371,36 +388,40 @@
 ; 內建比較/排序函數
 ; ═══════════════════════════════════════════════
 
-; build-in (ForwardFunc: vec-eq)
+#{buildin=vec-eq}
 ; vec-eq: 比較兩個切片是否相等
-; vec-eq = (a []t, b []t, elem-size i64) (eq i64) { }
+vec-eq = (a []t, b []t, elem-size i64) (eq i64) { }
 
-; build-in (ForwardFunc: arr-eq)
+#{buildin=arr-eq}
 ; arr-eq: 比較兩個固定大小陣列是否相等
-; arr-eq = (a i64, b i64, n i64) (eq i64) { }
+arr-eq = (a i64, b i64, n i64) (eq i64) { }
 
-; build-in (ForwardFunc: vec-sort)
+#{buildin=vec-sort}
 ; vec-sort: 升序排序切片（原地）
-; vec-sort = (a i64) { }
+vec-sort = (a i64) { }
 
-; build-in (ForwardFunc: vec-reverse)
+#{buildin=vec-reverse}
 ; vec-reverse: 反轉切片（原地）
-; vec-reverse = (a i64) { }
+vec-reverse = (a i64) { }
 
 ; []t.to-str: 字串表示
 ; 格式如 '[1, 2, 3]'
 ; 元素轉字串：i64 用 i64-to-str（在 number.no 中定義，自動加載）
 []t.to-str = () (out str) {
     {
-        .len == 0 -> out = '[]'
+        .len() == 0 -> out = '[]'
         -> {
             out = '['
-            last = .len
+            last = .len()
+            #{overflow = wrap}
             last = last - 1
-            i <- [0...len): {
+            i <- [0...len()): {
+                #{overflow = wrap}
                 out = out - number.i64-to-str(.[i])
+                #{overflow = wrap}
                 i < last -> out = out - ', '
             }
+            #{overflow = wrap}
             out = out - ']'
         }
     }

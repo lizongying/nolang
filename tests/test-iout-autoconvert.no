@@ -1,0 +1,30 @@
+; 回歸測試：io.out / io.outln / io.err / io.errln 自動將非字串引數轉為字串。
+; 修復前 io.out(42) 因引數型別不符（期望 str）而崩潰或型別錯誤。
+;
+; 預期 stdout：
+;   int=42
+;   f64=3.14
+;   bool=true
+;   n=-7
+;   s=hello
+;   sum=30
+; 預期 stderr：io.err / io.errln 的輸出（err-msg）
+main = () () {
+    io.out('int=')
+    io.outln(42)
+    io.out('f64=')
+    io.outln(3.14)
+    io.out('bool=')
+    io.outln(true)
+    n i64 = -7
+    io.out('n=')
+    io.outln(n)
+    s str = 'hello'
+    io.out('s=')
+    io.outln(s)
+    io.err('err-')
+    io.errln('msg')
+    io.out('sum=')
+    io.outln(10 + 20)
+    print('')
+}

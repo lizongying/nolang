@@ -287,13 +287,13 @@ open = (dsn str) (d db-mysql) {
     password = dsn.slice(colon-pos + 1, at-pos)
 
     ; 解析 host:port/dbname
-    rest = dsn.slice(at-pos + 1, dsn.len)
+    rest = dsn.slice(at-pos + 1, dsn.len-bytes())
     slash-pos = rest.index('/')
     {
         slash-pos < 0 -> return
     }
     host-port = rest.slice(0, slash-pos)
-    dbname = rest.slice(slash-pos + 1, rest.len)
+    dbname = rest.slice(slash-pos + 1, rest.len-bytes())
 
     ; 解析 host:port
     port = MYSQL-DEFAULT-PORT
@@ -302,7 +302,7 @@ open = (dsn str) (d db-mysql) {
     {
         hp-colon >= 0 -> {
             host = host-port.slice(0, hp-colon)
-            port-str = host-port.slice(hp-colon + 1, host-port.len)
+            port-str = host-port.slice(hp-colon + 1, host-port.len-bytes())
             p = 0
             i = 0
             {
@@ -312,14 +312,14 @@ open = (dsn str) (d db-mysql) {
                 }
                 p = p * 10 + c - 48
                 i = i + 1
-            } (i < port-str.len)
+            } (i < port-str.len-bytes())
             port = p
         }
     }
 
     ; localhost → 127.0.0.1
     {
-        host.len == 9 -> {
+        host.len-bytes() == 9 -> {
             is-localhost = true
             {
                 host[0] != 108 -> is-localhost = false
@@ -486,7 +486,7 @@ open = (dsn str) (d db-mysql) {
         resp[wpos] = user[i]
         wpos = wpos + 1
         i = i + 1
-    } (i < user.len)
+    } (i < user.len-bytes())
     resp[wpos] = 0
     wpos = wpos + 1
 
@@ -506,7 +506,7 @@ open = (dsn str) (d db-mysql) {
         resp[wpos] = dbname[i]
         wpos = wpos + 1
         i = i + 1
-    } (i < dbname.len)
+    } (i < dbname.len-bytes())
     resp[wpos] = 0
     wpos = wpos + 1
 
@@ -517,7 +517,7 @@ open = (dsn str) (d db-mysql) {
         resp[wpos] = plugin-name[i]
         wpos = wpos + 1
         i = i + 1
-    } (i < plugin-name.len)
+    } (i < plugin-name.len-bytes())
     resp[wpos] = 0
     wpos = wpos + 1
 
@@ -585,14 +585,14 @@ db-mysql.exec = (sql str) (r sql.result) {
 
     ; 建構 COM_QUERY 封包：0x03 + SQL
     space = ' '
-    payload = space.repeat(sql.len + 1)
+    payload = space.repeat(sql.len-bytes() + 1)
     payload[0] = COM-QUERY
     i = 0
     {
         payload[1 + i] = sql[i]
         i = i + 1
-    } (i < sql.len)
-    payload-len = 1 + sql.len
+    } (i < sql.len-bytes())
+    payload-len = 1 + sql.len-bytes()
 
     ; 發送（每個新命令 seq 從 0 開始）
     send-ok = mysql-pkt-send(.fd, 0, payload, payload-len)
@@ -634,14 +634,14 @@ db-mysql.query = (sql str) (rs rows-mysql) {
 
     ; 建構 COM_QUERY 封包
     space = ' '
-    payload = space.repeat(sql.len + 1)
+    payload = space.repeat(sql.len-bytes() + 1)
     payload[0] = COM-QUERY
     i = 0
     {
         payload[1 + i] = sql[i]
         i = i + 1
-    } (i < sql.len)
-    payload-len = 1 + sql.len
+    } (i < sql.len-bytes())
+    payload-len = 1 + sql.len-bytes()
 
     ; 發送
     send-ok = mysql-pkt-send(.fd, 0, payload, payload-len)
@@ -920,7 +920,7 @@ stmt-mysql.bind-int = (idx i64, v i64) (ok bool) {
     }
     vstr = v.to-str()
     before = cur.slice(0, pos)
-    after = cur.slice(pos + 1, cur.len)
+    after = cur.slice(pos + 1, cur.len-bytes())
     .bound = before - vstr - after
     ok = true
 }
@@ -940,7 +940,7 @@ stmt-mysql.bind-str = (idx i64, sval str) (ok bool) {
     ; char-to-str(39) = 單引號 '（ASCII 39）
     q = number.char-to-str(39)
     before = cur.slice(0, pos)
-    after = cur.slice(pos + 1, cur.len)
+    after = cur.slice(pos + 1, cur.len-bytes())
     .bound = before - q - sval - q - after
     ok = true
 }
@@ -960,7 +960,7 @@ stmt-mysql.bind-bool = (idx i64, v bool) (ok bool) {
         v -> bstr = '1'
     }
     before = cur.slice(0, pos)
-    after = cur.slice(pos + 1, cur.len)
+    after = cur.slice(pos + 1, cur.len-bytes())
     .bound = before - bstr - after
     ok = true
 }
@@ -972,14 +972,14 @@ stmt-mysql.exec = () (r sql.result) {
 
     ; 建構 COM_QUERY 封包
     space = ' '
-    payload = space.repeat(.bound.len + 1)
+    payload = space.repeat(.bound.len-bytes() + 1)
     payload[0] = COM-QUERY
     i = 0
     {
         payload[1 + i] = .bound[i]
         i = i + 1
-    } (i < .bound.len)
-    payload-len = 1 + .bound.len
+    } (i < .bound.len-bytes())
+    payload-len = 1 + .bound.len-bytes()
 
     ; 發送
     send-ok = mysql-pkt-send(.fd, 0, payload, payload-len)
@@ -1014,14 +1014,14 @@ stmt-mysql.query = () (rs rows-mysql) {
 
     ; 建構 COM_QUERY 封包
     space = ' '
-    payload = space.repeat(.bound.len + 1)
+    payload = space.repeat(.bound.len-bytes() + 1)
     payload[0] = COM-QUERY
     i = 0
     {
         payload[1 + i] = .bound[i]
         i = i + 1
-    } (i < .bound.len)
-    payload-len = 1 + .bound.len
+    } (i < .bound.len-bytes())
+    payload-len = 1 + .bound.len-bytes()
 
     ; 發送
     send-ok = mysql-pkt-send(.fd, 0, payload, payload-len)

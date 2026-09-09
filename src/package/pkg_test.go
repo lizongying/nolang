@@ -28,8 +28,8 @@ func TestLoadPackageTestDir(t *testing.T) {
 	if pkg.Repository != "https://github.com/lizongying/nolang" {
 		t.Errorf("Repository = %q, want %q", pkg.Repository, "https://github.com/lizongying/nolang")
 	}
-	if pkg.License != "MIT" {
-		t.Errorf("License = %q, want %q", pkg.License, "MIT")
+	if pkg.License != "Apache-2.0" {
+		t.Errorf("License = %q, want %q", pkg.License, "Apache-2.0")
 	}
 	if pkg.DevDependencies == nil {
 		t.Error("DevDependencies is nil")

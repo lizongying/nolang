@@ -37,7 +37,7 @@ print(lo); 122 (z)
 
 ; char.to-str()
 s = "中".to-str()
-print(s.len); 3 (UTF-8 bytes)
+print(s.len-bytes()); 3 (UTF-8 bytes)
 print(s); 中
 
 print('=== done ===')

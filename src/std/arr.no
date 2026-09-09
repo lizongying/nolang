@@ -56,12 +56,15 @@
 ; [n]t.reverse: 反轉陣列
 [n]t.reverse = () {
     i = 0
+    #{overflow = wrap}
     j = n - 1
     {
         tmp = .[i]
         .[i] = .[j]
         .[j] = tmp
+        #{overflow = wrap}
         i = i + 1
+        #{overflow = wrap}
         j = j - 1
     } (i < j)
 }
@@ -104,6 +107,7 @@
 [n]t.sum = () (sum t) {
     sum = 0
     i <- [0..n): {
+        #{overflow = wrap}
         sum = sum + .[i]
     }
 }
@@ -121,6 +125,7 @@
 
 ; [n]t.last: 最後一個元素
 [n]t.last = () (val t) {
+    #{overflow = wrap}
     idx = n - 1
     val = .[idx]
 }
@@ -134,12 +139,16 @@
 [n]t.sort-asc = () {
     i <- [1..n): {
         key = .[i]
+        #{overflow = wrap}
         j = i - 1
         {
             .[j] <= key -> break
+            #{overflow = wrap}
             .[j + 1] = .[j]
+            #{overflow = wrap}
             j = j - 1
         } (j >= 0)
+        #{overflow = wrap}
         .[j + 1] = key
     }
 }
@@ -148,12 +157,16 @@
 [n]t.sort-desc = () {
     i <- [1..n): {
         key = .[i]
+        #{overflow = wrap}
         j = i - 1
         {
             .[j] >= key -> break
+            #{overflow = wrap}
             .[j + 1] = .[j]
+            #{overflow = wrap}
             j = j - 1
         } (j >= 0)
+        #{overflow = wrap}
         .[j + 1] = key
     }
 }
@@ -172,6 +185,7 @@
 [n]t.count = (val t) (cnt i64) {
     cnt = 0
     i <- [0..n): {
+        #{overflow = wrap}
         .[i] == val -> cnt = cnt + 1
     }
 }
@@ -195,11 +209,15 @@
         n == 0 -> out = '[]'
         -> {
             out = '['
+            #{overflow = wrap}
             last = n - 1
             i <- [0..n): {
+                #{overflow = wrap}
                 out = out - number.i64-to-str(.[i])
+                #{overflow = wrap}
                 i < last -> out = out - ', '
             }
+            #{overflow = wrap}
             out = out - ']'
         }
     }

@@ -12,16 +12,20 @@
 
 main = () {
     ; Create test file
+    #{overflow = wrap}
     content = 'hello world test' - '\n'
+    #{overflow = wrap}
     fd = fs.open-write('/tmp/bug12-mem-safety-test.txt')
     b = content.to-bytes()
-    fs.write(fd, b, b.len)
+    fs.write(fd, b, b.len())
     fs.close(fd)
 
     ; Direct assignment: data str = fs.read-file(...)
     ; read-file returns []byte (%vec*) but data is %str-long.
     ; Without fix: LLVM type error (store i64 %rf.vec.N, i64* %data)
+    #{overflow = wrap}
     data str = fs.read-file('/tmp/bug12-mem-safety-test.txt')
+    #{overflow = wrap}
     print('data=[' - data - ']')
     ; Expected: data=[hello world test]
 

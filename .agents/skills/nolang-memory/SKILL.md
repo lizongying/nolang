@@ -37,6 +37,8 @@ Nolang 是**无 GC** 语言，内存安全完全依赖编译器在正确位置�
 - main 入口 ret 前：`emitHeapFree` 释放 top-level 局部堆变量 + `emitGlobalHeapFree` 释放模組級堆變數（globalVars 中的 vec/str/arr/结构体）
 - 重新赋值前：`freeOldHeapValue` 释放旧值
 - 结构体字段：`emitStructFieldsFree` 递归释放
+- **提前批量堆分配**：局部堆变量在 prologue 一次性预分配（vec 局部变量预分配容量 4，见 §10.4），避免运行期频繁分配
+- **作用域离开批 free**：函数结束时由 `emitHeapFree` 统一释放所有未 moved 的局部堆变量（见 §3.2.5），而非逐个手动释放
 
 ## 2. LLVM 类型布局
 

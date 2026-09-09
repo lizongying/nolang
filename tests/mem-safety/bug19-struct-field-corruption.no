@@ -17,38 +17,42 @@ pass-struct = (raw str) (s str) {
 ; Access struct field and do str-range — previously crashed
 use-struct = (t data) (s str) {
     sp i64 = -1
-    i <- [0..t.raw.len): {
+    i <- [0..t.raw.len-bytes()): {
         t.raw[i] == 32 -> {
             sp = i
             break
         }
     }
-    nl i64 = t.raw.len
-    j <- [sp + 1..t.raw.len): {
+    nl i64 = t.raw.len-bytes()
+    #{overflow = wrap}
+    j <- [sp + 1..t.raw.len-bytes()): {
         t.raw[j] == 0 -> {
             nl = j
             break
         }
     }
+    #{overflow = wrap}
     s = t.raw[sp + 1..nl)
 }
 
 ; Safe: directly use parameter — works
 pass-direct = (raw str) (s str) {
     sp i64 = -1
-    i <- [0..raw.len): {
+    i <- [0..raw.len-bytes()): {
         raw[i] == 32 -> {
             sp = i
             break
         }
     }
-    nl i64 = raw.len
-    j <- [sp + 1..raw.len): {
+    nl i64 = raw.len-bytes()
+    #{overflow = wrap}
+    j <- [sp + 1..raw.len-bytes()): {
         raw[j] == 0 -> {
             nl = j
             break
         }
     }
+    #{overflow = wrap}
     s = raw[sp + 1..nl)
 }
 
@@ -75,11 +79,13 @@ main = () {
 
     ; Safe: directly use parameter
     good-result = pass-direct(test-raw)
+    #{overflow = wrap}
     print('good: ' - good-result)
     ; Expected: good: file1.txt
 
     ; Bug: through struct
     bad-result = pass-struct(test-raw)
+    #{overflow = wrap}
     print('bad: ' - bad-result)
     ; Expected: bad: file1.txt
     ; Without fix: trace/BPT trap (crash)

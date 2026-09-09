@@ -152,7 +152,7 @@ t-copy-file = () {
 
 t-list-dir = () {
     entries = fs.list-dir('/tmp')
-    runner.gt(entries.len, 0, 'list-dir /tmp has entries')
+    runner.gt(entries.len(), 0, 'list-dir /tmp has entries')
 }
 
 ; ── 執行 ──────────────────────────────────────

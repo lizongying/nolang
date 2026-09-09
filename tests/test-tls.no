@@ -75,7 +75,7 @@ test-tls-bytes-cat = () {
     b[1] = 5
     out []byte
     out = tls.bytes-cat(a, b)
-    out.len != 5 -> {
+    out.len() != 5 -> {
         print('FAIL: expected out.len=5')
         return
     }
@@ -101,7 +101,7 @@ test-tls-bytes-to-bn = () {
     out = tls.bytes-to-bn(data)
 
     ; 4 bytes → 1 limb
-    out.len != 1 -> {
+    out.len() != 1 -> {
         print('FAIL: expected out.len=1')
         return
     }
@@ -122,7 +122,7 @@ test-tls-bn-to-bytes = () {
     out = tls.bn-to-bytes(num)
 
     ; 1 limb → 4 bytes, then strip leading zeros (0x01 is not zero)
-    out.len != 4 -> {
+    out.len() != 4 -> {
         print('FAIL: expected out.len=4')
         return
     }

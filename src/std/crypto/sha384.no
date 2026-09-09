@@ -23,14 +23,18 @@ sha384 = (data []byte) (hash [48]byte) {
     h6 u64 = 15767496247087499303
     h7 u64 = 5152675748646235460
 
-    dlen = data.len
+    dlen = data.len()
 
     ; 填充：0x80 + 0x00*pad + 16-byte big-endian bit length
     ; 總長度需為 128 的倍數
+    #{overflow = wrap}
     bit-len = dlen * 8
+    #{overflow = wrap}
     mod-val = (dlen + 17) % 128
     pad-len = 0
+    #{overflow = wrap}
     mod-val != 0 -> pad-len = 128 - mod-val
+    #{overflow = wrap}
     total-len = dlen + 1 + pad-len + 16
 
     ; 建立填充緩衝區
@@ -48,15 +52,18 @@ sha384 = (data []byte) (hash [48]byte) {
     padded[dlen] = 128
 
     ; 填充 0x00
+    #{overflow = wrap}
     i <- [dlen + 1..total-len - 16): {
         padded[i] = 0
     }
 
     ; 填充 bit-len（big-endian 128-bit，高 64 位元為 0）
     i <- [0..8): {
+        #{overflow = wrap}
         padded[total-len - 16 + i] = 0
     }
     i <- [0..8): {
+        #{overflow = wrap}
         padded[total-len - 8 + i] = (bit-len >> (56 - i * 8)) & 255
     }
 
@@ -69,9 +76,11 @@ sha384 = (data []byte) (hash [48]byte) {
     offset = 0
     {
         i <- [0..16): {
+            #{overflow = wrap}
             block[i] = (padded[offset + i * 8] << 56) | (padded[offset + i * 8 + 1] << 48) | (padded[offset + i * 8 + 2] << 40) | (padded[offset + i * 8 + 3] << 32) | (padded[offset + i * 8 + 4] << 24) | (padded[offset + i * 8 + 5] << 16) | (padded[offset + i * 8 + 6] << 8) | padded[offset + i * 8 + 7]
         }
         sha512.sha512-block(block, h0, h1, h2, h3, h4, h5, h6, h7)
+        #{overflow = wrap}
         offset = offset + 128
     } (offset < total-len)
 
@@ -136,7 +145,9 @@ sha384-hex = (data []byte) (hex str) {
     hex str = with-len(96)
 
     i <- [0..48): {
+        #{overflow = wrap}
         hex[i * 2] = hex-chars[(hash[i] >> 4) & 15]
+        #{overflow = wrap}
         hex[i * 2 + 1] = hex-chars[hash[i] & 15]
     }
 }

@@ -60,9 +60,10 @@ MULTIPART-BOUNDARY-LEN = 32
 multipart-gen-boundary = (seed i64) (boundary str) {
     boundary = MULTIPART-BOUNDARY-PREFIX
     chars = 'abcdefghijklmnopqrstuvwxyz0123456789'
-    prefix-len = boundary.len
+    prefix-len = boundary.len-bytes()
     i <- [0..16): {
         seed, r = rand.rand(seed)
+        #{overflow = wrap}
         boundary[prefix-len + i] = chars[r % 36]
     }
 }
@@ -111,11 +112,16 @@ multipart-writer.write-field = (name str, value str) (ok bool) {
     .closed -> return
     cr = number.char-to-str(13)
     lf = number.char-to-str(10)
+    #{overflow = wrap}
     crlf = cr - lf
 
+    #{overflow = wrap}
     .body = .body - '--' - .boundary - crlf
+    #{overflow = wrap}
     .body = .body - 'Content-Disposition: form-data; name="' - name - '"' - crlf
+    #{overflow = wrap}
     .body = .body - crlf
+    #{overflow = wrap}
     .body = .body - value - crlf
     ok = true
 }
@@ -131,12 +137,18 @@ multipart-writer.write-file = (name str, filename str, content-type str, content
     .closed -> return
     cr = number.char-to-str(13)
     lf = number.char-to-str(10)
+    #{overflow = wrap}
     crlf = cr - lf
 
+    #{overflow = wrap}
     .body = .body - '--' - .boundary - crlf
+    #{overflow = wrap}
     .body = .body - 'Content-Disposition: form-data; name="' - name - '"; filename="' - filename - '"' - crlf
+    #{overflow = wrap}
     .body = .body - 'Content-Type: ' - content-type - crlf
+    #{overflow = wrap}
     .body = .body - crlf
+    #{overflow = wrap}
     .body = .body - content - crlf
     ok = true
 }
@@ -148,8 +160,10 @@ multipart-writer.close-form = () (ok bool) {
     .closed -> return
     cr = number.char-to-str(13)
     lf = number.char-to-str(10)
+    #{overflow = wrap}
     crlf = cr - lf
 
+    #{overflow = wrap}
     .body = .body - '--' - .boundary - '--' - crlf
     .closed = true
     ok = true
@@ -170,6 +184,7 @@ multipart-writer.boundary-of = () (boundary str) {
 ; content-type: 取得 Content-Type 標頭值
 ; 返回 ct str: 如 'multipart/form-data; boundary=----NolangBoundary...'
 multipart-writer.content-type = () (ct str) {
+    #{overflow = wrap}
     ct = 'multipart/form-data; boundary=' - .boundary
 }
 
@@ -211,7 +226,7 @@ multipart-reader {
 multipart-reader.init = (boundary str, data str) {
     .boundary = boundary
     .data = data
-    .end = data.len
+    .end = data.len-bytes()
     .pos = 0
     .has-current = false
 }
@@ -222,6 +237,7 @@ multipart-reader.init = (boundary str, data str) {
 multipart-reader.parse-headers = (header-block str, part multipart-part) {
     cr = number.char-to-str(13)
     lf = number.char-to-str(10)
+    #{overflow = wrap}
     crlf = cr - lf
 
     pos = 0
@@ -232,14 +248,15 @@ multipart-reader.parse-headers = (header-block str, part multipart-part) {
         next-crlf < 0 -> {
 
             ; 最後一行
-            line = header-block.slice(pos, header-block.len)
+            line = header-block.slice(pos, header-block.len-bytes())
             .parse-header-line(line, part)
             break
         }
         line = header-block.slice(pos, next-crlf)
         .parse-header-line(line, part)
+        #{overflow = wrap}
         pos = next-crlf + 2
-        pos >= header-block.len -> break
+        pos >= header-block.len-bytes() -> break
     } (true)
 }
 
@@ -256,7 +273,8 @@ multipart-reader.parse-header-line = (line str, part multipart-part) {
             name-marker = 'name="'
             name-pos = line.index(name-marker)
             name-pos >= 0 -> {
-                name-start = name-pos + name-marker.len
+                #{overflow = wrap}
+                name-start = name-pos + name-marker.len-bytes()
                 name-end = line.index-from('"', name-start)
                 name-end >= 0 -> part.name = line.slice(name-start, name-end)
             }
@@ -265,14 +283,15 @@ multipart-reader.parse-header-line = (line str, part multipart-part) {
             file-marker = 'filename="'
             file-pos = line.index(file-marker)
             file-pos >= 0 -> {
-                file-start = file-pos + file-marker.len
+                #{overflow = wrap}
+                file-start = file-pos + file-marker.len-bytes()
                 file-end = line.index-from('"', file-start)
                 file-end >= 0 -> part.filename = line.slice(file-start, file-end)
             }
         }
         line.starts-with('Content-Type:') -> {
             ct-start = 13
-            part.content-type = line.slice(ct-start, line.len)
+            part.content-type = line.slice(ct-start, line.len-bytes())
             part.content-type = part.content-type.trim()
         }
     }
@@ -287,15 +306,19 @@ multipart-reader.next = () (has-part bool) {
     .pos >= .end -> return
     cr = number.char-to-str(13)
     lf = number.char-to-str(10)
+    #{overflow = wrap}
     crlf = cr - lf
 
     ; 尋找邊界行: --boundary
+    #{overflow = wrap}
     boundary-marker = '--' - .boundary
     marker-pos = .data.index-from(boundary-marker, .pos)
     marker-pos < 0 -> return
 
     ; 檢查是否為結束邊界: --boundary--
-    after-marker = marker-pos + boundary-marker.len
+    #{overflow = wrap}
+    after-marker = marker-pos + boundary-marker.len-bytes()
+    #{overflow = wrap}
     after-marker + 1 < .end -> .data[after-marker] == 45 && .data[after-marker + 1] == 45 -> {
 
         ; '--' = 結束邊界
@@ -305,9 +328,11 @@ multipart-reader.next = () (has-part bool) {
 
     ; 跳過邊界行後的 CRLF
     header-start = after-marker
+    #{overflow = wrap}
     header-start + 1 < .end -> .data[header-start] == 13 && .data[header-start + 1] == 10 -> header-start = header-start + 2
 
     ; 尋找標頭結束（CRLFCRLF）
+    #{overflow = wrap}
     header-end-marker = crlf - crlf
     header-end = .data.index-from(header-end-marker, header-start)
     header-end < 0 -> return
@@ -318,6 +343,7 @@ multipart-reader.next = () (has-part bool) {
     .parse-headers(header-block, part)
 
     ; 資料起始 = 標頭結束 + CRLFCRLF
+    #{overflow = wrap}
     data-start = header-end + 4
 
     ; 尋找下一個邊界（資料結束位置）
@@ -325,6 +351,7 @@ multipart-reader.next = () (has-part bool) {
     next-boundary < 0 -> return
 
     ; 資料結束 = 下一個邊界前 - CRLF
+    #{overflow = wrap}
     data-end = next-boundary - 2
     data-end < data-start -> data-end = data-start
     part.data = .data.slice(data-start, data-end)
@@ -361,7 +388,7 @@ multipart-reader.field-data = () (data str) {
 ; is-file: 判斷當前部分是否為檔案
 ; 返回 yes bool: true=檔案
 multipart-reader.is-file = () (yes bool) {
-    .current.filename.len > 0 -> yes = true
+    .current.filename.len-bytes() > 0 -> yes = true
 }
 
 ; has-current-part: 判斷是否有當前部分
@@ -402,14 +429,16 @@ multipart-parse = (content-type str, body str) (r ?multipart-reader) {
     boundary-marker = 'boundary='
     bpos = content-type.index(boundary-marker)
     bpos < 0 -> return
-    bstart = bpos + boundary-marker.len
+    #{overflow = wrap}
+    bstart = bpos + boundary-marker.len-bytes()
 
     ; 處理可能的引號
     {
-        bstart < content-type.len -> {
+        bstart < content-type.len-bytes() -> {
             content-type[bstart] == 34 -> {
 
                 ; 引號開始，找結束引號
+                #{overflow = wrap}
                 bstart = bstart + 1
                 bend = content-type.index-from('"', bstart)
                 bend < 0 -> return
@@ -419,7 +448,7 @@ multipart-parse = (content-type str, body str) (r ?multipart-reader) {
 
                 ; 無引號，取到行尾或分號
                 bend = content-type.index-from(';', bstart)
-                bend < 0 -> bend = content-type.len
+                bend < 0 -> bend = content-type.len-bytes()
                 boundary = content-type.slice(bstart, bend)
                 boundary = boundary.trim()
             }
@@ -439,15 +468,16 @@ multipart-extract-boundary = (content-type str) (boundary str) {
     boundary-marker = 'boundary='
     bpos = content-type.index(boundary-marker)
     bpos < 0 -> return
-    bstart = bpos + boundary-marker.len
-    bstart < content-type.len -> content-type[bstart] == 34 -> {
+    #{overflow = wrap}
+    bstart = bpos + boundary-marker.len-bytes()
+    bstart < content-type.len-bytes() -> content-type[bstart] == 34 -> {
         bstart = bstart + 1
         bend = content-type.index-from('"', bstart)
         bend < 0 -> return
         boundary = content-type.slice(bstart, bend)
     } -> {
         bend = content-type.index-from(';', bstart)
-        bend < 0 -> bend = content-type.len
+        bend < 0 -> bend = content-type.len-bytes()
         boundary = content-type.slice(bstart, bend)
         boundary = boundary.trim()
     }
@@ -480,22 +510,31 @@ multipart-writer.write-encrypted-file = (name str, filename str, content-type st
     i <- [0..12): {
         combined[i] = iv[i]
     }
-    sealed-n = sealed.len
+    sealed-n = sealed.len()
     i <- [0..sealed-n): {
+        #{overflow = wrap}
         combined[12 + i] = sealed[i]
     }
+    #{overflow = wrap}
     combined-n = 12 + sealed-n
     enc-str = base64.encode-std(combined)
 
     cr = number.char-to-str(13)
     lf = number.char-to-str(10)
+    #{overflow = wrap}
     crlf = cr - lf
 
+    #{overflow = wrap}
     .body = .body - '--' - .boundary - crlf
+    #{overflow = wrap}
     .body = .body - 'Content-Disposition: form-data; name="' - name - '"; filename="' - filename - '"' - crlf
+    #{overflow = wrap}
     .body = .body - 'Content-Type: ' - content-type - crlf
+    #{overflow = wrap}
     .body = .body - 'X-Encryption: aes-256-gcm' - crlf
+    #{overflow = wrap}
     .body = .body - crlf
+    #{overflow = wrap}
     .body = .body - enc-str - crlf
     ok = true
 }
@@ -520,21 +559,29 @@ multipart-writer.write-encrypted-field = (name str, value str, key [32]byte, iv 
     i <- [0..12): {
         combined[i] = iv[i]
     }
-    sealed-n = sealed.len
+    sealed-n = sealed.len()
     i <- [0..sealed-n): {
+        #{overflow = wrap}
         combined[12 + i] = sealed[i]
     }
+    #{overflow = wrap}
     combined-n = 12 + sealed-n
     enc-str = base64.encode-std(combined)
 
     cr = number.char-to-str(13)
     lf = number.char-to-str(10)
+    #{overflow = wrap}
     crlf = cr - lf
 
+    #{overflow = wrap}
     .body = .body - '--' - .boundary - crlf
+    #{overflow = wrap}
     .body = .body - 'Content-Disposition: form-data; name="' - name - '"' - crlf
+    #{overflow = wrap}
     .body = .body - 'X-Encryption: aes-256-gcm' - crlf
+    #{overflow = wrap}
     .body = .body - crlf
+    #{overflow = wrap}
     .body = .body - enc-str - crlf
     ok = true
 }
@@ -555,7 +602,7 @@ multipart-decrypt-field = (encrypted-data str, key [32]byte, aad []byte) (plain 
         nil -> return
         err -> return
     }
-    raw.len < 12 -> return
+    raw.len() < 12 -> return
 
     ; 提取 IV（前 12 位元組）
     iv [12]byte
@@ -565,14 +612,16 @@ multipart-decrypt-field = (encrypted-data str, key [32]byte, aad []byte) (plain 
 
     ; 提取密文+tag
     sealed []byte
-    sealed-n = raw.len - 12
+    #{overflow = wrap}
+    sealed-n = raw.len() - 12
     i <- [0..sealed-n): {
+        #{overflow = wrap}
         sealed[i] = raw[12 + i]
     }
 
     ; 解密
     opened []byte = aes-256-gcm.aes-256-gcm-open(key, iv, aad, sealed)
-    opened.len == 0 -> {
+    opened.len() == 0 -> {
         plain = err('decryption failed')
         return
     }

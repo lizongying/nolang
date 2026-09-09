@@ -185,6 +185,16 @@ const (
 	FlagAsKeyword // `use path.fn as alias`
 	FlagSlice     // StructField.IsSlice (legacy slice modifier)
 	FlagFuncType  // declared type renders as a function type
+	// FlagOverflowWrap / FlagOverflowClamp0 / FlagOverflowMin / FlagOverflowMax /
+	// FlagOverflowSaturate 攜帶函數級 #{overflow = wrap|clamp0|min|max|saturate}
+	// 註解指定的「整數算術溢位」處理模式，貫穿 HIR 重建（parser -> hir ->
+	// hir -> AST 重建），使泛型/聯集單態化複本在 HIR codegen 路徑仍能解析模式，
+	// 不依賴語意 side-table 時機。互斥：皆未設表示未標註（預設回傳 option）。
+	FlagOverflowWrap     uint32 = 1 << 25
+	FlagOverflowClamp0   uint32 = 1 << 26
+	FlagOverflowMin      uint32 = 1 << 27
+	FlagOverflowMax      uint32 = 1 << 28
+	FlagOverflowSaturate uint32 = 1 << 29
 )
 
 // NoID marks an absent child, sibling, string or type reference.

@@ -160,37 +160,45 @@ rand-bytes = (state i64, n i64) (out []byte) {
 ; val i64: 值
 put-u16 = (buf []byte, pos i64, val i64) {
     buf[pos] = (val >> 8) & 255
+    #{overflow = wrap}
     buf[pos + 1] = val & 255
 }
 
 ; put-u24: 將 24-bit 大端序值寫入緩衝區
 put-u24 = (buf []byte, pos i64, val i64) {
     buf[pos] = (val >> 16) & 255
+    #{overflow = wrap}
     buf[pos + 1] = (val >> 8) & 255
+    #{overflow = wrap}
     buf[pos + 2] = val & 255
 }
 
 ; get-u16: 從緩衝區讀取 16-bit 大端序值
 get-u16 = (buf []byte, pos i64) (val i64) {
+    #{overflow = wrap}
     val = ((buf[pos]) << 8) | (buf[pos + 1])
 }
 
 ; get-u24: 從緩衝區讀取 24-bit 大端序值
 get-u24 = (buf []byte, pos i64) (val i64) {
+    #{overflow = wrap}
     val = ((buf[pos]) << 16) | ((buf[pos + 1]) << 8) | (buf[pos + 2])
 }
 
 ; bytes-cat: 串接兩個位元組陣列
 bytes-cat = (a []byte, b []byte) (out []byte) {
-    an = a.len
-    bn = b.len
+    an = a.len()
+    bn = b.len()
+    #{overflow = wrap}
     out = with-len(an + bn)
     i <- [0..an): {
         out[i] = a[i]
     }
     i <- [0..bn): {
+        #{overflow = wrap}
         out[an + i] = b[i]
     }
+    #{overflow = wrap}
     out.truncate(an + bn)
 }
 
@@ -202,15 +210,19 @@ bytes-cat = (a []byte, b []byte) (out []byte) {
 ; data []byte: big-endian 位元組
 ; 返回 out []i64: 大整數（每個元素為 32-bit limb）
 bytes-to-bn = (data []byte) (out []i64) {
-    n = data.len
+    n = data.len()
+    #{overflow = wrap}
     limb-count = (n + 3) / 4
     out = with-len(limb-count)
     i <- [0..limb-count): {
         out[i] = 0
     }
     i <- [0..n): {
+        #{overflow = wrap}
         byte-from-lsb = n - 1 - i
+        #{overflow = wrap}
         limb = byte-from-lsb / 4
+        #{overflow = wrap}
         shift = (byte-from-lsb % 4) * 8
         out[limb] = out[limb] | ((data[i]) << shift)
     }
@@ -221,21 +233,28 @@ bytes-to-bn = (data []byte) (out []i64) {
 ; num []i64: 大整數
 ; 返回 out []byte: big-endian 位元組
 bn-to-bytes = (num []i64) (out []byte) {
-    n = num.len
+    n = num.len()
+    #{overflow = wrap}
     out-n = n * 4
     out = with-len(out-n)
     i <- [0..out-n): {
+        #{overflow = wrap}
         byte-from-lsb = out-n - 1 - i
+        #{overflow = wrap}
         limb = byte-from-lsb / 4
+        #{overflow = wrap}
         shift = (byte-from-lsb % 4) * 8
         out[i] = (num[limb] >> shift) & 255
     }
 
     ; 移除前導零
     {
+        #{overflow = wrap}
         i <- [0..out-n - 1): {
+            #{overflow = wrap}
             out[i] = out[i + 1]
         }
+        #{overflow = wrap}
         out-n = out-n - 1
     } (out-n > 1 && out[0] == 0)
     out.truncate(out-n)
@@ -287,10 +306,13 @@ prf = (secret []byte, label str, seed []byte, out-len i64) (out []byte) {
 
         ; 複製到輸出
         copy-n = 32
+        #{overflow = wrap}
         out-off + copy-n > out-len -> copy-n = out-len - out-off
         i <- [0..copy-n): {
+            #{overflow = wrap}
             out[out-off + i] = p[i]
         }
+        #{overflow = wrap}
         out-off = out-off + copy-n
 
         ; A(i+1) = HMAC(secret, A(i))
@@ -314,12 +336,16 @@ recv-n = (fd fd, buf []byte, n i64) (ok bool) {
     ok = false
     total = 0
     {
+        #{overflow = wrap}
         tmp str = with-len(n - total)
+        #{overflow = wrap}
         r = net.net-recv(fd, tmp, n - total)
         r <= 0 -> return
         i <- [0..r): {
+            #{overflow = wrap}
             buf[total + i] = tmp[i]
         }
+        #{overflow = wrap}
         total = total + r
     } (total < n)
     ok = true
@@ -337,12 +363,16 @@ read-record = (fd fd, buf []byte) (ct i64, rlen i64) {
     ; 讀取 5 位元組標頭 into buf[0..4]
     hdr-total = 0
     {
+        #{overflow = wrap}
         tmp str = with-len(5 - hdr-total)
+        #{overflow = wrap}
         r = net.net-recv(fd, tmp, 5 - hdr-total)
         r <= 0 -> return
         i <- [0..r): {
+            #{overflow = wrap}
             buf[hdr-total + i] = tmp[i]
         }
+        #{overflow = wrap}
         hdr-total = hdr-total + r
     } (hdr-total < 5)
 
@@ -358,15 +388,19 @@ read-record = (fd fd, buf []byte) (ct i64, rlen i64) {
     ; 讀取 body into buf[5..5+rlen-1]
     body-total = 0
     {
+        #{overflow = wrap}
         tmp2 str = with-len(rlen - body-total)
+        #{overflow = wrap}
         r = net.net-recv(fd, tmp2, rlen - body-total)
         r <= 0 -> {
             ct = -1
             return
         }
         i <- [0..r): {
+            #{overflow = wrap}
             buf[5 + body-total + i] = tmp2[i]
         }
+        #{overflow = wrap}
         body-total = body-total + r
     } (body-total < rlen)
     ; 注意：不修改 buf.len（vet 禁止修改 slice 的 len 欄位）。
@@ -378,7 +412,7 @@ read-record = (fd fd, buf []byte) (ct i64, rlen i64) {
 ; ct i64: content type
 ; data []byte: 資料
 send-raw = (fd fd, ct i64, data []byte) {
-    n = data.len
+    n = data.len()
     hdr [5]byte
     hdr[0] = ct & 255
     hdr[1] = (TLS-VERSION >> 8) & 255
@@ -396,10 +430,12 @@ send-raw = (fd fd, ct i64, data []byte) {
 ; append-hs: 將交握訊息追加到緩衝區
 ; data []byte: 訊息資料
 conn.append-hs = (data []byte) {
-    n = data.len
+    n = data.len()
     i <- [0..n): {
+        #{overflow = wrap}
         .hs-buf[.hs-buf-len + i] = data[i]
     }
+    #{overflow = wrap}
     .hs-buf-len = .hs-buf-len + n
     .hs-buf.len = .hs-buf-len
 }
@@ -410,8 +446,10 @@ conn.append-hs = (data []byte) {
 ; n i64: 要追加的位元組數
 conn.append-hs-from = (buf []byte, offset i64, n i64) {
     i <- [0..n): {
+        #{overflow = wrap}
         .hs-buf[.hs-buf-len + i] = buf[offset + i]
     }
+    #{overflow = wrap}
     .hs-buf-len = .hs-buf-len + n
     .hs-buf.len = .hs-buf-len
 }
@@ -422,34 +460,40 @@ conn.append-hs-from = (buf []byte, offset i64, n i64) {
 ; 返回 ok bool: true=成功
 conn.encrypt-record = (ct i64, data []byte) (ok bool) {
     ok = false
-    n = data.len
+    n = data.len()
 
     ; 1. 計算 MAC
     ; MAC = HMAC-SHA256(mac_key, seq_num(8) + type(1) + version(2) + length(2) + content)
+    #{overflow = wrap}
     mac-input []byte = with-len(13 + n)
 
     ; seq_num (8 bytes big-endian)
     seq = .write-seq
     i <- [0..8): {
+        #{overflow = wrap}
         mac-input[7 - i] = (seq >> (i * 8)) & 255
     }
     mac-input[8] = ct & 255
     put-u16(mac-input, 9, TLS-VERSION)
     put-u16(mac-input, 11, n)
     i <- [0..n): {
+        #{overflow = wrap}
         mac-input[13 + i] = data[i]
     }
     mac [32]byte
     mac = hmac.hmac-sha256(.client-mac-key[..], mac-input)
 
     ; 2. 明文 + MAC
+    #{overflow = wrap}
     plain []byte = with-len(n + 32)
     i <- [0..n): {
         plain[i] = data[i]
     }
     i <- [0..32): {
+        #{overflow = wrap}
         plain[n + i] = mac[i]
     }
+    #{overflow = wrap}
     plain-len = n + 32
     plain.truncate(plain-len)
 
@@ -469,22 +513,29 @@ conn.encrypt-record = (ct i64, data []byte) (ok bool) {
     cipher = aes-cbc.aes-128-cbc-enc(padded, .client-enc-key, iv)
 
     ; 6. 構建記錄: type(1) + version(2) + length(2) + IV(16) + cipher
-    rec-len = 16 + padded.len
+    #{overflow = wrap}
+    rec-len = 16 + padded.len()
+    #{overflow = wrap}
     rec []byte = with-len(5 + rec-len)
     rec[0] = TLS-CT-APP-DATA & 255
     put-u16(rec, 1, TLS-VERSION)
     put-u16(rec, 3, rec-len)
     i <- [0..16): {
+        #{overflow = wrap}
         rec[5 + i] = iv[i]
     }
-    i <- [0..padded.len): {
+    i <- [0..padded.len()): {
+        #{overflow = wrap}
         rec[5 + 16 + i] = cipher[i]
     }
+    #{overflow = wrap}
     rec.truncate(5 + rec-len)
 
     ; 7. 發送
+    #{overflow = wrap}
     sent = net.net-send(.fd, rec, 5 + rec-len)
     sent < 0 -> return
+    #{overflow = wrap}
     .write-seq = .write-seq + 1
     ok = true
 }
@@ -502,13 +553,16 @@ conn.decrypt-record = (buf []byte, expected-ct i64) (ct i64, out []byte) {
     ; 提取 IV
     iv [16]byte
     i <- [0..16): {
+        #{overflow = wrap}
         iv[i] = buf[5 + i]
     }
 
     ; 密文
+    #{overflow = wrap}
     cipher-len = rlen - 16
     cipher []byte = with-len(cipher-len)
     i <- [0..cipher-len): {
+        #{overflow = wrap}
         cipher[i] = buf[5 + 16 + i]
     }
     cipher.truncate(cipher-len)
@@ -525,12 +579,15 @@ conn.decrypt-record = (buf []byte, expected-ct i64) (ct i64, out []byte) {
 
     ; 驗證 MAC（最後 32 位元組為 MAC）
     plain-len < 32 -> return
+    #{overflow = wrap}
     content-len = plain-len - 32
 
     ; 計算期望 MAC
+    #{overflow = wrap}
     mac-input []byte = with-len(13 + content-len)
     seq = .read-seq
     i <- [0..8): {
+        #{overflow = wrap}
         mac-input[7 - i] = (seq >> (i * 8)) & 255
     }
 
@@ -539,6 +596,7 @@ conn.decrypt-record = (buf []byte, expected-ct i64) (ct i64, out []byte) {
     put-u16(mac-input, 9, TLS-VERSION)
     put-u16(mac-input, 11, content-len)
     i <- [0..content-len): {
+        #{overflow = wrap}
         mac-input[13 + i] = plain[i]
     }
     exp-mac [32]byte
@@ -547,6 +605,7 @@ conn.decrypt-record = (buf []byte, expected-ct i64) (ct i64, out []byte) {
     ; 驗證 MAC
     recv-mac-off = content-len
     i <- [0..32): {
+        #{overflow = wrap}
         b1 = plain[recv-mac-off + i]
         b2 = exp-mac[i]
         b1 != b2 -> return
@@ -559,6 +618,7 @@ conn.decrypt-record = (buf []byte, expected-ct i64) (ct i64, out []byte) {
     }
     out.truncate(content-len)
     ct = expected-ct
+    #{overflow = wrap}
     .read-seq = .read-seq + 1
 }
 
@@ -572,11 +632,12 @@ conn.decrypt-record = (buf []byte, expected-ct i64) (ct i64, out []byte) {
 ; exp i64: RSA 公鑰指數
 ; 返回 out []byte: 加密後的資料（長度 = mod-bytes.len）
 rsa-pkcs1-encrypt = (msg []byte, mod-bytes []byte, exp i64) (out []byte) {
-    msg-n = msg.len
-    mod-n = mod-bytes.len
+    msg-n = msg.len()
+    mod-n = mod-bytes.len()
 
     ; PKCS#1 v1.5 填充: 0x00 || 0x02 || PS || 0x00 || msg
     ; PS 長度 = mod-n - msg-n - 3
+    #{overflow = wrap}
     ps-len = mod-n - msg-n - 3
     ps-len < 8 -> return
 
@@ -591,12 +652,15 @@ rsa-pkcs1-encrypt = (msg []byte, mod-bytes []byte, exp i64) (out []byte) {
         state, r = rand(state)
         b = state & 255
         b == 0 -> b = 1
+        #{overflow = wrap}
         padded[2 + i] = b
     }
+    #{overflow = wrap}
     padded[2 + ps-len] = 0
 
     ; 複製訊息
     i <- [0..msg-n): {
+        #{overflow = wrap}
         padded[3 + ps-len + i] = msg[i]
     }
     padded-n = mod-n
@@ -616,7 +680,7 @@ rsa-pkcs1-encrypt = (msg []byte, mod-bytes []byte, exp i64) (out []byte) {
 
     ; RSA 加密: c = m^e mod n
     c-bn []i64
-    c-bn, c-bn-n = rsa.rsa-modpow(m-bn, m-bn.len, e-bn, 1, n-bn, n-bn.len)
+    c-bn, c-bn-n = rsa.rsa-modpow(m-bn, m-bn.len(), e-bn, 1, n-bn, n-bn.len())
 
     ; 轉換回位元組
     raw []byte
@@ -624,25 +688,29 @@ rsa-pkcs1-encrypt = (msg []byte, mod-bytes []byte, exp i64) (out []byte) {
 
     ; 確保輸出長度 = mod-n（左側補零）
     {
-        raw.len == mod-n -> out = raw
-        raw.len < mod-n -> {
+        raw.len() == mod-n -> out = raw
+        raw.len() < mod-n -> {
 
             ; 建立新緩衝區, 左側補零
             out = with-len(mod-n)
-            shift = mod-n - raw.len
+            #{overflow = wrap}
+            shift = mod-n - raw.len()
             i <- [0..shift): {
                 out[i] = 0
             }
-            i <- [0..raw.len): {
+            i <- [0..raw.len()): {
+                #{overflow = wrap}
                 out[shift + i] = raw[i]
             }
         }
-        raw.len > mod-n -> {
+        raw.len() > mod-n -> {
 
             ; 結果比模數長（不應發生）, 截斷
             out = with-len(mod-n)
-            off = raw.len - mod-n
+            #{overflow = wrap}
+            off = raw.len() - mod-n
             i <- [0..mod-n): {
+                #{overflow = wrap}
                 out[i] = raw[off + i]
             }
         }
@@ -671,37 +739,46 @@ conn.send-client-hello = () (ok bool) {
 
     ; version = 0x0303
     put-u16(hs, pos, TLS-VERSION)
+    #{overflow = wrap}
     pos = pos + 2
 
     ; random (32 bytes)
     rand-bytes-val []byte = rand-bytes(.rand-state, 32)
     i <- [0..32): {
+        #{overflow = wrap}
         hs[pos + i] = rand-bytes-val[i]
         .client-random[i] = rand-bytes-val[i]
     }
+    #{overflow = wrap}
     pos = pos + 32
 
     ; session_id_length = 0
     hs[pos] = 0
+    #{overflow = wrap}
     pos = pos + 1
 
     ; cipher_suites_length = 2 (一個 cipher suite)
     put-u16(hs, pos, 2)
+    #{overflow = wrap}
     pos = pos + 2
 
     ; cipher_suite = TLS_RSA_WITH_AES_128_CBC_SHA256
     put-u16(hs, pos, TLS-CIPHER-RSA-AES128-CBC-SHA256)
+    #{overflow = wrap}
     pos = pos + 2
 
     ; compression_methods_length = 1
     hs[pos] = 1
+    #{overflow = wrap}
     pos = pos + 1
 
     ; compression_method = 0 (null)
     hs[pos] = 0
+    #{overflow = wrap}
     pos = pos + 1
 
     ; 填入 length
+    #{overflow = wrap}
     body-len = pos - 4
     put-u24(hs, 1, body-len)
 
@@ -735,25 +812,31 @@ conn.read-server-hello = () (ok bool) {
     msg-len i64 = get-u24(buf, 6)
 
     ; version（buf[9..10]）
+    #{overflow = wrap}
     pos = pos + 2
 
     ; random (32 bytes)
     i <- [0..32): {
+        #{overflow = wrap}
         .server-random[i] = buf[pos + i]
     }
+    #{overflow = wrap}
     pos = pos + 32
 
     ; session_id
     sid-len = buf[pos]
+    #{overflow = wrap}
     pos = pos + 1 + sid-len
 
     ; cipher_suite
     cipher i64 = get-u16(buf, pos)
+    #{overflow = wrap}
     pos = pos + 2
     cipher != TLS-CIPHER-RSA-AES128-CBC-SHA256 -> return
 
     ; compression_method
     comp = buf[pos]
+    #{overflow = wrap}
     pos = pos + 1
     comp != 0 -> return
     ok = true
@@ -779,14 +862,17 @@ conn.read-certificate = (cert-out []byte) (ok bool) {
 
     ; total certs length (3 bytes)
     total-len i64 = get-u24(buf, pos)
+    #{overflow = wrap}
     pos = pos + 3
 
     ; first cert length (3 bytes)
     cert-len i64 = get-u24(buf, pos)
+    #{overflow = wrap}
     pos = pos + 3
 
     ; 複製憑證
     i <- [0..cert-len): {
+        #{overflow = wrap}
         cert-out[i] = buf[pos + i]
     }
     cert-out.truncate(cert-len)
@@ -816,23 +902,25 @@ conn.read-server-hello-done = () (ok bool) {
 ; 返回 ok bool: true=成功
 conn.send-client-key-exchange = (premaster []byte, cert []byte) (ok bool) {
     ok = false
-    cert-n = cert.len
+    cert-n = cert.len()
 
     ; 提取 RSA 公鑰
     mod-bytes []byte
     mod-bytes = x509.x509-rsa-n(cert)
-    mod-bytes.len == 0 -> return
+    mod-bytes.len() == 0 -> return
     exp i64 = x509.x509-rsa-e(cert)
     exp == 0 -> exp = 65537
 
     ; RSA 加密 premaster secret
     enc-premaster []byte
     enc-premaster = rsa-pkcs1-encrypt(premaster, mod-bytes, exp)
-    enc-premaster.len == 0 -> return
+    enc-premaster.len() == 0 -> return
 
     ; 構建 ClientKeyExchange 訊息
     ; length = 2 + enc-premaster.len
-    body-len = 2 + enc-premaster.len
+    #{overflow = wrap}
+    body-len = 2 + enc-premaster.len()
+    #{overflow = wrap}
     hs-len = 4 + body-len
     hs []byte = with-len(hs-len)
     hs[0] = TLS-HS-CLIENT-KEY-EXCHANGE
@@ -840,10 +928,11 @@ conn.send-client-key-exchange = (premaster []byte, cert []byte) (ok bool) {
     put-u24(hs, 1, body-len)
 
     ; encrypted premaster length
-    put-u16(hs, 4, enc-premaster.len)
+    put-u16(hs, 4, enc-premaster.len())
 
     ; encrypted premaster
-    i <- [0..enc-premaster.len): {
+    i <- [0..enc-premaster.len()): {
+        #{overflow = wrap}
         hs[6 + i] = enc-premaster[i]
     }
     .append-hs(hs)
@@ -884,11 +973,13 @@ conn.send-finished = () (ok bool) {
     verify = prf(.master-secret, 'client finished', hs-hash, TLS-FINISHED-SIZE)
 
     ; 構建 Finished 訊息
+    #{overflow = wrap}
     hs-len = 4 + TLS-FINISHED-SIZE
     hs []byte = with-len(hs-len)
     hs[0] = TLS-HS-FINISHED
     put-u24(hs, 1, TLS-FINISHED-SIZE)
     i <- [0..TLS-FINISHED-SIZE): {
+        #{overflow = wrap}
         hs[4 + i] = verify[i]
     }
 
@@ -946,6 +1037,7 @@ conn.read-finished = () (ok bool) {
     verify = prf(.master-secret, 'server finished', hs-hash, TLS-FINISHED-SIZE)
 
     i <- [0..TLS-FINISHED-SIZE): {
+        #{overflow = wrap}
         b1 = plain[4 + i]
         b2 = verify[i]
         b1 != b2 -> return
@@ -971,6 +1063,7 @@ conn.derive-keys = (premaster []byte) {
         seed[i] = .client-random[i]
     }
     i <- [0..32): {
+        #{overflow = wrap}
         seed[32 + i] = .server-random[i]
     }
     seed.truncate(64)
@@ -984,6 +1077,7 @@ conn.derive-keys = (premaster []byte) {
         ks[i] = .server-random[i]
     }
     i <- [0..32): {
+        #{overflow = wrap}
         ks[32 + i] = .client-random[i]
     }
     ks.truncate(64)
@@ -999,16 +1093,19 @@ conn.derive-keys = (premaster []byte) {
 
     ; server_write_MAC_key (32)
     i <- [0..32): {
+        #{overflow = wrap}
         .server-mac-key[i] = key-block[32 + i]
     }
 
     ; client_write key (16)
     i <- [0..16): {
+        #{overflow = wrap}
         .client-enc-key[i] = key-block[64 + i]
     }
 
     ; server_write key (16)
     i <- [0..16): {
+        #{overflow = wrap}
         .server-enc-key[i] = key-block[80 + i]
     }
 
@@ -1028,6 +1125,7 @@ conn.send-client-hello-13 = () (ok bool) {
 
     ; 生成 X25519 金鑰對（內聯實現，避免多返回值 [32]byte 的編譯器 bug）
     seed = .rand-state
+    #{overflow = wrap}
     .rand-state = .rand-state + 1
 
     ; 生成私鑰
@@ -1060,165 +1158,214 @@ conn.send-client-hello-13 = () (ok bool) {
 
     ; version = 0x0303（TLS 1.2，相容性）
     put-u16(hs, pos, TLS-VERSION)
+    #{overflow = wrap}
     pos = pos + 2
 
     ; random (32 bytes)
     rand-bytes-val []byte = rand-bytes(.rand-state, 32)
+    #{overflow = wrap}
     .rand-state = .rand-state + 32
     i <- [0..32): {
+        #{overflow = wrap}
         hs[pos + i] = rand-bytes-val[i]
         .client-random[i] = rand-bytes-val[i]
     }
+    #{overflow = wrap}
     pos = pos + 32
 
     ; session_id_length = 0
     hs[pos] = 0
+    #{overflow = wrap}
     pos = pos + 1
 
     ; cipher_suites: 2 suites = 4 bytes
     put-u16(hs, pos, 4)
+    #{overflow = wrap}
     pos = pos + 2
 
     ; TLS_AES_128_GCM_SHA256 (TLS 1.3, 0x1301)
     put-u16(hs, pos, TLS-CIPHER-AES128-GCM-SHA256)
+    #{overflow = wrap}
     pos = pos + 2
 
     ; TLS_RSA_WITH_AES_128_CBC_SHA256 (TLS 1.2, 0x003C)
     put-u16(hs, pos, TLS-CIPHER-RSA-AES128-CBC-SHA256)
+    #{overflow = wrap}
     pos = pos + 2
 
     ; compression_methods_length = 1
     hs[pos] = 1
+    #{overflow = wrap}
     pos = pos + 1
     hs[pos] = 0
+    #{overflow = wrap}
     pos = pos + 1
 
     ; === 擴展 ===
     ; 計算擴展總長度（先記錄位置，稍後填入）
     ext-len-pos = pos
+    #{overflow = wrap}
     pos = pos + 2
 
     ; 擴展 1: supported_versions (43)
     put-u16(hs, pos, TLS-EXT-SUPPORTED-VERSIONS)
+    #{overflow = wrap}
     pos = pos + 2
 
     ; ext data length = 3
     put-u16(hs, pos, 3)
+    #{overflow = wrap}
     pos = pos + 2
 
     ; versions list length = 2
     hs[pos] = 2
+    #{overflow = wrap}
     pos = pos + 1
 
     ; TLS 1.3 = 0x0304
     put-u16(hs, pos, TLS-VERSION-1-3)
+    #{overflow = wrap}
     pos = pos + 2
 
     ; 擴展 2: supported_groups (10)
     put-u16(hs, pos, TLS-EXT-SUPPORTED-GROUPS)
+    #{overflow = wrap}
     pos = pos + 2
 
     ; ext data length = 4
     put-u16(hs, pos, 4)
+    #{overflow = wrap}
     pos = pos + 2
 
     ; groups list length = 2
     put-u16(hs, pos, 2)
+    #{overflow = wrap}
     pos = pos + 2
 
     ; x25519 = 0x001D
     put-u16(hs, pos, TLS-GROUP-X25519)
+    #{overflow = wrap}
     pos = pos + 2
 
     ; 擴展 3: signature_algorithms (13)
     put-u16(hs, pos, TLS-EXT-SIGNATURE-ALGORITHMS)
+    #{overflow = wrap}
     pos = pos + 2
 
     ; 9 個演算法 = 18 bytes; ext data length = 2 (list len) + 18 = 20
     put-u16(hs, pos, 20)
+    #{overflow = wrap}
     pos = pos + 2
 
     ; sig algs list length = 18
     put-u16(hs, pos, 18)
+    #{overflow = wrap}
     pos = pos + 2
 
     ; 依優先順序：RSA-PSS（現代首選）> ECDSA > RSA-PKCS1
     put-u16(hs, pos, TLS-SIG-RSA-PSS-RSAE-SHA256)
+    #{overflow = wrap}
     pos = pos + 2
     put-u16(hs, pos, TLS-SIG-ECDSA-SECP256R1-SHA256)
+    #{overflow = wrap}
     pos = pos + 2
     put-u16(hs, pos, TLS-SIG-RSA-PSS-RSAE-SHA384)
+    #{overflow = wrap}
     pos = pos + 2
     put-u16(hs, pos, TLS-SIG-ECDSA-SECP384R1-SHA384)
+    #{overflow = wrap}
     pos = pos + 2
     put-u16(hs, pos, TLS-SIG-RSA-PSS-RSAE-SHA512)
+    #{overflow = wrap}
     pos = pos + 2
     put-u16(hs, pos, TLS-SIG-ECDSA-SECP521R1-SHA512)
+    #{overflow = wrap}
     pos = pos + 2
     put-u16(hs, pos, TLS-SIG-RSA-PKCS1-SHA256)
+    #{overflow = wrap}
     pos = pos + 2
     put-u16(hs, pos, TLS-SIG-RSA-PKCS1-SHA384)
+    #{overflow = wrap}
     pos = pos + 2
     put-u16(hs, pos, TLS-SIG-RSA-PKCS1-SHA512)
+    #{overflow = wrap}
     pos = pos + 2
 
     ; 擴展 4: key_share (51)
     put-u16(hs, pos, TLS-EXT-KEY-SHARE)
+    #{overflow = wrap}
     pos = pos + 2
 
     ; ext data length = 2 (client_shares_len) + 2 (group) + 2 (key_len) + 32 (key) = 38
     put-u16(hs, pos, 38)
+    #{overflow = wrap}
     pos = pos + 2
 
     ; client key shares length = 2 (group) + 2 (key_len) + 32 (key) = 36
     put-u16(hs, pos, 36)
+    #{overflow = wrap}
     pos = pos + 2
 
     ; group = x25519
     put-u16(hs, pos, TLS-GROUP-X25519)
+    #{overflow = wrap}
     pos = pos + 2
 
     ; key = 32 bytes
     put-u16(hs, pos, 32)
+    #{overflow = wrap}
     pos = pos + 2
     i <- [0..32): {
+        #{overflow = wrap}
         hs[pos + i] = .client-pub[i]
     }
+    #{overflow = wrap}
     pos = pos + 32
 
     ; 擴展 5: server_name (SNI, 0) — 必須包含，否則伺服器可能拒絕
     put-u16(hs, pos, 0)
+    #{overflow = wrap}
     pos = pos + 2
 
     ; ext data length = 2 + 1 + 2 + host.len
-    sni-ext-len = 5 + .host.len
+    #{overflow = wrap}
+    sni-ext-len = 5 + .host.len-bytes()
     put-u16(hs, pos, sni-ext-len)
+    #{overflow = wrap}
     pos = pos + 2
 
     ; server name list length = 1 + 2 + host.len
-    sni-list-len = 3 + .host.len
+    #{overflow = wrap}
+    sni-list-len = 3 + .host.len-bytes()
     put-u16(hs, pos, sni-list-len)
+    #{overflow = wrap}
     pos = pos + 2
 
     ; name type = 0 (host_name)
     hs[pos] = 0
+    #{overflow = wrap}
     pos = pos + 1
 
     ; name length
-    put-u16(hs, pos, .host.len)
+    put-u16(hs, pos, .host.len-bytes())
+    #{overflow = wrap}
     pos = pos + 2
 
     ; name
-    i <- [0...host.len): {
+    i <- [0...host.len-bytes()): {
+        #{overflow = wrap}
         hs[pos + i] = .host[i]
     }
-    pos = pos + .host.len
+    #{overflow = wrap}
+    pos = pos + .host.len-bytes()
 
     ; 填入擴展總長度
+    #{overflow = wrap}
     ext-total = pos - ext-len-pos - 2
     put-u16(hs, ext-len-pos, ext-total)
 
     ; 填入 handshake message length
+    #{overflow = wrap}
     body-len = pos - 4
     put-u24(hs, 1, body-len)
 
@@ -1229,6 +1376,7 @@ conn.send-client-hello-13 = () (ok bool) {
     dump = ''
     j <- [0..pos): {
         b = hs[j]
+        #{overflow = wrap}
         dump = dump - b.to-str() - ' '
     }
 
@@ -1264,26 +1412,33 @@ conn.read-server-hello-13 = () (ok bool) {
     pos = 9
 
     ; server version（TLS 1.3 中為 0x0303，實際版本在擴展中）
+    #{overflow = wrap}
     pos = pos + 2
 
     ; random (32 bytes)
     i <- [0..32): {
+        #{overflow = wrap}
         .server-random[i] = buf[pos + i]
     }
+    #{overflow = wrap}
     pos = pos + 32
 
     ; session_id
     sid-len = buf[pos]
+    #{overflow = wrap}
     pos = pos + 1 + sid-len
 
     ; cipher_suite
     cipher i64 = get-u16(buf, pos)
+    #{overflow = wrap}
     pos = pos + 2
 
     ; compression_method
+    #{overflow = wrap}
     pos = pos + 1
 
     ; 檢查是否有擴展
+    #{overflow = wrap}
     pos + 2 > rlen + 5 -> {
 
         ; 無擴展，TLS 1.2
@@ -1291,15 +1446,19 @@ conn.read-server-hello-13 = () (ok bool) {
         return
     }
     ext-len i64 = get-u16(buf, pos)
+    #{overflow = wrap}
     pos = pos + 2
+    #{overflow = wrap}
     ext-end = pos + ext-len
 
     ; 掃描擴展尋找 supported_versions 和 key_share
     is-tls13 = false
     {
         ext-type i64 = get-u16(buf, pos)
+        #{overflow = wrap}
         pos = pos + 2
         ext-data-len i64 = get-u16(buf, pos)
+        #{overflow = wrap}
         pos = pos + 2
 
         {
@@ -1318,14 +1477,17 @@ conn.read-server-hello-13 = () (ok bool) {
 
                 ; key_share: 2 bytes group + 2 bytes key length + key
                 ks-group = get-u16(buf, pos)
+                #{overflow = wrap}
                 ks-len i64 = get-u16(buf, pos + 2)
                 ks-group == TLS-GROUP-X25519 && ks-len == 32 -> {
                     i <- [0..32): {
+                        #{overflow = wrap}
                         .server-pub[i] = buf[pos + 4 + i]
                     }
                 }
             }
         }
+        #{overflow = wrap}
         pos = pos + ext-data-len
     } (pos < ext-end)
     {
@@ -1521,6 +1683,7 @@ build-nonce = (iv [12]byte, seq i64) (nonce [12]byte) {
 
     ; XOR sequence number (right-aligned 8 bytes) with last 8 bytes of IV
     i <- [0..8): {
+        #{overflow = wrap}
         nonce[4 + i] = nonce[4 + i] ^ ((seq >> ((7 - i) * 8)) & 255)
     }
 }
@@ -1534,14 +1697,16 @@ build-nonce = (iv [12]byte, seq i64) (nonce [12]byte) {
 ; 返回 ok bool: true=成功
 conn.encrypt-record-13 = (ct i64, data []byte, key [16]byte, iv [12]byte, seq i64) (ok bool) {
     ok = false
-    n = data.len
+    n = data.len()
 
     ; 明文 = data + content_type(1 byte)
+    #{overflow = wrap}
     plain []byte = with-len(n + 1)
     i <- [0..n): {
         plain[i] = data[i]
     }
     plain[n] = ct & 255
+    #{overflow = wrap}
     plain-len = n + 1
     plain.truncate(plain-len)
 
@@ -1555,6 +1720,7 @@ conn.encrypt-record-13 = (ct i64, data []byte, key [16]byte, iv [12]byte, seq i6
     put-u16(aad, 1, TLS-VERSION)
 
     ; 密文長度 = plain_len + 16 (tag)
+    #{overflow = wrap}
     put-u16(aad, 3, plain-len + 16)
     aad.truncate(5)
 
@@ -1563,17 +1729,22 @@ conn.encrypt-record-13 = (ct i64, data []byte, key [16]byte, iv [12]byte, seq i6
     sealed = aes-gcm.aes-128-gcm-seal(key, nonce, aad, plain)
 
     ; 構建完整記錄: header(5) + sealed
+    #{overflow = wrap}
     rec-len = plain-len + 16
+    #{overflow = wrap}
     rec []byte = with-len(5 + rec-len)
     rec[0] = TLS-CT-APP-DATA & 255
     put-u16(rec, 1, TLS-VERSION)
     put-u16(rec, 3, rec-len)
     i <- [0..rec-len): {
+        #{overflow = wrap}
         rec[5 + i] = sealed[i]
     }
+    #{overflow = wrap}
     rec.truncate(5 + rec-len)
 
     ; 發送
+    #{overflow = wrap}
     sent = net.net-send(.fd, rec, 5 + rec-len)
     sent < 0 -> return
     ok = true
@@ -1595,6 +1766,7 @@ conn.decrypt-record-13 = (rec []byte, key [16]byte, iv [12]byte, seq i64) (ct i6
     ; 提取密文+tag
     sealed []byte = with-len(rlen)
     i <- [0..rlen): {
+        #{overflow = wrap}
         sealed[i] = rec[5 + i]
     }
 
@@ -1613,11 +1785,13 @@ conn.decrypt-record-13 = (rec []byte, key [16]byte, iv [12]byte, seq i64) (ct i6
     ; 解密
     plain []byte
     plain = aes-gcm.aes-128-gcm-open(key, nonce, aad, sealed)
-    plain.len == 0 -> return
+    plain.len() == 0 -> return
 
     ; 最後一個位元組是原始 content type
-    plain-len = plain.len
+    plain-len = plain.len()
+    #{overflow = wrap}
     ct = plain[plain-len - 1]
+    #{overflow = wrap}
     plain-len = plain-len - 1
 
     out = with-len(plain-len)
@@ -1662,22 +1836,24 @@ conn.read-encrypted-handshake-13 = () (msg-type i64, msg-data []byte) {
 
     ; 若緩衝區中沒有足夠的資料，讀取新的加密記錄
     ; 一個 handshake 訊息標頭至少 4 bytes（1 byte type + 3 bytes length）
+    #{overflow = wrap}
     .hs-plain-pos + 4 > .hs-plain-len -> {
         ct = 0
         plain []byte
         ct, plain = .read-encrypted-record-13(.hs-server-key, .hs-server-iv, .hs-read-seq)
+        #{overflow = wrap}
         .hs-read-seq = .hs-read-seq + 1
         ct < 0 -> return
 
         ; 可能是 alert 或其他
         ct != TLS-CT-HANDSHAKE -> {
-            ct == TLS-CT-ALERT -> plain-len = plain.len
+            ct == TLS-CT-ALERT -> plain-len = plain.len()
             return
         }
 
         ; 將整個 plain 存入緩衝區
         .hs-plain-buf = plain
-        .hs-plain-len = plain.len
+        .hs-plain-len = plain.len()
         .hs-plain-pos = 0
     }
 
@@ -1686,32 +1862,39 @@ conn.read-encrypted-handshake-13 = () (msg-type i64, msg-data []byte) {
     ; 但 read-encrypted-record-13 已經移除了 inner content type，plain 就是純 handshake 資料
     pos = .hs-plain-pos
     msg-type = .hs-plain-buf[pos]
+    #{overflow = wrap}
     msg-len i64 = get-u24(.hs-plain-buf, pos + 1)
 
     ; 檢查是否有足夠的資料
+    #{overflow = wrap}
     pos + 4 + msg-len > .hs-plain-len -> return
     msg-data = with-len(msg-len)
     i <- [0..msg-len): {
+        #{overflow = wrap}
         msg-data[i] = .hs-plain-buf[pos + 4 + i]
     }
     msg-data.truncate(msg-len)
 
     ; 構建完整的 handshake message（含標頭）用於 transcript hash
     full-msg []byte
+    #{overflow = wrap}
     full-msg = with-len(4 + msg-len)
     full-msg[0] = msg-type
     full-msg[1] = (msg-len >> 16) & 255
     full-msg[2] = (msg-len >> 8) & 255
     full-msg[3] = msg-len & 255
     i <- [0..msg-len): {
+        #{overflow = wrap}
         full-msg[4 + i] = msg-data[i]
     }
+    #{overflow = wrap}
     full-msg.truncate(4 + msg-len)
 
     ; 追加到交握緩衝區（用於 transcript hash）
     .append-hs(full-msg)
 
     ; 更新緩衝區位置
+    #{overflow = wrap}
     .hs-plain-pos = pos + 4 + msg-len
 }
 
@@ -1813,6 +1996,7 @@ conn.send-finished-13 = () (ok bool) {
     hs[0] = TLS-HS-FINISHED
     put-u24(hs, 1, 32)
     i <- [0..32): {
+        #{overflow = wrap}
         hs[4 + i] = verify[i]
     }
     hs.truncate(36)
@@ -1822,6 +2006,7 @@ conn.send-finished-13 = () (ok bool) {
 
     ; 加密發送（使用交握金鑰）
     ok = .encrypt-record-13(TLS-CT-HANDSHAKE, hs, .hs-client-key, .hs-client-iv, .hs-write-seq)
+    #{overflow = wrap}
     .hs-write-seq = .hs-write-seq + 1
 }
 
@@ -1893,6 +2078,7 @@ conn.connect = (host str, port i64) (ok bool) {
         premaster[1] = 3
         rand-bytes-val []byte = rand-bytes(.rand-state, 46)
         i <- [0..46): {
+            #{overflow = wrap}
             premaster[2 + i] = rand-bytes-val[i]
         }
 
@@ -1990,6 +2176,7 @@ conn.connect-12 = (host str, port i64) (ok bool) {
     premaster[1] = 0x03
     rand-bytes-val []byte = rand-bytes(.rand-state, 46)
     i <- [0..46): {
+        #{overflow = wrap}
         premaster[2 + i] = rand-bytes-val[i]
     }
 
@@ -2061,6 +2248,7 @@ conn.send = (data str) (written ?i64) {
             ; TLS 1.3: 使用 AEAD
             ok = .encrypt-record-13(TLS-CT-APP-DATA, data-bytes, .ap-client-key, .ap-client-iv, .ap-write-seq)
             ok == false -> return
+            #{overflow = wrap}
             .ap-write-seq = .ap-write-seq + 1
         }
         -> {
@@ -2070,7 +2258,7 @@ conn.send = (data str) (written ?i64) {
             ok == false -> return
         }
     }
-    written = data.len
+    written = data.len-bytes()
 }
 
 ; recv: 透過 TLS 接收資料
@@ -2104,6 +2292,7 @@ conn.recv = (buf str, n i64) (read-n i64) {
                         ; CCS: middlebox compatibility dummy, 跳過不解密
 
                         d-ct, plain = .decrypt-record-13(rec, .ap-server-key, .ap-server-iv, .ap-read-seq)
+                        #{overflow = wrap}
                         .ap-read-seq = .ap-read-seq + 1
                         d-ct < 0 -> return
 
@@ -2131,7 +2320,7 @@ conn.recv = (buf str, n i64) (read-n i64) {
     }
 
     ; 複製到輸出緩衝區（在條件分支外賦值，避免作用域問題）
-    copy-n = plain.len
+    copy-n = plain.len()
     copy-n > n -> copy-n = n
     i <- [0..copy-n): {
         buf[i] = plain[i]
@@ -2243,10 +2432,12 @@ server-conn {
 
 ; server-conn.append-hs: 追加交握資料到緩衝區
 server-conn.append-hs = (data []byte) {
-    n = data.len
+    n = data.len()
     i <- [0..n): {
+        #{overflow = wrap}
         .hs-buf[.hs-buf-len + i] = data[i]
     }
+    #{overflow = wrap}
     .hs-buf-len = .hs-buf-len + n
     .hs-buf.len = .hs-buf-len
 }
@@ -2254,8 +2445,10 @@ server-conn.append-hs = (data []byte) {
 ; server-conn.append-hs-from: 從 buf 的 offset 位置追加 n 位元組
 server-conn.append-hs-from = (buf []byte, offset i64, n i64) {
     i <- [0..n): {
+        #{overflow = wrap}
         .hs-buf[.hs-buf-len + i] = buf[offset + i]
     }
+    #{overflow = wrap}
     .hs-buf-len = .hs-buf-len + n
     .hs-buf.len = .hs-buf-len
 }
@@ -2281,16 +2474,20 @@ server-conn.read-client-hello = () (ok bool) {
 
     ; client random (32 bytes)
     i <- [0..32): {
+        #{overflow = wrap}
         .client-random[i] = buf[pos + i]
     }
+    #{overflow = wrap}
     pos = pos + 32
 
     ; session_id
     sid-len = buf[pos]
+    #{overflow = wrap}
     pos = pos + 1 + sid-len
 
     ; cipher_suites
     cs-len = get-u16(buf, pos)
+    #{overflow = wrap}
     pos = pos + 2
 
     ; 檢查是否包含 TLS 1.2 或 TLS 1.3 cipher suite
@@ -2299,19 +2496,23 @@ server-conn.read-client-hello = () (ok bool) {
     j = 0
     {
         j < cs-len -> {
+            #{overflow = wrap}
             cs = get-u16(buf, pos + j)
             {
                 cs == TLS-CIPHER-RSA-AES128-CBC-SHA256 -> found-12 = true
                 cs == TLS-CIPHER-AES128-GCM-SHA256 -> found-13 = true
             }
+            #{overflow = wrap}
             j = j + 2
         }
     } (j < cs-len)
     found-12 == false && found-13 == false -> return
+    #{overflow = wrap}
     pos = pos + cs-len
 
     ; compression methods（跳過）
     comp-len = buf[pos]
+    #{overflow = wrap}
     pos = pos + 1 + comp-len
 
     ; 預設 TLS 1.2
@@ -2319,15 +2520,21 @@ server-conn.read-client-hello = () (ok bool) {
     .version = TLS-VERSION
 
     ; 解析擴展（尋找 supported_versions 和 key_share）
+    #{overflow = wrap}
     pos + 2 <= rlen + 5 -> {
         ext-total = get-u16(buf, pos)
+        #{overflow = wrap}
         pos = pos + 2
+        #{overflow = wrap}
         ext-end = pos + ext-total
 
         {
+            #{overflow = wrap}
             pos + 4 <= ext-end -> {
                 ext-type = get-u16(buf, pos)
+                #{overflow = wrap}
                 ext-data-len = get-u16(buf, pos + 2)
+                #{overflow = wrap}
                 pos = pos + 4
 
                 ; supported_versions (43)
@@ -2335,15 +2542,19 @@ server-conn.read-client-hello = () (ok bool) {
 
                     ; client 端: 1 byte list length + versions
                     sv-list-len = buf[pos]
+                    #{overflow = wrap}
                     sv-pos = pos + 1
+                    #{overflow = wrap}
                     sv-end = sv-pos + sv-list-len
                     {
+                        #{overflow = wrap}
                         sv-pos + 2 <= sv-end -> {
                             sv = get-u16(buf, sv-pos)
                             sv == TLS-VERSION-1-3 -> {
                                 .is-tls13 = true
                                 .version = TLS-VERSION-1-3
                             }
+                            #{overflow = wrap}
                             sv-pos = sv-pos + 2
                         }
                     } (sv-pos + 2 <= sv-end)
@@ -2352,21 +2563,28 @@ server-conn.read-client-hello = () (ok bool) {
                 ; key_share (51)
                 ext-type == TLS-EXT-KEY-SHARE -> {
                     ks-list-len = get-u16(buf, pos)
+                    #{overflow = wrap}
                     ks-pos = pos + 2
+                    #{overflow = wrap}
                     ks-end = ks-pos + ks-list-len
                     {
+                        #{overflow = wrap}
                         ks-pos + 4 <= ks-end -> {
                             ks-group = get-u16(buf, ks-pos)
+                            #{overflow = wrap}
                             ks-key-len = get-u16(buf, ks-pos + 2)
                             ks-group == TLS-GROUP-X25519 && ks-key-len == 32 -> {
                                 i <- [0..32): {
+                                    #{overflow = wrap}
                                     .client-pub[i] = buf[ks-pos + 4 + i]
                                 }
                             }
+                            #{overflow = wrap}
                             ks-pos = ks-pos + 4 + ks-key-len
                         }
                     } (ks-pos + 4 <= ks-end)
                 }
+                #{overflow = wrap}
                 pos = pos + ext-data-len
             }
         } (pos + 4 <= ext-end)
@@ -2400,30 +2618,38 @@ server-conn.send-server-hello = () (ok bool) {
 
     ; version = 0x0303
     put-u16(hs, pos, TLS-VERSION)
+    #{overflow = wrap}
     pos = pos + 2
 
     ; random (32 bytes)
     rand-bytes-val []byte = rand-bytes(.rand-state, 32)
+    #{overflow = wrap}
     .rand-state = .rand-state + 32
     i <- [0..32): {
+        #{overflow = wrap}
         hs[pos + i] = rand-bytes-val[i]
         .server-random[i] = rand-bytes-val[i]
     }
+    #{overflow = wrap}
     pos = pos + 32
 
     ; session_id_length = 0
     hs[pos] = 0
+    #{overflow = wrap}
     pos = pos + 1
 
     ; cipher_suite = TLS_RSA_WITH_AES_128_CBC_SHA256
     put-u16(hs, pos, TLS-CIPHER-RSA-AES128-CBC-SHA256)
+    #{overflow = wrap}
     pos = pos + 2
 
     ; compression_method = 0
     hs[pos] = 0
+    #{overflow = wrap}
     pos = pos + 1
 
     ; 填入 length
+    #{overflow = wrap}
     body-len = pos - 4
     put-u24(hs, 1, body-len)
     hs.truncate(pos)
@@ -2439,17 +2665,20 @@ server-conn.send-server-hello = () (ok bool) {
 server-conn.send-certificate = () (ok bool) {
     ok = false
 
-    cert-len = .cert.len
+    cert-len = .cert.len()
 
     ; Certificate 訊息: type(1) + length(3) + total_certs_len(3) + cert_len(3) + cert
+    #{overflow = wrap}
     hs-len = 4 + 3 + 3 + cert-len
     hs []byte = with-len(hs-len)
 
     hs[0] = TLS-HS-CERTIFICATE
+    #{overflow = wrap}
     body-len = 3 + 3 + cert-len
     put-u24(hs, 1, body-len)
 
     ; total certs length
+    #{overflow = wrap}
     put-u24(hs, 4, 3 + cert-len)
 
     ; first cert length
@@ -2457,6 +2686,7 @@ server-conn.send-certificate = () (ok bool) {
 
     ; cert data
     i <- [0..cert-len): {
+        #{overflow = wrap}
         hs[10 + i] = .cert[i]
     }
     hs.truncate(hs-len)
@@ -2489,7 +2719,7 @@ server-conn.send-server-hello-done = () (ok bool) {
 ; d []byte: 私鑰指數（big-endian）
 ; 返回 out []byte: 解密後的明文（nil=失敗）
 rsa-pkcs1-decrypt = (ciphertext []byte, n []byte, d []byte) (out []byte) {
-    mod-len = n.len
+    mod-len = n.len()
 
     ; 轉換為大整數
     c-bn []i64
@@ -2504,7 +2734,7 @@ rsa-pkcs1-decrypt = (ciphertext []byte, n []byte, d []byte) (out []byte) {
     ; RSA 解密: m = c^d mod n
     m-bn []i64
     m-bn-n = 0
-    m-bn, m-bn-n = rsa.rsa-modpow(c-bn, c-bn.len, d-bn, d-bn.len, n-bn, n-bn.len)
+    m-bn, m-bn-n = rsa.rsa-modpow(c-bn, c-bn.len(), d-bn, d-bn.len(), n-bn, n-bn.len())
 
     ; 轉換回位元組
     raw []byte
@@ -2513,21 +2743,25 @@ rsa-pkcs1-decrypt = (ciphertext []byte, n []byte, d []byte) (out []byte) {
     ; 左側補零至 mod-len
     m-bytes []byte
     {
-        raw.len == mod-len -> m-bytes = raw
-        raw.len < mod-len -> {
+        raw.len() == mod-len -> m-bytes = raw
+        raw.len() < mod-len -> {
             m-bytes = with-len(mod-len)
-            shift = mod-len - raw.len
+            #{overflow = wrap}
+            shift = mod-len - raw.len()
             i <- [0..shift): {
                 m-bytes[i] = 0
             }
-            i <- [0..raw.len): {
+            i <- [0..raw.len()): {
+                #{overflow = wrap}
                 m-bytes[shift + i] = raw[i]
             }
         }
-        raw.len > mod-len -> {
+        raw.len() > mod-len -> {
             m-bytes = with-len(mod-len)
-            off = raw.len - mod-len
+            #{overflow = wrap}
+            off = raw.len() - mod-len
             i <- [0..mod-len): {
+                #{overflow = wrap}
                 m-bytes[i] = raw[off + i]
             }
         }
@@ -2543,16 +2777,19 @@ rsa-pkcs1-decrypt = (ciphertext []byte, n []byte, d []byte) (out []byte) {
     {
         sep-pos < mod-len -> {
             m-bytes[sep-pos] == 0 -> found-sep = true
+            #{overflow = wrap}
             found-sep == false -> sep-pos = sep-pos + 1
         }
     } (sep-pos < mod-len && found-sep == false)
     found-sep == false -> return
 
     ; 提取明文
+    #{overflow = wrap}
     msg-len = mod-len - sep-pos - 1
     msg-len < 1 -> return
     out = with-len(msg-len)
     i <- [0..msg-len): {
+        #{overflow = wrap}
         out[i] = m-bytes[sep-pos + 1 + i]
     }
     out.truncate(msg-len)
@@ -2580,6 +2817,7 @@ server-conn.read-client-key-exchange = () (ok bool) {
     ; 提取加密的 premaster
     enc-premaster []byte = with-len(enc-len)
     i <- [0..enc-len): {
+        #{overflow = wrap}
         enc-premaster[i] = buf[11 + i]
     }
     enc-premaster.truncate(enc-len)
@@ -2588,8 +2826,8 @@ server-conn.read-client-key-exchange = () (ok bool) {
     premaster []byte
     premaster = rsa-pkcs1-decrypt(enc-premaster, .n-bytes, .d-bytes)
     {
-        premaster.len == 0 -> return
-        premaster.len < 48 -> {
+        premaster.len() == 0 -> return
+        premaster.len() < 48 -> {
 
             ; premaster 應為 48 bytes，且前 2 bytes 為版本 0x0303
             return
@@ -2619,6 +2857,7 @@ server-conn.derive-keys = (premaster []byte) {
         seed[i] = .client-random[i]
     }
     i <- [0..32): {
+        #{overflow = wrap}
         seed[32 + i] = .server-random[i]
     }
     seed.truncate(64)
@@ -2631,6 +2870,7 @@ server-conn.derive-keys = (premaster []byte) {
         ks[i] = .server-random[i]
     }
     i <- [0..32): {
+        #{overflow = wrap}
         ks[32 + i] = .client-random[i]
     }
     ks.truncate(64)
@@ -2646,16 +2886,19 @@ server-conn.derive-keys = (premaster []byte) {
 
     ; server_write_MAC_key (32)
     i <- [0..32): {
+        #{overflow = wrap}
         .server-mac-key[i] = key-block[32 + i]
     }
 
     ; client_write key (16)
     i <- [0..16): {
+        #{overflow = wrap}
         .client-enc-key[i] = key-block[64 + i]
     }
 
     ; server_write key (16)
     i <- [0..16): {
+        #{overflow = wrap}
         .server-enc-key[i] = key-block[80 + i]
     }
 
@@ -2670,31 +2913,37 @@ server-conn.derive-keys = (premaster []byte) {
 ; 返回 ok bool: true=成功
 server-conn.encrypt-record = (ct i64, data []byte) (ok bool) {
     ok = false
-    n = data.len
+    n = data.len()
 
     ; 1. 計算 MAC = HMAC-SHA256(server_mac_key, seq + type + version + length + content)
+    #{overflow = wrap}
     mac-input []byte = with-len(13 + n)
     seq = .write-seq
     i <- [0..8): {
+        #{overflow = wrap}
         mac-input[7 - i] = (seq >> (i * 8)) & 255
     }
     mac-input[8] = ct & 255
     put-u16(mac-input, 9, TLS-VERSION)
     put-u16(mac-input, 11, n)
     i <- [0..n): {
+        #{overflow = wrap}
         mac-input[13 + i] = data[i]
     }
     mac [32]byte
     mac = hmac.hmac-sha256(.server-mac-key[..], mac-input)
 
     ; 2. 明文 + MAC
+    #{overflow = wrap}
     plain []byte = with-len(n + 32)
     i <- [0..n): {
         plain[i] = data[i]
     }
     i <- [0..32): {
+        #{overflow = wrap}
         plain[n + i] = mac[i]
     }
+    #{overflow = wrap}
     plain.truncate(n + 32)
 
     ; 3. PKCS#7 填充
@@ -2704,6 +2953,7 @@ server-conn.encrypt-record = (ct i64, data []byte) (ok bool) {
     ; 4. 生成隨機 IV
     iv [16]byte
     iv-bytes []byte = rand-bytes(.rand-state, 16)
+    #{overflow = wrap}
     .rand-state = .rand-state + 16
     i <- [0..16): {
         iv[i] = iv-bytes[i]
@@ -2714,22 +2964,29 @@ server-conn.encrypt-record = (ct i64, data []byte) (ok bool) {
     cipher = aes-cbc.aes-128-cbc-enc(padded, .server-enc-key, iv)
 
     ; 6. 構建記錄: type(1) + version(2) + length(2) + IV(16) + cipher
-    rec-len = 16 + padded.len
+    #{overflow = wrap}
+    rec-len = 16 + padded.len()
+    #{overflow = wrap}
     rec []byte = with-len(5 + rec-len)
     rec[0] = TLS-CT-APP-DATA & 255
     put-u16(rec, 1, TLS-VERSION)
     put-u16(rec, 3, rec-len)
     i <- [0..16): {
+        #{overflow = wrap}
         rec[5 + i] = iv[i]
     }
-    i <- [0..padded.len): {
+    i <- [0..padded.len()): {
+        #{overflow = wrap}
         rec[5 + 16 + i] = cipher[i]
     }
+    #{overflow = wrap}
     rec.truncate(5 + rec-len)
 
     ; 7. 發送
+    #{overflow = wrap}
     sent = net.net-send(.fd, rec, 5 + rec-len)
     sent < 0 -> return
+    #{overflow = wrap}
     .write-seq = .write-seq + 1
     ok = true
 }
@@ -2748,13 +3005,16 @@ server-conn.decrypt-record = (buf []byte, expected-ct i64) (ct i64, out []byte) 
     ; 提取 IV
     iv [16]byte
     i <- [0..16): {
+        #{overflow = wrap}
         iv[i] = buf[5 + i]
     }
 
     ; 密文
+    #{overflow = wrap}
     cipher-len = rlen - 16
     cipher []byte = with-len(cipher-len)
     i <- [0..cipher-len): {
+        #{overflow = wrap}
         cipher[i] = buf[5 + 16 + i]
     }
     cipher.truncate(cipher-len)
@@ -2768,21 +3028,25 @@ server-conn.decrypt-record = (buf []byte, expected-ct i64) (ct i64, out []byte) 
     unpad-n < 0 -> return
 
     ; 明文 = data(0..unpad-n-32) + MAC(unpad-n-32..unpad-n)
+    #{overflow = wrap}
     data-len = unpad-n - 32
     data-len < 0 -> return
 
     ; 驗證 MAC
     ; MAC = HMAC-SHA256(client_mac_key, seq + type + version + length + content)
     ; TLS 1.2 中加密記錄的 type 固定為 23，但 MAC 計算使用原始 type
+    #{overflow = wrap}
     mac-input []byte = with-len(13 + data-len)
     seq = .read-seq
     i <- [0..8): {
+        #{overflow = wrap}
         mac-input[7 - i] = (seq >> (i * 8)) & 255
     }
     mac-input[8] = expected-ct & 255
     put-u16(mac-input, 9, TLS-VERSION)
     put-u16(mac-input, 11, data-len)
     i <- [0..data-len): {
+        #{overflow = wrap}
         mac-input[13 + i] = plain[i]
     }
     exp-mac [32]byte
@@ -2791,6 +3055,7 @@ server-conn.decrypt-record = (buf []byte, expected-ct i64) (ct i64, out []byte) 
     ; 比較 MAC
     mac-ok = 1
     i <- [0..32): {
+        #{overflow = wrap}
         b1 = plain[data-len + i]
         b2 = exp-mac[i]
         b1 != b2 -> mac-ok = 0
@@ -2804,6 +3069,7 @@ server-conn.decrypt-record = (buf []byte, expected-ct i64) (ct i64, out []byte) 
     }
     out.truncate(data-len)
     ct = expected-ct
+    #{overflow = wrap}
     .read-seq = .read-seq + 1
 }
 
@@ -2868,6 +3134,7 @@ server-conn.read-finished = () (ok bool) {
     verify = prf(.master-secret, 'client finished', hs-hash, TLS-FINISHED-SIZE)
 
     i <- [0..TLS-FINISHED-SIZE): {
+        #{overflow = wrap}
         b1 = plain[4 + i]
         b2 = verify[i]
         b1 != b2 -> return
@@ -2897,12 +3164,15 @@ server-conn.send-finished = () (ok bool) {
     verify = prf(.master-secret, 'server finished', hs-hash, TLS-FINISHED-SIZE)
 
     ; 構建 Finished 訊息
+    #{overflow = wrap}
     hs []byte = with-len(4 + TLS-FINISHED-SIZE)
     hs[0] = TLS-HS-FINISHED
     put-u24(hs, 1, TLS-FINISHED-SIZE)
     i <- [0..TLS-FINISHED-SIZE): {
+        #{overflow = wrap}
         hs[4 + i] = verify[i]
     }
+    #{overflow = wrap}
     hs.truncate(4 + TLS-FINISHED-SIZE)
 
     ; 追加到交握緩衝區（在加密之前）
@@ -2924,6 +3194,7 @@ server-conn.send-server-hello-13 = () (ok bool) {
 
     ; 生成 X25519 金鑰對
     seed = .rand-state
+    #{overflow = wrap}
     .rand-state = .rand-state + 1
 
     kp-state = seed
@@ -2955,62 +3226,81 @@ server-conn.send-server-hello-13 = () (ok bool) {
 
     ; version = 0x0303（legacy）
     put-u16(hs, pos, TLS-VERSION)
+    #{overflow = wrap}
     pos = pos + 2
 
     ; random (32 bytes)
     rand-bytes-val []byte = rand-bytes(.rand-state, 32)
+    #{overflow = wrap}
     .rand-state = .rand-state + 32
     i <- [0..32): {
+        #{overflow = wrap}
         hs[pos + i] = rand-bytes-val[i]
         .server-random[i] = rand-bytes-val[i]
     }
+    #{overflow = wrap}
     pos = pos + 32
 
     ; session_id_length = 0
     hs[pos] = 0
+    #{overflow = wrap}
     pos = pos + 1
 
     ; cipher_suite = TLS_AES_128_GCM_SHA256 (0x1301)
     put-u16(hs, pos, TLS-CIPHER-AES128-GCM-SHA256)
+    #{overflow = wrap}
     pos = pos + 2
 
     ; compression_method = 0
     hs[pos] = 0
+    #{overflow = wrap}
     pos = pos + 1
 
     ; === 擴展 ===
     ext-len-pos = pos
+    #{overflow = wrap}
     pos = pos + 2
 
     ; 擴展 1: supported_versions (43)
     put-u16(hs, pos, TLS-EXT-SUPPORTED-VERSIONS)
+    #{overflow = wrap}
     pos = pos + 2
     put-u16(hs, pos, 2)
+    #{overflow = wrap}
     pos = pos + 2
     put-u16(hs, pos, TLS-VERSION-1-3)
+    #{overflow = wrap}
     pos = pos + 2
 
     ; 擴展 2: key_share (51)
     put-u16(hs, pos, TLS-EXT-KEY-SHARE)
+    #{overflow = wrap}
     pos = pos + 2
 
     ; ext data length = 2 (group) + 2 (key_len) + 32 (key) = 36
     put-u16(hs, pos, 36)
+    #{overflow = wrap}
     pos = pos + 2
     put-u16(hs, pos, TLS-GROUP-X25519)
+    #{overflow = wrap}
     pos = pos + 2
     put-u16(hs, pos, 32)
+    #{overflow = wrap}
     pos = pos + 2
     i <- [0..32): {
+        #{overflow = wrap}
         hs[pos + i] = .server-pub[i]
     }
+    #{overflow = wrap}
     pos = pos + 32
 
     ; 填入擴展總長度
+    #{overflow = wrap}
     ext-total = pos - ext-len-pos - 2
     put-u16(hs, ext-len-pos, ext-total)
 
     ; 填入 handshake message length
+    #{overflow = wrap}
     body-len = pos - 4
     put-u24(hs, 1, body-len)
     hs.truncate(pos)
@@ -3152,6 +3442,7 @@ server-conn.derive-application-keys-13 = () {
     ; 注意：必須排除 client Finished（read-client-finished-13 會 append CF 到 hs-buf）。
     ; client Finished = 4 位元組標頭 + 32 位元組 verify_data = 36 位元組。
     ; 使用減去 36 後的長度切片，確保只雜湊到 server Finished。
+    #{overflow = wrap}
     pre-cf-len = .hs-buf-len - 36
     pre-cf-buf []byte = with-len(pre-cf-len)
     i <- [0..pre-cf-len): {
@@ -3203,14 +3494,16 @@ server-conn.derive-application-keys-13 = () {
 ; 返回 ok bool: true=成功
 server-conn.encrypt-record-13 = (ct i64, data []byte, key [16]byte, iv [12]byte, seq i64) (ok bool) {
     ok = false
-    n = data.len
+    n = data.len()
 
     ; 明文 = data + content_type(1 byte)
+    #{overflow = wrap}
     plain []byte = with-len(n + 1)
     i <- [0..n): {
         plain[i] = data[i]
     }
     plain[n] = ct & 255
+    #{overflow = wrap}
     plain-len = n + 1
     plain.truncate(plain-len)
 
@@ -3222,6 +3515,7 @@ server-conn.encrypt-record-13 = (ct i64, data []byte, key [16]byte, iv [12]byte,
     aad []byte = with-len(5)
     aad[0] = TLS-CT-APP-DATA & 255
     put-u16(aad, 1, TLS-VERSION)
+    #{overflow = wrap}
     put-u16(aad, 3, plain-len + 16)
     aad.truncate(5)
 
@@ -3230,17 +3524,22 @@ server-conn.encrypt-record-13 = (ct i64, data []byte, key [16]byte, iv [12]byte,
     sealed = aes-gcm.aes-128-gcm-seal(key, nonce, aad, plain)
 
     ; 構建完整記錄: header(5) + sealed
+    #{overflow = wrap}
     rec-len = plain-len + 16
+    #{overflow = wrap}
     rec []byte = with-len(5 + rec-len)
     rec[0] = TLS-CT-APP-DATA & 255
     put-u16(rec, 1, TLS-VERSION)
     put-u16(rec, 3, rec-len)
     i <- [0..rec-len): {
+        #{overflow = wrap}
         rec[5 + i] = sealed[i]
     }
+    #{overflow = wrap}
     rec.truncate(5 + rec-len)
 
     ; 發送
+    #{overflow = wrap}
     sent = net.net-send(.fd, rec, 5 + rec-len)
     sent < 0 -> return
     ok = true
@@ -3262,6 +3561,7 @@ server-conn.decrypt-record-13 = (rec []byte, key [16]byte, iv [12]byte, seq i64)
     ; 提取密文+tag
     sealed []byte = with-len(rlen)
     i <- [0..rlen): {
+        #{overflow = wrap}
         sealed[i] = rec[5 + i]
     }
 
@@ -3280,11 +3580,13 @@ server-conn.decrypt-record-13 = (rec []byte, key [16]byte, iv [12]byte, seq i64)
     ; 解密
     plain []byte
     plain = aes-gcm.aes-128-gcm-open(key, nonce, aad, sealed)
-    plain.len == 0 -> return
+    plain.len() == 0 -> return
 
     ; 最後一個位元組是原始 content type
-    plain-len = plain.len
+    plain-len = plain.len()
+    #{overflow = wrap}
     ct = plain[plain-len - 1]
+    #{overflow = wrap}
     plain-len = plain-len - 1
 
     out = with-len(plain-len)
@@ -3318,41 +3620,50 @@ server-conn.read-encrypted-record-13 = (key [16]byte, iv [12]byte, seq i64) (ct 
 server-conn.read-encrypted-handshake-13 = () (msg-type i64, msg-data []byte) {
     msg-type = -1
 
+    #{overflow = wrap}
     .hs-plain-pos + 4 > .hs-plain-len -> {
         ct = 0
         plain []byte
         ct, plain = .read-encrypted-record-13(.hs-client-key, .hs-client-iv, .hs-read-seq)
+        #{overflow = wrap}
         .hs-read-seq = .hs-read-seq + 1
         ct < 0 -> return
         ct != TLS-CT-HANDSHAKE -> return
         .hs-plain-buf = plain
-        .hs-plain-len = plain.len
+        .hs-plain-len = plain.len()
         .hs-plain-pos = 0
     }
     pos = .hs-plain-pos
     msg-type = .hs-plain-buf[pos]
+    #{overflow = wrap}
     msg-len i64 = get-u24(.hs-plain-buf, pos + 1)
 
+    #{overflow = wrap}
     pos + 4 + msg-len > .hs-plain-len -> return
     msg-data = with-len(msg-len)
     i <- [0..msg-len): {
+        #{overflow = wrap}
         msg-data[i] = .hs-plain-buf[pos + 4 + i]
     }
     msg-data.truncate(msg-len)
 
     full-msg []byte
+    #{overflow = wrap}
     full-msg = with-len(4 + msg-len)
     full-msg[0] = msg-type
     full-msg[1] = (msg-len >> 16) & 255
     full-msg[2] = (msg-len >> 8) & 255
     full-msg[3] = msg-len & 255
     i <- [0..msg-len): {
+        #{overflow = wrap}
         full-msg[4 + i] = msg-data[i]
     }
+    #{overflow = wrap}
     full-msg.truncate(4 + msg-len)
 
     .append-hs(full-msg)
 
+    #{overflow = wrap}
     .hs-plain-pos = pos + 4 + msg-len
 }
 
@@ -3373,6 +3684,7 @@ server-conn.send-encrypted-extensions-13 = () (ok bool) {
 
     ; 加密發送（使用交握金鑰）
     ok = .encrypt-record-13(TLS-CT-HANDSHAKE, hs, .hs-server-key, .hs-server-iv, .hs-write-seq)
+    #{overflow = wrap}
     .hs-write-seq = .hs-write-seq + 1
 }
 
@@ -3381,13 +3693,15 @@ server-conn.send-encrypted-extensions-13 = () (ok bool) {
 server-conn.send-certificate-13 = () (ok bool) {
     ok = false
 
-    cert-len = .cert.len
+    cert-len = .cert.len()
 
     ; Certificate: type(1) + length(3) + ctx_len(1) + list_len(3) + cert_len(3) + cert + ext_len(2)
+    #{overflow = wrap}
     hs-len = 4 + 1 + 3 + 3 + cert-len + 2
     hs []byte = with-len(hs-len)
 
     hs[0] = TLS-HS-CERTIFICATE
+    #{overflow = wrap}
     body-len = 1 + 3 + 3 + cert-len + 2
     put-u24(hs, 1, body-len)
 
@@ -3395,6 +3709,7 @@ server-conn.send-certificate-13 = () (ok bool) {
     hs[4] = 0
 
     ; certificate_list length = 3 + cert-len + 2
+    #{overflow = wrap}
     put-u24(hs, 5, 3 + cert-len + 2)
 
     ; first cert length
@@ -3402,10 +3717,12 @@ server-conn.send-certificate-13 = () (ok bool) {
 
     ; cert data
     i <- [0..cert-len): {
+        #{overflow = wrap}
         hs[11 + i] = .cert[i]
     }
 
     ; extensions length = 0
+    #{overflow = wrap}
     put-u16(hs, 11 + cert-len, 0)
     hs.truncate(hs-len)
 
@@ -3414,6 +3731,7 @@ server-conn.send-certificate-13 = () (ok bool) {
 
     ; 加密發送
     ok = .encrypt-record-13(TLS-CT-HANDSHAKE, hs, .hs-server-key, .hs-server-iv, .hs-write-seq)
+    #{overflow = wrap}
     .hs-write-seq = .hs-write-seq + 1
 }
 
@@ -3447,6 +3765,7 @@ server-conn.send-finished-13 = () (ok bool) {
     hs[0] = TLS-HS-FINISHED
     put-u24(hs, 1, 32)
     i <- [0..32): {
+        #{overflow = wrap}
         hs[4 + i] = verify[i]
     }
     hs.truncate(36)
@@ -3456,6 +3775,7 @@ server-conn.send-finished-13 = () (ok bool) {
 
     ; 加密發送
     ok = .encrypt-record-13(TLS-CT-HANDSHAKE, hs, .hs-server-key, .hs-server-iv, .hs-write-seq)
+    #{overflow = wrap}
     .hs-write-seq = .hs-write-seq + 1
 }
 
@@ -3602,7 +3922,7 @@ server-conn.send = (data str) (written ?i64) {
     written = nil
     .encrypted == false -> return
     data-bytes []byte = data.to-bytes()
-    data-len = data-bytes.len
+    data-len = data-bytes.len()
 
     {
         .is-tls13 -> {
@@ -3610,6 +3930,7 @@ server-conn.send = (data str) (written ?i64) {
             ; TLS 1.3: 使用 AEAD（伺服器應用金鑰）
             ok = .encrypt-record-13(TLS-CT-APP-DATA, data-bytes, .ap-server-key, .ap-server-iv, .ap-write-seq)
             ok == false -> return
+            #{overflow = wrap}
             .ap-write-seq = .ap-write-seq + 1
         }
         -> {
@@ -3639,6 +3960,7 @@ server-conn.recv = (buf str, n i64) (read-n i64) {
             ct = 0
             out []byte
             ct, out = .read-encrypted-record-13(.ap-client-key, .ap-client-iv, .ap-read-seq)
+            #{overflow = wrap}
             .ap-read-seq = .ap-read-seq + 1
             {
                 ct < 0 -> return
@@ -3666,7 +3988,7 @@ server-conn.recv = (buf str, n i64) (read-n i64) {
     }
 
     ; 複製到 buf（最多 n 位元組）
-    copy-n = plain.len
+    copy-n = plain.len()
     copy-n > n -> copy-n = n
 
     ; 直接寫入 buf（避免 buf = tmp-str 不會傳播到呼叫端）
@@ -3806,19 +4128,24 @@ https-serve-once = (listen-fd fd, status i64, body str) (ok bool) {
             recv-len = 0
             cr = number.char-to-str(13)
             lf = number.char-to-str(10)
+            #{overflow = wrap}
             crlf = cr - lf
+            #{overflow = wrap}
             separator = crlf - crlf
 
             sep-found = false
             {
                 sep-found -> *
+                #{overflow = wrap}
                 recv-len + 4096 > 8192 -> *
                 tmp str = with-len(4096)
                 rn = c.recv(tmp, 4096)
                 rn <= 0 -> *
                 i <- [0..rn): {
+                    #{overflow = wrap}
                     recv-buf[recv-len + i] = tmp[i]
                 }
+                #{overflow = wrap}
                 recv-len = recv-len + rn
 
                 data = recv-buf.slice(0, recv-len)
@@ -3834,10 +4161,11 @@ https-serve-once = (listen-fd fd, status i64, body str) (ok bool) {
                 status == 404 -> status-text = 'Not Found'
                 status == 500 -> status-text = 'Internal Server Error'
             }
-            body-len = body.len
+            body-len = body.len-bytes()
             len-s = body-len.to-str()
 
             ; 構建完整回應（一次發送，避免多次 send 的 option 處理）
+            #{overflow = wrap}
             response = 'HTTP/1.1 ' - status-s - ' ' - status-text - crlf - 'Content-Type: text/plain; charset=utf-8' - crlf - 'Content-Length: ' - len-s - crlf - 'Connection: close' - crlf - 'Server: nolang-https/1.0' - crlf - crlf - body
 
             w1 = c.send(response)

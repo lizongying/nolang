@@ -229,6 +229,7 @@ test-edge-i64 = () {
     s = (9223372036854775807).to-str()
     print(s); 期望: 9223372036854775807
 
+    #{overflow = wrap}
     s = (-9223372036854775807 - 1).to-str()
     print(s); 期望: -9223372036854775808
 }
@@ -238,6 +239,7 @@ test-from-hex-odd = () {
     b = 'abc'.from-hex()
     {
         b == nil -> print('nil')
+        #{overflow = wrap}
         b == err -> print('err - odd length'); 期望: err
         -> print('unexpected ok')
     }

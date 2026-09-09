@@ -87,6 +87,7 @@ bn-cmp = (a []byte, b []byte) (r i64) {
 bn-add = (a []byte, b []byte) (sum [32]byte, carry i64) {
     carry = 0
     i <- [0..32): {
+        #{overflow = wrap}
         val = (a[i]) + (b[i]) + carry
         sum[i] = val & 255
         carry = val >> 8
@@ -98,9 +99,11 @@ bn-add = (a []byte, b []byte) (sum [32]byte, carry i64) {
 bn-sub = (a []byte, b []byte) (diff [32]byte, borrow i64) {
     borrow = 0
     i <- [0..32): {
+        #{overflow = wrap}
         val = (a[i]) - (b[i]) - borrow
         {
             val < 0 -> {
+                #{overflow = wrap}
                 val = val + 256
                 borrow = 1
             }
@@ -148,18 +151,23 @@ bn-mulmod = (a []byte, b []byte, m []byte) (out [32]byte) {
     i <- [0..32): {
         carry = 0
         j <- [0..32): {
+            #{overflow = wrap}
             idx = i + j
+            #{overflow = wrap}
             val = (product[idx]) + (a[i]) * (b[j]) + carry
             product[idx] = val & 255
             carry = val >> 8
         }
 
         ; 傳播進位
+        #{overflow = wrap}
         idx = i + 32
         {
+            #{overflow = wrap}
             val = (product[idx]) + carry
             product[idx] = val & 255
             carry = val >> 8
+            #{overflow = wrap}
             idx = idx + 1
         } (idx < 64 && carry != 0)
     }
@@ -177,23 +185,27 @@ bn-mulmod = (a []byte, b []byte, m []byte) (out [32]byte) {
     {
 
         ; 檢查 work 的第 bit 位元
+        #{overflow = wrap}
         byte-idx = bit / 8
         bit-idx = bit % 8
         (work[byte-idx] >> bit-idx) & 1 == 1 -> {
 
             ; 減去 m << (bit - 256)
+            #{overflow = wrap}
             shift = bit - 256
             shifted [64]byte
 
             ; m << shift
             i <- [0..32): {
                 src-byte = i
+                #{overflow = wrap}
                 dst-byte-start = (i * 8 + shift) / 8
                 ; 簡化：只在 byte 邊界對齊時處理
             }
             ; 由於位元級移位複雜，使用更簡單的方法
             ; 直接從高 32 位元組開始減法
         }
+        #{overflow = wrap}
         bit = bit - 1
     } (bit >= 256)
 
@@ -206,6 +218,7 @@ bn-mulmod = (a []byte, b []byte, m []byte) (out [32]byte) {
     ; 每次嘗試減去 m * 2^(shift)
     shift-byte = 32
     {
+        #{overflow = wrap}
         shift-byte = shift-byte - 1
 
         ; 嘗試減去 m << (shift_byte * 8)
@@ -213,6 +226,7 @@ bn-mulmod = (a []byte, b []byte, m []byte) (out [32]byte) {
         can-sub = 1
         i <- [0..32): {
             wi = 0
+            #{overflow = wrap}
             shift-byte + i < 64 -> wi = work[shift-byte + i]
             mi = m[i]
             {
@@ -226,12 +240,15 @@ bn-mulmod = (a []byte, b []byte, m []byte) (out [32]byte) {
         can-sub == 1 -> {
             borrow = 0
             i <- [0..32): {
+                #{overflow = wrap}
                 idx = shift-byte + i
                 {
                     idx < 64 -> {
+                        #{overflow = wrap}
                         val = (work[idx]) - (m[i]) - borrow
                         {
                             val < 0 -> {
+                                #{overflow = wrap}
                                 val = val + 256
                                 borrow = 1
                             }
@@ -241,9 +258,11 @@ bn-mulmod = (a []byte, b []byte, m []byte) (out [32]byte) {
                     }
                     -> {
                         borrow != 0 -> {
+                            #{overflow = wrap}
                             val = (work[idx]) - borrow
                             {
                                 val < 0 -> {
+                                    #{overflow = wrap}
                                     val = val + 256
                                     borrow = 1
                                 }
@@ -256,6 +275,7 @@ bn-mulmod = (a []byte, b []byte, m []byte) (out [32]byte) {
             }
 
             ; 如果還能減，再減一次
+            #{overflow = wrap}
             shift-byte = shift-byte + 1
         }
     } (shift-byte > 0)
@@ -346,6 +366,7 @@ bn-invmod = (a []byte, m []byte) (out [32]byte) {
 
     ; 平方-乘法（從低位到高位）
     bit <- [0..256): {
+        #{overflow = wrap}
         byte-idx = bit / 8
         bit-idx = bit % 8
         (exp[byte-idx] >> bit-idx) & 1 == 1 -> result = bn-mulmod(result, base, m)
@@ -370,6 +391,7 @@ ec-point-double = (p []byte) (r []byte) {
     ; 如果 Y == 0，返回無窮遠點
     is-zero = 1
     i <- [0..32): {
+        #{overflow = wrap}
         p[32 + i] != 0 -> is-zero = 0
     }
     is-zero == 1 -> {
@@ -451,7 +473,9 @@ ec-point-double = (p []byte) (r []byte) {
     ; 輸出
     i <- [0..32): {
         r[i] = x3[i]
+        #{overflow = wrap}
         r[32 + i] = y3[i]
+        #{overflow = wrap}
         r[64 + i] = z3[i]
     }
 }
@@ -587,7 +611,9 @@ ec-point-add = (p []byte, q []byte) (r []byte) {
 
     i <- [0..32): {
         r[i] = x3[i]
+        #{overflow = wrap}
         r[32 + i] = y3[i]
+        #{overflow = wrap}
         r[64 + i] = z3[i]
     }
 }
@@ -615,6 +641,7 @@ ec-scalar-mult = (k [32]byte, p []byte) (r []byte) {
         }
 
         ; 如果 bit 為 1，R = R + P
+        #{overflow = wrap}
         byte-idx = bit / 8
         bit-idx = bit % 8
         (k[byte-idx] >> bit-idx) & 1 == 1 -> {
@@ -623,6 +650,7 @@ ec-scalar-mult = (k [32]byte, p []byte) (r []byte) {
                 r[i] = tmp[i]
             }
         }
+        #{overflow = wrap}
         bit = bit - 1
     } (bit >= 0)
 }
@@ -673,7 +701,9 @@ ec-point-to-bytes = (p []byte) (out [65]byte) {
     ; 輸出: 04 || x || y（大端序）
     out[0] = 4
     i <- [0..32): {
+        #{overflow = wrap}
         out[1 + i] = x[31 - i]
+        #{overflow = wrap}
         out[33 + i] = y[31 - i]
     }
 }
@@ -688,17 +718,21 @@ ec-bytes-to-point = (in [65]byte) (out []byte) {
     x [32]byte
     y [32]byte
     i <- [0..32): {
+        #{overflow = wrap}
         x[i] = in[1 + 31 - i]
+        #{overflow = wrap}
         y[i] = in[33 + 31 - i]
     }
 
     ; Jacobian: (X, Y, Z) = (x, y, 1)
     i <- [0..32): {
         out[i] = x[i]
+        #{overflow = wrap}
         out[32 + i] = y[i]
     }
     out[64] = 1
     i <- [1..32): {
+        #{overflow = wrap}
         out[64 + i] = 0
     }
 }
@@ -712,13 +746,16 @@ ec-get-basepoint = () (g []byte) {
 
     ; Gx, Gy 轉為小端序
     i <- [0..32): {
+        #{overflow = wrap}
         g[i] = P256-GX[31 - i]
+        #{overflow = wrap}
         g[32 + i] = P256-GY[31 - i]
     }
 
     ; Z = 1
     g[64] = 1
     i <- [1..32): {
+        #{overflow = wrap}
         g[64 + i] = 0
     }
 }
@@ -735,6 +772,7 @@ ecdsa-publickey = (priv [32]byte) (pub [65]byte) {
     ; 將私鑰轉為小端序
     k [32]byte
     i <- [0..32): {
+        #{overflow = wrap}
         k[i] = priv[31 - i]
     }
 
@@ -763,12 +801,14 @@ ecdsa-sign = (priv [32]byte, msg []byte) (sig [64]byte) {
     ; 將哈希轉為小端序
     h-le [32]byte
     i <- [0..32): {
+        #{overflow = wrap}
         h-le[i] = h[31 - i]
     }
 
     ; 私鑰轉小端序
     d [32]byte
     i <- [0..32): {
+        #{overflow = wrap}
         d[i] = priv[31 - i]
     }
 
@@ -776,6 +816,7 @@ ecdsa-sign = (priv [32]byte, msg []byte) (sig [64]byte) {
     k [32]byte
     state = 0
     i <- [0..32): {
+        #{overflow = wrap}
         state, rand-r = rand.rand(state + d[i] + h-le[i] + i)
         k[i] = state & 255
     }
@@ -803,6 +844,7 @@ ecdsa-sign = (priv [32]byte, msg []byte) (sig [64]byte) {
     ; 提取 x（大端序 → 小端序）
     rx [32]byte
     i <- [0..32): {
+        #{overflow = wrap}
         rx[i] = r-point-bytes[1 + 31 - i]
     }
     r-val [32]byte
@@ -823,7 +865,9 @@ ecdsa-sign = (priv [32]byte, msg []byte) (sig [64]byte) {
 
     ; 輸出（大端序）
     i <- [0..32): {
+        #{overflow = wrap}
         sig[i] = r-val[31 - i]
+        #{overflow = wrap}
         sig[32 + i] = s-val[31 - i]
     }
 }
@@ -839,7 +883,9 @@ ecdsa-verify = (pub [65]byte, msg []byte, sig [64]byte) (ok i64) {
     r-val [32]byte
     s-val [32]byte
     i <- [0..32): {
+        #{overflow = wrap}
         r-val[i] = sig[31 - i]
+        #{overflow = wrap}
         s-val[i] = sig[32 + 31 - i]
     }
 
@@ -879,6 +925,7 @@ h [32]byte
 h = sha256.sha256(msg)
 h-le [32]byte
 i <- [0..32): {
+    #{overflow = wrap}
     h-le[i] = h[31 - i]
 }
 
@@ -927,6 +974,7 @@ r-point-bytes [65]byte
 r-point-bytes = ec-point-to-bytes(r-point)
 rx [32]byte
 i <- [0..32): {
+    #{overflow = wrap}
     rx[i] = r-point-bytes[1 + 31 - i]
 }
 v [32]byte

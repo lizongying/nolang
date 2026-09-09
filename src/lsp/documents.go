@@ -610,6 +610,14 @@ func (m *DocumentManager) indexModuleStatement(index *SymbolIndex, stmt parser.S
 		return
 	}
 
+	// Keep built-in declarations (registered by indexBuiltinComments for
+	// #{buildin=NAME} / comment-form declarations in std modules) authoritative:
+	// a real function definition that merely re-declares a built-in stub in a
+	// declaration-only std file must not clobber the built-in symbol entry.
+	if existing, ok := index.definitions[name]; ok && existing.Type == "build-in" {
+		return
+	}
+
 	var line, column int
 	switch t := token.(type) {
 	case lexer.Token:
@@ -654,12 +662,18 @@ func (m *DocumentManager) indexBuiltinComments(index *SymbolIndex, source, modUR
 	lines := strings.Split(source, "\n")
 	for i, line := range lines {
 		trimmed := strings.TrimSpace(line)
-		if !strings.HasPrefix(trimmed, ";") {
+		// Skip annotation-only lines (e.g. #{buildin=NAME}); the following
+		// `NAME = (params) (results) { }` line carries the actual declaration.
+		if strings.HasPrefix(trimmed, "#{") {
 			continue
 		}
-		// Strip the leading semicolon
-		content := strings.TrimSpace(trimmed[1:])
-		// Look for pattern: NAME = ( ...  — a comment-only function signature
+		// Comment-form declarations start with ';'; strip it so the signature
+		// body parses identically to a real (non-comment) declaration.
+		content := trimmed
+		if strings.HasPrefix(content, ";") {
+			content = strings.TrimSpace(content[1:])
+		}
+		// Look for pattern: NAME = ( ...  — a function signature
 		eqIdx := strings.Index(content, " = (")
 		if eqIdx <= 0 {
 			continue

@@ -8,19 +8,19 @@
 t-encode = () {
     data []byte = [65, 66, 67]
     s = pem.pem-encode('TEST', data)
-    runner.gt(s.len, 10, 'encoded len > 10')
+    runner.gt(s.len(), 10, 'encoded len > 10')
 }
 
 t-encode-decode = () {
     data []byte = [1, 2, 3, 4, 5]
     encoded = pem.pem-encode('CERTIFICATE', data)
-    runner.gt(encoded.len, 0, 'encoded len > 0')
+    runner.gt(encoded.len(), 0, 'encoded len > 0')
 
     ok bool = false
     result = pem.pem-decode(encoded)
     result: {
         ok -> {
-            match = it.data.len == 5
+            match = it.data.len() == 5
             match2 = it.data[0] == 1 && it.data[4] == 5
             ok = match && match2
         }

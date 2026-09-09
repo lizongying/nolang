@@ -56,6 +56,7 @@ func NewServer() *Server {
 			DocumentFormattingProvider: true,
 			FoldingRangeProvider:       true,
 			RenameProvider:             true,
+			CodeActionProvider:         true,
 			SemanticTokensProvider: &SemanticTokensOptions{
 				Legend: GetSemanticTokensLegend(),
 				Full:   true,
@@ -154,33 +155,40 @@ func (s *Server) publishDocumentDiagnostics(uri string, parseErrors []string, as
 				if l.EndColumn > 0 {
 					endChar = uint32(l.EndColumn - 1)
 				}
-				var sev int
-				var tags []DiagnosticTag
-				switch l.Severity {
-				case checker.LintError:
-					sev = DiagnosticSeverityError
-				case checker.LintWarning:
-					sev = DiagnosticSeverityWarning
-				case checker.LintHint:
-					sev = DiagnosticSeverityHint
-					// Unused variables carry the Unnecessary tag for IDE
-					// strikethrough; RunAllLints marks them as "hint" +
-					// source "nolang-lint" with message containing
-					// "is defined but never used".
-					if strings.Contains(l.Message, "is defined but never used") {
-						tags = []DiagnosticTag{DiagnosticTagUnnecessary}
-					}
+			var sev int
+			var tags []DiagnosticTag
+			var code any
+			switch l.Severity {
+			case checker.LintError:
+				sev = DiagnosticSeverityError
+			case checker.LintWarning:
+				sev = DiagnosticSeverityWarning
+			case checker.LintHint:
+				sev = DiagnosticSeverityHint
+				// Unused variables carry the Unnecessary tag for IDE
+				// strikethrough; RunAllLints marks them as "hint" +
+				// source "nolang-lint" with message containing
+				// "is defined but never used".
+				if strings.Contains(l.Message, "is defined but never used") {
+					tags = []DiagnosticTag{DiagnosticTagUnnecessary}
 				}
-				diagnostics = append(diagnostics, Diagnostic{
-					Range: Range{
-						Start: Position{Line: uint32(l.Line - 1), Character: uint32(l.Column - 1)},
-						End:   Position{Line: uint32(l.Line - 1), Character: endChar},
-					},
-					Severity: sev,
-					Source:   l.Source,
-					Tags:     tags,
-					Message:  l.Message,
-				})
+			}
+			// 有號整數相減溢出提示帶固定 Code，供 code action 識別並提供
+			// 「插入 #{overflow = wrap|clamp0}」quickfix。
+			if l.Source == "nolang-overflow" {
+				code = "overflow-wrap"
+			}
+			diagnostics = append(diagnostics, Diagnostic{
+				Range: Range{
+					Start: Position{Line: uint32(l.Line - 1), Character: uint32(l.Column - 1)},
+					End:   Position{Line: uint32(l.Line - 1), Character: endChar},
+				},
+				Severity: sev,
+				Code:     code,
+				Source:   l.Source,
+				Tags:     tags,
+				Message:  l.Message,
+			})
 			}
 		}
 	}
@@ -767,6 +775,14 @@ func (s *Server) Handle(method string, params json.RawMessage) (any, error) {
 			}
 		}
 		return s.handleTextDocumentSemanticTokensFull(p)
+	case "textDocument/codeAction":
+		var p CodeActionParams
+		if params != nil {
+			if err := json.Unmarshal(params, &p); err != nil {
+				return nil, err
+			}
+		}
+		return s.handleTextDocumentCodeAction(p)
 	case "workspace/symbol":
 		var p WorkspaceSymbolParams
 		if params != nil {
@@ -778,6 +794,88 @@ func (s *Server) Handle(method string, params json.RawMessage) (any, error) {
 	default:
 		return nil, fmt.Errorf("method not found: %s", method)
 	}
+}
+
+// handleTextDocumentCodeAction 對「整數運算溢出」提示（Code = "overflow-wrap"）
+// 提供五個 quickfix，插入對應的 #{overflow = <mode>} 註解：
+//   wrap   無聲 2's complement 回繞
+//   clamp0 下溢歸零
+//   min    飽和箝位到型別最小值
+//   max    飽和箝位到型別最大值
+//   saturate 飽和箝位到型別區間
+// 五者都把整數運算的預設 option<int> 結果改為普通 int。
+func (s *Server) handleTextDocumentCodeAction(params CodeActionParams) (any, error) {
+	uri := params.TextDocument.URI
+
+	// 若客戶端透過 context.only 限定了動作種類，且不含 quickfix（或其子類），
+	// 則不產生任何 action，符合 LSP 語意。
+	if len(params.Context.Only) > 0 {
+		wantQuickFix := false
+		for _, k := range params.Context.Only {
+			if k == CodeActionKindQuickFix || strings.HasPrefix(string(k), string(CodeActionKindQuickFix)+".") {
+				wantQuickFix = true
+				break
+			}
+		}
+		if !wantQuickFix {
+			return []CodeAction{}, nil
+		}
+	}
+
+	var actions []CodeAction
+	for _, diag := range params.Context.Diagnostics {
+		if fmt.Sprint(diag.Code) != "overflow-wrap" {
+			continue
+		}
+		line := diag.Range.Start.Line
+		for _, mode := range []string{"wrap", "clamp0", "min", "max", "saturate"} {
+			if edit := s.overflowAnnotationEdit(uri, line, mode); edit != nil {
+				actions = append(actions, CodeAction{
+					Title:       "Add #{overflow = " + mode + "}",
+					Kind:        CodeActionKindQuickFix,
+					Diagnostics: []Diagnostic{diag},
+					Edit:        edit,
+				})
+			}
+		}
+	}
+	if actions == nil {
+		return []CodeAction{}, nil
+	}
+	return actions, nil
+}
+
+// overflowAnnotationEdit 在 line 上方插入 `#{overflow = <mode>}` 註解，縮排與該行一致。
+func (s *Server) overflowAnnotationEdit(uri string, line uint32, mode string) *WorkspaceEdit {
+	doc, err := s.documents.GetDocument(uri)
+	if err != nil || doc == nil {
+		return nil
+	}
+	lines := strings.Split(doc.Text, "\n")
+	indent := ""
+	if int(line) < len(lines) {
+		indent = leadingWhitespace(lines[line])
+	}
+	newText := indent + "#{overflow = " + mode + "}\n"
+	te := TextEdit{
+		Range: Range{
+			Start: Position{Line: line, Character: 0},
+			End:   Position{Line: line, Character: 0},
+		},
+		NewText: newText,
+	}
+	return &WorkspaceEdit{
+		Changes: map[string][]TextEdit{uri: {te}},
+	}
+}
+
+// leadingWhitespace 回傳字串開頭的連續空白（空格/製表符）。
+func leadingWhitespace(s string) string {
+	i := 0
+	for i < len(s) && (s[i] == ' ' || s[i] == '\t') {
+		i++
+	}
+	return s[:i]
 }
 
 func (s *Server) GetDocumentManager() *DocumentManager {

@@ -412,3 +412,108 @@ func TestUnwrapAssignAtTopLevel(t *testing.T) {
 		t.Errorf("expected error for ?= at top level, got none")
 	}
 }
+
+// TestUnwrapAssignNonOptionRHSError verifies that `?=` with a RHS that is
+// definitively NOT an option (literal, constant-foldable infix, or known
+// non-option local) produces the dedicated error telling the user to use `=`.
+// This prevents a large-scale `=` → `?=` mistake (per the立项 directive).
+func TestUnwrapAssignNonOptionRHSError(t *testing.T) {
+	tests := []struct {
+		name      string
+		input     string
+		wantErr   bool
+		errSubstr string
+	}{
+		{
+			name:    "constant infix is non-option",
+			input:   "foo = () (result ?i64) {\n    result = nil\n    v ?= 10 + 20\n}",
+			wantErr: true, errSubstr: "is not an option",
+		},
+		{
+			name:    "integer literal is non-option",
+			input:   "foo = () (result ?i64) {\n    result = nil\n    v ?= 42\n}",
+			wantErr: true, errSubstr: "is not an option",
+		},
+		{
+			name:    "known non-option local is non-option",
+			input:   "foo = () (result ?i64) {\n    result = nil\n    x i64 = 5\n    v ?= x\n}",
+			wantErr: true, errSubstr: "is not an option",
+		},
+		{
+			name:    "option-returning call is allowed",
+			input:   "foo = () (result ?i64) {\n    result = nil\n    v ?= bar()\n}",
+			wantErr: false,
+		},
+		{
+			name:    "infix with option operands is allowed",
+			input:   "foo = () (result ?i64) {\n    result = nil\n    a ?i64 = ok(1)\n    b ?i64 = ok(2)\n    v ?= a + b\n}",
+			wantErr: false,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			lex := lexer.New(tt.input)
+			p := New(lex)
+			_ = p.ParseProgram()
+			errs := p.Errors()
+			if tt.wantErr {
+				if len(errs) == 0 {
+					t.Fatalf("expected parse error, got none")
+				}
+				found := false
+				for _, e := range errs {
+					if strings.Contains(e, tt.errSubstr) {
+						found = true
+						break
+					}
+				}
+				if !found {
+					t.Errorf("expected error containing %q, got: %v", tt.errSubstr, errs)
+				}
+				return
+			}
+			if len(errs) != 0 {
+				t.Errorf("expected no parse error, got: %v", errs)
+			}
+		})
+	}
+}
+
+// TestUnwrapAssignCompoundOptionOperands verifies that a compound RHS such as
+// `v ?= a + b + c` (where the operands are option values) is lowered away
+// (no UnwrapAssignStatement remains) and that propagation guards are injected
+// for each option operand.
+func TestUnwrapAssignCompoundOptionOperands(t *testing.T) {
+	inputs := []string{
+		`sum = () (result ?i64) {
+    result = nil
+    a ?i64 = ok(10)
+    b ?i64 = ok(20)
+    c ?i64 = ok(30)
+    total ?= a + b + c
+}`,
+		`inner = () (result ?i64) {
+    result = nil
+    a ?i64 = ok(1)
+    b ?i64 = ok(2)
+    c ?i64 = ok(3)
+    d ?i64 = ok(4)
+    total ?= a + b + c + d
+}`,
+	}
+	for i, input := range inputs {
+		lex := lexer.New(input)
+		p := New(lex)
+		program := p.ParseProgram()
+		if errs := p.Errors(); len(errs) > 0 {
+			t.Fatalf("case %d parse errors: %v", i, errs)
+		}
+		hasUnwrap := false
+		for _, stmt := range program.Statements {
+			astContainsUnwrapAssign(stmt, &hasUnwrap)
+		}
+		if hasUnwrap {
+			t.Errorf("case %d: UnwrapAssignStatement should have been lowered", i)
+		}
+	}
+}

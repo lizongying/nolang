@@ -16,7 +16,7 @@
 ; []byte.len: 回傳位元組切片長度
 ; byte 是獨立類型，非 u8 別名，因此 []byte.len 不會從 []t.len 自動實例化。
 []byte.len = () (out i64) {
-    out = .len
+    out = .len()
 }
 
 ; i64.to-bytes-be: 將 int64 轉為大端序 8 位元組
@@ -57,6 +57,8 @@ i64.to-bytes-le = () (out [?]byte) {
     v = 0
     n = .len()
     i <- [0..n): {
+
+        #{overflow=wrap}
         v = v | ((.[i]) << (i * 8))
     }
 }
@@ -78,7 +80,6 @@ i64.to-bytes-le = () (out [?]byte) {
     }
     out = cs
 }
-
 
 ; []byte.to-str: 将字节切片按「先 to-chars 再 to-str」语义转成字符串。
 ; 每个字节被当作一个 0~255 的 Unicode 码点，再按 UTF-8 编码成 1~4 字节。
@@ -117,6 +118,8 @@ i64.to-bytes-le = () (out [?]byte) {
             seg[2] = 0x80 | ((cp >> 6) & 0x3f)
             seg[3] = 0x80 | (cp & 0x3f)
         }
+
+        #{overflow=wrap}
         r = r - seg
     }
     out = r
@@ -137,17 +140,20 @@ i64.to-bytes-le = () (out [?]byte) {
 ; 返回首次出现的位置，未找到返回 -1
 []byte.index = (target str) (pos i64) {
     pos = -1
-    tn = target.len
+    tn = target.len-bytes()
     tn == 0 -> {
         pos = 0
         return
     }
     n = .len()
+
+    #{overflow=wrap}
     limit = n - tn
     i = 0
     {
         matched = 1
         j <- [0..tn): {
+
             sj = .[i + j]
             tj = target[j]
             sj != tj -> {
@@ -167,7 +173,7 @@ i64.to-bytes-le = () (out [?]byte) {
 ; 返回首次出現的位置，未找到返回 -1
 []byte.index-from = (target str, from i64) (pos i64) {
     pos = -1
-    tn = target.len
+    tn = target.len-bytes()
     tn == 0 -> {
         n = .len()
         from <= n -> pos = from
@@ -175,11 +181,14 @@ i64.to-bytes-le = () (out [?]byte) {
     }
     from < 0 -> from = 0
     n = .len()
+
+    #{overflow=wrap}
     limit = n - tn
     i = from
     {
         matched = 1
         j <- [0..tn): {
+
             sj = .[i + j]
             tj = target[j]
             sj != tj -> {
@@ -199,11 +208,14 @@ i64.to-bytes-le = () (out [?]byte) {
 ; 返回新切片
 []byte.slice = (start i64, end i64) (val []byte) {
     start < 0 -> start = 0
-    end > .len -> end = .len
+    end > .len() -> end = .len()
     start >= end -> return
+
+    #{overflow=wrap}
     n = end - start
     val = with-len(n)
     i <- [0..n): {
+
         val[i] = .[start + i]
     }
 }
@@ -219,6 +231,8 @@ HEX-LOWER = '0123456789abcdef'
 ; []byte.to-hex: 將 []byte 編碼為大寫十六進制字串
 []byte.to-hex = () (out str) {
     n = .len()
+
+    #{overflow=wrap}
     out = with-len(n * 2)
     i <- [0..n): {
         b = .[i]
@@ -230,6 +244,8 @@ HEX-LOWER = '0123456789abcdef'
 ; []byte.to-hex-lower: 將 []byte 編碼為小寫十六進制字串
 []byte.to-hex-lower = () (out str) {
     n = .len()
+
+    #{overflow=wrap}
     out = with-len(n * 2)
     i <- [0..n): {
         b = .[i]
@@ -240,8 +256,7 @@ HEX-LOWER = '0123456789abcdef'
 
 ; byte.to-str: 將 byte 轉為字串（"65" → "65"）
 ; build-in (CLibCall: sprintf "%hhu")
-; byte.to-str = () (out str) {
-;     // LLVM: zext i8 to i64 → sprintf(buf, "%hhu", .)
+; byte.to-str = () (out str) {  // LLVM: zext i8 to i64 → sprintf(buf, "%hhu", .)
 ; }
 
 ; ═══════════════════════════════════════════════

@@ -4,20 +4,19 @@ sidebar_position: 1
 
 # Nolang Introduction
 
-Nolang is an experimental systems programming language that adopts a pass-by-reference model and safe scope model to achieve absolute memory safety. No GC.
+Nolang is an experimental systems programming language: memory-safe with no GC, semantically intuitive, and minimally syntactic. It adopts a pass-by-reference model and a safe scope model to achieve absolute memory safety.
 
 ## Core Features
 
-- **Developer-friendly**: No pointers, no ownership, no lifetimes...
-- **Pass by reference**: All function parameters are references; functions return results by modifying parameters
-- **Automatic memory management**: Through the safe scope model, memory is automatically released when leaving scope — no dangling pointers or memory leaks
-- **No GC**: No memory leaks, so no GC needed
-- **Performance-first**:
-deferred move; variables can be allocated once and freed once
-- **Method overloading**: Efficient performance through monomorphization
-- **Interfaces**: Support interface declaration, default implementations, and multi-interface inheritance
-- **Generics**: Support type and value generics
-- **Pattern matching**: Unique match design, simpler to use
+- **Memory-safe, no GC**: No garbage collector; automatic, safe memory management. Through the safe scope model, memory is automatically freed when leaving scope — no dangling pointers or memory leaks. Heap allocation is batched up-front, and a single batch free runs when the scope exits.
+- **Semantically intuitive**: Respects developer intent; no pointers, ownership, or lifetimes as hidden mental overhead.
+- **Minimal syntax**: Fewer keywords, simpler syntax.
+- **Pass by reference**: All function parameters are references; functions return results by modifying parameters.
+- **Performance-first**: Small strings require no heap allocation; variables can be allocated once and freed once.
+- **Method overloading**: Efficient performance through monomorphization.
+- **Interfaces**: Support interface declaration, default implementations, and multi-interface inheritance.
+- **Generics**: Support type and value generics.
+- **Pattern matching**: Unique match design, simpler to use.
 
 
 ## Quick Start

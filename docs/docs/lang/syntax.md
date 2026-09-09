@@ -1197,6 +1197,64 @@ map[str]
 
 ```
 
+### 安全索引（Safe Indexing）
+
+對 `arr` / `vec` / `slice`（`[]T`）的直接索引 `v[i]`，若索引越界，普通寫法會直接 abort（runtime error: index out of bounds）。Nolang 提供三種**安全**寫法，保證越界時絕不靜默崩潰：
+
+**1. `x ?= v[i]` —— 向上傳播錯誤**
+
+安全索引會把 `v[i]` 視為回傳 `?elem` 的運算：越界時回傳 `None`，否則回傳 `some(元素)`。配合 `?=` 解箱，越界錯誤會自動向上傳播（函式回傳 `?T` 時）。
+
+```no
+safe-get = (arr []i64, i i64) (res ?i64) {
+    x ?= arr[i]   ; 越界 → res = None（不崩潰）
+}
+```
+
+**2. `#{index-out=DEF} x = v[i]` —— 越界用字面量預設值替代**
+
+帶 `#{index-out=DEF}` 註解（註解可寫在賦值之後，同一行尾隨）時，越界不會崩潰，而是用 `DEF` 替代。`DEF` **只能是字面量**，依容器元素型別決定允許的種類：
+
+- 整數 / 字元容器（`i8`~`i128`、`u8`~`u128`、`byte`、`char`）：整數或字元字面量，如 `0`、`'x'`
+- 浮點容器（`f32`、`f64`）：浮點字面量，如 `0.0`
+- 布林容器（`bool`）：`true` / `false`
+- 字串容器（`str`）：字串字面量，如 `''`
+
+```no
+get-default = (arr []i64, i i64) (res i64) {
+    res = arr[i]  #{index-out=0}   ; 越界 → res = 0
+}
+
+get-ch = (arr []byte, i i64) (res byte) {
+    res = arr[i]  #{index-out=0}   ; byte 容器預設 0
+}
+```
+
+> 註解也支援前置寫法：`#{index-out=0} res = arr[i]`，語義相同。
+
+**3. option 回傳函式內的裸 `x = v[i]` —— 自動轉為 `?=`**
+
+當所在函式回傳 `?T` 結果時，裸的安全索引賦值 `x = v[i]` 會被自動改寫為 `x ?= v[i]`，越界自動向上傳播錯誤（與手寫 `?=` 等價）：
+
+```no
+auto-prop = (arr []i64, i i64) (res ?i64) {
+    x = arr[i]   ; 自動等同 x ?= arr[i]；越界 → res = None
+}
+```
+
+`vec`（含由 `to-vec()` 產生的未標註區域變數）同樣安全：
+
+```no
+get-vec-default = (a [4]i64, i i64) (res i64) {
+    v = a.to-vec()          ; v 的元素型別由 a 推導，無需標註
+    res = v[i]  #{index-out=0}   ; 越界 → res = 0（不崩潰）
+}
+```
+
+> **適用範圍：** 安全索引僅對 `arr` / `vec` / `slice` 的**直接變數索引**生效（`v[i]`，`v` 為識別符）。`str` / `txt` 索引仍回傳字元（語義不同）；`receiver.field[i]`（結構體欄位索引）走原有 bounds-check 路徑，不會被改寫為安全形式。
+>
+> **核心保證：** 無論用哪一種寫法，越界都不會讓程式靜默崩潰——或回傳 `None`、或回傳預設值、或向上傳播錯誤。
+
 ## 結構體
 
 結構體定義和字面量都必須使用多行形式，每個字段獨佔一行，字段之間不以逗號分隔，末尾也不跟逗號。
@@ -1521,6 +1579,120 @@ val: {
 }
 ```
 
+## 整數運算溢出（`#{overflow}` 註解）
+
+Nolang 不支援 panic——任何可能溢出的操作都必須以 `option` 或顯式註解處理，絕不會在執行期拋出整數溢位異常。下列**整數四則運算**的溢出行為由 `#{overflow = ...}` 註解控制：
+
+- 有號與無號的 **`+` `-` `*`**：左右運算元為整數（含 `int` 字面量）時皆適用；
+- 有號 **`/`**：僅 `INT_MIN / -1` 這一種情況會溢出（無號除法 `a/b ≤ a` 永不溢出，不適用）。
+
+> 無號整數（`u8`/`u16`/`u32`/`u64`/`u128`）的 `+ - *` 與有號整數**遵循完全相同的規則**：未標註時同樣預設回傳 `option<int>`，溢出 → `err`。這是設計上的刻意選擇——「只要無法在編譯期證明不可能溢出，就按相同規則處理」。
+
+| 模式 | 註解 | 溢出時 | 返回型別 | 適用場景 |
+| --- | --- | --- | --- | --- |
+| **默認（未標註）** | — | 溢出 → `err`，正常 → `ok(value)` | `option<int>` | 需要偵測溢出的運算 |
+| **回繞** | `#{overflow = wrap}` | 靜默 2's 補數回繞 | `int`（plain） | 哈希、密碼學、計數器等語義上容許回繞 |
+| **歸零** | `#{overflow = clamp0}` | 溢出（上溢或下溢）取 `0` | `int`（plain） | 差值不得為負的語義（如剩餘量） |
+| **最小值箝位** | `#{overflow = min}` | 溢出箝位到型別最小值 | `int`（plain） | 計數器下限、索引保護 |
+| **最大值箝位** | `#{overflow = max}` | 溢出箝位到型別最大值 | `int`（plain） | 容量上限、飽和累加 |
+| **飽和** | `#{overflow = saturate}` | 上溢→最大值、下溢→最小值 | `int`（plain） | 訊號/顏色飽和等 |
+
+此外，所有模式都支援**型別前綴形式**，精確指定某個窄型別的飽和界限，例如 `#{overflow = u8-max}`、`#{overflow = i8-min}`、`#{overflow = u16-saturate}`。當註解出現在函數級時，前綴型別會套用到該函數體內所有對應型別的運算。
+
+> **註解粒度**：`#{overflow = ...}` 放在**函數定義上方**時對整個函數體內的所有適用整數運算生效（函數級）；放在**某個 `let` 綁定上方**時只對緊隨的那一條運算語句生效（語句級）。一條註解僅作用於其後第一個定義/綁定。
+
+> **LSP 快速修復**：編輯器（nolang-lsp）會對未標註的整數運算給出 Hint（`nolang-overflow`），並提供五個 quickfix——**Add `#{overflow = wrap}`** / **`clamp0`** / **`min`** / **`max`** / **`saturate`**——自動在該運算所在語句上方、以與該行一致的縮排插入對應註解，把預設的 `option<int>` 結果改為 plain `int`。
+
+### 默認：返回 option<int>
+
+未標註時，`a - b` 的結果型別是 `option<int>`。接收端必須是 `?T`（可空型別），並用 match 解構 `err` / `nil` / `ok` 三個分支：
+
+```nolang
+main = () {
+    x i64 = 100
+    d ?i64 = x - 1          ; 默認：返回 option<i64>
+    d: {
+        err -> print(-1)    ; 溢出（如 x - 2^63 下溢）
+        nil -> print(0)
+        -> print(1)         ; ok(value)：正常結果
+    }
+}
+main()
+```
+
+> `%option` 的 `data` 欄為 `i64`；窄型別（`i8`/`i16`/`i32`）的結果會先符號擴展（sext）再存入，解包時再截斷回原寬度。
+
+### wrap：靜默回繞
+
+```nolang
+#{overflow = wrap}
+sub-wrap = (a i64, b i64) (r i64) {
+    r = a - b              ; 溢出時靜默 2's 補數回繞，返回 plain i64
+}
+```
+
+語句級：
+
+```nolang
+x i64 = -9223372036854775807
+#{overflow = wrap}
+w i64 = x - 2             ; 下溢回繞 → 9223372036854775807
+print(w)
+```
+
+### clamp0：溢出歸零
+
+```nolang
+x i64 = -9223372036854775807
+#{overflow = clamp0}
+c i64 = x - 2             ; 下溢 → 0（上溢同樣歸零）
+print(c)
+```
+
+### min / max / saturate：飽和箝位
+
+三種模式把溢出結果「夾」在型別可表示區間內，而非回繞或歸零：
+
+```nolang
+#{overflow = min}
+floor = (a i64, b i64) (r i64) {
+    r = a - b              ; 下溢 → i64 最小值；上溢 → i64 最大值
+}
+
+#{overflow = max}
+cap = (a i64, b i64) (r i64) {
+    r = a * b              ; 上溢 → i64 最大值；下溢 → i64 最小值
+}
+
+#{overflow = saturate}
+sat = (a i64, b i64) (r i64) {
+    r = a + b              ; 上溢→max、下溢→min
+}
+```
+
+型別前綴形式可精確控制窄型別的飽和界限（函數級註解會套用到體內所有對應型別運算）：
+
+```nolang
+#{overflow = u8-max}
+inc = (x u8) (r u8) {
+    r = x + 1              ; x = 255 時上溢 → 255（而非回繞成 0）
+}
+
+#{overflow = i8-min}
+dec = (x i8) (r i8) {
+    r = x - 1              ; x = -128 時下溢 → -128（而非回繞成 127）
+}
+```
+
+### 編譯器強制
+
+- 未標註的整數運算若賦值給**顯式 plain `int`** 變數，編譯器報錯（`cannot assign ?i64 value to i64 variable`），強制你加 `#{overflow = wrap}` / `#{overflow = clamp0}` / `#{overflow = min}` / `#{overflow = max}` / `#{overflow = saturate}`（或型別前綴形式）或改用具名 `?T`。
+- 未標註的整數運算若賦值給**無型別標註**的變數（`d = x - 1`），編譯器報錯並提示加上註解或宣告 `?i64`，避免產生非法 IR。
+- 無號整數運算（`u8`/`u16`/`u32`/`u64`/`u128`）**同樣適用**此機制：未標註時 `+ - *` 預設回傳 `option<int>`，溢出 → `err`，與有號整數規則一致。
+- `i128` 運算不支援 `option` 路徑（data 欄僅 `i64`），統一退化為靜默回繞以保留正確性。
+
+> **為什麼默認是 option 而非 wrap？** 靜默回繞會隱藏溢出 bug；預設回傳 `option` 強制呼叫方顯式處理溢出（或主動標註 `wrap` 表明「我接受回繞語義」），把「是否容許溢出」變成可見的設計決策。
+
 ### 錯誤上拋（`?=` 運算子）
 
 當函數返回 option 類型時，可以使用 `?=` 運算子自動解包 option 並向上拋錯誤，簡化錯誤處理流程。
@@ -1584,6 +1756,71 @@ pipeline = (input str) (result ?str) {
     result = b
 }
 ```
+
+**裸算術運算：** `?=` 的右側不限於函數呼叫——任何回傳 `option` 的整數運算（如未標註的 `a - b`、`a + b`、`a * b`）都可以直接用 `?=` 上拋溢出錯誤，無需先綁定到中間變數：
+
+```no
+; 溢出時自動 result = err; return，正常時 v 解包為內部值
+sub-safe = (a i64, b i64) (result ?i64) {
+    result = nil
+    v ?= a - b          ; 下溢/上溢 → err 自動上拋；否則 v = 內部 i64
+    result = v
+}
+
+add-safe = (a i64, b i64) (result ?i64) {
+    result = nil
+    v ?= a + b          ; 同上，適用於 + * 與有號 /
+    result = v
+}
+```
+
+等價展開（編譯器自動生成）：
+
+```no
+sub-safe = (a i64, b i64) (result ?i64) {
+    result = nil
+    __unwrap = a - b            ; option<i64>
+    __unwrap: {
+        nil -> { result = __unwrap; return }
+        err -> { result = __unwrap; return }
+        -> v = it               ; ok(value)：解包內部值
+    }
+    result = v
+}
+```
+
+**複合右側（compound RHS）：** `?=` 的右側可以是一個含多個 option 運算元的複合運算式。每個 option 運算元會被自動解包，並注入傳播守衛——只要任一運算元為 `nil` / `err`，當前函數的 option 結果參數即被設為該值並 `return`（向上拋）；全部成功才把內部值賦給左值：
+
+```no
+sum3 = () (result ?i64) {
+    result = nil
+    a ?i64 = ok(10)
+    b ?i64 = ok(20)
+    c ?i64 = ok(30)
+    total ?= a + b + c          ; 每個 option 運算元自動解包並傳播
+    result = total
+}
+
+comp = () (result ?i64) {
+    result = nil
+    a ?i64 = ok(4)
+    b ?i64 = ok(6)
+    v ?= dbl(a + b)            ; a + b 可能是 option，同樣自動解包並傳播
+    result = v
+}
+```
+
+> 只有「運算元位置」上的 option 會被自動解包（如 `a + b + c`、`f(b + c)`）；作為函式引數直接傳入的 option 變數不在此列——它會走 `?=` 既有的裸 option 引數豁免（`a ?= f(v)`，其中 `v` 為 `?i64`、`f` 接收 plain `i64`）。
+
+**非 option 右側報錯：** 為了避免大範圍地把 `=` 誤寫成 `?=`，當右側在編譯期可被確定為「明確非 option」時，編譯器會報錯並提示改用 `=`：
+
+- 字面量：`v ?= 42`
+- 常數可折疊的整數運算：`v ?= 10 + 20`
+- 已知型別且非 option 的區域變數：`v ?= x`（其中 `x i64 = 5`）
+
+報錯訊息形如：`` `?=` RHS `42` is not an option — use `=` instead ``。
+
+> 算術運算只要任一運算元是 option（或型別未知 / 為函式呼叫，可能回傳 option），即視為「可能 option」而放行，不會誤報——例如 `v ?= a + b + c`（a/b/c 為 `?i64`）或 `v ?= b + c`（b/c 未知型別）都可正常編譯。
 
 **適用場景：**
 - `pop` / `peek` 等可能為空的容器操作 → `?t`（`nil` = 空）

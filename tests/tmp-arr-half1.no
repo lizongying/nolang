@@ -1,7 +1,7 @@
 ; 第一半测试
 test-arr-len = () {
     b [3] = [10, 20, 30]
-    print(b.len)
+    print(b.len())
 }
 
 test-arr-clone = () {

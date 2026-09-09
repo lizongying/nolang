@@ -71,33 +71,33 @@ t-div-mod = () {
 
 t-i64-to-str = () {
     s = number.i64-to-str(42)
-    runner.eq(s.len, 2, 'i64-to-str 42 len')
+    runner.eq(s.len-bytes(), 2, 'i64-to-str 42 len')
     runner.str-eq(s, '42', 2, 'i64-to-str 42 content')
     n = number.i64-to-str(-456)
-    runner.eq(n.len, 4, 'i64-to-str -456 len')
+    runner.eq(n.len-bytes(), 4, 'i64-to-str -456 len')
     runner.str-eq(n, '-456', 4, 'i64-to-str -456 content')
     z = number.i64-to-str(0)
-    runner.eq(z.len, 1, 'i64-to-str 0 len')
+    runner.eq(z.len-bytes(), 1, 'i64-to-str 0 len')
     runner.str-eq(z, '0', 1, 'i64-to-str 0 content')
 }
 
 t-i64-method-to-str = () {
     v = 123
     s = v.to-str()
-    runner.eq(s.len, 3, 'i64.to-str 123 len')
+    runner.eq(s.len-bytes(), 3, 'i64.to-str 123 len')
     runner.str-eq(s, '123', 3, 'i64.to-str 123 content')
     n = 0 - 789
     ns = n.to-str()
-    runner.eq(ns.len, 4, 'i64.to-str -789 len')
+    runner.eq(ns.len-bytes(), 4, 'i64.to-str -789 len')
     runner.str-eq(ns, '-789', 4, 'i64.to-str -789 content')
 }
 
 t-u64-to-str = () {
     s = number.u64-to-str(255)
-    runner.eq(s.len, 3, 'u64-to-str 255 len')
+    runner.eq(s.len(), 3, 'u64-to-str 255 len')
     runner.str-eq(s, '255', 3, 'u64-to-str 255 content')
     z = number.u64-to-str(0)
-    runner.eq(z.len, 1, 'u64-to-str 0 len')
+    runner.eq(z.len(), 1, 'u64-to-str 0 len')
     runner.str-eq(z, '0', 1, 'u64-to-str 0 content')
 }
 

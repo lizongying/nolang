@@ -36,7 +36,7 @@ make-vec = () (out []i64) {
     ; out 的 data 現在指向字面量分配的新 buffer
 }
 v = make-vec()
-print(v.len)
+print(v.len())
 print(v[0])
 print(v[4])
 

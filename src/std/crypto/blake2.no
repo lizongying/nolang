@@ -17,45 +17,19 @@
 BLAKE2B-IV [8]u64 = [7640891576956012808, 13503953896175478587, 4354685564936845355, 11912009170470909681, 5840696475078001361, 11170449401992604703, 2270897969802886507, 6620516959819538809]
 
 ; 排列表（sigma）
-BLAKE2B-SIGMA [12][16]i64 = [
-    [
-        0, 1, 2, 3, 4, 5, 6, 7,
-        8, 9, 10, 11, 12, 13, 14, 15,
-    ], [
-        14, 10, 4, 8, 9, 15, 13, 6,
-        1, 12, 0, 2, 11, 7, 5, 3,
-    ], [
-        11, 8, 12, 0, 5, 2, 15, 13,
-        10, 14, 3, 6, 7, 1, 9, 4,
-    ], [
-        7, 9, 3, 1, 13, 12, 11, 14,
-        2, 6, 5, 10, 4, 0, 15, 8,
-    ], [
-        9, 0, 5, 7, 2, 4, 10, 15,
-        14, 1, 11, 12, 6, 8, 3, 13,
-    ], [
-        2, 12, 6, 10, 0, 11, 8, 3,
-        4, 13, 7, 5, 15, 14, 1, 9,
-    ], [
-        12, 5, 1, 15, 14, 13, 4, 10,
-        0, 7, 6, 3, 9, 2, 8, 11,
-    ], [
-        13, 11, 7, 14, 12, 1, 3, 9,
-        5, 0, 15, 4, 8, 6, 2, 10,
-    ],
-    [
-        6, 15, 14, 9, 11, 3, 0, 8,
-        12, 2, 13, 7, 1, 4, 10, 5,
-    ], [
-        10, 2, 8, 4, 7, 6, 1, 5,
-        15, 11, 9, 14, 3, 12, 13, 0,
-    ], [
-        0, 1, 2, 3, 4, 5, 6, 7,
-        8, 9, 10, 11, 12, 13, 14, 15,
-    ], [
-        14, 10, 4, 8, 9, 15, 13, 6,
-        1, 12, 0, 2, 11, 7, 5, 3,
-    ],
+BLAKE2B-SIGMA [192]i64 = [
+    0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15,
+    14, 10, 4, 8, 9, 15, 13, 6, 1, 12, 0, 2, 11, 7, 5, 3,
+    11, 8, 12, 0, 5, 2, 15, 13, 10, 14, 3, 6, 7, 1, 9, 4,
+    7, 9, 3, 1, 13, 12, 11, 14, 2, 6, 5, 10, 4, 0, 15, 8,
+    9, 0, 5, 7, 2, 4, 10, 15, 14, 1, 11, 12, 6, 8, 3, 13,
+    2, 12, 6, 10, 0, 11, 8, 3, 4, 13, 7, 5, 15, 14, 1, 9,
+    12, 5, 1, 15, 14, 13, 4, 10, 0, 7, 6, 3, 9, 2, 8, 11,
+    13, 11, 7, 14, 12, 1, 3, 9, 5, 0, 15, 4, 8, 6, 2, 10,
+    6, 15, 14, 9, 11, 3, 0, 8, 12, 2, 13, 7, 1, 4, 10, 5,
+    10, 2, 8, 4, 7, 6, 1, 5, 15, 11, 9, 14, 3, 12, 13, 0,
+    0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15,
+    14, 10, 4, 8, 9, 15, 13, 6, 1, 12, 0, 2, 11, 7, 5, 3
 ]
 
 ; 64-bit 全 1 遮罩
@@ -67,17 +41,22 @@ BLAKE2B-MASK u64 = 18446744073709551615
 
 ; rotr64: 64-bit 循環右移
 rotr64 = (x u64, n i64) (r u64) {
+    #{overflow = wrap}
     r = ((x >> n) | (x << (64 - n))) & BLAKE2B-MASK
 }
 
 ; G 函數（混合函數）
 blake2b-g = (v []u64, a i64, b i64, c i64, d i64, x u64, y u64) {
+    #{overflow = wrap}
     v[a] = (v[a] + v[b] + x) & BLAKE2B-MASK
     v[d] = rotr64(v[d] ^ v[a], 32)
+    #{overflow = wrap}
     v[c] = (v[c] + v[d]) & BLAKE2B-MASK
     v[b] = rotr64(v[b] ^ v[c], 24)
+    #{overflow = wrap}
     v[a] = (v[a] + v[b] + y) & BLAKE2B-MASK
     v[d] = rotr64(v[d] ^ v[a], 16)
+    #{overflow = wrap}
     v[c] = (v[c] + v[d]) & BLAKE2B-MASK
     v[b] = rotr64(v[b] ^ v[c], 63)
 }
@@ -95,6 +74,7 @@ blake2b-compress = (h []u64, block []byte, t u64, last i64) {
         v[i] = h[i]
     }
     i <- [0..8): {
+        #{overflow = wrap}
         v[8 + i] = BLAKE2B-IV[i]
     }
 
@@ -110,13 +90,19 @@ blake2b-compress = (h []u64, block []byte, t u64, last i64) {
     ; 載入訊息字（16 個 u64，小端序）
     m [16]u64
     i <- [0..16): {
+        #{overflow = wrap}
         off = i * 8
+        #{overflow = wrap}
         m[i] = (block[off]) | ((block[off + 1]) << 8) | ((block[off + 2]) << 16) | ((block[off + 3]) << 24) | ((block[off + 4]) << 32) | ((block[off + 5]) << 40) | ((block[off + 6]) << 48) | ((block[off + 7]) << 56)
     }
 
     ; 12 輪
+    s [16]i64
     round <- [0..12): {
-        s = BLAKE2B-SIGMA[round]
+        #{overflow = wrap}
+        base = round * 16
+        #{overflow = wrap}
+        i <- [0..16): { s[i] = BLAKE2B-SIGMA[base + i] }
         blake2b-g(v, 0, 4, 8, 12, m[s[0]], m[s[1]])
         blake2b-g(v, 1, 5, 9, 13, m[s[2]], m[s[3]])
         blake2b-g(v, 2, 6, 10, 14, m[s[4]], m[s[5]])
@@ -129,6 +115,7 @@ blake2b-compress = (h []u64, block []byte, t u64, last i64) {
 
     ; 最終化: h[i] ^= v[i] ^ v[i+8]
     i <- [0..8): {
+        #{overflow = wrap}
         h[i] = (h[i] ^ v[i] ^ v[8 + i]) & BLAKE2B-MASK
     }
 }
@@ -147,23 +134,27 @@ blake2b = (data []byte) (hash [64]byte) {
     i <- [0..8): {
         h[i] = BLAKE2B-IV[i]
     }
-    h[0] = (h[0] ^ 28429468708696321) & BLAKE2B-MASK
+    h[0] = (h[0] ^ 16842816) & BLAKE2B-MASK
 
-    dlen = data.len
+    dlen = data.len()
     t u64 = 0
 
     ; 處理完整區塊（while loop: 只在有完整 128-byte 區塊時才執行）
     offset = 0
     {
+        #{overflow = wrap}
         t = (t + 128) & BLAKE2B-MASK
         blake2b-compress(h, data[offset..], t, 0)
+        #{overflow = wrap}
         offset = offset + 128
     } (offset + 128 < dlen)
 
     ; 處理最後一個區塊（可能不完整）
     last-block []byte = with-len(128)
+    #{overflow = wrap}
     remaining = dlen - offset
     i <- [0..remaining): {
+        #{overflow = wrap}
         last-block[i] = data[offset + i]
     }
 
@@ -171,19 +162,28 @@ blake2b = (data []byte) (hash [64]byte) {
     i <- [remaining..128): {
         last-block[i] = 0
     }
+    #{overflow = wrap}
     t = (t + remaining) & BLAKE2B-MASK
     blake2b-compress(h, last-block, t, 1)
 
     ; 輸出（小端序）
     i <- [0..8): {
+        #{overflow = wrap}
         off = i * 8
         hash[off] = h[i]
+        #{overflow = wrap}
         hash[off + 1] = (h[i] >> 8) & 255
+        #{overflow = wrap}
         hash[off + 2] = (h[i] >> 16) & 255
+        #{overflow = wrap}
         hash[off + 3] = (h[i] >> 24) & 255
+        #{overflow = wrap}
         hash[off + 4] = (h[i] >> 32) & 255
+        #{overflow = wrap}
         hash[off + 5] = (h[i] >> 40) & 255
+        #{overflow = wrap}
         hash[off + 6] = (h[i] >> 48) & 255
+        #{overflow = wrap}
         hash[off + 7] = (h[i] >> 56) & 255
     }
 }
@@ -198,38 +198,51 @@ blake2b-256 = (data []byte) (hash [32]byte) {
     i <- [0..8): {
         h[i] = BLAKE2B-IV[i]
     }
-    h[0] = (h[0] ^ 28429468708696289) & BLAKE2B-MASK
+    h[0] = (h[0] ^ 16842784) & BLAKE2B-MASK
 
-    dlen = data.len
+    dlen = data.len()
     t u64 = 0
 
     offset = 0
     {
+        #{overflow = wrap}
         t = (t + 128) & BLAKE2B-MASK
         blake2b-compress(h, data[offset..], t, 0)
+        #{overflow = wrap}
         offset = offset + 128
     } (offset + 128 < dlen)
     last-block []byte = with-len(128)
+    #{overflow = wrap}
     remaining = dlen - offset
     i <- [0..remaining): {
+        #{overflow = wrap}
         last-block[i] = data[offset + i]
     }
     i <- [remaining..128): {
         last-block[i] = 0
     }
+    #{overflow = wrap}
     t = (t + remaining) & BLAKE2B-MASK
     blake2b-compress(h, last-block, t, 1)
 
     ; 輸出前 32 位元組（小端序）
     i <- [0..4): {
+        #{overflow = wrap}
         off = i * 8
         hash[off] = h[i]
+        #{overflow = wrap}
         hash[off + 1] = (h[i] >> 8) & 255
+        #{overflow = wrap}
         hash[off + 2] = (h[i] >> 16) & 255
+        #{overflow = wrap}
         hash[off + 3] = (h[i] >> 24) & 255
+        #{overflow = wrap}
         hash[off + 4] = (h[i] >> 32) & 255
+        #{overflow = wrap}
         hash[off + 5] = (h[i] >> 40) & 255
+        #{overflow = wrap}
         hash[off + 6] = (h[i] >> 48) & 255
+        #{overflow = wrap}
         hash[off + 7] = (h[i] >> 56) & 255
     }
 }
@@ -242,7 +255,24 @@ blake2b-hex = (data []byte) (hex str) {
     hex-chars = '0123456789abcdef'
     hex = with-len(128)
     i <- [0..64): {
+        #{overflow = wrap}
         hex[i * 2] = hex-chars[(hash[i] >> 4) & 15]
+        #{overflow = wrap}
+        hex[i * 2 + 1] = hex-chars[hash[i] & 15]
+    }
+}
+
+; blake2b-256-hex: 計算 BLAKE2b-256 並返回 hex 字串
+; data []byte: 輸入資料
+; 返回 hex str: 64 字元 hex 字串
+blake2b-256-hex = (data []byte) (hex str) {
+    hash = blake2b-256(data)
+    hex-chars = '0123456789abcdef'
+    hex = with-len(64)
+    i <- [0..32): {
+        #{overflow = wrap}
+        hex[i * 2] = hex-chars[(hash[i] >> 4) & 15]
+        #{overflow = wrap}
         hex[i * 2 + 1] = hex-chars[hash[i] & 15]
     }
 }
@@ -251,60 +281,44 @@ blake2b-hex = (data []byte) (hex str) {
 ; BLAKE2s（32-bit 版本）
 ; ═══════════════════════════════════════════════
 
-; BLAKE2s 初始向量（IV）
-BLAKE2S-IV [8]u32 = [1634760805, 857760878, 2036477234, 1797285236, 1112075736, 2020462676, 2066360040, 3383273152]
+; BLAKE2s 初始向量（IV）—— 與 SHA-256 相同
+; 注意：過去誤用 ChaCha "expand 32-byte k" 常數（0x61707865...），導致所有 BLAKE2s 雜湊錯誤。
+BLAKE2S-IV [8]u32 = [1779033703, 3144134277, 1013904242, 2773480762, 1359893119, 2600822924, 528734635, 1541459225]
 
 ; BLAKE2s 排列表（與 BLAKE2b 相同）
-BLAKE2S-SIGMA [10][16]i64 = [
-    [
-        0, 1, 2, 3, 4, 5, 6, 7,
-        8, 9, 10, 11, 12, 13, 14, 15,
-    ], [
-        14, 10, 4, 8, 9, 15, 13, 6,
-        1, 12, 0, 2, 11, 7, 5, 3,
-    ], [
-        11, 8, 12, 0, 5, 2, 15, 13,
-        10, 14, 3, 6, 7, 1, 9, 4,
-    ], [
-        7, 9, 3, 1, 13, 12, 11, 14,
-        2, 6, 5, 10, 4, 0, 15, 8,
-    ], [
-        9, 0, 5, 7, 2, 4, 10, 15,
-        14, 1, 11, 12, 6, 8, 3, 13,
-    ], [
-        2, 12, 6, 10, 0, 11, 8, 3,
-        4, 13, 7, 5, 15, 14, 1, 9,
-    ], [
-        12, 5, 1, 15, 14, 13, 4, 10,
-        0, 7, 6, 3, 9, 2, 8, 11,
-    ], [
-        13, 11, 7, 14, 12, 1, 3, 9,
-        5, 0, 15, 4, 8, 6, 2, 10,
-    ],
-    [
-        6, 15, 14, 9, 11, 3, 0, 8,
-        12, 2, 13, 7, 1, 4, 10, 5,
-    ], [
-        10, 2, 8, 4, 7, 6, 1, 5,
-        15, 11, 9, 14, 3, 12, 13, 0,
-    ],
+BLAKE2S-SIGMA [160]i64 = [
+    0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15,
+    14, 10, 4, 8, 9, 15, 13, 6, 1, 12, 0, 2, 11, 7, 5, 3,
+    11, 8, 12, 0, 5, 2, 15, 13, 10, 14, 3, 6, 7, 1, 9, 4,
+    7, 9, 3, 1, 13, 12, 11, 14, 2, 6, 5, 10, 4, 0, 15, 8,
+    9, 0, 5, 7, 2, 4, 10, 15, 14, 1, 11, 12, 6, 8, 3, 13,
+    2, 12, 6, 10, 0, 11, 8, 3, 4, 13, 7, 5, 15, 14, 1, 9,
+    12, 5, 1, 15, 14, 13, 4, 10, 0, 7, 6, 3, 9, 2, 8, 11,
+    13, 11, 7, 14, 12, 1, 3, 9, 5, 0, 15, 4, 8, 6, 2, 10,
+    6, 15, 14, 9, 11, 3, 0, 8, 12, 2, 13, 7, 1, 4, 10, 5,
+    10, 2, 8, 4, 7, 6, 1, 5, 15, 11, 9, 14, 3, 12, 13, 0
 ]
 
 BLAKE2S-MASK u32 = 4294967295
 
 ; rotr32: 32-bit 循環右移
 rotr32 = (x u32, n i64) (r u32) {
+    #{overflow = wrap}
     r = ((x >> n) | (x << (32 - n))) & BLAKE2S-MASK
 }
 
 ; G 函數
 blake2s-g = (v []u32, a i64, b i64, c i64, d i64, x u32, y u32) {
+    #{overflow = wrap}
     v[a] = (v[a] + v[b] + x) & BLAKE2S-MASK
     v[d] = rotr32(v[d] ^ v[a], 16)
+    #{overflow = wrap}
     v[c] = (v[c] + v[d]) & BLAKE2S-MASK
     v[b] = rotr32(v[b] ^ v[c], 12)
+    #{overflow = wrap}
     v[a] = (v[a] + v[b] + y) & BLAKE2S-MASK
     v[d] = rotr32(v[d] ^ v[a], 8)
+    #{overflow = wrap}
     v[c] = (v[c] + v[d]) & BLAKE2S-MASK
     v[b] = rotr32(v[b] ^ v[c], 7)
 }
@@ -316,17 +330,24 @@ blake2s-compress = (h []u32, block []byte, t u32, last i64) {
         v[i] = h[i]
     }
     i <- [0..8): {
+        #{overflow = wrap}
         v[8 + i] = BLAKE2S-IV[i]
     }
     v[12] = (v[12] ^ t) & BLAKE2S-MASK
     last != 0 -> v[14] = v[14] ^ BLAKE2S-MASK
     m [16]u32
     i <- [0..16): {
+        #{overflow = wrap}
         off = i * 4
+        #{overflow = wrap}
         m[i] = (block[off]) | ((block[off + 1]) << 8) | ((block[off + 2]) << 16) | ((block[off + 3]) << 24)
     }
+    s [16]i64
     round <- [0..10): {
-        s = BLAKE2S-SIGMA[round]
+        #{overflow = wrap}
+        base = round * 16
+        #{overflow = wrap}
+        i <- [0..16): { s[i] = BLAKE2S-SIGMA[base + i] }
         blake2s-g(v, 0, 4, 8, 12, m[s[0]], m[s[1]])
         blake2s-g(v, 1, 5, 9, 13, m[s[2]], m[s[3]])
         blake2s-g(v, 2, 6, 10, 14, m[s[4]], m[s[5]])
@@ -337,6 +358,7 @@ blake2s-compress = (h []u32, block []byte, t u32, last i64) {
         blake2s-g(v, 3, 4, 9, 14, m[s[14]], m[s[15]])
     }
     i <- [0..8): {
+        #{overflow = wrap}
         h[i] = (h[i] ^ v[i] ^ v[8 + i]) & BLAKE2S-MASK
     }
 }
@@ -349,33 +371,42 @@ blake2s = (data []byte) (hash [32]byte) {
     i <- [0..8): {
         h[i] = BLAKE2S-IV[i]
     }
-    h[0] = (h[0] ^ 16843009) & BLAKE2S-MASK
+    h[0] = (h[0] ^ 16842784) & BLAKE2S-MASK
 
-    dlen = data.len
+    dlen = data.len()
     t u32 = 0
 
     offset = 0
     {
+        #{overflow = wrap}
         t = (t + 64) & BLAKE2S-MASK
         blake2s-compress(h, data[offset..], t, 0)
+        #{overflow = wrap}
         offset = offset + 64
     } (offset + 64 < dlen)
     last-block []byte = with-len(64)
+    #{overflow = wrap}
     remaining = dlen - offset
     i <- [0..remaining): {
+        #{overflow = wrap}
         last-block[i] = data[offset + i]
     }
     i <- [remaining..64): {
         last-block[i] = 0
     }
+    #{overflow = wrap}
     t = (t + remaining) & BLAKE2S-MASK
     blake2s-compress(h, last-block, t, 1)
 
     i <- [0..8): {
+        #{overflow = wrap}
         off = i * 4
         hash[off] = h[i]
+        #{overflow = wrap}
         hash[off + 1] = (h[i] >> 8) & 255
+        #{overflow = wrap}
         hash[off + 2] = (h[i] >> 16) & 255
+        #{overflow = wrap}
         hash[off + 3] = (h[i] >> 24) & 255
     }
 }
@@ -388,7 +419,9 @@ blake2s-hex = (data []byte) (hex str) {
     hex-chars = '0123456789abcdef'
     hex = with-len(64)
     i <- [0..32): {
+        #{overflow = wrap}
         hex[i * 2] = hex-chars[(hash[i] >> 4) & 15]
+        #{overflow = wrap}
         hex[i * 2 + 1] = hex-chars[hash[i] & 15]
     }
 }

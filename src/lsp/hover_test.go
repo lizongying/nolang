@@ -616,3 +616,95 @@ func TestHoverFunctionParameterNotOverwrittenByBodyVariable(t *testing.T) {
 		t.Errorf("expected n to have type 'i64', got '%s'", entry.Type)
 	}
 }
+
+// TestGetHoverOverflowAnnotationKey 驗證懸浮在 `#{overflow = ...}` 註解行的
+// `overflow` 鍵上時，會回傳「什麼是整數溢出」的說明。
+func TestGetHoverOverflowAnnotationKey(t *testing.T) {
+	text := `#{overflow = wrap}
+i = i + 1`
+	doc := createTestDocument(text)
+	program := createTestProgram(text)
+	hp := NewHoverProvider(doc, createTestIndex(doc, program))
+
+	// 游標落在第 0 行 "overflow" 字詞上（#{ 在 0,1；overflow 從 2 開始）。
+	hover, found := hp.GetHover(Position{Line: 0, Character: 6})
+	if !found {
+		t.Fatal("expected hover for overflow key in annotation")
+	}
+	contents, ok := hover.Contents.(MarkupContent)
+	if !ok {
+		t.Fatalf("expected MarkupContent, got %T", hover.Contents)
+	}
+	if !strings.Contains(contents.Value, "整數溢出") {
+		t.Errorf("expected overflow-key doc to explain overflow, got:\n%s", contents.Value)
+	}
+}
+
+// TestGetHoverOverflowAnnotationWrapMode 驗證懸浮在 `#{overflow = wrap}` 的
+// `wrap` 值上時，會回傳 wrap 模式的詳細說明與示例。
+func TestGetHoverOverflowAnnotationWrapMode(t *testing.T) {
+	text := `#{overflow = wrap}
+i = i + 1`
+	doc := createTestDocument(text)
+	program := createTestProgram(text)
+	hp := NewHoverProvider(doc, createTestIndex(doc, program))
+
+	// "#{overflow = wrap}"：wrap 從字元 13 開始（#{=0,1 overflow=2..9 space=10 =(11 space=12 wrap=13..16）。
+	hover, found := hp.GetHover(Position{Line: 0, Character: 14})
+	if !found {
+		t.Fatal("expected hover for wrap mode in annotation")
+	}
+	contents, ok := hover.Contents.(MarkupContent)
+	if !ok {
+		t.Fatalf("expected MarkupContent, got %T", hover.Contents)
+	}
+	if !strings.Contains(contents.Value, "wrap") || !strings.Contains(contents.Value, "回繞") {
+		t.Errorf("expected wrap-mode doc with explanation+example, got:\n%s", contents.Value)
+	}
+}
+
+// TestGetHoverOverflowAnnotationOtherModes 驗證 saturate/min/max/clamp0 也能觸發。
+func TestGetHoverOverflowAnnotationOtherModes(t *testing.T) {
+	for _, mode := range []string{"clamp0", "min", "max", "saturate"} {
+		text := "#{overflow = " + mode + "}\ni = i + 1"
+		doc := createTestDocument(text)
+		program := createTestProgram(text)
+		hp := NewHoverProvider(doc, createTestIndex(doc, program))
+
+		// 模式值位於 `= ` 之後。
+		idx := strings.Index(text, mode)
+		hover, found := hp.GetHover(Position{Line: 0, Character: uint32(idx + 1)})
+		if !found {
+			t.Fatalf("expected hover for mode %q in annotation", mode)
+		}
+		contents, ok := hover.Contents.(MarkupContent)
+		if !ok {
+			t.Fatalf("expected MarkupContent for mode %q, got %T", mode, hover.Contents)
+		}
+		if !strings.Contains(contents.Value, mode) {
+			t.Errorf("expected doc to mention mode %q, got:\n%s", mode, contents.Value)
+		}
+	}
+}
+
+// TestGetHoverOverflowAnnotationNotOnIdentifier 驗證：同名識別符（如變數 wrap）
+// 若不在 `#{overflow = ...}` 註解行內，不應被誤判為 overflow 模式文檔。
+func TestGetHoverOverflowAnnotationNotOnIdentifier(t *testing.T) {
+	text := `wrap = 5
+i = i + 1`
+	doc := createTestDocument(text)
+	program := createTestProgram(text)
+	hp := NewHoverProvider(doc, createTestIndex(doc, program))
+
+	hover, found := hp.GetHover(Position{Line: 0, Character: 2})
+	if !found {
+		t.Skip("no hover for wrap identifier (acceptable)")
+	}
+	contents, ok := hover.Contents.(MarkupContent)
+	if !ok {
+		t.Fatalf("expected MarkupContent, got %T", hover.Contents)
+	}
+	if strings.Contains(contents.Value, "回繞") {
+		t.Errorf("wrap identifier outside annotation should not show overflow wrap doc, got:\n%s", contents.Value)
+	}
+}

@@ -40,7 +40,7 @@ case3-return-nil = () (out ?[]i64) {
 ; Case 7: ?[]i64 先賦值再用
 case7-slice = () (out ?[]i64) {
     out = [10, 20, 30]
-    n = out.len
+    n = out.len()
     print(n)
 }
 

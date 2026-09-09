@@ -19,20 +19,20 @@ reassign-after-move = () (out []i64) {
 }
 r1 = reassign-after-move()
 r1[0] == 1 -> print('test1 pass: reassign-after-move')
-r1.len == 3 -> print('test1 pass: len=3')
+r1.len() == 3 -> print('test1 pass: len=3')
 
 ; ---- 改进 1b：读写区分，RHS 引用源变量仍然阻止 move ----
-; a = a.len 这种 RHS 引用 a 的情况，move 应被拒绝。
+; a = a.len() 这种 RHS 引用 a 的情况，move 应被拒绝。
 
 rhs-read-source = () (out []i64) {
     a = [1, 2, 3]
     b = a          ; 应 clone（a 在后续 RHS 中被读取）
-    a = [a.len]   ; RHS 读取 a.len → 阻止 move
+    a = [a.len()]   ; RHS 读取 a.len() → 阻止 move
     out = b
 }
 r1b = rhs-read-source()
 r1b[0] == 1 -> print('test1b pass: rhs-read-source')
-r1b.len == 3 -> print('test1b pass: len=3')
+r1b.len() == 3 -> print('test1b pass: len=3')
 
 ; ---- 改进 2：分支感知 — 互斥分支中的读引用不阻止 move ----
 ; out = a 在 then 分支内，a 在 else 分支被读取。
@@ -47,17 +47,17 @@ mutual-exclusive-branch = (flag bool) (out []i64) {
             out = a     ; then 分支: move a→out（输出参数，有运行时位图）
         }
         -> {
-            print(a.len)  ; else 分支: 读 a（与 then 互斥，不阻止 then 的 move）
+            print(a.len())  ; else 分支: 读 a（与 then 互斥，不阻止 then 的 move）
             out = a
         }
     }
 }
 r2a = mutual-exclusive-branch(true)
 r2a[0] == 10 -> print('test2a pass: mutual-exclusive then')
-r2a.len == 3 -> print('test2a pass: len=3')
+r2a.len() == 3 -> print('test2a pass: len=3')
 r2b = mutual-exclusive-branch(false)
 r2b[0] == 10 -> print('test2b pass: mutual-exclusive else')
-r2b.len == 3 -> print('test2b pass: len=3')
+r2b.len() == 3 -> print('test2b pass: len=3')
 
 ; ---- 改进 3：循环体引用阻止 move ----
 ; b = a 后 a 在循环体内被读取，move 应被拒绝。
@@ -83,14 +83,14 @@ non-exclusive-branch = (flag bool) (out []i64) {
     b = a          ; 应 clone（a 在后续 if 分支中被读取）
     {
         flag -> {
-            print(a.len)  ; 顶层 b=a 之后，if 分支读 a → 阻止 move
+            print(a.len())  ; 顶层 b=a 之后，if 分支读 a → 阻止 move
         }
     }
     out = b
 }
 r4 = non-exclusive-branch(true)
 r4[0] == 1 -> print('test4 pass: non-exclusive-branch')
-r4.len == 3 -> print('test4 pass: len=3')
+r4.len() == 3 -> print('test4 pass: len=3')
 
 ; ---- 回归测试：move-clone-liveness 场景 ----
 ; 同一源变量先 clone 再 move
@@ -102,8 +102,8 @@ clone-then-move = () (a []i64, b []i64) {
 }
 ra, rb = clone-then-move()
 ra[0] == 10 -> print('test5 pass: clone-then-move a')
-ra.len == 3 -> print('test5 pass: clone-then-move a len')
+ra.len() == 3 -> print('test5 pass: clone-then-move a len')
 rb[0] == 10 -> print('test5 pass: clone-then-move b')
-rb.len == 3 -> print('test5 pass: clone-then-move b len')
+rb.len() == 3 -> print('test5 pass: clone-then-move b len')
 
 print('done')

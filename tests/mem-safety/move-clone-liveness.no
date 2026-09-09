@@ -31,20 +31,20 @@ multi-assign = () (a []i64, b []i64, c []i64) {
 main = () {
     ; 测试 1
     r1 = cond-move(1)
-    print(r1.len)
+    print(r1.len())
     r0 = cond-move(0)
-    print(r0.len)
+    print(r0.len())
 
     ; 测试 2
     ra, rb = clone-then-move()
-    print(ra.len)
-    print(rb.len)
+    print(ra.len())
+    print(rb.len())
 
     ; 测试 3
     ra2, rb2, rc2 = multi-assign()
-    print(ra2.len)
-    print(rb2.len)
-    print(rc2.len)
+    print(ra2.len())
+    print(rb2.len())
+    print(rc2.len())
 
     print('done')
 }

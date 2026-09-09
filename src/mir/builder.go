@@ -284,6 +284,33 @@ func (b *Builder) Terminate(op Op, args []ValueID, targets []BlockID, sym string
 	b.Mod.Blocks[b.CurBlock].Term = &Term{Op: op, Args: args, Targets: targets, Sym: sym}
 }
 
+// EmitOptionWrap builds an inline ?T option value { i64 tag, payload } from a
+// single payload value. It is the codegen primitive behind the nolang ?T
+// constructors val/ok/some (tag 0) and err (tag 2). The generic call path would
+// mis-resolve `err` to the std io.err stderr-writer (i64 result) and corrupt the
+// option payload; OpOptionWrap emits the inline option directly with the correct
+// discriminant. tag is the discriminant; payload is the (owned) value moved into
+// the option. The returned value carries optType (e.g. %option or %option_str).
+func (b *Builder) EmitOptionWrap(optType TypeID, tag int64, payload ValueID) ValueID {
+	iid := b.newInstID()
+	dst := b.newValueID(optType, "")
+	if f := b.Mod.Func(b.CurFunc); f != nil {
+		f.LocalTypes[dst] = optType
+	}
+	inst := &b.Mod.Insts[iid]
+	inst.ID = iid
+	inst.Op = OpOptionWrap
+	inst.Dst = dst
+	inst.Args = []ValueID{payload}
+	inst.Int = tag
+	inst.Type = optType
+	inst.Block = b.CurBlock
+	if f := b.Mod.Func(b.CurFunc); f != nil {
+		b.Mod.Blocks[b.CurBlock].Insts = append(b.Mod.Blocks[b.CurBlock].Insts, iid)
+	}
+	return dst
+}
+
 // EmitMoveInto emits an OpMove that stores src into the EXISTING dst slot without
 // allocating a new value id. Used for assignment to a previously-bound variable
 // (including a result parameter): the variable keeps its stable slot (so its name

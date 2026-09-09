@@ -41,6 +41,71 @@ var builtinTypeDoc = map[string]string{
 	"fd":   "**型別**: `fd` (file descriptor, stored as i64)",
 }
 
+// overflowKeyDoc 為 LSP hover 提供 `#{overflow = ...}` 註解鍵（overflow）的文檔，
+// 解釋什麼是整數溢出以及 nolang 預設/註解驅動的處理策略。
+var overflowKeyDoc = "**整數溢出註解 `#{overflow = ...}`**\n\n" +
+	"整數運算（加減乘，以及有符號除法 `INT_MIN / -1`）的結果可能超出該型別可表示的範圍，稱為**溢出**。\n\n" +
+	"nolang 的預設策略是：這些運算回傳 `option<int>`——溢出時得到 `err`，**永不 panic**，把溢出變成可處理的錯誤而非崩潰。\n\n" +
+	"若你希望改用其他溢出處理策略（例如底層演算法需要靜默按位回繞），可用註解改寫：\n\n" +
+	"```nolang\n" +
+	"#{overflow = wrap}      // 靜默 two's complement 回繞\n" +
+	"#{overflow = clamp0}    // 下溢歸零\n" +
+	"#{overflow = min}       // 下溢箝位到型別最小值\n" +
+	"#{overflow = max}       // 上溢箝位到型別最大值\n" +
+	"#{overflow = saturate}  // 上下溢皆飽和箝位\n" +
+	"```\n\n" +
+	"- **作用域**：寫在語句上方時僅作用於該語句；寫在函式/區塊頂部時，會沿用到其後所有語句，直到被下一個 `#{overflow = ...}` 覆寫。std 函式常以「區塊前置一次」覆蓋整塊。\n" +
+	"- 註解驅動的運算不再回傳 `option`，結果直接是普通 `int`。"
+
+// overflowModeDoc 為 LSP hover 提供 `#{overflow = <mode>}` 各模式值的詳細文檔（含示例）。
+var overflowModeDoc = map[string]string{
+	"wrap": "**`wrap` — 靜默按位回繞（two's complement wrap-around）**\n\n" +
+		"溢出時按二進位補碼截斷，結果環繞到型別區間的另一端。這是 C/C++、Rust（release）、Go（無符號）等的預設整數溢出行為，也是雜湊、校驗和、加密、亂數等底層運算的常見選擇。\n\n" +
+		"- 上溢：`MAX + 1 → MIN`\n" +
+		"- 下溢：`MIN - 1 → MAX`\n\n" +
+		"```nolang\n" +
+		"x i8 = 120\n" +
+		"#{overflow = wrap}\n" +
+		"x = x + 10        // 130 超出 i8 範圍 → 回繞為 -126\n" +
+		"```\n\n" +
+		"```nolang\n" +
+		"c u8 = 255\n" +
+		"#{overflow = wrap}\n" +
+		"c = c + 1         // 256 超出 u8 範圍 → 回繞為 0\n" +
+		"```\n\n" +
+		"- 與預設 `option<int>` 模式不同，`wrap` 不回傳 `option`，結果直接是普通 `int`。\n" +
+		"- 型別前綴形式 `i8-wrap` 等會被歸一化為 `wrap`（邊界由運算結果的實際型別決定）。",
+	"clamp0": "**`clamp0` — 下溢歸零（saturate to 0）**\n\n" +
+		"運算結果下溢（小於型別最小值）時，結果被箝位為 `0`；上溢時仍按預設行為處理。適用於「計數/累加不允許為負」的場景。\n\n" +
+		"```nolang\n" +
+		"n i32 = -5\n" +
+		"#{overflow = clamp0}\n" +
+		"n = n - 10        // -15 下溢 → 箝位為 0\n" +
+		"```",
+	"min": "**`min` — 下溢箝位到型別最小值**\n\n" +
+		"運算結果下溢時，結果被箝位為該型別的最小值（如 `i8 → -128`、`u8 → 0`）；上溢時仍按預設行為處理。\n\n" +
+		"```nolang\n" +
+		"x i8 = -120\n" +
+		"#{overflow = min}\n" +
+		"x = x - 20        // -140 下溢 → 箝位為 -128\n" +
+		"```",
+	"max": "**`max` — 上溢箝位到型別最大值**\n\n" +
+		"運算結果上溢時，結果被箝位為該型別的最大值（如 `i8 → 127`、`u8 → 255`）；下溢時仍按預設行為處理。\n\n" +
+		"```nolang\n" +
+		"x u8 = 250\n" +
+		"#{overflow = max}\n" +
+		"x = x + 10        // 260 上溢 → 箝位為 255\n" +
+		"```",
+	"saturate": "**`saturate` — 上下溢皆飽和箝位（saturating arithmetic）**\n\n" +
+		"運算結果上溢時箝位到型別最大值、下溢時箝位到型別最小值，結果始終落在型別區間內。這是影像/音訊處理、物理量積分等「數值不應越界」場景的標準做法。\n\n" +
+		"```nolang\n" +
+		"x i8 = 120\n" +
+		"#{overflow = saturate}\n" +
+		"x = x + 20        // 140 上溢 → 箝位為 127\n" +
+		"x = x - 300       // -173 下溢 → 箝位為 -128\n" +
+		"```",
+}
+
 type HoverProvider struct {
 	index *SymbolIndex
 	doc   *TextDocument
@@ -79,6 +144,17 @@ func (hp *HoverProvider) GetHover(position Position) (*Hover, bool) {
 		}, true
 	}
 
+	// overflow 註解 hover：僅當游標位於 `#{overflow = ...}` 註解行時觸發，
+	// 避免誤傷同名識別符（如變數/函式名 wrap、min、max）。
+	if doc, ok := hp.getOverflowAnnotationHover(position, word); ok {
+		return &Hover{
+			Contents: MarkupContent{
+				Kind:  MarkupKindMarkdown,
+				Value: doc,
+			},
+		}, true
+	}
+
 	if hp.index == nil {
 		return nil, false
 	}
@@ -95,6 +171,27 @@ func (hp *HoverProvider) GetHover(position Position) (*Hover, bool) {
 	return &Hover{
 		Contents: contents,
 	}, true
+}
+
+// getOverflowAnnotationHover 在游標位於 `#{overflow = ...}` 註解行時，為
+// `overflow` 鍵或各模式值（wrap/clamp0/min/max/saturate）提供 hover 文檔。
+// 透過「僅在含 `#{` 與 `overflow` 的註解行觸發」來避免誤傷同名識別符。
+func (hp *HoverProvider) getOverflowAnnotationHover(position Position, word string) (string, bool) {
+	lines := getLines(hp.doc.Text)
+	if int(position.Line) >= len(lines) {
+		return "", false
+	}
+	line := lines[position.Line]
+	if !strings.Contains(line, "#{") || !strings.Contains(line, "overflow") {
+		return "", false
+	}
+	if word == "overflow" {
+		return overflowKeyDoc, true
+	}
+	if doc, ok := overflowModeDoc[word]; ok {
+		return doc, true
+	}
+	return "", false
 }
 
 func (hp *HoverProvider) formatHoverContent(entry *IndexEntry) any {

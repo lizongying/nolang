@@ -3,7 +3,7 @@
 test-str-bytes = () {
     s = 'abc'
     out = s.to-bytes()
-    print(out.len); expect: 3
+    print(out.len()); expect: 3
     b0 = out[0]
     b1 = out[1]
     b2 = out[2]

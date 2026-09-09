@@ -8,18 +8,18 @@
 abs = fs.realpath('./src')
 eprint('realpath(./src) = ')
 print(abs)
-abs.len > 0 -> print('PASS: realpath returns non-empty')
-abs.len == 0 -> print('FAIL: realpath returns empty')
+abs.len() > 0 -> print('PASS: realpath returns non-empty')
+abs.len() == 0 -> print('FAIL: realpath returns empty')
 
 ; ═══════════════════════════════════════════════
 ; 2. fs.mkstemp — 建立臨時檔案（多返回值 name, fd）
 ; ═══════════════════════════════════════════════
 tmp-name, tmp-fd = fs.mkstemp('/tmp/nolang-test-XXXXXX')
 eprint('mkstemp name = ')
-print(tmp-name)
+eprint(tmp-name)
 eprint('mkstemp fd = ')
 tmp-fd-i64 i64 = tmp-fd
-print(tmp-fd-i64)
+eprint(tmp-fd-i64)
 tmp-fd >= 0 -> {
     print('PASS: mkstemp returned valid fd')
     fs.close(tmp-fd)
@@ -32,7 +32,7 @@ tmp-fd < 0 -> print('FAIL: mkstemp returned invalid fd')
 ; ═══════════════════════════════════════════════
 dir-name, dir-ok = fs.mkdtemp('/tmp/nolang-dir-XXXXXX')
 eprint('mkdtemp name = ')
-print(dir-name)
+eprint(dir-name)
 dir-ok -> {
     print('PASS: mkdtemp created directory')
     fs.remove(dir-name)
@@ -76,8 +76,8 @@ eprint('uname.release = ')
 print(uts.release)
 eprint('uname.machine = ')
 print(uts.machine)
-uts.sysname.len > 0 -> print('PASS: uname.sysname non-empty')
-uts.sysname.len == 0 -> print('FAIL: uname.sysname empty')
+uts.sysname.len() > 0 -> print('PASS: uname.sysname non-empty')
+uts.sysname.len() == 0 -> print('FAIL: uname.sysname empty')
 
 ; ═══════════════════════════════════════════════
 ; 8. os.sysconf — 查詢系統配置（_SC_NPROCESSORS_ONLN）

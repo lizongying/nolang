@@ -9,8 +9,8 @@
 ; 用法：
 ;   # std/hash/tdes
 ;   key [24]byte  // K1=key[0:8], K2=key[8:16], K3=key[16:24]
-;   out = tdes-enc(plain, plain.len, key)   // 加密
-;   out = tdes-dec(cipher, cipher.len, key) // 解密
+;   out = tdes-enc(plain, plain.len(), key)   // 加密
+;   out = tdes-dec(cipher, cipher.len(), key) // 解密
 
 ; tdes-enc: Triple DES 加密（ECB 模式）
 ; in []byte: 輸入資料（長度需為 8 的倍數）
@@ -25,7 +25,9 @@ tdes-enc = (in []byte, n i64, key [24]byte) (out []byte) {
     k3 [8]byte
     i <- [0..8): {
         k1[i] = key[i]
+        #{overflow = wrap}
         k2[i] = key[8 + i]
+        #{overflow = wrap}
         k3[i] = key[16 + i]
     }
 
@@ -37,6 +39,7 @@ tdes-enc = (in []byte, n i64, key [24]byte) (out []byte) {
         ; 提取當前區塊
         block []byte
         i <- [0..8): {
+            #{overflow = wrap}
             block[i] = in[blk + i]
         }
 
@@ -54,8 +57,10 @@ tdes-enc = (in []byte, n i64, key [24]byte) (out []byte) {
 
         ; 寫回輸出
         i <- [0..8): {
+            #{overflow = wrap}
             out[blk + i] = tmp3[i]
         }
+        #{overflow = wrap}
         blk = blk + 8
     } (blk < n)
 }
@@ -71,7 +76,9 @@ tdes-dec = (in []byte, n i64, key [24]byte) (out []byte) {
     k3 [8]byte
     i <- [0..8): {
         k1[i] = key[i]
+        #{overflow = wrap}
         k2[i] = key[8 + i]
+        #{overflow = wrap}
         k3[i] = key[16 + i]
     }
     out = with-len(n)
@@ -79,6 +86,7 @@ tdes-dec = (in []byte, n i64, key [24]byte) (out []byte) {
     {
         block []byte
         i <- [0..8): {
+            #{overflow = wrap}
             block[i] = in[blk + i]
         }
 
@@ -95,8 +103,10 @@ tdes-dec = (in []byte, n i64, key [24]byte) (out []byte) {
         tmp3 = des.des-dec(tmp2, 8, k1)
 
         i <- [0..8): {
+            #{overflow = wrap}
             out[blk + i] = tmp3[i]
         }
+        #{overflow = wrap}
         blk = blk + 8
     } (blk < n)
 }
@@ -115,13 +125,14 @@ tdes-cbc-enc = (in []byte, key [24]byte, iv [8]byte) (out []byte) {
     i <- [0..8): {
         prev[i] = iv[i]
     }
-    out = with-len(in.len)
+    out = with-len(in.len())
     blk = 0
     {
 
         ; XOR 當前區塊與 prev
         xored [8]byte
         i <- [0..8): {
+            #{overflow = wrap}
             xored[i] = (in[blk + i]) ^ (prev[i])
         }
 
@@ -131,11 +142,13 @@ tdes-cbc-enc = (in []byte, key [24]byte, iv [8]byte) (out []byte) {
 
         ; 寫回輸出並更新 prev
         i <- [0..8): {
+            #{overflow = wrap}
             out[blk + i] = enc-block[i]
             prev[i] = enc-block[i]
         }
+        #{overflow = wrap}
         blk = blk + 8
-    } (blk < in.len)
+    } (blk < in.len())
 }
 
 ; tdes-cbc-dec: Triple DES-CBC 解密
@@ -148,20 +161,23 @@ tdes-cbc-dec = (in []byte, key [24]byte, iv [8]byte) (out []byte) {
     i <- [0..8): {
         prev[i] = iv[i]
     }
-    out = with-len(in.len)
+    out = with-len(in.len())
     blk = 0
     {
         cipher-block [8]byte
         i <- [0..8): {
+            #{overflow = wrap}
             cipher-block[i] = in[blk + i]
         }
         dec-block []byte
         dec-block = tdes-dec(cipher-block, 8, key)
 
         i <- [0..8): {
+            #{overflow = wrap}
             out[blk + i] = (dec-block[i]) ^ (prev[i])
             prev[i] = cipher-block[i]
         }
+        #{overflow = wrap}
         blk = blk + 8
-    } (blk < in.len)
+    } (blk < in.len())
 }

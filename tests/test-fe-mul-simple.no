@@ -11,13 +11,16 @@ main = () {
     h []i64 = with-len(10)
     x25519.fe-mul(h, f, g)
 
+    #{overflow = wrap}
     eprint('2*3 = ')
     i <- [0..10): {
         eprint(h[i])
         eprint(' ')
     }
     {
+        #{overflow = wrap}
         h[0] == 6 -> print('PASS: 2*3=6')
+        #{overflow = wrap}
         h[0] != 6 -> print('FAIL: 2*3')
     }
 
@@ -31,13 +34,16 @@ main = () {
     h2 []i64 = with-len(10)
     x25519.fe-mul(h2, f2, g2)
 
+    #{overflow = wrap}
     eprint('2^26 * 2^26 = ')
     i <- [0..10): {
         eprint(h2[i])
         eprint(' ')
     }
     {
+        #{overflow = wrap}
         h2[2] == 2 -> print('PASS: 2^26*2^26=2^52')
+        #{overflow = wrap}
         h2[2] != 2 -> print('FAIL: 2^26*2^26')
     }
 
@@ -78,8 +84,10 @@ main = () {
         h3-bytes[i] != pm1-bytes[i] -> ok3 = false
     }
     {
+        #{overflow = wrap}
         ok3 == true -> print('PASS: (p-1)*1=p-1')
         ok3 == false -> {
+            #{overflow = wrap}
             print('FAIL: (p-1)*1')
             eprint('h3 bytes: ')
             i <- [0..32): {
@@ -98,6 +106,7 @@ main = () {
     h4 []i64 = with-len(10)
     x25519.fe-mul(h4, pm1, pm1)
 
+    #{overflow = wrap}
     eprint('(p-1)*(p-1) = ')
     i <- [0..10): {
         eprint(h4[i])

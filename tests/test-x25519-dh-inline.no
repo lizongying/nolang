@@ -13,18 +13,26 @@ key-holder {
 ; target: 目標 key-holder
 parse-hex-into = (hex-str str, target key-holder) {
     i <- [0..32): {
+        #{overflow = wrap}
         hi = hex-str[i * 2]
+        #{overflow = wrap}
         lo = hex-str[i * 2 + 1]
         hi-v = 0
         lo-v = 0
         {
+            #{overflow = wrap}
             hi >= 48 && hi <= 57 -> hi-v = hi - 48
+            #{overflow = wrap}
             hi >= 97 && hi <= 102 -> hi-v = hi - 87
+            #{overflow = wrap}
             hi >= 65 && hi <= 70 -> hi-v = hi - 55
         }
         {
+            #{overflow = wrap}
             lo >= 48 && lo <= 57 -> lo-v = lo - 48
+            #{overflow = wrap}
             lo >= 97 && lo <= 102 -> lo-v = lo - 87
+            #{overflow = wrap}
             lo >= 65 && lo <= 70 -> lo-v = lo - 55
         }
         target.priv[i] = (hi-v << 4) | lo-v
@@ -39,18 +47,26 @@ test-dh = () (pass bool) {
     alice = key-holder {}
     alice-hex = '77076d0a7318a57d3c16c17251b26645df4c2f87ebc0992ab177fba51db92c2a'
     i <- [0..32): {
+        #{overflow = wrap}
         hi = alice-hex[i * 2]
+        #{overflow = wrap}
         lo = alice-hex[i * 2 + 1]
         hi-v = 0
         lo-v = 0
         {
+            #{overflow = wrap}
             hi >= 48 && hi <= 57 -> hi-v = hi - 48
+            #{overflow = wrap}
             hi >= 97 && hi <= 102 -> hi-v = hi - 87
+            #{overflow = wrap}
             hi >= 65 && hi <= 70 -> hi-v = hi - 55
         }
         {
+            #{overflow = wrap}
             lo >= 48 && lo <= 57 -> lo-v = lo - 48
+            #{overflow = wrap}
             lo >= 97 && lo <= 102 -> lo-v = lo - 87
+            #{overflow = wrap}
             lo >= 65 && lo <= 70 -> lo-v = lo - 55
         }
         alice.priv[i] = (hi-v << 4) | lo-v
@@ -61,18 +77,26 @@ test-dh = () (pass bool) {
     bob = key-holder {}
     bob-hex = '5dab087e624a8a4b79e17f8b83800ee66f3bb1292618b6fd1c2f8b27ff88e0eb'
     i <- [0..32): {
+        #{overflow = wrap}
         hi = bob-hex[i * 2]
+        #{overflow = wrap}
         lo = bob-hex[i * 2 + 1]
         hi-v = 0
         lo-v = 0
         {
+            #{overflow = wrap}
             hi >= 48 && hi <= 57 -> hi-v = hi - 48
+            #{overflow = wrap}
             hi >= 97 && hi <= 102 -> hi-v = hi - 87
+            #{overflow = wrap}
             hi >= 65 && hi <= 70 -> hi-v = hi - 55
         }
         {
+            #{overflow = wrap}
             lo >= 48 && lo <= 57 -> lo-v = lo - 48
+            #{overflow = wrap}
             lo >= 97 && lo <= 102 -> lo-v = lo - 87
+            #{overflow = wrap}
             lo >= 65 && lo <= 70 -> lo-v = lo - 55
         }
         bob.priv[i] = (hi-v << 4) | lo-v

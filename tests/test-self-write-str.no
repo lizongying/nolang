@@ -1,0 +1,16 @@
+; test-self-write-str.no — 最小化成：match arm 中 `it.to-str()`（it = 匹配值）
+; 驗證 ?i64.to-str stripping 的正確 codegen（self 解析的配套）。
+
+test-val = () {
+    n ?i64 = 42
+    n: {
+        err -> print('got-err')
+        nil -> print('got-nil')
+        -> {
+            s = it.to-str()
+            print(s)
+        }
+    }
+}
+
+test-val()

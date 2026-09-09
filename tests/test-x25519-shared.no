@@ -3,18 +3,26 @@
 
 hex-to-bytes = (hex-str str) (out [32]byte) {
     i <- [0..32): {
+        #{overflow = wrap}
         hi = hex-str[i * 2]
+        #{overflow = wrap}
         lo = hex-str[i * 2 + 1]
         hi-v = 0
         lo-v = 0
         {
+            #{overflow = wrap}
             hi >= 48 && hi <= 57 -> hi-v = hi - 48
+            #{overflow = wrap}
             hi >= 97 && hi <= 102 -> hi-v = hi - 87
+            #{overflow = wrap}
             hi >= 65 && hi <= 70 -> hi-v = hi - 55
         }
         {
+            #{overflow = wrap}
             lo >= 48 && lo <= 57 -> lo-v = lo - 48
+            #{overflow = wrap}
             lo >= 97 && lo <= 102 -> lo-v = lo - 87
+            #{overflow = wrap}
             lo >= 65 && lo <= 70 -> lo-v = lo - 55
         }
         out[i] = (hi-v << 4) | lo-v

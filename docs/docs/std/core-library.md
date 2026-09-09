@@ -68,7 +68,7 @@ s.to-upper()                  ; 轉大寫
 s.to-lower()                  ; 轉小寫
 out = s.trim()                ; 去首尾空白
 out = s.repeat(n)             ; 重複
-out = s.slice(start, end)     ; 切片
+out = s.slice(start, end)     ; 切片（下標為碼點位置）
 b = s.to-bytes()              ; 轉 []byte
 s = b.to-str()                ; []byte 轉 str（方法）
 v = s.to-i64()                ; 字串轉 i64（回傳 ?i64）

@@ -42,7 +42,7 @@ hadError = false
 
 ; base-name: 取路徑最後一段檔名（自寫，避免 path.base 的長度 bug）
 base-name = (p str) (out str) {
-    plen = p.len
+    plen = p.len-bytes()
     plen > 1 -> {
         pc = p[plen - 1]
         pc == 45 -> plen = plen - 1
@@ -61,7 +61,7 @@ base-name = (p str) (out str) {
 
 ; join-path: 拼接目錄與檔名，避免重複分隔符
 join-path = (d str, name str) (out str) {
-    dlen = d.len
+    dlen = d.len-bytes()
     dlen == 0 -> {
         out = name
         return
@@ -191,7 +191,7 @@ main = () {
 
         a == '--' -> endOpts = true
         opt = false
-        endOpts == false -> a.len > 0 -> a[0] == 45 -> opt = true
+        endOpts == false -> a.len() > 0 -> a[0] == 45 -> opt = true
         opt == true -> {
             a[0] == 45 -> a[1] == 45 -> {
                 a == '--help' -> {
@@ -217,11 +217,11 @@ main = () {
                         hadError = true
                     }
                 }
-                a.starts-with('--target-directory=') -> targetDir = a.slice(19, a.len)
+                a.starts-with('--target-directory=') -> targetDir = a.slice(19, a.len())
             }
             a[0] == 45 -> a[1] != 45 -> {
                 needTArg = false
-                j <- [1..a.len): {
+                j <- [1..a.len()): {
                     ch = a[j]
                     {
                         ch == 115 -> symbolic = true
@@ -230,8 +230,8 @@ main = () {
                         ch == 118 -> verbose = true
                         ch == 84 -> noTargetDir = true
                         ch == 116 -> {
-                            j + 1 < a.len -> targetDir = a.slice(j + 1, a.len)
-                            j + 1 == a.len -> needTArg = true
+                            j + 1 < a.len() -> targetDir = a.slice(j + 1, a.len())
+                            j + 1 == a.len() -> needTArg = true
                         }
                     }
                 }

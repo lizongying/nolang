@@ -1,5 +1,5 @@
 s = 'hello'
-n = s.len
+n = s.len-bytes()
 print(n)
 
 c = s[0]
@@ -12,6 +12,6 @@ a = 'foo' - 'bar'
 print(a)
 
 b = s[1..4]
-print(b.len)
+print(b.len-bytes())
 
 print(-1)

@@ -149,8 +149,27 @@ func (g *Generator) mapToLLVMType(nolangType string) string {
 // Also handles array types like "[3 x u8]" → "[3 x i8]".
 func toLLVMType(t string) string {
 	// Handle array types: "[N x T]" → "[N x toLLVMType(T)]"
+	// For nested arrays like "[2 x [4 x i64]]", the outermost '[' must be
+	// matched with its OWN closing bracket at depth 0 — NOT the first ']'
+	// (which belongs to the inner "[4 x i64]"). Using strings.Index(t, "]")
+	// would truncate the element type to "[4 x i64" (missing its ']'),
+	// producing the malformed "[2 x [4 x i64]" seen in GEPs for 2D arrays.
 	if len(t) > 5 && strings.HasPrefix(t, "[") && strings.Contains(t, " x ") {
-		closeBracket := strings.Index(t, "]")
+		closeBracket := -1
+		depth := 0
+		for i := 0; i < len(t); i++ {
+			switch t[i] {
+			case '[':
+				depth++
+			case ']':
+				depth--
+				if depth == 0 {
+					closeBracket = i
+					goto matched
+				}
+			}
+		}
+	matched:
 		if closeBracket > 0 {
 			spaceIdx := strings.Index(t, " x ")
 			if spaceIdx > 0 && spaceIdx < closeBracket {
@@ -182,6 +201,15 @@ func toLLVMType(t string) string {
 func isUnsignedIntType(t string) bool {
 	switch t {
 	case "u8", "u16", "u32", "u64", "u128":
+		return true
+	}
+	return false
+}
+
+// isSignedIntType 判斷 nolang 型別字串是否為有符號整數（i8/i16/i32/i64/i128）。
+func isSignedIntType(t string) bool {
+	switch t {
+	case "i8", "i16", "i32", "i64", "i128":
 		return true
 	}
 	return false

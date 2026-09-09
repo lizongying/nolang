@@ -18,6 +18,7 @@ rr_fn = () (ret i64) {
 }
 
 consume = (x i64) (ret i64) {
+    #{overflow = wrap}
     ret = x + 42
 }
 
@@ -46,10 +47,10 @@ main = () {
     x2 = qs == rs ? 1 : 0
     print(x2)           // 1
 
-    // 5. txt 栈槽重绑定 → .len 验证
+    // 5. txt 栈槽重绑定 → .len() 验证
     tx txt = 'hello-slot-rebind'
     tx2 = tx
-    print(tx2.len)      // 17
+    print(tx2.len-bytes())      // 17
 
     // 6/7. 降级为完整 copy：源后续被引用 → 不可重绑定
     da = 5

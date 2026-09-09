@@ -9,7 +9,9 @@
 
 ; [n]t.reverse: 反轉陣列
 [n]t.reverse = () {
+    #{overflow = wrap}
     i <- [0..n / 2): {
+        #{overflow = wrap}
         j = n - 1 - i
         tmp = .[i]
         .[i] = .[j]

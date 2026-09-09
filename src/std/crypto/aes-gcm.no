@@ -55,7 +55,9 @@ ghash-mul = (x [16]byte, h [16]byte) (out [16]byte) {
     i <- [0..128): {
 
         ; 取 x 的第 i 位元（從最高位開始）
+        #{overflow = wrap}
         byte-idx = i / 8
+        #{overflow = wrap}
         bit-idx = 7 - (i % 8)
         xi = (x[byte-idx] >> bit-idx) & 1
 
@@ -72,7 +74,9 @@ ghash-mul = (x [16]byte, h [16]byte) (out [16]byte) {
         ; v = v >> 1
         j = 15
         {
+            #{overflow = wrap}
             v[j] = (v[j] >> 1) | ((v[j - 1] & 1) << 7)
+            #{overflow = wrap}
             j = j - 1
         } (j > 0)
         v[0] = v[0] >> 1
@@ -103,6 +107,7 @@ ghash = (h [16]byte, aad []byte, cipher []byte) (out [16]byte) {
     pos = 0
     {
         i <- [0..16): {
+            #{overflow = wrap}
             blk[i] = aad[pos + i]
         }
 
@@ -111,15 +116,18 @@ ghash = (h [16]byte, aad []byte, cipher []byte) (out [16]byte) {
             y[i] = y[i] ^ blk[i]
         }
         y = ghash-mul(y, h)
+        #{overflow = wrap}
         pos = pos + 16
-    } (pos + 16 <= aad.len)
+    } (pos + 16 <= aad.len())
 
     ; AAD 最後不完整區塊
-    pos < aad.len -> {
+    pos < aad.len() -> {
         i <- [0..16): {
             blk[i] = 0
         }
-        i <- [0..aad.len - pos): {
+        #{overflow = wrap}
+        i <- [0..aad.len() - pos): {
+            #{overflow = wrap}
             blk[i] = aad[pos + i]
         }
         i <- [0..16): {
@@ -132,19 +140,23 @@ ghash = (h [16]byte, aad []byte, cipher []byte) (out [16]byte) {
     pos = 0
     {
         i <- [0..16): {
+            #{overflow = wrap}
             blk[i] = cipher[pos + i]
         }
         i <- [0..16): {
             y[i] = y[i] ^ blk[i]
         }
         y = ghash-mul(y, h)
+        #{overflow = wrap}
         pos = pos + 16
-    } (pos + 16 <= cipher.len)
-    pos < cipher.len -> {
+    } (pos + 16 <= cipher.len())
+    pos < cipher.len() -> {
         i <- [0..16): {
             blk[i] = 0
         }
-        i <- [0..cipher.len - pos): {
+        #{overflow = wrap}
+        i <- [0..cipher.len() - pos): {
+            #{overflow = wrap}
             blk[i] = cipher[pos + i]
         }
         i <- [0..16): {
@@ -158,8 +170,10 @@ ghash = (h [16]byte, aad []byte, cipher []byte) (out [16]byte) {
     i <- [0..16): {
         len-blk[i] = 0
     }
-    aad-bits = aad.len * 8
-    cipher-bits = cipher.len * 8
+    #{overflow = wrap}
+    aad-bits = aad.len() * 8
+    #{overflow = wrap}
+    cipher-bits = cipher.len() * 8
 
     ; aad-bits 的高 64 位元（大端序）
     len-blk[0] = (aad-bits >> 56) & 255
@@ -205,7 +219,7 @@ aes-128-ctr-xor = (key [16]byte, icb [16]byte, data []byte) (out []byte) {
     i <- [0..16): {
         cb[i] = icb[i]
     }
-    out = with-len(data.len)
+    out = with-len(data.len())
     pos = 0
     {
 
@@ -215,16 +229,20 @@ aes-128-ctr-xor = (key [16]byte, icb [16]byte, data []byte) (out []byte) {
 
         ; XOR 16 位元組（或剩餘部分）
         n = 16
-        pos + n > data.len -> n = data.len - pos
+        #{overflow = wrap}
+        pos + n > data.len() -> n = data.len() - pos
         i <- [0..n): {
+            #{overflow = wrap}
             out[pos + i] = (data[pos + i]) ^ (ks[i])
         }
 
         ; 遞增計數器（大端序，最低 32 位元）
         j = 15
         {
+            #{overflow = wrap}
             cb[j] = (cb[j] + 1) & 255
             cb[j] != 0 -> break
+            #{overflow = wrap}
             j = j - 1
         } (j >= 12)
 
@@ -232,13 +250,16 @@ aes-128-ctr-xor = (key [16]byte, icb [16]byte, data []byte) (out []byte) {
         cb[12] == 0 && cb[13] == 0 && cb[14] == 0 && cb[15] == 0 -> {
             j = 11
             {
+                #{overflow = wrap}
                 cb[j] = (cb[j] + 1) & 255
                 cb[j] != 0 -> break
+                #{overflow = wrap}
                 j = j - 1
             } (j >= 0)
         }
+        #{overflow = wrap}
         pos = pos + n
-    } (pos < data.len)
+    } (pos < data.len())
 }
 
 ; ═══════════════════════════════════════════════
@@ -250,7 +271,7 @@ aes-128-ctr-xor = (key [16]byte, icb [16]byte, data []byte) (out []byte) {
 ; iv [12]byte: IV（nonce）
 ; aad []byte: 額外認證資料
 ; plain []byte: 明文
-; 返回 sealed []byte: 密文 + 16 位元組 tag（長度 = plain.len + 16）
+; 返回 sealed []byte: 密文 + 16 位元組 tag（長度 = plain.len() + 16）
 aes-128-gcm-seal = (key [16]byte, iv [12]byte, aad []byte, plain []byte) (sealed []byte) {
 
     ; 1. 計算雜湊子金鑰 H = AES-enc(key, 0^128)
@@ -284,8 +305,10 @@ aes-128-gcm-seal = (key [16]byte, iv [12]byte, aad []byte, plain []byte) (sealed
     ; 遞增 J0 → J0+1
     j = 15
     {
+        #{overflow = wrap}
         ctr[j] = (ctr[j] + 1) & 255
         ctr[j] != 0 -> break
+        #{overflow = wrap}
         j = j - 1
     } (j >= 12)
 
@@ -306,12 +329,14 @@ aes-128-gcm-seal = (key [16]byte, iv [12]byte, aad []byte, plain []byte) (sealed
     }
 
     ; 6. 輸出密文 + tag
-    sealed = with-len(cipher.len + 16)
-    i <- [0..cipher.len): {
+    #{overflow = wrap}
+    sealed = with-len(cipher.len() + 16)
+    i <- [0..cipher.len()): {
         sealed[i] = cipher[i]
     }
     i <- [0..16): {
-        sealed[cipher.len + i] = tag[i]
+        #{overflow = wrap}
+        sealed[cipher.len() + i] = tag[i]
     }
 }
 
@@ -322,8 +347,9 @@ aes-128-gcm-seal = (key [16]byte, iv [12]byte, aad []byte, plain []byte) (sealed
 ; sealed []byte: 密文 + 16 位元組 tag
 ; 返回 plain []byte: 明文（認證失敗時長度為 0）
 aes-128-gcm-open = (key [16]byte, iv [12]byte, aad []byte, sealed []byte) (plain []byte) {
-    sealed.len < 16 -> return
-    cipher-len = sealed.len - 16
+    sealed.len() < 16 -> return
+    #{overflow = wrap}
+    cipher-len = sealed.len() - 16
 
     ; 1. 計算 H
     zero-block [16]byte
@@ -354,6 +380,7 @@ aes-128-gcm-open = (key [16]byte, iv [12]byte, aad []byte, sealed []byte) (plain
     }
     tag [16]byte
     i <- [0..16): {
+        #{overflow = wrap}
         tag[i] = sealed[cipher-len + i]
     }
 
@@ -385,8 +412,10 @@ aes-128-gcm-open = (key [16]byte, iv [12]byte, aad []byte, sealed []byte) (plain
     }
     j = 15
     {
+        #{overflow = wrap}
         ctr[j] = (ctr[j] + 1) & 255
         ctr[j] != 0 -> break
+        #{overflow = wrap}
         j = j - 1
     } (j >= 12)
     plain = aes-128-ctr-xor(key, ctr, cipher)

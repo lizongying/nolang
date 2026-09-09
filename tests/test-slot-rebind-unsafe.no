@@ -5,6 +5,7 @@
 
 ; 異步函數（模組級聲明，供 run 引用）
 double = (n i64) (r i64) {
+    #{overflow = wrap}
     r = n * 2
 }
 

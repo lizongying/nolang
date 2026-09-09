@@ -37,100 +37,106 @@
 ; 內建函數（底層實作）
 ; ═══════════════════════════════════════════════
 
-; build-in (ForwardFunc: process-fork)
+#{buildin=process-fork}
 ; process-fork: fork 當前進程
 ; 返回 0=子進程, >0=父進程(子PID), -1=錯誤
-; process-fork = () (pid i64) { }
+process-fork = () (pid i64) { }
 
-; build-in (ForwardFunc: process-pipe)
+#{buildin=process-pipe}
 ; process-pipe: 建立管道
 ; 返回打包值 (read_fd << 32) | write_fd
-; process-pipe = () (fds i64) { }
+process-pipe = () (fds i64) { }
 
-; build-in (ForwardFunc: process-waitpid)
+#{buildin=process-waitpid}
 ; process-waitpid: 等待子進程
 ; 返回退出碼 (WEXITSTATUS)
-; process-waitpid = (pid i64, options i64) (code i64) { }
+process-waitpid = (pid i64, options i64) (code i64) { }
 
-; build-in (ForwardFunc: process-exec)
+#{buildin=process-waitpid-nohang}
+; process-waitpid-nohang: 非阻塞等待子進程 (WNOHANG)
+; 子進程仍在執行時返回 -1；已退出時返回其退出碼；錯誤時返回 -1。
+; 用於 timeout 看門狗輪詢。
+process-waitpid-nohang = (pid i64) (code i64) { }
+
+#{buildin=process-exec}
 ; process-exec: 替換當前進程
 ; 呼叫 execlp(program, program, arg, NULL)
 ; 僅在失敗時返回
-; process-exec = (program str, arg str) (err i64) { }
+process-exec = (program str, arg str) (err i64) { }
 
-; build-in (CLibCall: kill)
+#{buildin=process-kill}
 ; process-kill: 發送信號給進程
-; process-kill = (pid i64, sig i64) (ok bool) { }
+process-kill = (pid i64, sig i64) (ok bool) { }
 
-; build-in (CLibCall: dup2)
+#{buildin=process-dup2}
 ; process-dup2: 複製檔案描述符
-; process-dup2 = (oldfd i64, newfd i64) (newfd i64) { }
+process-dup2 = (oldfd i64, newfd i64) (newfd i64) { }
 
-; build-in (CLibCall: getppid)
+#{buildin=process-getppid}
 ; process-getppid: 取得父進程 ID
-; process-getppid = () (pid i64) { }
+process-getppid = () (pid i64) { }
 
-; build-in (CLibCall: system)
+#{buildin=process-system}
 ; process-system: 執行 shell 命令
-; process-system = (cmd str) (status i64) { }
+process-system = (cmd str) (status i64) { }
 
-; build-in (ForwardFunc: process-exec-shell)
+#{buildin=process-exec-shell}
 ; process-exec-shell: 用 sh -c 執行命令字串（替換當前進程）
 ; cmd: 完整命令字串
 ; 僅在失敗時返回 errno
-; process-exec-shell = (cmd str) (err i64) { }
+process-exec-shell = (cmd str) (err i64) { }
 
 ; ═══════════════════════════════════════════════
 ; Windows 平台專用 Win32 API 內建函數
 ; 這些取代 process.c 的 C runtime，以純 Nolang 實現 cmd
 ; ═══════════════════════════════════════════════
 
-; build-in (ForwardFunc: win-create-pipe)
+#{buildin=win-create-pipe}
 ; win-create-pipe: 建立匿名管道（CreatePipe）
 ; 返回打包值 (read_handle << 32) | write_handle，0=失敗
-; win-create-pipe = () (handles i64) { }
+win-create-pipe = () (handles i64) { }
 
-; build-in (ForwardFunc: win-close-handle)
+#{buildin=win-close-handle}
 ; win-close-handle: 關閉 Windows handle（CloseHandle）
-; win-close-handle = (handle i64) (ok bool) { }
+win-close-handle = (handle i64) (ok bool) { }
 
-; build-in (ForwardFunc: win-write-pipe)
+#{buildin=win-write-pipe}
 ; win-write-pipe: 寫入資料到管道/handle（WriteFile）
 ; 返回寫入位元組數，-1=錯誤
-; win-write-pipe = (handle i64, data str) (written i64) { }
+win-write-pipe = (handle i64, data str) (written i64) { }
 
-; build-in (ForwardFunc: win-read-pipe)
+#{buildin=win-read-pipe}
 ; win-read-pipe: 從管道/handle 讀取資料（ReadFile）
 ; 返回 (data, n)：n=讀取位元組數，-1=錯誤
-; win-read-pipe = (handle i64, max-bytes i64) (data str, n i64) { }
+win-read-pipe = (handle i64, max-bytes i64) (data str, n i64) { }
 
-; build-in (ForwardFunc: win-create-process)
+#{buildin=win-create-process}
 ; win-create-process: 創建子進程（CreateProcessA）
 ; cmdline: 完整命令列字串
 ; dir: 工作目錄（空=繼承）
 ; stdin-handle, stdout-handle, stderr-handle: 標準流 handle（0=繼承父進程）
 ; 返回 (proc-handle, status)：proc-handle>0=成功, 0=失敗
-; win-create-process = (cmdline str, dir str, stdin-handle i64, stdout-handle i64, stderr-handle i64) (proc-handle i64, status i64) { }
+win-create-process = (cmdline str, dir str, stdin-handle i64, stdout-handle i64, stderr-handle i64) (proc-handle i64, status i64) { }
 
-; build-in (ForwardFunc: win-wait-process)
+#{buildin=win-wait-process}
 ; win-wait-process: 等待進程結束（WaitForSingleObject）
 ; timeout-ms: 超時毫秒（0=無限等待）
 ; 返回 0=超時, 1=已退出, -1=錯誤
-; win-wait-process = (proc-handle i64, timeout-ms i64) (status i64) { }
+win-wait-process = (proc-handle i64, timeout-ms i64) (status i64) { }
 
-; build-in (ForwardFunc: win-get-exit-code)
+#{buildin=win-get-exit-code}
 ; win-get-exit-code: 取得進程退出碼（GetExitCodeProcess）
 ; 返回 (exit-code, ok)：ok=false 表示仍在執行
-; win-get-exit-code = (proc-handle i64) (exit-code i64, ok bool) { }
+win-get-exit-code = (proc-handle i64) (exit-code i64, ok bool) { }
 
-; build-in (ForwardFunc: win-terminate-process)
+#{buildin=win-terminate-process}
 ; win-terminate-process: 終止進程（TerminateProcess）
-; win-terminate-process = (proc-handle i64, exit-code i64) (ok bool) { }
+win-terminate-process = (proc-handle i64, exit-code i64) (ok bool) { }
 
-; build-in (ForwardFunc: win-get-std-handle)
+#{buildin=win-get-std-handle}
 ; win-get-std-handle: 取得標準 handle（GetStdHandle）
 ; which: 0=stdin, 1=stdout, 2=stderr
-; win-get-std-handle = (which i64) (handle i64) { }
+win-get-std-handle = (which i64) (handle i64) { }
 
 ; ═══════════════════════════════════════════════
 ; 信號常量
@@ -202,8 +208,21 @@ process.start-with-opts = (program str, args []str, dir str, input str, merge-er
 
     ; 構建命令字串
     cmdline str = program
-    i <- [0..args.len): {
-        cmdline = cmdline - ' ' - args[i]
+    is-sh-c = false
+    {
+        ; 直接執行 `sh -c <script>` 時避免雙重嵌套 sh -c（詳見 cmd）
+        program == 'sh' -> {
+            args.len() >= 2 -> is-sh-c = args[0] == '-c'
+        }
+    }
+    {
+        is-sh-c -> cmdline = args[1]
+        -> {
+            i <- [0..args.len()): {
+                #{overflow = wrap}
+                cmdline = cmdline - ' ' - args[i]
+            }
+        }
     }
 
     ; 建立 stdout 管道
@@ -236,7 +255,7 @@ process.start-with-opts = (program str, args []str, dir str, input str, merge-er
     in-read i64 = -1
     in-write i64 = -1
     {
-        input.len > 0 -> {
+        input.len-bytes() > 0 -> {
             in-fds = process-pipe()
             {
                 in-fds < 0 -> {
@@ -292,10 +311,16 @@ process.start-with-opts = (program str, args []str, dir str, input str, merge-er
             }
             ; 工作目錄
             {
-                dir.len > 0 -> ch-dir(dir)
+                dir.len-bytes() > 0 -> ch-dir(dir)
             }
             ; 執行命令
-            process-exec-shell(cmdline)
+            exec-rc i64 = process-exec-shell(cmdline)
+            ; exec 失敗：寫錯誤訊息到 stderr（fd 2），供父進程歸一化為 code=-1
+            exec-rc != 0 -> {
+                exec-err str = 'exec: ' - cmdline - ': command not found\n'
+                exec-err-bytes = exec-err.to-bytes()
+                fs.write(2, exec-err-bytes, exec-err-bytes.len())
+            }
             ; exec 失敗
             exit(127)
         }
@@ -336,7 +361,7 @@ process.start-with-opts = (program str, args []str, dir str, input str, merge-er
     {
         in-write >= 0 -> {
             b = input.to-bytes()
-            fs.write(in-write, b, b.len)
+            fs.write(in-write, b, b.len())
             fs.close(in-write)
         }
     }
@@ -447,7 +472,9 @@ process.read-all = () (content str, n i64) {
     {
         chunk-n = fs.read(.stdout-fd, buf, 4096)
         chunk-n <= 0 -> *
+        #{overflow = wrap}
         content = content - buf.slice(0, chunk-n).to-str()
+        #{overflow = wrap}
         n = n + chunk-n
     } (true)
 }
@@ -570,8 +597,36 @@ cmd = (program str, args []str, dir str, input str, env []str, timeout i64, merg
 
     ; 構建命令字串
     cmdline str = program
-    i <- [0..args.len): {
-        cmdline = cmdline - ' ' - args[i]
+    is-sh-c = false
+    {
+        ; 直接執行 `sh -c <script>` 時避免雙重嵌套 sh -c：
+        ; 否則 cmdline 會變成 "sh -c <script>"，再被 process-exec-shell 包成
+        ; `sh -c "sh -c <script>"`，script 永遠不會按預期執行。
+        ; 注意：nolang 的 && 不短路，故 args[0] 索引必須放在 -> 守衛區塊內。
+        program == 'sh' -> {
+            args.len() >= 2 -> is-sh-c = args[0] == '-c'
+        }
+    }
+    {
+        is-sh-c -> cmdline = args[1]
+        -> {
+            i <- [0..args.len()): {
+                #{overflow = wrap}
+                cmdline = cmdline - ' ' - args[i]
+            }
+        }
+    }
+
+    ; 環境變數轉發：process-exec-shell 本身不接收 env，故以 `env VAR=val ...` 前綴注入。
+    ; 說明：env 值含空白/特殊字元時可能需額外引用；此處處理常見情形。
+    {
+        env.len() > 0 -> {
+            envline str = 'env'
+            ei <- [0..env.len()): {
+                envline = envline - ' ' - env[ei]
+            }
+            cmdline = envline - ' ' - cmdline
+        }
     }
 
     ; 建立 stdout 管道
@@ -608,7 +663,7 @@ cmd = (program str, args []str, dir str, input str, env []str, timeout i64, merg
     in-read i64 = -1
     in-write i64 = -1
     {
-        input.len > 0 -> {
+        input.len-bytes() > 0 -> {
             in-fds = process-pipe()
             {
                 in-fds < 0 -> {
@@ -665,10 +720,16 @@ cmd = (program str, args []str, dir str, input str, env []str, timeout i64, merg
             }
             ; 工作目錄
             {
-                dir.len > 0 -> ch-dir(dir)
+                dir.len-bytes() > 0 -> ch-dir(dir)
             }
             ; 執行命令
-            process-exec-shell(cmdline)
+            exec-rc i64 = process-exec-shell(cmdline)
+            ; exec 失敗：寫錯誤訊息到 stderr（fd 2），供父進程歸一化為 code=-1
+            exec-rc != 0 -> {
+                exec-err str = 'exec: ' - cmdline - ': command not found\n'
+                exec-err-bytes = exec-err.to-bytes()
+                fs.write(2, exec-err-bytes, exec-err-bytes.len())
+            }
             ; exec 失敗
             exit(127)
         }
@@ -710,7 +771,7 @@ cmd = (program str, args []str, dir str, input str, env []str, timeout i64, merg
     {
         in-write >= 0 -> {
             b = input.to-bytes()
-            fs.write(in-write, b, b.len)
+            fs.write(in-write, b, b.len())
             fs.close(in-write)
         }
     }
@@ -720,37 +781,74 @@ cmd = (program str, args []str, dir str, input str, env []str, timeout i64, merg
     {
         n = fs.read(out-read, buf, 4096)
         n <= 0 -> break
+        #{overflow = wrap}
         out = out - buf.slice(0, n).to-str()
     } (true)
 
-    ; 等待進程結束
+    fs.close(out-read)
+
+    ; 等待進程結束（含超時看門狗）。
+    ; 注意：nolang 在函數中段的「裸區塊 + -> 鏈」後會提前返回，故本區塊須為函數最後語句；
+    ; stderr 捕獲與啟動/exec 失敗歸一化均置於此區塊內（waitpid 之後子進程已退出，
+    ; 讀取可取得完整輸出，EOF 後 read 回傳 0 自然結束迴圈）。
+    ; timeout>0 看門狗輪詢非阻塞 waitpid，超時則殺死子進程並回報 -2。
     {
         timeout > 0 -> {
-
-            ; TODO: 超時功能需要 alarm/SIGALRM 或非阻塞 waitpid 支援
-            ; 目前直接阻塞等待（與 stdbuf.no 一致）
-            code = process-waitpid(pid, 0)
+            elapsed i64 = 0
+            {
+                ; 子進程已結束則跳出
+                process-waitpid-nohang(pid) != -1 -> break
+                ; 已超時則跳出
+                elapsed >= timeout -> break
+                sleep-us(10000)
+                elapsed = elapsed + 10
+            } (true)
+            {
+                ; 超時：仍在執行 → 強制殺死並回報 -2
+                process-waitpid-nohang(pid) == -1 -> {
+                    process-kill(pid, 9)
+                    code = -2
+                    ; 收割被殺死的子進程
+                    process-waitpid(pid, 0)
+                }
+                ; 自然結束：收割並取得退出碼
+                -> {
+                    code = process-waitpid(pid, 0)
+                }
+            }
         }
-
         timeout <= 0 -> {
-
             ; 無限等待
             code = process-waitpid(pid, 0)
         }
-    }
-
-    fs.close(out-read)
-
-    ; 讀取 stderr 輸出（如果不 merge-err，捕獲）
-    {
-        ! merge-err -> {
-            err-read >= 0 -> {
-                {
-                    n = fs.read(err-read, buf, 4096)
-                    n <= 0 -> break
-                    stderr = stderr - buf.slice(0, n).to-str()
-                } (true)
-                fs.close(err-read)
+        ; 捕獲 stderr（僅非 merge-err 時 stderr 獨立管道）
+        {
+            ! merge-err -> {
+                err-read >= 0 -> {
+                    {
+                        n = fs.read(err-read, buf, 4096)
+                        n <= 0 -> break
+                        #{overflow = wrap}
+                        stderr = stderr - buf.slice(0, n).to-str()
+                    } (true)
+                    fs.close(err-read)
+                }
+            }
+        }
+        ; 啟動/exec 失敗歸一化：sh -c 包裝下指令不存在會令 sh 以 127 退出，
+        ; 將其視為 exec 失敗（code=-1, err=錯誤訊息），符合 API 契約。
+        code == 127 -> {
+            ! merge-err -> {
+                stderr.len-bytes() > 0 -> {
+                    code = -1
+                    err = stderr
+                }
+            }
+            merge-err -> {
+                out.len-bytes() > 0 -> {
+                    code = -1
+                    err = out
+                }
             }
         }
     }
@@ -770,14 +868,16 @@ cmd = (program str, args []str, dir str, input str, env []str, timeout i64, merg
 
     ; 構建命令列字串：program + " " + arg1 + " " + arg2 + ...
     cmdline str = program
-    i <- [0..args.len): {
+    i <- [0..args.len()): {
         arg str = args[i]
         ; 含空格的參數需要加引號
         has-space = arg.contains(' ')
         has-space != 0 -> {
+            #{overflow = wrap}
             cmdline = cmdline - ' "' - arg - '"'
         }
         has-space == 0 -> {
+            #{overflow = wrap}
             cmdline = cmdline - ' ' - arg
         }
     }
@@ -816,7 +916,7 @@ cmd = (program str, args []str, dir str, input str, env []str, timeout i64, merg
     in-read i64 = 0
     in-write i64 = 0
     {
-        input.len > 0 -> {
+        input.len-bytes() > 0 -> {
             in-fds = win-create-pipe()
             {
                 in-fds == 0 -> {
@@ -928,6 +1028,7 @@ cmd = (program str, args []str, dir str, input str, env []str, timeout i64, merg
             {
                 chunk, chunk-n = win-read-pipe(out-read, 4096)
                 chunk-n <= 0 -> break
+                #{overflow = wrap}
                 out = out - chunk
             } (true)
         }
@@ -943,6 +1044,7 @@ cmd = (program str, args []str, dir str, input str, env []str, timeout i64, merg
                 {
                     chunk, chunk-n = win-read-pipe(err-read, 4096)
                     chunk-n <= 0 -> break
+                    #{overflow = wrap}
                     stderr = stderr - chunk
                 } (true)
                 win-close-handle(err-read)
@@ -1031,7 +1133,7 @@ proc-info {
 #{linux-amd64, linux-arm64}
 list-all = () (procs []proc-info) {
     names = fs.list-dir('/proc')
-    i <- [0..names.len): {
+    i <- [0..names.len()): {
         name = names[i]
 
         ; 只處理全數字條目（PID 目錄）
@@ -1042,9 +1144,10 @@ list-all = () (procs []proc-info) {
                 p.pid = it
 
                 ; 讀取 /proc/<pid>/comm 取得進程名
+                #{overflow = wrap}
                 comm-path = '/proc/' - name - '/comm'
                 comm = fs.read-file(comm-path).to-str()
-                comm.len > 0 -> p.name = comm.trim()
+                comm.len() > 0 -> p.name = comm.trim()
                 procs.push(p)
             }
 
@@ -1055,12 +1158,12 @@ list-all = () (procs []proc-info) {
     }
 }
 
-#{mac-amd64, mac-arm64}
+#{mac-amd64, mac-arm64, intrinsic}
 list-all = () (procs []proc-info) {
     ; macOS 暫時返回空列表（需 libproc proc_listallpids 或 sysctl KERN_PROC）
 }
 
-#{win-amd64, win-arm64}
+#{win-amd64, win-arm64, intrinsic}
 list-all = () (procs []proc-info) {
     ; Windows 暫時返回空列表（需 CreateToolhelp32Snapshot）
 }
@@ -1081,7 +1184,7 @@ find-match = (pname str, target str) (yes bool) {
 ; 返回匹配的 PID 列表
 find-by-name = (name str) (pids []i64) {
     all []proc-info = list-all()
-    i <- [0..all.len): {
+    i <- [0..all.len()): {
         p proc-info = all[i]
         yes = find-match(p.name, name)
         yes -> pids.push(p.pid)

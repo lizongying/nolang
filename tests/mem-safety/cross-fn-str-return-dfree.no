@@ -17,12 +17,12 @@ g = () (out []i64) {
 
 main = () (out i64) {
     a = f()
-    a.len == 11 -> out = 1
-    print(a.len)
+    a.len-bytes() == 11 -> out = 1
+    print(a.len-bytes())
 
     b = g()
-    b.len == 3 -> out = 2
-    print(b.len)
+    b.len() == 3 -> out = 2
+    print(b.len())
 
     out = 0
 }

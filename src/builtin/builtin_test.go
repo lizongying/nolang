@@ -23,8 +23,10 @@ func TestBuiltinMethodListEntries(t *testing.T) {
 		if m.MethodName == "" {
 			t.Error("builtin method has empty MethodName")
 		}
-		// ForwardFunc, LLVMIntrinsic, CLibCall, or LLVMConv must be set
-		if m.ForwardFunc == "" && m.LLVMIntrinsic == "" && m.CLibCall == nil && m.LLVMConv == nil {
+		// ForwardFunc, LLVMIntrinsic, CLibCall, or LLVMConv must be set,
+		// unless the entry is an intercept-only pseudo-builtin (expanded
+		// inline by codegen, e.g. str.byte / txt.byte raw-byte accessors).
+		if !m.Intercepted && m.ForwardFunc == "" && m.LLVMIntrinsic == "" && m.CLibCall == nil && m.LLVMConv == nil {
 			t.Errorf("builtin %s has neither ForwardFunc, LLVMIntrinsic, CLibCall, nor LLVMConv", key)
 		}
 	}

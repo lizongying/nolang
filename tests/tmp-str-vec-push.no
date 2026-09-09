@@ -52,7 +52,7 @@ test-struct-clone-vec-field = () (ok bool) {
     g1.scores.push(200)
     g2 = g1
     g2.name == 'team-a' -> ok = true
-    g2.members.len == 2 -> ok = true
+    g2.members.len() == 2 -> ok = true
 }
 
 main = () {

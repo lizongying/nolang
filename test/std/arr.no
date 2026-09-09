@@ -11,7 +11,7 @@ failed = 0
 
 t-len = () {
     a [5]i64 = [1, 2, 3, 4, 5]
-    runner.eq(a.len, 5, 'arr.len == 5')
+    runner.eq(a.len(), 5, 'arr.len == 5')
 }
 
 t-element-access = () {

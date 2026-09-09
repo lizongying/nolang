@@ -47,7 +47,7 @@ t-cmd = () {
     args []str = ['hello']
     out, stderr, code, err = process.cmd('echo', args, '', '', [], 0, false)
     runner.eq(code, 0, 'cmd echo exit 0')
-    runner.gt(out.len, 0, 'cmd echo out len > 0')
+    runner.gt(out.len(), 0, 'cmd echo out len > 0')
 }
 
 ; ── 執行 ──────────────────────────────────────

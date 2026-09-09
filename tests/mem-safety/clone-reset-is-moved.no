@@ -12,9 +12,9 @@ clone-after-move = (flag i64) (out []i64) {
     ; 修復前: is_moved 保持 stale=true → 函數結束時跳過 free → 洩漏
     ; 修復後: is_moved 重置為 false → 函數結束時正確 free
     b = a
-    print(b.len)
+    print(b.len())
     print(b[0])
 }
 v = clone-after-move(1)
-print(v.len)
+print(v.len())
 print(v[0])

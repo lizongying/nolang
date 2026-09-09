@@ -1,14 +1,18 @@
 add = (a i64, b i64) (r i64) {
+  #{overflow = wrap}
   r = a + b
 }
 sub = (a i64, b i64) (r i64) {
+  #{overflow = wrap}
   r = a - b
 }
 mul = (a i64, b i64) (r i64) {
+  #{overflow = wrap}
   r = a * b
 }
 fib = (n i64) (r i64) {
   n < 2 -> r = n
+  #{overflow = wrap}
   n >= 2 -> r = fib(n - 1) + fib(n - 2)
 }
 swap = (a i64, b i64) (x i64, y i64) {
@@ -21,6 +25,7 @@ str-id = (s str) (out str) {
 sum-to = (n i64) (r i64) {
   r = 0
   for i in [0, 1, 2, 3, 4] {
+    #{overflow = wrap}
     r = r + i
   }
 }

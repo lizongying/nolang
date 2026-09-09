@@ -28,6 +28,7 @@ test-hkdf-extract = () {
 test-hkdf-expand = () {
     prk [32]byte
     i <- [0..32): {
+        #{overflow = wrap}
         prk[i] = i + 1
     }
     info []byte = with-cap(2)
@@ -52,6 +53,7 @@ test-hkdf-expand = () {
 test-hkdf-expand-label = () {
     prk [32]byte
     i <- [0..32): {
+        #{overflow = wrap}
         prk[i] = i + 1
     }
     ctx []byte = with-cap(2)
@@ -78,12 +80,14 @@ test-aes-gcm-seal-open = () {
     ; 16-byte key
     key [16]byte
     i <- [0..16): {
+        #{overflow = wrap}
         key[i] = i + 1
     }
 
     ; 12-byte IV
     iv [12]byte
     i <- [0..12): {
+        #{overflow = wrap}
         iv[i] = i + 10
     }
 
@@ -105,8 +109,9 @@ test-aes-gcm-seal-open = () {
     sealed []byte
     sealed = aes-gcm.aes-128-gcm-seal(key, iv, aad, plain)
 
-    ; sealed 長度應為 plain.len + 16 (tag)
-    expected-len = plain.len + 16
+    ; sealed 長度應為 plain.len() + 16 (tag)
+    #{overflow = wrap}
+    expected-len = plain.len() + 16
     sealed-nonzero = 0
     i <- [0..expected-len): {
         sealed[i] != 0 -> sealed-nonzero = 1
@@ -121,7 +126,7 @@ test-aes-gcm-seal-open = () {
     opened = aes-gcm.aes-128-gcm-open(key, iv, aad, sealed)
 
     ; 驗證解密結果與原文一致
-    i <- [0..plain.len): {
+    i <- [0..plain.len()): {
         opened[i] != plain[i] -> {
             print('FAIL: aes-gcm-open mismatch')
             return
@@ -136,6 +141,7 @@ test-x25519-scalarmult = () {
     ; 生成私鑰（固定值）
     priv [32]byte
     i <- [0..32): {
+        #{overflow = wrap}
         priv[i] = i + 1
     }
 

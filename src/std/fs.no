@@ -27,202 +27,172 @@
 ; 檔案操作（內建函數）
 ; ═══════════════════════════════════════════════
 
-; build-in (ForwardFunc: unlink)
+#{buildin=remove}
 ; remove: 刪除檔案
-; remove = (p str) (ok bool) {  // LLVM: call i32 @unlink → zext
-; }
+remove = (p str) (ok bool) { }
 
-; build-in (ForwardFunc: rename)
+#{buildin=rename}
 ; rename: 重新命名檔案
-; rename = (o str, n str) (ok bool) {  // LLVM: call i32 @rename → zext
-; }
+rename = (o str, n str) (ok bool) { }
 
-; build-in (CLibCall: symlink)
+#{buildin=symlink}
 ; symlink: 建立符號連結
 ; target: 連結指向的目標路徑
 ; linkpath: 符號連結本身的路徑
 ; 成功返回 true，失敗返回 false
-; symlink = (target str, linkpath str) (ok bool) {  // LLVM: call i32 @symlink → icmp eq 0 → zext
-; }
+symlink = (target str, linkpath str) (ok bool) { }
 
-; build-in (CLibCall: link)
+#{buildin=link}
 ; link: 建立硬連結
 ; oldpath: 既有檔案路徑
 ; newpath: 新硬連結路徑
 ; 成功返回 true，失敗返回 false
-; link = (oldpath str, newpath str) (ok bool) {  // LLVM: call i32 @link → icmp eq 0 → zext
-; }
+link = (oldpath str, newpath str) (ok bool) { }
 
-; build-in (ForwardFunc: realpath)
+#{buildin=realpath}
 ; realpath: 解析絕對路徑
 ; p: 輸入路徑（可能是相對路徑或含 . / .. 的路徑）
 ; 成功返回規範化的絕對路徑字串，失敗返回空串
-; realpath = (p str) (abs str) {  // LLVM: call i8* @realpath(p, NULL) → emitStrLongFromCStr
-; }
+realpath = (p str) (abs str) { }
 
-; build-in (ForwardFunc: readlink)
+#{buildin=readlink}
 ; readlink: 讀取符號連結的目標路徑
 ; p: 符號連結路徑
 ; 成功返回目標路徑字串與 ok=true，失敗返回空串與 ok=false
-; readlink = (p str) (target str, ok bool) {  // LLVM: call i64 @readlink(p, buf, n) → emitStrLongFromCStr
-; }
+readlink = (p str) (target str, ok bool) { }
 
-; build-in (ForwardFunc: mkstemp)
+#{buildin=mkstemp}
 ; mkstemp: 建立並開啟唯一臨時檔案
 ; tmpl: 模板字串，末尾必須為 'XXXXXX'（六個 X）
 ; 成功返回實際檔名與檔案描述符，失敗返回空串與 fd=-1
 ; 注意：返回順序為 (name, fd) 而非 (fd, name)，因為 lastBuiltinExtra 機制要求
 ;       第二返回值必須是 i64/bool 型別，str 必須為主返回值
-; mkstemp = (tmpl str) (name str, fd fd) {  // LLVM: call i32 @mkstemp(buf) → emitStrLongFromCStr
-; }
+mkstemp = (tmpl str) (name str, fd fd) { }
 
-; build-in (ForwardFunc: mkdtemp)
+#{buildin=mkdtemp}
 ; mkdtemp: 建立唯一臨時目錄
 ; tmpl: 模板字串，末尾必須為 'XXXXXX'
 ; 成功返回實際目錄名與 ok=true，失敗返回空串與 ok=false
-; mkdtemp = (tmpl str) (name str, ok bool) {  // LLVM: call i8* @mkdtemp(buf) → emitStrLongFromCStr
-; }
+mkdtemp = (tmpl str) (name str, ok bool) { }
 
-; build-in (CLibCall: mkfifo)
+#{buildin=mkfifo}
 ; mkfifo: 建立命名管道（FIFO）
 ; p: 管道路徑
 ; mode: 權限模式（如 0o644 = 420）
 ; 成功返回 true，失敗返回 false
-; mkfifo = (p str, mode i64) (ok bool) {  // LLVM: call i32 @mkfifo → icmp eq 0 → zext
-; }
+mkfifo = (p str, mode i64) (ok bool) { }
 
-; build-in (ForwardFunc: utime)
+#{buildin=utime}
 ; utime: 設定檔案的存取與修改時間
 ; p: 檔案路徑
 ; atime: 存取時間（Unix 秒）
 ; mtime: 修改時間（Unix 秒）
 ; 成功返回 true，失敗返回 false
-; utime = (p str, atime i64, mtime i64) (ok bool) {  // LLVM: alloca [16 x i8] times → call i32 @utimes
-; }
+utime = (p str, atime i64, mtime i64) (ok bool) { }
 
-; build-in (CLibCall: rmdir)
+#{buildin=rmdir}
 ; rmdir: 刪除空目錄
 ; p: 目錄路徑（必須為空目錄）
 ; 成功返回 true，失敗返回 false
-; rmdir = (p str) (ok bool) {  // LLVM: call i32 @rmdir → icmp eq 0 → zext
-; }
+rmdir = (p str) (ok bool) { }
 
-; build-in (CLibCall: mknod)
+#{buildin=mknod}
 ; mknod: 建立特殊檔案（管道、裝置節點等）
 ; p: 檔案路徑
 ; mode: 檔案類型與權限（如 0o644=420 普通檔案，0o666=438 FIFO）
 ; dev: 裝置號（對普通檔案/FIFO 傳 0）
 ; 成功返回 true，失敗返回 false（macOS/Windows 上可能不支援）
-; mknod = (p str, mode i64, dev i64) (ok bool) {  // LLVM: call i32 @mknod → icmp eq 0 → zext
-; }
+mknod = (p str, mode i64, dev i64) (ok bool) { }
 
-; build-in (CLibCall: truncate)
+#{buildin=truncate}
 ; truncate: 截斷或擴展檔案到指定大小
 ; p: 檔案路徑
 ; length: 目標長度（位元組）
 ; 成功返回 true，失敗返回 false
-; truncate = (p str, length i64) (ok bool) {  // LLVM: call i32 @truncate → icmp eq 0 → zext
-; }
+truncate = (p str, length i64) (ok bool) { }
 
-; build-in (ForwardFunc: sync)
+#{buildin=sync}
 ; sync: 將檔案系統緩衝區排清到磁碟（無返回值）
-; sync = () () {  // LLVM: call void @sync()
-; }
+sync = () () { }
 
-; build-in (ForwardFunc: lstat)
+#{buildin=lstat}
 ; lstat: 取得符號連結本身的資訊（不跟隨連結）
 ; 與 stat 不同：對符號連結呼叫時返回連結本身的資訊，而非目標
 ; p: 檔案路徑
 ; 成功返回 true，失敗返回 false
-; lstat = (p str) (ok bool) {  // LLVM: call i32 @lstat → icmp eq 0 → zext
-; }
+lstat = (p str) (ok bool) { }
 
-; build-in (ForwardFunc: stat-exists)
+#{buildin=exists}
 ; exists: 判斷路徑是否存在（跟隨符號連結）
 ; 成功返回 true，失敗返回 false
-; exists = (p str) (yes bool) {  // LLVM: call i32 @stat → icmp eq 0 → zext
-; }
+exists = (p str) (yes bool) { }
 
-; build-in (ForwardFunc: stat-file)
+#{buildin=is-file}
 ; is-file: 判斷路徑是否為普通檔案
-; is-file = (p str) (exists bool) {  // LLVM: call i32 @stat → icmp eq → zext
-; }
+is-file = (p str) (exists bool) { }
 
-; build-in (ForwardFunc: stat-dir)
+#{buildin=is-dir}
 ; is-dir: 判斷路徑是否為目錄
-; is-dir = (p str) (yes bool) {  // LLVM: call @stat + S-ISDIR(st-mode) → zext
-; }
+is-dir = (p str) (yes bool) { }
 
-; build-in (ForwardFunc: stat-size)
+#{buildin=stat-size}
 ; stat-size: 取得檔案大小
-; stat-size = (p str) (size ?i64) {  // LLVM: call @stat → st-size
-; }
+stat-size = (p str) (size ?i64) { }
 
-; build-in (ForwardFunc: fstat-size)
+#{buildin=fstat-size}
 ; fstat-size: 取得已開啟檔案的大小（用 fstat(fd)，消除 TOCTOU）
 ; fd: 已開啟的檔案描述符
-; fstat-size = (fd fd) (size ?i64) {  // LLVM: call @fstat(fd) → st-size
-; }
+fstat-size = (fd fd) (size ?i64) { }
 
-; build-in (ForwardFunc: read-file)
+#{buildin=read-file}
 ; [deprecated] read-file: 改用 read-bytes（支援錯誤處理、TOCTOU 安全、循環 read）
 ; read-file: 讀取整個檔案內容為 []byte（空 slice 表示失敗，無法區分空檔案與錯誤）
-; read-file = (p str) (content []byte) {  // LLVM: stat+open+malloc+read+close → %vec
-; }
+read-file = (p str) (content []byte) { }
 
-; build-in (ForwardFunc: write-file)
+#{buildin=write-file}
 ; [deprecated] write-file: 改用 write-bytes（支援錯誤處理、循環 write）
 ; write-file: 將 []byte 寫入檔案（覆寫，無法區分部分寫入與完全失敗）
-; write-file = (p str, data []byte) (ok bool) {  // LLVM: open+write+close → icmp
-; }
+write-file = (p str, data []byte) (ok bool) { }
 
-; build-in (ForwardFunc: stat-size)
+#{buildin=file-size}
 ; file-size: 取得檔案大小（同 stat-size）
-; file-size = (p str) (size ?i64) {  // LLVM: call @stat → st-size
-; }
+file-size = (p str) (size ?i64) { }
 
 ; ═══════════════════════════════════════════════
 ; 檔案讀寫（內建函數）
 ; ═══════════════════════════════════════════════
 
-; build-in (ForwardFunc: open-read)
+#{buildin=open-read}
 ; open-read: 以唯讀模式開啟檔案
-; open-read = (path str) (fd fd) {  // LLVM: call i32 @open(O-RDONLY) → zext
-; }
+open-read = (path str) (fd fd) { }
 
-; build-in (ForwardFunc: open-write)
+#{buildin=open-write}
 ; open-write: 以寫入模式開啟檔案（O-WRONLY|O-CREAT|O-TRUNC, 0644）
-; open-write = (path str) (fd fd) {  // LLVM: call i32 @open → zext
-; }
+open-write = (path str) (fd fd) { }
 
-; build-in (CLibCall: open)
+#{buildin=open-file}
 ; open-file: 以自訂旗標和權限開啟檔案
-; open-file = (path str, flags i64, mode i64) (fd fd) {  // LLVM: call i32 (i8*, i32, ...) @open → sext
-; }
+open-file = (path str, flags i64, mode i64) (fd fd) { }
 
-; build-in (ForwardFunc: read)
+#{buildin=read}
 ; read: 從檔案描述符讀取最多 n 位元組到 buf
-; read = (fd fd, buf []byte, n i64) (n i64) {  // LLVM: call i64 @read(fd, buf, n)
-; }
+read = (fd fd, buf []byte, n i64) (n i64) { }
 
-; build-in (ForwardFunc: write)
+#{buildin=write}
 ; write: 將 data 的前 n 位元組寫入檔案描述符
-; write = (fd fd, data []byte, n i64) (written i64) {  // LLVM: call i64 @write(fd, data, n)
-; }
+write = (fd fd, data []byte, n i64) (written i64) { }
 
-; build-in (ForwardFunc: close)
+#{buildin=close}
 ; close: 關閉檔案描述符
-; close = (fd fd) (ok i64) {  // LLVM: call i32 @close(fd) → zext
-; }
+close = (fd fd) (ok i64) { }
 
 ; ═══════════════════════════════════════════════
 ; 標準輸入（內建函數）
 ; ═══════════════════════════════════════════════
 
-; build-in (ForwardFunc: read-stdin-line)
+#{buildin=get-line}
 ; get-line: 從標準輸入讀取一行
-; get-line = () (line ?str) {  // LLVM: call i8* @fgets(buf, size, stdin)
-; }
+get-line = () (line ?str) { }
 
 ; read-stdin: 循環讀取 stdin 全部內容為 []byte（不依賴 stat/fstat，對管道安全）
 ; 返回 content ?[]byte:
@@ -239,7 +209,7 @@ read-stdin = () (content ?[]byte) {
             buf.push(tmp[i])
         }
     } (true)
-    buf.len == 0 -> {
+    buf.len() == 0 -> {
         content = nil
         return
     }
@@ -269,25 +239,21 @@ read-stdin-str = () (content ?str) {
 ; 目錄操作（內建函數）
 ; ═══════════════════════════════════════════════
 
-; build-in (ForwardFunc: open-dir)
+#{buildin=open-dir}
 ; open-dir: 開啟目錄以讀取條目
-; open-dir = (p str) (dirp i64) {  // LLVM: call i8* @opendir → ptrtoint to i64
-; }
+open-dir = (p str) (dirp i64) { }
 
-; build-in (ForwardFunc: read-dir)
+#{buildin=read-dir}
 ; read-dir: 讀取下一個目錄條目名稱
-; read-dir = (dirp i64) (name str, ok bool) {  // LLVM: call i8* @readdir → extract d_name → strlen → %str-long
-; }
+read-dir = (dirp i64) (name str, ok bool) { }
 
-; build-in (ForwardFunc: close-dir)
+#{buildin=close-dir}
 ; close-dir: 關閉目錄控制代碼
-; close-dir = (dirp i64) (ok bool) {  // LLVM: call i32 @closedir → icmp eq 0 → zext
-; }
+close-dir = (dirp i64) (ok bool) { }
 
-; build-in (ForwardFunc: touch-file)
+#{buildin=touch-file}
 ; touch-file: 更新檔案時間戳為當前時間
-; touch-file = (p str) (ok bool) {  // LLVM: call i32 @utimensat(AT_FDCWD, path, NULL, 0) → icmp eq 0 → zext
-; }
+touch-file = (p str) (ok bool) { }
 
 ; open() 旗標常數（平台特定）
 ; O_RDONLY/O_WRONLY/O_RDWR 跨平台通用（0/1/2）
@@ -609,8 +575,10 @@ file.read-bytes = () (content ?[]byte) {
     total = 0
     {
         total >= size -> break
+        #{overflow = wrap}
         n = read(.fd, buf[total..], size - total)
         n <= 0 -> break
+        #{overflow = wrap}
         total = total + n
     } (total < size)
     ; 截斷到實際讀取長度
@@ -635,12 +603,14 @@ file.write-str = (data str) (ok ?bool) {
     s = data.to-bytes()
     total = 0
     {
-        total >= s.len -> break
-        n = write(.fd, s[total..], s.len - total)
+        total >= s.len() -> break
+        #{overflow = wrap}
+        n = write(.fd, s[total..], s.len() - total)
         n <= 0 -> break
+        #{overflow = wrap}
         total = total + n
-    } (total < s.len)
-    total == s.len -> ok = true
+    } (total < s.len())
+    total == s.len() -> ok = true
 }
 
 ; write-bytes: 將 []byte 寫入檔案（覆寫整個檔案）
@@ -655,12 +625,14 @@ file.write-bytes = (data []byte) (ok ?bool) {
     }
     total = 0
     {
-        total >= data.len -> break
-        n = write(.fd, data[total..], data.len - total)
+        total >= data.len() -> break
+        #{overflow = wrap}
+        n = write(.fd, data[total..], data.len() - total)
         n <= 0 -> break
+        #{overflow = wrap}
         total = total + n
-    } (total < data.len)
-    total == data.len -> ok = true
+    } (total < data.len())
+    total == data.len() -> ok = true
 }
 
 ; ═══════════════════════════════════════════════
@@ -847,7 +819,7 @@ copy-file = (src str, dst str) (ok bool) {
 ;
 ; 用法：
 ;   names = list-dir('/path/to/dir')
-;   i <- [0..names.len): {
+;   i <- [0..names.len()): {
 ;       print(names[i])
 ;   }
 
@@ -873,6 +845,7 @@ list-dir = (dirpath str) (entries []str) {
 
 #{win-amd64, win-arm64}
 list-dir = (dirpath str) (entries []str) {
+    #{overflow = wrap}
     winpath = dirpath - '\\*'
     bufptr = os.win-find-first-file(winpath)
 
@@ -918,19 +891,19 @@ list-dir = (dirpath str) (entries []str) {
 ;
 ; 用法：
 ;   names = dir-entries('/path/to/dir')
-;   i <- [0..names.len): {
+;   i <- [0..names.len()): {
 ;       print(names[i])
 ;   }
 
 dir-entries = (dirpath str) (entries []str) {
     all []str
     all = list-dir(dirpath)
-    n = all.len
+    n = all.len()
     i <- [0..n): {
         name = all[i]
         skip = false
-        name.len == 1 && name[0] == 46 -> skip = true
-        name.len == 2 && name[0] == 46 && name[1] == 46 -> skip = true
+        name.len-bytes() == 1 && name[0] == 46 -> skip = true
+        name.len-bytes() == 2 && name[0] == 46 && name[1] == 46 -> skip = true
         skip == false -> entries.push(name)
     }
 }
@@ -945,7 +918,7 @@ dir-entries = (dirpath str) (entries []str) {
 ;
 ; 用法：
 ;   paths = walk('/path/to/dir')
-;   i <- [0..paths.len): {
+;   i <- [0..paths.len()): {
 ;       print(paths[i])
 ;   }
 
@@ -959,7 +932,7 @@ walk-collect = (dirpath str, paths []str) (out []str) {
     names []str
     names = dir-entries(dirpath)
 
-    n = names.len
+    n = names.len()
     n == 0 -> return
     sep = 47
 
@@ -968,13 +941,16 @@ walk-collect = (dirpath str, paths []str) (out []str) {
 
         fullpath str
         {
-            dirpath.len > 0 -> {
-                last = dirpath[dirpath.len - 1]
+            dirpath.len-bytes() > 0 -> {
+                #{overflow = wrap}
+                last = dirpath[dirpath.len-bytes() - 1]
+                #{overflow = wrap}
                 last == sep -> fullpath = dirpath - name
+                #{overflow = wrap}
                 last != sep -> fullpath = dirpath - '/' - name
             }
 
-            dirpath.len == 0 -> fullpath = name
+            dirpath.len-bytes() == 0 -> fullpath = name
         }
         is-d = is-dir(fullpath)
 
@@ -1020,8 +996,9 @@ walk-collect = (dirpath str, paths []str) (out []str) {
     ; embed.read: 讀取嵌入的文件
     ; path str: 文件路徑（相對於嵌入目錄，如 'index.html'）
     ; 返回 data []byte, ok bool: 文件內容和是否找到
+    #{overflow = wrap}
     embed.read = (path str) (data []byte, ok bool) {
-        pathLen = path.len
+        pathLen = path.len()
         i <- [0...count): {
             pStart = .pathStarts[i]
             pLen = .pathLens[i]
@@ -1052,8 +1029,9 @@ walk-collect = (dirpath str, paths []str) (out []str) {
     ; embed.exists: 檢查嵌入的文件是否存在
     ; path str: 文件路徑
     ; 返回 yes bool: 是否存在
+    #{overflow = wrap}
     embed.exists = (path str) (yes bool) {
-        pathLen = path.len
+        pathLen = path.len()
         i <- [0...count): {
             pStart = .pathStarts[i]
             pLen = .pathLens[i]

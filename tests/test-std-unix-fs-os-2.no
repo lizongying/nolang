@@ -60,8 +60,8 @@ rmdir-ok == false -> print('FAIL: rmdir failed')
 login-name = os.get-login()
 eprint('get-login = ')
 print(login-name)
-login-name.len > 0 -> print('PASS: get-login returns non-empty')
-login-name.len == 0 -> print('WARN: get-login returns empty (may be expected in some environments)')
+login-name.len() > 0 -> print('PASS: get-login returns non-empty')
+login-name.len() == 0 -> print('WARN: get-login returns empty (may be expected in some environments)')
 
 ; ═══════════════════════════════════════════════
 ; 5. os.get-host-id — 取得主機識別碼
@@ -137,7 +137,7 @@ print('SKIP: get-domain-name test')
 ; ═══════════════════════════════════════════════
 spawn-pid = process.spawn('echo hello_spawn')
 eprint('spawn pid = ')
-print(spawn-pid.to-str())
+eprint(spawn-pid.to-str())
 spawn-pid > 0 -> {
     print('PASS: spawn returned positive pid')
     status = wait(spawn-pid)

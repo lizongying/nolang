@@ -8,16 +8,19 @@
 ; ═══════════════════════════════════════════════
 
 ; count: 參數數量（含程式名）
+#{intrinsic}
 count = () (n i64) {
     ; LLVM: call os.args
 }
 
 ; get: 獲取第 i 個參數
+#{intrinsic}
 get = (i i64) (val str) {
     ; LLVM: call os.arg(i)
 }
 
 ; program: 程式名（第 0 個參數）
+#{intrinsic}
 program = () (name str) {
     ; LLVM: call os.arg(0)
 }
@@ -77,13 +80,16 @@ get-option = (key str, keyn i64, val str) (ok bool) {
             eq == 61 -> {
 
                 ; 複製 '=' 後的內容到 val
+                #{overflow = wrap}
                 k = keyn + 1
                 vn = 0
                 {
                     c = arg[k]
                     c == 0 -> break
                     val[vn] = c
+                    #{overflow = wrap}
                     vn = vn + 1
+                    #{overflow = wrap}
                     k = k + 1
                 } (true)
                 ok = true
@@ -108,6 +114,7 @@ get-positional = (idx i64) (val str, ok bool) {
         ; 跳過以 '-' 開頭的參數
         c0 = arg[0]
         c0 == 45 -> {
+            #{overflow = wrap}
             j = j + 1
 
             ; 如果是 --key value 形式，也跳過下一個
@@ -115,6 +122,7 @@ get-positional = (idx i64) (val str, ok bool) {
             c1 != 45 -> j < n -> {
                 next = get(j)
                 nc = next[0]
+                #{overflow = wrap}
                 nc != 45 -> j = j + 1
             }
             continue
@@ -127,12 +135,15 @@ get-positional = (idx i64) (val str, ok bool) {
                 c = arg[k]
                 c == 0 -> break
                 val[k] = c
+                #{overflow = wrap}
                 k = k + 1
             } (true)
             ok = true
             return
         }
+        #{overflow = wrap}
         pos = pos + 1
+        #{overflow = wrap}
         j = j + 1
     } (j < n)
 }

@@ -16,6 +16,7 @@ package llvm
 // HIR directly, shrinking then eliminating this adapter.
 
 import (
+	"os"
 	"reflect"
 	"sort"
 	"strings"
@@ -72,6 +73,11 @@ func (g *Generator) GenerateHIR(pkg *hir.Package) string {
 	defer func() { g.hirPkg = nil; g.hirOf = nil; g.hirStmtOf = nil; g.hirAstOf = nil }()
 	defer DFStatDump()
 	var sb strings.Builder
+	// 收集「可證明為純 ASCII」的字串變數（顯式 #{ascii} 註解 / ASCII 字面量 /
+	// 識別字傳播）。必須在 prepare 之前完成：下標 codegen 據此在 O(1) 直接定址
+	// 與 O(n) UTF-8 迭代之間擇一。HIR 模式下註解以 HIR id 為鍵，故須在
+	// g.hirOf 反查表建立之後（上面已完成）才能解析 #{ascii}。
+	g.collectAsciiVars(prog)
 	// prepare is now statement-slice driven; the HIR path feeds it the
 	// reconstructed program so declaration emission and state maps stay
 	// identical to the surface-AST path. Top-level LOGIC emission order is
@@ -79,6 +85,12 @@ func (g *Generator) GenerateHIR(pkg *hir.Package) string {
 	g.prepare(prog.Statements, prog.Sem, &sb)
 	g.generateMainFunction(&sb, prog, pkg)
 	g.finishModule(&sb)
+	if os.Getenv("NOLANG_IRDUMP") != "" {
+		if f, err := os.Create("/tmp/nolang_hir.ll"); err == nil {
+			f.WriteString(sb.String())
+			f.Close()
+		}
+	}
 	return sb.String()
 }
 
@@ -255,7 +267,20 @@ func (c *hirASTConv) stmt(id int32) (parser.Statement, error) {
 	case hir.KReturn:
 		s = &parser.ReturnStatement{Token: c.tok(id), ReturnValue: c.expr(n.First)}
 	case hir.KExprStmt:
-		s = &parser.ExpressionStatement{Token: c.tok(id), Expression: c.expr(n.First)}
+		es := &parser.ExpressionStatement{Token: c.tok(id), Expression: c.expr(n.First)}
+		// 解碼 HIR 標誌位還原 #{overflow = ...} 模式（貫穿 HIR 重建）。
+		if n.Has(hir.FlagOverflowWrap) {
+			es.OverflowMode = "wrap"
+		} else if n.Has(hir.FlagOverflowClamp0) {
+			es.OverflowMode = "clamp0"
+		} else if n.Has(hir.FlagOverflowMin) {
+			es.OverflowMode = "min"
+		} else if n.Has(hir.FlagOverflowMax) {
+			es.OverflowMode = "max"
+		} else if n.Has(hir.FlagOverflowSaturate) {
+			es.OverflowMode = "saturate"
+		}
+		s = es
 	case hir.KBlock:
 		s = c.block(id)
 	case hir.KFuncDef:
@@ -375,6 +400,18 @@ func (c *hirASTConv) funcDef(id int32) (parser.Statement, error) {
 		IsMethodDef:      n.Has(hir.FlagMethod),
 		IsSkipNamingCheck: n.Has(hir.FlagSkipNaming),
 	}
+	// 解碼 HIR 標誌位還原 #{overflow = wrap|clamp0|min|max|saturate} 模式（貫穿單態化複本）。
+	if n.Has(hir.FlagOverflowWrap) {
+		fd.OverflowMode = "wrap"
+	} else if n.Has(hir.FlagOverflowClamp0) {
+		fd.OverflowMode = "clamp0"
+	} else if n.Has(hir.FlagOverflowMin) {
+		fd.OverflowMode = "min"
+	} else if n.Has(hir.FlagOverflowMax) {
+		fd.OverflowMode = "max"
+	} else if n.Has(hir.FlagOverflowSaturate) {
+		fd.OverflowMode = "saturate"
+	}
 	fd.IsVariadic = n.Has(hir.FlagVariadic)
 	for _, ch := range c.children(id) {
 		cn := c.node(ch)
@@ -416,6 +453,18 @@ func (c *hirASTConv) forStmt(id int32) parser.Statement {
 		Body:          c.block(c.slotChild(id, "body")),
 		IterRange:     c.iterationExpr(c.slotChild(id, "iter")),
 		CountExpr:     c.expr(c.slotChild(id, "count")),
+	}
+	// 解碼 HIR 標誌位還原 #{overflow = wrap|clamp0|min|max|saturate} 模式（貫穿 HIR 重建）。
+	if n.Has(hir.FlagOverflowWrap) {
+		fs.OverflowMode = "wrap"
+	} else if n.Has(hir.FlagOverflowClamp0) {
+		fs.OverflowMode = "clamp0"
+	} else if n.Has(hir.FlagOverflowMin) {
+		fs.OverflowMode = "min"
+	} else if n.Has(hir.FlagOverflowMax) {
+		fs.OverflowMode = "max"
+	} else if n.Has(hir.FlagOverflowSaturate) {
+		fs.OverflowMode = "saturate"
 	}
 	return fs
 }

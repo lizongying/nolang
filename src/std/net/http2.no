@@ -76,15 +76,21 @@ conn {
 ; 返回 next-pos ?i64: ok=下一個位置, nil=錯誤
 frame.parse = (data str, pos i64) (next-pos ?i64) {
     next-pos = nil
-    pos + HTTP2-FRAME-HEADER-SIZE > data.len -> return
+    #{overflow = wrap}
+    pos + HTTP2-FRAME-HEADER-SIZE > data.len-bytes() -> return
 
     ; 24-bit length（big-endian）
+    #{overflow = wrap}
     .length = (data[pos] << 16) | (data[pos + 1] << 8) | data[pos + 2]
+    #{overflow = wrap}
     .frame-type = data[pos + 3]
+    #{overflow = wrap}
     .flags = data[pos + 4]
 
     ; 31-bit stream-id（big-endian，高位保留）
+    #{overflow = wrap}
     .stream-id = ((data[pos + 5] & 127) << 24) | (data[pos + 6] << 16) | (data[pos + 7] << 8) | data[pos + 8]
+    #{overflow = wrap}
     next-pos = pos + HTTP2-FRAME-HEADER-SIZE
 }
 
@@ -92,14 +98,23 @@ frame.parse = (data str, pos i64) (next-pos ?i64) {
 ; 返回 next-pos=下一個位置
 frame.serialize = (buf str, pos i64) (next-pos i64) {
     buf[pos] = (.length >> 16) & 255
+    #{overflow = wrap}
     buf[pos + 1] = (.length >> 8) & 255
+    #{overflow = wrap}
     buf[pos + 2] = .length & 255
+    #{overflow = wrap}
     buf[pos + 3] = .frame-type & 255
+    #{overflow = wrap}
     buf[pos + 4] = .flags & 255
+    #{overflow = wrap}
     buf[pos + 5] = (.stream-id >> 24) & 127
+    #{overflow = wrap}
     buf[pos + 6] = (.stream-id >> 16) & 255
+    #{overflow = wrap}
     buf[pos + 7] = (.stream-id >> 8) & 255
+    #{overflow = wrap}
     buf[pos + 8] = .stream-id & 255
+    #{overflow = wrap}
     next-pos = pos + HTTP2-FRAME-HEADER-SIZE
 }
 
@@ -146,7 +161,7 @@ conn.send-frame = (frame frame) (ok bool) {
     }
 
     ; 發送 payload
-    frame.payload.len > 0 -> .use-tls -> {
+    frame.payload.len-bytes() > 0 -> .use-tls -> {
         w = .tls-c.send(frame.payload)
         w: {
             nil -> return
@@ -154,8 +169,8 @@ conn.send-frame = (frame frame) (ok bool) {
             ->
         }
     } -> {
-        written = net.net-send(.fd, frame.payload, frame.payload.len)
-        written != frame.payload.len -> return
+        written = net.net-send(.fd, frame.payload, frame.payload.len-bytes())
+        written != frame.payload.len-bytes() -> return
     }
     ok = true
 }
@@ -174,15 +189,19 @@ conn.recv-frame = () (frame ?frame) {
     {
         hdr-total >= HTTP2-FRAME-HEADER-SIZE -> *
         {
+            #{overflow = wrap}
             .use-tls -> recv-n = .tls-c.recv(hdr-buf, HTTP2-FRAME-HEADER-SIZE - hdr-total)
+            #{overflow = wrap}
             -> recv-n = net.net-recv(.fd, hdr-buf, HTTP2-FRAME-HEADER-SIZE - hdr-total)
         }
         recv-n <= 0 -> return
 
         ; net-recv 覆寫 buf[0]，需要位移複製
         i <- [0..recv-n): {
+            #{overflow = wrap}
             hdr-buf[hdr-total + i] = hdr-buf[i]
         }
+        #{overflow = wrap}
         hdr-total = hdr-total + recv-n
     } (true)
 
@@ -201,13 +220,17 @@ conn.recv-frame = () (frame ?frame) {
         {
             payload-total >= f.length -> *
             {
+                #{overflow = wrap}
                 .use-tls -> recv-n = .tls-c.recv(f.payload, f.length - payload-total)
+                #{overflow = wrap}
                 -> recv-n = net.net-recv(.fd, f.payload, f.length - payload-total)
             }
             recv-n <= 0 -> return
             i <- [0..recv-n): {
+                #{overflow = wrap}
                 f.payload[payload-total + i] = f.payload[i]
             }
+            #{overflow = wrap}
             payload-total = payload-total + recv-n
         } (true)
     }
@@ -239,18 +262,20 @@ conn.send-headers = (stream-id i64, names [64]str, values [64]str, count i64, en
     i <- [0..count): {
 
         ; 用 slice 載入值（避開 IndexExpression codegen 問題）
-        nlen = names[i].len
-        vlen = values[i].len
+        nlen = names[i].len-bytes()
+        vlen = values[i].len-bytes()
         n str = names[i].slice(0, nlen)
         v str = values[i].slice(0, vlen)
         hdr-out = ' '
         hdr-out = .hpack.encode-header(n, v)
 
         ; 複製到 block
-        j <- [0..hdr-out.len): {
+        j <- [0..hdr-out.len-bytes()): {
+            #{overflow = wrap}
             block[block-n + j] = hdr-out[j]
         }
-        block-n = block-n + hdr-out.len
+        #{overflow = wrap}
+        block-n = block-n + hdr-out.len-bytes()
     }
 
     ; 構建 HEADERS 影格
@@ -268,7 +293,7 @@ conn.send-headers = (stream-id i64, names [64]str, values [64]str, count i64, en
 ; conn.send-data: 發送 DATA 影格
 conn.send-data = (stream-id i64, data str, end-stream bool) (ok bool) {
     ok = false
-    n = data.len
+    n = data.len-bytes()
     f frame
     f.length = n
     f.frame-type = FRAME-DATA
@@ -299,9 +324,10 @@ connect = (host str, port i64) (conn ?conn) {
     ; 1. 送出連線 preface
     cr = number.char-to-str(13)
     lf = number.char-to-str(10)
+    #{overflow = wrap}
     preface = 'PRI * HTTP/2.0' - cr - lf - cr - lf - 'SM' - cr - lf - cr - lf
-    written = net.net-send(fd, preface, preface.len)
-    written != preface.len -> {
+    written = net.net-send(fd, preface, preface.len-bytes())
+    written != preface.len-bytes() -> {
         fs.close(fd)
         return
     }
@@ -344,6 +370,7 @@ connect-tls = (host str, port i64) (conn ?conn) {
     ; 2. 送出連線 preface（透過 TLS）
     cr = number.char-to-str(13)
     lf = number.char-to-str(10)
+    #{overflow = wrap}
     preface = 'PRI * HTTP/2.0' - cr - lf - cr - lf - 'SM' - cr - lf - cr - lf
     w = tls-c.send(preface)
     w: {
@@ -355,7 +382,7 @@ connect-tls = (host str, port i64) (conn ?conn) {
             tls-c.close()
             return
         }
-        ok -> it != preface.len
+        ok -> it != preface.len-bytes()
         -> {
             tls-c.close()
             return
@@ -394,6 +421,7 @@ conn.close = () {
 ; host: 主機名（用於 :authority 標頭）
 ; body: 請求主體（空字串=無主體）
 ; 返回 resp=回應, ok=true=成功
+#{overflow = wrap}
 conn.request = (method str, path str, host str, body str) (names [32]str, values [32]str, header-count i64, resp-body str, resp-n i64, ok bool) {
     ok = false
     header-count = 0
@@ -430,7 +458,7 @@ conn.request = (method str, path str, host str, body str) (names [32]str, values
 
     ; body 長度
     has-body = false
-    body-len i64 = body.len
+    body-len i64 = body.len-bytes()
     body-len > 0 -> {
         has-body = true
 
@@ -477,8 +505,8 @@ conn.request = (method str, path str, host str, body str) (names [32]str, values
                 ; 複製到輸出（最多 32 項）
                 i <- [0..dec-count): {
                     i >= 32 -> break
-                    nlen = dec-names[i].len
-                    vlen = dec-values[i].len
+                    nlen = dec-names[i].len-bytes()
+                    vlen = dec-values[i].len-bytes()
                     names[i] = dec-names[i].slice(0, nlen)
                     values[i] = dec-values[i].slice(0, vlen)
                 }
@@ -496,10 +524,10 @@ conn.request = (method str, path str, host str, body str) (names [32]str, values
             f.frame-type == FRAME-DATA -> {
 
                 ; 複製到 resp-body
-                i <- [0..f.payload.len): {
+                i <- [0..f.payload.len-bytes()): {
                     resp-body[resp-n + i] = f.payload[i]
                 }
-                resp-n = resp-n + f.payload.len
+                resp-n = resp-n + f.payload.len-bytes()
                 (f.flags & FLAG-END-STREAM) != 0 -> {
                     ok = true
                     *
@@ -526,6 +554,7 @@ conn.request = (method str, path str, host str, body str) (names [32]str, values
 ; url: 'http://host:port/path'（port 可選，預設 80）
 ; body: 請求主體（空字串=無主體）
 ; 返回 names/values/header-count=回應標頭, resp-body/resp-n=回應主體, ok=true=成功
+#{intrinsic}
 do = (method str, url str, body str) (names [32]str, values [32]str, header-count i64, resp-body str, resp-n i64, ok bool) {
     ok = false
     header-count = 0
@@ -539,7 +568,7 @@ do = (method str, url str, body str) (names [32]str, values [32]str, header-coun
     u = url
 
     ; 偵測 scheme 並去掉前綴
-    u.len >= 8 -> {
+    u.len-bytes() >= 8 -> {
         prefix-https = 'https://'
         matched-https = 1
         i <- [0..8): {
@@ -551,10 +580,10 @@ do = (method str, url str, body str) (names [32]str, values [32]str, header-coun
         matched-https == 1 -> {
             use-tls = true
             port = HTTP2-DEFAULT-TLS-PORT
-            u = u.slice(8, u.len)
+            u = u.slice(8, u.len-bytes())
         }
     }
-    use-tls == false -> u.len >= 7 -> {
+    use-tls == false -> u.len-bytes() >= 7 -> {
         prefix = 'http://'
         matched = 1
         i <- [0..7): {
@@ -563,7 +592,7 @@ do = (method str, url str, body str) (names [32]str, values [32]str, header-coun
                 break
             }
         }
-        matched == 1 -> u = u.slice(7, u.len)
+        matched == 1 -> u = u.slice(7, u.len-bytes())
     }
 
     ; 分離 host:port 和 path
@@ -575,7 +604,7 @@ do = (method str, url str, body str) (names [32]str, values [32]str, header-coun
         }
         -> {
             host = u.slice(0, slash-idx)
-            path = u.slice(slash-idx, u.len)
+            path = u.slice(slash-idx, u.len-bytes())
         }
     }
 
@@ -583,9 +612,11 @@ do = (method str, url str, body str) (names [32]str, values [32]str, header-coun
     colon-idx = host.index(':')
     colon-idx >= 0 -> {
         host-only = host.slice(0, colon-idx)
-        port-str = host.slice(colon-idx + 1, host.len)
+        #{overflow = wrap}
+        port-str = host.slice(colon-idx + 1, host.len-bytes())
         port = 0
-        i <- [0..port-str.len): {
+        i <- [0..port-str.len-bytes()): {
+            #{overflow = wrap}
             port = port * 10 + (port-str[i] - 48)
         }
         host = host-only
@@ -626,8 +657,8 @@ do-req = (method str, url str, body str) (resp ?http.response) {
     ; 複製標頭到 r（用 slice 載入值）
     r.header-count = header-count
     i <- [0..header-count): {
-        nlen = names[i].len
-        vlen = values[i].len
+        nlen = names[i].len-bytes()
+        vlen = values[i].len-bytes()
         r.header-names[i] = names[i].slice(0, nlen)
         r.header-values[i] = values[i].slice(0, vlen)
 
@@ -644,6 +675,7 @@ do-req = (method str, url str, body str) (resp ?http.response) {
             is-status == 1 -> {
                 r.status-code = 0
                 j <- [0..vlen): {
+                    #{overflow = wrap}
                     r.status-code = r.status-code * 10 + (values[i][j] - 48)
                 }
                 r.status-text = values[i].slice(0, vlen)

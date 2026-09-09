@@ -28,17 +28,17 @@
 ; 內建函數（底層實作）
 ; ═══════════════════════════════════════════════
 
-; build-in (ForwardFunc: unix-listen)
+#{buildin=unix-listen}
 ; unix-listen: 建立 Unix Domain Socket 監聽
 ; 執行 unlink + socket(AF_UNIX) + bind + listen
 ; 返回 fd（-1=失敗）
-; unix-listen = (path str) (fd fd) { }
+unix-listen = (path str) (fd fd) { }
 
-; build-in (ForwardFunc: unix-dial)
+#{buildin=unix-dial}
 ; unix-dial: 連接到 Unix Domain Socket
 ; 執行 socket(AF_UNIX) + connect
 ; 返回 fd（-1=失敗）
-; unix-dial = (path str) (fd fd) { }
+unix-dial = (path str) (fd fd) { }
 
 ; ═══════════════════════════════════════════════
 ; 常量
@@ -164,7 +164,7 @@ unix-conn.dial = (path str) (ok bool) {
 unix-conn.send = (data str) (written i64) {
     written = -1
     .fd < 0 -> return
-    written = net.net-send(.fd, data, data.len)
+    written = net.net-send(.fd, data, data.len-bytes())
 }
 
 ; recv: 接收資料到緩衝區
@@ -187,8 +187,10 @@ unix-conn.recv-all = () (content str, total i64) {
         chunk-n = net.net-recv(.fd, buf, UNIX-BUF-SIZE)
         chunk-n <= 0 -> break
         i <- [0..chunk-n): {
+            #{overflow = wrap}
             content[total + i] = buf[i]
         }
+        #{overflow = wrap}
         total = total + chunk-n
     } (true)
 }

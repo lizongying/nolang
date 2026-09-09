@@ -2,13 +2,13 @@
 
 ; 基础赋值
 t txt = 'hello'
-n = t.len
+n = t.len()
 print('len:', n)
 print('first:', t[0])
 
 ; 空赋值
 t2 txt = ''
-n2 = t2.len
+n2 = t2.len()
 print('empty len:', n2)
 
 ; 转换

@@ -9,7 +9,7 @@ data.push(20)
 data.push(30)
 print('pushed 3 elements')
 
-n i64 = data.len
+n i64 = data.len()
 print(n)
 
 print(data[0])
@@ -19,14 +19,14 @@ print(data[2])
 data.clear()
 print('cleared')
 
-n = data.len
+n = data.len()
 print(n)
 
 data.push(40)
 data.push(50)
 print('pushed 2 after clear')
 
-n = data.len
+n = data.len()
 print(n)
 
 print(data[0])

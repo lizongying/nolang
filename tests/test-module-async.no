@@ -3,6 +3,7 @@
 
 ; 異步函數：返回輸入值的兩倍
 compute = (n i64) (r i64) {
+    #{overflow = wrap}
     r = n * 2
 }
 

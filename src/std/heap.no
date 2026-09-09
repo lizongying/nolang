@@ -25,9 +25,12 @@ heap.init = (data []i64) (h heap) {
 ; push: 向堆積推入一個元素
 heap.push = (val i64) {
     .data[.n] = val
+    #{overflow = wrap}
     .n = .n + 1
+    #{overflow = wrap}
     i = .n - 1
     {
+        #{overflow = wrap}
         parent = (i - 1) / 2
         .data[i] >= .data[parent] -> break
         tmp = .data[i]
@@ -45,12 +48,15 @@ heap.pop = () (val ?i64) {
         return
     }
     val = .data[0]
+    #{overflow = wrap}
     .n = .n - 1
     .data[0] = .data[.n]
     i = 0
     {
         smallest = i
+        #{overflow = wrap}
         left = 2 * i + 1
+        #{overflow = wrap}
         right = 2 * i + 2
         left < .n && .data[left] < .data[smallest] -> smallest = left
         right < .n && .data[right] < .data[smallest] -> smallest = right

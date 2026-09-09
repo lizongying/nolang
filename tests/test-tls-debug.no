@@ -33,7 +33,7 @@ b[0] = 3
 b[1] = 4
 out []byte
 out = tls.bytes-cat(a, b)
-out.len != 4 -> {
+out.len() != 4 -> {
     print('FAIL: expected out.len=4')
     return
 }

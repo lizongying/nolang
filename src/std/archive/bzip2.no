@@ -30,8 +30,9 @@ bz-bit-reader.read-bit = () (bit i64) {
     bit = 0
     {
         .bit-cnt == 0 -> {
-            .pos < .data.len -> {
+            .pos < .data.len() -> {
                 .bit-buf = .data[.pos]
+                #{overflow = wrap}
                 .pos = .pos + 1
                 .bit-cnt = 8
             }
@@ -39,6 +40,7 @@ bz-bit-reader.read-bit = () (bit i64) {
         .bit-cnt > 0 -> {
             bit = .bit-buf >> 7
             .bit-buf = .bit-buf & 0x7f
+            #{overflow = wrap}
             .bit-cnt = .bit-cnt - 1
         }
     }
@@ -93,6 +95,7 @@ bz-huffman.build = (lengths []i64, alpha-size i64) {
     }
     i <- [0..alpha-size): {
         l = lengths[i]
+        #{overflow = wrap}
         len-count[l] = len-count[l] + 1
         {
             l < .min-len -> .min-len = l
@@ -105,6 +108,7 @@ bz-huffman.build = (lengths []i64, alpha-size i64) {
     pp = 0
     i <- [0..24): {
         .base[i] = pp
+        #{overflow = wrap}
         pp = pp + len-count[i]
     }
 
@@ -125,6 +129,7 @@ bz-huffman.build = (lengths []i64, alpha-size i64) {
     i <- [0..alpha-size): {
         l = lengths[i]
         .perm[tmp-base[l]] = i
+        #{overflow = wrap}
         tmp-base[l] = tmp-base[l] + 1
     }
 }
@@ -141,17 +146,20 @@ bz-huffman.decode = (br bz-bit-reader) (sym i64) {
     ; 持續讀取直到找到匹配的碼
     {
         zvec <= .limit[zn] -> *
+        #{overflow = wrap}
         zn = zn + 1
         zj = br.read-bit()
         zvec = (zvec << 1) | zj
     } (zvec > .limit[zn] && zn < 23)
 
     ; 計算符號
+    #{overflow = wrap}
     idx = zvec - .base[zn]
     {
         idx < 0 -> return
         idx >= BZ-MAX-ALPHA-SIZE -> return
     }
+    #{overflow = wrap}
     sym = .perm[idx + .base[zn] - .base[zn]]
 }
 
@@ -165,10 +173,12 @@ bz-huffman.decode-symbol = (br bz-bit-reader) (sym i64) {
     .min-len == 0 -> return
     {
         zvec <= .limit[zn] -> *
+        #{overflow = wrap}
         zn = zn + 1
         zj = br.read-bit()
         zvec = (zvec << 1) | zj
     } (zvec > .limit[zn] && zn < 23)
+    #{overflow = wrap}
     idx = zvec - .base[zn]
     {
         idx < 0 -> return
@@ -187,7 +197,7 @@ bz-huffman.decode-symbol = (br bz-bit-reader) (sym i64) {
 bzip2-decompress = (data []byte) (out []byte) {
 
     ; 檢查標頭: "BZh" + block_size_char
-    data.len < 4 -> return
+    data.len() < 4 -> return
     data[0] != 66 -> return; 'B'
     data[1] != 90 -> return; 'Z'
     data[2] != 104 -> return; 'h'
@@ -256,7 +266,9 @@ bzip2-decompress = (data []byte) (out []byte) {
                     j <- [0..16): {
                         bit = br.read-bit()
                         bit == 1 -> {
+                            #{overflow = wrap}
                             in-use[i * 16 + j] = 1
+                            #{overflow = wrap}
                             n-in-use = n-in-use + 1
                         }
                     }
@@ -270,16 +282,20 @@ bzip2-decompress = (data []byte) (out []byte) {
             i <- [0..256): {
                 in-use[i] == 1 -> {
                     seq-to-unseq[k] = i
+                    #{overflow = wrap}
                     k = k + 1
                 }
             }
 
             ; alpha-size = nInUse + 2 (RUNA, RUNB + EOB)
+            #{overflow = wrap}
             alpha-size = n-in-use + 2
+            #{overflow = wrap}
             eob = n-in-use + 1
 
             ; ── 讀取 Huffman 碼表 ──
             ; 碼表數量 (3 bits, 2-6)
+            #{overflow = wrap}
             n-tables = br.read-bits(3) + 2
 
             ; 選擇器數量 (15 bits)
@@ -299,6 +315,7 @@ bzip2-decompress = (data []byte) (out []byte) {
                 {
                     bit = br.read-bit()
                     bit == 0 -> *
+                    #{overflow = wrap}
                     j = j + 1
                 } (j < 5)
                 j >= n-tables -> j = 0
@@ -306,6 +323,7 @@ bzip2-decompress = (data []byte) (out []byte) {
                 ; MTF 解碼
                 tmp = mtf-list[j]
                 m <- [0..j): {
+                    #{overflow = wrap}
                     mtf-list[j - m] = mtf-list[j - m - 1]
                 }
                 mtf-list[0] = tmp
@@ -336,12 +354,15 @@ bzip2-decompress = (data []byte) (out []byte) {
                     bit = br.read-bit()
                     bit == 0 -> {
                         lengths[i] = curr-len
+                        #{overflow = wrap}
                         i = i + 1
                     }
                     bit == 1 -> {
                         bit2 = br.read-bit()
                         {
+                            #{overflow = wrap}
                             bit2 == 0 -> curr-len = curr-len + 1
+                            #{overflow = wrap}
                             bit2 == 1 -> curr-len = curr-len - 1
                         }
                     }
@@ -380,9 +401,11 @@ bzip2-decompress = (data []byte) (out []byte) {
                 ; 需要新的選擇器？
                 group-remaining == 0 -> {
                     selector-idx < n-selectors -> cur-ht = selectors[selector-idx]
+                    #{overflow = wrap}
                     selector-idx = selector-idx + 1
                     group-remaining = BZ-GROUP-SIZE
                 }
+                #{overflow = wrap}
                 group-remaining = group-remaining - 1
 
                 ; 根據選擇器解碼符號
@@ -395,9 +418,11 @@ bzip2-decompress = (data []byte) (out []byte) {
                 cur-ht == 5 -> sym = ht5.decode-symbol(br)
 
                 ; RUNA (0): run 長度的低位
+                #{overflow = wrap}
                 sym == 0 -> run-len = run-len + 1
 
                 ; RUNB (1): run 長度的高位
+                #{overflow = wrap}
                 sym == 1 -> run-len = run-len + 2
 
                 ; EOB
@@ -424,11 +449,14 @@ bzip2-decompress = (data []byte) (out []byte) {
                     }
 
                     ; MTF 反變換
+                    #{overflow = wrap}
                     mtf-idx = sym - 1
                     val = mtf-pos[mtf-idx]
 
                     ; 將 val 移到前面
+                    #{overflow = wrap}
                     j <- [1..mtf-idx + 1): {
+                        #{overflow = wrap}
                         mtf-pos[mtf-idx - j + 1] = mtf-pos[mtf-idx - j]
                     }
                     mtf-pos[0] = val
@@ -438,7 +466,7 @@ bzip2-decompress = (data []byte) (out []byte) {
             } (block-done == 0)
 
             ; ── BWT 反變換 ──
-            bwt-n = bwt-out.len
+            bwt-n = bwt-out.len()
             bwt-n == 0 -> *
 
             ; 計算字節頻率
@@ -448,6 +476,7 @@ bzip2-decompress = (data []byte) (out []byte) {
             }
             i <- [0..bwt-n): {
                 v = bwt-out[i]
+                #{overflow = wrap}
                 v >= 0 -> v < 256 -> count[v] = count[v] + 1
             }
 
@@ -456,6 +485,7 @@ bzip2-decompress = (data []byte) (out []byte) {
             total = 0
             i <- [0..256): {
                 cum[i] = total
+                #{overflow = wrap}
                 total = total + count[i]
             }
 
@@ -473,7 +503,9 @@ bzip2-decompress = (data []byte) (out []byte) {
             i <- [0..bwt-n): {
                 v = bwt-out[i]
                 v >= 0 -> v < 256 -> {
+                    #{overflow = wrap}
                     lf[i] = cum[v] + rank[v]
+                    #{overflow = wrap}
                     rank[v] = rank[v] + 1
                 }
             }
@@ -491,6 +523,7 @@ bzip2-decompress = (data []byte) (out []byte) {
                 ; RLE1 解碼
                 {
                     v == last-byte -> {
+                        #{overflow = wrap}
                         run-count = run-count + 1
                         out.push(v)
 
@@ -550,7 +583,7 @@ bzip2-compress = (data []byte) (out []byte) {
     out.push(0x59)
 
     ; 區塊 CRC (32 bits) — 使用 CRC32
-    crc = crc-32.crc-32(data, data.len)
+    crc = crc-32.crc-32(data, data.len())
     out.push((crc >> 24) & 0xff)
     out.push((crc >> 16) & 0xff)
     out.push((crc >> 8) & 0xff)

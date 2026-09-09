@@ -21,7 +21,7 @@ bad-fd == -1 -> print('ok: fd == -1 negative')
 
 ; ── 3. fd 作為 fd 參數傳遞（write 內建函數） ──
 msg = 'hello fd\n'.to-bytes()
-n = fs.write(my-stdout, msg, msg.len)
+n = fs.write(my-stdout, msg, msg.len())
 n == 9 -> print('ok: write fd param')
 
 ; ── 4. fd 變量之間賦值（同類型賦值） ──

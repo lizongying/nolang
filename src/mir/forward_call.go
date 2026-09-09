@@ -102,6 +102,10 @@ const (
 	// cRetBufStr: the result string was written into the scratch buffer at
 	// BufIdx; adopt it as an owned %str-long.
 	cRetBufStr
+	// cRetStatBool: (stat == 0) && (st_mode & ModeMask != 0). Used by is-file
+	// (S_IFREG = 32768) and is-dir (S_IFDIR = 16384); a plain stat-success check
+	// would wrongly report a directory as a regular file.
+	cRetStatBool
 	// cRetField: read an i64 out of the scratch buffer at BufIdx + Offset. Used
 	// for st_size / st_mode / st_uid / st_gid / st_mtime.
 	cRetField
@@ -147,6 +151,13 @@ type cRetSpec struct {
 	Signed bool   // cRetI64: sext when true, zext when false
 	BufIdx int    // cRetBufStr / cRetField: which spec arg is the buffer
 	Offset int64  // cRetField: byte offset inside the buffer
+	// Width is the native bit-width of the field read by cRetField (16, 32, or
+	// 64). struct stat fields are NOT all 64-bit: st_mode is 16-bit, st_uid /
+	// st_gid are 32-bit, st_size / st_mtime.tv_sec are 64-bit. Reading the wrong
+	// width silently corrupts the result (an i64 read of st_mode at offset 4
+	// also swallowed st_nlink and part of st_ino). 0 means 64 (the historical
+	// default, used by stat-size / stat-mtime).
+	Width int
 	// LenFromRet: for cRetBufStr, the string length is the C return value
 	// (clamped at 0 on error) instead of strlen — the buffer is NOT
 	// NUL-terminated in that case and strlen would run off the end.
@@ -156,6 +167,9 @@ type cRetSpec struct {
 	TermBuf bool
 	RetType string // cRetSret: LLVM struct type of the returned value
 	Pair    cPairSpec
+	// ModeMask is the st_mode bit tested by cRetStatBool (e.g. 32768 = S_IFREG,
+	// 16384 = S_IFDIR). Ignored by other return kinds.
+	ModeMask int64
 }
 
 // cCallSpec is a complete, declarative description of one C call.
@@ -269,8 +283,8 @@ var forwardCSpecs = map[string]cCallSpec{
 	},
 
 	// ------------------------------------------------- struct stat family
-	"stat-file":   {Func: "stat", Args: []cArgSpec{{Kind: cArgCStr, From: 0}, statBufArg()}, Ret: cRetSpec{Kind: cRetBool, LLVM: "i32"}},
-	"stat-dir":    {Func: "stat", Args: []cArgSpec{{Kind: cArgCStr, From: 0}, statBufArg()}, Ret: cRetSpec{Kind: cRetBool, LLVM: "i32"}},
+	"stat-file":   {Func: "stat", Args: []cArgSpec{{Kind: cArgCStr, From: 0}, statBufArg()}, Ret: cRetSpec{Kind: cRetStatBool, LLVM: "i32", BufIdx: 1, Offset: statLayoutFor().ModeOff, ModeMask: 32768}},
+	"stat-dir":    {Func: "stat", Args: []cArgSpec{{Kind: cArgCStr, From: 0}, statBufArg()}, Ret: cRetSpec{Kind: cRetStatBool, LLVM: "i32", BufIdx: 1, Offset: statLayoutFor().ModeOff, ModeMask: 16384}},
 	"stat-exists": {Func: "stat", Args: []cArgSpec{{Kind: cArgCStr, From: 0}, statBufArg()}, Ret: cRetSpec{Kind: cRetBool, LLVM: "i32"}},
 	"lstat":       {Func: "lstat", Args: []cArgSpec{{Kind: cArgCStr, From: 0}, statBufArg()}, Ret: cRetSpec{Kind: cRetBool, LLVM: "i32"}},
 	"stat-size": {
@@ -283,15 +297,15 @@ var forwardCSpecs = map[string]cCallSpec{
 	},
 	"stat-mode": {
 		Func: "stat", Args: []cArgSpec{{Kind: cArgCStr, From: 0}, statBufArg()},
-		Ret: cRetSpec{Kind: cRetField, LLVM: "i32", BufIdx: 1, Offset: statLayoutFor().ModeOff, Pair: cPairSpec{Kind: cPairOKRetZero}},
+		Ret: cRetSpec{Kind: cRetField, LLVM: "i32", BufIdx: 1, Offset: statLayoutFor().ModeOff, Width: 16, Pair: cPairSpec{Kind: cPairOKRetZero}},
 	},
 	"stat-uid": {
 		Func: "stat", Args: []cArgSpec{{Kind: cArgCStr, From: 0}, statBufArg()},
-		Ret: cRetSpec{Kind: cRetField, LLVM: "i32", BufIdx: 1, Offset: statLayoutFor().UidOff, Pair: cPairSpec{Kind: cPairOKRetZero}},
+		Ret: cRetSpec{Kind: cRetField, LLVM: "i32", BufIdx: 1, Offset: statLayoutFor().UidOff, Width: 32, Pair: cPairSpec{Kind: cPairOKRetZero}},
 	},
 	"stat-gid": {
 		Func: "stat", Args: []cArgSpec{{Kind: cArgCStr, From: 0}, statBufArg()},
-		Ret: cRetSpec{Kind: cRetField, LLVM: "i32", BufIdx: 1, Offset: statLayoutFor().GidOff, Pair: cPairSpec{Kind: cPairOKRetZero}},
+		Ret: cRetSpec{Kind: cRetField, LLVM: "i32", BufIdx: 1, Offset: statLayoutFor().GidOff, Width: 32, Pair: cPairSpec{Kind: cPairOKRetZero}},
 	},
 	"stat-mtime": {
 		Func: "stat", Args: []cArgSpec{{Kind: cArgCStr, From: 0}, statBufArg()},
@@ -358,7 +372,12 @@ func (c *codegen) emitCCall(inst *Inst, spec *cCallSpec) error {
 			callArgs = append(callArgs, "i8* null")
 		case cArgBufPtr:
 			r := c.treg("cbuf")
-			c.sb.WriteString(fmt.Sprintf("  %s = alloca i8, i64 %d\n", r, a.Size))
+			// Allocate with 8-byte alignment. struct stat (and every other
+			// scratch buffer we hand to libc) must be naturally aligned: a
+			// 1-byte-aligned `alloca i8` lets the optimizer legalize an
+			// `align 2` i16 / `align 8` i64 read as UB and fold it to poison,
+			// which silently broke is-file/is-dir (mode bit always read as 0).
+			c.sb.WriteString(fmt.Sprintf("  %s = alloca i8, i64 %d, align 8\n", r, a.Size))
 			a.Temp = r
 			callArgs = append(callArgs, "i8* "+r)
 		case cArgCStr:
@@ -442,6 +461,32 @@ func (c *codegen) emitCCall(inst *Inst, spec *cCallSpec) error {
 	case cRetBool:
 		v := c.cToBool(callReg, callTy)
 		return c.storeResult(inst, 0, v, "i1")
+	case cRetStatBool:
+		// (stat == 0) && (st_mode & ModeMask != 0). Mirrors legacy is-file /
+		// is-dir: stat-failure alone is not enough — a directory is not a file.
+		buf := spec.Args[spec.Ret.BufIdx].Temp
+		if buf == "" {
+			return fmt.Errorf("builtin %s: scratch buffer not materialized", inst.Sym)
+		}
+		okCmp := c.treg("sfok")
+		c.sb.WriteString(fmt.Sprintf("  %s = icmp eq %s %s, 0\n", okCmp, callTy, callReg))
+		mg := c.treg("sfmg")
+		c.sb.WriteString(fmt.Sprintf("  %s = getelementptr inbounds i8, i8* %s, i64 %d\n", mg, buf, spec.Ret.Offset))
+		// Read st_mode as i32 (NOT i16): the bitcast i8*->i16* + load i16 pair
+		// miscompiles on this backend (the mode bit reads as 0), whereas the
+		// analogous i64 field read (cRetField) is reliable. 32768 (S_IFREG) and
+		// 16384 (S_IFDIR) both fit in i32, so the mask is exact.
+		mp := c.treg("sfmp")
+		c.sb.WriteString(fmt.Sprintf("  %s = bitcast i8* %s to i32*\n", mp, mg))
+		ml := c.treg("sfml")
+		c.sb.WriteString(fmt.Sprintf("  %s = load i32, i32* %s\n", ml, mp))
+		an := c.treg("sfan")
+		c.sb.WriteString(fmt.Sprintf("  %s = and i32 %s, %d\n", an, ml, spec.Ret.ModeMask))
+		c2 := c.treg("sfc2")
+		c.sb.WriteString(fmt.Sprintf("  %s = icmp ne i32 %s, 0\n", c2, an))
+		ext := c.treg("sfex")
+		c.sb.WriteString(fmt.Sprintf("  %s = and i1 %s, %s\n", ext, okCmp, c2))
+		return c.storeResult(inst, 0, ext, "i1")
 	case cRetDouble:
 		return c.storeResult(inst, 0, callReg, "double")
 	case cRetI64:
@@ -480,7 +525,21 @@ func (c *codegen) emitCCall(inst *Inst, spec *cCallSpec) error {
 		if buf == "" {
 			return fmt.Errorf("builtin %s: scratch buffer not materialized", inst.Sym)
 		}
-		v := c.loadFieldAt(buf, spec.Ret.Offset)
+		w := spec.Ret.Width
+		if w == 0 {
+			w = 64 // default: native 64-bit field (st_size / st_mtime.tv_sec)
+		}
+		v := c.loadFieldAtWidth(buf, spec.Ret.Offset, w)
+		// Mirror legacy stat-* exactly: when stat() fails the scratch buffer is
+		// left uninitialized, so the field must return 0 rather than whatever
+		// garbage the alloca held. stat-success is the i32 C return register.
+		if callReg != "" {
+			okCmp := c.treg("fok")
+			c.sb.WriteString(fmt.Sprintf("  %s = icmp eq %s %s, 0\n", okCmp, callTy, callReg))
+			sel := c.treg("fsel")
+			c.sb.WriteString(fmt.Sprintf("  %s = select i1 %s, i64 %s, i64 0\n", sel, okCmp, v))
+			v = sel
+		}
 		if err := c.storeResult(inst, 0, v, "i64"); err != nil {
 			return err
 		}
@@ -611,17 +670,38 @@ func (c *codegen) cToI64(reg, cTy string, signed bool) string {
 	return r
 }
 
-// loadFieldAt reads an i64 out of a scratch buffer at a byte offset — how the
-// struct-stat builtins extract a field without MIR having to model a
-// platform-specific C struct.
-func (c *codegen) loadFieldAt(buf string, off int64) string {
+// loadFieldAtWidth reads a field of native width (16/32/64 bits) out of a scratch
+// buffer at a byte offset and zero-extends it to i64 — how the struct-stat
+// builtins extract a field without MIR having to model a platform-specific C
+// struct. The width MUST match the C field: st_mode is 16-bit, st_uid/st_gid are
+// 32-bit, st_size/st_mtime.tv_sec are 64-bit. Reading more bytes than the field
+// occupies silently folds neighbouring fields (st_nlink, st_ino, ...) into the
+// value, which is exactly the bug that made stat-mode return garbage.
+func (c *codegen) loadFieldAtWidth(buf string, off int64, width int) string {
 	g := c.treg("fgep")
 	c.sb.WriteString(fmt.Sprintf("  %s = getelementptr inbounds i8, i8* %s, i64 %d\n", g, buf, off))
 	p := c.treg("fptr")
-	c.sb.WriteString(fmt.Sprintf("  %s = bitcast i8* %s to i64*\n", p, g))
-	v := c.treg("fld")
-	c.sb.WriteString(fmt.Sprintf("  %s = load i64, i64* %s\n", v, p))
-	return v
+	switch width {
+	case 16:
+		c.sb.WriteString(fmt.Sprintf("  %s = bitcast i8* %s to i16*\n", p, g))
+		l := c.treg("fld")
+		c.sb.WriteString(fmt.Sprintf("  %s = load i16, i16* %s\n", l, p))
+		z := c.treg("fzxt")
+		c.sb.WriteString(fmt.Sprintf("  %s = zext i16 %s to i64\n", z, l))
+		return z
+	case 32:
+		c.sb.WriteString(fmt.Sprintf("  %s = bitcast i8* %s to i32*\n", p, g))
+		l := c.treg("fld")
+		c.sb.WriteString(fmt.Sprintf("  %s = load i32, i32* %s\n", l, p))
+		z := c.treg("fzxt")
+		c.sb.WriteString(fmt.Sprintf("  %s = zext i32 %s to i64\n", z, l))
+		return z
+	default: // 64
+		c.sb.WriteString(fmt.Sprintf("  %s = bitcast i8* %s to i64*\n", p, g))
+		l := c.treg("fld")
+		c.sb.WriteString(fmt.Sprintf("  %s = load i64, i64* %s\n", l, p))
+		return l
+	}
 }
 
 // resultType is the LLVM type of the i-th MIR result value. The bool reports

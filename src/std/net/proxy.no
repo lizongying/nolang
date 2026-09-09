@@ -60,26 +60,32 @@ connect = (proxy-host str, proxy-port i64, target-host str, target-port i64, use
     fd < 0 -> return
     cr = number.char-to-str(13)
     lf = number.char-to-str(10)
+    #{overflow = wrap}
     crlf = cr - lf
 
     ; 建構 CONNECT 請求
     target-port-s = target-port.to-str()
+    #{overflow = wrap}
     req = 'CONNECT ' - target-host - ':' - target-port-s - ' HTTP/1.1' - crlf
+    #{overflow = wrap}
     req = req - 'Host: ' - target-host - ':' - target-port-s - crlf
 
     ; 代理認證（Basic 認證）
-    username.len > 0 -> {
+    username.len-bytes() > 0 -> {
 
         ; 格式: Proxy-Authorization: Basic base64(user:pass)
+        #{overflow = wrap}
         auth-raw = username - ':' - password
         auth-bytes []byte = auth-raw.to-bytes()
         enc-str = base64.encode-std(auth-bytes)
+        #{overflow = wrap}
         req = req - 'Proxy-Authorization: Basic ' - enc-str - crlf
     }
+    #{overflow = wrap}
     req = req - crlf
 
     ; 發送 CONNECT 請求
-    written = net.net-send(fd, req, req.len)
+    written = net.net-send(fd, req, req.len-bytes())
     written < 0 -> {
         fs.close(fd)
         fd = -1
@@ -88,12 +94,15 @@ connect = (proxy-host str, proxy-port i64, target-host str, target-port i64, use
 
     ; 接收回應（雙緩衝區：buf 接收, raw 累積）
     buf str = with-len(PROXY-BUF-SIZE)
+    #{overflow = wrap}
     raw str = with-len(PROXY-BUF-SIZE * 4)
     total = 0
+    #{overflow = wrap}
     separator = crlf - crlf
     sep-pos i64 = -1
 
     {
+        #{overflow = wrap}
         total > PROXY-BUF-SIZE * 4 - PROXY-BUF-SIZE -> {
             fs.close(fd)
             fd = -1
@@ -106,8 +115,10 @@ connect = (proxy-host str, proxy-port i64, target-host str, target-port i64, use
             return
         }
         i <- [0..n): {
+            #{overflow = wrap}
             raw[total + i] = buf[i]
         }
+        #{overflow = wrap}
         total = total + n
         data = raw.slice(0, total)
         sep-pos = data.index(separator)
@@ -127,18 +138,20 @@ connect = (proxy-host str, proxy-port i64, target-host str, target-port i64, use
         fd = -1
         return
     }
-    after-code = status-line.slice(sp1 + 1, status-line.len)
+    #{overflow = wrap}
+    after-code = status-line.slice(sp1 + 1, status-line.len-bytes())
     sp2 = after-code.index(' ')
     code-str = after-code
     sp2 >= 0 -> code-str = after-code.slice(0, sp2)
     code = 0
-    i <- [0..code-str.len): {
+    i <- [0..code-str.len-bytes()): {
         ch = code-str[i]
         ch < 48 || ch > 57 -> {
             fs.close(fd)
             fd = -1
             return
         }
+        #{overflow = wrap}
         code = code * 10 + ch - 48
     }
     code != 200 -> {
@@ -237,6 +250,7 @@ proxy-tls-dial = (proxy-host str, proxy-port i64, target-host str, target-port i
             premaster[1] = 0x03
             rand-bytes []byte = tls.rand-bytes(c.rand-state, 46)
             i <- [0..46): {
+                #{overflow = wrap}
                 premaster[2 + i] = rand-bytes[i]
             }
             c.derive-keys(premaster)
@@ -324,6 +338,7 @@ config.tls-connect = (target-host str, target-port i64) (tc ?tls.conn) {
             premaster[1] = 0x03
             rand-bytes []byte = tls.rand-bytes(c.rand-state, 46)
             i <- [0..46): {
+                #{overflow = wrap}
                 premaster[2 + i] = rand-bytes[i]
             }
             c.derive-keys(premaster)
@@ -392,7 +407,7 @@ socks5-connect = (proxy-host str, proxy-port i64, target-host str, target-port i
     req []byte
     req[0] = SOCKS5-VERSION
     {
-        username.len > 0 -> {
+        username.len-bytes() > 0 -> {
             req[1] = 2
             req[2] = SOCKS5-METHOD-NO-AUTH
             req[3] = SOCKS5-METHOD-USER-PASS
@@ -403,7 +418,8 @@ socks5-connect = (proxy-host str, proxy-port i64, target-host str, target-port i
         }
     }
     req-str = req.to-str()
-    written = net.net-send(fd, req-str, req.len + 1)
+    #{overflow = wrap}
+    written = net.net-send(fd, req-str, req.len() + 1)
     written < 0 -> {
         fs.close(fd)
         fd = -1
@@ -431,17 +447,22 @@ socks5-connect = (proxy-host str, proxy-port i64, target-host str, target-port i
         auth-req []byte
         pos = 0
         auth-req[pos] = 1
+        #{overflow = wrap}
         pos = pos + 1
-        auth-req[pos] = username.len & 255
+        auth-req[pos] = username.len-bytes() & 255
+        #{overflow = wrap}
         pos = pos + 1
-        i <- [0..username.len): {
+        i <- [0..username.len-bytes()): {
             auth-req[pos] = username[i]
+            #{overflow = wrap}
             pos = pos + 1
         }
-        auth-req[pos] = password.len & 255
+        auth-req[pos] = password.len-bytes() & 255
+        #{overflow = wrap}
         pos = pos + 1
-        i <- [0..password.len): {
+        i <- [0..password.len-bytes()): {
             auth-req[pos] = password[i]
+            #{overflow = wrap}
             pos = pos + 1
         }
         auth-str = auth-req.to-str()
@@ -471,24 +492,32 @@ socks5-connect = (proxy-host str, proxy-port i64, target-host str, target-port i
     conn-req []byte
     pos = 0
     conn-req[pos] = SOCKS5-VERSION
+    #{overflow = wrap}
     pos = pos + 1
     conn-req[pos] = SOCKS5-CMD-CONNECT
+    #{overflow = wrap}
     pos = pos + 1
     conn-req[pos] = 0
+    #{overflow = wrap}
     pos = pos + 1
 
     ; 使用域名地址類型
     conn-req[pos] = SOCKS5-ATYP-DOMAIN
+    #{overflow = wrap}
     pos = pos + 1
-    conn-req[pos] = target-host.len & 255
+    conn-req[pos] = target-host.len-bytes() & 255
+    #{overflow = wrap}
     pos = pos + 1
-    i <- [0..target-host.len): {
+    i <- [0..target-host.len-bytes()): {
         conn-req[pos] = target-host[i]
+        #{overflow = wrap}
         pos = pos + 1
     }
     conn-req[pos] = (target-port >> 8) & 255
+    #{overflow = wrap}
     pos = pos + 1
     conn-req[pos] = target-port & 255
+    #{overflow = wrap}
     pos = pos + 1
     conn-str = conn-req.to-str()
     written = net.net-send(fd, conn-str, pos)

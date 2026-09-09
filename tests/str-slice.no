@@ -4,32 +4,32 @@
 
 ; Short string (%str-short type)
 s = 'HelloWorld'
-print(s.len)
+print(s.len-bytes())
 
 ; full slice: s[..]
 a = s[..]
-print(a.len)
+print(a.len-bytes())
 
 ; from index: s[5..]
 b = s[5..]
-print(b.len)
+print(b.len-bytes())
 
 ; to index inclusive: s[..5]
 c = s[..5]
-print(c.len)
+print(c.len-bytes())
 
 ; range: s[1..4]
 d = s[1..4]
-print(d.len)
+print(d.len-bytes())
 
 ; range exclusive end: s[1..4)
 e = s[1..4)
-print(e.len)
+print(e.len-bytes())
 
 ; range exclusive start: s(1..4]
 f = s(1..4]
-print(f.len)
+print(f.len-bytes())
 
 ; range exclusive both: s(1..4)
 g = s(1..4)
-print(g.len)
+print(g.len-bytes())

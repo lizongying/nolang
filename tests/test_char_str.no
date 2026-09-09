@@ -1,6 +1,8 @@
 ; Test if single-char string literal works
 main = () {
     sep = ','
-    print('sep len: ' + sep.len.to-str())
+    #{overflow = wrap}
+    print('sep len: ' + sep.len-bytes().to-str())
+    #{overflow = wrap}
     print('sep[0]: ' + sep[0].to-str())
 }

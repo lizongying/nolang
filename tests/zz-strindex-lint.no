@@ -1,0 +1,54 @@
+; zz-strindex-lint.no — 验证 s[i] 性能告警（STR_INDEX_COMPLEXITY）仅在「手动按码点下标遍历」时触发
+;   - 单独一次 s[i]（循环外）：不告警（即使非 ASCII）
+;   - 手动按下标遍历：for i <- [0..b.count()): { x = b[i] } → 告警（非 ASCII，O(n^2)）
+;   - 手动按下标遍历但串可证明 ASCII：for i <- [0..a.count()): { x = a[i] } → 不告警
+;   - 直接遍历字符串 for c <- s：无 s[i]，不告警（内部应按码点迭代）
+;   - 字节访问 s.byte(i)：不是 IndexExpression，不告警
+test-str-index-lint = () {
+    ; ASCII 字面量：a[i] 单独一次，不告警
+    a = 'hello'
+    xa = a[1]
+
+    ; 非 ASCII 字面量（é 多字节）：b[i] 单独一次，不告警（不在循环里）
+    b = 'héllo'
+    yb = b[1]
+
+    ; 标识符传播：c 继承 b 的非 ASCII，c[i] 单独一次，不告警
+    c = b
+    zc = c[2]
+
+    ; ★ 手动按下标遍历 非 ASCII 串 → 告警（O(n^2) 反模式）
+    sumB = 0
+    for i <- [0..b.count()): {
+        ch = b[i]
+        #{overflow = wrap}
+        sumB = sumB + 1
+    }
+    print(sumB)
+
+    ; 手动按下标遍历 ASCII 串 → 不告警（可证明 ASCII，O(1)）
+    sumA = 0
+    for j <- [0..a.count()): {
+        ch = a[j]
+        #{overflow = wrap}
+        sumA = sumA + 1
+    }
+    print(sumA)
+
+    ; 直接遍历字符串：无 s[i]，不告警
+    sumC = 0
+    for cc <- b: {
+        #{overflow = wrap}
+        sumC = sumC + 1
+    }
+    print(sumC)
+
+    ; 字节访问逃生舱：不是 IndexExpression，不告警
+    w = b.byte(0)
+
+    print(xa)
+    print(yb)
+    print(zc)
+    print(w)
+}
+test-str-index-lint()

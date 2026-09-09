@@ -13,6 +13,7 @@
 main = () {
     ; Step 1: Get a str from a cross-module call
     ch str = helper.compute-str('commit')
+    #{overflow = wrap}
     print('step1 ch=[' - ch - ']')
     ; Expected: step1 ch=[commit-1234567890abcdef]
 
@@ -23,6 +24,7 @@ main = () {
     -> print('step2 ok=false')
 
     ; Step 3: Access ch again — should still be valid
+    #{overflow = wrap}
     print('step3 ch=[' - ch - ']')
     ; Expected: step3 ch=[commit-1234567890abcdef]
 

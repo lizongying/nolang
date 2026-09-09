@@ -211,9 +211,9 @@ test-vec-truncate = () {
     v.truncate(2)
     print(v[0])
     print(v[1])
-    print(v.len)
+    print(v.len())
     v.truncate(10)
-    print(v.len)
+    print(v.len())
 }
 
 ; test-vec-extend: 測試 extend 追加另一切片
@@ -231,7 +231,7 @@ test-vec-extend = () {
     print(v[2])
     print(v[3])
     print(v[4])
-    print(v.len)
+    print(v.len())
 }
 
 ; test-vec-to-str: 測試 to-str 字串表示

@@ -4,6 +4,7 @@ main = () {
     {
         eprint(i)
         eprint(' ')
+        #{overflow = wrap}
         i = i + 1
     } (i < 5)
     print('')

@@ -69,12 +69,72 @@ func (g *Generator) isNonVoidCall(expr *parser.CallExpression) bool {
 				return false
 			}
 		}
-		// Builtin methods are always non-void
-		if m := builtin.FindBuiltinMethod(ident.Value); m != nil {
-			return true
+	// Builtin methods are always non-void
+	if m := builtin.FindBuiltinMethod(ident.Value); m != nil {
+		return true
+	}
+}
+return true // default to non-void for unknown calls
+}
+
+// resolveGenericInstance resolves a bare (unmangled) generic/overloaded function
+// name to its monomorphized instance key, for use by the nested multi-assign
+// call path.
+//
+// Background: the transpiler rewrites SHORT-name generic calls (e.g. `exec`'s
+// internal `cmd`) to their mangled instance name (process.cmd_str_slice...),
+// but leaves FULLY-QUALIFIED cross-module calls (user-module `process.cmd`)
+// as the bare name. For those, funcNumResults/funcResultLLVMType hold the real
+// signature under the *mangled* key only, so the direct lookup in the curried
+// output-param path yields numResults=0 and drops every output parameter —
+// leaving out/se/code/err unbound and breaking later `out.contains` dispatch
+// (emitted as a broken module-qualified `call void @out.contains(...)`).
+//
+// We scan the registration maps for a mangle-derived variant of the bare name.
+// Monomorphized instance names use either a '_' separator (slices/arrays:
+// `process.cmd_str_slice...`) or a '.' separator (regular generics:
+// `sort.i64`). We require the variant to actually have output results so we
+// don't remap a genuinely-void bare name. The first match wins; for the common
+// case there is exactly one instance per concrete argument-type list.
+func (g *Generator) resolveGenericInstance(bareName string) string {
+	if g.funcNumResults == nil || bareName == "" {
+		return ""
+	}
+	// Prefer the '_' separator (slice/array monomorphization) first, then '.'.
+	for _, sep := range []string{"_", "."} {
+		prefix := bareName + sep
+		for k, n := range g.funcNumResults {
+			if n >= 1 && strings.HasPrefix(k, prefix) {
+				return k
+			}
 		}
 	}
-	return true // default to non-void for unknown calls
+	return ""
+}
+
+// formatDoubleConst renders a float64 as a full-precision LLVM `double` literal.
+// strconv 'g'/-1 round-trips the value exactly (unlike "%f", which caps at 6
+// decimals and silently truncates small-magnitude floats such as 0.0001234 →
+// "0.000123"). We then guarantee LLVM accepts the token by ensuring a decimal
+// point or exponent is present, mirroring generateExprWithSB's FloatLiteral
+// handling.
+func formatDoubleConst(v float64) string {
+	s := strconv.FormatFloat(v, 'g', -1, 64)
+	switch {
+	case s == "NaN":
+		return "nan"
+	case s == "+Inf", s == "Inf":
+		return "inf"
+	case s == "-Inf":
+		return "-inf"
+	}
+	if !strings.ContainsAny(s, ".eE") {
+		s += ".0"
+	} else if strings.ContainsAny(s, "eE") && !strings.Contains(s, ".") {
+		s = strings.Replace(s, "e", ".0e", 1)
+		s = strings.Replace(s, "E", ".0E", 1)
+	}
+	return s
 }
 
 // generateCallArg 生成單個函數調用參數的 LLVM 表示
@@ -197,12 +257,12 @@ func (g *Generator) generateCallArg(sb *strings.Builder, arg parser.Expression) 
 			if g.coroInAsyncFunc {
 				sb.WriteString(fmt.Sprintf("%s%s = call i8* @nolang.malloc(i64 8)\n", g.indent(), tmpName))
 				sb.WriteString(fmt.Sprintf("%s%s.cast = bitcast i8* %s to double*\n", g.indent(), tmpName, tmpName))
-				sb.WriteString(fmt.Sprintf("%sstore double %s, double* %s.cast\n", g.indent(), fmt.Sprintf("%f", a.Value), tmpName))
+				sb.WriteString(fmt.Sprintf("%sstore double %s, double* %s.cast\n", g.indent(), formatDoubleConst(a.Value), tmpName))
 				return "double* " + tmpName + ".cast"
 			}
 			// alloca 提升至 entry block，避免循環體內每次迭代增長棧
 			g.emitEntryAlloca(sb, "%s = alloca double\n", tmpName)
-			sb.WriteString(fmt.Sprintf("%sstore double %s, double* %s\n", g.indent(), fmt.Sprintf("%f", a.Value), tmpName))
+			sb.WriteString(fmt.Sprintf("%sstore double %s, double* %s\n", g.indent(), formatDoubleConst(a.Value), tmpName))
 		}
 		return "double* " + tmpName
 	case *parser.StringLiteral:
@@ -944,6 +1004,42 @@ var builtinDispatchNames = map[string]bool{
 }
 
 func (g *Generator) generateCallExpression(sb *strings.Builder, expr *parser.CallExpression) string {
+	// str.byte(i) / txt.byte(i) — 原始位元組訪問逃生艙口，永遠 O(1)。
+	// s[i] 語義已改為「第 i 個碼點」（未證明 ASCII 時為 O(n) UTF-8 迭代），
+	// 而標準庫內部的編解碼/比較/雜湊必須按位元組定址，故提供此顯式 accessor。
+	// 必須在任何其他分派之前攔截，否則會被當成一般 std 方法呼叫而進入函式體。
+	// 兩種 AST 形態都要覆蓋：
+	//  (a) 未脫糖的 DotExpression：s.byte(i)，接收者是 dot.Receiver
+	//  (b) 已脫糖的 Identifier："str.byte" / "txt.byte"，接收者降為第 0 個實參
+	if dot, ok := expr.Function.(*parser.DotExpression); ok && dot.Property == "byte" {
+		if recv, ok := dot.Receiver.(*parser.Identifier); ok && len(expr.Arguments) == 1 {
+			if t, ok := g.varTypes[recv.Value]; ok && (t == "%str-long" || t == "%txt") {
+				return g.generateRawByteAt(sb, recv.Value, t, expr.Arguments[0])
+			}
+		}
+	}
+	if id, ok := expr.Function.(*parser.Identifier); ok &&
+		(id.Value == "str.byte" || id.Value == "txt.byte") && len(expr.Arguments) == 2 {
+		if recv, ok := expr.Arguments[0].(*parser.Identifier); ok {
+			if t, ok := g.varTypes[recv.Value]; ok && (t == "%str-long" || t == "%txt") {
+				return g.generateRawByteAt(sb, recv.Value, t, expr.Arguments[1])
+			}
+		}
+	}
+	// str.len-bytes() — 字節數（底層 UTF-8 緩衝長度），O(1)。
+	// 對應舊語法 str.len（裸字段）。必須在任何一般方法分派之前攔截，
+	// 否則會被當成 std 方法呼叫而進入（已註解為 build-in 的）函式體。
+	// 覆蓋兩種 AST 形態：
+	//  (a) 未脫糖 DotExpression：s.len-bytes()（接收者 dot.Receiver，無參數）
+	//  (b) 已脫糖 Identifier："str.len-bytes"（接收者降為第 0 個實參）
+	if dot, ok := expr.Function.(*parser.DotExpression); ok && dot.Property == "len-bytes" {
+		if len(expr.Arguments) == 0 {
+			return g.generateStrByteLen(sb, dot.Receiver)
+		}
+	}
+	if id, ok := expr.Function.(*parser.Identifier); ok && id.Value == "str.len-bytes" && len(expr.Arguments) >= 1 {
+		return g.generateStrByteLen(sb, expr.Arguments[0])
+	}
 	// -async 函数调用：返回 %future（惰性，不执行）
 	if g.isAsyncCall(expr) {
 		return g.generateFutureCreation(sb, expr)
@@ -1089,6 +1185,20 @@ func (g *Generator) generateCallExpression(sb *strings.Builder, expr *parser.Cal
 						}
 					}
 				}
+			}
+		}
+		// Monomorphized-instance resolution for the nested multi-assign form.
+		// The transpiler rewrites short-name generic calls (e.g. `exec`'s internal
+		// `cmd`) to their mangled instance name (process.cmd_str_slice...), but leaves
+		// fully-qualified cross-module calls (user module `process.cmd`) as the bare
+		// name. For those, funcNumResults/funcResultLLVMType hold the real signature
+		// under the *mangled* key only, so the direct lookup below yields numResults=0
+		// and drops every output parameter — leaving out/se/code/err unbound and
+		// breaking later `out.contains` dispatch. Resolve the instance by scanning the
+		// registration maps for a mangle-derived key (base + "_" + ...).
+		if g.funcNumResults != nil && g.funcNumResults[innerFnName] == 0 {
+			if inst := g.resolveGenericInstance(innerFnName); inst != "" {
+				innerFnName = inst
 			}
 		}
 		if os.Getenv("NOLANG_DEBUG_MULTI") != "" {
@@ -1322,36 +1432,48 @@ func (g *Generator) generateCallExpression(sb *strings.Builder, expr *parser.Cal
 								// registration because it is also a multi-assign target), allocate
 								// a local slot now so varAddr's %"name" reference has a backing
 								// alloca.
-								if exists && !isGlobal && !isParam && !alreadyAllocated {
-										if g.emittedAlloca == nil {
-											g.emittedAlloca = make(map[string]bool)
-										}
-										g.emittedAlloca[ident.Value] = true
-										outType := g.varTypes[ident.Value]
-										g.tmpIdx++
-										g.funcVars = append(g.funcVars, varInfo{Name: ident.Value, Type: outType, Size: 8})
-										if sb != nil {
-											sb.WriteString(fmt.Sprintf("%s%s = alloca %s\n", g.indent(), llvmVarRef(ident.Value), outType))
-											sb.WriteString(fmt.Sprintf("%scall void @llvm.lifetime.start.p0i8(i64 8, i8* %s)\n", g.indent(), llvmVarRef(ident.Value)))
-										}
+							if exists && !isGlobal && !isParam && !alreadyAllocated {
+									if g.emittedAlloca == nil {
+										g.emittedAlloca = make(map[string]bool)
 									}
-								if !exists {
-							outType := "i64"
-							if outIdx < len(outTypes) {
-								outType = outTypes[outIdx]
-							}
-							g.varTypes[ident.Value] = outType
-							if g.emittedAlloca == nil {
-								g.emittedAlloca = make(map[string]bool)
-							}
-							g.emittedAlloca[ident.Value] = true
-							g.tmpIdx++
-							g.funcVars = append(g.funcVars, varInfo{Name: ident.Value, Type: outType, Size: 8})
-							if sb != nil {
-								sb.WriteString(fmt.Sprintf("%s%s = alloca %s\n", g.indent(), llvmVarRef(ident.Value), outType))
-								sb.WriteString(fmt.Sprintf("%scall void @llvm.lifetime.start.p0i8(i64 8, i8* %s)\n", g.indent(), llvmVarRef(ident.Value)))
-							}
+									g.emittedAlloca[ident.Value] = true
+									outType := g.varTypes[ident.Value]
+									g.tmpIdx++
+									g.funcVars = append(g.funcVars, varInfo{Name: ident.Value, Type: outType, Size: 8})
+									if sb != nil {
+										sb.WriteString(fmt.Sprintf("%s%s = alloca %s\n", g.indent(), llvmVarRef(ident.Value), outType))
+										// 零初始化：被調用函數的 prologue 會對 output 參數的舊 data 指標
+										// 做 free（見 stmt.go:3461 註釋「out 參數由呼叫方傳入指標並初始化緩衝區」）。
+										// 若呼叫方傳入的 slot 含 stack 殘值（非 null 的野指標），callee 進入時
+										// 的 free 會崩在「pointer being freed was not allocated」。zeroinitializer
+										// 把 data 指標置 null，使 prologue 的 null 檢查跳過 free，符合契約。
+										sb.WriteString(fmt.Sprintf("%sstore %s zeroinitializer, %s* %s\n", g.indent(), outType, outType, llvmVarRef(ident.Value)))
+										sb.WriteString(fmt.Sprintf("%scall void @llvm.lifetime.start.p0i8(i64 8, i8* %s)\n", g.indent(), llvmVarRef(ident.Value)))
+									}
+								}
+							if !exists {
+						outType := "i64"
+						if outIdx < len(outTypes) {
+							outType = outTypes[outIdx]
 						}
+						g.varTypes[ident.Value] = outType
+						if g.emittedAlloca == nil {
+							g.emittedAlloca = make(map[string]bool)
+						}
+						g.emittedAlloca[ident.Value] = true
+						g.tmpIdx++
+						g.funcVars = append(g.funcVars, varInfo{Name: ident.Value, Type: outType, Size: 8})
+						if sb != nil {
+							sb.WriteString(fmt.Sprintf("%s%s = alloca %s\n", g.indent(), llvmVarRef(ident.Value), outType))
+							// 零初始化：被調用函數的 prologue 會對 output 參數的舊 data 指標做 free
+							// （見 stmt.go:3461 註釋「out 參數由呼叫方傳入指針並初始化緩衝區」）。若呼叫方
+							// 傳入的 slot 含 stack 殘值（非 null 的野指針），callee 進入時的 free 會崩在
+							// 「pointer being freed was not allocated」。zeroinitializer 把 data 指針置 null，
+							// 使 prologue 的 null 檢查跳過 free，符合契約。
+							sb.WriteString(fmt.Sprintf("%sstore %s zeroinitializer, %s* %s\n", g.indent(), outType, outType, llvmVarRef(ident.Value)))
+							sb.WriteString(fmt.Sprintf("%scall void @llvm.lifetime.start.p0i8(i64 8, i8* %s)\n", g.indent(), llvmVarRef(ident.Value)))
+						}
+					}
 						argStr := g.generateCallArg(sb, outArg)
 						allArgs = append(allArgs, argStr)
 						continue
@@ -1489,6 +1611,22 @@ func (g *Generator) generateCallExpression(sb *strings.Builder, expr *parser.Cal
 					// use just the method name and let the method receiver
 					// resolution at ~L1697 resolve the correct type-prefixed name.
 					fnName = dot.Property
+				}
+			}
+		}
+	}
+	// TEMP DEBUG: inspect self-receiver calls at fnName derivation
+	if os.Getenv("NOLANG_DEBUG_SELF") != "" {
+		if dot, ok := expr.Function.(*parser.DotExpression); ok {
+			if id, ok := dot.Receiver.(*parser.Identifier); ok && id.Value == "self" {
+				if g.curFuncName == "" {
+					buf := make([]byte, 4096)
+					n := runtime.Stack(buf, false)
+					fmt.Fprintf(os.Stderr, "[debug-self] fnName-derive BUGGY: fnName=%q curFunc=%q selfInVarTypes=%v\nSTACK:\n%s\n",
+						fnName, g.curFuncName, (g.varTypes != nil && g.varTypes["self"] != ""), buf[:n])
+				} else {
+					fmt.Fprintf(os.Stderr, "[debug-self] fnName-derive OK: fnName=%q curFunc=%q selfInVarTypes=%v\n",
+						fnName, g.curFuncName, (g.varTypes != nil && g.varTypes["self"] != ""))
 				}
 			}
 		}
@@ -1965,9 +2103,12 @@ func (g *Generator) generateCallExpression(sb *strings.Builder, expr *parser.Cal
 				rt, has := g.varTypes[recv.Value]
 				fmt.Fprintf(os.Stderr, "[debug-it] call.go method-resolve: func=%s recv=%q varTypes=%v(%q) prop=%q\n", g.curFuncName, recv.Value, has, rt, dot.Property)
 			}
-			if recvType, ok := g.varTypes[recv.Value]; ok && g.unionAliases != nil {
-				// Map LLVM type name back to source type name
-				srcType := recvType
+		if recvType, ok := g.varTypes[recv.Value]; ok && g.unionAliases != nil {
+			if os.Getenv("NOLANG_DEBUG_IT") != "" {
+				fmt.Fprintf(os.Stderr, "[debug-it]   union-path recv=%q recvType=%q nAliases=%d\n", recv.Value, recvType, len(g.unionAliases))
+			}
+			// Map LLVM type name back to source type name
+			srcType := recvType
 				if srcType == "double" {
 					srcType = "f64"
 				} else if srcType == "float" {
@@ -2011,12 +2152,55 @@ func (g *Generator) generateCallExpression(sb *strings.Builder, expr *parser.Cal
 					// Option type (?T): try the inner type as a candidate
 					// (e.g. conn-val is ?str → try str.to-lower)
 					if srcType == "option" && g.optionInnerTypes != nil {
+						if os.Getenv("NOLANG_DEBUG_IT") != "" {
+							it2, _ := g.optionInnerTypes[recv.Value]
+							aet2, _ := g.arrayElemTypes[recv.Value]
+							fmt.Fprintf(os.Stderr, "[debug-it] option-inner recv=%q optionInnerTypes=%q arrayElemTypes=%q\n", recv.Value, it2, aet2)
+						}
 						if innerType, ok := g.optionInnerTypes[recv.Value]; ok {
 							innerSrc := strings.TrimPrefix(innerType, "%")
 							candidates = append(candidates, innerSrc)
 							if primAliases, ok := llvmTypeToNolang[innerSrc]; ok {
 								candidates = append(candidates, primAliases...)
 							}
+						// Option-wrapped slices/arrays (e.g. ?[]byte, ?[256]byte):
+						// the inner receiver is really a %vec/%arr, so method
+						// dispatch must use the monomorphized slice-method names
+						// (_x<elem>.method / _Nx<elem>.method) — the same names a
+						// plain slice/array receiver would produce. Without these,
+						// `r.len()` on a `?[256]byte` falls through to the bare
+						// `r.len` symbol (undefined).
+						//
+						// g.optionInnerTypes stores the LLVM type of the inner
+						// ("%vec"/"%arr"), not the nolang name ("[]byte"). The
+						// element type is recorded separately in g.arrayElemTypes
+						// (set when the option inner was registered for slices).
+						// For fixed arrays g.arraySizes may also be set.
+						innerElem := ""
+						if innerSrc == "vec" || innerSrc == "arr" {
+							if g.arrayElemTypes != nil {
+								if et, ok := g.arrayElemTypes[recv.Value]; ok {
+									innerElem = strings.TrimPrefix(et, "%")
+								}
+							}
+						} else if isSliceOrArrayType(innerSrc) {
+							_, _, innerElem = parseArrayType(innerSrc)
+						}
+						if innerElem != "" {
+							if elemAliases, ok := llvmTypeToNolang[innerElem]; ok {
+								for _, alias := range elemAliases {
+									if innerSrc == "arr" && g.arraySizes != nil {
+										if arrSize, ok := g.arraySizes[recv.Value]; ok {
+											candidates = append(candidates, fmt.Sprintf("_%dx%s", arrSize, alias))
+											candidates = append(candidates, fmt.Sprintf("[%dx]%s", arrSize, alias))
+										}
+									} else {
+										candidates = append(candidates, "_x"+alias)
+										candidates = append(candidates, "[]"+alias)
+									}
+								}
+							}
+						}
 						}
 					}
 				// Primitive LLVM types may correspond to multiple nolang type names.
@@ -2073,6 +2257,18 @@ func (g *Generator) generateCallExpression(sb *strings.Builder, expr *parser.Cal
 						// 接受任何已註冊的用戶方法（含 void 無輸出參數的方法，如 process.close）。
 						if _, ok := g.funcRetTypes[shortName]; ok {
 							fnName = shortName
+							// Prefer the monomorphized slice-method name (_x<elem>.<prop>)
+							// when registered: the transpiler rewrites the source name
+							// `[]<elem>.<prop>` to `_x<elem>.<prop>` for the ACTUAL emitted
+							// LLVM function, so emitting the source name would reference a
+							// missing symbol (e.g. `[]byte.to-str` → `_LB__RB_byte.to-str`
+							// instead of the real `_xbyte.to-str`).
+							if strings.HasPrefix(cand, "[]") && len(cand) > 2 {
+								monoName := "_x" + cand[2:] + "." + dot.Property
+								if _, ok2 := g.funcRetTypes[monoName]; ok2 {
+									fnName = monoName
+								}
+							}
 							methodReceiver = recv
 							break
 						}
@@ -2460,14 +2656,19 @@ func (g *Generator) generateCallExpression(sb *strings.Builder, expr *parser.Cal
 							if g.arrayElemTypes != nil {
 								if et, ok := g.arrayElemTypes[ident.Value]; ok {
 									et = strings.TrimPrefix(et, "%")
-									if elemAliases, ok := llvmTypeToNolang[et]; ok {
-										for _, alias := range elemAliases {
-											candidates = append(candidates, "[]"+alias)
-										}
-										for _, alias := range elemAliases {
-											candidates = append(candidates, "_x"+alias)
-										}
+								if elemAliases, ok := llvmTypeToNolang[et]; ok {
+									// 偏好 monomorphized 名（_x<elem>.prop）：transpiler 将
+									// `[]<elem>.prop` 改写为 `_x<elem>.prop` 作为实际发射的 LLVM
+									// 函数名，而源名 `[]<elem>.prop` 也仍登记在 funcRetTypes 中。
+									// 若先试源名会引用到 sanitize 后的错误符号
+									// (@_LB__RB_byte.to-str 而非 @_xbyte.to-str)。故 _x 变体在前。
+									for _, alias := range elemAliases {
+										candidates = append(candidates, "_x"+alias)
 									}
+									for _, alias := range elemAliases {
+										candidates = append(candidates, "[]"+alias)
+									}
+								}
 								}
 							}
 						}
@@ -2501,13 +2702,22 @@ func (g *Generator) generateCallExpression(sb *strings.Builder, expr *parser.Cal
 		maybeRenableLLVMName()
 		_, hasNolangImpl := g.funcRetTypes[fnName]
 
-		// Special case: .len() on builtin types (str.len, []byte.len, []i64.len)
-		// should always be inlined to a field access (getelementptr + load),
-		// even when a user-defined wrapper exists in funcRetTypes.
-		// The user-defined str.len in str.no is just `n = .len` — a trivial
-		// wrapper around the same builtin field access. Inlining avoids
-		// an unnecessary function call and matches test expectations.
+		// Special case: .len() on builtin types ([]byte.len, []i64.len, arr.len)
+		// should be inlined to a field access (getelementptr + load) — the element
+		// count.  BUT str.len() is now a real method returning the CODEPOINT count
+		// (see str.no), NOT the byte length. Inlining str.len would yield the byte
+		// length (wrong semantics), so we skip the inline for str receivers and let
+		// the real str.len method run. Bare s.len (byte field) is rejected in
+		// generateDotExpression; s.len-bytes() is intercepted earlier in
+		// generateCallExpression. So only array/slice/vec .len() is inlined here.
 		if (strings.HasSuffix(fnName, ".len") || fnName == "len") && methodReceiver != nil {
+			recvType := g.exprResultLLVMType(methodReceiver)
+			// str / txt 值的 .len() 是真實方法（字串碼點數 / txt 長度），必須 dispatch 到
+			// 真實方法，而非容器 inline。容器 inline（callBuiltin "len"）會對 by-value 的
+			// str/txt 結構做 getelementptr+load，產生非法 IR（txt-len-dispatch 回歸）。
+			// 原本只排除 str.len，這裡改用接收者 LLVM 型別同時排除 str 與 txt（以及任何
+			// str/txt 值接收者），更穩健。容器（%vec/%arr/原始陣列）接收者仍走 inline。
+			if recvType != "%str-long" && recvType != "%txt" {
 	
 			// callBuiltin has a "len" handler that inlines getelementptr + load
 			// for str/vec/arr types. Construct a synthetic call expression with
@@ -2534,6 +2744,7 @@ func (g *Generator) generateCallExpression(sb *strings.Builder, expr *parser.Cal
 			lenLlvmArg := func(val string) string { return val }
 			if r := g.callBuiltin(sb, "len", true, len(lenArgs), lenEvalArgs, lenStrArg, lenLlvmArg, lenExpr); r != "" {
 				return r
+			}
 			}
 		}
 
@@ -2581,6 +2792,35 @@ func (g *Generator) generateCallExpression(sb *strings.Builder, expr *parser.Cal
 // generic argument loop types each KIdent argument via generateTypedArgHIR
 // instead of the reconstructed AST node, keeping output byte-identical.
 func (g *Generator) generateCallEmit(sb *strings.Builder, expr *parser.CallExpression, fnName, llvmFnName string, methodReceiver parser.Expression, hirArgIDs []int32) string {
+	// io.out / io.outln / io.err / io.errln auto-convert non-string arguments to a
+	// string via the idiomatic .to-str() method (i64.to-str / f64.to-str / bool.to-str
+	// / char.to-str / []T.to-str ...). This makes `io.out(42)`, `io.out(3.14)`,
+	// `io.out(true)`, `io.out(c)` print directly without a manual .to-str().
+	// Already-string arguments (string literal, %str-long var, string concat) are
+	// passed through unchanged.
+	// We force AST-based argument typing (hirArgIDs = nil) so the wrapped .to-str()
+	// call is honored on the optimized HIR call path too (which otherwise types the
+	// argument directly from its HIR node and would pass an i64* to a %str-long* param).
+	// NOTE: the std io module registers these as bare names (out/outln/err/errln);
+	// the module-qualified form (io.out/...) is kept for direct source calls.
+	autoConvIdx := -1
+	if fnName == "io.out" || fnName == "out" ||
+		fnName == "io.outln" || fnName == "outln" ||
+		fnName == "io.err" || fnName == "err" ||
+		fnName == "io.errln" || fnName == "errln" {
+		if len(expr.Arguments) == 1 && !g.isStringExpr(expr.Arguments[0]) {
+			expr.Arguments[0] = &parser.CallExpression{
+				Function: &parser.DotExpression{
+					Receiver: expr.Arguments[0],
+					Property: "to-str",
+				},
+				Arguments: []parser.Expression{},
+			}
+			hirArgIDs = nil
+			autoConvIdx = 0
+		}
+	}
+
 	// Intercept .zero() calls that were rewritten by the transpiler
 	// (e.g. [4]i64.zero(data) → _LB_4_RB_i64.zero). If the function doesn't
 	// exist in funcRetTypes, generate llvm.memset directly.
@@ -3016,7 +3256,7 @@ func (g *Generator) generateCallEmit(sb *strings.Builder, expr *parser.CallExpre
 			if sb != nil {
 				// alloca 提升至 entry block，避免循環體內每次迭代增長棧
 				g.emitEntryAlloca(sb, "%s = alloca double\n", tmpName)
-				sb.WriteString(fmt.Sprintf("%sstore double %s, double* %s\n", g.indent(), fmt.Sprintf("%f", a.Value), tmpName))
+				sb.WriteString(fmt.Sprintf("%sstore double %s, double* %s\n", g.indent(), formatDoubleConst(a.Value), tmpName))
 			}
 			return "double* " + tmpName
 		case *parser.StringLiteral:
@@ -3513,7 +3753,7 @@ func (g *Generator) generateCallEmit(sb *strings.Builder, expr *parser.CallExpre
 			tmpName := fmt.Sprintf("%%ref.tmp.%d", g.tmpIdx)
 			if sb != nil {
 				g.emitEntryAlloca(sb, "%s = alloca double\n", tmpName)
-				sb.WriteString(fmt.Sprintf("%sstore double %s, double* %s\n", g.indent(), fmt.Sprintf("%f", node.Float()), tmpName))
+				sb.WriteString(fmt.Sprintf("%sstore double %s, double* %s\n", g.indent(), formatDoubleConst(node.Float()), tmpName))
 			}
 			return "double* " + tmpName
 		}
@@ -3558,11 +3798,28 @@ func (g *Generator) generateCallEmit(sb *strings.Builder, expr *parser.CallExpre
 				g.currentTargetType = pts[i]
 			}
 		}
+		// 有符號整數算術的溢出處理模式：依「參數型別」推導，與 let 語句一致
+		// （stmt.go ~L7444）。Nolang 預設 curOverflowMode 為 ""（回傳 option），
+		// 因此裸運算式作為函式引數（如 f(10+20)）會被編碼為 %option，
+		// 與參數期望的 i64 不符 → 編譯器拒絕（使用者須顯式以 ?= 解包，
+		// 例如 b ?= 10+20; f(b) 或 a ?= f(10+20)）。
+		// 唯獨 io.out/outln/err/errln 的自動轉字串（上方 autoConvIdx 標記的
+		// 引數）需要強制 wrap：該引數已被重寫為 (expr).to-str()，其接收者
+		// expr 必須以 i64（而非 %option）求值，.to-str() 才成立。
+		//   - 參數為 option 型別（%option）→ 維持 option（溢出 err）。
+		//   - 參數為普通型別且非自動轉字串引數 → 維持 option（由呼叫方處理，拒絕隱式解包）。
+		//   - 自動轉字串引數（i == autoConvIdx）→ 靜默回繞（wrap），確保 .to-str() 成立。
+		// 函數級已顯式標註 #{overflow=...} 時 curOverflowMode != ""，此處不會改動。
+		ovfPrev := g.curOverflowMode
+		if ovfPrev == "" && g.currentTargetType != "%option" && i == autoConvIdx {
+			g.curOverflowMode = "wrap"
+		}
 		if hirArgIDs != nil && i < len(hirArgIDs) {
 			typedArgs = append(typedArgs, generateTypedArgHIR(hirArgIDs[i], i))
 		} else {
 			typedArgs = append(typedArgs, genTypedArg(arg, i))
 		}
+		g.curOverflowMode = ovfPrev
 	}
 	g.currentTargetType = savedTargetType
 	g.currentTargetElemType = savedTargetElemType
@@ -3641,14 +3898,25 @@ func (g *Generator) generateCallEmit(sb *strings.Builder, expr *parser.CallExpre
 
 	// void + 單輸出：分配臨時輸出空間並附加指標到參數列表
 	// 支援多輸出參數：為所有輸出參數分配臨時空間，調用後載入第一個作為返回值
+	//
+	// 關於 stacksave/stackrestore 的重要修正：
+	// 對聚合型別（[N x i8]、%arr、%vec、%str-long、%option 等），呼叫傳回值會先 load 成一個
+	// SSA 值，再在 stackrestore 之後 store 到目標。LLVM 後端可能把這個聚合 SSA 值的「家內存槽」
+	// 放在剛被 stackrestore 釋放的 vso.tmp 上；stackrestore 之後、store 之前的指令會覆寫該槽，
+	// 導致 store 讀到垃圾值。純量（i1/i8/i16/i32/i64/double/float）一定會進暫存器，不受影響。
+	// 因此：純量回傳型別才用 stacksave/stackrestore（可在迴圈內回收臨時堆疊，且安全）；
+	// 聚合回傳型別跳過它們 —— vso.tmp 是固定大小 alloca，在 -O3 會被堆疊著色複用（迴圈內不增長），
+	// 在 -O0 則略增堆疊但保證正確，且不會釋放導致上述 use-after-free 式損壞。
 	voidSingleTmp := ""
 	voidSingleSp := ""
 	voidMultiTmps := []string{}
 	if voidSingleOutput {
-		g.tmpIdx++
-		voidSingleSp = fmt.Sprintf("%%vso.sp.%d", g.tmpIdx)
-		if sb != nil {
-			sb.WriteString(fmt.Sprintf("%s%s = call ptr @llvm.stacksave.p0()\n", g.indent(), voidSingleSp))
+		if isScalarLLVMType(voidSingleOutputType) {
+			g.tmpIdx++
+			voidSingleSp = fmt.Sprintf("%%vso.sp.%d", g.tmpIdx)
+			if sb != nil {
+				sb.WriteString(fmt.Sprintf("%s%s = call ptr @llvm.stacksave.p0()\n", g.indent(), voidSingleSp))
+			}
 		}
 		for mi, mt := range voidMultiOutputTypes {
 			g.tmpIdx++
@@ -3727,6 +3995,17 @@ func (g *Generator) generateCallEmit(sb *strings.Builder, expr *parser.CallExpre
 		}
 	}
 
+	// TEMP DEBUG: capture self.len mis-resolution context
+	if os.Getenv("NOLANG_DEBUG_SELF") != "" && strings.HasPrefix(fnName, "self.") {
+		recvName := ""
+		if dot, ok := expr.Function.(*parser.DotExpression); ok {
+			if id, ok := dot.Receiver.(*parser.Identifier); ok {
+				recvName = id.Value
+			}
+		}
+		fmt.Fprintf(os.Stderr, "[debug-self] call.go make-call: fnName=%q recv=%q curFunc=%q selfInVarTypes=%v methodReceiver=%v\n",
+			fnName, recvName, g.curFuncName, (g.varTypes != nil && g.varTypes["self"] != ""), methodReceiver != nil)
+	}
 	// Make the call
 	if os.Getenv("NOLANG_DEBUG_IT") != "" && strings.Contains(llvmFnName, "nil.") {
 		fmt.Fprintf(os.Stderr, "[debug-it] call.go make-call: fnName=%q llvmFnName=%q retType=%q methodReceiver=%v\n", fnName, llvmFnName, retType, methodReceiver != nil)
@@ -4771,13 +5050,15 @@ func (g *Generator) genForwardFunc(sb *strings.Builder, forwardFunc string, expr
 			// (cap 0→4→8→16→... each leaks the prior allocation).
 			// oldData is already an i8* register from loadDataPtrField above.
 			// emitNullCheckFree guards free(NULL) anyway (no-op when cap was 0).
-			g.emitNullCheckFree(sb, oldData)
+			// The data field GEP is reused for the new store below; the null
+			// reset inside emitNullCheckFree is overwritten by that store.
+			g.tmpIdx++
+			vpDataGEP := fmt.Sprintf("%%vp.ds.gep.%d", g.tmpIdx)
+			sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%vec, %%vec* %s, i32 0, i32 2\n", g.indent(), vpDataGEP, recvAddr))
+			g.emitNullCheckFree(sb, oldData, vpDataGEP)
 
 			// Update data (field 2) = newBuf
-			g.tmpIdx++
-			dataStoreGEP := fmt.Sprintf("%%vp.ds.gep.%d", g.tmpIdx)
-			sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%vec, %%vec* %s, i32 0, i32 2\n", g.indent(), dataStoreGEP, recvAddr))
-			g.storeDataPtrField(sb, newBuf, dataStoreGEP)
+			g.storeDataPtrField(sb, newBuf, vpDataGEP)
 
 			// Increment len: store len+1 to field 0
 			g.tmpIdx++
@@ -5680,4 +5961,47 @@ func (g *Generator) callExtern(sb *strings.Builder, info *ExternFuncInfo, expr *
 		return reg
 	}
 	return callReg
+}
+
+// isScalarLLVMType 判斷 LLVM 型別是否為「純量」（能裝進暫存器、不依賴堆疊家槽）。
+// 用於 voidSingleOutput 是否套用 stacksave/stackrestore：純量安全（如 i64 一定進暫存器）；
+// 聚合型別（[N x i8]、%arr、%vec、%str-long、%option 等）跳過，避免 load 後 store 跨
+// stackrestore 讀到已釋放的家槽而損壞（見 call.go voidSingleOutput 區塊說明）。
+func isScalarLLVMType(t string) bool {
+	switch t {
+	case "i1", "u1", "i8", "u8", "i16", "u16", "i32", "u32", "i64", "u64", "double", "float":
+		return true
+	}
+	return false
+}
+
+// isSliceOrArrayType reports whether s is a nolang slice ([]t) or fixed-array
+// ([n]t) type name (e.g. "[]byte", "[256]byte").
+func isSliceOrArrayType(s string) bool {
+	if strings.HasPrefix(s, "[]") && len(s) > 2 {
+		return true
+	}
+	if strings.HasPrefix(s, "[") {
+		if closeB := strings.IndexByte(s, ']'); closeB > 0 {
+			return closeB < len(s)-1
+		}
+	}
+	return false
+}
+
+// parseArrayType parses a nolang slice or fixed-array type name.
+// For "[]byte" it returns (false, 0, "byte"); for "[256]byte" it returns
+// (true, 256, "byte"). ok is false if s is not a recognized slice/array type.
+func parseArrayType(s string) (isArr bool, size int, elem string) {
+	if strings.HasPrefix(s, "[]") && len(s) > 2 {
+		return false, 0, s[2:]
+	}
+	if strings.HasPrefix(s, "[") {
+		if closeB := strings.IndexByte(s, ']'); closeB > 0 {
+			if n, err := strconv.Atoi(s[1:closeB]); err == nil {
+				return true, n, s[closeB+1:]
+			}
+		}
+	}
+	return false, 0, ""
 }

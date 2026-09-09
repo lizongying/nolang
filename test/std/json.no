@@ -215,7 +215,7 @@ t-stringify-obj = () {
         nil -> {}
         err -> {}
     }
-    runner.gt(s.len, 5, 'stringify obj len > 5')
+    runner.gt(s.len-bytes(), 5, 'stringify obj len > 5')
     runner.str-eq(s, '{"a":1}', 7, 'stringify obj content')
 }
 

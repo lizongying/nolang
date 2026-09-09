@@ -2,19 +2,13 @@ package mir
 
 import (
 	"fmt"
-	"os"
 	"regexp"
-	"sort"
 	"strconv"
 	"strings"
 
 	"github.com/lizongying/nolang/hir"
 )
 
-// debugLower reports whether MIR lowering tracing is enabled. It is read on
-// every call so a long-lived process (the LSP server) picks up a change without
-// a restart; the cost is a map lookup on a hot-ish path only in debug builds.
-func debugLower() bool { return os.Getenv("NOLANG_MIR_DEBUG") != "" }
 
 // byteArrayRe matches a `[N]byte` / `[N]i8` nolang global type, used to fold
 // module byte-array constants (SBOX, INV-SBOX) into compact c"..." data globals.
@@ -87,6 +81,12 @@ type lowerer struct {
 	// globalNodes records the HIR node id of each top-level KLet so the global's
 	// constant initializer can be folded on first reference.
 	globalNodes map[string]int32
+
+	// enumVariants maps an enum type name (e.g. "code") to its variant names in
+	// declaration order. Used to resolve enum-typed top-level `let`s and enum
+	// variant references (`code.io`) to i64 discriminants, and to map enum types
+	// to i64 in type resolution.
+	enumVariants map[string][]string
 }
 
 // collectStructFields scans the HIR package for struct definitions and records
@@ -123,9 +123,6 @@ func (l *lowerer) collectStructFields() {
 		}
 		if len(fields) > 0 {
 			l.mod.StructFields[name] = fields
-		}
-		if os.Getenv("NOLANG_MIR_DEBUG") != "" {
-			fmt.Fprintf(os.Stderr, "[mir-dbg] collectStructFields: name=%q nfields=%d fields=%+v\n", name, len(fields), fields)
 		}
 	}
 }
@@ -169,23 +166,21 @@ func (l *lowerer) synthesizeMainForTopLevel(pkg *hir.Package) {
 			if n.Has(hir.FlagModuleConst) {
 				continue
 			}
-			raw := l.letTypeRaw(n)
-			if raw != "" && l.foldConstText(n, raw) != "" {
-				continue
-			}
-			// Only inline top-level `let` bindings whose type the v1 codegen can
-			// emit as a statement. Std prelude constants (fs.file structlits for
-			// <stdin>/<stdout>/<stderr>, qualified names like fs.fd/err.code)
-			// would otherwise be inlined into main and produce malformed IR
-			// (undeclared struct types) -> whole-module fallback. They stay
-			// resolvable as lazily-materialized module globals when referenced
-			// (modules only). User literals (i64/byte/str/txt/fixed arrays)
-			// inline normally. A KLet whose type cannot be recovered at all is
-			// assumed NON-inlineable and skipped, unless its value is a plain
-			// literal (int/float/str/char/bool) the v1 codegen emits directly.
-			if raw != "" && !l.isInlineableLetType(raw) {
-				continue
-			}
+		raw := l.letTypeRaw(n)
+		if raw != "" && l.foldConstText(n, raw) != "" {
+			continue
+		}
+		// Inline top-level `let`s whose value is a runtime call result
+		// (`e = err.new(...)`, `mc = e.code()`, `e2 = err.err-from-errno(2)`):
+		// a call cannot be a module constant, so it must be computed inside the
+		// synthetic `main`. Skip only types the v1 codegen cannot emit as a
+		// statement (vec/option/slice element codegen is incomplete); scalars,
+		// structs and enums inline safely.
+		if l.letValueIsCall(n) && raw != "" && raw != "void" && !l.isUnsafeInlineType(raw) {
+			// inline call-result let into the synthetic `main`
+		} else if raw != "" && !l.isInlineableLetType(raw) {
+			continue
+		}
 		case hir.KStructLit:
 			// Top-level struct literals are std prelude inits (e.g. fs.file
 			// structlits for <stdin>/<stdout>/<stderr>). They reference struct
@@ -259,7 +254,7 @@ func internStrPkg(pkg *hir.Package, s string) int32 {
 // elimination). After lowering, Analyze runs to insert drops and run the
 // memory checks. The returned Report is the memory-safety report; diags are
 // lowering-coverage gaps.
-func LowerHIR(pkg *hir.Package) (*Module, *Report, []LowerDiag) {
+func LowerHIR(pkg *hir.Package, enumVariants map[string][]string) (*Module, *Report, []LowerDiag) {
 	l := &lowerer{
 		pkg:       pkg,
 		funcNames: map[string]int32{},
@@ -268,6 +263,7 @@ func LowerHIR(pkg *hir.Package) (*Module, *Report, []LowerDiag) {
 		globals:   map[string]ValueID{},
 		globalTypes: map[string]string{},
 		globalNodes: map[string]int32{},
+		enumVariants: enumVariants,
 	}
 	l.b = NewBuilder("hir")
 	l.mod = l.b.Module()
@@ -298,9 +294,6 @@ func LowerHIR(pkg *hir.Package) (*Module, *Report, []LowerDiag) {
 			}
 			l.funcNames[name] = id
 		case hir.KLet:
-			if os.Getenv("NOLANG_MIR_DEBUG") != "" {
-				fmt.Fprintf(os.Stderr, "[mir-dbg] top KLet name=%q moduleConst=%v\n", pkg.Str(n.S), n.Has(hir.FlagModuleConst))
-			}
 			// A top-level `let` is registered as a lazily-materialized module
 			// global when EITHER:
 			//   (a) the package is a real module (explicit `fn main`), so every
@@ -361,14 +354,6 @@ func LowerHIR(pkg *hir.Package) (*Module, *Report, []LowerDiag) {
 	}
 	if entry != "" {
 		l.worklist = append(l.worklist, entry)
-	}
-	if debugLower() {
-		names := make([]string, 0, len(l.funcNames))
-		for n := range l.funcNames {
-			names = append(names, n)
-		}
-		sort.Strings(names)
-		fmt.Fprintf(os.Stderr, "[MIR] %d top-level funcs: %v\n", len(names), names)
 	}
 	for len(l.worklist) > 0 {
 		name := l.worklist[0]
@@ -586,6 +571,12 @@ func (l *lowerer) inferredTypeOf(n *hir.Node) TypeID {
 	if raw == "" || raw == "void" {
 		return l.voidType
 	}
+	// Enum types lower to i64; map them explicitly so enum-typed values
+	// (`mc = e.code()`, `code.io`) get a real scalar type instead of collapsing
+	// to void.
+	if l.isEnumTypeName(raw) {
+		return l.b.Type("i64")
+	}
 	return l.b.Type(raw)
 }
 
@@ -662,6 +653,73 @@ func (l *lowerer) isInlineableLetType(raw string) bool {
 			return true
 		}
 	}
+	// Enum types (`code`, `file-mode`, `file-perm`) lower to i64 and inline
+	// cleanly into the synthetic `main`.
+	if l.isEnumTypeName(raw) {
+		return true
+	}
+	return false
+}
+
+// isEnumTypeName reports whether raw is an enum type name. It accepts both the
+// bare name ("code") and a namespaced form ("err.code") by checking the last
+// dot-separated segment, so `code` and `err.code`-annotated values both match.
+func (l *lowerer) isEnumTypeName(raw string) bool {
+	if raw == "" || len(l.enumVariants) == 0 {
+		return false
+	}
+	if _, ok := l.enumVariants[raw]; ok {
+		return true
+	}
+	if i := strings.LastIndex(raw, "."); i >= 0 {
+		if _, ok := l.enumVariants[raw[i+1:]]; ok {
+			return true
+		}
+	}
+	return false
+}
+
+// enumVariantValue resolves an enum variant reference ("code.io") to its
+// zero-based discriminant value. The receiver segment must be a known enum name.
+func (l *lowerer) enumVariantValue(key string) (int64, bool) {
+	if l.enumVariants == nil {
+		return 0, false
+	}
+	if i := strings.LastIndex(key, "."); i >= 0 {
+		enum := key[:i]
+		variant := key[i+1:]
+		if variants, ok := l.enumVariants[enum]; ok {
+			for idx, v := range variants {
+				if v == variant {
+					return int64(idx), true
+				}
+			}
+		}
+	}
+	return 0, false
+}
+
+// letValueIsCall reports whether a top-level KLet's value expression is a
+// function call (rather than a literal/struct-literal initializer).
+func (l *lowerer) letValueIsCall(n *hir.Node) bool {
+	for _, c := range l.pkg.Children(n.Id) {
+		cn := l.pkg.Node(c)
+		return cn != nil && cn.Kind == hir.KCall
+	}
+	return false
+}
+
+// isUnsafeInlineType reports whether a top-level `let` of the given type should
+// NOT be inlined into the synthetic `main` because the v1 codegen cannot emit it
+// as a statement (vec/option/slice element codegen is incomplete). Scalars,
+// structs and enums inline safely.
+func (l *lowerer) isUnsafeInlineType(raw string) bool {
+	switch {
+	case raw == "vec", raw == "option", raw == "%vec", raw == "%option":
+		return true
+	case strings.HasPrefix(raw, "[]"), strings.HasPrefix(raw, "%vec"), strings.HasPrefix(raw, "%option"):
+		return true
+	}
 	return false
 }
 
@@ -705,16 +763,6 @@ func (l *lowerer) letTypeRaw(n *hir.Node) string {
 func (l *lowerer) lowerFunction(name string, hirID int32) {
 	l.lowered[name] = true
 	n := l.pkg.Node(hirID)
-	if os.Getenv("NOLANG_MIR_DEBUG") != "" {
-		var ks []string
-		for _, c := range l.pkg.Children(hirID) {
-			cn := l.pkg.Node(c)
-			if cn != nil {
-				ks = append(ks, fmt.Sprintf("%s(S=%q,T=%q)", hir.KindNames[cn.Kind], l.pkg.Str(cn.S), l.pkg.Str(cn.Type)))
-			}
-		}
-		fmt.Fprintf(os.Stderr, "[mir-dbg] FUNC %q children: %v\n", name, ks)
-	}
 
 	var params []ValueID
 	var paramNames []string
@@ -777,6 +825,25 @@ func (l *lowerer) lowerFunction(name string, hirID int32) {
 		}
 	}
 
+	// Zero-initialize scalar result parameters so a result that is only assigned
+	// inside a conditional branch still holds its type's default (false/0/null)
+	// on the fall-through path. Without this, `error.is` (which sets
+	// `yes = true` only in the true branch) reads uninitialized memory in the
+	// else path and can return the wrong answer (e.g. `e.is(code.not-found)`
+	// reporting true).
+	//
+	// Only scalar kinds (int/bool/char/pointer) are safe to zero here with an
+	// integer constant. Aggregate result types (str, struct, slice, array,
+	// option, map) must keep the caller-allocated slot untouched — a "constant 0
+	// of aggregate type" store would corrupt the returned value (see str.fields).
+	for i := range resultNames {
+		switch l.mod.Type(results[i]).Kind {
+		case KindInt, KindBool, KindChar, KindPtr:
+			zero := l.b.EmitInt(OpConst, results[i], 0, "")
+			l.b.EmitMoveInto(resultVals[i], zero)
+		}
+	}
+
 	bodyID := l.slot(hirID, "body")
 	if bodyID != hir.NoID {
 		l.lowerBlock(bodyID)
@@ -825,9 +892,6 @@ func (l *lowerer) lowerStmt(id int32) {
 	if n == nil {
 		return
 	}
-	if os.Getenv("NOLANG_MIR_DEBUG") != "" {
-		fmt.Fprintf(os.Stderr, "[mir-dbg] STMT kind=%s id=%d\n", hir.KindNames[n.Kind], id)
-	}
 	switch n.Kind {
 	case hir.KLet:
 		name := l.pkg.Str(n.S)
@@ -869,11 +933,6 @@ func (l *lowerer) lowerStmt(id int32) {
 				childID = id
 			}
 		}
-		if os.Getenv("NOLANG_MIR_DEBUG") != "" && childID != hir.NoID {
-			if cn := l.pkg.Node(childID); cn != nil {
-				fmt.Fprintf(os.Stderr, "[mir-dbg] LET name=%q val=%d childKind=%v\n", name, val, cn.Kind)
-			}
-		}
 		if val != NoVal {
 			// txt is a fixed 256-byte stack struct ({ [255 x i8] data, i8 len }),
 			// distinct from the heap-backed %str-long. When a `let x:txt = <str>`
@@ -911,13 +970,6 @@ func (l *lowerer) lowerStmt(id int32) {
 		// `let x = y` (scalar) is a copy, not a live view of `y`. Owned
 		// values keep the alias (view) semantics the memory analysis already
 		// handles with a single drop for the shared slot.
-		if os.Getenv("NOLANG_MIR_DEBUG") != "" {
-			if dbgcn := l.pkg.Node(childID); dbgcn != nil {
-				_, dbgIsLocal := l.locals[l.pkg.Str(dbgcn.S)]
-				fmt.Fprintf(os.Stderr, "[mir-dbg] NEWBIND name=%q childKind=%v childName=%q isLocal=%v val=%d owned=%v\n",
-					name, hir.KindNames[dbgcn.Kind], l.pkg.Str(dbgcn.S), dbgIsLocal, val, l.isOwnedLocal(val))
-			}
-		}
 		if cn := l.pkg.Node(childID); cn != nil && cn.Kind == hir.KIdent {
 				if _, isLocal := l.locals[l.pkg.Str(cn.S)]; isLocal && !l.isOwnedLocal(val) {
 					typ := l.valueTypeOf(val)
@@ -1025,9 +1077,6 @@ func (l *lowerer) lowerIf(n *hir.Node) {
 	condID := l.slot(n.Id, "cond")
 	thenID := l.slot(n.Id, "then")
 	elseID := l.slot(n.Id, "else")
-	if os.Getenv("NOLANG_MIR_DEBUG") != "" {
-		fmt.Fprintf(os.Stderr, "[mir-dbg] LOWERIF cond=%d then=%d else=%d curFunc=%s\n", condID, thenID, elseID, l.curFuncName())
-	}
 
 	// Enclosing continuation: the merge block of the nearest enclosing
 	// control-flow construct (pushed by the caller's lowerIf/lowerFor). When
@@ -1608,9 +1657,6 @@ func (l *lowerer) lowerExpr(id int32) ValueID {
 		// the last resort before declaring the identifier unresolved, so it
 		// must come AFTER the locals lookup above (a local shadow wins).
 		if _, isGlobal := l.globals[name]; isGlobal {
-			if os.Getenv("NOLANG_MIR_DEBUG") != "" {
-				fmt.Fprintf(os.Stderr, "[mir-dbg] KIdent %q -> global, gtype=%q\n", name, l.globalTypes[name])
-			}
 			return l.lowerGlobalRef(name)
 		}
 		// unresolved: create a placeholder value of the inferred type so later
@@ -1734,9 +1780,6 @@ func (l *lowerer) lowerExpr(id int32) ValueID {
 			rv = l.lowerExpr(lr[1])
 		}
 		resTyp := l.typeOfNode(n)
-		if os.Getenv("NOLANG_MIR_DEBUG") != "" {
-			fmt.Fprintf(os.Stderr, "[mir-dbg] INFIX op=%v resTyp=%v lv=%d rv=%d\n", op, resTyp, lv, rv)
-		}
 		if isCmp {
 			resTyp = l.b.Type("bool")
 		} else if resTyp == l.voidType || resTyp == NoType {
@@ -1774,6 +1817,27 @@ func (l *lowerer) lowerExpr(id int32) ValueID {
 	case hir.KCall:
 		return l.lowerCall(n)
 	case hir.KDot:
+		// Enum variant reference (`code.io`, `code.not-found`): the receiver is
+		// an enum type and the field is a variant name. Lower to the variant's
+		// i64 discriminant constant instead of a field read (which would be a
+		// void op on an enum type and produce `icmp eq void undef, undef`).
+		var recvID int32
+		for _, c := range l.pkg.Children(id) {
+			recvID = c
+			break
+		}
+		if recvID != hir.NoID {
+			rn := l.pkg.Node(recvID)
+			if rn != nil && rn.Kind == hir.KIdent {
+				recvName := l.pkg.Str(rn.S)
+				if l.isEnumTypeName(recvName) {
+					fieldName := l.pkg.Str(n.S)
+					if v, ok := l.enumVariantValue(recvName + "." + fieldName); ok {
+						return l.b.EmitInt(OpConst, l.b.Type("i64"), v, "")
+					}
+				}
+			}
+		}
 		// Standalone field/property access `recv.field` (NOT a method call — a
 		// method call has the KDot as the KCall's `fn` slot and is handled in
 		// lowerCall). Lowers to OpGetField with the field name carried in Str.
@@ -2005,9 +2069,6 @@ func (l *lowerer) lowerDotRead(n *hir.Node) ValueID {
 		return NoVal
 	}
 	fieldT := l.b.Type(fieldTypeRaw)
-	if os.Getenv("NOLANG_MIR_DEBUG") != "" {
-		fmt.Fprintf(os.Stderr, "[mir-dbg] GETFIELD recvRaw=%q field=%q fieldTypeRaw=%q fieldT=%v\n", recvRaw, fieldName, fieldTypeRaw, fieldT)
-	}
 	v := l.b.Emit(OpGetField, fieldT, []ValueID{recvV}, "")
 	// carry the field name on the instruction for codegen index resolution
 	l.mod.Insts[len(l.mod.Insts)-1].Str = fieldName
@@ -2103,13 +2164,7 @@ func (l *lowerer) resolveCallee(n *hir.Node) (callee string, recvV ValueID) {
 						if ty := l.mod.Type(recvT); ty != nil && ty.Raw != "" {
 							recvTypeName = strings.TrimPrefix(ty.Raw, "?")
 						}
-						if os.Getenv("NOLANG_MIR_DEBUG") != "" {
-							fmt.Fprintf(os.Stderr, "[mir-dbg] resolveCallee IMPLICIT-SELF recvName=%q recvTypeName=%q curRecv=%d recvT=%d\n", recvName, recvTypeName, l.curRecv, recvT)
-						}
 						return recvTypeName + "." + method, l.curRecv
-					}
-					if os.Getenv("NOLANG_MIR_DEBUG") != "" {
-						fmt.Fprintf(os.Stderr, "[mir-dbg] resolveCallee RECEIVERLESS recvName=%q\n", recvName)
 					}
 					return recvName + "." + method, NoVal
 				}
@@ -2660,14 +2715,6 @@ func (l *lowerer) lowerAssignNode(assignID int32) ValueID {
 		return v
 	case hir.KDot:
 		// obj.field = v  -> set field of struct/option receiver.
-		if os.Getenv("NOLANG_MIR_DEBUG") != "" {
-			var rc int32
-			for _, c := range l.pkg.Children(target) {
-				rc = c
-				break
-			}
-			fmt.Fprintf(os.Stderr, "[mir-dbg] ASSIGN-KDot tn.S=%q tnKind=%v recvChild=%d\n", l.pkg.Str(tn.S), tn.Kind, rc)
-		}
 		var recvID int32
 		for _, c := range l.pkg.Children(target) {
 			recvID = c

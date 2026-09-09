@@ -2,6 +2,7 @@ package llvm
 
 import (
 	"fmt"
+	"math/big"
 	"os"
 	"strconv"
 	"strings"
@@ -593,9 +594,54 @@ func (g *Generator) generateConditionAsI1(sb *strings.Builder, cond parser.Expre
 	return reg
 }
 
+// generateBranchLastValue 產出 if 分支（then/else）最後一條陳述的值。
+//
+// 分支最後一條陳述若為 ExpressionStatement，generateIfExpression 直接以
+// generateExprWithSB 求值（以取得 if 運算式的 phi 值），而非走 generateStatement。
+// 因此必須在此手動套用該陳述上的 #{overflow = ...} 註解：否則臂體內的整數運算
+// （如 `cond -> out[pos] = d + 48` 中的 d + 48）會退回預設 option 模式，
+// 產生 %option 後被 trunc 到 i8 而讓 LLVM 報 invalid cast 錯誤。
+// 非 ExpressionStatement 的最後一條陳述照舊以 generateStatement 產出（不回傳值）。
+func (g *Generator) generateBranchLastValue(sb *strings.Builder, last parser.Statement) string {
+	if es, ok := last.(*parser.ExpressionStatement); ok {
+		prevOverflow := g.curOverflowMode
+		if stmtMode := g.overflowModeFromNode(last); stmtMode != "" {
+			g.curOverflowMode = stmtMode
+		}
+		v := g.generateExprWithSB(sb, es.Expression)
+		g.curOverflowMode = prevOverflow
+		return v
+	}
+	g.generateStatement(sb, last)
+	return ""
+}
+
 func (g *Generator) generateIfExpression(sb *strings.Builder, expr *parser.IfExpression) string {
 	g.tmpIdx++
 	labelId := g.tmpIdx
+
+	// 裸配對臂（cond -> body）的 #{overflow = ...} 註解須套用至「整個」分支，
+	// 包含條件與本體：條件內的整數運算（如 `n >= 0 - 128` 中的 `0 - 128`）
+	// 同樣需要 wrap 模式，否則會退回預設 option 模式產生 %option 型別，
+	// 在後續比較/窄型別截斷處讓 LLVM 報 invalid cast 錯誤。
+	// consequence / alternative 區塊若攜帶 overflow 註解，即代表此 if 源自帶
+	// 註解的裸配對臂（或其 then/else 區塊本身帶註解），其模式對條件與本體一體適用。
+	// 因此在生成條件之前設定，並於整個 if 結束（return 前）還原。
+	prevIfOverflow := g.curOverflowMode
+	// 裸配對臂（cond -> body）本身可能攜帶 #{overflow = ...} 註解（由 block-scoped
+	// overflow 傳播合併到 IfExpression 陳述節點）。須優先採用，才能讓條件內的整數
+	// 運算（如 `x == .p.len-bytes() - 1` 中的減法）套用正確模式，否則會退回預設
+	// option 模式產生 %option 型別，在後續比較處讓 LLVM 報型別錯誤。
+	ifOverflowMode := g.overflowModeFromNode(expr)
+	if ifOverflowMode == "" {
+		ifOverflowMode = g.overflowModeFromNode(expr.Consequence)
+	}
+	if ifOverflowMode == "" {
+		ifOverflowMode = g.overflowModeFromNode(expr.Alternative)
+	}
+	if ifOverflowMode != "" {
+		g.curOverflowMode = ifOverflowMode
+	}
 
 	// 若條件是 InfixExpression（比較運算），直接取 i1
 	cond := ""
@@ -667,11 +713,7 @@ func (g *Generator) generateIfExpression(sb *strings.Builder, expr *parser.IfExp
 			g.generateStatement(sb, expr.Consequence.Statements[i])
 		}
 		last := expr.Consequence.Statements[len(expr.Consequence.Statements)-1]
-		if es, ok := last.(*parser.ExpressionStatement); ok {
-			thenVal = g.generateExprWithSB(sb, es.Expression)
-		} else {
-			g.generateStatement(sb, last)
-		}
+		thenVal = g.generateBranchLastValue(sb, last)
 	}
 	// 若 then 分支的最後一個表達式是 void 函數呼叫（用結果參數），
 	// 則 thenVal 為空，需要從結果參數載入作為 phi 值。
@@ -745,11 +787,7 @@ func (g *Generator) generateIfExpression(sb *strings.Builder, expr *parser.IfExp
 			g.generateStatement(sb, expr.Alternative.Statements[i])
 		}
 		last := expr.Alternative.Statements[len(expr.Alternative.Statements)-1]
-		if es, ok := last.(*parser.ExpressionStatement); ok {
-			elseVal = g.generateExprWithSB(sb, es.Expression)
-		} else {
-			g.generateStatement(sb, last)
-		}
+		elseVal = g.generateBranchLastValue(sb, last)
 	}
 	if elseVal == "" && g.curFuncRetName != "" && !g.blockTerminated {
 		elseLoad := g.tmpReg("if.else.load")
@@ -883,6 +921,9 @@ func (g *Generator) generateIfExpression(sb *strings.Builder, expr *parser.IfExp
 		sb.WriteString(fmt.Sprintf("%s%s = phi %s [%s, %s], [%s, %s]\n",
 			g.indent(), phiReg, toLLVMType(phiType), thenVal, thenPred, elseVal, elsePred))
 	}
+
+	// 還原進入 if 前的 overflow 模式（見函數開頭的 prevIfOverflow）。
+	g.curOverflowMode = prevIfOverflow
 
 	return phiReg
 }
@@ -1632,8 +1673,36 @@ func (g *Generator) exprResultLLVMType(expr parser.Expression) string {
 				return t
 			}
 		}
+	case *parser.BooleanLiteral:
+		return "bool"
+	case *parser.IntegerLiteral:
+		return "i64"
+	case *parser.FloatLiteral:
+		return "f64"
+	case *parser.CharLiteral:
+		return "char"
 	case *parser.DotExpression:
 		recvType := g.exprResultLLVMType(v.Receiver)
+		// ?T receiver: strip the %option wrapper to reach the inner struct's
+		// field type. `opt.field` is unwrap-then-access; the inner type is
+		// recovered from optionInnerTypes (populated for option variables).
+		if recvType == "%option" {
+			if recvIdent, ok := v.Receiver.(*parser.Identifier); ok {
+				if inner := g.optionInnerTypes[recvIdent.Value]; inner != "" {
+					innerStructTy := strings.TrimPrefix(inner, "%")
+					if fields, _ := g.resolveStructFields(innerStructTy); fields != nil {
+						for _, f := range fields {
+							if f.name == v.Property {
+								if strings.HasPrefix(f.typ, "[") {
+									return "%arr"
+								}
+								return f.typ
+							}
+						}
+					}
+				}
+			}
+		}
 		if g.isStructLLVMType(recvType) {
 			structName := strings.TrimPrefix(recvType, "%")
 			// D3 fix: use resolveStructFields to handle module-prefixed struct names
@@ -2047,13 +2116,33 @@ func (g *Generator) exprResultLLVMType(expr parser.Expression) string {
 								return t
 							}
 						}
-						if g.funcResultLLVMType != nil {
-							if ts, ok := g.funcResultLLVMType[sanitizedName]; ok && len(ts) == 1 {
-								return ts[0]
-							}
-						}
+				if g.funcResultLLVMType != nil {
+					if ts, ok := g.funcResultLLVMType[sanitizedName]; ok && len(ts) == 1 {
+						return ts[0]
 					}
 				}
+			}
+			// Builtin methods (e.g. bool.to-str, i64.to-str, f64.to-str,
+			// char.to-str) are not recorded in funcRetTypes/funcResultLLVMType.
+			// Without this, literal/non-Identifier receiver method calls
+			// (e.g. true.to-str(), 3.14.to-str()) resolve to "" and the caller
+			// mis-classifies the %str-long result as an i64. Mirror the
+			// Identifier-receiver branch above.
+			if m := builtin.FindBuiltinMethod(shortName); m != nil && len(m.Return) > 0 {
+				if m.Return[0] == parser.TypeStr {
+					return "%str-long"
+				}
+				if m.Return[0] == parser.TypeF64 {
+					return "double"
+				}
+				if _, isSlice := m.Return[0].(*parser.SliceType); isSlice {
+					return "%vec"
+				}
+				if structTy := g.builtinStructReturnType(m); structTy != "" {
+					return structTy
+				}
+			}
+		}
 			}
 		}
 	case *parser.RunExpression:
@@ -2206,38 +2295,60 @@ func (g *Generator) generateDotExpression(sb *strings.Builder, expr *parser.DotE
 		}
 	}
 
+	// ?T receiver: strip the %option wrapper to reach the inner struct's field.
+	// The %option aggregate is { i64 tag, <inner>* payload }, so field 1 holds a
+	// pointer to the heap-allocated inner value. GEP+load that payload pointer,
+	// then let the normal struct field-resolution below GEP into the inner type.
+	// (Identifier receiver; covers the common `opt.field` form.)
+	if structName == "option" && varName != "" {
+		inner := ""
+		if g.optionInnerTypes != nil {
+			inner = g.optionInnerTypes[varName]
+		}
+		if inner == "" {
+			if sb != nil {
+				pos := expr.Pos()
+				fn := g.curFuncName
+				if fn == "" {
+					fn = "?"
+				}
+				g.AddCodegenError(fmt.Sprintf("cannot access field %q on option value %q: inner type unknown (func %s, line %d)", fieldName, varName, fn, pos.Line))
+			}
+			return "0"
+		}
+		innerStructTy := "%" + strings.TrimPrefix(inner, "%")
+		optVar := g.varAddr(varName)
+		payloadGEP := g.tmpReg("opt.payload.gep")
+		sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%option, %%option* %s, i32 0, i32 1\n", g.indent(), payloadGEP, optVar))
+		payloadLoad := g.tmpReg("opt.payload")
+		sb.WriteString(fmt.Sprintf("%s%s = load %s*, %s** %s\n", g.indent(), payloadLoad, innerStructTy, innerStructTy, payloadGEP))
+		structName = strings.TrimPrefix(inner, "%")
+		basePtr = payloadLoad
+	}
+
 	// Slice view .len: return computed view length directly (no struct access)
 	if fieldName == "len" && varName != "" && g.isSliceViewVar(varName) {
 		return g.sliceViewLen(varName)
 	}
 
-	// Built-in str .len access
-	// .len 需要字串的指標（%str-long*），而非載入後的值。
-	// 因此對鏈式 receiver 使用 generateExprPtr 取得指標，避免 load。
-	if fieldName == "len" && sb != nil {
+	// Migration-discovery diagnostics (NON-FATAL): record every deprecated bare
+	// `.len` property usage (str → .len-bytes(); container → .len()) but still
+	// emit valid IR via the generic field-access path below, so `no build`
+	// completes and the error locations can be harvested for migration.
+	// NOTE: bare `.len` on str/vec/arr/slice is generated as a direct struct
+	// field access (prior-binary behavior). The hard-reject migration to
+	// recv.len() is intentionally NOT enabled yet: per the in-tree note
+	// ("Re-enable as a hard error only after src/std/*.no is fully migrated"),
+	// src/std is still mid-migration and its own `.len` method bodies
+	// (e.g. `[]byte.len = () (out i64) { out = .len }`) plus several container
+	// helpers still require bare `.len` — enabling the hard error breaks std
+	// compilation. Re-add the reject only after that migration lands.
+
+	// Built-in str .len-bytes access: byte length of the underlying UTF-8 buffer
+	// (%str-long.len field). Mirrors the old bare .len semantics.
+	if fieldName == "len-bytes" && sb != nil {
 		if structName == "str-long" {
-			ptr := ""
-			if varName != "" {
-				ptr = g.varAddr(varName)
-			} else {
-				ptr = g.generateExprPtr(sb, expr.Receiver)
-				// generateExprPtr doesn't support CallExpression receivers (e.g. arg(i).len).
-				// Fall back to materializing the value into a temp alloca.
-				if ptr == "" {
-					val := g.generateExprWithSB(sb, expr.Receiver)
-					if val != "" && val != "0" {
-						if g.isStrPtrReg(val) {
-							ptr = val
-						} else {
-							tmpAlloca := g.tmpReg("strlen.recv")
-							sb.WriteString(fmt.Sprintf("%s%s = alloca %%str-long\n", g.indent(), tmpAlloca))
-							sb.WriteString(fmt.Sprintf("%sstore %%str-long %s, %%str-long* %s\n", g.indent(), val, tmpAlloca))
-							ptr = tmpAlloca
-						}
-					}
-				}
-			}
-			return g.extractStrLen(sb, ptr)
+			return g.generateStrByteLen(sb, expr.Receiver)
 		}
 	}
 
@@ -2336,6 +2447,51 @@ func (g *Generator) generateExprPtr(sb *strings.Builder, expr parser.Expression)
 			}
 			if sb != nil {
 				basePtr = g.generateExprPtr(sb, v.Receiver)
+			}
+		}
+		// ?T receiver: strip the %option wrapper to reach the inner struct's
+		// field pointer. The %option aggregate is { i64 tag, <inner>* payload },
+		// so field 1 holds a pointer to the heap-allocated inner value. GEP+load
+		// that payload pointer, then GEP into the inner struct's field and return
+		// the field address (so callers like emitDeepClone get a real pointer
+		// rather than an empty one).
+		if structName == "option" {
+			inner := ""
+			if recvName != "" {
+				if g.optionInnerTypes != nil {
+					inner = g.optionInnerTypes[recvName]
+				}
+			}
+			if inner != "" {
+				innerStructTy := strings.TrimPrefix(inner, "%")
+				optPtr := ""
+				if recvName != "" {
+					optPtr = g.varAddr(recvName)
+				} else if sb != nil {
+					optPtr = g.generateExprPtr(sb, v.Receiver)
+				}
+				if optPtr != "" {
+					payloadGEP := g.tmpReg("opt.ptr.gep")
+					if sb != nil {
+						sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%option, %%option* %s, i32 0, i32 1\n", g.indent(), payloadGEP, optPtr))
+					}
+					payloadLoad := g.tmpReg("opt.ptr")
+					if sb != nil {
+						sb.WriteString(fmt.Sprintf("%s%s = load %%%s*, %%%s** %s\n", g.indent(), payloadLoad, innerStructTy, innerStructTy, payloadGEP))
+					}
+					if fields, _ := g.resolveStructFields(innerStructTy); fields != nil {
+						for i, f := range fields {
+							if f.name == v.Property {
+								reg := g.tmpReg("opt.field.ptr")
+								if sb != nil {
+									sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%%s, %%%s* %s, i32 0, i32 %d\n",
+										g.indent(), reg, innerStructTy, innerStructTy, payloadLoad, i))
+								}
+								return reg
+							}
+						}
+					}
+				}
 			}
 		}
 		// D3 fix: use resolveStructFields to handle module-prefixed struct names
@@ -2571,6 +2727,37 @@ func (g *Generator) extractStrLen(sb *strings.Builder, strPtr string) string {
 		sb.WriteString(fmt.Sprintf("%s%s = load i64, i64* %s\n", g.indent(), lenLoad, lenGEP))
 	}
 	return lenLoad
+}
+
+// generateStrByteLen returns the byte length (底层 UTF-8 缓冲区长度) of a str
+// expression, mirroring the old bare .len field access. Handles Identifier
+// receivers (self / variables, already in varTypes as %str-long) and arbitrary
+// expressions (literals, call results) by materializing them into a temp alloca.
+func (g *Generator) generateStrByteLen(sb *strings.Builder, recv parser.Expression) string {
+	if id, ok := recv.(*parser.Identifier); ok {
+		if t, ok := g.varTypes[id.Value]; ok && t == "%str-long" {
+			return g.extractStrLen(sb, g.varAddr(id.Value))
+		}
+	}
+	// 一般接收者：先嘗試取得指標；失敗則具體化為臨時 alloca 再取 .len 欄位。
+	ptr := g.generateExprPtr(sb, recv)
+	if ptr == "" {
+		val := g.generateExprWithSB(sb, recv)
+		if val != "" && val != "0" {
+			if g.isStrPtrReg(val) {
+				// val 已是 %str-long* 指標（如字串字面量 / 轉換結果），直接使用。
+				ptr = val
+			} else {
+				tmp := g.tmpReg("strlen.recv")
+				if sb != nil {
+					sb.WriteString(fmt.Sprintf("%s%s = alloca %%str-long\n", g.indent(), tmp))
+					sb.WriteString(fmt.Sprintf("%sstore %%str-long %s, %%str-long* %s\n", g.indent(), val, tmp))
+				}
+				ptr = tmp
+			}
+		}
+	}
+	return g.extractStrLen(sb, ptr)
 }
 
 // extractStrCap extracts the i64 cap (field 1) from a %str-long* pointer.
@@ -4434,7 +4621,41 @@ func (g *Generator) generateIndexExpression(sb *strings.Builder, expr *parser.In
 // from the HIR KIdent node (n.S) and the index emitted through the seam, keeping
 // AST and HIR output byte-identical. expr is still used only for the compile-time
 // bounds-check decision canSkipBoundsCheck(varName, expr.Index).
+// indexExtendOp returns the LLVM extension opcode ("zext"/"sext") for widening a
+// loaded array element to i64. For raw array parameters (e.g. [32]byte whose LLVM
+// type is [32 x i8]*) extractArrayElemType yields the signed LLVM type "i8" and
+// loses the Nolang-level u8 (unsigned) distinction, so blindly calling
+// widenExtOp(llvmElemType) produces an incorrect "sext". We therefore prefer the
+// element type recorded in arrayElemTypes (which is derived from the Nolang source
+// type, e.g. "u8") when it is a narrow integer, ensuring [N]byte is zero-extended
+// rather than sign-extended. All other cases fall back to widenExtOp(llvmElemType).
+func (g *Generator) indexExtendOp(varName, llvmElemType string) string {
+	if et, ok := g.arrayElemTypes[varName]; ok {
+		switch et {
+		case "u8", "u16", "u32", "u64", "u128", "i8", "i16", "i32", "i1":
+			return widenExtOp(et)
+		}
+	}
+	return widenExtOp(llvmElemType)
+}
+
 func (g *Generator) generateIndexCore(sb *strings.Builder, expr *parser.IndexExpression, varName, idx string) string {
+	// Unwrap an %option *value* used directly as an index (e.g. `a[off + 1]` when
+	// the enclosing context uses option overflow mode, which makes `off + 1` an
+	// `%option` value like `%addopt.final`). Without this, the option struct is
+	// passed straight into @nolang.bounds_check / the index GEP, producing the
+	// verifier error "%option = type { i64, i64 } but expected 'i64'".
+	// Named %option variables are already unwrapped to i64 by the identifier
+	// emitter, so their SSA type is i64 and this branch is skipped.
+	if strings.HasPrefix(idx, "%") && g.ssaTypes != nil {
+		if t, ok := g.ssaTypes[idx]; ok && t == "%option" {
+			unwrapReg := g.tmpReg("idx.opt.unwrap")
+			if sb != nil {
+				sb.WriteString(fmt.Sprintf("%s%s = extractvalue %%option %s, 1\n", g.indent(), unwrapReg, idx))
+			}
+			idx = unwrapReg
+		}
+	}
 	// Slice view indexing: view[i] → use adjusted data pointer + offset, no struct access
 	if varName != "" && g.isSliceViewVar(varName) {
 		view := g.sliceViews[varName]
@@ -4485,10 +4706,16 @@ func (g *Generator) generateIndexCore(sb *strings.Builder, expr *parser.IndexExp
 	if varName != "" {
 		if t, ok := g.varTypes[varName]; ok && t == "%str-long" {
 			strPtr := g.varAddr(varName)
-			// Bounds check: load str len and verify idx
 			strLen := g.extractStrLen(sb, strPtr)
-			g.emitBoundsCheck(sb, idx, strLen)
 			dataPtr := g.extractStrDataPtr(sb, strPtr)
+			// 未被證明為純 ASCII 時，s[i] 語義是「第 i 個字符（碼點）」：
+			// 必須從緩衝區頭部前向迭代 UTF-8 序列，時間複雜度 O(n)。
+			// 已證明純 ASCII 時，一個位元組恰好等於一個碼點，可直接定址，O(1)。
+			if !g.asciiVars[varName] {
+				return g.emitStrCharAtCall(sb, dataPtr, strLen, idx)
+			}
+			// Bounds check: 僅 O(1) 路徑適用（此時 idx 既是位元組也是碼點下標）
+			g.emitBoundsCheck(sb, idx, strLen)
 			charGEP := g.tmpReg("str-longidx.gep")
 			charLoad := g.tmpReg("str-longidx.val")
 			charZext := g.tmpReg("str-longidx.zext")
@@ -4499,6 +4726,52 @@ func (g *Generator) generateIndexCore(sb *strings.Builder, expr *parser.IndexExp
 					g.indent(), charLoad, charGEP))
 				sb.WriteString(fmt.Sprintf("%s%s = zext i8 %s to i64\n",
 					g.indent(), charZext, charLoad))
+			}
+			return charZext
+		}
+	}
+
+	// txt indexing: txt 是固定 256 字節結構 { [255 x i8] data, i8 len }。
+	// 直接 GEP 到 data 欄位（field 0），bitcast 成 i8*，再用單一下標 GEP
+	// （與 %str-long 路徑一致），這樣迴圈變數索引（如 .[i + j]）能像 str 一樣
+	// 正確運作（原先的兩段式 GEP 對 phi 索引會產生錯誤 IR）。
+	if varName != "" {
+		if t, ok := g.varTypes[varName]; ok && t == "%txt" {
+			txtRef := llvmVarRef(varName)
+			if g.globalVars != nil && g.globalVars[varName] && !(g.funcLocalNames != nil && g.funcLocalNames[varName]) {
+				txtRef = llvmGlobalRef(varName)
+			}
+			// GEP 到 data 欄位（field 0）→ [255 x i8]*
+			dataGEP := g.tmpReg("txt.idx.data.gep")
+			if sb != nil {
+				sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%txt, %%txt* %s, i32 0, i32 0\n",
+					g.indent(), dataGEP, txtRef))
+			}
+			dataPtr := g.tmpReg("txt.idx.data")
+			if sb != nil {
+				sb.WriteString(fmt.Sprintf("%s%s = bitcast [255 x i8]* %s to i8*\n", g.indent(), dataPtr, dataGEP))
+			}
+			// 未被證明為純 ASCII 時走 O(n) UTF-8 迭代（與 str 路徑同款）；
+			// 已證明時一位元組 == 一碼點，落到下面的 O(1) 直接定址。
+			if !g.asciiVars[varName] {
+				lenGEP := g.tmpReg("txt.idx.len.gep")
+				lenLoad := g.tmpReg("txt.idx.len.val")
+				lenZext := g.tmpReg("txt.idx.len.zext")
+				if sb != nil {
+					sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%txt, %%txt* %s, i32 0, i32 1\n",
+						g.indent(), lenGEP, txtRef))
+					sb.WriteString(fmt.Sprintf("%s%s = load i8, i8* %s\n", g.indent(), lenLoad, lenGEP))
+					sb.WriteString(fmt.Sprintf("%s%s = zext i8 %s to i64\n", g.indent(), lenZext, lenLoad))
+				}
+				return g.emitStrCharAtCall(sb, dataPtr, lenZext, idx)
+			}
+			charGEP := g.tmpReg("txt.idx.gep")
+			charLoad := g.tmpReg("txt.idx.val")
+			charZext := g.tmpReg("txt.idx.zext")
+			if sb != nil {
+				sb.WriteString(fmt.Sprintf("%s%s = getelementptr i8, i8* %s, i64 %s\n", g.indent(), charGEP, dataPtr, idx))
+				sb.WriteString(fmt.Sprintf("%s%s = load i8, i8* %s\n", g.indent(), charLoad, charGEP))
+				sb.WriteString(fmt.Sprintf("%s%s = zext i8 %s to i64\n", g.indent(), charZext, charLoad))
 			}
 			return charZext
 		}
@@ -4689,17 +4962,17 @@ func (g *Generator) generateIndexCore(sb *strings.Builder, expr *parser.IndexExp
 					if g.ssaTypes != nil && g.isStructLLVMType(llvmElemType) {
 						g.ssaTypes[loadReg] = llvmElemType
 					}
-					if llvmElemType == "i8" || llvmElemType == "u8" {
-						zextReg := g.tmpReg("idx.zext")
-						op := widenExtOp(llvmElemType)
-						if sb != nil {
-							sb.WriteString(fmt.Sprintf("%s%s = %s i8 %s to i64\n", g.indent(), zextReg, op, loadReg))
-						}
-						return zextReg
+				if llvmElemType == "i8" || llvmElemType == "u8" {
+					zextReg := g.tmpReg("idx.zext")
+					op := g.indexExtendOp(varName, llvmElemType)
+					if sb != nil {
+						sb.WriteString(fmt.Sprintf("%s%s = %s i8 %s to i64\n", g.indent(), zextReg, op, loadReg))
 					}
-					return loadReg
+					return zextReg
 				}
-			} else {
+				return loadReg
+			}
+		} else {
 				// Raw array type (e.g. [12 x [16 x i64]] for 2D array constants)
 				elemType := extractArrayElemType(t)
 				if elemType != "" {
@@ -4785,7 +5058,7 @@ func (g *Generator) generateIndexCore(sb *strings.Builder, expr *parser.IndexExp
 	// 無符號（u8）使用 zext，有符號（i8）使用 sext
 	if llvmElemType == "i8" || llvmElemType == "u8" {
 		zextReg := g.tmpReg("idx.zext")
-		op := widenExtOp(llvmElemType)
+		op := g.indexExtendOp(varName, llvmElemType)
 		if sb != nil {
 			sb.WriteString(fmt.Sprintf("%s%s = %s i8 %s to i64\n", g.indent(), zextReg, op, loadReg))
 		}
@@ -5291,6 +5564,26 @@ func (g *Generator) generateStructLiteral(sb *strings.Builder, expr *parser.Stru
 	return "0"
 }
 
+// isOptionVar reports whether name denotes an option-typed variable whose
+// `== err/nil/ok` comparison must read the tag field (not the data field).
+// A variable is an option if its codegen type is "%option", OR if it appears
+// in optionInnerTypes (the ?T inner-type map). The latter covers synthetic
+// temporaries created by the `?=` desugar: their HIR/transpiler path may
+// collapse the Nolang "?i64" into the plain LLVM "i64" varTypes entry while
+// still allocating a %option struct and producing option values, so the
+// varTypes string alone is insufficient to detect option-ness.
+func (g *Generator) isOptionVar(name string) bool {
+	if t, ok := g.varTypes[name]; ok && t == "%option" {
+		return true
+	}
+	if g.optionInnerTypes != nil {
+		if _, ok := g.optionInnerTypes[name]; ok {
+			return true
+		}
+	}
+	return false
+}
+
 func (g *Generator) generateInfixI1(sb *strings.Builder, expr *parser.InfixExpression) string {
 	// Option tag comparison: x == err/nil/ok or x != err/nil/ok for %option typed variables
 	// Also handles tagged enum variants: x == status1, x == status2, etc.
@@ -5322,8 +5615,8 @@ func (g *Generator) generateInfixI1(sb *strings.Builder, expr *parser.InfixExpre
 						fmt.Fprintf(os.Stderr, "[debug-optcmp] ERR CMP left=%s tag=%d varType=%q isOption=%v\n", leftIdent.Value, tag, t, t == "%option")
 					}
 				}
-				if t, ok := g.varTypes[leftIdent.Value]; ok && t == "%option" {
-					tagGEP := g.tmpReg("opt.cmp.gep")
+			if g.isOptionVar(leftIdent.Value) {
+				tagGEP := g.tmpReg("opt.cmp.gep")
 					tagLoad := g.tmpReg("opt.cmp.load")
 					cmpReg := g.tmpReg("cmp.i1")
 					cmpOp := "eq"
@@ -5817,8 +6110,12 @@ func (g *Generator) generateSliceCore(sb *strings.Builder, expr *parser.SliceExp
 		elemSize = 1
 	} else if varName != "" {
 		if elemType, ok := g.arrayElemTypes[varName]; ok {
+			// 必須涵蓋無符號變體（byte→u8 等）：否則 [N]byte 陣列切片時
+			// elemSize 誤用預設 8，導致偏移 = start*8 而非 start*1，
+			// 固定陣列偏移切片直接作為 []byte 參數傳遞時讀到錯誤位元組
+			// （AES-128 輪密鑰 XOR 因此全錯）。
 			switch elemType {
-			case "i8", "i16", "i32", "i64":
+			case "i8", "u8", "i16", "u16", "i32", "u32", "i64", "u64":
 				if s := g.llvmTypeSize(elemType); s > 0 {
 					elemSize = s
 				}
@@ -5930,7 +6227,486 @@ func (g *Generator) emitIntArith(sb *strings.Builder, op, arithType, lc, rc stri
 	return reg
 }
 
+// emitClamp0Sub 發出「有符號相減、溢出歸零」程式碼：呼叫 @llvm.ssub.with.overflow，
+// 溢出時結果取 0（saturate to 0），否則取真值。回傳 iN 型暫存器。
+// i128 因 %option 無法容納且無法飽和表示，退化為靜默回繞（raw sub）。
+func (g *Generator) emitClamp0Sub(sb *strings.Builder, arithType, lc, rc string) string {
+	if arithType == "i128" {
+		return g.emitIntArith(sb, "sub", arithType, lc, rc)
+	}
+	width := arithType
+	ov := g.tmpReg("ssub.ov")
+	sb.WriteString(fmt.Sprintf("%s%s = call { %s, i1 } @llvm.ssub.with.overflow.%s(%s %s, %s %s)\n", g.indent(), ov, width, width, width, lc, width, rc))
+	res := g.tmpReg("ssub.res")
+	sb.WriteString(fmt.Sprintf("%s%s = extractvalue { %s, i1 } %s, 0\n", g.indent(), res, width, ov))
+	ofl := g.tmpReg("ssub.of")
+	sb.WriteString(fmt.Sprintf("%s%s = extractvalue { %s, i1 } %s, 1\n", g.indent(), ofl, width, ov))
+	clamped := g.tmpReg("clamp0.sub")
+	sb.WriteString(fmt.Sprintf("%s%s = select i1 %s, %s 0, %s %s\n", g.indent(), clamped, ofl, width, width, res))
+	if g.ssaTypes != nil {
+		g.ssaTypes[clamped] = toLLVMType(arithType)
+	}
+	return clamped
+}
+
+// emitOverflowSubOption 發出「有符號相減、溢出回傳 option<int>」程式碼：
+// 呼叫 @llvm.ssub.with.overflow，無溢出時建構 %option{tag=0, data=結果}（ok），
+// 溢出時建構 %option{tag=2, data=0}（err）。永不 panic。回傳 %option 型暫存器。
+// 結果值符號擴展至 i64 存入 data 欄（%option data 為 i64）；窄型別解包時再截斷。
+func (g *Generator) emitOverflowSubOption(sb *strings.Builder, arithType, lc, rc string) string {
+	// i128 無法放入 %option（data 僅 i64），退化為靜默回繞以保留正確性（不截斷）。
+	if arithType == "i128" {
+		return g.emitIntArith(sb, "sub", arithType, lc, rc)
+	}
+	width := arithType
+	ov := g.tmpReg("ssub.ov")
+	sb.WriteString(fmt.Sprintf("%s%s = call { %s, i1 } @llvm.ssub.with.overflow.%s(%s %s, %s %s)\n", g.indent(), ov, width, width, width, lc, width, rc))
+	res := g.tmpReg("ssub.res")
+	sb.WriteString(fmt.Sprintf("%s%s = extractvalue { %s, i1 } %s, 0\n", g.indent(), res, width, ov))
+	ofl := g.tmpReg("ssub.of")
+	sb.WriteString(fmt.Sprintf("%s%s = extractvalue { %s, i1 } %s, 1\n", g.indent(), ofl, width, ov))
+	// 符號擴展結果至 i64 存入 %option data
+	sext := res
+	if width != "i64" {
+		sext = g.tmpReg("ssub.sext")
+		sb.WriteString(fmt.Sprintf("%s%s = sext %s %s to i64\n", g.indent(), sext, width, res))
+	}
+	// ok = {tag=0, data=sext(result)}；err = {tag=2, data=0}
+	ok0 := g.tmpReg("subopt.ok0")
+	sb.WriteString(fmt.Sprintf("%s%s = insertvalue %%option zeroinitializer, i64 0, 0\n", g.indent(), ok0))
+	ok1 := g.tmpReg("subopt.ok1")
+	sb.WriteString(fmt.Sprintf("%s%s = insertvalue %%option %s, i64 %s, 1\n", g.indent(), ok1, ok0, sext))
+	err0 := g.tmpReg("subopt.err0")
+	sb.WriteString(fmt.Sprintf("%s%s = insertvalue %%option zeroinitializer, i64 2, 0\n", g.indent(), err0))
+	err1 := g.tmpReg("subopt.err1")
+	sb.WriteString(fmt.Sprintf("%s%s = insertvalue %%option %s, i64 0, 1\n", g.indent(), err1, err0))
+	final := g.tmpReg("subopt.final")
+	sb.WriteString(fmt.Sprintf("%s%s = select i1 %s, %%option %s, %%option %s\n", g.indent(), final, ofl, err1, ok1))
+	if g.ssaTypes != nil {
+		g.ssaTypes[final] = "%option"
+	}
+	return final
+}
+
+// intTypeBounds 回傳有號/無號整數型別（i8..i64 / u8..u64）的 [min, max] 字串常數。
+// i128/u128 不支援（呼叫方應先退化為 plain op）。
+func intTypeBounds(w string, signed bool) (minStr, maxStr string) {
+	bits, err := strconv.Atoi(strings.TrimLeft(w, "iu"))
+	if err != nil || bits <= 0 {
+		return "0", "0"
+	}
+	max := new(big.Int).Lsh(big.NewInt(1), uint(bits))
+	max.Sub(max, big.NewInt(1)) // 2^bits - 1
+	if signed {
+		half := new(big.Int).Lsh(big.NewInt(1), uint(bits-1))
+		minNeg := new(big.Int).Neg(half)
+		return minNeg.String(), new(big.Int).Sub(half, big.NewInt(1)).String()
+	}
+	return "0", max.String()
+}
+
+// optOperand 將運算元 v 展平為 (dataReg, errFlagReg, isOpt)：
+//   - 若 v 是 %option 暫存器（option 模式下內層算術 a*b / c-48 各自產生的 %option），
+//     則 extractvalue 取出 data(i64) 與 tag，並計算「是否為 err（tag==2）」的 i1 旗標；
+//   - 否則視為普通 i64 運算元，回傳 (v, "", false)。
+//
+// 用途：option 模式下複合整數算術 a*b + (c-48) 的內層各產生 %option，外層 + - * /
+// 必須先展平巢狀 %option 運算元、向上傳播內層 err，再進行自身溢出檢查。
+// emitOverflowArithOption / emitOverflowDivOption 呼叫本函式處理此情形。
+// sb 可為 nil（型別推導 pass），此時只分配暫存器名、不發出 IR。
+func (g *Generator) optOperand(sb *strings.Builder, v string) (data string, errFlag string, isOpt bool) {
+	if v == "" || !strings.HasPrefix(v, "%") {
+		return v, "", false
+	}
+	if g.ssaTypes != nil {
+		if t, ok := g.ssaTypes[v]; ok && t == "%option" {
+			tag := g.tmpReg("optarg.tag")
+			dataR := g.tmpReg("optarg.data")
+			errR := g.tmpReg("optarg.err")
+			if sb != nil {
+				sb.WriteString(fmt.Sprintf("%s%s = extractvalue %%option %s, 0\n", g.indent(), tag, v))
+				sb.WriteString(fmt.Sprintf("%s%s = extractvalue %%option %s, 1\n", g.indent(), dataR, v))
+				sb.WriteString(fmt.Sprintf("%s%s = icmp eq i64 %s, 2\n", g.indent(), errR, tag))
+			}
+			return dataR, errR, true
+		}
+	}
+	return v, "", false
+}
+
+// emitOverflowArithOption 發出「整數算術、溢出回傳 option<int>」程式碼：
+// 呼叫 @llvm.<s|u><op>.with.overflow，無溢出時建構 %option{tag=0, data=結果}（ok），
+// 溢出時建構 %option{tag=2, data=0}（err）。永不 panic。回傳 %option 型暫存器。
+// 窄型別結果符號/零擴展至 i64 存入 %option data 欄（%option data 為 i64）。
+// op ∈ {add, sub, mul}；signed 決定使用 s/u 前綴的 with.overflow 內建函數。
+func (g *Generator) emitOverflowArithOption(sb *strings.Builder, op, arithType, lc, rc string) string {
+	// i128 無法放入 %option（data 僅 i64），退化為靜默回繞以保留正確性（不截斷）。
+	if arithType == "i128" {
+		return g.emitIntArith(sb, op, arithType, lc, rc)
+	}
+	w := toLLVMType(arithType)
+	signed := !isUnsignedIntType(arithType)
+	prefix := "s"
+	if !signed {
+		prefix = "u"
+	}
+	// 展平巢狀 %option 運算元（option 模式下複合算術 a*b + (c-48) 的內層各產生 %option）。
+	lcData, lcErr, lcOpt := g.optOperand(sb, lc)
+	rcData, rcErr, rcOpt := g.optOperand(sb, rc)
+	// 窄型別：%option data 為 i64，運算前截斷回寬度 w。
+	lcUse := lcData
+	rcUse := rcData
+	if w != "i64" {
+		if lcOpt {
+			t := g.tmpReg(prefix + op + ".lcw")
+			if sb != nil {
+				sb.WriteString(fmt.Sprintf("%s%s = trunc i64 %s to %s\n", g.indent(), t, lcData, w))
+			}
+			lcUse = t
+		}
+		if rcOpt {
+			t := g.tmpReg(prefix + op + ".rcw")
+			if sb != nil {
+				sb.WriteString(fmt.Sprintf("%s%s = trunc i64 %s to %s\n", g.indent(), t, rcData, w))
+			}
+			rcUse = t
+		}
+	}
+	ov := g.tmpReg(prefix + op + ".ov")
+	sb.WriteString(fmt.Sprintf("%s%s = call { %s, i1 } @llvm.%s%s.with.overflow.%s(%s %s, %s %s)\n", g.indent(), ov, w, prefix, op, w, w, lcUse, w, rcUse))
+	res := g.tmpReg(prefix + op + ".res")
+	sb.WriteString(fmt.Sprintf("%s%s = extractvalue { %s, i1 } %s, 0\n", g.indent(), res, w, ov))
+	ofl := g.tmpReg(prefix + op + ".of")
+	sb.WriteString(fmt.Sprintf("%s%s = extractvalue { %s, i1 } %s, 1\n", g.indent(), ofl, w, ov))
+	// 擴展結果至 i64 存入 %option data
+	ext := res
+	if w != "i64" {
+		ext = g.tmpReg(prefix + op + ".ext")
+		if signed {
+			sb.WriteString(fmt.Sprintf("%s%s = sext %s %s to i64\n", g.indent(), ext, w, res))
+		} else {
+			sb.WriteString(fmt.Sprintf("%s%s = zext %s %s to i64\n", g.indent(), ext, w, res))
+		}
+	}
+	// 內層 err 旗標合併：任一 option 運算元為 err → 整體 err；外加自身溢出 ofl。
+	var errFlag string
+	if lcOpt && rcOpt {
+		errFlag = g.tmpReg(prefix + op + ".anyerr")
+		if sb != nil {
+			sb.WriteString(fmt.Sprintf("%s%s = or i1 %s, %s\n", g.indent(), errFlag, lcErr, rcErr))
+		}
+	} else if lcOpt {
+		errFlag = lcErr
+	} else if rcOpt {
+		errFlag = rcErr
+	}
+	finalErr := ofl
+	if errFlag != "" {
+		finalErr = g.tmpReg(prefix + op + ".ferr")
+		if sb != nil {
+			sb.WriteString(fmt.Sprintf("%s%s = or i1 %s, %s\n", g.indent(), finalErr, errFlag, ofl))
+		}
+	}
+	ok0 := g.tmpReg(op + "opt.ok0")
+	sb.WriteString(fmt.Sprintf("%s%s = insertvalue %%option zeroinitializer, i64 0, 0\n", g.indent(), ok0))
+	ok1 := g.tmpReg(op + "opt.ok1")
+	sb.WriteString(fmt.Sprintf("%s%s = insertvalue %%option %s, i64 %s, 1\n", g.indent(), ok1, ok0, ext))
+	err0 := g.tmpReg(op + "opt.err0")
+	sb.WriteString(fmt.Sprintf("%s%s = insertvalue %%option zeroinitializer, i64 2, 0\n", g.indent(), err0))
+	err1 := g.tmpReg(op + "opt.err1")
+	sb.WriteString(fmt.Sprintf("%s%s = insertvalue %%option %s, i64 0, 1\n", g.indent(), err1, err0))
+	final := g.tmpReg(op + "opt.final")
+	sb.WriteString(fmt.Sprintf("%s%s = select i1 %s, %%option %s, %%option %s\n", g.indent(), final, finalErr, err1, ok1))
+	if g.ssaTypes != nil {
+		g.ssaTypes[final] = "%option"
+	}
+	return final
+}
+
+// emitClampArith 發出「整數算術、溢出飽和箝位」程式碼，回傳 iN 型暫存器。
+// mode 決定箝位方向：
+//   - clamp0：下溢 → 0（上溢亦歸零，等價 saturate to 0）。
+//   - min：下溢 → 型別最小值（有號為負極值，無號為 0）。
+//   - max：上溢 → 型別最大值。
+//   - saturate：有號同時箝位上/下溢（依結果符號判斷方向）；無號上溢箝位至最大值。
+//
+// 說明：with.overflow 僅提供單一溢出旗標，無法區分上/下溢方向，故：
+//   - 有號 saturate 以 `res < 0` 判斷是否下溢，分別箝位 min / max。
+//   - 無號下溢（如 a - b 且 a < b）在 2's 補數下呈現為大正數（等同上溢），
+//     故無號一律箝位至 max（max 模式）或 0（min/clamp0 模式），無法同時雙向精確箝位。
+func (g *Generator) emitClampArith(sb *strings.Builder, op, arithType, lc, rc, mode string) string {
+	// i128 無法飽和表示（%option 無法容納，且無 sat 內建），退化為靜默回繞。
+	if arithType == "i128" {
+		return g.emitIntArith(sb, op, arithType, lc, rc)
+	}
+	w := toLLVMType(arithType)
+	signed := !isUnsignedIntType(arithType)
+	prefix := "s"
+	if !signed {
+		prefix = "u"
+	}
+	ov := g.tmpReg(prefix + op + ".ov")
+	sb.WriteString(fmt.Sprintf("%s%s = call { %s, i1 } @llvm.%s%s.with.overflow.%s(%s %s, %s %s)\n", g.indent(), ov, w, prefix, op, w, w, lc, w, rc))
+	res := g.tmpReg(prefix + op + ".res")
+	sb.WriteString(fmt.Sprintf("%s%s = extractvalue { %s, i1 } %s, 0\n", g.indent(), res, w, ov))
+	ofl := g.tmpReg(prefix + op + ".of")
+	sb.WriteString(fmt.Sprintf("%s%s = extractvalue { %s, i1 } %s, 1\n", g.indent(), ofl, w, ov))
+	minStr, maxStr := intTypeBounds(w, signed)
+	out := res
+	// 有號溢出方向由「運算元符號」決定：2's 補數回繞會使下溢結果呈現為大正數，
+	// 不能依結果符號判斷（否則 a-b 下溢會被誤判為上溢）。
+	//   add/mul 上溢 ⟺ a>=0 且 b>=0；下溢 ⟺ a<0 且 b<0。
+	//   sub(a-b) 上溢 ⟺ a>=0 且 b<=0；下溢 ⟺ a<0 且 b>=0。
+	// 無號溢出一律為「上溢」（模 2^N 回繞），上下箝位皆以 ofl 為準。
+	upCond := ofl
+	downCond := ofl
+	if signed {
+		aGe0 := g.tmpReg(prefix + op + ".age0")
+		sb.WriteString(fmt.Sprintf("%s%s = icmp sge %s %s, 0\n", g.indent(), aGe0, w, lc))
+		bGe0 := g.tmpReg(prefix + op + ".bge0")
+		sb.WriteString(fmt.Sprintf("%s%s = icmp sge %s %s, 0\n", g.indent(), bGe0, w, rc))
+		if op == "sub" {
+			up := g.tmpReg(prefix + op + ".up")
+			bLe0 := g.tmpReg(prefix + op + ".ble0")
+			sb.WriteString(fmt.Sprintf("%s%s = icmp sle %s %s, 0\n", g.indent(), bLe0, w, rc))
+			sb.WriteString(fmt.Sprintf("%s%s = and i1 %s, %s\n", g.indent(), up, aGe0, bLe0))
+			down := g.tmpReg(prefix + op + ".down")
+			aLt0 := g.tmpReg(prefix + op + ".alt0")
+			sb.WriteString(fmt.Sprintf("%s%s = icmp slt %s %s, 0\n", g.indent(), aLt0, w, lc))
+			sb.WriteString(fmt.Sprintf("%s%s = and i1 %s, %s\n", g.indent(), down, aLt0, bGe0))
+			upCond = up
+			downCond = down
+		} else if op == "mul" {
+			// 同號 → 上溢（結果為正且過大）；異號 → 下溢（結果為負且過小）。
+			up := g.tmpReg(prefix + op + ".up")
+			same1 := g.tmpReg(prefix + op + ".s1")
+			sb.WriteString(fmt.Sprintf("%s%s = and i1 %s, %s\n", g.indent(), same1, aGe0, bGe0))
+			aLt0 := g.tmpReg(prefix + op + ".alt0")
+			sb.WriteString(fmt.Sprintf("%s%s = icmp slt %s %s, 0\n", g.indent(), aLt0, w, lc))
+			bLt0 := g.tmpReg(prefix + op + ".blt0")
+			sb.WriteString(fmt.Sprintf("%s%s = icmp slt %s %s, 0\n", g.indent(), bLt0, w, rc))
+			same2 := g.tmpReg(prefix + op + ".s2")
+			sb.WriteString(fmt.Sprintf("%s%s = and i1 %s, %s\n", g.indent(), same2, aLt0, bLt0))
+			sb.WriteString(fmt.Sprintf("%s%s = or i1 %s, %s\n", g.indent(), up, same1, same2))
+			down := g.tmpReg(prefix + op + ".down")
+			opp1 := g.tmpReg(prefix + op + ".o1")
+			sb.WriteString(fmt.Sprintf("%s%s = and i1 %s, %s\n", g.indent(), opp1, aGe0, bLt0))
+			opp2 := g.tmpReg(prefix + op + ".o2")
+			sb.WriteString(fmt.Sprintf("%s%s = and i1 %s, %s\n", g.indent(), opp2, aLt0, bGe0))
+			sb.WriteString(fmt.Sprintf("%s%s = or i1 %s, %s\n", g.indent(), down, opp1, opp2))
+			upCond = up
+			downCond = down
+		} else {
+			up := g.tmpReg(prefix + op + ".up")
+			sb.WriteString(fmt.Sprintf("%s%s = and i1 %s, %s\n", g.indent(), up, aGe0, bGe0))
+			down := g.tmpReg(prefix + op + ".down")
+			aLt0 := g.tmpReg(prefix + op + ".alt0")
+			sb.WriteString(fmt.Sprintf("%s%s = icmp slt %s %s, 0\n", g.indent(), aLt0, w, lc))
+			bLt0 := g.tmpReg(prefix + op + ".blt0")
+			sb.WriteString(fmt.Sprintf("%s%s = icmp slt %s %s, 0\n", g.indent(), bLt0, w, rc))
+			sb.WriteString(fmt.Sprintf("%s%s = and i1 %s, %s\n", g.indent(), down, aLt0, bLt0))
+			upCond = up
+			downCond = down
+		}
+	}
+	// 上溢箝位（max / saturate）
+	if mode == "max" || mode == "saturate" {
+		hiSel := g.tmpReg(prefix + op + ".hi")
+		hiCond := ofl
+		if mode == "saturate" {
+			// saturate 需方向精確：僅當溢出上溢（true result > MAX）才箝位至 MAX。
+			hc := g.tmpReg(prefix + op + ".hic")
+			sb.WriteString(fmt.Sprintf("%s%s = and i1 %s, %s\n", g.indent(), hc, ofl, upCond))
+			hiCond = hc
+		}
+		sb.WriteString(fmt.Sprintf("%s%s = select i1 %s, %s %s, %s %s\n", g.indent(), hiSel, hiCond, w, maxStr, w, res))
+		out = hiSel
+	}
+	// 下溢箝位（clamp0 / min / saturate）
+	if mode == "clamp0" || mode == "min" || mode == "saturate" {
+		lowVal := "0"
+		if mode == "min" || mode == "saturate" {
+			lowVal = minStr
+		}
+		loSel := g.tmpReg(prefix + op + ".lo")
+		loCond := ofl
+		if mode == "saturate" {
+			// saturate 需方向精確：僅當溢出下溢（true result < MIN）才箝位至 MIN/0。
+			lc2 := g.tmpReg(prefix + op + ".loc")
+			sb.WriteString(fmt.Sprintf("%s%s = and i1 %s, %s\n", g.indent(), lc2, ofl, downCond))
+			loCond = lc2
+		}
+		sb.WriteString(fmt.Sprintf("%s%s = select i1 %s, %s %s, %s %s\n", g.indent(), loSel, loCond, w, lowVal, w, out))
+		out = loSel
+	}
+	if g.ssaTypes != nil {
+		g.ssaTypes[out] = toLLVMType(arithType)
+	}
+	return out
+}
+
+// emitOverflowDivOption 發出「有號整數除法、溢出（INT_MIN / -1）回傳 option<int>」程式碼。
+// 注意：LLVM sdiv INT_MIN,-1 為 poison/UB，故溢出時以 select 將除數替換為 0 避免執行該指令，
+// 再建構 %option{tag=2}（err）。無溢出時建構 ok(value)。回傳 %option 型暫存器。
+// 無號除法不會溢出（a/b <= a），直接走 plain udiv，不走此路徑。
+func (g *Generator) emitOverflowDivOption(sb *strings.Builder, arithType, lc, rc string) string {
+	if arithType == "i128" {
+		return g.emitIntArith(sb, "sdiv", arithType, lc, rc)
+	}
+	w := toLLVMType(arithType)
+	minStr, _ := intTypeBounds(arithType, true) // 有號最小值（INT_MIN）
+	// 展平巢狀 %option 運算元（option 模式下內層算術可能回傳 %option）。
+	lcData, lcErr, lcOpt := g.optOperand(sb, lc)
+	rcData, rcErr, rcOpt := g.optOperand(sb, rc)
+	lcW := lcData
+	rcW := rcData
+	if w != "i64" {
+		if lcOpt {
+			t := g.tmpReg("sdiv.lcw")
+			if sb != nil {
+				sb.WriteString(fmt.Sprintf("%s%s = trunc i64 %s to %s\n", g.indent(), t, lcData, w))
+			}
+			lcW = t
+		}
+		if rcOpt {
+			t := g.tmpReg("sdiv.rcw")
+			if sb != nil {
+				sb.WriteString(fmt.Sprintf("%s%s = trunc i64 %s to %s\n", g.indent(), t, rcData, w))
+			}
+			rcW = t
+		}
+	}
+	// 內層 err 旗標合併：任一 option 運算元為 err → 整體溢出。
+	var innerErr string
+	if lcOpt && rcOpt {
+		innerErr = g.tmpReg("sdiv.anyerr")
+		if sb != nil {
+			sb.WriteString(fmt.Sprintf("%s%s = or i1 %s, %s\n", g.indent(), innerErr, lcErr, rcErr))
+		}
+	} else if lcOpt {
+		innerErr = lcErr
+	} else if rcOpt {
+		innerErr = rcErr
+	}
+	isMin := g.tmpReg("sdiv.ismin")
+	sb.WriteString(fmt.Sprintf("%s%s = icmp eq %s %s, %s %s\n", g.indent(), isMin, w, lcW, w, minStr))
+	isNeg1 := g.tmpReg("sdiv.isneg1")
+	sb.WriteString(fmt.Sprintf("%s%s = icmp eq %s %s, %s -1\n", g.indent(), isNeg1, w, rcW, w))
+	ofl := g.tmpReg("sdiv.of")
+	sb.WriteString(fmt.Sprintf("%s%s = and i1 %s, %s\n", g.indent(), ofl, isMin, isNeg1))
+	// 整體溢出 = INT_MIN/-1 溢出 或 內層 err。
+	finalOfl := ofl
+	if innerErr != "" {
+		finalOfl = g.tmpReg("sdiv.fof")
+		if sb != nil {
+			sb.WriteString(fmt.Sprintf("%s%s = or i1 %s, %s\n", g.indent(), finalOfl, innerErr, ofl))
+		}
+	}
+	// 溢出時將被除數/除數替換為 0/1，避免 sdiv INT_MIN,-1 或除以 0 的 UB/poison；
+	// 商固定為 0 且 select 會以 err 覆蓋，故無副作用。
+	safeLc := g.tmpReg("sdiv.safelc")
+	sb.WriteString(fmt.Sprintf("%s%s = select i1 %s, %s 0, %s %s\n", g.indent(), safeLc, finalOfl, w, w, lcW))
+	safeRc := g.tmpReg("sdiv.saferc")
+	sb.WriteString(fmt.Sprintf("%s%s = select i1 %s, %s 1, %s %s\n", g.indent(), safeRc, finalOfl, w, w, rcW))
+	quo := g.tmpReg("sdiv.q")
+	sb.WriteString(fmt.Sprintf("%s%s = sdiv %s %s, %s %s\n", g.indent(), quo, w, safeLc, w, safeRc))
+	ext := quo
+	if w != "i64" {
+		ext = g.tmpReg("sdiv.ext")
+		sb.WriteString(fmt.Sprintf("%s%s = sext %s %s to i64\n", g.indent(), ext, w, quo))
+	}
+	ok0 := g.tmpReg("sdivopt.ok0")
+	sb.WriteString(fmt.Sprintf("%s%s = insertvalue %%option zeroinitializer, i64 0, 0\n", g.indent(), ok0))
+	ok1 := g.tmpReg("sdivopt.ok1")
+	sb.WriteString(fmt.Sprintf("%s%s = insertvalue %%option %s, i64 %s, 1\n", g.indent(), ok1, ok0, ext))
+	err0 := g.tmpReg("sdivopt.err0")
+	sb.WriteString(fmt.Sprintf("%s%s = insertvalue %%option zeroinitializer, i64 2, 0\n", g.indent(), err0))
+	err1 := g.tmpReg("sdivopt.err1")
+	sb.WriteString(fmt.Sprintf("%s%s = insertvalue %%option %s, i64 0, 1\n", g.indent(), err1, err0))
+	final := g.tmpReg("sdivopt.final")
+	sb.WriteString(fmt.Sprintf("%s%s = select i1 %s, %%option %s, %%option %s\n", g.indent(), final, finalOfl, err1, ok1))
+	if g.ssaTypes != nil {
+		g.ssaTypes[final] = "%option"
+	}
+	return final
+}
+
+// emitOverflowArith 依 curOverflowMode 分派整數算術的溢出處理：
+//   - wrap：靜默 2's 補數回繞（plain op）。
+//   - clamp0：下溢歸零。
+//   - min：下溢箝位至型別最小值。
+//   - max：上溢箝位至型別最大值。
+//   - saturate：上下溢皆飽和箝位。
+//   - 預設（""）：回傳 option<int>（溢出 err，正常 ok(value)），永不 panic。
+//
+// 適用於有號與無號整數的 + - *（以及有號 / 的 INT_MIN/-1 溢出）。
+func (g *Generator) emitOverflowArith(sb *strings.Builder, op, arithType, lc, rc string) string {
+	switch g.curOverflowMode {
+	case "wrap":
+		return g.emitIntArith(sb, op, arithType, lc, rc)
+	case "clamp0":
+		return g.emitClampArith(sb, op, arithType, lc, rc, "clamp0")
+	case "min":
+		return g.emitClampArith(sb, op, arithType, lc, rc, "min")
+	case "max":
+		return g.emitClampArith(sb, op, arithType, lc, rc, "max")
+	case "saturate":
+		return g.emitClampArith(sb, op, arithType, lc, rc, "saturate")
+	default:
+		return g.emitOverflowArithOption(sb, op, arithType, lc, rc)
+	}
+}
+
 func (g *Generator) generateInfix(sb *strings.Builder, expr *parser.InfixExpression) string {
+	// Option tag comparison fast path: x == err/nil/ok or x != err/nil/ok.
+	// MUST intercept before generateExprWithSB, because the sentinel
+	// identifiers (err/nil/ok) are not real variables and emitting a load
+	// for them produces undefined references (%err / %nil). This is the
+	// codegen counterpart of the `?=` desugar, where the match arms compare
+	// the temporary option variable (`__unwrap_N`) against err/nil sentinels.
+	if expr.Operator == "==" || expr.Operator == "!=" {
+		if leftIdent, ok := expr.Left.(*parser.Identifier); ok {
+			var tag int64 = -1
+			if rightIdent, ok := expr.Right.(*parser.Identifier); ok {
+				if rightIdent.Value == "err" {
+					tag = 2
+				} else if rightIdent.Value == "nil" {
+					tag = 1
+				} else if rightIdent.Value == "ok" {
+					tag = 0
+				}
+			} else if _, ok := expr.Right.(*parser.NilLiteral); ok {
+				tag = 1
+			}
+			if tag >= 0 {
+				t, hasT := g.varTypes[leftIdent.Value]
+				// isOptionVar covers both normal %option vars and synthetic
+				// temporaries (e.g. __unwrap_N) whose inner type is recorded in
+				// optionInnerTypes but whose varTypes entry may be the widened i64.
+				if g.isOptionVar(leftIdent.Value) || (hasT && t == "%str-long" && tag == 1) {
+					i1Result := g.generateInfixI1(sb, expr)
+					reg := g.tmpReg("optcmp.zext")
+					if sb != nil {
+						sb.WriteString(fmt.Sprintf("%s%s = zext i1 %s to i64\n", g.indent(), reg, i1Result))
+					}
+					return reg
+				}
+				// Non-option variable compared with err/ok sentinel: defer to
+				// generateInfixI1 (constant true/false) without emitting a load
+				// for the sentinel identifier.
+				if rightIdent, ok := expr.Right.(*parser.Identifier); ok {
+					if rightIdent.Value == "err" || rightIdent.Value == "ok" {
+						i1Result := g.generateInfixI1(sb, expr)
+						reg := g.tmpReg("optcmp.zext")
+						if sb != nil {
+							sb.WriteString(fmt.Sprintf("%s%s = zext i1 %s to i64\n", g.indent(), reg, i1Result))
+						}
+						return reg
+					}
+				}
+			}
+		}
+	}
 	left := g.generateExprWithSB(sb, expr.Left)
 	right := g.generateExprWithSB(sb, expr.Right)
 	return g.generateInfixCore(sb, expr, left, right)
@@ -6149,6 +6925,9 @@ func (g *Generator) generateInfixCore(sb *strings.Builder, expr *parser.InfixExp
 		arithType := g.arithLLVMType(expr.Left, expr.Right)
 		lc := g.coerceToInt(sb, left, expr.Left, arithType)
 		rc := g.coerceToInt(sb, right, expr.Right, arithType)
+		if arithType != "" {
+			return g.emitOverflowArith(sb, "add", arithType, lc, rc)
+		}
 		return g.emitIntArith(sb, "add", arithType, lc, rc)
 	case "-":
 		// String concatenation: detect if either operand is a string
@@ -6179,6 +6958,16 @@ func (g *Generator) generateInfixCore(sb *strings.Builder, expr *parser.InfixExp
 		arithType := g.arithLLVMType(expr.Left, expr.Right)
 		lc := g.coerceToInt(sb, left, expr.Left, arithType)
 		rc := g.coerceToInt(sb, right, expr.Right, arithType)
+		// 整數相減的溢出處理（有號與無號皆適用）：
+		//   - 預設（未標註 #{overflow}）：回傳 option<int>（溢出 → err，正常 → ok(value)），永不 panic。
+		//   - #{overflow = wrap}：靜默 2's complement 回繞，結果為 plain int。
+		//   - #{overflow = clamp0}：溢出（下溢）歸零，結果為 plain int。
+		//   - #{overflow = min/max/saturate}：飽和箝位，結果為 plain int。
+		// 說明：codegen 依接收端型別決定是否回傳 option（?T / ?= 接收 → option；
+		//   普通 int 接收 → 靜默回繞，與既有行為一致），lint 會提示加註解。
+		if arithType != "" {
+			return g.emitOverflowArith(sb, "sub", arithType, lc, rc)
+		}
 		return g.emitIntArith(sb, "sub", arithType, lc, rc)
 	case "*":
 		// String repetition: 'str' * n
@@ -6200,6 +6989,9 @@ func (g *Generator) generateInfixCore(sb *strings.Builder, expr *parser.InfixExp
 		arithType := g.arithLLVMType(expr.Left, expr.Right)
 		lc := g.coerceToInt(sb, left, expr.Left, arithType)
 		rc := g.coerceToInt(sb, right, expr.Right, arithType)
+		if arithType != "" {
+			return g.emitOverflowArith(sb, "mul", arithType, lc, rc)
+		}
 		return g.emitIntArith(sb, "mul", arithType, lc, rc)
 	case "/":
 		if ft := floatArithType(expr.Left, expr.Right); ft != "" {
@@ -6214,6 +7006,15 @@ func (g *Generator) generateInfixCore(sb *strings.Builder, expr *parser.InfixExp
 		arithType := g.arithLLVMType(expr.Left, expr.Right)
 		lc := g.coerceToInt(sb, left, expr.Left, arithType)
 		rc := g.coerceToInt(sb, right, expr.Right, arithType)
+		// 除法溢出處理：無號除法不會溢出（a/b <= a），走 plain udiv；
+		// 有號除法僅 INT_MIN / -1 會溢出（sdiv 為 UB），預設（option 接收端）
+		// 回傳 option<int>，其餘模式視為回繞（plain sdiv），與既有行為一致。
+		if arithType != "" {
+			if !isUnsignedIntType(arithType) && g.curOverflowMode == "" {
+				return g.emitOverflowDivOption(sb, arithType, lc, rc)
+			}
+			return g.emitIntArith(sb, divOp(arithType), arithType, lc, rc)
+		}
 		return g.emitIntArith(sb, divOp(arithType), arithType, lc, rc)
 	case "%":
 		if ft := floatArithType(expr.Left, expr.Right); ft != "" {
@@ -6532,6 +7333,48 @@ func (g *Generator) getStrPtr(sb *strings.Builder, expr parser.Expression) strin
 	if et == "" && g.ssaTypes != nil {
 		if ssaType, ok := g.ssaTypes[val]; ok {
 			et = ssaType
+		}
+	}
+	if et == "%option" {
+		// Option-wrapped string (?str): the inner value is a %str-long* stored
+		// in the option's data field. In a string context (concat, etc.) we must
+		// unwrap to the inner %str-long*. Only do this when the option actually
+		// wraps a string — a ?str variable (tracked via optionInnerTypes) or a
+		// method call that returns ?str (e.g. buf.to-str(), buf.slice(0,n).to-str()).
+		innerIsStr := false
+		if ident, ok := expr.(*parser.Identifier); ok {
+			if it, ok := g.optionInnerTypes[ident.Value]; ok && it == "%str-long" {
+				innerIsStr = true
+			}
+		}
+		if !innerIsStr {
+			if call, ok := expr.(*parser.CallExpression); ok {
+				if dot, ok := call.Function.(*parser.DotExpression); ok {
+					switch dot.Property {
+					case "to-str", "to-bytes", "to-bytes-str":
+						innerIsStr = true
+					}
+				}
+			}
+		}
+		if innerIsStr {
+			var optPtr string
+			if ident, ok := expr.(*parser.Identifier); ok {
+				optPtr = g.varAddr(ident.Value) // %option* for the variable
+			} else {
+				// Expression result: generateExprWithSB yielded a loaded %option value.
+				tmp := g.tmpReg("opt.str.alloca")
+				sb.WriteString(fmt.Sprintf("%s%s = alloca %%option\n", g.indent(), tmp))
+				sb.WriteString(fmt.Sprintf("%sstore %%option %s, %%option* %s\n", g.indent(), val, tmp))
+				optPtr = tmp
+			}
+			dataGEP := g.tmpReg("opt.str.data")
+			sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%option, %%option* %s, i32 0, i32 1\n", g.indent(), dataGEP, optPtr))
+			dataVal := g.tmpReg("opt.str.data.val")
+			sb.WriteString(fmt.Sprintf("%s%s = load i64, i64* %s\n", g.indent(), dataVal, dataGEP))
+			strPtr := g.tmpReg("opt.str.ptr")
+			sb.WriteString(fmt.Sprintf("%s%s = inttoptr i64 %s to %%str-long*\n", g.indent(), strPtr, dataVal))
+			return strPtr
 		}
 	}
 	if et == "%str-long" {

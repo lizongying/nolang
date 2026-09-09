@@ -27,6 +27,128 @@ import (
 // fn 在 std 簽名表和本地函數中均不存在的情况。
 // 這是 LSP 路徑專用的輕量檢查器——no vet 路徑已有 build/module_check.go
 // 中的完整版（依賴 merged 上下文），不需要調用此函數。
+// collectLocalVarNames 收集 program 中出現的本地變數名：
+//   - 所有函數定義的參數名；
+//   - 所有賦值表達式的 LHS 識別符（如 `x = ...`）。
+//
+// 用途：CheckUnresolvedModuleCalls 在判斷 `modName.fn()` 是否為「模組函數
+// 呼叫」前，先確認 modName 不是本地變數——若 modName 是本地變數，則
+// modName.fn 是對該變數的方法呼叫，不應被誤判為模組函數呼叫。
+func collectLocalVarNames(program *parser.Program, out map[string]bool) {
+	var walkStmt func(s parser.Statement)
+	var walkExpr func(e parser.Expression)
+
+	walkStmt = func(s parser.Statement) {
+		if s == nil {
+			return
+		}
+		switch x := s.(type) {
+		case *parser.FunctionDefinition:
+			for _, p := range x.Parameters {
+				out[p.Name] = true
+			}
+			if x.Body != nil {
+				for _, bs := range x.Body.Statements {
+					walkStmt(bs)
+				}
+			}
+		case *parser.BlockStatement:
+			for _, bs := range x.Statements {
+				walkStmt(bs)
+			}
+		case *parser.ExpressionStatement:
+			walkExpr(x.Expression)
+		case *parser.ReturnStatement:
+			walkExpr(x.ReturnValue)
+		case *parser.ForStatement:
+			walkStmt(x.Init)
+			walkExpr(x.Condition)
+			walkStmt(x.Update)
+			if x.Body != nil {
+				for _, bs := range x.Body.Statements {
+					walkStmt(bs)
+				}
+			}
+		}
+	}
+
+	walkExpr = func(e parser.Expression) {
+		if e == nil {
+			return
+		}
+		switch x := e.(type) {
+		case *parser.AssignExpression:
+			if id, ok := x.Left.(*parser.Identifier); ok {
+				out[id.Value] = true
+			}
+			walkExpr(x.Left)
+			walkExpr(x.Value)
+		case *parser.FunctionLiteral:
+			if x.Body != nil {
+				for _, bs := range x.Body.Statements {
+					walkStmt(bs)
+				}
+			}
+		case *parser.DotExpression:
+			walkExpr(x.Receiver)
+		case *parser.PrefixExpression:
+			walkExpr(x.Right)
+		case *parser.InfixExpression:
+			walkExpr(x.Left)
+			walkExpr(x.Right)
+		case *parser.ConditionalExpression:
+			walkExpr(x.Condition)
+			walkExpr(x.Consequence)
+			walkExpr(x.Alternative)
+		case *parser.GroupedExpression:
+			walkExpr(x.Expression)
+		case *parser.IfExpression:
+			walkExpr(x.Condition)
+			if x.Consequence != nil {
+				for _, bs := range x.Consequence.Statements {
+					walkStmt(bs)
+				}
+			}
+			if x.Alternative != nil {
+				for _, bs := range x.Alternative.Statements {
+					walkStmt(bs)
+				}
+			}
+		case *parser.IndexExpression:
+			walkExpr(x.Left)
+			walkExpr(x.Index)
+		case *parser.SliceExpression:
+			walkExpr(x.Left)
+			if x.Range.Start != nil {
+				walkExpr(x.Range.Start)
+			}
+			if x.Range.End != nil {
+				walkExpr(x.Range.End)
+			}
+		case *parser.RangeExpression:
+			walkExpr(x.Start)
+			walkExpr(x.End)
+		case *parser.StructLiteral:
+			for _, f := range x.Fields {
+				if f.Value != nil {
+					walkExpr(f.Value)
+				}
+			}
+		case *parser.CastExpression:
+			walkExpr(x.Expr)
+		case *parser.CallExpression:
+			walkExpr(x.Function)
+			for _, a := range x.Arguments {
+				walkExpr(a)
+			}
+		}
+	}
+
+	for _, stmt := range program.Statements {
+		walkStmt(stmt)
+	}
+}
+
 func CheckUnresolvedModuleCalls(program *parser.Program) []ValidateResult {
 	if program == nil {
 		return nil
@@ -37,6 +159,14 @@ func CheckUnresolvedModuleCalls(program *parser.Program) []ValidateResult {
 	for _, m := range knownStdModules() {
 		stdMods[m.ShortName] = true
 	}
+
+	// 1b. 收集本地變數名（函數參數 + 賦值 LHS 識別符）。
+	// 若 receiver 識別符是本地變數（例如參數名恰好與某 std 模組同名，
+	// 如 get-extension = (path str) 中的 path），則 path.slice(...) 是
+	// 對本地 str 變數的方法呼叫，而非模組函數呼叫，應跳過本檢查
+	// （符合本檔設計原則：不檢查 receiver 是變數的方法呼叫）。
+	localVars := make(map[string]bool)
+	collectLocalVarNames(program, localVars)
 
 	// 2. 收集 std 簽名表的所有 key（裸名 + module.fn 形式）
 	stdSigs, _ := CollectStdModuleSignatures()
@@ -80,7 +210,9 @@ func CheckUnresolvedModuleCalls(program *parser.Program) []ValidateResult {
 				if recv, ok := dot.Receiver.(*parser.Identifier); ok {
 					modName := recv.Value
 					fnName := dot.Property
-					if stdMods[modName] && fnName != "" {
+					// modName 為本地變數時，modName.fn 是對變數的方法呼叫，
+					// 不是模組函數呼叫，跳過本檢查（避免誤報）。
+					if stdMods[modName] && !localVars[modName] && fnName != "" {
 						// 檢查 fnName 是否在任何已知簽名表中
 						qualified := modName + "." + fnName
 						_, inStdBare := stdSigs[fnName]

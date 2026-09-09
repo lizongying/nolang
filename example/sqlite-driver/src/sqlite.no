@@ -219,7 +219,7 @@ stmt-sqlite.bind-int = (idx i64, v i64) (ok bool) {
 ; v str: 要綁定的文字內容
 ; 返回 ok bool: true=成功
 stmt-sqlite.bind-str = (idx i64, v str) (ok bool) {
-    rc = _sqlite3-bind-text(.handle, idx, v, v.len, -1)
+    rc = _sqlite3-bind-text(.handle, idx, v, v.len-bytes(), -1)
     ok = rc == SQLITE-OK
 }
 

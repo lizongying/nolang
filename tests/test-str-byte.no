@@ -1,0 +1,31 @@
+; test-str-byte — 回归測試：str.byte / txt.byte 的 MIR 後端 codegen
+;
+; 背景（2026-09-07 修復）：MIR=3（純 MIR 後端）原先對 `s.byte(i)` /
+; `t.byte(i)` 這類 raw-byte 存取子報 "unknown callee str.byte" 而編譯失敗。
+; 根因：byte 不是真正的函式（無 builtin-table 條目），MIR lowering 保留
+; 限定呼叫名 `str.byte` / `txt.byte`，但 emitCall 沒有為它們做特殊分派。
+; 修復是在 src/mir/codegen.go 的 emitCall 增加 str.byte / txt.byte 特殊
+; 分支，並新增 emitBuiltinRawByteAt（GEP + load i8 + zext）。
+;
+; 本測試在 MIR=2（legacy）與 MIR=3（純 MIR）下都應編譯通過並輸出相同結果。
+; 若 MIR=3 再次回歸，會 CRASH（編譯失敗）→ mir_cov 標記為非 MATCH。
+
+main = () () {
+    ; str（堆分配可變長字串）的 raw-byte 存取
+    s = 'ABC'
+    print(s.byte(0))
+    print(s.byte(1))
+    print(s.byte(2))
+
+    ; txt（棧分配固定長度字串）的 raw-byte 存取
+    t txt = 'ABC'
+    print(t.byte(0))
+    print(t.byte(1))
+    print(t.byte(2))
+
+    ; 非 ASCII（多字節 UTF-8）也應正確取出底層位元組
+    u = 'Aé'
+    print(u.byte(0))
+    print(u.byte(1))
+    print(u.byte(2))
+}

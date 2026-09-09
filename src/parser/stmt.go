@@ -423,9 +423,42 @@ func (p *Parser) parseStatement() Statement {
 			}
 			return block
 		}
-		// 裸條件 : { body } 語法 — 將 { 作為 ForStatement 的主體
-		// 前面的表達式在 parseExpressionStatement 中已解析
-		// 這裡回退並由 transpiler 處理
+		// A bare `{ ... }` at statement position that is neither a recognized
+		// loop nor a match form per classifyBlockAtCurrent. Its 3-token lookahead
+		// cannot always see that the block's contents ARE bare-match arms — e.g. a
+		// guard block whose first arm starts with a `.method()` self-call
+		// (`.len() == 0 -> { ... }`) or `IDENT == ... -> ...`. Routing such a block
+		// straight to parseExpressionStatement only consumes the FIRST arm (as a
+		// nil/If expression statement) and then the OUTER block terminates at this
+		// block's own `}`, leaking the rest of the enclosing function body to
+		// top level. Try a bare match first so the entire guard becomes a single
+		// statement; fall back to a plain expression statement (struct literals,
+		// grouping blocks, etc.) otherwise.
+		if bt == blockUnknown {
+			tok := p.currentToken
+			state := p.saveState()
+			savedCtx := p.ctx.copy()
+			p.ctx = p.ctx.filterOut(CTX_MATCH_ARM)
+			expr := p.parseBareMatchExpr()
+			p.ctx = savedCtx
+			if expr != nil {
+				return &ExpressionStatement{Token: tok, Expression: expr}
+			}
+			p.restoreState(state)
+			// parseBareMatchExpr couldn't handle this block (e.g. a leading
+			// #{...} annotation sits before the first arm, which confuses its
+			// lookahead). Fall back to parsing it as a plain block statement so
+			// its contents are not dropped. Crucially, parseBlockStatement stops
+			// at the closing '}' but does NOT consume it; advance past it so the
+			// enclosing block's brace matching is not thrown off (otherwise the
+			// outer block terminates early at this '}', orphaning the rest of the
+			// function body and triggering spurious parse errors downstream).
+			block := p.parseBlockStatement()
+			if p.currentToken.Type == lexer.RBRACE {
+				p.nextToken()
+			}
+			return block
+		}
 		return p.parseExpressionStatement()
 
 	case lexer.RBRACE:
@@ -747,9 +780,10 @@ func (p *Parser) parseUnwrapAssignStatement() Statement {
 	}
 
 	return &UnwrapAssignStatement{
-		Token: tok,
-		Name:  &Identifier{Token: nameTok, Value: nameTok.Literal},
-		Value: val,
+		Token:            tok,
+		Name:             &Identifier{Token: nameTok, Value: nameTok.Literal},
+		Value:            val,
+		IsAutoPropagated: false,
 	}
 }
 
@@ -1530,6 +1564,16 @@ func (p *Parser) parseExpressionStatement() Statement {
 	}
 
 	firstExpr := p.parseExpression(LOWEST)
+	// 欄位/索引目標的 ?=（解析期在 parseExpression 中產生 UnwrapAssignStatement）
+	// 必須作為獨立語句回傳，而非包進 ExpressionStatement——否則 lowering 時節點
+	// 位於 Expression 介面欄位，無法就地以 BlockStatement 替換（reflect.Set panic）。
+	// 此處與識別字 LHS 的 ?=（parseUnwrapAssignStatement）保持一致：直接回傳 Statement。
+	if uas, ok := firstExpr.(*UnwrapAssignStatement); ok {
+		if !p.ctx.contains(CTX_MATCH_ARM) && !p.ctx.contains(CTX_FOR_COND) {
+			p.skipToStatementEnd()
+		}
+		return uas
+	}
 	stmt := &ExpressionStatement{
 		Token:      tok,
 		Expression: firstExpr,
@@ -1850,6 +1894,9 @@ func isForCompOp(t lexer.TokenType) bool {
 func (p *Parser) parseBlockStatement() *BlockStatement {
 	block := &BlockStatement{Token: p.currentToken, Statements: []Statement{}}
 	openBraceLine := p.currentToken.Line
+	if os.Getenv("NOLANG_DEBUG_SELF") != "" && p.curFuncName == "txt.from-hex" {
+		fmt.Fprintf(os.Stderr, "[debug-self][block] ENTER body for %s, firstToken=%s\n", p.curFuncName, p.currentToken.Type)
+	}
 
 	p.nextToken()
 
@@ -1921,10 +1968,18 @@ func (p *Parser) parseBlockStatement() *BlockStatement {
 		if stmt != nil {
 			setDoc(stmt, doc)
 			p.attachInlineComment(stmt)
+			if os.Getenv("NOLANG_DEBUG_SELF") != "" && p.curFuncName == "txt.from-hex" {
+				fmt.Fprintf(os.Stderr, "[debug-self][block]   captured %T (cur=%s tok=%s)\n", stmt, p.curFuncName, p.currentToken.Type)
+			}
 			// 尾隨註解：`stmt #{...}`（同一行 stmt 之後的 #{...}）附加到剛解析的
 			// stmt，支援 `x = v[5] #{index-out=0}` 這類語法。前置註解由
 			// parseAnnotationStatement 附加到後續 stmt，此處僅處理尾隨。
-			if p.currentToken.Type == lexer.HASH_LBRACE {
+			// 關鍵：只有 #{...} 與 stmt 位於「同一行」才算尾隨；若 #{...} 在
+			// 新行，應視為下一條陳述的前置註解（如 std/str.no 的
+			// `#{overflow = wrap}` 後接裸配對臂），交給 parseAnnotationStatement
+			// 附加到後續 stmt。否則新行 #{...} 會被誤併入上一條 stmt，導致
+			// 溢出註解無法作用於其後的裸配對臂。
+			if p.currentToken.Type == lexer.HASH_LBRACE && p.currentToken.Line == stmt.Pos().Line {
 				if trailing := p.parseTrailingAnnotation(); len(trailing) > 0 {
 					p.attachAnnotations(stmt, trailing)
 				}
@@ -1986,6 +2041,12 @@ func (p *Parser) parseBlockStatement() *BlockStatement {
 	// Record the closing brace position so EndPos() returns an accurate
 	// line number for blank-line detection in the formatter.
 	block.RBrace = posFromToken(p.currentToken)
+
+	// 區塊級溢出模式沿用：將 #{overflow = ...} 沿用到其後（含巢狀區塊）的所有
+	// 陳述，直到被下一個 #{overflow = ...} 覆寫。使 std 函式「區塊前置一次
+	// #{overflow = wrap}」即可涵蓋整個區塊整數運算的語意成立（見
+	// propagateBlockScopedOverflow）。
+	p.propagateBlockScopedOverflow(block)
 
 	return block
 }
@@ -2661,6 +2722,27 @@ func (p *Parser) isCondLoopBlockFirst() bool {
 		if t.Type == lexer.EOF {
 			return false
 		}
+		if t.Type == lexer.HASH_LBRACE {
+			// 註解指令 #{ ... } 的結尾 } 並非程式碼區塊的結束，跳過整個
+			// 註解，避免其 } 讓大括號配對提前結束，導致：
+			//   (a) 錯誤地把內含註解的 `{ } (cond)` 條件迴圈誤判為普通區塊；
+			//   (b) 前向掃描把註解 } 當成某個區塊的結尾，使 isCondLoopBlockFirst
+			//       誤報 cond-loop，進而讓 parseCondLoopBlockFirst 錯誤消費後續
+			//       程式碼（表現為下游莫名其妙的 parse 錯誤，例如 (x << n) 被當成
+			//       函數呼叫引數列而報 "expected comma or right parenthesis"）。
+			k++
+			for {
+				tt := tokAt(k)
+				if tt.Type == lexer.EOF {
+					return false
+				}
+				k++
+				if tt.Type == lexer.RBRACE {
+					break
+				}
+			}
+			continue
+		}
 		if t.Type == lexer.LBRACE {
 			depth++
 		} else if t.Type == lexer.RBRACE {
@@ -2673,6 +2755,16 @@ func (p *Parser) isCondLoopBlockFirst() bool {
 	}
 	// k 在匹配的 } 處；下一個 token (k+1) 應為 LPAREN
 	if tokAt(k+1).Type != lexer.LPAREN {
+		return false
+	}
+	// Disambiguate a genuine `{ body } (cond)` conditional loop from a function
+	// body's `}` that happens to be followed by the `()` of the NEXT definition
+	// (e.g. `func-a = () { ... }` then `func-b = () { ... }`). In a real loop the
+	// `(` (loop condition) is attached to the same line as the closing `}`; a
+	// following definition puts its `()` on the next line. Without this, the
+	// lookahead wrongly treats the subsequent definition's `()` as a loop
+	// condition and emits a spurious "expected '(' after block in loop" error.
+	if tokAt(k).Line != tokAt(k+1).Line {
 		return false
 	}
 	// 掃描匹配的括號，從 k+2 開始

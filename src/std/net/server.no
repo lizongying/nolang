@@ -188,8 +188,10 @@ server-conn.recv-more = () (n i64) {
     n = net.net-recv(.fd, tmp, HTTP-SRV-RECV-SIZE)
     n > 0 -> {
         i <- [0..n): {
+            #{overflow = wrap}
             .recv-buf[.recv-buf-len + i] = tmp[i]
         }
+        #{overflow = wrap}
         .recv-buf-len = .recv-buf-len + n
     }
 }
@@ -202,7 +204,9 @@ server-conn.parse = () (ok bool) {
     .fd < 0 -> return
     cr = number.char-to-str(13)
     lf = number.char-to-str(10)
+    #{overflow = wrap}
     crlf = cr - lf
+    #{overflow = wrap}
     separator = crlf - crlf
 
     ; 讀取直到找到 \r\n\r\n（標頭結束）
@@ -215,6 +219,7 @@ server-conn.parse = () (ok bool) {
         sep-pos >= 0 -> *
 
         ; 緩衝區已滿但未找到分隔符
+        #{overflow = wrap}
         .recv-buf-len + HTTP-SRV-RECV-SIZE > HTTP-SRV-BUF-SIZE -> return
 
         ; 接收更多資料
@@ -224,7 +229,8 @@ server-conn.parse = () (ok bool) {
 
     ; 解析請求行和標頭
     head = .recv-buf.slice(0, sep-pos)
-    body-start = sep-pos + separator.len
+    #{overflow = wrap}
+    body-start = sep-pos + separator.len-bytes()
 
     ; 請求行（第一行）
     first-line-end = head.index(crlf)
@@ -235,18 +241,21 @@ server-conn.parse = () (ok bool) {
     sp1 = request-line.index(" ")
     sp1 < 0 -> return
     .method = request-line.slice(0, sp1)
-    after-method = request-line.slice(sp1 + 1, request-line.len)
+    #{overflow = wrap}
+    after-method = request-line.slice(sp1 + 1, request-line.len-bytes())
     sp2 = after-method.index(" ")
     sp2 < 0 -> return
     full-path = after-method.slice(0, sp2)
-    .version = after-method.slice(sp2 + 1, after-method.len)
+    #{overflow = wrap}
+    .version = after-method.slice(sp2 + 1, after-method.len-bytes())
 
     ; 分離 path 和 query
     q-pos = full-path.index("?")
     {
         q-pos >= 0 -> {
             .path = full-path.slice(0, q-pos)
-            .query = full-path.slice(q-pos + 1, full-path.len)
+            #{overflow = wrap}
+            .query = full-path.slice(q-pos + 1, full-path.len-bytes())
         }
         -> {
             .path = full-path
@@ -255,7 +264,8 @@ server-conn.parse = () (ok bool) {
     }
 
     ; 標頭
-    .headers = head.slice(first-line-end + crlf.len, head.len)
+    #{overflow = wrap}
+    .headers = head.slice(first-line-end + crlf.len-bytes(), head.len-bytes())
 
     ; 解析標頭到 header-names / header-values
     .header-count = 0
@@ -266,7 +276,7 @@ server-conn.parse = () (ok bool) {
         .header-values[i].len = 0
     }
     hs = .headers
-    hn = hs.len
+    hn = hs.len-bytes()
     hn > 0 -> {
         pos = 0
         {
@@ -278,21 +288,28 @@ server-conn.parse = () (ok bool) {
             colon-pos >= 0 && colon-pos < line-end -> {
                 cnt = .header-count
                 cnt < HTTP-SRV-MAX-HEADERS -> {
+                    #{overflow = wrap}
                     name-len = colon-pos - pos
                     j <- [0..name-len): {
+                        #{overflow = wrap}
                         .header-names[cnt][j] = hs[pos + j]
                     }
                     .header-names[cnt].len = name-len
+                    #{overflow = wrap}
                     val-start = colon-pos + 2
+                    #{overflow = wrap}
                     val-len = line-end - val-start
                     j <- [0..val-len): {
+                        #{overflow = wrap}
                         .header-values[cnt][j] = hs[val-start + j]
                     }
                     .header-values[cnt].len = val-len
+                    #{overflow = wrap}
                     .header-count = cnt + 1
                 }
             }
             next-crlf < 0 -> *
+            #{overflow = wrap}
             pos = next-crlf + 2
         } (true)
     }
@@ -319,21 +336,25 @@ server-conn.parse = () (ok bool) {
         ok -> {
             cl-str = it
             content-len = 0
-            j <- [0..cl-str.len): {
+            j <- [0..cl-str.len-bytes()): {
                 ch = cl-str[j]
+                #{overflow = wrap}
                 ch >= 48 && ch <= 57 -> content-len = content-len * 10 + ch - 48
             }
             content-len > 0 && content-len <= HTTP-SRV-MAX-BODY -> {
 
                 ; 標頭後已接收的資料
+                #{overflow = wrap}
                 available = .recv-buf-len - body-start
 
                 ; 如果不足，繼續接收
                 {
                     n = .recv-more()
                     n <= 0 -> return
+                    #{overflow = wrap}
                     available = .recv-buf-len - body-start
                 } (available < content-len)
+                #{overflow = wrap}
                 .body = .recv-buf.slice(body-start, body-start + content-len)
             }
         }
@@ -350,15 +371,17 @@ server-conn.get-header = (name str) (val ?str) {
     cnt = .header-count
     i <- [0..cnt): {
         matched = 1
-        .header-names[i].len != name.len -> matched = 0
+        .header-names[i].len-bytes() != name.len-bytes() -> matched = 0
         {
             matched == 1 -> {
-                j <- [0..name.len): {
+                j <- [0..name.len-bytes()): {
                     c1 = .header-names[i][j]
                     c2 = name[j]
 
                     ; 大小寫不敏感比較
+                    #{overflow = wrap}
                     c1 >= 65 && c1 <= 90 -> c1 = c1 + 32
+                    #{overflow = wrap}
                     c2 >= 65 && c2 <= 90 -> c2 = c2 + 32
                     c1 != c2 -> {
                         matched = 0
@@ -367,7 +390,7 @@ server-conn.get-header = (name str) (val ?str) {
                 }
             }
             matched == 1 -> {
-                vlen = .header-values[i].len
+                vlen = .header-values[i].len-bytes()
                 val = .header-values[i].slice(0, vlen)
                 return
             }
@@ -383,6 +406,7 @@ server-conn.write-status = (status i64) (ok bool) {
     .fd < 0 -> return
     cr = number.char-to-str(13)
     lf = number.char-to-str(10)
+    #{overflow = wrap}
     crlf = cr - lf
 
     status-s = status.to-str()
@@ -409,8 +433,9 @@ server-conn.write-status = (status i64) (ok bool) {
         status == 504 -> status-text = 'Gateway Timeout'
         ->
     }
+    #{overflow = wrap}
     line = 'HTTP/1.1 ' - status-s - ' ' - status-text - crlf
-    written = net.net-send(.fd, line, line.len)
+    written = net.net-send(.fd, line, line.len-bytes())
     written < 0 -> return
     ok = true
 }
@@ -424,9 +449,11 @@ server-conn.write-header = (name str, value str) (ok bool) {
     .fd < 0 -> return
     cr = number.char-to-str(13)
     lf = number.char-to-str(10)
+    #{overflow = wrap}
     crlf = cr - lf
+    #{overflow = wrap}
     line = name - ': ' - value - crlf
-    written = net.net-send(.fd, line, line.len)
+    written = net.net-send(.fd, line, line.len-bytes())
     written < 0 -> return
     ok = true
 }
@@ -438,8 +465,9 @@ server-conn.write-headers-done = () (ok bool) {
     .fd < 0 -> return
     cr = number.char-to-str(13)
     lf = number.char-to-str(10)
+    #{overflow = wrap}
     crlf = cr - lf
-    written = net.net-send(.fd, crlf, crlf.len)
+    written = net.net-send(.fd, crlf, crlf.len-bytes())
     written < 0 -> return
     ok = true
 }
@@ -450,8 +478,8 @@ server-conn.write-headers-done = () (ok bool) {
 server-conn.write-body = (data str) (ok bool) {
     ok = false
     .fd < 0 -> return
-    data.len > 0 -> {
-        written = net.net-send(.fd, data, data.len)
+    data.len-bytes() > 0 -> {
+        written = net.net-send(.fd, data, data.len-bytes())
         written < 0 -> return
     }
     ok = true
@@ -467,6 +495,7 @@ server-conn.write-text = (status i64, text str) (ok bool) {
     .fd < 0 -> return
     cr = number.char-to-str(13)
     lf = number.char-to-str(10)
+    #{overflow = wrap}
     crlf = cr - lf
 
     ; 狀態行
@@ -474,7 +503,7 @@ server-conn.write-text = (status i64, text str) (ok bool) {
     ok == false -> return
 
     ; 標頭
-    text-len = text.len
+    text-len = text.len-bytes()
     len-s = text-len.to-str()
     .write-header('Content-Type', 'text/plain; charset=utf-8')
     .write-header('Content-Length', len-s)
@@ -498,7 +527,7 @@ server-conn.write-json = (status i64, json-str str) (ok bool) {
     ok = false
     .fd < 0 -> return
     .write-status(status)
-    json-len = json-str.len
+    json-len = json-str.len-bytes()
     len-s = json-len.to-str()
     .write-header('Content-Type', 'application/json; charset=utf-8')
     .write-header('Content-Length', len-s)
@@ -520,7 +549,7 @@ server-conn.write-html = (status i64, html str) (ok bool) {
     ok = false
     .fd < 0 -> return
     .write-status(status)
-    html-len = html.len
+    html-len = html.len-bytes()
     len-s = html-len.to-str()
     .write-header('Content-Type', 'text/html; charset=utf-8')
     .write-header('Content-Length', len-s)
@@ -557,7 +586,7 @@ server-conn.write-error = (status i64, message str) (ok bool) {
     ok = false
     .fd < 0 -> return
     .write-status(status)
-    msg-len = message.len
+    msg-len = message.len-bytes()
     len-s = msg-len.to-str()
     .write-header('Content-Type', 'text/plain; charset=utf-8')
     .write-header('Content-Length', len-s)
@@ -651,9 +680,9 @@ server-conn.verify-basic-auth = (expected-user str, expected-pass str) (ok bool)
 ; 返回 ok bool: true=相等
 secure-compare = (a str, b str) (ok bool) {
     ok = false
-    a.len != b.len -> return
+    a.len-bytes() != b.len-bytes() -> return
     diff = 0
-    i <- [0..a.len): {
+    i <- [0..a.len-bytes()): {
         diff = diff | (a[i] ^ b[i])
     }
     diff == 0 -> ok = true
@@ -665,6 +694,7 @@ secure-compare = (a str, b str) (ok bool) {
 ; key []byte: HMAC-SHA256 簽名金鑰
 server-conn.set-signed-cookie = (name str, value str, key []byte) {
     signed-value = cookie.sign(name, value, key)
+    #{overflow = wrap}
     cookie-val = name - '=' - signed-value - '; Path=/; HttpOnly'
     .write-header('Set-Cookie', cookie-val)
 }
@@ -786,8 +816,10 @@ https-server-conn.recv-more = () (n i64) {
     n = .tls.recv(tmp, HTTP-SRV-RECV-SIZE)
     n > 0 -> {
         i <- [0..n): {
+            #{overflow = wrap}
             .recv-buf[.recv-buf-len + i] = tmp[i]
         }
+        #{overflow = wrap}
         .recv-buf-len = .recv-buf-len + n
     }
 }
@@ -798,7 +830,9 @@ https-server-conn.parse = () (ok bool) {
     ok = false
     cr = number.char-to-str(13)
     lf = number.char-to-str(10)
+    #{overflow = wrap}
     crlf = cr - lf
+    #{overflow = wrap}
     separator = crlf - crlf
 
     ; 讀取直到找到 \r\n\r\n（標頭結束）
@@ -807,6 +841,7 @@ https-server-conn.parse = () (ok bool) {
         data = .recv-buf.slice(0, .recv-buf-len)
         sep-pos = data.index(separator)
         sep-pos >= 0 -> *
+        #{overflow = wrap}
         .recv-buf-len + HTTP-SRV-RECV-SIZE > HTTP-SRV-BUF-SIZE -> return
         n = .recv-more()
         n <= 0 -> return
@@ -814,7 +849,8 @@ https-server-conn.parse = () (ok bool) {
 
     ; 解析請求行和標頭
     head = .recv-buf.slice(0, sep-pos)
-    body-start = sep-pos + separator.len
+    #{overflow = wrap}
+    body-start = sep-pos + separator.len-bytes()
 
     ; 請求行
     first-line-end = head.index(crlf)
@@ -826,11 +862,13 @@ https-server-conn.parse = () (ok bool) {
     sp1 = request-line.index(sp)
     sp1 < 0 -> return
     .method = request-line.slice(0, sp1)
-    after-method = request-line.slice(sp1 + 1, request-line.len)
+    #{overflow = wrap}
+    after-method = request-line.slice(sp1 + 1, request-line.len-bytes())
     sp2 = after-method.index(sp)
     sp2 < 0 -> return
     full-path = after-method.slice(0, sp2)
-    .version = after-method.slice(sp2 + 1, after-method.len)
+    #{overflow = wrap}
+    .version = after-method.slice(sp2 + 1, after-method.len-bytes())
 
     ; 分離 path 和 query
     qm = number.char-to-str(63)
@@ -838,7 +876,8 @@ https-server-conn.parse = () (ok bool) {
     {
         q-pos >= 0 -> {
             .path = full-path.slice(0, q-pos)
-            .query = full-path.slice(q-pos + 1, full-path.len)
+            #{overflow = wrap}
+            .query = full-path.slice(q-pos + 1, full-path.len-bytes())
         }
         -> {
             .path = full-path
@@ -847,7 +886,8 @@ https-server-conn.parse = () (ok bool) {
     }
 
     ; 標頭
-    .headers = head.slice(first-line-end + crlf.len, head.len)
+    #{overflow = wrap}
+    .headers = head.slice(first-line-end + crlf.len-bytes(), head.len-bytes())
 
     ; 解析標頭
     .header-count = 0
@@ -858,7 +898,7 @@ https-server-conn.parse = () (ok bool) {
         .header-values[i].len = 0
     }
     hs = .headers
-    hn = hs.len
+    hn = hs.len-bytes()
     hn > 0 -> {
         pos = 0
         {
@@ -870,21 +910,28 @@ https-server-conn.parse = () (ok bool) {
             colon-pos >= 0 && colon-pos < line-end -> {
                 cnt = .header-count
                 cnt < HTTP-SRV-MAX-HEADERS -> {
+                    #{overflow = wrap}
                     name-len = colon-pos - pos
                     j <- [0..name-len): {
+                        #{overflow = wrap}
                         .header-names[cnt][j] = hs[pos + j]
                     }
                     .header-names[cnt].len = name-len
+                    #{overflow = wrap}
                     val-start = colon-pos + 2
+                    #{overflow = wrap}
                     val-len = line-end - val-start
                     j <- [0..val-len): {
+                        #{overflow = wrap}
                         .header-values[cnt][j] = hs[val-start + j]
                     }
                     .header-values[cnt].len = val-len
+                    #{overflow = wrap}
                     .header-count = cnt + 1
                 }
             }
             next-crlf < 0 -> *
+            #{overflow = wrap}
             pos = next-crlf + 2
         } (true)
     }
@@ -911,17 +958,21 @@ https-server-conn.parse = () (ok bool) {
         ok -> {
             cl-str = it
             content-len = 0
-            j <- [0..cl-str.len): {
+            j <- [0..cl-str.len-bytes()): {
                 ch = cl-str[j]
+                #{overflow = wrap}
                 ch >= 48 && ch <= 57 -> content-len = content-len * 10 + ch - 48
             }
             content-len > 0 && content-len <= HTTP-SRV-MAX-BODY -> {
+                #{overflow = wrap}
                 available = .recv-buf-len - body-start
                 {
                     n = .recv-more()
                     n <= 0 -> return
+                    #{overflow = wrap}
                     available = .recv-buf-len - body-start
                 } (available < content-len)
+                #{overflow = wrap}
                 .body = .recv-buf.slice(body-start, body-start + content-len)
             }
         }
@@ -938,13 +989,15 @@ https-server-conn.get-header = (name str) (val ?str) {
     cnt = .header-count
     i <- [0..cnt): {
         matched = 1
-        .header-names[i].len != name.len -> matched = 0
+        .header-names[i].len-bytes() != name.len-bytes() -> matched = 0
         {
             matched == 1 -> {
-                j <- [0..name.len): {
+                j <- [0..name.len-bytes()): {
                     c1 = .header-names[i][j]
                     c2 = name[j]
+                    #{overflow = wrap}
                     c1 >= 65 && c1 <= 90 -> c1 = c1 + 32
+                    #{overflow = wrap}
                     c2 >= 65 && c2 <= 90 -> c2 = c2 + 32
                     c1 != c2 -> {
                         matched = 0
@@ -953,7 +1006,7 @@ https-server-conn.get-header = (name str) (val ?str) {
                 }
             }
             matched == 1 -> {
-                vlen = .header-values[i].len
+                vlen = .header-values[i].len-bytes()
                 val = .header-values[i].slice(0, vlen)
                 return
             }
@@ -968,6 +1021,7 @@ https-server-conn.write-status = (status i64) (ok bool) {
     ok = false
     cr = number.char-to-str(13)
     lf = number.char-to-str(10)
+    #{overflow = wrap}
     crlf = cr - lf
 
     status-s = status.to-str()
@@ -990,6 +1044,7 @@ https-server-conn.write-status = (status i64) (ok bool) {
         status == 503 -> status-text = 'Service Unavailable'
         ->
     }
+    #{overflow = wrap}
     line = 'HTTP/1.1 ' - status-s - ' ' - status-text - crlf
     w = .tls.send(line)
     send-ok = false
@@ -1011,7 +1066,9 @@ https-server-conn.write-header = (name str, value str) (ok bool) {
     ok = false
     cr = number.char-to-str(13)
     lf = number.char-to-str(10)
+    #{overflow = wrap}
     crlf = cr - lf
+    #{overflow = wrap}
     line = name - ': ' - value - crlf
     w = .tls.send(line)
     send-ok = false
@@ -1031,6 +1088,7 @@ https-server-conn.write-headers-done = () (ok bool) {
     ok = false
     cr = number.char-to-str(13)
     lf = number.char-to-str(10)
+    #{overflow = wrap}
     crlf = cr - lf
     w = .tls.send(crlf)
     send-ok = false
@@ -1049,7 +1107,7 @@ https-server-conn.write-headers-done = () (ok bool) {
 ; 返回 ok bool: true=成功
 https-server-conn.write-body = (data str) (ok bool) {
     ok = false
-    data.len > 0 -> {
+    data.len-bytes() > 0 -> {
         w = .tls.send(data)
         send-ok = false
 
@@ -1073,7 +1131,7 @@ https-server-conn.write-text = (status i64, text str) (ok bool) {
 
     ok = .write-status(status)
     ok == false -> return
-    text-len = text.len
+    text-len = text.len-bytes()
     len-s = text-len.to-str()
     .write-header('Content-Type', 'text/plain; charset=utf-8')
     .write-header('Content-Length', len-s)
@@ -1094,7 +1152,7 @@ https-server-conn.write-text = (status i64, text str) (ok bool) {
 https-server-conn.write-json = (status i64, json-str str) (ok bool) {
     ok = false
     .write-status(status)
-    json-len = json-str.len
+    json-len = json-str.len-bytes()
     len-s = json-len.to-str()
     .write-header('Content-Type', 'application/json; charset=utf-8')
     .write-header('Content-Length', len-s)
@@ -1115,7 +1173,7 @@ https-server-conn.write-json = (status i64, json-str str) (ok bool) {
 https-server-conn.write-html = (status i64, html str) (ok bool) {
     ok = false
     .write-status(status)
-    html-len = html.len
+    html-len = html.len-bytes()
     len-s = html-len.to-str()
     .write-header('Content-Type', 'text/html; charset=utf-8')
     .write-header('Content-Length', len-s)

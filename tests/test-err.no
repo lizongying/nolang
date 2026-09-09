@@ -51,6 +51,6 @@ print('ok: err-from-errno msg')
 ; ── 6. error.format 格式化錯誤 ──
 s = e.format()
 {
-    s.len > 0 -> print('ok: error.format')
+    s.len-bytes() > 0 -> print('ok: error.format')
     -> print('fail: error.format')
 }

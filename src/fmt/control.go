@@ -1,6 +1,8 @@
 package fmt
 
 import (
+	"fmt"
+	"os"
 	"strings"
 
 	"github.com/lizongying/nolang/lexer"
@@ -40,6 +42,13 @@ func (f *formatter) isStandaloneInline(body *parser.BlockStatement) bool {
 		body.ClosingBraceComment != nil ||
 		f.obcOf(body) != nil ||
 		f.hasDocComment(body.Statements[0]) {
+		return false
+	}
+	// 若唯一陳述帶有「會實際輸出」的附加註解（如區塊級 #{overflow=...} 經
+	// side-table 合併、或平台註解 #{mac-arm64}），內聯為 `cond -> #{...}` 形式無法
+	// 被解析器還原（註解會被誤判為 arm 本體，或二次格式化產生 `overflow = wrap`
+	// 之類的錯亂）。此時強制區塊形式 `cond -> { #{...} ... }` 以保證冪等與可重解析。
+	if f.attachedAnnotationsWillEmit(body.Statements[0]) {
 		return false
 	}
 	switch body.Statements[0].(type) {
@@ -194,6 +203,9 @@ func (f *formatter) formatBareMatchExpression(e *parser.IfExpression) {
 	}
 	// Output opening brace comment on the same line as {
 	if obc := f.obcOf(e); obc != nil && len(obc.List) > 0 {
+		if os.Getenv("NOLANG_FMTDBG") != "" {
+			fmt.Fprintf(os.Stderr, "[DBG] formatBareMatchExpression obcOf(e)=%q\n", obc.List[0].Text)
+		}
 		f.write("; ")
 		for _, c := range obc.List {
 			f.write(strings.TrimSpace(c.Text))
@@ -297,11 +309,20 @@ func (f *formatter) writeBareMatchArm(e *parser.IfExpression) {
 	// 該註釋會在 arm 條件之前獨立行輸出。
 	// 使用 IsInline 標誌（由 parser 設置）區分用戶寫的 block `{ }` 與 inline 單語句。
 	// 例外：若 body 是 bare match 表達式（本身就是 `{ }` 形式），內聯不改變其輸出形式。
+	//
+	// 關鍵守衛（與 isStandaloneInline 一致）：若唯一語句帶有「會實際輸出」的附加註解
+	// （如區塊級 #{overflow=wrap} 經 side-table 合併到該語句、或平台註解 #{mac-arm64}），
+	// 內聯成 `cond -> #{...}` 形式無法被解析器還原（註解會被誤判為 arm 本體，或二次格式化
+	// 產生 `overflow = wrap` 之類的錯亂）。此時強制區塊形式 `cond -> { #{...} ... }`，
+	// 保證冪等與可重解析。attachedAnnotationsWillEmit 只在「註解確實會被印出」時為真
+	// （模式與 f.activeOverflow 不同、或非 overflow 註解），故已生效的區塊級 overflow
+	// 不會誤觸此守衛，避免大範圍無謂的 block 化。
 	canInline := (e.Consequence.IsInline || f.isBareMatchBody(statements)) &&
 		len(statements) == 1 &&
 		e.Consequence.TrailingComments == nil &&
 		e.Consequence.ClosingBraceComment == nil &&
-		f.obcOf(e.Consequence) == nil
+		f.obcOf(e.Consequence) == nil &&
+		!f.attachedAnnotationsWillEmit(statements[0])
 	if canInline {
 		switch statements[0].(type) {
 		case *parser.ExpressionStatement, *parser.LetStatement,
@@ -423,6 +444,9 @@ func (f *formatter) writeBareMatchArm(e *parser.IfExpression) {
 	f.write(" {")
 	// Output opening brace comment on the same line as {
 	if obc := f.obcOf(e.Consequence); obc != nil && len(obc.List) > 0 {
+		if os.Getenv("NOLANG_FMTDBG") != "" {
+			fmt.Fprintf(os.Stderr, "[DBG] writeBareMatchArm obcOf(e.Consequence)=%q\n", obc.List[0].Text)
+		}
 		f.write("; ")
 		for _, c := range obc.List {
 			f.write(strings.TrimSpace(c.Text))

@@ -17,7 +17,9 @@
 // import build/llvm, so it can be tested in isolation.
 package mir
 
-import "strings"
+import (
+	"strings"
+)
 
 // ---------------------------------------------------------------------------
 // IDs
@@ -70,7 +72,16 @@ const (
 	OpGetField  // struct field read
 	OpSetField  // struct field write
 	OpStructLit // struct literal: allocate the struct; fields stored by OpSetField
-	OpIndex     // array/slice element read
+	// OpOptionWrap builds an inline ?T option value { i64 tag, payload } from a
+	// single payload value. It is the codegen primitive behind the nolang ?T
+	// constructors val/ok/some (tag 0) and err (tag 2). Routing those
+	// constructors through the generic call path mis-resolves `err` to the std
+	// io.err stderr-writer (returns i64) and corrupts the option's payload slot;
+	// OpOptionWrap emits the inline option directly with the correct
+	// discriminant. inst.Int carries the tag; inst.Args[0] is the payload value
+	// (ownership transferred into the option, so it is exempt from dropping).
+	OpOptionWrap // build inline option {tag, payload} for val/ok/some/err
+	OpIndex      // array/slice element read
 	OpIndexStore // array/slice element write
 	OpSliceOp   // slice sub-range
 	OpLen       // container length (str/vec/slice/array/map) — see lowerDotRead
@@ -135,6 +146,7 @@ var opNames = [opCount]string{
 	OpGetField:  "getfield",
 	OpSetField:  "setfield",
 	OpStructLit: "structlit",
+	OpOptionWrap: "option-wrap",
 	OpIndex:     "index",
 	OpIndexStore: "indexstore",
 	OpSliceOp:   "sliceop",
@@ -252,6 +264,21 @@ type Type struct {
 	Owned bool
 	Elem  TypeID
 	Sizes []int64 // for KindArray: dimensions
+	// Func is non-nil for KindFunc types. Params/Results are the by-VALUE
+	// MIR type IDs of the function's inputs and outputs (NOT the by-reference
+	// LLVM pointers). The by-ref LLVM signature of a function of this type is
+	//   void (Params[0]*, ..., Params[N-1]*, Results[0]*, ..., Results[M-1]*)*
+	// which is exactly the layout emitCall uses for a direct call, so an
+	// indirect call through a value of this type reuses that machinery by
+	// substituting the loaded function pointer for @funcname.
+	Func *FuncType
+}
+
+// FuncType describes the signature of a KindFunc MIR type. Params and Results
+// are by-value MIR type IDs (matching the nolang declaration `(p T)(r R)?`).
+type FuncType struct {
+	Params  []TypeID
+	Results []TypeID
 }
 
 // parseMapTypes splits a nolang map type string "[Key]Value" into its key and
@@ -345,6 +372,12 @@ func KindOfRaw(raw string) TypeKind {
 		return KindInt
 	case raw == "char":
 		return KindChar
+	case strings.HasPrefix(raw, "fn("):
+		// Function-type signature produced by parser.FunctionType.String():
+		//   fn()            -> no params, no results
+		//   fn(i64)         -> one i64 param, no results
+		//   fn(i64)(i64)    -> one i64 param, one i64 result
+		return KindFunc
 	case raw == "":
 		return KindUnknown
 	}
@@ -378,6 +411,13 @@ type Inst struct {
 	Flt   float64 // float payload
 	Str   string  // literal text / label / field name
 	Sym   string  // callee name / extern symbol / builtin
+	// Callee is the indirect-call target value (a function-pointer local) for an
+	// OpCall whose callee is NOT a named function but a fn-typed local/param
+	// (e.g. `setup()` where `setup` has type `test-cb`). When Callee != NoVal,
+	// emitCall loads the function pointer from Callee's slot and calls through it
+	// instead of emitting `call void @Sym(...)`. Sym may carry the fn-type name
+	// for diagnostics only.
+	Callee ValueID
 	Line  int32
 	Col   int32
 }
@@ -472,6 +512,13 @@ type Module struct {
 	// lowering. It drives OpGetField/OpSetField index resolution and the
 	// emission of LLVM struct type declarations.
 	StructFields map[string][]FieldInfo
+
+	// TypeAliases maps a named function-type alias (e.g. `test-cb` from
+	// `test-cb = ()`) to the KindFunc MIR type ID it denotes. Populated during
+	// HIR lowering from KTypeAlias nodes flagged FlagFuncType. internType
+	// consults it first so a param typed `test-cb` resolves to the function
+	// pointer type rather than being misclassified as a struct.
+	TypeAliases map[string]TypeID
 }
 
 // blockEmpty reports whether b has no instructions and no terminator — i.e. it
@@ -532,6 +579,15 @@ func (m *Module) internType(raw string) TypeID {
 	if id, ok := m.TypeMap[raw]; ok {
 		return id
 	}
+	// A named function-type alias (e.g. `test-cb`) resolves to the KindFunc
+	// type registered from its `test-cb = (...)` alias definition. This keeps
+	// fn-typed params/results at the correct function-pointer type instead of
+	// being misclassified as a struct by the bare-identifier fallback below.
+	if m.TypeAliases != nil {
+		if id, ok := m.TypeAliases[raw]; ok {
+			return id
+		}
+	}
 	kind := KindOfRaw(raw)
 	owned := ClassifyOwnership(raw)
 	if kind == KindStruct && m.OwnedStructs[raw] {
@@ -553,9 +609,75 @@ func (m *Module) internType(raw string) TypeID {
 		if elemRaw, ok := parseOptionElem(raw); ok {
 			t.Elem = m.internType(elemRaw)
 		}
+	} else if kind == KindFunc {
+		// Parse the `fn(p0,p1)(r0,r1)` signature into by-value MIR type IDs.
+		// Each parameter/result raw is interned so emitCall can derive the
+		// by-reference LLVM pointer type for the indirect call.
+		if params, results, ok := parseFuncType(raw); ok {
+			ftt := FuncType{}
+			for _, pr := range params {
+				ftt.Params = append(ftt.Params, m.internType(pr))
+			}
+			for _, rr := range results {
+				ftt.Results = append(ftt.Results, m.internType(rr))
+			}
+			t.Func = &ftt
+		}
 	}
 	m.TypeMap[raw] = tid
 	return tid
+}
+
+// parseFuncType parses a nolang function-type raw string of the form
+//   fn(p0,p1,...)(r0,r1,...)?
+// (exactly parser.FunctionType.String()) into its parameter and result type
+// raw strings. The optional result list may be absent (no results). Type
+// strings are comma-separated within each parenthesized group; nested
+// parentheses are not expected in the supported subset (scalar / slice / option
+// / array element types, not function-typed parameters).
+func parseFuncType(raw string) (params []string, results []string, ok bool) {
+	if !strings.HasPrefix(raw, "fn(") {
+		return nil, nil, false
+	}
+	rest := raw[len("fn("):]
+	// First group: params.
+	closeIdx := strings.IndexByte(rest, ')')
+	if closeIdx < 0 {
+		return nil, nil, false
+	}
+	params = splitTypeGroup(rest[:closeIdx])
+	rest = rest[closeIdx+1:]
+	// Optional second group: results.
+	if strings.HasPrefix(rest, "(") {
+		inner := rest[1:]
+		c := strings.IndexByte(inner, ')')
+		if c < 0 {
+			return nil, nil, false
+		}
+		results = splitTypeGroup(inner[:c])
+		rest = inner[c+1:]
+	}
+	if rest != "" {
+		return nil, nil, false
+	}
+	return params, results, true
+}
+
+// splitTypeGroup splits a comma-separated list of type raw strings. A trailing
+// comma (or empty content) yields no entry, matching parser behavior.
+func splitTypeGroup(s string) []string {
+	if s == "" {
+		return nil
+	}
+	parts := strings.Split(s, ",")
+	out := make([]string, 0, len(parts))
+	for _, p := range parts {
+		p = strings.TrimSpace(p)
+		if p != "" {
+			out = append(out, p)
+		}
+	}
+	return out
 }
 
 // FieldIndex returns the GEP index of a named field within a struct type, and

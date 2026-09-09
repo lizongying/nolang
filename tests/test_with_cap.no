@@ -2,13 +2,13 @@
 
 ; with-cap for str: s str = with-cap(256)
 s str = with-cap(256)
-slen = s.len
+slen = s.len-bytes()
 scap = s.cap
 print('str with-cap: len={slen} cap={scap}')
 
 ; with-cap for vec: v []i64 = with-cap(100)
 v []i64 = with-cap(100)
-vlen = v.len
+vlen = v.len()
 vcap = v.cap
 print('vec with-cap: len={vlen} cap={vcap}')
 
@@ -16,7 +16,7 @@ print('vec with-cap: len={vlen} cap={vcap}')
 v.push(10)
 v.push(20)
 v.push(30)
-vlen = v.len
+vlen = v.len()
 vcap = v.cap
 print('vec after push: len={vlen} cap={vcap}')
 e0 = v[0]
@@ -26,14 +26,14 @@ print('elements: {e0} {e1} {e2}')
 
 ; Clear and reuse
 v.clear()
-vlen = v.len
+vlen = v.len()
 vcap = v.cap
 print('vec after clear: len={vlen} cap={vcap}')
 
 ; Push again after clear - should still use existing cap
 v.push(40)
 v.push(50)
-vlen = v.len
+vlen = v.len()
 vcap = v.cap
 print('vec after re-push: len={vlen} cap={vcap}')
 e0 = v[0]

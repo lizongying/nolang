@@ -44,6 +44,7 @@ client.connect = (host str, port i64) (ok bool) {
     .port = port
     .connected = false
     ok = .c.dial(host, port)
+    print('DBG client.connect .c.fd=', .c.fd, ' ok=', ok)
     ok -> .connected = true
 }
 
@@ -52,7 +53,7 @@ client.connect = (host str, port i64) (ok bool) {
 ; 返回 ok=true=成功
 client.reconnect = () (ok bool) {
     ok = false
-    .host.len == 0 -> return
+    .host.len-bytes() == 0 -> return
     .connected -> {
         .c.close()
         .connected = false
@@ -65,8 +66,10 @@ client.reconnect = () (ok bool) {
 ; 返回 written=實際發送位元組數（-1=錯誤）
 client.send = (data str) (written i64) {
     written = -1
+    print('DBG client.send connected=', .connected)
     .connected == false -> return
     written = .c.send(data)
+    print('DBG client.send done written=', written)
 }
 
 ; recv: 接收資料到緩衝區
@@ -109,6 +112,7 @@ client.send-line = (line str) (written i64) {
 
     ; char-to-str(10) = 換行符 \n（ASCII 10）
     nl = number.char-to-str(10)
+    #{overflow = wrap}
     written = .c.send(line - nl)
 }
 

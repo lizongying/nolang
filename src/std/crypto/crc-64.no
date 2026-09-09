@@ -18,7 +18,7 @@ crc-64 = (data []byte) (crc u64) {
     ; 反射多項式: 0xC96C5795D7870F42
     poly u64 = 14180682008813511362
     crc = 0
-    i <- [0..data.len): {
+    i <- [0..data.len()): {
         crc = crc ^ (data[i])
         j <- [0..8): {
             {
@@ -37,6 +37,7 @@ crc-64-hex = (data []byte) (hex str) {
     hex-chars = '0123456789abcdef'
     hex str = with-len(16)
     i <- [0..16): {
+        #{overflow = wrap}
         hex[i] = hex-chars[(crc >> (60 - i * 4)) & 15]
     }
 }

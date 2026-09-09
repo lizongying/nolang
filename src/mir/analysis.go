@@ -73,6 +73,55 @@ func (m *Module) isOwnedVal(f *Function, v ValueID) bool {
 	return false
 }
 
+// isSliceViewOfArray reports whether inst is an OpSliceOp whose receiver is a
+// fixed array (`[N x T]`). Such a slice is a VIEW over the array's own stack
+// storage (emitted by emitSliceOp's fixed-array->%vec aliasing path), so it
+// owns no backing buffer and must NOT be vec_free'd. Dropping it would free the
+// fixed array's stack memory and abort (the arr-slice.no "pointer being freed
+// was not allocated" crash under NOLANG_MIR=3). A slice of a %vec or %str-long
+// gets its own freshly-malloc'd copy and IS owned, so it is still dropped.
+func (m *Module) isSliceViewOfArray(f *Function, inst *Inst) bool {
+	if inst.Op != OpSliceOp || len(inst.Args) == 0 {
+		return false
+	}
+	recvT := NoType
+	if t, ok := f.LocalTypes[inst.Args[0]]; ok {
+		recvT = t
+	} else if val := m.Value(inst.Args[0]); val != nil {
+		recvT = val.Type
+	}
+	if ty := m.Type(recvT); ty != nil && ty.Kind == KindArray {
+		if dt := m.Type(inst.Type); dt != nil && dt.Kind == KindSlice {
+			return true
+		}
+	}
+	return false
+}
+
+// isBorrowRead reports whether inst yields a BORROWED value: a read of a
+// container/struct element that aliases the owner's storage and therefore must
+// NOT be dropped by the reader. The owner (vec / array / str / map / struct)
+// owns and drops the element; a read merely borrows it.
+//
+// The only such op today is OpIndex (array/slice/str/map element read).
+// emitIndex lowers it by GEP + load with NO clone — the destination aliases
+// the element in place (for constant elements the destination's data pointer
+// points straight into read-only global memory). Dropping a borrowed read
+// would `free` the owner's storage (or, for constant elements, read-only
+// memory) and abort, exactly the `trace/BPT trap` we hit for `['a','b','c']
+// .to-str()`: the loop read `.[i]` into a local and `insertDrops` emitted
+// `@str_free` on it. The principled, lowering-consistent model is that an
+// element READ borrows — the container owns the element and frees it once.
+// (Ownership transfer out of a container is a distinct op, e.g. the `pop` /
+// `remove` methods, never a bare OpIndex; those are handled by the move
+// machinery instead.)
+func (m *Module) isBorrowRead(f *Function, inst *Inst) bool {
+	if inst.Op != OpIndex {
+		return false
+	}
+	return m.isOwnedVal(f, inst.Dst)
+}
+
 // insertDrops places exactly one OpDrop for every owned local on EVERY
 // control-flow path, after the value's last use on that path. It is derived from
 // the live sets (not textual position), which is what makes it correct across
@@ -114,6 +163,14 @@ func (m *Module) insertDrops(f *Function, rep *Report) {
 			if inst.Op == OpMove && len(inst.Args) > 0 && inst.Args[0] > NoVal {
 				moveSrc[inst.Args[0]] = true
 			}
+			// OpOptionWrap transfers ownership of its payload into the option
+			// (the option's drop is the single free site), so the payload value
+			// must be exempt from dropping — just like a move source. Without
+			// this an owned payload (str/vec/heap-option) is str_freed both on
+			// its own drop and on the option's drop -> double free.
+			if inst.Op == OpOptionWrap && len(inst.Args) > 0 && inst.Args[0] > NoVal {
+				moveSrc[inst.Args[0]] = true
+			}
 		}
 	}
 
@@ -137,7 +194,7 @@ func (m *Module) insertDrops(f *Function, rep *Report) {
 			if inst == nil {
 				continue
 			}
-			if inst.Dst > NoVal && m.isOwnedVal(f, inst.Dst) && !isParam[inst.Dst] && !moveSrc[inst.Dst] {
+			if inst.Dst > NoVal && m.isOwnedVal(f, inst.Dst) && !isParam[inst.Dst] && !moveSrc[inst.Dst] && !m.isSliceViewOfArray(f, inst) && !m.isBorrowRead(f, inst) {
 				droppable[inst.Dst] = true
 			}
 		}
@@ -215,45 +272,62 @@ func (m *Module) insertDrops(f *Function, rep *Report) {
 		} else {
 			succs = blk.Succs
 		}
-		for _, s := range succs {
-			var liveInS map[ValueID]bool
-			if s == NoBlock {
-				liveInS = nil // nothing is live entering the virtual exit
-			} else {
-				liveInS = liveIn[s]
+		// For each owned value live into b, decide WHERE its (per-path) drop goes.
+		// A drop must run exactly once on every path that no longer needs v:
+		//   - if v dies entering EVERY outgoing edge (and the return edge): a single
+		//     drop at the END of b is correct and runs once per path;
+		//   - if v dies entering SOME successors but is still LIVE into others, the
+		//     drop must go at the START of each dead successor so it executes only
+		//     on that path. Dropping at the source block's end would free v before a
+		//     sibling path that still reads it => use-after-free (the conditional /
+		//     match-block crash: `ka`/`kb` compared in the guard then re-read in the
+		//     other arm).
+		for v := range li {
+			if !droppable[v] {
+				continue
 			}
-			for v := range li {
-				if !droppable[v] {
-					continue
-				}
-				if liveInS != nil && liveInS[v] {
-					continue // still live entering s: not dead on this edge
-				}
+			deadSuccs := []BlockID{}
+			liveIntoAnySucc := false
+			returnEdgeDead := false
+			for _, s := range succs {
 				if s == NoBlock {
-					dropAtEnd[bid] = append(dropAtEnd[bid], v)
+					returnEdgeDead = true // v dies at the function return
 					continue
 				}
-				if isHeader[bid] {
-					// Source is a loop header: its END runs every iteration, so
-					// drop at the TARGET's START (executed once on the exit edge).
+				if liveIn[s][v] {
+					liveIntoAnySucc = true
+				} else {
+					deadSuccs = append(deadSuccs, s)
+				}
+			}
+			if len(deadSuccs) == 0 && !returnEdgeDead {
+				continue // live into every successor: not dead on any edge
+			}
+			if liveIntoAnySucc {
+				// Dies on some edges, live on others: drop at the START of each
+				// dead successor (executes only on that path).
+				for _, s := range deadSuccs {
 					k := startKey{v, s}
 					if seenStart[k] {
 						continue
 					}
 					seenStart[k] = true
 					dropAtStart[s] = append(dropAtStart[s], v)
-				} else {
-					// Normal / pre-loop edge: drop at the SOURCE's END (runs
-					// once, before/outside the loop) so a value dead entering a
-					// loop header is NOT freed on every iteration.
-					k := endKey{v, bid}
-					if seenEnd[k] {
-						continue
-					}
-					seenEnd[k] = true
-					dropAtEnd[bid] = append(dropAtEnd[bid], v)
 				}
+				// returnEdgeDead with a live sibling cannot happen (a return edge
+				// leaves the function); if it ever did, the source-end drop below
+				// would wrongly free the live sibling, so we deliberately do NOT
+				// emit it here.
+				continue
 			}
+			// Dead on ALL outgoing edges (and/or the return edge): one drop at the
+			// END of b runs once per path and is safe for every successor.
+			k := endKey{v, bid}
+			if seenEnd[k] {
+				continue
+			}
+			seenEnd[k] = true
+			dropAtEnd[bid] = append(dropAtEnd[bid], v)
 		}
 	}
 
@@ -506,14 +580,22 @@ func (m *Module) checkDropCount(f *Function, rep *Report) {
 			if inst == nil {
 				continue
 			}
-			if inst.Op == OpMove {
-				// Only the moved-from source (Args[0]) is exempt from dropping; the
-				// destination keeps its own drop responsibility. EmitMoveInto carries
-				// Args=[src, dst], so we must not mark dst as a move source.
-				if len(inst.Args) > 0 && inst.Args[0] > NoVal {
-					moveSrc[inst.Args[0]] = true
-				}
+		if inst.Op == OpMove {
+			// Only the moved-from source (Args[0]) is exempt from dropping; the
+			// destination keeps its own drop responsibility. EmitMoveInto carries
+			// Args=[src, dst], so we must not mark dst as a move source.
+			if len(inst.Args) > 0 && inst.Args[0] > NoVal {
+				moveSrc[inst.Args[0]] = true
 			}
+		}
+		// OpOptionWrap transfers ownership of its payload into the option (the
+		// option's single drop is the free site), so the payload, like a move
+		// source, must be exempt from dropping. Without this an owned payload
+		// (str/vec/heap-option) is reported as a leak even though it is freed
+		// exactly once by the option's drop.
+		if inst.Op == OpOptionWrap && len(inst.Args) > 0 && inst.Args[0] > NoVal {
+			moveSrc[inst.Args[0]] = true
+		}
 		}
 	}
 	dropCount := map[ValueID]int{}
@@ -536,7 +618,7 @@ func (m *Module) checkDropCount(f *Function, rep *Report) {
 					// Caller-owned out-param: not dropped by the callee.
 					continue
 				}
-				if m.isOwnedVal(f, inst.Dst) {
+				if m.isOwnedVal(f, inst.Dst) && !m.isSliceViewOfArray(f, inst) && !m.isBorrowRead(f, inst) {
 					declared[inst.Dst] = true
 				}
 			}

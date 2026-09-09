@@ -1,0 +1,87 @@
+; test-diag-x25519 — 診斷 x25519 對特定純量 [1..32] 是否輸出全零
+; 用 hex-to-bytes 建構純量（與 RFC 測試相同路徑），排除純量建構的編譯器問題。
+; 預期值由正確的 Python 參考實作（X25519, a24=121665, RFC 7748 §6.1 驗證）計算：
+;   scalarmult-base(010203...1f20) = 50408a669d1de6d052975d75fe6461ff976701188ff1bf5aeb98f43092d25d3f
+
+hex-to-bytes = (hex-str str) (out [32]byte) {
+    i <- [0..32): {
+        #{overflow = wrap}
+        hi = hex-str[i * 2]
+        #{overflow = wrap}
+        lo = hex-str[i * 2 + 1]
+        hi-v = 0
+        lo-v = 0
+        {
+            #{overflow = wrap}
+            hi >= 48 && hi <= 57 -> hi-v = hi - 48
+            #{overflow = wrap}
+            hi >= 97 && hi <= 102 -> hi-v = hi - 87
+            #{overflow = wrap}
+            hi >= 65 && hi <= 70 -> hi-v = hi - 55
+        }
+        {
+            #{overflow = wrap}
+            lo >= 48 && lo <= 57 -> lo-v = lo - 48
+            #{overflow = wrap}
+            lo >= 97 && lo <= 102 -> lo-v = lo - 87
+            #{overflow = wrap}
+            lo >= 65 && lo <= 70 -> lo-v = lo - 55
+        }
+        out[i] = (hi-v << 4) | lo-v
+    }
+}
+
+main = () () {
+    expected [32]byte
+    priv = hex-to-bytes('0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20')
+    pub = x25519.x25519-scalarmult-base(priv)
+
+    expected[0] = 80
+    expected[1] = 64
+    expected[2] = 138
+    expected[3] = 102
+    expected[4] = 157
+    expected[5] = 29
+    expected[6] = 230
+    expected[7] = 208
+    expected[8] = 82
+    expected[9] = 151
+    expected[10] = 93
+    expected[11] = 117
+    expected[12] = 254
+    expected[13] = 100
+    expected[14] = 97
+    expected[15] = 255
+    expected[16] = 151
+    expected[17] = 103
+    expected[18] = 1
+    expected[19] = 24
+    expected[20] = 143
+    expected[21] = 241
+    expected[22] = 191
+    expected[23] = 90
+    expected[24] = 235
+    expected[25] = 152
+    expected[26] = 244
+    expected[27] = 48
+    expected[28] = 146
+    expected[29] = 210
+    expected[30] = 93
+    expected[31] = 63
+
+    eq = true
+    i <- [0..32): {
+        pub[i] != expected[i] -> {
+            eq = false
+            break
+        }
+    }
+
+    {
+        eq == true -> print('PASS: scalarmult-base([1..32]) matches reference')
+        eq == false -> {
+            print('FAIL: scalarmult-base([1..32]) mismatch')
+            i <- [0..32): { eprint(pub[i]) }
+        }
+    }
+}

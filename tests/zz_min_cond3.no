@@ -1,0 +1,12 @@
+main = () {
+    ka = ''
+    #{overflow = wrap}
+    i <- [0..4): { ka = ka - 'x' - ' ' }
+    kb = ''
+    #{overflow = wrap}
+    i <- [0..4): { kb = kb - 'y' - ' ' }
+    {
+        ka == kb -> print('eq')
+        ka != kb -> print('ne')
+    }
+}

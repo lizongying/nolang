@@ -20,10 +20,10 @@ t-match-literal = () {
 
 t-find-literal = () {
     result = regexp-find('world', 'hello world')
-    runner.eq(result.len, 5, 'find world len == 5')
+    runner.eq(result.len(), 5, 'find world len == 5')
     runner.str-eq(result, 'world', 5, 'find world content')
     result2 = regexp-find('xyz', 'hello world')
-    runner.eq(result2.len, 0, 'find not found len == 0')
+    runner.eq(result2.len(), 0, 'find not found len == 0')
 }
 
 ; ── 量詞 ──────────────────────────────────────
@@ -88,7 +88,7 @@ t-digit-class = () {
     matched2 bool = regexp-match('\\d+', 'abcdef')
     runner.is-false(matched2, 'digit: \\d+ not match in abcdef')
     result = regexp-find('\\d+', 'abc123def456')
-    runner.eq(result.len, 3, 'digit find len == 3')
+    runner.eq(result.len(), 3, 'digit find len == 3')
     runner.str-eq(result, '123', 3, 'digit find content == 123')
 }
 
@@ -119,13 +119,13 @@ t-end-anchor = () {
 
 t-find-digits = () {
     result = regexp-find('[0-9]+', 'abc123def456')
-    runner.eq(result.len, 3, 'find [0-9]+ len == 3')
+    runner.eq(result.len(), 3, 'find [0-9]+ len == 3')
     runner.str-eq(result, '123', 3, 'find [0-9]+ content == 123')
 }
 
 t-find-not-found = () {
     result = regexp-find('xyz', 'hello world')
-    runner.eq(result.len, 0, 'find not found len == 0')
+    runner.eq(result.len(), 0, 'find not found len == 0')
 }
 
 ; ── 執行 ──────────────────────────────────────

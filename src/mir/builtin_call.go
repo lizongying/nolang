@@ -509,7 +509,7 @@ func (c *codegen) emitBuiltinForward(f *Function, inst *Inst, bm *builtin.Builti
 		return c.emitBuiltinEprint(inst)
 	case "get-arch":
 		return c.emitBuiltinArch(inst)
-	case "str-len", "vec-len":
+	case "str-len", "vec-len", "str-len-bytes":
 		return c.emitBuiltinLen(inst, bm.ForwardFunc)
 	case "math-max", "math-min", "math-abs", "math-clamp", "math-degrees":
 		return c.emitBuiltinMath(inst, bm.ForwardFunc)
@@ -541,6 +541,10 @@ func (c *codegen) emitBuiltinForward(f *Function, inst *Inst, bm *builtin.Builti
 		return c.emitBuiltinUtime(inst)
 	case "get-priority":
 		return c.emitBuiltinGetPriority(inst)
+	case "get-errno":
+		return c.emitBuiltinGetErrno(inst)
+	case "read-stdin-line":
+		return c.emitBuiltinGetLine(inst)
 	case "sysctl":
 		return c.emitBuiltinSysctl(inst)
 	case "process-waitpid":
@@ -906,6 +910,32 @@ func (c *codegen) emitBuiltinLen(inst *Inst, ff string) error {
 	if slot == "" {
 		return fmt.Errorf("builtin %s: receiver has no slot", ff)
 	}
+	if strings.HasPrefix(lt, "[") {
+		// Fixed array [N x E]: the length is the compile-time element count N
+		// (no runtime length field exists). Mirrors emitLenCap's KindArray path
+		// and the legacy backend, which returns N for `len([...])`. Without this,
+		// `len(fixedArray)` was dispatched to str-len and rejected with
+		// "unsupported receiver type [N x E]" (e.g. tests/1.no: `len(["a","b","c"])`).
+		n, ok := arraySizeOf(lt)
+		if !ok {
+			c.fail("builtin %s: cannot compute size of fixed-array receiver %s", ff, lt)
+			return fmt.Errorf("builtin %s fixed-array %s", ff, lt)
+		}
+		if inst.Dst <= NoVal {
+			return nil
+		}
+		dstLT, _ := c.ptype(inst.Dst)
+		dstSlot := c.valSlot[inst.Dst]
+		if dstSlot == "" {
+			return fmt.Errorf("builtin %s: no result slot", ff)
+		}
+		v := c.coerce("i64", fmt.Sprintf("%d", n), dstLT)
+		if v == "" {
+			return fmt.Errorf("builtin %s: cannot store i64 into %s", ff, dstLT)
+		}
+		c.sb.WriteString(fmt.Sprintf("  store %s %s, %s* %s\n", dstLT, v, dstLT, dstSlot))
+		return nil
+	}
 	if lt != "%str-long" && lt != "%vec" {
 		c.fail("builtin %s: unsupported receiver type %s", ff, lt)
 		return fmt.Errorf("builtin %s receiver %s: %s", ff, lt, strings.Join(c.errs, "; "))
@@ -1168,6 +1198,71 @@ func (c *codegen) emitBuiltinVecClear(inst *Inst) error {
 	z := c.treg("clz")
 	c.sb.WriteString(fmt.Sprintf("  %s = insertvalue %%vec %s, i64 0, 0\n", z, vv))
 	c.sb.WriteString(fmt.Sprintf("  store %%vec %s, %%vec* %s\n", z, slot))
+	return nil
+}
+
+// emitBuiltinArrZero lowers `.zero()`: zero the receiver's backing memory.
+//   - fixed array [N x E] (by-value): memset the whole slot (N*sizeof(E) bytes).
+//   - slice []E (%vec): memset len*stride bytes of the heap data buffer.
+//
+// The receiver is inst.Args[0]; its alloca slot (c.valSlot) is the memory the
+// caller observes, so mutating it in place matches the by-reference method
+// contract (and the legacy genArrZero behaviour).
+func (c *codegen) emitBuiltinArrZero(inst *Inst) error {
+	if len(inst.Args) < 1 {
+		return fmt.Errorf("arr.zero: needs receiver")
+	}
+	recv := inst.Args[0]
+	slot := c.valSlot[recv]
+	if slot == "" {
+		return fmt.Errorf("arr.zero: no receiver slot")
+	}
+	raw := c.rawTypeOf(recv)
+	if strings.HasPrefix(raw, "[]") {
+		// Slice: zero len*stride bytes of the backing buffer (field 2), like
+		// the legacy %vec branch of genArrZero.
+		_, stride := c.elemInfoOfVec(recv)
+		c.loadSeq++
+		lg := fmt.Sprintf("%%azlg%d", c.loadSeq)
+		c.sb.WriteString(fmt.Sprintf("  %s = getelementptr inbounds %%vec, %%vec* %s, i32 0, i32 0\n", lg, slot))
+		c.loadSeq++
+		lv := fmt.Sprintf("%%azlv%d", c.loadSeq)
+		c.sb.WriteString(fmt.Sprintf("  %s = load i64, i64* %s\n", lv, lg))
+		c.loadSeq++
+		dg := fmt.Sprintf("%%azdg%d", c.loadSeq)
+		c.sb.WriteString(fmt.Sprintf("  %s = getelementptr inbounds %%vec, %%vec* %s, i32 0, i32 2\n", dg, slot))
+		c.loadSeq++
+		dv := fmt.Sprintf("%%azdv%d", c.loadSeq)
+		c.sb.WriteString(fmt.Sprintf("  %s = load i64, i64* %s\n", dv, dg))
+		c.loadSeq++
+		dp := fmt.Sprintf("%%azdp%d", c.loadSeq)
+		c.sb.WriteString(fmt.Sprintf("  %s = inttoptr i64 %s to i8*\n", dp, dv))
+		c.loadSeq++
+		tb := fmt.Sprintf("%%aztb%d", c.loadSeq)
+		c.sb.WriteString(fmt.Sprintf("  %s = mul i64 %s, %d\n", tb, lv, stride))
+		c.sb.WriteString(fmt.Sprintf("  call void @llvm.memset.p0i8.i64(i8* %s, i8 0, i64 %s, i1 false)\n", dp, tb))
+		return nil
+	}
+	// Fixed array (by-value [N x E]): the LLVM type (e.g. "[4 x i64]") is the
+	// slot's alloca element type. Compute its byte size with a one-element GEP
+	// (slot+1 minus slot) so we never have to parse N/E by hand, then memset.
+	ll, _ := c.ptype(recv)
+	c.loadSeq++
+	stI := fmt.Sprintf("%%azst%d", c.loadSeq)
+	c.sb.WriteString(fmt.Sprintf("  %s = ptrtoint %s* %s to i64\n", stI, ll, slot))
+	c.loadSeq++
+	endG := fmt.Sprintf("%%azeg%d", c.loadSeq)
+	c.sb.WriteString(fmt.Sprintf("  %s = getelementptr %s, %s* %s, i64 1\n", endG, ll, ll, slot))
+	c.loadSeq++
+	endI := fmt.Sprintf("%%azei%d", c.loadSeq)
+	c.sb.WriteString(fmt.Sprintf("  %s = ptrtoint %s* %s to i64\n", endI, ll, endG))
+	c.loadSeq++
+	nb := fmt.Sprintf("%%aznb%d", c.loadSeq)
+	c.sb.WriteString(fmt.Sprintf("  %s = sub i64 %s, %s\n", nb, endI, stI))
+	c.loadSeq++
+	bc := fmt.Sprintf("%%azbc%d", c.loadSeq)
+	c.sb.WriteString(fmt.Sprintf("  %s = bitcast %s* %s to i8*\n", bc, ll, slot))
+	c.sb.WriteString(fmt.Sprintf("  call void @llvm.memset.p0i8.i64(i8* %s, i8 0, i64 %s, i1 false)\n", bc, nb))
 	return nil
 }
 
@@ -1744,6 +1839,98 @@ func (c *codegen) emitBuiltinGetPriority(inst *Inst) error {
 	ok := c.treg("gp.ok")
 	c.sb.WriteString(fmt.Sprintf("  %s = icmp eq i32 %s, 0\n", ok, eLoad))
 	return c.storeResult(inst, 1, ok, "i1")
+}
+
+// emitBuiltinGetErrno lowers `os.get-errno()` -> i64 (the last errno value from
+// the C library). Mirrors call.go's get-errno case: resolve the platform errno
+// pointer (__error on macOS/BSD, __errno_location on glibc) and load+sext the
+// i32 to i64. Single-result builtin, so only inst.Results[0] is filled.
+func (c *codegen) emitBuiltinGetErrno(inst *Inst) error {
+	efn := c.errnoFnName()
+	c.decl(fmt.Sprintf("declare i32* @%s()", efn))
+	ePtr := c.treg("ge.err")
+	c.sb.WriteString(fmt.Sprintf("  %s = call i32* @%s()\n", ePtr, efn))
+	eLoad := c.treg("ge.eld")
+	c.sb.WriteString(fmt.Sprintf("  %s = load i32, i32* %s\n", eLoad, ePtr))
+	ext := c.treg("ge.ext")
+	c.sb.WriteString(fmt.Sprintf("  %s = sext i32 %s to i64\n", ext, eLoad))
+	return c.storeResult(inst, 0, ext, "i64")
+}
+
+// emitBuiltinGetLine lowers `fs.get-line()` (ForwardFunc read-stdin-line): read
+// one line from stdin into a freshly malloc'd 4096-byte buffer via fgets(3),
+// strip a trailing '\n', and return (line str, ok bool). ok is false on EOF
+// (fgets returns NULL). Mirrors build/llvm/call_stdlib.go get-line: malloc +
+// fgets(stdin) + strlen + newline-strip + %str-long construction. The buffer is
+// adopted as an owned %str-long (cap = len), so the drop pass frees it like any
+// other owned string (the buffer is heap-owned via @malloc, matching @str_free).
+func (c *codegen) emitBuiltinGetLine(inst *Inst) error {
+	if len(inst.Results) < 1 || inst.Results[0] <= NoVal {
+		if inst.Dst <= NoVal {
+			c.fail("get-line: no result slot")
+			return fmt.Errorf("get-line: no result")
+		}
+	}
+	c.decl("declare i8* @fgets(i8*, i32, i8*)")
+	c.decl("declare void @llvm.memset.p0i8.i64(i8*, i8, i64, i1)")
+	// macOS uses __stdinp (i8**); Linux/others use stdin (i8**). The MIR prelude
+	// is currently hardcoded to arm64-apple-macosx, so default to __stdinp and
+	// only fall back to stdin for an explicit linux target.
+	stdinSym := "@__stdinp"
+	if runtime.GOOS == "linux" {
+		stdinSym = "@stdin"
+	}
+	c.global(stdinSym + " = external global i8*")
+
+	// buf = malloc(4096); memset(buf, 0, 4096) so a NULL (EOF) read leaves a
+	// valid, zeroed buffer and the branchless strip below never touches
+	// uninitialized memory.
+	buf := c.treg("gl.buf")
+	c.sb.WriteString(fmt.Sprintf("  %s = call i8* @malloc(i64 4096)\n", buf))
+	c.sb.WriteString(fmt.Sprintf("  call void @llvm.memset.p0i8.i64(i8* %s, i8 0, i64 4096, i1 false)\n", buf))
+	stdinReg := c.treg("gl.stdin")
+	c.sb.WriteString(fmt.Sprintf("  %s = load i8*, i8** %s\n", stdinReg, stdinSym))
+	fgetsReg := c.treg("gl.fgets")
+	c.sb.WriteString(fmt.Sprintf("  %s = call i8* @fgets(i8* %s, i32 4096, i8* %s)\n", fgetsReg, buf, stdinReg))
+	ok := c.treg("gl.ok")
+	c.sb.WriteString(fmt.Sprintf("  %s = icmp ne i8* %s, null\n", ok, fgetsReg))
+	lenReg := c.treg("gl.len")
+	c.sb.WriteString(fmt.Sprintf("  %s = call i64 @strlen(i8* %s)\n", lenReg, buf))
+
+	// Branchless trailing-newline strip. The byte beyond newLen is never read
+	// (the %str-long length caps it), so the buffer itself need not be mutated;
+	// we only shorten newLen when the last byte is '\n'. (The buffer is zeroed,
+	// so reading it when len == 0 is safe; the result is discarded via select.)
+	hasLen := c.treg("gl.has")
+	c.sb.WriteString(fmt.Sprintf("  %s = icmp sgt i64 %s, 0\n", hasLen, lenReg))
+	sub1 := c.treg("gl.sub1")
+	c.sb.WriteString(fmt.Sprintf("  %s = sub i64 %s, 1\n", sub1, lenReg))
+	lastIdx := c.treg("gl.lidx")
+	c.sb.WriteString(fmt.Sprintf("  %s = select i1 %s, i64 %s, i64 0\n", lastIdx, hasLen, sub1))
+	nlPtr := c.treg("gl.nlptr")
+	c.sb.WriteString(fmt.Sprintf("  %s = getelementptr inbounds i8, i8* %s, i64 %s\n", nlPtr, buf, lastIdx))
+	lastByte := c.treg("gl.nlb")
+	c.sb.WriteString(fmt.Sprintf("  %s = load i8, i8* %s\n", lastByte, nlPtr))
+	isNL := c.treg("gl.isnl")
+	c.sb.WriteString(fmt.Sprintf("  %s = icmp eq i8 %s, 10\n", isNL, lastByte))
+	isNLz64 := c.treg("gl.isnlz64")
+	c.sb.WriteString(fmt.Sprintf("  %s = zext i1 %s to i64\n", isNLz64, isNL))
+	newLenRaw := c.treg("gl.nlr")
+	c.sb.WriteString(fmt.Sprintf("  %s = sub i64 %s, %s\n", newLenRaw, lenReg, isNLz64))
+	// newLen = len - (newline ? 1 : 0), guarded to 0 when len == 0.
+	newLen := c.treg("gl.nl")
+	c.sb.WriteString(fmt.Sprintf("  %s = select i1 %s, i64 %s, i64 0\n", newLen, hasLen, newLenRaw))
+
+	// Adopt the malloc'd buffer as an owned %str-long {len, cap=len, data}.
+	if err := c.storeRawStr(inst, 0, newLen, newLen, buf); err != nil {
+		return err
+	}
+	if len(inst.Results) >= 2 && inst.Results[1] > NoVal {
+		if err := c.storeResult(inst, 1, ok, "i1"); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // emitBuiltinSysctl lowers `os.sysctl(name)` -> (val str, ok bool) on macOS/BSD

@@ -34,14 +34,14 @@ detect-type = (path str) (kind str) {
     ; 1. 基於擴展名判斷
     ext = get-extension(path)
     ext-kind = detect-by-extension(ext)
-    ext-kind.len > 0 -> {
+    ext-kind.len-bytes() > 0 -> {
         kind = ext-kind
         return
     }
 
     ; 2. 基於魔數判斷
     magic-kind = detect-by-magic(path)
-    magic-kind.len > 0 -> {
+    magic-kind.len-bytes() > 0 -> {
         kind = magic-kind
         return
     }
@@ -58,17 +58,21 @@ detect-type = (path str) (kind str) {
 ; path: 檔案路徑
 ; 返回副檔名（不含 '.'），無副檔名返回空串
 get-extension = (path str) (ext str) {
-    n = path.len
+    n = path.len-bytes()
+    #{overflow = wrap}
     i = n - 1
     {
         i < 0 -> return
         c = path[i]
         c == 47 -> return; '/' - 目錄分隔符，停止查找
+        #{overflow = wrap}
         c == 46 -> {  // '.' - 找到副檔名
+            #{overflow = wrap}
             ext = path.slice(i + 1, n)
             ext = ext.to-lower()
             return
         }
+        #{overflow = wrap}
         i = i - 1
     } (i >= 0)
 }

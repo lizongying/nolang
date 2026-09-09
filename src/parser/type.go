@@ -208,6 +208,106 @@ func (p *Parser) filterInferableType(retType string) string {
 	return retType
 }
 
+// containerElemType returns the element type of a container type string used
+// for arr/vec/slice indexing, or "" if lt is not an indexable container.
+// str/txt are intentionally excluded (their s[i] returns char, not Option).
+func containerElemType(lt string) string {
+	if lt == "" {
+		return ""
+	}
+	if lt == "str" || lt == "txt" {
+		return "" // char, not option-indexed
+	}
+	if strings.HasPrefix(lt, "[]") {
+		return lt[2:]
+	}
+	if strings.HasPrefix(lt, "[") {
+		if i := strings.Index(lt, "]"); i >= 0 && i+1 < len(lt) {
+			return lt[i+1:]
+		}
+	}
+	if strings.HasPrefix(lt, "vec[") && strings.HasSuffix(lt, "]") {
+		return lt[len("vec["):len(lt)-1]
+	}
+	return ""
+}
+
+// inferIndexElemType returns the element type of an IndexExpression's base
+// container, using the parser-resolved variable types (available at lowering
+// time). Returns "" if the element type cannot be determined.
+func (p *Parser) inferIndexElemType(idx *IndexExpression) string {
+	if idx == nil || idx.Left == nil {
+		return ""
+	}
+	lt := ""
+	// 必須用函數作用域查詢（FuncVarType）以避免同名區域變數的跨函數型別污染：
+	// p.sem.VarTypes 是全域快照，其他函數的 `arr []byte` 會覆寫本函數的
+	// `arr []i64`，導致元素型別被誤判為 byte（it 綁定成 i8 而崩潰）。
+	lookupVarType := func(name string) string {
+		if t, ok := p.sem.FuncVarType(p.curFuncName, name); ok && t != "" {
+			return t
+		}
+		if t, ok := p.sem.VarTypes[name]; ok {
+			return t
+		}
+		return ""
+	}
+	switch b := idx.Left.(type) {
+	case *Identifier:
+		// 優先查詢「安全索引專用」本地型別表（lower 預掃描所得），
+		// 避免跨函數型別污染（見 isSafeIndexBase 註解）。
+		if t, ok := p.idxLocalTypes[p.curFuncName][b.Value]; ok && t != "" {
+			lt = strings.TrimPrefix(t, "?")
+		} else if t := lookupVarType(b.Value); t != "" {
+			lt = strings.TrimPrefix(t, "?")
+		}
+	case *DotExpression:
+		// receiver.field[i] — resolve the struct field's container type.
+		rt := p.resolveReceiverType(b.Receiver)
+		if rt != "" {
+			if fields, ok := p.structFields[rt]; ok {
+				if ft, ok := fields[b.Property]; ok {
+					lt = strings.TrimPrefix(ft, "?")
+				}
+			}
+		}
+	}
+	if lt == "" {
+		return ""
+	}
+	return containerElemType(lt)
+}
+
+// isSafeIndexBase reports whether an IndexExpression indexes a direct
+// arr/vec/slice variable (which should become a safe Option-returning access),
+// as opposed to str/txt (which keeps returning char) or a struct field
+// (receiver.field[i], which keeps the existing bounds_check path).
+//
+// NOTE: only direct-variable bases are supported by the safe-index codegen
+// (generateOptionAssign's IndexExpression case). Struct-field indexing is
+// intentionally excluded here so it is never desugared into the safe form
+// (which the codegen does not yet handle for DotExpression bases).
+func (p *Parser) isSafeIndexBase(idx *IndexExpression) bool {
+	if idx == nil || idx.Left == nil {
+		return false
+	}
+	ident, ok := idx.Left.(*Identifier)
+	if !ok {
+		return false
+	}
+	lt := ""
+	// 優先查詢「安全索引專用」本地型別表（lower 預掃描區域變數容器型別所得，
+	// 如 `av = a.to-vec()` → []i64），其優先級高於全域快照，避免跨函數污染。
+	if t, ok := p.idxLocalTypes[p.curFuncName][ident.Value]; ok && t != "" {
+		lt = strings.TrimPrefix(t, "?")
+	} else if t, ok := p.sem.FuncVarType(p.curFuncName, ident.Value); ok && t != "" {
+		lt = strings.TrimPrefix(t, "?")
+	} else if t, ok := p.sem.VarTypes[ident.Value]; ok {
+		lt = strings.TrimPrefix(t, "?")
+	}
+	return containerElemType(lt) != ""
+}
+
 // isTypeName checks if the given literal is a known type name.
 // Used to support concise declarations like `i64` on its own line.
 func isTypeName(literal string) bool {

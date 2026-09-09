@@ -7,7 +7,7 @@ test-forward-slice = () (ok bool) {
     b = a[1..3]
     b[0] == 20 -> ok = true
     b[1] == 30 -> ok = true
-    b.len == 2 -> ok = true
+    b.len() == 2 -> ok = true
 }
 
 ; 測試 2：vec 反向切片 [3..1]（兩端包含）
@@ -17,7 +17,7 @@ test-vec-reverse-inclusive = () (ok bool) {
     b[0] == 40 -> ok = true
     b[1] == 30 -> ok = true
     b[2] == 20 -> ok = true
-    b.len == 3 -> ok = true
+    b.len() == 3 -> ok = true
 }
 
 ; 測試 3：vec 反向切片 [3..1)（右端不包含）
@@ -26,7 +26,7 @@ test-vec-reverse-exclusive = () (ok bool) {
     b = a[3..1)
     b[0] == 40 -> ok = true
     b[1] == 30 -> ok = true
-    b.len == 2 -> ok = true
+    b.len() == 2 -> ok = true
 }
 
 ; 測試 4：vec 反向切片 (3..1]（左端不包含）
@@ -37,7 +37,7 @@ test-vec-reverse-left-excl = () (ok bool) {
     b[1] == 40 -> ok = true
     b[2] == 30 -> ok = true
     b[3] == 20 -> ok = true
-    b.len == 4 -> ok = true
+    b.len() == 4 -> ok = true
 }
 
 ; 測試 5：str 反向切片
@@ -49,7 +49,7 @@ test-str-reverse = () (ok bool) {
     r[2] == 108 -> ok = true
     r[3] == 101 -> ok = true
     r[4] == 104 -> ok = true
-    r.len == 5 -> ok = true
+    r.len-bytes() == 5 -> ok = true
 }
 
 ; 測試 6：vec 反向切片獨立性（修改源不影響結果）
@@ -68,7 +68,7 @@ test-vec-reverse-simple = () (ok bool) {
     b[0] == 50 -> ok = true
     b[1] == 40 -> ok = true
     b[2] == 30 -> ok = true
-    b.len == 3 -> ok = true
+    b.len() == 3 -> ok = true
 }
 
 main = () {

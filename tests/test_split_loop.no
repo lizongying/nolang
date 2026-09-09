@@ -4,13 +4,17 @@ main = () {
     sep = ','
     start = 0
     pos = s.index-from(sep, start)
+    #{overflow = wrap}
     print('first pos: ' + pos.to-str())
 
     ; simulate split loop
     {
+        #{overflow = wrap}
         print('loop: pos=' + pos.to-str() + ' start=' + start.to-str())
-        start = pos + sep.len
+        #{overflow = wrap}
+        start = pos + sep.len-bytes()
         pos = s.index-from(sep, start)
+        #{overflow = wrap}
         print('next: pos=' + pos.to-str() + ' start=' + start.to-str())
     } (pos >= 0)
     print('done')

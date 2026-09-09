@@ -44,8 +44,10 @@ description: Reference for Nolang programming language syntax. Use when working 
     - [Cross-Module Type References](#cross-module-type-references)
   - [Export System](#export-system)
   - [Special Symbols & Operators](#special-symbols--operators)
+  - [Signed Integer Subtraction Overflow (`#{overflow}`)](#signed-integer-subtraction-overflow-overflow)
   - [FFI (`#{c}` annotation)](#ffi-c-annotation)
   - [Annotations (#{...} system)](#annotations-system)
+  - [Safe Indexing (安全索引)](#safe-indexing-安全索引)
   - [Platform annotations (`#{mac-arm64}`, `#{linux-amd64}`, etc.)](#platform-annotations)
   - [JS Backend (`--js`, `--browser`)](#js-backend)
 - [String Operations](#string-operations)
@@ -54,19 +56,19 @@ description: Reference for Nolang programming language syntax. Use when working 
 
 ## Introduction
 
-Nolang is an experimental systems programming language that adopts a pass-by-reference model and a safe scope model to achieve absolute memory safety. No GC.
+Nolang is an experimental systems programming language: memory-safe with no GC, semantically intuitive, and minimally syntactic. It adopts a pass-by-reference model and a safe scope model to achieve absolute memory safety.
 
 ### Core Features
 
-- **Developer-friendly**: No pointers, no ownership, no lifetimes...
-- **Pass by reference**: All function parameters are references; functions return results by modifying parameters
-- **Automatic memory management**: Through the safe scope model, memory is automatically freed when leaving scope; no dangling pointers or memory leaks
-- **No GC**: No memory leak issues, so GC is unnecessary
-- **Performance-first**: Small strings require no heap allocation; variables can be allocated once and freed once
-- **Method overloading**: Achieves high performance through monomorphization
-- **Interfaces**: Supports interface function declarations, default function implementations, and multiple interface inheritance
-- **Generics**: Supports type and numeric generics
-- **Match**: Unique match design, simpler to use
+- **Memory-safe, no GC**: No garbage collector; automatic, safe memory management. Through the safe scope model, memory is automatically freed when leaving scope — no dangling pointers or memory leaks. Heap allocation is batched up-front, and a single batch free runs when the scope exits.
+- **Semantically intuitive**: Respects developer intent; no pointers, ownership, or lifetimes as hidden mental overhead.
+- **Minimal syntax**: Fewer keywords, simpler syntax.
+- **Pass by reference**: All function parameters are references; functions return results by modifying parameters.
+- **Performance-first**: Small strings require no heap allocation; variables can be allocated once and freed once.
+- **Method overloading**: Achieves high performance through monomorphization.
+- **Interfaces**: Supports interface function declarations, default function implementations, and multiple interface inheritance.
+- **Generics**: Supports type and numeric generics.
+- **Match**: Unique match design, simpler to use.
 
 ### Quick Start
 
@@ -930,7 +932,7 @@ verbatim. Verify with `no fmt <file>`.
 Functions pass results by **modifying input parameters**. Nolang functions have the following characteristics:
 
 - Functions have no return value by default; all data interaction is through parameters only
-- All function parameters are reference types; modifying parameters directly affects the caller's data
+- All function parameters are reference types by default; any modification inside the function directly affects the caller's original data (modifiable, but not destroyable)
 - Variables inside a function are automatically destroyed when the function exits
 - Parameters with result annotation are writable output params
 - **Prefer `?t` option over `(val, ok bool)`** for functions that may fail or return empty
@@ -1709,6 +1711,42 @@ vec[i]
 // Get value from map
 map[str]
 ```
+
+### Safe Indexing (安全索引)
+
+Direct indexing of `arr` / `vec` / `slice` (`[]T`) with `v[i]` aborts on out-of-bounds. Three **safe** forms guarantee no silent crash:
+
+**1. `x ?= v[i]` — propagate error upward.** Treats `v[i]` as returning `?elem`: OOB → `None`, else `some(elem)`. Combined with `?=`, the error propagates up (the function must return `?T`).
+
+```no
+safe-get = (arr []i64, i i64) (res ?i64) {
+    x ?= arr[i]   // OOB → res = None (no crash)
+}
+```
+
+**2. `#{index-out=DEF} x = v[i]` — substitute a literal default on OOB.** The annotation may trail the assignment on the same line. `DEF` **must be a literal** (not an expression), typed by the element:
+- integer/char containers (`i8`–`i128`, `u8`–`u128`, `byte`, `char`): int or char literal, e.g. `0`, `'x'`
+- float containers (`f32`, `f64`): float literal, e.g. `0.0`
+- bool containers (`bool`): `true` / `false`
+- str containers (`str`): string literal, e.g. `''`
+
+```no
+get-default = (arr []i64, i i64) (res i64) {
+    res = arr[i]  #{index-out=0}   // OOB → res = 0
+}
+```
+Leading form `#{index-out=0} res = arr[i]` is also accepted.
+
+**3. Bare `x = v[i]` inside an option-returning function — auto-rewrite to `?=`.** When the enclosing function returns `?T`, a bare safe-index assignment `x = v[i]` is automatically rewritten to `x ?= v[i]`, propagating OOB upward.
+
+```no
+auto-prop = (arr []i64, i i64) (res ?i64) {
+    x = arr[i]   // auto-equivalent to x ?= arr[i]; OOB → res = None
+}
+```
+
+> **Scope:** safe indexing applies only to direct variable indexing of `arr`/`vec`/`slice` (`v[i]`, `v` an identifier). `str`/`txt` indexing still returns a char; `receiver.field[i]` uses the normal bounds-check path and is not rewritten.
+> **Guarantee:** with any of these forms, out-of-bounds never silently crashes — it returns `None`, returns a default, or propagates the error.
 
 ### Standard Library Struct Pattern
 
@@ -2874,6 +2912,72 @@ s[1] = 105                     // len automatically becomes 2
 // Manually setting .len is only for truncation (shortening)
 s.len = 5
 ```
+
+## Integer Arithmetic Overflow (`#{overflow}`)
+
+Nolang never panics. The following **integer arithmetic** operations control overflow behavior via the `#{overflow = ...}` annotation:
+
+- **Signed and unsigned `+ - *`** — applies whenever both operands are integers (incl. `int` literals).
+- **Signed `/`** — only `INT_MIN / -1` overflows (unsigned division `a/b ≤ a` never overflows, so it is not covered).
+
+The default (unannotated) behavior returns `option<int>`. Overflow yields `err`; normal yields `ok(value)`. The receiver must be `?T` and be destructured with match (`err` / `nil` / `ok`). A plain `int` receiver is a **compile error** (forces you to annotate or use `?T`).
+
+Modes (all return plain `int`):
+
+- **`#{overflow = wrap}`** → silent two's-complement wrap. Use for hashing, crypto, counters.
+- **`#{overflow = clamp0}`** → on overflow the result is `0`. Use when a value must never go negative.
+- **`#{overflow = min}`** → clamp to the type's minimum. Use for lower-bound guards.
+- **`#{overflow = max}`** → clamp to the type's maximum. Use for capacity caps / saturating accumulation.
+- **`#{overflow = saturate}`** → over-flow → max, under-flow → min.
+
+All modes also support **type-prefixed forms** that pin the exact narrow-type bound, e.g. `#{overflow = u8-max}`, `#{overflow = i8-min}`, `#{overflow = u16-saturate}`. A function-level annotation of a prefixed form applies to every same-type operation in the body.
+
+Annotation granularity: above a **function definition** → applies to all covered integer operations in the function body (function-level). Above a **`let` binding** → applies only to the immediately following operation statement (statement-level). One annotation affects only its first following definition/binding.
+
+**LSP quick fix:** the language server (nolang-lsp) emits a Hint (`nolang-overflow`) on every un-annotated integer operation and offers five code actions — **Add `#{overflow = wrap}`** / **`clamp0`** / **`min`** / **`max`** / **`saturate}`** — that insert the annotation above the operation's enclosing statement at the matching indentation, switching the default `option<int>` result back to plain `int`.
+
+```no
+#{overflow = wrap}
+sub-wrap = (a i64, b i64) (r i64) {
+    r = a - b              ; plain i64, silent wrap on overflow
+}
+
+#{overflow = u8-max}
+inc = (x u8) (r u8) {
+    r = x + 1              ; x = 255 → 255 (no wrap to 0)
+}
+
+#{overflow = i8-min}
+dec = (x i8) (r i8) {
+    r = x - 1              ; x = -128 → -128 (no wrap to 127)
+}
+
+main = () {
+    x i64 = -9223372036854775807
+    #{overflow = clamp0}
+    c i64 = x - 2         ; underflow → 0
+    print(c)
+
+    d ?i64 = x - 1        ; default: option<i64>
+    d: { err -> print(-1); nil -> print(0); -> print(1) }
+}
+main()
+```
+
+**Propagating overflow with `?=` (bare arithmetic):** `?=` works on any `option`-returning integer operation, not just function calls — so `v ?= a - b` auto-returns `err` on overflow without a temporary binding:
+
+```no
+sub-safe = (a i64, b i64) (result ?i64) {
+    result = nil
+    v ?= a - b            ; under/over-flow → err auto-propagated; else v = inner i64
+    result = v
+}
+```
+
+Notes:
+- `%option`'s `data` field is `i64`; narrow results (`i8`/`i16`/`i32`) are sign-extended before storage and truncated back on unwrap.
+- Unsigned arithmetic (`u8`/`u16`/`u32`/`u64`/`u128`) follows the **same rule** as signed: unannotated `+ - *` default to `option<int>` (overflow → `err`), not plain wrap.
+- `i128` operations do not support the `option` path (data field is only `i64`); they always degrade to silent wrap.
 
 ## Standard Library
 

@@ -3,7 +3,7 @@
 #{embed='tests/embed-test-asset.txt'}
 DATA []byte
 
-n = DATA.len
+n = DATA.len()
 print('embed len: {n}')
 {
     n == 5 -> print('len OK')

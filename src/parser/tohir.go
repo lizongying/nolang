@@ -233,7 +233,7 @@ func (c *hirConv) stmtNode(s Statement) int32 {
 	case *UnwrapAssignStatement:
 		return c.b.Add(hir.Node{
 			Kind:  hir.KUnwrapAssign,
-			S:     c.b.Intern(idValue(s.Name)),
+			S:     c.b.Intern(s.TargetName()),
 			First: c.expr(s.Value),
 			Line:  line, Col: col,
 		})
@@ -254,7 +254,7 @@ func (c *hirConv) stmtNode(s Statement) int32 {
 		return c.b.Add(hir.Node{Kind: hir.KReturn, First: c.expr(s.ReturnValue), Line: line, Col: col})
 
 	case *ExpressionStatement:
-		return c.b.Add(hir.Node{Kind: hir.KExprStmt, First: c.expr(s.Expression), Line: line, Col: col})
+		return c.b.Add(hir.Node{Kind: hir.KExprStmt, First: c.expr(s.Expression), Line: line, Col: col, Flags: overflowModeFlags(s.OverflowMode)})
 
 	case *BlockStatement:
 		stmts := make([]int32, 0, len(s.Statements))
@@ -272,7 +272,8 @@ func (c *hirConv) stmtNode(s Statement) int32 {
 		return c.funcLike(hir.KFuncDef, &s.FuncSignature, s.Name, s.Body, s.VariadicUnion, line, col,
 			hir.FlagMethod*u32(s.IsMethodDef)|
 				hir.FlagColon*u32(s.ColonSyntax)|
-				hir.FlagSkipNaming*u32(s.IsSkipNamingCheck))
+				hir.FlagSkipNaming*u32(s.IsSkipNamingCheck)|
+				overflowModeFlags(s.OverflowMode))
 
 	case *ExternStatement:
 		nodes := make([]int32, 0, len(s.Parameters)+len(s.Results))
@@ -309,7 +310,7 @@ func (c *hirConv) stmtNode(s Statement) int32 {
 		return c.b.Add(hir.Node{
 			Kind:  hir.KFor,
 			S:     c.b.Intern(s.Label),
-			Flags: hir.FlagCondWrapper * u32(s.IsCondWrapper),
+			Flags: hir.FlagCondWrapper*u32(s.IsCondWrapper) | overflowModeFlags(s.OverflowMode),
 			First: c.kids(nodes),
 			Line:  line, Col: col,
 		})
@@ -437,6 +438,26 @@ func (c *hirConv) funcLike(
 		First: c.kids(nodes),
 		Line:  line, Col: col,
 	})
+}
+
+// overflowModeFlags 將 FunctionDefinition.OverflowMode
+// （#{overflow = wrap|clamp0|min|max|saturate}）編碼為 HIR 標誌位，
+// 貫穿 HIR 重建；generateFunctionDefinition 重建時再解碼回字串。
+func overflowModeFlags(mode string) uint32 {
+	switch mode {
+	case "wrap":
+		return hir.FlagOverflowWrap
+	case "clamp0":
+		return hir.FlagOverflowClamp0
+	case "min":
+		return hir.FlagOverflowMin
+	case "max":
+		return hir.FlagOverflowMax
+	case "saturate":
+		return hir.FlagOverflowSaturate
+	default:
+		return 0
+	}
 }
 
 func (c *hirConv) param(p *Parameter, kind hir.Kind) int32 {

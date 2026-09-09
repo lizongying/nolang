@@ -14,9 +14,9 @@ failed = 0
 
 t-len = () {
     s = 'hello'
-    runner.eq(s.len, 5, 'str.len hello == 5')
+    runner.eq(s.len-bytes(), 5, 'str.len() hello == 5')
     e = ''
-    runner.eq(e.len, 0, 'str.len empty == 0')
+    runner.eq(e.len-bytes(), 0, 'str.len() empty == 0')
 }
 
 t-index = () {
@@ -62,27 +62,27 @@ t-case = () {
 t-trim = () {
     s1 = '  hi  '
     t1 = s1.trim()
-    runner.eq(t1.len, 2, 'trim both sides len')
+    runner.eq(t1.len(), 2, 'trim both sides len')
     runner.str-eq(t1, 'hi', 2, 'trim both sides content')
     s2 = 'hi'
     t2 = s2.trim()
-    runner.eq(t2.len, 2, 'trim no-space unchanged')
+    runner.eq(t2.len(), 2, 'trim no-space unchanged')
 }
 
 t-repeat = () {
     space = ' '
     buf = space.repeat(8)
-    runner.eq(buf.len, 8, 'repeat len')
+    runner.eq(buf.len(), 8, 'repeat len')
     ab = 'ab'
     r = ab.repeat(3)
-    runner.eq(r.len, 6, 'repeat ab x3 len')
+    runner.eq(r.len(), 6, 'repeat ab x3 len')
     runner.str-eq(r, 'ababab', 6, 'repeat ab x3 content')
 }
 
 t-slice = () {
     s = 'hello world'
     v = s.slice(6, 11)
-    runner.eq(v.len, 5, 'slice len')
+    runner.eq(v.len(), 5, 'slice len')
     runner.str-eq(v, 'world', 5, 'slice content')
     v2 = s.slice(0, 5)
     runner.str-eq(v2, 'hello', 5, 'slice from 0')
@@ -91,7 +91,7 @@ t-slice = () {
 t-to-bytes = () {
     s = 'hello'
     b = s.to-bytes()
-    runner.eq(b.len, 5, 'to-bytes len')
+    runner.eq(b.len(), 5, 'to-bytes len')
     b0 i64 = b[0]
     runner.eq(b0, 104, 'to-bytes 0 == h')
     b4 i64 = b[4]
@@ -141,7 +141,7 @@ t-eq = () {
 t-copy = () {
     s = 'abc'
     d = s.copy()
-    runner.eq(d.len, 3, 'copy len')
+    runner.eq(d.len(), 3, 'copy len')
     runner.is-true(d.eq(s, 3), 'copy content equal')
     d[0] = 120
     runner.eq(s[0], 97, 'copy is independent (source unchanged)')
@@ -150,13 +150,13 @@ t-copy = () {
 t-fill = () {
     s = 'abc'
     s.fill(122)
-    runner.eq(s.len, 3, 'fill keeps len')
+    runner.eq(s.len-bytes(), 3, 'fill keeps len')
     runner.str-eq(s, 'zzz', 3, 'fill with z')
 }
 
 ; ── 執行 ──────────────────────────────────────
 
-p1, f1 = runner.test('str.len', t-len)
+p1, f1 = runner.test('str.len()', t-len)
 passed = passed + p1
 failed = failed + f1
 p2, f2 = runner.test('str.index', t-index)

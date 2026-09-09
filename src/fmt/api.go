@@ -26,6 +26,15 @@ type formatter struct {
 	// formatBareMatchExpression 為 wildcard arm 合成的 IfExpression），
 	// 不污染 program.Sem。
 	synthRT map[*parser.IfExpression]parser.RTFlag
+
+	// activeOverflow 記錄上一個已輸出的 overflow 模式（正規化字串，如
+	// "wrap"/"clamp0"）。區塊級 #{overflow=...} 經 parser 的
+	// propagateBlockScopedOverflow 合併進區塊內「每一個」陳述的 side-table
+	// （供 codegen 讀取 Statement.OverflowMode 欄位），因此 formatter 若對每個
+	// 陳述都從 side-table 輸出，會把同一註解重複印 N 次。此欄位配合下方去重邏輯
+	// 讓 overflow 在每個區塊內僅輸出一次：模式不變即跳過。區塊邊界由
+	// formatBlockInner / formatProgram 負責 save/restore，確保跨區塊重新輸出正確。
+	activeOverflow string
 }
 
 // hasRT 查詢 IfExpression 的 fmt 往返標誌：先查 formatter 本地合成表，
@@ -65,9 +74,17 @@ func (f *formatter) newline() {
 // docStartLine returns the first line of the Doc comment before a statement, or 0.
 
 func (f *formatter) formatProgram(p *parser.Program) {
+	// 追蹤上一個「有輸出」的頂層陳述，使無輸出的陳述不會產生空白行，且空白行
+	// 保留以最後一個有輸出的陳述為基準（見 formatBlockInner 的同名邏輯）。
+	lastEmitEndLine := 0
+	prevEmitted := false
 	for i, stmt := range p.Statements {
-		if i > 0 {
-			prevEndLine := stmtTokenEndLine(p.Statements[i-1])
+		// 頂層陳述各自獨立：保存/恢復 activeOverflow，避免一個頂層區塊輸出的
+		// overflow 模式「洩漏」到下一個頂層區塊，導致後者漏印（非冪等）。
+		savedOverflow := f.activeOverflow
+		emits := f.statementEmitsSomething(stmt)
+		if i > 0 && emits {
+			prevEndLine := lastEmitEndLine
 			currStartLine := stmtFirstLine(stmt)
 			_, prevIsFunc := p.Statements[i-1].(*parser.FunctionDefinition)
 			_, currIsFunc := stmt.(*parser.FunctionDefinition)
@@ -79,12 +96,25 @@ func (f *formatter) formatProgram(p *parser.Program) {
 			} else if prevIsUse || currIsUse {
 				// 導入語句和其他語句之間保留空行
 				f.newline()
-			} else if f.hasBlankLineBetween(prevEndLine, currStartLine) || (prevIsFunc && currIsFunc) || f.hasDocComment(stmt) || f.hasAttachedAnnotations(stmt) {
+			} else if prevEmitted {
+				if prevEndLine == 0 {
+					prevEndLine = stmtTokenEndLine(p.Statements[i-1])
+				}
+				if f.hasBlankLineBetween(prevEndLine, currStartLine) || (prevIsFunc && currIsFunc) || f.hasDocComment(stmt) || f.attachedAnnotationsWillEmit(stmt) {
+					f.newline()
+				}
+				f.newline()
+			} else {
+				// 上一個陳述無輸出：仍需換到新行，但不保留空白行
 				f.newline()
 			}
-			f.newline()
 		}
 		f.formatStatement(stmt)
+		if emits {
+			lastEmitEndLine = stmtTokenEndLine(stmt)
+		}
+		prevEmitted = emits
+		f.activeOverflow = savedOverflow
 	}
 
 	// 輸出尾隨註釋
@@ -113,6 +143,9 @@ func formatProgram(code string) (out string, ok bool, errs []string) {
 
 	l := lexer.New(code)
 	p := parser.New(l)
+	// 取得 surface AST（UnwrapAssignStatement 等），直接渲染 `?=` / `=`，
+	// 而非展開為不可重解析的 __unwrap_N 區塊（見 parser.SkipUnwrapLowering）。
+	p.SkipUnwrapLowering = true
 	program := p.ParseProgram()
 
 	// 如果解析失敗，返回原始碼，不修改；並透出錯誤訊息讓上層（如 `no fmt`）回報

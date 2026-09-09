@@ -572,24 +572,42 @@ func (p *Parser) parseExpression(precedence int) Expression {
 	// }
 
 	// 處理賦值: u.name = value 或 a[i] = value
-	if p.currentToken.Type == lexer.ASSIGN {
+	if p.currentToken.Type == lexer.ASSIGN || p.currentToken.Type == lexer.QUESTION_ASSIGN {
 		if _, ok := leftExp.(*DotExpression); ok {
 			tok := p.currentToken
 			p.nextToken()
 			val := p.parseExpression(LOWEST)
-			leftExp = &AssignExpression{
-				Token: tok,
-				Left:  leftExp,
-				Value: val,
+			if tok.Type == lexer.QUESTION_ASSIGN {
+				// 欄位目標的 ?=：解箱並向上傳播（溢出/option 錯誤）。
+				leftExp = &UnwrapAssignStatement{
+					Token:  tok,
+					Target: leftExp,
+					Value:  val,
+				}
+			} else {
+				leftExp = &AssignExpression{
+					Token: tok,
+					Left:  leftExp,
+					Value: val,
+				}
 			}
 		} else if _, ok := leftExp.(*IndexExpression); ok {
 			tok := p.currentToken
 			p.nextToken()
 			val := p.parseExpression(LOWEST)
-			leftExp = &AssignExpression{
-				Token: tok,
-				Left:  leftExp,
-				Value: val,
+			if tok.Type == lexer.QUESTION_ASSIGN {
+				// 索引目標的 ?=：解箱並向上傳播（溢出/option 錯誤）。
+				leftExp = &UnwrapAssignStatement{
+					Token:  tok,
+					Target: leftExp,
+					Value:  val,
+				}
+			} else {
+				leftExp = &AssignExpression{
+					Token: tok,
+					Left:  leftExp,
+					Value: val,
+				}
 			}
 		}
 	}

@@ -785,6 +785,13 @@ if goos == "windows" {
 	sb.WriteString("\tret void\n")
 	sb.WriteString("}\n\n")
 
+	// nolang.str_char_at: UTF-8 aware character (codepoint) indexing.
+	// Returns the idx-th Unicode codepoint of the byte buffer [data, data+len).
+	// This is the O(n) path taken when the compiler cannot prove the string is
+	// pure ASCII; when ASCII is proven, codegen emits a direct byte GEP (O(1))
+	// and never reaches this helper.
+	sb.WriteString(strCharAtIR)
+
 	// nolang.memcmp: runtime byte-by-byte comparison (replaces @llvm.memcmp intrinsic
 	// which is not expanded by opt in LLVM 21). Returns -1, 0, or 1 (like C memcmp).
 	sb.WriteString("define internal i32 @nolang.memcmp(i8* %a, i8* %b, i64 %n) {\n")

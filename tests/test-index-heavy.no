@@ -2,6 +2,7 @@ get-at = (arr [5]i64, i i64) (r i64) {
   r = arr[i]
 }
 sum-at = (arr [5]i64, i i64, j i64) (r i64) {
+  #{overflow = wrap}
   r = arr[i] + arr[j]
 }
 main = () () {
@@ -17,9 +18,11 @@ main = () () {
   print(s[0])
   print(s[7])
   v [3]i64 = [1, 2, 3]
+  #{overflow = wrap}
   print(v[v[0] - 1])
   acc = 0
   for i in [0, 1, 2, 3, 4] {
+    #{overflow = wrap}
     acc = acc + a[i]
   }
   print(acc)

@@ -29,10 +29,10 @@ test-nested-clone-vec = () (ok bool) {
     b1 = b[1]
     a1[1] == 5 -> ok = true
     b1[1] == 5 -> ok = true
-    a.len == 2 -> ok = true
-    b.len == 2 -> ok = true
-    a0.len == 3 -> ok = true
-    b0.len == 3 -> ok = true
+    a.len() == 2 -> ok = true
+    b.len() == 2 -> ok = true
+    a0.len() == 3 -> ok = true
+    b0.len() == 3 -> ok = true
 }
 
 ; 測試 2：[][]i64 深層 clone — 修改子切片長度
@@ -45,9 +45,9 @@ test-nested-clone-modify = () (ok bool) {
     b0 = b[0]
     ; a 的第一個子切片長度應仍為 2
     a0 = a[0]
-    a0.len == 2 -> ok = true
+    a0.len() == 2 -> ok = true
     ; b 的第一個子切片長度應為 2
-    b0.len == 2 -> ok = true
+    b0.len() == 2 -> ok = true
     ; 驗證值
     b0[0] == 1 -> ok = true
     b0[1] == 2 -> ok = true
@@ -65,13 +65,13 @@ test-nested-element-assign = () (ok bool) {
     a.push(make-vec3(4, 5, 6))
     x = a[0]
     ; x 是獨立拷貝
-    x.len == 3 -> ok = true
+    x.len() == 3 -> ok = true
     x[0] == 1 -> ok = true
     x[1] == 2 -> ok = true
     x[2] == 3 -> ok = true
     ; a 應不受影響
     a0 = a[0]
-    a0.len == 3 -> ok = true
+    a0.len() == 3 -> ok = true
     a0[0] == 1 -> ok = true
 }
 
@@ -115,8 +115,8 @@ test-nested-clone-str = () (ok bool) {
     c1 = c[1]
     s1[0] == 'foo' -> ok = true
     c1[0] == 'foo' -> ok = true
-    s.len == 2 -> ok = true
-    c.len == 2 -> ok = true
+    s.len() == 2 -> ok = true
+    c.len() == 2 -> ok = true
 }
 
 ; ============================================================
@@ -164,13 +164,13 @@ test-struct-clone-vec-field = () (ok bool) {
     g2 = g1
     ; 驗證內容相同
     g2.name == 'team-a' -> ok = true
-    g2.members.len == 2 -> ok = true
-    g2.scores.len == 2 -> ok = true
+    g2.members.len() == 2 -> ok = true
+    g2.scores.len() == 2 -> ok = true
     ; 修改 g2 的切片欄位不影響 g1
-    g2.members.len == 2 -> ok = true
-    g2.scores.len == 2 -> ok = true
-    g1.members.len == 2 -> ok = true
-    g1.scores.len == 2 -> ok = true
+    g2.members.len() == 2 -> ok = true
+    g2.scores.len() == 2 -> ok = true
+    g1.members.len() == 2 -> ok = true
+    g1.scores.len() == 2 -> ok = true
     ; 驗證原始值不變
     g1.name == 'team-a' -> ok = true
 }
@@ -241,8 +241,8 @@ test-map-clone = () (ok bool) {
         ok -> v5 == 100 -> ok = true
     }
     ; m1 大小不變
-    m1.len == 3 -> ok = true
-    m2.len == 3 -> ok = true
+    m1.len() == 3 -> ok = true
+    m2.len() == 3 -> ok = true
 }
 
 ; ============================================================
@@ -261,13 +261,13 @@ test-map-vec-value-clone = () (ok bool) {
     v: {
         ok -> {
             v.push('z')
-            v.len == 3 -> ok = true
+            v.len() == 3 -> ok = true
         }
     }
     ; m1 的切片不應受影響
     v2 = m1.get('items')
     v2: {
-        ok -> v2.len == 2 -> ok = true
+        ok -> v2.len() == 2 -> ok = true
     }
 }
 
@@ -294,12 +294,12 @@ test-struct-nested-vec-clone = () (ok bool) {
     m2 = m1
     ; 驗證內容相同
     m2.name == 'data' -> ok = true
-    m2.rows.len == 2 -> ok = true
+    m2.rows.len() == 2 -> ok = true
     ; 修改 m2 的嵌套容器不影響 m1
     r0 = m2.rows[0]
     m1r0 = m1.rows[0]
-    m1r0.len == 2 -> ok = true
-    r0.len == 2 -> ok = true
+    m1r0.len() == 2 -> ok = true
+    r0.len() == 2 -> ok = true
     r0[0] == 'a' -> ok = true
     r0[1] == 'b' -> ok = true
 }
@@ -320,7 +320,7 @@ test-struct-array-clone = () (ok bool) {
     ; 深拷貝
     copy = people
     ; 驗證內容相同
-    copy.len == 2 -> ok = true
+    copy.len() == 2 -> ok = true
     c0 = copy[0]
     c0.name == 'Alice' -> ok = true
     c0.age == 30 -> ok = true
