@@ -115,11 +115,23 @@ func (p *Parser) classifyBlock() blockType {
 	}
 	switch tok2.Type {
 	case lexer.COMMA:
+		// 首個成員為裸變體（`fail,`）：可能是 C 風格枚舉（blockEnum），也可能是
+		// 「首變體為單元變體」的標籤列舉（如 `a-res { fail, ok(v i64) }`）。
+		// 於深度 0 掃描是否存在「變體名後接 `(`」的成員來消歧。
+		if p.blockHasParenVariant(skip) {
+			return blockTaggedEnum
+		}
 		return blockEnum
 	case lexer.ASSIGN:
 		// enum 顯式賦值：Name { VARIANT = value, ... }
 		return blockEnum
 	case lexer.LPAREN:
+		// 區分介面方法 (name(...)) 與帶括號載荷欄位的標籤列舉變體 (ok(v t), err(e str))。
+		// 介面每個成員都是 `name(...)`；標籤列舉至少含一個「裸變體」（IDENT/NIL 後
+		// 不接 `(`，如 `nil,`）。`#{buildin}` 前置註解亦強制視為標籤列舉。
+		if p.blockIsTaggedEnumWithParens(skip) || p.blockIsTaggedEnumAllParens(skip) {
+			return blockTaggedEnum
+		}
 		return blockIface
 	case lexer.DOT:
 		// Generic-receiver method form: t.method(...)
@@ -230,6 +242,130 @@ func (p *Parser) classifyBlock() blockType {
 	}
 }
 
+// blockIsTaggedEnumWithParens 判斷 `name { ... }` 區塊（首個成員形如 `name(...)`）是否
+// 實為標籤列舉（變體帶括號載荷欄位），而非介面（方法）。於深度 0 掃描成員名：若出現
+// IDENT/NIL 之後不接 `(` 的裸變體（如 `nil,`），即為標籤列舉。`#{buildin}` 前置註解
+// 亦強制視為標籤列舉（內建列舉如 option 的載荷由 runtime 提供）。
+// start 為 tok1（`{` 後首個非 NEWLINE token）的 look 索引。
+func (p *Parser) blockIsTaggedEnumWithParens(start int) bool {
+	for _, e := range p.pendingAnnotations {
+		if e != nil && e.Key == "buildin" {
+			return true
+		}
+	}
+	depth := 0
+	for i := start; i < start+200; i++ {
+		t := p.look(i)
+		switch t.Type {
+		case lexer.EOF:
+			return false
+		case lexer.LPAREN, lexer.LBRACKET, lexer.LBRACE:
+			depth++
+		case lexer.RPAREN, lexer.RBRACKET:
+			depth--
+			if depth < 0 {
+				return false
+			}
+		case lexer.RBRACE:
+			if depth == 0 {
+				return false // 區塊結束，未見裸變體
+			}
+			depth--
+		case lexer.IDENT, lexer.NIL:
+			if depth == 0 && p.look(i+1).Type != lexer.LPAREN {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// blockHasParenVariant 於深度 0 掃描 `name { ... }` 區塊，判斷是否存在「變體名後接 `(`」
+// 的成員（如 ok(v i64)）。用於把首個成員為裸變體的區塊（`fail, ok(v i64)`）從
+// C 風格枚舉（blockEnum）糾正為標籤列舉（blockTaggedEnum）。
+// start 為 tok1 的 look 索引（可為 -1，對應 peekToken）。
+func (p *Parser) blockHasParenVariant(start int) bool {
+	depth := 0
+	for i := start; i < start+200; i++ {
+		t := p.look(i)
+		switch t.Type {
+		case lexer.EOF:
+			return false
+		case lexer.LPAREN:
+			if depth == 0 && i-1 >= -1 {
+				if prev := p.look(i - 1); prev.Type == lexer.IDENT || prev.Type == lexer.NIL {
+					return true
+				}
+			}
+			depth++
+		case lexer.LBRACKET, lexer.LBRACE:
+			depth++
+		case lexer.RPAREN, lexer.RBRACKET:
+			depth--
+			if depth < 0 {
+				return false
+			}
+		case lexer.RBRACE:
+			if depth == 0 {
+				return false
+			}
+			depth--
+		}
+	}
+	return false
+}
+
+// blockIsTaggedEnumAllParens 判斷「所有成員皆為 name(...) 形態」的區塊是標籤列舉還是介面
+// （如 `shape { circle(r f64), rect(w f64, h f64) }` vs `enter { enter() }`）。
+// 消歧規則（有界確定性前瞻，使用者無需多寫任何東西）：
+//   - 任一成員在 `)` 後緊跟 `(`（結果組，如 `t.gt(b t) (res bool)`）→ 介面；
+//   - 否則若至少一個成員的參數列表非空（如 `circle(r f64)`）→ 標籤列舉；
+//   - 否則（全部為空參數 `name()`）→ 介面。
+//
+// 即：無結果組的介面方法請使用空參數列表（std 中僅有的介面 enter()/leave() 即如此）。
+func (p *Parser) blockIsTaggedEnumAllParens(start int) bool {
+	hasNonEmptyParams := false
+	for i := start; i < start+200; i++ {
+		t := p.look(i)
+		switch t.Type {
+		case lexer.EOF, lexer.RBRACE:
+			return hasNonEmptyParams
+		case lexer.LPAREN:
+			prev := lexer.Token{}
+			if i-1 >= -1 {
+				prev = p.look(i - 1)
+			}
+			if prev.Type != lexer.IDENT {
+				continue
+			}
+			if p.look(i+1).Type != lexer.RPAREN {
+				hasNonEmptyParams = true
+			}
+			// 找匹配的 `)`；其後若緊跟 `(` 則為介面的結果組。
+			d := 0
+			for k := i; k < i+200; k++ {
+				switch p.look(k).Type {
+				case lexer.LPAREN:
+					d++
+				case lexer.RPAREN:
+					d--
+					if d == 0 {
+						if p.look(k+1).Type == lexer.LPAREN {
+							return false
+						}
+						i = k
+						goto nextMember
+					}
+				case lexer.EOF:
+					return hasNonEmptyParams
+				}
+			}
+		nextMember:
+		}
+	}
+	return hasNonEmptyParams
+}
+
 // classifyBlockAtCurrent 分類 `{ body }` 的型別，當 currentToken == LBRACE 時呼叫。
 func (p *Parser) classifyBlockAtCurrent() blockType {
 	if p.currentToken.Type != lexer.LBRACE {
@@ -303,11 +439,19 @@ func (p *Parser) classifyBlockAtCurrent() blockType {
 
 	switch tok2.Type {
 	case lexer.COMMA:
+		// 同 classifyBlock：首個成員為裸變體時，掃描是否存在帶括號載荷變體來區分
+		// C 風格枚舉與標籤列舉。
+		if p.blockHasParenVariant(base) {
+			return blockTaggedEnum
+		}
 		return blockEnum
 	case lexer.ASSIGN:
 		// enum 顯式賦值：Name { VARIANT = value, ... }
 		return blockEnum
 	case lexer.LPAREN:
+		if p.blockIsTaggedEnumWithParens(base) || p.blockIsTaggedEnumAllParens(base) {
+			return blockTaggedEnum
+		}
 		return blockIface
 	case lexer.RARROW:
 		return blockMatch
@@ -923,6 +1067,9 @@ func setDoc(stmt Statement, doc *CommentGroup) {
 	case *StructDefinition:
 		s.Doc = doc
 	case *MultiAssignStatement:
+		s.Doc = doc
+	case *UnwrapAssignStatement:
+		// `v ?= expr` 的前置註釋也要掛上，否則 fmt 會把註釋吞掉。
 		s.Doc = doc
 	case *TypeAlias:
 		s.Doc = doc

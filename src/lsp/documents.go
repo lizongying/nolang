@@ -219,6 +219,10 @@ func (m *DocumentManager) ParseDocument(uri string) (*parser.Program, []string, 
 	l := lexer.New(text)
 	p := parser.New(l)
 	p.Filename = filenameFromURI(uri)
+	// 保留 surface AST（UnwrapAssignStatement 等）：doc.AST 會被 format-on-save
+	// 直接渲染回源碼（server.go formatNolangCode → fmt.FormatProgram）。
+	// 若啟用 lowering，`v ?= expr` 會展開成不可再解析的 __unwrap_N 區塊寫回檔案。
+	p.SkipUnwrapLowering = true
 	// Inject std module function signatures and struct field types so that
 	// the parser can infer types from cross-module method calls (e.g.
 	// tls-c.send() → ?i64), which enables option-match `it` binding injection.
@@ -228,6 +232,18 @@ func (m *DocumentManager) ParseDocument(uri string) (*parser.Program, []string, 
 	ast := p.ParseProgram()
 
 	errs := p.Errors()
+
+	// `?=` 的診斷（`lowerUnwrapAssign` 發出，例如「所在函式沒有 option 型別的結果參數」）
+	// 只有在**啟用** UnwrapAssign lowering 時才會產生；而 LSP 主解析必須跳過 lowering
+	// 才能保住 surface AST（見上面的 SkipUnwrapLowering）。因此另外跑一次純診斷解析，
+	// 把這批錯誤補回來。只在文件真的出現 `?=` 時才跑，避免每次擊鍵多一次完整解析。
+	if ast != nil {
+		seen := make(map[string]bool, len(errs))
+		for _, e := range errs {
+			seen[e] = true
+		}
+		errs = append(errs, collectUnwrapLoweringErrors(text, filenameFromURI(uri), seen)...)
+	}
 
 	// Rebuild symbol index
 	index := NewSymbolIndex(uri, version)
@@ -268,13 +284,25 @@ func (m *DocumentManager) ParseDocument(uri string) (*parser.Program, []string, 
 					index.definitions[ex.Name] = index.symbols[ex.Name]
 				}
 			} else {
-				index.functions[ex.Name] = &IndexEntry{
+				fnEntry := &IndexEntry{
 					Name: ex.Name,
 					Kind: SymbolKindFunction,
 					Type: "fn",
 				}
+				// AddBuiltinSymbols 先註冊了內建函式的完整簽名（Params /
+				// ResultParams / Doc）。若同名內建已存在，保留其簽名資訊，
+				// 否則 `size ?= fstat-size(.fd)` 等 ?= 賦值的型別推導會退化
+				// 為 "call fstat-size" 佔位符。
+				if existing, ok := index.functions[ex.Name]; ok && existing != nil {
+					fnEntry.Type = existing.Type
+					fnEntry.Params = existing.Params
+					fnEntry.ResultParams = existing.ResultParams
+					fnEntry.Doc = existing.Doc
+					fnEntry.Value = existing.Value
+				}
+				index.functions[ex.Name] = fnEntry
 				if _, exists := index.definitions[ex.Name]; !exists {
-					index.definitions[ex.Name] = index.functions[ex.Name]
+					index.definitions[ex.Name] = fnEntry
 				}
 			}
 		}
@@ -611,10 +639,10 @@ func (m *DocumentManager) indexModuleStatement(index *SymbolIndex, stmt parser.S
 	}
 
 	// Keep built-in declarations (registered by indexBuiltinComments for
-	// #{buildin=NAME} / comment-form declarations in std modules) authoritative:
+	// #{buildin} / comment-form declarations in std modules) authoritative:
 	// a real function definition that merely re-declares a built-in stub in a
 	// declaration-only std file must not clobber the built-in symbol entry.
-	if existing, ok := index.definitions[name]; ok && existing.Type == "build-in" {
+	if existing, ok := index.definitions[name]; ok && existing.IsBuiltin {
 		return
 	}
 
@@ -687,11 +715,11 @@ func (m *DocumentManager) indexBuiltinComments(index *SymbolIndex, source, modUR
 		if !builtinNames[name] {
 			continue
 		}
-		// If a real function definition with the SAME name exists (e.g. a
-		// user-defined `write` function with a body), don't overwrite it —
-		// the real implementation takes priority over the comment declaration.
+		// If a real (non-builtin) definition with the SAME name already exists
+		// (e.g. a user-defined `write` with a body), don't overwrite it — the
+		// real implementation takes priority over the declaration stub.
 		existing, exists := index.definitions[name]
-		if exists && existing.Name == name && existing.Location.URI != "" && existing.Type != "build-in" {
+		if exists && existing.Name == name && existing.Location.URI != "" && !existing.IsBuiltin {
 			continue // real definition with same name, don't overwrite
 		}
 
@@ -702,18 +730,31 @@ func (m *DocumentManager) indexBuiltinComments(index *SymbolIndex, source, modUR
 				End:   Position{Line: uint32(i), Character: uint32(len(line))},
 			},
 		}
-		entry := &IndexEntry{
-			Name:     name,
-			Kind:     SymbolKindFunction,
-			Type:     "build-in",
-			Location: loc,
+		// Carry over the built-in's authoritative signature. AddBuiltinSymbols
+		// populates index.functions but NOT index.definitions, so `existing`
+		// alone is often nil here. Without the fallback, option-return builtins
+		// (stat-size / fstat-size / file-size) lose their folded `?T` result
+		// type and `size ?= fstat-size(.fd)` degrades to a "call fstat-size"
+		// placeholder (and hover shows "build-in" instead of the signature).
+		src := existing
+		if fn, ok := index.functions[name]; ok && fn != nil && fn.Type != "" {
+			src = fn
 		}
-		if existing != nil {
-			// Preserve params/doc from AddBuiltinSymbols
-			entry.Params = existing.Params
-			entry.ResultParams = existing.ResultParams
-			entry.Doc = existing.Doc
-			entry.Value = existing.Value
+		entry := &IndexEntry{
+			Name:      name,
+			Kind:      SymbolKindFunction,
+			Location:  loc,
+			IsBuiltin: true,
+		}
+		if src != nil {
+			entry.Type = src.Type
+			entry.Params = src.Params
+			entry.ResultParams = src.ResultParams
+			entry.Doc = src.Doc
+			entry.Value = src.Value
+		}
+		if entry.Type == "" {
+			entry.Type = "build-in"
 		}
 		index.functions[name] = entry
 		index.definitions[name] = entry
@@ -756,4 +797,37 @@ func filenameFromURI(uri string) string {
 	// Strip "file://" prefix
 	path := strings.TrimPrefix(uri, "file://")
 	return filepath.Base(path)
+}
+
+// collectUnwrapLoweringErrors 以「啟用 UnwrapAssign lowering」的方式重新解析一次，
+// 只為收集 `?=` 相關診斷；回傳的 AST 一律丟棄，絕不能拿來覆蓋 doc.AST。
+//
+// 背景：LSP 主解析必須設 parser.SkipUnwrapLowering=true——doc.AST 會被 format-on-save
+// 直接渲染回源碼（server.go formatNolangCode），而 lowering 展開的 __unwrap_N 區塊
+// 不可再解析，寫回即損壞檔案。代價是 lowerUnwrapAssign 裡的檢查
+// （「`?=` 只能用在有 option 型別結果參數的函式內」等）完全不會執行，編輯器看不到
+// 這些錯誤，使用者只能在 `no build` 時才發現。
+//
+// seen 由呼叫端傳入已回報過的錯誤字串，避免與主解析的診斷重複。
+func collectUnwrapLoweringErrors(text, filename string, seen map[string]bool) []string {
+	if !strings.Contains(text, "?=") {
+		return nil
+	}
+	l := lexer.New(text)
+	p := parser.New(l)
+	p.Filename = filename
+	funcSigs, structFields := checker.CollectStdModuleSignatures()
+	methodSigs := checker.CollectStdMethodSigs()
+	p.SetExternSignatures(funcSigs, methodSigs, structFields)
+	_ = p.ParseProgram()
+
+	var extra []string
+	for _, e := range p.Errors() {
+		if seen[e] {
+			continue
+		}
+		seen[e] = true
+		extra = append(extra, e)
+	}
+	return extra
 }

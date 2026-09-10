@@ -87,8 +87,27 @@ func (f *formatter) formatTaggedEnumDefinition(s *parser.TaggedEnumDefinition) {
 	for _, v := range s.Variants {
 		f.newline()
 		f.write(v.Name)
-		f.write(" ")
-		f.write(v.Type.String())
+		if len(v.Fields) > 0 {
+			// 括號載荷欄位：ok(v t) / err(e str) / rect(w f64, h f64)
+			f.write("(")
+			for i, fld := range v.Fields {
+				if i > 0 {
+					f.write(", ")
+				}
+				if fld.Name != "" {
+					f.write(fld.Name)
+					f.write(" ")
+				}
+				if fld.Type != nil {
+					f.write(fld.Type.String())
+				}
+			}
+			f.write(")")
+		} else if v.Type != nil {
+			// 舊式空格分隔型別：val i64
+			f.write(" ")
+			f.write(v.Type.String())
+		}
 		f.write(",")
 	}
 	f.indent--

@@ -1645,19 +1645,42 @@ func (ta *TypeAlias) EndPos() lexer.Position {
 // IsUnion reports whether the alias binds to a union.
 func (ta *TypeAlias) IsUnion() bool { return ta.Union != nil }
 
-// TaggedEnumVariant — 標籤列舉變體（名稱 + 型別）
-type TaggedEnumVariant struct {
+// TaggedEnumField — 標籤列舉變體的具名載荷欄位（`ok(v t)` 的 `v t`）。
+type TaggedEnumField struct {
 	Token lexer.Token
 	Name  string
 	Type  Type
-	Index int64
 }
 
-// TaggedEnumDefinition — 標籤列舉：option { val i64, nil bool, err str }
+// TaggedEnumVariant — 標籤列舉變體（名稱 + 型別）
+//
+// 兩種寫法：
+//
+//	name          // 無載荷（unit variant，如 nil）
+//	name t        // 單一載荷型別（舊式，空格分隔）
+//	name(v t)     // 具名載荷欄位（新式，括號）
+//	name(w f64, h f64) // 多載荷欄位
+//
+// Type 為首個載荷欄位的型別（無載荷則為 nil）；Fields 保留全部具名欄位。
+type TaggedEnumVariant struct {
+	Token  lexer.Token
+	Name   string
+	Type   Type
+	Fields []*TaggedEnumField
+	// FieldNames 保留載荷欄位名（與 Fields 同序；舊式 `name t` 以變體名為欄位名）。
+	// 供析構綁定 `rect(w, h) -> ...` 生成 `it.<欄位名>` 提取。
+	FieldNames []string
+	Index      int64
+}
+
+// TaggedEnumDefinition — 標籤列舉：option { ok(v t), nil, err(e str) }
 type TaggedEnumDefinition struct {
 	Token    lexer.Token
 	Name     string
 	Variants []*TaggedEnumVariant
+	// Builtin 表示此列舉為內建（`#{buildin}` 標註）：變體用於匹配/窮盡性檢查，
+	// 但底層表示與構造由 runtime/builtin 提供，不產生使用者可見的 struct/union。
+	Builtin bool
 	CommentedNode
 }
 

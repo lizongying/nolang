@@ -20,63 +20,63 @@
 ; ═══════════════════════════════════════════════
 
 ; db-open: 開啟 SQLite 資料庫，返回 handle（0=失敗）
-#{buildin=db-open}
+#{buildin}
 db-open = (dsn str) (handle i64) { }
 
 ; db-close: 關閉 SQLite 資料庫
-#{buildin=db-close}
+#{buildin}
 db-close = (handle i64) (ok bool) { }
 
 ; db-exec: 執行 SQL 陳述式（CREATE/INSERT/UPDATE/DELETE）
-#{buildin=db-exec}
+#{buildin}
 db-exec = (handle i64, sql str) (ok bool) { }
 
 ; db-prepare: 預編譯 SQL 陳述式，返回 stmt handle（0=失敗）
-#{buildin=db-prepare}
+#{buildin}
 db-prepare = (handle i64, sql str) (stmt i64) { }
 
 ; db-step: 執行預編譯陳述式一步，返回 rc（100=ROW, 101=DONE）
-#{buildin=db-step}
+#{buildin}
 db-step = (stmt i64) (rc i64) { }
 
 ; db-column-count: 取得預編譯陳述式的欄位數
-#{buildin=db-column-count}
+#{buildin}
 db-column-count = (stmt i64) (count i64) { }
 
 ; db-column-int64: 取得欄位值為 int64
-#{buildin=db-column-int64}
+#{buildin}
 db-column-int64 = (stmt i64, col i64) (val i64) { }
 
 ; db-column-text: 取得欄位值為字串
-#{buildin=db-column-text}
+#{buildin}
 db-column-text = (stmt i64, col i64) (val str) { }
 
 ; db-column-double: 取得欄位值為 f64
-#{buildin=db-column-double}
+#{buildin}
 db-column-double = (stmt i64, col i64) (val f64) { }
 
 ; db-finalize: 釋放預編譯陳述式
-#{buildin=db-finalize}
+#{buildin}
 db-finalize = (stmt i64) (ok bool) { }
 
 ; db-last-insert-rowid: 取得最後插入的 rowid
-#{buildin=db-last-insert-rowid}
+#{buildin}
 db-last-insert-rowid = (handle i64) (rowid i64) { }
 
 ; db-changes: 取得最後陳述式影響的行數
-#{buildin=db-changes}
+#{buildin}
 db-changes = (handle i64) (count i64) { }
 
 ; db-bind-int64: 綁定 int64 參數到預編譯陳述式
-#{buildin=db-bind-int64}
+#{buildin}
 db-bind-int64 = (stmt i64, idx i64, val i64) (ok bool) { }
 
 ; db-bind-text: 綁定文字參數到預編譯陳述式
-#{buildin=db-bind-text}
+#{buildin}
 db-bind-text = (stmt i64, idx i64, val str) (ok bool) { }
 
 ; db-errmsg: 取得資料庫的錯誤訊息
-#{buildin=db-errmsg}
+#{buildin}
 db-errmsg = (handle i64) (msg str) { }
 
 ; ═══════════════════════════════════════════════
@@ -85,15 +85,15 @@ db-errmsg = (handle i64) (msg str) { }
 
 ; ffi-cstr-at: 讀取 C 字串陣列元素 ((char**)arr)[idx] 為 Nolang str
 ; 注意：參數不可命名為 `ptr` —— 它是保留關鍵字（指標型別），lexer 產出 PTR token 而非 IDENT。
-#{buildin=ffi-cstr-at}
+#{buildin}
 ffi-cstr-at = (arr i64, idx i64) (val str) { }
 
 ; ffi-cstr-at-int: 讀取 C 字串陣列元素並解析為 i64
-#{buildin=ffi-cstr-at-int}
+#{buildin}
 ffi-cstr-at-int = (arr i64, idx i64) (val i64) { }
 
 ; ffi-cstr-at-float: 讀取 C 字串陣列元素並解析為 f64
-#{buildin=ffi-cstr-at-float}
+#{buildin}
 ffi-cstr-at-float = (arr i64, idx i64) (val f64) { }
 
 ; result: 執行結果（所有驅動共用）

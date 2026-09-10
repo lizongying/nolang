@@ -3,6 +3,7 @@ package fmt
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/lizongying/nolang/lexer"
@@ -95,4 +96,28 @@ func joinErrors(errs []string) string {
 		out += "- " + e + "\n"
 	}
 	return out
+}
+
+// `v ?= expr`（UnwrapAssignStatement）的前置註釋曾因 parser setDoc 缺少該型別
+// 分支而丟失——fmt 直接把註釋吃掉。鎖死：註釋必須保留且輸出可再解析。
+func TestFormatUnwrapAssignKeepsDocComment(t *testing.T) {
+	src := "f = () {\n    ; 用 fstat 取得大小\n    size ?= fstat-size(.fd)\n\n    size == 0 -> {\n        x = 1\n    }\n}\n"
+	out, ok, errs := formatProgram(src)
+	if !ok {
+		t.Fatalf("format failed: %v", errs)
+	}
+	if !strings.Contains(out, "; 用 fstat 取得大小") {
+		t.Errorf("doc comment before ?= was dropped:\n%s", out)
+	}
+	if !strings.Contains(out, "size ?= fstat-size(.fd)") {
+		t.Errorf("?= statement not rendered:\n%s", out)
+	}
+	// 輸出必須可再解析（冪等前提）
+	l := lexer.New(out)
+	p := parser.New(l)
+	p.SkipUnwrapLowering = true
+	p.ParseProgram()
+	if len(p.Errors()) > 0 {
+		t.Errorf("formatted output no longer parses: %v\noutput:\n%s", p.Errors(), out)
+	}
 }

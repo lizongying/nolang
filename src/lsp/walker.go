@@ -150,6 +150,48 @@ func (w *ASTWalker) walkStatement(stmt parser.Statement, scope string) {
 			}
 		}
 
+	case *parser.UnwrapAssignStatement:
+		// `v ?= expr`（surface AST，SkipUnwrapLowering=true 時不會被展開）。
+		// 簡單變數目標：像 LetStatement 一樣索引符號，型別取 RHS 的返回型別並
+		// 剝掉 option 前綴（?= 賦的是解箱後的內層值）。
+		if s.Name != nil {
+			detail := w.getExprType(s.Value)
+			detail = strings.TrimPrefix(detail, "?")
+			if detail == "" || strings.HasPrefix(detail, "call ") {
+				if existing, exists := w.index.symbols[s.Name.Value]; exists && existing.Type != "" && !strings.HasPrefix(existing.Type, "call ") {
+					detail = existing.Type
+				}
+			}
+			entry := &IndexEntry{
+				Name: s.Name.Value,
+				Kind: SymbolKindVariable,
+				Type: detail,
+				Location: Location{
+					URI:   w.uri,
+					Range: rangeFromNode(s),
+				},
+				Scope: scope,
+				Value: w.getExprValue(s.Value),
+			}
+			existing, exists := w.index.symbols[s.Name.Value]
+			shouldStore := false
+			if !exists {
+				shouldStore = true
+			} else if existing.Location.URI == "" {
+				shouldStore = true
+			} else if matchesDevPlatform(w.program.Sem.PlatformKeysOf(s)) {
+				shouldStore = true
+			}
+			if shouldStore {
+				w.index.symbols[s.Name.Value] = entry
+				w.index.definitions[s.Name.Value] = entry
+			}
+			w.index.declarations[s.Name.Value] = append(w.index.declarations[s.Name.Value], entry)
+		}
+		if s.Value != nil {
+			w.walkExpression(s.Value, scope)
+		}
+
 	case *parser.MultiAssignStatement:
 		// Resolve types from the function's result parameters
 		var resultTypes []ParamInfo

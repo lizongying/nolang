@@ -73,6 +73,17 @@ type SemanticContext struct {
 	EnumVariants map[string][]string
 	DeclaredVars map[string]bool
 
+	// EnumVariantPayload：枚舉名 → 變體名 → 載荷型別字串（無載荷的單元變體為 ""）。
+	// 標籤列舉（tagged enum）的載荷型別是「編譯器根據被匹配變數靜態型別自動補全
+	// 完整命名」所必需的：match 分支寫裸名 `some`，解析期據此查出其載荷型別，
+	// 供析構綁定 `some(v) ->` 的 `v` 綁型與 codegen 的 data 欄位拷貝。
+	// 內建 option 也登記於此（ok→t、err→str、nil→""），保持資料驅動一致。
+	EnumVariantPayload map[string]map[string]string
+	// EnumVariantFields：枚舉名 → 變體名 → 載荷欄位型別列表（單元變體為 nil）。
+	// 多欄位變體（如 rect(w f64, h f64)）的載荷以「合成結構體」表示，
+	// 型別名為 `<枚舉名>.<變體名>`（由 codegen 登記為具名 LLVM struct）。
+	EnumVariantFields map[string]map[string][]string
+
 	// FuncVarTypes stores per-function-local variable types, keyed by
 	// function name → variable name → type. This prevents same-named
 	// locals in different functions (e.g. `r` in parse-i64 and parse-f64)
@@ -84,12 +95,14 @@ type SemanticContext struct {
 // NewSemanticContext 建立空語義副表。
 func NewSemanticContext() *SemanticContext {
 	return &SemanticContext{
-		nodeSem:          make(map[Node]*NodeSemantics),
-		VarTypes:         make(map[string]string),
-		EnumVariants:     make(map[string][]string),
-		DeclaredVars:     make(map[string]bool),
-		FuncVarTypes:     make(map[string]map[string]string),
-		FuncDeclaredVars: make(map[string]map[string]bool),
+		nodeSem:            make(map[Node]*NodeSemantics),
+		VarTypes:           make(map[string]string),
+		EnumVariants:       make(map[string][]string),
+		DeclaredVars:       make(map[string]bool),
+		EnumVariantPayload: make(map[string]map[string]string),
+		EnumVariantFields:  make(map[string]map[string][]string),
+		FuncVarTypes:       make(map[string]map[string]string),
+		FuncDeclaredVars:   make(map[string]map[string]bool),
 	}
 }
 
@@ -116,6 +129,16 @@ func (s *SemanticContext) Merge(other *SemanticContext) {
 	for k, v := range other.EnumVariants {
 		if _, exists := s.EnumVariants[k]; !exists {
 			s.SetEnumVariants(k, v)
+		}
+	}
+	for enumName, variants := range other.EnumVariantPayload {
+		for vn, pt := range variants {
+			s.SetEnumVariantPayload(enumName, vn, pt)
+		}
+	}
+	for enumName, variants := range other.EnumVariantFields {
+		for vn, fs := range variants {
+			s.SetEnumVariantFields(enumName, vn, fs)
 		}
 	}
 	for k := range other.DeclaredVars {
@@ -368,6 +391,53 @@ func (s *SemanticContext) SetEnumVariants(name string, variants []string) {
 func (s *SemanticContext) EnumVariantsOf(name string) ([]string, bool) {
 	v, ok := s.EnumVariants[name]
 	return v, ok
+}
+
+// SetEnumVariantPayload 登記某枚舉變體的載荷型別（單元變體傳 ""）。
+func (s *SemanticContext) SetEnumVariantPayload(enumName, variantName, payloadType string) {
+	if s.EnumVariantPayload == nil {
+		s.EnumVariantPayload = make(map[string]map[string]string)
+	}
+	if s.EnumVariantPayload[enumName] == nil {
+		s.EnumVariantPayload[enumName] = make(map[string]string)
+	}
+	s.EnumVariantPayload[enumName][variantName] = payloadType
+}
+
+// EnumVariantPayloadOf 查詢某枚舉變體的載荷型別。回傳 (型別, 是否存在)；
+// 型別為 "" 表示單元變體（無載荷）。多欄位變體回傳其合成結構體型別名
+// （`<枚舉名>.<變體名>`）。
+func (s *SemanticContext) EnumVariantPayloadOf(enumName, variantName string) (string, bool) {
+	if s.EnumVariantPayload == nil {
+		return "", false
+	}
+	if variants, ok := s.EnumVariantPayload[enumName]; ok {
+		pt, ok := variants[variantName]
+		return pt, ok
+	}
+	return "", false
+}
+
+// SetEnumVariantFields 登記某枚舉變體的載荷欄位型別列表（含欄位名由 Fields 提供）。
+func (s *SemanticContext) SetEnumVariantFields(enumName, variantName string, types []string) {
+	if s.EnumVariantFields == nil {
+		s.EnumVariantFields = make(map[string]map[string][]string)
+	}
+	if s.EnumVariantFields[enumName] == nil {
+		s.EnumVariantFields[enumName] = make(map[string][]string)
+	}
+	s.EnumVariantFields[enumName][variantName] = types
+}
+
+// EnumVariantFieldsOf 查詢某枚舉變體的載荷欄位型別列表（單元變體回傳空列表）。
+func (s *SemanticContext) EnumVariantFieldsOf(enumName, variantName string) []string {
+	if s.EnumVariantFields == nil {
+		return nil
+	}
+	if variants, ok := s.EnumVariantFields[enumName]; ok {
+		return variants[variantName]
+	}
+	return nil
 }
 
 // SetDeclared 標記變數已宣告。

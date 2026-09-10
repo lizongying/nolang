@@ -343,12 +343,25 @@ func (c *hirASTConv) stmt(id int32) (parser.Statement, error) {
 			if cn == nil {
 				continue
 			}
-			td.Variants = append(td.Variants, &parser.TaggedEnumVariant{
+			v := &parser.TaggedEnumVariant{
 				Token: c.tok(ch),
 				Name:  c.pkg.Str(cn.S),
 				Type:  parseHIRType(c.pkg.Str(cn.Type)),
 				Index: cn.Val,
-			})
+			}
+			// 重建括號載荷欄位（多欄位載荷靠此在 HIR 往返後仍可還原）。
+			for _, fc := range c.children(ch) {
+				fcn := c.node(fc)
+				if fcn == nil {
+					continue
+				}
+				v.Fields = append(v.Fields, &parser.TaggedEnumField{
+					Token: c.tok(fc),
+					Name:  c.pkg.Str(fcn.S),
+					Type:  parseHIRType(c.pkg.Str(fcn.Type)),
+				})
+			}
+			td.Variants = append(td.Variants, v)
 		}
 		s = td
 	case hir.KInterfaceDef:

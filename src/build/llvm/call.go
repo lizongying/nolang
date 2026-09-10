@@ -139,6 +139,14 @@ func formatDoubleConst(v float64) string {
 
 // generateCallArg 生成單個函數調用參數的 LLVM 表示
 func (g *Generator) generateCallArg(sb *strings.Builder, arg parser.Expression) string {
+	// 表達式位置的標籤列舉建構（如 f(rect(3.0, 4.0))）：建到臨時 %option，
+	// 以指標形式傳給被呼叫者。置於 switch 之前，讓所有未被顯式 case 覆蓋的
+	// 表達式型別仍走原本的 default 分支。
+	if call, isCall := arg.(*parser.CallExpression); isCall {
+		if tmpName, _ := g.emitEnumVariantTemp(sb, call); tmpName != "" {
+			return "%option* " + llvmVarRef(tmpName)
+		}
+	}
 	switch a := arg.(type) {
 	case *parser.Identifier:
 		// Enum variant: allocate temp i64 and store the constant tag index
@@ -3017,6 +3025,13 @@ func (g *Generator) generateCallEmit(sb *strings.Builder, expr *parser.CallExpre
 
 	// genTypedArg generates a typed pointer argument for a single expression
 	genTypedArg := func(arg parser.Expression, argIdx int) string {
+		// 表達式位置的標籤列舉建構（如 perimeter(rect(3.0, 4.0))）：建到臨時
+		// %option，以指標形式傳給被呼叫者。置於 switch 之前以保留 default 分支。
+		if call, isCall := arg.(*parser.CallExpression); isCall {
+			if tmpName, _ := g.emitEnumVariantTemp(sb, call); tmpName != "" {
+				return "%option* " + llvmVarRef(tmpName)
+			}
+		}
 		// DotExpression as method receiver (self): pass field pointer by-reference
 		// so the method can modify the struct field directly (e.g. c.inner.set-value(100))
 		if dot, ok := arg.(*parser.DotExpression); ok && argIdx == 0 && methodReceiver != nil {

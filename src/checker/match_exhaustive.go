@@ -2,6 +2,7 @@ package checker
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/lizongying/nolang/parser"
 )
@@ -48,11 +49,18 @@ func ValidateNonExhaustiveMatch(program *parser.Program) []ValidateResult {
 		if len(vs) == 0 {
 			continue
 		}
-		// Exhaustive: terminates in a catch-all `-> ` arm, or already handles a
-		// failure variant (nil/err) — in which case the unlisted variant simply
-		// falls through by design.
-		if matchHasCatchAll(root) || vs["nil"] || vs["err"] {
+		// Exhaustive: terminates in a catch-all `-> ` arm, or handles every
+		// option variant (ok/nil/err). err is a real variant of any ?T (std's
+		// read-stdin-str returns ?str and matches err ->), so all three are
+		// required — mirroring the parser's [RAL] completeness rule.
+		if matchHasCatchAll(root) || (vs["ok"] && vs["nil"] && vs["err"]) {
 			continue
+		}
+		var missing []string
+		for _, v := range []string{"ok", "nil", "err"} {
+			if !vs[v] {
+				missing = append(missing, v)
+			}
 		}
 		pos := root.Pos()
 		results = append(results, ValidateResult{
@@ -60,8 +68,8 @@ func ValidateNonExhaustiveMatch(program *parser.Program) []ValidateResult {
 			Line:    pos.Line,
 			Column:  pos.Column,
 			Message: fmt.Sprintf(
-				"non-exhaustive match on option '%s': the nil/err case is unhandled and will silently fall through — add a `-> ` (else) arm, or handle nil/err",
-				matchSubjectName(root)),
+				"non-exhaustive match on option '%s': missing arm(s): %s — add a `-> ` (else) arm, or handle every variant",
+				matchSubjectName(root), strings.Join(missing, ", ")),
 		})
 	}
 	return results

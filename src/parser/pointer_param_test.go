@@ -90,3 +90,31 @@ func TestPointerParamTypeIsPointerType(t *testing.T) {
 		t.Errorf("pointer elem = %#v, want NamedType(i8)", pt.Type)
 	}
 }
+
+// fmt 以 typeString 的規範前綴形式（`*i8`）輸出指標參數；源碼慣用法是後綴
+// （`i8*`）。兩種形態必須等價可解析，否則 fmt 輸出不可再解析
+// （TestFormatReparseClean/std/async.no 曾因此失敗）。
+func TestPointerParamPrefixFormAccepted(t *testing.T) {
+	srcs := []string{
+		"async-cancel = (task *i8) () { }",
+		"async-cancel = (task **i8) () { }",
+		"async-cancel = (task ?*i8) () { }",
+	}
+	for _, src := range srcs {
+		l := lexer.New(src)
+		p := New(l)
+		prog := p.ParseProgram()
+		if len(p.Errors()) > 0 {
+			t.Errorf("%q: parse errors: %v", src, p.Errors())
+			continue
+		}
+		fd, ok := prog.Statements[0].(*FunctionDefinition)
+		if !ok {
+			t.Errorf("%q: expected FunctionDefinition, got %T", src, prog.Statements[0])
+			continue
+		}
+		if fd.Parameters[0].Type == nil {
+			t.Errorf("%q: param type is nil", src)
+		}
+	}
+}

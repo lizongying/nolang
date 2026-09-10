@@ -252,7 +252,8 @@ func stmtTokenLine(stmt parser.Statement) int {
 // read from the semantic side-table.
 func (f *formatter) attachedAnnotations(stmt parser.Statement) []*parser.AnnotationEntry {
 	switch stmt.(type) {
-	case *parser.LetStatement, *parser.FunctionDefinition, *parser.StructDefinition, *parser.ExpressionStatement:
+	case *parser.LetStatement, *parser.FunctionDefinition, *parser.StructDefinition, *parser.ExpressionStatement,
+		*parser.TaggedEnumDefinition, *parser.EnumDefinition, *parser.InterfaceDefinition:
 		return f.sem.AnnotationsOf(stmt)
 	}
 	return nil

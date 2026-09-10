@@ -15,16 +15,6 @@ import (
 // thus emitted nothing). The caller uses this to skip the inter-statement gap so
 // a no-op statement produces zero output (no blank line) — essential for idempotency.
 func (f *formatter) formatStatement(stmt parser.Statement) bool {
-	if as, ok := stmt.(*parser.AnnotationStatement); ok {
-		bf, _ := os.OpenFile("/tmp/dbg_annot.txt", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
-		doc := as.GetDoc()
-		docStr := "<nil>"
-		if doc != nil && len(doc.List) > 0 {
-			docStr = doc.List[0].Text
-		}
-		fmt.Fprintf(bf, "ANNOT fmt: doc=%q emits=%v\n", docStr, f.statementEmitsSomething(stmt))
-		bf.Close()
-	}
 	// Skip compiler-injected synthetic statements (e.g., `it = matched`)
 	if ls, ok := stmt.(*parser.LetStatement); ok && ls.IsSynthetic {
 		return false
@@ -445,14 +435,10 @@ func (f *formatter) formatFunctionDefinition(s *parser.FunctionDefinition) {
 		f.writef("; %s", strings.TrimSpace(c.Text))
 	}
 	f.indent++
-	if strings.Contains(s.Name, "decode-block") {
-		bf, _ := os.Create("/tmp/dbg_body.txt")
-		for di, ds := range s.Body.Statements {
-			fmt.Fprintf(bf, "body[%d] %T\n", di, ds)
-		}
-		bf.Close()
-	}
-	f.formatBlockInner(s.Body, 0) // pass 0 to avoid preserving blank lines after { in function bodies
+	// 傳入真實的 '{' 行號：{ 與首陳述之間的空白行以源碼為準（有則保留、無則
+	// 不憑空插入）。此前傳 0 並依賴 hasDocComment 無條件插空行，會在源碼無
+	// 空行時於函式體開頭製造多餘空行。
+	f.formatBlockInner(s.Body, s.Body.Token.Line)
 	f.indent--
 	f.newline()
 	f.write("}")
@@ -574,9 +560,12 @@ func (f *formatter) formatBlockInner(body *parser.BlockStatement, openBraceLine 
 			// 用 hasBlankLineBetween 偵測「真實空白行」而非單純行號落差：後者會因
 			// formatter 自身輸出的註解（如區塊級 #{overflow=wrap}）推移首陳述行號，
 			// 導致二次格式化時誤插入空白行而非冪等。
+			// 注意：不能加 `|| f.hasDocComment(stmt)`——那會在源碼無空行時於
+			// `{` 與首條帶註解陳述之間憑空插入空行（頂層語句間隔由 api.go 的
+			// 程式級迴圈負責，區塊內一律以源碼空白為準）。
 			if emits {
 				firstDocStartLine := stmtFirstLine(stmt)
-				if (openBraceLine > 0 && f.hasBlankLineBetween(openBraceLine, firstDocStartLine)) || f.hasDocComment(stmt) {
+				if openBraceLine > 0 && f.hasBlankLineBetween(openBraceLine, firstDocStartLine) {
 					f.write("\n") // blank line (no indent)
 				}
 				f.newline()

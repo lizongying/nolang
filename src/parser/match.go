@@ -24,27 +24,6 @@ func (p *Parser) matchedIsOption(matched Expression) bool {
 	return false // 未知變數預設不觸發完整性檢查
 }
 
-// isBuiltinOption returns true if matched is a built-in optional (?i64, ?str, etc.).
-// Built-in optionals cannot produce err, so err branch should not be required.
-func (p *Parser) isBuiltinOption(matched Expression) bool {
-	if matched == nil {
-		return false
-	}
-	if ident, ok := matched.(*Identifier); ok {
-		if t, ok := p.sem.VarTypes[ident.Value]; ok {
-			if strings.HasPrefix(t, "?") {
-				base := t[1:]
-				switch base {
-				case "i64", "i32", "i16", "i8", "u64", "u32", "u16", "u8",
-					"f64", "f32", "str", "bool", "byte":
-					return true
-				}
-			}
-		}
-	}
-	return false
-}
-
 // parseTildeMatchStatement parses old-style ~match:
 //
 //	~match x { case err: ... case nil: ... default: ... }
@@ -501,11 +480,11 @@ func (p *Parser) parseBareMatchExpr() Expression {
 		}
 	}
 	// Check option match branch completeness (3 occurrences, keep in sync)
-	isBuiltinOpt2 := p.isBuiltinOption(nil)
-	if !hasElseArm && ((!isBuiltinOpt2 && !hasErrArm) || !hasNilArm || !hasValArm) {
+	// 裸 match（無主語，guard 形式）經 matchedIsOption(nil) 恆為 false，不觸發檢查。
+	if !hasElseArm && (!hasErrArm || !hasNilArm || !hasValArm) {
 		if p.matchedIsOption(nil) {
 			var missing []string
-			if !isBuiltinOpt2 && !hasErrArm {
+			if !hasErrArm {
 				missing = append(missing, "err")
 			}
 			if !hasNilArm {
@@ -702,7 +681,16 @@ type matchArm struct {
 	pos                 lexer.Position // position of condition or -> for diagnostic use
 	multiOptionPatterns []string       // nil || err → ["nil", "err"]; combined option patterns joined by ||
 	multiValuePatterns  []Expression   // 1 || 3 || 5 → [1, 3, 5]; combined value patterns joined by ||
-	skipItBinding       bool           // generated arms that never reference `it` (e.g. ?= / #{index-out}
+	// bindingName 記錄析構綁定 `ok(v) -> ...`：把 ok 變體的載荷綁定到 v（而非隱含的
+	// `it`）。嵌套 match 時用處最大——外層的 `it` 不會被內層覆蓋。
+	// 為空表示沿用隱含 `it`。
+	bindingName    string
+	bindingVariant string // "ok"（目前僅 ok 支援析構綁定）
+	// bindingNames/bindingFields：多欄位變體的析構綁定（`rect(w, h) -> ...`）。
+	// 依位置把 `it.f0` / `it.f1` 綁到 bindingNames[0] / bindingNames[1]。
+	bindingNames  []string
+	bindingFields []string
+	skipItBinding  bool   // generated arms that never reference `it` (e.g. ?= / #{index-out}
 	// sentinel arms that just return or substitute a default) opt out of the
 	// synthetic `it` binding, so a sentinel arm's %str-long/nil `it` type can't
 	// clobber the ok arm's element-type `it` (which would corrupt codegen).
@@ -931,10 +919,10 @@ func (p *Parser) parseMatchExpression() Expression {
 		}
 	}
 	// Check option match branch completeness (3 occurrences, keep in sync)
-	isBuiltinOpt3 := p.isBuiltinOption(matched)
-	if !hasElseArm && ((!isBuiltinOpt3 && !hasErrArm) || !hasNilArm || !hasValArm) {
+	// err 對所有 option（含 ?i64 等內建 option）都強制，不可豁免。
+	if !hasElseArm && (!hasErrArm || !hasNilArm || !hasValArm) {
 		var missing []string
-		if !isBuiltinOpt3 && !hasErrArm {
+		if !hasErrArm {
 			missing = append(missing, "err")
 		}
 		if !hasNilArm {

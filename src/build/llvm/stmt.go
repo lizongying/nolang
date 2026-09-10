@@ -2937,6 +2937,14 @@ func (g *Generator) generateFunctionDefinition(sb *strings.Builder, fd *parser.F
 		g.funcLocalNames[p.Name] = true
 		g.funcParams[p.Name] = true
 		g.varTypes[p.Name] = g.resolveParamLLVMType(p.Type)
+		// 標籤列舉型參數：登錄其枚舉型別名，供臂綁定解析載荷型別（參數不經
+		// generateOptionAssign，故無法在構造點登錄）。
+		if nt, ok := p.Type.(*parser.NamedType); ok && g.taggedEnumTypes[nt.Value] {
+			if g.taggedEnumVars == nil {
+				g.taggedEnumVars = make(map[string]string)
+			}
+			g.taggedEnumVars[p.Name] = nt.Value
+		}
 		// Track FunctionType parameters for indirect call codegen
 		if ft, ok := p.Type.(*parser.FunctionType); ok {
 			g.varFnTypes[p.Name] = ft
@@ -4420,6 +4428,12 @@ func (g *Generator) varLLVMType(stmt *parser.LetStatement) string {
 			// Note: bool-returning builtins intentionally fall through to "i64"
 			// because their IR emits `zext i1 to i64`, producing an i64 SSA
 			// value that the int-coercion path (trunc i64 to i1) handles correctly.
+			// Option-returning builtins (stat-size/file-size/fstat-size): std 以
+			// 單一 ?i64 暴露，ok 標誌走 lastBuiltinExtra，由 generateOptionAssign
+			// 構造 %option——變數必須 alloca 成 16 字節的 %option。
+			if builtin.IsOptionReturnBuiltin(name) {
+				return "%option"
+			}
 			if m := builtin.FindBuiltinMethod(name); m != nil && len(m.Return) > 0 {
 				if m.Return[0] == parser.TypeF64 {
 					return "double"
@@ -4551,6 +4565,10 @@ func (g *Generator) varLLVMType(stmt *parser.LetStatement) string {
 						}
 					}
 				// Then check builtins (strip module prefix)
+				// Option-returning builtins (e.g. fs.stat-size → ?i64)：同 ident 分支。
+				if builtin.IsOptionReturnBuiltin(dot.Property) {
+					return "%option"
+				}
 				if m := builtin.FindBuiltinMethod(dot.Property); m != nil && len(m.Return) > 0 {
 					if m.Return[0] == parser.TypeF64 {
 						return "double"
@@ -7670,6 +7688,18 @@ func (g *Generator) generateLet(sb *strings.Builder, stmt *parser.LetStatement) 
 			fmt.Fprintf(os.Stderr, "[debug-opt] generateLet synthetic name=%q type=%q(%T) src=%q srcVarType=%q\n", name, ntStr, stmt.Type, srcName, g.varTypes[srcName])
 		}
 		if nt, ok := stmt.Type.(*parser.NamedType); ok {
+			// 標籤列舉臂的合成綁定（`v = matched` / `it = matched`）：標籤列舉的
+			// 載荷型別「依變體而異」，無法用單一 optionInnerTypes 表達，故此處依該臂
+			// 的綁定型別（= 變體載荷型別）臨時設定來源變數的 inner type，供 %option
+			// data 欄位提取走對應路徑（i64/double/float/struct）。僅對標籤列舉來源生效。
+			if src, ok := stmt.Value.(*parser.Identifier); ok && nt.Value != "err" && nt.Value != "nil" {
+				if g.taggedEnumTypeOfVar(src.Value) != "" {
+					if g.optionInnerTypes == nil {
+						g.optionInnerTypes = make(map[string]string)
+					}
+					g.optionInnerTypes[src.Value] = g.mapToLLVMType(nt.Value)
+				}
+			}
 			// 判斷型別字串是否僅由 err/nil 組成（如 "err"、"nil"、"err | nil"），
 			// 不含任何具體元素型別（如 "[]byte | err" 仍需綁定 it = inner value）。
 			onlyErrNil := true
@@ -8153,7 +8183,25 @@ func (g *Generator) generateLet(sb *strings.Builder, stmt *parser.LetStatement) 
 		// 的 IndexExpression 分支產生 none/ok 分支（它用自己的 len 比較做
 		// 越界判斷，不依賴會 abort 的 bounds_check）。若在此處先求值，abort
 		// 會發生在 safe 分支之前，導致「安全索引」實際上仍崩潰。
-		if _, isIndexExpr := stmt.Value.(*parser.IndexExpression); !isIndexExpr {
+		// 標籤列舉變體建構（x = some(42) / x = none）：必須交由 generateOptionAssign
+		// 的變體建構分支處理。若在此處先行 eager 求值，generateExprWithSB 會把
+		// `some(...)` 當普通函式呼叫，發出未定義的 `@some` 呼叫。
+		isTaggedEnumCtor := false
+		if et := g.taggedEnumOfStmt(stmt); et != "" {
+			switch rhs := stmt.Value.(type) {
+			case *parser.CallExpression:
+				if id, ok := rhs.Function.(*parser.Identifier); ok {
+					if _, _, found := g.taggedEnumVariantOf(et, id.Value); found {
+						isTaggedEnumCtor = true
+					}
+				}
+			case *parser.Identifier:
+				if _, _, found := g.taggedEnumVariantOf(et, rhs.Value); found {
+					isTaggedEnumCtor = true
+				}
+			}
+		}
+		if _, isIndexExpr := stmt.Value.(*parser.IndexExpression); !isIndexExpr && !isTaggedEnumCtor {
 			if r := g.generateExprWithSB(sb, stmt.Value); r != "" {
 				if rt, ok := g.ssaTypes[r]; ok && rt == "%option" {
 					sb.WriteString(fmt.Sprintf("%sstore %%option %s, %%option* %s\n", g.indent(), r, llvmVarRef(name)))
@@ -10167,8 +10215,168 @@ func (g *Generator) generateExpressionStmt(sb *strings.Builder, stmt *parser.Exp
 
 // generateOptionAssign handles assignment to %option typed variables.
 // Cases: nil, val(x), err(x), implicit value (tag=0).
+// optionReturnBuiltinName returns the builtin name if the call targets an
+// option-returning builtin (std-declared as single ?T), handling both the bare
+// form (stat-size(...)) and the module-qualified form (fs.stat-size(...)).
+func optionReturnBuiltinName(v *parser.CallExpression) string {
+	switch fn := v.Function.(type) {
+	case *parser.Identifier:
+		if builtin.IsOptionReturnBuiltin(fn.Value) {
+			return fn.Value
+		}
+	case *parser.DotExpression:
+		if builtin.IsOptionReturnBuiltin(fn.Property) {
+			return fn.Property
+		}
+	}
+	return ""
+}
+
+// enumVariantCallOwner 判定 call 是否為標籤列舉變體建構（裸變體名可解析到已知枚舉），
+// 回傳 (所屬枚舉名, 變體名, 是否成立)。
+func (g *Generator) enumVariantCallOwner(call *parser.CallExpression) (string, string, bool) {
+	if call == nil || len(call.Arguments) == 0 {
+		return "", "", false
+	}
+	id, ok := call.Function.(*parser.Identifier)
+	if !ok {
+		return "", "", false
+	}
+	owner, ok := g.variantOwner[id.Value]
+	if !ok || owner == "" {
+		return "", "", false
+	}
+	if _, _, found := g.taggedEnumVariantOf(owner, id.Value); !found {
+		return "", "", false
+	}
+	return owner, id.Value, true
+}
+
+// emitEnumVariantTemp 把標籤列舉變體建構 `some(args…)` 發射到一個新的 %option
+// 臨時槽，回傳 (臨時槽名, 載入後的 %option 值)。非變體建構回傳 ("", "")。
+// 這讓「表達式位置」的枚舉建構（如 f(rect(3.0, 4.0))、wrap(a(5)) 的內層載荷）
+// 能複用 generateOptionAssign 的既有建構邏輯，無需另寫一份。
+func (g *Generator) emitEnumVariantTemp(sb *strings.Builder, call *parser.CallExpression) (string, string) {
+	owner, _, ok := g.enumVariantCallOwner(call)
+	if !ok {
+		return "", ""
+	}
+	g.tmpIdx++
+	tmpName := fmt.Sprintf("ref.enum.%d", g.tmpIdx)
+	if sb != nil {
+		g.emitEntryAlloca(sb, "%s = alloca %%option\n", llvmVarRef(tmpName))
+	}
+	synth := &parser.LetStatement{
+		Name:        &parser.Identifier{Value: tmpName},
+		Type:        &parser.NamedType{Value: owner},
+		Value:       call,
+		IsSynthetic: true,
+	}
+	g.generateOptionAssign(sb, synth)
+	loadReg := g.tmpReg("ref.enum.val")
+	if sb != nil {
+		sb.WriteString(fmt.Sprintf("%s%s = load %%option, %%option* %s\n", g.indent(), loadReg, llvmVarRef(tmpName)))
+	}
+	return tmpName, loadReg
+}
+
+// storeEnumPayloadStruct 為「多欄位標籤列舉變體」構造載荷：在堆上分配 payloadLLVM
+// struct，按位置逐欄位存入實參（必要時做數值型別轉換），再把指標 ptrtoint 存入
+// option 的 data 欄位。對應析構綁定 `rect(w, h) ->` 的 `it.f0` / `it.f1` 提取。
+func (g *Generator) storeEnumPayloadStruct(sb *strings.Builder, name, payloadLLVM string, fields []structField, args []parser.Expression) {
+	size := g.llvmTypeSize(payloadLLVM)
+	if size == 0 {
+		size = 8 * int64(len(fields))
+	}
+	heapPtr := g.tmpReg("enum.payload.heap")
+	sb.WriteString(fmt.Sprintf("%s%s = call i8* @nolang.malloc(i64 %d)\n", g.indent(), heapPtr, size))
+	cast := g.tmpReg("enum.payload.cast")
+	sb.WriteString(fmt.Sprintf("%s%s = bitcast i8* %s to %s*\n", g.indent(), cast, heapPtr, payloadLLVM))
+	for i, f := range fields {
+		if i >= len(args) {
+			break
+		}
+		val := g.generateExprWithSB(sb, args[i])
+		vt := toLLVMType(f.typ)
+		if g.isIntegerLLVMType(vt) {
+			val = g.coerceToInt(sb, val, args[i], f.typ)
+		} else if vt == "double" || vt == "float" {
+			val = g.coerceToFloatReg(sb, val, args[i], f.typ)
+		}
+		gep := g.tmpReg("enum.payload.gep")
+		sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %s, %s* %s, i32 0, i32 %d\n", g.indent(), gep, payloadLLVM, payloadLLVM, cast, i))
+		sb.WriteString(fmt.Sprintf("%sstore %s %s, %s* %s\n", g.indent(), vt, val, vt, gep))
+	}
+	ptrInt := g.tmpReg("enum.payload.int")
+	sb.WriteString(fmt.Sprintf("%s%s = ptrtoint i8* %s to i64\n", g.indent(), ptrInt, heapPtr))
+	dataGEP := g.tmpReg("opt.data.gep")
+	sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%option, %%option* %%%s, i32 0, i32 1\n", g.indent(), dataGEP, name))
+	sb.WriteString(fmt.Sprintf("%sstore i64 %s, i64* %s\n", g.indent(), ptrInt, dataGEP))
+}
+
+// taggedEnumOfStmt 回傳該 LetStatement 目標變數的標籤列舉型別名（非標籤列舉則 ""）。
+// 標籤列舉變數以 %option ABI 表示，其建構需依變體在「所屬枚舉」中的 tag 索引與載荷型別。
+func (g *Generator) taggedEnumOfStmt(stmt *parser.LetStatement) string {
+	if stmt == nil || stmt.Name == nil {
+		return ""
+	}
+	if nt, ok := stmt.Type.(*parser.NamedType); ok && g.taggedEnumTypes[nt.Value] {
+		return nt.Value
+	}
+	return g.taggedEnumTypeOfVar(stmt.Name.Value)
+}
+
+// taggedEnumTypeOfVar 依變數的 nolang 宣告型別回傳其標籤列舉型別名（非標籤列舉則 ""）。
+func (g *Generator) taggedEnumTypeOfVar(name string) string {
+	if g.varNolangTypes != nil {
+		if nt, ok := g.varNolangTypes[name]; ok && nt != "" && g.taggedEnumTypes[nt] {
+			return nt
+		}
+	}
+	if g.taggedEnumVars != nil {
+		if nt, ok := g.taggedEnumVars[name]; ok && nt != "" {
+			return nt
+		}
+	}
+	return ""
+}
+
+// taggedEnumVariantOf 在指定標籤列舉內解析變體裸名，回傳 (tag 索引, 載荷 nolang 型別, 是否存在)。
+// 這正是「依被匹配/被建構變數的靜態型別自動補全完整命名」的落地點：
+// 裸名 some 只在所屬枚舉的命名空間內查找，不同枚舉的同名變體互不干擾。
+func (g *Generator) taggedEnumVariantOf(enumName, variant string) (int64, string, bool) {
+	if enumName == "" || g.taggedEnumVariants == nil {
+		return 0, "", false
+	}
+	vs, ok := g.taggedEnumVariants[enumName]
+	if !ok {
+		return 0, "", false
+	}
+	idx, ok := vs[variant]
+	if !ok {
+		return 0, "", false
+	}
+	payload := ""
+	if g.taggedEnumPayload != nil {
+		if pm, ok := g.taggedEnumPayload[enumName]; ok {
+			payload = pm[variant]
+		}
+	}
+	return idx, payload, true
+}
+
 func (g *Generator) generateOptionAssign(sb *strings.Builder, stmt *parser.LetStatement) {
 	name := stmt.Name.Value
+
+	// 標籤列舉：目標變數的枚舉型別名（非標籤列舉則 ""）。
+	// 非空時，RHS 的裸變體名（some / none / ok / err …）在本枚舉的命名空間內解析。
+	enumName := g.taggedEnumOfStmt(stmt)
+	if enumName != "" {
+		if g.taggedEnumVars == nil {
+			g.taggedEnumVars = make(map[string]string)
+		}
+		g.taggedEnumVars[name] = enumName
+	}
 
 	// 釋放目標變數的舊堆 box（若有）。
 	// 場景：v = f1(); v = f2() — 第二次賦值前需先釋放 f1 返回的 box，否則洩漏。
@@ -10385,6 +10593,42 @@ func (g *Generator) generateOptionAssign(sb *strings.Builder, stmt *parser.LetSt
 		}
 	}
 
+	// copyArgToData：把建構子實參依其型別寫入 data 欄位。
+	// str（字面量/變量/字串運算式）走 copyStrToData 做深拷貝；其餘走 copyToData
+	// （按 optionInnerTypes 選擇純量直存 / struct 堆箱 / f64 直存）。
+	// 供標籤列舉變體建構 `x = some(42)` 與內建 option `x = ok(42)` 共用。
+	copyArgToData := func(arg parser.Expression) {
+		// 表達式位置的枚舉建構（如 wrap(a(5)) 的內層 a(5)）：先建到臨時 %option，
+		// 再把載入值寫入 data 欄位。
+		if call, isCall := arg.(*parser.CallExpression); isCall {
+			if _, loaded := g.emitEnumVariantTemp(sb, call); loaded != "" {
+				copyToData(loaded)
+				return
+			}
+		}
+		if _, isStr := arg.(*parser.StringLiteral); isStr {
+			srcPtr := g.generateExprWithSB(sb, arg)
+			copyStrToData(srcPtr)
+			return
+		}
+		if argIdent, isIdent := arg.(*parser.Identifier); isIdent {
+			if t, ok := g.varTypes[argIdent.Value]; ok && t == "%str-long" {
+				copyStrToData(strPtrOf(argIdent.Value))
+				return
+			}
+			val := g.generateExprWithSB(sb, arg)
+			copyToData(val)
+			return
+		}
+		if g.isStringExpr(arg) {
+			srcPtr := g.generateExprWithSB(sb, arg)
+			copyStrToData(srcPtr)
+			return
+		}
+		val := g.generateExprWithSB(sb, arg)
+		copyToData(val)
+	}
+
 	// 純宣告（x ?T，無 RHS）：預設初始化為 nil（tag=1, data=0）。
 	// 不可走 default 分支的 storeTag(0)+copyToData("0")——對 struct inner
 	// 型別會生成 `store %str-long 0`（整數常量存入結構體型別，非法 IR）。
@@ -10518,6 +10762,50 @@ func (g *Generator) generateOptionAssign(sb *strings.Builder, stmt *parser.LetSt
 		return
 
 	case *parser.CallExpression:
+		// 標籤列舉變體建構：x = some(42)（x 為標籤列舉型別）。
+		// 依目標變數的靜態型別解析裸變體名 → 取 tag 索引與載荷型別。
+		if enumName != "" {
+			if ident, ok := v.Function.(*parser.Identifier); ok && len(v.Arguments) >= 1 {
+				if tag, payload, found := g.taggedEnumVariantOf(enumName, ident.Value); found {
+					payloadLLVM := "i64"
+					if payload != "" {
+						payloadLLVM = g.mapToLLVMType(payload)
+					}
+					if g.optionInnerTypes == nil {
+						g.optionInnerTypes = make(map[string]string)
+					}
+					g.optionInnerTypes[name] = payloadLLVM
+					storeTag(tag)
+					// 多欄位載荷：堆上合成 struct，逐欄位存入，data 存其指標。
+					if fields, ok := g.structTypes[payload]; ok && len(fields) > 1 && len(fields) == len(v.Arguments) {
+						g.storeEnumPayloadStruct(sb, name, payloadLLVM, fields, v.Arguments)
+						return
+					}
+					copyArgToData(v.Arguments[0])
+					return
+				}
+			}
+		}
+		// Option-returning builtins (stat-size / file-size / fstat-size)：
+		// handler 返回 i64 值、ok 標誌放 lastBuiltinExtra（zext 後的 i64）。
+		// 在此構造 %option：tag = ok ? 0 : 1（nil），data = 值。
+		if optName := optionReturnBuiltinName(v); optName != "" {
+			g.lastBuiltinExtra = ""
+			val := g.generateExprWithSB(sb, v)
+			okZext := g.lastBuiltinExtra
+			g.lastBuiltinExtra = ""
+			if sb != nil {
+				okBool := g.tmpReg("opt.ok.cmp")
+				sb.WriteString(fmt.Sprintf("%s%s = icmp ne i64 %s, 0\n", g.indent(), okBool, okZext))
+				tagSel := g.tmpReg("opt.tag.sel")
+				sb.WriteString(fmt.Sprintf("%s%s = select i1 %s, i64 0, i64 1\n", g.indent(), tagSel, okBool))
+				tagGEP := g.tmpReg("opt.tag.gep")
+				sb.WriteString(fmt.Sprintf("%s%s = getelementptr inbounds %%option, %%option* %%%s, i32 0, i32 0\n", g.indent(), tagGEP, name))
+				sb.WriteString(fmt.Sprintf("%sstore i64 %s, i64* %s\n", g.indent(), tagSel, tagGEP))
+			}
+			copyI64ToData(val)
+			return
+		}
 		if ident, ok := v.Function.(*parser.Identifier); ok {
 			if (ident.Value == "val" || ident.Value == "ok") && len(v.Arguments) == 1 {
 				// x = val(expr) / ok(expr) → tag=0, copy expr to data
@@ -10708,6 +10996,14 @@ func (g *Generator) generateOptionAssign(sb *strings.Builder, stmt *parser.LetSt
 		copyToData(val)
 
 	case *parser.Identifier:
+		// 標籤列舉單元變體：x = none（x 為標籤列舉型別；none 無載荷 → tag=none, data=0）。
+		if enumName != "" && (g.funcLocalNames == nil || !g.funcLocalNames[v.Value]) {
+			if tag, payload, found := g.taggedEnumVariantOf(enumName, v.Value); found && payload == "" {
+				storeTag(tag)
+				zeroData()
+				return
+			}
+		}
 		// option = option：區分 move（out 參數）vs 深層 clone（局部）
 		if t, ok := g.varTypes[v.Value]; ok && t == "%option" {
 			isOutput := g.outputParamNames != nil && g.outputParamNames[name]

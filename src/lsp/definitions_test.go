@@ -1,6 +1,7 @@
 package lsp
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/lizongying/nolang/parser"
@@ -270,6 +271,58 @@ out = (s str) (n i64) {
 	// The comment declaration is on line 3 (0-based): "; write = (fd fd, data str, n i64) (written i64) { }"
 	if entry.Location.Range.Start.Line != 3 {
 		t.Errorf("expected definition at line 3, got line %d", entry.Location.Range.Start.Line)
+	}
+}
+
+// TestIndexBuiltinCommentsPreservesSignature verifies that a `#{buildin}` /
+// comment-form declaration of a compiler built-in does NOT clobber the
+// authoritative signature registered by AddBuiltinSymbols — which populates
+// index.functions but NOT index.definitions, so `existing = definitions[name]`
+// alone is nil for a first-time builtin.
+//
+// REGRESSION GUARD: option-return builtins (stat-size / fstat-size /
+// file-size) must keep their folded `?T` result type. Otherwise
+// `size ?= fstat-size(.fd)` type inference degrades to the "call fstat-size"
+// placeholder and hover renders "build-in" instead of the real signature.
+func TestIndexBuiltinCommentsPreservesSignature(t *testing.T) {
+	source := `; fstat-size: get the size of an open fd
+#{buildin}
+fstat-size = (fd fd) (size ?i64) {
+}
+`
+	index := NewSymbolIndex("file:///test.no", 1)
+	index.AddBuiltinSymbols()
+
+	dm := &DocumentManager{}
+	dm.indexBuiltinComments(index, source, "file:///std/fs.no", "fs")
+
+	fn, ok := index.functions["fstat-size"]
+	if !ok {
+		t.Fatal("fstat-size not indexed")
+	}
+	if len(fn.ResultParams) != 1 || fn.ResultParams[0].Type != "?i64" {
+		t.Errorf("ResultParams = %v, want [?i64]", fn.ResultParams)
+	}
+	if !strings.Contains(fn.Type, "?i64") {
+		t.Errorf("Type = %q, want it to carry the folded ?i64 result type", fn.Type)
+	}
+	if !fn.IsBuiltin {
+		t.Error("IsBuiltin = false, want true (marker used by indexModuleStatement)")
+	}
+	// go-to-definition still points at the declaration in the std file.
+	if fn.Location.URI != "file:///std/fs.no" {
+		t.Errorf("Location.URI = %q, want file:///std/fs.no", fn.Location.URI)
+	}
+
+	// A later real-definition pass over the same stub must not clobber the
+	// built-in entry (guarded by IsBuiltin, not the old Type=="build-in").
+	prog := createTestProgram(source)
+	for _, ms := range prog.Statements {
+		dm.indexModuleStatement(index, ms, "file:///std/fs.no")
+	}
+	after := index.functions["fstat-size"]
+	if len(after.ResultParams) != 1 || after.ResultParams[0].Type != "?i64" {
+		t.Errorf("after real-definition pass ResultParams = %v, want [?i64]", after.ResultParams)
 	}
 }
 

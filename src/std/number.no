@@ -145,23 +145,23 @@ pow = (a int, n int) (r int) {
 }
 
 ; i64-to-f64: 整數轉浮點
-#{buildin=i64-to-f64}
+#{buildin}
 i64-to-f64 = (a i64) (r f64) { }
 ;     r = a
 ; }
 
 ; f64-to-i64: 浮點轉整數（截斷）
-#{buildin=f64-to-i64}
+#{buildin}
 f64-to-i64 = (a f64) (r i64) { }
 ;     r = a
 ; }
 
 ; f32-to-f64: 將 f32 提升為 f64
-#{buildin=f32-to-f64}
+#{buildin}
 f32-to-f64 = (a f32) (r f64) { }
 
 ; f64-to-f32: 將 f64 降為 f32（可能損失精度）
-#{buildin=f64-to-f32}
+#{buildin}
 f64-to-f32 = (a f64) (r f32) { }
 
 ; ═══════════════════════════════════════════════
@@ -655,7 +655,7 @@ float.is-inf = () (yes bool) {
 ; [n]num.zero / []num.zero — 使用 llvm.memset 置零
 ; 定長陣列：總位元組 = n * sizeof(num) 編譯期常量
 ; 堆切片：運行時取 .len() * sizeof(num) 傳入 llvm.memset
-#{buildin=arr-zero}
+#{buildin}
 arr-zero = () { }
 ;     i = 0
 ;     for i < n {
@@ -675,11 +675,11 @@ arr-zero = () { }
 ; 位元操作（內建）
 ; ═══════════════════════════════════════════════
 ; rotate-left: 整數左旋 n 位元（映射到 ARM64 ROR via llvm.fshl）
-#{buildin=rotate-left}
+#{buildin}
 rotate-left = (x i64, n i64) (r i64) { }
 ; rotate-right: 整數右旋 n 位元（映射到 ARM64 ROR via llvm.fshr）
-#{buildin=rotate-right}
+#{buildin}
 rotate-right = (x i64, n i64) (r i64) { }
 ; store-le-u32: 將 u32 值以小端序寫入位元組陣列指定偏移位置
-#{buildin=store-le-u32}
+#{buildin}
 store-le-u32 = (arr i64, offset i64, val u32) { }

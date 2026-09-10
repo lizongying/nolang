@@ -262,13 +262,25 @@ f.indent++
 // 若 body 只有一個簡單語句（ExpressionStatement / LetStatement / ReturnStatement 等）且無註釋，
 // 內聯輸出在同一行；若 body 有多個語句，用 { } 大括號包裹。
 func (f *formatter) writeBareMatchArm(e *parser.IfExpression) {
-	// 過濾 compiler 注入的合成語句（如 `it = matched`）
+	// 過濾 compiler 注入的合成語句（如 `it = matched`），同時收集析構綁定名：
+	//   - 隱式 `it` 綁定（`ok ->` / `nil ->` 等）不算顯式綁定，輸出時省略；
+	//   - 其餘合成 `name = ...`（來自 `ok(v) ->` / `rect(w, h) ->`）為顯式析構綁定，
+	//     需在 arm 模式後以 `(name1, name2, ...)` 還原，否則格式化會丟掉綁定、
+	//     使 body 中引用的綁定名變成未定義變數。
 	statements := make([]parser.Statement, 0, len(e.Consequence.Statements))
+	var destructured []string
 	for _, stmt := range e.Consequence.Statements {
 		if ls, ok := stmt.(*parser.LetStatement); ok && ls.IsSynthetic {
+			if ls.Name != nil && ls.Name.Value != "" && ls.Name.Value != "it" {
+				destructured = append(destructured, ls.Name.Value)
+			}
 			continue
 		}
 		statements = append(statements, stmt)
+	}
+	bindingSuffix := ""
+	if len(destructured) > 0 {
+		bindingSuffix = "(" + strings.Join(destructured, ", ") + ")"
 	}
 
 	// outsideComments collects arm-level doc comments that were originally
@@ -364,7 +376,7 @@ func (f *formatter) writeBareMatchArm(e *parser.IfExpression) {
 
 	if f.hasRT(e, parser.RTMatchWildcard) {
 		if e.DotValBody != nil && e.DotValBody == e.Consequence {
-			f.write("ok ->")
+			f.write("ok" + bindingSuffix + " ->")
 		} else {
 			f.write("->")
 		}
@@ -396,10 +408,12 @@ func (f *formatter) writeBareMatchArm(e *parser.IfExpression) {
 		case e.EqualityPattern != nil:
 			// matched == X 等值 pattern，直接輸出 X
 			f.formatExpression(e.EqualityPattern)
+			f.write(bindingSuffix)
 			f.write(" ->")
 		default:
 			// 無顯式欄位：回退到格式化 Condition（向後相容）
 			f.formatExpression(e.Condition)
+			f.write(bindingSuffix)
 			f.write(" ->")
 		}
 	} else {

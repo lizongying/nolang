@@ -4769,6 +4769,13 @@ func validateStmtTypes(stmt parser.Statement, funcNames map[string]bool, funcTyp
 			// Still record its declared type so later synthetic references can resolve it
 			if s.Type != nil && s.Type.String() != "" {
 				varTypes[s.Name.Value] = s.Type.String()
+			} else if s.Name != nil && s.Name.Value == "it" {
+				// Untyped shared `it` binding（ok/wildcard 臂在 parse 期無法確定
+				// matched 型別時不帶 Type 標注）。清掉前一個 arm 的 typed binding
+				// 殘留在 varTypes["it"] 的型別（如 err 臂的 "err"），否則本臂的
+				// `v = it` 會把 v 推斷成 "err"，後續 `x ?= ...` + `x = v` 誤報
+				// "cannot assign err value to ?i64 variable"（trace 15w45dqk）。
+				delete(varTypes, "it")
 			}
 			break
 		}

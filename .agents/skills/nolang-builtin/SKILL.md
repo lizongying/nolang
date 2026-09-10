@@ -54,6 +54,45 @@ BuiltinMethod{
 - **CLibCall**: 直接调用 C 库函数（如 `rename` → `call i32 @rename`）
 - **LLVMIntrinsic**: 使用 LLVM 内联函数（如 `llvm.sin.f64`）
 
+## `#{buildin}` 註解（內建聲明）
+
+`.no` 標準庫中以 `#{buildin}` 標註的聲明表示「真實實作在 Go runtime / codegen，本體不參與
+校驗與 codegen」。`#{buildin}` **不帶值**（`#{buildin}`，而非 `#{buildin=NAME}`）；查找一律
+以**函式/變體自身的裸名**為鍵（`builtin.FindBuiltinMethod(calleeName)`），故無需在註解中
+重複函式名。
+
+兩種用法：
+
+1. **內建函式樁**（`#{buildin}` 在函式定義前）：
+
+   ```no
+   ; read-file = (p str) (content ?str) { ... }
+   #{buildin}
+   read-file = (p str) (content ?str) { }
+   ```
+
+   解析器在 `parser/annotation.go` 的 `attachAnnotations` 中把 `FunctionDefinition.BuiltinStub`
+   置真；此類函式體被跳過校驗與 codegen，呼叫改由 Go 側 `BuiltinMethod` 生成 IR。
+
+2. **內建標籤列舉**（`#{buildin}` 在標籤列舉前）：
+
+   ```no
+   ; src/std/option.no
+   #{buildin}
+   option {
+       ok(v t),
+       nil,
+       err(e str),
+   }
+   ```
+
+   置 `TaggedEnumDefinition.Builtin`。變體（名稱/順序/載荷型別）登記進 `sem.EnumVariants`，
+   驅動匹配與窮盡性檢查；但底層表示與構造由 builtin runtime 提供（`?t` option 用 `%option`
+   型別與 `ok(...)`/`nil`/`err(...)` 構造器），**不生成使用者可見的 struct/union**。
+
+> 歷史：早期寫法為 `#{buildin=NAME}`（帶 Go 側 builtin 鍵值）。由於查找只依賴裸名，
+> `=NAME` 屬冗餘，已統一簡化為 `#{buildin}`。
+
 ## 查找机制
 
 ### FindBuiltinMethod（按裸名查找）

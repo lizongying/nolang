@@ -278,6 +278,16 @@ func (p *Parser) parseArrayTypeMethodDefinition() Statement {
 				isOption = true
 				p.nextToken()
 			}
+			// 指標前綴：*T / **T（與 fmt 規範輸出一致，見 parseParamTypeAfterName）
+			ptrPrefix := ""
+			for p.currentToken.Type == lexer.MUL {
+				ptrPrefix += "*"
+				p.nextToken()
+			}
+			if p.currentToken.Type == lexer.STAR_STAR {
+				ptrPrefix += "**"
+				p.nextToken()
+			}
 			if p.currentToken.Type == lexer.LBRACKET {
 				p.nextToken()
 				if p.currentToken.Type == lexer.INT || p.currentToken.Type == lexer.IDENT {
@@ -309,13 +319,14 @@ func (p *Parser) parseArrayTypeMethodDefinition() Statement {
 						p.nextToken()
 					}
 				}
-			} else if !isOption {
+			} else if !isOption && ptrPrefix == "" {
 				msg := fmt.Sprintf("line %d, column %d: expected parameter type, got %s instead",
 					p.currentToken.Line, p.currentToken.Column, p.currentToken.Type.String())
 				p.saveError(msg)
 				return nil
 			}
 
+			paramType = ptrPrefix + paramType
 			if isOption {
 				paramType = "?" + paramType
 			}
@@ -400,6 +411,16 @@ func (p *Parser) parseArrayTypeMethodDefinition() Statement {
 					isOption = true
 					p.nextToken()
 				}
+				// 指標前綴：*T / **T（與 fmt 規範輸出一致，見 parseParamTypeAfterName）
+				ptrPrefix := ""
+				for p.currentToken.Type == lexer.MUL {
+					ptrPrefix += "*"
+					p.nextToken()
+				}
+				if p.currentToken.Type == lexer.STAR_STAR {
+					ptrPrefix += "**"
+					p.nextToken()
+				}
 				if p.currentToken.Type == lexer.LBRACKET {
 					p.nextToken()
 					if p.currentToken.Type == lexer.INT || p.currentToken.Type == lexer.IDENT {
@@ -431,12 +452,13 @@ func (p *Parser) parseArrayTypeMethodDefinition() Statement {
 							p.nextToken()
 						}
 					}
-				} else if !isOption {
+				} else if !isOption && ptrPrefix == "" {
 					msg := fmt.Sprintf("line %d, column %d: expected parameter type, got %s instead",
 						p.currentToken.Line, p.currentToken.Column, p.currentToken.Type.String())
 					p.saveError(msg)
 					return nil
 				}
+				paramType = ptrPrefix + paramType
 				if isOption {
 					paramType = "?" + paramType
 				}
@@ -980,8 +1002,17 @@ func (p *Parser) parseInterfaceDefinition() Statement {
 	return id
 }
 
-// parseTaggedEnumDefinition 解析標籤列舉：option { val i64, nil bool, err str }
+// parseTaggedEnumDefinition 解析標籤列舉：
+//
+//	option { ok(v t), nil, err(e str) }   // 括號載荷欄位（新式）
+//	option { val i64, nil bool, err str } // 空格分隔型別（舊式）
+//
+// 變體名稱登記進 sem.EnumVariants[<enumName>]，供匹配與窮盡性檢查資料驅動。
 func (p *Parser) parseTaggedEnumDefinition() Statement {
+	if p.sem.EnumVariants == nil {
+		p.sem.EnumVariants = make(map[string][]string)
+	}
+
 	ted := &TaggedEnumDefinition{
 		Token:    p.currentToken,
 		Name:     p.currentToken.Literal,
@@ -1014,40 +1045,104 @@ func (p *Parser) parseTaggedEnumDefinition() Statement {
 		}
 		p.nextToken() // skip variant name
 
-		// 解析型別
-		var variantTypeStr string
-		if p.currentToken.Type == lexer.IDENT || p.currentToken.Type == lexer.NIL {
-			variantTypeStr = p.currentToken.Literal
-			p.nextToken()
-		} else if p.currentToken.Type == lexer.LBRACKET {
-			// []type 或 [N]type
-			p.nextToken()
-			if p.currentToken.Type == lexer.INT {
-				variantTypeStr = "[" + p.currentToken.Literal + "]"
-				p.nextToken()
-			} else if p.currentToken.Type == lexer.IDENT {
-				variantTypeStr = "[" + p.currentToken.Literal + "]"
-				p.nextToken()
-			} else {
-				variantTypeStr = "[]"
+		if p.currentToken.Type == lexer.LPAREN {
+			// 括號載荷欄位：ok(v t) / err(e str) / rect(w f64, h f64)
+			p.nextToken() // skip (
+			for p.currentToken.Type != lexer.RPAREN && p.currentToken.Type != lexer.EOF {
+				for p.currentToken.Type == lexer.NEWLINE || p.currentToken.Type == lexer.COMMA {
+					p.nextToken()
+				}
+				if p.currentToken.Type == lexer.RPAREN {
+					break
+				}
+				field := &TaggedEnumField{Token: p.currentToken}
+				if p.currentToken.Type == lexer.IDENT {
+					field.Name = p.currentToken.Literal
+					p.nextToken() // skip field name
+				}
+				if ts := p.parseTaggedEnumVariantType(); ts != "" {
+					field.Type = buildType(ts, field.Token)
+				}
+				variant.Fields = append(variant.Fields, field)
+				if p.currentToken.Type == lexer.COMMA {
+					p.nextToken()
+				}
 			}
-			if p.currentToken.Type == lexer.RBRACKET {
-				p.nextToken()
+			if p.currentToken.Type == lexer.RPAREN {
+				p.nextToken() // skip )
 			}
-			if p.currentToken.Type == lexer.IDENT {
-				variantTypeStr = variantTypeStr + p.currentToken.Literal
-				p.nextToken()
+			if len(variant.Fields) > 0 {
+				variant.Type = variant.Fields[0].Type
 			}
-		}
-		if variantTypeStr != "" {
-			variant.Type = buildType(variantTypeStr, variant.Token)
+		} else if ts := p.parseTaggedEnumVariantType(); ts != "" {
+			variant.Type = buildType(ts, variant.Token)
 		}
 
 		ted.Variants = append(ted.Variants, variant)
+		p.sem.EnumVariants[ted.Name] = append(p.sem.EnumVariants[ted.Name], variant.Name)
+		// 登記載荷型別（單元變體為 ""）。多欄位變體以「合成結構體」表示，型別名
+		// 為 `<枚舉名>.<變體名>`（codegen 據此登記具名 LLVM struct）。
+		fieldTypes := []string{}
+		fieldNames := []string{}
+		for _, f := range variant.Fields {
+			ft := ""
+			if f.Type != nil {
+				ft = f.Type.String()
+			}
+			fieldTypes = append(fieldTypes, ft)
+			fieldNames = append(fieldNames, f.Name)
+		}
+		payloadType := ""
+		if len(fieldTypes) == 1 {
+			payloadType = fieldTypes[0]
+		} else if len(fieldTypes) > 1 {
+			payloadType = ted.Name + "." + variant.Name
+		} else if variant.Type != nil {
+			// 舊式 `name type`（空格分隔）單載荷
+			payloadType = variant.Type.String()
+			fieldTypes = []string{payloadType}
+			fieldNames = []string{variant.Name}
+		}
+		variant.FieldNames = fieldNames
+		p.sem.SetEnumVariantPayload(ted.Name, variant.Name, payloadType)
+		p.sem.SetEnumVariantFields(ted.Name, variant.Name, fieldTypes)
 		idx++
 	}
 
 	return ted
+}
+
+// parseTaggedEnumVariantType 解析標籤列舉變體/欄位的型別，回傳型別字串（無法辨識時
+// 回傳空字串且不消耗 token）。支援 IDENT/NIL、[]T、[N]T。
+func (p *Parser) parseTaggedEnumVariantType() string {
+	switch p.currentToken.Type {
+	case lexer.IDENT, lexer.NIL:
+		s := p.currentToken.Literal
+		p.nextToken()
+		return s
+	case lexer.LBRACKET:
+		// []type 或 [N]type
+		p.nextToken()
+		var s string
+		if p.currentToken.Type == lexer.INT {
+			s = "[" + p.currentToken.Literal + "]"
+			p.nextToken()
+		} else if p.currentToken.Type == lexer.IDENT {
+			s = "[" + p.currentToken.Literal + "]"
+			p.nextToken()
+		} else {
+			s = "[]"
+		}
+		if p.currentToken.Type == lexer.RBRACKET {
+			p.nextToken()
+		}
+		if p.currentToken.Type == lexer.IDENT {
+			s = s + p.currentToken.Literal
+			p.nextToken()
+		}
+		return s
+	}
+	return ""
 }
 
 func (p *Parser) parseStructDefinition() Statement {

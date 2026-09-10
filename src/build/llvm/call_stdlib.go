@@ -1030,6 +1030,9 @@ func (g *Generator) callBuiltin(sb *strings.Builder, fnName string, hasArgs bool
 	}
 
 	// stat-size / file-size: 獲取文件大小
+	// std 以單一 ?i64 option 暴露（fs.no: stat-size = (p str) (size ?i64)）。
+	// ok 標誌經 lastBuiltinExtra 帶出：單賦值路徑（generateOptionAssign）用它
+	// 構造 %option tag；雙賦值 s, ok = stat-size(p) 由 call.go 解構。
 	if (fnName == "stat-size" || fnName == "file-size") && hasArgs {
 		a := evalArgs()
 		// 從 %str-long 參數提取 i8* 資料指針
@@ -1040,6 +1043,7 @@ func (g *Generator) callBuiltin(sb *strings.Builder, fnName string, hasArgs bool
 		sizeGEP := g.tmpReg("stat.size")
 		sizeLoad := g.tmpReg("stat.size.ld")
 		selReg := g.tmpReg("stat.sel")
+		okZext := g.tmpReg("stat.ok.zext")
 		statL := g.statLayout()
 		if sb != nil {
 			sb.WriteString(fmt.Sprintf("%s%s = alloca i8, i64 %d\n", g.indent(), statBuf, statL.Size))
@@ -1048,11 +1052,14 @@ func (g *Generator) callBuiltin(sb *strings.Builder, fnName string, hasArgs bool
 			sb.WriteString(fmt.Sprintf("%s%s = getelementptr i8, i8* %s, i64 %d\n", g.indent(), sizeGEP, statBuf, statL.SizeOff))
 			sb.WriteString(fmt.Sprintf("%s%s = load i64, i64* %s\n", g.indent(), sizeLoad, sizeGEP))
 			sb.WriteString(fmt.Sprintf("%s%s = select i1 %s, i64 %s, i64 0\n", g.indent(), selReg, cmpReg, sizeLoad))
+			sb.WriteString(fmt.Sprintf("%s%s = zext i1 %s to i64\n", g.indent(), okZext, cmpReg))
 		}
+		g.lastBuiltinExtra = okZext
 		return selReg
 	}
 
 	// fstat-size: 用 fstat(fd) 獲取已開啟檔案的大小（消除 TOCTOU）
+	// ok 標誌經 lastBuiltinExtra 帶出（同 stat-size，見上）。
 	if fnName == "fstat-size" && hasArgs {
 		a := evalArgs()
 		// 參數是 fd (i64)，需 trunc to i32 for fstat 的 int fd 參數
@@ -1063,6 +1070,7 @@ func (g *Generator) callBuiltin(sb *strings.Builder, fnName string, hasArgs bool
 		sizeGEP := g.tmpReg("fstat.size")
 		sizeLoad := g.tmpReg("fstat.size.ld")
 		selReg := g.tmpReg("fstat.sel")
+		okZext := g.tmpReg("fstat.ok.zext")
 		statL := g.statLayout()
 		if sb != nil {
 			sb.WriteString(fmt.Sprintf("%s%s = trunc i64 %s to i32\n", g.indent(), fdReg, a[0]))
@@ -1072,7 +1080,9 @@ func (g *Generator) callBuiltin(sb *strings.Builder, fnName string, hasArgs bool
 			sb.WriteString(fmt.Sprintf("%s%s = getelementptr i8, i8* %s, i64 %d\n", g.indent(), sizeGEP, statBuf, statL.SizeOff))
 			sb.WriteString(fmt.Sprintf("%s%s = load i64, i64* %s\n", g.indent(), sizeLoad, sizeGEP))
 			sb.WriteString(fmt.Sprintf("%s%s = select i1 %s, i64 %s, i64 0\n", g.indent(), selReg, cmpReg, sizeLoad))
+			sb.WriteString(fmt.Sprintf("%s%s = zext i1 %s to i64\n", g.indent(), okZext, cmpReg))
 		}
+		g.lastBuiltinExtra = okZext
 		return selReg
 	}
 

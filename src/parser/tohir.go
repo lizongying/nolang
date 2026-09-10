@@ -363,12 +363,28 @@ func (c *hirConv) stmtNode(s Statement) int32 {
 			if v == nil {
 				continue
 			}
+			// 載荷欄位（括號形式 ok(v t) / rect(w f64, h f64)）以子節點
+			// （KStructField）附於變體節點下，讓 HIR 往返對多欄位載荷無損；
+			// 單載荷的 Type 仍照舊填入，保持既有單欄位行為逐位元組不變。
+			fieldNodes := make([]int32, 0, len(v.Fields))
+			for _, f := range v.Fields {
+				if f == nil {
+					continue
+				}
+				fieldNodes = append(fieldNodes, c.b.Add(hir.Node{
+					Kind: hir.KStructField,
+					S:    c.b.Intern(f.Name),
+					Type: c.typeID(f.Type),
+					Line: int32(f.Token.Line), Col: int32(f.Token.Column),
+				}))
+			}
 			nodes = append(nodes, c.b.Add(hir.Node{
-				Kind: hir.KVariant,
-				S:    c.b.Intern(v.Name),
-				Type: c.typeID(v.Type),
-				Val:  v.Index,
-				Line: int32(v.Token.Line), Col: int32(v.Token.Column),
+				Kind:  hir.KVariant,
+				S:     c.b.Intern(v.Name),
+				Type:  c.typeID(v.Type),
+				Val:   v.Index,
+				First: c.kids(fieldNodes),
+				Line:  int32(v.Token.Line), Col: int32(v.Token.Column),
 			}))
 		}
 		return c.b.Add(hir.Node{Kind: hir.KTaggedEnumDef, S: c.b.Intern(s.Name), First: c.kids(nodes), Line: line, Col: col})

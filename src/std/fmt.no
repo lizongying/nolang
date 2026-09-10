@@ -32,15 +32,15 @@
 ; 以下为需要模块前缀的 fmt 模块函数
 
 ; printf: 已廢棄，請改用 print（自動換行）或 io.out（不換行）
-#{buildin=printf}
+#{buildin}
 printf = (s str) { }
 
 ; sprintf: 已廢棄，請改用 format
-#{buildin=sprintf}
+#{buildin}
 sprintf = (s str) (out str) { }
 
 ; eprintf: 輸出格式化字串到標準錯誤（不換行），支援 {name:spec}
-#{buildin=eprintf}
+#{buildin}
 eprintf = (s str) { }
 
 ; ═══════════════════════════════════════════════

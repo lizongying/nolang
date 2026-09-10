@@ -5592,16 +5592,26 @@ func (g *Generator) generateInfixI1(sb *strings.Builder, expr *parser.InfixExpre
 			// Check if right side is Identifier (err/nil/ok/enum-variant) or NilLiteral (nil)
 			var tag int64 = -1
 			if rightIdent, ok := expr.Right.(*parser.Identifier); ok {
-				if rightIdent.Value == "err" {
-					tag = 2
-				} else if rightIdent.Value == "nil" {
-					tag = 1
-				} else if rightIdent.Value == "ok" {
-					tag = 0
-				} else if g.enumVariantIndex != nil {
-					// Check if it's a tagged enum variant
-					if idx, ok := g.enumVariantIndex[rightIdent.Value]; ok {
+				// 標籤列舉：優先依「被匹配變數的靜態型別」在本枚舉的命名空間內解析
+				// 變體裸名（ok/nil/err/some/none…），自動補全為完整命名。這使不同
+				// 枚舉的同名變體互不干擾（各自的 tag 索引獨立）。
+				if et := g.taggedEnumTypeOfVar(leftIdent.Value); et != "" {
+					if idx, _, found := g.taggedEnumVariantOf(et, rightIdent.Value); found {
 						tag = idx
+					}
+				}
+				if tag < 0 {
+					if rightIdent.Value == "err" {
+						tag = 2
+					} else if rightIdent.Value == "nil" {
+						tag = 1
+					} else if rightIdent.Value == "ok" {
+						tag = 0
+					} else if g.enumVariantIndex != nil {
+						// Check if it's a tagged enum variant
+						if idx, ok := g.enumVariantIndex[rightIdent.Value]; ok {
+							tag = idx
+						}
 					}
 				}
 			} else if _, ok := expr.Right.(*parser.NilLiteral); ok {

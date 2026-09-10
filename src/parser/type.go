@@ -970,6 +970,18 @@ func (p *Parser) parseParamTypeAfterName() (Type, bool) {
 		isOption = true
 		p.nextToken()
 	}
+	// 指標型別前綴：`name *T` / `name **T`。fmt 以 typeString 的規範前綴形式
+	// （`*i8`）輸出，後綴形式（`i8*`）是源碼慣用法——兩者必須等價可解析，
+	// 否則 fmt 輸出不可再解析（TestFormatReparseClean/async.no）。
+	ptrPrefix := ""
+	for p.currentToken.Type == lexer.MUL {
+		ptrPrefix += "*"
+		p.nextToken()
+	}
+	if p.currentToken.Type == lexer.STAR_STAR {
+		ptrPrefix += "**"
+		p.nextToken()
+	}
 	if p.currentToken.Type == lexer.LBRACKET {
 		// Parse first bracket group: [], [N], [?], or [K]
 		p.nextToken() // skip [
@@ -1034,12 +1046,13 @@ func (p *Parser) parseParamTypeAfterName() (Type, bool) {
 	// 故 `?T*` 解讀為 ?(*T)。支援多層：`T**` → `*(*T)`。
 	for p.currentToken.Type == lexer.MUL {
 		p.nextToken()
-		paramType = "*" + paramType
+		ptrPrefix += "*"
 	}
 	if p.currentToken.Type == lexer.STAR_STAR {
 		p.nextToken()
-		paramType = "**" + paramType
+		ptrPrefix += "**"
 	}
+	paramType = ptrPrefix + paramType
 
 	if isOption {
 		paramType = "?" + paramType

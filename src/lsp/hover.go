@@ -106,6 +106,56 @@ var overflowModeDoc = map[string]string{
 		"```",
 }
 
+// matchOptionPatternDoc 為 match arm 中的 option 模式（`ok` / `nil` / `err`）提供
+// hover 文檔主體，說明該模式在 option 三態（有值 / 無值 / 錯誤）中的語義。
+// 型別行與被匹配表達式由呼叫端依原始碼上下文補上（見 getMatchOptionPatternHover）。
+var matchOptionPatternDoc = map[string]string{
+	"ok": "**`ok` — option 模式：有值（成功）**\n\n" +
+		"被匹配的表達式帶有有效值時命中此臂。\n\n" +
+		"- 臂內可用 `it` 取得解箱後的內層值\n" +
+		"- 也可寫成 `ok(cond) -> ...`：在「有值」之外額外要求 `cond` 為真\n\n" +
+		"```nolang\n" +
+		"size ?= stat-size(p)\n" +
+		"size: {\n" +
+		"    ok -> n = it      // it 是解箱後的內層值\n" +
+		"    nil -> n = 0\n" +
+		"    err -> n = 0\n" +
+		"}\n" +
+		"```",
+	"nil": "**`nil` — option 模式：無值（空）**\n\n" +
+		"被匹配的表達式「沒有值」時命中此臂——注意它**不是**錯誤，只是空。\n\n" +
+		"- 典型來源：查不到鍵、讀到 EOF、函式回傳空結果\n" +
+		"- 臂內**不要**解引用 `it`（此時沒有值可解）\n\n" +
+		"```nolang\n" +
+		"v = m.get(k)\n" +
+		"v: {\n" +
+		"    ok -> io.outln(it)\n" +
+		"    nil -> io.outln('not found')   // 空，不是錯誤\n" +
+		"    err -> io.outln('failed')\n" +
+		"}\n" +
+		"```",
+	"err": "**`err` — option 模式：錯誤**\n\n" +
+		"被匹配的表達式代表一次**失敗的運算**時命中此臂。\n\n" +
+		"- 典型來源：整數溢出（nolang 預設策略）、I/O 失敗、呼叫失敗\n" +
+		"- 與 `nil` 的差別：`err` 是「出錯了」，`nil` 只是「沒有值」\n" +
+		"- 臂內**不要**解引用 `it`\n\n" +
+		"```nolang\n" +
+		"x i8 = 120\n" +
+		"(x + 10): {\n" +
+		"    ok  -> io.outln(it)\n" +
+		"    nil -> io.outln('no value')\n" +
+		"    err -> io.outln('overflow')    // 130 超出 i8 範圍\n" +
+		"}\n" +
+		"```",
+}
+
+// matchOptionPatternFooter 接在每個 option 模式文檔之後，解釋 `?T` 三態與
+// 「三臂齊全」的窮盡性要求。
+const matchOptionPatternFooter = "\n\n---\n\n" +
+	"`?T` 是 **option 型別**：要嘛是 `T` 的值（`ok`），要嘛是空（`nil`），要嘛是錯誤（`err`）。\n\n" +
+	"nolang 的 match 要求 `ok` / `nil` / `err` 三臂齊全（或以 `->` 通配臂收尾），" +
+	"避免漏處理失敗路徑——這是把錯誤當成值處理、而非抛異常的核心機制。"
+
 type HoverProvider struct {
 	index *SymbolIndex
 	doc   *TextDocument
@@ -136,6 +186,17 @@ func (hp *HoverProvider) GetHover(position Position) (*Hover, bool) {
 
 	// 內建型別 hover（i64, u8, byte, bool 等）
 	if doc, ok := builtinTypeDoc[word]; ok {
+		return &Hover{
+			Contents: MarkupContent{
+				Kind:  MarkupKindMarkdown,
+				Value: doc,
+			},
+		}, true
+	}
+
+	// match arm 的 option 模式 hover（`ok` / `nil` / `err`）：僅當游標位於
+	// `->` 之前的 pattern 區段時觸發，避免誤傷同名變數（如結果參數 `ok ?bool`）。
+	if doc, ok := hp.getMatchOptionPatternHover(position, word); ok {
 		return &Hover{
 			Contents: MarkupContent{
 				Kind:  MarkupKindMarkdown,
@@ -192,6 +253,219 @@ func (hp *HoverProvider) getOverflowAnnotationHover(position Position, word stri
 		return doc, true
 	}
 	return "", false
+}
+
+// isOptionPatternName 判斷 word 是否為 option match 模式（`ok` / `nil` / `err`）。
+func isOptionPatternName(word string) bool {
+	switch word {
+	case "ok", "nil", "err":
+		return true
+	}
+	return false
+}
+
+// isOptionPatternList 判斷 s（match arm 的 `->` 之前區段）是否只由 option 模式組成，
+// 例如 `ok`、`err `、`nil || err`、`ok(n > 0)`。含有其他識別符（如裸 match 的
+// 一般條件 `foo`）時回傳 false，避免把同名變數誤判為模式。
+func isOptionPatternList(s string) bool {
+	for _, part := range strings.Split(s, "||") {
+		part = strings.TrimSpace(part)
+		if part == "" {
+			return false
+		}
+		name := part
+		if i := strings.Index(part, "("); i >= 0 {
+			name = strings.TrimSpace(part[:i])
+		}
+		if !isOptionPatternName(name) {
+			return false
+		}
+	}
+	return true
+}
+
+// stripLineComment 去掉行內 `;` 註解（`;` 是 nolang 的單行註解符號）。
+func stripLineComment(s string) string {
+	if i := strings.Index(s, ";"); i >= 0 {
+		return s[:i]
+	}
+	return s
+}
+
+// indentWidth 回傳行的前導空白寬度（tab 視為 4 欄）。
+func indentWidth(s string) int {
+	n := 0
+	for _, r := range s {
+		switch r {
+		case ' ':
+			n++
+		case '\t':
+			n += 4
+		default:
+			return n
+		}
+	}
+	return n
+}
+
+// matchSubjectFromHeader 從 match 的 header 行（`size: {`、`f: {` 等）取出被匹配的
+// 表達式文字；裸 match（`{ ... }`）沒有 subject，回傳 ""。
+func matchSubjectFromHeader(line string) string {
+	s := strings.TrimSpace(stripLineComment(line))
+	s = strings.TrimSpace(strings.TrimSuffix(s, "{"))
+	if !strings.HasSuffix(s, ":") {
+		return "" // 裸 match，無 subject
+	}
+	return strings.TrimSpace(strings.TrimSuffix(s, ":"))
+}
+
+// findMatchSubject 向上尋找包住第 lineIdx 行 arm 的 match header，回傳被匹配表達式文字。
+// 同行寫法（`size: { ok -> ... }`）直接在當行取；否則向上一行行掃描，
+// 直到遇到縮排更淺且以 `{` 結尾的 header 行為止。
+func findMatchSubject(lines []string, lineIdx int, line string, arrowIdx int) string {
+	// 同行情形：`size: { ok -> ... }`
+	if brace := strings.LastIndex(line[:arrowIdx], "{"); brace >= 0 {
+		return matchSubjectFromHeader(line[:brace])
+	}
+	indent := indentWidth(line)
+	for i := lineIdx - 1; i >= 0; i-- {
+		cur := lines[i]
+		if strings.TrimSpace(stripLineComment(cur)) == "" {
+			continue // 空行 / 純註解行
+		}
+		if indentWidth(cur) >= indent {
+			continue // 縮排不比 arm 淺 → 不是 header
+		}
+		trimmed := strings.TrimSpace(stripLineComment(cur))
+		if !strings.HasSuffix(trimmed, "{") {
+			return "" // 縮排更淺但不是 block 起始 → 放棄
+		}
+		return matchSubjectFromHeader(cur)
+	}
+	return ""
+}
+
+// resolveOptionType 依被匹配表達式文字推導 option 型別與其內層型別。
+// 運算式為純識別符時查符號表（`size` → i64 → `?i64` / i64）；
+// 為呼叫時查函式回傳型別。無法判定時回傳空字串。
+func (hp *HoverProvider) resolveOptionType(subject string) (optType string, innerType string) {
+	if hp.index == nil || subject == "" {
+		return "", ""
+	}
+	base := subject
+	if i := strings.Index(base, "("); i >= 0 {
+		// 呼叫形式：`stat-size(p)` → 查函式回傳型別
+		fn := strings.TrimSpace(base[:i])
+		if entry, ok := hp.index.functions[fn]; ok && len(entry.ResultParams) > 0 {
+			t := entry.ResultParams[0].Type
+			if t == "" {
+				return "", ""
+			}
+			if strings.HasPrefix(t, "?") {
+				return t, strings.TrimPrefix(t, "?")
+			}
+			return "?" + t, t
+		}
+		return "", ""
+	}
+	// 純識別符（含 `.fd` 之類的接收者欄位則查不到，回傳空）
+	if entry, ok := hp.index.symbols[base]; ok && entry.Type != "" && !strings.HasPrefix(entry.Type, "call ") {
+		t := entry.Type
+		if strings.HasPrefix(t, "?") {
+			return t, strings.TrimPrefix(t, "?")
+		}
+		return "?" + t, t
+	}
+	return "", ""
+}
+
+// getMatchOptionPatternHover 在游標位於 match arm 的 option 模式
+// （`ok` / `nil` / `err`）上時，提供「option 型別 + 該模式語義」的 hover 文檔。
+// 透過「僅在 `->` 之前且該區段全是 option 模式時觸發」來避免誤傷同名變數
+// （如結果參數 `ok ?bool`、或 `err -> ok = err('...')` 右側的 `ok`）。
+func (hp *HoverProvider) getMatchOptionPatternHover(position Position, word string) (string, bool) {
+	if !isOptionPatternName(word) {
+		return "", false
+	}
+	lines := getLines(hp.doc.Text)
+	if int(position.Line) >= len(lines) {
+		return "", false
+	}
+	line := lines[position.Line]
+	arrowIdx := strings.Index(line, "->")
+	if arrowIdx < 0 || int(position.Character) >= arrowIdx {
+		return "", false // 游標不在 `->` 之前的 pattern 區段
+	}
+	// 確認游標所在的單字確實完整落在 pattern 區段內
+	start, end := wordBoundsAt(line, position.Character)
+	if start < 0 || end > arrowIdx || line[start:end] != word {
+		return "", false
+	}
+	prefix := line[:arrowIdx]
+	if brace := strings.LastIndex(prefix, "{"); brace >= 0 {
+		prefix = prefix[brace+1:]
+	}
+	if !isOptionPatternList(prefix) {
+		return "", false
+	}
+
+	doc, ok := matchOptionPatternDoc[word]
+	if !ok {
+		return "", false
+	}
+
+	subject := findMatchSubject(lines, int(position.Line), line, arrowIdx)
+	optType, innerType := hp.resolveOptionType(subject)
+
+	// 各模式的「自身型別」：`ok` 是解箱後的內層值型別，`nil` / `err` 是各自的哨兵型別。
+	// 這比一律顯示 option 型別更精確——懸停 `nil` 時使用者想知道的是「這裡是 nil」。
+	selfType := ""
+	switch word {
+	case "ok":
+		selfType = innerType
+	case "nil", "err":
+		selfType = word
+	}
+
+	var b strings.Builder
+	b.WriteString(doc)
+	if optType != "" || selfType != "" {
+		b.WriteString("\n\n")
+		if subject != "" {
+			b.WriteString(fmt.Sprintf("- **Matched**: `%s`\n", subject))
+		}
+		if optType != "" {
+			b.WriteString(fmt.Sprintf("- **Option type**: `%s`\n", optType))
+		}
+		if selfType != "" {
+			if word == "ok" {
+				b.WriteString(fmt.Sprintf("- **Type**: `%s`（解箱後的內層值型別，可經 `ok(name)` 改名）\n", selfType))
+			} else {
+				b.WriteString(fmt.Sprintf("- **Type**: `%s`\n", selfType))
+			}
+		}
+	}
+	b.WriteString(matchOptionPatternFooter)
+	return b.String(), true
+}
+
+// wordBoundsAt 回傳行內第 col 欄所在單字的 [start, end) 區間；col 不在單字上時回傳 (-1, -1)。
+func wordBoundsAt(line string, col uint32) (int, int) {
+	c := int(col)
+	if c < 0 || c > len(line) {
+		return -1, -1
+	}
+	start, end := c, c
+	for start > 0 && isWordChar(line[start-1]) {
+		start--
+	}
+	for end < len(line) && isWordChar(line[end]) {
+		end++
+	}
+	if start == end {
+		return -1, -1
+	}
+	return start, end
 }
 
 func (hp *HoverProvider) formatHoverContent(entry *IndexEntry) any {

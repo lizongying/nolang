@@ -3,17 +3,17 @@ PI = 3.141592653589793
 E = 2.718281828459045
 
 ; 基础
-#{buildin=abs}
+#{buildin}
 abs = (x f64) (res f64) { }
 
-#{buildin=max}
+#{buildin}
 max = (a f64, b f64) (res f64) { }
 
-#{buildin=min}
+#{buildin}
 min = (a f64, b f64) (res f64) { }
 
 ; 幂与根
-#{buildin=sqrt}
+#{buildin}
 sqrt = (x f64) (res f64) { }
 
 ; cbrt: 立方根
@@ -39,7 +39,7 @@ cbrt = (x f64) (res f64) {
     }
 }
 
-#{buildin=pow}
+#{buildin}
 pow = (x f64, y f64) (res f64) { }
 
 ; hypot: 歐幾里得範數 sqrt(x*x + y*y)
@@ -49,10 +49,10 @@ hypot = (x f64, y f64) (res f64) {
 }
 
 ; 三角函数（弧度）
-#{buildin=sin}
+#{buildin}
 sin = (x f64) (res f64) { }
 
-#{buildin=cos}
+#{buildin}
 cos = (x f64) (res f64) { }
 
 ; tan: tangent = sin/cos
@@ -61,52 +61,52 @@ tan = (x f64) (res f64) {
     res = sin(x) / cos(x)
 }
 
-#{buildin=asin}
+#{buildin}
 asin = (x f64) (res f64) { }
 
-#{buildin=acos}
+#{buildin}
 acos = (x f64) (res f64) { }
 
-#{buildin=atan}
+#{buildin}
 atan = (x f64) (res f64) { }
 
-#{buildin=atan2}
+#{buildin}
 atan2 = (y f64, x f64) (res f64) { }
 
 ; 双曲函数
-#{buildin=sinh}
+#{buildin}
 sinh = (x f64) (res f64) { }
 
-#{buildin=cosh}
+#{buildin}
 cosh = (x f64) (res f64) { }
 
-#{buildin=tanh}
+#{buildin}
 tanh = (x f64) (res f64) { }
 
 ; 取整
-#{buildin=ceil}
+#{buildin}
 ceil = (x f64) (res f64) { }
 
-#{buildin=floor}
+#{buildin}
 floor = (x f64) (res f64) { }
 
-#{buildin=round}
+#{buildin}
 round = (x f64) (res f64) { }
 
-#{buildin=trunc}
+#{buildin}
 trunc = (x f64) (res f64) { }
 
 ; 指数对数
-#{buildin=exp}
+#{buildin}
 exp = (x f64) (res f64) { }
 
-#{buildin=log}
+#{buildin}
 log = (x f64) (res f64) { }
 
-#{buildin=log10}
+#{buildin}
 log10 = (x f64) (res f64) { }
 
-#{buildin=log2}
+#{buildin}
 log2 = (x f64) (res f64) { }
 
 ; 杂项
@@ -138,5 +138,5 @@ radians = (d f64) (res f64) {
 ; 整數數學函數（內建）
 ; ═══════════════════════════════════════════════
 ; clamp: 將值限制在 [min, max] 範圍內
-#{buildin=clamp}
+#{buildin}
 clamp = (val i64, min i64, max i64) (result i64) { }

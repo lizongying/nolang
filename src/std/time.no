@@ -18,15 +18,15 @@ now-s = () (ts i64) {
 }
 
 ; now-ms: 當前 Unix 時間戳（毫秒）
-#{buildin=now-ms}
+#{buildin}
 now-ms = () (ts i64) { }
 
 ; now-us: 當前 Unix 時間戳（微秒）
-#{buildin=now-us}
+#{buildin}
 now-us = () (ts i64) { }
 
 ; now-ns: 當前時間戳（奈秒）
-#{buildin=now-ns}
+#{buildin}
 now-ns = () (ts i64) { }
 
 ; ═══════════════════════════════════════════════
@@ -48,11 +48,11 @@ sleep-ms = (ms i64) {
 }
 
 ; sleep-us: 睡眠指定微秒數
-#{buildin=sleep-us}
+#{buildin}
 sleep-us = (us i64) { }
 
 ; sleep-ns: 睡眠指定奈秒數
-#{buildin=sleep-ns}
+#{buildin}
 sleep-ns = (ns i64) { }
 
 ; ═══════════════════════════════════════════════

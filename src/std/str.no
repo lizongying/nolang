@@ -46,7 +46,7 @@ str.len = () (n i64) {
 
 ; str.eq: 比较两个字符串的前 n 个字节是否相等
 ; 返回 true=相等, false=不相等
-#{buildin=eq-raw}
+#{buildin}
 eq-raw = (b str, n i64) (eq bool) { }
 
 ; str.copy: 将 src 复制到 dst（整個字串）

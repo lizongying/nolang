@@ -59,13 +59,13 @@
 ;   // data == [1, 1, 3, 4, 5]
 
 ; sort-asc: 升序排序 data[0..n)
-#{buildin=sort-asc}
+#{buildin}
 sort-asc = (data []i64, n i64) { }
 ; []t.sort-asc = () {
 ; }
 
 ; sort-desc: 降序排序 data[0..n)
-#{buildin=sort-desc}
+#{buildin}
 sort-desc = (data []i64, n i64) { }
 ; []t.sort-desc = () {
 ; }
@@ -103,7 +103,7 @@ sort-desc = (data []i64, n i64) { }
 ;   cap == 0 → new-cap = 4
 ;   cap < 1024 → new-cap = cap * 2
 ;   cap >= 1024 → new-cap = cap * 5 / 4
-#{buildin=vec-push}
+#{buildin}
 vec-push = (val t) { }
 ;     n = .len()
 ;     .len = n + 1
@@ -113,7 +113,7 @@ vec-push = (val t) { }
 ; []t.clear: 清空切片（原地修改長度為 0）
 ; 不 free 堆、不縮 cap，data 指標完全不變
 ; 只有寫入帶長度新內容時才走擴容邏輯
-#{buildin=vec-clear}
+#{buildin}
 vec-clear = () { }
 
 ; 全局函数 with-cap / with-len / with-cap-len 的声明已移至 global.no
@@ -389,19 +389,19 @@ vec-clear = () { }
 ; ═══════════════════════════════════════════════
 
 ; vec-eq: 比較兩個切片是否相等
-#{buildin=vec-eq}
+#{buildin}
 vec-eq = (a []t, b []t, elem-size i64) (eq i64) { }
 
 ; arr-eq: 比較兩個固定大小陣列是否相等
-#{buildin=arr-eq}
+#{buildin}
 arr-eq = (a i64, b i64, n i64) (eq i64) { }
 
 ; vec-sort: 升序排序切片（原地）
-#{buildin=vec-sort}
+#{buildin}
 vec-sort = (a i64) { }
 
 ; vec-reverse: 反轉切片（原地）
-#{buildin=vec-reverse}
+#{buildin}
 vec-reverse = (a i64) { }
 
 ; []t.to-str: 字串表示

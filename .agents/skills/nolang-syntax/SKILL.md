@@ -1591,6 +1591,82 @@ struct-name {
 }
 ```
 
+**Tagged enums (payload variants).** A variant may carry named payload fields using the
+parenthesized form `variant(field type)`; a payload-less variant is a bare name. A variant
+may carry **multiple** fields (multi-field payloads are boxed in a synthesized heap struct):
+
+```no
+// tagged enum — tags are 0,1,2... in declaration order
+result {
+    ok(v t),        // payload field v of type t
+    nil,            // no payload
+    err(e str),     // payload field e of type str
+}
+
+shape {
+    circle(r f64),          // single field
+    rect(w f64, h f64),     // multiple fields
+    dot,                    // no payload
+}
+```
+
+Match on the variant name; payload-bearing variants support destructuring binding (multiple
+fields bind positionally):
+
+```no
+r result = ok(42)
+r: {
+    ok(v) -> print(v)     // binds ok's payload to v
+    nil -> print('empty')
+    err(e) -> print(e)
+}
+
+s shape = rect(3.0, 4.0)
+s: {
+    circle(r) -> print(r)        // binds the single field
+    rect(w, h) -> print(w * h)   // binds fields positionally
+    dot -> print('dot')
+}
+```
+
+Variants can be constructed directly in **expression position** — as a function argument, or
+as another variant's payload:
+
+```no
+x f64 = perimeter(rect(3.0, 4.0))   // construct inline and pass
+o outer = wrap(a(5))                // payload is itself an enum
+```
+
+**Namespacing and bare-name resolution.** Internally the compiler registers variants under
+their fully-qualified names (`module.enum.variant`, e.g. `option.option.ok`,
+`some-mod.my-result.ok`), so identically-named variants in different enums never collide. At
+the source level you write the bare name (`ok`, `rect`); the compiler resolves it to the
+full name **from the static type of the matched/constructed variable**. Two enums can
+therefore both have an `ok` variant with different tag orders and still be distinguished
+correctly.
+
+The old space-separated form `ok t` is equivalent to `ok(v t)` (field name omitted).
+Tagged-enum variant names are registered in the compiler's enum-variant table, which
+drives match lowering and exhaustiveness checking.
+
+**Builtin tagged enums (`#{buildin}`).** Prefixing a tagged enum with `#{buildin}` marks it
+as a *builtin* enum: its variants (names, order, payload types) drive matching and
+exhaustiveness, but the underlying representation and construction come from the builtin
+runtime — no user-visible struct/union is generated. The `?t` option type is declared this
+way in `src/std/option.no`:
+
+```no
+#{buildin}
+option {
+    ok(v t),        // tag 0
+    nil,            // tag 1
+    err(e str),     // tag 2
+}
+```
+
+`#{buildin}` takes no value (`#{buildin}`, not `#{buildin=NAME}`); it applies to builtin
+function stubs and builtin enums alike.
+
 **Rule: enum values must always be referenced using qualified form `enum-type.value`, never as bare names.** This prevents naming conflicts and ensures external packages cannot use values directly without qualification.
 
 ```no

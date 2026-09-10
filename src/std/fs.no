@@ -28,12 +28,12 @@
 ; ═══════════════════════════════════════════════
 
 ; remove: 刪除檔案
-#{buildin=remove}
+#{buildin}
 remove = (p str) (ok bool) {
 }
 
 ; rename: 重新命名檔案
-#{buildin=rename}
+#{buildin}
 rename = (o str, n str) (ok bool) {
 }
 
@@ -41,7 +41,7 @@ rename = (o str, n str) (ok bool) {
 ; target: 連結指向的目標路徑
 ; linkpath: 符號連結本身的路徑
 ; 成功返回 true，失敗返回 false
-#{buildin=symlink}
+#{buildin}
 symlink = (target str, linkpath str) (ok bool) {
 }
 
@@ -49,21 +49,21 @@ symlink = (target str, linkpath str) (ok bool) {
 ; oldpath: 既有檔案路徑
 ; newpath: 新硬連結路徑
 ; 成功返回 true，失敗返回 false
-#{buildin=link}
+#{buildin}
 link = (oldpath str, newpath str) (ok bool) {
 }
 
 ; realpath: 解析絕對路徑
 ; p: 輸入路徑（可能是相對路徑或含 . / .. 的路徑）
 ; 成功返回規範化的絕對路徑字串，失敗返回空串
-#{buildin=realpath}
+#{buildin}
 realpath = (p str) (abs str) {
 }
 
 ; readlink: 讀取符號連結的目標路徑
 ; p: 符號連結路徑
 ; 成功返回目標路徑字串與 ok=true，失敗返回空串與 ok=false
-#{buildin=readlink}
+#{buildin}
 readlink = (p str) (target str, ok bool) {
 }
 
@@ -72,14 +72,14 @@ readlink = (p str) (target str, ok bool) {
 ; 成功返回實際檔名與檔案描述符，失敗返回空串與 fd=-1
 ; 注意：返回順序為 (name, fd) 而非 (fd, name)，因為 lastBuiltinExtra 機制要求
 ;       第二返回值必須是 i64/bool 型別，str 必須為主返回值
-#{buildin=mkstemp}
+#{buildin}
 mkstemp = (tmpl str) (name str, fd fd) {
 }
 
 ; mkdtemp: 建立唯一臨時目錄
 ; tmpl: 模板字串，末尾必須為 'XXXXXX'
 ; 成功返回實際目錄名與 ok=true，失敗返回空串與 ok=false
-#{buildin=mkdtemp}
+#{buildin}
 mkdtemp = (tmpl str) (name str, ok bool) {
 }
 
@@ -87,7 +87,7 @@ mkdtemp = (tmpl str) (name str, ok bool) {
 ; p: 管道路徑
 ; mode: 權限模式（如 0o644 = 420）
 ; 成功返回 true，失敗返回 false
-#{buildin=mkfifo}
+#{buildin}
 mkfifo = (p str, mode i64) (ok bool) {
 }
 
@@ -96,14 +96,14 @@ mkfifo = (p str, mode i64) (ok bool) {
 ; atime: 存取時間（Unix 秒）
 ; mtime: 修改時間（Unix 秒）
 ; 成功返回 true，失敗返回 false
-#{buildin=utime}
+#{buildin}
 utime = (p str, atime i64, mtime i64) (ok bool) {
 }
 
 ; rmdir: 刪除空目錄
 ; p: 目錄路徑（必須為空目錄）
 ; 成功返回 true，失敗返回 false
-#{buildin=rmdir}
+#{buildin}
 rmdir = (p str) (ok bool) {
 }
 
@@ -112,7 +112,7 @@ rmdir = (p str) (ok bool) {
 ; mode: 檔案類型與權限（如 0o644=420 普通檔案，0o666=438 FIFO）
 ; dev: 裝置號（對普通檔案/FIFO 傳 0）
 ; 成功返回 true，失敗返回 false（macOS/Windows 上可能不支援）
-#{buildin=mknod}
+#{buildin}
 mknod = (p str, mode i64, dev i64) (ok bool) {
 }
 
@@ -120,12 +120,12 @@ mknod = (p str, mode i64, dev i64) (ok bool) {
 ; p: 檔案路徑
 ; length: 目標長度（位元組）
 ; 成功返回 true，失敗返回 false
-#{buildin=truncate}
+#{buildin}
 truncate = (p str, length i64) (ok bool) {
 }
 
 ; sync: 將檔案系統緩衝區排清到磁碟（無返回值）
-#{buildin=sync}
+#{buildin}
 sync = () {
 }
 
@@ -133,51 +133,51 @@ sync = () {
 ; 與 stat 不同：對符號連結呼叫時返回連結本身的資訊，而非目標
 ; p: 檔案路徑
 ; 成功返回 true，失敗返回 false
-#{buildin=lstat}
+#{buildin}
 lstat = (p str) (ok bool) {
 }
 
 ; exists: 判斷路徑是否存在（跟隨符號連結）
 ; 成功返回 true，失敗返回 false
-#{buildin=exists}
+#{buildin}
 exists = (p str) (yes bool) {
 }
 
 ; is-file: 判斷路徑是否為普通檔案
-#{buildin=is-file}
+#{buildin}
 is-file = (p str) (exists bool) {
 }
 
 ; is-dir: 判斷路徑是否為目錄
-#{buildin=is-dir}
+#{buildin}
 is-dir = (p str) (yes bool) {
 }
 
 ; stat-size: 取得檔案大小
-#{buildin=stat-size}
+#{buildin}
 stat-size = (p str) (size ?i64) {
 }
 
 ; fstat-size: 取得已開啟檔案的大小（用 fstat(fd)，消除 TOCTOU）
 ; fd: 已開啟的檔案描述符
-#{buildin=fstat-size}
+#{buildin}
 fstat-size = (fd fd) (size ?i64) {
 }
 
 ; [deprecated] read-file: 改用 read-bytes（支援錯誤處理、TOCTOU 安全、循環 read）
 ; read-file: 讀取整個檔案內容為 []byte（空 slice 表示失敗，無法區分空檔案與錯誤）
-#{buildin=read-file}
+#{buildin}
 read-file = (p str) (content []byte) {
 }
 
 ; [deprecated] write-file: 改用 write-bytes（支援錯誤處理、循環 write）
 ; write-file: 將 []byte 寫入檔案（覆寫，無法區分部分寫入與完全失敗）
-#{buildin=write-file}
+#{buildin}
 write-file = (p str, data []byte) (ok bool) {
 }
 
 ; file-size: 取得檔案大小（同 stat-size）
-#{buildin=file-size}
+#{buildin}
 file-size = (p str) (size ?i64) {
 }
 
@@ -186,32 +186,32 @@ file-size = (p str) (size ?i64) {
 ; ═══════════════════════════════════════════════
 
 ; open-read: 以唯讀模式開啟檔案
-#{buildin=open-read}
+#{buildin}
 open-read = (path str) (fd fd) {
 }
 
 ; open-write: 以寫入模式開啟檔案（O-WRONLY|O-CREAT|O-TRUNC, 0644）
-#{buildin=open-write}
+#{buildin}
 open-write = (path str) (fd fd) {
 }
 
 ; open-file: 以自訂旗標和權限開啟檔案
-#{buildin=open-file}
+#{buildin}
 open-file = (path str, flags i64, mode i64) (fd fd) {
 }
 
 ; read: 從檔案描述符讀取最多 n 位元組到 buf
-#{buildin=read}
+#{buildin}
 read = (fd fd, buf []byte, n i64) (n i64) {
 }
 
 ; write: 將 data 的前 n 位元組寫入檔案描述符
-#{buildin=write}
+#{buildin}
 write = (fd fd, data []byte, n i64) (written i64) {
 }
 
 ; close: 關閉檔案描述符
-#{buildin=close}
+#{buildin}
 close = (fd fd) (ok i64) {
 }
 
@@ -220,7 +220,7 @@ close = (fd fd) (ok i64) {
 ; ═══════════════════════════════════════════════
 
 ; get-line: 從標準輸入讀取一行
-#{buildin=get-line}
+#{buildin}
 get-line = () (line ?str) {
 }
 
@@ -271,25 +271,25 @@ read-stdin-str = () (content ?str) {
 
 ; open-dir: 開啟目錄以讀取條目
 
-#{buildin=open-dir}
+#{buildin}
 open-dir = (p str) (dirp i64) {
 }
 
 ; read-dir: 讀取下一個目錄條目名稱
 
-#{buildin=read-dir}
+#{buildin}
 read-dir = (dirp i64) (name str, ok bool) {
 }
 
 ; close-dir: 關閉目錄控制代碼
 
-#{buildin=close-dir}
+#{buildin}
 close-dir = (dirp i64) (ok bool) {
 }
 
 ; touch-file: 更新檔案時間戳為當前時間
 
-#{buildin=touch-file}
+#{buildin}
 touch-file = (p str) (ok bool) {
 }
 
@@ -600,7 +600,7 @@ file.read-bytes = () (content ?[]byte) {
         return
     }
     ; 用 fstat(fd) 取得大小 — 消除 TOCTOU
-    size = fstat-size(.fd)
+    size ?= fstat-size(.fd)
     size == 0 -> {
         content = nil
         return
@@ -777,8 +777,8 @@ write-bytes = (p str, data []byte) (ok ?bool) {
 
 ; append: 追加資料到檔案末尾
 ; 簡化實作：先讀取現有內容再合併寫入
-file.append = (data str, n i64) (ok bool) {
-    ok = false
+file.append = (data str, n i64) (success bool) {
+    success = false
     .fd < 0 -> return
     save-path = .path
     .close()
@@ -788,14 +788,14 @@ file.append = (data str, n i64) (ok bool) {
     exist-n = 0
     size = stat-size(save-path)
     size: {
-        ok -> {
-            size > 4096 -> exist-n = read(rd-fd, existing, 4096)
+        ok(it1) -> {
+            it1 > 4096 -> exist-n = read(rd-fd, existing, 4096)
 
-            size > 0 -> exist-n = read(rd-fd, existing, it)
+            it1 > 0 -> exist-n = read(rd-fd, existing, it1)
         }
 
         ; stat 失敗：視為空檔案，不預讀既有內容
-        nil -> exist-n = 0
+        -> exist-n = 0
     }
 
     close(rd-fd)
@@ -805,7 +805,7 @@ file.append = (data str, n i64) (ok bool) {
     exist-n > 0 -> write(.fd, existing, exist-n)
     b = data.to-bytes()
     written = write(.fd, b, n)
-    ok = written == n
+    success = written == n
 }
 
 ; copy-to: 將本檔案複製到 dst-path

@@ -67,7 +67,8 @@ func TestExhaustiveMatchOkNilElseNotReported(t *testing.T) {
 	}
 }
 
-// ok + nil covers both option variants even without a wildcard. Must NOT report.
+// ok + nil without err is NOT exhaustive: err is a real variant of any ?T
+// (std's read-stdin-str returns ?str and matches err ->). Must be reported.
 func TestExhaustiveMatchOkNilNoWildcardNotReported(t *testing.T) {
 	src := `f = () () {
     b: {
@@ -78,8 +79,29 @@ func TestExhaustiveMatchOkNilNoWildcardNotReported(t *testing.T) {
 }
 `
 	results := ValidateNonExhaustiveMatch(parseProg(t, src))
+	if n := countMatchNonex(results); n != 1 {
+		t.Fatalf("expected 1 match-nonex for ok+nil (err missing), got %d: %v", n, results)
+	}
+	if !strings.Contains(results[0].Message, "err") {
+		t.Errorf("expected message to list missing err, got: %s", results[0].Message)
+	}
+}
+
+// ok + nil + err without a wildcard IS exhaustive. Must NOT report.
+func TestExhaustiveMatchOkNilErrNoWildcardNotReported(t *testing.T) {
+	src := `f = () () {
+    b: {
+        ok -> n = 1
+
+        nil -> n = 2
+
+        err -> n = 3
+    }
+}
+`
+	results := ValidateNonExhaustiveMatch(parseProg(t, src))
 	if n := countMatchNonex(results); n != 0 {
-		t.Fatalf("expected 0 match-nonex for ok+nil match, got %d: %v", n, results)
+		t.Fatalf("expected 0 match-nonex for ok+nil+err match, got %d: %v", n, results)
 	}
 }
 
@@ -175,8 +197,9 @@ bar = () {
 	}
 }
 
-// Counterpart of the above: a call-subject match that DOES handle nil must not
-// be reported (the rule is about exhaustiveness, not about the subject shape).
+// Counterpart of the above: a call-subject match that DOES handle all three
+// variants must not be reported (the rule is about exhaustiveness, not about
+// the subject shape).
 func TestExhaustiveMatchCallSubjectNotReported(t *testing.T) {
 	src := `foo = () (v ?i64) {
     v = 1
@@ -186,11 +209,13 @@ bar = () {
         ok -> io.outln('ok')
 
         nil -> io.outln('nil')
+
+        err -> io.outln('err')
     }
 }
 `
 	results := ValidateNonExhaustiveMatch(parseProg(t, src))
 	if n := countMatchNonex(results); n != 0 {
-		t.Fatalf("expected 0 match-nonex when nil is handled, got %d: %v", n, results)
+		t.Fatalf("expected 0 match-nonex when all variants are handled, got %d: %v", n, results)
 	}
 }

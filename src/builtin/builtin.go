@@ -68,3 +68,30 @@ func FindBuiltinMethod(name string) *BuiltinMethod {
 	}
 	return nil
 }
+
+// optionReturnBuiltins lists builtins whose std declaration is a single option
+// (?i64) even though the registry Return carries the raw C pair (T, ok):
+//
+//	stat-size = (p str) (size ?i64)      ; fs.no
+//	fstat-size = (fd fd) (size ?i64)     ; fs.no
+//	file-size = (p str) (size ?i64)      ; fs.no
+//
+// For these, the ok flag is carried out of the LLVM handler via
+// Generator.lastBuiltinExtra (same channel as get-line's ok), and the
+// assignment layer (generateOptionAssign) materializes the %option
+// {tag, value} struct: tag 0 = ok, tag 1 = nil (C call failed).
+// Callers that need the type must consult this set INSTEAD of m.Return,
+// because Return[1] (the bool) is meaningless at the language level here —
+// unlike genuinely pair-valued builtins (readlink, mkdtemp, get-priority, ...)
+// whose std declarations are (T, ok bool) two-result contracts.
+var optionReturnBuiltins = map[string]bool{
+	"stat-size":  true,
+	"file-size":  true,
+	"fstat-size": true,
+}
+
+// IsOptionReturnBuiltin reports whether the builtin is std-declared as a
+// single ?T option (see optionReturnBuiltins).
+func IsOptionReturnBuiltin(name string) bool {
+	return optionReturnBuiltins[name]
+}

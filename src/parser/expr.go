@@ -912,19 +912,35 @@ func (p *Parser) parseMatchExprFrom(matched Expression) Expression {
 			ma.isDotVal = true
 			p.nextToken() // consume DOT
 		} else if p.currentToken.Type == lexer.IDENT && p.currentToken.Literal == "ok" && p.peekToken.Type == lexer.LPAREN {
-			// ok(cond) -> body → conditional val arm
-			// Desugars to: matched == ok && cond (built in buildMatchDesugar)
+			// ok(...) 有兩種含義，用「有界前瞻 1 個 token」在 parser 內部消歧，
+			// 不需要使用者多寫任何東西：
+			//
+			//	ok(v)     → 析構綁定：把 ok 變體的載荷綁定到 v（等價於 `ok ->` 但 it 改名 v）
+			//	ok(cond)  → 條件 val arm：desugar 成 matched == ok && cond
+			//
+			// 區分規則：括號內是「單個裸識別符」→ 析構綁定；其餘（比較、呼叫、字面量…）
+			// → 條件。這與 docs/lang/syntax.md 的「析構寫法」一致，且現有程式碼裡的
+			// ok(cond) 全都是比較式（如 `ok(it > 127)`），不受影響。
 			p.nextToken() // skip ok
 			p.nextToken() // skip (
-			p.ctx.push(CTX_MATCH_ARM)
-			okCond := p.parseExpression(LOWEST)
-			p.ctx.pop()
-			if p.currentToken.Type != lexer.RPAREN {
-				return nil
+			if p.currentToken.Type == lexer.IDENT && p.peekToken.Type == lexer.RPAREN {
+				ma.bindingName = p.currentToken.Literal
+				ma.bindingVariant = "ok"
+				ma.isWildcard = true
+				ma.isDotVal = true
+				p.nextToken() // skip name
+				p.nextToken() // skip )
+			} else {
+				p.ctx.push(CTX_MATCH_ARM)
+				okCond := p.parseExpression(LOWEST)
+				p.ctx.pop()
+				if p.currentToken.Type != lexer.RPAREN {
+					return nil
+				}
+				p.nextToken() // skip )
+				ma.isRawCond = true
+				ma.condition = okCond
 			}
-			p.nextToken() // skip )
-			ma.isRawCond = true
-			ma.condition = okCond
 		} else if p.currentToken.Type == lexer.IDENT && p.peekToken.Type == lexer.RARROW &&
 			(p.currentToken.Literal == "err" || p.currentToken.Literal == "nil" || p.currentToken.Literal == "ok") {
 			// err-> nil-> → option pattern
@@ -1273,11 +1289,12 @@ func (p *Parser) parseMatchExprFrom(matched Expression) Expression {
 		}
 	}
 	// Check option match branch completeness (3 occurrences, keep in sync)
-	isBuiltinOpt := p.isBuiltinOption(matched)
-	if !hasElseArm && ((!isBuiltinOpt && !hasErrArm) || !hasNilArm || !hasValArm) {
+	// err 對所有 option（含 ?i64 等內建 option）都強制：option 帶 err 變體
+	//（std 的 read-stdin-str 返回 ?str 並 match err -> 即證），不可豁免。
+	if !hasElseArm && (!hasErrArm || !hasNilArm || !hasValArm) {
 		if p.matchedIsOption(matched) {
 			var missing []string
-			if !isBuiltinOpt && !hasErrArm {
+			if !hasErrArm {
 				missing = append(missing, "err")
 			}
 			if !hasNilArm {
@@ -1937,10 +1954,26 @@ func (p *Parser) parseFunctionLiteral() Expression {
 
 			p.nextToken()
 
-			// Optional type annotation: (a i64, b str, c i8*)
-			if p.currentToken.Type == lexer.IDENT {
+			// Optional type annotation: (a i64, b str, c i8* / *i8)
+			if p.currentToken.Type == lexer.IDENT || p.currentToken.Type == lexer.MUL || p.currentToken.Type == lexer.STAR_STAR {
 				typeTok := p.currentToken
-				typeLit := p.currentToken.Literal
+				typeLit := ""
+				// 指標前綴：*i8 / **i8（fmt 的規範輸出形式）
+				for p.currentToken.Type == lexer.MUL {
+					typeLit += "*"
+					p.nextToken()
+				}
+				if p.currentToken.Type == lexer.STAR_STAR {
+					typeLit += "**"
+					p.nextToken()
+				}
+				if p.currentToken.Type != lexer.IDENT {
+					msg := fmt.Sprintf("line %d, column %d: expected parameter type, got %s instead",
+						p.currentToken.Line, p.currentToken.Column, p.currentToken.Type.String())
+					p.saveError(msg)
+					return nil
+				}
+				typeLit += p.currentToken.Literal
 				p.nextToken()
 				// 指標後綴：i8*（MUL）或 i8**（STAR_STAR），正規化為 buildType
 				// 的 * 前綴形式。參數列表中型別後不可能是乘法運算，無歧義。

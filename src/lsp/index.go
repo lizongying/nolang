@@ -18,6 +18,14 @@ type IndexEntry struct {
 	Params       []ParamInfo
 	ResultParams []ParamInfo // result/output parameter types
 	Doc          string      // doc comment text
+	// IsBuiltin marks an entry whose "definition" is a compiler built-in
+	// declaration (a `NAME = (...) (...) { }` stub, usually preceded by a
+	// `#{buildin}` annotation or a `; build-in` comment) inside a std module.
+	// Such entries carry the built-in's authoritative signature (Type /
+	// Params / ResultParams from AddBuiltinSymbols) plus a source Location for
+	// go-to-definition. They must NOT be overwritten by the stub's own AST
+	// declaration (indexModuleStatement) nor by a later comment scan.
+	IsBuiltin bool
 }
 
 type ParamInfo struct {
@@ -206,16 +214,36 @@ func (idx *SymbolIndex) AddBuiltinSymbols() {
 		for i, p := range m.Params {
 			params[i] = ParamInfo{Name: p.String(), Type: p.String()}
 		}
+		// 語言層返回型別：option-return 內建（stat-size/fstat-size/file-size）
+		// 的註冊表 Return 是原始 C pair (T, ok)，但 std 宣告是單一 ?T，
+		// 必須折疊為單一 ?T 作為返回型別（見 builtin.optionReturnBuiltins），
+		// 否則 `size ?= fstat-size(.fd)` 的 LSP 型別推導會拿到 (?i64, bool)。
 		retType := ""
-		if len(m.Return) > 0 {
-			retType = m.Return[0].String()
+		resultParams := make([]ParamInfo, 0, len(m.Return))
+		if n := len(m.Return); n > 0 {
+			if builtin.IsOptionReturnBuiltin(m.MethodName) {
+				retType = "?" + m.Return[0].String()
+				resultParams = append(resultParams, ParamInfo{Type: retType})
+			} else {
+				types := make([]string, n)
+				for i, rt := range m.Return {
+					types[i] = rt.String()
+					resultParams = append(resultParams, ParamInfo{Type: types[i]})
+				}
+				if n == 1 {
+					retType = types[0]
+				} else {
+					retType = "(" + strings.Join(types, ", ") + ")"
+				}
+			}
 		}
 		idx.functions[name] = &IndexEntry{
-			Name:   name,
-			Kind:   kind,
-			Type:   formatFuncType(params, retType),
-			Params: params,
-			Value:  m.Doc,
+			Name:         name,
+			Kind:         kind,
+			Type:         formatFuncType(params, retType),
+			Params:       params,
+			ResultParams: resultParams,
+			Value:        m.Doc,
 		}
 	}
 }

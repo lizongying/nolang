@@ -201,12 +201,33 @@ func (s *Server) publishDocumentDiagnostics(uri string, parseErrors []string, as
 func (s *Server) parseErrorToDiagnostic(errMsg string) Diagnostic {
 	var diagnostic Diagnostic
 	diagnostic.Source = "nolang-parser"
-	fmt.Sscanf(errMsg, "line %d, column %d:", &diagnostic.Range.Start.Line, &diagnostic.Range.Start.Character)
+	// parser.Diagnostic.Error() 在 Filename 非空時輸出 "fs.no:line 789, column 10: ..."。
+	// 直接對整串做 Sscanf("line %d, column %d:") 會因為開頭的檔名前綴而匹配失敗，
+	// 行/列保持 0 → 所有解析錯誤都被釘在 (0,0)。故先剝掉 "filename:" 前綴。
+	stripped := stripDiagFilename(errMsg)
+	line, col := 0, 0
+	fmt.Sscanf(stripped, "line %d, column %d:", &line, &col)
+	if line > 0 {
+		diagnostic.Range.Start.Line = uint32(line - 1)
+	}
+	if col > 0 {
+		diagnostic.Range.Start.Character = uint32(col - 1)
+	}
 	diagnostic.Range.End = diagnostic.Range.Start
 	diagnostic.Range.End.Character += 1
 	diagnostic.Severity = DiagnosticSeverityError
-	diagnostic.Message = errMsg
+	diagnostic.Message = stripped
 	return diagnostic
+}
+
+// stripDiagFilename 去掉 "file.no:line N, column M: [CODE] msg" 中的 "file.no:" 前綴，
+// 讓 Sscanf("line %d, column %d:") 能正確匹配到位置。沒有該前綴時原樣回傳。
+func stripDiagFilename(s string) string {
+	idx := strings.Index(s, "line ")
+	if idx > 0 && strings.HasSuffix(s[:idx], ":") {
+		return s[idx:]
+	}
+	return s
 }
 
 // parseWarningToDiagnostic converts a parser warning string ("line %d, column %d: message")

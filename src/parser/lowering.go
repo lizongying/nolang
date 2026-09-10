@@ -552,6 +552,71 @@ func defaultLiteralFor(tok lexer.Token, elem string, defVal AnnotationValue) (Ex
 	}
 }
 
+// preRegisterEnumArmBindings 在展開 match 之前，先依「被匹配變數的靜態型別」把
+// 帶載荷變體析構臂（`some(v) ->` / `rect(w, h) ->`）的綁定名與其欄位型別登記進
+// 函式作用域符號表。lowerSurfaceMatch 是先自底向上 walk arm 體（其中可能含有以該
+// 綁定變數為主體的嵌套 match），之後才 buildMatchDesugar；若不預先登記，內層 match
+// 在解析期查不到綁定變數的型別，就會把它自己的變體臂 `a(v)` 當成普通呼叫，導致
+// `v` 未定義。此處登記後，內層 match 便能正確解析自身變體並繼續綁定載荷。
+func (l *lowerer) preRegisterEnumArmBindings(sm *SurfaceMatch) {
+	if sm == nil || len(sm.Arms) == 0 {
+		return
+	}
+	ident, ok := sm.Matched.(*Identifier)
+	if !ok {
+		return
+	}
+	p := l.p
+	mt, ok := p.sem.FuncVarType(l.curFuncName, ident.Value)
+	if !ok || mt == "" {
+		return
+	}
+	if _, isEnum := p.sem.EnumVariantsOf(mt); !isEnum {
+		return
+	}
+	saved := p.curFuncName
+	p.curFuncName = l.curFuncName
+	defer func() { p.curFuncName = saved }()
+	for i := range sm.Arms {
+		a := &sm.Arms[i]
+		call, ok := a.condition.(*CallExpression)
+		if !ok || len(call.Arguments) == 0 {
+			continue
+		}
+		fn, ok := call.Function.(*Identifier)
+		if !ok {
+			continue
+		}
+		names := make([]string, 0, len(call.Arguments))
+		allBare := true
+		for _, arg := range call.Arguments {
+			id, isID := arg.(*Identifier)
+			if !isID {
+				allBare = false
+				break
+			}
+			names = append(names, id.Value)
+		}
+		if !allBare {
+			continue
+		}
+		fts := p.enumVariantFieldTypes(mt, fn.Value)
+		if len(fts) == 0 || len(fts) != len(names) {
+			continue
+		}
+		if p.sem.DeclaredVars == nil {
+			p.sem.DeclaredVars = make(map[string]bool)
+		}
+		for k, nm := range names {
+			p.sem.DeclaredVars[nm] = true
+			if fts[k] != "" {
+				p.sem.SetFuncVarType(l.curFuncName, nm, fts[k])
+				p.setVarType(nm, fts[k])
+			}
+		}
+	}
+}
+
 // lowerSurfaceMatch 將單個表層 match 節點展開為核心 AST。
 // 先自底向上處理 matched 與各 arm 內部（嵌套 match），再建 if 鏈。
 func (l *lowerer) lowerSurfaceMatch(sm *SurfaceMatch) Expression {
@@ -564,6 +629,8 @@ func (l *lowerer) lowerSurfaceMatch(sm *SurfaceMatch) Expression {
 			fmt.Fprintf(os.Stderr, "[debug-it] lowerSurfaceMatch: matched=%T curFuncName=%q\n", sm.Matched, l.curFuncName)
 		}
 	}
+	// 先把析構綁定名/型別登記進符號表，內層 match 才能解析其主體型別。
+	l.preRegisterEnumArmBindings(sm)
 	l.walk(reflect.ValueOf(&sm.Matched))
 	for i := range sm.Arms {
 		a := &sm.Arms[i]
@@ -791,6 +858,55 @@ func (p *Parser) buildMatchDesugar(sm *SurfaceMatch) Expression {
 	// For enum types, track which enum variant identifiers are listed
 	enumListedVariants := make(map[string]bool)
 	matchedIsEnum := isEnumType
+
+	// 標籤列舉析構綁定泛化：`some(v) -> ...`（不限於 ok）。
+	// 解析期無法判定（尚不知被匹配變數的靜態型別），故在此依 matchedVarType 決定：
+	// 僅當 X 是本枚舉的「帶載荷變體」且括號內為單一裸識別符時，才視為析構綁定——
+	// 把 arm.condition 規範化為 Identifier{X}，載荷綁定到 v。其餘 IDENT(expr) 形態
+	// （如 ok(it > 127) 這類條件臂）保持原樣，不受影響。
+	if matchedIsEnum {
+		for i := range arms {
+			a := &arms[i]
+			if a.bindingName != "" || len(a.bindingNames) > 0 {
+				continue
+			}
+			call, ok := a.condition.(*CallExpression)
+			if !ok || len(call.Arguments) == 0 {
+				continue
+			}
+			fn, ok := call.Function.(*Identifier)
+			if !ok {
+				continue
+			}
+			// 括號內必須全為裸識別符（綁定名）。
+			names := make([]string, 0, len(call.Arguments))
+			allBare := true
+			for _, arg := range call.Arguments {
+				id, isId := arg.(*Identifier)
+				if !isId {
+					allBare = false
+					break
+				}
+				names = append(names, id.Value)
+			}
+			if !allBare {
+				continue
+			}
+			fieldTypes := p.enumVariantFieldTypes(matchedVarType, fn.Value)
+			if len(fieldTypes) == 0 || len(fieldTypes) != len(names) {
+				continue
+			}
+			if len(names) == 1 {
+				a.bindingName = names[0]
+			} else {
+				a.bindingNames = names
+				a.bindingFields = fieldTypes
+			}
+			a.bindingVariant = fn.Value
+			a.condition = &Identifier{Token: fn.Token, Value: fn.Value}
+		}
+	}
+
 	for _, a := range arms {
 		if len(a.multiOptionPatterns) > 0 {
 			// Combined option patterns: mark all as explicit
@@ -837,6 +953,9 @@ func (p *Parser) buildMatchDesugar(sm *SurfaceMatch) Expression {
 		// data field, which is 0 (null) when the option is nil/err → segfault.
 		if itStmt != nil && !hasRawCond {
 			var armType string
+			// 標籤列舉帶載荷的變體臂：armType/綁定型別取「載荷型別」而非變體名，
+			// 使 `some(v) ->` 的 v 與隱含 `it` 得到正確型別（如 i64/f64/str）。
+			armBindingType := ""
 			skipItBinding := false
 			if arm.skipItBinding {
 				// Generated sentinel arms (e.g. ?= / #{index-out} err/nil arms)
@@ -875,6 +994,14 @@ func (p *Parser) buildMatchDesugar(sm *SurfaceMatch) Expression {
 			} else if arm.isWildcard {
 				if arm.isDotVal {
 					armType = "ok" // ok-> is explicit ok case
+					// 標籤列舉：`ok(v) ->` 這類走 dotVal 路徑的析構綁定，其綁定型別
+					// 同樣取載荷型別（由 bindingVariant 在本枚舉內解析）。
+					if matchedIsEnum && arm.bindingVariant != "" {
+						if pt := p.enumVariantPayload(matchedVarType, arm.bindingVariant); pt != "" {
+							armType = pt
+							armBindingType = pt
+						}
+					}
 				} else {
 					// Compute complement: which variants remain for -> else arm
 					if matchedIsEnum {
@@ -933,6 +1060,12 @@ func (p *Parser) buildMatchDesugar(sm *SurfaceMatch) Expression {
 					armType = "ok"
 				} else if matchedIsEnum {
 					armType = ident.Value // Use variant name as arm type for it binding
+					// 帶載荷變體（some(v) ->）：綁定型別 = 載荷型別。
+					// 由被匹配變數的靜態型別（matchedVarType）在解析期補全查得。
+					if pt := p.enumVariantPayload(matchedVarType, ident.Value); pt != "" {
+						armType = pt
+						armBindingType = pt
+					}
 				}
 			} else if _, ok := arm.condition.(*NilLiteral); ok {
 				armType = "nil"
@@ -941,24 +1074,77 @@ func (p *Parser) buildMatchDesugar(sm *SurfaceMatch) Expression {
 				armType = "ok"
 			}
 			if armType != "" {
+				// 析構綁定 `ok(v) -> ...`：把載荷綁到 v 而非隱含的 `it`。
+				// 嵌套 match 時這能保住外層的 `it`（否則內層會把它覆蓋掉）。
+				bindName := arm.bindingName
+				if bindName == "" {
+					bindName = "it"
+				}
 				// Use per-arm position so walker/index can distinguish synthetic bindings
 				var armTok lexer.Token
 				if arm.condition != nil {
 					pos := arm.condition.Pos()
-					armTok = lexer.Token{Type: lexer.IDENT, Literal: "it", Line: pos.Line, Column: pos.Column}
+					armTok = lexer.Token{Type: lexer.IDENT, Literal: bindName, Line: pos.Line, Column: pos.Column}
 				} else if len(arm.body.Statements) > 0 {
 					pos := arm.body.Statements[0].Pos()
-					armTok = lexer.Token{Type: lexer.IDENT, Literal: "it", Line: pos.Line, Column: pos.Column}
+					armTok = lexer.Token{Type: lexer.IDENT, Literal: bindName, Line: pos.Line, Column: pos.Column}
 				} else {
 					armTok = tok
 				}
-				if armIt := p.buildItBindingForArm(armTok, matched, armType, elemType, matchedVarType, isEnumType); armIt != nil {
+				if arm.bindingName != "" {
+					// 讓 checker / codegen 知道 v 的型別（等同 `it` 在 ok 臂的 elemType）。
+					// DeclaredVars 必須註冊，否則 ValidateUndefinedVars 會報
+					// "'v' is not defined"（`it` 是 checker 裡寫死的關鍵字，自訂名沒有這待遇）。
+					if p.sem.DeclaredVars == nil {
+						p.sem.DeclaredVars = make(map[string]bool)
+					}
+					p.sem.DeclaredVars[arm.bindingName] = true
+					bt := elemType
+					if armBindingType != "" {
+						bt = armBindingType
+					}
+					if bt != "" {
+						p.sem.SetFuncVarType(p.curFuncName, arm.bindingName, bt)
+						p.setVarType(arm.bindingName, bt)
+					}
+				}
+				if armIt := p.buildItBindingForArm(armTok, matched, armType, elemType, matchedVarType, isEnumType, bindName); armIt != nil {
 					// Set the synthetic end position to cover the arm body
 					bodyEnd := arm.body.EndPos()
 					if bodyEnd.Line == 0 && bodyEnd.Column == 0 && len(arm.body.Statements) > 0 {
 						bodyEnd = arm.body.Statements[len(arm.body.Statements)-1].EndPos()
 					}
 					armIt.SyntheticEnd = bodyEnd
+					// 多欄位析構綁定（`rect(w, h) -> ...`）：按位置把 it.f0 / it.f1
+					// 綁到各欄位名。逆序 prepend，使最終語句順序為 `it; w; h; body`。
+					if len(arm.bindingNames) > 0 {
+						for j := len(arm.bindingNames) - 1; j >= 0; j-- {
+							fname := arm.bindingNames[j]
+							ftype := ""
+							if j < len(arm.bindingFields) {
+								ftype = arm.bindingFields[j]
+							}
+							if p.sem.DeclaredVars == nil {
+								p.sem.DeclaredVars = make(map[string]bool)
+							}
+							p.sem.DeclaredVars[fname] = true
+							if ftype != "" {
+								p.sem.SetFuncVarType(p.curFuncName, fname, ftype)
+								p.setVarType(fname, ftype)
+							}
+							extract := &LetStatement{
+								Token: tok,
+								Name:  &Identifier{Token: tok, Value: fname},
+								Value: &DotExpression{
+									Token:    tok,
+									Receiver: &Identifier{Token: tok, Value: bindName},
+									Property: fmt.Sprintf("f%d", j),
+								},
+								IsSynthetic: true,
+							}
+							arm.body = p.prependStmt(arm.body, extract)
+						}
+					}
 					arm.body = p.prependStmt(arm.body, armIt)
 				} else if !skipItBinding && !isSentinelArmType(armType) {
 					// ok/else arm whose matched type is unknown at parse time:
@@ -968,7 +1154,7 @@ func (p *Parser) buildMatchDesugar(sm *SurfaceMatch) Expression {
 					// live variant. Sentinel (nil/err) arms must NOT receive any
 					// `it` binding here — doing so would emit an unconditional
 					// deref of the option's data field (null when nil/err).
-					arm.body = p.prependStmt(arm.body, itStmt)
+					arm.body = p.prependStmt(arm.body, p.namedItBinding(itStmt, bindName))
 				}
 				// Sentinel arms with unknown matched type: intentionally bind nothing.
 			} else if !skipItBinding && !arm.isWildcard {
@@ -1337,6 +1523,40 @@ func unionElemType(t string) string {
 	return ""
 }
 
+// enumVariantPayload 查詢枚舉變體的載荷型別，回傳 "" 表示單元變體或不存在。
+// 同時嘗試原樣鍵與去模組前綴的裸名鍵（解析期以裸名登記，模組前綴化後可能不一致）。
+func (p *Parser) enumVariantPayload(enumType, variant string) string {
+	if p.sem == nil || enumType == "" {
+		return ""
+	}
+	if pt, ok := p.sem.EnumVariantPayloadOf(enumType, variant); ok {
+		return pt
+	}
+	if idx := strings.LastIndex(enumType, "."); idx > 0 {
+		if pt, ok := p.sem.EnumVariantPayloadOf(enumType[idx+1:], variant); ok {
+			return pt
+		}
+	}
+	return ""
+}
+
+// enumVariantFieldTypes 查詢枚舉變體的載荷欄位型別列表（單元變體回傳 nil）。
+// 同時嘗試原樣鍵與去模組前綴的裸名鍵。
+func (p *Parser) enumVariantFieldTypes(enumType, variant string) []string {
+	if p.sem == nil || enumType == "" {
+		return nil
+	}
+	if fs := p.sem.EnumVariantFieldsOf(enumType, variant); len(fs) > 0 {
+		return fs
+	}
+	if idx := strings.LastIndex(enumType, "."); idx > 0 {
+		if fs := p.sem.EnumVariantFieldsOf(enumType[idx+1:], variant); len(fs) > 0 {
+			return fs
+		}
+	}
+	return nil
+}
+
 // isSentinelArmType reports whether armType denotes only the nil/err variants
 // (no payload), e.g. "nil", "err", or "err | nil". For these arms `it` is a
 // placeholder and must never trigger the struct-deref codegen path
@@ -1369,7 +1589,10 @@ func isSentinelArmType(armType string) bool {
 //	ok arm  -> it: elemType (e.g., i64 for ?i64)
 //
 // 型別資訊取自 sm 的解析期快照（MatchedVarType/IsEnumType）。
-func (p *Parser) buildItBindingForArm(tok lexer.Token, matched Expression, armType string, elemType string, matchedVarType string, isEnumType bool) *LetStatement {
+func (p *Parser) buildItBindingForArm(tok lexer.Token, matched Expression, armType string, elemType string, matchedVarType string, isEnumType bool, name string) *LetStatement {
+	if name == "" {
+		name = "it"
+	}
 	_, ok := matched.(*Identifier)
 	if !ok {
 		return nil
@@ -1391,7 +1614,7 @@ func (p *Parser) buildItBindingForArm(tok lexer.Token, matched Expression, armTy
 		case "err":
 			return &LetStatement{
 				Token:       tok,
-				Name:        &Identifier{Token: tok, Value: "it"},
+				Name:        &Identifier{Token: tok, Value: name},
 				Value:       matched,
 				Type:        &NamedType{Value: "err"},
 				IsSynthetic: true,
@@ -1399,7 +1622,7 @@ func (p *Parser) buildItBindingForArm(tok lexer.Token, matched Expression, armTy
 		case "nil":
 			return &LetStatement{
 				Token:       tok,
-				Name:        &Identifier{Token: tok, Value: "it"},
+				Name:        &Identifier{Token: tok, Value: name},
 				Value:       matched,
 				Type:        &NamedType{Value: "nil"},
 				IsSynthetic: true,
@@ -1464,11 +1687,22 @@ func (p *Parser) buildItBindingForArm(tok lexer.Token, matched Expression, armTy
 
 	return &LetStatement{
 		Token:       tok,
-		Name:        &Identifier{Token: tok, Value: "it"},
+		Name:        &Identifier{Token: tok, Value: name},
 		Value:       matched,
 		Type:        &NamedType{Value: typeStr},
 		IsSynthetic: true,
 	}
+}
+
+// namedItBinding 把共享的 `it = matched` 綁定改名為 `name = matched`
+// （析構綁定 `ok(v) -> ...` 用）。name 為空或 "it" 時直接回傳原節點。
+func (p *Parser) namedItBinding(it *LetStatement, name string) *LetStatement {
+	if it == nil || name == "" || name == "it" {
+		return it
+	}
+	nb := *it
+	nb.Name = &Identifier{Token: it.Token, Value: name}
+	return &nb
 }
 
 // prependStmt prepends a statement to a BlockStatement, returning a new BlockStatement.
@@ -1506,6 +1740,13 @@ func (p *Parser) prependStmt(body *BlockStatement, stmt Statement) *BlockStateme
 // (the checker will report it).
 func (l *lowerer) lowerUnwrapAssign(uas *UnwrapAssignStatement) Statement {
 	tok := uas.Token
+	if os.Getenv("NOLANG_DEBUG_IT") != "" {
+		nm := ""
+		if uas.Name != nil {
+			nm = uas.Name.Value
+		}
+		fmt.Fprintf(os.Stderr, "[debug-it] lowerUnwrapAssign: name=%q line=%d curFunc=%q\n", nm, tok.Line, l.curFuncName)
+	}
 
 	// First, walk into the Value expression to lower any nested SurfaceMatch.
 	l.walk(reflect.ValueOf(&uas.Value))
@@ -1660,7 +1901,17 @@ func (l *lowerer) lowerUnwrapAssign(uas *UnwrapAssignStatement) Statement {
 	var arms []matchArm
 
 	var preStmts []Statement
-	if resultName != "" {
+	// 傳播賦值目標是否「就是」option 結果參數本身（`r ?= ...`）。
+	// 僅此情形才能把 `r = __unwrap_N` 提前到 match 之前：此時 r 與 __unwrap_N
+	// 型別一致（同為 ?T），整體 option 結構淺拷貝即語意正確。
+	// 若目標是其他局部變數（如 `size ?= fstat-size(.fd)`，size:i64 而結果參數
+	// content:?[]byte），提前拷貝會把 ?i64 的整個 option 結構（ok 時 data=原始
+	// i64）塞進 ?[]byte 的結果槽 —— 之後 codegen 對 content 的 freeOldHeapValue
+	// /clone 會把該 i64 當 box 指標解引用 → segfault（見 fs.no file.read-bytes）。
+	// 此時改為在 nil/err arm 內才拷貝（僅傳播 err/nil 結果），ok 路徑不污染
+	// 結果槽，由用戶程式碼自行賦值。
+	targetIsResult := uas.Name != nil && uas.Name.Value == resultName
+	if resultName != "" && targetIsResult {
 		// 將 `result = __unwrap_N` 提前到 match 之前：三個 arm 都不再寫回 r，
 		// 因為 match 前的這次賦值已把 opt 結果（ok/err/nil）寫入 r，arm 內
 		// 只需 return（nil/err）或提取內部值（ok 臂的 v = it）。
@@ -1688,6 +1939,33 @@ func (l *lowerer) lowerUnwrapAssign(uas *UnwrapAssignStatement) Statement {
 		arms = append(arms, matchArm{
 			condition:    &Identifier{Token: tok, Value: "err"},
 			body:         &BlockStatement{Token: tok, Statements: []Statement{&ReturnStatement{Token: tok}}},
+			isBlockBody:  true,
+			pos:          posFromToken(tok),
+			skipItBinding: true,
+		})
+	} else if resultName != "" {
+		// 非結果參數目標（`v ?= ...` 且 v != 結果參數）：把 option 結構的傳播
+		// 拷貝放進 nil/err arm 內，ok 路徑完全不動結果參數。
+		propagate := func() *BlockStatement {
+			return &BlockStatement{Token: tok, Statements: []Statement{
+				&LetStatement{
+					Token: tok,
+					Name:  &Identifier{Token: tok, Value: resultName},
+					Value: tmpIdent,
+				},
+				&ReturnStatement{Token: tok},
+			}}
+		}
+		arms = append(arms, matchArm{
+			condition:    &Identifier{Token: tok, Value: "nil"},
+			body:         propagate(),
+			isBlockBody:  true,
+			pos:          posFromToken(tok),
+			skipItBinding: true,
+		})
+		arms = append(arms, matchArm{
+			condition:    &Identifier{Token: tok, Value: "err"},
+			body:         propagate(),
 			isBlockBody:  true,
 			pos:          posFromToken(tok),
 			skipItBinding: true,

@@ -1,7 +1,8 @@
-; option — 選項型別（標籤列舉/union）
+; option — 選項型別（內建標籤列舉/union）
 ;
-; 底層為 tagged enum：option { val t, nil bool, err str }
-; tag: 0=val, 1=nil, 2=err
+; 以 #{buildin} 宣告為內建標籤列舉：變體供匹配/窮盡性檢查，底層表示與構造由
+; 內建 runtime 提供（%option 型別 + ok(...)/nil/err(...) 構造器）。
+; tag: 0=ok, 1=nil, 2=err
 ;
 ; 用法：
 ;   x ?t                       // 宣告 option<t>
@@ -15,8 +16,9 @@
 ;       err -> log(it)
 ;       -> log(it)
 ;   }
+#{buildin}
 option {
-    ok t,
-    nil bool,
-    err str,
+    ok(v t),
+    nil,
+    err(e str),
 }

@@ -198,9 +198,9 @@ func (p *Parser) attachAnnotations(stmt Statement, entries []*AnnotationEntry) {
 			// 出參引用在 nolang 源碼之外賦值，跳過未賦值檢查。
 			fd.Intrinsic = true
 		case e.Key == "buildin":
-			// #{buildin=NAME} 標記此函式為標準庫內建聲明：真實實作位於 Go
+			// #{buildin} 標記此函式為標準庫內建聲明：真實實作位於 Go
 			// runtime，nolang 函式體不參與校驗與 codegen（編譯器遇到此標記直接
-			// 跳過）。NAME 為 Go 側 BuiltinMethod 的鍵。
+			// 跳過）。函式名即為 Go 側 BuiltinMethod 的鍵。
 			fd.BuiltinStub = true
 			if v, ok := e.Value.(*AnnotationIdentValue); ok {
 				fd.BuiltinName = v.Value
@@ -208,6 +208,16 @@ func (p *Parser) attachAnnotations(stmt Statement, entries []*AnnotationEntry) {
 				fd.BuiltinName = v.Value
 			}
 		}
+		}
+	}
+	// #{buildin} 標註標籤列舉：變體用於匹配/窮盡性檢查，底層表示與構造由
+	// runtime/builtin 提供，不產生使用者可見的 struct/union（如 option 的載荷
+	// 由 builtin 的 %option 承載）。
+	if ted, ok := stmt.(*TaggedEnumDefinition); ok {
+		for _, e := range entries {
+			if e.Key == "buildin" {
+				ted.Builtin = true
+			}
 		}
 	}
 }

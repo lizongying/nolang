@@ -83,6 +83,13 @@ func (g *Generator) mapToLLVMType(nolangType string) string {
 		}
 	}
 
+	// 標籤列舉型別（option / my-result / ...）：以通用 tagged-union ABI
+	// `%option` = {i64 tag, i64 data} 表示，載荷存 data 欄位。這使 option 與
+	// 任意用戶自訂標籤列舉共用同一套建構/解構/比較 codegen。
+	if g.taggedEnumTypes != nil && g.taggedEnumTypes[nolangType] {
+		return "%option"
+	}
+
 	// Check if it's a known struct type
 	if g.structTypes != nil {
 		if _, ok := g.structTypes[nolangType]; ok {

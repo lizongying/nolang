@@ -365,6 +365,16 @@ type Generator struct {
 	funcHasBody            map[string]bool                 // function name → true if the function has a non-empty body (not a ForwardFunc stub)
 	enumVariantIndex       map[string]int64                // enum variant name → tag index (e.g. status1→0, status2→1)
 	enumVariants           map[string]map[string]int64     // enum type name → variant name → value (e.g. "FileMode"→{"WRITE":1,"CREATE":64})
+	// === 標籤列舉（tagged enum）命名空間化註冊表 ===
+	// 編譯器內部以「<模組>.<枚舉>.<變體>」全名標識變體（如 option.option.ok /
+	// some-mod.my-result.ok），故不同枚舉的同名變體不會衝突。用戶源碼層面 match
+	// 分支只寫裸名（ok/some），由編譯器依被匹配變數的靜態型別自動補全完整命名。
+	// 底層 ABI 複用 `%option` = {i64 tag, i64 data}（載荷存 data 欄位）。
+	taggedEnumTypes    map[string]bool                 // 標籤列舉型別名（限定名 + 裸名別名）→ true
+	taggedEnumVariants map[string]map[string]int64     // 標籤列舉名 → 變體名 → tag 索引
+	taggedEnumPayload  map[string]map[string]string    // 標籤列舉名 → 變體名 → 載荷 nolang 型別（單元變體 ""）
+	variantOwner       map[string]string               // 變體裸名 → 所屬標籤列舉名（首次登記者勝）
+	taggedEnumVars     map[string]string               // 變數名 → 其標籤列舉型別名（含參數/區域變數，供臂綁定解析載荷型別）
 	fnTypeAliases          map[string]*parser.FunctionType // named function type alias name → FunctionType
 	concreteTypeAliases    map[string]parser.Type          // single concrete type alias name → underlying Type AST (e.g. "fd"→i64 NamedType)
 	externFuncs            map[string]*ExternFuncInfo      // extern function name → FFI type info
@@ -1655,6 +1665,11 @@ func (g *Generator) prepare(stmts []parser.Statement, sem *parser.SemanticContex
 	g.funcHasBody = make(map[string]bool)
 	g.enumVariantIndex = make(map[string]int64)
 	g.enumVariants = make(map[string]map[string]int64)
+	g.taggedEnumTypes = make(map[string]bool)
+	g.taggedEnumVariants = make(map[string]map[string]int64)
+	g.taggedEnumPayload = make(map[string]map[string]string)
+	g.variantOwner = make(map[string]string)
+	g.taggedEnumVars = make(map[string]string)
 	g.fnTypeAliases = make(map[string]*parser.FunctionType)
 	g.concreteTypeAliases = make(map[string]parser.Type)
 	g.externFuncs = make(map[string]*ExternFuncInfo)
@@ -1782,7 +1797,67 @@ func (g *Generator) prepare(stmts []parser.Statement, sem *parser.SemanticContex
 	// 收集標籤枚舉 & 簡單枚舉變體名稱 → 索引
 	for _, stmt := range stmts {
 		if ted, ok := stmt.(*parser.TaggedEnumDefinition); ok {
+			// 命名空間化登記：全名（含模組前綴，如 option.option / my-mod.my-result）
+			// 為主鍵，同時以裸名別名登記，方便跨模組與同檔引用。
+			fullName := ted.Name
+			bareEnum := fullName
+			if idx := strings.LastIndex(fullName, "."); idx > 0 {
+				bareEnum = fullName[idx+1:]
+			}
+			if g.taggedEnumVariants[fullName] == nil {
+				g.taggedEnumVariants[fullName] = make(map[string]int64)
+				g.taggedEnumPayload[fullName] = make(map[string]string)
+			}
+			if bareEnum != fullName {
+				if g.taggedEnumVariants[bareEnum] == nil {
+					g.taggedEnumVariants[bareEnum] = make(map[string]int64)
+					g.taggedEnumPayload[bareEnum] = make(map[string]string)
+				}
+			}
+			g.taggedEnumTypes[fullName] = true
+			g.taggedEnumTypes[bareEnum] = true
 			for i, v := range ted.Variants {
+				g.taggedEnumVariants[fullName][v.Name] = int64(i)
+				payload := ""
+				if len(v.Fields) == 1 {
+					if v.Fields[0].Type != nil {
+						payload = v.Fields[0].Type.String()
+					}
+				} else if len(v.Fields) > 1 {
+					// 多欄位載荷：合成具名 struct（欄位 f0/f1/…，按位置）。
+					// 型別名以「裸枚舉名.變體名」為準，與 parser 側（matchedVarType
+					// 為解析期裸名）保持一致。structTypes 已於本函式早段初始化，
+					// 故登記後會隨其他具名 struct 一併發射。
+					synth := bareEnum + "." + v.Name
+					fields := make([]structField, 0, len(v.Fields))
+					for fi, f := range v.Fields {
+						ft := "i64"
+						if f.Type != nil {
+							ft = g.mapToLLVMType(f.Type.String())
+						}
+						fields = append(fields, structField{name: fmt.Sprintf("f%d", fi), typ: ft})
+					}
+					if g.structTypes == nil {
+						g.structTypes = make(map[string][]structField)
+					}
+					g.structTypes[synth] = fields
+					payload = synth
+				} else if v.Type != nil {
+					payload = v.Type.String()
+				}
+				g.taggedEnumPayload[fullName][v.Name] = payload
+				if os.Getenv("NOLANG_DEBUG_ENUM") != "" {
+					fmt.Fprintf(os.Stderr, "[dbg-enum] %s variant=%s nFields=%d payload=%q\n", fullName, v.Name, len(v.Fields), payload)
+				}
+				if bareEnum != fullName {
+					g.taggedEnumVariants[bareEnum][v.Name] = int64(i)
+					g.taggedEnumPayload[bareEnum][v.Name] = payload
+				}
+				// 裸名 → 所屬枚舉（首次登記者勝；僅作無歧義兜底，
+				// 權威解析一律以被匹配變數的靜態型別為準）。
+				if _, exists := g.variantOwner[v.Name]; !exists {
+					g.variantOwner[v.Name] = fullName
+				}
 				g.enumVariantIndex[v.Name] = int64(i)
 				if g.varTypes != nil {
 					g.varTypes[v.Name] = "i64"

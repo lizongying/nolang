@@ -4,7 +4,7 @@
 ; 底層表示：i1（1 byte，0 或 1）
 
 ; bool.to-str: 將 bool 轉為字串 "true" 或 "false"
-#{buildin=bool-to-str}
+#{buildin}
 bool-to-str = () (out str) { }
 ;     // LLVM: select i1 ., "true", "false"
 ; }
