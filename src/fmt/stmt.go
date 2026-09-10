@@ -547,7 +547,14 @@ func (f *formatter) formatBlockInner(body *parser.BlockStatement, openBraceLine 
 						prevEndLine = openBraceLine
 					}
 					currStartLine := stmtFirstLine(stmt)
-					if f.hasBlankLineBetween(prevEndLine, currStartLine) || f.attachedAnnotationsWillEmit(stmt) {
+					// 帶 doc 註解的陳述一律與上方程式碼以一個空行分隔（與
+					// api.go 的頂層規則一致）：註解是「下一段程式碼的標題」，
+					// 沒有分隔就會與上一條陳述糊在一起（例如
+					// `} (total < size)` 之後緊接 `; 截斷到實際讀取長度`）。
+					// 注意：此規則**只**適用於區塊內第二條及之後的陳述；區塊
+					// 首條陳述不套用，否則會在 `{` 之後憑空插入空行（見下方
+					// i == 0 分支與 fmt/block_blank_test.go 的守衛）。
+					if f.hasBlankLineBetween(prevEndLine, currStartLine) || f.hasDocComment(stmt) || f.attachedAnnotationsWillEmit(stmt) {
 						f.write("\n") // blank line (no indent)
 					}
 					f.newline()
@@ -562,7 +569,8 @@ func (f *formatter) formatBlockInner(body *parser.BlockStatement, openBraceLine 
 			// 導致二次格式化時誤插入空白行而非冪等。
 			// 注意：不能加 `|| f.hasDocComment(stmt)`——那會在源碼無空行時於
 			// `{` 與首條帶註解陳述之間憑空插入空行（頂層語句間隔由 api.go 的
-			// 程式級迴圈負責，區塊內一律以源碼空白為準）。
+			// 程式級迴圈負責，區塊內一律以源碼空白為準）。區塊內「第二條及
+			// 之後」的陳述則相反：帶 doc 註解會強制空一行，見上方 i > 0 分支。
 			if emits {
 				firstDocStartLine := stmtFirstLine(stmt)
 				if openBraceLine > 0 && f.hasBlankLineBetween(openBraceLine, firstDocStartLine) {
@@ -578,8 +586,12 @@ func (f *formatter) formatBlockInner(body *parser.BlockStatement, openBraceLine 
 		prevEmitted = emits
 	}
 
-	// 輸出尾隨註釋
-	f.formatTrailingComments(body.TrailingComments)
+	// 輸出尾隨註釋（保留其與上方程式碼之間的空行）
+	prevEnd := lastEmitEndLine
+	if prevEnd == 0 {
+		prevEnd = openBraceLine
+	}
+	f.formatTrailingComments(body.TrailingComments, prevEnd)
 }
 
 func (f *formatter) formatBlockStatement(s *parser.BlockStatement) {
@@ -694,7 +706,7 @@ func (f *formatter) formatAnnotationStatement(s *parser.AnnotationStatement) boo
 	if os.Getenv("NOLANG_FMTDBG") != "" {
 		fmt.Fprintf(os.Stderr, "[DBG] formatAnnotationStatement standalone node, doc=%v\n", s.GetDoc() != nil)
 	}
-		var others []*parser.AnnotationEntry
+	var others []*parser.AnnotationEntry
 	var overflowModes []string
 	seenMode := make(map[string]bool)
 	for _, e := range s.Entries {

@@ -483,6 +483,7 @@ open = (p str, opts file-opts) (f ?file) {
 
         read-write -> flags = O-RDWR | O-CREAT | O-TRUNC
     }
+
     ; 附加旗標
     opts.excl -> flags = flags | O-EXCL
     opts.truncate -> flags = flags | O-TRUNC
@@ -599,14 +600,17 @@ file.read-bytes = () (content ?[]byte) {
         content = err('file not open')
         return
     }
+
     ; 用 fstat(fd) 取得大小 — 消除 TOCTOU
     size ?= fstat-size(.fd)
     size == 0 -> {
         content = nil
         return
     }
+
     ; 精確分配 buffer（len=size, cap=size）
     buf []byte = with-len(size)
+
     ; 循環 read 直到讀完或 EOF
     total = 0
     {
@@ -617,6 +621,7 @@ file.read-bytes = () (content ?[]byte) {
         n <= 0 -> break
         total = total + n
     } (total < size)
+
     ; 截斷到實際讀取長度
     buf.truncate(total)
     total == 0 -> {

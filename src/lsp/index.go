@@ -34,6 +34,18 @@ type ParamInfo struct {
 	DefaultValue string // 參數默認值的字串表示（如 "1024"），空串表示無默認值
 }
 
+// scopeRange 記錄一個函式（或方法）宣告在檔案中的行號區間，用於把游標位置
+// 映射回「所在的函式作用域」。LSP 的符號表本質是扁平的（同名符號只留一個），
+// 但 nolang 允許不同函式各自宣告同名區域變數（如 fs.no 裡 `size` 同時是
+// stat-size 的結果參數、read-bytes 的區域變數、append 的區域變數）。
+// 有了 scopeRange，hover / go-to-definition 才能在同一個作用域內精確解析，
+// 避免「A 函式的區域變數」被「B 函式的結果參數」蓋掉。
+type scopeRange struct {
+	Name  string
+	Start Position
+	End   Position
+}
+
 type SymbolIndex struct {
 	mu           sync.RWMutex
 	uri          string
@@ -43,6 +55,33 @@ type SymbolIndex struct {
 	references   map[string][]Location
 	functions    map[string]*IndexEntry
 	declarations map[string][]*IndexEntry // all declarations per name, for AST-range lookup
+	scopeRanges  []scopeRange             // function/method body ranges, for scope-aware lookup
+}
+
+// AddScopeRange 由 ASTWalker 在走訪函式宣告時呼叫。
+func (idx *SymbolIndex) AddScopeRange(name string, r Range) {
+	if name == "" {
+		return
+	}
+	idx.mu.Lock()
+	defer idx.mu.Unlock()
+	idx.scopeRanges = append(idx.scopeRanges, scopeRange{Name: name, Start: r.Start, End: r.End})
+}
+
+// enclosingScopeAt 回傳游標所在函式（或方法）的名稱；游標位於頂層時回傳 ""。
+// 多個區間重疊（巢狀函式）時取最內層（Start 最大者）。
+func (idx *SymbolIndex) enclosingScopeAt(pos Position) string {
+	best := ""
+	var bestStart Position
+	found := false
+	for _, sr := range idx.scopeRanges {
+		if isPosBeforeOrAt(sr.Start, pos) && isPosBefore(pos, sr.End) {
+			if !found || isPosBefore(bestStart, sr.Start) {
+				best, bestStart, found = sr.Name, sr.Start, true
+			}
+		}
+	}
+	return best
 }
 
 func NewSymbolIndex(uri string, version int) *SymbolIndex {
@@ -97,6 +136,28 @@ func (idx *SymbolIndex) LookupAtPosition(name string, pos Position) (*IndexEntry
 	}
 	if best != nil {
 		return best, true
+	}
+	// 游標不在任何宣告區間內（一般是一次「引用」）。扁平符號表對同名符號採
+	// 後寫覆蓋，跨函式同名區域變數會互相污染（典型：`size ?= fstat-size(.fd)`
+	// 被 stat-size 的結果參數 `size ?i64` 蓋掉）。先做作用域精確比對：
+	// 找出「與游標同一函式」的宣告，並取游標之前最近的一筆。
+	if scope := idx.enclosingScopeAt(pos); scope != "" {
+		var scoped, fallbackEntry *IndexEntry
+		for _, e := range idx.declarations[name] {
+			if e.Scope != scope {
+				continue
+			}
+			fallbackEntry = e
+			if isPosBeforeOrAt(e.Location.Range.Start, pos) {
+				scoped = e
+			}
+		}
+		if scoped == nil {
+			scoped = fallbackEntry
+		}
+		if scoped != nil {
+			return scoped, true
+		}
 	}
 	// Fall back to flat lookup
 	if e, ok := idx.symbols[name]; ok {

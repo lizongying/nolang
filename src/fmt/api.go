@@ -90,11 +90,14 @@ func (f *formatter) formatProgram(p *parser.Program) {
 			_, currIsFunc := stmt.(*parser.FunctionDefinition)
 			_, prevIsUse := p.Statements[i-1].(*parser.UseStatement)
 			_, currIsUse := stmt.(*parser.UseStatement)
-			// 導入語句之間不留空行（也不保留源文件的空白行）
+			// 導入語句（`# std/...`）：相鄰導入之間只換行、不留空行，但務必
+			// 換行 —— 否則第二個導入會接在第一個同行（`# a# b`）；導入與其他
+			// 語句之間固定留一個空行（依源碼空行與否皆補齊，使註解/函式前有
+			// 分隔）。
 			if prevIsUse && currIsUse {
-				// no blank line between imports
+				f.newline()
 			} else if prevIsUse || currIsUse {
-				// 導入語句和其他語句之間保留空行
+				f.write("\n") // blank line (no indent)
 				f.newline()
 			} else if prevEmitted {
 				if prevEndLine == 0 {
@@ -117,12 +120,17 @@ func (f *formatter) formatProgram(p *parser.Program) {
 		f.activeOverflow = savedOverflow
 	}
 
-	// 輸出尾隨註釋
+	// 輸出尾隨註釋（檔案尾），保留其與上方程式碼之間的空行（與
+	// formatTrailingComments 的區塊級邏輯一致）。
 	if p.TrailingComments != nil {
-		f.newline()
+		prevLine := lastEmitEndLine
 		for _, c := range p.TrailingComments.List {
-			f.writeCommentBody(c)
+			if prevLine > 0 && c.Pos.Line > 0 && f.hasBlankLineBetween(prevLine, c.Pos.Line) {
+				f.write("\n") // blank line (no indent)
+			}
 			f.newline()
+			f.writeCommentBody(c)
+			prevLine = c.Pos.Line
 		}
 	}
 }

@@ -1486,6 +1486,7 @@ sha512-block = (s str, h0 u64, h1 u64, h2 u64, h3 u64, h4 u64, h5 u64, h6 u64, h
     c = b
     b = a
     a = T1 + T2
+
     ; 第 1 輪 (K1 = 0x7137449123EF65CD)
     S1 = ((e >> 14) | (e << 50))
     S1 = S1 ^ ((e >> 18) | (e << 46)) ^ ((e >> 41) | (e << 23))
@@ -2767,33 +2768,33 @@ func TestFormatScalarSlicePerLine8(t *testing.T) {
 		expected string
 	}{
 		{
-			name: "scalar slice literal 16 ints uses 8-per-line",
-			input: "v []i64 = [\n    0,\n    1,\n    2,\n    3,\n    4,\n    5,\n    6,\n    7,\n    8,\n    9,\n    10,\n    11,\n    12,\n    13,\n    14,\n    15,\n]\n",
+			name:     "scalar slice literal 16 ints uses 8-per-line",
+			input:    "v []i64 = [\n    0,\n    1,\n    2,\n    3,\n    4,\n    5,\n    6,\n    7,\n    8,\n    9,\n    10,\n    11,\n    12,\n    13,\n    14,\n    15,\n]\n",
 			expected: "v []i64 = [\n    0, 1, 2, 3, 4, 5, 6, 7,\n    8, 9, 10, 11, 12, 13, 14, 15,\n]\n",
 		},
 		{
-			name:  "scalar slice literal 9 ints single source line becomes 8+1",
-			input: "v []i64 = [0, 1, 2, 3, 4, 5, 6, 7, 8]\n",
+			name:     "scalar slice literal 9 ints single source line becomes 8+1",
+			input:    "v []i64 = [0, 1, 2, 3, 4, 5, 6, 7, 8]\n",
 			expected: "v []i64 = [\n    0, 1, 2, 3, 4, 5, 6, 7,\n    8,\n]\n",
 		},
 		{
-			name: "scalar slice literal 20 bytes uses 8-per-line",
-			input: "v []byte = [0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f, 0x10, 0x11, 0x12, 0x13]\n",
+			name:     "scalar slice literal 20 bytes uses 8-per-line",
+			input:    "v []byte = [0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f, 0x10, 0x11, 0x12, 0x13]\n",
 			expected: "v []byte = [\n    0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07,\n    0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f,\n    0x10, 0x11, 0x12, 0x13,\n]\n",
 		},
 		{
-			name: "negative scalar literals also use 8-per-line",
-			input: "v []i64 = [-1, -2, -3, -4, -5, -6, -7, -8, -9, -10]\n",
+			name:     "negative scalar literals also use 8-per-line",
+			input:    "v []i64 = [-1, -2, -3, -4, -5, -6, -7, -8, -9, -10]\n",
 			expected: "v []i64 = [\n    -1, -2, -3, -4, -5, -6, -7, -8,\n    -9, -10,\n]\n",
 		},
 		{
-			name: "scalar slice with <=8 elements stays single line",
-			input: "v []i64 = [0, 1, 2, 3, 4, 5, 6, 7]\n",
+			name:     "scalar slice with <=8 elements stays single line",
+			input:    "v []i64 = [0, 1, 2, 3, 4, 5, 6, 7]\n",
 			expected: "v []i64 = [0, 1, 2, 3, 4, 5, 6, 7]\n",
 		},
 		{
-			name: "char scalar slice uses 8-per-line",
-			input: "v []char = [\"a\", \"b\", \"c\", \"d\", \"e\", \"f\", \"g\", \"h\", \"i\", \"j\"]\n",
+			name:     "char scalar slice uses 8-per-line",
+			input:    "v []char = [\"a\", \"b\", \"c\", \"d\", \"e\", \"f\", \"g\", \"h\", \"i\", \"j\"]\n",
 			expected: "v []char = [\n    \"a\", \"b\", \"c\", \"d\", \"e\", \"f\", \"g\", \"h\",\n    \"i\", \"j\",\n]\n",
 		},
 		{
@@ -2802,22 +2803,22 @@ func TestFormatScalarSlicePerLine8(t *testing.T) {
 			// Previously the comment was left unattached in p.comments and
 			// ended up as block TrailingComments, causing it to wrap to the
 			// next line on format.
-		name: "standalone_if_then_else_arm_inline_semicolon_comment",
-		input: "foo = () {\n    bare == false -> {\n        os.mkdir(x, 493) -> {}\n        -> return; 493 = 0755\n    }\n}\n",
-		expected: "foo = () {\n    bare == false -> {\n        os.mkdir(x, 493) -> {}\n\n        -> return; 493 = 0755\n    }\n}\n",
-	},
-	{
-		// regression: a block containing standalone if-then statements
-		// (cond -> { body }) followed by a nested bare match
-		// ( { pat -> body -> body } ) was mis-classified as blockMatch
-		// by classifyBlockAtCurrent (which saw IDENT -> at depth 0).
-		// parseBareMatchExpr would then fail on the nested bare match
-		// (expecting -> or : after the expression, but seeing }),
-		// returning nil and silently dropping the entire block.
-		// The fix falls back to parseBlockStatement when
-		// parseBareMatchExpr returns nil.
-		name: "mixed_standalone_if_then_and_nested_bare_match",
-		input: `f = () {
+			name:     "standalone_if_then_else_arm_inline_semicolon_comment",
+			input:    "foo = () {\n    bare == false -> {\n        os.mkdir(x, 493) -> {}\n        -> return; 493 = 0755\n    }\n}\n",
+			expected: "foo = () {\n    bare == false -> {\n        os.mkdir(x, 493) -> {}\n\n        -> return; 493 = 0755\n    }\n}\n",
+		},
+		{
+			// regression: a block containing standalone if-then statements
+			// (cond -> { body }) followed by a nested bare match
+			// ( { pat -> body -> body } ) was mis-classified as blockMatch
+			// by classifyBlockAtCurrent (which saw IDENT -> at depth 0).
+			// parseBareMatchExpr would then fail on the nested bare match
+			// (expecting -> or : after the expression, but seeing }),
+			// returning nil and silently dropping the entire block.
+			// The fix falls back to parseBlockStatement when
+			// parseBareMatchExpr returns nil.
+			name: "mixed_standalone_if_then_and_nested_bare_match",
+			input: `f = () {
     dry-run = false
     {
         dry-run -> {
@@ -2835,7 +2836,7 @@ func TestFormatScalarSlicePerLine8(t *testing.T) {
     }
 }
 `,
-		expected: `f = () {
+			expected: `f = () {
     dry-run = false
     {
         dry-run -> {
@@ -2854,7 +2855,7 @@ func TestFormatScalarSlicePerLine8(t *testing.T) {
     }
 }
 `,
-	},
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

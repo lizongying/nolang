@@ -41,6 +41,8 @@ func (w *ASTWalker) walkStatement(stmt parser.Statement, scope string) {
 	switch s := stmt.(type) {
 	case *parser.FunctionDefinition:
 		w.addFunction(s.Name, s.Token, s.Parameters, s.Results, s.Body, scope, s.IsVariadic, extractDocComment(&s.CommentedNode))
+		// 記錄函式區間，供 LookupAtPosition 做作用域精確解析（同名區域變數）
+		w.index.AddScopeRange(s.Name, rangeFromNode(s))
 		// Index parameters and result parameters as symbols so hover on
 		// parameter names shows the declared type (e.g. `n i64` → i64)
 		// instead of falling back to a same-named variable in another function.
@@ -83,6 +85,9 @@ func (w *ASTWalker) walkStatement(stmt parser.Statement, scope string) {
 					w.index.functions[s.Name.Value] = entry
 					w.index.definitions[s.Name.Value] = entry
 				}
+				// 記錄函式區間（`name = (...) (...) { ... }` 形式，含方法如
+				// `file.read-bytes`），供 LookupAtPosition 做作用域精確解析。
+				w.index.AddScopeRange(s.Name.Value, rangeFromNode(s))
 				// Index parameters and result parameters as symbols so hover on
 				// parameter names shows the declared type.
 				w.indexFunctionParams(funcLit.Parameters, funcLit.Results, s.Name.Value)
@@ -168,7 +173,7 @@ func (w *ASTWalker) walkStatement(stmt parser.Statement, scope string) {
 				Type: detail,
 				Location: Location{
 					URI:   w.uri,
-					Range: rangeFromNode(s),
+					Range: w.rangeFromIdent(s.Name),
 				},
 				Scope: scope,
 				Value: w.getExprValue(s.Value),

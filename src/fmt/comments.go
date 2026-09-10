@@ -179,15 +179,27 @@ func (f *formatter) formatInlineComment(comment *parser.CommentGroup) {
 }
 
 // formatTrailingComments outputs comments that appear before a closing brace.
-
-// formatTrailingComments outputs comments that appear before a closing brace.
-func (f *formatter) formatTrailingComments(tc *parser.CommentGroup) {
+// prevEndLine is the source line of the last emitted statement (or the block's
+// opening brace when the block has no statements beforehand); it anchors
+// blank-line detection so a separating blank between the preceding code and a
+// trailing comment (and between consecutive trailing comments) is preserved.
+// Without it the blank would always collapse, making it impossible to keep
+// `stmt\n\n; comment\n}`.
+func (f *formatter) formatTrailingComments(tc *parser.CommentGroup, prevEndLine int) {
 	if tc == nil {
 		return
 	}
+	prevLine := prevEndLine
 	for _, c := range tc.List {
+		// 保留源碼中「上一段程式碼與本註釋之間」以及「兩個註釋之間」的空行。
+		// 用 hasBlankLineBetween 偵測真實空白行（並略過 overflow 註解行），
+		// 而非單純行號落差 —— 後者會在 formatter 自身輸出推移行號後誤判、破壞冪等。
+		if prevLine > 0 && c.Pos.Line > 0 && f.hasBlankLineBetween(prevLine, c.Pos.Line) {
+			f.write("\n") // blank line (no indent)
+		}
 		f.newline()
 		f.writeCommentBody(c)
+		prevLine = c.Pos.Line
 	}
 }
 
@@ -287,7 +299,7 @@ func (f *formatter) attachedAnnotationsWillEmit(stmt parser.Statement) bool {
 }
 
 // overflowModeStringOf 從一個 overflow 註解條目取出正規化模式字串
-//（wrap/clamp0/min/max/saturate）；非 overflow 條目、無值或無法識別時回傳 ""。
+// （wrap/clamp0/min/max/saturate）；非 overflow 條目、無值或無法識別時回傳 ""。
 // 用於 formatter 對區塊級 #{overflow=...} 去重輸出（見 formatStatement /
 // formatAnnotationStatement 的 activeOverflow 機制）。
 func overflowModeStringOf(e *parser.AnnotationEntry) string {

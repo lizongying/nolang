@@ -284,6 +284,19 @@ func RunAllLints(program *parser.Program, opts LintOptions) []LintResult {
 		})
 	}
 
+	// 19c. option 值直接比較（如 `size = fstat-size(.fd); size == 0`）。
+	// option 在 HIR/LLVM 層是 tagged enum {tag, data}，拿它跟數字/字串比是
+	// 無意義的；正確寫法是先 `v ?= expr` 解包或用 match 分支。與 [RAL] /
+	// ValidateNonExhaustiveMatch 互補：本規則管「比較」，那兩個管「解構」。
+	// 參見 checker/option_compare.go。
+	for _, u := range ValidateOptionComparison(program) {
+		results = append(results, LintResult{
+			Line: u.Line, Column: u.Column,
+			Severity: LintError, Source: "nolang-type-checker",
+			Message: u.Message, TraceID: u.TraceID,
+		})
+	}
+
 	// 19. print 格式字串校驗
 	for _, u := range ValidatePrintFormat(program) {
 		results = append(results, LintResult{
