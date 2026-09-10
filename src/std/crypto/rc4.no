@@ -41,6 +41,7 @@ rc4 = (in []byte, key []byte) (out []byte) {
     pos <- [0..in.len()): {
         #{overflow=wrap}
         i = (i + 1) % 256
+        #{overflow=wrap}
         j = (j + (s[i])) % 256
 
         ; Swap s[i] and s[j]
@@ -49,6 +50,7 @@ rc4 = (in []byte, key []byte) (out []byte) {
         s[j] = t
 
         ; 生成密鑰流位元組
+        #{overflow=wrap}
         k = s[((s[i]) + (s[j])) % 256]
         out[pos] = (in[pos]) ^ (k & 255)
     }

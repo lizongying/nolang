@@ -2065,7 +2065,13 @@ func (p *Parser) parseBlockStatement() *BlockStatement {
 	// 陳述，直到被下一個 #{overflow = ...} 覆寫。使 std 函式「區塊前置一次
 	// #{overflow = wrap}」即可涵蓋整個區塊整數運算的語意成立（見
 	// propagateBlockScopedOverflow）。
-	p.propagateBlockScopedOverflow(block)
+	// 行注解語意：獨立的 `#{overflow=...}` 只作用於其緊跟的下一條陳述。
+	p.applyLineOverflowAnnotations(block)
+
+	// 遺留的區塊級傳播（僅遷移/校驗工具啟用）。
+	if p.LegacyBlockOverflowPropagation {
+		p.propagateBlockScopedOverflow(block)
+	}
 
 	return block
 }

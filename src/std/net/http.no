@@ -110,7 +110,9 @@ request.add-header = (name str, value str) (ok bool) {
     idx = .header-count
 
     ; 用字串串接組裝 'Name: Value'（建立獨立緩衝區，避免逐位元組寫入溢出）
+    #{overflow=wrap}
     .headers[idx] = name - ': ' - value
+    #{overflow=wrap}
     .header-count = idx + 1
     ok = true
 }
@@ -138,6 +140,7 @@ response.parse-headers = () {
     n == 0 -> return
     cr = number.char-to-str(13)
     lf = number.char-to-str(10)
+    #{overflow=wrap}
     crlf = cr - lf
 
     pos = 0
@@ -152,6 +155,7 @@ response.parse-headers = () {
 
         ; 在 [pos, line-end) 中找 ': '
         colon-pos = hs.index-from(': ', pos)
+        #{overflow=wrap}
         colon-pos >= 0 && colon-pos < line-end -> {
             cnt = .header-count
             cnt < HTTP-MAX-RESP-HEADERS -> {
@@ -166,6 +170,7 @@ response.parse-headers = () {
             }
         }
         next-crlf < 0 -> *
+        #{overflow=wrap}
         pos = next-crlf + 2
     } (true)
 }
@@ -226,6 +231,7 @@ do = (method str, url str, body str) (resp ?response) {
     port-str = ''
     cr = number.char-to-str(13)
     lf = number.char-to-str(10)
+    #{overflow=wrap}
     crlf = cr - lf
     req = ''
     len-str = ''
@@ -233,6 +239,7 @@ do = (method str, url str, body str) (resp ?response) {
     raw str = with-len(HTTP-MAX-RESPONSE)
     total = 0
     recv-raw = ''
+    #{overflow=wrap}
     separator = crlf - crlf
     head = ''
     status-line = ''
@@ -272,6 +279,7 @@ do = (method str, url str, body str) (resp ?response) {
 
     ; 檢查 host 是否含 :port
     colon-pos = host.index(':')
+    #{overflow=wrap}
     colon-pos >= 0 -> {
         #{overflow=wrap}
         host-only = host.slice(0, colon-pos)
@@ -304,18 +312,30 @@ do = (method str, url str, body str) (resp ?response) {
 
     ; ── 建構請求 ──
     req = method
+    #{overflow=wrap}
     req = req - ' '
+    #{overflow=wrap}
     req = req - path
+    #{overflow=wrap}
     req = req - ' HTTP/1.1'
+    #{overflow=wrap}
     req = req - crlf
+    #{overflow=wrap}
     req = req - 'Host: '
+    #{overflow=wrap}
     req = req - host
+    #{overflow=wrap}
     req = req - crlf
+    #{overflow=wrap}
     req = req - 'Connection: close'
+    #{overflow=wrap}
     req = req - crlf
+    #{overflow=wrap}
     req = req - 'User-Agent: nolang-http/1.0'
+    #{overflow=wrap}
     req = req - crlf
 
+    #{overflow=wrap}
     body.len-bytes() > 0 -> {
         #{overflow=wrap}
         body-len i64 = body.len-bytes()
@@ -324,7 +344,9 @@ do = (method str, url str, body str) (resp ?response) {
         req = req - len-str
         req = req - crlf
     }
+    #{overflow=wrap}
     req = req - crlf
+    #{overflow=wrap}
     body.len-bytes() > 0 -> req = req - body
 
     ; ── 發送請求 ──
@@ -360,6 +382,7 @@ do = (method str, url str, body str) (resp ?response) {
             -> n = net.net-recv(fd, buf, HTTP-BUF-SIZE)
         }
         n <= 0 -> *
+        #{overflow=wrap}
         total + n > HTTP-MAX-RESPONSE -> *
 
         ; 將接收的位元組複製到 raw
@@ -367,6 +390,7 @@ do = (method str, url str, body str) (resp ?response) {
             #{overflow=wrap}
             raw[total + i] = buf[i]
         }
+        #{overflow=wrap}
         total = total + n
     } (true)
     {
@@ -383,10 +407,12 @@ do = (method str, url str, body str) (resp ?response) {
     sep-pos = recv-raw.index(separator)
     sep-pos < 0 -> return
     head = recv-raw.slice(0, sep-pos)
+    #{overflow=wrap}
     r.body = recv-raw.slice(sep-pos + separator.len-bytes(), recv-raw.len-bytes())
 
     ; 解析狀態行（第一行）
     first-line-end = head.index(crlf)
+    #{overflow=wrap}
     {
         first-line-end < 0 -> {
             status-line = head
@@ -403,10 +429,12 @@ do = (method str, url str, body str) (resp ?response) {
     ; 狀態行格式：HTTP/1.1 200 OK
     sp1 = status-line.index(' ')
     sp1 < 0 -> return
+    #{overflow=wrap}
     after-code = status-line.slice(sp1 + 1, status-line.len-bytes())
     sp2 = after-code.index(' ')
     sp2 < 0 -> return
     code-str = after-code.slice(0, sp2)
+    #{overflow=wrap}
     r.status-text = after-code.slice(sp2 + 1, after-code.len-bytes())
 
     ; 解析狀態碼
@@ -415,6 +443,7 @@ do = (method str, url str, body str) (resp ?response) {
         #{overflow=wrap}
         c = code-str[i]
         c < 48 || c > 57 -> return
+        #{overflow=wrap}
         code = code * 10 + c - 48
     }
     r.status-code = code
@@ -440,6 +469,7 @@ do-req = (req request) (resp ?response) {
     port-str = ''
     cr = number.char-to-str(13)
     lf = number.char-to-str(10)
+    #{overflow=wrap}
     crlf = cr - lf
     req-str = ''
     len-str = ''
@@ -447,6 +477,7 @@ do-req = (req request) (resp ?response) {
     raw str = with-len(HTTP-MAX-RESPONSE)
     total = 0
     recv-raw = ''
+    #{overflow=wrap}
     separator = crlf - crlf
     head = ''
     status-line = ''
@@ -486,6 +517,7 @@ do-req = (req request) (resp ?response) {
         }
     }
     colon-pos = host.index(':')
+    #{overflow=wrap}
     colon-pos >= 0 -> {
         #{overflow=wrap}
         host-only = host.slice(0, colon-pos)
@@ -518,24 +550,37 @@ do-req = (req request) (resp ?response) {
 
     ; ── 建構請求（含自訂標頭）──
     req-str = method
+    #{overflow=wrap}
     req-str = req-str - ' '
+    #{overflow=wrap}
     req-str = req-str - path
+    #{overflow=wrap}
     req-str = req-str - ' HTTP/1.1'
+    #{overflow=wrap}
     req-str = req-str - crlf
+    #{overflow=wrap}
     req-str = req-str - 'Host: '
+    #{overflow=wrap}
     req-str = req-str - host
+    #{overflow=wrap}
     req-str = req-str - crlf
+    #{overflow=wrap}
     req-str = req-str - 'Connection: close'
+    #{overflow=wrap}
     req-str = req-str - crlf
+    #{overflow=wrap}
     req-str = req-str - 'User-Agent: nolang-http/1.0'
+    #{overflow=wrap}
     req-str = req-str - crlf
 
     ; 附加自訂標頭
     hi <- [0..req.header-count): {
         #{overflow=wrap}
         req-str = req-str - req.headers[hi]
+        #{overflow=wrap}
         req-str = req-str - crlf
     }
+    #{overflow=wrap}
     body.len-bytes() > 0 -> {
         #{overflow=wrap}
         body-len i64 = body.len-bytes()
@@ -544,7 +589,9 @@ do-req = (req request) (resp ?response) {
         req-str = req-str - len-str
         req-str = req-str - crlf
     }
+    #{overflow=wrap}
     req-str = req-str - crlf
+    #{overflow=wrap}
     body.len-bytes() > 0 -> req-str = req-str - body
 
     ; ── 發送請求 ──
@@ -579,11 +626,13 @@ do-req = (req request) (resp ?response) {
             -> n = net.net-recv(fd, buf, HTTP-BUF-SIZE)
         }
         n <= 0 -> *
+        #{overflow=wrap}
         total + n > HTTP-MAX-RESPONSE -> *
         i <- [0..n): {
             #{overflow=wrap}
             raw[total + i] = buf[i]
         }
+        #{overflow=wrap}
         total = total + n
     } (true)
     {
@@ -598,9 +647,11 @@ do-req = (req request) (resp ?response) {
     sep-pos = recv-raw.index(separator)
     sep-pos < 0 -> return
     head = recv-raw.slice(0, sep-pos)
+    #{overflow=wrap}
     r.body = recv-raw.slice(sep-pos + separator.len-bytes(), recv-raw.len-bytes())
 
     first-line-end = head.index(crlf)
+    #{overflow=wrap}
     {
         first-line-end < 0 -> {
             status-line = head
@@ -615,10 +666,12 @@ do-req = (req request) (resp ?response) {
     }
     sp1 = status-line.index(' ')
     sp1 < 0 -> return
+    #{overflow=wrap}
     after-code = status-line.slice(sp1 + 1, status-line.len-bytes())
     sp2 = after-code.index(' ')
     sp2 < 0 -> return
     code-str = after-code.slice(0, sp2)
+    #{overflow=wrap}
     r.status-text = after-code.slice(sp2 + 1, after-code.len-bytes())
 
     code = 0
@@ -626,6 +679,7 @@ do-req = (req request) (resp ?response) {
         #{overflow=wrap}
         c = code-str[i]
         c < 48 || c > 57 -> return
+        #{overflow=wrap}
         code = code * 10 + c - 48
     }
     r.status-code = code
@@ -694,6 +748,7 @@ set-basic-auth = (req request, user str, password str) (ok bool) {
     raw = user - ':' - password
     raw-bytes []byte = raw.to-bytes()
     enc-str = base64.encode-std(raw-bytes)
+    #{overflow=wrap}
     auth-val = 'Basic ' - enc-str
     ok = req.add-header('Authorization', auth-val)
 }

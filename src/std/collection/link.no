@@ -70,10 +70,12 @@ link {
     l.prev = prv
 
     ; 初始化空閒鏈結串列: 0→1→2→...→n-1→-1
+    #{overflow=wrap}
     i <- [0..n - 1): {
         #{overflow=wrap}
         l.next[i] = i + 1
     }
+    #{overflow=wrap}
     l.next[n - 1] = -1
 }
 
@@ -99,6 +101,7 @@ link {
     l.head >= 0 -> l.prev[l.head] = idx
     l.head = idx
     l.tail < 0 -> l.tail = idx
+    #{overflow=wrap}
     l.size = l.size + 1
     ok = true
 }
@@ -119,6 +122,7 @@ link {
     l.tail >= 0 -> l.next[l.tail] = idx
     l.tail = idx
     l.head < 0 -> l.head = idx
+    #{overflow=wrap}
     l.size = l.size + 1
     ok = true
 }
@@ -144,6 +148,7 @@ link {
     ; 回收節點到空閒鏈結串列
     l.next[idx] = l.free-head
     l.free-head = idx
+    #{overflow=wrap}
     l.size = l.size - 1
 }
 
@@ -166,6 +171,7 @@ link {
     }
     l.next[idx] = l.free-head
     l.free-head = idx
+    #{overflow=wrap}
     l.size = l.size - 1
 }
 
@@ -199,6 +205,7 @@ link {
 [n]t.link-insert-at = (l link, pos i64, val t) (ok bool) {
     #{overflow=wrap}
     ok = false
+    #{overflow=wrap}
     {
         pos < 0 || pos > l.size -> return
 
@@ -256,6 +263,7 @@ link {
     l.next[new] = idx
     l.next[p] = new
     l.prev[idx] = new
+    #{overflow=wrap}
     l.size = l.size + 1
     ok = true
 }
@@ -322,6 +330,7 @@ link {
     ; 回收節點
     l.next[idx] = l.free-head
     l.free-head = idx
+    #{overflow=wrap}
     l.size = l.size - 1
 }
 

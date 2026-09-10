@@ -495,7 +495,9 @@ process.read-all = () (content str, n i64) {
         #{overflow=wrap}
         chunk-n = fs.read(.stdout-fd, buf, 4096)
         chunk-n <= 0 -> *
+        #{overflow=wrap}
         content = content - buf.slice(0, chunk-n).to-str()
+        #{overflow=wrap}
         n = n + chunk-n
     } (true)
 }
@@ -806,6 +808,7 @@ cmd = (program str, args []str, dir str, input str, env []str, timeout i64, merg
         #{overflow=wrap}
         n = fs.read(out-read, buf, 4096)
         n <= 0 -> break
+        #{overflow=wrap}
         out = out - buf.slice(0, n).to-str()
     } (true)
 

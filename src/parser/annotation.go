@@ -229,6 +229,65 @@ func (p *Parser) attachAnnotations(stmt Statement, entries []*AnnotationEntry) {
 	}
 }
 
+// applyLineOverflowAnnotations 實作 `#{overflow = ...}` 的「行注解」語意：一個
+// 獨立的 AnnotationStatement 只把其 overflow 模式套用到**緊跟其後的下一條陳述**
+//（若該陳述尚未自帶 overflow 註解），不向區塊其餘陳述或巢狀區塊傳播。
+//
+// 之所以需要此 pass：`#{overflow=wrap}` 緊跟的陳述可能以無法被
+// parseAnnotationStatement 附加的 token 開頭（如 `.n = .n + 1` 以 DOT 開頭、
+// `return x + 1` 以 RETURN 開頭），此時註解會退化成獨立 AnnotationStatement，
+// 而其 overflow 條目不會出現在目標陳述的 side-table 上，codegen 逐條陳述讀取
+// 溢出模式（overflowModeFromNode）就會漏掉。本 pass 把該模式合併到下一條陳述。
+func (p *Parser) applyLineOverflowAnnotations(block *BlockStatement) {
+	if block == nil {
+		return
+	}
+	apply := func(stmts []Statement) {
+		for i, s := range stmts {
+			as, ok := s.(*AnnotationStatement)
+			if !ok {
+				continue
+			}
+			entries := p.overflowEntries(as.Entries)
+			if entries == nil {
+				continue
+			}
+			mode := p.overflowModeString(entries)
+			for j := i + 1; j < len(stmts); j++ {
+				next := stmts[j]
+				if next == nil {
+					continue
+				}
+				// 連續的獨立註解：以最後一條為準（前一條不覆蓋後一條的目標）。
+				if _, isAnn := next.(*AnnotationStatement); isAnn {
+					break
+				}
+				// 行注解語意：overflow 模式只寫入下一條陳述的 OverflowMode 欄位
+				//（供 codegen 的 overflowModeFromNode 讀取），**不**合併進其註解
+				// side-table——否則 formatter 會把同一行 #{overflow=...} 既以獨立
+				// 註解陳述、又以附加註解形式各印一次（雙印，破壞冪等）。
+				// 註解行的輸出由獨立 AnnotationStatement 節點本身負責（見
+				// fmt/stmt.go formatAnnotationStatement）；IDENT 起始、parser 已
+				// 直接附加到該陳述的情況則由 attachedAnnotations 輸出，二者皆單次。
+				setStmtOverflowMode(next, mode)
+				break
+			}
+		}
+	}
+	apply(block.Statements)
+	// 巢狀：ForStatement 體 / 直接子區塊各自處理（遞迴由 parseBlockStatement
+	// 對每個區塊自身呼叫本函式完成，此處僅覆蓋解析時未經 parseBlockStatement
+	// 的內聯體，如單陳述迴圈體）。
+	for _, s := range block.Statements {
+		switch v := s.(type) {
+		case *ForStatement:
+			if v.Body != nil {
+				apply(v.Body.Statements)
+			}
+		}
+	}
+}
+
 // overflowEntries 從一組註解條目中挑出 overflow 鍵的條目（std 函式普遍以
 // `#{overflow = wrap}` 一次性涵蓋整個區塊的整數運算）。回傳 nil 表示無 overflow 註解。
 func (p *Parser) overflowEntries(entries []*AnnotationEntry) []*AnnotationEntry {

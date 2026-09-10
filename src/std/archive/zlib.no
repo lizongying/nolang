@@ -30,6 +30,7 @@ adler-32 = (data []byte, n i64) (sum i64) {
     i <- [0..n): {
         #{overflow=wrap}
         a = (a + data[i]) % MOD
+        #{overflow=wrap}
         b = (b + a) % MOD
     }
     sum = ((b << 16) | a) & 4294967295
@@ -91,6 +92,7 @@ zlib-decompress = (data []byte) (out []byte, ok bool) {
     data[0] != 0x78 -> return
 
     ; 跳過 2-byte zlib header，取 raw DEFLATE 資料
+    #{overflow=wrap}
     deflate-len i64 = data.len() - 6; 去掉 2-byte header + 4-byte Adler-32
     deflate-data []byte
     i <- [0..deflate-len): {
@@ -99,6 +101,7 @@ zlib-decompress = (data []byte) (out []byte, ok bool) {
     }
 
     ; 預估輸出大小：100 倍輸入（上限 1MB，下限 64 bytes）
+    #{overflow=wrap}
     est-out i64 = deflate-len * 100
     est-out > 1048576 -> est-out = 1048576
     est-out < 64 -> est-out = 64
@@ -128,8 +131,11 @@ zlib-decompress-stored = (data []byte) (out []byte, ok bool) {
         bfinal i64 = hdr & 1
         btype i64 = (hdr >> 1) & 3
         btype != 0 -> return
+        #{overflow=wrap}
         p = p + 1
+        #{overflow=wrap}
         blk-len i64 = data[p] | (data[p + 1] << 8)
+        #{overflow=wrap}
         p = p + 4; 跳過 LEN(2) + NLEN(2)
 
         ; 提取 payload
@@ -137,6 +143,7 @@ zlib-decompress-stored = (data []byte) (out []byte, ok bool) {
             #{overflow=wrap}
             out.push(data[p + i])
         }
+        #{overflow=wrap}
         p = p + blk-len
         bfinal == 1 -> break
     } (true)
@@ -158,12 +165,16 @@ zlib-consumed-stored = (data []byte) (consumed i64) {
         bfinal i64 = data[p] & 1
         btype i64 = (data[p] >> 1) & 3
         btype != 0 -> return
+        #{overflow=wrap}
         p = p + 1
+        #{overflow=wrap}
         blk-len i64 = (data[p] & 255) | ((data[p + 1] & 255) << 8)
+        #{overflow=wrap}
         p = p + 4 + blk-len
         bfinal == 1 -> break
     } (true)
 
     ; p 現在指向 Adler-32（4 bytes）
+    #{overflow=wrap}
     consumed = p + 4
 }

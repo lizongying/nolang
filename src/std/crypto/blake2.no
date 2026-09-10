@@ -62,10 +62,13 @@ blake2b-g = (v []u64, a i64, b i64, c i64, d i64, x u64, y u64) {
     #{overflow=wrap}
     v[a] = (v[a] + v[b] + x) & BLAKE2B-MASK
     v[d] = rotr64(v[d] ^ v[a], 32)
+    #{overflow=wrap}
     v[c] = (v[c] + v[d]) & BLAKE2B-MASK
     v[b] = rotr64(v[b] ^ v[c], 24)
+    #{overflow=wrap}
     v[a] = (v[a] + v[b] + y) & BLAKE2B-MASK
     v[d] = rotr64(v[d] ^ v[a], 16)
+    #{overflow=wrap}
     v[c] = (v[c] + v[d]) & BLAKE2B-MASK
     v[b] = rotr64(v[b] ^ v[c], 63)
 }
@@ -101,6 +104,7 @@ blake2b-compress = (h []u64, block []byte, t u64, last i64) {
     i <- [0..16): {
         #{overflow=wrap}
         off = i * 8
+        #{overflow=wrap}
         m[i] = (block[off]) | ((block[off + 1]) << 8) | ((block[off + 2]) << 16) | ((block[off + 3]) << 24) | ((block[off + 4]) << 32) | ((block[off + 5]) << 40) | ((block[off + 6]) << 48) | ((block[off + 7]) << 56)
     }
 
@@ -157,11 +161,13 @@ blake2b = (data []byte) (hash [64]byte) {
         #{overflow=wrap}
         t = (t + 128) & BLAKE2B-MASK
         blake2b-compress(h, data[offset..], t, 0)
+        #{overflow=wrap}
         offset = offset + 128
     } (offset + 128 < dlen)
 
     ; 處理最後一個區塊（可能不完整）
     last-block []byte = with-len(128)
+    #{overflow=wrap}
     remaining = dlen - offset
     i <- [0..remaining): {
         #{overflow=wrap}
@@ -173,6 +179,7 @@ blake2b = (data []byte) (hash [64]byte) {
         #{overflow=wrap}
         last-block[i] = 0
     }
+    #{overflow=wrap}
     t = (t + remaining) & BLAKE2B-MASK
     blake2b-compress(h, last-block, t, 1)
 
@@ -181,12 +188,19 @@ blake2b = (data []byte) (hash [64]byte) {
         #{overflow=wrap}
         off = i * 8
         hash[off] = h[i]
+        #{overflow=wrap}
         hash[off + 1] = (h[i] >> 8) & 255
+        #{overflow=wrap}
         hash[off + 2] = (h[i] >> 16) & 255
+        #{overflow=wrap}
         hash[off + 3] = (h[i] >> 24) & 255
+        #{overflow=wrap}
         hash[off + 4] = (h[i] >> 32) & 255
+        #{overflow=wrap}
         hash[off + 5] = (h[i] >> 40) & 255
+        #{overflow=wrap}
         hash[off + 6] = (h[i] >> 48) & 255
+        #{overflow=wrap}
         hash[off + 7] = (h[i] >> 56) & 255
     }
 }
@@ -213,9 +227,11 @@ blake2b-256 = (data []byte) (hash [32]byte) {
         #{overflow=wrap}
         t = (t + 128) & BLAKE2B-MASK
         blake2b-compress(h, data[offset..], t, 0)
+        #{overflow=wrap}
         offset = offset + 128
     } (offset + 128 < dlen)
     last-block []byte = with-len(128)
+    #{overflow=wrap}
     remaining = dlen - offset
     i <- [0..remaining): {
         #{overflow=wrap}
@@ -225,6 +241,7 @@ blake2b-256 = (data []byte) (hash [32]byte) {
         #{overflow=wrap}
         last-block[i] = 0
     }
+    #{overflow=wrap}
     t = (t + remaining) & BLAKE2B-MASK
     blake2b-compress(h, last-block, t, 1)
 
@@ -233,12 +250,19 @@ blake2b-256 = (data []byte) (hash [32]byte) {
         #{overflow=wrap}
         off = i * 8
         hash[off] = h[i]
+        #{overflow=wrap}
         hash[off + 1] = (h[i] >> 8) & 255
+        #{overflow=wrap}
         hash[off + 2] = (h[i] >> 16) & 255
+        #{overflow=wrap}
         hash[off + 3] = (h[i] >> 24) & 255
+        #{overflow=wrap}
         hash[off + 4] = (h[i] >> 32) & 255
+        #{overflow=wrap}
         hash[off + 5] = (h[i] >> 40) & 255
+        #{overflow=wrap}
         hash[off + 6] = (h[i] >> 48) & 255
+        #{overflow=wrap}
         hash[off + 7] = (h[i] >> 56) & 255
     }
 }
@@ -253,6 +277,7 @@ blake2b-hex = (data []byte) (hex str) {
     i <- [0..64): {
         #{overflow=wrap}
         hex[i * 2] = hex-chars[(hash[i] >> 4) & 15]
+        #{overflow=wrap}
         hex[i * 2 + 1] = hex-chars[hash[i] & 15]
     }
 }
@@ -267,6 +292,7 @@ blake2b-256-hex = (data []byte) (hex str) {
     i <- [0..32): {
         #{overflow=wrap}
         hex[i * 2] = hex-chars[(hash[i] >> 4) & 15]
+        #{overflow=wrap}
         hex[i * 2 + 1] = hex-chars[hash[i] & 15]
     }
 }
@@ -316,10 +342,13 @@ blake2s-g = (v []u32, a i64, b i64, c i64, d i64, x u32, y u32) {
     #{overflow=wrap}
     v[a] = (v[a] + v[b] + x) & BLAKE2S-MASK
     v[d] = rotr32(v[d] ^ v[a], 16)
+    #{overflow=wrap}
     v[c] = (v[c] + v[d]) & BLAKE2S-MASK
     v[b] = rotr32(v[b] ^ v[c], 12)
+    #{overflow=wrap}
     v[a] = (v[a] + v[b] + y) & BLAKE2S-MASK
     v[d] = rotr32(v[d] ^ v[a], 8)
+    #{overflow=wrap}
     v[c] = (v[c] + v[d]) & BLAKE2S-MASK
     v[b] = rotr32(v[b] ^ v[c], 7)
 }
@@ -340,6 +369,7 @@ blake2s-compress = (h []u32, block []byte, t u32, last i64) {
     i <- [0..16): {
         #{overflow=wrap}
         off = i * 4
+        #{overflow=wrap}
         m[i] = (block[off]) | ((block[off + 1]) << 8) | ((block[off + 2]) << 16) | ((block[off + 3]) << 24)
     }
     s [16]i64
@@ -385,9 +415,11 @@ blake2s = (data []byte) (hash [32]byte) {
         #{overflow=wrap}
         t = (t + 64) & BLAKE2S-MASK
         blake2s-compress(h, data[offset..], t, 0)
+        #{overflow=wrap}
         offset = offset + 64
     } (offset + 64 < dlen)
     last-block []byte = with-len(64)
+    #{overflow=wrap}
     remaining = dlen - offset
     i <- [0..remaining): {
         #{overflow=wrap}
@@ -397,6 +429,7 @@ blake2s = (data []byte) (hash [32]byte) {
         #{overflow=wrap}
         last-block[i] = 0
     }
+    #{overflow=wrap}
     t = (t + remaining) & BLAKE2S-MASK
     blake2s-compress(h, last-block, t, 1)
 
@@ -404,8 +437,11 @@ blake2s = (data []byte) (hash [32]byte) {
         #{overflow=wrap}
         off = i * 4
         hash[off] = h[i]
+        #{overflow=wrap}
         hash[off + 1] = (h[i] >> 8) & 255
+        #{overflow=wrap}
         hash[off + 2] = (h[i] >> 16) & 255
+        #{overflow=wrap}
         hash[off + 3] = (h[i] >> 24) & 255
     }
 }
@@ -420,6 +456,7 @@ blake2s-hex = (data []byte) (hex str) {
     i <- [0..32): {
         #{overflow=wrap}
         hex[i * 2] = hex-chars[(hash[i] >> 4) & 15]
+        #{overflow=wrap}
         hex[i * 2 + 1] = hex-chars[hash[i] & 15]
     }
 }

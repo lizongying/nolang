@@ -55,6 +55,7 @@ hkdf-expand-hmac = (prk-vec []byte, t-data []byte, t-len i64, info []byte, count
     ; 計算訊息長度: t-len + info.len() + (counter > 0 ? 1 : 0)
     #{overflow=wrap}
     msg-len = t-len + info.len()
+    #{overflow=wrap}
     counter > 0 -> msg-len = msg-len + 1
     msg []byte = with-len(msg-len)
     i <- [0..t-len): {
@@ -65,6 +66,7 @@ hkdf-expand-hmac = (prk-vec []byte, t-data []byte, t-len i64, info []byte, count
         #{overflow=wrap}
         msg[t-len + i] = info[i]
     }
+    #{overflow=wrap}
     counter > 0 -> msg[t-len + info.len()] = counter & 255
     out = hmac.hmac-sha256(prk-vec, msg)
 }
@@ -151,6 +153,7 @@ hkdf-expand-label = (prk [32]byte, label str, context []byte, out-len i64) (okm 
     label-bytes []byte = full-label.to-bytes()
 
     ; 構建 info: length(2) + label-len(1) + label + ctx-len(1) + ctx
+    #{overflow=wrap}
     info-len = 2 + 1 + label-bytes.len() + 1 + context.len()
     info []byte = with-len(info-len)
     pos = 0
@@ -169,10 +172,12 @@ hkdf-expand-label = (prk [32]byte, label str, context []byte, out-len i64) (okm 
         #{overflow=wrap}
         info[pos + i] = label-bytes[i]
     }
+    #{overflow=wrap}
     pos = pos + label-bytes.len()
 
     ; context length (1 byte)
     info[pos] = context.len() & 255
+    #{overflow=wrap}
     pos = pos + 1
 
     ; context bytes

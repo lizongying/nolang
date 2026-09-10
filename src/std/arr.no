@@ -57,13 +57,16 @@
 [n]t.reverse = () {
     #{overflow=wrap}
     i = 0
+    #{overflow=wrap}
     j = n - 1
     {
         #{overflow=wrap}
         tmp = .[i]
         .[i] = .[j]
         .[j] = tmp
+        #{overflow=wrap}
         i = i + 1
+        #{overflow=wrap}
         j = j - 1
     } (i < j)
 }
@@ -139,13 +142,17 @@
     i <- [1..n): {
         #{overflow=wrap}
         key = .[i]
+        #{overflow=wrap}
         j = i - 1
         {
             #{overflow=wrap}
             .[j] <= key -> break
+            #{overflow=wrap}
             .[j + 1] = .[j]
+            #{overflow=wrap}
             j = j - 1
         } (j >= 0)
+        #{overflow=wrap}
         .[j + 1] = key
     }
 }
@@ -155,13 +162,17 @@
     i <- [1..n): {
         #{overflow=wrap}
         key = .[i]
+        #{overflow=wrap}
         j = i - 1
         {
             #{overflow=wrap}
             .[j] >= key -> break
+            #{overflow=wrap}
             .[j + 1] = .[j]
+            #{overflow=wrap}
             j = j - 1
         } (j >= 0)
+        #{overflow=wrap}
         .[j + 1] = key
     }
 }

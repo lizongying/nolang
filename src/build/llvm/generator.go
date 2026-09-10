@@ -929,6 +929,19 @@ func (g *Generator) overflowModeFromNode(n parser.Node) string {
 	if n == nil {
 		return ""
 	}
+	// 行注解語意：**不再**支援函式級/方法級 `#{overflow}` 註解。
+	// 函式定義（或方法定義 = let + 函式字面量）上方的 #{overflow} 不再作為
+	//「涵蓋整個函式體」的模式來源；溢出模式一律由各陳述自身的行注解決定
+	//（generateStatement 進入每條陳述時讀取）。該註解仍保留於原始碼與
+	// side-table（不會被 formatter 丟棄），只是不產生整體作用域。
+	if _, ok := n.(*parser.FunctionDefinition); ok {
+		return ""
+	}
+	if ls, ok := n.(*parser.LetStatement); ok {
+		if _, isFn := ls.Value.(*parser.FunctionLiteral); isFn {
+			return ""
+		}
+	}
 	// FunctionDefinition 節點若已攜帶 #{overflow} 欄位（parser 於解析期填寫、
 	// 單態化複本繼承），優先採用——此路徑在 HIR 模式下亦可靠（不依賴 side-table）。
 	if fd, ok := n.(*parser.FunctionDefinition); ok && fd.OverflowMode != "" {

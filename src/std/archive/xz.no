@@ -31,12 +31,14 @@ lzma-rd {
 lzma-rd.init = (data []byte, start-pos i64) {
     #{overflow=wrap}
     .data = data
+    #{overflow=wrap}
     .pos = start-pos + 1; 跳過第一個位元組（必須為 0）
     .range = 0xffffffff
     .code = 0
     i <- [0..4): {
         #{overflow=wrap}
         .code = (.code << 8) | .data[.pos]
+        #{overflow=wrap}
         .pos = .pos + 1
     }
 }
@@ -56,9 +58,11 @@ lzma-rd.normalize = () {
 lzma-rd.decode-bit = (prob i64) (bit i64, new-prob i64) {
     #{overflow=wrap}
     .normalize()
+    #{overflow=wrap}
     bound = (.range >> 11) * prob
 
     bit = 0
+    #{overflow=wrap}
     {
         .code < bound -> {
             #{overflow=wrap}
@@ -84,6 +88,7 @@ lzma-rd.decode-direct-bits = (num-bits i64) (res i64) {
         #{overflow=wrap}
         .normalize()
         .range = .range >> 1
+        #{overflow=wrap}
         t = .code - .range
         {
             t < 0 -> .code = t
@@ -109,6 +114,7 @@ lzma-rd.decode-bit-tree = (probs []i64, num-bits i64) (sym i64) {
         probs[m] = tmp
         m = (m << 1) | bit
     }
+    #{overflow=wrap}
     sym = m - (1 << num-bits)
 }
 
@@ -285,6 +291,7 @@ lzma-decoder.decode-literal = () {
     prev = .prev-byte
 
     ; 使用前一個字節的高位作為上下文
+    #{overflow=wrap}
     ctx = prev >> (8 - .lc)
 
     ; 解碼 8 個位元
@@ -296,6 +303,7 @@ lzma-decoder.decode-literal = () {
         prob-idx = ctx + 0x100
         symbol = 1
         {
+            #{overflow=wrap}
             bit, tmp = .rd.decode-bit(.literal[prob-idx + symbol])
             #{overflow=wrap}
             .literal[prob-idx + symbol] = tmp
@@ -326,6 +334,7 @@ lzma-decoder.decode-length = (probs []i64) (length i64) {
     }
     bit, tmp = .rd.decode-bit(probs[1])
     probs[1] = tmp
+    #{overflow=wrap}
     bit == 0 -> {
 
         ; 中位：3 bits + 8
@@ -348,6 +357,7 @@ lzma-decoder.decode-length = (probs []i64) (length i64) {
         sub-probs.push(probs[10 + i])
     }
     sym = .rd.decode-bit-tree(sub-probs, 8)
+    #{overflow=wrap}
     length = sym + 16
 }
 
@@ -375,9 +385,11 @@ lzma-decoder.decode-distance = (length i64) (dist i64) {
     }
 
     ; 計算額外位元數
+    #{overflow=wrap}
     num-direct-bits = (pos-slot >> 1) - 1
     base = (2 | (pos-slot & 1)) << num-direct-bits
 
+    #{overflow=wrap}
     pos-slot < 14 -> {
 
         ; 使用反向位元樹
@@ -393,6 +405,7 @@ lzma-decoder.decode-distance = (length i64) (dist i64) {
     }
 
     ; 直接位元 + 對齊
+    #{overflow=wrap}
     direct = .rd.decode-direct-bits(num-direct-bits - 4)
     align-probs []i64
     i <- [0..16): {
@@ -400,6 +413,7 @@ lzma-decoder.decode-distance = (length i64) (dist i64) {
         align-probs.push(.align[i])
     }
     align = .rd.decode-reverse-bit-tree(align-probs, 4)
+    #{overflow=wrap}
     dist = base + (direct << 4) + align
 }
 
@@ -557,8 +571,11 @@ lzma-decompress = (data []byte) (out []byte) {
 
     ; 解析屬性
     props = data[0]
+    #{overflow=wrap}
     pb = props / (9 * 5)
+    #{overflow=wrap}
     rem = props % (9 * 5)
+    #{overflow=wrap}
     lp = rem / 9
     lc = rem % 9
 
@@ -635,17 +652,22 @@ xz-decompress = (data []byte) (out []byte) {
 
         ; 讀取 Block Header Size
         ; 實際大小 = (value + 1) * 4
+        #{overflow=wrap}
         header-size = (data[pos] + 1) * 4
+        #{overflow=wrap}
         pos = pos + 1
 
         ; 讀取 Block Flags
         block-flags = data[pos]
+        #{overflow=wrap}
         pos = pos + 1
 
         ; 檢查 filter count（低 2 bits）
+        #{overflow=wrap}
         n-filters = (block-flags & 0x3) + 1
 
         ; 跳過壓縮大小（如果有）
+        #{overflow=wrap}
         (block-flags & 0x40) != 0 -> {
 
             ; 壓縮大小使用變長整數編碼
@@ -654,6 +676,7 @@ xz-decompress = (data []byte) (out []byte) {
         }
 
         ; 跳過解壓大小（如果有）
+        #{overflow=wrap}
         (block-flags & 0x80) != 0 -> {
 
             ; 解壓大小使用變長整數編碼
@@ -663,14 +686,17 @@ xz-decompress = (data []byte) (out []byte) {
 
         ; 讀取 Filter ID（應為 0x21 = LZMA2）
         filter-id = data[pos]
+        #{overflow=wrap}
         pos = pos + 1
 
         ; 讀取 Filter Properties Size
         props-size = data[pos]
+        #{overflow=wrap}
         pos = pos + 1
 
         ; 讀取 LZMA2 屬性
         lzma2-props = 0
+        #{overflow=wrap}
         props-size > 0 -> {
             #{overflow=wrap}
             lzma2-props = data[pos]
@@ -678,6 +704,7 @@ xz-decompress = (data []byte) (out []byte) {
         }
 
         ; 跳到 Block Header 結尾
+        #{overflow=wrap}
         pos = pos + header-size - 2 - props-size - 2
 
         ; 解壓 LZMA2 資料流
@@ -702,12 +729,14 @@ lzma2-decompress-stream = (data []byte, start-pos i64, out []byte) {
         #{overflow=wrap}
         pos >= data.len() -> *
         ctrl = data[pos]
+        #{overflow=wrap}
         pos = pos + 1
 
         ; 結束標記
         ctrl == 0 -> *
 
         ; 未壓縮區塊（字典重置）
+        #{overflow=wrap}
         ctrl == 1 -> {
 
             ; 讀取大小 (2 bytes)
@@ -724,6 +753,7 @@ lzma2-decompress-stream = (data []byte, start-pos i64, out []byte) {
         }
 
         ; 未壓縮區塊（無字典重置）
+        #{overflow=wrap}
         ctrl == 2 -> {
             #{overflow=wrap}
             size = (data[pos] << 8) | data[pos + 1]
@@ -736,6 +766,7 @@ lzma2-decompress-stream = (data []byte, start-pos i64, out []byte) {
         }
 
         ; LZMA 壓縮區塊
+        #{overflow=wrap}
         ctrl >= 0x80 -> {
 
             ; 解析大小

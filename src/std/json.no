@@ -107,6 +107,7 @@ json-pool.alloc = () (idx i64) {
     idx = -1
     .count >= JSON-MAX-NODES -> return
     idx = .count
+    #{overflow=wrap}
     .count = .count + 1
     .nodes[idx].count = 0
     .nodes[idx].kind = JSON-KIND-NULL
@@ -149,6 +150,7 @@ json-pool.parse = (s str, pos i64) (node-idx i64, next-pos i64, ok bool) {
         #{overflow=wrap}
         c = s[p]
         c != 32 && c != 9 && c != 10 && c != 13 -> break
+        #{overflow=wrap}
         p = p + 1
     } (p < sn)
     p >= sn -> return
@@ -346,11 +348,13 @@ json-pool.skip-ws = (s str, pos i64) (p i64) {
 json-pool.parse-str = (node-idx i64, s str, pos i64) (next-pos i64, ok bool) {
     #{overflow=wrap}
     ok = false
+    #{overflow=wrap}
     i = pos + 1
     j = 0
     c = 0
 
     ; 預估容量：掃描到閉引號的距離（不超過 s.len-bytes() - pos）
+    #{overflow=wrap}
     est-cap = s.len-bytes() - pos
     est-cap < 1 -> est-cap = 1
     .nodes[node-idx].str-val = with-len(est-cap)
@@ -358,6 +362,7 @@ json-pool.parse-str = (node-idx i64, s str, pos i64) (next-pos i64, ok bool) {
         #{overflow=wrap}
         i >= s.len-bytes() -> return
         c = s[i]
+        #{overflow=wrap}
         {
             c == 34 -> {
                 #{overflow=wrap}
@@ -383,7 +388,9 @@ json-pool.parse-str = (node-idx i64, s str, pos i64) (next-pos i64, ok bool) {
             }
         }
         .nodes[node-idx].str-val[j] = c
+        #{overflow=wrap}
         j = j + 1
+        #{overflow=wrap}
         i = i + 1
     } (i < s.len-bytes())
 }
@@ -398,6 +405,7 @@ json-pool.parse-num = (node-idx i64, s str, pos i64) (next-pos i64, ok bool) {
     .nodes[node-idx].num-val = 0.0
 
     ; 負號
+    #{overflow=wrap}
     s[i] == 45 -> {
         #{overflow=wrap}
         negative = 1
@@ -410,11 +418,14 @@ json-pool.parse-num = (node-idx i64, s str, pos i64) (next-pos i64, ok bool) {
         i >= s.len-bytes() -> break
         c = s[i]
         c < 48 || c > 57 -> break
+        #{overflow=wrap}
         .nodes[node-idx].num-val = .nodes[node-idx].num-val * 10.0 + (c - 48)
+        #{overflow=wrap}
         i = i + 1
     } (i < s.len-bytes())
 
     ; 小數部分
+    #{overflow=wrap}
     i < s.len-bytes() -> {
         c = s[i]
         c == 46 -> {
@@ -434,6 +445,7 @@ json-pool.parse-num = (node-idx i64, s str, pos i64) (next-pos i64, ok bool) {
     }
 
     ; 指數部分（e/E [+/-] digits）
+    #{overflow=wrap}
     i < s.len-bytes() -> {
         c = s[i]
         c == 101 || c == 69 -> {
@@ -476,6 +488,7 @@ json-pool.parse-num = (node-idx i64, s str, pos i64) (next-pos i64, ok bool) {
     }
 
     ; 處理負數
+    #{overflow=wrap}
     negative == 1 -> .nodes[node-idx].num-val = 0.0 - .nodes[node-idx].num-val
     next-pos = i
 }
@@ -542,6 +555,7 @@ json-pool.set-key = (obj-idx i64, key str, val-idx i64) (ok bool) {
 
     ; (length preset by with-len(key.len-bytes()) above)
     .nodes[obj-idx].children[cnt] = val-idx
+    #{overflow=wrap}
     .nodes[obj-idx].count = cnt + 1
     ok = true
 }
@@ -931,6 +945,7 @@ json.alloc-node = () (idx i64) {
     idx = -1
     .pool.count >= JSON-MAX-NODES -> return
     idx = .pool.count
+    #{overflow=wrap}
     .pool.count = .pool.count + 1
     .pool.nodes[idx].count = 0
     .pool.nodes[idx].kind = JSON-KIND-NULL
@@ -995,6 +1010,7 @@ json.set = (key str, val-idx i64) (ok bool) {
     ktmp str = .pool.nodes[.root].keys[cnt].slice-bytes(0, key.len-bytes())
     .pool.nodes[.root].keys[cnt] = ktmp
     .pool.nodes[.root].children[cnt] = val-idx
+    #{overflow=wrap}
     .pool.nodes[.root].count = cnt + 1
     ok = true
 }
@@ -1130,6 +1146,7 @@ json.arr-push = (val json) (ok bool) {
     cnt = .pool.nodes[.root].count
     cnt >= JSON-MAX-CHILDREN -> return
     .pool.nodes[.root].children[cnt] = val.root
+    #{overflow=wrap}
     .pool.nodes[.root].count = cnt + 1
     ok = true
 }
@@ -1290,6 +1307,7 @@ json.obj-keys-str = () (keys str) {
     i <- [0..cnt): {
         #{overflow=wrap}
         key = .pool.nodes[.root].keys[i]
+        #{overflow=wrap}
         keys = keys - key - '\n'
     }
 }

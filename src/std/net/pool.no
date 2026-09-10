@@ -121,11 +121,13 @@ pool.close-conn = (idx i64) {
     .conns[idx].close()
 
     ; 將最後一個移到當前位置
+    #{overflow=wrap}
     last = .count - 1
     idx != last -> {
         .conns[idx] = .conns[last]
         .in-use[idx] = .in-use[last]
     }
+    #{overflow=wrap}
     .count = .count - 1
 }
 

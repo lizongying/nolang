@@ -34,7 +34,6 @@ embed {
 ; path str: 文件路徑（相對於嵌入目錄，如 'index.html'）
 ; 返回 data []byte, ok bool: 文件內容和是否找到
 
-#{overflow=wrap}
 embed.read = (path str) (data []byte, ok bool) {
     pathLen = path.len()
     i <- [0...count): {
@@ -47,11 +46,13 @@ embed.read = (path str) (data []byte, ok bool) {
         ; 逐字節比較
         match = true
         j <- [0..pLen): {
+            #{overflow=wrap}
             .paths[pStart + j] != path[j] -> {
                 match = false
                 *
             }
         }
+        #{overflow=wrap}
         match -> {
             dStart = .dataStarts[i]
             dLen = .dataLens[i]
@@ -68,7 +69,6 @@ embed.read = (path str) (data []byte, ok bool) {
 ; path str: 文件路徑
 ; 返回 yes bool: 是否存在
 
-#{overflow=wrap}
 embed.exists = (path str) (yes bool) {
     pathLen = path.len()
     i <- [0...count): {
@@ -77,6 +77,7 @@ embed.exists = (path str) (yes bool) {
         pLen != pathLen -> *
         match = true
         j <- [0..pLen): {
+            #{overflow=wrap}
             .paths[pStart + j] != path[j] -> {
                 match = false
                 *

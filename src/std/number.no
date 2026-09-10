@@ -118,6 +118,7 @@ odd = (a int) (yes bool) {
 gcd = (a int, b int) (r int) {
     #{overflow=wrap}
     a < 0 -> a = 0 - a
+    #{overflow=wrap}
     b < 0 -> b = 0 - b
     {
         #{overflow=wrap}
@@ -136,6 +137,7 @@ lcm = (a int, b int) (r int) {
         return
     }
     g = gcd(a, b)
+    #{overflow=wrap}
     r = a / g * b
 }
 
@@ -147,6 +149,7 @@ pow = (a int, n int) (r int) {
     {
         #{overflow=wrap}
         n & 1 == 1 -> r = r * base
+        #{overflow=wrap}
         base = base * base
         n = n >> 1
     } (n > 0)
@@ -197,6 +200,7 @@ i64-to-str = (n i64) (out str) {
 
     ; 負數：以 u64 取絕對值，避開 i64.MIN 溢出。
     ; 隱式 i64 -> u64（位元組重新詮釋）後做 0 - mag（u64 回繞）即得絕對值。
+    #{overflow=wrap}
     n < 0 -> {
         #{overflow=wrap}
         neg = 1
@@ -212,19 +216,25 @@ i64-to-str = (n i64) (out str) {
     {
         #{overflow=wrap}
         digits = digits + 1
+        #{overflow=wrap}
         tmp = tmp / 10
     } (tmp != 0)
     total = digits
+    #{overflow=wrap}
     neg == 1 -> total = total + 1
     out = with-cap(total)
+    #{overflow=wrap}
     pos = digits - 1
     neg == 1 -> pos = digits
     {
         #{overflow=wrap}
         d = mag % 10
+        #{overflow=wrap}
         ascii = d + 48
         out[pos] = ascii
+        #{overflow=wrap}
         mag = mag / 10
+        #{overflow=wrap}
         pos = pos - 1
     } (mag != 0)
     neg == 1 -> out[0] = 45
@@ -243,16 +253,21 @@ u64-to-str = (u u64) (out str) {
     {
         #{overflow=wrap}
         digits = digits + 1
+        #{overflow=wrap}
         tmp = tmp / 10
     } (tmp > 0)
     out = with-cap(digits)
+    #{overflow=wrap}
     pos = digits - 1
     {
         #{overflow=wrap}
         d = u % 10
+        #{overflow=wrap}
         ascii = d + 48
         out[pos] = ascii
+        #{overflow=wrap}
         u = u / 10
+        #{overflow=wrap}
         pos = pos - 1
     } (u > 0)
 }
@@ -304,20 +319,27 @@ int.to-str = () (out str) {
     {
         #{overflow=wrap}
         digits = digits + 1
+        #{overflow=wrap}
         tmp = tmp / 10
     } (tmp != 0)
     total = digits
+    #{overflow=wrap}
     neg == 1 -> total = total + 1
     out = with-cap(total)
+    #{overflow=wrap}
     pos = digits - 1
     neg == 1 -> pos = digits
     {
         #{overflow=wrap}
         d = n % 10
+        #{overflow=wrap}
         neg == 1 -> d = 0 - d
+        #{overflow=wrap}
         ascii = d + 48
         out[pos] = ascii
+        #{overflow=wrap}
         n = n / 10
+        #{overflow=wrap}
         pos = pos - 1
     } (n != 0)
     neg == 1 -> out[0] = 45
@@ -405,6 +427,7 @@ f64-to-str = (x f64) (out str) {
     ; 符號處理
     neg = 0
     ax f64 = x
+    #{overflow=wrap}
     x < 0.0 -> {
         #{overflow=wrap}
         neg = 1
@@ -415,20 +438,26 @@ f64-to-str = (x f64) (out str) {
     e i64 = f64-to-i64(math.floor(math.log10(ax)))
 
     ; 邊界調整：若 ax >= 10^(e+1)，則 e++
+    #{overflow=wrap}
     upper f64 = math.exp(i64-to-f64(e + 1) * LN10)
+    #{overflow=wrap}
     ax >= upper -> e = e + 1
 
     ; 計算 6 位有效數字的整數尾數
     ; m = round(ax / 10^e * 100000)
+    #{overflow=wrap}
     base f64 = math.exp(i64-to-f64(e) * LN10)
+    #{overflow=wrap}
     ax < base -> {
         #{overflow=wrap}
         e = e - 1
         base = math.exp(i64-to-f64(e) * LN10)
     }
+    #{overflow=wrap}
     m i64 = f64-to-i64(ax / base * 100000.0 + 0.5)
 
     ; 四捨五入溢出處理
+    #{overflow=wrap}
     m >= 1000000 -> {
         #{overflow=wrap}
         m = m / 10
@@ -442,7 +471,9 @@ f64-to-str = (x f64) (out str) {
     {
         #{overflow=wrap}
         digits[i] = (tmp % 10) + 48
+        #{overflow=wrap}
         tmp = tmp / 10
+        #{overflow=wrap}
         i = i - 1
     } (i >= 0)
 
@@ -455,6 +486,7 @@ f64-to-str = (x f64) (out str) {
             last-nz = i
             i = -1
         }
+        #{overflow=wrap}
         i = i - 1
     } (i >= 0)
 
@@ -465,6 +497,7 @@ f64-to-str = (x f64) (out str) {
 
         e >= 6 -> use-sci = 1
     }
+    #{overflow=wrap}
     use-sci == 1 -> {
 
         ; 科學記號：d.ddddde±NN
@@ -524,6 +557,7 @@ f64-to-str = (x f64) (out str) {
     }
 
     ; 固定記號
+    #{overflow=wrap}
     e >= 0 -> {
         #{overflow=wrap}
         int-digits = e + 1
@@ -564,32 +598,42 @@ f64-to-str = (x f64) (out str) {
     }
 
     ; e < 0: 0.00dddd
+    #{overflow=wrap}
     lead-zeros = 0 - e - 1
+    #{overflow=wrap}
     total = 2 + lead-zeros + last-nz + 1
+    #{overflow=wrap}
     neg == 1 -> total = total + 1
     out = with-cap(total)
     pos = 0
+    #{overflow=wrap}
     neg == 1 -> {
         #{overflow=wrap}
         out[pos] = 45
         pos = pos + 1
     }
     out[pos] = 48
+    #{overflow=wrap}
     pos = pos + 1
     out[pos] = 46
+    #{overflow=wrap}
     pos = pos + 1
     j = 0
     {
         #{overflow=wrap}
         out[pos] = 48
+        #{overflow=wrap}
         pos = pos + 1
+        #{overflow=wrap}
         j = j + 1
     } (j < lead-zeros)
     j = 0
     {
         #{overflow=wrap}
         out[pos] = digits[j]
+        #{overflow=wrap}
         pos = pos + 1
+        #{overflow=wrap}
         j = j + 1
     } (j <= last-nz)
 }

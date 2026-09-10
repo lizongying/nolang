@@ -188,7 +188,9 @@ permute = (input i64, tbl []byte, n i64, width i64) (r i64) {
         #{overflow=wrap}
         pos = width - (tbl[i])
         bit = (input >> pos) & 1
+        #{overflow=wrap}
         r = r | (bit << (n - 1 - i))
+        #{overflow=wrap}
         i = i + 1
     } (i < n)
 }
@@ -199,8 +201,10 @@ permute = (input i64, tbl []byte, n i64, width i64) (r i64) {
 sbox-lookup = (input i64, box []byte) (r i64) {
     #{overflow=wrap}
     v = input & 63
+    #{overflow=wrap}
     row = ((v >> 5) & 1) * 2 + (v & 1)
     col = (v >> 1) & 15
+    #{overflow=wrap}
     r = box[row * 16 + col] & 15
 }
 
@@ -253,26 +257,38 @@ des-key-schedule = (key [8]byte) (ks [96]byte) {
         #{overflow=wrap}
         pos = 64 - (PC1-C[i])
         bit = (k64 >> pos) & 1
+        #{overflow=wrap}
         c = c | (bit << (27 - i))
+        #{overflow=wrap}
         pos2 = 64 - (PC1-D[i])
         bit2 = (k64 >> pos2) & 1
+        #{overflow=wrap}
         d = d | (bit2 << (27 - i))
     }
     round <- [0..16): {
         #{overflow=wrap}
         shift = SHIFT-TBL[round]
+        #{overflow=wrap}
         cm = (1 << 28) - 1
+        #{overflow=wrap}
         c = ((c << shift) | (c >> (28 - shift))) & cm
+        #{overflow=wrap}
         d = ((d << shift) | (d >> (28 - shift))) & cm
         cd = (c << 28) | d
         sk = 0
         sk = permute(cd, PC2-TBL, 48, 56)
+        #{overflow=wrap}
         off = round * 6
         ks[off] = (sk >> 40) & 255
+        #{overflow=wrap}
         ks[off + 1] = (sk >> 32) & 255
+        #{overflow=wrap}
         ks[off + 2] = (sk >> 24) & 255
+        #{overflow=wrap}
         ks[off + 3] = (sk >> 16) & 255
+        #{overflow=wrap}
         ks[off + 4] = (sk >> 8) & 255
+        #{overflow=wrap}
         ks[off + 5] = sk & 255
     }
 }
@@ -300,6 +316,7 @@ des-block = (in []byte, n i64, ks [96]byte, encrypt i64) (out []byte) {
             -> sk-off = (15 - round) * 6
         }
         sk = 0
+        #{overflow=wrap}
         sk = (ks[sk-off] << 40) |
 (ks[sk-off + 1] << 32) |
 (ks[sk-off + 2] << 24) |

@@ -88,6 +88,7 @@ parse-field = (s str, pos i64) (field str, new-pos i64) {
     {
         #{overflow=wrap}
         c = s[pos]
+        #{overflow=wrap}
         {
             c == 44 -> {
                 #{overflow=wrap}
@@ -103,7 +104,9 @@ parse-field = (s str, pos i64) (field str, new-pos i64) {
             }
         }
         field[fn] = c
+        #{overflow=wrap}
         fn = fn + 1
+        #{overflow=wrap}
         pos = pos + 1
     } (pos < s.len-bytes())
     new-pos = pos
@@ -146,12 +149,15 @@ encode-field = (field str) (out str) {
         return
     }
     j = 0
+    #{overflow=wrap}
     out = with-cap(field.len-bytes() * 2 + 2)
     out[j] = 34
+    #{overflow=wrap}
     j = j + 1
     i <- [0..field.len-bytes()): {
         #{overflow=wrap}
         c = field[i]
+        #{overflow=wrap}
         {
             c == 34 -> {
                 #{overflow=wrap}
@@ -162,6 +168,7 @@ encode-field = (field str) (out str) {
 
             -> out[j] = c
         }
+        #{overflow=wrap}
         j = j + 1
     }
     out[j] = 34

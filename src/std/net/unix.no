@@ -193,6 +193,7 @@ unix-conn.recv-all = () (content str, total i64) {
             #{overflow=wrap}
             content[total + i] = buf[i]
         }
+        #{overflow=wrap}
         total = total + chunk-n
     } (true)
 }

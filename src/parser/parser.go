@@ -69,6 +69,18 @@ type Parser struct {
 	// UnwrapAssignStatement 節點，直接渲染 `?=` / `=`，避免輸出不可重解析的
 	// __unwrap_N 區塊（見 src/fmt 與 no fmt 的 reparse/idempotency 測試）。
 	SkipUnwrapLowering bool
+
+	// LegacyBlockOverflowPropagation 啟用「區塊級 #{overflow=...}」的**遺留**
+	// 傳播語意（propagateBlockScopedOverflow）。預設 false。
+	//
+	// 現行語意：`#{overflow=...}` 是**行注解**——只作用於其上緊跟的那一條陳述
+	//（見 applyLineOverflowAnnotations），不向區塊其餘陳述或巢狀區塊傳播，
+	// 函式/方法定義上方的註解也不再涵蓋整個函式體。這使註解所見即所得，
+	// 不會被 formatter 去重折疊、也不會因傳播疏漏而靜默改變整數語意。
+	//
+	// 設為 true 可還原舊的區塊作用域行為，僅供遷移/校驗工具
+	//（cmd/lineoverflow）以「傳播 ON」重解析原始碼、對照逐行注解是否等價。
+	LegacyBlockOverflowPropagation bool
 }
 
 // blockType — { body } 內部的型別分類

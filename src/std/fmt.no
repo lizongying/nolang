@@ -124,7 +124,9 @@ fmt-parse-spec = (spec str) (fill i64, align i64, sign i64, alt i64, zero i64, w
         #{overflow=wrap}
         c = spec[wi]
         c < 48 || c > 57 -> break
+        #{overflow=wrap}
         width-v = width-v * 10 + c - 48
+        #{overflow=wrap}
         last-wi = wi + 1
     }
     i = last-wi
@@ -187,7 +189,9 @@ fmt-apply-spec = (s str, fill i64, align i64, width i64) (out str) {
         out = s.copy()
         return
     }
+    #{overflow=wrap}
     pad = width - slen
+    #{overflow=wrap}
     {
         align == 60 -> {
             ; 左對齊：s + fill*pad
@@ -253,13 +257,16 @@ fmt-uint-base = (u u64, base i64, upper bool) (out str) {
     {
         #{overflow=wrap}
         digits = digits + 1
+        #{overflow=wrap}
         tmp = tmp / base
     } (tmp > 0)
     out = with-cap(digits)
+    #{overflow=wrap}
     pos = digits - 1
     {
         #{overflow=wrap}
         d = u % base
+        #{overflow=wrap}
         {
             d < 10 -> out[pos] = d + 48
 
@@ -270,7 +277,9 @@ fmt-uint-base = (u u64, base i64, upper bool) (out str) {
                 -> out[pos] = d - 10 + 97
             }
         }
+        #{overflow=wrap}
         u = u / base
+        #{overflow=wrap}
         pos = pos - 1
     } (u > 0)
 }
@@ -306,6 +315,7 @@ fmt-int = (n i64, spec str) (out str) {
     flen = full.len-bytes()
     digits str = with-cap(flen)
     dlen-v = 0
+    #{overflow=wrap}
     {
         n < 0 -> {
             #{overflow=wrap}
@@ -328,6 +338,7 @@ fmt-int = (n i64, spec str) (out str) {
     }
 
     ; 零填充：在符號後、數字前補 0
+    #{overflow=wrap}
     zero == 1 -> {
         #{overflow=wrap}
         sign-len = 0
@@ -352,6 +363,7 @@ fmt-int = (n i64, spec str) (out str) {
 
     ; 組合 body = sign-char + digits
     body-len = dlen-v
+    #{overflow=wrap}
     sign-char != 0 -> body-len = body-len + 1
     body str = with-cap(body-len)
     pos = 0
@@ -428,6 +440,7 @@ fmt-uint = (u u64, spec str) (out str) {
 
     ; 零填充
     dlen = digits.len-bytes()
+    #{overflow=wrap}
     zero == 1 -> {
         #{overflow=wrap}
         target = width - prefix-len
@@ -449,6 +462,7 @@ fmt-uint = (u u64, spec str) (out str) {
     }
 
     ; 組合 body = prefix + digits
+    #{overflow=wrap}
     body-len = dlen + prefix-len
     body str = with-cap(body-len)
     i <- [0..prefix-len): {

@@ -2100,6 +2100,14 @@ func (t *Transpiler) CompileTarget(source string, _ Target) (string, error) {
 			allValidateErrs = append(allValidateErrs, fmt.Sprintf("line %d, column %d: %s [%s]", e.Line, e.Column, e.Message, e.TraceID))
 		}
 	}
+	// 未處理的溢出 option 檢查（編譯硬錯誤）：未標註 #{overflow} 的整數運算預設回傳
+	// option<int>，若結果未被 ?= 上拋 / match 解構 / 作為 ?T 返回或宣告，即「沉默泄漏」，
+	// 必須顯式處理（加 #{overflow} 註解回普通 int、用 ?= 上拋、或顯式宣告 ?T）。
+	if leakErrs := checker.ValidateUnhandledOverflow(program, t.sourcePath); len(leakErrs) > 0 {
+		for _, e := range leakErrs {
+			allValidateErrs = append(allValidateErrs, fmt.Sprintf("line %d, column %d: %s [%s]", e.Line, e.Column, e.Message, e.TraceID))
+		}
+	}
 	// ?T 輸出參數未初始化檢查（case6）
 	if uninitErrs := checker.ValidateUninitOutputParams(program); len(uninitErrs) > 0 {
 		for _, e := range uninitErrs {
@@ -4635,7 +4643,7 @@ func cloneAndSubstitute(fd *parser.FunctionDefinition, genericArgs []parser.Expr
 	}
 	// 複製並替換函數體
 	newBody := substituteBody(fd.Body, subst)
-	return &parser.FunctionDefinition{
+	nf := &parser.FunctionDefinition{
 		Token: fd.Token,
 		Name:  mangledName,
 		FuncSignature: parser.FuncSignature{
@@ -4643,10 +4651,17 @@ func cloneAndSubstitute(fd *parser.FunctionDefinition, genericArgs []parser.Expr
 			Parameters:    newParams,
 			Results:       newResults,
 		},
-		Body:        newBody,
-		IsMethodDef: fd.IsMethodDef,
+		Body:         newBody,
+		IsMethodDef:  fd.IsMethodDef,
 		OverflowMode: fd.OverflowMode,
 	}
+	// 傳承模板函式的來源檔 / 模組歸屬：單態化產生的是新節點，若不複製會讓
+	// SourceFile 變成空值，導致 (a) lint 診斷無法歸因到正確源檔、(b) 標準庫
+	// 泛型（如 vec/map）的實例被誤判為主程式碼而觸發使用者向檢查（如未處理
+	// 溢出 option 的 ovfhndld）。
+	parser.SetSourceFile(nf, parser.GetSourceFile(fd))
+	parser.SetModuleOwner(nf, parser.GetModuleOwner(fd))
+	return nf
 }
 // substituteBody 遞迴替換函數體中的泛型參數
 func substituteBody(body *parser.BlockStatement, subst map[string]string) *parser.BlockStatement {

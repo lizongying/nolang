@@ -617,8 +617,10 @@ file.read-bytes = () (content ?[]byte) {
         #{overflow=wrap}
         total >= size -> break
 
+        #{overflow=wrap}
         n = read(.fd, buf[total..], size - total)
         n <= 0 -> break
+        #{overflow=wrap}
         total = total + n
     } (total < size)
 
@@ -647,8 +649,10 @@ file.write-str = (data str) (ok ?bool) {
         #{overflow=wrap}
         total >= s.len() -> break
 
+        #{overflow=wrap}
         n = write(.fd, s[total..], s.len() - total)
         n <= 0 -> break
+        #{overflow=wrap}
         total = total + n
     } (total < s.len())
     total == s.len() -> ok = true
@@ -669,8 +673,10 @@ file.write-bytes = (data []byte) (ok ?bool) {
         #{overflow=wrap}
         total >= data.len() -> break
 
+        #{overflow=wrap}
         n = write(.fd, data[total..], data.len() - total)
         n <= 0 -> break
+        #{overflow=wrap}
         total = total + n
     } (total < data.len())
     total == data.len() -> ok = true

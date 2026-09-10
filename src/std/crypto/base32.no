@@ -19,9 +19,12 @@ base32-encode = (data []byte) (out str) {
 
     ; 計算輸出長度
     ; 每 5 位元組 → 8 字元，不足部分加填充
+    #{overflow=wrap}
     full-groups = dlen / 5
     remainder = dlen % 5
+    #{overflow=wrap}
     out-len = full-groups * 8
+    #{overflow=wrap}
     remainder != 0 -> out-len = out-len + 8
     out str = with-len(out-len)
     out-pos = 0
@@ -32,25 +35,39 @@ base32-encode = (data []byte) (out str) {
         ; 提取 5 位元組 → 40 位元 → 8 個 5-bit 值
         #{overflow=wrap}
         b0 = data[pos]
+        #{overflow=wrap}
         b1 = data[pos + 1]
+        #{overflow=wrap}
         b2 = data[pos + 2]
+        #{overflow=wrap}
         b3 = data[pos + 3]
+        #{overflow=wrap}
         b4 = data[pos + 4]
 
         out[out-pos] = BASE32-ALPHABET[(b0 >> 3) & 31]
+        #{overflow=wrap}
         out[out-pos + 1] = BASE32-ALPHABET[((b0 & 7) << 2) | ((b1 >> 6) & 3)]
+        #{overflow=wrap}
         out[out-pos + 2] = BASE32-ALPHABET[(b1 >> 1) & 31]
+        #{overflow=wrap}
         out[out-pos + 3] = BASE32-ALPHABET[((b1 & 1) << 4) | ((b2 >> 4) & 15)]
+        #{overflow=wrap}
         out[out-pos + 4] = BASE32-ALPHABET[((b2 & 15) << 1) | ((b3 >> 7) & 1)]
+        #{overflow=wrap}
         out[out-pos + 5] = BASE32-ALPHABET[(b3 >> 2) & 31]
+        #{overflow=wrap}
         out[out-pos + 6] = BASE32-ALPHABET[((b3 & 3) << 3) | ((b4 >> 5) & 7)]
+        #{overflow=wrap}
         out[out-pos + 7] = BASE32-ALPHABET[b4 & 31]
 
+        #{overflow=wrap}
         pos = pos + 5
+        #{overflow=wrap}
         out-pos = out-pos + 8
     } (pos + 5 <= dlen)
 
     ; 處理剩餘位元組
+    #{overflow=wrap}
     remainder != 0 -> {
 
         ; 補零到 5 位元組
@@ -124,6 +141,7 @@ base32-decode = (in str) (out []byte) {
 
     ; 計算填充數
     pad-count = 0
+    #{overflow=wrap}
     i = in-len - 1
     {
         #{overflow=wrap}
@@ -132,6 +150,7 @@ base32-decode = (in str) (out []byte) {
 
             -> break
         }
+        #{overflow=wrap}
         i = i - 1
     } (i >= 0)
     out-pos = 0
@@ -154,6 +173,7 @@ base32-decode = (in str) (out []byte) {
             #{overflow=wrap}
             c = in[pos + i]
             val = 0
+            #{overflow=wrap}
             {
                 c >= 'A' && c <= 'Z' -> val = c - 'A'
 
@@ -184,17 +204,24 @@ base32-decode = (in str) (out []byte) {
 
         ; 組合為 5 位元組
         out[out-pos] = ((v0 << 3) | (v1 >> 2)) & 255
+        #{overflow=wrap}
         out[out-pos + 1] = (((v1 & 3) << 6) | (v2 << 1) | (v3 >> 4)) & 255
+        #{overflow=wrap}
         out[out-pos + 2] = (((v3 & 15) << 4) | (v4 >> 1)) & 255
+        #{overflow=wrap}
         out[out-pos + 3] = (((v4 & 1) << 7) | (v5 << 2) | (v6 >> 3)) & 255
+        #{overflow=wrap}
         out[out-pos + 4] = (((v6 & 7) << 5) | v7) & 255
 
+        #{overflow=wrap}
         pos = pos + 8
+        #{overflow=wrap}
         out-pos = out-pos + 5
     } (pos + 8 <= in-len)
 
     ; 根據填充數調整輸出長度
     ; 6 padding → 1 byte, 4 padding → 2 bytes, 3 padding → 3 bytes, 1 padding → 4 bytes
+    #{overflow=wrap}
     {
         pad-count == 6 -> out-pos = out-pos - 4
 

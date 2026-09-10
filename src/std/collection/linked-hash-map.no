@@ -52,6 +52,7 @@ linked-hash-map.put = (key i64, val i64) (is-new bool) {
             is-new = false
             return
         }
+        #{overflow=wrap}
         idx = idx + 1
         idx >= .cap -> idx = 0
     } (.occ[idx] == 1)
@@ -72,6 +73,7 @@ linked-hash-map.put = (key i64, val i64) (is-new bool) {
             .tail = idx
         }
     }
+    #{overflow=wrap}
     .size = .size + 1
     is-new = true
 }
@@ -87,6 +89,7 @@ linked-hash-map.get = (key i64) (result ?i64) {
             result = .vals[idx]
             return
         }
+        #{overflow=wrap}
         idx = idx + 1
         idx >= .cap -> idx = 0
     } (.occ[idx] == 1)
@@ -129,6 +132,7 @@ linked-hash-map.remove = (key i64) (removed bool) {
             removed = true
             return
         }
+        #{overflow=wrap}
         idx = idx + 1
         idx >= .cap -> idx = 0
     } (.occ[idx] == 1)

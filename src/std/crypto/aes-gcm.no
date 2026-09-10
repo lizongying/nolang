@@ -57,6 +57,7 @@ ghash-mul = (x [16]byte, h [16]byte) (out [16]byte) {
         ; 取 x 的第 i 位元（從最高位開始）
         #{overflow=wrap}
         byte-idx = i / 8
+        #{overflow=wrap}
         bit-idx = 7 - (i % 8)
         xi = (x[byte-idx] >> bit-idx) & 1
 
@@ -75,6 +76,7 @@ ghash-mul = (x [16]byte, h [16]byte) (out [16]byte) {
         {
             #{overflow=wrap}
             v[j] = (v[j] >> 1) | ((v[j - 1] & 1) << 7)
+            #{overflow=wrap}
             j = j - 1
         } (j > 0)
         v[0] = v[0] >> 1
@@ -119,10 +121,12 @@ ghash = (h [16]byte, aad []byte, cipher []byte) (out [16]byte) {
 
         #{overflow=wrap}
         y = ghash-mul(y, h)
+        #{overflow=wrap}
         pos = pos + 16
     } (pos + 16 <= aad.len())
 
     ; AAD 最後不完整區塊
+    #{overflow=wrap}
     pos < aad.len() -> {
         i <- [0..16): {
             #{overflow=wrap}
@@ -155,8 +159,10 @@ ghash = (h [16]byte, aad []byte, cipher []byte) (out [16]byte) {
 
         #{overflow=wrap}
         y = ghash-mul(y, h)
+        #{overflow=wrap}
         pos = pos + 16
     } (pos + 16 <= cipher.len())
+    #{overflow=wrap}
     pos < cipher.len() -> {
         i <- [0..16): {
             #{overflow=wrap}
@@ -181,7 +187,9 @@ ghash = (h [16]byte, aad []byte, cipher []byte) (out [16]byte) {
         #{overflow=wrap}
         len-blk[i] = 0
     }
+    #{overflow=wrap}
     aad-bits = aad.len() * 8
+    #{overflow=wrap}
     cipher-bits = cipher.len() * 8
 
     ; aad-bits 的高 64 位元（大端序）
@@ -241,6 +249,7 @@ aes-128-ctr-xor = (key [16]byte, icb [16]byte, data []byte) (out []byte) {
 
         ; XOR 16 位元組（或剩餘部分）
         n = 16
+        #{overflow=wrap}
         pos + n > data.len() -> n = data.len() - pos
         i <- [0..n): {
             #{overflow=wrap}
@@ -253,10 +262,12 @@ aes-128-ctr-xor = (key [16]byte, icb [16]byte, data []byte) (out []byte) {
             #{overflow=wrap}
             cb[j] = (cb[j] + 1) & 255
             cb[j] != 0 -> break
+            #{overflow=wrap}
             j = j - 1
         } (j >= 12)
 
         ; 若進位傳播到 byte 11 之後，繼續進位
+        #{overflow=wrap}
         cb[12] == 0 && cb[13] == 0 && cb[14] == 0 && cb[15] == 0 -> {
             j = 11
             {
@@ -266,6 +277,7 @@ aes-128-ctr-xor = (key [16]byte, icb [16]byte, data []byte) (out []byte) {
                 j = j - 1
             } (j >= 0)
         }
+        #{overflow=wrap}
         pos = pos + n
     } (pos < data.len())
 }
@@ -321,6 +333,7 @@ aes-128-gcm-seal = (key [16]byte, iv [12]byte, aad []byte, plain []byte) (sealed
         #{overflow=wrap}
         ctr[j] = (ctr[j] + 1) & 255
         ctr[j] != 0 -> break
+        #{overflow=wrap}
         j = j - 1
     } (j >= 12)
 
@@ -342,6 +355,7 @@ aes-128-gcm-seal = (key [16]byte, iv [12]byte, aad []byte, plain []byte) (sealed
     }
 
     ; 6. 輸出密文 + tag
+    #{overflow=wrap}
     sealed = with-len(cipher.len() + 16)
     i <- [0..cipher.len()): {
         #{overflow=wrap}
@@ -362,6 +376,7 @@ aes-128-gcm-seal = (key [16]byte, iv [12]byte, aad []byte, plain []byte) (sealed
 aes-128-gcm-open = (key [16]byte, iv [12]byte, aad []byte, sealed []byte) (plain []byte) {
     #{overflow=wrap}
     sealed.len() < 16 -> return
+    #{overflow=wrap}
     cipher-len = sealed.len() - 16
 
     ; 1. 計算 H
@@ -435,6 +450,7 @@ aes-128-gcm-open = (key [16]byte, iv [12]byte, aad []byte, sealed []byte) (plain
         #{overflow=wrap}
         ctr[j] = (ctr[j] + 1) & 255
         ctr[j] != 0 -> break
+        #{overflow=wrap}
         j = j - 1
     } (j >= 12)
     plain = aes-128-ctr-xor(key, ctr, cipher)

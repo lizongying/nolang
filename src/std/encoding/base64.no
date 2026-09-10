@@ -26,6 +26,7 @@ PAD = 61
 encode = (data []byte, table str) (out str) {
     #{overflow=wrap}
     n = data.len()
+    #{overflow=wrap}
     out-cap = (n + 2) / 3 * 4
     out = with-cap(out-cap)
     i = 0
@@ -33,18 +34,27 @@ encode = (data []byte, table str) (out str) {
     {
         #{overflow=wrap}
         b0 = data[i]
+        #{overflow=wrap}
         b1 = data[i + 1]
+        #{overflow=wrap}
         b2 = data[i + 2]
         out[j] = table[b0 >> 2]
+        #{overflow=wrap}
         out[j + 1] = table[((b0 & 3) << 4) | (b1 >> 4)]
+        #{overflow=wrap}
         out[j + 2] = table[((b1 & 15) << 2) | (b2 >> 6)]
+        #{overflow=wrap}
         out[j + 3] = table[b2 & 63]
+        #{overflow=wrap}
         i = i + 3
+        #{overflow=wrap}
         j = j + 4
     } (i + 3 <= n)
 
     ; 處理剩餘 1 或 2 位元組
+    #{overflow=wrap}
     rem = n - i
+    #{overflow=wrap}
     {
         rem == 1 -> {
             #{overflow=wrap}
@@ -96,6 +106,7 @@ decode = (s str, table str) (out ?[]byte) {
 
     ; 計算填充數
     pad-count = 0
+    #{overflow=wrap}
     {
         n > 0 -> {
             #{overflow=wrap}
@@ -111,18 +122,23 @@ decode = (s str, table str) (out ?[]byte) {
     }
     i = 0
     j = 0
+    #{overflow=wrap}
     buf []byte = with-cap(n * 3 / 4)
     {
         #{overflow=wrap}
         v0 = b64-val(s[i], table)
+        #{overflow=wrap}
         v1 = b64-val(s[i + 1], table)
+        #{overflow=wrap}
         v2 = b64-val(s[i + 2], table)
+        #{overflow=wrap}
         v3 = b64-val(s[i + 3], table)
         v0 < 0 || v1 < 0 -> {
             out = err('invalid base64 character')
             return
         }
         buf[j] = (v0 << 2) | (v1 >> 4)
+        #{overflow=wrap}
         s[i + 2] != 61 -> {
             #{overflow=wrap}
             v2 < 0 -> {
@@ -131,6 +147,7 @@ decode = (s str, table str) (out ?[]byte) {
             }
             buf[j + 1] = ((v1 & 15) << 4) | (v2 >> 2)
         }
+        #{overflow=wrap}
         s[i + 3] != 61 -> {
             #{overflow=wrap}
             v3 < 0 -> {
@@ -139,9 +156,12 @@ decode = (s str, table str) (out ?[]byte) {
             }
             buf[j + 2] = ((v2 & 3) << 6) | v3
         }
+        #{overflow=wrap}
         j = j + 3
+        #{overflow=wrap}
         i = i + 4
     } (i + 4 <= n)
+    #{overflow=wrap}
     buf.truncate(j - pad-count)
     out = buf
 }

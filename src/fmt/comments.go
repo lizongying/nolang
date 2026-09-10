@@ -1,8 +1,6 @@
 package fmt
 
 import (
-	"fmt"
-	"os"
 	"strings"
 
 	"github.com/lizongying/nolang/parser"
@@ -265,6 +263,7 @@ func stmtTokenLine(stmt parser.Statement) int {
 func (f *formatter) attachedAnnotations(stmt parser.Statement) []*parser.AnnotationEntry {
 	switch stmt.(type) {
 	case *parser.LetStatement, *parser.FunctionDefinition, *parser.StructDefinition, *parser.ExpressionStatement,
+		*parser.ForStatement, *parser.MultiAssignStatement,
 		*parser.TaggedEnumDefinition, *parser.EnumDefinition, *parser.InterfaceDefinition:
 		return f.sem.AnnotationsOf(stmt)
 	}
@@ -278,20 +277,15 @@ func (f *formatter) hasAttachedAnnotations(stmt parser.Statement) bool {
 }
 
 // attachedAnnotationsWillEmit reports whether formatting this statement will emit
-// at least one #{...} annotation line before its body (either a non-overflow
-// entry, or an overflow entry whose normalized mode differs from the currently
-// active overflow). It is used by the gap logic to decide whether to insert a
-// separating blank line: a block-scoped overflow annotation merged onto *every*
-// statement by propagateBlockScopedOverflow must NOT trigger a gap (otherwise a
-// blank line would be inserted before every statement and break idempotency).
-// Only annotations that will actually be emitted count.
+// a #{...} line before its body for a **non-overflow** entry (platform/generic
+// annotations such as #{mac-arm64}). It is used by the gap logic to decide
+// whether to insert a separating blank line.
+//
+// overflow 條目**不再**計入：`#{overflow=...}` 現為行注解，幾乎每條含算術的
+// 陳述都自帶一行，若讓它觸發間隙會在每條陳述前插入空行（破壞冪等且嚴重膨脹）。
 func (f *formatter) attachedAnnotationsWillEmit(stmt parser.Statement) bool {
 	for _, e := range f.attachedAnnotations(stmt) {
-		if e.Key == "overflow" {
-			if m := overflowModeStringOf(e); m != "" && m != f.activeOverflow {
-				return true
-			}
-		} else {
+		if e.Key != "overflow" {
 			return true
 		}
 	}
@@ -300,8 +294,6 @@ func (f *formatter) attachedAnnotationsWillEmit(stmt parser.Statement) bool {
 
 // overflowModeStringOf 從一個 overflow 註解條目取出正規化模式字串
 // （wrap/clamp0/min/max/saturate）；非 overflow 條目、無值或無法識別時回傳 ""。
-// 用於 formatter 對區塊級 #{overflow=...} 去重輸出（見 formatStatement /
-// formatAnnotationStatement 的 activeOverflow 機制）。
 func overflowModeStringOf(e *parser.AnnotationEntry) string {
 	if e == nil || e.Key != "overflow" || e.Value == nil {
 		return ""
@@ -315,27 +307,19 @@ func overflowModeStringOf(e *parser.AnnotationEntry) string {
 	return ""
 }
 
-// emitOverflowAnnotation 輸出一個去重後的 overflow 註解行（若模式與
-// f.activeOverflow 相同則跳過）。回傳是否實際輸出。overflow 與平台/泛型註解
-// 分屬不同行：本函式只負責 overflow 行，呼叫方處理 others 行。
+// emitOverflowAnnotation 輸出一個 overflow 註解行。`#{overflow=...}` 現為行注解
+// （見 parser.applyLineOverflowAnnotations），與其下方陳述一一對應，因此**不再**
+// 去重折疊——每一處顯式注解都原樣輸出，避免 formatter 靜默刪除注解造成整數
+// 語意漂移。回傳是否實際輸出。overflow 與平台/泛型註解分屬不同行：本函式只負責
+// overflow 行，呼叫方處理 others 行。
 //
 // trailingNewline 控制是否在註解行末輸出換行：
 //   - 附加路徑（formatStatement 中已掛載到某陳述的 overflow）：設 true，
 //     使該陳述自身的內容（如 `key = .[i]`）落在下一行。
 //   - 獨立註解陳述路徑（formatAnnotationStatement）：設 false，使註解以
 //     「結尾即內容」形式結束（不帶尾隨換行），由後續的間隙邏輯統一負責換行。
-//     若此處帶尾隨換行，則下一個陳述的間隙邏輯又會補一個 newline，造成
-//     「註解行與下一陳述之間多出一個空行」且每次格式化累加（非冪等）。
 func (f *formatter) emitOverflowAnnotation(mode string, trailingNewline bool) bool {
-	if os.Getenv("NOLANG_FMTDBG") != "" {
-		buf := f.buf.String()
-		last := buf
-		if len(buf) > 80 {
-			last = "..." + buf[len(buf)-80:]
-		}
-		fmt.Fprintf(os.Stderr, "[DBG] emitOverflow mode=%q active=%q trail=%v bufTail=%q\n", mode, f.activeOverflow, trailingNewline, last)
-	}
-	if mode == "" || mode == f.activeOverflow {
+	if mode == "" {
 		return false
 	}
 	f.write("#{overflow=")
@@ -344,7 +328,6 @@ func (f *formatter) emitOverflowAnnotation(mode string, trailingNewline bool) bo
 	if trailingNewline {
 		f.newline()
 	}
-	f.activeOverflow = mode
 	return true
 }
 

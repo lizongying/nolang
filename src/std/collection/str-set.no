@@ -38,8 +38,10 @@ str-set.hash = (key str) (idx i64) {
     i <- [0..key.len-bytes()): {
         #{overflow=wrap}
         h = h ^ (key[i])
+        #{overflow=wrap}
         h = h * SS-FNV-PRIME
     }
+    #{overflow=wrap}
     idx = h & (.cap - 1)
 }
 
@@ -64,6 +66,7 @@ str-set.add = (key str) (is-new bool) {
             is-new = false
             return
         }
+        #{overflow=wrap}
         idx = idx + 1
         idx >= .cap -> idx = 0
     } (.occ[idx] == 1)
@@ -75,6 +78,7 @@ str-set.add = (key str) (is-new bool) {
         .keys[idx][i] = key[i]
     }
     .occ[idx] = 1
+    #{overflow=wrap}
     .size = .size + 1
     is-new = true
 }
@@ -91,6 +95,7 @@ str-set.contains = (key str) (found bool) {
             found = true
             return
         }
+        #{overflow=wrap}
         idx = idx + 1
         idx >= .cap -> idx = 0
     } (.occ[idx] == 1)
@@ -104,6 +109,7 @@ str-set.remove = (key str) (removed bool) {
     {
         #{overflow=wrap}
         eq = .str-eq(.keys[idx], key)
+        #{overflow=wrap}
         eq -> {
             #{overflow=wrap}
             .occ[idx] = 0
@@ -112,6 +118,7 @@ str-set.remove = (key str) (removed bool) {
             removed = true
             return
         }
+        #{overflow=wrap}
         idx = idx + 1
         idx >= .cap -> idx = 0
     } (.occ[idx] == 1)

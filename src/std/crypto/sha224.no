@@ -28,10 +28,14 @@ sha224 = (data []byte) (hash [28]byte) {
 
     ; 填充：0x80 + 0x00*pad + 8-byte big-endian bit length
     ; 總長度需為 64 的倍數
+    #{overflow=wrap}
     bit-len = dlen * 8
+    #{overflow=wrap}
     mod-val = (dlen + 9) % 64
     pad-len = 0
+    #{overflow=wrap}
     mod-val != 0 -> pad-len = 64 - mod-val
+    #{overflow=wrap}
     total-len = dlen + 1 + pad-len + 8
 
     ; 建立填充緩衝區
@@ -51,6 +55,7 @@ sha224 = (data []byte) (hash [28]byte) {
     padded[dlen] = 128
 
     ; 填充 0x00
+    #{overflow=wrap}
     i <- [dlen + 1..total-len - 8): {
         #{overflow=wrap}
         padded[i] = 0
@@ -77,6 +82,7 @@ sha224 = (data []byte) (hash [28]byte) {
 
         #{overflow=wrap}
         sha256.sha256-block(block, h0, h1, h2, h3, h4, h5, h6, h7)
+        #{overflow=wrap}
         offset = offset + 64
     } (offset < total-len)
 
@@ -123,6 +129,7 @@ sha224-hex = (data []byte) (hex str) {
     i <- [0..28): {
         #{overflow=wrap}
         hex[i * 2] = hex-chars[(hash[i] >> 4) & 15]
+        #{overflow=wrap}
         hex[i * 2 + 1] = hex-chars[hash[i] & 15]
     }
 }

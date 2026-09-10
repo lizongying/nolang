@@ -102,6 +102,7 @@ parse-set = (set-cookie-str str) (c cookie) {
     semi-pos = set-cookie-str.index(';')
     first-pair = set-cookie-str
     rest = ''
+    #{overflow=wrap}
     semi-pos >= 0 -> {
         #{overflow=wrap}
         first-pair = set-cookie-str.slice(0, semi-pos)
@@ -115,6 +116,7 @@ parse-set = (set-cookie-str str) (c cookie) {
 
     ; 去除前後空格
     c.name = c.name.trim()
+    #{overflow=wrap}
     c.value = first-pair.slice(eq-pos + 1, first-pair.len-bytes())
     c.value = c.value.trim()
 
@@ -143,6 +145,7 @@ parse-set = (set-cookie-str str) (c cookie) {
 
         ; 解析屬性
         attr-eq = attr.index('=')
+        #{overflow=wrap}
         {
             attr-eq >= 0 -> {
                 #{overflow=wrap}
@@ -195,6 +198,7 @@ parse-set = (set-cookie-str str) (c cookie) {
             }
         }
         next-semi < 0 -> *
+        #{overflow=wrap}
         pos = next-semi + 1
     } (true)
 }
@@ -226,6 +230,7 @@ parse-header = (cookie-header str) (names [16]str, values [16]str, count i64) {
         pair = cookie-header.slice(pos, pair-end)
         pair = pair.trim()
         eq-pos = pair.index('=')
+        #{overflow=wrap}
         eq-pos >= 0 && count < 16 -> {
             #{overflow=wrap}
             names[count] = pair.slice(0, eq-pos)
@@ -233,6 +238,7 @@ parse-header = (cookie-header str) (names [16]str, values [16]str, count i64) {
             count = count + 1
         }
         next-semi < 0 -> *
+        #{overflow=wrap}
         pos = next-semi + 1
     } (true)
 }
@@ -247,15 +253,21 @@ parse-header = (cookie-header str) (names [16]str, values [16]str, count i64) {
 build-set = (c cookie) (out str) {
     #{overflow=wrap}
     out = c.name - '=' - c.value
+    #{overflow=wrap}
     c.path.len-bytes() > 0 -> out = out - '; Path=' - c.path
+    #{overflow=wrap}
     c.domain.len-bytes() > 0 -> out = out - '; Domain=' - c.domain
+    #{overflow=wrap}
     c.max-age >= 0 -> {
         #{overflow=wrap}
         ma-s = c.max-age.to-str()
         out = out - '; Max-Age=' - ma-s
     }
+    #{overflow=wrap}
     c.secure -> out = out - '; Secure'
+    #{overflow=wrap}
     c.http-only -> out = out - '; HttpOnly'
+    #{overflow=wrap}
     c.same-site.len-bytes() > 0 -> out = out - '; SameSite=' - c.same-site
 }
 
@@ -269,6 +281,7 @@ build-header = (names [16]str, values [16]str, count i64) (out str) {
     i <- [0..count): {
         #{overflow=wrap}
         out.len-bytes() > 0 -> out = out - '; '
+        #{overflow=wrap}
         out = out - names[i] - '=' - values[i]
     }
 }
@@ -469,8 +482,10 @@ sign = (name str, value str, key []byte) (signed str) {
     i <- [0..32): {
         #{overflow=wrap}
         hex-str[i * 2] = hex-chars[(mac[i] >> 4) & 15]
+        #{overflow=wrap}
         hex-str[i * 2 + 1] = hex-chars[mac[i] & 15]
     }
+    #{overflow=wrap}
     signed = value - '.' - hex-str
 }
 
@@ -487,6 +502,7 @@ verify = (name str, signed-value str, key []byte) (ok bool, value str) {
 
     ; 尋找最後一個 '.'
     dot-pos = -1
+    #{overflow=wrap}
     i = signed-value.len-bytes() - 1
     {
         #{overflow=wrap}
@@ -494,18 +510,21 @@ verify = (name str, signed-value str, key []byte) (ok bool, value str) {
             dot-pos = i
             break
         }
+        #{overflow=wrap}
         i = i - 1
     } (i >= 0)
     dot-pos < 0 -> return
 
     ; 提取原始值和簽名
     value = signed-value.slice(0, dot-pos)
+    #{overflow=wrap}
     provided-hex = signed-value.slice(dot-pos + 1, signed-value.len-bytes())
 
     ; 計算期望的簽名
     expected-signed = sign(name, value, key)
 
     ; 提取期望的 hex 部分
+    #{overflow=wrap}
     expected-hex = expected-signed.slice(value.len-bytes() + 1, expected-signed.len-bytes())
 
     ; 比較簽名（常數時間比較）

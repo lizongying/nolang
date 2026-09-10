@@ -58,6 +58,7 @@ aes-128-cbc-enc = (in []byte, key [16]byte, iv [16]byte) (out []byte) {
             #{overflow=wrap}
             prev[i] = out[blk + i]
         }
+        #{overflow=wrap}
         blk = blk + 16
     } (blk < in.len())
 }
@@ -103,6 +104,7 @@ aes-128-cbc-dec = (in []byte, key [16]byte, iv [16]byte) (out []byte) {
             #{overflow=wrap}
             prev[i] = cur-cipher[i]
         }
+        #{overflow=wrap}
         blk = blk + 16
     } (blk < in.len())
 }
@@ -114,6 +116,7 @@ pkcs7-pad = (in []byte) (out []byte) {
     #{overflow=wrap}
     pad-len = 16 - (in.len() % 16)
     pad-len == 0 -> pad-len = 16
+    #{overflow=wrap}
     out = with-len(in.len() + pad-len)
     i <- [0..in.len()): {
         #{overflow=wrap}
@@ -134,6 +137,7 @@ pkcs7-unpad = (in []byte) (out-n i64) {
         out-n = -1
         return
     }
+    #{overflow=wrap}
     pad-len = in[in.len() - 1]
     pad-len == 0 || pad-len > 16 -> {
         out-n = -1
@@ -148,5 +152,6 @@ pkcs7-unpad = (in []byte) (out-n i64) {
             return
         }
     }
+    #{overflow=wrap}
     out-n = in.len() - pad-len
 }

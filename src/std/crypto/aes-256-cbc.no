@@ -38,6 +38,7 @@ aes-256-cbc-enc = (in []byte, key [32]byte, iv [16]byte) (out []byte) {
             out[blk + i] = enc-block[i]
             prev[i] = enc-block[i]
         }
+        #{overflow=wrap}
         blk = blk + 16
     } (blk < in.len())
 }
@@ -69,6 +70,7 @@ aes-256-cbc-dec = (in []byte, key [32]byte, iv [16]byte) (out []byte) {
             out[blk + i] = (dec-block[i]) ^ (prev[i])
             prev[i] = cipher-block[i]
         }
+        #{overflow=wrap}
         blk = blk + 16
     } (blk < in.len())
 }

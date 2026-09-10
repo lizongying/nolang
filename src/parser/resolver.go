@@ -272,6 +272,15 @@ func (s *SemanticContext) RawAnnotationsOf(n Node) []*AnnotationEntry {
 	return nil
 }
 
+// RawAnnotationsOf 是 Parser 級便利訪問器，轉發到語義副表，供工具
+// （cmd/lineoverflow）在解析後讀取區塊級 overflow 傳播的結果。nil 安全。
+func (p *Parser) RawAnnotationsOf(n Node) []*AnnotationEntry {
+	if p == nil {
+		return nil
+	}
+	return p.sem.RawAnnotationsOf(n)
+}
+
 // PlatformKeysOf 返回節點的平台註解 key（無則 nil）。nil receiver 安全。
 func (s *SemanticContext) PlatformKeysOf(n Node) []string {
 	if s == nil {

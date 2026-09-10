@@ -59,13 +59,17 @@ str.gt = (b str) (res bool) {
     i <- [1..n): {
         #{overflow=wrap}
         key = .[i]
+        #{overflow=wrap}
         j = i - 1
         {
             #{overflow=wrap}
             .[j] <= key -> break
+            #{overflow=wrap}
             .[j + 1] = .[j]
+            #{overflow=wrap}
             j = j - 1
         } (j >= 0)
+        #{overflow=wrap}
         .[j + 1] = key
     }
 }
@@ -75,13 +79,17 @@ str.gt = (b str) (res bool) {
     i <- [1..n): {
         #{overflow=wrap}
         key = .[i]
+        #{overflow=wrap}
         j = i - 1
         {
             #{overflow=wrap}
             .[j] >= key -> break
+            #{overflow=wrap}
             .[j + 1] = .[j]
+            #{overflow=wrap}
             j = j - 1
         } (j >= 0)
+        #{overflow=wrap}
         .[j + 1] = key
     }
 }
@@ -92,13 +100,17 @@ str.gt = (b str) (res bool) {
     i <- [1..sz): {
         #{overflow=wrap}
         key = .[i]
+        #{overflow=wrap}
         j = i - 1
         {
             #{overflow=wrap}
             .[j] <= key -> break
+            #{overflow=wrap}
             .[j + 1] = .[j]
+            #{overflow=wrap}
             j = j - 1
         } (j >= 0)
+        #{overflow=wrap}
         .[j + 1] = key
     }
 }
@@ -109,13 +121,17 @@ str.gt = (b str) (res bool) {
     i <- [1..sz): {
         #{overflow=wrap}
         key = .[i]
+        #{overflow=wrap}
         j = i - 1
         {
             #{overflow=wrap}
             .[j] >= key -> break
+            #{overflow=wrap}
             .[j + 1] = .[j]
+            #{overflow=wrap}
             j = j - 1
         } (j >= 0)
+        #{overflow=wrap}
         .[j + 1] = key
     }
 }

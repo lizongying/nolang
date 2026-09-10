@@ -161,13 +161,16 @@ vec-clear = () {
     #{overflow=wrap}
     i = 0
     j = .len()
+    #{overflow=wrap}
     j = j - 1
     {
         #{overflow=wrap}
         tmp = .[i]
         .[i] = .[j]
         .[j] = tmp
+        #{overflow=wrap}
         i = i + 1
+        #{overflow=wrap}
         j = j - 1
     } (i < j)
 }
@@ -388,8 +391,10 @@ vec-clear = () {
         #{overflow=wrap}
         i >= blen -> break
         cur = .len()
+        #{overflow=wrap}
         .len = cur + 1
         .[cur] = b[i]
+        #{overflow=wrap}
         i = i + 1
     } (i < blen)
 }

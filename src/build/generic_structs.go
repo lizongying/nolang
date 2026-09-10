@@ -324,7 +324,7 @@ func cloneMethod(fd *parser.FunctionDefinition, subst map[string]string, concret
 		}
 	}
 
-	return &parser.FunctionDefinition{
+	nf := &parser.FunctionDefinition{
 		Token: fd.Token,
 		Name:  newName,
 		FuncSignature: parser.FuncSignature{
@@ -333,6 +333,11 @@ func cloneMethod(fd *parser.FunctionDefinition, subst map[string]string, concret
 		},
 		Body: substituteBody(fd.Body, subst),
 	}
+	// 傳承模板方法的來源檔 / 模組歸屬（理由同 transpiler 的泛型函式單態化：
+	// 不複製會讓 SourceFile 為空，造成診斷歸因錯誤與標準庫實例被誤判為主程式碼）。
+	parser.SetSourceFile(nf, parser.GetSourceFile(fd))
+	parser.SetModuleOwner(nf, parser.GetModuleOwner(fd))
+	return nf
 }
 
 // monomorphizeGenericStructs 泛型結構體單態化主流程：

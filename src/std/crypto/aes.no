@@ -310,7 +310,9 @@ aes-key-expand = (key [16]byte) (ek [176]byte) {
         #{overflow=wrap}
         off = (i - 1) * 4
 
+        #{overflow=wrap}
         w = (ek[off] << 24) | (ek[off + 1] << 16) | (ek[off + 2] << 8) | ek[off + 3]
+        #{overflow=wrap}
         {
             i % 4 == 0 -> {
                 rw = 0
@@ -328,9 +330,13 @@ aes-key-expand = (key [16]byte) (ek [176]byte) {
                 w = (wprev ^ w) & 4294967295
             }
         }
+        #{overflow=wrap}
         ek[i * 4] = (w >> 24) & 255
+        #{overflow=wrap}
         ek[i * 4 + 1] = (w >> 16) & 255
+        #{overflow=wrap}
         ek[i * 4 + 2] = (w >> 8) & 255
+        #{overflow=wrap}
         ek[i * 4 + 3] = w & 255
     }
 }
@@ -353,6 +359,7 @@ aes-128-enc = (in [16]byte, key [16]byte) (out [16]byte) {
         shift-rows(out[..])
         mix-columns(out[..])
 
+        #{overflow=wrap}
         rk-off = round * 16
         add-round-key(out[..], ek[rk-off..])
     }
@@ -379,10 +386,12 @@ aes-128-dec = (in [16]byte, key [16]byte) (out [16]byte) {
         inv-shift-rows(out[..])
         inv-sub-bytes(out[..], 16)
 
+        #{overflow=wrap}
         rk-off = round * 16
         add-round-key(out[..], ek[rk-off..])
         inv-mix-columns(out[..])
 
+        #{overflow=wrap}
         round = round - 1
     } (round > 0)
 
@@ -410,7 +419,9 @@ aes-256-key-expand = (key [32]byte) (ek [240]byte) {
 
         #{overflow=wrap}
         off = (i - 1) * 4
+        #{overflow=wrap}
         w = (ek[off] << 24) | (ek[off + 1] << 16) | (ek[off + 2] << 8) | ek[off + 3]
+        #{overflow=wrap}
         {
             i % 8 == 0 -> {
                 rw = 0
@@ -435,9 +446,13 @@ aes-256-key-expand = (key [32]byte) (ek [240]byte) {
                 w = (w-prev8 ^ w) & 4294967295
             }
         }
+        #{overflow=wrap}
         ek[i * 4] = (w >> 24) & 255
+        #{overflow=wrap}
         ek[i * 4 + 1] = (w >> 16) & 255
+        #{overflow=wrap}
         ek[i * 4 + 2] = (w >> 8) & 255
+        #{overflow=wrap}
         ek[i * 4 + 3] = w & 255
     }
 }
@@ -456,6 +471,7 @@ aes-256-enc = (in [16]byte, key [32]byte) (out [16]byte) {
         shift-rows(out[..])
         mix-columns(out[..])
 
+        #{overflow=wrap}
         rk-off = round * 16
         add-round-key(out[..], ek[rk-off..])
     }
@@ -478,9 +494,11 @@ aes-256-dec = (in [16]byte, key [32]byte) (out [16]byte) {
         inv-shift-rows(out[..])
         inv-sub-bytes(out[..], 16)
 
+        #{overflow=wrap}
         rk-off = round * 16
         add-round-key(out[..], ek[rk-off..])
         inv-mix-columns(out[..])
+        #{overflow=wrap}
         round = round - 1
     } (round > 0)
     inv-shift-rows(out[..])

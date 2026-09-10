@@ -337,6 +337,18 @@ func RunAllLints(program *parser.Program, opts LintOptions) []LintResult {
 		})
 	}
 
+	// 20d. 未處理的溢出 option（編譯硬錯誤，與 20c 互補：20c 是「建議加註解」的
+	// Hint，本規則是「option 被產生卻未被處理」的 ERROR）。未標註 #{overflow} 的
+	// 整數運算預設回傳 option<int>；若結果既沒被 ?= 上拋、沒被 match 解構、也沒作為
+	// ?T 顯式返回/宣告，就處於「沉默泄漏」狀態（option 值飄著未被處理）。
+	for _, u := range ValidateUnhandledOverflow(program, opts.SourcePath) {
+		results = append(results, LintResult{
+			Line: u.Line, Column: u.Column,
+			Severity: LintError, Source: "nolang-overflow",
+			Message: u.Message, TraceID: u.TraceID,
+		})
+	}
+
 	// 21. parser 警告
 	for _, warnMsg := range program.Warnings {
 		var line, col int

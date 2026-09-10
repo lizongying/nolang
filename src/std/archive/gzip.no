@@ -40,6 +40,7 @@ bit-reader.read-bit = () (bit i64) {
     }
     bit = .bit-buf & 1
     .bit-buf = .bit-buf >> 1
+    #{overflow=wrap}
     .bit-cnt = .bit-cnt - 1
 }
 
@@ -61,8 +62,10 @@ bit-reader.skip-to-byte = () {
 bit-reader.read-u16-le = () (v i64) {
     #{overflow=wrap}
     lo = .data[.pos]
+    #{overflow=wrap}
     .pos = .pos + 1
     hi = .data[.pos]
+    #{overflow=wrap}
     .pos = .pos + 1
     v = lo | (hi << 8)
 }
@@ -91,6 +94,7 @@ huffman.build = (lengths []i64, n i64) {
     i <- [0..n): {
         #{overflow=wrap}
         l = lengths[i]
+        #{overflow=wrap}
         .count[l] = .count[l] + 1
     }
     .count[0] = 0
@@ -130,15 +134,19 @@ huffman.decode = (br bit-reader) (sym i64) {
         bit = br.read-bit()
         code = code | bit
         cnt = .count[len]
+        #{overflow=wrap}
         code - first < cnt -> {
             #{overflow=wrap}
             sym = .symbol[index + (code - first)]
             return
         }
+        #{overflow=wrap}
         index = index + cnt
+        #{overflow=wrap}
         first = first + cnt
         first = first << 1
         code = code << 1
+        #{overflow=wrap}
         len = len + 1
     } (len <= 15)
     sym = -1
@@ -180,7 +188,9 @@ build-fixed = (lc huffman, dc huffman) {
 build-dynamic = (br bit-reader, lc huffman, dc huffman) {
     #{overflow=wrap}
     hlit = br.read-bits(5) + 257
+    #{overflow=wrap}
     hdist = br.read-bits(5) + 1
+    #{overflow=wrap}
     hclen = br.read-bits(4) + 4
 
     ; 讀取碼長度碼的碼長度
@@ -206,6 +216,7 @@ build-dynamic = (br bit-reader, lc huffman, dc huffman) {
 
     ; 解碼字面/長度和距離碼長度
     lengths []i64
+    #{overflow=wrap}
     total = hlit + hdist
     i <- [0..total): {
         #{overflow=wrap}
@@ -215,6 +226,7 @@ build-dynamic = (br bit-reader, lc huffman, dc huffman) {
     {
         #{overflow=wrap}
         sym = clcodec.decode(br)
+        #{overflow=wrap}
         {
             sym < 16 -> {
                 #{overflow=wrap}
@@ -433,6 +445,7 @@ deflate-stored = (data []byte) (out []byte) {
 
         ; BFINAL: 1 = 最後區塊
         final = 0
+        #{overflow=wrap}
         pos + blen >= n -> final = 1
 
         ; BFINAL (1 bit) + BTYPE=00 (2 bits)，填充到位元組邊界
@@ -453,6 +466,7 @@ deflate-stored = (data []byte) (out []byte) {
             #{overflow=wrap}
             result.push(data[pos + i])
         }
+        #{overflow=wrap}
         pos = pos + blen
     } (pos < n)
     out = result
@@ -515,6 +529,7 @@ gzip-decompress = (data []byte) (out []byte) {
     flg = data[3]
 
     ; FEXTRA (bit 2)
+    #{overflow=wrap}
     (flg & 4) != 0 -> {
         #{overflow=wrap}
         xlen = data[pos]
@@ -524,6 +539,7 @@ gzip-decompress = (data []byte) (out []byte) {
     }
 
     ; FNAME (bit 3) — 以 \0 結尾的字串
+    #{overflow=wrap}
     (flg & 8) != 0 -> {
         {
             #{overflow=wrap}
@@ -534,6 +550,7 @@ gzip-decompress = (data []byte) (out []byte) {
     }
 
     ; FCOMMENT (bit 4) — 以 \0 結尾的字串
+    #{overflow=wrap}
     (flg & 16) != 0 -> {
         {
             #{overflow=wrap}
@@ -544,6 +561,7 @@ gzip-decompress = (data []byte) (out []byte) {
     }
 
     ; FHCRC (bit 0) — 2 bytes CRC16
+    #{overflow=wrap}
     (flg & 1) != 0 -> pos = pos + 2
 
     ; DEFLATE 資料從 pos 開始
@@ -551,6 +569,7 @@ gzip-decompress = (data []byte) (out []byte) {
     deflate-data []byte
 
     ; 尾部有 8 bytes（CRC32 + ISIZE）
+    #{overflow=wrap}
     deflate-end = data.len() - 8
     i <- [pos..deflate-end): {
         #{overflow=wrap}
@@ -558,6 +577,7 @@ gzip-decompress = (data []byte) (out []byte) {
     }
 
     ; 預期大小 = ISIZE（最後 4 bytes）
+    #{overflow=wrap}
     isize = (data[data.len() - 4]) | ((data[data.len() - 3]) << 8) | ((data[data.len() - 2]) << 16) | ((data[data.len() - 1]) << 24)
 
     out = inflate-decompress(deflate-data, isize)

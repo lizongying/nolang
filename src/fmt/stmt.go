@@ -230,20 +230,11 @@ func (f *formatter) statementEmitsSomething(stmt parser.Statement) bool {
 }
 
 // annotationStatementEmits reports whether a standalone #{...} annotation
-// statement will actually emit output. It returns true if there is any
-// non-overflow entry, or an overflow entry whose normalized mode differs from
-// the currently active overflow (so it would be re-emitted).
+// statement will actually emit output. With `#{overflow=...}` as a line
+// annotation (no more cross-statement de-duplication) every entry is emitted
+// verbatim, so any entry yields output.
 func (f *formatter) annotationStatementEmits(s *parser.AnnotationStatement) bool {
-	for _, e := range s.Entries {
-		if e.Key == "overflow" {
-			if m := overflowModeStringOf(e); m != "" && m != f.activeOverflow {
-				return true
-			}
-		} else {
-			return true
-		}
-	}
-	return false
+	return len(s.Entries) > 0
 }
 
 func (f *formatter) formatUseStatement(s *parser.UseStatement) {
@@ -571,18 +562,6 @@ func (f *formatter) formatParameters(params []*parser.Parameter, isVariadic bool
 // and doc-comment spacing. The caller is responsible for writing braces and
 // managing indent. openBraceLine is the source line of '{' (0 if unknown).
 func (f *formatter) formatBlockInner(body *parser.BlockStatement, openBraceLine int) {
-	// 區塊級 overflow 註解為區塊作用域：進入區塊時保存目前生效模式，離開時恢復，
-	// 使區塊內已輸出的 overflow 不會外洩到外層，且跨區塊/跨函式能正確重新輸出
-	//（避免把 activeOverflow 誤判為「模式未變」而漏印）。
-	savedOverflow := f.activeOverflow
-	// 每個區塊自帶獨立的 overflow 作用域：進入時**重設**為「未生效」，離開時還原。
-	// 若沿用外層模式（只 save/restore 而不重設），區塊自己攜帶的 `#{overflow=...}`
-	// 會被誤判為「模式未變」而整個漏印；重解析後的輸出就丟失區塊級標註，
-	// 該區塊的整數運算退回預設 option 模式（產生 %option 後被 trunc 到窄型別 →
-	// LLVM 報錯 / 型別不符）。重設可保證每個需要 wrap 的區塊都至少輸出一次標註。
-	f.activeOverflow = ""
-	defer func() { f.activeOverflow = savedOverflow }()
-
 	// 過濾掉 ; 分隔符產生的空表達式語句及 compiler 注入的合成語句
 	statements := make([]parser.Statement, 0, len(body.Statements))
 	for _, stmt := range body.Statements {

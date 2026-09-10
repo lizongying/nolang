@@ -27,6 +27,7 @@ pbkdf2-hmac-sha256 = (password []byte, salt []byte, iterations i64, key-len i64)
     h-len = 32
 
     ; 計算需要多少個區塊
+    #{overflow=wrap}
     blocks = (key-len + h-len - 1) / h-len
 
     out = with-len(key-len)
@@ -45,8 +46,11 @@ pbkdf2-hmac-sha256 = (password []byte, salt []byte, iterations i64, key-len i64)
 
         ; INT_32_BE(block_idx)
         u-input[salt-len] = (block-idx >> 24) & 255
+        #{overflow=wrap}
         u-input[salt-len + 1] = (block-idx >> 16) & 255
+        #{overflow=wrap}
         u-input[salt-len + 2] = (block-idx >> 8) & 255
+        #{overflow=wrap}
         u-input[salt-len + 3] = block-idx & 255
 
         ; U1 = HMAC(password, salt || INT_32_BE(block_idx))
@@ -76,12 +80,15 @@ pbkdf2-hmac-sha256 = (password []byte, salt []byte, iterations i64, key-len i64)
 
         ; 輸出到 out（最後一個區塊可能截斷）
         copy-len = h-len
+        #{overflow=wrap}
         out-pos + copy-len > key-len -> copy-len = key-len - out-pos
         i <- [0..copy-len): {
             #{overflow=wrap}
             out[out-pos + i] = t[i]
         }
+        #{overflow=wrap}
         out-pos = out-pos + copy-len
+        #{overflow=wrap}
         block-idx = block-idx + 1
     } (block-idx <= blocks)
 }
@@ -100,6 +107,7 @@ pbkdf2-hmac-sha512 = (password []byte, salt []byte, iterations i64, key-len i64)
     #{overflow=wrap}
     h-len = 64
 
+    #{overflow=wrap}
     blocks = (key-len + h-len - 1) / h-len
 
     out = with-len(key-len)
@@ -114,8 +122,11 @@ pbkdf2-hmac-sha512 = (password []byte, salt []byte, iterations i64, key-len i64)
             u-input[i] = salt[i]
         }
         u-input[salt-len] = (block-idx >> 24) & 255
+        #{overflow=wrap}
         u-input[salt-len + 1] = (block-idx >> 16) & 255
+        #{overflow=wrap}
         u-input[salt-len + 2] = (block-idx >> 8) & 255
+        #{overflow=wrap}
         u-input[salt-len + 3] = block-idx & 255
 
         u [64]byte
@@ -135,12 +146,15 @@ pbkdf2-hmac-sha512 = (password []byte, salt []byte, iterations i64, key-len i64)
             }
         }
         copy-len = h-len
+        #{overflow=wrap}
         out-pos + copy-len > key-len -> copy-len = key-len - out-pos
         i <- [0..copy-len): {
             #{overflow=wrap}
             out[out-pos + i] = t[i]
         }
+        #{overflow=wrap}
         out-pos = out-pos + copy-len
+        #{overflow=wrap}
         block-idx = block-idx + 1
     } (block-idx <= blocks)
 }
@@ -159,6 +173,7 @@ pbkdf2-hmac-sha1 = (password []byte, salt []byte, iterations i64, key-len i64) (
     #{overflow=wrap}
     h-len = 20
 
+    #{overflow=wrap}
     blocks = (key-len + h-len - 1) / h-len
 
     out = with-len(key-len)
@@ -173,8 +188,11 @@ pbkdf2-hmac-sha1 = (password []byte, salt []byte, iterations i64, key-len i64) (
             u-input[i] = salt[i]
         }
         u-input[salt-len] = (block-idx >> 24) & 255
+        #{overflow=wrap}
         u-input[salt-len + 1] = (block-idx >> 16) & 255
+        #{overflow=wrap}
         u-input[salt-len + 2] = (block-idx >> 8) & 255
+        #{overflow=wrap}
         u-input[salt-len + 3] = block-idx & 255
 
         u [20]byte
@@ -194,12 +212,15 @@ pbkdf2-hmac-sha1 = (password []byte, salt []byte, iterations i64, key-len i64) (
             }
         }
         copy-len = h-len
+        #{overflow=wrap}
         out-pos + copy-len > key-len -> copy-len = key-len - out-pos
         i <- [0..copy-len): {
             #{overflow=wrap}
             out[out-pos + i] = t[i]
         }
+        #{overflow=wrap}
         out-pos = out-pos + copy-len
+        #{overflow=wrap}
         block-idx = block-idx + 1
     } (block-idx <= blocks)
 }

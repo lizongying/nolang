@@ -60,18 +60,21 @@ detect-type = (path str) (kind str) {
 get-extension = (path str) (ext str) {
     #{overflow=wrap}
     n = path.len-bytes()
+    #{overflow=wrap}
     i = n - 1
     {
         #{overflow=wrap}
         i < 0 -> return
         c = path[i]
         c == 47 -> return; '/' - 目錄分隔符，停止查找
+        #{overflow=wrap}
         c == 46 -> {; '.' - 找到副檔名
             #{overflow=wrap}
             ext = path.slice(i + 1, n)
             ext = ext.to-lower()
             return
         }
+        #{overflow=wrap}
         i = i - 1
     } (i >= 0)
 }

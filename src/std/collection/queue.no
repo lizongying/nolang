@@ -61,15 +61,19 @@ queue {
 [n]t.queue-push = (q queue, val t) (ok bool) {
     #{overflow=wrap}
     ok = false
+    #{overflow=wrap}
     sz = q.tail - q.head
+    #{overflow=wrap}
     sz >= q.cap - 1 -> return
     idx = q.tail
+    #{overflow=wrap}
     {
         idx >= 0 -> idx = idx % q.cap
 
         -> idx = q.cap - ((-idx) % q.cap)
     }
     .[idx] = val
+    #{overflow=wrap}
     q.tail = q.tail + 1
     ok = true
 }
@@ -85,12 +89,14 @@ queue {
         return
     }
     idx = q.head
+    #{overflow=wrap}
     {
         idx >= 0 -> idx = idx % q.cap
 
         -> idx = q.cap - ((-idx) % q.cap)
     }
     val = .[idx]
+    #{overflow=wrap}
     q.head = q.head + 1
 }
 
@@ -105,6 +111,7 @@ queue {
         return
     }
     idx = q.head
+    #{overflow=wrap}
     {
         idx >= 0 -> idx = idx % q.cap
 

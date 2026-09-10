@@ -28,10 +28,14 @@ sha384 = (data []byte) (hash [48]byte) {
 
     ; 填充：0x80 + 0x00*pad + 16-byte big-endian bit length
     ; 總長度需為 128 的倍數
+    #{overflow=wrap}
     bit-len = dlen * 8
+    #{overflow=wrap}
     mod-val = (dlen + 17) % 128
     pad-len = 0
+    #{overflow=wrap}
     mod-val != 0 -> pad-len = 128 - mod-val
+    #{overflow=wrap}
     total-len = dlen + 1 + pad-len + 16
 
     ; 建立填充緩衝區
@@ -51,6 +55,7 @@ sha384 = (data []byte) (hash [48]byte) {
     padded[dlen] = 128
 
     ; 填充 0x00
+    #{overflow=wrap}
     i <- [dlen + 1..total-len - 16): {
         #{overflow=wrap}
         padded[i] = 0
@@ -81,6 +86,7 @@ sha384 = (data []byte) (hash [48]byte) {
 
         #{overflow=wrap}
         sha512.sha512-block(block, h0, h1, h2, h3, h4, h5, h6, h7)
+        #{overflow=wrap}
         offset = offset + 128
     } (offset < total-len)
 
@@ -147,6 +153,7 @@ sha384-hex = (data []byte) (hex str) {
     i <- [0..48): {
         #{overflow=wrap}
         hex[i * 2] = hex-chars[(hash[i] >> 4) & 15]
+        #{overflow=wrap}
         hex[i * 2 + 1] = hex-chars[hash[i] & 15]
     }
 }

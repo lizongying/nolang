@@ -29,8 +29,10 @@ deque.push-front = (val i64) {
     #{overflow=wrap}
     n = .tail - .head
     n >= .cap -> return
+    #{overflow=wrap}
     new-head = .head - 1
     idx = new-head
+    #{overflow=wrap}
     idx < 0 -> idx = idx + .cap
     .buf[idx] = val
     .head = new-head
@@ -42,12 +44,14 @@ deque.push-back = (val i64) {
     n = .tail - .head
     n >= .cap -> return
     idx = .tail
+    #{overflow=wrap}
     {
         idx >= 0 -> idx = idx % .cap
 
         -> idx = .cap - ((-idx) % .cap)
     }
     .buf[idx] = val
+    #{overflow=wrap}
     .tail = .tail + 1
 }
 
@@ -61,12 +65,14 @@ deque.pop-front = () (val ?i64) {
         return
     }
     idx = .head
+    #{overflow=wrap}
     {
         idx >= 0 -> idx = idx % .cap
 
         -> idx = .cap - ((-idx) % .cap)
     }
     val = .buf[idx]
+    #{overflow=wrap}
     .head = .head + 1
 }
 
@@ -79,8 +85,10 @@ deque.pop-back = () (val ?i64) {
         val = nil
         return
     }
+    #{overflow=wrap}
     new-tail = .tail - 1
     idx = new-tail
+    #{overflow=wrap}
     {
         idx >= 0 -> idx = idx % .cap
 
@@ -100,6 +108,7 @@ deque.peek-front = () (val ?i64) {
         return
     }
     idx = .head
+    #{overflow=wrap}
     {
         idx >= 0 -> idx = idx % .cap
 
@@ -117,7 +126,9 @@ deque.peek-back = () (val ?i64) {
         val = nil
         return
     }
+    #{overflow=wrap}
     idx = .tail - 1
+    #{overflow=wrap}
     {
         idx >= 0 -> idx = idx % .cap
 

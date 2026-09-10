@@ -40,8 +40,10 @@ str-map.hash = (key str) (idx i64) {
     i <- [0..key.len-bytes()): {
         #{overflow=wrap}
         h = h ^ (key[i])
+        #{overflow=wrap}
         h = h * FNV-PRIME
     }
+    #{overflow=wrap}
     idx = h & (.cap - 1)
 }
 
@@ -71,6 +73,7 @@ str-map.put = (key str, val str) (is-new bool) {
             is-new = false
             return
         }
+        #{overflow=wrap}
         idx = idx + 1
         idx >= .cap -> idx = 0
     } (.occ[idx] == 1)
@@ -89,6 +92,7 @@ str-map.put = (key str, val str) (is-new bool) {
         .vals[idx][i] = val[i]
     }
     .occ[idx] = 1
+    #{overflow=wrap}
     .size = .size + 1
     is-new = true
 }
@@ -105,6 +109,7 @@ str-map.get = (key str) (result ?str) {
             result = .vals[idx]
             return
         }
+        #{overflow=wrap}
         idx = idx + 1
         idx >= .cap -> idx = 0
     } (.occ[idx] == 1)
@@ -130,6 +135,7 @@ str-map.remove = (key str) (removed bool) {
     {
         #{overflow=wrap}
         eq = .str-eq(.keys[idx], key)
+        #{overflow=wrap}
         eq -> {
             #{overflow=wrap}
             .occ[idx] = 0
@@ -139,6 +145,7 @@ str-map.remove = (key str) (removed bool) {
             removed = true
             return
         }
+        #{overflow=wrap}
         idx = idx + 1
         idx >= .cap -> idx = 0
     } (.occ[idx] == 1)

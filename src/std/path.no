@@ -108,6 +108,7 @@ path.join = (b str) {
     j <- [start-b..bn): {
         #{overflow=wrap}
         .p[out-n] = b[j]
+        #{overflow=wrap}
         out-n = out-n + 1
     }
 }
@@ -128,7 +129,9 @@ path.base = () (out str) {
         c = .p[i]
         c == SEP -> last-sep = i
     }
+    #{overflow=wrap}
     start = last-sep + 1
+    #{overflow=wrap}
     out-n = .p.len-bytes() - start
     out = with-cap(.p.len-bytes())
     i <- [0..out-n): {
@@ -192,6 +195,7 @@ path.ext = () (out str) {
     {
         #{overflow=wrap}
         last-dot <= last-sep -> return
+        #{overflow=wrap}
         last-idx = .p.len-bytes() - 1
         last-dot == last-idx -> {
 
@@ -200,6 +204,7 @@ path.ext = () (out str) {
         }
     }
     start = last-dot
+    #{overflow=wrap}
     out-n = .p.len-bytes() - start
     out = with-cap(.p.len-bytes())
     i <- [0..out-n): {
@@ -344,7 +349,9 @@ path.split = () (f str) {
     }
 
     ; 提取檔名
+    #{overflow=wrap}
     start = last-sep + 1
+    #{overflow=wrap}
     out-n = .p.len-bytes() - start
     f = with-len(out-n)
     i <- [0..out-n): {

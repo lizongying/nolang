@@ -26,6 +26,7 @@ stack {
 stack.push = (val i64) {
     #{overflow=wrap}
     .data[.n] = val
+    #{overflow=wrap}
     .n = .n + 1
 }
 
@@ -37,6 +38,7 @@ stack.pop = () (val ?i64) {
         val = nil
         return
     }
+    #{overflow=wrap}
     .n = .n - 1
     val = .data[.n]
 }
@@ -49,6 +51,7 @@ stack.peek = () (val ?i64) {
         val = nil
         return
     }
+    #{overflow=wrap}
     val = .data[.n - 1]
 }
 

@@ -144,6 +144,7 @@ writer.write-line = (s str) (written i64) {
     nl []byte = with-len(1)
     nl[0] = 10
     written = fs.write(.fd, nl, 1)
+    #{overflow=wrap}
     written = written + n
 }
 
@@ -165,6 +166,7 @@ outln = (s str) (n i64) {
     nl []byte = with-len(1)
     nl[0] = 10
     m = fs.write(STDOUT-FD, nl, 1)
+    #{overflow=wrap}
     n = n + m
 }
 
@@ -182,6 +184,7 @@ errln = (s str) (n i64) {
     nl []byte = with-len(1)
     nl[0] = 10
     m = fs.write(STDERR-FD, nl, 1)
+    #{overflow=wrap}
     n = n + m
 }
 

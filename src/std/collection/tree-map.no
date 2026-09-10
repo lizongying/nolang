@@ -63,10 +63,12 @@ tree-map.init = () {
     .root = -1
     .free-head = 0
     .size = 0
+    #{overflow=wrap}
     i <- [0..TM-CAP - 1): {
         #{overflow=wrap}
         .left[i] = i + 1
     }
+    #{overflow=wrap}
     .left[TM-CAP - 1] = -1
 }
 
@@ -112,6 +114,7 @@ tree-map.update-ht = (idx i64) {
     #{overflow=wrap}
     lh = .ht(.left[idx])
     rh = .ht(.right[idx])
+    #{overflow=wrap}
     .height[idx] = (lh > rh ? lh : rh) + 1
 }
 
@@ -122,6 +125,7 @@ tree-map.bf = (idx i64) (b i64) {
     #{overflow=wrap}
     lh = .ht(.left[idx])
     rh = .ht(.right[idx])
+    #{overflow=wrap}
     b = lh - rh
 }
 
@@ -376,6 +380,7 @@ tree-map.remove = (key i64) (ok bool) {
     } (idx >= 0)
     idx < 0 -> return
     ok = true
+    #{overflow=wrap}
     .size = .size - 1
 
     ; 雙子節點：用後繼替換後刪除後繼
@@ -517,10 +522,12 @@ tree-map.clear = () {
     .root = -1
     .free-head = 0
     .size = 0
+    #{overflow=wrap}
     i <- [0..TM-CAP - 1): {
         #{overflow=wrap}
         .left[i] = i + 1
     }
+    #{overflow=wrap}
     .left[TM-CAP - 1] = -1
 }
 

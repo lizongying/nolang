@@ -61,10 +61,12 @@ tree-set.init = () {
     .root = -1
     .free-head = 0
     .size = 0
+    #{overflow=wrap}
     i <- [0..TS-CAP - 1): {
         #{overflow=wrap}
         .left[i] = i + 1
     }
+    #{overflow=wrap}
     .left[TS-CAP - 1] = -1
 }
 
@@ -110,6 +112,7 @@ tree-set.update-ht = (idx i64) {
     #{overflow=wrap}
     lh = .ht(.left[idx])
     rh = .ht(.right[idx])
+    #{overflow=wrap}
     .height[idx] = (lh > rh ? lh : rh) + 1
 }
 
@@ -120,6 +123,7 @@ tree-set.bf = (idx i64) (b i64) {
     #{overflow=wrap}
     lh = .ht(.left[idx])
     rh = .ht(.right[idx])
+    #{overflow=wrap}
     b = lh - rh
 }
 
@@ -346,6 +350,7 @@ tree-set.remove = (key i64) (ok bool) {
     } (idx >= 0)
     idx < 0 -> return
     ok = true
+    #{overflow=wrap}
     .size = .size - 1
 
     ; 雙子節點：用後繼替換後刪除後繼
@@ -484,10 +489,12 @@ tree-set.clear = () {
     .root = -1
     .free-head = 0
     .size = 0
+    #{overflow=wrap}
     i <- [0..TS-CAP - 1): {
         #{overflow=wrap}
         .left[i] = i + 1
     }
+    #{overflow=wrap}
     .left[TS-CAP - 1] = -1
 }
 

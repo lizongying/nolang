@@ -97,6 +97,7 @@ bz-huffman.build = (lengths []i64, alpha-size i64) {
     i <- [0..alpha-size): {
         #{overflow=wrap}
         l = lengths[i]
+        #{overflow=wrap}
         len-count[l] = len-count[l] + 1
         {
             l < .min-len -> .min-len = l
@@ -111,6 +112,7 @@ bz-huffman.build = (lengths []i64, alpha-size i64) {
     i <- [0..24): {
         #{overflow=wrap}
         .base[i] = pp
+        #{overflow=wrap}
         pp = pp + len-count[i]
     }
 
@@ -132,6 +134,7 @@ bz-huffman.build = (lengths []i64, alpha-size i64) {
         #{overflow=wrap}
         l = lengths[i]
         .perm[tmp-base[l]] = i
+        #{overflow=wrap}
         tmp-base[l] = tmp-base[l] + 1
     }
 }
@@ -150,18 +153,21 @@ bz-huffman.decode = (br bz-bit-reader) (sym i64) {
     {
         #{overflow=wrap}
         zvec <= .limit[zn] -> *
+        #{overflow=wrap}
         zn = zn + 1
         zj = br.read-bit()
         zvec = (zvec << 1) | zj
     } (zvec > .limit[zn] && zn < 23)
 
     ; 計算符號
+    #{overflow=wrap}
     idx = zvec - .base[zn]
     {
         idx < 0 -> return
 
         idx >= BZ-MAX-ALPHA-SIZE -> return
     }
+    #{overflow=wrap}
     sym = .perm[idx + .base[zn] - .base[zn]]
 }
 
@@ -177,10 +183,12 @@ bz-huffman.decode-symbol = (br bz-bit-reader) (sym i64) {
     {
         #{overflow=wrap}
         zvec <= .limit[zn] -> *
+        #{overflow=wrap}
         zn = zn + 1
         zj = br.read-bit()
         zvec = (zvec << 1) | zj
     } (zvec > .limit[zn] && zn < 23)
+    #{overflow=wrap}
     idx = zvec - .base[zn]
     {
         idx < 0 -> return

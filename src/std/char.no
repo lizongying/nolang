@@ -172,6 +172,7 @@ char.to-str = () (s str) {
     #{overflow=saturate}
     n = .len()
 
+    #{overflow=saturate}
     tmp []byte = with-cap(n * 4)
     i <- [0..n): {
         #{overflow=saturate}

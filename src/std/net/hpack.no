@@ -195,6 +195,7 @@ tables.dyn-add = (name str, value str) {
         ; 用 slice 複製（CallExpression 正確載入 str-long value）
         #{overflow=wrap}
         prev-name-len = .dyn-names[i - 1].len-bytes()
+        #{overflow=wrap}
         prev-val-len = .dyn-values[i - 1].len-bytes()
 
         ; 逐 byte 複製 name
@@ -212,6 +213,7 @@ tables.dyn-add = (name str, value str) {
             dv-tmp[j] = .dyn-values[i - 1][j]
         }
         .dyn-values[i] = dv-tmp
+        #{overflow=wrap}
         i = i - 1
     } (i > 0)
 
@@ -228,7 +230,9 @@ tables.dyn-add = (name str, value str) {
         dv0-tmp[j] = value[j]
     }
     .dyn-values[0] = dv0-tmp
+    #{overflow=wrap}
     .dyn-count = .dyn-count + 1
+    #{overflow=wrap}
     .dyn-size = .dyn-size + name.len-bytes() + value.len-bytes() + 32
 }
 
@@ -353,6 +357,7 @@ tables.find-name = (name str) (idx i64) {
 tables.lookup = (idx i64) (name str, value str, ok bool) {
     #{overflow=wrap}
     ok = false
+    #{overflow=wrap}
     {
         idx <= 0 -> return
 
@@ -368,6 +373,7 @@ tables.lookup = (idx i64) (name str, value str, ok bool) {
             return
         }
     }
+    #{overflow=wrap}
     dyn-idx = idx - HPACK-STATIC-COUNT - 1
     dyn-idx < .dyn-count -> {
         n-len = .dyn-names[dyn-idx].len-bytes()
@@ -391,6 +397,7 @@ tables.lookup = (idx i64) (name str, value str, ok bool) {
 encode-int = (val i64, prefix-bits i64, prefix-byte i64) (out str) {
     #{overflow=wrap}
     out = with-cap(10)
+    #{overflow=wrap}
     max-prefix = (1 << prefix-bits) - 1
     val < max-prefix -> {
         out[0] = prefix-byte | val
@@ -400,10 +407,12 @@ encode-int = (val i64, prefix-bits i64, prefix-byte i64) (out str) {
     ; 第一個 byte: prefix 全 1
     out[0] = prefix-byte | max-prefix
     n = 1
+    #{overflow=wrap}
     val = val - max-prefix
     {
         #{overflow=wrap}
         out[n] = (val & 127) | 128
+        #{overflow=wrap}
         n = n + 1
         val = val >> 7
     } (val >= 128)
@@ -421,9 +430,11 @@ decode-int = (data str, pos i64, prefix-bits i64) (val i64, next-pos i64) {
         next-pos = -1
         return
     }
+    #{overflow=wrap}
     max-prefix = (1 << prefix-bits) - 1
     first = data[pos] & max-prefix
     val = first
+    #{overflow=wrap}
     next-pos = pos + 1
     first < max-prefix -> return
 
@@ -436,8 +447,11 @@ decode-int = (data str, pos i64, prefix-bits i64) (val i64, next-pos i64) {
             *
         }
         b = data[next-pos]
+        #{overflow=wrap}
         next-pos = next-pos + 1
+        #{overflow=wrap}
         val = val + ((b & 127) << m)
+        #{overflow=wrap}
         m = m + 7
         (b & 128) == 0 -> *
         m >= 35 -> {
@@ -490,6 +504,7 @@ decode-str = (data str, pos i64) (out str, next-pos i64) {
     len = 0
     p = 0
     len, p = decode-int(data, pos, 7)
+    #{overflow=wrap}
     {
         p < 0 -> {
             next-pos = -1
@@ -508,6 +523,7 @@ decode-str = (data str, pos i64) (out str, next-pos i64) {
         #{overflow=wrap}
         out[i] = data[p + i]
     }
+    #{overflow=wrap}
     next-pos = p + len
 }
 
@@ -531,11 +547,13 @@ tables.encode-header = (name str, value str) (out str) {
         out = encode-int(full-idx, 7, 128)
         return
     }
+    #{overflow=wrap}
     out = with-cap(name.len-bytes() + value.len-bytes() + 8)
 
     ; 2. name 匹配 → Literal with Incremental Indexing（6.2.1），name 用索引
     name-idx = 0
     name-idx = .find-name(name)
+    #{overflow=wrap}
     name-idx > 0 -> {
 
         ; 格式：01xxxxxx（高 2 位為 01，6-bit 索引）
@@ -573,6 +591,7 @@ tables.encode-header = (name str, value str) (out str) {
         #{overflow=wrap}
         out[out-n + i] = name-out[i]
     }
+    #{overflow=wrap}
     out-n = out-n + name-out.len-bytes()
 
     ; 編碼 value

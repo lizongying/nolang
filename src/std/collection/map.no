@@ -53,8 +53,10 @@ hashmap-str-tmpl.hash = (key str) (idx i64) {
     i <- [0..key.len-bytes()): {
         #{overflow=wrap}
         h = h ^ (key[i])
+        #{overflow=wrap}
         h = h * FNV-PRIME
     }
+    #{overflow=wrap}
     idx = h & (.cap - 1)
 }
 
@@ -90,6 +92,7 @@ hashmap-str-tmpl.put = (key str, val v) (is-new bool) {
             }
         }
         .occ[idx] == 2 -> first-tomb < 0 -> first-tomb = idx
+        #{overflow=wrap}
         idx = idx + 1
         idx >= .cap -> idx = 0
     } (.occ[idx] != 0)
@@ -100,6 +103,7 @@ hashmap-str-tmpl.put = (key str, val v) (is-new bool) {
     .keys[insert-idx] = key
     .vals[insert-idx] = val
     .occ[insert-idx] = 1
+    #{overflow=wrap}
     .size = .size + 1
     is-new = true
 }
@@ -119,6 +123,7 @@ hashmap-str-tmpl.get = (key str) (result ?v) {
                 return
             }
         }
+        #{overflow=wrap}
         idx = idx + 1
         idx >= .cap -> idx = 0
     } (.occ[idx] != 0)
@@ -154,6 +159,7 @@ hashmap-str-tmpl.remove = (key str) (removed bool) {
                 return
             }
         }
+        #{overflow=wrap}
         idx = idx + 1
         idx >= .cap -> idx = 0
     } (.occ[idx] != 0)
@@ -278,6 +284,7 @@ hashmap-int-tmpl.put = (key k, val v) (is-new bool) {
             return
         }
         .occ[idx] == 2 -> first-tomb < 0 -> first-tomb = idx
+        #{overflow=wrap}
         idx = idx + 1
         idx >= .cap -> idx = 0
     } (.occ[idx] != 0)
@@ -286,6 +293,7 @@ hashmap-int-tmpl.put = (key k, val v) (is-new bool) {
     .keys[insert-idx] = key
     .vals[insert-idx] = val
     .occ[insert-idx] = 1
+    #{overflow=wrap}
     .size = .size + 1
     is-new = true
 }
@@ -301,6 +309,7 @@ hashmap-int-tmpl.get = (key k) (result ?v) {
             result = .vals[idx]
             return
         }
+        #{overflow=wrap}
         idx = idx + 1
         idx >= .cap -> idx = 0
     } (.occ[idx] != 0)
@@ -332,6 +341,7 @@ hashmap-int-tmpl.remove = (key k) (removed bool) {
             removed = true
             return
         }
+        #{overflow=wrap}
         idx = idx + 1
         idx >= .cap -> idx = 0
     } (.occ[idx] != 0)
@@ -449,6 +459,7 @@ hashmap-bool-tmpl.put = (key bool, val v) (is-new bool) {
     .keys[idx] = key
     .vals[idx] = val
     .occ[idx] = 1
+    #{overflow=wrap}
     .size = .size + 1
     is-new = true
 }

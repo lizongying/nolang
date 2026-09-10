@@ -26,15 +26,6 @@ type formatter struct {
 	// formatBareMatchExpression 為 wildcard arm 合成的 IfExpression），
 	// 不污染 program.Sem。
 	synthRT map[*parser.IfExpression]parser.RTFlag
-
-	// activeOverflow 記錄上一個已輸出的 overflow 模式（正規化字串，如
-	// "wrap"/"clamp0"）。區塊級 #{overflow=...} 經 parser 的
-	// propagateBlockScopedOverflow 合併進區塊內「每一個」陳述的 side-table
-	// （供 codegen 讀取 Statement.OverflowMode 欄位），因此 formatter 若對每個
-	// 陳述都從 side-table 輸出，會把同一註解重複印 N 次。此欄位配合下方去重邏輯
-	// 讓 overflow 在每個區塊內僅輸出一次：模式不變即跳過。區塊邊界由
-	// formatBlockInner / formatProgram 負責 save/restore，確保跨區塊重新輸出正確。
-	activeOverflow string
 }
 
 // hasRT 查詢 IfExpression 的 fmt 往返標誌：先查 formatter 本地合成表，
@@ -79,9 +70,6 @@ func (f *formatter) formatProgram(p *parser.Program) {
 	lastEmitEndLine := 0
 	prevEmitted := false
 	for i, stmt := range p.Statements {
-		// 頂層陳述各自獨立：保存/恢復 activeOverflow，避免一個頂層區塊輸出的
-		// overflow 模式「洩漏」到下一個頂層區塊，導致後者漏印（非冪等）。
-		savedOverflow := f.activeOverflow
 		emits := f.statementEmitsSomething(stmt)
 		if i > 0 && emits {
 			prevEndLine := lastEmitEndLine
@@ -117,7 +105,6 @@ func (f *formatter) formatProgram(p *parser.Program) {
 			lastEmitEndLine = stmtTokenEndLine(stmt)
 		}
 		prevEmitted = emits
-		f.activeOverflow = savedOverflow
 	}
 
 	// 輸出尾隨註釋（檔案尾），保留其與上方程式碼之間的空行（與

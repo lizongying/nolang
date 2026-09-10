@@ -379,11 +379,14 @@ func parseCompileErrorToLints(err error) []checker.LintResult {
 			continue
 		}
 		// 提取並移除 [xxx] 後綴（由 transpiler.go 格式化注入）
+		// suffix 形如 " [traceid]"：suffix[0]=' '、suffix[1]='['，故 traceid 為
+		// suffix[2 : len-1]。注意勿寫死偏移量（曾誤用 8，把所有 trace id 截成末
+		// 兩字元，如 "ovfhndld"→"ld"）。len>=3 防護避免 " []" 之類切片越界。
 		tid := ""
 		if idx := strings.LastIndex(part, " ["); idx >= 0 {
 			suffix := part[idx:]
-			if strings.HasSuffix(suffix, "]") {
-				tid = suffix[8 : len(suffix)-1]
+			if strings.HasSuffix(suffix, "]") && len(suffix) >= 3 {
+				tid = suffix[2 : len(suffix)-1]
 				part = strings.TrimSpace(part[:idx])
 			}
 		}

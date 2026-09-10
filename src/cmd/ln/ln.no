@@ -45,13 +45,17 @@ base-name = (p str) (out str) {
     plen = p.len-bytes()
     plen > 1 -> {
         pc = p[plen - 1]
-        pc == 45 -> plen = plen - 1
+        pc == 45 -> {
+            #{overflow=wrap}
+            plen = plen - 1
+        }
     }
     last = -1
     i <- [0..plen): {
         c = p[i]
         c == 45 -> last = i
     }
+    #{overflow=wrap}
     start = last + 1
     out = ''
     k <- [start..plen): {
@@ -209,6 +213,7 @@ main = () {
                 a == '--no-target-directory' -> noTargetDir = true
                 a == '--target-directory' -> {
                     i < n - 1 -> {
+                        #{overflow=wrap}
                         i = i + 1
                         targetDir = os.arg(i)
                     }
@@ -237,6 +242,7 @@ main = () {
                 }
                 needTArg == true -> {
                     i < n - 1 -> {
+                        #{overflow=wrap}
                         i = i + 1
                         targetDir = os.arg(i)
                     }
@@ -251,8 +257,10 @@ main = () {
         a == '--' -> countIt = false
         countIt == true -> {
             firstPos < 0 -> firstPos = i
+            #{overflow=wrap}
             npos = npos + 1
         }
+        #{overflow=wrap}
         i = i + 1
     } (true)
     {

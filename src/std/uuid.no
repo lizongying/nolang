@@ -40,6 +40,7 @@ new-v4 = (state i64) (out uuid) {
 
         #{overflow=wrap}
         out.bytes[i] = r & 255
+        #{overflow=wrap}
         {
             i + 1 < 16 -> out.bytes[i + 1] = (r >> 8) & 255
 
@@ -47,6 +48,7 @@ new-v4 = (state i64) (out uuid) {
 
             i + 3 < 16 -> out.bytes[i + 3] = (r >> 24) & 255
         }
+        #{overflow=wrap}
         i = i + 4
     } (i < 16)
 
@@ -112,6 +114,7 @@ uuid.to-str = () (out str) {
 hex-byte = (b byte, pos i64, out str) {
     #{overflow=wrap}
     out[pos] = HEX[(b >> 4) & 15]
+    #{overflow=wrap}
     out[pos + 1] = HEX[b & 15]
 }
 
@@ -146,6 +149,7 @@ uuid.to-str-upper = () (out str) {
 hex-byte-upper = (b byte, pos i64, out str, table str) {
     #{overflow=wrap}
     out[pos] = table[(b >> 4) & 15]
+    #{overflow=wrap}
     out[pos + 1] = table[b & 15]
 }
 
@@ -180,8 +184,11 @@ parse-with-dashes = (s str, pos i64, out uuid) (ok bool) {
     #{overflow=wrap}
     ok = true
     v0 = parse-hex-byte(s, pos)
+    #{overflow=wrap}
     v1 = parse-hex-byte(s, pos + 2)
+    #{overflow=wrap}
     v2 = parse-hex-byte(s, pos + 4)
+    #{overflow=wrap}
     v3 = parse-hex-byte(s, pos + 6)
     out.bytes[0] = v0
     out.bytes[1] = v1
@@ -189,39 +196,55 @@ parse-with-dashes = (s str, pos i64, out uuid) (ok bool) {
     out.bytes[3] = v3
 
     ; 跳過連字號
+    #{overflow=wrap}
     s[pos + 8] != 45 -> {
         ok = false
         return
     }
+    #{overflow=wrap}
     v4 = parse-hex-byte(s, pos + 9)
+    #{overflow=wrap}
     v5 = parse-hex-byte(s, pos + 11)
     out.bytes[4] = v4
     out.bytes[5] = v5
+    #{overflow=wrap}
     s[pos + 13] != 45 -> {
         ok = false
         return
     }
+    #{overflow=wrap}
     v6 = parse-hex-byte(s, pos + 14)
+    #{overflow=wrap}
     v7 = parse-hex-byte(s, pos + 16)
     out.bytes[6] = v6
     out.bytes[7] = v7
+    #{overflow=wrap}
     s[pos + 18] != 45 -> {
         ok = false
         return
     }
+    #{overflow=wrap}
     v8 = parse-hex-byte(s, pos + 19)
+    #{overflow=wrap}
     v9 = parse-hex-byte(s, pos + 21)
     out.bytes[8] = v8
     out.bytes[9] = v9
+    #{overflow=wrap}
     s[pos + 23] != 45 -> {
         ok = false
         return
     }
+    #{overflow=wrap}
     v10 = parse-hex-byte(s, pos + 24)
+    #{overflow=wrap}
     v11 = parse-hex-byte(s, pos + 26)
+    #{overflow=wrap}
     v12 = parse-hex-byte(s, pos + 28)
+    #{overflow=wrap}
     v13 = parse-hex-byte(s, pos + 30)
+    #{overflow=wrap}
     v14 = parse-hex-byte(s, pos + 32)
+    #{overflow=wrap}
     v15 = parse-hex-byte(s, pos + 34)
     out.bytes[10] = v10
     out.bytes[11] = v11
@@ -249,6 +272,7 @@ parse-no-dashes = (s str, pos i64, out uuid) (ok bool) {
 parse-hex-byte = (s str, pos i64) (v i64) {
     #{overflow=wrap}
     c0 = s[pos]
+    #{overflow=wrap}
     c1 = s[pos + 1]
     h0 = str.hex-val(c0)
     h1 = str.hex-val(c1)

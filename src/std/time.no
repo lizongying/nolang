@@ -86,6 +86,7 @@ duration-us-between = (start i64, end i64) (diff i64) {
 since-s = (start i64) (diff i64) {
     #{overflow=wrap}
     end i64 = os.now()
+    #{overflow=wrap}
     diff = end - start
 }
 
@@ -93,6 +94,7 @@ since-s = (start i64) (diff i64) {
 since-ms = (start i64) (diff i64) {
     #{overflow=wrap}
     end i64 = now-ms()
+    #{overflow=wrap}
     diff = end - start
 }
 
@@ -100,6 +102,7 @@ since-ms = (start i64) (diff i64) {
 since-us = (start i64) (diff i64) {
     #{overflow=wrap}
     end i64 = now-us()
+    #{overflow=wrap}
     diff = end - start
 }
 
@@ -113,11 +116,13 @@ format-duration = (seconds i64) (out str) {
     #{overflow=wrap}
     h i64 = seconds / 3600
     rem i64 = seconds % 3600
+    #{overflow=wrap}
     m i64 = rem / 60
     sec i64 = rem % 60
     h-s = number.i64-to-str(h)
     m-s = number.i64-to-str(m)
     sec-s = number.i64-to-str(sec)
+    #{overflow=wrap}
     out = h-s - 'h' - m-s - 'm' - sec-s - 's'
 }
 
@@ -153,6 +158,7 @@ timer.elapsed-ms = () (ms i64) {
 timer.elapsed-s = () (s i64) {
     #{overflow=wrap}
     ms i64 = .end-ts - .start-ts
+    #{overflow=wrap}
     s = ms / 1000
 }
 
@@ -160,6 +166,7 @@ timer.elapsed-s = () (s i64) {
 timer.elapsed-us = () (us i64) {
     #{overflow=wrap}
     ms i64 = .end-ts - .start-ts
+    #{overflow=wrap}
     us = ms * 1000
 }
 
@@ -207,6 +214,7 @@ days-in-month-fn = (y i64, m i64) (d i64) {
 
         m > 12 -> return
     }
+    #{overflow=wrap}
     d = _days-in-month[m - 1]
     m == 2 -> {
         leap bool
@@ -223,6 +231,7 @@ unix-to-date = (ts i64) (d date) {
     #{overflow=wrap}
     days = ts / 86400
     rem = ts % 86400
+    #{overflow=wrap}
     rem < 0 -> {
         #{overflow=wrap}
         days = days - 1
@@ -230,28 +239,44 @@ unix-to-date = (ts i64) (d date) {
     }
 
     ; 時、分、秒
+    #{overflow=wrap}
     d.hour = rem / 3600
+    #{overflow=wrap}
     d.min = (rem % 3600) / 60
     d.sec = rem % 60
 
     ; 將 1970-01-01 起的天數轉為日期
     ; days = z - 719468（z 是從 0000-03-01 起的天數）
+    #{overflow=wrap}
     z = days + 719468
+    #{overflow=wrap}
     era = z / 146097
+    #{overflow=wrap}
     z < 0 && z % 146097 != 0 -> era = era - 1
+    #{overflow=wrap}
     doe = z - era * 146097
+    #{overflow=wrap}
     yoe = doe / 36524
     doe2 = doe % 36524
+    #{overflow=wrap}
     yoe2 = doe2 / 1461
     doe3 = doe2 % 1461
+    #{overflow=wrap}
     yoe3 = doe3 / 365
     yoe3 == 4 -> yoe3 = 3
+    #{overflow=wrap}
     y = era * 400 + yoe * 100 + yoe2 * 4 + yoe3
+    #{overflow=wrap}
     doy = doe - yoe * 36524 - yoe2 * 1461 - yoe3 * 365
+    #{overflow=wrap}
     mp = (5 * doy + 2) / 153
+    #{overflow=wrap}
     d.day = doy - (153 * mp + 2) / 5 + 1
+    #{overflow=wrap}
     d.month = mp + 3
+    #{overflow=wrap}
     mp >= 10 -> d.month = mp - 9
+    #{overflow=wrap}
     {
         d.month <= 2 -> d.year = y + 1
 
@@ -260,7 +285,9 @@ unix-to-date = (ts i64) (d date) {
 
     ; 星期幾（1970-01-01 是星期四 = 4）
     w = days % 7
+    #{overflow=wrap}
     w < 0 -> w = w + 7
+    #{overflow=wrap}
     d.wday = (w + 4) % 7
 }
 
@@ -272,19 +299,28 @@ date-to-unix = (d date) (ts i64) {
     m = d.month
 
     ; 調整：3月為年初
+    #{overflow=wrap}
     m <= 2 -> y = y - 1
+    #{overflow=wrap}
     era = y / 400
+    #{overflow=wrap}
     y < 0 && y % 400 != 0 -> era = era - 1
+    #{overflow=wrap}
     yoe = y - era * 400
     m2 = m
+    #{overflow=wrap}
     {
         m2 > 2 -> m2 = m2 - 3
 
         -> m2 = m2 + 9
     }
+    #{overflow=wrap}
     doy = (153 * m2 + 2) / 5 + d.day - 1
+    #{overflow=wrap}
     doe = yoe * 365 + yoe / 4 - yoe / 100 + doy
+    #{overflow=wrap}
     days = era * 146097 + doe - 719468
+    #{overflow=wrap}
     ts = days * 86400 + d.hour * 3600 + d.min * 60 + d.sec
 }
 
@@ -294,6 +330,7 @@ format-date = (d date) (out str) {
     #{overflow=wrap}
     neg = 0
     yr = d.year
+    #{overflow=wrap}
     yr < 0 -> {
         #{overflow=wrap}
         neg = 1
@@ -307,34 +344,53 @@ format-date = (d date) (out str) {
         out[0] = 45
         pos = 1
     }
+    #{overflow=wrap}
     out[pos] = (yr / 1000) % 10 + 48
+    #{overflow=wrap}
     out[pos + 1] = (yr / 100) % 10 + 48
+    #{overflow=wrap}
     out[pos + 2] = (yr / 10) % 10 + 48
+    #{overflow=wrap}
     out[pos + 3] = yr % 10 + 48
+    #{overflow=wrap}
     out[pos + 4] = 45
 
     ; 月
+    #{overflow=wrap}
     out[pos + 5] = d.month / 10 + 48
+    #{overflow=wrap}
     out[pos + 6] = d.month % 10 + 48
+    #{overflow=wrap}
     out[pos + 7] = 45
 
     ; 日
+    #{overflow=wrap}
     out[pos + 8] = d.day / 10 + 48
+    #{overflow=wrap}
     out[pos + 9] = d.day % 10 + 48
+    #{overflow=wrap}
     out[pos + 10] = 32
 
     ; 時
+    #{overflow=wrap}
     out[pos + 11] = d.hour / 10 + 48
+    #{overflow=wrap}
     out[pos + 12] = d.hour % 10 + 48
+    #{overflow=wrap}
     out[pos + 13] = 58
 
     ; 分
+    #{overflow=wrap}
     out[pos + 14] = d.min / 10 + 48
+    #{overflow=wrap}
     out[pos + 15] = d.min % 10 + 48
+    #{overflow=wrap}
     out[pos + 16] = 58
 
     ; 秒
+    #{overflow=wrap}
     out[pos + 17] = d.sec / 10 + 48
+    #{overflow=wrap}
     out[pos + 18] = d.sec % 10 + 48
 }
 
@@ -366,6 +422,7 @@ parse-date = (s str) (ts ?i64) {
         #{overflow=wrap}
         c = s[i]
         c < 48 || c > 57 -> return
+        #{overflow=wrap}
         d.year = d.year * 10 + (c - 48)
     }
     s[4] != 45 -> return
@@ -373,6 +430,7 @@ parse-date = (s str) (ts ?i64) {
         #{overflow=wrap}
         c = s[i]
         c < 48 || c > 57 -> return
+        #{overflow=wrap}
         d.month = d.month * 10 + (c - 48)
     }
     s[7] != 45 -> return
@@ -380,6 +438,7 @@ parse-date = (s str) (ts ?i64) {
         #{overflow=wrap}
         c = s[i]
         c < 48 || c > 57 -> return
+        #{overflow=wrap}
         d.day = d.day * 10 + (c - 48)
     }
 

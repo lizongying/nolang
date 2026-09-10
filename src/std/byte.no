@@ -120,6 +120,7 @@ i64.to-bytes-le = () (out [?]byte) {
             seg[3] = 0x80 | (cp & 0x3f)
         }
 
+        #{overflow=wrap}
         r = r - seg
     }
     out = r
@@ -148,6 +149,7 @@ i64.to-bytes-le = () (out [?]byte) {
     }
     n = .len()
 
+    #{overflow=wrap}
     limit = n - tn
     i = 0
     {
@@ -167,6 +169,7 @@ i64.to-bytes-le = () (out [?]byte) {
             pos = i
             return
         }
+        #{overflow=wrap}
         i = i + 1
     } (i <= limit)
 }
@@ -185,6 +188,7 @@ i64.to-bytes-le = () (out [?]byte) {
     from < 0 -> from = 0
     n = .len()
 
+    #{overflow=wrap}
     limit = n - tn
     i = from
     {
@@ -204,6 +208,7 @@ i64.to-bytes-le = () (out [?]byte) {
             pos = i
             return
         }
+        #{overflow=wrap}
         i = i + 1
     } (i <= limit)
 }
@@ -216,6 +221,7 @@ i64.to-bytes-le = () (out [?]byte) {
     end > .len() -> end = .len()
     start >= end -> return
 
+    #{overflow=wrap}
     n = end - start
     val = with-len(n)
     i <- [0..n): {
@@ -238,11 +244,14 @@ HEX-LOWER = '0123456789abcdef'
     #{overflow=wrap}
     n = .len()
 
+    #{overflow=wrap}
     out = with-len(n * 2)
     i <- [0..n): {
         #{overflow=wrap}
         b = .[i]
+        #{overflow=wrap}
         out[i * 2] = HEX-UPPER[b >> 4]
+        #{overflow=wrap}
         out[i * 2 + 1] = HEX-UPPER[b & 15]
     }
 }
@@ -252,11 +261,14 @@ HEX-LOWER = '0123456789abcdef'
     #{overflow=wrap}
     n = .len()
 
+    #{overflow=wrap}
     out = with-len(n * 2)
     i <- [0..n): {
         #{overflow=wrap}
         b = .[i]
+        #{overflow=wrap}
         out[i * 2] = HEX-LOWER[b >> 4]
+        #{overflow=wrap}
         out[i * 2 + 1] = HEX-LOWER[b & 15]
     }
 }

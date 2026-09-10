@@ -106,11 +106,14 @@ txt.to-hex = () (out str) {
     #{overflow=wrap}
     HEX = '0123456789ABCDEF'
     n i64 = .len()
+    #{overflow=wrap}
     out = with-len(n * 2)
     i <- [0..n): {
         #{overflow=wrap}
         b = .byte(i)
+        #{overflow=wrap}
         out[i * 2] = HEX[b >> 4]
+        #{overflow=wrap}
         out[i * 2 + 1] = HEX[b & 15]
     }
 }
@@ -165,6 +168,7 @@ txt.ends-with = (sub txt) (yes bool) {
     n i64 = .len()
     sn == 0 -> yes = true
     n < sn -> yes = false
+    #{overflow=wrap}
     off = n - sn
     yes = .index-from(sub, off) == off
 }
@@ -179,6 +183,7 @@ txt.append = (b byte) {
     n i64 = .len()
     n >= 255 -> return
     .[n] = b
+    #{overflow=wrap}
     .len = n + 1
 }
 
@@ -187,12 +192,14 @@ txt.append-str = (s str) {
     #{overflow=wrap}
     sn i64 = s.len-bytes()
     n i64 = .len()
+    #{overflow=wrap}
     remain = 255 - n
     sn > remain -> sn = remain
     i <- [0..sn): {
         #{overflow=wrap}
         .[n + i] = s.byte(i)
     }
+    #{overflow=wrap}
     .len = n + sn
 }
 
@@ -201,12 +208,14 @@ txt.append-txt = (t txt) {
     #{overflow=wrap}
     tn i64 = t.len()
     n i64 = .len()
+    #{overflow=wrap}
     remain = 255 - n
     tn > remain -> tn = remain
     i <- [0..tn): {
         #{overflow=wrap}
         .[n + i] = t.byte(i)
     }
+    #{overflow=wrap}
     .len = n + tn
 }
 
@@ -273,6 +282,7 @@ txt.slice = (start i64, end i64) (out txt) {
     cur-len i64 = .len()
     end > cur-len -> end = cur-len
     start >= end -> return
+    #{overflow=wrap}
     n = end - start
     n > 255 -> n = 255
     i <- [0..n): {
@@ -381,13 +391,16 @@ txt.trim = () (val txt) {
         c = .byte(start)
         c != 32 && c != 9 && c != 10 && c != 13 -> break
     }
+    #{overflow=wrap}
     end = n - 1
     {
         #{overflow=wrap}
         c = .byte(end)
         c != 32 && c != 9 && c != 10 && c != 13 -> break
+        #{overflow=wrap}
         end = end - 1
     } (end >= start)
+    #{overflow=wrap}
     m = end - start + 1
     m < 0 -> return
     i <- [0..m): {
@@ -408,6 +421,7 @@ txt.trim-char = (ch char) (val txt) {
         b = .byte(start)
         cp i64 = b
         clen = 1
+        #{overflow=wrap}
         {
             b < 0x80 -> {
                 cp = b
@@ -433,6 +447,7 @@ txt.trim-char = (ch char) (val txt) {
             }
         }
         cp != ch -> break
+        #{overflow=wrap}
         start = start + clen
     } (start < n)
     end = start
@@ -442,6 +457,7 @@ txt.trim-char = (ch char) (val txt) {
         b = .byte(i)
         cp = b
         clen = 1
+        #{overflow=wrap}
         {
             b < 0x80 -> {
                 cp = b
@@ -466,9 +482,12 @@ txt.trim-char = (ch char) (val txt) {
                 clen = 4
             }
         }
+        #{overflow=wrap}
         cp != ch -> end = i + clen
+        #{overflow=wrap}
         i = i + clen
     } (i < n)
+    #{overflow=wrap}
     m = end - start
     m < 0 -> return
     j <- [0..m): {
@@ -512,6 +531,7 @@ txt.count = () (cnt i64) {
     {
         #{overflow=wrap}
         b = .byte(i)
+        #{overflow=wrap}
         {
             b < 0x80 -> i = i + 1
 
@@ -521,6 +541,7 @@ txt.count = () (cnt i64) {
 
             -> i = i + 4
         }
+        #{overflow=wrap}
         cnt = cnt + 1
     } (i < n)
 }
@@ -539,6 +560,7 @@ txt.index-from = (target txt, from i64) (pos i64) {
     m i64 = target.len()
     m == 0 -> from <= n -> pos = from
     n < m -> pos = -1
+    #{overflow=wrap}
     limit = n - m
     i <- [0..n]: {
         #{overflow=wrap}
@@ -565,6 +587,7 @@ txt.rindex = (target txt) (pos i64) {
     m i64 = target.len()
     m == 0 -> pos = n
     n < m -> pos = -1
+    #{overflow=wrap}
     limit = n - m
     i <- [0..n]: {
         #{overflow=wrap}
@@ -596,6 +619,7 @@ txt.rindex-from = (target txt, from i64) (pos i64) {
     m i64 = target.len()
     m == 0 -> from <= n -> pos = n
     n < m -> pos = -1
+    #{overflow=wrap}
     limit = n - m
     i <- [0..n]: {
         #{overflow=wrap}
@@ -708,6 +732,7 @@ txt.to-u8 = () (val ?u8) {
             val = err('invalid number: non-digit character')
             return
         }
+        #{overflow=wrap}
         n = n * 10 + c - 48
     }
     {
@@ -747,6 +772,7 @@ txt.to-u16 = () (val ?u16) {
             val = err('invalid number: non-digit character')
             return
         }
+        #{overflow=wrap}
         n = n * 10 + c - 48
     }
     {
@@ -786,6 +812,7 @@ txt.to-u32 = () (val ?u32) {
             val = err('invalid number: non-digit character')
             return
         }
+        #{overflow=wrap}
         n = n * 10 + c - 48
     }
     {
@@ -816,6 +843,7 @@ txt.to-u64 = () (val ?u64) {
             val = err('invalid number: non-digit character')
             return
         }
+        #{overflow=wrap}
         n = n * 10 + c - 48
     }
     val = n
@@ -851,6 +879,7 @@ txt.to-byte = () (val ?byte) {
             val = err('invalid number: non-digit character')
             return
         }
+        #{overflow=wrap}
         n = n * 10 + c - 48
     }
     {
@@ -925,6 +954,7 @@ txt.replace-char = (old-ch char, new-ch char) (val txt) {
         b = .byte(i)
         cp i64 = b
         clen = 1
+        #{overflow=wrap}
         {
             b < 0x80 -> {
                 cp = b
@@ -949,6 +979,7 @@ txt.replace-char = (old-ch char, new-ch char) (val txt) {
                 clen = 4
             }
         }
+        #{overflow=wrap}
         {
             cp == old-ch -> {
                 new-ch < 0x80 -> {
@@ -1030,6 +1061,7 @@ txt.replace-char = (old-ch char, new-ch char) (val txt) {
                 }
             }
         }
+        #{overflow=wrap}
         i = i + clen
     } (i < n)
     val.len = pos
@@ -1057,10 +1089,12 @@ txt.replace-str = (old txt, new txt) (val txt) {
                 match = 0
                 break
             }
+            #{overflow=wrap}
             .byte(i + j) != old.byte(j) -> {
                 match = 0
                 break
             }
+            #{overflow=wrap}
             j = j + 1
         } (j < old-len)
         match -> {
@@ -1108,6 +1142,7 @@ txt.replace-n = (old txt, new txt, n i64) (val txt) {
         val = .slice(0, .len())
         return
     }
+    #{overflow=wrap}
     repl = np - 1
     repl > n -> repl = n
     total = 0
@@ -1117,6 +1152,7 @@ txt.replace-n = (old txt, new txt, n i64) (val txt) {
             #{overflow=wrap}
             i <= repl -> total = total + new.len() -> total = total + old.len()
         }
+        #{overflow=wrap}
         total = total + parts[i].len()
     }
     total > 255 -> total = 255
@@ -1165,6 +1201,7 @@ txt.split = (sep txt) (out []txt) {
     {
         #{overflow=wrap}
         result.push(.slice(start, pos))
+        #{overflow=wrap}
         start = pos + sep.len()
         pos = .index-from(sep, start)
     } (pos >= 0)
@@ -1196,7 +1233,9 @@ txt.split-n = (sep txt, maxsplit i64) (out []txt) {
             return
         }
         result.push(.slice(start, pos))
+        #{overflow=wrap}
         start = pos + sep.len()
+        #{overflow=wrap}
         count = count + 1
         pos = .index-from(sep, start)
     } (pos >= 0)
@@ -1272,6 +1311,7 @@ txt.lines = () (out []txt) {
     {
         #{overflow=wrap}
         c = .byte(i)
+        #{overflow=wrap}
         c == 10 -> {
             #{overflow=wrap}
             end = i
@@ -1283,6 +1323,7 @@ txt.lines = () (out []txt) {
             result.push(.slice(start, end))
             start = i + 1
         }
+        #{overflow=wrap}
         i = i + 1
     } (i < n)
     start < n -> result.push(.slice(start, n))

@@ -20,6 +20,7 @@ add = (s []i64, n i64, val i64) (new-n i64) {
         s[i] == val -> return
     }
     s[n] = val
+    #{overflow=wrap}
     new-n = n + 1
 }
 

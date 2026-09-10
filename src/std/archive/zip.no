@@ -34,7 +34,9 @@ zip-entry {
 u32le = (data []byte, off i64) (v i64) {
     #{overflow=wrap}
     off1 = off + 1
+    #{overflow=wrap}
     off2 = off + 2
+    #{overflow=wrap}
     off3 = off + 3
     b0 = data[off]
     b1 = data[off1]
@@ -60,7 +62,9 @@ zip.find-eocd = () (off i64) {
     off = -1
     n = len(.data)
     ! n >= 22 -> return
+    #{overflow=wrap}
     start = n - 22
+    #{overflow=wrap}
     i <- [0..start + 1): {
         #{overflow=wrap}
         idx = start - i
@@ -79,6 +83,7 @@ zip.get-cd-off = () (cd-off i64) {
         cd-off = 0
         return
     }
+    #{overflow=wrap}
     off16 = eocd + 16
     cd-off = u32le(.data, off16)
 }
@@ -91,6 +96,7 @@ zip.get-total = () (total i64) {
         total = 0
         return
     }
+    #{overflow=wrap}
     off8 = eocd + 8
     total = u16le(.data, off8)
 }
@@ -103,13 +109,18 @@ zip.entry-off = (idx i64) (off i64) {
     j <- [0..idx): {
         #{overflow=wrap}
         j >= total -> break
+        #{overflow=wrap}
         off28 = cur + 28
+        #{overflow=wrap}
         off30 = cur + 30
+        #{overflow=wrap}
         off32 = cur + 32
         name-len = u16le(.data, off28)
         extra-len = u16le(.data, off30)
         comment-len = u16le(.data, off32)
+        #{overflow=wrap}
         skip = 46 + name-len + extra-len + comment-len
+        #{overflow=wrap}
         cur = cur + skip
     }
     off = cur
@@ -130,13 +141,16 @@ zip.entry = (idx i64) (e zip-entry) {
 zip.name = (idx i64) (name str) {
     #{overflow=wrap}
     off = .entry-off(idx)
+    #{overflow=wrap}
     off28 = off + 28
     name-len = u16le(.data, off28)
+    #{overflow=wrap}
     off46 = off + 46
     result = ''
     i <- [0..name-len): {
         #{overflow=wrap}
         idx2 = off46 + i
+        #{overflow=wrap}
         result = result - number.char-to-str(.data[idx2])
     }
     name = result
@@ -146,6 +160,7 @@ zip.name = (idx i64) (name str) {
 zip.size = (idx i64) (sz i64) {
     #{overflow=wrap}
     off = .entry-off(idx)
+    #{overflow=wrap}
     off24 = off + 24
     sz = u32le(.data, off24)
 }
@@ -154,6 +169,7 @@ zip.size = (idx i64) (sz i64) {
 zip.compressed-size = (idx i64) (csz i64) {
     #{overflow=wrap}
     off = .entry-off(idx)
+    #{overflow=wrap}
     off20 = off + 20
     csz = u32le(.data, off20)
 }
@@ -162,6 +178,7 @@ zip.compressed-size = (idx i64) (csz i64) {
 zip.method = (idx i64) (method i64) {
     #{overflow=wrap}
     off = .entry-off(idx)
+    #{overflow=wrap}
     off10 = off + 10
     method = u16le(.data, off10)
 }
@@ -170,9 +187,13 @@ zip.method = (idx i64) (method i64) {
 zip.extract = (idx i64) (out []byte) {
     #{overflow=wrap}
     off = .entry-off(idx)
+    #{overflow=wrap}
     off24 = off + 24
+    #{overflow=wrap}
     off10 = off + 10
+    #{overflow=wrap}
     off42 = off + 42
+    #{overflow=wrap}
     off20 = off + 20
     sz = u32le(.data, off24)
     csz = u32le(.data, off20)
@@ -180,13 +201,18 @@ zip.extract = (idx i64) (out []byte) {
     local-off = u32le(.data, off42)
 
     ; local file header: 30 + name-len + extra-len
+    #{overflow=wrap}
     off26 = local-off + 26
+    #{overflow=wrap}
     off28 = local-off + 28
+    #{overflow=wrap}
     off30 = local-off + 30
     name-len2 = u16le(.data, off26)
     extra-len2 = u16le(.data, off28)
+    #{overflow=wrap}
     data-off = off30 + name-len2 + extra-len2
     result []byte
+    #{overflow=wrap}
     {
         method == 0 && sz > 0 -> {
             i <- [0..sz): {
@@ -217,13 +243,16 @@ zip.extract = (idx i64) (out []byte) {
 zip-entry.name = () (name str) {
     #{overflow=wrap}
     off = .off
+    #{overflow=wrap}
     off28 = off + 28
     name-len = u16le(.data, off28)
+    #{overflow=wrap}
     off46 = off + 46
     result = ''
     i <- [0..name-len): {
         #{overflow=wrap}
         idx2 = off46 + i
+        #{overflow=wrap}
         result = result - number.char-to-str(.data[idx2])
     }
     name = result
@@ -254,9 +283,13 @@ zip-entry.method = () (method i64) {
 zip-entry.extract = () (out []byte) {
     #{overflow=wrap}
     off = .off
+    #{overflow=wrap}
     off24 = off + 24
+    #{overflow=wrap}
     off10 = off + 10
+    #{overflow=wrap}
     off42 = off + 42
+    #{overflow=wrap}
     off20 = off + 20
     sz = u32le(.data, off24)
     csz = u32le(.data, off20)
@@ -264,13 +297,18 @@ zip-entry.extract = () (out []byte) {
     local-off = u32le(.data, off42)
 
     ; local file header: 30 + name-len + extra-len
+    #{overflow=wrap}
     off26 = local-off + 26
+    #{overflow=wrap}
     off28 = local-off + 28
+    #{overflow=wrap}
     off30 = local-off + 30
     name-len2 = u16le(.data, off26)
     extra-len2 = u16le(.data, off28)
+    #{overflow=wrap}
     data-off = off30 + name-len2 + extra-len2
     result []byte
+    #{overflow=wrap}
     {
         method == 0 && sz > 0 -> {
             i <- [0..sz): {
@@ -319,6 +357,7 @@ zip-writer.add-file = (name str, content []byte) {
     off = .data.len()
     .write-local-file(name, content, crc)
     .write-cd-entry(name, off, content.len(), content.len(), crc)
+    #{overflow=wrap}
     .count = .count + 1
 }
 
@@ -326,11 +365,13 @@ zip-writer.add-file = (name str, content []byte) {
 zip-writer.add-dir = (name str) {
     #{overflow=wrap}
     dname = name
+    #{overflow=wrap}
     dname.ends-with('/') == false -> dname = dname - '/'
     empty []byte
     off = .data.len()
     .write-local-file(dname, empty, 0)
     .write-cd-entry(dname, off, 0, 0, 0)
+    #{overflow=wrap}
     .count = .count + 1
 }
 

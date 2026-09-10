@@ -102,6 +102,7 @@ bn-sub = (a []byte, b []byte) (diff [32]byte, borrow i64) {
     i <- [0..32): {
         #{overflow=wrap}
         val = (a[i]) - (b[i]) - borrow
+        #{overflow=wrap}
         {
             val < 0 -> {
                 #{overflow=wrap}
@@ -156,18 +157,21 @@ bn-mulmod = (a []byte, b []byte, m []byte) (out [32]byte) {
         j <- [0..32): {
             #{overflow=wrap}
             idx = i + j
+            #{overflow=wrap}
             val = (product[idx]) + (a[i]) * (b[j]) + carry
             product[idx] = val & 255
             carry = val >> 8
         }
 
         ; 傳播進位
+        #{overflow=wrap}
         idx = i + 32
         {
             #{overflow=wrap}
             val = (product[idx]) + carry
             product[idx] = val & 255
             carry = val >> 8
+            #{overflow=wrap}
             idx = idx + 1
         } (idx < 64 && carry != 0)
     }
@@ -188,6 +192,7 @@ bn-mulmod = (a []byte, b []byte, m []byte) (out [32]byte) {
         #{overflow=wrap}
         byte-idx = bit / 8
         bit-idx = bit % 8
+        #{overflow=wrap}
         (work[byte-idx] >> bit-idx) & 1 == 1 -> {
 
             ; 減去 m << (bit - 256)
@@ -205,6 +210,7 @@ bn-mulmod = (a []byte, b []byte, m []byte) (out [32]byte) {
             ; 由於位元級移位複雜，使用更簡單的方法
             ; 直接從高 32 位元組開始減法
         }
+        #{overflow=wrap}
         bit = bit - 1
     } (bit >= 256)
 
@@ -226,6 +232,7 @@ bn-mulmod = (a []byte, b []byte, m []byte) (out [32]byte) {
         i <- [0..32): {
             #{overflow=wrap}
             wi = 0
+            #{overflow=wrap}
             shift-byte + i < 64 -> wi = work[shift-byte + i]
             mi = m[i]
             {
@@ -237,6 +244,7 @@ bn-mulmod = (a []byte, b []byte, m []byte) (out [32]byte) {
                 }
             }
         }
+        #{overflow=wrap}
         can-sub == 1 -> {
             #{overflow=wrap}
             borrow = 0
@@ -477,7 +485,9 @@ ec-point-double = (p []byte) (r []byte) {
     i <- [0..32): {
         #{overflow=wrap}
         r[i] = x3[i]
+        #{overflow=wrap}
         r[32 + i] = y3[i]
+        #{overflow=wrap}
         r[64 + i] = z3[i]
     }
 }
@@ -615,7 +625,9 @@ ec-point-add = (p []byte, q []byte) (r []byte) {
     i <- [0..32): {
         #{overflow=wrap}
         r[i] = x3[i]
+        #{overflow=wrap}
         r[32 + i] = y3[i]
+        #{overflow=wrap}
         r[64 + i] = z3[i]
     }
 }
@@ -645,6 +657,7 @@ ec-scalar-mult = (k [32]byte, p []byte) (r []byte) {
         }
 
         ; 如果 bit 為 1，R = R + P
+        #{overflow=wrap}
         byte-idx = bit / 8
         bit-idx = bit % 8
         (k[byte-idx] >> bit-idx) & 1 == 1 -> {
@@ -653,6 +666,7 @@ ec-scalar-mult = (k [32]byte, p []byte) (r []byte) {
                 r[i] = tmp[i]
             }
         }
+        #{overflow=wrap}
         bit = bit - 1
     } (bit >= 0)
 }
@@ -705,6 +719,7 @@ ec-point-to-bytes = (p []byte) (out [65]byte) {
     i <- [0..32): {
         #{overflow=wrap}
         out[1 + i] = x[31 - i]
+        #{overflow=wrap}
         out[33 + i] = y[31 - i]
     }
 }
@@ -721,6 +736,7 @@ ec-bytes-to-point = (in [65]byte) (out []byte) {
     i <- [0..32): {
         #{overflow=wrap}
         x[i] = in[1 + 31 - i]
+        #{overflow=wrap}
         y[i] = in[33 + 31 - i]
     }
 
@@ -728,6 +744,7 @@ ec-bytes-to-point = (in [65]byte) (out []byte) {
     i <- [0..32): {
         #{overflow=wrap}
         out[i] = x[i]
+        #{overflow=wrap}
         out[32 + i] = y[i]
     }
     out[64] = 1
@@ -748,6 +765,7 @@ ec-get-basepoint = () (g []byte) {
     i <- [0..32): {
         #{overflow=wrap}
         g[i] = P256-GX[31 - i]
+        #{overflow=wrap}
         g[32 + i] = P256-GY[31 - i]
     }
 
@@ -815,6 +833,7 @@ ecdsa-sign = (priv [32]byte, msg []byte) (sig [64]byte) {
     k [32]byte
     state = 0
     i <- [0..32): {
+        #{overflow=wrap}
         state, rand-r = rand.rand(state + d[i] + h-le[i] + i)
 
         #{overflow=wrap}
@@ -867,6 +886,7 @@ ecdsa-sign = (priv [32]byte, msg []byte) (sig [64]byte) {
     i <- [0..32): {
         #{overflow=wrap}
         sig[i] = r-val[31 - i]
+        #{overflow=wrap}
         sig[32 + i] = s-val[31 - i]
     }
 }
@@ -884,6 +904,7 @@ ecdsa-verify = (pub [65]byte, msg []byte, sig [64]byte) (ok i64) {
     i <- [0..32): {
         #{overflow=wrap}
         r-val[i] = sig[31 - i]
+        #{overflow=wrap}
         s-val[i] = sig[32 + 31 - i]
     }
 
