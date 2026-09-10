@@ -25,7 +25,7 @@ rc4 = (in []byte, key []byte) (out []byte) {
     key-len = key.len()
     j = 0
     i <- [0..256): {
-        #{overflow = wrap}
+        #{overflow=wrap}
         j = (j + (s[i]) + (key[i % key-len])) % 256
 
         ; Swap s[i] and s[j]
@@ -39,9 +39,8 @@ rc4 = (in []byte, key []byte) (out []byte) {
     i = 0
     j = 0
     pos <- [0..in.len()): {
-        #{overflow = wrap}
+        #{overflow=wrap}
         i = (i + 1) % 256
-        #{overflow = wrap}
         j = (j + (s[i])) % 256
 
         ; Swap s[i] and s[j]
@@ -50,7 +49,6 @@ rc4 = (in []byte, key []byte) (out []byte) {
         s[j] = t
 
         ; 生成密鑰流位元組
-        #{overflow = wrap}
         k = s[((s[i]) + (s[j])) % 256]
         out[pos] = (in[pos]) ^ (k & 255)
     }

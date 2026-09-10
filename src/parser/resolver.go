@@ -258,6 +258,20 @@ func (s *SemanticContext) AnnotationsOf(n Node) []*AnnotationEntry {
 	return nil
 }
 
+// RawAnnotationsOf 返回節點在「解析期」由 #{...} 收集的原始註解條目（無則 nil）。
+// 解析期 Annotations 尚未由 ResolveProgram 從 RawAnnotations 拷貝，故解析期邏輯
+// （如 blockLevelOverflowMode / propagateOverflowInStmts）必須讀此欄位，否則永遠看不到
+// 語句自帶（attached）的註解。nil receiver 安全。
+func (s *SemanticContext) RawAnnotationsOf(n Node) []*AnnotationEntry {
+	if s == nil {
+		return nil
+	}
+	if ns, ok := s.nodeSem[n]; ok {
+		return ns.RawAnnotations
+	}
+	return nil
+}
+
 // PlatformKeysOf 返回節點的平台註解 key（無則 nil）。nil receiver 安全。
 func (s *SemanticContext) PlatformKeysOf(n Node) []string {
 	if s == nil {

@@ -35,23 +35,20 @@ ARGON2-MASK u64 = 18446744073709551615
 
 ; rotr64: 64-bit 循環右移
 argon2-rotr = (x u64, n i64) (r u64) {
-    #{overflow = wrap}
+    #{overflow=wrap}
     r = ((x >> n) | (x << (64 - n))) & ARGON2-MASK
 }
 
 ; Blake2b G 函數（用於 Argon2 壓縮函數）
 ; 操作 8 個 u64 值（索引 a..h 在 v 陣列中）
 argon2-blake-g = (v []u64, a i64, b i64, c i64, d i64, x u64, y u64) {
-    #{overflow = wrap}
+    #{overflow=wrap}
     v[a] = (v[a] + v[b] + 2 * (v[a] & 4294967295) * (v[b] & 4294967295)) & ARGON2-MASK
     v[d] = argon2-rotr(v[d] ^ v[a], 32)
-    #{overflow = wrap}
     v[c] = (v[c] + v[d] + 2 * (v[c] & 4294967295) * (v[d] & 4294967295)) & ARGON2-MASK
     v[b] = argon2-rotr(v[b] ^ v[c], 24)
-    #{overflow = wrap}
     v[a] = (v[a] + v[b] + 2 * (v[a] & 4294967295) * (v[b] & 4294967295)) & ARGON2-MASK
     v[d] = argon2-rotr(v[d] ^ v[a], 16)
-    #{overflow = wrap}
     v[c] = (v[c] + v[d] + 2 * (v[c] & 4294967295) * (v[d] & 4294967295)) & ARGON2-MASK
     v[b] = argon2-rotr(v[b] ^ v[c], 63)
 }
@@ -76,7 +73,6 @@ argon2-h-prime = (input []byte, out-len i64) (out []byte) {
 
     {
         out-len <= 64 -> {
-
             ; Blake2b 輸出，參數: out_len 作為 salt
             ; 構建輸入: len_bytes || input
             combined []byte
@@ -85,7 +81,7 @@ argon2-h-prime = (input []byte, out-len i64) (out []byte) {
             combined[2] = len-bytes[2]
             combined[3] = len-bytes[3]
             i <- [0..input.len()): {
-                #{overflow = wrap}
+                #{overflow=wrap}
                 combined[4 + i] = input[i]
             }
 
@@ -97,17 +93,18 @@ argon2-h-prime = (input []byte, out-len i64) (out []byte) {
                 out[i] = hash[i]
             }
         }
-        -> {
 
+        -> {
             ; 輸出 > 64 位元組，需要多次 Blake2b
             ; V = Blake2b(len_bytes || input)
+            #{overflow=wrap}
             combined []byte
             combined[0] = len-bytes[0]
             combined[1] = len-bytes[1]
             combined[2] = len-bytes[2]
             combined[3] = len-bytes[3]
             i <- [0..input.len()): {
-                #{overflow = wrap}
+                #{overflow=wrap}
                 combined[4 + i] = input[i]
             }
             v [64]byte
@@ -115,20 +112,19 @@ argon2-h-prime = (input []byte, out-len i64) (out []byte) {
 
             ; 輸出前 32 位元組
             i <- [0..32): {
+                #{overflow=wrap}
                 out[i] = v[i]
             }
-            #{overflow = wrap}
             remaining = out-len - 32
             pos = 32
             {
+                #{overflow=wrap}
                 v = blake2.blake2b(v)
                 i <- [0..32): {
-                    #{overflow = wrap}
+                    #{overflow=wrap}
                     out[pos + i] = v[i]
                 }
-                #{overflow = wrap}
                 pos = pos + 32
-                #{overflow = wrap}
                 remaining = remaining - 32
             } (remaining > 64)
 
@@ -136,7 +132,7 @@ argon2-h-prime = (input []byte, out-len i64) (out []byte) {
             last-hash [64]byte
             last-hash = blake2.blake2b(v)
             i <- [0..remaining): {
-                #{overflow = wrap}
+                #{overflow=wrap}
                 out[pos + i] = last-hash[i]
             }
         }
@@ -163,9 +159,8 @@ argon2-compress = (x []byte, y []byte) (out []byte) {
     ; 載入為 128 個 u64（16×8 矩陣）
     v [128]u64
     i <- [0..128): {
-        #{overflow = wrap}
+        #{overflow=wrap}
         off = i * 8
-        #{overflow = wrap}
         v[i] = (r[off]) | ((r[off + 1]) << 8) | ((r[off + 2]) << 16) | ((r[off + 3]) << 24) | ((r[off + 4]) << 32) | ((r[off + 5]) << 40) | ((r[off + 6]) << 48) | ((r[off + 7]) << 56)
     }
 
@@ -173,84 +168,54 @@ argon2-compress = (x []byte, y []byte) (out []byte) {
     i <- [0..8): {
 
         ; 行 i: v[16*i .. 16*i+15]
-        #{overflow = wrap}
+        #{overflow=wrap}
         base = i * 16
 
         ; 兩輪 G
-        #{overflow = wrap}
         argon2-blake-g(v, base + 0, base + 4, base + 8, base + 12, 0, 0)
-        #{overflow = wrap}
         argon2-blake-g(v, base + 1, base + 5, base + 9, base + 13, 0, 0)
-        #{overflow = wrap}
         argon2-blake-g(v, base + 2, base + 6, base + 10, base + 14, 0, 0)
-        #{overflow = wrap}
         argon2-blake-g(v, base + 3, base + 7, base + 11, base + 15, 0, 0)
-        #{overflow = wrap}
         argon2-blake-g(v, base + 0, base + 5, base + 10, base + 15, 0, 0)
-        #{overflow = wrap}
         argon2-blake-g(v, base + 1, base + 6, base + 11, base + 12, 0, 0)
-        #{overflow = wrap}
         argon2-blake-g(v, base + 2, base + 7, base + 8, base + 13, 0, 0)
-        #{overflow = wrap}
         argon2-blake-g(v, base + 3, base + 4, base + 9, base + 14, 0, 0)
     }
 
     ; 應用 P 函數到每列
     i <- [0..8): {
+        #{overflow=wrap}
         base = i
-        #{overflow = wrap}
         argon2-blake-g(v, base + 0, base + 32, base + 64, base + 96, 0, 0)
-        #{overflow = wrap}
         argon2-blake-g(v, base + 16, base + 48, base + 80, base + 112, 0, 0)
-        #{overflow = wrap}
         argon2-blake-g(v, base + 1, base + 33, base + 65, base + 97, 0, 0)
-        #{overflow = wrap}
         argon2-blake-g(v, base + 17, base + 49, base + 81, base + 113, 0, 0)
-        #{overflow = wrap}
         argon2-blake-g(v, base + 2, base + 34, base + 66, base + 98, 0, 0)
-        #{overflow = wrap}
         argon2-blake-g(v, base + 18, base + 50, base + 82, base + 114, 0, 0)
-        #{overflow = wrap}
         argon2-blake-g(v, base + 3, base + 35, base + 67, base + 99, 0, 0)
-        #{overflow = wrap}
         argon2-blake-g(v, base + 19, base + 51, base + 83, base + 115, 0, 0)
-        #{overflow = wrap}
         argon2-blake-g(v, base + 4, base + 36, base + 68, base + 100, 0, 0)
-        #{overflow = wrap}
         argon2-blake-g(v, base + 20, base + 52, base + 84, base + 116, 0, 0)
-        #{overflow = wrap}
         argon2-blake-g(v, base + 5, base + 37, base + 69, base + 101, 0, 0)
-        #{overflow = wrap}
         argon2-blake-g(v, base + 21, base + 53, base + 85, base + 117, 0, 0)
-        #{overflow = wrap}
         argon2-blake-g(v, base + 6, base + 38, base + 70, base + 102, 0, 0)
-        #{overflow = wrap}
         argon2-blake-g(v, base + 22, base + 54, base + 86, base + 118, 0, 0)
-        #{overflow = wrap}
         argon2-blake-g(v, base + 7, base + 39, base + 71, base + 103, 0, 0)
-        #{overflow = wrap}
         argon2-blake-g(v, base + 23, base + 55, base + 87, base + 119, 0, 0)
     }
 
     ; 輸出 = (X XOR Y) XOR Z（即 R XOR P(R)）
     i <- [0..128): {
-        #{overflow = wrap}
+        #{overflow=wrap}
         off = i * 8
         val = v[i]
         out[off] = ((val & 255) ^ r[off]) & 255
-        #{overflow = wrap}
         out[off + 1] = (((val >> 8) & 255) ^ r[off + 1]) & 255
-        #{overflow = wrap}
         out[off + 2] = (((val >> 16) & 255) ^ r[off + 2]) & 255
-        #{overflow = wrap}
         out[off + 3] = (((val >> 24) & 255) ^ r[off + 3]) & 255
-        #{overflow = wrap}
         out[off + 4] = (((val >> 32) & 255) ^ r[off + 4]) & 255
-        #{overflow = wrap}
         out[off + 5] = (((val >> 40) & 255) ^ r[off + 5]) & 255
-        #{overflow = wrap}
         out[off + 6] = (((val >> 48) & 255) ^ r[off + 6]) & 255
-        #{overflow = wrap}
         out[off + 7] = (((val >> 56) & 255) ^ r[off + 7]) & 255
     }
 }
@@ -270,13 +235,11 @@ argon2-compress = (x []byte, y []byte) (out []byte) {
 argon2id = (password []byte, salt []byte, time-cost i64, memory-cost i64, parallelism i64, out-len i64) (out []byte) {
 
     ; 計算記憶體區塊數
-    #{overflow = wrap}
+    #{overflow=wrap}
     m = memory-cost / (4 * parallelism) * 4 * parallelism
-    #{overflow = wrap}
     m < 8 * parallelism -> m = 8 * parallelism
     lanes = parallelism
     blocks = m
-    #{overflow = wrap}
     blocks-per-lane = blocks / lanes
 
     ; 構建 H0 輸入
@@ -285,135 +248,83 @@ argon2id = (password []byte, salt []byte, time-cost i64, memory-cost i64, parall
     pos = 0
 
     ; parallelism (32-bit LE)
-    #{overflow = wrap}
     h0-input[pos + 0] = parallelism & 255
-    #{overflow = wrap}
     h0-input[pos + 1] = (parallelism >> 8) & 255
-    #{overflow = wrap}
     h0-input[pos + 2] = (parallelism >> 16) & 255
-    #{overflow = wrap}
     h0-input[pos + 3] = (parallelism >> 24) & 255
-    #{overflow = wrap}
     pos = pos + 4
 
     ; out-len (32-bit LE)
-    #{overflow = wrap}
     h0-input[pos + 0] = out-len & 255
-    #{overflow = wrap}
     h0-input[pos + 1] = (out-len >> 8) & 255
-    #{overflow = wrap}
     h0-input[pos + 2] = (out-len >> 16) & 255
-    #{overflow = wrap}
     h0-input[pos + 3] = (out-len >> 24) & 255
-    #{overflow = wrap}
     pos = pos + 4
 
     ; memory-cost m (32-bit LE)
-    #{overflow = wrap}
     h0-input[pos + 0] = m & 255
-    #{overflow = wrap}
     h0-input[pos + 1] = (m >> 8) & 255
-    #{overflow = wrap}
     h0-input[pos + 2] = (m >> 16) & 255
-    #{overflow = wrap}
     h0-input[pos + 3] = (m >> 24) & 255
-    #{overflow = wrap}
     pos = pos + 4
 
     ; time-cost t (32-bit LE)
-    #{overflow = wrap}
     h0-input[pos + 0] = time-cost & 255
-    #{overflow = wrap}
     h0-input[pos + 1] = (time-cost >> 8) & 255
-    #{overflow = wrap}
     h0-input[pos + 2] = (time-cost >> 16) & 255
-    #{overflow = wrap}
     h0-input[pos + 3] = (time-cost >> 24) & 255
-    #{overflow = wrap}
     pos = pos + 4
 
     ; version v (32-bit LE) = 0x13
-    #{overflow = wrap}
     h0-input[pos + 0] = ARGON2-VERSION & 255
-    #{overflow = wrap}
     h0-input[pos + 1] = (ARGON2-VERSION >> 8) & 255
-    #{overflow = wrap}
     h0-input[pos + 2] = 0
-    #{overflow = wrap}
     h0-input[pos + 3] = 0
-    #{overflow = wrap}
     pos = pos + 4
 
     ; type y (32-bit LE) = 2 (Argon2id)
-    #{overflow = wrap}
     h0-input[pos + 0] = ARGON2-ID & 255
-    #{overflow = wrap}
     h0-input[pos + 1] = 0
-    #{overflow = wrap}
     h0-input[pos + 2] = 0
-    #{overflow = wrap}
     h0-input[pos + 3] = 0
-    #{overflow = wrap}
     pos = pos + 4
 
     ; len(P) (32-bit LE) || P
     pw-len = password.len()
-    #{overflow = wrap}
     h0-input[pos + 0] = pw-len & 255
-    #{overflow = wrap}
     h0-input[pos + 1] = (pw-len >> 8) & 255
-    #{overflow = wrap}
     h0-input[pos + 2] = (pw-len >> 16) & 255
-    #{overflow = wrap}
     h0-input[pos + 3] = (pw-len >> 24) & 255
-    #{overflow = wrap}
     pos = pos + 4
     i <- [0..pw-len): {
-        #{overflow = wrap}
+        #{overflow=wrap}
         h0-input[pos + i] = password[i]
     }
-    #{overflow = wrap}
     pos = pos + pw-len
 
     ; len(S) (32-bit LE) || S
     salt-len = salt.len()
-    #{overflow = wrap}
     h0-input[pos + 0] = salt-len & 255
-    #{overflow = wrap}
     h0-input[pos + 1] = (salt-len >> 8) & 255
-    #{overflow = wrap}
     h0-input[pos + 2] = (salt-len >> 16) & 255
-    #{overflow = wrap}
     h0-input[pos + 3] = (salt-len >> 24) & 255
-    #{overflow = wrap}
     pos = pos + 4
     i <- [0..salt-len): {
-        #{overflow = wrap}
+        #{overflow=wrap}
         h0-input[pos + i] = salt[i]
     }
-    #{overflow = wrap}
     pos = pos + salt-len
 
     ; len(K) = 0, len(X) = 0（不使用金鑰和關聯資料）
-    #{overflow = wrap}
     h0-input[pos + 0] = 0
-    #{overflow = wrap}
     h0-input[pos + 1] = 0
-    #{overflow = wrap}
     h0-input[pos + 2] = 0
-    #{overflow = wrap}
     h0-input[pos + 3] = 0
-    #{overflow = wrap}
     pos = pos + 4
-    #{overflow = wrap}
     h0-input[pos + 0] = 0
-    #{overflow = wrap}
     h0-input[pos + 1] = 0
-    #{overflow = wrap}
     h0-input[pos + 2] = 0
-    #{overflow = wrap}
     h0-input[pos + 3] = 0
-    #{overflow = wrap}
     pos = pos + 4
 
     ; H0 = Blake2b(h0-input)
@@ -437,6 +348,7 @@ argon2id = (password []byte, salt []byte, time-cost i64, memory-cost i64, parall
     ; 初始化前兩個區塊
     init-input []byte
     i <- [0..64): {
+        #{overflow=wrap}
         init-input[i] = h0[i]
     }
 
@@ -460,8 +372,8 @@ argon2id = (password []byte, salt []byte, time-cost i64, memory-cost i64, parall
 
     ; 複製到記憶體
     i <- [0..1024): {
+        #{overflow=wrap}
         mem[i] = block0[i]
-        #{overflow = wrap}
         mem[1024 + i] = block1[i]
     }
 
@@ -470,47 +382,42 @@ argon2id = (password []byte, salt []byte, time-cost i64, memory-cost i64, parall
     {
 
         ; 參考區塊（前一個）
-        #{overflow = wrap}
+        #{overflow=wrap}
         prev-idx = curr-idx - 1
 
         ; Argon2id: 第一 pass 的前半部分使用 data-independent 定址
         ; 簡化：使用前一個區塊作為參考
-        #{overflow = wrap}
         ref-idx = curr-idx - 1
         ref-idx < 0 -> ref-idx = 0
 
         ; 計算新區塊 = G(mem[prev], mem[ref])
-        #{overflow = wrap}
         new-block = argon2-compress(mem[prev-idx * 1024..], mem[ref-idx * 1024..])
 
         i <- [0..1024): {
-            #{overflow = wrap}
+            #{overflow=wrap}
             mem[curr-idx * 1024 + i] = new-block[i]
         }
-        #{overflow = wrap}
         curr-idx = curr-idx + 1
     } (curr-idx < blocks-per-lane)
 
     ; 迭代 passes
     pass <- [1..time-cost): {
+        #{overflow=wrap}
         curr-idx = 0
         {
-            #{overflow = wrap}
+            #{overflow=wrap}
             prev-idx = curr-idx - 1
-            #{overflow = wrap}
             prev-idx < 0 -> prev-idx = blocks-per-lane - 1
             ref-idx = curr-idx
             ref-idx < 0 -> ref-idx = 0
 
             ; 新區塊 = G(mem[prev], mem[ref]) XOR 舊區塊
-            #{overflow = wrap}
             new-block = argon2-compress(mem[prev-idx * 1024..], mem[ref-idx * 1024..])
 
             i <- [0..1024): {
-                #{overflow = wrap}
+                #{overflow=wrap}
                 mem[curr-idx * 1024 + i] = (mem[curr-idx * 1024 + i]) ^ (new-block[i])
             }
-            #{overflow = wrap}
             curr-idx = curr-idx + 1
         } (curr-idx < blocks-per-lane)
     }
@@ -518,10 +425,9 @@ argon2id = (password []byte, salt []byte, time-cost i64, memory-cost i64, parall
     ; 最終區塊 = XOR 所有 lane 的最後區塊
     ; 簡化（單 lane）：最終區塊 = 最後一個區塊
     final-block []byte
-    #{overflow = wrap}
     last-idx = blocks-per-lane - 1
     i <- [0..1024): {
-        #{overflow = wrap}
+        #{overflow=wrap}
         final-block[i] = mem[last-idx * 1024 + i]
     }
 

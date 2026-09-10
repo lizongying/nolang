@@ -35,7 +35,7 @@ set-level = (l i64) {
 ; debug: 輸出 DEBUG 級別日誌
 debug = (msg str) {
     level <= 0 -> {
-        #{overflow = wrap}
+        #{overflow=wrap}
         n = io.errln('[DEBUG] ' - msg)
     }
 }
@@ -43,7 +43,7 @@ debug = (msg str) {
 ; info: 輸出 INFO 級別日誌
 info = (msg str) {
     level <= 1 -> {
-        #{overflow = wrap}
+        #{overflow=wrap}
         n = io.errln('[INFO] ' - msg)
     }
 }
@@ -51,7 +51,7 @@ info = (msg str) {
 ; warn: 輸出 WARN 級別日誌
 warn = (msg str) {
     level <= 2 -> {
-        #{overflow = wrap}
+        #{overflow=wrap}
         n = io.errln('[WARN] ' - msg)
     }
 }
@@ -59,7 +59,7 @@ warn = (msg str) {
 ; error: 輸出 ERROR 級別日誌
 error = (msg str) {
     level <= 3 -> {
-        #{overflow = wrap}
+        #{overflow=wrap}
         n = io.errln('[ERROR] ' - msg)
     }
 }
@@ -67,7 +67,7 @@ error = (msg str) {
 ; fatal: 輸出 FATAL 級別日誌並退出
 fatal = (msg str, code i64) {
     ; 無條件輸出
-    #{overflow = wrap}
+    #{overflow=wrap}
     n = io.errln('[FATAL] ' - msg)
     os.exit(code)
 }

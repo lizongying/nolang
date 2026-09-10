@@ -44,10 +44,10 @@ txt.eq = (b txt) (eq bool) {
     an != bn -> eq = false
     i <- [0..an): {
         i == 0 -> {
+            #{overflow=wrap}
             ok = 1
             k = 0
-            #{overflow = wrap}
-            { c = .byte(k) - b.byte(k); c != 0 -> ok = 0; k == an - 1 -> ok == 0 -> eq = false; k = k + 1 } (k < an)
+            c = .byte(k) - b.byte(k); c != 0 -> ok = 0; k == an - 1 -> ok == 0 -> eq = false; k = k + 1 } (k < an)
         }
     }
 }
@@ -103,15 +103,14 @@ txt.to-bytes = () (out []byte) {
 
 ; txt.to-hex: 将 txt 转换为十六进制字符串
 txt.to-hex = () (out str) {
+    #{overflow=wrap}
     HEX = '0123456789ABCDEF'
     n i64 = .len()
-    #{overflow = wrap}
     out = with-len(n * 2)
     i <- [0..n): {
+        #{overflow=wrap}
         b = .byte(i)
-        #{overflow = wrap}
         out[i * 2] = HEX[b >> 4]
-        #{overflow = wrap}
         out[i * 2 + 1] = HEX[b & 15]
     }
 }
@@ -160,12 +159,12 @@ txt.starts-with = (sub txt) (yes bool) {
 
 ; txt.ends-with: 是否以指定后缀结尾
 txt.ends-with = (sub txt) (yes bool) {
+    #{overflow=wrap}
     yes = false
     sn i64 = sub.len()
     n i64 = .len()
     sn == 0 -> yes = true
     n < sn -> yes = false
-    #{overflow = wrap}
     off = n - sn
     yes = .index-from(sub, off) == off
 }
@@ -176,40 +175,38 @@ txt.ends-with = (sub txt) (yes bool) {
 
 ; txt.append: 追加字节（不超出 255 限制）
 txt.append = (b byte) {
+    #{overflow=wrap}
     n i64 = .len()
     n >= 255 -> return
     .[n] = b
-    #{overflow = wrap}
     .len = n + 1
 }
 
 ; txt.append-str: 追加 str（不超出 255 限制）
 txt.append-str = (s str) {
+    #{overflow=wrap}
     sn i64 = s.len-bytes()
     n i64 = .len()
-    #{overflow = wrap}
     remain = 255 - n
     sn > remain -> sn = remain
     i <- [0..sn): {
-        #{overflow = wrap}
+        #{overflow=wrap}
         .[n + i] = s.byte(i)
     }
-    #{overflow = wrap}
     .len = n + sn
 }
 
 ; txt.append-txt: 追加 txt（不超出 255 限制）
 txt.append-txt = (t txt) {
+    #{overflow=wrap}
     tn i64 = t.len()
     n i64 = .len()
-    #{overflow = wrap}
     remain = 255 - n
     tn > remain -> tn = remain
     i <- [0..tn): {
-        #{overflow = wrap}
+        #{overflow=wrap}
         .[n + i] = t.byte(i)
     }
-    #{overflow = wrap}
     .len = n + tn
 }
 
@@ -239,6 +236,7 @@ txt.compare = (b txt) (r i64) {
                 r = -1
                 return
             }
+
             ai > bi -> {
                 r = 1
                 return
@@ -247,7 +245,9 @@ txt.compare = (b txt) (r i64) {
     }
     {
         an < bn -> r = -1
+
         an > bn -> r = 1
+
         -> r = 0
     }
 }
@@ -260,7 +260,7 @@ txt.compare = (b txt) (r i64) {
 txt.reverse = () (out txt) {
     n i64 = .len()
     i <- [0..n): {
-        #{overflow = wrap}
+        #{overflow=wrap}
         out[i] = .byte(n - 1 - i)
     }
     out.len = n
@@ -268,15 +268,15 @@ txt.reverse = () (out txt) {
 
 ; txt.slice: 截取子串 [start, end) 返回新的 txt
 txt.slice = (start i64, end i64) (out txt) {
+    #{overflow=wrap}
     start < 0 -> start = 0
     cur-len i64 = .len()
     end > cur-len -> end = cur-len
     start >= end -> return
-    #{overflow = wrap}
     n = end - start
     n > 255 -> n = 255
     i <- [0..n): {
-        #{overflow = wrap}
+        #{overflow=wrap}
         out[i] = .byte(start + i)
     }
     out.len = n
@@ -306,18 +306,21 @@ txt.decode-cp = (i i64) (cp i64, clen i64) {
             cp = b
             clen = 1
         }
+
         b < 0xe0 -> {
-            #{overflow = wrap}
+            #{overflow=wrap}
             cp = ((b & 0x1f) << 6) | (.byte(i + 1) & 0x3f)
             clen = 2
         }
+
         b < 0xf0 -> {
-            #{overflow = wrap}
+            #{overflow=wrap}
             cp = ((b & 0x0f) << 12) | ((.byte(i + 1) & 0x3f) << 6) | (.byte(i + 2) & 0x3f)
             clen = 3
         }
+
         -> {
-            #{overflow = wrap}
+            #{overflow=wrap}
             cp = ((b & 0x07) << 18) | ((.byte(i + 1) & 0x3f) << 12) | ((.byte(i + 2) & 0x3f) << 6) | (.byte(i + 3) & 0x3f)
             clen = 4
         }
@@ -335,8 +338,11 @@ txt.to-upper = () (val txt) {
     i <- [0..n): {
         c = .byte(i)
         {
-            #{overflow = wrap}
-            c >= 97 && c <= 122 -> val[i] = c - 32
+            c >= 97 && c <= 122 -> {
+                #{overflow=wrap}
+                val[i] = c - 32
+            }
+
             -> val[i] = c
         }
     }
@@ -350,8 +356,11 @@ txt.to-lower = () (val txt) {
     i <- [0..n): {
         c = .byte(i)
         {
-            #{overflow = wrap}
-            c >= 65 && c <= 90 -> val[i] = c + 32
+            c >= 65 && c <= 90 -> {
+                #{overflow=wrap}
+                val[i] = c + 32
+            }
+
             -> val[i] = c
         }
     }
@@ -365,24 +374,24 @@ txt.to-lower = () (val txt) {
 ; txt.trim: 去除首尾空白字元
 ; 返回新 txt
 txt.trim = () (val txt) {
+    #{overflow=wrap}
     n i64 = .len()
     start <- [0..n): {
+        #{overflow=wrap}
         c = .byte(start)
         c != 32 && c != 9 && c != 10 && c != 13 -> break
     }
-    #{overflow = wrap}
     end = n - 1
     {
+        #{overflow=wrap}
         c = .byte(end)
         c != 32 && c != 9 && c != 10 && c != 13 -> break
-        #{overflow = wrap}
         end = end - 1
     } (end >= start)
-    #{overflow = wrap}
     m = end - start + 1
     m < 0 -> return
     i <- [0..m): {
-        #{overflow = wrap}
+        #{overflow=wrap}
         val[i] = .byte(start + i)
     }
     val.len = m
@@ -391,9 +400,11 @@ txt.trim = () (val txt) {
 ; txt.trim-char: 去除首尾指定字元（UTF-8 碼點）
 ; 返回新 txt
 txt.trim-char = (ch char) (val txt) {
+    #{overflow=wrap}
     n i64 = .len()
     start = 0
     {
+        #{overflow=wrap}
         b = .byte(start)
         cp i64 = b
         clen = 1
@@ -402,29 +413,32 @@ txt.trim-char = (ch char) (val txt) {
                 cp = b
                 clen = 1
             }
+
             b < 0xe0 -> {
-                #{overflow = wrap}
+                #{overflow=wrap}
                 cp = ((b & 0x1f) << 6) | (.byte(start + 1) & 0x3f)
                 clen = 2
             }
+
             b < 0xf0 -> {
-                #{overflow = wrap}
+                #{overflow=wrap}
                 cp = ((b & 0x0f) << 12) | ((.byte(start + 1) & 0x3f) << 6) | (.byte(start + 2) & 0x3f)
                 clen = 3
             }
+
             -> {
-                #{overflow = wrap}
+                #{overflow=wrap}
                 cp = ((b & 0x07) << 18) | ((.byte(start + 1) & 0x3f) << 12) | ((.byte(start + 2) & 0x3f) << 6) | (.byte(start + 3) & 0x3f)
                 clen = 4
             }
         }
         cp != ch -> break
-        #{overflow = wrap}
         start = start + clen
     } (start < n)
     end = start
     i = start
     {
+        #{overflow=wrap}
         b = .byte(i)
         cp = b
         clen = 1
@@ -433,32 +447,32 @@ txt.trim-char = (ch char) (val txt) {
                 cp = b
                 clen = 1
             }
+
             b < 0xe0 -> {
-                #{overflow = wrap}
+                #{overflow=wrap}
                 cp = ((b & 0x1f) << 6) | (.byte(i + 1) & 0x3f)
                 clen = 2
             }
+
             b < 0xf0 -> {
-                #{overflow = wrap}
+                #{overflow=wrap}
                 cp = ((b & 0x0f) << 12) | ((.byte(i + 1) & 0x3f) << 6) | (.byte(i + 2) & 0x3f)
                 clen = 3
             }
+
             -> {
-                #{overflow = wrap}
+                #{overflow=wrap}
                 cp = ((b & 0x07) << 18) | ((.byte(i + 1) & 0x3f) << 12) | ((.byte(i + 2) & 0x3f) << 6) | (.byte(i + 3) & 0x3f)
                 clen = 4
             }
         }
-        #{overflow = wrap}
         cp != ch -> end = i + clen
-        #{overflow = wrap}
         i = i + clen
     } (i < n)
-    #{overflow = wrap}
     m = end - start
     m < 0 -> return
     j <- [0..m): {
-        #{overflow = wrap}
+        #{overflow=wrap}
         val[j] = .byte(start + j)
     }
     val.len = m
@@ -477,8 +491,8 @@ txt.repeat = (times i64) (val txt) {
     i <- [0..times): {
         j <- [0..n): {
             pos < cap -> {
+                #{overflow=wrap}
                 val[pos] = .byte(j)
-                #{overflow = wrap}
                 pos = pos + 1
             }
         }
@@ -496,18 +510,17 @@ txt.count = () (cnt i64) {
     n i64 = .len()
     i = 0
     {
+        #{overflow=wrap}
         b = .byte(i)
         {
-            #{overflow = wrap}
             b < 0x80 -> i = i + 1
-            #{overflow = wrap}
+
             b < 0xe0 -> i = i + 2
-            #{overflow = wrap}
+
             b < 0xf0 -> i = i + 3
-            #{overflow = wrap}
+
             -> i = i + 4
         }
-        #{overflow = wrap}
         cnt = cnt + 1
     } (i < n)
 }
@@ -519,25 +532,24 @@ txt.count = () (cnt i64) {
 ; txt.index-from: 從 from 位置開始查找子串
 ; 返回首次出現位置，未找到返回 -1
 txt.index-from = (target txt, from i64) (pos i64) {
+    #{overflow=wrap}
     pos = -1
     from < 0 -> from = 0
     n i64 = .len()
     m i64 = target.len()
     m == 0 -> from <= n -> pos = from
     n < m -> pos = -1
-    #{overflow = wrap}
     limit = n - m
     i <- [0..n]: {
+        #{overflow=wrap}
         i >= from -> i <= limit -> {
             ok = 1
             k = 0
             {
-                #{overflow = wrap}
+                #{overflow=wrap}
                 c = .byte(i + k) - target.byte(k)
                 c != 0 -> ok = 0
-                #{overflow = wrap}
                 k == m - 1 -> ok == 1 -> pos == -1 -> pos = i
-                #{overflow = wrap}
                 k = k + 1
             } (k < m)
         }
@@ -547,24 +559,23 @@ txt.index-from = (target txt, from i64) (pos i64) {
 ; txt.rindex: 反向查找子串最後出現位置
 ; 返回位置，未找到 -1
 txt.rindex = (target txt) (pos i64) {
+    #{overflow=wrap}
     pos = -1
     n i64 = .len()
     m i64 = target.len()
     m == 0 -> pos = n
     n < m -> pos = -1
-    #{overflow = wrap}
     limit = n - m
     i <- [0..n]: {
+        #{overflow=wrap}
         i <= limit -> {
             ok = 1
             k = 0
             {
-                #{overflow = wrap}
+                #{overflow=wrap}
                 c = .byte(i + k) - target.byte(k)
                 c != 0 -> ok = 0
-                #{overflow = wrap}
                 k == m - 1 -> ok == 1 -> pos = i
-                #{overflow = wrap}
                 k = k + 1
             } (k < m)
         }
@@ -578,25 +589,24 @@ txt.last-index = (target txt) (pos i64) {
 
 ; txt.rindex-from: 從 from 位置反向查找子串（返回位置 >= from 的最後一次出現）
 txt.rindex-from = (target txt, from i64) (pos i64) {
+    #{overflow=wrap}
     pos = -1
     from < 0 -> from = 0
     n i64 = .len()
     m i64 = target.len()
     m == 0 -> from <= n -> pos = n
     n < m -> pos = -1
-    #{overflow = wrap}
     limit = n - m
     i <- [0..n]: {
+        #{overflow=wrap}
         i >= from -> i <= limit -> {
             ok = 1
             k = 0
             {
-                #{overflow = wrap}
+                #{overflow=wrap}
                 c = .byte(i + k) - target.byte(k)
                 c != 0 -> ok = 0
-                #{overflow = wrap}
                 k == m - 1 -> ok == 1 -> pos = i
-                #{overflow = wrap}
                 k = k + 1
             } (k < m)
         }
@@ -619,11 +629,14 @@ txt.to-i8 = () (val ?i8) {
     v = .to-i64()
     v: {
         err -> val = err(it)
+
         nil -> return
+
         ok -> {
+            #{overflow=wrap}
             n = it
-            #{overflow = wrap}
             n >= 0 - 128 && n <= 127 -> val = n
+
             -> val = err('out of range for i8')
         }
     }
@@ -634,11 +647,14 @@ txt.to-i16 = () (val ?i16) {
     v = .to-i64()
     v: {
         err -> val = err(it)
+
         nil -> return
+
         ok -> {
+            #{overflow=wrap}
             n = it
-            #{overflow = wrap}
             n >= 0 - 32768 && n <= 32767 -> val = n
+
             -> val = err('out of range for i16')
         }
     }
@@ -649,11 +665,14 @@ txt.to-i32 = () (val ?i32) {
     v = .to-i64()
     v: {
         err -> val = err(it)
+
         nil -> return
+
         ok -> {
+            #{overflow=wrap}
             n = it
-            #{overflow = wrap}
             n >= 0 - 2147483648 && n <= 2147483647 -> val = n
+
             -> val = err('out of range for i32')
         }
     }
@@ -673,6 +692,7 @@ txt.to-u8 = () (val ?u8) {
             val = err('invalid u8: negative sign not allowed')
             return
         }
+
         c == 43 -> {
             start = 1
             .len() == 1 -> {
@@ -682,16 +702,17 @@ txt.to-u8 = () (val ?u8) {
         }
     }
     i <- [start..n): {
+        #{overflow=wrap}
         c = .byte(i)
         c < 48 || c > 57 -> {
             val = err('invalid number: non-digit character')
             return
         }
-        #{overflow = wrap}
         n = n * 10 + c - 48
     }
     {
         n >= 0 && n <= 255 -> val = n
+
         -> val = err('out of range for u8')
     }
 }
@@ -710,6 +731,7 @@ txt.to-u16 = () (val ?u16) {
             val = err('invalid u16: negative sign not allowed')
             return
         }
+
         c == 43 -> {
             start = 1
             .len() == 1 -> {
@@ -719,16 +741,17 @@ txt.to-u16 = () (val ?u16) {
         }
     }
     i <- [start..n): {
+        #{overflow=wrap}
         c = .byte(i)
         c < 48 || c > 57 -> {
             val = err('invalid number: non-digit character')
             return
         }
-        #{overflow = wrap}
         n = n * 10 + c - 48
     }
     {
         n >= 0 && n <= 65535 -> val = n
+
         -> val = err('out of range for u16')
     }
 }
@@ -747,6 +770,7 @@ txt.to-u32 = () (val ?u32) {
             val = err('invalid u32: negative sign not allowed')
             return
         }
+
         c == 43 -> {
             start = 1
             .len() == 1 -> {
@@ -756,16 +780,17 @@ txt.to-u32 = () (val ?u32) {
         }
     }
     i <- [start..n): {
+        #{overflow=wrap}
         c = .byte(i)
         c < 48 || c > 57 -> {
             val = err('invalid number: non-digit character')
             return
         }
-        #{overflow = wrap}
         n = n * 10 + c - 48
     }
     {
         n >= 0 && n <= 4294967295 -> val = n
+
         -> val = err('out of range for u32')
     }
 }
@@ -785,12 +810,12 @@ txt.to-u64 = () (val ?u64) {
     start = 0
     c == 43 -> start = 1
     i <- [start..n): {
+        #{overflow=wrap}
         c = .byte(i)
         c < 48 || c > 57 -> {
             val = err('invalid number: non-digit character')
             return
         }
-        #{overflow = wrap}
         n = n * 10 + c - 48
     }
     val = n
@@ -810,6 +835,7 @@ txt.to-byte = () (val ?byte) {
             val = err('invalid byte: negative sign not allowed')
             return
         }
+
         c == 43 -> {
             start = 1
             .len() == 1 -> {
@@ -819,16 +845,17 @@ txt.to-byte = () (val ?byte) {
         }
     }
     i <- [start..n): {
+        #{overflow=wrap}
         c = .byte(i)
         c < 48 || c > 57 -> {
             val = err('invalid number: non-digit character')
             return
         }
-        #{overflow = wrap}
         n = n * 10 + c - 48
     }
     {
         n >= 0 && n <= 255 -> val = n
+
         -> val = err('out of range for byte')
     }
 }
@@ -848,6 +875,7 @@ txt.to-f32 = () (val ?f32) {
             val = nil
             return
         }
+
         f == err -> {
             val = err('txt.to-f32: parse error')
             return
@@ -863,12 +891,14 @@ txt.to-bool = () (val ?bool) {
             val = nil
             return
         }
+
         .len() == 4 -> {
             .byte(0) == 116 && .byte(1) == 114 && .byte(2) == 117 && .byte(3) == 101 -> {
                 val = true
                 return
             }
         }
+
         .len() == 5 -> {
             .byte(0) == 102 && .byte(1) == 97 && .byte(2) == 108 && .byte(3) == 115 && .byte(4) == 101 -> {
                 val = false
@@ -891,6 +921,7 @@ txt.replace-char = (old-ch char, new-ch char) (val txt) {
     pos = 0
     i = 0
     {
+        #{overflow=wrap}
         b = .byte(i)
         cp i64 = b
         clen = 1
@@ -899,18 +930,21 @@ txt.replace-char = (old-ch char, new-ch char) (val txt) {
                 cp = b
                 clen = 1
             }
+
             b < 0xe0 -> {
-                #{overflow = wrap}
+                #{overflow=wrap}
                 cp = ((b & 0x1f) << 6) | (.byte(i + 1) & 0x3f)
                 clen = 2
             }
+
             b < 0xf0 -> {
-                #{overflow = wrap}
+                #{overflow=wrap}
                 cp = ((b & 0x0f) << 12) | ((.byte(i + 1) & 0x3f) << 6) | (.byte(i + 2) & 0x3f)
                 clen = 3
             }
+
             -> {
-                #{overflow = wrap}
+                #{overflow=wrap}
                 cp = ((b & 0x07) << 18) | ((.byte(i + 1) & 0x3f) << 12) | ((.byte(i + 2) & 0x3f) << 6) | (.byte(i + 3) & 0x3f)
                 clen = 4
             }
@@ -919,75 +953,83 @@ txt.replace-char = (old-ch char, new-ch char) (val txt) {
             cp == old-ch -> {
                 new-ch < 0x80 -> {
                     pos < cap -> {
+                        #{overflow=wrap}
                         val[pos] = new-ch
-                        #{overflow = wrap}
                         pos = pos + 1
                     }
                 }
+
                 new-ch < 0x800 -> {
                     pos < cap -> {
+                        #{overflow=wrap}
                         val[pos] = 0xc0 | ((new-ch >> 6) & 0x1f)
-                        #{overflow = wrap}
                         pos = pos + 1
                     }
+
                     pos < cap -> {
+                        #{overflow=wrap}
                         val[pos] = 0x80 | (new-ch & 0x3f)
-                        #{overflow = wrap}
                         pos = pos + 1
                     }
                 }
+
                 new-ch < 0x10000 -> {
                     pos < cap -> {
+                        #{overflow=wrap}
                         val[pos] = 0xe0 | ((new-ch >> 12) & 0x0f)
-                        #{overflow = wrap}
                         pos = pos + 1
                     }
+
                     pos < cap -> {
+                        #{overflow=wrap}
                         val[pos] = 0x80 | ((new-ch >> 6) & 0x3f)
-                        #{overflow = wrap}
                         pos = pos + 1
                     }
+
                     pos < cap -> {
+                        #{overflow=wrap}
                         val[pos] = 0x80 | (new-ch & 0x3f)
-                        #{overflow = wrap}
                         pos = pos + 1
                     }
                 }
+
                 -> {
                     pos < cap -> {
+                        #{overflow=wrap}
                         val[pos] = 0xf0 | ((new-ch >> 18) & 0x07)
-                        #{overflow = wrap}
                         pos = pos + 1
                     }
+
                     pos < cap -> {
+                        #{overflow=wrap}
                         val[pos] = 0x80 | ((new-ch >> 12) & 0x3f)
-                        #{overflow = wrap}
                         pos = pos + 1
                     }
+
                     pos < cap -> {
+                        #{overflow=wrap}
                         val[pos] = 0x80 | ((new-ch >> 6) & 0x3f)
-                        #{overflow = wrap}
                         pos = pos + 1
                     }
+
                     pos < cap -> {
+                        #{overflow=wrap}
                         val[pos] = 0x80 | (new-ch & 0x3f)
-                        #{overflow = wrap}
                         pos = pos + 1
                     }
                 }
             }
+
             -> {
                 k <- [0..clen): {
                     pos < cap -> {
-                        #{overflow = wrap}
+                        #{overflow=wrap}
                         val[pos] = .byte(i + k)
-                        #{overflow = wrap}
                         pos = pos + 1
                     }
                 }
             }
         }
-        #{overflow = wrap}
         i = i + clen
     } (i < n)
     val.len = pos
@@ -1010,37 +1052,38 @@ txt.replace-str = (old txt, new txt) (val txt) {
         match = 1
         j = 0
         {
-            #{overflow = wrap}
+            #{overflow=wrap}
             i + j >= n -> {
                 match = 0
                 break
             }
-            #{overflow = wrap}
             .byte(i + j) != old.byte(j) -> {
                 match = 0
                 break
             }
-            #{overflow = wrap}
             j = j + 1
         } (j < old-len)
         match -> {
             k <- [0..new-len): {
+                #{overflow=wrap}
                 pos < cap -> {
+                    #{overflow=wrap}
                     val[pos] = new.byte(k)
-                    #{overflow = wrap}
                     pos = pos + 1
                 }
             }
-            #{overflow = wrap}
+
+            #{overflow=wrap}
             i = i + old-len
         }
+
         -> {
+            #{overflow=wrap}
             pos < cap -> {
+                #{overflow=wrap}
                 val[pos] = .byte(i)
-                #{overflow = wrap}
                 pos = pos + 1
             }
-            #{overflow = wrap}
             i = i + 1
         }
     } (i < n)
@@ -1050,6 +1093,7 @@ txt.replace-str = (old txt, new txt) (val txt) {
 ; txt.replace-n: 限定替換次數
 ; old txt, new txt, n i64: 最大替換次數（n<=0 不替換）
 txt.replace-n = (old txt, new txt, n i64) (val txt) {
+    #{overflow=wrap}
     n <= 0 -> {
         val = .slice(0, .len())
         return
@@ -1064,38 +1108,39 @@ txt.replace-n = (old txt, new txt, n i64) (val txt) {
         val = .slice(0, .len())
         return
     }
-    #{overflow = wrap}
     repl = np - 1
     repl > n -> repl = n
     total = 0
     i <- [0..np): {
+        #{overflow=wrap}
         i > 0 -> {
-            #{overflow = wrap}
+            #{overflow=wrap}
             i <= repl -> total = total + new.len() -> total = total + old.len()
         }
-        #{overflow = wrap}
         total = total + parts[i].len()
     }
     total > 255 -> total = 255
     cap = 255
     pos = 0
     i <- [0..np): {
+        #{overflow=wrap}
         i > 0 -> {
             sep = new
             i > repl -> sep = old
             j <- [0..sep.len()): {
                 pos < cap -> {
+                    #{overflow=wrap}
                     val[pos] = sep.byte(j)
-                    #{overflow = wrap}
                     pos = pos + 1
                 }
             }
         }
         s = parts[i]
         j <- [0..s.len()): {
+            #{overflow=wrap}
             pos < cap -> {
+                #{overflow=wrap}
                 val[pos] = s.byte(j)
-                #{overflow = wrap}
                 pos = pos + 1
             }
         }
@@ -1118,8 +1163,8 @@ txt.split = (sep txt) (out []txt) {
     start = 0
     pos = .index-from(sep, start)
     {
+        #{overflow=wrap}
         result.push(.slice(start, pos))
-        #{overflow = wrap}
         start = pos + sep.len()
         pos = .index-from(sep, start)
     } (pos >= 0)
@@ -1144,15 +1189,14 @@ txt.split-n = (sep txt, maxsplit i64) (out []txt) {
     pos = .index-from(sep, start)
     count = 0
     {
+        #{overflow=wrap}
         count >= maxsplit -> {
             result.push(.slice(start, .len()))
             out = result
             return
         }
         result.push(.slice(start, pos))
-        #{overflow = wrap}
         start = pos + sep.len()
-        #{overflow = wrap}
         count = count + 1
         pos = .index-from(sep, start)
     } (pos >= 0)
@@ -1174,8 +1218,8 @@ txt-join = (parts []txt, sep txt) (out txt) {
         i > 0 -> {
             sj <- [0..sep.len()): {
                 pos < cap -> {
+                    #{overflow=wrap}
                     out[pos] = sep.byte(sj)
-                    #{overflow = wrap}
                     pos = pos + 1
                 }
             }
@@ -1184,8 +1228,8 @@ txt-join = (parts []txt, sep txt) (out txt) {
         sl i64 = s.len()
         sj <- [0..sl): {
             pos < cap -> {
+                #{overflow=wrap}
                 out[pos] = s.byte(sj)
-                #{overflow = wrap}
                 pos = pos + 1
             }
         }
@@ -1205,10 +1249,12 @@ txt.fields = () (out []txt) {
             b != 32 && b != 9 && b != 10 && b != 13 -> {
                 start < 0 -> start = i
             }
+
             start >= 0 -> {
                 result.push(.slice(start, i))
                 start = -1
             }
+
             ->
         }
     }
@@ -1224,20 +1270,19 @@ txt.lines = () (out []txt) {
     start = 0
     i = 0
     {
+        #{overflow=wrap}
         c = .byte(i)
         c == 10 -> {
+            #{overflow=wrap}
             end = i
             i > start -> {
-                #{overflow = wrap}
+                #{overflow=wrap}
                 prev = .byte(i - 1)
-                #{overflow = wrap}
                 prev == 13 -> end = i - 1
             }
             result.push(.slice(start, end))
-            #{overflow = wrap}
             start = i + 1
         }
-        #{overflow = wrap}
         i = i + 1
     } (i < n)
     start < n -> result.push(.slice(start, n))
@@ -1253,17 +1298,21 @@ txt-hex-val = (c i64) (v i64) {
     v = -1
     {
         c >= 48 && c <= 57 -> {
-            #{overflow = wrap}
+            #{overflow=wrap}
             v = c - 48
             return
         }
+
         c >= 65 && c <= 70 -> {
-            #{overflow = wrap}
+            #{overflow=wrap}
             v = c - 65 + 10
             return
         }
-        #{overflow = wrap}
-        c >= 97 && c <= 102 -> v = c - 97 + 10
+
+        c >= 97 && c <= 102 -> {
+            #{overflow=wrap}
+            v = c - 97 + 10
+        }
     }
 }
 
@@ -1275,6 +1324,7 @@ txt.from-hex = () (out ?txt) {
             out = nil
             return
         }
+
         .len() % 2 != 0 -> {
             out = err('odd-length hex string')
             return

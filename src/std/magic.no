@@ -58,21 +58,20 @@ detect-type = (path str) (kind str) {
 ; path: 檔案路徑
 ; 返回副檔名（不含 '.'），無副檔名返回空串
 get-extension = (path str) (ext str) {
+    #{overflow=wrap}
     n = path.len-bytes()
-    #{overflow = wrap}
     i = n - 1
     {
+        #{overflow=wrap}
         i < 0 -> return
         c = path[i]
         c == 47 -> return; '/' - 目錄分隔符，停止查找
-        #{overflow = wrap}
-        c == 46 -> {  // '.' - 找到副檔名
-            #{overflow = wrap}
+        c == 46 -> {; '.' - 找到副檔名
+            #{overflow=wrap}
             ext = path.slice(i + 1, n)
             ext = ext.to-lower()
             return
         }
-        #{overflow = wrap}
         i = i - 1
     } (i >= 0)
 }
@@ -83,56 +82,107 @@ get-extension = (path str) (ext str) {
 detect-by-extension = (ext str) (kind str) {
     {
         ext == 'txt' -> kind = 'ASCII text'
+
         ext == 'md' -> kind = 'Markdown text'
+
         ext == 'json' -> kind = 'JSON data'
+
         ext == 'xml' -> kind = 'XML document'
+
         ext == 'csv' -> kind = 'CSV data'
+
         ext == 'html' || ext == 'htm' -> kind = 'HTML document'
+
         ext == 'css' -> kind = 'CSS stylesheet'
+
         ext == 'js' -> kind = 'JavaScript source'
+
         ext == 'ts' -> kind = 'TypeScript source'
+
         ext == 'no' -> kind = 'Nolang source'
+
         ext == 'go' -> kind = 'Go source'
+
         ext == 'py' -> kind = 'Python source'
+
         ext == 'sh' -> kind = 'Shell script'
+
         ext == 'c' -> kind = 'C source'
+
         ext == 'h' -> kind = 'C header'
+
         ext == 'cpp' || ext == 'cc' -> kind = 'C++ source'
+
         ext == 'hpp' -> kind = 'C++ header'
+
         ext == 'rs' -> kind = 'Rust source'
+
         ext == 'java' -> kind = 'Java source'
+
         ext == 'png' -> kind = 'PNG image'
+
         ext == 'jpg' || ext == 'jpeg' -> kind = 'JPEG image'
+
         ext == 'gif' -> kind = 'GIF image'
+
         ext == 'bmp' -> kind = 'BMP image'
+
         ext == 'svg' -> kind = 'SVG image'
+
         ext == 'ico' -> kind = 'ICO image'
+
         ext == 'pdf' -> kind = 'PDF document'
+
         ext == 'zip' -> kind = 'Zip archive'
+
         ext == 'gz' -> kind = 'Gzip compressed'
+
         ext == 'tar' -> kind = 'Tar archive'
+
         ext == 'bz2' -> kind = 'Bzip2 compressed'
+
         ext == 'xz' -> kind = 'XZ compressed'
+
         ext == '7z' -> kind = '7-Zip archive'
+
         ext == 'rar' -> kind = 'RAR archive'
+
         ext == 'wav' -> kind = 'WAV audio'
+
         ext == 'mp3' -> kind = 'MP3 audio'
+
         ext == 'mp4' -> kind = 'MP4 video'
+
         ext == 'avi' -> kind = 'AVI video'
+
         ext == 'mkv' -> kind = 'MKV video'
+
         ext == 'exe' -> kind = 'Windows executable'
+
         ext == 'dll' -> kind = 'Windows DLL'
+
         ext == 'so' -> kind = 'Shared library'
+
         ext == 'dylib' -> kind = 'macOS shared library'
+
         ext == 'o' -> kind = 'Object file'
+
         ext == 'a' -> kind = 'Static library'
+
         ext == 'wasm' -> kind = 'WebAssembly module'
+
         ext == 'yaml' || ext == 'yml' -> kind = 'YAML document'
+
         ext == 'toml' -> kind = 'TOML document'
+
         ext == 'ini' -> kind = 'INI configuration'
+
         ext == 'conf' -> kind = 'Configuration file'
+
         ext == 'log' -> kind = 'Log file'
+
         ext == 'lock' -> kind = 'Lock file'
+
         -> kind = ''
     }
 }
@@ -162,133 +212,132 @@ detect-by-magic = (path str) (kind str) {
 
     {
         b0 == 137 && b1 == 80 && b2 == 78 && b3 == 71 -> {
-
             ; PNG: 89 50 4E 47 (\x89PNG)
 
             kind = 'PNG image'
             return
         }
-        b0 == 255 && b1 == 216 && b2 == 255 -> {
 
+        b0 == 255 && b1 == 216 && b2 == 255 -> {
             ; JPEG: FF D8 FF
 
             kind = 'JPEG image'
             return
         }
-        b0 == 71 && b1 == 73 && b2 == 70 && b3 == 56 -> {
 
+        b0 == 71 && b1 == 73 && b2 == 70 && b3 == 56 -> {
             ; GIF: 47 49 46 38 (GIF8)
 
             kind = 'GIF image'
             return
         }
-        b0 == 66 && b1 == 77 -> {
 
+        b0 == 66 && b1 == 77 -> {
             ; BMP: 42 4D (BM)
 
             kind = 'BMP image'
             return
         }
-        b0 == 37 && b1 == 80 && b2 == 68 && b3 == 70 -> {
 
+        b0 == 37 && b1 == 80 && b2 == 68 && b3 == 70 -> {
             ; PDF: 25 50 44 46 (%PDF)
 
             kind = 'PDF document'
             return
         }
-        b0 == 80 && b1 == 75 && b2 == 3 && b3 == 4 -> {
 
+        b0 == 80 && b1 == 75 && b2 == 3 && b3 == 4 -> {
             ; ZIP: 50 4B 03 04 (PK\x03\x04)
 
             kind = 'Zip archive'
             return
         }
-        b0 == 31 && b1 == 139 -> {
 
+        b0 == 31 && b1 == 139 -> {
             ; GZIP: 1F 8B
 
             kind = 'Gzip compressed'
             return
         }
-        b0 == 127 && b1 == 69 && b2 == 76 && b3 == 70 -> {
 
+        b0 == 127 && b1 == 69 && b2 == 76 && b3 == 70 -> {
             ; ELF: 7F 45 4C 46 (\x7fELF)
 
             kind = 'ELF executable'
             return
         }
-        b0 == 207 && b1 == 250 && b2 == 237 && b3 == 254 -> {
 
+        b0 == 207 && b1 == 250 && b2 == 237 && b3 == 254 -> {
             ; Mach-O 64-bit LE: CF FA ED FE
 
             kind = 'Mach-O 64-bit executable'
             return
         }
-        b0 == 254 && b1 == 237 && b2 == 250 && b3 == 206 -> {
 
+        b0 == 254 && b1 == 237 && b2 == 250 && b3 == 206 -> {
             ; Mach-O 32-bit BE: FE ED FA CE
 
             kind = 'Mach-O executable'
             return
         }
-        b0 == 254 && b1 == 237 && b2 == 250 && b3 == 207 -> {
 
+        b0 == 254 && b1 == 237 && b2 == 250 && b3 == 207 -> {
             ; Mach-O 64-bit BE: FE ED FA CF
 
             kind = 'Mach-O 64-bit executable'
             return
         }
-        b0 == 206 && b1 == 250 && b2 == 237 && b3 == 254 -> {
 
+        b0 == 206 && b1 == 250 && b2 == 237 && b3 == 254 -> {
             ; Mach-O 32-bit LE: CE FA ED FE
 
             kind = 'Mach-O executable'
             return
         }
-        b0 == 77 && b1 == 90 -> {
 
+        b0 == 77 && b1 == 90 -> {
             ; PE/COFF: 4D 5A (MZ)
 
             kind = 'PE executable'
             return
         }
-        b0 == 0 && b1 == 97 && b2 == 115 && b3 == 109 -> {
 
+        b0 == 0 && b1 == 97 && b2 == 115 && b3 == 109 -> {
             ; WebAssembly: 00 61 73 6D (\0asm)
 
             kind = 'WebAssembly module'
             return
         }
-        b0 == 66 && b1 == 90 && b2 == 104 -> {
 
+        b0 == 66 && b1 == 90 && b2 == 104 -> {
             ; Bzip2: 42 5A 68 (BZh)
 
             kind = 'Bzip2 compressed'
             return
         }
-        b0 == 253 && b1 == 55 && b2 == 122 && b3 == 88 -> {
 
+        b0 == 253 && b1 == 55 && b2 == 122 && b3 == 88 -> {
             ; XZ: FD 37 7A 58 5A 00
 
             kind = 'XZ compressed'
             return
         }
-        b0 == 82 && b1 == 97 && b2 == 114 && b3 == 33 -> {
 
+        b0 == 82 && b1 == 97 && b2 == 114 && b3 == 33 -> {
             ; RAR: 52 61 72 21 (Rar!)
 
             kind = 'RAR archive'
             return
         }
-        b0 == 55 && b1 == 122 && b2 == 188 && b3 == 175 -> {
 
+        b0 == 55 && b1 == 122 && b2 == 188 && b3 == 175 -> {
             ; 7-Zip: 37 7A BC AF 27 1C
 
             kind = '7-Zip archive'
             return
         }
-        b0 == 82 && b1 == 73 && b2 == 70 && b3 == 70 -> {
 
+        b0 == 82 && b1 == 73 && b2 == 70 && b3 == 70 -> {
             ; WAV: 52 49 46 46 (RIFF) + offset 8: 57 41 56 45 (WAVE)
 
             n >= 12 -> {
@@ -304,20 +353,21 @@ detect-by-magic = (path str) (kind str) {
             kind = 'RIFF container'
             return
         }
-        b0 == 73 && b1 == 68 && b2 == 33 -> {
 
+        b0 == 73 && b1 == 68 && b2 == 33 -> {
             ; MP3 ID3: 49 44 33 (ID3)
 
             kind = 'MP3 audio'
             return
         }
-        b0 == 255 && (b1 == 251 || b1 == 243 || b1 == 242) -> {
 
+        b0 == 255 && (b1 == 251 || b1 == 243 || b1 == 242) -> {
             ; MP3 frame sync: FF FB or FF F3 or FF F2
 
             kind = 'MP3 audio'
             return
         }
+
         -> kind = ''
     }
 }

@@ -58,13 +58,13 @@ static-hashmap-str-tmpl.init = () {
 
 ; hash: FNV-1a 字串雜湊
 static-hashmap-str-tmpl.hash = (key str) (idx i64) {
+    #{overflow=wrap}
     h = FNV-OFFSET
     i <- [0..key.len-bytes()): {
+        #{overflow=wrap}
         h = h ^ (key[i])
-        #{overflow = wrap}
         h = h * FNV-PRIME
     }
-    #{overflow = wrap}
     idx = h & (.cap - 1)
 }
 
@@ -79,10 +79,12 @@ static-hashmap-str-tmpl.str-eq = (a str, b str) (eq bool) {
 
 ; put: 插入或更新 key→value，回傳是否新增
 static-hashmap-str-tmpl.put = (key str, val v) (is-new bool) {
+    #{overflow=wrap}
     idx = .hash(key)
     first-tomb = -1
 
     {
+        #{overflow=wrap}
         .occ[idx] == 1 -> {
             eq = .str-eq(.keys[idx], key)
             eq -> {
@@ -92,7 +94,6 @@ static-hashmap-str-tmpl.put = (key str, val v) (is-new bool) {
             }
         }
         .occ[idx] == 2 -> first-tomb < 0 -> first-tomb = idx
-        #{overflow = wrap}
         idx = idx + 1
         idx >= .cap -> idx = 0
     } (.occ[idx] != 0)
@@ -103,7 +104,6 @@ static-hashmap-str-tmpl.put = (key str, val v) (is-new bool) {
     .keys[insert-idx] = key
     .vals[insert-idx] = val
     .occ[insert-idx] = 1
-    #{overflow = wrap}
     .size = .size + 1
     is-new = true
 }
@@ -114,6 +114,7 @@ static-hashmap-str-tmpl.get = (key str) (result ?v) {
     idx = .hash(key)
 
     {
+        #{overflow=wrap}
         .occ[idx] == 1 -> {
             eq = .str-eq(.keys[idx], key)
             eq -> {
@@ -121,7 +122,6 @@ static-hashmap-str-tmpl.get = (key str) (result ?v) {
                 return
             }
         }
-        #{overflow = wrap}
         idx = idx + 1
         idx >= .cap -> idx = 0
     } (.occ[idx] != 0)
@@ -132,7 +132,9 @@ static-hashmap-str-tmpl.contains = (key str) (found bool) {
     val ?v = .get(key)
     val: {
         ok -> found = true
+
         err ->
+
         nil ->
     }
 }
@@ -143,17 +145,17 @@ static-hashmap-str-tmpl.remove = (key str) (removed bool) {
     idx = .hash(key)
 
     {
+        #{overflow=wrap}
         .occ[idx] == 1 -> {
             eq = .str-eq(.keys[idx], key)
             eq -> {
+                #{overflow=wrap}
                 .occ[idx] = 2
-                #{overflow = wrap}
                 .size = .size - 1
                 removed = true
                 return
             }
         }
-        #{overflow = wrap}
         idx = idx + 1
         idx >= .cap -> idx = 0
     } (.occ[idx] != 0)
@@ -225,23 +227,24 @@ static-hashmap-int-tmpl.init = () {
 
 ; hash: 計算索引（位元遮罩）
 static-hashmap-int-tmpl.hash = (key k) (idx i64) {
-    #{overflow = wrap}
+    #{overflow=wrap}
     idx = key & (.cap - 1)
 }
 
 ; put: 插入或更新 key→value，回傳是否新增
 static-hashmap-int-tmpl.put = (key k, val v) (is-new bool) {
+    #{overflow=wrap}
     idx = .hash(key)
     first-tomb = -1
 
     {
+        #{overflow=wrap}
         .occ[idx] == 1 -> .keys[idx] == key -> {
             .vals[idx] = val
             is-new = false
             return
         }
         .occ[idx] == 2 -> first-tomb < 0 -> first-tomb = idx
-        #{overflow = wrap}
         idx = idx + 1
         idx >= .cap -> idx = 0
     } (.occ[idx] != 0)
@@ -250,7 +253,6 @@ static-hashmap-int-tmpl.put = (key k, val v) (is-new bool) {
     .keys[insert-idx] = key
     .vals[insert-idx] = val
     .occ[insert-idx] = 1
-    #{overflow = wrap}
     .size = .size + 1
     is-new = true
 }
@@ -261,11 +263,11 @@ static-hashmap-int-tmpl.get = (key k) (result ?v) {
     idx = .hash(key)
 
     {
+        #{overflow=wrap}
         .occ[idx] == 1 -> .keys[idx] == key -> {
             result = .vals[idx]
             return
         }
-        #{overflow = wrap}
         idx = idx + 1
         idx >= .cap -> idx = 0
     } (.occ[idx] != 0)
@@ -276,7 +278,9 @@ static-hashmap-int-tmpl.contains = (key k) (found bool) {
     val ?v = .get(key)
     val: {
         ok -> found = true
+
         err ->
+
         nil ->
     }
 }
@@ -287,14 +291,14 @@ static-hashmap-int-tmpl.remove = (key k) (removed bool) {
     idx = .hash(key)
 
     {
+        #{overflow=wrap}
         .occ[idx] == 1 -> .keys[idx] == key -> {
+            #{overflow=wrap}
             .occ[idx] = 2
-            #{overflow = wrap}
             .size = .size - 1
             removed = true
             return
         }
-        #{overflow = wrap}
         idx = idx + 1
         idx >= .cap -> idx = 0
     } (.occ[idx] != 0)
@@ -366,12 +370,14 @@ static-hashmap-bool-tmpl.init = () {
 static-hashmap-bool-tmpl.hash = (key bool) (idx i64) {
     {
         key == true -> idx = 1
+
         -> idx = 0
     }
 }
 
 ; put: 插入或更新 key→value，回傳是否新增
 static-hashmap-bool-tmpl.put = (key bool, val v) (is-new bool) {
+    #{overflow=wrap}
     idx = .hash(key)
 
     .occ[idx] == 1 -> {
@@ -382,7 +388,6 @@ static-hashmap-bool-tmpl.put = (key bool, val v) (is-new bool) {
     .keys[idx] = key
     .vals[idx] = val
     .occ[idx] = 1
-    #{overflow = wrap}
     .size = .size + 1
     is-new = true
 }
@@ -403,7 +408,9 @@ static-hashmap-bool-tmpl.contains = (key bool) (found bool) {
     val ?v = .get(key)
     val: {
         ok -> found = true
+
         err ->
+
         nil ->
     }
 }
@@ -414,8 +421,8 @@ static-hashmap-bool-tmpl.remove = (key bool) (removed bool) {
     idx = .hash(key)
 
     .occ[idx] == 1 -> {
+        #{overflow=wrap}
         .occ[idx] = 2
-        #{overflow = wrap}
         .size = .size - 1
         removed = true
     }

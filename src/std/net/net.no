@@ -37,37 +37,44 @@
 ; 執行 socket + setsockopt(SO_REUSEADDR) + bind + listen
 ; 返回 fd（-1=失敗）
 #{buildin}
-net-listen = (host str, port i64) (fd fd) { }
+net-listen = (host str, port i64) (fd fd) {
+}
 
 ; net-dial: 建立 TCP 客戶端連接
 ; 執行 socket + connect
 ; 返回 fd（-1=失敗）
 #{buildin}
-net-dial = (host str, port i64) (fd fd) { }
+net-dial = (host str, port i64) (fd fd) {
+}
 
 ; net-accept: 接受 TCP 連接
 ; 返回客戶端 fd（-1=失敗）
 #{buildin}
-net-accept = (listen-fd fd) (fd fd) { }
+net-accept = (listen-fd fd) (fd fd) {
+}
 
 ; net-accept-nb: 非阻塞接受 TCP 連接（監聽 socket 設為非阻塞）
 ; 返回客戶端 fd：>=0=成功, -2=暫無連接（would-block）, -1=失敗
 #{buildin}
-net-accept-nb = (listen-fd fd) (fd fd) { }
+net-accept-nb = (listen-fd fd) (fd fd) {
+}
 
 ; net-send: 發送資料
 ; 返回實際發送位元組數（-1=錯誤）
 #{buildin}
-net-send = (fd fd, data str, n i64) (written i64) { }
+net-send = (fd fd, data str, n i64) (written i64) {
+}
 
 ; net-recv: 接收資料
 ; 返回實際接收位元組數（-1=錯誤, 0=連接關閉）
 #{buildin}
-net-recv = (fd fd, buf str, n i64) (read-n i64) { }
+net-recv = (fd fd, buf str, n i64) (read-n i64) {
+}
 
 ; close: 關閉檔案描述符（來自 fs 模組）
 #{buildin}
-close = (fd fd) (ok i64) { }
+close = (fd fd) (ok i64) {
+}
 
 ; ═══════════════════════════════════════════════
 ; 網路常量
@@ -210,13 +217,13 @@ conn.recv-all = () (content str, total i64) {
     .fd < 0 -> return
     buf str = with-len(NET-BUF-SIZE)
     {
+        #{overflow=wrap}
         chunk-n = net-recv(.fd, buf, NET-BUF-SIZE)
         chunk-n <= 0 -> *
         i <- [0..chunk-n): {
-            #{overflow = wrap}
+            #{overflow=wrap}
             content[total + i] = buf[i]
         }
-        #{overflow = wrap}
         total = total + chunk-n
     } (true)
 }
@@ -265,22 +272,26 @@ dial-to = (host str, port i64) (c ?conn) {
 ; net-udp-open: 建立 UDP socket
 ; 返回 fd（-1=失敗）
 #{buildin}
-net-udp-open = () (fd fd) { }
+net-udp-open = () (fd fd) {
+}
 
 ; net-udp-sendto: 發送 UDP 資料到指定位址
 ; 返回實際發送位元組數（-1=錯誤）
 #{buildin}
-net-udp-sendto = (fd fd, data str, n i64, host str, port i64) (written i64) { }
+net-udp-sendto = (fd fd, data str, n i64, host str, port i64) (written i64) {
+}
 
 ; net-udp-recvfrom: 接收 UDP 資料
 ; 返回實際接收位元組數（-1=錯誤, 0=逾時）
 #{buildin}
-net-udp-recvfrom = (fd fd, buf str, n i64) (read-n i64) { }
+net-udp-recvfrom = (fd fd, buf str, n i64) (read-n i64) {
+}
 
 ; net-set-recv-timeout: 設定 socket 接收逾時
 ; 返回 0=成功, -1=錯誤
 #{buildin}
-net-set-recv-timeout = (fd fd, timeout-ms i64) (ok i64) { }
+net-set-recv-timeout = (fd fd, timeout-ms i64) (ok i64) {
+}
 
 ; socket 類型（UDP）
 SOCK-DGRAM = 2
@@ -521,7 +532,7 @@ enc-conn.init = (c conn, key [32]byte) {
 ; enc-conn.gen-iv: 生成下一個 IV（nonce）
 ; 返回 iv [12]byte: 12 位元組 IV
 enc-conn.gen-iv = () (iv [12]byte) {
-    #{overflow = wrap}
+    #{overflow=wrap}
     .send-seq = .send-seq + 1
     seq = .send-seq
 
@@ -534,6 +545,8 @@ enc-conn.gen-iv = () (iv [12]byte) {
     ; 用 rand 生成剩餘 8 bytes
     i <- [4..12): {
         s, r = rand.rand(.rand-seed)
+
+        #{overflow=wrap}
         .rand-seed = s
         iv[i] = r & 255
     }
@@ -543,6 +556,7 @@ enc-conn.gen-iv = () (iv [12]byte) {
 ; data str: 明文資料
 ; 返回 ok bool: true=成功
 enc-conn.send-encrypted = (data str) (ok bool) {
+    #{overflow=wrap}
     ok = false
     .underlying.fd < 0 -> return
 
@@ -557,7 +571,6 @@ enc-conn.send-encrypted = (data str) (ok bool) {
 
     ; 封包格式: [4-byte length][12-byte IV][sealed]
     ; length = 12 + sealed-n
-    #{overflow = wrap}
     payload-len = 12 + sealed-n
     packet []byte
     packet[0] = (payload-len >> 24) & 255
@@ -567,17 +580,16 @@ enc-conn.send-encrypted = (data str) (ok bool) {
 
     ; 複製 IV
     i <- [0..12): {
-        #{overflow = wrap}
+        #{overflow=wrap}
         packet[4 + i] = iv[i]
     }
 
     ; 複製密文
     i <- [0..sealed-n): {
-        #{overflow = wrap}
+        #{overflow=wrap}
         packet[16 + i] = sealed[i]
     }
     packet-str = packet.to-str()
-    #{overflow = wrap}
     packet-total = 4 + payload-len
     written = net-send(.underlying.fd, packet-str, packet-total)
     written == packet-total -> ok = true
@@ -586,6 +598,7 @@ enc-conn.send-encrypted = (data str) (ok bool) {
 ; enc-conn.recv-encrypted: 接收並解密資料
 ; 返回 data ?str: ok=解密後明文, nil=失敗
 enc-conn.recv-encrypted = () (data ?str) {
+    #{overflow=wrap}
     data = nil
     .underlying.fd < 0 -> return
 
@@ -604,15 +617,15 @@ enc-conn.recv-encrypted = () (data ?str) {
     ; 提取 IV
     iv [12]byte
     i <- [0..12): {
+        #{overflow=wrap}
         iv[i] = payload-buf[i]
     }
 
     ; 提取密文
-    #{overflow = wrap}
     sealed-n = payload-len - 12
     sealed []byte
     i <- [0..sealed-n): {
-        #{overflow = wrap}
+        #{overflow=wrap}
         sealed[i] = payload-buf[12 + i]
     }
 
@@ -641,7 +654,9 @@ enc-dial = (host str, port i64, key [32]byte) (ec ?enc-conn) {
     c ?conn = dial-to(host, port)
     c: {
         nil -> return
+
         err -> return
+
         ok -> {
             e enc-conn
             e.init(c, key)
@@ -679,7 +694,8 @@ enc-accept = (c conn, key [32]byte) (ec enc-conn) {
 ; net-icmp-open: 建立 ICMP socket
 ; 返回 fd fd（-1=失敗）
 #{buildin}
-net-icmp-open = () (fd fd) { }
+net-icmp-open = () (fd fd) {
+}
 
 ; ICMP 常量
 ICMP-ECHO-REQUEST = 8
@@ -743,7 +759,7 @@ icmp-conn.build-echo = (pkt []byte, seq i64) {
 
     ; Payload: 填入序號作為資料（用於驗證回應）
     i <- [0..ICMP-PAYLOAD-SIZE): {
-        #{overflow = wrap}
+        #{overflow=wrap}
         pkt[ICMP-HEADER-SIZE + i] = (seq + i) & 255
     }
 
@@ -758,34 +774,30 @@ icmp-conn.build-echo = (pkt []byte, seq i64) {
 ; len i64: 封包長度
 ; 返回 checksum i64（16 位元）
 icmp-checksum = (data []byte, len i64) (checksum i64) {
+    #{overflow=wrap}
     checksum = 0
     i = 0
     {
-        #{overflow = wrap}
+        #{overflow=wrap}
         i + 1 < len -> {
 
             ; 16-bit word: data[i] << 8 | data[i+1]
-            #{overflow = wrap}
+            #{overflow=wrap}
             w = ((data[i]) << 8) | (data[i + 1])
-            #{overflow = wrap}
             checksum = checksum + w
 
             ; 處理進位
-            #{overflow = wrap}
             checksum > 65535 -> checksum = (checksum & 65535) + (checksum >> 16)
         }
-        #{overflow = wrap}
         i = i + 2
     } (i < len)
 
     ; 奇數長度：補零處理最後一個位元組
     len & 1 == 1 -> {
-        #{overflow = wrap}
+        #{overflow=wrap}
         checksum = checksum + ((data[len - 1]) << 8)
-        #{overflow = wrap}
         checksum > 65535 -> checksum = (checksum & 65535) + (checksum >> 16)
     }
-    #{overflow = wrap}
     checksum = (checksum & 65535) + (checksum >> 16)
     checksum = (~checksum) & 65535
 }
@@ -795,6 +807,7 @@ icmp-checksum = (data []byte, len i64) (checksum i64) {
 ; timeout-ms i64: 逾時毫秒數
 ; 返回 rtt ?i64: ok=往返延遲（微秒）, nil=失敗
 icmp-conn.ping-once = (host str, timeout-ms i64) (rtt ?i64) {
+    #{overflow=wrap}
     rtt = nil
     .fd < 0 -> return
 
@@ -803,7 +816,6 @@ icmp-conn.ping-once = (host str, timeout-ms i64) (rtt ?i64) {
 
     ; 建構 ICMP Echo Request
     pkt []byte = with-len(ICMP-PACKET-SIZE)
-    #{overflow = wrap}
     .seq = .seq + 1
     .build-echo(pkt, .seq)
 
@@ -826,13 +838,12 @@ icmp-conn.ping-once = (host str, timeout-ms i64) (rtt ?i64) {
     offset = 0
     {
         n >= 20 -> {
-
             ; 檢查 IP 版本 (byte 0 >> 4 == 4 表示 IPv4)
             ver = (recv-buf[0] >> 4) & 15
             ver == 4 -> {
 
                 ; IHL = (byte 0 & 0x0F) * 4
-                #{overflow = wrap}
+                #{overflow=wrap}
                 ihl = (recv-buf[0] & 15) * 4
                 offset = ihl
             }
@@ -840,7 +851,6 @@ icmp-conn.ping-once = (host str, timeout-ms i64) (rtt ?i64) {
     }
 
     ; 檢查 ICMP 回應長度
-    #{overflow = wrap}
     n - offset < ICMP-HEADER-SIZE -> return
 
     ; 驗證 ICMP Type = 0 (Echo Reply)
@@ -848,17 +858,14 @@ icmp-conn.ping-once = (host str, timeout-ms i64) (rtt ?i64) {
     icmp-type != ICMP-ECHO-REPLY -> return
 
     ; 驗證 Identifier
-    #{overflow = wrap}
     recv-ident = ((recv-buf[offset + 4]) << 8) | (recv-buf[offset + 5])
     recv-ident != .ident -> return
 
     ; 驗證 Sequence（只比較低 16 位）
-    #{overflow = wrap}
     recv-seq = ((recv-buf[offset + 6]) << 8) | (recv-buf[offset + 7])
     recv-seq != (.seq & 65535) -> return
 
     ; 計算 RTT
-    #{overflow = wrap}
     rtt = t-end - t-start
 }
 
@@ -869,12 +876,12 @@ icmp-conn.ping-once = (host str, timeout-ms i64) (rtt ?i64) {
 icmp-conn.ping-host = (host str, count i64, timeout-ms i64) {
     i <- [0..count): {
         r ?i64 = .ping-once(host, timeout-ms)
-        r: {
-            #{overflow = wrap}
+        {
+            #{overflow=wrap}
             nil -> print(host + ': ping timeout (seq=' + (.seq & 65535).to-str() + ')')
-            #{overflow = wrap}
+
             -> print(host + ': seq=' + (.seq & 65535).to-str() + ' rtt=' + it.to-str() + ' us')
-        }
+        } (r)
 
         ; 間隔 1 秒
         count > 1 -> os.sleep(1)
@@ -972,12 +979,12 @@ ifconfig-list = () (ifs []if-info) {
     ; 冒號前為介面名，冒號後為空白分隔的 16 個統計欄位
     lines = content.split('\n')
     i <- [2..lines.len-bytes()): {
+        #{overflow=wrap}
         line = lines[i]
         line.len-bytes() == 0 -> *
         colon-pos = line.index(':')
         colon-pos < 0 -> *
         name = line.slice(0, colon-pos).trim()
-        #{overflow = wrap}
         stats-str = line.slice(colon-pos + 1, line.len-bytes()).trim()
         fields = split-ws(stats-str)
         fields.len-bytes() >= 10 -> {
@@ -986,25 +993,33 @@ ifconfig-list = () (ifs []if-info) {
             v0 ?i64 = fields[0].to-i64()
             v0: {
                 ok -> info.rx-bytes = it
+
                 nil -> *
+
                 err -> *
             }
             v1 ?i64 = fields[1].to-i64()
             v1: {
                 ok -> info.rx-packets = it
+
                 nil -> *
+
                 err -> *
             }
             v8 ?i64 = fields[8].to-i64()
             v8: {
                 ok -> info.tx-bytes = it
+
                 nil -> *
+
                 err -> *
             }
             v9 ?i64 = fields[9].to-i64()
             v9: {
                 ok -> info.tx-packets = it
+
                 nil -> *
+
                 err -> *
             }
             ifs.push(info)
@@ -1113,8 +1128,11 @@ split-ws = (s str) (out []str) {
             i < n -> {
                 c = s[i]
                 {
-                    #{overflow = wrap}
-                    c == 32 || c == 9 -> i = i + 1
+                    c == 32 || c == 9 -> {
+                        #{overflow=wrap}
+                        i = i + 1
+                    }
+
                     -> *
                 }
             }
@@ -1125,9 +1143,9 @@ split-ws = (s str) (out []str) {
         start = i
         {
             i < n -> {
+                #{overflow=wrap}
                 c = s[i]
                 c == 32 || c == 9 -> *
-                #{overflow = wrap}
                 i = i + 1
             }
         } (i < n && s[i] != 32 && s[i] != 9)

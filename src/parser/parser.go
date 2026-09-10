@@ -1046,6 +1046,11 @@ func setDoc(stmt Statement, doc *CommentGroup) {
 		s.Doc = doc
 	case *ExpressionStatement:
 		s.Doc = doc
+	case *BlockStatement:
+		// 裸 `{ ... }` guard 區塊（statement 位置、無條件）在 parseStatement 的
+		// LBRACE 分支直接回傳 BlockStatement；setDoc 若不認識它，區塊上方的
+		// doc 註釋會被丟棄（如 path.no 的 `; '.' 必須在 '/' 之後`）。
+		s.Doc = doc
 	case *FunctionDefinition:
 		s.Doc = doc
 	case *ForStatement:

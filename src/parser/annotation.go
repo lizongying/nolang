@@ -115,8 +115,15 @@ func (p *Parser) parseAnnotationStatement() Statement {
 		annotStmt.Entries = entries
 	}
 
-	// 若後續為 IDENT 開頭的宣告，附加註解
+	// 若後續為 IDENT 開頭的宣告，附加註解。
+	// 亦含 IN（`in` 為關鍵字但常被當作參數名，如 `in []byte`）：形如
+	//   #{overflow = wrap}
+	//   in.len() == 0 -> { ... }
+	// 若不把 IN 視為可附加，註解會退化成獨立 AnnotationStatement，後續
+	// `in.len() == 0 -> ...` 的解析走 blockUnknown 分支，`in` 被吞掉，
+	// 格式化輸出變成 `.len() == 0 -> ...`（語意破壞、非冪等）。
 	if p.currentToken.Type == lexer.IDENT ||
+		p.currentToken.Type == lexer.IN ||
 		p.currentToken.Type == lexer.RARROW ||
 		(p.currentToken.Type == lexer.LBRACKET && p.isArrayTypeMethodDefinition()) {
 		// RARROW 分支處理 wildcard 裸配對臂（`-> body`）：
@@ -311,28 +318,45 @@ func (p *Parser) propagateOverflowInStmts(stmts []Statement, cur []*AnnotationEn
 
 // blockLevelOverflowMode 回傳本區塊「直接陳述」中「單一」溢出模式的註解條目；
 // 若無 overflow 註解、或出現兩種以上不同模式（需 override 語意），回傳 nil。
-// 只統計獨立 AnnotationStatement（語句自帶的 overflow 註解不算區塊級）。
+//
+// 同時統計兩種來源：
+//   - 獨立 AnnotationStatement（`#{overflow=...}` 自成一句）；
+//   - 語句自帶（attached）的 overflow 註解 —— 即註解緊接在該語句之前、由
+//     parseAnnotationStatement 附加到語句上的情形。
+//
+// 後者至關重要：`no fmt` 會把區塊的 overflow 標註統一輸出到區塊開頭，若該區塊
+// 第一條陳述以 IDENT 開頭（如 `key = .[i]`），註解會被 attach 而非成為獨立語句。
+// 只認獨立 AnnotationStatement 會讓 blockLevelOverflowMode 回 nil，區塊級 wrap
+// 整批失效（整數運算退回預設 option 模式 → %option 被 trunc 到窄型別 → LLVM 報錯）。
+// 解析期 Annotations 尚未由 ResolveProgram 填充，故必須讀 RawAnnotations。
 func (p *Parser) blockLevelOverflowMode(stmts []Statement) []*AnnotationEntry {
 	seenMode := ""
 	var single []*AnnotationEntry
-	for _, s := range stmts {
-		as, ok := s.(*AnnotationStatement)
-		if !ok {
-			continue
-		}
-		e := p.overflowEntries(as.Entries)
+	consider := func(e []*AnnotationEntry) bool {
 		if e == nil {
-			continue
+			return true
 		}
 		mode := p.overflowModeString(e)
 		if mode == "" {
-			continue // 無法識別的模式不計入單模式判定
+			return true // 無法識別的模式不計入單模式判定
 		}
 		if seenMode == "" {
 			seenMode = mode
 			single = e
 		} else if mode != seenMode {
-			return nil // 多模式：退回前向 override
+			return false // 多模式：退回前向 override
+		}
+		return true
+	}
+	for _, s := range stmts {
+		if as, ok := s.(*AnnotationStatement); ok {
+			if !consider(p.overflowEntries(as.Entries)) {
+				return nil
+			}
+			continue
+		}
+		if !consider(p.overflowEntries(p.sem.RawAnnotationsOf(s))) {
+			return nil
 		}
 	}
 	if seenMode == "" {
@@ -379,7 +403,14 @@ func (p *Parser) mergeAnnotations(n Node, entries []*AnnotationEntry) {
 	if isNil(n) || len(entries) == 0 {
 		return
 	}
-	if existing := p.sem.AnnotationsOf(n); len(existing) > 0 {
+	// 解析期 Annotations 尚未由 ResolveProgram 從 RawAnnotations 拷貝，若只讀
+	// Annotations 會得到空切片 → 走 else 分支直接覆寫，把語句原有的非 overflow
+	// 註解（如 #{intrinsic}）連同既有 RawAnnotations 一起丟掉。故回退讀 RawAnnotations。
+	existing := p.sem.AnnotationsOf(n)
+	if len(existing) == 0 {
+		existing = p.sem.RawAnnotationsOf(n)
+	}
+	if len(existing) > 0 {
 		seen := make(map[string]bool, len(existing))
 		merged := make([]*AnnotationEntry, 0, len(existing)+len(entries))
 		for _, e := range existing {

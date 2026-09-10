@@ -884,11 +884,16 @@ func (p *Parser) parseLetStatement() Statement {
 					}
 				} else {
 					if hasSize {
+						// 源碼顯式寫了 `[N]`（只是省略元素型別）：整個陣列型別
+						// 不算「推斷」，formatter 必須印回 `[N]`；只有被補成
+						// i64 的元素型別標 IsInferred，formatter 才不會多印
+						// `i64`。否則 `a [3] = [1,2,3]` 會被格式化成
+						// `a = [1,2,3]`，把定長陣列悄悄降級為切片（語意改變）。
 						stmt.Type = &ArrayType{
 							Token:      bracketToken,
 							Size:       sizeExpr,
 							Elem:       &NamedType{Token: bracketToken, Value: "i64", IsInferred: true},
-							IsInferred: true,
+							IsInferred: false,
 						}
 					} else {
 						stmt.Type = &SliceType{
@@ -1823,7 +1828,8 @@ func (p *Parser) parseDotExprLetStatement() Statement {
 					}
 				} else {
 					if hasSize {
-						stmt.Type = &ArrayType{Token: bracketToken, Size: sizeExpr, Elem: &NamedType{Token: bracketToken, Value: "i64", IsInferred: true}, IsInferred: true}
+						// 同 parseVarDecl 上方：源碼寫了 `[N]`，須保留 `[N]` 的輸出。
+						stmt.Type = &ArrayType{Token: bracketToken, Size: sizeExpr, Elem: &NamedType{Token: bracketToken, Value: "i64", IsInferred: true}, IsInferred: false}
 					} else {
 						stmt.Type = &SliceType{Token: bracketToken, Elem: &NamedType{Token: bracketToken, Value: "i64", IsInferred: true}, IsInferred: true}
 					}
@@ -1879,7 +1885,15 @@ func isStatementBoundary(t lexer.TokenType) bool {
 		// -> can begin a standalone wildcard if-then (-> body)
 		lexer.RARROW,
 		// match can be used as a variable name (keyword used as ident)
-		lexer.MATCH:
+		lexer.MATCH,
+		// in can be used as a variable name (keyword used as ident), e.g.
+		// `f = (in []byte) (…) { … }` in std/crypto. Without this,
+		// skipToStatementEnd (called after a preceding let/return/etc.)
+		// swallows the leading `in` of the NEXT statement and resumes at the
+		// following `.`, silently rewriting `in.len()` into `self.len()`
+		// (implicit-receiver form) — a semantic change, and the formatted
+		// output is non-idempotent.
+		lexer.IN:
 		return true
 	}
 	return false

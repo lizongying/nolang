@@ -4695,15 +4695,50 @@ func overflowModeFromSem(sem *parser.SemanticContext, n parser.Node) string {
 	return ""
 }
 
+// typeNamesEquivalent 判斷兩個型別名是否指涉同一個型別，容許「裸名 ↔ 模組限定名」
+// 的拼寫差異（如 `frame` 與 `http2.frame`）。
+//
+// 模組合併後，struct/enum 型別會同時以裸名與 module.name 兩種鍵註冊
+// （見 build/module_prefix.go 的 typeOwner 與 build/llvm 的雙鍵註冊），
+// 因此兩種拼寫在語意上等價。但 AST 改寫 pass 可能只改寫其中一側
+// （例如把區域變數的型別註解寫成 http2.frame，卻沒改寫同一函式方法的結果型別
+// ?frame），導致純字串比較誤報。
+//
+// 只比較「整串」的裸名/限定名對應，不做子字串比對：
+//
+//	frame          vs http2.frame   → true
+//	server.conn    vs tls.conn      → false（兩個都是限定名，後綴雖同但不互為前綴）
+//	?T             vs ?U             → 遞迴比較內層
+func typeNamesEquivalent(a, b string) bool {
+	if a == b {
+		return true
+	}
+	if a == "" || b == "" {
+		return false
+	}
+	// 指標/可空前綴需一致，再比較其餘部分。
+	for _, prefix := range []string{"?", "*", "%"} {
+		pa := strings.HasPrefix(a, prefix)
+		pb := strings.HasPrefix(b, prefix)
+		if pa != pb {
+			return false
+		}
+		if pa {
+			return typeNamesEquivalent(strings.TrimPrefix(a, prefix), strings.TrimPrefix(b, prefix))
+		}
+	}
+	return strings.HasSuffix(a, "."+b) || strings.HasSuffix(b, "."+a)
+}
+
 // optionTypesCompatible 判斷兩個 option 型別（?T / ?U）是否可互相賦值：
-// 內部型別相同或皆為整數型別（允許窄化）。
+// 內部型別相同（容許模組限定名差異）或皆為整數型別（允許窄化）。
 func optionTypesCompatible(inferred, existing string) bool {
 	if !strings.HasPrefix(inferred, "?") || !strings.HasPrefix(existing, "?") {
 		return false
 	}
 	it := inferred[1:]
 	et := existing[1:]
-	if it == et {
+	if typeNamesEquivalent(it, et) {
 		return true
 	}
 	if _, _, ok1 := intTypeRange(it); ok1 {
@@ -4777,6 +4812,16 @@ func validateStmtTypes(stmt parser.Statement, funcNames map[string]bool, funcTyp
 				// "cannot assign err value to ?i64 variable"（trace 15w45dqk）。
 				delete(varTypes, "it")
 			}
+			break
+		}
+		// Compiler-generated `result = __unwrap_N` propagation assignment
+		// (lowering's `?=` / safe-index error paths). It copies the whole
+		// option value into an option-typed result parameter to forward a
+		// nil/err outcome; at runtime every option is `{i64 tag, i64 data}`,
+		// so the copy is representation-compatible even when the inner types
+		// differ (`size ?= fstat-size(.fd)` in a function returning `?[]byte`).
+		// Type compatibility here is guaranteed by lowering, so skip the check.
+		if s.IsPropagation {
 			break
 		}
 		// 宣告局部變數後，從 funcNames 中移除該名稱，
@@ -4964,7 +5009,7 @@ func validateStmtTypes(stmt parser.Statement, funcNames map[string]bool, funcTyp
 							}
 						}
 					}
-					if inferredType != "" && inferredType != existingType && isConcreteType(existingType) && !isArrayAssign && !isOptionCtor &&
+					if inferredType != "" && !typeNamesEquivalent(inferredType, existingType) && isConcreteType(existingType) && !isArrayAssign && !isOptionCtor &&
 						!isArgTypeCompatible(existingType, inferredType, s.Value) && !optionTypesCompatible(inferredType, existingType) {
 						valPos := s.Value.Pos()
 						results = append(results, ValidateResult{
@@ -5088,7 +5133,7 @@ func validateStmtTypes(stmt parser.Statement, funcNames map[string]bool, funcTyp
 								}
 							}
 						}
-						if valType != "" && valType != existingType && isConcreteType(existingType) && !isOptionCtor &&
+						if valType != "" && !typeNamesEquivalent(valType, existingType) && isConcreteType(existingType) && !isOptionCtor &&
 							!isArgTypeCompatible(existingType, valType, assign.Value) && !optionTypesCompatible(valType, existingType) {
 							// Check if this is an array/slice literal assignment to a typed array variable
 							_, isSlice := assign.Value.(*parser.SliceLiteral)
@@ -5844,7 +5889,19 @@ func ValidateCrossModuleTypeRefs(program *parser.Program) []ValidateResult {
 				checkType(s.Type, s.Token.Line, s.Token.Column)
 			}
 		case *parser.FunctionDefinition:
-			for _, p := range s.Parameters {
+			// 方法定義的第一個參數是 parser 合成的 receiver（`self`），
+			// 由 parser/decl.go 在解析 `t.method = …` 時自動插到最前面，
+			// 並非使用者撰寫的參數型別標註。對其套用跨模組前綴檢查會產生
+			// 誤報：例如 JS 平台宣告 `json.parse = …` / `timer.x = …`，
+			// 其 receiver 名稱 `json` / `timer` 恰好與 std 模組中的 struct
+			// 同名，於是噴出 "type 'json' not found; did you mean
+			// 'json.json'?"——但這裡的 `json` 是 JS 全域命名空間而非型別。
+			// 故跳過合成的首個參數，只檢查使用者實際撰寫的參數/回傳型別。
+			paramStart := 0
+			if s.IsMethodDef && len(s.Parameters) > 0 {
+				paramStart = 1
+			}
+			for _, p := range s.Parameters[paramStart:] {
 				if p.Type != nil {
 					checkType(p.Type, p.Token.Line, p.Token.Column)
 				}

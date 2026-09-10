@@ -25,37 +25,34 @@ aes-256-ctr-xor = (key [32]byte, icb [16]byte, data []byte) (out []byte) {
     out = with-len(data.len())
     pos = 0
     {
+        #{overflow=wrap}
         ks [16]byte
         ks = aes.aes-256-enc(cb, key)
 
         n = 16
-        #{overflow = wrap}
         pos + n > data.len() -> n = data.len() - pos
         i <- [0..n): {
-            #{overflow = wrap}
+            #{overflow=wrap}
             out[pos + i] = (data[pos + i]) ^ (ks[i])
         }
 
         ; 遞增計數器（大端序，最低 32 位元）
         j = 15
         {
-            #{overflow = wrap}
+            #{overflow=wrap}
             cb[j] = (cb[j] + 1) & 255
             cb[j] != 0 -> break
-            #{overflow = wrap}
             j = j - 1
         } (j >= 12)
         cb[12] == 0 && cb[13] == 0 && cb[14] == 0 && cb[15] == 0 -> {
             j = 11
             {
-                #{overflow = wrap}
+                #{overflow=wrap}
                 cb[j] = (cb[j] + 1) & 255
                 cb[j] != 0 -> break
-                #{overflow = wrap}
                 j = j - 1
             } (j >= 0)
         }
-        #{overflow = wrap}
         pos = pos + n
     } (pos < data.len())
 }
@@ -69,20 +66,24 @@ aes-256-ctr-xor = (key [32]byte, icb [16]byte, data []byte) (out []byte) {
 aes-256-gcm-seal = (key [32]byte, iv [12]byte, aad []byte, plain []byte) (sealed []byte) {
 
     ; 1. H = AES-256-enc(key, 0^128)
+    #{overflow=wrap}
     zero-block [16]byte
     i <- [0..16): {
+        #{overflow=wrap}
         zero-block[i] = 0
     }
     h-bytes [16]byte
     h-bytes = aes.aes-256-enc(zero-block, key)
     h [16]byte
     i <- [0..16): {
+        #{overflow=wrap}
         h[i] = h-bytes[i]
     }
 
     ; 2. J0 = iv || 0x00000001
     j0 [16]byte
     i <- [0..12): {
+        #{overflow=wrap}
         j0[i] = iv[i]
     }
     j0[12] = 0
@@ -93,14 +94,14 @@ aes-256-gcm-seal = (key [32]byte, iv [12]byte, aad []byte, plain []byte) (sealed
     ; 3. CTR 從 J0+1 開始加密
     ctr [16]byte
     i <- [0..16): {
+        #{overflow=wrap}
         ctr[i] = j0[i]
     }
     j = 15
     {
-        #{overflow = wrap}
+        #{overflow=wrap}
         ctr[j] = (ctr[j] + 1) & 255
         ctr[j] != 0 -> break
-        #{overflow = wrap}
         j = j - 1
     } (j >= 12)
     cipher []byte
@@ -115,17 +116,18 @@ aes-256-gcm-seal = (key [32]byte, iv [12]byte, aad []byte, plain []byte) (sealed
     j0-enc = aes.aes-256-enc(j0, key)
     tag [16]byte
     i <- [0..16): {
+        #{overflow=wrap}
         tag[i] = (j0-enc[i]) ^ (ghash-out[i])
     }
 
     ; 6. 輸出密文 + tag
-    #{overflow = wrap}
     sealed = with-len(cipher.len() + 16)
     i <- [0..cipher.len()): {
+        #{overflow=wrap}
         sealed[i] = cipher[i]
     }
     i <- [0..16): {
-        #{overflow = wrap}
+        #{overflow=wrap}
         sealed[cipher.len() + i] = tag[i]
     }
 }
@@ -137,25 +139,28 @@ aes-256-gcm-seal = (key [32]byte, iv [12]byte, aad []byte, plain []byte) (sealed
 ; sealed []byte: 密文 + 16 位元組 tag
 ; 返回 plain []byte: 明文（認證失敗時長度為 0）
 aes-256-gcm-open = (key [32]byte, iv [12]byte, aad []byte, sealed []byte) (plain []byte) {
+    #{overflow=wrap}
     sealed.len() < 16 -> return
-    #{overflow = wrap}
     cipher-len = sealed.len() - 16
 
     ; 1. H
     zero-block [16]byte
     i <- [0..16): {
+        #{overflow=wrap}
         zero-block[i] = 0
     }
     h-bytes [16]byte
     h-bytes = aes.aes-256-enc(zero-block, key)
     h [16]byte
     i <- [0..16): {
+        #{overflow=wrap}
         h[i] = h-bytes[i]
     }
 
     ; 2. J0
     j0 [16]byte
     i <- [0..12): {
+        #{overflow=wrap}
         j0[i] = iv[i]
     }
     j0[12] = 0
@@ -166,11 +171,12 @@ aes-256-gcm-open = (key [32]byte, iv [12]byte, aad []byte, sealed []byte) (plain
     ; 3. 提取密文和 tag
     cipher []byte
     i <- [0..cipher-len): {
+        #{overflow=wrap}
         cipher[i] = sealed[i]
     }
     tag [16]byte
     i <- [0..16): {
-        #{overflow = wrap}
+        #{overflow=wrap}
         tag[i] = sealed[cipher-len + i]
     }
 
@@ -181,10 +187,12 @@ aes-256-gcm-open = (key [32]byte, iv [12]byte, aad []byte, sealed []byte) (plain
     j0-enc = aes.aes-256-enc(j0, key)
     exp-tag [16]byte
     i <- [0..16): {
+        #{overflow=wrap}
         exp-tag[i] = (j0-enc[i]) ^ (ghash-out[i])
     }
     diff = 0
     i <- [0..16): {
+        #{overflow=wrap}
         diff = diff | (tag[i] ^ exp-tag[i])
     }
     diff != 0 -> return
@@ -192,14 +200,14 @@ aes-256-gcm-open = (key [32]byte, iv [12]byte, aad []byte, sealed []byte) (plain
     ; 5. 解密
     ctr [16]byte
     i <- [0..16): {
+        #{overflow=wrap}
         ctr[i] = j0[i]
     }
     j = 15
     {
-        #{overflow = wrap}
+        #{overflow=wrap}
         ctr[j] = (ctr[j] + 1) & 255
         ctr[j] != 0 -> break
-        #{overflow = wrap}
         j = j - 1
     } (j >= 12)
     plain = aes-256-ctr-xor(key, ctr, cipher)

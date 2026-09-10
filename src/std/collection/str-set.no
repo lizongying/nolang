@@ -33,13 +33,13 @@ str-set.init = () {
 
 ; hash: FNV-1a 字串雜湊
 str-set.hash = (key str) (idx i64) {
+    #{overflow=wrap}
     h = SS-FNV-OFFSET
     i <- [0..key.len-bytes()): {
+        #{overflow=wrap}
         h = h ^ (key[i])
-        #{overflow = wrap}
         h = h * SS-FNV-PRIME
     }
-    #{overflow = wrap}
     idx = h & (.cap - 1)
 }
 
@@ -54,15 +54,16 @@ str-set.str-eq = (a str, b str) (eq bool) {
 
 ; add: 加入元素，回傳是否新增
 str-set.add = (key str) (is-new bool) {
+    #{overflow=wrap}
     idx = .hash(key)
 
     {
+        #{overflow=wrap}
         eq = .str-eq(.keys[idx], key)
         eq -> {
             is-new = false
             return
         }
-        #{overflow = wrap}
         idx = idx + 1
         idx >= .cap -> idx = 0
     } (.occ[idx] == 1)
@@ -70,10 +71,10 @@ str-set.add = (key str) (is-new bool) {
     ; 複製 key
     .keys[idx].len = key.len-bytes()
     i <- [0..key.len-bytes()): {
+        #{overflow=wrap}
         .keys[idx][i] = key[i]
     }
     .occ[idx] = 1
-    #{overflow = wrap}
     .size = .size + 1
     is-new = true
 }
@@ -84,12 +85,12 @@ str-set.contains = (key str) (found bool) {
     idx = .hash(key)
 
     {
+        #{overflow=wrap}
         eq = .str-eq(.keys[idx], key)
         eq -> {
             found = true
             return
         }
-        #{overflow = wrap}
         idx = idx + 1
         idx >= .cap -> idx = 0
     } (.occ[idx] == 1)
@@ -101,16 +102,16 @@ str-set.remove = (key str) (removed bool) {
     idx = .hash(key)
 
     {
+        #{overflow=wrap}
         eq = .str-eq(.keys[idx], key)
         eq -> {
+            #{overflow=wrap}
             .occ[idx] = 0
             .keys[idx].len = 0
-            #{overflow = wrap}
             .size = .size - 1
             removed = true
             return
         }
-        #{overflow = wrap}
         idx = idx + 1
         idx >= .cap -> idx = 0
     } (.occ[idx] == 1)

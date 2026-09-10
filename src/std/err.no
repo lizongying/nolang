@@ -55,11 +55,17 @@ errno-to-code = (errno i64) (ec code) {
     ec = code.invalid
     {
         errno == 0 -> ec = code.ok
+
         errno == 2 -> ec = code.not-found
+
         errno == 1 || errno == 13 || errno == 30 || errno == 79 -> ec = code.permission
+
         errno == 5 || errno == 32 || errno == 100 || errno == 104 || errno == 112 || errno == 113 -> ec = code.io
+
         errno == 11 || errno == 35 || errno == 110 -> ec = code.timeout
+
         errno == 84 -> ec = code.parse
+
         errno == 12 || errno == 28 || errno == 34 || errno == 75 -> ec = code.overflow
     }
 }

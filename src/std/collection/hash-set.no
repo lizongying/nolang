@@ -29,26 +29,26 @@ hash-set.init = () {
 
 ; hash: 計算索引
 hash-set.hash = (key i64) (idx i64) {
-    #{overflow = wrap}
+    #{overflow=wrap}
     idx = key & (.cap - 1)
 }
 
 ; add: 加入元素，回傳是否新增
 hash-set.add = (key i64) (is-new bool) {
+    #{overflow=wrap}
     idx = .hash(key)
 
     {
+        #{overflow=wrap}
         .keys[idx] == key -> {
             is-new = false
             return
         }
-        #{overflow = wrap}
         idx = idx + 1
         idx >= .cap -> idx = 0
     } (.occ[idx] == 1)
     .keys[idx] = key
     .occ[idx] = 1
-    #{overflow = wrap}
     .size = .size + 1
     is-new = true
 }
@@ -59,11 +59,11 @@ hash-set.contains = (key i64) (found bool) {
     idx = .hash(key)
 
     {
+        #{overflow=wrap}
         .keys[idx] == key -> {
             found = true
             return
         }
-        #{overflow = wrap}
         idx = idx + 1
         idx >= .cap -> idx = 0
     } (.occ[idx] == 1)
@@ -75,14 +75,14 @@ hash-set.remove = (key i64) (removed bool) {
     idx = .hash(key)
 
     {
+        #{overflow=wrap}
         .keys[idx] == key -> {
+            #{overflow=wrap}
             .occ[idx] = 0
-            #{overflow = wrap}
             .size = .size - 1
             removed = true
             return
         }
-        #{overflow = wrap}
         idx = idx + 1
         idx >= .cap -> idx = 0
     } (.occ[idx] == 1)

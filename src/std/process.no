@@ -40,51 +40,61 @@
 ; process-fork: fork 當前進程
 ; 返回 0=子進程, >0=父進程(子PID), -1=錯誤
 #{buildin}
-process-fork = () (pid i64) { }
+process-fork = () (pid i64) {
+}
 
 ; process-pipe: 建立管道
 ; 返回打包值 (read_fd << 32) | write_fd
 #{buildin}
-process-pipe = () (fds i64) { }
+process-pipe = () (fds i64) {
+}
 
 ; process-waitpid: 等待子進程
 ; 返回退出碼 (WEXITSTATUS)
 #{buildin}
-process-waitpid = (pid i64, options i64) (code i64) { }
+process-waitpid = (pid i64, options i64) (code i64) {
+}
 
 ; process-waitpid-nohang: 非阻塞等待子進程 (WNOHANG)
 ; 子進程仍在執行時返回 -1；已退出時返回其退出碼；錯誤時返回 -1。
 ; 用於 timeout 看門狗輪詢。
 #{buildin}
-process-waitpid-nohang = (pid i64) (code i64) { }
+process-waitpid-nohang = (pid i64) (code i64) {
+}
 
 ; process-exec: 替換當前進程
 ; 呼叫 execlp(program, program, arg, NULL)
 ; 僅在失敗時返回
 #{buildin}
-process-exec = (program str, arg str) (err i64) { }
+process-exec = (program str, arg str) (err i64) {
+}
 
 ; process-kill: 發送信號給進程
 #{buildin}
-process-kill = (pid i64, sig i64) (ok bool) { }
+process-kill = (pid i64, sig i64) (ok bool) {
+}
 
 ; process-dup2: 複製檔案描述符
 #{buildin}
-process-dup2 = (oldfd i64, newfd i64) (newfd i64) { }
+process-dup2 = (oldfd i64, newfd i64) (newfd i64) {
+}
 
 ; process-getppid: 取得父進程 ID
 #{buildin}
-process-getppid = () (pid i64) { }
+process-getppid = () (pid i64) {
+}
 
 ; process-system: 執行 shell 命令
 #{buildin}
-process-system = (cmd str) (status i64) { }
+process-system = (cmd str) (status i64) {
+}
 
 ; process-exec-shell: 用 sh -c 執行命令字串（替換當前進程）
 ; cmd: 完整命令字串
 ; 僅在失敗時返回 errno
 #{buildin}
-process-exec-shell = (cmd str) (err i64) { }
+process-exec-shell = (cmd str) (err i64) {
+}
 
 ; ═══════════════════════════════════════════════
 ; Windows 平台專用 Win32 API 內建函數
@@ -94,21 +104,25 @@ process-exec-shell = (cmd str) (err i64) { }
 ; win-create-pipe: 建立匿名管道（CreatePipe）
 ; 返回打包值 (read_handle << 32) | write_handle，0=失敗
 #{buildin}
-win-create-pipe = () (handles i64) { }
+win-create-pipe = () (handles i64) {
+}
 
 ; win-close-handle: 關閉 Windows handle（CloseHandle）
 #{buildin}
-win-close-handle = (handle i64) (ok bool) { }
+win-close-handle = (handle i64) (ok bool) {
+}
 
 ; win-write-pipe: 寫入資料到管道/handle（WriteFile）
 ; 返回寫入位元組數，-1=錯誤
 #{buildin}
-win-write-pipe = (handle i64, data str) (written i64) { }
+win-write-pipe = (handle i64, data str) (written i64) {
+}
 
 ; win-read-pipe: 從管道/handle 讀取資料（ReadFile）
 ; 返回 (data, n)：n=讀取位元組數，-1=錯誤
 #{buildin}
-win-read-pipe = (handle i64, max-bytes i64) (data str, n i64) { }
+win-read-pipe = (handle i64, max-bytes i64) (data str, n i64) {
+}
 
 ; win-create-process: 創建子進程（CreateProcessA）
 ; cmdline: 完整命令列字串
@@ -116,27 +130,32 @@ win-read-pipe = (handle i64, max-bytes i64) (data str, n i64) { }
 ; stdin-handle, stdout-handle, stderr-handle: 標準流 handle（0=繼承父進程）
 ; 返回 (proc-handle, status)：proc-handle>0=成功, 0=失敗
 #{buildin}
-win-create-process = (cmdline str, dir str, stdin-handle i64, stdout-handle i64, stderr-handle i64) (proc-handle i64, status i64) { }
+win-create-process = (cmdline str, dir str, stdin-handle i64, stdout-handle i64, stderr-handle i64) (proc-handle i64, status i64) {
+}
 
 ; win-wait-process: 等待進程結束（WaitForSingleObject）
 ; timeout-ms: 超時毫秒（0=無限等待）
 ; 返回 0=超時, 1=已退出, -1=錯誤
 #{buildin}
-win-wait-process = (proc-handle i64, timeout-ms i64) (status i64) { }
+win-wait-process = (proc-handle i64, timeout-ms i64) (status i64) {
+}
 
 ; win-get-exit-code: 取得進程退出碼（GetExitCodeProcess）
 ; 返回 (exit-code, ok)：ok=false 表示仍在執行
 #{buildin}
-win-get-exit-code = (proc-handle i64) (exit-code i64, ok bool) { }
+win-get-exit-code = (proc-handle i64) (exit-code i64, ok bool) {
+}
 
 ; win-terminate-process: 終止進程（TerminateProcess）
 #{buildin}
-win-terminate-process = (proc-handle i64, exit-code i64) (ok bool) { }
+win-terminate-process = (proc-handle i64, exit-code i64) (ok bool) {
+}
 
 ; win-get-std-handle: 取得標準 handle（GetStdHandle）
 ; which: 0=stdin, 1=stdout, 2=stderr
 #{buildin}
-win-get-std-handle = (which i64) (handle i64) { }
+win-get-std-handle = (which i64) (handle i64) {
+}
 
 ; ═══════════════════════════════════════════════
 ; 信號常量
@@ -217,9 +236,10 @@ process.start-with-opts = (program str, args []str, dir str, input str, merge-er
     }
     {
         is-sh-c -> cmdline = args[1]
+
         -> {
             i <- [0..args.len()): {
-                #{overflow = wrap}
+                #{overflow=wrap}
                 cmdline = cmdline - ' ' - args[i]
             }
         }
@@ -280,7 +300,6 @@ process.start-with-opts = (program str, args []str, dir str, input str, merge-er
 
     {
         pid == 0 -> {
-
             ; 子進程：重定向標準流
             process-dup2(out-write, 1)
             {
@@ -309,24 +328,27 @@ process.start-with-opts = (program str, args []str, dir str, input str, merge-er
                     fs.close(in-write)
                 }
             }
+
             ; 工作目錄
             {
                 dir.len-bytes() > 0 -> ch-dir(dir)
             }
+
             ; 執行命令
             exec-rc i64 = process-exec-shell(cmdline)
+
             ; exec 失敗：寫錯誤訊息到 stderr（fd 2），供父進程歸一化為 code=-1
             exec-rc != 0 -> {
                 exec-err str = 'exec: ' - cmdline - ': command not found\n'
                 exec-err-bytes = exec-err.to-bytes()
                 fs.write(2, exec-err-bytes, exec-err-bytes.len())
             }
+
             ; exec 失敗
             exit(127)
         }
 
         pid < 0 -> {
-
             ; fork 失敗
             fs.close(out-read)
             fs.close(out-write)
@@ -470,11 +492,10 @@ process.read-all = () (content str, n i64) {
     .stdout-fd < 0 -> return
     buf []byte = with-len(4096)
     {
+        #{overflow=wrap}
         chunk-n = fs.read(.stdout-fd, buf, 4096)
         chunk-n <= 0 -> *
-        #{overflow = wrap}
         content = content - buf.slice(0, chunk-n).to-str()
-        #{overflow = wrap}
         n = n + chunk-n
     } (true)
 }
@@ -609,9 +630,10 @@ cmd = (program str, args []str, dir str, input str, env []str, timeout i64, merg
     }
     {
         is-sh-c -> cmdline = args[1]
+
         -> {
             i <- [0..args.len()): {
-                #{overflow = wrap}
+                #{overflow=wrap}
                 cmdline = cmdline - ' ' - args[i]
             }
         }
@@ -689,7 +711,6 @@ cmd = (program str, args []str, dir str, input str, env []str, timeout i64, merg
 
     {
         pid == 0 -> {
-
             ; 子進程：重定向標準流
             process-dup2(out-write, 1)
             {
@@ -718,24 +739,27 @@ cmd = (program str, args []str, dir str, input str, env []str, timeout i64, merg
                     fs.close(in-write)
                 }
             }
+
             ; 工作目錄
             {
                 dir.len-bytes() > 0 -> ch-dir(dir)
             }
+
             ; 執行命令
             exec-rc i64 = process-exec-shell(cmdline)
+
             ; exec 失敗：寫錯誤訊息到 stderr（fd 2），供父進程歸一化為 code=-1
             exec-rc != 0 -> {
                 exec-err str = 'exec: ' - cmdline - ': command not found\n'
                 exec-err-bytes = exec-err.to-bytes()
                 fs.write(2, exec-err-bytes, exec-err-bytes.len())
             }
+
             ; exec 失敗
             exit(127)
         }
 
         pid < 0 -> {
-
             ; fork 失敗
             fs.close(out-read)
             fs.close(out-write)
@@ -779,9 +803,9 @@ cmd = (program str, args []str, dir str, input str, env []str, timeout i64, merg
     ; 讀取 stdout 輸出（在 waitpid 之前讀取以避免管道死鎖）
     buf []byte = with-len(4096)
     {
+        #{overflow=wrap}
         n = fs.read(out-read, buf, 4096)
         n <= 0 -> break
-        #{overflow = wrap}
         out = out - buf.slice(0, n).to-str()
     } (true)
 
@@ -798,57 +822,61 @@ cmd = (program str, args []str, dir str, input str, env []str, timeout i64, merg
             {
                 ; 子進程已結束則跳出
                 process-waitpid-nohang(pid) != -1 -> break
+
                 ; 已超時則跳出
                 elapsed >= timeout -> break
                 sleep-us(10000)
                 elapsed = elapsed + 10
             } (true)
-            {
-                ; 超時：仍在執行 → 強制殺死並回報 -2
-                process-waitpid-nohang(pid) == -1 -> {
-                    process-kill(pid, 9)
-                    code = -2
-                    ; 收割被殺死的子進程
-                    process-waitpid(pid, 0)
-                }
+
+            ; 超時：仍在執行 → 強制殺死並回報 -2
+            process-waitpid-nohang(pid) == -1 -> {
+                process-kill(pid, 9)
+                code = -2
+
+                ; 收割被殺死的子進程
+                process-waitpid(pid, 0)
+            }
+
+            -> {
                 ; 自然結束：收割並取得退出碼
-                -> {
-                    code = process-waitpid(pid, 0)
-                }
+                code = process-waitpid(pid, 0)
             }
         }
-        timeout <= 0 -> {
-            ; 無限等待
-            code = process-waitpid(pid, 0)
-        }
-        ; 捕獲 stderr（僅非 merge-err 時 stderr 獨立管道）
-        {
-            ! merge-err -> {
-                err-read >= 0 -> {
-                    {
-                        n = fs.read(err-read, buf, 4096)
-                        n <= 0 -> break
-                        #{overflow = wrap}
-                        stderr = stderr - buf.slice(0, n).to-str()
-                    } (true)
-                    fs.close(err-read)
-                }
+    }
+    timeout <= 0 -> {
+        ; 無限等待
+        code = process-waitpid(pid, 0)
+    }
+
+    ; 捕獲 stderr（僅非 merge-err 時 stderr 獨立管道）
+    {
+        ! merge-err -> {
+            err-read >= 0 -> {
+                {
+                    #{overflow=wrap}
+                    n = fs.read(err-read, buf, 4096)
+                    n <= 0 -> break
+                    stderr = stderr - buf.slice(0, n).to-str()
+                } (true)
+                fs.close(err-read)
             }
         }
-        ; 啟動/exec 失敗歸一化：sh -c 包裝下指令不存在會令 sh 以 127 退出，
-        ; 將其視為 exec 失敗（code=-1, err=錯誤訊息），符合 API 契約。
-        code == 127 -> {
-            ! merge-err -> {
-                stderr.len-bytes() > 0 -> {
-                    code = -1
-                    err = stderr
-                }
+    }
+
+    ; 啟動/exec 失敗歸一化：sh -c 包裝下指令不存在會令 sh 以 127 退出，
+    ; 將其視為 exec 失敗（code=-1, err=錯誤訊息），符合 API 契約。
+    code == 127 -> {
+        ! merge-err -> {
+            stderr.len-bytes() > 0 -> {
+                code = -1
+                err = stderr
             }
-            merge-err -> {
-                out.len-bytes() > 0 -> {
-                    code = -1
-                    err = out
-                }
+        }
+        merge-err -> {
+            out.len-bytes() > 0 -> {
+                code = -1
+                err = out
             }
         }
     }
@@ -870,14 +898,15 @@ cmd = (program str, args []str, dir str, input str, env []str, timeout i64, merg
     cmdline str = program
     i <- [0..args.len()): {
         arg str = args[i]
+
         ; 含空格的參數需要加引號
         has-space = arg.contains(' ')
         has-space != 0 -> {
-            #{overflow = wrap}
+            #{overflow=wrap}
             cmdline = cmdline - ' "' - arg - '"'
         }
         has-space == 0 -> {
-            #{overflow = wrap}
+            #{overflow=wrap}
             cmdline = cmdline - ' ' - arg
         }
     }
@@ -994,7 +1023,6 @@ cmd = (program str, args []str, dir str, input str, env []str, timeout i64, merg
             wait-status = win-wait-process(proc-handle, timeout)
             {
                 wait-status == 0 -> {
-
                     ; 超時，終止進程
                     win-terminate-process(proc-handle, 1)
                     win-wait-process(proc-handle, 0)
@@ -1003,7 +1031,6 @@ cmd = (program str, args []str, dir str, input str, env []str, timeout i64, merg
                 }
 
                 ! wait-status == 0 -> {
-
                     ; 已退出
                     exit-code, ok = win-get-exit-code(proc-handle)
                     code = exit-code
@@ -1012,7 +1039,6 @@ cmd = (program str, args []str, dir str, input str, env []str, timeout i64, merg
         }
 
         timeout <= 0 -> {
-
             ; 無限等待
             win-wait-process(proc-handle, 0)
             exit-code, ok = win-get-exit-code(proc-handle)
@@ -1027,8 +1053,9 @@ cmd = (program str, args []str, dir str, input str, env []str, timeout i64, merg
             chunk-n i64 = 0
             {
                 chunk, chunk-n = win-read-pipe(out-read, 4096)
+
+                #{overflow=wrap}
                 chunk-n <= 0 -> break
-                #{overflow = wrap}
                 out = out - chunk
             } (true)
         }
@@ -1043,8 +1070,9 @@ cmd = (program str, args []str, dir str, input str, env []str, timeout i64, merg
                 chunk-n i64 = 0
                 {
                     chunk, chunk-n = win-read-pipe(err-read, 4096)
+
+                    #{overflow=wrap}
                     chunk-n <= 0 -> break
-                    #{overflow = wrap}
                     stderr = stderr - chunk
                 } (true)
                 win-close-handle(err-read)
@@ -1140,11 +1168,11 @@ list-all = () (procs []proc-info) {
         pid-val ?i64 = name.to-i64()
         pid-val: {
             ok -> {
+                #{overflow=wrap}
                 p = proc-info {}
                 p.pid = it
 
                 ; 讀取 /proc/<pid>/comm 取得進程名
-                #{overflow = wrap}
                 comm-path = '/proc/' - name - '/comm'
                 comm = fs.read-file(comm-path).to-str()
                 comm.len() > 0 -> p.name = comm.trim()
@@ -1204,7 +1232,6 @@ spawn = (cmd str) (pid i64) {
     pid = process-fork()
     {
         pid == 0 -> {
-
             ; 子進程：用 sh -c 執行
             process-exec-shell(cmd)
 
@@ -1213,7 +1240,6 @@ spawn = (cmd str) (pid i64) {
         }
 
         pid < 0 -> {
-
             ; fork 失敗
             pid = -1
         }

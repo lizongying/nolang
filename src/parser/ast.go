@@ -547,6 +547,18 @@ type LetStatement struct {
 	// (checker.IsConstantExpr) and matches the target platform.
 	// Replaces the external map[string]Expression moduleConstants.
 	IsModuleConst bool
+	// IsPropagation marks a compiler-generated `result = __unwrap_N` assignment
+	// emitted by lowering's `?=` (and safe-index auto-propagation) error paths:
+	// the whole option value is copied into an option-typed result parameter so
+	// that a nil/err outcome propagates out of the function.
+	//
+	// At runtime every option is `{i64 tag, i64 data}` regardless of the inner
+	// type, so the copy is representation-compatible even when the source and
+	// target inner types differ (e.g. `size ?= fstat-size(.fd)` inside a
+	// function returning `?[]byte`). The type checker must therefore not flag
+	// it as a type mismatch. This is a checker-only hint: codegen ignores it
+	// (unlike IsSynthetic, which changes ownership/option-assign behaviour).
+	IsPropagation bool
 	CommentedNode
 }
 

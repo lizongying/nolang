@@ -57,17 +57,15 @@ str.gt = (b str) (res bool) {
 ; [n]ord.sort-asc: 升序原地排序（插入排序）
 [n]ord.sort-asc = () {
     i <- [1..n): {
+        #{overflow=wrap}
         key = .[i]
-        #{overflow = wrap}
         j = i - 1
         {
+            #{overflow=wrap}
             .[j] <= key -> break
-            #{overflow = wrap}
             .[j + 1] = .[j]
-            #{overflow = wrap}
             j = j - 1
         } (j >= 0)
-        #{overflow = wrap}
         .[j + 1] = key
     }
 }
@@ -75,17 +73,15 @@ str.gt = (b str) (res bool) {
 ; [n]ord.sort-desc: 降序原地排序（插入排序）
 [n]ord.sort-desc = () {
     i <- [1..n): {
+        #{overflow=wrap}
         key = .[i]
-        #{overflow = wrap}
         j = i - 1
         {
+            #{overflow=wrap}
             .[j] >= key -> break
-            #{overflow = wrap}
             .[j + 1] = .[j]
-            #{overflow = wrap}
             j = j - 1
         } (j >= 0)
-        #{overflow = wrap}
         .[j + 1] = key
     }
 }
@@ -94,17 +90,15 @@ str.gt = (b str) (res bool) {
 []ord.sort-asc = () {
     sz = .len()
     i <- [1..sz): {
+        #{overflow=wrap}
         key = .[i]
-        #{overflow = wrap}
         j = i - 1
         {
+            #{overflow=wrap}
             .[j] <= key -> break
-            #{overflow = wrap}
             .[j + 1] = .[j]
-            #{overflow = wrap}
             j = j - 1
         } (j >= 0)
-        #{overflow = wrap}
         .[j + 1] = key
     }
 }
@@ -113,17 +107,15 @@ str.gt = (b str) (res bool) {
 []ord.sort-desc = () {
     sz = .len()
     i <- [1..sz): {
+        #{overflow=wrap}
         key = .[i]
-        #{overflow = wrap}
         j = i - 1
         {
+            #{overflow=wrap}
             .[j] >= key -> break
-            #{overflow = wrap}
             .[j + 1] = .[j]
-            #{overflow = wrap}
             j = j - 1
         } (j >= 0)
-        #{overflow = wrap}
         .[j + 1] = key
     }
 }

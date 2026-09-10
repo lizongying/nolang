@@ -80,16 +80,15 @@ get-option = (key str, keyn i64, val str) (ok bool) {
             eq == 61 -> {
 
                 ; 複製 '=' 後的內容到 val
-                #{overflow = wrap}
+                #{overflow=wrap}
                 k = keyn + 1
                 vn = 0
                 {
+                    #{overflow=wrap}
                     c = arg[k]
                     c == 0 -> break
                     val[vn] = c
-                    #{overflow = wrap}
                     vn = vn + 1
-                    #{overflow = wrap}
                     k = k + 1
                 } (true)
                 ok = true
@@ -109,20 +108,21 @@ get-positional = (idx i64) (val str, ok bool) {
     pos = 0
     j = 1
     {
+        #{overflow=wrap}
         arg = get(j)
 
         ; 跳過以 '-' 開頭的參數
         c0 = arg[0]
         c0 == 45 -> {
-            #{overflow = wrap}
+            #{overflow=wrap}
             j = j + 1
 
             ; 如果是 --key value 形式，也跳過下一個
             c1 = arg[1]
             c1 != 45 -> j < n -> {
+                #{overflow=wrap}
                 next = get(j)
                 nc = next[0]
-                #{overflow = wrap}
                 nc != 45 -> j = j + 1
             }
             continue
@@ -132,18 +132,16 @@ get-positional = (idx i64) (val str, ok bool) {
             ; 複製 arg 到 val
             k = 0
             {
+                #{overflow=wrap}
                 c = arg[k]
                 c == 0 -> break
                 val[k] = c
-                #{overflow = wrap}
                 k = k + 1
             } (true)
             ok = true
             return
         }
-        #{overflow = wrap}
         pos = pos + 1
-        #{overflow = wrap}
         j = j + 1
     } (j < n)
 }

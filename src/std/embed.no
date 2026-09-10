@@ -40,8 +40,10 @@ embed.read = (path str) (data []byte, ok bool) {
     i <- [0...count): {
         pStart = .pathStarts[i]
         pLen = .pathLens[i]
+
         ; 快速長度檢查
         pLen != pathLen -> *
+
         ; 逐字節比較
         match = true
         j <- [0..pLen): {
@@ -53,6 +55,7 @@ embed.read = (path str) (data []byte, ok bool) {
         match -> {
             dStart = .dataStarts[i]
             dLen = .dataLens[i]
+
             ; 從 blob 中切片返回
             data = .blob[dStart..dStart + dLen)
             ok = true

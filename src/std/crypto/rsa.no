@@ -20,14 +20,17 @@
 
 ; rsa-bn-cmp: 比較兩個大數 a 和 b
 ; 返回 cmp: 1 = a > b, 0 = a == b, -1 = a < b
-#{overflow = wrap}
+#{overflow=wrap}
 rsa-bn-cmp = (a []i64, an i64, b []i64, bn i64) (cmp i64) {
     cmp = 0
     {
         an > bn -> cmp = 1
+
         an < bn -> cmp = -1
+
         an == bn -> {
             an == 0 -> cmp = 0
+
             an > 0 -> {
                 i = an - 1
                 {
@@ -48,23 +51,22 @@ rsa-bn-cmp = (a []i64, an i64, b []i64, bn i64) (cmp i64) {
 rsa-bn-add = (a []i64, an i64, b []i64, bn i64) (c []i64, cn i64) {
 
     ; 分配輸出緩衝區（結果最多 max(an, bn) + 1 個 limb）
+    #{overflow=wrap}
     max-ab = an
     bn > max-ab -> max-ab = bn
-    #{overflow = wrap}
     c = with-len(max-ab + 2)
     carry = 0
     i = 0
     {
+        #{overflow=wrap}
         sum = carry
         {
-            #{overflow = wrap}
             i < an -> sum = sum + a[i]
-            #{overflow = wrap}
+
             i < bn -> sum = sum + b[i]
         }
         c[i] = sum & 4294967295
         carry = sum >> 32
-        #{overflow = wrap}
         i = i + 1
     } (i < an || i < bn || carry != 0)
     cn = i
@@ -76,20 +78,20 @@ rsa-bn-add = (a []i64, an i64, b []i64, bn i64) (c []i64, cn i64) {
 rsa-bn-sub = (a []i64, an i64, b []i64, bn i64) (c []i64, cn i64) {
 
     ; 分配輸出緩衝區（多配置 1 個 limb 供後續左移使用）
-    #{overflow = wrap}
+    #{overflow=wrap}
     c = with-len(an + 2)
     borrow = 0
     i <- [0..an): {
-        #{overflow = wrap}
+        #{overflow=wrap}
         diff = a[i] - borrow
-        #{overflow = wrap}
         i < bn -> diff = diff - b[i]
         {
             diff < 0 -> {
-                #{overflow = wrap}
+                #{overflow=wrap}
                 diff = diff + 4294967296
                 borrow = 1
             }
+
             -> borrow = 0
         }
         c[i] = diff & 4294967295
@@ -99,11 +101,11 @@ rsa-bn-sub = (a []i64, an i64, b []i64, bn i64) (c []i64, cn i64) {
     local-cn = an
     keep-trimming = true
     {
+        #{overflow=wrap}
         keep-trimming -> {
             local-cn > 1 -> {
-                #{overflow = wrap}
+                #{overflow=wrap}
                 c[local-cn - 1] == 0 -> local-cn = local-cn - 1
-                #{overflow = wrap}
                 c[local-cn - 1] != 0 -> keep-trimming = false
             }
             local-cn <= 1 -> keep-trimming = false
@@ -118,36 +120,34 @@ rsa-bn-sub = (a []i64, an i64, b []i64, bn i64) (c []i64, cn i64) {
 rsa-bn-mul = (a []i64, an i64, b []i64, bn i64) (c []i64, cn i64) {
 
     ; 分配輸出緩衝區
-    #{overflow = wrap}
+    #{overflow=wrap}
     c = with-len(an + bn + 1)
-    #{overflow = wrap}
     i <- [0..an + bn): {
+        #{overflow=wrap}
         c[i] = 0
     }
     i <- [0..an): {
+        #{overflow=wrap}
         a[i] == 0 -> continue
         carry = 0
         j <- [0..bn): {
-            #{overflow = wrap}
+            #{overflow=wrap}
             prod = (c[i + j] & 4294967295) + (a[i] & 4294967295) * (b[j] & 4294967295) + carry
-            #{overflow = wrap}
             c[i + j] = prod & 4294967295
             carry = prod >> 32
         }
-        #{overflow = wrap}
         c[i + bn] = carry & 4294967295
     }
 
     ; 計算實際長度（使用局部變數避免輸出參數 aliasing 問題）
-    #{overflow = wrap}
     local-cn = an + bn
     keep-trimming = true
     {
+        #{overflow=wrap}
         keep-trimming -> {
             local-cn > 1 -> {
-                #{overflow = wrap}
+                #{overflow=wrap}
                 c[local-cn - 1] == 0 -> local-cn = local-cn - 1
-                #{overflow = wrap}
                 c[local-cn - 1] != 0 -> keep-trimming = false
             }
             local-cn <= 1 -> keep-trimming = false
@@ -168,8 +168,8 @@ rsa-bn-shl1 = (a []i64, an i64) (new-an i64) {
     }
     new-an = an
     carry != 0 -> {
+        #{overflow=wrap}
         a[an] = carry
-        #{overflow = wrap}
         new-an = an + 1
     }
 }
@@ -178,14 +178,14 @@ rsa-bn-shl1 = (a []i64, an i64) (new-an i64) {
 
 ; rsa-bn-shr1: a = a >> 1（原地右移 1 位元）
 rsa-bn-shr1 = (a []i64, an i64) (new-an i64) {
+    #{overflow=wrap}
     carry = 0
-    #{overflow = wrap}
     i i64 = an - 1
     {
+        #{overflow=wrap}
         new-val = (carry << 31) | (a[i] >> 1)
         carry = a[i] & 1
         a[i] = new-val & 4294967295
-        #{overflow = wrap}
         i = i - 1
     } (i >= 0)
     local-an = an
@@ -193,11 +193,11 @@ rsa-bn-shr1 = (a []i64, an i64) (new-an i64) {
     ; 移除前導零（使用局部變數避免輸出參數 aliasing 問題）
     keep-trimming = true
     {
+        #{overflow=wrap}
         keep-trimming -> {
             local-an > 1 -> {
-                #{overflow = wrap}
+                #{overflow=wrap}
                 a[local-an - 1] == 0 -> local-an = local-an - 1
-                #{overflow = wrap}
                 a[local-an - 1] != 0 -> keep-trimming = false
             }
             local-an <= 1 -> keep-trimming = false
@@ -216,6 +216,7 @@ rsa-bn-shr1 = (a []i64, an i64) (new-an i64) {
 rsa-bn-div-mod = (a []i64, an i64, b []i64, bn i64) (q []i64, qn i64, r []i64, rn i64) {
 
     ; 處理 b = 0
+    #{overflow=wrap}
     bn == 1 && b[0] == 0 -> {
         q = with-len(1)
         q[0] = 0
@@ -231,7 +232,6 @@ rsa-bn-div-mod = (a []i64, an i64, b []i64, bn i64) (q []i64, qn i64, r []i64, r
     ; local-q 需至少 an + 2 個 limb：商數最多 (bits/32)+1 ≈ an+1 limbs
     buf-len = an
     bn > buf-len -> buf-len = bn
-    #{overflow = wrap}
     buf-len = buf-len + 2
     local-r []i64 = with-len(buf-len)
     local-q []i64 = with-len(buf-len)
@@ -240,44 +240,43 @@ rsa-bn-div-mod = (a []i64, an i64, b []i64, bn i64) (q []i64, qn i64, r []i64, r
 
     ; 初始化
     i <- [0..buf-len): {
+        #{overflow=wrap}
         local-r[i] = 0
         local-q[i] = 0
     }
 
     ; 計算 a 的最高有效位元數
-    #{overflow = wrap}
     top = a[an - 1]
     lead = 0
     tmp i64 = top
     {
+        #{overflow=wrap}
         tmp = tmp >> 1
-        #{overflow = wrap}
         lead = lead + 1
     } (tmp != 0)
     an > 0 && top == 0 -> lead = 0
-    #{overflow = wrap}
     bits i64 = (an - 1) * 32 + lead
 
     ; 二進位長除法：從最高位到最低位
-    #{overflow = wrap}
     i = bits - 1
     {
 
         ; r = r << 1
+        #{overflow=wrap}
         carry-shl = 0
         j <- [0..local-rn): {
+            #{overflow=wrap}
             new-val = (local-r[j] << 1) | carry-shl
             carry-shl = local-r[j] >> 31
             local-r[j] = new-val & 4294967295
         }
         carry-shl != 0 -> {
+            #{overflow=wrap}
             local-r[local-rn] = carry-shl
-            #{overflow = wrap}
             local-rn = local-rn + 1
         }
 
         ; r[0] 設為 a 的第 i 位元
-        #{overflow = wrap}
         limb = i / 32
         bit-pos = i % 32
         a-bit = (a[limb] >> bit-pos) & 1
@@ -287,44 +286,44 @@ rsa-bn-div-mod = (a []i64, an i64, b []i64, bn i64) (q []i64, qn i64, r []i64, r
         cmp = 0
         cmp = rsa-bn-cmp(local-r, local-rn, b, bn)
         cmp >= 0 -> {
+            #{overflow=wrap}
             sub-r []i64
             sub-rn = 0
             sub-r, sub-rn = rsa-bn-sub(local-r, local-rn, b, bn)
 
             ; 複製 sub-r 回 local-r
             k <- [0..sub-rn): {
+                #{overflow=wrap}
                 local-r[k] = sub-r[k]
             }
 
             ; 清除剩餘的高位 limb
             k = sub-rn
             {
+                #{overflow=wrap}
                 k < local-rn -> {
+                    #{overflow=wrap}
                     local-r[k] = 0
-                    #{overflow = wrap}
                     k = k + 1
                 }
             } (k < local-rn)
             local-rn = sub-rn
-            #{overflow = wrap}
             q-limb = i / 32
             q-bit = i % 32
             local-q[q-limb] = local-q[q-limb] | (1 << q-bit)
         }
-        #{overflow = wrap}
         i = i - 1
     } (i >= 0)
 
     ; 計算 q 的長度（Nolang && 不短路，需用旗標變數）
-    #{overflow = wrap}
     local-qn = (bits / 32) + 1
     keep-trimming = true
     {
+        #{overflow=wrap}
         keep-trimming -> {
             local-qn > 1 -> {
-                #{overflow = wrap}
+                #{overflow=wrap}
                 local-q[local-qn - 1] == 0 -> local-qn = local-qn - 1
-                #{overflow = wrap}
                 local-q[local-qn - 1] != 0 -> keep-trimming = false
             }
             local-qn <= 1 -> keep-trimming = false
@@ -376,32 +375,31 @@ rsa-modpow-step = (result []i64, rn i64, base []i64, bn i64, exp-bit i64, modulu
 rsa-modpow = (base []i64, bn i64, exp []i64, en i64, modulus []i64, mn i64) (result []i64, rn i64) {
 
     ; 使用局部變數避免輸出參數 aliasing 問題
+    #{overflow=wrap}
     local-result []i64 = with-len(mn)
     i <- [0..mn): {
+        #{overflow=wrap}
         local-result[i] = 0
     }
     local-result[0] = 1
     local-rn = 1
 
     ; 計算 exp 的位元數
-    #{overflow = wrap}
     top i64 = exp[en - 1]
     lead = 0
     tmp i64 = top
     {
+        #{overflow=wrap}
         tmp = tmp >> 1
-        #{overflow = wrap}
         lead = lead + 1
     } (tmp != 0)
     en > 0 && top == 0 -> lead = 0
-    #{overflow = wrap}
     bits i64 = (en - 1) * 32 + lead
 
     ; 從最高位到最低位
-    #{overflow = wrap}
     i = bits - 1
     {
-        #{overflow = wrap}
+        #{overflow=wrap}
         e-limb = i / 32
         e-bit = i % 32
         exp-bit = (exp[e-limb] >> e-bit) & 1
@@ -412,7 +410,6 @@ rsa-modpow = (base []i64, bn i64, exp []i64, en i64, modulus []i64, mn i64) (res
         local-result = new-result
         local-rn = new-rn
 
-        #{overflow = wrap}
         i = i - 1
     } (i >= 0)
     result = local-result

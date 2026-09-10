@@ -340,21 +340,23 @@ aes-key-expand = (key [16]byte) (ek [176]byte) {
 ; aes-128-enc: 加密一個 16-byte 區塊
 aes-128-enc = (in [16]byte, key [16]byte) (out [16]byte) {
     ek [176]byte
-    ek [ek] = aes-key-expand(key)
+    ek[ek] = aes-key-expand(key)
     i <- [0..16): {
         out[i] = in[i]
     }
     add-round-key(out[..], ek[..])
+
     ; 第 1-9 輪
     round <- [1..10): {
+        #{overflow=wrap}
         sub-bytes(out[..], 16)
         shift-rows(out[..])
         mix-columns(out[..])
 
-        #{overflow=wrap}
         rk-off = round * 16
         add-round-key(out[..], ek[rk-off..])
     }
+
     ; 第 10 輪（無 MixColumns）
     sub-bytes(out[..], 16)
     shift-rows(out[..])
@@ -369,19 +371,21 @@ aes-128-dec = (in [16]byte, key [16]byte) (out [16]byte) {
         out[i] = in[i]
     }
     add-round-key(out[..], ek[160..])
+
     ; 第 9-1 輪
     round = 9
     {
+        #{overflow=wrap}
         inv-shift-rows(out[..])
         inv-sub-bytes(out[..], 16)
 
-        #{overflow=wrap}
         rk-off = round * 16
         add-round-key(out[..], ek[rk-off..])
         inv-mix-columns(out[..])
 
         round = round - 1
     } (round > 0)
+
     ; 第 0 輪
     inv-shift-rows(out[..])
     inv-sub-bytes(out[..], 16)
@@ -447,11 +451,11 @@ aes-256-enc = (in [16]byte, key [32]byte) (out [16]byte) {
     }
     add-round-key(out[..], ek[..])
     round <- [1..14): {
+        #{overflow=wrap}
         sub-bytes(out[..], 16)
         shift-rows(out[..])
         mix-columns(out[..])
 
-        #{overflow=wrap}
         rk-off = round * 16
         add-round-key(out[..], ek[rk-off..])
     }
@@ -470,10 +474,10 @@ aes-256-dec = (in [16]byte, key [32]byte) (out [16]byte) {
     add-round-key(out[..], ek[224..])
     round = 13
     {
+        #{overflow=wrap}
         inv-shift-rows(out[..])
         inv-sub-bytes(out[..], 16)
 
-        #{overflow=wrap}
         rk-off = round * 16
         add-round-key(out[..], ek[rk-off..])
         inv-mix-columns(out[..])

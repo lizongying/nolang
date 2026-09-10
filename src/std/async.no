@@ -43,9 +43,11 @@
 ; async-cancel: 取消一个通过 run() 启动的后台任务
 ; 参数 task 为 run 返回的不透明句柄（i8*）。返回 void。
 #{buildin}
-async-cancel = (task i8*) () { }
+async-cancel = (task *i8) {
+}
 
 ; async-cancelled: 检查当前正在执行的异步任务是否已被取消
 ; 返回 bool。仅在异步任务（事件循环调度的 -async 函数）内调用才有意义。
 #{buildin}
-async-cancelled = () (cancelled bool) { }
+async-cancelled = () (cancelled bool) {
+}

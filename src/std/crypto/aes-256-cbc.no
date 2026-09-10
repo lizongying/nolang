@@ -24,20 +24,20 @@ aes-256-cbc-enc = (in []byte, key [32]byte, iv [16]byte) (out []byte) {
     out = with-len(in.len())
     blk = 0
     {
+        #{overflow=wrap}
         xored [16]byte
         i <- [0..16): {
-            #{overflow = wrap}
+            #{overflow=wrap}
             xored[i] = (in[blk + i]) ^ (prev[i])
         }
         enc-block [16]byte
         enc-block = aes.aes-256-enc(xored, key)
 
         i <- [0..16): {
-            #{overflow = wrap}
+            #{overflow=wrap}
             out[blk + i] = enc-block[i]
             prev[i] = enc-block[i]
         }
-        #{overflow = wrap}
         blk = blk + 16
     } (blk < in.len())
 }
@@ -55,20 +55,20 @@ aes-256-cbc-dec = (in []byte, key [32]byte, iv [16]byte) (out []byte) {
     out = with-len(in.len())
     blk = 0
     {
+        #{overflow=wrap}
         cipher-block [16]byte
         i <- [0..16): {
-            #{overflow = wrap}
+            #{overflow=wrap}
             cipher-block[i] = in[blk + i]
         }
         dec-block [16]byte
         dec-block = aes.aes-256-dec(cipher-block, key)
 
         i <- [0..16): {
-            #{overflow = wrap}
+            #{overflow=wrap}
             out[blk + i] = (dec-block[i]) ^ (prev[i])
             prev[i] = cipher-block[i]
         }
-        #{overflow = wrap}
         blk = blk + 16
     } (blk < in.len())
 }

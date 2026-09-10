@@ -57,15 +57,14 @@ tree-set {
 
 ; init: 初始化空樹與空閒節點池
 tree-set.init = () {
+    #{overflow=wrap}
     .root = -1
     .free-head = 0
     .size = 0
-    #{overflow = wrap}
     i <- [0..TS-CAP - 1): {
-        #{overflow = wrap}
+        #{overflow=wrap}
         .left[i] = i + 1
     }
-    #{overflow = wrap}
     .left[TS-CAP - 1] = -1
 }
 
@@ -108,9 +107,9 @@ tree-set.ht = (idx i64) (h i64) {
 ; update-ht: 重新計算節點高度
 ; idx i64: 節點索引
 tree-set.update-ht = (idx i64) {
+    #{overflow=wrap}
     lh = .ht(.left[idx])
     rh = .ht(.right[idx])
-    #{overflow = wrap}
     .height[idx] = (lh > rh ? lh : rh) + 1
 }
 
@@ -118,9 +117,9 @@ tree-set.update-ht = (idx i64) {
 ; idx i64: 節點索引
 ; 返回 b i64: 平衡因子
 tree-set.bf = (idx i64) (b i64) {
+    #{overflow=wrap}
     lh = .ht(.left[idx])
     rh = .ht(.right[idx])
-    #{overflow = wrap}
     b = lh - rh
 }
 
@@ -145,8 +144,10 @@ tree-set.rot-left = (x i64) {
     p = .parent[x]
     {
         p < 0 -> .root = y
+
         -> {
             .left[p] == x -> .left[p] = y
+
             -> .right[p] = y
         }
     }
@@ -172,8 +173,10 @@ tree-set.rot-right = (x i64) {
     p = .parent[x]
     {
         p < 0 -> .root = y
+
         -> {
             .left[p] == x -> .left[p] = y
+
             -> .right[p] = y
         }
     }
@@ -202,8 +205,8 @@ tree-set.rebalance = (idx i64) (nr i64) {
             nr = .parent[idx]
             return
         }
-        b < -1 -> {
 
+        b < -1 -> {
             ; 右重（b < -1）
 
             rb = .bf(.right[idx])
@@ -273,12 +276,12 @@ tree-set.add = (key i64) (ok bool) {
         {
             key < .keys[cur] -> {
                 .left[cur] < 0 -> {
+                    #{overflow=wrap}
                     idx = .alloc-node()
                     idx < 0 -> return
                     .keys[idx] = key
                     .left[cur] = idx
                     .parent[idx] = cur
-                    #{overflow = wrap}
                     .size = .size + 1
                     ok = true
                     .rebalance-up(cur)
@@ -286,14 +289,15 @@ tree-set.add = (key i64) (ok bool) {
                 }
                 cur = .left[cur]
             }
+
             -> {
                 .right[cur] < 0 -> {
+                    #{overflow=wrap}
                     idx = .alloc-node()
                     idx < 0 -> return
                     .keys[idx] = key
                     .right[cur] = idx
                     .parent[idx] = cur
-                    #{overflow = wrap}
                     .size = .size + 1
                     ok = true
                     .rebalance-up(cur)
@@ -317,6 +321,7 @@ tree-set.contains = (key i64) (yes bool) {
         }
         {
             key < .keys[idx] -> idx = .left[idx]
+
             -> idx = .right[idx]
         }
     } (idx >= 0)
@@ -328,17 +333,19 @@ tree-set.contains = (key i64) (yes bool) {
 tree-set.remove = (key i64) (ok bool) {
 
     ; BST 搜尋
+    #{overflow=wrap}
     idx = .root
     {
+        #{overflow=wrap}
         key == .keys[idx] -> break
         {
             key < .keys[idx] -> idx = .left[idx]
+
             -> idx = .right[idx]
         }
     } (idx >= 0)
     idx < 0 -> return
     ok = true
-    #{overflow = wrap}
     .size = .size - 1
 
     ; 雙子節點：用後繼替換後刪除後繼
@@ -358,8 +365,10 @@ tree-set.remove = (key i64) (ok bool) {
     child >= 0 -> .parent[child] = p
     {
         p < 0 -> .root = child
+
         -> {
             .left[p] == idx -> .left[p] = child
+
             -> .right[p] = child
         }
     }
@@ -413,6 +422,7 @@ tree-set.lower-bound = (target i64) (val ?i64) {
                 result = idx
                 idx = .left[idx]
             }
+
             -> idx = .right[idx]
         }
     } (idx >= 0)
@@ -435,6 +445,7 @@ tree-set.upper-bound = (target i64) (val ?i64) {
                 result = idx
                 idx = .left[idx]
             }
+
             -> idx = .right[idx]
         }
     } (idx >= 0)
@@ -469,15 +480,14 @@ tree-set.for-each = (val i64) {
 
 ; clear: 清空所有元素，重建空閒池
 tree-set.clear = () {
+    #{overflow=wrap}
     .root = -1
     .free-head = 0
     .size = 0
-    #{overflow = wrap}
     i <- [0..TS-CAP - 1): {
-        #{overflow = wrap}
+        #{overflow=wrap}
         .left[i] = i + 1
     }
-    #{overflow = wrap}
     .left[TS-CAP - 1] = -1
 }
 

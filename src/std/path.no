@@ -82,7 +82,7 @@ path.join = (b str) {
     ; 如果 a 不以 '/' 結尾且 b 不以 '/' 開頭，加入 '/'
     need-sep = 1
     out-n > 0 -> {
-        #{overflow = wrap}
+        #{overflow=wrap}
         last-a = .p[out-n - 1]
         last-a == SEP -> need-sep = 0
     }
@@ -92,8 +92,8 @@ path.join = (b str) {
     }
     out-n == 0 -> need-sep = 0
     need-sep == 1 -> {
+        #{overflow=wrap}
         .p[out-n] = SEP
-        #{overflow = wrap}
         out-n = out-n + 1
     }
 
@@ -106,8 +106,8 @@ path.join = (b str) {
 
     ; 複製 b
     j <- [start-b..bn): {
+        #{overflow=wrap}
         .p[out-n] = b[j]
-        #{overflow = wrap}
         out-n = out-n + 1
     }
 }
@@ -121,18 +121,18 @@ path.join = (b str) {
 path.base = () (out str) {
 
     ; 找最右邊的 '/'
+    #{overflow=wrap}
     last-sep = -1
     i <- [0...p.len-bytes()): {
+        #{overflow=wrap}
         c = .p[i]
         c == SEP -> last-sep = i
     }
-    #{overflow = wrap}
     start = last-sep + 1
-    #{overflow = wrap}
     out-n = .p.len-bytes() - start
     out = with-cap(.p.len-bytes())
     i <- [0..out-n): {
-        #{overflow = wrap}
+        #{overflow=wrap}
         out[i] = .p[start + i]
     }
 }
@@ -149,12 +149,12 @@ path.dir = () {
     }
     {
         last-sep < 0 -> {
-
             ; 無 '/'，變為 '.'
             .p[0] = DOT
             .p.len = 1
             return
         }
+
         -> {
             out-n = last-sep
             out-n == 0 -> {
@@ -172,23 +172,27 @@ path.dir = () {
 ; path.ext: 取出檔案副檔名（含點）
 ; 返回副檔名字串
 path.ext = () (out str) {
+    #{overflow=wrap}
     out-n = 0
 
     ; 找最右邊的 '/' 之後的 '.'
     last-sep = -1
     last-dot = -1
     i <- [0...p.len-bytes()): {
+        #{overflow=wrap}
         c = .p[i]
         {
             c == SEP -> last-sep = i
+
             c == DOT -> last-dot = i
         }
     }
 
     ; '.' 必須在 '/' 之後
     {
+        #{overflow=wrap}
         last-dot <= last-sep -> return
-        last-idx = .p.len-bytes() - 1 #{overflow = wrap}
+        last-idx = .p.len-bytes() - 1
         last-dot == last-idx -> {
 
             ; 副檔名不能是路徑的最後一個字元（排除 '.' 和 '..'）
@@ -196,11 +200,10 @@ path.ext = () (out str) {
         }
     }
     start = last-dot
-    #{overflow = wrap}
     out-n = .p.len-bytes() - start
     out = with-cap(.p.len-bytes())
     i <- [0..out-n): {
-        #{overflow = wrap}
+        #{overflow=wrap}
         out[i] = .p[start + i]
     }
 }
@@ -231,56 +234,62 @@ path.clean = () {
         c = .p[i]
         {
             c == SEP -> {
-
                 ; 處理上一段
                 {
                     dot-count == 1 ->
-                    dot-count == 2 -> {
 
+                    dot-count == 2 -> {
                         ; 回退 '..'
                         ; 找 .p 中前一個 '/'
-                        #{overflow = wrap}
+                        #{overflow=wrap}
                         j = out-n - 1
                         {
+                            #{overflow=wrap}
                             .p[j] == SEP -> break
-                            #{overflow = wrap}
                             j = j - 1
                         } (j >= 0)
                         {
                             j < 0 -> out-n = 0
+
                             -> out-n = j
                         }
                     }
+
                     out-n > 0 -> {
-                        #{overflow = wrap}
+                        #{overflow=wrap}
                         prev = .p[out-n - 1]
                         prev != SEP -> {
+                            #{overflow=wrap}
                             .p[out-n] = SEP
-                            #{overflow = wrap}
                             out-n = out-n + 1
                         }
                     }
+
                     -> {
+                        #{overflow=wrap}
                         .p[out-n] = SEP
-                        #{overflow = wrap}
                         out-n = out-n + 1
                     }
                 }
                 dot-count = 0
             }
-            #{overflow = wrap}
-            c == DOT -> dot-count = dot-count + 1
-            -> {
 
+            c == DOT -> {
+                #{overflow=wrap}
+                dot-count = dot-count + 1
+            }
+
+            -> {
                 ; 寫入之前積累的 '.' 字元
                 j <- [0..dot-count): {
+                    #{overflow=wrap}
                     .p[out-n] = DOT
-                    #{overflow = wrap}
                     out-n = out-n + 1
                 }
+
+                #{overflow=wrap}
                 dot-count = 0
                 .p[out-n] = c
-                #{overflow = wrap}
                 out-n = out-n + 1
             }
         }
@@ -289,16 +298,18 @@ path.clean = () {
     ; 處理末尾段
     {
         dot-count == 1 ->
+
         dot-count == 2 -> {
-            #{overflow = wrap}
+            #{overflow=wrap}
             j = out-n - 1
             {
+                #{overflow=wrap}
                 .p[j] == SEP -> break
-                #{overflow = wrap}
                 j = j - 1
             } (j >= 0)
             {
                 j < 0 -> out-n = 0
+
                 -> out-n = j
             }
         }
@@ -306,9 +317,8 @@ path.clean = () {
 
     ; 移除末尾 '/'
     out-n > 1 -> {
-        #{overflow = wrap}
+        #{overflow=wrap}
         prev = .p[out-n - 1]
-        #{overflow = wrap}
         prev == SEP -> out-n = out-n - 1
     }
     .p.len = out-n
@@ -325,39 +335,39 @@ path.clean = () {
 path.split = () (f str) {
 
     ; 找最右邊的 '/'
+    #{overflow=wrap}
     last-sep = -1
     i <- [0...p.len-bytes()): {
+        #{overflow=wrap}
         c = .p[i]
         c == SEP -> last-sep = i
     }
 
     ; 提取檔名
-    #{overflow = wrap}
     start = last-sep + 1
-    #{overflow = wrap}
     out-n = .p.len-bytes() - start
     f = with-len(out-n)
     i <- [0..out-n): {
-        #{overflow = wrap}
+        #{overflow=wrap}
         f[i] = .p[start + i]
     }
 
     ; 原地修改 .p 為目錄部分
     {
         last-sep < 0 -> {
-
             ; 無 '/'，.p 變為 '.'
             .p[0] = DOT
             .p.len = 1
             return
         }
-        last-sep == 0 -> {
 
+        last-sep == 0 -> {
             ; 根目錄 '/'
             .p[0] = SEP
             .p.len = 1
             return
         }
+
         -> .p.len = last-sep
     }
 }

@@ -61,6 +61,7 @@ link {
 ; prv []i64: 前一節點索引陣列（由呼叫者提供，大小 ≥ n）
 ; 返回 l link: 初始化後的鏈結串列
 [n]t.link-init = (nxt []i64, prv []i64) (l link) {
+    #{overflow=wrap}
     l.head = -1
     l.tail = -1
     l.free-head = 0
@@ -69,12 +70,10 @@ link {
     l.prev = prv
 
     ; 初始化空閒鏈結串列: 0→1→2→...→n-1→-1
-    #{overflow = wrap}
     i <- [0..n - 1): {
-        #{overflow = wrap}
+        #{overflow=wrap}
         l.next[i] = i + 1
     }
-    #{overflow = wrap}
     l.next[n - 1] = -1
 }
 
@@ -83,6 +82,7 @@ link {
 ; val t: 要插入的值
 ; 返回 ok bool: true=成功, false=節點池已滿
 [n]t.link-push-front = (l link, val t) (ok bool) {
+    #{overflow=wrap}
     ok = false
 
     ; 從空閒鏈結串列分配節點
@@ -99,7 +99,6 @@ link {
     l.head >= 0 -> l.prev[l.head] = idx
     l.head = idx
     l.tail < 0 -> l.tail = idx
-    #{overflow = wrap}
     l.size = l.size + 1
     ok = true
 }
@@ -109,6 +108,7 @@ link {
 ; val t: 要插入的值
 ; 返回 ok bool: true=成功, false=節點池已滿
 [n]t.link-push-back = (l link, val t) (ok bool) {
+    #{overflow=wrap}
     ok = false
     idx = l.free-head
     idx < 0 -> return
@@ -119,7 +119,6 @@ link {
     l.tail >= 0 -> l.next[l.tail] = idx
     l.tail = idx
     l.head < 0 -> l.head = idx
-    #{overflow = wrap}
     l.size = l.size + 1
     ok = true
 }
@@ -128,6 +127,7 @@ link {
 ; l link: 鏈結串列狀態
 ; 返回 val ?t: ok=彈出值, nil=串列為空
 [n]t.link-pop-front = (l link) (val ?t) {
+    #{overflow=wrap}
     l.head < 0 -> {
         val = nil
         return
@@ -137,13 +137,13 @@ link {
     l.head = l.next[idx]
     {
         l.head >= 0 -> l.prev[l.head] = -1
+
         -> l.tail = -1
     }
 
     ; 回收節點到空閒鏈結串列
     l.next[idx] = l.free-head
     l.free-head = idx
-    #{overflow = wrap}
     l.size = l.size - 1
 }
 
@@ -151,6 +151,7 @@ link {
 ; l link: 鏈結串列狀態
 ; 返回 val ?t: ok=彈出值, nil=串列為空
 [n]t.link-pop-back = (l link) (val ?t) {
+    #{overflow=wrap}
     l.tail < 0 -> {
         val = nil
         return
@@ -160,11 +161,11 @@ link {
     l.tail = l.prev[idx]
     {
         l.tail >= 0 -> l.next[l.tail] = -1
+
         -> l.head = -1
     }
     l.next[idx] = l.free-head
     l.free-head = idx
-    #{overflow = wrap}
     l.size = l.size - 1
 }
 
@@ -196,12 +197,14 @@ link {
 ; val t: 要插入的值
 ; 返回 ok bool: true=成功, false=位置越界或節點池已滿
 [n]t.link-insert-at = (l link, pos i64, val t) (ok bool) {
+    #{overflow=wrap}
     ok = false
     {
         pos < 0 || pos > l.size -> return
-        pos == 0 -> {
 
+        pos == 0 -> {
             ; 插入頭部
+            #{overflow=wrap}
             idx = l.free-head
             idx < 0 -> return
             l.free-head = l.next[idx]
@@ -211,14 +214,14 @@ link {
             l.head >= 0 -> l.prev[l.head] = idx
             l.head = idx
             l.tail < 0 -> l.tail = idx
-            #{overflow = wrap}
             l.size = l.size + 1
             ok = true
             return
         }
-        pos == l.size -> {
 
+        pos == l.size -> {
             ; 插入尾部
+            #{overflow=wrap}
             idx = l.free-head
             idx < 0 -> return
             l.free-head = l.next[idx]
@@ -228,7 +231,6 @@ link {
             l.tail >= 0 -> l.next[l.tail] = idx
             l.tail = idx
             l.head < 0 -> l.head = idx
-            #{overflow = wrap}
             l.size = l.size + 1
             ok = true
             return
@@ -238,6 +240,7 @@ link {
     ; 插入中間：定位到 pos 的節點
     idx = l.head
     i <- [0..pos): {
+        #{overflow=wrap}
         idx = l.next[idx]
     }
 
@@ -253,7 +256,6 @@ link {
     l.next[new] = idx
     l.next[p] = new
     l.prev[idx] = new
-    #{overflow = wrap}
     l.size = l.size + 1
     ok = true
 }
@@ -263,40 +265,43 @@ link {
 ; pos i64: 移除位置
 ; 返回 val ?t: ok=移除的值, nil=位置越界
 [n]t.link-remove-at = (l link, pos i64) (val ?t) {
+    #{overflow=wrap}
     {
         pos < 0 || pos >= l.size -> {
             val = nil
             return
         }
-        pos == 0 -> {
 
+        pos == 0 -> {
             ; 移除頭部
+            #{overflow=wrap}
             idx = l.head
             val = .[idx]
             l.head = l.next[idx]
             {
                 l.head >= 0 -> l.prev[l.head] = -1
+
                 -> l.tail = -1
             }
             l.next[idx] = l.free-head
             l.free-head = idx
-            #{overflow = wrap}
             l.size = l.size - 1
             return
         }
-        pos == l.size - 1 -> {
 
+        pos == l.size - 1 -> {
             ; 移除尾部
+            #{overflow=wrap}
             idx = l.tail
             val = .[idx]
             l.tail = l.prev[idx]
             {
                 l.tail >= 0 -> l.next[l.tail] = -1
+
                 -> l.head = -1
             }
             l.next[idx] = l.free-head
             l.free-head = idx
-            #{overflow = wrap}
             l.size = l.size - 1
             return
         }
@@ -305,6 +310,7 @@ link {
     ; 移除中間：定位到 pos 的節點
     idx = l.head
     i <- [0..pos): {
+        #{overflow=wrap}
         idx = l.next[idx]
     }
     val = .[idx]
@@ -316,7 +322,6 @@ link {
     ; 回收節點
     l.next[idx] = l.free-head
     l.free-head = idx
-    #{overflow = wrap}
     l.size = l.size - 1
 }
 
@@ -360,7 +365,7 @@ link {
     pos = -1
     idx = l.head
     i <- [0..l.size): {
-        #{overflow = wrap}
+        #{overflow=wrap}
         d = .[idx] - val
         d == 0 -> {
             pos = i

@@ -32,22 +32,19 @@ CC-MASK32 u32 = 4294967295
 
 ; rotl32: 32-bit 循環左移
 rotl32 = (x u32, n i64) (r u32) {
-    #{overflow = wrap}
+    #{overflow=wrap}
     r = ((x << n) | (x >> (32 - n))) & CC-MASK32
 }
 
 ; quarter-round: ChaCha20 四分之一輪
 qr = (state []u32, a i64, b i64, c i64, d i64) {
-    #{overflow = wrap}
+    #{overflow=wrap}
     state[a] = (state[a] + state[b]) & CC-MASK32
     state[d] = rotl32(state[d] ^ state[a], 16)
-    #{overflow = wrap}
     state[c] = (state[c] + state[d]) & CC-MASK32
     state[d] = rotl32(state[d] ^ state[c], 12)
-    #{overflow = wrap}
     state[a] = (state[a] + state[b]) & CC-MASK32
     state[d] = rotl32(state[d] ^ state[a], 8)
-    #{overflow = wrap}
     state[c] = (state[c] + state[d]) & CC-MASK32
     state[d] = rotl32(state[d] ^ state[c], 7)
 }
@@ -72,7 +69,7 @@ chacha20-block = (key [32]byte, counter u32, nonce [12]byte) (out [64]byte) {
 
     ; 金鑰（8 個 32-bit 小端字）
     i <- [0..8): {
-        #{overflow = wrap}
+        #{overflow=wrap}
         state[4 + i] = (key[i * 4]) | ((key[i * 4 + 1]) << 8) | ((key[i * 4 + 2]) << 16) | ((key[i * 4 + 3]) << 24)
     }
 
@@ -81,7 +78,7 @@ chacha20-block = (key [32]byte, counter u32, nonce [12]byte) (out [64]byte) {
 
     ; Nonce（3 個 32-bit 小端字）
     i <- [0..3): {
-        #{overflow = wrap}
+        #{overflow=wrap}
         state[13 + i] = (nonce[i * 4]) | ((nonce[i * 4 + 1]) << 8) | ((nonce[i * 4 + 2]) << 16) | ((nonce[i * 4 + 3]) << 24)
     }
 
@@ -109,15 +106,11 @@ chacha20-block = (key [32]byte, counter u32, nonce [12]byte) (out [64]byte) {
 
     ; state += init（序列化為小端位元組）
     i <- [0..16): {
-        #{overflow = wrap}
+        #{overflow=wrap}
         val = (state[i] + init[i]) & CC-MASK32
-        #{overflow = wrap}
         out[i * 4] = val & 255
-        #{overflow = wrap}
         out[i * 4 + 1] = (val >> 8) & 255
-        #{overflow = wrap}
         out[i * 4 + 2] = (val >> 16) & 255
-        #{overflow = wrap}
         out[i * 4 + 3] = (val >> 24) & 255
     }
 }
@@ -133,19 +126,17 @@ chacha20-xor = (key [32]byte, counter u32, nonce [12]byte, data []byte) (out []b
     pos = 0
     blk-counter = counter
     {
+        #{overflow=wrap}
         ks [64]byte
         ks = chacha20-block(key, blk-counter, nonce)
 
         n = 64
-        #{overflow = wrap}
         pos + n > data.len() -> n = data.len() - pos
         i <- [0..n): {
-            #{overflow = wrap}
+            #{overflow=wrap}
             out[pos + i] = (data[pos + i]) ^ (ks[i])
         }
-        #{overflow = wrap}
         pos = pos + n
-        #{overflow = wrap}
         blk-counter = (blk-counter + 1) & CC-MASK32
     } (pos < data.len())
 }
@@ -162,6 +153,7 @@ poly1305 = (key [32]byte, data []byte) (tag [16]byte) {
 
     ; r = key[0..16]，清除高位（clamping）
     ; r &= 0x0ffffffc0ffffffc0ffffffc0fffffff
+    #{overflow=wrap}
     r [5]u32
     r[0] = ((key[0]) | ((key[1]) << 8) | ((key[2]) << 16) | ((key[3]) << 24)) & 67108863
     r[1] = ((key[4]) | ((key[5]) << 8) | ((key[6]) << 16) | ((key[7]) << 24)) & 134217726
@@ -189,8 +181,8 @@ poly1305 = (key [32]byte, data []byte) (tag [16]byte) {
     {
 
         ; 載入區塊（小端序），末尾補零
+        #{overflow=wrap}
         n = 16
-        #{overflow = wrap}
         pos + n > data.len() -> n = data.len() - pos
         t0 u32 = 0
         t1 u32 = 0
@@ -200,35 +192,35 @@ poly1305 = (key [32]byte, data []byte) (tag [16]byte) {
 
         {
             n > 0 -> t0 = data[pos]
-            #{overflow = wrap}
+
             n > 1 -> t0 = t0 | ((data[pos + 1]) << 8)
-            #{overflow = wrap}
+
             n > 2 -> t0 = t0 | ((data[pos + 2]) << 16)
-            #{overflow = wrap}
+
             n > 3 -> t0 = t0 | ((data[pos + 3]) << 24)
-            #{overflow = wrap}
+
             n > 4 -> t1 = data[pos + 4]
-            #{overflow = wrap}
+
             n > 5 -> t1 = t1 | ((data[pos + 5]) << 8)
-            #{overflow = wrap}
+
             n > 6 -> t1 = t1 | ((data[pos + 6]) << 16)
-            #{overflow = wrap}
+
             n > 7 -> t1 = t1 | ((data[pos + 7]) << 24)
-            #{overflow = wrap}
+
             n > 8 -> t2 = data[pos + 8]
-            #{overflow = wrap}
+
             n > 9 -> t2 = t2 | ((data[pos + 9]) << 8)
-            #{overflow = wrap}
+
             n > 10 -> t2 = t2 | ((data[pos + 10]) << 16)
-            #{overflow = wrap}
+
             n > 11 -> t2 = t2 | ((data[pos + 11]) << 24)
-            #{overflow = wrap}
+
             n > 12 -> t3 = data[pos + 12]
-            #{overflow = wrap}
+
             n > 13 -> t3 = t3 | ((data[pos + 13]) << 8)
-            #{overflow = wrap}
+
             n > 14 -> t3 = t3 | ((data[pos + 14]) << 16)
-            #{overflow = wrap}
+
             n > 15 -> t3 = t3 | ((data[pos + 15]) << 24)
         }
 
@@ -236,24 +228,19 @@ poly1305 = (key [32]byte, data []byte) (tag [16]byte) {
         ; 完整區塊添加 2^128，部分區塊添加 2^(n*8)
         {
             n == 16 -> t4 = 1
-            -> {
 
+            -> {
                 ; 部分區塊：設置對應位元
-                #{overflow = wrap}
+                #{overflow=wrap}
                 t0 = t0 | (1 << (n * 8))
             }
         }
 
         ; h += t（h 是 5-limb 130-bit，t 也轉為 5-limb）
-        #{overflow = wrap}
         h0 = (h0 + t0) & CC-MASK32
-        #{overflow = wrap}
         h1 = (h1 + t1) & CC-MASK32
-        #{overflow = wrap}
         h2 = (h2 + t2) & CC-MASK32
-        #{overflow = wrap}
         h3 = (h3 + t3) & CC-MASK32
-        #{overflow = wrap}
         h4 = (h4 + t4) & CC-MASK32
 
         ; h = h * r mod (2^130 - 5)
@@ -268,133 +255,91 @@ poly1305 = (key [32]byte, data []byte) (tag [16]byte) {
         ; 但 32-bit 乘法會溢出，所以需要更小心
 
         ; 由於 Nolang 的整數運算，我們使用 64-bit 中間結果
-        #{overflow = wrap}
         d0 u64 = h0 * r[0]
-        #{overflow = wrap}
         d0 = d0 + h1 * (r[4] * 5)
-        #{overflow = wrap}
         d0 = d0 + h2 * (r[3] * 5)
-        #{overflow = wrap}
         d0 = d0 + h3 * (r[2] * 5)
-        #{overflow = wrap}
         d0 = d0 + h4 * (r[1] * 5)
 
-        #{overflow = wrap}
         d1 u64 = h0 * r[1]
-        #{overflow = wrap}
         d1 = d1 + h1 * r[0]
-        #{overflow = wrap}
         d1 = d1 + h2 * (r[4] * 5)
-        #{overflow = wrap}
         d1 = d1 + h3 * (r[3] * 5)
-        #{overflow = wrap}
         d1 = d1 + h4 * (r[2] * 5)
 
-        #{overflow = wrap}
         d2 u64 = h0 * r[2]
-        #{overflow = wrap}
         d2 = d2 + h1 * r[1]
-        #{overflow = wrap}
         d2 = d2 + h2 * r[0]
-        #{overflow = wrap}
         d2 = d2 + h3 * (r[4] * 5)
-        #{overflow = wrap}
         d2 = d2 + h4 * (r[3] * 5)
 
-        #{overflow = wrap}
         d3 u64 = h0 * r[3]
-        #{overflow = wrap}
         d3 = d3 + h1 * r[2]
-        #{overflow = wrap}
         d3 = d3 + h2 * r[1]
-        #{overflow = wrap}
         d3 = d3 + h3 * r[0]
-        #{overflow = wrap}
         d3 = d3 + h4 * (r[4] * 5)
 
-        #{overflow = wrap}
         d4 u64 = h0 * r[4]
-        #{overflow = wrap}
         d4 = d4 + h1 * r[3]
-        #{overflow = wrap}
         d4 = d4 + h2 * r[2]
-        #{overflow = wrap}
         d4 = d4 + h3 * r[1]
-        #{overflow = wrap}
         d4 = d4 + h4 * r[0]
 
         ; 進位處理 + 模約簡（2^130 - 5）
         c u64 = d0 >> 26
         h0 = (d0 & 67108863)
-        #{overflow = wrap}
         d1 = d1 + c
         c = d1 >> 26
         h1 = (d1 & 67108863)
-        #{overflow = wrap}
         d2 = d2 + c
         c = d2 >> 26
         h2 = (d2 & 67108863)
-        #{overflow = wrap}
         d3 = d3 + c
         c = d3 >> 26
         h3 = (d3 & 67108863)
-        #{overflow = wrap}
         d4 = d4 + c
         c = d4 >> 26
         h4 = (d4 & 67108863)
-        #{overflow = wrap}
         h0 = (h0 + c * 5) & CC-MASK32
         c = h0 >> 26
         h0 = h0 & 67108863
-        #{overflow = wrap}
         h1 = (h1 + c) & CC-MASK32
 
-        #{overflow = wrap}
         pos = pos + 16
     } (pos < data.len())
 
     ; 最終約簡
     c = h1 >> 26
     h1 = h1 & 67108863
-    #{overflow = wrap}
     h2 = (h2 + c) & CC-MASK32
     c = h2 >> 26
     h2 = h2 & 67108863
-    #{overflow = wrap}
     h3 = (h3 + c) & CC-MASK32
     c = h3 >> 26
     h3 = h3 & 67108863
-    #{overflow = wrap}
     h4 = (h4 + c) & CC-MASK32
     c = h4 >> 26
     h4 = h4 & 67108863
-    #{overflow = wrap}
     h0 = (h0 + c * 5) & CC-MASK32
     c = h0 >> 26
     h0 = h0 & 67108863
-    #{overflow = wrap}
     h1 = (h1 + c) & CC-MASK32
 
     ; h -= 2^130 - 5（如果 h >= 2^130 - 5）
     ; 簡化：h += 5，如果進位則取低 130 位
-    #{overflow = wrap}
     g0 = h0 + 5
     g0-32 = g0 & CC-MASK32
     c = g0 >> 26
     g0 = g0 & 67108863
-    #{overflow = wrap}
     g1 = h1 + c
     c = g1 >> 26
     g1 = g1 & 67108863
-    #{overflow = wrap}
     g2 = h2 + c
     c = g2 >> 26
     g2 = g2 & 67108863
-    #{overflow = wrap}
     g3 = h3 + c
     c = g3 >> 26
     g3 = g3 & 67108863
-    #{overflow = wrap}
     g4 = h4 + c
     c = g4 >> 26
     g4 = g4 & 67108863
@@ -423,25 +368,20 @@ poly1305 = (key [32]byte, data []byte) (tag [16]byte) {
     f3 = (f >> 32)
 
     ; h += s
-    #{overflow = wrap}
     f0 = (f0 + s0) & CC-MASK32
     carry = f0 >> 16
 
     ; 對於 32-bit 加法，進位只影響高位
     ; 簡化：直接逐字相加並處理進位
-    #{overflow = wrap}
     f = f0 + s0
     f0 = f & CC-MASK32
     c = (f >> 32)
-    #{overflow = wrap}
     f = f1 + s1 + c
     f1 = f & CC-MASK32
     c = (f >> 32)
-    #{overflow = wrap}
     f = f2 + s2 + c
     f2 = f & CC-MASK32
     c = (f >> 32)
-    #{overflow = wrap}
     f3 = (f3 + s3 + c) & CC-MASK32
 
     ; 輸出 tag（小端序）
@@ -491,6 +431,7 @@ poly1305-key-gen = (key [32]byte, nonce [12]byte) (otk [32]byte) {
 chacha20-poly1305-seal = (key [32]byte, nonce [12]byte, aad []byte, plain []byte) (sealed []byte) {
 
     ; 1. 生成 Poly1305 金鑰
+    #{overflow=wrap}
     otk [32]byte
     otk = poly1305-key-gen(key, nonce)
 
@@ -504,82 +445,58 @@ chacha20-poly1305-seal = (key [32]byte, nonce [12]byte, aad []byte, plain []byte
 
     ; AAD
     i <- [0..aad.len()): {
-        #{overflow = wrap}
+        #{overflow=wrap}
         mac-input[pos + i] = aad[i]
     }
-    #{overflow = wrap}
     pos = pos + aad.len()
 
     ; pad16 for AAD
-    #{overflow = wrap}
     pad-len = 16 - (aad.len() % 16)
     pad-len == 16 -> pad-len = 0
     i <- [0..pad-len): {
-        #{overflow = wrap}
+        #{overflow=wrap}
         mac-input[pos + i] = 0
     }
-    #{overflow = wrap}
     pos = pos + pad-len
 
     ; Cipher
     i <- [0..cipher.len()): {
-        #{overflow = wrap}
+        #{overflow=wrap}
         mac-input[pos + i] = cipher[i]
     }
-    #{overflow = wrap}
     pos = pos + cipher.len()
 
     ; pad16 for cipher
-    #{overflow = wrap}
     pad-len = 16 - (cipher.len() % 16)
     pad-len == 16 -> pad-len = 0
     i <- [0..pad-len): {
-        #{overflow = wrap}
+        #{overflow=wrap}
         mac-input[pos + i] = 0
     }
-    #{overflow = wrap}
     pos = pos + pad-len
 
     ; aad_len (64-bit LE)
     aad-len = aad.len()
-    #{overflow = wrap}
     mac-input[pos + 0] = aad-len & 255
-    #{overflow = wrap}
     mac-input[pos + 1] = (aad-len >> 8) & 255
-    #{overflow = wrap}
     mac-input[pos + 2] = (aad-len >> 16) & 255
-    #{overflow = wrap}
     mac-input[pos + 3] = (aad-len >> 24) & 255
-    #{overflow = wrap}
     mac-input[pos + 4] = 0
-    #{overflow = wrap}
     mac-input[pos + 5] = 0
-    #{overflow = wrap}
     mac-input[pos + 6] = 0
-    #{overflow = wrap}
     mac-input[pos + 7] = 0
-    #{overflow = wrap}
     pos = pos + 8
 
     ; cipher_len (64-bit LE)
     cipher-len = cipher.len()
-    #{overflow = wrap}
     mac-input[pos + 0] = cipher-len & 255
-    #{overflow = wrap}
     mac-input[pos + 1] = (cipher-len >> 8) & 255
-    #{overflow = wrap}
     mac-input[pos + 2] = (cipher-len >> 16) & 255
-    #{overflow = wrap}
     mac-input[pos + 3] = (cipher-len >> 24) & 255
-    #{overflow = wrap}
     mac-input[pos + 4] = 0
-    #{overflow = wrap}
     mac-input[pos + 5] = 0
-    #{overflow = wrap}
     mac-input[pos + 6] = 0
-    #{overflow = wrap}
     mac-input[pos + 7] = 0
-    #{overflow = wrap}
     pos = pos + 8
 
     ; 4. 計算 tag
@@ -587,13 +504,13 @@ chacha20-poly1305-seal = (key [32]byte, nonce [12]byte, aad []byte, plain []byte
     tag = poly1305(otk, mac-input)
 
     ; 5. 輸出密文 + tag
-    #{overflow = wrap}
     sealed = with-len(cipher.len() + 16)
     i <- [0..cipher.len()): {
+        #{overflow=wrap}
         sealed[i] = cipher[i]
     }
     i <- [0..16): {
-        #{overflow = wrap}
+        #{overflow=wrap}
         sealed[cipher.len() + i] = tag[i]
     }
 }
@@ -605,8 +522,8 @@ chacha20-poly1305-seal = (key [32]byte, nonce [12]byte, aad []byte, plain []byte
 ; sealed []byte: 密文 + 16 位元組 tag
 ; 返回 plain []byte: 明文（認證失敗時長度為 0）
 chacha20-poly1305-open = (key [32]byte, nonce [12]byte, aad []byte, sealed []byte) (plain []byte) {
+    #{overflow=wrap}
     sealed.len() < 16 -> return
-    #{overflow = wrap}
     cipher-len = sealed.len() - 16
 
     ; 1. 生成 Poly1305 金鑰
@@ -616,11 +533,12 @@ chacha20-poly1305-open = (key [32]byte, nonce [12]byte, aad []byte, sealed []byt
     ; 2. 提取密文和 tag
     cipher []byte
     i <- [0..cipher-len): {
+        #{overflow=wrap}
         cipher[i] = sealed[i]
     }
     tag [16]byte
     i <- [0..16): {
-        #{overflow = wrap}
+        #{overflow=wrap}
         tag[i] = sealed[cipher-len + i]
     }
 
@@ -629,77 +547,53 @@ chacha20-poly1305-open = (key [32]byte, nonce [12]byte, aad []byte, sealed []byt
     pos = 0
 
     i <- [0..aad.len()): {
-        #{overflow = wrap}
+        #{overflow=wrap}
         mac-input[pos + i] = aad[i]
     }
-    #{overflow = wrap}
     pos = pos + aad.len()
 
-    #{overflow = wrap}
     pad-len = 16 - (aad.len() % 16)
     pad-len == 16 -> pad-len = 0
     i <- [0..pad-len): {
-        #{overflow = wrap}
+        #{overflow=wrap}
         mac-input[pos + i] = 0
     }
-    #{overflow = wrap}
     pos = pos + pad-len
 
     i <- [0..cipher.len()): {
-        #{overflow = wrap}
+        #{overflow=wrap}
         mac-input[pos + i] = cipher[i]
     }
-    #{overflow = wrap}
     pos = pos + cipher.len()
 
-    #{overflow = wrap}
     pad-len = 16 - (cipher.len() % 16)
     pad-len == 16 -> pad-len = 0
     i <- [0..pad-len): {
-        #{overflow = wrap}
+        #{overflow=wrap}
         mac-input[pos + i] = 0
     }
-    #{overflow = wrap}
     pos = pos + pad-len
 
     aad-len = aad.len()
-    #{overflow = wrap}
     mac-input[pos + 0] = aad-len & 255
-    #{overflow = wrap}
     mac-input[pos + 1] = (aad-len >> 8) & 255
-    #{overflow = wrap}
     mac-input[pos + 2] = (aad-len >> 16) & 255
-    #{overflow = wrap}
     mac-input[pos + 3] = (aad-len >> 24) & 255
-    #{overflow = wrap}
     mac-input[pos + 4] = 0
-    #{overflow = wrap}
     mac-input[pos + 5] = 0
-    #{overflow = wrap}
     mac-input[pos + 6] = 0
-    #{overflow = wrap}
     mac-input[pos + 7] = 0
-    #{overflow = wrap}
     pos = pos + 8
 
     cipher-len-val = cipher.len()
-    #{overflow = wrap}
     mac-input[pos + 0] = cipher-len-val & 255
-    #{overflow = wrap}
     mac-input[pos + 1] = (cipher-len-val >> 8) & 255
-    #{overflow = wrap}
     mac-input[pos + 2] = (cipher-len-val >> 16) & 255
-    #{overflow = wrap}
     mac-input[pos + 3] = (cipher-len-val >> 24) & 255
-    #{overflow = wrap}
     mac-input[pos + 4] = 0
-    #{overflow = wrap}
     mac-input[pos + 5] = 0
-    #{overflow = wrap}
     mac-input[pos + 6] = 0
-    #{overflow = wrap}
     mac-input[pos + 7] = 0
-    #{overflow = wrap}
     pos = pos + 8
 
     exp-tag [16]byte
@@ -708,6 +602,7 @@ chacha20-poly1305-open = (key [32]byte, nonce [12]byte, aad []byte, sealed []byt
     ; 4. 常數時間比較
     diff = 0
     i <- [0..16): {
+        #{overflow=wrap}
         diff = diff | (tag[i] ^ exp-tag[i])
     }
     diff != 0 -> return

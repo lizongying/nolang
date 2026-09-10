@@ -28,6 +28,7 @@ hkdf-extract = (salt []byte, ikm []byte) (prk [32]byte) {
                 k[i] = 0
             }
         }
+
         -> {
             i <- [0..salt.len()): {
                 k[i] = salt[i]
@@ -52,19 +53,18 @@ hkdf-extract = (salt []byte, ikm []byte) (prk [32]byte) {
 hkdf-expand-hmac = (prk-vec []byte, t-data []byte, t-len i64, info []byte, counter i64) (out [32]byte) {
 
     ; 計算訊息長度: t-len + info.len() + (counter > 0 ? 1 : 0)
-    #{overflow = wrap}
+    #{overflow=wrap}
     msg-len = t-len + info.len()
-    #{overflow = wrap}
     counter > 0 -> msg-len = msg-len + 1
     msg []byte = with-len(msg-len)
     i <- [0..t-len): {
+        #{overflow=wrap}
         msg[i] = t-data[i]
     }
     i <- [0..info.len()): {
-        #{overflow = wrap}
+        #{overflow=wrap}
         msg[t-len + i] = info[i]
     }
-    #{overflow = wrap}
     counter > 0 -> msg[t-len + info.len()] = counter & 255
     out = hmac.hmac-sha256(prk-vec, msg)
 }
@@ -92,7 +92,6 @@ hkdf-expand = (prk [32]byte, info []byte, out-len i64) (okm []byte) {
 
     {
         out-len <= 32 -> {
-
             ; T(1) = HMAC-SHA256(PRK, info || 1)
             t-tmp [32]byte
             t-tmp = hkdf-expand-hmac(prk-vec, t, 0, info, counter)
@@ -102,28 +101,28 @@ hkdf-expand = (prk [32]byte, info []byte, out-len i64) (okm []byte) {
                 okm[i] = t-tmp[i]
             }
         }
+
         out-len > 32 -> {
             {
+                #{overflow=wrap}
                 t-len-for-hmac = 0
                 t-valid -> t-len-for-hmac = 32
                 t-tmp [32]byte
                 t-tmp = hkdf-expand-hmac(prk-vec, t, t-len-for-hmac, info, counter)
 
                 i <- [0..32): {
+                    #{overflow=wrap}
                     t[i] = t-tmp[i]
                 }
                 t-valid = true
 
                 copy-n = 32
-                #{overflow = wrap}
                 off + copy-n > out-len -> copy-n = out-len - off
                 i <- [0..copy-n): {
-                    #{overflow = wrap}
+                    #{overflow=wrap}
                     okm[off + i] = t[i]
                 }
-                #{overflow = wrap}
                 off = off + copy-n
-                #{overflow = wrap}
                 counter = counter + 1
             } (off < out-len)
         }
@@ -147,12 +146,11 @@ hkdf-expand-label = (prk [32]byte, label str, context []byte, out-len i64) (okm 
     ;   opaque label<7..255> = "tls13 " + label
     ;   opaque context<0..255> = context
 
-    #{overflow = wrap}
+    #{overflow=wrap}
     full-label = 'tls13 ' - label
     label-bytes []byte = full-label.to-bytes()
 
     ; 構建 info: length(2) + label-len(1) + label + ctx-len(1) + ctx
-    #{overflow = wrap}
     info-len = 2 + 1 + label-bytes.len() + 1 + context.len()
     info []byte = with-len(info-len)
     pos = 0
@@ -168,20 +166,18 @@ hkdf-expand-label = (prk [32]byte, label str, context []byte, out-len i64) (okm 
 
     ; label bytes
     i <- [0..label-bytes.len()): {
-        #{overflow = wrap}
+        #{overflow=wrap}
         info[pos + i] = label-bytes[i]
     }
-    #{overflow = wrap}
     pos = pos + label-bytes.len()
 
     ; context length (1 byte)
     info[pos] = context.len() & 255
-    #{overflow = wrap}
     pos = pos + 1
 
     ; context bytes
     i <- [0..context.len()): {
-        #{overflow = wrap}
+        #{overflow=wrap}
         info[pos + i] = context[i]
     }
     info.truncate(info-len)

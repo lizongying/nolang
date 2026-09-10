@@ -336,6 +336,7 @@ func (l *lowerer) maybeAutoPropagateIndex(stmt interface{}) Statement {
 	var value Expression
 	var name *Identifier
 	var tok lexer.Token
+	var srcNode CommentedNode
 	// 僅處理顯式 `let x = v[5]`（*LetStatement）。裸賦值 `x = v[5]`
 	//（*AssignExpression，如 std `b = buf[0]` 將 u8 位元組寫入 ?i64 結果參數）
 	// 不改寫為 ?=：此類 RHS 是「普通元素值」而非 option，強行 ?= 會讓
@@ -348,6 +349,11 @@ func (l *lowerer) maybeAutoPropagateIndex(stmt interface{}) Statement {
 			name = s.Name
 			tok = s.Token
 		}
+		// 保留來源節點的註釋（Doc/行內）與來源檔案資訊：改寫後的
+		// UnwrapAssignStatement 會取代原 LetStatement 出現在 AST 中，
+		// 若不带過去，fmt 就會把該陳述上方的 doc 註釋吞掉
+		//（如 dns.no 的 `; 檢查回應碼`）。
+		srcNode = s.CommentedNode
 	default:
 		return nil
 	}
@@ -369,7 +375,7 @@ func (l *lowerer) maybeAutoPropagateIndex(stmt interface{}) Statement {
 			}
 		}
 	}
-	return &UnwrapAssignStatement{Token: tok, Name: name, Value: value, IsAutoPropagated: true}
+	return &UnwrapAssignStatement{Token: tok, Name: name, Value: value, IsAutoPropagated: true, CommentedNode: srcNode}
 }
 
 // maybeIndexOutAssign 偵測帶 `#{index-out=DEF}` 註解的安全索引賦值
@@ -1949,9 +1955,10 @@ func (l *lowerer) lowerUnwrapAssign(uas *UnwrapAssignStatement) Statement {
 		propagate := func() *BlockStatement {
 			return &BlockStatement{Token: tok, Statements: []Statement{
 				&LetStatement{
-					Token: tok,
-					Name:  &Identifier{Token: tok, Value: resultName},
-					Value: tmpIdent,
+					Token:         tok,
+					Name:          &Identifier{Token: tok, Value: resultName},
+					Value:         tmpIdent,
+					IsPropagation: true,
 				},
 				&ReturnStatement{Token: tok},
 			}}

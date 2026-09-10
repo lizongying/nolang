@@ -101,28 +101,31 @@ ip-addr.parse = (s str) (ok bool) {
         c = s[i]
         {
             c >= 48 && c <= 57 -> {
-                #{overflow = wrap}
+                #{overflow=wrap}
                 octet = octet * 10 + (c - 48)
                 has-digit = 1
                 octet > 255 -> return
             }
-            c == 46 -> {
 
+            c == 46 -> {
                 ; 點分隔符
+                #{overflow=wrap}
                 has-digit == 0 -> return
-                #{overflow = wrap}
                 dot-count = dot-count + 1
                 dot-count > 3 -> return
 
                 ; 存入對應欄位
                 {
                     dot-count == 1 -> .a = octet
+
                     dot-count == 2 -> .b = octet
+
                     dot-count == 3 -> .c = octet
                 }
                 octet = 0
                 has-digit = 0
             }
+
             -> return
         }
     }
@@ -157,7 +160,7 @@ ip-addr.to-str = () (out str) {
     sb = .b.to-str()
     tmp = sb.copy()
     j <- [0..tmp.len-bytes()): {
-        #{overflow = wrap}
+        #{overflow=wrap}
         out[n + 1 + j] = tmp[j]
     }
     n = out.len-bytes()
@@ -165,7 +168,7 @@ ip-addr.to-str = () (out str) {
     sc = .c.to-str()
     tmp = sc.copy()
     j <- [0..tmp.len-bytes()): {
-        #{overflow = wrap}
+        #{overflow=wrap}
         out[n + 1 + j] = tmp[j]
     }
     n = out.len-bytes()
@@ -173,7 +176,7 @@ ip-addr.to-str = () (out str) {
     sd = .d.to-str()
     tmp = sd.copy()
     j <- [0..tmp.len-bytes()): {
-        #{overflow = wrap}
+        #{overflow=wrap}
         out[n + 1 + j] = tmp[j]
     }
 }
@@ -233,16 +236,17 @@ ip-addr.is-private = () (yes bool) {
             yes = true
             return
         }
-        .a == 172 -> {
 
+        .a == 172 -> {
             ; 172.16.0.0/12 (172.16.0.0 ~ 172.31.255.255)
             .b >= 16 && .b <= 31
         }
-        .a == 192 -> {
 
+        .a == 192 -> {
             ; 192.168.0.0/16
             .b == 168
         }
+
         -> {
             yes = true
             return
@@ -308,6 +312,7 @@ ip-addr.in-subnet = (base ip-addr, prefix-len i64) (yes bool) {
             yes = true
             return
         }
+
         prefix-len >= 32 -> {
             yes = .equal(base)
             return
@@ -321,10 +326,13 @@ ip-addr.in-subnet = (base ip-addr, prefix-len i64) (yes bool) {
     ; 建立遮罩：高位 prefix-len 個 1
     mask = 0
     {
-        #{overflow = wrap}
-        prefix-len == 32 -> mask = 0 - 1
+        prefix-len == 32 -> {
+            #{overflow=wrap}
+            mask = 0 - 1
+        }
+
         -> {
-            #{overflow = wrap}
+            #{overflow=wrap}
             mask = (0 - 1) << (32 - prefix-len)
             mask = mask & 0xffffffff
         }

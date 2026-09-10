@@ -23,6 +23,7 @@ crc-64 = (data []byte) (crc u64) {
         j <- [0..8): {
             {
                 crc & 1 != 0 -> crc = ((crc >> 1) ^ poly) & mask
+
                 -> crc = (crc >> 1) & mask
             }
         }
@@ -37,7 +38,7 @@ crc-64-hex = (data []byte) (hex str) {
     hex-chars = '0123456789abcdef'
     hex str = with-len(16)
     i <- [0..16): {
-        #{overflow = wrap}
+        #{overflow=wrap}
         hex[i] = hex-chars[(crc >> (60 - i * 4)) & 15]
     }
 }

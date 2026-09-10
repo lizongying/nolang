@@ -614,9 +614,9 @@ file.read-bytes = () (content ?[]byte) {
     ; 循環 read 直到讀完或 EOF
     total = 0
     {
+        #{overflow=wrap}
         total >= size -> break
 
-        #{overflow=wrap}
         n = read(.fd, buf[total..], size - total)
         n <= 0 -> break
         total = total + n
@@ -644,9 +644,9 @@ file.write-str = (data str) (ok ?bool) {
     s = data.to-bytes()
     total = 0
     {
+        #{overflow=wrap}
         total >= s.len() -> break
 
-        #{overflow=wrap}
         n = write(.fd, s[total..], s.len() - total)
         n <= 0 -> break
         total = total + n
@@ -666,9 +666,9 @@ file.write-bytes = (data []byte) (ok ?bool) {
     }
     total = 0
     {
+        #{overflow=wrap}
         total >= data.len() -> break
 
-        #{overflow=wrap}
         n = write(.fd, data[total..], data.len() - total)
         n <= 0 -> break
         total = total + n
@@ -897,6 +897,8 @@ list-dir = (dirpath str) (entries []str) {
     ok = true
     {
         name, ok = os.win-find-next-file(bufptr)
+
+        #{overflow=wrap}
         ok -> result.push(name)
     } (ok == true)
     os.win-find-close(bufptr)

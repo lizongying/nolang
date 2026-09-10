@@ -35,13 +35,13 @@ str-map.init = () {
 
 ; hash: FNV-1a 字串雜湊
 str-map.hash = (key str) (idx i64) {
+    #{overflow=wrap}
     h = FNV-OFFSET
     i <- [0..key.len-bytes()): {
+        #{overflow=wrap}
         h = h ^ (key[i])
-        #{overflow = wrap}
         h = h * FNV-PRIME
     }
-    #{overflow = wrap}
     idx = h & (.cap - 1)
 }
 
@@ -56,9 +56,11 @@ str-map.str-eq = (a str, b str) (eq bool) {
 
 ; put: 插入或更新 key→value，回傳是否新增
 str-map.put = (key str, val str) (is-new bool) {
+    #{overflow=wrap}
     idx = .hash(key)
 
     {
+        #{overflow=wrap}
         eq = .str-eq(.keys[idx], key)
         eq -> {
             .vals[idx] = val
@@ -69,7 +71,6 @@ str-map.put = (key str, val str) (is-new bool) {
             is-new = false
             return
         }
-        #{overflow = wrap}
         idx = idx + 1
         idx >= .cap -> idx = 0
     } (.occ[idx] == 1)
@@ -77,16 +78,17 @@ str-map.put = (key str, val str) (is-new bool) {
     ; 複製 key
     .keys[idx].len = key.len-bytes()
     i <- [0..key.len-bytes()): {
+        #{overflow=wrap}
         .keys[idx][i] = key[i]
     }
 
     ; 複製 val
     .vals[idx].len = val.len-bytes()
     i <- [0..val.len-bytes()): {
+        #{overflow=wrap}
         .vals[idx][i] = val[i]
     }
     .occ[idx] = 1
-    #{overflow = wrap}
     .size = .size + 1
     is-new = true
 }
@@ -97,12 +99,12 @@ str-map.get = (key str) (result ?str) {
     idx = .hash(key)
 
     {
+        #{overflow=wrap}
         eq = .str-eq(.keys[idx], key)
         eq -> {
             result = .vals[idx]
             return
         }
-        #{overflow = wrap}
         idx = idx + 1
         idx >= .cap -> idx = 0
     } (.occ[idx] == 1)
@@ -113,7 +115,9 @@ str-map.contains = (key str) (found bool) {
     val = .get(key)
     val: {
         ok -> found = true
+
         err ->
+
         nil ->
     }
 }
@@ -124,17 +128,17 @@ str-map.remove = (key str) (removed bool) {
     idx = .hash(key)
 
     {
+        #{overflow=wrap}
         eq = .str-eq(.keys[idx], key)
         eq -> {
+            #{overflow=wrap}
             .occ[idx] = 0
             .keys[idx].len = 0
             .vals[idx].len = 0
-            #{overflow = wrap}
             .size = .size - 1
             removed = true
             return
         }
-        #{overflow = wrap}
         idx = idx + 1
         idx >= .cap -> idx = 0
     } (.occ[idx] == 1)

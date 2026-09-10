@@ -58,6 +58,7 @@ pool.init = (host str, port i64, max-size i64) {
     .port = port
     {
         max-size > POOL-MAX-CONNS -> max-size = POOL-MAX-CONNS
+
         max-size <= 0 -> max-size = 1
     }
     .max-size = max-size
@@ -87,9 +88,9 @@ pool.get = () (c ?net.conn) {
         ok = false
         ok = cn.dial(.host, .port)
         ok -> {
+            #{overflow=wrap}
             .conns[.count] = cn
             .in-use[.count] = true
-            #{overflow = wrap}
             .count = .count + 1
             c = cn
         }
@@ -115,17 +116,16 @@ pool.put = (c net.conn) {
 ; close-conn: 關閉並移除指定連接
 ; idx i64: 連接索引
 pool.close-conn = (idx i64) {
+    #{overflow=wrap}
     idx < 0 || idx >= .count -> return
     .conns[idx].close()
 
     ; 將最後一個移到當前位置
-    #{overflow = wrap}
     last = .count - 1
     idx != last -> {
         .conns[idx] = .conns[last]
         .in-use[idx] = .in-use[last]
     }
-    #{overflow = wrap}
     .count = .count - 1
 }
 
@@ -142,7 +142,7 @@ pool.close-all = () {
 pool.active-count = () (n i64) {
     n = 0
     i <- [0...count): {
-        #{overflow = wrap}
+        #{overflow=wrap}
         .in-use[i] -> n = n + 1
     }
 }
@@ -152,7 +152,7 @@ pool.active-count = () (n i64) {
 pool.idle-count = () (n i64) {
     n = 0
     i <- [0...count): {
-        #{overflow = wrap}
+        #{overflow=wrap}
         .in-use[i] == false -> n = n + 1
     }
 }

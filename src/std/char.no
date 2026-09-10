@@ -169,11 +169,12 @@ char.to-str = () (s str) {
 ;     直接报 "unknown callee []t.to-chars"，无法编译通过。
 ; 在编译器修复 []char 切片支持前，请勿依赖 to-chars / []char.to-str。
 []char.to-str = () (out str) {
+    #{overflow=saturate}
     n = .len()
 
-    #{overflow=saturate}
     tmp []byte = with-cap(n * 4)
     i <- [0..n): {
+        #{overflow=saturate}
         cp = .[i]
         {
             cp < 0x80 -> tmp.push(cp & 0xff)
@@ -200,6 +201,7 @@ char.to-str = () (s str) {
     m = tmp.len()
     out = with-len(m)
     j <- [0..m): {
+        #{overflow=saturate}
         out[j] = tmp[j]
     }
 }

@@ -40,7 +40,16 @@ func (f *formatter) formatStatement(stmt parser.Statement) bool {
 			// Preserve blank line between last Doc comment and statement
 			f.write("\n") // bare blank line (no indent)
 		}
-		f.newline() // indent for statement
+		// 獨立 #{...} 註解若因 activeOverflow 去重而不輸出本體，就只有其 Doc
+		// 會印出；此時不可收尾換行，否則會留下只有縮排的空行（非冪等）。行尾
+		// 交由下一條陳述的 gap 邏輯或區塊的 `}` 收束。
+		emitBody := true
+		if as, ok := stmt.(*parser.AnnotationStatement); ok {
+			emitBody = f.annotationStatementEmits(as)
+		}
+		if emitBody {
+			f.newline() // indent for statement
+		}
 	}
 
 	// Output attached annotations before the statement.
@@ -126,7 +135,14 @@ func (f *formatter) formatStatement(stmt parser.Statement) bool {
 		} else {
 			f.formatExpression(s.Name)
 		}
-		f.write(" ?= ")
+		// IsAutoPropagated=True 表示此節點由 lowering 從普通 `x = v[5]` 自動
+		// 提升而來（來源中並非顯式 `?=`），formatter 須渲染回 `=` 以忠實還原
+		// 來源（見 ast.go 對 UnwrapAssignStatement.IsAutoPropagated 的說明）。
+		if s.IsAutoPropagated {
+			f.write(" = ")
+		} else {
+			f.write(" ?= ")
+		}
 		f.formatExpression(s.Value)
 	case *parser.ExternStatement:
 		f.formatExternStatement(s)
@@ -148,6 +164,48 @@ func (f *formatter) formatStatement(stmt parser.Statement) bool {
 	return emitted
 }
 
+// isStandaloneIfThen reports whether stmt is a standalone if-then
+// (`cond -> body`, RTStandalone) that still lacks an else branch.
+func (f *formatter) isStandaloneIfThen(stmt parser.Statement) bool {
+	es, ok := stmt.(*parser.ExpressionStatement)
+	if !ok || es.Expression == nil {
+		return false
+	}
+	ie, ok := es.Expression.(*parser.IfExpression)
+	if !ok {
+		return false
+	}
+	return f.hasRT(ie, parser.RTStandalone) &&
+		!f.hasRT(ie, parser.RTMatchWildcard) &&
+		ie.Alternative == nil
+}
+
+// isBareElseAfterIfThen reports whether cur is a bare wildcard `-> body` arm
+// (RTStandalone + RTMatchWildcard) that directly follows an else-less standalone
+// if-then (prev) in the same block. Such a pair is semantically an if/else; the
+// parser normally folds the `->` into the if's Alternative, but a preceding
+// standalone `#{...}` annotation makes parseAnnotationStatement consume the `->`
+// first, bypassing that folding and leaving two sibling statements. The
+// formatter must render this shape identically to the folded one (a blank line
+// before the else) to stay idempotent.
+func (f *formatter) isBareElseAfterIfThen(prev, cur parser.Statement) bool {
+	if prev == nil {
+		return false
+	}
+	es, ok := cur.(*parser.ExpressionStatement)
+	if !ok || es.Expression == nil {
+		return false
+	}
+	ie, ok := es.Expression.(*parser.IfExpression)
+	if !ok {
+		return false
+	}
+	if !f.hasRT(ie, parser.RTStandalone) || !f.hasRT(ie, parser.RTMatchWildcard) {
+		return false
+	}
+	return f.isStandaloneIfThen(prev)
+}
+
 // statementEmitsSomething reports whether formatting this statement will produce
 // any visible output. It mirrors the emit logic of formatStatement without
 // side effects (except reading the read-only f.activeOverflow for overflow
@@ -157,7 +215,12 @@ func (f *formatter) formatStatement(stmt parser.Statement) bool {
 func (f *formatter) statementEmitsSomething(stmt parser.Statement) bool {
 	switch s := stmt.(type) {
 	case *parser.AnnotationStatement:
-		return f.annotationStatementEmits(s)
+		// 即使註解本身因去重而不輸出，其前置 Doc 註釋仍會被 formatStatement
+		// 印出，因此仍算「有輸出」：否則呼叫端 (formatBlockInner) 會因為
+		// emits==false 而跳過換行，formatStatement 的 formatDocComments 就把
+		// 註解直接接在上一條陳述結尾（典型：gzip.no 的
+		// `}; FHCRC (bit 0) — 2 bytes CRC16`），非冪等。
+		return f.annotationStatementEmits(s) || f.hasDocComment(s)
 	case *parser.LetStatement:
 		return !s.IsSynthetic
 	case *parser.ExpressionStatement:
@@ -512,6 +575,12 @@ func (f *formatter) formatBlockInner(body *parser.BlockStatement, openBraceLine 
 	// 使區塊內已輸出的 overflow 不會外洩到外層，且跨區塊/跨函式能正確重新輸出
 	//（避免把 activeOverflow 誤判為「模式未變」而漏印）。
 	savedOverflow := f.activeOverflow
+	// 每個區塊自帶獨立的 overflow 作用域：進入時**重設**為「未生效」，離開時還原。
+	// 若沿用外層模式（只 save/restore 而不重設），區塊自己攜帶的 `#{overflow=...}`
+	// 會被誤判為「模式未變」而整個漏印；重解析後的輸出就丟失區塊級標註，
+	// 該區塊的整數運算退回預設 option 模式（產生 %option 後被 trunc 到窄型別 →
+	// LLVM 報錯 / 型別不符）。重設可保證每個需要 wrap 的區塊都至少輸出一次標註。
+	f.activeOverflow = ""
 	defer func() { f.activeOverflow = savedOverflow }()
 
 	// 過濾掉 ; 分隔符產生的空表達式語句及 compiler 注入的合成語句
@@ -529,6 +598,7 @@ func (f *formatter) formatBlockInner(body *parser.BlockStatement, openBraceLine 
 	// 追踪上一個「有輸出」的陳述，使無輸出的陳述（如已生效的區塊級
 	// overflow 註解）不會產生空白行，且空白行保留以最後一個有輸出的陳述為基準。
 	lastEmitEndLine := 0
+	var lastEmitStmt parser.Statement
 	prevEmitted := false
 	for i, stmt := range statements {
 		emits := f.statementEmitsSomething(stmt)
@@ -554,7 +624,13 @@ func (f *formatter) formatBlockInner(body *parser.BlockStatement, openBraceLine 
 					// 注意：此規則**只**適用於區塊內第二條及之後的陳述；區塊
 					// 首條陳述不套用，否則會在 `{` 之後憑空插入空行（見下方
 					// i == 0 分支與 fmt/block_blank_test.go 的守衛）。
-					if f.hasBlankLineBetween(prevEndLine, currStartLine) || f.hasDocComment(stmt) || f.attachedAnnotationsWillEmit(stmt) {
+					// 獨立的 wildcard `-> body` 臂若緊跟在一條尚無 else 的
+					// standalone if-then 之後，語意上就是該 if 的 else 分支：
+					// 與「直接相鄰、被 parser 鏈成 Alternative」的情形採用
+					// 相同的排版（else 另起一行時補一個空行），否則前置
+					// `#{...}` 註解造成的非鏈式 AST 會與鏈式版本輸出不同 →
+					// 非冪等（fmt.no / net.no 的漂移）。
+					if f.hasBlankLineBetween(prevEndLine, currStartLine) || f.hasDocComment(stmt) || f.attachedAnnotationsWillEmit(stmt) || f.isBareElseAfterIfThen(lastEmitStmt, stmt) {
 						f.write("\n") // blank line (no indent)
 					}
 					f.newline()
@@ -582,6 +658,7 @@ func (f *formatter) formatBlockInner(body *parser.BlockStatement, openBraceLine 
 		f.formatStatement(stmt)
 		if emits {
 			lastEmitEndLine = stmtTokenEndLine(stmt)
+			lastEmitStmt = stmt
 		}
 		prevEmitted = emits
 	}
