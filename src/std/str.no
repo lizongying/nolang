@@ -1560,6 +1560,7 @@ str.split = (sep str) (out []str) {
                 #{overflow=wrap}
                 out[pos] = sep.byte(j)
 
+                #{overflow=wrap}
                 pos = pos + 1
             }
         }
@@ -1622,6 +1623,7 @@ str.replace-str = (old str, new str) (val str) {
             #{overflow=wrap}
             out-len = out-len + new-len
 
+            #{overflow=wrap}
             i = i + old-len
         }
 
@@ -1630,6 +1632,7 @@ str.replace-str = (old str, new str) (val str) {
             #{overflow=wrap}
             out-len = out-len + 1
 
+            #{overflow=wrap}
             i = i + 1
         }
     } (i < n)
@@ -1665,6 +1668,7 @@ str.replace-str = (old str, new str) (val str) {
                 #{overflow=wrap}
                 val[pos] = new.byte(k)
 
+                #{overflow=wrap}
                 pos = pos + 1
             }
 
@@ -1676,8 +1680,10 @@ str.replace-str = (old str, new str) (val str) {
             #{overflow=wrap}
             val[pos] = .byte(i)
 
+            #{overflow=wrap}
             pos = pos + 1
 
+            #{overflow=wrap}
             i = i + 1
         }
     } (i < n)

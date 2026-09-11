@@ -127,18 +127,18 @@ func TestUnhandledOverflowAllowed(t *testing.T) {
 	}
 }
 
-// TestUnhandledOverflowStdExempt 驗證標準庫豁免：標準庫內部大量依賴預設 option
-// 語意，若視為未處理會讓每個 no build / no run 失敗。使用者程式必須仍被檢查。
-// mainFile 為空/非 std 時恢復檢查，覆蓋「單檔 vet 主程式自身陳述 SourceFile 為空」
-// 的情境（見 ast.go CommentedNode 註解）。
-func TestUnhandledOverflowStdExempt(t *testing.T) {
+// TestUnhandledOverflowNoStdExempt 驗證撤銷標準庫豁免後的統一檢查：不再因
+// mainFile 路徑含 std 而放行。原本的 std 豁免是為了繞開 merged 歸因不準導致的
+// 偽報，現歸因已修好且 std 自身沉默泄漏已以 `#{overflow=wrap}` 逐站修復，故對
+// 所有程式碼（含路徑看似 std 的檔）一律檢查未處理溢出。
+func TestUnhandledOverflowNoStdExempt(t *testing.T) {
 	cases := []struct {
 		mainFile string
 		want     int
 	}{
-		{mainFile: "std/str.no", want: 0},
-		{mainFile: "/repo/src/std/str.no", want: 0},
-		{mainFile: "src/std/vec.no", want: 0},
+		{mainFile: "std/str.no", want: 1},
+		{mainFile: "/repo/src/std/str.no", want: 1},
+		{mainFile: "src/std/vec.no", want: 1},
 		{mainFile: "src/cmd/ln/ln.no", want: 1},
 		{mainFile: "src/app.no", want: 1},
 		{mainFile: "", want: 1}, // 無來源資訊時保守檢查，避免漏報
@@ -167,3 +167,4 @@ func TestUnhandledOverflowWiredIntoLints(t *testing.T) {
 		t.Fatalf("ValidateUnhandledOverflow not surfaced through RunAllLints")
 	}
 }
+

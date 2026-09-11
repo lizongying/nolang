@@ -111,6 +111,7 @@ ip-addr.parse = (s str) (ok bool) {
                 ; 點分隔符
                 #{overflow=wrap}
                 has-digit == 0 -> return
+                #{overflow=wrap}
                 dot-count = dot-count + 1
                 dot-count > 3 -> return
 

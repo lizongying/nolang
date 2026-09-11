@@ -6,6 +6,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/lizongying/nolang/builtin"
 	"github.com/lizongying/nolang/hir"
 )
 
@@ -157,30 +158,58 @@ func (l *lowerer) synthesizeMainForTopLevel(pkg *hir.Package) {
 			hir.KUse, hir.KExport, hir.KAnnotation:
 			continue // definitions are not top-level statements
 		case hir.KLet:
-			// Module constants (FlagModuleConst) and any top-level `let` with a
-			// constant initializer (int/float/bool/byte-array/fixed-array literal)
-			// are registered as lazily-materialized globals by the registration
-			// loop above and must NOT be inlined into the synthetic `main` — doing
-			// so would shadow the global binding and drop the constant. Skip them
-			// here so only true script-local `let`s are inlined.
-			if n.Has(hir.FlagModuleConst) {
+			// Module constants (FlagModuleConst) with a constant initializer
+			// (int/float/bool/byte-array/fixed-array literal) are registered as
+			// lazily-materialized globals by the registration loop above and must
+			// NOT be inlined into the synthetic `main`. A FlagModuleConst `let`
+			// whose initializer is NOT constant (e.g. `bad-fd fd = -1`,
+			// `x = someFn()`) is NOT a real module constant — it must be inlined
+			// as a script-local so it gets a runtime value. Skipping inlining
+			// unconditionally used to leave such lets as unmaterialized global
+			// markers -> every later read was `undef` (test-fd-newtype trapped at
+			// `bad-fd < 0`).
+			if n.Has(hir.FlagModuleConst) && l.foldConstText(n, l.letTypeRaw(n)) != "" {
 				continue
 			}
 		raw := l.letTypeRaw(n)
 		if raw != "" && l.foldConstText(n, raw) != "" {
 			continue
 		}
-		// Inline top-level `let`s whose value is a runtime call result
-		// (`e = err.new(...)`, `mc = e.code()`, `e2 = err.err-from-errno(2)`):
-		// a call cannot be a module constant, so it must be computed inside the
-		// synthetic `main`. Skip only types the v1 codegen cannot emit as a
-		// statement (vec/option/slice element codegen is incomplete); scalars,
-		// structs and enums inline safely.
+		// Inline top-level `let`s that are COMPUTED at runtime (call results,
+		// arithmetic, negative literals like `bad-fd fd = -1`, ...) into the
+		// synthetic `main` as locals — unless the v1 codegen cannot emit the
+		// type as a statement. Types the codegen cannot emit:
+		//   * vec/option/slice (isUnsafeInlineType) — must stay module globals;
+		//   * std prelude struct literals (fs.file, io.reader, os.utsname,
+		//     path.path, ...) which reference un-emitted types and are dead for
+		//     the MIR path (print writes to fd 1 directly) — skip them.
+		// Scalars, integer newtypes (fd), user structs and enums inline safely.
+		// Previously only `isInlineableLetType(raw)` qualified for inlining, so
+		// any non-inlineable-but-emittable top-level `let` (e.g. `fd`) was
+		// NEITHER inlined NOR kept as a global and was silently dropped, leaving
+		// every later read as `undef` (test-fd-newtype: `bad-fd < 0` trapped).
 		if l.letValueIsCall(n) && raw != "" && raw != "void" && !l.isUnsafeInlineType(raw) {
 			// inline call-result let into the synthetic `main`
+		} else if raw != "" && l.isUnsafeInlineType(raw) {
+			continue // vec/option/slice: keep as module global
 		} else if raw != "" && !l.isInlineableLetType(raw) {
-			continue
+			// A non-inlineable type. Skip ONLY genuine structs — these
+			// reference un-emitted struct layouts and are dead for the MIR path
+			// (print writes to fd 1 directly). Scalar newtypes/enums (fs.fd,
+			// fs.code, ...) are NOT registered in StructFields/OwnedStructs and
+			// so are NOT skipped here: they MUST be inlined, else every later
+			// read is `undef` (test-fd-newtype `bad-fd < 0` trapped). Use the
+			// read-only StructFields/OwnedStructs tables (NOT l.b.Type — calling
+			// the builder during HIR analysis, before curFunc is set, mutates
+			// codegen state and corrupts the sibling global-let path).
+			if _, isStruct := l.mod.StructFields[raw]; isStruct {
+				continue // user struct with fields: dead for MIR path
+			}
+			if l.mod.OwnedStructs[raw] {
+				continue // owned struct: dead for MIR path
+			}
 		}
+		// otherwise (scalar / newtype / user struct / enum): inline into main
 		case hir.KStructLit:
 			// Top-level struct literals are std prelude inits (e.g. fs.file
 			// structlits for <stdin>/<stdout>/<stderr>). They reference struct
@@ -311,12 +340,18 @@ func LowerHIR(pkg *hir.Package, enumVariants map[string][]string) (*Module, *Rep
 			// Non-constant script top-level `let`s (e.g. `x = someFn()`) are NOT
 			// registered here; synthesizeMainForTopLevel inlines the inlineable
 			// ones as locals.
+			// Register a top-level `let` as a module global ONLY when it is a
+			// real compile-time constant. A FlagModuleConst `let` whose
+			// initializer is NOT constant (e.g. `bad-fd fd = -1`, `x = someFn()`)
+			// must NOT become an unmaterialized global marker — doing so leaves
+			// every later read as `undef` and also blocks inlining. Such lets are
+			// left for synthesizeMainForTopLevel, which inlines the inlineable
+			// ones as locals (test-fd-newtype). For a real module (hasExplicitMain)
+			// all top-level `let`s stay module-level globals, as before.
 			if !hasExplicitMain {
-				if !n.Has(hir.FlagModuleConst) {
-					raw := l.letTypeRaw(n)
-					if raw == "" || l.foldConstText(n, raw) == "" {
-						continue
-					}
+				raw := l.letTypeRaw(n)
+				if raw == "" || l.foldConstText(n, raw) == "" {
+					continue
 				}
 			}
 			gname := pkg.Str(n.S)
@@ -915,12 +950,12 @@ func (l *lowerer) lowerStmt(id int32) {
 				}
 			}
 		}
-		for _, c := range l.pkg.Children(id) {
-			childID = c
-			val = l.lowerExpr(c)
-			break
-		}
-		l.typeHint = NoType
+	for _, c := range l.pkg.Children(id) {
+		childID = c
+		val = l.lowerExpr(c)
+		break
+	}
+	l.typeHint = NoType
 		if val == NoVal {
 			// Declaration with NO initializer: `blk [16]byte` / `buf str`.
 			// Nolang zero-initializes these. Lowering used to skip binding
@@ -1649,6 +1684,41 @@ func (l *lowerer) lowerExpr(id int32) ValueID {
 		return l.lowerArrayElems(elems)
 	case hir.KIdent:
 		name := l.pkg.Str(n.S)
+		// Option variant bare references (`err`, `ok`, `some`): lower to the
+		// option discriminant constant so comparisons / match patterns resolve
+		// to the RIGHT tag. `nil` is handled by KNilLit (tag 1); here we cover
+		// `err` (tag 2) and `ok`/`some` (tag 0). A bare variant identifier
+		// carries NO type in HIR (it resolves to void), so the ?T type must be
+		// read from context: the infix comparison sibling (seeded into
+		// l.typeHint by the KInfix lowering below) or the active type hint.
+		// `err`/`ok` may also be registered as module globals, so this MUST run
+		// before the locals / globals lookup — otherwise they resolve to a plain
+		// ?T global that codegen materializes as the nil tag (or undef),
+		// breaking `n == err` matches and `it.to-str()` arms (the trap/BPT
+		// behind several corpus crashes).
+		if name == "err" || name == "ok" || name == "some" {
+			optTyp := l.typeOfNode(n)
+			if t := l.mod.Type(optTyp); t == nil || t.Kind != KindOption {
+				if ht := l.typeHint; ht != NoType && ht != l.voidType {
+					if tt := l.mod.Type(ht); tt != nil && tt.Kind == KindOption {
+						optTyp = ht
+					}
+				}
+			}
+			if optTyp != NoType && optTyp != l.voidType {
+				if tt := l.mod.Type(optTyp); tt != nil && tt.Kind == KindOption {
+					tag := int64(0)
+					if name == "err" {
+						tag = 2
+					}
+					var payload ValueID = NoVal
+					if tt.Elem != NoType {
+						payload = l.b.Emit(OpConst, tt.Elem, nil, "")
+					}
+					return l.b.EmitOptionWrap(optTyp, tag, payload)
+				}
+			}
+		}
 		if v, ok := l.locals[name]; ok {
 			return v
 		}
@@ -1754,14 +1824,32 @@ func (l *lowerer) lowerExpr(id int32) ValueID {
 			ln := l.pkg.Node(lr[0])
 			rn := l.pkg.Node(lr[1])
 			if ln != nil && rn != nil {
+				// A bare option-variant operand (`nil`, `err`, `ok`, `some`)
+				// carries no type of its own; seed l.typeHint with its sibling's
+				// ?T type so the variant lowers to the correct discriminant.
+				isVar := func(nd *hir.Node) bool {
+					if nd == nil {
+						return false
+					}
+					if nd.Kind == hir.KNilLit {
+						return true
+					}
+					if nd.Kind == hir.KIdent {
+						switch l.pkg.Str(nd.S) {
+						case "err", "ok", "some":
+							return true
+						}
+					}
+					return false
+				}
 				switch {
-				case ln.Kind == hir.KNilLit && rn.Kind != hir.KNilLit:
+				case isVar(ln) && !isVar(rn):
 					rv = l.lowerExpr(lr[1])
 					saved := l.typeHint
 					l.typeHint = l.valueTypeOf(rv)
 					lv = l.lowerExpr(lr[0])
 					l.typeHint = saved
-				case rn.Kind == hir.KNilLit && ln.Kind != hir.KNilLit:
+				case isVar(rn) && !isVar(ln):
 					lv = l.lowerExpr(lr[0])
 					saved := l.typeHint
 					l.typeHint = l.valueTypeOf(lv)
@@ -1972,6 +2060,17 @@ func (l *lowerer) lowerSlice(n *hir.Node) ValueID {
 	resTyp := l.typeOfNode(n)
 	if resTyp == NoType || resTyp == l.voidType {
 		resTyp = l.b.Type("i64")
+	} else if t := l.mod.Type(resTyp); t != nil && t.Kind == KindArray {
+		// Slicing a fixed array yields a SLICE (vec), never a fixed array. The
+		// HIR node type is the array type ([N]Elem), but the slice result must
+		// be []Elem so codegen builds a heap %vec (matching the legacy backend).
+		// Without this, emitSliceOp sees a fixed-array destination, copies the
+		// element bytes into a stack slot, and the subsequent move into the
+		// []i64 result reinterpreters those bytes as a %vec header — leaving a
+		// garbage data pointer that aborts (trace/BPT trap) on first use.
+		if _, elemRaw, ok := parseArray(t.Raw); ok {
+			resTyp = l.b.Type("[]" + elemRaw)
+		}
 	}
 	return l.b.Emit(OpSliceOp, resTyp, args, "")
 }
@@ -1981,6 +2080,45 @@ func (l *lowerer) lowerSlice(n *hir.Node) ValueID {
 // `self` (captured as l.curRecv / the `self` local). The field name is the KDot's
 // S string and is carried on the instruction's Str so codegen can resolve the
 // struct field index.
+// typeConstantValue resolves a primitive integer type's MIN/MAX compile-time
+// constant (e.g. `i8.MIN`, `u32.MAX`). nolang integer types are all i64 in the
+// MIR backend, so the value is returned as an i64. Returns (0,false) when the
+// receiver is not a primitive integer type or the field is not MIN/MAX.
+func typeConstantValue(typeName, field string) (int64, bool) {
+	if field != "MIN" && field != "MAX" {
+		return 0, false
+	}
+	var minv, maxv int64
+	switch typeName {
+	case "i8":
+		minv, maxv = -128, 127
+	case "u8", "byte":
+		minv, maxv = 0, 255
+	case "i16":
+		minv, maxv = -32768, 32767
+	case "u16":
+		minv, maxv = 0, 65535
+	case "i32":
+		minv, maxv = -2147483648, 2147483647
+	case "u32":
+		minv, maxv = 0, 4294967295
+	case "i64":
+		minv, maxv = -9223372036854775808, 9223372036854775807
+	case "u64":
+		// u64.MAX (18446744073709551615) exceeds i64 range; clamp to the
+		// largest representable i64. No corpus test exercises u64.MAX, and
+		// the MIR backend has no unsigned-64 storage, so this is the safe
+		// best-effort value.
+		minv, maxv = 0, 9223372036854775807
+	default:
+		return 0, false
+	}
+	if field == "MIN" {
+		return minv, true
+	}
+	return maxv, true
+}
+
 func (l *lowerer) lowerDotRead(n *hir.Node) ValueID {
 	fieldName := l.pkg.Str(n.S)
 
@@ -1988,6 +2126,20 @@ func (l *lowerer) lowerDotRead(n *hir.Node) ValueID {
 	for _, c := range l.pkg.Children(n.Id) {
 		recvID = c
 		break
+	}
+
+	// Type-level constant access: `i8.MIN`, `u32.MAX`, ... The receiver is the
+	// PRIMITIVE TYPE NAME (a KIdent like `i8`), not a value, so it has no slot
+	// to read a field from. Emit the compile-time constant directly. Without
+	// this, `m = i8.MIN` resolved `i8` as an (unbound) identifier, returned
+	// NoVal, and the top-level global `m` was left uninitialized -> `undef`
+	// -> opt-inserted trap at the `m == -128` comparison (test-i8-debug2).
+	if recvID != hir.NoID {
+		if rn := l.pkg.Node(recvID); rn != nil && rn.Kind == hir.KIdent {
+			if v, ok := typeConstantValue(l.pkg.Str(rn.S), fieldName); ok {
+				return l.b.EmitInt(OpConst, l.b.Type("i64"), v, "")
+			}
+		}
 	}
 
 	var recvV ValueID
@@ -2193,9 +2345,67 @@ func (l *lowerer) resolveCallee(n *hir.Node) (callee string, recvV ValueID) {
 	// "i64.to-str". Strip the marker so the callee matches the legacy
 	// backend, which resolves optional receivers to their inner type.
 	recvTypeName = strings.TrimPrefix(recvTypeName, "?")
+	// A slice/array method that the builtin table supplies for a vec/array
+	// receiver must be emitted as that BUILTIN, not as a call to the generic
+	// stub (see sliceMethodBuiltin). Otherwise `v.len()` lowers to
+	// `[]t.len` -> `_xt.len` -> `self.len` -> `[]t.len` ...: infinite
+	// recursion, which is a stack-overflow SIGSEGV at runtime, not a compile
+	// error. This single mis-resolution accounted for ~20 of the 37 MIR=3
+	// runtime crashes in the corpus sweep.
+	if bm := sliceMethodBuiltin(recvTypeName, method); bm != "" {
+		return bm, rv
+	}
 	return canonSliceRecv(recvTypeName + "." + method), rv
 	}
 	return "", NoVal
+}
+
+// sliceMethodBuiltin reports the BARE builtin method name to use for a
+// slice/array-receiver method call, or "" when the ordinary qualified call
+// must be kept.
+//
+// Why it exists: nolang materializes a generic slice method as a chain of
+// compiler-generated forwarding stubs with no real body —
+//
+//	[]i64.len  ->  _xi64.len  ->  self.len
+//	                             ^ canonSliceRecv -> "[]t.len"
+//	[]t.len    ->  _xt.len    ->  self.len  -> "[]t.len"  (cycle!)
+//
+// `[]t.len` is a real function in the HIR package, so codegen prefers it over
+// the bare-name builtin `len` (ForwardFunc vec-len) and emits a self-recursive
+// call. Because the chain is generic it is invisible at the call site: the
+// only symptom is a runtime stack overflow.
+//
+// Resolution rule (deliberately narrow so it can never shadow user code):
+//   - receiver must be a slice `[]T` or fixed array `[N]T`;
+//   - an EXACT `[]t.<method>` builtin entry (vec.push, []t.pop, ...) already
+//     routes correctly, so keep the qualified name;
+//   - otherwise, if the bare `<method>` is a vec/array-receiver builtin with a
+//     ForwardFunc, return it so codegen emits the builtin inline.
+func sliceMethodBuiltin(recvTypeName, method string) string {
+	if recvTypeName == "" || method == "" {
+		return ""
+	}
+	if !strings.HasPrefix(recvTypeName, "[]") && !strings.HasPrefix(recvTypeName, "[") {
+		return ""
+	}
+	if bm := builtin.FindBuiltinMethod("[]t." + method); bm != nil {
+		return ""
+	}
+	// NOTE: FindBuiltinMethod returns the FIRST entry with that method name,
+	// which for `len` is the str one (ForwardFunc str-len) — the vec entry
+	// (ForwardFunc vec-len) is registered later. A slice receiver must get the
+	// vec/array entry, so scan for the receiver kind explicitly.
+	for i := range builtin.BuiltinMethodList {
+		bm := &builtin.BuiltinMethodList[i]
+		if bm.MethodName != method || bm.ForwardFunc == "" {
+			continue
+		}
+		if bm.ReceiverType == builtin.ReceiverVec || bm.ReceiverType == builtin.ReceiverArr {
+			return method
+		}
+	}
+	return ""
 }
 
 func (l *lowerer) lowerCall(n *hir.Node) ValueID {

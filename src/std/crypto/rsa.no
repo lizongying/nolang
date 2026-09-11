@@ -179,6 +179,7 @@ rsa-bn-shl1 = (a []i64, an i64) (new-an i64) {
     carry != 0 -> {
         #{overflow=wrap}
         a[an] = carry
+        #{overflow=wrap}
         new-an = an + 1
     }
 }

@@ -656,6 +656,7 @@ tables.decode-headers = (data str) (names [128]str, values [128]str, count i64, 
                     lv-tmp[j] = lk-val[j]
                 }
                 values[count] = lv-tmp
+                #{overflow=wrap}
                 count = count + 1
                 pos = next
             }
@@ -702,6 +703,7 @@ tables.decode-headers = (data str) (names [128]str, values [128]str, count i64, 
                     vb-tmp[j] = value[j]
                 }
                 values[count] = vb-tmp
+                #{overflow=wrap}
                 count = count + 1
 
                 ; 加入動態表
@@ -748,6 +750,7 @@ tables.decode-headers = (data str) (names [128]str, values [128]str, count i64, 
                     vb-tmp[j] = value[j]
                 }
                 values[count] = vb-tmp
+                #{overflow=wrap}
                 count = count + 1
             }
 
@@ -791,6 +794,7 @@ tables.decode-headers = (data str) (names [128]str, values [128]str, count i64, 
                     vb-tmp[j] = value[j]
                 }
                 values[count] = vb-tmp
+                #{overflow=wrap}
                 count = count + 1
             }
 

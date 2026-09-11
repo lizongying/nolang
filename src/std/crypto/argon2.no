@@ -118,6 +118,7 @@ argon2-h-prime = (input []byte, out-len i64) (out []byte) {
                 #{overflow=wrap}
                 out[i] = v[i]
             }
+            #{overflow=wrap}
             remaining = out-len - 32
             pos = 32
             {
@@ -127,7 +128,9 @@ argon2-h-prime = (input []byte, out-len i64) (out []byte) {
                     #{overflow=wrap}
                     out[pos + i] = v[i]
                 }
+                #{overflow=wrap}
                 pos = pos + 32
+                #{overflow=wrap}
                 remaining = remaining - 32
             } (remaining > 64)
 

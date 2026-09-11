@@ -126,6 +126,7 @@ varint-decode = (buf []byte, pos i64) (val i64, next-pos i64) {
         prefix == 0 -> {
             #{overflow=wrap}
             val = first & 63
+            #{overflow=wrap}
             next-pos = pos + 1
         }
 
@@ -133,6 +134,7 @@ varint-decode = (buf []byte, pos i64) (val i64, next-pos i64) {
             #{overflow=wrap}
             pos + 1 >= buf.len() -> return
             val = ((first & 63) << 8) | (buf[pos + 1])
+            #{overflow=wrap}
             next-pos = pos + 2
         }
 
@@ -143,6 +145,7 @@ varint-decode = (buf []byte, pos i64) (val i64, next-pos i64) {
             val = val | ((buf[pos + 1]) << 16)
             val = val | ((buf[pos + 2]) << 8)
             val = val | (buf[pos + 3])
+            #{overflow=wrap}
             next-pos = pos + 4
         }
 
@@ -157,6 +160,7 @@ varint-decode = (buf []byte, pos i64) (val i64, next-pos i64) {
             val = val | ((buf[pos + 5]) << 16)
             val = val | ((buf[pos + 6]) << 8)
             val = val | (buf[pos + 7])
+            #{overflow=wrap}
             next-pos = pos + 8
         }
     }
@@ -262,8 +266,10 @@ parse-frames = (buf []byte, pos i64, end i64) (frames [32]frame, count i64) {
                 count = -1
                 return
             }
+            #{overflow=wrap}
             pos = rl-np + rl-val
             frames[count].length = 0
+            #{overflow=wrap}
             count = count + 1
         }
 
@@ -286,8 +292,10 @@ parse-frames = (buf []byte, pos i64, end i64) (frames [32]frame, count i64) {
                 count = -1
                 return
             }
+            #{overflow=wrap}
             pos = rl-np + rl-val
             frames[count].length = 0
+            #{overflow=wrap}
             count = count + 1
         }
 
@@ -296,6 +304,7 @@ parse-frames = (buf []byte, pos i64, end i64) (frames [32]frame, count i64) {
 
             #{overflow=wrap}
             frames[count].length = 0
+            #{overflow=wrap}
             count = count + 1
         }
 
@@ -310,8 +319,10 @@ parse-frames = (buf []byte, pos i64, end i64) (frames [32]frame, count i64) {
                 count = -1
                 return
             }
+            #{overflow=wrap}
             pos = tl-np + tl-val
             frames[count].length = 0
+            #{overflow=wrap}
             count = count + 1
         }
 
@@ -328,6 +339,7 @@ parse-frames = (buf []byte, pos i64, end i64) (frames [32]frame, count i64) {
             }
             pos = mv-np
             frames[count].length = 0
+            #{overflow=wrap}
             count = count + 1
         }
     }

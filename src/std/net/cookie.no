@@ -430,6 +430,7 @@ jar.parse-response = (set-cookie-str str, domain str, path str) {
     c.path.len-bytes() == 0 -> {
         #{overflow=wrap}
         slash-pos = -1
+        #{overflow=wrap}
         i = path.len-bytes() - 1
         {
             #{overflow=wrap}
@@ -437,6 +438,7 @@ jar.parse-response = (set-cookie-str str, domain str, path str) {
                 slash-pos = i
                 break
             }
+            #{overflow=wrap}
             i = i - 1
         } (i >= 0)
         {

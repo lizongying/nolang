@@ -4213,6 +4213,7 @@ https-serve-once = (listen-fd fd, status i64, body str) (ok bool) {
             cr = number.char-to-str(13)
             lf = number.char-to-str(10)
             crlf = cr - lf
+            #{overflow=wrap}
             separator = crlf - crlf
 
             sep-found = false
@@ -4227,6 +4228,7 @@ https-serve-once = (listen-fd fd, status i64, body str) (ok bool) {
                     #{overflow=wrap}
                     recv-buf[recv-len + i] = tmp[i]
                 }
+                #{overflow=wrap}
                 recv-len = recv-len + rn
 
                 data = recv-buf.slice(0, recv-len)

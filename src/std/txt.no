@@ -47,6 +47,7 @@ txt.eq = (b txt) (eq bool) {
             #{overflow=wrap}
             ok = 1
             k = 0
+            #{overflow=wrap}
             c = .byte(k) - b.byte(k); c != 0 -> ok = 0; k == an - 1 -> ok == 0 -> eq = false; k = k + 1 } (k < an)
         }
     }
@@ -512,6 +513,7 @@ txt.repeat = (times i64) (val txt) {
             pos < cap -> {
                 #{overflow=wrap}
                 val[pos] = .byte(j)
+                #{overflow=wrap}
                 pos = pos + 1
             }
         }
@@ -1118,6 +1120,7 @@ txt.replace-str = (old txt, new txt) (val txt) {
                 val[pos] = .byte(i)
                 pos = pos + 1
             }
+            #{overflow=wrap}
             i = i + 1
         }
     } (i < n)
@@ -1259,6 +1262,7 @@ txt-join = (parts []txt, sep txt) (out txt) {
                 pos < cap -> {
                     #{overflow=wrap}
                     out[pos] = sep.byte(sj)
+                    #{overflow=wrap}
                     pos = pos + 1
                 }
             }
@@ -1269,6 +1273,7 @@ txt-join = (parts []txt, sep txt) (out txt) {
             pos < cap -> {
                 #{overflow=wrap}
                 out[pos] = s.byte(sj)
+                #{overflow=wrap}
                 pos = pos + 1
             }
         }

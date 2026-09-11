@@ -39,6 +39,7 @@ from-i64 = (v i64) (out bigint) {
         v < 0 -> {
             #{overflow=wrap}
             out.sign = -1
+            #{overflow=wrap}
             v = 0 - v
         }
 
@@ -733,6 +734,7 @@ from-str = (s str) (out bigint) {
             out.sign = -1
             pos = pos + 1
         }
+        #{overflow=wrap}
         s[pos] == 43 -> pos = pos + 1
     }
     {
@@ -743,6 +745,7 @@ from-str = (s str) (out bigint) {
                 mul-i64(out, 10, tmp-bigint)
                 out = tmp-bigint
                 out = out.add-i64(c - 48)
+                #{overflow=wrap}
                 pos = pos + 1
             }
 

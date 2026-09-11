@@ -461,6 +461,7 @@ lzma-decoder.decode = (data []byte, start-pos i64, unpacked-size i64) {
 
                     ; 複製匹配資料
                     ; length + LZMA-MIN-MATCH 個字節
+                    #{overflow=wrap}
                     actual-len = length + LZMA-MIN-MATCH
                     i <- [0..actual-len): {
                         #{overflow=wrap}
@@ -492,6 +493,7 @@ lzma-decoder.decode = (data []byte, start-pos i64, unpacked-size i64) {
                             ; 短重複（1 字節）
                             #{overflow=wrap}
                             .update-state-shortrep()
+                            #{overflow=wrap}
                             src-pos = .out.len() - .rep0 - 1
                             src-pos >= 0 -> {
                                 b = .out[src-pos]

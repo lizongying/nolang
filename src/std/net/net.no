@@ -1160,6 +1160,7 @@ split-ws = (s str) (out []str) {
                 #{overflow=wrap}
                 c = s[i]
                 c == 32 || c == 9 -> *
+                #{overflow=wrap}
                 i = i + 1
             }
         } (i < n && s[i] != 32 && s[i] != 9)

@@ -72,6 +72,7 @@ encode-header = (name str, value str) (buf []byte, n i64) {
 
     ; 字面標頭前綴: 0010 0000（不使用靜態表參考，名稱為字面值）
     buf[pos] = QPACK-LITERAL-PREFIX
+    #{overflow=wrap}
     pos = pos + 1
 
     ; 名稱長度（varint，高位=0 表示 Huffman 關閉）
@@ -79,6 +80,7 @@ encode-header = (name str, value str) (buf []byte, n i64) {
         name-bytes.len() < 64 -> {
             #{overflow=wrap}
             buf[pos] = name-bytes.len() & 255
+            #{overflow=wrap}
             pos = pos + 1
         }
 
@@ -87,6 +89,7 @@ encode-header = (name str, value str) (buf []byte, n i64) {
             #{overflow=wrap}
             buf[pos] = 0x40 | ((name-bytes.len() >> 8) & 255)
             buf[pos + 1] = name-bytes.len() & 255
+            #{overflow=wrap}
             pos = pos + 2
         }
     }
@@ -96,6 +99,7 @@ encode-header = (name str, value str) (buf []byte, n i64) {
         #{overflow=wrap}
         buf[pos + i] = name-bytes[i]
     }
+    #{overflow=wrap}
     pos = pos + name-bytes.len()
 
     ; 值長度
@@ -103,6 +107,7 @@ encode-header = (name str, value str) (buf []byte, n i64) {
         value-bytes.len() < 64 -> {
             #{overflow=wrap}
             buf[pos] = value-bytes.len() & 255
+            #{overflow=wrap}
             pos = pos + 1
         }
 
@@ -110,6 +115,7 @@ encode-header = (name str, value str) (buf []byte, n i64) {
             #{overflow=wrap}
             buf[pos] = 0x40 | ((value-bytes.len() >> 8) & 255)
             buf[pos + 1] = value-bytes.len() & 255
+            #{overflow=wrap}
             pos = pos + 2
         }
     }
@@ -119,6 +125,7 @@ encode-header = (name str, value str) (buf []byte, n i64) {
         #{overflow=wrap}
         buf[pos + i] = value-bytes[i]
     }
+    #{overflow=wrap}
     pos = pos + value-bytes.len()
 
     n = pos
@@ -147,6 +154,7 @@ encode-headers = (names [16]str, values [16]str, count i64) (buf []byte, n i64) 
             #{overflow=wrap}
             buf[pos + j] = hdr-buf[j]
         }
+        #{overflow=wrap}
         pos = pos + hdr-n
     }
     n = pos
@@ -163,6 +171,7 @@ decode-header = (buf []byte, pos i64) (name str, value str, next-pos i64) {
     next-pos = -1
     pos >= buf.len() -> return
     prefix = buf[pos]
+    #{overflow=wrap}
     pos = pos + 1
 
     ; 檢查是否為字面標頭（001x xxxx）
@@ -174,21 +183,25 @@ decode-header = (buf []byte, pos i64) (name str, value str, next-pos i64) {
 
     ; 名稱長度
     name-len = buf[pos] & 63
+    #{overflow=wrap}
     pos = pos + 1
     pos + name-len > buf.len() -> return
 
     ; 讀取名稱
     name = buf[pos..pos + name-len].to-str()
+    #{overflow=wrap}
     pos = pos + name-len
 
     ; 值長度
     pos >= buf.len() -> return
     value-len = buf[pos] & 63
+    #{overflow=wrap}
     pos = pos + 1
     pos + value-len > buf.len() -> return
 
     ; 讀取值
     value = buf[pos..pos + value-len].to-str()
+    #{overflow=wrap}
     pos = pos + value-len
 
     next-pos = pos
@@ -215,6 +228,7 @@ encode-frame = (frame-type i64, payload []byte) (buf []byte, n i64) {
         #{overflow=wrap}
         buf[pos + i] = ft-buf[i]
     }
+    #{overflow=wrap}
     pos = pos + ft-n
 
     ; 影格長度（varint）
@@ -225,6 +239,7 @@ encode-frame = (frame-type i64, payload []byte) (buf []byte, n i64) {
         #{overflow=wrap}
         buf[pos + i] = len-buf[i]
     }
+    #{overflow=wrap}
     pos = pos + len-n
 
     ; 影格資料
@@ -232,6 +247,7 @@ encode-frame = (frame-type i64, payload []byte) (buf []byte, n i64) {
         #{overflow=wrap}
         buf[pos + i] = payload[i]
     }
+    #{overflow=wrap}
     pos = pos + payload.len()
 
     n = pos
@@ -303,6 +319,7 @@ parse-frame = (buf []byte, pos i64) (frame-type i64, payload []byte, next-pos i6
         #{overflow=wrap}
         payload[i] = buf[pos + i]
     }
+    #{overflow=wrap}
     next-pos = pos + len-val
 }
 
@@ -376,6 +393,7 @@ parse-url = (url str) (host str, port i64, path str, ok bool) {
             #{overflow=wrap}
             c = port-str[i]
             c < 48 || c > 57 -> return
+            #{overflow=wrap}
             p = p * 10 + c - 48
         }
         port = p

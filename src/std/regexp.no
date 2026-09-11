@@ -380,6 +380,7 @@ regexp.parse-atom = (pattern str, i i64) (new-i i64) {
     c == 46 -> {
         #{overflow=wrap}
         .tmp-atom-type = RE-OP-ANY
+        #{overflow=wrap}
         result-i = i + 1
     }
 
@@ -399,6 +400,7 @@ regexp.parse-atom = (pattern str, i i64) (new-i i64) {
         #{overflow=wrap}
         .tmp-atom-type = RE-OP-CHAR
         .tmp-atom-char = c
+        #{overflow=wrap}
         result-i = i + 1
     }
     new-i = result-i

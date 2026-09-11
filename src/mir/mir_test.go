@@ -147,7 +147,7 @@ main = () () {
 		t.Fatal("ASTToHIR returned nil")
 	}
 
-	mod, rep, diags := LowerHIR(pkg, nil, nil)
+	mod, rep, diags := LowerHIR(pkg, nil)
 	if mod == nil {
 		t.Fatal("LowerHIR returned nil module")
 	}
@@ -188,7 +188,7 @@ func TestLowerHIRControlFlow(t *testing.T) {
 		t.Fatalf("parse errors: %v", errs)
 	}
 	pkg := parser.ASTToHIR(prog)
-	mod, rep, diags := LowerHIR(pkg, nil, nil)
+	mod, rep, diags := LowerHIR(pkg, nil)
 	if errs := mod.Validate(); len(errs) != 0 {
 		t.Fatalf("lowered MIR failed validation: %v", errs)
 	}

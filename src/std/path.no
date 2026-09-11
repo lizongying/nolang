@@ -94,6 +94,7 @@ path.join = (b str) {
     need-sep == 1 -> {
         #{overflow=wrap}
         .p[out-n] = SEP
+        #{overflow=wrap}
         out-n = out-n + 1
     }
 
@@ -251,6 +252,7 @@ path.clean = () {
                         {
                             #{overflow=wrap}
                             .p[j] == SEP -> break
+                            #{overflow=wrap}
                             j = j - 1
                         } (j >= 0)
                         {
@@ -266,6 +268,7 @@ path.clean = () {
                         prev != SEP -> {
                             #{overflow=wrap}
                             .p[out-n] = SEP
+                            #{overflow=wrap}
                             out-n = out-n + 1
                         }
                     }
@@ -273,6 +276,7 @@ path.clean = () {
                     -> {
                         #{overflow=wrap}
                         .p[out-n] = SEP
+                        #{overflow=wrap}
                         out-n = out-n + 1
                     }
                 }
@@ -289,12 +293,14 @@ path.clean = () {
                 j <- [0..dot-count): {
                     #{overflow=wrap}
                     .p[out-n] = DOT
+                    #{overflow=wrap}
                     out-n = out-n + 1
                 }
 
                 #{overflow=wrap}
                 dot-count = 0
                 .p[out-n] = c
+                #{overflow=wrap}
                 out-n = out-n + 1
             }
         }
@@ -310,6 +316,7 @@ path.clean = () {
             {
                 #{overflow=wrap}
                 .p[j] == SEP -> break
+                #{overflow=wrap}
                 j = j - 1
             } (j >= 0)
             {
@@ -324,6 +331,7 @@ path.clean = () {
     out-n > 1 -> {
         #{overflow=wrap}
         prev = .p[out-n - 1]
+        #{overflow=wrap}
         prev == SEP -> out-n = out-n - 1
     }
     .p.len = out-n

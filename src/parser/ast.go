@@ -477,6 +477,8 @@ type MultiAssignStatement struct {
 	Token   lexer.Token  // the ASSIGN token
 	Targets []Expression // left-side targets: Identifier or IndexExpression
 	Value   Expression
+	// OverflowMode 攜帶 #{overflow = wrap|clamp0|...} 行注解指定的溢出處理模式（見 LetStatement）。
+	OverflowMode string
 	CommentedNode
 }
 
@@ -559,6 +561,11 @@ type LetStatement struct {
 	// it as a type mismatch. This is a checker-only hint: codegen ignores it
 	// (unlike IsSynthetic, which changes ownership/option-assign behaviour).
 	IsPropagation bool
+	// OverflowMode 攜帶 #{overflow = wrap|clamp0|...} 行注解指定的溢出處理模式；
+	// "" 表示未標註（預設回傳 option<int>）。由 applyLineOverflowAnnotations 在
+	// 解析期填入，使本檢查（checker.stmtOverflowAnnotated）與 HIR 重建都能還原模式，
+	// 不依賴語意 side-table（HIR 模式下 g.sem 為 nil）。
+	OverflowMode string
 	CommentedNode
 }
 
@@ -593,6 +600,8 @@ func (i *Identifier) EndPos() lexer.Position { return posFromToken(i.Token) }
 type ReturnStatement struct {
 	Token       lexer.Token
 	ReturnValue Expression
+	// OverflowMode 攜帶 #{overflow = wrap|clamp0|...} 行注解指定的溢出處理模式（見 LetStatement）。
+	OverflowMode string
 	CommentedNode
 }
 

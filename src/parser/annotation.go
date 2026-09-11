@@ -184,6 +184,21 @@ func (p *Parser) parseAnnotationStatement() Statement {
 // （ResolveProgram）收尾計算並存入 side-table。
 func (p *Parser) attachAnnotations(stmt Statement, entries []*AnnotationEntry) {
 	p.sem.SetRawAnnotations(stmt, entries)
+	// 同步將 #{overflow = wrap|clamp0} 攜帶到陳述節點的 OverflowMode 欄位（與
+	// applyLineOverflowAnnotations → setStmtOverflowMode 對「獨立 AnnotationStatement
+	// 下一條陳述」的處理一致）。原因：merged/lowered 路徑下各標準庫模組由不同 Parser
+	// 實例各自解析，註解只寫入「該次解析」的 p.sem side-table；而 ValidateUnhandledOverflow
+	// 走 program.Sem 遍歷合併後的 AST，二者常非同一語意實例，導致側表查不到（rawN=0）而
+	// 把已標註的整數運算誤報為未處理溢出。節點欄位不依賴 side-table，能在解析期直接隨
+	// AST 流轉，徹底消除這類「行注解已存在卻被誤報」的沉默假陽性；同時讓 HIR 重建後
+	// 仍能還原模式（g.sem 為 nil 時同樣適用）。formatter 讀取的是 side-table
+	// （attachedAnnotations），不讀此欄位，故不會重複印出 #{overflow=...}。
+	// 注意：前置註解附加到「緊鄰其後的陳述」，對 `cond -> body` 這類單條件陳述，附加對象
+	// 是外層 ExpressionStatement（包住 IfExpression），其臂體內整數運算靠本檢查的
+	// enclosingOverflow 由外層欄位向臂體傳遞，故不需逐條處理臂體。
+	if mode := p.overflowModeString(entries); mode != "" {
+		setStmtOverflowMode(stmt, mode)
+	}
 	// 同步將 #{overflow = wrap|clamp0} 攜帶到 FunctionDefinition 節點欄位，
 	// 使單態化複本能繼承（HIR 模式下 side-table 拷貝無效）。
 	if fd, ok := stmt.(*FunctionDefinition); ok {
@@ -443,6 +458,11 @@ func (p *Parser) overflowModeString(entries []*AnnotationEntry) string {
 // setStmtOverflowMode 將溢出模式寫入陳述節點的 OverflowMode 欄位（ForStatement / ExpressionStatement 需要），
 // 使 HIR 重建後仍能還原模式（不依賴語意 side-table）。HIR 模式下 g.sem 為 nil，
 // 若無此欄位，迴圈體 / if·match 臂體整數運算會退回預設 option 模式，產生 %option 後被 trunc 到窄型別而報錯。
+// 行注解的下一條陳述可能是任意型別（let 綁定 / return / 表達式陳述 / for），
+// 此處統一將溢出模式寫入其 OverflowMode 欄位，使 HIR 重建與本檢查
+// （checker.stmtOverflowAnnotated 會讀取該欄位）都能還原模式（不依賴語意 side-table）。
+// HIR 模式下 g.sem 為 nil，若無此欄位，相關整數運算會退回預設 option 模式，
+// 產生 %option 後被 trunc 到窄型別而報錯。
 func setStmtOverflowMode(s Statement, mode string) {
 	if mode == "" {
 		return
@@ -451,6 +471,12 @@ func setStmtOverflowMode(s Statement, mode string) {
 	case *ForStatement:
 		n.OverflowMode = mode
 	case *ExpressionStatement:
+		n.OverflowMode = mode
+	case *LetStatement:
+		n.OverflowMode = mode
+	case *ReturnStatement:
+		n.OverflowMode = mode
+	case *MultiAssignStatement:
 		n.OverflowMode = mode
 	}
 }

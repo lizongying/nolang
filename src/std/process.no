@@ -829,6 +829,7 @@ cmd = (program str, args []str, dir str, input str, env []str, timeout i64, merg
                 ; 已超時則跳出
                 elapsed >= timeout -> break
                 sleep-us(10000)
+                #{overflow=wrap}
                 elapsed = elapsed + 10
             } (true)
 

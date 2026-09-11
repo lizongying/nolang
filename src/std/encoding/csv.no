@@ -55,12 +55,14 @@ parse-field = (s str, pos i64) (field str, new-pos i64) {
                     }
 
                     ; 結束雙引號
+                    #{overflow=wrap}
                     pos = pos + 1
 
                     ; 跳過後續逗號
                     pos < s.len-bytes() -> {
                         #{overflow=wrap}
                         nc = s[pos]
+                        #{overflow=wrap}
                         nc == 44 -> pos = pos + 1
                     }
                     new-pos = pos
@@ -71,12 +73,16 @@ parse-field = (s str, pos i64) (field str, new-pos i64) {
                     ; 換行在引號內視為換行字元
                     #{overflow=wrap}
                     field[fn] = c
+                    #{overflow=wrap}
                     fn = fn + 1
+                    #{overflow=wrap}
                     pos = pos + 1
                     continue
                 }
                 field[fn] = c
+                #{overflow=wrap}
                 fn = fn + 1
+                #{overflow=wrap}
                 pos = pos + 1
             } (pos < s.len-bytes())
             new-pos = pos

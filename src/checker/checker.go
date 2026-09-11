@@ -3106,6 +3106,12 @@ func stmtOverflowAnnotated(sem *parser.SemanticContext, stmt parser.Statement) b
 		return s.OverflowMode != ""
 	case *parser.ExpressionStatement:
 		return s.OverflowMode != ""
+	case *parser.LetStatement:
+		return s.OverflowMode != ""
+	case *parser.ReturnStatement:
+		return s.OverflowMode != ""
+	case *parser.MultiAssignStatement:
+		return s.OverflowMode != ""
 	}
 	return false
 }
@@ -3187,30 +3193,44 @@ func ValidateUnhandledOverflow(program *parser.Program, mainFile string) []Valid
 	// 報告多次；同時防禦性過濾 walk 中可能的重複訪問）。
 	seen := map[string]bool{}
 
-	// 標準函式庫（語言自帶、已烘焙進二進位）豁免本檢查：標準庫內部大量依賴
-	// 預設 option 語意，若視為未處理會讓每個 no build / no run 編譯失敗。
-	// 使用者程式仍被完整檢查。
+	// 本檢查對使用者程式碼與標準函式庫（std）一體適用：merged/lowered 路徑下 std
+	// 的型別歸因已透過「節點欄位攜帶 OverflowMode + 解析期 side-table」修正為可靠，
+	// 故不再對 std 設豁免。std 自身的沉默泄漏已以 `#{overflow=wrap}` 逐站修復（見
+	// src/std 各模組），撤豁免後 no build / no run / no vet 對 std 與使用者碼同標準。
 	//
 	// curFile 追蹤「當前所处函式來源檔」，取值依序為：陳述自身的 SourceFile
 	// （模組合併後由 transpiler 填入）→ 外層傳入的 curFile → mainFile（目前
 	// 被編譯/檢查的主檔案）。三層回退不可少：單檔 vet / LSP 路徑下主程式自身
 	// 的陳述其 SourceFile 為空（見 ast.go CommentedNode 註解），若無 mainFile
-	// 回退，直接 vet std/str.no 之類的標準庫檔案就會誤報。
-	// NOLANG_OVF_NO_STD_EXEMPT=1 關閉標準庫豁免（審計模式）：用來統計標準庫
-	// 內究竟有多少處未被處理的溢出 option，供後續決定是否逐步收緊。預設關閉。
-	ovfStdExemptOff := os.Getenv("NOLANG_OVF_NO_STD_EXEMPT") != ""
-	isStdFile := func(f string) bool {
-		if f == "" || ovfStdExemptOff {
-			return false
+	// 回退，直接 vet std/str.no 之類的標準庫檔案就會漏報。
+	//
+	// 合併程式中同一份 std 原始檔可能因載入路徑不同而帶兩種 SourceFile 字串
+	// （如嵌入的絕對路徑 `/.../src/std/str.no` 與工作區磁碟的相對路徑
+	// `src/std/str.no`），導致同一處被重複計入。去重鍵對路徑做 filepath.Abs
+	// 正規化，使兩種形式歸併為同一處。
+
+	// canonPath 正規化 SourceFile 以便跨載入路徑去重（見上）。
+	canonPath := func(f string) string {
+		if f == "" {
+			return ""
 		}
-		norm := strings.ReplaceAll(f, "\\", "/")
-		// "std/..." 為合併後的模組相對路徑；"/std/" 覆蓋絕對路徑下位於
-		// std 目錄內的檔案（如 <repo>/src/std/str.no）。
-		return strings.HasPrefix(norm, "std/") || strings.Contains(norm, "/std/")
+		// 標準庫同一份原始檔可能因載入路徑不同而帶兩種 SourceFile 字串
+		// （嵌入的絕對路徑 /.../src/std/X.no 與工作區磁碟的 std/X.no /
+		// src/std/X.no 等），統一為「std/X.no」模組相對形式以便去重。
+		if i := strings.Index(f, "/std/"); i >= 0 {
+			return "std" + f[i+len("/std/"):]
+		}
+		if strings.HasPrefix(f, "std/") {
+			return f
+		}
+		if a, err := filepath.Abs(f); err == nil {
+			return a
+		}
+		return f
 	}
 
-	walkStmt := func(stmt parser.Statement, fnReturnsOption bool, varTypes map[string]string, selfType, curFile string) {}
-	var walkExpr func(e parser.Expression, fnReturnsOption bool, varTypes map[string]string, selfType, curFile string)
+	walkStmt := func(stmt parser.Statement, fnReturnsOption, enclosingOverflow bool, varTypes map[string]string, selfType, curFile string) {}
+	var walkExpr func(e parser.Expression, fnReturnsOption, enclosingOverflow bool, varTypes map[string]string, selfType, curFile string)
 
 	// seedVarTypes 由函式參數（含方法 self 接收者）建立區域型別對照表，
 	// 供 isDirectOverflowValue 判斷運算元是否為整數（排除 str - str 等字串拼接）。
@@ -3230,19 +3250,10 @@ func ValidateUnhandledOverflow(program *parser.Program, mainFile string) []Valid
 	}
 
 	report := func(stmt parser.Statement, msg string, curFile string) {
-		// 審計模式下只報告「主檔案自身」的陳述：合併進來的依賴語句會在那些依賴
-		// 自己被 vet 時各報一次，否則同一處被重複計入 N 次（實測逐檔求和會從
-		// ~2k 膨脹到 ~10k）；且 merged/lowered 上下文中依賴語句的位置歸因不可靠
-		// （實測回報位置指向 return／空行），只報主檔案可得到可信的統計。
-		if ovfStdExemptOff && curFile != mainFile {
-			return
-		}
-		if isStdFile(curFile) {
-			return
-		}
-		// key 必須含 curFile：合併後的 program 彙集了多個模組的陳述，不同檔案
-		// 完全可能出現相同的 (line, col)，若不含檔案會互相吃掉而漏報。
-		key := fmt.Sprintf("%s|%d:%d:%s", curFile, stmt.Pos().Line, stmt.Pos().Column, msg)
+		// key 必須含 curFile（正規化後）：合併後的 program 彙集了多個模組的陳述，
+		// 不同檔案完全可能出現相同的 (line, col)，若不含檔案會互相吃掉而漏報；
+		// 正規化則使同一檔案的絕對/相對兩種 SourceFile 歸併為同一處。
+		key := fmt.Sprintf("%s|%d:%d:%s", canonPath(curFile), stmt.Pos().Line, stmt.Pos().Column, msg)
 		if seen[key] {
 			return
 		}
@@ -3255,35 +3266,42 @@ func ValidateUnhandledOverflow(program *parser.Program, mainFile string) []Valid
 		})
 	}
 
-	walkExpr = func(e parser.Expression, fnReturnsOption bool, varTypes map[string]string, selfType, curFile string) {
+	walkExpr = func(e parser.Expression, fnReturnsOption, enclosingOverflow bool, varTypes map[string]string, selfType, curFile string) {
 		if e == nil {
 			return
 		}
 		switch x := e.(type) {
 		case *parser.IfExpression:
-			// 條件 if / match 解構：遞迴其分支體（作為獨立陳述各自受註解作用域約束），
-			// 不把分支內的溢出運算當成「外層陳述的結果」。
+			// 條件 if / match 解構：遞迴其分支體。enclosingOverflow 透過本參數向臂體
+			// 內陳述傳遞——若外層陳述已被 #{overflow=...} 註解，臂體內的整數運算
+			// 一併視為已處理（否則 `cond -> body` 臂體內的 `cp = cp + 1` 會被孤立上報）。
 			if x.Consequence != nil {
 				for _, b := range x.Consequence.Statements {
-					walkStmt(b, fnReturnsOption, varTypes, selfType, curFile)
+					walkStmt(b, fnReturnsOption, enclosingOverflow, varTypes, selfType, curFile)
 				}
 			}
 			if x.Alternative != nil {
 				for _, b := range x.Alternative.Statements {
-					walkStmt(b, fnReturnsOption, varTypes, selfType, curFile)
+					walkStmt(b, fnReturnsOption, enclosingOverflow, varTypes, selfType, curFile)
 				}
 			}
 		case *parser.GroupedExpression:
-			walkExpr(x.Expression, fnReturnsOption, varTypes, selfType, curFile)
+			walkExpr(x.Expression, fnReturnsOption, enclosingOverflow, varTypes, selfType, curFile)
 		case *parser.PrefixExpression:
-			walkExpr(x.Right, fnReturnsOption, varTypes, selfType, curFile)
+			walkExpr(x.Right, fnReturnsOption, enclosingOverflow, varTypes, selfType, curFile)
 		}
 	}
 
-	walkStmt = func(stmt parser.Statement, fnReturnsOption bool, varTypes map[string]string, selfType, curFile string) {
+	walkStmt = func(stmt parser.Statement, fnReturnsOption, enclosingOverflow bool, varTypes map[string]string, selfType, curFile string) {
 		if stmt == nil {
 			return
 		}
+		// 若本陳述自身已被 #{overflow=...} 註解，或其外層陳述（如緊鄰前置註解的
+		// `cond -> body` 條件陳述）已被註解，則其整棵子樹（含 if/match 臂體、迴圈
+		// 體內的整數運算）視同已處理，不再逐條陳述上報「未處理溢出」。這讓「行注解
+		// 只作用下一條陳述」的語意正確涵蓋 `cond -> body` 這類單條件陳述內的整數
+		// 運算，也使 275 個既有行注解能真正作用於其分支體內的溢出处。
+		effOverflow := enclosingOverflow || stmtOverflowAnnotated(sem, stmt)
 		switch s := stmt.(type) {
 		case *parser.FunctionDefinition:
 			fnOpt := false
@@ -3299,13 +3317,15 @@ func ValidateUnhandledOverflow(program *parser.Program, mainFile string) []Valid
 			if cf == "" {
 				cf = mainFile
 			}
-			vt, st := seedVarTypes(s.Parameters, s.IsMethodDef)
-			if s.Body != nil {
-				for _, b := range s.Body.Statements {
-					walkStmt(b, fnOpt, vt, st, cf)
-				}
+		vt, st := seedVarTypes(s.Parameters, s.IsMethodDef)
+		if s.Body != nil {
+			// 函式體是獨立作用域，只受其自身註解約束；不繼承外層 enclosingOverflow，
+			// 以免外層註解靜默掩蓋巢狀函式體內的真實泄漏。
+			for _, b := range s.Body.Statements {
+				walkStmt(b, fnOpt, false, vt, st, cf)
 			}
-			return
+		}
+		return
 		case *parser.LetStatement:
 			// `name = (...) (...) {}` 方法定義：遞迴其函式體，自身非運算綁定。
 			if fl, ok := s.Value.(*parser.FunctionLiteral); ok {
@@ -3322,13 +3342,13 @@ func ValidateUnhandledOverflow(program *parser.Program, mainFile string) []Valid
 				if cf == "" {
 					cf = mainFile
 				}
-				vt, st := seedVarTypes(fl.Parameters, false)
-				if fl.Body != nil {
-					for _, b := range fl.Body.Statements {
-						walkStmt(b, fnOpt, vt, st, cf)
-					}
+			vt, st := seedVarTypes(fl.Parameters, false)
+			if fl.Body != nil {
+				for _, b := range fl.Body.Statements {
+					walkStmt(b, fnOpt, false, vt, st, cf)
 				}
-				return
+			}
+			return
 			}
 			// 具型別標註的綁定就地登記進 varTypes（順序語句共享同一 map），使後續
 			// 語句能據此判斷運算元型別（如 r str = ... 之後的 r - seg 才會被排除
@@ -3338,72 +3358,72 @@ func ValidateUnhandledOverflow(program *parser.Program, mainFile string) []Valid
 			}
 			// 普通 `=`：未被註解處理且 LHS 未顯式宣告 ?T，且其結果本質是未標註溢出
 			// 運算 → 沉默泄漏。函式回傳 ?T 時，區域 option 中間值是合約內預期行為 → 不報。
-			if !fnReturnsOption && !stmtOverflowAnnotated(sem, s) {
-				declaredOption := s.Type != nil && strings.HasPrefix(s.Type.String(), "?")
-				if !declaredOption && isDirectOverflowValue(s.Value, varTypes, selfType) {
-					report(s, "整数运算 `a OP b` 默认在溢出时返回 option<int>（永不 panic）。此 option 未被处理：请加 `#{overflow = wrap}` 注解回普通 int，或用 `?=` 上抛（如 `x ?= a + b`），或显式声明为 option 类型（如 `x ?i64 = a + b`）。", curFile)
-				}
+		if !fnReturnsOption && !effOverflow {
+			declaredOption := s.Type != nil && strings.HasPrefix(s.Type.String(), "?")
+			if !declaredOption && isDirectOverflowValue(s.Value, varTypes, selfType) {
+				report(s, "整数运算 `a OP b` 默认在溢出时返回 option<int>（永不 panic）。此 option 未被处理：请加 `#{overflow = wrap}` 注解回普通 int，或用 `?=` 上抛（如 `x ?= a + b`），或显式声明为 option 类型（如 `x ?i64 = a + b`）。", curFile)
 			}
-			if s.Value != nil {
-				walkExpr(s.Value, fnReturnsOption, varTypes, selfType, curFile)
+		}
+		if s.Value != nil {
+			walkExpr(s.Value, fnReturnsOption, effOverflow, varTypes, selfType, curFile)
+		}
+	case *parser.ReturnStatement:
+		if !effOverflow {
+			// 函式回傳 ?T 時，回傳 option 是合約內預期行為 → 不報。
+			if isDirectOverflowValue(s.ReturnValue, varTypes, selfType) && !fnReturnsOption {
+				report(s, "返回的整数运算默认返回 option<int>，但本函数不返回 option 类型。请加 `#{overflow = wrap}` 注解回普通 int，或让函数返回 ?T 并用 `result ?= expr` 上抛。", curFile)
 			}
-		case *parser.ReturnStatement:
-			if !stmtOverflowAnnotated(sem, s) {
-				// 函式回傳 ?T 時，回傳 option 是合約內預期行為 → 不報。
-				if isDirectOverflowValue(s.ReturnValue, varTypes, selfType) && !fnReturnsOption {
-					report(s, "返回的整数运算默认返回 option<int>，但本函数不返回 option 类型。请加 `#{overflow = wrap}` 注解回普通 int，或让函数返回 ?T 并用 `result ?= expr` 上抛。", curFile)
-				}
+		}
+		if s.ReturnValue != nil {
+			walkExpr(s.ReturnValue, fnReturnsOption, effOverflow, varTypes, selfType, curFile)
+		}
+	case *parser.ExpressionStatement:
+		if !fnReturnsOption && !effOverflow {
+			if isDirectOverflowValue(s.Expression, varTypes, selfType) {
+				report(s, "整数运算结果默认是 option<int>，作为表达式语句被丢弃（未处理）。请加 `#{overflow = wrap}` 注解回普通 int，或用 `?=` 上抛。", curFile)
 			}
-			if s.ReturnValue != nil {
-				walkExpr(s.ReturnValue, fnReturnsOption, varTypes, selfType, curFile)
+		}
+		if s.Expression != nil {
+			walkExpr(s.Expression, fnReturnsOption, effOverflow, varTypes, selfType, curFile)
+		}
+	case *parser.UnwrapAssignStatement:
+		// `?=` 上拋：已處理，跳過；但仍遞迴其體內巢狀陳述。
+		if s.Value != nil {
+			walkExpr(s.Value, fnReturnsOption, effOverflow, varTypes, selfType, curFile)
+		}
+	case *parser.ForStatement:
+		// for 的 init 可能綁定迴圈變數（如 i i64 = 0），登記後續可據此判斷型別。
+		if s.Init != nil {
+			if ls, ok := s.Init.(*parser.LetStatement); ok && ls.Type != nil && ls.Name != nil {
+				varTypes[ls.Name.Value] = ls.Type.String()
 			}
-		case *parser.ExpressionStatement:
-			if !fnReturnsOption && !stmtOverflowAnnotated(sem, s) {
-				if isDirectOverflowValue(s.Expression, varTypes, selfType) {
-					report(s, "整数运算结果默认是 option<int>，作为表达式语句被丢弃（未处理）。请加 `#{overflow = wrap}` 注解回普通 int，或用 `?=` 上抛。", curFile)
-				}
+			walkStmt(s.Init, fnReturnsOption, effOverflow, varTypes, selfType, curFile)
+		}
+		if s.Condition != nil {
+			walkExpr(s.Condition, fnReturnsOption, effOverflow, varTypes, selfType, curFile)
+		}
+		if s.Update != nil {
+			walkStmt(s.Update, fnReturnsOption, effOverflow, varTypes, selfType, curFile)
+		}
+		if s.Body != nil {
+			for _, b := range s.Body.Statements {
+				walkStmt(b, fnReturnsOption, effOverflow, varTypes, selfType, curFile)
 			}
-			if s.Expression != nil {
-				walkExpr(s.Expression, fnReturnsOption, varTypes, selfType, curFile)
-			}
-		case *parser.UnwrapAssignStatement:
-			// `?=` 上拋：已處理，跳過；但仍遞迴其體內巢狀陳述。
-			if s.Value != nil {
-				walkExpr(s.Value, fnReturnsOption, varTypes, selfType, curFile)
-			}
-		case *parser.ForStatement:
-			// for 的 init 可能綁定迴圈變數（如 i i64 = 0），登記後續可據此判斷型別。
-			if s.Init != nil {
-				if ls, ok := s.Init.(*parser.LetStatement); ok && ls.Type != nil && ls.Name != nil {
-					varTypes[ls.Name.Value] = ls.Type.String()
-				}
-				walkStmt(s.Init, fnReturnsOption, varTypes, selfType, curFile)
-			}
-			if s.Condition != nil {
-				walkExpr(s.Condition, fnReturnsOption, varTypes, selfType, curFile)
-			}
-			if s.Update != nil {
-				walkStmt(s.Update, fnReturnsOption, varTypes, selfType, curFile)
-			}
-			if s.Body != nil {
-				for _, b := range s.Body.Statements {
-					walkStmt(b, fnReturnsOption, varTypes, selfType, curFile)
-				}
-			}
-		case *parser.BlockStatement:
-			for _, b := range s.Statements {
-				walkStmt(b, fnReturnsOption, varTypes, selfType, curFile)
-			}
-		case *parser.MultiAssignStatement:
-			// a, b = f()：名稱型別由呼叫回傳值決定，難靜態得知，僅遞迴 RHS。
-			if s.Value != nil {
-				walkExpr(s.Value, fnReturnsOption, varTypes, selfType, curFile)
-			}
+		}
+	case *parser.BlockStatement:
+		for _, b := range s.Statements {
+			walkStmt(b, fnReturnsOption, effOverflow, varTypes, selfType, curFile)
+		}
+	case *parser.MultiAssignStatement:
+		// a, b = f()：名稱型別由呼叫回傳值決定，難靜態得知，僅遞迴 RHS。
+		if s.Value != nil {
+			walkExpr(s.Value, fnReturnsOption, effOverflow, varTypes, selfType, curFile)
+		}
 		}
 	}
 
 	for _, stmt := range program.Statements {
-		walkStmt(stmt, false, map[string]string{}, "", mainFile)
+		walkStmt(stmt, false, false, map[string]string{}, "", mainFile)
 	}
 	return results
 }

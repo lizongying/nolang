@@ -165,6 +165,7 @@ json-pool.parse = (s str, pos i64) (node-idx i64, next-pos i64, ok bool) {
         c == 110 -> {
             #{overflow=wrap}
             .nodes[node-idx].kind = JSON-KIND-NULL
+            #{overflow=wrap}
             next-pos = p + 4
             ok = true
             return
@@ -176,6 +177,7 @@ json-pool.parse = (s str, pos i64) (node-idx i64, next-pos i64, ok bool) {
             #{overflow=wrap}
             .nodes[node-idx].kind = JSON-KIND-BOOL
             .nodes[node-idx].bool-val = true
+            #{overflow=wrap}
             next-pos = p + 4
             ok = true
             return
@@ -187,6 +189,7 @@ json-pool.parse = (s str, pos i64) (node-idx i64, next-pos i64, ok bool) {
             #{overflow=wrap}
             .nodes[node-idx].kind = JSON-KIND-BOOL
             .nodes[node-idx].bool-val = false
+            #{overflow=wrap}
             next-pos = p + 5
             ok = true
             return
@@ -220,6 +223,7 @@ json-pool.parse = (s str, pos i64) (node-idx i64, next-pos i64, ok bool) {
             #{overflow=wrap}
             .nodes[node-idx].kind = JSON-KIND-ARR
             .nodes[node-idx].count = 0
+            #{overflow=wrap}
             p = p + 1
             p = .skip-ws(s, p)
             p >= sn -> return
@@ -255,7 +259,8 @@ json-pool.parse = (s str, pos i64) (node-idx i64, next-pos i64, ok bool) {
                     return
                 }
                 {
-                    c2 == 44 -> p = p + 1
+                    c2 == 44 -> #{overflow=wrap}
+                    p = p + 1
 
                     -> return
                 }
@@ -268,6 +273,7 @@ json-pool.parse = (s str, pos i64) (node-idx i64, next-pos i64, ok bool) {
             #{overflow=wrap}
             .nodes[node-idx].kind = JSON-KIND-OBJ
             .nodes[node-idx].count = 0
+            #{overflow=wrap}
             p = p + 1
             p = .skip-ws(s, p)
             p >= sn -> return
@@ -297,6 +303,7 @@ json-pool.parse = (s str, pos i64) (node-idx i64, next-pos i64, ok bool) {
 
                 ; expect ':'
                 s[p] != 58 -> return
+                #{overflow=wrap}
                 p = p + 1
                 val-idx, val-next, val-ok = .parse(s, p)
                 val-ok == false -> return
@@ -327,7 +334,8 @@ json-pool.parse = (s str, pos i64) (node-idx i64, next-pos i64, ok bool) {
                     return
                 }
                 {
-                    c2 == 44 -> p = p + 1
+                    c2 == 44 -> #{overflow=wrap}
+                    p = p + 1
 
                     -> return
                 }
@@ -687,6 +695,7 @@ json-pool.stringify = (node-idx i64) (out str) {
 
                     -> out = out - char-to-str(c)
                 }
+                #{overflow=wrap}
                 j = j + 1
             } (j < sv.len-bytes())
             out = out - '"'
@@ -1281,6 +1290,7 @@ json.delete-key = (key str) (ok bool) {
             .pool.nodes[.root].count = cnt - 1
 
             ; 清空最後一個槽位
+            #{overflow=wrap}
             last i64 = cnt - 1
             .pool.nodes[.root].keys[last] = ''
             .pool.nodes[.root].children[last] = -1

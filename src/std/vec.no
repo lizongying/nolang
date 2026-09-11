@@ -214,6 +214,7 @@ vec-clear = () {
             ; 先在末尾增長一格作為佔位（內聯 push）
             #{overflow=wrap}
             last = .len()
+            #{overflow=wrap}
             last = last - 1
             cur = .len()
             .len = cur + 1
@@ -221,10 +222,12 @@ vec-clear = () {
 
             ; 從末尾向前平移元素到 i+1
             k = .len()
+            #{overflow=wrap}
             k = k - 2
             {
                 #{overflow=wrap}
                 .[k + 1] = .[k]
+                #{overflow=wrap}
                 k = k - 1
             } (k >= i)
             .[i] = val
@@ -434,6 +437,7 @@ vec-reverse = (a i64) {
             #{overflow=wrap}
             out = '['
             last = .len()
+            #{overflow=wrap}
             last = last - 1
             i <- [0...len()): {
                 #{overflow=wrap}

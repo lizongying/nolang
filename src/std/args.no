@@ -88,7 +88,9 @@ get-option = (key str, keyn i64, val str) (ok bool) {
                     c = arg[k]
                     c == 0 -> break
                     val[vn] = c
+                    #{overflow=wrap}
                     vn = vn + 1
+                    #{overflow=wrap}
                     k = k + 1
                 } (true)
                 ok = true

@@ -371,13 +371,16 @@ inflate-decompress = (data []byte, out-size i64) (out []byte) {
                         code = sym - 257
                         length = length-base[code]
                         extra = length-extra[code]
+                        #{overflow=wrap}
                         extra > 0 -> length = length + br.read-bits(extra)
                         dsym = dc.decode(br)
                         distance = dist-base[dsym]
                         dextra = dist-extra[dsym]
+                        #{overflow=wrap}
                         dextra > 0 -> distance = distance + br.read-bits(dextra)
 
                         ; 複製回參考
+                        #{overflow=wrap}
                         src = result.len() - distance
                         i <- [0..length): {
                             #{overflow=wrap}
@@ -406,13 +409,16 @@ inflate-decompress = (data []byte, out-size i64) (out []byte) {
                         code = sym - 257
                         length = length-base[code]
                         extra = length-extra[code]
+                        #{overflow=wrap}
                         extra > 0 -> length = length + br.read-bits(extra)
                         dsym = dc.decode(br)
                         distance = dist-base[dsym]
                         dextra = dist-extra[dsym]
+                        #{overflow=wrap}
                         dextra > 0 -> distance = distance + br.read-bits(dextra)
 
                         ; 複製回參考
+                        #{overflow=wrap}
                         src = result.len() - distance
                         i <- [0..length): {
                             #{overflow=wrap}

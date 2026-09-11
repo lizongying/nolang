@@ -119,12 +119,15 @@ hkdf-expand = (prk [32]byte, info []byte, out-len i64) (okm []byte) {
                 t-valid = true
 
                 copy-n = 32
+                #{overflow=wrap}
                 off + copy-n > out-len -> copy-n = out-len - off
                 i <- [0..copy-n): {
                     #{overflow=wrap}
                     okm[off + i] = t[i]
                 }
+                #{overflow=wrap}
                 off = off + copy-n
+                #{overflow=wrap}
                 counter = counter + 1
             } (off < out-len)
         }

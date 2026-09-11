@@ -302,11 +302,14 @@ bzip2-decompress = (data []byte) (out []byte) {
             }
 
             ; alpha-size = nInUse + 2 (RUNA, RUNB + EOB)
+            #{overflow=wrap}
             alpha-size = n-in-use + 2
+            #{overflow=wrap}
             eob = n-in-use + 1
 
             ; ── 讀取 Huffman 碼表 ──
             ; 碼表數量 (3 bits, 2-6)
+            #{overflow=wrap}
             n-tables = br.read-bits(3) + 2
 
             ; 選擇器數量 (15 bits)
@@ -330,6 +333,7 @@ bzip2-decompress = (data []byte) (out []byte) {
                     #{overflow=wrap}
                     bit = br.read-bit()
                     bit == 0 -> *
+                    #{overflow=wrap}
                     j = j + 1
                 } (j < 5)
                 j >= n-tables -> j = 0
@@ -372,6 +376,7 @@ bzip2-decompress = (data []byte) (out []byte) {
                     bit == 0 -> {
                         #{overflow=wrap}
                         lengths[i] = curr-len
+                        #{overflow=wrap}
                         i = i + 1
                     }
                     bit == 1 -> {
@@ -431,9 +436,11 @@ bzip2-decompress = (data []byte) (out []byte) {
                 group-remaining == 0 -> {
                     #{overflow=wrap}
                     selector-idx < n-selectors -> cur-ht = selectors[selector-idx]
+                    #{overflow=wrap}
                     selector-idx = selector-idx + 1
                     group-remaining = BZ-GROUP-SIZE
                 }
+                #{overflow=wrap}
                 group-remaining = group-remaining - 1
 
                 ; 根據選擇器解碼符號
@@ -446,9 +453,11 @@ bzip2-decompress = (data []byte) (out []byte) {
                 cur-ht == 5 -> sym = ht5.decode-symbol(br)
 
                 ; RUNA (0): run 長度的低位
+                #{overflow=wrap}
                 sym == 0 -> run-len = run-len + 1
 
                 ; RUNB (1): run 長度的高位
+                #{overflow=wrap}
                 sym == 1 -> run-len = run-len + 2
 
                 ; EOB
@@ -476,6 +485,7 @@ bzip2-decompress = (data []byte) (out []byte) {
                     }
 
                     ; MTF 反變換
+                    #{overflow=wrap}
                     mtf-idx = sym - 1
                     val = mtf-pos[mtf-idx]
 
@@ -512,6 +522,7 @@ bzip2-decompress = (data []byte) (out []byte) {
             i <- [0..256): {
                 #{overflow=wrap}
                 cum[i] = total
+                #{overflow=wrap}
                 total = total + count[i]
             }
 

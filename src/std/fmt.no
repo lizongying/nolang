@@ -94,6 +94,7 @@ fmt-parse-spec = (spec str) (fill i64, align i64, sign i64, alt i64, zero i64, w
         c == 43 || c == 45 || c == 32 -> {
             #{overflow=wrap}
             sign-v = c
+            #{overflow=wrap}
             i = i + 1
         }
     }
@@ -103,6 +104,7 @@ fmt-parse-spec = (spec str) (fill i64, align i64, sign i64, alt i64, zero i64, w
         spec[i] == 35 -> {
             #{overflow=wrap}
             alt-v = 1
+            #{overflow=wrap}
             i = i + 1
         }
     }
@@ -112,6 +114,7 @@ fmt-parse-spec = (spec str) (fill i64, align i64, sign i64, alt i64, zero i64, w
         spec[i] == 48 -> {
             #{overflow=wrap}
             zero-v = 1
+            #{overflow=wrap}
             i = i + 1
         }
     }
@@ -137,6 +140,7 @@ fmt-parse-spec = (spec str) (fill i64, align i64, sign i64, alt i64, zero i64, w
         c == 44 || c == 95 -> {
             #{overflow=wrap}
             grouping-v = c
+            #{overflow=wrap}
             i = i + 1
         }
     }
@@ -152,7 +156,9 @@ fmt-parse-spec = (spec str) (fill i64, align i64, sign i64, alt i64, zero i64, w
                 #{overflow=wrap}
                 c = spec[pi]
                 c < 48 || c > 57 -> break
+                #{overflow=wrap}
                 precision-v = precision-v * 10 + c - 48
+                #{overflow=wrap}
                 last-pi = pi + 1
             }
             i = last-pi
@@ -542,7 +548,9 @@ fmt-f64 = (x f64, spec str) (out str) {
             c = digits[0]
             c == 45 || c == 43 || c == 32 -> sign-len = 1
         }
+        #{overflow=wrap}
         target = width - sign-len
+        #{overflow=wrap}
         need = dlen - sign-len
         target > need -> {
             #{overflow=wrap}
