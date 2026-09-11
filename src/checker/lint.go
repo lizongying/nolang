@@ -349,6 +349,22 @@ func RunAllLints(program *parser.Program, opts LintOptions) []LintResult {
 		})
 	}
 
+	// 20e. 未處理的越界索引（編譯硬錯誤，與 20d 同源：arr/vec/slice 索引 b[i]
+	// 越界時預設回傳 option<elem>，若既沒被 `?=` 上拋、沒被 `#{index-out = DEF}`
+	// 註解處理、也沒在返回 ?T 的函式中自動上拋，就處於「沉默泄漏」狀態。
+	for _, u := range ValidateUnhandledIndex(program, opts.SourcePath) {
+		file := u.File
+		if file == "" {
+			file = opts.SourcePath
+		}
+		results = append(results, LintResult{
+			Line: u.Line, Column: u.Column,
+			Severity: LintError, Source: "nolang-index",
+			File:     file,
+			Message: u.Message, TraceID: u.TraceID,
+		})
+	}
+
 	// 21. parser 警告
 	for _, warnMsg := range program.Warnings {
 		var line, col int

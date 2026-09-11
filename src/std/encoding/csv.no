@@ -10,6 +10,7 @@
 ;   fields = csv.parse-line(line, 3)        // 限制最多 3 個欄位
 
 ; parse-field: 解析 CSV 中的一個欄位
+#{index-out = 0}
 ; 從 s[pos] 開始解析，處理雙引號和逗號
 ; s str: CSV 文字
 ; pos i64: 開始位置
@@ -22,6 +23,7 @@ parse-field = (s str, pos i64) (field str, new-pos i64) {
         new-pos = pos
         return
     }
+    #{index-out = 0}
     c = s[pos]
     {
         c == 44 -> {
@@ -37,6 +39,7 @@ parse-field = (s str, pos i64) (field str, new-pos i64) {
             pos = pos + 1
             {
                 #{overflow=wrap}
+                #{index-out = 0}
                 c = s[pos]
                 c == 34 -> {
 
@@ -44,9 +47,11 @@ parse-field = (s str, pos i64) (field str, new-pos i64) {
                     #{overflow=wrap}
                     pos + 1 < s.len-bytes() -> {
                         #{overflow=wrap}
+                        #{index-out = 0}
                         nc = s[pos + 1]
                         nc == 34 -> {
                             #{overflow=wrap}
+                            #{index-out = 0}
                             field[fn] = 34
                             fn = fn + 1
                             pos = pos + 2
@@ -61,6 +66,7 @@ parse-field = (s str, pos i64) (field str, new-pos i64) {
                     ; 跳過後續逗號
                     pos < s.len-bytes() -> {
                         #{overflow=wrap}
+                        #{index-out = 0}
                         nc = s[pos]
                         #{overflow=wrap}
                         nc == 44 -> pos = pos + 1
@@ -72,6 +78,7 @@ parse-field = (s str, pos i64) (field str, new-pos i64) {
 
                     ; 換行在引號內視為換行字元
                     #{overflow=wrap}
+                    #{index-out = 0}
                     field[fn] = c
                     #{overflow=wrap}
                     fn = fn + 1
@@ -79,6 +86,7 @@ parse-field = (s str, pos i64) (field str, new-pos i64) {
                     pos = pos + 1
                     continue
                 }
+                #{index-out = 0}
                 field[fn] = c
                 #{overflow=wrap}
                 fn = fn + 1
@@ -93,6 +101,7 @@ parse-field = (s str, pos i64) (field str, new-pos i64) {
     ; 普通欄位（無引號）
     {
         #{overflow=wrap}
+        #{index-out = 0}
         c = s[pos]
         #{overflow=wrap}
         {
@@ -109,6 +118,7 @@ parse-field = (s str, pos i64) (field str, new-pos i64) {
                 return
             }
         }
+        #{index-out = 0}
         field[fn] = c
         #{overflow=wrap}
         fn = fn + 1
@@ -127,6 +137,7 @@ parse-line = (s str, max-fields i64 = 1024) (fields []str) {
     pos = 0
     fields = with-cap(max-fields)
     {
+        #{index-out = 0}
         fields[n], pos = parse-field(s, pos)
 
         #{overflow=wrap}
@@ -144,6 +155,7 @@ encode-field = (field str) (out str) {
     need-quote = false
     i <- [0..field.len-bytes()): {
         #{overflow=wrap}
+        #{index-out = 0}
         c = field[i]
         c == 44 || c == 34 || c == 10 || c == 13 -> {
             need-quote = true
@@ -157,25 +169,33 @@ encode-field = (field str) (out str) {
     j = 0
     #{overflow=wrap}
     out = with-cap(field.len-bytes() * 2 + 2)
+    #{index-out = 0}
     out[j] = 34
     #{overflow=wrap}
     j = j + 1
     i <- [0..field.len-bytes()): {
         #{overflow=wrap}
+        #{index-out = 0}
         c = field[i]
         #{overflow=wrap}
         {
             c == 34 -> {
                 #{overflow=wrap}
+                #{index-out = 0}
                 out[j] = 34
                 j = j + 1
+                #{index-out = 0}
                 out[j] = 34
             }
 
-            -> out[j] = c
+             -> {
+                #{index-out = 0}
+                out[j] = c
+            }
         }
         #{overflow=wrap}
         j = j + 1
     }
+    #{index-out = 0}
     out[j] = 34
 }

@@ -1689,7 +1689,7 @@ Nolang 不支援 panic——任何可能溢出的操作都必須以 `option` 或
 
 > **LSP 快速修復**：編輯器（nolang-lsp）會對未標註的整數運算給出 Hint（`nolang-overflow`），並提供五個 quickfix——**Add `#{overflow = wrap}`** / **`clamp0`** / **`min`** / **`max`** / **`saturate`**——自動在該運算所在語句上方、以與該行一致的縮排插入對應註解，把預設的 `option<int>` 結果改為 plain `int`。
 
-### 默認：返回 option<int>
+### 默認：返回 `option<int>`
 
 未標註時，`a - b` 的結果型別是 `option<int>`。接收端必須是 `?T`（可空型別），並用 match 解構 `err` / `nil` / `ok` 三個分支：
 

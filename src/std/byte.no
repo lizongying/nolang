@@ -21,25 +21,41 @@
 
 ; i64.to-bytes-be: 將 int64 轉為大端序 8 位元組
 i64.to-bytes-be = () (out [?]byte) {
+    #{index-out = 0}
     out[0] = (. >> 56) & 255
+    #{index-out = 0}
     out[1] = (. >> 48) & 255
+    #{index-out = 0}
     out[2] = (. >> 40) & 255
+    #{index-out = 0}
     out[3] = (. >> 32) & 255
+    #{index-out = 0}
     out[4] = (. >> 24) & 255
+    #{index-out = 0}
     out[5] = (. >> 16) & 255
+    #{index-out = 0}
     out[6] = (. >> 8) & 255
+    #{index-out = 0}
     out[7] = . & 255
 }
 
 ; i64.to-bytes-le: 將 int64 轉為小端序 8 位元組
 i64.to-bytes-le = () (out [?]byte) {
+    #{index-out = 0}
     out[0] = . & 255
+    #{index-out = 0}
     out[1] = (. >> 8) & 255
+    #{index-out = 0}
     out[2] = (. >> 16) & 255
+    #{index-out = 0}
     out[3] = (. >> 24) & 255
+    #{index-out = 0}
     out[4] = (. >> 32) & 255
+    #{index-out = 0}
     out[5] = (. >> 40) & 255
+    #{index-out = 0}
     out[6] = (. >> 48) & 255
+    #{index-out = 0}
     out[7] = (. >> 56) & 255
 }
 
@@ -85,7 +101,9 @@ i64.to-bytes-le = () (out [?]byte) {
 ; 每个字节被当作一个 0~255 的 Unicode 码点，再按 UTF-8 编码成 1~4 字节。
 ; 即本方法等价于 b.to-chars().to-str()：byte 0xC3 → 码点 0xC3 → UTF-8 字节 0xC3 0x83。
 ;
+#{index-out = 0}
 ; 实现说明（2026-09-06）：legacy 后端对「返回字符串 out 做变量下标赋值 out[pos]=」不会
+#{index-out = 0}
 ; 维护字符串长度（会带出尾部空字节），但对「字面下标 s[0]/s[1]/…」会正确维护长度（见
 ; char.to-str：with-cap(4) + 字面下标，返回长度正确）。故本实现逐字节构造一个
 ; with-cap(4) 的局部 seg（用字面下标写入 UTF-8 字节），再用字符串拼接 out = out - seg
@@ -104,19 +122,31 @@ i64.to-bytes-le = () (out [?]byte) {
         #{overflow=wrap}
         cp = .[i] & 0xff
         seg str = with-cap(4)
-        cp < 0x80 -> seg[0] = cp
+                cp < 0x80 -> {
+            #{index-out = 0}
+            seg[0] = cp
+        }
 
         -> cp < 0x800 -> {
+            #{index-out = 0}
             seg[0] = 0xc0 | ((cp >> 6) & 0x1f)
+            #{index-out = 0}
             seg[1] = 0x80 | (cp & 0x3f)
         } -> cp < 0x10000 -> {
+            #{index-out = 0}
             seg[0] = 0xe0 | ((cp >> 12) & 0x0f)
+            #{index-out = 0}
             seg[1] = 0x80 | ((cp >> 6) & 0x3f)
+            #{index-out = 0}
             seg[2] = 0x80 | (cp & 0x3f)
         } -> {
+            #{index-out = 0}
             seg[0] = 0xf0 | ((cp >> 18) & 0x07)
+            #{index-out = 0}
             seg[1] = 0x80 | ((cp >> 12) & 0x3f)
+            #{index-out = 0}
             seg[2] = 0x80 | ((cp >> 6) & 0x3f)
+            #{index-out = 0}
             seg[3] = 0x80 | (cp & 0x3f)
         }
 
@@ -133,6 +163,7 @@ i64.to-bytes-le = () (out [?]byte) {
     n = .len()
     out = with-len(n)
     i <- [0..n): {
+        #{index-out = 0}
         out[i] = .[i]
     }
 }
@@ -159,6 +190,7 @@ i64.to-bytes-le = () (out [?]byte) {
 
             #{overflow=wrap}
             sj = .[i + j]
+            #{index-out = 0}
             tj = target[j]
             sj != tj -> {
                 matched = 0
@@ -198,6 +230,7 @@ i64.to-bytes-le = () (out [?]byte) {
 
             #{overflow=wrap}
             sj = .[i + j]
+            #{index-out = 0}
             tj = target[j]
             sj != tj -> {
                 matched = 0
@@ -227,6 +260,7 @@ i64.to-bytes-le = () (out [?]byte) {
     i <- [0..n): {
 
         #{overflow=wrap}
+        #{index-out = 0}
         val[i] = .[start + i]
     }
 }
@@ -250,8 +284,10 @@ HEX-LOWER = '0123456789abcdef'
         #{overflow=wrap}
         b = .[i]
         #{overflow=wrap}
+        #{index-out = 0}
         out[i * 2] = HEX-UPPER[b >> 4]
         #{overflow=wrap}
+        #{index-out = 0}
         out[i * 2 + 1] = HEX-UPPER[b & 15]
     }
 }
@@ -267,8 +303,10 @@ HEX-LOWER = '0123456789abcdef'
         #{overflow=wrap}
         b = .[i]
         #{overflow=wrap}
+        #{index-out = 0}
         out[i * 2] = HEX-LOWER[b >> 4]
         #{overflow=wrap}
+        #{index-out = 0}
         out[i * 2 + 1] = HEX-LOWER[b & 15]
     }
 }
@@ -288,6 +326,7 @@ HEX-LOWER = '0123456789abcdef'
     n = .len()
     n > 255 -> n = 255
     i <- [0..n): {
+        #{index-out = 0}
         out[i] = .[i]
     }
     out.len = n

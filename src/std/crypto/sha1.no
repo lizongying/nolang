@@ -38,6 +38,7 @@ sha1-block = (s []u32, h0 u32, h1 u32, h2 u32, h3 u32, h4 u32) (r0 u32, r1 u32, 
     f = (b & c) | ((mask ^ b) & d)
     temp = ((a << 5) | (a >> 27)) & mask
     #{overflow=wrap}
+    #{index-out = 0}
     temp = (temp + f + e + 1518500249 + s[0]) & mask
     e = d
     d = c
@@ -47,6 +48,7 @@ sha1-block = (s []u32, h0 u32, h1 u32, h2 u32, h3 u32, h4 u32) (r0 u32, r1 u32, 
     f = (b & c) | ((mask ^ b) & d)
     temp = ((a << 5) | (a >> 27)) & mask
     #{overflow=wrap}
+    #{index-out = 0}
     temp = (temp + f + e + 1518500249 + s[1]) & mask
     e = d
     d = c
@@ -56,6 +58,7 @@ sha1-block = (s []u32, h0 u32, h1 u32, h2 u32, h3 u32, h4 u32) (r0 u32, r1 u32, 
     f = (b & c) | ((mask ^ b) & d)
     temp = ((a << 5) | (a >> 27)) & mask
     #{overflow=wrap}
+    #{index-out = 0}
     temp = (temp + f + e + 1518500249 + s[2]) & mask
     e = d
     d = c
@@ -65,6 +68,7 @@ sha1-block = (s []u32, h0 u32, h1 u32, h2 u32, h3 u32, h4 u32) (r0 u32, r1 u32, 
     f = (b & c) | ((mask ^ b) & d)
     temp = ((a << 5) | (a >> 27)) & mask
     #{overflow=wrap}
+    #{index-out = 0}
     temp = (temp + f + e + 1518500249 + s[3]) & mask
     e = d
     d = c
@@ -74,6 +78,7 @@ sha1-block = (s []u32, h0 u32, h1 u32, h2 u32, h3 u32, h4 u32) (r0 u32, r1 u32, 
     f = (b & c) | ((mask ^ b) & d)
     temp = ((a << 5) | (a >> 27)) & mask
     #{overflow=wrap}
+    #{index-out = 0}
     temp = (temp + f + e + 1518500249 + s[4]) & mask
     e = d
     d = c
@@ -83,6 +88,7 @@ sha1-block = (s []u32, h0 u32, h1 u32, h2 u32, h3 u32, h4 u32) (r0 u32, r1 u32, 
     f = (b & c) | ((mask ^ b) & d)
     temp = ((a << 5) | (a >> 27)) & mask
     #{overflow=wrap}
+    #{index-out = 0}
     temp = (temp + f + e + 1518500249 + s[5]) & mask
     e = d
     d = c
@@ -92,6 +98,7 @@ sha1-block = (s []u32, h0 u32, h1 u32, h2 u32, h3 u32, h4 u32) (r0 u32, r1 u32, 
     f = (b & c) | ((mask ^ b) & d)
     temp = ((a << 5) | (a >> 27)) & mask
     #{overflow=wrap}
+    #{index-out = 0}
     temp = (temp + f + e + 1518500249 + s[6]) & mask
     e = d
     d = c
@@ -101,6 +108,7 @@ sha1-block = (s []u32, h0 u32, h1 u32, h2 u32, h3 u32, h4 u32) (r0 u32, r1 u32, 
     f = (b & c) | ((mask ^ b) & d)
     temp = ((a << 5) | (a >> 27)) & mask
     #{overflow=wrap}
+    #{index-out = 0}
     temp = (temp + f + e + 1518500249 + s[7]) & mask
     e = d
     d = c
@@ -110,6 +118,7 @@ sha1-block = (s []u32, h0 u32, h1 u32, h2 u32, h3 u32, h4 u32) (r0 u32, r1 u32, 
     f = (b & c) | ((mask ^ b) & d)
     temp = ((a << 5) | (a >> 27)) & mask
     #{overflow=wrap}
+    #{index-out = 0}
     temp = (temp + f + e + 1518500249 + s[8]) & mask
     e = d
     d = c
@@ -119,6 +128,7 @@ sha1-block = (s []u32, h0 u32, h1 u32, h2 u32, h3 u32, h4 u32) (r0 u32, r1 u32, 
     f = (b & c) | ((mask ^ b) & d)
     temp = ((a << 5) | (a >> 27)) & mask
     #{overflow=wrap}
+    #{index-out = 0}
     temp = (temp + f + e + 1518500249 + s[9]) & mask
     e = d
     d = c
@@ -128,6 +138,7 @@ sha1-block = (s []u32, h0 u32, h1 u32, h2 u32, h3 u32, h4 u32) (r0 u32, r1 u32, 
     f = (b & c) | ((mask ^ b) & d)
     temp = ((a << 5) | (a >> 27)) & mask
     #{overflow=wrap}
+    #{index-out = 0}
     temp = (temp + f + e + 1518500249 + s[10]) & mask
     e = d
     d = c
@@ -137,6 +148,7 @@ sha1-block = (s []u32, h0 u32, h1 u32, h2 u32, h3 u32, h4 u32) (r0 u32, r1 u32, 
     f = (b & c) | ((mask ^ b) & d)
     temp = ((a << 5) | (a >> 27)) & mask
     #{overflow=wrap}
+    #{index-out = 0}
     temp = (temp + f + e + 1518500249 + s[11]) & mask
     e = d
     d = c
@@ -146,6 +158,7 @@ sha1-block = (s []u32, h0 u32, h1 u32, h2 u32, h3 u32, h4 u32) (r0 u32, r1 u32, 
     f = (b & c) | ((mask ^ b) & d)
     temp = ((a << 5) | (a >> 27)) & mask
     #{overflow=wrap}
+    #{index-out = 0}
     temp = (temp + f + e + 1518500249 + s[12]) & mask
     e = d
     d = c
@@ -155,6 +168,7 @@ sha1-block = (s []u32, h0 u32, h1 u32, h2 u32, h3 u32, h4 u32) (r0 u32, r1 u32, 
     f = (b & c) | ((mask ^ b) & d)
     temp = ((a << 5) | (a >> 27)) & mask
     #{overflow=wrap}
+    #{index-out = 0}
     temp = (temp + f + e + 1518500249 + s[13]) & mask
     e = d
     d = c
@@ -164,6 +178,7 @@ sha1-block = (s []u32, h0 u32, h1 u32, h2 u32, h3 u32, h4 u32) (r0 u32, r1 u32, 
     f = (b & c) | ((mask ^ b) & d)
     temp = ((a << 5) | (a >> 27)) & mask
     #{overflow=wrap}
+    #{index-out = 0}
     temp = (temp + f + e + 1518500249 + s[14]) & mask
     e = d
     d = c
@@ -173,6 +188,7 @@ sha1-block = (s []u32, h0 u32, h1 u32, h2 u32, h3 u32, h4 u32) (r0 u32, r1 u32, 
     f = (b & c) | ((mask ^ b) & d)
     temp = ((a << 5) | (a >> 27)) & mask
     #{overflow=wrap}
+    #{index-out = 0}
     temp = (temp + f + e + 1518500249 + s[15]) & mask
     e = d
     d = c
@@ -183,6 +199,7 @@ sha1-block = (s []u32, h0 u32, h1 u32, h2 u32, h3 u32, h4 u32) (r0 u32, r1 u32, 
     ; 第 16-19 輪 — 擴展訊息，rotl(w_{t-3} ^ w_{t-8} ^ w_{t-14} ^ w_{t-16}, 1)
 
     ; w16 = rotl(w13 ^ w8 ^ w2 ^ w0, 1)
+    #{index-out = 0}
     w = s[13] ^ s[8] ^ s[2] ^ s[0]
     w = ((w << 1) | (w >> 31)) & mask
     w16 = w
@@ -197,6 +214,7 @@ sha1-block = (s []u32, h0 u32, h1 u32, h2 u32, h3 u32, h4 u32) (r0 u32, r1 u32, 
     a = temp
 
     ; w17 = rotl(w14 ^ w9 ^ w3 ^ w1, 1)
+    #{index-out = 0}
     w = s[14] ^ s[9] ^ s[3] ^ s[1]
     w = ((w << 1) | (w >> 31)) & mask
     w17 = w
@@ -211,6 +229,7 @@ sha1-block = (s []u32, h0 u32, h1 u32, h2 u32, h3 u32, h4 u32) (r0 u32, r1 u32, 
     a = temp
 
     ; w18 = rotl(w15 ^ w10 ^ w4 ^ w2, 1)
+    #{index-out = 0}
     w = s[15] ^ s[10] ^ s[4] ^ s[2]
     w = ((w << 1) | (w >> 31)) & mask
     w18 = w
@@ -225,6 +244,7 @@ sha1-block = (s []u32, h0 u32, h1 u32, h2 u32, h3 u32, h4 u32) (r0 u32, r1 u32, 
     a = temp
 
     ; w19 = rotl(w16 ^ w11 ^ w5 ^ w3, 1)
+    #{index-out = 0}
     w = w16 ^ s[11] ^ s[5] ^ s[3]
     w = ((w << 1) | (w >> 31)) & mask
     w19 = w
@@ -242,6 +262,7 @@ sha1-block = (s []u32, h0 u32, h1 u32, h2 u32, h3 u32, h4 u32) (r0 u32, r1 u32, 
     ; f = b ^ c ^ d
 
     ; w20 = rotl(w17 ^ w12 ^ w6 ^ w4, 1)
+    #{index-out = 0}
     w = w17 ^ s[12] ^ s[6] ^ s[4]
     w = ((w << 1) | (w >> 31)) & mask
     w20 = w
@@ -256,6 +277,7 @@ sha1-block = (s []u32, h0 u32, h1 u32, h2 u32, h3 u32, h4 u32) (r0 u32, r1 u32, 
     a = temp
 
     ; w21 = rotl(w18 ^ w13 ^ w7 ^ w5, 1)
+    #{index-out = 0}
     w = w18 ^ s[13] ^ s[7] ^ s[5]
     w = ((w << 1) | (w >> 31)) & mask
     w21 = w
@@ -270,6 +292,7 @@ sha1-block = (s []u32, h0 u32, h1 u32, h2 u32, h3 u32, h4 u32) (r0 u32, r1 u32, 
     a = temp
 
     ; w22 = rotl(w19 ^ w14 ^ w8 ^ w6, 1)
+    #{index-out = 0}
     w = w19 ^ s[14] ^ s[8] ^ s[6]
     w = ((w << 1) | (w >> 31)) & mask
     w22 = w
@@ -284,6 +307,7 @@ sha1-block = (s []u32, h0 u32, h1 u32, h2 u32, h3 u32, h4 u32) (r0 u32, r1 u32, 
     a = temp
 
     ; w23 = rotl(w20 ^ w15 ^ w9 ^ w7, 1)
+    #{index-out = 0}
     w = w20 ^ s[15] ^ s[9] ^ s[7]
     w = ((w << 1) | (w >> 31)) & mask
     w23 = w
@@ -298,6 +322,7 @@ sha1-block = (s []u32, h0 u32, h1 u32, h2 u32, h3 u32, h4 u32) (r0 u32, r1 u32, 
     a = temp
 
     ; w24 = rotl(w21 ^ w16 ^ w10 ^ w8, 1)
+    #{index-out = 0}
     w = w21 ^ w16 ^ s[10] ^ s[8]
     w = ((w << 1) | (w >> 31)) & mask
     w24 = w
@@ -312,6 +337,7 @@ sha1-block = (s []u32, h0 u32, h1 u32, h2 u32, h3 u32, h4 u32) (r0 u32, r1 u32, 
     a = temp
 
     ; w25 = rotl(w22 ^ w17 ^ w11 ^ w9, 1)
+    #{index-out = 0}
     w = w22 ^ w17 ^ s[11] ^ s[9]
     w = ((w << 1) | (w >> 31)) & mask
     w25 = w
@@ -326,6 +352,7 @@ sha1-block = (s []u32, h0 u32, h1 u32, h2 u32, h3 u32, h4 u32) (r0 u32, r1 u32, 
     a = temp
 
     ; w26 = rotl(w23 ^ w18 ^ w12 ^ w10, 1)
+    #{index-out = 0}
     w = w23 ^ w18 ^ s[12] ^ s[10]
     w = ((w << 1) | (w >> 31)) & mask
     w26 = w
@@ -340,6 +367,7 @@ sha1-block = (s []u32, h0 u32, h1 u32, h2 u32, h3 u32, h4 u32) (r0 u32, r1 u32, 
     a = temp
 
     ; w27 = rotl(w24 ^ w19 ^ w13 ^ w11, 1)
+    #{index-out = 0}
     w = w24 ^ w19 ^ s[13] ^ s[11]
     w = ((w << 1) | (w >> 31)) & mask
     w27 = w
@@ -354,6 +382,7 @@ sha1-block = (s []u32, h0 u32, h1 u32, h2 u32, h3 u32, h4 u32) (r0 u32, r1 u32, 
     a = temp
 
     ; w28 = rotl(w25 ^ w20 ^ w14 ^ w12, 1)
+    #{index-out = 0}
     w = w25 ^ w20 ^ s[14] ^ s[12]
     w = ((w << 1) | (w >> 31)) & mask
     w28 = w
@@ -368,6 +397,7 @@ sha1-block = (s []u32, h0 u32, h1 u32, h2 u32, h3 u32, h4 u32) (r0 u32, r1 u32, 
     a = temp
 
     ; w29 = rotl(w26 ^ w21 ^ w15 ^ w13, 1)
+    #{index-out = 0}
     w = w26 ^ w21 ^ s[15] ^ s[13]
     w = ((w << 1) | (w >> 31)) & mask
     w29 = w
@@ -382,6 +412,7 @@ sha1-block = (s []u32, h0 u32, h1 u32, h2 u32, h3 u32, h4 u32) (r0 u32, r1 u32, 
     a = temp
 
     ; w30 = rotl(w27 ^ w22 ^ w16 ^ w14, 1)
+    #{index-out = 0}
     w = w27 ^ w22 ^ w16 ^ s[14]
     w = ((w << 1) | (w >> 31)) & mask
     w30 = w
@@ -396,6 +427,7 @@ sha1-block = (s []u32, h0 u32, h1 u32, h2 u32, h3 u32, h4 u32) (r0 u32, r1 u32, 
     a = temp
 
     ; w31 = rotl(w28 ^ w23 ^ w17 ^ w15, 1)
+    #{index-out = 0}
     w = w28 ^ w23 ^ w17 ^ s[15]
     w = ((w << 1) | (w >> 31)) & mask
     w31 = w
@@ -1132,28 +1164,33 @@ sha1 = (data []byte) (hash [20]byte) {
     padded []byte
     i <- [0..total-len): {
         #{overflow=wrap}
+        #{index-out = 0}
         padded[i] = 0
     }
 
     ; 複製原始資料
     i <- [0..dlen): {
         #{overflow=wrap}
+        #{index-out = 0}
         padded[i] = data[i]
     }
 
     ; 填充 0x80
+    #{index-out = 0}
     padded[dlen] = 128
 
     ; 填充 0x00
     #{overflow=wrap}
     i <- [dlen + 1..total-len - 8): {
         #{overflow=wrap}
+        #{index-out = 0}
         padded[i] = 0
     }
 
     ; 填充 bit-len（big-endian 64-bit）
     i <- [0..8): {
         #{overflow=wrap}
+        #{index-out = 0}
         padded[total-len - 8 + i] = (bit-len >> (56 - i * 8)) & 255
     }
 
@@ -1169,6 +1206,7 @@ sha1 = (data []byte) (hash [20]byte) {
         ; 將 64 位元組轉為 16 個 32-bit big-endian 字
         i <- [0..16): {
             #{overflow=wrap}
+            #{index-out = 0}
             block[i] = (padded[offset + i * 4] << 24) | (padded[offset + i * 4 + 1] << 16) | (padded[offset + i * 4 + 2] << 8) | padded[offset + i * 4 + 3]
         }
         h0, h1, h2, h3, h4 = sha1-block(block, h0, h1, h2, h3, h4)
@@ -1178,25 +1216,45 @@ sha1 = (data []byte) (hash [20]byte) {
     } (offset < total-len)
 
     ; 輸出 20 位元組雜湊值（big-endian）
+    #{index-out = 0}
     hash[0] = (h0 >> 24) & 255
+    #{index-out = 0}
     hash[1] = (h0 >> 16) & 255
+    #{index-out = 0}
     hash[2] = (h0 >> 8) & 255
+    #{index-out = 0}
     hash[3] = h0 & 255
+    #{index-out = 0}
     hash[4] = (h1 >> 24) & 255
+    #{index-out = 0}
     hash[5] = (h1 >> 16) & 255
+    #{index-out = 0}
     hash[6] = (h1 >> 8) & 255
+    #{index-out = 0}
     hash[7] = h1 & 255
+    #{index-out = 0}
     hash[8] = (h2 >> 24) & 255
+    #{index-out = 0}
     hash[9] = (h2 >> 16) & 255
+    #{index-out = 0}
     hash[10] = (h2 >> 8) & 255
+    #{index-out = 0}
     hash[11] = h2 & 255
+    #{index-out = 0}
     hash[12] = (h3 >> 24) & 255
+    #{index-out = 0}
     hash[13] = (h3 >> 16) & 255
+    #{index-out = 0}
     hash[14] = (h3 >> 8) & 255
+    #{index-out = 0}
     hash[15] = h3 & 255
+    #{index-out = 0}
     hash[16] = (h4 >> 24) & 255
+    #{index-out = 0}
     hash[17] = (h4 >> 16) & 255
+    #{index-out = 0}
     hash[18] = (h4 >> 8) & 255
+    #{index-out = 0}
     hash[19] = h4 & 255
 }
 
@@ -1211,8 +1269,10 @@ sha1-hex = (data []byte) (hex str) {
 
     i <- [0..20): {
         #{overflow=wrap}
+        #{index-out = 0}
         hex[i * 2] = hex-chars[(hash[i] >> 4) & 15]
         #{overflow=wrap}
+        #{index-out = 0}
         hex[i * 2 + 1] = hex-chars[hash[i] & 15]
     }
 }

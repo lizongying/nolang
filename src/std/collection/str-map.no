@@ -27,8 +27,11 @@ str-map.init = () {
     .cap = 256
     .size = 0
     i <- [0..256): {
+        #{index-out = 0}
         .occ[i] = 0
+        #{index-out = 0}
         .keys[i].len = 0
+        #{index-out = 0}
         .vals[i].len = 0
     }
 }
@@ -39,6 +42,7 @@ str-map.hash = (key str) (idx i64) {
     h = FNV-OFFSET
     i <- [0..key.len-bytes()): {
         #{overflow=wrap}
+        #{index-out = 0}
         h = h ^ (key[i])
         #{overflow=wrap}
         h = h * FNV-PRIME
@@ -51,7 +55,10 @@ str-map.hash = (key str) (idx i64) {
 str-map.str-eq = (a str, b str) (eq bool) {
     a.len-bytes() != b.len-bytes() -> return
     i <- [0..a.len-bytes()): {
-        a[i] != b[i] -> return
+                a[i] != b[i] -> {
+            #{index-out = 0}
+            return
+        }
     }
     eq = true
 }
@@ -63,11 +70,15 @@ str-map.put = (key str, val str) (is-new bool) {
 
     {
         #{overflow=wrap}
+        #{index-out = 0}
         eq = .str-eq(.keys[idx], key)
         eq -> {
+            #{index-out = 0}
             .vals[idx] = val
+            #{index-out = 0}
             .vals[idx].len = val.len-bytes()
             i <- [0..val.len-bytes()): {
+                #{index-out = 0}
                 .vals[idx][i] = val[i]
             }
             is-new = false
@@ -76,21 +87,27 @@ str-map.put = (key str, val str) (is-new bool) {
         #{overflow=wrap}
         idx = idx + 1
         idx >= .cap -> idx = 0
+    #{index-out = 0}
     } (.occ[idx] == 1)
 
     ; 複製 key
+    #{index-out = 0}
     .keys[idx].len = key.len-bytes()
     i <- [0..key.len-bytes()): {
         #{overflow=wrap}
+        #{index-out = 0}
         .keys[idx][i] = key[i]
     }
 
     ; 複製 val
+    #{index-out = 0}
     .vals[idx].len = val.len-bytes()
     i <- [0..val.len-bytes()): {
         #{overflow=wrap}
+        #{index-out = 0}
         .vals[idx][i] = val[i]
     }
+    #{index-out = 0}
     .occ[idx] = 1
     #{overflow=wrap}
     .size = .size + 1
@@ -104,14 +121,17 @@ str-map.get = (key str) (result ?str) {
 
     {
         #{overflow=wrap}
+        #{index-out = 0}
         eq = .str-eq(.keys[idx], key)
         eq -> {
+            #{index-out = 0}
             result = .vals[idx]
             return
         }
         #{overflow=wrap}
         idx = idx + 1
         idx >= .cap -> idx = 0
+    #{index-out = 0}
     } (.occ[idx] == 1)
 }
 
@@ -134,12 +154,16 @@ str-map.remove = (key str) (removed bool) {
 
     {
         #{overflow=wrap}
+        #{index-out = 0}
         eq = .str-eq(.keys[idx], key)
         #{overflow=wrap}
         eq -> {
             #{overflow=wrap}
+            #{index-out = 0}
             .occ[idx] = 0
+            #{index-out = 0}
             .keys[idx].len = 0
+            #{index-out = 0}
             .vals[idx].len = 0
             .size = .size - 1
             removed = true
@@ -148,14 +172,18 @@ str-map.remove = (key str) (removed bool) {
         #{overflow=wrap}
         idx = idx + 1
         idx >= .cap -> idx = 0
+    #{index-out = 0}
     } (.occ[idx] == 1)
 }
 
 ; clear: 清空
 str-map.clear = () {
     i <- [0...cap): {
+        #{index-out = 0}
         .occ[i] = 0
+        #{index-out = 0}
         .keys[i].len = 0
+        #{index-out = 0}
         .vals[i].len = 0
     }
     .size = 0
@@ -175,7 +203,9 @@ str-map.is-empty = () (empty bool) {
 str-map.for-each = (k str, v str) {
     i <- [0...cap): {
         .occ[i] == 1 -> {
+            #{index-out = 0}
             k = .keys[i]
+            #{index-out = 0}
             v = .vals[i]
         }
     }

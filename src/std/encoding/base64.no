@@ -33,17 +33,24 @@ encode = (data []byte, table str) (out str) {
     j = 0
     {
         #{overflow=wrap}
+        #{index-out = 0}
         b0 = data[i]
         #{overflow=wrap}
+        #{index-out = 0}
         b1 = data[i + 1]
         #{overflow=wrap}
+        #{index-out = 0}
         b2 = data[i + 2]
+        #{index-out = 0}
         out[j] = table[b0 >> 2]
         #{overflow=wrap}
+        #{index-out = 0}
         out[j + 1] = table[((b0 & 3) << 4) | (b1 >> 4)]
         #{overflow=wrap}
+        #{index-out = 0}
         out[j + 2] = table[((b1 & 15) << 2) | (b2 >> 6)]
         #{overflow=wrap}
+        #{index-out = 0}
         out[j + 3] = table[b2 & 63]
         #{overflow=wrap}
         i = i + 3
@@ -58,20 +65,31 @@ encode = (data []byte, table str) (out str) {
     {
         rem == 1 -> {
             #{overflow=wrap}
+            #{index-out = 0}
             b0 = data[i]
+            #{index-out = 0}
             out[j] = table[b0 >> 2]
+            #{index-out = 0}
             out[j + 1] = table[(b0 & 3) << 4]
+            #{index-out = 0}
             out[j + 2] = PAD
+            #{index-out = 0}
             out[j + 3] = PAD
         }
 
         rem == 2 -> {
             #{overflow=wrap}
+            #{index-out = 0}
             b0 = data[i]
+            #{index-out = 0}
             b1 = data[i + 1]
+            #{index-out = 0}
             out[j] = table[b0 >> 2]
+            #{index-out = 0}
             out[j + 1] = table[((b0 & 3) << 4) | (b1 >> 4)]
+            #{index-out = 0}
             out[j + 2] = table[(b1 & 15) << 2]
+            #{index-out = 0}
             out[j + 3] = PAD
         }
     }
@@ -110,12 +128,14 @@ decode = (s str, table str) (out ?[]byte) {
     {
         n > 0 -> {
             #{overflow=wrap}
+            #{index-out = 0}
             last = s[n - 1]
             last == 61 -> pad-count = 1
         }
 
         n > 1 -> {
             #{overflow=wrap}
+            #{index-out = 0}
             last2 = s[n - 2]
             last2 == 61 -> pad-count = 2
         }
@@ -126,17 +146,22 @@ decode = (s str, table str) (out ?[]byte) {
     buf []byte = with-cap(n * 3 / 4)
     {
         #{overflow=wrap}
+        #{index-out = 0}
         v0 = b64-val(s[i], table)
         #{overflow=wrap}
+        #{index-out = 0}
         v1 = b64-val(s[i + 1], table)
         #{overflow=wrap}
+        #{index-out = 0}
         v2 = b64-val(s[i + 2], table)
         #{overflow=wrap}
+        #{index-out = 0}
         v3 = b64-val(s[i + 3], table)
         v0 < 0 || v1 < 0 -> {
             out = err('invalid base64 character')
             return
         }
+        #{index-out = 0}
         buf[j] = (v0 << 2) | (v1 >> 4)
         #{overflow=wrap}
         s[i + 2] != 61 -> {
@@ -145,6 +170,7 @@ decode = (s str, table str) (out ?[]byte) {
                 out = err('invalid base64 character')
                 return
             }
+            #{index-out = 0}
             buf[j + 1] = ((v1 & 15) << 4) | (v2 >> 2)
         }
         #{overflow=wrap}
@@ -154,6 +180,7 @@ decode = (s str, table str) (out ?[]byte) {
                 out = err('invalid base64 character')
                 return
             }
+            #{index-out = 0}
             buf[j + 2] = ((v2 & 3) << 6) | v3
         }
         #{overflow=wrap}
@@ -179,6 +206,7 @@ b64-val = (c i64, table str) (v i64) {
         return
     }
     i <- [0..64): {
+        #{index-out = 0}
         tc = table[i]
         tc == c -> {
             v = i

@@ -511,6 +511,8 @@ func (c *codegen) emitBuiltinForward(f *Function, inst *Inst, bm *builtin.Builti
 		return c.emitBuiltinArch(inst)
 	case "str-len", "vec-len", "str-len-bytes":
 		return c.emitBuiltinLen(inst, bm.ForwardFunc)
+	case "str-clear":
+		return c.emitBuiltinStrClear(inst)
 	case "math-max", "math-min", "math-abs", "math-clamp", "math-degrees":
 		return c.emitBuiltinMath(inst, bm.ForwardFunc)
 	case "str-to-bool":
@@ -936,6 +938,33 @@ func (c *codegen) emitBuiltinLen(inst *Inst, ff string) error {
 		c.sb.WriteString(fmt.Sprintf("  store %s %s, %s* %s\n", dstLT, v, dstLT, dstSlot))
 		return nil
 	}
+	if lt == "%txt" {
+		// %txt = type { [255 x i8], i8 }; field 1 is the i8 length byte.
+		// str-len-bytes on a %txt returns its byte length, mirroring
+		// emitLenCap's txt.len path and the legacy backend (which reads the
+		// i8 len field). Without this, `s.str-len-bytes()` on a %txt receiver
+		// was rejected with "unsupported receiver type %txt" under MIR=3.
+		g := c.treg("lg")
+		c.sb.WriteString(fmt.Sprintf("  %s = getelementptr inbounds %s, %s* %s, i32 0, i32 1\n", g, lt, lt, slot))
+		l := c.treg("ll")
+		c.sb.WriteString(fmt.Sprintf("  %s = load i8, i8* %s\n", l, g))
+		z := c.treg("lz")
+		c.sb.WriteString(fmt.Sprintf("  %s = zext i8 %s to i64\n", z, l))
+		if inst.Dst <= NoVal {
+			return nil
+		}
+		dstLT, _ := c.ptype(inst.Dst)
+		dstSlot := c.valSlot[inst.Dst]
+		if dstSlot == "" {
+			return fmt.Errorf("builtin %s: no result slot", ff)
+		}
+		v := c.coerce("i64", z, dstLT)
+		if v == "" {
+			return fmt.Errorf("builtin %s: cannot store i64 into %s", ff, dstLT)
+		}
+		c.sb.WriteString(fmt.Sprintf("  store %s %s, %s* %s\n", dstLT, v, dstLT, dstSlot))
+		return nil
+	}
 	if lt != "%str-long" && lt != "%vec" {
 		c.fail("builtin %s: unsupported receiver type %s", ff, lt)
 		return fmt.Errorf("builtin %s receiver %s: %s", ff, lt, strings.Join(c.errs, "; "))
@@ -1198,6 +1227,27 @@ func (c *codegen) emitBuiltinVecClear(inst *Inst) error {
 	z := c.treg("clz")
 	c.sb.WriteString(fmt.Sprintf("  %s = insertvalue %%vec %s, i64 0, 0\n", z, vv))
 	c.sb.WriteString(fmt.Sprintf("  store %%vec %s, %%vec* %s\n", z, slot))
+	return nil
+}
+
+// emitBuiltinStrClear lowers `str.clear()`: set the receiver's logical length to
+// 0 in place (field 0 of %str-long), keeping the existing data pointer/capacity
+// (mirrors the builtin comment "no storage switch" — str.clear does not free or
+// reallocate, it only hides the contents). The receiver is read/written through
+// its alloca slot, so the caller observes the mutation (by-reference contract).
+func (c *codegen) emitBuiltinStrClear(inst *Inst) error {
+	if len(inst.Args) < 1 {
+		return fmt.Errorf("str.clear: needs receiver")
+	}
+	slot := c.valSlot[inst.Args[0]]
+	if slot == "" {
+		return fmt.Errorf("str.clear: no receiver slot")
+	}
+	vv := c.treg("clv")
+	c.sb.WriteString(fmt.Sprintf("  %s = load %%str-long, %%str-long* %s\n", vv, slot))
+	z := c.treg("clz")
+	c.sb.WriteString(fmt.Sprintf("  %s = insertvalue %%str-long %s, i64 0, 0\n", z, vv))
+	c.sb.WriteString(fmt.Sprintf("  store %%str-long %s, %%str-long* %s\n", z, slot))
 	return nil
 }
 

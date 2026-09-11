@@ -265,7 +265,22 @@ func (f *formatter) attachedAnnotations(stmt parser.Statement) []*parser.Annotat
 	case *parser.LetStatement, *parser.FunctionDefinition, *parser.StructDefinition, *parser.ExpressionStatement,
 		*parser.ForStatement, *parser.MultiAssignStatement,
 		*parser.TaggedEnumDefinition, *parser.EnumDefinition, *parser.InterfaceDefinition:
-		return f.sem.AnnotationsOf(stmt)
+		all := f.sem.AnnotationsOf(stmt)
+		// `#{index-out = ...}` 是「行注解」：永遠只以獨立 AnnotationStatement
+		// 形式印出（見 formatAnnotationStatement），不應作為附加註解再印一次
+		// （否則與獨立行形成雙印、破壞冪等）。故過濾掉該鍵，使其僅出現在
+		// 獨立註解行。
+		if len(all) == 0 {
+			return nil
+		}
+		filtered := all[:0:0]
+		for _, e := range all {
+			if e != nil && e.Key == "index-out" {
+				continue
+			}
+			filtered = append(filtered, e)
+		}
+		return filtered
 	}
 	return nil
 }

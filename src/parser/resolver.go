@@ -90,6 +90,13 @@ type SemanticContext struct {
 	// from colliding in the global VarTypes map during lowering.
 	FuncVarTypes     map[string]map[string]string
 	FuncDeclaredVars map[string]map[string]bool
+
+	// IdxLocalTypes 是「安全索引專用」的解析器本地型別表（函數作用域）：
+	// 記錄由 to-vec() 等 RHS 推導出的容器型別（如 `av = a.to-vec()` → []i64），
+	// 供 checker 的 ValidateUnhandledIndex 判定索引基底是否為 arr/vec/slice。
+	// parser 實例在 ParseProgram 返回後即被丟棄，故 lowering 階段將此表掛到
+	// 語義副表匯出，使 checker 能複現 isSafeIndexBase 的型別查詢。
+	IdxLocalTypes map[string]map[string]string
 }
 
 // NewSemanticContext 建立空語義副表。
@@ -160,6 +167,20 @@ func (s *SemanticContext) Merge(other *SemanticContext) {
 	for fn, vars := range other.FuncDeclaredVars {
 		for vn := range vars {
 			s.SetFuncDeclared(fn, vn)
+		}
+	}
+	// Merge safe-index local types (don't overwrite existing entries).
+	for fn, vars := range other.IdxLocalTypes {
+		for vn, vt := range vars {
+			if s.IdxLocalTypes == nil {
+				s.IdxLocalTypes = make(map[string]map[string]string)
+			}
+			if s.IdxLocalTypes[fn] == nil {
+				s.IdxLocalTypes[fn] = make(map[string]string)
+			}
+			if _, exists := s.IdxLocalTypes[fn][vn]; !exists {
+				s.IdxLocalTypes[fn][vn] = vt
+			}
 		}
 	}
 }

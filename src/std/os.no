@@ -416,6 +416,7 @@ args = () (count i64) {
 arg = (idx i64) (val str) {
 }
 
+#{index-out = 0}
 ;     // LLVM: access argv[idx]
 ; }
 ; ═══════════════════════════════════════════════

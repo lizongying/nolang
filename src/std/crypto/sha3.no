@@ -3,6 +3,7 @@
 ; 實作 NIST FIPS 202 定義的 SHA-3 系列，基於 Keccak 海綿結構。
 ; 提供 SHA3-224、SHA3-256、SHA3-384、SHA3-512 四種輸出長度。
 ;
+#{index-out = 0}
 ; 內部狀態為 1600-bit（25 × 64-bit lanes），Keccak-f[1600] 含 24 輪。
 ;
 ; 用法：
@@ -18,7 +19,10 @@
 ; ═══════════════════════════════════════════════
 
 ; 旋轉偏移表（rho），25 個 lane 的旋轉量
-; 排列: lane[x][y] -> index = x + 5*y (x=0..4, y=0..4)
+; 排列: lane[x][y] -> {
+    #{index-out = 0}
+    index = x + 5*y (x=0..4, y=0..4)
+}
 KECCAK-RC [25]u64 = [
     0, 1, 62, 28, 27, 36, 44, 6,
     55, 20, 3, 10, 43, 25, 39, 41,
@@ -37,9 +41,11 @@ KECCAK-RC-FINAL [24]u64 = [
 SHA3-MASK64 u64 = 18446744073709551615
 
 ; ═══════════════════════════════════════════════
+#{index-out = 0}
 ; Keccak-f[1600] 置換
 ; ═══════════════════════════════════════════════
 
+#{index-out = 0}
 ; keccak-f1600: 執行 Keccak-f[1600] 置換（24 輪）
 ; state []u64: 25 個 64-bit lane（輸入/輸出）
 keccak-f1600 = (state []u64) {
@@ -49,6 +55,7 @@ keccak-f1600 = (state []u64) {
         c [5]u64
         x <- [0..5): {
             #{overflow=wrap}
+            #{index-out = 0}
             c[x] = state[x] ^ state[x + 5] ^ state[x + 10] ^ state[x + 15] ^ state[x + 20]
         }
         d [5]u64
@@ -57,12 +64,15 @@ keccak-f1600 = (state []u64) {
             x1 = (x + 1) % 5
             #{overflow=wrap}
             x4 = (x + 4) % 5
+            #{index-out = 0}
             d[x] = c[x1] ^ ((c[x4] << 1) | (c[x4] >> 63))
+            #{index-out = 0}
             d[x] = d[x] & SHA3-MASK64
         }
         x <- [0..5): {
             y <- [0..5): {
                 #{overflow=wrap}
+                #{index-out = 0}
                 state[x + 5 * y] = state[x + 5 * y] ^ d[x]
             }
         }
@@ -72,18 +82,22 @@ keccak-f1600 = (state []u64) {
         x <- [0..5): {
             y <- [0..5): {
                 #{overflow=wrap}
+                #{index-out = 0}
                 rc = KECCAK-RC[x + 5 * y]
                 #{overflow=wrap}
+                #{index-out = 0}
                 val = state[x + 5 * y]
                 #{overflow=wrap}
                 rotated = ((val << rc) | (val >> (64 - rc))) & SHA3-MASK64
                 rc == 0 -> rotated = val
 
+                #{index-out = 0}
                 ; π: new[x'][y'] where x' = y, y' = (2x+3y) % 5
                 nx = y
                 #{overflow=wrap}
                 ny = (2 * x + 3 * y) % 5
                 #{overflow=wrap}
+                #{index-out = 0}
                 b[nx + 5 * ny] = rotated
             }
         }
@@ -96,11 +110,13 @@ keccak-f1600 = (state []u64) {
                 #{overflow=wrap}
                 x2 = (x + 2) % 5
                 #{overflow=wrap}
+                #{index-out = 0}
                 state[x + 5 * y] = b[x + 5 * y] ^ ((SHA3-MASK64 ^ b[x1 + 5 * y]) & b[x2 + 5 * y])
             }
         }
 
         ; ι (iota)
+        #{index-out = 0}
         state[0] = state[0] ^ KECCAK-RC-FINAL[round]
     }
 }
@@ -124,6 +140,7 @@ keccak-sponge = (data []byte, rate i64, capacity i64, out-len i64, suffix byte) 
     state []u64
     i <- [0..25): {
         #{overflow=wrap}
+        #{index-out = 0}
         state[i] = 0
     }
     dlen = data.len()
@@ -140,6 +157,7 @@ keccak-sponge = (data []byte, rate i64, capacity i64, out-len i64, suffix byte) 
                 #{overflow=wrap}
                 lane-idx = i / 8
                 byte-idx = i % 8
+                #{index-out = 0}
                 state[lane-idx] = state[lane-idx] ^ (data[absorbed + i] << (byte-idx * 8))
             }
         }
@@ -166,6 +184,7 @@ keccak-sponge = (data []byte, rate i64, capacity i64, out-len i64, suffix byte) 
 
     ; 添加 suffix
     #{overflow=wrap}
+    #{index-out = 0}
     state[lane-idx] = state[lane-idx] ^ (suffix << (byte-idx * 8))
 
     ; 在 rate 末尾添加 0x80
@@ -174,6 +193,7 @@ keccak-sponge = (data []byte, rate i64, capacity i64, out-len i64, suffix byte) 
     #{overflow=wrap}
     last-byte-idx = (rate - 1) % 8
     #{overflow=wrap}
+    #{index-out = 0}
     state[last-lane-idx] = state[last-lane-idx] ^ (128 << (last-byte-idx * 8))
     keccak-f1600(state)
 
@@ -186,6 +206,7 @@ keccak-sponge = (data []byte, rate i64, capacity i64, out-len i64, suffix byte) 
                 #{overflow=wrap}
                 lane-idx = i / 8
                 byte-idx = i % 8
+                #{index-out = 0}
                 out[squeezed + i] = (state[lane-idx] >> (byte-idx * 8)) & 255
             }
         }
@@ -207,6 +228,7 @@ keccak-sponge = (data []byte, rate i64, capacity i64, out-len i64, suffix byte) 
 sha3-224 = (data []byte) (hash [28]byte) {
     out []byte = keccak-sponge(data, 144, 56, 28, 0x06)
     i <- [0..28): {
+        #{index-out = 0}
         hash[i] = out[i]
     }
 }
@@ -217,6 +239,7 @@ sha3-224 = (data []byte) (hash [28]byte) {
 sha3-256 = (data []byte) (hash [32]byte) {
     out []byte = keccak-sponge(data, 136, 64, 32, 0x06)
     i <- [0..32): {
+        #{index-out = 0}
         hash[i] = out[i]
     }
 }
@@ -227,6 +250,7 @@ sha3-256 = (data []byte) (hash [32]byte) {
 sha3-384 = (data []byte) (hash [48]byte) {
     out []byte = keccak-sponge(data, 104, 96, 48, 0x06)
     i <- [0..48): {
+        #{index-out = 0}
         hash[i] = out[i]
     }
 }
@@ -237,6 +261,7 @@ sha3-384 = (data []byte) (hash [48]byte) {
 sha3-512 = (data []byte) (hash [64]byte) {
     out []byte = keccak-sponge(data, 72, 128, 64, 0x06)
     i <- [0..64): {
+        #{index-out = 0}
         hash[i] = out[i]
     }
 }
@@ -254,8 +279,10 @@ sha3-224-hex = (data []byte) (hex str) {
     hex str = with-len(56)
     i <- [0..28): {
         #{overflow=wrap}
+        #{index-out = 0}
         hex[i * 2] = hex-chars[(hash[i] >> 4) & 15]
         #{overflow=wrap}
+        #{index-out = 0}
         hex[i * 2 + 1] = hex-chars[hash[i] & 15]
     }
 }
@@ -269,8 +296,10 @@ sha3-256-hex = (data []byte) (hex str) {
     hex str = with-len(64)
     i <- [0..32): {
         #{overflow=wrap}
+        #{index-out = 0}
         hex[i * 2] = hex-chars[(hash[i] >> 4) & 15]
         #{overflow=wrap}
+        #{index-out = 0}
         hex[i * 2 + 1] = hex-chars[hash[i] & 15]
     }
 }
@@ -284,8 +313,10 @@ sha3-384-hex = (data []byte) (hex str) {
     hex str = with-len(96)
     i <- [0..48): {
         #{overflow=wrap}
+        #{index-out = 0}
         hex[i * 2] = hex-chars[(hash[i] >> 4) & 15]
         #{overflow=wrap}
+        #{index-out = 0}
         hex[i * 2 + 1] = hex-chars[hash[i] & 15]
     }
 }
@@ -299,8 +330,10 @@ sha3-512-hex = (data []byte) (hex str) {
     hex str = with-len(128)
     i <- [0..64): {
         #{overflow=wrap}
+        #{index-out = 0}
         hex[i * 2] = hex-chars[(hash[i] >> 4) & 15]
         #{overflow=wrap}
+        #{index-out = 0}
         hex[i * 2 + 1] = hex-chars[hash[i] & 15]
     }
 }

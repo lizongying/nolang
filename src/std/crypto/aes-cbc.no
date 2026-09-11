@@ -27,6 +27,7 @@ aes-128-cbc-enc = (in []byte, key [16]byte, iv [16]byte) (out []byte) {
     ; 上一個密文區塊（初始為 IV）
     prev [16]byte
     i <- [0..16): {
+        #{index-out = 0}
         prev[i] = iv[i]
     }
 
@@ -40,6 +41,7 @@ aes-128-cbc-enc = (in []byte, key [16]byte, iv [16]byte) (out []byte) {
         xored [16]byte
         i <- [0..16): {
             #{overflow=wrap}
+            #{index-out = 0}
             xored[i] = (in[blk + i]) ^ (prev[i])
         }
 
@@ -50,12 +52,14 @@ aes-128-cbc-enc = (in []byte, key [16]byte, iv [16]byte) (out []byte) {
         ; 輸出密文
         i <- [0..16): {
             #{overflow=wrap}
+            #{index-out = 0}
             out[blk + i] = enc-block[i]
         }
 
         ; 更新 prev 為當前密文區塊
         i <- [0..16): {
             #{overflow=wrap}
+            #{index-out = 0}
             prev[i] = out[blk + i]
         }
         #{overflow=wrap}
@@ -73,6 +77,7 @@ aes-128-cbc-dec = (in []byte, key [16]byte, iv [16]byte) (out []byte) {
     ; 上一個密文區塊（初始為 IV）
     prev [16]byte
     i <- [0..16): {
+        #{index-out = 0}
         prev[i] = iv[i]
     }
 
@@ -86,6 +91,7 @@ aes-128-cbc-dec = (in []byte, key [16]byte, iv [16]byte) (out []byte) {
         cur-cipher [16]byte
         i <- [0..16): {
             #{overflow=wrap}
+            #{index-out = 0}
             cur-cipher[i] = in[blk + i]
         }
 
@@ -96,12 +102,14 @@ aes-128-cbc-dec = (in []byte, key [16]byte, iv [16]byte) (out []byte) {
         ; XOR 與 prev 得到明文
         i <- [0..16): {
             #{overflow=wrap}
+            #{index-out = 0}
             out[blk + i] = (dec-block[i]) ^ (prev[i])
         }
 
         ; 更新 prev 為當前密文區塊
         i <- [0..16): {
             #{overflow=wrap}
+            #{index-out = 0}
             prev[i] = cur-cipher[i]
         }
         #{overflow=wrap}
@@ -120,10 +128,12 @@ pkcs7-pad = (in []byte) (out []byte) {
     out = with-len(in.len() + pad-len)
     i <- [0..in.len()): {
         #{overflow=wrap}
+        #{index-out = 0}
         out[i] = in[i]
     }
     i <- [0..pad-len): {
         #{overflow=wrap}
+        #{index-out = 0}
         out[in.len() + i] = pad-len
     }
 }
@@ -138,6 +148,7 @@ pkcs7-unpad = (in []byte) (out-n i64) {
         return
     }
     #{overflow=wrap}
+    #{index-out = 0}
     pad-len = in[in.len() - 1]
     pad-len == 0 || pad-len > 16 -> {
         out-n = -1

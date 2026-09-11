@@ -112,6 +112,7 @@ url-parse = (url-str str) (u url-info) {
         n = path-pos
     }
 
+    #{index-out = 0}
     ; 剩餘部分為 authority (host[:port] 或 user:pass@host:port)
     authority = url-str.slice(pos, n)
 
@@ -146,6 +147,7 @@ url-parse = (url-str str) (u url-info) {
             valid = true
             i <- [0..port-str.len-bytes()): {
                 #{overflow=wrap}
+                #{index-out = 0}
                 ch = port-str[i]
                 ch < 48 || ch > 57 -> {
                     valid = false
@@ -303,7 +305,10 @@ url-info.to-str = () (out str) {
     }
     #{overflow=wrap}
     {
-        .path.len-bytes() > 0 && .path[0] == 47 -> out = out - .path
+                .path.len-bytes() > 0 && .path[0] == 47 -> {
+            #{index-out = 0}
+            out = out - .path
+        }
 
         .path.len-bytes() > 0 -> out = out - '/' - .path
     }
@@ -324,6 +329,7 @@ url-encode = (s str) (out str) {
     hex-chars = '0123456789ABCDEF'
     out = ''
     i <- [0..s.len-bytes()): {
+        #{index-out = 0}
         c = s[i]
 
         ; 不編碼的字元：A-Z, a-z, 0-9, -, _, ., ~
@@ -346,11 +352,17 @@ url-encode = (s str) (out str) {
             ->
         }
         {
-            keep -> out[out.len-bytes()] = c
+                        keep -> {
+                #{index-out = 0}
+                out[out.len-bytes()] = c
+            }
 
             -> {
+                #{index-out = 0}
                 out[out.len-bytes()] = 37
+                #{index-out = 0}
                 out[out.len-bytes()] = hex-chars[c >> 4]
+                #{index-out = 0}
                 out[out.len-bytes()] = hex-chars[c & 15]
             }
         }
@@ -364,6 +376,7 @@ url-encode-component = (s str) (out str) {
     hex-chars = '0123456789ABCDEF'
     out = ''
     i <- [0..s.len-bytes()): {
+        #{index-out = 0}
         c = s[i]
 
         ; 只保留 A-Z, a-z, 0-9, -, _, ., ~
@@ -386,11 +399,17 @@ url-encode-component = (s str) (out str) {
             ->
         }
         {
-            keep -> out[out.len-bytes()] = c
+                        keep -> {
+                #{index-out = 0}
+                out[out.len-bytes()] = c
+            }
 
             -> {
+                #{index-out = 0}
                 out[out.len-bytes()] = 37
+                #{index-out = 0}
                 out[out.len-bytes()] = hex-chars[c >> 4]
+                #{index-out = 0}
                 out[out.len-bytes()] = hex-chars[c & 15]
             }
         }
@@ -405,6 +424,7 @@ url-decode = (s str) (out str) {
     i = 0
     {
         #{overflow=wrap}
+        #{index-out = 0}
         c = s[i]
         #{overflow=wrap}
         {
@@ -413,7 +433,9 @@ url-decode = (s str) (out str) {
                     ; %XX
 
                     #{overflow=wrap}
+                    #{index-out = 0}
                     h1 = s[i + 1]
+                    #{index-out = 0}
                     h2 = s[i + 2]
                     val = 0
 
@@ -436,14 +458,21 @@ url-decode = (s str) (out str) {
 
                         ->
                     }
+                    #{index-out = 0}
                     out[out.len-bytes()] = val & 255
                     i = i + 2
                 }
             }
 
-            c == 43 -> out[out.len-bytes()] = 32; + 號轉空格
+                        c == 43 -> {
+                #{index-out = 0}
+                out[out.len-bytes()] = 32; + 號轉空格
+            }
 
-            -> out[out.len-bytes()] = c
+             -> {
+                #{index-out = 0}
+                out[out.len-bytes()] = c
+            }
         }
         #{overflow=wrap}
         i = i + 1
@@ -463,7 +492,9 @@ url-build-query = (keys [16]str, values [16]str, count i64) (out str) {
     out = ''
     i <- [0..count): {
         #{overflow=wrap}
+        #{index-out = 0}
         enc-k = url-encode(keys[i])
+        #{index-out = 0}
         enc-v = url-encode(values[i])
         #{overflow=wrap}
         out.len-bytes() > 0 -> out = out - '&'
@@ -593,6 +624,7 @@ url-parse-basic-auth = (header str) (user str, password str) {
     user-bytes []byte
     j <- [0..colon): {
         #{overflow=wrap}
+        #{index-out = 0}
         user-bytes[j] = raw[j]
     }
     user = user-bytes.to-str()
@@ -601,6 +633,7 @@ url-parse-basic-auth = (header str) (user str, password str) {
     #{overflow=wrap}
     j <- [colon + 1..raw.len()): {
         #{overflow=wrap}
+        #{index-out = 0}
         pass-bytes[k] = raw[j]
         #{overflow=wrap}
         k = k + 1

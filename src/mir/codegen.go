@@ -60,6 +60,11 @@ type codegen struct {
 	extDeclOrder []string
 	extraGlobals []string
 	strConsts    map[string]string // dedupe string-constant globals by content
+
+	// optPayload maps a per-payload inline option LLVM type (%option_<elem>)
+	// to its payload field LLVM type, so print/compare code can peel field 1
+	// and route it to the correct scalar printer. Populated at type-decl time.
+	optPayload map[string]string
 }
 
 // ptype returns the LLVM type string for a MIR value and whether it is owned.
@@ -205,6 +210,7 @@ func (m *Module) EmitLLVM() (out string, err error) {
 		resultParam:  map[ValueID]bool{},
 		strGlobals:   map[ValueID]strGlobal{},
 		extDecls:     map[string]bool{},
+		optPayload:   map[string]string{},
 	}
 	// Sanitize LLVM symbol names, disambiguating collisions. Nolang method
 	// names embed their receiver type (e.g. `[]t.len`, `vec.reverse`,
@@ -745,15 +751,15 @@ define void @print_bool(i1 %v) {
 entry:
   br i1 %v, label %t, label %f
 t:
-  call i64 @write(i32 1, i8* getelementptr inbounds ([4 x i8], [4 x i8]* @.true, i64 0, i64 0), i64 4)
+  call i64 @write(i32 1, i8* getelementptr inbounds ([1 x i8], [1 x i8]* @.true, i64 0, i64 0), i64 1)
   ret void
 f:
-  call i64 @write(i32 1, i8* getelementptr inbounds ([5 x i8], [5 x i8]* @.false, i64 0, i64 0), i64 5)
+  call i64 @write(i32 1, i8* getelementptr inbounds ([1 x i8], [1 x i8]* @.false, i64 0, i64 0), i64 1)
   ret void
 }
 
-@.true = private constant [4 x i8] c"true"
-@.false = private constant [5 x i8] c"false"
+@.true = private constant [1 x i8] c"1"
+@.false = private constant [1 x i8] c"0"
 @.nl = private constant [2 x i8] c"\0A\00"
 @.sp = private constant [2 x i8] c" \00"
 
@@ -1651,6 +1657,23 @@ func (c *codegen) optionScalarPayload(srcT, sv string) string {
 	return sv
 }
 
+// unwrapOptionOperand extracts the ok-payload of an %option operand when the
+// arithmetic/comparison destination is a plain scalar. The overflow-default
+// integration makes integer arithmetic yield ?T, so a variable that holds such
+// a result is typed %option; when it is reused as an operand of a scalar op
+// (`%c = mul i64 %x, %y` where %y is %option) opt rejects the IR as "defined
+// with type %option but expected i64". Mirroring legacy, the variable
+// contributes its scalar payload (tag 0 = ok), never the {tag,payload} struct.
+func (c *codegen) unwrapOptionOperand(t, v, dstLT string) (string, string) {
+	if t == "%option" && dstLT != "%option" && dstLT != "" {
+		c.loadSeq++
+		pl := fmt.Sprintf("%%opu%d", c.loadSeq)
+		c.sb.WriteString(fmt.Sprintf("  %s = extractvalue %s %s, 1\n", pl, t, v))
+		return dstLT, pl
+	}
+	return t, v
+}
+
 func (c *codegen) emitArith(f *Function, inst *Inst) error {
 	lt, _ := c.ptype(inst.Dst)
 	slot := c.valSlot[inst.Dst]
@@ -1677,17 +1700,37 @@ func (c *codegen) emitArith(f *Function, inst *Inst) error {
 		c.sb.WriteString(fmt.Sprintf("  store %s %%c%d, %s* %s\n", lt, inst.Dst, lt, slot))
 		return nil
 	}
-	// Coerce both operands to the result type: a str-byte (i8) arithmetic like
-	// `c - 32` feeds an i8 literal (i64) into an i8 op; mismatched widths are a
-	// hard LLVM type error. Truncate/extend so the operation type matches.
-	// (coerceInt is a no-op for floating-point types, so it leaves `double`
-	// operands untouched — important, since integer trunc/sext would corrupt them.)
-	aV = c.coerceInt(aV, aT, lt)
-	bV = c.coerceInt(bV, bT, lt)
+	// Overflow-default arithmetic: integer/float ops yield ?T. Unwrap any
+	// %option operands to their scalar payload, compute in the scalar element
+	// type, then wrap the result back into the option (tag 0 = ok) for storage.
+	resLT := lt
+	wrapResult := false
+	if strings.HasPrefix(lt, "%option") {
+		if val := c.mod.Value(inst.Dst); val != nil {
+			if t := c.mod.Type(val.Type); t != nil && t.Kind == KindOption {
+				if elem := optionElemRaw(t); elem != "" {
+					_, payloadLT := c.optionType(elem)
+					resLT = payloadLT
+					wrapResult = true
+					aT, aV = c.unwrapOptionOperand(aT, aV, resLT)
+					bT, bV = c.unwrapOptionOperand(bT, bV, resLT)
+				}
+			}
+		}
+	} else {
+		aT, aV = c.unwrapOptionOperand(aT, aV, lt)
+		bT, bV = c.unwrapOptionOperand(bT, bV, lt)
+	}
+	// Coerce both operands to the (possibly unwrapped) result type: a str-byte
+	// (i8) arithmetic like `c - 32` feeds an i8 literal (i64) into an i8 op;
+	// mismatched widths are a hard LLVM type error. Truncate/extend so the
+	// operation type matches. (coerceInt is a no-op for floating-point types.)
+	aV = c.coerceInt(aV, aT, resLT)
+	bV = c.coerceInt(bV, bT, resLT)
 	// Integer ops (add/sub/mul/sdiv/srem) are ILLEGAL on floating-point values;
 	// f64 arithmetic must use the float-family opcodes or opt rejects the IR with
 	// "invalid operand type for instruction" (the f64↔str type-width bug).
-	isFloat := lt == "double"
+	isFloat := resLT == "double"
 	var op string
 	switch inst.Op {
 	case OpAdd:
@@ -1721,22 +1764,62 @@ func (c *codegen) emitArith(f *Function, inst *Inst) error {
 			op = "srem"
 		}
 	}
-	c.sb.WriteString(fmt.Sprintf("  %%c%d = %s %s %s, %s\n", inst.Dst, op, lt, aV, bV))
-	c.sb.WriteString(fmt.Sprintf("  store %s %%c%d, %s* %s\n", lt, inst.Dst, lt, slot))
+	c.sb.WriteString(fmt.Sprintf("  %%c%d = %s %s %s, %s\n", inst.Dst, op, resLT, aV, bV))
+	if wrapResult {
+		c.loadSeq++
+		wreg := fmt.Sprintf("%%cw%d", c.loadSeq)
+		c.sb.WriteString(fmt.Sprintf("  %s = insertvalue %s %s, %s %%c%d, 1\n", wreg, lt, optionZeroLit(lt, resLT), resLT, inst.Dst))
+		c.sb.WriteString(fmt.Sprintf("  store %s %s, %s* %s\n", lt, wreg, lt, slot))
+	} else {
+		c.sb.WriteString(fmt.Sprintf("  store %s %%c%d, %s* %s\n", lt, inst.Dst, lt, slot))
+	}
 	return nil
+}
+
+// optionZeroLit returns an LLVM aggregate literal of the given option type with
+// both fields zeroed ({ i64 0, <payload> 0 }), used as the seed for
+// insertvalue when wrapping a scalar result into an option (tag 0 = ok).
+func optionZeroLit(optionLT, payloadLT string) string {
+	if payloadLT == "double" {
+		return "{ i64 0, double 0.0 }"
+	}
+	return fmt.Sprintf("{ i64 0, %s 0 }", payloadLT)
 }
 
 func (c *codegen) emitNeg(inst *Inst) error {
 	lt, _ := c.ptype(inst.Dst)
 	slot := c.valSlot[inst.Dst]
 	vT, v := c.loadVal(inst.Args[0])
-	v = c.coerceInt(v, vT, lt)
-	if lt == "double" {
+	resLT := lt
+	wrapResult := false
+	if strings.HasPrefix(lt, "%option") {
+		if val := c.mod.Value(inst.Dst); val != nil {
+			if t := c.mod.Type(val.Type); t != nil && t.Kind == KindOption {
+				if elem := optionElemRaw(t); elem != "" {
+					_, payloadLT := c.optionType(elem)
+					resLT = payloadLT
+					wrapResult = true
+					vT, v = c.unwrapOptionOperand(vT, v, resLT)
+				}
+			}
+		}
+	} else {
+		vT, v = c.unwrapOptionOperand(vT, v, lt)
+	}
+	v = c.coerceInt(v, vT, resLT)
+	if resLT == "double" {
 		c.sb.WriteString(fmt.Sprintf("  %%c%d = fneg double %s\n", inst.Dst, v))
 	} else {
-		c.sb.WriteString(fmt.Sprintf("  %%c%d = sub %s 0, %s\n", inst.Dst, lt, v))
+		c.sb.WriteString(fmt.Sprintf("  %%c%d = sub %s 0, %s\n", inst.Dst, resLT, v))
 	}
-	c.sb.WriteString(fmt.Sprintf("  store %s %%c%d, %s* %s\n", lt, inst.Dst, lt, slot))
+	if wrapResult {
+		c.loadSeq++
+		wreg := fmt.Sprintf("%%cw%d", c.loadSeq)
+		c.sb.WriteString(fmt.Sprintf("  %s = insertvalue %s %s, %s %%c%d, 1\n", wreg, lt, optionZeroLit(lt, resLT), resLT, inst.Dst))
+		c.sb.WriteString(fmt.Sprintf("  store %s %s, %s* %s\n", lt, wreg, lt, slot))
+	} else {
+		c.sb.WriteString(fmt.Sprintf("  store %s %%c%d, %s* %s\n", lt, inst.Dst, lt, slot))
+	}
 	return nil
 }
 
@@ -1937,8 +2020,33 @@ func (c *codegen) emitBitwise(inst *Inst) error {
 	slot := c.valSlot[inst.Dst]
 	aT, aV := c.loadVal(inst.Args[0])
 	bT, bV := c.loadVal(inst.Args[1])
-	aV = c.coerceInt(aV, aT, lt)
-	bV = c.coerceInt(bV, bT, lt)
+	// Overflow-default arithmetic yields ?T, so a bitwise operand (and/or/xor/
+	// shl/shr) may carry an %option value. Unwrap %option operands to their
+	// scalar payload, compute in the scalar element type, then wrap the result
+	// back into the option (tag 0 = ok) for storage — mirroring emitArith.
+	// Without this, `lshr %option %lv, %lv` where the shift amount is a plain
+	// i64 fails LLVM verification ("defined with type 'i64' but expected
+	// '%option'") (test-vec-assign).
+	resLT := lt
+	wrapResult := false
+	if strings.HasPrefix(lt, "%option") {
+		if val := c.mod.Value(inst.Dst); val != nil {
+			if t := c.mod.Type(val.Type); t != nil && t.Kind == KindOption {
+				if elem := optionElemRaw(t); elem != "" {
+					_, payloadLT := c.optionType(elem)
+					resLT = payloadLT
+					wrapResult = true
+					aT, aV = c.unwrapOptionOperand(aT, aV, resLT)
+					bT, bV = c.unwrapOptionOperand(bT, bV, resLT)
+				}
+			}
+		}
+	} else {
+		aT, aV = c.unwrapOptionOperand(aT, aV, lt)
+		bT, bV = c.unwrapOptionOperand(bT, bV, lt)
+	}
+	aV = c.coerceInt(aV, aT, resLT)
+	bV = c.coerceInt(bV, bT, resLT)
 	var op string
 	switch inst.Op {
 	case OpBitAnd:
@@ -1952,8 +2060,15 @@ func (c *codegen) emitBitwise(inst *Inst) error {
 	case OpShr:
 		op = "lshr"
 	}
-	c.sb.WriteString(fmt.Sprintf("  %%c%d = %s %s %s, %s\n", inst.Dst, op, lt, aV, bV))
-	c.sb.WriteString(fmt.Sprintf("  store %s %%c%d, %s* %s\n", lt, inst.Dst, lt, slot))
+	c.sb.WriteString(fmt.Sprintf("  %%c%d = %s %s %s, %s\n", inst.Dst, op, resLT, aV, bV))
+	if wrapResult {
+		c.loadSeq++
+		wreg := fmt.Sprintf("%%cw%d", c.loadSeq)
+		c.sb.WriteString(fmt.Sprintf("  %s = insertvalue %s %s, %s %%c%d, 1\n", wreg, lt, optionZeroLit(lt, resLT), resLT, inst.Dst))
+		c.sb.WriteString(fmt.Sprintf("  store %s %s, %s* %s\n", lt, wreg, lt, slot))
+	} else {
+		c.sb.WriteString(fmt.Sprintf("  store %s %%c%d, %s* %s\n", lt, inst.Dst, lt, slot))
+	}
 	return nil
 }
 
@@ -2346,8 +2461,9 @@ func (c *codegen) emitIndex(inst *Inst) error {
 	idxV = c.coerceIndex(idxVT, idxV)
 	dstSlot := c.valSlot[inst.Dst]
 	if dstSlot == "" {
-		c.fail("index result has no slot in func %d", c.cf)
-		return fmt.Errorf("index dst slot")
+		dt, _ := c.ptype(inst.Dst)
+		c.fail("index result has no slot in func %s (dst=%d type=%s) arrT=%s elemT=%s", c.fname[c.cf], inst.Dst, dt, arrT, elemT)
+		return fmt.Errorf("index dst slot (dst=%d type=%s)", inst.Dst, dt)
 	}
 	ep := c.elemAddr(arrSlot, idxV, arrT, elemT)
 	c.loadSeq++
@@ -2416,6 +2532,21 @@ func (c *codegen) emitIndexStore(inst *Inst) error {
 	// []byte, which keeps the store to a single byte at offset i).
 	if cv := c.coerce(valT, valV, elemT); cv != "" {
 		valV = cv
+	} else if strings.HasPrefix(valT, "%option") && elemT != "%str-long" && elemT != "%vec" && elemT != "%option" {
+		// Overflow-default integer arithmetic yields ?i64 (an %option). Assigning
+		// it to a plain scalar element (`a[i] = a[j]+a[k]` with a:[N]i64) unwraps
+		// the ok payload, matching the legacy codegen (which stores the scalar
+		// payload, not the whole {tag,payload} struct). Without this, opt rejects
+		// the store as "defined with type '%option' but expected 'i64'" and the
+		// build fails under NOLANG_MIR=3 (regression of test-arr.no).
+		c.loadSeq++
+		pl := fmt.Sprintf("%%opay%d", c.loadSeq)
+		c.sb.WriteString(fmt.Sprintf("  %s = extractvalue %s %s, 1\n", pl, valT, valV))
+		if cv2 := c.coerce("i64", pl, elemT); cv2 != "" {
+			valV = cv2
+		} else {
+			valV = pl
+		}
 	} else if valT == "%str-long" && elemT == "i8" {
 		// Storing a (single-char) string value into a char slot: take its first
 		// byte. `s[i] = c` where c is a one-char string stores byte 0 of c's
@@ -2606,6 +2737,21 @@ func (c *codegen) emitSetField(inst *Inst) error {
 		if fieldLT == "" {
 			fieldLT = "i64"
 		}
+		// Overflow-default: if the RHS is ?T (an %option) but the field is a
+		// scalar, unwrap the ok payload before storing — mirror legacy, which
+		// stores the scalar payload, not the whole {tag,payload} struct. Without
+		// this, opt rejects the store as "defined with type '%option' but
+		// expected 'i64'" and the build fails under NOLANG_MIR=3.
+		if strings.HasPrefix(recvLT, "%option") && fieldLT != "%str-long" && fieldLT != "%vec" && fieldLT != "%option" {
+			c.loadSeq++
+			pl := fmt.Sprintf("%%opay%d", c.loadSeq)
+			c.sb.WriteString(fmt.Sprintf("  %s = extractvalue %s %s, 1\n", pl, recvLT, valV))
+			if cv2 := c.coerce("i64", pl, fieldLT); cv2 != "" {
+				valV = cv2
+			} else {
+				valV = pl
+			}
+		}
 		c.loadSeq++
 		pg := fmt.Sprintf("%%opg%d", c.loadSeq)
 		c.sb.WriteString(fmt.Sprintf("  %s = getelementptr inbounds %s, %s* %s, i32 0, i32 1\n", pg, recvLT, recvLT, recvSlot))
@@ -2615,10 +2761,25 @@ func (c *codegen) emitSetField(inst *Inst) error {
 		c.sb.WriteString(fmt.Sprintf("  store %s %s, %s* %s\n", fieldLT, valV, fieldLT, gp))
 		return nil
 	}
-	_, valV := c.loadVal(inst.Args[1])
+	valLT, valV := c.loadVal(inst.Args[1])
 	fieldLT, _ := c.ptype(inst.Args[1])
 	if fieldLT == "" {
 		fieldLT = "i64"
+	}
+	// Overflow-default: if the RHS is ?T (an %option) but the field is a scalar,
+	// unwrap the ok payload before storing — mirror legacy, which stores the
+	// scalar payload, not the whole {tag,payload} struct. Without this, opt
+	// rejects the store as "defined with type '%option' but expected 'i64'" and
+	// the build fails under NOLANG_MIR=3. Mirrors emitIndexStore's unwrap.
+	if strings.HasPrefix(valLT, "%option") && fieldLT != "%str-long" && fieldLT != "%vec" && fieldLT != "%option" {
+		c.loadSeq++
+		pl := fmt.Sprintf("%%opay%d", c.loadSeq)
+		c.sb.WriteString(fmt.Sprintf("  %s = extractvalue %s %s, 1\n", pl, valLT, valV))
+		if cv2 := c.coerce("i64", pl, fieldLT); cv2 != "" {
+			valV = cv2
+		} else {
+			valV = pl
+		}
 	}
 	// Container pseudo-fields (len/cap/data) for slice/str are layout-derived
 	// and have no StructFields entry. Handle them via GEP into the aggregate,
@@ -3023,6 +3184,7 @@ func (c *codegen) emitStructTypes() {
 			continue
 		}
 		seenOpt[optLT] = true
+		c.optPayload[optLT] = payloadLT
 		c.sb.WriteString(fmt.Sprintf("%s = type { i64, %s }\n", optLT, payloadLT))
 	}
 }
@@ -3106,13 +3268,50 @@ func (c *codegen) emitCall(f *Function, inst *Inst) error {
 				c.sb.WriteString("  call void @print_space()\n")
 			}
 			if isOptionType(argT) {
-				// Best-effort option print: emit the discriminant (tag) so the
-				// output distinguishes some/none/err. Field 0 is always the i64
-				// tag regardless of the payload type (%option or %option_<elem>).
-				c.loadSeq++
-				tg := fmt.Sprintf("%%optg%d", c.loadSeq)
-				c.sb.WriteString(fmt.Sprintf("  %s = extractvalue %s %s, 0\n", tg, argT, argV))
-				c.sb.WriteString(fmt.Sprintf("  call void @print_i64(i64 %s)\n", tg))
+				// Option print: emit the inner value (or "nil"), matching the
+				// legacy backend, NOT the discriminant tag. The dedicated
+				// print_option helper handles the flat scalar %option = { i64
+				// tag, i64 data } by reading the inner field; for per-payload
+				// inline options (%option_<elem>) the payload is by-value, so we
+				// peel field 1 and print it with the matching scalar printer —
+				// the payload is NOT always i64 (a ?str option carries a
+				// %str-long payload, a ?User option a %User struct payload), so
+				// routing to print_i64 unconditionally is wrong and trips the
+				// LLVM verifier (e.g. `%optpl19` defined as %str-long but
+				// expected i64 at `call @print_i64`).
+				if argT == "%option" {
+					c.sb.WriteString(fmt.Sprintf("  call void @print_option(%s %s)\n", argT, argV))
+				} else {
+					c.loadSeq++
+					pl := fmt.Sprintf("%%optpl%d", c.loadSeq)
+					c.sb.WriteString(fmt.Sprintf("  %s = extractvalue %s %s, 1\n", pl, argT, argV))
+					// Route the peeled payload to the correct scalar printer by
+					// its LLVM type (optPayload is populated at type-decl time).
+					payloadLT := c.optPayload[argT]
+					if payloadLT == "" {
+						payloadLT = "i64"
+					}
+					switch payloadLT {
+					case "%str-long":
+						c.sb.WriteString(fmt.Sprintf("  call void @print_str(%s %s)\n", payloadLT, pl))
+					case "double":
+						c.sb.WriteString(fmt.Sprintf("  call void @print_double(%s %s)\n", payloadLT, pl))
+					case "i64":
+						c.sb.WriteString(fmt.Sprintf("  call void @print_i64(%s %s)\n", payloadLT, pl))
+					case "i8":
+						c.loadSeq++
+						z := fmt.Sprintf("%%optz%d", c.loadSeq)
+						c.sb.WriteString(fmt.Sprintf("  %s = zext i8 %s to i64\n", z, pl))
+						c.sb.WriteString(fmt.Sprintf("  call void @print_i64(i64 %s)\n", z))
+					case "i1":
+						c.sb.WriteString(fmt.Sprintf("  call void @print_bool(%s %s)\n", payloadLT, pl))
+					default:
+						// %vec / user-struct / fixed-array payload has no scalar
+						// printer in MIR yet; legacy prints via to-str. Skip
+						// rather than crash the verifier.
+						c.fail("print of option payload type %s unsupported in func %s", payloadLT, f.Name)
+					}
+				}
 				continue
 			}
 			switch argT {
@@ -3313,6 +3512,48 @@ func (c *codegen) buildVecViewFromArray(argT, arrSlot string) string {
 	return "%vec* " + slot
 }
 
+// buildVecViewFromValues emits a borrow slice view over a freshly-allocated
+// stack array holding the given element values, and returns the "%vec* slot"
+// argument string to pass. This is the call-site counterpart of
+// buildVecViewFromArray: where that one wraps an EXISTING fixed array, this
+// one collects a list of scalar call arguments (the spread elements of a
+// variadic generic call like `number.max(10, 20)`) into a real %vec so the
+// callee (whose variadic parameter is `[]T`) indexes them correctly. cap==0
+// marks the view as non-owning so @vec_free skips the stack backing store.
+func (c *codegen) buildVecViewFromValues(elemLLT string, argLLVMs []string) string {
+	n := int64(len(argLLVMs))
+	arrType := fmt.Sprintf("[%d x %s]", n, elemLLT)
+	c.loadSeq++
+	arr := fmt.Sprintf("%%cav%d", c.loadSeq)
+	c.sb.WriteString(fmt.Sprintf("  %s = alloca %s\n", arr, arrType))
+	for i, av := range argLLVMs {
+		c.loadSeq++
+		elp := fmt.Sprintf("%%cav%d", c.loadSeq)
+		c.sb.WriteString(fmt.Sprintf("  %s = getelementptr inbounds %s, %s* %s, i64 0, i64 %d\n", elp, arrType, arrType, arr, i))
+		c.sb.WriteString(fmt.Sprintf("  store %s %s, %s* %s\n", elemLLT, av, elemLLT, elp))
+	}
+	c.loadSeq++
+	dataPtr := fmt.Sprintf("%%cav%d", c.loadSeq)
+	c.sb.WriteString(fmt.Sprintf("  %s = getelementptr inbounds %s, %s* %s, i64 0, i64 0\n", dataPtr, arrType, arrType, arr))
+	c.loadSeq++
+	pt := fmt.Sprintf("%%cav%d", c.loadSeq)
+	c.sb.WriteString(fmt.Sprintf("  %s = ptrtoint i8* %s to i64\n", pt, dataPtr))
+	c.loadSeq++
+	s0 := fmt.Sprintf("%%cav%d", c.loadSeq)
+	c.sb.WriteString(fmt.Sprintf("  %s = insertvalue %%vec { i64 0, i64 0, i64 0 }, i64 %d, 0\n", s0, n))
+	c.loadSeq++
+	s1 := fmt.Sprintf("%%cav%d", c.loadSeq)
+	c.sb.WriteString(fmt.Sprintf("  %s = insertvalue %%vec %s, i64 0, 1\n", s1, s0))
+	c.loadSeq++
+	s2 := fmt.Sprintf("%%cav%d", c.loadSeq)
+	c.sb.WriteString(fmt.Sprintf("  %s = insertvalue %%vec %s, i64 %s, 2\n", s2, s1, pt))
+	c.loadSeq++
+	slot := fmt.Sprintf("%%cav%d", c.loadSeq)
+	c.sb.WriteString(fmt.Sprintf("  %s = alloca %%vec\n", slot))
+	c.sb.WriteString(fmt.Sprintf("  store %%vec %s, %%vec* %s\n", s2, slot))
+	return "%vec* " + slot
+}
+
 // emitCallBody emits a call to calleeName using the by-reference ABI: every
 // input parameter is passed as a pointer to the caller's slot, every result is
 // passed as an out-pointer, and results are loaded back into inst.Results.
@@ -3334,7 +3575,42 @@ func (c *codegen) emitCallBody(f *Function, cf *Function, inst *Inst, calleeName
 		}
 	}
 	var callArgs []string
+	// Variadic call detection: a nolang variadic function (e.g. `max (a ..num)`)
+	// is monomorphized with its spread parameter as a single []T slice (the
+	// receiver). A call that supplies MORE scalar arguments than the function
+	// has in-parameters collects those trailing arguments into a %vec and
+	// passes it as the (last) variadic parameter. Without this, the trailing
+	// args are dropped and the slice parameter receives the first arg's storage
+	// as its %vec header -> the callee dereferences a garbage data pointer ->
+	// SIGTRAP at runtime (test-number-generic). Only trigger when the last
+	// in-param is actually a slice, so ordinary fixed-arity functions are
+	// unaffected.
+	variadicLast := false
+	if nIn := len(inParams); nIn >= 1 && len(inst.Args) > nIn {
+		lastP := inParams[nIn-1]
+		if pv := c.mod.Value(lastP); pv != nil {
+			if pt := c.mod.Type(pv.Type); pt != nil && pt.Kind == KindSlice {
+				variadicLast = true
+			}
+		}
+	}
 	for i, p := range inParams {
+		if variadicLast && i == len(inParams)-1 {
+			// Collect every remaining call argument into a borrow %vec view and
+			// pass it as the variadic (slice) parameter. The element LLVM type
+			// is taken from the first collected argument's loaded type.
+			var argLLVMs []string
+			elemLLT := "i64"
+			for j := i; j < len(inst.Args); j++ {
+				at, av := c.loadVal(inst.Args[j])
+				if j == i && at != "" {
+					elemLLT = at
+				}
+				argLLVMs = append(argLLVMs, av)
+			}
+			callArgs = append(callArgs, c.buildVecViewFromValues(elemLLT, argLLVMs))
+			continue
+		}
 		plt, owned := c.ptype(p)
 		if i >= len(inst.Args) {
 			// The HIR sometimes drops a trailing literal argument (e.g.

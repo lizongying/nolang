@@ -168,6 +168,7 @@ compute-accept = (key str) (accept str) {
 
     i <- [0..20): {
         #{overflow=wrap}
+        #{index-out = 0}
         hash-vec[i] = hash[i]
     }
     accept = base64.encode-std(hash-vec)
@@ -190,9 +191,13 @@ next-rand = () (r i64) {
 ; 返回 key str: 4 字元字串
 gen-mask-key = (seed i64) (key str) {
     key str = with-len(4)
+    #{index-out = 0}
     key[0] = (seed & 255)
+    #{index-out = 0}
     key[1] = ((seed >> 8) & 255)
+    #{index-out = 0}
     key[2] = ((seed >> 16) & 255)
+    #{index-out = 0}
     key[3] = ((seed >> 24) & 255)
 }
 
@@ -205,6 +210,7 @@ gen-client-key = (seed i64) (key str) {
         #{overflow=wrap}
         s = seed + i * 31
         #{overflow=wrap}
+        #{index-out = 0}
         raw[i] = (s * 1103515245 + 12345) & 255
     }
     rv = raw.to-bytes()
@@ -234,6 +240,7 @@ build-frame = (opcode i64, data str, mask bool, mask-key str) (frame str) {
     frame str = with-len(total)
 
     ; byte 0: FIN(1) | opcode
+    #{index-out = 0}
     frame[0] = 128 | (opcode & 15)
 
     ; byte 1: mask | len
@@ -241,18 +248,26 @@ build-frame = (opcode i64, data str, mask bool, mask-key str) (frame str) {
     mask -> mask-bit = 128
     #{overflow=wrap}
     {
-        dlen <= 125 -> frame[1] = mask-bit | dlen
+                dlen <= 125 -> {
+            #{index-out = 0}
+            frame[1] = mask-bit | dlen
+        }
 
         dlen > 125 && dlen <= 65535 -> {
+            #{index-out = 0}
             frame[1] = mask-bit | 126
+            #{index-out = 0}
             frame[2] = (dlen >> 8) & 255
+            #{index-out = 0}
             frame[3] = dlen & 255
         }
 
         dlen > 65535 -> {
+            #{index-out = 0}
             frame[1] = mask-bit | 127
             i <- [0..8): {
                 #{overflow=wrap}
+                #{index-out = 0}
                 frame[2 + i] = (dlen >> (56 - i * 8)) & 255
             }
         }
@@ -270,12 +285,14 @@ build-frame = (opcode i64, data str, mask bool, mask-key str) (frame str) {
         mask -> {
             i <- [0..4): {
                 #{overflow=wrap}
+                #{index-out = 0}
                 frame[mk-start + i] = mask-key[i]
             }
 
             ; masked payload
             i <- [0..dlen): {
                 #{overflow=wrap}
+                #{index-out = 0}
                 frame[header-len + i] = (data[i] ^ mask-key[i % 4]) & 255
             }
         }
@@ -284,6 +301,7 @@ build-frame = (opcode i64, data str, mask bool, mask-key str) (frame str) {
             ; unmasked payload
             i <- [0..dlen): {
                 #{overflow=wrap}
+                #{index-out = 0}
                 frame[header-len + i] = data[i]
             }
         }
@@ -370,6 +388,7 @@ server-conn.handshake = () {
         n <= 0 -> return
         i <- [0..n): {
             #{overflow=wrap}
+            #{index-out = 0}
             raw[total + i] = tmp[i]
         }
         #{overflow=wrap}
@@ -415,7 +434,10 @@ server-conn.handshake = () {
     ; 跳過空白
     #{overflow=wrap}
     {
-        val-start < head.len-bytes() && head[val-start] == 32 -> val-start = val-start + 1
+                val-start < head.len-bytes() && head[val-start] == 32 -> {
+            #{index-out = 0}
+            val-start = val-start + 1
+        }
 
         ->
     }
@@ -438,7 +460,10 @@ server-conn.handshake = () {
     up-val-start = up-pos + up-marker.len-bytes()
     #{overflow=wrap}
     {
-        up-val-start < head.len-bytes() && head[up-val-start] == 32 -> up-val-start = up-val-start + 1
+                up-val-start < head.len-bytes() && head[up-val-start] == 32 -> {
+            #{index-out = 0}
+            up-val-start = up-val-start + 1
+        }
 
         ->
     }
@@ -471,6 +496,7 @@ server-conn.handshake = () {
     total > body-start -> {
         remaining = raw.slice(body-start, total)
         i <- [0..remaining.len-bytes()): {
+            #{index-out = 0}
             .recv-buf[i] = remaining[i]
         }
         .recv-buf-len = remaining.len-bytes()
@@ -535,10 +561,13 @@ server-conn.send-close = (close-code i64, reason str) (ok bool) {
     ; payload: 2-byte big-endian code + reason
     #{overflow=wrap}
     payload str = with-len(2 + reason.len-bytes())
+    #{index-out = 0}
     payload[0] = (close-code >> 8) & 255
+    #{index-out = 0}
     payload[1] = close-code & 255
     i <- [0..reason.len-bytes()): {
         #{overflow=wrap}
+        #{index-out = 0}
         payload[2 + i] = reason[i]
     }
     ok = .send(WS-OP-CLOSE, payload)
@@ -587,13 +616,16 @@ server-conn.recv = () (msg ?message) {
             }
             i <- [0..n): {
                 #{overflow=wrap}
+                #{index-out = 0}
                 .recv-buf[.recv-buf-len + i] = tmp[i]
             }
             .recv-buf-len = .recv-buf-len + n
         }
 
         ; 解析 frame header
+        #{index-out = 0}
         b0 = .recv-buf[0]
+        #{index-out = 0}
         b1 = .recv-buf[1]
         fin = (b0 & 128) != 0
         opcode = b0 & 15
@@ -632,6 +664,7 @@ server-conn.recv = () (msg ?message) {
                     }
                     i <- [0..n): {
                         #{overflow=wrap}
+                        #{index-out = 0}
                         .recv-buf[.recv-buf-len + i] = tmp[i]
                     }
                     .recv-buf-len = .recv-buf-len + n
@@ -641,6 +674,7 @@ server-conn.recv = () (msg ?message) {
                 payload-len = 0
                 i <- [0..8): {
                     #{overflow=wrap}
+                    #{index-out = 0}
                     payload-len = (payload-len << 8) | .recv-buf[2 + i]
                 }
             }
@@ -659,10 +693,12 @@ server-conn.recv = () (msg ?message) {
                     }
                     i <- [0..n): {
                         #{overflow=wrap}
+                        #{index-out = 0}
                         .recv-buf[.recv-buf-len + i] = tmp[i]
                     }
                     .recv-buf-len = .recv-buf-len + n
                 }
+                #{index-out = 0}
                 payload-len = (.recv-buf[2] << 8) | .recv-buf[3]
             }
         }
@@ -686,6 +722,7 @@ server-conn.recv = () (msg ?message) {
                 }
                 i <- [0..n): {
                     #{overflow=wrap}
+                    #{index-out = 0}
                     .recv-buf[.recv-buf-len + i] = tmp[i]
                 }
                 .recv-buf-len = .recv-buf-len + n
@@ -705,6 +742,7 @@ server-conn.recv = () (msg ?message) {
             mask-key str = with-len(4)
             i <- [0..4): {
                 #{overflow=wrap}
+                #{index-out = 0}
                 mask-key[i] = .recv-buf[mask-start + i]
             }
         }
@@ -718,9 +756,12 @@ server-conn.recv = () (msg ?message) {
         payload str = with-len(payload-len)
         i <- [0..payload-len): {
             #{overflow=wrap}
+            #{index-out = 0}
             b = .recv-buf[payload-start + i]
             masked -> b
+            #{index-out = 0}
             b ^ mask-key[i % 4]
+            #{index-out = 0}
             payload[i] = b & 255
         }
 
@@ -730,6 +771,7 @@ server-conn.recv = () (msg ?message) {
         remaining-len = .recv-buf-len - remaining-start
         i <- [0..remaining-len): {
             #{overflow=wrap}
+            #{index-out = 0}
             .recv-buf[i] = .recv-buf[remaining-start + i]
         }
         .recv-buf-len = remaining-len
@@ -825,6 +867,7 @@ server-conn.recv-nb = () (msg ?message) {
             }
             i <- [0..n): {
                 #{overflow=wrap}
+                #{index-out = 0}
                 .recv-buf[.recv-buf-len + i] = tmp[i]
             }
             .recv-buf-len = .recv-buf-len + n
@@ -835,7 +878,9 @@ server-conn.recv-nb = () (msg ?message) {
 
     ; 2) 只從已緩衝的 recv-buf 解析一個完整 frame；資料不足則回傳 nil（would-block）
     .recv-buf-len < 2 -> return
+    #{index-out = 0}
     b0 = .recv-buf[0]
+    #{index-out = 0}
     b1 = .recv-buf[1]
     fin = (b0 & 128) != 0
     opcode = b0 & 15
@@ -861,11 +906,15 @@ server-conn.recv-nb = () (msg ?message) {
             payload-len = 0
             j <- [0..8): {
                 #{overflow=wrap}
+                #{index-out = 0}
                 payload-len = (payload-len << 8) | .recv-buf[2 + j]
             }
         }
 
-        payload-len == 126 -> payload-len = (.recv-buf[2] << 8) | .recv-buf[3]
+                payload-len == 126 -> {
+            #{index-out = 0}
+            payload-len = (.recv-buf[2] << 8) | .recv-buf[3]
+        }
     }
     #{overflow=wrap}
     frame-total = header-total + payload-len
@@ -884,6 +933,7 @@ server-conn.recv-nb = () (msg ?message) {
         mask-key str = with-len(4)
         k <- [0..4): {
             #{overflow=wrap}
+            #{index-out = 0}
             mask-key[k] = .recv-buf[mask-start + k]
         }
     }
@@ -893,9 +943,12 @@ server-conn.recv-nb = () (msg ?message) {
     payload str = with-len(payload-len)
     p <- [0..payload-len): {
         #{overflow=wrap}
+        #{index-out = 0}
         b = .recv-buf[payload-start + p]
         masked -> b
+        #{index-out = 0}
         b ^ mask-key[p % 4]
+        #{index-out = 0}
         payload[p] = b & 255
     }
 
@@ -905,6 +958,7 @@ server-conn.recv-nb = () (msg ?message) {
     remaining-len = .recv-buf-len - remaining-start
     r <- [0..remaining-len): {
         #{overflow=wrap}
+        #{index-out = 0}
         .recv-buf[r] = .recv-buf[remaining-start + r]
     }
     .recv-buf-len = remaining-len
@@ -1025,10 +1079,13 @@ client.send-close = (close-code i64, reason str) (ok bool) {
     .connected == false -> return
     #{overflow=wrap}
     payload str = with-len(2 + reason.len-bytes())
+    #{index-out = 0}
     payload[0] = (close-code >> 8) & 255
+    #{index-out = 0}
     payload[1] = close-code & 255
     i <- [0..reason.len-bytes()): {
         #{overflow=wrap}
+        #{index-out = 0}
         payload[2 + i] = reason[i]
     }
     ok = .send(WS-OP-CLOSE, payload)
@@ -1078,11 +1135,14 @@ client.recv = () (msg ?message) {
             }
             i <- [0..n): {
                 #{overflow=wrap}
+                #{index-out = 0}
                 .recv-buf[.recv-buf-len + i] = tmp[i]
             }
             .recv-buf-len = .recv-buf-len + n
         }
+        #{index-out = 0}
         b0 = .recv-buf[0]
+        #{index-out = 0}
         b1 = .recv-buf[1]
         fin = (b0 & 128) != 0
         opcode = b0 & 15
@@ -1128,6 +1188,7 @@ client.recv = () (msg ?message) {
                 }
                 i <- [0..n): {
                     #{overflow=wrap}
+                    #{index-out = 0}
                     .recv-buf[.recv-buf-len + i] = tmp[i]
                 }
                 .recv-buf-len = .recv-buf-len + n
@@ -1135,6 +1196,7 @@ client.recv = () (msg ?message) {
             payload-len = 0
             i <- [0..8): {
                 #{overflow=wrap}
+                #{index-out = 0}
                 payload-len = (payload-len << 8) | .recv-buf[2 + i]
             }
         }
@@ -1165,10 +1227,12 @@ client.recv = () (msg ?message) {
                 }
                 i <- [0..n): {
                     #{overflow=wrap}
+                    #{index-out = 0}
                     .recv-buf[.recv-buf-len + i] = tmp[i]
                 }
                 .recv-buf-len = .recv-buf-len + n
             }
+            #{index-out = 0}
             payload-len = (.recv-buf[2] << 8) | .recv-buf[3]
         }
         #{overflow=wrap}
@@ -1202,6 +1266,7 @@ client.recv = () (msg ?message) {
                 }
                 i <- [0..n): {
                     #{overflow=wrap}
+                    #{index-out = 0}
                     .recv-buf[.recv-buf-len + i] = tmp[i]
                 }
                 .recv-buf-len = .recv-buf-len + n
@@ -1220,6 +1285,7 @@ client.recv = () (msg ?message) {
             mask-key str = with-len(4)
             i <- [0..4): {
                 #{overflow=wrap}
+                #{index-out = 0}
                 mask-key[i] = .recv-buf[mask-start + i]
             }
         }
@@ -1231,9 +1297,12 @@ client.recv = () (msg ?message) {
         payload str = with-len(payload-len)
         i <- [0..payload-len): {
             #{overflow=wrap}
+            #{index-out = 0}
             b = .recv-buf[payload-start + i]
             masked -> b
+            #{index-out = 0}
             b ^ mask-key[i % 4]
+            #{index-out = 0}
             payload[i] = b & 255
         }
         remaining-start = frame-total
@@ -1241,6 +1310,7 @@ client.recv = () (msg ?message) {
         remaining-len = .recv-buf-len - remaining-start
         i <- [0..remaining-len): {
             #{overflow=wrap}
+            #{index-out = 0}
             .recv-buf[i] = .recv-buf[remaining-start + i]
         }
         .recv-buf-len = remaining-len
@@ -1361,6 +1431,7 @@ connect = (url str) (c ?client) {
         p = 0
         i <- [0..port-str.len-bytes()): {
             #{overflow=wrap}
+            #{index-out = 0}
             ch = port-str[i]
             ch < 48 || ch > 57 -> {
                 c = err('invalid port')
@@ -1506,6 +1577,7 @@ connect = (url str) (c ?client) {
         }
         i <- [0..n): {
             #{overflow=wrap}
+            #{index-out = 0}
             raw[total + i] = tmp[i]
         }
         #{overflow=wrap}
@@ -1538,6 +1610,7 @@ connect = (url str) (c ?client) {
     status-code = 0
     i <- [0..code-str.len-bytes()): {
         #{overflow=wrap}
+        #{index-out = 0}
         ch = code-str[i]
         ch < 48 || ch > 57 -> {
             {
@@ -1587,7 +1660,10 @@ connect = (url str) (c ?client) {
     val-start = accept-pos + accept-marker.len-bytes()
     #{overflow=wrap}
     {
-        val-start < head.len-bytes() && head[val-start] == 32 -> val-start = val-start + 1
+                val-start < head.len-bytes() && head[val-start] == 32 -> {
+            #{index-out = 0}
+            val-start = val-start + 1
+        }
 
         ->
     }
@@ -1617,6 +1693,7 @@ connect = (url str) (c ?client) {
     remaining-len > 0 -> {
         remaining = raw.slice(body-start, total)
         i <- [0..remaining-len): {
+            #{index-out = 0}
             rb[i] = remaining[i]
         }
     }

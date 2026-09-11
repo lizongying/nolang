@@ -27,6 +27,7 @@ rand-str = (state i64, n i64) (s str) {
     i <- [0..n): {
         r = 0
         state, r = rand(state)
+        #{index-out = 0}
         s[i] = chars[r % 62]
     }
 }

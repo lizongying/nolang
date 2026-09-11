@@ -1408,7 +1408,7 @@ func (t *Transpiler) loadStdModuleBody(sp string, merged *parser.Program, typeOw
 			}
 			merged.Statements = append(merged.Statements, fd)
 			parser.SetModuleOwner(fd, info.ShortName)
-			parser.SetSourceFile(fd, modFile)
+			parser.SetSourceFileDeep(fd, modFile)
 		}
 		if ls, ok := ms.(*parser.LetStatement); ok && ls.Name != nil {
 			// 如果主程序已有同名變量，跳過以避免衝突
@@ -1430,7 +1430,7 @@ func (t *Transpiler) loadStdModuleBody(sp string, merged *parser.Program, typeOw
 				}
 				merged.Statements = append(merged.Statements, ls)
 				parser.SetModuleOwner(ls, info.ShortName)
-				parser.SetSourceFile(ls, modFile)
+				parser.SetSourceFileDeep(ls, modFile)
 				if isConst && checker.MatchesTargetPlatform(platformKeys, t.targetGoos, t.targetGoarch) {
 					ls.IsModuleConst = true
 				}
@@ -2108,6 +2108,12 @@ func (t *Transpiler) CompileTarget(source string, _ Target) (string, error) {
 			allValidateErrs = append(allValidateErrs, fmt.Sprintf("line %d, column %d: %s [%s]", e.Line, e.Column, e.Message, e.TraceID))
 		}
 	}
+	// 未處理的越界索引（arr/vec/slice 索引 b[i]）目前「只」作為 LSP / `no vet`
+	// 診斷（見 checker.ValidateUnhandledIndex → RunAllLints 的 "nolang-index"
+	// 來源），不作為編譯硬錯誤：既有程式碼（含 std 與大量範例/測試）廣泛以舊式
+	// 「越界 panic」寫法使用 b = arr[i]，若在此升級為硬錯誤會讓 `no build` /
+	// `no run` / `no test` 對既有程式碼全面失敗。編輯器與 `no vet` 已能提供紅色
+	// 診斷並附 `#{index-out = 0}` quickfix，引導使用者顯式處理（?= 上拋或加註解）。
 	// ?T 輸出參數未初始化檢查（case6）
 	if uninitErrs := checker.ValidateUninitOutputParams(program); len(uninitErrs) > 0 {
 		for _, e := range uninitErrs {

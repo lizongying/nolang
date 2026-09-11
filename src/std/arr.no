@@ -24,18 +24,22 @@
 
 ; [n]t.len: 回傳陣列長度
 ; 註：輸出參數用 out 而非 n，避免與泛型參數 n 衝突
+#{index-out = 0}
 [n]t.len = () (out i64) {
     out = n
 }
 
 ; [n]t.clone: 將陣列複製到 dst
+#{index-out = 0}
 [n]t.clone = () (dst [n]t) {
     i <- [0..n): {
+        #{index-out = 0}
         dst[i] = .[i]
     }
 }
 
 ; [n]t.eq: 比較兩個陣列是否相等
+#{index-out = 0}
 [n]t.eq = (b [n]t) (yes bool) {
     yes = true
     i <- [0..n): {
@@ -47,6 +51,7 @@
 }
 
 ; [n]t.fill: 全部填充為 val
+#{index-out = 0}
 [n]t.fill = (val t) {
     i <- [0..n): {
         .[i] = val
@@ -54,6 +59,7 @@
 }
 
 ; [n]t.reverse: 反轉陣列
+#{index-out = 0}
 [n]t.reverse = () {
     #{overflow=wrap}
     i = 0
@@ -72,6 +78,7 @@
 }
 
 ; [n]t.contains: 是否包含值 val
+#{index-out = 0}
 [n]t.contains = (val t) (found bool) {
     i <- [0..n): {
         .[i] == val -> {
@@ -82,14 +89,17 @@
 }
 
 ; [n]t.to-vec: 陣列方法，轉為 []t vec
+#{index-out = 0}
 [n]t.to-vec = () (out []t) {
     out = with-len(n)
     i <- [0..n): {
+        #{index-out = 0}
         out[i] = .[i]
     }
 }
 
 ; [n]t.max: 陣列中的最大值
+#{index-out = 0}
 [n]t.max = () (max t) {
     max = .[0]
     i <- [1..n): {
@@ -98,6 +108,7 @@
 }
 
 ; [n]t.min: 陣列中的最小值
+#{index-out = 0}
 [n]t.min = () (min t) {
     min = .[0]
     i <- [1..n): {
@@ -106,6 +117,7 @@
 }
 
 ; [n]t.sum: 陣列元素總和
+#{index-out = 0}
 [n]t.sum = () (sum t) {
     sum = 0
     i <- [0..n): {
@@ -115,6 +127,7 @@
 }
 
 ; [n]t.index-of: 找到值返回索引，否則 -1
+#{index-out = 0}
 [n]t.index-of = (val t) (idx i64) {
     idx = -1
     i <- [0..n): {
@@ -126,6 +139,7 @@
 }
 
 ; [n]t.last: 最後一個元素
+#{index-out = 0}
 [n]t.last = () (val t) {
     #{overflow=wrap}
     idx = n - 1
@@ -133,11 +147,13 @@
 }
 
 ; [n]t.first: 第一個元素
+#{index-out = 0}
 [n]t.first = () (val t) {
     val = .[0]
 }
 
 ; [n]t.sort-asc: 升序原地排序（插入排序）
+#{index-out = 0}
 [n]t.sort-asc = () {
     i <- [1..n): {
         #{overflow=wrap}
@@ -158,6 +174,7 @@
 }
 
 ; [n]t.sort-desc: 降序原地排序（插入排序）
+#{index-out = 0}
 [n]t.sort-desc = () {
     i <- [1..n): {
         #{overflow=wrap}
@@ -179,6 +196,7 @@
 
 ; [n]t.swap: 交換兩位置元素
 ; i i64, j i64: 位置
+#{index-out = 0}
 [n]t.swap = (i i64, j i64) {
     tmp = .[i]
     .[i] = .[j]
@@ -188,6 +206,7 @@
 ; [n]t.count: 統計值出現次數
 ; val t: 要統計的值
 ; 返回 cnt i64: 出現次數
+#{index-out = 0}
 [n]t.count = (val t) (cnt i64) {
     cnt = 0
     i <- [0..n): {
@@ -199,6 +218,7 @@
 ; [n]t.at: 安全索引訪問
 ; i i64: 索引
 ; 返回 val ?t: 越界返回 nil
+#{index-out = 0}
 [n]t.at = (i i64) (val ?t) {
     {
         i < 0 -> val = nil
@@ -212,6 +232,7 @@
 ; [n]t.to-str: 字串表示
 ; 返回 out str: 格式如 '[1, 2, 3]'
 ; 元素轉字串：i64 用 i64-to-str（在 number.no 中定義，自動加載）
+#{index-out = 0}
 [n]t.to-str = () (out str) {
     {
         n == 0 -> out = '[]'

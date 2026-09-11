@@ -178,6 +178,11 @@ func (s *Server) publishDocumentDiagnostics(uri string, parseErrors []string, as
 			if l.Source == "nolang-overflow" {
 				code = "overflow-wrap"
 			}
+			// 未處理越界索引帶固定 Code，供 code action 識別並提供
+			// 「插入 #{index-out = 0}」quickfix（越界取預設值）。
+			if l.Source == "nolang-index" {
+				code = "safe-index"
+			}
 			diagnostics = append(diagnostics, Diagnostic{
 				Range: Range{
 					Start: Position{Line: uint32(l.Line - 1), Character: uint32(l.Column - 1)},
@@ -845,14 +850,26 @@ func (s *Server) handleTextDocumentCodeAction(params CodeActionParams) (any, err
 
 	var actions []CodeAction
 	for _, diag := range params.Context.Diagnostics {
-		if fmt.Sprint(diag.Code) != "overflow-wrap" {
-			continue
-		}
-		line := diag.Range.Start.Line
-		for _, mode := range []string{"wrap", "clamp0", "min", "max", "saturate"} {
-			if edit := s.overflowAnnotationEdit(uri, line, mode); edit != nil {
+		switch fmt.Sprint(diag.Code) {
+		case "overflow-wrap":
+			line := diag.Range.Start.Line
+			for _, mode := range []string{"wrap", "clamp0", "min", "max", "saturate"} {
+				if edit := s.overflowAnnotationEdit(uri, line, mode); edit != nil {
+					actions = append(actions, CodeAction{
+						Title:       "Add #{overflow = " + mode + "}",
+						Kind:        CodeActionKindQuickFix,
+						Diagnostics: []Diagnostic{diag},
+						Edit:        edit,
+					})
+				}
+			}
+		case "safe-index":
+			// 越界索引的 quickfix：在該行行尾追加 `#{index-out = 0}` 尾隨註解，
+			// 越界時取預設值 0（與 `#{index-out = DEF}` 語法一致，DEF 為字面量）。
+			line := diag.Range.Start.Line
+			if edit := s.safeIndexAnnotationEdit(uri, line); edit != nil {
 				actions = append(actions, CodeAction{
-					Title:       "Add #{overflow = " + mode + "}",
+					Title:       "Add #{index-out = 0}",
 					Kind:        CodeActionKindQuickFix,
 					Diagnostics: []Diagnostic{diag},
 					Edit:        edit,
@@ -897,6 +914,36 @@ func leadingWhitespace(s string) string {
 		i++
 	}
 	return s[:i]
+}
+
+// safeIndexAnnotationEdit 在 line 行尾追加 `#{index-out = 0}` 尾隨註解（與
+// `#{overflow = ...}` 行註解不同，#{index-out} 必須貼在索引陳述同一行），縮排不變。
+func (s *Server) safeIndexAnnotationEdit(uri string, line uint32) *WorkspaceEdit {
+	doc, err := s.documents.GetDocument(uri)
+	if err != nil || doc == nil {
+		return nil
+	}
+	lines := strings.Split(doc.Text, "\n")
+	if int(line) >= len(lines) {
+		return nil
+	}
+	orig := lines[line]
+	// 行尾已有尾隨註解則不重複插入（避免與現有 #{...} 衝突）。
+	trimmed := strings.TrimRight(orig, " \t")
+	if strings.Contains(trimmed, "#{") {
+		return nil
+	}
+	newText := trimmed + " #{index-out = 0}\n"
+	te := TextEdit{
+		Range: Range{
+			Start: Position{Line: line, Character: uint32(len(orig))},
+			End:   Position{Line: line, Character: uint32(len(orig))},
+		},
+		NewText: newText,
+	}
+	return &WorkspaceEdit{
+		Changes: map[string][]TextEdit{uri: {te}},
+	}
 }
 
 func (s *Server) GetDocumentManager() *DocumentManager {

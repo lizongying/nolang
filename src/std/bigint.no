@@ -45,6 +45,7 @@ from-i64 = (v i64) (out bigint) {
 
         -> out.sign = 1
     }
+    #{index-out = 0}
     out.limbs[0] = v
     out.len = 1
 }
@@ -53,6 +54,7 @@ from-i64 = (v i64) (out bigint) {
 from-u64 = (v i64) (out bigint) {
     out.limbs = with-len(1)
     out.sign = 1
+    #{index-out = 0}
     out.limbs[0] = v
     out.len = 1
 }
@@ -61,6 +63,7 @@ from-u64 = (v i64) (out bigint) {
 zero = () (out bigint) {
     out.limbs = with-len(1)
     out.sign = 1
+    #{index-out = 0}
     out.limbs[0] = 0
     out.len = 1
 }
@@ -69,6 +72,7 @@ zero = () (out bigint) {
 one = () (out bigint) {
     out.limbs = with-len(1)
     out.sign = 1
+    #{index-out = 0}
     out.limbs[0] = 1
     out.len = 1
 }
@@ -79,6 +83,7 @@ bigint.copy = () (out bigint) {
     out.sign = .sign
     out.len = .len
     i <- [0...len): {
+        #{index-out = 0}
         out.limbs[i] = .limbs[i]
     }
 }
@@ -130,6 +135,7 @@ bigint.abs-cmp = (b bigint) (r i64) {
 
 ; bigint.is-zero: 是否為零
 bigint.is-zero = () (r bool) {
+    #{index-out = 0}
     r = .len == 1 && .limbs[0] == 0
 }
 
@@ -152,7 +158,10 @@ bigint.eq = (b bigint) (r bool) {
     #{overflow=wrap}
     i <- [.len - 1..0]: {
         #{overflow=wrap}
-        .limbs[i] & MASK != b.limbs[i] & MASK -> return
+                .limbs[i] & MASK != b.limbs[i] & MASK -> {
+            #{index-out = 0}
+            return
+        }
     }
     r = true
 }
@@ -197,14 +206,22 @@ abs-add = (a bigint, b bigint) (c bigint) {
     i <- [0..cl): {
         #{overflow=wrap}
         av = 0
-        i < al -> av = a.limbs[i]
+                i < al -> {
+            #{index-out = 0}
+            av = a.limbs[i]
+        }
         bv = 0
-        i < bl -> bv = b.limbs[i]
+                i < bl -> {
+            #{index-out = 0}
+            bv = b.limbs[i]
+        }
         #{overflow=wrap}
         s = av + bv + carry
+        #{index-out = 0}
         c.limbs[i] = s & MASK
         carry = s >> 32
     }
+    #{index-out = 0}
     c.limbs[cl] = carry
     c.normalize()
 }
@@ -239,9 +256,13 @@ abs-sub = (a bigint, b bigint) (c bigint) {
     c.len = al
     i <- [0..al): {
         #{overflow=wrap}
+        #{index-out = 0}
         av = a.limbs[i]
         bv = 0
-        i < bl -> bv = b.limbs[i]
+                i < bl -> {
+            #{index-out = 0}
+            bv = b.limbs[i]
+        }
         #{overflow=wrap}
         d = av - borrow - bv
         #{overflow=wrap}
@@ -254,6 +275,7 @@ abs-sub = (a bigint, b bigint) (c bigint) {
 
             -> borrow = 0
         }
+        #{index-out = 0}
         c.limbs[i] = d & MASK
     }
     c.normalize()
@@ -275,22 +297,28 @@ mul = (a bigint, b bigint) (c bigint) {
     #{overflow=wrap}
     i <- [0..al + bl): {
         #{overflow=wrap}
+        #{index-out = 0}
         c.limbs[i] = 0
     }
     i <- [0..al): {
         #{overflow=wrap}
         carry = 0
+        #{index-out = 0}
         av = a.limbs[i] & MASK
         j <- [0..bl): {
             #{overflow=wrap}
+            #{index-out = 0}
             bv = b.limbs[j] & MASK
             #{overflow=wrap}
+            #{index-out = 0}
             p = av * bv + c.limbs[i + j] + carry
             #{overflow=wrap}
+            #{index-out = 0}
             c.limbs[i + j] = p & MASK
             carry = p >> 32
         }
         #{overflow=wrap}
+        #{index-out = 0}
         c.limbs[i + bl] = carry
     }
     #{overflow=wrap}
@@ -315,10 +343,13 @@ mul-i64 = (a bigint, v i64, c bigint) {
     carry = 0
     i <- [0..a.len): {
         #{overflow=wrap}
+        #{index-out = 0}
         p = (a.limbs[i] & MASK) * (v & MASK) + carry
+        #{index-out = 0}
         c.limbs[i] = p & MASK
         carry = p >> 32
     }
+    #{index-out = 0}
     c.limbs[a.len] = carry
     c.normalize()
 }
@@ -357,9 +388,11 @@ div-mod = (a bigint, b bigint) (q bigint, r bigint) {
     #{overflow=wrap}
     b.len == 1 -> {
         #{overflow=wrap}
+        #{index-out = 0}
         v = b.limbs[0] & MASK
         q = div-i64(a, v)
         r.limbs = with-len(1)
+        #{index-out = 0}
         r.limbs[0] = mod-i64(a, v)
         r.len = 1
         q.sign = a.sign * b.sign
@@ -371,10 +404,12 @@ div-mod = (a bigint, b bigint) (q bigint, r bigint) {
     q.limbs = with-len(q.len)
     i <- [0..q.len): {
         #{overflow=wrap}
+        #{index-out = 0}
         q.limbs[i] = 0
     }
     bl = b.len
     #{overflow=wrap}
+    #{index-out = 0}
     bt = b.limbs[bl - 1] & MASK
     shift = 0
     tmp = bt
@@ -394,13 +429,19 @@ div-mod = (a bigint, b bigint) (q bigint, r bigint) {
     i <- [0..norm-a-len): {
         #{overflow=wrap}
         av = 0
-        i < a.len -> av = a.limbs[i]
+                i < a.len -> {
+            #{index-out = 0}
+            av = a.limbs[i]
+        }
+        #{index-out = 0}
         norm-a.limbs[i] = av
     }
     shift > 0 -> {
         carry = 0
         i <- [0..norm-a-len): {
+            #{index-out = 0}
             v = (norm-a.limbs[i] & MASK) << shift | carry
+            #{index-out = 0}
             norm-a.limbs[i] = v & MASK
             carry = v >> 32
         }
@@ -409,10 +450,13 @@ div-mod = (a bigint, b bigint) (q bigint, r bigint) {
     qi = q.len - 1
     {
         #{overflow=wrap}
+        #{index-out = 0}
         an = norm-a.limbs[qi + bl] & MASK
         #{overflow=wrap}
+        #{index-out = 0}
         an1 = norm-a.limbs[qi + bl - 1] & MASK
         #{overflow=wrap}
+        #{index-out = 0}
         an2 = norm-a.limbs[qi + bl - 2] & MASK
         #{overflow=wrap}
         qd = an * BASE + an1
@@ -424,19 +468,24 @@ div-mod = (a bigint, b bigint) (q bigint, r bigint) {
         carry = 0
         bj <- [0..bl): {
             #{overflow=wrap}
+            #{index-out = 0}
             bv = b.limbs[bj] & MASK
             #{overflow=wrap}
             p = qd * bv
             #{overflow=wrap}
+            #{index-out = 0}
             subval = (norm-a.limbs[qi + bj] & MASK) - (p & MASK) - carry
             #{overflow=wrap}
+            #{index-out = 0}
             norm-a.limbs[qi + bj] = subval & MASK
             #{overflow=wrap}
             carry = (p >> 32) - (subval >> 32)
         }
         #{overflow=wrap}
+        #{index-out = 0}
         subval = (norm-a.limbs[qi + bl] & MASK) - carry
         #{overflow=wrap}
+        #{index-out = 0}
         norm-a.limbs[qi + bl] = subval & MASK
 
         #{overflow=wrap}
@@ -446,12 +495,16 @@ div-mod = (a bigint, b bigint) (q bigint, r bigint) {
             carry = 0
             bj <- [0..bl): {
                 #{overflow=wrap}
+                #{index-out = 0}
                 s = (norm-a.limbs[qi + bj] & MASK) + (b.limbs[bj] & MASK) + carry
+                #{index-out = 0}
                 norm-a.limbs[qi + bj] = s & MASK
                 carry = s >> 32
             }
+            #{index-out = 0}
             norm-a.limbs[qi + bl] = norm-a.limbs[qi + bl] + carry
         }
+        #{index-out = 0}
         q.limbs[qi] = qd
         #{overflow=wrap}
         qi = qi - 1
@@ -465,6 +518,7 @@ div-mod = (a bigint, b bigint) (q bigint, r bigint) {
     r.sign = a.sign
     i <- [0..b.len): {
         #{overflow=wrap}
+        #{index-out = 0}
         r.limbs[i] = norm-a.limbs[i]
     }
     r.normalize()
@@ -493,8 +547,10 @@ div-i64 = (a bigint, v i64) (q bigint) {
     #{overflow=wrap}
     i <- [a.len - 1..0]: {
         #{overflow=wrap}
+        #{index-out = 0}
         cur = (rem << 32) | (a.limbs[i] & MASK)
         #{overflow=wrap}
+        #{index-out = 0}
         q.limbs[i] = cur / v
         rem = cur % v
     }
@@ -509,6 +565,7 @@ mod-i64 = (a bigint, v i64) (r i64) {
     #{overflow=wrap}
     i <- [a.len - 1..0]: {
         #{overflow=wrap}
+        #{index-out = 0}
         cur = (rem << 32) | (a.limbs[i] & MASK)
         rem = cur % v
     }
@@ -545,6 +602,7 @@ mod-pow = (base bigint, exp bigint, modulus bigint, r bigint) {
     b = bigint {}
     b = base.copy()
     #{overflow=wrap}
+    #{index-out = 0}
     top = exp.limbs[exp.len - 1] & MASK
     lead = 0
     tmp = top
@@ -564,7 +622,10 @@ mod-pow = (base bigint, exp bigint, modulus bigint, r bigint) {
         #{overflow=wrap}
         elimb = i / 32
         ebit = i % 32
-        (exp.limbs[elimb] >> ebit) & 1 == 1 -> r = mul(r, b)
+                (exp.limbs[elimb] >> ebit) & 1 == 1 -> {
+            #{index-out = 0}
+            r = mul(r, b)
+        }
     }
 }
 
@@ -613,12 +674,15 @@ lcm = (a bigint, b bigint) (l bigint) {
 bigint.shl1 = () {
     carry = 0
     i <- [0...len): {
+        #{index-out = 0}
         v = (.limbs[i] & MASK) << 1 | carry
         carry = v >> 32
+        #{index-out = 0}
         .limbs[i] = v & MASK
     }
     carry > 0 -> {
         #{overflow=wrap}
+        #{index-out = 0}
         .limbs[.len] = carry
         .len = .len + 1
     }
@@ -629,10 +693,15 @@ bigint.shr1 = () {
     #{overflow=wrap}
     i <- [.len - 1..0]: {
         #{overflow=wrap}
+        #{index-out = 0}
         carry = .limbs[i] & 1
+        #{index-out = 0}
         .limbs[i] = (.limbs[i] >> 1) & MASK
         #{overflow=wrap}
-        i > 0 && carry > 0 -> .limbs[i - 1] = .limbs[i - 1] | (1 << 31)
+                i > 0 && carry > 0 -> {
+            #{index-out = 0}
+            .limbs[i - 1] = .limbs[i - 1] | (1 << 31)
+        }
     }
 
     #{overflow=wrap}
@@ -664,6 +733,7 @@ bigint.normalize = () {
     {
         #{overflow=wrap}
         .len = .len - 1
+    #{index-out = 0}
     } (.len > 1 && .limbs[.len - 1] == 0)
 }
 
@@ -674,11 +744,13 @@ bigint.to-str = () (out str) {
     out = with-cap(256)
     z = .is-zero()
     z -> {
+        #{index-out = 0}
         out[0] = 48
         return
     }
     out-n = 0
     .sign == -1 -> {
+        #{index-out = 0}
         out[0] = 45
         out-n = 1
     }
@@ -693,6 +765,7 @@ bigint.to-str = () (out str) {
         tz -> break
         d = mod-i64(tmp, 10)
         #{overflow=wrap}
+        #{index-out = 0}
         buf[bufn] = d + 48
         #{overflow=wrap}
         bufn = bufn + 1
@@ -702,6 +775,7 @@ bigint.to-str = () (out str) {
     j = bufn - 1
     {
         #{overflow=wrap}
+        #{index-out = 0}
         out[out-n] = buf[j]
         #{overflow=wrap}
         out-n = out-n + 1
@@ -716,12 +790,14 @@ bigint.to-str = () (out str) {
 from-str = (s str) (out bigint) {
     out.limbs = with-len(1)
     out.sign = 1
+    #{index-out = 0}
     out.limbs[0] = 0
     out.len = 1
     pos = 0
     tmp-bigint = bigint {}
     {
         #{overflow=wrap}
+        #{index-out = 0}
         c = s[pos]
         c != 32 && c != 9 && c != 10 && c != 13 -> break
         #{overflow=wrap}
@@ -735,9 +811,13 @@ from-str = (s str) (out bigint) {
             pos = pos + 1
         }
         #{overflow=wrap}
-        s[pos] == 43 -> pos = pos + 1
+                s[pos] == 43 -> {
+            #{index-out = 0}
+            pos = pos + 1
+        }
     }
     {
+        #{index-out = 0}
         c = s[pos]
         {
             c >= 48 && c <= 57 -> {
@@ -777,12 +857,14 @@ bigint.to-hex = () (out str) {
     hex = '0123456789abcdef'
     out-n = 0
     .sign == -1 -> {
+        #{index-out = 0}
         out[0] = 45
         out-n = 1
     }
     #{overflow=wrap}
     i <- [.len - 1..0]: {
         #{overflow=wrap}
+        #{index-out = 0}
         limb = .limbs[i] & MASK
         #{overflow=wrap}
         {
@@ -796,6 +878,7 @@ bigint.to-hex = () (out str) {
                         nibble = (limb >> shift) & 15
                         done == 1 || nibble != 0
                         done = 1
+                        #{index-out = 0}
                         out[out-n] = hex[nibble]
                         out-n = out-n + 1
                     } (shift >= 0)
@@ -807,6 +890,7 @@ bigint.to-hex = () (out str) {
         {
             #{overflow=wrap}
             nibble = (limb >> shift) & 15
+            #{index-out = 0}
             out[out-n] = hex[nibble]
             #{overflow=wrap}
             out-n = out-n + 1
@@ -822,10 +906,12 @@ bigint.to-hex = () (out str) {
 from-hex = (s str) (out bigint) {
     out.limbs = with-len(1)
     out.sign = 1
+    #{index-out = 0}
     out.limbs[0] = 0
     out.len = 1
     tmp-bigint = bigint {}
     i <- [0..s.len-bytes()): {
+        #{index-out = 0}
         c = s[i]
         {
             c >= 48 && c <= 57 -> {

@@ -232,6 +232,10 @@ func containerElemType(lt string) string {
 	return ""
 }
 
+// ContainerElemType 是 containerElemType 的導出版，供 checker 套件判定容器元素型別
+// （區分 arr/vec/slice 與 str/txt、struct field 等不會產生 option 索引的基底）。
+func ContainerElemType(lt string) string { return containerElemType(lt) }
+
 // inferIndexElemType returns the element type of an IndexExpression's base
 // container, using the parser-resolved variable types (available at lowering
 // time). Returns "" if the element type cannot be determined.
@@ -302,7 +306,7 @@ func (p *Parser) isSafeIndexBase(idx *IndexExpression) bool {
 		lt = strings.TrimPrefix(t, "?")
 	} else if t, ok := p.sem.FuncVarType(p.curFuncName, ident.Value); ok && t != "" {
 		lt = strings.TrimPrefix(t, "?")
-	} else if t, ok := p.sem.VarTypes[ident.Value]; ok {
+	} else 	if t, ok := p.sem.VarTypes[ident.Value]; ok {
 		lt = strings.TrimPrefix(t, "?")
 	}
 	return containerElemType(lt) != ""

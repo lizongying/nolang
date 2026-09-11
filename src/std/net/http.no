@@ -94,8 +94,11 @@ request.init = (method str, url str, body str) {
     .header-count = 0
     i <- [0..HTTP-MAX-REQ-HEADERS): {
 
+        #{index-out = 0}
         ; 用空格字串初始化 headers[i]，使 data buffer 非 null
+        #{index-out = 0}
         .headers[i] = ' '
+        #{index-out = 0}
         .headers[i].len = 0
     }
 }
@@ -111,6 +114,7 @@ request.add-header = (name str, value str) (ok bool) {
 
     ; 用字串串接組裝 'Name: Value'（建立獨立緩衝區，避免逐位元組寫入溢出）
     #{overflow=wrap}
+    #{index-out = 0}
     .headers[idx] = name - ': ' - value
     #{overflow=wrap}
     .header-count = idx + 1
@@ -130,9 +134,13 @@ response.parse-headers = () {
     ; 初始化標頭陣列（用空格字串使 data buffer 非 null）
     i <- [0..HTTP-MAX-RESP-HEADERS): {
         #{overflow=wrap}
+        #{index-out = 0}
         .header-names[i] = ' '
+        #{index-out = 0}
         .header-names[i].len = 0
+        #{index-out = 0}
         .header-values[i] = ' '
+        #{index-out = 0}
         .header-values[i].len = 0
     }
     hs = .headers
@@ -163,8 +171,10 @@ response.parse-headers = () {
                 ; 用 slice 複製 name/value（建立獨立緩衝區，避免逐位元組寫入溢出）
                 #{overflow=wrap}
                 name-str = hs.slice(pos, colon-pos)
+                #{index-out = 0}
                 .header-names[cnt] = name-str
                 val-str = hs.slice(colon-pos + 2, line-end)
+                #{index-out = 0}
                 .header-values[cnt] = val-str
                 .header-count = cnt + 1
             }
@@ -183,9 +193,13 @@ response.get-header = (name str) (val ?str) {
     cnt = .header-count
     i <- [0..cnt): {
 
+        #{index-out = 0}
         ; 直接存取 .header-names[i] 比較（避免 local str 從陣列元素賦值的 codegen 限制）
         matched = 1
-        .header-names[i].len-bytes() != name.len-bytes() -> matched = 0
+                .header-names[i].len-bytes() != name.len-bytes() -> {
+            #{index-out = 0}
+            matched = 0
+        }
         {
             matched == 1 -> {
                 j <- [0..name.len-bytes()): {
@@ -198,7 +212,9 @@ response.get-header = (name str) (val ?str) {
 
             matched == 1 -> {
                 ; 用 slice 複製值到 val（slice 是 CallExpression，正確載入 str-long value）
+                #{index-out = 0}
                 vlen = .header-values[i].len-bytes()
+                #{index-out = 0}
                 val = .header-values[i].slice(0, vlen)
                 return
             }
@@ -263,6 +279,7 @@ do = (method str, url str, body str) (resp ?response) {
     }
     rest = url.slice(scheme-len, url.len-bytes())
 
+    #{index-out = 0}
     ; 分離 host[:port] 與 path（找到第一個 /）
     slash-pos = rest.index('/')
     {
@@ -287,6 +304,7 @@ do = (method str, url str, body str) (resp ?response) {
         p = 0
         i <- [0..port-str.len-bytes()): {
             #{overflow=wrap}
+            #{index-out = 0}
             c = port-str[i]
             c < 48 || c > 57 -> return
             p = p * 10 + c - 48
@@ -388,6 +406,7 @@ do = (method str, url str, body str) (resp ?response) {
         ; 將接收的位元組複製到 raw
         i <- [0..n): {
             #{overflow=wrap}
+            #{index-out = 0}
             raw[total + i] = buf[i]
         }
         #{overflow=wrap}
@@ -441,6 +460,7 @@ do = (method str, url str, body str) (resp ?response) {
     code = 0
     i <- [0..code-str.len-bytes()): {
         #{overflow=wrap}
+        #{index-out = 0}
         c = code-str[i]
         c < 48 || c > 57 -> return
         #{overflow=wrap}
@@ -525,6 +545,7 @@ do-req = (req request) (resp ?response) {
         p = 0
         i <- [0..port-str.len-bytes()): {
             #{overflow=wrap}
+            #{index-out = 0}
             c = port-str[i]
             c < 48 || c > 57 -> return
             p = p * 10 + c - 48
@@ -576,6 +597,7 @@ do-req = (req request) (resp ?response) {
     ; 附加自訂標頭
     hi <- [0..req.header-count): {
         #{overflow=wrap}
+        #{index-out = 0}
         req-str = req-str - req.headers[hi]
         #{overflow=wrap}
         req-str = req-str - crlf
@@ -630,6 +652,7 @@ do-req = (req request) (resp ?response) {
         total + n > HTTP-MAX-RESPONSE -> *
         i <- [0..n): {
             #{overflow=wrap}
+            #{index-out = 0}
             raw[total + i] = buf[i]
         }
         #{overflow=wrap}
@@ -677,6 +700,7 @@ do-req = (req request) (resp ?response) {
     code = 0
     i <- [0..code-str.len-bytes()): {
         #{overflow=wrap}
+        #{index-out = 0}
         c = code-str[i]
         c < 48 || c > 57 -> return
         #{overflow=wrap}

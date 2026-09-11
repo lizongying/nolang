@@ -167,6 +167,7 @@ client.next-event = () (ev ?event) {
                 ; 將剩餘資料移到緩衝區開頭
                 i <- [0..remaining.len-bytes()): {
                     #{overflow=wrap}
+                    #{index-out = 0}
                     .recv-buf[i] = remaining[i]
                 }
                 .recv-buf-len = remaining.len-bytes()
@@ -186,10 +187,17 @@ client.next-event = () (ev ?event) {
                     line = event-block.slice(pos, line-end)
 
                     ; 去除行尾 \r
-                    line.len-bytes() > 0 -> line[line.len-bytes() - 1] == 13 -> line = line.slice(0, line.len-bytes() - 1)
+                                        line.len-bytes() > 0 -> {
+                                                line[line.len-bytes() - 1] == 13 -> {
+                            #{index-out = 0}
+                            line = line.slice(0, line.len-bytes() - 1)
+                        }
+                    }
 
                     ; 跳過空行和註解行
-                    line.len-bytes() > 0 -> line[0] != 58 -> {
+                                        line.len-bytes() > 0 -> {
+                        line[0] != 58 -> {
+                    }
 
                         ; 尋找冒號分隔符
                         colon = line.index(':')
@@ -199,7 +207,12 @@ client.next-event = () (ev ?event) {
                             #{overflow=wrap}
                             field = line.slice(0, colon)
                             val-start = colon + 1
-                            val-start < line.len-bytes() -> line[val-start] == 32 -> val-start = val-start + 1
+                                                        val-start < line.len-bytes() -> {
+                                                                line[val-start] == 32 -> {
+                                    #{index-out = 0}
+                                    val-start = val-start + 1
+                                }
+                            }
                             value = line.slice(val-start, line.len-bytes())
                         }
                         {
@@ -280,6 +293,7 @@ client.next-event = () (ev ?event) {
                 ; 複製到緩衝區末尾
                 i <- [0..n): {
                     #{overflow=wrap}
+                    #{index-out = 0}
                     .recv-buf[.recv-buf-len + i] = tmp[i]
                 }
                 .recv-buf-len = .recv-buf-len + n
@@ -431,6 +445,7 @@ client.reconnect = () (ok bool) {
         }
         i <- [0..n): {
             #{overflow=wrap}
+            #{index-out = 0}
             raw[total + i] = tmp[i]
         }
         #{overflow=wrap}
@@ -458,6 +473,7 @@ client.reconnect = () (ok bool) {
     status-code = 0
     i <- [0..code-str.len-bytes()): {
         #{overflow=wrap}
+        #{index-out = 0}
         c = code-str[i]
         c < 48 || c > 57 -> {
             .close()
@@ -480,6 +496,7 @@ client.reconnect = () (ok bool) {
     .recv-buf-len = remaining.len-bytes()
     i <- [0..remaining.len-bytes()): {
         #{overflow=wrap}
+        #{index-out = 0}
         .recv-buf[i] = remaining[i]
     }
     ok = true
@@ -540,6 +557,7 @@ sse-connect = (url str) (client ?client) {
         p = 0
         i <- [0..port-str.len-bytes()): {
             #{overflow=wrap}
+            #{index-out = 0}
             c = port-str[i]
             c < 48 || c > 57 -> {
                 client = err('invalid port')
@@ -676,6 +694,7 @@ sse-connect = (url str) (client ?client) {
         }
         i <- [0..n): {
             #{overflow=wrap}
+            #{index-out = 0}
             raw[total + i] = tmp[i]
         }
         #{overflow=wrap}
@@ -705,6 +724,7 @@ sse-connect = (url str) (client ?client) {
     status-code = 0
     i <- [0..code-str.len-bytes()): {
         #{overflow=wrap}
+        #{index-out = 0}
         c = code-str[i]
         c < 48 || c > 57 -> {
             use-tls -> tls-c.close()
@@ -733,6 +753,7 @@ sse-connect = (url str) (client ?client) {
     rb str = with-len(SSE-BUF-SIZE)
     i <- [0..remaining.len-bytes()): {
         #{overflow=wrap}
+        #{index-out = 0}
         rb[i] = remaining[i]
     }
     cli client = client {
@@ -851,6 +872,7 @@ server-conn.handshake = () (ok bool) {
         n <= 0 -> return
         i <- [0..n): {
             #{overflow=wrap}
+            #{index-out = 0}
             raw[total + i] = tmp[i]
         }
         #{overflow=wrap}

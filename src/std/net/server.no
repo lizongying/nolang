@@ -189,6 +189,7 @@ server-conn.recv-more = () (n i64) {
     n > 0 -> {
         i <- [0..n): {
             #{overflow=wrap}
+            #{index-out = 0}
             .recv-buf[.recv-buf-len + i] = tmp[i]
         }
         #{overflow=wrap}
@@ -275,9 +276,13 @@ server-conn.parse = () (ok bool) {
     .header-count = 0
     i <- [0..HTTP-SRV-MAX-HEADERS): {
         #{overflow=wrap}
+        #{index-out = 0}
         .header-names[i] = ' '
+        #{index-out = 0}
         .header-names[i].len = 0
+        #{index-out = 0}
         .header-values[i] = ' '
+        #{index-out = 0}
         .header-values[i].len = 0
     }
     hs = .headers
@@ -299,15 +304,19 @@ server-conn.parse = () (ok bool) {
                     name-len = colon-pos - pos
                     j <- [0..name-len): {
                         #{overflow=wrap}
+                        #{index-out = 0}
                         .header-names[cnt][j] = hs[pos + j]
                     }
+                    #{index-out = 0}
                     .header-names[cnt].len = name-len
                     val-start = colon-pos + 2
                     val-len = line-end - val-start
                     j <- [0..val-len): {
                         #{overflow=wrap}
+                        #{index-out = 0}
                         .header-values[cnt][j] = hs[val-start + j]
                     }
+                    #{index-out = 0}
                     .header-values[cnt].len = val-len
                     .header-count = cnt + 1
                 }
@@ -345,6 +354,7 @@ server-conn.parse = () (ok bool) {
             content-len = 0
             j <- [0..cl-str.len-bytes()): {
                 #{overflow=wrap}
+                #{index-out = 0}
                 ch = cl-str[j]
                 ch >= 48 && ch <= 57 -> content-len = content-len * 10 + ch - 48
             }
@@ -378,12 +388,17 @@ server-conn.get-header = (name str) (val ?str) {
     cnt = .header-count
     i <- [0..cnt): {
         matched = 1
-        .header-names[i].len-bytes() != name.len-bytes() -> matched = 0
+                .header-names[i].len-bytes() != name.len-bytes() -> {
+            #{index-out = 0}
+            matched = 0
+        }
         {
             matched == 1 -> {
                 j <- [0..name.len-bytes()): {
                     #{overflow=wrap}
+                    #{index-out = 0}
                     c1 = .header-names[i][j]
+                    #{index-out = 0}
                     c2 = name[j]
 
                     ; 大小寫不敏感比較
@@ -397,7 +412,9 @@ server-conn.get-header = (name str) (val ?str) {
             }
 
             matched == 1 -> {
+                #{index-out = 0}
                 vlen = .header-values[i].len-bytes()
+                #{index-out = 0}
                 val = .header-values[i].slice(0, vlen)
                 return
             }
@@ -718,6 +735,7 @@ secure-compare = (a str, b str) (ok bool) {
     a.len-bytes() != b.len-bytes() -> return
     diff = 0
     i <- [0..a.len-bytes()): {
+        #{index-out = 0}
         diff = diff | (a[i] ^ b[i])
     }
     diff == 0 -> ok = true
@@ -855,6 +873,7 @@ https-server-conn.recv-more = () (n i64) {
     n > 0 -> {
         i <- [0..n): {
             #{overflow=wrap}
+            #{index-out = 0}
             .recv-buf[.recv-buf-len + i] = tmp[i]
         }
         #{overflow=wrap}
@@ -935,9 +954,13 @@ https-server-conn.parse = () (ok bool) {
     .header-count = 0
     i <- [0..HTTP-SRV-MAX-HEADERS): {
         #{overflow=wrap}
+        #{index-out = 0}
         .header-names[i] = ' '
+        #{index-out = 0}
         .header-names[i].len = 0
+        #{index-out = 0}
         .header-values[i] = ' '
+        #{index-out = 0}
         .header-values[i].len = 0
     }
     hs = .headers
@@ -959,15 +982,19 @@ https-server-conn.parse = () (ok bool) {
                     name-len = colon-pos - pos
                     j <- [0..name-len): {
                         #{overflow=wrap}
+                        #{index-out = 0}
                         .header-names[cnt][j] = hs[pos + j]
                     }
+                    #{index-out = 0}
                     .header-names[cnt].len = name-len
                     val-start = colon-pos + 2
                     val-len = line-end - val-start
                     j <- [0..val-len): {
                         #{overflow=wrap}
+                        #{index-out = 0}
                         .header-values[cnt][j] = hs[val-start + j]
                     }
+                    #{index-out = 0}
                     .header-values[cnt].len = val-len
                     .header-count = cnt + 1
                 }
@@ -1005,6 +1032,7 @@ https-server-conn.parse = () (ok bool) {
             content-len = 0
             j <- [0..cl-str.len-bytes()): {
                 #{overflow=wrap}
+                #{index-out = 0}
                 ch = cl-str[j]
                 ch >= 48 && ch <= 57 -> content-len = content-len * 10 + ch - 48
             }
@@ -1034,12 +1062,17 @@ https-server-conn.get-header = (name str) (val ?str) {
     cnt = .header-count
     i <- [0..cnt): {
         matched = 1
-        .header-names[i].len-bytes() != name.len-bytes() -> matched = 0
+                .header-names[i].len-bytes() != name.len-bytes() -> {
+            #{index-out = 0}
+            matched = 0
+        }
         {
             matched == 1 -> {
                 j <- [0..name.len-bytes()): {
                     #{overflow=wrap}
+                    #{index-out = 0}
                     c1 = .header-names[i][j]
+                    #{index-out = 0}
                     c2 = name[j]
                     c1 >= 65 && c1 <= 90 -> c1 = c1 + 32
                     c2 >= 65 && c2 <= 90 -> c2 = c2 + 32
@@ -1051,7 +1084,9 @@ https-server-conn.get-header = (name str) (val ?str) {
             }
 
             matched == 1 -> {
+                #{index-out = 0}
                 vlen = .header-values[i].len-bytes()
+                #{index-out = 0}
                 val = .header-values[i].slice(0, vlen)
                 return
             }

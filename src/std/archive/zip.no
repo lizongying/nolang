@@ -38,9 +38,13 @@ u32le = (data []byte, off i64) (v i64) {
     off2 = off + 2
     #{overflow=wrap}
     off3 = off + 3
+    #{index-out = 0}
     b0 = data[off]
+    #{index-out = 0}
     b1 = data[off1]
+    #{index-out = 0}
     b2 = data[off2]
+    #{index-out = 0}
     b3 = data[off3]
     v = b0 | (b1 << 8) | (b2 << 16) | (b3 << 24)
 }
@@ -49,7 +53,9 @@ u32le = (data []byte, off i64) (v i64) {
 u16le = (data []byte, off i64) (v i64) {
     #{overflow=wrap}
     off1 = off + 1
+    #{index-out = 0}
     b0 = data[off]
+    #{index-out = 0}
     b1 = data[off1]
     v = b0 | (b1 << 8)
 }
@@ -151,6 +157,7 @@ zip.name = (idx i64) (name str) {
         #{overflow=wrap}
         idx2 = off46 + i
         #{overflow=wrap}
+        #{index-out = 0}
         result = result - number.char-to-str(.data[idx2])
     }
     name = result
@@ -218,6 +225,7 @@ zip.extract = (idx i64) (out []byte) {
             i <- [0..sz): {
                 #{overflow=wrap}
                 src-off = data-off + i
+                #{index-out = 0}
                 result.push(.data[src-off])
             }
         }
@@ -227,6 +235,7 @@ zip.extract = (idx i64) (out []byte) {
             compressed []byte
             i <- [0..csz): {
                 #{overflow=wrap}
+                #{index-out = 0}
                 compressed.push(.data[data-off + i])
             }
 
@@ -253,6 +262,7 @@ zip-entry.name = () (name str) {
         #{overflow=wrap}
         idx2 = off46 + i
         #{overflow=wrap}
+        #{index-out = 0}
         result = result - number.char-to-str(.data[idx2])
     }
     name = result
@@ -314,6 +324,7 @@ zip-entry.extract = () (out []byte) {
             i <- [0..sz): {
                 #{overflow=wrap}
                 src-off = data-off + i
+                #{index-out = 0}
                 result.push(.data[src-off])
             }
         }
@@ -323,6 +334,7 @@ zip-entry.extract = () (out []byte) {
             compressed []byte
             i <- [0..csz): {
                 #{overflow=wrap}
+                #{index-out = 0}
                 compressed.push(.data[data-off + i])
             }
 
@@ -396,12 +408,14 @@ zip-writer.finalize = () (out []byte) {
     cd-offset = .data.len()
     cd-size = .cd-data.len()
     i <- [0..cd-size): {
+        #{index-out = 0}
         .put(.cd-data[i])
     }
     .write-eocd(cd-offset, cd-size)
     dlen = .data.len()
     out = with-cap(.data.len())
     i <- [0..dlen): {
+        #{index-out = 0}
         out[i] = .data[i]
     }
 }
@@ -426,6 +440,7 @@ zip-writer.write-local-file = (name str, content []byte, crc i64) {
     ; 簽名 PK\x03\x04
     sig []byte = [0x50, 0x4b, 0x03, 0x04]
     i <- [0..4): {
+        #{index-out = 0}
         .put(sig[i])
     }
 
@@ -460,11 +475,13 @@ zip-writer.write-local-file = (name str, content []byte, crc i64) {
 
     ; 檔名
     i <- [0..name-len): {
+        #{index-out = 0}
         .put(name[i])
     }
 
     ; 檔案內容
     i <- [0..content.len()): {
+        #{index-out = 0}
         .put(content[i])
     }
 }
@@ -489,6 +506,7 @@ zip-writer.write-cd-entry = (name str, offset i64, size i64, compressed-size i64
     ; 簽名 PK\x01\x02
     sig []byte = [0x50, 0x4b, 0x01, 0x02]
     i <- [0..4): {
+        #{index-out = 0}
         .cd-put(sig[i])
     }
 
@@ -541,6 +559,7 @@ zip-writer.write-cd-entry = (name str, offset i64, size i64, compressed-size i64
 
     ; 檔名
     i <- [0..name-len): {
+        #{index-out = 0}
         .cd-put(name[i])
     }
 }
@@ -551,6 +570,7 @@ zip-writer.write-eocd = (cd-offset i64, cd-size i64) {
     ; 簽名 PK\x05\x06
     sig []byte = [0x50, 0x4b, 0x05, 0x06]
     i <- [0..4): {
+        #{index-out = 0}
         .put(sig[i])
     }
 

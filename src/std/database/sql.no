@@ -98,6 +98,7 @@ db-errmsg = (handle i64) (msg str) {
 ; FFI 輔助函數（內建）
 ; ═══════════════════════════════════════════════
 
+#{index-out = 0}
 ; ffi-cstr-at: 讀取 C 字串陣列元素 ((char**)arr)[idx] 為 Nolang str
 ; 注意：參數不可命名為 `ptr` —— 它是保留關鍵字（指標型別），lexer 產出 PTR token 而非 IDENT。
 #{buildin}

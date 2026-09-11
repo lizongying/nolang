@@ -215,6 +215,7 @@ days-in-month-fn = (y i64, m i64) (d i64) {
         m > 12 -> return
     }
     #{overflow=wrap}
+    #{index-out = 0}
     d = _days-in-month[m - 1]
     m == 2 -> {
         leap bool
@@ -341,56 +342,76 @@ format-date = (d date) (out str) {
     out = with-len(out-len)
     pos = 0
     neg == 1 -> {
+        #{index-out = 0}
         out[0] = 45
         pos = 1
     }
     #{overflow=wrap}
+    #{index-out = 0}
     out[pos] = (yr / 1000) % 10 + 48
     #{overflow=wrap}
+    #{index-out = 0}
     out[pos + 1] = (yr / 100) % 10 + 48
     #{overflow=wrap}
+    #{index-out = 0}
     out[pos + 2] = (yr / 10) % 10 + 48
     #{overflow=wrap}
+    #{index-out = 0}
     out[pos + 3] = yr % 10 + 48
     #{overflow=wrap}
+    #{index-out = 0}
     out[pos + 4] = 45
 
     ; 月
     #{overflow=wrap}
+    #{index-out = 0}
     out[pos + 5] = d.month / 10 + 48
     #{overflow=wrap}
+    #{index-out = 0}
     out[pos + 6] = d.month % 10 + 48
     #{overflow=wrap}
+    #{index-out = 0}
     out[pos + 7] = 45
 
     ; 日
     #{overflow=wrap}
+    #{index-out = 0}
     out[pos + 8] = d.day / 10 + 48
     #{overflow=wrap}
+    #{index-out = 0}
     out[pos + 9] = d.day % 10 + 48
     #{overflow=wrap}
+    #{index-out = 0}
     out[pos + 10] = 32
 
     ; 時
     #{overflow=wrap}
+    #{index-out = 0}
     out[pos + 11] = d.hour / 10 + 48
     #{overflow=wrap}
+    #{index-out = 0}
     out[pos + 12] = d.hour % 10 + 48
     #{overflow=wrap}
+    #{index-out = 0}
     out[pos + 13] = 58
 
     ; 分
     #{overflow=wrap}
+    #{index-out = 0}
     out[pos + 14] = d.min / 10 + 48
     #{overflow=wrap}
+    #{index-out = 0}
     out[pos + 15] = d.min % 10 + 48
     #{overflow=wrap}
+    #{index-out = 0}
     out[pos + 16] = 58
 
     ; 秒
     #{overflow=wrap}
+    #{index-out = 0}
     out[pos + 17] = d.sec / 10 + 48
     #{overflow=wrap}
+    #{index-out = 0}
     out[pos + 18] = d.sec % 10 + 48
 }
 
@@ -420,22 +441,31 @@ parse-date = (s str) (ts ?i64) {
     ; 解析 YYYY-MM-DD
     i <- [0..4): {
         #{overflow=wrap}
+        #{index-out = 0}
         c = s[i]
         c < 48 || c > 57 -> return
         #{overflow=wrap}
         d.year = d.year * 10 + (c - 48)
     }
-    s[4] != 45 -> return
+        s[4] != 45 -> {
+        #{index-out = 0}
+        return
+    }
     i <- [5..7): {
         #{overflow=wrap}
+        #{index-out = 0}
         c = s[i]
         c < 48 || c > 57 -> return
         #{overflow=wrap}
         d.month = d.month * 10 + (c - 48)
     }
-    s[7] != 45 -> return
+        s[7] != 45 -> {
+        #{index-out = 0}
+        return
+    }
     i <- [8..10): {
         #{overflow=wrap}
+        #{index-out = 0}
         c = s[i]
         c < 48 || c > 57 -> return
         #{overflow=wrap}
@@ -456,23 +486,35 @@ parse-date = (s str) (ts ?i64) {
 
     ; 可選的時間部分 HH:MM:SS
     n >= 19 -> {
-        s[10] != 32 -> return
+                s[10] != 32 -> {
+            #{index-out = 0}
+            return
+        }
         i <- [11..13): {
             #{overflow=wrap}
+            #{index-out = 0}
             c = s[i]
             c < 48 || c > 57 -> return
             d.hour = d.hour * 10 + (c - 48)
         }
-        s[13] != 58 -> return
+                s[13] != 58 -> {
+            #{index-out = 0}
+            return
+        }
         i <- [14..16): {
             #{overflow=wrap}
+            #{index-out = 0}
             c = s[i]
             c < 48 || c > 57 -> return
             d.min = d.min * 10 + (c - 48)
         }
-        s[16] != 58 -> return
+                s[16] != 58 -> {
+            #{index-out = 0}
+            return
+        }
         i <- [17..19): {
             #{overflow=wrap}
+            #{index-out = 0}
             c = s[i]
             c < 48 || c > 57 -> return
             d.sec = d.sec * 10 + (c - 48)

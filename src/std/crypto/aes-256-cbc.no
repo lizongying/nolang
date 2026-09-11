@@ -19,6 +19,7 @@
 aes-256-cbc-enc = (in []byte, key [32]byte, iv [16]byte) (out []byte) {
     prev [16]byte
     i <- [0..16): {
+        #{index-out = 0}
         prev[i] = iv[i]
     }
     out = with-len(in.len())
@@ -28,6 +29,7 @@ aes-256-cbc-enc = (in []byte, key [32]byte, iv [16]byte) (out []byte) {
         xored [16]byte
         i <- [0..16): {
             #{overflow=wrap}
+            #{index-out = 0}
             xored[i] = (in[blk + i]) ^ (prev[i])
         }
         enc-block [16]byte
@@ -35,7 +37,9 @@ aes-256-cbc-enc = (in []byte, key [32]byte, iv [16]byte) (out []byte) {
 
         i <- [0..16): {
             #{overflow=wrap}
+            #{index-out = 0}
             out[blk + i] = enc-block[i]
+            #{index-out = 0}
             prev[i] = enc-block[i]
         }
         #{overflow=wrap}
@@ -51,6 +55,7 @@ aes-256-cbc-enc = (in []byte, key [32]byte, iv [16]byte) (out []byte) {
 aes-256-cbc-dec = (in []byte, key [32]byte, iv [16]byte) (out []byte) {
     prev [16]byte
     i <- [0..16): {
+        #{index-out = 0}
         prev[i] = iv[i]
     }
     out = with-len(in.len())
@@ -60,6 +65,7 @@ aes-256-cbc-dec = (in []byte, key [32]byte, iv [16]byte) (out []byte) {
         cipher-block [16]byte
         i <- [0..16): {
             #{overflow=wrap}
+            #{index-out = 0}
             cipher-block[i] = in[blk + i]
         }
         dec-block [16]byte
@@ -67,7 +73,9 @@ aes-256-cbc-dec = (in []byte, key [32]byte, iv [16]byte) (out []byte) {
 
         i <- [0..16): {
             #{overflow=wrap}
+            #{index-out = 0}
             out[blk + i] = (dec-block[i]) ^ (prev[i])
+            #{index-out = 0}
             prev[i] = cipher-block[i]
         }
         #{overflow=wrap}

@@ -405,6 +405,71 @@ func GetSourceFile(stmt Statement) string {
 	return ""
 }
 
+// SetSourceFileDeep recursively sets the source file path on a statement AND all
+// of its nested body statements (function bodies, for-loop bodies, if blocks,
+// etc.). This is needed so that, after std modules are merged into a program,
+// every statement self-identifies its origin file and linter diagnostics are
+// attributed to the correct module rather than inheriting the vetted file's name.
+func SetSourceFileDeep(stmt Statement, file string) {
+	if stmt == nil {
+		return
+	}
+	SetSourceFile(stmt, file)
+	switch s := stmt.(type) {
+	case *FunctionDefinition:
+		if s.Body != nil {
+			for _, b := range s.Body.Statements {
+				SetSourceFileDeep(b, file)
+			}
+		}
+	case *ForStatement:
+		if s.Init != nil {
+			SetSourceFileDeep(s.Init, file)
+		}
+		if s.Body != nil {
+			for _, b := range s.Body.Statements {
+				SetSourceFileDeep(b, file)
+			}
+		}
+	case *BlockStatement:
+		for _, b := range s.Statements {
+			SetSourceFileDeep(b, file)
+		}
+	case *LetStatement:
+		if s.Value != nil {
+			setSourceFileDeepOnExpr(s.Value, file)
+		}
+	case *ExpressionStatement:
+		if s.Expression != nil {
+			setSourceFileDeepOnExpr(s.Expression, file)
+		}
+	}
+}
+
+// setSourceFileDeepOnExpr recurses into expressions that can carry nested body
+// statements (if/else blocks, grouped exprs) so their inner statements inherit
+// the module's source file too.
+func setSourceFileDeepOnExpr(e Expression, file string) {
+	if e == nil {
+		return
+	}
+	switch x := e.(type) {
+	case *IfExpression:
+		if x.Consequence != nil {
+			for _, b := range x.Consequence.Statements {
+				SetSourceFileDeep(b, file)
+			}
+		}
+		if x.Alternative != nil {
+			for _, b := range x.Alternative.Statements {
+				SetSourceFileDeep(b, file)
+			}
+		}
+	case *GroupedExpression:
+		setSourceFileDeepOnExpr(x.Expression, file)
+	}
+}
+
 // ---- Program ----
 
 type Program struct {

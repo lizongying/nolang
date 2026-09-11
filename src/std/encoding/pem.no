@@ -78,10 +78,12 @@ pem-encode = (label str, data []byte) (out str) {
     ; 寫入 header
     i <- [0..header.len-bytes()): {
         #{overflow=wrap}
+        #{index-out = 0}
         out[pos] = header[i]
         #{overflow=wrap}
         pos = pos + 1
     }
+    #{index-out = 0}
     out[pos] = 10
     #{overflow=wrap}
     pos = pos + 1
@@ -97,10 +99,12 @@ pem-encode = (label str, data []byte) (out str) {
         remaining < PEM-LINE-LEN -> line-len = remaining
         j <- [0..line-len): {
             #{overflow=wrap}
+            #{index-out = 0}
             out[pos] = b64[src + j]
             #{overflow=wrap}
             pos = pos + 1
         }
+        #{index-out = 0}
         out[pos] = 10
         #{overflow=wrap}
         pos = pos + 1
@@ -111,10 +115,12 @@ pem-encode = (label str, data []byte) (out str) {
     ; 寫入 footer
     i <- [0..footer.len-bytes()): {
         #{overflow=wrap}
+        #{index-out = 0}
         out[pos] = footer[i]
         #{overflow=wrap}
         pos = pos + 1
     }
+    #{index-out = 0}
     out[pos] = 10
     #{overflow=wrap}
     pos = pos + 1
@@ -154,7 +160,12 @@ pem-decode = (pem-str str) (result ?pem-block) {
 
     ; 跳過換行符
     #{overflow=wrap}
-    b64-start < n -> pem-str[b64-start] == 10 -> b64-start = b64-start + 1
+        b64-start < n -> {
+                pem-str[b64-start] == 10 -> {
+            #{index-out = 0}
+            b64-start = b64-start + 1
+        }
+    }
 
     ; 查找 '-----END '
     end-marker = '-----END '
@@ -168,6 +179,7 @@ pem-decode = (pem-str str) (result ?pem-block) {
     dst = 0
     i <- [b64-start..end-pos): {
         #{overflow=wrap}
+        #{index-out = 0}
         c = pem-str[i]
 
         ; 跳過換行符和空白
@@ -182,6 +194,7 @@ pem-decode = (pem-str str) (result ?pem-block) {
         #{overflow=wrap}
         skip == false -> {
             #{overflow=wrap}
+            #{index-out = 0}
             b64-data[dst] = c
             dst = dst + 1
         }

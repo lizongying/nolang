@@ -593,18 +593,16 @@ func (m *Module) internType(raw string) TypeID {
 	if kind == KindStruct && m.OwnedStructs[raw] {
 		owned = true
 	}
-	// A bare-identifier (or namespaced) type that is neither a registered
-	// struct layout nor an owned struct is a scalar newtype / enum (e.g. `fd`,
-	// `fs.fd`, `code`) — nolang models these as integer aliases, and the MIR
-	// backend represents every integer as i64, so lower them as KindInt.
-	// Without this, `fd`-typed locals resolved to a bogus KindStruct type and
-	// `let bad-fd fs.fd = -1` bound the variable to a struct-typed const that
-	// codegen emitted as `undef` -> opt-inserted trap at the first `bad-fd < 0`
-	// comparison (test-fd-newtype). Real user/std structs ARE registered in
-	// StructFields (by collectStructFields) so they keep KindStruct; the
-	// namespaced scalar newtype `fs.fd` has no struct fields and correctly
-	// becomes KindInt here.
-	if kind == KindStruct && !m.OwnedStructs[raw] {
+	// A bare-identifier type that is neither a registered struct layout nor an
+	// owned struct is a scalar newtype / enum (e.g. `fd`, `code`) — nolang models
+	// these as integer aliases, and the MIR backend represents every integer as
+	// i64, so lower them as KindInt. Without this, `fd`-typed locals resolved to
+	// a bogus KindStruct type and `let bad-fd fd = -1` bound the variable to a
+	// struct-typed const that codegen emitted as `undef` -> opt-inserted trap at
+	// the first `bad-fd < 0` comparison (test-fd-newtype). Real user/std structs
+	// ARE registered in StructFields (by collectStructFields), so they keep
+	// KindStruct; namespaced types (contain ".") are left as struct too.
+	if kind == KindStruct && !m.OwnedStructs[raw] && !strings.Contains(raw, ".") {
 		if _, isStruct := m.StructFields[raw]; !isStruct {
 			kind = KindInt
 		}

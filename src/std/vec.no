@@ -15,21 +15,25 @@
 ;
 ; vec-slice
 ;
+#{index-out = 0}
 ; []t[..]
 ; []t[..)
 ; []t(..]
 ; []t(..)
 ;
+#{index-out = 0}
 ; []t[n0..]
 ; []t[n0..)
 ; []t(n0..]
 ; []t(n0..)
 ;
+#{index-out = 0}
 ; []t[..n1]
 ; []t[..n1)
 ; []t(..n1]
 ; []t(..n1)
 ;
+#{index-out = 0}
 ; []t[n0..n1]
 ; []t[n0..n1)
 ; []t(n0..n1]
@@ -179,6 +183,7 @@ vec-clear = () {
 []t.clone = () (dst []t) {
     dst = with-len(.len())
     i <- [0...len()): {
+        #{index-out = 0}
         dst[i] = .[i]
     }
 }
@@ -193,6 +198,7 @@ vec-clear = () {
 ; []t.to-arr: 切片方法，轉為 [n]t 陣列
 []t.to-arr = () (out [?]t) {
     i <- [0...len()): {
+        #{index-out = 0}
         out[i] = .[i]
     }
 }
@@ -396,6 +402,7 @@ vec-clear = () {
         cur = .len()
         #{overflow=wrap}
         .len = cur + 1
+        #{index-out = 0}
         .[cur] = b[i]
         #{overflow=wrap}
         i = i + 1

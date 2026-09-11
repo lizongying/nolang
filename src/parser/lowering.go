@@ -142,12 +142,37 @@ func (l *lowerer) walk(v reflect.Value) {
 			//      越界時向上傳播錯誤。
 			replaced := false
 			if v.Index(i).CanSet() {
-				if repl := l.maybeIndexOutAssign(v.Index(i).Interface()); repl != nil {
-					v.Index(i).Set(reflect.ValueOf(repl))
-					replaced = true
-				} else if repl := l.maybeAutoPropagateIndex(v.Index(i).Interface()); repl != nil {
-					v.Index(i).Set(reflect.ValueOf(repl))
-					replaced = true
+				stmt := v.Index(i).Interface()
+				// 展开 ExpressionStatement → AssignExpression：索引寫入
+				//（`k[i] = key[i]`、`obj.field = arr[i]`）在 AST 上為
+				// ExpressionStatement 包裹 AssignExpression，必須取出內層
+				// AssignExpression 才能被 maybeIndexOutAssign 辨識（其 switch
+				// 直接匹配 *AssignExpression）。同時把外層 ExpressionStatement
+				// 攜帶的 `#{index-out}` 註解轉掛到內層 AssignExpression，否則
+				// 註解查不到、desugar 不觸發，越界索引仍被當成未處理。
+				if es, ok := stmt.(*ExpressionStatement); ok {
+					if ae, ok2 := es.Expression.(*AssignExpression); ok2 {
+						if l.p.sem != nil {
+							if anns := l.p.sem.RawAnnotationsOf(es); len(anns) > 0 {
+								l.p.sem.SetRawAnnotations(ae, anns)
+								// 同時填 Annotations：ResolveProgram 只對解析期直接
+								// 收到 RawAnnotations 的節點（此處為外層 es）回填
+								// Annotations，內層 ae 沒有；maybeIndexOutAssign
+								// 讀 AnnotationsOf，必須在此一併補齊，否則註解查不到。
+								l.p.sem.ensure(ae).Annotations = anns
+							}
+						}
+						stmt = ae
+					}
+				}
+				if !l.p.SkipSafeIndexLowering {
+					if repl := l.maybeIndexOutAssign(stmt); repl != nil {
+						v.Index(i).Set(reflect.ValueOf(repl))
+						replaced = true
+					} else if repl := l.maybeAutoPropagateIndex(stmt); repl != nil {
+						v.Index(i).Set(reflect.ValueOf(repl))
+						replaced = true
+					}
 				}
 			}
 			l.walk(v.Index(i))
@@ -211,6 +236,26 @@ func (l *lowerer) collectLocalTypes(fd *FunctionDefinition) {
 	l.p.curFuncName = fd.Name
 	l.curFuncName = fd.Name
 	localTypes := map[string]string{}
+	// 參數型別：明確標註的容器型別（arr [N]T / []T / vec[T]）同樣記入「安全索引
+	// 專用」本地型別表，使 `key[i]`（key 為參數）也能被 isSafeIndexBase 辨識、
+	// 走安全降級（否則降級在 ResolveProgram 之前執行，參數型別尚未進入
+	// sem.FuncVarType，isSafeIndexBase 查不到 → 參數基底的越界索引無法被
+	// `#{index-out}` 處理，與 checker 的判定（ResolveProgram 之後，含參數型別）
+	// 不一致，導致標註失效、索引仍被報未處理）。
+	for _, prm := range fd.Parameters {
+		if prm.Type == nil {
+			continue
+		}
+		nm := prm.Name
+		if nm == "" {
+			continue
+		}
+		lt := typeString(prm.Type)
+		if lt != "" {
+			localTypes[nm] = lt
+			l.recordIndexLocalType(fd.Name, nm, lt)
+		}
+	}
 	for _, st := range fd.Body.Statements {
 		ls, ok := st.(*LetStatement)
 		if !ok || ls.Name == nil {
@@ -369,7 +414,7 @@ func (l *lowerer) maybeAutoPropagateIndex(stmt interface{}) Statement {
 	}
 	// 帶 #{index-out} 註解的賦值走預設值路徑，不改寫為 ?=。
 	if l.p.sem != nil {
-		for _, e := range l.p.sem.AnnotationsOf(stmt.(Node)) {
+		for _, e := range l.p.sem.RawAnnotationsOf(stmt.(Node)) {
 			if e != nil && e.Key == "index-out" {
 				return nil
 			}
@@ -390,6 +435,7 @@ func (l *lowerer) maybeIndexOutAssign(stmt interface{}) Statement {
 	l.p.curFuncName = l.curFuncName
 	var value Expression
 	var name *Identifier
+	var leftExpr Expression // 非識別符 LHS（如 `out[i] = .[i]` 的索引寫入 LHS）
 	var tok lexer.Token
 	switch s := stmt.(type) {
 	case *LetStatement:
@@ -406,11 +452,16 @@ func (l *lowerer) maybeIndexOutAssign(stmt interface{}) Statement {
 		if id, ok := s.Left.(*Identifier); ok {
 			name = id
 			tok = s.Token
+		} else {
+			// 索引寫入 LHS（arr[i] = x[i] / obj.field = x[i]）：保留 LHS 表達式，
+			// 在兩個 match arm 中對其賦值（ok arm 寫解箱元素，none arm 寫 DEF）。
+			leftExpr = s.Left
+			tok = s.Token
 		}
 	default:
 		return nil
 	}
-	if name == nil || value == nil {
+	if (name == nil && leftExpr == nil) || value == nil {
 		return nil
 	}
 	idx, ok := value.(*IndexExpression)
@@ -426,7 +477,11 @@ func (l *lowerer) maybeIndexOutAssign(stmt interface{}) Statement {
 	}
 	var defVal AnnotationValue
 	found := false
-	for _, e := range l.p.sem.AnnotationsOf(stmt.(Node)) {
+	// 使用 RawAnnotationsOf（desugar walk 在將註解從外層 ExpressionStatement
+	// 轉移到內層 AssignExpression 後寫入的即時 side-table），而非 AnnotationsOf
+	// （後者讀取 ResolveProgram 階段填入的 ns.Annotations，對 index-write LHS
+	// 這類「註解掛在外層、desugar 時才轉移進內層」的語句會查不到而誤判為未處理）。
+	for _, e := range l.p.sem.RawAnnotationsOf(stmt.(Node)) {
 		if e != nil && e.Key == "index-out" {
 			defVal = e.Value
 			found = true
@@ -462,22 +517,21 @@ func (l *lowerer) maybeIndexOutAssign(stmt interface{}) Statement {
 	if defLit == nil {
 		defLit = &IntegerLiteral{Token: tok, Value: 0}
 	}
-	// arms: ok -> x = it（解箱元素，賦值給 x）；-> 預設值（越界/錯誤時用 DEF）。
-	// x 必須在所有分支都被初始化：若 x 尚未宣告（全新區域變數）則在 match 前
-	// 預先 `let x = DEF` 宣告；若 x 已宣告（例如結果參數 res）則三個分支皆為賦值。
-	// 越界/錯誤分支（wildcard）從不使用 `it`，標記 skipItBinding 避免其 %str-long
-	// 型別的 `it` 綁定覆寫 ok 分支的元素型別 `it`。
-	// 注意：nolang 中「單一變數 = 值」在 AST 上是 LetStatement（非 AssignExpression）。
-	// AssignExpression 僅用於點/索引 LHS（obj.field = x / arr[i] = x）。若此處用
-	// AssignExpression，codegen 的 generateAssignExpression 沒有 identifier-LHS 分支，
-	// 會完全不發出 store，導致結果參數 res 的賦值遺失，並被函數尾的 return-init
-	// 零值填補（__ret_init_bitmap 未標記）覆寫為 0（即 in-bounds 回傳 0 的 bug）。
-	// 改用 LetStatement：generateLet 對已存在的變數（含結果參數）只 store 不重新
-	// alloca，且会标记 return-init bit，使尾填補跳過、res 保留正確值。
+	// arms: ok -> lhs = it（解箱元素寫入 lhs）；-> 預設值（越界/錯誤時用 DEF）。
+	// 識別符 LHS（x = ...）走 LetStatement；索引/點 LHS（arr[i] = ... / obj.field = ...）
+	// 走 AssignExpression，在兩個 arm 中對同一 LHS 賦值（ok arm 寫解箱元素，none
+	// arm 寫 DEF）。none arm 從不使用 `it`，skipItBinding 避免其 %str-long 型別的
+	// `it` 綁定覆寫 ok arm 的元素型別 `it`。
+	assignToLHS := func(val Expression) Statement {
+		if name != nil {
+			return &LetStatement{Token: tok, Name: name, Value: val}
+		}
+		return &ExpressionStatement{Token: tok, Expression: &AssignExpression{Token: tok, Left: leftExpr, Value: val}}
+	}
 	okBody := &BlockStatement{Token: tok, Statements: []Statement{
-		&LetStatement{Token: tok, Name: name, Value: &Identifier{Token: tok, Value: "it"}},
+		assignToLHS(&Identifier{Token: tok, Value: "it"}),
 	}}
-	defAssign := &LetStatement{Token: tok, Name: name, Value: defLit}
+	defAssign := assignToLHS(defLit)
 	arms := []matchArm{
 		{condition: &Identifier{Token: tok, Value: "ok"}, body: okBody, isBlockBody: true, pos: posFromToken(tok)},
 		{isWildcard: true, body: &BlockStatement{Token: tok, Statements: []Statement{defAssign}}, isBlockBody: true, skipItBinding: true, pos: posFromToken(tok)},
@@ -490,9 +544,10 @@ func (l *lowerer) maybeIndexOutAssign(stmt interface{}) Statement {
 	if lowered == nil {
 		return nil
 	}
-	// 若 x 尚未宣告，預先宣告（所有分支皆會賦值，故安全）。
+	// 識別符 LHS 且尚未宣告時預先 `let x = DEF` 宣告（所有分支皆會賦值，故安全）；
+	// 索引/點 LHS 是既有 lvalue，無需預先宣告。
 	var stmts []Statement
-	if l.p.sem == nil || l.p.sem.VarTypes[name.Value] == "" {
+	if name != nil && (l.p.sem == nil || l.p.sem.VarTypes[name.Value] == "") {
 		preDecl := &LetStatement{Token: tok, Name: name, Value: defLit}
 		stmts = []Statement{preDecl, tmpAssign, &ExpressionStatement{Token: tok, Expression: lowered}}
 	} else {

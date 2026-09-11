@@ -70,6 +70,14 @@ type Parser struct {
 	// __unwrap_N 區塊（見 src/fmt 與 no fmt 的 reparse/idempotency 測試）。
 	SkipUnwrapLowering bool
 
+	// SkipSafeIndexLowering 控制是否跳過安全索引的 lowering（#\{index-out=DEF\}
+	// 展開為 match 區塊、option 回傳函式內裸 `x = v[i]` 自動上拋展開為 `x ?= v[i]`）。
+	// 預設 false：編譯器需要展開後的 IR。
+	// `no fmt` 設定為 true，使 formatter 取得 surface AST 中的 `x = v[i]` 與
+	// 獨立行上的 `#{index-out = DEF}` 註解，直接渲染原始寫法，避免輸出不可重解析
+	// 的 `__idx_out_N` 區塊（見 no fmt 的 reparse/idempotency 測試）。
+	SkipSafeIndexLowering bool
+
 	// LegacyBlockOverflowPropagation 啟用「區塊級 #{overflow=...}」的**遺留**
 	// 傳播語意（propagateBlockScopedOverflow）。預設 false。
 	//
@@ -1195,6 +1203,11 @@ func (p *Parser) ParseProgram() *Program {
 	if os.Getenv("NOLANG_DEBUG_SELF") != "" && strings.Contains(p.Filename, "txt") {
 		dbgLeakState("POST-lower", program)
 	}
+
+	// 將「安全索引專用」本地型別表（idxLocalTypes）掛到語義副表匯出，供
+	// checker 的 ValidateUnhandledIndex 複現 isSafeIndexBase 的型別查詢（parser
+	// 實例在 ParseProgram 返回後即被丟棄）。
+	program.Sem.IdxLocalTypes = p.idxLocalTypes
 
 	program.TrailingComments = p.collectDocComments()
 	program.Warnings = append([]string{}, p.Warnings()...)

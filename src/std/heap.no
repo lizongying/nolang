@@ -25,6 +25,7 @@ heap.init = (data []i64) (h heap) {
 ; push: 向堆積推入一個元素
 heap.push = (val i64) {
     #{overflow=wrap}
+    #{index-out = 0}
     .data[.n] = val
     #{overflow=wrap}
     .n = .n + 1
@@ -33,9 +34,15 @@ heap.push = (val i64) {
     {
         #{overflow=wrap}
         parent = (i - 1) / 2
-        .data[i] >= .data[parent] -> break
+                .data[i] >= .data[parent] -> {
+            #{index-out = 0}
+            break
+        }
+        #{index-out = 0}
         tmp = .data[i]
+        #{index-out = 0}
         .data[i] = .data[parent]
+        #{index-out = 0}
         .data[parent] = tmp
         i = parent
     } (i > 0)
@@ -49,9 +56,11 @@ heap.pop = () (val ?i64) {
         val = nil
         return
     }
+    #{index-out = 0}
     val = .data[0]
     #{overflow=wrap}
     .n = .n - 1
+    #{index-out = 0}
     .data[0] = .data[.n]
     i = 0
     {
@@ -61,11 +70,20 @@ heap.pop = () (val ?i64) {
         left = 2 * i + 1
         #{overflow=wrap}
         right = 2 * i + 2
-        left < .n && .data[left] < .data[smallest] -> smallest = left
-        right < .n && .data[right] < .data[smallest] -> smallest = right
+                left < .n && .data[left] < .data[smallest] -> {
+            #{index-out = 0}
+            smallest = left
+        }
+                right < .n && .data[right] < .data[smallest] -> {
+            #{index-out = 0}
+            smallest = right
+        }
         smallest == i -> break
+        #{index-out = 0}
         tmp = .data[i]
+        #{index-out = 0}
         .data[i] = .data[smallest]
+        #{index-out = 0}
         .data[smallest] = tmp
         i = smallest
     } (true)
@@ -78,6 +96,7 @@ heap.peek = () (val ?i64) {
         val = nil
         return
     }
+    #{index-out = 0}
     val = .data[0]
 }
 

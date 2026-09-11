@@ -24,6 +24,7 @@ aes-128-ctr = (in []byte, key [16]byte, iv [16]byte) (out []byte) {
     ; 計數器（初始為 IV）
     ctr [16]byte
     i <- [0..16): {
+        #{index-out = 0}
         ctr[i] = iv[i]
     }
     out = with-len(in.len())
@@ -41,6 +42,7 @@ aes-128-ctr = (in []byte, key [16]byte, iv [16]byte) (out []byte) {
         pos + n > in.len() -> n = in.len() - pos
         i <- [0..n): {
             #{overflow=wrap}
+            #{index-out = 0}
             out[pos + i] = (in[pos + i]) ^ (ks[i])
         }
 
@@ -48,8 +50,12 @@ aes-128-ctr = (in []byte, key [16]byte, iv [16]byte) (out []byte) {
         j = 15
         {
             #{overflow=wrap}
+            #{index-out = 0}
             ctr[j] = (ctr[j] + 1) & 255
-            ctr[j] != 0 -> break
+                        ctr[j] != 0 -> {
+                #{index-out = 0}
+                break
+            }
             #{overflow=wrap}
             j = j - 1
         } (j >= 12)
@@ -60,8 +66,12 @@ aes-128-ctr = (in []byte, key [16]byte, iv [16]byte) (out []byte) {
             j = 11
             {
                 #{overflow=wrap}
+                #{index-out = 0}
                 ctr[j] = (ctr[j] + 1) & 255
-                ctr[j] != 0 -> break
+                                ctr[j] != 0 -> {
+                    #{index-out = 0}
+                    break
+                }
                 j = j - 1
             } (j >= 0)
         }
@@ -82,6 +92,7 @@ aes-128-ctr = (in []byte, key [16]byte, iv [16]byte) (out []byte) {
 aes-256-ctr = (in []byte, key [32]byte, iv [16]byte) (out []byte) {
     ctr [16]byte
     i <- [0..16): {
+        #{index-out = 0}
         ctr[i] = iv[i]
     }
     out = with-len(in.len())
@@ -96,13 +107,18 @@ aes-256-ctr = (in []byte, key [32]byte, iv [16]byte) (out []byte) {
         pos + n > in.len() -> n = in.len() - pos
         i <- [0..n): {
             #{overflow=wrap}
+            #{index-out = 0}
             out[pos + i] = (in[pos + i]) ^ (ks[i])
         }
         j = 15
         {
             #{overflow=wrap}
+            #{index-out = 0}
             ctr[j] = (ctr[j] + 1) & 255
-            ctr[j] != 0 -> break
+                        ctr[j] != 0 -> {
+                #{index-out = 0}
+                break
+            }
             #{overflow=wrap}
             j = j - 1
         } (j >= 12)
@@ -111,8 +127,12 @@ aes-256-ctr = (in []byte, key [32]byte, iv [16]byte) (out []byte) {
             j = 11
             {
                 #{overflow=wrap}
+                #{index-out = 0}
                 ctr[j] = (ctr[j] + 1) & 255
-                ctr[j] != 0 -> break
+                                ctr[j] != 0 -> {
+                    #{index-out = 0}
+                    break
+                }
                 j = j - 1
             } (j >= 0)
         }

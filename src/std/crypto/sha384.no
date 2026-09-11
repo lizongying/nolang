@@ -42,32 +42,38 @@ sha384 = (data []byte) (hash [48]byte) {
     padded []byte
     i <- [0..total-len): {
         #{overflow=wrap}
+        #{index-out = 0}
         padded[i] = 0
     }
 
     ; 複製原始資料
     i <- [0..dlen): {
         #{overflow=wrap}
+        #{index-out = 0}
         padded[i] = data[i]
     }
 
     ; 填充 0x80
+    #{index-out = 0}
     padded[dlen] = 128
 
     ; 填充 0x00
     #{overflow=wrap}
     i <- [dlen + 1..total-len - 16): {
         #{overflow=wrap}
+        #{index-out = 0}
         padded[i] = 0
     }
 
     ; 填充 bit-len（big-endian 128-bit，高 64 位元為 0）
     i <- [0..8): {
         #{overflow=wrap}
+        #{index-out = 0}
         padded[total-len - 16 + i] = 0
     }
     i <- [0..8): {
         #{overflow=wrap}
+        #{index-out = 0}
         padded[total-len - 8 + i] = (bit-len >> (56 - i * 8)) & 255
     }
 
@@ -81,6 +87,7 @@ sha384 = (data []byte) (hash [48]byte) {
     {
         i <- [0..16): {
             #{overflow=wrap}
+            #{index-out = 0}
             block[i] = (padded[offset + i * 8] << 56) | (padded[offset + i * 8 + 1] << 48) | (padded[offset + i * 8 + 2] << 40) | (padded[offset + i * 8 + 3] << 32) | (padded[offset + i * 8 + 4] << 24) | (padded[offset + i * 8 + 5] << 16) | (padded[offset + i * 8 + 6] << 8) | padded[offset + i * 8 + 7]
         }
 
@@ -91,53 +98,101 @@ sha384 = (data []byte) (hash [48]byte) {
     } (offset < total-len)
 
     ; 輸出 48 位元組雜湊值（big-endian，截斷 h0..h5）
+    #{index-out = 0}
     hash[0] = (h0 >> 56) & 255
+    #{index-out = 0}
     hash[1] = (h0 >> 48) & 255
+    #{index-out = 0}
     hash[2] = (h0 >> 40) & 255
+    #{index-out = 0}
     hash[3] = (h0 >> 32) & 255
+    #{index-out = 0}
     hash[4] = (h0 >> 24) & 255
+    #{index-out = 0}
     hash[5] = (h0 >> 16) & 255
+    #{index-out = 0}
     hash[6] = (h0 >> 8) & 255
+    #{index-out = 0}
     hash[7] = h0 & 255
+    #{index-out = 0}
     hash[8] = (h1 >> 56) & 255
+    #{index-out = 0}
     hash[9] = (h1 >> 48) & 255
+    #{index-out = 0}
     hash[10] = (h1 >> 40) & 255
+    #{index-out = 0}
     hash[11] = (h1 >> 32) & 255
+    #{index-out = 0}
     hash[12] = (h1 >> 24) & 255
+    #{index-out = 0}
     hash[13] = (h1 >> 16) & 255
+    #{index-out = 0}
     hash[14] = (h1 >> 8) & 255
+    #{index-out = 0}
     hash[15] = h1 & 255
+    #{index-out = 0}
     hash[16] = (h2 >> 56) & 255
+    #{index-out = 0}
     hash[17] = (h2 >> 48) & 255
+    #{index-out = 0}
     hash[18] = (h2 >> 40) & 255
+    #{index-out = 0}
     hash[19] = (h2 >> 32) & 255
+    #{index-out = 0}
     hash[20] = (h2 >> 24) & 255
+    #{index-out = 0}
     hash[21] = (h2 >> 16) & 255
+    #{index-out = 0}
     hash[22] = (h2 >> 8) & 255
+    #{index-out = 0}
     hash[23] = h2 & 255
+    #{index-out = 0}
     hash[24] = (h3 >> 56) & 255
+    #{index-out = 0}
     hash[25] = (h3 >> 48) & 255
+    #{index-out = 0}
     hash[26] = (h3 >> 40) & 255
+    #{index-out = 0}
     hash[27] = (h3 >> 32) & 255
+    #{index-out = 0}
     hash[28] = (h3 >> 24) & 255
+    #{index-out = 0}
     hash[29] = (h3 >> 16) & 255
+    #{index-out = 0}
     hash[30] = (h3 >> 8) & 255
+    #{index-out = 0}
     hash[31] = h3 & 255
+    #{index-out = 0}
     hash[32] = (h4 >> 56) & 255
+    #{index-out = 0}
     hash[33] = (h4 >> 48) & 255
+    #{index-out = 0}
     hash[34] = (h4 >> 40) & 255
+    #{index-out = 0}
     hash[35] = (h4 >> 32) & 255
+    #{index-out = 0}
     hash[36] = (h4 >> 24) & 255
+    #{index-out = 0}
     hash[37] = (h4 >> 16) & 255
+    #{index-out = 0}
     hash[38] = (h4 >> 8) & 255
+    #{index-out = 0}
     hash[39] = h4 & 255
+    #{index-out = 0}
     hash[40] = (h5 >> 56) & 255
+    #{index-out = 0}
     hash[41] = (h5 >> 48) & 255
+    #{index-out = 0}
     hash[42] = (h5 >> 40) & 255
+    #{index-out = 0}
     hash[43] = (h5 >> 32) & 255
+    #{index-out = 0}
     hash[44] = (h5 >> 24) & 255
+    #{index-out = 0}
     hash[45] = (h5 >> 16) & 255
+    #{index-out = 0}
     hash[46] = (h5 >> 8) & 255
+    #{index-out = 0}
     hash[47] = h5 & 255
 }
 
@@ -152,8 +207,10 @@ sha384-hex = (data []byte) (hex str) {
 
     i <- [0..48): {
         #{overflow=wrap}
+        #{index-out = 0}
         hex[i * 2] = hex-chars[(hash[i] >> 4) & 15]
         #{overflow=wrap}
+        #{index-out = 0}
         hex[i * 2 + 1] = hex-chars[hash[i] & 15]
     }
 }

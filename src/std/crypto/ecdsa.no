@@ -66,7 +66,9 @@ P256-B [32]byte = [
 ; 返回: -1 if a < b, 0 if a == b, 1 if a > b
 bn-cmp = (a []byte, b []byte) (r i64) {
     i <- [31..0]: {
+        #{index-out = 0}
         ai = a[i]
+        #{index-out = 0}
         bi = b[i]
         {
             ai > bi -> {
@@ -89,7 +91,9 @@ bn-add = (a []byte, b []byte) (sum [32]byte, carry i64) {
     carry = 0
     i <- [0..32): {
         #{overflow=wrap}
+        #{index-out = 0}
         val = (a[i]) + (b[i]) + carry
+        #{index-out = 0}
         sum[i] = val & 255
         carry = val >> 8
     }
@@ -101,6 +105,7 @@ bn-sub = (a []byte, b []byte) (diff [32]byte, borrow i64) {
     borrow = 0
     i <- [0..32): {
         #{overflow=wrap}
+        #{index-out = 0}
         val = (a[i]) - (b[i]) - borrow
         #{overflow=wrap}
         {
@@ -112,6 +117,7 @@ bn-sub = (a []byte, b []byte) (diff [32]byte, borrow i64) {
 
             -> borrow = 0
         }
+        #{index-out = 0}
         diff[i] = val
     }
 }
@@ -121,6 +127,7 @@ bn-mod = (a []byte, m []byte) (out [32]byte) {
     work [32]byte
     diff [32]byte
     i <- [0..32): {
+        #{index-out = 0}
         work[i] = a[i]
     }
 
@@ -133,10 +140,12 @@ bn-mod = (a []byte, m []byte) (out [32]byte) {
         borrow = 0
         diff, borrow = bn-sub(work, m)
         i <- [0..32): {
+            #{index-out = 0}
             work[i] = diff[i]
         }
     }
     i <- [0..32): {
+        #{index-out = 0}
         out[i] = work[i]
     }
 }
@@ -147,6 +156,7 @@ bn-mulmod = (a []byte, b []byte, m []byte) (out [32]byte) {
     ; 512-bit 乘積（64 位元組）
     product [64]byte
     i <- [0..64): {
+        #{index-out = 0}
         product[i] = 0
     }
 
@@ -158,7 +168,9 @@ bn-mulmod = (a []byte, b []byte, m []byte) (out [32]byte) {
             #{overflow=wrap}
             idx = i + j
             #{overflow=wrap}
+            #{index-out = 0}
             val = (product[idx]) + (a[i]) * (b[j]) + carry
+            #{index-out = 0}
             product[idx] = val & 255
             carry = val >> 8
         }
@@ -168,7 +180,9 @@ bn-mulmod = (a []byte, b []byte, m []byte) (out [32]byte) {
         idx = i + 32
         {
             #{overflow=wrap}
+            #{index-out = 0}
             val = (product[idx]) + carry
+            #{index-out = 0}
             product[idx] = val & 255
             carry = val >> 8
             #{overflow=wrap}
@@ -181,6 +195,7 @@ bn-mulmod = (a []byte, b []byte, m []byte) (out [32]byte) {
     ; 簡化方法：重複減法（高位部分）
     work [64]byte
     i <- [0..64): {
+        #{index-out = 0}
         work[i] = product[i]
     }
 
@@ -227,13 +242,18 @@ bn-mulmod = (a []byte, b []byte, m []byte) (out [32]byte) {
         shift-byte = shift-byte - 1
 
         ; 嘗試減去 m << (shift_byte * 8)
+        #{index-out = 0}
         ; 即在 work[shift_byte..shift_byte+32] 處減去 m
         can-sub = 1
         i <- [0..32): {
             #{overflow=wrap}
             wi = 0
             #{overflow=wrap}
-            shift-byte + i < 64 -> wi = work[shift-byte + i]
+                        shift-byte + i < 64 -> {
+                #{index-out = 0}
+                wi = work[shift-byte + i]
+            }
+            #{index-out = 0}
             mi = m[i]
             {
                 wi > mi -> break
@@ -254,6 +274,7 @@ bn-mulmod = (a []byte, b []byte, m []byte) (out [32]byte) {
                 {
                     idx < 64 -> {
                         #{overflow=wrap}
+                        #{index-out = 0}
                         val = (work[idx]) - (m[i]) - borrow
                         {
                             val < 0 -> {
@@ -264,12 +285,14 @@ bn-mulmod = (a []byte, b []byte, m []byte) (out [32]byte) {
 
                             -> borrow = 0
                         }
+                        #{index-out = 0}
                         work[idx] = val
                     }
 
                     -> {
                         borrow != 0 -> {
                             #{overflow=wrap}
+                            #{index-out = 0}
                             val = (work[idx]) - borrow
                             {
                                 val < 0 -> {
@@ -280,6 +303,7 @@ bn-mulmod = (a []byte, b []byte, m []byte) (out [32]byte) {
 
                                 -> borrow = 0
                             }
+                            #{index-out = 0}
                             work[idx] = val
                         }
                     }
@@ -291,6 +315,7 @@ bn-mulmod = (a []byte, b []byte, m []byte) (out [32]byte) {
         }
     } (shift-byte > 0)
     i <- [0..32): {
+        #{index-out = 0}
         out[i] = work[i]
     }
 }
@@ -322,6 +347,7 @@ bn-submod = (a []byte, b []byte, m []byte) (out [32]byte) {
             borrow = 0
             diff, borrow = bn-sub(a, b)
             i <- [0..32): {
+                #{index-out = 0}
                 out[i] = diff[i]
             }
         }
@@ -343,6 +369,7 @@ bn-submod = (a []byte, b []byte, m []byte) (out [32]byte) {
             borrow2 = 0
             diff2, borrow2 = bn-sub(tmp, b)
             i <- [0..32): {
+                #{index-out = 0}
                 out[i] = diff2[i]
             }
         }
@@ -366,8 +393,10 @@ bn-invmod = (a []byte, m []byte) (out [32]byte) {
 
     ; result = 1
     result [32]byte
+    #{index-out = 0}
     result[0] = 1
     i <- [1..32): {
+        #{index-out = 0}
         result[i] = 0
     }
 
@@ -380,10 +409,14 @@ bn-invmod = (a []byte, m []byte) (out [32]byte) {
         #{overflow=wrap}
         byte-idx = bit / 8
         bit-idx = bit % 8
-        (exp[byte-idx] >> bit-idx) & 1 == 1 -> result = bn-mulmod(result, base, m)
+                (exp[byte-idx] >> bit-idx) & 1 == 1 -> {
+            #{index-out = 0}
+            result = bn-mulmod(result, base, m)
+        }
         base = bn-mulmod(base, base, m)
     }
     i <- [0..32): {
+        #{index-out = 0}
         out[i] = result[i]
     }
 }
@@ -403,10 +436,14 @@ ec-point-double = (p []byte) (r []byte) {
     is-zero = 1
     i <- [0..32): {
         #{overflow=wrap}
-        p[32 + i] != 0 -> is-zero = 0
+                p[32 + i] != 0 -> {
+            #{index-out = 0}
+            is-zero = 0
+        }
     }
     is-zero == 1 -> {
         i <- [0..96): {
+            #{index-out = 0}
             r[i] = 0
         }
         return
@@ -484,10 +521,13 @@ ec-point-double = (p []byte) (r []byte) {
     ; 輸出
     i <- [0..32): {
         #{overflow=wrap}
+        #{index-out = 0}
         r[i] = x3[i]
         #{overflow=wrap}
+        #{index-out = 0}
         r[32 + i] = y3[i]
         #{overflow=wrap}
+        #{index-out = 0}
         r[64 + i] = z3[i]
     }
 }
@@ -505,10 +545,14 @@ ec-point-add = (p []byte, q []byte) (r []byte) {
     ; 檢查 P 是否為無窮遠點
     p-inf = 1
     i <- [0..96): {
-        p[i] != 0 -> p-inf = 0
+                p[i] != 0 -> {
+            #{index-out = 0}
+            p-inf = 0
+        }
     }
     p-inf == 1 -> {
         i <- [0..96): {
+            #{index-out = 0}
             r[i] = q[i]
         }
         return
@@ -517,10 +561,14 @@ ec-point-add = (p []byte, q []byte) (r []byte) {
     ; 檢查 Q 是否為無窮遠點
     q-inf = 1
     i <- [0..96): {
-        q[i] != 0 -> q-inf = 0
+                q[i] != 0 -> {
+            #{index-out = 0}
+            q-inf = 0
+        }
     }
     q-inf == 1 -> {
         i <- [0..96): {
+            #{index-out = 0}
             r[i] = p[i]
         }
         return
@@ -567,12 +615,18 @@ ec-point-add = (p []byte, q []byte) (r []byte) {
     ;   否則: return infinity
     h-is-zero = 1
     i <- [0..32): {
-        h[i] != 0 -> h-is-zero = 0
+                h[i] != 0 -> {
+            #{index-out = 0}
+            h-is-zero = 0
+        }
     }
     h-is-zero == 1 -> {
         r-is-zero = 1
         i <- [0..32): {
-            rr[i] != 0 -> r-is-zero = 0
+                        rr[i] != 0 -> {
+                #{index-out = 0}
+                r-is-zero = 0
+            }
         }
         {
             r-is-zero == 1 -> {
@@ -582,6 +636,7 @@ ec-point-add = (p []byte, q []byte) (r []byte) {
 
             -> {
                 i <- [0..96): {
+                    #{index-out = 0}
                     r[i] = 0
                 }
                 return
@@ -624,10 +679,13 @@ ec-point-add = (p []byte, q []byte) (r []byte) {
 
     i <- [0..32): {
         #{overflow=wrap}
+        #{index-out = 0}
         r[i] = x3[i]
         #{overflow=wrap}
+        #{index-out = 0}
         r[32 + i] = y3[i]
         #{overflow=wrap}
+        #{index-out = 0}
         r[64 + i] = z3[i]
     }
 }
@@ -640,6 +698,7 @@ ec-scalar-mult = (k [32]byte, p []byte) (r []byte) {
 
     ; R = 無窮遠點
     i <- [0..96): {
+        #{index-out = 0}
         r[i] = 0
     }
 
@@ -653,6 +712,7 @@ ec-scalar-mult = (k [32]byte, p []byte) (r []byte) {
         tmp = ec-point-double(r)
         i <- [0..96): {
             #{overflow=wrap}
+            #{index-out = 0}
             r[i] = tmp[i]
         }
 
@@ -663,6 +723,7 @@ ec-scalar-mult = (k [32]byte, p []byte) (r []byte) {
         (k[byte-idx] >> bit-idx) & 1 == 1 -> {
             tmp = ec-point-add(r, p)
             i <- [0..96): {
+                #{index-out = 0}
                 r[i] = tmp[i]
             }
         }
@@ -682,7 +743,10 @@ ec-point-to-bytes = (p []byte) (out [65]byte) {
     ; 檢查無窮遠點
     z-is-zero = 1
     i <- [0..32): {
-        pz[i] != 0 -> z-is-zero = 0
+                pz[i] != 0 -> {
+            #{index-out = 0}
+            z-is-zero = 0
+        }
     }
     z-is-zero == 1 -> {
 
@@ -715,11 +779,14 @@ ec-point-to-bytes = (p []byte) (out [65]byte) {
     y = bn-mulmod(py, z3-inv, P256-P)
 
     ; 輸出: 04 || x || y（大端序）
+    #{index-out = 0}
     out[0] = 4
     i <- [0..32): {
         #{overflow=wrap}
+        #{index-out = 0}
         out[1 + i] = x[31 - i]
         #{overflow=wrap}
+        #{index-out = 0}
         out[33 + i] = y[31 - i]
     }
 }
@@ -735,21 +802,27 @@ ec-bytes-to-point = (in [65]byte) (out []byte) {
     y [32]byte
     i <- [0..32): {
         #{overflow=wrap}
+        #{index-out = 0}
         x[i] = in[1 + 31 - i]
         #{overflow=wrap}
+        #{index-out = 0}
         y[i] = in[33 + 31 - i]
     }
 
     ; Jacobian: (X, Y, Z) = (x, y, 1)
     i <- [0..32): {
         #{overflow=wrap}
+        #{index-out = 0}
         out[i] = x[i]
         #{overflow=wrap}
+        #{index-out = 0}
         out[32 + i] = y[i]
     }
+    #{index-out = 0}
     out[64] = 1
     i <- [1..32): {
         #{overflow=wrap}
+        #{index-out = 0}
         out[64 + i] = 0
     }
 }
@@ -764,15 +837,19 @@ ec-get-basepoint = () (g []byte) {
     ; Gx, Gy 轉為小端序
     i <- [0..32): {
         #{overflow=wrap}
+        #{index-out = 0}
         g[i] = P256-GX[31 - i]
         #{overflow=wrap}
+        #{index-out = 0}
         g[32 + i] = P256-GY[31 - i]
     }
 
     ; Z = 1
+    #{index-out = 0}
     g[64] = 1
     i <- [1..32): {
         #{overflow=wrap}
+        #{index-out = 0}
         g[64 + i] = 0
     }
 }
@@ -790,6 +867,7 @@ ecdsa-publickey = (priv [32]byte) (pub [65]byte) {
     k [32]byte
     i <- [0..32): {
         #{overflow=wrap}
+        #{index-out = 0}
         k[i] = priv[31 - i]
     }
 
@@ -819,6 +897,7 @@ ecdsa-sign = (priv [32]byte, msg []byte) (sig [64]byte) {
     h-le [32]byte
     i <- [0..32): {
         #{overflow=wrap}
+        #{index-out = 0}
         h-le[i] = h[31 - i]
     }
 
@@ -826,6 +905,7 @@ ecdsa-sign = (priv [32]byte, msg []byte) (sig [64]byte) {
     d [32]byte
     i <- [0..32): {
         #{overflow=wrap}
+        #{index-out = 0}
         d[i] = priv[31 - i]
     }
 
@@ -834,9 +914,11 @@ ecdsa-sign = (priv [32]byte, msg []byte) (sig [64]byte) {
     state = 0
     i <- [0..32): {
         #{overflow=wrap}
+        #{index-out = 0}
         state, rand-r = rand.rand(state + d[i] + h-le[i] + i)
 
         #{overflow=wrap}
+        #{index-out = 0}
         k[i] = state & 255
     }
 
@@ -845,9 +927,15 @@ ecdsa-sign = (priv [32]byte, msg []byte) (sig [64]byte) {
     k[0] == 0 -> {
         all-zero = 1
         i <- [1..32): {
-            k[i] != 0 -> all-zero = 0
+                        k[i] != 0 -> {
+                #{index-out = 0}
+                all-zero = 0
+            }
         }
-        all-zero == 1 -> k[0] = 1
+                all-zero == 1 -> {
+            #{index-out = 0}
+            k[0] = 1
+        }
     }
 
     ; R = k * G
@@ -864,6 +952,7 @@ ecdsa-sign = (priv [32]byte, msg []byte) (sig [64]byte) {
     rx [32]byte
     i <- [0..32): {
         #{overflow=wrap}
+        #{index-out = 0}
         rx[i] = r-point-bytes[1 + 31 - i]
     }
     r-val [32]byte
@@ -885,8 +974,10 @@ ecdsa-sign = (priv [32]byte, msg []byte) (sig [64]byte) {
     ; 輸出（大端序）
     i <- [0..32): {
         #{overflow=wrap}
+        #{index-out = 0}
         sig[i] = r-val[31 - i]
         #{overflow=wrap}
+        #{index-out = 0}
         sig[32 + i] = s-val[31 - i]
     }
 }
@@ -903,8 +994,10 @@ ecdsa-verify = (pub [65]byte, msg []byte, sig [64]byte) (ok i64) {
     s-val [32]byte
     i <- [0..32): {
         #{overflow=wrap}
+        #{index-out = 0}
         r-val[i] = sig[31 - i]
         #{overflow=wrap}
+        #{index-out = 0}
         s-val[i] = sig[32 + 31 - i]
     }
 
@@ -912,7 +1005,10 @@ ecdsa-verify = (pub [65]byte, msg []byte, sig [64]byte) (ok i64) {
     ; r != 0
     r-zero = 1
     i <- [0..32): {
-        r-val[i] != 0 -> r-zero = 0
+                r-val[i] != 0 -> {
+            #{index-out = 0}
+            r-zero = 0
+        }
     }
     r-zero == 1 -> {
         ok = 0
@@ -922,7 +1018,10 @@ ecdsa-verify = (pub [65]byte, msg []byte, sig [64]byte) (ok i64) {
     ; s != 0
     s-zero = 1
     i <- [0..32): {
-        s-val[i] != 0 -> s-zero = 0
+                s-val[i] != 0 -> {
+            #{index-out = 0}
+            s-zero = 0
+        }
     }
     s-zero == 1 -> {
         ok = 0
@@ -945,6 +1044,7 @@ ecdsa-verify = (pub [65]byte, msg []byte, sig [64]byte) (ok i64) {
     h-le [32]byte
     i <- [0..32): {
         #{overflow=wrap}
+        #{index-out = 0}
         h-le[i] = h[31 - i]
     }
 
@@ -981,7 +1081,10 @@ ecdsa-verify = (pub [65]byte, msg []byte, sig [64]byte) (ok i64) {
     ; 檢查 R 是否為無窮遠點
     r-inf = 1
     i <- [0..96): {
-        r-point[i] != 0 -> r-inf = 0
+                r-point[i] != 0 -> {
+            #{index-out = 0}
+            r-inf = 0
+        }
     }
     r-inf == 1 -> {
         ok = 0
@@ -994,6 +1097,7 @@ ecdsa-verify = (pub [65]byte, msg []byte, sig [64]byte) (ok i64) {
     rx [32]byte
     i <- [0..32): {
         #{overflow=wrap}
+        #{index-out = 0}
         rx[i] = r-point-bytes[1 + 31 - i]
     }
     v [32]byte
@@ -1002,6 +1106,9 @@ ecdsa-verify = (pub [65]byte, msg []byte, sig [64]byte) (ok i64) {
     ; 驗證 v == r
     ok = 1
     i <- [0..32): {
-        v[i] != r-val[i] -> ok = 0
+                v[i] != r-val[i] -> {
+            #{index-out = 0}
+            ok = 0
+        }
     }
 }

@@ -131,6 +131,7 @@ parse-set = (set-cookie-str str) (c cookie) {
         {
             #{overflow=wrap}
             pos = pos + 1
+        #{index-out = 0}
         } (pos < rest.len-bytes() && rest[pos] == 32)
 
         #{overflow=wrap}
@@ -165,6 +166,7 @@ parse-set = (set-cookie-str str) (c cookie) {
                         valid = true
                         j <- [0..attr-val.len-bytes()): {
                             #{overflow=wrap}
+                            #{index-out = 0}
                             ch = attr-val[j]
                             ch < 48 || ch > 57 -> {
                                 valid = false
@@ -218,6 +220,7 @@ parse-header = (cookie-header str) (names [16]str, values [16]str, count i64) {
         {
             #{overflow=wrap}
             pos = pos + 1
+        #{index-out = 0}
         } (pos < cookie-header.len-bytes() && cookie-header[pos] == 32)
 
         #{overflow=wrap}
@@ -233,7 +236,9 @@ parse-header = (cookie-header str) (names [16]str, values [16]str, count i64) {
         #{overflow=wrap}
         eq-pos >= 0 && count < 16 -> {
             #{overflow=wrap}
+            #{index-out = 0}
             names[count] = pair.slice(0, eq-pos)
+            #{index-out = 0}
             values[count] = pair.slice(eq-pos + 1, pair.len-bytes())
             count = count + 1
         }
@@ -282,6 +287,7 @@ build-header = (names [16]str, values [16]str, count i64) (out str) {
         #{overflow=wrap}
         out.len-bytes() > 0 -> out = out - '; '
         #{overflow=wrap}
+        #{index-out = 0}
         out = out - names[i] - '=' - values[i]
     }
 }
@@ -301,6 +307,7 @@ jar.set = (name str, value str, domain str, path str, max-age i64) {
     ; 檢查是否已存在同名 Cookie
     i <- [0...count): {
         .names[i] == name && .domains[i] == domain && .paths[i] == path -> {
+            #{index-out = 0}
             .values[i] = value
             return
         }
@@ -309,9 +316,13 @@ jar.set = (name str, value str, domain str, path str, max-age i64) {
     ; 新增 Cookie
     .count < COOKIE-JAR-MAX -> {
         #{overflow=wrap}
+        #{index-out = 0}
         .names[.count] = name
+        #{index-out = 0}
         .values[.count] = value
+        #{index-out = 0}
         .domains[.count] = domain
+        #{index-out = 0}
         .paths[.count] = path
         .count = .count + 1
     }
@@ -330,24 +341,40 @@ jar.get = (name str, domain str, path str) (val ?str) {
             ; 域名匹配（簡化：精確匹配或子域名匹配）
             domain-match = false
             {
-                .domains[i] == domain -> domain-match = true
+                                .domains[i] == domain -> {
+                    #{index-out = 0}
+                    domain-match = true
+                }
 
                 .domains[i].len-bytes() > 0 -> {
                     #{overflow=wrap}
-                    domain.ends-with('.' - .domains[i]) -> domain-match = true
+                                        domain.ends-with('.' - .domains[i]) -> {
+                        #{index-out = 0}
+                        domain-match = true
+                    }
                 }
 
-                .domains[i].len-bytes() == 0 -> domain-match = true
+                                .domains[i].len-bytes() == 0 -> {
+                    #{index-out = 0}
+                    domain-match = true
+                }
             }
 
             ; 路徑匹配（簡化：前綴匹配）
             path-match = false
             {
-                .paths[i] == '/' -> path-match = true
+                                .paths[i] == '/' -> {
+                    #{index-out = 0}
+                    path-match = true
+                }
 
-                path.starts-with(.paths[i]) -> path-match = true
+                                path.starts-with(.paths[i]) -> {
+                    #{index-out = 0}
+                    path-match = true
+                }
             }
             domain-match && path-match -> {
+                #{index-out = 0}
                 val = .values[i]
                 return
             }
@@ -367,9 +394,13 @@ jar.delete = (name str, domain str, path str) {
             #{overflow=wrap}
             last = .count - 1
             i != last -> {
+                #{index-out = 0}
                 .names[i] = .names[last]
+                #{index-out = 0}
                 .values[i] = .values[last]
+                #{index-out = 0}
                 .domains[i] = .domains[last]
+                #{index-out = 0}
                 .paths[i] = .paths[last]
             }
             .count = .count - 1
@@ -389,9 +420,15 @@ jar.build-header = (domain str, path str) (out str) {
         ; 域名匹配
         domain-match = false
         {
-            .domains[i].len-bytes() == 0 -> domain-match = true
+                        .domains[i].len-bytes() == 0 -> {
+                #{index-out = 0}
+                domain-match = true
+            }
 
-            .domains[i] == domain -> domain-match = true
+                        .domains[i] == domain -> {
+                #{index-out = 0}
+                domain-match = true
+            }
 
             domain.ends-with('.' - .domains[i]) -> {
                 #{overflow=wrap}
@@ -402,13 +439,20 @@ jar.build-header = (domain str, path str) (out str) {
         ; 路徑匹配
         path-match = false
         {
-            .paths[i] == '/' -> path-match = true
+                        .paths[i] == '/' -> {
+                #{index-out = 0}
+                path-match = true
+            }
 
-            path.starts-with(.paths[i]) -> path-match = true
+                        path.starts-with(.paths[i]) -> {
+                #{index-out = 0}
+                path-match = true
+            }
         }
         domain-match && path-match -> {
             #{overflow=wrap}
             out.len-bytes() > 0 -> out = out - '; '
+            #{index-out = 0}
             out = out - .names[i] - '=' - .values[i]
         }
     }
@@ -483,8 +527,10 @@ sign = (name str, value str, key []byte) (signed str) {
     hex-str str = with-len(64)
     i <- [0..32): {
         #{overflow=wrap}
+        #{index-out = 0}
         hex-str[i * 2] = hex-chars[(mac[i] >> 4) & 15]
         #{overflow=wrap}
+        #{index-out = 0}
         hex-str[i * 2 + 1] = hex-chars[mac[i] & 15]
     }
     #{overflow=wrap}
@@ -537,6 +583,7 @@ verify = (name str, signed-value str, key []byte) (ok bool, value str) {
     diff = 0
     i <- [0..provided-hex.len-bytes()): {
         #{overflow=wrap}
+        #{index-out = 0}
         diff = diff | (provided-hex[i] ^ expected-hex[i])
     }
     {

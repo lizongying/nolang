@@ -32,6 +32,7 @@ bz-bit-reader.read-bit = () (bit i64) {
         .bit-cnt == 0 -> {
             .pos < .data.len() -> {
                 #{overflow=wrap}
+                #{index-out = 0}
                 .bit-buf = .data[.pos]
                 .pos = .pos + 1
                 .bit-cnt = 8
@@ -80,10 +81,13 @@ bz-huffman {
 ; build: 從碼長度陣列建構 Huffman 碼表
 bz-huffman.build = (lengths []i64, alpha-size i64) {
     i <- [0..24): {
+        #{index-out = 0}
         .limit[i] = 0
+        #{index-out = 0}
         .base[i] = 0
     }
     i <- [0..258): {
+        #{index-out = 0}
         .perm[i] = 0
     }
     .min-len = 24
@@ -92,12 +96,15 @@ bz-huffman.build = (lengths []i64, alpha-size i64) {
     ; 計算各長度的碼數
     len-count [24]i64
     i <- [0..24): {
+        #{index-out = 0}
         len-count[i] = 0
     }
     i <- [0..alpha-size): {
         #{overflow=wrap}
+        #{index-out = 0}
         l = lengths[i]
         #{overflow=wrap}
+        #{index-out = 0}
         len-count[l] = len-count[l] + 1
         {
             l < .min-len -> .min-len = l
@@ -107,20 +114,26 @@ bz-huffman.build = (lengths []i64, alpha-size i64) {
     }
 
     ; 計算 base 陣列
+    #{index-out = 0}
     ; base[len] = 在 perm 中，長度 len 的起始索引
     pp = 0
     i <- [0..24): {
         #{overflow=wrap}
+        #{index-out = 0}
         .base[i] = pp
         #{overflow=wrap}
+        #{index-out = 0}
         pp = pp + len-count[i]
     }
 
     ; 計算 limit 陣列
+    #{index-out = 0}
     ; limit[len] = 長度 len 的最大碼值
     vec = 0
     i <- [0..24): {
+        #{index-out = 0}
         vec = (vec << 1) | len-count[i]
+        #{index-out = 0}
         .limit[i] = vec
     }
 
@@ -128,13 +141,17 @@ bz-huffman.build = (lengths []i64, alpha-size i64) {
     ; 重新計算 base（臨時使用）
     tmp-base [24]i64
     i <- [0..24): {
+        #{index-out = 0}
         tmp-base[i] = .base[i]
     }
     i <- [0..alpha-size): {
         #{overflow=wrap}
+        #{index-out = 0}
         l = lengths[i]
+        #{index-out = 0}
         .perm[tmp-base[l]] = i
         #{overflow=wrap}
+        #{index-out = 0}
         tmp-base[l] = tmp-base[l] + 1
     }
 }
@@ -152,15 +169,20 @@ bz-huffman.decode = (br bz-bit-reader) (sym i64) {
     ; 持續讀取直到找到匹配的碼
     {
         #{overflow=wrap}
-        zvec <= .limit[zn] -> *
+                zvec <= .limit[zn] -> {
+            #{index-out = 0}
+            *
+        }
         #{overflow=wrap}
         zn = zn + 1
         zj = br.read-bit()
         zvec = (zvec << 1) | zj
+    #{index-out = 0}
     } (zvec > .limit[zn] && zn < 23)
 
     ; 計算符號
     #{overflow=wrap}
+    #{index-out = 0}
     idx = zvec - .base[zn]
     {
         idx < 0 -> return
@@ -168,10 +190,12 @@ bz-huffman.decode = (br bz-bit-reader) (sym i64) {
         idx >= BZ-MAX-ALPHA-SIZE -> return
     }
     #{overflow=wrap}
+    #{index-out = 0}
     sym = .perm[idx + .base[zn] - .base[zn]]
 }
 
 ; 修正: 正確的符號計算
+#{index-out = 0}
 ; sym = perm[zvec - base[zn]]
 bz-huffman.decode-symbol = (br bz-bit-reader) (sym i64) {
     #{overflow=wrap}
@@ -182,19 +206,25 @@ bz-huffman.decode-symbol = (br bz-bit-reader) (sym i64) {
     .min-len == 0 -> return
     {
         #{overflow=wrap}
-        zvec <= .limit[zn] -> *
+                zvec <= .limit[zn] -> {
+            #{index-out = 0}
+            *
+        }
         #{overflow=wrap}
         zn = zn + 1
         zj = br.read-bit()
         zvec = (zvec << 1) | zj
+    #{index-out = 0}
     } (zvec > .limit[zn] && zn < 23)
     #{overflow=wrap}
+    #{index-out = 0}
     idx = zvec - .base[zn]
     {
         idx < 0 -> return
 
         idx >= BZ-MAX-ALPHA-SIZE -> return
     }
+    #{index-out = 0}
     sym = .perm[idx]
 }
 
@@ -209,9 +239,18 @@ bzip2-decompress = (data []byte) (out []byte) {
 
     ; 檢查標頭: "BZh" + block_size_char
     data.len() < 4 -> return
-    data[0] != 66 -> return; 'B'
-    data[1] != 90 -> return; 'Z'
-    data[2] != 104 -> return; 'h'
+        data[0] != 66 -> {
+        #{index-out = 0}
+        return; 'B'
+    }
+        data[1] != 90 -> {
+        #{index-out = 0}
+        return; 'Z'
+    }
+        data[2] != 104 -> {
+        #{index-out = 0}
+        return; 'h'
+    }
     {
         data[3] < 49 -> {
             ; '1'
@@ -266,11 +305,13 @@ bzip2-decompress = (data []byte) (out []byte) {
             in-use-16 [16]i64
             i <- [0..16): {
                 #{overflow=wrap}
+                #{index-out = 0}
                 in-use-16[i] = br.read-bit()
             }
             in-use [256]i64
             i <- [0..256): {
                 #{overflow=wrap}
+                #{index-out = 0}
                 in-use[i] = 0
             }
             n-in-use = 0
@@ -281,6 +322,7 @@ bzip2-decompress = (data []byte) (out []byte) {
                         bit = br.read-bit()
                         bit == 1 -> {
                             #{overflow=wrap}
+                            #{index-out = 0}
                             in-use[i * 16 + j] = 1
                             n-in-use = n-in-use + 1
                         }
@@ -289,6 +331,7 @@ bzip2-decompress = (data []byte) (out []byte) {
             }
 
             ; 建構 unseq-to-seq 映射
+            #{index-out = 0}
             ; seq-to-unseq[k] = 第 k 個使用中的字節值
             seq-to-unseq [256]i64
             k = 0
@@ -296,6 +339,7 @@ bzip2-decompress = (data []byte) (out []byte) {
                 #{overflow=wrap}
                 in-use[i] == 1 -> {
                     #{overflow=wrap}
+                    #{index-out = 0}
                     seq-to-unseq[k] = i
                     k = k + 1
                 }
@@ -324,6 +368,7 @@ bzip2-decompress = (data []byte) (out []byte) {
             mtf-list [6]i64
             i <- [0..6): {
                 #{overflow=wrap}
+                #{index-out = 0}
                 mtf-list[i] = i
             }
             i <- [0..n-selectors): {
@@ -339,12 +384,16 @@ bzip2-decompress = (data []byte) (out []byte) {
                 j >= n-tables -> j = 0
 
                 ; MTF 解碼
+                #{index-out = 0}
                 tmp = mtf-list[j]
                 m <- [0..j): {
                     #{overflow=wrap}
+                    #{index-out = 0}
                     mtf-list[j - m] = mtf-list[j - m - 1]
                 }
+                #{index-out = 0}
                 mtf-list[0] = tmp
+                #{index-out = 0}
                 selectors[i] = tmp
             }
 
@@ -375,6 +424,7 @@ bzip2-decompress = (data []byte) (out []byte) {
                     bit = br.read-bit()
                     bit == 0 -> {
                         #{overflow=wrap}
+                        #{index-out = 0}
                         lengths[i] = curr-len
                         #{overflow=wrap}
                         i = i + 1
@@ -413,10 +463,12 @@ bzip2-decompress = (data []byte) (out []byte) {
 
             ; ── 解碼區塊資料 ──
             ; MTF 反變換狀態
+            #{index-out = 0}
             ; mtf-pos[k] = 第 k 個 MTF 位置對應的原始字節值
             mtf-pos [258]i64
             i <- [0..n-in-use): {
                 #{overflow=wrap}
+                #{index-out = 0}
                 mtf-pos[i] = seq-to-unseq[i]
             }
             selector-idx = 0
@@ -435,7 +487,10 @@ bzip2-decompress = (data []byte) (out []byte) {
                 ; 需要新的選擇器？
                 group-remaining == 0 -> {
                     #{overflow=wrap}
-                    selector-idx < n-selectors -> cur-ht = selectors[selector-idx]
+                                        selector-idx < n-selectors -> {
+                        #{index-out = 0}
+                        cur-ht = selectors[selector-idx]
+                    }
                     #{overflow=wrap}
                     selector-idx = selector-idx + 1
                     group-remaining = BZ-GROUP-SIZE
@@ -466,6 +521,7 @@ bzip2-decompress = (data []byte) (out []byte) {
                     ; 輸出剩餘的 run
                     run-len > 0 -> {
                         i <- [0..run-len): {
+                            #{index-out = 0}
                             bwt-out.push(mtf-pos[0])
                         }
                     }
@@ -479,6 +535,7 @@ bzip2-decompress = (data []byte) (out []byte) {
                     #{overflow=wrap}
                     run-len > 0 -> {
                         i <- [0..run-len): {
+                            #{index-out = 0}
                             bwt-out.push(mtf-pos[0])
                         }
                         run-len = 0
@@ -487,13 +544,16 @@ bzip2-decompress = (data []byte) (out []byte) {
                     ; MTF 反變換
                     #{overflow=wrap}
                     mtf-idx = sym - 1
+                    #{index-out = 0}
                     val = mtf-pos[mtf-idx]
 
                     ; 將 val 移到前面
                     j <- [1..mtf-idx + 1): {
                         #{overflow=wrap}
+                        #{index-out = 0}
                         mtf-pos[mtf-idx - j + 1] = mtf-pos[mtf-idx - j]
                     }
+                    #{index-out = 0}
                     mtf-pos[0] = val
 
                     bwt-out.push(val)
@@ -508,12 +568,19 @@ bzip2-decompress = (data []byte) (out []byte) {
             count [256]i64
             i <- [0..256): {
                 #{overflow=wrap}
+                #{index-out = 0}
                 count[i] = 0
             }
             i <- [0..bwt-n): {
                 #{overflow=wrap}
+                #{index-out = 0}
                 v = bwt-out[i]
-                v >= 0 -> v < 256 -> count[v] = count[v] + 1
+                                v >= 0 -> {
+                                        v < 256 -> {
+                        #{index-out = 0}
+                        count[v] = count[v] + 1
+                    }
+                }
             }
 
             ; 計算累積頻率（各值在排序後的起始位置）
@@ -521,13 +588,17 @@ bzip2-decompress = (data []byte) (out []byte) {
             total = 0
             i <- [0..256): {
                 #{overflow=wrap}
+                #{index-out = 0}
                 cum[i] = total
                 #{overflow=wrap}
+                #{index-out = 0}
                 total = total + count[i]
             }
 
             ; 計算 LF mapping
+            #{index-out = 0}
             ; lf[i] = 如果 bwt-out[i] 是第 k 次出現的值 v，
+            #{index-out = 0}
             ;          則 lf[i] = cum[v] + k
             lf []i64
             i <- [0..bwt-n): {
@@ -537,14 +608,18 @@ bzip2-decompress = (data []byte) (out []byte) {
             rank [256]i64
             i <- [0..256): {
                 #{overflow=wrap}
+                #{index-out = 0}
                 rank[i] = 0
             }
             i <- [0..bwt-n): {
                 #{overflow=wrap}
+                #{index-out = 0}
                 v = bwt-out[i]
                 v >= 0 -> v < 256 -> {
                     #{overflow=wrap}
+                    #{index-out = 0}
                     lf[i] = cum[v] + rank[v]
+                    #{index-out = 0}
                     rank[v] = rank[v] + 1
                 }
             }
@@ -557,7 +632,9 @@ bzip2-decompress = (data []byte) (out []byte) {
 
             i <- [0..bwt-n): {
                 #{overflow=wrap}
+                #{index-out = 0}
                 v = bwt-out[p]
+                #{index-out = 0}
                 p = lf[p]
 
                 ; RLE1 解碼

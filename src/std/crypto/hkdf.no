@@ -25,12 +25,14 @@ hkdf-extract = (salt []byte, ikm []byte) (prk [32]byte) {
     {
         salt.len() == 0 -> {
             i <- [0..32): {
+                #{index-out = 0}
                 k[i] = 0
             }
         }
 
         -> {
             i <- [0..salt.len()): {
+                #{index-out = 0}
                 k[i] = salt[i]
             }
         }
@@ -60,14 +62,19 @@ hkdf-expand-hmac = (prk-vec []byte, t-data []byte, t-len i64, info []byte, count
     msg []byte = with-len(msg-len)
     i <- [0..t-len): {
         #{overflow=wrap}
+        #{index-out = 0}
         msg[i] = t-data[i]
     }
     i <- [0..info.len()): {
         #{overflow=wrap}
+        #{index-out = 0}
         msg[t-len + i] = info[i]
     }
     #{overflow=wrap}
-    counter > 0 -> msg[t-len + info.len()] = counter & 255
+        counter > 0 -> {
+        #{index-out = 0}
+        msg[t-len + info.len()] = counter & 255
+    }
     out = hmac.hmac-sha256(prk-vec, msg)
 }
 
@@ -81,6 +88,7 @@ hkdf-expand = (prk [32]byte, info []byte, out-len i64) (okm []byte) {
     ; 將 prk 轉為 []byte
     prk-vec []byte = with-len(32)
     i <- [0..32): {
+        #{index-out = 0}
         prk-vec[i] = prk[i]
     }
 
@@ -100,6 +108,7 @@ hkdf-expand = (prk [32]byte, info []byte, out-len i64) (okm []byte) {
 
             copy-n = out-len
             i <- [0..copy-n): {
+                #{index-out = 0}
                 okm[i] = t-tmp[i]
             }
         }
@@ -114,6 +123,7 @@ hkdf-expand = (prk [32]byte, info []byte, out-len i64) (okm []byte) {
 
                 i <- [0..32): {
                     #{overflow=wrap}
+                    #{index-out = 0}
                     t[i] = t-tmp[i]
                 }
                 t-valid = true
@@ -123,6 +133,7 @@ hkdf-expand = (prk [32]byte, info []byte, out-len i64) (okm []byte) {
                 off + copy-n > out-len -> copy-n = out-len - off
                 i <- [0..copy-n): {
                     #{overflow=wrap}
+                    #{index-out = 0}
                     okm[off + i] = t[i]
                 }
                 #{overflow=wrap}
@@ -162,23 +173,28 @@ hkdf-expand-label = (prk [32]byte, label str, context []byte, out-len i64) (okm 
     pos = 0
 
     ; length (2 bytes, big-endian)
+    #{index-out = 0}
     info[0] = (out-len >> 8) & 255
+    #{index-out = 0}
     info[1] = out-len & 255
     pos = 2
 
     ; label length (1 byte)
+    #{index-out = 0}
     info[2] = label-bytes.len() & 255
     pos = 3
 
     ; label bytes
     i <- [0..label-bytes.len()): {
         #{overflow=wrap}
+        #{index-out = 0}
         info[pos + i] = label-bytes[i]
     }
     #{overflow=wrap}
     pos = pos + label-bytes.len()
 
     ; context length (1 byte)
+    #{index-out = 0}
     info[pos] = context.len() & 255
     #{overflow=wrap}
     pos = pos + 1
@@ -186,6 +202,7 @@ hkdf-expand-label = (prk [32]byte, label str, context []byte, out-len i64) (okm 
     ; context bytes
     i <- [0..context.len()): {
         #{overflow=wrap}
+        #{index-out = 0}
         info[pos + i] = context[i]
     }
     info.truncate(info-len)
@@ -202,6 +219,7 @@ hkdf-expand-label = (prk [32]byte, label str, context []byte, out-len i64) (okm 
 hkdf-expand-label-vec = (prk []byte, label str, context []byte, out-len i64) (okm []byte) {
     prk-arr [32]byte
     i <- [0..32): {
+        #{index-out = 0}
         prk-arr[i] = prk[i]
     }
     okm = hkdf-expand-label(prk-arr, label, context, out-len)

@@ -14,7 +14,12 @@ const config: Config = {
   projectName: 'nolang',
 
   onBrokenLinks: 'throw',
-  onBrokenMarkdownLinks: 'warn',
+
+  markdown: {
+    hooks: {
+      onBrokenMarkdownLinks: 'warn',
+    },
+  },
 
   clientModules: [require.resolve('./src/nolang-prism.js')],
 

@@ -138,9 +138,12 @@ func formatProgram(code string) (out string, ok bool, errs []string) {
 
 	l := lexer.New(code)
 	p := parser.New(l)
-	// 取得 surface AST（UnwrapAssignStatement 等），直接渲染 `?=` / `=`，
-	// 而非展開為不可重解析的 __unwrap_N 區塊（見 parser.SkipUnwrapLowering）。
+	// 取得 surface AST（UnwrapAssignStatement / 安全索引展開等），直接渲染
+	// `?=` / `=` / `x = v[i]` 與獨立行上的 `#{index-out = DEF}`，而非展開為
+	// 不可重解析的 __unwrap_N / __idx_out_N 區塊（見 parser.SkipUnwrapLowering
+	// 與 parser.SkipSafeIndexLowering）。
 	p.SkipUnwrapLowering = true
+	p.SkipSafeIndexLowering = true
 	program := p.ParseProgram()
 
 	// 如果解析失敗，返回原始碼，不修改；並透出錯誤訊息讓上層（如 `no fmt`）回報

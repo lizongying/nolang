@@ -58,6 +58,20 @@ type lowerer struct {
 	// statement after a nested match arm). See lowerIf.
 	contStack []BlockID
 
+	// contTargets maps an `if`/`for` merge/continuation block to the block it
+	// must fall through to when it ends up unterminated (i.e. its enclosing
+	// block's continuation). This is set by lowerIf/lowerFor for their merge
+	// block and consulted by ensureReturn so that a merge which is NOT the last
+	// statement of its enclosing block (e.g. a then-only `if` followed by
+	// unconditional statements in a loop body — binary `pow`) branches to the
+	// loop continuation, while a merge that IS the last statement of a nested
+	// match arm branches to the enclosing match arm's merge instead of being
+	// patched with `ret void` (which used to drop every statement after a match
+	// arm). Using a deferred map (rather than redirecting immediately) avoids
+	// the timing bug where post-if statements are lowered AFTER the if returns
+	// and would otherwise land in the wrong block.
+	contTargets map[BlockID]BlockID
+
 	// typeHint is the declared type of the binding currently being lowered.
 	// Some builtins (with-len / with-cap / with-cap-len) declare an EMPTY
 	// return list because their result type is inferred from the assignment's
@@ -173,40 +187,74 @@ func (l *lowerer) synthesizeMainForTopLevel(pkg *hir.Package) {
 			}
 		raw := l.letTypeRaw(n)
 		if raw != "" && l.foldConstText(n, raw) != "" {
-			continue
+			// A real COMPILE-TIME CONSTANT initializer. Scalars/enums/fixed
+			// arrays fold to a genuine LLVM constant and stay module globals
+			// (registered by the loop above). Slice/option/vec literals also
+			// fold, but to a *fixed-array* text that disagrees with their
+			// slice/option type, so they must NOT become module globals — they
+			// are inlined below as locals (handled by the isUnsafeInlineType
+			// branch), matching how a function-local `let v []i64 = [...]`
+			// lowers to a real `%vec`. Skip the global keep for those.
+			if l.isUnsafeInlineType(raw) {
+				// fall through to inline as a local
+			} else {
+				continue
+			}
 		}
 		// Inline top-level `let`s that are COMPUTED at runtime (call results,
-		// arithmetic, negative literals like `bad-fd fd = -1`, ...) into the
-		// synthetic `main` as locals — unless the v1 codegen cannot emit the
-		// type as a statement. Types the codegen cannot emit:
-		//   * vec/option/slice (isUnsafeInlineType) — must stay module globals;
-		//   * std prelude struct literals (fs.file, io.reader, os.utsname,
-		//     path.path, ...) which reference un-emitted types and are dead for
-		//     the MIR path (print writes to fd 1 directly) — skip them.
-		// Scalars, integer newtypes (fd), user structs and enums inline safely.
-		// Previously only `isInlineableLetType(raw)` qualified for inlining, so
-		// any non-inlineable-but-emittable top-level `let` (e.g. `fd`) was
-		// NEITHER inlined NOR kept as a global and was silently dropped, leaving
-		// every later read as `undef` (test-fd-newtype: `bad-fd < 0` trapped).
-		if l.letValueIsCall(n) && raw != "" && raw != "void" && !l.isUnsafeInlineType(raw) {
-			// inline call-result let into the synthetic `main`
+		// arithmetic, negative literals like `bad-fd fd = -1`, slice/array/
+		// option/vec literals, uninitialized containers, ...) into the
+		// synthetic `main` as locals. A function-local `let` of any of these
+		// types lowers correctly (e.g. `let v []i64 = [10,20,30]` becomes a
+		// real `%vec` with len 3 and the right elements, and an uninitialized
+		// `data []i64` zero-inits to an empty `%vec` that `.push` can extend),
+		// so inlining them here is exactly what legacy's top-level-statement
+		// lowering does. Keeping them as module globals used to void them
+		// (test-oob-ok: `v[0]` -> "index slot: void"; test_vec_push_clear:
+		// `data.push(10)` -> "vec.push: needs receiver"; test-vec-assign:
+		// `block[i] = x` -> "indexstore slot"). Scalars, integer newtypes
+		// (fd), user structs and enums also inline safely.
+		if l.letValueIsCall(n) && raw != "" && raw != "void" {
+			// Inline a CALL-result top-level `let` into the synthetic `main`
+			// as a runtime local. A call result is emitted via EmitCallMulti
+			// (which allocates the destination slot for ANY type, including
+			// slice/option/vec), so it is always safe to inline regardless of
+			// the declared type. The old guard `!isUnsafeInlineType(raw)`
+			// wrongly skipped slice/option/vec call-valued lets (e.g.
+			// `v = get-slice()` where get-slice returns `[]i64`), dropping them
+			// entirely so every later read resolved to a void `const` and
+			// `v[0]` indexed void -> "no slot" compile error (slice1). Only
+			// CONSTANT initializers of those types must stay module globals
+			// (handled by the branch below, which is reached only when the
+			// value is NOT a call).
 		} else if raw != "" && l.isUnsafeInlineType(raw) {
-			continue // vec/option/slice: keep as module global
+			// Slice/vec literal or uninitialized container: inline as a local
+			// (NOT a module global). `isUnsafeInlineType` matches []T / vec /
+			// %vec / %option (a `?T` top-level let is handled by the
+			// isInlineableLetType path below, which wraps the scalar payload).
+			// See the foldConstText branch above
+			// and the registration loop — these would otherwise void.
 		} else if raw != "" && !l.isInlineableLetType(raw) {
-			// A non-inlineable type. Skip ONLY genuine structs — these
-			// reference un-emitted struct layouts and are dead for the MIR path
-			// (print writes to fd 1 directly). Scalar newtypes/enums (fs.fd,
-			// fs.code, ...) are NOT registered in StructFields/OwnedStructs and
-			// so are NOT skipped here: they MUST be inlined, else every later
-			// read is `undef` (test-fd-newtype `bad-fd < 0` trapped). Use the
-			// read-only StructFields/OwnedStructs tables (NOT l.b.Type — calling
-			// the builder during HIR analysis, before curFunc is set, mutates
-			// codegen state and corrupts the sibling global-let path).
-			if _, isStruct := l.mod.StructFields[raw]; isStruct {
-				continue // user struct with fields: dead for MIR path
-			}
-			if l.mod.OwnedStructs[raw] {
-				continue // owned struct: dead for MIR path
+			// A non-inlineable, non-unsafe type. std prelude structs are only
+			// emittable into LLVM when their field layout is registered in
+			// StructFields (the prelude declares `%path_path = type { ... }`
+			// for every such struct it actually uses). A struct that IS
+			// registered (path.path, err.error, os.utsname, io.reader, ...)
+			// is genuinely used by the script and lowers cleanly via
+			// lowerStructLit, so fall through and inline it as a local. A
+			// struct that is NOT registered (e.g. fs.file when its module's
+			// layout is not collected) has NO emitted LLVM type — inlining it
+			// would produce an undeclared `%fs_file` and malformed IR, so skip
+			// it (it is a dead prelude init for the MIR path: print writes to
+			// fd 1 directly and never references it). The old heuristic
+			// skipped ALL namespaced types (`strings.Contains(raw,".")`),
+			// which wrongly dropped `path.path` too — path.path is a scalar-
+			// free struct the script constructs and calls methods on
+			// (test_path_char: `p = path { p: "." }; p.path_dir()` trapped
+			// because `p` read as a void `undef`).
+			base := strings.TrimPrefix(raw, "%")
+			if _, ok := l.mod.StructFields[base]; !ok {
+				continue // unemittable std prelude struct: dead for MIR path
 			}
 		}
 		// otherwise (scalar / newtype / user struct / enum): inline into main
@@ -351,6 +399,21 @@ func LowerHIR(pkg *hir.Package, enumVariants map[string][]string) (*Module, *Rep
 			if !hasExplicitMain {
 				raw := l.letTypeRaw(n)
 				if raw == "" || l.foldConstText(n, raw) == "" {
+					continue
+				}
+				// A top-level slice/array/option/vec `let` in a SCRIPT (no
+				// explicit `fn main`) is NOT a module-scope constant that must
+				// outlive every function — its only consumer is the synthetic
+				// `main`, which materializes it as a local (synthesizeMainForTop-
+				// Level inlines it). Registering it here would emit a broken
+				// `@name = global <slice-type> <fixed-array-constant>` whose type
+				// and initializer disagree: foldConstText lowers a slice literal
+				// (`v []i64 = [10,20,30]`) to a fixed array `[3 x i64]`, but the
+				// binding type is a slice (`%vec`), so the LLVM verifier rejects
+				// the module and every later read resolves to a void `const`
+				// (test-oob-ok: `v[0]` -> "index slot: value ... void"). Skip the
+				// global registration so it is inlined as a real local instead.
+				if l.isUnsafeInlineType(raw) {
 					continue
 				}
 			}
@@ -797,6 +860,10 @@ func (l *lowerer) letTypeRaw(n *hir.Node) string {
 
 func (l *lowerer) lowerFunction(name string, hirID int32) {
 	l.lowered[name] = true
+	// Reset the deferred merge-continuation map for this function. Block IDs
+	// are unique per module, but clearing avoids stale cross-function entries
+	// and keeps ensureReturn's lookup scoped to the current function.
+	l.contTargets = make(map[BlockID]BlockID)
 	n := l.pkg.Node(hirID)
 
 	var params []ValueID
@@ -905,7 +972,16 @@ func (l *lowerer) ensureReturn(fid FuncID) {
 			continue
 		}
 		l.b.SetBlock(bid)
-		l.b.Terminate(OpReturn, nil, nil, "")
+		if target, ok := l.contTargets[bid]; ok && target != NoBlock {
+			// This merge/continuation block was registered by lowerIf/lowerFor
+			// to fall through to the enclosing continuation (loop body -> update
+			// block; nested match arm -> outer merge). Branch there instead of
+			// returning, so control flow continues correctly past an `if` whose
+			// merge is not the function's final block.
+			l.b.Terminate(OpBr, nil, []BlockID{target}, "")
+		} else {
+			l.b.Terminate(OpReturn, nil, nil, "")
+		}
 	}
 }
 
@@ -969,6 +1045,22 @@ func (l *lowerer) lowerStmt(id int32) {
 			}
 		}
 		if val != NoVal {
+			// If the binding's declared type is an option (?T) but the
+			// initializer lowered to a bare scalar (e.g. `n ?i64 = 42`), wrap
+			// the scalar as the option's "some" discriminant {tag=0,
+			// payload=val} so the variable carries the option type end-to-end.
+			// Without this, `n` collapsed to a bare i64 and later `n == err` /
+			// `n == nil` match comparisons (and `print(n)`) saw the wrong type
+			// -> opt-inserted trap / wrong output (test-self-write-str,
+			// test-it-probe). A value that is ALREADY an option (e.g. from a
+			// `?i64`-returning call) is left as-is.
+			if dt := l.typeOfNode(n); dt != NoType && dt != l.voidType {
+				if tt := l.mod.Type(dt); tt != nil && tt.Kind == KindOption {
+					if vt := l.valueTypeOf(val); vt == NoType || vt == l.voidType || l.mod.Type(vt).Kind != KindOption {
+						val = l.b.EmitOptionWrap(dt, 0, val)
+					}
+				}
+			}
 			// txt is a fixed 256-byte stack struct ({ [255 x i8] data, i8 len }),
 			// distinct from the heap-backed %str-long. When a `let x:txt = <str>`
 			// is lowered, the RHS lowers to a %str-long value; convert it into a
@@ -1160,15 +1252,27 @@ func (l *lowerer) lowerIf(n *hir.Node) {
 	// already redirected its empty merge to mergeBlk sees the correct block.
 	l.contStack = l.contStack[:len(l.contStack)-1]
 
-	if l.mod.blockEmpty(mergeBlk) && enclosingCont != NoBlock {
-		// This if was the last statement in its enclosing block. Splice the
-		// empty merge out of the CFG: redirect then/else (and any nested
-		// merges already redirected here) to the enclosing continuation.
-		l.mod.redirectTermTargets(mergeBlk, enclosingCont)
-	} else {
-		// Either the merge has post-if code, or this is a top-level if whose
-		// merge legitimately ends the function. Continue lowering into it.
-		l.b.SetBlock(mergeBlk)
+	// Always continue lowering into the merge block. Post-if statements (the
+	// code lexically following this if inside its enclosing block) are lowered
+	// by the caller (lowerBlock) AFTER this if returns, so they must flow into
+	// mergeBlk — not into the false/else branch. Previously the merge was
+	// spliced to enclosingCont when it looked empty, which left the current
+	// block as elseBlk and made those post-if statements run only on the false
+	// branch -> e.g. binary `pow`'s `base*=base; n>>=1` never advanced on the
+	// taken branch -> infinite loop (test-number-generic).
+	l.b.SetBlock(mergeBlk)
+
+	// Record where the merge must fall through when it ends up unterminated
+	// (i.e. it is the last statement of its enclosing block OR carries post-if
+	// code that then needs to reach the enclosing continuation). ensureReturn
+	// consults this map so the merge branches to the enclosing continuation
+	// (loop body -> update; nested match arm -> outer merge) instead of being
+	// patched with `ret void` (which used to drop every statement after a
+	// match arm, or silently broke the loop). We do NOT terminate it here
+	// because post-if code is lowered later; the map defers the decision past
+	// that timing.
+	if enclosingCont != NoBlock {
+		l.contTargets[mergeBlk] = enclosingCont
 	}
 }
 
@@ -1181,6 +1285,19 @@ func (l *lowerer) lowerFor(n *hir.Node) {
 		// every use cascaded into an "unresolved identifier" lower-gap).
 		bodyID := l.slot(n.Id, "body")
 		l.lowerRangeFor(n, iterID, bodyID, l.b.CurrentBlock())
+		return
+	}
+
+	// Repeat-N-times: `for ... * N { body }` (the HIR carries a `count` slot
+	// with the integer N and no init/cond/update). Dispatch to the dedicated
+	// lowerer, which runs body exactly N times. Without this, lowerFor ignored
+	// the `count` slot and fell through to the init/cond/update path with all
+	// three empty -> an unconditional `while(true)` -> infinite loop
+	// (test-for3 hung under MIR=3 while legacy terminated correctly).
+	countID := l.slot(n.Id, "count")
+	if countID != hir.NoID {
+		bodyID := l.slot(n.Id, "body")
+		l.lowerCountFor(n, countID, bodyID)
 		return
 	}
 
@@ -1468,6 +1585,80 @@ func (l *lowerer) lowerRangeFor(n *hir.Node, iterID int32, bodyID int32, pre Blo
 	}
 }
 
+// lowerCountFor lowers a repeat-N-times loop: `for ... * N { body }` (the HIR
+// carries a `count` slot with the integer N and no init/cond/update). It runs
+// body exactly N times. Without this, lowerFor ignored the `count` slot and
+// fell through to the init/cond/update path with all three empty -> an
+// unconditional `while(true)` -> infinite loop (test-for3 hung under MIR=3
+// while legacy terminated correctly). The counter is a real local slot
+// decremented each iteration; the loop terminates when it reaches zero.
+func (l *lowerer) lowerCountFor(n *hir.Node, countID int32, bodyID int32) {
+	// Enclosing continuation: the merge block of the nearest enclosing
+	// control-flow construct (pushed by the caller's lowerIf/lowerFor). Same
+	// rationale as lowerFor / lowerRangeFor: terminate this loop's exit block
+	// to it when the loop is not the last statement of its block, so the loop
+	// exit is not left unterminated (which mangles the CFG into a constant
+	// condition / infinite loop once `opt` sees it).
+	enclosingCont := NoBlock
+	if len(l.contStack) > 0 {
+		enclosingCont = l.contStack[len(l.contStack)-1]
+	}
+
+	cntV := l.lowerExpr(countID)
+	if cntV == NoVal {
+		return
+	}
+	idxT := l.valueTypeOf(cntV)
+	if idxT == NoType || idxT == l.voidType {
+		idxT = l.b.Type("i64")
+	}
+	// Counter variable: give it a real Dst-backed slot (same rationale as
+	// lowerRangeFor — a bare Param value id has no slot and the init move
+	// would hit "move destination has no slot"). The zero const below seeds
+	// the slot; the move overwrites it with N.
+	iSlot := l.b.EmitInt(OpConst, idxT, 0, "ri")
+	pre := l.b.CurrentBlock()
+	l.b.SetBlock(pre)
+	l.b.EmitMoveInto(iSlot, cntV)
+
+	header := l.b.NewBlock("for.header")
+	body := l.b.NewBlock("for.body")
+	update := l.b.NewBlock("for.update")
+	exit := l.b.NewBlock("for.exit")
+	l.loopStack = append(l.loopStack, loopCtx{exit: exit, update: update})
+	defer func() { l.loopStack = l.loopStack[:len(l.loopStack)-1] }()
+	// Register the loop continuation as the enclosing continuation so an empty
+	// if-merge inside the body redirects here (see lowerFor / lowerRangeFor).
+	l.contStack = append(l.contStack, update)
+	defer func() { l.contStack = l.contStack[:len(l.contStack)-1] }()
+
+	l.b.SetBlock(pre)
+	l.b.Terminate(OpBr, nil, []BlockID{header}, "")
+	l.b.SetBlock(header)
+	zero := l.b.EmitInt(OpConst, idxT, 0, "")
+	condV := l.b.Emit(OpGt, l.b.Type("bool"), []ValueID{iSlot, zero}, "")
+	l.b.Terminate(OpCondBr, []ValueID{condV}, []BlockID{body, exit}, "")
+	l.b.SetBlock(body)
+	if bodyID != hir.NoID {
+		l.lowerBlock(bodyID)
+	}
+	if l.mod.Block(body).Term == nil {
+		l.b.Terminate(OpBr, nil, []BlockID{update}, "")
+	}
+	if cur := l.b.CurrentBlock(); cur != NoBlock && l.mod.Block(cur).Term == nil {
+		l.b.Terminate(OpBr, nil, []BlockID{update}, "")
+	}
+	l.b.SetBlock(update)
+	one := l.b.EmitInt(OpConst, idxT, 1, "")
+	nextV := l.b.Emit(OpSub, idxT, []ValueID{iSlot, one}, "")
+	l.b.EmitMoveInto(iSlot, nextV)
+	l.b.Terminate(OpBr, nil, []BlockID{header}, "")
+	l.b.SetBlock(exit)
+	if enclosingCont != NoBlock && l.mod.Block(exit).Term == nil {
+		l.b.Terminate(OpBr, nil, []BlockID{enclosingCont}, "")
+	}
+}
+
 // valueTypeOf returns the static type id of a value, consulting the current
 // function's LocalTypes first (authoritative for call results) then the global
 // value table. Returns NoType when unknown.
@@ -1576,6 +1767,59 @@ func (l *lowerer) foldConstText(n *hir.Node, gtype string) string {
 		return "i1 0"
 	case hir.KFloatLit:
 		return fmt.Sprintf("double %s", formatFloat(n.Float()))
+	case hir.KPrefix:
+		// Negation / bitwise-complement of a constant operand: fold the operand
+		// and apply the operator so negative module constants (e.g.
+		// `bad-fd fd = -1`, `min = -128`) become real LLVM constants instead of
+		// unmaterialized global markers (which read as `undef` and trap).
+		var operand int32
+		for _, c := range l.pkg.Children(n.Id) {
+			operand = c
+			break
+		}
+		if operand == hir.NoID {
+			return ""
+		}
+		ct := l.foldConstText(l.pkg.Node(operand), gtype)
+		if ct == "" {
+			return ""
+		}
+		fields := strings.Fields(ct)
+		if len(fields) != 2 {
+			return ""
+		}
+		typ, lit := fields[0], fields[1]
+		switch l.pkg.Str(n.S) {
+		case "-":
+			v, err := strconv.ParseInt(lit, 10, 64)
+			if err != nil {
+				return ""
+			}
+			return fmt.Sprintf("%s %d", typ, -v)
+		case "~":
+			v, err := strconv.ParseUint(lit, 10, 64)
+			if err != nil {
+				return ""
+			}
+			return fmt.Sprintf("%s %d", typ, int64(^v))
+		}
+		return ""
+	case hir.KIdent:
+		// A reference to another module constant (e.g. `copy-fd fd = my-stdin`):
+		// fold to that constant's initializer text so the alias becomes a real
+		// LLVM constant instead of an unmaterialized global marker (which reads
+		// as `undef`). Only resolves when the referenced name is already a
+		// registered module constant (registration runs in source order, so
+		// preceding `let`s are available).
+		name := l.pkg.Str(n.S)
+		if nid, ok := l.globalNodes[name]; ok {
+			if nn := l.pkg.Node(nid); nn != nil {
+				if ct := l.foldConstText(nn, gtype); ct != "" {
+					return ct
+				}
+			}
+		}
+		return ""
 	case hir.KArrayLit:
 		var elems []int32
 		// HIR array literals carry a leading KSlot("size") plus one KSlot("elem")
@@ -1684,19 +1928,21 @@ func (l *lowerer) lowerExpr(id int32) ValueID {
 		return l.lowerArrayElems(elems)
 	case hir.KIdent:
 		name := l.pkg.Str(n.S)
-		// Option variant bare references (`err`, `ok`, `some`): lower to the
-		// option discriminant constant so comparisons / match patterns resolve
-		// to the RIGHT tag. `nil` is handled by KNilLit (tag 1); here we cover
-		// `err` (tag 2) and `ok`/`some` (tag 0). A bare variant identifier
-		// carries NO type in HIR (it resolves to void), so the ?T type must be
-		// read from context: the infix comparison sibling (seeded into
+		// Option variant bare references (`err`, `ok`, `some`, `nil`): lower to
+		// the option discriminant constant so comparisons / match patterns
+		// resolve to the RIGHT tag. `nil` is the "none" discriminant (tag 1);
+		// `ok`/`some` are "some" (tag 0); `err` is "err" (tag 2). A bare variant
+		// identifier carries NO type in HIR (it resolves to void), so the ?T type
+		// must be read from context: the infix comparison sibling (seeded into
 		// l.typeHint by the KInfix lowering below) or the active type hint.
-		// `err`/`ok` may also be registered as module globals, so this MUST run
-		// before the locals / globals lookup — otherwise they resolve to a plain
-		// ?T global that codegen materializes as the nil tag (or undef),
-		// breaking `n == err` matches and `it.to-str()` arms (the trap/BPT
-		// behind several corpus crashes).
-		if name == "err" || name == "ok" || name == "some" {
+		// `err`/`ok`/`nil` may also be registered as module globals, so this
+		// MUST run BEFORE the locals / globals lookup — otherwise they resolve to
+		// a plain ?T global that codegen materializes as the nil tag (or undef),
+		// breaking `n == err`/`v == nil` matches and `it.to-str()` arms (the
+		// trap/BPT behind several corpus crashes, including `[n]t.at` / `.fl` /
+		// `.last` which compare the option result against `nil` inside their
+		// desugared `UnwrapAssign` match).
+		if name == "err" || name == "ok" || name == "some" || name == "nil" {
 			optTyp := l.typeOfNode(n)
 			if t := l.mod.Type(optTyp); t == nil || t.Kind != KindOption {
 				if ht := l.typeHint; ht != NoType && ht != l.voidType {
@@ -1708,11 +1954,14 @@ func (l *lowerer) lowerExpr(id int32) ValueID {
 			if optTyp != NoType && optTyp != l.voidType {
 				if tt := l.mod.Type(optTyp); tt != nil && tt.Kind == KindOption {
 					tag := int64(0)
-					if name == "err" {
+					switch name {
+					case "err":
 						tag = 2
+					case "nil":
+						tag = 1
 					}
 					var payload ValueID = NoVal
-					if tt.Elem != NoType {
+					if name != "nil" && tt.Elem != NoType {
 						payload = l.b.Emit(OpConst, tt.Elem, nil, "")
 					}
 					return l.b.EmitOptionWrap(optTyp, tag, payload)
@@ -1836,7 +2085,7 @@ func (l *lowerer) lowerExpr(id int32) ValueID {
 					}
 					if nd.Kind == hir.KIdent {
 						switch l.pkg.Str(nd.S) {
-						case "err", "ok", "some":
+						case "err", "ok", "some", "nil":
 							return true
 						}
 					}
@@ -2028,9 +2277,12 @@ func (l *lowerer) lowerSlice(n *hir.Node) ValueID {
 		return NoVal
 	}
 	var loV, hiV ValueID = NoVal, NoVal
+	var leftInc, rightInc bool = true, true
 	if rangeID != hir.NoID {
 		rn := l.pkg.Node(rangeID)
 		if rn != nil {
+			leftInc = rn.Has(hir.FlagLeftInc)
+			rightInc = rn.Has(hir.FlagRightInc)
 			for _, c := range l.pkg.Children(rangeID) {
 				cn := l.pkg.Node(c)
 				if cn == nil {
@@ -2047,17 +2299,49 @@ func (l *lowerer) lowerSlice(n *hir.Node) ValueID {
 	}
 	args := []ValueID{arrV}
 	if loV != NoVal {
+		// Exclusive lower bound `(` excludes the start index -> start+1.
+		// Inclusive `[` keeps it; an absent lower bound defaults to 0.
+		if !leftInc {
+			one := l.b.EmitInt(OpConst, l.b.Type("i64"), 1, "")
+			loV = l.b.Emit(OpAdd, l.b.Type("i64"), []ValueID{loV, one}, "")
+		}
 		args = append(args, loV)
 	} else {
 		args = append(args, l.b.EmitInt(OpConst, l.b.Type("i64"), 0, ""))
 	}
 	if hiV != NoVal {
+		// Inclusive upper bound `]` includes the end index -> end+1 (the slice
+		// op takes an EXCLUSIVE upper bound). Exclusive `)` keeps it; an absent
+		// upper bound defaults to the container length.
+		if rightInc {
+			one := l.b.EmitInt(OpConst, l.b.Type("i64"), 1, "")
+			hiV = l.b.Emit(OpAdd, l.b.Type("i64"), []ValueID{hiV, one}, "")
+		}
 		args = append(args, hiV)
 	} else {
 		// open upper bound: use the container length
 		args = append(args, l.b.Emit(OpLen, l.b.Type("i64"), []ValueID{arrV}, ""))
 	}
 	resTyp := l.typeOfNode(n)
+	if resTyp == NoType || resTyp == l.voidType {
+		// typeOfNode(KSlice) returns void when the receiver's declared type is
+		// unreachable from the KIdent node (the declared type lives on the KLet,
+		// not on every KIdent reference). Derive the slice result type from the
+		// lowered receiver value instead: a fixed array [N]Elem slices to []Elem.
+		// Without this the result collapsed to the bare element type (i64), so
+		// b[0]'s index result was void-typed and got no alloca slot -> "index
+		// dst slot" (tests/arr-slice.no). Mirrors the KindArray->[]Elem conversion
+		// below for the reachable-type path.
+		if rt := l.valueTypeOf(arrV); rt != NoType && rt != l.voidType {
+			if rty := l.mod.Type(rt); rty != nil && rty.Kind == KindArray {
+				if _, elemRaw, ok := parseArray(rty.Raw); ok {
+					resTyp = l.b.Type("[]" + elemRaw)
+				}
+			} else if rty != nil && rty.Kind == KindSlice {
+				resTyp = rt
+			}
+		}
+	}
 	if resTyp == NoType || resTyp == l.voidType {
 		resTyp = l.b.Type("i64")
 	} else if t := l.mod.Type(resTyp); t != nil && t.Kind == KindArray {
@@ -2310,15 +2594,24 @@ func (l *lowerer) resolveCallee(n *hir.Node) (callee string, recvV ValueID) {
 		if rn := l.pkg.Node(recvID); rn != nil && rn.Kind == hir.KIdent {
 			if recvName := l.pkg.Str(rn.S); recvName != "" {
 				if _, bound := l.locals[recvName]; !bound {
-					if l.curRecv != NoVal {
-						recvT := l.valueTypeOf(l.curRecv)
-						recvTypeName := recvName
-						if ty := l.mod.Type(recvT); ty != nil && ty.Raw != "" {
-							recvTypeName = strings.TrimPrefix(ty.Raw, "?")
-						}
-						return recvTypeName + "." + method, l.curRecv
+					if _, gbound := l.globals[recvName]; !gbound {
+						// A module namespace (`fs`, `os`, `net`, ...) is NOT a
+						// bound value: lower to a plain qualified call with NO
+						// receiver argument. Crucially, do NOT prepend the
+						// enclosing method's `self` type: inside `path.path.is-file`
+						// the call `fs.is_file(self.p)` has receiver child `fs`
+						// (a module), so its callee must stay `fs.is-file`. The
+						// old code rewrote it to `path.path.is-file` (using self's
+						// type) which resolved to the enclosing function itself ->
+						// infinite recursion -> stack-overflow SIGSEGV at runtime
+						// (test-path_char). The implicit-self case
+						// (`regexp.regexp.emit`) is a BARE KIdent with no receiver
+						// child and is handled by the KIdent branch above.
+						return recvName + "." + method, NoVal
 					}
-					return recvName + "." + method, NoVal
+					// recvName is a bound GLOBAL (e.g. a top-level `data [4]i64`
+					// or `v []str`); fall through to the method-call path below
+					// so it is lowered as a real receiver value, not a module.
 				}
 			}
 		}
@@ -2835,6 +3128,25 @@ func (l *lowerer) elementTypeOf(v ValueID) TypeID {
 		}
 		if ty.Elem != NoType {
 			return ty.Elem
+		}
+		// Defensive fallback: some array/slice types in the table lack a
+		// registered Elem (e.g. a slice sliced from a fixed array, whose type
+		// is `[]Elem` but Elem was never set). Derive the element from the raw
+		// type string so `b[0]` is typed `Elem` (i64 for []i64) instead of
+		// void. Without this the index result is void-typed, gets no alloca
+		// slot, and codegen fails with "index dst slot" (tests/arr-slice.no).
+		// Mirrors codegen.elemTypeOfReceiver's defensive path. Only reached
+		// when Elem is missing, so it can never change a currently-correct
+		// (non-void) element type.
+		if e, ok := arrayElemRaw(ty.Raw); ok {
+			if et := l.b.Type(e); et != l.voidType {
+				return et
+			}
+		}
+		if e, ok := parseSliceElem(ty.Raw); ok {
+			if et := l.b.Type(e); et != l.voidType {
+				return et
+			}
 		}
 	}
 	return l.voidType

@@ -83,16 +83,19 @@ path.join = (b str) {
     need-sep = 1
     out-n > 0 -> {
         #{overflow=wrap}
+        #{index-out = 0}
         last-a = .p[out-n - 1]
         last-a == SEP -> need-sep = 0
     }
     bn > 0 -> {
+        #{index-out = 0}
         first-b = b[0]
         first-b == SEP -> need-sep = 0
     }
     out-n == 0 -> need-sep = 0
     need-sep == 1 -> {
         #{overflow=wrap}
+        #{index-out = 0}
         .p[out-n] = SEP
         #{overflow=wrap}
         out-n = out-n + 1
@@ -101,6 +104,7 @@ path.join = (b str) {
     ; 如果 b 以 '/' 開頭，跳過
     start-b = 0
     bn > 0 -> {
+        #{index-out = 0}
         first-b = b[0]
         first-b == SEP -> start-b = 1
     }
@@ -108,6 +112,7 @@ path.join = (b str) {
     ; 複製 b
     j <- [start-b..bn): {
         #{overflow=wrap}
+        #{index-out = 0}
         .p[out-n] = b[j]
         #{overflow=wrap}
         out-n = out-n + 1
@@ -127,6 +132,7 @@ path.base = () (out str) {
     last-sep = -1
     i <- [0...p.len-bytes()): {
         #{overflow=wrap}
+        #{index-out = 0}
         c = .p[i]
         c == SEP -> last-sep = i
     }
@@ -137,6 +143,7 @@ path.base = () (out str) {
     out = with-cap(.p.len-bytes())
     i <- [0..out-n): {
         #{overflow=wrap}
+        #{index-out = 0}
         out[i] = .p[start + i]
     }
 }
@@ -148,12 +155,14 @@ path.dir = () {
     ; 找最右邊的 '/'
     last-sep = -1
     i <- [0...p.len-bytes()): {
+        #{index-out = 0}
         c = .p[i]
         c == SEP -> last-sep = i
     }
     {
         last-sep < 0 -> {
             ; 無 '/'，變為 '.'
+            #{index-out = 0}
             .p[0] = DOT
             .p.len = 1
             return
@@ -164,6 +173,7 @@ path.dir = () {
             out-n == 0 -> {
 
                 ; 根目錄 '/'
+                #{index-out = 0}
                 .p[0] = SEP
                 .p.len = 1
                 return
@@ -184,6 +194,7 @@ path.ext = () (out str) {
     last-dot = -1
     i <- [0...p.len-bytes()): {
         #{overflow=wrap}
+        #{index-out = 0}
         c = .p[i]
         {
             c == SEP -> last-sep = i
@@ -210,6 +221,7 @@ path.ext = () (out str) {
     out = with-cap(.p.len-bytes())
     i <- [0..out-n): {
         #{overflow=wrap}
+        #{index-out = 0}
         out[i] = .p[start + i]
     }
 }
@@ -222,6 +234,7 @@ path.ext = () (out str) {
 ; 返回 true=是, false=否
 path.is-abs = () (yes bool) {
     .p.len-bytes() > 0 -> {
+        #{index-out = 0}
         c = .p[0]
         c == SEP -> yes = true
     }
@@ -237,6 +250,7 @@ path.clean = () {
     out-n = 0
     dot-count = 0
     i <- [0...p.len-bytes()): {
+        #{index-out = 0}
         c = .p[i]
         {
             c == SEP -> {
@@ -251,7 +265,10 @@ path.clean = () {
                         j = out-n - 1
                         {
                             #{overflow=wrap}
-                            .p[j] == SEP -> break
+                                                        .p[j] == SEP -> {
+                                #{index-out = 0}
+                                break
+                            }
                             #{overflow=wrap}
                             j = j - 1
                         } (j >= 0)
@@ -264,9 +281,11 @@ path.clean = () {
 
                     out-n > 0 -> {
                         #{overflow=wrap}
+                        #{index-out = 0}
                         prev = .p[out-n - 1]
                         prev != SEP -> {
                             #{overflow=wrap}
+                            #{index-out = 0}
                             .p[out-n] = SEP
                             #{overflow=wrap}
                             out-n = out-n + 1
@@ -275,6 +294,7 @@ path.clean = () {
 
                     -> {
                         #{overflow=wrap}
+                        #{index-out = 0}
                         .p[out-n] = SEP
                         #{overflow=wrap}
                         out-n = out-n + 1
@@ -292,6 +312,7 @@ path.clean = () {
                 ; 寫入之前積累的 '.' 字元
                 j <- [0..dot-count): {
                     #{overflow=wrap}
+                    #{index-out = 0}
                     .p[out-n] = DOT
                     #{overflow=wrap}
                     out-n = out-n + 1
@@ -299,6 +320,7 @@ path.clean = () {
 
                 #{overflow=wrap}
                 dot-count = 0
+                #{index-out = 0}
                 .p[out-n] = c
                 #{overflow=wrap}
                 out-n = out-n + 1
@@ -315,7 +337,10 @@ path.clean = () {
             j = out-n - 1
             {
                 #{overflow=wrap}
-                .p[j] == SEP -> break
+                                .p[j] == SEP -> {
+                    #{index-out = 0}
+                    break
+                }
                 #{overflow=wrap}
                 j = j - 1
             } (j >= 0)
@@ -330,6 +355,7 @@ path.clean = () {
     ; 移除末尾 '/'
     out-n > 1 -> {
         #{overflow=wrap}
+        #{index-out = 0}
         prev = .p[out-n - 1]
         #{overflow=wrap}
         prev == SEP -> out-n = out-n - 1
@@ -352,6 +378,7 @@ path.split = () (f str) {
     last-sep = -1
     i <- [0...p.len-bytes()): {
         #{overflow=wrap}
+        #{index-out = 0}
         c = .p[i]
         c == SEP -> last-sep = i
     }
@@ -364,6 +391,7 @@ path.split = () (f str) {
     f = with-len(out-n)
     i <- [0..out-n): {
         #{overflow=wrap}
+        #{index-out = 0}
         f[i] = .p[start + i]
     }
 
@@ -371,6 +399,7 @@ path.split = () (f str) {
     {
         last-sep < 0 -> {
             ; 無 '/'，.p 變為 '.'
+            #{index-out = 0}
             .p[0] = DOT
             .p.len = 1
             return
@@ -378,6 +407,7 @@ path.split = () (f str) {
 
         last-sep == 0 -> {
             ; 根目錄 '/'
+            #{index-out = 0}
             .p[0] = SEP
             .p.len = 1
             return

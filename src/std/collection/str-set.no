@@ -26,7 +26,9 @@ str-set.init = () {
     .cap = 256
     .size = 0
     i <- [0..256): {
+        #{index-out = 0}
         .occ[i] = 0
+        #{index-out = 0}
         .keys[i].len = 0
     }
 }
@@ -37,6 +39,7 @@ str-set.hash = (key str) (idx i64) {
     h = SS-FNV-OFFSET
     i <- [0..key.len-bytes()): {
         #{overflow=wrap}
+        #{index-out = 0}
         h = h ^ (key[i])
         #{overflow=wrap}
         h = h * SS-FNV-PRIME
@@ -49,7 +52,10 @@ str-set.hash = (key str) (idx i64) {
 str-set.str-eq = (a str, b str) (eq bool) {
     a.len-bytes() != b.len-bytes() -> return
     i <- [0..a.len-bytes()): {
-        a[i] != b[i] -> return
+                a[i] != b[i] -> {
+            #{index-out = 0}
+            return
+        }
     }
     eq = true
 }
@@ -61,6 +67,7 @@ str-set.add = (key str) (is-new bool) {
 
     {
         #{overflow=wrap}
+        #{index-out = 0}
         eq = .str-eq(.keys[idx], key)
         eq -> {
             is-new = false
@@ -69,14 +76,18 @@ str-set.add = (key str) (is-new bool) {
         #{overflow=wrap}
         idx = idx + 1
         idx >= .cap -> idx = 0
+    #{index-out = 0}
     } (.occ[idx] == 1)
 
     ; 複製 key
+    #{index-out = 0}
     .keys[idx].len = key.len-bytes()
     i <- [0..key.len-bytes()): {
         #{overflow=wrap}
+        #{index-out = 0}
         .keys[idx][i] = key[i]
     }
+    #{index-out = 0}
     .occ[idx] = 1
     #{overflow=wrap}
     .size = .size + 1
@@ -90,6 +101,7 @@ str-set.contains = (key str) (found bool) {
 
     {
         #{overflow=wrap}
+        #{index-out = 0}
         eq = .str-eq(.keys[idx], key)
         eq -> {
             found = true
@@ -98,6 +110,7 @@ str-set.contains = (key str) (found bool) {
         #{overflow=wrap}
         idx = idx + 1
         idx >= .cap -> idx = 0
+    #{index-out = 0}
     } (.occ[idx] == 1)
 }
 
@@ -108,11 +121,14 @@ str-set.remove = (key str) (removed bool) {
 
     {
         #{overflow=wrap}
+        #{index-out = 0}
         eq = .str-eq(.keys[idx], key)
         #{overflow=wrap}
         eq -> {
             #{overflow=wrap}
+            #{index-out = 0}
             .occ[idx] = 0
+            #{index-out = 0}
             .keys[idx].len = 0
             .size = .size - 1
             removed = true
@@ -121,13 +137,16 @@ str-set.remove = (key str) (removed bool) {
         #{overflow=wrap}
         idx = idx + 1
         idx >= .cap -> idx = 0
+    #{index-out = 0}
     } (.occ[idx] == 1)
 }
 
 ; clear: 清空
 str-set.clear = () {
     i <- [0...cap): {
+        #{index-out = 0}
         .occ[i] = 0
+        #{index-out = 0}
         .keys[i].len = 0
     }
     .size = 0
@@ -146,6 +165,9 @@ str-set.is-empty = () (empty bool) {
 ; for-each: 遍歷所有元素
 str-set.for-each = (val str) {
     i <- [0...cap): {
-        .occ[i] == 1 -> val = .keys[i]
+                .occ[i] == 1 -> {
+            #{index-out = 0}
+            val = .keys[i]
+        }
     }
 }

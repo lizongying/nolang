@@ -191,6 +191,7 @@ unix-conn.recv-all = () (content str, total i64) {
         chunk-n <= 0 -> break
         i <- [0..chunk-n): {
             #{overflow=wrap}
+            #{index-out = 0}
             content[total + i] = buf[i]
         }
         #{overflow=wrap}

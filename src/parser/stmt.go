@@ -2067,6 +2067,9 @@ func (p *Parser) parseBlockStatement() *BlockStatement {
 	// propagateBlockScopedOverflow）。
 	// 行注解語意：獨立的 `#{overflow=...}` 只作用於其緊跟的下一條陳述。
 	p.applyLineOverflowAnnotations(block)
+	// 行注解語意：`#{index-out = ...}` 獨立註解只作用於其緊跟的下一條陳述
+	//（供 desugar 辨識越界預設值路徑）。
+	p.applyLineIndexOutAnnotations(block)
 
 	// 遺留的區塊級傳播（僅遷移/校驗工具啟用）。
 	if p.LegacyBlockOverflowPropagation {

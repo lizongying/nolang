@@ -19,6 +19,45 @@ import (
 	"github.com/lizongying/nolang/parser"
 )
 
+// identIndexReadOnLine 報告該行是否含「直接變數基底」索引讀取 `base[i]`：base 結尾為
+// 識別符 / `)` / `]`，且 `[` 之後不是範圍 `[0..`、不是 `[?]`、也不是空括號
+// （切片型別 `[]T`）。DotExpression 基底 `.[i]` / `.field[i]` 因 `[` 前為 `.`
+// 而不匹配，故不被當作可處理的直接索引讀取。
+//
+// 注意：使用手動掃描而非 regexp，因 Go 的 RE2 引擎不支援 `(?!...)` 負向先行斷言。
+func identIndexReadOnLine(s string) bool {
+	isBase := func(c byte) bool {
+		return c == ')' || c == ']' ||
+			(c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
+			(c >= '0' && c <= '9') || c == '_'
+	}
+	for i := 0; i < len(s); i++ {
+		if s[i] != '[' {
+			continue
+		}
+		if i == 0 || !isBase(s[i-1]) {
+			continue
+		}
+		after := s[i+1:]
+		if len(after) == 0 || after[0] == ']' { // []T 切片型別
+			continue
+		}
+		if after[0] == '?' { // [?]
+			continue
+		}
+		// 範圍 [0..n)：base 後緊跟數字且隨後出現 ".."
+		if after[0] >= '0' && after[0] <= '9' {
+			if end := strings.IndexByte(after, ']'); end >= 2 && after[1] == '.' && after[2] == '.' {
+				continue
+			}
+		}
+		if strings.IndexByte(after, ']') >= 0 {
+			return true
+		}
+	}
+	return false
+}
+
 // Migrated from build/transpiler.go: semantic-checker subsystem
 // (validators + module/type resolution helpers).
 
@@ -1159,6 +1198,12 @@ func checkNaming(stmt parser.Statement, globalVars map[string]bool) []ValidateRe
 		// Skip reassignments of known global variables (e.g., RAND-COUNTER).
 		// Local variables with uppercase names (e.g., C) are still flagged.
 		if s.Name != nil && globalVars[s.Name.Value] {
+			return results
+		}
+		// 跳過編譯器合成變數（雙底線前綴 `__` 慣例，如 index-out 降級產生的
+		// `__idx_out_L_C`、unwrap 降級的 `__unwrap_N`、回填位圖 `__ret_init_bitmap`）。
+		// 這些名稱含底線/數字會違反命名規範，但屬內部產物，不應對使用者報警。
+		if s.Name != nil && strings.HasPrefix(s.Name.Value, "__") {
 			return results
 		}
 		if s.Name != nil && !isValidVarName(s.Name.Value) {
@@ -3424,6 +3469,303 @@ func ValidateUnhandledOverflow(program *parser.Program, mainFile string) []Valid
 
 	for _, stmt := range program.Statements {
 		walkStmt(stmt, false, false, map[string]string{}, "", mainFile)
+	}
+	return results
+}
+
+const unhandledIndexTraceID = "idxhndld"
+
+// ValidateUnhandledIndex 報告所有「可能越界但未被處理」的 arr/vec/slice 索引
+// （b[i]），作為編譯錯誤（亦由 RunAllLints 納入 no vet / LSP 診斷）。
+//
+// 背景：arr/vec/slice 的索引 b[i] 在越界時預設回傳 option<elem>（永不 panic），
+// 與整數溢出同理。這個 option 若不被處理，就會「沉默泄漏」：變數被推斷為 option
+// 但程式其實把它當普通 elem 用，運行期語意漂移（且 codegen 的 option 是
+// {tag,data} 結構，直接當 elem 解引用會錯）。本規則在編譯期攔截這種「產生 option
+// 卻沒處理」的寫法，迫使程式設計師顯式二選一：
+//   1. 用 `a ?= b[i]` 上拋（錯誤傳給呼叫者）；在返回 ?T 的函式中 `a = b[i]`
+//      會被 lowering 自動改寫為 `a ?= b[i]`（自動上拋）；
+//   2. 加 `#{index-out = DEF}` 註解（DEF 為字面量），越界時取預設值 DEF。
+//
+// 與 parser 的 isSafeIndexBase / maybeAutoPropagateIndex / maybeIndexOutAssign
+// 保持一致：str/txt 索引回傳字元（非 option，不報）；struct field 索引（receiver.field[i]）
+// 走既有 bounds_check 路徑（不報）；只有直接變數基底的 arr/vec/slice 索引會產生
+// option 並需被處理。
+func ValidateUnhandledIndex(program *parser.Program, mainFile string) []ValidateResult {
+	if program == nil {
+		return nil
+	}
+	sem := program.Sem
+	var results []ValidateResult
+	seen := map[string]bool{}
+
+	// 合併程式中同一份 std 原始檔可能因載入路徑不同而帶兩種 SourceFile 字串，
+	// 去重鍵對路徑做 filepath.Abs 正規化（見 ValidateUnhandledOverflow）。
+	canonPath := func(f string) string {
+		if f == "" {
+			return ""
+		}
+		if i := strings.Index(f, "/std/"); i >= 0 {
+			return "std" + f[i+len("/std/"):]
+		}
+		if strings.HasPrefix(f, "std/") {
+			return f
+		}
+		if a, err := filepath.Abs(f); err == nil {
+			return a
+		}
+		return f
+	}
+
+	// lineHasIdentIndexRead 確認 file 的 line 行確實含一個「直接變數基底」索引讀取
+	//（`name[i]`，name 為識別符 / `)` / `]`；排除切片型別 `[]T`、範圍 `[0..n)`、
+	// `[?]`、以及 DotExpression 基底 `.[i]` / `.field[i]`）。合併 std 的 vet 會把
+	// 跨模組索引誤歸因到錯誤檔案的某一行（該行實際無索引讀取，如方法呼叫、註解、
+	// `}`），此過濾剔除這類誤報，只保留真正落在含索引讀取行上的診斷。
+	srcLines := map[string][]string{}
+	lineHasIdentIndexRead := func(file string, line int) bool {
+		abs, err := filepath.Abs(file)
+		if err != nil {
+			abs = file
+		}
+		lines, ok := srcLines[abs]
+		if !ok {
+			data, e := os.ReadFile(abs)
+			if e != nil {
+				return true // 無法讀取則不過濾（保留診斷）
+			}
+			lines = strings.Split(string(data), "\n")
+			srcLines[abs] = lines
+		}
+		if line < 1 || line > len(lines) {
+			return false
+		}
+		return identIndexReadOnLine(lines[line-1])
+	}
+
+	report := func(idx *parser.IndexExpression, curFile string) {
+		// 標準庫（std）不再豁免（自 2026-09-11 起，與 overflow 規則一致）。未處理
+		// 越界索引必須逐站以 `#{index-out = DEF}` 或 `?=` 修復，使 `no vet` 與
+		// 合併程式的 lint 對 std 保持乾淨。
+		line, col := idx.Pos().Line, idx.Pos().Column
+		// 剔除合併 std vet 的跨模組誤歸因：報告行必須確實含直接變數基底索引讀取。
+		if !lineHasIdentIndexRead(curFile, line) {
+			return
+		}
+		msg := "数组/切片索引 `arr[i]` 默认在越界时返回 option<elem>（永不 panic）。此 option 未被处理：请用 `a ?= arr[i]` 上抛（在返回 ?T 的函数中可直接 `a = arr[i]` 自动上抛），或加 `#{index-out = DEF}` 注解以越界时取默认值 DEF。"
+		key := fmt.Sprintf("%s|%d:%d", canonPath(curFile), line, col)
+		if seen[key] {
+			return
+		}
+		seen[key] = true
+		results = append(results, ValidateResult{
+			Line:      line,
+			Column:    col,
+			EndColumn: idx.EndPos().Column,
+			File:      curFile,
+			Message:   msg,
+			TraceID:   unhandledIndexTraceID,
+		})
+	}
+
+	// isSafeBase 複製 parser.isSafeIndexBase 的判定（僅直接變數基底、arr/vec/slice）。
+	isSafeBase := func(curFunc string, idx *parser.IndexExpression) bool {
+		if idx == nil || idx.Left == nil {
+			return false
+		}
+		ident, ok := idx.Left.(*parser.Identifier)
+		if !ok {
+			return false
+		}
+		// 合併 std vet 時，checker 的 curFunc 可能帶多餘的模組前綴
+		//（如 "path.path.join"），而 IdxLocalTypes 的鍵是 lower 期記錄的
+		// 單前綴名（"path.join"）。逐層去掉前綴嘗試，對齊鍵名。
+		// 只查 IdxLocalTypes（lower 預掃描所得，權威且無跨函數污染）；
+		// 不使用 FuncVarType / 全域 VarType 回退——那些在合併模式下會被
+		// 同名參數（其他函數的 `b []byte`）污染，導致 str 索引 b[0] 被誤判。
+		funcKeys := []string{curFunc}
+		if i := strings.Index(curFunc, "."); i >= 0 {
+			funcKeys = append(funcKeys, curFunc[i+1:])
+		}
+		lt := ""
+		if sem != nil && sem.IdxLocalTypes != nil {
+			for _, cf := range funcKeys {
+				if t, ok := sem.IdxLocalTypes[cf][ident.Value]; ok && t != "" {
+					lt = strings.TrimPrefix(t, "?")
+					break
+				}
+			}
+		}
+		return parser.ContainerElemType(lt) != ""
+	}
+
+	// lhsIsOption 報告指派目標（既存變數）的靜態型別是否為 ?T：option 目標會
+	// 自動接納越界 option（不報）。
+	lhsIsOption := func(curFunc, name string) bool {
+		if name == "" || sem == nil {
+			return false
+		}
+		if t, ok := sem.FuncVarType(curFunc, name); ok && strings.HasPrefix(t, "?") {
+			return true
+		}
+		if t, ok := sem.VarType(name); ok && strings.HasPrefix(t, "?") {
+			return true
+		}
+		return false
+	}
+
+	// Pass 1：收錄「已處理」的索引表達式指標。
+	//   - `a ?= b[i]`（UnwrapAssignStatement，含自動上拋改寫）
+	//   - `#{index-out = DEF}` 降級產生的合成 tmp：`__idx_out_L_C = b[i]`（IsSynthetic）
+	handled := map[*parser.IndexExpression]bool{}
+
+	var walkStmt func(stmt parser.Statement, curFunc string, fnOpt bool, curFile string)
+	var walkExpr func(e parser.Expression, curFunc string, curFile string)
+
+	walkExpr = func(e parser.Expression, curFunc, curFile string) {
+		if e == nil {
+			return
+		}
+		switch x := e.(type) {
+		case *parser.UnwrapAssignStatement:
+			if idx, ok := x.Value.(*parser.IndexExpression); ok {
+				handled[idx] = true
+			}
+			if x.Value != nil {
+				walkExpr(x.Value, curFunc, curFile)
+			}
+		case *parser.IfExpression:
+			if x.Consequence != nil {
+				for _, b := range x.Consequence.Statements {
+					walkStmt(b, curFunc, false, curFile)
+				}
+			}
+			if x.Alternative != nil {
+				for _, b := range x.Alternative.Statements {
+					walkStmt(b, curFunc, false, curFile)
+				}
+			}
+		case *parser.GroupedExpression:
+			walkExpr(x.Expression, curFunc, curFile)
+		case *parser.PrefixExpression:
+			walkExpr(x.Right, curFunc, curFile)
+		}
+	}
+
+	walkStmt = func(stmt parser.Statement, curFunc string, fnOpt bool, curFile string) {
+		if stmt == nil {
+			return
+		}
+		switch s := stmt.(type) {
+		case *parser.FunctionDefinition:
+			fcf := s.SourceFile
+			if fcf == "" {
+				fcf = curFile
+			}
+			if fcf == "" {
+				fcf = mainFile
+			}
+			fnOpt = false
+			if len(s.Results) > 0 && s.Results[0] != nil && s.Results[0].Type != nil {
+				if strings.HasPrefix(s.Results[0].Type.String(), "?") {
+					fnOpt = true
+				}
+			}
+			if s.Body != nil {
+				for _, b := range s.Body.Statements {
+					walkStmt(b, s.Name, fnOpt, fcf)
+				}
+			}
+			return
+		case *parser.LetStatement:
+			// `#{index-out}` 降級產生的合成 tmp：`__idx_out_L_C = b[i]`。
+			if s.IsSynthetic && s.Name != nil && strings.HasPrefix(s.Name.Value, "__idx_out_") {
+				if idx, ok := s.Value.(*parser.IndexExpression); ok {
+					handled[idx] = true
+				}
+			}
+			// 非合成 `x = b[i]`：若 LHS 顯式宣告 ?T（option 本地）則已接納
+			// 越界 option；否則（非 option 函式，或結果參數非 ?T）越界 option
+			// 未被處理 → 報錯。
+			if !s.IsSynthetic {
+				if idx, ok := s.Value.(*parser.IndexExpression); ok {
+					if isSafeBase(curFunc, idx) && !(s.Type != nil && strings.HasPrefix(s.Type.String(), "?")) {
+						cf := s.SourceFile
+						if cf == "" {
+							cf = curFile
+						}
+						if cf == "" {
+							cf = mainFile
+						}
+						report(idx, cf)
+					}
+				}
+			}
+			if s.Value != nil {
+				walkExpr(s.Value, curFunc, curFile)
+			}
+		case *parser.ExpressionStatement:
+			// `b = arr[i]`（既有變數的裸賦值）以 ExpressionStatement 包裹
+			// AssignExpression 出現：LHS 為 ?T 或處於 option 函式（codegen 自動
+			// wrap）時已接納；否則越界 option 未被處理 → 報錯。
+			if ae, ok := s.Expression.(*parser.AssignExpression); ok {
+				if idx, ok := ae.Value.(*parser.IndexExpression); ok {
+					if isSafeBase(curFunc, idx) {
+						handledByType := false
+						if id, ok := ae.Left.(*parser.Identifier); ok {
+							handledByType = lhsIsOption(curFunc, id.Value)
+						}
+						if !handledByType && !fnOpt {
+							cf := s.SourceFile
+							if cf == "" {
+								cf = curFile
+							}
+							if cf == "" {
+								cf = mainFile
+							}
+							report(idx, cf)
+						}
+					}
+				}
+			}
+			if s.Expression != nil {
+				walkExpr(s.Expression, curFunc, curFile)
+			}
+		case *parser.UnwrapAssignStatement:
+			if idx, ok := s.Value.(*parser.IndexExpression); ok {
+				handled[idx] = true
+			}
+			if s.Value != nil {
+				walkExpr(s.Value, curFunc, curFile)
+			}
+		case *parser.ForStatement:
+			if s.Init != nil {
+				walkStmt(s.Init, curFunc, fnOpt, curFile)
+			}
+			if s.Condition != nil {
+				walkExpr(s.Condition, curFunc, curFile)
+			}
+			if s.Update != nil {
+				walkStmt(s.Update, curFunc, fnOpt, curFile)
+			}
+			if s.Body != nil {
+				for _, b := range s.Body.Statements {
+					walkStmt(b, curFunc, fnOpt, curFile)
+				}
+			}
+		case *parser.BlockStatement:
+			for _, b := range s.Statements {
+				walkStmt(b, curFunc, fnOpt, curFile)
+			}
+		case *parser.MultiAssignStatement:
+			if s.Value != nil {
+				walkExpr(s.Value, curFunc, curFile)
+			}
+		}
+	}
+
+	for _, stmt := range program.Statements {
+		walkStmt(stmt, "", false, mainFile)
 	}
 	return results
 }

@@ -183,7 +183,23 @@ func (p *Parser) parseAnnotationStatement() Statement {
 // 不再掛載到 AST 節點上；平台鍵/泛型參數/embed 由獨立 Resolver pass
 // （ResolveProgram）收尾計算並存入 side-table。
 func (p *Parser) attachAnnotations(stmt Statement, entries []*AnnotationEntry) {
-	p.sem.SetRawAnnotations(stmt, entries)
+	// `#{index-out = ...}`（安全索引越界預設值）必須「單獨成行、置於目標陳述上方」，
+	// 不允許寫在陳述同行的「前綴」（`#{index-out=0} x = v[5]`）或「尾隨」
+	// （`x = v[5] #{index-out=0}`）位置。兩者都與陳述位於同一行，故在此統一攔截：
+	// 註解條目的行號等於陳述行號即視為非法同行註解，報錯且不上掛（退化為未處理，
+	// 由 checker 報 `nolang-index`，提示使用者改成行上獨立註解）。
+	// overflow 等其它註解不受影響（使用者未要求改變其同行行為）。
+	var filtered []*AnnotationEntry
+	stmtLine := stmt.Pos().Line
+	for _, e := range entries {
+		if e != nil && e.Key == "index-out" && e.Token.Line == stmtLine {
+			p.saveError(fmt.Sprintf("line %d, column %d: `#{index-out = ...}` 必须单独成行置于语句上方，不能写在语句同一行（前缀或后缀）",
+				e.Token.Line, e.Token.Column))
+			continue
+		}
+		filtered = append(filtered, e)
+	}
+	p.sem.SetRawAnnotations(stmt, filtered)
 	// 同步將 #{overflow = wrap|clamp0} 攜帶到陳述節點的 OverflowMode 欄位（與
 	// applyLineOverflowAnnotations → setStmtOverflowMode 對「獨立 AnnotationStatement
 	// 下一條陳述」的處理一致）。原因：merged/lowered 路徑下各標準庫模組由不同 Parser
@@ -301,6 +317,123 @@ func (p *Parser) applyLineOverflowAnnotations(block *BlockStatement) {
 			}
 		}
 	}
+}
+
+// applyLineIndexOutAnnotations 實作 `#{index-out = ...}` 的「行注解」語意：一個
+// 獨立的 AnnotationStatement 只把其 index-out 條目套用到**緊跟其後的下一條陳述**
+//（若該陳述尚未自帶 index-out 註解），不向區塊其餘陳述或巢狀區塊傳播。
+//
+// 之所以需要此 pass：`#{index-out=0}` 緊跟的陳述可能以無法被
+// parseAnnotationStatement 附加的 token 開頭（如 `return arr[i]` 以 RETURN 開頭、
+// `.[i] = x` 以 DOT 開頭），此時註解會退化成獨立 AnnotationStatement，而其
+// index-out 條目不會出現在目標陳述的 side-table 上，desugar 讀取 AnnotationsOf
+// 就會漏掉、把已標註的越界索引誤報為未處理。本 pass 把該條目合併到下一條陳述
+// 的 RawAnnotations（供 ResolveProgram 拷貝進 Annotations，desugar 即可找到）。
+// 與 applyLineOverflowAnnotations 一致：index-out 條目寫入 side-table，而非註解行
+// 欄位——formatter 的 attachedAnnotations 已過濾 index-out 鍵，不會把同一行
+// 既以獨立註解、又以附加註解形式各印一次（雙印，破壞冪等）。
+func (p *Parser) applyLineIndexOutAnnotations(block *BlockStatement) {
+	if block == nil {
+		return
+	}
+	// 把 index-out 條目合併進 for 迴圈體的每一條陳述（desugar 只對 body 內的
+	// LetStatement / AssignExpression / ExpressionStatement 生效，不讀 for 本身）。
+	propagateToForBody := func(fs *ForStatement, entries []*AnnotationEntry) {
+		if fs == nil || fs.Body == nil {
+			return
+		}
+		// 記錄 for 體「自帶」的 index-out（避免重複套用）。
+		selfOut := p.indexOutEntries(p.sem.RawAnnotationsOf(fs))
+		for _, bs := range fs.Body.Statements {
+			if bs == nil {
+				continue
+			}
+			if p.indexOutEntries(p.sem.RawAnnotationsOf(bs)) == nil {
+				p.mergeAnnotations(bs, entries)
+			}
+		}
+		_ = selfOut
+	}
+	apply := func(stmts []Statement) {
+		for i, s := range stmts {
+			as, ok := s.(*AnnotationStatement)
+			if !ok {
+				continue
+			}
+			entries := p.indexOutEntries(as.Entries)
+			if entries == nil {
+				continue
+			}
+			for j := i + 1; j < len(stmts); j++ {
+				next := stmts[j]
+				if next == nil {
+					continue
+				}
+				// 連續的獨立註解：以最後一條為準（前一條不覆蓋後一條的目標）。
+				if _, isAnn := next.(*AnnotationStatement); isAnn {
+					break
+				}
+				// 行注解語意：index-out 條目合併進下一條陳述的 side-table，
+				// 供 desugar（maybeIndexOutAssign / maybeIndexOutReturn）辨識。
+				// 若下一條陳述已自帶 index-out，不覆蓋（避免重複套用）。
+				if p.indexOutEntries(p.sem.RawAnnotationsOf(next)) == nil {
+					p.mergeAnnotations(next, entries)
+				}
+				// 若下一條是 for 迴圈（含 `k <- [0..N):` 計數迴圈），其體內的
+				// 索引讀取 `buf[base+k] = data[off+base+k]` 才是真正需要降級的
+				// 目標。desugar 只對 LetStatement / AssignExpression / ExpressionStatement
+				// 生效，不會讀取 ForStatement 本身的註解，故把 index-out 條目
+				// 一併合併進迴圈體的每條陳述，使其體內索引讀取能被正確處理。
+				if fs, ok := next.(*ForStatement); ok {
+					propagateToForBody(fs, entries)
+				}
+				break
+			}
+		}
+		// 備用路徑：parseAnnotationStatement 對 IDENT 開頭的 for（如 `i <- [0..]:`）
+		// 會把 index-out 直接 attachAnnotations(for, entries) 並回傳 for，註解陳述
+		// 被消費、不再出現於 block.Statements。此處補掃描「已自帶 index-out 的 for」，
+		// 把註解傳播進其體，使其體內索引讀取能被 desugar 處理（否則越界索引被誤報
+		// 未處理）。
+		for _, s := range stmts {
+			if fs, ok := s.(*ForStatement); ok {
+				if entries := p.indexOutEntries(p.sem.RawAnnotationsOf(fs)); entries != nil {
+					for _, bs := range fs.Body.Statements {
+						if bs == nil {
+							continue
+						}
+						if p.indexOutEntries(p.sem.RawAnnotationsOf(bs)) == nil {
+							p.mergeAnnotations(bs, entries)
+						}
+					}
+				}
+			}
+		}
+	}
+	apply(block.Statements)
+	// 巢狀：ForStatement 體各自處理。
+	for _, s := range block.Statements {
+		if v, ok := s.(*ForStatement); ok && v.Body != nil {
+			apply(v.Body.Statements)
+		}
+	}
+}
+
+// indexOutEntries 從一組註解條目中挑出 index-out 鍵的條目。回傳 nil 表示無 index-out 註解。
+func (p *Parser) indexOutEntries(entries []*AnnotationEntry) []*AnnotationEntry {
+	if len(entries) == 0 {
+		return nil
+	}
+	var out []*AnnotationEntry
+	for _, e := range entries {
+		if e.Key == "index-out" {
+			out = append(out, e)
+		}
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
 }
 
 // overflowEntries 從一組註解條目中挑出 overflow 鍵的條目（std 函式普遍以

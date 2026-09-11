@@ -1,5 +1,5 @@
 ---
-sidebar_position: 4.2
+sidebar_position: 4.4
 ---
 
 ## 其他
@@ -135,49 +135,6 @@ enter {
 leave {
     leave()
 }     
-```
-
-### async — 異步協程與取消原語
-
-Nolang 提供協作式、單執行緒、無棧的異步協程模型：
-
-```no
-; 啟動 -async 函數為後台任務，返回不透明 task 句柄
-h = run worker-async(args)
-
-; 等待後台任務完成，返回結果
-r = awy h
-
-; 取消後台任務（協作式）
-async.async-cancel(h)                    ; 設置任務 h 的取消標誌
-
-; 協作式自我取消檢查（在異步函數內調用）
-yes = async.async-cancelled()            ; 返回當前任務是否已被取消
-```
-
-> **注意：** 取消是協作式而非搶占式。長阻塞調用（如網路請求）無法被強制中斷。任務會在下一個協作檢查點（`async-cancelled()` 調用或事件迴圈下次調度）真正停止。
-
-### global — 全域內建函數
-
-無需模組前綴即可調用的函數。僅有以下 6 個全域函數，其餘跨模組調用都必須加模組前綴。
-
-```no
-; 容量/長度構造（型別由賦值左側推斷）
-s str = with-cap(256)                   ; 預分配 256 位元組 str（len=0）
-v []i64 = with-cap(100)                 ; 預分配 100 元素切片（len=0）
-s str = with-len(10)                    ; 長度為 10 的 str
-v []i64 = with-len(100)                 ; 長度為 100 的切片
-v []i64 = with-cap-len(200, 100)        ; 容量 200、長度 100 的切片
-
-; 也可作為 str/vec 方法調用：
-s = ''.with-cap(256)
-v = [].with-cap(100)
-v = [].with-len-cap(100, 200)           ; 長度 100，容量 200
-
-; 輸出/格式化
-print('x={x}')                          ; 具名格式，stdout + 換行
-eprint('err {x}')                       ; 具名格式，stderr + 換行
-s = format('x={x}')                      ; 返回格式化字串
 ```
 
 ### magic — 檔案類型檢測

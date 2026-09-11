@@ -55,24 +55,34 @@ fe-neg = (h []i64, f []i64) {
     ; limb: [MASK-26-19, MASK-25, MASK-26, MASK-25, MASK-26, MASK-25, MASK-26, MASK-25, MASK-26, MASK-25-1]
     ; 但簡化：先減 f，再加上 p 的倍數使結果為正
     #{overflow=wrap}
+    #{index-out = 0}
     h[0] = 67108844 - f[0]
     #{overflow=wrap}
+    #{index-out = 0}
     h[1] = 33554431 - f[1]
     #{overflow=wrap}
+    #{index-out = 0}
     h[2] = 67108863 - f[2]
     #{overflow=wrap}
+    #{index-out = 0}
     h[3] = 33554431 - f[3]
     #{overflow=wrap}
+    #{index-out = 0}
     h[4] = 67108863 - f[4]
     #{overflow=wrap}
+    #{index-out = 0}
     h[5] = 33554431 - f[5]
     #{overflow=wrap}
+    #{index-out = 0}
     h[6] = 67108863 - f[6]
     #{overflow=wrap}
+    #{index-out = 0}
     h[7] = 33554431 - f[7]
     #{overflow=wrap}
+    #{index-out = 0}
     h[8] = 67108863 - f[8]
     #{overflow=wrap}
+    #{index-out = 0}
     h[9] = 33554431 - f[9]
 }
 
@@ -217,6 +227,7 @@ ge-scalar-mult = (r []i64, scalar []byte, p []i64) {
         #{overflow=wrap}
         byte-idx = t / 8
         bit-idx = t % 8
+        #{index-out = 0}
         bit = (scalar[byte-idx] >> bit-idx) & 1
 
         bit == 1 -> {
@@ -259,9 +270,11 @@ ge-pack = (p []i64) (out [32]byte) {
     x25519.fe-tobytes(x-bytes, x)
 
     ; 設置最高位元為 x 的最低位元
+    #{index-out = 0}
     y-bytes[31] = y-bytes[31] | ((x-bytes[0] & 1) << 7)
 
     i <- [0..32): {
+        #{index-out = 0}
         out[i] = y-bytes[i]
     }
 }
@@ -272,11 +285,14 @@ ge-pack = (p []i64) (out [32]byte) {
 ge-unpack = (s [32]byte) (ok i64, p []i64) {
 
     ; 提取符號位
+    #{index-out = 0}
     sign = (s[31] >> 7) & 1
     s-copy [32]byte
     i <- [0..32): {
+        #{index-out = 0}
         s-copy[i] = s[i]
     }
+    #{index-out = 0}
     s-copy[31] = s-copy[31] & 127
 
     ; 載入 y
@@ -347,7 +363,10 @@ ge-unpack = (s [32]byte) (ok i64, p []i64) {
 
     is-zero = 1
     i <- [0..32): {
-        diff-bytes[i] != 0 -> is-zero = 0
+                diff-bytes[i] != 0 -> {
+            #{index-out = 0}
+            is-zero = 0
+        }
     }
     is-zero == 0 -> {
 
@@ -369,7 +388,10 @@ ge-unpack = (s [32]byte) (ok i64, p []i64) {
 
         is-zero = 1
         i <- [0..32): {
-            diff-bytes[i] != 0 -> is-zero = 0
+                        diff-bytes[i] != 0 -> {
+                #{index-out = 0}
+                is-zero = 0
+            }
         }
         is-zero == 0 -> {
             ok = 0
@@ -380,7 +402,10 @@ ge-unpack = (s [32]byte) (ok i64, p []i64) {
     ; 檢查符號：如果 x 的最低位元 != sign，取負
     x-bytes [32]byte
     x25519.fe-tobytes(x-bytes, x)
-    (x-bytes[0] & 1) != sign -> fe-neg(x, x)
+        (x-bytes[0] & 1) != sign -> {
+        #{index-out = 0}
+        fe-neg(x, x)
+    }
 
     ; 構建點 (X, Y, Z, T) = (x, y, 1, x*y)
     x25519.fe-copy(p, x)
@@ -464,6 +489,7 @@ sc-reduce = (s []byte) (out [32]byte) {
         #{overflow=wrap}
         off = i * 8
         #{overflow=wrap}
+        #{index-out = 0}
         limbs[i] = (s[off]) | ((s[off + 1]) << 8) | ((s[off + 2]) << 16) | ((s[off + 3]) << 24) | ((s[off + 4]) << 32) | ((s[off + 5]) << 40) | ((s[off + 6]) << 48) | ((s[off + 7]) << 56)
     }
 
@@ -471,8 +497,11 @@ sc-reduce = (s []byte) (out [32]byte) {
     ; L = 2^252 + 27742317777372353535851937790883648493
     ; 小端: limbs[0..3] = L 的低 256 位, limbs[4..7] = L 的高位
     ; L in 8×64-bit:
+    #{index-out = 0}
     ; limbs[0] = 0x000e14def9dea2f7
+    #{index-out = 0}
     ; limbs[1] = 0x9c6d125812631a5c
+    #{index-out = 0}
     ; limbs[2] = 0xf5d3ed0000000000 (實際需精確)
     ; 簡化：使用逐位元組比較和減法
 
@@ -481,6 +510,7 @@ sc-reduce = (s []byte) (out [32]byte) {
 
     ; 更實際的方法：使用 32 位元組比較和減法
     ; 將 64 位元組分為高低兩半
+    #{index-out = 0}
     ; high = s[32:64], low = s[0:32]
     ; result = low + high * 2^256 mod L
     ; 由於 L ≈ 2^252，2^256 mod L = 2^256 - 4*L = ... (複雜)
@@ -491,6 +521,7 @@ sc-reduce = (s []byte) (out [32]byte) {
     ; 逐位元組減法（最多 8 次，因為輸入最多 2^512，L ≈ 2^252）
     work [64]byte
     i <- [0..64): {
+        #{index-out = 0}
         work[i] = s[i]
     }
 
@@ -512,7 +543,10 @@ sc-reduce = (s []byte) (out [32]byte) {
         ; 如果高位不為零，需要處理
         has-high = 0
         i <- [32..64): {
-            work[i] != 0 -> has-high = 1
+                        work[i] != 0 -> {
+                #{index-out = 0}
+                has-high = 1
+            }
         }
         has-high == 0 -> {
 
@@ -522,7 +556,10 @@ sc-reduce = (s []byte) (out [32]byte) {
             {
                 #{overflow=wrap}
                 {
-                    work[i] > ED-L[i] -> break
+                                        work[i] > ED-L[i] -> {
+                        #{index-out = 0}
+                        break
+                    }
 
                     work[i] < ED-L[i] -> {
                         ge = 0
@@ -539,6 +576,7 @@ sc-reduce = (s []byte) (out [32]byte) {
         borrow = 0
         i <- [0..32): {
             #{overflow=wrap}
+            #{index-out = 0}
             diff-val = (work[i]) - (ED-L[i]) - borrow
             #{overflow=wrap}
             {
@@ -550,12 +588,14 @@ sc-reduce = (s []byte) (out [32]byte) {
 
                 -> borrow = 0
             }
+            #{index-out = 0}
             work[i] = diff-val
         }
 
         ; 處理高位借位
         i <- [32..64 && borrow != 0): {
             #{overflow=wrap}
+            #{index-out = 0}
             diff-val = (work[i]) - borrow
             #{overflow=wrap}
             {
@@ -567,10 +607,12 @@ sc-reduce = (s []byte) (out [32]byte) {
 
                 -> borrow = 0
             }
+            #{index-out = 0}
             work[i] = diff-val
         }
     }
     i <- [0..32): {
+        #{index-out = 0}
         out[i] = work[i]
     }
 }
@@ -586,6 +628,7 @@ sc-muladd = (a [32]byte, b [32]byte, c [32]byte) (s [32]byte) {
     ; 使用 32 位元組乘法（schoolbook）
     product [64]byte
     i <- [0..64): {
+        #{index-out = 0}
         product[i] = 0
     }
     i <- [0..32): {
@@ -595,7 +638,9 @@ sc-muladd = (a [32]byte, b [32]byte, c [32]byte) (s [32]byte) {
             #{overflow=wrap}
             idx = i + j
             #{overflow=wrap}
+            #{index-out = 0}
             val = (product[idx]) + (a[i]) * (b[j]) + carry
+            #{index-out = 0}
             product[idx] = val & 255
             carry = val >> 8
         }
@@ -605,7 +650,9 @@ sc-muladd = (a [32]byte, b [32]byte, c [32]byte) (s [32]byte) {
         idx = i + 32
         {
             #{overflow=wrap}
+            #{index-out = 0}
             val = (product[idx]) + carry
+            #{index-out = 0}
             product[idx] = val & 255
             carry = val >> 8
             #{overflow=wrap}
@@ -617,13 +664,17 @@ sc-muladd = (a [32]byte, b [32]byte, c [32]byte) (s [32]byte) {
     carry = 0
     i <- [0..32): {
         #{overflow=wrap}
+        #{index-out = 0}
         val = (product[i]) + (c[i]) + carry
+        #{index-out = 0}
         product[i] = val & 255
         carry = val >> 8
     }
     i <- [32..64 && carry != 0): {
         #{overflow=wrap}
+        #{index-out = 0}
         val = (product[i]) + carry
+        #{index-out = 0}
         product[i] = val & 255
         carry = val >> 8
     }
@@ -648,10 +699,14 @@ ed25519-publickey = (seed [32]byte) (pub [32]byte) {
     ; 取前 32 位元組並 clamp
     a []byte
     i <- [0..32): {
+        #{index-out = 0}
         a[i] = h[i]
     }
+    #{index-out = 0}
     a[0] = a[0] & 248
+    #{index-out = 0}
     a[31] = a[31] & 127
+    #{index-out = 0}
     a[31] = a[31] | 64
 
     ; A = a * B
@@ -672,19 +727,26 @@ ed25519-sign = (seed [32]byte, msg []byte) (sig [64]byte) {
     h [64]byte
     h = sha512.sha512(seed)
 
+    #{index-out = 0}
     ; a = clamp(H[0:32])
     a []byte
     i <- [0..32): {
+        #{index-out = 0}
         a[i] = h[i]
     }
+    #{index-out = 0}
     a[0] = a[0] & 248
+    #{index-out = 0}
     a[31] = a[31] & 127
+    #{index-out = 0}
     a[31] = a[31] | 64
 
+    #{index-out = 0}
     ; prefix = H[32:64]
     prefix [32]byte
     i <- [0..32): {
         #{overflow=wrap}
+        #{index-out = 0}
         prefix[i] = h[32 + i]
     }
 
@@ -695,11 +757,13 @@ ed25519-sign = (seed [32]byte, msg []byte) (sig [64]byte) {
     ; r = SHA-512(prefix || msg) mod L
     r-input []byte
     i <- [0..32): {
+        #{index-out = 0}
         r-input[i] = prefix[i]
     }
     msg-len = msg.len()
     i <- [0..msg-len): {
         #{overflow=wrap}
+        #{index-out = 0}
         r-input[32 + i] = msg[i]
     }
     r-hash [64]byte
@@ -716,14 +780,17 @@ ed25519-sign = (seed [32]byte, msg []byte) (sig [64]byte) {
     ; k = SHA-512(R || A || msg) mod L
     k-input []byte
     i <- [0..32): {
+        #{index-out = 0}
         k-input[i] = r[i]
     }
     i <- [0..32): {
         #{overflow=wrap}
+        #{index-out = 0}
         k-input[32 + i] = pub[i]
     }
     i <- [0..msg-len): {
         #{overflow=wrap}
+        #{index-out = 0}
         k-input[64 + i] = msg[i]
     }
     k-hash [64]byte
@@ -734,6 +801,7 @@ ed25519-sign = (seed [32]byte, msg []byte) (sig [64]byte) {
     ; S = (r + k * a) mod L
     a-arr [32]byte
     i <- [0..32): {
+        #{index-out = 0}
         a-arr[i] = a[i]
     }
     s [32]byte
@@ -742,8 +810,10 @@ ed25519-sign = (seed [32]byte, msg []byte) (sig [64]byte) {
     ; 簽名 = R || S
     i <- [0..32): {
         #{overflow=wrap}
+        #{index-out = 0}
         sig[i] = r[i]
         #{overflow=wrap}
+        #{index-out = 0}
         sig[32 + i] = s[i]
     }
 }
@@ -755,14 +825,17 @@ ed25519-sign = (seed [32]byte, msg []byte) (sig [64]byte) {
 ; 返回 ok i64: 1=有效, 0=無效
 ed25519-verify = (pub [32]byte, msg []byte, sig [64]byte) (ok i64) {
 
+    #{index-out = 0}
     ; 解析 R = sig[0:32], S = sig[32:64]
     r [32]byte
     i <- [0..32): {
+        #{index-out = 0}
         r[i] = sig[i]
     }
     s [32]byte
     i <- [0..32): {
         #{overflow=wrap}
+        #{index-out = 0}
         s[i] = sig[32 + i]
     }
 
@@ -776,7 +849,10 @@ ed25519-verify = (pub [32]byte, msg []byte, sig [64]byte) (ok i64) {
                 return
             }
 
-            s[i] < ED-L[i] -> break
+                        s[i] < ED-L[i] -> {
+                #{index-out = 0}
+                break
+            }
         }
         #{overflow=wrap}
         i = i - 1
@@ -803,15 +879,18 @@ ed25519-verify = (pub [32]byte, msg []byte, sig [64]byte) (ok i64) {
     ; k = SHA-512(R || A || msg) mod L
     k-input []byte
     i <- [0..32): {
+        #{index-out = 0}
         k-input[i] = r[i]
     }
     i <- [0..32): {
         #{overflow=wrap}
+        #{index-out = 0}
         k-input[32 + i] = pub[i]
     }
     msg-len = msg.len()
     i <- [0..msg-len): {
         #{overflow=wrap}
+        #{index-out = 0}
         k-input[64 + i] = msg[i]
     }
     k-hash [64]byte
@@ -837,6 +916,9 @@ ed25519-verify = (pub [32]byte, msg []byte, sig [64]byte) (ok i64) {
 
     ok = 1
     i <- [0..32): {
-        sb-bytes[i] != rka-bytes[i] -> ok = 0
+                sb-bytes[i] != rka-bytes[i] -> {
+            #{index-out = 0}
+            ok = 0
+        }
     }
 }

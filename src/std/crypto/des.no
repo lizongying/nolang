@@ -186,6 +186,7 @@ permute = (input i64, tbl []byte, n i64, width i64) (r i64) {
     i = 0
     {
         #{overflow=wrap}
+        #{index-out = 0}
         pos = width - (tbl[i])
         bit = (input >> pos) & 1
         #{overflow=wrap}
@@ -205,6 +206,7 @@ sbox-lookup = (input i64, box []byte) (r i64) {
     row = ((v >> 5) & 1) * 2 + (v & 1)
     col = (v >> 1) & 15
     #{overflow=wrap}
+    #{index-out = 0}
     r = box[row * 16 + col] & 15
 }
 
@@ -249,17 +251,20 @@ f = (r i64, k i64) (out i64) {
 des-key-schedule = (key [8]byte) (ks [96]byte) {
     k64 = 0
     i <- [0..8): {
+        #{index-out = 0}
         k64 = (k64 << 8) | (key[i])
     }
     c = 0
     d = 0
     i <- [0..28): {
         #{overflow=wrap}
+        #{index-out = 0}
         pos = 64 - (PC1-C[i])
         bit = (k64 >> pos) & 1
         #{overflow=wrap}
         c = c | (bit << (27 - i))
         #{overflow=wrap}
+        #{index-out = 0}
         pos2 = 64 - (PC1-D[i])
         bit2 = (k64 >> pos2) & 1
         #{overflow=wrap}
@@ -267,6 +272,7 @@ des-key-schedule = (key [8]byte) (ks [96]byte) {
     }
     round <- [0..16): {
         #{overflow=wrap}
+        #{index-out = 0}
         shift = SHIFT-TBL[round]
         #{overflow=wrap}
         cm = (1 << 28) - 1
@@ -279,16 +285,22 @@ des-key-schedule = (key [8]byte) (ks [96]byte) {
         sk = permute(cd, PC2-TBL, 48, 56)
         #{overflow=wrap}
         off = round * 6
+        #{index-out = 0}
         ks[off] = (sk >> 40) & 255
         #{overflow=wrap}
+        #{index-out = 0}
         ks[off + 1] = (sk >> 32) & 255
         #{overflow=wrap}
+        #{index-out = 0}
         ks[off + 2] = (sk >> 24) & 255
         #{overflow=wrap}
+        #{index-out = 0}
         ks[off + 3] = (sk >> 16) & 255
         #{overflow=wrap}
+        #{index-out = 0}
         ks[off + 4] = (sk >> 8) & 255
         #{overflow=wrap}
+        #{index-out = 0}
         ks[off + 5] = sk & 255
     }
 }
@@ -299,6 +311,7 @@ des-key-schedule = (key [8]byte) (ks [96]byte) {
 des-block = (in []byte, n i64, ks [96]byte, encrypt i64) (out []byte) {
     block = 0
     i <- [0..8): {
+        #{index-out = 0}
         block = (block << 8) | (in[i])
     }
     ip = 0
@@ -317,10 +330,15 @@ des-block = (in []byte, n i64, ks [96]byte, encrypt i64) (out []byte) {
         }
         sk = 0
         #{overflow=wrap}
+        #{index-out = 0}
         sk = (ks[sk-off] << 40) |
+#{index-out = 0}
 (ks[sk-off + 1] << 32) |
+#{index-out = 0}
 (ks[sk-off + 2] << 24) |
+#{index-out = 0}
 (ks[sk-off + 3] << 16) |
+#{index-out = 0}
 (ks[sk-off + 4] << 8) | ks[sk-off + 5]
         fout = f(r, sk)
         new-l = r
