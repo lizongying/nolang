@@ -61,6 +61,11 @@ type codegen struct {
 	extraGlobals []string
 	strConsts    map[string]string // dedupe string-constant globals by content
 
+	// async task runtime: per-callee wrapper define blocks (callee raw name ->
+	// wrapper LLVM name) and a monotonic sequence counter for fresh names.
+	asyncWrappers   map[string]string
+	asyncWrapperSeq int
+
 	// optPayload maps a per-payload inline option LLVM type (%option_<elem>)
 	// to its payload field LLVM type, so print/compare code can peel field 1
 	// and route it to the correct scalar printer. Populated at type-decl time.
@@ -132,6 +137,17 @@ func supportedLLVM(lt string) bool {
 	// (alloca/load/store/arith/field) is handled generically via ptype, and their
 	// drops are implemented in emitDrop (vec_free / option element free).
 	if len(lt) > 2 && lt[0] == '%' {
+		return true
+	}
+	return false
+}
+
+// isScalarLLVM reports whether an LLVM type is a non-pointer scalar (i64, i1,
+// double, i8). Such parameters are passed BY VALUE in the MIR call ABI; every
+// other type (aggregate / pointer / struct) is passed BY POINTER.
+func isScalarLLVM(lt string) bool {
+	switch lt {
+	case "i64", "i1", "double", "i8":
 		return true
 	}
 	return false
@@ -258,6 +274,13 @@ func (m *Module) EmitLLVM() (out string, err error) {
 	c.emitPrelude()
 	c.emitStructTypes()
 	c.emitGlobals()
+	// Async cooperative scheduler runtime (globals + nolang_async_* functions).
+	// Buffered into extraGlobals so it is emitted after every function body;
+	// forward references to these functions from OpRun/OpAwait caller code are
+	// legal in LLVM. The %task type itself is declared in the prelude so it is
+	// visible to the function bodies that reference %task*.
+	c.asyncWrappers = map[string]string{}
+	c.emitAsyncScheduler()
 	// Module globals resolve to their @name (a pointer); register the slot so
 	// any instruction referencing the global value emits `@name` directly.
 	c.globalSlots = map[ValueID]string{}
@@ -568,6 +591,10 @@ target triple = "arm64-apple-macosx15.0.0"
 %str-long = type { i64, i64, i8* }   ; len, cap, data
 %vec = type { i64, i64, i64 }
 %option = type { i64, i64 }
+
+; async task runtime (mirrors legacy build/llvm cooperative scheduler).
+; %task = { resume_fn, data(i64 ptr), done, cancelled }; 24 bytes.
+%task = type { void (i8*)*, i64, i1, i1 }
 
 declare i8* @malloc(i64)
 declare void @free(i8*)
@@ -1112,12 +1139,24 @@ func (c *codegen) emitGlobals() {
 	// Module-level constant bindings (SBOX, TLS-FINISHED-SIZE, perm-600, ...).
 	for _, g := range c.mod.Globals {
 		if g.ConstText == "" {
-			// Unfoldable initializer: emit as an external declaration. The
-			// LLVM verifier rejects the undefined reference, the referencing
-			// function falls back to the legacy codegen, and we never emit
-			// wrong data for a crypto constant.
+			// Uninitialized module-level variable (e.g. `ga-priv [32]byte`
+			// declared at top level outside an explicit `fn main`, then
+			// written inside `main`). nolang zero-initializes such bindings and
+			// they are mutable, so emit a DEFINED mutable global
+			// (`private global <T> zeroinitializer`) — NOT an `external
+			// constant` declaration, which leaves an undefined symbol that
+			// fails to link under NOLANG_MIR=3 (test-x25519-keypair-diff:
+			// `_ga-priv` / `_gb-priv` undefined). The old `external constant`
+			// form was only safe under NOLANG_MIR=2 (strangler-fig fallback);
+			// with fallback disabled it must be a real definition.
 			lt, _ := c.ptype(g.Init)
-			c.sb.WriteString(fmt.Sprintf("@%s = external constant %s\n", g.Name, lt))
+			if lt == "" || lt == "void" {
+				// Type not resolvable: keep the (benign) external form rather
+				// than emit malformed IR.
+				c.sb.WriteString(fmt.Sprintf("@%s = external constant %s\n", g.Name, lt))
+				continue
+			}
+			c.sb.WriteString(fmt.Sprintf("@%s = private global %s zeroinitializer\n", g.Name, lt))
 			continue
 		}
 		// Module-level bindings (SBOX, data, ...) are mutable in nolang — a
@@ -1572,6 +1611,10 @@ func (c *codegen) emitInst(f *Function, inst *Inst, allocaFor func(ValueID) stri
 		return c.emitLenCap(inst)
 	case OpCall:
 		return c.emitCall(f, inst)
+	case OpRun:
+		return c.emitAsyncRun(f, inst)
+	case OpAwait:
+		return c.emitAsyncAwait(f, inst)
 	case OpReturn:
 		c.sb.WriteString("  ret void\n")
 		return nil
@@ -4185,6 +4228,504 @@ func (c *codegen) emitCallBody(f *Function, cf *Function, inst *Inst, calleeName
 		c.sb.WriteString(fmt.Sprintf("  %%c%d = load %s, %s* %s\n", rv, rlt, rlt, rs))
 		c.sb.WriteString(fmt.Sprintf("  store %s %%c%d, %s* %s\n", rlt, rv, rlt, c.valSlot[rv]))
 	}
+	return nil
+}
+
+// ---------------------------------------------------------------------------
+// Async task runtime (OpRun / OpAwait + cooperative scheduler)
+// ---------------------------------------------------------------------------
+//
+// An `-async` call is lowered to OpRun, which builds a heap %task (resume_fn =
+// a generated async_wrapper.N, data = an args struct whose field 0 is the
+// result pointer, done/cancelled = false) and enqueues it. OpAwait drives the
+// task to completion: if not yet done it synchronously calls resume_fn(task);
+// then it reads the result from the args struct's field 0. This mirrors the
+// legacy build/llvm model; for flat (top-level) await trees — the only shape
+// tests/test-async.no uses — the synchronous drive yields byte-identical
+// output to the legacy event loop without ever entering nolang_async_run.
+
+// mallocBytesFor returns a heap size (bytes) large enough to hold an LLVM value
+// of type lt. Scalars get their natural width; aggregates get their header size.
+// This is used only to size the per-arg and per-result buffers the wrapper
+// reads through, so the value is copied in/out intact.
+func (c *codegen) mallocBytesFor(lt string) int64 {
+	switch lt {
+	case "i64", "double":
+		return 8
+	case "i1", "i8":
+		return 1
+	case "%str-long", "%vec":
+		return 24
+	case "%option":
+		return 16
+	}
+	if strings.HasPrefix(lt, "%option_") {
+		return 16
+	}
+	if strings.HasPrefix(lt, "%") {
+		// named user struct: approximate with its emitted layout size.
+		if sz := c.structLLVMSize(lt); sz > 0 {
+			return sz
+		}
+		return 24
+	}
+	if strings.HasPrefix(lt, "[") {
+		// fixed array: best-effort element size * length.
+		if n, elem := parseArrayType(lt); n > 0 {
+			return n * c.mallocBytesFor(elem)
+		}
+		return 8
+	}
+	return 8
+}
+
+// structLLVMSize returns the byte size of a named struct type %name from the
+// emitted struct layout (StructFields). Returns 0 when unknown. The StructFields
+// key is the raw type; the sanitized %name is reconstructed back to raw by
+// turning underscores into dots.
+func (c *codegen) structLLVMSize(name string) int64 {
+	raw := strings.TrimPrefix(name, "%")
+	raw = strings.ReplaceAll(raw, "_", ".")
+	if fields, ok := c.mod.StructFields[raw]; ok {
+		var sz int64
+		for _, fld := range fields {
+			if tid := c.mod.internType(fld.TypeRaw); tid != NoType {
+				if ty := c.mod.Type(tid); ty != nil {
+					sz += c.mallocBytesFor(c.llvmTypeOf(ty))
+					continue
+				}
+			}
+			sz += 8
+		}
+		return sz
+	}
+	return 0
+}
+
+// parseArrayType parses a fixed-array LLVM type "[N x elem]" into (N, elem).
+func parseArrayType(lt string) (int64, string) {
+	if !strings.HasPrefix(lt, "[") {
+		return 0, ""
+	}
+	// [N x elem]
+	inner := lt[1 : len(lt)-1]
+	sp := strings.Index(inner, " x ")
+	if sp < 0 {
+		return 0, ""
+	}
+	var n int64
+	if _, err := fmt.Sscanf(inner[:sp], "%d", &n); err != nil {
+		return 0, ""
+	}
+	return n, inner[sp+3:]
+}
+
+// emitAsyncScheduler emits the cooperative-scheduler globals and functions
+// (nolang_async_enqueue / _yield / _wait / _done / _run) into the module tail.
+// These are ported verbatim from the legacy build/llvm emitter (decl.go); the
+// %task type they reference is declared in the prelude.
+func (c *codegen) emitAsyncScheduler() {
+	var b strings.Builder
+	b.WriteString("@nolang_ready_q = global [256 x i8*] zeroinitializer\n")
+	b.WriteString("@nolang_ready_head = global i32 0\n")
+	b.WriteString("@nolang_ready_tail = global i32 0\n")
+	b.WriteString("@nolang_current_task = global i8* null\n")
+	b.WriteString("@nolang_waiters = global [256 x i8*] zeroinitializer\n")
+	// nolang_async_enqueue(task): enqueue into the ready queue (ring of 256).
+	b.WriteString("define void @nolang_async_enqueue(i8* %task) {\n")
+	b.WriteString("entry:\n")
+	b.WriteString("\t%tail = load i32, i32* @nolang_ready_tail\n")
+	b.WriteString("\t%gep = getelementptr [256 x i8*], [256 x i8*]* @nolang_ready_q, i32 0, i32 %tail\n")
+	b.WriteString("\tstore i8* %task, i8** %gep\n")
+	b.WriteString("\t%next = add i32 %tail, 1\n")
+	b.WriteString("\t%mod = urem i32 %next, 256\n")
+	b.WriteString("\tstore i32 %mod, i32* @nolang_ready_tail\n")
+	b.WriteString("\tret void\n}\n")
+	// nolang_async_yield(): re-enqueue the current task.
+	b.WriteString("define void @nolang_async_yield() {\n")
+	b.WriteString("entry:\n")
+	b.WriteString("\t%cur = load i8*, i8** @nolang_current_task\n")
+	b.WriteString("\tcall void @nolang_async_enqueue(i8* %cur)\n")
+	b.WriteString("\tret void\n}\n")
+	// nolang_async_wait(waited): register the current task as waiter on `waited`.
+	b.WriteString("define void @nolang_async_wait(i8* %waited) {\n")
+	b.WriteString("entry:\n")
+	b.WriteString("\t%cur = load i8*, i8** @nolang_current_task\n")
+	b.WriteString("\t%idx = ptrtoint i8* %waited to i64\n")
+	b.WriteString("\t%idx8 = and i64 %idx, 255\n")
+	b.WriteString("\t%idx32 = trunc i64 %idx8 to i32\n")
+	b.WriteString("\t%gep = getelementptr [256 x i8*], [256 x i8*]* @nolang_waiters, i32 0, i32 %idx32\n")
+	b.WriteString("\tstore i8* %cur, i8** %gep\n")
+	b.WriteString("\tret void\n}\n")
+	// nolang_async_done(task): wake the task's waiter (if any).
+	b.WriteString("define void @nolang_async_done(i8* %task) {\n")
+	b.WriteString("entry:\n")
+	b.WriteString("\t%idx = ptrtoint i8* %task to i64\n")
+	b.WriteString("\t%idx8 = and i64 %idx, 255\n")
+	b.WriteString("\t%idx32 = trunc i64 %idx8 to i32\n")
+	b.WriteString("\t%gep = getelementptr [256 x i8*], [256 x i8*]* @nolang_waiters, i32 0, i32 %idx32\n")
+	b.WriteString("\t%waiter = load i8*, i8** %gep\n")
+	b.WriteString("\t%is_null = icmp eq i8* %waiter, null\n")
+	b.WriteString("\tbr i1 %is_null, label %ret, label %wake\n")
+	b.WriteString("wake:\n")
+	b.WriteString("\tcall void @nolang_async_enqueue(i8* %waiter)\n")
+	b.WriteString("\tstore i8* null, i8** %gep\n")
+	b.WriteString("\tbr label %ret\n")
+	b.WriteString("ret:\n")
+	b.WriteString("\tret void\n}\n")
+	// nolang_async_run(main_task): the event loop. Drives every enqueued task to
+	// completion, waking waiters when a task finishes. Only needed for nested
+	// async (await inside an -async fn); flat top-level awaits drive inline.
+	b.WriteString("define void @nolang_async_run(i8* %main_task) {\n")
+	b.WriteString("entry:\n")
+	b.WriteString("\tcall void @nolang_async_enqueue(i8* %main_task)\n")
+	b.WriteString("\tbr label %loop\n")
+	b.WriteString("loop:\n")
+	b.WriteString("\t%head = load i32, i32* @nolang_ready_head\n")
+	b.WriteString("\t%tail = load i32, i32* @nolang_ready_tail\n")
+	b.WriteString("\t%eq = icmp eq i32 %head, %tail\n")
+	b.WriteString("\tbr i1 %eq, label %exit, label %run_one\n")
+	b.WriteString("run_one:\n")
+	b.WriteString("\t%gep = getelementptr [256 x i8*], [256 x i8*]* @nolang_ready_q, i32 0, i32 %head\n")
+	b.WriteString("\t%task = load i8*, i8** %gep\n")
+	b.WriteString("\tstore i8* %task, i8** @nolang_current_task\n")
+	b.WriteString("\t%next = add i32 %head, 1\n")
+	b.WriteString("\t%mod = urem i32 %next, 256\n")
+	b.WriteString("\tstore i32 %mod, i32* @nolang_ready_head\n")
+	b.WriteString("\t%task_typed = bitcast i8* %task to { void (i8*)*, i64, i1, i1 }*\n")
+	b.WriteString("\t%fn_gep = getelementptr { void (i8*)*, i64, i1, i1 }, { void (i8*)*, i64, i1, i1 }* %task_typed, i32 0, i32 0\n")
+	b.WriteString("\t%resume_fn = load void (i8*)*, void (i8*)** %fn_gep\n")
+	b.WriteString("\tcall void %resume_fn(i8* %task)\n")
+	b.WriteString("\t%done_gep = getelementptr { void (i8*)*, i64, i1, i1 }, { void (i8*)*, i64, i1, i1 }* %task_typed, i32 0, i32 2\n")
+	b.WriteString("\t%done_val = load i1, i1* %done_gep\n")
+	b.WriteString("\tbr i1 %done_val, label %done_handler, label %loop\n")
+	b.WriteString("done_handler:\n")
+	b.WriteString("\tcall void @nolang_async_done(i8* %task)\n")
+	b.WriteString("\tbr label %loop\n")
+	b.WriteString("exit:\n")
+	b.WriteString("\tret void\n}\n")
+	c.extraGlobals = append(c.extraGlobals, b.String())
+}
+
+// asyncWrapperFor returns (generating if necessary) the LLVM name of the
+// async_wrapper.N define that resumes an `-async` callee. The wrapper calls the
+// target MIR function with the arg/result pointers packed in the args struct,
+// then marks the task done. argTypes are the callee's non-result (input)
+// parameter LLVM types in order; resLT is the single result type.
+func (c *codegen) asyncWrapperFor(calleeName, targetName string, argTypes []string, resLT string) string {
+	if w, ok := c.asyncWrappers[calleeName]; ok {
+		return w
+	}
+	c.asyncWrapperSeq++
+	n := c.asyncWrapperSeq
+	wname := fmt.Sprintf("async_wrapper.%d", n)
+
+	numFields := len(argTypes) + 1
+	argsTypeStr := "{ "
+	for i := 0; i < numFields; i++ {
+		if i > 0 {
+			argsTypeStr += ", "
+		}
+		argsTypeStr += "i8*"
+	}
+	argsTypeStr += " }"
+
+	var b strings.Builder
+	fmt.Fprintf(&b, "define void @%s(i8* %%task_ptr) {\n", wname)
+	b.WriteString("entry:\n")
+	b.WriteString("\t%t = bitcast i8* %task_ptr to %task*\n")
+	// Guard: already done -> skip (event loop may re-schedule a finished task).
+	b.WriteString("\t%done.gep = getelementptr inbounds %task, %task* %t, i32 0, i32 2\n")
+	b.WriteString("\t%done.val = load i1, i1* %done.gep\n")
+	b.WriteString("\tbr i1 %done.val, label %w_exit, label %w_can\n")
+	// Cancelled -> mark done and skip (graceful abort).
+	b.WriteString("w_can:\n")
+	b.WriteString("\t%can.gep = getelementptr inbounds %task, %task* %t, i32 0, i32 3\n")
+	b.WriteString("\t%can.val = load i1, i1* %can.gep\n")
+	b.WriteString("\tbr i1 %can.val, label %w_skip, label %w_exec\n")
+	b.WriteString("w_skip:\n")
+	b.WriteString("\tstore i1 true, i1* %done.gep\n")
+	b.WriteString("\tbr label %w_exit\n")
+	// Execute: read args struct from data field, call target, set done.
+	b.WriteString("w_exec:\n")
+	b.WriteString("\t%data.gep = getelementptr inbounds %task, %task* %t, i32 0, i32 1\n")
+	b.WriteString("\t%data.i64 = load i64, i64* %data.gep\n")
+	b.WriteString("\t%data.i8 = inttoptr i64 %data.i64 to i8*\n")
+	fmt.Fprintf(&b, "\t%%args.typed = bitcast i8* %%data.i8 to %s*\n", argsTypeStr)
+	// result ptr (args field 0)
+	fmt.Fprintf(&b, "\t%%result.ptr.gep = getelementptr inbounds %s, %s* %%args.typed, i32 0, i32 0\n", argsTypeStr, argsTypeStr)
+	b.WriteString("\t%result.ptr = load i8*, i8** %result.ptr.gep\n")
+	fmt.Fprintf(&b, "\t%%result.typed = bitcast i8* %%result.ptr to %s*\n", resLT)
+	var callArgs []string
+	for i, at := range argTypes {
+		fmt.Fprintf(&b, "\t%%warg.%d.gep = getelementptr inbounds %s, %s* %%args.typed, i32 0, i32 %d\n", i, argsTypeStr, argsTypeStr, i+1)
+		fmt.Fprintf(&b, "\t%%warg.%d.ptr = load i8*, i8** %%warg.%d.gep\n", i, i)
+		fmt.Fprintf(&b, "\t%%warg.%d.typed = bitcast i8* %%warg.%d.ptr to %s*\n", i, i, at)
+		// Honor the MIR call ABI: scalar (non-pointer) parameters are passed BY
+		// VALUE, every aggregate/owned parameter is passed BY POINTER. The args
+		// struct stores an i8* to a heap copy; for scalars we load the value and
+		// pass it directly, matching how emitCallBody lowers a normal call.
+		if isScalarLLVM(at) {
+			fmt.Fprintf(&b, "\t%%warg.%d.val = load %s, %s* %%warg.%d.typed\n", i, at, at, i)
+			callArgs = append(callArgs, fmt.Sprintf("%s %%warg.%d.val", at, i))
+		} else {
+			callArgs = append(callArgs, fmt.Sprintf("%s* %%warg.%d.typed", at, i))
+		}
+	}
+	callArgs = append(callArgs, fmt.Sprintf("%s* %%result.typed", resLT))
+	fmt.Fprintf(&b, "\tcall void @%s(%s)\n", targetName, strings.Join(callArgs, ", "))
+	// Free each arg container (the malloc'd per-arg buffer); the data the
+	// target may have moved into its result is owned by the result buffer, not
+	// by these arg buffers, so freeing only the container is safe.
+	for i := range argTypes {
+		fmt.Fprintf(&b, "\tcall void @free(i8* %%warg.%d.ptr)\n", i)
+	}
+	b.WriteString("\tstore i1 true, i1* %done.gep\n")
+	b.WriteString("\tbr label %w_exit\n")
+	b.WriteString("w_exit:\n")
+	b.WriteString("\tret void\n}\n\n")
+	w := b.String()
+	c.extraGlobals = append(c.extraGlobals, w)
+	c.asyncWrappers[calleeName] = wname
+	return wname
+}
+
+// emitAsyncRun emits caller code for OpRun: it resolves the `-async` callee,
+// builds a heap %task (resume_fn = a generated wrapper, data = an args struct
+// {result_ptr, arg0_ptr, ...}, done/cancelled = false), enqueues it, and stores
+// the opaque task handle (i8* bitcast to i64) into inst.Dst. Each argument is
+// copied into its own heap buffer so the value survives until the wrapper runs.
+func (c *codegen) emitAsyncRun(f *Function, inst *Inst) error {
+	calleeName := inst.Sym
+	if calleeName == "" {
+		// run <handle-var>: the operand is already a handle; forward it.
+		hlt, hreg := c.loadVal(inst.Args[0])
+		slot := c.valSlot[inst.Dst]
+		c.sb.WriteString(fmt.Sprintf("  store %s %s, %s* %s\n", hlt, hreg, hlt, slot))
+		return nil
+	}
+	cid, ok := c.mod.FuncByName[calleeName]
+	if !ok {
+		c.fail("OpRun: unknown async callee %q", calleeName)
+		return fmt.Errorf("OpRun: unknown async callee %q", calleeName)
+	}
+	cf := c.mod.Func(cid)
+	targetName := c.fname[cid]
+
+	isResult := map[ValueID]bool{}
+	for _, rp := range cf.ResultParams {
+		isResult[rp] = true
+	}
+	var argTypes []string
+	for _, p := range cf.Params {
+		if isResult[p] {
+			continue
+		}
+		lt, _ := c.ptype(p)
+		argTypes = append(argTypes, lt)
+	}
+	resLT := "i64"
+	if len(cf.ResultParams) > 0 {
+		resLT, _ = c.ptype(cf.ResultParams[0])
+	}
+	wrapperName := c.asyncWrapperFor(calleeName, targetName, argTypes, resLT)
+
+	numFields := len(argTypes) + 1
+	argsTypeStr := "{ "
+	for i := 0; i < numFields; i++ {
+		if i > 0 {
+			argsTypeStr += ", "
+		}
+		argsTypeStr += "i8*"
+	}
+	argsTypeStr += " }"
+
+	// 1. result buffer (heap), zero-initialized so an owned payload slot is valid.
+	c.loadSeq++
+	resBuf := fmt.Sprintf("%%arun.resbuf.%d", c.loadSeq)
+	c.sb.WriteString(fmt.Sprintf("  %s = call i8* @malloc(i64 %d)\n", resBuf, c.mallocBytesFor(resLT)))
+	c.loadSeq++
+	resBufT := fmt.Sprintf("%%arun.resbuf.t.%d", c.loadSeq)
+	c.sb.WriteString(fmt.Sprintf("  %s = bitcast i8* %s to %s*\n", resBufT, resBuf, resLT))
+	c.sb.WriteString(fmt.Sprintf("  store %s zeroinitializer, %s* %s\n", resLT, resLT, resBufT))
+
+	// 2. args struct (heap): { i8*, i8*, ... }
+	c.loadSeq++
+	argsStruct := fmt.Sprintf("%%arun.args.%d", c.loadSeq)
+	c.sb.WriteString(fmt.Sprintf("  %s = call i8* @malloc(i64 %d)\n", argsStruct, int64(numFields)*8))
+	c.loadSeq++
+	argsStructT := fmt.Sprintf("%%arun.args.t.%d", c.loadSeq)
+	c.sb.WriteString(fmt.Sprintf("  %s = bitcast i8* %s to %s*\n", argsStructT, argsStruct, argsTypeStr))
+
+	// field 0 = result buffer (as i8*)
+	c.loadSeq++
+	resI8 := fmt.Sprintf("%%arun.resi8.%d", c.loadSeq)
+	c.sb.WriteString(fmt.Sprintf("  %s = bitcast %s* %s to i8*\n", resI8, resLT, resBufT))
+	c.loadSeq++
+	f0 := fmt.Sprintf("%%arun.f0.%d", c.loadSeq)
+	c.sb.WriteString(fmt.Sprintf("  %s = getelementptr inbounds %s, %s* %s, i32 0, i32 0\n", f0, argsTypeStr, argsTypeStr, argsStructT))
+	c.sb.WriteString(fmt.Sprintf("  store i8* %s, i8** %s\n", resI8, f0))
+
+	// each arg: load value, copy into a heap buffer, store its i8* into field i+1.
+	for i, av := range inst.Args {
+		alt, areg := c.loadVal(av)
+		c.loadSeq++
+		abuf := fmt.Sprintf("%%arun.argbuf.%d_%d", c.loadSeq, i)
+		c.sb.WriteString(fmt.Sprintf("  %s = call i8* @malloc(i64 %d)\n", abuf, c.mallocBytesFor(alt)))
+		c.loadSeq++
+		abufT := fmt.Sprintf("%%arun.argbuf.t.%d_%d", c.loadSeq, i)
+		c.sb.WriteString(fmt.Sprintf("  %s = bitcast i8* %s to %s*\n", abufT, abuf, alt))
+		c.sb.WriteString(fmt.Sprintf("  store %s %s, %s* %s\n", alt, areg, alt, abufT))
+		c.loadSeq++
+		ai8 := fmt.Sprintf("%%arun.argi8.%d_%d", c.loadSeq, i)
+		c.sb.WriteString(fmt.Sprintf("  %s = bitcast %s* %s to i8*\n", ai8, alt, abufT))
+		c.loadSeq++
+		fi := fmt.Sprintf("%%arun.fi.%d_%d", c.loadSeq, i)
+		c.sb.WriteString(fmt.Sprintf("  %s = getelementptr inbounds %s, %s* %s, i32 0, i32 %d\n", fi, argsTypeStr, argsTypeStr, argsStructT, i+1))
+		c.sb.WriteString(fmt.Sprintf("  store i8* %s, i8** %s\n", ai8, fi))
+	}
+
+	// bitcast args struct to i8*, then to i64 for the task's data field.
+	c.loadSeq++
+	argsI8 := fmt.Sprintf("%%arun.argsi8.%d", c.loadSeq)
+	c.sb.WriteString(fmt.Sprintf("  %s = bitcast %s* %s to i8*\n", argsI8, argsTypeStr, argsStructT))
+	c.loadSeq++
+	argsI64 := fmt.Sprintf("%%arun.argsi64.%d", c.loadSeq)
+	c.sb.WriteString(fmt.Sprintf("  %s = ptrtoint i8* %s to i64\n", argsI64, argsI8))
+
+	// 3. task struct (heap).
+	c.loadSeq++
+	taskBuf := fmt.Sprintf("%%arun.task.%d", c.loadSeq)
+	c.sb.WriteString("  " + taskBuf + " = call i8* @malloc(i64 24)\n")
+	c.loadSeq++
+	taskT := fmt.Sprintf("%%arun.task.t.%d", c.loadSeq)
+	c.sb.WriteString(fmt.Sprintf("  %s = bitcast i8* %s to %%task*\n", taskT, taskBuf))
+	c.loadSeq++
+	tf0 := fmt.Sprintf("%%arun.tf0.%d", c.loadSeq)
+	c.sb.WriteString(fmt.Sprintf("  %s = getelementptr inbounds %%task, %%task* %s, i32 0, i32 0\n", tf0, taskT))
+	c.sb.WriteString(fmt.Sprintf("  store void (i8*)* @%s, void (i8*)** %s\n", wrapperName, tf0))
+	c.loadSeq++
+	tf1 := fmt.Sprintf("%%arun.tf1.%d", c.loadSeq)
+	c.sb.WriteString(fmt.Sprintf("  %s = getelementptr inbounds %%task, %%task* %s, i32 0, i32 1\n", tf1, taskT))
+	c.sb.WriteString(fmt.Sprintf("  store i64 %s, i64* %s\n", argsI64, tf1))
+	c.loadSeq++
+	tf2 := fmt.Sprintf("%%arun.tf2.%d", c.loadSeq)
+	c.sb.WriteString(fmt.Sprintf("  %s = getelementptr inbounds %%task, %%task* %s, i32 0, i32 2\n", tf2, taskT))
+	c.sb.WriteString(fmt.Sprintf("  store i1 false, i1* %s\n", tf2))
+	c.loadSeq++
+	tf3 := fmt.Sprintf("%%arun.tf3.%d", c.loadSeq)
+	c.sb.WriteString(fmt.Sprintf("  %s = getelementptr inbounds %%task, %%task* %s, i32 0, i32 3\n", tf3, taskT))
+	c.sb.WriteString(fmt.Sprintf("  store i1 false, i1* %s\n", tf3))
+
+	// enqueue the task.
+	c.loadSeq++
+	taskI8 := fmt.Sprintf("%%arun.taski8.%d", c.loadSeq)
+	c.sb.WriteString(fmt.Sprintf("  %s = bitcast %%task* %s to i8*\n", taskI8, taskT))
+	c.sb.WriteString(fmt.Sprintf("  call void @nolang_async_enqueue(i8* %s)\n", taskI8))
+
+	// return handle (i8* -> i64) into inst.Dst.
+	slot := c.valSlot[inst.Dst]
+	c.loadSeq++
+	handleI64 := fmt.Sprintf("%%arun.handle.%d", c.loadSeq)
+	c.sb.WriteString(fmt.Sprintf("  %s = ptrtoint i8* %s to i64\n", handleI64, taskI8))
+	c.sb.WriteString(fmt.Sprintf("  store i64 %s, i64* %s\n", handleI64, slot))
+	return nil
+}
+
+// emitAsyncAwait emits caller code for OpAwait: it loads the task handle,
+// synchronously drives the task to completion if not already done, then reads
+// the result from the args struct's field 0 and stores it into inst.Dst. The
+// result/args/task heap containers are freed afterwards (their inner owned data
+// is now owned by the result slot, so only the containers are freed).
+func (c *codegen) emitAsyncAwait(f *Function, inst *Inst) error {
+	resLT, _ := c.ptype(inst.Dst)
+	slot := c.valSlot[inst.Dst]
+	if slot == "" {
+		c.fail("OpAwait: no slot for destination")
+		return fmt.Errorf("OpAwait: no slot")
+	}
+	// load handle (i64) -> %task*
+	_, hreg := c.loadVal(inst.Args[0])
+	c.loadSeq++
+	taskI8 := fmt.Sprintf("%%aawy.ti8.%d", c.loadSeq)
+	c.sb.WriteString(fmt.Sprintf("  %s = inttoptr i64 %s to i8*\n", taskI8, hreg))
+	c.loadSeq++
+	taskT := fmt.Sprintf("%%aawy.tt.%d", c.loadSeq)
+	c.sb.WriteString(fmt.Sprintf("  %s = bitcast i8* %s to %%task*\n", taskT, taskI8))
+
+	// check done (field 2)
+	c.loadSeq++
+	doneGep := fmt.Sprintf("%%aawy.dg.%d", c.loadSeq)
+	c.sb.WriteString(fmt.Sprintf("  %s = getelementptr inbounds %%task, %%task* %s, i32 0, i32 2\n", doneGep, taskT))
+	c.loadSeq++
+	doneVal := fmt.Sprintf("%%aawy.dv.%d", c.loadSeq)
+	c.sb.WriteString(fmt.Sprintf("  %s = load i1, i1* %s\n", doneVal, doneGep))
+
+	notDoneDef := fmt.Sprintf("aawy.notdone.%d", c.loadSeq)
+	notDoneRef := "%" + notDoneDef
+	doneDef := fmt.Sprintf("aawy.done.%d", c.loadSeq)
+	doneRef := "%" + doneDef
+	c.sb.WriteString(fmt.Sprintf("  br i1 %s, label %s, label %s\n", doneVal, doneRef, notDoneRef))
+
+	// not done: call resume_fn(task) to drive it to completion.
+	c.sb.WriteString(notDoneDef + ":\n")
+	c.loadSeq++
+	fnGep := fmt.Sprintf("%%aawy.fg.%d", c.loadSeq)
+	c.sb.WriteString(fmt.Sprintf("  %s = getelementptr inbounds %%task, %%task* %s, i32 0, i32 0\n", fnGep, taskT))
+	c.loadSeq++
+	fnVal := fmt.Sprintf("%%aawy.fn.%d", c.loadSeq)
+	c.sb.WriteString(fmt.Sprintf("  %s = load void (i8*)*, void (i8*)** %s\n", fnVal, fnGep))
+	// Publish this task as the current task for the duration of the synchronous
+	// drive, so an `async-cancelled()` call inside the target reads the right
+	// %task.cancelled flag (the legacy event loop sets @nolang_current_task the
+	// same way before invoking a task's resume_fn). Restored to null afterwards;
+	// MIR drives one task at a time (no nested coroutine suspend), so a single
+	// save/restore pair is sufficient.
+	c.sb.WriteString(fmt.Sprintf("  store i8* %s, i8** @nolang_current_task\n", taskI8))
+	c.sb.WriteString(fmt.Sprintf("  call void %s(i8* %s)\n", fnVal, taskI8))
+	c.sb.WriteString("  store i8* null, i8** @nolang_current_task\n")
+	c.sb.WriteString(fmt.Sprintf("  br label %s\n", doneRef))
+
+	// done: read result from args struct field 0.
+	c.sb.WriteString(doneDef + ":\n")
+	c.loadSeq++
+	dataGep := fmt.Sprintf("%%aawy.dataGep.%d", c.loadSeq)
+	c.sb.WriteString(fmt.Sprintf("  %s = getelementptr inbounds %%task, %%task* %s, i32 0, i32 1\n", dataGep, taskT))
+	c.loadSeq++
+	dataI64 := fmt.Sprintf("%%aawy.dataI64.%d", c.loadSeq)
+	c.sb.WriteString(fmt.Sprintf("  %s = load i64, i64* %s\n", dataI64, dataGep))
+	c.loadSeq++
+	dataI8 := fmt.Sprintf("%%aawy.dataI8.%d", c.loadSeq)
+	c.sb.WriteString(fmt.Sprintf("  %s = inttoptr i64 %s to i8*\n", dataI8, dataI64))
+	c.loadSeq++
+	argsTyped := fmt.Sprintf("%%aawy.argsT.%d", c.loadSeq)
+	c.sb.WriteString(fmt.Sprintf("  %s = bitcast i8* %s to { i8* }*\n", argsTyped, dataI8))
+	c.loadSeq++
+	resPtrGep := fmt.Sprintf("%%aawy.rpGep.%d", c.loadSeq)
+	c.sb.WriteString(fmt.Sprintf("  %s = getelementptr inbounds { i8* }, { i8* }* %s, i32 0, i32 0\n", resPtrGep, argsTyped))
+	c.loadSeq++
+	resPtr := fmt.Sprintf("%%aawy.rp.%d", c.loadSeq)
+	c.sb.WriteString(fmt.Sprintf("  %s = load i8*, i8** %s\n", resPtr, resPtrGep))
+	c.loadSeq++
+	resTyped := fmt.Sprintf("%%aawy.resT.%d", c.loadSeq)
+	c.sb.WriteString(fmt.Sprintf("  %s = bitcast i8* %s to %s*\n", resTyped, resPtr, resLT))
+	c.loadSeq++
+	resVal := fmt.Sprintf("%%aawy.res.%d", c.loadSeq)
+	c.sb.WriteString(fmt.Sprintf("  %s = load %s, %s* %s\n", resVal, resLT, resLT, resTyped))
+	c.sb.WriteString(fmt.Sprintf("  store %s %s, %s* %s\n", resLT, resVal, resLT, slot))
+
+	// free the containers (result buffer, args struct, task struct). Inner owned
+	// data now lives in the result slot, so freeing only the 24/8-byte wrappers
+	// is safe.
+	c.loadSeq++
+	fr := fmt.Sprintf("%%aawy.freeres.%d", c.loadSeq)
+	c.sb.WriteString(fmt.Sprintf("  %s = bitcast i8* %s to i8*\n", fr, resPtr))
+	c.sb.WriteString(fmt.Sprintf("  call void @free(i8* %s)\n", fr))
+	c.sb.WriteString(fmt.Sprintf("  call void @free(i8* %s)\n", dataI8))
+	c.loadSeq++
+	ft := fmt.Sprintf("%%aawy.freetask.%d", c.loadSeq)
+	c.sb.WriteString(fmt.Sprintf("  %s = bitcast %%task* %s to i8*\n", ft, taskT))
+	c.sb.WriteString(fmt.Sprintf("  call void @free(i8* %s)\n", ft))
 	return nil
 }
 

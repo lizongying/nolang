@@ -4,7 +4,11 @@ import os, sys, subprocess, glob, tempfile, shutil
 ENV = dict(os.environ)
 ENV["PATH"] = "/usr/bin:/opt/homebrew/opt/llvm/bin:" + ENV.get("PATH", "")
 ROOT = "/Users/lizongying/IdeaProjects/no"
-NO = os.path.join(ROOT, "no")
+# NOTE: the authoritative binary is <repo>/bin/no (built via
+# `cd src && go build -ldflags="-s -w" -o ../bin/no ./cmd/no`). The repo-root
+# `no` is a stale build artifact left over from older workflows and silently
+# produced wrong sweep results — do not use it.
+NO = os.path.join(ROOT, "bin", "no")
 
 def run_mir(f, mode):
     out = tempfile.NamedTemporaryFile(delete=False, suffix=".out")
@@ -22,7 +26,8 @@ def run_mir(f, mode):
         out.close(); err.close()
 
 def main():
-    files = sorted(glob.glob(os.path.join(ROOT, "tests", "*.no")))
+    # Recursive: the corpus is tests/**/*.no (tests/*.no + tests/mem-safety/*.no).
+    files = sorted(glob.glob(os.path.join(ROOT, "tests", "**", "*.no"), recursive=True))
     cats = {"pass": [], "cerr": [], "crash": [], "diverge": [], "hang": []}
     for f in files:
         rc2, o2, _ = run_mir(f, 2)

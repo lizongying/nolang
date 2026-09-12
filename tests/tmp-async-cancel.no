@@ -1,0 +1,38 @@
+; tmp-async-cancel.no — async-cancel / async-cancelled / async-yield 探针
+
+worker-async = (n i64) (r i64) {
+    #{overflow = wrap}
+    r = n * 2
+}
+
+; 启动后取消，再 awy（应得 zero value 0）
+test-cancel = () {
+    h = run worker-async(100)
+    async-cancel(h)
+    r = awy h
+    print(r); expect: 0
+}
+
+; 未取消：正常完成
+test-no-cancel = () {
+    h = run worker-async(21)
+    r = awy h
+    print(r); expect: 42
+}
+
+; async-cancelled 在非事件循环驱动下应安全返回 0（false）
+test-cancelled = () {
+    c = async-cancelled()
+    print(c); expect: 0
+}
+
+; async-yield 退化路径：调用即返回（占位）
+test-yield = () {
+    async-yield()
+    print(7); expect: 7
+}
+
+test-cancel()
+test-no-cancel()
+test-cancelled()
+test-yield()

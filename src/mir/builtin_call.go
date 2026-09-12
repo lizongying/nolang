@@ -549,6 +549,14 @@ func (c *codegen) emitBuiltinForward(f *Function, inst *Inst, bm *builtin.Builti
 		return c.emitBuiltinVecTruncate(inst)
 	case "uname":
 		return c.emitBuiltinUname(inst)
+	case "net-icmp-open":
+		return c.emitBuiltinNetIcmpOpen(inst)
+	case "net-dial":
+		return c.emitBuiltinNetDial(inst)
+	case "net-send":
+		return c.emitBuiltinNetSend(inst)
+	case "net-recv":
+		return c.emitBuiltinNetRecv(inst)
 	case "read-file":
 		return c.emitBuiltinReadFile(inst)
 	case "utime":
@@ -571,6 +579,12 @@ func (c *codegen) emitBuiltinForward(f *Function, inst *Inst, bm *builtin.Builti
 		return c.emitBuiltinStoreLE(f, inst)
 	case "rotate-left", "rotate-right":
 		return c.emitBuiltinRotate(f, inst, bm.ForwardFunc)
+	case "async-cancel":
+		return c.emitBuiltinAsyncCancel(inst)
+	case "async-cancelled":
+		return c.emitBuiltinAsyncCancelled(inst)
+	case "async-yield":
+		return c.emitBuiltinAsyncYield(inst)
 	}
 	// Generic C call: the whole point of forward_call.go. Consulted LAST so a
 	// bespoke handler always wins, but it turns "add a POSIX builtin" from a new
@@ -580,6 +594,90 @@ func (c *codegen) emitBuiltinForward(f *Function, inst *Inst, bm *builtin.Builti
 	}
 	c.fail("unsupported builtin %s (ForwardFunc=%q) in func %s", inst.Sym, bm.ForwardFunc, f.Name)
 	return fmt.Errorf("unsupported builtin %s", inst.Sym)
+}
+
+// emitBuiltinAsyncCancel lowers `async-cancel(h)`: set the task's cancelled flag
+// (%task field 3 = true). `h` is MIR's opaque handle — the i64 that OpRun
+// stored (ptrtoint of the heap %task i8*), so it is inttoptr'd back to %task*
+// here. Mirrors legacy build/llvm/call_stdlib.go verbatim: the generated
+// async_wrapper.N checks this flag on entry and, when set, marks the task done
+// WITHOUT running the target (graceful abort), so a later `awy h` returns the
+// zero value — exactly std/async.no's documented contract ("若已取消则立即返回，
+// r 为 zero value").
+func (c *codegen) emitBuiltinAsyncCancel(inst *Inst) error {
+	if len(inst.Args) < 1 {
+		return fmt.Errorf("async-cancel: missing task handle")
+	}
+	lt, hreg := c.loadVal(inst.Args[0])
+	taskT := hreg
+	switch lt {
+	case "i64":
+		taskT = c.treg("acan.t")
+		c.sb.WriteString(fmt.Sprintf("  %s = inttoptr i64 %s to %%task*\n", taskT, hreg))
+	case "i8*":
+		taskT = c.treg("acan.t")
+		c.sb.WriteString(fmt.Sprintf("  %s = bitcast i8* %s to %%task*\n", taskT, hreg))
+	}
+	gep := c.treg("acan.gep")
+	c.sb.WriteString(fmt.Sprintf("  %s = getelementptr inbounds %%task, %%task* %s, i32 0, i32 3\n", gep, taskT))
+	c.sb.WriteString(fmt.Sprintf("  store i1 true, i1* %s\n", gep))
+	return nil
+}
+
+// emitBuiltinAsyncCancelled lowers `async-cancelled()`: cooperative
+// self-cancellation check. It reads @nolang_current_task (the task the
+// scheduler is currently running) and returns its cancelled flag (field 3).
+// When no task is current (e.g. a top-level `awy` sync drive, or a non-async
+// context) current_task is null, so the null arm yields false — matching the
+// legacy comment "若当前不在异步任务中...安全返回 false". The i1 result is
+// materialized via phi across the null/load arms (never dereferencing null) and
+// coerced into the destination slot's type (i1 or i64).
+func (c *codegen) emitBuiltinAsyncCancelled(inst *Inst) error {
+	if inst.Dst <= NoVal {
+		return nil
+	}
+	dstLT, _ := c.ptype(inst.Dst)
+	dstSlot := c.valSlot[inst.Dst]
+	if dstSlot == "" {
+		return fmt.Errorf("async-cancelled: no result slot")
+	}
+	cur := c.treg("acur.cur")
+	c.sb.WriteString(fmt.Sprintf("  %s = load i8*, i8** @nolang_current_task\n", cur))
+	isNull := c.treg("acur.isnull")
+	c.sb.WriteString(fmt.Sprintf("  %s = icmp eq i8* %s, null\n", isNull, cur))
+	nullDef := c.label("acur.null")
+	loadDef := c.label("acur.load")
+	doneDef := c.label("acur.done")
+	c.sb.WriteString(fmt.Sprintf("  br i1 %s, label %%%s, label %%%s\n", isNull, nullDef, loadDef))
+	c.sb.WriteString(nullDef + ":\n")
+	c.sb.WriteString(fmt.Sprintf("  br label %%%s\n", doneDef))
+	c.sb.WriteString(loadDef + ":\n")
+	cast := c.treg("acur.cast")
+	c.sb.WriteString(fmt.Sprintf("  %s = bitcast i8* %s to %%task*\n", cast, cur))
+	gep := c.treg("acur.gep")
+	c.sb.WriteString(fmt.Sprintf("  %s = getelementptr inbounds %%task, %%task* %s, i32 0, i32 3\n", gep, cast))
+	loaded := c.treg("acur.can")
+	c.sb.WriteString(fmt.Sprintf("  %s = load i1, i1* %s\n", loaded, gep))
+	c.sb.WriteString(fmt.Sprintf("  br label %%%s\n", doneDef))
+	c.sb.WriteString(doneDef + ":\n")
+	phi := c.treg("acur.phi")
+	c.sb.WriteString(fmt.Sprintf("  %s = phi i1 [ %s, %%%s ], [ false, %%%s ]\n", phi, loaded, loadDef, nullDef))
+	v := c.coerce("i1", phi, dstLT)
+	if v == "" {
+		return fmt.Errorf("async-cancelled: cannot store i1 into %s", dstLT)
+	}
+	c.sb.WriteString(fmt.Sprintf("  store %s %s, %s* %s\n", dstLT, v, dstLT, dstSlot))
+	return nil
+}
+
+// emitBuiltinAsyncYield lowers `async-yield()`. In an `-async` function used as
+// a top-level statement the legacy backend rewrites this into a coroutine
+// suspend point (coro.go); MIR has no coroutine state transformation, so it
+// always takes the degenerate path — call @nolang_async_yield, which re-enqueues
+// the current task and returns. Returns void (no destination).
+func (c *codegen) emitBuiltinAsyncYield(inst *Inst) error {
+	c.sb.WriteString("  call void @nolang_async_yield()\n")
+	return nil
 }
 
 // declareIntrinsic records a module-level `declare` for an LLVM intrinsic so it
@@ -1797,6 +1895,194 @@ func (c *codegen) emitBuiltinUname(inst *Inst) error {
 		c.sb.WriteString(fmt.Sprintf("  %s = getelementptr inbounds %s, %s* %s, i32 0, i32 %d\n", dstGEP, dstLT, dstLT, dstSlot, i))
 		c.sb.WriteString(fmt.Sprintf("  store %%str-long %s, %%str-long* %s\n", strReg, dstGEP))
 	}
+	return nil
+}
+
+// emitBuiltinNetIcmpOpen lowers `net.net-icmp-open()` -> fd i64: create an ICMP
+// socket for ping.
+//
+//	macOS: socket(AF_INET, SOCK_DGRAM=2, IPPROTO_ICMP=1) — unprivileged.
+//	Linux: socket(AF_INET, SOCK_RAW=3,  IPPROTO_ICMP=1) — needs CAP_NET_RAW.
+//
+// Returns the fd (>=0 on success, -1 on error). Mirrors the legacy backend
+// (build/llvm/call_stdlib.go net-icmp-open), which emits the @socket call inline
+// rather than through a C shim. The OS-specific sockType is chosen at codegen
+// time from runtime.GOOS (the prelude is compiled for the host).
+func (c *codegen) emitBuiltinNetIcmpOpen(inst *Inst) error {
+	dstSlot := c.valSlot[inst.Dst]
+	if dstSlot == "" {
+		return fmt.Errorf("net-icmp-open: no result slot")
+	}
+	dstLT, _ := c.ptype(inst.Dst)
+	if dstLT == "" {
+		dstLT = "i64"
+	}
+	sockType := int32(3) // SOCK_RAW (Linux)
+	if runtime.GOOS == "darwin" {
+		sockType = 2 // SOCK_DGRAM (macOS unprivileged ICMP)
+	}
+	c.decl("declare i32 @socket(i32, i32, i32)")
+	sock := c.treg("icmp.sock")
+	c.sb.WriteString(fmt.Sprintf("  %s = call i32 @socket(i32 2, i32 %d, i32 1)\n", sock, sockType))
+	fd := c.treg("icmp.fd")
+	c.sb.WriteString(fmt.Sprintf("  %s = sext i32 %s to i64\n", fd, sock))
+	if dstLT != "i64" {
+		if r := c.coerce("i64", fd, dstLT); r != "" {
+			fd = r
+		}
+	}
+	c.sb.WriteString(fmt.Sprintf("  store %s %s, %s* %s\n", dstLT, fd, dstLT, dstSlot))
+	return nil
+}
+
+// emitBuiltinNetDial lowers `net.net-dial(host, port)` -> fd i64: create a TCP
+// client connection. Performs socket(AF_INET, SOCK_STREAM, 0) + inet_pton +
+// connect. This mirrors the legacy backend's happy path for IP-literal hosts
+// (build/llvm/call_stdlib.go net-dial); hostname DNS resolution via getaddrinfo
+// is intentionally omitted for now — net-dial returns -1 for a non-IP-literal
+// host until that fallback is ported. The sockaddr_in layout differs per OS:
+//
+//	darwin: sin_len@0=16, sin_family@1=AF_INET, sin_port@2, sin_addr@4
+//	linux :                 sin_family@0=AF_INET, sin_port@2, sin_addr@4
+func (c *codegen) emitBuiltinNetDial(inst *Inst) error {
+	if len(inst.Args) < 2 {
+		return fmt.Errorf("net-dial: needs (host, port)")
+	}
+	dstSlot := c.valSlot[inst.Dst]
+	if dstSlot == "" {
+		return fmt.Errorf("net-dial: no result slot")
+	}
+	hostPtr := c.cstrOf(inst.Args[0])
+	if hostPtr == "" {
+		return fmt.Errorf("net-dial: cannot marshal host as C string")
+	}
+	_, portReg := c.loadVal(inst.Args[1])
+
+	darwin := runtime.GOOS == "darwin"
+	familyOff := int64(0)
+	if darwin {
+		familyOff = 1
+	}
+	portOff := int64(2)
+	addrOff := int64(4)
+
+	c.decl("declare i32 @socket(i32, i32, i32)")
+	c.decl("declare i32 @connect(i32, i8*, i32)")
+	c.decl("declare i32 @inet_pton(i32, i8*, i8*)")
+
+	sock := c.treg("netd.sock")
+	c.sb.WriteString(fmt.Sprintf("  %s = call i32 @socket(i32 2, i32 1, i32 0)\n", sock))
+
+	addr := c.treg("netd.addr")
+	c.sb.WriteString(fmt.Sprintf("  %s = alloca [16 x i8]\n", addr))
+	addrp := c.treg("netd.addrp")
+	c.sb.WriteString(fmt.Sprintf("  %s = getelementptr inbounds [16 x i8], [16 x i8]* %s, i64 0, i64 0\n", addrp, addr))
+	c.sb.WriteString(fmt.Sprintf("  call void @llvm.memset.p0i8.i64(i8* %s, i8 0, i64 16, i1 0)\n", addrp))
+
+	if darwin {
+		lenGEP := c.treg("netd.leng")
+		c.sb.WriteString(fmt.Sprintf("  %s = getelementptr inbounds [16 x i8], [16 x i8]* %s, i64 0, i64 0\n", lenGEP, addr))
+		c.sb.WriteString(fmt.Sprintf("  store i8 16, i8* %s\n", lenGEP))
+	}
+
+	famGEP := c.treg("netd.famg")
+	c.sb.WriteString(fmt.Sprintf("  %s = getelementptr inbounds [16 x i8], [16 x i8]* %s, i64 0, i64 %d\n", famGEP, addr, familyOff))
+	c.sb.WriteString(fmt.Sprintf("  store i8 2, i8* %s\n", famGEP))
+
+	// sin_port = htons(port) = ((port & 0xff) << 8) | ((port >> 8) & 0xff)
+	plo := c.treg("netd.plo")
+	c.sb.WriteString(fmt.Sprintf("  %s = and i64 %s, 255\n", plo, portReg))
+	plo8 := c.treg("netd.plo8")
+	c.sb.WriteString(fmt.Sprintf("  %s = shl i64 %s, 8\n", plo8, plo))
+	phi := c.treg("netd.phi")
+	c.sb.WriteString(fmt.Sprintf("  %s = lshr i64 %s, 8\n", phi, portReg))
+	phi8 := c.treg("netd.phi8")
+	c.sb.WriteString(fmt.Sprintf("  %s = and i64 %s, 255\n", phi8, phi))
+	pnet := c.treg("netd.pnet")
+	c.sb.WriteString(fmt.Sprintf("  %s = or i64 %s, %s\n", pnet, plo8, phi8))
+	pnet16 := c.treg("netd.pnet16")
+	c.sb.WriteString(fmt.Sprintf("  %s = trunc i64 %s to i16\n", pnet16, pnet))
+	portGEP := c.treg("netd.portg")
+	c.sb.WriteString(fmt.Sprintf("  %s = getelementptr inbounds [16 x i8], [16 x i8]* %s, i64 0, i64 %d\n", portGEP, addr, portOff))
+	c.sb.WriteString(fmt.Sprintf("  store i16 %s, i16* %s\n", pnet16, portGEP))
+
+	addrGEP := c.treg("netd.addrg")
+	c.sb.WriteString(fmt.Sprintf("  %s = getelementptr inbounds [16 x i8], [16 x i8]* %s, i64 0, i64 %d\n", addrGEP, addr, addrOff))
+	pton := c.treg("netd.pton")
+	c.sb.WriteString(fmt.Sprintf("  %s = call i32 @inet_pton(i32 2, i8* %s, i8* %s)\n", pton, hostPtr, addrGEP))
+	c.sb.WriteString(fmt.Sprintf("  call void @free(i8* %s)\n", hostPtr))
+
+	connRet := c.treg("netd.conn")
+	c.sb.WriteString(fmt.Sprintf("  %s = call i32 @connect(i32 %s, i8* %s, i32 16)\n", connRet, sock, addrp))
+
+	// fd = (socket ok && connect ok) ? socket : -1
+	sockOk := c.treg("netd.sok")
+	c.sb.WriteString(fmt.Sprintf("  %s = icmp sge i32 %s, 0\n", sockOk, sock))
+	sock64 := c.treg("netd.s64")
+	c.sb.WriteString(fmt.Sprintf("  %s = sext i32 %s to i64\n", sock64, sock))
+	s1 := c.treg("netd.s1")
+	c.sb.WriteString(fmt.Sprintf("  %s = select i1 %s, i64 %s, i64 -1\n", s1, sockOk, sock64))
+	connOk := c.treg("netd.cok")
+	c.sb.WriteString(fmt.Sprintf("  %s = icmp sge i32 %s, 0\n", connOk, connRet))
+	fd := c.treg("netd.fd")
+	c.sb.WriteString(fmt.Sprintf("  %s = select i1 %s, i64 %s, i64 -1\n", fd, connOk, s1))
+	c.sb.WriteString(fmt.Sprintf("  store i64 %s, i64* %s\n", fd, dstSlot))
+	return nil
+}
+
+// emitBuiltinNetSend lowers `net.net-send(fd, data, n)` -> written i64: a direct
+// send(2) on the connected socket. data is a str/[]byte; its data pointer is
+// passed with the explicit length n (no NUL termination required). Mirrors the
+// legacy backend (build/llvm/call_stdlib.go net-send).
+func (c *codegen) emitBuiltinNetSend(inst *Inst) error {
+	if len(inst.Args) < 3 {
+		return fmt.Errorf("net-send: needs (fd, data, n)")
+	}
+	dstSlot := c.valSlot[inst.Dst]
+	if dstSlot == "" {
+		return fmt.Errorf("net-send: no result slot")
+	}
+	fdReg, err := c.marshalScalar(inst, 0, "i32")
+	if err != nil {
+		return err
+	}
+	dataPtr := c.dataPtrOf(inst.Args[1])
+	if dataPtr == "" {
+		return fmt.Errorf("net-send: cannot take data pointer of arg 1")
+	}
+	_, nReg := c.loadVal(inst.Args[2])
+	c.decl("declare i64 @send(i32, i8*, i64, i32)")
+	ret := c.treg("nets")
+	c.sb.WriteString(fmt.Sprintf("  %s = call i64 @send(i32 %s, i8* %s, i64 %s, i32 0)\n", ret, fdReg, dataPtr, nReg))
+	c.sb.WriteString(fmt.Sprintf("  store i64 %s, i64* %s\n", ret, dstSlot))
+	return nil
+}
+
+// emitBuiltinNetRecv lowers `net.net-recv(fd, buf, n)` -> read-n i64: a direct
+// recv(2) into buf's data buffer. Mirrors the legacy backend (build/llvm/
+// call_stdlib.go net-recv). The received byte count is the result; the Nolang
+// string length is NOT updated (matching legacy recv on a fixed buffer).
+func (c *codegen) emitBuiltinNetRecv(inst *Inst) error {
+	if len(inst.Args) < 3 {
+		return fmt.Errorf("net-recv: needs (fd, buf, n)")
+	}
+	dstSlot := c.valSlot[inst.Dst]
+	if dstSlot == "" {
+		return fmt.Errorf("net-recv: no result slot")
+	}
+	fdReg, err := c.marshalScalar(inst, 0, "i32")
+	if err != nil {
+		return err
+	}
+	bufPtr := c.dataPtrOf(inst.Args[1])
+	if bufPtr == "" {
+		return fmt.Errorf("net-recv: cannot take data pointer of arg 1")
+	}
+	_, nReg := c.loadVal(inst.Args[2])
+	c.decl("declare i64 @recv(i32, i8*, i64, i32)")
+	ret := c.treg("netr")
+	c.sb.WriteString(fmt.Sprintf("  %s = call i64 @recv(i32 %s, i8* %s, i64 %s, i32 0)\n", ret, fdReg, bufPtr, nReg))
+	c.sb.WriteString(fmt.Sprintf("  store i64 %s, i64* %s\n", ret, dstSlot))
 	return nil
 }
 

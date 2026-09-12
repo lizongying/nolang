@@ -115,6 +115,19 @@ type lowerer struct {
 	// that also flagged plain brace-bearing literals (JSON, code templates)
 	// whose legacy output is the literal text.
 	inPrintArgs int
+
+	// structLitTypes maps an anonymous struct-literal HIR node id to the struct
+	// type name it must be given. The parser records an EMPTY Type for a bare
+	// `{ a: 1 }` literal (parseStructLit: "由 codegen 推斷" — inferred from
+	// context), and legacy resolves that context at codegen time from the call
+	// site. MIR has no call context at codegen, so lowerCallArgs seeds the
+	// expected type here from the callee's declared parameter types (e.g.
+	// `fs.open(p, opts file-opts)` makes `{ mode: 0 }` a `file-opts`) before the
+	// argument is lowered. Without it lowerStructLit emits an untyped structlit
+	// and emitSetField's FieldIndex lookup fails with "setfield field" — the
+	// 10-test fs-open/errno family (test-open-*, test_fs_error_*, test-fs-struct,
+	// test-uninit-output).
+	structLitTypes map[int32]string
 }
 
 // collectStructFields scans the HIR package for struct definitions and records
@@ -2343,6 +2356,10 @@ func (l *lowerer) lowerExpr(id int32) ValueID {
 		return l.b.Emit(op, resTyp, []ValueID{lv, rv}, "")
 	case hir.KCall:
 		return l.lowerCall(n)
+	case hir.KRun:
+		return l.lowerAsyncRun(n)
+	case hir.KAwait:
+		return l.lowerAsyncAwait(n)
 	case hir.KDot:
 		// Enum variant reference (`code.io`, `code.not-found`): the receiver is
 		// an enum type and the field is a variant name. Lower to the variant's
@@ -2416,11 +2433,95 @@ func (l *lowerer) lowerNilLit(n *hir.Node) ValueID {
 	return l.b.EmitInt(OpConst, t, 0, "")
 }
 
+// canonStructRaw resolves a possibly-unqualified struct type name to the exact
+// key used by mod.StructFields. std structs are module-qualified there (e.g.
+// `fs.file-opts`), so a bare `file-opts` must be canonicalized to the qualified
+// key before it is used as a MIR type: codegen names the LLVM struct type from
+// the StructFields key (`%` + sanitize(raw)), so a mismatch would make the
+// struct's alloca reference a non-existent LLVM type.
+func (l *lowerer) canonStructRaw(raw string) string {
+	if raw == "" {
+		return raw
+	}
+	if _, ok := l.mod.StructFields[raw]; ok {
+		return raw
+	}
+	for k := range l.mod.StructFields {
+		if strings.HasSuffix(k, "."+raw) {
+			return k
+		}
+	}
+	return raw
+}
+
+// paramRawTypesOfCallee returns the declared parameter type strings of a nolang
+// function in declaration order. A method's receiver is params[0] (the HIR
+// KParam list includes the implicit `self`), matching lowerCallArgs' implicit-
+// self convention. Returns nil when the callee has no HIR definition (builtins).
+func (l *lowerer) paramRawTypesOfCallee(callee string) []string {
+	if callee == "" {
+		return nil
+	}
+	id, ok := l.funcNames[callee]
+	if !ok {
+		return nil
+	}
+	var out []string
+	for _, c := range l.pkg.Children(id) {
+		cn := l.pkg.Node(c)
+		if cn == nil || cn.Kind != hir.KParam {
+			continue
+		}
+		raw := ""
+		if t := l.mod.Type(l.typeOfNode(cn)); t != nil {
+			raw = t.Raw
+		}
+		out = append(out, raw)
+	}
+	return out
+}
+
+// noteAnonymousStructLit records the struct type an anonymous `{...}` literal
+// argument should take, derived from the callee's parameter type at that
+// position. Only bare literals (empty n.S) and non-option parameter types are
+// seeded: an option-typed parameter (`?T`) would additionally need wrapping,
+// which is out of scope here and left to the existing promotion path.
+func (l *lowerer) noteAnonymousStructLit(id int32, typeRaw string) {
+	if id == hir.NoID || typeRaw == "" || strings.HasPrefix(typeRaw, "?") {
+		return
+	}
+	n := l.pkg.Node(id)
+	if n == nil || n.Kind != hir.KStructLit || l.pkg.Str(n.S) != "" {
+		return
+	}
+	raw := l.canonStructRaw(typeRaw)
+	if raw == "" {
+		return
+	}
+	if _, ok := l.mod.StructFields[raw]; !ok {
+		// Not a known struct (e.g. a builtin like `txt`): leave it alone rather
+		// than inventing a struct type codegen cannot lay out.
+		return
+	}
+	if l.structLitTypes == nil {
+		l.structLitTypes = map[int32]string{}
+	}
+	l.structLitTypes[id] = raw
+}
+
 // lowerStructLit lowers `T{ f: v, ... }` into a struct value: allocate the
 // struct, then store each field initializer into it via OpSetField. The result
 // value is the (addressable) struct slot, so later field reads GEP into it.
 func (l *lowerer) lowerStructLit(n *hir.Node) ValueID {
 	raw := l.pkg.Str(n.S)
+	if raw == "" {
+		// Anonymous `{...}` literal: the type is inferred from context. Use the
+		// parameter type seeded by lowerCallArgs, canonicalized to the
+		// StructFields key so codegen's LLVM struct type matches.
+		if ov, ok := l.structLitTypes[n.Id]; ok {
+			raw = l.canonStructRaw(ov)
+		}
+	}
 	typ := l.b.Type(raw)
 	res := l.b.Emit(OpStructLit, typ, nil, raw)
 	for _, fID := range l.pkg.Children(n.Id) {
@@ -3248,7 +3349,7 @@ func (l *lowerer) lowerCall(n *hir.Node) ValueID {
 	// (tests/test-option.no, tests/test-option-match.no, ...). This is the
 	// documented intent of Builder.EmitOptionWrap — see its comment.
 	if callee == "err" || callee == "ok" || callee == "some" {
-		argv := l.lowerCallArgs(n, recvV)
+		argv := l.lowerCallArgs(n, recvV, callee)
 		if optTyp := l.variantCtorOptType(argv); optTyp != NoType {
 			tag := int64(0)
 			if callee == "err" {
@@ -3279,7 +3380,16 @@ func (l *lowerer) lowerCall(n *hir.Node) ValueID {
 		l.inPrintArgs++
 		defer func() { l.inPrintArgs-- }()
 	}
-	argv := l.lowerCallArgs(n, recvV)
+	argv := l.lowerCallArgs(n, recvV, callee)
+	// Async function call (`-async` suffix): lower to OpRun — a lazily-enqueued
+	// %task whose opaque i8* handle is returned as an i64. The matching `awy`
+	// (OpAwait) drives the task to completion and reads the result. This keeps
+	// async calls out of the normal out-param call path (which would execute
+	// the function eagerly and return its value, not a handle).
+	if strings.HasSuffix(callee, "-async") {
+		handleTyp := l.b.Type("i64")
+		return l.b.Emit(OpRun, handleTyp, argv, callee)
+	}
 	// The KCall node carries NO type — the AST CallExpression has no Type field,
 	// so InferredType/KType are both empty for it. Derive the result type from
 	// the callee's signature, in three tiers:
@@ -3341,6 +3451,48 @@ func (l *lowerer) lowerCall(n *hir.Node) ValueID {
 		return NoVal
 	}
 	return dsts[0]
+}
+
+// lowerAsyncRun lowers `run <expr>` (hir.KRun). The operand is either an
+// `-async` call (lowered by lowerCall into an OpRun handle) or an existing
+// handle variable (`run f` where f already holds a handle) — in the latter
+// case we simply return the handle value. Returns the opaque handle (i64).
+func (l *lowerer) lowerAsyncRun(n *hir.Node) ValueID {
+	child := n.First
+	if child == hir.NoID {
+		return NoVal
+	}
+	cn := l.pkg.Node(child)
+	if cn != nil && cn.Kind == hir.KIdent {
+		// run <handle-var>: operand already a handle; return it as-is.
+		return l.lowerExpr(child)
+	}
+	// run <async-call>: lower the inner call (lowerCall detects -async → OpRun).
+	return l.lowerExpr(child)
+}
+
+// lowerAsyncAwait lowers `awy <expr>` (hir.KAwait) into an OpAwait that drives
+// the task to completion and loads the result. The operand is either an
+// `-async` call (lowered to a handle first) or a handle variable.
+func (l *lowerer) lowerAsyncAwait(n *hir.Node) ValueID {
+	child := n.First
+	if child == hir.NoID {
+		return NoVal
+	}
+	h := l.lowerExpr(child) // OpRun handle for a call, or the handle var
+	if h == NoVal {
+		return NoVal
+	}
+	resTyp := l.b.Type("i64")
+	// Derive the async result type when the operand is a direct call.
+	if cn := l.pkg.Node(child); cn != nil && cn.Kind == hir.KCall {
+		if callee, _ := l.resolveCallee(cn); callee != "" {
+			if rt := l.resultTypeOfCallee(callee); rt != l.voidType {
+				resTyp = rt
+			}
+		}
+	}
+	return l.b.Emit(OpAwait, resTyp, []ValueID{h}, "")
 }
 
 // resultTypeOfCallee derives the return type of a called function from its
@@ -3461,14 +3613,14 @@ func (l *lowerer) lowerMultiAssign(id int32) {
 	if len(resTypes) == 0 {
 		// Unknown/void callee: emit a plain void call and give each target a
 		// zero-initialized placeholder so later reads still resolve.
-		l.lowerCallArgs(vn, recvV)
+		l.lowerCallArgs(vn, recvV, callee)
 		for _, t := range targets {
 			l.bindPlaceholder(t)
 		}
 		return
 	}
 
-	argv := l.lowerCallArgs(vn, recvV)
+	argv := l.lowerCallArgs(vn, recvV, callee)
 	dsts := l.b.EmitCallMulti(resTypes, argv, callee)
 	for i, t := range targets {
 		if i >= len(dsts) {
@@ -3496,7 +3648,7 @@ func (l *lowerer) lowerMultiAssignCall(n *hir.Node, innerCallID int32) ValueID {
 	l.enqueueCallee(callee)
 
 	targets := l.slotArgs(n.Id, "arg")
-	argv := l.lowerCallArgs(inner, recvV)
+	argv := l.lowerCallArgs(inner, recvV, callee)
 
 	resTypes := l.resultTypesOfCallee(callee)
 	if len(resTypes) == 0 {
@@ -3510,7 +3662,7 @@ func (l *lowerer) lowerMultiAssignCall(n *hir.Node, innerCallID int32) ValueID {
 		}
 	}
 	if len(resTypes) == 0 {
-		l.lowerCallArgs(inner, recvV)
+		l.lowerCallArgs(inner, recvV, callee)
 		for _, t := range targets {
 			l.bindPlaceholder(t)
 		}
@@ -3527,10 +3679,13 @@ func (l *lowerer) lowerMultiAssignCall(n *hir.Node, innerCallID int32) ValueID {
 }
 
 // lowerCallArgs lowers the `arg` slots of a call node and prepends an explicit
-// receiver when the call is a method call.
-func (l *lowerer) lowerCallArgs(n *hir.Node, recvV ValueID) []ValueID {
+// receiver when the call is a method call. `callee` is used to seed the type of
+// any anonymous `{...}` literal argument from the callee's declared parameter
+// types (see structLitTypes); pass "" when there is no meaningful callee.
+func (l *lowerer) lowerCallArgs(n *hir.Node, recvV ValueID, callee string) []ValueID {
 	args := l.slotArgs(n.Id, "arg")
 	var argv []ValueID
+	argOffset := 0
 	if recvV != NoVal {
 		// nolang's implicit-self convention: a bare `.method(args)` call inside a
 		// method already lists the receiver as the FIRST argument node (an ident
@@ -3547,6 +3702,16 @@ func (l *lowerer) lowerCallArgs(n *hir.Node, recvV ValueID) []ValueID {
 		}
 		if !firstIsSelf {
 			argv = append(argv, recvV)
+			argOffset = 1
+		}
+	}
+	// Seed anonymous struct-literal argument types from the callee's declared
+	// parameter types before lowering, so lowerStructLit can emit a typed
+	// structlit (see structLitTypes).
+	paramRaws := l.paramRawTypesOfCallee(callee)
+	for i, a := range args {
+		if pi := i + argOffset; pi < len(paramRaws) {
+			l.noteAnonymousStructLit(a, paramRaws[pi])
 		}
 	}
 	for _, a := range args {

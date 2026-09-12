@@ -1,0 +1,23 @@
+; tmp-async-yield.no — async-yield 在 -async 目標內（讓出控制權）
+
+yielder-async = (n i64) (r i64) {
+    async-yield()
+    #{overflow = wrap}
+    r = n + 1
+}
+
+; 目標執行中讓出一次後繼續，最終返回 n+1
+test-yield-inside = () {
+    h = run yielder-async(5)
+    r = awy h
+    print(r); expect: 6
+}
+
+; 非協程上下文的退化路徑
+test-yield-plain = () {
+    async-yield()
+    print(9); expect: 9
+}
+
+test-yield-inside()
+test-yield-plain()

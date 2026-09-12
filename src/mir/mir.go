@@ -133,6 +133,17 @@ const (
 	// %vec straight into the %str-long slot, and nolang treats the bytes as text.
 	OpStrFromVec
 
+	// async task runtime (cooperative scheduler; mirrors legacy build/llvm)
+	// OpRun builds a lazily-enqueued %task for an `-async` function call and
+	// returns its opaque i8* handle. Sym carries the async callee's LLVM name;
+	// Args are the already-lowered argument values. When Sym is empty the
+	// operand is already a handle (run <future-var>) and OpRun just returns it.
+	OpRun
+	// OpAwait drives a %task handle to completion (synchronously invokes its
+	// resume_fn if not yet done) and loads the result. Dst is the result value;
+	// its LLVM type is the async function's result type. Args[0] is the handle.
+	OpAwait
+
 	opCount
 )
 
@@ -169,6 +180,8 @@ var opNames = [opCount]string{
 	OpCast:      "cast",
 	OpTxtFromStr: "txt-from-str",
 	OpStrFromVec: "str-from-vec",
+	OpRun:       "run",
+	OpAwait:     "await",
 }
 
 func (o Op) String() string {
