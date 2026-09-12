@@ -8,6 +8,7 @@ import (
 
 	"github.com/lizongying/nolang/builtin"
 	"github.com/lizongying/nolang/hir"
+	"github.com/lizongying/nolang/parser"
 )
 
 
@@ -102,6 +103,18 @@ type lowerer struct {
 	// variant references (`code.io`) to i64 discriminants, and to map enum types
 	// to i64 in type resolution.
 	enumVariants map[string][]string
+
+	// inPrintArgs is >0 while the arguments of a print-family call are being
+	// lowered. A `{name}` field inside a string literal is ONLY substituted at
+	// such a call site (legacy: llvm.shouldInterceptNamedFormat is consulted
+	// from callFmt, i.e. print/eprint/printf/format and nothing else); every
+	// other context — `s = 'x={n}'`, an argument to a user function, a struct
+	// field — prints the braces LITERALLY. This flag lets lowerExpr's KStrLit
+	// case raise the "interp" fallback diagnostic only for the print-family
+	// case, instead of the old blanket `Contains("{") && Contains("}")` test
+	// that also flagged plain brace-bearing literals (JSON, code templates)
+	// whose legacy output is the literal text.
+	inPrintArgs int
 }
 
 // collectStructFields scans the HIR package for struct definitions and records
@@ -1032,6 +1045,23 @@ func (l *lowerer) lowerStmt(id int32) {
 		break
 	}
 	l.typeHint = NoType
+		// A binding DECLARED as `str` whose initializer is a []byte value must
+		// be reinterpreted, not stored as-is: `data str = fs.read-file(path)`
+		// (tests/mem-safety/bug12-builtin-slice-to-str.no) assigns the read-file
+		// %vec into a %str-long slot. Legacy does that reinterpret directly; MIR
+		// needs an explicit conversion or every later use of `data` (concat,
+		// `==`) passes a %vec where a %str-long is expected and opt rejects it.
+		if val != NoVal {
+			if dt := l.typeOfNode(n); dt != NoType && dt != l.voidType {
+				if dty := l.mod.Type(dt); dty != nil && dty.Raw == "str" {
+					if vt := l.valueTypeOf(val); vt != NoType && vt != l.voidType {
+						if vty := l.mod.Type(vt); vty != nil && vty.Kind == KindSlice {
+							val = l.b.Emit(OpStrFromVec, l.b.Type("str"), []ValueID{val}, "")
+						}
+					}
+				}
+			}
+		}
 		if val == NoVal {
 			// Declaration with NO initializer: `blk [16]byte` / `buf str`.
 			// Nolang zero-initializes these. Lowering used to skip binding
@@ -1684,16 +1714,36 @@ func (l *lowerer) lowerArrayElems(elems []int32) ValueID {
 	if len(elems) == 0 {
 		return NoVal
 	}
+	// Determine the element type from the first element. The declared/HIR type
+	// is authoritative when known, but it resolves to `void` for some call
+	// expressions (e.g. `a = [a.len()]` where the element is a method call).
+	// In that case lower the first element up-front and use its actual value
+	// type, so we emit `[1]i64` instead of the invalid `[1]void`.
+	var firstVal ValueID = NoVal
 	elemT := l.typeOfNode(l.pkg.Node(elems[0]))
-	elemRaw := "i64"
-	if ty := l.mod.Type(elemT); ty != nil && ty.Raw != "" {
+	elemRaw := ""
+	if ty := l.mod.Type(elemT); ty != nil && ty.Raw != "" && ty.Raw != "void" {
 		elemRaw = ty.Raw
+	}
+	if elemRaw == "" {
+		firstVal = l.lowerExpr(elems[0])
+		if firstVal != NoVal {
+			if ty := l.mod.Type(l.valueTypeOf(firstVal)); ty != nil && ty.Raw != "" && ty.Raw != "void" {
+				elemRaw = ty.Raw
+			}
+		}
+	}
+	if elemRaw == "" || elemRaw == "void" {
+		elemRaw = "i64"
 	}
 	arrRaw := fmt.Sprintf("[%d]%s", len(elems), elemRaw)
 	arrT := l.b.Type(arrRaw)
 	arrV := l.b.Emit(OpConst, arrT, nil, "")
 	for k, e := range elems {
-		ev := l.lowerExpr(e)
+		ev := firstVal
+		if k != 0 || ev == NoVal {
+			ev = l.lowerExpr(e)
+		}
 		if ev == NoVal {
 			return NoVal
 		}
@@ -1910,6 +1960,21 @@ func (l *lowerer) lowerExpr(id int32) ValueID {
 			return NoVal
 		}
 		elemT := l.elementTypeOf(arrV)
+		// A narrow (byte/u8) element READ is promoted to i64, matching the
+		// legacy backend, which materializes a byte loaded out of a
+		// byte-addressed buffer as a full i64 register. Keeping the read at i8
+		// made every wider expression built on it truncate: `padded[i] << 24`
+		// in std/crypto/sha1 yielded 0 (0x61 << 24 truncated to one byte)
+		// instead of 0x61000000, producing a wrong-but-exit-0 SHA-1 digest.
+		// Only the READ is promoted — OpIndexStore keeps the true element type
+		// (see codegen.elemTypeOfReceiver) so a write still stores one byte.
+		if elemT != l.voidType {
+			if et := l.mod.Type(elemT); et != nil && (et.Raw == "byte" || et.Raw == "u8" || et.Raw == "i8") {
+				if i64T := l.b.Type("i64"); i64T != l.voidType {
+					elemT = i64T
+				}
+			}
+		}
 		return l.b.Emit(OpIndex, elemT, []ValueID{arrV, idxV}, "")
 	case hir.KArrayLit:
 		// Typed fixed array literal: `a [N] = [e0, e1, ...]`. In HIR the KArrayLit
@@ -1996,16 +2061,32 @@ func (l *lowerer) lowerExpr(id int32) ValueID {
 		return l.b.EmitInt(OpConst, l.typeOfNode(n), val, "")
 	case hir.KStrLit:
 		s := l.pkg.Str(n.S)
+		// Nolang string interpolation (`print('x={expr}')`) is substituted ONLY
+		// at a print-family call site; see lowerNamedFormat. Everything else
+		// (`s = 'x={n}'`, a struct field, an argument to a user function) emits
+		// the braces literally — verified against the legacy backend, whose
+		// named-format interception is reachable solely from callFmt.
+		//
+		// The old test here was `Contains("{") && Contains("}")`, which also
+		// flagged ordinary brace-bearing literals (JSON, code templates, `{}`
+		// in embedded sources) and forced a whole-module fallback for them.
+		// Now the diagnostic is raised only when the literal really is a
+		// format string AND it appears as a print-family argument that the
+		// interception failed to lower — i.e. exactly the case where emitting
+		// the raw text would be silently wrong.
 		if strings.Contains(s, "{") && strings.Contains(s, "}") {
-			// Nolang string interpolation (`'x={expr}'`) is not yet lowered by
-			// the v1 MIR backend: it would emit the raw literal with the
-			// UNSUBSTITUTED `{expr}` text, producing WRONG output that still
-			// exits 0 — a silent correctness regression versus the legacy path
-			// (which substitutes). Record a FATAL lower diagnostic (kind
-			// "interp") so emitMIR falls back to the legacy HIR codegen for the
-			// whole module. Shipping unsubstituted output is strictly worse than
-			// using the legacy backend, so we never let MIR emit it.
-			l.unsupported(l.curFuncName(), "interp", "string interpolation not lowered: "+interpPreview(s))
+			if segs, err := parser.ParseFormatString(s); err == nil {
+				hasField := false
+				for _, sg := range segs {
+					if sg.Field != nil {
+						hasField = true
+						break
+					}
+				}
+				if hasField && l.inPrintArgs > 0 {
+					l.unsupported(l.curFuncName(), "interp", "string interpolation not lowered: "+interpPreview(s))
+				}
+			}
 		}
 		return l.b.EmitStr(OpConst, l.b.Type("str"), s, "")
 	case hir.KCharLit:
@@ -2116,6 +2197,71 @@ func (l *lowerer) lowerExpr(id int32) ValueID {
 			lv = l.lowerExpr(lr[0])
 			rv = l.lowerExpr(lr[1])
 		}
+		// Arithmetic on a single-character string literal (`"A" + 1`) is BYTE
+		// arithmetic, not string concatenation: legacy's isStringExpr rejects
+		// one-rune string literals, so `"A"` folds to 65 and the result is 66.
+		// Without this the literal stayed a %str-long, the infix fell through to
+		// `add i64 <str>, 1`, and LLVM verification rejected the module
+		// (tests/test-str-ops.no). Comparisons are left alone — `s == "A"` is a
+		// string compare, handled by the OpStrEq path below.
+		// Determine str-ness of each operand BEFORE any byte folding below.
+		rawOf := func(v ValueID) string {
+			t := l.valueTypeOf(v)
+			if t == l.voidType || t == NoType {
+				return ""
+			}
+			if ty := l.mod.Type(t); ty != nil {
+				return ty.Raw
+			}
+			return ""
+		}
+		lStr := rawOf(lv) == "str"
+		rStr := rawOf(rv) == "str"
+		// Nolang quoting: `'...'` is a StringLiteral, `"..."` is a CharLiteral
+		// (already a byte-valued i64 here). A ONE-character StringLiteral paired
+		// with a non-string operand is BYTE arithmetic, not concatenation:
+		// `'A' + 1` is 66 (tests/test-str-ops.no). Legacy's isStringExpr gates
+		// this on the sibling NOT being a string, so `'a' + 'b'` stays "ab".
+		// It applies to `+`/`-` only — for `*` a string literal is always a
+		// string (`'x' * 5` is repeat -> "xxxxx"), never a byte.
+		srcOp := l.pkg.Str(n.S)
+		if !isCmp && (srcOp == "+" || srcOp == "-") {
+			if sn := l.pkg.Node(lr[0]); sn != nil && sn.Kind == hir.KStrLit && !rStr {
+				if b, ok := singleCharStrByte(l.pkg.Str(sn.S)); ok {
+					lv = l.b.EmitInt(OpConst, l.b.Type("i64"), b, "")
+					lStr = false
+				}
+			}
+			if sn := l.pkg.Node(lr[1]); sn != nil && sn.Kind == hir.KStrLit && !lStr {
+				if b, ok := singleCharStrByte(l.pkg.Str(sn.S)); ok {
+					rv = l.b.EmitInt(OpConst, l.b.Type("i64"), b, "")
+					rStr = false
+				}
+			}
+		}
+		// `str <op> char` (`hi - "B"`) is concatenation with the character
+		// rendered as a ONE-character string, not as its decimal code — legacy
+		// uses byteToSingleCharStr here. Materialize the character as a str
+		// constant so emitArith sees two %str-long operands and never falls
+		// into emitIntToStr (which would print "hello66" instead of "helloB").
+		if !isCmp && (srcOp == "+" || srcOp == "-" || srcOp == "*") {
+			if lStr && !rStr {
+				if sn := l.pkg.Node(lr[1]); sn != nil && sn.Kind == hir.KCharLit {
+					if cp, ok := charLitCode(l.pkg.Str(sn.S)); ok {
+						rv = l.b.EmitStr(OpConst, l.b.Type("str"), string(rune(cp)), "")
+						rStr = true
+					}
+				}
+			}
+			if rStr && !lStr {
+				if sn := l.pkg.Node(lr[0]); sn != nil && sn.Kind == hir.KCharLit {
+					if cp, ok := charLitCode(l.pkg.Str(sn.S)); ok {
+						lv = l.b.EmitStr(OpConst, l.b.Type("str"), string(rune(cp)), "")
+						lStr = true
+					}
+				}
+			}
+		}
 		resTyp := l.typeOfNode(n)
 		if isCmp {
 			resTyp = l.b.Type("bool")
@@ -2132,12 +2278,29 @@ func (l *lowerer) lowerExpr(id int32) ValueID {
 				resTyp = rt
 			}
 		}
-		// String concatenation (`a - b` / `a + b` on str operands) yields a
-		// str, never void. Without this the infix result value is typed void
-		// and emitArith emits an illegal `add void` (or `sub void`) on the
-		// %str-long operands. Detect it from the operand raw types.
-		if !isCmp && l.valueRaw(lv) == "str" && l.valueRaw(rv) == "str" {
+		// String concatenation (`a - b` / `a + b` with a str operand) yields a
+		// str, never void or a scalar. Without this the infix result value is
+		// typed i64 and emitArith emits an illegal `sub i64 %str-long, ...`
+		// (tests/test-str-ops.no: `hi - "B"`).
+		//
+		// A single str operand is enough: mixed `str + int` promotes the int to
+		// a decimal string (emitArith does exactly that), and `str * int` is
+		// string repeat, not multiplication — both need the str result type.
+		// Only `+`, `-` (concat) and `*` (repeat) are string operators; for
+		// every other op a str operand is a type error and we keep the old
+		// behaviour rather than silently turning it into a concat.
+		if !isCmp && (srcOp == "+" || srcOp == "-" || srcOp == "*") && (lStr || rStr) {
 			resTyp = l.b.Type("str")
+		}
+		// A `+`/`-` where NEITHER operand is a string after the folding above is
+		// byte/int arithmetic even when the checker inferred `str` from the
+		// literal (`'A' + 1` -> inferred str, but legacy yields the int 66).
+		// Without this the result stays a str and emitArith concatenates the
+		// decimal forms — "651" instead of 66.
+		if !isCmp && (srcOp == "+" || srcOp == "-") && !lStr && !rStr {
+			if ty := l.mod.Type(resTyp); ty != nil && ty.Raw == "str" {
+				resTyp = l.b.Type("i64")
+			}
 		}
 		// String equality/inequality cannot be a direct `icmp` (str is a struct),
 		// so route it through the runtime @str_eq helper via OpStrEq. `!=` negates
@@ -2149,6 +2312,33 @@ func (l *lowerer) lowerExpr(id int32) ValueID {
 			}
 			fals := l.b.EmitInt(OpConst, l.b.Type("bool"), 0, "")
 			return l.b.Emit(OpNe, l.b.Type("bool"), []ValueID{eq, fals}, "")
+		}
+		// An arithmetic/bitwise op whose DECLARED result type is a narrow int
+		// but whose operands lowered to a WIDER value must keep the wider type.
+		// `padded[i] << 24` (a byte element, promoted to i64 by the KIndex read
+		// above) would otherwise truncate straight back to one byte — 0x61 << 24
+		// becomes 0, and `(a<<24)|(b<<16)|c` collapses to just `c` — which
+		// silently corrupted std/crypto/sha1's message schedule and digest.
+		// Legacy behaves the same way: it computes in the operand's register
+		// width, so a byte VARIABLE (`b byte = 255; b << 4` -> 240) still wraps
+		// at 8 bits while a byte read out of a buffer yields the full value.
+		// Only widen when an operand really IS wider; never narrow a result.
+		if !isCmp && isArithOrBitwiseOp(op) {
+			if rt := l.mod.Type(resTyp); rt != nil && (rt.Raw == "byte" || rt.Raw == "u8" || rt.Raw == "i8") {
+				for _, side := range [...]ValueID{lv, rv} {
+					if side == NoVal {
+						continue
+					}
+					st := l.valueTypeOf(side)
+					if st == l.voidType || st == NoType {
+						continue
+					}
+					if stt := l.mod.Type(st); stt != nil && stt.Raw == "i64" {
+						resTyp = st
+						break
+					}
+				}
+			}
 		}
 		return l.b.Emit(op, resTyp, []ValueID{lv, rv}, "")
 	case hir.KCall:
@@ -2252,6 +2442,13 @@ func (l *lowerer) lowerStructLit(n *hir.Node) ValueID {
 		// FieldIndex lookup matches the GETFIELD convention in lowerDotRead.
 		sid := l.b.EmitVoid(OpSetField, []ValueID{res, vv}, "")
 		l.mod.Insts[sid].Str = fieldName
+		// The field initializer is consumed by the constructor: its heap
+		// transfers into the struct field. Mark it so the drop pass does not
+		// free the initializer's temporary separately (which would free a
+		// buffer the struct — and any struct moved out of the frame — still
+		// points to; the SIGSEGV / NUL-name behind struct-field-leak and
+		// struct-move-is-moved).
+		l.mod.Insts[sid].MovesArg = true
 	}
 	return res
 }
@@ -2701,6 +2898,328 @@ func sliceMethodBuiltin(recvTypeName, method string) string {
 	return ""
 }
 
+// variantCtorOptType derives the ?T result type of an option-variant
+// constructor call (`err(x)` / `ok(x)` / `some(x)`). It prefers the LHS/context
+// type hint when that is an option (e.g. `x3 ?str = err('msg')` publishes
+// `?str` via lowerAssignNode), and otherwise derives `?<elem>` from the single
+// payload argument's type. Returns NoType when neither is available, so the
+// caller falls through to the (incorrect) generic path and surfaces a
+// diagnostic instead of building a malformed option.
+func (l *lowerer) variantCtorOptType(argv []ValueID) TypeID {
+	if ht := l.typeHint; ht != NoType && ht != l.voidType {
+		if tt := l.mod.Type(ht); tt != nil && tt.Kind == KindOption {
+			return ht
+		}
+	}
+	if len(argv) > 0 {
+		at := l.valueTypeOf(argv[0])
+		if at != NoType && at != l.voidType {
+			if at2 := l.mod.Type(at); at2 != nil && at2.Raw != "" {
+				if ot := l.b.Type("?" + at2.Raw); ot != l.voidType {
+					return ot
+				}
+			}
+		}
+	}
+	return NoType
+}
+
+// namedFormatKind describes how a print-family callee consumes its format
+// string: which stream it writes to, whether a trailing newline is appended,
+// and whether it RETURNS the formatted string instead of writing it.
+type namedFormatKind struct {
+	stderr  bool
+	newline bool
+	retStr  bool
+}
+
+// namedFormatFns mirrors llvm.shouldInterceptNamedFormat: exactly these
+// builtins perform {name:spec} substitution. `println` is deliberately ABSENT
+// — the legacy table does not list it either, so `println('x={n}')` prints the
+// braces literally in both backends.
+var namedFormatFns = map[string]namedFormatKind{
+	"print":   {newline: true},
+	"eprint":  {stderr: true, newline: true},
+	"printf":  {},
+	"eprintf": {stderr: true},
+	"format":  {retStr: true},
+	"sprintf": {retStr: true},
+}
+
+// isPrintFamilyCallee reports whether callee is one of the builtins that
+// perform named-format substitution (possibly `fmt.`-qualified). A method call
+// such as `w.print(...)` is NOT one of them.
+func isPrintFamilyCallee(callee string) bool {
+	base := callee
+	if i := strings.LastIndex(base, "."); i >= 0 {
+		if base[:i] != "fmt" {
+			return false
+		}
+		base = base[i+1:]
+	}
+	_, ok := namedFormatFns[base]
+	return ok
+}
+
+// lowerNamedFormat lowers a print-family call whose format string contains
+// {name} / {name:spec} fields. It mirrors the legacy path
+// (llvm.callNamedFormat) in two respects that matter for output equality:
+//
+//   - interception happens ONLY for a print-family callee, and for
+//     print/eprint only when the call has exactly one argument; and
+//   - each literal segment is written verbatim, each field is rendered by the
+//     std fmt-* helper (fmt-int / fmt-uint / fmt-f64 / fmt-str / fmt-bool),
+//     and print/eprint append a single trailing newline.
+//
+// Returns false when the call is not a named-format call (or the format string
+// parses but has no fields), so the generic path handles it. Returns true when
+// the call was lowered — or when it deliberately refused to lower and recorded
+// an "interp" fallback diagnostic, because emitting the un-substituted text
+// would be silently wrong.
+func (l *lowerer) lowerNamedFormat(callee string, n *hir.Node) (bool, ValueID) {
+	base := callee
+	if i := strings.LastIndex(base, "."); i >= 0 {
+		if base[:i] != "fmt" {
+			return false, NoVal
+		}
+		base = base[i+1:]
+	}
+	k, ok := namedFormatFns[base]
+	if !ok {
+		return false, NoVal
+	}
+	args := l.slotArgs(n.Id, "arg")
+	if len(args) == 0 {
+		return false, NoVal
+	}
+	// Legacy intercepts print/eprint only for a single string-literal argument;
+	// a multi-arg call goes through the variadic (space-separated) path.
+	if (base == "print" || base == "eprint") && len(args) != 1 {
+		return false, NoVal
+	}
+	a0 := l.pkg.Node(args[0])
+	if a0 == nil || a0.Kind != hir.KStrLit {
+		return false, NoVal
+	}
+	s := l.pkg.Str(a0.S)
+	if !strings.Contains(s, "{") {
+		return false, NoVal
+	}
+	segs, err := parser.ParseFormatString(s)
+	if err != nil {
+		return false, NoVal
+	}
+	hasField := false
+	for _, sg := range segs {
+		if sg.Field != nil {
+			hasField = true
+			break
+		}
+	}
+	if !hasField {
+		return false, NoVal
+	}
+	if k.retStr {
+		// format()/sprintf() CONCATENATE the segments into one str result.
+		return l.lowerNamedFormatResult(segs, s)
+	}
+	writeFn := "$print_str"
+	nlFn := "$print_nl"
+	if k.stderr {
+		writeFn = "$eprint_str"
+		nlFn = "$eprint_nl"
+	}
+	for _, sg := range segs {
+		if sg.Field == nil {
+			if sg.Literal == "" {
+				continue
+			}
+			lit := l.b.EmitStr(OpConst, l.b.Type("str"), sg.Literal, "")
+			l.b.EmitVoid(OpCall, []ValueID{lit}, writeFn)
+			continue
+		}
+		v, ok := l.lowerFormatField(sg.Field)
+		if !ok {
+			// lowerFormatField already recorded the fallback diagnostic.
+			return true, NoVal
+		}
+		l.b.EmitVoid(OpCall, []ValueID{v}, writeFn)
+	}
+	if k.newline {
+		l.b.EmitVoid(OpCall, nil, nlFn)
+	}
+	return true, NoVal
+}
+
+// lowerNamedFormatResult builds the str RESULT of format()/sprintf() by folding
+// every rendered segment with the synthetic $str_concat helper (legacy folds the
+// same way in callNamedFormat via concatStrLongPtrs). A single segment is
+// returned as-is; an empty format string yields an empty str constant.
+func (l *lowerer) lowerNamedFormatResult(segs []parser.FormatSegment, src string) (bool, ValueID) {
+	strT := l.b.Type("str")
+	var pieces []ValueID
+	for _, sg := range segs {
+		if sg.Field == nil {
+			if sg.Literal == "" {
+				continue
+			}
+			pieces = append(pieces, l.b.EmitStr(OpConst, strT, sg.Literal, ""))
+			continue
+		}
+		v, ok := l.lowerFormatField(sg.Field)
+		if !ok {
+			// lowerFormatField already recorded the fallback diagnostic.
+			return true, NoVal
+		}
+		pieces = append(pieces, v)
+	}
+	if len(pieces) == 0 {
+		return true, l.b.EmitStr(OpConst, strT, "", "")
+	}
+	acc := pieces[0]
+	for _, p := range pieces[1:] {
+		dsts := l.b.EmitCallMulti([]TypeID{strT}, []ValueID{acc, p}, "$str_concat")
+		if len(dsts) == 0 {
+			l.unsupported(l.curFuncName(), "interp", "format() concat produced no result: "+interpPreview(src))
+			return true, NoVal
+		}
+		acc = dsts[0]
+	}
+	return true, acc
+}
+
+// lowerFormatField renders one {name[:spec]} field into a str value by calling
+// the matching std fmt-* helper. It handles only fields whose name is a simple
+// identifier bound in the current function or as a module global — an
+// expression field (`{hash[i]:02x}`) is source text that can no longer be
+// parsed here, so it is refused with an "interp" fallback diagnostic.
+func (l *lowerer) lowerFormatField(f *parser.FormatField) (ValueID, bool) {
+	if f == nil || f.Name == "" {
+		l.unsupported(l.curFuncName(), "interp", "empty format field")
+		return NoVal, false
+	}
+	v, ok := l.lookupFormatValue(f.Name)
+	if !ok {
+		l.unsupported(l.curFuncName(), "interp", "unresolved format field "+f.Name)
+		return NoVal, false
+	}
+	raw := ""
+	if t := l.mod.Type(l.valueTypeOf(v)); t != nil {
+		raw = t.Raw
+	}
+	raw = strings.TrimPrefix(raw, "?")
+	fn := ""
+	switch {
+	case raw == "str":
+		fn = "fmt-str"
+	case raw == "f64" || raw == "float" || raw == "double":
+		fn = "fmt-f64"
+		// NOTE: `bool` deliberately does NOT go through std fmt-bool here.
+		// fmt-bool renders "true"/"false", but the legacy backend renders a
+		// bool format field as "1"/"0" in function bodies (its varTypes table
+		// does not expose i1 for locals, so dispatchFmtCall falls through to
+		// fmt-int) — the same 1/0 that MIR's own print_bool emits for plain
+		// `print(b)`. Routing through fmt-int keeps MIR self-consistent
+		// (print(b) and print('{b}') agree) and matches the corpus-dominant
+		// legacy output. Only legacy's top-level-script mode prints "true",
+		// which is the inconsistent case (its print(b) prints "true" there
+		// too — MIR standardizes on 1/0 for both).
+	case raw == "" || strings.HasPrefix(raw, "option") || strings.HasPrefix(raw, "[]") ||
+		strings.HasPrefix(raw, "[") || strings.Contains(raw, "{"):
+		// Container / option / unknown: legacy has no fmt-* helper for these
+		// either (it routes them through .to-str or emits ""). Refuse instead
+		// of guessing.
+		l.unsupported(l.curFuncName(), "interp", "format field type "+raw+" not lowered")
+		return NoVal, false
+	default:
+		// Integer (i8..i64, u8..u64, byte, int, ...). The unsigned renderings
+		// (b/o/x/X/p) go through fmt-uint, everything else through fmt-int —
+		// exactly llvm.dispatchFmtCall.
+		fn = "fmt-int"
+		if f.Parsed != nil {
+			switch f.Parsed.Type {
+			case 'b', 'o', 'x', 'X', 'p':
+				fn = "fmt-uint"
+			}
+		}
+	}
+	l.enqueueCallee(fn)
+	strT := l.b.Type("str")
+	specV := l.b.EmitStr(OpConst, strT, f.Spec, "")
+	argV := v
+	if fn == "fmt-int" || fn == "fmt-uint" {
+		// fmt-int / fmt-uint take an i64; widen a narrower integer so the
+		// out-parameter store is not a type mismatch.
+		if i64T := l.b.Type("i64"); l.valueTypeOf(v) != i64T {
+			if lt := l.mod.Type(l.valueTypeOf(v)); lt != nil && isIntegerMIRType(lt.Raw) && lt.Raw != "i64" {
+				argV = l.b.Emit(OpCast, i64T, []ValueID{v}, "")
+			}
+		}
+	}
+	dsts := l.b.EmitCallMulti([]TypeID{strT}, []ValueID{argV, specV}, fn)
+	if len(dsts) == 0 {
+		l.unsupported(l.curFuncName(), "interp", "fmt call "+fn+" produced no result")
+		return NoVal, false
+	}
+	return dsts[0], true
+}
+
+// fmtIndexFieldRe matches the only expression shape a format field
+// realistically uses: `ident[index]` (e.g. `{hash[i]:02x}`).
+var fmtIndexFieldRe = regexp.MustCompile(`^([A-Za-z_][A-Za-z0-9_-]*)\[([A-Za-z_][A-Za-z0-9_-]*|[0-9]+)\]$`)
+
+// lookupFormatValue resolves the value a {name} format field refers to.
+//
+// A field name is SOURCE TEXT (`hash[i]`, `content.len-bytes()`), and MIR sees
+// only HIR — there is no parser left at this stage, so a general expression
+// field cannot be lowered and is refused (legacy re-parses it with
+// lexer+parser+checker, which is not available here). The one shape worth
+// supporting is a container element read, because printing a byte/word of a
+// buffer is the single most common use of an expression field
+// (`print('{hash[i]:02x}')`); it lowers to the same OpIndex the ordinary
+// `a[i]` expression uses.
+func (l *lowerer) lookupFormatValue(name string) (ValueID, bool) {
+	if v, ok := l.locals[name]; ok {
+		return v, true
+	}
+	if _, isGlobal := l.globals[name]; isGlobal {
+		return l.lowerGlobalRef(name), true
+	}
+	m := fmtIndexFieldRe.FindStringSubmatch(name)
+	if m == nil {
+		return NoVal, false
+	}
+	base, ok := l.lookupFormatValue(m[1])
+	if !ok {
+		return NoVal, false
+	}
+	var idxV ValueID
+	if n, err := strconv.ParseInt(m[2], 0, 64); err == nil {
+		idxV = l.b.EmitInt(OpConst, l.b.Type("i64"), n, "")
+	} else if iv, ok := l.lookupFormatValue(m[2]); ok {
+		idxV = iv
+	} else {
+		return NoVal, false
+	}
+	elemT := l.elementTypeOf(base)
+	if elemT == l.voidType {
+		return NoVal, false
+	}
+	return l.b.Emit(OpIndex, elemT, []ValueID{base, idxV}, ""), true
+}
+
+// isIntegerMIRType reports whether a nolang type string is a scalar integer
+// that needs widening before being handed to fmt-int / fmt-uint.
+func isIntegerMIRType(raw string) bool {
+	switch raw {
+	case "i8", "i16", "i32", "i64", "u8", "u16", "u32", "u64", "byte", "char", "int", "uint":
+		return true
+	}
+	// `bool` is an i1 at the LLVM level and is rendered through fmt-int
+	// (see lowerFormatField); it needs the same zext to i64.
+	return raw == "bool"
+}
+
 func (l *lowerer) lowerCall(n *hir.Node) ValueID {
 	callee, recvV := l.resolveCallee(n)
 	if callee == "" {
@@ -2719,8 +3238,47 @@ func (l *lowerer) lowerCall(n *hir.Node) ValueID {
 		return NoVal
 	}
 	// reachability: enqueue the referenced function for lowering
+	// Option variant constructors `err(x)` / `ok(x)` / `some(x)` are CALLS
+	// (they carry a payload argument), distinct from the bare variant
+	// identifiers handled in the KIdent case (hir2mir.go). Route them through
+	// EmitOptionWrap so the ?T option value is built inline with the correct
+	// discriminant and payload type. The generic call path mis-resolves `err`
+	// to the std io.err stderr-writer (i64 result) and the caller then inserts
+	// that i64 into the %str-long option payload slot, which opt rejects
+	// (tests/test-option.no, tests/test-option-match.no, ...). This is the
+	// documented intent of Builder.EmitOptionWrap — see its comment.
+	if callee == "err" || callee == "ok" || callee == "some" {
+		argv := l.lowerCallArgs(n, recvV)
+		if optTyp := l.variantCtorOptType(argv); optTyp != NoType {
+			tag := int64(0)
+			if callee == "err" {
+				tag = 2
+			}
+			var payload ValueID = NoVal
+			if len(argv) > 0 {
+				payload = argv[0]
+			}
+			return l.b.EmitOptionWrap(optTyp, tag, payload)
+		}
+	}
+
+	// Named-format interception: `print('x={n}')` / `eprint('{a}:{b}')` /
+	// `printf('{pi:.2f}')`. The legacy backend substitutes {name[:spec]}
+	// fields at the print site only (llvm.callFmt -> callNamedFormat); MIR
+	// must do the same HERE, at lowering time, because the field name is
+	// source text that is gone by codegen. Returns true when the call has
+	// been fully lowered (or deliberately refused with a fallback
+	// diagnostic) and the generic path below must not run.
+	if handled, res := l.lowerNamedFormat(callee, n); handled {
+		return res
+	}
+
 	l.enqueueCallee(callee)
 
+	if isPrintFamilyCallee(callee) {
+		l.inPrintArgs++
+		defer func() { l.inPrintArgs-- }()
+	}
 	argv := l.lowerCallArgs(n, recvV)
 	// The KCall node carries NO type — the AST CallExpression has no Type field,
 	// so InferredType/KType are both empty for it. Derive the result type from
@@ -3267,6 +3825,43 @@ func prefixOp(s string) Op {
 		return OpNot
 	}
 	return OpInvalid
+}
+
+// isArithOrBitwiseOp reports whether op is an integer arithmetic / bitwise
+// infix operator (i.e. NOT a comparison and NOT a string op), used by the
+// narrow-result widening rule in lowerExpr's KInfix case.
+// isArithOrBitwiseOp reports whether op is a numeric/bitwise operator.
+func isArithOrBitwiseOp(op Op) bool {
+	switch op {
+	case OpAdd, OpSub, OpMul, OpDiv, OpMod, OpBitAnd, OpBitOr, OpXor, OpShl, OpShr:
+		return true
+	}
+	return false
+}
+
+// singleCharStrByte returns the byte value of a one-rune string literal
+// (`"A"` -> 65). In arithmetic context nolang treats a single-character string
+// literal as a BYTE, not a string — legacy's isStringExpr returns false for it,
+// which is why `"A" + 1` is 66 and not "A1" (tests/test-str-ops.no). Returns
+// false for the empty string and for multi-rune literals, which stay strings.
+// charLitCode returns the code point of a char literal node's text. The raw
+// text may or may not still carry quotes (`'B'`, `"B"` or bare `B` depending on
+// where in the pipeline it was produced), so strip both quote styles and take
+// the first rune — mirroring lowerCharLit.
+func charLitCode(s string) (int64, bool) {
+	t := strings.Trim(s, "'\"")
+	for _, r := range t {
+		return int64(r), true
+	}
+	return 0, false
+}
+
+func singleCharStrByte(s string) (int64, bool) {
+	rs := []rune(s)
+	if len(rs) != 1 {
+		return 0, false
+	}
+	return int64(rs[0]), true
 }
 
 func infixOp(s string) (Op, bool) {

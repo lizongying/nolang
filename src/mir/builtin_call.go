@@ -62,6 +62,16 @@ func clibZero(t builtin.LLVMArgType) string {
 	return "0"
 }
 
+// rawWriteFns maps a synthetic raw-write callee (emitted only by the
+// named-format lowering) to the LLVM type of its single argument; an empty
+// string marks the no-argument newline helpers. See emitCall in codegen.go.
+var rawWriteFns = map[string]string{
+	"$print_str":  "%str-long",
+	"$eprint_str": "%str-long",
+	"$print_nl":   "",
+	"$eprint_nl":  "",
+}
+
 // runtimeFns are declared in the MIR prelude (emitPrelude) and must NOT be
 // re-declared by the generic C-forwarder (which would emit a conflicting
 // signature, e.g. write with a different fd width, tripping opt's "invalid
@@ -539,6 +549,8 @@ func (c *codegen) emitBuiltinForward(f *Function, inst *Inst, bm *builtin.Builti
 		return c.emitBuiltinVecTruncate(inst)
 	case "uname":
 		return c.emitBuiltinUname(inst)
+	case "read-file":
+		return c.emitBuiltinReadFile(inst)
 	case "utime":
 		return c.emitBuiltinUtime(inst)
 	case "get-priority":
@@ -1785,6 +1797,83 @@ func (c *codegen) emitBuiltinUname(inst *Inst) error {
 		c.sb.WriteString(fmt.Sprintf("  %s = getelementptr inbounds %s, %s* %s, i32 0, i32 %d\n", dstGEP, dstLT, dstLT, dstSlot, i))
 		c.sb.WriteString(fmt.Sprintf("  store %%str-long %s, %%str-long* %s\n", strReg, dstGEP))
 	}
+	return nil
+}
+
+// emitBuiltinReadFile lowers `fs.read-file(path)` -> []byte: open the file,
+// measure it with lseek, malloc a buffer, read it in one shot and close the fd.
+// The result is a %vec {len, cap, data} whose data field is the malloc'd buffer
+// (kept as an integer, like every other MIR slice), so the caller's drop /
+// vec_free releases it. Any failure (open, lseek, read) yields an EMPTY slice
+// rather than a negative length — a negative len would be read back as a huge
+// unsigned count and cause buffer overreads. This mirrors the legacy
+// call_stdlib.go read-file inliner, which also clamps to 0 on failure.
+func (c *codegen) emitBuiltinReadFile(inst *Inst) error {
+	if len(inst.Args) < 1 {
+		return fmt.Errorf("read-file: needs path")
+	}
+	dstLT, _ := c.ptype(inst.Dst)
+	dstSlot := c.valSlot[inst.Dst]
+	if dstSlot == "" {
+		return fmt.Errorf("read-file: no result slot")
+	}
+	if dstLT != "%vec" {
+		return fmt.Errorf("read-file: result type %s is not a slice", dstLT)
+	}
+	pathV, err := c.argIndex(inst, 0)
+	if err != nil {
+		return err
+	}
+	pathPtr := c.cstrOf(pathV)
+	if pathPtr == "" {
+		return fmt.Errorf("read-file: cannot marshal path as C string")
+	}
+
+	// NOTE: `open` is already declared by the fs.open family as
+	// `declare i32 @open(i8*, i32, i32)`. Emitting a variadic form here would
+	// be a *different* signature for the same symbol and LLVM rejects it with
+	// "invalid redefinition of function 'open'", so match it exactly (the third
+	// argument is the creation mode, unused with O_RDONLY).
+	c.decl("declare i32 @open(i8*, i32, i32)")
+	c.decl("declare i64 @lseek(i32, i64, i32)")
+	c.decl("declare i64 @read(i32, i8*, i64)")
+	c.decl("declare i32 @close(i32)")
+
+	fd := c.treg("rf.fd")
+	c.sb.WriteString(fmt.Sprintf("  %s = call i32 @open(i8* %s, i32 0, i32 0)\n", fd, pathPtr))
+	openOk := c.treg("rf.fdok")
+	c.sb.WriteString(fmt.Sprintf("  %s = icmp sge i32 %s, 0\n", openOk, fd))
+	end := c.treg("rf.end")
+	c.sb.WriteString(fmt.Sprintf("  %s = call i64 @lseek(i32 %s, i64 0, i32 2)\n", end, fd))
+	c.sb.WriteString(fmt.Sprintf("  call i64 @lseek(i32 %s, i64 0, i32 0)\n", fd))
+	szOk := c.treg("rf.szok")
+	c.sb.WriteString(fmt.Sprintf("  %s = icmp sge i64 %s, 0\n", szOk, end))
+	sz := c.treg("rf.sz")
+	c.sb.WriteString(fmt.Sprintf("  %s = select i1 %s, i64 %s, i64 0\n", sz, szOk, end))
+	buf := c.treg("rf.buf")
+	c.sb.WriteString(fmt.Sprintf("  %s = call i8* @malloc(i64 %s)\n", buf, sz))
+	nr := c.treg("rf.n")
+	c.sb.WriteString(fmt.Sprintf("  %s = call i64 @read(i32 %s, i8* %s, i64 %s)\n", nr, fd, buf, sz))
+	c.sb.WriteString(fmt.Sprintf("  call i32 @close(i32 %s)\n", fd))
+	readOk := c.treg("rf.nok")
+	c.sb.WriteString(fmt.Sprintf("  %s = icmp sge i64 %s, 0\n", readOk, nr))
+	allOk := c.treg("rf.ok")
+	c.sb.WriteString(fmt.Sprintf("  %s = and i1 %s, %s\n", allOk, openOk, readOk))
+	ln := c.treg("rf.len")
+	c.sb.WriteString(fmt.Sprintf("  %s = select i1 %s, i64 %s, i64 0\n", ln, allOk, nr))
+
+	// %vec = { i64 len, i64 cap, i64 data } — data is a heap pointer as i64.
+	lenGEP := c.treg("rf.lgep")
+	c.sb.WriteString(fmt.Sprintf("  %s = getelementptr inbounds %%vec, %%vec* %s, i32 0, i32 0\n", lenGEP, dstSlot))
+	c.sb.WriteString(fmt.Sprintf("  store i64 %s, i64* %s\n", ln, lenGEP))
+	capGEP := c.treg("rf.cgep")
+	c.sb.WriteString(fmt.Sprintf("  %s = getelementptr inbounds %%vec, %%vec* %s, i32 0, i32 1\n", capGEP, dstSlot))
+	c.sb.WriteString(fmt.Sprintf("  store i64 %s, i64* %s\n", ln, capGEP))
+	dataGEP := c.treg("rf.dgep")
+	c.sb.WriteString(fmt.Sprintf("  %s = getelementptr inbounds %%vec, %%vec* %s, i32 0, i32 2\n", dataGEP, dstSlot))
+	dataInt := c.treg("rf.data")
+	c.sb.WriteString(fmt.Sprintf("  %s = ptrtoint i8* %s to i64\n", dataInt, buf))
+	c.sb.WriteString(fmt.Sprintf("  store i64 %s, i64* %s\n", dataInt, dataGEP))
 	return nil
 }
 

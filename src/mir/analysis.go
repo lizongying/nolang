@@ -149,6 +149,11 @@ func (m *Module) isBorrowRead(f *Function, inst *Inst) bool {
 // are borrowed and owned by the caller, so they are never dropped here (dropping
 // them would double-free the caller's buffer).
 func (m *Module) insertDrops(f *Function, rep *Report) {
+	// Liveness is needed to decide whether a constructor store CONSUMES its
+	// value (only when the value is dead after the store — a still-live value
+	// keeps its own drop at its last use).
+	liveIn, liveOut := m.Liveness(f)
+
 	moveSrc := map[ValueID]bool{}
 	for _, bid := range f.Blocks {
 		blk := m.Block(bid)
@@ -170,6 +175,24 @@ func (m *Module) insertDrops(f *Function, rep *Report) {
 			// its own drop and on the option's drop -> double free.
 			if inst.Op == OpOptionWrap && len(inst.Args) > 0 && inst.Args[0] > NoVal {
 				moveSrc[inst.Args[0]] = true
+			}
+			// OpStrFromVec reinterprets a []byte as a str WITHOUT copying: the
+			// result aliases the slice's buffer, so the slice must not be
+			// dropped separately (double free -> trace/BPT trap in
+			// tests/mem-safety/bug12-builtin-slice-to-str.no).
+			if inst.Op == OpStrFromVec && len(inst.Args) > 0 && inst.Args[0] > NoVal {
+				moveSrc[inst.Args[0]] = true
+			}
+			// A struct-literal field store (OpSetField with MovesArg) consumes
+			// its value: ownership transfers into the field, so the value's
+			// temporary must not be freed separately — that would free a buffer
+			// the (possibly escaped) struct still points to. Only when the value
+			// is dead after the store; a value still live afterwards keeps its
+			// drop at its last use.
+			if inst.Op == OpSetField && inst.MovesArg && len(inst.Args) >= 2 && inst.Args[1] > NoVal {
+				if !liveOut[bid][inst.Args[1]] {
+					moveSrc[inst.Args[1]] = true
+				}
 			}
 		}
 	}
@@ -202,8 +225,6 @@ func (m *Module) insertDrops(f *Function, rep *Report) {
 	if len(droppable) == 0 {
 		return
 	}
-
-	liveIn, liveOut := m.Liveness(f)
 
 	// (B) intra-block drops: defined in b, dead after b.
 	dropAtEnd := map[BlockID][]ValueID{}
@@ -595,6 +616,18 @@ func (m *Module) checkDropCount(f *Function, rep *Report) {
 		// exactly once by the option's drop.
 		if inst.Op == OpOptionWrap && len(inst.Args) > 0 && inst.Args[0] > NoVal {
 			moveSrc[inst.Args[0]] = true
+		}
+		// OpStrFromVec takes over the slice's buffer (see insertDrops above).
+		if inst.Op == OpStrFromVec && len(inst.Args) > 0 && inst.Args[0] > NoVal {
+			moveSrc[inst.Args[0]] = true
+		}
+		// A struct-literal field store consumes its value: ownership moves into
+		// the field, so the value is freed by the struct (not by its own drop).
+		// Exempt it here to match insertDrops, which suppresses its drop when it
+		// is dead after the store — otherwise the leak check spuriously reports
+		// `missing-drop` for every struct-literal field initializer.
+		if inst.Op == OpSetField && inst.MovesArg && len(inst.Args) >= 2 && inst.Args[1] > NoVal {
+			moveSrc[inst.Args[1]] = true
 		}
 		}
 	}

@@ -125,6 +125,13 @@ const (
 	// conversion
 	OpCast
 	OpTxtFromStr // str -> txt: copy string bytes into the fixed 256-byte txt buffer, set len (<=255)
+	// OpStrFromVec reinterprets a []byte (%vec) as a str (%str-long). The two
+	// layouts are already byte-identical except that %vec keeps its data pointer
+	// as i64 while %str-long keeps it as i8*, so this is a field-wise copy with
+	// an inttoptr. Legacy does exactly this: `data str = fs.read-file(path)`
+	// (tests/mem-safety/bug12-builtin-slice-to-str.no) stores the read-file
+	// %vec straight into the %str-long slot, and nolang treats the bytes as text.
+	OpStrFromVec
 
 	opCount
 )
@@ -161,6 +168,7 @@ var opNames = [opCount]string{
 	OpCallFFI:   "call-ffi",
 	OpCast:      "cast",
 	OpTxtFromStr: "txt-from-str",
+	OpStrFromVec: "str-from-vec",
 }
 
 func (o Op) String() string {
@@ -420,6 +428,13 @@ type Inst struct {
 	Callee ValueID
 	Line  int32
 	Col   int32
+	// MovesArg marks an aggregate-constructor store (OpSetField emitted by
+	// lowerStructLit) whose value argument (Args[1]) is CONSUMED: ownership
+	// transfers into the struct field, so the value's temporary heap must not be
+	// dropped separately (doing so frees a buffer the escaped struct still
+	// points to). The drop pass treats it as a move source when it is dead after
+	// the store.
+	MovesArg bool
 }
 
 type Term struct {
@@ -575,6 +590,29 @@ func (m *Module) MarkOwnedStruct(raw string) {
 // Ownership, and parsing composite element types / array dimensions. It is the
 // shared implementation behind both Builder.Type and codegen's on-the-fly
 // interning (e.g. when emitting struct type declarations).
+// uniqueQualifiedStruct resolves a bare struct type name to the single
+// registered module-qualified key that owns it (e.g. "utsname" -> "os.utsname").
+// Returns "" when there is no such key, or when more than one module defines
+// the same bare name — in that case the caller keeps its previous (scalar)
+// interpretation rather than guessing.
+func (m *Module) uniqueQualifiedStruct(raw string) string {
+	if raw == "" || strings.Contains(raw, ".") {
+		return ""
+	}
+	suffix := "." + raw
+	found := ""
+	for k := range m.StructFields {
+		if !strings.HasSuffix(k, suffix) {
+			continue
+		}
+		if found != "" && found != k {
+			return "" // ambiguous: two modules define the same struct name
+		}
+		found = k
+	}
+	return found
+}
+
 func (m *Module) internType(raw string) TypeID {
 	if id, ok := m.TypeMap[raw]; ok {
 		return id
@@ -604,6 +642,16 @@ func (m *Module) internType(raw string) TypeID {
 	// KindStruct; namespaced types (contain ".") are left as struct too.
 	if kind == KindStruct && !m.OwnedStructs[raw] && !strings.Contains(raw, ".") {
 		if _, isStruct := m.StructFields[raw]; !isStruct {
+			// std structs are registered under their module-qualified name
+			// (e.g. `os.utsname`) while a builtin signature or a local decl may
+			// only know the bare name (`utsname`). Resolve the bare name to its
+			// qualified key so `uts = os.uname()` binds a real %os_utsname slot
+			// instead of collapsing to i64 — which made `uts.sysname` emit a
+			// getelementptr on i64 and fail LLVM verification. Mirrors the
+			// suffix fallback already used for field reads (hir2mir KDot).
+			if q := m.uniqueQualifiedStruct(raw); q != "" {
+				return m.internType(q)
+			}
 			kind = KindInt
 		}
 	}

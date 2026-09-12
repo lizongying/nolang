@@ -274,8 +274,10 @@ func (m *Module) EmitLLVM() (out string, err error) {
 			return "", err
 		}
 	}
-	if _, ok := c.fname[findMainFunc(m)]; ok {
-		c.emitEntry()
+	if mid := findMainFunc(m); mid != NoFunc {
+		if _, ok := c.fname[mid]; ok {
+			c.emitEntry(m.Func(mid))
+		}
 	}
 	// Module-level trailing section: globals and external declarations that
 	// emission discovered along the way (MIR has no separate "declare" pass).
@@ -445,6 +447,15 @@ func (c *codegen) coerceInt(v, fromT, toT string) string {
 	r := fmt.Sprintf("%%cv%d", c.loadSeq)
 	if fw > tw {
 		c.sb.WriteString(fmt.Sprintf("  %s = trunc %s %s to %s\n", r, fromT, v, toT))
+	} else if fromT == "i8" {
+		// Narrowing->widening an i8 must ZERO-extend: nolang's `byte`/`u8` are
+		// UNSIGNED and are by far the dominant user of the i8 LLVM type (MIR
+		// maps byte/u8/i8 all to i8), and the legacy backend zexts i8 to i64.
+		// Sign-extending made a byte >= 0x80 poison every wider expression it
+		// took part in — `padded[i] = 0x80` then
+		// `(padded[i+0]<<24)|...|padded[i+3]` yielded a negative word, which is
+		// why std/crypto/sha1 produced a wrong (but exit-0) digest under MIR.
+		c.sb.WriteString(fmt.Sprintf("  %s = zext %s %s to %s\n", r, fromT, v, toT))
 	} else {
 		c.sb.WriteString(fmt.Sprintf("  %s = sext %s %s to %s\n", r, fromT, v, toT))
 	}
@@ -456,6 +467,17 @@ func (c *codegen) coerceInt(v, fromT, toT string) string {
 // not sign-extended — so a byte index like 200 stays 200 instead of wrapping to a
 // huge i64 (which would read past the array). i64 indices are returned unchanged.
 func (c *codegen) coerceIndex(idxT, idxV string) string {
+	// An option-typed index (`a[res]` where `res ?i64 = ...`) must be unwrapped
+	// to its payload before it can address memory: `%option` is a {tag,payload}
+	// struct and opt rejects it as a GEP index ("defined with type '%option'
+	// but expected 'i64'"). Legacy stores/reads the scalar payload for an
+	// option index, so do the same (tests/test-option-index.no).
+	if isOptionType(idxT) {
+		c.loadSeq++
+		pl := fmt.Sprintf("%%ixp%d", c.loadSeq)
+		c.sb.WriteString(fmt.Sprintf("  %s = extractvalue %s %s, 1\n", pl, idxT, idxV))
+		idxT, idxV = "i64", pl
+	}
 	switch idxT {
 	case "i8", "i1", "i16", "i32":
 		c.loadSeq++
@@ -837,6 +859,42 @@ entry:
   ret void
 }
 
+; eprint_str writes ONLY the string (no trailing newline) so the named-format
+; lowering can emit each format segment separately and append a single newline
+; at the end — mirroring legacy callNamedFormat's io.err-per-segment behavior.
+define void @eprint_str(%str-long %s) {
+entry:
+  %len = extractvalue %str-long %s, 0
+  %data = extractvalue %str-long %s, 2
+  call i64 @write(i32 2, i8* %data, i64 %len)
+  ret void
+}
+
+; _mir_str_concat: heap-concatenate two strings into a fresh %str-long. Used by
+; the named-format lowering to build the str RESULT of format()/sprintf(), which
+; legacy produces with concatStrLongPtrs. Named with a _mir_ prefix for the same
+; reason as _mir_str_repeat: "str_concat" is already a runtimeFns entry and a
+; same-named definition would trip LLVM verification ("invalid redefinition").
+define %str-long @_mir_str_concat(%str-long %a, %str-long %b) {
+entry:
+  %alen = extractvalue %str-long %a, 0
+  %blen = extractvalue %str-long %b, 0
+  %total = add i64 %alen, %blen
+  %size = add i64 %total, 1
+  %buf = call i8* @malloc(i64 %size)
+  %adata = extractvalue %str-long %a, 2
+  call void @llvm.memcpy.p0i8.p0i8.i64(i8* %buf, i8* %adata, i64 %alen, i1 false)
+  %bdst = getelementptr i8, i8* %buf, i64 %alen
+  %bdata = extractvalue %str-long %b, 2
+  call void @llvm.memcpy.p0i8.p0i8.i64(i8* %bdst, i8* %bdata, i64 %blen, i1 false)
+  %nul = getelementptr i8, i8* %buf, i64 %total
+  store i8 0, i8* %nul
+  %r0 = insertvalue %str-long { i64 0, i64 0, i8* null }, i64 %total, 0
+  %r1 = insertvalue %str-long %r0, i64 %total, 1
+  %r2 = insertvalue %str-long %r1, i8* %buf, 2
+  ret %str-long %r2
+}
+
 ; --- C string bridge (CLibCall builtins) -------------------------------------
 ; Nolang strings are (len, cap, data) triples with NO NUL terminator, and libc
 ; static buffers must never be adopted by a %str-long (it would be freed). These
@@ -1103,8 +1161,39 @@ func dataStr(s string) string {
 	return b.String()
 }
 
-func (c *codegen) emitEntry() {
+func (c *codegen) emitEntry(main *Function) {
+	// The nolang `main` may declare an out parameter, which is its process exit
+	// code: `main = () (out i64) { ... out = 2 }`. `_nolang_main` is emitted with
+	// that result as a leading out-pointer (see the by-reference ABI), so the C
+	// entry MUST allocate the slot, pass its address, and return the value as the
+	// i32 status. Emitting `call void @_nolang_main()` with no argument dropped
+	// the out pointer: the callee's `store ... , i64* %p0` then targets a
+	// garbage/null pointer, which -O3 folds to `unreachable` (SIGTRAP) and the
+	// epilogue (globals free + ret) is deleted — the crash behind
+	// tests/mem-safety/cross-fn-str-return-dfree.no.
 	c.sb.WriteString("define i32 @main(i32 %0, i8** %1) {\nentry:\n")
+	if main != nil && len(main.ResultParams) > 0 {
+		rt, _ := c.ptype(main.ResultParams[0])
+		if rt == "" {
+			rt = "i64"
+		}
+		c.sb.WriteString(fmt.Sprintf("  %%rc = alloca %s\n", rt))
+		c.sb.WriteString(fmt.Sprintf("  store %s zeroinitializer, %s* %%rc\n", rt, rt))
+		c.sb.WriteString(fmt.Sprintf("  call void @_nolang_main(%s* %%rc)\n", rt))
+		switch rt {
+		case "i32":
+			c.sb.WriteString("  %rv = load i32, i32* %rc\n")
+			c.sb.WriteString("  ret i32 %rv\n")
+		case "i64":
+			c.sb.WriteString("  %rv = load i64, i64* %rc\n")
+			c.sb.WriteString("  %rs = trunc i64 %rv to i32\n")
+			c.sb.WriteString("  ret i32 %rs\n")
+		default:
+			c.sb.WriteString("  ret i32 0\n")
+		}
+		c.sb.WriteString("}\n")
+		return
+	}
 	c.sb.WriteString("  call void @_nolang_main()\n")
 	c.sb.WriteString("  ret i32 0\n}\n")
 }
@@ -1475,6 +1564,8 @@ func (c *codegen) emitInst(f *Function, inst *Inst, allocaFor func(ValueID) stri
 		return c.emitOptionWrap(inst)
 	case OpTxtFromStr:
 		return c.emitTxtFromStr(inst)
+	case OpStrFromVec:
+		return c.emitStrFromVec(inst)
 	case OpSliceOp:
 		return c.emitSliceOp(inst)
 	case OpLen, OpCap:
@@ -1854,7 +1945,10 @@ func (c *codegen) emitCast(inst *Inst) error {
 			srcRaw = t.Raw
 		}
 	}
-	signed := strings.HasPrefix(srcRaw, "i") && srcRaw != "i1"
+	// `byte`/`u8` zero-extend (see coerceInt); only genuinely signed widths
+	// sign-extend. Note `i8` is zero-extended too — MIR maps byte/u8/i8 onto
+	// the same LLVM i8, and unsigned bytes dominate the corpus.
+	signed := strings.HasPrefix(srcRaw, "i") && srcRaw != "i1" && srcRaw != "i8"
 	if signed {
 		c.sb.WriteString(fmt.Sprintf("  %%c%d = sext %s %s to %s\n", inst.Dst, srcT, srcV, dstLT))
 	} else {
@@ -2254,6 +2348,16 @@ func (c *codegen) emitMove(inst *Inst) error {
 		c.sb.WriteString(fmt.Sprintf("  store %s %s, %s* %s\n", payloadLT, u1, payloadLT, dstSlot))
 		return nil
 	}
+	// Fixed-array source into a slice (%vec) destination: `a = x` where x is a
+	// locally-materialized array literal. A plain `load %vec, [N x T]* src` would
+	// reinterpret the array's first three elements as {len,cap,data} (len=first
+	// element) — e.g. get-pair's `x=[1,2,3]; a=x` read len=1. Build a real slice
+	// view instead. Mirrors the call-site / emitSetField array->vec coercion.
+	if dstT == "%vec" && strings.HasPrefix(srcT, "[") {
+		v := c.vecFromArraySink(srcT, srcSlot)
+		c.sb.WriteString(fmt.Sprintf("  store %%vec %s, %%vec* %s\n", v, dstSlot))
+		return nil
+	}
 	// Use a unique temp name (%mv<instID>) because Dst is an existing variable
 	// slot already defined by its original binding, so reusing %c<Dst> would
 	// collide.
@@ -2559,31 +2663,58 @@ func (c *codegen) emitIndexStore(inst *Inst) error {
 			valV = by
 		}
 	}
+	// Owned element assignment must DEEP CLONE the incoming value: `s[0] = a`
+	// stores a by-value copy of the {len,cap,data} triple that still SHARES a's
+	// heap buffer. A later `a = 'changed'` drops a's old buffer, leaving s[0]
+	// dangling, and s[0]'s own drop then double-frees it. Legacy deep-clones on
+	// the write side to mirror the already-cloned read side (`x = s[0]`), which
+	// is exactly what tests/mem-safety/element-assign-clone.no asserts.
+	// %vec / heap-option elements still share: there is no vec clone helper.
+	if elemT == "%str-long" && valT == "%str-long" {
+		c.loadSeq++
+		cl := fmt.Sprintf("%%icl%d", c.loadSeq)
+		c.sb.WriteString(fmt.Sprintf("  %s = call %s @str_clone(%s %s)\n", cl, elemT, elemT, valV))
+		valV = cl
+	}
 	c.sb.WriteString(fmt.Sprintf("  store %s %s, %s* %s\n", elemT, valV, elemT, ep))
-	if arrT == "%str-long" {
-		// Writing a byte may extend the logical length (a freshly with-cap'd
-		// str has len=0, but its data buffer has cap bytes). Mirror legacy:
-		// len = max(len, idx+1) so the written region becomes visible to callers
-		// (print_str reads field 0 as the length). Without this, `val[i] = c`
-		// inside a loop like str.to-upper leaves len=0 and prints nothing.
-		c.loadSeq++
-		lenGep := fmt.Sprintf("%%slg%d", c.loadSeq)
-		c.sb.WriteString(fmt.Sprintf("  %s = getelementptr inbounds %%str-long, %%str-long* %s, i32 0, i32 0\n", lenGep, arrSlot))
-		c.loadSeq++
-		curLen := fmt.Sprintf("%%slc%d", c.loadSeq)
-		c.sb.WriteString(fmt.Sprintf("  %s = load i64, i64* %s\n", curLen, lenGep))
-		c.loadSeq++
-		idx1 := fmt.Sprintf("%%sli%d", c.loadSeq)
-		c.sb.WriteString(fmt.Sprintf("  %s = add i64 %s, 1\n", idx1, idxV))
-		c.loadSeq++
-		cmp := fmt.Sprintf("%%slm%d", c.loadSeq)
-		c.sb.WriteString(fmt.Sprintf("  %s = icmp sgt i64 %s, %s\n", cmp, idx1, curLen))
-		c.loadSeq++
-		newLen := fmt.Sprintf("%%sln%d", c.loadSeq)
-		c.sb.WriteString(fmt.Sprintf("  %s = select i1 %s, i64 %s, i64 %s\n", newLen, cmp, idx1, curLen))
-		c.sb.WriteString(fmt.Sprintf("  store i64 %s, i64* %s\n", newLen, lenGep))
+	if arrT == "%str-long" || arrT == "%vec" {
+		// Writing an element may extend the logical length. Two cases matter and
+		// both match the legacy codegen:
+		//   - a freshly with-cap'd str has len=0 but a cap-sized buffer;
+		//     without this `val[i] = c` in a loop (str.to-upper) leaves len=0
+		//     and prints nothing;
+		//   - a slice declared with no capacity (`padded []byte`) is
+		//     {len=0,cap=0,data=0}; legacy grows it on the first OOB write
+		//     (len = max(len, idx+1)) so `padded[i] = 0` inside a loop
+		//     materializes it. MIR used to store the bytes (ensureVecBuffer
+		//     mallocs a buffer) but leave len=0, so every later `.len()` /
+		//     iteration over the slice saw an EMPTY container — the root cause
+		//     of a wrong (but exit-0) SHA-1 digest, since std/crypto/sha1
+		//     builds its padding buffer exactly this way.
+		c.emitExtendLen(arrT, arrSlot, idxV)
 	}
 	return nil
+}
+
+// emitExtendLen stores len = max(len, idx+1) into field 0 of a %str-long /
+// %vec slot, so a write past the current logical length becomes visible.
+func (c *codegen) emitExtendLen(arrT, arrSlot, idxV string) {
+	c.loadSeq++
+	lenGep := fmt.Sprintf("%%slg%d", c.loadSeq)
+	c.sb.WriteString(fmt.Sprintf("  %s = getelementptr inbounds %s, %s* %s, i32 0, i32 0\n", lenGep, arrT, arrT, arrSlot))
+	c.loadSeq++
+	curLen := fmt.Sprintf("%%slc%d", c.loadSeq)
+	c.sb.WriteString(fmt.Sprintf("  %s = load i64, i64* %s\n", curLen, lenGep))
+	c.loadSeq++
+	idx1 := fmt.Sprintf("%%sli%d", c.loadSeq)
+	c.sb.WriteString(fmt.Sprintf("  %s = add i64 %s, 1\n", idx1, idxV))
+	c.loadSeq++
+	cmp := fmt.Sprintf("%%slm%d", c.loadSeq)
+	c.sb.WriteString(fmt.Sprintf("  %s = icmp sgt i64 %s, %s\n", cmp, idx1, curLen))
+	c.loadSeq++
+	newLen := fmt.Sprintf("%%sln%d", c.loadSeq)
+	c.sb.WriteString(fmt.Sprintf("  %s = select i1 %s, i64 %s, i64 %s\n", newLen, cmp, idx1, curLen))
+	c.sb.WriteString(fmt.Sprintf("  store i64 %s, i64* %s\n", newLen, lenGep))
 }
 
 // emitGetField lowers `recv.field`: compute the field address via GEP into the
@@ -2752,6 +2883,16 @@ func (c *codegen) emitSetField(inst *Inst) error {
 				valV = pl
 			}
 		}
+		// Fixed-array RHS into a slice-typed (option-wrapped) field: same
+		// [N x T] -> %vec borrow-view coercion as the plain setfield path below.
+		if strings.HasPrefix(fieldLT, "[") {
+			if fi := c.mod.StructFields[structKey]; idx < len(fi) && strings.HasPrefix(fi[idx].TypeRaw, "[]") {
+				if rs := c.valSlot[inst.Args[1]]; rs != "" {
+					valV = c.vecViewValue(fieldLT, rs)
+					fieldLT = "%vec"
+				}
+			}
+		}
 		c.loadSeq++
 		pg := fmt.Sprintf("%%opg%d", c.loadSeq)
 		c.sb.WriteString(fmt.Sprintf("  %s = getelementptr inbounds %s, %s* %s, i32 0, i32 1\n", pg, recvLT, recvLT, recvSlot))
@@ -2802,6 +2943,20 @@ func (c *codegen) emitSetField(inst *Inst) error {
 	if !ok {
 		c.fail("setfield: field %q not found on %q in func %d", inst.Str, recvRaw, c.cf)
 		return fmt.Errorf("setfield field")
+	}
+	// Fixed-array RHS stored into a slice-typed field (`c.data = [1,2,3]` where
+	// `data []i64`): coerce [N x T] -> %vec borrow view (len=N, cap=0,
+	// data=&arr[0]) so the field holds a real slice header. Legacy treats [N]T
+	// as []T pointing at the array's storage; without this the raw array bytes
+	// are written into the 24-byte %vec slot, so `.len()` reads the first
+	// element and `.[i]` derefs the (misread) data pointer -> SIGSEGV.
+	if strings.HasPrefix(fieldLT, "[") {
+		if fi := c.mod.StructFields[structKey]; idx < len(fi) && strings.HasPrefix(fi[idx].TypeRaw, "[]") {
+			if rs := c.valSlot[inst.Args[1]]; rs != "" {
+				valV = c.vecFromArraySink(fieldLT, rs)
+				fieldLT = "%vec"
+			}
+		}
 	}
 	structLT := recvLT
 	c.loadSeq++
@@ -3193,6 +3348,56 @@ func (c *codegen) emitStructTypes() {
 // fixed 256-byte %txt buffer (data[0..min(len,255)]) and store the length as
 // an i8. The destination %txt slot is pre-allocated by the prologue. This is
 // the MIR analogue of the legacy str->txt conversion in build/llvm/stmt.go.
+// emitStrFromVec lowers `OpStrFromVec`: reinterpret a []byte (%vec) as a str
+// (%str-long). Both layouts are { i64 len, i64 cap, <data> }; only the data
+// field differs (i64 vs i8*), so the conversion copies len/cap verbatim and
+// inttoptr's the pointer. Legacy stores the read-file %vec straight into the
+// %str-long slot, so nolang sees the file's bytes as text — `data str =
+// fs.read-file(path)` (tests/mem-safety/bug12-builtin-slice-to-str.no).
+//
+// The result ALIASES the slice's buffer (no copy), exactly like legacy. The
+// caller must not drop both.
+func (c *codegen) emitStrFromVec(inst *Inst) error {
+	dstLT, _ := c.ptype(inst.Dst)
+	dstSlot := c.valSlot[inst.Dst]
+	if dstSlot == "" {
+		c.fail("str-from-vec dst has no slot in func %d", c.cf)
+		return fmt.Errorf("str-from-vec dst slot")
+	}
+	srcT, srcV := c.loadVal(inst.Args[0])
+	if srcT == dstLT {
+		c.sb.WriteString(fmt.Sprintf("  store %s %s, %s* %s\n", dstLT, srcV, dstLT, dstSlot))
+		return nil
+	}
+	if srcT != "%vec" || dstLT != "%str-long" {
+		c.fail("str-from-vec: cannot convert %s to %s in func %d", srcT, dstLT, c.cf)
+		return fmt.Errorf("str-from-vec: bad types %s -> %s", srcT, dstLT)
+	}
+	c.loadSeq++
+	lv := fmt.Sprintf("%%svl%d", c.loadSeq)
+	c.sb.WriteString(fmt.Sprintf("  %s = extractvalue %%vec %s, 0\n", lv, srcV))
+	c.loadSeq++
+	cv := fmt.Sprintf("%%svc%d", c.loadSeq)
+	c.sb.WriteString(fmt.Sprintf("  %s = extractvalue %%vec %s, 1\n", cv, srcV))
+	c.loadSeq++
+	dv := fmt.Sprintf("%%svd%d", c.loadSeq)
+	c.sb.WriteString(fmt.Sprintf("  %s = extractvalue %%vec %s, 2\n", dv, srcV))
+	c.loadSeq++
+	pv := fmt.Sprintf("%%svp%d", c.loadSeq)
+	c.sb.WriteString(fmt.Sprintf("  %s = inttoptr i64 %s to i8*\n", pv, dv))
+	c.loadSeq++
+	s0 := fmt.Sprintf("%%svs%d", c.loadSeq)
+	c.sb.WriteString(fmt.Sprintf("  %s = insertvalue %%str-long { i64 0, i64 0, i8* null }, i64 %s, 0\n", s0, lv))
+	c.loadSeq++
+	s1 := fmt.Sprintf("%%svs%d", c.loadSeq)
+	c.sb.WriteString(fmt.Sprintf("  %s = insertvalue %%str-long %s, i64 %s, 1\n", s1, s0, cv))
+	c.loadSeq++
+	s2 := fmt.Sprintf("%%svs%d", c.loadSeq)
+	c.sb.WriteString(fmt.Sprintf("  %s = insertvalue %%str-long %s, i8* %s, 2\n", s2, s1, pv))
+	c.sb.WriteString(fmt.Sprintf("  store %%str-long %s, %%str-long* %s\n", s2, dstSlot))
+	return nil
+}
+
 func (c *codegen) emitTxtFromStr(inst *Inst) error {
 	dstSlot := c.valSlot[inst.Dst] // %txt*
 	if dstSlot == "" {
@@ -3371,6 +3576,56 @@ func (c *codegen) emitCall(f *Function, inst *Inst) error {
 		c.sb.WriteString("  call void @print_nl()\n")
 		return nil
 	}
+	// Synthetic raw-write callees, emitted ONLY by the named-format lowering
+	// (lowerNamedFormat in hir2mir.go). They write ONE value with no separator
+	// and no trailing newline — which is exactly what a format segment needs
+	// and what `print` above cannot do (it joins its variadic arguments with
+	// spaces and appends a newline). The leading `$` is not a legal nolang
+	// identifier character, so these names can never collide with a real
+	// function or shadow `lookupBuiltin`.
+	if rw, ok := rawWriteFns[callee]; ok {
+		if rw == "" {
+			c.sb.WriteString("  call void @" + callee[1:] + "()\n")
+			return nil
+		}
+		if len(inst.Args) == 0 || inst.Args[0] == NoVal {
+			c.fail("%s without argument in func %s", callee, f.Name)
+			return fmt.Errorf("%s: missing argument", callee)
+		}
+		argT, argV := c.loadVal(inst.Args[0])
+		if argV == "" || argT == "void" {
+			return nil
+		}
+		if argT != rw {
+			c.fail("%s expects %s, got %s in func %s", callee, rw, argT, f.Name)
+			return fmt.Errorf("%s: argument type mismatch", callee)
+		}
+		c.sb.WriteString(fmt.Sprintf("  call void @%s(%s %s)\n", callee[1:], rw, argV))
+		return nil
+	}
+	// Synthetic str concat, emitted only by the named-format lowering to build
+	// the returned string of format()/sprintf() (legacy: concatStrLongPtrs).
+	if callee == "$str_concat" {
+		if len(inst.Args) < 2 {
+			c.fail("$str_concat needs 2 arguments in func %s", f.Name)
+			return fmt.Errorf("$str_concat: bad arity")
+		}
+		aT, aV := c.loadVal(inst.Args[0])
+		bT, bV := c.loadVal(inst.Args[1])
+		if aT != "%str-long" || bT != "%str-long" {
+			c.fail("$str_concat got %s/%s in func %s", aT, bT, f.Name)
+			return fmt.Errorf("$str_concat: argument type mismatch")
+		}
+		c.loadSeq++
+		r := fmt.Sprintf("%%cat%d", c.loadSeq)
+		c.sb.WriteString(fmt.Sprintf("  %s = call %%str-long @_mir_str_concat(%%str-long %s, %%str-long %s)\n", r, aV, bV))
+		if len(inst.Results) > 0 && inst.Results[0] > NoVal {
+			if slot := c.valSlot[inst.Results[0]]; slot != "" {
+				c.sb.WriteString(fmt.Sprintf("  store %%str-long %s, %%str-long* %s\n", r, slot))
+			}
+		}
+		return nil
+	}
 	// `str.byte` / `txt.byte` are raw-byte accessors (`s.byte(i)` in source):
 	// they are NOT real functions and have no body in the HIR package. Legacy
 	// codegen expands them inline via generateRawByteAt (GEP+load+zext on the
@@ -3486,6 +3741,23 @@ func (c *codegen) emitCall(f *Function, inst *Inst) error {
 // `[1,2,3,4].to-str()` hands the array to []i64.to-str as a real slice view
 // instead of reinterpreting the array bytes as a %vec, which crashes).
 func (c *codegen) buildVecViewFromArray(argT, arrSlot string) string {
+	s2 := c.vecViewValue(argT, arrSlot)
+	c.loadSeq++
+	slot := fmt.Sprintf("%%cav%d", c.loadSeq)
+	c.sb.WriteString(fmt.Sprintf("  %s = alloca %%vec\n", slot))
+	c.sb.WriteString(fmt.Sprintf("  store %%vec %s, %%vec* %s\n", s2, slot))
+	return "%vec* " + slot
+}
+
+// vecViewValue emits a borrow slice view over a fixed stack array and returns
+// the %vec{ len=N, cap=0, data=&arr[0] } SSA register name (cap==0 marks the
+// view as non-owning so @vec_free skips the stack backing store). It is the
+// value-producing counterpart of buildVecViewFromArray (which additionally
+// spills the view to a temporary slot for pass-by-pointer call arguments): use
+// this when the %vec must be stored inline (e.g. a struct field of slice type
+// assigned a fixed-array literal `c.data = [1,2,3]`, where storing the raw
+// array bytes into the %vec slot would make len/data read garbage).
+func (c *codegen) vecViewValue(argT, arrSlot string) string {
 	n := int64(0)
 	if m, ok := arraySizeOf(argT); ok {
 		n = m
@@ -3505,11 +3777,59 @@ func (c *codegen) buildVecViewFromArray(argT, arrSlot string) string {
 	c.loadSeq++
 	s2 := fmt.Sprintf("%%cav%d", c.loadSeq)
 	c.sb.WriteString(fmt.Sprintf("  %s = insertvalue %%vec %s, i64 %s, 2\n", s2, s1, pt))
-	c.loadSeq++
-	slot := fmt.Sprintf("%%cav%d", c.loadSeq)
-	c.sb.WriteString(fmt.Sprintf("  %s = alloca %%vec\n", slot))
-	c.sb.WriteString(fmt.Sprintf("  store %%vec %s, %%vec* %s\n", s2, slot))
-	return "%vec* " + slot
+	return s2
+}
+
+// vecOwnedFromArray heap-allocates a %vec holding a memcpy'd copy of the N
+// elements of the fixed stack array arrSlot (LLVM type argT = "[N x T]") and
+// returns the %vec{len=N, cap=N, data=heap} SSA value. cap==len marks the vec
+// OWNED: @vec_free releases the heap buffer when the owning binding is dropped.
+// Unlike the cap=0 borrow view (vecViewValue) this is valid when the resulting
+// slice OUTLIVES the current frame — stored into a struct field that is
+// returned/moved out — where a borrow over stack memory would dangle once the
+// frame is popped (garbage reads / SIGSEGV). Only safe for trivially-copyable
+// elements (memcpy would alias a nested heap for owned element types).
+func (c *codegen) vecOwnedFromArray(argT, arrSlot string) string {
+	n := int64(0)
+	if m, ok := arraySizeOf(argT); ok {
+		n = m
+	}
+	elemT := ""
+	if i := strings.Index(argT, " x "); i >= 0 {
+		elemT = strings.TrimSuffix(argT[i+3:], "]")
+	}
+	total := n * elemStride(elemT)
+	buf := c.treg("bva")
+	c.sb.WriteString(fmt.Sprintf("  %s = call i8* @malloc(i64 %d)\n", buf, total))
+	src := c.treg("bva")
+	c.sb.WriteString(fmt.Sprintf("  %s = getelementptr inbounds %s, %s* %s, i64 0, i64 0\n", src, argT, argT, arrSlot))
+	c.sb.WriteString(fmt.Sprintf("  call void @llvm.memcpy.p0i8.p0i8.i64(i8* %s, i8* %s, i64 %d, i1 false)\n", buf, src, total))
+	dp := c.treg("bva")
+	c.sb.WriteString(fmt.Sprintf("  %s = ptrtoint i8* %s to i64\n", dp, buf))
+	s0 := c.treg("bva")
+	c.sb.WriteString(fmt.Sprintf("  %s = insertvalue %%vec { i64 0, i64 0, i64 0 }, i64 %d, 0\n", s0, n))
+	s1 := c.treg("bva")
+	c.sb.WriteString(fmt.Sprintf("  %s = insertvalue %%vec %s, i64 %d, 1\n", s1, s0, n))
+	s2 := c.treg("bva")
+	c.sb.WriteString(fmt.Sprintf("  %s = insertvalue %%vec %s, i64 %s, 2\n", s2, s1, dp))
+	return s2
+}
+
+// vecFromArraySink selects the array -> slice coercion for a sink that may
+// escape the frame: a heap-owned copy for trivially-copyable elements, falling
+// back to the cap=0 borrow view for element types whose nested heap would be
+// aliased by a raw memcpy (needs a deep clone that does not exist yet).
+func (c *codegen) vecFromArraySink(argT, arrSlot string) string {
+	elemT := ""
+	if i := strings.Index(argT, " x "); i >= 0 {
+		elemT = strings.TrimSuffix(argT[i+3:], "]")
+	}
+	switch elemT {
+	case "i8", "i1", "i64", "double":
+		return c.vecOwnedFromArray(argT, arrSlot)
+	default:
+		return c.vecViewValue(argT, arrSlot)
+	}
 }
 
 // buildVecViewFromValues emits a borrow slice view over a freshly-allocated
