@@ -1800,6 +1800,11 @@ func (c *codegen) emitInst(f *Function, inst *Inst, allocaFor func(ValueID) stri
 		// every Dst value); field initializers are stored by the separate
 		// OpSetField instructions, so there is nothing to emit here.
 		return nil
+	case OpFuncRef:
+		// A function-reference value (OpFuncRef) carries a KindFunc type and
+		// a Name; loadVal resolves it to `@funcname` directly. No IR needs to
+		// be emitted here — the value is materialized at its use site.
+		return nil
 	case OpOptionWrap:
 		return c.emitOptionWrap(inst)
 	case OpTxtFromStr:
@@ -3562,24 +3567,30 @@ func (c *codegen) emitSliceOp(inst *Inst) error {
 	}
 
 	// rightInc: inst.Int == 1 means the upper bound is inclusive (']').
-	// Apply +1 to hi BEFORE computing the length, matching legacy's
-	// computeReversibleLen (which adds 1 for rightInc in both directions).
-	hiAdj := hiV
-	if inst.Int == 1 {
-		hiAdj = c.treg("sohi")
-		c.sb.WriteString(fmt.Sprintf("  %s = add i64 %s, 1\n", hiAdj, hiV))
-	}
+	// Compute abs(hi - lo) first, then add 1 for rightInc — matching
+	// legacy's computeReversibleLen which does:
+	//   forward:  len = end - start + (1 if rightInc)
+	//   reverse:  len = start - end + (1 if rightInc)
+	// We must NOT pre-adjust hi before the abs, because
+	//   abs(lo - (hi+1)) != abs(lo - hi) + 1  (off by one for reverse).
 
-	// Detect reverse slice (lo > hi) at runtime and compute abs(hiAdj - lo).
-	// Forward: len = hiAdj - lo.  Reverse: len = lo - hiAdj.
+	// Detect reverse slice (lo > hi) at runtime and compute abs(hi - lo).
+	// Forward: len = hi - lo.  Reverse: len = lo - hi.
 	revCmp := c.treg("sorv")
-	c.sb.WriteString(fmt.Sprintf("  %s = icmp sgt i64 %s, %s\n", revCmp, loV, hiAdj))
+	c.sb.WriteString(fmt.Sprintf("  %s = icmp sgt i64 %s, %s\n", revCmp, loV, hiV))
 	fwdLen := c.treg("sofl")
-	c.sb.WriteString(fmt.Sprintf("  %s = sub i64 %s, %s\n", fwdLen, hiAdj, loV))
+	c.sb.WriteString(fmt.Sprintf("  %s = sub i64 %s, %s\n", fwdLen, hiV, loV))
 	revLen := c.treg("sorl")
-	c.sb.WriteString(fmt.Sprintf("  %s = sub i64 %s, %s\n", revLen, loV, hiAdj))
-	newLen := c.treg("sonl")
-	c.sb.WriteString(fmt.Sprintf("  %s = select i1 %s, i64 %s, i64 %s\n", newLen, revCmp, revLen, fwdLen))
+	c.sb.WriteString(fmt.Sprintf("  %s = sub i64 %s, %s\n", revLen, loV, hiV))
+	absLen := c.treg("sonl")
+	c.sb.WriteString(fmt.Sprintf("  %s = select i1 %s, i64 %s, i64 %s\n", absLen, revCmp, revLen, fwdLen))
+
+	// Add 1 for inclusive upper bound (']')
+	newLen := absLen
+	if inst.Int == 1 {
+		newLen = c.treg("sohi")
+		c.sb.WriteString(fmt.Sprintf("  %s = add i64 %s, 1\n", newLen, absLen))
+	}
 
 	// Byte offset of the sub-range start inside the backing buffer.
 	// For forward slices this is lo*stride; for reverse slices it's also lo

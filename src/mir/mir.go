@@ -143,6 +143,14 @@ const (
 	// %vec straight into the %str-long slot, and nolang treats the bytes as text.
 	OpStrFromVec
 
+	// OpFuncRef takes the address of a named function (Sym carries the raw
+	// HIR function name) and yields a function-pointer value of KindFunc type.
+	// Used when a function name is passed as an argument to another function
+	// (e.g. `run-suite(my-setup, my-teardown)`), so the callee receives a
+	// callable function pointer. codegen's loadVal already handles KindFunc
+	// values with a Name by emitting `@funcname` directly.
+	OpFuncRef
+
 	// async task runtime (cooperative scheduler; mirrors legacy build/llvm)
 	// OpRun builds a lazily-enqueued %task for an `-async` function call and
 	// returns its opaque i8* handle. Sym carries the async callee's LLVM name;
@@ -191,6 +199,7 @@ var opNames = [opCount]string{
 	OpCast:      "cast",
 	OpTxtFromStr: "txt-from-str",
 	OpStrFromVec: "str-from-vec",
+	OpFuncRef:   "func-ref",
 	OpRun:       "run",
 	OpAwait:     "await",
 }

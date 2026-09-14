@@ -1143,6 +1143,36 @@ func (l *lowerer) letTypeRaw(n *hir.Node) string {
 
 // ---- function lowering ----
 
+// funcSigRaw builds a `fn(p0,p1,...)(r0,r1,...)?` type string from a HIR
+// function definition's parameter and result nodes. This is used by lowerExpr's
+// KIdent branch to create a KindFunc-typed value when a function name is used
+// as a value (passed as an argument to another function). The string must
+// match the format expected by internType/parseFuncType.
+func (l *lowerer) funcSigRaw(hirID int32) string {
+	var params, results []string
+	for _, c := range l.pkg.Children(hirID) {
+		cn := l.pkg.Node(c)
+		if cn == nil {
+			continue
+		}
+		switch cn.Kind {
+		case hir.KParam:
+			if t := l.pkg.Type(cn.Type); t != "" {
+				params = append(params, t)
+			}
+		case hir.KResult:
+			if t := l.pkg.Type(cn.Type); t != "" {
+				results = append(results, t)
+			}
+		}
+	}
+	sig := "fn(" + strings.Join(params, ",") + ")"
+	if len(results) > 0 {
+		sig += "(" + strings.Join(results, ",") + ")"
+	}
+	return sig
+}
+
 func (l *lowerer) lowerFunction(name string, hirID int32) {
 	l.lowered[name] = true
 	// Reset the deferred merge-continuation map for this function. Block IDs
@@ -2218,21 +2248,23 @@ func (l *lowerer) lowerRangeFor(n *hir.Node, iterID int32, bodyID int32, pre Blo
 		l.unsupported(l.curFuncName(), "for-range", "cannot determine element type of collection")
 		return
 	}
-	// Static length: fixed arrays only. Slices/ident-of-slice need a runtime
-	// len intrinsic, which is not wired up yet — fall back to the proven legacy
-	// path for those (the lower-gap triggers a full-function fallback).
-	length := int64(-1)
+	idxT := l.b.Type("i64")
+	// Determine the collection length. Fixed arrays have a compile-time
+	// size (KindArray.Sizes[0]); slices/vecs need a runtime OpLen (field 0
+	// of %vec). Support both so `for i in slice_expr` works, not just
+	// `for i in [a, b, c]`.
+	var lengthV ValueID = NoVal
 	if t := l.valueTypeOf(arrV); t != NoType {
 		if ty := l.mod.Type(t); ty != nil && ty.Kind == KindArray && len(ty.Sizes) > 0 {
-			length = ty.Sizes[0]
+			lengthV = l.b.EmitInt(OpConst, idxT, ty.Sizes[0], "")
 		}
 	}
-	if length < 0 {
-		l.unsupported(l.curFuncName(), "for-range", "non-fixed-length collection not supported")
-		return
+	if lengthV == NoVal {
+		// Runtime length: emit OpLen on the collection value. codegen
+		// extracts field 0 (len) from %vec / %str-long.
+		lengthV = l.b.Emit(OpLen, idxT, []ValueID{arrV}, "")
 	}
 
-	idxT := l.b.Type("i64")
 	// Same slot-allocation rationale as the integer-range form: emit a zero
 	// const so the index variable gets a Dst-backed alloca slot.
 	idxSlot := l.b.EmitInt(OpConst, idxT, 0, varName+"#idx")
@@ -2253,8 +2285,7 @@ func (l *lowerer) lowerRangeFor(n *hir.Node, iterID int32, bodyID int32, pre Blo
 	l.b.Terminate(OpBr, nil, []BlockID{header}, "")
 
 	l.b.SetBlock(header)
-	lenV := l.b.EmitInt(OpConst, idxT, length, "")
-	condV := l.b.Emit(OpLt, l.b.Type("bool"), []ValueID{idxSlot, lenV}, "")
+	condV := l.b.Emit(OpLt, l.b.Type("bool"), []ValueID{idxSlot, lengthV}, "")
 	l.b.Terminate(OpCondBr, []ValueID{condV}, []BlockID{body, exit}, "")
 
 	// Body entry: bind v = collection[idx]. Emitted here (not in pre) so it runs
@@ -2816,6 +2847,24 @@ func (l *lowerer) lowerExpr(id int32) ValueID {
 		if _, isGlobal := l.globals[name]; isGlobal {
 			return l.lowerGlobalRef(name)
 		}
+		// A function name used as a value (not called): `run-suite(my-setup,
+		// my-teardown)` passes the function's address as a callable argument.
+		// resolveCallee already handles the CALL site (`setup()` inside the
+		// callee body), but the ARGUMENT site (where the function name is
+		// passed BY VALUE) falls through to "unresolved identifier" because the
+		// name is neither a local nor a global. Emit an OpFuncRef that yields a
+		// KindFunc-typed value whose Name carries the function name; codegen's
+		// loadVal resolves it to `@funcname` (tests/test-named-fn-type.no).
+		if hirID, ok := l.funcNames[name]; ok {
+			fnStr := l.funcSigRaw(hirID)
+			fnTyp := l.b.Type(fnStr)
+			v := l.b.Emit(OpFuncRef, fnTyp, nil, name)
+			// Set the Value's Name so loadVal can resolve it to @funcname.
+			l.mod.Values[v].Name = name
+			// Enqueue the function for lowering so its body is emitted.
+			l.enqueueCallee(name)
+			return v
+		}
 		// unresolved: create a placeholder value of the inferred type so later
 		// instructions can still reference it; flag for diagnostics.
 		l.unsupported(l.curFuncName(), "ident", "unresolved identifier "+name)
@@ -3149,8 +3198,10 @@ func (l *lowerer) lowerExpr(id int32) ValueID {
 			if op == OpEq {
 				return eq
 			}
-			fals := l.b.EmitInt(OpConst, l.b.Type("bool"), 0, "")
-			return l.b.Emit(OpNe, l.b.Type("bool"), []ValueID{eq, fals}, "")
+			// `!=` is the negation of ==. OpNe(eq, false) would be
+			// `eq != false` which is just `eq` — not a negation.
+			// Use OpNot (xor with 1) to correctly invert the result.
+			return l.b.Emit(OpNot, l.b.Type("bool"), []ValueID{eq}, "")
 		}
 		// An arithmetic/bitwise op whose DECLARED result type is a narrow int
 		// but whose operands lowered to a WIDER value must keep the wider type.
