@@ -2407,6 +2407,46 @@ func (l *lowerer) valueTypeOf(v ValueID) TypeID {
 	return NoType
 }
 
+// fieldTypeOf returns the MIR TypeID of a named field within the struct type
+// of the receiver value. It mirrors codegen's structKeyOf + FieldIndex lookup
+// so the lowerer can set a type hint for LHS-inferred builtins assigned to a
+// struct field (`.hs-buf = with-cap(65536)`). Returns NoType when the field
+// or struct type cannot be resolved.
+func (l *lowerer) fieldTypeOf(recvV ValueID, fieldName string) TypeID {
+	raw := l.valueRaw(recvV)
+	if raw == "" {
+		return NoType
+	}
+	// Strip option prefix: `?T.field` should resolve to T's field.
+	raw = strings.TrimPrefix(raw, "?")
+	// Resolve the struct key: try exact, then suffix match (e.g. `conn` ->
+	// `tls.conn`), mirroring codegen's structKeyOf.
+	key := raw
+	if _, ok := l.mod.StructFields[key]; !ok {
+		found := ""
+		for k := range l.mod.StructFields {
+			if k == raw || strings.HasSuffix(k, "."+raw) {
+				found = k
+				break
+			}
+		}
+		if found == "" {
+			return NoType
+		}
+		key = found
+	}
+	fields, ok := l.mod.StructFields[key]
+	if !ok {
+		return NoType
+	}
+	for _, f := range fields {
+		if f.Name == fieldName && f.TypeRaw != "" {
+			return l.b.Type(f.TypeRaw)
+		}
+	}
+	return NoType
+}
+
 // expandTypeAlias resolves a nolang value-type alias (e.g. `fd` -> `i64`,
 // recorded by collectValueTypeAliases) to its underlying type name. It is used
 // so a method call on a newtype receiver (`fd.to-str`) forms the same callee
@@ -5241,6 +5281,29 @@ func (l *lowerer) lowerAssignNode(assignID int32) ValueID {
 				if gv := l.lowerGlobalRef(nm); gv != NoVal {
 					if t := l.valueTypeOf(gv); t != NoType && t != l.voidType {
 						l.typeHint = t
+					}
+				}
+			}
+		}
+	} else if tn.Kind == hir.KDot {
+		// Field assignment `.field = with-cap(n)`: the LHS-inferred builtin
+		// needs the FIELD's type as a hint, not the receiver's. Without this,
+		// `.hs-buf = with-cap(65536)` inside a method lowers the call to void
+		// (no typeHint set), the field gets NoVal, and codegen fails with
+		// "builtin with-cap: no result slot" (tests/test-net-http.no, which
+		// pulls in tls.no's conn.init).
+		fieldName := l.pkg.Str(tn.S)
+		if fieldName != "" {
+			var recvID int32
+			for _, c := range l.pkg.Children(target) {
+				recvID = c
+				break
+			}
+			if recvID != hir.NoID {
+				recvV := l.lowerExpr(recvID)
+				if recvV != NoVal {
+					if ft := l.fieldTypeOf(recvV, fieldName); ft != NoType && ft != l.voidType {
+						l.typeHint = ft
 					}
 				}
 			}

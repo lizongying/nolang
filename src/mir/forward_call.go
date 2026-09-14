@@ -60,8 +60,10 @@ const (
 	cArgBufPtr
 	// cArgFixed is a literal supplied by the spec (buffer sizes, option flags).
 	cArgFixed
-	// cArgNull is an explicit NULL pointer argument.
-	cArgNull
+// cArgNull is an explicit NULL pointer argument.
+cArgNull
+// cArgI64ToPtr converts an i64 value to i8* via inttoptr (e.g. dir handles).
+cArgI64ToPtr
 )
 
 // KeepAlive marks a cArgCStr buffer that the C function rewrites in place
@@ -170,6 +172,9 @@ type cRetSpec struct {
 	// ModeMask is the st_mode bit tested by cRetStatBool (e.g. 32768 = S_IFREG,
 	// 16384 = S_IFDIR). Ignored by other return kinds.
 	ModeMask int64
+	// PtrToInt: for cRetI64 with a pointer return type (e.g. opendir -> i8*),
+	// emit ptrtoint instead of sext/zext.
+	PtrToInt bool
 }
 
 // cCallSpec is a complete, declarative description of one C call.
@@ -322,6 +327,28 @@ var forwardCSpecs = map[string]cCallSpec{
 
 	// ------------------------------------------------- process
 	"process-fork": {Func: "fork", Ret: cRetSpec{Kind: cRetI64, LLVM: "i32", Signed: true}},
+
+	// ------------------------------------------------- touch / dir
+	"touch-file": {
+		Func: "utimensat",
+		Args: []cArgSpec{
+			{Kind: cArgFixed, Fixed: "-2", LLVM: "i32"}, // AT_FDCWD
+			{Kind: cArgCStr, From: 0},                    // path
+			{Kind: cArgNull},                              // NULL (times = now)
+			{Kind: cArgFixed, Fixed: "0", LLVM: "i32"},   // flags
+		},
+		Ret: cRetSpec{Kind: cRetBool, LLVM: "i32"},
+	},
+	"open-dir": {
+		Func: "opendir",
+		Args: []cArgSpec{{Kind: cArgCStr, From: 0}},
+		Ret:  cRetSpec{Kind: cRetI64, LLVM: "i8*", PtrToInt: true},
+	},
+	"close-dir": {
+		Func: "closedir",
+		Args: []cArgSpec{{Kind: cArgI64ToPtr, From: 0}},
+		Ret:  cRetSpec{Kind: cRetBool, LLVM: "i32"},
+	},
 }
 
 // forwardCSpecOf resolves a ForwardFunc name against the C-call table. It
@@ -420,6 +447,14 @@ func (c *codegen) emitCCall(inst *Inst, spec *cCallSpec) error {
 				return fmt.Errorf("builtin %s: %v", inst.Sym, err)
 			}
 			callArgs = append(callArgs, "double "+v)
+		case cArgI64ToPtr:
+			v, err := c.marshalScalar(inst, a.From, "i64")
+			if err != nil {
+				return fmt.Errorf("builtin %s: %v", inst.Sym, err)
+			}
+			p := c.treg("i2p")
+			c.sb.WriteString(fmt.Sprintf("  %s = inttoptr i64 %s to i8*\n", p, v))
+			callArgs = append(callArgs, "i8* "+p)
 		default:
 			v, err := c.marshalScalar(inst, a.From, "i64")
 			if err != nil {
@@ -490,7 +525,14 @@ func (c *codegen) emitCCall(inst *Inst, spec *cCallSpec) error {
 	case cRetDouble:
 		return c.storeResult(inst, 0, callReg, "double")
 	case cRetI64:
-		v := c.cToI64(callReg, callTy, spec.Ret.Signed)
+		var v string
+		if spec.Ret.PtrToInt {
+			r := c.treg("p2i")
+			c.sb.WriteString(fmt.Sprintf("  %s = ptrtoint %s %s to i64\n", r, callTy, callReg))
+			v = r
+		} else {
+			v = c.cToI64(callReg, callTy, spec.Ret.Signed)
+		}
 		return c.storeResult(inst, 0, v, "i64")
 	case cRetCStrToStr:
 		if err := c.storeCStrResult(inst, 0, callReg); err != nil {
@@ -647,8 +689,8 @@ func cArgLLVMType(a cArgSpec) string {
 		return "i32"
 	case cArgDouble:
 		return "double"
-	case cArgCStr, cArgRawPtr, cArgBufPtr, cArgNull:
-		return "i8*"
+case cArgCStr, cArgRawPtr, cArgBufPtr, cArgNull, cArgI64ToPtr:
+	return "i8*"
 	case cArgFixed:
 		if a.LLVM != "" {
 			return a.LLVM

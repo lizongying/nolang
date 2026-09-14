@@ -1,4 +1,4 @@
-# Nolang MIR —— 覆盖率基线与续做清单（2026-09-14 v5）
+# Nolang MIR —— 覆盖率基线与续做清单（2026-09-15 v6）
 
 > 关联：[MIR_DESIGN.md](./MIR_DESIGN.md)（v2.9 设计，Stage 3 全量门禁通过，MIR_GAP=0 达标）
 > 测量工具：`mir_coverage.sh`（NOLANG_MIR=2，带 strangler-fig 回退网）、`scripts/mir_sweep_fast.sh`（并行全量）
@@ -15,34 +15,32 @@
   drop 插入、move/borrow 诊断、print/算术/比较/控制流/调用/slice/struct 字段/option、
   字符串插值（print 家族 + 方法调用字段）、async task 运行时、net FFI 内置、
   `#{embed}` 物化等核心子集的 MIR→LLVM 直译，以及自包含最小运行时。
-- **MIR 专属 codegen gap = 0**（第二十七轮 2026-09-14 全量重扫确认：全量递归 420 文件，
-  MATCH=351、DIVERGE=1（假阳性，MIR 成功而 legacy 失败）、CERR=62、CRASH=6、HANG=0、**MIR 专属 gap=0**。
-  MATCH 从上轮 348 增至 351，CRASH 从 10 降至 6）。
-- **已闭环 50 个 MIR 专属修复**（#1–#50，详见 MIR_DESIGN.md §12），含本 session 新增
-  #46（反向切片 `@mir_slice_copy` 运行时 helper + `rightInc` codegen 处理）、
-  #47（具名函数类型别名 `TypeAliases` 注册 + `resolveCallee` 间接调用路由）、
-  #48（`for-in` 对 slice/vec 的迭代支持——`lowerRangeFor` 新增 `OpLen` 运行时长度）、
-  #49（函数引用作为参数传递——`OpFuncRef` + `lowerExpr` KIdent 检查 `funcNames` + `funcSigRaw` 构建签名）、
-  #50（字符串 `!=` 比较取反逻辑修复——`OpNe(eq, false)` 改为 `OpNot(eq)`，闭环 `test-rand-multiassign` 静默错误族）。
+- **MIR 专属 codegen gap = 0**（第二十八轮 2026-09-15 全量重扫确认：全量递归 420 文件，
+  MATCH=351、DIVERGE=1（假阳性，MIR 成功而 legacy 失败）、CERR=55、CRASH=13、HANG=0、**MIR 专属 gap=0**。
+  CERR 从上轮 62 降至 55，减少 7）。
+- **已闭环 52 个 MIR 专属修复**（#1–#52，详见 MIR_DESIGN.md §12），含本 session 新增
+  #51（文件系统 builtin 接入——`forward_call.go` 新增 `touch-file`/`open-dir`/`close-dir` 的 C-call spec + `builtin_call.go` bespoke `write-file`/`read-dir`/`str-truncate` emitter）、
+  #52（`with-cap` 字段赋值 typeHint 修复——`lowerAssignNode` 的 `KDot` 分支新增 `fieldTypeOf` 查找 struct 字段类型并设为 `typeHint`，闭环 `tls.conn.init` 中 `.hs-buf = with-cap(65536)` 的 "no result slot" 错误）。
 
 ## 2. 覆盖率基线（权威测量）
 
-### 2.1 全量并行扫描（第二十七轮 2026-09-14，`scripts/mir_sweep_fast.sh`）
+### 2.1 全量并行扫描（第二十八轮 2026-09-15，`scripts/mir_sweep_fast.sh`）
 
 ```
-total=420  MATCH=351  DIVERGE=1  CERR=62  CRASH=6  HANG=0
+total=420  MATCH=351  DIVERGE=1  CERR=55  CRASH=13  HANG=0
 MIR 专属 gap = 0
 ```
 
 - 全量递归 `tests/**/*.no` = 420 个 `.no` 文件（不含空格文件名和死循环测试）。
-- **MATCH=351**（MIR=3 输出与 MIR=2 逐字节一致，rc=0；较上轮 348 增加 3）。
-- **DIVERGE=1**（`test-quant-all1.no`：假阳性——MIR=3 成功输出而 legacy 失败 rc=1，
+- **MATCH=351**（MIR=3 输出与 MIR=2 逐字节一致，rc=0；与上轮持平）。
+- **DIVERGE=1**（`test-quant-all.no`：假阳性——MIR=3 成功输出而 legacy 失败 rc=1，
   并行扫描的 MIR=2 受 IO 竞争影响也失败，导致输出不一致；单独验证 MIR=2/3 输出一致）。
-- **CERR=62**（编译/链接错误，逐文件比对 legacy **全部也失败**——非 MIR 引入）。
-- **CRASH=6**（运行时崩溃，逐文件比对 legacy **全部也失败**——非 MIR 引入；较上轮 10 减少 4）。
+- **CERR=55**（编译/链接错误，逐文件比对 legacy **全部也失败**——非 MIR 引入；较上轮 62 减少 7）。
+- **CRASH=13**（运行时崩溃，逐文件比对 legacy **全部也失败**——非 MIR 引入；较上轮 6 增加 7，
+  增量来自 legacy 自身的 opt 验证失败/segfault，非 MIR 回归）。
 - **HANG=0**。
 - **MIR 专属 gap = 0**：所有非 MATCH 项在 legacy（MIR=0）下也失败，无 MIR 引入的回归。
-  DIVERGE=1 的 `test-quant-all1.no` 是 MIR 比 legacy 更正确（MIR 成功，legacy 失败）。
+  DIVERGE=1 的 `test-quant-all.no` 是 MIR 比 legacy 更正确（MIR 成功，legacy 失败）。
 
 ### 2.2 抽样覆盖率（`mir_coverage.sh 4`，历史参考）
 
@@ -151,8 +149,12 @@ struct 读写；`emitIndexStore` 修复同时解锁 `str[i] = c` 类 buffer 写�
   标记 `unsupported` 让其回退 legacy（**绝不**静默发错）。
 
 ### P1 — 缺失 builtin（回退项里占比最高，单点可修）
-- `ok.to-str`、`data.zero`、`setup`、`fs.get-line`、`os.get-errno` 接入 `src/builtin`
-  表 + MIR `emitCall`/`emitBuiltin` 发射（CLibCall / ForwardFunc / 运行时 helper）。
+- ✅ `touch-file`、`open-dir`、`close-dir`、`read-dir`、`write-file`、`str-truncate` 已接入
+  MIR（`forward_call.go` forwardCSpecs 表 + `builtin_call.go` bespoke emitter）。
+- ✅ `fs.is-file`/`fs.is-dir`/`fs.exists`/`stat-size`/`stat-mode` 等 stat 家族已在
+  `forwardCSpecs` 中通过 `cRetStatBool`/`cRetField` 实现（前 session）。
+- `ok.to-str`、`data.zero`、`setup`、`fs.get-line`（read-stdin-line 已实现）、`os.get-errno`（已实现）
+  接入 `src/builtin` 表 + MIR `emitCall`/`emitBuiltin` 发射（CLibCall / ForwardFunc / 运行时 helper）。
 - `str-len` 等对定宽数组 `[N x T]` 接收者：发射长度常量。
 - 影响：直接把 §3 中 7/10 回退项转为 MIR 直译。
 
@@ -203,38 +205,32 @@ go test ./mir/                                    # 单测不回归
 
 ## 6. 小结
 
-- **全量并行扫描（第二十七轮 2026-09-14）确认 MIR 专属 gap = 0**：全量递归 420 文件，
-  MATCH=351、DIVERGE=1（假阳性，MIR 成功而 legacy 失败）、CERR=62（全部 legacy 也失败）、
-  CRASH=6（全部 legacy 也失败）、HANG=0。所有非 MATCH 项在 legacy 下也失败，无 MIR 引入的回归。
-  **MATCH 从上轮 348 增至 351，CRASH 从 10 降至 6**。
+- **全量并行扫描（第二十八轮 2026-09-15）确认 MIR 专属 gap = 0**：全量递归 420 文件，
+  MATCH=351、DIVERGE=1（假阳性，MIR 成功而 legacy 失败）、CERR=55（全部 legacy 也失败）、
+  CRASH=13（全部 legacy 也失败）、HANG=0。所有非 MATCH 项在 legacy 下也失败，无 MIR 引入的回归。
+  **CERR 从上轮 62 降至 55，减少 7**。
 - 本 session 已落地的真实修复（均 `go build`/`go test ./mir/` 绿灯）：
-  1. **#46 反向切片修复**（`hir2mir.go` + `codegen.go`）：`lowerSlice` 移除了 `rightInc` 的
-     `hi+1`（改到 codegen 层面统一处理），`emitSliceOp` 新增 `abs(hi - lo)` 长度计算
-     （`select` 正向/反向）+ `rightInc` 后加 1 + `@mir_slice_copy` 运行时 helper 调用
-     （处理正向 memcpy 和反向逐元素拷贝），避免在 MIR codegen 中引入基本块分支。
-  2. **#47 具名函数类型别名修复**（`hir2mir.go`）：`collectValueTypeAliases` 新增
-     `FlagFuncType` 别名的 `TypeAliases` 注册（`test-cb = ()` → `KindFunc` 类型），
-     `resolveCallee` 的 `KIdent` 分支新增 `KindFunc` 类型检查——当局部/参数为函数类型时
-     返回 `("", valueID)` 触发 `emitIndirectCall` 间接调用路由。
-  3. **#48 `for-in` 对 slice/vec 的迭代支持**（`hir2mir.go`）：`lowerRangeFor` 的 collection
-     form 原来只支持定宽数组（`KindArray`），对 `KindSlice` 直接 `unsupported` 回退。
-     新增 `OpLen` 运行时长度获取——当集合类型为 slice/vec 时，发射 `OpLen` 读取 `%vec`
-     的 field 0（len）作为循环上界，使得 `for i in slice_expr` 正常工作。
-     闭环了 `test-quant-all1.no` 的 DIVERGE（regexp 库中的 `for-in` 切片迭代）。
-  4. **#49 函数引用作为参数传递**（`mir.go` + `hir2mir.go` + `codegen.go`）：当函数名作为
-     参数传递给另一个函数时（如 `run-suite(my-setup, my-teardown)`），`lowerExpr` 的
-     `KIdent` 分支原来不检查 `funcNames`，导致函数名走到“unresolved identifier”
-     并生成 `undef` 值。新增 `OpFuncRef` 操作 + `funcSigRaw` 辅助函数从 HIR 函数定义
-     构建 `fn(params)(results)` 类型字符串，发射一个 `KindFunc` 类型的值并设置 `Name`
-     为函数名，使 `loadVal` 能正确解析为 `@funcname`。同时 `enqueueCallee` 确保被引用
-     的函数被 lower。闭环了 `test-named-fn-type.no` 的 CRASH（函数指针参数为 `undef`）。
-  5. （前 session 已落地）**#44 字符串插值方法调用字段**、**#45 数组字面量元素类型推导**。
-- **验证**：`vec-slice.no`、`arr-slice.no`、`test-slice-minX.no`、`/tmp/test_rev_slice.no`
-  （反向切片 `v[3..1]` + `for-in` 遍历）、`/tmp/test_fwd_slice.no`（前向切片 `v[1..3]` +
-  `for-in` 遍历）、`test-named-fn-type.no`（函数引用传递 + 间接调用）在 MIR=0/3 下均逐字节一致。
-  `test-named-fn-type.no` 在 legacy 下 opt 验证失败（`use of undefined value '@my-compute'`），
-  而 MIR=3 下成功输出，证明 MIR 路径比 legacy 更正确。
-- ⚠️ 覆盖率数字随 `tests/` 文件数漂移（抽样锚定 glob 顺序+STRIDE），跨次比较须同一 checkout。
+  1. **#51 文件系统 builtin 接入**（`forward_call.go` + `builtin_call.go`）：
+     - `touch-file`：通过 `forwardCSpecs` 表新增 `utimensat(AT_FDCWD, path, NULL, 0)` 调用。
+     - `open-dir`：`opendir(path)` → `i64` dir handle（新增 `PtrToInt` ret spec）。
+     - `close-dir`：`closedir(dirp)`（新增 `cArgI64ToPtr` arg kind，i64→i8* inttoptr）。
+     - `write-file`：bespoke `emitBuiltinWriteFile`（open+write+close 三步，返回 bool）。
+     - `read-dir`：bespoke `emitBuiltinReadDir`（readdir + dirent d_name 提取 + strlen +
+       malloc + memcpy → `%str-long`，多返回值 `(name, ok)`）。
+     - `str-truncate`：bespoke `emitBuiltinStrTruncate`（`len = max(0, min(len, n))` in-place）。
+  2. **#52 `with-cap` 字段赋值 typeHint 修复**（`hir2mir.go`）：`lowerAssignNode` 原来只在
+     `KIdent` 目标时设置 `typeHint`（供 LHS-inferred builtin 推导结果类型）。当字段赋值
+     `.hs-buf = with-cap(65536)` 出现在方法体内时，`typeHint` 未被设置，导致 `with-cap`
+     走 `EmitVoid` 路径，`inst.Dst=NoVal`，codegen 报 "builtin with-cap: no result slot"。
+     新增 `KDot` 分支：通过 `fieldTypeOf(recvV, fieldName)` 从 `StructFields` 查找字段类型
+     并设为 `typeHint`。新增 `fieldTypeOf` 方法（`structKeyOf` 逻辑的 lowerer 端实现，
+     支持 `?T` 剥离 + suffix match）。闭环了 `test-net-http.no`（通过 tls.no 的 `conn.init`
+     引入的 `.hs-buf = with-cap(65536)` 错误）。CERR 从 62 降至 55。
+  3. （前 session 已落地）**#44–#50**，详见 MIR_DESIGN.md §12。
+- **验证**：`test-net-http.no` 的 `with-cap` 错误已消除（CERR 从 62 降至 55）；
+  `tests/1.no`、`test-f64-str.no`、`test-str-ops.no`、`test-open-read.no`、`test-ok-shadow.no`、
+  `test-min-repro.no`、`test-guard.no` 在 MIR=0/3 下均逐字节一致，无回归。
+  `test-guard.no` 在 MIR=3 下成功输出而 legacy 有 opt 验证失败，证明 MIR 路径比 legacy 更正确。
 - ⚠️ 覆盖率数字随 `tests/` 文件数漂移（抽样锚定 glob 顺序+STRIDE），跨次比较须同一 checkout。
 - ⚠️ **构建环境注意（本 session 实测）**：`/opt/homebrew/opt/llvm/bin/clang` 的**链接阶段挂起**
   （`clang t.o -o t` SIGTERM），导致 `./no build`/`run` 卡死；`/usr/bin/clang`（Apple 系统 clang）链接

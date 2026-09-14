@@ -719,6 +719,12 @@ func (c *codegen) emitBuiltinForward(f *Function, inst *Inst, bm *builtin.Builti
 		return c.emitBuiltinAsyncCancelled(inst)
 	case "async-yield":
 		return c.emitBuiltinAsyncYield(inst)
+	case "write-file":
+		return c.emitBuiltinWriteFile(inst)
+	case "read-dir":
+		return c.emitBuiltinReadDir(inst)
+	case "str-truncate":
+		return c.emitBuiltinStrTruncate(inst)
 	}
 	// Generic C call: the whole point of forward_call.go. Consulted LAST so a
 	// bespoke handler always wins, but it turns "add a POSIX builtin" from a new
@@ -2394,6 +2400,198 @@ func (c *codegen) emitBuiltinReadFile(inst *Inst) error {
 	dataInt := c.treg("rf.data")
 	c.sb.WriteString(fmt.Sprintf("  %s = ptrtoint i8* %s to i64\n", dataInt, buf))
 	c.sb.WriteString(fmt.Sprintf("  store i64 %s, i64* %s\n", dataInt, dataGEP))
+	return nil
+}
+
+// emitBuiltinWriteFile lowers `write-file(path, data)` -> ok bool.
+// Mirrors the legacy call_stdlib.go write-file inliner: open with
+// O_WRONLY|O_CREAT|O_TRUNC, write(fd, data, len), close(fd), ok = (written == len).
+func (c *codegen) emitBuiltinWriteFile(inst *Inst) error {
+	if len(inst.Args) < 2 {
+		return fmt.Errorf("write-file: needs path and data")
+	}
+	dstSlot := c.valSlot[inst.Dst]
+	if dstSlot == "" {
+		return fmt.Errorf("write-file: no result slot")
+	}
+	pathV, err := c.argIndex(inst, 0)
+	if err != nil {
+		return err
+	}
+	pathPtr := c.cstrOf(pathV)
+	if pathPtr == "" {
+		return fmt.Errorf("write-file: cannot marshal path as C string")
+	}
+
+	// Extract len and data pointer from the []byte (%vec) argument.
+	dataSlot := c.valSlot[inst.Args[1]]
+	if dataSlot == "" {
+		return fmt.Errorf("write-file: data arg has no slot")
+	}
+	lenGEP := c.treg("wf.lgep")
+	c.sb.WriteString(fmt.Sprintf("  %s = getelementptr inbounds %%vec, %%vec* %s, i32 0, i32 0\n", lenGEP, dataSlot))
+	wfLen := c.treg("wf.len")
+	c.sb.WriteString(fmt.Sprintf("  %s = load i64, i64* %s\n", wfLen, lenGEP))
+	dataGEP := c.treg("wf.dgep")
+	c.sb.WriteString(fmt.Sprintf("  %s = getelementptr inbounds %%vec, %%vec* %s, i32 0, i32 2\n", dataGEP, dataSlot))
+	dataPtr := c.treg("wf.data")
+	c.sb.WriteString(fmt.Sprintf("  %s = load i64, i64* %s\n", dataPtr, dataGEP))
+	dataPtrCast := c.treg("wf.dp")
+	c.sb.WriteString(fmt.Sprintf("  %s = inttoptr i64 %s to i8*\n", dataPtrCast, dataPtr))
+
+	c.decl("declare i32 @open(i8*, i32, i32)")
+	c.decl("declare i64 @write(i32, i8*, i64)")
+	c.decl("declare i32 @close(i32)")
+
+	// open(path, O_WRONLY|O_CREAT|O_TRUNC, 0644=420)
+	// macOS: 1 | 512 | 1024 = 1537; Linux: 1 | 64 | 512 = 577
+	openFlags := 1537
+	if runtime.GOOS == "linux" {
+		openFlags = 577
+	}
+	fd := c.treg("wf.fd")
+	c.sb.WriteString(fmt.Sprintf("  %s = call i32 @open(i8* %s, i32 %d, i32 420)\n", fd, pathPtr, openFlags))
+	openOk := c.treg("wf.ok")
+	c.sb.WriteString(fmt.Sprintf("  %s = icmp sge i32 %s, 0\n", openOk, fd))
+
+	// write(fd, data, len)
+	wr := c.treg("wf.wr")
+	c.sb.WriteString(fmt.Sprintf("  %s = call i64 @write(i32 %s, i8* %s, i64 %s)\n", wr, fd, dataPtrCast, wfLen))
+	// If open failed, use -1 for write result
+	wrSel := c.treg("wf.wrs")
+	c.sb.WriteString(fmt.Sprintf("  %s = select i1 %s, i64 %s, i64 -1\n", wrSel, openOk, wr))
+
+	// close(fd)
+	c.sb.WriteString(fmt.Sprintf("  call i32 @close(i32 %s)\n", fd))
+
+	// ok = (written == len)
+	cmp := c.treg("wf.cmp")
+	c.sb.WriteString(fmt.Sprintf("  %s = icmp eq i64 %s, %s\n", cmp, wrSel, wfLen))
+	c.sb.WriteString(fmt.Sprintf("  store i1 %s, i1* %s\n", cmp, dstSlot))
+	return nil
+}
+
+// emitBuiltinReadDir lowers `read-dir(dirp)` -> (name str, ok bool).
+// Mirrors the legacy call_stdlib.go read-dir inliner: readdir(dirp) returns
+// a dirent* (NULL = no more entries); d_name is at offset 21 on macOS.
+// The name is strlen'd, malloc'd, and memcpy'd into an owned %str-long.
+func (c *codegen) emitBuiltinReadDir(inst *Inst) error {
+	if len(inst.Args) < 1 {
+		return fmt.Errorf("read-dir: needs dirp")
+	}
+	// result 0 = name (str), result 1 = ok (bool)
+	nameSlot := c.valSlot[inst.Results[0]]
+	if nameSlot == "" {
+		return fmt.Errorf("read-dir: no name result slot")
+	}
+
+	dirpV, err := c.argIndex(inst, 0)
+	if err != nil {
+		return err
+	}
+	dirpT, dirpVal := c.loadVal(dirpV)
+	_ = dirpT
+
+	c.decl("declare i8* @readdir(i8*)")
+	// strlen is already declared globally by codegen.go
+
+	// inttoptr i64 to i8* (DIR*)
+	dirpPtr := c.treg("rd.dp")
+	c.sb.WriteString(fmt.Sprintf("  %s = inttoptr i64 %s to i8*\n", dirpPtr, dirpVal))
+
+	// readdir(dirp)
+	entry := c.treg("rd.ent")
+	c.sb.WriteString(fmt.Sprintf("  %s = call i8* @readdir(i8* %s)\n", entry, dirpPtr))
+
+	// ok = (entry != NULL)
+	okReg := c.treg("rd.ok")
+	c.sb.WriteString(fmt.Sprintf("  %s = icmp ne i8* %s, null\n", okReg, entry))
+
+	// d_name at offset 21 on macOS (d_ino(8) + d_seekoff(8) + d_reclen(2)
+	// + d_namlen(2) + d_type(1) = 21). Linux: d_ino(8) + d_off(8) +
+	// d_reclen(2) + d_type(1) = 19.
+	dnameOff := int64(21)
+	if runtime.GOOS == "linux" {
+		dnameOff = 19
+	}
+	nameGep := c.treg("rd.ng")
+	c.sb.WriteString(fmt.Sprintf("  %s = getelementptr i8, i8* %s, i64 %d\n", nameGep, entry, dnameOff))
+
+	// Select: if not NULL, use d_name pointer; otherwise use empty string global
+	c.global(`@.str.empty = private unnamed_addr constant [1 x i8] c"\00"`)
+	emptyPtr := c.treg("rd.ep")
+	c.sb.WriteString(fmt.Sprintf("  %s = getelementptr inbounds [1 x i8], [1 x i8]* @.str.empty, i64 0, i64 0\n", emptyPtr))
+	safeName := c.treg("rd.sn")
+	c.sb.WriteString(fmt.Sprintf("  %s = select i1 %s, i8* %s, i8* %s\n", safeName, okReg, nameGep, emptyPtr))
+
+	// strlen on the safe pointer
+	lenReg := c.treg("rd.len")
+	c.sb.WriteString(fmt.Sprintf("  %s = call i64 @strlen(i8* %s)\n", lenReg, safeName))
+
+	// malloc(len + 1) and memcpy (readdir returns static memory)
+	bufSize := c.treg("rd.bs")
+	c.sb.WriteString(fmt.Sprintf("  %s = add i64 %s, 1\n", bufSize, lenReg))
+	nameBuf := c.treg("rd.nb")
+	c.sb.WriteString(fmt.Sprintf("  %s = call i8* @malloc(i64 %s)\n", nameBuf, bufSize))
+	c.sb.WriteString(fmt.Sprintf("  call void @llvm.memcpy.p0i8.p0i8.i64(i8* %s, i8* %s, i64 %s, i1 false)\n", nameBuf, safeName, bufSize))
+
+	// Build %str-long { len, cap, data } in the result slot
+	lenGEP := c.treg("rd.lgep")
+	c.sb.WriteString(fmt.Sprintf("  %s = getelementptr inbounds %%str-long, %%str-long* %s, i32 0, i32 0\n", lenGEP, nameSlot))
+	c.sb.WriteString(fmt.Sprintf("  store i64 %s, i64* %s\n", lenReg, lenGEP))
+	capGEP := c.treg("rd.cgep")
+	c.sb.WriteString(fmt.Sprintf("  %s = getelementptr inbounds %%str-long, %%str-long* %s, i32 0, i32 1\n", capGEP, nameSlot))
+	c.sb.WriteString(fmt.Sprintf("  store i64 %s, i64* %s\n", lenReg, capGEP))
+	dataGEP := c.treg("rd.dgep")
+	c.sb.WriteString(fmt.Sprintf("  %s = getelementptr inbounds %%str-long, %%str-long* %s, i32 0, i32 2\n", dataGEP, nameSlot))
+	dataInt := c.treg("rd.di")
+	c.sb.WriteString(fmt.Sprintf("  %s = ptrtoint i8* %s to i64\n", dataInt, nameBuf))
+	c.sb.WriteString(fmt.Sprintf("  store i64 %s, i64* %s\n", dataInt, dataGEP))
+
+	// Store ok into result 1
+	if err := c.storeResult(inst, 1, okReg, "i1"); err != nil {
+		return err
+	}
+	return nil
+}
+
+// emitBuiltinStrTruncate lowers `str.truncate(n)` — set len = max(0, min(len, n))
+// in-place on the receiver's %str-long {len, cap, data}. cap and data pointer
+// are unchanged. Mirrors the legacy genForwardFunc "str-truncate" case.
+func (c *codegen) emitBuiltinStrTruncate(inst *Inst) error {
+	if len(inst.Args) < 2 {
+		return fmt.Errorf("str-truncate: needs receiver and n")
+	}
+	recvSlot := c.valSlot[inst.Args[0]]
+	if recvSlot == "" {
+		return fmt.Errorf("str-truncate: receiver has no slot")
+	}
+	nT, nV := c.loadVal(inst.Args[1])
+	n := c.coerce(nT, nV, "i64")
+	if n == "" {
+		n = nV
+	}
+
+	// Load current len
+	lenGEP := c.treg("st.lgep")
+	c.sb.WriteString(fmt.Sprintf("  %s = getelementptr inbounds %%str-long, %%str-long* %s, i32 0, i32 0\n", lenGEP, recvSlot))
+	curLen := c.treg("st.cl")
+	c.sb.WriteString(fmt.Sprintf("  %s = load i64, i64* %s\n", curLen, lenGEP))
+
+	// newLen = min(curLen, max(0, n))
+	// clamp n to >= 0
+	zero := c.treg("st.z")
+	c.sb.WriteString(fmt.Sprintf("  %s = icmp slt i64 %s, 0\n", zero, n))
+	clampedN := c.treg("st.cn")
+	c.sb.WriteString(fmt.Sprintf("  %s = select i1 %s, i64 0, i64 %s\n", clampedN, zero, n))
+	// min(curLen, clampedN)
+	ltCmp := c.treg("st.lt")
+	c.sb.WriteString(fmt.Sprintf("  %s = icmp slt i64 %s, %s\n", ltCmp, curLen, clampedN))
+	newLen := c.treg("st.nl")
+	c.sb.WriteString(fmt.Sprintf("  %s = select i1 %s, i64 %s, i64 %s\n", newLen, ltCmp, curLen, clampedN))
+
+	// Store new len
+	c.sb.WriteString(fmt.Sprintf("  store i64 %s, i64* %s\n", newLen, lenGEP))
 	return nil
 }
 
