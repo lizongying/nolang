@@ -165,7 +165,7 @@ func (m *Module) insertDrops(f *Function, rep *Report) {
 			if inst == nil {
 				continue
 			}
-			if inst.Op == OpMove && len(inst.Args) > 0 && inst.Args[0] > NoVal {
+			if isTransferringMove(inst) {
 				moveSrc[inst.Args[0]] = true
 			}
 			// OpOptionWrap transfers ownership of its payload into the option
@@ -436,6 +436,19 @@ func equalSet(a, b valueSet) bool {
 	return true
 }
 
+// isTransferringMove reports whether an OpMove transfers ownership out of its
+// source. A SELF-move (`move [x -> x]`, emitted by the lowering for a
+// redundant re-assignment such as `x = x`) copies a slot onto itself and moves
+// nothing: treating it as a transfer made the very next `drop x` look like a
+// double-free ("value 1400 dropped after move"), which blocked the MIR backend
+// on tests/test-str.no (std str.replace-n).
+func isTransferringMove(inst *Inst) bool {
+	if inst == nil || inst.Op != OpMove || len(inst.Args) == 0 || inst.Args[0] <= NoVal {
+		return false
+	}
+	return len(inst.Args) < 2 || inst.Args[1] != inst.Args[0]
+}
+
 // checkMoves flags use-after-move in nolang's sense: a value DROPPED after it
 // has been moved (its ownership transferred to the move destination) is a
 // double-free — the destination already owns the heap pointer, so dropping the
@@ -519,7 +532,7 @@ func (m *Module) checkMoves(f *Function, rep *Report) {
 				if inst == nil {
 					continue
 				}
-				if inst.Op == OpMove && len(inst.Args) > 0 && inst.Args[0] > NoVal {
+				if isTransferringMove(inst) {
 					cur[inst.Args[0]] = true
 				}
 			}
@@ -565,7 +578,7 @@ func (m *Module) checkMoves(f *Function, rep *Report) {
 					})
 				}
 			}
-			if inst.Op == OpMove && len(inst.Args) > 0 && inst.Args[0] > NoVal {
+			if isTransferringMove(inst) {
 				cur[inst.Args[0]] = true
 			}
 		}

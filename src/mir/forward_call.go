@@ -530,12 +530,26 @@ func (c *codegen) emitCCall(inst *Inst, spec *cCallSpec) error {
 			w = 64 // default: native 64-bit field (st_size / st_mtime.tv_sec)
 		}
 		v := c.loadFieldAtWidth(buf, spec.Ret.Offset, w)
+		// stat-success is the i32 C return register.
+		okCmp := ""
+		if callReg != "" {
+			okCmp = c.treg("fok")
+			c.sb.WriteString(fmt.Sprintf("  %s = icmp eq %s %s, 0\n", okCmp, callTy, callReg))
+		}
+		// Option-returning builtins (stat-size / file-size / fstat-size): std
+		// declares them as a single `?i64`, so the stat-success flag must
+		// become the option discriminant (tag 0 = ok, tag 1 = nil) instead of
+		// a second result — exactly what legacy's generateOptionAssign does
+		// (build/llvm/stmt.go). Emitting a bare i64 instead leaves `?=`
+		// comparisons against `err` untyped -> `icmp eq i64 %v, undef` ->
+		// `unreachable` -> SIGTRAP (tests/test-open-read.no).
+		if lt, ok := c.resultType(inst, 0); ok && isOptionType(lt) {
+			return c.storeOptionFromPair(inst, v, okCmp)
+		}
 		// Mirror legacy stat-* exactly: when stat() fails the scratch buffer is
 		// left uninitialized, so the field must return 0 rather than whatever
-		// garbage the alloca held. stat-success is the i32 C return register.
-		if callReg != "" {
-			okCmp := c.treg("fok")
-			c.sb.WriteString(fmt.Sprintf("  %s = icmp eq %s %s, 0\n", okCmp, callTy, callReg))
+		// garbage the alloca held.
+		if okCmp != "" {
 			sel := c.treg("fsel")
 			c.sb.WriteString(fmt.Sprintf("  %s = select i1 %s, i64 %s, i64 0\n", sel, okCmp, v))
 			v = sel
@@ -570,6 +584,24 @@ func (c *codegen) emitCCall(inst *Inst, spec *cCallSpec) error {
 		c.sb.WriteString(fmt.Sprintf("  call void @free(i8* %s)\n", s))
 	}
 	return nil
+}
+
+// storeOptionFromPair stores a (value, okFlag) pair into a `?T` result as the
+// flat `%option { tag, data }`: tag 0 (ok/some) when the flag is set, tag 1
+// (nil/none) otherwise; data is the value. This mirrors legacy's
+// generateOptionAssign for option-returning builtins.
+func (c *codegen) storeOptionFromPair(inst *Inst, val, okFlag string) error {
+	tag := c.treg("optg")
+	if okFlag != "" {
+		c.sb.WriteString(fmt.Sprintf("  %s = select i1 %s, i64 0, i64 1\n", tag, okFlag))
+	} else {
+		c.sb.WriteString(fmt.Sprintf("  %s = select i1 true, i64 0, i64 1\n", tag))
+	}
+	w1 := c.treg("optw")
+	c.sb.WriteString(fmt.Sprintf("  %s = insertvalue %%option { i64 0, i64 0 }, i64 %s, 0\n", w1, tag))
+	w2 := c.treg("optw")
+	c.sb.WriteString(fmt.Sprintf("  %s = insertvalue %%option %s, i64 %s, 1\n", w2, w1, val))
+	return c.storeResult(inst, 0, w2, "%option")
 }
 
 // storePairResult fills result index 1 when the C return register carries it.

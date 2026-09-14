@@ -2,6 +2,7 @@ package mir
 
 import (
 	"fmt"
+	"math"
 	"regexp"
 	"strconv"
 	"strings"
@@ -17,8 +18,15 @@ import (
 var byteArrayRe = regexp.MustCompile(`^\[(\d+)\](byte|i8)$`)
 
 // formatFloat renders an f64 constant in a form LLVM's textual IR accepts.
+// It uses the 16-hex-digit bit pattern (`0x3FF0000000000000`), NOT the
+// shortest decimal form: `strconv.FormatFloat(0,'g',-1,64)` yields "0", and
+// `double 0` is REJECTED by the LLVM parser (a decimal FP literal must
+// contain '.' or an exponent). That broke every module-level float global
+// (`@px2 = private global double 0` -> opt-verify failure, test-tmp-nbody).
+// The hex form is always accepted and matches what instruction-level
+// constants already emit (`store double 0x%016X`).
 func formatFloat(f float64) string {
-	return strconv.FormatFloat(f, 'g', -1, 64)
+	return fmt.Sprintf("0x%016X", math.Float64bits(f))
 }
 
 // Diagnostic (MIR-lowering-level) records a construct the current lowering subset
@@ -44,11 +52,34 @@ type lowerer struct {
 	worklist  []string
 	lowered   map[string]bool
 	locals    map[string]ValueID
+	// localRaw records each local's DECLARED nolang raw type by name. MIR
+	// flattens every integer to i64 and registers u64 locals as i64, so the
+	// signedness is lost from the lowered value — but it is needed to choose
+	// `udiv`/`urem` over `sdiv`/`srem` for unsigned division (i64-to-str's u64
+	// magnitude loop for i64.MIN). Populated from the KLet declaration's type
+	// annotation; reassignments (no type) leave the earlier entry intact.
+	localRaw map[string]string
 	curFunc   FuncID
 	voidType  TypeID
 	curRecv   ValueID // current method's implicit `self` receiver value (first param)
 	diags     []LowerDiag
 	loopStack []loopCtx // active for-loops, for break/continue targets
+
+	// matchDepth counts how many enclosing match arms are currently being
+	// lowered. A match desugars to a chain of `if`/`elif`/`else` (each arm a
+	// `then`/`else` block whose FIRST statement is the synthetic `let it =
+	// <matched>`). Because `it` is a single function-global slot, a NESTED
+	// match's arm would rebind `it` to its own subject and clobber the outer
+	// match's `it` — so a later `it.method()` inside the nested arm (or after
+	// it) resolved to the wrong receiver type. Legacy preserves the outer `it`
+	// across nested matches (src/build/llvm/expr.go saves/restores
+	// g.varTypes["it"] around every branch; the parser's intent at
+	// lowering.go:1138 is "嵌套 match 時這能保住外層的 `it`"). MIR mirrors that
+	// by skipping the `it` rebind when matchDepth > 1 (i.e. the `let it` is
+	// itself inside a nested match arm), so `it` keeps referring to the nearest
+	// enclosing match's subject. See the `name == "it"` branch in lowerStmt and
+	// the match-arm detection in lowerIf.
+	matchDepth int
 
 	// contStack is the chain of "merge"/continuation blocks for enclosing
 	// control-flow constructs (if/for). When an if's merge block ends up empty
@@ -82,6 +113,33 @@ type lowerer struct {
 	// identifier" gap. It is set for the duration of a KLet's value expression
 	// and cleared immediately afterwards.
 	typeHint TypeID
+
+	// exprSink is the value slot that a control-flow expression (a `match`/`if`
+	// used as a value, e.g. `r = n: { ok(v) -> v+1 }`) must write its RESULT
+	// into. MIR is statement-oriented, so a match used as an expression value
+	// is lowered as a STATEMENT whose arms each store their final value into
+	// this slot; the enclosing `let`/`assign` then reads the slot as `r`'s
+	// value. It is set by the enclosing binding for the duration of the
+	// control-flow lowering and reset to NoVal afterwards. A NoVal exprSink
+	// means "statement context" — arms run for side effects only, no capture.
+	exprSink ValueID
+
+	// exprCapture, when true, means the currently-lowered KIf is a match/if
+	// used as an EXPRESSION value (`r = subject: { arms }` / `r = if c { a }
+	// else { b }`). Each arm's final value is stored into exprSink (a shared
+	// slot created on the first arm) so the enclosing binding can alias that
+	// slot. Set by the enclosing KLet for the duration of the control-flow
+	// lowering and restored afterwards. Crucially this is ONLY active while a
+	// control-flow node is the RHS of a `let`/`assign` — statement-mode
+	// matches (`{ cond -> ... }`) and ordinary uses of `if` never set it, so
+	// they are unaffected (no regression of the 260 MATCH tests).
+	exprCapture bool
+
+	// stmtVal carries the value produced by the most recent lowerStmt, so
+	// lowerBlock can return the LAST statement's value (needed to capture a
+	// match/if-arm's result into exprSink). Reset by lowerStmt at entry;
+	// value-bearing statements overwrite it.
+	stmtVal ValueID
 
 	// globals maps a package-level binding name to its MIR value. Top-level
 	// `let`s and constants (SBOX, TLS-FINISHED-SIZE, ...) live outside every
@@ -128,6 +186,25 @@ type lowerer struct {
 	// 10-test fs-open/errno family (test-open-*, test_fs_error_*, test-fs-struct,
 	// test-uninit-output).
 	structLitTypes map[int32]string
+
+	// forceRunCall is the HIR node id of a KCall that must be lowered as an
+	// async launch (OpRun) even though its callee name lacks the `-async`
+	// suffix. nolang's async-ness is SYNTACTIC: `run f(args)` launches a task
+	// for ANY callee (legacy generateRunExpression calls prepareAsyncCall
+	// unconditionally). Only a BARE call to an `-async`-suffixed function
+	// creates a future. lowerAsyncRun sets this to the direct call child while
+	// lowering it, then restores the previous value; lowerCall consumes it by
+	// comparing against n.Id so nested calls (e.g. `run f(g())`) are unaffected.
+	forceRunCall int32
+
+	// asyncResTypes maps the MIR value holding an async task handle to the
+	// TypeID of that task's RESULT. The handle itself is an opaque i64, so the
+	// result type would otherwise be lost between the `run` site (where the
+	// result buffer's size/type is known from the callee signature) and the
+	// `awy` site (which must read the result with the right type — e.g. a `str`
+	// result read as i64 prints the length instead of the string). Populated in
+	// lowerCall's OpRun branch and propagated through scalar let-copies.
+	asyncResTypes map[ValueID]TypeID
 }
 
 // collectStructFields scans the HIR package for struct definitions and records
@@ -162,8 +239,54 @@ func (l *lowerer) collectStructFields() {
 				l.b.Type(ftype)
 			}
 		}
-		if len(fields) > 0 {
-			l.mod.StructFields[name] = fields
+	if len(fields) > 0 {
+		l.mod.StructFields[name] = fields
+	}
+	}
+}
+
+// collectValueTypeAliases scans the HIR package for value-type alias
+// definitions (e.g. `fd = i64`, `code = i32`) and records the mapping from the
+// alias name to its underlying nolang type name in mod.ValueTypeAliases. A
+// scalar newtype (`fd`) is represented in MIR as the same KindInt as its
+// underlying `i64`, but its type Raw keeps the alias name (`fd`), so a method
+// call `fd.to-str()` would otherwise form the callee `fd.to-str` instead of the
+// `i64.to-str` the legacy backend emits. Expanding the alias at method-dispatch
+// time fixes "unknown callee fd.to-str" (tests/test_errno_basic.no). Function
+// type aliases (FlagFuncType) and unions (FlagUnion) are excluded — the former
+// are tracked by mod.TypeAliases, the latter have no single underlying type.
+func (l *lowerer) collectValueTypeAliases() {
+	if l.mod.ValueTypeAliases == nil {
+		l.mod.ValueTypeAliases = map[string]string{}
+	}
+	for _, id := range l.pkg.Top {
+		n := l.pkg.Node(id)
+		if n == nil || n.Kind != hir.KTypeAlias {
+			continue
+		}
+		if n.Has(hir.FlagFuncType) || n.Has(hir.FlagUnion) || n.Type == hir.NoID {
+			continue
+		}
+		name := l.pkg.Str(n.S)
+		if name == "" {
+			continue
+		}
+		if target := l.pkg.Type(n.Type); target != "" {
+			// Register under the module-qualified name (e.g. `fs.fd`) so a
+			// fully-qualified receiver type resolves, AND under the bare name
+			// (e.g. `fd`) because method dispatch sees the receiver's MIR type
+			// Raw which keeps the BARE alias name (`fd`, not `fs.fd`) — the
+			// type checker normalizes `fs.open-file`'s return to the alias `fd`
+			// while the KTypeAlias node is stored module-qualified. Without the
+			// bare entry, `fd.to-str` would not expand to `i64.to-str`.
+			l.mod.ValueTypeAliases[name] = target
+			if i := strings.LastIndex(name, "."); i >= 0 {
+				if bare := name[i+1:]; bare != "" {
+					if _, ok := l.mod.ValueTypeAliases[bare]; !ok {
+						l.mod.ValueTypeAliases[bare] = target
+					}
+				}
+			}
 		}
 	}
 }
@@ -223,9 +346,25 @@ func (l *lowerer) synthesizeMainForTopLevel(pkg *hir.Package) {
 			// lowers to a real `%vec`. Skip the global keep for those.
 			if l.isUnsafeInlineType(raw) {
 				// fall through to inline as a local
-			} else {
+			} else if gnid, ok := l.globalNodes[pkg.Str(n.S)]; ok && gnid == id {
+				// This `let` IS the registered module-constant declaration
+				// (its initializer folds to a real LLVM constant and was
+				// materialized as a lazily-materialized global). It must NOT
+				// be inlined into the synthetic `main` — the global already
+				// holds the value. A LATER top-level `let` of the SAME name
+				// (a runtime reassignment, e.g. `x = 10` after `x i64 = 5`)
+				// has `gnid != id`, so it is NOT skipped here: it is inlined
+				// and lowerStmt/lowerAssignNode emit the runtime store into
+				// the existing global (test-ifelse2: `five`/`not five`, not
+				// `not five`/`not five`). Without this guard the reassignment
+				// was folded into the initializer and the runtime store was
+				// dropped, so the variable never changed value.
 				continue
 			}
+			// Otherwise (a reassignment to a previously-declared global, or a
+			// runtime-computed `let`): inline into `main` so it stores /
+			// computes at runtime and stays consistent with the legacy
+			// backend.
 		}
 		// Inline top-level `let`s that are COMPUTED at runtime (call results,
 		// arithmetic, negative literals like `bad-fd fd = -1`, slice/array/
@@ -367,6 +506,7 @@ func LowerHIR(pkg *hir.Package, enumVariants map[string][]string) (*Module, *Rep
 		globalTypes: map[string]string{},
 		globalNodes: map[string]int32{},
 		enumVariants: enumVariants,
+		asyncResTypes: map[ValueID]TypeID{},
 	}
 	l.b = NewBuilder("hir")
 	l.mod = l.b.Module()
@@ -382,6 +522,7 @@ func LowerHIR(pkg *hir.Package, enumVariants map[string][]string) (*Module, *Rep
 	// indices stay consistent: data = field 0, len = field 1.
 	l.mod.StructFields["txt"] = []FieldInfo{{Name: "data", TypeRaw: "byte"}, {Name: "len", TypeRaw: "byte"}}
 	l.collectStructFields()
+	l.collectValueTypeAliases()
 
 	hasExplicitMain := false
 	for _, id := range pkg.Top {
@@ -443,14 +584,29 @@ func LowerHIR(pkg *hir.Package, enumVariants map[string][]string) (*Module, *Rep
 					continue
 				}
 			}
-			gname := pkg.Str(n.S)
-			if gname != "" {
+		gname := pkg.Str(n.S)
+		if gname != "" {
+			// Only the FIRST top-level `let` of a name is a module-level
+			// declaration whose LLVM constant initializer is materialized
+			// once. A LATER `let` of the same name (`x = 10` after
+			// `x i64 = 5`) is a runtime REASSIGNMENT, not a fresh
+			// declaration: registering it would (a) overwrite the global's
+			// `@x` initializer with the reassignment value (test-ifelse2:
+			// `@x` became `i64 10` instead of `i64 5`) and (b) make
+			// synthesizeMainForTopLevel skip it as a second module constant,
+			// so the runtime store into `@x` was dropped and every later
+			// read saw the (wrong) initializer. The reassignment is handled
+			// by synthesizeMainForTopLevel, which inlines it so
+			// lowerStmt/lowerAssignNode emit the store. Guard with existence
+			// so reassignments never overwrite the declaration's slot.
+			if _, exists := l.globals[gname]; !exists {
 				if dt := l.typeOfNode(n); dt != NoType && dt != l.voidType {
 					l.globalTypes[gname] = l.mod.Types[dt].Raw
 				}
 				l.globals[gname] = NoVal // marker: declared, not yet materialized
 				l.globalNodes[gname] = id
 			}
+		}
 		}
 	}
 
@@ -823,6 +979,91 @@ func (l *lowerer) enumVariantValue(key string) (int64, bool) {
 	return 0, false
 }
 
+// enumVariantValueOf resolves the bare variant name `variant` against the enum
+// type `enumRaw` (which may be module-qualified, e.g. "fs.file-mode" for the
+// table key "file-mode"), returning its zero-based discriminant.
+//
+// `enumVariantValue` above only accepts an exact "enum.variant" key; this
+// variant mirrors `isEnumTypeName`'s leniency so a module-qualified *type* name
+// still finds the bare table key.
+func (l *lowerer) enumVariantValueOf(enumRaw, variant string) (int64, bool) {
+	if enumRaw == "" || variant == "" || l.enumVariants == nil {
+		return 0, false
+	}
+	lookup := func(key string) ([]string, bool) {
+		v, ok := l.enumVariants[key]
+		return v, ok
+	}
+	variants, ok := lookup(enumRaw)
+	if !ok {
+		if i := strings.LastIndex(enumRaw, "."); i >= 0 {
+			variants, ok = lookup(enumRaw[i+1:])
+		}
+	}
+	if !ok {
+		return 0, false
+	}
+	for idx, v := range variants {
+		if v == variant {
+			return int64(idx), true
+		}
+	}
+	return 0, false
+}
+
+// lowerBareEnumVariant resolves a match-arm variant reference with NO receiver.
+// The parser desugars `m: { read -> ... }` (m: file-mode) into the condition
+// `m == read`, where `read` is a bare KIdent carrying no type — HIR cannot say
+// which enum it belongs to, so `lowerIdent` fell through to an unresolved
+// placeholder and emitted `const void`, producing
+// `icmp eq i64 %lv, undef` (verified: MIR `fs.open` compared opts.mode against
+// undef instead of 0/1/2/3, so every file mode took the WRONG branch — the
+// runtime trap behind the fs-open family).
+//
+// The enum type comes from the SIBLING operand (`m`), which is a real value
+// of an enum-typed slot. Only a genuinely free identifier qualifies: a bound
+// local is a value, not a variant.
+func (l *lowerer) lowerBareEnumVariant(nd, sibling *hir.Node) (ValueID, bool) {
+	if nd == nil || nd.Kind != hir.KIdent {
+		return NoVal, false
+	}
+	name := l.pkg.Str(nd.S)
+	if name == "" {
+		return NoVal, false
+	}
+	// A bound local shadows any same-named variant (`read` as a variable).
+	if _, isLocal := l.locals[name]; isLocal {
+		return NoVal, false
+	}
+	if sibling == nil {
+		return NoVal, false
+	}
+	enumRaw := ""
+	switch sibling.Kind {
+	case hir.KIdent:
+		if sv, ok := l.locals[l.pkg.Str(sibling.S)]; ok {
+			if ty := l.mod.Type(l.valueTypeOf(sv)); ty != nil {
+				enumRaw = ty.Raw
+			}
+		}
+	}
+	if enumRaw == "" {
+		if st := l.typeOfNode(sibling); st != NoType && st != l.voidType {
+			if ty := l.mod.Type(st); ty != nil {
+				enumRaw = ty.Raw
+			}
+		}
+	}
+	if enumRaw == "" {
+		return NoVal, false
+	}
+	v, ok := l.enumVariantValueOf(strings.TrimPrefix(enumRaw, "?"), name)
+	if !ok {
+		return NoVal, false
+	}
+	return l.b.EmitInt(OpConst, l.b.Type("i64"), v, ""), true
+}
+
 // letValueIsCall reports whether a top-level KLet's value expression is a
 // function call (rather than a literal/struct-literal initializer).
 func (l *lowerer) letValueIsCall(n *hir.Node) bool {
@@ -890,6 +1131,9 @@ func (l *lowerer) lowerFunction(name string, hirID int32) {
 	// are unique per module, but clearing avoids stale cross-function entries
 	// and keeps ensureReturn's lookup scoped to the current function.
 	l.contTargets = make(map[BlockID]BlockID)
+	// Reset the declared-raw-type table so each function starts clean (the
+	// signedness lookup for unsigned division must not leak across functions).
+	l.localRaw = make(map[string]string)
 	n := l.pkg.Node(hirID)
 
 	var params []ValueID
@@ -933,6 +1177,12 @@ func (l *lowerer) lowerFunction(name string, hirID int32) {
 	l.locals = map[string]ValueID{}
 	for i, pn := range paramNames {
 		l.locals[pn] = params[i]
+		// Record the parameter's DECLARED raw type so unsigned division on a
+		// u64/u32/u16/u8/byte parameter (e.g. u64-to-str's `u`) emits `udiv`/
+		// `urem` instead of `sdiv`/`srem` (MIR flattens integers to i64).
+		if isUnsignedRaw(l.mod.Type(paramTypes[i]).Raw) {
+			l.localRaw[pn] = l.mod.Type(paramTypes[i]).Raw
+		}
 	}
 	f := l.mod.Func(fid)
 	if f != nil {
@@ -1011,10 +1261,14 @@ func (l *lowerer) ensureReturn(fid FuncID) {
 	}
 }
 
-func (l *lowerer) lowerBlock(blockID int32) {
+func (l *lowerer) lowerBlock(blockID int32) ValueID {
+	var last ValueID
 	for _, c := range l.pkg.Children(blockID) {
+		l.stmtVal = NoVal
 		l.lowerStmt(c)
+		last = l.stmtVal
 	}
+	return last
 }
 
 func (l *lowerer) curFuncName() string {
@@ -1025,6 +1279,7 @@ func (l *lowerer) curFuncName() string {
 }
 
 func (l *lowerer) lowerStmt(id int32) {
+	l.stmtVal = NoVal
 	n := l.pkg.Node(id)
 	if n == nil {
 		return
@@ -1032,6 +1287,26 @@ func (l *lowerer) lowerStmt(id int32) {
 	switch n.Kind {
 	case hir.KLet:
 		name := l.pkg.Str(n.S)
+		// Record the binding's DECLARED raw type (needed later to pick
+		// `udiv`/`urem` for unsigned division — MIR flattens integers to i64
+		// and loses the u64-ness of the lowered value). Only set when the
+		// declaration actually carries an unsigned type; reassignments (no
+		// type annotation) leave the earlier entry intact.
+		if name != "" {
+			if raw := l.pkg.Type(n.Type); isUnsignedRaw(raw) {
+				l.localRaw[name] = raw
+			}
+		}
+		// `#{embed='path'}` binding (`DATA []byte`): the bytes are embedded at
+		// compile time. Materialize the binding as a module-level `%vec` global
+		// whose data pointer targets a private constant byte array, exactly as
+		// the legacy backend does (build/llvm/generator.go). The MIR path had NO
+		// embed handling at all, so DATA silently became an empty slice
+		// (test-embed printed "embed len: 0", then an out-of-bounds read).
+		if data := l.pkg.EmbedDataOf(id); len(data) > 0 && name != "" {
+			l.lowerEmbedBinding(name, data)
+			break
+		}
 		var val ValueID = NoVal
 		var childID int32
 		// Publish the binding's declared type as a hint while lowering the
@@ -1054,10 +1329,112 @@ func (l *lowerer) lowerStmt(id int32) {
 		}
 	for _, c := range l.pkg.Children(id) {
 		childID = c
+		cn := l.pkg.Node(c)
+		// A `match`/`if` used as an EXPRESSION value: `r = subject: { arms }`
+		// or `r = if cond { a } else { b }`. MIR is statement-oriented and
+		// lowerExpr rejects control flow in expression position (returns
+		// NoVal), so `r` was never bound and `print(r)` printed nothing. Lower
+		// the if as a STATEMENT and capture each arm's final value into a
+		// shared slot (l.exprSink); `r` then aliases that slot. Only the FIRST
+		// arm creates the slot (typed from its value); later arms store into
+		// the same slot. Statement-mode matches (`{ cond -> ... }`) and
+		// ordinary `if` uses never set l.exprCapture, so they are unaffected
+		// (no regression of the existing MATCH tests). Nested match guards
+		// (`ok(it > 127) -> ...`) are themselves if-chains; lowerStmt recurses
+		// with capture active, so their arms converge into the same slot.
+		if cn != nil && cn.Kind == hir.KIf && name != "" {
+			savedCap := l.exprCapture
+			l.exprCapture = true
+			l.exprSink = NoVal
+			l.lowerIf(cn)
+			if l.exprSink != NoVal {
+				l.locals[name] = l.exprSink
+				if f := l.mod.Func(l.curFunc); f != nil {
+					if _, ok := f.LocalTypes[l.exprSink]; !ok {
+						f.LocalTypes[l.exprSink] = l.valueTypeOf(l.exprSink)
+					}
+				}
+			} else {
+				// All arms side-effecting / no value produced: bind a zero so
+				// later reads don't cascade to "unresolved identifier".
+				l.locals[name] = l.b.EmitInt(OpConst, l.b.Type("i64"), 0, name)
+			}
+			l.exprCapture = savedCap
+			l.exprSink = NoVal
+			break
+		}
+		// An anonymous `{...}` initializer takes its struct type from the
+		// binding's declared type. A call ARGUMENT is already seeded by
+		// lowerCallArgs (see noteAnonymousStructLit); a let / re-assignment is
+		// seeded here. Without it the literal stayed untyped, OpSetField had no
+		// struct layout to index and the whole module failed with
+		// "setfield field" (tests/test-uninit-output.no: `out = { val: 42,
+		// data: [...] }` where `out ?uninit-struct` is the result parameter, so
+		// the declared type is option-wrapped — strip the marker and let the
+		// option-wrap path below re-add it).
+		if l.typeHint != NoType && l.typeHint != l.voidType {
+			if ty := l.mod.Type(l.typeHint); ty != nil && ty.Raw != "" {
+				l.noteAnonymousStructLit(c, strings.TrimPrefix(ty.Raw, "?"))
+			}
+		}
 		val = l.lowerExpr(c)
 		break
 	}
 	l.typeHint = NoType
+		// Match-arm `it` binding whose declared HIR type is the `err` variant
+		// marker (the parser puts `t=err` on the synthetic `it = matched` let of
+		// an `err ->` arm). The err payload is ALWAYS `str` (the builtin option
+		// is `option { ok(v t), nil, err(e str) }`), so bind `it` as a str by
+		// peeling the option's payload and reinterpreting it as %str-long. The
+		// previous code let `it` keep the WHOLE option type (?fs.file / ?[]byte /
+		// ...), so uses like `print('...' - it)` peeled to the OK payload
+		// (fs.file / []byte) instead of the err message (str) — tripping
+		// opt-verify with a type mismatch (tests/test_fs_error_complete.no,
+		// test-opt-struct-field.no).
+		// Clone the peeled payload: the option ALSO owns the err-payload buffer,
+		// so sharing it would double-free on drop — the same trap as the ?str
+		// receiver unwrap (resolveCallee). The err payload is bitcast-compatible
+		// with the option slot's declared OK-payload type (both 24-byte
+		// {len,cap,data} / {a,b,c} structs), so emitMove's peel+bitcast path
+		// yields a correct %str-long.
+		if val != NoVal {
+			if raw := l.pkg.Type(n.Type); raw == "err" {
+				if vt := l.valueTypeOf(val); vt != NoType && vt != l.voidType {
+					if vty := l.mod.Type(vt); vty != nil && vty.Kind == KindOption {
+						// The err payload is ALWAYS `str` (option { ...,
+						// err(e str) }). For a non-scalar option (?str / ?fs.file
+						// / ...) the err str fits in the payload slot, so peel +
+						// clone it into `it` as an independently-owned
+						// %str-long. For a SCALAR option (?i64 / ?u8 / ?bool / ...)
+						// the flat %option payload is a single 8-byte i64 that
+						// holds ONLY the error data pointer — the str's len/cap
+						// are lost. emitMove's `dstT == "%str-long"` branch reads
+						// 24 bytes from an 8-byte slot (alloca i64 + bitcast +
+						// load), so the recovered %str-long gets UNINITIALISED
+						// stack in its len/cap; the later @str_clone then copies
+						// garbage bytes out-of-bounds -> a runtime trace/BPT trap
+						// (tests/test-opt-match-all.no, and any statement-mode
+						// `match x: { err -> ... }` on a scalar option). Nolang
+						// cannot represent a full str error inside a scalar
+						// option, so for scalar options we deliberately SKIP the
+						// peel: `it` keeps the whole option (its arm body does
+						// not need the str error — no scalar-option err test
+						// prints `it`), and no OOB read occurs. Non-scalar
+						// options still peel correctly (test_fs_error_complete /
+						// test-opt-struct-field).
+						if elem, ok := parseOptionElem(vty.Raw); ok && elem != "" {
+							if et := l.mod.Type(l.b.Type(elem)); et != nil {
+								switch et.Kind {
+								case KindStr, KindStruct:
+									peeled := l.b.Emit(OpMove, l.b.Type("str"), []ValueID{val}, "")
+									val = l.b.Emit(OpClone, l.b.Type("str"), []ValueID{peeled}, "")
+								}
+							}
+						}
+					}
+				}
+			}
+		}
 		// A binding DECLARED as `str` whose initializer is a []byte value must
 		// be reinterpreted, not stored as-is: `data str = fs.read-file(path)`
 		// (tests/mem-safety/bug12-builtin-slice-to-str.no) assigns the read-file
@@ -1070,6 +1447,47 @@ func (l *lowerer) lowerStmt(id int32) {
 					if vt := l.valueTypeOf(val); vt != NoType && vt != l.voidType {
 						if vty := l.mod.Type(vt); vty != nil && vty.Kind == KindSlice {
 							val = l.b.Emit(OpStrFromVec, l.b.Type("str"), []ValueID{val}, "")
+						}
+					}
+				}
+			}
+		}
+		// `?=` desugaring: the initializer is an OPTION but the binding's
+		// declared type is the PAYLOAD (`let s=size t=i64` inside the
+		// desugared `__unwrap` match — see fs.file.read-bytes). Legacy stores
+		// the option's data field into the scalar (build/llvm
+		// `__unwrap_606.data.gep`); MIR must do the same. Without this the
+		// binding stays `?T` and every later use — `size == 0`,
+		// `size - total`, `with-len(size)` — passes the whole %option struct
+		// where an i64 is expected (tests/test-open-read.no).
+		if val != NoVal {
+			// A declared type of `err` / `err | nil` is a VARIANT MARKER the
+			// parser puts on the synthetic `it` binding of a match arm
+			// (`let s=it t=err`), not a real type. Taking it literally retypes
+			// the binding as "err", and the next `it.read-bytes()` then
+			// resolves to `err.read-bytes` — "unknown callee"
+			// (tests/test-open-read.no, tests/test-fs-struct.no).
+			if dt := l.letDeclaredType(n); dt != NoType && dt != l.voidType {
+				if dty := l.mod.Type(dt); dty != nil && dty.Kind != KindOption {
+					if vt := l.valueTypeOf(val); vt != NoType && vt != l.voidType {
+						if vty := l.mod.Type(vt); vty != nil && vty.Kind == KindOption {
+							// Only peel a NON-HEAP payload. OpMove is a bitwise
+							// copy, so peeling an owned payload (?str -> str)
+							// aliases the SAME heap pointer: the binding would
+							// then be dropped after the option's own drop frees
+							// it, i.e. a real double-free that checkMoves
+							// reports as "value N dropped after move". That is
+							// exactly the match-arm narrowing (`n ?str` narrowed
+							// to `str` in the default arm) — tests/test-option.no
+							// and tests/test-option-match.no, which the legacy
+							// backend handles by keeping the option intact.
+							if elem, ok := parseOptionElem(vty.Raw); ok {
+								if et := l.b.Type(elem); et != NoType {
+									if ety := l.mod.Type(et); ety == nil || !ety.Owned {
+										val = l.b.Emit(OpMove, dt, []ValueID{val}, "")
+									}
+								}
+							}
 						}
 					}
 				}
@@ -1113,19 +1531,110 @@ func (l *lowerer) lowerStmt(id int32) {
 			if l.pkg.Type(n.Type) == "txt" {
 				val = l.b.Emit(OpTxtFromStr, l.b.Type("txt"), []ValueID{val}, "")
 			}
-			if existing, ok := l.locals[name]; ok {
-				// Re-binding an already-declared variable (e.g. assigning to a
-				// result parameter like `out = a + b`, or a reassignment). Move the
-				// rhs into the EXISTING slot so the name keeps pointing at the same
-				// slot; this also makes result params get written back correctly.
-				// Owned reassignment frees the old value exactly once (drop) then
-				// transfers ownership of the new value via move; the memory analysis
-				// inserts the slot's exit drop, which frees the NEW content.
-				if l.isOwnedLocal(existing) {
-					l.b.EmitVoid(OpDrop, []ValueID{existing}, "")
+		if existing, ok := l.locals[name]; ok {
+			// Match-arm synthetic `it` is bound PER ARM but the `locals` map is
+			// function-global, so every arm after the first finds `it` already
+			// declared. The arms can carry DIFFERENT `it` types (err arm →
+			// str, ok arm → fs.file / ?fs.file). The previous code mutated the
+			// SHARED slot's LocalType to follow the new value
+			// (`f.LocalTypes[existing] = typ`), which CORRUPTED the earlier
+			// arm's bindings that already captured the same value id: the f1
+			// err arm's `it` (value 24) holds a cloned `str` produced by FIX-1's
+			// OpClone, but the f1 ok arm then retyped value 24 to %fs_file, so
+			// at codegen time `ptype(24)` was %fs_file and the err clone emitted
+			// `call %fs_file @str_clone` — an opt-verify mismatch
+			// (tests/test_fs_error_complete.no). The fix is to give EACH arm its
+			// OWN value for `it` (a fresh move of the arm's matched value) and
+			// repoint `locals["it"]` at it, leaving the prior arm's value id and
+			// its type untouched. Resolution of `it.foo` then uses the correct
+			// per-arm type, and the prior arm's clone keeps its `str` type.
+			// This introduces one extra move (a by-value copy of an option /
+			// struct), which the memory analysis already handles with a single
+			// drop for the fresh slot — no double-free.
+		if name == "it" {
+			// Nested match arm: do NOT clobber the outer `it` (parser intent
+			// lowering.go:1138; legacy saves/restores g.varTypes["it"] in
+			// expr.go). matchDepth > 1 means this `let it = <matched>` is itself
+			// inside a nested match arm, so the matched subject belongs to the
+			// inner match — but nolang semantics (and legacy output) keep `it`
+			// pointing at the NEAREST ENCLOSING match's subject. Keep the
+			// existing outer `it` binding and drop the inner payload value so the
+			// memory analysis still accounts for it (it is otherwise unused).
+			if l.matchDepth > 1 {
+				if l.isOwnedLocal(val) {
+					l.b.EmitVoid(OpDrop, []ValueID{val}, "")
 				}
-				l.b.EmitMoveInto(existing, val)
 				break
+			}
+			// Bind `it` as an ALIAS of the matched value rather than a
+			// transferring move. The match subject is routinely re-used by the
+			// arm body: e.g. after `s = parts[i]` the original `parts[i]` is
+			// referenced again for `s.len-bytes()` / `s.byte(j)`, so the same
+			// subject value id is live across `it`'s binding AND the body. A
+			// transferring OpMove would mark that shared subject value as moved
+			// while it is still needed -> [use-after-move] / double-free
+			// (str.replace-n: "value 1419 dropped after move"). Aliasing makes
+			// `it` and the subject the SAME value id, which the memory analysis
+			// drops exactly once — no double-free. Each arm's `let it` points at
+			// its own matched value id (the desugar materialises a per-arm
+			// subject), so per-arm types stay correct (test_fs_error_complete:
+			// err arm `it` is the str payload, wildcard arm `it` is the whole
+			// ?fs.file). Aliasing also avoids cloning a possibly-nil option's
+			// inner buffer, which would be unsound.
+			if typ := l.valueTypeOf(val); typ != NoType && typ != l.voidType {
+				l.locals[name] = val
+				break
+			}
+			l.b.EmitMoveInto(existing, val)
+			break
+		}
+			// Self-assignment (`it = it`): the RHS lowered to the same slot as
+			// the target, so no ownership transfer occurs. Emitting an OpDrop
+			// here would free the slot's current content and the following
+			// EmitMoveInto(existing, val) (== move slot->slot) would move
+			// already-freed memory -> double free / use-after-free (observed as
+			// a runtime SIGTRAP in str.replace-n). The memory analysis inserts
+			// the single correct exit-drop for this slot, so skip entirely.
+			if val == existing {
+				break
+			}
+			// Re-binding an already-declared variable (e.g. assigning to a
+			// result parameter like `out = a + b`, or a reassignment). Move the
+			// rhs into the EXISTING slot so the name keeps pointing at the same
+			// slot; this also makes result params get written back correctly.
+			// Owned reassignment frees the old value exactly once (drop) then
+			// transfers ownership of the new value via move; the memory analysis
+			// inserts the slot's exit drop, which frees the NEW content.
+			if l.isOwnedLocal(existing) {
+				l.b.EmitVoid(OpDrop, []ValueID{existing}, "")
+			}
+			l.b.EmitMoveInto(existing, val)
+			break
+		}
+			// Re-binding a MODULE-LEVEL binding. A script-level `px2 = 0.0`
+			// whose initializer folds to a constant is registered as a module
+			// global (synthesizeMainForTopLevel keeps it out of the synthetic
+			// `main`), so it has no local slot. The READ side already resolves
+			// it through lowerIdent -> lowerGlobalRef (the global's @slot), but
+			// the WRITE side used to fall through to the "new binding" path
+			// below, binding the name to a FRESH local slot. Read and write then
+			// target different storage: a loop like `px2 = px2 + mi * vi` re-read
+			// the never-updated global every iteration and produced only the
+			// last term (test-tmp-nbody-debug printed -5.04e-05 instead of
+			// -3.87e-04). Store into the global and bind the name to the global's
+			// value so both sides agree. Owned (heap) types are left to the
+			// fresh-slot path: their move needs clone/drop bookkeeping the
+			// global slot does not have.
+			if _, isGlobal := l.globals[name]; isGlobal {
+				if gv := l.lowerGlobalRef(name); gv != NoVal && !l.isOwnedLocal(gv) {
+					if gvt := l.valueTypeOf(gv); gvt != NoType && gvt != l.voidType {
+						if vt := l.valueTypeOf(val); vt == gvt {
+							l.b.EmitMoveInto(gv, val)
+							l.locals[name] = gv
+							break
+						}
+					}
+				}
 			}
 		// New binding. If the initializer is a direct reference to an
 		// existing NON-OWNED local (e.g. `tmp = n`), binding `name` to that
@@ -1148,6 +1657,10 @@ func (l *lowerer) lowerStmt(id int32) {
 					}
 					if typ != NoType && typ != l.voidType {
 						fresh := l.b.Emit(OpMove, typ, []ValueID{val}, "")
+						// A copied async handle keeps its task's result type.
+						if rt, ok := l.asyncResTypes[val]; ok {
+							l.asyncResTypes[fresh] = rt
+						}
 						l.locals[name] = fresh
 						if f := l.mod.Func(l.curFunc); f != nil {
 							if _, ok := f.LocalTypes[fresh]; !ok {
@@ -1158,8 +1671,8 @@ func (l *lowerer) lowerStmt(id int32) {
 					}
 				}
 			}
-			l.locals[name] = val
-			if f := l.mod.Func(l.curFunc); f != nil {
+		l.locals[name] = val
+		if f := l.mod.Func(l.curFunc); f != nil {
 				// Preserve the type Emit already assigned to val (authoritative for
 				// call results, which the KLet child node does not carry a type for).
 				// Only fill in when missing — e.g. a bare KIdent placeholder.
@@ -1179,21 +1692,31 @@ func (l *lowerer) lowerStmt(id int32) {
 			child = c
 			break
 		}
-		if child != hir.NoID {
-			cn := l.pkg.Node(child)
-			if cn != nil && (cn.Kind == hir.KIf || cn.Kind == hir.KFor) {
-				if cn.Kind == hir.KIf {
-					l.lowerIf(cn)
-				} else {
-					l.lowerFor(cn)
-				}
-				return
+		if child == hir.NoID {
+			return
+		}
+		cn := l.pkg.Node(child)
+		if cn != nil && (cn.Kind == hir.KIf || cn.Kind == hir.KFor) {
+			// Statement-mode control flow: lower it directly. When this
+			// statement is itself an arm of a match/if being captured as an
+			// expression value, publish the captured slot as this statement's
+			// value so the caller can read it back.
+			if cn.Kind == hir.KIf {
+				l.lowerIf(cn)
+			} else {
+				l.lowerFor(cn)
 			}
+			if l.exprCapture && l.exprSink != NoVal {
+				l.stmtVal = l.exprSink
+			}
+			return
 		}
-		for _, c := range l.pkg.Children(id) {
-			l.lowerExpr(c)
-			break
-		}
+		// Bare expression statement (`'hello'` in `r = if 1 { 'hello' }`):
+		// record its value for the enclosing control-flow-expression capture,
+		// then lower it exactly ONCE. (Returning here is essential — the old
+		// trailing `for` loop re-lowered this same child, duplicating every
+		// statement in the program.)
+		l.stmtVal = l.lowerExpr(child)
 	case hir.KReturn:
 		// Surface the function's option result type so `return nil` lowers to an
 		// %option constant (the "none" discriminant) rather than a bare i64 that
@@ -1218,6 +1741,9 @@ func (l *lowerer) lowerStmt(id int32) {
 		l.lowerMultiAssign(id)
 	case hir.KIf:
 		l.lowerIf(n)
+		if l.exprCapture && l.exprSink != NoVal {
+			l.stmtVal = l.exprSink
+		}
 	case hir.KFor:
 		l.lowerFor(n)
 	case hir.KBreak:
@@ -1243,10 +1769,44 @@ func (l *lowerer) lowerStmt(id int32) {
 
 // ---- control flow ----
 
+// blockStartsWithIt reports whether the given block's first statement is the
+// synthetic `let it = <matched>` that the parser prepends to every match arm
+// body (lowering.go ~1180-1228). A plain `if` body never leads with `let it`,
+// so this is a reliable match-arm detector used to maintain matchDepth.
+func (l *lowerer) blockStartsWithIt(blockID int32) bool {
+	if blockID == hir.NoID {
+		return false
+	}
+	for _, c := range l.pkg.Children(blockID) {
+		stmt := l.pkg.Node(c)
+		if stmt == nil {
+			continue
+		}
+		if stmt.Kind == hir.KLet && l.pkg.Str(stmt.S) == "it" {
+			return true
+		}
+		// Only inspect the first top-level statement of the block.
+		return false
+	}
+	return false
+}
+
 func (l *lowerer) lowerIf(n *hir.Node) {
 	condID := l.slot(n.Id, "cond")
 	thenID := l.slot(n.Id, "then")
 	elseID := l.slot(n.Id, "else")
+
+	// Detect match arms: a match desugars to an if-chain where each arm's body
+	// block starts with the synthetic `let it = <matched>` (the parser prepends
+	// it; see lowering.go ~1180-1228). A plain `if` never leads with `let it`,
+	// so this reliably distinguishes a match arm from an ordinary block. We bump
+	// matchDepth while lowering such a block so that a `let it` nested inside it
+	// (a nested match arm) is recognized as nested and does NOT clobber the
+	// outer `it` (parser intent: lowering.go:1138). The else-chain continuation
+	// of a match is itself an `if`, not a `let it` block, so it is NOT counted —
+	// only genuine arm bodies increment depth.
+	thenIsArm := l.blockStartsWithIt(thenID)
+	elseIsArm := l.blockStartsWithIt(elseID)
 
 	// Enclosing continuation: the merge block of the nearest enclosing
 	// control-flow construct (pushed by the caller's lowerIf/lowerFor). When
@@ -1277,7 +1837,14 @@ func (l *lowerer) lowerIf(n *hir.Node) {
 
 	l.b.SetBlock(thenBlk)
 	if thenID != hir.NoID {
-		l.lowerBlock(thenID)
+		if thenIsArm {
+			l.matchDepth++
+		}
+		armVal := l.lowerBlock(thenID)
+		if thenIsArm {
+			l.matchDepth--
+		}
+		l.captureArmValue(armVal)
 	}
 	if l.mod.Block(thenBlk).Term == nil {
 		l.b.Terminate(OpBr, nil, []BlockID{mergeBlk}, "")
@@ -1285,7 +1852,14 @@ func (l *lowerer) lowerIf(n *hir.Node) {
 
 	l.b.SetBlock(elseBlk)
 	if elseID != hir.NoID {
-		l.lowerBlock(elseID)
+		if elseIsArm {
+			l.matchDepth++
+		}
+		armVal := l.lowerBlock(elseID)
+		if elseIsArm {
+			l.matchDepth--
+		}
+		l.captureArmValue(armVal)
 	}
 	if l.mod.Block(elseBlk).Term == nil {
 		l.b.Terminate(OpBr, nil, []BlockID{mergeBlk}, "")
@@ -1318,6 +1892,37 @@ func (l *lowerer) lowerIf(n *hir.Node) {
 		l.contTargets[mergeBlk] = enclosingCont
 	}
 }
+
+// captureArmValue records one match/if arm's final value into the shared
+// expression slot l.exprSink. The slot is created (zero-initialized, of the
+// arm value's type) on the FIRST captured arm; later arms store into the same
+// slot. Only active while l.exprCapture is set (a match/if used as an
+// expression value). Owned values (str/vec/option) are CLONED before storing so
+// the slot owns its own copy and the arm's original value drops exactly once
+// (no double-free). A value equal to l.exprSink itself means a nested guard
+// arm already wrote the slot — skip storing the slot into itself.
+func (l *lowerer) captureArmValue(v ValueID) {
+	if v == NoVal || !l.exprCapture {
+		return
+	}
+	if l.exprSink == NoVal {
+		typ := l.valueTypeOf(v)
+		if typ == NoType || typ == l.voidType {
+			typ = l.b.Type("i64")
+		}
+		l.exprSink = l.b.EmitInt(OpConst, typ, 0, "")
+	}
+	if v == l.exprSink {
+		return
+	}
+	typ := l.valueTypeOf(l.exprSink)
+	stored := v
+	if l.isOwnedLocal(v) {
+		stored = l.b.Emit(OpClone, typ, []ValueID{v}, "")
+	}
+	l.b.EmitMoveInto(l.exprSink, stored)
+}
+
 
 func (l *lowerer) lowerFor(n *hir.Node) {
 	iterID := l.slot(n.Id, "iter")
@@ -1498,15 +2103,32 @@ func (l *lowerer) lowerRangeFor(n *hir.Node, iterID int32, bodyID int32, pre Blo
 		// gives it a Dst-backed slot; the init move below overwrites it.
 		iSlot := l.b.EmitInt(OpConst, elemT, 0, varName)
 		l.locals[varName] = iSlot
-		// init v = lo  (or lo+1 when the left bound is open '(')
-		l.b.SetBlock(pre)
-		if leftInc {
-			l.b.EmitMoveInto(iSlot, startV)
-		} else {
-			one0 := l.b.EmitInt(OpConst, elemT, 1, "")
-			adjV := l.b.Emit(OpAdd, elemT, []ValueID{startV, one0}, "")
-			l.b.EmitMoveInto(iSlot, adjV)
+		// init v = lo +/- (leftInc?0:1), stepping toward hi. Nolang ranges are
+		// bidirectional: `for i in [5..0)` counts DOWN (5,4,3,2,1). The loop
+		// direction is inferred from the bounds (ascending iff lo <= hi); the
+		// step and the comparison operator both depend on it. The IR has no
+		// select/mux op, so the direction is resolved with branches on the
+		// loop-invariant bounds (opt hoists them out of the loop body).
+		exclOff := int64(0)
+		if !leftInc {
+			exclOff = 1
 		}
+		offV := l.b.EmitInt(OpConst, elemT, exclOff, "")
+		initAsc := l.b.Emit(OpAdd, elemT, []ValueID{startV, offV}, "")
+		initDesc := l.b.Emit(OpSub, elemT, []ValueID{startV, offV}, "")
+		initAscB := l.b.NewBlock("rng.init.asc")
+		initDescB := l.b.NewBlock("rng.init.desc")
+		initJoin := l.b.NewBlock("rng.init.join")
+		l.b.SetBlock(pre)
+		l.b.Terminate(OpCondBr, []ValueID{l.b.Emit(OpLe, l.b.Type("bool"), []ValueID{startV, endV}, "")},
+			[]BlockID{initAscB, initDescB}, "")
+		l.b.SetBlock(initAscB)
+		l.b.EmitMoveInto(iSlot, initAsc)
+		l.b.Terminate(OpBr, nil, []BlockID{initJoin}, "")
+		l.b.SetBlock(initDescB)
+		l.b.EmitMoveInto(iSlot, initDesc)
+		l.b.Terminate(OpBr, nil, []BlockID{initJoin}, "")
+
 		header := l.b.NewBlock("for.header")
 		body := l.b.NewBlock("for.body")
 		update := l.b.NewBlock("for.update")
@@ -1517,15 +2139,24 @@ func (l *lowerer) lowerRangeFor(n *hir.Node, iterID int32, bodyID int32, pre Blo
 		// empty if-merge inside the body redirects here (see lowerFor).
 		l.contStack = append(l.contStack, update)
 		defer func() { l.contStack = l.contStack[:len(l.contStack)-1] }()
+		l.b.SetBlock(initJoin)
 		l.b.Terminate(OpBr, nil, []BlockID{header}, "")
 		l.b.SetBlock(header)
-		// '<=' for an inclusive right bound (']'), '<' for an open one (')').
-		cmpOp := OpLt
+		// Ascending: `i < hi` (']' -> `<=`). Descending: `i > hi` (']' -> `>=`).
+		ascCmpOp, descCmpOp := OpLt, OpGt
 		if rightInc {
-			cmpOp = OpLe
+			ascCmpOp, descCmpOp = OpLe, OpGe
 		}
-		condV := l.b.Emit(cmpOp, l.b.Type("bool"), []ValueID{iSlot, endV}, "")
-		l.b.Terminate(OpCondBr, []ValueID{condV}, []BlockID{body, exit}, "")
+		hdAsc := l.b.NewBlock("for.hd.asc")
+		hdDesc := l.b.NewBlock("for.hd.desc")
+		l.b.Terminate(OpCondBr, []ValueID{l.b.Emit(OpLe, l.b.Type("bool"), []ValueID{startV, endV}, "")},
+			[]BlockID{hdAsc, hdDesc}, "")
+		l.b.SetBlock(hdAsc)
+		ca := l.b.Emit(ascCmpOp, l.b.Type("bool"), []ValueID{iSlot, endV}, "")
+		l.b.Terminate(OpCondBr, []ValueID{ca}, []BlockID{body, exit}, "")
+		l.b.SetBlock(hdDesc)
+		cd := l.b.Emit(descCmpOp, l.b.Type("bool"), []ValueID{iSlot, endV}, "")
+		l.b.Terminate(OpCondBr, []ValueID{cd}, []BlockID{body, exit}, "")
 		l.b.SetBlock(body)
 		if bodyID != hir.NoID {
 			l.lowerBlock(bodyID)
@@ -1537,15 +2168,22 @@ func (l *lowerer) lowerRangeFor(n *hir.Node, iterID int32, bodyID int32, pre Blo
 			l.b.Terminate(OpBr, nil, []BlockID{update}, "")
 		}
 		l.b.SetBlock(update)
-		one := l.b.EmitInt(OpConst, elemT, 1, "")
-		nextV := l.b.Emit(OpAdd, elemT, []ValueID{iSlot, one}, "")
-		l.b.EmitMoveInto(iSlot, nextV)
+		// Step: +1 ascending, -1 descending (direction resolved by branch).
+		upAsc := l.b.NewBlock("for.upd.asc")
+		upDesc := l.b.NewBlock("for.upd.desc")
+		l.b.Terminate(OpCondBr, []ValueID{l.b.Emit(OpLe, l.b.Type("bool"), []ValueID{startV, endV}, "")},
+			[]BlockID{upAsc, upDesc}, "")
+		l.b.SetBlock(upAsc)
+		l.b.EmitMoveInto(iSlot, l.b.Emit(OpAdd, elemT, []ValueID{iSlot, l.b.EmitInt(OpConst, elemT, 1, "")}, ""))
 		l.b.Terminate(OpBr, nil, []BlockID{header}, "")
-	l.b.SetBlock(exit)
-	if enclosingCont != NoBlock && l.mod.Block(exit).Term == nil {
-		l.b.Terminate(OpBr, nil, []BlockID{enclosingCont}, "")
-	}
-	return
+		l.b.SetBlock(upDesc)
+		l.b.EmitMoveInto(iSlot, l.b.Emit(OpSub, elemT, []ValueID{iSlot, l.b.EmitInt(OpConst, elemT, 1, "")}, ""))
+		l.b.Terminate(OpBr, nil, []BlockID{header}, "")
+		l.b.SetBlock(exit)
+		if enclosingCont != NoBlock && l.mod.Block(exit).Term == nil {
+			l.b.Terminate(OpBr, nil, []BlockID{enclosingCont}, "")
+		}
+		return
 }
 
 	// --- collection form: for v in [a, b, c]  (v is the element) ---
@@ -1720,6 +2358,41 @@ func (l *lowerer) valueTypeOf(v ValueID) TypeID {
 	return NoType
 }
 
+// expandTypeAlias resolves a nolang value-type alias (e.g. `fd` -> `i64`,
+// recorded by collectValueTypeAliases) to its underlying type name. It is used
+// so a method call on a newtype receiver (`fd.to-str`) forms the same callee
+// the legacy backend emits (`i64.to-str`). Names that are not registered
+// aliases are returned unchanged.
+func (l *lowerer) expandTypeAlias(name string) string {
+	if l.mod.ValueTypeAliases != nil {
+		if t, ok := l.mod.ValueTypeAliases[name]; ok {
+			return t
+		}
+	}
+	return name
+}
+
+// resolveModuleCallName resolves a MODULE-namespace call (`mod.fn`, e.g.
+// `helper.compute-str`, `num.rotate-left`) to the funcNames key the MIR backend
+// actually registered for that free function. nolang stores free functions from
+// a `# /path` module under their BARE name (the HIR merge keeps `compute-str`,
+// not `helper.compute-str`), while the source call uses the module prefix. The
+// legacy backend resolves the module-prefixed call to the same bare function via
+// its module table; mirroring that here lets cross-module calls lower instead of
+// reporting "unknown callee helper.compute-str" (tests/mem-safety/bug13-*.no).
+// When the prefixed name IS registered (e.g. `io.writer.write`, a method whose
+// name is naturally qualified) it is preferred; otherwise the bare name wins.
+func (l *lowerer) resolveModuleCallName(recvName, method string) string {
+	qualified := recvName + "." + method
+	if _, ok := l.funcNames[qualified]; ok {
+		return qualified
+	}
+	if _, ok := l.funcNames[method]; ok {
+		return method
+	}
+	return qualified
+}
+
 // lowerArrayElems materializes a fixed array [N]elem from a list of element
 // expression node ids, storing each element into its slot. Shared by KArrayLit
 // (elems come from "elem" slots) and KSliceLit (elems are direct children).
@@ -1764,6 +2437,32 @@ func (l *lowerer) lowerArrayElems(elems []int32) ValueID {
 		l.b.EmitVoid(OpIndexStore, []ValueID{arrV, idxV, ev}, "")
 	}
 	return arrV
+}
+
+// lowerEmbedBinding materializes an `#{embed='file'}` top-level binding as a
+// module-level `%vec` global over a private constant byte array. The global's
+// LLVM initializer is `%vec { N, N, ptrtoint([N x i8]* @.embed.<name> to i64) }`
+// and its bytes are stashed on the GlobalDecl so codegen emits the backing
+// `@.embed.<name>` constant. cap == len marks the vec owned, so the binding
+// behaves like a real slice for reads; its data points into constant memory.
+func (l *lowerer) lowerEmbedBinding(name string, data []byte) {
+	if v, ok := l.globals[name]; ok && v != NoVal {
+		l.locals[name] = v
+		return
+	}
+	gv := l.b.Global(name, l.b.Type("[]byte"))
+	n := len(data)
+	for i := range l.mod.Globals {
+		if l.mod.Globals[i].Init == gv {
+			l.mod.Globals[i].ConstText = fmt.Sprintf(
+				"%%vec { i64 %d, i64 %d, i64 ptrtoint ([%d x i8]* @.embed.%s to i64) }",
+				n, n, n, name)
+			l.mod.Globals[i].EmbedBytes = data
+			break
+		}
+	}
+	l.globals[name] = gv
+	l.locals[name] = gv
 }
 
 // lowerGlobalRef resolves a reference to a module-level binding (SBOX,
@@ -2021,6 +2720,19 @@ func (l *lowerer) lowerExpr(id int32) ValueID {
 		// `.last` which compare the option result against `nil` inside their
 		// desugared `UnwrapAssign` match).
 		if name == "err" || name == "ok" || name == "some" || name == "nil" {
+			// A variable/parameter sharing one of these names must resolve as a
+			// normal identifier, NEVER as a variant keyword. Check locals/globals
+			// FIRST so we never short-circuit a real variable (this is exactly
+			// what caused the 19th-round regression on test-ok-shadow /
+			// test-bare-match / bug13, which all declare `ok bool`).
+			if v, ok := l.locals[name]; ok {
+				return v
+			}
+			if _, isGlobal := l.globals[name]; isGlobal {
+				return l.lowerGlobalRef(name)
+			}
+			// Genuine bare variant keyword. Determine the option type from the
+			// surrounding context (the matched subject's type).
 			optTyp := l.typeOfNode(n)
 			if t := l.mod.Type(optTyp); t == nil || t.Kind != KindOption {
 				if ht := l.typeHint; ht != NoType && ht != l.voidType {
@@ -2045,6 +2757,21 @@ func (l *lowerer) lowerExpr(id int32) ValueID {
 					return l.b.EmitOptionWrap(optTyp, tag, payload)
 				}
 			}
+			// Non-option context: `match 42: { err -> ... }` compares a plain
+			// integer against the `err` discriminant, which is meaningless. The
+			// old path fell through to the unresolved-identifier emission (an
+			// `undef` constant) and `subject == undef` is LLVM poison that opt
+			// folds into a runtime trace/BPT trap (a red-line crash). Emit a
+			// concrete zero of the subject's (inferred) type so the comparison
+			// is well-defined (false → no match → fall through) instead of
+			// poisoning. Legacy's output for such a program (it prints the `err`
+			// arm) is itself a quirk and is deliberately NOT replicated.
+			if ht := l.typeHint; ht != NoType && ht != l.voidType {
+				if tt := l.mod.Type(ht); tt != nil && tt.Kind != KindOption {
+					return l.b.EmitInt(OpConst, ht, 0, "")
+				}
+			}
+			return l.b.EmitInt(OpConst, l.b.Type("i64"), 0, "")
 		}
 		if v, ok := l.locals[name]; ok {
 			return v
@@ -2154,6 +2881,34 @@ func (l *lowerer) lowerExpr(id int32) ValueID {
 			}
 		}
 		op, isCmp := infixOp(l.pkg.Str(n.S))
+		// Unsigned division/remainder: nolang's u64/u32/u16/u8/byte family uses
+		// unsigned semantics, but MIR flattens every integer to the LLVM i64
+		// width and registers u64 locals as i64, so the signedness is NOT
+		// recoverable from the lowered value. Route through OpUDiv/OpUMod so
+		// codegen emits `udiv`/`urem`. The signedness is read from the
+		// DECLARED raw type of the operand variables (recorded when their KLet
+		// was lowered), since MIR flattens u64 to i64 everywhere else. Without
+		// this, i64.MIN's 2^63 magnitude (which carries the i64.MIN bit
+		// pattern) signed-divides to garbage in i64-to-str / u64-to-str.
+		if !isCmp && (op == OpDiv || op == OpMod) {
+			unsigned := false
+			for _, cid := range lr[:i] {
+				cn := l.pkg.Node(cid)
+				if cn != nil && cn.Kind == hir.KIdent {
+					if isUnsignedRaw(l.localRaw[l.pkg.Str(cn.S)]) {
+						unsigned = true
+						break
+					}
+				}
+			}
+			if unsigned {
+				if op == OpDiv {
+					op = OpUDiv
+				} else {
+					op = OpUMod
+				}
+			}
+		}
 		// Option/nil pattern matching (`it == nil`): the nil operand must lower
 		// to the option's "none" discriminant (%option {tag=1, val=0}), never a
 		// bare i64 0. Publish the *sibling* operand's actual type as a hint so
@@ -2199,6 +2954,20 @@ func (l *lowerer) lowerExpr(id int32) ValueID {
 					rv = l.lowerExpr(lr[1])
 					l.typeHint = saved
 				default:
+					// Bare user-enum variant (`m: { read -> ... }`): the variant
+					// carries no receiver and no type, so resolve it from the
+					// sibling's enum type. Must be tried BEFORE lowering the bare
+					// operand, which would otherwise emit an unresolved `void` const.
+					if ev, ok := l.lowerBareEnumVariant(ln, rn); ok {
+						rv = l.lowerExpr(lr[1])
+						lv = ev
+						break
+					}
+					if ev, ok := l.lowerBareEnumVariant(rn, ln); ok {
+						lv = l.lowerExpr(lr[0])
+						rv = ev
+						break
+					}
 					lv = l.lowerExpr(lr[0])
 					rv = l.lowerExpr(lr[1])
 				}
@@ -2209,6 +2978,21 @@ func (l *lowerer) lowerExpr(id int32) ValueID {
 		} else {
 			lv = l.lowerExpr(lr[0])
 			rv = l.lowerExpr(lr[1])
+		}
+		// ARITHMETIC on an option-typed operand must use the PAYLOAD. `?=` is
+		// desugared by the parser into a plain assignment from the option
+		// value, so `size ?= fstat-size(.fd)` leaves `size` typed `?T` and
+		// `size - total` would otherwise hand the whole `%option` struct to
+		// `sub` (EmitLLVM: "cannot coerce arg from %option to i64",
+		// tests/test-open-read.no). Moving into the element type lowers to an
+		// `extractvalue` of the payload field. Comparisons are left alone:
+		// `x == err` / `x == nil` are TAG comparisons handled above.
+		unwrapped := false
+		if !isCmp {
+			nlv := l.unwrapOptionOperand(lv)
+			nrv := l.unwrapOptionOperand(rv)
+			unwrapped = nlv != lv || nrv != rv
+			lv, rv = nlv, nrv
 		}
 		// Arithmetic on a single-character string literal (`"A" + 1`) is BYTE
 		// arithmetic, not string concatenation: legacy's isStringExpr rejects
@@ -2278,6 +3062,15 @@ func (l *lowerer) lowerExpr(id int32) ValueID {
 		resTyp := l.typeOfNode(n)
 		if isCmp {
 			resTyp = l.b.Type("bool")
+		} else if unwrapped {
+			// Both operands were option payloads (see unwrapOptionOperand):
+			// the node's declared type is still the `?T` the operand carried,
+			// but the arithmetic result is a plain `T`. Keeping `?T` made
+			// `size - total` an option, which then failed to coerce to the i64
+			// argument of `read(...)` (tests/test-open-read.no).
+			if lt := l.valueTypeOf(lv); lt != l.voidType && lt != NoType {
+				resTyp = lt
+			}
 		} else if resTyp == l.voidType || resTyp == NoType {
 			// Arithmetic result type unknown here (e.g. an operand is a
 			// module-level global whose KIdent type resolves to void, or a
@@ -2386,7 +3179,21 @@ func (l *lowerer) lowerExpr(id int32) ValueID {
 		// method call has the KDot as the KCall's `fn` slot and is handled in
 		// lowerCall). Lowers to OpGetField with the field name carried in Str.
 		return l.lowerDotRead(n)
-	case hir.KIf, hir.KFor:
+	case hir.KIf:
+		// A `match`/`if` used as an expression value (`r = subject: { arms }`)
+		// is lowered by the enclosing `let`/`assign` via the exprSink capture
+		// mechanism: lowerIf stores each arm's result into l.exprSink and the
+		// binding aliases that slot. When capture is active, run the if as a
+		// statement and return the shared slot so nested arms (match guards)
+		// converge correctly. When NOT capturing (ordinary use of `if` in
+		// expression position) we keep the historical "unsupported" behaviour.
+		if l.exprCapture && l.exprSink != NoVal {
+			l.lowerIf(n)
+			return l.exprSink
+		}
+		l.unsupported(l.curFuncName(), "expr-ctrl", "control flow used as expression value")
+		return NoVal
+	case hir.KFor:
 		l.unsupported(l.curFuncName(), "expr-ctrl", "control flow used as expression value")
 		return NoVal
 	default:
@@ -2426,8 +3233,19 @@ func (l *lowerer) lowerNilLit(n *hir.Node) ValueID {
 	// context is an option type, so non-option `nil` (e.g. for %err_error) keeps
 	// its own representation.
 	if ht := l.typeHint; ht != NoType && ht != l.voidType {
-		if tt := l.mod.Type(ht); tt != nil && tt.Kind == KindOption {
-			t = ht
+		if tt := l.mod.Type(ht); tt != nil {
+			if tt.Kind == KindOption {
+				t = ht
+			} else if tt.Kind == KindStr {
+				// nolang `nil` compared against / assigned to a plain `str`
+				// means the null/empty string. Emit an empty %str-long so the
+				// later @str_eq (or move/store) is type-correct AND semantically
+				// right (a null str equals the empty string). Without this,
+				// `r == nil` where r : str lowers `nil` to a bare i64 0 and
+				// emitStrEq emits an illegal `@str_eq(%str-long, i64)`
+				// (tests/mem-safety/ffi-str-return.no: `r == nil`).
+				return l.b.EmitStr(OpConst, l.b.Type("str"), "", "")
+			}
 		}
 	}
 	return l.b.EmitInt(OpConst, t, 0, "")
@@ -2747,6 +3565,15 @@ func (l *lowerer) lowerDotRead(n *hir.Node) ValueID {
 		l.unsupported(l.curFuncName(), "dot", "field "+fieldName+": cannot determine receiver type")
 		return NoVal
 	}
+	// A `?T.field` read peels the option to reach the inner struct's layout.
+	// The method-call path already strips the leading '?' (see resolveCallee:
+	// `v.to-str()` on ?i64 -> "i64.to-str"), but the FIELD path looked up
+	// StructFields["?conn"], which is never registered -> "no struct layout for
+	// ?conn" -> the binding never materialized, so a later `port.to-str()` saw
+	// `port` as an unbound name and resolved it as a MODULE namespace
+	// ("unknown callee port.to-str", test-opt-struct-field). emitGetField
+	// already emits the option peel, so only the lookup key needs fixing.
+	recvRaw = strings.TrimPrefix(recvRaw, "?")
 
 	// Container builtin properties: `.len` / `.cap` are properties of the
 	// container itself, not struct fields. There is one such layout per
@@ -2883,33 +3710,54 @@ func (l *lowerer) resolveCallee(n *hir.Node) (callee string, recvV ValueID) {
 			recvID = c
 			break
 		}
+		// Implicit receiver `.method()` used OUTSIDE a method body. The parser
+		// lowers a bare `.method(args)` to `self.method(args)` (see
+		// parser/expr.go, lexer.DOT), but `self` is only bound inside a method
+		// body: in a match arm the enclosing subject is bound to `it`, so
+		// `.method()` there denotes `it.method()` — precisely the explicit form
+		// the sibling arm pattern uses (`it.write-str(payload)`, cf.
+		// tests/test-open-read.no, which already lowers correctly). Without this
+		// the unbound `self` fell into the module-namespace branch below and the
+		// callee became "self.write-str" -> "unknown callee self.write-str"
+		// (tests/test-open-perm.no, test-open-write.no, test_fs_error_complete.no).
+		var implicitIt ValueID = NoVal
+		if rn := l.pkg.Node(recvID); rn != nil && rn.Kind == hir.KIdent &&
+			l.pkg.Str(rn.S) == "self" {
+			if _, bound := l.locals["self"]; !bound {
+				if itv, ok := l.locals["it"]; ok {
+					implicitIt = itv
+				}
+			}
+		}
 		// A bare identifier that is NOT a bound local is a MODULE namespace,
 		// not a value: `number.rotate-left(t, 7)`, `net.send(fd, buf, n)`,
 		// `fs.open(path)`. Lowering those as a method call tried to evaluate
 		// the module name as a value and reported "unresolved identifier
 		// <module>" — a large share of the remaining ident gaps. They lower to
 		// a plain qualified call with NO receiver argument.
-		if rn := l.pkg.Node(recvID); rn != nil && rn.Kind == hir.KIdent {
-			if recvName := l.pkg.Str(rn.S); recvName != "" {
-				if _, bound := l.locals[recvName]; !bound {
-					if _, gbound := l.globals[recvName]; !gbound {
-						// A module namespace (`fs`, `os`, `net`, ...) is NOT a
-						// bound value: lower to a plain qualified call with NO
-						// receiver argument. Crucially, do NOT prepend the
-						// enclosing method's `self` type: inside `path.path.is-file`
-						// the call `fs.is_file(self.p)` has receiver child `fs`
-						// (a module), so its callee must stay `fs.is-file`. The
-						// old code rewrote it to `path.path.is-file` (using self's
-						// type) which resolved to the enclosing function itself ->
-						// infinite recursion -> stack-overflow SIGSEGV at runtime
-						// (test-path_char). The implicit-self case
-						// (`regexp.regexp.emit`) is a BARE KIdent with no receiver
-						// child and is handled by the KIdent branch above.
-						return recvName + "." + method, NoVal
+		if implicitIt == NoVal {
+			if rn := l.pkg.Node(recvID); rn != nil && rn.Kind == hir.KIdent {
+				if recvName := l.pkg.Str(rn.S); recvName != "" {
+					if _, bound := l.locals[recvName]; !bound {
+						if _, gbound := l.globals[recvName]; !gbound {
+							// A module namespace (`fs`, `os`, `net`, ...) is NOT a
+							// bound value: lower to a plain qualified call with NO
+							// receiver argument. Crucially, do NOT prepend the
+							// enclosing method's `self` type: inside `path.path.is-file`
+							// the call `fs.is_file(self.p)` has receiver child `fs`
+							// (a module), so its callee must stay `fs.is-file`. The
+							// old code rewrote it to `path.path.is-file` (using self's
+							// type) which resolved to the enclosing function itself ->
+							// infinite recursion -> stack-overflow SIGSEGV at runtime
+							// (test-path_char). The implicit-self case
+							// (`regexp.regexp.emit`) is a BARE KIdent with no receiver
+							// child and is handled by the KIdent branch above.
+							return l.resolveModuleCallName(recvName, method), NoVal
+						}
+						// recvName is a bound GLOBAL (e.g. a top-level `data [4]i64`
+						// or `v []str`); fall through to the method-call path below
+						// so it is lowered as a real receiver value, not a module.
 					}
-					// recvName is a bound GLOBAL (e.g. a top-level `data [4]i64`
-					// or `v []str`); fall through to the method-call path below
-					// so it is lowered as a real receiver value, not a module.
 				}
 			}
 		}
@@ -2917,7 +3765,10 @@ func (l *lowerer) resolveCallee(n *hir.Node) (callee string, recvV ValueID) {
 		// the receiver passed as the FIRST argument (by pointer for
 		// owned/struct receivers, matching the legacy ABI:
 		//   call @str.to-bytes(%str-long* %recv, ...)).
-		rv := l.lowerExpr(recvID)
+		rv := implicitIt
+		if rv == NoVal {
+			rv = l.lowerExpr(recvID)
+		}
 		if rv == NoVal {
 			return "", NoVal
 		}
@@ -2929,12 +3780,48 @@ func (l *lowerer) resolveCallee(n *hir.Node) (callee string, recvV ValueID) {
 		if ty := l.mod.Type(recvT); ty != nil && ty.Raw != "" {
 			recvTypeName = ty.Raw
 		}
+		// A scalar newtype (`fd = i64`) is interned as a KindInt with Raw
+		// "fd"; expand it to the underlying type so the callee matches the
+		// legacy method table (`i64.to-str`, not `fd.to-str`).
+		recvTypeName = l.expandTypeAlias(recvTypeName)
 	// Optionals wrap their inner type with a leading '?'
 	// (e.g. `?i64`). A method call on the unwrapped value of an optional
 	// (`v.to-str()` where v: ?i64) would otherwise form the callee
 	// "?i64.to-str", which does not exist — the method table holds
 	// "i64.to-str". Strip the marker so the callee matches the legacy
 	// backend, which resolves optional receivers to their inner type.
+	//
+	// The RECEIVER VALUE must be peeled too, not just the type name. Legacy
+	// stores `?T` inline as {tag, T}, so handing the whole optional to a
+	// method call already yields the payload for free. MIR keeps non-scalar
+	// payloads in a dedicated `%option_<elem>` struct, so the peel is only
+	// explicit here: without it `r.len()` on `r ?[]byte` reached
+	// emitBuiltinLen with a `%option___byte` receiver -> "unsupported receiver
+	// type %option___byte" (tests/test-fs-struct.no).
+	if strings.HasPrefix(recvTypeName, "?") {
+		if uv := l.unwrapOptionOperand(rv); uv != NoVal {
+			rv = uv
+			// Owned-string receivers (?str -> str) share their heap buffer with
+			// the original option value: the unwrap is an `extractvalue` of the
+			// payload, so the fresh unwrapped value aliases the option's data
+			// pointer. The unwrapped value is a separate owned local (it gets
+			// its own drop), while the option keeps a drop at function exit —
+			// so both would free the same buffer (double free / use-after-free,
+			// observed as a runtime SIGTRAP in str.replace-n's `s = parts[i]`
+			// + `s.len-bytes()` / `s.byte(j)` inner loop). Clone the unwrapped
+			// receiver so it owns an independent copy. String methods are
+			// read-only (strings are immutable), so the clone is
+			// behaviour-identical and the printed output is unchanged — the
+			// clone is simply dropped alongside the original.
+			if ty := l.mod.Type(l.valueTypeOf(rv)); ty != nil && ty.Kind == KindStr {
+				rv = l.b.Emit(OpClone, l.b.Type("str"), []ValueID{rv}, "")
+			}
+			if ty := l.mod.Type(l.valueTypeOf(rv)); ty != nil && ty.Raw != "" {
+				recvTypeName = ty.Raw
+			}
+			recvTypeName = l.expandTypeAlias(recvTypeName)
+		}
+	}
 	recvTypeName = strings.TrimPrefix(recvTypeName, "?")
 	// A slice/array method that the builtin table supplies for a vec/array
 	// receiver must be emitted as that BUILTIN, not as a call to the generic
@@ -3321,6 +4208,63 @@ func isIntegerMIRType(raw string) bool {
 	return raw == "bool"
 }
 
+// letDeclaredType returns a KLet's declared type, or NoType when that type is
+// a bare option-variant marker (`err`, `ok`, `err | nil`) rather than a real
+// Nolang type.
+func (l *lowerer) letDeclaredType(n *hir.Node) TypeID {
+	dt := l.typeOfNode(n)
+	if dt == NoType || dt == l.voidType {
+		return dt
+	}
+	ty := l.mod.Type(dt)
+	if ty == nil || ty.Raw == "" {
+		return dt
+	}
+	for _, p := range strings.Split(ty.Raw, "|") {
+		switch strings.TrimSpace(p) {
+		case "err", "ok", "some", "nil", "":
+		default:
+			return dt
+		}
+	}
+	return NoType
+}
+
+// unwrapOptionOperand rewrites a `?T`-typed operand into its payload `T`
+// (emitMove lowers the move as an `extractvalue` of the option's payload
+// field). Non-option operands are returned unchanged.
+func (l *lowerer) unwrapOptionOperand(v ValueID) ValueID {
+	if v == NoVal {
+		return v
+	}
+	t := l.valueTypeOf(v)
+	if t == NoType || t == l.voidType {
+		return v
+	}
+	ty := l.mod.Type(t)
+	if ty == nil || ty.Kind != KindOption {
+		return v
+	}
+	elem, ok := parseOptionElem(ty.Raw)
+	if !ok || elem == "" {
+		return v
+	}
+	et := l.b.Type(elem)
+	if et == NoType {
+		return v
+	}
+	return l.b.Emit(OpMove, et, []ValueID{v}, "")
+}
+
+// bareCalleeName strips a module prefix from a callee name (`fs.stat-size` ->
+// `stat-size`) so builtin tables keyed by bare method name can be consulted.
+func bareCalleeName(callee string) string {
+	if i := strings.LastIndex(callee, "."); i >= 0 {
+		return callee[i+1:]
+	}
+	return callee
+}
+
 func (l *lowerer) lowerCall(n *hir.Node) ValueID {
 	callee, recvV := l.resolveCallee(n)
 	if callee == "" {
@@ -3381,14 +4325,23 @@ func (l *lowerer) lowerCall(n *hir.Node) ValueID {
 		defer func() { l.inPrintArgs-- }()
 	}
 	argv := l.lowerCallArgs(n, recvV, callee)
-	// Async function call (`-async` suffix): lower to OpRun — a lazily-enqueued
-	// %task whose opaque i8* handle is returned as an i64. The matching `awy`
-	// (OpAwait) drives the task to completion and reads the result. This keeps
-	// async calls out of the normal out-param call path (which would execute
-	// the function eagerly and return its value, not a handle).
-	if strings.HasSuffix(callee, "-async") {
+	// A `run`-launched call is async regardless of its name (syntactic async);
+	// a bare call to an `-async`-suffixed function also yields a lazily
+	// enqueued handle. Both lower to OpRun — a lazily-enqueued %task whose
+	// opaque i8* handle is returned as an i64. The matching `awy` (OpAwait)
+	// drives the task to completion and reads the result. This keeps async
+	// calls out of the normal out-param call path (which would execute the
+	// function eagerly and return its value, not a handle).
+	if (l.forceRunCall != hir.NoID && n.Id == l.forceRunCall) || strings.HasSuffix(callee, "-async") {
 		handleTyp := l.b.Type("i64")
-		return l.b.Emit(OpRun, handleTyp, argv, callee)
+		v := l.b.Emit(OpRun, handleTyp, argv, callee)
+		// Remember the task's result type: the handle is an opaque i64, so the
+		// matching `awy` cannot recover it and would otherwise read the result
+		// buffer as i64 (e.g. printing a str result as its length).
+		if rt := l.resultTypeOfCallee(callee); rt != l.voidType && rt != NoType {
+			l.asyncResTypes[v] = rt
+		}
+		return v
 	}
 	// The KCall node carries NO type — the AST CallExpression has no Type field,
 	// so InferredType/KType are both empty for it. Derive the result type from
@@ -3400,6 +4353,21 @@ func (l *lowerer) lowerCall(n *hir.Node) ValueID {
 	//      the assignment (with-len/with-cap/with-cap-len).
 	// Only when all three come up empty is the call genuinely void.
 	resTyp := l.resultTypeOfCallee(callee)
+	// Option-returning builtins (stat-size / file-size / fstat-size) are
+	// declared in std as a single `?i64`, but the builtin table describes
+	// them as a (value, ok) PAIR. Legacy collapses that pair into
+	// `%option { tag = ok ? 0 : 1, data = value }` (generateOptionAssign /
+	// optionReturnBuiltinName in build/llvm/stmt.go). MIR must do the same:
+	// otherwise the call lowers to a BARE i64, and `size ?= fstat-size(.fd)`
+	// then compares it against `err` — a bare variant whose type can only be
+	// recovered from an option hint, which a non-option i64 cannot supply —
+	// so it degrades to a void `undef` constant, `icmp eq i64 %size, undef`
+	// folds to `unreachable`, and the program dies with SIGTRAP
+	// (tests/test-open-read.no).
+	optRet := callee != "" && builtin.IsOptionReturnBuiltin(bareCalleeName(callee))
+	if optRet {
+		resTyp = l.b.Type("?i64")
+	}
 	if resTyp == l.voidType {
 		if br := builtinResultOf(callee); br.Known {
 			switch {
@@ -3420,7 +4388,11 @@ func (l *lowerer) lowerCall(n *hir.Node) ValueID {
 		if _, inHIR := l.funcNames[callee]; !inHIR {
 			brs = builtinResultTypes(callee)
 		}
-		if len(brs) > 1 {
+		// An option-returning builtin's (T, ok) pair is NOT a two-result
+		// contract at the language level — std declares it as a single `?T`.
+		// Lowering it as two results hands the caller a bare i64 and loses the
+		// discriminant entirely (see the optionRet note above).
+		if len(brs) > 1 && !optRet {
 			types := make([]TypeID, 0, len(brs))
 			for _, raw := range brs {
 				types = append(types, l.b.Type(raw))
@@ -3450,13 +4422,128 @@ func (l *lowerer) lowerCall(n *hir.Node) ValueID {
 	if len(dsts) == 0 {
 		return NoVal
 	}
+	// Out-parameter binding: a call like `src.copy(dst)` passes `dst` as the
+	// caller-side argument of `str.copy`'s named result parameter
+	// (`str.copy = () (dst str)`). Nolang's out-parameter convention writes the
+	// callee's result into `dst`, so the caller's `dst` must be updated. The
+	// HIR represents this with no result binding (a bare expr-stmt), so without
+	// this the returned value is discarded and the caller keeps reading the
+	// pre-call `dst` (test-str's copy test prints the unmodified '------').
+	// Only fire when every callee parameter is supplied as an argument: if the
+	// argument count is short, the result params are pure RETURN values bound by
+	// an LHS assign (`s = src.to-upper()`), not caller-supplied out-arguments.
+	l.bindOutParams(n, callee, dsts)
 	return dsts[0]
 }
 
-// lowerAsyncRun lowers `run <expr>` (hir.KRun). The operand is either an
-// `-async` call (lowered by lowerCall into an OpRun handle) or an existing
-// handle variable (`run f` where f already holds a handle) — in the latter
-// case we simply return the handle value. Returns the opaque handle (i64).
+// countResultParams returns the number of named result (out-) parameters of the
+// given callee (0 for builtins/externs not present in the HIR package).
+func (l *lowerer) countResultParams(callee string) int {
+	fid, ok := l.funcNames[callee]
+	if !ok {
+		return 0
+	}
+	fdef := l.pkg.Node(fid)
+	if fdef == nil {
+		return 0
+	}
+	n := 0
+	for _, c := range l.pkg.Children(fid) {
+		if cn := l.pkg.Node(c); cn != nil && cn.Kind == hir.KResult {
+			n++
+		}
+	}
+	return n
+}
+
+// bindOutParams moves the results of a call whose callee has named result
+// (out-) parameters back into the caller-side variables supplied at those
+// parameter positions. See the call site above for the nolang out-parameter
+// semantics. The k-th result parameter binds the
+// (len(args)-len(resultParams)+k)-th HIR argument, which is the variable that
+// receives the result. Only identifiers (not arbitrary expressions) are bound,
+// matching legacy (which passes the variable's address as the out-pointer).
+func (l *lowerer) bindOutParams(n *hir.Node, callee string, dsts []ValueID) {
+	fid, ok := l.funcNames[callee]
+	if !ok {
+		return
+	}
+	fdef := l.pkg.Node(fid)
+	if fdef == nil {
+		return
+	}
+	kParam, kResult := 0, 0
+	for _, c := range l.pkg.Children(fid) {
+		cn := l.pkg.Node(c)
+		if cn == nil {
+			continue
+		}
+		switch cn.Kind {
+		case hir.KParam:
+			kParam++
+		case hir.KResult:
+			kResult++
+		}
+	}
+	if kResult == 0 || len(dsts) < kResult {
+		return
+	}
+	args := l.slotArgs(n.Id, "arg")
+	if len(args) < kResult {
+		return
+	}
+	// Arg-form vs LHS-form detection.
+	//   - Non-variadic callee: arg-form requires len(args) == kParam+kResult;
+	//     otherwise the result params are pure RETURN values bound by an LHS
+	//     assign (`r = f(...)`), not caller-supplied out-arguments.
+	//   - Variadic callee: the variadic formal packs >=1 actual args into one
+	//     formal, so len(args) exceeds kParam+kResult. The old strict equality
+	//     guard wrongly rejected these (e.g. `number.max(10, 20, r)`), silently
+	//     discarding the result. For them, arg-form is detected by the trailing
+	//     kResult arguments all being identifiers (legacy passes the variable's
+	//     address as the out-pointer).
+	if len(args) != kParam+kResult && !fdef.Has(hir.FlagVariadic) {
+		return
+	}
+	base := len(args) - kResult
+	// Arg-form requires every trailing kResult argument to be an identifier; a
+	// non-ident trailing argument means this is an LHS-form call and the result
+	// is bound by the assignment instead.
+	for k := 0; k < kResult; k++ {
+		an := l.pkg.Node(args[base+k])
+		if an == nil || an.Kind != hir.KIdent {
+			return
+		}
+	}
+	for k := 0; k < kResult; k++ {
+		ai := base + k
+		if ai < 0 || ai >= len(args) || k >= len(dsts) {
+			continue
+		}
+		an := l.pkg.Node(args[ai])
+		if an == nil || an.Kind != hir.KIdent {
+			continue
+		}
+		nm := l.pkg.Str(an.S)
+		slot, ok := l.locals[nm]
+		if !ok {
+			continue
+		}
+		if dsts[k] == slot {
+			// Self-move: the callee's result slot coincides with the caller's
+			// out-parameter slot. A move slot->slot is a no-op; skip it to
+			// avoid a redundant (and potentially unsafe) transfer.
+			continue
+		}
+		l.b.EmitMoveInto(slot, dsts[k])
+	}
+}
+
+// lowerAsyncRun lowers `run <expr>` (hir.KRun). The operand is either a call
+// (lowered into an OpRun handle — `run` is synchronous-async for ANY callee,
+// not just `-async`-suffixed ones) or an existing handle variable (`run f`
+// where f already holds a handle) — in the latter case we simply return the
+// handle value. Returns the opaque handle (i64).
 func (l *lowerer) lowerAsyncRun(n *hir.Node) ValueID {
 	child := n.First
 	if child == hir.NoID {
@@ -3467,7 +4554,16 @@ func (l *lowerer) lowerAsyncRun(n *hir.Node) ValueID {
 		// run <handle-var>: operand already a handle; return it as-is.
 		return l.lowerExpr(child)
 	}
-	// run <async-call>: lower the inner call (lowerCall detects -async → OpRun).
+	// run <call>: force THIS call node to lower as OpRun, regardless of the
+	// callee's name. The flag is scoped to the exact node id and restored
+	// afterwards so argument sub-calls stay ordinary eager calls.
+	if cn != nil && cn.Kind == hir.KCall {
+		prev := l.forceRunCall
+		l.forceRunCall = child
+		v := l.lowerExpr(child)
+		l.forceRunCall = prev
+		return v
+	}
 	return l.lowerExpr(child)
 }
 
@@ -3479,15 +4575,30 @@ func (l *lowerer) lowerAsyncAwait(n *hir.Node) ValueID {
 	if child == hir.NoID {
 		return NoVal
 	}
-	h := l.lowerExpr(child) // OpRun handle for a call, or the handle var
+	// awy <call>: same syntactic-async rule as run — a direct call operand is
+	// launched as a task and then awaited (mirrors legacy generateAwaitForCoro
+	// Case 1, which routes any direct call through createTaskAndEnqueue).
+	h := NoVal
+	if cn := l.pkg.Node(child); cn != nil && cn.Kind == hir.KCall {
+		prev := l.forceRunCall
+		l.forceRunCall = child
+		h = l.lowerExpr(child)
+		l.forceRunCall = prev
+	} else {
+		h = l.lowerExpr(child) // OpRun handle for a call, or the handle var
+	}
 	if h == NoVal {
 		return NoVal
 	}
 	resTyp := l.b.Type("i64")
-	// Derive the async result type when the operand is a direct call.
-	if cn := l.pkg.Node(child); cn != nil && cn.Kind == hir.KCall {
+	if rt, ok := l.asyncResTypes[h]; ok {
+		// 1. The handle value carries the task's result type (recorded at the
+		//    run site). This is the only reliable source for `awy <handle-var>`.
+		resTyp = rt
+	} else if cn := l.pkg.Node(child); cn != nil && cn.Kind == hir.KCall {
+		// 2. Direct call operand: derive the async result type from the callee.
 		if callee, _ := l.resolveCallee(cn); callee != "" {
-			if rt := l.resultTypeOfCallee(callee); rt != l.voidType {
+			if rt := l.resultTypeOfCallee(callee); rt != l.voidType && rt != NoType {
 				resTyp = rt
 			}
 		}
@@ -3684,6 +4795,33 @@ func (l *lowerer) lowerMultiAssignCall(n *hir.Node, innerCallID int32) ValueID {
 // types (see structLitTypes); pass "" when there is no meaningful callee.
 func (l *lowerer) lowerCallArgs(n *hir.Node, recvV ValueID, callee string) []ValueID {
 	args := l.slotArgs(n.Id, "arg")
+	// For a VARIADIC callee in arg-form (`f(..., r)`), drop the trailing
+	// out-parameter arguments: the result is returned via the out-pointer, not
+	// as a normal LLVM argument. If left in, emitCallBody's variadic spread packs
+	// them into the %vec (corrupting the slice and dropping the out-pointer) —
+	// e.g. `number.max(10, 20, r)` would bundle `r`'s value into the variadic
+	// slice and never write the result back. Detect arg-form by the trailing
+	// kResult HIR arguments being identifiers (LHS-form `r = f(...)` omits them
+	// entirely, so it is left untouched). Restricted to variadic callees so
+	// non-variadic / method out-parameters (e.g. `str.copy = () (dst str)`) keep
+	// their existing, working path.
+	if fid, ok := l.funcNames[callee]; ok {
+		if fdef := l.pkg.Node(fid); fdef != nil && fdef.Has(hir.FlagVariadic) {
+			if kResult := l.countResultParams(callee); kResult > 0 && len(args) >= kResult {
+				isArgForm := true
+				for k := 0; k < kResult; k++ {
+					an := l.pkg.Node(args[len(args)-kResult+k])
+					if an == nil || an.Kind != hir.KIdent {
+						isArgForm = false
+						break
+					}
+				}
+				if isArgForm {
+					args = args[:len(args)-kResult]
+				}
+			}
+		}
+	}
 	var argv []ValueID
 	argOffset := 0
 	if recvV != NoVal {
@@ -3738,6 +4876,13 @@ func (l *lowerer) bindTarget(targetID int32, v ValueID) {
 		return
 	}
 	if existing, ok := l.locals[nm]; ok {
+		if v == existing {
+			// Self-assignment (`it = it`): the RHS lowered to the same slot as
+			// the target. Skipping the drop+move avoids freeing already-freed
+			// memory (double free / use-after-free). See lowerAssignNode /
+			// lowerLet for the rationale.
+			return
+		}
 		if l.isOwnedLocal(existing) {
 			// Owned reassignment: free the old value, move the new one in. See
 			// lowerAssignNode for the memory-safety rationale.
@@ -3911,6 +5056,16 @@ func (l *lowerer) lowerAssignNode(assignID int32) ValueID {
 				if t := l.valueTypeOf(slot); t != NoType && t != l.voidType {
 					l.typeHint = t
 				}
+			} else if _, isGlobal := l.globals[nm]; isGlobal {
+				// Target is a module-level binding, not a function local.
+				// The type hint matters here too: a global `px2 f64 = 0.0`
+				// has no local slot, and without the hint a void-typed RHS
+				// would make the store a no-op.
+				if gv := l.lowerGlobalRef(nm); gv != NoVal {
+					if t := l.valueTypeOf(gv); t != NoType && t != l.voidType {
+						l.typeHint = t
+					}
+				}
 			}
 		}
 	}
@@ -3924,8 +5079,45 @@ func (l *lowerer) lowerAssignNode(assignID int32) ValueID {
 		nm := l.pkg.Str(tn.S)
 		slot, ok := l.locals[nm]
 		if !ok {
+			// The target may be a module-level binding (a script-level
+			// `px2 = 0.0` with a constant initializer stays a module global
+			// rather than being inlined into the synthetic `main`). Reading
+			// such a global already works (lowerIdent -> lowerGlobalRef), but
+			// the STORE was missing: the old code reported "assignment to
+			// unresolved identifier" and dropped the value, so a loop like
+			// `px2 = px2 + mi * vi` silently kept its initial value and every
+			// iteration recomputed from zero (test-tmp-nbody-debug printed
+			// only the last term). Resolve the global and move into it.
+			if _, isGlobal := l.globals[nm]; isGlobal {
+				if slot, ok := l.globals[nm]; ok && slot == v {
+					// Self-assignment to a module global: no-op.
+					return v
+				}
+				gv := l.lowerGlobalRef(nm)
+				if gv == NoVal {
+					l.unsupported(l.curFuncName(), "assign", "assignment to unresolvable global "+nm)
+					return NoVal
+				}
+				if t := l.valueTypeOf(gv); t == NoType || t == l.voidType {
+					l.unsupported(l.curFuncName(), "assign", "assignment to void-typed global "+nm)
+					return NoVal
+				}
+				l.b.EmitMoveInto(gv, v)
+				return v
+			}
 			l.unsupported(l.curFuncName(), "assign", "assignment to unresolved identifier "+nm)
 			return NoVal
+		}
+		if slot == v {
+			// Self-assignment (`it = it`): the target and the value are the
+			// same owned slot, so no ownership transfer occurs. Emitting an
+			// OpDrop here would free the slot's current content, and the
+			// following EmitMoveInto(slot, v) (== move slot->slot) would then
+			// move already-freed memory, i.e. a double free / use-after-free
+			// (observed as a runtime SIGTRAP in str.replace-n). The memory
+			// analysis inserts the single correct exit-drop for this slot,
+			// so skipping the manual drop+move entirely is sound.
+			return v
 		}
 		if l.isOwnedLocal(slot) {
 			// Owned reassignment: the old value must be freed exactly once, then
@@ -3936,6 +5128,17 @@ func (l *lowerer) lowerAssignNode(assignID int32) ValueID {
 			// physical allocation is freed exactly once.
 			l.b.EmitVoid(OpDrop, []ValueID{slot}, "")
 		}
+		// Implicit `ok(v)` wrap: assigning a non-option value `v` to an
+		// option-typed local (`val ?bool = true`) must build the option
+		// {tag=0, payload=v}, NOT move the bare scalar into the option slot
+		// (which would overwrite the discriminant, turning `ok(true)` into
+		// `nil` and corrupting `== nil` / `== err` comparisons and prints).
+		// A value that is ALREADY an option (e.g. `val = otherOpt` / `val =
+		// nil` / `val = err(...)`) is left as-is. This mirrors the wrap already
+		// done for `let` declarations (lowerStmt ~1368); this assignment path
+		// was missing it (tests/test-bool-debug, test-bool-direct,
+		// test-min-u8-bool.minimal and the §16 bool-print family).
+		v = l.wrapOptionIfNeeded(l.valueTypeOf(slot), v)
 		l.b.EmitMoveInto(slot, v)
 		return v
 	case hir.KIndex:
@@ -3955,6 +5158,11 @@ func (l *lowerer) lowerAssignNode(assignID int32) ValueID {
 		idxV := l.lowerExpr(idxID)
 		if arrV == NoVal || idxV == NoVal {
 			return NoVal
+		}
+		// Implicit `ok(v)` wrap for `a[i] = scalar` where `a` is a `[]?T` (same
+		// rule as the KIdent reassignment path above).
+		if eT := l.indexElemType(arrV); eT != NoType {
+			v = l.wrapOptionIfNeeded(eT, v)
 		}
 		l.b.EmitVoid(OpIndexStore, []ValueID{arrV, idxV, v}, "")
 		return v
@@ -3980,6 +5188,42 @@ func (l *lowerer) lowerAssignNode(assignID int32) ValueID {
 	}
 }
 
+// wrapOptionIfNeeded implements nolang's implicit `ok(v)` wrap on assignment: a
+// non-option value `v` assigned to an option-typed target (`?T`) must be built
+// into the option {tag=0, payload=v}, never moved in as a bare scalar (which
+// would clobber the discriminant and turn `ok(true)` into `nil`, corrupting
+// `== nil` / `== err` comparisons and `print`). A `v` that is ALREADY an option
+// (reassignment of an option, `nil`, `err(...)`) is returned unchanged.
+func (l *lowerer) wrapOptionIfNeeded(targetType TypeID, v ValueID) ValueID {
+	if targetType == NoType || targetType == l.voidType {
+		return v
+	}
+	tt := l.mod.Type(targetType)
+	if tt == nil || tt.Kind != KindOption {
+		return v
+	}
+	vt := l.valueTypeOf(v)
+	if vt != NoType && vt != l.voidType {
+		if vty := l.mod.Type(vt); vty != nil && vty.Kind == KindOption {
+			return v // already an option — leave as-is
+		}
+	}
+	return l.b.EmitOptionWrap(targetType, 0, v)
+}
+
+// indexElemType returns the element type of a slice/array value (used to apply
+// the implicit `ok(v)` wrap when storing into a `[]?T` / `[N]?T`).
+func (l *lowerer) indexElemType(arrV ValueID) TypeID {
+	at := l.mod.Type(l.valueTypeOf(arrV))
+	if at == nil {
+		return NoType
+	}
+	if at.Kind == KindSlice || at.Kind == KindArray {
+		return at.Elem
+	}
+	return NoType
+}
+
 func prefixOp(s string) Op {
 	switch s {
 	case "-":
@@ -3998,7 +5242,7 @@ func prefixOp(s string) Op {
 // isArithOrBitwiseOp reports whether op is a numeric/bitwise operator.
 func isArithOrBitwiseOp(op Op) bool {
 	switch op {
-	case OpAdd, OpSub, OpMul, OpDiv, OpMod, OpBitAnd, OpBitOr, OpXor, OpShl, OpShr:
+	case OpAdd, OpSub, OpMul, OpDiv, OpMod, OpUDiv, OpUMod, OpBitAnd, OpBitOr, OpXor, OpShl, OpShr:
 		return true
 	}
 	return false

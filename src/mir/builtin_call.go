@@ -116,6 +116,102 @@ var runtimeFns = map[string]bool{
 	"nanosleep":       true,
 }
 
+// variadicFixedArgs lists C library functions that take `...` together with the
+// number of FIXED (non-variadic) parameters. `open` is the one that actually
+// bit: its mode argument is variadic.
+var variadicFixedArgs = map[string]int{
+	"open":     2, // open(const char*, int, ...)
+	"openat":   3, // openat(int, const char*, int, ...)
+	"fcntl":    2, // fcntl(int, int, ...)
+	"ioctl":    2, // ioctl(int, unsigned long, ...)
+	"printf":   1,
+	"fprintf":  2,
+	"sprintf":  2,
+	"snprintf": 3,
+	"scanf":    1,
+	"sscanf":   2,
+	"execl":    2,
+	"execlp":   2,
+	"execle":   2,
+	"syscall":  1,
+}
+
+// variadicCallType renders the callee function type a variadic C function must
+// be called through, e.g. `i32 (i8*, i32, ...)`. Returns "" for non-variadic
+// callees (or when the call passes no variadic argument), which keeps the plain
+// `call <ret> @fn(...)` form. See the call-site note in emitClibCall for why
+// spelling the type out is required.
+func variadicCallType(fn, ret string, argTypes []string) string {
+	nFixed, ok := variadicFixedArgs[fn]
+	if !ok || len(argTypes) <= nFixed {
+		return ""
+	}
+	fixed := append([]string{}, argTypes[:nFixed]...)
+	fixed = append(fixed, "...")
+	return ret + " (" + strings.Join(fixed, ", ") + ")"
+}
+
+// variadicDecl rewrites `declare <ret> @<name>(a, b, c)` into
+// `declare <ret> @<name>(a, b, ...)` when <name> is a known variadic C
+// function. Declarations that are already variadic, or that name something
+// else, are returned unchanged.
+func variadicDecl(line string) string {
+	const marker = "@"
+	if !strings.HasPrefix(line, "declare") {
+		return line
+	}
+	at := strings.IndexByte(line, '@')
+	op := strings.IndexByte(line, '(')
+	if at < 0 || op < 0 || at > op {
+		return line
+	}
+	name := line[at+1 : op]
+	nFixed, ok := variadicFixedArgs[name]
+	if !ok {
+		return line
+	}
+	close := strings.LastIndexByte(line, ')')
+	if close < op {
+		return line
+	}
+	args := line[op+1 : close]
+	if strings.Contains(args, "...") {
+		return line
+	}
+	// Split top-level commas (types here are simple: no nested parens except
+	// function pointers, which none of these signatures use).
+	var parts []string
+	depth := 0
+	cur := ""
+	for _, r := range args {
+		switch r {
+		case '(':
+			depth++
+		case ')':
+			depth--
+		case ',':
+			if depth == 0 {
+				parts = append(parts, strings.TrimSpace(cur))
+				cur = ""
+				continue
+			}
+		}
+		cur += string(r)
+	}
+	if last := strings.TrimSpace(cur); last != "" {
+		parts = append(parts, last)
+	}
+	if len(parts) <= nFixed {
+		// Fewer args than the fixed arity: nothing to convert, keep as-is.
+		return line
+	}
+	fixed := parts[:nFixed]
+	if nFixed == 0 {
+		return line[:op+1] + "..." + line[close:]
+	}
+	return line[:op+1] + strings.Join(fixed, ", ") + ", ..." + line[close:]
+}
+
 // declFuncName extracts the callee name from a `declare ... @name(...)` line.
 func declFuncName(line string) string {
 	at := strings.IndexByte(line, '@')
@@ -132,7 +228,18 @@ func declFuncName(line string) string {
 // decl records an external declaration to be appended to the module. Duplicate
 // symbols collapse: a module may call the same C function from many sites and
 // LLVM rejects two identical declarations only in the sense of wasting text.
+//
+// Variadic C functions are rewritten to a variadic signature before recording:
+// MIR derives declarations from the Nolang call site (one arg per argument),
+// which yields a NON-variadic `declare i32 @open(i8*, i32, i32)`. The real
+// libc `open` is variadic, and on AAPCS64 (Apple ARM64) variadic arguments are
+// passed on the STACK while the first two go in registers — so a non-variadic
+// declaration makes the callee read `mode` from the stack instead of x2 and the
+// file is created with garbage permissions (test-open-read: 0140 instead of
+// 0600, which then made the follow-up O_RDONLY open fail with EACCES).
+// Legacy declares these as `declare i32 @open(ptr, i32, ...)`.
 func (c *codegen) decl(line string) {
+	line = variadicDecl(line)
 	if c.extDecls == nil {
 		c.extDecls = map[string]bool{}
 	}
@@ -156,6 +263,17 @@ func (c *codegen) decl(line string) {
 // often carry only the bare name, so ptype cannot resolve them directly. The
 // suffix match keeps the lookup robust to the module prefix.
 func (c *codegen) structLLVMType(suffix string) string {
+	// Exact match first: a bare struct name must resolve to ITS OWN definition,
+	// not a module-qualified one that merely shares the suffix. Without this,
+	// `structLLVMType("conn")` could return `%net_conn` (std's `net.conn`, a
+	// single-field {i64}) instead of the user's `%conn` ({%str-long, i64})
+	// depending on Go map iteration order — producing an option payload type
+	// with the WRONG layout and a `getelementptr ... i32 0, i32 1` that indexes
+	// a one-field struct (invalid getelementptr indices, opt-verify) for
+	// `?conn.field` access — tests/test-opt-struct-field.no.
+	if _, ok := c.mod.StructFields[suffix]; ok {
+		return "%" + sanitize(suffix)
+	}
 	for raw := range c.mod.StructFields {
 		if strings.HasSuffix(raw, suffix) {
 			return "%" + sanitize(raw)
@@ -380,6 +498,20 @@ func (c *codegen) emitBuiltinCLib(f *Function, inst *Inst, bm *builtin.BuiltinMe
 	}
 	argList := strings.Join(argStrs, ", ")
 	c.decl(fmt.Sprintf("declare %s @%s(%s)", cRet, fn, strings.Join(declArgs, ", ")))
+	// A variadic C callee must ALSO be called through an explicit function
+	// type: LLVM's textual parser builds a `call` from the printed return type
+	// plus the argument list when no type is spelled out, so
+	// `call i32 @open(i8*, i32, i32)` parses as NON-variadic even though @open
+	// is declared with `...`. llc then passes the mode argument in x2 WITHOUT
+	// setting up the AArch64 varargs register save area, and libc's va_arg
+	// reads stack garbage as the file mode — every file was created with
+	// garbage permissions (test-open-read: 0140 instead of 0600, which made
+	// the follow-up O_RDONLY open fail with EACCES). Spelling the type out
+	// (`call i32 (i8*, i32, ...) @open(...)`) restores the varargs ABI.
+	cTy := cRet
+	if vt := variadicCallType(fn, cRet, declArgs); vt != "" {
+		cTy = vt
+	}
 
 	dstLT := ""
 	dstSlot := ""
@@ -392,7 +524,7 @@ func (c *codegen) emitBuiltinCLib(f *Function, inst *Inst, bm *builtin.BuiltinMe
 	case cl.RetBuf:
 		// The C call's own return value is discarded: the interesting output is
 		// what it wrote into the scratch buffer.
-		c.sb.WriteString(fmt.Sprintf("  call %s @%s(%s)\n", cRet, fn, argList))
+		c.sb.WriteString(fmt.Sprintf("  call %s @%s(%s)\n", cTy, fn, argList))
 		if dstLT == "%str-long" {
 			if dstSlot == "" {
 				return fmt.Errorf("builtin %s: no result slot", inst.Sym)
@@ -414,7 +546,7 @@ func (c *codegen) emitBuiltinCLib(f *Function, inst *Inst, bm *builtin.BuiltinMe
 		}
 	case cl.RetExt != nil:
 		r := c.treg("cr")
-		c.sb.WriteString(fmt.Sprintf("  %s = call %s @%s(%s)\n", r, cRet, fn, argList))
+		c.sb.WriteString(fmt.Sprintf("  %s = call %s @%s(%s)\n", r, cTy, fn, argList))
 		if dstLT != "" && dstSlot != "" {
 			v := c.coerce(cRet, r, dstLT)
 			if v == "" {
@@ -426,7 +558,7 @@ func (c *codegen) emitBuiltinCLib(f *Function, inst *Inst, bm *builtin.BuiltinMe
 	case cl.CmpRet:
 		// POSIX convention: 0 means success. Nolang models that as a bool.
 		r := c.treg("cr")
-		c.sb.WriteString(fmt.Sprintf("  %s = call %s @%s(%s)\n", r, cRet, fn, argList))
+		c.sb.WriteString(fmt.Sprintf("  %s = call %s @%s(%s)\n", r, cTy, fn, argList))
 		if dstLT != "" && dstSlot != "" {
 			cmp := c.treg("cc")
 			c.sb.WriteString(fmt.Sprintf("  %s = icmp eq %s %s, 0\n", cmp, cRet, r))
@@ -442,7 +574,7 @@ func (c *codegen) emitBuiltinCLib(f *Function, inst *Inst, bm *builtin.BuiltinMe
 			c.sb.WriteString(fmt.Sprintf("  call void @%s(%s)\n", fn, argList))
 		} else {
 			r := c.treg("cr")
-			c.sb.WriteString(fmt.Sprintf("  %s = call %s @%s(%s)\n", r, cRet, fn, argList))
+			c.sb.WriteString(fmt.Sprintf("  %s = call %s @%s(%s)\n", r, cTy, fn, argList))
 			if dstLT != "" && dstSlot != "" {
 				v := c.coerce(cRet, r, dstLT)
 				if v == "" {
@@ -577,6 +709,8 @@ func (c *codegen) emitBuiltinForward(f *Function, inst *Inst, bm *builtin.Builti
 		return c.emitBuiltinLoadLE(f, inst, bm.ForwardFunc)
 	case "store-le-u32":
 		return c.emitBuiltinStoreLE(f, inst)
+	case "eq-raw":
+		return c.emitBuiltinEqRaw(inst)
 	case "rotate-left", "rotate-right":
 		return c.emitBuiltinRotate(f, inst, bm.ForwardFunc)
 	case "async-cancel":
@@ -594,6 +728,53 @@ func (c *codegen) emitBuiltinForward(f *Function, inst *Inst, bm *builtin.Builti
 	}
 	c.fail("unsupported builtin %s (ForwardFunc=%q) in func %s", inst.Sym, bm.ForwardFunc, f.Name)
 	return fmt.Errorf("unsupported builtin %s", inst.Sym)
+}
+
+// emitBuiltinEqRaw lowers `a.eq(b, n)` (builtin `str.eq`, ForwardFunc
+// "eq-raw"): compare the first n bytes of two strings with memcmp and return
+// whether they are equal. Mirrors the legacy backend (build/llvm/call.go
+// "eq-raw"), which emits memcmp(a_data, b_data, n) == 0 and zero-extends the
+// i1 to the boolean result slot. Without it the generic dispatch fell through
+// to "unsupported builtin str.eq" (tests/test-str.no).
+func (c *codegen) emitBuiltinEqRaw(inst *Inst) error {
+	if len(inst.Args) < 3 {
+		return fmt.Errorf("eq-raw: needs (receiver, b, n)")
+	}
+	ap := c.dataPtrOf(inst.Args[0])
+	if ap == "" {
+		return fmt.Errorf("eq-raw: cannot take data pointer of receiver")
+	}
+	bp := c.dataPtrOf(inst.Args[1])
+	if bp == "" {
+		return fmt.Errorf("eq-raw: cannot take data pointer of arg 1")
+	}
+	nT, nV := c.loadVal(inst.Args[2])
+	n := c.coerce(nT, nV, "i64")
+	if n == "" {
+		n = nV
+	}
+	c.decl("declare i32 @memcmp(i8*, i8*, i64)")
+	cmp := c.treg("eqc")
+	c.sb.WriteString(fmt.Sprintf("  %s = call i32 @memcmp(i8* %s, i8* %s, i64 %s)\n", cmp, ap, bp, n))
+	eq := c.treg("eqr")
+	c.sb.WriteString(fmt.Sprintf("  %s = icmp eq i32 %s, 0\n", eq, cmp))
+	if inst.Dst <= NoVal {
+		return nil
+	}
+	dstT, _ := c.ptype(inst.Dst)
+	dstSlot := c.valSlot[inst.Dst]
+	if dstSlot == "" {
+		return fmt.Errorf("eq-raw: no result slot")
+	}
+	if dstT == "" {
+		dstT = "i1"
+	}
+	v := c.coerce("i1", eq, dstT)
+	if v == "" {
+		return fmt.Errorf("eq-raw: cannot store i1 into %s", dstT)
+	}
+	c.sb.WriteString(fmt.Sprintf("  store %s %s, %s* %s\n", dstT, v, dstT, dstSlot))
+	return nil
 }
 
 // emitBuiltinAsyncCancel lowers `async-cancel(h)`: set the task's cancelled flag
@@ -1119,9 +1300,23 @@ func (c *codegen) strConst(s string) string {
 	return r
 }
 
-// emitBuiltinStrToBool lowers `str.to-bool()`: true iff the receiver equals the
-// literal "true". The table entry carries no body, so MIR must synthesize the
-// comparison inline.
+// emitBuiltinStrToBool lowers `str.to-bool()`, replicating the nolang std body
+// (src/std/str.no) inline:
+//
+//	""        -> nil      (tag=1)
+//	"true"    -> ok(true) (tag=0, payload=1)
+//	"false"   -> ok(false)(tag=0, payload=0)
+//	anything else -> err  (tag=2)
+//
+// The option discriminant convention is tag 0 = some/ok, 1 = nil/none, 2 = err
+// (see docs/MIR_DESIGN.md §runtime). The previous implementation emitted
+// tag=1 for the `ok` case — turning every `ok(true)`/`ok(false)` into `nil`,
+// which corrupted `== nil` / `== err` comparisons and `print` of `?bool`
+// (the §16 bool-print DIVERGE family: test-bool-debug, test-bool-direct,
+// test-min-u8-bool.minimal). It also only compared against "true", so "false"
+// / empty / non-bool strings were misclassified. This version compares against
+// both literals, inspects the receiver length for the empty case, and selects
+// the correct tag/payload for all four outcomes.
 func (c *codegen) emitBuiltinStrToBool(inst *Inst) error {
 	if len(inst.Args) == 0 {
 		return fmt.Errorf("str.to-bool: missing receiver")
@@ -1135,21 +1330,41 @@ func (c *codegen) emitBuiltinStrToBool(inst *Inst) error {
 		return fmt.Errorf("str.to-bool: no result slot")
 	}
 	rcvTy, rcvV := c.loadVal(inst.Args[0])
-	trueV := c.strConst("true")
-	eq := c.treg("stb")
-	c.sb.WriteString(fmt.Sprintf("  %s = call i1 @str_eq(%s %s, %%str-long %s)\n", eq, rcvTy, rcvV, trueV))
-	if dstLT == "%option" {
-		// ?bool -> { tag=1 (some), inner=zext(i1) }
-		inner := c.treg("stbi")
-		c.sb.WriteString(fmt.Sprintf("  %s = zext i1 %s to i64\n", inner, eq))
+	eqTrue := c.treg("stbt")
+	c.sb.WriteString(fmt.Sprintf("  %s = call i1 @str_eq(%s %s, %%str-long %s)\n", eqTrue, rcvTy, rcvV, c.strConst("true")))
+	eqFalse := c.treg("stbf")
+	c.sb.WriteString(fmt.Sprintf("  %s = call i1 @str_eq(%s %s, %%str-long %s)\n", eqFalse, rcvTy, rcvV, c.strConst("false")))
+	// Receiver length is the first i64 field of %str-long; empty string -> nil.
+	rcvLen := c.treg("stbl")
+	c.sb.WriteString(fmt.Sprintf("  %s = extractvalue %s %s, 0\n", rcvLen, rcvTy, rcvV))
+	isEmpty := c.treg("stbe")
+	c.sb.WriteString(fmt.Sprintf("  %s = icmp eq i64 %s, 0\n", isEmpty, rcvLen))
+	// tag: 0=some/ok, 1=nil/none, 2=err.
+	tagElse := c.treg("stbtg0")
+	c.sb.WriteString(fmt.Sprintf("  %s = select i1 %s, i64 1, i64 2\n", tagElse, isEmpty))
+	tagNoTrue := c.treg("stbtg1")
+	c.sb.WriteString(fmt.Sprintf("  %s = select i1 %s, i64 0, i64 %s\n", tagNoTrue, eqFalse, tagElse))
+	tag := c.treg("stbtg")
+	c.sb.WriteString(fmt.Sprintf("  %s = select i1 %s, i64 0, i64 %s\n", tag, eqTrue, tagNoTrue))
+	// payload: 1 for "true", 0 otherwise (ok(false)/nil/err all use 0).
+	payload := c.treg("stbp")
+	c.sb.WriteString(fmt.Sprintf("  %s = select i1 %s, i64 1, i64 0\n", payload, eqTrue))
+	optStore := func(lt string) {
 		s0 := c.treg("stbs0")
-		c.sb.WriteString(fmt.Sprintf("  %s = insertvalue %%option { i64 0, i64 0 }, i64 1, 0\n", s0))
+		if lt == "%option" {
+			c.sb.WriteString(fmt.Sprintf("  %s = insertvalue %%option { i64 0, i64 0 }, i64 %s, 0\n", s0, tag))
+		} else {
+			c.sb.WriteString(fmt.Sprintf("  %s = insertvalue %s zeroinitializer, i64 %s, 0\n", s0, lt, tag))
+		}
 		s1 := c.treg("stbs1")
-		c.sb.WriteString(fmt.Sprintf("  %s = insertvalue %%option %s, i64 %s, 1\n", s1, s0, inner))
-		c.sb.WriteString(fmt.Sprintf("  store %%option %s, %%option* %s\n", s1, dstSlot))
+		c.sb.WriteString(fmt.Sprintf("  %s = insertvalue %s %s, i64 %s, 1\n", s1, lt, s0, payload))
+		c.sb.WriteString(fmt.Sprintf("  store %s %s, %s* %s\n", lt, s1, lt, dstSlot))
+	}
+	if dstLT == "%option" || strings.HasPrefix(dstLT, "%option_") {
+		optStore(dstLT)
 		return nil
 	}
-	v := c.coerce("i1", eq, dstLT)
+	v := c.coerce("i1", eqTrue, dstLT)
 	if v == "" {
 		return fmt.Errorf("str.to-bool: cannot coerce i1 to %s", dstLT)
 	}
@@ -1245,6 +1460,17 @@ func (c *codegen) emitBuiltinVecPush(inst *Inst) error {
 	c.sb.WriteString(fmt.Sprintf("  call void @free(i8* %s)\n", srcPtr))
 	ebase := c.treg("vpeb")
 	c.sb.WriteString(fmt.Sprintf("  %s = bitcast i8* %s to %s*\n", ebase, newBuf, elemTy))
+	// Owned-string element: the %str-long struct is stored by value into the
+	// vec, so a plain `store` SHARES the temp's heap buffer. When the pushed
+	// temp (e.g. a str.slice-bytes result) drops, the vec element dangles and
+	// reads as garbage — the str.split -> parts[i] use-after-free corruption.
+	// Deep-clone the data so the vec owns an independent buffer (mirrors the
+	// legacy backend's vec.push, which takes ownership of a fresh copy).
+	if elemTy == "%str-long" {
+		cl := c.treg("vpc2")
+		c.sb.WriteString(fmt.Sprintf("  %s = call %%str-long @str_clone(%%str-long %s)\n", cl, elemV))
+		elemV = cl
+	}
 	eptr := c.treg("vpep")
 	c.sb.WriteString(fmt.Sprintf("  %s = getelementptr inbounds %s, %s* %s, i64 %s\n", eptr, elemTy, elemTy, ebase, lenG))
 	c.sb.WriteString(fmt.Sprintf("  store %s %s, %s* %s\n", elemTy, elemV, elemTy, eptr))
@@ -1619,6 +1845,14 @@ func (c *codegen) emitBuiltinVecInsert(inst *Inst) error {
 	c.sb.WriteString(fmt.Sprintf("  call void @llvm.memcpy.p0i8.p0i8.i64(i8* %s, i8* %s, i64 %s, i1 false)\n", newBuf, srcPtr, bytes1))
 	ebase := c.treg("iveb")
 	c.sb.WriteString(fmt.Sprintf("  %s = bitcast i8* %s to %s*\n", ebase, newBuf, elemLL))
+	// Owned-string element: clone before storing into the vec (same reasoning
+	// as emitBuiltinVecPush — a by-value store shares the temp's buffer, which
+	// the temp's drop would free out from under the vec element).
+	if elemLL == "%str-long" {
+		cl := c.treg("ivc2")
+		c.sb.WriteString(fmt.Sprintf("  %s = call %%str-long @str_clone(%%str-long %s)\n", cl, elemV))
+		elemV = cl
+	}
 	eptr := c.treg("ivep")
 	c.sb.WriteString(fmt.Sprintf("  %s = getelementptr inbounds %s, %s* %s, i64 %s\n", eptr, elemLL, elemLL, ebase, idxClamp2))
 	c.sb.WriteString(fmt.Sprintf("  store %s %s, %s* %s\n", elemLL, elemV, elemLL, eptr))

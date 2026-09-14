@@ -70,6 +70,14 @@ type codegen struct {
 	// to its payload field LLVM type, so print/compare code can peel field 1
 	// and route it to the correct scalar printer. Populated at type-decl time.
 	optPayload map[string]string
+
+	// optPrintHelper maps a per-payload inline option LLVM type (%option_<elem>)
+	// to the dedicated print helper function name (e.g. @print_option_str) that
+	// performs the nil-tag check and prints "nil" or the payload inside its OWN
+	// function body. Routed through from emitCall's print special-case so that
+	// no new basic blocks are emitted mid-function (which breaks LLVM
+	// verification). Populated at type-decl time alongside optPayload.
+	optPrintHelper map[string]string
 }
 
 // ptype returns the LLVM type string for a MIR value and whether it is owned.
@@ -118,6 +126,44 @@ func (c *codegen) ptype(v ValueID) (llvm string, owned bool) {
 
 func (c *codegen) fail(format string, args ...interface{}) {
 	c.errs = append(c.errs, fmt.Sprintf(format, args...))
+}
+
+// optionElemKind returns the nolang element Kind of an option-typed value (the
+// Kind of T for a ?T), or KindUnknown if the value isn't a (flat) option or the
+// element type is unavailable. Used at print time to route a flat `%option` to a
+// type-aware printer — e.g. `?bool` must print "true"/"false", not the i64
+// payload "1"/"0" that the generic @print_option would emit. The LLVM `%option`
+// type is the same for every scalar option (?i64, ?bool, ?u8, ...) so the element
+// Kind can only be recovered from the nolang type table.
+func (c *codegen) optionElemKind(v ValueID) TypeKind {
+	var tid TypeID
+	if c.cf != NoFunc {
+		if f := c.mod.Func(c.cf); f != nil {
+			if t, ok := f.LocalTypes[v]; ok {
+				tid = t
+			}
+		}
+	}
+	if tid == NoType {
+		if val := c.mod.Value(v); val != nil {
+			tid = val.Type
+		}
+	}
+	if tid == NoType {
+		return KindUnknown
+	}
+	ty := c.mod.Type(tid)
+	if ty == nil || ty.Kind != KindOption {
+		return KindUnknown
+	}
+	if ty.Elem == NoType {
+		return KindUnknown
+	}
+	et := c.mod.Type(ty.Elem)
+	if et == nil {
+		return KindUnknown
+	}
+	return et.Kind
 }
 
 func supportedLLVM(lt string) bool {
@@ -227,6 +273,7 @@ func (m *Module) EmitLLVM() (out string, err error) {
 		strGlobals:   map[ValueID]strGlobal{},
 		extDecls:     map[string]bool{},
 		optPayload:   map[string]string{},
+		optPrintHelper: map[string]string{},
 	}
 	// Sanitize LLVM symbol names, disambiguating collisions. Nolang method
 	// names embed their receiver type (e.g. `[]t.len`, `vec.reverse`,
@@ -310,6 +357,12 @@ func (m *Module) EmitLLVM() (out string, err error) {
 	for _, d := range c.extDeclOrder {
 		c.sb.WriteString(d + "\n")
 	}
+	// Marker: this module was produced by the MIR backend. The build pipeline
+	// detects it (see build.builder.go's llc invocation) to select MIR-specific
+	// codegen flags — notably --fp-contract=off, because MIR's IR shape lets
+	// llc fuse `fmul`+`fadd` into an FMA where the legacy IR does not, which
+	// shifts float results by 1 ulp relative to legacy (test-tmp-nbody-debug).
+	c.sb.WriteString("!nolang.mir.backend = !{!0}\n!0 = !{i32 1}\n")
 	if len(c.errs) > 0 {
 		return "", fmt.Errorf("MIR->LLVM: %s", strings.Join(c.errs, "; "))
 	}
@@ -528,7 +581,7 @@ func (c *codegen) optionPayloadLLVMType(elemRaw string) string {
 		return "%str-long"
 	case "vec":
 		return "%vec"
-	case "double":
+	case "double", "f64":
 		return "double"
 	case "i64", "i8", "i1", "byte", "u8", "char", "bool", "":
 		return "i64"
@@ -748,8 +801,16 @@ define void @print_i64(i64 %v) {
 entry:
   %buf = alloca [24 x i8]
   %neg = icmp slt i64 %v, 0
+  ; Magnitude without signed-overflow poison: sub i64 0, %v is undefined
+  ; (poison) for i64.MIN (-9223372036854775808) and InstCombine folds it to
+  ; garbage at runtime. Guard the subtraction with a select keyed on an
+  ; explicit isMin check: the poison sub result is only chosen when isMin is
+  ; true, so InstCombine cannot fold it unconditionally. For MIN the select
+  ; returns its (unsigned) magnitude 2^63 directly.
+  %isMin = icmp eq i64 %v, -9223372036854775808
   %negv = sub i64 0, %v
-  %abs = select i1 %neg, i64 %negv, i64 %v
+  %absNeg = select i1 %isMin, i64 9223372036854775808, i64 %negv
+  %abs = select i1 %neg, i64 %absNeg, i64 %v
   %end = getelementptr [24 x i8], [24 x i8]* %buf, i64 0, i64 23
   store i8 0, i8* %end
   %sp = call i8* @digits(i64 %abs, i8* %end)
@@ -769,30 +830,122 @@ emit:
 }
 
 @.dot = private constant [2 x i8] c".\00"
+; @print_double formats a double with the SAME %g convention the legacy backend
+; uses (legacy print(f64) routes through std f64-to-str, which replaced sprintf
+; %g). We implement it BY HAND instead of calling libc snprintf, because the
+; variadic snprintf call is mis-lowered by the opaque-pointer rewrite / opt on
+; this toolchain: the double argument arrives corrupted, printing garbage like
+; 5.3e-315 instead of 3.14. The hand-rolled formatter (a) applies the sign to
+; the INTEGER part only and passes the absolute magnitude to @digits (which
+; expects a non-negative i64), and (b) emits the fractional part with trailing
+; zeros trimmed (matching %g: 1500 -> "1500", 3.14 -> "3.14", -2.5 -> "-2.5"),
+; instead of the old fixed 6-decimal "1500.000000" / negative-garbage output.
 define void @print_double(double %v) {
 entry:
-  %buf = alloca [40 x i8]
-  %ipart = fptosi double %v to i64
+  %isneg = fcmp olt double %v, 0.0
+  %negv = fneg double %v
+  %abs = select i1 %isneg, double %negv, double %v
+  %ipart = fptosi double %abs to i64
   %ipartd = sitofp i64 %ipart to double
-  %fpart = fsub double %v, %ipartd
+  %fpart = fsub double %abs, %ipartd
+  %buf = alloca [40 x i8]
   %end = getelementptr [40 x i8], [40 x i8]* %buf, i64 0, i64 39
   store i8 0, i8* %end
   %sp = call i8* @digits(i64 %ipart, i8* %end)
   %ep = getelementptr [40 x i8], [40 x i8]* %buf, i64 0, i64 39
-  %ep_p = ptrtoint i8* %ep to i64
-  %sp_p = ptrtoint i8* %sp to i64
-  %len = sub i64 %ep_p, %sp_p
-  call i64 @write(i32 1, i8* %sp, i64 %len)
-  call i64 @write(i32 1, i8* getelementptr inbounds ([2 x i8], [2 x i8]* @.dot, i64 0, i64 0), i64 1)
-  %scaled = fmul double %fpart, 1.0e+06
+  %epp = ptrtoint i8* %ep to i64
+  %spp = ptrtoint i8* %sp to i64
+  %ilen = sub i64 %epp, %spp
+  br i1 %isneg, label %negw, label %intw
+negw:
+  store i8 45, i8* %end
+  %dw = call i64 @write(i32 1, i8* %end, i64 1)
+  br label %intw
+intw:
+  %iw = call i64 @write(i32 1, i8* %sp, i64 %ilen)
+  %isz = fcmp oeq double %fpart, 0.0
+  br i1 %isz, label %done, label %frac
+frac:
+  %dotw = call i64 @write(i32 1, i8* getelementptr inbounds ([2 x i8], [2 x i8]* @.dot, i64 0, i64 0), i64 1)
+  %scaled = fmul double %fpart, 1.0e6
   %fi = fptosi double %scaled to i64
-  %fend = getelementptr [40 x i8], [40 x i8]* %buf, i64 0, i64 39
-  store i8 0, i8* %fend
-  %fsp = call i8* @digits(i64 %fi, i8* %fend)
-  %fend_p = ptrtoint i8* %fend to i64
-  %fsp_p = ptrtoint i8* %fsp to i64
-  %flen = sub i64 %fend_p, %fsp_p
-  call i64 @write(i32 1, i8* %fsp, i64 %flen)
+  %q1 = sdiv i64 %fi, 10
+  %d0 = srem i64 %fi, 10
+  %q2 = sdiv i64 %q1, 10
+  %d1 = srem i64 %q1, 10
+  %q3 = sdiv i64 %q2, 10
+  %d2 = srem i64 %q2, 10
+  %q4 = sdiv i64 %q3, 10
+  %d3 = srem i64 %q3, 10
+  %q5 = sdiv i64 %q4, 10
+  %d4 = srem i64 %q4, 10
+  %nz0 = icmp ne i64 %d0, 0
+  %nz1 = icmp ne i64 %d1, 0
+  %nz2 = icmp ne i64 %d2, 0
+  %nz3 = icmp ne i64 %d3, 0
+  %nz4 = icmp ne i64 %d4, 0
+  %nz5 = icmp ne i64 %q5, 0
+  %tz5 = select i1 %nz5, i64 5, i64 6
+  %tz4 = select i1 %nz4, i64 4, i64 %tz5
+  %tz3 = select i1 %nz3, i64 3, i64 %tz4
+  %tz2 = select i1 %nz2, i64 2, i64 %tz3
+  %tz1 = select i1 %nz1, i64 1, i64 %tz2
+  %tz = select i1 %nz0, i64 0, i64 %tz1
+  %p5 = icmp sge i64 5, %tz
+  %p4 = icmp sge i64 4, %tz
+  %p3 = icmp sge i64 3, %tz
+  %p2 = icmp sge i64 2, %tz
+  %p1 = icmp sge i64 1, %tz
+  %p0 = icmp eq i64 %tz, 0
+  %ob = alloca i8
+  br i1 %p5, label %w5, label %c4
+w5:
+  %c5 = trunc i64 %q5 to i8
+  %cc5 = add i8 %c5, 48
+  store i8 %cc5, i8* %ob
+  %ww5 = call i64 @write(i32 1, i8* %ob, i64 1)
+  br label %c4
+c4:
+  br i1 %p4, label %w4, label %c3
+w4:
+  %c4v = trunc i64 %d4 to i8
+  %cc4 = add i8 %c4v, 48
+  store i8 %cc4, i8* %ob
+  %ww4 = call i64 @write(i32 1, i8* %ob, i64 1)
+  br label %c3
+c3:
+  br i1 %p3, label %w3, label %c2
+w3:
+  %c3v = trunc i64 %d3 to i8
+  %cc3 = add i8 %c3v, 48
+  store i8 %cc3, i8* %ob
+  %ww3 = call i64 @write(i32 1, i8* %ob, i64 1)
+  br label %c2
+c2:
+  br i1 %p2, label %w2, label %c1
+w2:
+  %c2v = trunc i64 %d2 to i8
+  %cc2 = add i8 %c2v, 48
+  store i8 %cc2, i8* %ob
+  %ww2 = call i64 @write(i32 1, i8* %ob, i64 1)
+  br label %c1
+c1:
+  br i1 %p1, label %w1, label %c0
+w1:
+  %c1v = trunc i64 %d1 to i8
+  %cc1 = add i8 %c1v, 48
+  store i8 %cc1, i8* %ob
+  %ww1 = call i64 @write(i32 1, i8* %ob, i64 1)
+  br label %c0
+c0:
+  br i1 %p0, label %w0, label %done
+w0:
+  %c0v = trunc i64 %d0 to i8
+  %cc0 = add i8 %c0v, 48
+  store i8 %cc0, i8* %ob
+  %ww0 = call i64 @write(i32 1, i8* %ob, i64 1)
+  br label %done
+done:
   ret void
 }
 
@@ -807,6 +960,10 @@ f:
   ret void
 }
 
+; Bare bool literals: legacy print(true)/print(false) emit "1"/"0" (the integer
+; representation of the bool), NOT "true"/"false". Option-of-bool (?bool) is
+; printed by @print_option_bool as "true"/"false" instead — legacy dispatches
+; the two differently, so MIR must too.
 @.true = private constant [1 x i8] c"1"
 @.false = private constant [1 x i8] c"0"
 @.nl = private constant [2 x i8] c"\0A\00"
@@ -844,14 +1001,47 @@ some:
   ret void
 }
 
+; @print_option_bool mirrors @print_option but formats the inner value of a
+; ?bool as "true"/"false" instead of the raw i64 payload (1/0) — matching the
+; legacy backend's bool print for option types. The flat %option layout loses
+; the element type, so the print-call site must route ?bool here explicitly
+; (see emitCall's print special-case), never through the generic @print_option.
+define void @print_option_bool(%option %o) {
+entry:
+  %tag = extractvalue %option %o, 0
+  %isnil = icmp eq i64 %tag, 1
+  br i1 %isnil, label %nil, label %some
+nil:
+  call i64 @write(i32 1, i8* getelementptr inbounds ([3 x i8], [3 x i8]* @.nilstr, i64 0, i64 0), i64 3)
+  ret void
+some:
+  %inner = extractvalue %option %o, 1
+  %b = trunc i64 %inner to i1
+  br i1 %b, label %ot, label %of
+ot:
+  call i64 @write(i32 1, i8* getelementptr inbounds ([5 x i8], [5 x i8]* @.otrue, i64 0, i64 0), i64 4)
+  ret void
+of:
+  call i64 @write(i32 1, i8* getelementptr inbounds ([6 x i8], [6 x i8]* @.ofalse, i64 0, i64 0), i64 5)
+  ret void
+}
+
+; ?bool literals for @print_option_bool: legacy print(?bool) of ok(true)/ok(false)
+; emits "true"/"false" (distinct from bare-bool print's "1"/"0"). Trailing NUL
+; keeps the inbounds GEP in-bounds; write length is the visible char count.
+@.otrue = private constant [5 x i8] c"true\00"
+@.ofalse = private constant [6 x i8] c"false\00"
+
 ; eprint_* mirror print_* but write to stderr (fd 2) and append a newline,
 ; matching the legacy io.errln behavior. Reuse @digits for itoa.
 define void @eprint_i64(i64 %v) {
 entry:
   %buf = alloca [24 x i8]
   %neg = icmp slt i64 %v, 0
+  %isMin = icmp eq i64 %v, -9223372036854775808
   %negv = sub i64 0, %v
-  %abs = select i1 %neg, i64 %negv, i64 %v
+  %absNeg = select i1 %isMin, i64 9223372036854775808, i64 %negv
+  %abs = select i1 %neg, i64 %absNeg, i64 %v
   %end = getelementptr [24 x i8], [24 x i8]* %buf, i64 0, i64 23
   store i8 0, i8* %end
   %sp = call i8* @digits(i64 %abs, i8* %end)
@@ -1138,6 +1328,14 @@ entry:
 func (c *codegen) emitGlobals() {
 	// Module-level constant bindings (SBOX, TLS-FINISHED-SIZE, perm-600, ...).
 	for _, g := range c.mod.Globals {
+		// `#{embed='file'}` binding: emit the embedded bytes as a private
+		// constant byte array. The `%vec` global below references it through a
+		// `ptrtoint([N x i8]* @.embed.<name> to i64)` initializer, so the
+		// slice's data pointer targets constant memory (never freed).
+		if g.EmbedBytes != nil {
+			c.sb.WriteString(fmt.Sprintf("@.embed.%s = private constant [%d x i8] c\"%s\"\n",
+				g.Name, len(g.EmbedBytes), dataStr(string(g.EmbedBytes))))
+		}
 		if g.ConstText == "" {
 			// Uninitialized module-level variable (e.g. `ga-priv [32]byte`
 			// declared at top level outside an explicit `fn main`, then
@@ -1564,7 +1762,7 @@ func (c *codegen) emitInst(f *Function, inst *Inst, allocaFor func(ValueID) stri
 	switch inst.Op {
 	case OpConst:
 		return c.emitConst(inst, allocaFor)
-	case OpAdd, OpSub, OpMul, OpDiv, OpMod:
+	case OpAdd, OpSub, OpMul, OpDiv, OpMod, OpUDiv, OpUMod:
 		return c.emitArith(f, inst)
 	case OpNeg:
 		return c.emitNeg(inst)
@@ -1743,15 +1941,7 @@ func (c *codegen) emitOptionWrap(inst *Inst) error {
 	// %lv, 1` and opt rejects it ("defined with type %str-long but expected
 	// %fs_file").
 	if svType != "" && svType != payloadLT {
-		if srcSlot := c.valSlot[inst.Args[0]]; srcSlot != "" {
-			c.loadSeq++
-			bc := fmt.Sprintf("%%owbc%d", c.loadSeq)
-			c.sb.WriteString(fmt.Sprintf("  %s = bitcast %s* %s to %s*\n", bc, svType, srcSlot, payloadLT))
-			c.loadSeq++
-			ld := fmt.Sprintf("%%owld%d", c.loadSeq)
-			c.sb.WriteString(fmt.Sprintf("  %s = load %s, %s* %s\n", ld, payloadLT, payloadLT, bc))
-			sv = ld
-		}
+		sv = c.optionPayloadPun(inst.Args[0], svType, payloadLT, sv)
 	}
 	c.loadSeq++
 	w1 := fmt.Sprintf("%%ow%d", c.loadSeq)
@@ -1761,6 +1951,54 @@ func (c *codegen) emitOptionWrap(inst *Inst) error {
 	c.sb.WriteString(fmt.Sprintf("  %s = insertvalue %s %s, %s %s, 1\n", w2, optLT, w1, payloadLT, sv))
 	c.sb.WriteString(fmt.Sprintf("  store %s %s, %s* %s\n", optLT, w2, optLT, slot))
 	return nil
+}
+
+// optionPayloadPun coerces a source value into the payload field type of an
+// inline option (`%option_<elem> = { i64 tag, <payload> }`), returning the
+// LLVM value string to insert.
+//
+// Two shapes need it:
+//
+//  1. FIXED ARRAY -> slice payload. `out ?[]i64 = [10, 20, 30]` lowers the
+//     literal to a fixed `[3 x i64]` while the option's payload field is a
+//     `%vec`. A raw bitcast would reinterpret the ELEMENTS as the slice header
+//     (len=10, cap=20, data=30), so `out.len()` returned nonsense; inserting
+//     the array directly is rejected by the verifier ("defined with type
+//     '[3 x i64]' but expected '%vec'"). Build a real slice instead — a heap
+//     copy for trivially-copyable elements (test-uninit-output case7-slice).
+//
+//  2. Type-pun: nolang permits `err(msg)` / `val(x)` to wrap a value whose type
+//     differs from the option's declared payload element. The canonical case is
+//     `err(str-msg)` into a non-str option (?file, ?[]byte, ...): the message
+//     is a %str-long but the inline slot is typed %fs_file / %vec. The legacy
+//     backend always lowers ?T to the FLAT `%option = { i64 tag, i64 data }`
+//     and stores the message's heap pointer (ptrtoint -> i64), so the payload
+//     bytes are type-erased and only the tag is ever inspected at runtime. MIR's
+//     per-payload inline type is stricter, so the source is re-punned through a
+//     pointer bitcast + load. Without this, `err(err-msg)` into `?file` emits
+//     `insertvalue %option_fs_file, %str-long %lv, 1` and opt rejects it.
+func (c *codegen) optionPayloadPun(srcVal ValueID, svType, payloadLT, sv string) string {
+	if payloadLT == "%vec" && strings.HasPrefix(svType, "[") {
+		arrSlot := c.valSlot[srcVal]
+		if arrSlot == "" {
+			// No slot (the value is a transient register): spill it to a temp
+			// stack slot so the array->slice helper has an addressable source.
+			arrSlot = c.treg("owa")
+			c.sb.WriteString(fmt.Sprintf("  %s = alloca %s\n", arrSlot, svType))
+			c.sb.WriteString(fmt.Sprintf("  store %s %s, %s* %s\n", svType, sv, svType, arrSlot))
+		}
+		return c.vecFromArraySink(svType, arrSlot)
+	}
+	if srcSlot := c.valSlot[srcVal]; srcSlot != "" {
+		c.loadSeq++
+		bc := fmt.Sprintf("%%owbc%d", c.loadSeq)
+		c.sb.WriteString(fmt.Sprintf("  %s = bitcast %s* %s to %s*\n", bc, svType, srcSlot, payloadLT))
+		c.loadSeq++
+		ld := fmt.Sprintf("%%owld%d", c.loadSeq)
+		c.sb.WriteString(fmt.Sprintf("  %s = load %s, %s* %s\n", ld, payloadLT, payloadLT, bc))
+		return ld
+	}
+	return sv
 }
 
 // optionScalarPayload coerces a constructor payload value into the i64 data
@@ -1897,6 +2135,12 @@ func (c *codegen) emitArith(f *Function, inst *Inst) error {
 		} else {
 			op = "srem"
 		}
+	case OpUDiv:
+		// Unsigned division (nolang u64 family). Never float.
+		op = "udiv"
+	case OpUMod:
+		// Unsigned remainder (nolang u64 family). Never float.
+		op = "urem"
 	}
 	c.sb.WriteString(fmt.Sprintf("  %%c%d = %s %s %s, %s\n", inst.Dst, op, resLT, aV, bV))
 	if wrapResult {
@@ -2099,8 +2343,22 @@ func (c *codegen) emitStrEq(inst *Inst) error {
 	lt, _ := c.ptype(inst.Dst)
 	slot := c.valSlot[inst.Dst]
 	aT, aV := c.loadVal(inst.Args[0])
-	_, bV := c.loadVal(inst.Args[1])
-	c.sb.WriteString(fmt.Sprintf("  %%c%d = call i1 @str_eq(%s %s, %s %s)\n", inst.Dst, aT, aV, aT, bV))
+	bT, bV := c.loadVal(inst.Args[1])
+	// Mixed %str-long vs integer operand (e.g. a `str == char` where the char
+	// sits on the right, or any `nil` that for some reason lowered to a scalar):
+	// promote the integer to a %str-long through the same runtime helpers
+	// emitCmp uses, so the @str_eq call is type-correct and semantically right
+	// (char -> one-char string). `nil` against a str is already lowered to an
+	// empty %str-long by lowerNilLit, so this path only sees genuine integers.
+	if aT == "%str-long" && bT != "%str-long" && isIntType(bT) {
+		bV = c.emitIntToStr(bV, bT)
+		bT = "%str-long"
+	}
+	if bT == "%str-long" && aT != "%str-long" && isIntType(aT) {
+		aV = c.emitIntToStr(aV, aT)
+		aT = "%str-long"
+	}
+	c.sb.WriteString(fmt.Sprintf("  %%c%d = call i1 @str_eq(%s %s, %s %s)\n", inst.Dst, aT, aV, bT, bV))
 	c.sb.WriteString(fmt.Sprintf("  store %s %%c%d, %s* %s\n", lt, inst.Dst, lt, slot))
 	return nil
 }
@@ -2111,6 +2369,20 @@ func (c *codegen) emitStrEq(inst *Inst) error {
 func isIntType(lt string) bool {
 	switch lt {
 	case "i64", "i8", "i32", "i16", "u64", "u32", "u16", "u8":
+		return true
+	}
+	return false
+}
+
+// isUnsignedRaw reports whether a nolang RAW integer type is unsigned
+// (u64/u32/u16/u8/byte). MIR flattens every integer to the LLVM i64 width, so
+// signed vs unsigned is NOT recoverable from the LLVM type alone — it must be
+// read from the source type. Division/remainder on an unsigned operand must
+// use `udiv`/`urem` (otherwise the i64.MIN magnitude 2^63 corrupts the digit
+// loop of i64-to-str / u64-to-str).
+func isUnsignedRaw(raw string) bool {
+	switch raw {
+	case "u64", "u32", "u16", "u8", "byte":
 		return true
 	}
 	return false
@@ -2360,7 +2632,15 @@ func (c *codegen) emitMove(inst *Inst) error {
 			return nil
 		}
 		// non-scalar payload: store the payload value inline in the per-payload
-		// option type (%option_fs_file / %option_str / ...).
+		// option type (%option_fs_file / %option_str / ...). A source whose
+		// LLVM type differs from the declared payload must be coerced first
+		// (fixed array -> %vec slice payload, otherwise a type-pun) — see
+		// optionPayloadPun. Assigning a slice literal to a `?[]i64` out-param
+		// (`out = [10, 20, 30]`) reaches exactly this path, and inserting the
+		// raw `[3 x i64]` is rejected by the verifier (test-uninit-output).
+		if srcT != "" && srcT != payloadLT {
+			sv = c.optionPayloadPun(inst.Args[0], srcT, payloadLT, sv)
+		}
 		c.loadSeq++
 		w1 := fmt.Sprintf("%%mvw%d", c.loadSeq)
 		c.sb.WriteString(fmt.Sprintf("  %s = insertvalue %s zeroinitializer, i64 0, 0\n", w1, optLT))
@@ -2380,15 +2660,69 @@ func (c *codegen) emitMove(inst *Inst) error {
 		elem, _ := parseOptionElem(srcRaw)
 		optLT, payloadLT := c.optionType(elem)
 		_, sv := c.loadVal(inst.Args[0])
-		if payloadLT == "i64" {
-			u1 := fmt.Sprintf("%%mvu%d", c.loadSeq)
-			c.sb.WriteString(fmt.Sprintf("  %s = extractvalue %s %s, 1\n", u1, optLT, sv))
-			c.sb.WriteString(fmt.Sprintf("  store %s %s, %s* %s\n", dstT, u1, dstT, dstSlot))
+		// Peel the payload. The payload's LLVM type is NOT the destination type
+		// in general: a scalar option is the FLAT `%option = { i64 tag, i64 data }`
+		// whatever its element, so unwrapping `?byte` yields an i64 that must be
+		// TRUNCATED to the i8 destination. Storing the raw payload is rejected by
+		// the verifier — opt: "'%mvu295' defined with type 'i64' but expected
+		// 'i8'" — which killed the whole `str[i]` -> `?byte` family
+		// (tests/test-x25519-minimal.no, test-hmac, test-sha256, test-fe-ops, ...).
+	c.loadSeq++
+	u1 := fmt.Sprintf("%%mvu%d", c.loadSeq)
+	c.sb.WriteString(fmt.Sprintf("  %s = extractvalue %s %s, 1\n", u1, optLT, sv))
+	// Owned-string option peel: extractvalue copies the {len,cap,data} triple
+	// by value, so the destination SHARES the option's heap buffer. nolang
+	// `x = opt` does NOT transfer ownership (the option may be unwrapped again
+	// at a later use — str.replace-n unwraps the same `?str` twice), so BOTH the
+	// destination and the later re-unwrap would drop the SAME buffer -> double
+	// free (the str.replace-n trace/BPT trap). Clone the payload so the
+	// destination owns an independent buffer; the option keeps its own (freed
+	// exactly once on its own drop).
+	if payloadLT == "%str-long" {
+		c.loadSeq++
+		cl := fmt.Sprintf("%%mvucl%d", c.loadSeq)
+		c.sb.WriteString(fmt.Sprintf("  %s = call %%str-long @str_clone(%%str-long %s)\n", cl, u1))
+		c.sb.WriteString(fmt.Sprintf("  store %%str-long %s, %%str-long* %s\n", cl, dstSlot))
+		return nil
+	}
+	if payloadLT != dstT && dstT != "" {
+			if cv := c.coerce(payloadLT, u1, dstT); cv != "" {
+				c.sb.WriteString(fmt.Sprintf("  store %s %s, %s* %s\n", dstT, cv, dstT, dstSlot))
+				return nil
+			}
+			if dstT == "%str-long" {
+				// `err` arm: `it` is the err message `str` (%str-long, 24B)
+				// but the option's payload slot is typed for the (larger) OK
+				// payload — e.g. ?fs.file's slot is %fs_file (32B). Nolang
+				// lays the option payload out as a union with the err `str`
+				// in the FIRST 24 bytes. Read exactly 24 bytes via
+				// alloca+bitcast+load so we don't overflow the %str-long slot
+				// (a plain `store %fs_file` would write 32 bytes into 24 and
+				// corrupt the stack) — tests/test_fs_error_complete.no,
+				// test-opt-struct-field.no.
+				c.loadSeq++
+				pa := fmt.Sprintf("%%mvpa%d", c.loadSeq)
+				c.sb.WriteString(fmt.Sprintf("  %s = alloca %s\n", pa, payloadLT))
+				c.sb.WriteString(fmt.Sprintf("  store %s %s, %s* %s\n", payloadLT, u1, payloadLT, pa))
+				c.loadSeq++
+				bc := fmt.Sprintf("%%mvub%d", c.loadSeq)
+				c.sb.WriteString(fmt.Sprintf("  %s = bitcast %s* %s to %s*\n", bc, payloadLT, pa, dstT))
+				c.loadSeq++
+				ld := fmt.Sprintf("%%mvul%d", c.loadSeq)
+				c.sb.WriteString(fmt.Sprintf("  %s = load %s, %s* %s\n", ld, dstT, dstT, bc))
+				c.sb.WriteString(fmt.Sprintf("  store %s %s, %s* %s\n", dstT, ld, dstT, dstSlot))
+				return nil
+			}
+			// Structurally incompatible payload/destination (a type-punned
+			// option): store through a bitcast pointer, mirroring
+			// optionPayloadPun. Only the tag is ever read at runtime.
+			c.loadSeq++
+			bc := fmt.Sprintf("%%mvub%d", c.loadSeq)
+			c.sb.WriteString(fmt.Sprintf("  %s = bitcast %s* %s to %s*\n", bc, dstT, dstSlot, payloadLT))
+			c.sb.WriteString(fmt.Sprintf("  store %s %s, %s* %s\n", payloadLT, u1, payloadLT, bc))
 			return nil
 		}
-		u1 := fmt.Sprintf("%%mvu%d", c.loadSeq)
-		c.sb.WriteString(fmt.Sprintf("  %s = extractvalue %s %s, 1\n", u1, optLT, sv))
-		c.sb.WriteString(fmt.Sprintf("  store %s %s, %s* %s\n", payloadLT, u1, payloadLT, dstSlot))
+		c.sb.WriteString(fmt.Sprintf("  store %s %s, %s* %s\n", dstT, u1, dstT, dstSlot))
 		return nil
 	}
 	// Fixed-array source into a slice (%vec) destination: `a = x` where x is a
@@ -2415,8 +2749,14 @@ func (c *codegen) emitClone(inst *Inst) error {
 		dstT, _ := c.ptype(inst.Dst)
 		dstSlot := c.valSlot[inst.Dst]
 		_, srcV := c.loadVal(inst.Args[0])
+		// A true deep copy: @str_clone duplicates the buffer at the SAME length.
+		// The previous code used @str_concat(s, s), which concatenates the
+		// string with ITSELF and doubles the length — so every byte copied out
+		// of a cloned string (e.g. the `?str` receiver unwrap in
+		// str.replace-n's `s = parts[i]` inner loop) was emitted twice,
+		// producing `aa_bb-cc` instead of `a_b-c`.
 		tmp := fmt.Sprintf("%%cl%d", inst.ID)
-		c.sb.WriteString(fmt.Sprintf("  %s = call %s @str_concat(%s %s, %s %s)\n", tmp, dstT, dstT, srcV, dstT, srcV))
+		c.sb.WriteString(fmt.Sprintf("  %s = call %s @str_clone(%s %s)\n", tmp, dstT, dstT, srcV))
 		c.sb.WriteString(fmt.Sprintf("  store %s %s, %s* %s\n", dstT, tmp, dstT, dstSlot))
 		return nil
 	}
@@ -2772,10 +3112,28 @@ func (c *codegen) emitGetField(inst *Inst) error {
 	}
 	recvRaw := ""
 	recvLT := ""
-	if val := c.mod.Value(inst.Args[0]); val != nil {
-		if t := c.mod.Type(val.Type); t != nil {
-			recvRaw = t.Raw
-			recvLT = c.llvmTypeOf(t)
+	// Prefer the function-local type (f.LocalTypes) for the receiver: it is the
+	// AUTHORITATIVE type after lowering (e.g. a `?T` option wrap is recorded
+	// there), whereas the bare Value.Type field can hold the INNER element type
+	// (e.g. `conn` instead of `?conn`) for a call result whose payload was
+	// re-wrapped. Using Value.Type here mis-classified `?conn.path` as a plain
+	// `conn` getfield and emitted a GEP that skipped the option peel, producing
+	// `getelementptr inbounds %net_conn, ...` against an %option_conn slot
+	// (invalid getelementptr indices, opt-verify) — tests/test-opt-struct-field.no.
+	if f := c.mod.Func(c.cf); f != nil {
+		if tid, ok := f.LocalTypes[inst.Args[0]]; ok {
+			if t := c.mod.Type(tid); t != nil {
+				recvRaw = t.Raw
+				recvLT = c.llvmTypeOf(t)
+			}
+		}
+	}
+	if recvLT == "" {
+		if val := c.mod.Value(inst.Args[0]); val != nil {
+			if t := c.mod.Type(val.Type); t != nil {
+				recvRaw = t.Raw
+				recvLT = c.llvmTypeOf(t)
+			}
 		}
 	}
 	if recvLT == "" {
@@ -3384,7 +3742,57 @@ func (c *codegen) emitStructTypes() {
 		seenOpt[optLT] = true
 		c.optPayload[optLT] = payloadLT
 		c.sb.WriteString(fmt.Sprintf("%s = type { i64, %s }\n", optLT, payloadLT))
+		// Emit a dedicated print helper for this per-payload option type when
+		// its payload has a scalar printer (str/i64/i8/double/bool). The helper
+		// does the nil-tag branch INSIDE its own function so emitCall can route
+		// the print through a plain `call` without emitting new basic blocks
+		// mid-function (which breaks LLVM verification). Non-printable payloads
+		// (%vec / user-struct / fixed-array) are skipped; emitCall c.fail()s.
+		c.emitOptionPrintHelper(optLT, payloadLT)
 	}
+}
+
+// emitOptionPrintHelper emits a dedicated `define void @print_option_<elem>`
+// helper for a per-payload inline option type (%option_<elem>). The helper
+// extracts the tag (field 0), branches on nil (tag == 1) to print the literal
+// "nil", and otherwise peels the payload (field 1) and routes it to the
+// matching scalar printer — mirroring the flat-option @print_option helper.
+// Keeping the branch inside its own function lets emitCall route the print
+// through a plain `call` instead of synthesizing new basic blocks mid-function
+// (which breaks LLVM verification). Only payload types with a scalar printer
+// (str/i64/i8/double/bool) produce a helper; the rest are skipped and left to
+// emitCall's c.fail(). The helper name is stored in c.optPrintHelper[optLT].
+func (c *codegen) emitOptionPrintHelper(optLT, payloadLT string) {
+	var body string
+	switch payloadLT {
+	case "%str-long":
+		body = "  call void @print_str(%str-long %p)\n"
+	case "double":
+		body = "  call void @print_double(double %p)\n"
+	case "i64":
+		body = "  call void @print_i64(i64 %p)\n"
+	case "i8":
+		body = "  %pz = zext i8 %p to i64\n  call void @print_i64(i64 %pz)\n"
+	case "i1":
+		body = "  call void @print_bool(i1 %p)\n"
+	default:
+		// %vec / user-struct / fixed-array: no scalar printer — skip.
+		return
+	}
+	name := "@print_option_" + strings.NewReplacer("%", "", "-", "_", ".", "_", " ", "_", "*", "_").Replace(payloadLT)
+	c.optPrintHelper[optLT] = name
+	c.sb.WriteString(fmt.Sprintf("define void %s(%s %%o) {\n", name, optLT))
+	c.sb.WriteString("entry:\n")
+	c.sb.WriteString(fmt.Sprintf("  %%otag = extractvalue %s %%o, 0\n", optLT))
+	c.sb.WriteString("  %oisnil = icmp eq i64 %otag, 1\n")
+	c.sb.WriteString("  br i1 %oisnil, label %onil, label %osome\n")
+	c.sb.WriteString("onil:\n")
+	c.sb.WriteString("  call i64 @write(i32 1, i8* getelementptr inbounds ([3 x i8], [3 x i8]* @.nilstr, i64 0, i64 0), i64 3)\n")
+	c.sb.WriteString("  ret void\n")
+	c.sb.WriteString("osome:\n")
+	c.sb.WriteString(fmt.Sprintf("  %%p = extractvalue %s %%o, 1\n", optLT))
+	c.sb.WriteString(body)
+	c.sb.WriteString("  ret void\n}\n")
 }
 
 // emitTxtFromStr lowers `OpTxtFromStr`: copy a %str-long's bytes into the
@@ -3527,39 +3935,35 @@ func (c *codegen) emitCall(f *Function, inst *Inst) error {
 				// routing to print_i64 unconditionally is wrong and trips the
 				// LLVM verifier (e.g. `%optpl19` defined as %str-long but
 				// expected i64 at `call @print_i64`).
-				if argT == "%option" {
-					c.sb.WriteString(fmt.Sprintf("  call void @print_option(%s %s)\n", argT, argV))
+			if argT == "%option" {
+				// Flat scalar option `{ i64 tag, i64 payload }`. The element
+				// type is lost in LLVM IR, so recover it from the nolang type
+				// table: a `?bool` must print "true"/"false" (via
+				// @print_option_bool), every other scalar option prints the raw
+				// payload via @print_option (matching legacy print of ?i64/?u8/...).
+				if c.optionElemKind(a) == KindBool {
+					c.sb.WriteString(fmt.Sprintf("  call void @print_option_bool(%s %s)\n", argT, argV))
 				} else {
-					c.loadSeq++
-					pl := fmt.Sprintf("%%optpl%d", c.loadSeq)
-					c.sb.WriteString(fmt.Sprintf("  %s = extractvalue %s %s, 1\n", pl, argT, argV))
-					// Route the peeled payload to the correct scalar printer by
-					// its LLVM type (optPayload is populated at type-decl time).
-					payloadLT := c.optPayload[argT]
-					if payloadLT == "" {
-						payloadLT = "i64"
-					}
-					switch payloadLT {
-					case "%str-long":
-						c.sb.WriteString(fmt.Sprintf("  call void @print_str(%s %s)\n", payloadLT, pl))
-					case "double":
-						c.sb.WriteString(fmt.Sprintf("  call void @print_double(%s %s)\n", payloadLT, pl))
-					case "i64":
-						c.sb.WriteString(fmt.Sprintf("  call void @print_i64(%s %s)\n", payloadLT, pl))
-					case "i8":
-						c.loadSeq++
-						z := fmt.Sprintf("%%optz%d", c.loadSeq)
-						c.sb.WriteString(fmt.Sprintf("  %s = zext i8 %s to i64\n", z, pl))
-						c.sb.WriteString(fmt.Sprintf("  call void @print_i64(i64 %s)\n", z))
-					case "i1":
-						c.sb.WriteString(fmt.Sprintf("  call void @print_bool(%s %s)\n", payloadLT, pl))
-					default:
-						// %vec / user-struct / fixed-array payload has no scalar
-						// printer in MIR yet; legacy prints via to-str. Skip
-						// rather than crash the verifier.
-						c.fail("print of option payload type %s unsupported in func %s", payloadLT, f.Name)
-					}
+					c.sb.WriteString(fmt.Sprintf("  call void @print_option(%s %s)\n", argT, argV))
 				}
+			} else {
+				// Inline per-payload option (%option_<elem>). Route the entire
+				// print through a dedicated helper function (e.g.
+				// @print_option_str) that performs the nil-tag check and prints
+				// "nil" or the payload inside its OWN function body. Emitting the
+				// branch inline here (mid-function, inside emitCall) breaks LLVM
+				// verification, so a plain `call` keeps emitCall block-free while
+				// still matching legacy output (nil -> "nil", some -> payload).
+				if helper, ok := c.optPrintHelper[argT]; ok {
+					c.sb.WriteString(fmt.Sprintf("  call void %s(%s %s)\n", helper, argT, argV))
+				} else {
+					// Payload type (%vec / user-struct / fixed-array) has no
+					// scalar printer in MIR yet; legacy prints via to-str. Skip
+					// rather than crash the verifier.
+					c.fail("print of option payload type %s unsupported in func %s", argT, f.Name)
+				}
+				continue
+			}
 				continue
 			}
 			switch argT {
@@ -3771,7 +4175,234 @@ func (c *codegen) emitCall(f *Function, inst *Inst) error {
 		c.fail("callee %s unresolved in func %s", callee, f.Name)
 		return fmt.Errorf("callee nil")
 	}
+	// User-declared FFI extern (`#{c} name = (...) (...)`) uses the C ABI,
+	// NOT the Nolang by-reference ABI. Route it to the FFI marshaller.
+	if cf.IsExtern {
+		return c.emitExternCall(f, inst, cf)
+	}
 	return c.emitCallBody(f, cf, inst, "@"+c.fname[cid])
+}
+
+// mirFFITypeToLLVM maps a Nolang FFI type name to its C-side LLVM type for the
+// `declare` signature (mirrors build/llvm ffiTypeToLLVM). The Nolang *storage*
+// type differs (str stores as %str-long, ptr as i64), so the marshalling in
+// emitExternCall consults the raw Nolang type, not this mapping.
+func mirFFITypeToLLVM(t string) string {
+	switch t {
+	case "i64":
+		return "i64"
+	case "i32", "bool":
+		return "i32"
+	case "f64":
+		return "double"
+	case "str", "ptr":
+		return "i8*"
+	case "pptr":
+		return "i8**"
+	case "ppptr":
+		return "i8***"
+	default:
+		return "i64"
+	}
+}
+
+// emitExternCall lowers a call to a user-declared FFI extern function
+// (`#{c} name = (...) (...)`) using the C calling convention, replicating the
+// legacy build/llvm callExtern ABI exactly so output matches byte-for-byte:
+//
+//   - inputs:  str -> NUL-terminated i8* (@str_cstr); i64 -> i64; i32/bool ->
+//     trunc to i32; f64 -> double; ptr -> inttoptr i64 to i8*; pptr/ppptr ->
+//     alloca i8*/i8** passed by pointer (written back after the call).
+//   - outputs: i64 -> i64; i32 -> sext to i64; f64 -> double; str -> build an
+//     owned %str-long via @str_from_cstr (strlen + malloc copy, so a static
+//     C string is not freed as heap); ptr/pptr/ppptr -> ptrtoint to i64;
+//     bool -> icmp ne 0 then zext to i64; void -> nothing.
+//
+// The C symbol name maps '-' to '_' and drops a leading '_' (private marker),
+// matching externSymbolRef.
+func (c *codegen) emitExternCall(f *Function, inst *Inst, cf *Function) error {
+	cName := cf.Name
+	if strings.HasPrefix(cName, "_") {
+		cName = cName[1:]
+	}
+	cName = strings.ReplaceAll(cName, "-", "_")
+	sym := "@" + cName
+
+	// Emit the `declare` once (MIR has no separate declaration pass). Function.
+	// Params holds ValueIDs; the Nolang FFI type name lives on each param's type.
+	declParams := make([]string, 0, len(cf.Params))
+	for _, p := range cf.Params {
+		raw := ""
+		if val := c.mod.Value(p); val != nil {
+			if t := c.mod.Type(val.Type); t != nil {
+				raw = t.Raw
+			}
+		}
+		declParams = append(declParams, mirFFITypeToLLVM(raw))
+	}
+	retRaw := ""
+	if len(cf.Results) > 0 {
+		if t := c.mod.Type(cf.Results[0]); t != nil {
+			retRaw = t.Raw
+		}
+	}
+	retLLVM := "void"
+	if retRaw != "" {
+		retLLVM = mirFFITypeToLLVM(retRaw)
+	}
+	c.decl(fmt.Sprintf("declare %s %s(%s)", retLLVM, sym, strings.Join(declParams, ", ")))
+
+	// Marshal arguments (Nolang storage -> C ABI).
+	var callArgs []string
+	var toFree []string
+	type pptrSlot struct {
+		slotReg string
+		argVal  ValueID
+		levels  int // 1 = pptr (i8**), 2 = ppptr (i8***)
+	}
+	var pptrs []pptrSlot
+	for i, p := range cf.Params {
+		if i >= len(inst.Args) {
+			break
+		}
+		raw := ""
+		if val := c.mod.Value(p); val != nil {
+			if t := c.mod.Type(val.Type); t != nil {
+				raw = t.Raw
+			}
+		}
+		av, avV := c.loadVal(inst.Args[i])
+		switch raw {
+		case "str":
+			cs := c.cstrOf(inst.Args[i])
+			if cs == "" {
+				c.fail("extern %s: cannot marshal str arg %d", cf.Name, i)
+				return fmt.Errorf("extern str arg")
+			}
+			callArgs = append(callArgs, "i8* "+cs)
+			toFree = append(toFree, cs)
+		case "i64":
+			callArgs = append(callArgs, "i64 "+avV)
+		case "i32", "bool":
+			c.loadSeq++
+			reg := fmt.Sprintf("%%exti%d", c.loadSeq)
+			c.sb.WriteString(fmt.Sprintf("  %s = trunc %s %s to i32\n", reg, av, avV))
+			callArgs = append(callArgs, "i32 "+reg)
+		case "f64":
+			callArgs = append(callArgs, "double "+avV)
+		case "ptr":
+			c.loadSeq++
+			reg := fmt.Sprintf("%%extp%d", c.loadSeq)
+			c.sb.WriteString(fmt.Sprintf("  %s = inttoptr i64 %s to i8*\n", reg, avV))
+			callArgs = append(callArgs, "i8* "+reg)
+		case "pptr":
+			c.loadSeq++
+			slot := fmt.Sprintf("%%extpp%d", c.loadSeq)
+			c.sb.WriteString(fmt.Sprintf("  %s = alloca i8*\n", slot))
+			c.sb.WriteString(fmt.Sprintf("  store i8* inttoptr (i64 %s to i8*), i8** %s\n", avV, slot))
+			callArgs = append(callArgs, "i8** "+slot)
+			pptrs = append(pptrs, pptrSlot{slotReg: slot, argVal: inst.Args[i], levels: 1})
+		case "ppptr":
+			c.loadSeq++
+			slot := fmt.Sprintf("%%extpp%d", c.loadSeq)
+			c.sb.WriteString(fmt.Sprintf("  %s = alloca i8**\n", slot))
+			c.sb.WriteString(fmt.Sprintf("  store i8** inttoptr (i64 %s to i8**), i8*** %s\n", avV, slot))
+			callArgs = append(callArgs, "i8*** "+slot)
+			pptrs = append(pptrs, pptrSlot{slotReg: slot, argVal: inst.Args[i], levels: 2})
+		default:
+			callArgs = append(callArgs, "i64 "+avV)
+		}
+	}
+
+	// Emit the C call.
+	var callReg string
+	if retLLVM == "void" {
+		c.sb.WriteString(fmt.Sprintf("  call void %s(%s)\n", sym, strings.Join(callArgs, ", ")))
+	} else {
+		c.loadSeq++
+		callReg = fmt.Sprintf("%%extr%d", c.loadSeq)
+		c.sb.WriteString(fmt.Sprintf("  %s = call %s %s(%s)\n", callReg, retLLVM, sym, strings.Join(callArgs, ", ")))
+	}
+
+	// Write back pptr/ppptr outputs (load the i8*/i8** and store the i64 back
+	// into the caller's slot, mirroring legacy's ptrtoint store-back).
+	for _, ps := range pptrs {
+		elemLT := "i8*"
+		if ps.levels == 2 {
+			elemLT = "i8**"
+		}
+		c.loadSeq++
+		ld := fmt.Sprintf("%%extpl%d", c.loadSeq)
+		c.sb.WriteString(fmt.Sprintf("  %s = load %s, %s* %s\n", ld, elemLT, elemLT, ps.slotReg))
+		c.loadSeq++
+		pi := fmt.Sprintf("%%extpi%d", c.loadSeq)
+		c.sb.WriteString(fmt.Sprintf("  %s = ptrtoint %s %s to i64\n", pi, elemLT, ld))
+		if aslot := c.valSlot[ps.argVal]; aslot != "" {
+			c.sb.WriteString(fmt.Sprintf("  store i64 %s, i64* %s\n", pi, aslot))
+		}
+	}
+
+	// Convert the C return value into Nolang storage.
+	if retLLVM == "void" || len(inst.Results) == 0 {
+		// No return to convert; the NUL-terminated copies are no longer needed.
+		for _, cs := range toFree {
+			c.sb.WriteString(fmt.Sprintf("  call void @free(i8* %s)\n", cs))
+		}
+		return nil
+	}
+	rv := inst.Results[0]
+	if rv <= NoVal {
+		for _, cs := range toFree {
+			c.sb.WriteString(fmt.Sprintf("  call void @free(i8* %s)\n", cs))
+		}
+		return nil
+	}
+	rslot := c.valSlot[rv]
+	if rslot == "" {
+		for _, cs := range toFree {
+			c.sb.WriteString(fmt.Sprintf("  call void @free(i8* %s)\n", cs))
+		}
+		return nil
+	}
+	switch retRaw {
+	case "str":
+		c.loadSeq++
+		strReg := fmt.Sprintf("%%extrs%d", c.loadSeq)
+		c.sb.WriteString(fmt.Sprintf("  %s = call %%str-long @str_from_cstr(i8* %s)\n", strReg, callReg))
+		c.sb.WriteString(fmt.Sprintf("  store %%str-long %s, %%str-long* %s\n", strReg, rslot))
+	case "i64":
+		c.sb.WriteString(fmt.Sprintf("  store i64 %s, i64* %s\n", callReg, rslot))
+	case "i32":
+		c.loadSeq++
+		sext := fmt.Sprintf("%%extrs%d", c.loadSeq)
+		c.sb.WriteString(fmt.Sprintf("  %s = sext i32 %s to i64\n", sext, callReg))
+		c.sb.WriteString(fmt.Sprintf("  store i64 %s, i64* %s\n", sext, rslot))
+	case "f64":
+		c.sb.WriteString(fmt.Sprintf("  store double %s, double* %s\n", callReg, rslot))
+	case "ptr", "pptr", "ppptr":
+		c.loadSeq++
+		pi := fmt.Sprintf("%%extrp%d", c.loadSeq)
+		llvmRet := mirFFITypeToLLVM(retRaw)
+		c.sb.WriteString(fmt.Sprintf("  %s = ptrtoint %s %s to i64\n", pi, llvmRet, callReg))
+		c.sb.WriteString(fmt.Sprintf("  store i64 %s, i64* %s\n", pi, rslot))
+	case "bool":
+		c.loadSeq++
+		cmp := fmt.Sprintf("%%extrb%d", c.loadSeq)
+		c.sb.WriteString(fmt.Sprintf("  %s = icmp ne %s %s, 0\n", cmp, retLLVM, callReg))
+		c.loadSeq++
+		ze := fmt.Sprintf("%%extrz%d", c.loadSeq)
+		c.sb.WriteString(fmt.Sprintf("  %s = zext i1 %s to i64\n", ze, cmp))
+		c.sb.WriteString(fmt.Sprintf("  store i64 %s, i64* %s\n", ze, rslot))
+	default:
+		c.sb.WriteString(fmt.Sprintf("  store i64 %s, i64* %s\n", callReg, rslot))
+	}
+	// The NUL-terminated argument copies are only safe to free once the return
+	// (if any) has been converted: a str return points into the copy's buffer,
+	// so freeing first would read freed memory in @str_from_cstr.
+	for _, cs := range toFree {
+		c.sb.WriteString(fmt.Sprintf("  call void @free(i8* %s)\n", cs))
+	}
+	return nil
 }
 
 // buildVecViewFromArray emits a borrow slice view over a fixed stack array and
@@ -4490,6 +5121,51 @@ func (c *codegen) asyncWrapperFor(calleeName, targetName string, argTypes []stri
 	return wname
 }
 
+// coerceAsyncArg loads an async-launch argument and coerces it to the target
+// parameter's declared LLVM type `plt`, returning the (type, register) pair to
+// store into the args struct. The wrapper reinterprets the stored bytes as
+// `plt`, so a mismatch would make the callee read garbage: notably a fixed
+// stack array `[N x T]` bound to a `[]T` (%vec) parameter. The array->slice
+// cases reuse the exact coercions emitCallBody applies for ordinary calls
+// (heap-owned copy for trivially-copyable elements, borrow view otherwise;
+// string byte view for %str-long -> []byte).
+func (c *codegen) coerceAsyncArg(av ValueID, plt string) (string, string) {
+	alt, areg := c.loadVal(av)
+	if alt == plt {
+		return alt, areg
+	}
+	if plt == "%vec" && strings.HasPrefix(alt, "[") {
+		slot := c.valSlot[av]
+		if slot == "" {
+			// Value has no addressable slot (a pure SSA constant): spill it so
+			// the coercion can take &arr[0].
+			c.loadSeq++
+			slot = fmt.Sprintf("%%arun.spill.%d", c.loadSeq)
+			c.sb.WriteString(fmt.Sprintf("  %s = alloca %s\n", slot, alt))
+			c.sb.WriteString(fmt.Sprintf("  store %s %s, %s* %s\n", alt, areg, alt, slot))
+		}
+		return "%vec", c.vecFromArraySink(alt, slot)
+	}
+	if plt == "%vec" && alt == "%str-long" {
+		// string -> []byte view: %vec{ len, 0, data-as-intptr }. cap is 0 so the
+		// borrowed constant data is never freed.
+		l := c.treg("asv.l")
+		c.sb.WriteString(fmt.Sprintf("  %s = extractvalue %%str-long %s, 0\n", l, areg))
+		d := c.treg("asv.d")
+		c.sb.WriteString(fmt.Sprintf("  %s = extractvalue %%str-long %s, 2\n", d, areg))
+		p := c.treg("asv.p")
+		c.sb.WriteString(fmt.Sprintf("  %s = ptrtoint i8* %s to i64\n", p, d))
+		s0 := c.treg("asv0")
+		c.sb.WriteString(fmt.Sprintf("  %s = insertvalue %%vec { i64 0, i64 0, i64 0 }, i64 %s, 0\n", s0, l))
+		s1 := c.treg("asv1")
+		c.sb.WriteString(fmt.Sprintf("  %s = insertvalue %%vec %s, i64 0, 1\n", s1, s0))
+		s2 := c.treg("asv2")
+		c.sb.WriteString(fmt.Sprintf("  %s = insertvalue %%vec %s, i64 %s, 2\n", s2, s1, p))
+		return "%vec", s2
+	}
+	return alt, areg
+}
+
 // emitAsyncRun emits caller code for OpRun: it resolves the `-async` callee,
 // builds a heap %task (resume_fn = a generated wrapper, data = an args struct
 // {result_ptr, arg0_ptr, ...}, done/cancelled = false), enqueues it, and stores
@@ -4566,9 +5242,21 @@ func (c *codegen) emitAsyncRun(f *Function, inst *Inst) error {
 	c.sb.WriteString(fmt.Sprintf("  %s = getelementptr inbounds %s, %s* %s, i32 0, i32 0\n", f0, argsTypeStr, argsTypeStr, argsStructT))
 	c.sb.WriteString(fmt.Sprintf("  store i8* %s, i8** %s\n", resI8, f0))
 
-	// each arg: load value, copy into a heap buffer, store its i8* into field i+1.
+	// each arg: coerce to the PARAMETER's declared LLVM type, then copy into a
+	// heap buffer and store its i8* into field i+1. The wrapper passes each
+	// buffer's ADDRESS straight to the target, so the buffer's layout must
+	// equal the declared parameter type. Binding the buffer to the argument
+	// VALUE's type instead (a raw fixed array `[N x i64]` for a `[]i64`
+	// parameter) makes the callee reinterpret the element bytes as a
+	// %vec{len,cap,data} header and dereference an integer as a data pointer ->
+	// SIGSEGV (async-shared-race / test-slot-rebind-unsafe family). Mirrors
+	// emitCallBody's array->slice coercion.
 	for i, av := range inst.Args {
-		alt, areg := c.loadVal(av)
+		plt := "i64"
+		if i < len(argTypes) {
+			plt = argTypes[i]
+		}
+		alt, areg := c.coerceAsyncArg(av, plt)
 		c.loadSeq++
 		abuf := fmt.Sprintf("%%arun.argbuf.%d_%d", c.loadSeq, i)
 		c.sb.WriteString(fmt.Sprintf("  %s = call i8* @malloc(i64 %d)\n", abuf, c.mallocBytesFor(alt)))

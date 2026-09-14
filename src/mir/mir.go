@@ -93,6 +93,16 @@ const (
 	OpMul
 	OpDiv
 	OpMod
+	// OpUDiv / OpUMod: UNSIGNED integer division/remainder. Nolang u64/u32/u16/
+	// u8/byte use unsigned semantics, but MIR flattens every integer to the LLVM
+	// i64 width and registers u64 locals as i64, so the signedness is NOT
+	// recoverable from the lowered value type. It is read from the HIR infix
+	// node's inferred (u64) type at hir2mir time and routed through these ops,
+	// which emit `udiv`/`urem` (otherwise i64.MIN's 2^63 magnitude, which has
+	// the i64.MIN bit pattern, signed-divides to garbage in i64-to-str /
+	// u64-to-str).
+	OpUDiv
+	OpUMod
 	OpNeg
 	OpNot
 	OpAnd
@@ -171,6 +181,7 @@ var opNames = [opCount]string{
 	OpLen:       "len",
 	OpCap:       "cap",
 	OpAdd:       "add", OpSub: "sub", OpMul: "mul", OpDiv: "div", OpMod: "mod",
+	OpUDiv: "udiv", OpUMod: "umod",
 	OpNeg: "neg", OpNot: "not", OpAnd: "and", OpOr: "or", OpBitAnd: "bitand", OpBitOr: "bitor", OpXor: "xor", OpShl: "shl", OpShr: "shr",
 	OpEq: "eq", OpNe: "ne", OpLt: "lt", OpLe: "le", OpGt: "gt", OpGe: "ge", OpStrEq: "streq",
 	OpPhi:  "phi",
@@ -503,6 +514,12 @@ type GlobalDecl struct {
 	// then resolves to an undefined @Name, which the verifier rejects and the
 	// caller falls back to the legacy codegen (never emits wrong data).
 	ConstText string
+	// EmbedBytes, when non-nil, is the compile-time payload of an
+	// `#{embed='file'}` binding. Codegen emits it as a private constant byte
+	// array `@.embed.<Name> = private constant [N x i8] c"..."`, which
+	// ConstText references through a `ptrtoint([N x i8]* @.embed.<Name> to
+	// i64)`. Mirrors the legacy backend's embed global (build/llvm/generator.go).
+	EmbedBytes []byte
 }
 
 type Module struct {
@@ -547,6 +564,16 @@ type Module struct {
 	// consults it first so a param typed `test-cb` resolves to the function
 	// pointer type rather than being misclassified as a struct.
 	TypeAliases map[string]TypeID
+
+	// ValueTypeAliases maps a nolang *value* type alias (e.g. `fd = i64`,
+	// `code = i32`) to the bare nolang type name of its underlying type.
+	// Populated during HIR lowering from KTypeAlias nodes whose target is a
+	// concrete (non-func, non-union) type. It lets method-call dispatch expand
+	// a newtype receiver (`fd.to-str`) to the method table key the legacy
+	// backend actually emits (`i64.to-str`) — otherwise the bare alias name
+	// forms a callee (`fd.to-str`) that no function matches
+	// ("unknown callee fd.to-str", tests/test_errno_basic.no).
+	ValueTypeAliases map[string]string
 }
 
 // blockEmpty reports whether b has no instructions and no terminator — i.e. it

@@ -535,16 +535,24 @@ func vprintf(sink *bytes.Buffer, format string, args ...any) {
 // 這是語意等價的（opaque pointer 只是丟棄指標所載的元素型別，load/store/getelementptr
 // 的值/元素型別仍保留），且對已經是 ptr 的 IR 是冪等的。
 // 註：僅影響編譯管線輸出的 LLVM IR；Go 原始碼不受影響。
+//
+// ⚠️ 這些 pattern 必須帶「左邊界」guard（`(^|[^A-Za-z0-9_%])`）：型別名稱裡可以
+// 合法地含有基本型別片段，MIR 的 per-payload option 型別就是如此——
+// `%option___i64`（= `%option_` + sanitize("[]i64")）。沒有 guard 時，prim
+// pattern 會在識別字「內部」匹配 `i64*` 並只把它換成 `ptr`，產出**不存在的型別名**
+// `%option___ptr`，於是 `alloca %option___i64` 與 `store ..., %option___ptr %x`
+// 型別不一致 → `opt` 驗證失敗（`'%v3.s' defined with type 'ptr' but expected
+// '%option___ptr = type opaque'`，tests/test-uninit-output.no 等 opt-verify 族）。
 var (
-	reOpaqueArr   = regexp.MustCompile(`\[[0-9]+ x [^\]]+\]\*+`)
-	reOpaquePrim  = regexp.MustCompile(`(?:void|i1|i8|i16|i32|i64|f16|f32|f64|half|double|fp128|x86_fp80|ppc_fp128)\*+`)
+	reOpaqueArr   = regexp.MustCompile(`(^|[^A-Za-z0-9_%])\[[0-9]+ x [^\]]+\]\*+`)
+	reOpaquePrim  = regexp.MustCompile(`(^|[^A-Za-z0-9_%])(?:void|i1|i8|i16|i32|i64|f16|f32|f64|half|double|fp128|x86_fp80|ppc_fp128)\*+`)
 	reOpaqueNamed = regexp.MustCompile(`%+[A-Za-z][A-Za-z0-9_]*\*+`)
 )
 
 // toOpaquePointers 把型別化指標語法重寫為 opaque pointer（ptr）。
 func toOpaquePointers(code string) string {
-	code = reOpaqueArr.ReplaceAllString(code, "ptr")
-	code = reOpaquePrim.ReplaceAllString(code, "ptr")
+	code = reOpaqueArr.ReplaceAllString(code, "${1}ptr")
+	code = reOpaquePrim.ReplaceAllString(code, "${1}ptr")
 	code = reOpaqueNamed.ReplaceAllString(code, "ptr")
 	return code
 }
@@ -643,7 +651,19 @@ func buildLLVMInternal(code string, fileName string, outPath string, cc string, 
 	// 組譯階段的符號解析問題。
 	sPath := filepath.Join(tempDir, fileName+".s")
 	if !isWasiTarget {
-		llcArgs := []string{"--fp-contract=fast", llPath, "-o", sPath}
+		// MIR-emitted IR carries the `!nolang.mir.backend` marker (added by
+		// mir.codegen). Its instruction shape lets llc fuse `fmul`+`fadd`
+		// into an FMA where the legacy IR does not, so fusing shifts float
+		// results by 1 ulp relative to the legacy backend — which is what
+		// MIR is validated against (test-tmp-nbody-debug: vz[0]
+		// ...052e-05 vs legacy ...048e-05). Nolang has no FMA semantics, so
+		// MIR builds use strict (unfused) evaluation. Legacy keeps `fast`
+		// for the documented FP-throughput win.
+		fpContract := "fast"
+		if strings.Contains(code, "!nolang.mir.backend") {
+			fpContract = "off"
+		}
+		llcArgs := []string{"--fp-contract=" + fpContract, llPath, "-o", sPath}
 		if target != "" {
 			llcArgs = append([]string{"-mtriple=" + target}, llcArgs...)
 		}
