@@ -259,12 +259,15 @@ func (l *lowerer) collectValueTypeAliases() {
 	if l.mod.ValueTypeAliases == nil {
 		l.mod.ValueTypeAliases = map[string]string{}
 	}
+	if l.mod.TypeAliases == nil {
+		l.mod.TypeAliases = map[string]TypeID{}
+	}
 	for _, id := range l.pkg.Top {
 		n := l.pkg.Node(id)
 		if n == nil || n.Kind != hir.KTypeAlias {
 			continue
 		}
-		if n.Has(hir.FlagFuncType) || n.Has(hir.FlagUnion) || n.Type == hir.NoID {
+		if n.Has(hir.FlagUnion) || n.Type == hir.NoID {
 			continue
 		}
 		name := l.pkg.Str(n.S)
@@ -272,6 +275,21 @@ func (l *lowerer) collectValueTypeAliases() {
 			continue
 		}
 		if target := l.pkg.Type(n.Type); target != "" {
+			if n.Has(hir.FlagFuncType) {
+				// Register the function-type alias so internType resolves
+				// `test-cb` to the KindFunc type (e.g. `fn()`), not a
+				// misclassified KindInt. This lets resolveCallee detect
+				// fn-typed parameters and emit indirect calls
+				// (tests/test-named-fn-type.no).
+				l.mod.TypeAliases[name] = l.b.Type(target)
+				if i := strings.LastIndex(name, "."); i >= 0 {
+					bare := name[i+1:]
+					if _, ok := l.mod.TypeAliases[bare]; !ok {
+						l.mod.TypeAliases[bare] = l.b.Type(target)
+					}
+				}
+				continue
+			}
 			// Register under the module-qualified name (e.g. `fs.fd`) so a
 			// fully-qualified receiver type resolves, AND under the bare name
 			// (e.g. `fd`) because method dispatch sees the receiver's MIR type
@@ -2400,16 +2418,31 @@ func (l *lowerer) lowerArrayElems(elems []int32) ValueID {
 	if len(elems) == 0 {
 		return NoVal
 	}
-	// Determine the element type from the first element. The declared/HIR type
-	// is authoritative when known, but it resolves to `void` for some call
-	// expressions (e.g. `a = [a.len()]` where the element is a method call).
-	// In that case lower the first element up-front and use its actual value
-	// type, so we emit `[1]i64` instead of the invalid `[1]void`.
+	// Determine the element type. Priority:
+	//  1. The typeHint's element type (when assigning to a typed slice like
+	//     `data []byte = [0x61, 0x62, 0x63]`, the hint is `[]byte` so the
+	//     element should be `byte`, NOT `i64` from the integer literal).
+	//  2. The first element's HIR type (authoritative when known, but void for
+	//     some call expressions like `a = [a.len()]`).
+	//  3. The first element's lowered value type.
+	//  4. Fallback to `i64`.
 	var firstVal ValueID = NoVal
-	elemT := l.typeOfNode(l.pkg.Node(elems[0]))
 	elemRaw := ""
-	if ty := l.mod.Type(elemT); ty != nil && ty.Raw != "" && ty.Raw != "void" {
-		elemRaw = ty.Raw
+	// Check typeHint for a slice/array element type first.
+	if l.typeHint != NoType && l.typeHint != l.voidType {
+		if ht := l.mod.Type(l.typeHint); ht != nil {
+			if (ht.Kind == KindSlice || ht.Kind == KindArray) && ht.Elem != NoType {
+				if et := l.mod.Type(ht.Elem); et != nil && et.Raw != "" && et.Raw != "void" {
+				elemRaw = et.Raw
+			}
+			}
+		}
+	}
+	elemT := l.typeOfNode(l.pkg.Node(elems[0]))
+	if elemRaw == "" {
+		if ty := l.mod.Type(elemT); ty != nil && ty.Raw != "" && ty.Raw != "void" {
+			elemRaw = ty.Raw
+		}
 	}
 	if elemRaw == "" {
 		firstVal = l.lowerExpr(elems[0])
@@ -3426,13 +3459,11 @@ func (l *lowerer) lowerSlice(n *hir.Node) ValueID {
 		args = append(args, l.b.EmitInt(OpConst, l.b.Type("i64"), 0, ""))
 	}
 	if hiV != NoVal {
-		// Inclusive upper bound `]` includes the end index -> end+1 (the slice
-		// op takes an EXCLUSIVE upper bound). Exclusive `)` keeps it; an absent
-		// upper bound defaults to the container length.
-		if rightInc {
-			one := l.b.EmitInt(OpConst, l.b.Type("i64"), 1, "")
-			hiV = l.b.Emit(OpAdd, l.b.Type("i64"), []ValueID{hiV, one}, "")
-		}
+		// The exclusive upper bound is computed in codegen (emitSliceOp) so
+		// that reverse slices (start > end) are handled uniformly: codegen
+		// applies +1 for rightInc in BOTH forward and reverse directions, then
+		// takes abs(hi - lo) for the length.  Recording rightInc on the inst
+		// (Int field) lets codegen know to add 1.
 		args = append(args, hiV)
 	} else {
 		// open upper bound: use the container length
@@ -3472,7 +3503,15 @@ func (l *lowerer) lowerSlice(n *hir.Node) ValueID {
 			resTyp = l.b.Type("[]" + elemRaw)
 		}
 	}
-	return l.b.Emit(OpSliceOp, resTyp, args, "")
+	sliceDst := l.b.Emit(OpSliceOp, resTyp, args, "")
+	// Record rightInc on the instruction (Int=1) so codegen knows the upper
+	// bound is inclusive and must add 1 to hi before computing the length.
+	// This is needed for BOTH forward and reverse slices; codegen takes
+	// abs(hi - lo) to handle reverse (start > end) correctly.
+	if rightInc {
+		l.mod.Insts[len(l.mod.Insts)-1].Int = 1
+	}
+	return sliceDst
 }
 
 // OpGetField instruction. The receiver is either the KDot's single child (explicit
@@ -3679,6 +3718,21 @@ func (l *lowerer) resolveCallee(n *hir.Node) (callee string, recvV ValueID) {
 	switch fnn.Kind {
 	case hir.KIdent:
 		name := l.pkg.Str(fnn.S)
+		// Indirect call through a fn-typed local/parameter: `setup()` where
+		// `setup` is a parameter of named function type (e.g. `test-cb`).
+		// The callee is the VALUE held in the local's slot (a function pointer),
+		// not a function NAME. Return the local's ValueID as recvV with an
+		// empty callee so lowerCall emits an OpCall with inst.Callee set
+		// (triggering emitIndirectCall in codegen). Without this the callee
+		// falls through to canonSliceRecv("setup") which is not a registered
+		// function name -> "unknown callee setup" (tests/test-named-fn-type.no).
+		if v, ok := l.locals[name]; ok && v != NoVal {
+			if vt := l.valueTypeOf(v); vt != NoType {
+				if ty := l.mod.Type(vt); ty != nil && ty.Kind == KindFunc {
+					return "", v
+				}
+			}
+		}
 		// Implicit-self method call. nolang lowers `.emit(...)` (called from
 		// inside `regexp.regexp.compile`) to a bare KIdent `regexp.regexp.emit`
 		// with NO receiver child. The MIR function `regexp.regexp.emit`, however,
@@ -4156,16 +4210,29 @@ func (l *lowerer) lowerFormatField(f *parser.FormatField) (ValueID, bool) {
 // realistically uses: `ident[index]` (e.g. `{hash[i]:02x}`).
 var fmtIndexFieldRe = regexp.MustCompile(`^([A-Za-z_][A-Za-z0-9_-]*)\[([A-Za-z_][A-Za-z0-9_-]*|[0-9]+)\]$`)
 
+// fmtMethodFieldRe matches a zero-argument method call on a simple identifier:
+// `ident.method()` (e.g. `{content.len-bytes()}`). This is the second most
+// common expression-field shape after `ident[index]`, and it covers all the
+// `.len()`, `.len-bytes()`, `.to-str()` calls that appear in debug print
+// statements. Only NO-ARGUMENT methods are supported — the format field syntax
+// has no way to express arguments, and any method that takes args would need a
+// full re-parse.
+var fmtMethodFieldRe = regexp.MustCompile(`^([A-Za-z_][A-Za-z0-9_-]*)\.([A-Za-z_][A-Za-z0-9_-]*)\(\)$`)
+
 // lookupFormatValue resolves the value a {name} format field refers to.
 //
 // A field name is SOURCE TEXT (`hash[i]`, `content.len-bytes()`), and MIR sees
 // only HIR — there is no parser left at this stage, so a general expression
 // field cannot be lowered and is refused (legacy re-parses it with
-// lexer+parser+checker, which is not available here). The one shape worth
-// supporting is a container element read, because printing a byte/word of a
-// buffer is the single most common use of an expression field
-// (`print('{hash[i]:02x}')`); it lowers to the same OpIndex the ordinary
-// `a[i]` expression uses.
+// lexer+parser+checker, which is not available here). Two expression shapes
+// are supported because they cover the vast majority of real-world usage:
+//
+//   - `ident[index]` (e.g. `{hash[i]:02x}`) — container element read, lowered
+//     to OpIndex.
+//   - `ident.method()` (e.g. `{content.len-bytes()}`) — zero-argument method
+//     call, lowered to OpCall with the receiver as the first argument.
+//
+// General expression fields (e.g. `{a.b.c}`, `{f(x)}`) are still refused.
 func (l *lowerer) lookupFormatValue(name string) (ValueID, bool) {
 	if v, ok := l.locals[name]; ok {
 		return v, true
@@ -4173,27 +4240,71 @@ func (l *lowerer) lookupFormatValue(name string) (ValueID, bool) {
 	if _, isGlobal := l.globals[name]; isGlobal {
 		return l.lowerGlobalRef(name), true
 	}
-	m := fmtIndexFieldRe.FindStringSubmatch(name)
-	if m == nil {
-		return NoVal, false
+	// ident[index] pattern
+	if m := fmtIndexFieldRe.FindStringSubmatch(name); m != nil {
+		base, ok := l.lookupFormatValue(m[1])
+		if !ok {
+			return NoVal, false
+		}
+		var idxV ValueID
+		if n, err := strconv.ParseInt(m[2], 0, 64); err == nil {
+			idxV = l.b.EmitInt(OpConst, l.b.Type("i64"), n, "")
+		} else if iv, ok := l.lookupFormatValue(m[2]); ok {
+			idxV = iv
+		} else {
+			return NoVal, false
+		}
+		elemT := l.elementTypeOf(base)
+		if elemT == l.voidType {
+			return NoVal, false
+		}
+		return l.b.Emit(OpIndex, elemT, []ValueID{base, idxV}, ""), true
 	}
-	base, ok := l.lookupFormatValue(m[1])
-	if !ok {
-		return NoVal, false
+	// ident.method() pattern — zero-argument method call
+	if m := fmtMethodFieldRe.FindStringSubmatch(name); m != nil {
+		base, ok := l.lookupFormatValue(m[1])
+		if !ok {
+			return NoVal, false
+		}
+		method := m[2]
+		// Determine the receiver type to form the callee name.
+		recvT := l.valueTypeOf(base)
+		recvTypeName := "str"
+		if ty := l.mod.Type(recvT); ty != nil && ty.Raw != "" {
+			recvTypeName = ty.Raw
+		}
+		recvTypeName = l.expandTypeAlias(recvTypeName)
+		recvTypeName = strings.TrimPrefix(recvTypeName, "?")
+		// Check if there's a builtin for this receiver+method.
+		// Builtins are dispatched by the Inst.Sym string at codegen time
+		// (emitBuiltinForward), so we just emit the call with the right
+		// symbol — no enqueue needed (builtins have no HIR body to lower).
+		if bm := sliceMethodBuiltin(recvTypeName, method); bm != "" {
+			// Builtin slice/array method (e.g. len, cap, ...).
+			callee := bm
+			if bmEntry := builtin.FindBuiltinMethod(recvTypeName + "." + method); bmEntry != nil {
+				callee = bmEntry.ForwardFunc
+			}
+			return l.b.Emit(OpCall, l.b.Type("i64"), []ValueID{base}, callee), true
+		}
+		// Check the builtin table for a str/scalar method (e.g. str.len-bytes).
+		if bm := builtin.FindBuiltinMethod(recvTypeName + "." + method); bm != nil {
+			callee := bm.ForwardFunc
+			resT := l.b.Type("i64")
+			if len(bm.Return) > 0 && bm.Return[0] == parser.TypeStr {
+				resT = l.b.Type("str")
+			}
+			return l.b.Emit(OpCall, resT, []ValueID{base}, callee), true
+		}
+		// Not a builtin — try a user-defined method. The callee is
+		// "recvType.method" (e.g. "str.to-str").
+		callee := canonSliceRecv(recvTypeName + "." + method)
+		l.enqueueCallee(callee)
+		// We don't know the return type; use i64 as a safe default.
+		// The format field rendering will coerce to str via fmt-* helpers.
+		return l.b.Emit(OpCall, l.b.Type("i64"), []ValueID{base}, callee), true
 	}
-	var idxV ValueID
-	if n, err := strconv.ParseInt(m[2], 0, 64); err == nil {
-		idxV = l.b.EmitInt(OpConst, l.b.Type("i64"), n, "")
-	} else if iv, ok := l.lookupFormatValue(m[2]); ok {
-		idxV = iv
-	} else {
-		return NoVal, false
-	}
-	elemT := l.elementTypeOf(base)
-	if elemT == l.voidType {
-		return NoVal, false
-	}
-	return l.b.Emit(OpIndex, elemT, []ValueID{base, idxV}, ""), true
+	return NoVal, false
 }
 
 // isIntegerMIRType reports whether a nolang type string is a scalar integer
@@ -4267,6 +4378,21 @@ func bareCalleeName(callee string) string {
 
 func (l *lowerer) lowerCall(n *hir.Node) ValueID {
 	callee, recvV := l.resolveCallee(n)
+	if callee == "" && recvV != NoVal {
+		// Indirect call through a fn-typed local/parameter (e.g. `setup()`
+		// where `setup` has named function type `test-cb`). resolveCallee
+		// returned the local's ValueID as recvV with an empty callee.
+		// Emit an OpCall with inst.Callee = recvV so codegen's
+		// emitIndirectCall loads the function pointer and calls through it.
+		argv := l.lowerCallArgs(n, NoVal, "")
+		resTyp := l.typeOfNode(n)
+		if resTyp == NoType || resTyp == l.voidType {
+			resTyp = l.b.Type("i64")
+		}
+		v := l.b.Emit(OpCall, resTyp, argv, "")
+		l.mod.Insts[len(l.mod.Insts)-1].Callee = recvV
+		return v
+	}
 	if callee == "" {
 		// Multi-assign shape: nolang lowers `a, b = f()` to a KCall whose
 		// `fn` slot is the inner call and whose `arg` slots are the LHS target

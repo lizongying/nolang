@@ -1,8 +1,8 @@
-# Nolang MIR —— 覆盖率基线与续做清单（2026-09-06）
+# Nolang MIR —— 覆盖率基线与续做清单（2026-09-14 v3）
 
-> 关联：[MIR_DESIGN.md](./MIR_DESIGN.md)（v1 设计，Stage 0 已完成，Stage 2/3 进行中）
-> 测量工具：`mir_coverage.sh`（NOLANG_MIR=2，带 strangler-fig 回退网）
-> 本文是「继续完整实现」的进度锚点：先量化“完成度”，再给出按可行性排序的续做清单。
+> 关联：[MIR_DESIGN.md](./MIR_DESIGN.md)（v2.8 设计，Stage 3 全量门禁通过，MIR_GAP=0 达标）
+> 测量工具：`mir_coverage.sh`（NOLANG_MIR=2，带 strangler-fig 回退网）、`scripts/mir_sweep_fast.sh`（并行全量）
+> 本文是「继续完整实现」的进度锚点：先量化"完成度"，再给出按可行性排序的续做清单。
 
 ---
 
@@ -12,12 +12,34 @@
 - 管线接线完整：`transpiler.go` 支持 `NOLANG_MIR=1`（验证/审计，总回退 legacy）、
   `=2`（MIR 直译 + 安全回退 legacy）、`=3`（MIR 直译，零回退，作为全量覆盖闸门）。
 - MIR 已实现：HIR→MIR lowering（可达性 lazy lower）、CFG、liveness、ownership 分类、
-  drop 插入、move/borrow 诊断、print/算术/比较/控制流/调用/slice/struct 字段/option 等
-  核心子集的 MIR→LLVM 直译，以及自包含最小运行时（@str_concat/@str_from_const/@digits/…）。
-- **Stage 4（修光全部内存 bug 族）尚未开始**：double-free/UAF/OOB/borrow-escape 的
-  系统性探测已就位，但 MIR 直译尚未全量替换 legacy emitter。
+  drop 插入、move/borrow 诊断、print/算术/比较/控制流/调用/slice/struct 字段/option、
+  字符串插值（print 家族 + 方法调用字段）、async task 运行时、net FFI 内置、
+  `#{embed}` 物化等核心子集的 MIR→LLVM 直译，以及自包含最小运行时。
+- **MIR 专属 codegen gap = 0**（第二十五轮 2026-09-14 全量重扫确认：全量递归 481 文件，
+  MATCH=397、DIVERGE=1（legacy 也失败）、CERR=75（全部 legacy 也失败）、CRASH=8（全部
+  legacy 也失败）、HANG=0、**MIR 专属 gap=0**）。
+- **已闭环 47 个 MIR 专属修复**（#1–#47，详见 MIR_DESIGN.md §12），含本 session 新增
+  #46（反向切片 `@mir_slice_copy` 运行时 helper + `rightInc` codegen 处理）和 #47
+  （具名函数类型别名 `TypeAliases` 注册 + `resolveCallee` 间接调用路由）。
 
 ## 2. 覆盖率基线（权威测量）
+
+### 2.1 全量并行扫描（第二十五轮 2026-09-14，`scripts/mir_sweep_fast.sh`）
+
+```
+total=481  MATCH=397  DIVERGE=1  CERR=75  CRASH=8  HANG=0
+MIR 专属 gap = 0
+```
+
+- 全量递归 `tests/**/*.no` = 481 个 `.no` 文件。
+- **MATCH=397**（MIR=3 输出与 MIR=2 逐字节一致，rc=0）。
+- **DIVERGE=1**（`test-quant-all1.no`：legacy 也失败——opt 验证错误，非 MIR 引入）。
+- **CERR=75**（编译/链接错误，逐文件比对 legacy **全部也失败**——非 MIR 引入）。
+- **CRASH=8**（运行时崩溃，逐文件比对 legacy **全部也失败**——非 MIR 引入）。
+- **HANG=0**。
+- **MIR 专属 gap = 0**：所有非 MATCH 项在 legacy（MIR=0）下也失败，无 MIR 引入的回归。
+
+### 2.2 抽样覆盖率（`mir_coverage.sh 4`，历史参考）
 
 运行 `bash mir_coverage.sh 4`（对 `tests/*.no` 抽样 90 个，STRIDE=4）：
 
@@ -27,7 +49,6 @@ total=90  emitted(MIR)=79  fallback(legacy)=9  buildfail=2
 
 > ⚠️ **抽样随测试文件数漂移**：`mir_coverage.sh` 的抽样是 `tests/*.no` 按 glob 顺序每 4 个取一个，
 > 所以样本集依赖 `tests/` 下的文件数量。文件增减会让样本变化，跨次覆盖率数字**不可直接相减**比较。
-> 下面所有数字均为同一 checkout（含本文件所述 3 个修复）下的实测值。
 
 - **MIR 直译成功发射：79/90 ≈ 88%**（在 strangler-fig 安全网下）。
 - 回退 legacy：9/90 ≈ 10%。
@@ -168,23 +189,20 @@ go test ./mir/                                    # 单测不回归
 
 ## 6. 小结
 
-- MIR 直译已覆盖抽样语料 **88%**（安全网内，同 checkout 实测 79/9/2），核心子集稳固。
+- **全量并行扫描（第二十五轮 2026-09-14）确认 MIR 专属 gap = 0**：全量递归 481 文件，
+  MATCH=397、DIVERGE=1（legacy 也失败）、CERR=75（全部 legacy 也失败）、CRASH=8（全部
+  legacy 也失败）、HANG=0。所有非 MATCH 项在 legacy 下也失败，无 MIR 引入的回归。
 - 本 session 已落地的真实修复（均 `go build`/`go test ./mir/` 绿灯）：
-  1. **P2.0 struct 字面量掉落修复**（`hir2mir.go`）：`synthesizeMainForTopLevel` 新增
-     `isStructLitWithFieldNames` 判别，用户级（带真实字段名的）struct 字面量照常内联，预置 init
-     （空字段名）仍跳过。解锁全部"声明即赋值的 struct 变量"程序。
-  2. **`emitIndexStore` char/str 写入修复**（`codegen.go`，本 session 重新应用）：owned 判定改按
-     元素类型；`%str-long` 值写入 `i8` 槽时取首字节。治掉 `store i8 %str-long` 的 opt 验证失败。
-  3. （前 session 已落地，本轮复验）`emitCall` 聚合实参 slot 物化、`emitCmp` char/str 促销、`emitArith`
-     `str + int` 促销。
-- **验证**：`/tmp/minpath.no`（`x = path {p:'hello'}`）在 `NOLANG_MIR=0/2/3` 下均输出 `hello\nhello`；
-  `test_path_char2` 现已能在 **MIR=3 下与 legacy 逐字节一致**通过。
-- **已知剩余 gap**：`test_path_char` 在 MIR=3 下于 `p.exists()`→`fs.is-file(.p)` 处 **segfault**
-  （`fs.is-file` 等文件系统 builtin 在 MIR 路径未接线，属 P1 缺失 builtin，**与 struct 字面量无关**）；
-  该 segfault = 非零退出，故 **MIR=2 仍正确回退 legacy**，安全网未被破坏、未发射坏构建。
-- 剩余回退 + 静默错误输出，全部映射到 §3/§4 的具体代码点；无“无法定位”的黑洞。
-- 下一步最高杠杆：**P1 缺失 builtin 接线**（`fs.is-file`/`fs.get-line`/`os.get-errno`/`ok.to-str`/
-  `data.zero`/`setup`/`str-len` 定宽数组接收者）→ P0 静默错误清零。
+  1. **#46 反向切片修复**（`hir2mir.go` + `codegen.go`）：`lowerSlice` 移除了 `rightInc` 的
+     `hi+1`（改到 codegen 层面统一处理），`emitSliceOp` 新增 `hiAdj = hi + (1 if rightInc)`、
+     `abs(hiAdj - lo)` 长度计算（`select` 正向/反向）、`@mir_slice_copy` 运行时 helper 调用
+     （处理正向 memcpy 和反向逐元素拷贝），避免在 MIR codegen 中引入基本块分支。
+  2. **#47 具名函数类型别名修复**（`hir2mir.go`）：`collectValueTypeAliases` 新增
+     `FlagFuncType` 别名的 `TypeAliases` 注册（`test-cb = ()` → `KindFunc` 类型），
+     `resolveCallee` 的 `KIdent` 分支新增 `KindFunc` 类型检查——当局部/参数为函数类型时
+     返回 `("", valueID)` 触发 `emitIndirectCall` 间接调用路由。
+  3. （前 session 已落地）**#44 字符串插值方法调用字段**、**#45 数组字面量元素类型推导**。
+- **验证**：`vec-slice.no`、`arr-slice.no`、`test-slice-minX.no` 在 MIR=0/3 下均逐字节一致。
 - ⚠️ 覆盖率数字随 `tests/` 文件数漂移（抽样锚定 glob 顺序+STRIDE），跨次比较须同一 checkout。
 - ⚠️ **构建环境注意（本 session 实测）**：`/opt/homebrew/opt/llvm/bin/clang` 的**链接阶段挂起**
   （`clang t.o -o t` SIGTERM），导致 `./no build`/`run` 卡死；`/usr/bin/clang`（Apple 系统 clang）链接

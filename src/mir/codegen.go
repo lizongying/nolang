@@ -52,6 +52,9 @@ type codegen struct {
 	curFn       *Function // function currently being emitted (for param ownership checks)
 	loadSeq     int // unique suffix for materialized load registers
 
+	// mirSliceCopyEmitted tracks whether @mir_slice_copy has been emitted.
+	mirSliceCopyEmitted bool
+
 	// externals discovered during emission: a CLibCall may reach a C symbol
 	// that the prelude does not know about, so declarations are accumulated
 	// here and appended to the module once every function has been emitted
@@ -3558,10 +3561,29 @@ func (c *codegen) emitSliceOp(inst *Inst) error {
 		}
 	}
 
+	// rightInc: inst.Int == 1 means the upper bound is inclusive (']').
+	// Apply +1 to hi BEFORE computing the length, matching legacy's
+	// computeReversibleLen (which adds 1 for rightInc in both directions).
+	hiAdj := hiV
+	if inst.Int == 1 {
+		hiAdj = c.treg("sohi")
+		c.sb.WriteString(fmt.Sprintf("  %s = add i64 %s, 1\n", hiAdj, hiV))
+	}
+
+	// Detect reverse slice (lo > hi) at runtime and compute abs(hiAdj - lo).
+	// Forward: len = hiAdj - lo.  Reverse: len = lo - hiAdj.
+	revCmp := c.treg("sorv")
+	c.sb.WriteString(fmt.Sprintf("  %s = icmp sgt i64 %s, %s\n", revCmp, loV, hiAdj))
+	fwdLen := c.treg("sofl")
+	c.sb.WriteString(fmt.Sprintf("  %s = sub i64 %s, %s\n", fwdLen, hiAdj, loV))
+	revLen := c.treg("sorl")
+	c.sb.WriteString(fmt.Sprintf("  %s = sub i64 %s, %s\n", revLen, loV, hiAdj))
 	newLen := c.treg("sonl")
-	c.sb.WriteString(fmt.Sprintf("  %s = sub i64 %s, %s\n", newLen, hiV, loV))
+	c.sb.WriteString(fmt.Sprintf("  %s = select i1 %s, i64 %s, i64 %s\n", newLen, revCmp, revLen, fwdLen))
 
 	// Byte offset of the sub-range start inside the backing buffer.
+	// For forward slices this is lo*stride; for reverse slices it's also lo
+	// (the high index), because the copy starts from there.
 	var off string
 	if stride == 1 {
 		off = loV
@@ -3583,22 +3605,16 @@ func (c *codegen) emitSliceOp(inst *Inst) error {
 	srcBase := c.treg("sosb")
 	c.sb.WriteString(fmt.Sprintf("  %s = getelementptr inbounds i8, i8* %s, i64 %s\n", srcBase, srcPtr, off))
 
-	// Fixed-array receiver sliced into a %vec: a slice result can ESCAPE the
-	// array's lifetime (e.g. returned from a function, or stored in a variable
-	// that outlives the array). Building a borrow VIEW over the array's storage
-	// (data = &arr[lo], cap = len-lo) is unsafe in that case: the backing array
-	// dies, leaving a dangling pointer, and `@vec_free` would `free()` a stack/
-	// borrowed address (abort trap). So we ALWAYS materialize an owned heap copy
-	// here — exactly like the %vec and %str-long receiver paths below. This also
-	// matches the legacy backend, which copies the sub-range into a heap buffer.
-	// (The transient borrow views used for fixed-array -> %vec *receiver* coercion
-	// at call sites are a separate mechanism with cap=0 and are NOT affected.)
-
-	// Fresh backing buffer + copy the sub-range (uniform ownership model: the
-	// slice gets its own copy and never aliases the source).
-	newBuf := c.treg("sonb2")
+	// Fresh backing buffer (uniform ownership model: the slice gets its own
+	// copy and never aliases the source).
+	newBuf := c.treg("snbuf")
 	c.sb.WriteString(fmt.Sprintf("  %s = call i8* @malloc(i64 %s)\n", newBuf, bytes))
-	c.sb.WriteString(fmt.Sprintf("  call void @llvm.memcpy.p0i8.p0i8.i64(i8* %s, i8* %s, i64 %s, i1 false)\n", newBuf, srcBase, bytes))
+
+	// Delegate the copy to @mir_slice_copy, a runtime helper that handles
+	// both forward (memcpy) and reverse (per-element backward copy) cases
+	// without introducing basic-block branches in the emitted code.
+	c.ensureMirSliceCopy()
+	c.sb.WriteString(fmt.Sprintf("  call void @mir_slice_copy(i8* %s, i8* %s, i64 %s, i64 %d, i1 %s)\n", newBuf, srcBase, newLen, stride, revCmp))
 
 	if dstLT == "%str-long" {
 		s0 := c.treg("sos0")
@@ -3628,6 +3644,50 @@ func (c *codegen) emitSliceOp(inst *Inst) error {
 		c.sb.WriteString(fmt.Sprintf("  store %%vec %s, %%vec* %s\n", s2, dstSlot))
 	}
 	return nil
+}
+
+// ensureMirSliceCopy emits the @mir_slice_copy runtime helper if it hasn't
+// been emitted yet. The helper copies `count` elements of `stride` bytes each
+// from `src` to `dst`. When `reversed` is true, it walks `src` backward (from
+// the high index toward the low index) and writes them forward into `dst`,
+// producing a reversed copy. When false, it's a plain memcpy.
+//
+// Encapsulating the branch and loop inside a function avoids emitting basic-
+// block branches in the MIR codegen's linear instruction stream, which would
+// break the alloca-slot model (non-entry-block allocas interact badly with
+// llc -O0's register spilling).
+func (c *codegen) ensureMirSliceCopy() {
+	if c.mirSliceCopyEmitted {
+		return
+	}
+	c.mirSliceCopyEmitted = true
+	c.global(`define void @mir_slice_copy(i8* %dst, i8* %src, i64 %count, i64 %stride, i1 %reversed) {
+entry:
+  br i1 %reversed, label %rev, label %fwd
+fwd:
+  %fwd_bytes = mul i64 %count, %stride
+  call void @llvm.memcpy.p0i8.p0i8.i64(i8* %dst, i8* %src, i64 %fwd_bytes, i1 false)
+  ret void
+rev:
+  %i_ptr = alloca i64
+  store i64 0, i64* %i_ptr
+  br label %rev_cond
+rev_cond:
+  %i = load i64, i64* %i_ptr
+  %cmp = icmp slt i64 %i, %count
+  br i1 %cmp, label %rev_body, label %rev_end
+rev_body:
+  %src_off = mul i64 %i, %stride
+  %neg_off = sub i64 0, %src_off
+  %src_p = getelementptr i8, i8* %src, i64 %neg_off
+  %dst_p = getelementptr i8, i8* %dst, i64 %src_off
+  call void @llvm.memcpy.p0i8.p0i8.i64(i8* %dst_p, i8* %src_p, i64 %stride, i1 false)
+  %next = add i64 %i, 1
+  store i64 %next, i64* %i_ptr
+  br label %rev_cond
+rev_end:
+  ret void
+}`)
 }
 
 // elemStride returns the byte size of an LLVM element type, used to scale slice
