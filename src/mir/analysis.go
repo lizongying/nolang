@@ -117,10 +117,24 @@ func (m *Module) isSliceViewOfArray(f *Function, inst *Inst) bool {
 // `remove` methods, never a bare OpIndex; those are handled by the move
 // machinery instead.)
 func (m *Module) isBorrowRead(f *Function, inst *Inst) bool {
-	if inst.Op != OpIndex {
-		return false
+	// OpIndex: array/slice/str/map element read aliases the owner's storage.
+	if inst.Op == OpIndex {
+		return m.isOwnedVal(f, inst.Dst)
 	}
-	return m.isOwnedVal(f, inst.Dst)
+	// OpGetField: struct field read aliases the struct's storage. A getfield
+	// of an owned field (e.g. self.keys: []str) returns a %vec whose data
+	// pointer points into the struct's heap buffer. Dropping it would free
+	// the struct's internal buffer, causing a double-free when the struct
+	// itself is later freed (or when another getfield re-reads the same
+	// field and the now-freed buffer is accessed). The struct owns its
+	// fields; a field read borrows. This mirrors the OpIndex rationale above.
+	// Codegen already clones owned %str-long fields (emitGetField), but owned
+	// %vec fields are NOT cloned (no @vec_clone in the runtime), so the drop
+	// must be suppressed here instead.
+	if inst.Op == OpGetField {
+		return m.isOwnedVal(f, inst.Dst)
+	}
+	return false
 }
 
 // insertDrops places exactly one OpDrop for every owned local on EVERY

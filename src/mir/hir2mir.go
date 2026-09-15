@@ -2463,7 +2463,29 @@ func (l *lowerer) fieldTypeOf(recvV ValueID, fieldName string) TypeID {
 			}
 		}
 		if found == "" {
-			return NoType
+			// Fallback for hashmap specialized structs: the generic_structs
+			// pass instantiates hashmap-str-tmpl into hashmap-str-i64 (etc.),
+			// but the HIR struct definition may use the template name while the
+			// method's self parameter type uses the specialized name. Try
+			// matching by prefix: if raw starts with "hashmap-", look for any
+			// StructFields key that starts with the same prefix and ends with
+			// "-tmpl".
+			if strings.HasPrefix(raw, "hashmap-") {
+				parts := strings.SplitN(raw, "-", 3)
+				prefix := ""
+				if len(parts) >= 2 {
+					prefix = parts[0] + "-" + parts[1] + "-"
+				}
+				for k := range l.mod.StructFields {
+					if strings.HasPrefix(k, prefix) && strings.HasSuffix(k, "-tmpl") {
+						found = k
+						break
+					}
+				}
+			}
+			if found == "" {
+				return NoType
+			}
 		}
 		key = found
 	}
@@ -3086,6 +3108,8 @@ func (l *lowerer) lowerExpr(id int32) ValueID {
 		return l.lowerNilLit(n)
 	case hir.KStructLit:
 		return l.lowerStructLit(n)
+	case hir.KMapLit:
+		return l.lowerMapLit(n)
 	case hir.KSlice:
 		return l.lowerSlice(n)
 	case hir.KPrefix:
@@ -3621,6 +3645,65 @@ func (l *lowerer) lowerStructLit(n *hir.Node) ValueID {
 		// points to; the SIGSEGV / NUL-name behind struct-field-leak and
 		// struct-move-is-moved).
 		l.mod.Insts[sid].MovesArg = true
+	}
+	return res
+}
+
+// lowerMapLit lowers a map literal `{ k1:v1, k2:v2, ... }` into a series of
+// calls: first `hashmap-<K>-<V>.init(self)`, then `hashmap-<K>-<V>.put(self,
+// key, val, &is_new)` for each pair. This mirrors the legacy backend's
+// generateLet MapType path (stmt.go ~9199). The map type is carried by the
+// KMapLit node's Type field (e.g. [str]i64); it is resolved to the specialized
+// hashmap struct name (hashmap-str-i64) for the callee.
+func (l *lowerer) lowerMapLit(n *hir.Node) ValueID {
+	mapRaw := l.pkg.Type(n.Type)
+	if mapRaw == "" {
+		mapRaw = l.pkg.InferredType(n.Id)
+	}
+	k, v, ok := parseMapTypes(mapRaw)
+	if !ok {
+		l.unsupported(l.curFuncName(), "map-lit", "cannot parse map type "+mapRaw)
+		return NoVal
+	}
+	vSan := strings.ReplaceAll(v, "[]", "slice_")
+	hmName := "hashmap-" + k + "-" + vSan
+	hmT := l.b.Type(hmName)
+
+	// Allocate the hashmap struct (OpStructLit zeroes it).
+	res := l.b.Emit(OpStructLit, hmT, nil, hmName)
+
+	// Call hashmap.init(self) — enqueue so the function is lowered.
+	initCallee := hmName + ".init"
+	l.enqueueCallee(initCallee)
+	if _, ok := l.funcNames[initCallee]; ok {
+		l.b.EmitVoid(OpCall, []ValueID{res}, initCallee)
+	}
+
+	// For each key:value pair, call hashmap.put(self, key, val, &is_new).
+	// The put method has a bool result param (is-new); allocate a local for it.
+	putCallee := hmName + ".put"
+	l.enqueueCallee(putCallee)
+	if _, ok := l.funcNames[putCallee]; !ok {
+		return res
+	}
+	for _, pairID := range l.pkg.Children(n.Id) {
+		pn := l.pkg.Node(pairID)
+		if pn == nil || pn.Kind != hir.KMapPair {
+			continue
+		}
+		pairChildren := l.pkg.Children(pairID)
+		if len(pairChildren) < 2 {
+			continue
+		}
+		keyV := l.lowerExpr(pairChildren[0])
+		valV := l.lowerExpr(pairChildren[1])
+		if keyV == NoVal || valV == NoVal {
+			continue
+		}
+		// put(self, key, val, &is_new) — the bool result param is an out-param.
+		isNewT := l.b.Type("bool")
+		isNew := l.b.Emit(OpConst, isNewT, nil, "")
+		l.b.EmitVoid(OpCall, []ValueID{res, keyV, valV, isNew}, putCallee)
 	}
 	return res
 }
@@ -5386,6 +5469,13 @@ func (l *lowerer) elementTypeOf(v ValueID) TypeID {
 		if ty.Raw == "str" {
 			return l.b.Type("i8")
 		}
+		// A txt is `{ [255 x i8], i8 }`; indexing a txt yields a single byte
+		// (i8), just like indexing a str. Without this, `t[0]` on a txt-typed
+		// value lowered to void and codegen failed with "index dst slot
+		// (type=void)" (tests/test-txt.no).
+		if ty.Raw == "txt" {
+			return l.b.Type("i8")
+		}
 		if ty.Elem != NoType {
 			return ty.Elem
 		}
@@ -5467,6 +5557,14 @@ func (l *lowerer) lowerAssignNode(assignID int32) ValueID {
 		// (no typeHint set), the field gets NoVal, and codegen fails with
 		// "builtin with-cap: no result slot" (tests/test-net-http.no, which
 		// pulls in tls.no's conn.init).
+		//
+		// For implicit-self field assignments (`.keys = with-len(16)` inside
+		// a method body), the KDot target has NO child node — the receiver is
+		// the method's implicit `self`/`curRecv`. Without this fallback, the
+		// typeHint is never set and `with-len` lowers to void (NoVal Dst),
+		// causing "builtin with-len: no result slot" at codegen. This affects
+		// all hashmap methods (init/rehash/clear) that use `with-len` to
+		// allocate keys/vals/occ slices (tests/test-map.no, test-basic.no).
 		fieldName := l.pkg.Str(tn.S)
 		if fieldName != "" {
 			var recvID int32
@@ -5474,12 +5572,19 @@ func (l *lowerer) lowerAssignNode(assignID int32) ValueID {
 				recvID = c
 				break
 			}
+			var recvV ValueID
 			if recvID != hir.NoID {
-				recvV := l.lowerExpr(recvID)
-				if recvV != NoVal {
-					if ft := l.fieldTypeOf(recvV, fieldName); ft != NoType && ft != l.voidType {
-						l.typeHint = ft
-					}
+				recvV = l.lowerExpr(recvID)
+			} else {
+				// Implicit self receiver: .field = ... inside a method body.
+				recvV = l.curRecv
+				if recvV == NoVal {
+					recvV = l.locals["self"]
+				}
+			}
+			if recvV != NoVal {
+				if ft := l.fieldTypeOf(recvV, fieldName); ft != NoType && ft != l.voidType {
+					l.typeHint = ft
 				}
 			}
 		}
@@ -5606,7 +5711,16 @@ func (l *lowerer) lowerAssignNode(assignID int32) ValueID {
 			recvID = c
 			break
 		}
-		recvV := l.lowerExpr(recvID)
+		var recvV ValueID
+		if recvID != hir.NoID {
+			recvV = l.lowerExpr(recvID)
+		} else {
+			// Implicit self receiver: .field = ... inside a method body.
+			recvV = l.curRecv
+			if recvV == NoVal {
+				recvV = l.locals["self"]
+			}
+		}
 		if recvV == NoVal {
 			return NoVal
 		}
@@ -5614,6 +5728,15 @@ func (l *lowerer) lowerAssignNode(assignID int32) ValueID {
 		// FieldIndex lookup matches the GETFIELD convention in lowerDotRead.
 		sid := l.b.EmitVoid(OpSetField, []ValueID{recvV, v}, "")
 		l.mod.Insts[sid].Str = l.pkg.Str(tn.S)
+		// The field assignment consumes the RHS value: ownership of an owned
+		// RHS (str/vec/option) transfers into the struct field, so the value's
+		// temporary must NOT be dropped separately — that would free a buffer
+		// the struct still points to (use-after-free -> SIGSEGV). This mirrors
+		// lowerStructLit's MovesArg; without it, `.keys = with-len(n)` inside
+		// hashmap.rehash drops the freshly allocated slice immediately after
+		// the setfield, and every subsequent index/getfield on it crashes
+		// (tests/test-map.no).
+		l.mod.Insts[sid].MovesArg = true
 		return v
 	default:
 		l.unsupported(l.curFuncName(), "assign", "unsupported assign target kind "+hir.KindNames[tn.Kind])
