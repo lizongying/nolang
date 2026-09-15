@@ -3916,7 +3916,9 @@ func canonSliceRecv(name string) string {
 	if strings.HasPrefix(recv, "[]") {
 		return "[]t" + meth
 	}
-	if strings.HasPrefix(recv, "[") && strings.Contains(recv, "]") {
+	// Map types like [str]i64 start with '[' but must NOT be canonicalised
+	// to []t — they have their own concrete method definitions.
+	if strings.HasPrefix(recv, "[") && strings.Contains(recv, "]") && !isMapRaw(recv) {
 		return "[]t" + meth
 	}
 	return name
@@ -4107,6 +4109,29 @@ func (l *lowerer) resolveCallee(n *hir.Node) (callee string, recvV ValueID) {
 	if bm := sliceMethodBuiltin(recvTypeName, method); bm != "" {
 		return bm, rv
 	}
+	// Map types ([str]i64, [i64]bool, ...) have user-defined methods on the
+	// concrete hashmap struct (hashmap-str-i64, hashmap-i64-bool, ...), not
+	// on the [key]val form. The generic_structs pass in the legacy backend
+	// instantiates hashmap-<key>-<val> from the hashmap-str-tmpl template and
+	// renames all methods accordingly. Without this mapping, m.len() on a
+	// [str]i64 map searched for "[str]i64.len" which does not exist, falling
+	// through to canonSliceRecv → "[]t.len" → "unknown callee" (or worse,
+	// before the map guard was added, dispatching to the str-len builtin on
+	// an i64 receiver). The naming convention is:
+	//   [key]val → hashmap-<key>-<val>
+	// e.g. [str]i64 → hashmap-str-i64, [i64]bool → hashmap-i64-bool.
+	if k, v, ok := parseMapTypes(recvTypeName); ok {
+		// Match the legacy generic_structs naming: the value type is sanitised
+		// (e.g. []str → slice_str) so hashmap-str-[]str becomes
+		// hashmap-str-slice_str. Key types in the corpus are always scalar
+		// (str/i64/bool) and need no sanitisation.
+		vSan := strings.ReplaceAll(v, "[]", "slice_")
+		hashmapName := "hashmap-" + k + "-" + vSan
+		hashmapCallee := hashmapName + "." + method
+		if _, ok := l.funcNames[hashmapCallee]; ok {
+			return hashmapCallee, rv
+		}
+	}
 	// A CONCRETE slice method (`[]byte.slice`, `[]char.to-str`, `[]ord.sort-asc`,
 	// `[]str.join`, ...) is a real function with a real body, defined by the std
 	// library for that element type. It must win over the canonicalised `[]t.m`
@@ -4149,6 +4174,14 @@ func (l *lowerer) resolveCallee(n *hir.Node) (callee string, recvV ValueID) {
 //     ForwardFunc, return it so codegen emits the builtin inline.
 func sliceMethodBuiltin(recvTypeName, method string) string {
 	if recvTypeName == "" || method == "" {
+		return ""
+	}
+	// Map types like [str]i64 also start with '[', but they are NOT slices —
+	// their .len() / .put() / .get() etc. are user-defined methods, not
+	// builtins. Without this guard, m.len() on a [str]i64 map was dispatched
+	// to the str-len builtin, which then rejected the i64 (opaque handle)
+	// receiver with "unsupported receiver type i64".
+	if isMapRaw(recvTypeName) {
 		return ""
 	}
 	if !strings.HasPrefix(recvTypeName, "[]") && !strings.HasPrefix(recvTypeName, "[") {
@@ -5447,6 +5480,24 @@ func (l *lowerer) lowerAssignNode(assignID int32) ValueID {
 					if ft := l.fieldTypeOf(recvV, fieldName); ft != NoType && ft != l.voidType {
 						l.typeHint = ft
 					}
+				}
+			}
+		}
+	} else if tn.Kind == hir.KIndex {
+		// Indexed assignment `a[i] = with-len(n)`: the LHS-inferred builtin
+		// needs the ELEMENT type as a hint. Without this, `.keys[cnt] = with-len(...)`
+		// inside json.no lowers the call to void (no typeHint), and codegen fails
+		// with "builtin with-len: no result slot" (tests/mem-safety/test-json-nested-match.no).
+		var arrID int32
+		for _, c := range l.pkg.Children(target) {
+			arrID = c
+			break
+		}
+		if arrID != hir.NoID {
+			arrV := l.lowerExpr(arrID)
+			if arrV != NoVal {
+				if et := l.elementTypeOf(arrV); et != NoType && et != l.voidType {
+					l.typeHint = et
 				}
 			}
 		}
