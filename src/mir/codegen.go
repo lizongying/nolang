@@ -3081,6 +3081,25 @@ func (c *codegen) emitIndex(inst *Inst) error {
 	c.loadSeq++
 	lv := fmt.Sprintf("%%lx%d", c.loadSeq)
 	c.sb.WriteString(fmt.Sprintf("  %s = load %s, %s* %s\n", lv, elemT, elemT, ep))
+	// Owned element types (%str-long) must be DEEP CLONED on read, not just
+	// shallow-copied: `s = arr[i]` loads the {len,cap,data} triple, which
+	// SHARES the heap buffer with arr[i]. When `s` goes out of scope it is
+	// dropped (@str_free frees the data pointer), leaving arr[i] with a
+	// dangling pointer. The next read of arr[i] passes garbage to @str_cmp /
+	// @str_eq, producing wrong results or crashes. This mirrors the write
+	// side (emitIndexStore) which already calls @str_clone on assignment.
+	//
+	// test-diff-debug.no was the canonical victim: `s = lines2[i]` inside an
+	// eprint('{s}') loop shared the buffer, the drop freed it, and the
+	// subsequent diff-engine-lcs compared against dangling strings → every
+	// `compare == 0` was false → the DP table stayed all zeros → segfault
+	// on backtracking.
+	if elemT == "%str-long" && dstT == "%str-long" {
+		c.loadSeq++
+		cl := fmt.Sprintf("%%ixc%d", c.loadSeq)
+		c.sb.WriteString(fmt.Sprintf("  %s = call %s @str_clone(%s %s)\n", cl, elemT, elemT, lv))
+		lv = cl
+	}
 	// Coerce the loaded element to the destination variable's type (e.g. i8 ->
 	// i64 for `x = slice[i]` where x is i64).
 	if cv := c.coerce(elemT, lv, dstT); cv != "" {
