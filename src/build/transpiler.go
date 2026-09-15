@@ -2855,7 +2855,9 @@ func verifyMIRIRViaOpt(ll string) error {
 	if err != nil {
 		return nil // cannot verify; do not break the build
 	}
-	defer os.RemoveAll(dir)
+	if os.Getenv("NOLANG_MIR_KEEP_IR") == "" {
+		defer os.RemoveAll(dir)
+	}
 	inPath := filepath.Join(dir, "m.ll")
 	// 將型別化指標 IR 重寫為 opaque pointer，兼容 LLVM 17+（本機 opt/llc 為 21）。
 	if err := os.WriteFile(inPath, []byte(toOpaquePointers(ll)), 0644); err != nil {

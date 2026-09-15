@@ -1226,6 +1226,143 @@ entry:
   ret %str-long %s2
 }
 
+; str_from_double: render a double as a freshly-allocated %str-long, mirroring
+; print_double's %g convention (sign on integer part, trailing zeros trimmed).
+; Used by emitCall's i64/double -> str auto-coercion when a double value is
+; passed to a str parameter (e.g. io.out(3.14)).
+define %str-long @str_from_double(double %v) {
+entry:
+  %isneg = fcmp olt double %v, 0.0
+  %negv = fneg double %v
+  %abs = select i1 %isneg, double %negv, double %v
+  %ipart = fptosi double %abs to i64
+  %ipartd = sitofp i64 %ipart to double
+  %fpart = fsub double %abs, %ipartd
+  %buf = alloca [40 x i8]
+  %end = getelementptr [40 x i8], [40 x i8]* %buf, i64 0, i64 39
+  store i8 0, i8* %end
+  %sp = call i8* @digits(i64 %ipart, i8* %end)
+  %epp = ptrtoint i8* %end to i64
+  %spp = ptrtoint i8* %sp to i64
+  %ilen = sub i64 %epp, %spp
+  %wpos = getelementptr [40 x i8], [40 x i8]* %buf, i64 0, i64 0
+  br i1 %isneg, label %negw, label %intw
+negw:
+  store i8 45, i8* %wpos
+  %wnext = getelementptr [40 x i8], [40 x i8]* %buf, i64 0, i64 1
+  call void @llvm.memcpy.p0i8.p0i8.i64(i8* %wnext, i8* %sp, i64 %ilen, i1 0)
+  %tlen_neg = add i64 %ilen, 1
+  br label %frac
+intw:
+  call void @llvm.memcpy.p0i8.p0i8.i64(i8* %wpos, i8* %sp, i64 %ilen, i1 0)
+  %tlen_int = add i64 %ilen, 0
+  br label %frac
+frac:
+  %tlen = phi i64 [ %tlen_neg, %negw ], [ %tlen_int, %intw ]
+  %isz = fcmp oeq double %fpart, 0.0
+  br i1 %isz, label %done, label %fracbuild
+fracbuild:
+  %dotpos = getelementptr [40 x i8], [40 x i8]* %buf, i64 0, i64 %tlen
+  store i8 46, i8* %dotpos
+  %tlen2 = add i64 %tlen, 1
+  %scaled = fmul double %fpart, 1.0e6
+  %fi = fptosi double %scaled to i64
+  %q1 = sdiv i64 %fi, 10
+  %d0 = srem i64 %fi, 10
+  %q2 = sdiv i64 %q1, 10
+  %d1 = srem i64 %q1, 10
+  %q3 = sdiv i64 %q2, 10
+  %d2 = srem i64 %q2, 10
+  %q4 = sdiv i64 %q3, 10
+  %d3 = srem i64 %q3, 10
+  %q5 = sdiv i64 %q4, 10
+  %d4 = srem i64 %q4, 10
+  %nz0 = icmp ne i64 %d0, 0
+  %nz1 = icmp ne i64 %d1, 0
+  %nz2 = icmp ne i64 %d2, 0
+  %nz3 = icmp ne i64 %d3, 0
+  %nz4 = icmp ne i64 %d4, 0
+  %nz5 = icmp ne i64 %q5, 0
+  %tz5 = select i1 %nz5, i64 5, i64 6
+  %tz4 = select i1 %nz4, i64 4, i64 %tz5
+  %tz3 = select i1 %nz3, i64 3, i64 %tz4
+  %tz2 = select i1 %nz2, i64 2, i64 %tz3
+  %tz1 = select i1 %nz1, i64 1, i64 %tz2
+  %tz = select i1 %nz0, i64 0, i64 %tz1
+  %p5 = icmp sge i64 5, %tz
+  %p4 = icmp sge i64 4, %tz
+  %p3 = icmp sge i64 3, %tz
+  %p2 = icmp sge i64 2, %tz
+  %p1 = icmp sge i64 1, %tz
+  br i1 %p5, label %w5, label %c4
+w5:
+  %c5 = trunc i64 %q5 to i8
+  %cc5 = add i8 %c5, 48
+  %wp5 = getelementptr [40 x i8], [40 x i8]* %buf, i64 0, i64 %tlen2
+  store i8 %cc5, i8* %wp5
+  %tlen3 = add i64 %tlen2, 1
+  br label %c4
+c4:
+  %tlen4 = phi i64 [ %tlen3, %w5 ], [ %tlen2, %fracbuild ]
+  br i1 %p4, label %w4, label %c3
+w4:
+  %c4v = trunc i64 %d4 to i8
+  %cc4 = add i8 %c4v, 48
+  %wp4 = getelementptr [40 x i8], [40 x i8]* %buf, i64 0, i64 %tlen4
+  store i8 %cc4, i8* %wp4
+  %tlen5 = add i64 %tlen4, 1
+  br label %c3
+c3:
+  %tlen6 = phi i64 [ %tlen5, %w4 ], [ %tlen4, %c4 ]
+  br i1 %p3, label %w3, label %c2
+w3:
+  %c3v = trunc i64 %d3 to i8
+  %cc3 = add i8 %c3v, 48
+  %wp3 = getelementptr [40 x i8], [40 x i8]* %buf, i64 0, i64 %tlen6
+  store i8 %cc3, i8* %wp3
+  %tlen7 = add i64 %tlen6, 1
+  br label %c2
+c2:
+  %tlen8 = phi i64 [ %tlen7, %w3 ], [ %tlen6, %c3 ]
+  br i1 %p2, label %w2, label %c1
+w2:
+  %c2v = trunc i64 %d2 to i8
+  %cc2 = add i8 %c2v, 48
+  %wp2 = getelementptr [40 x i8], [40 x i8]* %buf, i64 0, i64 %tlen8
+  store i8 %cc2, i8* %wp2
+  %tlen9 = add i64 %tlen8, 1
+  br label %c1
+c1:
+  %tlen10 = phi i64 [ %tlen9, %w2 ], [ %tlen8, %c2 ]
+  br i1 %p1, label %w1, label %c0
+w1:
+  %c1v = trunc i64 %d1 to i8
+  %cc1 = add i8 %c1v, 48
+  %wp1 = getelementptr [40 x i8], [40 x i8]* %buf, i64 0, i64 %tlen10
+  store i8 %cc1, i8* %wp1
+  %tlen11 = add i64 %tlen10, 1
+  br label %c0
+c0:
+  %tlen12 = phi i64 [ %tlen11, %w1 ], [ %tlen10, %c1 ]
+  %p0 = icmp eq i64 %tz, 0
+  br i1 %p0, label %w0, label %done
+w0:
+  %c0v = trunc i64 %d0 to i8
+  %cc0 = add i8 %c0v, 48
+  %wp0 = getelementptr [40 x i8], [40 x i8]* %buf, i64 0, i64 %tlen12
+  store i8 %cc0, i8* %wp0
+  %tlen13 = add i64 %tlen12, 1
+  br label %done
+done:
+  %flen = phi i64 [ %tlen, %frac ], [ %tlen12, %c0 ], [ %tlen13, %w0 ]
+  %nbuf = call i8* @malloc(i64 %flen)
+  call void @llvm.memcpy.p0i8.p0i8.i64(i8* %nbuf, i8* %wpos, i64 %flen, i1 0)
+  %s0 = insertvalue %str-long { i64 0, i64 0, i8* null }, i64 %flen, 0
+  %s1 = insertvalue %str-long %s0, i64 %flen, 1
+  %s2 = insertvalue %str-long %s1, i8* %nbuf, 2
+  ret %str-long %s2
+}
+
 ; --- nolang.* runtime helpers ------------------------------------------------
 ; The builtin table refers to these names as if they were plain libc symbols
 ; (CLibCall{FuncName: "nolang.now_ms"}), but libc has never provided them: the
@@ -5029,6 +5166,43 @@ func (c *codegen) emitCallBody(f *Function, cf *Function, inst *Inst, calleeName
 					callArgs = append(callArgs, plt+"* "+slot)
 				}
 			} else {
+				// i64/double -> %str-long auto-coercion: nolang allows
+				// passing a scalar where a string parameter is expected
+				// (e.g. io.out(x) where x: i64 or x: f64). Legacy silently
+				// reinterprets the bits (which passes opt but aborts at
+				// runtime); MIR must emit an explicit conversion to produce
+				// a valid %str-long. Without this, `store %str-long %lv,
+				// %str-long* %carg` has a type mismatch and opt-verify
+				// rejects the module (test-tls-prf-only.no,
+				// test-iout-autoconvert.no, ...).
+				if plt == "%str-long" && argT == "i64" {
+					c.loadSeq++
+					conv := fmt.Sprintf("%%ic%d", c.loadSeq)
+					c.sb.WriteString(fmt.Sprintf("  %s = call %%str-long @str_from_i64(i64 %s)\n", conv, av))
+					av = conv
+					argT = "%str-long"
+				} else if plt == "%str-long" && argT == "double" {
+					c.loadSeq++
+					conv := fmt.Sprintf("%%dc%d", c.loadSeq)
+					c.sb.WriteString(fmt.Sprintf("  %s = call %%str-long @str_from_double(double %s)\n", conv, av))
+					av = conv
+					argT = "%str-long"
+				} else if plt == "%str-long" && argT == "i1" {
+					// bool -> str: "true" or "false"
+					c.decl("@.mir.true = private constant [4 x i8] c\"true\"")
+					c.decl("@.mir.false = private constant [5 x i8] c\"false\"")
+					c.loadSeq++
+					treg := fmt.Sprintf("%%bt%d", c.loadSeq)
+					c.sb.WriteString(fmt.Sprintf("  %s = call %%str-long @str_from_const(ptr getelementptr inbounds ([4 x i8], ptr @.mir.true, i64 0, i64 0), i64 4)\n", treg))
+					c.loadSeq++
+					freg := fmt.Sprintf("%%bf%d", c.loadSeq)
+					c.sb.WriteString(fmt.Sprintf("  %s = call %%str-long @str_from_const(ptr getelementptr inbounds ([5 x i8], ptr @.mir.false, i64 0, i64 0), i64 5)\n", freg))
+					c.loadSeq++
+					conv := fmt.Sprintf("%%bc%d", c.loadSeq)
+					c.sb.WriteString(fmt.Sprintf("  %s = select i1 %s, %%str-long %s, %%str-long %s\n", conv, av, treg, freg))
+					av = conv
+					argT = "%str-long"
+				}
 				c.loadSeq++
 				slot := fmt.Sprintf("%%carg%d", c.loadSeq)
 				c.sb.WriteString(fmt.Sprintf("  %s = alloca %s\n", slot, plt))
