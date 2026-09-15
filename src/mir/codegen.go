@@ -514,6 +514,32 @@ func (c *codegen) coerceInt(v, fromT, toT string) string {
 	if fromT == toT || toT == "" {
 		return v
 	}
+	// Integer -> double: when a mixed-type arithmetic (e.g. i64 + f64)
+	// feeds an i64 operand into a double result, LLVM requires an explicit
+	// sitofp conversion. Without it, `fadd double %d, %i64_val` fails opt
+	// verification ("defined with type 'i64' but expected 'double'").
+	// This covers the JSON parse test family where `x = i + f` produces an
+	// i64-typed MIR value used in a double fadd.
+	if toT == "double" && fromT != "double" && fromT != "float" {
+		fw, fok := intWidth(fromT)
+		if fok {
+			c.loadSeq++
+			r := fmt.Sprintf("%%cv%d", c.loadSeq)
+			if fw == 64 {
+				c.sb.WriteString(fmt.Sprintf("  %s = sitofp i64 %s to double\n", r, v))
+			} else {
+				c.sb.WriteString(fmt.Sprintf("  %s = sitofp %s %s to double\n", r, fromT, v))
+			}
+			return r
+		}
+	}
+	// double/float -> integer: the reverse direction (fptosi).
+	if (fromT == "double" || fromT == "float") && toT != "double" && toT != "float" {
+		c.loadSeq++
+		r := fmt.Sprintf("%%cv%d", c.loadSeq)
+		c.sb.WriteString(fmt.Sprintf("  %s = fptosi %s %s to %s\n", r, fromT, v, toT))
+		return r
+	}
 	fw, fok := intWidth(fromT)
 	tw, tok := intWidth(toT)
 	if !fok || !tok {
