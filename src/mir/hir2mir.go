@@ -1724,9 +1724,25 @@ func (l *lowerer) lowerStmt(id int32) {
 				// Preserve the type Emit already assigned to val (authoritative for
 				// call results, which the KLet child node does not carry a type for).
 				// Only fill in when missing — e.g. a bare KIdent placeholder.
-				if _, ok := f.LocalTypes[val]; !ok {
-					f.LocalTypes[val] = l.typeOfNode(l.pkg.Node(childID))
+			if _, ok := f.LocalTypes[val]; !ok {
+				nt := l.typeOfNode(l.pkg.Node(childID))
+				if nt == NoType || nt == l.voidType {
+					// The bound value usually ALREADY carries a real type: a
+					// module global produced by lowerGlobalRef, or a call
+					// result typed by Builder.Emit. The KLet's child node is
+					// very often a bare `ident` / `call` that carries NO type
+					// of its own, so typeOfNode returns void here. Propagating
+					// that void would RETYPE a live value to void and make
+					// codegen emit `undef` for every later use of it — e.g.
+					// top-level `x = 3` referenced by a match arm's synthetic
+					// `let it = x` (match on a module-global subject). Keep
+					// the value's own type whenever it is known.
+					if vt := l.valueTypeOf(val); vt != NoType && vt != l.voidType {
+						nt = vt
+					}
 				}
+				f.LocalTypes[val] = nt
+			}
 			}
 		}
 	case hir.KExprStmt:

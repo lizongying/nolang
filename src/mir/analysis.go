@@ -789,6 +789,16 @@ func sameSet(a, b map[ValueID]bool) bool {
 // debugging the drop-insertion / move analysis. Gated by NOLANG_MIR_DUMP_MIR.
 func (m *Module) DumpAnnotated() string {
 	var b strings.Builder
+	if len(m.Globals) > 0 {
+		fmt.Fprintf(&b, "### globals (%d)\n", len(m.Globals))
+		for _, g := range m.Globals {
+			ct := g.ConstText
+			if len(ct) > 48 {
+				ct = ct[:48] + "..."
+			}
+			fmt.Fprintf(&b, "  @%s = value %d type %d const=%q\n", g.Name, g.Init, g.Type, ct)
+		}
+	}
 	for i := range m.Funcs {
 		f := &m.Funcs[i]
 		if f.Name == "" {

@@ -3275,7 +3275,11 @@ func ValidateUnhandledOverflow(program *parser.Program, mainFile string) []Valid
 	}
 
 	walkStmt := func(stmt parser.Statement, fnReturnsOption, enclosingOverflow bool, varTypes map[string]string, selfType, curFile string) {}
-	var walkExpr func(e parser.Expression, fnReturnsOption, enclosingOverflow bool, varTypes map[string]string, selfType, curFile string)
+	// valueCtx 標記該表達式處於「值上下文」（綁定右值 / 回傳值 / 呼叫實參），
+	// 而非「陳述上下文」（值被丟棄）。match 作表達式使用時
+	// （`result = x: { 2 -> 2 + 1 }`），臂末表達式就是臂的值，不是被丟棄的
+	// 表達式陳述；若一律當丟棄處理會對這種寫法誤報「未處理溢出」。
+	var walkExpr func(e parser.Expression, fnReturnsOption, enclosingOverflow, valueCtx bool, varTypes map[string]string, selfType, curFile string)
 
 	// seedVarTypes 由函式參數（含方法 self 接收者）建立區域型別對照表，
 	// 供 isDirectOverflowValue 判斷運算元是否為整數（排除 str - str 等字串拼接）。
@@ -3311,7 +3315,7 @@ func ValidateUnhandledOverflow(program *parser.Program, mainFile string) []Valid
 		})
 	}
 
-	walkExpr = func(e parser.Expression, fnReturnsOption, enclosingOverflow bool, varTypes map[string]string, selfType, curFile string) {
+	walkExpr = func(e parser.Expression, fnReturnsOption, enclosingOverflow, valueCtx bool, varTypes map[string]string, selfType, curFile string) {
 		if e == nil {
 			return
 		}
@@ -3320,20 +3324,28 @@ func ValidateUnhandledOverflow(program *parser.Program, mainFile string) []Valid
 			// 條件 if / match 解構：遞迴其分支體。enclosingOverflow 透過本參數向臂體
 			// 內陳述傳遞——若外層陳述已被 #{overflow=...} 註解，臂體內的整數運算
 			// 一併視為已處理（否則 `cond -> body` 臂體內的 `cp = cp + 1` 會被孤立上報）。
-			if x.Consequence != nil {
-				for _, b := range x.Consequence.Statements {
-					walkStmt(b, fnReturnsOption, enclosingOverflow, varTypes, selfType, curFile)
+			// walkArm 逐條走臂體；在值上下文下，臂的最後一條「表達式陳述」即為
+		// 該臂的值（不是被丟棄），跳過以免誤報。
+		walkArm := func(stmts []parser.Statement) {
+			for i, b := range stmts {
+				if valueCtx && i == len(stmts)-1 {
+					if _, isExprStmt := b.(*parser.ExpressionStatement); isExprStmt {
+						continue
+					}
 				}
+				walkStmt(b, fnReturnsOption, enclosingOverflow, varTypes, selfType, curFile)
+			}
+		}
+		if x.Consequence != nil {
+				walkArm(x.Consequence.Statements)
 			}
 			if x.Alternative != nil {
-				for _, b := range x.Alternative.Statements {
-					walkStmt(b, fnReturnsOption, enclosingOverflow, varTypes, selfType, curFile)
-				}
+				walkArm(x.Alternative.Statements)
 			}
 		case *parser.GroupedExpression:
-			walkExpr(x.Expression, fnReturnsOption, enclosingOverflow, varTypes, selfType, curFile)
+			walkExpr(x.Expression, fnReturnsOption, enclosingOverflow, valueCtx, varTypes, selfType, curFile)
 		case *parser.PrefixExpression:
-			walkExpr(x.Right, fnReturnsOption, enclosingOverflow, varTypes, selfType, curFile)
+			walkExpr(x.Right, fnReturnsOption, enclosingOverflow, valueCtx, varTypes, selfType, curFile)
 		}
 	}
 
@@ -3400,6 +3412,14 @@ func ValidateUnhandledOverflow(program *parser.Program, mainFile string) []Valid
 			// 為字串拼接而非誤報整數溢出）。
 			if s.Type != nil && s.Name != nil {
 				varTypes[s.Name.Value] = s.Type.String()
+			} else if s.Type == nil && s.Name != nil && s.Value != nil {
+				// 未標註型別的綁定（`a = 'foo'`）也由初值推斷並登記：否則後續
+				// 陳述中該變數型別「未知」會被保守視為整數，把字串拼接
+				// （`c = a - b`，str 的 `-` 是拼接）誤報成未處理的整數溢出。
+				// 推斷不出型別（如跨模組呼叫結果）時保持未知，仍走保守路徑。
+				if t := inferExprType(s.Value, varTypes, nil, selfType); t != "" {
+					varTypes[s.Name.Value] = t
+				}
 			}
 			// 普通 `=`：未被註解處理且 LHS 未顯式宣告 ?T，且其結果本質是未標註溢出
 			// 運算 → 沉默泄漏。函式回傳 ?T 時，區域 option 中間值是合約內預期行為 → 不報。
@@ -3410,7 +3430,7 @@ func ValidateUnhandledOverflow(program *parser.Program, mainFile string) []Valid
 			}
 		}
 		if s.Value != nil {
-			walkExpr(s.Value, fnReturnsOption, effOverflow, varTypes, selfType, curFile)
+			walkExpr(s.Value, fnReturnsOption, effOverflow, true, varTypes, selfType, curFile)
 		}
 	case *parser.ReturnStatement:
 		if !effOverflow {
@@ -3420,7 +3440,7 @@ func ValidateUnhandledOverflow(program *parser.Program, mainFile string) []Valid
 			}
 		}
 		if s.ReturnValue != nil {
-			walkExpr(s.ReturnValue, fnReturnsOption, effOverflow, varTypes, selfType, curFile)
+			walkExpr(s.ReturnValue, fnReturnsOption, effOverflow, true, varTypes, selfType, curFile)
 		}
 	case *parser.ExpressionStatement:
 		if !fnReturnsOption && !effOverflow {
@@ -3429,12 +3449,12 @@ func ValidateUnhandledOverflow(program *parser.Program, mainFile string) []Valid
 			}
 		}
 		if s.Expression != nil {
-			walkExpr(s.Expression, fnReturnsOption, effOverflow, varTypes, selfType, curFile)
+			walkExpr(s.Expression, fnReturnsOption, effOverflow, false, varTypes, selfType, curFile)
 		}
 	case *parser.UnwrapAssignStatement:
 		// `?=` 上拋：已處理，跳過；但仍遞迴其體內巢狀陳述。
 		if s.Value != nil {
-			walkExpr(s.Value, fnReturnsOption, effOverflow, varTypes, selfType, curFile)
+			walkExpr(s.Value, fnReturnsOption, effOverflow, true, varTypes, selfType, curFile)
 		}
 	case *parser.ForStatement:
 		// for 的 init 可能綁定迴圈變數（如 i i64 = 0），登記後續可據此判斷型別。
@@ -3445,7 +3465,7 @@ func ValidateUnhandledOverflow(program *parser.Program, mainFile string) []Valid
 			walkStmt(s.Init, fnReturnsOption, effOverflow, varTypes, selfType, curFile)
 		}
 		if s.Condition != nil {
-			walkExpr(s.Condition, fnReturnsOption, effOverflow, varTypes, selfType, curFile)
+			walkExpr(s.Condition, fnReturnsOption, effOverflow, true, varTypes, selfType, curFile)
 		}
 		if s.Update != nil {
 			walkStmt(s.Update, fnReturnsOption, effOverflow, varTypes, selfType, curFile)
@@ -3462,13 +3482,19 @@ func ValidateUnhandledOverflow(program *parser.Program, mainFile string) []Valid
 	case *parser.MultiAssignStatement:
 		// a, b = f()：名稱型別由呼叫回傳值決定，難靜態得知，僅遞迴 RHS。
 		if s.Value != nil {
-			walkExpr(s.Value, fnReturnsOption, effOverflow, varTypes, selfType, curFile)
+			walkExpr(s.Value, fnReturnsOption, effOverflow, true, varTypes, selfType, curFile)
 		}
 		}
 	}
 
+	// 頂層順序陳述必須共享同一份 varTypes：此前每條頂層陳述都新建一個空 map，
+	// 前一條陳述註冊的型別標註（如 `a f64 = arr[0]`）在後續陳述（`c f64 = a * b`）
+	// 中不可見，運算元被當成「型別未知」而保守視為整數 → 對浮點/字串運算誤報
+	// 「未處理整數溢出」（tmp-arr-test / test-str-concat 等）。函式體仍各自
+	// 建立獨立作用域（seedVarTypes），不受影響。
+	topTypes := map[string]string{}
 	for _, stmt := range program.Statements {
-		walkStmt(stmt, false, false, map[string]string{}, "", mainFile)
+		walkStmt(stmt, false, false, topTypes, "", mainFile)
 	}
 	return results
 }
