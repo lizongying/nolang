@@ -497,6 +497,12 @@ type Function struct {
 	LocalTypes map[ValueID]TypeID // value -> type (carries ownership)
 	IsExtern   bool
 	IsMethod   bool
+	// Variadic marks a `f (a ..T)` spread function (hir.FlagVariadic). The
+	// call site must pack trailing scalar arguments into the []T spread
+	// parameter; emitCallBody needs this flag because the "more actual args
+	// than in-params" count heuristic cannot tell a spread element from an
+	// explicitly written trailing out-param actual.
+	Variadic   bool
 	Receiver   TypeID
 	SourceName string
 }

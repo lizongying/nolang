@@ -110,7 +110,13 @@ func init() {
 		Params:       []parser.Type{parser.TypeI64, parser.TypeI64},
 		Return:       []parser.Type{parser.TypeBool},
 		Doc:          "Send signal to process. Returns true on success",
-		CLibCall:     &CLibCall{FuncName: killFn, ArgTypes: []LLVMArgType{LLVMI32, LLVMI32}, RetType: LLVMI32, RetExt: &i64Type, TruncArgs: map[int]LLVMArgType{0: LLVMI32, 1: LLVMI32}},
+		// kill(2) returns 0 on success, so the declared bool needs the POSIX
+		// convention applied explicitly. Without CmpRet the raw i32 leaked
+		// through as the result, which is inverted (0 == success reads as
+		// false) and — for the MIR backend, which types the destination
+		// precisely — could not even be coerced into the i1 result slot
+		// ("cannot coerce result i32 to i1" in process.cmd).
+		CLibCall: &CLibCall{FuncName: killFn, ArgTypes: []LLVMArgType{LLVMI32, LLVMI32}, RetType: LLVMI32, CmpRet: true, TruncArgs: map[int]LLVMArgType{0: LLVMI32, 1: LLVMI32}},
 	})
 
 	// process-dup2: duplicate file descriptor

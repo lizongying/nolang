@@ -1761,6 +1761,43 @@ func (c *codegen) optionTag(v, optLT string) string {
 	return r
 }
 
+// optionPayloadOf extracts an option's payload (field 1) and returns it together
+// with its LLVM type. Used when an option is compared against a plain value, or
+// moved into a non-option destination.
+func (c *codegen) optionPayloadOf(v, optLT string) (string, string) {
+	payload := c.optionPayloadLLVMType(c.optionElemRawOf(optLT))
+	c.loadSeq++
+	r := fmt.Sprintf("%%op%d", c.loadSeq)
+	c.sb.WriteString(fmt.Sprintf("  %s = extractvalue %s %s, 1\n", r, optLT, v))
+	return r, payload
+}
+
+// optionElemRawOf recovers the element raw type from an option's LLVM type
+// (%option_str -> "str", %option_fs_file -> "fs.file"). The flat `%option`
+// (scalar payload, i64) yields "". The reverse mapping mirrors structLLVMSize:
+// sanitize() folded every non-alphanumeric rune to '_', so '_' is turned back
+// into '.', but a name that is itself a known struct key is preferred as-is so
+// a real underscore in a user type name is not mangled.
+func (c *codegen) optionElemRawOf(optLT string) string {
+	if optLT == "%option" {
+		return ""
+	}
+	suffix := strings.TrimPrefix(optLT, "%option_")
+	if suffix == optLT || suffix == "" {
+		return ""
+	}
+	if _, ok := c.mod.StructFields[suffix]; ok {
+		return suffix
+	}
+	if dot := strings.ReplaceAll(suffix, "_", "."); dot != suffix {
+		if _, ok := c.mod.StructFields[dot]; ok {
+			return dot
+		}
+		return dot
+	}
+	return suffix
+}
+
 func (c *codegen) emitInst(f *Function, inst *Inst, allocaFor func(ValueID) string) error {
 	switch inst.Op {
 	case OpConst:
@@ -2258,17 +2295,34 @@ func (c *codegen) emitCmp(inst *Inst) error {
 	slot := c.valSlot[inst.Dst]
 	aT, aV := c.loadVal(inst.Args[0])
 	bT, bV := c.loadVal(inst.Args[1])
-	// Option-vs-nil / option-vs-err comparisons compare the option's TAG
-	// (discriminant, field 0), not the whole struct. A direct `icmp` on
-	// %option is illegal, and nolang `opt == nil` / `opt == err` always
-	// compares the discriminant, so extract it and compare as i64.
-	if isOptionType(aT) {
+	// Option operands. Which half of the `{ tag, payload }` struct is compared
+	// depends on the OTHER side:
+	//
+	//   - option vs option (`opt == nil`, `opt == err`, `a == b` on two
+	//     optionals) is nolang's null/error TEST, so compare the TAG
+	//     (discriminant, field 0). A direct `icmp` on %option is illegal.
+	//   - option vs a plain value (`content == 'Hello World'` on a `?str`) uses
+	//     the PAYLOAD — that is the legacy behaviour, and it is the only reading
+	//     that makes the expression mean anything.
+	//
+	// Extracting the tag unconditionally (the previous behaviour) made the
+	// second case compare the discriminant's DECIMAL TEXT against the literal:
+	// `?str` became the string "0", so `content == 'Hello World'` was never
+	// true, and the follow-up `x != v -> ...` arm was equally false, leaving
+	// both arms of the guard silently skipped
+	// (tests/test-process-run.no: `out.trim()`-style checks on `?str` values
+	// coming out of `[]byte.to-str`).
+	aOpt, bOpt := isOptionType(aT), isOptionType(bT)
+	switch {
+	case aOpt && bOpt:
 		aV = c.optionTag(aV, aT)
 		aT = "i64"
-	}
-	if isOptionType(bT) {
 		bV = c.optionTag(bV, bT)
 		bT = "i64"
+	case aOpt:
+		aV, aT = c.optionPayloadOf(aV, aT)
+	case bOpt:
+		bV, bT = c.optionPayloadOf(bV, bT)
 	}
 	// Mixed %str-long vs integer (char/byte/i64) comparison: nolang `char/byte
 	// == str` treats the integer as a single/decimal string, so promote it to
@@ -2283,7 +2337,19 @@ func (c *codegen) emitCmp(inst *Inst) error {
 		aT = "%str-long"
 	}
 	if aT == "%str-long" && bT == "%str-long" {
-		c.sb.WriteString(fmt.Sprintf("  %%c%d = call i1 @str_eq(%s %s, %s %s)\n", inst.Dst, aT, aV, bT, bV))
+		// The comparison is always performed as EQUALITY (that is what the
+		// runtime @str_eq helper provides); `!=` must explicitly invert it.
+		// Emitting @str_eq for both operators made `a != b` behave exactly like
+		// `a == b` whenever an operand reached this branch through the int->str
+		// promotion below (e.g. `?str != 'lit'`), so the "not equal" arm fired on
+		// equal strings.
+		if inst.Op == OpNe {
+			eqR := fmt.Sprintf("%%c%de", inst.Dst)
+			c.sb.WriteString(fmt.Sprintf("  %s = call i1 @str_eq(%s %s, %s %s)\n", eqR, aT, aV, bT, bV))
+			c.sb.WriteString(fmt.Sprintf("  %%c%d = xor i1 %s, true\n", inst.Dst, eqR))
+		} else {
+			c.sb.WriteString(fmt.Sprintf("  %%c%d = call i1 @str_eq(%s %s, %s %s)\n", inst.Dst, aT, aV, bT, bV))
+		}
 		c.sb.WriteString(fmt.Sprintf("  store %s %%c%d, %s* %s\n", lt, inst.Dst, lt, slot))
 		return nil
 	}
@@ -2817,23 +2883,66 @@ func (c *codegen) elemAddr(arrSlot, idxV, arrT, elemT string) string {
 	}
 }
 
-// elemByteSize returns the byte width of an LLVM element type stored inside a
-// %vec / fixed array. Used to size a freshly materialized backing buffer.
-func elemByteSize(t string) int64 {
-	switch t {
-	case "i1", "i8":
-		return 1
-	case "i16":
-		return 2
-	case "i32":
-		return 4
-	case "i64":
-		return 8
-	case "%str-long", "%vec", "%option":
-		return 24
-	default:
-		return 8
+// mirScalarByteSize maps the LLVM-level scalar MIR types to their byte sizes.
+var mirScalarByteSize = map[string]int64{
+	"i1": 1, "i8": 1, "i16": 2, "i32": 4, "i64": 8,
+	"double": 8, "float": 4,
+}
+
+// mirStaticTypeSize returns sizeof(lt) when it is known at code-emission time.
+// It covers the scalars plus the three fixed MIR aggregates; every other type
+// (user struct, per-payload %option_<elem>, nested fixed array) is sized by the
+// opt-foldable `getelementptr` trick in typeSizeOperand instead of duplicating
+// LLVM's layout rules here.
+func mirStaticTypeSize(lt string) (int64, bool) {
+	if n, ok := mirScalarByteSize[lt]; ok {
+		return n, true
 	}
+	switch lt {
+	case "%str-long", "%vec":
+		return 24, true // {i64,i64,i8*} / {i64,i64,i64}
+	case "%option":
+		return 16, true // {i64 tag, i64 payload}
+	}
+	return 0, false
+}
+
+// typeSizeOperand returns an i64 LLVM operand equal to sizeof(lt): an inline
+// literal for the well-known types, otherwise a freshly emitted (and by opt
+// constant-folded) `ptrtoint (getelementptr (T, ptr null, i64 1))`.
+func (c *codegen) typeSizeOperand(lt string) string {
+	if n, ok := mirStaticTypeSize(lt); ok {
+		return fmt.Sprintf("%d", n)
+	}
+	c.loadSeq++
+	r := fmt.Sprintf("%%tsz%d", c.loadSeq)
+	c.sb.WriteString(fmt.Sprintf("  %s = ptrtoint ptr getelementptr (%s, ptr null, i64 1) to i64\n", r, lt))
+	return r
+}
+
+// allocBytesOperand returns an i64 operand holding cap * sizeof(elemLT), the
+// byte count of a slice/string backing store with `cap` slots.
+//
+// A slice's backing store holds ELEMENT-sized slots: []str is an array of
+// 24-byte %str-long, []?i64 of 16-byte %option. Sizing it with a constant 8
+// under-allocates, and a later `a[i] = v` then loads a whole element out of the
+// end of the block, so the element's `data` field is heap garbage and
+// @str_free aborts with "pointer being freed was not allocated"
+// (SIGABRT at -O0, the same UB turning into SIGTRAP at -O3).
+func (c *codegen) allocBytesOperand(capV, elemLT string) string {
+	n, ok := mirStaticTypeSize(elemLT)
+	if ok && n == 1 {
+		return capV // str / []byte: one byte per slot
+	}
+	sz := c.typeSizeOperand(elemLT)
+	c.loadSeq++
+	r := fmt.Sprintf("%%basz%d", c.loadSeq)
+	if ok {
+		c.sb.WriteString(fmt.Sprintf("  %s = mul i64 %s, %d\n", r, capV, n))
+	} else {
+		c.sb.WriteString(fmt.Sprintf("  %s = mul i64 %s, %s\n", r, capV, sz))
+	}
+	return r
 }
 
 // ensureVecBuffer lazily allocates a backing buffer for an empty %vec whose data
@@ -2849,7 +2958,10 @@ func elemByteSize(t string) int64 {
 // data pointing at constant memory) keeps its non-null data and is left alone.
 func (c *codegen) ensureVecBuffer(arrSlot string, v ValueID, idxV, elemT string) {
 	const vecDefaultCap = int64(1024)
-	sizeBytes := vecDefaultCap * elemByteSize(elemT)
+	elemSz := c.typeSizeOperand(elemT)
+	c.loadSeq++
+	sizeReg := fmt.Sprintf("%%vbsz%d", c.loadSeq)
+	c.sb.WriteString(fmt.Sprintf("  %s = mul i64 %s, %d\n", sizeReg, elemSz, vecDefaultCap))
 
 	// Load the data field (field 2) and branch if it is still null.
 	c.loadSeq++
@@ -2871,7 +2983,12 @@ func (c *codegen) ensureVecBuffer(arrSlot string, v ValueID, idxV, elemT string)
 	c.sb.WriteString(fmt.Sprintf("%s:\n", lAlloc))
 	c.loadSeq++
 	buf := fmt.Sprintf("%%vbbuf%d", c.loadSeq)
-	c.sb.WriteString(fmt.Sprintf("  %s = call i8* @malloc(i64 %d)\n", buf, sizeBytes))
+	c.sb.WriteString(fmt.Sprintf("  %s = call i8* @malloc(i64 %s)\n", buf, sizeReg))
+	// Zero it for the same reason as emitBuiltinAlloc: the elements are owned
+	// (e.g. []str), so the first `a[i] = v` drops the previous element and a
+	// garbage %str-long there would free() an arbitrary pointer.
+	c.decl("declare void @llvm.memset.p0i8.i64(i8*, i8, i64, i1)")
+	c.sb.WriteString(fmt.Sprintf("  call void @llvm.memset.p0i8.i64(i8* %s, i8 0, i64 %s, i1 false)\n", buf, sizeReg))
 	c.loadSeq++
 	ptri := fmt.Sprintf("%%vbptri%d", c.loadSeq)
 	c.sb.WriteString(fmt.Sprintf("  %s = ptrtoint i8* %s to i64\n", ptri, buf))
@@ -4650,8 +4767,34 @@ func (c *codegen) emitCallBody(f *Function, cf *Function, inst *Inst, calleeName
 	// SIGTRAP at runtime (test-number-generic). Only trigger when the last
 	// in-param is actually a slice, so ordinary fixed-arity functions are
 	// unaffected.
+	//
+	// Out-param actuals are NOT variadic spread elements. A caller may write a
+	// named out-parameter explicitly as a trailing argument (`lcs(a, b, ops)`
+	// for `lcs = (a []str, b []str) (ops []diff-op)`), in which case inst.Args
+	// has exactly len(inParams)+len(outParams) entries. Counting those as spread
+	// elements packs the INPUT arguments into a bogus %vec — and because the
+	// freshly-lowered slice literal is still a fixed array (`[3 x %str-long]`)
+	// while the packer stores into a `%cav` slot typed for its first element,
+	// the emitted IR mixes `%vec` and `[3 x %str-long]` and LLVM's verifier
+	// rejects the whole module (opt: "'%lv39' defined with type '%vec' but
+	// expected '[3 x %str-long]'"). When the element type happens to agree the
+	// IR is accepted and instead silently corrupts the slice. (lowerCallArgs
+	// strips the same trailing args, but only for VARIADIC callees; a
+	// non-variadic callee keeps them, which is why this has to be handled here
+	// too.)
+	//
+	// The count is only ambiguous for a variadic callee, where n spread
+	// elements look exactly like n out-param actuals (`number.max(10, 20)` has
+	// 2 args, 1 spread in-param and 1 result param). cf.Variadic resolves it:
+	// subtract the trailing args only for a non-variadic callee, where there is
+	// no other way to have extras.
+	nOut := len(outParams)
+	effArgs := len(inst.Args)
+	if !cf.Variadic && nOut > 0 && effArgs == len(inParams)+nOut {
+		effArgs -= nOut
+	}
 	variadicLast := false
-	if nIn := len(inParams); nIn >= 1 && len(inst.Args) > nIn {
+	if nIn := len(inParams); nIn >= 1 && effArgs > nIn {
 		lastP := inParams[nIn-1]
 		if pv := c.mod.Value(lastP); pv != nil {
 			if pt := c.mod.Type(pv.Type); pt != nil && pt.Kind == KindSlice {
@@ -4666,7 +4809,7 @@ func (c *codegen) emitCallBody(f *Function, cf *Function, inst *Inst, calleeName
 			// is taken from the first collected argument's loaded type.
 			var argLLVMs []string
 			elemLLT := "i64"
-			for j := i; j < len(inst.Args); j++ {
+			for j := i; j < effArgs; j++ {
 				at, av := c.loadVal(inst.Args[j])
 				if j == i && at != "" {
 					elemLLT = at
@@ -5689,22 +5832,29 @@ func (c *codegen) emitBuiltinAlloc(inst *Inst, ff string) error {
 			lenV = capV
 		}
 	}
-	stride := int64(8)
-	if lt == "%str-long" {
-		stride = 1
-	}
+	// The backing store holds ELEMENT-sized slots, so the stride comes from the
+	// destination's own element type ([]str -> 24-byte %str-long, []?i64 ->
+	// 16-byte %option), not from a constant 8. elemTypeOfReceiver returns "i8"
+	// for a str destination, which is exactly the 1-byte-per-slot string case.
 	var szStr string
-	if stride == 1 {
+	if lt == "%str-long" {
 		szStr = capV
 	} else {
-		sz := fmt.Sprintf("%%ba%d", c.loadSeq)
-		c.loadSeq++
-		c.sb.WriteString(fmt.Sprintf("  %s = mul i64 %s, %d\n", sz, capV, stride))
-		szStr = sz
+		szStr = c.allocBytesOperand(capV, c.elemTypeOfReceiver(inst.Dst))
 	}
 	mp := fmt.Sprintf("%%ba%d", c.loadSeq)
 	c.loadSeq++
 	c.sb.WriteString(fmt.Sprintf("  %s = call i8* @malloc(i64 %s)\n", mp, szStr))
+	// Zero the fresh buffer. A malloc'd block is UNINITIALIZED, and for owned
+	// element types (%str-long / nested %vec / %option) the slice's element slots
+	// must read back as a defined empty value: `a[i] = v` drops the PREVIOUS
+	// element before overwriting, and a garbage %str-long there is handed to
+	// @str_free -> free(<random pointer>) -> abort trap. Legacy zeroes the buffer
+	// for exactly this reason ("load undef -> icmp -> free(undef) is UB that SCCP
+	// deletes the whole fn"); MIR must match. For a %str-long the element slots are
+	// 1 byte, so this also makes with-len(n) a zero-filled string like legacy.
+	c.decl("declare void @llvm.memset.p0i8.i64(i8*, i8, i64, i1)")
+	c.sb.WriteString(fmt.Sprintf("  call void @llvm.memset.p0i8.i64(i8* %s, i8 0, i64 %s, i1 false)\n", mp, szStr))
 	if lt == "%vec" {
 		dp := fmt.Sprintf("%%ba%d", c.loadSeq)
 		c.loadSeq++

@@ -11,6 +11,8 @@
 #   CERR     both fail, MIR=3 error looks like a compile/link failure
 #   CRASH    both fail, MIR=3 error is a runtime signal
 #   HANG     MIR=3 exceeded the per-test timeout
+#   HANG_LEGACY  the MIR=2 baseline itself timed out (reported separately so a
+#                baseline hang is never miscounted as MIRBETTER)
 #
 # The MIR_GAP / (CERR|CRASH) split is the whole point: without running the
 # baseline every pre-existing failure looks like a MIR regression and the sweep
@@ -26,8 +28,32 @@ mkdir -p "$WORKDIR"
 rm -f "$WORKDIR"/*.txt
 
 # run_to <seconds> <cmd...> — alarm-based timeout (exit 142 on expiry).
+#
+# The naive form `perl -e 'alarm shift; exec @ARGV'` only signals the DIRECT
+# child: on expiry the perl process dies but the exec'd process (and anything it
+# spawned, e.g. clang / the compiled program / a `no run` grandchild) keeps
+# running detached, so sweep_one can block forever and `xargs -P` never returns.
+# Here the child is put in its OWN process group (setpgid, since macOS ships no
+# `setsid`) and on expiry we `kill -KILL -$pgid` — nuking the entire tree.
 run_to() {
-  perl -e 'alarm shift; exec @ARGV' "$@"
+  perl -MPOSIX -e '
+    my $t = shift;
+    my $pid = fork();
+    exit 127 unless defined $pid;
+    if ($pid == 0) { POSIX::setpgid(0, 0); exec @ARGV; exit 127; }
+    my $timedout = 0;
+    $SIG{ALRM} = sub {
+      $timedout = 1;
+      kill("-KILL", $pid);
+      kill("KILL", $pid);
+    };
+    alarm $t;
+    waitpid($pid, 0);
+    alarm 0;
+    my $st = $?;
+    exit 142 if $timedout;
+    exit(($st & 127) ? 128 + ($st & 127) : ($st >> 8));
+  ' "$@"
 }
 
 sweep_one() {
@@ -43,6 +69,10 @@ sweep_one() {
   local rc3=$?
   if [ "$rc3" = "124" ] || [ "$rc3" = "142" ]; then
     echo "HANG $f" >> "$WORKDIR/results.txt"
+  elif [ "$rc2" = "124" ] || [ "$rc2" = "142" ]; then
+    # Baseline itself hung: must NOT fall through to MIRBETTER (rc2 != 0,
+    # rc3 == 0) which would report a hang as an MIR success.
+    echo "HANG_LEGACY $f" >> "$WORKDIR/results.txt"
   elif [ "$rc3" != "0" ]; then
     if [ "$rc2" = "0" ]; then
       echo "MIR_GAP $f" >> "$WORKDIR/results.txt"
@@ -73,7 +103,8 @@ grep -c "^MIR_GAP" "$WORKDIR/results.txt" 2>/dev/null | xargs echo "MIR_GAP="
 grep -c "^MIRBETTER" "$WORKDIR/results.txt" 2>/dev/null | xargs echo "MIRBETTER="
 grep -c "^CERR" "$WORKDIR/results.txt" 2>/dev/null | xargs echo "CERR=(both fail)"
 grep -c "^CRASH" "$WORKDIR/results.txt" 2>/dev/null | xargs echo "CRASH=(both fail)"
-grep -c "^HANG" "$WORKDIR/results.txt" 2>/dev/null | xargs echo "HANG="
+grep -c "^HANG " "$WORKDIR/results.txt" 2>/dev/null | xargs echo "HANG="
+grep -c "^HANG_LEGACY" "$WORKDIR/results.txt" 2>/dev/null | xargs echo "HANG_LEGACY=(baseline hung)="
 echo ""
 echo "=== MIR_GAP (baseline ok, MIR=3 fails) ==="
 grep "^MIR_GAP" "$WORKDIR/results.txt" 2>/dev/null | sed 's/^MIR_GAP //' | sort
@@ -82,4 +113,7 @@ echo "=== DIVERGE ==="
 grep "^DIVERGE" "$WORKDIR/results.txt" 2>/dev/null | sed 's/^DIVERGE //' | sort
 echo ""
 echo "=== HANG ==="
-grep "^HANG" "$WORKDIR/results.txt" 2>/dev/null | sed 's/^HANG //' | sort
+grep "^HANG " "$WORKDIR/results.txt" 2>/dev/null | sed 's/^HANG //' | sort
+echo ""
+echo "=== HANG_LEGACY ==="
+grep "^HANG_LEGACY" "$WORKDIR/results.txt" 2>/dev/null | sed 's/^HANG_LEGACY //' | sort

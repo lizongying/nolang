@@ -554,8 +554,19 @@ func LowerHIR(pkg *hir.Package, enumVariants map[string][]string) (*Module, *Rep
 			if name == "main" {
 				hasExplicitMain = true
 			}
+			// Skip the platform variants that do not apply to the target, so a
+			// declaration with several platform bodies registers the matching
+			// one (see nodeMatchesPlatform; `process.cmd`'s POSIX vs Win32 pair
+			// otherwise collapsed onto a single mangled symbol and the Win32
+			// body won).
+			if !nodeMatchesPlatform(pkg, id) {
+				continue
+			}
 			l.funcNames[name] = id
 		case hir.KLet:
+			if !nodeMatchesPlatform(pkg, id) {
+				continue
+			}
 			// A top-level `let` is registered as a lazily-materialized module
 			// global when EITHER:
 			//   (a) the package is a real module (explicit `fn main`), so every
@@ -1235,6 +1246,11 @@ func (l *lowerer) lowerFunction(name string, hirID int32) {
 	f := l.mod.Func(fid)
 	if f != nil {
 		f.ResultParams = resultVals
+		// `f (a ..T)` — record variadicness so emitCallBody knows to pack the
+		// trailing scalar arguments into the []T spread parameter instead of
+		// relying on an arg-count heuristic that explicit out-param actuals
+		// make ambiguous.
+		f.Variadic = n.Has(hir.FlagVariadic)
 		// Mark method functions so codegen passes the receiver by reference
 		// (aliases the caller's self pointer instead of copying into a local
 		// alloca). Without this, mutating std methods (vec.insert/remove/…)
@@ -2495,7 +2511,104 @@ func (l *lowerer) resolveModuleCallName(recvName, method string) string {
 	if _, ok := l.funcNames[method]; ok {
 		return method
 	}
-	return qualified
+	return l.resolveOverloadedFuncName(qualified)
+}
+
+// mangleTypeReplacer mirrors build.sanitizeTypeForName — the surface-AST
+// mangler that turns a declared parameter type into an LLVM-identifier-safe
+// token. It is duplicated here (rather than imported) because package build
+// depends on package mir, so the dependency cannot be inverted.
+var mangleTypeReplacer = strings.NewReplacer(
+	"[]", "slice.",
+	"?", "opt.",
+	"ptr ", "ptr.",
+	"[", "arr",
+	"]", ".",
+	" ", "_",
+	"|", "-",
+)
+
+// resolveOverloadedFuncName maps a callee whose overload-mangling suffix was
+// lost back to the single HIR definition that carries it.
+//
+// Why it is needed: build.mangleOverloads renames every top-level function
+// whose bare name collides with another definition to
+// `<name>_<sanitized param types>` and rewrites *bare Identifier* call sites to
+// match. A QUALIFIED call (`process.cmd(...)`) is a DotExpression, which that
+// rewrite pass deliberately leaves alone, so the caller keeps the unmangled
+// name while the only definition in the module carries the mangled one.
+// `process.cmd` is exactly this case — it has a POSIX and a Win32 variant, both
+// named `cmd`, so it is mangled to
+// `process.cmd_str_slice.str_str_str_slice.str_i64_bool`.
+//
+// Without this the callee missed `funcNames` entirely, `resultTypesOfCallee`
+// returned nothing, and every one of the four multi-assign targets was bound to
+// an i64 zero placeholder (tests/test-process-run.no then reported the bogus
+// "unknown callee i64.trim" for `out.trim()`, because `out` had become an i64).
+//
+// The substitution is verified, never guessed: a candidate is accepted only
+// when its suffix is EXACTLY the sanitized parameter-type list of its own HIR
+// definition. A different function whose name merely starts with `callee_`
+// (say `x_y` for callee `x`) therefore can never be picked up by accident.
+func (l *lowerer) resolveOverloadedFuncName(callee string) string {
+	if callee == "" {
+		return callee
+	}
+	if _, ok := l.funcNames[callee]; ok {
+		return callee
+	}
+	prefix := callee + "_"
+	match := ""
+	found := 0
+	for name, id := range l.funcNames {
+		if !strings.HasPrefix(name, prefix) {
+			continue
+		}
+		if !l.mangledSuffixMatches(id, name[len(prefix):]) {
+			continue
+		}
+		found++
+		if found > 1 {
+			// Genuinely overloaded: the request is ambiguous without argument
+			// types, so leave the name untouched and let the caller's normal
+			// diagnostic surface instead of silently picking one.
+			return callee
+		}
+		match = name
+	}
+	if found == 1 {
+		return match
+	}
+	return callee
+}
+
+// mangledSuffixMatches reports whether `suffix` is exactly the sanitized
+// parameter-type list of the function definition node `id`.
+func (l *lowerer) mangledSuffixMatches(id int32, suffix string) bool {
+	if id == hir.NoID || suffix == "" {
+		return false
+	}
+	var parts []string
+	for _, c := range l.pkg.Children(id) {
+		cn := l.pkg.Node(c)
+		if cn == nil || cn.Kind != hir.KParam {
+			continue
+		}
+		raw := ""
+		if cn.Type != hir.NoID {
+			raw = l.pkg.Type(cn.Type)
+		}
+		if raw == "" {
+			if ty := l.mod.Type(l.typeOfNode(cn)); ty != nil {
+				raw = ty.Raw
+			}
+		}
+		if raw == "" {
+			return false
+		}
+		parts = append(parts, mangleTypeReplacer.Replace(raw))
+	}
+	return len(parts) > 0 && strings.Join(parts, "_") == suffix
 }
 
 // lowerArrayElems materializes a fixed array [N]elem from a list of element
@@ -3994,7 +4107,20 @@ func (l *lowerer) resolveCallee(n *hir.Node) (callee string, recvV ValueID) {
 	if bm := sliceMethodBuiltin(recvTypeName, method); bm != "" {
 		return bm, rv
 	}
-	return canonSliceRecv(recvTypeName + "." + method), rv
+	// A CONCRETE slice method (`[]byte.slice`, `[]char.to-str`, `[]ord.sort-asc`,
+	// `[]str.join`, ...) is a real function with a real body, defined by the std
+	// library for that element type. It must win over the canonicalised `[]t.m`
+	// form: canonSliceRecv is a fallback for GENERIC slice methods (`[]t.len`),
+	// and it maps unconditionally, so `buf.slice(0, n)` on a `[]byte` became the
+	// non-existent `[]t.slice` -> "unknown callee []t.slice"
+	// (tests/mem-safety/bug15-read-dowhile-copyfile.no). Preferring the concrete
+	// name also matches the legacy backend, which tries `[]<elem>.m` before the
+	// `_x<elem>.m` / generic candidates.
+	concrete := recvTypeName + "." + method
+	if _, ok := l.funcNames[concrete]; ok {
+		return concrete, rv
+	}
+	return canonSliceRecv(concrete), rv
 	}
 	return "", NoVal
 }

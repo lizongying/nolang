@@ -2,6 +2,7 @@ package mir
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 )
 
@@ -356,6 +357,54 @@ func (m *Module) insertDrops(f *Function, rep *Report) {
 	// that reaches the block, so a merge drop covers all its incoming arms).
 	// insertDropAt already prepends into blk.Insts, so we must NOT re-assemble
 	// blk.Insts here (that would double-insert the prepended drops).
+	//
+	// A start-drop is REDUNDANT when every path leaving its block runs into
+	// another block that already drops the same value on entry. This is exactly
+	// the `break` shape: `i > 2 -> break` compiles to a trampoline block whose
+	// only instruction is `br <loop-exit>`, and the loop exit legitimately needs
+	// a start-drop for the loop-invariant value (it dies on the header's exit
+	// edge). Emitting one for the trampoline too freed the value TWICE on the
+	// break path — the loop-invariant buffer/string was released at the
+	// trampoline's start and again at the loop exit's start, aborting the
+	// process (SIGTRAP/SIGABRT) on every
+	// `{ ...; cond -> break } (true)` loop that reads an owned value declared
+	// before the loop (minimal repro: `s str = 'xy'` + a loop that prints `s`
+	// and breaks).
+	//
+	// Only single-successor chains are followed, so a justification can never
+	// sit on a path a branch could skip. Blocks are visited in a deterministic
+	// ascending order and a skip is only ever justified by a block that has NOT
+	// been skipped itself, so a cycle of droppers can never justify removing
+	// every drop in the cycle — at least one always survives. The residual risk
+	// is the benign direction: over-removal leaks, it cannot double free.
+	startDropSet := map[BlockID]map[ValueID]bool{}
+	for bid, vs := range dropAtStart {
+		startDropSet[bid] = map[ValueID]bool{}
+		for _, v := range vs {
+			startDropSet[bid][v] = true
+		}
+	}
+	skipped := map[BlockID]map[ValueID]bool{}
+	order := make([]BlockID, 0, len(dropAtStart))
+	for bid := range dropAtStart {
+		order = append(order, bid)
+	}
+	sort.Slice(order, func(i, j int) bool { return order[i] < order[j] })
+	for _, bid := range order {
+		vs := dropAtStart[bid]
+		kept := vs[:0]
+		for _, v := range vs {
+			if m.redundantStartDrop(bid, v, startDropSet, skipped, map[BlockID]bool{}) {
+				if skipped[bid] == nil {
+					skipped[bid] = map[ValueID]bool{}
+				}
+				skipped[bid][v] = true
+				continue
+			}
+			kept = append(kept, v)
+		}
+		dropAtStart[bid] = kept
+	}
 	for bid, vs := range dropAtStart {
 		if m.Block(bid) == nil {
 			continue
@@ -376,6 +425,35 @@ func (m *Module) insertDrops(f *Function, rep *Report) {
 			rep.DropsInserted++
 		}
 	}
+}
+
+// redundantStartDrop reports whether every path leaving block b reaches a block
+// that unconditionally drops v at its START — which makes b's own start-drop a
+// redundant second free.
+//
+// It deliberately walks ONLY through single-successor blocks: on such a chain
+// there is no branch that could avoid the downstream drop, so a drop placed at
+// the chain's end is guaranteed to run for every path out of b. A block with two
+// or more successors returns false immediately, and so does a revisit (a cycle),
+// which keeps the caller's drop.
+//
+// `skipped` holds the values already deemed redundant; a block that was skipped
+// cannot serve as justification for another skip, so a cycle cannot cancel out
+// all of its own drops.
+func (m *Module) redundantStartDrop(b BlockID, v ValueID, startDrop, skipped map[BlockID]map[ValueID]bool, seen map[BlockID]bool) bool {
+	if seen[b] {
+		return false
+	}
+	seen[b] = true
+	blk := m.Block(b)
+	if blk == nil || len(blk.Succs) != 1 {
+		return false
+	}
+	t := blk.Succs[0]
+	if startDrop[t][v] && !skipped[t][v] {
+		return true
+	}
+	return m.redundantStartDrop(t, v, startDrop, skipped, seen)
 }
 
 // insertDropAt appends an OpDrop for val to the module and inserts it into the

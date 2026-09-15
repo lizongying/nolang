@@ -709,6 +709,10 @@ func (c *codegen) emitBuiltinForward(f *Function, inst *Inst, bm *builtin.Builti
 		return c.emitBuiltinSysctl(inst)
 	case "process-waitpid":
 		return c.emitBuiltinWaitpid(inst)
+	case "process-waitpid-nohang":
+		return c.emitBuiltinWaitpidNohang(inst)
+	case "process-pipe":
+		return c.emitBuiltinPipe(inst)
 	case "process-exec-shell":
 		return c.emitBuiltinExecShell(inst)
 	case "load-le-u16", "load-le-u32", "load-le-u64":
@@ -3040,8 +3044,7 @@ func (c *codegen) storeRawStr(inst *Inst, i int, lenReg, capReg, dataReg string)
 // emitBuiltinWaitpid lowers `process.waitpid(pid, options)` -> status i64.
 // Returns WEXITSTATUS: (status >> 8) & 0xFF, where status is the i32 written by
 // libc waitpid into an out-parameter. Mirrors call_stdlib.go process-waitpid.
-func (c *codegen) emitBuiltinWaitpid(inst *Inst) error {
-	if len(inst.Args) < 2 {
+func (c *codegen) emitBuiltinWaitpid(inst *Inst) error {	if len(inst.Args) < 2 {
 		return fmt.Errorf("waitpid: needs pid, options")
 	}
 	pid, err := c.marshalScalar(inst, 0, "i32")
@@ -3066,6 +3069,74 @@ func (c *codegen) emitBuiltinWaitpid(inst *Inst) error {
 	ext := c.treg("wp.ext")
 	c.sb.WriteString(fmt.Sprintf("  %s = sext i32 %s to i64\n", ext, code))
 	return c.storeResult(inst, 0, ext, "i64")
+}
+
+// emitBuiltinPipe lowers `process.pipe()` -> i64, packing the two file
+// descriptors as `(read_fd << 32) | write_fd` — the exact encoding
+// call_stdlib.go's process-pipe produces, so the Nolang side can unpack it with
+// a shift/mask pair.
+//
+// Needed for std/process.no's POSIX `cmd`: it creates up to three pipes this
+// way (stdout, stderr, stdin), so without it every process test failed at
+// "unsupported builtin process-pipe" once the platform filter stopped resolving
+// `process.cmd` to its Win32 body.
+func (c *codegen) emitBuiltinPipe(inst *Inst) error {
+	c.decl("declare i32 @pipe(i32*)")
+	fds := c.treg("pp.fds")
+	c.sb.WriteString(fmt.Sprintf("  %s = alloca [2 x i32]\n", fds))
+	ret := c.treg("pp.ret")
+	c.sb.WriteString(fmt.Sprintf("  %s = call i32 @pipe(i32* %s)\n", ret, fds))
+	gep0 := c.treg("pp.gep0")
+	c.sb.WriteString(fmt.Sprintf("  %s = getelementptr [2 x i32], [2 x i32]* %s, i64 0, i64 0\n", gep0, fds))
+	fd0 := c.treg("pp.fd0")
+	c.sb.WriteString(fmt.Sprintf("  %s = load i32, i32* %s\n", fd0, gep0))
+	gep1 := c.treg("pp.gep1")
+	c.sb.WriteString(fmt.Sprintf("  %s = getelementptr [2 x i32], [2 x i32]* %s, i64 0, i64 1\n", gep1, fds))
+	fd1 := c.treg("pp.fd1")
+	c.sb.WriteString(fmt.Sprintf("  %s = load i32, i32* %s\n", fd1, gep1))
+	ext0 := c.treg("pp.ext0")
+	c.sb.WriteString(fmt.Sprintf("  %s = sext i32 %s to i64\n", ext0, fd0))
+	ext1 := c.treg("pp.ext1")
+	c.sb.WriteString(fmt.Sprintf("  %s = sext i32 %s to i64\n", ext1, fd1))
+	shl := c.treg("pp.shl")
+	c.sb.WriteString(fmt.Sprintf("  %s = shl i64 %s, 32\n", shl, ext0))
+	pack := c.treg("pp.pack")
+	c.sb.WriteString(fmt.Sprintf("  %s = or i64 %s, %s\n", pack, shl, ext1))
+	return c.storeResult(inst, 0, pack, "i64")
+}
+
+// emitBuiltinWaitpidNohang lowers `process.waitpid-nohang(pid)` -> i64: -1
+// while the child is still running (waitpid returns <= 0), otherwise the exit
+// code. Mirrors call_stdlib.go process-waitpid-nohang, including the WNOHANG=1
+// option so the poll never blocks.
+func (c *codegen) emitBuiltinWaitpidNohang(inst *Inst) error {
+	if len(inst.Args) < 1 {
+		return fmt.Errorf("waitpid-nohang: needs pid")
+	}
+	pid, err := c.marshalScalar(inst, 0, "i32")
+	if err != nil {
+		return err
+	}
+	c.decl("declare i32 @waitpid(i32, i32*, i32)")
+	st := c.treg("wn.st")
+	c.sb.WriteString(fmt.Sprintf("  %s = alloca i32\n", st))
+	ret := c.treg("wn.ret")
+	c.sb.WriteString(fmt.Sprintf("  %s = call i32 @waitpid(i32 %s, i32* %s, i32 1)\n", ret, pid, st))
+	rext := c.treg("wn.retext")
+	c.sb.WriteString(fmt.Sprintf("  %s = sext i32 %s to i64\n", rext, ret))
+	still := c.treg("wn.still")
+	c.sb.WriteString(fmt.Sprintf("  %s = icmp sle i64 %s, 0\n", still, rext))
+	ld := c.treg("wn.ld")
+	c.sb.WriteString(fmt.Sprintf("  %s = load i32, i32* %s\n", ld, st))
+	sh := c.treg("wn.sh")
+	c.sb.WriteString(fmt.Sprintf("  %s = lshr i32 %s, 8\n", sh, ld))
+	code := c.treg("wn.code")
+	c.sb.WriteString(fmt.Sprintf("  %s = and i32 %s, 255\n", code, sh))
+	cext := c.treg("wn.codeext")
+	c.sb.WriteString(fmt.Sprintf("  %s = sext i32 %s to i64\n", cext, code))
+	res := c.treg("wn.result")
+	c.sb.WriteString(fmt.Sprintf("  %s = select i1 %s, i64 -1, i64 %s\n", res, still, cext))
+	return c.storeResult(inst, 0, res, "i64")
 }
 
 // emitBuiltinExecShell lowers `process.exec-shell(cmd)` -> replaces the current
