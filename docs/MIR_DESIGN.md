@@ -1,6 +1,6 @@
-# Nolang MIR — 工业级中端中间表示设计（实施记录 v2.18）
+# Nolang MIR — 工业级中端中间表示设计（实施记录 v2.20）
 
-> 状态：直接发射已达 **Stage 3**（MIR→LLVM 直接发射，全量 corpus 门禁可跑；**第三十五轮（2026-09-15）权威全量扫描：`MATCH=371/421`（≈88.1%）、`DIVERGE=1`（`test-quant-all1.no`，地址非确定性假阳性，手动复跑为 MATCH）、`MIR 专属 gap=0`、`两模式都失败=45`（CERR 31 + CRASH 14）、`HANG=4`（`test-for2.no` 两模式都挂死；`test-parse-min.no` 编译成功但 90s 超时，手动运行 57s 成功输出 `ok: parse str`；`test-json-nested-match.no` 编译成功但 segfault，legacy 也失败；`test-json-parse-option.no` 编译成功但超时，legacy 也失败）**。本轮修 **#68**（`coerceInt` 扩展支持 `i64→double`（`sitofp`）和 `double→i64`（`fptosi`）类型转换：之前 `coerceInt` 仅处理整数宽度转换，当 `fromT=i64`、`toT=double` 时直接返回原值，导致 `fadd double %d, %i64_val` 因类型不匹配被 opt-verify 拒绝。新增浮点转换路径覆盖所有 `emitBinOp`/`emitCmp` 等调用 `coerceInt` 的场景。3 个测试从 CERR 转为编译成功：`test-parse-min.no`（MATCH，仅运行慢）、`test-json-nested-match.no`（CRASH，legacy 也失败）、`test-json-parse-option.no`（CRASH/HANG，legacy 也失败））。**第三十四轮的 `MATCH=372`/`DIVERGE=0`/`CERR=34`/`CRASH=14`/`HANG=1` 与第三十五轮的 `MATCH=371`/`DIVERGE=1`/`CERR=31`/`CRASH=14`/`HANG=4` 之差：−1 MATCH（`test-quant-all1.no` 的 DIVERGE 为地址非确定性假阳性，手动复跑为 MATCH）、+1 DIVERGE（同上假阳性）、−3 CERR（3 个 `i64 vs double` 类型不匹配的测试编译成功）、+3 HANG（这 3 个测试编译成功但运行超时/崩溃，legacy 也失败）**。详见 §13.3.11）
+> 状态：**默认后端已切换到 MIR**（`NOLANG_MIR` 未设置 ⇒ MIR-only，见 §13.3.12 ⑤；`NOLANG_MIR=0` 仍可选 legacy）。**第三十八轮（2026-09-16）权威全量扫描：`MATCH=387/421`（≈91.9%）、`DIVERGE=1`（`mem-safety/str-concat-leak.no`，二进制地址差异假阳性）、`MIR 专属 gap=0`、`两模式都失败=29`（CERR 18 + CRASH 11）、`HANG=4`**（同一轮另对 `test/`（40 文件）与 `example/`（11 文件）做了交叉扫描：`GAP=0`/`DIVERGE=0`/`HANG=0`，全部为「两模式都失败」的既有失败）。本轮按 §15 剩余清单顺序推进，交付：**#71** MIR 从未处理 `hir.KRegexLit` —— 正则字面量 `/pattern/flags` 在 legacy 里是 **codegen 期**脱糖成 `regexp-compile()` 调用（`build/llvm/expr.go`），MIR 没有 codegen 期 AST，于是字面量根本不产生值、`re2 = /hello/gi` 从不绑定局部，后续所有使用都表现为「未解析标识符 / 未解析格式字段」（`test-regex-literal.no` 由「两模式都失败」转 MATCH）；**#72** `lowerFormatField` 的 `default:` 分支把「不是特判类型」当成「整数」，把 `%regexp_regexp` 结构体塞进 `fmt-int` 产生非法 IR，改为只有整型/bool 才走 `fmt-int`；**#73** `NOLANG_MIR` 未设置时的默认值由 legacy 改为 `3`（MIR-only）；**#74** 扫描脚本补打 CERR/CRASH 名单（此前只有计数，排查必须重扫 40 分钟）；**#75** 致命 lowering 诊断带上具体字段/类型（此前只报桶名 `unsupported construct (string interpolation)`）；**#76** `transitive_import_test.go` 的断言接受 MIR 的符号净化拼写（`@middle-fn` → `@middle_fn`）。净 **MATCH +1**、两模式都失败 30→29。**关键量化：** 对同一份语料，默认口径（MIR-only）通过 **388/421**，与旧默认（`MIR=2`：`MATCH 387 + DIVERGE 1`）的 `rc=0` 集合**完全一致** —— 即切换默认不改变任何测试的成败，只是停止用 legacy 掩盖 MIR 的缺口（`MIR_GAP=0` 的推论）。详见 §13.3.12。
 > 作者：编译器工作流
 > 关联：`src/hir`（HIR）、`src/build/llvm`（LLVM 后端）、`src/parser/tohir.go`（AST→HIR）、`src/mir`（本层）
 
@@ -304,6 +304,57 @@ unsupported kind ⇒ 记录 diagnostic 并安全终止该函数 lower（验证�
     - **⚠️ 第一版修法踩的坑（务必记住）**：先写的是"无条件扣减"（不看 `cf.Variadic`）。这会让 `number.max(10, 20)` 也中招——它是「1 个展开入参 + 1 个出参，恰好 2 个实参」，扣减后 `effArgs = 1`，`1 > 1` 不成立 → 变参展开不再发生 → **`tests/test-number-generic.no` 与 `tests/test-number.no` 双双由 MATCH 回归 trace/BPT**（紧随其后的全量扫描 gap 0→3 立刻抓到）。**计数在此时本质歧义，必须用 `FlagVariadic` 这类语义标记消歧，不能靠算术**。加 `cf.Variadic` 判据后两个方向都成立：`rep7`/`rep8` 输出与 legacy 逐字节一致（`2 1 1 0 1 1 1 0 1 1 1 0 0 0 0 0`），`test-number-generic`/`test-number` 回到 `m2=0 m3=0`；再跑全量扫描 gap 3→0、MATCH 365→367。
     - **为什么它不在任何轮次的 gap 数里**：语料中恰好没有"显式写出具名出参实参 + 末入参是切片"的形状，所以它既不表现为 gap 也不表现为 DIVERGE——只有从 `test-diff-debug.no` 的深挖中做最小复现时才被逼出来。**方法论教训：沿着一个失败测试往下挖到最小复现，常会挖出一个与该测试无关、但比它更普遍的真 bug（本轮 #63 即如此），而只盯 gap 计数会永远看不到它；反之，任何"看起来只是改判据"的小改动都必须立刻全量重扫兜底。**
 
+67. **【目录 #67】`collectVarTypesFromBody` 把「已声明局部的再赋值」误当「遮蔽全局」，删掉了它的型别（2026-09-15 第三十七轮，两模式同失败）**：
+    - **现象**：`b [3]i64 = [10, 20, 30]` 之后写 `b = b.clone()`，`tests/tmp-arr-half1.no` 在 **两模式**都失败——legacy 报 `opt: use of undefined value '@b.clone'`（调用点停在下线前的 `@b.clone`，即 dot 表达式根本没被重写），MIR=3 报 `unknown callee []t.clone`。而 `c = b.clone()`（绑定到**新名**）两模式都正常，这是唯一线索。
+    - **根因**：`build/transpiler.go` 的 `collectVarTypesFromBody` 对「`Type == nil` 且 `inferTypeFromExpr(Value)` 推断不出」的 `LetStatement` 执行 `delete(varTypes, name)`，注释称是为了清掉「从外层/全局继承的同名陈旧条目」。但 `b = b.clone()` 是**同一函数体内已声明局部的再赋值**，不是陈旧全局：删除后 `resolveMethodCall` 里 `varTypes[recvIdent.Value]` 查不到 `b` 的型别 → 直接 `return false` → 泛型模板 `[n]t.clone` 从未被 `cloneAndSubstitute` 单态化 → 调用点留下未解析的 `b.clone`。**这是前端（transpiler）缺陷，不是 MIR 缺陷**——正因如此修它对两个后端同时生效。
+    - **修法**：新增 `collectVarTypesFromBodyIn(body, varTypes, declared)`，用 `declared map[string]bool` 记录**在本体内**绑定过型别的名字（显式 `Type` 与可推断初值都记）；只有当名字**不在** `declared` 里时才执行原来的 delete。递归分支（`BlockStatement` / `ForStatement` / `IfExpression` 块）共享同一个 `declared`，故内层块声明的名字也受保护。
+    - **为何不会破坏原语义**：名字只被**外层的全局/外层作用域**污染（原 delete 的靶子）时，`declared` 里没有它，行为与修复前完全一致；同名局部在本体内**先声明后赋值**才有 `declared` 命中，此时保留自己的型别才是正确的。
+    - **验证**：最小复现（`/tmp/mt/c5.no`）两模式都输出 `10/20/30`；`tests/tmp-arr-half1.no` 由「两模式都失败」→ **MATCH**（9 个子测试全过）。
+
+68. **【目录 #68】print 家族的容器实参未被渲染成字符串（2026-09-15 第三十七轮，MIR 侧 `printableValue`）**：
+    - **现象**：`print(v)`（vec/array）与 `print(a[0..2])` 在 MIR=3 报 `print unsupported arg type %vec`；legacy 报 `opt: use of undefined value '@_LB__RB_t.to-str'`——legacy 想调 `[]t.to-str`，但该泛型模板没有被任何真实调用点触发单态化。`tests/test-slice-heavy.no` 两模式都失败。
+    - **修法（MIR 侧）**：`hir2mir.go` 新增 `printableValue(v)`：当实参的 MIR 型别 Kind 为 `KindSlice`/`KindArray` 时，用 `toStrCalleeFor(ty)` 按 **`_<N>x<E>.to-str` → `_x<E>.to-str` → `[]<E>.to-str` → `[]t.to-str` → `[n]t.to-str`** 的顺序找已注册符号，然后 `enqueueCallee` + `EmitCallMulti` 包一层 to-str。**顺序不可颠倒**：必须**先试 mangled 单态名**（`_xi64.to-str`）**再试泛型模板名**（`[]t.to-str`）——模板在 HIR 里没有体，调到它就是 undefined callee。（`str` 的 Kind 是 `KindStr`，天然被排除。）
+    - **⚠️ 第一版踩的坑（本轮最大教训）**：包裹开关一开始直接复用 `l.inPrintArgs > 0`。**该标志在整棵实参子树里都 > 0**，于是 `print(b.to-str())` 里**被嵌套的 `b.to-str()` 把自己的 receiver `b` 也包了一层 to-str**，源码语义被降级成 `print(b.to-str().to-str())`：`[3]i64` 先渲染成 str、再对 str 走一遍数组版 to-str，输出 `[9, 9, <堆地址>]`（垃圾，且末位每次运行都变），而基线是 `[1, 2, 3]`。**一次引入 13 个 MATCH→DIVERGE**（`tmp-arr-g1/f1/f2/f3/g1/g2/g3/h1/q1/q2/ts1/half2` 等 12 个 + `test-arr-max-print`/`test-vec-str-to-str`）。修法：新增**独立的** `wrapPrintArgs bool`——`lowerCall` 只在**最外层** print 家族调用前置 true，`lowerCallArgs` 进入时先存后清零、`defer` 恢复，因此嵌套调用自己的实参不会被包裹。**`inPrintArgs` 必须保持整棵子树可见**（`KStrLit` 的字符串插值诊断要它），绝不能复用。
+    - **发现方式**：全量扫描 MATCH 381→368、DIVERGE 1→15；用 `git worktree add /tmp/no-base af2e494` 编出 HEAD 基线二进制，再用 `/tmp/cmp2.sh`（同一文件跑 base/new × MIR=2/3，同时比 rc 与输出）逐个确认：5 个 DIVERGE 文件在 base 下输出恒为 `[1, 2, 3]`、在 new 下输出每次不同的地址 → 确证是本轮引入而非抖动。
+    - **验证**：`tests/test-slice-heavy.no` 由「两模式都失败」→ **MATCH**（`[10, 20, 30]` / `[30, 40, 50, 0]` / `[2, 3, 4]` 逐字节一致）。有趣的是 legacy 也随之转好：`collectVarTypesFromBody` 的修复（#67）让 `v`/`a` 的型别在 legacy 的 varTypes 里也保住了。
+
+69. **【目录 #69】`net-dial`/`net-send`/`net-recv` 的实参序列化 + 补齐 5 个 net 内建（2026-09-15/16 第三十七轮）**：
+    - **`cstrOf` 只认 `%str-long`/`%vec`**：`net.net-dial(host, port)` 的 `host` 在 MIR 里是 `%option_str`（`?str`，payload 内联），于是 `net-dial: cannot marshal host as C string`。修法：`cstrOf` 先判 `strings.HasPrefix(lt, "%option")` → `optionPayloadOf` 剥出 field 1，payload 是 `%str-long`/`%vec` 时再 `@str_cstr`。nil option 的 payload 为零值，`inet_pton` 自然失败、builtin 返回 -1，与"host 串非法"同结局。
+    - **`dataPtrOf` 只认 `%str-long`/`%vec`**：`net-send(fd, data, n)` 的 `data` 在测试里是 `[5 x i8]`（定宽字节数组）。修法：同样支持 option 载荷（`extractvalue .../2` 取 data 指针），并对 `[N x T]` 走 `getelementptr inbounds [N x T], ... , i64 0, i64 0` + `bitcast T* → i8*`。
+    - **补齐 5 个 ForwardFunc**：`net-set-recv-timeout`（`setsockopt(SO_RCVTIMEO)`，`SOL_SOCKET`/`SO_RCVTIMEO` 常量按 `runtime.GOOS` 取值：darwin 65535/4102、linux 1/20）、`net-accept-nb`（`fcntl(F_SETFL, O_NONBLOCK)` + `accept`，`EAGAIN` 时返回 -2）、`net-recv-nb`（`recv(..., MSG_DONTWAIT=64)`）、`net-udp-sendto`（按 `emitBuiltinNetDial` 同款 sockaddr_in 布局 + `sendto`）、`net-udp-recvfrom`（`recvfrom` 带 scratch sockaddr）。
+    - **验证**：`tests/test-http-rest.no`、`tests/test-net-http.no` 由「两模式都失败」→ **MATCH**（`test-tls.no`/`test-tls-part3.no`/`test-tls-prf-only.no`/`test-https-server.no` 推进到下一层错误：定宽数组 GEP / `%addopt.final` option 未解包）。
+
+70. **【目录 #70】`std/crypto/aes.no` 的源码笔误 `ek[ek] = aes-key-expand(key)`（2026-09-16 第三十七轮，两模式同失败）**：
+    - **现象**：`tests/test-aes-enc.no` 两模式都失败。MIR=3 的 opt-verify 报 `%ep25641 = getelementptr [176 x i8], ptr %v1.s, i64 0, i64 %lv25640` 且 `'%lv25640' defined with type '[176 x i8]' but expected 'i64'`。**初看是 MIR 的定宽数组 GEP 类型推导错（§15 清单第 1 项，据信阻塞 6 个测试），实为 std 源码笔误。**
+    - **根因**：`std/crypto/aes.no:439` 写成 `ek[ek] = aes-key-expand(key)` —— 用数组 `ek` 自身当**下标**、把整个 176 字节展开密钥赋给**一个字节元素**。同文件 `aes-128-dec`（第 475 行）写的是 `ek = aes-key-expand(key)`，可确证笔误。MIR 忠实 lower 出 `indexstore [ek, ek, <176B 结果>]`，于是 GEP 的下标是 `[176 x i8]`。
+    - **修法**：改为 `ek = aes-key-expand(key)`（与 dec 一致），`make gen no` 重烘焙 std。
+    - **验证**：`tests/test-aes-enc.no` 由「两模式都失败」→ **MATCH**（两模式均输出 `6b c1 be e2 2e 40 9f 96 e9 3d 7e 11 73`）。连带 `test-http-rest`/`test-net-http`（走 TLS→AES-GCM）也一并转 MATCH。
+    - **教训**：**"定宽数组 GEP 类型有偏差"这类判读必须回到源码核对**——MIR 报的 GEP 错常常只是忠实反映了一个上游（std/前端）的形状错误；`elemAddr` 自身在这条路径上是对的。同理，`coerceIndex` 不该把数组强转 i64 来"修"这个症状，那会把真 bug 藏起来。
+
+71. **【目录 #71】MIR 从未处理 `hir.KRegexLit`：正则字面量在 lowering 期没有对应物（2026-09-16 第三十八轮，两模式同失败）**：
+    - **现象**：`tests/test-regex-literal.no` 两模式都失败。MIR=3 报 `unsupported construct (string interpolation)`，**看起来像 §15 #6「字符串插值」的工作项**。
+    - **根因**：`/pattern/flags` 在 legacy 里是 **codegen 期**由 AST 改写完成脱糖（`build/llvm/expr.go` 把 `*parser.RegexLiteral` 换成 `regexp-compile('pattern')` 调用）。**MIR 没有 codegen 期 AST**，而 `grep KRegexLit src/mir/*.go` 为空 —— lowering 里一处都没处理，字面量落进默认分支、**不产生任何值**，`re2 = /hello/gi` 因此从不绑定局部 `re2`，后续 `print('re2.pattern = {re2-pattern}')` 报的是 `unresolved format field re2-pattern`。**表象在插值，真因在字面量。**
+    - **修法**：`hir2mir.go` 新增 `lowerRegexLit`，把字面量下沉为 `regexp-compile('pattern')` 调用（`enqueueCallee` + `EmitCallMulti(dsts=[regexp], args=[str 常量])`）。callee 名字先试裸名 `regexp-compile`，再回退 `regexp.regexp-compile`。flags（`n.S2`）不参与语义——legacy 同样只是把 flags 挂在节点上不消费，保持逐字节兼容。
+    - **验证**：`tests/test-regex-literal.no` 两模式 `rc=0` 且输出逐字节一致（`matched = 0` / `re2.pattern = hello`）。最小复现 `/tmp/mt/i4.no`（`re2 = /hello/gi; p = re2.pattern; print(p)`）修复前**两模式都输出空行**，修复后都输出 `hello` —— 说明 MIR 此前对 `re2.pattern` 是"静默错"（rc=0 但值为空），不只是报错。
+
+72. **【目录 #72】`lowerFormatField` 的 `default:` 把结构体当整数（2026-09-16 第三十八轮，由 #71 暴露）**：
+    - **现象**：`print('x = {re2}')`（`re2` 是 `regexp` 结构体）MIR=3 opt-verify 报 `'%lv17' defined with type '%regexp_regexp = type { %str-long, i1, ... }' but expected 'i64'`，位置在 `call void @fmt_int(i64 %lv17, ...)`。
+    - **根因**：该函数的 `switch` 只特判了 `str`/`f64`/容器-option-未知，`default:` 分支的隐含前提是"其余 ⇒ 整数"，于是 `%regexp_regexp` 被直接塞进 `fmt-int`。
+    - **修法**：`default:` 改成显式的「不可渲染类型」拒绝分支（`l.unsupported(... "format field type "+raw+" not lowered")`），只有 `isIntegerMIRType(raw)`（已含 `bool`）才走 `fmt-int`/`fmt-uint`。
+    - **教训**：`switch` 的 `default:` 一旦被当成"剩下的都是 X"，每引入一种新类型都会静默落进来。改这类分支前先把 X 写成显式判据。
+
+73. **【目录 #73】默认后端切换为 MIR-only（2026-09-16 第三十八轮，第二优先级 #8）**：
+    - **改动**：`src/build/transpiler.go` 中 `mirMode := os.Getenv("NOLANG_MIR")` 之后加 `if mirMode == "" { mirMode = "3" }` —— 未设置即 MIR-only（无回退）；`NOLANG_MIR=0` 仍显式选 legacy，`1`/`2` 语义不变。
+    - **依据**：全量语料默认口径通过 **388/421**，与旧默认口径（`MIR=2`：`MATCH 387 + DIVERGE 1 = 388`）**集合完全一致**；`test/`（40）+`example/`（11）交叉扫描 `GAP=0`/`DIVERGE=0`/`HANG=0`。`MIR_GAP=0` 的直接推论是"没有 legacy 能过而 MIR 不能过的用例"，故切换不改变任何测试成败。
+    - **反向证据**：`NOLANG_MIR=0` 下**最简单的 `print(1+2)` 程序编译失败**（`'%addopt.final.N' defined with type '%option' but expected 'i64'`，`store i64 %addopt.final, ptr %fmtval`）。legacy 对"默认溢出模式的整数算术作 print 实参"这条主干路径是坏的，MIR 正确。
+    - **配套**：`scripts/mir_sweep_fast.sh` 的汇总补打 CERR/CRASH 名单；致命 lowering 诊断带上具体字段名与类型（`unsupported construct in MIR backend: interp: unresolved format field X`，替换掉原来只报桶名的 `unsupported construct (string interpolation)`）；新增 `firstFatalLowerDiag` 返回诊断本身供上报。
+
+74. **【目录 #74】`transitive_import_test.go` 断言接受 MIR 的符号净化拼写（2026-09-16 第三十八轮）**：
+    - **现象**：默认切到 MIR 后 `go test ./build/` 多出 4 个失败（`TestTransitiveImportLLVM`/`...ThreeLevels`/`...Diamond`/`...EntryUsesDeepFn`）：`LLVM IR does not contain @deep-fn`。
+    - **复核**：**不是功能回归**。手工搭同一模块图，默认口径与 `NOLANG_MIR=0` 都正确输出 `142`；转储 IR 可见 MIR 产出的是 `@middle_fn`/`@deep_fn`（净化过的拼写），legacy 是 `@middle-fn`。LLVM 无引号标识符只保证 `[-a-zA-Z$._0-9]`，而 MIR 要从任意 Nolang 标识符生成名字，故做净化。两者都是合法 IR，链接与运行一致。
+    - **修法**：新增 `irHasFunc(ir, fn)` 辅助函数，同时接受原拼写与净化拼写；`@shared-fn` 的计数同理加 `@shared_fn`。**这些测试的意图是"符号没被模块合并丢掉"（D17），不该被拿来钉死命名风格。**
+    - **核对**：与基线 worktree（`/tmp/no-base`，HEAD `af2e494`）对比，`build` 包失败集在 `NOLANG_MIR=0`/`2`/`3` 下完全一致（`TestSliceMethodLenCall{,OnI64,OnStr}`、`TestProgramUsesPrintDetectsLoopAndBlockBodies`、`TestGenerateHIRMatchesGenerate`、`TestUserReadOverridesBuiltin`）——均为既有失败。
+
 ---
 
 ## 13. 当前已知 gap 家族（下一轮推进目标）
@@ -575,6 +626,122 @@ unsupported kind ⇒ 记录 diagnostic 并安全终止该函数 lower（验证�
 
 ---
 
+#### 13.3.11 第三十七轮（2026-09-16）权威全量扫描：按 §15 剩余清单顺序推进
+
+**口径**：`./bin/no`（绝不用仓库根 `no`），全量递归 `tests/**/*.no` = **421**；基线 `NOLANG_MIR=2`，被测 `NOLANG_MIR=3`；`scripts/mir_sweep_fast.sh`，8-worker、`MIR_SWEEP_TIMEOUT=100`。
+
+**结果**：`MATCH=386`（≈91.7%）、`DIVERGE=1`、`MIR_GAP=0`、`MIRBETTER=0`、`CERR=19`、`CRASH=11`、`HANG=4`（合计 421）。
+
+**与上一轮（第三十六轮）对比**：MATCH 381→**386**（+5）、DIVERGE 1→1、MIR_GAP 0→0、两模式都失败 35→**30**（−5）、HANG 4→4。**本轮净增的 5 个 MATCH 全部来自"两模式都失败 → 两模式都成功"**：`tests/tmp-arr-half1.no`（#67）、`tests/test-slice-heavy.no`（#68）、`tests/test-aes-enc.no`（#70）、`tests/test-http-rest.no`、`tests/test-net-http.no`（#69 + #70）。
+
+##### ① 扫描器分类缺陷（本轮修好，影响此前所有轮次的口径）
+
+`scripts/mir_sweep_fast.sh` 里 CERR/CRASH 的判別写的是
+
+```sh
+grep -q "compilation error\|Undefined symbols\|ld: \|cannot find\|error: linker\|undefined reference" "$err3"
+```
+
+**BSD grep 的 BRE 不把 `\|` 当"或"**（它匹配字面的 `|`），所以这个 `grep` **永不命中**，`CERR` 恒为 0，所有"两模式都失败"的测试一律落进 `CRASH`。实测：本轮同一次扫描，用 `grep -E "...|..."` 重新分类即得 `CERR 26 + CRASH 7`（与第三十六轮的 28/7 形状吻合）。**修法**：改用 `grep -E` + 裸 `|`。**影响**：第三十二~三十六轮文档里的 CERR/CRASH 拆分不可信（两者之和才可比）。
+
+##### ② 本轮确认的"两模式共有"根因（非 MIR 专属）
+
+- **`%addopt.final` 未解包（legacy 报错，阻塞 6+ 测试）**：`test-tls.no`、`test-json.no`、`test-tls13-crypto.no`、`test-http-rest.no`、`test-net-http.no`、`test-https-server.no` 在 **legacy** 报 `opt: error: '%addopt.final.N' defined with type '%option = type { i64, i64 }' but expected 'i64'`——一条 `#{overflow}` 算术的结果仍是 `option`，却被存进 i64 槽位/参与 `icmp`。这是**前端/legacy 共有**的问题（MIR 侧已由 §12 #15 的 sink 解包覆盖），修它可同时解锁两后端，是下一轮性价比最高的一项。
+- **`test-tls-prf-only.no` / `test-tls-part3.no`**：MIR=3 报 `call void @prf(..., i64 %lv215, ...)` 里 `'%lv215' defined with type '%vec'` —— 传给 `prf` 的第 4 个（i64）形参的是个 `[]byte`。属 MIR 的实参编组问题。
+- **`test-json.no`**：MIR=3 报 `call void @str_slice(%str-long*, i64, i64 %lv186, ...)` 里 `'%lv186' defined with type '%str-long'` —— `s.slice(i, j)` 的第二个实参（`i64`）传成了 str。与上一条同族。
+- **`tests/i.no` 是负测试**（源码注释即写 `; compilation error: i16 'a' has no method 'len'`），其 CERR 是期望行为——**§15 清单里的 #7「`str-len` 接收者 i64」不是真工作项**，勿再投入。
+
+##### ③ 本轮被证伪的判读
+
+§15 清单第 1 项「定宽数组 GEP 类型不匹配，阻塞 6 个 crypto/JSON 测试」经本轮复核**至少在 `test-aes-enc.no` 上是误判**：真因是 `std/crypto/aes.no` 的 `ek[ek] = aes-key-expand(key)` 源码笔误（§12 #70）。`elemAddr` 自身的定宽数组分支（`getelementptr [N x T], [N x T]* slot, i64 0, i64 idx`）是对的。**其余 5 个是否同源待逐个复核**——判这类错时必须先回到 std/前端源码确认形状，再动 codegen。
+
+##### ④ 方法论要点（本轮新增）
+
+- **改动标志位作用域前先问"它是否对整棵子树可见"**：`inPrintArgs` 故意对整棵实参子树可见（字符串插值诊断需要），拿它当"只作用于最外层实参"的包裹开关就会把嵌套调用也改造掉，一次引入 13 个 DIVERGE。需要不同可见范围就**另开一个标志**（`wrapPrintArgs`），不要复用。
+- **未触发单态化的"合成调用"救不了 legacy**：为了让 legacy 也能 `print(vec)`，试过在 transpiler 里合成一个 dummy `x.to-str()` 调用来触发 `[]t.to-str` 单态化；名字确实被解析成 `_xi64.to-str`，但**没有被真实调用点引用的单态化产物会在 codegen 之前被丢掉**，legacy 仍报 undefined。已回退。
+- **`git worktree` + 基线二进制 + 逐文件 A/B（`/tmp/cmp2.sh`）是判定"是否本轮引入"最快的手艺**：编一份 HEAD 二进制，对可疑文件同时跑 base/new × MIR=2/3，比 rc 与输出。它比"重跑一次全量扫描看数字变了没"快一个数量级，且能区分"抖动"与"真回归"（本轮 5 个 DIVERGE 在 base 下输出恒定、new 下每次都不同 → 真回归）。
+
+#### 13.3.12 第三十八轮（2026-09-16）权威全量扫描：语料分类 + 默认路径切换
+
+**口径**：`./bin/no`，全量递归 `tests/**/*.no` = **421**；基线 `NOLANG_MIR=2`，被测 `NOLANG_MIR=3`；`scripts/mir_sweep_fast.sh`，8-worker、`MIR_SWEEP_TIMEOUT=90`。另对 `test/`（40）与 `example/`（11）跑同一对口径做交叉验证。
+
+**结果**：`MATCH=387`（≈91.9%）、`DIVERGE=1`、`MIR_GAP=0`、`MIRBETTER=0`、`CERR=18`、`CRASH=11`、`HANG=4`。**与上一轮（第三十七轮）对比**：MATCH 386→**387**（+1，`test-regex-literal.no` 由 CERR 转 MATCH）、两模式都失败 30→**29**。`test/` 与 `example/`：`GAP=0`、`DIVERGE=0`、`HANG=0`。
+
+**默认口径（不设 `NOLANG_MIR`）实测：`388/421`（92.2%）通过，`FAIL=29`、`HANG=4`。**
+
+##### ① 正则字面量：MIR 的 codegen 期脱糖缺口（#71）
+
+`tests/test-regex-literal.no` 在 **两个后端都失败**，但 MIR 报的是 `unsupported construct (string interpolation)`，看起来像 §15 #6「字符串插值」的工作项。实际根因完全不同：
+
+- `/pattern/flags` 在 **legacy 是 codegen 期**由 AST 改写完成脱糖（`build/llvm/expr.go`：把 `*parser.RegexLiteral` 换成 `regexp-compile('pattern')` 调用）。
+- **MIR 没有 codegen 期 AST** —— lowering 是最后一个还能看到这个形状的地方。`hir.KRegexLit` 在 `src/mir/` 下**一处都没处理**（`grep KRegexLit src/mir/*.go` 为空），于是字面量落进 `lowerExpr` 的默认分支，**根本不产生值**。
+- 后果的**表象具有强误导性**：`re2 = /hello/gi` 这条 `let` 从未绑定局部 `re2`，后面 `print('re2.pattern = {re2-pattern}')` 就报 `unresolved format field re2-pattern`。**看到"未解析格式字段"先别急着查插值管线，要先确认被插值的那个绑定本身有没有建立。**
+
+**修法**：新增 `lowerRegexLit`（`hir2mir.go`），把 `/pattern/flags` 下沉为 `regexp-compile('pattern')` 调用（`enqueueCallee` + `EmitCallMulti`，结果型别 `regexp`）。flags 仍不参与语义——与 legacy 一致（legacy 也只是把 flags 挂在节点上不消费），保持逐字节兼容。**结果**：`test-regex-literal.no` 两模式 `rc=0` 且输出逐字节一致（`matched = 0` / `re2.pattern = hello`）。
+
+##### ② `lowerFormatField` 的 `default:` 把结构体当整数（#72）
+
+修完 #71 暴露出来：`print('x = {re2}')`（`re2` 是 `regexp` 结构体）走 `lowerFormatField` 的 `default:` 分支，而那个分支的隐含前提是"不是特判类型 ⇒ 整数"，于是把 `%regexp_regexp` 直接传给 `fmt-int`，产出非法 IR：
+
+```
+error: '%lv17' defined with type '%regexp_regexp = type {...}' but expected 'i64'
+  call void @fmt_int(i64 %lv17, %str-long* %carg19, %str-long* %cres20)
+```
+
+**修法**：`default:` 改成显式的「不可渲染类型」拒绝分支，只有 `isIntegerMIRType(raw)`（含 `bool`，见该处注释）才走 `fmt-int`/`fmt-uint`。**原则**：`switch` 的 `default:` 若被当成"剩下的都是 X"，就在改动前先把 X 写成判据——否则每加一种新类型都会静默落进来。
+
+##### ③ 「两模式都失败」的精确分类（29 个）
+
+本轮逐文件复核（`/tmp/d30_all.txt`），结论是**绝大多数不是 MIR 的工作项**：
+
+| 类别 | 数量 | 文件 | 归属 |
+| --- | --- | --- | --- |
+| **测试源陈旧（API/语法漂移）** | **14** | 8 个缺 `#{overflow=wrap}` 而触发 `ValidateUnhandledOverflow` 硬错（`test-all`/`test-database-sql`/`test-ffi-mysql`/`test-ffi-sqlite`/`test-sha256-simplified`/`test-sse`/`test-tagged-enum`/`tmp-words-test`）；2 个 `#{index-out=...}` 与语句同行（`test-safe-index`/`test-safe-index-containers`）；`test-json.no` 调 `p.stringify(root, out-buf, 0)` 而现行签名是 `json-pool.stringify(node-idx) -> str`；`test-tls-prf-only.no`/`test-tls-part3.no` 用 6 参 `prf(secret,4,label,seed,3,32)` 而现行 4 参 `prf(secret,label,seed,out-len)`；`test-x25519-fe-diag.no` 引用已不存在的 std 函数 | **非 MIR**：测试要与语言/std 对齐（**修测试**） |
+| **两模式同崩/同挂的 std 缺陷** | **8** | `test-basic`/`test-std-hash`/`test-std-net-ext`/`test-tls-debug`/`test-tls-part2`/`test-tls`/`test-txt`/`vec` | **非 MIR**：std/legacy 共有 |
+| **legacy 专属编译缺陷** | **3** | `test-http3`/`test-https-server`/`test-tls13-crypto`：legacy 报 `%addopt.final` 未解包。**MIR=3 已能编译过去**，只是随后运行时 segfault | **非 MIR**：legacy 停用后消失 |
+| **MIR 侧真实缺口** | **3** | `test-strconv.no`（`%option_f64` 未能 coerce 到 `double`）、`test-std-new.no`（`%str-long` 送进 `inttoptr i64`）、`mem-safety/nested-container-clone.no`（`%vec` 参与 `icmp`） | **MIR 工作项** |
+| **负测试（期望失败）** | **1** | `tests/i.no`（源码注释即 `; compilation error: i16 'a' has no method 'len'`） | **非 MIR**：应为期望行为 |
+
+> 合计 14 + 8 + 3 + 3 + 1 = **29**，与 `CERR 18 + CRASH 11` 一致。**注意 `test-json.no` 的 MIR 错误（`str_slice` 第二个实参拿到 `%str-long`）不是独立的 MIR 缺口**——它正是"测试调了旧签名的 `stringify`、于是 `out-n` 其实是 `str`"的直接后果；测试修好后 MIR 侧无需任何改动。**同理 `test-std-new.no`/`test-strconv.no` 同时具备 legacy `%addopt.final` 与 MIR 真缺口两种身份**，此处按"MIR 侧是否还有活要干"归入 MIR。
+>
+> 另有 **4 个 HANG**（`test-for2.no`、`test-parse-min.no`、`mem-safety/test-json-parse-option.no`、`mem-safety/test-json-nested-match.no`）**不计入上面 29**：3 个是 json parse 的两模式死循环，属 std 缺陷；`print('start')` 的输出被 SIGKILL 吞掉，**不能靠 stdout 判断挂在哪里**。
+
+> **HANG 的一处口径陷阱（必记）**：`mir_sweep_fast.sh` 先判 `rc3` 再判 `rc2`，所以 `HANG_LEGACY=0` **并不**意味着"基线没挂"——只要两者都挂，它就记成 `HANG`。本轮 3 个 json/parse 测试即属此类：**两模式都挂死**，不是 MIR 专属。要区分必须单独跑基线。
+
+##### ④ 交叉扫描：语料外无缺口
+
+对 `test/`（40 文件，多为 `test/std/*.no` 这类无 `main` 的模块文件，单独 `run` 必然失败）与 `example/`（11）跑同口径：**`GAP=0`、`DIVERGE=0`、`HANG=0`**，全部失败都是「两模式都失败」的既有失败。这是切换默认路径的前置条件。
+
+##### ⑤ 默认路径切换（#73）与它的量化依据
+
+`src/build/transpiler.go` 中 `NOLANG_MIR` 未设置时默认值由 legacy（不进入 MIR 分支）改为 **`"3"`**（MIR-only，无回退）；`NOLANG_MIR=0` 仍可显式选 legacy。
+
+**依据**：全量语料上默认口径通过 **388/421**，与旧默认口径（`MIR=2`，`MATCH 387 + DIVERGE 1 = 388`）**完全一致** —— `MIR_GAP=0` 的直接推论是"没有任何 legacy 能过而 MIR 不能过的用例"，因此切换默认**不改变任何测试的成败**，只是把"用 legacy 掩盖 MIR 缺口"这条路径关掉，让新暴露的缺口立刻可见。加上 `test/`+`example/` 的 `GAP=0` 交叉验证，语料内外的风险都已被测量过。
+
+**一个顺带得到的强证据**：`NOLANG_MIR=0 ./bin/no run <最简单的 print(1+2) 程序>` **编译失败**：
+
+```
+opt: error: '%addopt.final.5254' defined with type '%option = type { i64, i64 }' but expected 'i64'
+  store i64 %addopt.final.5254, ptr %fmtval.5262
+```
+
+即 legacy 对「默认溢出模式下的整数算术作为 print 实参」这一**极常见形状**是坏的。§13.3.11 ② 记的「`%addopt.final` 阻塞 6+ 测试」不止是那 6 个测试的问题，而是 legacy 的一条主干缺陷。**MIR 在这条路径上是正确的**，这从另一个方向支持了默认切换。
+
+##### ⑥ 单测回归处置（#76）
+
+切换默认后 `go test ./build/` 多出 4 个失败（`TestTransitiveImportLLVM` / `...ThreeLevels` / `...Diamond` / `...EntryUsesDeepFn`）。**不是功能回归**：手工搭同一模块图，默认口径与 `NOLANG_MIR=0` 都正确输出 `142`，程序可跑。差异只在**符号拼写**——legacy 原样输出 `@middle-fn`，MIR 净化为 `@middle_fn`（LLVM 无引号标识符只能保证 `[-a-zA-Z$._0-9]`，而 MIR 要从任意 Nolang 标识符生成名字）。这些测试的**意图是"符号没被模块合并丢掉"（D17）**，不该被拿来钉死命名风格，故加 `irHasFunc` 同时接受两种拼写。
+
+**核对方式**：与基线 worktree（`/tmp/no-base`，HEAD `af2e494`）逐项对比，`build` 包失败集在 `NOLANG_MIR=0`/`2`/`3` 下**完全一致**（`TestSliceMethodLenCall{,OnI64,OnStr}`、`TestProgramUsesPrintDetectsLoopAndBlockBodies`、`TestGenerateHIRMatchesGenerate`、`TestUserReadOverridesBuiltin`）——这些是既有失败，与本轮无关。
+
+##### ⑦ 方法论要点（本轮新增）
+
+- **"两模式都失败"必须先分类再动手**：本轮 29 个里只有约 7 个是 MIR 的事，14 个是测试源陈旧。若不分类就直接去改 codegen，会追着 legacy 的锅修 MIR。
+- **看到"未解析 X"先查绑定、再查使用**：正则字面量的表象是插值报错（#71），`%addopt.final` 的表象是 bounds-check 报错，两者真因都在上游。
+- **错误信息要把诊断细节带出来**：`unsupported construct (string interpolation)` 这个桶名把已经拿到手的 `unresolved format field re2-pattern` 丢掉了（#75），导致每查一次都要重新插桩。**桶名越短，调试成本越高。**
+- **切换默认前先量"新旧默认的 rc=0 集合是否相同"**，而不是只量新默认的通过数——前者才是"不改变行为"的直接证据。
+
+---
+
 ## 14. 溢出默认（overflow-default）与 MIR 的集成（进行中）
 
 `#{overflow}` 默认使整数 `+ - * /` 返回 `option<int>`（不 panic）。当前状态：
@@ -600,7 +767,9 @@ unsupported kind ⇒ 记录 diagnostic 并安全终止该函数 lower（验证�
 - **Stage 3 续（第三十一轮 2026-09-15，`./bin/no`，421 文件全量纳入）**：**`MATCH=367`（≈87.2%）、`DIVERGE=0`、`MIR 专属 gap=0`（标签值；**抖动校正后为 1**）、`两模式都失败=53`（CERR 39 + CRASH 14）、`HANG=1`**。三项产出：① **#63** 修掉 `emitCallBody` 把"显式写出的具名出参实参"误判为变参展开（新增 `mir.Function.Variadic` 作消歧依据；该 bug 在语料里无对应形状，只有做最小复现才逼得出来——见 §12 #63 与 §13.3.10 ④）；② **修好扫描器超时工具缺陷**（`run_to` 由 `perl -e 'alarm; exec'` 改为 `setpgid` + `kill -KILL -$pgid` 杀整个进程组，并补 `HANG_LEGACY` 桶与修正 `grep -c "^HANG"` 误统计 —— `test-for2.no` 不再卡死整轮，见 §13.3.10 ①）；③ **抖动甄别**：查实第三十→三十一轮的 `gap 1→0`、`CRASH 13→14`、`DIVERGE 0→1→0` 全是两个 flaky 文件（`test-diff-debug.no` 的 legacy 基线 1/6 失败、`test-quant-all1.no` 打印未初始化栈指针）造成的**标签互换，不是任何修复的效果**；对 `CRASH` 桶 14 个逐文件重复采样确认 13 个为确定性双失败（见 §13.3.10 ②）。**方法论要点**：① 小改判据也必须全量重扫——#63 第一版"无条件扣减"当场让 `test-number-generic.no`/`test-number.no` 回归（gap 0→3），加 `cf.Variadic` 判据后才回落（§13.3.10 ⑤）；② **计数在有歧义时不可用作判据**，必须找语义标记（`FlagVariadic`）；③ 沿一个失败测试挖最小复现，常能挖出比它更普遍的真 bug（本轮 #63），而只盯 gap 计数永远看不到它；④ **当基线自己 flaky 时，"基线过、MIR 挂"这个判据本身不可靠**，`MIR_GAP`/`DIVERGE` 这类差一位指标必须重复采样定真值。
 - **Stage 3 续（第三十轮 2026-09-15，`./bin/no`，421 文件 / 实测 420）**：**`MATCH=367`（≈87.4%）、`DIVERGE=0`、`MIR 专属 gap=1`、`两模式都失败=52`、`HANG=1`**（第二十九轮同口径 364/1/2/53/1，净 **MATCH +3、DIVERGE −1、失败 −1、gap −1**）。本轮八项修复：**#55** MIR 缺失的平台过滤（新增 `src/mir/platform.go`，`process.cmd` 的 POSIX/Win32 同参变体不再塌缩到同一 mangled 符号）、**#56** 重载 mangling 后的 callee 名解析（`resolveOverloadedFuncName` + `mangledSuffixMatches` 反向校验，闭环 `unknown callee i64.trim` 这一"症状与根因完全脱节"的误导性诊断）、**#57** 泛型切片方法名回落具体元素类型（`[]byte.slice` 优先于 `[]t.slice`）、**#58** 补齐 `process-pipe`/`process-waitpid-nohang` 内置 + `process-kill` 改 `CmpRet`、**#59** `emitCmp` 的 option 语义二修（option↔option 比 tag、option↔普通值比 payload；`%str-long` 的 `!=` 从"等同 `==`"改为 `xor @str_eq`）、**#60** `break` 蹦床块的重复 start-drop → 双释放（`redundantStartDrop` 沿单后继链消冗余，确定性顺序保证纯 dropper 环不会消掉全部 drop）、**#61** `with-cap/with-len/with-cap-len` 的元素步长硬编码 8 + 新缓冲未清零（`[]str` 需 24 字节槽位；新增 `mirStaticTypeSize`/`typeSizeOperand`（`ptrtoint(gep(T, null, 1))` 让 LLVM 折叠出精确 `sizeof`）/`allocBytesOperand`，并在两条 malloc 路径补 `llvm.memset` 清零以镜像 legacy）、**#62** 回退一个**未提交**的 `emitFunc` 参数别名收窄改动（它引入 5 个 MIR_GAP）。**方法论要点（本轮最重要的产出）**：① **文档里的 gap 数只代表"上次扫描时的二进制"**，工作树里未提交的改动必须重扫才能计入结论——若信任文档的 "gap=2" 会漏掉 `emitFunc` 引入的 5 个；② 判定"是否本轮引入"必须 `git worktree add` 建**干净 HEAD 基线**，并把工作树改动**逐 hunk** `git apply -R` 二分（本次据此把 5 个 gap 精确钉到 `emitFunc` 的两个 hunk）；③ 代码注释里"因为某机制所以安全"的推理要回到源码核对（`droppable` 里一行 `!isParam[inst.Dst]` 就证伪了整段"别名会被 callee drop"的说法）；④ 修"两模式都失败"的公共依赖会让 MIR_GAP 先升后降（第二十九轮的 gap 0→2），**"两模式都挂"不是稳态**。
 
-- **Stage 4（下一步）**：① 收敛最后一个 MIR_GAP `test-diff-debug`（DP 表全 0 / `bus error`；根因落在 `[]str` 元素的 `compare` 调用降级路径，探针显示 `with-len`+字面量赋值的 `[]str` 元素方法调用在**两模式**都 segfault → 需先修更底层的通用缺陷）；② `with-len`/`index dst slot` 的 void 型别族（#54 同族，5）；③ `str-len receiver i64`（3）；④ 语料迁移 8 个真·未标注溢出运算；⑤ `net-dial` 非 IP 字面量 host 的 `getaddrinfo` 回落（3）；⑥ **修 `run_to` 超时只杀 `no` 不杀子进程组的问题**（`test-for2.no` 的 `MIR=2` 子进程连 alarm 都逃逸，`sweep_one` 永久阻塞）；⑦ 逐站消除 §13.3 长尾；FFI/async/crypto/net/map/字符串方法内置补齐；最终让 `no build` 默认走 MIR=3（移除 legacy 散布 `emitHeapFree`）。
+- **Stage 3 续（第三十七·三十八轮 2026-09-15/16，`./bin/no`，421 文件全量）**：**`MATCH=387`（≈91.9%）、`DIVERGE=1`、`MIR 专属 gap=0`、`两模式都失败=29`（CERR 18 + CRASH 11）、`HANG=4`；默认口径（不设 `NOLANG_MIR`）通过 `388/421`（92.2%）**。第三十七轮四修：**#67** `collectVarTypesFromBody` 把"已声明局部的再赋值"误当"遮蔽全局"而删掉其型别 → `[n]t.clone` 从未单态化；**#68** MIR 的 print 家族容器实参未走 `to-str`（`printableValue`/`toStrCalleeFor` + 独立 `wrapPrintArgs` 标志）；**#69** `net-dial`/`net-send`/`net-recv` 的 option 载荷与定宽数组实参序列化 + 补齐 5 个 net 内建；**#70** `std/crypto/aes.no` 源码笔误 `ek[ek] = ...`（净 MATCH +5）。第三十八轮四修：**#71** MIR 从未处理 `hir.KRegexLit`（正则字面量在 legacy 是 codegen 期脱糖，MIR 无 codegen 期 AST → 字面量不产生值 → 表象为"未解析格式字段"）；**#72** `lowerFormatField` 的 `default:` 把结构体当整数；**#73** 默认后端切换为 MIR-only（第二优先级 #8 落地）；**#74** `transitive_import_test.go` 接受 MIR 的符号净化拼写。**方法论要点**：① "两模式都失败"必须先分类——本轮 29 个里只有 **3 个**是 MIR 的事（`test-strconv`/`test-std-new`/`nested-container-clone`），**14 个是测试源陈旧**（API/语法漂移）、8 个两模式同崩同挂、3 个 legacy 专属编译缺陷（`%addopt.final`）、1 个负测试；② 扫掠脚本先判 `rc3` 再判 `rc2`，故 `HANG_LEGACY=0` **不等于**基线没挂；③ 调试期不要把诊断细节丢在桶名里。详见 §13.3.11/§13.3.12。
+
+- **Stage 4（下一步）**：① 收敛最后一个 MIR_GAP `test-diff-debug`（DP 表全 0 / `bus error`；根因落在 `[]str` 元素的 `compare` 调用降级路径，探针显示 `with-len`+字面量赋值的 `[]str` 元素方法调用在**两模式**都 segfault → 需先修更底层的通用缺陷）；② `with-len`/`index dst slot` 的 void 型别族（#54 同族，5）；③ `str-len receiver i64`（3）；④ 语料迁移 8 个真·未标注溢出运算；⑤ `net-dial` 非 IP 字面量 host 的 `getaddrinfo` 回落（3）；⑥ ~~修 `run_to` 超时只杀 `no` 不杀子进程组的问题~~（**已完成**，`setpgid` + `kill -KILL -$pgid`，见 §13.3.10 ①）；**⑥'（新）`HANG=4` 的两模式死循环**（`test-parse-min.no`、`mem-safety/test-json-parse-option.no`、`mem-safety/test-json-nested-match.no` 的 json parse 与 `test-for2.no`）——两后端同挂，属 std 缺陷；⑦ 逐站消除 §13.3 长尾；FFI/async/crypto/net/map/字符串方法内置补齐；**（`no build` 默认走 MIR=3 已于第三十八轮 #73 完成）**；⑧ **#9/#10：移除 strangler-fig 回退、清理 legacy 后端（`src/build/llvm/`，约 60KB）并更新构建系统**——这是第二优先级的剩余部分，也是本路线图最后一块结构性工作。
 
 ---
 

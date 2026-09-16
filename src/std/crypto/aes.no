@@ -436,7 +436,7 @@ aes-key-expand = (key [16]byte) (ek [176]byte) {
 aes-128-enc = (in [16]byte, key [16]byte) (out [16]byte) {
     ek [176]byte
     #{index-out = 0}
-    ek[ek] = aes-key-expand(key)
+    ek = aes-key-expand(key)
     i <- [0..16): {
         #{index-out = 0}
         out[i] = in[i]

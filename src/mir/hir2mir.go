@@ -174,6 +174,15 @@ type lowerer struct {
 	// whose legacy output is the literal text.
 	inPrintArgs int
 
+	// wrapPrintArgs is true only while the argument list of the OUTERMOST
+	// print-family call is being lowered (see lowerCallArgs). It drives
+	// printableValue, the to-str wrapping of container arguments; inPrintArgs
+	// cannot be reused for it because that one intentionally stays >0 for the
+	// whole argument subtree (the string-interpolation diagnostic must fire for
+	// a nested literal too), which would make a nested method call wrap its own
+	// receiver.
+	wrapPrintArgs bool
+
 	// structLitTypes maps an anonymous struct-literal HIR node id to the struct
 	// type name it must be given. The parser records an EMPTY Type for a bare
 	// `{ a: 1 }` literal (parseStructLit: "由 codegen 推斷" — inferred from
@@ -3102,6 +3111,8 @@ func (l *lowerer) lowerExpr(id int32) ValueID {
 			}
 		}
 		return l.b.EmitStr(OpConst, l.b.Type("str"), s, "")
+	case hir.KRegexLit:
+		return l.lowerRegexLit(n)
 	case hir.KCharLit:
 		return l.lowerCharLit(n)
 	case hir.KNilLit:
@@ -3477,6 +3488,38 @@ func (l *lowerer) lowerExpr(id int32) ValueID {
 		l.unsupported(l.curFuncName(), hir.KindNames[n.Kind], "expression kind not lowered yet")
 		return NoVal
 	}
+}
+
+// lowerRegexLit lowers a `/pattern/flags` regex literal.
+//
+// The legacy backend desugars this at CODEGEN time, rewriting the AST node into
+// a `regexp-compile('pattern')` call (build/llvm/expr.go). MIR has no codegen-
+// stage AST — lowering is the last point where the shape exists — so the
+// desugaring has to happen here. Without it the literal produced no value at
+// all: the enclosing `let re2 = /hello/gi` never bound a local, and every later
+// use of `re2` surfaced as "unresolved identifier" / "unresolved format field"
+// (which reads like an interpolation bug but is really a missing literal).
+//
+// Flags are carried on the node (n.S2) but the regexp engine does not consume
+// them yet — legacy drops them the same way, so we stay byte-compatible.
+func (l *lowerer) lowerRegexLit(n *hir.Node) ValueID {
+	pat := l.pkg.Str(n.S)
+	reT := l.b.Type("regexp")
+	// std functions register under their bare name; fall back to the
+	// module-qualified spelling in case only that one was loaded.
+	callee := "regexp-compile"
+	if _, ok := l.funcNames[callee]; !ok {
+		if _, ok2 := l.funcNames["regexp."+callee]; ok2 {
+			callee = "regexp." + callee
+		}
+	}
+	l.enqueueCallee(callee)
+	argV := l.b.EmitStr(OpConst, l.b.Type("str"), pat, "")
+	if dsts := l.b.EmitCallMulti([]TypeID{reT}, []ValueID{argV}, callee); len(dsts) > 0 {
+		return dsts[0]
+	}
+	l.unsupported(l.curFuncName(), "regex", "regexp-compile produced no result")
+	return l.b.Emit(OpConst, reT, nil, "")
 }
 
 // lowerDotRead lowers a standalone field/property access `recv.field` to an
@@ -4522,8 +4565,8 @@ func (l *lowerer) lowerFormatField(f *parser.FormatField) (ValueID, bool) {
 		// of guessing.
 		l.unsupported(l.curFuncName(), "interp", "format field type "+raw+" not lowered")
 		return NoVal, false
-	default:
-		// Integer (i8..i64, u8..u64, byte, int, ...). The unsigned renderings
+	case isIntegerMIRType(raw):
+		// Integer (i8..i64, u8..u64, byte, int, ...) and bool. The unsigned renderings
 		// (b/o/x/X/p) go through fmt-uint, everything else through fmt-int —
 		// exactly llvm.dispatchFmtCall.
 		fn = "fmt-int"
@@ -4533,6 +4576,15 @@ func (l *lowerer) lowerFormatField(f *parser.FormatField) (ValueID, bool) {
 				fn = "fmt-uint"
 			}
 		}
+	default:
+		// Structs (regexp, user types) and anything else unrecognised: there is
+		// no fmt-* helper for them. The old `default:` branch assumed "not one
+		// of the special cases ⇒ integer" and handed a %struct value to
+		// fmt-int, which produced invalid IR ("'%lv' defined with type
+		// '%regexp_regexp' but expected 'i64'") instead of a clean refusal.
+		// Refusing lets the caller fall back rather than emit garbage.
+		l.unsupported(l.curFuncName(), "interp", "format field type "+raw+" not lowered")
+		return NoVal, false
 	}
 	l.enqueueCallee(fn)
 	strT := l.b.Type("str")
@@ -4798,6 +4850,9 @@ func (l *lowerer) lowerCall(n *hir.Node) ValueID {
 	if isPrintFamilyCallee(callee) {
 		l.inPrintArgs++
 		defer func() { l.inPrintArgs-- }()
+		savedWrap := l.wrapPrintArgs
+		l.wrapPrintArgs = true
+		defer func() { l.wrapPrintArgs = savedWrap }()
 	}
 	argv := l.lowerCallArgs(n, recvV, callee)
 	// A `run`-launched call is async regardless of its name (syntactic async);
@@ -5299,6 +5354,16 @@ func (l *lowerer) lowerCallArgs(n *hir.Node, recvV ValueID, callee string) []Val
 	}
 	var argv []ValueID
 	argOffset := 0
+	// Only the OUTERMOST print-family call wraps its arguments in to-str. The
+	// flag is cleared while each argument expression is lowered: `inPrintArgs`
+	// alone is not enough, because it stays >0 for the whole subtree, so a
+	// nested method call such as `print(b.to-str())` saw the flag and wrapped
+	// `b.to-str()`'s own RECEIVER — lowering the source to
+	// `print(b.to-str().to-str())`. The outer to-str then received a str and
+	// produced garbage (`[9, 9, <address>]` for a `[3]i64`).
+	wrapArgs := l.wrapPrintArgs
+	l.wrapPrintArgs = false
+	defer func() { l.wrapPrintArgs = wrapArgs }()
 	if recvV != NoVal {
 		// nolang's implicit-self convention: a bare `.method(args)` call inside a
 		// method already lists the receiver as the FIRST argument node (an ident
@@ -5328,9 +5393,75 @@ func (l *lowerer) lowerCallArgs(n *hir.Node, recvV ValueID, callee string) []Val
 		}
 	}
 	for _, a := range args {
-		argv = append(argv, l.lowerExpr(a))
+		v := l.lowerExpr(a)
+		if wrapArgs {
+			v = l.printableValue(v)
+		}
+		argv = append(argv, v)
 	}
 	return argv
+}
+
+// printableValue renders a container-typed print-family argument through its
+// receiver's `to-str` method, mirroring the legacy backend (which lowers
+// `print(v)` / `print(a[0..2])` to a `[]t.to-str` call).
+//
+// Without it the argument reaches codegen as a raw `%vec` / fixed array and
+// print fails with "print unsupported arg type %vec"
+// (tests/test-slice-heavy.no). Scalar types (including `str`, whose Kind is
+// KindStr rather than KindSlice) are returned untouched.
+func (l *lowerer) printableValue(v ValueID) ValueID {
+	if v == NoVal {
+		return v
+	}
+	t := l.valueTypeOf(v)
+	ty := l.mod.Type(t)
+	if ty == nil || (ty.Kind != KindSlice && ty.Kind != KindArray) {
+		return v
+	}
+	if callee := l.toStrCalleeFor(ty); callee != "" {
+		l.enqueueCallee(callee)
+		if dsts := l.b.EmitCallMulti([]TypeID{l.b.Type("str")}, []ValueID{v}, callee); len(dsts) > 0 {
+			return dsts[0]
+		}
+	}
+	return v
+}
+
+// toStrCalleeFor returns the `to-str` callee registered for a slice/array
+// receiver type, or "" when none exists (the argument is then printed as-is,
+// which codegen will report rather than silently mis-render).
+//
+// Generic std methods are monomorphized by the front end under a mangled name
+// (`[]t.to-str` on a []i64 becomes `_xi64.to-str`, `[n]t.to-str` on a [4]i64
+// becomes `_4xi64.to-str`), so the mangled forms must be tried BEFORE the
+// generic template names — a call to the bare template has no body and would
+// be reported as an undefined callee.
+func (l *lowerer) toStrCalleeFor(ty *Type) string {
+	elem := ""
+	if ty.Elem != NoType {
+		if et := l.mod.Type(ty.Elem); et != nil {
+			elem = et.Raw
+		}
+	}
+	raw := strings.TrimPrefix(ty.Raw, "?")
+	var cands []string
+	if elem != "" {
+		if closeB := strings.IndexByte(raw, ']'); closeB > 0 {
+			size := raw[1:closeB]
+			if size != "" {
+				cands = append(cands, "_"+size+"x"+elem+".to-str")
+			}
+		}
+		cands = append(cands, "_x"+elem+".to-str", "[]"+elem+".to-str")
+	}
+	cands = append(cands, "[]t.to-str", "[n]t.to-str")
+	for _, c := range cands {
+		if _, ok := l.funcNames[c]; ok {
+			return c
+		}
+	}
+	return ""
 }
 
 // bindTarget binds a multi-assign target node (normally a KIdent) to the given

@@ -21,6 +21,7 @@ package mir
 
 import (
 	"fmt"
+	"os"
 	"runtime"
 	"strings"
 
@@ -360,8 +361,31 @@ func (c *codegen) coerce(srcTy, srcVal, wantTy string) string {
 // functions that expect a NUL-terminated string.
 func (c *codegen) dataPtrOf(v ValueID) string {
 	lt, _ := c.ptype(v)
+	// An option-typed buffer (`?str` / `?[]byte`, LLVM `%option_str`) must be
+	// peeled first: net-send / net-recv take the raw data pointer of the
+	// PAYLOAD, and a `{tag, payload}` struct has no data field of its own.
+	if strings.HasPrefix(lt, "%option") {
+		_, sv := c.loadVal(v)
+		pv, pt := c.optionPayloadOf(sv, lt)
+		switch pt {
+		case "%str-long":
+			r := c.treg("dpl")
+			c.sb.WriteString(fmt.Sprintf("  %s = extractvalue %%str-long %s, 2\n", r, pv))
+			return r
+		case "%vec":
+			l := c.treg("dpl")
+			c.sb.WriteString(fmt.Sprintf("  %s = extractvalue %%vec %s, 2\n", l, pv))
+			r := c.treg("dpp")
+			c.sb.WriteString(fmt.Sprintf("  %s = inttoptr i64 %s to i8*\n", r, l))
+			return r
+		}
+		return ""
+	}
 	slot := c.valSlot[v]
 	if slot == "" {
+		if os.Getenv("NOLANG_MIR_DEBUG_CSTR") != "" {
+			fmt.Fprintf(os.Stderr, "[dptr] v=%d lt=%q (no slot)\n", v, lt)
+		}
 		return ""
 	}
 	switch lt {
@@ -380,6 +404,24 @@ func (c *codegen) dataPtrOf(v ValueID) string {
 		c.sb.WriteString(fmt.Sprintf("  %s = inttoptr i64 %s to i8*\n", r, l))
 		return r
 	}
+	if os.Getenv("NOLANG_MIR_DEBUG_CSTR") != "" {
+		fmt.Fprintf(os.Stderr, "[dptr] v=%d lt=%q slot=%q\n", v, lt, slot)
+	}
+	// Fixed-size array `[N x T]` (a byte-array buffer or a short string kept
+	// inline): GEP to element 0 and bitcast to i8*. `net-send(fd, data, n)` on
+	// a `[5 x i8]` constant reached here and failed with "cannot take data
+	// pointer of arg 1" (test-tls / test-https-server).
+	if strings.HasPrefix(lt, "[") && strings.HasSuffix(lt, "]") {
+		parts := strings.Fields(strings.TrimSuffix(strings.TrimPrefix(lt, "["), "]"))
+		if len(parts) > 0 {
+			elemT := parts[len(parts)-1]
+			g := c.treg("dpg")
+			c.sb.WriteString(fmt.Sprintf("  %s = getelementptr inbounds %s, %s* %s, i64 0, i64 0\n", g, lt, lt, slot))
+			r := c.treg("dpp")
+			c.sb.WriteString(fmt.Sprintf("  %s = bitcast %s* %s to i8*\n", r, elemT, g))
+			return r
+		}
+	}
 	return ""
 }
 
@@ -390,7 +432,28 @@ func (c *codegen) dataPtrOf(v ValueID) string {
 // end of the buffer).
 func (c *codegen) cstrOf(v ValueID) string {
 	lt, _ := c.ptype(v)
+	// An option-typed string argument (`?str`, LLVM `%option_str`) carries its
+	// payload inline; C-library entry points such as net-dial / net-listen take
+	// the plain string, so peel field 1 first. Without this every
+	// `net.net-dial(host, port)` whose `host` came from an option-typed binding
+	// failed with "cannot marshal host as C string" (test-tls / test-http-rest /
+	// test-net-http / test-https-server). A nil option has a zero payload, so
+	// inet_pton simply fails and the builtin returns -1 — the same "cannot
+	// connect" outcome as a bad host string.
+	if strings.HasPrefix(lt, "%option") {
+		_, sv := c.loadVal(v)
+		pv, pt := c.optionPayloadOf(sv, lt)
+		if pt == "%str-long" || pt == "%vec" {
+			r := c.treg("cs")
+			c.sb.WriteString(fmt.Sprintf("  %s = call i8* @str_cstr(%s %s)\n", r, pt, pv))
+			return r
+		}
+		return ""
+	}
 	if lt != "%str-long" && lt != "%vec" {
+		if os.Getenv("NOLANG_MIR_DEBUG_CSTR") != "" {
+			fmt.Fprintf(os.Stderr, "[cstr] v=%d lt=%q\n", v, lt)
+		}
 		return ""
 	}
 	_, sval := c.loadVal(v)
@@ -689,12 +752,22 @@ func (c *codegen) emitBuiltinForward(f *Function, inst *Inst, bm *builtin.Builti
 		return c.emitBuiltinNetListen(inst)
 	case "net-accept":
 		return c.emitBuiltinNetAccept(inst)
+	case "net-accept-nb":
+		return c.emitBuiltinNetAcceptNb(inst)
+	case "net-recv-nb":
+		return c.emitBuiltinNetRecvNb(inst)
+	case "net-udp-sendto":
+		return c.emitBuiltinNetUdpSendTo(inst)
+	case "net-udp-recvfrom":
+		return c.emitBuiltinNetUdpRecvFrom(inst)
 	case "net-udp-open":
 		return c.emitBuiltinNetUdpOpen(inst)
 	case "net-send":
 		return c.emitBuiltinNetSend(inst)
 	case "net-recv":
 		return c.emitBuiltinNetRecv(inst)
+	case "net-set-recv-timeout":
+		return c.emitBuiltinNetSetRecvTimeout(inst)
 	case "read-file":
 		return c.emitBuiltinReadFile(inst)
 	case "utime":
@@ -2504,6 +2577,303 @@ func (c *codegen) emitBuiltinNetRecv(inst *Inst) error {
 	ret := c.treg("netr")
 	c.sb.WriteString(fmt.Sprintf("  %s = call i64 @recv(i32 %s, i8* %s, i64 %s, i32 0)\n", ret, fdReg, bufPtr, nReg))
 	c.sb.WriteString(fmt.Sprintf("  store i64 %s, i64* %s\n", ret, dstSlot))
+	return nil
+}
+
+// emitBuiltinNetAcceptNb lowers `net.net-accept-nb(fd)` -> fd i64: a
+// non-blocking accept. Legacy routes this through the runtime helper
+// @nolang_net_accept_nb (build/llvm/decl.go); MIR emits the equivalent inline:
+// accept(2) with the listen socket switched to O_NONBLOCK beforehand, so a
+// pending-connection-free poll returns -2 (EWOULDBLOCK) instead of blocking the
+// cooperative scheduler. Returns >=0 client fd, -2 = would block, -1 = error.
+func (c *codegen) emitBuiltinNetAcceptNb(inst *Inst) error {
+	if len(inst.Args) < 1 {
+		return fmt.Errorf("net-accept-nb: needs (listen-fd)")
+	}
+	dstSlot := c.valSlot[inst.Dst]
+	if dstSlot == "" {
+		return fmt.Errorf("net-accept-nb: no result slot")
+	}
+	fdReg, err := c.marshalScalar(inst, 0, "i32")
+	if err != nil {
+		return err
+	}
+	c.decl("declare i32 @fcntl(i32, i32, i32)")
+	c.decl("declare i32 @accept(i32, i8*, i32*)")
+	c.decl("@.mir.errno = external global i32")
+	// fcntl(fd, F_SETFL=4, O_NONBLOCK) — macOS 0x0004, Linux 0x800
+	nb := "4"
+	if runtime.GOOS == "linux" {
+		nb = "2048"
+	}
+	c.sb.WriteString(fmt.Sprintf("  call i32 @fcntl(i32 %s, i32 4, i32 %s)\n", fdReg, nb))
+	addr := c.treg("netanb.addr")
+	addrp := c.treg("netanb.addrp")
+	c.sb.WriteString(fmt.Sprintf("  %s = alloca [16 x i8]\n", addr))
+	c.sb.WriteString(fmt.Sprintf("  %s = getelementptr inbounds [16 x i8], [16 x i8]* %s, i64 0, i64 0\n", addrp, addr))
+	c.sb.WriteString(fmt.Sprintf("  call void @llvm.memset.p0i8.p0i8.i64(i8* %s, i8 0, i64 16, i1 false)\n", addrp))
+	alen := c.treg("netanb.alen")
+	c.sb.WriteString(fmt.Sprintf("  %s = alloca i32\n", alen))
+	c.sb.WriteString(fmt.Sprintf("  store i32 16, i32* %s\n", alen))
+	ret := c.treg("netanb.ret")
+	c.sb.WriteString(fmt.Sprintf("  %s = call i32 @accept(i32 %s, i8* %s, i32* %s)\n", ret, fdReg, addrp, alen))
+	// -1 with EAGAIN/EWOULDBLOCK -> -2 (would block). macOS EAGAIN=35,
+	// Linux EAGAIN=11.
+	eagain := "35"
+	if runtime.GOOS == "linux" {
+		eagain = "11"
+	}
+	isErr := c.treg("netanb.iserr")
+	c.sb.WriteString(fmt.Sprintf("  %s = icmp eq i32 %s, -1\n", isErr, ret))
+	en := c.treg("netanb.en")
+	c.sb.WriteString(fmt.Sprintf("  %s = load i32, i32* @.mir.errno\n", en))
+	isAgain := c.treg("netanb.again")
+	c.sb.WriteString(fmt.Sprintf("  %s = icmp eq i32 %s, %s\n", isAgain, en, eagain))
+	wouldBlock := c.treg("netanb.wb")
+	c.sb.WriteString(fmt.Sprintf("  %s = and i1 %s, %s\n", wouldBlock, isErr, isAgain))
+	fd := c.treg("netanb.fd")
+	c.sb.WriteString(fmt.Sprintf("  %s = sext i32 %s to i64\n", fd, ret))
+	r := c.treg("netanb.res")
+	c.sb.WriteString(fmt.Sprintf("  %s = select i1 %s, i64 -2, i64 %s\n", r, wouldBlock, fd))
+	dstLT, _ := c.ptype(inst.Dst)
+	if dstLT == "" {
+		dstLT = "i64"
+	}
+	if cv := c.coerce("i64", r, dstLT); cv != "" {
+		r = cv
+	}
+	c.sb.WriteString(fmt.Sprintf("  store %s %s, %s* %s\n", dstLT, r, dstLT, dstSlot))
+	return nil
+}
+
+// emitBuiltinNetRecvNb lowers `net.net-recv-nb(fd, buf, n)` -> read-n i64:
+// recv(2) with MSG_DONTWAIT so the call never blocks. MSG_DONTWAIT is 0x40 on
+// macOS and 0x40 (MSG_DONTWAIT) on Linux as well.
+func (c *codegen) emitBuiltinNetRecvNb(inst *Inst) error {
+	if len(inst.Args) < 3 {
+		return fmt.Errorf("net-recv-nb: needs (fd, buf, n)")
+	}
+	dstSlot := c.valSlot[inst.Dst]
+	if dstSlot == "" {
+		return fmt.Errorf("net-recv-nb: no result slot")
+	}
+	fdReg, err := c.marshalScalar(inst, 0, "i32")
+	if err != nil {
+		return err
+	}
+	bufPtr := c.dataPtrOf(inst.Args[1])
+	if bufPtr == "" {
+		return fmt.Errorf("net-recv-nb: cannot take data pointer of arg 1")
+	}
+	_, nReg := c.loadVal(inst.Args[2])
+	c.decl("declare i64 @recv(i32, i8*, i64, i32)")
+	ret := c.treg("netrnb")
+	c.sb.WriteString(fmt.Sprintf("  %s = call i64 @recv(i32 %s, i8* %s, i64 %s, i32 64)\n", ret, fdReg, bufPtr, nReg))
+	dstLT, _ := c.ptype(inst.Dst)
+	if dstLT == "" {
+		dstLT = "i64"
+	}
+	if cv := c.coerce("i64", ret, dstLT); cv != "" {
+		ret = cv
+	}
+	c.sb.WriteString(fmt.Sprintf("  store %s %s, %s* %s\n", dstLT, ret, dstLT, dstSlot))
+	return nil
+}
+
+// emitBuiltinNetUdpSendTo lowers `net.net-udp-sendto(fd, data, n, host, port)`
+// -> written i64: sendto(2) to a sockaddr_in built exactly like
+// emitBuiltinNetDial's. Returns -1 when the host is not an IP literal.
+func (c *codegen) emitBuiltinNetUdpSendTo(inst *Inst) error {
+	if len(inst.Args) < 5 {
+		return fmt.Errorf("net-udp-sendto: needs (fd, data, n, host, port)")
+	}
+	dstSlot := c.valSlot[inst.Dst]
+	if dstSlot == "" {
+		return fmt.Errorf("net-udp-sendto: no result slot")
+	}
+	fdReg, err := c.marshalScalar(inst, 0, "i32")
+	if err != nil {
+		return err
+	}
+	dataPtr := c.dataPtrOf(inst.Args[1])
+	if dataPtr == "" {
+		return fmt.Errorf("net-udp-sendto: cannot take data pointer of arg 1")
+	}
+	_, nReg := c.loadVal(inst.Args[2])
+	hostPtr := c.cstrOf(inst.Args[3])
+	if hostPtr == "" {
+		return fmt.Errorf("net-udp-sendto: cannot marshal host as C string")
+	}
+	_, portReg := c.loadVal(inst.Args[4])
+
+	// Build sockaddr_in exactly like emitBuiltinNetDial: 16 zeroed bytes with
+	// (darwin) sin_len@0, sin_family@0|1 = AF_INET, sin_port@2 = htons(port)
+	// and sin_addr@4 filled by inet_pton.
+	darwin := runtime.GOOS == "darwin"
+	familyOff := int64(0)
+	if darwin {
+		familyOff = 1
+	}
+	addr := c.treg("netus.addr")
+	addrp := c.treg("netus.addrp")
+	c.sb.WriteString(fmt.Sprintf("  %s = alloca [16 x i8]\n", addr))
+	c.sb.WriteString(fmt.Sprintf("  %s = getelementptr inbounds [16 x i8], [16 x i8]* %s, i64 0, i64 0\n", addrp, addr))
+	c.sb.WriteString(fmt.Sprintf("  call void @llvm.memset.p0i8.p0i8.i64(i8* %s, i8 0, i64 16, i1 false)\n", addrp))
+	if darwin {
+		lenGEP := c.treg("netus.leng")
+		c.sb.WriteString(fmt.Sprintf("  %s = getelementptr inbounds [16 x i8], [16 x i8]* %s, i64 0, i64 0\n", lenGEP, addr))
+		c.sb.WriteString(fmt.Sprintf("  store i8 16, i8* %s\n", lenGEP))
+	}
+	famGEP := c.treg("netus.famg")
+	c.sb.WriteString(fmt.Sprintf("  %s = getelementptr inbounds [16 x i8], [16 x i8]* %s, i64 0, i64 %d\n", famGEP, addr, familyOff))
+	c.sb.WriteString(fmt.Sprintf("  store i8 2, i8* %s\n", famGEP))
+	plo := c.treg("netus.plo")
+	c.sb.WriteString(fmt.Sprintf("  %s = and i64 %s, 255\n", plo, portReg))
+	plo8 := c.treg("netus.plo8")
+	c.sb.WriteString(fmt.Sprintf("  %s = shl i64 %s, 8\n", plo8, plo))
+	phi := c.treg("netus.phi")
+	c.sb.WriteString(fmt.Sprintf("  %s = lshr i64 %s, 8\n", phi, portReg))
+	phi8 := c.treg("netus.phi8")
+	c.sb.WriteString(fmt.Sprintf("  %s = and i64 %s, 255\n", phi8, phi))
+	pnet := c.treg("netus.pnet")
+	c.sb.WriteString(fmt.Sprintf("  %s = or i64 %s, %s\n", pnet, plo8, phi8))
+	pnet16 := c.treg("netus.pnet16")
+	c.sb.WriteString(fmt.Sprintf("  %s = trunc i64 %s to i16\n", pnet16, pnet))
+	portGEP := c.treg("netus.portg")
+	c.sb.WriteString(fmt.Sprintf("  %s = getelementptr inbounds [16 x i8], [16 x i8]* %s, i64 0, i64 2\n", portGEP, addr))
+	c.sb.WriteString(fmt.Sprintf("  store i16 %s, i16* %s\n", pnet16, portGEP))
+	addrGEP := c.treg("netus.addrg")
+	c.sb.WriteString(fmt.Sprintf("  %s = getelementptr inbounds [16 x i8], [16 x i8]* %s, i64 0, i64 4\n", addrGEP, addr))
+	c.decl("declare i32 @inet_pton(i32, i8*, i8*)")
+	pton := c.treg("netus.pton")
+	c.sb.WriteString(fmt.Sprintf("  %s = call i32 @inet_pton(i32 2, i8* %s, i8* %s)\n", pton, hostPtr, addrGEP))
+
+	c.decl("declare i64 @sendto(i32, i8*, i64, i32, i8*, i32)")
+	ret := c.treg("netus")
+	c.sb.WriteString(fmt.Sprintf("  %s = call i64 @sendto(i32 %s, i8* %s, i64 %s, i32 0, i8* %s, i32 16)\n",
+		ret, fdReg, dataPtr, nReg, addrp))
+	c.sb.WriteString(fmt.Sprintf("  call void @free(i8* %s)\n", hostPtr))
+	dstLT, _ := c.ptype(inst.Dst)
+	if dstLT == "" {
+		dstLT = "i64"
+	}
+	if cv := c.coerce("i64", ret, dstLT); cv != "" {
+		ret = cv
+	}
+	c.sb.WriteString(fmt.Sprintf("  store %s %s, %s* %s\n", dstLT, ret, dstLT, dstSlot))
+	return nil
+}
+
+// emitBuiltinNetUdpRecvFrom lowers `net.net-udp-recvfrom(fd, buf, n)` ->
+// read-n i64: recvfrom(2) with a scratch sockaddr the caller ignores.
+func (c *codegen) emitBuiltinNetUdpRecvFrom(inst *Inst) error {
+	if len(inst.Args) < 3 {
+		return fmt.Errorf("net-udp-recvfrom: needs (fd, buf, n)")
+	}
+	dstSlot := c.valSlot[inst.Dst]
+	if dstSlot == "" {
+		return fmt.Errorf("net-udp-recvfrom: no result slot")
+	}
+	fdReg, err := c.marshalScalar(inst, 0, "i32")
+	if err != nil {
+		return err
+	}
+	bufPtr := c.dataPtrOf(inst.Args[1])
+	if bufPtr == "" {
+		return fmt.Errorf("net-udp-recvfrom: cannot take data pointer of arg 1")
+	}
+	_, nReg := c.loadVal(inst.Args[2])
+	c.decl("declare i64 @recvfrom(i32, i8*, i64, i32, i8*, i32*)")
+	addr := c.treg("netur.addr")
+	addrp := c.treg("netur.addrp")
+	c.sb.WriteString(fmt.Sprintf("  %s = alloca [16 x i8]\n", addr))
+	c.sb.WriteString(fmt.Sprintf("  %s = getelementptr inbounds [16 x i8], [16 x i8]* %s, i64 0, i64 0\n", addrp, addr))
+	alen := c.treg("netur.alen")
+	c.sb.WriteString(fmt.Sprintf("  %s = alloca i32\n", alen))
+	c.sb.WriteString(fmt.Sprintf("  store i32 16, i32* %s\n", alen))
+	ret := c.treg("netur")
+	c.sb.WriteString(fmt.Sprintf("  %s = call i64 @recvfrom(i32 %s, i8* %s, i64 %s, i32 0, i8* %s, i32* %s)\n",
+		ret, fdReg, bufPtr, nReg, addrp, alen))
+	dstLT, _ := c.ptype(inst.Dst)
+	if dstLT == "" {
+		dstLT = "i64"
+	}
+	if cv := c.coerce("i64", ret, dstLT); cv != "" {
+		ret = cv
+	}
+	c.sb.WriteString(fmt.Sprintf("  store %s %s, %s* %s\n", dstLT, ret, dstLT, dstSlot))
+	return nil
+}
+
+// emitBuiltinNetSetRecvTimeout lowers `net.net-set-recv-timeout(fd, ms)` ->
+// ok i64: sets SO_RCVTIMEO via setsockopt(2), mirroring the legacy inliner
+// (build/llvm/call_stdlib.go net-set-recv-timeout). Returns the raw
+// setsockopt result sign-extended to i64 (0 = success, -1 = error).
+//
+// struct timeval is 16 bytes on 64-bit; the platform differs only in the
+// SOL_SOCKET / SO_RCVTIMEO constants:
+//
+//	darwin: SOL_SOCKET=0xFFFF (65535), SO_RCVTIMEO=0x1006 (4102)
+//	linux : SOL_SOCKET=1,              SO_RCVTIMEO=20
+func (c *codegen) emitBuiltinNetSetRecvTimeout(inst *Inst) error {
+	if len(inst.Args) < 2 {
+		return fmt.Errorf("net-set-recv-timeout: needs (fd, timeout-ms)")
+	}
+	dstSlot := c.valSlot[inst.Dst]
+	if dstSlot == "" {
+		return fmt.Errorf("net-set-recv-timeout: no result slot")
+	}
+	fdReg, err := c.marshalScalar(inst, 0, "i32")
+	if err != nil {
+		return err
+	}
+	_, msReg := c.loadVal(inst.Args[1])
+
+	c.decl("declare i32 @setsockopt(i32, i32, i32, i8*, i32)")
+	tv := c.treg("netto.tv")
+	tvp := c.treg("netto.tvptr")
+	c.sb.WriteString(fmt.Sprintf("  %s = alloca [16 x i8]\n", tv))
+	c.sb.WriteString(fmt.Sprintf("  %s = getelementptr inbounds [16 x i8], [16 x i8]* %s, i64 0, i64 0\n", tvp, tv))
+	c.sb.WriteString(fmt.Sprintf("  call void @llvm.memset.p0i8.p0i8.i64(i8* %s, i8 0, i64 16, i1 false)\n", tvp))
+
+	sec := c.treg("netto.sec")
+	c.sb.WriteString(fmt.Sprintf("  %s = sdiv i64 %s, 1000\n", sec, msReg))
+	rem := c.treg("netto.rem")
+	c.sb.WriteString(fmt.Sprintf("  %s = srem i64 %s, 1000\n", rem, msReg))
+	usec := c.treg("netto.usec")
+	c.sb.WriteString(fmt.Sprintf("  %s = mul i64 %s, 1000\n", usec, rem))
+
+	secg := c.treg("netto.secg")
+	c.sb.WriteString(fmt.Sprintf("  %s = getelementptr inbounds i8, i8* %s, i64 0\n", secg, tvp))
+	secc := c.treg("netto.secc")
+	c.sb.WriteString(fmt.Sprintf("  %s = bitcast i8* %s to i64*\n", secc, secg))
+	c.sb.WriteString(fmt.Sprintf("  store i64 %s, i64* %s\n", sec, secc))
+
+	usg := c.treg("netto.usg")
+	c.sb.WriteString(fmt.Sprintf("  %s = getelementptr inbounds i8, i8* %s, i64 8\n", usg, tvp))
+	usc := c.treg("netto.usc")
+	c.sb.WriteString(fmt.Sprintf("  %s = bitcast i8* %s to i64*\n", usc, usg))
+	c.sb.WriteString(fmt.Sprintf("  store i64 %s, i64* %s\n", usec, usc))
+
+	solSocket := "65535"
+	soRcvtimeo := "4102"
+	if runtime.GOOS == "linux" {
+		solSocket = "1"
+		soRcvtimeo = "20"
+	}
+	ret := c.treg("netto.ret")
+	c.sb.WriteString(fmt.Sprintf("  %s = call i32 @setsockopt(i32 %s, i32 %s, i32 %s, i8* %s, i32 16)\n",
+		ret, fdReg, solSocket, soRcvtimeo, tvp))
+	ext := c.treg("netto.ext")
+	c.sb.WriteString(fmt.Sprintf("  %s = sext i32 %s to i64\n", ext, ret))
+	dstLT, _ := c.ptype(inst.Dst)
+	if dstLT == "" {
+		dstLT = "i64"
+	}
+	if r := c.coerce("i64", ext, dstLT); r != "" {
+		ext = r
+	}
+	c.sb.WriteString(fmt.Sprintf("  store %s %s, %s* %s\n", dstLT, ext, dstLT, dstSlot))
 	return nil
 }
 

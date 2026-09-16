@@ -76,7 +76,12 @@ sweep_one() {
   elif [ "$rc3" != "0" ]; then
     if [ "$rc2" = "0" ]; then
       echo "MIR_GAP $f" >> "$WORKDIR/results.txt"
-    elif grep -q "compilation error\|Undefined symbols\|ld: \|cannot find\|error: linker\|undefined reference" "$err3" 2>/dev/null; then
+    # NOTE: must be `grep -E` with plain `|`. BSD grep's BRE does NOT treat
+    # `\|` as alternation (it matches a literal '|'), so the original
+    # `grep -q "compilation error\|Undefined symbols\|..."` NEVER matched and
+    # every both-fail test was misreported as CRASH (CERR was silently always
+    # 0). Use -E (extended regex) where `|` really is alternation.
+    elif grep -Eq "compilation error|Undefined symbols|ld: |cannot find|error: linker|undefined reference" "$err3" 2>/dev/null; then
       echo "CERR $f" >> "$WORKDIR/results.txt"
     else
       echo "CRASH $f" >> "$WORKDIR/results.txt"
@@ -117,3 +122,15 @@ grep "^HANG " "$WORKDIR/results.txt" 2>/dev/null | sed 's/^HANG //' | sort
 echo ""
 echo "=== HANG_LEGACY ==="
 grep "^HANG_LEGACY" "$WORKDIR/results.txt" 2>/dev/null | sed 's/^HANG_LEGACY //' | sort
+
+# The both-fail buckets are the actionable backlog: they are pre-existing
+# failures that BOTH backends hit, so they need root-cause triage (stale test
+# vs. std/frontend bug vs. real MIR gap) before they can be counted as MIR
+# work. Printing only the counts forces a second 40-minute sweep just to learn
+# WHICH files they are — so always dump the names too.
+echo ""
+echo "=== CERR (both fail, compile/link) ==="
+grep "^CERR " "$WORKDIR/results.txt" 2>/dev/null | sed 's/^CERR //' | sort
+echo ""
+echo "=== CRASH (both fail, runtime signal) ==="
+grep "^CRASH " "$WORKDIR/results.txt" 2>/dev/null | sed 's/^CRASH //' | sort

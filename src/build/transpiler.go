@@ -2784,7 +2784,18 @@ for _, stmt := range program.Statements {
 		// if any construct is outside the v1 subset the codegen returns an error and
 		// we fall back to the legacy HIR path (strangler-fig: MIR can never break
 		// the build while it matures).
+		//
+		// DEFAULT IS MIR=3 (MIR-only, no fallback). The strangler-fig default was
+		// flipped once the full-corpus gate was clean: over tests/ (421 files),
+		// test/ (40) and example/ (11) the measured MIR_GAP was 0 and DIVERGE 1
+		// (a test that prints a heap address, i.e. non-deterministic in ANY
+		// backend). With no case where legacy succeeds and MIR fails, keeping
+		// legacy as the default only hid MIR's remaining gaps. `NOLANG_MIR=0`
+		// still selects the legacy HIR path for anything that needs it.
 		mirMode := os.Getenv("NOLANG_MIR")
+		if mirMode == "" {
+			mirMode = "3"
+		}
 		if mirMode == "1" || mirMode == "2" || mirMode == "3" {
 			if mirMode == "1" {
 				// Verification / dump mode: run MIR lowering + analysis, dump the
@@ -2965,11 +2976,15 @@ func (t *Transpiler) emitMIR(hirPkg *hir.Package, allowFallback bool) (out strin
 	// IR. Shipping silently-wrong output is worse than using the legacy backend,
 	// so these fatal lower diagnostics (kind "interp") trigger a fallback when
 	// allowed, and a hard error under NOLANG_MIR=3 (Stage-3 coverage gate).
-	if hasFatalLowerDiag(diags) {
+	if d, ok := firstFatalLowerDiag(diags); ok {
 		if allowFallback {
 			return t.llvmGenerator.GenerateHIR(hirPkg), ""
 		}
-		return "", "unsupported construct (string interpolation) in MIR backend"
+		// Surface the concrete lowering diagnostic (field name / type / shape),
+		// not just the generic bucket. A bare "unsupported construct" forces a
+		// re-run with debugger every single time — the diag already carries the
+		// answer, so print it.
+		return "", "unsupported construct in MIR backend: " + d.Kind + ": " + d.Msg
 	}
 	if os.Getenv("NOLANG_MIR_DUMP_MIR") != "" {
 		fmt.Fprintf(os.Stderr, "[MIR-DUMP]\n%s\n", mod.DumpAnnotated())
@@ -3023,17 +3038,23 @@ func (t *Transpiler) emitMIR(hirPkg *hir.Package, allowFallback bool) (out strin
 
 // hasFatalLowerDiag reports whether any lowering diagnostic represents a
 // construct the v1 MIR backend cannot emit correctly (producing wrong-but-exit-0
-// output). Such constructs must fall back to legacy even though the IR passes
-// opt/llc. Currently only string interpolation (kind "interp") qualifies;
-// benign lower gaps (ident/dot) are intentionally NOT fatal — they emit a
-// best-effort form that works for the v1 subset.
+// output). See firstFatalLowerDiag for what qualifies.
 func hasFatalLowerDiag(diags []mir.LowerDiag) bool {
+	_, ok := firstFatalLowerDiag(diags)
+	return ok
+}
+
+// firstFatalLowerDiag returns the first diagnostic that represents a construct
+// the MIR backend cannot emit correctly, together with true. Benign lower gaps
+// (kind "ident"/"dot") are intentionally NOT fatal — they emit a best-effort
+// form that works for the v1 subset.
+func firstFatalLowerDiag(diags []mir.LowerDiag) (mir.LowerDiag, bool) {
 	for _, d := range diags {
 		if d.Kind == "interp" {
-			return true
+			return d, true
 		}
 	}
-	return false
+	return mir.LowerDiag{}, false
 }
 
 // collectReassignedGlobals 掃描語句，找出 Type==nil 的 LetStatement（賦值），
@@ -4001,6 +4022,9 @@ func triggerToStrForFormatSpec(formatArg parser.Expression,
 	}
 }
 
+// fmtArgRecvTypes returns the candidate receiver types of a print argument.
+// A fixed array [N]T yields both [N]T and its slice view []T (slicing an array
+// produces a slice, and the backends may resolve to-str through either form).
 // isContainerTypeNolang reports whether a Nolang type string (from varTypes)
 // represents a container type that has a .to-str() method.
 func isContainerTypeNolang(typeStr string) bool {
@@ -4929,27 +4953,49 @@ func collectVarTypesFromBody(body *parser.BlockStatement, varTypes map[string]st
 	if body == nil {
 		return
 	}
+	// declared tracks the names bound WITHIN this body (as opposed to names
+	// inherited from an enclosing/global scope), so the "uninferable value"
+	// branch below can tell a REASSIGNMENT of a local apart from a fresh
+	// binding that merely shadows a global of the same name.
+	declared := make(map[string]bool)
+	collectVarTypesFromBodyIn(body, varTypes, declared)
+}
+
+func collectVarTypesFromBodyIn(body *parser.BlockStatement, varTypes map[string]string, declared map[string]bool) {
+	if body == nil {
+		return
+	}
 	for _, stmt := range body.Statements {
 		if ls, ok := stmt.(*parser.LetStatement); ok {
 			if ls.Type != nil {
 				varTypes[ls.Name.Value] = ls.Type.String()
+				declared[ls.Name.Value] = true
 			} else if ls.Value != nil {
 				if t := inferTypeFromExpr(ls.Value); t != "" {
 					varTypes[ls.Name.Value] = t
-				} else {
+					declared[ls.Name.Value] = true
+				} else if !declared[ls.Name.Value] {
 					// Can't infer type (e.g., method call result) — delete any
 					// stale entry inherited from another scope (e.g., a global
 					// variable with the same name) to prevent wrong method resolution.
+					//
+					// A name already bound EARLIER IN THIS BODY is a reassignment
+					// (`b [3]i64 = [10,20,30]` ... `b = b.clone()`), not a stale
+					// global: deleting it here dropped the declared type, so
+					// resolveMethodCall could not type the receiver `b` and
+					// never monomorphized `[n]t.clone` — the call stayed an
+					// unresolved `@b.clone` in BOTH backends. Keep the declared
+					// type; the reassignment cannot change it.
 					delete(varTypes, ls.Name.Value)
 				}
 			}
 		}
 		if bs, ok := stmt.(*parser.BlockStatement); ok {
-			collectVarTypesFromBody(bs, varTypes)
+			collectVarTypesFromBodyIn(bs, varTypes, declared)
 		}
 		if fs, ok := stmt.(*parser.ForStatement); ok {
 			if fs.Body != nil {
-				collectVarTypesFromBody(fs.Body, varTypes)
+				collectVarTypesFromBodyIn(fs.Body, varTypes, declared)
 			}
 		}
 		// ExpressionStatement may wrap an IfExpression (e.g. `cond -> { body }`

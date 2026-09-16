@@ -10,6 +10,28 @@ import (
 	"github.com/lizongying/nolang/parser"
 )
 
+// irHasFunc reports whether the IR mentions the Nolang function fn.
+//
+// The two backends spell user function symbols differently: the legacy HIR
+// backend emits the source name verbatim (`@middle-fn`), while the MIR backend
+// sanitizes it to a plain LLVM identifier (`@middle_fn`) — LLVM's unquoted-name
+// grammar only guarantees [-a-zA-Z$._0-9], and MIR generates names from
+// arbitrary Nolang identifiers. Both spellings are valid IR and the program
+// links and runs identically either way.
+//
+// These tests exist to prove the symbol SURVIVED the transitive module merge
+// (D17), not to pin the backend's naming convention — so accept both.
+func irHasFunc(ir, fn string) bool {
+	if strings.Contains(ir, "@"+fn) {
+		return true
+	}
+	sanitized := strings.NewReplacer("-", "_", ".", "_", "$", "_").Replace(fn)
+	if sanitized == fn {
+		return false
+	}
+	return strings.Contains(ir, "@"+sanitized)
+}
+
 // TestTransitiveImportLLVM verifies that transitively imported modules
 // are correctly included in the whole-program IR.
 //
@@ -70,12 +92,12 @@ func TestTransitiveImportLLVM(t *testing.T) {
 
 	// The IR must contain deep-fn — if the transitive import were broken,
 	// deep-fn would be missing, causing "use of undefined value" at link time.
-	if !strings.Contains(llvmIR, "@deep-fn") {
+	if !irHasFunc(llvmIR, "deep-fn") {
 		t.Errorf("LLVM IR does not contain @deep-fn — transitive import was dropped (D17 regression)")
 	}
 
 	// The IR must also contain middle-fn (direct import, should always work).
-	if !strings.Contains(llvmIR, "@middle-fn") {
+	if !irHasFunc(llvmIR, "middle-fn") {
 		t.Errorf("LLVM IR does not contain @middle-fn — direct import was dropped")
 	}
 }
@@ -216,8 +238,8 @@ func TestTransitiveImportThreeLevels(t *testing.T) {
 	}
 
 	// All three levels must be present.
-	for _, fn := range []string{"@level1-fn", "@level2-fn", "@level3-fn"} {
-		if !strings.Contains(llvmIR, fn) {
+	for _, fn := range []string{"level1-fn", "level2-fn", "level3-fn"} {
+		if !irHasFunc(llvmIR, fn) {
 			t.Errorf("LLVM IR does not contain %s — transitive import chain broken (D17 regression)", fn)
 		}
 	}
@@ -280,15 +302,15 @@ func TestTransitiveImportDiamond(t *testing.T) {
 		t.Fatalf("compile error: %v", err)
 	}
 
-	for _, fn := range []string{"@left-fn", "@right-fn", "@shared-fn"} {
-		if !strings.Contains(llvmIR, fn) {
+	for _, fn := range []string{"left-fn", "right-fn", "shared-fn"} {
+		if !irHasFunc(llvmIR, fn) {
 			t.Errorf("LLVM IR does not contain %s — diamond import broken (D17 regression)", fn)
 		}
 	}
 
 	// shared-fn should appear exactly once as a definition (define),
 	// not duplicated.
-	defineCount := strings.Count(llvmIR, "@shared-fn")
+	defineCount := strings.Count(llvmIR, "@shared-fn") + strings.Count(llvmIR, "@shared_fn")
 	// In LLVM IR, @shared-fn appears in both the definition and call sites.
 	// We just verify it's present (dedup is handled at the module-loading level).
 	if defineCount == 0 {
@@ -350,8 +372,8 @@ func TestTransitiveImportEntryUsesDeepFn(t *testing.T) {
 	}
 
 	// Both a-fn and c-fn must be in the IR.
-	for _, fn := range []string{"@a-fn", "@c-fn"} {
-		if !strings.Contains(llvmIR, fn) {
+	for _, fn := range []string{"a-fn", "c-fn"} {
+		if !irHasFunc(llvmIR, fn) {
 			t.Errorf("LLVM IR does not contain %s — transitive import not visible to entry file (bug08)", fn)
 		}
 	}
