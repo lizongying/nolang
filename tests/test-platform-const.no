@@ -1,0 +1,38 @@
+; Platform-variant constants in a SCRIPT (no explicit `fn main`): the variant
+; matching the host must win, and only that variant may contribute a value.
+;
+; Regression for the MIR script path. `nodeMatchesPlatform` (src/mir/platform.go)
+; was consulted by the top-level registration loop but NOT by
+; synthesizeMainForTopLevel (src/mir/hir2mir.go), so a platform-filtered variant
+; was still inlined as a script local and its wrong-platform value overwrote the
+; global that the matching variant had registered. On arm64 macOS this printed
+; 200 (the `...-amd64` value) while the legacy backend printed 100; a lone
+; `#{mac-amd64}` variant compiled and printed its value instead of being
+; excluded. Both now agree.
+;
+; Every variant holds a DISTINCT value, so on whichever host this runs a wrong
+; pick shows up as a changed stdout hash in the frozen golden baseline
+; (scripts/mir_golden.sh + tests/golden/mir-baseline.tsv), which is now the
+; regression oracle for this file. The std sources could not catch the original
+; bug: std/fs.no's mac-amd64 and mac-arm64 constants happen to hold equal values
+; (O-CREAT 512/512, O-TRUNC 1024/1024), which made the wrong pick invisible.
+
+#{mac-arm64}
+PV = 100
+
+#{mac-amd64}
+PV = 200
+
+#{linux-arm64}
+PV = 300
+
+#{linux-amd64}
+PV = 400
+
+#{win-arm64}
+PV = 500
+
+#{win-amd64}
+PV = 600
+
+print(PV)

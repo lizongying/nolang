@@ -22,7 +22,6 @@ import (
 	"testing"
 
 	nolang "github.com/lizongying/nolang"
-	"github.com/lizongying/nolang/build/llvm"
 	"github.com/lizongying/nolang/checker"
 	"github.com/lizongying/nolang/hir"
 	"github.com/lizongying/nolang/lexer"
@@ -497,13 +496,18 @@ func TestAnnotationsSurviveLowering(t *testing.T) {
 }
 
 // TestPlatformFilteringMatchesAST is the payoff of the previous test: it runs
-// the real AST-based platform filter and an HIR-based reimplementation of the
-// same rule over every target triple, and requires them to keep or drop
-// exactly the same statements.
+// the AST-side platform rule and an HIR-side reimplementation of the same rule
+// over every target triple, and requires them to keep or drop exactly the same
+// statements.
 //
 // This is the check that would have caught the dropped side table as a
 // user-visible bug rather than as missing metadata: without annotations in
 // HIR, every #{win-amd64} wrapper in std/fs.no survives into a macOS build.
+//
+// Both sides are now derived from their own source of truth (the parser's
+// Sem.PlatformKeysOf versus the HIR annotation table). Until §13.3.13 the AST
+// side delegated to build/llvm.FilterByPlatform, which made this partly a test
+// of the legacy backend; that package is gone.
 func TestPlatformFilteringMatchesAST(t *testing.T) {
 	targets := []struct{ goos, goarch string }{
 		{"darwin", "arm64"}, {"darwin", "amd64"},
@@ -512,8 +516,7 @@ func TestPlatformFilteringMatchesAST(t *testing.T) {
 		{"wasip1", "wasm"},
 	}
 
-	// hirMatches mirrors build/llvm.matchesPlatform, reading from HIR instead
-	// of the AST side table.
+	// hirMatches is the HIR-side answer: what a backend sees after AST -> HIR.
 	hirMatches := func(pkg *hir.Package, id int32, goos, goarch string) bool {
 		keys, hasValue := pkg.AnnotationKeys(id)
 		if len(keys) == 0 {
@@ -524,6 +527,31 @@ func TestPlatformFilteringMatchesAST(t *testing.T) {
 			if hasValue[i] {
 				continue // only bare keys can be platform keys
 			}
+			m, isPlatform := pkgutil.PlatformKeys[k]
+			if !isPlatform {
+				continue
+			}
+			hasPlatform = true
+			if goos == m.GOOS && goarch == m.GOARCH {
+				return true
+			}
+		}
+		return !hasPlatform
+	}
+
+	// astMatches is the AST-side answer, taken from the parser's side table.
+	//
+	// It used to delegate to build/llvm.FilterByPlatform. That package was
+	// deleted along with the legacy backend (§13.3.13), and re-deriving the
+	// answer here is strictly better anyway: the invariant under test is that
+	// platform annotations SURVIVE AST -> HIR, which is only meaningful if the
+	// two sides are computed from different sources. Delegating to the legacy
+	// filter had also quietly turned this into a test of that backend rather
+	// than of HIR. PlatformKeysOf returns only bare platform keys, so it needs
+	// no hasValue filter of its own.
+	astMatches := func(prog *parser.Program, i int, goos, goarch string) bool {
+		hasPlatform := false
+		for _, k := range prog.Sem.PlatformKeysOf(prog.Statements[i]) {
 			m, isPlatform := pkgutil.PlatformKeys[k]
 			if !isPlatform {
 				continue
@@ -554,9 +582,11 @@ func TestPlatformFilteringMatchesAST(t *testing.T) {
 		}
 
 		for _, tgt := range targets {
-			keptAST := llvm.FilterByPlatform(prog.Sem, prog.Statements, tgt.goos, tgt.goarch)
-			var keptHIR []int
+			var keptAST, keptHIR []int
 			for i := range prog.Statements {
+				if astMatches(prog, i, tgt.goos, tgt.goarch) {
+					keptAST = append(keptAST, i)
+				}
 				if hirMatches(pkg, pkg.Top[i], tgt.goos, tgt.goarch) {
 					keptHIR = append(keptHIR, i)
 				}
@@ -566,8 +596,8 @@ func TestPlatformFilteringMatchesAST(t *testing.T) {
 					info.FullPath, tgt.goos, tgt.goarch, len(keptAST), len(keptHIR))
 				continue
 			}
-			for j, idx := range keptHIR {
-				if keptAST[j] != prog.Statements[idx] {
+			for j := range keptHIR {
+				if keptAST[j] != keptHIR[j] {
 					t.Errorf("module %s on %s/%s: kept statement #%d differs between filters",
 						info.FullPath, tgt.goos, tgt.goarch, j)
 					break

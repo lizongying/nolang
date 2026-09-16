@@ -342,6 +342,28 @@ func (l *lowerer) synthesizeMainForTopLevel(pkg *hir.Package) {
 		if n == nil {
 			continue
 		}
+		// A node carrying platform annotations (#{mac-arm64}, #{win-amd64}, ...)
+		// participates only when one of its keys matches the target. The
+		// registration loops above already apply this check to KFuncDef/KLet so
+		// the MATCHING variant is the one that lands in the name tables (see
+		// nodeMatchesPlatform). This inlining path must apply the SAME check:
+		// without it a filtered-out variant was still inlined as a script local,
+		// and its wrong-platform value overwrote the global registered by the
+		// matching variant. Measured on arm64 macOS (a script, no `fn main`):
+		//
+		//	#{mac-arm64} V = 1
+		//	#{mac-amd64} V = 2
+		//	print(V)
+		//
+		// printed 2 instead of 1, and a lone `#{mac-amd64} V = 8` compiled and
+		// printed 8 where the legacy backend correctly reports an undefined
+		// `%V`. Filtering here makes both cases agree with legacy. Note the
+		// bug was invisible in the test corpus because std's mac-amd64 and
+		// mac-arm64 constants happen to hold equal values (std/fs.no O-CREAT
+		// 512/512, O-TRUNC 1024/1024).
+		if !nodeMatchesPlatform(pkg, id) {
+			continue
+		}
 		switch n.Kind {
 		case hir.KStructDef, hir.KFuncDef, hir.KExtern, hir.KEnumDef,
 			hir.KTypeAlias, hir.KTaggedEnumDef, hir.KInterfaceDef,

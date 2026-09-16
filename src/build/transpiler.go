@@ -12,7 +12,6 @@ import (
 	"strconv"
 	"strings"
 	nolang "github.com/lizongying/nolang"
-	"github.com/lizongying/nolang/build/llvm"
 	"github.com/lizongying/nolang/builtin"
 	"github.com/lizongying/nolang/cache"
 	"github.com/lizongying/nolang/checker"
@@ -557,7 +556,6 @@ func updateCallNamesInStmt(stmt parser.Statement, overloads map[string][]*parser
 	}
 }
 type Transpiler struct {
-	llvmGenerator    *llvm.Generator
 	pkg              *Package // 當前套件（用於路徑解析）
 	sourcePath       string   // 當前編譯的源碼檔案路徑（用於 std 庫檢測）
 	allowAnonymousFn bool     // 是否允許匿名函式型別參數（來自 package.jsonc）
@@ -589,8 +587,7 @@ type Transpiler struct {
 }
 func NewTranspiler(pkg *Package) *Transpiler {
 	t := &Transpiler{
-		llvmGenerator: llvm.NewGenerator(),
-		pkg:           pkg,
+		pkg: pkg,
 	}
 	if pkg != nil {
 		t.allowAnonymousFn = pkg.Compiler.AnonymousFnType
@@ -2703,43 +2700,19 @@ for _, stmt := range program.Statements {
 		})
 		return "", nil
 	}
-	// 傳播目標平台到 LLVM generator，讓 Generate 內部的平台過濾使用目標平台
-	// 而非編譯主機平台（支援交叉編譯）。
-	t.llvmGenerator.SetTargetPlatform(t.targetGoos, t.targetGoarch)
-	t.llvmGenerator.SetNoBoundsCheck(t.noBoundsCheck)
-	// 傳遞主檔案名稱集合，讓 generator 能區分主檔案全域變數的合法重新賦值
-	// 與導入模組函數中的同名局部變數（如 bigint.cmp 中的 result 不應誤寫到 @result）
-	t.llvmGenerator.SetMainFileNames(mainVarNames)
-	// 構建全局變量和函數的模組歸屬映射，用於精確判斷跨模組全局變量賦值。
-	// globalVarOwner: 全局變量名 → 模組短名（"" = 主檔案）
-	// funcOwner: 函數名 → 模組短名（"" = 主檔案）
-	globalVarOwner := make(map[string]string)
-	funcOwner := make(map[string]string)
-	for _, stmt := range merged.Statements {
-		switch s := stmt.(type) {
-		case *parser.LetStatement:
-			if s.Name == nil {
-				continue
-			}
-			// 只記錄非函數的全局變量
-			if _, isFn := s.Value.(*parser.FunctionLiteral); isFn {
-				funcOwner[s.Name.Value] = parser.GetModuleOwner(stmt)
-			} else {
-				globalVarOwner[s.Name.Value] = parser.GetModuleOwner(stmt)
-			}
-		case *parser.FunctionDefinition:
-			funcOwner[s.Name] = parser.GetModuleOwner(stmt)
-		}
-	}
-	t.llvmGenerator.SetGlobalVarOwners(globalVarOwner, funcOwner)
-	// HIR is the default codegen path. The checked AST is lowered to HIR and the
-	// generator consumes the HIR package (restoring inferred types from the
-	// side-table). The legacy surface-AST codegen is retained only as an escape
-	// hatch selected with NOLANG_HIR=0 (for bisecting regressions).
+	// The checked AST is lowered to HIR; the MIR backend consumes the HIR package
+	// (restoring inferred types from the side-table). This is the ONLY codegen
+	// path. The legacy surface-AST generator (selected with NOLANG_HIR=0) and the
+	// legacy HIR-based generator both lived in src/build/llvm/ and were removed
+	// once the full-corpus gate was clean (docs/MIR_DESIGN.md §13.3.13).
+	//
+	// targetGoos/targetGoarch are still honoured, but in the merge pass above
+	// (checker.MatchesTargetPlatform at the std-module import sites), so IMPORTED
+	// platform variants follow `-target`. A MAIN-file variant is left to the
+	// backend, which filters those by HOST platform (src/mir/platform.go) — see
+	// the cross-compilation caveat in §15.
 	var ir string
-	if os.Getenv("NOLANG_HIR") == "0" {
-		ir = t.llvmGenerator.Generate(merged)
-	} else {
+	{
 		if os.Getenv("NOLANG_DEBUG_SELF") != "" {
 			f, _ := os.Create("/tmp/merged_dump.txt")
 			for i, st := range merged.Statements {
@@ -2777,73 +2750,48 @@ for _, stmt := range program.Statements {
 				}
 			}
 		}
-		// MIR pipeline. NOLANG_MIR=1: verification mode — run HIR->MIR lowering +
-		// memory analysis, dump the module + report to a temp file, then fall back
-		// to the proven HIR codegen (no behavioral change). NOLANG_MIR=2: actually
-		// emit LLVM IR from the MIR (MIR->LLVM direct emission, item 2) and run it;
-		// if any construct is outside the v1 subset the codegen returns an error and
-		// we fall back to the legacy HIR path (strangler-fig: MIR can never break
-		// the build while it matures).
+		// MIR is the only codegen path. The strangler-fig machinery that used to
+		// live here is gone (docs/MIR_DESIGN.md §13.3.13): there is no NOLANG_MIR=2
+		// fallback to a legacy HIR generator, no NOLANG_MIR=0 legacy backend, and
+		// no NOLANG_HIR=0 surface-AST generator left to degrade to. A construct the
+		// MIR backend cannot handle now fails the build loudly instead of silently
+		// producing output from a second implementation.
 		//
-		// DEFAULT IS MIR=3 (MIR-only, no fallback). The strangler-fig default was
-		// flipped once the full-corpus gate was clean: over tests/ (421 files),
-		// test/ (40) and example/ (11) the measured MIR_GAP was 0 and DIVERGE 1
-		// (a test that prints a heap address, i.e. non-deterministic in ANY
-		// backend). With no case where legacy succeeds and MIR fails, keeping
-		// legacy as the default only hid MIR's remaining gaps. `NOLANG_MIR=0`
-		// still selects the legacy HIR path for anything that needs it.
+		// NOLANG_MIR=1 is retained as a pure DIAGNOSTIC: it dumps the lowered
+		// module + memory report to a temp file and then emits MIR exactly as
+		// normal. (It used to dump and then hand back to legacy, which no longer
+		// exists.) 0 and 2 are rejected rather than silently ignored so an old
+		// invocation cannot be mistaken for a working legacy run.
 		mirMode := os.Getenv("NOLANG_MIR")
-		if mirMode == "" {
-			mirMode = "3"
+		if mirMode == "0" || mirMode == "2" {
+			return "", fmt.Errorf("NOLANG_MIR=%s: the legacy codegen backend was removed and MIR is the only backend; unset NOLANG_MIR (or use NOLANG_MIR=1 for the lowering dump)", mirMode)
 		}
-		if mirMode == "1" || mirMode == "2" || mirMode == "3" {
-			if mirMode == "1" {
-				// Verification / dump mode: run MIR lowering + analysis, dump the
-				// module + report to a temp file, then ALWAYS fall back to the
-				// proven HIR codegen (no behavioral change). Wrapped in recover so
-				// an unexpected lowering panic can never crash the build.
-				func() {
-					defer func() { recover() }()
-					mod, rep, ldiags := mir.LowerHIR(hirPkg, checker.CollectStdEnumVariants())
-					if mod != nil {
-						if f, err := os.CreateTemp("", "nolang-mir-*.txt"); err == nil {
-							fmt.Fprintf(f, "=== NOLANG_MIR verification for %s ===\n", t.sourcePath)
-							fmt.Fprintf(f, "--- lowered MIR ---\n%s\n", mod.String())
-							fmt.Fprintf(f, "--- memory analysis ---\n")
-							fmt.Fprintf(f, "drops inserted: %d\n", rep.DropsInserted)
-							for _, d := range rep.Diagnostics {
-								fmt.Fprintf(f, "[mem-diag] %s: %s (func=%s)\n", d.Kind, d.Msg, d.Func)
-							}
-							for _, d := range ldiags {
-								fmt.Fprintf(f, "[lower-gap] %s/%s: %s\n", d.Func, d.Kind, d.Msg)
-							}
-							f.Close()
+		if mirMode == "1" {
+			func() {
+				defer func() { recover() }()
+				mod, rep, ldiags := mir.LowerHIR(hirPkg, checker.CollectStdEnumVariants())
+				if mod != nil {
+					if f, err := os.CreateTemp("", "nolang-mir-*.txt"); err == nil {
+						fmt.Fprintf(f, "=== NOLANG_MIR verification for %s ===\n", t.sourcePath)
+						fmt.Fprintf(f, "--- lowered MIR ---\n%s\n", mod.String())
+						fmt.Fprintf(f, "--- memory analysis ---\n")
+						fmt.Fprintf(f, "drops inserted: %d\n", rep.DropsInserted)
+						for _, d := range rep.Diagnostics {
+							fmt.Fprintf(f, "[mem-diag] %s: %s (func=%s)\n", d.Kind, d.Msg, d.Func)
 						}
+						for _, d := range ldiags {
+							fmt.Fprintf(f, "[lower-gap] %s/%s: %s\n", d.Func, d.Kind, d.Msg)
+						}
+						f.Close()
 					}
-				}()
-				ir = t.llvmGenerator.GenerateHIR(hirPkg)
-			} else {
-				// NOLANG_MIR == "2": emit from MIR directly with strangler-fig
-				// fallback to the legacy HIR path on any gap / panic / opt-verify
-				// failure. NOLANG_MIR == "3": emit from MIR directly with NO
-				// fallback (Stage 3 full-corpus gate) — any gap fails the build so
-				// coverage gaps are surfaced rather than silently hidden.
-				if mirMode == "3" {
-					mout, mreason := t.emitMIR(hirPkg, false)
-					if mout == "" {
-						return "", fmt.Errorf("NOLANG_MIR=3: MIR codegen could not handle %s (no fallback): %s", t.sourcePath, mreason)
-					}
-					ir = mout
-				} else {
-					ir, _ = t.emitMIR(hirPkg, true)
 				}
-			}
-		} else {
-			ir = t.llvmGenerator.GenerateHIR(hirPkg)
+			}()
 		}
-	}
-	if errs := t.llvmGenerator.CodegenErrors(); len(errs) > 0 {
-		return "", fmt.Errorf("codegen errors: %v", errs)
+		mout, mreason := t.emitMIR(hirPkg)
+		if mout == "" {
+			return "", fmt.Errorf("MIR codegen could not handle %s: %s", t.sourcePath, mreason)
+		}
+		ir = mout
 	}
 	return ir, nil
 }
@@ -2912,52 +2860,30 @@ func verifyMIRIRViaOpt(ll string) error {
 	return nil
 }
 
-// LastMIREmitted records whether the most recent NOLANG_MIR=2 build actually
-// emitted MIR IR (true) or fell back to the legacy HIR path (false). `no run`
-// consults it to decide whether a non-zero runtime exit should trigger a
-// legacy rebuild+rerun (strangler-fig: MIR must never produce a worse result
-// than legacy). It is a single-build signal and is only meaningful for the
-// single-file native build path; concurrent builders (e.g. `no test`) should not
-// rely on it.
-var LastMIREmitted bool
-
-// emitMIR is the NOLANG_MIR=2/3 codegen path. It lowers HIR -> MIR, analyzes
-// memory, emits LLVM IR, and pre-flights it through the optimizer. It returns
-// MIR-emitted IR only when every stage succeeds.
+// emitMIR is the codegen path. It lowers HIR -> MIR, analyzes memory, emits LLVM
+// IR, and pre-flights it through the optimizer. It returns MIR-emitted IR only
+// when every stage succeeds; on any failure it returns empty IR plus a reason and
+// the caller rejects the build.
 //
-// allowFallback (NOLANG_MIR=2) enables the strangler-fig guarantee: on ANY
-// failure — an unsupported construct, an optimizer verification error, or an
-// unexpected panic anywhere in the MIR pipeline — it degrades to the proven
-// legacy HIR codegen. MIR can never break the build while it matures; it only
-// ever silently falls back. The deferred recover() catches panics that neither
-// EmitLLVM's own recovery nor opt verification would (e.g. a nil dereference
-// during HIR->MIR lowering).
+// There is deliberately NO fallback to a second backend. Until §13.3.13 this
+// function took an `allowFallback` flag that, under NOLANG_MIR=2, degraded to the
+// legacy HIR generator on ANY failure (unsupported construct, optimizer
+// verification error, or panic). That made MIR unbreakable but also invisible: a
+// gap silently produced legacy output, so nothing failed and nothing was
+// reported. Failing loudly is the point — see §13.3.13 for the deletion.
 //
-// allowFallback=false (NOLANG_MIR=3) disables the fallback: on any failure the
-// build fails instead (returns empty IR for the caller to reject). This is the
-// Stage 3 full-corpus gate used to surface and quantify MIR coverage gaps.
-func (t *Transpiler) emitMIR(hirPkg *hir.Package, allowFallback bool) (out string, reason string) {
+// The deferred recover() is retained (panics during lowering are still bugs, not
+// user errors) but now always propagates: it catches panics that neither
+// EmitLLVM's own recovery nor opt verification would.
+func (t *Transpiler) emitMIR(hirPkg *hir.Package) (out string, reason string) {
 	debug := os.Getenv("NOLANG_MIR_DEBUG") != ""
-	// LastMIREmitted records whether the MIR path actually emitted IR for the most
-	// recent NOLANG_MIR=2 build (vs. fell back to legacy). `no run` reads it after
-	// a build to decide whether a non-zero runtime exit warrants a legacy
-	// rebuild+rerun (strangler-fig: MIR must never produce a worse result than
-	// legacy). Unused in NOLANG_MIR=3 mode.
-	LastMIREmitted = false
 	defer func() {
 		if r := recover(); r != nil {
 			if debug {
 				fmt.Fprintf(os.Stderr, "[MIR] recovered panic: %v\n", r)
 			}
-			if allowFallback {
-				// On a panic, no explicit return ran, so `out` is still its zero
-				// value. Override it with the proven legacy IR so the build never
-				// breaks (strangler-fig).
-				out = t.llvmGenerator.GenerateHIR(hirPkg)
-			} else {
-				out = ""  // propagate empty; caller rejects the build
-				reason = fmt.Sprintf("panic: %v", r)
-			}
+			out = "" // propagate empty; caller rejects the build
+			reason = fmt.Sprintf("panic: %v", r)
 		}
 	}()
 	mod, rep, diags := mir.LowerHIR(hirPkg, checker.CollectStdEnumVariants())
@@ -2965,21 +2891,13 @@ func (t *Transpiler) emitMIR(hirPkg *hir.Package, allowFallback bool) (out strin
 		fmt.Fprintf(os.Stderr, "[HIR-DUMP]\n%s\n", hirPkg.Dump())
 	}
 	if mod == nil {
-		if allowFallback {
-			return t.llvmGenerator.GenerateHIR(hirPkg), ""
-		}
 		return "", "lowering produced nil module"
 	}
-	// Lowering gaps that produce WRONG-but-exit-0 output (e.g. string
-	// interpolation `'x={expr}'`, which the v1 MIR backend cannot lower and would
-	// emit unsubstituted) must fall back to legacy even though opt/llc accept the
-	// IR. Shipping silently-wrong output is worse than using the legacy backend,
-	// so these fatal lower diagnostics (kind "interp") trigger a fallback when
-	// allowed, and a hard error under NOLANG_MIR=3 (Stage-3 coverage gate).
+	// Lowering gaps that would produce WRONG-but-exit-0 output (a shape the v1 MIR
+	// backend cannot lower and would emit unsubstituted) are hard errors.
+	// Shipping silently-wrong output is the one outcome worse than refusing to
+	// compile, so these fatal lower diagnostics (kind "interp") stop the build.
 	if d, ok := firstFatalLowerDiag(diags); ok {
-		if allowFallback {
-			return t.llvmGenerator.GenerateHIR(hirPkg), ""
-		}
 		// Surface the concrete lowering diagnostic (field name / type / shape),
 		// not just the generic bucket. A bare "unsupported construct" forces a
 		// re-run with debugger every single time — the diag already carries the
@@ -2989,19 +2907,16 @@ func (t *Transpiler) emitMIR(hirPkg *hir.Package, allowFallback bool) (out strin
 	if os.Getenv("NOLANG_MIR_DUMP_MIR") != "" {
 		fmt.Fprintf(os.Stderr, "[MIR-DUMP]\n%s\n", mod.DumpAnnotated())
 	}
-	// Strangler-fig memory-safety gate: only emit MIR when the analysis is CLEAN.
-	// If the analyzer found any unsafe construct (use-after-move, missing/duplicate
-	// drop, borrow-escape, unsupported), the MIR codegen would produce IR with a
-	// double-free / UAF / leak — exactly the "lots of memory problems" class. Those
-	// always surface as rep.Diagnostics, so a non-empty report means "MIR cannot
-	// guarantee safety here" and we degrade to the proven legacy HIR path rather
-	// than emit a binary that aborts at runtime.
+	// Memory-safety gate: only emit when the analysis is CLEAN. If the analyzer
+	// found any unsafe construct (use-after-move, missing/duplicate drop,
+	// borrow-escape, unsupported) the codegen would produce IR with a
+	// double-free / UAF / leak — exactly the "lots of memory problems" class.
+	// Those always surface as rep.Diagnostics, so a non-empty report means "MIR
+	// cannot guarantee safety here" and the build is refused rather than emitting
+	// a binary that aborts at runtime.
 	if rep != nil && rep.HasErrors() {
 		if debug {
 			fmt.Fprintf(os.Stderr, "[MIR] memory analysis found unsafe constructs: %v\n", rep.Error())
-		}
-		if allowFallback {
-			return t.llvmGenerator.GenerateHIR(hirPkg), ""
 		}
 		return "", rep.Error()
 	}
@@ -3009,9 +2924,6 @@ func (t *Transpiler) emitMIR(hirPkg *hir.Package, allowFallback bool) (out strin
 	if err != nil {
 		if debug {
 			fmt.Fprintf(os.Stderr, "[MIR] EmitLLVM failed: %v\n", err)
-		}
-		if allowFallback {
-			return t.llvmGenerator.GenerateHIR(hirPkg), ""
 		}
 		return "", fmt.Sprintf("EmitLLVM: %v", err)
 	}
@@ -3025,23 +2937,9 @@ func (t *Transpiler) emitMIR(hirPkg *hir.Package, allowFallback bool) (out strin
 		if debug {
 			fmt.Fprintf(os.Stderr, "[MIR] opt verification failed: %v\n", verr)
 		}
-		if allowFallback {
-			return t.llvmGenerator.GenerateHIR(hirPkg), ""
-		}
 		return "", fmt.Sprintf("opt-verify: %v", verr)
 	}
-	if allowFallback {
-		LastMIREmitted = true
-	}
 	return ll, ""
-}
-
-// hasFatalLowerDiag reports whether any lowering diagnostic represents a
-// construct the v1 MIR backend cannot emit correctly (producing wrong-but-exit-0
-// output). See firstFatalLowerDiag for what qualifies.
-func hasFatalLowerDiag(diags []mir.LowerDiag) bool {
-	_, ok := firstFatalLowerDiag(diags)
-	return ok
 }
 
 // firstFatalLowerDiag returns the first diagnostic that represents a construct

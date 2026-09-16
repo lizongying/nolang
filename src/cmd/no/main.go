@@ -1762,62 +1762,35 @@ func runCommand(args []string) {
 		CompilerVersion: version,
 		LDFlags:         ldFlags,
 	}
-	// Strangler-fig safety net for `no run` (build + run, wrapped together):
-	// if the MIR backend emitted this binary and EITHER the build OR the
-	// execution exited non-zero, transparently rebuild with the proven legacy
-	// HIR path and re-run, so the user never observes a worse result than
-	// legacy. This must cover BOTH stages because a MIR-emitted IR can pass the
-	// opt/llc pre-flight yet still fail at the *link* step (undefined symbol,
-	// e.g. a vec/option method the v1 codegen referenced but did not emit) — the
-	// compile-time pre-flight does not run the linker, so only the wrapped retry
-	// catches it. It also covers a latent runtime double-free/UAF the v1 MIR
-	// memory analysis missed. This is what makes NOLANG_MIR=2 safe to leave on.
-	var buildErr, runErr error
-	runBuiltBinary := func() error {
-		cmd := exec.Command(outPath, fs.Args()[1:]...)
-		cmd.Stdin = os.Stdin
-		cmd.Stdout = os.Stdout
-		cmd.Stderr = os.Stderr
-		return cmd.Run()
+	// Build + run. There is no transparent retry: MIR is the only backend, so a
+	// build error or a non-zero runtime exit is reported as-is.
+	//
+	// Until §13.3.13 this wrapped both stages in a strangler-fig retry: if the MIR
+	// backend had emitted the binary and EITHER stage failed, it rebuilt with the
+	// legacy HIR path and re-ran, so the user never saw a worse result than legacy.
+	// That covered a link error (a MIR-emitted module can pass the opt/llc
+	// pre-flight yet reference a symbol the codegen did not emit — the pre-flight
+	// never runs the linker) and a latent runtime double-free/UAF the memory
+	// analysis missed. It also meant a MIR miscompile was silently replaced by
+	// another backend's output. Note the retry was only reachable under
+	// NOLANG_MIR=2 (it was gated on LastMIREmitted, which the MIR-only path never
+	// set), so removing it does not change the default path's behaviour.
+	if buildErr := nbuild.BuildFile(inputPath, opts); buildErr != nil {
+		fmt.Fprintf(os.Stderr, "Error: %v\n", buildErr)
+		os.Exit(1)
 	}
-	if buildErr = nbuild.BuildFile(inputPath, opts); buildErr != nil {
-		if !nbuild.LastMIREmitted {
-			fmt.Fprintf(os.Stderr, "Error: %v\n", buildErr)
-			os.Exit(1)
-		}
-		// MIR emitted but the build pipeline rejected it (e.g. link error) →
-		// fall through to the legacy retry below.
-	} else if runtime.GOOS != "wasip1" {
+	if runtime.GOOS == "wasip1" {
 		// WASM 下無法執行編譯產物（瀏覽器沙箱不支援 spawn 子行程）。
-		if runErr = runBuiltBinary(); runErr != nil {
-			if !nbuild.LastMIREmitted {
-				fmt.Fprintf(os.Stderr, "Error: %v\n", runErr)
-				os.Exit(1)
-			}
-			// MIR emitted but the binary aborted at runtime → fall through.
-		}
-	} else {
 		fmt.Fprintln(os.Stderr, "Error: running compiled binary not supported in browser playground")
 		os.Exit(1)
 	}
-	if nbuild.LastMIREmitted && (buildErr != nil || runErr != nil) {
-		if verbose {
-			fmt.Fprintln(os.Stderr, "[MIR] build/run failed under MIR backend; retrying with legacy HIR path")
-		}
-		prevMIR := os.Getenv("NOLANG_MIR")
-		os.Setenv("NOLANG_MIR", "0")
-		defer os.Setenv("NOLANG_MIR", prevMIR)
-		if berr := nbuild.BuildFile(inputPath, opts); berr != nil {
-			fmt.Fprintf(os.Stderr, "Error: %v\n", berr)
-			os.Exit(1)
-		}
-		if runtime.GOOS != "wasip1" {
-			if rerr := runBuiltBinary(); rerr != nil {
-				fmt.Fprintf(os.Stderr, "Error: %v\n", rerr)
-				os.Exit(1)
-			}
-		}
-		return
+	runCmd := exec.Command(outPath, fs.Args()[1:]...)
+	runCmd.Stdin = os.Stdin
+	runCmd.Stdout = os.Stdout
+	runCmd.Stderr = os.Stderr
+	if runErr := runCmd.Run(); runErr != nil {
+		fmt.Fprintf(os.Stderr, "Error: %v\n", runErr)
+		os.Exit(1)
 	}
 }
 

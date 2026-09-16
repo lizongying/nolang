@@ -1,8 +1,10 @@
-# Nolang MIR — 工业级中端中间表示设计（实施记录 v2.20）
+# Nolang MIR — 工业级中端中间表示设计（实施记录 v2.22）
 
-> 状态：**默认后端已切换到 MIR**（`NOLANG_MIR` 未设置 ⇒ MIR-only，见 §13.3.12 ⑤；`NOLANG_MIR=0` 仍可选 legacy）。**第三十八轮（2026-09-16）权威全量扫描：`MATCH=387/421`（≈91.9%）、`DIVERGE=1`（`mem-safety/str-concat-leak.no`，二进制地址差异假阳性）、`MIR 专属 gap=0`、`两模式都失败=29`（CERR 18 + CRASH 11）、`HANG=4`**（同一轮另对 `test/`（40 文件）与 `example/`（11 文件）做了交叉扫描：`GAP=0`/`DIVERGE=0`/`HANG=0`，全部为「两模式都失败」的既有失败）。本轮按 §15 剩余清单顺序推进，交付：**#71** MIR 从未处理 `hir.KRegexLit` —— 正则字面量 `/pattern/flags` 在 legacy 里是 **codegen 期**脱糖成 `regexp-compile()` 调用（`build/llvm/expr.go`），MIR 没有 codegen 期 AST，于是字面量根本不产生值、`re2 = /hello/gi` 从不绑定局部，后续所有使用都表现为「未解析标识符 / 未解析格式字段」（`test-regex-literal.no` 由「两模式都失败」转 MATCH）；**#72** `lowerFormatField` 的 `default:` 分支把「不是特判类型」当成「整数」，把 `%regexp_regexp` 结构体塞进 `fmt-int` 产生非法 IR，改为只有整型/bool 才走 `fmt-int`；**#73** `NOLANG_MIR` 未设置时的默认值由 legacy 改为 `3`（MIR-only）；**#74** 扫描脚本补打 CERR/CRASH 名单（此前只有计数，排查必须重扫 40 分钟）；**#75** 致命 lowering 诊断带上具体字段/类型（此前只报桶名 `unsupported construct (string interpolation)`）；**#76** `transitive_import_test.go` 的断言接受 MIR 的符号净化拼写（`@middle-fn` → `@middle_fn`）。净 **MATCH +1**、两模式都失败 30→29。**关键量化：** 对同一份语料，默认口径（MIR-only）通过 **388/421**，与旧默认（`MIR=2`：`MATCH 387 + DIVERGE 1`）的 `rc=0` 集合**完全一致** —— 即切换默认不改变任何测试的成败，只是停止用 legacy 掩盖 MIR 的缺口（`MIR_GAP=0` 的推论）。详见 §13.3.12。
+> 状态：**legacy 后端已删除，MIR 是唯一后端**（`NOLANG_MIR=0`/`=2` 现为明确报错；未设置 == `=3` == MIR-only；`=1` 保留为 lowering 转储）。**第三十九·续轮（2026-09-16）落地：移除 strangler-fig 回退 + 删除 `src/build/llvm/`（48 文件 / 50,006 行 / 2.0MB）+ 冻结双基线 oracle，详见 §13.3.13 ⑥。**
+> 第三十九轮权威全量扫描（删除前口径，`MATCH=388/422`（≈92.2%）、`DIVERGE=1`（`mem-safety/str-concat-leak.no`，二进制地址差异假阳性）、`MIR 专属 gap=0`、`两模式都失败=29`（CERR 18 + CRASH 11）、`HANG=4`）——本轮相对第三十八轮 **MATCH 387→388**（新增 `tests/test-platform-const.no`），其余分类逐项不变、零回归。同一轮另对 `test/`（40 文件）与 `example/`（11 文件）做交叉扫描：`GAP=0`/`DIVERGE=0`/`HANG=0`。本轮交付：**#77** 平台变体过滤在脚本模式下失效（`synthesizeMainForTopLevel` 漏 `nodeMatchesPlatform`，导致语料区分不出的**真** gap）；**#9/#10 范围勘定与落地**（`src/build/llvm/` 实为 5 万行不是 60KB）。第三十八轮交付 **#71** `hir.KRegexLit` 未处理、**#72** `lowerFormatField` 的 `default:` 把结构体当整数、**#73** 默认后端切 MIR-only、**#74** `transitive_import_test.go` 接受 MIR 符号净化拼写（配套：扫描脚本补打 CERR/CRASH 名单、致命诊断带具体字段）、**#77** 平台过滤脚本模式缺口、**#78** 扫描器名单输出（净 MATCH +1、两模式都失败 30→29）。
+> **关键量化：** 对同一份语料，默认口径（MIR-only）通过 **388/421**，与旧默认（`MIR=2`：`MATCH 387 + DIVERGE 1`）的 `rc=0` 集合**完全一致** —— 即切换默认不改变任何测试的成败，只是停止用 legacy 掩盖 MIR 的缺口。详见 §13.3.12。
 > 作者：编译器工作流
-> 关联：`src/hir`（HIR）、`src/build/llvm`（LLVM 后端）、`src/parser/tohir.go`（AST→HIR）、`src/mir`（本层）
+> 关联：`src/hir`（HIR）、`src/parser/tohir.go`（AST→HIR）、`src/mir`（本层）。~~`src/build/llvm`（legacy LLVM 后端）~~ 已于第三十九·续轮删除（§13.3.13 ⑥）
 
 ---
 
@@ -16,7 +18,7 @@ v1（本文档前身）是一份**前向设计**：描述了 `NOLANG_MIR=1` 审�
 - 当前已知的 gap 家族：**第三十一轮（2026-09-15）权威全量扫描：`MATCH=367`、`DIVERGE=0`、`MIR 专属 gap=0`、`两模式都失败=53`、`HANG=1`（`test-for2.no`，两模式都挂死）**（全量递归 `tests/**/*.no`=421，本轮 421 全部纳入统计；口径见下）。**第三十轮同口径为 MATCH=367/DIVERGE=0/gap=1/失败=52/HANG=1**，第二十九轮 364/1/2/53/1，第二十八轮 352/0/0/68/1。**第三十→三十一轮的配方变化（gap 1→0、CRASH 13→14）全部来自抖动，不是修复**：`test-diff-debug.no` 的 legacy 基线 6 次里失败 1 次（健康 5/6 时被标 MIR_GAP，抖动时落 CRASH）；`test-quant-all1.no` 两模式都打印未初始化栈指针（第三十轮标 DIVERGE、第三十一轮标 MATCH，其 legacy 自身输出不自洽）。**抖动校正后的真实态：MIR 专属 gap = 1（`test-diff-debug.no`）、DIVERGE = 0**。① 唯一真实 gap `test-diff-debug.no`：MIR=3 恒错（DP 表恒为全 0，6/6），legacy DP 表恒正确（6/6，`1 1 1 0`）——`a[ai].compare(b[aj])` 对相等元素（`'c'`vs`'c'`、`'a'`vs`'a'`）在 MIR=3 返回非 0；但其 legacy 基线自身也有 1/6 崩溃率（同一处 `ops` 构建循环），故按 §13.3.7 口径时通时不通，属"两模式共有的深层缺陷 + MIR 侧确定性放大的表征"；② 第三十轮的 2 个 gap（`mem-safety/bug15-read-dowhile-copyfile.no`、`test-process-run.no`）仍**闭环**（#55–#59）；③ 第三十轮回退的 `emitFunc` 改动（#62）未再回归；④ **本轮 #63 修的是"文档 gap 数以外"的一类**：它只在"显式写出具名出参实参 + 末入参是切片"的组合下触发，语料中原本没有该形状的测试，故不出现在任何轮次的 gap 数里（新发现路径见 §13.3.10）。详见 **§13.3.7 / §13.3.9 / §13.3.10**；
 - 覆盖扫描方法论（`scripts/mir_cov.py` / `mir_sweep.py`；⚠️ 两者用**陈旧的仓库根 `no`**，权威扫描应改用 `./bin/no` 并覆盖 `tests/**/*.no`）。
 
-> ⚠️ 实施约束：任何 MIR 失败在 `NOLANG_MIR=2` 下**必须安全回退**到现有 HIR 路径（strangler-fig），绝不阻断构建；`NOLANG_MIR=3` 关闭回退以暴露覆盖缺口。
+> ⚠️ 历史实施约束（**已随 legacy 删除失效，仅作追溯**）：MIR 成熟期曾要求任何 MIR 失败在 `NOLANG_MIR=2` 下**必须安全回退**到 legacy HIR 路径（strangler-fig），`NOLANG_MIR=3` 关闭回退以暴露覆盖缺口。第三十九·续轮删除 legacy 后，`=0`/`=2` 均为明确报错，回退机制不存在；回归保护改由冻结基线承担（§13.3.13 ④⑥）。
 
 ---
 
@@ -354,6 +356,23 @@ unsupported kind ⇒ 记录 diagnostic 并安全终止该函数 lower（验证�
     - **复核**：**不是功能回归**。手工搭同一模块图，默认口径与 `NOLANG_MIR=0` 都正确输出 `142`；转储 IR 可见 MIR 产出的是 `@middle_fn`/`@deep_fn`（净化过的拼写），legacy 是 `@middle-fn`。LLVM 无引号标识符只保证 `[-a-zA-Z$._0-9]`，而 MIR 要从任意 Nolang 标识符生成名字，故做净化。两者都是合法 IR，链接与运行一致。
     - **修法**：新增 `irHasFunc(ir, fn)` 辅助函数，同时接受原拼写与净化拼写；`@shared-fn` 的计数同理加 `@shared_fn`。**这些测试的意图是"符号没被模块合并丢掉"（D17），不该被拿来钉死命名风格。**
     - **核对**：与基线 worktree（`/tmp/no-base`，HEAD `af2e494`）对比，`build` 包失败集在 `NOLANG_MIR=0`/`2`/`3` 下完全一致（`TestSliceMethodLenCall{,OnI64,OnStr}`、`TestProgramUsesPrintDetectsLoopAndBlockBodies`、`TestGenerateHIRMatchesGenerate`、`TestUserReadOverridesBuiltin`）——均为既有失败。
+
+77. **【目录 #77】平台变体过滤在脚本模式下失效（2026-09-16 第三十九轮，legacy 对 / MIR 错）**：
+    - **现象**（arm64 macOS，脚本无显式 `main`）：`#{mac-amd64} V = 8` 单独 → MIR **打印 8**（legacy 正确报 opt 错 `%V` undefined）；`#{linux-amd64} V = 9` → MIR **9**；`#{mac-arm64} V=1` + `#{mac-amd64} V=2` → legacy `1` / MIR **`2`**；六平台变体各持不同值 → legacy `100` / MIR **`600`**。非宿主的 `...-amd64` 变体总胜出。带显式 `main` 的真实程序**正确**（`11`/`11`），故缺口限定在脚本模式。已排除 Rosetta（`file bin/no` / `uname -m` / `go env GOARCH` 均为 arm64）。
+    - **根因**：`nodeMatchesPlatform`（`src/mir/platform.go`）只在顶层**注册循环**（`hir2mir.go` 的 `KFuncDef`/`KLet` 各一处）被调用，而脚本路径 `synthesizeMainForTopLevel` 没有这个检查 → 被注册循环过滤掉的变体**仍被内联**进合成的 `main`，其错误平台的值覆盖了匹配变体注册的全局。
+    - **修法**：在 `synthesizeMainForTopLevel` 的 `for _, id := range pkg.Top` 循环入口（判空后、`switch` 前）补 `if !nodeMatchesPlatform(pkg, id) { continue }`，让所有顶层节点种类共用同一判据（无注解节点返回 `true`，std 预置节点不受影响）。
+    - **验证**：8 个最小复现全部与 legacy 一致；新增 `tests/test-platform-const.no`（六平台变体各持不同值）作常驻回归，并用修复前二进制（HEAD `47b6cad` worktree）实测得 legacy `100` / MIR `600`，确认用例有判别力。
+    - **为何全量扫描漏掉**：`tests/` 无任何平台注解用例，且 `std/fs.no` 的 `mac-amd64`/`mac-arm64` 常量值相同（`O-CREAT` 512/512、`O-TRUNC` 1024/1024），错选不可观测；`std/process.no` 的注解在**函数**上（走注册循环，本来就对）。⇒ **`MIR_GAP=0` 只说明"语料区分不出"。**
+
+78. **【目录 #78】扫描器新增 CERR/CRASH 名单输出（2026-09-16 第三十九轮）**：`scripts/mir_sweep_fast.sh` 汇总段补打 `CERR`/`CRASH` 逐文件名单，避免排查时重复 9 分钟全量重扫。
+
+79. **【目录 #79】删除 legacy 后端 `src/build/llvm/` + 移除 strangler-fig 回退（2026-09-16 第三十九·续轮，第二优先级 #9/#10 收官）**：
+    - **规模实测**：48 文件 / 50,006 行 / 2.0MB = 15 生产文件（41,806 行）+ 33 测试文件（8,200 行 / 188 个 `func Test`）。**旧文档记的"约 60KB"低估约 30 倍。**（`src/build/wasm/`、`src/build/js/` 是另外两个后端，不在本项内。）
+    - **改动**：`transpiler.go` 删 `build/llvm` import / `llvmGenerator` 字段 / 构造，`emitMIR(hirPkg, allowFallback bool)` → `emitMIR(hirPkg)`，删 8 处 `GenerateHIR` 回退分支 + `LastMIREmitted` + `hasFatalLowerDiag`，`NOLANG_MIR=0`/`=2` 改为明确报错（保留 `=1` 转储）；`cmd/no/main.go` 删 `no run` 的重编重跑重试点；`hir/golden_test.go` 解除对 `llvm.FilterByPlatform` 的依赖；`git rm -r src/build/llvm/`；删 scratch 目录 `src/cmd/tmp_test_and_i8/`。
+    - **构建系统零改动**：`Makefile` 的 `GO_SOURCES`/`NO_SOURCES` 都是 `find` 通配，删文件自动适配——§15 里"更新构建系统"这条偏保守。
+    - **Oracle 替代（删除的前置条件）**：新增 `scripts/mir_golden.sh` + `tests/golden/{legacy,mir}-baseline.tsv`（各 422 条，每文件 `<rc> <sha256(stdout)> <path>`）。`legacy-baseline` 是**语义**参照（注意其 82/422 即 19.4% 的 `rc=1` 属"无参照"，因 legacy 连 `print(1+2)` 都编不过），`mir-baseline` 是**回归**参照（删除后唯一可用）。
+    - **验证**：`go build ./...`/`go vet ./...` 通过；`go test ./...` 失败集与干净 HEAD worktree（`47b6cad`）**逐条一致**（`fmt` 2 + `build` 4 + `checker` 2，全部既有失败；`TestGenerateHIRMatchesGenerate` 随包消失）；golden 比对 `SAME=388` / `REGRESS=0` / `DIVERGE=1`（已知假阳性）。
+    - **踩坑**：`mir_golden.sh` 首版在**比对模式**也强制 `NOLANG_MIR=0`（与自身注释"比对模式从不强制"相矛盾），删 legacy 后表现为 `REGRESS=389` 的假象；macOS bash 3.2 不支持 `${b^^}`。详见 §13.3.13 ⑥。
 
 ---
 
@@ -742,6 +761,132 @@ opt: error: '%addopt.final.5254' defined with type '%option = type { i64, i64 }'
 
 ---
 
+#### 13.3.13 第三十九轮（2026-09-16）：平台变体过滤缺口 + `#9/#10` 范围勘定
+
+**口径**：同 §13.3.12（`./bin/no`，全量递归 `tests/**/*.no`，基线 `NOLANG_MIR=2`，被测 `=3`）。
+**结果**：`MATCH=388`（≈92.2%）、`DIVERGE=1`、`MIR_GAP=0`、`MIRBETTER=0`、`CERR=18`、`CRASH=11`、`HANG=4`。相对第三十八轮 **MATCH 387→388（+1，即本轮新增的 `tests/test-platform-const.no`）**，其余分类**逐项不变**，零回归。
+
+##### ① 平台变体过滤在脚本模式下失效（#77）
+
+查 `#9/#10` 的耦合面时偶然实测到的**真 gap**（legacy 正确、MIR 错误），且此前的全量扫描完全看不到它。
+
+**现象（宿主 arm64 macOS，脚本无显式 `main`）**：
+
+| 用例 | legacy | MIR=3（修复前） |
+| --- | --- | --- |
+| `#{mac-amd64}` `V = 8` 单独 | 正确报错（opt 报 `%V` undefined） | **打印 8** |
+| `#{linux-amd64}` `V = 9` 单独 | 正确报错 | **打印 9** |
+| `#{mac-arm64} V=1` + `#{mac-amd64} V=2` | `1` | **`2`** |
+| 六平台变体各持不同值 | `100` | **`600`**（win-amd64 的值） |
+
+规律是**非宿主的 `...-amd64` 变体总胜出**，宿主的 `mac-arm64` 反而被丢弃。已排除"跑在 Rosetta 下导致 `runtime.GOARCH` 是 amd64"这一可能：`file bin/no` = arm64、`uname -m` = arm64、`go env GOARCH` = arm64。**带显式 `main` 的真实程序（含跨模块读取）是正确的**（`11`/`11`），所以缺口限定在**脚本模式**。
+
+**根因**：`nodeMatchesPlatform`（`src/mir/platform.go`）只在顶层**注册循环**里被调用——`hir2mir.go` 的 `KFuncDef`（`l.funcNames[name]=id` 之前）与 `KLet`（`l.globals` 之前）各一处。脚本路径的 `synthesizeMainForTopLevel`（`hir2mir.go` 起于 `func (l *lowerer) synthesizeMainForTopLevel`）**没有这个检查**，于是被注册循环过滤掉的变体**仍然被内联**进合成的 `main`，其错误平台的值覆盖了匹配变体注册的全局。这解释了全部四种现象：单个不匹配变体被内联成脚本局部（所以"照编不误"）；多变体时匹配者成为全局、不匹配者成为内联局部，后者胜出；两个都不匹配时按源序后者胜出。
+
+**修法**：在 `synthesizeMainForTopLevel` 的 `for _, id := range pkg.Top` 循环入口（`n == nil` 判空之后、`switch n.Kind` 之前）补同一个检查：
+
+```go
+if !nodeMatchesPlatform(pkg, id) {
+    continue
+}
+```
+
+放在循环入口而非 `case hir.KLet` 内，是为了让所有顶层节点种类（`KLet`/`KStructLit`/表达式语句…）共用同一判据。无注解的节点 `nodeMatchesPlatform` 返回 `true`，std 预置节点不受影响。
+
+**验证**：8 个最小复现全部与 legacy 一致（`7/7`、`100/100`、`6/6`、`1/1`、`1/1`，以及 3 个两模式**都**编译失败）。新增 `tests/test-platform-const.no`（六平台变体各持不同值）作为常驻回归——**用修复前二进制（HEAD `47b6cad` worktree）跑该用例得 MIR `600` vs legacy `100`，确认它真能抓到该 bug**。
+
+**为什么全量扫描抓不到（本轮最重要的一条方法论）**：`tests/` 里**没有任何**用例使用平台注解（`grep -rl 'mac-arm64\|linux-amd64' tests/` 为空），而 `std/fs.no` 的 `mac-amd64` 与 `mac-arm64` 常量**值恰好相同**（`O-CREAT` 512/512、`O-TRUNC` 1024/1024），所以即使错选也不产生可观测差异；`std/process.no` 的注解挂在**函数**上（走注册循环，本来就对）。⇒ **`MIR_GAP=0` 只意味着"语料区分不出"，不等于"两后端等价"。判定一个 gap 家族是否真清零，要问"语料里有没有能区分它的用例"。**
+
+##### ② `#9/#10` 的范围勘定：`src/build/llvm/` 是 5 万行不是 60KB
+
+§15 旧记的"约 60KB"**低估约 30 倍**。实测：**48 个 `.go` 文件 / 50,006 行 / 2.0MB**
+= **15 个生产文件（41,806 行）** + **33 个测试文件（8,200 行 / 188 个 `func Test`）**。
+生产文件：`stmt.go` 11,463 / `expr.go` 8,701 / `call.go` 6,022 / `call_stdlib.go` 4,925 / `generator.go` 3,873 / `decl.go` 1,279 / `coro.go` 1,242 / `gen_hir.go` 1,036 / `reachability.go` 780 / `slice_view.go` 730 / `dataflow.go` 617 / `types.go` 599 / `strchar_at.go` 416 / `clone_slice.go` 86 / `dfstat_tmp.go` 37。
+（`src/build/wasm/`、`src/build/js/` 是另外两个后端，**不在本项内**。）
+
+**「移除 strangler-fig 回退」的精确含义**：目前实际并存**四条**代码生成路径，不止两条。
+`NOLANG_MIR=3`（默认）→MIR；`=2`→MIR+失败即回退；`=0`→legacy **HIR** 后端（`transpiler.go` `GenerateHIR` 的 else 分支）；`NOLANG_HIR=0`→legacy **AST** 后端（更旧的 surface-AST 路径 `Generate(merged)`）。另有 `NOLANG_MIR=1`：转储后**总是**回退。
+`GenerateHIR` 调用点共 **8 处**，全部由 `emitMIR(hirPkg, allowFallback bool)` 的布尔控制——该参数本身就是 strangler-fig；`hasFatalLowerDiag`/`firstFatalLowerDiag` 也只为"要不要回退"而存在。
+
+**跨包耦合面极小（本项可行的关键）**：`go list -deps ./mir/` **不含** `nolang/build/llvm`，MIR 包完全独立。全仓 import 该包仅 4 处：`transpiler.go`（`llvm.NewGenerator`/`llvm.Generator`）、`src/hir/golden_test.go`（`llvm.FilterByPlatform`，仅测试）、`src/cmd/tmp_test_and_i8/main.go`、`tmp/bug13-dump.go`。
+需先"接管"的非 codegen 物只有两项：4 个 setter（`SetTargetPlatform`/`SetNoBoundsCheck`/`SetMainFileNames`/`SetGlobalVarOwners`）与 `CodegenErrors()` 错误通道（`transpiler.go` 读、`build/llvm/generator.go` 写，**MIR 路径也读它**）。
+**构建系统实际零改动**：`Makefile` 的 `GO_SOURCES`/`NO_SOURCES` 都是 `find` 通配，删文件自动适配（§15 里"更新构建系统"这条偏保守）。
+
+##### ③ 188 个 legacy 测试的覆盖盘点（删除前必读）
+
+| 类别 | 数量 | 内容 | 处置 |
+| --- | --- | --- | --- |
+| **A · legacy 内部机制** | ~100 | `dataflow_test.go` 67（CFG 数据流框架自身：bitset/effect/move fact/out-bind/init fact）、`gen_hir_test.go` 14（legacy HIR→IR 文本断言，含**既有失败** `TestGenerateHIRMatchesGenerate`）、`reachability_test.go` 2、`expr_test.go` 3、`bug11/bug13/bug15/bug16/bug_dom` 8、`chain`/`callvec_store` 等 | **随包删除**。它们断言 legacy 的 IR 文本或框架内部结构，不描述语言语义。MIR 的对应物是 `src/mir/analysis.go` + `mir_test.go` 的 4 个分析测试 |
+| **B · 语言/std 语义知识** | ~20 | `generator_test.go` 9（**平台变体解析 / datalayout / triple / 各平台声明**）、`decl_test.go` 4（`TestStatLayoutForAllPlatforms`、`TestOpenWriteFlagsForAllPlatforms`）、`overflow_test.go` 4（语句级 `#{overflow=...}` 读取）、`chacha`/`poly1305` 2 | **迁移重点**。MIR 有独立镜像表（`src/mir/platform.go`、`builtin_call.go`）但**零测试**——① 的缺口正出自这里：`TestPlatformVariantResolution`/`TestPlatformVariantMultiKey` 只测 legacy |
+| **C · 历史 bug 回归（IR 文本断言）** | ~68 | `struct_*` 33（字段访问/数组字段/深拷贝/push/clear-truncate/retinit）、`str_slice_regression` 5、`str_index_regression` 4、`cross_module_str_stride` 7、`callvec_store` 6、`recursive_match_it` 3、`for_loop_match` 4、`match_str_clone` 2、`arr_byte_offset_slice` 2、`d23_option_struct_field` 1、`user_func_overrides` 3 等 | **无法机械迁移**（全部断言 legacy IR 字符串）。其**语义意图**由 `tests/*.no`（371 个运行比对用例）承载；建议增量策略：删后若出现回归再补 |
+
+**当前不对称**：legacy 188 个单测 vs MIR **6 个**（`src/mir/mir_test.go` 209 行）。这是第三优先级"MIR 单测扩展"的量化依据。
+
+##### ④ 删 legacy 会失去 Oracle —— 必须先冻结基线快照
+
+`MATCH`/`DIVERGE`/`MIR_GAP` 这套判据的**全部**信息都来自 `NOLANG_MIR=0` 这个对照后端。删掉它之后：
+- `DIVERGE`（两模式 rc=0 但输出不同）**永久无法再检测**——而这正是本文件反复依赖的核心信号；
+- `NOLANG_MIR=0` 这条排障退路消失。
+
+**对策（删除前必做）**：把当前语料在 `NOLANG_MIR=0` 下的 stdout/rc 冻结成 golden 快照并入库，后续用它与新 MIR 输出做同口径 diff。否则第 ① 类"两后端分叉"的 bug 将不再有任何自动发现手段。
+
+##### ⑤ 方法论要点（本轮新增）
+
+- **过滤类逻辑要同时问"注册侧"和"内联侧"**：平台过滤只在注册循环里做了，脚本内联路径漏了。**任何"跳过某节点"的检查，都要确认所有会物化该节点的路径都过了同一个检查。**
+- **`MIR_GAP=0` ≠ 两后端等价**，只在"语料能区分"的范围内成立。要给结论加"语料是否具备区分能力"这一前提（① 就是反例）。
+- **排除环境假设要比推理快**：怀疑"宿主架构被 Rosetta 改写"只需 `file bin/no` + `uname -m` 两条命令，省掉一整轮错误归因。
+- **回归用例要用修复前的二进制实测它确实失败**：`git worktree add <tmp> HEAD` + 旧二进制跑新用例，才能证明用例有判别力而不是恒真。
+- **"未定义标识符静默"是既有的、更普遍的 MIR 宽松策略**，不是平台过滤特有：`print(ZZZ)`（真正未定义）在 MIR 下同样 rc=0 且输出空行，legacy 则报 opt 错。修复后平台场景与该通病行为一致；这条通病单独成项，不在本轮范围。
+
+##### ⑥ 删除落地（第三十九·续轮）：strangler-fig 移除 + `src/build/llvm/` 删除 + 基线对账
+
+按 ② 的范围勘定与 ④ 的 oracle 对策执行，全部改动**未提交**（工作区状态见文末）。
+
+**改了什么（5 个文件 + 1 个新脚本 + 2 个新基线）：**
+
+| 项 | 内容 |
+| --- | --- |
+| `src/build/transpiler.go` | 删 `build/llvm` import、`Transpiler.llvmGenerator` 字段与其构造；`emitMIR` 签名由 `(hirPkg, allowFallback bool)` 收为 `(hirPkg)`；删全部 `if allowFallback { return t.llvmGenerator.GenerateHIR(...) }` 分支、`LastMIREmitted`、`hasFatalLowerDiag`；`NOLANG_MIR=0`/`=2` 改为**明确报错**，`=1` 仅 dump。保留 `targetGoos/targetGoarch`（前端合并阶段 `checker.MatchesTargetPlatform` 仍需要） |
+| `src/cmd/no/main.go` | 删 `no run` 的 strangler-fig 重试段（原"legacy 编译失败 → 重编重跑"），改为直接失败退出 |
+| `src/hir/golden_test.go` | 解除对 `llvm.FilterByPlatform` 的依赖，新增 `astMatches(prog, i, goos, goarch)` 用 `prog.Sem.PlatformKeysOf` 自算（两函数均显式从 `prog` 取数，避免闭包捕获循环变量） |
+| `src/mir/hir2mir.go` | ① 的 `nodeMatchesPlatform` 缺口修复（一并随本批落地） |
+| `tests/test-platform-const.no` | ① 的常驻回归用例（六平台变体各持不同值） |
+| `scripts/mir_golden.sh`（新） | 冻结/比对基线指纹：每文件一行 `<rc> <sha256(stdout)> <path>`。`-update` 冻结，无参则与当前默认后端比对；复用 `mir_sweep_fast.sh` 的进程组级 kill 超时 |
+| `tests/golden/{legacy,mir}-baseline.tsv`（新） | 各 422 条。legacy-baseline 的 `rc=0` 有 340（失败 82，19.4%，即 ④ 说的"无参照"条目）；mir-baseline 的 `rc=0` 有 389 |
+| 删除 | `git rm -r src/build/llvm/`（48 文件）+ 删 `src/cmd/tmp_test_and_i8/`（scratch，直接调 legacy 生成器，留在模块内会让 `go build ./...` 失败） |
+
+**验证矩阵（全部通过）：**
+
+| 检查 | 结果 |
+| --- | --- |
+| `go build ./...` | rc=0 |
+| `go vet ./...` | 仅 `build/wasm` 一条既有警告（`WriteByte` 签名），与本次无关 |
+| `./bin/no run tests/test-platform-const.no` | `100`（默认 == `NOLANG_MIR=3`）；`=0`/`=2` 均报 `the legacy codegen backend was removed` |
+| `go test ./...` | 失败集与**干净 HEAD worktree（`47b6cad`）逐条一致**：`fmt`(2) + `build`(4) + `checker`(2)。**全部为既有失败**；`TestGenerateHIRMatchesGenerate` 已随 legacy 包消失 |
+| golden 比对（`mir-baseline.tsv`） | `SAME=388`、**`REGRESS=0`**、`DIVERGE=1`（`tests/mem-safety/str-concat-leak.no`，已知的二进制地址差异假阳性，非新问题）、`BOTH_FAIL=33`、`NEW=0`（388+1+33=422） |
+
+**基线时序核对（防"冻结了错的参照"）**：`mir-baseline.tsv` 冻于 11:36，晚于 ① 的修复（11:12），且含 `tests/test-platform-const.no`，其哈希 `eea8254c…` **正是 `sha256("100\n")`** —— 即冻结的是**修复后**行为，而修复前 MIR 的 `sha256("600\n")`（`ab8e9a58…`）不在任何基线里。确认 `mir-baseline` 与 `legacy-baseline` 在该文件上同值（legacy 本就输出宿主平台值 `100`），也就是 ① 的修复把 MIR 拉回了 legacy 语义。
+
+**新旧口径对照（本轮的"零回归"证据）**：第三十九轮扫描（删除前）`MATCH=388/422`、`MIR_GAP=0`；删除后同一语料经 `mir-baseline` 比对为 `SAME=388` / **`REGRESS=0`** / `DIVERGE=1`（沿用同一条已知假阳性）/ `BOTH_FAIL=33`。两者**逐项一致**，说明删除本身**不改变任何文件的行为**（预期如此：legacy 在默认口径下本就未被调用）。两个口径用不同的机制得到同一个 388，互为交叉验证。
+
+**两个基线的比对结果（删除后首次实跑）：**
+
+| 基线 | SAME | DIVERGE | REGRESS | IMPROVED | BOTH_FAIL | 读法 |
+| --- | --- | --- | --- | --- | --- | --- |
+| `mir-baseline.tsv`（回归参照） | 388 | 1 | **0** | 0 | 33 | 与删除前 `MATCH=388` 逐项吻合；唯一 DIVERGE 是已知地址假阳性 |
+| `legacy-baseline.tsv`（语义参照） | 302 | 38 | **0** | 49 | 33 | `REGRESS=0` ⇒ 没有任何"legacy 能编而 MIR 不能"的文件；`IMPROVED=49` ⇒ legacy 坏掉的 82 个里 49 个 MIR 能过；`DIVERGE=38` 与历史上 legacy 口径的分叉规模（第三十七/三十八轮 ~37–38）**吻合**，说明冻结的 oracle 忠实复现了被删掉的那个后端 |
+
+**这张表的用法（删除后的日常口径）**：`mir-baseline` 的 `REGRESS` 桶就是新的 `MIR_GAP`（"以前能过，现在不能过"）；`legacy-baseline` 的 `DIVERGE` 桶就是新的 `DIVERGE`（语义分歧候选，逐个判"谁对"——已知多数是 legacy 错，如 bool 打印不一致、`async-yield` legacy SIGSEGV、hmac/sha256 legacy 算错）。
+
+
+
+**本批踩到的两个 harness 自伤（都已修，值得记住）：**
+
+- **`mir_golden.sh` 在比对模式误强制 `NOLANG_MIR=0`**：脚本注释明确写着"比对模式从不强制 NOLANG_MIR"，但代码里 `GOLDEN_MIR=${GOLDEN_MIR:-0}` 是无条件的，`fingerprint_one` 按它选命令行。删掉 legacy 后，比对**每个文件都走 `NOLANG_MIR=0` 的报错路径** → 首次实跑报 `REGRESS=389`（= golden 全部 rc=0 条目），差点被读成"全量回归"。修法：引入 `FORCE_MIR`，**仅 `-update` 模式**按 `GOLDEN_MIR` 取值，比对模式恒空（恒测当前默认）。**教训：harness 的"默认参数"本身就是被测对象的一部分——注释描述的行为必须与代码逐行核对，尤其是"从不做 X"这种断言。**
+- **`${b^^}` 不可用**：macOS 自带 bash 3.2（`/bin/bash`）无 bash 4 的大写展开，脚本在打印非空桶时以 `bad substitution` 中断（前一次空桶侥幸没触发）。改为 `tr 'a-z' 'A-Z'`。**教训：脚本要么声明 `#!/usr/bin/env bash` 并确认版本，要么只用 POSIX 子集。**
+
+---
+
 ## 14. 溢出默认（overflow-default）与 MIR 的集成（进行中）
 
 `#{overflow}` 默认使整数 `+ - * /` 返回 `option<int>`（不 panic）。当前状态：
@@ -769,7 +914,9 @@ opt: error: '%addopt.final.5254' defined with type '%option = type { i64, i64 }'
 
 - **Stage 3 续（第三十七·三十八轮 2026-09-15/16，`./bin/no`，421 文件全量）**：**`MATCH=387`（≈91.9%）、`DIVERGE=1`、`MIR 专属 gap=0`、`两模式都失败=29`（CERR 18 + CRASH 11）、`HANG=4`；默认口径（不设 `NOLANG_MIR`）通过 `388/421`（92.2%）**。第三十七轮四修：**#67** `collectVarTypesFromBody` 把"已声明局部的再赋值"误当"遮蔽全局"而删掉其型别 → `[n]t.clone` 从未单态化；**#68** MIR 的 print 家族容器实参未走 `to-str`（`printableValue`/`toStrCalleeFor` + 独立 `wrapPrintArgs` 标志）；**#69** `net-dial`/`net-send`/`net-recv` 的 option 载荷与定宽数组实参序列化 + 补齐 5 个 net 内建；**#70** `std/crypto/aes.no` 源码笔误 `ek[ek] = ...`（净 MATCH +5）。第三十八轮四修：**#71** MIR 从未处理 `hir.KRegexLit`（正则字面量在 legacy 是 codegen 期脱糖，MIR 无 codegen 期 AST → 字面量不产生值 → 表象为"未解析格式字段"）；**#72** `lowerFormatField` 的 `default:` 把结构体当整数；**#73** 默认后端切换为 MIR-only（第二优先级 #8 落地）；**#74** `transitive_import_test.go` 接受 MIR 的符号净化拼写。**方法论要点**：① "两模式都失败"必须先分类——本轮 29 个里只有 **3 个**是 MIR 的事（`test-strconv`/`test-std-new`/`nested-container-clone`），**14 个是测试源陈旧**（API/语法漂移）、8 个两模式同崩同挂、3 个 legacy 专属编译缺陷（`%addopt.final`）、1 个负测试；② 扫掠脚本先判 `rc3` 再判 `rc2`，故 `HANG_LEGACY=0` **不等于**基线没挂；③ 调试期不要把诊断细节丢在桶名里。详见 §13.3.11/§13.3.12。
 
-- **Stage 4（下一步）**：① 收敛最后一个 MIR_GAP `test-diff-debug`（DP 表全 0 / `bus error`；根因落在 `[]str` 元素的 `compare` 调用降级路径，探针显示 `with-len`+字面量赋值的 `[]str` 元素方法调用在**两模式**都 segfault → 需先修更底层的通用缺陷）；② `with-len`/`index dst slot` 的 void 型别族（#54 同族，5）；③ `str-len receiver i64`（3）；④ 语料迁移 8 个真·未标注溢出运算；⑤ `net-dial` 非 IP 字面量 host 的 `getaddrinfo` 回落（3）；⑥ ~~修 `run_to` 超时只杀 `no` 不杀子进程组的问题~~（**已完成**，`setpgid` + `kill -KILL -$pgid`，见 §13.3.10 ①）；**⑥'（新）`HANG=4` 的两模式死循环**（`test-parse-min.no`、`mem-safety/test-json-parse-option.no`、`mem-safety/test-json-nested-match.no` 的 json parse 与 `test-for2.no`）——两后端同挂，属 std 缺陷；⑦ 逐站消除 §13.3 长尾；FFI/async/crypto/net/map/字符串方法内置补齐；**（`no build` 默认走 MIR=3 已于第三十八轮 #73 完成）**；⑧ **#9/#10：移除 strangler-fig 回退、清理 legacy 后端（`src/build/llvm/`，约 60KB）并更新构建系统**——这是第二优先级的剩余部分，也是本路线图最后一块结构性工作。
+- **Stage 4（下一步）**：① 收敛最后一个 MIR_GAP `test-diff-debug`（DP 表全 0 / `bus error`；根因落在 `[]str` 元素的 `compare` 调用降级路径，探针显示 `with-len`+字面量赋值的 `[]str` 元素方法调用在**两模式**都 segfault → 需先修更底层的通用缺陷）；② `with-len`/`index dst slot` 的 void 型别族（#54 同族，5）；③ `str-len receiver i64`（3）；④ 语料迁移 8 个真·未标注溢出运算；⑤ `net-dial` 非 IP 字面量 host 的 `getaddrinfo` 回落（3）；⑥ ~~修 `run_to` 超时只杀 `no` 不杀子进程组的问题~~（**已完成**，`setpgid` + `kill -KILL -$pgid`，见 §13.3.10 ①）；**⑥'（新）`HANG=4` 的两模式死循环**（`test-parse-min.no`、`mem-safety/test-json-parse-option.no`、`mem-safety/test-json-nested-match.no` 的 json parse 与 `test-for2.no`）——两后端同挂，属 std 缺陷；⑦ 逐站消除 §13.3 长尾；FFI/async/crypto/net/map/字符串方法内置补齐；**（`no build` 默认走 MIR=3 已于第三十八轮 #73 完成）**；⑧ ~~**#9/#10：移除 strangler-fig 回退、清理 legacy 后端（`src/build/llvm/`）并更新构建系统**~~ —— **已完成（第三十九·续轮）**：legacy 后端已删除（48 文件 / 50,006 行 / 2.0MB，非旧记的"约 60KB"），`NOLANG_MIR=0/2` 改为明确报错；构建系统**零改动**（`Makefile` 的 `GO_SOURCES`/`NO_SOURCES` 都是 `find` 通配，删文件自动适配）。回归保护改由 `tests/golden/*.tsv` 冻结基线承担。详见 §13.3.13 ⑥。
+
+- **Stage 4 续（第三十九·续轮 2026-09-16，已落地）**：**删除 legacy 后端**（`src/build/llvm/`）+ 移除 strangler-fig 回退 + 冻结双基线 oracle。验证：`go build ./...` / `go vet ./...` 通过；`go test ./...` 失败集与干净 HEAD worktree **逐条一致**（`fmt` 2 + `build` 4 + `checker` 2，全部既有）；golden 比对 `SAME=388` / `REGRESS=0` / `DIVERGE=1`（已知假阳性）/ `BOTH_FAIL=33`。**遗留：改动未提交**（见 §13.3.13 ⑥ 与末节）。**下一步（第三优先级）**：① 把 MIR 的单测从 6 个补到与 legacy 188 个相当的覆盖（重点是 §13.3.13 ③ 分类 B 的**平台变体解析 / datalayout / 溢出注解读取**——① 的平台缺口正出自这里零测试）；② `HANG=4`（两模式死循环，std 缺陷）与 `DIVERGE=1`（地址差异假阳性）的正式标记；③ §13.3.13 ③ 分类 C 的 68 个 IR 文本断言测试，按"删后出现回归再补"的增量策略迁移。
 
 ---
 
@@ -778,7 +925,7 @@ opt: error: '%addopt.final.5254' defined with type '%option = type { i64, i64 }'
 - **生成顺序/平台过滤（第三十轮已落地 #55）**：HIR `#{platform}` 注解需在 lower 前过滤——已实现为 `src/mir/platform.go`（`nodeMatchesPlatform`，镜像 `build/llvm.matchesPlatform`），并在 `hir2mir.go` 的 `KFuncDef`/`KExtern` 与 `KLet` 两处 `funcNames`/全局注册点应用。**未做**：`KStructDef`、`KConst`、`KTypeAlias` 等其余节点类型尚未过滤（目前只覆盖函数与全局绑定），若将来出现"同名同参的平台异构 struct/常量"仍会塌缩。
 - **跨模块 owner 判定**：与 `globalVarOwner`/`funcOwner` 对齐（`transpiler.go`）。
 - **推断类型来源**：`pkg.Inferred[id]` 是分类 ownership 的权威输入；缺失时回退声明类型 `Node.Type` 并标记诊断。
-- **回归红线**：任何 MIR 失败在 `NOLANG_MIR=2` 必须回退现有路径；全量 `no build` 扫掠在 sandbox 受限（约 360 测试会被 SIGKILL），用定向子集 + `opt -passes=verify` 快速回路验证（`scripts/mir_cov.py` / `mir_sweep.py`）。
+- **回归红线（第三十九·续轮改写）**：~~任何 MIR 失败在 `NOLANG_MIR=2` 必须回退现有路径~~ —— **legacy 已删除，回退机制不存在**。现在的红线是：`scripts/mir_golden.sh` 对 `tests/golden/mir-baseline.tsv` 的比对必须 **`REGRESS=0`**（对 `legacy-baseline.tsv` 的比对同样必须 `REGRESS=0`，那是"legacy 能编而 MIR 不能"的禁止集）。全量 `no build` 扫掠在 sandbox 受限（约 360 测试会被 SIGKILL），用定向子集 + `opt -passes=verify` 快速回路验证（`scripts/mir_cov.py` / `mir_sweep.py`）。
 - **bool 打印：legacy 自身不一致，暂不强行对齐（2026-09-12 实测）**。legacy 的 bool 输出**依赖表达式形态**而非值：命名变量 `print(b)` / 结构体字段 `print(p.vis)` → `true`/`false`；比较表达式 `print(n > 3)` / vec 元素 `print(v[0])` → `1`/`0`；`(n>3).to-str()` → `1` 而命名变量 `.to-str()` → `true`。MIR 全站统一输出 `1`/`0`（`print_bool`）。因此在顶层命名 bool 场景 MIR 与 legacy 分歧（如 `tests/test-std-unix-fs-os.no` 的 `utime ok = true` vs `1`），但这类测试 rc 仍为 0。**判定**：属 legacy 历史不一致（且 legacy 在函数体内 `print(局部 bool)` 会直接 opt 失败：`'%b.val' defined with type 'i64' but expected 'i1'`），不是干净的 MIR 缺陷；强行翻转会在另一半场景引入新的分歧，故维持现状并记录。**扫掠超时口径**：crypto 系列（sha256/hmac/tls）单测编译+运行需 10–14s，扫掠脚本超时必须 ≥60s，否则（尤其在并发 `go build` 抢 CPU 时）会被误判为 HANG。
 - **溢出默认集成中段风险（已消解）**：§13.1/§14 的解包缺失曾令 `test-arr.no` 退化（已闭环，`emitIndexStore`）；续闭环 `emitSetField`（§12 #14），sink 站点解包已覆盖 `emitIndexStore`+`emitSetField`。**原"剩余 `opt-verify` 家族（§13.3.1，23 个）在非 sink 表达式路径未解包"的判断已过时**：该家族经 #15/#18/#19/#23/#32/#33/#34/#39 逐站闭环，第十三轮复核 **MIR 专属剩 0**。`test-arr.no` 已于第十二轮实测 `MIR=3` 与 legacy 逐字节一致。**精确 MIR=3 通过数**：第十三轮以**修正二进制路径**（`./bin/no`，非陈旧的仓库根 `no`）对全量 `tests/**/*.no` 重跑，结果见 §10.1。
 - **legacy `awy f` future 变量漏行 bug（2026-09-12 第十二轮实测，MIR 正确、legacy 错）**：`tests/test-async.no` 的 `test-await-future` 子用例写 `f = compute-async(25); r = awy f; print(r)`。MIR=3 正确输出 8 行（`42/42/1/-1/0/60/60/50`），但 legacy（`MIR=0`）只输出 7 行、**漏最后一行 `50`**——legacy 对 `awy <future 变量>`（future 已先 `run` 进变量、再 await 该变量）的调度路径存在既有 bug，未把该 future 的结果打印出来。故 `test-async` 在 §10.1 覆盖表中**不计入 MATCH**（要求逐字节一致），而归入 "MIR 正确 / legacy 错误" 族（同 #28 插值、#36 x25519）。这是 legacy 自身缺陷，非 MIR 回归；MIR 因忠实移植 legacy `build/llvm` 协作式调度器契约（§12 #39）而绕过了该 bug。
