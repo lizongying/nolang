@@ -1926,8 +1926,69 @@ func (c *codegen) loadVal(v ValueID) (string, string) {
 	}
 	lt, _ := c.ptype(v)
 	slot := c.valSlot[v]
-	if lt == "void" || slot == "" {
+	if lt == "void" {
+		// A genuinely void value has no storage, so there is nothing to load.
+		// This is the common, legitimate case (a unit/() result, or a call to a
+		// void function used for its side effects): callers test for `"void"`
+		// and skip the value — see emitCall's print loop (`argT == "void"` ->
+		// continue). Measured on the full corpus: 51 of the 55
+		// NOLANG_MIR_DEBUG_UNDEF hits are this branch and every one of them is
+		// correct; making it fail would break legitimate code en masse.
 		return "void", "undef"
+	}
+	if slot == "" {
+		// THE SILENT-UNDEF HOLE (bug #85, docs/MIR_DESIGN.md §12 #85).
+		//
+		// A value with a real (non-void) LLVM type but no alloca slot is a
+		// *lowering failure*: the consumer is asking for a value that no
+		// instruction ever produced. Handing back `undef` compiles cleanly,
+		// runs, and exits 0 — LLVM folds `undef` into any value it needs — so
+		// the failure is invisible:
+		//
+		//   i <- [0..3): { print('item' + i.to-str()) }   (tests/mem-safety/
+		//   str-concat-leak.no, and /tmp/fz/c1.no)
+		//
+		// lowers to `call dst=0 args=[3]` (the `i.to-str()` call never gets a
+		// result value: Dst = NoVal) followed by `add dst=12:str args=[11 0]`,
+		// i.e. the concat's second operand IS NoVal. This function then
+		// returned `undef`, the IR became
+		// `@str_concat(%str-long %lv13, %str-long undef)`, and the program
+		// printed 0..775 MB of stack bytes with rc=0.
+		//
+		// The legacy backend carried a guard of exactly this shape — its
+		// emitArgAsStrLong hard-errored with "expression produced empty value"
+		// — so both backends recognised the condition and only one reported
+		// it. Ringing here restores that parity: the only two corpus files that
+		// reach this branch (tests/mem-safety/str-concat-leak.no and
+		// tests/test-std-hash.no) both carry legacy-baseline rc=1, and after
+		// the guard their fingerprints are BYTE-IDENTICAL to that frozen
+		// semantic oracle (`1 e3b0c442…`, empty stdout). So this is the
+		// oracle's own verdict, not a regression — see docs/MIR_DESIGN.md
+		// §13.3.17 ③ for why `no build` rc and `no run` rc must not be
+		// confused when checking that claim.
+		//
+		// The `else` arm has never been observed on real input: every
+		// non-NoVal hit in the corpus is a legitimate void value (the branch
+		// above). It is kept so that the other half of the class cannot
+		// silently return `undef` again.
+		//
+		// c.fail() accumulates instead of aborting, so ONE build reports every
+		// offending site in the function — which is why this replaces the
+		// NOLANG_MIR_DEBUG_UNDEF measurement pass (kept below for log greps).
+		if v == NoVal {
+			c.fail("func %s: consumer reads value 0 (NoVal), which no instruction produced — "+
+				"a lowering failure previously emitted as `undef` (bug #85); "+
+				"the instruction feeding this operand has no Dst", c.fname[c.cf])
+		} else {
+			c.fail("func %s: value %d has LLVM type %s but no storage slot — "+
+				"nothing produced it, and the `undef` fallback would silently "+
+				"miscompile (bug #85)", c.fname[c.cf], v, lt)
+		}
+		if os.Getenv("NOLANG_MIR_DEBUG_UNDEF") != "" {
+			fmt.Fprintf(os.Stderr, "[mir-undef] func=%s value=%d llvm=%q slot=%q\n",
+				c.fname[c.cf], v, lt, slot)
+		}
+		return lt, "undef"
 	}
 	c.loadSeq++
 	reg := fmt.Sprintf("%%lv%d", c.loadSeq)

@@ -5,16 +5,24 @@
 ; was consulted by the top-level registration loop but NOT by
 ; synthesizeMainForTopLevel (src/mir/hir2mir.go), so a platform-filtered variant
 ; was still inlined as a script local and its wrong-platform value overwrote the
-; global that the matching variant had registered. On arm64 macOS this printed
-; 200 (the `...-amd64` value) while the legacy backend printed 100; a lone
-; `#{mac-amd64}` variant compiled and printed its value instead of being
-; excluded. Both now agree.
+; global that the matching variant had registered. On arm64 macOS the broken MIR
+; printed 600 (the LAST variant, `win-amd64`).
+;
+; NOTE — the legacy backend is NOT the oracle here. Measured with a
+; pre-deletion binary (git worktree add <tmp> 47b6cad): legacy prints 600 too,
+; i.e. it never filtered platform variants in script mode at all (a lone
+; `#{mac-amd64}` variant also just printed its value). The fix therefore makes
+; MIR follow the DOCUMENTED meaning of the annotation (docs/docs/lang/syntax.md)
+; rather than restoring legacy parity, and this file now deliberately DIVERGES
+; from tests/golden/legacy-baseline.tsv. With an explicit `fn main` both
+; backends already filtered identically.
 ;
 ; Every variant holds a DISTINCT value, so on whichever host this runs a wrong
 ; pick shows up as a changed stdout hash in the frozen golden baseline
 ; (scripts/mir_golden.sh + tests/golden/mir-baseline.tsv), which is now the
-; regression oracle for this file. The std sources could not catch the original
-; bug: std/fs.no's mac-amd64 and mac-arm64 constants happen to hold equal values
+; regression oracle for this file. The same rules are pinned as Go unit tests in
+; src/mir/platform_test.go. The std sources could not catch the original bug:
+; std/fs.no's mac-amd64 and mac-arm64 constants happen to hold equal values
 ; (O-CREAT 512/512, O-TRUNC 1024/1024), which made the wrong pick invisible.
 
 #{mac-arm64}

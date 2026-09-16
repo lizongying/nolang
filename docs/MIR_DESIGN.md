@@ -1,7 +1,11 @@
-# Nolang MIR — 工业级中端中间表示设计（实施记录 v2.22）
+# Nolang MIR — 工业级中端中间表示设计（实施记录 v2.26）
 
-> 状态：**legacy 后端已删除，MIR 是唯一后端**（`NOLANG_MIR=0`/`=2` 现为明确报错；未设置 == `=3` == MIR-only；`=1` 保留为 lowering 转储）。**第三十九·续轮（2026-09-16）落地：移除 strangler-fig 回退 + 删除 `src/build/llvm/`（48 文件 / 50,006 行 / 2.0MB）+ 冻结双基线 oracle，详见 §13.3.13 ⑥。**
-> 第三十九轮权威全量扫描（删除前口径，`MATCH=388/422`（≈92.2%）、`DIVERGE=1`（`mem-safety/str-concat-leak.no`，二进制地址差异假阳性）、`MIR 专属 gap=0`、`两模式都失败=29`（CERR 18 + CRASH 11）、`HANG=4`）——本轮相对第三十八轮 **MATCH 387→388**（新增 `tests/test-platform-const.no`），其余分类逐项不变、零回归。同一轮另对 `test/`（40 文件）与 `example/`（11 文件）做交叉扫描：`GAP=0`/`DIVERGE=0`/`HANG=0`。本轮交付：**#77** 平台变体过滤在脚本模式下失效（`synthesizeMainForTopLevel` 漏 `nodeMatchesPlatform`，导致语料区分不出的**真** gap）；**#9/#10 范围勘定与落地**（`src/build/llvm/` 实为 5 万行不是 60KB）。第三十八轮交付 **#71** `hir.KRegexLit` 未处理、**#72** `lowerFormatField` 的 `default:` 把结构体当整数、**#73** 默认后端切 MIR-only、**#74** `transitive_import_test.go` 接受 MIR 符号净化拼写（配套：扫描脚本补打 CERR/CRASH 名单、致命诊断带具体字段）、**#77** 平台过滤脚本模式缺口、**#78** 扫描器名单输出（净 MATCH +1、两模式都失败 30→29）。
+> 状态：**legacy 后端已删除，MIR 是唯一后端**（`NOLANG_MIR=0`/`=2` 现为明确报错；未设置 == `=3` == MIR-only；`=1` 保留为 lowering 转储）。**第四十轮（2026-09-16）：`src/mir` 单测 6 → 13（新增 `platform_test.go`，含判别力实测），并更正两处依据、记录两个"两后端共有"的既有限制 —— 详见 §13.3.14。** ⚠️ 特别注意 §13.3.13 ① 的更正：**`#77` 不是"MIR 偏离 legacy"，而是 legacy 在脚本模式下同样不过滤（实测 `600`）、MIR 单方面按注解的文档语义修好了它。**
+> **第四十一轮（2026-09-16）：`HANG=4` 被证伪（→1，且剩下那个是有意死循环）+ 预检去重（编译耗时 −50%：11 行 json 程序 62s → 32s，普通程序不变）。** 三个 json 用例不是死循环而是**编译期爆炸** —— 根因是 LLVM `sroa` 无法廉价处理 MIR 产出的 22KB 内联聚合（`%json_json_pool = { [64 x %json_json_value], i64 }`），单跑该 pass 就 458× 膨胀（229KB → 105MB）。详见 §13.3.15 与 §12 #82/#83/#84。⚠️ 由此**推翻两条旧记载**：§13.2 的"`test-for2.no` 两模式 HANG"（它全文两行 `{ } (true)`，即块调用语法写成的 `while(true){}`）与"三个 json/parse 测试两模式都挂死、属 std 缺陷"（legacy 对它们 rc=1，**从未跑起来过**）。
+> **第三十九·续轮（2026-09-16）落地：移除 strangler-fig 回退 + 删除 `src/build/llvm/`（48 文件 / 50,006 行 / 2.0MB）+ 冻结双基线 oracle，详见 §13.3.13 ⑥。**
+> **第四十二轮（2026-09-16）：`rc=124` 语义清理（4 → 1，只剩那个有意死循环）+ golden 骨架加固（300s 超时 / `-P 4` / `-update` 破坏守卫 / `UNSTABLE` 分流，`DIVERGE` 从恒 1 变 0），详见 §13.3.16 与 §12 #86。** ⚠️ 本轮**推翻一条持续三轮的旧结论**：`mem-safety/str-concat-leak.no` 的哈希不一致**不是**"二进制地址差异假阳性"——该文件输出 1000 行纯文本、不含地址；真因是 **#85**：`print('item' + i.to-str())` 在 count-for 里把拼接的右操作数降级成 `undef`，于是**以 rc=0 输出 0–775MB 不确定垃圾**（2 秒可复现）。同一轮另把 **#84** 定性为**运行期 SIGSEGV**（stderr `Error: signal: segmentation fault`，崩在第一条语句 `json.parse('')` 的最简早返回路径上），并用同形状的 `/tmp` 探针排除了"22KB 值语义载荷 + option + match"这一假设。
+> 第三十九轮权威全量扫描（删除前口径，`MATCH=388/422`（≈92.2%）、`DIVERGE=1`（`mem-safety/str-concat-leak.no`，二进制地址差异假阳性 —— **第四十二轮更正：并非地址差异，该文件输出纯文本、不含任何地址；真因是 #85 静默错误编译，见 §13.3.16 ⑤**）、`MIR 专属 gap=0`、`两模式都失败=29`（CERR 18 + CRASH 11）、`HANG=4`）——本轮相对第三十八轮 **MATCH 387→388**（新增 `tests/test-platform-const.no`），其余分类逐项不变、零回归。同一轮另对 `test/`（40 文件）与 `example/`（11 文件）做交叉扫描：`GAP=0`/`DIVERGE=0`/`HANG=0`。本轮交付：**#77** 平台变体过滤在脚本模式下失效（`synthesizeMainForTopLevel` 漏 `nodeMatchesPlatform`，导致语料区分不出的**真** gap）；**#9/#10 范围勘定与落地**（`src/build/llvm/` 实为 5 万行不是 60KB）。第三十八轮交付 **#71** `hir.KRegexLit` 未处理、**#72** `lowerFormatField` 的 `default:` 把结构体当整数、**#73** 默认后端切 MIR-only、**#74** `transitive_import_test.go` 接受 MIR 符号净化拼写（配套：扫描脚本补打 CERR/CRASH 名单、致命诊断带具体字段）、**#77** 平台过滤脚本模式缺口、**#78** 扫描器名单输出（净 MATCH +1、两模式都失败 30→29）。
+> **第四十三轮（2026-09-16）：#85 护栏落地 —— `loadVal` 的"静默 `undef`"改为响铃诊断，并修正上一轮高估的影响半径（`tests/` 内 19 文件 → **2 文件**），详见 §13.3.17 与 §12 #85。** ⚠️ 上一轮用 `NOLANG_MIR_DEBUG_UNDEF` 量到的"19 文件 / 55 处命中"**把两类命中混在一起了**：其中 **51 处 `llvm="void"` 是合法的**（void 值本无存储，调用方正是靠 `"void"` 跳过它），**只有 4 处 `value=0` 是真洞**（`value=0` 即 `NoVal`：消费方在读取没有任何指令产生过的操作数），落在 **2 个文件**（`mem-safety/str-concat-leak.no`、`test-std-hash.no`）。这两个文件的 `legacy-baseline` 判定**本来就是 rc=1**，所以护栏是把 MIR 拉回冻结语义基线的判定 —— **对上 oracle，不是回归**；重冻结后两份基线与改动前 **恰好 diff 2 行**，且两行的新值都与 `legacy-baseline` **逐字节相同**。**把扫描范围扩到 `test/`(40)+`example/`(11) 又恰好多出 1 个**：`test/std/process.no` 护栏前 `no test` 在 **`t-cmd` 上 SIGSEGV**，护栏后变成编译期点名同一函数的诊断 ⇒ **没有任何测试由通过变失败**。另记两条判读教训：`no build` 的 rc（编译器）与 `no run` 的 rc（程序退出码）**不是一回事**；`BOTH_FAIL` 桶**不比哈希**，故 `test-std-hash.no` 的修复在桶计数上完全不可见。
 > **关键量化：** 对同一份语料，默认口径（MIR-only）通过 **388/421**，与旧默认（`MIR=2`：`MATCH 387 + DIVERGE 1`）的 `rc=0` 集合**完全一致** —— 即切换默认不改变任何测试的成败，只是停止用 legacy 掩盖 MIR 的缺口。详见 §13.3.12。
 > 作者：编译器工作流
 > 关联：`src/hir`（HIR）、`src/parser/tohir.go`（AST→HIR）、`src/mir`（本层）。~~`src/build/llvm`（legacy LLVM 后端）~~ 已于第三十九·续轮删除（§13.3.13 ⑥）
@@ -357,14 +361,152 @@ unsupported kind ⇒ 记录 diagnostic 并安全终止该函数 lower（验证�
     - **修法**：新增 `irHasFunc(ir, fn)` 辅助函数，同时接受原拼写与净化拼写；`@shared-fn` 的计数同理加 `@shared_fn`。**这些测试的意图是"符号没被模块合并丢掉"（D17），不该被拿来钉死命名风格。**
     - **核对**：与基线 worktree（`/tmp/no-base`，HEAD `af2e494`）对比，`build` 包失败集在 `NOLANG_MIR=0`/`2`/`3` 下完全一致（`TestSliceMethodLenCall{,OnI64,OnStr}`、`TestProgramUsesPrintDetectsLoopAndBlockBodies`、`TestGenerateHIRMatchesGenerate`、`TestUserReadOverridesBuiltin`）——均为既有失败。
 
-77. **【目录 #77】平台变体过滤在脚本模式下失效（2026-09-16 第三十九轮，legacy 对 / MIR 错）**：
-    - **现象**（arm64 macOS，脚本无显式 `main`）：`#{mac-amd64} V = 8` 单独 → MIR **打印 8**（legacy 正确报 opt 错 `%V` undefined）；`#{linux-amd64} V = 9` → MIR **9**；`#{mac-arm64} V=1` + `#{mac-amd64} V=2` → legacy `1` / MIR **`2`**；六平台变体各持不同值 → legacy `100` / MIR **`600`**。非宿主的 `...-amd64` 变体总胜出。带显式 `main` 的真实程序**正确**（`11`/`11`），故缺口限定在脚本模式。已排除 Rosetta（`file bin/no` / `uname -m` / `go env GOARCH` 均为 arm64）。
+77. **【目录 #77】平台变体过滤在脚本模式下失效（2026-09-16 第三十九轮；**口径经第四十轮更正**）**：
+    - **现象**（arm64 macOS，脚本无显式 `main`）：`#{mac-amd64} V = 8` 单独 → MIR **打印 8**、legacy 也 **打印 8**；`#{linux-amd64} V = 9` 单独 → 两者都 **`9`**；`#{mac-arm64} V=1` + `#{mac-amd64} V=2` → 两者都 **`2`**；六平台变体各持不同值 → 两者都 **`600`**。修复后 MIR 依次为 **无输出 / 无输出 / `1` / `100`**。带显式 `fn main` 的顶层 let 走注册循环，两个后端**本来就都正确过滤**（实测 `111`/`111`），故缺口只出现在**脚本模式的顶层内联路径**。
+    - ⚠️ **第四十轮更正（重要）**：本条目初稿记作"legacy 正确（报 opt 错 / `1` / `100`）、MIR 错"——**实测 legacy 在脚本模式下同样不过滤**（用 `git worktree add <tmp> 47b6cad` 现场编译的 pre-deletion 二进制重测）。所以 `#77` 的真身是**两后端共有的缺口、MIR 单方面修好了它**；判据改用**注解的文档语义**（`docs/docs/lang/syntax.md`），而非"与 legacy 逐字节一致"。直接后果：`tests/test-platform-const.no` 现在 MIR `100` vs legacy `600` **故意分叉**（计入 `legacy-baseline` 的 `DIVERGE`）。详见 §13.3.14 ②。
     - **根因**：`nodeMatchesPlatform`（`src/mir/platform.go`）只在顶层**注册循环**（`hir2mir.go` 的 `KFuncDef`/`KLet` 各一处）被调用，而脚本路径 `synthesizeMainForTopLevel` 没有这个检查 → 被注册循环过滤掉的变体**仍被内联**进合成的 `main`，其错误平台的值覆盖了匹配变体注册的全局。
     - **修法**：在 `synthesizeMainForTopLevel` 的 `for _, id := range pkg.Top` 循环入口（判空后、`switch` 前）补 `if !nodeMatchesPlatform(pkg, id) { continue }`，让所有顶层节点种类共用同一判据（无注解节点返回 `true`，std 预置节点不受影响）。
-    - **验证**：8 个最小复现全部与 legacy 一致；新增 `tests/test-platform-const.no`（六平台变体各持不同值）作常驻回归，并用修复前二进制（HEAD `47b6cad` worktree）实测得 legacy `100` / MIR `600`，确认用例有判别力。
+    - **验证**：新增 `tests/test-platform-const.no`（六平台变体各持不同值）作常驻回归——它对"**过滤是否发生**"有判别力（修复前 MIR `600` → 修复后 `100`），对"两后端是否一致"则没有（legacy 本来就不过滤）。第四十轮补 `src/mir/platform_test.go`（`src/mir` 单测 6→14），覆盖穷尽全表、`fn main` 路径、无注解/带值注解不被误判，并**实测判别力**（把检查短路成 `false &&` 后恰好 2 个脚本模式测试失败）。
     - **为何全量扫描漏掉**：`tests/` 无任何平台注解用例，且 `std/fs.no` 的 `mac-amd64`/`mac-arm64` 常量值相同（`O-CREAT` 512/512、`O-TRUNC` 1024/1024），错选不可观测；`std/process.no` 的注解在**函数**上（走注册循环，本来就对）。⇒ **`MIR_GAP=0` 只说明"语料区分不出"。**
 
 78. **【目录 #78】扫描器新增 CERR/CRASH 名单输出（2026-09-16 第三十九轮）**：`scripts/mir_sweep_fast.sh` 汇总段补打 `CERR`/`CRASH` 逐文件名单，避免排查时重复 9 分钟全量重扫。
+
+80. **【目录 #80】MIR 单测补齐（平台变体）+ 两处依据更正 + 两个两后端共有既有限制（2026-09-16 第四十轮，第三优先级第一项启动）**：
+    - **交付**：`src/mir/platform_test.go`，`src/mir` 单测 **6 → 13**（7 个新测试 / 9 个用例，全部以宿主推导期望值，非覆盖平台自动 `t.Skip`）。
+    - **依据更正 ×2**：§13.3.13 ①（现象表 legacy 列）与 ⑥（"`mir-baseline`/`legacy-baseline` 在该文件上同值"）—— 两处都错把 legacy 当正确参照。实测 legacy 在脚本模式**不过滤**（`600`）。⇒ **方法论：把"与 X 一致"当判据前先把 X 也测一遍。**
+    - **既有限制 A（两后端一致）**：**函数体内**的平台注解不被过滤（后出现者胜出，与宿主无关）。已由 `TestFunctionBodyPlatformVariantIsNotFiltered` 显式钉住；修则测试失败并提示改期望值。
+    - **既有限制 B（两后端一致）**：`#{overflow = clamp0 | min | max | saturate}` **策略未生效**，5 种模式输出完全相同（都回绕），注解只起"关掉 `option<int>` 包装"的作用。MIR 侧完全无溢出模式概念（`grep nsw\|OverflowMode src/mir/*.go` 为空）。范围限定：仅验证了**贴在 `let` 上方**的语句级形式；`ExpressionStatement`（if/match 臂体）路径未验证。
+    - **oracle 通道**：需要"逐字节对照具体用例"时用 `git worktree add <tmp> 47b6cad` 现场编译 legacy；需要"批量回归"时用冻结的 TSV。这是 §13.3.13 ④ 之外的第二条通道。
+
+82. **【目录 #82】预检不再重复整条后端流水线（2026-09-16 第四十一轮，编译耗时 −50%）**：
+    - **现象**：11 行 json 脚本（`p = json-pool {}` + `root, next, ok = p.parse(body, 0)`）`no build` 需 **61.4s**，而 `print('hi')` 只要 1.4s；耗时与 MIR 块数无关（15 块的 `alloc` 14.0s > 71 块的 `parse-num` 4.7s），产出 IR 仅 173KB。
+    - **根因（成本面）**：`verifyMIRIRViaOpt` 每次构建跑完整 `opt -O3`（15.1s）**加** `llc`（14s），产物 `m.s` 丢弃；builder 随后对同一份字节再跑一遍。62s ≈ 2 + (15+14) × 2。
+    - **改动**：默认只跑 `opt -passes=verify`（~30ms，仍是该阶段存在的理由），跳过 Stage 2 的 `llc`；`NOLANG_MIR_PREFLIGHT=full` 恢复旧行为。**不改变任何构建的成败**（builder 对同字节跑同命令），只改变失败发生在哪一步、报哪条消息。
+    - **验证**：`print('hi')` 1.6–2.0s（不变）；11 行 json **62s → 31.8/32.3s**；`NOLANG_MIR_PREFLIGHT=full` 63.5s（忠实复现旧默认）；假 `opt`（`exit 1`）下两种模式都在预检处报 `MIR IR failed LLVM verification`。
+    - **反例护栏**：`llc` 在**未优化** IR 上 >100s（684 个 `alloca` ≈ 1.8MB 栈帧）、在 `-O3` 后只要 14s。所以"降级为 verify-only 但继续汇编"会把构建改**慢**——这条是在实施前顺手测出来的。
+
+83. **【目录 #83】MIR 产出 IR 的形态对 LLVM 病态：`sroa` 撕裂 22KB 聚合（2026-09-16 第四十一轮，**未修**）**：
+    - **量化**：`opt -O0` 30ms / `-O1` 15.2s / `-O3` 15.1s，输出 173KB → **5.7MB**；逐 pass 隔离后唯一爆点是 **`sroa`**（229KB → **105,192,073 B**，×458，1.26s）；`-unroll-threshold=0`/`-inline-threshold=0` 均无效（后者恶化到 12.4MB）。
+    - **形态**：`%json_json_value = { i64, %str-long, double, i1, [16 x i64], [16 x %str-long], i64 }`（≈350B）、`%json_json_pool = { [64 x %json_json_value], i64 }`（≈22KB），而 `alloca [64 x %json_json_value]` 出现 **81 次**（全函数 684 个 `alloca`）。SROA 按常量下标把内联大数组拆成标量 ⇒ 十万量级标量。
+    - **修法方向**（属 codegen 语义改动，需单独评估）：大数组字段改堆分配/按引用访问（避免"取一次 `.nodes` 复制 22KB"）；或用属性抑制对这类聚合的 SROA（代价是丢优化）。
+    - **回归信号**：11 行 json 程序的 `no build` 耗时（现 32s，修好后应回秒级）。
+
+84. **【目录 #84】两个 json 用例在编译成功后被"解锁"出来，运行期 SIGSEGV（2026-09-16 第四十一轮发现 / 第四十二轮定性，**待修**）**：
+    - `mem-safety/test-json-parse-option.no`（117.1s）与 `mem-safety/test-json-nested-match.no`（113.4s）在 #82 之前因编译超时被记为 HANG，从未真正执行过；现在都能编译，但**运行期 rc=1**，stdout 只有 `start`。legacy 侧这两份文件 rc=1（连编译都过不去），所以历史扫描不可能发现。
+    - **第四十二轮定性：rc=1 不是编译器或超时造成的，而是段错误。** stderr 为 `Error: signal: segmentation fault`（运行期把信号翻成该诊断并以 1 退出）——这解释了"编译成功却 rc=1"的怪相。
+    - **已定位到失败语句**：把 `json.parse('')` 之后的每一步用 `print` 切开（串行、单独编译），输出止于第一个 `print`，即崩溃发生在**第一条语句 `e1 = json.parse('')` 上**，而那是 `json.parse` 里最简单的早返回路径（`result = nil` → `s.len-bytes() == 0` → `result = err('empty input')` → `return`）。所以不是递归下降解析器的问题。
+    - **已排除**：用同样的类型（22KB 的 `json-pool`/`json`/`?json`）在自己的模块里复刻"option 包装 + match + `err(<str>)` 早返回"全部**通过**（`/tmp` 探针 p5/p6/p9，2–10s 编译），见 §13.3.16 ④。故触发因素在 `src/std/json.no` 自身，而非该类型形状或 option 机制。
+    - **代价**：json 族每个探针的编译仍要 110s+（#83），这是它至今未闭环的原因；`?json` 的载荷是 22KB 值语义结构，任何 json 程序都会拖入这个成本。
+
+85. **【目录 #85】`count-for` 迭代变量上未绑定的方法调用被降级成 `undef`：静默输出 0–775MB 垃圾（2026-09-16 第四十二轮发现 / 第四十三轮加护栏；**底层 lowering 缺陷待修**）**：
+    - **症状**：`tests/mem-safety/str-concat-leak.no`（rc=**0**）输出 **0–775MB 二进制垃圾**，且**字节数与行数每次运行都不同**（5 次实测：775904872 / 784287641 / 775904872 / 766050306 / 775904872 字节；1000 / 1118 / 1128 行）。首行字节为 `item` + 12 个 NUL，随后是 `06 00…`（i64=6）两次——即打印的是**结构体原始内存**。
+    - **⚠️ 旧结论被推翻**：此前（第三十九轮起）把这条记成"DIVERGE 的**地址差异假阳性**"。**不成立** —— 该文件的输出是 `'item' + i.to-str()` 的**纯文本**，不含任何地址；哈希不稳定是因为**输出本身不确定**。这是一条真实的**静默错误编译**，被"假阳性"这个标签写掉了整整三轮。
+    - **2 秒复现**（无需 json，故不必付 #83 的 110s 代价）：
+      ```nolang
+      i <- [0..3): {
+          print('item' + i.to-str())
+      }
+      ```
+      输出 1169 字节二进制垃圾，rc=0。
+    - **IR 证据**（`NOLANG_MIR_DUMP_LL=1`，`@_nolang_main.bb5`）：拼接的右操作数是 `undef`，且 `i.to-str()` 的 `call` 指令**根本没有生成**（只有两次未被使用的 `load i64, i64* %v2.s`）：
+      ```llvm
+      %lv13 = load %str-long, %str-long* %v8.s
+      %c12 = call %str-long @str_concat(%str-long %lv13, %str-long undef)
+      call void @print_str(%str-long %lv14)
+      ```
+    - **MIR 证据**（`NOLANG_MIR_DUMP_MIR=1`）：`call dst=0 args=[3]` —— `dst=0` 是"无目标槽位"哨兵，`args=[3]` 指向 `const dst=3:i64`（即 count-for 的**初值常量**，而不是循环变量 `v2`）。消费方随后 `add dst=12:str args=[11 0]` 引用了值 `0` ⇒ `undef`。
+    - **判别矩阵**（全部 2s 级探针，`/tmp/fz/`）：
+      | 接收者 | 上下文 | 结果 |
+      | --- | --- | --- |
+      | `x i64 = 42`（let） | `print(x.to-str())` | ✅ `42` |
+      | `i`（count-for） | `print(i.to-str())` | ❌ 空 |
+      | `i`（count-for） | `s str = i.to-str()` 后 `print(s)` | ✅ `0/1/2` |
+      | `i`（count-for） | `g(i.to-str())`（**用户函数**实参） | ✅ `0/1/2` |
+      | `x i64 = 42` | `print('item' + x.to-str())` | ✅ `item42` |
+      | 普通函数 `f(1)` | `print('item' + f(1))` | ✅ `itemz` |
+      | `i`（count-for） | `print('item' + i.to-str())` | ❌ 1169B 垃圾 |
+      | `i`（count-for） | 先 `s str = i.to-str()` 再 `print('item' + s)` | ✅ `item0/1/2` |
+      ⇒ **触发条件 = count-for 迭代变量作接收者 + 内建调用的实参位置 + 方法调用未先绑定**。三者缺一即正常。
+    - **为什么危险**：rc=0 且 stdout "看起来有输出"，比崩溃更难被发现；`str-concat-leak.no` 正是语料里唯一的哨兵，却因被标为"假阳性"而失声。
+    - **修法方向**（两条独立缺陷，建议分开修）：
+      1. **lowering**：`hir2mir.go` 里"零入参方法调用（接收者类型不同、签名相同的 `X.to-str` 族）在实参位置 + 迭代变量接收者"**根本没有算出结果类型**，于是走了 void 那条路（见下方第四十三轮更正）。
+    - **⚠️ 第四十三轮更正（上一条的旧说法有两处错）**：原记"结果参数未绑定到值 id，且**接收者被绑成循环初值常量**"。逐条核对 `NOLANG_MIR_DUMP_MIR` 后：
+      - **接收者是绑对的**。`call dst=0 args=[3]` 里的值 `3` 就是循环计数器本身——block 1 分配 `const 1..4`，block 11/12 做 `add dst=15 args=[3 14]` 再 `move dst=0 args=[15 3]`，即 `3` 每次迭代被重新写回 ⇒ **它就是 `i`，不是"循环初值常量"**。原文那句话是误读（把 `args=[3]` 里的值 id 当成了常量池里的初值）。
+      - **真正的机制在 `lowerCall` 的 void 分支**（`hir2mir.go:4959–4963`）：
+        ```go
+        if resTyp == l.voidType {
+            // void call: emit without a destination value (statement, not expression)
+            l.b.EmitVoid(OpCall, argv, callee)
+            return NoVal          // <-- 表达式位置却拿到 NoVal
+        }
+        ```
+        `resTyp` 由 `resultTypeOfCallee(callee)` 得到（4907 行），三档回退（HIR 定义 → 内建表 → LHS 类型提示）都没命中时**才是 void**。本形状里三档全落空 ⇒ 调用被当成"语句型 void 调用"发射，**不分配结果值**，`lowerCall` 返回 `NoVal` 给上层的 `+`。⇒ 上游 `add dst=12 args=[11 0]` 的第二操作数就是 `NoVal`。
+      - **为什么同族的其它形状正常**：`s str = i.to-str()` 与 `g(i.to-str())` 都有**外部类型提示**（LHS 声明 / 形参类型），`resTyp` 因此不是 void，走 `EmitCallMulti`（4973 行）→ 结果值进 `inst.Results` → 正常。⇒ **触发条件可以精确表述为"该方法调用的结果类型三档回退全落空"**，而"count-for 迭代变量 + 实参位置"只是能构造出这种落空的一种场景。
+      - **已确证但尚未定位的一环**：`NOLANG_MIR_DEBUG=1` 的既有钩子（只对 `i64-to-str`/`number.i64-to-str` 打印）**没有输出**，且 stderr 里**只有 `NoVal` 一条报文、没有"unknown callee"**，说明该 `callee` 名**是能被解析的**、但既不是 `i64-to-str` 也不为 `resultTypeOfCallee` 所知。要把 `callee` 的确切拼写钉死，需要给 MIR 转储补上 `Sym` 字段——**本轮故意没做**：扫描正在使用 `bin/no`，中途重编译会让同一次比对混用两个二进制（见 §13.3.17 ⑧）。
+      - **附带发现的第二处隐患**：即使把 `resTyp` 修对，`codegen.go` 的 `i64-to-str` 快路径（4611–4672 行）在 `inst.Results` 为空时**静默 `return nil`**——整个调用凭空消失。也就是说同类"结果值没被登记"的失效有**两条**独立路径，护栏只拦下游消费者那一条。
+      2. **checker**：`s str = 'item' + x.to-str()`（接收者**显式** i64）报 `cannot assign non-string value to string variable 's'` —— 即 `str + <调用>` 没有被判成 `str`。两个阶段对同一表达式各有各的错，这正是"未绑定形式"能穿过 checker 直达错误降级的原因。
+    - **回归信号**：`no run tests/mem-safety/str-concat-leak.no` 的输出应稳定为 1000 行 `item0`…`item999`（当前是 0–775MB 垃圾）。
+    - **⭐ 与 legacy 的对照（现场重建 `47b6cad`，`NOLANG_MIR=0`）—— 根因共有，但失败模式是 MIR 独有的**：
+
+      | 探针 | legacy | MIR |
+      | --- | --- | --- |
+      | `str-concat-leak.no` | **rc=1** `opt: error: use of undefined value '@i.to.str'` | **rc=0，0–775MB 垃圾** |
+      | c1 `print('item' + i.to-str())` | rc=1，同一错误 | rc=0，1169B 垃圾 |
+      | c4 `print(i.to-str())` | **rc=1** `codegen error: expression produced empty value in emitArgAsStrLong (expr: *parser.CallExpression)` | **rc=0，空输出** |
+      | d1 `x i64 = 42; print(x.to-str())` | rc=0 ✅ `42` | rc=0 ✅ `42` |
+      | d5 `s str = 'item' + x.to-str()` | rc=1 `cannot assign non-string value to string variable 's'` | rc=1，同一错误 |
+      | e1 count-for 绑定后再 print | rc=0 ✅ `0/1/2` | rc=0 ✅ |
+      | f1 `print('item' + x.to-str())` | rc=0 ✅ `item42` | rc=0 ✅ |
+      | g2 `g(i.to-str())`（用户函数实参） | rc=0 ✅ `0/1/2` | rc=0 ✅ |
+
+      ⇒ ① **共性根因是前端的**：两个后端都把 `i.to-str()` 解析成"名为 `i` 的类型上的方法"（legacy 直接发出 `@i.to.str` 这个不存在的符号）。这在 legacy 时代就存在，**不是 MIR 引入的**。② **MIR 独有且更危险的是失败模式**：legacy 在 `emitArgAsStrLong` 处**精确检测到"表达式没产生值"并硬报错**，MIR 则在 `loadVal`（`codegen.go:1927–1931`）**静默返回 `("void","undef")`**，消费者照单全收 ⇒ rc=0 + 错输出。**"表达式没产生值"这个条件两个后端都知道，只有一个选择说出来。**
+    - **修法（两步，第二步收益最大）**：① 前端：修"未指定类型的接收者（count-for 迭代变量）在实参位置的方法名解析"——属**共有**缺陷，按本项目的经验修它会让 `gap`/失败数先升后降（掩盖的真缺口浮出）；② **MIR：把 `loadVal` 的 `lt=="void"||slot==""` 从"返回 `undef`"改成 `c.fail(...)`**（该文件已有 54 处 `c.fail` 的同款模式），即复刻 legacy 的 `emitArgAsStrLong` 护栏。这一步把一整类"静默错误编译"变成响铃诊断，**是风险最高的缺陷类别里性价比最高的一处改动**；预期副作用是若干当前 rc=0 的用例会变 rc=1（含 `str-concat-leak.no`），需按"先响铃、再逐条修"的顺序接受并重冻结基线。
+    - **⭐ 第四十三轮：护栏已落地（第 ② 步），并修正上一轮高估的影响半径。** 上一轮由 `NOLANG_MIR_DEBUG_UNDEF` 得到"**19 个文件 / 55 处命中**，其中 18 个当前 rc=0"，据此推断"可能有一批静默错编译"。**这个推断把两类命中混在一起了** —— 把 55 条诊断按 `llvm=` / `value=` 字段切开：
+
+      | 类别 | 条数 | `value=` | 落点 | 判定 |
+      | --- | --- | --- | --- | --- |
+      | `llvm="void"` | **51** | `173 / 708 / 604 / …`（真实值 id） | 集中在 `hashmap_str_str_hash`(18) / `hashmap_str_i64_hash`(12) / `hashmap_str_bool_hash`(3) 等 std 函数 | ✅ **合法**：void 值本就没有存储，调用方正是靠 `"void"` 这个返回值跳过它（`emitCall` 的 print 循环 `argT == "void" -> continue`） |
+      | `value=0 llvm="i64" slot=""` | **4** | **`0`**（即 `NoVal`，`mir.go:41`） | `_nolang_main`(2) + `des_block`(2) | ❌ **真洞**：消费方在读取**没有任何指令产生过**的操作数 |
+
+      ⇒ 影响半径从"19 个文件"收敛到 **2 个文件**（**仅就 `tests/` 语料而言**，见下方"第三个文件"），而且这两个文件的 `legacy-baseline` 判定**本来就是 rc=1**。**⚠️ 但要看清"哪个 rc"**：两处 rc 不是一回事——`no build` 的 rc 是**编译器**的成败，而 golden 基线记的是 `no run` 的 rc（**先编译再执行，程序自己的退出码**）。手工探针用的是前者，预言机用的是后者，下面是按**预言机口径**（`no run` + stdout 哈希）逐字节对齐后的真表：
+
+      | 文件 | legacy（语义 oracle） | MIR 加护栏前 | MIR 加护栏后 |
+      | --- | --- | --- | --- |
+      | `tests/mem-safety/str-concat-leak.no` | `1 e3b0c442…`（空 stdout） | `0 eb28fc09…` ← **编译成功**，程序跑了，输出 0–775MB 不确定垃圾，**退出码 0** | `1 e3b0c442…` ✅ **与 oracle 逐字节相同** |
+      | `tests/test-std-hash.no` | `1 e3b0c442…`（空 stdout） | `1 399229a5…` ← **编译成功**，程序跑了并**自己有输出**，但程序自身返回 1 | `1 e3b0c442…` ✅ **与 oracle 逐字节相同** |
+
+      ⇒ 两点结论：① **两个文件加护栏后的指纹都与冻结语义 oracle 逐字节相同**（不只是 rc 相等）——护栏把 MIR 拉回 oracle 的判定，**这是"对上 oracle"，不是回归**；② **`test-std-hash.no` 的 rc 在预言机里没变（1 → 1）**，变的只是原因（"编译成功但程序失败"→"编译失败"）与 stdout。而比对脚本对"两边都非零"只记 `BOTH_FAIL`、**不比哈希**，所以这次修复在桶计数上**完全不可见**——它是本轮桶方案的一个盲点，见 §13.3.17 ④。
+    - **⭐ 第三个文件在语料之外：`test/std/process.no`（本轮最有说服力的一条证据）**。上一轮的诊断扫描只覆盖 `tests/**/*.no`，所以"2 个文件"**只是 `tests/` 内的答案**。本轮用**护栏前后的两个二进制**对 `test/`（40）+ `example/`（11）做逐文件 `rc` 对照，**恰好多出一个**：
+
+      | 文件 | 护栏前 | 护栏后 | 说明 |
+      | --- | --- | --- | --- |
+      | `test/std/process.no` | `build rc=0` | `build rc=1` | 唯一一个 rc 变化的文件（`test/`+`example/` 全扫） |
+
+      而它的**真实性质**要用该文件自己文档化的命令 `no test test/std/process.no` 才看得见：
+
+      | | 护栏前 | 护栏后 |
+      | --- | --- | --- |
+      | `no test test/std/process.no` | 依次跑 `process.new` / `process.shell` / `process.spawn-wait` / `process.parent-pid`，**第 5 个测试崩掉**：`FAIL: test/std/process.no (exit code signal: segmentation fault)` | `FAIL: test/std/process.no` + **`compilation error: … func t_cmd: consumer reads value 0 (NoVal) …`** |
+
+      第 5 个测试正是 `t-cmd`（源文件 46 行 `t-cmd = () {`），**与护栏点名的函数 `t_cmd` 完全一致**。⇒ 这条链完整闭合：**同一个未绑定的值，护栏前表现为"跑着跑着段错误"（没有任何线索指向原因），护栏后变成"编译期点名 `t_cmd` 和缺失的值"**。这是护栏价值最强的例证 —— 它把一次 SIGSEGV 变成了一条可读的诊断。（`no test` 的最终判定两版都是 `FAIL`，即**没有任何测试从通过变成失败**。）
+    - **顺带澄清两个易踩的命令语义**：① `no build <file> -o <out>` **不产出二进制**（rc=0 表示"编译器流水线成功"，`-o` 被忽略）——所以 `no build` 的 rc 只能当"编译成败"用，要执行必须用 `no run`（预言机正是 `no run`）；② `test/std/*.no` 是给 `no test` 用的**测试库文件**（无 `main`），不是独立程序。**背景数字（避免把既有失败误算进本次改动）**：`test/` 40 个里 23 个 `no build` 失败，其中 22 个**两版一致**（7 个 `ovfhndld` 陈旧测试源 + 15 个其它既有 MIR gap：`opt-verify`、`cannot marshal arg 0 as C string` 等），只有 `process.no` 是护栏引入；`example/` 11 个里 1 个失败（`mysql-driver/src/mysql.no`），两版一致。
+    - **落地实现**（`src/mir/codegen.go` `loadVal`）：把原来合在一起的条件 `lt == "void" || slot == ""` **拆成两支**，只对第二支响铃：
+      ```go
+      if lt == "void" { return "void", "undef" }            // 合法：void/unit 无存储
+      if slot == "" { c.fail(...); return lt, "undef" }     // 静默错误编译 -> 响铃
+      ```
+      **拆开的理由就是上表的测量数据**：合在一起改会让 51 条合法命中全部误报。报文区分两种成因：`NoVal` 者直指"喂这个操作数的指令没有 Dst"，其余报出 `value` 与 LLVM 类型。
+    - **为什么用 `c.fail` 而不是立刻 `return err`**：`c.fail` 只累积、统一在 `EmitLLVM` 出口（`codegen.go:369`）汇总，故**一次构建就把函数内每一处越界点全部列出**（`test-std-hash.no` 的两处一次性报全）——这也是它取代上一轮"先加 env 诊断手工测一遍"流程的原因。`NOLANG_MIR_DEBUG_UNDEF` 保留（供日志 grep 与将来的扫描脚本用）。
+    - **验证**：`go build ./...` 通过；`/tmp/fz/c1.no` 由"1169B 垃圾 rc=0"变为 **rc=1 + 精确报文**；5 个正常探针（`d1` let 接收者 / `f1` 显式 i64 接收者 / `g1` 用户函数实参 / `e1` 绑定后 print / `lit` 纯字面量拼接）rc 与输出**逐字节不变**；未受影响的高频命中文件（`test-map-generics.no` 9 处、`test-map.no` 3 处 —— 全是 `llvm="void"` 那类）仍 rc=0。
+    - **仍未修（本护栏不解决）**：底层 lowering 缺陷（`i.to-str()` 的 `call` 没有 Dst）依旧在，只是现在会响铃而非静默。修好它之后这两个文件的 rc 应回到 0 且输出正确（`str-concat-leak.no` 应为 1000 行 `item0…item999`）——那一步才是真正的修复，届时需再次重冻结基线。
+
+86. **【目录 #86】golden 测试骨架加固：`rc=124` 语义清理、`-update` 破坏守卫、`UNSTABLE` 分流（2026-09-16 第四十二轮）**：
+    - **`rc=124` 的语义问题**：`MIR_GOLDEN_TIMEOUT` 原为 90s，而 124 混装了三种完全不同的东西——真死循环、**慢但有限**的编译、以及 **`-P 8` 自身并发争抢**。第三条是实测的：`tests/test-parse-min.no` 串行 **32.9s / rc=0**，却在冻结基线里记成 **124**（指纹哈希是空输出哈希，说明它根本没跑到运行）。后果不是数字不准，而是**超时的文件无法报告任何行为回归**。
+    - **改动**：`MIR_GOLDEN_TIMEOUT` 默认 **300s**、新增 `MIR_GOLDEN_JOBS` 默认 **4**（降并发以减少争用）；注释里写明"oracle 的存在意义是准确，它是手工跑的，不在循环里"。
+    - **`-update` 守卫**：`src/build/llvm/` 删除后 `NOLANG_MIR=0` 是硬错，而 `-update` 的默认 `GOLDEN_MIR=0` 会把 `legacy-baseline.tsv`（唯一的**语义**参照）覆盖成"422 个文件全部非零"的垃圾。现直接拒绝（rc=2，不写文件），且**故意不留覆盖开关**：若将来恢复 legacy，应连同这道守卫一起删。`legacy-baseline.tsv` 自此为**只读历史产物**。
+    - **`UNSTABLE` 分流**：`MIR_GOLDEN_UNSTABLE` 列出"输出本身不确定"的文件（当前只有 `str-concat-leak.no`，原因指向 #85），哈希不符时记 `UNSTABLE` 而非 `DIVERGE`。理由写在脚本里：一个**永远不可能匹配**的条目会在每次比对时都报警，最终把读者训练成忽略 DIVERGE。`DIVERGE` 必须保持是干净信号。
+    - **验证**：见 §13.3.16 ①③。
+
 
 79. **【目录 #79】删除 legacy 后端 `src/build/llvm/` + 移除 strangler-fig 回退（2026-09-16 第三十九·续轮，第二优先级 #9/#10 收官）**：
     - **规模实测**：48 文件 / 50,006 行 / 2.0MB = 15 生产文件（41,806 行）+ 33 测试文件（8,200 行 / 188 个 `func Test`）。**旧文档记的"约 60KB"低估约 30 倍。**（`src/build/wasm/`、`src/build/js/` 是另外两个后端，不在本项内。）
@@ -387,7 +529,7 @@ unsupported kind ⇒ 记录 diagnostic 并安全终止该函数 lower（验证�
 - `vec.no` —— `SIGSEGV`（两模式 rc=1）。
 - `test-std-net-ext.no` —— `SIGSEGV`（两模式）。
 - `test-tls-part2.no` —— `SIGSEGV`（两模式）。
-- `test-for2.no` —— `HANG`（两模式 rc=124，死循环/阻塞）。
+- `test-for2.no` —— `HANG`（两模式 rc=124，死循环/阻塞）。**（第四十一轮更正：该文件全文两行 `{` `} (true)` —— 块调用语法写成的 `while (true) { }`，无限循环是**设计**而非缺陷；`no build` 1 秒完成、rc=0，见 §13.3.15 ②。第四十一轮另证伪：与它同批记为 HANG 的三个 json/parse 文件**都不是**死循环。）**
 - `tmp-getline.no` —— MIR=0 `HANG`（等 stdin）；**MIR=3 rc=0**（无输入正常退出 "no input"）——MIR 反而更好。
 - `tmp-loop-test.no` —— 两模式 **rc=0**（现已通过，非真实挂死）。
 
@@ -770,16 +912,22 @@ opt: error: '%addopt.final.5254' defined with type '%option = type { i64, i64 }'
 
 查 `#9/#10` 的耦合面时偶然实测到的**真 gap**（legacy 正确、MIR 错误），且此前的全量扫描完全看不到它。
 
-**现象（宿主 arm64 macOS，脚本无显式 `main`）**：
+**现象（宿主 arm64 macOS，脚本无显式 `main`）** — 三栏对照，第三栏是第四十轮用 pre-deletion 二进制（`git worktree add <tmp> 47b6cad`）重测的权威值：
 
-| 用例 | legacy | MIR=3（修复前） |
-| --- | --- | --- |
-| `#{mac-amd64}` `V = 8` 单独 | 正确报错（opt 报 `%V` undefined） | **打印 8** |
-| `#{linux-amd64}` `V = 9` 单独 | 正确报错 | **打印 9** |
-| `#{mac-arm64} V=1` + `#{mac-amd64} V=2` | `1` | **`2`** |
-| 六平台变体各持不同值 | `100` | **`600`**（win-amd64 的值） |
+| 用例 | legacy（`47b6cad`） | MIR=3（修复前） | MIR=3（修复后） |
+| --- | --- | --- | --- |
+| `#{mac-amd64}` `V = 8` 单独 | 打印 **8** | 打印 8 | **无输出**（变体被过滤 → `V` 未定义，落进 MIR 的「未解析标识符静默」通病） |
+| `#{linux-amd64}` `V = 9` 单独 | 打印 **9** | 打印 9 | **无输出** |
+| `#{mac-arm64} V=1` + `#{mac-amd64} V=2` | **`2`** | **`2`** | **`1`** |
+| 六平台变体各持不同值 | **`600`** | **`600`**（win-amd64 的值） | **`100`** |
 
-规律是**非宿主的 `...-amd64` 变体总胜出**，宿主的 `mac-arm64` 反而被丢弃。已排除"跑在 Rosetta 下导致 `runtime.GOARCH` 是 amd64"这一可能：`file bin/no` = arm64、`uname -m` = arm64、`go env GOARCH` = arm64。**带显式 `main` 的真实程序（含跨模块读取）是正确的**（`11`/`11`），所以缺口限定在**脚本模式**。
+规律是**后出现的变体总胜出**（与宿主无关），宿主的 `mac-arm64` 反被丢弃。已排除"跑在 Rosetta 下导致 `runtime.GOARCH` 是 amd64"这一可能：`file bin/no` = arm64、`uname -m` = arm64、`go env GOARCH` = arm64。**带显式 `fn main` 时顶层 let 走注册循环，两个后端都正确过滤**（实测 `111/111`），所以缺口限定在**脚本模式的顶层内联路径**。
+
+> ⚠️ **依据更正（第四十轮实测，重要）**：本节初稿记作"legacy 正确、MIR 错误"，**这是错的**。用 `47b6cad` worktree 编译的 legacy 二进制重测证明：**legacy 在脚本模式下同样不过滤**平台变体 —— 单独 `#{mac-amd64}` 照常打印 8（并非"正确报错"），双变体打印后出现者 2（并非 1），六变体打印 600（并非 100）。
+>
+> 所以 `#77` 不是"MIR 偏离了 legacy"，而是**两个后端共同的缺口，MIR 单方面把它修好了**。判据必须改用**注解的文档语义**（`docs/docs/lang/syntax.md`：平台注解决定该语句是否参与本次编译），而不是"与 legacy 逐字节一致"。这也是只有**顶层 let**（有 `fn main` 时）才天然一致的原因：那条路径两个后端都过滤。
+>
+> 直接后果：修复后 `tests/test-platform-const.no` 在 MIR 与 legacy 之间**故意分叉**（`100` vs `600`）。该分叉在 `tests/golden/legacy-baseline.tsv` 的比对里表现为一个 `DIVERGE`（两后端都 rc=0 但输出不同）—— 是**有意修复的签名**，不是回归。**教训：把"与 legacy 一致"当作正确性判据之前，先确认 legacy 真的做对了这件事。**
 
 **根因**：`nodeMatchesPlatform`（`src/mir/platform.go`）只在顶层**注册循环**里被调用——`hir2mir.go` 的 `KFuncDef`（`l.funcNames[name]=id` 之前）与 `KLet`（`l.globals` 之前）各一处。脚本路径的 `synthesizeMainForTopLevel`（`hir2mir.go` 起于 `func (l *lowerer) synthesizeMainForTopLevel`）**没有这个检查**，于是被注册循环过滤掉的变体**仍然被内联**进合成的 `main`，其错误平台的值覆盖了匹配变体注册的全局。这解释了全部四种现象：单个不匹配变体被内联成脚本局部（所以"照编不误"）；多变体时匹配者成为全局、不匹配者成为内联局部，后者胜出；两个都不匹配时按源序后者胜出。
 
@@ -793,7 +941,7 @@ if !nodeMatchesPlatform(pkg, id) {
 
 放在循环入口而非 `case hir.KLet` 内，是为了让所有顶层节点种类（`KLet`/`KStructLit`/表达式语句…）共用同一判据。无注解的节点 `nodeMatchesPlatform` 返回 `true`，std 预置节点不受影响。
 
-**验证**：8 个最小复现全部与 legacy 一致（`7/7`、`100/100`、`6/6`、`1/1`、`1/1`，以及 3 个两模式**都**编译失败）。新增 `tests/test-platform-const.no`（六平台变体各持不同值）作为常驻回归——**用修复前二进制（HEAD `47b6cad` worktree）跑该用例得 MIR `600` vs legacy `100`，确认它真能抓到该 bug**。
+**验证**：新增 `tests/test-platform-const.no`（六平台变体各持不同值）作为常驻回归。用修复前二进制（`47b6cad` worktree）实测该用例得 MIR **`600`** —— 同一份 legacy 也是 **`600`**（见上方更正），所以该用例对"**过滤是否发生**"有判别力，对"两后端是否一致"则没有（legacy 本来就不过滤）。`src/mir/platform_test.go`（第四十轮新增）把这条规律固化为 7 个 Go 单测（含穷尽 `package.PlatformKeys` 全表、`fn main` 顶层路径、以及钉住"函数体内不过滤"这一两后端共有的既有限制），并**实测了判别力**：把 `synthesizeMainForTopLevel` 的检查改成 `if false && !nodeMatchesPlatform(...)` 后，恰好两个脚本模式测试失败，其余不受影响。
 
 **为什么全量扫描抓不到（本轮最重要的一条方法论）**：`tests/` 里**没有任何**用例使用平台注解（`grep -rl 'mac-arm64\|linux-amd64' tests/` 为空），而 `std/fs.no` 的 `mac-amd64` 与 `mac-arm64` 常量**值恰好相同**（`O-CREAT` 512/512、`O-TRUNC` 1024/1024），所以即使错选也不产生可观测差异；`std/process.no` 的注解挂在**函数**上（走注册循环，本来就对）。⇒ **`MIR_GAP=0` 只意味着"语料区分不出"，不等于"两后端等价"。判定一个 gap 家族是否真清零，要问"语料里有没有能区分它的用例"。**
 
@@ -820,7 +968,7 @@ if !nodeMatchesPlatform(pkg, id) {
 | **B · 语言/std 语义知识** | ~20 | `generator_test.go` 9（**平台变体解析 / datalayout / triple / 各平台声明**）、`decl_test.go` 4（`TestStatLayoutForAllPlatforms`、`TestOpenWriteFlagsForAllPlatforms`）、`overflow_test.go` 4（语句级 `#{overflow=...}` 读取）、`chacha`/`poly1305` 2 | **迁移重点**。MIR 有独立镜像表（`src/mir/platform.go`、`builtin_call.go`）但**零测试**——① 的缺口正出自这里：`TestPlatformVariantResolution`/`TestPlatformVariantMultiKey` 只测 legacy |
 | **C · 历史 bug 回归（IR 文本断言）** | ~68 | `struct_*` 33（字段访问/数组字段/深拷贝/push/clear-truncate/retinit）、`str_slice_regression` 5、`str_index_regression` 4、`cross_module_str_stride` 7、`callvec_store` 6、`recursive_match_it` 3、`for_loop_match` 4、`match_str_clone` 2、`arr_byte_offset_slice` 2、`d23_option_struct_field` 1、`user_func_overrides` 3 等 | **无法机械迁移**（全部断言 legacy IR 字符串）。其**语义意图**由 `tests/*.no`（371 个运行比对用例）承载；建议增量策略：删后若出现回归再补 |
 
-**当前不对称**：legacy 188 个单测 vs MIR **6 个**（`src/mir/mir_test.go` 209 行）。这是第三优先级"MIR 单测扩展"的量化依据。
+**当前不对称**：legacy 188 个单测 vs MIR **6 个**（`src/mir/mir_test.go` 209 行）→ **第四十轮起为 13 个**（新增 `src/mir/platform_test.go` 的 7 个测试函数，覆盖分类 B 的**平台变体解析**；含 3 个子用例共 15 个用例，详见 §13.3.14 ①）。这是第三优先级"MIR 单测扩展"的量化依据。
 
 ##### ④ 删 legacy 会失去 Oracle —— 必须先冻结基线快照
 
@@ -865,7 +1013,9 @@ if !nodeMatchesPlatform(pkg, id) {
 | `go test ./...` | 失败集与**干净 HEAD worktree（`47b6cad`）逐条一致**：`fmt`(2) + `build`(4) + `checker`(2)。**全部为既有失败**；`TestGenerateHIRMatchesGenerate` 已随 legacy 包消失 |
 | golden 比对（`mir-baseline.tsv`） | `SAME=388`、**`REGRESS=0`**、`DIVERGE=1`（`tests/mem-safety/str-concat-leak.no`，已知的二进制地址差异假阳性，非新问题）、`BOTH_FAIL=33`、`NEW=0`（388+1+33=422） |
 
-**基线时序核对（防"冻结了错的参照"）**：`mir-baseline.tsv` 冻于 11:36，晚于 ① 的修复（11:12），且含 `tests/test-platform-const.no`，其哈希 `eea8254c…` **正是 `sha256("100\n")`** —— 即冻结的是**修复后**行为，而修复前 MIR 的 `sha256("600\n")`（`ab8e9a58…`）不在任何基线里。确认 `mir-baseline` 与 `legacy-baseline` 在该文件上同值（legacy 本就输出宿主平台值 `100`），也就是 ① 的修复把 MIR 拉回了 legacy 语义。
+**基线时序核对（防"冻结了错的参照"）**：`mir-baseline.tsv` 冻于 11:36，晚于 ① 的修复（11:12），且含 `tests/test-platform-const.no`，其哈希 `eea8254c…` **正是 `sha256("100\n")`** —— 即冻结的是**修复后**行为，而修复前 MIR 的 `sha256("600\n")`（`ab8e9a58…`）不在 `mir-baseline` 里。确认基线冻对了时机。
+
+> ⚠️ **同一处的第二处依据更正（第四十轮实测）**：本节初稿接着写"`mir-baseline` 与 `legacy-baseline` 在该文件上同值（legacy 本就输出宿主平台值 `100`），也就是 ① 的修复把 MIR 拉回了 legacy 语义"——**这句是错的**。`legacy-baseline.tsv` 在该文件上记的是 **`600`**（用 `47b6cad` worktree 重测证实 legacy 脚本模式不过滤），与 `mir-baseline` 的 `100` **不同值**。所以 ① 的修复**没有**"拉回 legacy 语义"，而是让 MIR 按注解的**文档语义**过滤、**有意偏离** legacy；这条分叉就计入下面 `legacy-baseline` 的 `DIVERGE=38` 之中。详见 ① 的更正框。
 
 **新旧口径对照（本轮的"零回归"证据）**：第三十九轮扫描（删除前）`MATCH=388/422`、`MIR_GAP=0`；删除后同一语料经 `mir-baseline` 比对为 `SAME=388` / **`REGRESS=0`** / `DIVERGE=1`（沿用同一条已知假阳性）/ `BOTH_FAIL=33`。两者**逐项一致**，说明删除本身**不改变任何文件的行为**（预期如此：legacy 在默认口径下本就未被调用）。两个口径用不同的机制得到同一个 388，互为交叉验证。
 
@@ -887,6 +1037,397 @@ if !nodeMatchesPlatform(pkg, id) {
 
 ---
 
+#### 13.3.14 第四十轮（2026-09-16）：MIR 单测补齐（平台变体）+ 两处依据更正 + 两个「两后端共有」的既有限制
+
+**触发**：第三优先级第一项 —— "MIR 单测 6→对齐 legacy 188，**重点补平台变体/datalayout/溢出注解**，那正是 §13.3.13 ① 缺口的零测试区"。从平台变体入手（① 刚证明它是零测试区），过程中反查出 ① 的**依据记载有误**，并顺带钉住两个两后端共有的既有限制。
+
+**口径与前置**：legacy 已于第三十九·续轮删除，所以本轮的"legacy 对照值"一律来自 **`git worktree add /tmp/no-legacy 47b6cad` 现场编译的 pre-deletion 二进制**（`go build -ldflags="-s -w" -o bin/no-legacy ./cmd/no`）。这正是 §13.3.13 ④ 冻结基线之外的第二条 oracle 通道：**需要"逐字节对照某个具体用例"时用 worktree 现场重建；需要"批量回归"时用冻结的 TSV。** 用完 `git worktree remove --force`。
+
+##### ① 交付：`src/mir/platform_test.go`（`src/mir` 测试数 6 → 13）
+
+7 个新单测（其中一个含 3 个子用例），全部以**宿主**推导期望值（`package.PlatformKeyFor(runtime.GOOS, runtime.GOARCH)`）而非硬编码 `darwin/arm64`，因此在任何 `PlatformKeys` 覆盖的机器上都有意义（无覆盖的机器自动 `t.Skip`）。
+
+| 测试 | 钉住的行为 |
+| --- | --- |
+| `TestPlatformKeyForRoundTrip` | `PlatformKeys` ↔ `PlatformKeyFor` 双射；`freebsd/arm64` → `""`（表外平台不得解析成别的 key） |
+| `TestNodeMatchesPlatformForEveryKey` | **穷尽全表**：`nodeMatchesPlatform` 对每个 key 恰好只有宿主那个返回 `true` |
+| `TestNodeMatchesPlatformKeepsUnannotatedNodes`（3 子用例） | 无注解 / `#{overflow = wrap}` / `#{overflow = clamp0}` **都保留** —— 带值注解与裸平台旗标共用 `#{}` 语法，误判会把半个程序过滤掉 |
+| `TestScriptModePlatformVariantKeepsHostValue` | **① 的回归**：脚本模式（无 `fn main`）只保留宿主变体，且**只有**它 materialise 成全局 |
+| `TestScriptModeLoneWrongPlatformVariantIsDropped` | 单独一个非宿主变体不得留下任何值 |
+| `TestTopLevelVariantWithExplicitMainKeepsHostValue` | 有显式 `fn main` 时顶层 let 走注册循环，宿主变体胜出 |
+| `TestFunctionBodyPlatformVariantIsNotFiltered` | **钉住既有限制 A**（见 ③）：函数体内的变体两个后端都不过滤 |
+
+**判别力实测（不是"跑绿就算"）**：把 `synthesizeMainForTopLevel` 的检查临时改成 `if false && !nodeMatchesPlatform(pkg, id)`，恰好 `TestScriptModePlatformVariantKeepsHostValue` 与 `TestScriptModeLoneWrongPlatformVariantIsDropped` 两个失败、其余 5 个不受影响；恢复后全绿且 `git diff src/mir/hir2mir.go` 无残留。⇒ 用例确实绑定到被修的那条路径。
+
+**测试如何驱动 lowering**：`parseHIR` 必须复刻 `build/transpiler.go` 的前端序列 —— `parser.ASTToHIRWithMap(prog)` **加上** `parser.PopulateInferredTypes(pkg, idMap)`。只做前者时脚本模式产出 `globals=0`、`main` 为空的空壳（顶层语句读不到推断类型就不进合成 `main`），"过滤有没有发生"这个问题根本无法被观测。**这是写这类 lowering 测试最容易踩的坑。**
+
+##### ② 依据更正（重要）：§13.3.13 ① 的 legacy 列**全是错的**
+
+① 原文把 `#77` 描述成"legacy 正确、MIR 错误"，并给出 `legacy=100`、`legacy=1`、"legacy 正确报错"等值。第四十轮用 `47b6cad` worktree 现场重测，**实测值如下**（详见 ① 的更正框）：
+
+| 用例（脚本模式） | legacy 实测 | MIR（修复前） | MIR（修复后） |
+| --- | --- | --- | --- |
+| `#{mac-amd64} V = 8` 单独 | **`8`** | `8` | 无输出 |
+| `#{linux-amd64} V = 9` 单独 | **`9`** | `9` | 无输出 |
+| `#{mac-arm64} V=1` + `#{mac-amd64} V=2` | **`2`** | `2` | `1` |
+| 六平台变体各持不同值 | **`600`** | `600` | `100` |
+
+**legacy 在脚本模式下从来不过滤平台变体**（一律"后出现者胜出"）。所以 `#77` 的真身是：**两个后端共有的缺口，MIR 单方面修好了它** —— 不是"MIR 偏离了正确的 legacy"。判据从"与 legacy 逐字节一致"改为**注解的文档语义**（`docs/docs/lang/syntax.md`）。直接后果：`tests/test-platform-const.no` 现在在 MIR（`100`）与 legacy（`600`）之间**故意分叉**，在 `legacy-baseline` 比对里表现为一个 `DIVERGE`。
+
+**为什么当初会记错**：① 写于删 legacy **之前**，当时想当然地认为"legacy 是参照物、必然正确"，只实测了 MIR 侧就填了 legacy 列。⇒ **方法论：把"与 X 一致"当正确性判据之前，必须先把 X 也测一遍。参照物本身可能正是错的那一方。**
+
+##### ③ 既有限制 A：函数体内的平台注解不被过滤（两后端一致）
+
+```nolang
+main = () () {
+  #{mac-arm64}
+  PV = 111
+  #{linux-amd64}
+  PV = 222
+  print(PV)
+  return
+}
+main()
+```
+
+宿主 arm64 macOS：legacy **`222`**、MIR **`222`**（一致）。**后出现者胜出，与宿主无关。** 语句级平台过滤只接在**顶层**（注册循环 + `synthesizeMainForTopLevel`），函数体/块体内的语句两条路径都没接。这不是回归（删除前两者就一致），本轮以 `TestFunctionBodyPlatformVariantIsNotFiltered` 把它**显式钉在测试里**：将来若真要修，该测试会失败并提示改期望值。
+
+##### ④ 既有限制 B：4 种溢出模式策略在实际编译中未生效（两后端一致）
+
+规范（`docs/docs/lang/syntax.md` 溢出节）定义 `#{overflow = wrap | clamp0 | min | max | saturate}`，legacy 也确实有 `emitOverflowArith` → `emitClampArith` 的完整实现（`expr.go`，约 100 行，含 `@llvm.*.with.overflow` + 溢出方向判定 + `select` 箝位）。但**端到端实测**（宿主 arm64 macOS）：
+
+```nolang
+f = (x i64) () {
+  #{overflow = clamp0}      ; 依次换成 wrap / min / max / saturate
+  b = x + 1
+  print(b)
+  return
+}
+f(9223372036854775807)
+```
+
+| 模式 | legacy | MIR |
+| --- | --- | --- |
+| `wrap` / `clamp0` / `min` / `max` / `saturate` | 全部 `-9223372036854775808` | **完全相同** |
+
+**5 种模式输出完全一致（都退化为回绕）**，即：注解目前只起到"关掉 `option<int>` 包装、让未处理溢出的算术通过 `ValidateUnhandledOverflow`"的作用，**具体溢出策略没有生效**（`clamp0` 应为 `0`、`max`/`saturate` 应为 `9223372036854775807`）。因为**两后端一致**，这**不是 MIR 缺口**，而是语言特性的既有限制。
+
+**范围限定**：本条只验证了**语句级注解贴在 `let` 上方**这一形式（恰好是规范示例使用的唯一形式）。legacy 的 `overflowModeFromNode` 对 `ExpressionStatement`（if/match 臂体）有独立的 `OverflowMode` 字段读取路径，**该路径本轮未验证**，可能生效 —— 若将来要修，先从那里查起。根因线索：`overflowModeFromNode` 对 `FunctionDefinition` 显式返回 `""`（函数级注解已被移除），而 `LetStatement` 没有 `OverflowMode` 字段，只能靠 `annotationsFor`（AST 节点 → HIR id → 注解）兜底，实测该兜底在 let 上取不到值。
+
+**MIR 侧现状**：`grep -n 'nsw\|nuw\|OverflowMode\|overflow-mode' src/mir/*.go` **为空** —— MIR 完全没有溢出模式的概念，整数算术一律裸 `add`/`sub`/`mul`（即 wrap 语义）。这解释了为什么"退化"在 MIR 上是**预期行为**；要真正实现，需在 lowering 侧引入 `curOverflowMode` 上下文并把模式带到 `Inst` 上供 codegen 分派。
+
+##### ⑤ 方法论要点（本轮新增）
+
+- **"与 X 一致"不是正确性判据，除非你先测过 X。** ② 是这条的实例：参照物（legacy）本身在脚本模式下就是错的，把它当基准会把"修对了"误记成"跑偏了"。
+- **零测试区既可能藏缺口，也可能藏"两后端共有的既有限制"。** 本轮在同一个区域（平台变体 / 溢出注解）同时挖到两种：平台变体是**真缺口**（MIR 单方面可修），溢出模式是**共同限制**（需先改语言实现）。**发现差异后第一件事是"另一侧也测一遍"，据差异方向分流。**
+- **写 lowering 测试必须复刻真实前端序列**（`ASTToHIRWithMap` + `PopulateInferredTypes`），否则会得到"看起来跑通了、其实什么都没 lower"的空壳（见 ① 末段）。
+- **回归用例要实测判别力**：临时把被修的检查短路成 `false && …`，确认"恰好该失败的失败"。顺带能确认用例绑定的是哪条路径（本轮 5/7 不受影响，正说明只有 2 个绑定到该路径）。
+
+---
+
+#### 13.3.15 第四十一轮（2026-09-16）：`HANG=4` 的证伪 —— 三个是编译期爆炸（SROA 病态），一个是有意死循环
+
+##### ① 结论先行：冻结基线直接推翻了旧分类
+
+`tests/golden/*.tsv` 的 rc 分布是权威依据（**冻结值**，不是扫描脚本的推定值）：
+
+| 文件 | legacy rc | MIR rc | 真身 |
+| --- | --- | --- | --- |
+| `tests/test-for2.no` | **124** | 124 | 真·无限循环，但**是程序语义**（见 ②） |
+| `tests/test-parse-min.no` | **1** | 124 | MIR 编译期爆炸；legacy 根本没跑到运行 |
+| `mem-safety/test-json-parse-option.no` | **1** | 124 | 同上 |
+| `mem-safety/test-json-nested-match.no` | **1** | 124 | 同上 |
+
+（mir-baseline 全量 rc 分布：`0`×389 / `1`×29 / `124`×4；legacy-baseline：`0`×340 / `1`×81 / `124`×**1**。）
+
+第三十八轮记的"3 个 json/parse 测试**两模式都死循环**、属 std 缺陷"**不成立**。§3b 的两条口径陷阱在这里同时生效：扫描脚本的基线臂跑的是 `NOLANG_MIR=2`，而 `MIR=2` 就是 MIR 自己（第三十九轮已勘），所以 `rc2` 复现的是 MIR 的挂死、不是 legacy 的行为；legacy 对这三份文件的 rc 是 **1**（编译期拒绝），从来没挂过。
+
+##### ② `test-for2.no` 的"挂死"是设计，不是缺陷
+
+文件全文两行：`{` `} (true)`。`no build` **1 秒完成、rc=0**，`NOLANG_MIR_DUMP_MIR=1` 显示合成的 `main` 是
+
+```
+block1 → block2 { const true; cond-br → {3,5} } → block3 → block4 → block2 ; block5: return
+```
+
+即 `while (true) { }`。**"块 + 条件"就是循环语法**，`(true)` 是恒真条件；两个后端都转成无限循环，这是正确行为。它没有 `expect:`、没有任何输出断言，扫描把它记 `HANG` 是**口径**问题而不是 bug —— 语料里应当有一条"有意死循环"的标注。
+
+##### ③ 三个 json 文件的真身：62 秒的编译期爆炸
+
+最小复现（11 行，脚本模式）：
+
+```nolang
+p = json-pool {}
+body str = '"hi"'
+root, next, ok = p.parse(body, 0)
+```
+
+**逐构造耗时**（`no build`，串行无争用）：
+
+| 程序 | MIR 块数 | `no build` |
+| --- | --- | --- |
+| `print('hi')` | 1 | **1.4s** |
+| `p.init()` | 15 | 3.3s |
+| `p.skip-ws()` | 15 | 3.6s |
+| `p.alloc()` | 15 | **14.0s** |
+| `p.parse-str()` | 29 | 10.2s |
+| `p.parse-num()` | 71 | 4.7s |
+| `p.parse()` | 129 | **61.4s** |
+
+**耗时与 MIR 块数无关**（15 块的 `alloc` 比 71 块的 `parse-num` 贵 3 倍），且产出的 IR 只有 **173KB / 4694 行** —— 所以既不是 IR 体积问题，也不是前端问题（`no fmt` 0s、`no vet` 2s，`vet` 已经解析并检查了整个内嵌 std）。
+
+用 `no build -v` 逐行打时间戳（零代码改动）切出阶段：**第一条 `-v` 输出出现在 +31.5 秒**（= 前端 + MIR + `emitMIR` 内嵌的 verify 预检 `opt -O3`），此后 builder 再跑一次 `opt -O3`。单命令实测：
+
+| 命令 | 耗时 | 输出体积 |
+| --- | --- | --- |
+| `opt -O0 dist/c_parse.ll` | **30ms** | 211KB |
+| `opt -O1 …` | **15.2s** | **5.7MB** |
+| `opt -O3 …` | 15.1s | 5.7MB |
+| `llc` on 预优化 IR | **>100s（未跑完）** | — |
+| `llc` on `-O3` 后的 IR | ~14s | — |
+
+⇒ 62s ≈ 2s（前端+MIR）+ (15s opt + 14s llc) **× 2**。**整条后端流水线每次构建跑了两遍。**
+
+##### ④ 根因：`sroa` 撕裂超大聚合（IR 形态问题，尚未修）
+
+`opt -passes=inline` 之后逐个 pass 单独施加，只有一个爆：
+
+| pass | 耗时 | 输出体积 |
+| --- | --- | --- |
+| **`sroa`** | 1.26s | **105,192,073 B（458×）** |
+| jump-threading / simplifycfg / early-cse / mem2reg / gvn / licm / loop-rotate / correlated-propagation / tailcallelim / inline / loop-unroll / loop-vectorize | 26–33ms | 157–330KB |
+
+`-unroll-threshold=0`、`-unroll-count=0` 均无效（仍 5.7MB），`-inline-threshold=0` 反而恶化到 12.4MB ⇒ **既不是展开也不是内联，是 SROA**。
+
+为什么 SROA 会炸：
+
+```
+%json_json_value = type { i64, %str-long, double, i1, [16 x i64], [16 x %str-long], i64 }   ; ≈350B
+%json_json_pool  = type { [64 x %json_json_value], i64 }                                     ; ≈22KB
+```
+
+且 `alloca [64 x %json_json_value]` 在 366 个块里出现 **81 次**（`alloca [16 x i64]` / `[16 x %str-long]` 各 6 次，全函数共 684 个 `alloca`）。SROA 按常量下标把内联大数组拆成标量：单个 alloca 可拆出 `64 × 38 ≈ 2400` 个标量，81 个就是十万量级 —— 正是 105MB 的来源。优化后的 `json_json_pool_parse` 由 1896 行涨到 **55,822 行**，`alloc` 由 340 行涨到 13,988 行。
+
+**一个必须记住的反直觉点**：`llc` 在**未优化** IR 上超过 100 秒（684 个 alloca ≈ 1.8MB 栈帧），在 `opt -O3` 后的 IR 上只要 14 秒。任何"跳过 opt 直接汇编"的直觉都会把构建变慢 —— 这也解释了为什么 `NOLANG_OPT_LEVEL=-O0` 的构建比默认 `-O3` **更慢**。
+
+##### ⑤ 落地 #82：预检不再重复整条后端流水线
+
+`verifyMIRIRViaOpt` 原本在**每次构建**里跑完整 `opt $NOLANG_OPT_LEVEL`（默认 `-O3`）**加** `llc`，而 builder 随后用**同样的命令、同样的字节**再跑一遍；预检的 `m.s` 产物直接丢弃。改动：
+
+- **默认**只跑 `opt -passes=verify`（~30ms）。这正是该阶段存在的理由 —— IR verifier 是任何 `opt` 管线的第一件事，注册类型不匹配 / 未定义被调 / void 误用都会在这里被拒；而优化产物没人用。
+- **跳过 Stage 2（`llc`）**：见 ④ 的实测，喂未优化 IR 会更慢；builder 紧接着就用同一条 IR 汇编。
+- `NOLANG_MIR_PREFLIGHT=full` 恢复旧行为（完整管线 + `llc`），留给"只被某个变换 pass 拒绝"的 IR 形态排查。
+
+**这次改动不改变任何构建的成败，只改变失败发生在哪一步、报哪条消息**：builder 随后对同一份字节跑同一条命令，所以 full 预检拒绝的 IR 在 builder 侧同样被拒。实测：
+
+| 场景 | 改前 | 改后 |
+| --- | --- | --- |
+| `print('hi')` | 1.4s | **1.6–2.0s**（不变） |
+| 11 行 json 复现 | 61.4s | **31.8 / 32.3s** |
+| 同上，`NOLANG_MIR_PREFLIGHT=full` | — | 63.5s（忠实复现旧默认） |
+| `tests/test-parse-min.no` | rc=124（>90s 超时） | **rc=0 / 33.4s**，输出 `start / ok: parse str / next= / 7` |
+| `mem-safety/test-json-parse-option.no` | rc=124 | **rc=1 / 117.1s**，输出仅 `start` |
+| `mem-safety/test-json-nested-match.no` | rc=124 | **rc=1 / 113.4s**，输出仅 `start` |
+
+预检门本身也验过仍然有效：用会把 `opt` 替换成"总是失败"的假二进制（`PATH=/tmp/fz/failbin:$PATH`），两种模式下都得到 `MIR IR failed LLVM verification: … fake-opt: deliberate failure`。
+
+⇒ **三个"挂死"文件没有一个是死循环**：一个转为通过，另两个编译成功后**在运行期以 rc=1 失败**（都只打印出 `start`，失败发生在 parse/match 之内）。这是把编译期爆炸拆掉之后**新浮出**的既有缺陷 —— 记为 **#84 待查**（legacy 侧它们连编译都过不去，此前从未被执行过）。
+
+`HANG` 至此只剩 `test-for2.no` 一个，且是有意的。但注意 `test-parse-min`（33s）与两个 json 用例（113–117s）的差距说明**重复成本只占其中一半**：去掉重复后它们仍紧贴 90s 扫描预算，所以在重新冻结之前，这两个文件在基线里**仍会被记 124** —— 真正解决要靠 ⑥ 的 IR 形态改动。这也顺手解释了扫描为何慢：凡是碰 `json` 的用例都在白付一倍后端成本。
+
+##### ⑥ 待办 #83（未做）：IR 形态本身
+
+③④ 只是把重复成本去掉；**根因仍在** —— 值语义结构体（`json-pool` 内联 64 元素数组，元素又各带两个 16 元素数组）被整体物化成 `alloca`，单次 `opt` 仍要 15s、`llc` 14s。可能的修法（都属 codegen 语义改动，需单独评估）：
+
+- 大数组字段走堆分配 / 按引用访问，避免"取一次 `.nodes` 就复制 22KB"；
+- 或用属性/元数据（`optnone`/`noinline`/`llvm.sroa` 相关）抑制对这类聚合的 SROA —— 代价是丢掉优化。
+
+**判别这个 bug 是否回归的最快信号**：`no build` 一个 11 行 json 程序的耗时（现在是 32s，修好 IR 形态后应降到秒级）。
+
+##### ⑦ 方法论要点（本轮新增）
+
+- **超时不是死循环的证据**。`MIR_SWEEP_TIMEOUT=90` 的产物里，慢编译与挂死无法区分；四个 `HANG` 里三个是慢编译。判"是否循环"用"两个不同预算下的 `NOLANG_MIR_DUMP_MIR` 是否**逐字节相同且完整**"，再配合 `no fmt`/`no vet` 排除前端。
+- **`ps` 在 sandbox 内 `operation not permitted`**，返回空列表看起来就像"没有残留进程"——所有基于 `ps` 的"环境是干净的"结论都不可信，改用 `pgrep -f`（且模式要窄：`pgrep -f 'bin/no'` 会匹配到工具自身的 shell）。残留编译进程会让相邻两次测量差一倍。
+- **"两遍流水线"这类成本要靠读阶段顺序发现，不能靠直觉**：`verifyMIRIRViaOpt` 的注释写着"预检"，但它跑的是完整管线 + 汇编，产物全部丢弃。
+- **反例优先**：`llc` 在未优化 IR 上 >100s 这一条，是在实施"降级为 verify-only"**之前**顺手测出来的；没测就会把构建从 62s 改成 >130s 并以为是优化。
+- **确认测试真的在测这件事**：把 SROA 说成"优化器很慢"是不够的，逐 pass 隔离（`-passes=<one>`）才能把 15s 归到一个 pass 上。
+
+##### 13.3.16 第四十二轮（2026-09-16 续）：`rc=124` 的语义清理；证伪"地址差异假阳性"，挖出静默错误编译 #85
+
+##### ① #82 的行为保持：拿改动**之前**冻结的基线当预言机
+
+`tests/golden/mir-baseline.tsv` 的 mtime 是 **11:36:34**，而 `src/build/transpiler.go` / `bin/no` 是 **12:49** —— 即基线早于 #82 一小时。用改动后的后端跑全量比对，422 条**逐条完全一致**（`SAME=388` / `REGRESS=0` / `IMPROVED=0` / `BOTH_FAIL=33` / `DIVERGE=1`），且非零 rc 的 33 条路径与数值**逐条相同**（`0`×389 / `1`×29 / `124`×4）。
+
+这是比"跑一遍没挂"强得多的证据：**一次跨改动的逐条等值**。原计划的"#82 改了 rc，所以要重新冻结"因此**不必要**——但它的前提（"改了 rc"）本身是错的，见 ②。
+
+##### ② `rc=124` 里的第三个来源：并发争抢（而不是文件慢）
+
+`tests/test-parse-min.no` 在冻结基线里是 **124**，串行单跑却是 **32.9s / rc=0**（输出 `start / ok: parse str / next= / 7`）。同一条目两种口径矛盾，只可能来自测量条件：golden 用 `-P 8` 并发跑 422 个文件，而 LLVM `opt` 是 CPU 密集的，8 路争抢把 33s 顶过 90s 上限。指纹哈希是**空输出哈希**（`e3b0c44…`）正好印证——一个打印瞬时发生的程序根本没轮到运行。
+
+⇒ **超时不是文件的属性，是测量环境的属性。** 124 桶里同时住着：真死循环（`test-for2.no`）、慢但有限的编译（两个 json 用例 111–120s）、以及纯争用伪影。危害不止是数字错，而是**超时的文件无法报告任何行为回归**——两个 json 用例编译成功后**运行期 sigsegv（#84）**，只要它们卡在 90s 之上就永远看不见。
+
+##### ③ 重冻结：`rc=124` 从此只表示"死循环"
+
+`MIR_GOLDEN_TIMEOUT` 90s → **300s**、`MIR_GOLDEN_JOBS` 固定 8 → **4**（§12 #86）。重冻结结果：
+
+| | 旧基线（90s / -P 8） | 新基线（300s / -P 4） |
+| --- | --- | --- |
+| `rc=0` | 389 | **390** |
+| `rc=1` | 29 | **31** |
+| `rc=124` | 4 | **1** |
+| 124 名单 | for2 + 2 json + **parse-min（伪影）** | **只有 `tests/test-for2.no`** |
+
+逐条 diff 正好三处，全部是"拿到了本该早就拿到的判定"：
+
+```
+rc: 124 -> 1   tests/mem-safety/test-json-nested-match.no
+rc: 124 -> 1   tests/mem-safety/test-json-parse-option.no
+rc: 124 -> 0   tests/test-parse-min.no
+```
+
+即：**#84 的运行期失败第一次被基线记录在案**——修好后会显示 `IMPROVED`，将来再回归会被抓住。`rc=124` 现在有单一含义（死循环），`for2` 是语料里唯一的、且是设计使然的那个。
+
+随后用新骨架对**刚冻结的**基线跑一次比对，验证三个新机制同时生效：
+
+```
+SAME=389   DIVERGE=0   UNSTABLE=1   REGRESS=0   IMPROVED=0   BOTH_FAIL=32   NEW=0
+UNSTABLE: tests/mem-safety/str-concat-leak.no
+```
+
+`DIVERGE=0` 是本轮最有价值的单个数：在此之前它恒为 1，且那 1 是**假信号**（见 ⑤），即"每次比对都报警、每次都不必看"。389 + 0 + 1 + 0 + 0 + 32 = 422 闭合。`BOTH_FAIL=32` 与冻结分布（31×rc=1 + 1×rc=124）一致。
+
+##### ④ #84 定性为段错误，并排除了"类型形状"这一假设
+
+stderr 给出确凿证据：`Error: signal: segmentation fault`（运行期把信号翻成该诊断，以 rc=1 退出）。用 `print` 把 `json.parse('')` 之后每一步切开，输出止于第一个 `print` ⇒ 崩溃在**第一条语句**，走的是最简单的早返回（`result = nil` → 空串 → `result = err('empty input')` → `return`），与递归下降解析器无关。
+
+随后把嫌疑类型**原样搬进一个 `/tmp` 模块**（`json-value` 350B × 64 ⇒ `json-pool` 22KB、`json`、`?json`、struct 字面量初始化、option 包装、`err(<str>)` 早返回、`ok ->` 匹配）——**p5/p6/p9 全部通过**（2–10s 编译）。所以触发因素在 `src/std/json.no` 自身，而非 22KB 值语义载荷的 option/match 机制。
+
+（这也顺手证实了 #83 的成本面：p5 用**同样的类型**只要 10s，而**任何** json 程序都要 110s+ —— 差距来自 json.no 的代码体量与 `sroa` 交互，不是类型本身。）
+
+##### ⑤ 反转：`str-concat-leak.no` 不是"地址差异假阳性"，是静默错误编译
+
+`tests/mem-safety/str-concat-leak.no` 的哈希在**同一个后端**两次运行之间就不一样。此前三轮把它记作"DIVERGE 的地址差异假阳性"——**查下去发现完全不是**：该文件打印的是 `'item' + i.to-str()`（1000 行纯文本，**不含任何地址**）。5 次实测：
+
+```
+rc=0 lines=1000 bytes=775904872
+rc=0 lines=1000 bytes=784287641
+rc=0 lines=1000 bytes=775904872
+rc=0 lines=1118 bytes=766050306
+rc=0 lines=1128 bytes=775904872
+```
+
+一个打印 `item0`…`item999` 的程序产出 **775MB**，首字节是 `item` + 12 个 NUL + `06 00…` ×2——打印的是**结构体原始内存**。IR 直接指明了原因：
+
+```llvm
+%c12 = call %str-long @str_concat(%str-long %lv13, %str-long undef)
+```
+
+拼接的右操作数是 **`undef`**：`i.to-str()` 的 `call` 指令压根没生成，消费方读到 `undef`，而 `str_concat` 会把 `undef` 的 len/data 字段当真 ⇒ 长度任取寄存器残留值。**rc=0**，输出"看着有东西"。8 组 2 秒级探针把触发条件收窄为：**count-for 迭代变量作接收者 + 内建调用的实参位置 + 方法调用未先绑定**（矩阵与修法方向见 §12 #85）。
+
+两个可疑点都指向**未绑定**这个字眼，而该文件自己的注释写的就是"拼接结果**未绑定变量**"——即这条测试从一开始就在测这件事，只是三轮里没人打开它。
+
+**现场重建 legacy（`47b6cad`）把"谁错"划清了**：同一批探针下 legacy 在 **c1/c4/`str-concat-leak.no` 上都 rc=1 并给出精确诊断**（`opt: use of undefined value '@i.to.str'`；`codegen error: expression produced empty value in emitArgAsStrLong`），而 MIR 在同一位置 **rc=0 输出垃圾**。所以：**根因（前端把 `i.to-str()` 解析成"类型 `i` 上的方法"）是共有的**，**MIR 独有的是失败模式**——legacy 说"表达式没产生值"，MIR 静默把 `undef` 交给消费者。这条对照把 #85 从"一个诡异现象"变成了"一个明确的护栏缺失"，修法见 §12 #85。
+
+**顺带影响判读口径：`IMPROVED` 不能无条件当成好事。** `legacy-baseline` 里 `rc!=0` 的 82 条是"legacy 编不过 = 无参照"，而本轮对它的语义比对里 `IMPROVED` 从 49 涨到 **50**，多出来的那一条正是 `str-concat-leak.no`：legacy rc=1 → MIR rc=0，harness 记为"改进"，**实际是 MIR 接受了 legacy 拒绝的输入并错误编译**。⇒ 判读 `IMPROVED` 时分两类：legacy 因**自身缺陷**编不过（如 `%addopt.final`）而 MIR 正确 → 真改进；legacy **正确地拒绝**了非法输入而 MIR 接受 → **可疑，必须人工看输出**。当前 50 条里至少 1 条属后者。
+
+##### ⑥ 方法论要点（本轮新增）
+
+- **一个持续的哈希不一致，先当作 bug，不要先当作噪声。** "地址差异假阳性"这个结论从未被验证过（该文件根本没有地址），却静默地把一条真实的静默错误编译（rc=0 + 775MB 垃圾）封存了三轮。命名一个现象为"假阳性"之前，去看一眼它的输出。
+- **口径矛盾（同一文件 33s/rc=0 vs 基线 124）是测量条件的线索，不是数据噪声。** 顺着它挖出了 `-P` 争用这一类系统性偏差，并让一个 bucket 从"三种含义"变成"一种含义"。
+- **跨改动的逐条等值 > 事后跑一遍。** 用改动**之前**冻结的基线做预言机，得到的"422 条逐条一致"才是"行为保持"的证据；顺序反过来（先改后冻）就等于把结论假设掉了。
+- **拿"同形状搬到干净模块里"来二分归属。** p5/p6/p9 把"22KB 值语义载荷 + option + match"整条链排除掉，把 #84 的范围从"可能的机制"缩到"`json.no` 自身"；代价 2–10s，而直接在 json 上试是 110s/次。
+- **`grep` 在 `-n "pattern\|pattern"` 形式下会静默返回空**（本轮多次踩到），改用工具的 Grep 或简单单元模式。
+- **`pgrep -f` 的模式会匹配到工具自身的 shell 命令行**（模式文本就在那条 `zsh -f -c …` 里），所以"窄模式"并不足够；判残留进程要连 `命令名` 一起排除。
+
+##### 13.3.17 第四十三轮（2026-09-16 续）：#85 护栏落地 —— 静默错误编译变响铃诊断，影响半径由 19 文件修正为 2 文件
+
+第四十二轮把 #85 挖了出来，但**止步于"加了一条 env 门控诊断"**，并把测量结论写成"19 个文件 / 55 处命中，其中 18 个当前 rc=0 ⇒ 可能有一批静默错编译"。本轮做两件事：**把护栏真正落地**，以及**修正上面那个被高估了 10 倍的影响半径**。
+
+**① 影响半径 19 → 2：诊断的两次命中被混成了一类**
+
+`NOLANG_MIR_DEBUG_UNDEF` 打印的 55 条记录里同时住着两种完全不同的东西，按字段切开即分：
+
+| 类别 | 条数 | `value=` | 落点 | 判定 |
+| --- | --- | --- | --- | --- |
+| `llvm="void"` | **51** | `173 / 708 / 604 / 183 / 1367 / …`（真实值 id） | `hashmap_str_str_hash`(18) / `hashmap_str_i64_hash`(12) / `hashmap_str_bool_hash`(3) / `str_to_i8`(4) 等 **std 函数** | ✅ **合法** —— void 值本就没有存储，调用方正是靠这个 `"void"` 返回值跳过它（`emitCall` 的 print 循环里那句 `argT == "void" -> continue`） |
+| `value=0 llvm="i64" slot=""` | **4** | **`0`** = `NoVal`（`mir.go:41`） | `_nolang_main`(2) + `des_block`(2) | ❌ **真洞** —— 消费方在读取**没有任何指令产生过**的操作数 |
+
+⇒ 真实影响半径是 **2 个文件**：`tests/mem-safety/str-concat-leak.no`、`tests/test-std-hash.no`。上一轮"18 个 rc=0 文件可能都被静默错误编译"是**把 51 条合法命中当成可疑**推出来的。
+
+**教训（本轮方法论第一条）**：一条诊断如果**为两种不同原因**同时触发，**必须先按字段分类再计数**，否则计数本身就是错的。上一轮的做法（`awk '$1>0' | wc -l` 数"有命中的文件"）恰恰丢掉了区分所需的那一列 —— 而那一列**当时就打印在日志里**，只是没有被读。
+
+**② 落地：把合在一起的条件拆成两支，只对第二支响铃**
+
+`src/mir/codegen.go` `loadVal` 原来是 `if lt == "void" || slot == ""` 共用一个 `return "void", "undef"`。**拆开的依据就是上表**——合在一起改会让 51 条合法命中全部误报。现在：
+
+```go
+if lt == "void" { return "void", "undef" }          // 合法：void/unit 无存储
+if slot == ""   { c.fail(...); return lt, "undef" } // 静默错误编译 -> 响铃
+```
+
+报文区分两种成因：`NoVal` 者直指"喂这个操作数的指令没有 Dst"，其余报出 `value` 与 LLVM 类型。**注意第二种报文目前是未被执行过的路径**——语料里 55 条命中中，除 4 条 `NoVal` 外全是合法的 void 分支，**没有任何一条**是"有类型（非 void）却无槽位"。它保留在那里是为了让将来出现的该类失败不至于又变成静默 `undef`，但**它至今只在代码里存在，没有被任何真实输入触发过**（写判据时不要把"两处报文都见过"当真）。用 `c.fail` 而非立刻 `return err` 的理由：`c.fail` 只累积、统一在 `EmitLLVM` 出口汇总，**一次构建就把函数内每一处越界点全部列出**（`test-std-hash.no` 的 2 处一次性报全）；这也让上一轮那条 `NOLANG_MIR_DEBUG_UNDEF` 测量流程变成可选（该开关保留，供日志 grep）。
+
+**③ 这是"对上 oracle"，不是回归 —— 而且要先分清"哪个 rc"**
+
+`no build` 的 rc 是**编译器**的成败；golden 基线记的是 `no run` 的 rc，即**先编译再执行、程序自己的退出码**。手工探针（`no build`）与预言机（`no run`）口径不同，混用会得出错表。按预言机口径逐字节对齐：
+
+| 文件 | legacy（语义 oracle） | MIR 加护栏前 | MIR 加护栏后 |
+| --- | --- | --- | --- |
+| `tests/mem-safety/str-concat-leak.no` | `1 e3b0c442…`（空 stdout） | `0 eb28fc09…`（编译成功，程序跑了，输出垃圾，**退出 0**） | `1 e3b0c442…` ✅ 与 oracle **逐字节相同** |
+| `tests/test-std-hash.no` | `1 e3b0c442…`（空 stdout） | `1 399229a5…`（编译成功，程序跑了**有输出**，但程序自身返回 1） | `1 e3b0c442…` ✅ 与 oracle **逐字节相同** |
+
+⇒ 这次 `rc=0 → rc=1` **不是 REGRESS，是把 MIR 的判定拉回语义 oracle 的判定**（且连 stdout 都逐字节相同）。这是上一轮 §13.3.16 里"`IMPROVED` 不能无条件当成绩"的**反向应用**：`REGRESS` 也不能无条件当退步，要看 oracle 在那边怎么说——**并且要看 oracle 记的是哪个 rc**。
+
+**④ 本轮新发现的桶方案盲点：两个"都失败"不等于同一件事**
+
+`test-std-hash.no` 的**预言机 rc 根本没变**（`1 → 1`），变的是**原因**（"编译成功、程序自己失败并有输出" → "编译失败、stdout 变空"）。而比对脚本对"两边都非零"只记 `BOTH_FAIL`、**不比较哈希** —— 所以这次修复在桶计数上**完全不可见**：`BOTH_FAIL=32` 前后一模一样，`SAME/REGRESS` 也没动。`test-std-hash.no` 正好同时命中两件事：它在 `legacy-baseline` 里也是 `rc=1`（legacy 编不过），于是"legacy 编不过 / MIR 编不过"与"legacy 编不过 / MIR 编得过但跑挂"被**压成同一个桶**。
+
+⇒ `BOTH_FAIL` 是个**只会掩盖信息的桶**：它把"两侧都失败"当成同一件事，而失败的原因（编译期 vs 运行期、有没有输出）恰恰是最需要区分的。**将来若要给桶方案做一次升级，优先项是把 `BOTH_FAIL` 按"两侧失败发生在编译期还是运行期"再切一层**，而不是再加新的顶层桶。本轮不改桶方案（会牵动全部历史数字），只在此记下。
+
+**⑤ 反直觉点：加护栏前 `test-std-hash.no` 的哈希是*稳定*的**
+
+它稳定输出 `399229a5…`，却在 `des_block` 里有 2 处 `NoVal` 消费。即 `undef` 恰好落在了一个不影响输出的位置（LLVM 把 `undef` 折成了所需的值）。⇒ **"输出稳定"不是"没有 undef"的证据**，用哈希稳定性当无罪证明会漏掉整类缺陷；判据必须是"是否存在没有产生者的值"，那正是护栏在问的问题。（对照：`str-concat-leak.no` 的 `undef` 落在 len/data 字段上，于是长度任取寄存器残留 ⇒ 不确定。）
+
+**⑥ 验证**
+
+- `go build ./...` 通过；`bin/no` 重出。`gofmt` 只报告既存差异（改动前 `codegen.go` 就在 `gofmt -l` 名单里，全仓 67 个文件如此），我的新增行未被 gofmt 触碰。
+- `go test ./mir/` 全绿；`go test ./...` 的失败包与既有集**逐条一致**（`fmt`/`build`/`checker`，无 `mir`）——即护栏不改 Go 层测试。
+- `/tmp/fz/c1.no`：`rc=0` + 1169B 垃圾 → **rc=1** + `func _nolang_main: consumer reads value 0 (NoVal), which no instruction produced …`（同一构建把函数内每一处都列全，`test-std-hash.no` 的 2 处一次性报全）。
+- 5 个正常探针（`d1` let 接收者 / `f1` 显式 i64 接收者 / `g1` 用户函数实参 / `e1` 先绑定再 print / `lit` 纯字面量拼接）rc 与输出**逐字节不变**。
+- 未受影响的高频命中文件仍 rc=0：`test-map-generics.no`（9 处命中）、`test-map.no`（3 处）—— 全部属 `llvm="void"` 那类。
+- **全量回归比对（对改动前的 `mir-baseline.tsv`，300s / `-P 4`）**：`SAME=389` / `DIVERGE=0` / `UNSTABLE=0` / **`REGRESS=1`**（唯一一条：`tests/mem-safety/str-concat-leak.no` (now rc=1)）/ `IMPROVED=0` / `BOTH_FAIL=32` / `NEW=0`（合计 422）。**唯一变动就是那一个文件，且已按 §12 #85 的花名册判定为"对上 oracle"**。注意 `UNSTABLE` 由 1 变 **0** 不是漏报：`str-concat-leak.no` 现在编译失败、stdout 恒空，指纹**重新变得可冻结**，`MIR_GOLDEN_UNSTABLE` 里那条已按脚本注释的约定移除（见 §12 #86）。
+- **重冻结结果（`GOLDEN=tests/golden/mir-baseline.tsv GOLDEN_MIR=default scripts/mir_golden.sh -update`）**：422 条，`rc=0` **390 → 389**、`rc!=0` **32 → 33**。与改动前基线 diff **恰好 2 行**：
+
+  | 文件 | 改动前 | 重冻结后 |
+  | --- | --- | --- |
+  | `tests/mem-safety/str-concat-leak.no` | `0 eb28fc09…` | `1 e3b0c442…` |
+  | `tests/test-std-hash.no` | `1 399229a5…` | `1 e3b0c442…`（**rc 未变，只变 stdout**） |
+
+  **没有任何其它行变动** ⇒ 本轮改动的影响面被**穷举到 2 行**（无 flaky、无附带改动）。两行的新值都与 `legacy-baseline` **逐字节相同**。
+- **重冻结后按两份冻结基线 join 推导语义桶**（桶是这两列的纯函数，无需重跑 8 分钟）：`SAME=302 / DIVERGE=38 / REGRESS=0 / IMPROVED=49 / BOTH_FAIL=33`（=422）。对比第四十二轮的 302/38/0/**50**/**32**：**只有 `str-concat-leak.no` 一个文件从 `IMPROVED` 移到 `BOTH_FAIL`**（`test-std-hash.no` **本来就在 `BOTH_FAIL`** —— 它的 oracle rc 前后都是 1，所以"rc 桶"看不见它；这正是 ④ 的盲点）。**顺带：本轮先按直觉写成"两个文件都从 IMPROVED 移出（50→48/32→34）"，实测是 49/33 —— 猜数的方向对、个数错，验证一次就纠正了。**
+- **护栏影响的完整穷举（`tests/` 之外）**：用护栏前后的两个二进制对 `test/`（40）+ `example/`（11）逐文件比 `build` rc，**恰好 1 个文件变化**：`test/std/process.no`（`pre=0 post=1`）。护栏前它 `no test` 时在 `t-cmd` 上 **SIGSEGV**，护栏后变成编译期点名诊断，**无测试由通过变失败**（见 §12 #85 的"第三个文件"）。`test/` 里另有 22 个 `no build` 失败**两版一致**、与护栏无关，作背景记录：7 个 `ovfhndld`（测试源陈旧，缺 `#{overflow=wrap}`）+ 15 个其它既有 MIR gap（`opt-verify: MIR IR failed LLVM verification`、`builtin fs.is-file: cannot marshal arg 0 as C string` 等）。`example/` 11 个中 1 个失败（`mysql-driver/src/mysql.no`），同样两版一致。
+
+**⑦ 未闭环的部分（护栏不解决底层缺陷）**
+`i.to-str()` 的 `call` 依旧**没有结果值**（MIR 证据 `call dst=0 args=[3]`），只是现在会响铃而不是静默。本轮把成因从"接收者绑错"更正为 **`lowerCall` 的 void 分支**：`resTyp` 的三档回退（HIR 定义 → 内建表 → LHS 类型提示）全落空时，调用被当成语句型 void 调用发射、返回 `NoVal`（`hir2mir.go:4959–4963`），于是上游 `+` 拿到 `NoVal`；同族能正常工作只是因为它们有外部类型提示。详见 §12 #85 的第四十三轮更正——**那里还记了本轮确证但未定位的一环（`callee` 的确切拼写，需要给 MIR 转储补 `Sym` 字段）**，以及 `codegen.go` 里第二条独立失效路径（`i64-to-str` 快路径在 `Results` 为空时静默 `return nil`）。修好之后这两个文件的 rc 应回到 0 且输出正确（`str-concat-leak.no` 应为 1000 行 `item0…item999`），届时需再次重冻结基线。**当前状态是"响铃"而非"修好"**，不要把它读成已修复。
+
+**⑧ 一条操作纪律（本轮踩到）**
+
+**不要在扫描运行期间重编译 `bin/no`。** 扫描脚本不复制二进制，`xargs` 起的每个子进程都在调用同一个 `./bin/no`；中途覆盖它，同一次比对就会**混用两个版本的编译器**，产出的桶计数无法解释。同理，**也不要在扫描期间编辑 `mir_golden.sh` 本身**（bash 增量读取脚本，改到未读部分会让后续行从错误的偏移解析）。本轮这两件事都发生了，处理方式是**杀掉重跑**而不是"反正只差一点"。衍生纪律：**杀掉扫描前先记下它可能留下的子进程**——被杀的扫描不会回收它已经 fork 出去的 `bin/no`（`test-for2.no` 是死循环，会一直占满一个核），而残留的高 CPU 进程恰好会污染下一次扫描的计时。
+
+**⑨ 手工探针与预言机的 rc 必须分清（本轮差点写错结论）**
+
+`no build` 的 rc = **编译器**成败；预言机记的是 `no run` 的 rc = **先编译再执行、程序自己的退出码**。本轮的探针全用 `no build`，于是得到"两个文件都是 rc=0 → 加护栏后都是 rc=1，都改了"，而按预言机口径实际上是**只有一个变了**（`test-std-hash.no` 早就是 rc=1）。若照前一种说法去写文档，就会虚构出一次并不存在的 `0 → 1` 转变，并把"桶没动"误读成"护栏没生效"。
+
+⇒ 纪律：**凡是要写进"某文件从 X 变成 Y"的结论，必须用与预言机同一条命令（`no run`）在同一路径上取得**；`no build` 只用于判断"编译期是否失败"。两者的差异在"程序自身会失败"的测试上尤其致命——而语料里这类（自断言测试）恰恰不少。
+
+**⑩ 语料 ≠ 仓库：`tests/` 之外的 51 个文件里还有一个**
+
+本轮差点把结论停在"2 个文件"。上一轮的诊断扫描是 `find tests -name '*.no'`，所以那个数字**只在 `tests/` 内成立**。用护栏前后的两个二进制（`git worktree add /tmp/no-preguard HEAD` → 建旧二进制 → **用完立刻 `worktree remove --force`**）对 `test/`（40）+ `example/`（11）逐文件比对 `build` rc，**恰好多出一个**：`test/std/process.no`（`pre=0 post=1`）。而它的性质比语料里那两个更有说服力 —— 护栏前 `no test` 在**第 5 个测试**（正是 `t-cmd`，与护栏点名的 `t_cmd` 同函数）上 `signal: segmentation fault`；护栏后变成编译期点名诊断，**没有任何测试由通过变失败**。
+
+⇒ 纪律：**给出"影响半径"时必须写明扫描范围**（这里是"`tests/**/*.no`，422 个"），并且**在一处修复的收尾阶段把范围扩到相邻目录**（`test/`、`example/` 各 11–40 个文件，全扫 2 分钟）。**代价极低、回报是一次完整的、可写进结论的穷举**；不扩，就会把一个不完整的数字当成完整的。
+
+---
+
 ## 14. 溢出默认（overflow-default）与 MIR 的集成（进行中）
 
 `#{overflow}` 默认使整数 `+ - * /` 返回 `option<int>`（不 panic）。当前状态：
@@ -899,6 +1440,7 @@ if !nodeMatchesPlatform(pkg, id) {
 - `NOLANG_MIR_DUMP_MIR=1`：打印 lowered MIR 到 stderr。
 - `NOLANG_MIR_DUMP_LL=1`：写出 emitted LLVM IR 到临时 `.ll`（路径在 stderr）。
 - `NOLANG_MIR_DUMP_HIR=1` / `NOLANG_MIR_DEBUG=1` / `NOLANG_MIR_DUMP_BAD=1`：辅助诊断。
+- `NOLANG_MIR_DEBUG_UNDEF=1`（**第四十二轮新增 / 第四十三轮起为附加日志**）：打印 `loadVal` 里"类型非 void 却无槽位"的每一个点（`[mir-undef] func=… value=… llvm=… slot=…`）。第四十二轮它是 **#85 的测量入口**（env 门控、零行为变更，用于量化"改成 `c.fail` 会影响多少用例"）；**第四十三轮护栏落地后**该分支已无条件 `c.fail`（`lt == "void"` 那支仍是合法的 `return "void","undef"`，不打印也不报错），所以此开关现在只多打一份 stderr 日志，供扫描脚本 grep。⚠️ 判断命中时要**看 `value=` 字段**：`value=0`（`NoVal`）才是真洞，其余（真实值 id）是合法的 void 分支 —— 第四十二轮把两者混为一谈，把影响半径高估了 10 倍（§13.3.17 ①）。
 
 ---
 
@@ -914,19 +1456,31 @@ if !nodeMatchesPlatform(pkg, id) {
 
 - **Stage 3 续（第三十七·三十八轮 2026-09-15/16，`./bin/no`，421 文件全量）**：**`MATCH=387`（≈91.9%）、`DIVERGE=1`、`MIR 专属 gap=0`、`两模式都失败=29`（CERR 18 + CRASH 11）、`HANG=4`；默认口径（不设 `NOLANG_MIR`）通过 `388/421`（92.2%）**。第三十七轮四修：**#67** `collectVarTypesFromBody` 把"已声明局部的再赋值"误当"遮蔽全局"而删掉其型别 → `[n]t.clone` 从未单态化；**#68** MIR 的 print 家族容器实参未走 `to-str`（`printableValue`/`toStrCalleeFor` + 独立 `wrapPrintArgs` 标志）；**#69** `net-dial`/`net-send`/`net-recv` 的 option 载荷与定宽数组实参序列化 + 补齐 5 个 net 内建；**#70** `std/crypto/aes.no` 源码笔误 `ek[ek] = ...`（净 MATCH +5）。第三十八轮四修：**#71** MIR 从未处理 `hir.KRegexLit`（正则字面量在 legacy 是 codegen 期脱糖，MIR 无 codegen 期 AST → 字面量不产生值 → 表象为"未解析格式字段"）；**#72** `lowerFormatField` 的 `default:` 把结构体当整数；**#73** 默认后端切换为 MIR-only（第二优先级 #8 落地）；**#74** `transitive_import_test.go` 接受 MIR 的符号净化拼写。**方法论要点**：① "两模式都失败"必须先分类——本轮 29 个里只有 **3 个**是 MIR 的事（`test-strconv`/`test-std-new`/`nested-container-clone`），**14 个是测试源陈旧**（API/语法漂移）、8 个两模式同崩同挂、3 个 legacy 专属编译缺陷（`%addopt.final`）、1 个负测试；② 扫掠脚本先判 `rc3` 再判 `rc2`，故 `HANG_LEGACY=0` **不等于**基线没挂；③ 调试期不要把诊断细节丢在桶名里。详见 §13.3.11/§13.3.12。
 
-- **Stage 4（下一步）**：① 收敛最后一个 MIR_GAP `test-diff-debug`（DP 表全 0 / `bus error`；根因落在 `[]str` 元素的 `compare` 调用降级路径，探针显示 `with-len`+字面量赋值的 `[]str` 元素方法调用在**两模式**都 segfault → 需先修更底层的通用缺陷）；② `with-len`/`index dst slot` 的 void 型别族（#54 同族，5）；③ `str-len receiver i64`（3）；④ 语料迁移 8 个真·未标注溢出运算；⑤ `net-dial` 非 IP 字面量 host 的 `getaddrinfo` 回落（3）；⑥ ~~修 `run_to` 超时只杀 `no` 不杀子进程组的问题~~（**已完成**，`setpgid` + `kill -KILL -$pgid`，见 §13.3.10 ①）；**⑥'（新）`HANG=4` 的两模式死循环**（`test-parse-min.no`、`mem-safety/test-json-parse-option.no`、`mem-safety/test-json-nested-match.no` 的 json parse 与 `test-for2.no`）——两后端同挂，属 std 缺陷；⑦ 逐站消除 §13.3 长尾；FFI/async/crypto/net/map/字符串方法内置补齐；**（`no build` 默认走 MIR=3 已于第三十八轮 #73 完成）**；⑧ ~~**#9/#10：移除 strangler-fig 回退、清理 legacy 后端（`src/build/llvm/`）并更新构建系统**~~ —— **已完成（第三十九·续轮）**：legacy 后端已删除（48 文件 / 50,006 行 / 2.0MB，非旧记的"约 60KB"），`NOLANG_MIR=0/2` 改为明确报错；构建系统**零改动**（`Makefile` 的 `GO_SOURCES`/`NO_SOURCES` 都是 `find` 通配，删文件自动适配）。回归保护改由 `tests/golden/*.tsv` 冻结基线承担。详见 §13.3.13 ⑥。
+- **Stage 4（下一步）**：① 收敛最后一个 MIR_GAP `test-diff-debug`（DP 表全 0 / `bus error`；根因落在 `[]str` 元素的 `compare` 调用降级路径，探针显示 `with-len`+字面量赋值的 `[]str` 元素方法调用在**两模式**都 segfault → 需先修更底层的通用缺陷）；② `with-len`/`index dst slot` 的 void 型别族（#54 同族，5）；③ `str-len receiver i64`（3）；④ 语料迁移 8 个真·未标注溢出运算；⑤ `net-dial` 非 IP 字面量 host 的 `getaddrinfo` 回落（3）；⑥ ~~修 `run_to` 超时只杀 `no` 不杀子进程组的问题~~（**已完成**，`setpgid` + `kill -KILL -$pgid`，见 §13.3.10 ①）；**⑥'（第四十一轮已结清）`HANG=4`**：~~`test-parse-min.no`、`mem-safety/test-json-parse-option.no`、`mem-safety/test-json-nested-match.no` 的 json parse 与 `test-for2.no`）——两后端同挂，属 std 缺陷~~ —— **该判断已被证伪**：三个 json 文件是**编译期爆炸**（62s > 90s 预算；legacy 侧 rc=1 从未跑起来过），`test-for2.no` 是**有意的 `while(true){}`**。见 §13.3.15 与 §12 #82/#83/#84。⑦ 逐站消除 §13.3 长尾；FFI/async/crypto/net/map/字符串方法内置补齐；**（`no build` 默认走 MIR=3 已于第三十八轮 #73 完成）**；⑧ ~~**#9/#10：移除 strangler-fig 回退、清理 legacy 后端（`src/build/llvm/`）并更新构建系统**~~ —— **已完成（第三十九·续轮）**：legacy 后端已删除（48 文件 / 50,006 行 / 2.0MB，非旧记的"约 60KB"），`NOLANG_MIR=0/2` 改为明确报错；构建系统**零改动**（`Makefile` 的 `GO_SOURCES`/`NO_SOURCES` 都是 `find` 通配，删文件自动适配）。回归保护改由 `tests/golden/*.tsv` 冻结基线承担。详见 §13.3.13 ⑥。
 
-- **Stage 4 续（第三十九·续轮 2026-09-16，已落地）**：**删除 legacy 后端**（`src/build/llvm/`）+ 移除 strangler-fig 回退 + 冻结双基线 oracle。验证：`go build ./...` / `go vet ./...` 通过；`go test ./...` 失败集与干净 HEAD worktree **逐条一致**（`fmt` 2 + `build` 4 + `checker` 2，全部既有）；golden 比对 `SAME=388` / `REGRESS=0` / `DIVERGE=1`（已知假阳性）/ `BOTH_FAIL=33`。**遗留：改动未提交**（见 §13.3.13 ⑥ 与末节）。**下一步（第三优先级）**：① 把 MIR 的单测从 6 个补到与 legacy 188 个相当的覆盖（重点是 §13.3.13 ③ 分类 B 的**平台变体解析 / datalayout / 溢出注解读取**——① 的平台缺口正出自这里零测试）；② `HANG=4`（两模式死循环，std 缺陷）与 `DIVERGE=1`（地址差异假阳性）的正式标记；③ §13.3.13 ③ 分类 C 的 68 个 IR 文本断言测试，按"删后出现回归再补"的增量策略迁移。
+- **Stage 4 续（第三十九·续轮 2026-09-16，已落地）**：**删除 legacy 后端**（`src/build/llvm/`）+ 移除 strangler-fig 回退 + 冻结双基线 oracle。验证：`go build ./...` / `go vet ./...` 通过；`go test ./...` 失败集与干净 HEAD worktree **逐条一致**（`fmt` 2 + `build` 4 + `checker` 2，全部既有）；golden 比对 `SAME=388` / `REGRESS=0` / `DIVERGE=1`（已知假阳性）/ `BOTH_FAIL=33`。**遗留：改动未提交**（见 §13.3.13 ⑥ 与末节）。**下一步（第三优先级）**：① ~~把 MIR 的单测从 6 个补到与 legacy 188 个相当的覆盖~~（**已启动：第四十轮 6 → 13**，新增 `src/mir/platform_test.go` 覆盖**平台变体解析**这一零测试区，并顺带更正 §13.3.13 ① 的依据、记录两个"两后端共有"的既有限制 —— 详见 §13.3.14）；**剩余重点**：`datalayout`/`triple`（MIR 已无硬编码 triple，宿主即目标，无可测对象）、**溢出注解读取**（MIR 侧完全无此概念，见 §13.3.14 ④）、§13.3.13 ③ 分类 B 的其余主题；② ~~`HANG=4`（两模式死循环，std 缺陷）~~ **第四十一轮已结清**（三个 json 用例是编译期爆炸、`test-for2.no` 是有意死循环，见 §13.3.15），`DIVERGE=1`（地址差异假阳性）的正式标记待做；③ §13.3.13 ③ 分类 C 的 68 个 IR 文本断言测试，按"删后出现回归再补"的增量策略迁移；④ 若要让溢出模式**真正生效**，需先改语言实现（§13.3.14 ④），再在 MIR 侧引入 `curOverflowMode` 上下文与 `Inst` 级模式分派；⑤ 若要修**函数体内**平台变体不过滤（§13.3.14 ③），`TestFunctionBodyPlatformVariantIsNotFiltered` 会失败并提示改期望值。
+
+- **Stage 4 续（第四十一轮 2026-09-16）：`HANG=4` 的证伪 + 预检去重（编译耗时 −50%）**：**`HANG 4 → 1`，且剩下那一个（`test-for2.no`）是设计上有意的死循环**。三步：① 用**冻结基线的 rc** 推翻"三个 json 用例两模式都死循环"的旧结论 —— legacy 对它们 rc=1（**从未跑起来过**），MIR 的 rc=124 是**编译期爆炸**（62s > 90s 扫描预算）；② 根因定位：`sroa` 无法廉价处理 MIR 产出的 22KB 内联聚合（`%json_json_pool = { [64 x %json_json_value], i64 }`，`alloca [64 x %json_json_value]` 出现 **81 次**），单跑这一个 pass 就 458× 膨胀（229KB → 105MB）；③ 落地 **#82**：预检不再重复整条后端流水线（`opt`+`llc` 各跑两遍 → 只跑 verifier、不汇编），11 行 json 程序 **62s → 32s**、`print('hi')` 不变、`NOLANG_MIR_PREFLIGHT=full` 保留旧行为。**副产品 #84**：两个 json 用例被"解锁"后暴露运行期 rc=1（此前从未被执行过）。**明确未修 #83**：IR 形态本身（值语义大数组字段被整体物化）。详见 §13.3.15。
+
+- **Stage 4 续（第四十二轮 2026-09-16）：`rc=124` 语义清理 + golden 骨架加固；证伪"地址差异假阳性"，挖出静默错误编译 #85**：**`rc=124` 4 → 1**（只剩 `test-for2.no`，即那个有意死循环），`DIVERGE` 从"恒 1"变为 **0**。四步：① 用 #82 改动**之前**冻结的基线与改动后后端做全量比对，422 条**逐条一致**（`SAME=388`/`REGRESS=0`）⇒ #82 行为保持，且**不需要重新冻结**（原计划的理由本身是错的）；② 顺着"`test-parse-min.no` 串行 32.9s/rc=0 却在基线里记 124"这个口径矛盾，查出 `rc=124` 混装了第三种来源——**`-P 8` 并发争抢**（指纹是空输出哈希，即根本没跑到运行）；超时的文件**无法报告任何行为回归**，正是它掩盖了 #84 两轮；③ 落地 **#86**：超时 90s→300s、并发 8→4、`-update` 非默认 oracle 守卫（防止 `legacy-baseline.tsv` 被全失败垃圾覆盖，且故意不留开关）、`UNSTABLE` 分流（`str-concat-leak.no`）；④ **反转一条件持续三轮的结论**——`str-concat-leak.no` 的哈希不一致**不是**"二进制地址差异假阳性"（该文件输出 1000 行纯文本、**不含地址**），真因是 **#85**：`print('item' + i.to-str())` 在 count-for 里把拼接右操作数降级成 **`undef`**（IR 直证 `str_concat(%str-long %lv13, %str-long undef)`，且 `i.to-str()` 的 `call` 指令根本没生成），于是**以 rc=0 输出 0–775MB 不确定垃圾**——典型的**静默错误编译**，比崩溃更危险，被"假阳性"标签封存了三轮。**副产品**：把 #84 定性为**运行期 SIGSEGV**（stderr `Error: signal: segmentation fault`，崩在第一条语句 `json.parse('')` 的最简早返回路径），并用同形状 `/tmp` 探针（p5/p6/p9）排除了"22KB 值语义载荷 + option + match"这一整条假设。**本轮的写法教训**：命名一个现象为"假阳性"之前先去看它的输出。**另外现场重建 legacy（`47b6cad`）划清了 #85 的归属**：根因（前端把 `i.to-str()` 解析成"类型 `i` 上的方法"）**两个后端共有**（legacy 发出不存在的符号 `@i.to.str`），而 **MIR 独有的是失败模式**——legacy 在 `emitArgAsStrLong` **硬报错**"expression produced empty value"，MIR 在 `loadVal` 静默返回 `undef`。⇒ 性价比最高的一处改动是给 `loadVal` 补护栏（复刻 legacy 那个诊断），把一整类静默错误编译变成响铃失败。**并由此补一条判读口径**：`IMPROVED` 不能无条件算成绩，50 条里至少 1 条（`str-concat-leak.no`）是"MIR 接受了 legacy 正确拒绝的非法输入"。详见 §13.3.16 与 §12 #84/#85/#86。
+
+- **Stage 4 续（第四十三轮 2026-09-16）：#85 护栏落地 —— `loadVal` 的静默 `undef` 变响铃；影响半径由 19 文件修正为 2 文件（`tests/` 内）+ 1 个（`test/`）**：把上一轮"先加 env 诊断测一遍"的测量结果**按字段切开**，发现 55 条命中里 **51 条是 `llvm="void"` 的合法命中**（void 值无存储，调用方靠 `"void"` 跳过它），**只有 4 条 `value=0`（=`NoVal`）是真洞**，落在 **2 个文件**。据此把 `loadVal` 里合在一起的 `lt == "void" || slot == ""` **拆成两支**，只对 `slot == ""` 那支 `c.fail`（报文区分 `NoVal` 与"有类型无槽位"两种成因；后者至今未被任何真实输入触发）——**拆分支的依据正是这份测量**，合在一起改会让 51 处合法命中全部误报。**两个受影响文件加护栏后的指纹与冻结语义 oracle（`legacy-baseline`）逐字节相同**（`1 e3b0c442…` 空 stdout）⇒ **对上 oracle，不是回归**；重冻结与改动前**恰好 diff 2 行**、无其它变动。**把范围扩到 `test/`(40)+`example/`(11) 又多出 1 个**：`test/std/process.no` 护栏前 `no test` 的**第 5 个测试 `t-cmd` 直接 SIGSEGV**，护栏后变为编译期点名 `t_cmd` 的诊断 ⇒ **无测试由通过变失败**（护栏把一次无解释的段错误变成可读诊断，是本轮价值最强的例证）。**三条判读教训**：① 手工探针用 `no build` 而预言机用 `no run`，**两个 rc 不是一回事**（前者=编译器成败，后者=程序退出码），混用会虚构出并不存在的 `test-std-hash.no` 的 `0→1` 转变（它早就是 rc=1）；② `BOTH_FAIL` **不比哈希**，所以"编译失败"与"编译成功但程序自己失败"被压成一个桶，这次修复在桶计数上**完全不可见**（要直接 diff 指纹行）；③ 加护栏前 `test-std-hash.no` 哈希是**稳定**的（`399229a5…`）却仍含 2 处 `NoVal` 消费 —— **"输出稳定"不是"没有 undef"的证据**。**根因也一并更正**：不是"接收者绑错"（`args=[3]` 就是循环计数器 `i`），而是 `hir2mir.go:4959–4963` 的 **void 分支**（`resTyp` 三档回退全落空 ⇒ 按语句型 void 调用发射、返回 `NoVal`）。**未闭环**：`callee` 的确切拼写待定（需给 MIR 转储补 `Sym`），`codegen.go` 的 `i64-to-str` 快路径在 `Results` 为空时还会**静默 `return nil`**（第二条独立失效路径）。详见 §13.3.17 与 §12 #85。
 
 ---
 
 ## 16. 开放问题与风险（更新）
 
-- **生成顺序/平台过滤（第三十轮已落地 #55）**：HIR `#{platform}` 注解需在 lower 前过滤——已实现为 `src/mir/platform.go`（`nodeMatchesPlatform`，镜像 `build/llvm.matchesPlatform`），并在 `hir2mir.go` 的 `KFuncDef`/`KExtern` 与 `KLet` 两处 `funcNames`/全局注册点应用。**未做**：`KStructDef`、`KConst`、`KTypeAlias` 等其余节点类型尚未过滤（目前只覆盖函数与全局绑定），若将来出现"同名同参的平台异构 struct/常量"仍会塌缩。
+- **生成顺序/平台过滤（第三十轮落地 #55，第三十九轮补 `#77`，第四十轮补测）**：HIR `#{platform}` 注解需在 lower 前过滤——已实现为 `src/mir/platform.go`（`nodeMatchesPlatform`，镜像已删除的 `build/llvm.matchesPlatform`；`package.PlatformKeys` 为唯一键表），现应用于**三处**：`hir2mir.go` 的 `KFuncDef`/`KExtern` 与 `KLet` 两个**注册点**，以及**脚本模式**的 `synthesizeMainForTopLevel` 顶层内联循环（#77，漏了它会让被过滤变体的值覆盖匹配变体注册的全局）。`src/mir/platform_test.go`（第四十轮）穷尽全表钉住这套判据。**未做的两部分**：① `KStructDef`、`KConst`、`KTypeAlias` 等其余**顶层**节点类型尚未过滤，若将来出现"同名同参的平台异构 struct/常量"仍会塌缩；② **函数体/块体内**的语句**两个后端都不过滤**（后出现者胜出，与宿主无关）——这是**共有的既有限制**而非 MIR 缺口，见 §13.3.14 ③，已由 `TestFunctionBodyPlatformVariantIsNotFiltered` 显式钉住。
+- **溢出模式策略未生效（第四十轮新记，两后端共有）**：`#{overflow = clamp0 | min | max | saturate}` 在**实际编译**中与 `wrap` 行为完全一致（5 种模式输出相同），注解目前只起"关掉 `option<int>` 包装"的作用。legacy 虽实现了 `emitClampArith`，但在 HIR 模式下读不到 `let` 上的注解；MIR 侧则**完全没有**溢出模式概念（`src/mir/*.go` 无 `nsw`/`OverflowMode`）。因为**两后端一致**，不是 MIR 缺口。详见 §13.3.14 ④。
+- **编译期成本：MIR 产出 IR 的形态对 LLVM 病态（第四十一轮新记，**未修 #83**）**：`json-pool` 这类"值语义结构体内联大数组"（`[64 x %json_json_value]` ≈22KB，其元素又各带两个 16 元素数组）被整体物化成 `alloca`，LLVM 的 `sroa` 会按常量下标把它们拆成十万量级标量 —— 单跑这一个 pass 实测 **229KB → 105MB（×458）**。后果：`opt -O3` 15s、`llc` 14s，且在 #82 之前这两个阶段**每次构建各跑两遍**（62s/次构建）。**扫掠预算的含义因此变了**：触碰 json 的用例耗时 113–117s，即使 90s 预算也仍会被记 HANG —— 不是挂死，是慢。判别方法（`no fmt`/`no vet` 先排除前端、两个预算下比对 `NOLANG_MIR_DUMP_MIR` 是否逐字节相同）与修法方向见 §13.3.15 ③④⑥。
+- **【最高优先风险】静默错误编译：rc=0 但输出错误（第四十二轮新记 #85 / 第四十三轮已加护栏，**底层未修**）**：`print('item' + i.to-str())`（count-for 迭代变量、未先绑定）把拼接右操作数降级成 IR 里的 `undef`，于是**以 rc=0 输出 0–775MB 不确定垃圾**。这类缺陷比崩溃危险得多：它不触发任何判据——rc=0、无 stderr、输出"看着有东西"；而 rc 类判据（`MIR_GAP`/`REGRESS`/`CRASH`）对它完全失效，**只有逐字节哈希比对能看见它**。更值得记取的是**它是怎么被藏住三轮的**：语料里唯一的哨兵 `mem-safety/str-concat-leak.no` 确实报了哈希不一致，但被标注为"二进制地址差异假阳性"——**该结论从未被验证过，而那个文件根本不打印地址**。⇒ 处理原则：① `DIVERGE`/哈希不一致先当 bug，命名"假阳性"之前必须看一眼实际输出；② 已知会不确定的条目放进 `MIR_GOLDEN_UNSTABLE` 并**写明原因与 bug 号**，而不是靠"反正是噪声"忽略；③ 修 #85 时三条要分开（前端方法名解析（**共有**）+ MIR 的 `loadVal` 静默 `undef` 护栏 + checker 对 `str + <调用>` 的类型判定，见 §12 #85）；④ **`IMPROVED` 桶要人工过一遍**——`legacy-baseline` 的 `rc!=0` 是"无参照"，MIR 从 rc=1 变 rc=0 可能正是"接受了 legacy 正确拒绝的非法输入"（`str-concat-leak.no` 就是这一条），不能当成绩。
+  - **第四十三轮更新**：**护栏已落地**（`loadVal` 拆两支，`slot == ""` 那支 `c.fail`），该类的**静默**属性已消除 —— 现在会以 rc=1 + 精确报文响铃。**影响半径修正为 2 个文件（`tests/` 语料内）+ 1 个（`test/`）**（`str-concat-leak.no`、`test-std-hash.no`、`test/std/process.no`，三者本即失败/broken：前二者 `legacy-baseline` 即 rc=1，第三者护栏前 `no test` 在 `t-cmd` 上 SIGSEGV）：上一轮"19 文件"是把 51 条 `llvm="void"` 的合法命中与 4 条 `value=0` 的真洞混在一起数出来的（§13.3.17 ①）。**剩余的开放风险从"静默"变为两个**：① 底层 lowering 缺陷未修（`i.to-str()` 的 `call` 没有结果值；成因是 `hir2mir.go:4959–4963` 的 void 分支，非"接收者绑错"），响铃只是不掩盖；② **同类风险下一次可能以别的形式出现**——判据是"是否存在没有产生者的值"，而不是"rc 是否为 0"，所以 §12 #85 的 `NoVal` 检查点值得作为一类断言保留。另记两条口径：**"输出稳定"不等于"没有 undef"**（`test-std-hash.no` 稳定却含 2 处），哈希稳定性不能当无罪证据；**给出的影响半径必须写明扫描范围**（本轮"2 个文件"一度被当成完整答案，扩到 `test/`+`example/` 就多出一个）。
+
 - **跨模块 owner 判定**：与 `globalVarOwner`/`funcOwner` 对齐（`transpiler.go`）。
+
 - **推断类型来源**：`pkg.Inferred[id]` 是分类 ownership 的权威输入；缺失时回退声明类型 `Node.Type` 并标记诊断。
-- **回归红线（第三十九·续轮改写）**：~~任何 MIR 失败在 `NOLANG_MIR=2` 必须回退现有路径~~ —— **legacy 已删除，回退机制不存在**。现在的红线是：`scripts/mir_golden.sh` 对 `tests/golden/mir-baseline.tsv` 的比对必须 **`REGRESS=0`**（对 `legacy-baseline.tsv` 的比对同样必须 `REGRESS=0`，那是"legacy 能编而 MIR 不能"的禁止集）。全量 `no build` 扫掠在 sandbox 受限（约 360 测试会被 SIGKILL），用定向子集 + `opt -passes=verify` 快速回路验证（`scripts/mir_cov.py` / `mir_sweep.py`）。
-- **bool 打印：legacy 自身不一致，暂不强行对齐（2026-09-12 实测）**。legacy 的 bool 输出**依赖表达式形态**而非值：命名变量 `print(b)` / 结构体字段 `print(p.vis)` → `true`/`false`；比较表达式 `print(n > 3)` / vec 元素 `print(v[0])` → `1`/`0`；`(n>3).to-str()` → `1` 而命名变量 `.to-str()` → `true`。MIR 全站统一输出 `1`/`0`（`print_bool`）。因此在顶层命名 bool 场景 MIR 与 legacy 分歧（如 `tests/test-std-unix-fs-os.no` 的 `utime ok = true` vs `1`），但这类测试 rc 仍为 0。**判定**：属 legacy 历史不一致（且 legacy 在函数体内 `print(局部 bool)` 会直接 opt 失败：`'%b.val' defined with type 'i64' but expected 'i1'`），不是干净的 MIR 缺陷；强行翻转会在另一半场景引入新的分歧，故维持现状并记录。**扫掠超时口径**：crypto 系列（sha256/hmac/tls）单测编译+运行需 10–14s，扫掠脚本超时必须 ≥60s，否则（尤其在并发 `go build` 抢 CPU 时）会被误判为 HANG。
+- **回归红线（第四十轮补充；第四十二轮改为"分桶语义"口径）**：~~任何 MIR 失败在 `NOLANG_MIR=2` 必须回退现有路径~~ —— **legacy 已删除，回退机制不存在**。现在的红线是：`scripts/mir_golden.sh` 对 `tests/golden/mir-baseline.tsv` 的比对必须 **`REGRESS=0`**（对 `legacy-baseline.tsv` 的比对同样必须 `REGRESS=0`，那是"legacy 能编而 MIR 不能"的禁止集）。**判读这套桶时必须知道三件事（第四十二轮 #86）**：① `rc=124` 是"没拿到判定"，不是文件的属性——超时 90s→**300s**、并发 `-P` 8→**4** 之后，124 只剩 `test-for2.no`（有意死循环）；② `UNSTABLE` 是"输出本身不确定"的已知清单（当前 1 个：`str-concat-leak.no`，原因 #85），它与 `DIVERGE` 分开列出，为的是让 `DIVERGE` 保持干净信号——**一个永远不可能匹配的条目会让读者学会忽略整个桶**；③ `legacy-baseline.tsv` 已**不可再生**（`-update` 配非 `default` 的 oracle 会被守卫直接拒绝，rc=2），它是只读历史产物。**`legacy-baseline` 的 `DIVERGE` 桶必须逐个判"谁对"**：它现在是"语义分歧候选"而非"错误清单"，已知多数是 legacy 错（bool 打印不一致、`async-yield` legacy SIGSEGV、hmac/sha256 legacy 算错），且**新增了一个方向相反、有意为之的成员** —— `tests/test-platform-const.no`（MIR `100` vs legacy `600`，§13.3.14 ②）。全量 `no build` 扫掠在 sandbox 受限（约 360 测试会被 SIGKILL），用定向子集 + `opt -passes=verify` 快速回路验证（`scripts/mir_cov.py` / `mir_sweep.py`）。单测层面：`go test ./mir/` 必须全绿（第四十轮起 13 个测试函数 / 15 个用例，含平台变体判据）。
+- **bool 打印：legacy 自身不一致，暂不强行对齐（2026-09-12 实测）**。legacy 的 bool 输出**依赖表达式形态**而非值：命名变量 `print(b)` / 结构体字段 `print(p.vis)` → `true`/`false`；比较表达式 `print(n > 3)` / vec 元素 `print(v[0])` → `1`/`0`；`(n>3).to-str()` → `1` 而命名变量 `.to-str()` → `true`。MIR 全站统一输出 `1`/`0`（`print_bool`）。因此在顶层命名 bool 场景 MIR 与 legacy 分歧（如 `tests/test-std-unix-fs-os.no` 的 `utime ok = true` vs `1`），但这类测试 rc 仍为 0。**判定**：属 legacy 历史不一致（且 legacy 在函数体内 `print(局部 bool)` 会直接 opt 失败：`'%b.val' defined with type 'i64' but expected 'i1'`），不是干净的 MIR 缺陷；强行翻转会在另一半场景引入新的分歧，故维持现状并记录。**扫掠超时口径**：crypto 系列（sha256/hmac/tls）单测编译+运行需 10–14s，扫掠脚本超时必须 ≥60s，否则（尤其在并发 `go build` 抢 CPU 时）会被误判为 HANG；**json 系列在 90s 下必超**（串行 33–120s，属性 §13.3.15 的**编译期成本**而非挂死）。**第四十二轮更正**：这个"90s 会超"的现象里**混着两种成因**——`test-parse-min.no` 串行只要 32.9s，它记 124 纯属 `-P 8` 并发争抢；故 `scripts/mir_golden.sh` 的默认超时已提到 **300s**、并发降到 **4**，让 124 只表示死循环（§12 #86）。**并发争抢是系统性的**：同一份语料在 8 路并发与串行下会得到不同的 rc 分类。
 - **溢出默认集成中段风险（已消解）**：§13.1/§14 的解包缺失曾令 `test-arr.no` 退化（已闭环，`emitIndexStore`）；续闭环 `emitSetField`（§12 #14），sink 站点解包已覆盖 `emitIndexStore`+`emitSetField`。**原"剩余 `opt-verify` 家族（§13.3.1，23 个）在非 sink 表达式路径未解包"的判断已过时**：该家族经 #15/#18/#19/#23/#32/#33/#34/#39 逐站闭环，第十三轮复核 **MIR 专属剩 0**。`test-arr.no` 已于第十二轮实测 `MIR=3` 与 legacy 逐字节一致。**精确 MIR=3 通过数**：第十三轮以**修正二进制路径**（`./bin/no`，非陈旧的仓库根 `no`）对全量 `tests/**/*.no` 重跑，结果见 §10.1。
 - **legacy `awy f` future 变量漏行 bug（2026-09-12 第十二轮实测，MIR 正确、legacy 错）**：`tests/test-async.no` 的 `test-await-future` 子用例写 `f = compute-async(25); r = awy f; print(r)`。MIR=3 正确输出 8 行（`42/42/1/-1/0/60/60/50`），但 legacy（`MIR=0`）只输出 7 行、**漏最后一行 `50`**——legacy 对 `awy <future 变量>`（future 已先 `run` 进变量、再 await 该变量）的调度路径存在既有 bug，未把该 future 的结果打印出来。故 `test-async` 在 §10.1 覆盖表中**不计入 MATCH**（要求逐字节一致），而归入 "MIR 正确 / legacy 错误" 族（同 #28 插值、#36 x25519）。这是 legacy 自身缺陷，非 MIR 回归；MIR 因忠实移植 legacy `build/llvm` 协作式调度器契约（§12 #39）而绕过了该 bug。
 - **legacy `async-yield()` 在 `-async` 函数内 SIGSEGV（2026-09-12 第十二·续轮实测，MIR 正确、legacy 崩）**：`tests/tmp-async-yield.no` 的 `-async` 目标 `yielder-async` 体内首条语句是 `async-yield()`，随后 `r = n + 1`，由 `run`/`awy` 驱动。MIR=3 输出 `6/9` **正确**；legacy（`MIR=0`）**SIGSEGV**（最小复现 `/tmp/min-yield.no` 亦崩）——legacy 的 `coro.go` 把顶层 `async-yield()` 改写为协程挂起点后，在 `run`+`awy` 驱动的 `-async` 函数上挂起/恢复路径崩。MIR 因无协程状态变换、恒走退化路径（`call @nolang_async_yield`）而正确。又一 "MIR 正确 / legacy 错误" 案例，非 MIR 回归。注意：**函数名以 `-async` 结尾会被 MIR/legacy 都当作异步调用**（`strings.HasSuffix(callee, "-async")` → `OpRun`），故测试函数名应避免该后缀（本测试初版误名 `test-yield-in-async` 被当作 `run` 而未被 await，已改名 `test-yield-inside`）。

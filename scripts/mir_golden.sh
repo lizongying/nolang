@@ -22,14 +22,49 @@
 # differ every run. rc is kept because a "golden ok -> now fails" transition
 # (the REGRESS bucket) is the post-deletion analogue of MIR_GAP.
 #
+# WHAT rc=124 MEANS — and why the timeout is 300s, not 90s
+# -------------------------------------------------------
+# 124 is "the harness's own alarm fired", i.e. "no verdict". It is NOT a
+# property of the file. Three very different things land there:
+#   (a) genuine infinite loop        -> 124 at ANY timeout  (tests/test-for2.no)
+#   (b) slow-but-finite compile      -> 124 only below its cost
+#   (c) contention                  -> 124 when -P parallelism starves the box
+# (c) is not hypothetical, it is measured: tests/test-parse-min.no takes
+# 32.9s / rc=0 run alone, yet recorded **124** in the frozen mir-baseline
+# because the sweep runs 8 builds at once and LLVM opt is CPU-bound. Its
+# fingerprint hash is the empty-stdout hash, which is the tell: a program
+# that prints instantly never got to run.
+#
+# The consequence is worse than a wrong number: a file that times out cannot
+# report a *behaviour* regression. The two json/parse cases compile in
+# 111-120s and then FAIL AT RUNTIME (rc=1) — invisible as long as they sit
+# above the cap, visible the moment they sit below it. So the cap is set at
+# 300s and the job count lowered: the oracle exists to be accurate, and it is
+# run by hand after backend changes, not in a loop.
+#   MIR_GOLDEN_TIMEOUT=<sec>   (default 300) raise to separate (b) from (a)
+#   MIR_GOLDEN_JOBS=<n>        (default 4)   lower to reduce (c)
+#
 # USAGE
-#   GOLDEN_MIR=0       scripts/mir_golden.sh -update legacy-baseline.tsv
-#   GOLDEN_MIR=default scripts/mir_golden.sh -update mir-baseline.tsv
+#   GOLDEN=tests/golden/mir-baseline.tsv GOLDEN_MIR=default scripts/mir_golden.sh -update
 #   GOLDEN=tests/golden/mir-baseline.tsv scripts/mir_golden.sh
+#
+# ⚠️ The -update line used to read `scripts/mir_golden.sh -update mir-baseline.tsv`.
+# That was WRONG and dangerous: there is no positional argument — the path comes
+# from $GOLDEN only — so the trailing `mir-baseline.tsv` was silently ignored and
+# $GOLDEN fell back to its default, legacy-baseline.tsv. Following the documented
+# command would therefore OVERWRITE the semantic oracle with a default-backend
+# capture, and (because the label is derived from the basename) that file would
+# then describe itself as a legacy capture while holding MIR output. Fixed here,
+# and closed off by the "never -update a *legacy* golden" guard below.
+#
+# legacy-baseline.tsv can NO LONGER be regenerated (see the guards below) — it is
+# a historical artefact, and that is the point of keeping it.
 #
 # Two goldens are worth keeping:
 #   tests/golden/legacy-baseline.tsv  (GOLDEN_MIR=0)
-#       what the pure legacy backend computes. The SEMANTIC oracle. Beware: the
+#       what the pure legacy backend computes. The SEMANTIC oracle. Frozen
+#       2026-09-16, before src/build/llvm/ was deleted — NOT regenerable (see
+#       the -update guard). Beware: the
 #       legacy backend is broken on ~19% of the corpus (it cannot even compile
 #       `print(1+2)` — the `%addopt.final` option-not-unwrapped bug), so its
 #       rc!=0 entries mean "no reference available here", not "expected failure".
@@ -48,9 +83,71 @@ NO=${NO:-./bin/no}
 GOLDEN=${GOLDEN:-tests/golden/legacy-baseline.tsv}
 GOLDEN_MIR=${GOLDEN_MIR:-0}
 WORKDIR=/tmp/mir_golden
-TMO=${MIR_GOLDEN_TIMEOUT:-90}
+# 300s, not 90s: see the "WHAT rc=124 MEANS" block above. At 90s the three
+# json/parse files never yield a verdict, so their rc=1 runtime failure (the
+# thing a regression oracle exists to catch) is structurally unobservable.
+TMO=${MIR_GOLDEN_TIMEOUT:-300}
+JOBS=${MIR_GOLDEN_JOBS:-4}
+# Files whose stdout is legitimately NONDETERMINISTIC, so a hash mismatch is
+# not evidence of a regression. They are reported as UNSTABLE rather than
+# DIVERGE: DIVERGE must stay a clean signal, and an entry that can never match
+# would otherwise print on every single run and train the reader to ignore it.
+#
+# Each entry needs a REASON, or the list becomes a place to hide breakage.
+#
+# Currently EMPTY, and that is a deliberate state, not an oversight. The list was
+# introduced (round 42) with exactly one entry:
+#
+#   tests/mem-safety/str-concat-leak.no
+#     #85: printed 0..775 MB of garbage with rc=0, because `print('item' +
+#     i.to-str())` in a count-for lowered the concat's right operand to `undef`
+#     (byte count varied run to run, so the hash could not be frozen). The note
+#     here said "Remove it once #85 is fixed."
+#
+# Round 43 added the loadVal guard, so the file now FAILS TO COMPILE (rc=1,
+# deterministic, empty stdout) instead of printing an unpredictable amount of
+# rubbish. Its fingerprint is therefore freezable again and the entry has been
+# removed. Keep it that way: should the guard ever be reverted, the hash
+# mismatch that reappears is a CORRECT DIVERGE signal for a real bug — not
+# noise to be suppressed. Only re-add an entry together with (a) a concrete
+# reason and (b) a bug number, and only when the nondeterminism is *inherent*
+# to the program rather than a symptom of a defect.
+UNSTABLE=${MIR_GOLDEN_UNSTABLE:-""}
 MODE="compare"
 [ "$1" = "-update" ] && MODE="update"
+
+# GUARD: never re-freeze the legacy oracle from a machine that has no legacy
+# backend. `src/build/llvm/` is deleted, so `NOLANG_MIR=0` is now a hard error
+# — an `-update` with GOLDEN_MIR=0 would write a "capture" in which every one
+# of the 422 files exits non-zero, silently destroying the only record of what
+# legacy actually computed (the SEMANTIC oracle) and leaving a file that looks
+# like a legitimate baseline. There is no override on purpose: if the legacy
+# backend is ever reinstated, that change should also remove this guard.
+if [ "$MODE" = "update" ] && [ "$GOLDEN_MIR" != "default" ]; then
+  echo "ERROR: refusing to re-freeze a non-default oracle (GOLDEN_MIR=$GOLDEN_MIR)." >&2
+  echo "       The legacy backend (NOLANG_MIR=0) no longer exists and is a hard" >&2
+  echo "       error, so this capture would be all-fail garbage. The existing" >&2
+  echo "       legacy-baseline.tsv is a historical artefact — keep it read-only." >&2
+  echo "       To capture the CURRENT backend use: GOLDEN_MIR=default $0 -update <file>" >&2
+  exit 2
+fi
+
+# GUARD 2: never -update a file whose NAME says "legacy", whatever GOLDEN_MIR is.
+# The guard above only blocks `GOLDEN_MIR=0`. A plain
+# `GOLDEN_MIR=default scripts/mir_golden.sh -update` with $GOLDEN left at its
+# default would still land on legacy-baseline.tsv and overwrite the semantic
+# oracle with a *default-backend* capture — worse than the case above, because
+# the file is then mislabelled as a legacy capture (the label is derived from the
+# basename, see the compare mode) and every later semantic comparison becomes
+# self-referential. The name is the only marker of intent we have; honour it.
+case "$(basename "$GOLDEN")" in
+  *legacy*)
+    echo "ERROR: refusing to overwrite '$GOLDEN' — its name marks it as the" >&2
+    echo "       captured LEGACY backend, which can no longer be produced." >&2
+    echo "       Capture the current backend into mir-baseline.tsv instead:" >&2
+    echo "         GOLDEN=tests/golden/mir-baseline.tsv GOLDEN_MIR=default $0 -update" >&2
+    exit 2 ;;
+esac
 
 # In COMPARE mode the backend under test is ALWAYS the current default — the
 # golden file is the only thing that differs between a "semantic" run (vs the
@@ -60,6 +157,10 @@ MODE="compare"
 # "389 regressions" instead of "the harness is asking for a deleted backend".
 # Only -update needs GOLDEN_MIR, to decide what to *capture*.
 FORCE_MIR=""
+# Unreachable since the -update guard above (it exits for any GOLDEN_MIR other
+# than "default"), kept because it is the mechanism `fingerprint_one` still
+# reads: empty means "the current default backend". The legacy capture path is
+# intentionally gone, not forgotten.
 if [ "$MODE" = "update" ] && [ "$GOLDEN_MIR" != "default" ]; then
   FORCE_MIR="$GOLDEN_MIR"
 fi
@@ -133,7 +234,7 @@ fingerprint_one() {
 export -f fingerprint_one run_to sha_of
 export NO WORKDIR TMO MODE GOLDEN_MIR FORCE_MIR
 
-find tests -name '*.no' -print0 | xargs -0 -P 8 -I{} bash -c 'fingerprint_one "$@"' _ {}
+find tests -name '*.no' -print0 | xargs -0 -P "$JOBS" -I{} bash -c 'fingerprint_one "$@"' _ {}
 
 sort -k3 "$WORKDIR/fp.txt" > "$WORKDIR/fp.sorted.tsv"
 
@@ -158,11 +259,17 @@ join -1 3 -2 3 -o 0,1.1,1.2,2.1,2.2 -t' ' \
 
 : > "$WORKDIR/c_same.txt"; : > "$WORKDIR/c_diverge.txt"; : > "$WORKDIR/c_regress.txt"
 : > "$WORKDIR/c_improved.txt"; : > "$WORKDIR/c_bothfail.txt"; : > "$WORKDIR/c_new.txt"
+: > "$WORKDIR/c_unstable.txt"
 
 while read -r path grc gh nrc nh; do
   if [ "$grc" = "0" ] && [ "$nrc" = "0" ]; then
     if [ "$gh" = "$nh" ]; then echo "$path" >> "$WORKDIR/c_same.txt"
-    else echo "$path" >> "$WORKDIR/c_diverge.txt"; fi
+    else
+      case " $UNSTABLE " in
+        *" $path "*) echo "$path" >> "$WORKDIR/c_unstable.txt" ;;
+        *)           echo "$path" >> "$WORKDIR/c_diverge.txt" ;;
+      esac
+    fi
   elif [ "$grc" = "0" ] && [ "$nrc" != "0" ]; then
     echo "$path (now rc=$nrc)" >> "$WORKDIR/c_regress.txt"
   elif [ "$grc" != "0" ] && [ "$nrc" = "0" ]; then
@@ -191,11 +298,12 @@ echo "golden: $GOLDEN ($(cnt "$WORKDIR/gold.paths") entries)"
 echo
 echo "SAME=      $(cnt "$WORKDIR/c_same.txt")"
 echo "DIVERGE=   $(cnt "$WORKDIR/c_diverge.txt")"
+echo "UNSTABLE=  $(cnt "$WORKDIR/c_unstable.txt")     (known-nondeterministic output — see \$MIR_GOLDEN_UNSTABLE)"
 echo "REGRESS=   $(cnt "$WORKDIR/c_regress.txt")     (golden ok -> now fails)"
 echo "IMPROVED=  $(cnt "$WORKDIR/c_improved.txt")     (golden failed -> now ok)"
 echo "BOTH_FAIL= $(cnt "$WORKDIR/c_bothfail.txt")"
 echo "NEW=       $(cnt "$WORKDIR/c_new.txt")     (not in golden)"
-for b in diverge regress improved new; do
+for b in diverge unstable regress improved new; do
   if [ -s "$WORKDIR/c_$b.txt" ]; then
     # macOS ships bash 3.2 — `${b^^}` (uppercase expansion) is a bash 4 feature
     # and aborts the script with "bad substitution". Use tr instead.

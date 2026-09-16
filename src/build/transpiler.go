@@ -2796,16 +2796,30 @@ for _, stmt := range program.Statements {
 	return ir, nil
 }
 
-// verifyMIRIRViaOpt runs the LLVM optimizer over MIR-emitted IR (NOLANG_MIR=2).
+// verifyMIRIRViaOpt pre-flights MIR-emitted IR through the LLVM toolchain so a
+// broken IR is reported with the MIR-specific message ("MIR IR failed LLVM
+// verification/assembly") instead of surfacing several seconds later as a
+// generic optimizer error from the builder.
 //
 // MIR is still maturing; some constructs produce IR that only the optimizer's
-// verifier rejects — e.g. register type mismatches, undefined callees, or a
-// void value used where a result is expected. Because `opt` runs *after*
-// CompileTarget has already committed to the MIR IR (inside buildLLVMInternal),
-// we pre-flight it here so a failing MIR IR is caught and the caller can fall
-// back to the proven legacy HIR path. This is the strangler-fig guarantee:
-// MIR can never break the build while it matures — it only ever degrades to the
-// legacy codegen.
+// verifier rejects — e.g. register type mismatches, undefined callees, or a void
+// value used where a result is expected.
+//
+// DEFAULT = CHEAP GATE. Only `opt -passes=verify` runs (~30 ms). This is exactly
+// the check this stage exists for: the IR verifier is the first thing any `opt`
+// pipeline runs. The previous default — a full `opt -O3` *plus* `llc` — did not
+// just check the IR, it duplicated the builder's entire backend on every single
+// build; combined with an IR shape LLVM's SROA cannot handle cheaply, that is
+// what turned a 5-line json program into a 62 s compile (§13.3.15). Note the
+// duplicated stages cannot even be kept for free: `llc` on *unoptimized* MIR IR
+// is far slower than on the optimized IR (>100 s vs ~14 s), so a "verify-only"
+// pre-flight that still assembled would be a pessimization.
+//
+// NOLANG_MIR_PREFLIGHT=full restores the old behaviour (full pipeline + llc) for
+// hunting an IR shape that survives verification but breaks a transformation
+// pass or the assembler. It changes only WHERE a build fails, never WHETHER it
+// fails: the builder runs the identical command over the identical bytes, so an
+// IR the full pre-flight rejects is rejected by the builder too.
 //
 // If `opt` is unavailable we cannot verify and assume the IR is sound (mirroring
 // buildLLVMInternal's own opt-unavailable handling, which skips optimization).
@@ -2822,17 +2836,21 @@ func verifyMIRIRViaOpt(ll string) error {
 	if err := os.WriteFile(inPath, []byte(toOpaquePointers(ll)), 0644); err != nil {
 		return nil
 	}
-	// Stage 1: optimizer verification. MIR-emitted IR may only fail the
-	// optimizer's verifier (register type mismatches, undefined callees, void in
-	// the wrong place). opt runs *after* CompileTarget returns, so we pre-flight
-	// it here.
+	// Stage 1: IR verification. See the function comment: the default runs only
+	// the verifier pass, because the full pipeline here duplicated the builder's
+	// opt on every build.
+	fullPreflight := os.Getenv("NOLANG_MIR_PREFLIGHT") == "full"
 	if _, err := exec.LookPath("opt"); err == nil {
 		outPath := filepath.Join(dir, "m_opt.ll")
-		optLevel := os.Getenv("NOLANG_OPT_LEVEL")
-		if optLevel == "" {
-			optLevel = "-O3"
+		args := []string{"-passes=verify", inPath, "-S", "-o", outPath}
+		if fullPreflight {
+			optLevel := os.Getenv("NOLANG_OPT_LEVEL")
+			if optLevel == "" {
+				optLevel = "-O3"
+			}
+			args = []string{optLevel, inPath, "-S", "-o", outPath}
 		}
-		cmd := exec.Command("opt", optLevel, inPath, "-S", "-o", outPath)
+		cmd := exec.Command("opt", args...)
 		var buf bytes.Buffer
 		cmd.Stdout = &buf
 		cmd.Stderr = &buf
@@ -2845,9 +2863,11 @@ func verifyMIRIRViaOpt(ll string) error {
 		inPath = outPath
 	}
 	// Stage 2: assembly. opt can pass while llc still rejects the IR (e.g. an
-	// instruction the codegen emitted that the assembler lowers incorrectly). This
-	// is the next build stage after opt, so verify it too.
-	if _, err := exec.LookPath("llc"); err == nil {
+	// instruction the codegen emitted that the assembler lowers incorrectly).
+	// Skipped by default: assembling costs ~14 s on optimized json IR (>100 s on
+	// unoptimized IR, see the function comment) and the builder assembles the
+	// identical IR immediately after this returns.
+	if _, err := exec.LookPath("llc"); err == nil && fullPreflight {
 		sPath := filepath.Join(dir, "m.s")
 		cmd := exec.Command("llc", "--fp-contract=fast", inPath, "-o", sPath)
 		var buf bytes.Buffer
@@ -2861,9 +2881,9 @@ func verifyMIRIRViaOpt(ll string) error {
 }
 
 // emitMIR is the codegen path. It lowers HIR -> MIR, analyzes memory, emits LLVM
-// IR, and pre-flights it through the optimizer. It returns MIR-emitted IR only
-// when every stage succeeds; on any failure it returns empty IR plus a reason and
-// the caller rejects the build.
+// IR, and pre-flights it past the LLVM verifier (see verifyMIRIRViaOpt). It
+// returns MIR-emitted IR only when every stage succeeds; on any failure it
+// returns empty IR plus a reason and the caller rejects the build.
 //
 // There is deliberately NO fallback to a second backend. Until §13.3.13 this
 // function took an `allowFallback` flag that, under NOLANG_MIR=2, degraded to the
