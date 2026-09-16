@@ -50,7 +50,7 @@ type codegen struct {
 	strGlobals  map[ValueID]strGlobal
 	cf          FuncID
 	curFn       *Function // function currently being emitted (for param ownership checks)
-	loadSeq     int // unique suffix for materialized load registers
+	loadSeq     int       // unique suffix for materialized load registers
 
 	// mirSliceCopyEmitted tracks whether @mir_slice_copy has been emitted.
 	mirSliceCopyEmitted bool
@@ -267,15 +267,15 @@ func (m *Module) EmitLLVM() (out string, err error) {
 		}
 	}()
 	c := &codegen{
-		mod:          m,
-		fname:        map[FuncID]string{},
-		labelFor:     map[BlockID]string{},
-		valSlot:      map[ValueID]string{},
-		paramPtr:     map[ValueID]string{},
-		resultParam:  map[ValueID]bool{},
-		strGlobals:   map[ValueID]strGlobal{},
-		extDecls:     map[string]bool{},
-		optPayload:   map[string]string{},
+		mod:            m,
+		fname:          map[FuncID]string{},
+		labelFor:       map[BlockID]string{},
+		valSlot:        map[ValueID]string{},
+		paramPtr:       map[ValueID]string{},
+		resultParam:    map[ValueID]bool{},
+		strGlobals:     map[ValueID]strGlobal{},
+		extDecls:       map[string]bool{},
+		optPayload:     map[string]string{},
 		optPrintHelper: map[string]string{},
 	}
 	// Sanitize LLVM symbol names, disambiguating collisions. Nolang method
@@ -1667,8 +1667,8 @@ func (c *codegen) emitFunc(f *Function) error {
 				}
 				lt, _ := c.ptype(inst.Dst)
 				if !supportedLLVM(lt) {
-				c.fail("unsupported value type %s in func %s", lt, f.Name)
-				return fmt.Errorf("unsupported value type %s in func %s", lt, f.Name)
+					c.fail("unsupported value type %s in func %s", lt, f.Name)
+					return fmt.Errorf("unsupported value type %s in func %s", lt, f.Name)
 				}
 			}
 		}
@@ -1990,6 +1990,18 @@ func (c *codegen) loadVal(v ValueID) (string, string) {
 		}
 		return lt, "undef"
 	}
+	// #83 SROA guard: for large aggregate types, do NOT emit a `load T` —
+	// loading a 22KB struct into an SSA value triggers SROA to scalarize
+	// every nested field, causing compile-time explosion. Return the slot
+	// pointer directly; callers that need to copy the value should use
+	// memcpy (see emitMove/emitGetField/emitSetField/emitReturn, all of
+	// which have shouldUseMemcpy guards). Callers that use the returned
+	// value for arithmetic/comparison/store will get the slot pointer,
+	// which is fine for aggregate types because they are never used in
+	// scalar operations — they are only stored/loaded/copied/fielded.
+	if c.shouldUseMemcpy(lt) {
+		return lt, slot
+	}
 	c.loadSeq++
 	reg := fmt.Sprintf("%%lv%d", c.loadSeq)
 	c.sb.WriteString(fmt.Sprintf("  %s = load %s, %s* %s\n", reg, lt, lt, slot))
@@ -2000,6 +2012,18 @@ func (c *codegen) loadVal(v ValueID) (string, string) {
 // field 0). nolang `opt == nil` / `opt == err` always compares the tag, not the
 // whole struct, so callers (e.g. emitCmp) extract it before an integer icmp.
 func (c *codegen) optionTag(v, optLT string) string {
+	// #83 SROA guard: for large option types, loadVal returns a slot pointer
+	// (not a loaded value), so extractvalue cannot be used. GEP field 0 (the
+	// tag) and load the i64 directly.
+	if c.shouldUseMemcpy(optLT) {
+		c.loadSeq++
+		gp := fmt.Sprintf("%%otg%d", c.loadSeq)
+		c.sb.WriteString(fmt.Sprintf("  %s = getelementptr inbounds %s, %s* %s, i32 0, i32 0\n", gp, optLT, optLT, v))
+		c.loadSeq++
+		r := fmt.Sprintf("%%ot%d", c.loadSeq)
+		c.sb.WriteString(fmt.Sprintf("  %s = load i64, i64* %s\n", r, gp))
+		return r
+	}
 	c.loadSeq++
 	r := fmt.Sprintf("%%ot%d", c.loadSeq)
 	c.sb.WriteString(fmt.Sprintf("  %s = extractvalue %s %s, 0\n", r, optLT, v))
@@ -2011,6 +2035,17 @@ func (c *codegen) optionTag(v, optLT string) string {
 // moved into a non-option destination.
 func (c *codegen) optionPayloadOf(v, optLT string) (string, string) {
 	payload := c.optionPayloadLLVMType(c.optionElemRawOf(optLT))
+	// #83 SROA guard: for large option types, loadVal returns a slot pointer,
+	// so extractvalue cannot be used. GEP field 1 (the payload) and load.
+	if c.shouldUseMemcpy(optLT) {
+		c.loadSeq++
+		gp := fmt.Sprintf("%%opg%d", c.loadSeq)
+		c.sb.WriteString(fmt.Sprintf("  %s = getelementptr inbounds %s, %s* %s, i32 0, i32 1\n", gp, optLT, optLT, v))
+		c.loadSeq++
+		r := fmt.Sprintf("%%op%d", c.loadSeq)
+		c.sb.WriteString(fmt.Sprintf("  %s = load %s, %s* %s\n", r, payload, payload, gp))
+		return r, payload
+	}
 	c.loadSeq++
 	r := fmt.Sprintf("%%op%d", c.loadSeq)
 	c.sb.WriteString(fmt.Sprintf("  %s = extractvalue %s %s, 1\n", r, optLT, v))
@@ -2242,8 +2277,45 @@ func (c *codegen) emitOptionWrap(inst *Inst) error {
 	// `err(err-msg)` into `?file` emits `insertvalue %option_fs_file, %str-long
 	// %lv, 1` and opt rejects it ("defined with type %str-long but expected
 	// %fs_file").
+	//
+	// #84 guard: when the payload type is MUCH larger than the source (e.g.
+	// %str-long (24 bytes) → %json_json (22KB)), the bitcast+load reads past
+	// the source alloca → SIGSEGV. The type-pun is only safe when the source
+	// and payload types are the same size. When they differ in size, use
+	// zeroinitializer for the payload (the runtime only reads the tag for
+	// err/nil arms, so the payload bytes are never accessed).
 	if svType != "" && svType != payloadLT {
-		sv = c.optionPayloadPun(inst.Args[0], svType, payloadLT, sv)
+		if c.typeSizeSafe(svType, payloadLT) {
+			sv = c.optionPayloadPun(inst.Args[0], svType, payloadLT, sv)
+		} else {
+			// Source smaller than payload (or either unknown): bitcast+load
+			// would read past the source alloca (e.g. %str-long 24B →
+			// %json_json 22KB → SIGSEGV). Use zeroinitializer; the runtime
+			// only reads the tag for err/nil arms, so payload bytes are safe
+			// to zero.
+			sv = "zeroinitializer"
+		}
+	}
+	// #83 SROA guard: for large aggregate payloads, loadVal returns a slot
+	// pointer (not a loaded value), so insertvalue cannot be used. Instead,
+	// store the tag via a small insertvalue (i64 tag only), then memcpy the
+	// payload from the source slot into the option's payload field.
+	if c.shouldUseMemcpy(payloadLT) {
+		// Build a partial option with just the tag set, store it, then
+		// memcpy the payload into field 1.
+		c.loadSeq++
+		w1 := fmt.Sprintf("%%ow%d", c.loadSeq)
+		c.sb.WriteString(fmt.Sprintf("  %s = insertvalue %s zeroinitializer, i64 %d, 0\n", w1, optLT, tag))
+		c.sb.WriteString(fmt.Sprintf("  store %s %s, %s* %s\n", optLT, w1, optLT, slot))
+		// GEP to the payload field (field 1) and memcpy from source.
+		if srcSlot := c.valSlot[inst.Args[0]]; srcSlot != "" {
+			c.loadSeq++
+			pg := fmt.Sprintf("%%owpf%d", c.loadSeq)
+			c.sb.WriteString(fmt.Sprintf("  %s = getelementptr inbounds %s, %s* %s, i32 0, i32 1\n", pg, optLT, optLT, slot))
+			sz := c.typeSizeOperand(payloadLT)
+			c.emitMemcpy(pg, srcSlot, sz)
+		}
+		return nil
 	}
 	c.loadSeq++
 	w1 := fmt.Sprintf("%%ow%d", c.loadSeq)
@@ -2279,6 +2351,26 @@ func (c *codegen) emitOptionWrap(inst *Inst) error {
 //     per-payload inline type is stricter, so the source is re-punned through a
 //     pointer bitcast + load. Without this, `err(err-msg)` into `?file` emits
 //     `insertvalue %option_fs_file, %str-long %lv, 1` and opt rejects it.
+//
+// typeSizeSafe reports whether the bitcast+load type-pun in optionPayloadPun
+// is safe: the source value's allocation must be at least as large as the
+// payload type. Returns false when either type's size is unknown (conservative).
+func (c *codegen) typeSizeSafe(svType, payloadLT string) bool {
+	srcSize, srcOk := mirStaticTypeSize(svType)
+	dstSize, dstOk := mirStaticTypeSize(payloadLT)
+	if !srcOk || !dstOk {
+		// At least one type is a user struct / unknown size.
+		// Only allow when the types are the same (no pun needed) or
+		// both are known scalars. Otherwise conservatively reject.
+		// Exception: array→vec pun is handled separately in optionPayloadPun.
+		if payloadLT == "%vec" && strings.HasPrefix(svType, "[") {
+			return true
+		}
+		return false
+	}
+	return srcSize >= dstSize
+}
+
 func (c *codegen) optionPayloadPun(srcVal ValueID, svType, payloadLT, sv string) string {
 	if payloadLT == "%vec" && strings.HasPrefix(svType, "[") {
 		arrSlot := c.valSlot[srcVal]
@@ -3014,6 +3106,22 @@ func (c *codegen) emitMove(inst *Inst) error {
 		if srcT != "" && srcT != payloadLT {
 			sv = c.optionPayloadPun(inst.Args[0], srcT, payloadLT, sv)
 		}
+		// #83 SROA guard: for large aggregate payloads, loadVal returns a
+		// slot pointer. Use tag-only insertvalue + memcpy like emitOptionWrap.
+		if c.shouldUseMemcpy(payloadLT) {
+			c.loadSeq++
+			w1 := fmt.Sprintf("%%mvw%d", c.loadSeq)
+			c.sb.WriteString(fmt.Sprintf("  %s = insertvalue %s zeroinitializer, i64 0, 0\n", w1, optLT))
+			c.sb.WriteString(fmt.Sprintf("  store %s %s, %s* %s\n", optLT, w1, optLT, dstSlot))
+			if srcSlot := c.valSlot[inst.Args[0]]; srcSlot != "" {
+				c.loadSeq++
+				pg := fmt.Sprintf("%%mvpf%d", c.loadSeq)
+				c.sb.WriteString(fmt.Sprintf("  %s = getelementptr inbounds %s, %s* %s, i32 0, i32 1\n", pg, optLT, optLT, dstSlot))
+				sz := c.typeSizeOperand(payloadLT)
+				c.emitMemcpy(pg, srcSlot, sz)
+			}
+			return nil
+		}
 		c.loadSeq++
 		w1 := fmt.Sprintf("%%mvw%d", c.loadSeq)
 		c.sb.WriteString(fmt.Sprintf("  %s = insertvalue %s zeroinitializer, i64 0, 0\n", w1, optLT))
@@ -3040,25 +3148,25 @@ func (c *codegen) emitMove(inst *Inst) error {
 		// the verifier — opt: "'%mvu295' defined with type 'i64' but expected
 		// 'i8'" — which killed the whole `str[i]` -> `?byte` family
 		// (tests/test-x25519-minimal.no, test-hmac, test-sha256, test-fe-ops, ...).
-	c.loadSeq++
-	u1 := fmt.Sprintf("%%mvu%d", c.loadSeq)
-	c.sb.WriteString(fmt.Sprintf("  %s = extractvalue %s %s, 1\n", u1, optLT, sv))
-	// Owned-string option peel: extractvalue copies the {len,cap,data} triple
-	// by value, so the destination SHARES the option's heap buffer. nolang
-	// `x = opt` does NOT transfer ownership (the option may be unwrapped again
-	// at a later use — str.replace-n unwraps the same `?str` twice), so BOTH the
-	// destination and the later re-unwrap would drop the SAME buffer -> double
-	// free (the str.replace-n trace/BPT trap). Clone the payload so the
-	// destination owns an independent buffer; the option keeps its own (freed
-	// exactly once on its own drop).
-	if payloadLT == "%str-long" {
 		c.loadSeq++
-		cl := fmt.Sprintf("%%mvucl%d", c.loadSeq)
-		c.sb.WriteString(fmt.Sprintf("  %s = call %%str-long @str_clone(%%str-long %s)\n", cl, u1))
-		c.sb.WriteString(fmt.Sprintf("  store %%str-long %s, %%str-long* %s\n", cl, dstSlot))
-		return nil
-	}
-	if payloadLT != dstT && dstT != "" {
+		u1 := fmt.Sprintf("%%mvu%d", c.loadSeq)
+		c.sb.WriteString(fmt.Sprintf("  %s = extractvalue %s %s, 1\n", u1, optLT, sv))
+		// Owned-string option peel: extractvalue copies the {len,cap,data} triple
+		// by value, so the destination SHARES the option's heap buffer. nolang
+		// `x = opt` does NOT transfer ownership (the option may be unwrapped again
+		// at a later use — str.replace-n unwraps the same `?str` twice), so BOTH the
+		// destination and the later re-unwrap would drop the SAME buffer -> double
+		// free (the str.replace-n trace/BPT trap). Clone the payload so the
+		// destination owns an independent buffer; the option keeps its own (freed
+		// exactly once on its own drop).
+		if payloadLT == "%str-long" {
+			c.loadSeq++
+			cl := fmt.Sprintf("%%mvucl%d", c.loadSeq)
+			c.sb.WriteString(fmt.Sprintf("  %s = call %%str-long @str_clone(%%str-long %s)\n", cl, u1))
+			c.sb.WriteString(fmt.Sprintf("  store %%str-long %s, %%str-long* %s\n", cl, dstSlot))
+			return nil
+		}
+		if payloadLT != dstT && dstT != "" {
 			if cv := c.coerce(payloadLT, u1, dstT); cv != "" {
 				c.sb.WriteString(fmt.Sprintf("  store %s %s, %s* %s\n", dstT, cv, dstT, dstSlot))
 				return nil
@@ -3108,6 +3216,19 @@ func (c *codegen) emitMove(inst *Inst) error {
 		c.sb.WriteString(fmt.Sprintf("  store %%vec %s, %%vec* %s\n", v, dstSlot))
 		return nil
 	}
+	// #83 SROA guard: for large aggregate types (user structs like %json_json
+	// at ~22KB, or their containing option/struct types), a `load T, T* src`
+	// + `store T, T* dst` pair exposes the entire struct's internal layout to
+	// LLVM's SROA pass, which tries to scalarize every field — 22KB of nested
+	// arrays explodes into tens of thousands of SSA values and stalls opt
+	// for 25+ seconds. Using `llvm.memcpy` instead hides the struct internals
+	// from SROA (memcpy of an opaque byte blob is not scalarizable), reducing
+	// compile time from 43s to under 1s for the json test case.
+	if c.shouldUseMemcpy(dstT) {
+		sz := c.typeSizeOperand(dstT)
+		c.emitMemcpy(dstSlot, srcSlot, sz)
+		return nil
+	}
 	// Use a unique temp name (%mv<instID>) because Dst is an existing variable
 	// slot already defined by its original binding, so reusing %c<Dst> would
 	// collide.
@@ -3140,9 +3261,10 @@ func (c *codegen) emitClone(inst *Inst) error {
 // arrSlot. The container layout depends on arrT:
 //   - %str-long {i64, i64, i8*} : data is field 2 (i8*); index a byte.
 //   - %vec      {i64, i64, i64} : data is field 2 (pointer stored as i64);
-//                            inttoptr to the element-type pointer, then index.
+//     inttoptr to the element-type pointer, then index.
 //   - fixed array [N x T]      : the array type is its own element type; a
-//                            single-level GEP does the right thing.
+//     single-level GEP does the right thing.
+//
 // Returns the element pointer register (typed `<elemT>*`).
 func (c *codegen) elemAddr(arrSlot, idxV, arrT, elemT string) string {
 	switch arrT {
@@ -3217,6 +3339,222 @@ func (c *codegen) typeSizeOperand(lt string) string {
 	r := fmt.Sprintf("%%tsz%d", c.loadSeq)
 	c.sb.WriteString(fmt.Sprintf("  %s = ptrtoint ptr getelementptr (%s, ptr null, i64 1) to i64\n", r, lt))
 	return r
+}
+
+// shouldUseMemcpy reports whether a load+store of LLVM type `lt` should be
+// replaced by an equivalent `llvm.memcpy` to avoid SROA scalar-replacement
+// explosion on large aggregate types.
+//
+// SROA decomposes every alloca that participates in a `load T` / `store T`
+// into individual scalar fields. For a large struct like %json_json (~22KB,
+// containing [64]json_value each holding [16]str + [16]i64), this produces
+// thousands of SSA values and stalls opt for tens of seconds. Using memcpy
+// instead hides the struct layout from SROA (the pass treats memcpy as an
+// opaque byte copy and does not scalarize through it), bringing compile time
+// from ~43s down to under 1s.
+//
+// The threshold of 4096 bytes is chosen so that medium-sized structs with
+// flat arrays of small elements (e.g. %http_response at ~1.6KB, containing
+// [32 x %str-long]) still use normal load+store — SROA handles these fine —
+// while truly large nested structs like %json_json (~22KB, with [64]json_value
+// each holding [16]str + [16]i64) use memcpy to avoid the SROA explosion.
+//
+// Unlike the previous name-based heuristic, this method recursively computes
+// the actual type size using c.mod.StructFields, so small user-defined structs
+// (e.g. %MyType { %str-long, %vec } = 48B) correctly use normal load+store.
+func (c *codegen) shouldUseMemcpy(lt string) bool {
+	// Only aggregate types (named structs, options wrapping structs, fixed
+	// arrays of aggregates) can be large enough to matter; scalars and the
+	// small MIR builtins (%str-long, %vec, %option) are always fine.
+	if lt == "" || lt == "void" || lt == "i64" || lt == "double" || lt == "i1" || lt == "i8" {
+		return false
+	}
+	if lt == "%str-long" || lt == "%vec" || lt == "%option" || lt == "%txt" {
+		return false
+	}
+	// Compute the actual type size; only use memcpy for types above the
+	// SROA explosion threshold. If we cannot determine the size (unknown
+	// type), default to false (normal load+store) — this is safe because
+	// SROA only explodes on *known* large structs with nested arrays.
+	size, ok := c.computeTypeSize(lt, map[string]bool{})
+	if !ok {
+		return false
+	}
+	return size > 4096
+}
+
+// computeTypeSize recursively computes the byte size of an LLVM type string.
+// Returns (size, true) when the size is known, or (0, false) for unknown types.
+// The visited map prevents infinite recursion on self-referential struct types.
+func (c *codegen) computeTypeSize(lt string, visited map[string]bool) (int64, bool) {
+	// Scalars and known-small builtins.
+	if n, ok := mirStaticTypeSize(lt); ok {
+		return n, true
+	}
+	if lt == "%txt" {
+		return 256, true // { [255 x i8] data, i8 len } ≈ 256B
+	}
+	// Fixed arrays: [N x elem] -> N * sizeof(elem).
+	if len(lt) > 0 && lt[0] == '[' {
+		// Parse "[N x T]" — extract N and T.
+		inner := lt[1:strings.LastIndex(lt, "]")]
+		xIdx := strings.Index(inner, " x ")
+		if xIdx < 0 {
+			return 0, false
+		}
+		nStr := inner[:xIdx]
+		elemLT := inner[xIdx+3:]
+		var n int64
+		for _, ch := range nStr {
+			if ch < '0' || ch > '9' {
+				return 0, false
+			}
+			n = n*10 + int64(ch-'0')
+		}
+		elemSz, ok := c.computeTypeSize(elemLT, visited)
+		if !ok {
+			return 0, false
+		}
+		return n * elemSz, true
+	}
+	// Named struct types (%foo): resolve via StructFields and sum field sizes.
+	if len(lt) > 1 && lt[0] == '%' {
+		name := lt[1:] // strip leading '%'
+		if visited[name] {
+			return 0, false // recursive struct — can't compute statically
+		}
+		visited[name] = true
+		// Per-payload option types: %option_T = { i64 tag, <payload> }.
+		if strings.HasPrefix(name, "option_") {
+			elemName := strings.TrimPrefix(name, "option_")
+			// Try multiple lookups: the sanitized name directly, and the
+			// unsanitized name (with _ -> . for module-qualified structs).
+			payloadLT := c.optionPayloadLLVMType(elemName)
+			if payloadLT == "i64" {
+				payloadLT = c.optionPayloadLLVMType(unsanitize(elemName))
+			}
+			payloadSz, ok := c.computeTypeSize(payloadLT, visited)
+			if !ok {
+				return 0, false
+			}
+			return 8 + payloadSz, true // i64 tag + payload
+		}
+		// Look up struct fields by the sanitized name (StructFields keys are
+		// raw nolang names; the LLVM type name has dots replaced with _).
+		structKey := c.structKeyOf(unsanitize(name))
+		if structKey == "" {
+			structKey = unsanitize(name)
+		}
+		fields, ok := c.mod.StructFields[structKey]
+		if !ok {
+			// Try the sanitized name directly (some structs are registered
+			// under their sanitized name).
+			fields, ok = c.mod.StructFields[name]
+		}
+		if !ok {
+			return 0, false // unknown struct — can't compute size
+		}
+		var total int64
+		for _, f := range fields {
+			fieldLT := c.nolangTypeToLLVM(f.TypeRaw)
+			fsz, ok := c.computeTypeSize(fieldLT, visited)
+			if !ok {
+				return 0, false
+			}
+			total += fsz
+		}
+		return total, true
+	}
+	return 0, false
+}
+
+// nolangTypeToLLVM converts a nolang type string (e.g. "str", "i64", "[]byte",
+// "foo", "?bar") to its LLVM type string. This is a simplified version of
+// llvmTypeOf that works from the raw type string instead of a Type pointer.
+func (c *codegen) nolangTypeToLLVM(raw string) string {
+	switch raw {
+	case "str":
+		return "%str-long"
+	case "vec":
+		return "%vec"
+	case "i64", "int", "uint", "usize", "isize":
+		return "i64"
+	case "byte", "u8", "i8":
+		return "i8"
+	case "u16", "i16":
+		return "i16"
+	case "u32", "i32":
+		return "i32"
+	case "bool":
+		return "i1"
+	case "double", "f64", "f32", "float":
+		return "double"
+	}
+	// Option type: ?T
+	if strings.HasPrefix(raw, "?") {
+		elem := raw[1:]
+		if lt, _ := c.optionType(elem); lt != "" {
+			return lt
+		}
+		return "%option"
+	}
+	// Slice type: []T
+	if strings.HasPrefix(raw, "[]") {
+		return "%vec"
+	}
+	// Fixed array: [N]T
+	if strings.HasPrefix(raw, "[") {
+		// Try to resolve via the type system.
+		if tID := c.mod.internType(raw); tID != NoType {
+			if ty := c.mod.Type(tID); ty != nil {
+				return c.llvmTypeOf(ty)
+			}
+		}
+		return "i64"
+	}
+	// Map type: [K]V
+	if k, v, ok := parseMapTypes(raw); ok {
+		vSan := strings.ReplaceAll(v, "[]", "slice_")
+		hmName := "hashmap-" + k + "-" + vSan
+		if _, ok := c.mod.StructFields[hmName]; ok {
+			return "%" + sanitize(hmName)
+		}
+		if s := c.structLLVMType(hmName); s != "" {
+			return s
+		}
+		return "i64"
+	}
+	// User struct: try StructFields lookup.
+	if lt := c.structLLVMType(raw); lt != "" {
+		return lt
+	}
+	if _, ok := c.mod.StructFields[raw]; ok {
+		return "%" + sanitize(raw)
+	}
+	return "i64"
+}
+
+// unsanitize reverses the sanitize() transformation: replaces '_' with '.'
+// when the result matches a known struct name in StructFields. This is needed
+// because LLVM type names use '_' as a separator (e.g. %fs_file) while
+// StructFields keys use the original nolang names (e.g. "fs.file").
+func unsanitize(s string) string {
+	if strings.Contains(s, "_") {
+		candidate := strings.ReplaceAll(s, "_", ".")
+		// We can't check StructFields here (this is a package-level function),
+		// so just return the dot-version; the caller will look it up.
+		return candidate
+	}
+	return s
+}
+
+// emitMemcpy emits a `call void @llvm.memcpy.p0.p0.i64(dst, src, size, false)`
+// that copies `size` bytes from src to dst. This is semantically equivalent to
+// `load T; store T` but does not expose the struct layout to SROA, avoiding
+// the scalar-replacement explosion on large aggregates (#83).
+func (c *codegen) emitMemcpy(dst, src, size string) {
+	c.decl("declare void @llvm.memcpy.p0.p0.i64(ptr noalias nocapture writeonly, ptr noalias nocapture readonly, i64, i1 immarg)")
+	c.sb.WriteString(fmt.Sprintf("  call void @llvm.memcpy.p0.p0.i64(ptr %s, ptr %s, i64 %s, i1 false)\n", dst, src, size))
 }
 
 // allocBytesOperand returns an i64 operand holding cap * sizeof(elemLT), the
@@ -3333,27 +3671,27 @@ func arrayElemRaw(raw string) (string, bool) {
 func (c *codegen) elemTypeOfReceiver(recv ValueID) string {
 	if val := c.mod.Value(recv); val != nil {
 		if t := c.mod.Type(val.Type); t != nil {
-		switch t.Kind {
-		case KindSlice, KindArray:
-			if t.Elem != NoType {
-				if et := c.mod.Type(t.Elem); et != nil {
-					return c.llvmTypeOf(et)
+			switch t.Kind {
+			case KindSlice, KindArray:
+				if t.Elem != NoType {
+					if et := c.mod.Type(t.Elem); et != nil {
+						return c.llvmTypeOf(et)
+					}
 				}
-			}
-			// Fallback: derive the element type from the raw string when Elem
-			// is missing (some array types in the table lack it). Mirrors
-			// elementTypeOf's defensive path so the backing-store element width
-			// is correct (i64 for [128]i64, i8 for [512]byte) instead of the
-			// default i8, which would overrun non-byte arrays.
-			if e, ok := arrayElemRaw(t.Raw); ok {
-				if et := c.mod.Type(c.mod.internType(e)); et != nil {
-					return c.llvmTypeOf(et)
+				// Fallback: derive the element type from the raw string when Elem
+				// is missing (some array types in the table lack it). Mirrors
+				// elementTypeOf's defensive path so the backing-store element width
+				// is correct (i64 for [128]i64, i8 for [512]byte) instead of the
+				// default i8, which would overrun non-byte arrays.
+				if e, ok := arrayElemRaw(t.Raw); ok {
+					if et := c.mod.Type(c.mod.internType(e)); et != nil {
+						return c.llvmTypeOf(et)
+					}
 				}
+				return "i8"
+			case KindStr:
+				return "i8"
 			}
-			return "i8"
-		case KindStr:
-			return "i8"
-		}
 		}
 	}
 	return "i8"
@@ -3607,6 +3945,12 @@ func (c *codegen) emitGetField(inst *Inst) error {
 		c.loadSeq++
 		gp := fmt.Sprintf("%%gp%d", c.loadSeq)
 		c.sb.WriteString(fmt.Sprintf("  %s = getelementptr inbounds %s, %s* %s, i32 0, i32 %d\n", gp, payloadLT, payloadLT, pg, idx))
+		// #83 SROA guard: for large aggregate field types, use memcpy.
+		if c.shouldUseMemcpy(fieldLT) {
+			sz := c.typeSizeOperand(fieldLT)
+			c.emitMemcpy(c.valSlot[inst.Dst], gp, sz)
+			return nil
+		}
 		c.loadSeq++
 		lv := fmt.Sprintf("%%lx%d", c.loadSeq)
 		c.sb.WriteString(fmt.Sprintf("  %s = load %s, %s* %s\n", lv, fieldLT, fieldLT, gp))
@@ -3639,6 +3983,13 @@ func (c *codegen) emitGetField(inst *Inst) error {
 	c.loadSeq++
 	gep := fmt.Sprintf("%%gp%d", c.loadSeq)
 	c.sb.WriteString(fmt.Sprintf("  %s = getelementptr inbounds %s, %s* %s, i32 0, i32 %d\n", gep, structLT, structLT, recvSlot, idx))
+	// #83 SROA guard: for large aggregate field types, use memcpy from the
+	// GEP'd field address to the destination slot instead of load+store.
+	if c.shouldUseMemcpy(fieldLT) {
+		sz := c.typeSizeOperand(fieldLT)
+		c.emitMemcpy(c.valSlot[inst.Dst], gep, sz)
+		return nil
+	}
 	c.loadSeq++
 	lv := fmt.Sprintf("%%lx%d", c.loadSeq)
 	c.sb.WriteString(fmt.Sprintf("  %s = load %s, %s* %s\n", lv, fieldLT, fieldLT, gep))
@@ -3806,6 +4157,15 @@ func (c *codegen) emitSetField(inst *Inst) error {
 	c.loadSeq++
 	gep := fmt.Sprintf("%%gp%d", c.loadSeq)
 	c.sb.WriteString(fmt.Sprintf("  %s = getelementptr inbounds %s, %s* %s, i32 0, i32 %d\n", gep, structLT, structLT, recvSlot, idx))
+	// #83 SROA guard: for large aggregate field types, use memcpy from the
+	// source slot to the GEP'd field address instead of load+store.
+	if c.shouldUseMemcpy(fieldLT) {
+		if srcSlot := c.valSlot[inst.Args[1]]; srcSlot != "" {
+			sz := c.typeSizeOperand(fieldLT)
+			c.emitMemcpy(gep, srcSlot, sz)
+			return nil
+		}
+	}
 	c.sb.WriteString(fmt.Sprintf("  store %s %s, %s* %s\n", fieldLT, valV, fieldLT, gep))
 	return nil
 }
@@ -4441,35 +4801,35 @@ func (c *codegen) emitCall(f *Function, inst *Inst) error {
 				// routing to print_i64 unconditionally is wrong and trips the
 				// LLVM verifier (e.g. `%optpl19` defined as %str-long but
 				// expected i64 at `call @print_i64`).
-			if argT == "%option" {
-				// Flat scalar option `{ i64 tag, i64 payload }`. The element
-				// type is lost in LLVM IR, so recover it from the nolang type
-				// table: a `?bool` must print "true"/"false" (via
-				// @print_option_bool), every other scalar option prints the raw
-				// payload via @print_option (matching legacy print of ?i64/?u8/...).
-				if c.optionElemKind(a) == KindBool {
-					c.sb.WriteString(fmt.Sprintf("  call void @print_option_bool(%s %s)\n", argT, argV))
+				if argT == "%option" {
+					// Flat scalar option `{ i64 tag, i64 payload }`. The element
+					// type is lost in LLVM IR, so recover it from the nolang type
+					// table: a `?bool` must print "true"/"false" (via
+					// @print_option_bool), every other scalar option prints the raw
+					// payload via @print_option (matching legacy print of ?i64/?u8/...).
+					if c.optionElemKind(a) == KindBool {
+						c.sb.WriteString(fmt.Sprintf("  call void @print_option_bool(%s %s)\n", argT, argV))
+					} else {
+						c.sb.WriteString(fmt.Sprintf("  call void @print_option(%s %s)\n", argT, argV))
+					}
 				} else {
-					c.sb.WriteString(fmt.Sprintf("  call void @print_option(%s %s)\n", argT, argV))
+					// Inline per-payload option (%option_<elem>). Route the entire
+					// print through a dedicated helper function (e.g.
+					// @print_option_str) that performs the nil-tag check and prints
+					// "nil" or the payload inside its OWN function body. Emitting the
+					// branch inline here (mid-function, inside emitCall) breaks LLVM
+					// verification, so a plain `call` keeps emitCall block-free while
+					// still matching legacy output (nil -> "nil", some -> payload).
+					if helper, ok := c.optPrintHelper[argT]; ok {
+						c.sb.WriteString(fmt.Sprintf("  call void %s(%s %s)\n", helper, argT, argV))
+					} else {
+						// Payload type (%vec / user-struct / fixed-array) has no
+						// scalar printer in MIR yet; legacy prints via to-str. Skip
+						// rather than crash the verifier.
+						c.fail("print of option payload type %s unsupported in func %s", argT, f.Name)
+					}
+					continue
 				}
-			} else {
-				// Inline per-payload option (%option_<elem>). Route the entire
-				// print through a dedicated helper function (e.g.
-				// @print_option_str) that performs the nil-tag check and prints
-				// "nil" or the payload inside its OWN function body. Emitting the
-				// branch inline here (mid-function, inside emitCall) breaks LLVM
-				// verification, so a plain `call` keeps emitCall block-free while
-				// still matching legacy output (nil -> "nil", some -> payload).
-				if helper, ok := c.optPrintHelper[argT]; ok {
-					c.sb.WriteString(fmt.Sprintf("  call void %s(%s %s)\n", helper, argT, argV))
-				} else {
-					// Payload type (%vec / user-struct / fixed-array) has no
-					// scalar printer in MIR yet; legacy prints via to-str. Skip
-					// rather than crash the verifier.
-					c.fail("print of option payload type %s unsupported in func %s", argT, f.Name)
-				}
-				continue
-			}
 				continue
 			}
 			switch argT {
@@ -4702,6 +5062,12 @@ func (c *codegen) emitCall(f *Function, inst *Inst) error {
 						c.sb.WriteString(fmt.Sprintf("  %s = call %%str-long @str_from_i64(i64 %s)\n", tmp, argV))
 						c.sb.WriteString(fmt.Sprintf("  store %%str-long %s, %%str-long* %s\n", tmp, c.valSlot[inst.Results[0]]))
 					}
+				}
+				// #85 guard: if Results is empty the lowering failed to
+				// allocate a destination — the call would silently vanish.
+				// Report it instead of returning nil (which hides the bug).
+				if len(inst.Results) == 0 || inst.Results[0] <= NoVal {
+					c.fail("i64-to-str: no result slot (lowering failure in func %s)", f.Name)
 				}
 				return nil
 			}
@@ -5328,23 +5694,23 @@ func (c *codegen) emitCallBody(f *Function, cf *Function, inst *Inst, calleeName
 				c.loadSeq++
 				s2 := fmt.Sprintf("%%cav%d", c.loadSeq)
 				c.sb.WriteString(fmt.Sprintf("  %s = insertvalue %%vec %s, i64 %s, 2\n", s2, s1, pt))
-					c.loadSeq++
-					slot := fmt.Sprintf("%%carg%d", c.loadSeq)
-					c.sb.WriteString(fmt.Sprintf("  %s = alloca %%vec\n", slot))
-					c.sb.WriteString(fmt.Sprintf("  store %%vec %s, %%vec* %s\n", s2, slot))
-					callArgs = append(callArgs, "%vec* "+slot)
-					continue
-				}
-				if plt == "%vec" && argT == "%str-long" {
-					// string -> []byte view: a %str-long passed to a []byte parameter
-					// becomes a %vec{ len, len, data-as-intptr } so the callee reads
-					// the string's bytes. len is field 0; data (i8*) is field 2 and
-					// must be cast to the %vec's i64 intptr. Mirrors the legacy
-					// str->vec coercion in genForwardFunc / call args.
-					strLen := c.treg("csv.l")
-					c.sb.WriteString(fmt.Sprintf("  %s = extractvalue %%str-long %s, 0\n", strLen, av))
-					strData := c.treg("csv.d")
-					c.sb.WriteString(fmt.Sprintf("  %s = extractvalue %%str-long %s, 2\n", strData, av))
+				c.loadSeq++
+				slot := fmt.Sprintf("%%carg%d", c.loadSeq)
+				c.sb.WriteString(fmt.Sprintf("  %s = alloca %%vec\n", slot))
+				c.sb.WriteString(fmt.Sprintf("  store %%vec %s, %%vec* %s\n", s2, slot))
+				callArgs = append(callArgs, "%vec* "+slot)
+				continue
+			}
+			if plt == "%vec" && argT == "%str-long" {
+				// string -> []byte view: a %str-long passed to a []byte parameter
+				// becomes a %vec{ len, len, data-as-intptr } so the callee reads
+				// the string's bytes. len is field 0; data (i8*) is field 2 and
+				// must be cast to the %vec's i64 intptr. Mirrors the legacy
+				// str->vec coercion in genForwardFunc / call args.
+				strLen := c.treg("csv.l")
+				c.sb.WriteString(fmt.Sprintf("  %s = extractvalue %%str-long %s, 0\n", strLen, av))
+				strData := c.treg("csv.d")
+				c.sb.WriteString(fmt.Sprintf("  %s = extractvalue %%str-long %s, 2\n", strData, av))
 				strPt := c.treg("csv.p")
 				c.sb.WriteString(fmt.Sprintf("  %s = ptrtoint i8* %s to i64\n", strPt, strData))
 				s0 := c.treg("csv0")
@@ -5356,10 +5722,10 @@ func (c *codegen) emitCallBody(f *Function, cf *Function, inst *Inst, calleeName
 				c.sb.WriteString(fmt.Sprintf("  %s = insertvalue %%vec %s, i64 0, 1\n", s1, s0))
 				s2 := c.treg("csv2")
 				c.sb.WriteString(fmt.Sprintf("  %s = insertvalue %%vec %s, i64 %s, 2\n", s2, s1, strPt))
-					slot := c.treg("carg")
-					c.sb.WriteString(fmt.Sprintf("  %s = alloca %%vec\n", slot))
-					c.sb.WriteString(fmt.Sprintf("  store %%vec %s, %%vec* %s\n", s2, slot))
-					callArgs = append(callArgs, "%vec* "+slot)
+				slot := c.treg("carg")
+				c.sb.WriteString(fmt.Sprintf("  %s = alloca %%vec\n", slot))
+				c.sb.WriteString(fmt.Sprintf("  store %%vec %s, %%vec* %s\n", s2, slot))
+				callArgs = append(callArgs, "%vec* "+slot)
 				continue
 			}
 			if plt == "%vec" {
@@ -5480,6 +5846,12 @@ func (c *codegen) emitCallBody(f *Function, cf *Function, inst *Inst, calleeName
 			continue
 		}
 		rlt, _ := c.ptype(rv)
+		// #83 SROA guard: same as emitMove, use memcpy for large aggregates.
+		if c.shouldUseMemcpy(rlt) {
+			sz := c.typeSizeOperand(rlt)
+			c.emitMemcpy(c.valSlot[rv], rs, sz)
+			continue
+		}
 		c.sb.WriteString(fmt.Sprintf("  %%c%d = load %s, %s* %s\n", rv, rlt, rlt, rs))
 		c.sb.WriteString(fmt.Sprintf("  store %s %%c%d, %s* %s\n", rlt, rv, rlt, c.valSlot[rv]))
 	}
@@ -6150,6 +6522,12 @@ func (c *codegen) emitBuiltinRawByteAt(f *Function, inst *Inst) error {
 func (c *codegen) emitReturn(f *Function) error {
 	for _, rp := range f.ResultParams {
 		plt, _ := c.ptype(rp)
+		// #83 SROA guard: use memcpy for large aggregates.
+		if c.shouldUseMemcpy(plt) {
+			sz := c.typeSizeOperand(plt)
+			c.emitMemcpy(c.paramPtr[rp], c.valSlot[rp], sz)
+			continue
+		}
 		_, v := c.loadVal(rp)
 		pp := c.paramPtr[rp]
 		c.sb.WriteString(fmt.Sprintf("  store %s %s, %s* %s\n", plt, v, plt, pp))

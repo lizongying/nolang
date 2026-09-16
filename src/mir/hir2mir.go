@@ -4869,6 +4869,83 @@ func (l *lowerer) lowerCall(n *hir.Node) ValueID {
 
 	l.enqueueCallee(callee)
 
+	// #84: A method called via module namespace (e.g. `json.parse('')`) has
+	// recvV == NoVal because `json` was treated as a module name, not a
+	// receiver value. But the callee is registered as a method
+	// (f.IsMethod=true) and its first parameter is the implicit `self`
+	// receiver. Without a receiver value, lowerCallArgs does not prepend one,
+	// so inst.Args[0] is the first REAL argument (e.g. `s str`), which
+	// emitCallBody's `cf.IsMethod && i == 0` branch then mistakes for the
+	// receiver — passing a %str-long alloca (24 bytes) where the callee
+	// expects a %json_json struct (22KB), causing a SIGSEGV when the callee
+	// reads self fields past the 24-byte boundary.
+	//
+	// Fix: synthesize a zero-initialized receiver of the callee's declared
+	// receiver type and set recvV to it, so lowerCallArgs prepends it as the
+	// first argument. The zero value is safe because `json.parse` (and similar
+	// module-namespace methods) do not read from `self` — they construct a new
+	// value and return it. Methods that DO read self are always called with an
+	// explicit receiver (obj.method()), never via module namespace.
+	if recvV == NoVal {
+		// Only synthesize a receiver when the HIR call args do NOT already
+		// include one. A method call via KDot (`a.fill(99)`) is lowered by
+		// resolveCallee to a KIdent callee (`_3xi64.fill`) with recvV=NoVal,
+		// BUT the HIR call args already list the receiver `a` as the first
+		// arg slot — lowerCallArgs will lower it directly. Synthesizing ANOTHER
+		// receiver here would prepend a spurious extra argument (3 args instead
+		// of 2), causing a type mismatch at the call site.
+		//
+		// The synthesis is only needed for TRUE module-namespace calls
+		// (e.g. `json.parse('')`) where the HIR call args do NOT include a
+		// receiver — the module name was consumed as a namespace prefix, not
+		// an argument. Detect this by checking whether the number of HIR arg
+		// slots is less than the callee's parameter count (excluding the
+		// receiver param): if the args already cover all non-receiver params,
+		// the receiver must be among them.
+		hirArgs := l.slotArgs(n.Id, "arg")
+		needSynthRecv := true
+		if fid, ok := l.funcNames[callee]; ok {
+			if fn := l.pkg.Node(fid); fn != nil && fn.Has(hir.FlagMethod) {
+				// Count the callee's non-receiver params (all KParam children
+				// except the first, which is the receiver).
+				paramCount := 0
+				first := true
+				for _, c := range l.pkg.Children(fid) {
+					cn := l.pkg.Node(c)
+					if cn == nil || cn.Kind != hir.KParam {
+						continue
+					}
+					if first {
+						first = false
+						continue // skip receiver param
+					}
+					paramCount++
+				}
+				// If HIR args >= non-receiver params, the args already include
+				// the receiver (e.g. `a.fill(99)` has 2 args for 1 non-receiver
+				// param). Do NOT synthesize.
+				if len(hirArgs) > paramCount {
+					needSynthRecv = false
+				}
+				if needSynthRecv {
+					// Get the receiver type from the first KParam child.
+					for _, c := range l.pkg.Children(fid) {
+						cn := l.pkg.Node(c)
+						if cn == nil || cn.Kind != hir.KParam {
+							continue
+						}
+						recvTyp := l.typeOfNode(cn)
+						if recvTyp != NoType && recvTyp != l.voidType {
+							recvV = l.b.Emit(OpConst, recvTyp, nil, "")
+							l.mod.Values[recvV].Name = "zero-recv"
+						}
+						break // only the first KParam (the receiver)
+					}
+				}
+			}
+		}
+	}
+
 	if isPrintFamilyCallee(callee) {
 		l.inPrintArgs++
 		defer func() { l.inPrintArgs-- }()
@@ -5170,6 +5247,17 @@ func (l *lowerer) resultTypeOfCallee(callee string) TypeID {
 	}
 	id, ok := l.funcNames[callee]
 	if !ok {
+		// The callee is not a registered HIR function. Before falling back to
+		// void, check whether it is a known scalar method whose definition
+		// lives in a std module that may not have been loaded (e.g. i64.to-str
+		// is in number.no, which is loaded on-demand only when the `number`
+		// module is explicitly referenced). The checker has the same special-
+		// case table (checker.go §inferExprType). Without this fallback, the
+		// call is mis-lowered as void and the consumer reads NoVal — the
+		// silent-undef bug #85.
+		if rt := scalarMethodResult(callee); rt != "" {
+			return l.b.Type(rt)
+		}
 		return l.voidType
 	}
 	n := l.pkg.Node(id)

@@ -118,3 +118,56 @@ func builtinResultOf(callee string) builtinResult {
 	}
 	return builtinResult{Known: true} // known builtin, void result
 }
+
+// scalarMethodResult returns the nolang type string of the result of a known
+// scalar-type method whose definition lives in a std module that may not have
+// been loaded into the HIR package. This mirrors the checker's special-case
+// table (checker.go inferExprType: isValidationIntType → to-str/to-i64/...).
+//
+// Without this, when a scalar method like `i64.to-str()` is called but the
+// defining module (e.g. number.no) was not auto-loaded, resultTypeOfCallee
+// returns voidType and the call is mis-lowered as a void statement — the
+// silent-undef bug #85.
+//
+// The table is intentionally narrow: only methods that (a) are defined in
+// std modules loaded on-demand and (b) have a fixed, type-known result.
+// Methods routed through the builtin table (bool.to-str, str.to-bool, ...)
+// are already handled by builtinResultOf and need not appear here.
+func scalarMethodResult(callee string) string {
+	dot := strings.LastIndex(callee, ".")
+	if dot < 0 {
+		return ""
+	}
+	recv := callee[:dot]
+	method := callee[dot+1:]
+	if !isScalarNolangType(recv) {
+		return ""
+	}
+	switch method {
+	case "to-str":
+		return "str"
+	case "to-i64":
+		return "i64"
+	case "to-u64":
+		return "u64"
+	case "to-bool":
+		return "bool"
+	case "to-f64":
+		return "f64"
+	case "to-f32":
+		return "f32"
+	}
+	return ""
+}
+
+// isScalarNolangType reports whether raw is a scalar nolang type that has
+// std-defined methods (to-str, to-i64, ...).
+func isScalarNolangType(raw string) bool {
+	switch raw {
+	case "i8", "i16", "i32", "i64", "u8", "u16", "u32", "u64",
+		"byte", "char", "int", "uint",
+		"f32", "f64":
+		return true
+	}
+	return false
+}
