@@ -12,6 +12,7 @@ dlen i64 = 3
 print('dlen')
 print(dlen)
 
+#{overflow = wrap}
 bit-len i64 = dlen * 8
 print('bit-len')
 print(bit-len)
@@ -21,10 +22,12 @@ print('mod-val')
 print(mod-val)
 
 pad-len i64 = 0
+#{overflow = wrap}
 mod-val != 0 -> pad-len = 64 - mod-val
 print('pad-len')
 print(pad-len)
 
+#{overflow = wrap}
 total-len i64 = dlen + 1 + pad-len + 8
 print('total-len')
 print(total-len)

@@ -1,4 +1,5 @@
 ; test-tagged-enum.no — 任意標籤列舉（帶載荷 / 多欄位 / 命名空間 / 表達式位置建構）
+#{overflow = wrap}
 ;
 ; 覆蓋：
 ;   - 單元變體（無載荷）
@@ -34,10 +35,11 @@ shape {
     dot,
 }
 
+#{overflow = wrap}
 area = (s shape) (a f64) {
     s: {
-        circle(r) -> a = r * 3.0
-        rect(w, h) -> a = w * h
+        circle(r) -> { #{overflow = wrap} a = r * 3.0 }
+        rect(w, h) -> { #{overflow = wrap} a = w * h }
         dot -> a = 0.0
     }
 }

@@ -51,6 +51,7 @@ k <- [0..n): {
 found == 0 -> {
     words.push(tmp-word)
     counts.push(1)
+    #{overflow = wrap}
     n = n + 1
 }
 

@@ -12,7 +12,7 @@ seed[0] = 0xaa
 seed[1] = 0xbb
 seed[2] = 0xcc
 prf-out []byte
-prf-out = tls.prf(secret, 4, 'test label', seed, 3, 32)
+prf-out = tls.prf(secret, 'test label', seed, 32)
 print('after prf')
 has-nonzero = 0
 i <- [0..32): {

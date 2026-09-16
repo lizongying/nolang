@@ -9,7 +9,8 @@ safe-get = (arr []i64, i i64) (res ?i64) {
 }
 
 get-default = (arr []i64, i i64) (res i64) {
-    res = arr[i]  #{index-out=0}
+    #{index-out=0}
+    res = arr[i]
 }
 
 auto-prop = (arr []i64, i i64) (res ?i64) {
@@ -72,27 +73,32 @@ unwrap-infix-rhs = (n i64) (r ?i64) {
 
 ; float 元素 + 浮點預設值
 get-default-f = (arr []f64, i i64) (res f64) {
-    res = arr[i]  #{index-out=1.5}
+    #{index-out=1.5}
+    res = arr[i]
 }
 
 ; str 元素 + 字串預設值
 get-default-str = (arr []str, i i64) (res str) {
-    res = arr[i]  #{index-out='-'}
+    #{index-out='-'}
+    res = arr[i]
 }
 
 ; bool 元素 + 布林預設值
 get-default-bool = (arr []bool, i i64) (res bool) {
-    res = arr[i]  #{index-out=true}
+    #{index-out=true}
+    res = arr[i]
 }
 
 ; byte(u8) 元素 + 整數預設值
 get-default-byte = (arr []u8, i i64) (res u8) {
-    res = arr[i]  #{index-out=0}
+    #{index-out=0}
+    res = arr[i]
 }
 
 ; char 元素 + 字元預設值（字面量）
 get-default-char = (arr []char, i i64) (res char) {
-    res = arr[i]  #{index-out='x'}
+    #{index-out='x'}
+    res = arr[i]
 }
 
 main = () () {

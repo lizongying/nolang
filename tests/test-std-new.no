@@ -138,11 +138,11 @@ decoded: {
 }
 
 ; ═══════════════════════════════════════════════
-; 5. fs.read-dir
+; 5. fs.list-dir
 ; ═══════════════════════════════════════════════
-print('=== fs.read-dir ===')
+print('=== fs.list-dir ===')
 
-entries []str = fs.read-dir('.')
+entries []str = fs.list-dir('.')
 n = entries.len()
 print('entry count:' - n.to-str())
 i <- [0..n): {

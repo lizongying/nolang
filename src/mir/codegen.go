@@ -2669,9 +2669,27 @@ func (c *codegen) emitCmp(inst *Inst) error {
 		bV = c.optionTag(bV, bT)
 		bT = "i64"
 	case aOpt:
-		aV, aT = c.optionPayloadOf(aV, aT)
+		// Only extract the payload when the comparison is meaningful:
+		// - option vs scalar (int) with scalar payload → payload compare
+		// - option vs str/vec with matching payload → payload compare
+		// When the payload is an aggregate but the other side is a scalar
+		// (e.g. ?[]str vs bool), comparing the payload is meaningless and
+		// produces a type mismatch. Fall back to comparing the TAG.
+		payloadT := c.optionPayloadLLVMType(c.optionElemRawOf(aT))
+		if payloadT == bT || (isIntType(bT) && (payloadT == "i64" || payloadT == "i32" || payloadT == "i8" || payloadT == "i1")) || (bT == "%str-long" && payloadT == "%str-long") || (bT == "%vec" && payloadT == "%vec") {
+			aV, aT = c.optionPayloadOf(aV, aT)
+		} else {
+			aV = c.optionTag(aV, aT)
+			aT = "i64"
+		}
 	case bOpt:
-		bV, bT = c.optionPayloadOf(bV, bT)
+		payloadT := c.optionPayloadLLVMType(c.optionElemRawOf(bT))
+		if payloadT == aT || (isIntType(aT) && (payloadT == "i64" || payloadT == "i32" || payloadT == "i8" || payloadT == "i1")) || (aT == "%str-long" && payloadT == "%str-long") || (aT == "%vec" && payloadT == "%vec") {
+			bV, bT = c.optionPayloadOf(bV, bT)
+		} else {
+			bV = c.optionTag(bV, bT)
+			bT = "i64"
+		}
 	}
 	// Mixed %str-long vs integer (char/byte/i64) comparison: nolang `char/byte
 	// == str` treats the integer as a single/decimal string, so promote it to
@@ -3800,7 +3818,7 @@ func (c *codegen) emitIndexStore(inst *Inst) error {
 	// []byte, which keeps the store to a single byte at offset i).
 	if cv := c.coerce(valT, valV, elemT); cv != "" {
 		valV = cv
-	} else if strings.HasPrefix(valT, "%option") && elemT != "%str-long" && elemT != "%vec" && elemT != "%option" {
+	} else if strings.HasPrefix(valT, "%option") && !strings.HasPrefix(elemT, "%option") && elemT != "%str-long" && elemT != "%vec" {
 		// Overflow-default integer arithmetic yields ?i64 (an %option). Assigning
 		// it to a plain scalar element (`a[i] = a[j]+a[k]` with a:[N]i64) unwraps
 		// the ok payload, matching the legacy codegen (which stores the scalar
@@ -4068,7 +4086,7 @@ func (c *codegen) emitSetField(inst *Inst) error {
 		// stores the scalar payload, not the whole {tag,payload} struct. Without
 		// this, opt rejects the store as "defined with type '%option' but
 		// expected 'i64'" and the build fails under NOLANG_MIR=3.
-		if strings.HasPrefix(recvLT, "%option") && fieldLT != "%str-long" && fieldLT != "%vec" && fieldLT != "%option" {
+		if strings.HasPrefix(recvLT, "%option") && !strings.HasPrefix(fieldLT, "%option") && fieldLT != "%str-long" && fieldLT != "%vec" {
 			c.loadSeq++
 			pl := fmt.Sprintf("%%opay%d", c.loadSeq)
 			c.sb.WriteString(fmt.Sprintf("  %s = extractvalue %s %s, 1\n", pl, recvLT, valV))
@@ -4107,7 +4125,7 @@ func (c *codegen) emitSetField(inst *Inst) error {
 	// scalar payload, not the whole {tag,payload} struct. Without this, opt
 	// rejects the store as "defined with type '%option' but expected 'i64'" and
 	// the build fails under NOLANG_MIR=3. Mirrors emitIndexStore's unwrap.
-	if strings.HasPrefix(valLT, "%option") && fieldLT != "%str-long" && fieldLT != "%vec" && fieldLT != "%option" {
+	if strings.HasPrefix(valLT, "%option") && !strings.HasPrefix(fieldLT, "%option") && fieldLT != "%str-long" && fieldLT != "%vec" {
 		c.loadSeq++
 		pl := fmt.Sprintf("%%opay%d", c.loadSeq)
 		c.sb.WriteString(fmt.Sprintf("  %s = extractvalue %s %s, 1\n", pl, valLT, valV))
@@ -5762,6 +5780,13 @@ func (c *codegen) emitCallBody(f *Function, cf *Function, inst *Inst, calleeName
 					c.loadSeq++
 					conv := fmt.Sprintf("%%ic%d", c.loadSeq)
 					c.sb.WriteString(fmt.Sprintf("  %s = call %%str-long @str_from_i64(i64 %s)\n", conv, av))
+					av = conv
+					argT = "%str-long"
+				} else if plt == "%str-long" && argT == "i8" {
+					// char/byte -> str: render as a single-character string
+					c.loadSeq++
+					conv := fmt.Sprintf("%%cc%d", c.loadSeq)
+					c.sb.WriteString(fmt.Sprintf("  %s = call %%str-long @str_from_char(i8 %s)\n", conv, av))
 					av = conv
 					argT = "%str-long"
 				} else if plt == "%str-long" && argT == "double" {

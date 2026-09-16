@@ -9,14 +9,16 @@
 ; --- 固定陣列 [N]i64：#{index-out} 預設值 ---
 get-default-arr = (i i64) (res i64) {
     a [4]i64 = [10, 20, 30, 40]
-    res = a[i]  #{index-out=0}
+    #{index-out=0}
+    res = a[i]
 }
 
 ; --- vec[T]：#{index-out} 預設值 ---
 get-default-vec = (i i64) (res i64) {
     a [4]i64 = [10, 20, 30, 40]
     av = a.to-vec()
-    res = av[i]  #{index-out=0}
+    #{index-out=0}
+    res = av[i]
 }
 
 ; --- 固定陣列 [N]i64：?=（結果參數直接承接） ---

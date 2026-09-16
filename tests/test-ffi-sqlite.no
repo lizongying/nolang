@@ -54,6 +54,7 @@ count i64 = 0
         }
         -> print('fail: id mismatch')
     }
+    #{overflow = wrap}
     count = count + 1
 } (rs.next())
 rs.close()
@@ -104,6 +105,7 @@ rs3 rows = d.query('SELECT id FROM users')
 rs3.stmt != 0 -> {
     total i64 = 0
     {
+        #{overflow = wrap}
         total = total + 1
     } (rs3.next())
     {

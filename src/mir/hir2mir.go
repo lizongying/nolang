@@ -4043,6 +4043,25 @@ func (l *lowerer) lowerDotRead(n *hir.Node) ValueID {
 	return v
 }
 
+// sliceMangledName returns the transpiler's mangled form of a slice/array type
+// name, matching the rule in transpiler.go:
+//   `[]t`  -> `_xt`
+//   `[N]t` -> `_Nxt`
+// This is used to match the implicit-self call name (`_xt.len`) against the
+// receiver's raw type (`[]t`) in resolveCallee.
+func sliceMangledName(raw string) string {
+	raw = strings.TrimPrefix(raw, "?")
+	if strings.HasPrefix(raw, "[]") {
+		return "_x" + raw[2:]
+	}
+	if strings.HasPrefix(raw, "[") {
+		if idx := strings.IndexByte(raw, ']'); idx > 0 {
+			return "_" + raw[1:idx] + "x" + raw[idx+1:]
+		}
+	}
+	return raw
+}
+
 // canonSliceRecv maps a concrete slice/array receiver type name (e.g.
 // "[]i64", "[3]i64", "[]byte", "?[]i64") to the generic "[]t" used to key
 // slice-method builtins and the generated `[]t.*` HIR funcs. Non-slice names
@@ -4116,11 +4135,30 @@ func (l *lowerer) resolveCallee(n *hir.Node) (callee string, recvV ValueID) {
 		if l.curRecv != NoVal {
 			if dot := strings.LastIndex(name, "."); dot > 0 {
 				tname := name[:dot]
+				method := name[dot+1:]
 				recvRaw := ""
 				if ty := l.mod.Type(l.valueTypeOf(l.curRecv)); ty != nil && ty.Raw != "" {
 					recvRaw = ty.Raw
 				}
-			if recvRaw != "" && tname == recvRaw {
+			// The transpiler mangles `[]t.method` to `_xt.method` and
+			// `[N]t.method` to `_Nxt.method` (see transpiler.go). The
+			// generic stub's body calls `.method()` which resolves to the
+			// mangled name, but `tname` (`_xt`) never equals `recvRaw`
+			// (`[]t`). Match the mangled form too, and route slice/array
+			// builtins (len/cap) through sliceMethodBuiltin to avoid the
+			// self-recursive call `_xt.len` -> `_xt.len`.
+			if recvRaw != "" && (tname == recvRaw || tname == sliceMangledName(recvRaw)) {
+				if bm := sliceMethodBuiltin(recvRaw, method); bm != "" {
+					return bm, l.curRecv
+				}
+				// txt.len / txt.cap: txt is a fixed buffer, not a slice, so
+				// sliceMethodBuiltin does not match. Its .len() method body
+				// calls .len() which re-enters txt.len (same cycle as []t.len).
+				// lowerDotRead already handles txt.len as OpLen, so route the
+				// method call to the bare builtin "len" to avoid the cycle.
+				if (method == "len" || method == "cap") && recvRaw == "txt" {
+					return method, l.curRecv
+				}
 				return canonSliceRecv(name), l.curRecv
 			}
 		}
