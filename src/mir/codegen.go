@@ -445,6 +445,12 @@ func (c *codegen) llvmTypeOf(t *Type) string {
 			return lt
 		}
 		return "%option"
+	case KindEnum:
+		// Tagged enum: { i64 tag, [N x i64] payload }. The payload is a UNION
+		// shared by every variant, so it is a flat slot array rather than a
+		// per-variant struct — a field access bitcasts to the field's real
+		// type at its slot offset.
+		return "%tenum_" + sanitize(t.Raw)
 	case KindArray:
 		// Fixed array: LLVM [N x elem]. Element type is required for the layout.
 		if t.Elem != NoType && c.mod.Type(t.Elem) != nil {
@@ -619,6 +625,37 @@ func (c *codegen) coerceIndex(idxT, idxV string) string {
 // `%option_<elem>` (= { i64 tag, <payload> }).
 func isOptionType(lt string) bool {
 	return lt == "%option" || strings.HasPrefix(lt, "%option_")
+}
+
+// peelOptionValue unwraps a by-value option into its payload field: it emits
+// `extractvalue <optLT> <val>, 1` and returns the payload's LLVM type plus the
+// fresh register. Returns ("", "") when lt is not an option type, when the
+// payload type is unknown (nothing is emitted in that case), so callers can
+// apply it unconditionally and fall back to the original operand.
+//
+// This is the sink half of the option-unwrap contract (§13.1): an `?T` flows
+// into a position that wants a bare `T`. The canonical case is std/str.no
+// `str.to-f32`, which does `f ?f64 = .to-f64()`, returns early on nil/err, and
+// then calls `number.f64-to-f32(f)` — the surviving value is ok(payload), so
+// the payload must be peeled before the conversion. Without this the option
+// struct itself is handed to the converter and opt rejects the module:
+// "builtin number.f64-to-f32: cannot coerce %option_f64 to double".
+func (c *codegen) peelOptionValue(lt, val string) (string, string) {
+	if !isOptionType(lt) || val == "" {
+		return "", ""
+	}
+	payloadLT := "i64"
+	if lt != "%option" {
+		p, ok := c.optPayload[lt]
+		if !ok || p == "" {
+			return "", ""
+		}
+		payloadLT = p
+	}
+	c.loadSeq++
+	r := fmt.Sprintf("%%optpv%d", c.loadSeq)
+	c.sb.WriteString(fmt.Sprintf("  %s = extractvalue %s %s, 1\n", r, lt, val))
+	return payloadLT, r
 }
 
 // optionPayloadLLVMType returns the LLVM type of an option's payload field for
@@ -1746,7 +1783,27 @@ func (c *codegen) emitFunc(f *Function) error {
 		// (trace/BPT trap). Legacy zero-initializes locals, so this is required
 		// for parity. Written Dst/params overwrite the zero below, so this is
 		// safe.
-		if owned {
+		//
+		// An option slot is the ONE type whose default is not its zero value:
+		// `%option` is `{ i64 tag, payload }` with tag 0 = ok, 2 = err and
+		// 1 = nil, so `zeroinitializer` reads back as `ok(0)` — a non-nil
+		// some(zero). Store the nil discriminant instead. This matters most for
+		// a named OUT-parameter that the body returns without assigning (e.g.
+		// `hashmap.get` on a miss, which just falls out of its probe loop): the
+		// write-back then published either uninitialized garbage or a stale
+		// `ok` from a previously reused slot, so a removed key still came back
+		// "found" carrying the previous call's payload
+		// (tests/mem-safety/map-tombstone.no, tests/test-map-generics.no).
+		// Written Dst/params overwrite this, so the extra store is dead for
+		// every value that is actually assigned.
+		if isOptionType(lt) {
+			elem := ""
+			if dv := c.mod.Value(v); dv != nil {
+				elem = optionElemRaw(c.mod.Type(dv.Type))
+			}
+			_, payloadLT := c.optionType(elem)
+			c.sb.WriteString(fmt.Sprintf("  store %s { i64 1, %s zeroinitializer }, %s* %s\n", lt, payloadLT, lt, s))
+		} else if owned {
 			c.sb.WriteString(fmt.Sprintf("  store %s zeroinitializer, %s* %s\n", lt, lt, s))
 		}
 		c.valSlot[v] = s
@@ -2011,6 +2068,30 @@ func (c *codegen) loadVal(v ValueID) (string, string) {
 // optionTag returns an i64 register holding the option's discriminant (tag,
 // field 0). nolang `opt == nil` / `opt == err` always compares the tag, not the
 // whole struct, so callers (e.g. emitCmp) extract it before an integer icmp.
+// isEnumLLVMType reports whether lt is a tagged-enum layout (%tenum_<name>).
+func isEnumLLVMType(lt string) bool {
+	return strings.HasPrefix(lt, "%tenum_")
+}
+
+// enumTagOf extracts an enum value's discriminant (field 0).
+func (c *codegen) enumTagOf(v, enumLT string) string {
+	// Large enums: loadVal hands back a slot pointer rather than a loaded
+	// value, so extractvalue is not applicable — GEP field 0 and load.
+	if c.shouldUseMemcpy(enumLT) {
+		c.loadSeq++
+		gp := fmt.Sprintf("%%etg%d", c.loadSeq)
+		c.sb.WriteString(fmt.Sprintf("  %s = getelementptr inbounds %s, %s* %s, i32 0, i32 0\n", gp, enumLT, enumLT, v))
+		c.loadSeq++
+		r := fmt.Sprintf("%%et%d", c.loadSeq)
+		c.sb.WriteString(fmt.Sprintf("  %s = load i64, i64* %s\n", r, gp))
+		return r
+	}
+	c.loadSeq++
+	r := fmt.Sprintf("%%et%d", c.loadSeq)
+	c.sb.WriteString(fmt.Sprintf("  %s = extractvalue %s %s, 0\n", r, enumLT, v))
+	return r
+}
+
 func (c *codegen) optionTag(v, optLT string) string {
 	// #83 SROA guard: for large option types, loadVal returns a slot pointer
 	// (not a loaded value), so extractvalue cannot be used. GEP field 0 (the
@@ -2104,6 +2185,12 @@ func (c *codegen) emitInst(f *Function, inst *Inst, allocaFor func(ValueID) stri
 		return c.emitMove(inst)
 	case OpClone:
 		return c.emitClone(inst)
+	case OpEnumNew:
+		return c.emitEnumNew(inst)
+	case OpEnumTag:
+		return c.emitEnumTag(inst)
+	case OpEnumField:
+		return c.emitEnumField(inst)
 	case OpIndex:
 		return c.emitIndex(inst)
 	case OpIndexStore:
@@ -2661,6 +2748,21 @@ func (c *codegen) emitCmp(inst *Inst) error {
 	// both arms of the guard silently skipped
 	// (tests/test-process-run.no: `out.trim()`-style checks on `?str` values
 	// coming out of `[]byte.to-str`).
+	// Tagged-enum operands. A match arm compiles to
+	// `subject == <variant constructor>` (the parser desugars
+	// `s: { circle(r) -> ... }` into an equality test against the variant),
+	// and an enum is `{ tag, payload }`, so a whole-struct `icmp` is illegal.
+	// The comparison that the source means is the DISCRIMINANT: an arm matches
+	// when the subject holds that variant, regardless of the payload — and the
+	// constructor side carries no payload anyway (its fields are the arm's
+	// binding names, lowered separately).
+	aEnum, bEnum := isEnumLLVMType(aT), isEnumLLVMType(bT)
+	if aEnum && bEnum {
+		aV = c.enumTagOf(aV, aT)
+		aT = "i64"
+		bV = c.enumTagOf(bV, bT)
+		bT = "i64"
+	}
 	aOpt, bOpt := isOptionType(aT), isOptionType(bT)
 	switch {
 	case aOpt && bOpt:
@@ -3055,7 +3157,7 @@ func (c *codegen) emitMove(inst *Inst) error {
 	srcSlot := c.valSlot[inst.Args[0]]
 	if srcSlot == "" {
 		c.fail("move source has no slot in func %d", c.cf)
-		return fmt.Errorf("move src slot")
+		return fmt.Errorf("move src slot v%d -> v%d", inst.Args[0], dstVal)
 	}
 	srcT, _ := c.ptype(inst.Args[0])
 	// Ownership-correctness guard: moving a BORROWED input parameter into an owned
@@ -3285,6 +3387,32 @@ func (c *codegen) emitClone(inst *Inst) error {
 //
 // Returns the element pointer register (typed `<elemT>*`).
 func (c *codegen) elemAddr(arrSlot, idxV, arrT, elemT string) string {
+	// An option whose payload is a container is indexed through the payload
+	// (mirrors lowerer.elemTypeOfType): a match arm binds `it` to the option,
+	// so `it[0]` on `?[]byte` GEPs into `%option___byte` field 1 (the %vec)
+	// first. Doing the GEP on the option struct directly is rejected by opt
+	// with "invalid getelementptr indices".
+	if isOptionType(arrT) {
+		payloadLT := "i64"
+		if arrT != "%option" {
+			p, ok := c.optPayload[arrT]
+			if !ok || p == "" {
+				// Unknown payload: fall through and let the existing path
+				// produce a diagnostic rather than silently mis-indexing.
+				return c.elemAddrRaw(arrSlot, idxV, arrT, elemT)
+			}
+			payloadLT = p
+		}
+		g := c.treg("eg")
+		c.sb.WriteString(fmt.Sprintf("  %s = getelementptr inbounds %s, %s* %s, i32 0, i32 1\n", g, arrT, arrT, arrSlot))
+		return c.elemAddrRaw(g, idxV, payloadLT, elemT)
+	}
+	return c.elemAddrRaw(arrSlot, idxV, arrT, elemT)
+}
+
+// elemAddrRaw is the pre-option-peel body of elemAddr: it computes the address
+// of element `idxV` inside a container of LLVM type arrT held at arrSlot.
+func (c *codegen) elemAddrRaw(arrSlot, idxV, arrT, elemT string) string {
 	switch arrT {
 	case "%str-long":
 		g := c.treg("eg")
@@ -4634,6 +4762,232 @@ func (c *codegen) emitStructTypes() {
 		// (%vec / user-struct / fixed-array) are skipped; emitCall c.fail()s.
 		c.emitOptionPrintHelper(optLT, payloadLT)
 	}
+	// Tagged enums: %tenum_<name> = type { i64, [N x i64] }.
+	for raw, ei := range c.mod.TaggedEnums {
+		n := ei.PayloadSlots
+		if n < 1 {
+			n = 1
+		}
+		c.sb.WriteString(fmt.Sprintf("%%tenum_%s = type { i64, [%d x i64] }\n", sanitize(raw), n))
+	}
+}
+
+// taggedEnumOf looks up an enum's variant table by raw type name.
+func (c *codegen) taggedEnumOf(raw string) *TaggedEnumInfo {
+	return c.mod.TaggedEnums[raw]
+}
+
+// enumVariantByTag returns the variant whose discriminant is tag.
+func enumVariantByTag(ei *TaggedEnumInfo, tag int64) *VariantInfo {
+	if ei == nil {
+		return nil
+	}
+	for i := range ei.Variants {
+		if ei.Variants[i].Tag == tag {
+			return &ei.Variants[i]
+		}
+	}
+	return nil
+}
+
+// enumFieldSlot returns the 8-byte slot offset of field `idx` within a
+// variant's payload, plus the number of slots that field occupies. Slots are
+// what make the union layout computable without reimplementing LLVM's struct
+// alignment rules: every field starts on an 8-byte boundary, which satisfies
+// the alignment of every scalar and of %str-long / %vec / %option.
+func (c *codegen) enumFieldSlot(v *VariantInfo, idx int) (int64, int64) {
+	if v == nil || idx < 0 || idx >= len(v.Fields) {
+		return 0, 1
+	}
+	var off int64
+	for i := 0; i < idx; i++ {
+		off += c.enumRawSlots(v.Fields[i])
+	}
+	return off, c.enumRawSlots(v.Fields[idx])
+}
+
+// enumRawSlots returns the payload-slot width of a nolang type.
+func (c *codegen) enumRawSlots(raw string) int64 {
+	switch raw {
+	case "str", "vec":
+		return 3
+	}
+	if strings.HasPrefix(raw, "[]") {
+		return 3
+	}
+	if strings.HasPrefix(raw, "?") {
+		return 2
+	}
+	if fields, ok := c.mod.StructFields[raw]; ok {
+		var n int64
+		for _, f := range fields {
+			n += c.enumRawSlots(f.TypeRaw)
+		}
+		if n > 0 {
+			return n
+		}
+	}
+	return 1
+}
+
+// emitEnumNew builds a tagged-enum variant value `{ tag, payload }`.
+//
+// The whole value is stored with a zeroed payload first, then each field is
+// written into its slot through a bitcast of the payload base pointer. The
+// zeroing matters: the payload is a union, so slots not written by this
+// variant would otherwise hold whatever was in the alloca, and a later read of
+// a wider field (a %str-long) would hand a garbage data pointer to @str_free.
+func (c *codegen) emitEnumNew(inst *Inst) error {
+	dstLT, _ := c.ptype(inst.Dst)
+	slot := c.valSlot[inst.Dst]
+	if slot == "" || dstLT == "void" || dstLT == "" {
+		return nil
+	}
+	ei := c.taggedEnumOf(enumRawOfType(c.mod, inst.Type))
+	nSlots := int64(1)
+	if ei != nil && ei.PayloadSlots > 0 {
+		nSlots = ei.PayloadSlots
+	}
+	c.sb.WriteString(fmt.Sprintf("  store %s { i64 %d, [%d x i64] zeroinitializer }, %s* %s\n",
+		dstLT, inst.Int, nSlots, dstLT, slot))
+	if len(inst.Args) == 0 {
+		return nil
+	}
+	v := enumVariantByTag(ei, inst.Int)
+	// Payload base: GEP to field 1 -> [N x i64]*.
+	c.loadSeq++
+	base := fmt.Sprintf("%%en%d", c.loadSeq)
+	c.sb.WriteString(fmt.Sprintf("  %s = getelementptr inbounds %s, %s* %s, i32 0, i32 1\n",
+		base, dstLT, dstLT, slot))
+	arrLT := fmt.Sprintf("[%d x i64]", nSlots)
+	for i, a := range inst.Args {
+		if a <= NoVal {
+			continue
+		}
+		off, _ := c.enumFieldSlot(v, i)
+		valT, valV := c.loadVal(a)
+		fieldLT := valT
+		if i < len(v.Fields) {
+			if ft := c.mod.Type(c.mod.internType(v.Fields[i])); ft != nil {
+				fieldLT = c.llvmTypeOf(ft)
+			}
+		}
+		if fieldLT == "" {
+			fieldLT = "i64"
+		}
+		c.loadSeq++
+		gp := fmt.Sprintf("%%en%d", c.loadSeq)
+		c.sb.WriteString(fmt.Sprintf("  %s = getelementptr inbounds %s, %s* %s, i64 0, i64 %d\n",
+			gp, arrLT, arrLT, base, off))
+		storeLT, storeV := fieldLT, valV
+		ptr := gp
+		if fieldLT != "i64" {
+			if cv := c.coerce(fieldLT, valV, valT); cv != "" {
+				storeV = cv
+			}
+			c.loadSeq++
+			bc := fmt.Sprintf("%%en%d", c.loadSeq)
+			c.sb.WriteString(fmt.Sprintf("  %s = bitcast i64* %s to %s*\n", bc, gp, fieldLT))
+			ptr = bc
+		} else {
+			if cv := c.coerce("i64", valV, valT); cv != "" {
+				storeV = cv
+			}
+		}
+		c.sb.WriteString(fmt.Sprintf("  store %s %s, %s* %s\n", storeLT, storeV, storeLT, ptr))
+	}
+	return nil
+}
+
+// emitEnumTag reads an enum value's discriminant (field 0).
+func (c *codegen) emitEnumTag(inst *Inst) error {
+	dstSlot := c.valSlot[inst.Dst]
+	if dstSlot == "" {
+		return nil
+	}
+	srcT, srcV := c.loadVal(inst.Args[0])
+	valT := srcT
+	if t := c.mod.Type(c.mod.Value(inst.Args[0]).Type); t != nil {
+		valT = c.llvmTypeOf(t)
+	}
+	if valT == "" || valT == "void" {
+		valT = srcT
+	}
+	c.loadSeq++
+	tv := fmt.Sprintf("%%et%d", c.loadSeq)
+	c.sb.WriteString(fmt.Sprintf("  %s = extractvalue %s %s, 0\n", tv, valT, srcV))
+	c.sb.WriteString(fmt.Sprintf("  store i64 %s, i64* %s\n", tv, dstSlot))
+	return nil
+}
+
+// emitEnumField reads payload field `inst.Int` of an enum value, typed by
+// inst.Type. The field lives at an 8-byte slot offset in the union payload, so
+// the read is a GEP to the slot plus a bitcast to the field's real type.
+func (c *codegen) emitEnumField(inst *Inst) error {
+	dstSlot := c.valSlot[inst.Dst]
+	if dstSlot == "" {
+		return nil
+	}
+	srcSlot := c.valSlot[inst.Args[0]]
+	srcT, srcV := c.loadVal(inst.Args[0])
+	valT := ""
+	if t := c.mod.Type(c.mod.Value(inst.Args[0]).Type); t != nil {
+		valT = c.llvmTypeOf(t)
+	}
+	if valT == "" || valT == "void" {
+		valT = srcT
+	}
+	fieldLT, _ := c.ptype(inst.Dst)
+	if fieldLT == "" || fieldLT == "void" {
+		fieldLT = "i64"
+	}
+	if srcSlot == "" {
+		// Value (not address) form: extract from the register directly.
+		c.loadSeq++
+		tv := fmt.Sprintf("%%ef%d", c.loadSeq)
+		c.sb.WriteString(fmt.Sprintf("  %s = extractvalue %s %s, %d\n", tv, valT, srcV, inst.Int))
+		c.sb.WriteString(fmt.Sprintf("  store i64 %s, i64* %s\n", tv, dstSlot))
+		return nil
+	}
+	// The payload array's declared width must match the enum's real layout:
+	// a str payload occupies 3 slots, so a hard-coded `[1 x i64]` GEP read the
+	// wrong element type and yielded 0 (tests/test-tagged-enum.no: `b-res`).
+	nSlots := int64(1)
+	if ei := c.taggedEnumOf(enumRawOfType(c.mod, c.mod.Value(inst.Args[0]).Type)); ei != nil && ei.PayloadSlots > 0 {
+		nSlots = ei.PayloadSlots
+	}
+	arrLT := fmt.Sprintf("[%d x i64]", nSlots)
+	c.loadSeq++
+	base := fmt.Sprintf("%%ef%d", c.loadSeq)
+	c.sb.WriteString(fmt.Sprintf("  %s = getelementptr inbounds %s, %s* %s, i32 0, i32 1\n",
+		base, valT, valT, srcSlot))
+	c.loadSeq++
+	gp := fmt.Sprintf("%%ef%d", c.loadSeq)
+	c.sb.WriteString(fmt.Sprintf("  %s = getelementptr inbounds %s, %s* %s, i64 0, i64 %d\n",
+		gp, arrLT, arrLT, base, inst.Int))
+	if fieldLT == "i64" {
+		c.loadSeq++
+		lv := fmt.Sprintf("%%ef%d", c.loadSeq)
+		c.sb.WriteString(fmt.Sprintf("  %s = load i64, i64* %s\n", lv, gp))
+		c.sb.WriteString(fmt.Sprintf("  store i64 %s, i64* %s\n", lv, dstSlot))
+		return nil
+	}
+	c.loadSeq++
+	bc := fmt.Sprintf("%%ef%d", c.loadSeq)
+	c.sb.WriteString(fmt.Sprintf("  %s = bitcast i64* %s to %s*\n", bc, gp, fieldLT))
+	c.loadSeq++
+	lv := fmt.Sprintf("%%ef%d", c.loadSeq)
+	c.sb.WriteString(fmt.Sprintf("  %s = load %s, %s* %s\n", lv, fieldLT, fieldLT, bc))
+	c.sb.WriteString(fmt.Sprintf("  store %s %s, %s* %s\n", fieldLT, lv, fieldLT, dstSlot))
+	return nil
+}
+
+// enumRawOfType returns the raw nolang type string of a MIR type id.
+func enumRawOfType(m *Module, t TypeID) string {
+	if ty := m.Type(t); ty != nil {
+		return ty.Raw
+	}
+	return ""
 }
 
 // emitOptionPrintHelper emits a dedicated `define void @print_option_<elem>`

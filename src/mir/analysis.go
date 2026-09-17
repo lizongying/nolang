@@ -204,9 +204,32 @@ func (m *Module) insertDrops(f *Function, rep *Report) {
 			// the (possibly escaped) struct still points to. Only when the value
 			// is dead after the store; a value still live afterwards keeps its
 			// drop at its last use.
-			if inst.Op == OpSetField && inst.MovesArg && len(inst.Args) >= 2 && inst.Args[1] > NoVal {
+			// A tagged-enum constructor consumes its payload fields: the variant
+		// value holds them inline in its payload union, so their ownership
+		// transfers into the enum and they must not be reported as leaked.
+		if inst.Op == OpEnumNew {
+			for _, a := range inst.Args {
+				if a > NoVal {
+					moveSrc[a] = true
+				}
+			}
+		}
+		if inst.Op == OpSetField && inst.MovesArg && len(inst.Args) >= 2 && inst.Args[1] > NoVal {
 				if !liveOut[bid][inst.Args[1]] {
 					moveSrc[inst.Args[1]] = true
+				}
+			}
+			// A tagged-enum constructor CONSUMES its payload fields: the
+			// variant value holds them inline in its payload union, so the
+			// source temporaries must not be freed separately — that would
+			// leave the enum holding a freed buffer (tests/test-tagged-enum.no:
+			// `q b-res = ok('hi')` printed nothing because the string was
+			// freed at the end of the enclosing block).
+			if inst.Op == OpEnumNew {
+				for _, a := range inst.Args {
+					if a > NoVal && !liveOut[bid][a] {
+						moveSrc[a] = true
+					}
 				}
 			}
 		}
@@ -733,6 +756,16 @@ func (m *Module) checkDropCount(f *Function, rep *Report) {
 		// `missing-drop` for every struct-literal field initializer.
 		if inst.Op == OpSetField && inst.MovesArg && len(inst.Args) >= 2 && inst.Args[1] > NoVal {
 			moveSrc[inst.Args[1]] = true
+		}
+		// A tagged-enum constructor CONSUMES its payload fields: the variant
+		// value holds them inline in its payload union, so ownership transfers
+		// into the enum and the fields must not be reported as leaked.
+		if inst.Op == OpEnumNew {
+			for _, a := range inst.Args {
+				if a > NoVal {
+					moveSrc[a] = true
+				}
+			}
 		}
 		}
 	}

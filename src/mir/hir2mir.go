@@ -104,6 +104,31 @@ type lowerer struct {
 	// and would otherwise land in the wrong block.
 	contTargets map[BlockID]BlockID
 
+	// inArmCond marks the condition position of a match arm, where a variant
+	// constructor is a PATTERN (not a value being built). armEnum/armVariant
+	// carry it into the arm body so field bindings can be projected onto the
+	// payload (see lowerKLet).
+	inArmCond  bool
+	armEnum    *TaggedEnumInfo
+	armVariant *VariantInfo
+	// armEnumPrefer is the subject's enum type and armSubjectID the subject
+	// expression, both captured while an arm condition is lowered; see lowerIf.
+	armEnumPrefer string
+	armSubjectID  int32
+	// localEnums records the PLAIN enums defined by the program being
+	// compiled (as opposed to std's). It bounds the "resolve a bare variant
+	// name globally" fallback below: std's variant tables contain very common
+	// names, and matching those unconditionally turned ordinary identifiers
+	// into enum constants (map tests regressed on it).
+	localEnums map[string]bool
+
+	// itSrc is the value the current match arm bound to `it` — i.e. the
+	// matched subject itself. It is the projection source for a pattern's
+	// field names. `it`'s own slot is shared across arms (and across matches
+	// in a function) so its declared type may be a previous arm's; the SOURCE
+	// value always has the right type.
+	itSrc ValueID
+
 	// typeHint is the declared type of the binding currently being lowered.
 	// Some builtins (with-len / with-cap / with-cap-len) declare an EMPTY
 	// return list because their result type is inferred from the assignment's
@@ -214,6 +239,250 @@ type lowerer struct {
 	// result read as i64 prints the length instead of the string). Populated in
 	// lowerCall's OpRun branch and propagated through scalar let-copies.
 	asyncResTypes map[ValueID]TypeID
+}
+
+// copiedEnumVariants returns a private copy of the enum-variant table so the
+// lowerer can add the program's own definitions without mutating the shared
+// std cache that the caller passed in.
+func copiedEnumVariants(src map[string][]string) map[string][]string {
+	dst := make(map[string][]string, len(src))
+	for k, v := range src {
+		dst[k] = v
+	}
+	return dst
+}
+
+// collectLocalEnumVariants registers the PLAIN (payload-less) enums defined by
+// the program being compiled into l.enumVariants, which otherwise only holds
+// std enums (checker.CollectStdEnumVariants). Without this a user enum's
+// variant names were invisible to MIR: `c color = green` lowered to a void
+// const and `c: { red -> ... }` could not resolve `red`
+// (tests/test-tagged-enum.no).
+//
+// Only KEnumDef is registered here. A tagged enum (KTaggedEnumDef) is a
+// struct value, not a plain i64 discriminant, so adding its variant names to
+// this table would make isEnumTypeName report true for it and let it be
+// inlined as an integer; its arms are resolved through mod.TaggedEnums.
+func (l *lowerer) collectLocalEnumVariants() {
+	if l.enumVariants == nil {
+		l.enumVariants = map[string][]string{}
+	}
+	for _, id := range l.pkg.Top {
+		n := l.pkg.Node(id)
+		if n == nil || n.Kind != hir.KEnumDef {
+			continue
+		}
+		name := l.pkg.Str(n.S)
+		if name == "" {
+			continue
+		}
+		if _, exists := l.enumVariants[name]; exists {
+			continue // std definition wins
+		}
+		var vs []string
+		for _, c := range l.pkg.Children(id) {
+			cn := l.pkg.Node(c)
+			if cn == nil || cn.Kind != hir.KEnumValue {
+				continue
+			}
+			if vn := l.pkg.Str(cn.S); vn != "" {
+				vs = append(vs, vn)
+			}
+		}
+		if len(vs) > 0 {
+			l.enumVariants[name] = vs
+			if l.localEnums == nil {
+				l.localEnums = map[string]bool{}
+			}
+			l.localEnums[name] = true
+		}
+	}
+}
+
+// collectTaggedEnums scans the HIR package for tagged-enum definitions and
+// records their variant tables into mod.TaggedEnums. This must run before any
+// function body is lowered: a variant constructor (`full(7)`) and a match arm
+// (`full(v) -> ...`) are both resolved through this table.
+func (l *lowerer) collectTaggedEnums() {
+	for _, id := range l.pkg.Top {
+		n := l.pkg.Node(id)
+		if n == nil || n.Kind != hir.KTaggedEnumDef {
+			continue
+		}
+		l.collectTaggedEnum(l.pkg, id)
+	}
+}
+
+// collectTaggedEnum records one tagged-enum definition. The discriminant of a
+// variant is its declaration order within the enum body, which is what the
+// match desugar and the constructor both agree on.
+func (l *lowerer) collectTaggedEnum(pkg *hir.Package, id int32) {
+	n := pkg.Node(id)
+	if n == nil {
+		return
+	}
+	name := pkg.Str(n.S)
+	if name == "" {
+		return
+	}
+	info := &TaggedEnumInfo{Name: name}
+	slots := int64(1) // never zero-width: a unit-only enum still needs a payload array
+	for _, c := range pkg.Children(id) {
+		vn := pkg.Node(c)
+		if vn == nil || vn.Kind != hir.KVariant {
+			continue
+		}
+		v := VariantInfo{Name: pkg.Str(vn.S), Tag: int64(len(info.Variants))}
+		var total int64
+		for _, fc := range pkg.Children(c) {
+			fn := pkg.Node(fc)
+			if fn == nil || fn.Kind != hir.KStructField {
+				continue
+			}
+			raw := pkg.Type(fn.Type)
+			if raw == "" {
+				continue
+			}
+			v.Fields = append(v.Fields, raw)
+			v.FieldNames = append(v.FieldNames, pkg.Str(fn.S))
+			total += l.enumFieldSlots(raw)
+		}
+		if len(v.Fields) == 0 {
+			// Single-field payloads are carried on the variant's own Type in
+			// HIR (`ok(v i64)` -> KVariant.Type = i64) with no KStructField
+			// children; multi-field ones use the children.
+			if raw := pkg.Type(vn.Type); raw != "" && raw != "void" {
+				v.Fields = append(v.Fields, raw)
+				v.FieldNames = append(v.FieldNames, "")
+				total += l.enumFieldSlots(raw)
+			}
+		}
+		info.Variants = append(info.Variants, v)
+		if total > slots {
+			slots = total
+		}
+	}
+	info.PayloadSlots = slots
+	l.mod.TaggedEnums[name] = info
+}
+
+// enumFieldIndex returns the payload-field index that `name` binds in a
+// variant pattern, or -1. A single-field payload declared on the variant
+// itself has no recorded name, so it matches any binding name at position 0.
+func enumFieldIndex(v *VariantInfo, name string) int {
+	if v == nil || len(v.Fields) == 0 {
+		return -1
+	}
+	for i, fn := range v.FieldNames {
+		if i < len(v.Fields) && fn == name {
+			return i
+		}
+	}
+	if len(v.Fields) == 1 && v.FieldNames[0] == "" {
+		return 0
+	}
+	return -1
+}
+
+// enumFieldSlots returns how many 8-byte payload slots one field occupies.
+// The payload is a union, so a field only has to fit — but it must fit for
+// every variant, hence the enum's slot width is the max over variants.
+func (l *lowerer) enumFieldSlots(raw string) int64 {
+	switch raw {
+	case "str", "vec":
+		return 3 // %str-long / %vec = 24 bytes
+	}
+	if strings.HasPrefix(raw, "[]") {
+		return 3
+	}
+	if strings.HasPrefix(raw, "?") {
+		return 2 // %option = 16 bytes (tag + payload)
+	}
+	if fields, ok := l.mod.StructFields[raw]; ok {
+		var n int64
+		for _, f := range fields {
+			n += l.enumFieldSlots(f.TypeRaw)
+		}
+		if n > 0 {
+			return n
+		}
+	}
+	return 1
+}
+
+// typeHintRaw returns the nolang type string of the type expected at the
+// current lowering site (the declared type of the binding or the parameter
+// type of the call being filled), or "" when it is unknown.
+func (l *lowerer) typeHintRaw() string {
+	if l.typeHint == NoType || l.typeHint == l.voidType {
+		return ""
+	}
+	if t := l.mod.Type(l.typeHint); t != nil {
+		return t.Raw
+	}
+	return ""
+}
+
+// enumVariantOf resolves a variant (constructor) name to its enum and variant
+// entry. `prefer` is the enum raw type expected at this site — the declared
+// type of the binding being initialized, or the parameter type at a call site.
+//
+// Disambiguation rule (deliberately strict): when `prefer` is known, ONLY that
+// enum is searched. This is what keeps three different `ok`s apart —
+// `a-res.ok(i64)`, `b-res.ok(str)` and the option constructor `ok(x)` of ?T —
+// and it is why a failed lookup must NOT fall through to a global scan: with
+// `x ?i64 = ok(5)` the expected type is an option, and a global scan would
+// happily match some unrelated enum's `ok` and build the wrong value.
+//
+// With no expected type a global scan is the only option, but it is accepted
+// only when the variant name is unique across all enums; an ambiguous name
+// resolves to nothing rather than picking an arbitrary enum.
+// enumPrefer returns the enum type to resolve a variant name against: the
+// declared type at this site when it IS an enum, otherwise the enclosing
+// match arm's subject type (see lowerIf). An empty result means "unknown",
+// which restricts resolution to globally unique variant names.
+func (l *lowerer) enumPrefer() string {
+	if r := l.typeHintRaw(); r != "" {
+		if _, ok := l.mod.TaggedEnums[r]; ok {
+			return r
+		}
+	}
+	return l.armEnumPrefer
+}
+
+func (l *lowerer) enumVariantOf(prefer, variant string) (*TaggedEnumInfo, *VariantInfo) {
+	if variant == "" {
+		return nil, nil
+	}
+	if prefer != "" {
+		ei, ok := l.mod.TaggedEnums[prefer]
+		if !ok {
+			return nil, nil
+		}
+		for i := range ei.Variants {
+			if ei.Variants[i].Name == variant {
+				return ei, &ei.Variants[i]
+			}
+		}
+		return nil, nil
+	}
+	var found *TaggedEnumInfo
+	var vi *VariantInfo
+	for _, ei := range l.mod.TaggedEnums {
+		for i := range ei.Variants {
+			if ei.Variants[i].Name != variant {
+				continue
+			}
+			if found != nil {
+				return nil, nil // ambiguous across enums
+			}
+			found, vi = ei, &ei.Variants[i]
+		}
+	}
+	if found == nil {
+		return nil, nil
+	}
+	return found, vi
 }
 
 // collectStructFields scans the HIR package for struct definitions and records
@@ -363,6 +632,14 @@ func (l *lowerer) synthesizeMainForTopLevel(pkg *hir.Package) {
 		// 512/512, O-TRUNC 1024/1024).
 		if !nodeMatchesPlatform(pkg, id) {
 			continue
+		}
+		// A tagged-enum definition carries the variant table that later
+		// lowering needs: it is not a statement, but it must be collected
+		// before any function body that constructs or matches an enum is
+		// lowered. (Previously it fell into the `continue` below and MIR knew
+		// nothing about enums, so `full(7)` resolved to nothing at all.)
+		if n.Kind == hir.KTaggedEnumDef {
+			l.collectTaggedEnum(pkg, id)
 		}
 		switch n.Kind {
 		case hir.KStructDef, hir.KFuncDef, hir.KExtern, hir.KEnumDef,
@@ -554,7 +831,11 @@ func LowerHIR(pkg *hir.Package, enumVariants map[string][]string) (*Module, *Rep
 		globals:   map[string]ValueID{},
 		globalTypes: map[string]string{},
 		globalNodes: map[string]int32{},
-		enumVariants: enumVariants,
+		// Copy the caller's table: it is the SHARED std cache
+		// (checker.stdEnumVariantsCache), and collectLocalEnumVariants adds the
+		// program's own enum definitions to it. Writing into the shared map
+		// would leak one program's enums into every later compilation.
+		enumVariants: copiedEnumVariants(enumVariants),
 		asyncResTypes: map[ValueID]TypeID{},
 	}
 	l.b = NewBuilder("hir")
@@ -571,6 +852,8 @@ func LowerHIR(pkg *hir.Package, enumVariants map[string][]string) (*Module, *Rep
 	// indices stay consistent: data = field 0, len = field 1.
 	l.mod.StructFields["txt"] = []FieldInfo{{Name: "data", TypeRaw: "byte"}, {Name: "len", TypeRaw: "byte"}}
 	l.collectStructFields()
+	l.collectTaggedEnums()
+	l.collectLocalEnumVariants()
 	l.collectValueTypeAliases()
 
 	hasExplicitMain := false
@@ -1071,6 +1354,93 @@ func (l *lowerer) enumVariantValueOf(enumRaw, variant string) (int64, bool) {
 	return 0, false
 }
 
+// enumArmFieldValue projects a tagged-enum variant pattern's field name onto
+// the matched subject's payload slot. It applies only while an arm body is
+// being lowered (armVariant set by the arm's condition), and only when the
+// name really is one of that variant's fields. The subject is the arm's `it`
+// binding, which the parser always emits as the first statement of an arm.
+func (l *lowerer) enumArmFieldValue(name string) (ValueID, bool) {
+	if l.armVariant == nil || l.armEnum == nil || name == "" || name == "it" {
+		return NoVal, false
+	}
+	fi := enumFieldIndex(l.armVariant, name)
+	if fi < 0 || fi >= len(l.armVariant.Fields) {
+		return NoVal, false
+	}
+	subj := l.itSrc
+	if subj == NoVal {
+		// No `let it` seen (an arm whose body does not start with the
+		// synthetic binding): fall back to the `it` local itself.
+		if v, ok := l.locals["it"]; ok {
+			subj = v
+		}
+	}
+	if subj == NoVal {
+		return NoVal, false
+	}
+	// The subject's declared type is NOT checked against the enum here: an
+	// arm's `it` slot is shared across arms of the same match (and across
+	// matches in a function), so it may still carry the first arm's type.
+	// The arm's own variant table is authoritative — it was resolved from the
+	// subject in the arm's condition.
+	if subj == NoVal {
+		return NoVal, false
+	}
+	ft := l.b.Type(l.armVariant.Fields[fi])
+	if ft == NoType || ft == l.voidType {
+		return NoVal, false
+	}
+	var slot int64
+	for k := 0; k < fi; k++ {
+		slot += l.enumFieldSlots(l.armVariant.Fields[k])
+	}
+	fv := l.b.Emit(OpEnumField, ft, []ValueID{subj}, "")
+	l.mod.Insts[len(l.mod.Insts)-1].Int = slot
+	return fv, true
+}
+
+// plainEnumVariantValue resolves a bare variant name of a PLAIN (payload-less)
+// enum to its discriminant. The expected type at the site is tried first; when
+// it is not an enum name (a plain enum value is just an i64 in MIR, and a match
+// arm's subject carries no hint at all) the name is resolved globally, but only
+// if it is unique across all enums — an ambiguous name resolves to nothing
+// rather than picking an arbitrary enum.
+func (l *lowerer) plainEnumVariantValue(name string) (int64, bool) {
+	if raw := l.typeHintRaw(); raw != "" {
+		if val, ok := l.enumVariantValueOf(raw, name); ok {
+			return val, true
+		}
+	}
+	if raw := l.armEnumPrefer; raw != "" {
+		if val, ok := l.enumVariantValueOf(raw, name); ok {
+			return val, true
+		}
+	}
+	if l.enumVariants == nil || len(l.localEnums) == 0 {
+		return 0, false
+	}
+	var val int64
+	found := false
+	for en, vs := range l.enumVariants {
+		// Only the program's OWN enums participate in the global fallback.
+		// std's variant names (found / removed / ok / ...) collide with
+		// ordinary identifiers far too often to match them speculatively.
+		if !l.localEnums[en] {
+			continue
+		}
+		for i, vn := range vs {
+			if vn != name {
+				continue
+			}
+			if found {
+				return 0, false // ambiguous across enums
+			}
+			val, found = int64(i), true
+		}
+	}
+	return val, found
+}
+
 // lowerBareEnumVariant resolves a match-arm variant reference with NO receiver.
 // The parser desugars `m: { read -> ... }` (m: file-mode) into the condition
 // `m == read`, where `read` is a bare KIdent carrying no type — HIR cannot say
@@ -1118,6 +1488,11 @@ func (l *lowerer) lowerBareEnumVariant(nd, sibling *hir.Node) (ValueID, bool) {
 		return NoVal, false
 	}
 	v, ok := l.enumVariantValueOf(strings.TrimPrefix(enumRaw, "?"), name)
+	if !ok {
+		// The sibling's MIR type is the enum's underlying i64, so it no longer
+		// names the enum; fall back to a globally unique variant name.
+		v, ok = l.plainEnumVariantValue(name)
+	}
 	if !ok {
 		return NoVal, false
 	}
@@ -1476,6 +1851,33 @@ func (l *lowerer) lowerStmt(id int32) {
 		break
 	}
 	l.typeHint = NoType
+	if name == "it" && val != NoVal {
+		l.itSrc = val
+	}
+	// Tagged-enum arm destructuring. Inside a `circle(r) -> ...` arm the
+	// parser binds each field NAME to the matched subject, so `r` would
+	// receive the whole `{tag, payload}` enum and `r * 3.0` then multiplied a
+	// struct by a float (void result -> "move src slot" in codegen). Project
+	// the binding onto the variant's payload slot instead.
+	if l.armVariant != nil && val != NoVal && name != "" && name != "it" {
+		if vt := l.valueTypeOf(val); vt != NoType && vt != l.voidType {
+			if ty := l.mod.Type(vt); ty != nil && ty.Kind == KindEnum {
+				if l.armEnum == nil || l.armEnum.Name == ty.Raw {
+					if fi := enumFieldIndex(l.armVariant, name); fi >= 0 && fi < len(l.armVariant.Fields) {
+						if ft := l.b.Type(l.armVariant.Fields[fi]); ft != NoType && ft != l.voidType {
+							var slot int64
+							for k := 0; k < fi; k++ {
+								slot += l.enumFieldSlots(l.armVariant.Fields[k])
+							}
+							fv := l.b.Emit(OpEnumField, ft, []ValueID{val}, "")
+							l.mod.Insts[len(l.mod.Insts)-1].Int = slot
+							val = fv
+						}
+					}
+				}
+			}
+		}
+	}
 		// Match-arm `it` binding whose declared HIR type is the `err` variant
 		// marker (the parser puts `t=err` on the synthetic `it = matched` let of
 		// an `err ->` arm). The err payload is ALWAYS `str` (the builtin option
@@ -1936,7 +2338,39 @@ func (l *lowerer) lowerIf(n *hir.Node) {
 	mergeBlk := l.b.NewBlock("if.merge")
 	l.contStack = append(l.contStack, mergeBlk)
 	if condID != hir.NoID {
+		// An arm condition may be a tagged-enum variant pattern
+		// (`s: { circle(r) -> ... }`), which the parser desugars into an
+		// equality test against the variant constructor. Mark the condition
+		// position so lowerEnumCtor can record WHICH variant the arm is for;
+		// the arm body's bindings (`r`) are then projected onto that variant's
+		// payload instead of receiving the whole enum.
+		l.inArmCond = true
+		// Disambiguate the arm's variant name by the SUBJECT's type: an
+		// equality test `p == fail` does not say which enum `fail` belongs to
+		// on its own, and both `a-res` and `b-res` declare one. Read the
+		// subject's type from the HIR (no lowering, so no duplicate
+		// instructions) instead of guessing globally.
+		if cn := l.pkg.Node(condID); cn != nil && (l.pkg.Str(cn.S) == "==" || l.pkg.Str(cn.S) == "!=") {
+			for _, ch := range l.pkg.Children(condID) {
+				if chn := l.pkg.Node(ch); chn != nil {
+					if lt := l.typeOfNode(chn); lt != NoType && lt != l.voidType {
+						if ty := l.mod.Type(lt); ty != nil && ty.Kind == KindEnum {
+							l.armEnumPrefer = ty.Raw
+							// Only a plain identifier is safe to re-evaluate in
+							// the arm body; anything else (a call, an index)
+							// may have side effects.
+							if chn.Kind == hir.KIdent {
+								l.armSubjectID = ch
+							}
+						}
+					}
+				}
+				break // first child is the subject
+			}
+		}
 		c := l.lowerExpr(condID)
+		l.inArmCond = false
+		l.armEnumPrefer = ""
 		if c != NoVal {
 			l.b.Terminate(OpCondBr, []ValueID{c}, []BlockID{thenBlk, elseBlk}, "")
 		} else {
@@ -1948,10 +2382,24 @@ func (l *lowerer) lowerIf(n *hir.Node) {
 
 	l.b.SetBlock(thenBlk)
 	if thenID != hir.NoID {
+		// Re-read the subject HERE rather than trusting `it`: after the first
+		// arm, `it` is re-assigned into a shared slot, and a later arm's
+		// projection could still see the earlier subject.
+		if l.armVariant != nil && l.armSubjectID != hir.NoID {
+			if sv := l.lowerExpr(l.armSubjectID); sv != NoVal {
+				l.itSrc = sv
+			}
+		}
+		l.armSubjectID = hir.NoID
 		if thenIsArm {
 			l.matchDepth++
 		}
+		savedItSrc := l.itSrc
 		armVal := l.lowerBlock(thenID)
+		// The variant pattern only applies to THIS arm's body.
+		l.armVariant = nil
+		l.armEnum = nil
+		l.itSrc = savedItSrc
 		if thenIsArm {
 			l.matchDepth--
 		}
@@ -2034,6 +2482,145 @@ func (l *lowerer) captureArmValue(v ValueID) {
 	l.b.EmitMoveInto(l.exprSink, stored)
 }
 
+// lowerCond lowers the ternary `c ? a : b` (hir.KCond; children are
+// [cond, consequence, alternative]).
+//
+// MIR had NO case for KCond at all, so the whole expression lowered to NoVal:
+// `max = sum > 10 ? sum : 10` never bound `max`, and every later read of it
+// cascaded into "unresolved identifier" / "unresolved format field max"
+// (tests/test-all.no). A DECLARED binding (`max i64 = c ? a : b`) took the
+// "declaration with no initializer" zero-init fallback, so it compiled but
+// silently always held 0 — worse than an error, because the wrong value is
+// invisible.
+//
+// The arms are lowered as real branches into a shared result slot, reusing the
+// same capture machinery as `r = if c { a } else { b }`. Unlike that path the
+// slot is created in the block that DOMINATES both arms (before the cond-br),
+// so the merge block can legally read it whichever way the branch went.
+func (l *lowerer) lowerCond(id int32) ValueID {
+	var condID, thenID, elseID int32 = hir.NoID, hir.NoID, hir.NoID
+	i := 0
+	for _, c := range l.pkg.Children(id) {
+		switch i {
+		case 0:
+			condID = c
+		case 1:
+			thenID = c
+		case 2:
+			elseID = c
+		}
+		i++
+	}
+	if condID == hir.NoID || thenID == hir.NoID {
+		return NoVal
+	}
+	// Result slot type: prefer the consequence's inferred type, else the
+	// alternative's, else i64. Created here so it dominates both arms.
+	resT := l.typeOfNode(l.pkg.Node(thenID))
+	if resT == NoType || resT == l.voidType {
+		if elseID != hir.NoID {
+			resT = l.typeOfNode(l.pkg.Node(elseID))
+		}
+	}
+	if resT == NoType || resT == l.voidType {
+		resT = l.b.Type("i64")
+	}
+	sink := l.b.EmitInt(OpConst, resT, 0, "")
+
+	thenBlk := l.b.NewBlock("cond.then")
+	elseBlk := l.b.NewBlock("cond.else")
+	mergeBlk := l.b.NewBlock("cond.merge")
+	cv := l.lowerExpr(condID)
+	if cv != NoVal {
+		l.b.Terminate(OpCondBr, []ValueID{cv}, []BlockID{thenBlk, elseBlk}, "")
+	} else {
+		l.b.Terminate(OpBr, nil, []BlockID{thenBlk}, "")
+	}
+
+	savedCap, savedSink := l.exprCapture, l.exprSink
+	l.exprCapture = true
+	l.exprSink = sink
+
+	l.b.SetBlock(thenBlk)
+	if v := l.lowerExpr(thenID); v != NoVal {
+		l.captureArmValue(v)
+	}
+	if l.mod.Block(thenBlk).Term == nil {
+		l.b.Terminate(OpBr, nil, []BlockID{mergeBlk}, "")
+	}
+
+	l.b.SetBlock(elseBlk)
+	if elseID != hir.NoID {
+		if v := l.lowerExpr(elseID); v != NoVal {
+			l.captureArmValue(v)
+		}
+	}
+	if l.mod.Block(elseBlk).Term == nil {
+		l.b.Terminate(OpBr, nil, []BlockID{mergeBlk}, "")
+	}
+
+	l.exprCapture, l.exprSink = savedCap, savedSink
+	l.b.SetBlock(mergeBlk)
+	return sink
+}
+
+// lowerSafeIndex lowers a bounds-checked element read whose result is an
+// option: in range -> ok(elem), out of range -> nil (tag 1). It backs the
+// parser's safe-index desugar (`x ?= v[i]` and `#{index-out=DEF} x = v[i]`),
+// which both lower the read into a `?elem` binding and then match on it.
+//
+// The result slot is created in the block that dominates both arms (as an
+// option-typed constant, i.e. nil), so the arms only ever overwrite it — MIR
+// has no phi, every branch convergence goes through such a shared slot.
+func (l *lowerer) lowerSafeIndex(arrV, idxV ValueID, elemT, optT TypeID) ValueID {
+	i64T := l.b.Type("i64")
+	boolT := l.b.Type("bool")
+	if i64T == l.voidType || boolT == l.voidType {
+		return NoVal
+	}
+	n := l.b.Emit(OpLen, i64T, []ValueID{arrV}, "")
+	if n == NoVal {
+		return NoVal
+	}
+	zero := l.b.EmitInt(OpConst, i64T, 0, "")
+	nonneg := l.b.Emit(OpGe, boolT, []ValueID{idxV, zero}, "")
+	inRange := l.b.Emit(OpLt, boolT, []ValueID{idxV, n}, "")
+	ok := l.b.Emit(OpAnd, boolT, []ValueID{nonneg, inRange}, "")
+
+	sink := l.b.EmitInt(OpConst, optT, 0, "") // nil: tag=1, zero payload
+
+	okBlk := l.b.NewBlock("idx.ok")
+	noneBlk := l.b.NewBlock("idx.none")
+	mergeBlk := l.b.NewBlock("idx.merge")
+	l.b.Terminate(OpCondBr, []ValueID{ok}, []BlockID{okBlk, noneBlk}, "")
+
+	l.b.SetBlock(okBlk)
+	e := l.b.Emit(OpIndex, elemT, []ValueID{arrV, idxV}, "")
+	if e != NoVal {
+		// An owned element (str) read out of the container is only BORROWED
+		// (OpIndex aliases the owner's storage). Wrapping it into the option
+		// makes the move analysis treat the option as its owner, so the later
+		// drop of the option would free a buffer the container still owns.
+		// Clone so each side owns its own copy.
+		if et := l.mod.Type(elemT); et != nil && et.Kind == KindStr {
+			e = l.b.Emit(OpClone, elemT, []ValueID{e}, "")
+		}
+		wrapped := l.b.EmitOptionWrap(optT, 0, e)
+		l.b.EmitMoveInto(sink, wrapped)
+	}
+	if l.mod.Block(okBlk).Term == nil {
+		l.b.Terminate(OpBr, nil, []BlockID{mergeBlk}, "")
+	}
+
+	// The none arm leaves the slot at its nil initial value.
+	l.b.SetBlock(noneBlk)
+	if l.mod.Block(noneBlk).Term == nil {
+		l.b.Terminate(OpBr, nil, []BlockID{mergeBlk}, "")
+	}
+
+	l.b.SetBlock(mergeBlk)
+	return sink
+}
 
 func (l *lowerer) lowerFor(n *hir.Node) {
 	iterID := l.slot(n.Id, "iter")
@@ -2939,6 +3526,9 @@ func (l *lowerer) lowerExpr(id int32) ValueID {
 		// An assignment used as an expression (e.g. `if (x = read())` or an
 		// assignment wrapped in a KExprStmt) evaluates to its right-hand side.
 		return l.lowerAssignNode(id)
+	case hir.KCond:
+		// ternary: `c ? a : b`
+		return l.lowerCond(id)
 	case hir.KIndex:
 		// array/slice element read: a[i]
 		var arrID, idxID int32
@@ -2973,6 +3563,24 @@ func (l *lowerer) lowerExpr(id int32) ValueID {
 				}
 			}
 		}
+		// Safe index: when the binding site is declared as an option (?elem)
+		// the read must be bounds-checked and yield nil when out of range.
+		// This is what the parser's safe-index desugar emits for
+		// `x ?= v[i]` and `#{index-out=DEF} x = v[i]`:
+		//
+		//	__idx_out_N ?i64 = v[i]
+		//	__idx_out_N: { ok -> { x = it }  ok -> { x = DEF } }
+		//
+		// Without the check OpIndex read raw out-of-bounds memory, wrapped the
+		// garbage into ok(...) and the `ok` arm then assigned it — a silent
+		// wrong answer at best, and for owned element types (str) a wild
+		// buffer pointer that SIGSEGVs on the first use
+		// (tests/test-safe-index.no: `get-default OOB`).
+		if l.typeHint != NoType && l.typeHint != l.voidType {
+			if ht := l.mod.Type(l.typeHint); ht != nil && ht.Kind == KindOption {
+				return l.lowerSafeIndex(arrV, idxV, elemT, l.typeHint)
+			}
+		}
 		return l.b.Emit(OpIndex, elemT, []ValueID{arrV, idxV}, "")
 	case hir.KArrayLit:
 		// Typed fixed array literal: `a [N] = [e0, e1, ...]`. In HIR the KArrayLit
@@ -2991,6 +3599,15 @@ func (l *lowerer) lowerExpr(id int32) ValueID {
 		return l.lowerArrayElems(elems)
 	case hir.KIdent:
 		name := l.pkg.Str(n.S)
+		// Tagged-enum arm destructuring, checked BEFORE any local binding.
+		// A variant pattern's field name (`ok(v) -> print(v)`) belongs to the
+		// arm, and an earlier arm that bound the same name must not shadow it:
+		// `b-res` follows `a-res` in the same function and both arms call their
+		// payload `v`, so a locals-first lookup made the second arm print the
+		// first arm's value.
+		if fv, ok := l.enumArmFieldValue(name); ok {
+			return fv
+		}
 		// Option variant bare references (`err`, `ok`, `some`, `nil`): lower to
 		// the option discriminant constant so comparisons / match patterns
 		// resolve to the RIGHT tag. `nil` is the "none" discriminant (tag 1);
@@ -3016,6 +3633,16 @@ func (l *lowerer) lowerExpr(id int32) ValueID {
 			}
 			if _, isGlobal := l.globals[name]; isGlobal {
 				return l.lowerGlobalRef(name)
+			}
+			// A tagged enum may declare a variant named `ok` / `err` / `nil`
+			// (`b-res { ok(v str), fail }`). When the expected type at this
+			// site is such an enum the name is that enum's constructor, NOT
+			// the option variant keyword: the keyword path below would emit a
+			// plain const of the enum type, leaving the arm to compare against
+			// discriminant 0 regardless of the variant's real tag
+			// (tests/test-tagged-enum.no prints `0` instead of `hi`).
+			if ei, vi := l.enumVariantOf(l.enumPrefer(), name); ei != nil && vi != nil {
+				return l.lowerEnumUnit(ei, vi)
 			}
 			// Genuine bare variant keyword. Determine the option type from the
 			// surrounding context (the matched subject's type).
@@ -3062,6 +3689,14 @@ func (l *lowerer) lowerExpr(id int32) ValueID {
 		if v, ok := l.locals[name]; ok {
 			return v
 		}
+		// A unit variant of a tagged enum used as a VALUE (`c color = green`).
+		// It is a constructor with no payload; the enum is taken from the type
+		// expected at this site, which is what distinguishes `color.green`
+		// from an identically named variant of another enum. Checked after the
+		// locals lookup so a local binding still shadows a variant name.
+		if ei, vi := l.enumVariantOf(l.enumPrefer(), name); ei != nil && vi != nil {
+			return l.lowerEnumUnit(ei, vi)
+		}
 		// A top-level module binding (SBOX, TLS-FINISHED-SIZE, perm-600, ...)
 		// lives outside every function; resolve it as a module global. This is
 		// the last resort before declaring the identifier unresolved, so it
@@ -3087,6 +3722,28 @@ func (l *lowerer) lowerExpr(id int32) ValueID {
 			l.enqueueCallee(name)
 			return v
 		}
+		// A unit variant of a PLAIN (payload-less) enum used as a VALUE:
+		// `c color = green` in a let, and `red` in a match arm. The parser
+		// classifies `color { red, green, blue }` as a plain EnumDefinition
+		// (no variant carries a payload), whose values are plain i64
+		// discriminants — the same representation `Color.red`-style qualified
+		// references already use.
+		//
+		// The declared type at this site is usually NOT the enum name: a plain
+		// enum value IS its i64 discriminant in MIR, so `c color = green`
+		// exposes `i64` as the hint and a match arm's subject carries no hint
+		// at all. Fall back to a globally unique variant name in that case,
+		// which is why this sits after the local/global lookups — a real
+		// binding must always win.
+		if val, ok := l.plainEnumVariantValue(name); ok {
+			return l.b.EmitInt(OpConst, l.b.Type("i64"), val, "")
+		}
+		// Tagged-enum arm destructuring. A variant pattern's field names
+		// (`s: { rect(w, h) -> ... }`) are NOT local bindings — the parser only
+		// binds the subject to `it`, so `w` / `h` reached this point as
+		// unresolved identifiers and lowered to void constants, making
+		// `a = w * h` a void multiply. Project them onto the matched subject's
+		// payload slot instead.
 		// unresolved: create a placeholder value of the inferred type so later
 		// instructions can still reference it; flag for diagnostics.
 		l.unsupported(l.curFuncName(), "ident", "unresolved identifier "+name)
@@ -4869,6 +5526,16 @@ func (l *lowerer) lowerCall(n *hir.Node) ValueID {
 		}
 		return NoVal
 	}
+	// Tagged-enum variant constructor: `full(7)` / `rect(2.0, 3.0)` / `ok(5)`.
+	// Checked BEFORE the option constructors below, because a tagged enum may
+	// legitimately declare a variant named `ok` — and when it does, the
+	// expected type at this site is the enum, not an option
+	// (tests/test-tagged-enum.no: `a-res` and `b-res` both declare `ok` with
+	// different payload types and different tags).
+	if ei, vi := l.enumVariantOf(l.enumPrefer(), callee); ei != nil && vi != nil {
+		return l.lowerEnumCtor(n, ei, vi)
+	}
+
 	// reachability: enqueue the referenced function for lowering
 	// Option variant constructors `err(x)` / `ok(x)` / `some(x)` are CALLS
 	// (they carry a payload argument), distinct from the bare variant
@@ -5471,6 +6138,51 @@ func (l *lowerer) lowerMultiAssignCall(n *hir.Node, innerCallID int32) ValueID {
 // receiver when the call is a method call. `callee` is used to seed the type of
 // any anonymous `{...}` literal argument from the callee's declared parameter
 // types (see structLitTypes); pass "" when there is no meaningful callee.
+// lowerEnumCtor lowers a tagged-enum variant constructor call (`full(7)`,
+// `rect(2.0, 3.0)`). The payload arguments are evaluated in order and packed
+// into the enum's shared payload area; the discriminant comes from the
+// variant's declaration order.
+func (l *lowerer) lowerEnumCtor(n *hir.Node, ei *TaggedEnumInfo, vi *VariantInfo) ValueID {
+	enumT := l.b.Type(ei.Name)
+	if enumT == l.voidType || enumT == NoType {
+		return NoVal
+	}
+	argv := l.lowerCallArgs(n, NoVal, "")
+	if len(argv) > len(vi.Fields) {
+		// A unit variant written in call position (`green()`) carries no
+		// payload; drop any stray (e.g. out-param) trailing arguments rather
+		// than storing them past the declared fields.
+		argv = argv[:len(vi.Fields)]
+	}
+	v := l.b.Emit(OpEnumNew, enumT, argv, "")
+	inst := &l.mod.Insts[len(l.mod.Insts)-1]
+	inst.Int = vi.Tag
+	if l.inArmCond {
+		// This constructor is a match-arm PATTERN. Record the variant so the
+		// arm body's field bindings can be projected onto the payload.
+		l.armEnum, l.armVariant = ei, vi
+	}
+	return v
+}
+
+// lowerEnumUnit lowers a bare unit-variant reference (`green` in
+// `c color = green`): a constructor with no payload.
+func (l *lowerer) lowerEnumUnit(ei *TaggedEnumInfo, vi *VariantInfo) ValueID {
+	enumT := l.b.Type(ei.Name)
+	if enumT == l.voidType || enumT == NoType {
+		return NoVal
+	}
+	v := l.b.Emit(OpEnumNew, enumT, nil, "")
+	inst := &l.mod.Insts[len(l.mod.Insts)-1]
+	inst.Int = vi.Tag
+	if l.inArmCond {
+		// Same as lowerEnumCtor: a variant name in an arm condition is a
+		// PATTERN, so record it for the arm body's field bindings.
+		l.armEnum, l.armVariant = ei, vi
+	}
+	return v
+}
+
 func (l *lowerer) lowerCallArgs(n *hir.Node, recvV ValueID, callee string) []ValueID {
 	args := l.slotArgs(n.Id, "arg")
 	// For a VARIADIC callee in arg-form (`f(..., r)`), drop the trailing
@@ -5540,8 +6252,23 @@ func (l *lowerer) lowerCallArgs(n *hir.Node, recvV ValueID, callee string) []Val
 			l.noteAnonymousStructLit(a, paramRaws[pi])
 		}
 	}
-	for _, a := range args {
+	for i, a := range args {
+		// Seed the EXPECTED TYPE at an argument position so a tagged-enum
+		// variant constructor written inline can be resolved to its enum:
+		// `area(rect(2.0, 3.0))` only knows `rect` belongs to `shape` from the
+		// parameter's declared type (tests/test-tagged-enum.no). Restricted to
+		// parameters whose declared type IS a tagged enum, so no other call
+		// site changes the type hint it exposes to its argument expressions.
+		saved := l.typeHint
+		if pi := i + argOffset; pi < len(paramRaws) {
+			if raw := paramRaws[pi]; raw != "" {
+				if _, isEnum := l.mod.TaggedEnums[raw]; isEnum {
+					l.typeHint = l.b.Type(raw)
+				}
+			}
+		}
 		v := l.lowerExpr(a)
+		l.typeHint = saved
 		if wrapArgs {
 			v = l.printableValue(v)
 		}
@@ -5741,6 +6468,28 @@ func (l *lowerer) elementTypeOf(v ValueID) TypeID {
 	}
 	ty := l.mod.Type(t)
 	if ty != nil {
+		return l.elemTypeOfType(ty)
+	}
+	return l.voidType
+}
+
+// elemTypeOfType is the type-level half of elementTypeOf: it maps a container
+// type to the type produced by a single index operation.
+func (l *lowerer) elemTypeOfType(ty *Type) TypeID {
+	if ty != nil {
+		// An option wrapping a container is indexed THROUGH its payload. A
+		// match arm binds `it` to the option itself, so `it[0]` on the `?[]byte`
+		// returned by `'6162'.from-hex()` must unwrap twice: `?[]byte` ->
+		// `[]byte` -> `byte`. Without this the index result was typed `[]byte`
+		// and codegen GEP'd into the option struct itself, which opt rejects
+		// with "invalid getelementptr indices" (tests/test-strconv.no,
+		// test-from-hex-even).
+		if ty.Kind == KindOption && ty.Elem != NoType {
+			if et := l.mod.Type(ty.Elem); et != nil {
+				return l.elemTypeOfType(et)
+			}
+			return ty.Elem
+		}
 		// A str is `{len, cap, i8* data}`; indexing a str yields a single byte
 		// (i8), not a struct element. Without this, `s[i]` lowered to void and
 		// every string-builder idiom (to-upper / replace / repeat / ...) that
@@ -5894,6 +6643,14 @@ func (l *lowerer) lowerAssignNode(assignID int32) ValueID {
 	switch tn.Kind {
 	case hir.KIdent:
 		nm := l.pkg.Str(tn.S)
+		// Keep the arm-projection source in sync: after the first arm has
+		// bound `it`, later arms re-assign it (same slot) rather than
+		// declaring it, so a `let`-only update missed every arm but the first
+		// and projected the field names onto the FIRST arm's subject
+		// (tests/test-tagged-enum.no printed an empty string for `b-res`).
+		if nm == "it" && v != NoVal {
+			l.itSrc = v
+		}
 		slot, ok := l.locals[nm]
 		if !ok {
 			// The target may be a module-level binding (a script-level

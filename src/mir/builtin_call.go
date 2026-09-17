@@ -667,6 +667,12 @@ func (c *codegen) emitBuiltinConv(f *Function, inst *Inst, bm *builtin.BuiltinMe
 		return fmt.Errorf("builtin %s: missing operand", inst.Sym)
 	}
 	srcTy, srcVal := c.loadVal(inst.Args[0])
+	// An option flowing into a scalar conversion carries the value in its
+	// payload field (the nil/err arms have already returned at this point), so
+	// peel it before coercing. See peelOptionValue.
+	if pt, pv := c.peelOptionValue(srcTy, srcVal); pv != "" {
+		srcTy, srcVal = pt, pv
+	}
 	if inst.Dst <= NoVal {
 		return nil
 	}

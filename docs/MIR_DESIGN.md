@@ -6,6 +6,8 @@
 > **第四十二轮（2026-09-16）：`rc=124` 语义清理（4 → 1，只剩那个有意死循环）+ golden 骨架加固（300s 超时 / `-P 4` / `-update` 破坏守卫 / `UNSTABLE` 分流，`DIVERGE` 从恒 1 变 0），详见 §13.3.16 与 §12 #86。** ⚠️ 本轮**推翻一条持续三轮的旧结论**：`mem-safety/str-concat-leak.no` 的哈希不一致**不是**"二进制地址差异假阳性"——该文件输出 1000 行纯文本、不含地址；真因是 **#85**：`print('item' + i.to-str())` 在 count-for 里把拼接的右操作数降级成 `undef`，于是**以 rc=0 输出 0–775MB 不确定垃圾**（2 秒可复现）。同一轮另把 **#84** 定性为**运行期 SIGSEGV**（stderr `Error: signal: segmentation fault`，崩在第一条语句 `json.parse('')` 的最简早返回路径上），并用同形状的 `/tmp` 探针排除了"22KB 值语义载荷 + option + match"这一假设。
 > 第三十九轮权威全量扫描（删除前口径，`MATCH=388/422`（≈92.2%）、`DIVERGE=1`（`mem-safety/str-concat-leak.no`，二进制地址差异假阳性 —— **第四十二轮更正：并非地址差异，该文件输出纯文本、不含任何地址；真因是 #85 静默错误编译，见 §13.3.16 ⑤**）、`MIR 专属 gap=0`、`两模式都失败=29`（CERR 18 + CRASH 11）、`HANG=4`）——本轮相对第三十八轮 **MATCH 387→388**（新增 `tests/test-platform-const.no`），其余分类逐项不变、零回归。同一轮另对 `test/`（40 文件）与 `example/`（11 文件）做交叉扫描：`GAP=0`/`DIVERGE=0`/`HANG=0`。本轮交付：**#77** 平台变体过滤在脚本模式下失效（`synthesizeMainForTopLevel` 漏 `nodeMatchesPlatform`，导致语料区分不出的**真** gap）；**#9/#10 范围勘定与落地**（`src/build/llvm/` 实为 5 万行不是 60KB）。第三十八轮交付 **#71** `hir.KRegexLit` 未处理、**#72** `lowerFormatField` 的 `default:` 把结构体当整数、**#73** 默认后端切 MIR-only、**#74** `transitive_import_test.go` 接受 MIR 符号净化拼写（配套：扫描脚本补打 CERR/CRASH 名单、致命诊断带具体字段）、**#77** 平台过滤脚本模式缺口、**#78** 扫描器名单输出（净 MATCH +1、两模式都失败 30→29）。
 > **第四十三轮（2026-09-16）：#85 护栏落地 —— `loadVal` 的"静默 `undef`"改为响铃诊断，并修正上一轮高估的影响半径（`tests/` 内 19 文件 → **2 文件**），详见 §13.3.17 与 §12 #85。** ⚠️ 上一轮用 `NOLANG_MIR_DEBUG_UNDEF` 量到的"19 文件 / 55 处命中"**把两类命中混在一起了**：其中 **51 处 `llvm="void"` 是合法的**（void 值本无存储，调用方正是靠 `"void"` 跳过它），**只有 4 处 `value=0` 是真洞**（`value=0` 即 `NoVal`：消费方在读取没有任何指令产生过的操作数），落在 **2 个文件**（`mem-safety/str-concat-leak.no`、`test-std-hash.no`）。这两个文件的 `legacy-baseline` 判定**本来就是 rc=1**，所以护栏是把 MIR 拉回冻结语义基线的判定 —— **对上 oracle，不是回归**；重冻结后两份基线与改动前 **恰好 diff 2 行**，且两行的新值都与 `legacy-baseline` **逐字节相同**。**把扫描范围扩到 `test/`(40)+`example/`(11) 又恰好多出 1 个**：`test/std/process.no` 护栏前 `no test` 在 **`t-cmd` 上 SIGSEGV**，护栏后变成编译期点名同一函数的诊断 ⇒ **没有任何测试由通过变失败**。另记两条判读教训：`no build` 的 rc（编译器）与 `no run` 的 rc（程序退出码）**不是一回事**；`BOTH_FAIL` 桶**不比哈希**，故 `test-std-hash.no` 的修复在桶计数上完全不可见。
+> **第四十五轮（2026-09-17）：两个「语言级缺口」落地（tagged enum + safe index），并修掉一个更底层的 `option` 槽位默认值缺陷 —— 金标 `DIVERGE` 归零（`SAME=409 / DIVERGE=0 / REGRESS=0 / IMPROVED=0 / BOTH_FAIL=13`），详见 §13.3.18。** ⚠️ 本轮最有价值的不是两个大特性，而是 ③：**`%option` 的零值是 `ok(0)` 而不是 `nil`**（tag 0=ok / 1=nil / 2=err），于是**从未被赋值的 `?T` 具名出参**会把「同一槽位上一次调用的返回值」当成自己的结果 —— `hashmap.get` 未命中时只是从探针循环掉出去、`result` 从未写过，删掉的 key 因此仍报 `found`。仓库文档 `docs/docs/lang/code-style.md` 早已定义「具名出参延迟零值（option → `nil`）」，legacy 用 `%__ret_init_bitmap` 在 return 处补零，**MIR 从未实现**；本实现在 prologue 写 nil 常量，观察等价。另记一条判读方法：**「行为随代码布局漂移」是读未初始化内存的签名** —— 四次消融（禁 safe index / 强制 ok / 换 `OpCap` / 加诊断打印）每次都改变现象、而诊断从未触发，这只能是「槽位没被写过」，不是「边界算错」。顺带修 `std/collection/map.no`+`static-hashmap.no` 的 int 模板**空守卫体**（`.keys[idx] == key -> { }` 让键比较形同虚设，6 处；同形状全仓另有 5 处在 net/regexp/x509，无 oracle 故未动）。
+
 > **关键量化：** 对同一份语料，默认口径（MIR-only）通过 **388/421**，与旧默认（`MIR=2`：`MATCH 387 + DIVERGE 1`）的 `rc=0` 集合**完全一致** —— 即切换默认不改变任何测试的成败，只是停止用 legacy 掩盖 MIR 的缺口。详见 §13.3.12。
 > 作者：编译器工作流
 > 关联：`src/hir`（HIR）、`src/parser/tohir.go`（AST→HIR）、`src/mir`（本层）。~~`src/build/llvm`（legacy LLVM 后端）~~ 已于第三十九·续轮删除（§13.3.13 ⑥）
@@ -1425,6 +1427,183 @@ if slot == ""   { c.fail(...); return lt, "undef" } // 静默错误编译 -> 响
 本轮差点把结论停在"2 个文件"。上一轮的诊断扫描是 `find tests -name '*.no'`，所以那个数字**只在 `tests/` 内成立**。用护栏前后的两个二进制（`git worktree add /tmp/no-preguard HEAD` → 建旧二进制 → **用完立刻 `worktree remove --force`**）对 `test/`（40）+ `example/`（11）逐文件比对 `build` rc，**恰好多出一个**：`test/std/process.no`（`pre=0 post=1`）。而它的性质比语料里那两个更有说服力 —— 护栏前 `no test` 在**第 5 个测试**（正是 `t-cmd`，与护栏点名的 `t_cmd` 同函数）上 `signal: segmentation fault`；护栏后变成编译期点名诊断，**没有任何测试由通过变失败**。
 
 ⇒ 纪律：**给出"影响半径"时必须写明扫描范围**（这里是"`tests/**/*.no`，422 个"），并且**在一处修复的收尾阶段把范围扩到相邻目录**（`test/`、`example/` 各 11–40 个文件，全扫 2 分钟）。**代价极低、回报是一次完整的、可写进结论的穷举**；不扩，就会把一个不完整的数字当成完整的。
+
+---
+
+#### 13.3.16 第四十四轮（2026-09-17）：三个真缺口 —— option 解包的两个新 sink + `KCond`（三元）从未 lowering
+
+**指标（金标 `mir-baseline`，422 语料）**
+
+| 指标 | 上轮 | 本轮 |
+|---|---|---|
+| SAME | 390 | 389 |
+| DIVERGE | 1 | 2（新增的 1 个是**修复**，见下） |
+| REGRESS | 0 | **0** |
+| IMPROVED | 14 | **16** |
+| BOTH_FAIL | 17 | **15** |
+
+新修 2 个：`tests/test-strconv.no`、`tests/test-all.no`。
+
+**① `emitBuiltinConv`：option 流入标量转换时没有解包**
+
+`std/str.no` 的 `str.to-f32` 写作 `f ?f64 = .to-f64()` → nil/err 两臂已 `return` → `val = number.f64-to-f32(f)`。存活下来的 `f` 是 `ok(payload)`，传给形参 `a f64` 前必须剥壳。`emitBuiltinConv` 直接把整个 `%option_f64` 交给 `coerce`：
+
+```
+builtin number.f64-to-f32: cannot coerce %option_f64 to double
+```
+
+修法：新增 `codegen.peelOptionValue(lt, val)`（`extractvalue <optLT> %v, 1`，payload 类型从 `c.optPayload` 查，`%option` 恒为 `i64`），在 `emitBuiltinConv` 里无条件试剥。**这是 §13.1「sink 解包」契约的又一站**：此前只覆盖 `emitIndexStore`/`emitSetField`/`print`，标量转换这一站漏了。
+
+**② option 包裹的容器被索引：元素类型取错 + GEP 打在 option 结构体上**
+
+`b = '6162'.from-hex()` 得 `?[]byte`，match 默认臂把 `it` 绑到 **option 本身**，于是：
+
+- lowering 侧 `elementTypeOf` 见 `ty.Kind==KindOption` 就返回 `ty.Elem`（= `[]byte`），`it[0]` 的结果类型成了 `[]byte` 而非 `byte`；
+- codegen 侧 `elemAddr` 拿 `arrT = "%option___byte"` 走 default 分支，发出 `getelementptr %option___byte, ptr %slot, i64 0, i64 %i` —— 结构体成员下标必须是常量，opt 直接拒：`invalid getelementptr indices`。
+
+修法两处配套，缺一不可：
+- `hir2mir.elementTypeOfType(ty)`：新增类型层递归，`KindOption` 时穿透到 payload 再取元素（`?[]byte` → `[]byte` → `byte`）；`elementTypeOf` 退化为「取值 → 调它」。
+- `codegen.elemAddr`：option 先 `getelementptr <optLT>, <optLT>* slot, i32 0, i32 1` 拿到 payload 指针，再以 payload 为容器类型递归（原函数体改名 `elemAddrRaw`）。
+
+⇒ 纪律：**「解包」类修复必须 lowering 与 codegen 两侧一起改**。只改一边不会报错更少，只会把 `opt-verify` 的类型错配从一处挪到另一处。
+
+**③ `KCond`（三元 `c ? a : b`）在 MIR 里根本没有 lowering 分支**
+
+`hir2mir.lowerExpr` 的 switch 没有 `case hir.KCond`（全仓 `KCond` 只在 `parser/tohir.go` 产生、在 `hir/hir.go` 声明，**没有任何消费者**），整棵表达式 lower 成 `NoVal`：
+
+- `max = sum > 10 ? sum : 10`（未声明类型）→ `max` 永不被绑定 → 后续 `print('max: {max}')` 报 `interp: unresolved format field max`（`tests/test-all.no` 死的正是这一句）；
+- `max i64 = sum > 10 ? sum : 10`（**已声明**类型）→ 走「声明但无初值」的零初始化兜底，**编译通过但恒为 0**。
+
+后者比前者危险得多：它是**静默的错误值**，扫 rc 永远看不见。
+
+修法：新增 `lowerCond`，把两臂当真分支降到共享结果槽，复用 `r = if c { a } else { b }` 已有的 `exprCapture`/`exprSink`/`captureArmValue` 机制。**唯一的结构差异**：结果槽在 `cond-br` **之前**的支配块里创建（`lowerIf` 的路径是在 then 块创建），否则 merge 块读它不满足支配关系。已验证：i64 / str / 函数内 / 真假两臂全部正确。
+
+**④ 一个 DIVERGE 是修复不是回归（务必这样判）**
+
+`tests/test-slot-rebind.no` 本轮新进 DIVERGE。判据不是「哈希变了」，而是**文件自带期望输出**：
+
+```
+// 期望输出（每行一个）: 42 7 1 1 17 5 5 10 100 99 84
+```
+
+用 `git worktree add /tmp/no-h HEAD` 建旧二进制对跑：
+
+| | 输出 |
+|---|---|
+| 基线哈希对应 | `42 7 (空) (空) 17 5 5 10 100 99 84` |
+| 本轮 | `42 7 1 1 17 5 5 10 100 99 84` |
+
+两个空行正是三元结果——**修复前 `x1 = qi == ri ? 1 : 0` 连 0 都没打印出来**（`print` 收到 void）。⇒ 纪律：**DIVERGE 条目先找「谁对」的独立判据**（测试文件自带的期望、另一份 TSV、旧二进制对跑），哈希本身只会告诉你「变了」。
+
+`tests/tmp-icmp-test.no` 那条 DIVERGE **不是本轮引入**：HEAD 二进制与本轮二进制 md5 完全相同（`1dcca233…`，输出就是 `5`），说明它与冻结基线之间的差异先于本轮存在，属环境相关（raw socket）。
+
+**影响半径（按第十三轮⑩纪律扩到相邻目录）**：`test/` + `example/` 共 **51** 个文件，用前后两个二进制逐文件比 `build` rc，**差异 0**。`go test ./mir/` 全绿。
+
+**剩余 15 个 BOTH_FAIL 的重新分类（本轮勘定）**
+
+| 类别 | 文件 | 性质 |
+|---|---|---|
+| 负测试（**失败即正确**） | `i.no` | `print(a.len())` 本就该编译失败；MIR 报 `builtin str-len receiver i64`，rc=1 ✓ |
+| FFI / 外部库 | `test-database-sql`、`test-ffi-mysql`、`test-ffi-sqlite`（`unknown callee sql.db.exec`）、`test-sse`（`sse.connect`） | 需 FFI 实现，非本轮 |
+| **语言特性缺口**（两后端都无） | `test-tagged-enum`（`unknown callee full`；`KVariant` 在 `src/mir` 里**零引用**，JS 后端同样 skip）、`test-safe-index`（`#{index-out=DEF}` 要求 OOB→`?elem`，MIR 的 `emitIndex` 无边界检查） | 不是 MIR 的锅；改 `OpIndex` 全局语义风险高，单独立项 |
+| 测试源与 std 漂移 | `test-json`（`p.stringify(root, out-buf, 0)` 3 参，现行签名 `(node-idx i64) (out str)`）、`test-basic`（`bigint.gcd(12, 18, r)` 传 i64 给 `bigint` 形参 → bus error） | **修测试**，别改编译器 |
+| 深层运行时崩溃 | `nested-container-clone`、`test-json-parse-option`、`test-https-server`、`test-basic` | SIGSEGV，逐个挖 |
+| #85 家族 | `test-std-hash` | `des_block` 里 `NoVal`；触发点是 `std/crypto/des.no` 把 `#{index-out}` 写在**续行的中缀表达式中间** |
+| 有意死循环 | `test-for2` | rc=124，设计如此 |
+| 待定 | `test-x25519-fe-diag`（abort trap） | 未挖 |
+
+⇒ 本轮最大的认知修正：**上一轮把 `i.no`、`test-json`、`test-basic` 都归进「Codegen 类型问题 / 深层运行时」，实际三个里有两个是测试源自身的问题**（`i.no` 是负测试、`test-json`/`test-basic` 是 API 漂移）。**给 BOTH_FAIL 分类时必须先看测试源在说什么**，否则会把「修测试」的活当成「修编译器」的活排进路线图。
+
+#### 13.3.18 第四十五轮（2026-09-17）：两个语言级缺口（tagged enum / safe index）+ option 槽位默认值 + std int 哈希模板空守卫体
+
+**指标（金标 `mir-baseline`，422 语料，重冻结前口径）**
+
+| 指标 | 第四十四轮末 | 本轮 |
+|---|---|---|
+| SAME | 389 | 387 |
+| DIVERGE | 2 | **4**（4 个**全部**判为「基线记的是错行为」，见 ⑤） |
+| REGRESS | 0 | **0** |
+| IMPROVED | 16 | **18** |
+| BOTH_FAIL | 15 | **13** |
+
+新修 2 个（rc 1→0）：`tests/test-tagged-enum.no`、`tests/test-safe-index.no`（并带动 `test-safe-index-containers.no`、`test-safe-index-utl.no`、`test-map-generics.no`、`mem-safety/map-tombstone.no` 的输出变为正确）。
+**回归 oracle 重冻结后权威口径：`SAME=409 / DIVERGE=0 / REGRESS=0 / IMPROVED=0 / BOTH_FAIL=13`。**
+
+**① tagged enum（`hir.KVariant`）落地 —— 此前是全后端缺口**
+
+`KVariant` 在 `src/mir` 里**零引用**，JS 后端同样 skip，所以这不是 MIR 缺口而是语言级缺口（第四十四轮已如此判定）。本轮补齐：
+
+- `mir.go`：新增 `KindEnum` 与 `%tenum_<name> = { i64 tag, [N x i64] }` 布局（payload 是**各变体共享的槽数组**，不是 per-variant struct，字段访问按槽位 bitcast）；新增 `Module.TaggedEnums`（含 `VariantInfo{Name, Tag, Fields, FieldNames}`）与三条指令 `OpEnumNew` / `OpEnumTag` / `OpEnumField`。
+- `hir2mir.go`：`collectTaggedEnums` 采集定义；`enumVariantOf(prefer, variant)` 解析变体名 —— `prefer` 优先取绑定点的声明类型，无提示时回退**本包**枚举的**唯一**变体名（`localEnums` 界定回退范围，见 ④）；构造器 `lowerEnumCtor` / `lowerEnumUnit`，且 `resolveCallee` 与 `KIdent` 两个入口都要接（变体名有 `full(7)` 与裸 `empty` 两种形态）。
+- **arm 析构绑定**（`ok(v) -> print(v)` 的 `v` 投影到 payload）踩了三个坑，每个都是「顺序/身份」问题而非类型问题：
+  - 投影判断必须在**局部绑定之前**做。`a-res` 与 `b-res` 两个 arm 都把载荷叫 `v`，locals-first 会让第二个 arm 读到第一个 arm 的旧绑定（`tests/test-tagged-enum.no` 印出空串）。
+  - arm 的 `it` **槽位在 arm 之间复用**（同一 match、甚至同一函数内的不同 match），其声明类型可能是**上一个 arm 的** → 不能拿它做枚举类型校验；以 arm 自己的 `armVariant` 变体表为准，投影源用 arm 条件处捕获的 subject 表达式在 arm 体开始时**重新求值**（`armSubjectID` + `itSrc`）。
+  - 实参位置的变体（`area(circle(2))`）需要 `lowerCallArgs` 按形参类型设 `typeHint` 才能消歧。
+- 比较只比 tag：`emitCmp` 新增 enum↔enum 走 `%tenum` 的 field 0。
+- 所有权：`OpEnumNew` 的载荷**转移进** enum（`analysis.go` 的 `moveSrc` + 泄漏检查两处），否则 `q b-res = ok('hi')` 的字符串会在块尾被 `str_free` 掉、arm 里印出空。
+
+**② safe index（`#{index-out=N}` / `x ?= v[i]`）落地**
+
+`lowerIndex` 此前**无视绑定点的 `?elem` 声明**，一律发射裸 `OpIndex`：越界读到垃圾内存后**包成 `ok(垃圾)`**，`ok` 臂随即把垃圾赋给目标（`test-safe-index-utl.no` 的越界调用在整个 HEAD 里印出 `untyped-local x = 8415131232`，而该文件头注释明确要求越界时 some 分支**不得执行**）。
+
+- 新增 `lowerSafeIndex`：`OpLen` + `0 <= i < len` → `ok(elem)` / `nil`；结果槽在分叉**之前**以 nil 常量创建（MIR 无 phi，每个分支汇聚都经过这样一块共享槽）。
+- 元素为 owned（`str`）时，`OpIndex` 读出的只是**借用**；包进 option 会让 option 成为 owner，随后 drop 会释放容器仍持有的缓冲 → 必须先 `OpClone`。
+
+**③ option 槽位的默认值不是它的零值（`codegen.go` 的 `allocaFor`）—— 本轮最有价值的一处**
+
+`%option` 是 `{ i64 tag, payload }`，**tag 0=ok / 1=nil / 2=err**，所以 `zeroinitializer` 读回来是 **`ok(0)`**，不是 nil。旧行为只对 owned 槽写 `zeroinitializer`，于是一个**从未被赋值的 `?T` 具名出参**要么是 `ok(0)`、要么是未初始化垃圾、要么是**同一槽位上一次调用留下的 `ok`**。
+
+后果最典型的是 `hashmap.get`：未命中时它只是从探针循环里掉出去（`result` 从未被写过），调用方于是看到**上一次调用写进同一槽位的返回值**。`tests/mem-safety/map-tombstone.no` 里已删除的 key 仍报 `c-found`，`test-map-generics.no` 的 `remove` 之后 `contains` 仍为 1。
+
+修法：option 槽一律以 **nil 常量**初始化（`store %option_i64 { i64 1, i64 zeroinitializer }, ...`）。
+
+- **与既有设计的关系**：`docs/docs/lang/code-style.md` 早已定义「具名出参**延迟零值**」——prologue 不做初始化，legacy 用 `%__ret_init_bitmap` 追踪是否显式赋值、在 **return 处**按型别补零，且**明确写了「option → `nil`」**。MIR 从未实现这套 bitmap。本实现把同一语义放在 **prologue**：观察等价（唯一差别是「未赋值即读」从「未定义」变为「nil」），代价是每个 option 出参多一条会被 LLVM 折叠的 store。
+- **顺带修掉两个既有崩溃**：`print(<nil option>)` 从 `trace/BPT trap` 变为正常印 `nil`；option 出参早返回后调用方的后续语句不再**静默截断**（`f = (k i64) (r ?i64) { k == 0 -> return ... }` 连调两次，第二次之后整个程序停止输出）。
+
+**④ std 的 `[i64]K` 哈希模板有空守卫体（`src/std/collection/map.no`、`static-hashmap.no`，int 模板 put/get/remove 共 6 处）**
+
+```nolang
+.occ[idx] == 1 -> {
+    #{index-out = 0}
+    .keys[idx] == key -> {     ; ← 守卫体为空
+}
+    #{index-out = 0}
+    result = .vals[idx]        ; ← 与 return 一起落在守卫之外
+    return
+}
+```
+
+键比较形同虚设：只要 `occ[idx]==1` 就无条件返回该槽的值。实测 `[i64]i64` map `remove(2)` 后 `contains(2)` 仍为 1，`test-int-tombstone` 期望 `2-removed-ok` 却得到 `2-found`。str 键模板写法正确（它必须先 `eq = .str-eq(k, key)` 再比较），所以只有 int 模板中招。
+
+- **已排除「fmt 事故」**：`no fmt -d src/std/collection/map.no` 只规范化 `#{index-out=0}` 的空白与几行缩进，**不会**把语句挪进守卫体 ⇒ 是源码 bug。
+- **同形状全仓还有 5 处**（`net/multipart`×2、`net/sse`、`regexp`、`crypto/x509`）**本轮未动**：没有 oracle 判定其意图（可能是「有意的空操作」），也没有任何已知现象指向它们。
+
+**⑤ 四个 DIVERGE 逐个判「谁对」——全部是基线错**
+
+| 文件 | 基线（旧 oracle） | 本轮 | 判据 |
+|---|---|---|---|
+| `tests/test-slot-rebind.no` | `42 7 (空)(空) 17 …` | `42 7 1 1 17 5 5 10 100 99 84` | 文件第 5–6 行自带期望输出，逐字相同 |
+| `tests/test-safe-index-utl.no` | 越界时印出 `8415131232` | 越界时不执行 some 分支 | 文件头注释明确要求 |
+| `mem-safety/map-tombstone.no` | `c-found` / `name-found` | `c-removed-ok` / `name-removed-ok` | 第 34 行注释「验证已删除的 key 查不到」+ nil 臂的命名 |
+| `test-map-generics.no` | `1` | `0` | 第 21、131 行 `print(found); expect: 0`（紧随 `remove`） |
+
+⚠️ **`legacy-baseline` 对这 4 个文件全部记的是 `rc=1` + 空 stdout 哈希**（legacy 根本编译不过），所以**没有语义 oracle 可用**，只能以测试自带的 `expect:`/注释为准 —— 判读时不要拿「legacy 一致」当论据（§13.3.14 ① 的同一教训）。
+
+**⑥ 回归 oracle 重冻结：25 行变化，三类，逐类可解释**
+
+`GOLDEN_MIR=default scripts/mir_golden.sh -update` 后与旧文件 diff **恰好 25 条**：
+
+1. **4 条 DIVERGE** —— 上表，全部是「基线记的是错行为」；
+2. **18 条 IMPROVED** —— rc 1→0，仓上唯一 `-update` 允许的方向；
+3. **3 条 BOTH_FAIL 的陈旧哈希** —— `nested-container-clone`、`test-https-server`、`test-x25519-fe-diag`：rc 都是 1，但指纹与冻结时不同（两个从「空 stdout」变成「有 stdout 后崩」，即失败点从编译期移到了运行期）。**用 HEAD 二进制复核三者输出与本轮逐字节相同** ⇒ 漂移早于本轮（甚至早于本 session 的 HEAD），`-update` 只是顺带纠正。**若不是沿 diff 逐条核对，这 3 条会完全不可见**（§13.3.17 ④ 的第二次印证：`BOTH_FAIL` 桶比 rc 不比哈希）。
+
+**⑦ 判读方法（本轮新增，可复用）**
+
+- **「行为随代码布局漂移」是读未初始化内存的签名**。定位 `map-tombstone` 差异时逐次消融：禁用 safe index → 恢复基线行为；**只保留块结构、强制 `ok=true`** → 又回到基线行为；把界从 `OpLen` 换成 `OpCap` → 仍与基线不同；在 `none` 臂加诊断打印 → **诊断一次都没触发**，行为却再次改变。四步合起来的结论不可能是「边界判定错」（那样强制 ok 应当无影响），只能是**该槽位本身没被写过** ⇒ 直接指向 `allocaFor`。教训：当消融操作本身会改变被观测现象时，别继续假设「我的新代码算错了」，要假设「我在读没被写过的内存」。
+- **`allocaFor` 的零初始化只在 `owned` 时发生**，而 option 的「零值」与「默认值」不同 —— 任何新增类型 Kind 时都要问一遍「它的 `zeroinitializer` 语义正确吗」。
+
+**影响半径**：`tests/**/*.no`（422，全量金标扫描）+ `test/`（40）与 `example/`（11）共 51 个文件逐个与 HEAD 对拍：**`build` rc 差异 0；`run` 输出差异 1，且是改进** —— `test/std/enum_cross.no` 从 `passed: 0 / total: 0` 变为 `passed: 2 / total: 2`（跨模块枚举 `file-mode.write` / `file-perm.perm-644` 的 match 此前完全没跑起来）。
+单测红线：`go test -count=1 ./mir/` 全绿；`go test ./...` 的失败集与 HEAD worktree 逐项相同（`build` 4 + `checker` 2 + `fmt` 2）。
 
 ---
 

@@ -87,6 +87,14 @@ const (
 	OpLen       // container length (str/vec/slice/array/map) — see lowerDotRead
 	OpCap       // container capacity (str/vec/slice/array)
 
+	// Tagged-enum primitives (§13.3.18). An enum value is
+	// `{ i64 tag, [N x i64] payload }`; the payload is a union shared by every
+	// variant, so field access is a bitcast at a slot offset rather than a
+	// struct GEP.
+	OpEnumNew    // build a variant value: args = payload fields, Int = tag, Name = enum raw
+	OpEnumTag    // read the discriminant (i64) of an enum value
+	OpEnumField  // read payload field at slot Int, typed by inst.Type
+
 	// arithmetic / logic
 	OpAdd
 	OpSub
@@ -202,6 +210,9 @@ var opNames = [opCount]string{
 	OpFuncRef:   "func-ref",
 	OpRun:       "run",
 	OpAwait:     "await",
+	OpEnumNew:   "enum-new",
+	OpEnumTag:   "enum-tag",
+	OpEnumField: "enum-field",
 }
 
 func (o Op) String() string {
@@ -251,6 +262,7 @@ const (
 	KindStruct
 	KindFunc
 	KindVoid
+	KindEnum
 )
 
 // String returns a readable name for a TypeKind, used by diagnostics, the MIR
@@ -285,6 +297,8 @@ func (k TypeKind) String() string {
 		return "func"
 	case KindVoid:
 		return "void"
+	case KindEnum:
+		return "enum"
 	}
 	return "TypeKind?"
 }
@@ -296,6 +310,35 @@ func (k TypeKind) String() string {
 type FieldInfo struct {
 	Name    string
 	TypeRaw string
+}
+
+// VariantInfo describes one variant (constructor) of a tagged enum: its source
+// name, its discriminant (the declaration order within the enum body), and the
+// raw nolang types of its payload fields in declaration order. A unit variant
+// (`red`, `empty`) simply has no fields.
+type VariantInfo struct {
+	Name   string
+	Tag    int64
+	Fields []string
+	// FieldNames holds the source name of each payload field, parallel to
+	// Fields. A single-field payload declared on the variant itself
+	// (`ok(v i64)` -> KVariant.Type) has no KStructField child and therefore
+	// no name; such an entry is "" and matches any binding name by position.
+	FieldNames []string
+}
+
+// TaggedEnumInfo is the variant table of one tagged enum. PayloadSlots is the
+// width of the shared payload area in 8-byte slots, which is the max over all
+// variants of the sum of their fields' slot widths.
+//
+// Layout: the enum is represented as `{ i64 tag, [PayloadSlots x i64] payload }`.
+// The payload is a UNION — every variant writes its fields into the same
+// storage — so all field reads/writes go through a bitcast to the field's real
+// type at its slot offset, never through a per-variant struct type.
+type TaggedEnumInfo struct {
+	Name         string
+	Variants     []VariantInfo
+	PayloadSlots int64
 }
 
 type Type struct {
@@ -573,6 +616,17 @@ type Module struct {
 	// emission of LLVM struct type declarations.
 	StructFields map[string][]FieldInfo
 
+	// TaggedEnums maps a tagged-enum raw type name (e.g. "color", "box") to
+	// its variant table, collected from HIR KTaggedEnumDef nodes during
+	// lowering. It drives variant-constructor resolution, match dispatch on
+	// the discriminant, and the emission of the enum's LLVM layout.
+	//
+	// Variants are NAME-SPACED BY ENUM: two enums may both define `ok` with
+	// different tags and different payloads (see tests/test-tagged-enum.no).
+	// Resolution therefore always goes through the target enum's own table,
+	// never a global variant-name index.
+	TaggedEnums map[string]*TaggedEnumInfo
+
 	// TypeAliases maps a named function-type alias (e.g. `test-cb` from
 	// `test-cb = ()`) to the KindFunc MIR type ID it denotes. Populated during
 	// HIR lowering from KTypeAlias nodes flagged FlagFuncType. internType
@@ -626,6 +680,7 @@ func NewModule(name string) *Module {
 		Lowered:      map[string]bool{},
 		OwnedStructs: map[string]bool{},
 		StructFields: map[string][]FieldInfo{},
+		TaggedEnums:  map[string]*TaggedEnumInfo{},
 	}
 	// reserve index 0 of each slice as a nil element
 	m.Funcs = append(m.Funcs, Function{})
@@ -683,6 +738,13 @@ func (m *Module) internType(raw string) TypeID {
 	}
 	kind := KindOfRaw(raw)
 	owned := ClassifyOwnership(raw)
+	// A raw name that names a tagged enum definition is KindEnum, not the
+	// KindStruct that the bare-identifier fallback would produce. Without this
+	// an enum-typed local was materialized as a struct with no fields, and its
+	// variant constructors resolved to nothing ("unknown callee full").
+	if _, isEnum := m.TaggedEnums[raw]; isEnum {
+		kind = KindEnum
+	}
 	if kind == KindStruct && m.OwnedStructs[raw] {
 		owned = true
 	}
