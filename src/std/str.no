@@ -117,11 +117,12 @@ str.decode-cp = (i i64) (cp i64, clen i64) {
 ; 返回 target 首次出現的「字節偏移」，未找到返回 -1
 ; from-byte 為起始字節位置；split 等內部按字節切片時使用
 str.find-byte-from = (target str, from-byte i64) (pos i64) {
+    r-from = from-byte
     #{overflow=wrap}
     pos = -1
-    from-byte < 0 -> from-byte = 0
+    r-from < 0 -> r-from = 0
     target.len-bytes() == 0 -> {
-        from-byte <= .len-bytes() -> pos = from-byte
+        r-from <= .len-bytes() -> pos = r-from
         return
     }
     n = .len-bytes()
@@ -130,8 +131,8 @@ str.find-byte-from = (target str, from-byte i64) (pos i64) {
 
     #{overflow=wrap}
     limit = n - m
-    from-byte > limit -> return
-    i <- [from-byte..limit]: {
+    r-from > limit -> return
+    i <- [r-from..limit]: {
         #{overflow=wrap}
         matched = 1
         j <- [0..m): {
@@ -152,12 +153,13 @@ str.find-byte-from = (target str, from-byte i64) (pos i64) {
 ; str.rfind-byte-from: 內部字節級反向查找
 ; 返回 target 最後一次出現的「字節偏移」（>= from-byte），未找到返回 -1
 str.rfind-byte-from = (target str, from-byte i64) (pos i64) {
+    r-from = from-byte
     #{overflow=wrap}
     pos = -1
-    from-byte < 0 -> from-byte = 0
+    r-from < 0 -> r-from = 0
     {
         target.len-bytes() == 0 -> {
-            from-byte <= .len-bytes() -> pos = .len-bytes()
+            r-from <= .len-bytes() -> pos = .len-bytes()
             return
         }
 
@@ -166,7 +168,7 @@ str.rfind-byte-from = (target str, from-byte i64) (pos i64) {
 
     #{overflow=wrap}
     limit = .len-bytes() - target.len-bytes()
-    from-byte > limit -> return
+    r-from > limit -> return
     i = limit
     {
         #{overflow=wrap}
@@ -186,7 +188,7 @@ str.rfind-byte-from = (target str, from-byte i64) (pos i64) {
 
         #{overflow=wrap}
         i = i - 1
-    } (i >= from-byte)
+    } (i >= r-from)
 }
 
 ; str.cp-index: 將字節偏移轉為碼點（字符）下標
@@ -409,13 +411,15 @@ str.repeat = (times i64) (val str) {
 #{index-out = 0}
 ; 與 s[i] 碼點索引語義一致；要按字節偏移切片請用 s.slice-bytes()
 str.slice = (start i64, end i64) (val str) {
+    r-start = start
+    r-end = end
     #{overflow=wrap}
     ncp = .len()
-    start < 0 -> start = 0
-    end > ncp -> end = ncp
-    start >= end -> return
-    sb = .byte-index(start)
-    eb = .byte-index(end)
+    r-start < 0 -> r-start = 0
+    r-end > ncp -> r-end = ncp
+    r-start >= r-end -> return
+    sb = .byte-index(r-start)
+    eb = .byte-index(r-end)
 
     #{overflow=wrap}
     n = eb - sb
@@ -431,19 +435,21 @@ str.slice = (start i64, end i64) (val str) {
 ; str.slice-bytes: 按「字節偏移」截取子串 [start, end)（內部位元組級使用）
 ; 與 s.byte(i) 語義一致；標準庫 split/replace 等內部按字節切片時使用
 str.slice-bytes = (start i64, end i64) (val str) {
+    r-start = start
+    r-end = end
     #{overflow=wrap}
-    start < 0 -> start = 0
-    end > .len-bytes() -> end = .len-bytes()
-    start >= end -> return
+    r-start < 0 -> r-start = 0
+    r-end > .len-bytes() -> r-end = .len-bytes()
+    r-start >= r-end -> return
 
     #{overflow=wrap}
-    n = end - start
+    n = r-end - r-start
     val = with-cap(n)
     i <- [0..n): {
 
         #{overflow=wrap}
         #{index-out = 0}
-        val[i] = .byte(start + i)
+        val[i] = .byte(r-start + i)
     }
 }
 

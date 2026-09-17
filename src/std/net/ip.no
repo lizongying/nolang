@@ -83,23 +83,24 @@ ip-addr {
 ; 格式：A.B.C.D，每段 0~255
 ; 返回 ok=true=成功
 ip-addr.parse = (s str) (ok bool) {
+    r-s = s
     ok = false
     .a = 0
     .b = 0
     .c = 0
     .d = 0
-    n = s.len-bytes()
+    n = r-s.len-bytes()
     n == 0 -> return
 
     ; 解析第一個 octet
-    s = s.slice(0, n)
+    r-s = r-s.slice(0, n)
     dot-count = 0
     octet = 0
     octet-idx = 0
     has-digit = 0
     i <- [0..n): {
         #{index-out = 0}
-        c = s[i]
+        c = r-s[i]
         {
             c >= 48 && c <= 57 -> {
                 #{overflow=wrap}

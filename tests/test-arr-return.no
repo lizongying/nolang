@@ -10,8 +10,8 @@ fill-bytes = () (out [32]byte) {
     }
 }
 
-; fill-bytes-param: 透過參數填充 [32]byte
-fill-bytes-param = (out [32]byte) {
+; fill-bytes-param: 輸出填充好的 [32]byte
+fill-bytes-param = () (out [32]byte) {
     i <- [0..32): {
         #{overflow = wrap}
         out[i] = (i + 100) & 255
@@ -59,7 +59,7 @@ test-param-pass = () (pass bool) {
     pass = false
 
     arr [32]byte
-    fill-bytes-param(arr)
+    arr = fill-bytes-param()
 
     ; 檢查前 8 bytes
     i <- [0..8): {

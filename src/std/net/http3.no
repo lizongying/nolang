@@ -180,13 +180,14 @@ encode-headers = (names [16]str, values [16]str, count i64) (buf []byte, n i64) 
 ; 返回 value str: 標頭值
 ; 返回 next-pos i64: 下一個位置（-1=錯誤）
 decode-header = (buf []byte, pos i64) (name str, value str, next-pos i64) {
+    r-pos = pos
     #{overflow=wrap}
     next-pos = -1
-    pos >= buf.len() -> return
+    r-pos >= buf.len() -> return
     #{index-out = 0}
-    prefix = buf[pos]
+    prefix = buf[r-pos]
     #{overflow=wrap}
-    pos = pos + 1
+    r-pos = r-pos + 1
 
     ; 檢查是否為字面標頭（001x xxxx）
     (prefix & 0xe0) != 0x20 -> {
@@ -197,32 +198,32 @@ decode-header = (buf []byte, pos i64) (name str, value str, next-pos i64) {
 
     ; 名稱長度
     #{index-out = 0}
-    name-len = buf[pos] & 63
+    name-len = buf[r-pos] & 63
     #{overflow=wrap}
-    pos = pos + 1
-    pos + name-len > buf.len() -> return
+    r-pos = r-pos + 1
+    r-pos + name-len > buf.len() -> return
 
     ; 讀取名稱
     #{index-out = 0}
-    name = buf[pos..pos + name-len].to-str()
+    name = buf[r-pos..r-pos + name-len].to-str()
     #{overflow=wrap}
-    pos = pos + name-len
+    r-pos = r-pos + name-len
 
     ; 值長度
-    pos >= buf.len() -> return
+    r-pos >= buf.len() -> return
     #{index-out = 0}
-    value-len = buf[pos] & 63
+    value-len = buf[r-pos] & 63
     #{overflow=wrap}
-    pos = pos + 1
-    pos + value-len > buf.len() -> return
+    r-pos = r-pos + 1
+    r-pos + value-len > buf.len() -> return
 
     ; 讀取值
     #{index-out = 0}
-    value = buf[pos..pos + value-len].to-str()
+    value = buf[r-pos..r-pos + value-len].to-str()
     #{overflow=wrap}
-    pos = pos + value-len
+    r-pos = r-pos + value-len
 
-    next-pos = pos
+    next-pos = r-pos
 }
 
 ; ═══════════════════════════════════════════════
@@ -320,32 +321,33 @@ encode-settings-frame = () (buf []byte, n i64) {
 ; 返回 payload []byte: 影格資料
 ; 返回 next-pos i64: 下一個位置（-1=錯誤）
 parse-frame = (buf []byte, pos i64) (frame-type i64, payload []byte, next-pos i64) {
+    r-pos = pos
     #{overflow=wrap}
     next-pos = -1
     frame-type = 0
 
     ft = 0
     ft-np = 0
-    ft, ft-np = quic.varint-decode(buf, pos)
+    ft, ft-np = quic.varint-decode(buf, r-pos)
     ft-np < 0 -> return
     frame-type = ft
-    pos = ft-np
+    r-pos = ft-np
 
     len-val = 0
     len-np = 0
-    len-val, len-np = quic.varint-decode(buf, pos)
+    len-val, len-np = quic.varint-decode(buf, r-pos)
     len-np < 0 -> return
-    pos = len-np
+    r-pos = len-np
 
-    pos + len-val > buf.len() -> return
+    r-pos + len-val > buf.len() -> return
     payload = with-len(len-val)
     i <- [0..len-val): {
         #{overflow=wrap}
         #{index-out = 0}
-        payload[i] = buf[pos + i]
+        payload[i] = buf[r-pos + i]
     }
     #{overflow=wrap}
-    next-pos = pos + len-val
+    next-pos = r-pos + len-val
 }
 
 ; ═══════════════════════════════════════════════

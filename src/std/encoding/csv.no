@@ -17,61 +17,62 @@
 ; 返回 field str: 解析出的欄位內容
 ; 返回 new-pos i64: 解析後的新位置
 parse-field = (s str, pos i64) (field str, new-pos i64) {
+    r-pos = pos
     fn = 0
     field = with-cap(s.len-bytes())
-    pos >= s.len-bytes() -> {
-        new-pos = pos
+    r-pos >= s.len-bytes() -> {
+        new-pos = r-pos
         return
     }
     #{index-out = 0}
-    c = s[pos]
+    c = s[r-pos]
     {
         c == 44 -> {
             ; 空欄位（逗號開頭）
             #{overflow=wrap}
-            new-pos = pos + 1
+            new-pos = r-pos + 1
             return
         }
 
         c == 34 -> {
             ; 雙引號包圍的欄位
             #{overflow=wrap}
-            pos = pos + 1
+            r-pos = r-pos + 1
             {
                 #{overflow=wrap}
                 #{index-out = 0}
-                c = s[pos]
+                c = s[r-pos]
                 c == 34 -> {
 
                     ; 檢查是否為跳脫的雙引號
                     #{overflow=wrap}
-                    pos + 1 < s.len-bytes() -> {
+                    r-pos + 1 < s.len-bytes() -> {
                         #{overflow=wrap}
                         #{index-out = 0}
-                        nc = s[pos + 1]
+                        nc = s[r-pos + 1]
                         nc == 34 -> {
                             #{overflow=wrap}
                             #{index-out = 0}
                             field[fn] = 34
                             fn = fn + 1
-                            pos = pos + 2
+                            r-pos = r-pos + 2
                             continue
                         }
                     }
 
                     ; 結束雙引號
                     #{overflow=wrap}
-                    pos = pos + 1
+                    r-pos = r-pos + 1
 
                     ; 跳過後續逗號
-                    pos < s.len-bytes() -> {
+                    r-pos < s.len-bytes() -> {
                         #{overflow=wrap}
                         #{index-out = 0}
-                        nc = s[pos]
+                        nc = s[r-pos]
                         #{overflow=wrap}
-                        nc == 44 -> pos = pos + 1
+                        nc == 44 -> r-pos = r-pos + 1
                     }
-                    new-pos = pos
+                    new-pos = r-pos
                     return
                 }
                 c == 10 || c == 13 -> {
@@ -83,7 +84,7 @@ parse-field = (s str, pos i64) (field str, new-pos i64) {
                     #{overflow=wrap}
                     fn = fn + 1
                     #{overflow=wrap}
-                    pos = pos + 1
+                    r-pos = r-pos + 1
                     continue
                 }
                 #{index-out = 0}
@@ -91,9 +92,9 @@ parse-field = (s str, pos i64) (field str, new-pos i64) {
                 #{overflow=wrap}
                 fn = fn + 1
                 #{overflow=wrap}
-                pos = pos + 1
-            } (pos < s.len-bytes())
-            new-pos = pos
+                r-pos = r-pos + 1
+            } (r-pos < s.len-bytes())
+            new-pos = r-pos
             return
         }
     }
@@ -102,19 +103,19 @@ parse-field = (s str, pos i64) (field str, new-pos i64) {
     {
         #{overflow=wrap}
         #{index-out = 0}
-        c = s[pos]
+        c = s[r-pos]
         #{overflow=wrap}
         {
             c == 44 -> {
                 #{overflow=wrap}
-                pos = pos + 1
-                new-pos = pos
+                r-pos = r-pos + 1
+                new-pos = r-pos
                 return
             }
 
             c == 10 || c == 13 -> {
                 ; 換行結束欄位（不消耗換行）
-                new-pos = pos
+                new-pos = r-pos
                 return
             }
         }
@@ -123,9 +124,9 @@ parse-field = (s str, pos i64) (field str, new-pos i64) {
         #{overflow=wrap}
         fn = fn + 1
         #{overflow=wrap}
-        pos = pos + 1
-    } (pos < s.len-bytes())
-    new-pos = pos
+        r-pos = r-pos + 1
+    } (r-pos < s.len-bytes())
+    new-pos = r-pos
 }
 
 ; parse-line: 解析一行 CSV 文字

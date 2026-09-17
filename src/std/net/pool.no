@@ -54,14 +54,15 @@ pool {
 ; port i64: 目標埠號
 ; max-size i64: 最大連接數
 pool.init = (host str, port i64, max-size i64) {
+    r-max-size = max-size
     .host = host
     .port = port
     {
-        max-size > POOL-MAX-CONNS -> max-size = POOL-MAX-CONNS
+        r-max-size > POOL-MAX-CONNS -> r-max-size = POOL-MAX-CONNS
 
-        max-size <= 0 -> max-size = 1
+        r-max-size <= 0 -> r-max-size = 1
     }
-    .max-size = max-size
+    .max-size = r-max-size
     .count = 0
     i <- [0..POOL-MAX-CONNS): {
         #{index-out = 0}

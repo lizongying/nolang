@@ -87,6 +87,7 @@ static-hashmap-str-tmpl.str-eq = (a str, b str) (eq bool) {
 
 ; put: 插入或更新 key→value，回傳是否新增
 static-hashmap-str-tmpl.put = (key str, val v) (is-new bool) {
+    .cap == 0 -> .init()
     #{overflow=wrap}
     idx = .hash(key)
     first-tomb = -1
@@ -210,7 +211,7 @@ static-hashmap-str-tmpl.is-empty = () (empty bool) {
 }
 
 ; for-each: 遍歷所有 (key, value)
-static-hashmap-str-tmpl.for-each = (k str, v v) {
+static-hashmap-str-tmpl.for-each = () (k str, v v) {
     i <- [0...cap): {
         .occ[i] == 1 -> {
             #{index-out = 0}
@@ -267,6 +268,7 @@ static-hashmap-int-tmpl.hash = (key k) (idx i64) {
 
 ; put: 插入或更新 key→value，回傳是否新增
 static-hashmap-int-tmpl.put = (key k, val v) (is-new bool) {
+    .cap == 0 -> .init()
     #{overflow=wrap}
     idx = .hash(key)
     first-tomb = -1
@@ -385,7 +387,7 @@ static-hashmap-int-tmpl.is-empty = () (empty bool) {
 }
 
 ; for-each: 遍歷所有 (key, value)
-static-hashmap-int-tmpl.for-each = (k k, v v) {
+static-hashmap-int-tmpl.for-each = () (k k, v v) {
     i <- [0...cap): {
         .occ[i] == 1 -> {
             #{index-out = 0}
@@ -442,6 +444,7 @@ static-hashmap-bool-tmpl.hash = (key bool) (idx i64) {
 
 ; put: 插入或更新 key→value，回傳是否新增
 static-hashmap-bool-tmpl.put = (key bool, val v) (is-new bool) {
+    .cap == 0 -> .init()
     #{overflow=wrap}
     idx = .hash(key)
 
@@ -522,7 +525,7 @@ static-hashmap-bool-tmpl.is-empty = () (empty bool) {
 }
 
 ; for-each: 遍歷所有 (key, value)
-static-hashmap-bool-tmpl.for-each = (k bool, v v) {
+static-hashmap-bool-tmpl.for-each = () (k bool, v v) {
     i <- [0...cap): {
         .occ[i] == 1 -> {
             #{index-out = 0}

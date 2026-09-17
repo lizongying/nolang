@@ -424,7 +424,7 @@ regexp.parse-atom = (pattern str, i i64) (new-i i64) {
 ; 副作用：建立新的字元類別，索引存入 .tmp-atom-cls
 regexp.parse-class = (pattern str, i i64) (new-i i64) {
     #{overflow=wrap}
-    result-i = i
+    ri = i
 
     ; 分配類別
     cls-idx = .alloc-class()
@@ -433,17 +433,17 @@ regexp.parse-class = (pattern str, i i64) (new-i i64) {
 
     n = pattern.len-bytes()
     #{overflow=wrap}
-    i = i + 1
+    ri = ri + 1
 
     ; 檢查反向 ^
     negated = 0
     #{overflow=wrap}
-        i < n -> {
-        pattern[i] == 94 -> {
+        ri < n -> {
+        pattern[ri] == 94 -> {
     }
         #{overflow=wrap}
         negated = 1
-        i = i + 1
+        ri = ri + 1
     }
 
     ; ']' 在第一個位置視為常字元
@@ -452,32 +452,32 @@ regexp.parse-class = (pattern str, i i64) (new-i i64) {
     {
         #{overflow=wrap}
         #{index-out = 0}
-        c = pattern[i]
+        c = pattern[ri]
 
         ; 結束（非首字元）
         #{overflow=wrap}
         c == 93 && first == 0 -> {
             #{overflow=wrap}
-            i = i + 1
+            ri = ri + 1
             break
         }
         first = 0
 
         ; 預設前進 1
         #{overflow=wrap}
-        next-i = i + 1
+        next-i = ri + 1
 
         ; 檢查範圍 c-end
         is-range = 0
         #{overflow=wrap}
-        i + 2 < n -> {
+        ri + 2 < n -> {
             #{overflow=wrap}
             #{index-out = 0}
-            next-c = pattern[i + 1]
+            next-c = pattern[ri + 1]
             next-c == 45 -> {
                 #{overflow=wrap}
                 #{index-out = 0}
-                end-c = pattern[i + 2]
+                end-c = pattern[ri + 2]
                 end-c != 93 -> {
                     #{overflow=wrap}
                     is-range = 1
@@ -487,7 +487,7 @@ regexp.parse-class = (pattern str, i i64) (new-i i64) {
                         .set-class-bit(cls-idx, k)
                         k = k + 1
                     } (k <= end-c)
-                    next-i = i + 3
+                    next-i = ri + 3
                 }
             }
         }
@@ -497,19 +497,19 @@ regexp.parse-class = (pattern str, i i64) (new-i i64) {
             ; 跳脫序列
             c == 92 -> {
                 #{overflow=wrap}
-                next-i = i + 1
-                i < n -> {
+                next-i = ri + 1
+                ri < n -> {
                     #{overflow=wrap}
                     #{index-out = 0}
-                    esc-c = pattern[i + 1]
+                    esc-c = pattern[ri + 1]
                     .set-class-escape(cls-idx, esc-c)
-                    next-i = i + 2
+                    next-i = ri + 2
                 }
             }
             c != 92 -> .set-class-bit(cls-idx, c)
         }
-        i = next-i
-    } (i < n)
+        ri = next-i
+    } (ri < n)
 
     ; 反向
     #{overflow=wrap}
@@ -522,7 +522,7 @@ regexp.parse-class = (pattern str, i i64) (new-i i64) {
             .cls[base + j] = .cls[base + j] ^ 255
         }
     }
-    result-i = i
+    result-i = ri
     new-i = result-i
 }
 
@@ -533,6 +533,7 @@ regexp.parse-class = (pattern str, i i64) (new-i i64) {
 ; 副作用：設置 .tmp-atom-type, .tmp-atom-char, .tmp-atom-cls
 regexp.parse-escape = (pattern str, i i64) (new-i i64) {
     #{overflow=wrap}
+    ri = i
     result-i = i
 
     .tmp-atom-type = RE-OP-CHAR
@@ -541,13 +542,13 @@ regexp.parse-escape = (pattern str, i i64) (new-i i64) {
 
     n = pattern.len-bytes()
     #{overflow=wrap}
-    i = i + 1
-    i >= n -> {
+    ri = ri + 1
+    ri >= n -> {
         new-i = result-i
         return
     }
     #{index-out = 0}
-    c = pattern[i]
+    c = pattern[ri]
 
     ; \d — 數字
     #{overflow=wrap}
@@ -555,7 +556,7 @@ regexp.parse-escape = (pattern str, i i64) (new-i i64) {
         #{overflow=wrap}
         .tmp-atom-type = RE-OP-CLASS
         .tmp-atom-cls = .make-class-digits()
-        result-i = i + 1
+        result-i = ri + 1
     }
 
     ; \D — 非數字
@@ -564,7 +565,7 @@ regexp.parse-escape = (pattern str, i i64) (new-i i64) {
         #{overflow=wrap}
         .tmp-atom-type = RE-OP-CLASS
         .tmp-atom-cls = .make-class-nondigits()
-        result-i = i + 1
+        result-i = ri + 1
     }
 
     ; \w — 文字字元
@@ -573,7 +574,7 @@ regexp.parse-escape = (pattern str, i i64) (new-i i64) {
         #{overflow=wrap}
         .tmp-atom-type = RE-OP-CLASS
         .tmp-atom-cls = .make-class-word()
-        result-i = i + 1
+        result-i = ri + 1
     }
 
     ; \W — 非文字字元
@@ -582,7 +583,7 @@ regexp.parse-escape = (pattern str, i i64) (new-i i64) {
         #{overflow=wrap}
         .tmp-atom-type = RE-OP-CLASS
         .tmp-atom-cls = .make-class-nonword()
-        result-i = i + 1
+        result-i = ri + 1
     }
 
     ; \s — 空白字元
@@ -591,7 +592,7 @@ regexp.parse-escape = (pattern str, i i64) (new-i i64) {
         #{overflow=wrap}
         .tmp-atom-type = RE-OP-CLASS
         .tmp-atom-cls = .make-class-space()
-        result-i = i + 1
+        result-i = ri + 1
     }
 
     ; \S — 非空白字元
@@ -600,7 +601,7 @@ regexp.parse-escape = (pattern str, i i64) (new-i i64) {
         #{overflow=wrap}
         .tmp-atom-type = RE-OP-CLASS
         .tmp-atom-cls = .make-class-nonspace()
-        result-i = i + 1
+        result-i = ri + 1
     }
 
     ; \n
@@ -608,7 +609,7 @@ regexp.parse-escape = (pattern str, i i64) (new-i i64) {
     c == 110 -> {
         #{overflow=wrap}
         .tmp-atom-char = 10
-        result-i = i + 1
+        result-i = ri + 1
     }
 
     ; \t
@@ -616,7 +617,7 @@ regexp.parse-escape = (pattern str, i i64) (new-i i64) {
     c == 116 -> {
         #{overflow=wrap}
         .tmp-atom-char = 9
-        result-i = i + 1
+        result-i = ri + 1
     }
 
     ; \r
@@ -624,7 +625,7 @@ regexp.parse-escape = (pattern str, i i64) (new-i i64) {
     c == 114 -> {
         #{overflow=wrap}
         .tmp-atom-char = 13
-        result-i = i + 1
+        result-i = ri + 1
     }
 
     ; 跳脫特殊字元或常字元
@@ -632,7 +633,7 @@ regexp.parse-escape = (pattern str, i i64) (new-i i64) {
     c != 100 && c != 68 && c != 119 && c != 87 && c != 115 && c != 83 && c != 110 && c != 116 && c != 114 -> {
         #{overflow=wrap}
         .tmp-atom-char = c
-        result-i = i + 1
+        result-i = ri + 1
     }
     new-i = result-i
 }

@@ -81,6 +81,15 @@ type codegen struct {
 	// no new basic blocks are emitted mid-function (which breaks LLVM
 	// verification). Populated at type-decl time alongside optPayload.
 	optPrintHelper map[string]string
+
+	// defInst maps a MIR value to the instruction that defined it (by InstID),
+	// so emitCallBody can detect when a method-call receiver is the result of an
+	// OpGetField. In that case the callee receives the struct field's GEP
+	// address directly (so mutations propagate back to the struct), instead of
+	// a pointer to a temporary alloca slot (which silently discards writes).
+	// This is the `m.rows.push(x)` case: without it, push modifies a copy of
+	// m.rows and the struct field stays unchanged.
+	defInst map[ValueID]InstID
 }
 
 // ptype returns the LLVM type string for a MIR value and whether it is owned.
@@ -277,6 +286,7 @@ func (m *Module) EmitLLVM() (out string, err error) {
 		extDecls:       map[string]bool{},
 		optPayload:     map[string]string{},
 		optPrintHelper: map[string]string{},
+		defInst:        map[ValueID]InstID{},
 	}
 	// Sanitize LLVM symbol names, disambiguating collisions. Nolang method
 	// names embed their receiver type (e.g. `[]t.len`, `vec.reverse`,
@@ -1693,6 +1703,12 @@ func (c *codegen) emitFunc(f *Function) error {
 		for _, iid := range blk.Insts {
 			inst := c.mod.Inst(iid)
 			if inst != nil && inst.Dst > NoVal {
+				// Build the defInst map: record which instruction produced
+				// each value, so emitCallBody can detect a method-call
+				// receiver that is the result of OpGetField and pass the
+				// struct field's GEP address directly (so mutations
+				// propagate back to the struct, e.g. `m.rows.push(x)`).
+				c.defInst[inst.Dst] = iid
 				// Function-pointer constants (a fn name passed as a callback)
 				// have a void(...)* MIR type that supportedLLVM does not list;
 				// they are referenced by @name directly (loadVal) and need no
@@ -6011,6 +6027,72 @@ func (c *codegen) emitCallBody(f *Function, cf *Function, inst *Inst, calleeName
 			// copying into a fresh %carg alloca (which would discard self
 			// mutations). Covers non-owned aggregate receivers (fixed arrays,
 			// non-owned structs) that are now also passed by pointer.
+			//
+			// EXCEPTION: when the receiver is the result of OpGetField (e.g.
+			// `m.rows.push(x)` — receiver is `m.rows`), the temporary alloca slot
+			// holds a *copy* of the field value. Passing that slot's pointer makes
+			// the callee mutate the copy, and the struct field stays unchanged
+			// (observed: `rows len: 0` after `push`). Instead, compute the GEP
+			// address of the struct field directly and pass THAT, so mutations
+			// propagate back into the struct.
+			if defIID, ok := c.defInst[inst.Args[0]]; ok {
+				if defInst := c.mod.Inst(defIID); defInst != nil && defInst.Op == OpGetField {
+					// The getfield's receiver (the struct value) and field name.
+					gfRecv := defInst.Args[0]
+					gfFieldName := defInst.Str
+					if gfRecvSlot, ok2 := c.valSlot[gfRecv]; ok2 && gfRecvSlot != "" {
+						// Resolve the struct type and field index, mirroring
+						// emitGetField's lookup but only the GEP part.
+						gfRecvRaw := ""
+						gfRecvLT := ""
+						if fl := c.mod.Func(c.cf); fl != nil {
+							if tid, ok3 := fl.LocalTypes[gfRecv]; ok3 {
+								if t := c.mod.Type(tid); t != nil {
+									gfRecvRaw = t.Raw
+									gfRecvLT = c.llvmTypeOf(t)
+								}
+							}
+						}
+						if gfRecvLT == "" {
+							if v := c.mod.Value(gfRecv); v != nil {
+								if t := c.mod.Type(v.Type); t != nil {
+									gfRecvRaw = t.Raw
+									gfRecvLT = c.llvmTypeOf(t)
+								}
+							}
+						}
+						if gfRecvLT == "" {
+							gfRecvLT = "%" + sanitize(gfRecvRaw)
+						}
+						// Strip option wrapper if needed (mirrors emitGetField).
+						gfRecvRaw = strings.TrimPrefix(gfRecvRaw, "?")
+						structKey := c.structKeyOf(gfRecvRaw)
+						if structKey == "" {
+							structKey = gfRecvRaw
+						}
+						// Try container pseudo-fields first (len/cap/data).
+						if idx, ok3 := containerFieldIndex(gfFieldName); ok3 {
+							if t := c.mod.Type(c.mod.Value(gfRecv).Type); t != nil &&
+								(t.Kind == KindSlice || t.Kind == KindStr) {
+								c.loadSeq++
+								gep := fmt.Sprintf("%%gfrcv%d", c.loadSeq)
+								c.sb.WriteString(fmt.Sprintf("  %s = getelementptr inbounds %s, %s* %s, i32 0, i32 %d\n", gep, gfRecvLT, gfRecvLT, gfRecvSlot, idx))
+								callArgs = append(callArgs, plt+"* "+gep)
+								continue
+							}
+						}
+						// Regular struct field.
+						if idx, ok3 := c.mod.FieldIndex(structKey, gfFieldName); ok3 {
+							c.loadSeq++
+							gep := fmt.Sprintf("%%gfrcv%d", c.loadSeq)
+							c.sb.WriteString(fmt.Sprintf("  %s = getelementptr inbounds %s, %s* %s, i32 0, i32 %d\n", gep, gfRecvLT, gfRecvLT, gfRecvSlot, idx))
+							callArgs = append(callArgs, plt+"* "+gep)
+							continue
+						}
+						// Field lookup failed: fall through to the normal path.
+					}
+				}
+			}
 			//
 			// Exception: a fixed stack array ([N x T]) passed as the receiver of
 			// a %vec (slice) method (e.g. `[1,2,3,4].to-str()` → []i64.to-str)

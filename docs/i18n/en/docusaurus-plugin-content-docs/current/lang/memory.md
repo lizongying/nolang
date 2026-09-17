@@ -36,7 +36,7 @@ After rebind, b and a point to the same stack slot, so any later read of b obser
 | Disable condition | Reason |
 |-------------------|--------|
 | Target is output param / global / heap-type variable | Output params are passed by pointer, globals are cross-function visible, heap types need deep free — rebind breaks ownership |
-| Source is a param / global | Params are passed by reference; rebind would corrupt the caller's stack frame |
+| Source is a param / global | Params are references to the caller's data; rebind would corrupt the caller's stack frame |
 | **stdlib function** (`curIsStdLib`, set via `SetStdModules`) | stdlib internal alias bindings (e.g. fmt's `it` aliased to local `n`) are hard for the reference analysis to fully model |
 | **User function body contains a closure (`FunctionLiteral`) or coroutine spawn (`RunExpression`)** (`curHasUnsafeConstruct`, scanned recursively by `bodyHasUnsafeConstruct`) | A closure evaluates captured variables in a *separate function context*; a coroutine runs on another thread. Both have variable lifetimes beyond the current function's single-function `g.varAlias` alias scope, so rebind would corrupt the shared stack slot |
 
@@ -222,7 +222,7 @@ When `can_slot_rebind` is not satisfied (source referenced later) → **degrade 
 | target is an output param | output param is a caller-passed pointer; rebinding would point it at the local source slot, caller can't read it |
 | target is a global var | rebinding makes the global name resolve to a local source slot, breaking global semantics |
 | target is a heap-type var | stack-slot rebind only applies to stack types |
-| source is a param | params are pass-by-reference; rebinding corrupts the caller's stack frame |
+| source is a param | params are references to the caller's data; rebinding corrupts the caller's stack frame |
 | source is a global var | global address aliased to a local source, semantically wrong |
 
 ### Alias invalidation on reassignment

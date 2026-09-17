@@ -453,17 +453,20 @@ utils/
 
 ## Function Definition
 
-Functions pass results by **modifying input parameters**; `...` is only used for early termination and cannot be followed by a result.
+Functions use a **read-only input / writable output** parameter model; `...` is only used for early termination and cannot be followed by a result.
 
 Nolang functions have the following characteristics:
 
-- Functions have no return value by default; all data exchange is done through parameters
-- All function parameters are reference types; modifying a parameter directly affects the caller's data
+- Functions have no return value by default; all data exchange is done through output parameters
+- **Input parameters are read-only**: scalars are passed by value; composite types are passed by read-only reference. Writing to input parameters or their sub-fields inside the function body is prohibited.
+- **Output parameters are writable**: the caller may bind an existing variable to an output slot, in which case the function modifies that variable's memory directly. The caller may also leave outputs unbound, in which case the function generates fresh values.
 - Variables inside a function are automatically destroyed when the function exits
+- **Alias rule**: an input read-only reference and an output slot may point to the same object. As long as writes occur only in the output area and inputs are only read, this is legal; the compiler does not perform static alias checking.
+- **Type method sugar**: `type.method = (inputs) (rest-outputs...) {}` desugars to `method = (inputs) (self type, rest-outputs...) {}`. Calling `instance.method(args)` binds the instance to the first output parameter `self`; the function body uses `.` to refer to `self`; writes to `self` directly modify the original instance.
 
-Nolang functions do not provide a return value mechanism; all output results are accomplished through the parameters themselves.
+Nolang functions do not provide a return value mechanism; all output results are accomplished through named output parameters.
 
-System functions allow a syntactic-sugar form of return values for user convenience. Since the underlying mechanism still works through input parameters, no new variable is returned, and the interior is safe.
+System functions allow a syntactic-sugar form of return values for user convenience. Since the underlying mechanism still works through output parameters, no new variable is returned, and the interior is safe.
 
 ### Parameter Default Values
 

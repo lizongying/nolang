@@ -1,9 +1,9 @@
-; test-arr-param — 測試 [32]byte 作為參數傳遞給另一個函數時的寫入
+; test-arr-param — 測試 [32]byte 作為輸出參數傳遞給另一個函數時的寫入
 ; 重現 X25519 中 fe-tobytes(out, result) 的前 8 bytes 為零的 bug
 
-; inner-write: 接收 [32]byte 參數並寫入數據
-; 模擬 fe-tobytes(s [32]byte, h []i64) 的行為
-inner-write = (s [32]byte) {
+; inner-write: 輸出 [32]byte 參數並寫入數據
+; 模擬 fe-tobytes(h []i64) (s [32]byte) 的行為
+inner-write = () (s [32]byte) {
     i <- [0..32): {
         #{overflow = wrap}
         s[i] = (i + 1) & 255
@@ -13,7 +13,7 @@ inner-write = (s [32]byte) {
 ; outer-call: 返回 [32]byte，內部呼叫 inner-write 寫入
 ; 模擬 x25519-scalarmult 呼叫 fe-tobytes
 outer-call = () (out [32]byte) {
-    inner-write(out)
+    out = inner-write()
 }
 
 ; test-via-inner: 測試通過內部函數寫入的 [32]byte
@@ -50,9 +50,9 @@ test-via-inner = () (pass bool) {
     pass = true
 }
 
-; inner-write-i64: 接收 [32]byte 參數和 []i64 參數
+; inner-write-i64: 輸出 [32]byte，使用 []i64 作為輸入
 ; 更接近 fe-tobytes 的真實簽名
-inner-write-i64 = (s [32]byte, h []i64) {
+inner-write-i64 = (h []i64) (s [32]byte) {
     i <- [0..32): {
         s[i] = (h[i % 10]) & 255
     }
@@ -65,7 +65,7 @@ outer-call-i64 = () (out [32]byte) {
         #{overflow = wrap}
         h[i] = (i + 1) * 10
     }
-    inner-write-i64(out, h)
+    out = inner-write-i64(h)
 }
 
 ; test-via-i64: 測試通過 i64 參數函數寫入

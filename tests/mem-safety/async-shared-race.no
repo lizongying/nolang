@@ -26,6 +26,7 @@
 
 ; 測試 1：參數所有權隔離 — run 的參數被深拷貝，不共享 data
 modify-async = (v []i64) (r i64) {
+    ; async runtime deep-copies v, so modifying v[0] is safe
     v[0] = 999; 修改的是深拷貝副本，不影響調用方的 shared
     r = v[0]
 }

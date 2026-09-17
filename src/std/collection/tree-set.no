@@ -282,21 +282,23 @@ tree-set.rebalance = (idx i64) (nr i64) {
 ; rebalance-up: 從 idx 向上逐層再平衡
 ; idx i64: 起始節點索引
 tree-set.rebalance-up = (idx i64) {
+    r-idx = idx
     {
-        nr = .rebalance(idx)
+        nr = .rebalance(r-idx)
         #{index-out = 0}
-        idx = .parent[nr]
-    } (idx >= 0)
+        r-idx = .parent[nr]
+    } (r-idx >= 0)
 }
 
 ; successor: 求節點的中序後繼
 ; idx i64: 節點索引
 ; 返回 succ i64: 後繼索引，-1=無後繼
 tree-set.successor = (idx i64) (succ i64) {
+    r-idx = idx
     succ = -1
-    .right[idx] >= 0 -> {
+    .right[r-idx] >= 0 -> {
         #{index-out = 0}
-        succ = .right[idx]
+        succ = .right[r-idx]
         {
             #{index-out = 0}
             succ = .left[succ]
@@ -305,13 +307,13 @@ tree-set.successor = (idx i64) (succ i64) {
         return
     }
     #{index-out = 0}
-    p = .parent[idx]
+    p = .parent[r-idx]
     {
-                idx != .right[p] -> {
+                r-idx != .right[p] -> {
             #{index-out = 0}
             break
         }
-        idx = p
+        r-idx = p
         #{index-out = 0}
         p = .parent[p]
     } (p >= 0)
@@ -589,7 +591,7 @@ tree-set.upper-bound = (target i64) (val ?i64) {
 
 ; for-each: 按升序遍歷所有元素
 ; val i64: 輸出值（每個元素更新）
-tree-set.for-each = (val i64) {
+tree-set.for-each = () (val i64) {
     idx = .root
     idx < 0 -> return
 

@@ -76,6 +76,9 @@ hashmap-str-tmpl.str-eq = (a str, b str) (eq bool) {
 ; put: 插入或更新 key→value，回傳是否新增
 hashmap-str-tmpl.put = (key str, val v) (is-new bool) {
 
+    ; 若未初始化，自動初始化
+    .cap == 0 -> .init()
+
     ; 檢查裝載因子，觸發擴容
     #{overflow=wrap}
     {
@@ -201,7 +204,7 @@ hashmap-str-tmpl.is-empty = () (empty bool) {
 }
 
 ; for-each: 遍歷所有 (key, value)
-hashmap-str-tmpl.for-each = (k str, v v) {
+hashmap-str-tmpl.for-each = () (k str, v v) {
     n = .cap
     i <- [0..n): {
         .occ[i] == 1 -> {
@@ -295,6 +298,9 @@ hashmap-int-tmpl.hash = (key k) (idx i64) {
 
 ; put: 插入或更新 key→value，回傳是否新增
 hashmap-int-tmpl.put = (key k, val v) (is-new bool) {
+
+    ; 若未初始化，自動初始化
+    .cap == 0 -> .init()
 
     ; 檢查裝載因子，觸發擴容
     #{overflow=wrap}
@@ -413,7 +419,7 @@ hashmap-int-tmpl.is-empty = () (empty bool) {
 }
 
 ; for-each: 遍歷所有 (key, value)
-hashmap-int-tmpl.for-each = (k k, v v) {
+hashmap-int-tmpl.for-each = () (k k, v v) {
     n = .cap
     i <- [0..n): {
         .occ[i] == 1 -> {
@@ -505,6 +511,7 @@ hashmap-bool-tmpl.hash = (key bool) (idx i64) {
 
 ; put: 插入或更新 key→value，回傳是否新增（直接索引，無 rehash）
 hashmap-bool-tmpl.put = (key bool, val v) (is-new bool) {
+    .cap == 0 -> .init()
     #{overflow=wrap}
     idx = .hash(key)
 
@@ -580,7 +587,7 @@ hashmap-bool-tmpl.is-empty = () (empty bool) {
 }
 
 ; for-each: 遍歷所有 (key, value)
-hashmap-bool-tmpl.for-each = (k bool, v v) {
+hashmap-bool-tmpl.for-each = () (k bool, v v) {
     n = .cap
     i <- [0..n): {
         .occ[i] == 1 -> {

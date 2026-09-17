@@ -115,7 +115,7 @@ x509-tbs-range = (data []byte) (start i64, end i64) {
 ; x509-serial: 提取憑證序號（若可放入 i64）
 ; data: DER 編碼憑證
 ; serial: 輸出序號（0 表示無法提取）
-x509-serial = (data []byte, serial i64) {
+x509-serial = (data []byte) (serial i64) {
     tbs-start, tbs-end = x509-tbs-range(data)
 
     #{overflow=wrap}

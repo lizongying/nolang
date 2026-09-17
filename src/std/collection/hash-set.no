@@ -119,7 +119,7 @@ hash-set.is-empty = () (empty bool) {
 }
 
 ; for-each: 遍歷所有元素
-hash-set.for-each = (val i64) {
+hash-set.for-each = () (val i64) {
     i <- [0...cap): {
                 .occ[i] == 1 -> {
             #{index-out = 0}

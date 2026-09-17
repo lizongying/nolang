@@ -232,9 +232,10 @@ txt.append-txt = (t txt) {
 
 ; txt.truncate: 截断到指定长度
 txt.truncate = (n i64) {
-    n > 255 -> n = 255
-    .len() < n -> return
-    .len = n
+    rn = n
+    rn > 255 -> rn = 255
+    .len() < rn -> return
+    .len = rn
 }
 
 ; ═══════════════════════════════════════════════
@@ -289,18 +290,20 @@ txt.reverse = () (out txt) {
 
 ; txt.slice: 截取子串 [start, end) 返回新的 txt
 txt.slice = (start i64, end i64) (out txt) {
+    r-start = start
+    r-end = end
     #{overflow=wrap}
-    start < 0 -> start = 0
+    r-start < 0 -> r-start = 0
     cur-len i64 = .len()
-    end > cur-len -> end = cur-len
-    start >= end -> return
+    r-end > cur-len -> r-end = cur-len
+    r-start >= r-end -> return
     #{overflow=wrap}
-    n = end - start
+    n = r-end - r-start
     n > 255 -> n = 255
     i <- [0..n): {
         #{overflow=wrap}
         #{index-out = 0}
-        out[i] = .byte(start + i)
+        out[i] = .byte(r-start + i)
     }
     out.len = n
 }
@@ -578,18 +581,19 @@ txt.count = () (cnt i64) {
 ; txt.index-from: 從 from 位置開始查找子串
 ; 返回首次出現位置，未找到返回 -1
 txt.index-from = (target txt, from i64) (pos i64) {
+    r-from = from
     #{overflow=wrap}
     pos = -1
-    from < 0 -> from = 0
+    r-from < 0 -> r-from = 0
     n i64 = .len()
     m i64 = target.len()
-    m == 0 -> from <= n -> pos = from
+    m == 0 -> r-from <= n -> pos = r-from
     n < m -> pos = -1
     #{overflow=wrap}
     limit = n - m
     i <- [0..n]: {
         #{overflow=wrap}
-        i >= from -> i <= limit -> {
+        i >= r-from -> i <= limit -> {
             ok = 1
             k = 0
             {
@@ -637,18 +641,19 @@ txt.last-index = (target txt) (pos i64) {
 
 ; txt.rindex-from: 從 from 位置反向查找子串（返回位置 >= from 的最後一次出現）
 txt.rindex-from = (target txt, from i64) (pos i64) {
+    r-from = from
     #{overflow=wrap}
     pos = -1
-    from < 0 -> from = 0
+    r-from < 0 -> r-from = 0
     n i64 = .len()
     m i64 = target.len()
-    m == 0 -> from <= n -> pos = n
+    m == 0 -> r-from <= n -> pos = n
     n < m -> pos = -1
     #{overflow=wrap}
     limit = n - m
     i <- [0..n]: {
         #{overflow=wrap}
-        i >= from -> i <= limit -> {
+        i >= r-from -> i <= limit -> {
             ok = 1
             k = 0
             {

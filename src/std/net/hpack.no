@@ -547,6 +547,7 @@ tables.lookup = (idx i64) (name str, value str, ok bool) {
 ; prefix-byte: 已填好的前綴 byte（高 8-prefix-bits 位已設置）
 ; 返回 out=編碼後的字串
 encode-int = (val i64, prefix-bits i64, prefix-byte i64) (out str) {
+    r-val = val
     #{overflow=wrap}
     out = with-cap(10)
     #{overflow=wrap}
@@ -562,17 +563,17 @@ encode-int = (val i64, prefix-bits i64, prefix-byte i64) (out str) {
     out[0] = prefix-byte | max-prefix
     n = 1
     #{overflow=wrap}
-    val = val - max-prefix
+    r-val = r-val - max-prefix
     {
         #{overflow=wrap}
         #{index-out = 0}
-        out[n] = (val & 127) | 128
+        out[n] = (r-val & 127) | 128
         #{overflow=wrap}
         n = n + 1
-        val = val >> 7
-    } (val >= 128)
+        r-val = r-val >> 7
+    } (r-val >= 128)
     #{index-out = 0}
-    out[n] = val
+    out[n] = r-val
 }
 
 ; decode-int: 從 data 的 pos 位置解碼變長整數

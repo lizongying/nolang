@@ -56,14 +56,14 @@ description: Reference for Nolang programming language syntax. Use when working 
 
 ## Introduction
 
-Nolang is an experimental systems programming language: memory-safe with no GC, semantically intuitive, and minimally syntactic. It adopts a pass-by-reference model and a safe scope model to achieve absolute memory safety.
+Nolang is an experimental systems programming language: memory-safe with no GC, semantically intuitive, and minimally syntactic. It adopts a read-only-input / writable-output parameter model and a safe scope model to achieve absolute memory safety.
 
 ### Core Features
 
 - **Memory-safe, no GC**: No garbage collector; automatic, safe memory management. Through the safe scope model, memory is automatically freed when leaving scope — no dangling pointers or memory leaks. Heap allocation is batched up-front, and a single batch free runs when the scope exits.
 - **Semantically intuitive**: Respects developer intent; no pointers, ownership, or lifetimes as hidden mental overhead.
 - **Minimal syntax**: Fewer keywords, simpler syntax.
-- **Pass by reference**: All function parameters are references; functions return results by modifying parameters.
+- **Read-only inputs, writable outputs**: Input parameters are read-only (scalars pass by value, composites pass by read-only reference); outputs are named writable parameters that the function modifies in place.
 - **Performance-first**: Small strings require no heap allocation; variables can be allocated once and freed once.
 - **Method overloading**: Achieves high performance through monomorphization.
 - **Interfaces**: Supports interface function declarations, default function implementations, and multiple interface inheritance.
@@ -929,17 +929,25 @@ verbatim. Verify with `no fmt <file>`.
 
 ### Functions
 
-Functions pass results by **modifying input parameters**. Nolang functions have the following characteristics:
+Nolang functions use a **read-only input / writable output** parameter model:
 
-- Functions have no return value by default; all data interaction is through parameters only
-- All function parameters are reference types by default; any modification inside the function directly affects the caller's original data (modifiable, but not destroyable)
+```
+name = (inputs) (outputs) {}
+```
+
+- **Inputs**: Input parameters are **read-only**. Scalars (i64, f64, bool, etc.) are passed by value. Composite types (str, []T, struct) are passed by read-only reference. Writing to an input parameter or its sub-fields inside the function is **prohibited**.
+- **Outputs**: Named output parameters are **writable**. The caller may bind an existing variable to an output slot, in which case the function modifies that variable's memory directly. The caller may also leave outputs unbound, in which case the function generates fresh values.
+- Functions have no return value by default; all data interaction is through output parameters only
 - Variables inside a function are automatically destroyed when the function exits
-- Parameters with result annotation are writable output params
 - **Prefer `?t` option over `(val, ok bool)`** for functions that may fail or return empty
 - **Parameter default values**: use `name type = expr` syntax. Parameters with defaults can be omitted at the call site. Default parameters must be the last parameters.
 - **Parameter and result count limit**: max 64 parameters and 64 results per function (u64 bitmap limit for move tracking). Exceeding the limit produces a compile error — use a container type (`vec`/`arr`/struct) to bundle multiple values.
 
-System functions allow syntactic sugar return values for user convenience. Since the underlying mechanism still works through input parameters, no new variables are returned, making it internally safe.
+**Alias rule**: An input read-only reference and an output slot may point to the same object. As long as writes occur only in the output area and inputs are only read, this is legal; the compiler does not perform static alias checking.
+
+**Type method sugar**: `type.method = (inputs) (rest-outputs...) {}` desugars to `method = (inputs) (self type, rest-outputs...) {}`. When calling `instance.method(args)`, the instance is bound to the first output parameter `self`; the function body uses `.` to refer to `self` in the output area; writes to `self` directly modify the original instance. The remaining outputs (after `self`) can be destructured by the caller or discarded.
+
+System functions allow syntactic sugar return values for user convenience. Since the underlying mechanism still works through output parameters, no new variables are returned, making it internally safe.
 
 ```no
 add = (a i64, b i64) (result i64) {

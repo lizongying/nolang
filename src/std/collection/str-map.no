@@ -200,7 +200,7 @@ str-map.is-empty = () (empty bool) {
 }
 
 ; for-each: 遍歷所有 (key, value)
-str-map.for-each = (k str, v str) {
+str-map.for-each = () (k str, v str) {
     i <- [0...cap): {
         .occ[i] == 1 -> {
             #{index-out = 0}

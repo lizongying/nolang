@@ -269,14 +269,15 @@ fmt-apply-spec = (s str, fill i64, align i64, width i64) (out str) {
 ; fmt-uint-base: 將 u64 按指定進制轉為字串
 ; base: 2/8/10/16；upper: hex 是否大寫
 fmt-uint-base = (u u64, base i64, upper bool) (out str) {
+    ru = u
     #{overflow=wrap}
-    u == 0 -> {
+    ru == 0 -> {
         out = with-cap(1)
         #{index-out = 0}
         out[0] = 48
         return
     }
-    tmp u64 = u
+    tmp u64 = ru
     digits = 0
     {
         #{overflow=wrap}
@@ -289,7 +290,7 @@ fmt-uint-base = (u u64, base i64, upper bool) (out str) {
     pos = digits - 1
     {
         #{overflow=wrap}
-        d = u % base
+        d = ru % base
         #{overflow=wrap}
         {
                         d < 10 -> {
@@ -311,10 +312,10 @@ fmt-uint-base = (u u64, base i64, upper bool) (out str) {
             }
         }
         #{overflow=wrap}
-        u = u / base
+        ru = ru / base
         #{overflow=wrap}
         pos = pos - 1
-    } (u > 0)
+    } (ru > 0)
 }
 
 ; ═══════════════════════════════════════════════

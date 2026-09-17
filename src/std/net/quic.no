@@ -236,6 +236,7 @@ frame {
 ; 返回 frames [32]frame: 解析出的影格陣列
 ; 返回 count i64: 影格數量（-1=錯誤）
 parse-frames = (buf []byte, pos i64, end i64) (frames [32]frame, count i64) {
+    r-pos = pos
     count = 0
     ft = 0
     {
@@ -243,12 +244,12 @@ parse-frames = (buf []byte, pos i64, end i64) (frames [32]frame, count i64) {
         count >= QUIC-MAX-FRAMES -> return
         ft-val = 0
         ft-pos = 0
-        ft-val, ft-pos = varint-decode(buf, pos)
+        ft-val, ft-pos = varint-decode(buf, r-pos)
         ft-pos < 0 -> {
             count = -1
             return
         }
-        pos = ft-pos
+        r-pos = ft-pos
 
         #{index-out = 0}
         frames[count].frame-type = ft-val & 255
@@ -261,14 +262,14 @@ parse-frames = (buf []byte, pos i64, end i64) (frames [32]frame, count i64) {
         i <- [0..data-len): {
             #{overflow=wrap}
             #{index-out = 0}
-            frames[count].data[i] = buf[pos + i]
+            frames[count].data[i] = buf[r-pos + i]
         }
         #{overflow=wrap}
         #{index-out = 0}
-        pos = pos + frames[count].length
+        r-pos = r-pos + frames[count].length
         #{overflow=wrap}
         count = count + 1
-    } (pos < end)
+    } (r-pos < end)
 
     ; CONNECTION_CLOSE (0x1c)
     {
@@ -277,29 +278,29 @@ parse-frames = (buf []byte, pos i64, end i64) (frames [32]frame, count i64) {
             #{overflow=wrap}
             ec-val = 0
             ec-np = 0
-            ec-val, ec-np = varint-decode(buf, pos)
+            ec-val, ec-np = varint-decode(buf, r-pos)
             ec-np < 0 -> {
                 count = -1
                 return
             }
-            pos = ec-np
+            r-pos = ec-np
             ft2-val = 0
             ft2-np = 0
-            ft2-val, ft2-np = varint-decode(buf, pos)
+            ft2-val, ft2-np = varint-decode(buf, r-pos)
             ft2-np < 0 -> {
                 count = -1
                 return
             }
-            pos = ft2-np
+            r-pos = ft2-np
             rl-val = 0
             rl-np = 0
-            rl-val, rl-np = varint-decode(buf, pos)
+            rl-val, rl-np = varint-decode(buf, r-pos)
             rl-np < 0 -> {
                 count = -1
                 return
             }
             #{overflow=wrap}
-            pos = rl-np + rl-val
+            r-pos = rl-np + rl-val
             #{index-out = 0}
             frames[count].length = 0
             #{overflow=wrap}
@@ -312,21 +313,21 @@ parse-frames = (buf []byte, pos i64, end i64) (frames [32]frame, count i64) {
             #{overflow=wrap}
             ec-val = 0
             ec-np = 0
-            ec-val, ec-np = varint-decode(buf, pos)
+            ec-val, ec-np = varint-decode(buf, r-pos)
             ec-np < 0 -> {
                 count = -1
                 return
             }
-            pos = ec-np
+            r-pos = ec-np
             rl-val = 0
             rl-np = 0
-            rl-val, rl-np = varint-decode(buf, pos)
+            rl-val, rl-np = varint-decode(buf, r-pos)
             rl-np < 0 -> {
                 count = -1
                 return
             }
             #{overflow=wrap}
-            pos = rl-np + rl-val
+            r-pos = rl-np + rl-val
             #{index-out = 0}
             frames[count].length = 0
             #{overflow=wrap}
@@ -349,13 +350,13 @@ parse-frames = (buf []byte, pos i64, end i64) (frames [32]frame, count i64) {
             #{overflow=wrap}
             tl-val = 0
             tl-np = 0
-            tl-val, tl-np = varint-decode(buf, pos)
+            tl-val, tl-np = varint-decode(buf, r-pos)
             tl-np < 0 -> {
                 count = -1
                 return
             }
             #{overflow=wrap}
-            pos = tl-np + tl-val
+            r-pos = tl-np + tl-val
             #{index-out = 0}
             frames[count].length = 0
             #{overflow=wrap}
@@ -368,19 +369,19 @@ parse-frames = (buf []byte, pos i64, end i64) (frames [32]frame, count i64) {
             #{overflow=wrap}
             mv-val = 0
             mv-np = 0
-            mv-val, mv-np = varint-decode(buf, pos)
+            mv-val, mv-np = varint-decode(buf, r-pos)
             mv-np < 0 -> {
                 count = -1
                 return
             }
-            pos = mv-np
+            r-pos = mv-np
             #{index-out = 0}
             frames[count].length = 0
             #{overflow=wrap}
             count = count + 1
         }
     }
-    pos = end
+    r-pos = end
 }
 
 ; ═══════════════════════════════════════════════

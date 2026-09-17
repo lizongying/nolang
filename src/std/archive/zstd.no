@@ -211,14 +211,15 @@ fse-table.build = (norm-count []i64, max-symbol i64, table-log i64) {
 ; count > 0: 返回 tableLog - floor(log2(count))
 ; count <= 0: 返回 tableLog
 bits-for-count = (count i64) (n i64) {
+    r-count = count
     n = 0
-    count <= 0 -> return
+    r-count <= 0 -> return
     {
         #{overflow=wrap}
-        count = count >> 1
+        r-count = r-count >> 1
         #{overflow=wrap}
         n = n + 1
-    } (count > 0)
+    } (r-count > 0)
 }
 
 ; decode: FSE 解碼一個符號

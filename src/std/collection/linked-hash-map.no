@@ -183,7 +183,7 @@ linked-hash-map.is-empty = () (empty bool) {
 }
 
 ; for-each: 按插入順序遍歷所有 (key, value)
-linked-hash-map.for-each = (k i64, v i64) {
+linked-hash-map.for-each = () (k i64, v i64) {
     idx = .head
     {
         .occ[idx] == 1 -> {

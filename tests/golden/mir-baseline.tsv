@@ -34,7 +34,7 @@
 0 045f3e2f59a9f7b224eda2bfc1212c5ea760772ebba2a50767de6c0a775262b1 tests/mem-safety/map-tombstone.no
 0 5b5488d19f5770cf8cc334fc48288b2037a7c71bdc0811943da483188c089dbf tests/mem-safety/move-clone-liveness.no
 0 f4cfa4c45bdaec2c8de8a4c3f5be245b0c6d9a38c8c1b5253c18059c70c472ce tests/mem-safety/move-eligibility-improved.no
-1 631d0344bd69ec333d8420f2545c1dfa635bc4994f5e6748456be1836b8390a1 tests/mem-safety/nested-container-clone.no
+0 b9bd3aa7aee7cc85adabf14e271dd188c8f1879829cb9656f95a2f0a9413d715 tests/mem-safety/nested-container-clone.no
 0 a9c323c06462efc4590c3e58af9777746864cea74d0fdc0abf41fd217242e9ea tests/mem-safety/option-heap-leak.no
 0 1b4cfd03b2e0cbaa4ff76d9cd112371f3cdaf5fe7eca129a66a718fecbe52080 tests/mem-safety/prologue-buf-leak.no
 0 33a7b215065f2ee8635efb72620bc269a1efb889ba3026560334da7366742374 tests/mem-safety/reassign-leak.no
@@ -91,7 +91,7 @@
 0 8977939a609a1f94094a753425b1705f7371fd74328006cb0cbc49fc4ad0c12d tests/test-arr.no
 0 011cd89661492a0281ac26c6a47272fe91ec35ffbed8d80013b80a02f35b45a5 tests/test-async.no
 0 5d77449b0cef3650e3c165db948be2bc641641badfb1884a3851a3270ecc9145 tests/test-bare-match.no
-1 f456c1ffc6a33cd5dae1ca90cf499aadeabb167b9e687175a8fc62476833374c tests/test-basic.no
+0 0e990395bfaa17fca78103cdc5ac24495ede088351f75c1f485aaf3244f7a946 tests/test-basic.no
 0 8ccc87b54c984b02d1d00f56c853e4434412c1038aa7ce7aca099f82f4263455 tests/test-bnot.no
 0 29dd43290cd1d9341c5e73d6daa0e5bb1ae6ef8fed65b44693a2411f0b8eb9af tests/test-bool-debug.no
 0 4aebf7e60729b74c58e6e223c950186a4a38b6df729581dbbdef59b8b12db480 tests/test-bool-direct.no
@@ -192,7 +192,7 @@
 0 d117fa006ba9208500b2930ce69cbde436c647afa917cb7396a9bc9111a46dd2 tests/test-multi-char-dquote.no
 0 6dd5a2fa724e1b5c78875314dcfec8d2663e83ea6c0d0e0b05f03f04216feaa3 tests/test-named-fn-type.no
 0 d1fda088268365f88ce026555a285af7ac4a5f68b602529f52562d76f7faee5b tests/test-named-format.no
-0 a35bd77f7dd45e1e2e6b894099729de76a05c7ade467a259d6b84f85cb145dcf tests/test-net-client.no
+0 08909f4d12ad46813beb30a9b202a9484f20ba9d16c69f025f129e4d586d30ca tests/test-net-client.no
 0 d2e36036f50e91d1a4d20d11a37fdd1eedcf96846ce17dd7b2c943c08690a500 tests/test-net-http.no
 0 2925c3b54adc0eb7d36f59cbe9b639841bc512872116d8573dcec03e79a69baf tests/test-number-div-mod-clamp.no
 0 5eaa9ccb4a7fd7cf2745436b5d7a191359c10ee26936a87d5fa84f0e7a4b434e tests/test-number-generic.no
@@ -280,7 +280,7 @@
 0 8a68a548f38146e50ad525577ff1a13f826f48c3b9f759d7aba810a280697021 tests/test-strconv.no
 0 f33ae3bc9a22cd7564990a794789954409977013966fb1a8f43c35776b833a95 tests/test-string-literal-recv.no
 0 90afb49a553d85f8750f0b49cbdd82657f6323997946f680e4bc362961208fd2 tests/test-tagged-enum.no
-0 7353688270cedfb4ae8628ab67e608506efb6a18d2dd3b0ed381b67704f3a239 tests/test-tcp-fork.no
+0 efb94942591d7fb009946828c2bde15a8dbb8ee57014fec5f424f0663f5092bf tests/test-tcp-fork.no
 0 15e1f39e09fed434456cdc629ce57a83f6e2fec80441a141d18dc7252758dc1c tests/test-time.no
 0 b7a42d847d241277f7141ac0d80070923b3fc37d01e55c22996cf49a93b6282c tests/test-tls-debug.no
 0 9afdbdf2aa07de8533eef8e3642d3265e8a041d921caca4a678fdac1a9e20f65 tests/test-tls-import-repeat.no

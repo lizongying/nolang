@@ -124,17 +124,19 @@ odd = (a int) (yes bool) {
 
 ; gcd: 最大公因數（輾轉相除法）
 gcd = (a int, b int) (r int) {
+    ra = a
+    rb = b
     #{overflow=wrap}
-    a < 0 -> a = 0 - a
+    ra < 0 -> ra = 0 - ra
     #{overflow=wrap}
-    b < 0 -> b = 0 - b
+    rb < 0 -> rb = 0 - rb
     {
         #{overflow=wrap}
-        t = b
-        b = a % b
-        a = t
-    } (b != 0)
-    r = a
+        t = rb
+        rb = ra % rb
+        ra = t
+    } (rb != 0)
+    r = ra
 }
 
 ; lcm: 最小公倍數
@@ -152,15 +154,16 @@ lcm = (a int, b int) (r int) {
 ; pow: 整數冪 a^n（n ≥ 0）— 對所有整數型別通用
 ; 使用快速冪算法 O(log n)
 pow = (a int, n int) (r int) {
+    rn = n
     r = 1
     base = a
     {
         #{overflow=wrap}
-        n & 1 == 1 -> r = r * base
+        rn & 1 == 1 -> r = r * base
         #{overflow=wrap}
         base = base * base
-        n = n >> 1
-    } (n > 0)
+        rn = rn >> 1
+    } (rn > 0)
 }
 
 ; i64-to-f64: 整數轉浮點
@@ -255,6 +258,7 @@ i64-to-str = (n i64) (out str) {
 
 ; u64-to-str: 將 u64 轉為字串
 u64-to-str = (u u64) (out str) {
+    ru = u
     #{overflow=wrap}
     u == 0 -> {
         out = with-cap(1)
@@ -262,7 +266,7 @@ u64-to-str = (u u64) (out str) {
         out[0] = 48
         return
     }
-    tmp u64 = u
+    tmp u64 = ru
     digits = 0
     {
         #{overflow=wrap}
@@ -275,16 +279,16 @@ u64-to-str = (u u64) (out str) {
     pos = digits - 1
     {
         #{overflow=wrap}
-        d = u % 10
+        d = ru % 10
         #{overflow=wrap}
         ascii = d + 48
         #{index-out = 0}
         out[pos] = ascii
         #{overflow=wrap}
-        u = u / 10
+        ru = ru / 10
         #{overflow=wrap}
         pos = pos - 1
-    } (u > 0)
+    } (ru > 0)
 }
 
 ; char-to-str: 將 char（i64 Unicode 碼點）轉為 UTF-8 編碼字串
@@ -720,7 +724,7 @@ mod = (a int, b int) (r int) {
 }
 
 ; swap: 交換兩個值
-swap = (a t, b t) {
+swap = () (a t, b t) {
     tmp = a
     a = b
     b = tmp
