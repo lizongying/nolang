@@ -142,8 +142,8 @@ c'
 
     lines1 []str
     lines2 []str
-    diff-split-lines(c1, lines1)
-    diff-split-lines(c2, lines2)
+    lines1 = diff-split-lines(c1)
+    lines2 = diff-split-lines(c2)
 
     n1 = lines1.len()
     n2 = lines2.len()

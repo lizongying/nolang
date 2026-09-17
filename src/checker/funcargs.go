@@ -194,7 +194,10 @@ func checkArgCountInExpr(expr parser.Expression, sigs map[string]*funcSig) []Val
 						break
 					}
 				}
-				// Allow more args than params (could be output param), only flag too few
+				// Allow more args than params (could be output param binding or
+				// method-call receiver rewritten to type.method(receiver, ...)).
+				// This runs on the MERGED program where method calls have already
+				// been rewritten, so extra args are expected and legitimate.
 				if len(e.Arguments) < minArgs {
 					results = append(results, ValidateResult{
 						TraceID: "j7dzteja",
@@ -1174,8 +1177,18 @@ func checkCallArgsInExpr(expr parser.Expression, sigs map[string]*funcSig, varTy
 						break
 					}
 				}
-				if len(e.Arguments) > len(sig.ParamTypes) {
-					// More args than params: last arg might be output param, check up to param count
+				// Method calls have implicit self in signature but not in expr.Arguments
+				maxArgs := len(sig.ParamTypes)
+				if len(sig.ParamTypes) > 0 && sig.ParamTypes[0].Name == "self" {
+					maxArgs--
+				}
+				if len(e.Arguments) > maxArgs {
+					results = append(results, ValidateResult{
+						TraceID: "oarg2",
+						Line:    e.Token.Line,
+						Column:  e.Token.Column,
+						Message: fmt.Sprintf("function '%s' expects at most %d input argument(s), got %d — output parameters should be bound via assignment, e.g. result = %s(...)", ident.Value, maxArgs, len(e.Arguments), ident.Value),
+					})
 				} else if len(e.Arguments) < minArgs {
 					results = append(results, ValidateResult{
 						TraceID: "haahhq7o",
@@ -1194,25 +1207,25 @@ func checkCallArgsInExpr(expr parser.Expression, sigs map[string]*funcSig, varTy
 						if expectedType == "" || argType == "" {
 							continue
 						}
-					// Phase-2 rule: a bare option argument (?T passed where T is
-					// expected) must be rejected. Implicit unwrap of option
-					// arguments is not allowed. Provably-non-option expressions
-					// (e.g. a constant like `10+20`, or an `it` binding inside a
-					// match arm) already resolve to the plain T type and never
-					// reach this branch, so they pass. Genuine ?T values (a ?i64
-					// variable, a ?i64-returning call, etc.) cannot be proven
-					// non-option at compile time and are rejected here, forcing
-					// the caller to unwrap explicitly (match on the value and call
-					// inside the `-> it` arm, or force-unwrap).
-					//
-					// Exemption: when the call is the RHS of a `?=` unwrap
-					// (underUnwrap == true, set by the desugared `__unwrap_N` let
-					// in the statement checker), the `?=` itself is the required
-					// explicit unwrap — the same exemption already granted to the
-					// bare-arithmetic-argument rule (f10x20nf) below. Inside a `?=`
-					// RHS, a ?T argument is auto-unwrapped and any none propagates
-					// upward, which is exactly `?=`'s purpose.
-					if !underUnwrap && strings.HasPrefix(argType, "?") && strings.TrimPrefix(argType, "?") == expectedType {
+						// Phase-2 rule: a bare option argument (?T passed where T is
+						// expected) must be rejected. Implicit unwrap of option
+						// arguments is not allowed. Provably-non-option expressions
+						// (e.g. a constant like `10+20`, or an `it` binding inside a
+						// match arm) already resolve to the plain T type and never
+						// reach this branch, so they pass. Genuine ?T values (a ?i64
+						// variable, a ?i64-returning call, etc.) cannot be proven
+						// non-option at compile time and are rejected here, forcing
+						// the caller to unwrap explicitly (match on the value and call
+						// inside the `-> it` arm, or force-unwrap).
+						//
+						// Exemption: when the call is the RHS of a `?=` unwrap
+						// (underUnwrap == true, set by the desugared `__unwrap_N` let
+						// in the statement checker), the `?=` itself is the required
+						// explicit unwrap — the same exemption already granted to the
+						// bare-arithmetic-argument rule (f10x20nf) below. Inside a `?=`
+						// RHS, a ?T argument is auto-unwrapped and any none propagates
+						// upward, which is exactly `?=`'s purpose.
+						if !underUnwrap && strings.HasPrefix(argType, "?") && strings.TrimPrefix(argType, "?") == expectedType {
 							results = append(results, ValidateResult{
 								TraceID: "fxxoptarg",
 								Line:    e.Token.Line,
