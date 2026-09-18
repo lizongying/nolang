@@ -531,6 +531,27 @@ func ValidateEmbedAnnotations(program *parser.Program, sourcePath string) []Vali
 	return results
 }
 
+// declaredResults returns the declared result parameters of a function/method
+// definition, with the implicit `self` receiver stripped for method
+// definitions.
+//
+// parser injects `self` as the *first output parameter* of every method
+// definition (see parser/decl.go; method semantics are
+// `type.method = (inputs) (self type, rest-results...) {}`). Any code that
+// reads `Results[0]` as "the return type" must therefore go through this
+// helper, otherwise a method gets misread as returning its receiver type
+// (e.g. `sym = ht.decode-symbol(br)` -> "cannot assign bz-huffman value to
+// i64 variable 'sym'").
+//
+// Callers that need the index of the first real result can use the returned
+// slice directly: `rs := declaredResults(fd); if len(rs) > 0 { ... rs[0] ... }`.
+func declaredResults(fd *parser.FunctionDefinition) []*parser.Parameter {
+	if fd.IsMethodDef && len(fd.Results) > 0 && fd.Results[0] != nil && fd.Results[0].Name == "self" {
+		return fd.Results[1:]
+	}
+	return fd.Results
+}
+
 // ValidateDeprecatedLen reports deprecated bare `.len` property reads on
 // str / array / slice / vec receivers. The property form is being phased out
 // in favor of the `.len()` method (containers) and `.len-bytes()` / `.len()`
@@ -547,8 +568,10 @@ func ValidateDeprecatedLen(program *parser.Program) []ValidateResult {
 	funcTypes := make(map[string]string)
 	for _, stmt := range program.Statements {
 		if fd, ok := stmt.(*parser.FunctionDefinition); ok {
-			if len(fd.Results) > 0 && fd.Results[0].Type != nil {
-				funcTypes[fd.Name] = fd.Results[0].Type.String()
+			// declaredResults drops the implicit `self` receiver of methods, so
+			// rs[0] is the real return type (absent for void methods).
+			if rs := declaredResults(fd); len(rs) > 0 && rs[0].Type != nil {
+				funcTypes[fd.Name] = rs[0].Type.String()
 			}
 		}
 	}
@@ -813,8 +836,10 @@ func ValidateTypes(program *parser.Program) []ValidateResult {
 	funcTypes := make(map[string]string)
 	for _, stmt := range program.Statements {
 		if fd, ok := stmt.(*parser.FunctionDefinition); ok {
-			if len(fd.Results) > 0 && fd.Results[0].Type != nil {
-				funcTypes[fd.Name] = fd.Results[0].Type.String()
+			// declaredResults drops the implicit `self` receiver of methods, so
+			// rs[0] is the real return type (absent for void methods).
+			if rs := declaredResults(fd); len(rs) > 0 && rs[0].Type != nil {
+				funcTypes[fd.Name] = rs[0].Type.String()
 			}
 		}
 		if es, ok := stmt.(*parser.ExternStatement); ok {
@@ -1846,7 +1871,9 @@ func ValidateUninitOutputParams(program *parser.Program) []ValidateResult {
 			col  int
 		}
 		var nullableParams []nullableParam
-		for _, r := range fd.Results {
+		// declaredResults 剔除方法定義的隱式 `self` 接收者，理由同
+		// ValidateUnassignedReturns：接收者由呼叫方指標別名提供。
+		for _, r := range declaredResults(fd) {
 			if r.Name == "" {
 				continue
 			}
@@ -1913,7 +1940,9 @@ func ValidateUnassignedReturns(program *parser.Program) []ValidateResult {
 			col  int
 		}
 		var retParams []retParam
-		for _, r := range fd.Results {
+		// declaredResults 剔除方法定義的隱式 `self` 接收者：self 由呼叫方
+		// 指標別名提供，函式體無須「賦值」，不應報未賦值。
+		for _, r := range declaredResults(fd) {
 			if r.Name == "" || r.Type == nil {
 				continue
 			}
@@ -2492,8 +2521,10 @@ func ValidateRedundantTypeAnnotation(program *parser.Program) []ValidateResult {
 	validationFuncTypes = make(map[string]string)
 	for _, stmt := range program.Statements {
 		if fd, ok := stmt.(*parser.FunctionDefinition); ok {
-			if len(fd.Results) > 0 && fd.Results[0].Type != nil {
-				validationFuncTypes[fd.Name] = fd.Results[0].Type.String()
+			// declaredResults drops the implicit `self` receiver of methods, so
+			// rs[0] is the real return type (absent for void methods).
+			if rs := declaredResults(fd); len(rs) > 0 && rs[0].Type != nil {
+				validationFuncTypes[fd.Name] = rs[0].Type.String()
 			}
 		}
 		if es, ok := stmt.(*parser.ExternStatement); ok {
@@ -3362,8 +3393,10 @@ func ValidateUnhandledOverflow(program *parser.Program, mainFile string) []Valid
 		switch s := stmt.(type) {
 		case *parser.FunctionDefinition:
 			fnOpt := false
-			if len(s.Results) > 0 && s.Results[0] != nil && s.Results[0].Type != nil {
-				if strings.HasPrefix(s.Results[0].Type.String(), "?") {
+			// declaredResults drops the implicit `self` receiver of methods, so
+			// rs[0] is the real return type.
+			if rs := declaredResults(s); len(rs) > 0 && rs[0] != nil && rs[0].Type != nil {
+				if strings.HasPrefix(rs[0].Type.String(), "?") {
 					fnOpt = true
 				}
 			}
@@ -3692,8 +3725,10 @@ func ValidateUnhandledIndex(program *parser.Program, mainFile string) []Validate
 				fcf = mainFile
 			}
 			fnOpt = false
-			if len(s.Results) > 0 && s.Results[0] != nil && s.Results[0].Type != nil {
-				if strings.HasPrefix(s.Results[0].Type.String(), "?") {
+			// declaredResults drops the implicit `self` receiver of methods, so
+			// rs[0] is the real return type.
+			if rs := declaredResults(s); len(rs) > 0 && rs[0] != nil && rs[0].Type != nil {
+				if strings.HasPrefix(rs[0].Type.String(), "?") {
 					fnOpt = true
 				}
 			}
@@ -3983,8 +4018,9 @@ func collectStrIndexTypes(stmts []parser.Statement, sem *parser.SemanticContext,
 			for _, p := range st.FuncSignature.Parameters {
 				scope[p.Name] = typeNodeString(p.Type)
 			}
-			if len(st.FuncSignature.Results) > 0 {
-				funcReturns[st.Name] = typeNodeString(st.FuncSignature.Results[0].Type)
+			// declaredResults drops the implicit `self` receiver of methods.
+			if rs := declaredResults(st); len(rs) > 0 {
+				funcReturns[st.Name] = typeNodeString(rs[0].Type)
 			}
 			if st.Body != nil {
 				collectStrIndexTypes(st.Body.Statements, sem, st.Name, scopeTypes, funcReturns, asciiVars)
@@ -4471,8 +4507,10 @@ func ValidatePrintFormat(program *parser.Program) []ValidateResult {
 	validationFuncTypes = make(map[string]string)
 	for _, stmt := range program.Statements {
 		if fd, ok := stmt.(*parser.FunctionDefinition); ok {
-			if len(fd.Results) > 0 && fd.Results[0].Type != nil {
-				validationFuncTypes[fd.Name] = fd.Results[0].Type.String()
+			// declaredResults drops the implicit `self` receiver of methods, so
+			// rs[0] is the real return type (absent for void methods).
+			if rs := declaredResults(fd); len(rs) > 0 && rs[0].Type != nil {
+				validationFuncTypes[fd.Name] = rs[0].Type.String()
 			}
 		}
 		if es, ok := stmt.(*parser.ExternStatement); ok {
