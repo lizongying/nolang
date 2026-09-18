@@ -330,16 +330,16 @@ des-block = (in []byte, n i64, ks [96]byte, encrypt i64) (out []byte) {
         }
         sk = 0
         #{overflow=wrap}
+        ; 單一 #{index-out} 註解涵蓋整個陳述（本行的所有 ks[...] 讀取共用同一個
+        ; 越界預設值）。注意：`#{...}` 必須自成一行置於目標陳述「上方」——若把它
+        ; 插在多行運算式的續行之間（換行 + `#{...}` + 續行運算元），語句會在該處
+        ; 被切斷，後續陳述被收編到外層區塊，函式體因而被靜默截斷。
         #{index-out = 0}
         sk = (ks[sk-off] << 40) |
-#{index-out = 0}
-(ks[sk-off + 1] << 32) |
-#{index-out = 0}
-(ks[sk-off + 2] << 24) |
-#{index-out = 0}
-(ks[sk-off + 3] << 16) |
-#{index-out = 0}
-(ks[sk-off + 4] << 8) | ks[sk-off + 5]
+            (ks[sk-off + 1] << 32) |
+            (ks[sk-off + 2] << 24) |
+            (ks[sk-off + 3] << 16) |
+            (ks[sk-off + 4] << 8) | ks[sk-off + 5]
         fout = f(r, sk)
         new-l = r
         r = l ^ fout

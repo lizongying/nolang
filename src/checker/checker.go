@@ -1861,10 +1861,34 @@ func ValidateUndefinedVars(program *parser.Program, rootDir string) []ValidateRe
 
 	return results
 }
+
+// methodDefNames 收集程式中所有方法定義的完整名稱（`Type.method` /
+// `module.Type.method`，含單態化前綴後的變體）。
+//
+// 用途：runAllLints 是在「整個 merged 程式」上執行的，而 merged 程式在
+// 合併 std 模組時會被整程式 pass 重寫——其中 transpiler 的呼叫解析會把
+// 方法呼叫 `recv.m(args)` 攤平成自由函式呼叫 `Type.m(recv, args)`
+// （見 build/transpiler.go 的 `ce.Function = &parser.Identifier{...}` +
+// `ce.Arguments = append([]parser.Expression{receiverArg}, ...)`）。
+// 攤平後語法上的 DotExpression 消失，接收者變成第一個實參，
+// 「方法呼叫會改寫接收者」的判定就必須靠這裡的方法名集合來認出。
+func methodDefNames(program *parser.Program) map[string]bool {
+	names := make(map[string]bool)
+	for _, stmt := range program.Statements {
+		if fd, ok := stmt.(*parser.FunctionDefinition); ok && fd.IsMethodDef {
+			names[fd.Name] = true
+		}
+	}
+	return names
+}
+
 func ValidateUninitOutputParams(program *parser.Program) []ValidateResult {
 	var results []ValidateResult
 	// 預計算應跳過校驗的內建樁（含同名多載延續定義）。
 	suppressed := builtinSuppressedDefs(program)
+	// 方法定義名集合：攤平後的方法呼叫（`Type.m(recv, ...)`）第一個實參
+	// 是被改寫的接收者，需與 DotExpression 形式一視同仁（見 methodDefNames）。
+	methods := methodDefNames(program)
 	for _, stmt := range program.Statements {
 		fd, ok := stmt.(*parser.FunctionDefinition)
 		if !ok || fd.Body == nil {
@@ -1902,7 +1926,7 @@ func ValidateUninitOutputParams(program *parser.Program) []ValidateResult {
 		}
 		// Collect all directly-assigned variable names in the body
 		assigned := make(map[string]bool)
-		collectAssignedNames(fd.Body.Statements, assigned)
+		collectAssignedNames(fd.Body.Statements, assigned, methods)
 		// Collect all read variable names in the body
 		read := make(map[string]bool)
 		collectReadNames(fd.Body.Statements, read)
@@ -1931,6 +1955,8 @@ func ValidateUnassignedReturns(program *parser.Program) []ValidateResult {
 	var results []ValidateResult
 	// 預計算應跳過校驗的內建樁（含同名多載延續定義）。
 	suppressed := builtinSuppressedDefs(program)
+	// 方法定義名集合，理由同 ValidateUninitOutputParams（見 methodDefNames）。
+	methods := methodDefNames(program)
 	for _, stmt := range program.Statements {
 		fd, ok := stmt.(*parser.FunctionDefinition)
 		if !ok || fd.Body == nil {
@@ -1973,7 +1999,7 @@ func ValidateUnassignedReturns(program *parser.Program) []ValidateResult {
 		}
 		// Collect all directly-assigned variable names in the body
 		assigned := make(map[string]bool)
-		collectAssignedNames(fd.Body.Statements, assigned)
+		collectAssignedNames(fd.Body.Statements, assigned, methods)
 		// Report any result parameter that is never assigned
 		for _, p := range retParams {
 			if !assigned[p.name] {
@@ -2078,7 +2104,14 @@ func builtinSuppressedDefs(program *parser.Program) map[*parser.FunctionDefiniti
 	return suppressed
 }
 
-func collectAssignedNames(stmts []parser.Statement, assigned map[string]bool) {
+// collectAssignedNames 收集 stmts 中所有「被寫入」的變數名（見
+// assignTargetBaseName），以及「作為方法呼叫接收者而被改寫」的變數名。
+//
+// methods 是程式中的方法定義名集合（methodDefNames）：merged 程式中
+// `recv.m(args)` 已被攤平成 `Type.m(recv, args)`，接收者（第一個實參）
+// 必須靠這個集合認出，否則 `ec.init(c, key)` 這類「以方法初始化出參」
+// 的函式會被誤報為「返回參數從未賦值」。
+func collectAssignedNames(stmts []parser.Statement, assigned map[string]bool, methods map[string]bool) {
 	for _, stmt := range stmts {
 		if stmt == nil {
 			continue
@@ -2089,7 +2122,7 @@ func collectAssignedNames(stmts []parser.Statement, assigned map[string]bool) {
 				assigned[s.Name.Value] = true
 			}
 			if s.Value != nil {
-				collectAssignedNamesInExpr(s.Value, assigned)
+				collectAssignedNamesInExpr(s.Value, assigned, methods)
 			}
 		case *parser.MultiAssignStatement:
 			for _, target := range s.Targets {
@@ -2098,13 +2131,13 @@ func collectAssignedNames(stmts []parser.Statement, assigned map[string]bool) {
 				}
 			}
 			if s.Value != nil {
-				collectAssignedNamesInExpr(s.Value, assigned)
+				collectAssignedNamesInExpr(s.Value, assigned, methods)
 			}
 		case *parser.BlockStatement:
-			collectAssignedNames(s.Statements, assigned)
+			collectAssignedNames(s.Statements, assigned, methods)
 		case *parser.ForStatement:
 			if s.Init != nil {
-				collectAssignedNames([]parser.Statement{s.Init}, assigned)
+				collectAssignedNames([]parser.Statement{s.Init}, assigned, methods)
 			}
 			// A range-for loop variable (i <- [a..b): {...}) is always
 			// assigned by the iteration, so it must not be flagged as
@@ -2115,30 +2148,30 @@ func collectAssignedNames(stmts []parser.Statement, assigned map[string]bool) {
 				assigned[s.IterRange.Variable] = true
 			}
 			if s.Body != nil {
-				collectAssignedNames(s.Body.Statements, assigned)
+				collectAssignedNames(s.Body.Statements, assigned, methods)
 			}
 		case *parser.ExpressionStatement:
 			if s.Expression != nil {
-				collectAssignedNamesInExpr(s.Expression, assigned)
+				collectAssignedNamesInExpr(s.Expression, assigned, methods)
 			}
 		case *parser.ReturnStatement:
 			if s.ReturnValue != nil {
-				collectAssignedNamesInExpr(s.ReturnValue, assigned)
+				collectAssignedNamesInExpr(s.ReturnValue, assigned, methods)
 			}
 		}
 	}
 }
-func collectAssignedNamesInExpr(expr parser.Expression, assigned map[string]bool) {
+func collectAssignedNamesInExpr(expr parser.Expression, assigned map[string]bool, methods map[string]bool) {
 	if expr == nil {
 		return
 	}
 	switch e := expr.(type) {
 	case *parser.IfExpression:
 		if e.Consequence != nil {
-			collectAssignedNames(e.Consequence.Statements, assigned)
+			collectAssignedNames(e.Consequence.Statements, assigned, methods)
 		}
 		if e.Alternative != nil {
-			collectAssignedNames(e.Alternative.Statements, assigned)
+			collectAssignedNames(e.Alternative.Statements, assigned, methods)
 		}
 	case *parser.ConditionalExpression:
 		// ternary cond ? a : b — no statements, just expressions
@@ -2149,7 +2182,7 @@ func collectAssignedNamesInExpr(expr parser.Expression, assigned map[string]bool
 			assigned[name] = true
 		}
 		if e.Value != nil {
-			collectAssignedNamesInExpr(e.Value, assigned)
+			collectAssignedNamesInExpr(e.Value, assigned, methods)
 		}
 	case *parser.CallExpression:
 		// A method call mutates its receiver: `out.init(c, key)`,
@@ -2163,9 +2196,32 @@ func collectAssignedNamesInExpr(expr parser.Expression, assigned map[string]bool
 				assigned[name] = true
 			}
 		}
-		collectAssignedNamesInExpr(e.Function, assigned)
+		// 同一件事的「攤平」形態：`Type.m(recv, args...)`。
+		//
+		// RunAllLints 跑在 merged 程式上，而合併 std 模組會觸發整程式
+		// pass，把方法呼叫攤平成帶顯式 self 的自由函式呼叫
+		// （build/transpiler.go：`ce.Function = &parser.Identifier{...}` +
+		// 把接收者 unshift 進 Arguments）。攤平後語法上的 DotExpression
+		// 已不存在，接收者變成**第一個實參**：
+		//     enc-accept = (c conn, key [32]byte) (ec enc-conn) {
+		//         ec.init(c, key)          ; 原始語法 → DotExpression 分支
+		//     }
+		//     ; merged：CallExpression{fn: Identifier{enc-conn.init},
+		//     ;                        args: [ec, c, key]}   → 這裡
+		// 少了這一支，`ec` 就會被誤報 "never assigned"（i3k422u3）。
+		//
+		// 只在被呼叫者確實是**方法定義**時才把第一個實參算作接收者：
+		// 自由函式的首個實參是按值傳入的（不會被改寫），若一併放行會
+		// 讓這條檢查失去意義。使用者手寫的 `Type.m(recv, ...)` 靜態
+		// 呼叫語意與 `recv.m(...)` 相同，同樣適用。
+		if id, ok := e.Function.(*parser.Identifier); ok && len(e.Arguments) > 0 && methods[id.Value] {
+			if name := assignTargetBaseName(e.Arguments[0]); name != "" {
+				assigned[name] = true
+			}
+		}
+		collectAssignedNamesInExpr(e.Function, assigned, methods)
 		for _, a := range e.Arguments {
-			collectAssignedNamesInExpr(a, assigned)
+			collectAssignedNamesInExpr(a, assigned, methods)
 		}
 	}
 }

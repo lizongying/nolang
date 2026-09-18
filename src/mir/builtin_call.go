@@ -1619,13 +1619,38 @@ func (c *codegen) emitBuiltinVecPush(inst *Inst) error {
 		return fmt.Errorf("vec.push: no receiver slot")
 	}
 	elemTy, elemV := c.loadVal(elem)
-	stride := int64(8)
-	switch elemTy {
-	case "%str-long":
-		stride = 24
-	case "i8":
-		stride = 1
+	// 元素寬度與步長必須以**接收者宣告的元素型別**為準，不能以引數值的型別為準：
+	// 整數字面量在 lowering 中一律降為 i64，若照引數型別推導，`[]byte.push(1)`
+	// 會以 8 位元組步長 + `store i64` 寫入，而 []byte 的索引讀寫是 1 位元組步長
+	// ——push 進去的資料整體錯位，只有第 0 個位元組看起來是對的（實測
+	// `out.push(1); out.push(2); out.push(3)` → 01 00 00；全域與具名出參接收者
+	// 皆然）。這正是「容器元素步長 = sizeof(元素型別)」不變量。
+	//
+	// 關鍵：這裡必須用**索引路徑的同一個解析函式** elemTypeOfReceiver
+	// （emitIndex/emitIndexStore 用的就是它），而不是另寫一套映射。兩者不一致
+	// 比「兩邊都錯」更糟：資料按 A 寬度寫、按 B 寬度讀，push 進去的元素會
+	// 互相覆蓋。實測過的教訓：一度改用 elemInfoOfVec（它把 i16/i32 映射為
+	// i16/i32），於是 []i16 變成 push 按 2 位元組、讀取按 8 位元組，w[0] 讀出
+	// 0x02030102 這種「兩個相鄰元素拼在一起」的垃圾。MIR 後端的所有整數型別
+	// 都是 i64（見 llvmTypeOf 的 KindInt 分支），elemTypeOfReceiver 正是這個
+	// 事實的唯一出口，push 必須與它對齊。
+	elemLL := c.elemTypeOfReceiver(recv)
+	if elemTy != elemLL {
+		if conv := c.coerce(elemTy, elemV, elemLL); conv != "" {
+			elemV = conv
+		} else {
+			// 無法轉換的元素（結構體、%option 等）：沿用引數值型別，
+			// 保持與索引路徑相同的位元組寬度假設。
+			elemLL = elemTy
+		}
 	}
+	// 步長 = sizeof(elemLL)。mirStaticTypeSize 覆蓋純量 + %str-long + %vec；
+	// 其餘（使用者結構體）退回 8，與先前行為一致。
+	stride := int64(8)
+	if sz, ok := mirStaticTypeSize(elemLL); ok {
+		stride = sz
+	}
+	elemTy = elemLL
 	vv := c.treg("vpv")
 	c.sb.WriteString(fmt.Sprintf("  %s = load %%vec, %%vec* %s\n", vv, slot))
 	lenG := c.treg("vpl")

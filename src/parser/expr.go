@@ -732,6 +732,20 @@ func (p *Parser) parseInfixExpression(left Expression) Expression {
 		p.nextToken()
 	}
 	expr.Right = p.parseExpression(precedence)
+	// 右運算元缺失必須報錯。以前這裡靜默留下 Right == nil 的中綴節點，而
+	// 語句/區塊解析已經把後續陳述收編到外層區塊——結果是**函式體被默默
+	// 截斷**且編譯照樣成功（src/std/crypto/des.no 的 des-block 尾段就是這樣
+	// 消失的，見 tests/golden 之外的 parser 回歸測試）。呼叫端只在
+	// infixOperators 命中時才會進到這裡，該集合內全是需要右運算元的二元
+	// 運算符，故 Right == nil 一定是錯誤。
+	if expr.Right == nil {
+		// 定位到運算符本身（expr.Token），而不是 p.currentToken：後者此時
+		// 已經停在「吃掉運算符後看到的第一個非 NEWLINE token」，在註解/換行
+		// 插入的情形下會指向一個與錯誤無關的列，反而誤導讀者。
+		p.saveError(fmt.Sprintf("line %d, column %d: expected expression after operator '%s'",
+			expr.Token.Line, expr.Token.Column, expr.Operator))
+		return left
+	}
 
 	// 处理三元表达式（最低优先级）
 	if p.currentToken.Type == lexer.QUESTION {
