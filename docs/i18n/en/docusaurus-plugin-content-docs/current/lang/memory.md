@@ -50,7 +50,7 @@ After rebind, b and a point to the same stack slot, so any later read of b obser
 Stack-slot rebind only affects the **value copy** semantics of stack-type `b = a`; it is fully orthogonal to the deep-clone / move (output param) paths of heap-owning types, which are unaffected by `slotRebindSafe`.
 
 ### Test references
-- `tests/test-slot-rebind.no`: i64/u64 rebind, i128/u128 via `==`, txt via `.len`, degrade-to-copy (`da` reused → `db`/`dc` copy), reassign-after (`ra`=10), param-move (`pm_fn` source is a param → copy), rebind-then-reassign (`rr_fn` → `rr`=99), consume (`consume(m)` → `cm`=84). Expected output: `42 7 1 1 17 5 5 10 100 99 84`.
+- `tests/test-slot-rebind.no`: i64/u64 rebind, i128/u128 via `==`, txt via `.len-bytes()`, degrade-to-copy (`da` reused → `db`/`dc` copy), reassign-after (`ra`=10), param-move (`pm_fn` source is a param → copy), rebind-then-reassign (`rr_fn` → `rr`=99), consume (`consume(m)` → `cm`=84). Expected output: `42 7 1 1 17 5 5 10 100 99 84`.
 - `tests/test-slot-rebind-unsafe.no`: coroutine (`run`/`awy`) capturing a stack variable, verifying `curHasUnsafeConstruct` disables rebind and output matches baseline.
 
 ### Compiler-Inserted Free

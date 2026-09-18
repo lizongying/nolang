@@ -410,7 +410,7 @@ The Nolang standard library provides a rich set of common functionality, includi
 ```no
 ; ❌ Wrong: re-implementing str → []byte conversion
 str-to-bytes = (s str) (out []byte) {
-    n = s.len
+    n = s.len-bytes()
     i = 0
     for i < n {
         out[i] = s[i]
@@ -581,10 +581,10 @@ i <- 'abc': {   ; iterate over each character in the string
 ;   for i <- [0..[1..5][0]] { } ; syntax error
 
 ; ⚠️ Avoid the ... ambiguity
-;   The range operator is .. (two dots). The self-method call is .len.
-;   When written without a space: [0.. .len) → [0...len), the three dots
+;   The range operator is .. (two dots). The self-method call is .len().
+;   When written without a space: [0.. .len()) → [0...len()), the three dots
 ;   look like a single operator (and ... is the return/terminate operator).
-;   Use self.len instead of .len to disambiguate: i <- [0..self.len): { }
+;   Use self.len() instead of .len() to disambiguate: i <- [0..self.len()): { }
 ;   (self and . are semantically equivalent inside method bodies)
 
 ; Conditional loop (the for keyword form is retained for non-1 steps or complex conditions)
@@ -934,7 +934,7 @@ nums(1..3) ; [2]
 ; String
 s = 'abc'
 s[1..]   ; 'bc'
-s[1..s.len) ; 'bc'
+s[1..s.len()) ; 'bc'
 ```
 
 **Types and methods of slices:**
@@ -952,12 +952,12 @@ Therefore, the methods of the original type are directly available:
 ; arr slice → vec view, sharing arr's underlying memory
 a [5]u8 = [0, 1, 2, 3, 4]
 s = a[1..4]    ; s is a []u8 view pointing into a's memory
-n = s.len      ; slice.len
+n = s.len()    ; slice.len()
 
 ; vec slice → vec view, sharing vec's underlying memory
 v = [10, 20, 30, 40, 50]
 s = v[2..]     ; s is a []i64 view
-s.reverse(s.len)  ; slice.reverse
+s.reverse(s.len())  ; slice.reverse
 
 ; str slice → str view, sharing str's underlying memory
 s = 'Hello World'
@@ -1030,15 +1030,13 @@ type.method-name = (params) (results) {
 ```no
 ; str method
 str.to-upper = () (out str) {
-    out.len = .len
-    i = 0
-    for i < .len {
-        c = .[i]
+    out = with-cap(.len-bytes())
+    i <- [0...len-bytes()): {
+        c = .byte(i)
         {
             c >= 97 && c <= 122 -> out[i] = c - 32
             -> out[i] = c
         }
-        i = i + 1
     }
 }
 
@@ -1640,7 +1638,7 @@ serve = (conn server-conn) {
     path == '/' -> path = '/index.html'
 
     ; Strip leading / to get relative path
-    rel = path.slice(1, path.len)
+    rel = path.slice(1, path.len-bytes())
 
     ; Read from embedded filesystem
     data, ok = DIST.read(rel)

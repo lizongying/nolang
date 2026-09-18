@@ -483,7 +483,7 @@ Nolang 標準庫提供了豐富的常用功能，包括字串操作、位元組�
 ```no
 ; ❌ 錯誤：自行實現 str → []byte 轉換
 str-to-bytes = (s str) (out []byte) {
-    n = s.len
+    n = s.len-bytes()
     i = 0
     {
         out[i] = s[i]
@@ -715,10 +715,10 @@ i <- 'abc': {   ; 遍历字符串中的每个字符
 ;   for i <- [0..[1..5][0]] { } ; 語法錯誤
 
 ; ⚠️ 避免 ... 歧義
-;   範圍運算子是 ..（兩點），self 方法調用是 .len。
-;   連寫時 [0.. .len) → [0...len)，三個點看起來像單一運算子
+;   範圍運算子是 ..（兩點），self 方法調用是 .len()。
+;   連寫時 [0.. .len()) → [0...len())，三個點看起來像單一運算子
 ;   （而 ... 是 return/終止運算子）。
-;   應使用 self.len 代替 .len 消歧：i <- [0..self.len): { }
+;   應使用 self.len() 代替 .len() 消歧：i <- [0..self.len()): { }
 ;   （方法體內 self 與 . 語義等價）
 
 ; 條件循環（新式 { } (cond) 取代舊式 for cond { }）
@@ -1144,7 +1144,7 @@ nums(1..3) ; [2]          兩端開區間
 ; 字符串
 s = 'abc'
 s[1..]   ; 'bc'
-s[1..s.len) ; 'bc'
+s[1..s.len()) ; 'bc'
 ```
 
 > 切片語法支援與 match/range-for 相同的 16 種區間組合。在切片上下文中，無界區間基於切片的長度：`[..]` 表示整個切片，`[a..]` 表示從索引 a 到末尾，`[..b]` 表示從開頭到索引 b。
@@ -1164,12 +1164,12 @@ s[1..s.len) ; 'bc'
 ; arr 切片 → vec 視圖，共享 arr 的底層記憶體
 a [5]u8 = [0, 1, 2, 3, 4]
 s = a[1..4]    ; s 是 []u8 視圖，指向 a 的記憶體
-n = s.len      ; slice.len
+n = s.len()    ; slice.len()
 
 ; vec 切片 → vec 視圖，共享 vec 的底層記憶體
 v = [10, 20, 30, 40, 50]
 s = v[2..]     ; s 是 []i64 視圖
-s.reverse(s.len)  ; slice.reverse
+s.reverse(s.len())  ; slice.reverse
 
 ; str 切片 → str 視圖，共享 str 的底層記憶體
 s = 'Hello World'
@@ -1349,16 +1349,14 @@ type.method-name = (params) (results) {
 ```no
 ; str 方法
 str.to-upper = () (out str) {
-    out.len = .len
-    i = 0
-    {
-        c = .[i]
+    out = with-cap(.len-bytes())
+    i <- [0...len-bytes()): {
+        c = .byte(i)
         {
             c >= 97 && c <= 122 -> out[i] = c - 32
             -> out[i] = c
         }
-        i = i + 1
-    } (i < .len)
+    }
 }
 
 ; char 方法
@@ -2304,7 +2302,7 @@ serve = (conn server-conn) {
     path == '/' -> path = '/index.html'
 
     ; 去掉前導 / 得到相對路徑
-    rel = path.slice(1, path.len)
+    rel = path.slice(1, path.len-bytes())
 
     ; 從嵌入的文件系統讀取
     data, ok = DIST.read(rel)

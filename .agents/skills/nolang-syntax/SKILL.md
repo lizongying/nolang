@@ -828,7 +828,7 @@ The Nolang standard library provides a rich set of common functionality, includi
 ```no
 // ❌ Wrong: reimplementing str → []byte conversion
 str-to-bytes = (s str) (out []byte) {
-    n = s.len
+    n = s.len-bytes()
     i = 0
     {
         out[i] = s[i]
@@ -1161,7 +1161,9 @@ int.to-str = () (out str) {
     out = ''
     n = .
     // ... conversion logic using `n` (not `.` directly after first use)
-    out.len = len
+    // Allocate the result up front (e.g. `out = with-cap(digits)`) and fill it
+    // by index. The str length is read-only: read it with `.len()` /
+    // `.len-bytes()`, never assign `out.len = n`.
 }
 ```
 
@@ -1244,10 +1246,10 @@ i <- 'abc': {      // iterate over each character in the string
 //   i <- [0..[1..5][0]]: { }   // syntax error
 
 // ⚠️ Avoid the ... ambiguity in range bounds
-//   The range operator is .. (two dots). The self-method call is .len.
-//   When written without a space: [0.. .len) → [0...len), the three dots
+//   The range operator is .. (two dots). The self-method call is .len().
+//   When written without a space: [0.. .len()) → [0...len()), the three dots
 //   look like a single operator (and ... is the return/terminate operator).
-//   Use self.len instead of .len to disambiguate: i <- [0..self.len): { }
+//   Use self.len() instead of .len() to disambiguate: i <- [0..self.len()): { }
 //   (self and . are semantically equivalent inside method bodies)
 
 // Single if (retained)
@@ -1706,16 +1708,14 @@ Methods are defined on types, using `.` to reference the receiver. The receiver 
 ```no
 // str method
 str.to-upper = () (out str) {
-    out.len = .len
-    i = 0
-    {
-        c = .[i]
+    out = with-cap(.len-bytes())
+    i <- [0...len-bytes()): {
+        c = .byte(i)
         {
             c >= 97 && c <= 122 -> out[i] = c - 32
             -> out[i] = c
         }
-        i = i + 1
-    } (i < .len)
+    }
 }
 
 // char method
@@ -1764,12 +1764,12 @@ Slicing (`arr[1..3]`, `vec[1..3]`, `str[1..3]`) produces a **view** into the ori
 // arr slice → vec view, shares arr's memory
 a [5]u8 = [0, 1, 2, 3, 4]
 s = a[1..4]       // s is []u8 view into a's buffer
-n = s.len         // vec.len
+n = s.len()       // vec.len()
 
 // vec slice → vec view, shares vec's memory
 v = [10, 20, 30, 40, 50]
 s = v[2..]        // s is []i64 view
-s.reverse(s.len)  // vec.reverse
+s.reverse(s.len())  // vec.reverse
 
 // str slice → str view, shares str's memory
 s = 'Hello World'
@@ -1920,7 +1920,7 @@ Method calls on struct fields via `self.field` (abbreviated `.field`) are fully 
 data = .recv-buf.slice(0, .recv-buf-len)   // correctly inferred as str
 
 // .tls-c is a tls.conn field → .tls-c.send() works directly
-written = .tls-c.send(req, req.len)
+written = .tls-c.send(req, req.len())
 ```
 
 ### Interfaces
@@ -2976,7 +2976,7 @@ sub = s[6..11]     // 'World'
 sub = s[0..5)      // 'Hello'
 
 // Length
-n = s.len          // byte length
+n = s.len-bytes()  // byte length
 n = s.count()      // code point count (Unicode character count)
 ```
 
@@ -2986,15 +2986,16 @@ For the complete list of string methods, see the [standard library reference —
 
 ### Auto Length Tracking
 
-When assigning `s[i] = v`, LLVM codegen automatically updates the `len` field to `max(len, idx+1)`, no need to manually set `.len`:
+When assigning `s[i] = v`, LLVM codegen automatically updates the length to `max(len, idx+1)` — no need to set it manually (and it cannot be assigned: the length is read-only):
 
 ```no
 s = ''
-s[0] = 72                      // len automatically becomes 1
-s[1] = 105                     // len automatically becomes 2
+s[0] = 72                      // length automatically becomes 1
+s[1] = 105                     // length automatically becomes 2
 
-// Manually setting .len is only for truncation (shortening)
-s.len = 5
+// Truncation (shortening) is expressed as a slice
+s = s.slice(0, 5)              // code-point truncation
+s = s.slice-bytes(0, 5)        // byte truncation
 ```
 
 ## Integer Arithmetic Overflow (`#{overflow}`)

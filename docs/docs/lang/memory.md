@@ -51,7 +51,7 @@ Nolang 是**無 GC** 語言，記憶體安全由編譯器自動插入 `free` 保
 棧槽重綁定只作用在棧類型 `b = a` 的**值拷貝**語義上，與堆擁有型別的「深層 clone / move（輸出參數）」完全正交；堆類型路徑不受 `slotRebindSafe` 影響。
 
 ### 測試參考
-- `tests/test-slot-rebind.no`：i64/u64 重綁定、i128/u128 經 `==` 比較、txt 經 `.len`、降級拷貝（`da` 複用 → `db`/`dc` 拷貝）、重賦值後（`ra`=10）、參數 move（`pm_fn` 源為參數 → 拷貝）、重綁定後重賦值（`rr_fn` → `rr`=99）、消費（`consume(m)` → `cm`=84）。期望輸出 `42 7 1 1 17 5 5 10 100 99 84`。
+- `tests/test-slot-rebind.no`：i64/u64 重綁定、i128/u128 經 `==` 比較、txt 經 `.len-bytes()`、降級拷貝（`da` 複用 → `db`/`dc` 拷貝）、重賦值後（`ra`=10）、參數 move（`pm_fn` 源為參數 → 拷貝）、重綁定後重賦值（`rr_fn` → `rr`=99）、消費（`consume(m)` → `cm`=84）。期望輸出 `42 7 1 1 17 5 5 10 100 99 84`。
 - `tests/test-slot-rebind-unsafe.no`：協程（`run`/`awy`）capture 棧變數，驗證 `curHasUnsafeConstruct` 禁用重綁定後輸出與基線一致。
 
 ### 編譯器插入 free
