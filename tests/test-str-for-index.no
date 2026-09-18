@@ -1,0 +1,6 @@
+; minimal test for str index in for loop
+s = 'abc'
+i <- [0..3): {
+    b = s[i]
+    print(b)
+}

@@ -1,0 +1,4 @@
+; minimal str index test
+s = 'abc'
+c = s[0]
+print(c)

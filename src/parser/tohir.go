@@ -422,7 +422,31 @@ func (c *hirConv) funcLike(
 	variadicUnion string, line, col int32, extra uint32,
 ) int32 {
 	nodes := make([]int32, 0, len(sig.Parameters)+len(sig.Results)+len(sig.GenericParams)+2)
+	// Method definitions have an implicit `self` as the first parameter in the
+	// AST (inserted by parseMethodDefinition / parseArrayTypeMethodDefinition).
+	// The self-to-out-param refactor moves `self` from the input-parameter list
+	// to the output-parameter list (first KResult), so that the codegen can
+	// alias it to the caller's receiver pointer for mutation propagation.
+	// This only changes the HIR representation — the AST (and thus the checker,
+	// formatter, etc.) still sees `self` as the first parameter.
+	//
+	// The self KResult node is emitted FIRST (before KParam nodes) so that in
+	// the HIR children list the ordering is: [self_result, param1, param2,
+	// ..., result1, result2, ...]. This ensures that `lowerFunction` puts self
+	// at params[0] (the first LLVM argument), matching `emitCallBody`'s
+	// callArgs ordering: [self_ptr, arg1, arg2, ...].
+	isMethod := extra&hir.FlagMethod != 0
+	var selfParam *Parameter
+	selfSkipped := false
+	if isMethod && len(sig.Parameters) > 0 && sig.Parameters[0].Name == "self" {
+		selfParam = sig.Parameters[0]
+		selfSkipped = true
+		nodes = append(nodes, c.param(selfParam, hir.KResult))
+	}
 	for _, p := range sig.Parameters {
+		if isMethod && selfSkipped && p == sig.Parameters[0] {
+			continue // already emitted as KResult above
+		}
 		nodes = append(nodes, c.param(p, hir.KParam))
 	}
 	for _, r := range sig.Results {

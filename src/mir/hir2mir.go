@@ -1644,13 +1644,35 @@ func (l *lowerer) lowerFunction(name string, hirID int32) {
 		l.curRecv = resultVals[0]
 	}
 	l.locals = map[string]ValueID{}
-	for i, pn := range paramNames {
-		l.locals[pn] = params[i]
-		// Record the parameter's DECLARED raw type so unsigned division on a
-		// u64/u32/u16/u8/byte parameter (e.g. u64-to-str's `u`) emits `udiv`/
-		// `urem` instead of `sdiv`/`srem` (MIR flattens integers to i64).
-		if isUnsignedRaw(l.mod.Type(paramTypes[i]).Raw) {
-			l.localRaw[pn] = l.mod.Type(paramTypes[i]).Raw
+	// Build l.locals: each KParam/KResult name maps to its value. The params
+	// slice is built in HIR children order (interleaving KParam and KResult),
+	// so a simple index loop over paramNames is wrong when KResult (self)
+	// precedes KParam children. Instead, iterate params in order and match
+	// names from paramNames (for KParam) and resultNames (for KResult).
+	{
+		pIdx := 0 // index into paramNames
+		rIdx := 0 // index into resultNames
+		for _, c := range l.pkg.Children(hirID) {
+			cn := l.pkg.Node(c)
+			if cn == nil {
+				continue
+			}
+			switch cn.Kind {
+			case hir.KParam:
+				if pIdx < len(paramNames) {
+					l.locals[paramNames[pIdx]] = params[pIdx+rIdx]
+					// Record the DECLARED raw type for unsigned division.
+					if isUnsignedRaw(l.mod.Type(paramTypes[pIdx]).Raw) {
+						l.localRaw[paramNames[pIdx]] = l.mod.Type(paramTypes[pIdx]).Raw
+					}
+					pIdx++
+				}
+			case hir.KResult:
+				if rIdx < len(resultNames) {
+					l.locals[resultNames[rIdx]] = params[pIdx+rIdx]
+					rIdx++
+				}
+			}
 		}
 	}
 	f := l.mod.Func(fid)
@@ -1688,7 +1710,17 @@ func (l *lowerer) lowerFunction(name string, hirID int32) {
 	// integer constant. Aggregate result types (str, struct, slice, array,
 	// option, map) must keep the caller-allocated slot untouched — a "constant 0
 	// of aggregate type" store would corrupt the returned value (see str.fields).
+	//
+	// For a method, the first KResult is `self` (the out-param receiver). Its
+	// value comes from the caller and must NOT be zero-initialized — doing so
+	// overwrites the receiver with 0 before the method body runs (e.g.
+	// `i64.to-str` always saw self=0 and printed "0" regardless of the actual
+	// integer value).
+	isMethod := n.Has(hir.FlagMethod)
 	for i := range resultNames {
+		if isMethod && i == 0 {
+			continue // skip self
+		}
 		switch l.mod.Type(results[i]).Kind {
 		case KindInt, KindBool, KindChar, KindPtr:
 			zero := l.b.EmitInt(OpConst, results[i], 0, "")
@@ -5836,6 +5868,8 @@ func (l *lowerer) bindOutParams(n *hir.Node, callee string, dsts []ValueID) {
 		return
 	}
 	kParam, kResult := 0, 0
+	isMethod := fdef.Has(hir.FlagMethod)
+	resultSkipped := false
 	for _, c := range l.pkg.Children(fid) {
 		cn := l.pkg.Node(c)
 		if cn == nil {
@@ -5845,6 +5879,12 @@ func (l *lowerer) bindOutParams(n *hir.Node, callee string, dsts []ValueID) {
 		case hir.KParam:
 			kParam++
 		case hir.KResult:
+			// For a method, the first KResult is `self` (the receiver
+			// out-param), not a real result — do not count it.
+			if isMethod && !resultSkipped {
+				resultSkipped = true
+				continue
+			}
 			kResult++
 		}
 	}
@@ -5859,13 +5899,23 @@ func (l *lowerer) bindOutParams(n *hir.Node, callee string, dsts []ValueID) {
 	//   - Non-variadic callee: arg-form requires len(args) == kParam+kResult;
 	//     otherwise the result params are pure RETURN values bound by an LHS
 	//     assign (`r = f(...)`), not caller-supplied out-arguments.
+	//   - For a METHOD, the HIR call args include the receiver as the first
+	//     argument (e.g. `src.copy(dst)` has args=[src, dst]), so arg-form
+	//     requires len(args) == 1(receiver) + kParam + kResult. Without the
+	//     +1 for the receiver, `src.copy(dst)` is rejected (2 != 0+1) and the
+	//     result is never moved back into `dst` (test-str copy test reads the
+	//     unmodified '------').
 	//   - Variadic callee: the variadic formal packs >=1 actual args into one
 	//     formal, so len(args) exceeds kParam+kResult. The old strict equality
 	//     guard wrongly rejected these (e.g. `number.max(10, 20, r)`), silently
 	//     discarding the result. For them, arg-form is detected by the trailing
 	//     kResult arguments all being identifiers (legacy passes the variable's
 	//     address as the out-pointer).
-	if len(args) != kParam+kResult && !fdef.Has(hir.FlagVariadic) {
+	recvOffset := 0
+	if isMethod {
+		recvOffset = 1 // the receiver (self) is the first HIR arg
+	}
+	if len(args) != recvOffset+kParam+kResult && !fdef.Has(hir.FlagVariadic) {
 		return
 	}
 	base := len(args) - kResult

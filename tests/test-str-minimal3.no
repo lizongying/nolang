@@ -1,0 +1,30 @@
+; Minimal str test 3 - test str.copy
+src = 'abcdef'
+dst = '------'
+src.copy(dst)
+c0 = dst[0]
+c1 = dst[1]
+print(c0)
+print(c1)
+print(0)
+
+; Test str.eq
+a = 'hello'
+b = 'hello'
+eq1 = a.eq(b, 5)
+print(eq1)
+print(1)
+
+; Test str.index
+s = 'hello world'
+pos1 = s.index('world')
+print(pos1)
+pos2 = s.index('xyz')
+print(pos2)
+print(2)
+
+; Test str.to-upper
+s2 = 'hello'
+upper = s2.to-upper()
+print(upper)
+print(3)

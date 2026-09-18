@@ -5957,8 +5957,22 @@ func (c *codegen) emitCallBody(f *Function, cf *Function, inst *Inst, calleeName
 		if selfLT == "" || selfLT == "void" {
 			selfLT = "i64"
 		}
+		recvT, _ := c.ptype(inst.Args[0])
 		if rs, ok := c.valSlot[inst.Args[0]]; ok && rs != "" {
-			callArgs = append(callArgs, selfLT+"* "+rs)
+			// A fixed stack array ([N x T]) passed as the self out-param of a
+			// %vec (slice) method (e.g. `arr.to-str()` where arr is [3]i64 and
+			// the callee is []t.to-str) must NOT be passed raw: the callee
+			// would reinterpret the array's element bytes as a
+			// %vec{len,cap,data} and dereference a tiny integer as a pointer
+			// -> SIGSEGV. Build a borrow slice view (len=N, cap=0,
+			// data=&arr[0]) so the callee indexes correctly. This mirrors the
+			// same coercion already done for ordinary in-param arguments
+			// (see the plt=="%vec" && HasPrefix(argT,"[") branch below).
+			if selfLT == "%vec" && strings.HasPrefix(recvT, "[") {
+				callArgs = append(callArgs, c.buildVecViewFromArray(recvT, rs))
+			} else {
+				callArgs = append(callArgs, selfLT+"* "+rs)
+			}
 		} else {
 			c.loadSeq++
 			slot := fmt.Sprintf("%%cself%d", c.loadSeq)

@@ -1,0 +1,7 @@
+; minimal test for str concat in loop
+s = 'hello'
+n = s.len-bytes()
+i <- [0..n): {
+    b = s[i]
+    print('byte=' - b.to-str())
+}

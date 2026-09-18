@@ -1,0 +1,4 @@
+; test: print a single array element
+arr [3] = [1, 2, 3]
+s0 = arr[0]
+print(s0)

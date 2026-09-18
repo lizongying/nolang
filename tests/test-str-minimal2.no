@@ -1,0 +1,12 @@
+; Minimal str test to find the hang
+s = 'abcdef'
+n = s.len-bytes()
+print(n)
+print(0)
+
+s.fill(120)
+print(1)
+
+c0 = s[0]
+print(c0)
+print(2)

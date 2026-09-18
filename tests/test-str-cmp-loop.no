@@ -1,0 +1,14 @@
+; test: str concat with to-str in loop
+s = '  hello'
+n = s.len-bytes()
+i <- [0..n): {
+    b = s[i]
+    is-ws = false
+    {
+        b == 32 -> is-ws = true
+    }
+    {
+        is-ws -> print('WS')
+        -> print('non-WS')
+    }
+}
