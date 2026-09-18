@@ -664,8 +664,6 @@ zstd-decompress = (data []byte) (out []byte) {
         pos: 0
         window-size: 0
     }
-    frame.out []byte
-    frame.dict []byte
 
     ; 讀取 frame header
     ok = frame.read-frame-header()

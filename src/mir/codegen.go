@@ -5271,11 +5271,18 @@ func (c *codegen) emitCall(f *Function, inst *Inst) error {
 			case "i64":
 				c.sb.WriteString(fmt.Sprintf("  call void @print_i64(%s %s)\n", argT, argV))
 			case "i8":
-				// byte: zero-extend to i64 and print the integer value, matching
-				// legacy print-byte (fmt-int of the zext).
+				// byte/u8 and i8 share the LLVM i8 representation, so the
+				// static nolang type decides the extension: unsigned byte/u8
+				// zero-extends (0xFF prints 255), signed i8 sign-extends (0xFF
+				// prints -1). Without this split every i8 slot printed unsigned,
+				// so a module-level `s i8 = -1` came out as 255.
+				ext := "zext"
+				if c.rawTypeOf(a) == "i8" {
+					ext = "sext"
+				}
 				c.loadSeq++
 				z := fmt.Sprintf("%%ptz%d", c.loadSeq)
-				c.sb.WriteString(fmt.Sprintf("  %s = zext i8 %s to i64\n", z, argV))
+				c.sb.WriteString(fmt.Sprintf("  %s = %s i8 %s to i64\n", z, ext, argV))
 				c.sb.WriteString(fmt.Sprintf("  call void @print_i64(i64 %s)\n", z))
 			case "double":
 				c.sb.WriteString(fmt.Sprintf("  call void @print_double(%s %s)\n", argT, argV))

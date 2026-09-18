@@ -33,7 +33,54 @@ type NodeSemantics struct {
 	// OpeningBraceComment 保存 `{` 同行註釋（BlockStatement 或裸 match 的
 	// IfExpression）。僅 formatter 讀取。
 	OpeningBraceComment *CommentGroup
+
+	// Callee 記錄「這個 CallExpression 被改寫成了什麼」（見 CalleeKind）。
+	//
+	// 用途：整程式 pass 會把方法呼叫 `recv.m(args)` 攤平為自由函式呼叫
+	// `Type.m(recv, args)`（接收者 unshift 進 Arguments，被呼叫者換成
+	// Identifier），語法上的 DotExpression 隨之消失。攤平後「第一個實參曾
+	// 是接收者」這件事在 AST 上已不可自證，過去只能靠「被呼叫者的名字是否
+	// 撞上某個方法定義」反推——那既會漏（同名 alias）也會誤（自由函式被
+	// 誤認）。改寫時在此留一筆，就把這個事實變成**顯式記錄**。
+	//
+	// 寫入者（全部在整程式 pass 中，皆早於 RunAllLints）：
+	//   - build/transpiler.go 的 resolveMethodCall（攤平方法呼叫，兩個分支）
+	//     → CalleeMethod。此時 program 即 merged，其 Sem 已建好並歸併完各模塊。
+	//   - checker.go 的 resolveModuleCallsInExpr（衝突函式改名 `module.fn`）
+	//     → CalleeModuleFn。
+	// 讀取者：checker（目前唯一消費點是 ValidateUnassignedReturns 系列的
+	// collectAssignedNamesInExpr）。
+	Callee CalleeKind
 }
+
+// CalleeKind 描述一個 CallExpression 在整程式改寫後代表哪一類呼叫。
+//
+// 注意：**原始碼永遠寫不出帶點的 Identifier**——lexer 的 isLetter 含 `-`
+// （這才是 `enc-conn` 合法的原因）但不含 `.`，readIdentifier 只吃
+// isLetter||isDigit。所以「被呼叫者是 Identifier 且名字帶點」只可能來自
+// 改寫，源碼在此一律先給 DotExpression。
+type CalleeKind uint8
+
+const (
+	// CalleeUnknown 未記錄：源碼原樣的呼叫，或未經本機制改寫的呼叫。
+	CalleeUnknown CalleeKind = iota
+	// CalleeMethod：由 `recv.m(args)` 攤平而來的（用戶自訂）方法呼叫，
+	// Arguments[0] 是接收者。接收者可被該方法改寫（如 `ec.init(c, key)`）。
+	//
+	// 已知的非寫入者：checker 自己的 resolveSelfInExpr 也會把方法體內的
+	// `self.m(args)` 改寫成 `Type.m(self, args)`（同樣是 AST、同樣早於
+	// RunAllLints），但**刻意不記錄**——它的接收者恆為 `self`，而 `self`
+	// 已被 declaredResults 從返回參數中剔除，永不參與「未賦值返回參數」
+	// 這類判定。因此這裡不收錄它，不是漏寫。
+	CalleeMethod
+	// CalleeModuleFn：由模組限定自由函式呼叫改寫而來（衝突改名為
+	// `module.fn`）。Arguments[0] 是**普通實參**，不是接收者，按值傳入。
+	//
+	// 它與 CalleeMethod 的**形狀完全相同**（皆為 `Identifier{"帶點名"}` +
+	// 首實參），兩者共用同一個字串命名空間（見 build/module_prefix.go）；
+	// 記錄下來才區分得出「首實參是不是接收者」。
+	CalleeModuleFn
+)
 
 // RTFlag 是 fmt 往返專用的表層語法標誌位集合。
 type RTFlag uint8
@@ -232,6 +279,28 @@ func (s *SemanticContext) HasRTFlag(n Node, fl RTFlag) bool {
 		return ns.RTFlags&fl != 0
 	}
 	return false
+}
+
+// SetCallee 記錄某個 CallExpression 被整程式改寫成了哪一種呼叫（見 CalleeKind）。
+// 由 build/transpiler.go 的 resolveMethodCall 在攤平／改名當下寫入。
+// nil receiver / nil 節點安全。
+func (s *SemanticContext) SetCallee(n Node, k CalleeKind) {
+	if s == nil || n == nil {
+		return
+	}
+	s.ensure(n).Callee = k
+}
+
+// CalleeOf 回報節點被改寫成的呼叫種類；從未記錄時返回 CalleeUnknown
+// （源碼原樣的呼叫，或未經本機制改寫者）。nil receiver 安全。
+func (s *SemanticContext) CalleeOf(n Node) CalleeKind {
+	if s == nil || n == nil {
+		return CalleeUnknown
+	}
+	if ns, ok := s.nodeSem[n]; ok {
+		return ns.Callee
+	}
+	return CalleeUnknown
 }
 
 // SetOpeningBraceComment 設定節點的 `{` 同行註釋；cg 為 nil 時清除。

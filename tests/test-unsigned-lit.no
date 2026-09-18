@@ -1,0 +1,57 @@
+; test-unsigned-lit — 負整數字面量指派給無號整數型別，必須讀回無號值
+;
+; Regression（src/std/archive/xz.no:649 的 `unpacked-size = -1`，unpacked-size 為 byte）：
+;   checker  原本報 "cannot assign i64 value to byte variable"（阻塞 no build）；
+;   codegen  側即使放行，MIR 也把所有純量整數扁平化成 i64，byte 綁定存的是 i64 -1，
+;            print 出來是 "-1"；
+;   而同一個字面量寫進 []byte 元素會被截成 i8、print 走 zext → 印 255。兩邊不一致。
+; 現在統一成無號：
+;   1. checker：整數字面量指派給已宣告型別的變數 → 常數轉換，只放行
+;      「負字面量 → 無號目標」（checker.isIntLiteralNarrowingToDeclared）；
+;   2. mir：lower 時把該常數摺進目標值域（mir.tryUnsignedLitFold）。
+;
+; 有號目標（i8/i64）不受影響，仍讀回 -1。
+;
+; 注意：本檔刻意把斷言放進 main() —— 腳本頂層的綁定會被降成 global（拿到真實
+; i8 槽位），走的不是這條路徑。
+
+main = () () {
+    b byte = -1
+    print('byte -1 = ')
+    print(b)
+    print('\n')
+
+    c byte = 0
+    c = -1
+    print('reassign byte -1 = ')
+    print(c)
+    print('\n')
+
+    u u16 = -1
+    print('u16 -1 = ')
+    print(u)
+    print('\n')
+
+    w u32 = -2
+    print('u32 -2 = ')
+    print(w)
+    print('\n')
+
+    ; ── 反向守衛：有號型別維持原樣 ──
+    s i8 = -1
+    print('i8 -1 = ')
+    print(s)
+    print('\n')
+
+    n i64 = -1
+    print('i64 -1 = ')
+    print(n)
+    print('\n')
+
+    ; ── []byte 元素必須與上面一致（同一個字面量，兩種存放位置）──
+    v []byte = with-len(1)
+    v[0] = -1
+    print('vec elem -1 = ')
+    print(v[0])
+    print('\n')
+}

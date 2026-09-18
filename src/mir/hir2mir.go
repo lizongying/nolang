@@ -1784,6 +1784,99 @@ func (l *lowerer) curFuncName() string {
 	return ""
 }
 
+// unsignedIntWidth returns the bit width of an unsigned nolang raw integer
+// type, or 0 when raw is not an unsigned integer type. MIR flattens every
+// integer to i64, so u64/u128 are reported as 64 (no wider representation
+// exists at runtime).
+func unsignedIntWidth(raw string) int {
+	switch raw {
+	case "byte", "u8":
+		return 8
+	case "u16":
+		return 16
+	case "u32":
+		return 32
+	case "u64", "u128":
+		return 64
+	}
+	return 0
+}
+
+// foldUnsignedIntConst converts a NEGATIVE integer constant into the value it
+// denotes under the two's-complement bit pattern of an unsigned target type
+// (e.g. -1 as byte becomes 255). Non-negative constants are returned unchanged.
+//
+// This is the codegen half of the checker's constant-conversion rule for
+// `x byte = -1`: MIR flattens scalar integers to i64, so without the fold a
+// byte-typed binding would store i64 -1 and read back as -1, while the same
+// literal stored into a []byte element (truncated to i8, printed via zext)
+// reads back as 255. Folding at the assignment makes both agree.
+func foldUnsignedIntConst(v int64, width int) int64 {
+	if v >= 0 || width <= 0 {
+		return v
+	}
+	if width > 64 {
+		width = 64
+	}
+	mask := uint64(1)<<uint(width) - 1
+	return int64(uint64(v) & mask)
+}
+
+// tryUnsignedLitFold lowers an integer literal (optionally negated, e.g. -1)
+// that is being assigned to a binding declared with the unsigned raw integer
+// type raw. The constant is folded into the target's value range so the stored
+// value matches unsigned semantics — `b byte = -1` stores 255, not -1.
+//
+// Returns (value, true) on success and (NoVal, false) when the node is not a
+// negative integer literal, raw is not an unsigned integer type, or the fold is
+// a no-op (u64/u128, where i64 cannot represent values above 2^63).
+func (l *lowerer) tryUnsignedLitFold(nodeID int32, raw string) (ValueID, bool) {
+	w := unsignedIntWidth(raw)
+	if w == 0 || nodeID == hir.NoID {
+		return NoVal, false
+	}
+	n := l.pkg.Node(nodeID)
+	if n == nil {
+		return NoVal, false
+	}
+	var val int64
+	switch n.Kind {
+	case hir.KIntLit, hir.KByteLit:
+		val = n.Val
+	case hir.KPrefix:
+		// `-1` lowers as KPrefix("-") over KIntLit(1).
+		if l.pkg.Str(n.S) != "-" {
+			return NoVal, false
+		}
+		operand := hir.NoID
+		for _, c := range l.pkg.Children(n.Id) {
+			operand = c
+			break
+		}
+		if operand == hir.NoID {
+			return NoVal, false
+		}
+		on := l.pkg.Node(operand)
+		if on == nil || (on.Kind != hir.KIntLit && on.Kind != hir.KByteLit) {
+			return NoVal, false
+		}
+		val = -on.Val
+	default:
+		return NoVal, false
+	}
+	if val >= 0 {
+		return NoVal, false
+	}
+	folded := foldUnsignedIntConst(val, w)
+	if folded == val {
+		return NoVal, false
+	}
+	// Keep the i64 MIR type: scalar integer bindings are flattened to i64
+	// regardless of their declared width, so emitting a byte-typed constant
+	// here would diverge from every other byte assignment path.
+	return l.b.EmitInt(OpConst, l.b.Type("i64"), folded, ""), true
+}
+
 func (l *lowerer) lowerStmt(id int32) {
 	l.stmtVal = NoVal
 	n := l.pkg.Node(id)
@@ -1881,6 +1974,16 @@ func (l *lowerer) lowerStmt(id int32) {
 		if l.typeHint != NoType && l.typeHint != l.voidType {
 			if ty := l.mod.Type(l.typeHint); ty != nil && ty.Raw != "" {
 				l.noteAnonymousStructLit(c, strings.TrimPrefix(ty.Raw, "?"))
+			}
+		}
+		// 整數字面量指派給無號型別的綁定：常數轉換（`b byte = -1` 存 255 而非 -1）。
+		// 只對「整個初始化式就是（負）整數字面量」生效，不會外溢到巢狀呼叫實參。
+		if name != "" {
+			if raw, ok := l.localRaw[name]; ok {
+				if folded, foldedOK := l.tryUnsignedLitFold(c, raw); foldedOK {
+					val = folded
+					break
+				}
 			}
 		}
 		val = l.lowerExpr(c)
@@ -6732,7 +6835,19 @@ func (l *lowerer) lowerAssignNode(assignID int32) ValueID {
 			}
 		}
 	}
-	v := l.lowerExpr(value)
+	// 整數字面量指派給無號型別的綁定：常數轉換（`b = -1`（b 為 byte）存 255 而非 -1）。
+	// 與 KLet 分支同源，只對「整個右側就是（負）整數字面量」生效。
+	var v ValueID = NoVal
+	if tn.Kind == hir.KIdent && value != hir.NoID {
+		if nm := l.pkg.Str(tn.S); nm != "" {
+			if raw, ok := l.localRaw[nm]; ok {
+				v, _ = l.tryUnsignedLitFold(value, raw)
+			}
+		}
+	}
+	if v == NoVal {
+		v = l.lowerExpr(value)
+	}
 	l.typeHint = NoType
 	if v == NoVal {
 		return NoVal

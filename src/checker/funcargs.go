@@ -817,6 +817,50 @@ func isSafeBitwiseNarrowing(expr parser.Expression, targetType string) bool {
 	return isBitwiseConstructExpr(expr)
 }
 
+// isIntLiteralNarrowingToDeclared 報告「整數字面量指派給已宣告整數型別的變數」
+// 是否應視為合法的常數轉換（不報窄化錯誤）。
+//
+// 適用情境（僅限指派語句，不含呼叫實參）：
+//
+//	x byte = 0        ; 已在範圍內，走一般範圍檢查（此函式回傳 false）
+//	x byte = -1       ; 負字面量 → 無號目標：二補數位模式轉換（0xFF == 255），放行
+//	x byte = 300      ; 正值超出上界 = 真實數值溢位，仍報錯
+//	x i8   = -200     ; 負值超出有號下界 = 真實數值溢位，仍報錯
+//
+// 語義界線：負字面量寫入無號變數是「位模式指派」（sentinel 慣用法，如 -1 表示
+// 未知/全 1），截斷結果由目標寬度唯一決定；正值超出上界則是「數值溢位」，屬於
+// 真實的邏輯錯誤，必須繼續報錯。
+//
+// 只在截斷無歧義時放行：字面量需落在目標寬度的 [-2^(w-1), 2^w-1] 視窗內
+// （w = 目標位寬）；例如 byte 的視窗是 -128..255，故 -200 落在窗外仍報錯。
+func isIntLiteralNarrowingToDeclared(expr parser.Expression, targetType string) bool {
+	val, ok := integerLiteralValue(expr)
+	if !ok {
+		return false
+	}
+	min, max, ok := intTypeRange(targetType)
+	if !ok {
+		return false
+	}
+	// 落在目標範圍內的走既有路徑，這裡只處理越界的情形。
+	if val >= min && val <= max {
+		return false
+	}
+	// 只放行「負字面量 → 無號目標」這一檔。
+	if val >= 0 || min != 0 {
+		return false
+	}
+	w := integerBitWidth(targetType)
+	if w == 0 {
+		return false
+	}
+	if w >= 64 {
+		// 任何 int64 都有唯一確定的 64 位元（或更寬）二補數位模式。
+		return true
+	}
+	return val >= -(int64(1) << uint(w-1))
+}
+
 // narrowingHint 回傳一個可操作的窄化修復提示。當 fromType 的值需要賦值給
 // 更窄的 toType 時，提示使用者如何用位元運算安全窄化。
 //

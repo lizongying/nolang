@@ -655,7 +655,6 @@ lzma-decompress = (data []byte) (out []byte) {
     dec.lc = lc
     dec.lp = lp
     dec.pb = pb
-    dec.out []byte
     dec.state = 0
     dec.rep0 = 0
     dec.rep1 = 0
@@ -869,7 +868,6 @@ lzma2-decompress-stream = (data []byte, start-pos i64, out []byte) {
             dec.lc = 3
             dec.lp = 0
             dec.pb = 2
-            dec.out []byte
             dec.state = 0
             dec.rep0 = 0
             dec.rep1 = 0

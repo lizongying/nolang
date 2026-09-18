@@ -4104,6 +4104,12 @@ func resolveMethodCall(dot *parser.DotExpression, ce *parser.CallExpression,
 			Value: recvIdent.Value,
 		}
 		ce.Arguments = append([]parser.Expression{receiverArg}, ce.Arguments...)
+		// 記一筆「這是一次被攤平的方法呼叫」到語義副表：攤平後 DotExpression
+		// 消失、接收者變成 Arguments[0]，這個事實已無法從 AST 自證，
+		// checker 需要它來判定接收者被改寫（見 parser.CalleeKind）。
+		if program != nil && program.Sem != nil {
+			program.Sem.SetCallee(ce, parser.CalleeMethod)
+		}
 		return true
 	}
 	// Early exit: if the method is a builtin (e.g. "len") and no generic method
@@ -4238,6 +4244,10 @@ func resolveMethodCall(dot *parser.DotExpression, ce *parser.CallExpression,
 		Value: recvIdent.Value,
 	}
 	ce.Arguments = append([]parser.Expression{receiverArg}, ce.Arguments...)
+	// 同上：非泛型分支的攤平也要留記錄（見 parser.CalleeKind）。
+	if program != nil && program.Sem != nil {
+		program.Sem.SetCallee(ce, parser.CalleeMethod)
+	}
 	return true
 }
 // matchTypePattern matches a type pattern like "[n]t" against a concrete type like "[4]i64".

@@ -953,9 +953,9 @@ func ValidateTypes(program *parser.Program) []ValidateResult {
 		// 判斷是否為 struct 方法
 		selfType := ""
 		if fd, ok := stmt.(*parser.FunctionDefinition); ok {
-		if len(fd.Results) > 0 && fd.Results[0].Name == "self" {
-			selfType = fd.Results[0].Type.String()
-		}
+			if len(fd.Results) > 0 && fd.Results[0].Name == "self" {
+				selfType = fd.Results[0].Type.String()
+			}
 			// 跳過單態化生成的函式（函式名含 '__'），因為這些函式
 			// 由編譯器自動生成，其型別檢查應在泛型模板層面完成。
 			// 單態化後的函式體中 i64 字面量賦值給特化類型（如 f64、u8）
@@ -1243,6 +1243,10 @@ func checkNaming(stmt parser.Statement, globalVars map[string]bool) []ValidateRe
 		if s.Name != nil && strings.HasPrefix(s.Name.Value, "__") {
 			return results
 		}
+		// 註：點號名字（`recv.field`）不可能出現在這裡——產生它的點號欄位型別
+		// 宣告已被 parser 移除（見 parser/stmt.go 的相關註解），而模組前綴改名
+		// 只作用於頂層 LetStatement，本函式已在上方跳過。故不需要為點號名字
+		// 開任何豁免（曾誤以 IsFieldDecl 旗標處理，該旗標已隨語法一併移除）。
 		if s.Name != nil && !isValidVarName(s.Name.Value) {
 			results = append(results, ValidateResult{
 				TraceID: "2dhoris2",
@@ -1862,33 +1866,26 @@ func ValidateUndefinedVars(program *parser.Program, rootDir string) []ValidateRe
 	return results
 }
 
-// methodDefNames 收集程式中所有方法定義的完整名稱（`Type.method` /
-// `module.Type.method`，含單態化前綴後的變體）。
+// 註：此處原本有一個 methodDefNames()，以「被呼叫者的名字是否撞上某個方法
+// 定義」反推「攤平後的首實參曾是接收者」。該做法已廢除，改走語義副表：
 //
-// 用途：runAllLints 是在「整個 merged 程式」上執行的，而 merged 程式在
-// 合併 std 模組時會被整程式 pass 重寫——其中 transpiler 的呼叫解析會把
-// 方法呼叫 `recv.m(args)` 攤平成自由函式呼叫 `Type.m(recv, args)`
-// （見 build/transpiler.go 的 `ce.Function = &parser.Identifier{...}` +
-// `ce.Arguments = append([]parser.Expression{receiverArg}, ...)`）。
-// 攤平後語法上的 DotExpression 消失，接收者變成第一個實參，
-// 「方法呼叫會改寫接收者」的判定就必須靠這裡的方法名集合來認出。
-func methodDefNames(program *parser.Program) map[string]bool {
-	names := make(map[string]bool)
-	for _, stmt := range program.Statements {
-		if fd, ok := stmt.(*parser.FunctionDefinition); ok && fd.IsMethodDef {
-			names[fd.Name] = true
-		}
-	}
-	return names
-}
+//   - 會漏：衝突改名的自由函式 `module.fn` 與某方法定義同名時，會被誤認成
+//     方法呼叫（見 build/module_prefix.go 的命名空間共用問題）。
+//   - 會誤：自由函式的首實參是按值傳入的，本就不該算「已賦值」。
+//   - 根因：攤平的結果在 AST 上不可自證，只能靠名字字串猜。
+//
+// 現在改由攤平點（build/transpiler.go 的 resolveMethodCall）把
+// 「這是一次被攤平的方法呼叫」寫進 parser.SemanticContext（parser.CalleeKind），
+// 檢查側直接讀 `sem.CalleeOf(call) == parser.CalleeMethod`——事實顯式記錄，
+// 不再依賴名字能否撞上某個定義。
 
 func ValidateUninitOutputParams(program *parser.Program) []ValidateResult {
 	var results []ValidateResult
 	// 預計算應跳過校驗的內建樁（含同名多載延續定義）。
 	suppressed := builtinSuppressedDefs(program)
-	// 方法定義名集合：攤平後的方法呼叫（`Type.m(recv, ...)`）第一個實參
-	// 是被改寫的接收者，需與 DotExpression 形式一視同仁（見 methodDefNames）。
-	methods := methodDefNames(program)
+	// 語義副表：攤平後的方法呼叫（`Type.m(recv, ...)`）第一個實參是被改寫的
+	// 接收者，需與 DotExpression 形式一視同仁（理由見上方註釋）。
+	sem := program.Sem
 	for _, stmt := range program.Statements {
 		fd, ok := stmt.(*parser.FunctionDefinition)
 		if !ok || fd.Body == nil {
@@ -1926,7 +1923,7 @@ func ValidateUninitOutputParams(program *parser.Program) []ValidateResult {
 		}
 		// Collect all directly-assigned variable names in the body
 		assigned := make(map[string]bool)
-		collectAssignedNames(fd.Body.Statements, assigned, methods)
+		collectAssignedNames(fd.Body.Statements, assigned, sem)
 		// Collect all read variable names in the body
 		read := make(map[string]bool)
 		collectReadNames(fd.Body.Statements, read)
@@ -1955,8 +1952,8 @@ func ValidateUnassignedReturns(program *parser.Program) []ValidateResult {
 	var results []ValidateResult
 	// 預計算應跳過校驗的內建樁（含同名多載延續定義）。
 	suppressed := builtinSuppressedDefs(program)
-	// 方法定義名集合，理由同 ValidateUninitOutputParams（見 methodDefNames）。
-	methods := methodDefNames(program)
+	// 語義副表，理由同 ValidateUninitOutputParams。
+	sem := program.Sem
 	for _, stmt := range program.Statements {
 		fd, ok := stmt.(*parser.FunctionDefinition)
 		if !ok || fd.Body == nil {
@@ -1999,7 +1996,7 @@ func ValidateUnassignedReturns(program *parser.Program) []ValidateResult {
 		}
 		// Collect all directly-assigned variable names in the body
 		assigned := make(map[string]bool)
-		collectAssignedNames(fd.Body.Statements, assigned, methods)
+		collectAssignedNames(fd.Body.Statements, assigned, sem)
 		// Report any result parameter that is never assigned
 		for _, p := range retParams {
 			if !assigned[p.name] {
@@ -2107,11 +2104,12 @@ func builtinSuppressedDefs(program *parser.Program) map[*parser.FunctionDefiniti
 // collectAssignedNames 收集 stmts 中所有「被寫入」的變數名（見
 // assignTargetBaseName），以及「作為方法呼叫接收者而被改寫」的變數名。
 //
-// methods 是程式中的方法定義名集合（methodDefNames）：merged 程式中
-// `recv.m(args)` 已被攤平成 `Type.m(recv, args)`，接收者（第一個實參）
-// 必須靠這個集合認出，否則 `ec.init(c, key)` 這類「以方法初始化出參」
-// 的函式會被誤報為「返回參數從未賦值」。
-func collectAssignedNames(stmts []parser.Statement, assigned map[string]bool, methods map[string]bool) {
+// sem 是語義副表（program.Sem）：merged 程式中 `recv.m(args)` 已被攤平成
+// `Type.m(recv, args)`，接收者（第一個實參）已無法從語法自證，只能靠攤平點
+// 寫入的 `CalleeOf(call) == parser.CalleeMethod` 認出；否則 `ec.init(c, key)`
+// 這類「以方法初始化出參」的函式會被誤報為「返回參數從未賦值」（i3k422u3）。
+// sem 為 nil 時等同於「全部未記錄」（安全降級，只是不再認得攤平形態）。
+func collectAssignedNames(stmts []parser.Statement, assigned map[string]bool, sem *parser.SemanticContext) {
 	for _, stmt := range stmts {
 		if stmt == nil {
 			continue
@@ -2122,7 +2120,7 @@ func collectAssignedNames(stmts []parser.Statement, assigned map[string]bool, me
 				assigned[s.Name.Value] = true
 			}
 			if s.Value != nil {
-				collectAssignedNamesInExpr(s.Value, assigned, methods)
+				collectAssignedNamesInExpr(s.Value, assigned, sem)
 			}
 		case *parser.MultiAssignStatement:
 			for _, target := range s.Targets {
@@ -2131,13 +2129,13 @@ func collectAssignedNames(stmts []parser.Statement, assigned map[string]bool, me
 				}
 			}
 			if s.Value != nil {
-				collectAssignedNamesInExpr(s.Value, assigned, methods)
+				collectAssignedNamesInExpr(s.Value, assigned, sem)
 			}
 		case *parser.BlockStatement:
-			collectAssignedNames(s.Statements, assigned, methods)
+			collectAssignedNames(s.Statements, assigned, sem)
 		case *parser.ForStatement:
 			if s.Init != nil {
-				collectAssignedNames([]parser.Statement{s.Init}, assigned, methods)
+				collectAssignedNames([]parser.Statement{s.Init}, assigned, sem)
 			}
 			// A range-for loop variable (i <- [a..b): {...}) is always
 			// assigned by the iteration, so it must not be flagged as
@@ -2148,30 +2146,30 @@ func collectAssignedNames(stmts []parser.Statement, assigned map[string]bool, me
 				assigned[s.IterRange.Variable] = true
 			}
 			if s.Body != nil {
-				collectAssignedNames(s.Body.Statements, assigned, methods)
+				collectAssignedNames(s.Body.Statements, assigned, sem)
 			}
 		case *parser.ExpressionStatement:
 			if s.Expression != nil {
-				collectAssignedNamesInExpr(s.Expression, assigned, methods)
+				collectAssignedNamesInExpr(s.Expression, assigned, sem)
 			}
 		case *parser.ReturnStatement:
 			if s.ReturnValue != nil {
-				collectAssignedNamesInExpr(s.ReturnValue, assigned, methods)
+				collectAssignedNamesInExpr(s.ReturnValue, assigned, sem)
 			}
 		}
 	}
 }
-func collectAssignedNamesInExpr(expr parser.Expression, assigned map[string]bool, methods map[string]bool) {
+func collectAssignedNamesInExpr(expr parser.Expression, assigned map[string]bool, sem *parser.SemanticContext) {
 	if expr == nil {
 		return
 	}
 	switch e := expr.(type) {
 	case *parser.IfExpression:
 		if e.Consequence != nil {
-			collectAssignedNames(e.Consequence.Statements, assigned, methods)
+			collectAssignedNames(e.Consequence.Statements, assigned, sem)
 		}
 		if e.Alternative != nil {
-			collectAssignedNames(e.Alternative.Statements, assigned, methods)
+			collectAssignedNames(e.Alternative.Statements, assigned, sem)
 		}
 	case *parser.ConditionalExpression:
 		// ternary cond ? a : b — no statements, just expressions
@@ -2182,7 +2180,7 @@ func collectAssignedNamesInExpr(expr parser.Expression, assigned map[string]bool
 			assigned[name] = true
 		}
 		if e.Value != nil {
-			collectAssignedNamesInExpr(e.Value, assigned, methods)
+			collectAssignedNamesInExpr(e.Value, assigned, sem)
 		}
 	case *parser.CallExpression:
 		// A method call mutates its receiver: `out.init(c, key)`,
@@ -2210,18 +2208,23 @@ func collectAssignedNamesInExpr(expr parser.Expression, assigned map[string]bool
 		//     ;                        args: [ec, c, key]}   → 這裡
 		// 少了這一支，`ec` 就會被誤報 "never assigned"（i3k422u3）。
 		//
-		// 只在被呼叫者確實是**方法定義**時才把第一個實參算作接收者：
-		// 自由函式的首個實參是按值傳入的（不會被改寫），若一併放行會
-		// 讓這條檢查失去意義。使用者手寫的 `Type.m(recv, ...)` 靜態
-		// 呼叫語意與 `recv.m(...)` 相同，同樣適用。
-		if id, ok := e.Function.(*parser.Identifier); ok && len(e.Arguments) > 0 && methods[id.Value] {
+		// 判據來自**語義副表**，不再靠名字反推：攤平點
+		// （build/transpiler.go 的 resolveMethodCall）在改寫當下會於
+		// program.Sem 上記一筆 parser.CalleeMethod，這裡直接讀那個事實。
+		//
+		// 舊做法是「被呼叫者的名字是否撞上某個方法定義」，已廢除：
+		// 它既會漏（衝突改名的自由函式 module.fn 與某方法同名時被誤認成
+		// 方法，見 build/module_prefix.go 的命名空間共用問題），也會誤
+		// （自由函式首實參按值傳入，本就不該算已賦值）。而且它依賴的是
+		// 名字字串能否撞上某個定義這種脆弱推理，而不是一次顯式記錄。
+		if sem.CalleeOf(e) == parser.CalleeMethod && len(e.Arguments) > 0 {
 			if name := assignTargetBaseName(e.Arguments[0]); name != "" {
 				assigned[name] = true
 			}
 		}
-		collectAssignedNamesInExpr(e.Function, assigned, methods)
+		collectAssignedNamesInExpr(e.Function, assigned, sem)
 		for _, a := range e.Arguments {
-			collectAssignedNamesInExpr(a, assigned, methods)
+			collectAssignedNamesInExpr(a, assigned, sem)
 		}
 	}
 }
@@ -3187,7 +3190,7 @@ func ValidateIntOverflow(program *parser.Program) []ValidateResult {
 		results = append(results, ValidateResult{
 			Line:    line,
 			Column:  col,
-			Message: "整數運算 `a OP b` 預設在溢出時回傳 option<int>（永不 panic）。若希望回傳普通 int，可加註解 `#{overflow = wrap}`（無聲回繞）/`clamp0`（下溢歸零）/`min`/`max`/`saturate`（飽和箝位）；亦可用型別前綴形式如 `#{overflow = u8-max}` 或 `#{overflow = i8-min}`。",
+			Message: "整數運算 `a OP b` 預設在溢出時回傳 option<int>。若希望回傳普通 int，可加註解 `#{overflow = wrap}`（無聲回繞）/`clamp0`（下溢歸零）/`min`/`max`/`saturate`（飽和箝位）；亦可用型別前綴形式如 `#{overflow = u8-max}` 或 `#{overflow = i8-min}`。",
 			TraceID: "ovf-int-default",
 		})
 	}
@@ -3373,7 +3376,8 @@ func ValidateUnhandledOverflow(program *parser.Program, mainFile string) []Valid
 		return f
 	}
 
-	walkStmt := func(stmt parser.Statement, fnReturnsOption, enclosingOverflow bool, varTypes map[string]string, selfType, curFile string) {}
+	walkStmt := func(stmt parser.Statement, fnReturnsOption, enclosingOverflow bool, varTypes map[string]string, selfType, curFile string) {
+	}
 	// valueCtx 標記該表達式處於「值上下文」（綁定右值 / 回傳值 / 呼叫實參），
 	// 而非「陳述上下文」（值被丟棄）。match 作表達式使用時
 	// （`result = x: { 2 -> 2 + 1 }`），臂末表達式就是臂的值，不是被丟棄的
@@ -3424,18 +3428,18 @@ func ValidateUnhandledOverflow(program *parser.Program, mainFile string) []Valid
 			// 內陳述傳遞——若外層陳述已被 #{overflow=...} 註解，臂體內的整數運算
 			// 一併視為已處理（否則 `cond -> body` 臂體內的 `cp = cp + 1` 會被孤立上報）。
 			// walkArm 逐條走臂體；在值上下文下，臂的最後一條「表達式陳述」即為
-		// 該臂的值（不是被丟棄），跳過以免誤報。
-		walkArm := func(stmts []parser.Statement) {
-			for i, b := range stmts {
-				if valueCtx && i == len(stmts)-1 {
-					if _, isExprStmt := b.(*parser.ExpressionStatement); isExprStmt {
-						continue
+			// 該臂的值（不是被丟棄），跳過以免誤報。
+			walkArm := func(stmts []parser.Statement) {
+				for i, b := range stmts {
+					if valueCtx && i == len(stmts)-1 {
+						if _, isExprStmt := b.(*parser.ExpressionStatement); isExprStmt {
+							continue
+						}
 					}
+					walkStmt(b, fnReturnsOption, enclosingOverflow, varTypes, selfType, curFile)
 				}
-				walkStmt(b, fnReturnsOption, enclosingOverflow, varTypes, selfType, curFile)
 			}
-		}
-		if x.Consequence != nil {
+			if x.Consequence != nil {
 				walkArm(x.Consequence.Statements)
 			}
 			if x.Alternative != nil {
@@ -3475,15 +3479,15 @@ func ValidateUnhandledOverflow(program *parser.Program, mainFile string) []Valid
 			if cf == "" {
 				cf = mainFile
 			}
-		vt, st := seedVarTypes(s.Parameters, s.IsMethodDef)
-		if s.Body != nil {
-			// 函式體是獨立作用域，只受其自身註解約束；不繼承外層 enclosingOverflow，
-			// 以免外層註解靜默掩蓋巢狀函式體內的真實泄漏。
-			for _, b := range s.Body.Statements {
-				walkStmt(b, fnOpt, false, vt, st, cf)
+			vt, st := seedVarTypes(s.Parameters, s.IsMethodDef)
+			if s.Body != nil {
+				// 函式體是獨立作用域，只受其自身註解約束；不繼承外層 enclosingOverflow，
+				// 以免外層註解靜默掩蓋巢狀函式體內的真實泄漏。
+				for _, b := range s.Body.Statements {
+					walkStmt(b, fnOpt, false, vt, st, cf)
+				}
 			}
-		}
-		return
+			return
 		case *parser.LetStatement:
 			// `name = (...) (...) {}` 方法定義：遞迴其函式體，自身非運算綁定。
 			if fl, ok := s.Value.(*parser.FunctionLiteral); ok {
@@ -3500,13 +3504,13 @@ func ValidateUnhandledOverflow(program *parser.Program, mainFile string) []Valid
 				if cf == "" {
 					cf = mainFile
 				}
-			vt, st := seedVarTypes(fl.Parameters, false)
-			if fl.Body != nil {
-				for _, b := range fl.Body.Statements {
-					walkStmt(b, fnOpt, false, vt, st, cf)
+				vt, st := seedVarTypes(fl.Parameters, false)
+				if fl.Body != nil {
+					for _, b := range fl.Body.Statements {
+						walkStmt(b, fnOpt, false, vt, st, cf)
+					}
 				}
-			}
-			return
+				return
 			}
 			// 具型別標註的綁定就地登記進 varTypes（順序語句共享同一 map），使後續
 			// 語句能據此判斷運算元型別（如 r str = ... 之後的 r - seg 才會被排除
@@ -3524,67 +3528,67 @@ func ValidateUnhandledOverflow(program *parser.Program, mainFile string) []Valid
 			}
 			// 普通 `=`：未被註解處理且 LHS 未顯式宣告 ?T，且其結果本質是未標註溢出
 			// 運算 → 沉默泄漏。函式回傳 ?T 時，區域 option 中間值是合約內預期行為 → 不報。
-		if !fnReturnsOption && !effOverflow {
-			declaredOption := s.Type != nil && strings.HasPrefix(s.Type.String(), "?")
-			if !declaredOption && isDirectOverflowValue(s.Value, varTypes, selfType) {
-				report(s, "整数运算 `a OP b` 默认在溢出时返回 option<int>（永不 panic）。此 option 未被处理：请加 `#{overflow = wrap}` 注解回普通 int，或用 `?=` 上抛（如 `x ?= a + b`），或显式声明为 option 类型（如 `x ?i64 = a + b`）。", curFile)
+			if !fnReturnsOption && !effOverflow {
+				declaredOption := s.Type != nil && strings.HasPrefix(s.Type.String(), "?")
+				if !declaredOption && isDirectOverflowValue(s.Value, varTypes, selfType) {
+					report(s, "整数运算 `a OP b` 默认在溢出时返回 option<int>。此 option 未被处理：请加 `#{overflow = wrap}` 注解回普通 int，或用 `?=` 上抛（如 `x ?= a + b`），或显式声明为 option 类型（如 `x ?i64 = a + b`）。", curFile)
+				}
 			}
-		}
-		if s.Value != nil {
-			walkExpr(s.Value, fnReturnsOption, effOverflow, true, varTypes, selfType, curFile)
-		}
-	case *parser.ReturnStatement:
-		if !effOverflow {
-			// 函式回傳 ?T 時，回傳 option 是合約內預期行為 → 不報。
-			if isDirectOverflowValue(s.ReturnValue, varTypes, selfType) && !fnReturnsOption {
-				report(s, "返回的整数运算默认返回 option<int>，但本函数不返回 option 类型。请加 `#{overflow = wrap}` 注解回普通 int，或让函数返回 ?T 并用 `result ?= expr` 上抛。", curFile)
+			if s.Value != nil {
+				walkExpr(s.Value, fnReturnsOption, effOverflow, true, varTypes, selfType, curFile)
 			}
-		}
-		if s.ReturnValue != nil {
-			walkExpr(s.ReturnValue, fnReturnsOption, effOverflow, true, varTypes, selfType, curFile)
-		}
-	case *parser.ExpressionStatement:
-		if !fnReturnsOption && !effOverflow {
-			if isDirectOverflowValue(s.Expression, varTypes, selfType) {
-				report(s, "整数运算结果默认是 option<int>，作为表达式语句被丢弃（未处理）。请加 `#{overflow = wrap}` 注解回普通 int，或用 `?=` 上抛。", curFile)
+		case *parser.ReturnStatement:
+			if !effOverflow {
+				// 函式回傳 ?T 時，回傳 option 是合約內預期行為 → 不報。
+				if isDirectOverflowValue(s.ReturnValue, varTypes, selfType) && !fnReturnsOption {
+					report(s, "返回的整数运算默认返回 option<int>，但本函数不返回 option 类型。请加 `#{overflow = wrap}` 注解回普通 int，或让函数返回 ?T 并用 `result ?= expr` 上抛。", curFile)
+				}
 			}
-		}
-		if s.Expression != nil {
-			walkExpr(s.Expression, fnReturnsOption, effOverflow, false, varTypes, selfType, curFile)
-		}
-	case *parser.UnwrapAssignStatement:
-		// `?=` 上拋：已處理，跳過；但仍遞迴其體內巢狀陳述。
-		if s.Value != nil {
-			walkExpr(s.Value, fnReturnsOption, effOverflow, true, varTypes, selfType, curFile)
-		}
-	case *parser.ForStatement:
-		// for 的 init 可能綁定迴圈變數（如 i i64 = 0），登記後續可據此判斷型別。
-		if s.Init != nil {
-			if ls, ok := s.Init.(*parser.LetStatement); ok && ls.Type != nil && ls.Name != nil {
-				varTypes[ls.Name.Value] = ls.Type.String()
+			if s.ReturnValue != nil {
+				walkExpr(s.ReturnValue, fnReturnsOption, effOverflow, true, varTypes, selfType, curFile)
 			}
-			walkStmt(s.Init, fnReturnsOption, effOverflow, varTypes, selfType, curFile)
-		}
-		if s.Condition != nil {
-			walkExpr(s.Condition, fnReturnsOption, effOverflow, true, varTypes, selfType, curFile)
-		}
-		if s.Update != nil {
-			walkStmt(s.Update, fnReturnsOption, effOverflow, varTypes, selfType, curFile)
-		}
-		if s.Body != nil {
-			for _, b := range s.Body.Statements {
+		case *parser.ExpressionStatement:
+			if !fnReturnsOption && !effOverflow {
+				if isDirectOverflowValue(s.Expression, varTypes, selfType) {
+					report(s, "整数运算结果默认是 option<int>，作为表达式语句被丢弃（未处理）。请加 `#{overflow = wrap}` 注解回普通 int，或用 `?=` 上抛。", curFile)
+				}
+			}
+			if s.Expression != nil {
+				walkExpr(s.Expression, fnReturnsOption, effOverflow, false, varTypes, selfType, curFile)
+			}
+		case *parser.UnwrapAssignStatement:
+			// `?=` 上拋：已處理，跳過；但仍遞迴其體內巢狀陳述。
+			if s.Value != nil {
+				walkExpr(s.Value, fnReturnsOption, effOverflow, true, varTypes, selfType, curFile)
+			}
+		case *parser.ForStatement:
+			// for 的 init 可能綁定迴圈變數（如 i i64 = 0），登記後續可據此判斷型別。
+			if s.Init != nil {
+				if ls, ok := s.Init.(*parser.LetStatement); ok && ls.Type != nil && ls.Name != nil {
+					varTypes[ls.Name.Value] = ls.Type.String()
+				}
+				walkStmt(s.Init, fnReturnsOption, effOverflow, varTypes, selfType, curFile)
+			}
+			if s.Condition != nil {
+				walkExpr(s.Condition, fnReturnsOption, effOverflow, true, varTypes, selfType, curFile)
+			}
+			if s.Update != nil {
+				walkStmt(s.Update, fnReturnsOption, effOverflow, varTypes, selfType, curFile)
+			}
+			if s.Body != nil {
+				for _, b := range s.Body.Statements {
+					walkStmt(b, fnReturnsOption, effOverflow, varTypes, selfType, curFile)
+				}
+			}
+		case *parser.BlockStatement:
+			for _, b := range s.Statements {
 				walkStmt(b, fnReturnsOption, effOverflow, varTypes, selfType, curFile)
 			}
-		}
-	case *parser.BlockStatement:
-		for _, b := range s.Statements {
-			walkStmt(b, fnReturnsOption, effOverflow, varTypes, selfType, curFile)
-		}
-	case *parser.MultiAssignStatement:
-		// a, b = f()：名稱型別由呼叫回傳值決定，難靜態得知，僅遞迴 RHS。
-		if s.Value != nil {
-			walkExpr(s.Value, fnReturnsOption, effOverflow, true, varTypes, selfType, curFile)
-		}
+		case *parser.MultiAssignStatement:
+			// a, b = f()：名稱型別由呼叫回傳值決定，難靜態得知，僅遞迴 RHS。
+			if s.Value != nil {
+				walkExpr(s.Value, fnReturnsOption, effOverflow, true, varTypes, selfType, curFile)
+			}
 		}
 	}
 
@@ -3610,9 +3614,9 @@ const unhandledIndexTraceID = "idxhndld"
 // 但程式其實把它當普通 elem 用，運行期語意漂移（且 codegen 的 option 是
 // {tag,data} 結構，直接當 elem 解引用會錯）。本規則在編譯期攔截這種「產生 option
 // 卻沒處理」的寫法，迫使程式設計師顯式二選一：
-//   1. 用 `a ?= b[i]` 上拋（錯誤傳給呼叫者）；在返回 ?T 的函式中 `a = b[i]`
-//      會被 lowering 自動改寫為 `a ?= b[i]`（自動上拋）；
-//   2. 加 `#{index-out = DEF}` 註解（DEF 為字面量），越界時取預設值 DEF。
+//  1. 用 `a ?= b[i]` 上拋（錯誤傳給呼叫者）；在返回 ?T 的函式中 `a = b[i]`
+//     會被 lowering 自動改寫為 `a ?= b[i]`（自動上拋）；
+//  2. 加 `#{index-out = DEF}` 註解（DEF 為字面量），越界時取預設值 DEF。
 //
 // 與 parser 的 isSafeIndexBase / maybeAutoPropagateIndex / maybeIndexOutAssign
 // 保持一致：str/txt 索引回傳字元（非 option，不報）；struct field 索引（receiver.field[i]）
@@ -3679,7 +3683,7 @@ func ValidateUnhandledIndex(program *parser.Program, mainFile string) []Validate
 		if !lineHasIdentIndexRead(curFile, line) {
 			return
 		}
-		msg := "数组/切片索引 `arr[i]` 默认在越界时返回 option<elem>（永不 panic）。此 option 未被处理：请用 `a ?= arr[i]` 上抛（在返回 ?T 的函数中可直接 `a = arr[i]` 自动上抛），或加 `#{index-out = DEF}` 注解以越界时取默认值 DEF。"
+		msg := "数组/切片索引 `arr[i]` 默认在越界时返回 option<elem>。此 option 未被处理：请用 `a ?= arr[i]` 上抛（在返回 ?T 的函数中可直接 `a = arr[i]` 自动上抛），或加 `#{index-out = DEF}` 注解以越界时取默认值 DEF。"
 		key := fmt.Sprintf("%s|%d:%d", canonPath(curFile), line, col)
 		if seen[key] {
 			return
@@ -5607,10 +5611,10 @@ func validateStmtTypes(stmt parser.Statement, funcNames map[string]bool, funcTyp
 			}
 		}
 		// 進入方法體時，更新 selfType
-	methodSelfType := selfType
-	if len(s.Results) > 0 && s.Results[0].Name == "self" {
-		methodSelfType = s.Results[0].Type.String()
-	}
+		methodSelfType := selfType
+		if len(s.Results) > 0 && s.Results[0].Name == "self" {
+			methodSelfType = s.Results[0].Type.String()
+		}
 		// 建立局部 funcNames 副本，排除當前函式的參數和輸出參數名，
 		// 避免與全域函式同名時（如 io.out）對輸出參數賦值被誤報為
 		// "cannot reassign function name"。
@@ -5848,7 +5852,9 @@ func validateStmtTypes(stmt parser.Statement, funcNames map[string]bool, funcTyp
 						}
 					}
 					if inferredType != "" && !typeNamesEquivalent(inferredType, existingType) && isConcreteType(existingType) && !isArrayAssign && !isOptionCtor &&
-						!isArgTypeCompatible(existingType, inferredType, s.Value) && !optionTypesCompatible(inferredType, existingType) {
+						!isArgTypeCompatible(existingType, inferredType, s.Value) && !optionTypesCompatible(inferredType, existingType) &&
+						// 整數字面量指派給已宣告型別的變數：常數轉換（如 -1 → byte == 255），不報窄化
+						!isIntLiteralNarrowingToDeclared(s.Value, existingType) {
 						valPos := s.Value.Pos()
 						results = append(results, ValidateResult{
 							TraceID: "15w45dqk",
@@ -5972,7 +5978,9 @@ func validateStmtTypes(stmt parser.Statement, funcNames map[string]bool, funcTyp
 							}
 						}
 						if valType != "" && !typeNamesEquivalent(valType, existingType) && isConcreteType(existingType) && !isOptionCtor &&
-							!isArgTypeCompatible(existingType, valType, assign.Value) && !optionTypesCompatible(valType, existingType) {
+							!isArgTypeCompatible(existingType, valType, assign.Value) && !optionTypesCompatible(valType, existingType) &&
+							// 整數字面量指派給已宣告型別的變數：常數轉換（如 -1 → byte == 255），不報窄化
+							!isIntLiteralNarrowingToDeclared(assign.Value, existingType) {
 							// Check if this is an array/slice literal assignment to a typed array variable
 							_, isSlice := assign.Value.(*parser.SliceLiteral)
 							_, isArrayLit := assign.Value.(*parser.ArrayLiteral)
@@ -6837,7 +6845,7 @@ func resolveModuleCalls(program *parser.Program, importedModules []string, prefi
 		}
 	}
 	for _, stmt := range program.Statements {
-		resolveModuleCallsInStmt(stmt, modSet, moduleFns, moduleConsts, prefixedFns)
+		resolveModuleCallsInStmt(stmt, program.Sem, modSet, moduleFns, moduleConsts, prefixedFns)
 	}
 }
 func extractModulePathAndFunc(dot *parser.DotExpression) (path, fnName string) {
@@ -6858,48 +6866,48 @@ func extractModulePathAndFunc(dot *parser.DotExpression) (path, fnName string) {
 	path = strings.Join(segments, "/")
 	return path, fnName
 }
-func resolveModuleCallsInStmt(stmt parser.Statement, modSet map[string]bool, moduleFns map[string]bool, moduleConsts map[string]bool, prefixedFns map[string]bool) {
+func resolveModuleCallsInStmt(stmt parser.Statement, sem *parser.SemanticContext, modSet map[string]bool, moduleFns map[string]bool, moduleConsts map[string]bool, prefixedFns map[string]bool) {
 	switch s := stmt.(type) {
 	case *parser.ExpressionStatement:
 		if s.Expression != nil {
-			s.Expression = resolveModuleCallsInExpr(s.Expression, modSet, moduleFns, moduleConsts, prefixedFns)
+			s.Expression = resolveModuleCallsInExpr(s.Expression, sem, modSet, moduleFns, moduleConsts, prefixedFns)
 		}
 	case *parser.LetStatement:
 		if s.Value != nil {
-			s.Value = resolveModuleCallsInExpr(s.Value, modSet, moduleFns, moduleConsts, prefixedFns)
+			s.Value = resolveModuleCallsInExpr(s.Value, sem, modSet, moduleFns, moduleConsts, prefixedFns)
 		}
 	case *parser.MultiAssignStatement:
 		if s.Value != nil {
-			s.Value = resolveModuleCallsInExpr(s.Value, modSet, moduleFns, moduleConsts, prefixedFns)
+			s.Value = resolveModuleCallsInExpr(s.Value, sem, modSet, moduleFns, moduleConsts, prefixedFns)
 		}
 	case *parser.FunctionDefinition:
 		if s.Body != nil {
 			for _, bodyStmt := range s.Body.Statements {
-				resolveModuleCallsInStmt(bodyStmt, modSet, moduleFns, moduleConsts, prefixedFns)
+				resolveModuleCallsInStmt(bodyStmt, sem, modSet, moduleFns, moduleConsts, prefixedFns)
 			}
 		}
 	case *parser.BlockStatement:
 		for _, bodyStmt := range s.Statements {
-			resolveModuleCallsInStmt(bodyStmt, modSet, moduleFns, moduleConsts, prefixedFns)
+			resolveModuleCallsInStmt(bodyStmt, sem, modSet, moduleFns, moduleConsts, prefixedFns)
 		}
 	case *parser.ForStatement:
 		if s.Condition != nil {
-			s.Condition = resolveModuleCallsInExpr(s.Condition, modSet, moduleFns, moduleConsts, prefixedFns)
+			s.Condition = resolveModuleCallsInExpr(s.Condition, sem, modSet, moduleFns, moduleConsts, prefixedFns)
 		}
 		if s.Init != nil {
-			resolveModuleCallsInStmt(s.Init, modSet, moduleFns, moduleConsts, prefixedFns)
+			resolveModuleCallsInStmt(s.Init, sem, modSet, moduleFns, moduleConsts, prefixedFns)
 		}
 		if s.Update != nil {
-			resolveModuleCallsInStmt(s.Update, modSet, moduleFns, moduleConsts, prefixedFns)
+			resolveModuleCallsInStmt(s.Update, sem, modSet, moduleFns, moduleConsts, prefixedFns)
 		}
 		if s.Body != nil {
 			for _, bodyStmt := range s.Body.Statements {
-				resolveModuleCallsInStmt(bodyStmt, modSet, moduleFns, moduleConsts, prefixedFns)
+				resolveModuleCallsInStmt(bodyStmt, sem, modSet, moduleFns, moduleConsts, prefixedFns)
 			}
 		}
 	}
 }
-func resolveModuleCallsInExpr(expr parser.Expression, modSet map[string]bool, moduleFns map[string]bool, moduleConsts map[string]bool, prefixedFns map[string]bool) parser.Expression {
+func resolveModuleCallsInExpr(expr parser.Expression, sem *parser.SemanticContext, modSet map[string]bool, moduleFns map[string]bool, moduleConsts map[string]bool, prefixedFns map[string]bool) parser.Expression {
 	if expr == nil {
 		return nil
 	}
@@ -6909,7 +6917,7 @@ func resolveModuleCallsInExpr(expr parser.Expression, modSet map[string]bool, mo
 		// CallExpression's Function is itself a CallExpression. Recurse into
 		// it first so the inner module-qualified name gets resolved.
 		if _, isCall := e.Function.(*parser.CallExpression); isCall {
-			e.Function = resolveModuleCallsInExpr(e.Function, modSet, moduleFns, moduleConsts, prefixedFns)
+			e.Function = resolveModuleCallsInExpr(e.Function, sem, modSet, moduleFns, moduleConsts, prefixedFns)
 		}
 		// Check if this is a module.fn() call (single or multi-level).
 		// Only rewrite when the function property is a known module-level function
@@ -6928,6 +6936,13 @@ func resolveModuleCallsInExpr(expr parser.Expression, modSet map[string]bool, mo
 					e.Function = &parser.Identifier{
 						Token: lexer.Token{Type: lexer.IDENT, Literal: full},
 						Value: full,
+					}
+					// 留一筆「這是模組限定自由函式呼叫」。它與攤平後的方法呼叫
+					// 形狀完全相同（Arguments[0] 是普通實參，不是接收者），
+					// 兩者共用同一個「帶點 Identifier」命名空間；記錄下來才能
+					// 區分，否則模組自由函式的首實參會被誤算成「被改寫」。
+					if sem != nil {
+						sem.SetCallee(e, parser.CalleeModuleFn)
 					}
 				} else if moduleFns[fnName] {
 					// We are in this branch because fnName is a real top-level
@@ -6962,7 +6977,7 @@ func resolveModuleCallsInExpr(expr parser.Expression, modSet map[string]bool, mo
 		}
 		// Recurse into arguments
 		for i, arg := range e.Arguments {
-			e.Arguments[i] = resolveModuleCallsInExpr(arg, modSet, moduleFns, moduleConsts, prefixedFns)
+			e.Arguments[i] = resolveModuleCallsInExpr(arg, sem, modSet, moduleFns, moduleConsts, prefixedFns)
 		}
 		return e
 
@@ -6978,87 +6993,87 @@ func resolveModuleCallsInExpr(expr parser.Expression, modSet map[string]bool, mo
 			}
 		}
 		// 遞迴處理 receiver（鏈式存取如 a.b.c 的 struct 欄位）
-		e.Receiver = resolveModuleCallsInExpr(e.Receiver, modSet, moduleFns, moduleConsts, prefixedFns)
+		e.Receiver = resolveModuleCallsInExpr(e.Receiver, sem, modSet, moduleFns, moduleConsts, prefixedFns)
 		return e
 
 	case *parser.InfixExpression:
 		if e.Left != nil {
-			e.Left = resolveModuleCallsInExpr(e.Left, modSet, moduleFns, moduleConsts, prefixedFns)
+			e.Left = resolveModuleCallsInExpr(e.Left, sem, modSet, moduleFns, moduleConsts, prefixedFns)
 		}
 		if e.Right != nil {
-			e.Right = resolveModuleCallsInExpr(e.Right, modSet, moduleFns, moduleConsts, prefixedFns)
+			e.Right = resolveModuleCallsInExpr(e.Right, sem, modSet, moduleFns, moduleConsts, prefixedFns)
 		}
 		return e
 
 	case *parser.PrefixExpression:
 		if e.Right != nil {
-			e.Right = resolveModuleCallsInExpr(e.Right, modSet, moduleFns, moduleConsts, prefixedFns)
+			e.Right = resolveModuleCallsInExpr(e.Right, sem, modSet, moduleFns, moduleConsts, prefixedFns)
 		}
 		return e
 
 	case *parser.ConditionalExpression:
 		if e.Condition != nil {
-			e.Condition = resolveModuleCallsInExpr(e.Condition, modSet, moduleFns, moduleConsts, prefixedFns)
+			e.Condition = resolveModuleCallsInExpr(e.Condition, sem, modSet, moduleFns, moduleConsts, prefixedFns)
 		}
 		if e.Consequence != nil {
-			e.Consequence = resolveModuleCallsInExpr(e.Consequence, modSet, moduleFns, moduleConsts, prefixedFns)
+			e.Consequence = resolveModuleCallsInExpr(e.Consequence, sem, modSet, moduleFns, moduleConsts, prefixedFns)
 		}
 		if e.Alternative != nil {
-			e.Alternative = resolveModuleCallsInExpr(e.Alternative, modSet, moduleFns, moduleConsts, prefixedFns)
+			e.Alternative = resolveModuleCallsInExpr(e.Alternative, sem, modSet, moduleFns, moduleConsts, prefixedFns)
 		}
 		return e
 
 	case *parser.IfExpression:
 		if e.Condition != nil {
-			e.Condition = resolveModuleCallsInExpr(e.Condition, modSet, moduleFns, moduleConsts, prefixedFns)
+			e.Condition = resolveModuleCallsInExpr(e.Condition, sem, modSet, moduleFns, moduleConsts, prefixedFns)
 		}
 		if e.Consequence != nil {
 			for _, bodyStmt := range e.Consequence.Statements {
-				resolveModuleCallsInStmt(bodyStmt, modSet, moduleFns, moduleConsts, prefixedFns)
+				resolveModuleCallsInStmt(bodyStmt, sem, modSet, moduleFns, moduleConsts, prefixedFns)
 			}
 		}
 		if e.Alternative != nil {
 			for _, bodyStmt := range e.Alternative.Statements {
-				resolveModuleCallsInStmt(bodyStmt, modSet, moduleFns, moduleConsts, prefixedFns)
+				resolveModuleCallsInStmt(bodyStmt, sem, modSet, moduleFns, moduleConsts, prefixedFns)
 			}
 		}
 		return e
 
 	case *parser.GroupedExpression:
 		if e.Expression != nil {
-			e.Expression = resolveModuleCallsInExpr(e.Expression, modSet, moduleFns, moduleConsts, prefixedFns)
+			e.Expression = resolveModuleCallsInExpr(e.Expression, sem, modSet, moduleFns, moduleConsts, prefixedFns)
 		}
 		return e
 
 	case *parser.IndexExpression:
 		if e.Left != nil {
-			e.Left = resolveModuleCallsInExpr(e.Left, modSet, moduleFns, moduleConsts, prefixedFns)
+			e.Left = resolveModuleCallsInExpr(e.Left, sem, modSet, moduleFns, moduleConsts, prefixedFns)
 		}
 		if e.Index != nil {
-			e.Index = resolveModuleCallsInExpr(e.Index, modSet, moduleFns, moduleConsts, prefixedFns)
+			e.Index = resolveModuleCallsInExpr(e.Index, sem, modSet, moduleFns, moduleConsts, prefixedFns)
 		}
 		return e
 
 	case *parser.SliceExpression:
 		if e.Left != nil {
-			e.Left = resolveModuleCallsInExpr(e.Left, modSet, moduleFns, moduleConsts, prefixedFns)
+			e.Left = resolveModuleCallsInExpr(e.Left, sem, modSet, moduleFns, moduleConsts, prefixedFns)
 		}
 		if e.Range != nil {
 			if e.Range.Start != nil {
-				e.Range.Start = resolveModuleCallsInExpr(e.Range.Start, modSet, moduleFns, moduleConsts, prefixedFns)
+				e.Range.Start = resolveModuleCallsInExpr(e.Range.Start, sem, modSet, moduleFns, moduleConsts, prefixedFns)
 			}
 			if e.Range.End != nil {
-				e.Range.End = resolveModuleCallsInExpr(e.Range.End, modSet, moduleFns, moduleConsts, prefixedFns)
+				e.Range.End = resolveModuleCallsInExpr(e.Range.End, sem, modSet, moduleFns, moduleConsts, prefixedFns)
 			}
 		}
 		return e
 
 	case *parser.AssignExpression:
 		if e.Left != nil {
-			e.Left = resolveModuleCallsInExpr(e.Left, modSet, moduleFns, moduleConsts, prefixedFns)
+			e.Left = resolveModuleCallsInExpr(e.Left, sem, modSet, moduleFns, moduleConsts, prefixedFns)
 		}
 		if e.Value != nil {
-			e.Value = resolveModuleCallsInExpr(e.Value, modSet, moduleFns, moduleConsts, prefixedFns)
+			e.Value = resolveModuleCallsInExpr(e.Value, sem, modSet, moduleFns, moduleConsts, prefixedFns)
 		}
 		return e
 
@@ -7098,9 +7113,9 @@ func resolveSelfMethodCalls(program *parser.Program) {
 		// Desugaring here converts them to explicit `Type.method(self, args)`
 		// calls, which survive inlining and every expression context uniformly.
 		var selfType string
-	if len(fd.Results) > 0 && fd.Results[0].Name == "self" && fd.Results[0].Type != nil {
-		selfType = fd.Results[0].Type.String()
-	} else if parts := strings.Split(fd.Name, "."); len(parts) >= 2 {
+		if len(fd.Results) > 0 && fd.Results[0].Name == "self" && fd.Results[0].Type != nil {
+			selfType = fd.Results[0].Type.String()
+		} else if parts := strings.Split(fd.Name, "."); len(parts) >= 2 {
 			// Receiver type is every segment except the final method name.
 			selfType = strings.Join(parts[:len(parts)-1], ".")
 		}
@@ -7130,58 +7145,58 @@ func resolveMethodCalls(program *parser.Program, typeOwner map[string]string) {
 		}
 	}
 	for _, stmt := range program.Statements {
-		resolveMethodCallsInStmt(stmt, typeOwner, definedMethods)
+		resolveMethodCallsInStmt(stmt, program.Sem, typeOwner, definedMethods)
 	}
 }
-func resolveMethodCallsInStmt(stmt parser.Statement, typeOwner map[string]string, definedMethods map[string]bool) {
+func resolveMethodCallsInStmt(stmt parser.Statement, sem *parser.SemanticContext, typeOwner map[string]string, definedMethods map[string]bool) {
 	if stmt == nil {
 		return
 	}
 	switch s := stmt.(type) {
 	case *parser.ExpressionStatement:
 		if s.Expression != nil {
-			s.Expression = resolveMethodCallsInExpr(s.Expression, typeOwner, definedMethods)
+			s.Expression = resolveMethodCallsInExpr(s.Expression, sem, typeOwner, definedMethods)
 		}
 	case *parser.LetStatement:
 		if s.Value != nil {
-			s.Value = resolveMethodCallsInExpr(s.Value, typeOwner, definedMethods)
+			s.Value = resolveMethodCallsInExpr(s.Value, sem, typeOwner, definedMethods)
 		}
 	case *parser.MultiAssignStatement:
 		if s.Value != nil {
-			s.Value = resolveMethodCallsInExpr(s.Value, typeOwner, definedMethods)
+			s.Value = resolveMethodCallsInExpr(s.Value, sem, typeOwner, definedMethods)
 		}
 	case *parser.FunctionDefinition:
 		if s.Body != nil {
 			for _, bodyStmt := range s.Body.Statements {
-				resolveMethodCallsInStmt(bodyStmt, typeOwner, definedMethods)
+				resolveMethodCallsInStmt(bodyStmt, sem, typeOwner, definedMethods)
 			}
 		}
 	case *parser.BlockStatement:
 		for _, bodyStmt := range s.Statements {
-			resolveMethodCallsInStmt(bodyStmt, typeOwner, definedMethods)
+			resolveMethodCallsInStmt(bodyStmt, sem, typeOwner, definedMethods)
 		}
 	case *parser.ForStatement:
 		if s.Condition != nil {
-			s.Condition = resolveMethodCallsInExpr(s.Condition, typeOwner, definedMethods)
+			s.Condition = resolveMethodCallsInExpr(s.Condition, sem, typeOwner, definedMethods)
 		}
 		if s.Init != nil {
-			resolveMethodCallsInStmt(s.Init, typeOwner, definedMethods)
+			resolveMethodCallsInStmt(s.Init, sem, typeOwner, definedMethods)
 		}
 		if s.Update != nil {
-			resolveMethodCallsInStmt(s.Update, typeOwner, definedMethods)
+			resolveMethodCallsInStmt(s.Update, sem, typeOwner, definedMethods)
 		}
 		if s.Body != nil {
 			for _, bodyStmt := range s.Body.Statements {
-				resolveMethodCallsInStmt(bodyStmt, typeOwner, definedMethods)
+				resolveMethodCallsInStmt(bodyStmt, sem, typeOwner, definedMethods)
 			}
 		}
 	case *parser.ReturnStatement:
 		if s.ReturnValue != nil {
-			s.ReturnValue = resolveMethodCallsInExpr(s.ReturnValue, typeOwner, definedMethods)
+			s.ReturnValue = resolveMethodCallsInExpr(s.ReturnValue, sem, typeOwner, definedMethods)
 		}
 	}
 }
-func resolveMethodCallsInExpr(expr parser.Expression, typeOwner map[string]string, definedMethods map[string]bool) parser.Expression {
+func resolveMethodCallsInExpr(expr parser.Expression, sem *parser.SemanticContext, typeOwner map[string]string, definedMethods map[string]bool) parser.Expression {
 	if expr == nil {
 		return nil
 	}
@@ -7206,6 +7221,13 @@ func resolveMethodCallsInExpr(expr parser.Expression, typeOwner map[string]strin
 								Token: lexer.Token{Type: lexer.IDENT, Literal: fullName},
 								Value: fullName,
 							}
+							// 這也是**方法呼叫**：源碼寫 `Type.method(recv, …)` 時，
+							// 接收者是使用者自己寫在實參表首位的，改寫只是把被呼叫
+							// 者補成完整限定名，實參不動 ⇒ Arguments[0] 仍是接收者，
+							// 與攤平形態語意相同（故同樣記 CalleeMethod）。
+							if sem != nil {
+								sem.SetCallee(e, parser.CalleeMethod)
+							}
 							break
 						}
 					}
@@ -7214,60 +7236,60 @@ func resolveMethodCallsInExpr(expr parser.Expression, typeOwner map[string]strin
 		}
 		// Recurse into arguments and nested calls
 		if innerCall, ok := e.Function.(*parser.CallExpression); ok {
-			e.Function = resolveMethodCallsInExpr(innerCall, typeOwner, definedMethods)
+			e.Function = resolveMethodCallsInExpr(innerCall, sem, typeOwner, definedMethods)
 		}
 		for i, arg := range e.Arguments {
-			e.Arguments[i] = resolveMethodCallsInExpr(arg, typeOwner, definedMethods)
+			e.Arguments[i] = resolveMethodCallsInExpr(arg, sem, typeOwner, definedMethods)
 		}
 		return e
 	case *parser.DotExpression:
-		e.Receiver = resolveMethodCallsInExpr(e.Receiver, typeOwner, definedMethods)
+		e.Receiver = resolveMethodCallsInExpr(e.Receiver, sem, typeOwner, definedMethods)
 		return e
 	case *parser.InfixExpression:
 		if e.Left != nil {
-			e.Left = resolveMethodCallsInExpr(e.Left, typeOwner, definedMethods)
+			e.Left = resolveMethodCallsInExpr(e.Left, sem, typeOwner, definedMethods)
 		}
 		if e.Right != nil {
-			e.Right = resolveMethodCallsInExpr(e.Right, typeOwner, definedMethods)
+			e.Right = resolveMethodCallsInExpr(e.Right, sem, typeOwner, definedMethods)
 		}
 		return e
 	case *parser.PrefixExpression:
 		if e.Right != nil {
-			e.Right = resolveMethodCallsInExpr(e.Right, typeOwner, definedMethods)
+			e.Right = resolveMethodCallsInExpr(e.Right, sem, typeOwner, definedMethods)
 		}
 		return e
 	case *parser.IndexExpression:
 		if e.Left != nil {
-			e.Left = resolveMethodCallsInExpr(e.Left, typeOwner, definedMethods)
+			e.Left = resolveMethodCallsInExpr(e.Left, sem, typeOwner, definedMethods)
 		}
 		if e.Index != nil {
-			e.Index = resolveMethodCallsInExpr(e.Index, typeOwner, definedMethods)
+			e.Index = resolveMethodCallsInExpr(e.Index, sem, typeOwner, definedMethods)
 		}
 		return e
 	case *parser.IfExpression:
 		if e.Condition != nil {
-			e.Condition = resolveMethodCallsInExpr(e.Condition, typeOwner, definedMethods)
+			e.Condition = resolveMethodCallsInExpr(e.Condition, sem, typeOwner, definedMethods)
 		}
 		if e.Consequence != nil {
 			for _, bs := range e.Consequence.Statements {
-				resolveMethodCallsInStmt(bs, typeOwner, definedMethods)
+				resolveMethodCallsInStmt(bs, sem, typeOwner, definedMethods)
 			}
 		}
 		if e.Alternative != nil {
 			for _, bs := range e.Alternative.Statements {
-				resolveMethodCallsInStmt(bs, typeOwner, definedMethods)
+				resolveMethodCallsInStmt(bs, sem, typeOwner, definedMethods)
 			}
 		}
 		return e
 	case *parser.ConditionalExpression:
 		if e.Condition != nil {
-			e.Condition = resolveMethodCallsInExpr(e.Condition, typeOwner, definedMethods)
+			e.Condition = resolveMethodCallsInExpr(e.Condition, sem, typeOwner, definedMethods)
 		}
 		if e.Consequence != nil {
-			e.Consequence = resolveMethodCallsInExpr(e.Consequence, typeOwner, definedMethods)
+			e.Consequence = resolveMethodCallsInExpr(e.Consequence, sem, typeOwner, definedMethods)
 		}
 		if e.Alternative != nil {
-			e.Alternative = resolveMethodCallsInExpr(e.Alternative, typeOwner, definedMethods)
+			e.Alternative = resolveMethodCallsInExpr(e.Alternative, sem, typeOwner, definedMethods)
 		}
 		return e
 	}

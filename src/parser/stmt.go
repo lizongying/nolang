@@ -300,13 +300,27 @@ func (p *Parser) parseStatement() Statement {
 					p.restoreState(state)
 					return p.parseColonMethodDefinition(structToken)
 				}
-				// 點號型別宣告：dec.out []byte 或 dec.out []byte = value
-				// 當 IDENT.IDENT 後面是 [ 且符合陣列/切片型別模式時，
-				// 走 parseLetStatement 路徑，但變數名為 DotExpression。
+				// 點號欄位型別宣告 `recv.field []T` / `[N]T` / `[K]V`（可帶 `= value`）
+				// 已被移除，不再接受。欄位型別只能在型別定義中宣告；在函式體內
+				// 再寫一次既不生效（欄位不會重建、值不會重置），又容易被誤讀為
+				// 指派 `recv.field = []`。過去它會構造出名字是合成字串
+				// "recv.field" 的 LetStatement：命名檢查因此誤報 2dhoris2，而欄位
+				// 不存在時能一路通過 checker、直到 MIR codegen 才以
+				// `EmitLLVM: setfield field` 失敗。
+				//
+				// 這裡保留偵測只為給出針對性診斷：直接刪掉本分支的話，該行會掉進
+				// 一般表達式解析，報出與真正病因無關的泛用錯誤。
 				if p.currentToken.Type == lexer.IDENT && p.peekToken.Type == lexer.LBRACKET {
 					if p.isDotExprTypeDecl() {
+						propTok := p.currentToken
+						p.saveError(fmt.Sprintf(
+							"line %d, column %d: '%s.%s []T' is not allowed: the field type belongs in the type definition of '%s'. To store into the field write '%s.%s = ...'",
+							structToken.Line, structToken.Column,
+							structToken.Literal, propTok.Literal, structToken.Literal,
+							structToken.Literal, propTok.Literal))
 						p.restoreState(state)
-						return p.parseDotExprLetStatement()
+						p.skipToStatementEnd()
+						return nil
 					}
 				}
 			}
@@ -1736,126 +1750,6 @@ func (p *Parser) isDotExprTypeDecl() bool {
 		}
 	}
 	return false
-}
-
-// parseDotExprLetStatement 解析点号表达式的类型声明，如 dec.out []byte 或 dec.out []byte = value。
-// 变量名为 DotExpression（如 dec.out），类型为 []byte。
-func (p *Parser) parseDotExprLetStatement() Statement {
-	receiverTok := p.currentToken // IDENT (receiver, e.g. dec)
-	p.nextToken()                 // skip receiver → currentToken = DOT
-	p.nextToken()                 // skip DOT → currentToken = IDENT (property)
-	propTok := p.currentToken
-	p.nextToken() // skip property → currentToken = LBRACKET
-
-	// 构建 DotExpression 作为变量名
-	receiver := &Identifier{Token: receiverTok, Value: receiverTok.Literal}
-	dotExpr := &DotExpression{
-		Token:    propTok,
-		Receiver: receiver,
-		Property: propTok.Literal,
-	}
-
-	stmt := &LetStatement{
-		Token: receiverTok,
-		Name:  &Identifier{Token: propTok, Value: receiverTok.Literal + "." + propTok.Literal},
-	}
-	_ = dotExpr // dotExpr 用于类型推断，Name 使用字符串形式
-
-	// 解析 []type 部分（复用 parseLetStatement 的数组/切片类型解析逻辑）
-	if p.currentToken.Type == lexer.LBRACKET {
-		bracketToken := p.currentToken
-		p.nextToken() // skip [ → current = first content token
-
-		if p.currentToken.Type == lexer.IDENT && p.peekToken.Type == lexer.RBRACKET &&
-			(isBuiltinTypeName(p.currentToken.Literal) || p.isRegisteredTypeName(p.currentToken.Literal)) {
-			// Map type: [K]V
-			keyName := p.currentToken.Literal
-			keyTok := p.currentToken
-			p.nextToken() // skip K → current = ]
-			p.nextToken() // skip ] → current = V
-			// Value type can itself be a complex type (e.g. [str][]str)
-			valType, ok := p.parseTypeExpression()
-			if ok {
-				stmt.Type = &MapType{
-					Token: bracketToken,
-					Key:   &NamedType{Token: keyTok, Value: keyName},
-					Value: valType,
-				}
-			} else {
-				if p.currentToken.Type == lexer.IDENT {
-					valName := p.currentToken.Literal
-					valTok := p.currentToken
-					p.nextToken()
-					stmt.Type = &MapType{
-						Token: bracketToken,
-						Key:   &NamedType{Token: keyTok, Value: keyName},
-						Value: &NamedType{Token: valTok, Value: valName},
-					}
-				}
-			}
-		} else {
-			hasSize := false
-			var sizeExpr Expression
-			if p.currentToken.Type == lexer.QUESTION {
-				hasSize = true
-				p.nextToken()
-			} else if p.currentToken.Type != lexer.RBRACKET {
-				sizeExpr = p.parseExpression(LOWEST)
-				hasSize = true
-				if p.currentToken.Type != lexer.RBRACKET {
-					p.nextToken()
-				}
-			}
-			if p.currentToken.Type == lexer.RBRACKET {
-				p.nextToken()
-				if p.currentToken.Type == lexer.IDENT {
-					elemType := p.currentToken.Literal
-					elem := &NamedType{Token: p.currentToken, Value: elemType}
-					if hasSize {
-						stmt.Type = &ArrayType{Token: bracketToken, Size: sizeExpr, Elem: elem}
-					} else {
-						stmt.Type = &SliceType{Token: bracketToken, Elem: elem}
-					}
-					p.nextToken()
-				} else if p.currentToken.Type == lexer.LBRACKET {
-					elemType, ok := p.parseTypeExpression()
-					if ok {
-						if hasSize {
-							stmt.Type = &ArrayType{Token: bracketToken, Size: sizeExpr, Elem: elemType}
-						} else {
-							stmt.Type = &SliceType{Token: bracketToken, Elem: elemType}
-						}
-					}
-				} else {
-					if hasSize {
-						// 同 parseVarDecl 上方：源碼寫了 `[N]`，須保留 `[N]` 的輸出。
-						stmt.Type = &ArrayType{Token: bracketToken, Size: sizeExpr, Elem: &NamedType{Token: bracketToken, Value: "i64", IsInferred: true}, IsInferred: false}
-					} else {
-						stmt.Type = &SliceType{Token: bracketToken, Elem: &NamedType{Token: bracketToken, Value: "i64", IsInferred: true}, IsInferred: true}
-					}
-				}
-			}
-		}
-	}
-
-	// 检查赋值
-	if p.currentToken.Type == lexer.ASSIGN {
-		p.nextToken() // skip =
-		p.ctx.push(CTX_EXPR)
-		stmt.Value = p.parseExpression(LOWEST)
-		p.ctx.pop()
-	} else if p.currentToken.Type == lexer.NEWLINE || p.peekToken.Type == lexer.NEWLINE ||
-		p.currentToken.Type == lexer.RBRACE || p.currentToken.Type == lexer.EOF {
-		if p.currentToken.Type == lexer.IDENT {
-			p.nextToken()
-		}
-		if stmt.Type != nil {
-			p.setVarType(stmt.Name.Value, typeString(stmt.Type))
-		}
-		return stmt
-	}
-
-	return stmt
 }
 
 // isReturnTerminator reports whether t is a valid token to immediately follow a
