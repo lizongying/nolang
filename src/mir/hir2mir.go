@@ -1634,10 +1634,14 @@ func (l *lowerer) lowerFunction(name string, hirID int32) {
 	fid := l.b.NewFunc(name, params, results, isExtern)
 	l.curFunc = fid
 	l.curRecv = NoVal
-	// For a method, the receiver is the first parameter (the implicit `self` that
-	// `.field` accesses resolve to when the KDot has no explicit receiver child).
-	if n.Has(hir.FlagMethod) && len(params) > 0 {
-		l.curRecv = params[0]
+	// For a method, `self` is the first KResult (an out-param the caller
+	// passes by pointer so mutations propagate).  It is the implicit
+	// receiver that `.field` accesses resolve to when the KDot has no
+	// explicit receiver child.  Before the self-to-Result refactor, self
+	// was the first KParam and lived at params[0]; now it is the first
+	// result value.
+	if n.Has(hir.FlagMethod) && len(resultVals) > 0 {
+		l.curRecv = resultVals[0]
 	}
 	l.locals = map[string]ValueID{}
 	for i, pn := range paramNames {
@@ -1661,9 +1665,9 @@ func (l *lowerer) lowerFunction(name string, hirID int32) {
 		// (aliases the caller's self pointer instead of copying into a local
 		// alloca). Without this, mutating std methods (vec.insert/remove/…)
 		// silently discard self mutations under the MIR backend.
-		if n.Has(hir.FlagMethod) && len(paramTypes) > 0 {
+		if n.Has(hir.FlagMethod) && len(results) > 0 {
 			f.IsMethod = true
-			f.Receiver = paramTypes[0]
+			f.Receiver = results[0]
 		}
 	}
 	for i, rn := range resultNames {
@@ -4272,9 +4276,11 @@ func (l *lowerer) canonStructRaw(raw string) string {
 }
 
 // paramRawTypesOfCallee returns the declared parameter type strings of a nolang
-// function in declaration order. A method's receiver is params[0] (the HIR
-// KParam list includes the implicit `self`), matching lowerCallArgs' implicit-
-// self convention. Returns nil when the callee has no HIR definition (builtins).
+// function in declaration order. For a method, the first entry is the receiver
+// (self) type — taken from the first KResult — so that lowerCallArgs' argOffset
+// alignment stays correct (argv[0] is the receiver, argv[1+] are real args,
+// paramRaws[0] is the receiver type, paramRaws[1+] are real param types).
+// Returns nil when the callee has no HIR definition (builtins).
 func (l *lowerer) paramRawTypesOfCallee(callee string) []string {
 	if callee == "" {
 		return nil
@@ -4283,7 +4289,25 @@ func (l *lowerer) paramRawTypesOfCallee(callee string) []string {
 	if !ok {
 		return nil
 	}
+	fnNode := l.pkg.Node(id)
+	isMethod := fnNode != nil && fnNode.Has(hir.FlagMethod)
 	var out []string
+	// For a method, prepend self's type (from the first KResult) so that
+	// paramRaws aligns with argv (which has the receiver at index 0).
+	if isMethod {
+		for _, c := range l.pkg.Children(id) {
+			cn := l.pkg.Node(c)
+			if cn == nil || cn.Kind != hir.KResult {
+				continue
+			}
+			raw := ""
+			if t := l.mod.Type(l.typeOfNode(cn)); t != nil {
+				raw = t.Raw
+			}
+			out = append(out, raw)
+			break // only the first KResult (self)
+		}
+	}
 	for _, c := range l.pkg.Children(id) {
 		cn := l.pkg.Node(c)
 		if cn == nil || cn.Kind != hir.KParam {
@@ -5611,18 +5635,14 @@ func (l *lowerer) lowerCall(n *hir.Node) ValueID {
 		needSynthRecv := true
 		if fid, ok := l.funcNames[callee]; ok {
 			if fn := l.pkg.Node(fid); fn != nil && fn.Has(hir.FlagMethod) {
-				// Count the callee's non-receiver params (all KParam children
-				// except the first, which is the receiver).
+				// Count the callee's non-receiver params (all KParam children).
+				// self is now a KResult (out-param), so all KParams are real
+				// parameters — none is the receiver.
 				paramCount := 0
-				first := true
 				for _, c := range l.pkg.Children(fid) {
 					cn := l.pkg.Node(c)
 					if cn == nil || cn.Kind != hir.KParam {
 						continue
-					}
-					if first {
-						first = false
-						continue // skip receiver param
 					}
 					paramCount++
 				}
@@ -5633,10 +5653,11 @@ func (l *lowerer) lowerCall(n *hir.Node) ValueID {
 					needSynthRecv = false
 				}
 				if needSynthRecv {
-					// Get the receiver type from the first KParam child.
+					// Get the receiver type from the first KResult child
+					// (self is the first result / out-param).
 					for _, c := range l.pkg.Children(fid) {
 						cn := l.pkg.Node(c)
-						if cn == nil || cn.Kind != hir.KParam {
+						if cn == nil || cn.Kind != hir.KResult {
 							continue
 						}
 						recvTyp := l.typeOfNode(cn)
@@ -5644,7 +5665,7 @@ func (l *lowerer) lowerCall(n *hir.Node) ValueID {
 							recvV = l.b.Emit(OpConst, recvTyp, nil, "")
 							l.mod.Values[recvV].Name = "zero-recv"
 						}
-						break // only the first KParam (the receiver)
+						break // only the first KResult (self)
 					}
 				}
 			}
@@ -5771,7 +5792,9 @@ func (l *lowerer) lowerCall(n *hir.Node) ValueID {
 }
 
 // countResultParams returns the number of named result (out-) parameters of the
-// given callee (0 for builtins/externs not present in the HIR package).
+// given callee, EXCLUDING `self` for methods (self is an out-param but is not a
+// return value the caller receives). Returns 0 for builtins/externs not present
+// in the HIR package.
 func (l *lowerer) countResultParams(callee string) int {
 	fid, ok := l.funcNames[callee]
 	if !ok {
@@ -5781,9 +5804,15 @@ func (l *lowerer) countResultParams(callee string) int {
 	if fdef == nil {
 		return 0
 	}
+	isMethod := fdef.Has(hir.FlagMethod)
 	n := 0
+	firstSkipped := false
 	for _, c := range l.pkg.Children(fid) {
 		if cn := l.pkg.Node(c); cn != nil && cn.Kind == hir.KResult {
+			if isMethod && !firstSkipped {
+				firstSkipped = true
+				continue // skip self
+			}
 			n++
 		}
 	}
@@ -5969,9 +5998,18 @@ func (l *lowerer) resultTypeOfCallee(callee string) TypeID {
 	if n == nil {
 		return l.voidType
 	}
+	// For a method, the first KResult is `self` (the out-param receiver),
+	// not a real return value.  Skip it so the result type is the actual
+	// return value, not the receiver's type.
+	isMethod := n.Has(hir.FlagMethod)
+	firstSkipped := false
 	for _, c := range l.pkg.Children(id) {
 		cn := l.pkg.Node(c)
 		if cn != nil && cn.Kind == hir.KResult {
+			if isMethod && !firstSkipped {
+				firstSkipped = true
+				continue // skip self
+			}
 			t := l.typeOfNode(cn)
 			if t != l.voidType {
 				return t
@@ -5994,9 +6032,18 @@ func (l *lowerer) resultTypesOfCallee(callee string) []TypeID {
 		return nil
 	}
 	var out []TypeID
+	// For a method, the first KResult is `self` (the out-param receiver),
+	// not a real return value.  Skip it.
+	fnNode := l.pkg.Node(id)
+	isMethod := fnNode != nil && fnNode.Has(hir.FlagMethod)
+	firstSkipped := false
 	for _, c := range l.pkg.Children(id) {
 		cn := l.pkg.Node(c)
 		if cn != nil && cn.Kind == hir.KResult {
+			if isMethod && !firstSkipped {
+				firstSkipped = true
+				continue // skip self
+			}
 			out = append(out, l.typeOfNode(cn))
 		}
 	}

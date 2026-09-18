@@ -1845,7 +1845,20 @@ func (c *codegen) emitFunc(f *Function) error {
 	// by-pointer) param, so it is covered by this same loop — no special case.
 	for _, p := range f.Params {
 		if c.resultParam[p] {
-			continue // out-params are written back by emitReturn, not aliased
+			// self (the first result param of a method) IS aliased to the
+			// caller's pointer so in-body mutations propagate directly.
+			// Other result params are written back by emitReturn.
+			if f.IsMethod {
+				isSelf := false
+				if len(f.ResultParams) > 0 && f.ResultParams[0] == p {
+					isSelf = true
+				}
+				if isSelf {
+					c.valSlot[p] = c.paramPtr[p]
+					continue
+				}
+			}
+			continue // other out-params are written back by emitReturn, not aliased
 		}
 		plt, powned := c.ptype(p)
 		if powned || byPointerLLVM(plt, powned) || strings.HasSuffix(plt, "*") {
@@ -5915,8 +5928,16 @@ func (c *codegen) emitCallBody(f *Function, cf *Function, inst *Inst, calleeName
 	// 2 args, 1 spread in-param and 1 result param). cf.Variadic resolves it:
 	// subtract the trailing args only for a non-variadic callee, where there is
 	// no other way to have extras.
-	nOut := len(outParams)
-	effArgs := len(inst.Args)
+	// For a method, the first out-param is `self` (the receiver out-param).
+	// It is passed as inst.Args[0]'s slot address — NOT as a freshly
+	// allocated %cres — so that mutations propagate to the caller.  The
+	// remaining out-params (if any) are real return values and use %cres.
+	selfOut := 0
+	if cf.IsMethod && len(outParams) > 0 {
+		selfOut = 1 // the first out-param is self
+	}
+	nOut := len(outParams) - selfOut // real out-params (excluding self)
+	effArgs := len(inst.Args) - selfOut // inst.Args[0] is the receiver
 	if !cf.Variadic && nOut > 0 && effArgs == len(inParams)+nOut {
 		effArgs -= nOut
 	}
@@ -5929,7 +5950,27 @@ func (c *codegen) emitCallBody(f *Function, cf *Function, inst *Inst, calleeName
 			}
 		}
 	}
+	// For a method, pass the receiver's slot address as the self out-param.
+	if selfOut > 0 && len(inst.Args) > 0 {
+		selfP := outParams[0]
+		selfLT, _ := c.ptype(selfP)
+		if selfLT == "" || selfLT == "void" {
+			selfLT = "i64"
+		}
+		if rs, ok := c.valSlot[inst.Args[0]]; ok && rs != "" {
+			callArgs = append(callArgs, selfLT+"* "+rs)
+		} else {
+			c.loadSeq++
+			slot := fmt.Sprintf("%%cself%d", c.loadSeq)
+			c.sb.WriteString(fmt.Sprintf("  %s = alloca %s\n", slot, selfLT))
+			c.sb.WriteString(fmt.Sprintf("  store %s zeroinitializer, %s* %s\n", selfLT, selfLT, slot))
+			callArgs = append(callArgs, selfLT+"* "+slot)
+		}
+	}
 	for i, p := range inParams {
+		// For a method, inst.Args[0] is the receiver (passed as self out-param
+		// above).  Real arguments start at inst.Args[selfOut].
+		argIdx := i + selfOut
 		if variadicLast && i == len(inParams)-1 {
 			// Collect every remaining call argument into a borrow %vec view and
 			// pass it as the variadic (slice) parameter. The element LLVM type
@@ -5937,7 +5978,7 @@ func (c *codegen) emitCallBody(f *Function, cf *Function, inst *Inst, calleeName
 			var argLLVMs []string
 			elemLLT := "i64"
 			for j := i; j < effArgs; j++ {
-				at, av := c.loadVal(inst.Args[j])
+				at, av := c.loadVal(inst.Args[j+selfOut])
 				if j == i && at != "" {
 					elemLLT = at
 				}
@@ -5947,7 +5988,7 @@ func (c *codegen) emitCallBody(f *Function, cf *Function, inst *Inst, calleeName
 			continue
 		}
 		plt, owned := c.ptype(p)
-		if i >= len(inst.Args) {
+		if argIdx >= len(inst.Args) {
 			// The HIR sometimes drops a trailing literal argument (e.g.
 			// `.emit(RE-OP-ANY, 0, 0)` lowers with the second `0` missing because
 			// the parser/semantic pass collapses identical consecutive literals).
@@ -5959,7 +6000,7 @@ func (c *codegen) emitCallBody(f *Function, cf *Function, inst *Inst, calleeName
 			callArgs = append(callArgs, plt+" zeroinitializer")
 			continue
 		}
-		argT, av := c.loadVal(inst.Args[i])
+		argT, av := c.loadVal(inst.Args[argIdx])
 		// Function-pointer argument to a fn-typed parameter. The callee declares
 		// such a parameter BY REFERENCE as a `<sig>**` slot (see emitFunc's
 		// fn-type param gate). We must therefore pass the *address* of a slot
@@ -5977,16 +6018,11 @@ func (c *codegen) emitCallBody(f *Function, cf *Function, inst *Inst, calleeName
 			callArgs = append(callArgs, fnLT+"* "+slot)
 			continue
 		}
-		// Method receiver (first input parameter): pass the receiver's *real slot
-		// address* by reference so self mutations (len/cap fields, elements)
-		// propagate to the caller, matching legacy codegen (which GEPs the
-		// %self pointer in place). The default owned-param path below copies the
-		// value into a fresh alloca and passes that address, which silently
-		// discards self mutations for container methods (vec.insert / vec.remove
-		// / …) under the MIR backend — the element writes still hit the shared
-		// backing buffer, but the caller's len/cap never update, corrupting
-		// subsequent indexing.
-		if cf.IsMethod && i == 0 {
+		// Method receiver special handling is NOT needed here when self is
+		// an out-param: the receiver is already passed as the self out-param
+		// above.  For extern methods that still have self as a KParam, the
+		// receiver is inst.Args[0] (argIdx == 0 when selfOut == 0).
+		if cf.IsMethod && i == 0 && selfOut == 0 {
 			if rs, ok := c.valSlot[inst.Args[0]]; ok && rs != "" {
 				recvLT, recvOwned := c.ptype(inst.Args[0])
 				if isOptionType(recvLT) {
@@ -6016,7 +6052,7 @@ func (c *codegen) emitCallBody(f *Function, cf *Function, inst *Inst, calleeName
 				}
 			}
 		}
-		if cf.IsMethod && i == 0 && (owned || byPointerLLVM(plt, owned)) {
+		if cf.IsMethod && i == 0 && selfOut == 0 && (owned || byPointerLLVM(plt, owned)) {
 			// The receiver slot (c.valSlot[receiver]) is the address of the
 			// caller's container/aggregate (a pointer to the alloca). Pass it
 			// directly — `plt` is the value type and the "*" makes the argument a
@@ -6285,7 +6321,12 @@ func (c *codegen) emitCallBody(f *Function, cf *Function, inst *Inst, calleeName
 		}
 	}
 	var resSlots []string
-	for _, p := range outParams {
+	for idx, p := range outParams {
+		if idx == 0 && selfOut > 0 {
+			// The first out-param (self) was already passed as the receiver's
+			// slot address above; no %cres alloca needed.
+			continue
+		}
 		plt, _ := c.ptype(p)
 		c.loadSeq++
 		slot := fmt.Sprintf("%%cres%d", c.loadSeq)
@@ -6981,7 +7022,14 @@ func (c *codegen) emitBuiltinRawByteAt(f *Function, inst *Inst) error {
 }
 
 func (c *codegen) emitReturn(f *Function) error {
-	for _, rp := range f.ResultParams {
+	for idx, rp := range f.ResultParams {
+		// For a method, the first result param is `self` (the out-param
+		// receiver).  Its value is modified in-place through the caller's
+		// pointer during the method body, so there is nothing to write back
+		// at return — writing back would be a no-op self-store.
+		if f.IsMethod && idx == 0 {
+			continue
+		}
 		plt, _ := c.ptype(rp)
 		// #83 SROA guard: use memcpy for large aggregates.
 		if c.shouldUseMemcpy(plt) {
