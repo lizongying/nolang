@@ -12,7 +12,7 @@ i64 i64
 
 i8 i8
 
-; compilation error: i16 'a' has no method 'len', use 'a.len' instead
+; a.len() is the element count (live call below); the bare `.len` property form is removed
 ; print(a.len())
 
 print(a.len())

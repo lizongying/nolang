@@ -95,6 +95,15 @@ func inferExprType(expr parser.Expression, varTypes map[string]string, funcTypes
 	case *parser.RegexLiteral:
 		return "regexp"
 	case *parser.Identifier:
+		// Implicit receiver: `.len` parses to DotExpression{Receiver: self}
+		// (parser/expr.go), and an explicit `self.len` reaches here as the
+		// bare Identifier "self". `self` is never a local, so without this
+		// case its type resolves to "" and every self-field access looks like
+		// an unknown receiver. The two DotExpression branches below already
+		// special-case `self`; this makes the base case agree with them.
+		if e.Value == "self" && selfType != "" {
+			return selfType
+		}
 		if t, ok := varTypes[e.Value]; ok {
 			// Function-type variable: return simplified "fn" marker
 			if strings.HasPrefix(t, "fn(") {
@@ -603,7 +612,10 @@ func ValidateDeprecatedLen(program *parser.Program) []ValidateResult {
 		var selfType string
 		varTypes := make(map[string]string)
 		if fd, ok := stmt.(*parser.FunctionDefinition); ok {
-				if len(fd.Results) > 0 && fd.Results[0].Name == "self" && fd.Results[0].Type != nil {
+			// The implicit receiver sits at Results[0] (parser/decl.go); its
+			// type is the struct this function is a method of. Needed so that
+			// `self` / `.field` receivers can be resolved below.
+			if fd.IsMethodDef && len(fd.Results) > 0 && fd.Results[0].Name == "self" && fd.Results[0].Type != nil {
 				selfType = fd.Results[0].Type.String()
 			}
 			for _, p := range fd.Parameters {

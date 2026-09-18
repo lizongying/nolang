@@ -3,7 +3,7 @@
 
 a [1] = [1]
 
-; compilation error: array 'a' has no method 'len', use 'a.len' instead
+; a.len() is the element count (live call below); the bare `.len` property form is removed
 ; print(a.len())
 
 print(a.len())
