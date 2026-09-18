@@ -5959,17 +5959,19 @@ func validateStmtArrayBounds(stmt parser.Statement, arraySizes map[string]int64,
 				funcSliceSizes[p.Name] = 0
 			}
 		}
-		for _, p := range s.Results {
-			if p.Type != nil {
-				funcVarTypes[p.Name] = p.Type.String()
-				if p.Type.String() == "str" {
-					funcStringSizes[p.Name] = 0
-				}
-			}
-			if isSliceTypeOrOptionSlice(p.Type) {
-				funcSliceSizes[p.Name] = 0
+	for _, p := range s.Results {
+		if p.Type != nil {
+			funcVarTypes[p.Name] = p.Type.String()
+			if p.Type.String() == "str" {
+				funcStringSizes[p.Name] = 0
 			}
 		}
+		// Skip 'self' (now in Results) to allow vec.truncate/extend
+		// and other low-level slice methods to modify .len internally.
+		if p.Name != "self" && isSliceTypeOrOptionSlice(p.Type) {
+			funcSliceSizes[p.Name] = 0
+		}
+	}
 		if s.Body != nil {
 			collectVarTypesFromBody(s.Body, funcVarTypes)
 			for _, ss := range s.Body.Statements {

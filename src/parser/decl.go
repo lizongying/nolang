@@ -66,13 +66,15 @@ func (p *Parser) parseMethodDefinition(structToken lexer.Token) Statement {
 		}
 	}
 
-	// 插入 self 參數
+	// 插入 self 作為首個輸出參數（out-param），而非輸入參數。
+	// 方法語義：type.method = (inputs) (self type, rest-outputs...) {}
+	// self 放在 Results 使 codegen 將其 alias 到調用方的 receiver 指針。
 	selfParam := &Parameter{
 		Token: structToken,
 		Name:  "self",
 		Type:  buildType(structToken.Literal, structToken),
 	}
-	funcDef.Parameters = append([]*Parameter{selfParam}, funcDef.Parameters...)
+	funcDef.Results = append([]*Parameter{selfParam}, funcDef.Results...)
 
 	return funcDef
 }
@@ -535,13 +537,13 @@ func (p *Parser) parseArrayTypeMethodDefinition() Statement {
 		p.nextToken()
 	}
 
-	// 插入 self 參數
+	// 插入 self 作為首個輸出參數（out-param）
 	selfParam := &Parameter{
 		Token: elemToken,
 		Name:  "self",
 		Type:  buildType(arrayType, elemToken),
 	}
-	def.Parameters = append([]*Parameter{selfParam}, def.Parameters...)
+	def.Results = append([]*Parameter{selfParam}, def.Results...)
 
 	return def
 }
@@ -1842,13 +1844,13 @@ func (p *Parser) parseColonMethodDefinition(structToken lexer.Token) Statement {
 		p.methodStructStack = p.methodStructStack[:len(p.methodStructStack)-1]
 	}
 
-	// Insert self parameter
+	// Insert self as first output parameter (out-param)
 	selfParam := &Parameter{
 		Token: structToken,
 		Name:  "self",
 		Type:  buildType(structToken.Literal, structToken),
 	}
-	def.Parameters = append([]*Parameter{selfParam}, def.Parameters...)
+	def.Results = append([]*Parameter{selfParam}, def.Results...)
 
 	return def
 }

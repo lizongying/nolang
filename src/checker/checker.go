@@ -580,8 +580,8 @@ func ValidateDeprecatedLen(program *parser.Program) []ValidateResult {
 		var selfType string
 		varTypes := make(map[string]string)
 		if fd, ok := stmt.(*parser.FunctionDefinition); ok {
-			if len(fd.Parameters) > 0 && fd.Parameters[0].Name == "self" && fd.Parameters[0].Type != nil {
-				selfType = fd.Parameters[0].Type.String()
+				if len(fd.Results) > 0 && fd.Results[0].Name == "self" && fd.Results[0].Type != nil {
+				selfType = fd.Results[0].Type.String()
 			}
 			for _, p := range fd.Parameters {
 				if p.Type != nil && p.Type.String() != "" {
@@ -916,9 +916,9 @@ func ValidateTypes(program *parser.Program) []ValidateResult {
 		// 判斷是否為 struct 方法
 		selfType := ""
 		if fd, ok := stmt.(*parser.FunctionDefinition); ok {
-			if len(fd.Parameters) > 0 && fd.Parameters[0].Name == "self" {
-				selfType = fd.Parameters[0].Type.String()
-			}
+		if len(fd.Results) > 0 && fd.Results[0].Name == "self" {
+			selfType = fd.Results[0].Type.String()
+		}
 			// 跳過單態化生成的函式（函式名含 '__'），因為這些函式
 			// 由編譯器自動生成，其型別檢查應在泛型模板層面完成。
 			// 單態化後的函式體中 i64 字面量賦值給特化類型（如 f64、u8）
@@ -2371,13 +2371,13 @@ func ValidateInterfaceImplementation(program *parser.Program) []ValidateResult {
 		if !ok {
 			continue
 		}
-		// Dotted methods have a hidden self parameter prepended by
-		// parseMethodDefinition. Skip it for signature comparison.
+		// Dotted methods have self as the first output parameter (Results[0]),
+		// inserted by parseMethodDefinition. Skip it for signature comparison.
 		implParams := fd.Parameters
-		if len(implParams) > 0 && implParams[0].Name == "self" {
-			implParams = implParams[1:]
-		}
 		implResults := fd.Results
+		if len(implResults) > 0 && implResults[0].Name == "self" {
+			implResults = implResults[1:]
+		}
 		for _, methods := range ifaces {
 			for _, m := range methods {
 				if m.Name != implMethod {
@@ -5501,10 +5501,10 @@ func validateStmtTypes(stmt parser.Statement, funcNames map[string]bool, funcTyp
 			}
 		}
 		// 進入方法體時，更新 selfType
-		methodSelfType := selfType
-		if len(s.Parameters) > 0 && s.Parameters[0].Name == "self" {
-			methodSelfType = s.Parameters[0].Type.String()
-		}
+	methodSelfType := selfType
+	if len(s.Results) > 0 && s.Results[0].Name == "self" {
+		methodSelfType = s.Results[0].Type.String()
+	}
 		// 建立局部 funcNames 副本，排除當前函式的參數和輸出參數名，
 		// 避免與全域函式同名時（如 io.out）對輸出參數賦值被誤報為
 		// "cannot reassign function name"。
@@ -6992,9 +6992,9 @@ func resolveSelfMethodCalls(program *parser.Program) {
 		// Desugaring here converts them to explicit `Type.method(self, args)`
 		// calls, which survive inlining and every expression context uniformly.
 		var selfType string
-		if len(fd.Parameters) > 0 && fd.Parameters[0].Name == "self" && fd.Parameters[0].Type != nil {
-			selfType = fd.Parameters[0].Type.String()
-		} else if parts := strings.Split(fd.Name, "."); len(parts) >= 2 {
+	if len(fd.Results) > 0 && fd.Results[0].Name == "self" && fd.Results[0].Type != nil {
+		selfType = fd.Results[0].Type.String()
+	} else if parts := strings.Split(fd.Name, "."); len(parts) >= 2 {
 			// Receiver type is every segment except the final method name.
 			selfType = strings.Join(parts[:len(parts)-1], ".")
 		}
@@ -7688,8 +7688,15 @@ func funcSigFromDef(fd *parser.FunctionDefinition) *funcSig {
 		}
 		params[i] = paramInfo{Name: p.Name, Type: t, HasDefault: p.DefaultExpr != nil}
 	}
-	results := make([]paramInfo, len(fd.Results))
-	for i, r := range fd.Results {
+	// Method definitions have self as the first output parameter (Results[0]).
+	// Exclude it from ResultTypes so return-count validation (lookupReturnCount)
+	// sees the real number of return values, not including the implicit self.
+	resultParams := fd.Results
+	if fd.IsMethodDef && len(resultParams) > 0 && resultParams[0].Name == "self" {
+		resultParams = resultParams[1:]
+	}
+	results := make([]paramInfo, len(resultParams))
+	for i, r := range resultParams {
 		t := ""
 		if r != nil && r.Type != nil {
 			t = r.Type.String()

@@ -134,8 +134,8 @@ func prefixModuleStatements(stmts []parser.Statement, moduleShortName string, ty
 			// （"client.client"）不匹配，self 方法解析全部失敗
 			// （IR 中出現未定義的 @self.field.method void call）。
 			// 在模組內部改寫則無歧義：接收者型別必屬本模組。
-			if len(fd.Parameters) > 0 && fd.Parameters[0].Name == "self" {
-				if nt, ok := fd.Parameters[0].Type.(*parser.NamedType); ok && nt.Value == typePrefix {
+			if len(fd.Results) > 0 && fd.Results[0].Name == "self" {
+				if nt, ok := fd.Results[0].Type.(*parser.NamedType); ok && nt.Value == typePrefix {
 					nt.Value = moduleShortName + "." + typePrefix
 				}
 			}

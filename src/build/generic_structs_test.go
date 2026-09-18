@@ -208,9 +208,9 @@ hashmap-str-tmpl.contains = (key str)(found bool) {
 			continue
 		}
 		wantMethods[fd.Name] = true
-		// self 參數型別應為 hashmap-str-i64
-		if len(fd.Parameters) == 0 || fd.Parameters[0].Type.String() != "hashmap-str-i64" {
-			t.Errorf("method %q: self param type = %q, want hashmap-str-i64", fd.Name, fd.Parameters[0].Type.String())
+		// self 參數型別應為 hashmap-str-i64 (now in Results[0])
+		if len(fd.Results) == 0 || fd.Results[0].Type.String() != "hashmap-str-i64" {
+			t.Errorf("method %q: self param type = %q, want hashmap-str-i64", fd.Name, fd.Results[0].Type.String())
 		}
 	}
 	for name, found := range wantMethods {
@@ -223,9 +223,9 @@ hashmap-str-tmpl.contains = (key str)(found bool) {
 	for _, stmt := range generated[1:] {
 		fd := stmt.(*parser.FunctionDefinition)
 		if fd.Name == "hashmap-str-i64.put" {
-			// param[2] = val: v → i64
-			if fd.Parameters[2].Name != "val" || fd.Parameters[2].Type.String() != "i64" {
-				t.Errorf("put val param = %s:%s, want val:i64", fd.Parameters[2].Name, fd.Parameters[2].Type.String())
+			// param[1] = val: v → i64 (self is now in Results, so val is at index 1)
+			if fd.Parameters[1].Name != "val" || fd.Parameters[1].Type.String() != "i64" {
+				t.Errorf("put val param = %s:%s, want val:i64", fd.Parameters[1].Name, fd.Parameters[1].Type.String())
 			}
 		}
 		if fd.Name == "hashmap-str-i64.contains" {
@@ -281,20 +281,20 @@ hashmap-int-tmpl.put = (key k, val v) {
 	if valsField == nil || valsField.Type.String() != "bool" {
 		t.Errorf("vals type = %v, want bool (v substituted)", valsField)
 	}
-	// 方法 self 型別
+	// 方法 self 型別 (now in Results[0])
 	fd := generated[1].(*parser.FunctionDefinition)
 	if fd.Name != "hashmap-i64-bool.put" {
 		t.Errorf("method name = %q, want hashmap-i64-bool.put", fd.Name)
 	}
-	if fd.Parameters[0].Type.String() != "hashmap-i64-bool" {
-		t.Errorf("self type = %s, want hashmap-i64-bool", fd.Parameters[0].Type.String())
+	if fd.Results[0].Type.String() != "hashmap-i64-bool" {
+		t.Errorf("self type = %s, want hashmap-i64-bool", fd.Results[0].Type.String())
 	}
 	// key: k → i64, val: v → bool
-	if fd.Parameters[1].Type.String() != "i64" {
-		t.Errorf("key type = %s, want i64", fd.Parameters[1].Type.String())
+	if fd.Parameters[0].Type.String() != "i64" {
+		t.Errorf("key type = %s, want i64", fd.Parameters[0].Type.String())
 	}
-	if fd.Parameters[2].Type.String() != "bool" {
-		t.Errorf("val type = %s, want bool", fd.Parameters[2].Type.String())
+	if fd.Parameters[1].Type.String() != "bool" {
+		t.Errorf("val type = %s, want bool", fd.Parameters[1].Type.String())
 	}
 }
 

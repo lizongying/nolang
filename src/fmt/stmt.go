@@ -470,16 +470,17 @@ func (f *formatter) formatFunctionDefinition(s *parser.FunctionDefinition) {
 	} else {
 		f.write(" = (")
 	}
-	// Skip implicit self parameter for method definitions
-	params := s.Parameters
-	if isMethodDef(s) && len(params) > 0 && params[0].Name == "self" {
-		params = params[1:]
-	}
-	f.formatParameters(params, s.IsVariadic)
+	// self is now the first output parameter (Results[0]) for method definitions.
+	// It is implicit and should not be rendered.
+	f.formatParameters(s.Parameters, s.IsVariadic)
 	f.write(")")
-	if len(s.Results) > 0 {
+	results := s.Results
+	if isMethodDef(s) && len(results) > 0 && results[0].Name == "self" {
+		results = results[1:]
+	}
+	if len(results) > 0 {
 		f.write(" (")
-		f.formatParameters(s.Results, false)
+		f.formatParameters(results, false)
 		f.write(")")
 	}
 	f.write(" {")

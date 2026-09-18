@@ -32,14 +32,17 @@ func TestParseArrayTypeMethodDefinitionNullableSlice(t *testing.T) {
 	if fd.Name != "[?]ord.ast" {
 		t.Errorf("expected name '[?]ord.ast', got %q", fd.Name)
 	}
-	if len(fd.Parameters) != 1 || fd.Parameters[0].Name != "self" {
-		t.Fatalf("expected 1 self param, got %d", len(fd.Parameters))
+	if len(fd.Parameters) != 0 {
+		t.Fatalf("expected 0 input params (self is now out-param), got %d", len(fd.Parameters))
 	}
-	if fd.Parameters[0].Type == nil || fd.Parameters[0].Type.String() != "[?]ord" {
-		t.Errorf("expected self type '[?]ord', got %v", fd.Parameters[0].Type)
+	if len(fd.Results) != 2 || fd.Results[0].Name != "self" {
+		t.Fatalf("expected 2 results (self + [?]ord), got %d", len(fd.Results))
 	}
-	if len(fd.Results) != 1 || fd.Results[0].Type.String() != "[?]ord" {
-		t.Errorf("expected result type '[?]ord', got %v", fd.Results[0].Type)
+	if fd.Results[0].Type == nil || fd.Results[0].Type.String() != "[?]ord" {
+		t.Errorf("expected self type '[?]ord', got %v", fd.Results[0].Type)
+	}
+	if fd.Results[1].Type == nil || fd.Results[1].Type.String() != "[?]ord" {
+		t.Errorf("expected result type '[?]ord', got %v", fd.Results[1].Type)
 	}
 }
 
