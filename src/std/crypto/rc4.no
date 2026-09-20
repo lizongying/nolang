@@ -6,7 +6,7 @@
 ; 注意：RC4 已被認為不安全，僅供遺留系統相容使用。
 ;
 ; 用法：
-;   # std/hash/rc4
+;   # std/crypto/rc4
 ;   key []byte = 'secret key'
 ;   cipher = rc4(plain, key)   // 加密
 ;   plain = rc4(cipher, key)   // 解密（相同操作）

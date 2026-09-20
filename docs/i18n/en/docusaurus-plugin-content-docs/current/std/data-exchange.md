@@ -92,8 +92,32 @@ Common functions and methods:
 
 Kind constants: `YAML-KIND-NULL` / `BOOL` / `INT` / `FLOAT` / `STR` / `SEQ` / `MAP` (0–6). Scalar-style constants: `YAML-STYLE-PLAIN` / `SINGLE` / `DOUBLE` / `LITERAL` / `FOLDED` / `ALIAS` (0–5), plus `YAML-STYLE-BLOCK` / `FLOW` (6–7).
 
-> **Caveat 1**: child views are returned as `(out yaml, ok bool)`, not `?yaml`. The MIR backend cannot safely share the node pool: once a struct containing a slice is boxed into an option and handed back to the caller, releasing that option also frees the parent document's node buffer (the parent then reports `len() == 0`).
+> **Caveat 1**: child views are returned as `(out yaml, ok bool)`, not `?yaml`. This is an API-style choice, not an ownership limitation — a child sharing the parent's node pool is perfectly safe. Prefer the path helpers (`find-str` / `find-i64` / ...) for lookups.
 >
-> **Caveat 2**: the backend emits floating-point arithmetic with fast-math, so a real NaN cannot be produced at runtime (`0.0 / 0.0` folds to `0`). `.nan` is therefore detected by `is-nan()` from the node's source text, and `f64()` returns `0.0` for it; `to-json()` emits `null` and `to-yaml()` emits `.nan`.
+> **Caveat 2**: inside nested matches `it` is restored **per level**. An inner match's arm rebinds `it` to its own subject (the arm body must see the inner value), but as soon as that arm ends `it` reverts to the enclosing arm's subject — so this is safe:
+>
+> ```no
+> d ?yaml = yaml.parse(src)
+> d: {
+>     nil -> print('nil')
+>
+>     err -> print(it)
+>
+>     -> {
+>         print(it.find-str('a'))        ; outer it = the document
+>         v ?yaml = it.at(0)
+>         v: {
+>             nil -> print('none')
+>             err -> print('err')
+>             -> print(it.find-str('b')) ; inner it = the child
+>         }
+>         print(it.find-str('c'))        ; ✅ it is the document again
+>     }
+> }
+> ```
+>
+> The one exception is the outermost match: after it ends `it` still holds the last arm's value (it is not restored), so never rely on `it` outside a match. To use the value across levels, still copy it into a named local (`doc = it`) or use a destructuring binding `ok(v) -> ...`.
+>
+> **Caveat 3**: `.nan` parses to a real NaN — `f64()` returns NaN and `x != x` is true. JSON has no NaN, so `to-json()` emits `null` for it; `to-yaml()` emits `.nan`.
 
 ---

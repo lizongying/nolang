@@ -1,0 +1,131 @@
+; test-match-it-scope.no — 巢狀 match 結束後 `it` 必須還原成外層臂的主體
+;
+; 回歸：`it` 是單一的函式全域綁定。內層 match 的臂會把它重新綁到自己的主體
+; （這是必要的——臂體必須看到內層值），但臂結束後沒有還原，於是外層臂在內層
+; match 之後讀到的 `it` 仍是**內層**主體：
+;
+;   d ?yaml = yaml.parse(src)
+;   d: { -> {
+;           a ?yaml = it.at(0)     ; it = 文件
+;           a: { -> ... }          ; 內層臂把 it 綁到子節點
+;           b ?yaml = it.at(1)     ; ⚠ 這時的 it 還是子節點 → 永遠 nil
+;       } }
+;
+; 修復前「again」那幾條印出內層值（7 / child），修復後印出外層值（42 / root）。
+
+check-str = (name str, got str, want str) {
+    got == want -> print('ok: ' - name)
+
+    -> print('fail: ' - name - ' got=[' - got - '] want=[' - want - ']')
+}
+
+mk-outer = () (out ?i64) {
+    out = 42
+}
+
+mk-inner = () (out ?i64) {
+    out = 7
+}
+
+; 最小重現：兩層 option match
+probe-min = () (out str) {
+    out = ''
+    a ?i64 = mk-outer()
+    a: {
+        nil -> out = 'nil'
+
+        err -> out = 'err'
+
+        -> {
+            got = it.to-str()
+            b ?i64 = mk-inner()
+            b: {
+                nil -> print('  inner nil')
+
+                err -> print('  inner err')
+
+                -> {
+                    inner = it.to-str()
+                    out = got - '/' - inner - '/' - it.to-str()
+                }
+            }
+
+            ; 內層 match 結束後 it 必須回到 42
+            out = got - '/' - it.to-str()
+        }
+    }
+}
+
+; 三層巢狀：每一層都要各自還原
+probe-deep = () (out str) {
+    out = ''
+    a ?i64 = mk-outer()
+    a: {
+        nil -> out = 'nil'
+
+        err -> out = 'err'
+
+        -> {
+            out = it.to-str()
+            b ?i64 = mk-inner()
+            b: {
+                nil -> out = 'b nil'
+
+                err -> out = 'b err'
+
+                -> {
+                    out = out - '-' - it.to-str()
+                    c ?i64 = mk-outer()
+                    c: {
+                        nil -> out = 'c nil'
+
+                        err -> out = 'c err'
+
+                        -> out = out - '-' - it.to-str()
+                    }
+
+                    ; 第三層結束後 it 要回到第二層的 7
+                    out = out - '-' - it.to-str()
+                }
+            }
+
+            ; 第二層結束後 it 要回到第一層的 42
+            out = out - '-' - it.to-str()
+        }
+    }
+}
+
+; else 臂（wildcard）裡的巢狀 match 也要還原
+probe-else = () (out str) {
+    out = ''
+    a ?i64 = mk-outer()
+    a: {
+        nil -> out = 'nil'
+
+        err -> out = 'err'
+
+        -> {
+            o = it.to-str()
+            b ?i64 = mk-inner()
+            b: {
+                nil -> print('  b nil')
+
+                err -> print('  b err')
+
+                -> print('  b=' - it.to-str())
+            }
+            out = o - '/' - it.to-str()
+        }
+    }
+}
+
+main = () {
+    s1 = probe-min()
+    check-str('nested-ok-arm', s1, '42/42')
+
+    s2 = probe-deep()
+    check-str('nested-three-levels', s2, '42-7-42-7-42')
+
+    s3 = probe-else()
+    check-str('nested-else-arm', s3, '42/42')
+}

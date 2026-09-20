@@ -7,7 +7,7 @@
 ; 複用 x25519.no 的 GF(2^255-19) 域元素操作。
 ;
 ; 用法：
-;   # std/hash/ed25519
+;   # std/crypto/ed25519
 ;   priv [32]byte = ed25519-generate-seed(seed)
 ;   pub [32]byte = ed25519-publickey(priv)
 ;   sig [64]byte = ed25519-sign(priv, msg)

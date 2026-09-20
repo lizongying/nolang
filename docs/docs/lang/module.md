@@ -20,10 +20,10 @@ ShortName 是模組路徑的最後一段，用作跨模組調用時的前綴。
 | `std/fs.no` | `fs` | `fs` | 頂層檔案 |
 | `std/net/net.no` | `net/net` | `net` | 路徑最後一段 |
 | `std/net/client.no` | `net/client` | `client` | 路徑最後一段 |
-| `std/hash/sha256.no` | `hash/sha256` | `sha256` | 路徑最後一段 |
+| `std/crypto/sha256.no` | `crypto/sha256` | `sha256` | 路徑最後一段 |
 | `std/archive/gzip.no` | `archive/gzip` | `gzip` | 路徑最後一段 |
 
-ShortName 即為 FullPath 以斜線分隔後的最後一段（如 `hash/sha256` → `sha256`）。
+ShortName 即為 FullPath 以斜線分隔後的最後一段（如 `crypto/sha256` → `sha256`）。
 
 ## 需要前綴
 

@@ -4,7 +4,7 @@
 ; 組合成 ChaCha20-Poly1305 AEAD，提供機密性與完整性。
 ;
 ; 用法：
-;   # std/hash/chacha20-poly1305
+;   # std/crypto/chacha20-poly1305
 ;   key [32]byte: 256-bit 金鑰
 ;   nonce [12]byte: 96-bit nonce
 ;   aad []byte: 額外認證資料

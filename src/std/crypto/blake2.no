@@ -4,7 +4,7 @@
 ; 區塊大小 128 位元組，12 輪，使用 64-bit 字。
 ;
 ; 用法：
-;   # std/hash/blake2b
+;   # std/crypto/blake2b
 ;   hash = blake2b(data)           // [64]byte，預設輸出 64 位元組
 ;   hash32 = blake2b-256(data)     // [32]byte，輸出 32 位元組
 ;   hex = blake2b-hex(data)        // 128 字元 hex 字串

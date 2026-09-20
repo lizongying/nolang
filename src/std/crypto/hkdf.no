@@ -4,7 +4,7 @@
 ; 基於 HMAC-SHA256（32 位元組輸出）。
 ;
 ; 用法：
-;   # std/hash/hkdf
+;   # std/crypto/hkdf
 ;   prk = hkdf-extract(salt, ikm)           // 返回 [32]byte
 ;   okm = hkdf-expand(prk, info, 32)        // 返回 []byte
 ;   okm = hkdf-expand-label(prk, 'label', ctx, 32)  // TLS 1.3 專用

@@ -1190,7 +1190,7 @@ func pathHasComponent(p, comp string) bool {
 }
 
 // dotModulePath 從 DotExpression 提取模組路徑（如 array.map → "array"，
-// hash/sha256.sum → "hash/sha256"），與 checker.extractModulePathAndFunc 同義
+// crypto/sha256.sum → "crypto/sha256"），與 checker.extractModulePathAndFunc 同義
 // 但獨立實作於 build 包（該函數未導出）。
 func dotModulePath(dot *parser.DotExpression) string {
 	var segments []string
@@ -9280,7 +9280,7 @@ func validateExprArrayBounds(expr parser.Expression, arraySizes map[string]int64
                
  
 // moduleShortName extracts the last path segment as the module name.
-// "std/math" → "math", "fmt" → "fmt", "hash/md5" → "md5"
+// "std/math" → "math", "fmt" → "fmt", "crypto/md5" → "md5"
                                           
                                                    
                      
@@ -9765,7 +9765,7 @@ func validateExprArrayBounds(expr parser.Expression, arraySizes map[string]int64
 //
 //	DotExpression{Identifier("math"), "sqrt"}     → ("math", "sqrt")
 //	DotExpression{DotExpression{Identifier("hash"), "sha256"}, "sha256"}
-//	                                              → ("hash/sha256", "sha256")
+//	                                              → ("crypto/sha256", "sha256")
 //
 // Returns ("", "") if the chain contains non-Identifier nodes.
                                                                                 

@@ -851,7 +851,7 @@ Common standard library replacements:
 - `[]byte.to-hex()` / `[]byte.to-hex-lower()` — byte array to hex string
 - `str.to-i64()` / `str.to-f64()` — string to number
 - `int.to-str()` / `float.to-str()` — number to string
-- `std/hash/sha1`, `std/hash/sha256`, `std/hash/sha512` — hash computation
+- `std/crypto/sha1`, `std/crypto/sha256`, `std/crypto/sha512` — hash computation
 
 ### File Naming
 
@@ -1413,6 +1413,25 @@ val: {
     -> log('empty')         // catch-all, handles nil here
 }
 ```
+
+```no
+// it scoping: nested matches restore level by level
+outer: {
+    -> {
+        use(it)             // outer it
+        inner ?T = f(it)
+        inner: {
+            -> use(it)      // inner it = unwrapped `inner`
+        }
+        use(it)             // ✅ it is the outer value again
+    }
+}
+```
+
+> **Note**: restoration only happens for **nested** matches. After the outermost match ends,
+> `it` still holds the last arm's value — do not use `it` outside a match. To carry the value
+> across levels, copy it into a named local (`doc = it`) or use a destructuring binding
+> `ok(v) -> ...`.
 
 ```no
 // ✅ Combined option patterns: nil || err -> body
@@ -2337,10 +2356,10 @@ ShortName is the last segment of the module path, used as the prefix for cross-m
 | `std/fs.no`        | `fs`           | `fs`      | Top-level file    |
 | `std/net/net.no`   | `net/net`      | `net`     | Last path segment |
 | `std/net/client.no`| `net/client`   | `client`  | Last path segment |
-| `std/hash/sha256.no` | `hash/sha256` | `sha256`  | Last path segment |
+| `std/crypto/sha256.no` | `crypto/sha256` | `sha256`  | Last path segment |
 | `std/archive/gzip.no` | `archive/gzip` | `gzip`  | Last path segment |
 
-ShortName is the last segment of FullPath when split by slashes (e.g. `hash/sha256` → `sha256`).
+ShortName is the last segment of FullPath when split by slashes (e.g. `crypto/sha256` → `sha256`).
 
 #### Prefix Required
 

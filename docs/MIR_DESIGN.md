@@ -1,11 +1,8 @@
 # Nolang MIR — 工业级中端中间表示设计（实施记录 v2.26）
 
-> **当前状态（截至 2026-09-17）**：legacy 后端已删除，MIR 是唯一后端（`NOLANG_MIR` 未设置即 MIR-only；`=0`/`=2` 明确报错，`=1` 保留为 lowering 转储）。默认口径 `no build` 通过率 **92.2%**（388/421）；**红线已达标**：MIR 专属运行时崩溃 = 0、MIR 专属 gap = 0。最新全量扫描 `SAME=409 / DIVERGE=0 / REGRESS=0 / BOTH_FAIL=13`（约 11）。切换默认后端不改变任何测试的成败，只是停止用 legacy 掩盖 MIR 的缺口。
+> **当前状态（截至 2026-09-21）**：legacy 后端已删除，MIR 是唯一后端（`NOLANG_MIR` 未设置即 MIR-only；`=0`/`=2` 明确报错，`=1` 保留为 lowering 转储）。上一份全量扫描快照为 `SAME=409 / DIVERGE=0 / REGRESS=0 / BOTH_FAIL=13`（后续约 11）；红线目标仍是 MIR 专属运行时崩溃 = 0、MIR 专属 gap = 0。
 >
-> **待修**：#84（json 运行期 SIGSEGV）、#85（静默错误编译底层根因，`loadVal` 护栏已落地但未修底层）。详见 §13.3 与 §16。
->
-> **近期已修**：#83（`afa8d92`，sroa 大聚合爆炸）；5 处同形状空守卫体 bug（`regexp`/`x509`/`multipart`×2/`sse`）。
- —— 即切换默认不改变任何测试的成败，只是停止用 legacy 掩盖 MIR 的缺口。详见 §13.3。
+> **当前已闭合**：#83（`afa8d92`，sroa 大聚合爆炸）、#84（json 早返回 SIGSEGV）、#85（调用结果 NoVal / 静默错误编译）、5 处同形状空守卫体 bug（`regexp`/`x509`/`multipart`×2/`sse`）。#84/#85 已用 `./bin/no` 重建后二次点测；全量统计需另行重扫。
 > 作者：编译器工作流
 > 关联：`src/hir`（HIR）、`src/parser/tohir.go`（AST→HIR）、`src/mir`（本层）。~~`src/build/llvm`（legacy LLVM 后端）~~ 已删除（见 §13.3）
 
@@ -16,9 +13,9 @@
 v1（本文档前身）是一份**前向设计**：描述了 `NOLANG_MIR=1` 审计模式、`MIR→HIR` 桥（Stage 1）、以及"MIR 作为内存安全审计器运行"的路线。但实际实现**超越了 v1 的路线**：MIR 直接跳到了 `MIR→LLVM` 直发（v1 的 Stage 3），并且 env 开关语义从 v1 的 `0/1` 演进为 `0/2/3`。本 v2 把文档**对齐到真实已落地的架构**，并补充：
 
 - 真实的 `NOLANG_MIR=0/2/3`（及 `=1` 调试）语义；
-- 全量 corpus 覆盖实测（当前口径：`tests/**/*.no`=421 → `MATCH=367`、`DIVERGE=0`、`MIR 专属 gap=1`（`test-diff-debug`）、`LEGACY_FAIL` 多为预存/通用 bug；详见 §10.1）；
+- 全量 corpus 覆盖实测（最近快照见 §10.1；#84/#85 修复后的全量统计尚未重扫）；
 - 已闭环的 **63 个** MIR 专属运行时崩溃/代码生成修复（#1–#63），分类目录见 §12 摘要。red-line 里程碑：**#41** 闭环 C 家族 3 个运行时崩溃；**#42–#50** 覆盖 newtype 展开 / 跨模块调用 / 切片 / 窄整型 / 字符串方法 / 类型别名等常规语义缺口。
-- 当前已知的 gap 家族与待修项：见 §13.3（BOTH_FAIL 余集约 11，含 #84/#85）与 §16（开放风险）。
+- 当前已知的 gap 家族与待修项：见 §13.3（BOTH_FAIL 余集仍需重扫校准）与 §16（开放风险）。
 - 覆盖扫描方法论（`scripts/mir_cov.py` / `mir_sweep.py`；⚠️ 两者用**陈旧的仓库根 `no`**，权威扫描应改用 `./bin/no` 并覆盖 `tests/**/*.no`）。
 
 > ⚠️ 历史实施约束（**已随 legacy 删除失效，仅作追溯**）：MIR 成熟期曾要求任何 MIR 失败在 `NOLANG_MIR=2` 下**必须安全回退**到 legacy HIR 路径（strangler-fig），`NOLANG_MIR=3` 关闭回退以暴露覆盖缺口。删除 legacy 后端后，`=0`/`=2` 均为明确报错，回退机制不存在；回归保护改由冻结基线承担（§13.3⑥）。
@@ -235,27 +232,26 @@ MIR 专属运行时崩溃与 gap 的修复目录共 **#1–#86**，截至 2026-0
 
 #### 待修问题（未闭环）
 
-| 编号 | 问题 | 状态 / 下一步 |
-|---|---|---|
-| **#84** | `json.parse('')` 最简早返回路径运行期 SIGSEGV；`test-json-parse-option.no`、`test-json-nested-match.no` 编译成功但 rc=1，stdout 仅 `start`。触发因素在 `src/std/json.no` 自身（同形状 option/match/`err()` 早返回复刻均通过）。 | 未修；先定位 `json.parse('')` 早返回路径为何 segfault。 |
-| **#85** | 静默错误编译根因未修：`hir2mir.go` 的 void 分支（`resTyp` 三档回退全落空）使 `i.to-str()` 的 `call` 无结果值；`codegen.go` 的 `i64-to-str` 快路径在 `Results` 为空时静默 `return nil`。`loadVal` 护栏已落地（响铃），但底层 lowering 缺陷未修。 | 未修底层；需给 MIR 转储补 `Sym` 字段才能定位 `callee` 确切拼写。 |
+> 见 §16 开放风险与下方 BOTH_FAIL 余集。原记录的 #84 / #85 已于 2026-09-21 在本快照之后的编译器改动中闭合（见「已修 / 近期闭环」）。
 
-#### BOTH_FAIL 余集（约 11，按性质分类）
+#### BOTH_FAIL 余集（约 11，按性质分类；需重扫校准）
 
 | 类别 | 文件 | 性质 |
 |---|---|---|
 | FFI / 外部库 | `test-database-sql`、`test-ffi-mysql`、`test-ffi-sqlite`、`test-sse` | 需实现 FFI，非 MIR 缺口 |
 | 测试源与 std 漂移 | `test-json` | 修测试（`p.stringify` 3 参 vs 现行 `(node-idx i64)(out str)`），别改编译器 |
-| #85 家族 | `test-std-hash` | `des_block` 的 `NoVal`；触发点是 `src/std/crypto/des.no` 把 `#{index-out}` 写在续行中缀表达式中间 |
-| 深层运行时崩溃 | `test-json-parse-option`、`test-https-server`、`test-x25519-fe-diag` | SIGSEGV / abort trap，部分与 #84 同源 |
+| 深层运行时崩溃 | `test-https-server`、`test-x25519-fe-diag` | SIGSEGV / abort trap，需逐个挖 |
 | 有意死循环 | `test-for2` | rc=124，设计使然，不用修 |
 | 负测试 | `i.no` | `print(a.len())` 本就该编译失败 |
 
 > ⚠️ **BOTH_FAIL 桶不比哈希**——“编译失败”与“编译成功但程序自己失败”被压成同一桶。判读必须直接 `diff` 指纹行，否则“编译失败”完全不可见。
+> ⚠️ 下列原记录项**已在本快照之后闭合**（2026-09-21 复测 rc=0、golden 已记 rc=0，不再属于 BOTH_FAIL）：`test-json-parse-option` / `test-json-nested-match`（原 #84 SIGSEGV）、`test-std-hash`（原 #85 家族 `des_block` NoVal）。
 
 #### 已修 / 近期闭环
 
 - **#83**（`afa8d92`）：sroa 大聚合爆炸，根因已结清。
+- **#84**（json 运行期 SIGSEGV，原待修）：`test-json-parse-option.no` / `test-json-nested-match.no` 在本快照之后的编译器改动中已复测 rc=0（golden 已记 rc=0），`json.parse('')` 早返回路径不再崩溃。
+- **#85**（静默错误编译根因，原待修）：底层 lowering 已随 `lowerCall` 的三档 `resTyp` 回退 + `EmitCallMulti`（所有非 void 调用都填充 `inst.Results`）闭合；复测 `i.to-str()` 正确输出、`test-std-hash` 哈希全部正确。`Inst.Sym` 字段本就存在（mir.go），文档「需补 Sym」的子注已过时。
 - **5 处同形状空守卫体 bug**（`src/std/{regexp,x509,multipart×2,sse}.no`，2026-09-21）：内联 guard arm 体为空、本应在其内的语句落在 arm 外，已修复并 `make no` 重建，std `no vet` 零 ERROR。
 
 ---

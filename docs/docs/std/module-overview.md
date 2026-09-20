@@ -91,35 +91,32 @@ sidebar_position: 4.3
 | crypto/aes-cbc      | 子模組 | AES-CBC 模式（128/256） |
 | crypto/aes-ctr      | 子模組 | AES-CTR 模式（128/256） |
 | crypto/aes-gcm      | 子模組 | AES-GCM AEAD（128/256） |
-| hash/des            | 子模組 | DES 加解密       |
-| hash/des-enc        | 子模組 | DES 加密         |
-| hash/des-dec        | 子模組 | DES 解密         |
-| hash/tdes           | 子模組 | 三重 DES         |
-| hash/rsa            | 子模組 | RSA 模冪         |
-| hash/md5            | 子模組 | MD5 雜湊         |
-| hash/sha1           | 子模組 | SHA-1 雜湊       |
-| hash/sha224         | 子模組 | SHA-224 雜湊     |
-| hash/sha256         | 子模組 | SHA-256 雜湊     |
-| hash/sha384         | 子模組 | SHA-384 雜湊     |
-| hash/sha512         | 子模組 | SHA-512 雜湊     |
-| hash/sha3           | 子模組 | SHA-3 雜湊       |
-| hash/blake2         | 子模組 | BLAKE2 雜湊      |
-| hash/crc-16         | 子模組 | CRC16 校驗       |
-| hash/crc-32         | 子模組 | CRC32 校驗       |
-| hash/crc-64         | 子模組 | CRC64 校驗       |
-| hash/fnv            | 子模組 | FNV-1 雜湊       |
-| hash/fnv-1a-32      | 子模組 | FNV-1a 雜湊      |
-| hash/hmac           | 子模組 | HMAC 認證碼      |
-| hash/hkdf           | 子模組 | HKDF 金鑰推導    |
-| hash/pbkdf2         | 子模組 | PBKDF2 金鑰推導  |
-| hash/argon2         | 子模組 | Argon2 金鑰推導  |
-| hash/scrypt         | 子模組 | scrypt 金鑰推導  |
-| hash/chacha20-poly1305 | 子模組 | ChaCha20-Poly1305 |
-| hash/rc4            | 子模組 | RC4 串流加密     |
-| hash/ecdsa          | 子模組 | ECDSA 簽章       |
-| hash/ed25519        | 子模組 | Ed25519 簽章     |
-| hash/x25519         | 子模組 | X25519 金鑰交換  |
-| hash/base32         | 子模組 | Base32 編解碼    |
-| hash/rand           | 子模組 | 隨機數產生器     |
-| hash/rand-str       | 子模組 | 隨機字串產生     |
-| hash/x509           | 子模組 | X.509 DER 解析   |
+| crypto/des            | 子模組 | DES 加解密       |
+| crypto/tdes           | 子模組 | 三重 DES         |
+| crypto/rsa            | 子模組 | RSA 模冪         |
+| crypto/md5            | 子模組 | MD5 雜湊         |
+| crypto/sha1           | 子模組 | SHA-1 雜湊       |
+| crypto/sha224         | 子模組 | SHA-224 雜湊     |
+| crypto/sha256         | 子模組 | SHA-256 雜湊     |
+| crypto/sha384         | 子模組 | SHA-384 雜湊     |
+| crypto/sha512         | 子模組 | SHA-512 雜湊     |
+| crypto/sha3           | 子模組 | SHA-3 雜湊       |
+| crypto/blake2         | 子模組 | BLAKE2 雜湊      |
+| crypto/crc-16         | 子模組 | CRC16 校驗       |
+| crypto/crc-32         | 子模組 | CRC32 校驗       |
+| crypto/crc-64         | 子模組 | CRC64 校驗       |
+| crypto/fnv            | 子模組 | FNV-1 雜湊       |
+| crypto/fnv-1a-32      | 子模組 | FNV-1a 雜湊      |
+| crypto/hmac           | 子模組 | HMAC 認證碼      |
+| crypto/hkdf           | 子模組 | HKDF 金鑰推導    |
+| crypto/pbkdf2         | 子模組 | PBKDF2 金鑰推導  |
+| crypto/argon2         | 子模組 | Argon2 金鑰推導  |
+| crypto/scrypt         | 子模組 | scrypt 金鑰推導  |
+| crypto/chacha20-poly1305 | 子模組 | ChaCha20-Poly1305 |
+| crypto/rc4            | 子模組 | RC4 串流加密     |
+| crypto/ecdsa          | 子模組 | ECDSA 簽章       |
+| crypto/ed25519        | 子模組 | Ed25519 簽章     |
+| crypto/x25519         | 子模組 | X25519 金鑰交換  |
+| crypto/base32         | 子模組 | Base32 編解碼    |
+| crypto/rand           | 子模組 | 隨機數產生器     |
+| crypto/x509           | 子模組 | X.509 DER 解析   |

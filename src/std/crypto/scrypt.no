@@ -4,7 +4,7 @@
 ; 使用 PBKDF2-HMAC-SHA256 + Salsa20/8 核心函數。
 ;
 ; 用法：
-;   # std/hash/scrypt
+;   # std/crypto/scrypt
 ;   password []byte = 'password'
 ;   salt []byte = 'salt'
 ;   N = 16384    // CPU/Memory 參數（必須是 2 的冪）

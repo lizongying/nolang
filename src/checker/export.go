@@ -12,7 +12,7 @@ func KnownStdModules() []StdModuleInfo { return knownStdModules() }
 // KnownJsModules 回傳全部 js 模組資訊。
 func KnownJsModules() []JsModuleInfo { return knownJsModules() }
 
-// ModuleShortName 從模組路徑提取最後一段短名（"hash/rand" → "rand"）。
+// ModuleShortName 從模組路徑提取最後一段短名（"crypto/rand" → "rand"）。
 func ModuleShortName(path string) string { return moduleShortName(path) }
 
 // InferExprType 推斷表達式的型別字串（供 build 代碼生成前的型別重寫使用）。

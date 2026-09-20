@@ -4,7 +4,7 @@
 ; 底層呼叫 sha256-block 處理 512-bit 區塊。
 ;
 ; 用法：
-;   # std/hash/sha224
+;   # std/crypto/sha224
 ;   hash = sha224(data)       // hash = 28 位元組 [28]byte
 ;   hex = sha224-hex(data)    // hex = 56 字元 hex 字串
 

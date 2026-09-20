@@ -349,13 +349,13 @@ yaml-inf = () (v f64) {
     v = 1.0 / 0.0
 }
 
-; yaml-nan: 非数占位值
+; yaml-nan: 非数
 ;
-; 后端无法产生真正的 NaN（常量折叠把 `0.0 / 0.0` 折成 0，fast-math 又把
-; `inf - inf` 折叠成 0），所以这里只能给出一个占位值；.nan 的判定改由
-; yaml-node-is-nan 依据节点原文完成。
+; 必须走运行期除法：编译期常量折叠会把 `0.0 / 0.0` 直接算成 0。
+; 借道局部变量可避免折叠，得到真正的 NaN（`x != x` 为真）。
 yaml-nan = () (v f64) {
-    v = 0.0
+    zero f64 = 0.0
+    v = zero / zero
 }
 
 ; yaml-hex-digit: 十六进制字符转数值，非十六进制返回 -1
@@ -2657,11 +2657,15 @@ yaml-to-i64 = (s str) (v i64) {
 
 ; yaml-node-is-nan: 节点是否为 .nan
 ;
-; 注意：当前后端用 fast-math 生成浮点运算，运行期无法产生真正的 NaN
-; （`0.0 / 0.0` 会被折成 0，`inf - inf` 同样是 0），因此用节点原文判定。
+; `.nan` 的 fval 由 yaml-nan() 填入真正的 NaN，所以按值判定（NaN != NaN）。
+; 节点原文判定作为兜底：标签改写等路径可能只改 text 而不重算 fval。
 yaml-node-is-nan = (nd yaml-node) (yes bool) {
     yes = false
     nd.kind != YAML-KIND-FLOAT -> return
+    nd.fval != nd.fval -> {
+        yes = true
+        return
+    }
     yes = nd.text == '.nan' || nd.text == '.NaN' || nd.text == '.NAN'
 }
 

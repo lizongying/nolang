@@ -3,7 +3,7 @@
 ; 使用 HMAC-SHA256 作為偽隨機函數（PRF），通過迭代派生金鑰。
 ;
 ; 用法：
-;   # std/hash/pbkdf2
+;   # std/crypto/pbkdf2
 ;   password []byte = 'password'
 ;   salt []byte = 'salt'
 ;   iterations = 10000

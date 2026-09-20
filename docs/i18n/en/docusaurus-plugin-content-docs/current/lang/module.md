@@ -18,10 +18,10 @@ ShortName is the last segment of the module path, used as the prefix for cross-m
 | `std/fs.no`           | `fs`            | `fs`      | Top-level file    |
 | `std/net/net.no`     | `net/net`       | `net`     | Last path segment |
 | `std/net/client.no`   | `net/client`    | `client`  | Last path segment |
-| `std/hash/sha256.no`  | `hash/sha256`   | `sha256`  | Last path segment |
+| `std/crypto/sha256.no`  | `crypto/sha256`   | `sha256`  | Last path segment |
 | `std/archive/gzip.no` | `archive/gzip`  | `gzip`    | Last path segment |
 
-ShortName is the last segment of FullPath when split by `/` (e.g., `hash/sha256` → `sha256`).
+ShortName is the last segment of FullPath when split by `/` (e.g., `crypto/sha256` → `sha256`).
 
 ## When Prefix is Required
 

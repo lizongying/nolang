@@ -3018,7 +3018,13 @@ func (c *codegen) emitCmp(inst *Inst) error {
 		case OpEq:
 			fop = "oeq"
 		case OpNe:
-			fop = "one"
+			// `!=` is the UNORDERED predicate (une), not `one`. With `one`,
+			// `NaN != NaN` evaluated to false — which is wrong under IEEE-754
+			// and made `x != x` useless as the NaN test that `f64-to-str` and
+			// friends rely on (they printed NaN as "0"). `==` stays ordered
+			// (oeq), so `NaN == NaN` is still false and `!=` remains its
+			// exact negation.
+			fop = "une"
 		case OpLt:
 			fop = "olt"
 		case OpLe:
@@ -5538,6 +5544,7 @@ func (c *codegen) emitSetField(inst *Inst) error {
 		} else {
 			c.sb.WriteString(fmt.Sprintf("  store %s %s, %s* %s\n", fieldLT, valV, fieldLT, p))
 		}
+		c.cloneStructFieldLeaves(structKey, idx, p, fieldLT)
 		return nil
 	}
 	// #83 SROA guard: for large aggregate field types, use memcpy from the
@@ -5546,6 +5553,7 @@ func (c *codegen) emitSetField(inst *Inst) error {
 		if srcSlot := c.valSlot[inst.Args[1]]; srcSlot != "" {
 			sz := c.typeSizeOperand(fieldLT)
 			c.emitMemcpy(gep, srcSlot, sz)
+			c.cloneStructFieldLeaves(structKey, idx, gep, fieldLT)
 			return nil
 		}
 	}
@@ -5581,7 +5589,57 @@ func (c *codegen) emitSetField(inst *Inst) error {
 		return nil
 	}
 	c.sb.WriteString(fmt.Sprintf("  store %s %s, %s* %s\n", fieldLT, valV, fieldLT, gep))
+	c.cloneStructFieldLeaves(structKey, idx, gep, fieldLT)
 	return nil
+}
+
+// cloneStructFieldLeaves deep-copies the inline owned `str` leaves of the
+// STRUCT-TYPED value that was just written into `recv.field` (at `dst`).
+//
+// A struct-typed field write is a bitwise copy — memcpy or a plain `store` —
+// which duplicates the `{len,cap,data}` descriptor of every inline `str` inside
+// WITHOUT duplicating the buffer. The field and the source then share one
+// buffer while both are eventually dropped, so whichever side is released first
+// pulls the memory out from under the other:
+//
+//	outer { p inner }        inner { name str }
+//	c = outer { p: obj.p }   ; obj borrowed -> caller still owns the buffer
+//	... drop the child ...   ; parent's `p.name` now reads freed memory
+//
+// Verified before this fix (`o10.no`): the child printed `alice`, then dropping
+// it turned the parent's `p.name` into an empty string; with an option-held
+// parent the child was already blank on the first read.
+//
+// This is the struct-field mirror of the `%str-long` clone a few lines above
+// (same reasoning, one level of indirection deeper). It is deliberately
+// unconditional: deciding "is the source still live?" needs liveness the
+// codegen does not carry, and an unnecessary clone only costs a copy, whereas a
+// missed clone is a use-after-free.
+//
+// Scope, both deliberate:
+//   - Built-in container types are skipped: `%vec`/`%str-long`/`%option` ARE in
+//     StructFields, and cloning them as user structs would store 24 bytes into
+//     an 8-byte slot.
+//   - Fixed arrays of structs are skipped: `emitLeafFieldsCloneR` walks struct
+//     fields, not array elements, so it would clone nothing while
+//     `emitStructDropHelper` (which does not walk arrays either) frees nothing —
+//     the two stay consistent and the array case keeps its current behaviour.
+func (c *codegen) cloneStructFieldLeaves(structKey string, idx int, dst, fieldLT string) {
+	if fieldLT == "" || strings.HasPrefix(fieldLT, "[") || isBuiltinContainerLT(fieldLT) {
+		return
+	}
+	fields := c.mod.StructFields[structKey]
+	if idx < 0 || idx >= len(fields) {
+		return
+	}
+	subKey := c.mod.StructKeyOf(fields[idx].TypeRaw)
+	if subKey == "" {
+		return
+	}
+	if !c.mod.StructHasOwnedLeafFields(subKey) {
+		return
+	}
+	c.emitLeafFieldsClone(dst, fieldLT, subKey)
 }
 
 // emitLenCap lowers a container length/capacity read (OpLen / OpCap).

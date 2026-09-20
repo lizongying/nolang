@@ -4,7 +4,7 @@
 ; 使用 10-limb 表示法（交替 26/25 位元）表示 GF(2^255-19) 域元素。
 ;
 ; 用法：
-;   # std/hash/x25519
+;   # std/crypto/x25519
 ;   // 生成金鑰對
 ;   priv [32]byte
 ;   pub [32]byte = x25519-scalarmult-base(priv)

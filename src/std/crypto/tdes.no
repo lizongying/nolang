@@ -7,7 +7,7 @@
 ; 支援 2-key 模式（K1=K3）和 3-key 模式。
 ;
 ; 用法：
-;   # std/hash/tdes
+;   # std/crypto/tdes
 #{index-out = 0}
 ;   key [24]byte  // K1=key[0:8], K2=key[8:16], K3=key[16:24]
 ;   out = tdes-enc(plain, plain.len(), key)   // 加密

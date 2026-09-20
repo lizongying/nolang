@@ -6,7 +6,7 @@
 ; 使用 Blake2b 作為底層哈希函數。
 ;
 ; 用法：
-;   # std/hash/argon2
+;   # std/crypto/argon2
 ;   password []byte = 'password'
 ;   salt []byte = 'somesalt'
 ;   // 參數: time_cost=3, memory_cost=4096, parallelism=1, output_len=32

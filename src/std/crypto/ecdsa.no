@@ -7,7 +7,7 @@
 ; Jacobian 座標進行點運算。
 ;
 ; 用法：
-;   # std/hash/ecdsa
+;   # std/crypto/ecdsa
 ;   priv [32]byte = ecdsa-generate(seed)
 ;   pub [65]byte = ecdsa-publickey(priv)
 ;   sig [64]byte = ecdsa-sign(priv, msg)

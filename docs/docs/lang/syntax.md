@@ -502,7 +502,7 @@ data []byte = s.to-bytes()
 - `[]byte.to-hex()` / `[]byte.to-hex-lower()` — 位元組陣列轉十六進制字串
 - `str.to-i64()` / `str.to-f64()` — 字串解析為數字
 - `int.to-str()` / `float.to-str()` — 數字轉字串
-- `std/hash/sha1`、`std/hash/sha256`、`std/hash/sha512` — 雜湊計算
+- `std/crypto/sha1`、`std/crypto/sha256`、`std/crypto/sha512` — 雜湊計算
 
 ### TOML 設定檔（`toml`）
 
@@ -996,6 +996,24 @@ val: {
     -> log('empty')         ; catch-all，此處為 nil
 }
 ```
+
+```no
+; it 的作用域：巢狀 match 按層還原
+outer: {
+    -> {
+        use(it)             ; 外層 it
+        inner ?T = f(it)
+        inner: {
+            -> use(it)      ; 內層 it = inner 的解包值
+        }
+        use(it)             ; ✅ 內層臂結束後 it 已還原成外層值
+    }
+}
+```
+
+> **注意**：還原只發生在**巢狀**的 match。最外層 match 結束後 `it` 仍保留最後一個臂的值，
+> 不要在 match 之外使用 `it`。需要跨層使用時請存到具名變數（`doc = it`），或用析構綁定
+> `ok(v) -> ...` 把載荷綁到自己的名字上。
 
 ```no
 ; ✅ 組合 option 模式：nil || err -> body

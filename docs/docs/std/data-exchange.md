@@ -92,8 +92,32 @@ doc: {
 
 節點類型常量：`YAML-KIND-NULL` / `BOOL` / `INT` / `FLOAT` / `STR` / `SEQ` / `MAP`（0–6）；標量風格常量 `YAML-STYLE-PLAIN` / `SINGLE` / `DOUBLE` / `LITERAL` / `FOLDED` / `ALIAS`（0–5）與 `YAML-STYLE-BLOCK` / `FLOW`（6–7）。
 
-> **注意一**：子節點視圖以 `(out yaml, ok bool)` 回傳，而不是 `?yaml`。MIR 後端目前無法安全地共享節點池——把含切片的結構體裝進 option 交還呼叫方後，呼叫方釋放該 option 會連帶釋放父文檔的節點緩衝區（表現為父文檔再次使用時 `len()` 變成 0）。
+> **注意一**：子節點視圖以 `(out yaml, ok bool)` 回傳，而不是 `?yaml`。這是 API 風格的選擇，不是所有權限制——子節點與父文檔共享節點池本來就是安全的。取值一律建議用 `find-str` / `find-i64` 這類路徑便捷函式。
 >
-> **注意二**：後端以 fast-math 生成浮點運算，運行期無法產生真正的 NaN（`0.0 / 0.0` 會被折成 `0`），因此 `.nan` 由 `is-nan()` 依節點原文判定，`f64()` 對它回傳 `0.0`；`to-json()` 輸出 `null`，`to-yaml()` 輸出 `.nan`。
+> **注意二**：巢狀 match 裡 `it` 是**按層還原**的。內層 match 的臂會把 `it` 重新綁到自己的主體（臂體必須看到內層值），但該臂一結束 `it` 就還原成外層臂的主體，所以下面這種寫法是安全的：
+>
+> ```no
+> d ?yaml = yaml.parse(src)
+> d: {
+>     nil -> print('nil')
+>
+>     err -> print(it)
+>
+>     -> {
+>         print(it.find-str('a'))        ; 外層 it = 文件
+>         v ?yaml = it.at(0)
+>         v: {
+>             nil -> print('none')
+>             err -> print('err')
+>             -> print(it.find-str('b')) ; 內層 it = 子節點
+>         }
+>         print(it.find-str('c'))        ; ✅ it 已還原成文件
+>     }
+> }
+> ```
+>
+> 唯一的例外是最外層的 match：它結束後 `it` 仍保留最後一個臂的值（不會還原），所以不要在 match 之外依賴 `it`。需要跨層使用時，仍可顯式存到具名區域變數（`doc = it`），或用析構綁定 `ok(v) -> ...`。
+>
+> **注意三**：`.nan` 會被解析成真正的 NaN（`f64()` 回傳 NaN，`x != x` 為真）。JSON 沒有 NaN，所以 `to-json()` 對它輸出 `null`；`to-yaml()` 輸出 `.nan`。
 
 ---

@@ -5137,7 +5137,7 @@ func resolveModulePath(moduleName string) string {
 	//    - "math"   → FullPath: "math"      → std/math.no
 	//    - "net"    → FullPath: "net/net"   → std/net/net.no
 	//    - "client" → FullPath: "net/client"→ std/net/client.no
-	//    - "hmac"   → FullPath: "hash/hmac" → std/hash/hmac.no
+	//    - "hmac"   → FullPath: "crypto/hmac" → std/crypto/hmac.no
 	for _, info := range knownStdModules() {
 		if info.ShortPath == moduleName || info.FullPath == moduleName || info.ShortName == moduleName {
 			stdFile := pkg.GetStdSourceFile(info.FullPath)
@@ -6527,8 +6527,8 @@ func stdHirForSource(source []byte) *hir.Package {
 
 type StdModuleInfo struct {
 	ShortName string // last path segment of FullPath, e.g. "rand", "math"
-	FullPath  string // relative to std/, e.g. "hash/rand", "net/net", "math"
-	ShortPath string // FullPath with redundant dir omitted when dir==file, e.g. "net", "hash/hmac", "math"
+	FullPath  string // relative to std/, e.g. "crypto/rand", "net/net", "math"
+	ShortPath string // FullPath with redundant dir omitted when dir==file, e.g. "net", "crypto/hmac", "math"
 }
 
 func debugCountHashFns(stage string, merged *parser.Program) {
@@ -7251,7 +7251,7 @@ func resolveModuleCallsInExpr(expr parser.Expression, sem *parser.SemanticContex
 		if dot, ok := e.Function.(*parser.DotExpression); ok {
 			modPath, fnName := extractModulePathAndFunc(dot)
 			if modPath != "" && modSet[modPath] {
-				// 模組短名：多層路徑（hash/sha256）取最後一段
+				// 模組短名：多層路徑（crypto/sha256）取最後一段
 				short := modPath
 				if idx := strings.LastIndex(short, "/"); idx >= 0 {
 					short = short[idx+1:]

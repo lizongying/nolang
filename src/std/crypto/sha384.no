@@ -4,7 +4,7 @@
 ; 底層呼叫 sha512-block 處理 1024-bit 區塊。
 ;
 ; 用法：
-;   # std/hash/sha384
+;   # std/crypto/sha384
 ;   hash = sha384(data)       // hash = 48 位元組 [48]byte
 ;   hex = sha384-hex(data)    // hex = 96 字元 hex 字串
 

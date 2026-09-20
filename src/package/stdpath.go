@@ -87,7 +87,7 @@ func GetStdSourceDir() (dir string, source string) {
 }
 
 // GetStdSourceFile returns the full path to a std library source file.
-// e.g. GetStdSourceFile("hash/rand") → "/path/to/src/std/hash/rand.no"
+// e.g. GetStdSourceFile("crypto/rand") → "/path/to/src/std/hash/rand.no"
 func GetStdSourceFile(modulePath string) string {
 	dir, _ := GetStdSourceDir()
 	return filepath.Join(dir, modulePath) + ".no"

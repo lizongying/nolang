@@ -91,35 +91,32 @@ sidebar_position: 4.5
 | crypto/aes-cbc      | Submodule | AES-CBC mode (128/256)                 |
 | crypto/aes-ctr      | Submodule | AES-CTR mode (128/256)                 |
 | crypto/aes-gcm      | Submodule | AES-GCM AEAD (128/256)                 |
-| hash/des            | Submodule | DES encryption/decryption               |
-| hash/des-enc        | Submodule | DES encryption                          |
-| hash/des-dec        | Submodule | DES decryption                          |
-| hash/tdes           | Submodule | Triple DES                              |
-| hash/rsa            | Submodule | RSA modular exponentiation              |
-| hash/md5            | Submodule | MD5 hash                                |
-| hash/sha1           | Submodule | SHA-1 hash                              |
-| hash/sha224         | Submodule | SHA-224 hash                            |
-| hash/sha256         | Submodule | SHA-256 hash                            |
-| hash/sha384         | Submodule | SHA-384 hash                            |
-| hash/sha512         | Submodule | SHA-512 hash                            |
-| hash/sha3           | Submodule | SHA-3 hash                              |
-| hash/blake2         | Submodule | BLAKE2 hash                             |
-| hash/crc-16         | Submodule | CRC16 checksum                          |
-| hash/crc-32         | Submodule | CRC32 checksum                          |
-| hash/crc-64         | Submodule | CRC64 checksum                          |
-| hash/fnv            | Submodule | FNV-1 hash                              |
-| hash/fnv-1a-32      | Submodule | FNV-1a hash                             |
-| hash/hmac           | Submodule | HMAC authentication code                |
-| hash/hkdf           | Submodule | HKDF key derivation                     |
-| hash/pbkdf2         | Submodule | PBKDF2 key derivation                   |
-| hash/argon2         | Submodule | Argon2 key derivation                   |
-| hash/scrypt         | Submodule | scrypt key derivation                   |
-| hash/chacha20-poly1305 | Submodule | ChaCha20-Poly1305                    |
-| hash/rc4            | Submodule | RC4 stream cipher                       |
-| hash/ecdsa          | Submodule | ECDSA signature                         |
-| hash/ed25519        | Submodule | Ed25519 signature                       |
-| hash/x25519         | Submodule | X25519 key exchange                     |
-| hash/base32         | Submodule | Base32 encoding/decoding                |
-| hash/rand           | Submodule | Random number generator                 |
-| hash/rand-str       | Submodule | Random string generation                |
-| hash/x509           | Submodule | X.509 DER parsing                       |
+| crypto/des            | Submodule | DES encryption/decryption               |
+| crypto/tdes           | Submodule | Triple DES                              |
+| crypto/rsa            | Submodule | RSA modular exponentiation              |
+| crypto/md5            | Submodule | MD5 hash                                |
+| crypto/sha1           | Submodule | SHA-1 hash                              |
+| crypto/sha224         | Submodule | SHA-224 hash                            |
+| crypto/sha256         | Submodule | SHA-256 hash                            |
+| crypto/sha384         | Submodule | SHA-384 hash                            |
+| crypto/sha512         | Submodule | SHA-512 hash                            |
+| crypto/sha3           | Submodule | SHA-3 hash                              |
+| crypto/blake2         | Submodule | BLAKE2 hash                             |
+| crypto/crc-16         | Submodule | CRC16 checksum                          |
+| crypto/crc-32         | Submodule | CRC32 checksum                          |
+| crypto/crc-64         | Submodule | CRC64 checksum                          |
+| crypto/fnv            | Submodule | FNV-1 hash                              |
+| crypto/fnv-1a-32      | Submodule | FNV-1a hash                             |
+| crypto/hmac           | Submodule | HMAC authentication code                |
+| crypto/hkdf           | Submodule | HKDF key derivation                     |
+| crypto/pbkdf2         | Submodule | PBKDF2 key derivation                   |
+| crypto/argon2         | Submodule | Argon2 key derivation                   |
+| crypto/scrypt         | Submodule | scrypt key derivation                   |
+| crypto/chacha20-poly1305 | Submodule | ChaCha20-Poly1305                    |
+| crypto/rc4            | Submodule | RC4 stream cipher                       |
+| crypto/ecdsa          | Submodule | ECDSA signature                         |
+| crypto/ed25519        | Submodule | Ed25519 signature                       |
+| crypto/x25519         | Submodule | X25519 key exchange                     |
+| crypto/base32         | Submodule | Base32 encoding/decoding                |
+| crypto/rand           | Submodule | Random number generator                 |
+| crypto/x509           | Submodule | X.509 DER parsing                       |

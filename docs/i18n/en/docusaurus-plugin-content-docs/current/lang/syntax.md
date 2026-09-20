@@ -429,7 +429,7 @@ Common standard library replacements:
 - `[]byte.to-hex()` / `[]byte.to-hex-lower()` — byte array to hexadecimal string
 - `str.to-i64()` / `str.to-f64()` — parse string to number
 - `int.to-str()` / `float.to-str()` — number to string
-- `std/hash/sha1`, `std/hash/sha256`, `std/hash/sha512` — hash computation
+- `std/crypto/sha1`, `std/crypto/sha256`, `std/crypto/sha512` — hash computation
 
 ### TOML Configuration Files (`toml`)
 
@@ -790,6 +790,25 @@ val: {
     -> log('empty')         ; catch-all; here it is nil
 }
 ```
+
+```no
+; it scoping: nested matches restore level by level
+outer: {
+    -> {
+        use(it)             ; outer it
+        inner ?T = f(it)
+        inner: {
+            -> use(it)      ; inner it = unwrapped `inner`
+        }
+        use(it)             ; ✅ it is the outer value again
+    }
+}
+```
+
+> **Note**: restoration only happens for **nested** matches. After the outermost match ends,
+> `it` still holds the last arm's value — do not use `it` outside a match. To carry the value
+> across levels, copy it into a named local (`doc = it`) or use a destructuring binding
+> `ok(v) -> ...` to bind the payload to your own name.
 
 ```no
 ; ✅ Combined option pattern: nil || err -> body
