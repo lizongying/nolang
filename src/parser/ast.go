@@ -274,6 +274,8 @@ func typeString(n Node) string {
 		return "?" + typeString(n.Type)
 	case *PointerType:
 		return "*" + typeString(n.Type)
+	case *ViewType:
+		return "&" + typeString(n.Type)
 	case *FunctionType:
 		return n.String()
 	default:
@@ -743,6 +745,32 @@ type FuncSignature struct {
 	GenericUnion  string        // 當函數的參數/結果型別是 union alias（非 variadic）時記錄 union 名稱；codegen 會單態化
 }
 
+// DeclaredResults returns fn's declared result parameters with the implicit
+// `self` receiver removed for method definitions.
+//
+// Method definitions carry a synthetic receiver as their *first output
+// parameter* (see parseMethodDefinition / parseArrayTypeMethodDefinition /
+// parseColonMethodDefinition, which all prepend it, and tohir's funcLike,
+// which re-emits it as the first KResult). It is an out-param the caller
+// aliases to its receiver, not a return value, so every reader of `Results`
+// that means "the values this call produces" must go through this helper.
+// The two ways of getting it wrong are both silent:
+//
+//   - type inference reads a single-element result list as "the call returns
+//     this type", so a void method looks like it returns its receiver
+//     (`dir = p.dir()` -> dir became a path);
+//   - a method with real results exports a list one entry too long, which
+//     any `len(rets) == 1` guard then drops entirely.
+func DeclaredResults(fd *FunctionDefinition) []*Parameter {
+	if fd == nil {
+		return nil
+	}
+	if fd.IsMethodDef && len(fd.Results) > 0 && fd.Results[0] != nil && fd.Results[0].Name == "self" {
+		return fd.Results[1:]
+	}
+	return fd.Results
+}
+
 type FunctionDefinition struct {
 	Token lexer.Token
 	Name  string
@@ -1154,6 +1182,33 @@ func (pt *PointerType) EndPos() lexer.Position {
 	return posFromToken(pt.Token)
 }
 func (pt *PointerType) String() string { return "*" + typeString(pt.Type) }
+
+// ViewType represents a VIEW (non-owning borrow) of another type: `&T`.
+//
+// A view is a borrowed reference that never owns heap memory:
+//   - it is NOT freed (MIR ClassifyOwnership reports Owned=false for `&T`),
+//   - it may only be produced where a lifetime can be attached to it — in a
+//     method result, where the lifetime is implicitly bound to `self`
+//     (`json.get = (key str) (child ?&json)`), or by a slice expression.
+//
+// At the LLVM level a view is `T*`; because aggregates are already passed as
+// `T*` in the MIR call ABI, a view can be handed straight to a method as its
+// `self` receiver with no conversion.
+type ViewType struct {
+	Token lexer.Token
+	Type  Type // implements both Expression and Type
+}
+
+func (vt *ViewType) expressionNode()     {}
+func (vt *ViewType) typeNode()           {}
+func (vt *ViewType) Pos() lexer.Position { return posFromToken(vt.Token) }
+func (vt *ViewType) EndPos() lexer.Position {
+	if vt.Type != nil {
+		return vt.Type.EndPos()
+	}
+	return posFromToken(vt.Token)
+}
+func (vt *ViewType) String() string { return "&" + typeString(vt.Type) }
 
 // GroupedExpression represents a parenthesized expression: (expr)
 type GroupedExpression struct {

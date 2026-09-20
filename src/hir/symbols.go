@@ -118,14 +118,40 @@ func collectInto(st *SymbolTable, pkg *Package, moduleShort string, structCount 
 			// Always a non-nil slice, even for a method with no results
 			// (e.g. sort's "[]ord.sort-asc"), so that a registered symbol
 			// with zero results stays distinguishable from an absent one.
+			//
+			// A method carries `self` as its FIRST KResult: the parser moves
+			// the receiver out of the parameter list and re-emits it ahead of
+			// the other results (see funcLike in parser/tohir.go). It is an
+			// out-param receiver, not a return value, and the tables built
+			// here feed let type inference (parser/type.go), which reads a
+			// result list of length 1 as "the call returns this type". Left
+			// in, a void method like `path.dir` would be inferred as returning
+			// its own receiver type, and a one-result method would export a
+			// two-entry list that the len==1 guard hides entirely.
+			//
+			// This mirrors parser.DeclaredResults for the AST; keep the two in
+			// step, and see its comment for the full rationale.
+			isMethod := n.Has(FlagMethod)
 			rets := make([]string, 0)
+			selfPending := isMethod
 			for c := n.First; c != NoID; c = pkg.Nodes[c].Next {
-				if pkg.Nodes[c].Kind == KResult {
-					rets = append(rets, qualify(pkg.Type(pkg.Nodes[c].Type)))
+				if pkg.Nodes[c].Kind != KResult {
+					continue
 				}
+				if selfPending {
+					// Only the first result can be the receiver, and only it
+					// is named "self"; anything else falls through as a real
+					// result so a method with a first result of another name
+					// keeps all its values.
+					selfPending = false
+					if pkg.Str(pkg.Nodes[c].S) == "self" {
+						continue
+					}
+				}
+				rets = append(rets, qualify(pkg.Type(pkg.Nodes[c].Type)))
 			}
 			switch {
-			case !n.Has(FlagMethod):
+			case !isMethod:
 				st.Funcs[moduleShort+"."+name] = rets
 			case strings.HasPrefix(name, "["):
 				// Receiver-generic array/slice method: the receiver is part

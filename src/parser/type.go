@@ -970,8 +970,17 @@ func (p *Parser) parseParamTypeAfterName() (Type, bool) {
 
 	paramType := ""
 	isOption := false
-	if p.currentToken.Type == lexer.QUESTION {
-		isOption = true
+	// view（借用）型別前綴：`name &T`，可與 option 組合為 `name ?&T`。
+	// `?` 與 `&` 的書寫順序不限（`?&T` 與 `&?T` 等價），正規形式為 `?&T`。
+	// 注意：`&` 在表達式裡是按位與，但在此處（參數/返回名之後的型別位置）
+	// 只可能是 view 型別，不會歧義。
+	viewPrefix := ""
+	for p.currentToken.Type == lexer.QUESTION || p.currentToken.Type == lexer.AND {
+		if p.currentToken.Type == lexer.QUESTION {
+			isOption = true
+		} else {
+			viewPrefix += "&"
+		}
 		p.nextToken()
 	}
 	// 指標型別前綴：`name *T` / `name **T`。fmt 以 typeString 的規範前綴形式
@@ -1037,7 +1046,7 @@ func (p *Parser) parseParamTypeAfterName() (Type, bool) {
 				p.nextToken()
 			}
 		}
-	} else if !isOption {
+	} else if !isOption && viewPrefix == "" {
 		msg := fmt.Sprintf("line %d, column %d: expected parameter type, got %s instead",
 			p.currentToken.Line, p.currentToken.Column, p.currentToken.Type.String())
 		p.saveError(msg)
@@ -1057,6 +1066,9 @@ func (p *Parser) parseParamTypeAfterName() (Type, bool) {
 		ptrPrefix += "**"
 	}
 	paramType = ptrPrefix + paramType
+
+	// view 包在指標外層：`&T` / `&*T` → ViewType{T} / ViewType{PointerType{T}}
+	paramType = viewPrefix + paramType
 
 	if isOption {
 		paramType = "?" + paramType
@@ -1156,6 +1168,14 @@ func buildType(typeStr string, tok lexer.Token) Type {
 		}
 		return &PointerType{Token: tok, Type: inner}
 	}
+	// 處理 & 前綴（view 型別，非擁有借用）
+	if typeStr[0] == '&' {
+		inner := buildType(typeStr[1:], tok)
+		if inner == nil {
+			return nil
+		}
+		return &ViewType{Token: tok, Type: inner}
+	}
 	// 處理 [] 前綴（切片型別）
 	if strings.HasPrefix(typeStr, "[]") {
 		elem := buildType(typeStr[2:], tok)
@@ -1252,6 +1272,8 @@ func typeToString(t Type) string {
 		return "[]" + typeToString(typ.Elem)
 	case *NullableType:
 		return "?" + typeToString(typ.Type)
+	case *ViewType:
+		return "&" + typeToString(typ.Type)
 	case *PointerType:
 		if strings.HasPrefix(typeToString(typ.Type), "ptr ") {
 			return typeToString(typ.Type)

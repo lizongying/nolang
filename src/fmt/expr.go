@@ -88,6 +88,11 @@ func (f *formatter) formatExpression(expr parser.Expression) {
 			f.write(" ")
 			f.write(e.Type.String())
 		}
+	case *parser.ViewType:
+		f.write("&")
+		if e.Type != nil {
+			f.write(e.Type.String())
+		}
 	case *parser.GroupedExpression:
 		f.write("(")
 		f.formatExpression(e.Expression)

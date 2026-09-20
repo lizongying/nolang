@@ -64,6 +64,28 @@ type codegen struct {
 	extraGlobals []string
 	strConsts    map[string]string // dedupe string-constant globals by content
 
+	// extraFuncs / extraFuncsBody hold helper functions that emission discovers
+	// while lowering a function body but that must NOT be spliced into it.
+	// Phase 1's lazy-pointee accessors (`@__nolang_get_<T>`) need their own
+	// basic blocks, and codegen cannot open new blocks inside a function body
+	// (blocks come from iterating f.Blocks) — so the body is buffered here and
+	// flushed once every function has been emitted. extraFuncs is the
+	// already-emitted set, so a helper is written exactly once.
+	extraFuncs     map[string]bool
+	extraFuncsBody strings.Builder
+
+	// sanIdx maps a sanitized LLVM struct name (`json_json_pool`) back to its
+	// StructFields key (`json.json-pool`), built lazily by sanitizedStructKey.
+	//
+	// WHY IT IS NEEDED: sanitize() maps EVERY non-alphanumeric rune to '_', so
+	// both '.' and '-' collapse and the mapping is many-to-one. unsanitize()
+	// only tries the dotted form, so any key containing '-' (e.g.
+	// `json.json-pool`) is unreachable that way. computeTypeSize then reports
+	// the type as unsizable, which silently disables shouldUseMemcpy for it.
+	// Ambiguous collisions are omitted (see sanitizedStructKey), so lookups stay
+	// deterministic and never more aggressive than before.
+	sanIdx map[string]string
+
 	// async task runtime: per-callee wrapper define blocks (callee raw name ->
 	// wrapper LLVM name) and a monotonic sequence counter for fresh names.
 	asyncWrappers   map[string]string
@@ -239,6 +261,29 @@ func byPointerLLVM(lt string, owned bool) bool {
 	return false
 }
 
+// isViewValue reports whether v is a VIEW (`&T` / `?&T`) — a non-owning
+// borrow. Used to gate the view-specific codegen paths so no other receiver
+// shape can fall into them by accident.
+func (c *codegen) isViewValue(v ValueID) bool {
+	raw := ""
+	if f := c.mod.Func(c.cf); f != nil {
+		if t, ok := f.LocalTypes[v]; ok {
+			if ty := c.mod.Type(t); ty != nil {
+				raw = ty.Raw
+			}
+		}
+	}
+	if raw == "" {
+		if val := c.mod.Value(v); val != nil {
+			if ty := c.mod.Type(val.Type); ty != nil {
+				raw = ty.Raw
+			}
+		}
+	}
+	raw = strings.TrimPrefix(raw, "?")
+	return strings.HasPrefix(raw, "&")
+}
+
 func sizeOfArray(t *Type) int64 {
 	if len(t.Sizes) > 0 {
 		return t.Sizes[0]
@@ -287,6 +332,7 @@ func (m *Module) EmitLLVM() (out string, err error) {
 		optPayload:     map[string]string{},
 		optPrintHelper: map[string]string{},
 		defInst:        map[ValueID]InstID{},
+		extraFuncs:     map[string]bool{},
 	}
 	// Sanitize LLVM symbol names, disambiguating collisions. Nolang method
 	// names embed their receiver type (e.g. `[]t.len`, `vec.reverse`,
@@ -364,6 +410,12 @@ func (m *Module) EmitLLVM() (out string, err error) {
 	}
 	// Module-level trailing section: globals and external declarations that
 	// emission discovered along the way (MIR has no separate "declare" pass).
+	// Helper bodies come first: a later function may call them, and while LLVM
+	// allows forward references, keeping definitions ahead of the globals that
+	// sometimes reference them reads better in a dump.
+	if c.extraFuncsBody.Len() > 0 {
+		c.sb.WriteString(c.extraFuncsBody.String())
+	}
 	for _, g := range c.extraGlobals {
 		c.sb.WriteString(g + "\n")
 	}
@@ -468,6 +520,23 @@ func (c *codegen) llvmTypeOf(t *Type) string {
 		}
 		return "[0 x i64]"
 	case KindPtr:
+		// View type `&T`: a borrow is represented as a POINTER to the borrowed
+		// value's LLVM type — `&json` -> `%json*`, `&[]i64` -> `%vec*`,
+		// `&str` -> `%str-long*`, `&i64` -> `i64*`. Because aggregates are
+		// already passed as `T*` in the MIR call ABI, a view can be handed
+		// straight to a method as its `self` receiver with no conversion.
+		if strings.HasPrefix(t.Raw, "&") {
+			if t.Elem != NoType {
+				if et := c.mod.Type(t.Elem); et != nil {
+					return c.llvmTypeOf(et) + "*"
+				}
+			}
+			if et := c.mod.internType(strings.TrimPrefix(t.Raw, "&")); et != NoType {
+				if ety := c.mod.Type(et); ety != nil {
+					return c.llvmTypeOf(ety) + "*"
+				}
+			}
+		}
 		return "i8*"
 	case KindFunc:
 		// A function-pointer type renders to the by-reference LLVM signature:
@@ -686,6 +755,17 @@ func (c *codegen) optionPayloadLLVMType(elemRaw string) string {
 	if strings.HasPrefix(elemRaw, "[]") {
 		return "%vec"
 	}
+	if strings.HasPrefix(elemRaw, "&") {
+		// `?&T` — an optional view. The payload is the view pointer itself
+		// (`%T*`), so the option stays a two-field inline struct and no
+		// ownership is implied (ClassifyOwnership reports `&T` as not owned).
+		if t := c.mod.internType(elemRaw); t != NoType {
+			if ty := c.mod.Type(t); ty != nil {
+				return c.llvmTypeOf(ty)
+			}
+		}
+		return "i8*"
+	}
 	if strings.HasPrefix(elemRaw, "[") {
 		if t := c.mod.internType(elemRaw); t != NoType {
 			if ty := c.mod.Type(t); ty != nil {
@@ -754,6 +834,13 @@ declare i32 @memcmp(i8*, i8*, i64)
 
 define void @str_free(%str-long %s) {
 entry:
+  ; Borrowed slice VIEWS carry cap=0: their data pointer aliases another
+  ; string's buffer and must NOT be freed. Only real heap strings (cap>0) own
+  ; their buffer. Mirrors the @vec_free cap==0 skip below.
+  %scap = extractvalue %str-long %s, 1
+  %scap0 = icmp eq i64 %scap, 0
+  br i1 %scap0, label %done, label %check
+check:
   %data = extractvalue %str-long %s, 2
   %null = icmp eq i8* %data, null
   br i1 %null, label %done, label %freeit
@@ -2212,6 +2299,8 @@ func (c *codegen) emitInst(f *Function, inst *Inst, allocaFor func(ValueID) stri
 		return c.emitDrop(inst)
 	case OpMove:
 		return c.emitMove(inst)
+	case OpBorrow:
+		return c.emitBorrow(inst)
 	case OpClone:
 		return c.emitClone(inst)
 	case OpEnumNew:
@@ -3114,6 +3203,16 @@ func (c *codegen) emitDrop(inst *Inst) error {
 		// struct is by-value and needs no free.
 		c.sb.WriteString(fmt.Sprintf("  call void @vec_free(%s %s)\n", lt, v))
 	default:
+		// STRUCT WITH POINTER FIELDS: free the pointees, recursively. Pass the
+		// SLOT address, not the loaded value — the destructor mutates nothing but
+		// needs the struct's address to GEP its fields.
+		if key := c.structKeyOfLLVM(lt); key != "" && c.mod.StructHasPtrFields(key) {
+			if slot := c.valSlot[inst.Args[0]]; slot != "" {
+				c.emitStructDropHelper(lt, key)
+				c.sb.WriteString(fmt.Sprintf("  call void @%s(%s* %s)\n", structDropName(lt), lt, slot))
+			}
+			return nil
+		}
 		// scalar: nothing to free
 	}
 	return nil
@@ -3158,6 +3257,42 @@ func (c *codegen) emitOptionDrop(inst *Inst, v, optLT string) {
 		// to free (or a shallow no-op for structs; deep-free is a follow-up).
 		c.sb.WriteString(fmt.Sprintf("  ; drop %s (option element %q owns nothing / shallow)\n", v, elemRaw))
 	}
+}
+
+// emitBorrow lowers OpBorrow: take the ADDRESS of a value's storage and store
+// that pointer into the destination — no ownership transfer, no copy.
+//
+// This is the primitive behind a VIEW (`&T`). A view is `T*` at the LLVM level,
+// so `&json` is `%json*`. Every MIR value lives in a slot (`%vN.s`, or the
+// caller's pointer `%pN` for an aliased by-ref parameter), and that slot name IS
+// the address of the value's storage — so borrowing is a single store of the
+// slot pointer, with no load of the value itself.
+//
+//   &self  ->  store %json* %p0,        %json** %dst.s
+//   &local ->  store %json* %v3.s,      %json** %dst.s
+func (c *codegen) emitBorrow(inst *Inst) error {
+	if len(inst.Args) < 1 || inst.Args[0] <= NoVal {
+		c.fail("borrow: missing source in func %d", c.cf)
+		return fmt.Errorf("borrow arity")
+	}
+	src := inst.Args[0]
+	srcSlot := c.valSlot[src]
+	if srcSlot == "" {
+		c.fail("borrow: source %d has no slot in func %d", src, c.cf)
+		return fmt.Errorf("borrow src slot")
+	}
+	srcLT, _ := c.ptype(src)
+	if srcLT == "" {
+		srcLT = "i64"
+	}
+	dstSlot := c.valSlot[inst.Dst]
+	if dstSlot == "" {
+		c.fail("borrow: destination %d has no slot in func %d", inst.Dst, c.cf)
+		return fmt.Errorf("borrow dst slot")
+	}
+	ptrLT := srcLT + "*"
+	c.sb.WriteString(fmt.Sprintf("  store %s %s, %s* %s\n", ptrLT, srcSlot, ptrLT, dstSlot))
+	return nil
 }
 
 func (c *codegen) emitMove(inst *Inst) error {
@@ -3299,7 +3434,26 @@ func (c *codegen) emitMove(inst *Inst) error {
 		// (tests/test-x25519-minimal.no, test-hmac, test-sha256, test-fe-ops, ...).
 		c.loadSeq++
 		u1 := fmt.Sprintf("%%mvu%d", c.loadSeq)
-		c.sb.WriteString(fmt.Sprintf("  %s = extractvalue %s %s, 1\n", u1, optLT, sv))
+		if c.shouldUseMemcpy(payloadLT) {
+			// #83 SROA guard, symmetric with the WRAP path above: for a large
+			// payload loadVal returns the option's SLOT, not a loaded value, so
+			// `extractvalue` on it is invalid IR —
+			//   opt: "'%v14.s' defined with type 'ptr' but expected
+			//         '%option_json_json = type { i64, %json_json }'"
+			// Address the payload field with a GEP and load from there.
+			//
+			// NOTE: this gap was unreachable until computeTypeSize learned to
+			// size %json_json. Its payload type is `json.json-pool`, whose
+			// sanitized name (%json_json_pool) the old reverse lookup could not
+			// resolve, so computeTypeSize failed and shouldUseMemcpy returned
+			// false for ?json — accidentally hiding this path entirely.
+			c.loadSeq++
+			pg := fmt.Sprintf("%%mvpf%d", c.loadSeq)
+			c.sb.WriteString(fmt.Sprintf("  %s = getelementptr inbounds %s, %s* %s, i32 0, i32 1\n", pg, optLT, optLT, sv))
+			c.sb.WriteString(fmt.Sprintf("  %s = load %s, %s* %s\n", u1, payloadLT, payloadLT, pg))
+		} else {
+			c.sb.WriteString(fmt.Sprintf("  %s = extractvalue %s %s, 1\n", u1, optLT, sv))
+		}
 		// Owned-string option peel: extractvalue copies the {len,cap,data} triple
 		// by value, so the destination SHARES the option's heap buffer. nolang
 		// `x = opt` does NOT transfer ownership (the option may be unwrapped again
@@ -3322,21 +3476,54 @@ func (c *codegen) emitMove(inst *Inst) error {
 			}
 			if dstT == "%str-long" {
 				// `err` arm: `it` is the err message `str` (%str-long, 24B)
-				// but the option's payload slot is typed for the (larger) OK
-				// payload — e.g. ?fs.file's slot is %fs_file (32B). Nolang
-				// lays the option payload out as a union with the err `str`
-				// in the FIRST 24 bytes. Read exactly 24 bytes via
-				// alloca+bitcast+load so we don't overflow the %str-long slot
-				// (a plain `store %fs_file` would write 32 bytes into 24 and
-				// corrupt the stack) — tests/test_fs_error_complete.no,
-				// test-opt-struct-field.no.
+				// but the option's payload slot is typed for the OK payload —
+				// e.g. ?fs.file's slot is %fs_file (32B). Nolang lays the option
+				// payload out as a union with the err `str` in the FIRST 24
+				// bytes. Read exactly 24 bytes via alloca+bitcast+load so we
+				// don't overflow the %str-long slot (a plain `store %fs_file`
+				// would write 32 bytes into 24 and corrupt the stack) —
+				// tests/test_fs_error_complete.no, test-opt-struct-field.no.
+				// Buffer = the UNION of the payload and a %str-long, so it is
+				// guaranteed to hold EITHER, with LLVM computing both the size
+				// and the alignment. No size estimate is involved.
+				//
+				// WHY NOT computeTypeSize: it sums field sizes WITHOUT alignment
+				// padding, so it UNDER-estimates — `A { i64, i1 }` computes as 9
+				// but is really 16, and `B { x A, y A }` as 18 but really 32.
+				// Choosing the buffer from that number would overflow whenever
+				// the estimate fell below 24 while the real type was larger.
+				//
+				// The previous code sidestepped the question by allocating the
+				// PAYLOAD type itself and reading 24 bytes out of it. That was an
+				// 8-byte OVERREAD once the Phase-1 pointer layout shrank
+				// %json_json to 16B while the err message stayed a 24B
+				// %str-long — undefined behaviour, which opt exploited: at -O2
+				// the entire enclosing function was miscompiled so that EVERY arm
+				// of the match fell through
+				// (tests/mem-safety/test-json-parse-option.no printed neither
+				// `ok` nor `err` nor `nil`), while the same IR at -O0 was
+				// correct.
+				unionLT := fmt.Sprintf("{ %s, %s }", payloadLT, dstT)
 				c.loadSeq++
 				pa := fmt.Sprintf("%%mvpa%d", c.loadSeq)
-				c.sb.WriteString(fmt.Sprintf("  %s = alloca %s\n", pa, payloadLT))
-				c.sb.WriteString(fmt.Sprintf("  store %s %s, %s* %s\n", payloadLT, u1, payloadLT, pa))
+				c.sb.WriteString(fmt.Sprintf("  %s = alloca %s\n", pa, unionLT))
+				// Field 0 holds the payload; field 1 is a ZEROED %str-long so
+				// that when the payload is smaller than the message, the tail of
+				// the 24-byte read is zero. The inline layout read back
+				// {0,0,null} — an empty str — because the wrap path stores
+				// zeroinitializer for the payload on err paths that carry no
+				// message (json.parse), and that behaviour is preserved.
+				c.loadSeq++
+				f0 := fmt.Sprintf("%%mvpf0_%d", c.loadSeq)
+				c.sb.WriteString(fmt.Sprintf("  %s = getelementptr inbounds %s, %s* %s, i32 0, i32 0\n", f0, unionLT, unionLT, pa))
+				c.sb.WriteString(fmt.Sprintf("  store %s %s, %s* %s\n", payloadLT, u1, payloadLT, f0))
+				c.loadSeq++
+				f1 := fmt.Sprintf("%%mvpf1_%d", c.loadSeq)
+				c.sb.WriteString(fmt.Sprintf("  %s = getelementptr inbounds %s, %s* %s, i32 0, i32 1\n", f1, unionLT, unionLT, pa))
+				c.sb.WriteString(fmt.Sprintf("  store %s zeroinitializer, %s* %s\n", dstT, dstT, f1))
 				c.loadSeq++
 				bc := fmt.Sprintf("%%mvub%d", c.loadSeq)
-				c.sb.WriteString(fmt.Sprintf("  %s = bitcast %s* %s to %s*\n", bc, payloadLT, pa, dstT))
+				c.sb.WriteString(fmt.Sprintf("  %s = bitcast %s* %s to %s*\n", bc, unionLT, pa, dstT))
 				c.loadSeq++
 				ld := fmt.Sprintf("%%mvul%d", c.loadSeq)
 				c.sb.WriteString(fmt.Sprintf("  %s = load %s, %s* %s\n", ld, dstT, dstT, bc))
@@ -3387,6 +3574,195 @@ func (c *codegen) emitMove(inst *Inst) error {
 	return nil
 }
 
+// clonePtrStructKey returns the struct key of an OpClone/OpMove payload that is
+// a struct owning separately-allocated pointees. A bitwise copy of such a value
+// would leave the source and destination SHARING those pointees.
+//
+// The destination's type wins when it has one (emitMove types the copy by the
+// destination), falling back to the source.
+func (c *codegen) clonePtrStructKey(inst *Inst) (string, bool) {
+	if !FieldPtrLayout || len(inst.Args) == 0 {
+		return "", false
+	}
+	dstVal := inst.Dst
+	if dstVal == NoVal && len(inst.Args) >= 2 {
+		dstVal = inst.Args[1]
+	}
+	for _, v := range []ValueID{dstVal, inst.Args[0]} {
+		if v <= NoVal {
+			continue
+		}
+		t := c.mod.Type(c.localTypeOf(v))
+		if t == nil || t.Kind != KindStruct {
+			continue
+		}
+		if key := c.mod.StructKeyOf(t.Raw); key != "" && c.mod.StructHasPtrFields(key) {
+			return key, true
+		}
+	}
+	return "", false
+}
+
+// emitPtrStructClone lowers a deep copy of a struct with pointer fields:
+// a bitwise copy of the struct, then a fresh pointee for every pointer field
+// (recursively), so the destination shares no heap with the source.
+//
+// This is the CLONE half of the plan's clone-vs-move decision; the MOVE half is
+// the unchanged bitwise copy in emitMove, chosen by the analysis when the source
+// is provably dead afterwards.
+func (c *codegen) emitPtrStructClone(inst *Inst, key string) error {
+	dstVal := inst.Dst
+	if dstVal == NoVal && len(inst.Args) >= 2 {
+		dstVal = inst.Args[1]
+	}
+	dstSlot := c.valSlot[dstVal]
+	srcSlot := c.valSlot[inst.Args[0]]
+	if dstSlot == "" || srcSlot == "" {
+		c.fail("clone: missing slot in func %d", c.cf)
+		return fmt.Errorf("clone slot")
+	}
+	structLT := "%" + sanitize(key)
+	if t := c.mod.Type(c.localTypeOf(dstVal)); t != nil {
+		if lt := c.llvmTypeOf(t); lt != "" {
+			structLT = lt
+		}
+	}
+	// 1. Bitwise copy: scalars, inline members, and the pointer VALUES.
+	c.emitMemcpy(dstSlot, srcSlot, c.typeSizeOperand(structLT))
+	// 2. Give every pointer field its own pointee, recursively.
+	c.emitPtrFieldsClone(dstSlot, srcSlot, structLT, key, map[string]bool{})
+	return nil
+}
+
+// emitPtrFieldsClone replaces each pointer field of the struct at dstSlot with a
+// fresh allocation holding a copy of the corresponding source pointee, and
+// recurses into the copies so the two structs share nothing at any depth.
+//
+// `onPath` breaks recursion on a self-referential struct (a linked list or
+// tree). Walking the chain IS the correct value semantics, but it is unbounded —
+// and a CYCLE would never terminate. A cycle can only be built through a pointer
+// field, which ValidateFieldTags cannot reject statically (it only catches
+// by-value inline cycles), so the deeper levels are left SHARED and this is
+// recorded as a known limitation rather than allowed to hang.
+func (c *codegen) emitPtrFieldsClone(dstSlot, srcSlot, structLT, key string, onPath map[string]bool) {
+	if onPath[key] {
+		return
+	}
+	onPath[key] = true
+	defer delete(onPath, key)
+	fields := c.mod.StructFields[key]
+	for _, i := range c.mod.StructPtrFieldIdxs(key) {
+		pointeeLT := c.llvmTypeOf(c.mod.Type(c.mod.internType(fields[i].TypeRaw)))
+		if pointeeLT == "" {
+			continue
+		}
+		// The DESTINATION gets a FRESH allocation, never @__nolang_get_<T>.
+		// The bitwise copy at the top of emitPtrStructClone already copied the
+		// source's pointer into this field, so `get` would see it non-NULL and
+		// hand back that very pointer — making the two structs share one pointee
+		// and the "deep copy" a no-op (which is exactly what it did before this
+		// was split out). Discarding the copied pointer is not a leak: it is the
+		// SOURCE's pointer, and the source still owns it.
+		df := c.treg("pcd")
+		c.sb.WriteString(fmt.Sprintf("  %s = getelementptr inbounds %s, %s* %s, i32 0, i32 %d\n", df, structLT, structLT, dstSlot, i))
+		dp := c.emitAllocPointee(pointeeLT)
+		c.sb.WriteString(fmt.Sprintf("  store %s* %s, %s** %s\n", pointeeLT, dp, pointeeLT, df))
+		// The SOURCE goes through @__nolang_get_<T>: its pointee may be NULL (a
+		// freshly declared struct), and a memcpy from NULL would fault.
+		// Allocating into the source is a benign side effect — it makes the
+		// source's own field valid, and the source still owns and drops it.
+		sf := c.treg("pcs")
+		c.sb.WriteString(fmt.Sprintf("  %s = getelementptr inbounds %s, %s* %s, i32 0, i32 %d\n", sf, structLT, structLT, srcSlot, i))
+		sp := c.ptrFieldAddr(pointeeLT, sf)
+		c.emitMemcpy(dp, sp, c.typeSizeOperand(pointeeLT))
+		if sub := c.mod.StructKeyOf(fields[i].TypeRaw); sub != "" && c.mod.StructHasPtrFields(sub) {
+			c.emitPtrFieldsClone(dp, sp, pointeeLT, sub, onPath)
+		}
+	}
+}
+
+// structDropName is the LLVM name of the recursive destructor for a struct type.
+func structDropName(lt string) string {
+	return "__nolang_drop_" + sanitize(strings.TrimPrefix(lt, "%"))
+}
+
+// structKeyOfLLVM resolves an LLVM struct type name (`%os_utsname`) back to the
+// StructFields key (`os.utsname`). The sanitized form is tried first so a name
+// that legitimately contains an underscore is not mangled into a dotted one.
+func (c *codegen) structKeyOfLLVM(lt string) string {
+	name := strings.TrimPrefix(lt, "%")
+	if k := c.mod.StructKeyOf(name); k != "" {
+		return k
+	}
+	if k := c.mod.StructKeyOf(unsanitize(name)); k != "" {
+		return k
+	}
+	// Last resort: invert sanitize() using the real keys. unsanitize() only
+	// re-inserts '.', so a key containing any OTHER separator is unreachable
+	// through it — `my-thing` becomes `%my_thing`, and neither StructKeyOf
+	// ("my_thing") nor StructKeyOf("my.thing") matches the key `my-thing`.
+	//
+	// This is not cosmetic: the caller (emitDrop) uses the result to decide
+	// whether a struct owns pointees and therefore needs a recursive drop. A
+	// failed lookup returned "" -> StructHasPtrFields("") is false -> the drop
+	// was silently SKIPPED, leaking every pointee of any dashed-name struct.
+	// Verified: `my-thing { p inner }` emitted no @__nolang_drop_my_thing at all,
+	// while the identical undashed `mything` emitted one.
+	return c.sanitizedStructKey(name)
+}
+
+// emitStructDropHelper emits the recursive destructor for one struct type: it
+// frees the pointee of every pointer field (recursing into it first), and
+// nothing else.
+//
+// SCOPE — what this deliberately does NOT free yet: owned LEAF fields (str / vec
+// / []T / map) whose descriptor is inlined in the struct. Their buffers are
+// reachable only through the field, and the current read path
+// (`isBorrowRead`'s "the struct owns its fields; a field read borrows") hands out
+// aliases of them, so freeing them here would double-free against a value that
+// was legitimately read out. Landing leaf frees needs the clone/move machinery to
+// be in place for field READS too, and is tracked as the next step. Structs
+// therefore still leak their leaf buffers, exactly as they did before Phase 1 —
+// this change fixes the leak Phase 1 itself introduced (the pointees), and does
+// not make the pre-existing one worse.
+//
+// Each pointer field is null-checked before being recursed into and freed: a
+// freshly declared struct has NULL pointees, and `free` on NULL is legal but a
+// recursive `load` through NULL is not.
+func (c *codegen) emitStructDropHelper(lt, key string) {
+	fn := structDropName(lt)
+	if c.extraFuncs[fn] {
+		return
+	}
+	c.extraFuncs[fn] = true
+	fields := c.mod.StructFields[key]
+	idx := c.mod.StructPtrFieldIdxs(key)
+	c.decl("declare void @free(i8*)")
+	var b strings.Builder
+	b.WriteString(fmt.Sprintf("define void @%s(%s* %%p) {\n", fn, lt))
+	b.WriteString("entry:\n")
+	b.WriteString("  br label %b0\n")
+	for n, i := range idx {
+		pointeeLT := c.llvmTypeOf(c.mod.Type(c.mod.internType(fields[i].TypeRaw)))
+		next := fmt.Sprintf("b%d", n+1)
+		b.WriteString(fmt.Sprintf("b%d:\n", n))
+		b.WriteString(fmt.Sprintf("  %%f%d = getelementptr inbounds %s, %s* %%p, i32 0, i32 %d\n", n, lt, lt, i))
+		b.WriteString(fmt.Sprintf("  %%q%d = load %s*, %s** %%f%d\n", n, pointeeLT, pointeeLT, n))
+		b.WriteString(fmt.Sprintf("  %%z%d = icmp eq %s* %%q%d, null\n", n, pointeeLT, n))
+		b.WriteString(fmt.Sprintf("  br i1 %%z%d, label %%%s, label %%r%d\n", n, next, n))
+		b.WriteString(fmt.Sprintf("r%d:\n", n))
+		if sub := c.mod.StructKeyOf(fields[i].TypeRaw); sub != "" && c.mod.StructHasPtrFields(sub) {
+			c.emitStructDropHelper(pointeeLT, sub)
+			b.WriteString(fmt.Sprintf("  call void @%s(%s* %%q%d)\n", structDropName(pointeeLT), pointeeLT, n))
+		}
+		b.WriteString(fmt.Sprintf("  call void @free(i8* %%q%d)\n", n))
+		b.WriteString(fmt.Sprintf("  br label %%%s\n", next))
+	}
+	b.WriteString(fmt.Sprintf("b%d:\n", len(idx)))
+	b.WriteString("  ret void\n}\n")
+	c.extraFuncsBody.WriteString(b.String())
+}
+
 func (c *codegen) emitClone(inst *Inst) error {
 	if lt, _ := c.ptype(inst.Args[0]); lt == "%str-long" {
 		dstT, _ := c.ptype(inst.Dst)
@@ -3402,6 +3778,11 @@ func (c *codegen) emitClone(inst *Inst) error {
 		c.sb.WriteString(fmt.Sprintf("  %s = call %s @str_clone(%s %s)\n", tmp, dstT, dstT, srcV))
 		c.sb.WriteString(fmt.Sprintf("  store %s %s, %s* %s\n", dstT, tmp, dstT, dstSlot))
 		return nil
+	}
+	// STRUCT WITH POINTER FIELDS: a bitwise copy (what emitMove would do) leaves
+	// the two values sharing their pointees, so the clone must deep-copy them.
+	if key, ok := c.clonePtrStructKey(inst); ok {
+		return c.emitPtrStructClone(inst, key)
 	}
 	return c.emitMove(inst)
 }
@@ -3558,6 +3939,41 @@ func (c *codegen) shouldUseMemcpy(lt string) bool {
 	return size > 4096
 }
 
+// sanitizedStructKey resolves a sanitized LLVM struct name (`json_json_pool`)
+// back to its StructFields key (`json.json-pool`), returning "" when the name is
+// unknown or ambiguous.
+//
+// This is the missing inverse of sanitize(). sanitize() replaces every
+// non-alphanumeric rune with '_', so '.' and '-' are indistinguishable
+// afterwards, and unsanitize() only reconstructs the dotted form — a key like
+// `json.json-pool` therefore cannot be recovered by it. The index is built once
+// from the actual StructFields keys, which is the only place the original
+// spelling still exists.
+//
+// Ambiguous names (two keys sanitizing identically) are DROPPED rather than
+// resolved arbitrarily: the build iterates a Go map, so keeping "the first one"
+// would make the result depend on map iteration order — and a golden baseline
+// must not drift. Dropping them keeps the previous conservative behaviour.
+func (c *codegen) sanitizedStructKey(san string) string {
+	if c.sanIdx == nil {
+		idx := make(map[string]string, len(c.mod.StructFields))
+		ambiguous := map[string]bool{}
+		for k := range c.mod.StructFields {
+			s := sanitize(k)
+			if _, dup := idx[s]; dup {
+				ambiguous[s] = true
+				continue
+			}
+			idx[s] = k
+		}
+		for s := range ambiguous {
+			delete(idx, s)
+		}
+		c.sanIdx = idx
+	}
+	return c.sanIdx[san]
+}
+
 // computeTypeSize recursively computes the byte size of an LLVM type string.
 // Returns (size, true) when the size is known, or (0, false) for unknown types.
 // The visited map prevents infinite recursion on self-referential struct types.
@@ -3608,6 +4024,27 @@ func (c *codegen) computeTypeSize(lt string, visited map[string]bool) (int64, bo
 			if payloadLT == "i64" {
 				payloadLT = c.optionPayloadLLVMType(unsanitize(elemName))
 			}
+			if payloadLT == "i64" {
+				// Invert sanitize() using the real keys: unsanitize() only
+				// re-inserts '.', so a payload whose name contains another
+				// separator (e.g. `my-thing` -> %option_my_thing) would fall
+				// through to "i64" and be sized as a scalar (8B) instead of the
+				// real struct.
+				//
+				// Under-estimating here is NOT harmless, because this size is
+				// what shouldUseMemcpy compares against its threshold. That
+				// predicate does not merely pick an instruction: it decides
+				// whether loadVal returns the loaded VALUE or the SLOT POINTER,
+				// and every caller must branch accordingly. A wrong size
+				// therefore (a) sends genuinely large payloads down the
+				// SROA-exploding `load T; store T` path — measured at ~250s for
+				// tests/test-json.no, 6s once fixed — and (b) changes the shape of
+				// the value handed to callers, which is how the option-unwrap
+				// path was found emitting `extractvalue` on a slot pointer.
+				if k := c.sanitizedStructKey(elemName); k != "" {
+					payloadLT = c.optionPayloadLLVMType(k)
+				}
+			}
 			payloadSz, ok := c.computeTypeSize(payloadLT, visited)
 			if !ok {
 				return 0, false
@@ -3627,10 +4064,28 @@ func (c *codegen) computeTypeSize(lt string, visited map[string]bool) (int64, bo
 			fields, ok = c.mod.StructFields[name]
 		}
 		if !ok {
+			// Last resort: invert sanitize() using the real keys. Needed for any
+			// struct whose name contains a separator OTHER than '.' (e.g.
+			// `json.json-pool` -> `%json_json_pool`), which unsanitize() above
+			// cannot reconstruct because it only re-inserts '.'.
+			if k := c.sanitizedStructKey(name); k != "" {
+				fields, ok = c.mod.StructFields[k]
+			}
+		}
+		if !ok {
 			return 0, false // unknown struct — can't compute size
 		}
 		var total int64
 		for _, f := range fields {
+			// POINTER FIELD (Phase 1 layout flip): the slot holds a `%T*`, so it
+			// contributes 8 bytes — NOT the pointee's inline size. Without this
+			// the size is over-reported, which both mis-sizes the lazy-pointee
+			// allocation and can keep a shrunk struct above shouldUseMemcpy's
+			// SROA threshold.
+			if c.fieldIsPointer(f) {
+				total += 8
+				continue
+			}
 			fieldLT := c.nolangTypeToLLVM(f.TypeRaw)
 			fsz, ok := c.computeTypeSize(fieldLT, visited)
 			if !ok {
@@ -3727,6 +4182,114 @@ func unsanitize(s string) string {
 // that copies `size` bytes from src to dst. This is semantically equivalent to
 // `load T; store T` but does not expose the struct layout to SROA, avoiding
 // the scalar-replacement explosion on large aggregates (#83).
+// emitAllocPointee mallocs a zeroed block large enough for one `lt` and returns
+// the register holding the pointer to it.
+//
+// The block is ZEROED on purpose: the pointee's members are owned, and the first
+// store into an owned member drops the previous value first. A garbage member
+// there would free() an arbitrary pointer -- the same hazard emitBuiltinAlloc
+// guards against for slices.
+//
+// With opaque pointers the returned `i8*` IS the `%lt*` as far as LLVM is
+// concerned, so callers use it directly as a typed pointer.
+func (c *codegen) emitAllocPointee(lt string) string {
+	c.decl("declare i8* @malloc(i64)")
+	c.decl("declare void @llvm.memset.p0i8.i64(i8*, i8, i64, i1)")
+	sz := c.typeSizeOperand(lt)
+	c.loadSeq++
+	buf := fmt.Sprintf("%%pa%d", c.loadSeq)
+	c.sb.WriteString(fmt.Sprintf("  %s = call i8* @malloc(i64 %s)\n", buf, sz))
+	c.sb.WriteString(fmt.Sprintf("  call void @llvm.memset.p0i8.i64(i8* %s, i8 0, i64 %s, i1 false)\n", buf, sz))
+	return buf
+}
+
+// ptrFieldGetName is the LLVM name of the lazy-pointee accessor for a pointee
+// type. The name is derived from the pointee's LLVM type (not from a struct key)
+// so it is always non-empty and stable even when a type has no StructFields
+// entry.
+func ptrFieldGetName(pointeeLT string) string {
+	return "__nolang_get_" + sanitize(strings.TrimPrefix(pointeeLT, "%"))
+}
+
+// emitPtrFieldGetHelper emits the lazy-pointee accessor for one pointee type:
+//
+//	define %T* @__nolang_get_T(%T** %slot) {
+//	entry:
+//	  %p = load %T*, %T** %slot
+//	  %isnull = icmp eq %T* %p, null
+//	  br i1 %isnull, label %alloc, label %done
+//	alloc:
+//	  %n = call i8* @malloc(sizeof(T))
+//	  call void @llvm.memset.p0i8.i64(i8* %n, i8 0, i64 sizeof(T), i1 false)
+//	  store %T* %n, %T** %slot
+//	  br label %done
+//	done:
+//	  %r = phi %T* [ %p, %entry ], [ %n, %alloc ]
+//	  ret %T* %r
+//	}
+//
+// WHY A FUNCTION AND NOT INLINE CODE: `e1 employee` zero-initialises the struct,
+// so every pointer field starts NULL, and `e1.addr.street = 'x'` — or even a
+// plain read of `e1.addr.street` — would dereference it. Allocating on demand
+// needs a conditional, and a conditional needs basic blocks, which codegen
+// cannot safely introduce in the middle of an existing function body (blocks are
+// emitted by iterating f.Blocks; the option-print helper documents the same
+// constraint). A separate function has its own entry block and may branch freely.
+//
+// The call is a single instruction at the use site and the helper is small
+// enough that LLVM inlines it, so the steady-state cost is one predictable
+// compare plus the load that was already there.
+//
+// Semantics note: this makes an untouched pointer field read as ZEROS rather
+// than faulting, which matches the pre-flip inline layout where the field was
+// part of a zero-initialised struct.
+func (c *codegen) emitPtrFieldGetHelper(pointeeLT string) {
+	fn := ptrFieldGetName(pointeeLT)
+	if c.extraFuncs[fn] {
+		return
+	}
+	c.extraFuncs[fn] = true
+	c.decl("declare i8* @malloc(i64)")
+	c.decl("declare void @llvm.memset.p0i8.i64(i8*, i8, i64, i1)")
+	c.extraFuncsBody.WriteString(fmt.Sprintf("define %s* @%s(%s** %%slot) {\n", pointeeLT, fn, pointeeLT))
+	c.extraFuncsBody.WriteString("entry:\n")
+	c.extraFuncsBody.WriteString(fmt.Sprintf("  %%p = load %s*, %s** %%slot\n", pointeeLT, pointeeLT))
+	c.extraFuncsBody.WriteString(fmt.Sprintf("  %%isnull = icmp eq %s* %%p, null\n", pointeeLT))
+	c.extraFuncsBody.WriteString("  br i1 %isnull, label %alloc, label %done\n")
+	c.extraFuncsBody.WriteString("alloc:\n")
+	// sizeof(T) is obtained from LLVM itself, via the same
+	// `ptrtoint (getelementptr (T, ptr null, i64 1))` idiom typeSizeOperand uses.
+	//
+	// This deliberately does NOT call computeTypeSize. That sizer resolves a
+	// pointee LLVM type name back to a StructFields key, and sanitize() collapses
+	// BOTH '.' and '-' to '_' — so the key `json.json-pool` becomes
+	// `%json_json_pool`, which unsanitize() (which only tries '.') cannot map
+	// back. `?json` therefore failed to compile with
+	// "lazy pointee accessor: cannot size %json_json_pool".
+	//
+	// Deriving the size from LLVM also means the malloc is guaranteed to match
+	// the layout LLVM actually assigns, rather than trusting a second, divergent
+	// size calculator — the class of disagreement opaque pointers cannot catch.
+	// The instruction is a constant expression and is folded away by opt.
+	c.extraFuncsBody.WriteString(fmt.Sprintf("  %%sz = ptrtoint ptr getelementptr (%s, ptr null, i64 1) to i64\n", pointeeLT))
+	c.extraFuncsBody.WriteString("  %n = call i8* @malloc(i64 %sz)\n")
+	c.extraFuncsBody.WriteString("  call void @llvm.memset.p0i8.i64(i8* %n, i8 0, i64 %sz, i1 false)\n")
+	c.extraFuncsBody.WriteString(fmt.Sprintf("  store %s* %%n, %s** %%slot\n", pointeeLT, pointeeLT))
+	c.extraFuncsBody.WriteString("  br label %done\n")
+	c.extraFuncsBody.WriteString("done:\n")
+	c.extraFuncsBody.WriteString(fmt.Sprintf("  %%r = phi %s* [ %%p, %%entry ], [ %%n, %%alloc ]\n", pointeeLT))
+	c.extraFuncsBody.WriteString("  ret " + pointeeLT + "* %r\n}\n")
+}
+
+// ptrFieldAddr returns a `%T*` operand for the pointee of the pointer field
+// whose slot address is `fieldSlotAddr` (`%T**`), allocating it on demand.
+func (c *codegen) ptrFieldAddr(pointeeLT, fieldSlotAddr string) string {
+	c.emitPtrFieldGetHelper(pointeeLT)
+	p := c.treg("pfg")
+	c.sb.WriteString(fmt.Sprintf("  %s = call %s* @%s(%s** %s)\n", p, pointeeLT, ptrFieldGetName(pointeeLT), pointeeLT, fieldSlotAddr))
+	return p
+}
+
 func (c *codegen) emitMemcpy(dst, src, size string) {
 	c.decl("declare void @llvm.memcpy.p0.p0.i64(ptr noalias nocapture writeonly, ptr noalias nocapture readonly, i64, i1 immarg)")
 	c.sb.WriteString(fmt.Sprintf("  call void @llvm.memcpy.p0.p0.i64(ptr %s, ptr %s, i64 %s, i1 false)\n", dst, src, size))
@@ -3947,6 +4510,16 @@ func (c *codegen) emitIndexStore(inst *Inst) error {
 		c.fail("index-store of value with no slot in func %d", c.cf)
 		return fmt.Errorf("indexstore slot")
 	}
+	// Lvalue projection: `a[i] = v` where `a` is itself a field read
+	// (`self.pool.nodes[i] = x`) or an element read — the alloca holds a COPY of
+	// the container, so storing through it would be lost. Write through the
+	// real container address instead.
+	if p, ptid, projected := c.lvalueAddrOf(inst.Args[0]); projected && p != "" && os.Getenv("NOLANG_LV_INDEX") == "" {
+		if pt := c.mod.Type(ptid); pt != nil {
+			arrSlot = p
+			arrT = c.llvmTypeOf(pt)
+		}
+	}
 	_, idxV := c.loadVal(inst.Args[1])
 	idxVT, _ := c.ptype(inst.Args[1])
 	idxV = c.coerceIndex(idxVT, idxV)
@@ -4056,6 +4629,139 @@ func (c *codegen) emitExtendLen(arrT, arrSlot, idxV string) {
 	c.sb.WriteString(fmt.Sprintf("  store i64 %s, i64* %s\n", newLen, lenGep))
 }
 
+// localTypeOf resolves the MIR type of a value, preferring the enclosing
+// function's LocalTypes table (authoritative after lowering — e.g. a `?T`
+// option wrap is recorded there) over the value's own declared type.
+func (c *codegen) localTypeOf(v ValueID) TypeID {
+	if f := c.mod.Func(c.cf); f != nil {
+		if tid, ok := f.LocalTypes[v]; ok {
+			return tid
+		}
+	}
+	if val := c.mod.Value(v); val != nil {
+		return val.Type
+	}
+	return NoType
+}
+
+// lvalueAddrOf computes the LLVM address of the storage a MIR value was READ
+// OUT OF, for values that are *projections* of an addressable base — i.e. the
+// value is defined by a chain of OpGetField (struct field read) and/or
+// OpIndex (container element read) instructions rooted at an alloca or a
+// by-reference parameter.
+//
+// Why this exists: `self.pool.nodes[i].kind = x` lowers to a chain of reads
+// that each copy their operand into a fresh alloca (for `.nodes` that is a
+// whole [64 x json_value] array). OpSetField then writes into that COPY and
+// the mutation is silently lost — the reason every mutating std method
+// (json.set / json-pool.alloc / vec.insert / …) was a no-op under the MIR
+// backend. Emitting the GEP chain instead makes the write land in the real
+// storage, and it also removes the redundant copies.
+//
+// Returns (ptr, tid, true) when an address was computed — ptr may then be used
+// wherever the value's slot would have been used — or (slot, tid, false) when
+// the value is not a projection, in which case callers keep their existing
+// slot-based handling unchanged.
+func (c *codegen) lvalueAddrOf(v ValueID) (string, TypeID, bool) {
+	slot := c.valSlot[v]
+	tid := c.localTypeOf(v)
+	if slot == "" || tid == NoType {
+		return slot, tid, false
+	}
+	if os.Getenv("NOLANG_MIR_NO_LVALUE") != "" {
+		return slot, tid, false
+	}
+	defIID, ok := c.defInst[v]
+	if !ok {
+		return slot, tid, false
+	}
+	di := c.mod.Inst(defIID)
+	if di == nil {
+		return slot, tid, false
+	}
+	switch di.Op {
+	case OpGetField:
+		if len(di.Args) < 1 {
+			return slot, tid, false
+		}
+		bptr, btid, _ := c.lvalueAddrOf(di.Args[0])
+		if bptr == "" || btid == NoType {
+			return slot, tid, false
+		}
+		bt := c.mod.Type(btid)
+		if bt == nil {
+			return slot, tid, false
+		}
+		basePtr := bptr
+		baseLT := c.llvmTypeOf(bt)
+		baseRaw := bt.Raw
+		// `?T.field`: the payload lives in field 1 of the option.
+		if isOptionType(baseLT) {
+			elem, ok := parseOptionElem(baseRaw)
+			if !ok {
+				return slot, tid, false
+			}
+			_, payloadLT := c.optionType(elem)
+			g := c.treg("lvg")
+			c.sb.WriteString(fmt.Sprintf("  %s = getelementptr inbounds %s, %s* %s, i32 0, i32 1\n", g, baseLT, baseLT, basePtr))
+			basePtr = g
+			baseLT = payloadLT
+			baseRaw = elem
+		}
+		structKey := c.structKeyOf(baseRaw)
+		if structKey == "" {
+			structKey = baseRaw
+		}
+		idx, ok := c.mod.FieldIndex(structKey, di.Str)
+		if !ok {
+			return slot, tid, false
+		}
+		g := c.treg("lvg")
+		c.sb.WriteString(fmt.Sprintf("  %s = getelementptr inbounds %s, %s* %s, i32 0, i32 %d\n", g, baseLT, baseLT, basePtr, idx))
+		// POINTER FIELD (Phase 1 layout flip): the field slot holds a `%T*`, so
+		// the GEP above yields the address OF THE POINTER, not of the value.
+		// Load the pointer to reach the storage the projection actually
+		// addresses. Skipping this makes `h.p.x = 42` overwrite the pointer
+		// bits themselves (the store below writes an i64 into the first 8 bytes
+		// of the `%T*` slot) and the next `h.p.x` read segfaults — see
+		// tmp/field-mut.no. Opaque pointers give no safety net: `%T*` and `%T**`
+		// are both `ptr`, so the bad IR VERIFIES.
+		if f, ok := c.fieldAt(structKey, idx); ok && c.fieldIsPointer(f) {
+			if pointeeLT := c.llvmTypeOf(c.mod.Type(tid)); pointeeLT != "" {
+				// LAZY allocation, not a plain load: a freshly declared struct is
+				// zero-initialised, so the pointer starts NULL and `e1.addr.street
+				// = 'x'` would write through it. @__nolang_get_<T> allocates the
+				// pointee on first touch.
+				return c.ptrFieldAddr(pointeeLT, g), tid, true
+			}
+		}
+		return g, tid, true
+	case OpIndex:
+		if len(di.Args) < 2 {
+			return slot, tid, false
+		}
+		bptr, btid, _ := c.lvalueAddrOf(di.Args[0])
+		if bptr == "" || btid == NoType {
+			return slot, tid, false
+		}
+		bt := c.mod.Type(btid)
+		if bt == nil {
+			return slot, tid, false
+		}
+		elemT := c.localTypeOf(v)
+		if elemT == NoType || c.mod.Type(elemT) == nil {
+			return slot, tid, false
+		}
+		elemLT := c.llvmTypeOf(c.mod.Type(elemT))
+		_, idxV := c.loadVal(di.Args[1])
+		idxVT, _ := c.ptype(di.Args[1])
+		idxV = c.coerceIndex(idxVT, idxV)
+		ep := c.elemAddr(bptr, idxV, c.llvmTypeOf(bt), elemLT)
+		return ep, tid, true
+	}
+	return slot, tid, false
+}
+
 // emitGetField lowers `recv.field`: compute the field address via GEP into the
 // receiver's struct slot, load the field, and store it in the result slot. The
 // field index comes from the module's StructFields layout (keyed by the
@@ -4095,12 +4801,31 @@ func (c *codegen) emitGetField(inst *Inst) error {
 	if recvLT == "" {
 		recvLT = "%" + sanitize(recvRaw)
 	}
+	// VIEW auto-deref: a `&T` view is `T*` at the LLVM level, so a field read
+	// through a view must load the pointer first and then GEP into the pointee.
+	// Without this the GEP indexes into the POINTER slot and opt rejects it.
+	if strings.HasPrefix(recvRaw, "&") && strings.HasSuffix(recvLT, "*") {
+		// recvLT is `%T*`; the slot is `%T**`, so load the POINTER (not the
+		// pointee) and GEP through it.
+		c.loadSeq++
+		pv := fmt.Sprintf("%%vld%d", c.loadSeq)
+		c.sb.WriteString(fmt.Sprintf("  %s = load %s, %s* %s\n", pv, recvLT, recvLT, recvSlot))
+		recvLT = strings.TrimSuffix(recvLT, "*")
+		recvRaw = strings.TrimPrefix(recvRaw, "&")
+		recvSlot = pv
+	}
 	if isOptionType(recvLT) {
 		// `?T.field`: peel the option (field 1 holds the inline payload of type
 		// payloadLT), then GEP into the inner struct's field.
 		elem, _ := parseOptionElem(recvRaw)
 		_, payloadLT := c.optionType(elem)
 		innerRaw := elem
+		// `?&T` — an optional VIEW: the option's payload IS the view pointer
+		// (`%T*`), so the field GEP must peel that pointer first.
+		viewElem := strings.HasPrefix(innerRaw, "&")
+		if viewElem {
+			innerRaw = strings.TrimPrefix(innerRaw, "&")
+		}
 		structKey := c.structKeyOf(innerRaw)
 		if structKey == "" {
 			structKey = innerRaw
@@ -4117,9 +4842,18 @@ func (c *codegen) emitGetField(inst *Inst) error {
 		c.loadSeq++
 		pg := fmt.Sprintf("%%opg%d", c.loadSeq)
 		c.sb.WriteString(fmt.Sprintf("  %s = getelementptr inbounds %s, %s* %s, i32 0, i32 1\n", pg, recvLT, recvLT, recvSlot))
+		payloadBase := payloadLT
+		if viewElem && strings.HasSuffix(payloadLT, "*") {
+			// Load the view pointer out of the payload field (`%T**` -> `%T*`).
+			payloadBase = strings.TrimSuffix(payloadLT, "*")
+			c.loadSeq++
+			pv := fmt.Sprintf("%%vld%d", c.loadSeq)
+			c.sb.WriteString(fmt.Sprintf("  %s = load %s, %s* %s\n", pv, payloadBase, payloadLT, pg))
+			pg = pv
+		}
 		c.loadSeq++
 		gp := fmt.Sprintf("%%gp%d", c.loadSeq)
-		c.sb.WriteString(fmt.Sprintf("  %s = getelementptr inbounds %s, %s* %s, i32 0, i32 %d\n", gp, payloadLT, payloadLT, pg, idx))
+		c.sb.WriteString(fmt.Sprintf("  %s = getelementptr inbounds %s, %s* %s, i32 0, i32 %d\n", gp, payloadBase, payloadBase, pg, idx))
 		// #83 SROA guard: for large aggregate field types, use memcpy.
 		if c.shouldUseMemcpy(fieldLT) {
 			sz := c.typeSizeOperand(fieldLT)
@@ -4158,6 +4892,24 @@ func (c *codegen) emitGetField(inst *Inst) error {
 	c.loadSeq++
 	gep := fmt.Sprintf("%%gp%d", c.loadSeq)
 	c.sb.WriteString(fmt.Sprintf("  %s = getelementptr inbounds %s, %s* %s, i32 0, i32 %d\n", gep, structLT, structLT, recvSlot, idx))
+	// POINTER FIELD (Phase 1 layout flip): the slot holds a `%T*`, not the `%T`
+	// itself. Load the pointer, then read the pointee THROUGH it, so the value
+	// this op yields is still the plain `%T` that every downstream consumer
+	// already expects. Only fields whose tag says so are affected; `#{inline}`
+	// fields and owned leaves (str/vec/[]T/map) keep the old by-value read.
+	//
+	// The pointee is fetched through @__nolang_get_<T> rather than a bare load
+	// so that reading an UNASSIGNED field yields zeros instead of dereferencing
+	// NULL — matching the pre-flip inline layout, where the field was simply
+	// part of a zero-initialised struct.
+	//
+	// There is NO LLVM-level safety net for this. With opaque pointers `%T*` and
+	// `%T**` are both `ptr`, so getting it wrong yields IR that VERIFIES but
+	// reads the wrong bytes -- see the `store %pt %lv, %pt* %gp` bug that
+	// produced `7 -7` instead of `7 8` in tests/field-tag.no.
+	if f, ok := c.fieldAt(structKey, idx); ok && c.fieldIsPointer(f) {
+		gep = c.ptrFieldAddr(fieldLT, gep)
+	}
 	// #83 SROA guard: for large aggregate field types, use memcpy from the
 	// GEP'd field address to the destination slot instead of load+store.
 	if c.shouldUseMemcpy(fieldLT) {
@@ -4217,6 +4969,32 @@ func (c *codegen) emitSetField(inst *Inst) error {
 	}
 	if recvLT == "" {
 		recvLT = "%" + sanitize(recvRaw)
+	}
+	// Lvalue projection: when the receiver was read out of a struct field or a
+	// container element (`self.pool.nodes[i].kind = x`, `o.i.v = n`), its alloca
+	// holds a COPY and the store below would be lost. Redirect the write at the
+	// real storage (GEP chain from the addressable base) instead.
+	if p, ptid, projected := c.lvalueAddrOf(inst.Args[0]); projected && p != "" && os.Getenv("NOLANG_LV_FIELD") == "" {
+		if pt := c.mod.Type(ptid); pt != nil {
+			recvSlot = p
+			recvTy = pt
+			recvRaw = pt.Raw
+			recvLT = c.llvmTypeOf(pt)
+		}
+	}
+	// VIEW auto-deref: a `&T` view is `T*`; writing a field through it must
+	// load the stored pointer first so the GEP lands on the borrowed struct
+	// (otherwise the store writes into the view's own slot and is lost).
+	if c.isViewValue(inst.Args[0]) && strings.HasSuffix(recvLT, "*") {
+		c.loadSeq++
+		pv := fmt.Sprintf("%%vld%d", c.loadSeq)
+		c.sb.WriteString(fmt.Sprintf("  %s = load %s, %s* %s\n", pv, recvLT, recvLT, recvSlot))
+		recvLT = strings.TrimSuffix(recvLT, "*")
+		recvRaw = strings.TrimPrefix(recvRaw, "&")
+		recvSlot = pv
+		if id := c.mod.internType(recvRaw); id != NoType {
+			recvTy = c.mod.Type(id)
+		}
 	}
 	if isOptionType(recvLT) {
 		// `?T.field = v`: peel the option (field 1 holds the inline payload),
@@ -4332,6 +5110,33 @@ func (c *codegen) emitSetField(inst *Inst) error {
 	c.loadSeq++
 	gep := fmt.Sprintf("%%gp%d", c.loadSeq)
 	c.sb.WriteString(fmt.Sprintf("  %s = getelementptr inbounds %s, %s* %s, i32 0, i32 %d\n", gep, structLT, structLT, recvSlot, idx))
+	// POINTER FIELD (Phase 1 layout flip): the slot holds a `%T*`, so the value
+	// must be written into the POINTEE -- never into the slot itself (that
+	// overruns the 8-byte slot) and never as the source's own pointer.
+	//
+	// The pointee is reused when it already exists rather than reallocated. Two
+	// reasons: an in-place overwrite is what value assignment means, and
+	// reallocating leaks the previous pointee on every store (a loop that
+	// assigns the field would leak one pointee per iteration).
+	//
+	// Copying rather than sharing the source's pointer is deliberate for Phase
+	// 1. Sharing would be a DOUBLE FREE: the source is still live (its owner
+	// drops it later) and nothing yet records that this field merely borrows.
+	// Sharing is what Phase 1.5 introduces, and only for a field PROVEN to
+	// borrow from a parameter. So Phase 1 accepts the copy cost; the json pool
+	// keeps being copied until the borrow mechanism lands.
+	if f, ok := c.fieldAt(structKey, idx); ok && c.fieldIsPointer(f) {
+		p := c.ptrFieldAddr(fieldLT, gep)
+		// memcpy only when valV is exactly the source slot's own value; if the
+		// value was coerced above (option unwrap), copying the raw slot would
+		// copy the wrong bytes.
+		if srcSlot := c.valSlot[inst.Args[1]]; srcSlot != "" && valLT == fieldLT && c.shouldUseMemcpy(fieldLT) {
+			c.emitMemcpy(p, srcSlot, c.typeSizeOperand(fieldLT))
+		} else {
+			c.sb.WriteString(fmt.Sprintf("  store %s %s, %s* %s\n", fieldLT, valV, fieldLT, p))
+		}
+		return nil
+	}
 	// #83 SROA guard: for large aggregate field types, use memcpy from the
 	// source slot to the GEP'd field address instead of load+store.
 	if c.shouldUseMemcpy(fieldLT) {
@@ -4464,7 +5269,30 @@ func (c *codegen) emitSliceOp(inst *Inst) error {
 	//   %str-long   : data is i8* in field 2; len = field 0; stride = 1
 	//   [N x E]     : fixed array; data = &arr[0]; len = N; stride = sizeof(E)
 	var srcPtr, rlen string
-	stride := int64(8)
+	// Element size, carried as an i64 OPERAND so that both the statically known
+	// cases (a literal) and the unknown ones (an LLVM-derived operand) work.
+	//
+	// WHY NOT elemStride: it falls back to 8 for every type it does not know
+	// (user structs, %option_<T>, fixed arrays). The sub-range START is then
+	// computed as a manual `lo * stride`, while the element ADDRESSES inside the
+	// buffer are typed GEPs that LLVM scales by the REAL size — so the two
+	// disagree and the slice reads from the wrong offset. Measured on
+	// `[]person` (`tmp/wslice.no`, `people[1..3]`): reported len 3 instead of 2
+	// and then aborted — segfault with the corrected element size, `trace/BPT
+	// trap` with the old under-sized buffer, i.e. broken either way.
+	//
+	// For a statically known size the operand is the SAME decimal literal the
+	// old code emitted, so every previously-correct case keeps byte-identical
+	// IR; only the types elemStride guessed wrong change.
+	stride := int64(0) // statically known size; 0 => use strideOp
+	strideOp := "8"    // conservative default = elemStride's old fallback
+	setElemStride := func(elemLT string) {
+		if n, ok := mirStaticTypeSize(elemLT); ok {
+			stride, strideOp = n, fmt.Sprintf("%d", n)
+			return
+		}
+		strideOp = c.typeSizeOperand(elemLT)
+	}
 	isFixedArray := strings.HasPrefix(recvLT, "[")
 	switch {
 	case recvLT == "%vec":
@@ -4478,7 +5306,7 @@ func (c *codegen) emitSliceOp(inst *Inst) error {
 		c.sb.WriteString(fmt.Sprintf("  %s = inttoptr i64 %s to i8*\n", srcPtr, rdata))
 		if st := c.mod.Type(inst.Type); st != nil && st.Elem != NoType {
 			if et := c.mod.Type(st.Elem); et != nil {
-				stride = elemStride(c.llvmTypeOf(et))
+				setElemStride(c.llvmTypeOf(et))
 			}
 		}
 	case recvLT == "%str-long":
@@ -4489,7 +5317,7 @@ func (c *codegen) emitSliceOp(inst *Inst) error {
 		rdata := c.treg("sod")
 		c.sb.WriteString(fmt.Sprintf("  %s = extractvalue %s %s, 2\n", rdata, recvLT, rv))
 		srcPtr = rdata
-		stride = 1
+		stride, strideOp = 1, "1"
 	case isFixedArray:
 		// Fixed array [N x E]: length is the compile-time size N; the data
 		// pointer is the address of element 0.
@@ -4507,7 +5335,7 @@ func (c *codegen) emitSliceOp(inst *Inst) error {
 		if t := c.mod.Value(inst.Args[0]); t != nil {
 			if mt := c.mod.Type(t.Type); mt != nil && mt.Elem != NoType {
 				if et := c.mod.Type(mt.Elem); et != nil {
-					stride = elemStride(c.llvmTypeOf(et))
+					setElemStride(c.llvmTypeOf(et))
 				}
 			}
 		}
@@ -4536,7 +5364,10 @@ func (c *codegen) emitSliceOp(inst *Inst) error {
 		}
 	}
 
-	// rightInc: inst.Int == 1 means the upper bound is inclusive (']').
+	// rightInc: the SliceFlagRightInc bit of inst.Int means the upper bound is
+	// inclusive (']'). Test the BIT, not `inst.Int == 1`: SliceFlagView shares
+	// the same word, so a forward view slice carries 0b11 and an exact compare
+	// against 1 would silently drop the +1 (tests/str-slice.no regressed).
 	// Compute abs(hi - lo) first, then add 1 for rightInc — matching
 	// legacy's computeReversibleLen which does:
 	//   forward:  len = end - start + (1 if rightInc)
@@ -4557,7 +5388,7 @@ func (c *codegen) emitSliceOp(inst *Inst) error {
 
 	// Add 1 for inclusive upper bound (']')
 	newLen := absLen
-	if inst.Int == 1 {
+	if inst.Int&SliceFlagRightInc != 0 {
 		newLen = c.treg("sohi")
 		c.sb.WriteString(fmt.Sprintf("  %s = add i64 %s, 1\n", newLen, absLen))
 	}
@@ -4570,7 +5401,7 @@ func (c *codegen) emitSliceOp(inst *Inst) error {
 		off = loV
 	} else {
 		loBytes := c.treg("solb")
-		c.sb.WriteString(fmt.Sprintf("  %s = mul i64 %s, %d\n", loBytes, loV, stride))
+		c.sb.WriteString(fmt.Sprintf("  %s = mul i64 %s, %s\n", loBytes, loV, strideOp))
 		off = loBytes
 	}
 	// Total byte count to copy.
@@ -4579,29 +5410,54 @@ func (c *codegen) emitSliceOp(inst *Inst) error {
 		bytes = newLen
 	} else {
 		nlBytes := c.treg("sonb")
-		c.sb.WriteString(fmt.Sprintf("  %s = mul i64 %s, %d\n", nlBytes, newLen, stride))
+		c.sb.WriteString(fmt.Sprintf("  %s = mul i64 %s, %s\n", nlBytes, newLen, strideOp))
 		bytes = nlBytes
 	}
 
 	srcBase := c.treg("sosb")
 	c.sb.WriteString(fmt.Sprintf("  %s = getelementptr inbounds i8, i8* %s, i64 %s\n", srcBase, srcPtr, off))
 
-	// Fresh backing buffer (uniform ownership model: the slice gets its own
-	// copy and never aliases the source).
-	newBuf := c.treg("snbuf")
-	c.sb.WriteString(fmt.Sprintf("  %s = call i8* @malloc(i64 %s)\n", newBuf, bytes))
+	// SLICE VIEW: when the sub-range is statically FORWARD and does not escape,
+	// the result ALIASES the receiver's buffer instead of copying it.
+	//
+	// Non-ownership is encoded as cap == 0 — exactly the convention @vec_free
+	// already uses to skip freeing borrowed slice views, so the existing drop
+	// insertion stays correct without any analysis change: the value is still
+	// "owned" to the analysis, but freeing it is a no-op.
+	//
+	// Only `%vec` / `%str-long` destinations can carry a cap; a fixed-array
+	// destination has no header, so it keeps the copy path.
+	// A fixed array is NOT heap-backed: aliasing its inline stack storage would
+	// (a) hand out a pointer that dies with the enclosing scope rather than with
+	// the frame, and (b) change what an out-of-range sub-range reads (the copy
+	// path lands in fresh malloc'd memory, the view reads neighbouring stack
+	// slots — tests/test-slice-heavy.no prints `a[2..5]` of a `[5]i64`).
+	// Heap containers (str / vec / slice) keep the zero-copy view.
+	isView := inst.Int&SliceFlagView != 0 && !isFixedArray &&
+		(dstLT == "%vec" || dstLT == "%str-long")
+	var newBuf string
+	capV := newLen
+	if isView {
+		newBuf = srcBase
+		capV = "0"
+	} else {
+		// Fresh backing buffer: the sub-slice gets its own copy and never
+		// aliases the source.
+		newBuf = c.treg("snbuf")
+		c.sb.WriteString(fmt.Sprintf("  %s = call i8* @malloc(i64 %s)\n", newBuf, bytes))
 
-	// Delegate the copy to @mir_slice_copy, a runtime helper that handles
-	// both forward (memcpy) and reverse (per-element backward copy) cases
-	// without introducing basic-block branches in the emitted code.
-	c.ensureMirSliceCopy()
-	c.sb.WriteString(fmt.Sprintf("  call void @mir_slice_copy(i8* %s, i8* %s, i64 %s, i64 %d, i1 %s)\n", newBuf, srcBase, newLen, stride, revCmp))
+		// Delegate the copy to @mir_slice_copy, a runtime helper that handles
+		// both forward (memcpy) and reverse (per-element backward copy) cases
+		// without introducing basic-block branches in the emitted code.
+		c.ensureMirSliceCopy()
+		c.sb.WriteString(fmt.Sprintf("  call void @mir_slice_copy(i8* %s, i8* %s, i64 %s, i64 %s, i1 %s)\n", newBuf, srcBase, newLen, strideOp, revCmp))
+	}
 
 	if dstLT == "%str-long" {
 		s0 := c.treg("sos0")
 		c.sb.WriteString(fmt.Sprintf("  %s = insertvalue %%str-long { i64 0, i64 0, i8* null }, i64 %s, 0\n", s0, newLen))
 		s1 := c.treg("sos1")
-		c.sb.WriteString(fmt.Sprintf("  %s = insertvalue %%str-long %s, i64 %s, 1\n", s1, s0, newLen))
+		c.sb.WriteString(fmt.Sprintf("  %s = insertvalue %%str-long %s, i64 %s, 1\n", s1, s0, capV))
 		s2 := c.treg("sos2")
 		c.sb.WriteString(fmt.Sprintf("  %s = insertvalue %%str-long %s, i8* %s, 2\n", s2, s1, newBuf))
 		c.sb.WriteString(fmt.Sprintf("  store %%str-long %s, %%str-long* %s\n", s2, dstSlot))
@@ -4619,7 +5475,7 @@ func (c *codegen) emitSliceOp(inst *Inst) error {
 		s0 := c.treg("sos0")
 		c.sb.WriteString(fmt.Sprintf("  %s = insertvalue %%vec { i64 0, i64 0, i64 0 }, i64 %s, 0\n", s0, newLen))
 		s1 := c.treg("sos1")
-		c.sb.WriteString(fmt.Sprintf("  %s = insertvalue %%vec %s, i64 %s, 1\n", s1, s0, newLen))
+		c.sb.WriteString(fmt.Sprintf("  %s = insertvalue %%vec %s, i64 %s, 1\n", s1, s0, capV))
 		s2 := c.treg("sos2")
 		c.sb.WriteString(fmt.Sprintf("  %s = insertvalue %%vec %s, i64 %s, 2\n", s2, s1, dp))
 		c.sb.WriteString(fmt.Sprintf("  store %%vec %s, %%vec* %s\n", s2, dstSlot))
@@ -4755,7 +5611,11 @@ func (c *codegen) emitStructTypes() {
 		parts := make([]string, 0, len(fields))
 		for _, f := range fields {
 			tid := c.mod.internType(f.TypeRaw)
-			parts = append(parts, c.llvmTypeOf(c.mod.Type(tid)))
+			flt := c.llvmTypeOf(c.mod.Type(tid))
+			if c.fieldIsPointer(f) {
+				flt += "*"
+			}
+			parts = append(parts, flt)
 		}
 		c.sb.WriteString(fmt.Sprintf("%s = type { %s }\n", lt, strings.Join(parts, ", ")))
 	}
@@ -4799,6 +5659,29 @@ func (c *codegen) emitStructTypes() {
 		}
 		c.sb.WriteString(fmt.Sprintf("%%tenum_%s = type { i64, [%d x i64] }\n", sanitize(raw), n))
 	}
+}
+
+// fieldIsPointer reports whether a field's slot holds a `%T*` rather than an
+// inlined `%T`. The definition lives on Module (see Module.FieldIsPointer) so
+// the analysis passes and codegen share it; this is the codegen-side alias.
+//
+// EVERY Phase 1 behaviour change is gated on this predicate, which returns
+// false when the switch is off — that is what makes the switch-off path
+// provably byte-identical to the pre-Phase-1 backend.
+func (c *codegen) fieldIsPointer(f FieldInfo) bool {
+	return c.mod.FieldIsPointer(f)
+}
+
+// fieldAt returns the FieldInfo at index idx of the struct registered under
+// structKey. `structKey` must be the same key FieldIndex resolved with, so the
+// index is guaranteed to line up. Returns false for container pseudo-fields
+// (len/cap/data) and unknown structs, which have no tag and are never pointers.
+func (c *codegen) fieldAt(structKey string, idx int) (FieldInfo, bool) {
+	fields := c.mod.StructFields[structKey]
+	if idx < 0 || idx >= len(fields) {
+		return FieldInfo{}, false
+	}
+	return fields[idx], true
 }
 
 // taggedEnumOf looks up an enum's variant table by raw type name.
@@ -5807,12 +6690,33 @@ func (c *codegen) vecOwnedFromArray(argT, arrSlot string) string {
 	if i := strings.Index(argT, " x "); i >= 0 {
 		elemT = strings.TrimSuffix(argT[i+3:], "]")
 	}
-	total := n * elemStride(elemT)
+	// Element size for the malloc and the memcpy. Do NOT use elemStride: it
+	// falls back to 8 for any type it does not know, so coercing `[N x struct]`
+	// (or `[N x %option_<T>]`, or a nested fixed array) to a slice allocated
+	// and copied only 8 bytes per element — a heap overflow, and the copy
+	// truncated every element. typeSizeOperand asks LLVM, which is the same
+	// authority the element GEPs below use.
+	//
+	// The statically known cases keep emitting the SAME decimal literal as
+	// before, so their IR stays byte-identical.
+	var total string
+	switch {
+	case elemT == "":
+		total = fmt.Sprintf("%d", n*8) // no element type parsed — old fallback
+	default:
+		if sz, ok := mirStaticTypeSize(elemT); ok {
+			total = fmt.Sprintf("%d", n*sz)
+		} else {
+			tt := c.treg("bva")
+			c.sb.WriteString(fmt.Sprintf("  %s = mul i64 %d, %s\n", tt, n, c.typeSizeOperand(elemT)))
+			total = tt
+		}
+	}
 	buf := c.treg("bva")
-	c.sb.WriteString(fmt.Sprintf("  %s = call i8* @malloc(i64 %d)\n", buf, total))
+	c.sb.WriteString(fmt.Sprintf("  %s = call i8* @malloc(i64 %s)\n", buf, total))
 	src := c.treg("bva")
 	c.sb.WriteString(fmt.Sprintf("  %s = getelementptr inbounds %s, %s* %s, i64 0, i64 0\n", src, argT, argT, arrSlot))
-	c.sb.WriteString(fmt.Sprintf("  call void @llvm.memcpy.p0i8.p0i8.i64(i8* %s, i8* %s, i64 %d, i1 false)\n", buf, src, total))
+	c.sb.WriteString(fmt.Sprintf("  call void @llvm.memcpy.p0i8.p0i8.i64(i8* %s, i8* %s, i64 %s, i1 false)\n", buf, src, total))
 	dp := c.treg("bva")
 	c.sb.WriteString(fmt.Sprintf("  %s = ptrtoint i8* %s to i64\n", dp, buf))
 	s0 := c.treg("bva")
@@ -5965,7 +6869,30 @@ func (c *codegen) emitCallBody(f *Function, cf *Function, inst *Inst, calleeName
 			selfLT = "i64"
 		}
 		recvT, _ := c.ptype(inst.Args[0])
-		if rs, ok := c.valSlot[inst.Args[0]]; ok && rs != "" {
+		// Lvalue projection: `j.pool.parse(s, 0)` — the receiver was READ OUT
+		// of a struct field (or a container element), so its alloca holds a
+		// COPY and every mutation the callee makes to `self` would be lost
+		// (this is why json.parse / json.set-str silently did nothing). Pass
+		// the address of the REAL field instead so `self` aliases it.
+		rs := ""
+		if p, _, projected := c.lvalueAddrOf(inst.Args[0]); projected && p != "" && os.Getenv("NOLANG_LV_RECV") == "" {
+			rs = p
+		} else if s, ok := c.valSlot[inst.Args[0]]; ok && s != "" {
+			rs = s
+		}
+		// Only a genuine VIEW takes this path: the check is deliberately
+		// narrow (exact `T*` receiver against a `T` self) so no existing
+		// receiver shape can fall into it by accident.
+		if recvT == selfLT+"*" && c.isViewValue(inst.Args[0]) {
+			// VIEW receiver (`&T`): the value IS a `T*`, so its slot is a
+			// `T**`. Passing the slot address would hand the callee a pointer
+			// TO THE VIEW rather than to the borrowed value (a method called
+			// through a view then read garbage). Load the stored pointer and
+			// pass that — it is exactly the `%T*` the callee's `self` expects.
+			if _, lv := c.loadVal(inst.Args[0]); lv != "" {
+				callArgs = append(callArgs, selfLT+"* "+lv)
+			}
+		} else if rs != "" {
 			// A fixed stack array ([N x T]) passed as the self out-param of a
 			// %vec (slice) method (e.g. `arr.to-str()` where arr is [3]i64 and
 			// the callee is []t.to-str) must NOT be passed raw: the callee
@@ -5991,6 +6918,15 @@ func (c *codegen) emitCallBody(f *Function, cf *Function, inst *Inst, calleeName
 	for i, p := range inParams {
 		// For a method, inst.Args[0] is the receiver (passed as self out-param
 		// above).  Real arguments start at inst.Args[selfOut].
+		//
+		// argIdx is the ONLY correct index into inst.Args for the i-th input
+		// parameter; `i` alone is off by one whenever selfOut > 0. Every branch
+		// below that reaches for the argument's own slot must use argIdx —
+		// reaching for inst.Args[i] there silently picks up the receiver
+		// instead, which is exactly how `tls.conn.append-hs` came to be called
+		// as append-hs(self, self): the []byte parameter received the receiver
+		// pointer, the callee read it as a %vec header, and the process
+		// segfaulted on a null data pointer (tests/test-tls.no).
 		argIdx := i + selfOut
 		if variadicLast && i == len(inParams)-1 {
 			// Collect every remaining call argument into a borrow %vec view and
@@ -6178,9 +7114,9 @@ func (c *codegen) emitCallBody(f *Function, cf *Function, inst *Inst, calleeName
 				// NOT free the borrowed buffer (legacy @vec_free skips cap==0). N
 				// comes from the array type; the data pointer is the address of
 				// element 0.
-				arrSlot := c.valSlot[inst.Args[i]]
+				arrSlot := c.valSlot[inst.Args[argIdx]]
 				var n int64
-				if at := c.mod.Value(inst.Args[i]); at != nil {
+				if at := c.mod.Value(inst.Args[argIdx]); at != nil {
 					if mtt := c.mod.Type(at.Type); mtt != nil && len(mtt.Sizes) > 0 {
 						n = mtt.Sizes[0]
 					}
@@ -6250,7 +7186,7 @@ func (c *codegen) emitCallBody(f *Function, cf *Function, inst *Inst, calleeName
 				// reference before; regular slice arguments were copied, silently
 				// discarding self-mutations. %str-long/%option keep the safe
 				// copy-by-value path (they are not mutated in place by callees).
-				if argSlot := c.valSlot[inst.Args[i]]; argSlot != "" {
+				if argSlot := c.valSlot[inst.Args[argIdx]]; argSlot != "" {
 					callArgs = append(callArgs, plt+"* "+argSlot)
 				} else {
 					c.loadSeq++
@@ -6315,7 +7251,7 @@ func (c *codegen) emitCallBody(f *Function, cf *Function, inst *Inst, calleeName
 			// pass the address of the argument's local slot so the callee's
 			// by-pointer param is satisfied. The argument is copied by value
 			// (call-by-value semantics), matching the prologue's load-into-slot.
-			argSlot := c.valSlot[inst.Args[i]]
+			argSlot := c.valSlot[inst.Args[argIdx]]
 			if argSlot == "" {
 				// The argument has no alloca slot of its own (e.g. a struct /
 				// fixed-array literal passed directly at the call site, or a
@@ -6439,6 +7375,11 @@ func (c *codegen) structLLVMSize(name string) int64 {
 	if fields, ok := c.mod.StructFields[raw]; ok {
 		var sz int64
 		for _, fld := range fields {
+			// A pointer field occupies one pointer, NOT the pointee's size.
+			if c.fieldIsPointer(fld) {
+				sz += 8
+				continue
+			}
 			if tid := c.mod.internType(fld.TypeRaw); tid != NoType {
 				if ty := c.mod.Type(tid); ty != nil {
 					sz += c.mallocBytesFor(c.llvmTypeOf(ty))

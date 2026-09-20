@@ -18,8 +18,145 @@
 package mir
 
 import (
+	"os"
 	"strings"
 )
+
+// FieldPtrLayout enables the Phase 1 layout flip: a struct-typed field whose
+// semantic tag is Owned/Borrow is laid out as a POINTER to its pointee (%T*)
+// instead of inlining the pointee by value.
+//
+// It is behind a switch purely for ATTRIBUTION. The workspace carries other
+// people's uncommitted changes, so the frozen golden baseline is not a valid
+// "before" reference; the only reliable way to attribute a moved test is to
+// compare the SAME binary with this on and off (same precedent as
+// NOLANG_MIR_NO_LVALUE). Enable with NOLANG_FIELD_PTR=1.
+//
+// Default OFF until the flip is complete, because a half-applied flip is worse
+// than none: with the layout changed but the borrow mechanism not yet in place,
+// `child = T { p: src.p }` shares a pointer that drop then frees twice.
+var FieldPtrLayout = os.Getenv("NOLANG_FIELD_PTR") != ""
+
+// IsStructType reports whether raw names a struct whose layout this module
+// knows: a struct declared in this package (including one declared later — see
+// StructNames), an already-registered qualified std struct, or a bare name that
+// resolves to exactly one qualified struct.
+//
+// The builtin inline descriptors str/vec/txt are deliberately NOT structs here:
+// their ownership is decided by ClassifyOwnership, and `txt` is a plain 256-byte
+// stack buffer that owns nothing — tagging it Owned would have made Phase 1
+// emit a drop for it.
+//
+// Lives on Module (not on the lowerer) so the analysis passes and codegen ask
+// the SAME question. It reads only StructNames / StructFields / the qualified
+// suffix scan, so unlike internType it has no interning side effect and is safe
+// to call at any point in the pipeline.
+func (m *Module) IsStructType(raw string) bool {
+	switch raw {
+	case "", "str", "vec", "txt":
+		return false
+	}
+	if m.StructNames[raw] {
+		return true
+	}
+	if _, ok := m.StructFields[raw]; ok {
+		return true
+	}
+	if strings.Contains(raw, ".") {
+		return false
+	}
+	return m.uniqueQualifiedStruct(raw) != ""
+}
+
+// FieldIsPointer reports whether a field's slot holds a `%T*` rather than an
+// inlined `%T`.
+//
+// Two guards, both deliberate:
+//
+//  1. `FieldTagInline` short-circuits. Inline is the ZERO value of FieldTag, so
+//     any FieldInfo that never went through tag analysis keeps the pre-existing
+//     by-value layout. That is what makes this flip safe to land incrementally:
+//     an untagged field can never silently become a pointer.
+//
+//  2. The field's type must be a STRUCT. Owned leaves (str / vec / []T / map)
+//     are tagged Owned too, but they are already-owned inline descriptors whose
+//     layout must not change — `str.data` in particular is the descriptor's own
+//     raw buffer, and pointerizing it would add a hop and break the drop walk.
+//     `?T` (T a struct) is Owned as well, but its payload stays inline; giving
+//     it a pointer is a separate step (see the plan's L1 item 5).
+//
+// Note the test is on the field's WHOLE type, not its element: `[N]T` and `[]T`
+// are not structs, so their elements stay inline by design (the
+// container-element decision). That falls out of this check rather than being a
+// separate special case.
+func (m *Module) FieldIsPointer(f FieldInfo) bool {
+	if !FieldPtrLayout {
+		return false
+	}
+	if f.Tag == FieldTagInline {
+		return false
+	}
+	return m.IsStructType(f.TypeRaw)
+}
+
+// StructKeyOf resolves a raw struct name to the key StructFields is registered
+// under. A bare name may live under its module-qualified key (`utsname` ->
+// `os.utsname`), so an exact miss falls back to a suffix scan.
+func (m *Module) StructKeyOf(raw string) string {
+	if raw == "" {
+		return ""
+	}
+	if _, ok := m.StructFields[raw]; ok {
+		return raw
+	}
+	for k := range m.StructFields {
+		if k == raw || strings.HasSuffix(k, "."+raw) {
+			return k
+		}
+	}
+	return ""
+}
+
+// StructPtrFieldIdxs returns the indices of key's fields whose slot is a `%T*`,
+// in declaration order. Returns nil for an unknown key.
+func (m *Module) StructPtrFieldIdxs(key string) []int {
+	fields := m.StructFields[key]
+	var out []int
+	for i := range fields {
+		if m.FieldIsPointer(fields[i]) {
+			out = append(out, i)
+		}
+	}
+	return out
+}
+
+// StructHasPtrFields reports whether any of key's fields is pointer-laid-out,
+// i.e. whether a value of this struct owns separately-allocated pointees that a
+// bitwise copy would SHARE and that a drop must therefore free.
+func (m *Module) StructHasPtrFields(key string) bool {
+	return len(m.StructPtrFieldIdxs(key)) > 0
+}
+
+// typeOwnsHeap is the drop machinery's ownership test: the pre-existing owner
+// set (`Type.Owned`: str / vec / []T / map / ?owned) OR a struct whose pointer
+// layout gives it separately-allocated pointees.
+//
+// Deliberately SEPARATE from Type.Owned. Type.Owned is stamped into TypeMap at
+// intern time and also drives the calling convention and clone decisions, so
+// widening it there would change the ABI for every struct. This predicate is
+// consulted only by insertDrops / checkDropCount / isBorrowRead.
+func (m *Module) typeOwnsHeap(ty *Type) bool {
+	if ty == nil {
+		return false
+	}
+	if ty.Owned {
+		return true
+	}
+	if !FieldPtrLayout || ty.Kind != KindStruct {
+		return false
+	}
+	return m.StructHasPtrFields(m.StructKeyOf(ty.Raw))
+}
 
 // ---------------------------------------------------------------------------
 // IDs
@@ -173,6 +310,20 @@ const (
 	opCount
 )
 
+// OpSliceOp flag bits (Inst.Int).
+const (
+	// SliceFlagRightInc: the range's upper bound is inclusive (`]`, not `)`),
+	// so codegen adds 1 to hi before computing the length. Pre-existing.
+	SliceFlagRightInc = 1
+	// SliceFlagView: the sub-range ALIASES the receiver's backing buffer
+	// instead of copying it (a slice VIEW). Non-ownership is encoded as
+	// cap == 0, which @vec_free / @str_free already skip. Set by lowerSlice
+	// only when the range is statically FORWARD (a reversed range cannot be
+	// represented as a contiguous borrow, so it must keep copying), and
+	// cleared again by the escape pass when the result outlives its source.
+	SliceFlagView = 2
+)
+
 var opNames = [opCount]string{
 	OpInvalid:   "invalid",
 	OpReturn:    "return",
@@ -310,6 +461,63 @@ func (k TypeKind) String() string {
 type FieldInfo struct {
 	Name    string
 	TypeRaw string
+	// Tag is the field's compile-time semantic tag, fixed at the DEFINITION
+	// site (see FieldTag). It is derived from the declared type plus the field's
+	// own annotations — never from cross-statement dataflow.
+	Tag FieldTag
+}
+
+// FieldTag is the semantic tag nolang stamps on a struct field at its
+// DEFINITION site. The tag is a DECLARATION: it says who owns the field's
+// storage, and is therefore decided without any use-site analysis. (Deciding
+// whether an assignment must CLONE or may MOVE is a separate, purely
+// optimizing question — see analysis.go's field-assignment pass.)
+//
+// Layout consequence (see emitStructTypes): a struct-typed field is Owned by
+// DEFAULT and stored as a pointer (`%T*`); `#{inline}` opts a struct-typed
+// field into the by-value layout.
+//
+// Ownership is transitive and orthogonal to the tag: an Inline field whose type
+// contains owned members (e.g. `#{inline} s holder` where holder has a str
+// field) still needs a RECURSIVE drop. The tag decides layout and the field
+// slot's own ownership; the drop walk is structural.
+type FieldTag uint8
+
+const (
+	// FieldTagInline: the field's value lives inside the host struct and the
+	// slot owns no separate heap object. Scalars are always Inline, and a
+	// struct-typed field opts in with `#{inline}`.
+	//
+	// This is the ZERO value on purpose: it is the layout every field had
+	// before field tags existed, so a FieldInfo built without tag analysis
+	// keeps the previous by-value behaviour instead of silently turning into a
+	// pointer.
+	FieldTagInline FieldTag = iota
+	// FieldTagOwned: the field slot owns heap storage. A struct-typed field is
+	// Owned by default and stored as a pointer; owned leaves (str, vec, []T,
+	// maps, option-of-owned) stay Owned and keep their inline descriptor, whose
+	// pointer lives inside. Dropping the host drops the field, recursively.
+	FieldTagOwned
+	// FieldTagBorrow: the field aliases storage owned elsewhere. It is never
+	// dropped, and it must not outlive its owner — a borrow escaping its
+	// defining frame is a compile error, not a silent dangling read.
+	//
+	// NOTE: this is NOT the same concept as the `&T` view. `&T` is a LIFETIME
+	// annotation ("this value's lifetime is bound to the method receiver") and
+	// may only appear in a method's result list; Borrow is a field/variable
+	// ownership tag. Keeping them distinct is deliberate.
+	FieldTagBorrow
+)
+
+// String renders the tag using the names the language uses.
+func (t FieldTag) String() string {
+	switch t {
+	case FieldTagOwned:
+		return "Owned"
+	case FieldTagBorrow:
+		return "Borrow"
+	}
+	return "Inline"
 }
 
 // VariantInfo describes one variant (constructor) of a tagged enum: its source
@@ -443,7 +651,11 @@ func KindOfRaw(raw string) TypeKind {
 	case strings.HasPrefix(raw, "?"):
 		return KindOption
 	case strings.HasPrefix(raw, "&"):
-		return KindPtr
+		// VIEW (`&T`). `&` is a LIFETIME ANNOTATION — "this value's lifetime is
+		// bound to the method receiver (`self`)" — NOT a pointer and NOT a
+		// distinct type. So a view keeps T's kind (and therefore T's layout);
+		// see Module.internType for the two things that do differ.
+		return KindOfRaw(strings.TrimPrefix(raw, "&"))
 	case strings.HasPrefix(raw, "["):
 		return KindArray
 	case raw == "i8", raw == "i16", raw == "i32", raw == "i64", raw == "u8", raw == "u16", raw == "u32", raw == "u64":
@@ -616,6 +828,20 @@ type Module struct {
 	// emission of LLVM struct type declarations.
 	StructFields map[string][]FieldInfo
 
+	// StructNames is the set of struct names known to this module, populated by
+	// a PRE-PASS before any field type is interned. internType's bare-identifier
+	// fixup collapses a name it does not recognize to KindInt and CACHES that
+	// result in TypeMap, so a struct whose field references a struct declared
+	// LATER used to be permanently mis-typed as i64 — the field access then
+	// emitted `getelementptr inbounds i64` and LLVM verification failed:
+	//
+	//	holder { p pt }   ; pt declared below
+	//	pt { x i64  y i64 }
+	//
+	// Consulting this set keeps the field KindStruct regardless of declaration
+	// order.
+	StructNames map[string]bool
+
 	// TaggedEnums maps a tagged-enum raw type name (e.g. "color", "box") to
 	// its variant table, collected from HIR KTaggedEnumDef nodes during
 	// lowering. It drives variant-constructor resolution, match dispatch on
@@ -680,6 +906,7 @@ func NewModule(name string) *Module {
 		Lowered:      map[string]bool{},
 		OwnedStructs: map[string]bool{},
 		StructFields: map[string][]FieldInfo{},
+		StructNames:  map[string]bool{},
 		TaggedEnums:  map[string]*TaggedEnumInfo{},
 	}
 	// reserve index 0 of each slice as a nil element
@@ -758,7 +985,7 @@ func (m *Module) internType(raw string) TypeID {
 	// ARE registered in StructFields (by collectStructFields), so they keep
 	// KindStruct; namespaced types (contain ".") are left as struct too.
 	if kind == KindStruct && !m.OwnedStructs[raw] && !strings.Contains(raw, ".") {
-		if _, isStruct := m.StructFields[raw]; !isStruct {
+		if _, isStruct := m.StructFields[raw]; !isStruct && !m.StructNames[raw] {
 			// std structs are registered under their module-qualified name
 			// (e.g. `os.utsname`) while a builtin signature or a local decl may
 			// only know the bare name (`utsname`). Resolve the bare name to its
@@ -774,21 +1001,48 @@ func (m *Module) internType(raw string) TypeID {
 	}
 	tid := TypeID(len(m.Types))
 	m.Types = append(m.Types, Type{ID: tid, Raw: raw, Kind: kind, Owned: owned})
-	t := &m.Types[tid]
-	if kind == KindArray {
+	// The nested m.internType calls below APPEND to m.Types and can therefore
+	// REALLOCATE its backing array. Holding `t := &m.Types[tid]` across such a
+	// call — or writing `m.Types[tid].Elem = m.internType(...)`, whose left-hand
+	// index is resolved before the call runs — stores through a stale pointer
+	// and is silently dropped.
+	//
+	// The damage is partial, which is what made it hard to see: the first
+	// component survives (`Sizes` is written before the nested call) while the
+	// second is lost, so a type came out half-populated. It only bit when the
+	// element type had not been interned earlier in the compilation, because the
+	// TypeMap lookup at the top makes every later intern a no-append early
+	// return. Concretely `[512]byte` (the `cls` field of std regexp) interned
+	// with Elem == NoType, and llvmTypeOf's KindArray fallback then rendered it
+	// as the ZERO-BYTE `[0 x i64]` — silently shrinking the struct by 512 bytes,
+	// so every index-store through the field wrote past the allocation and
+	// aborted with SIGBUS (tests/test-dump2.no, test-chain-copy.no, test-regexp.no
+	// and the other regexp tests).
+	//
+	// So: resolve every nested type into a local first, and re-index m.Types
+	// only afterwards.
+	var arrSizes []int64
+	var elemTID TypeID
+	var fnT *FuncType
+	switch {
+	case kind == KindArray:
 		if n, elemRaw, ok := parseArray(raw); ok {
-			t.Sizes = []int64{n}
-			t.Elem = m.internType(elemRaw)
+			arrSizes = []int64{n}
+			elemTID = m.internType(elemRaw)
 		}
-	} else if kind == KindSlice {
+	case kind == KindSlice:
 		if elemRaw, ok := parseSliceElem(raw); ok {
-			t.Elem = m.internType(elemRaw)
+			elemTID = m.internType(elemRaw)
 		}
-	} else if kind == KindOption {
+	case kind == KindOption:
 		if elemRaw, ok := parseOptionElem(raw); ok {
-			t.Elem = m.internType(elemRaw)
+			elemTID = m.internType(elemRaw)
 		}
-	} else if kind == KindFunc {
+	case kind == KindPtr && strings.HasPrefix(raw, "&"):
+		// View type `&T`: record the borrowed element type so codegen can
+		// render the view as `llvm(T)*` instead of a bare `i8*`.
+		elemTID = m.internType(strings.TrimPrefix(raw, "&"))
+	case kind == KindFunc:
 		// Parse the `fn(p0,p1)(r0,r1)` signature into by-value MIR type IDs.
 		// Each parameter/result raw is interned so emitCall can derive the
 		// by-reference LLVM pointer type for the indirect call.
@@ -800,8 +1054,14 @@ func (m *Module) internType(raw string) TypeID {
 			for _, rr := range results {
 				ftt.Results = append(ftt.Results, m.internType(rr))
 			}
-			t.Func = &ftt
+			fnT = &ftt
 		}
+	}
+	res := &m.Types[tid]
+	res.Sizes = arrSizes
+	res.Elem = elemTID
+	if fnT != nil {
+		res.Func = fnT
 	}
 	m.TypeMap[raw] = tid
 	return tid

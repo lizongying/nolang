@@ -42,6 +42,367 @@ func (r *Report) Error() string {
 // inserts exactly-one Drop per owned local (respecting moves), and runs the
 // move/borrow checks. It mutates the module (drop insertion) and returns a
 // report summarizing what it did and any diagnostics.
+// escapingValues returns the set of values in f that OUTLIVE the frame: the
+// result / out parameters, anything stored into a struct field or container,
+// and — transitively — anything copied into one of those.
+//
+// The propagation is a linear worklist over srcOf, so escape THROUGH ANOTHER
+// VARIABLE (`y = x[0..1]` then `res = y`) is caught, which a
+// look-at-the-assignment-target-only rule would miss.
+func (m *Module) escapingValues(f *Function) map[ValueID]bool {
+	escaped := map[ValueID]bool{}
+	var work []ValueID
+	mark := func(v ValueID) {
+		if v <= NoVal || escaped[v] {
+			return
+		}
+		escaped[v] = true
+		work = append(work, v)
+	}
+	for _, rp := range f.ResultParams {
+		mark(rp)
+	}
+	for _, bid := range f.Blocks {
+		blk := m.Block(bid)
+		if blk == nil {
+			continue
+		}
+		for _, iid := range blk.Insts {
+			inst := m.Inst(iid)
+			if inst == nil {
+				continue
+			}
+			switch inst.Op {
+			case OpSetField:
+				// Args = [receiver, value]: stored into the struct, so it
+				// outlives the frame.
+				if len(inst.Args) >= 2 {
+					mark(inst.Args[1])
+				}
+			case OpIndexStore:
+				// Args = [container, index, value]
+				if len(inst.Args) >= 3 {
+					mark(inst.Args[2])
+				}
+			}
+		}
+	}
+	// srcOf[v] = the values v was COPIED FROM. Built once, then the escape set
+	// is propagated with a linear worklist instead of rescanning every
+	// instruction per escaping value (quadratic on large std functions).
+	srcOf := map[ValueID][]ValueID{}
+	for _, bid := range f.Blocks {
+		blk := m.Block(bid)
+		if blk == nil {
+			continue
+		}
+		for _, iid := range blk.Insts {
+			inst := m.Inst(iid)
+			if inst == nil {
+				continue
+			}
+			switch inst.Op {
+			case OpMove:
+				// Emit(OpMove, [src])     -> Dst is the fresh copy
+				// EmitMoveInto(dst, src)  -> Dst == NoVal, Args = [src, dst]
+				if inst.Dst > NoVal && len(inst.Args) >= 1 {
+					srcOf[inst.Dst] = append(srcOf[inst.Dst], inst.Args[0])
+				}
+				if len(inst.Args) >= 2 && inst.Args[1] > NoVal {
+					srcOf[inst.Args[1]] = append(srcOf[inst.Args[1]], inst.Args[0])
+				}
+			case OpOptionWrap:
+				if inst.Dst > NoVal && len(inst.Args) >= 1 {
+					srcOf[inst.Dst] = append(srcOf[inst.Dst], inst.Args[0])
+				}
+			}
+		}
+	}
+	for len(work) > 0 {
+		v := work[len(work)-1]
+		work = work[:len(work)-1]
+		for _, s := range srcOf[v] {
+			mark(s)
+		}
+	}
+	return escaped
+}
+
+// frameEscapingValues returns the values in f that provably OUTLIVE the frame.
+//
+// It is the STRICT counterpart of escapingValues. That one is deliberately
+// over-approximating — it treats every OpSetField / OpIndexStore target as
+// escaping — which is right for slice views, where the only consequence of a
+// false positive is a redundant copy. It is wrong for `&T` borrows, which
+// cannot be demoted to a copy: `h.p = pt` into a LOCAL holder would be
+// rejected even though nothing leaves the frame.
+//
+// So here a stored value escapes only when the CONTAINER escapes: the escape
+// set is seeded from the result / out parameters and propagated along
+// "container escapes => stored value escapes" and "copy escapes => source
+// escapes" edges.
+func (m *Module) frameEscapingValues(f *Function) map[ValueID]bool {
+	// deps[v] = the values that escape WHEN v escapes.
+	deps := map[ValueID][]ValueID{}
+	add := func(v, w ValueID) {
+		if v > NoVal && w > NoVal {
+			deps[v] = append(deps[v], w)
+		}
+	}
+	for _, bid := range f.Blocks {
+		blk := m.Block(bid)
+		if blk == nil {
+			continue
+		}
+		for _, iid := range blk.Insts {
+			inst := m.Inst(iid)
+			if inst == nil {
+				continue
+			}
+			switch inst.Op {
+			case OpMove:
+				// Emit(OpMove, [src])     -> Dst is the fresh copy
+				// EmitMoveInto(dst, src)  -> Dst == NoVal, Args = [src, dst]
+				add(inst.Dst, inst.Args[0])
+				if len(inst.Args) >= 2 {
+					add(inst.Args[1], inst.Args[0])
+				}
+			case OpOptionWrap:
+				add(inst.Dst, inst.Args[0])
+			case OpSetField:
+				// Args = [receiver, value]: the value outlives the frame only
+				// if the struct does.
+				if len(inst.Args) >= 2 {
+					add(inst.Args[0], inst.Args[1])
+				}
+			case OpIndexStore:
+				// Args = [container, index, value]
+				if len(inst.Args) >= 3 {
+					add(inst.Args[0], inst.Args[2])
+				}
+			}
+		}
+	}
+	escaped := map[ValueID]bool{}
+	var work []ValueID
+	mark := func(v ValueID) {
+		if v <= NoVal || escaped[v] {
+			return
+		}
+		escaped[v] = true
+		work = append(work, v)
+	}
+	for _, rp := range f.ResultParams {
+		mark(rp)
+	}
+	for len(work) > 0 {
+		v := work[len(work)-1]
+		work = work[:len(work)-1]
+		for _, w := range deps[v] {
+			mark(w)
+		}
+	}
+	return escaped
+}
+
+// checkBorrowEscapes rejects a `&T` (view) borrow that OUTLIVES the storage it
+// points at.
+//
+// A view is a raw pointer to another value's slot. Borrowing from a PARAMETER
+// is fine — the caller owns it, so it outlives this frame — and that is exactly
+// what a method-result view (`v ?&point = self`) does. Borrowing from a LOCAL
+// and then letting the pointer escape (returned, or written into a struct the
+// caller receives) leaves the caller holding an address into a dead frame:
+//
+//	mk = () (h holder) { pt = point{...}; h = holder { p: pt, n: 0 } }
+//
+// `h` is the result out-param, `pt` is a local, so `h.p` dangles the moment
+// `mk` returns — this silently read 0 instead of 1. There is no way to repair
+// it at codegen time (the field is a pointer by declaration), so the program is
+// REFUSED rather than miscompiled.
+func (m *Module) checkBorrowEscapes(f *Function, rep *Report) {
+	isParam := map[ValueID]bool{}
+	for _, p := range f.Params {
+		isParam[p] = true
+	}
+	escaped := m.frameEscapingValues(f)
+	for _, bid := range f.Blocks {
+		blk := m.Block(bid)
+		if blk == nil {
+			continue
+		}
+		for _, iid := range blk.Insts {
+			inst := m.Inst(iid)
+			if inst == nil || inst.Op != OpBorrow || len(inst.Args) == 0 {
+				continue
+			}
+			if !escaped[inst.Dst] {
+				continue
+			}
+			src := inst.Args[0]
+			// Borrowed from a parameter: the caller owns the storage, so the
+			// view remains valid after this frame returns.
+			if isParam[src] {
+				continue
+			}
+			rep.Diagnostics = append(rep.Diagnostics, Diagnostic{
+				Kind:  "borrow-escape",
+				Func:  f.Name,
+				Block: bid,
+				Inst:  iid,
+				Msg: fmt.Sprintf("view %s borrows a local value but escapes the function; "+
+					"the borrowed storage dies with the frame, so the caller would hold a "+
+					"dangling pointer (borrow from a parameter or from 'self' instead)",
+					m.typeStr(inst.Type)),
+			})
+		}
+	}
+}
+
+// demoteUnsafeSliceViews turns an OpSliceOp's VIEW flag back off whenever the
+// borrowed sub-range cannot be proven to stay valid for as long as the view is
+// live. Two hazards, both of which would otherwise leave a dangling alias:
+//
+//  1. ESCAPE. The result outlives the frame that owns the source — moved into a
+//     result / out parameter, stored into a struct field or container, or moved
+//     into a value that itself escapes. The caller would be handed a pointer
+//     into storage that dies with the frame (tests/slice1.no,
+//     tests/move-slice.no).
+//
+//  2. CLOBBER. The source container's backing buffer is freed or replaced at or
+//     after the point the slice is taken — reassigned (`arr = [...]`), mutated
+//     through a call that may grow or reallocate it, or written anywhere inside
+//     a loop, where a lexically earlier write still executes after the slice on
+//     the next iteration (tests/mem-safety/slice-view-escape.no, test 5).
+//
+// A slice view aliases the source's buffer and carries cap == 0 so it is never
+// freed; either hazard turns that into a use-after-free, so the sub-range is
+// materialized as an owned copy instead.
+//
+// The escape set is computed with a small worklist over the instruction stream;
+// it is deliberately transitive, so a view that escapes THROUGH ANOTHER VARIABLE
+// (`y = x[0..1]` then `res = y`) is caught, which a look-at-the-target-only rule
+// would miss.
+func (m *Module) demoteUnsafeSliceViews() {
+	for fi := range m.Funcs {
+		f := &m.Funcs[fi]
+		if f.IsExtern {
+			continue
+		}
+		escaped := m.escapingValues(f)
+		// ---- program order -------------------------------------------------
+		// A linear index over (block, instruction) so we can ask "does the
+		// source get clobbered AFTER the slice is taken?".
+		ord := map[InstID]int{}
+		blockIdx := map[BlockID]int{}
+		n := 0
+		for bi, bid := range f.Blocks {
+			blockIdx[bid] = bi
+			blk := m.Block(bid)
+			if blk == nil {
+				continue
+			}
+			for _, iid := range blk.Insts {
+				ord[iid] = n
+				n++
+			}
+		}
+		// A block sits inside a loop when one of its predecessors appears at or
+		// after it in program order (a back edge). There, program order says
+		// nothing about execution order across iterations, so any write to the
+		// source at all is treated as a clobber.
+		inLoop := map[BlockID]bool{}
+		for _, bid := range f.Blocks {
+			blk := m.Block(bid)
+			if blk == nil {
+				continue
+			}
+			for _, p := range blk.Preds {
+				if pi, ok := blockIdx[p]; ok && pi >= blockIdx[bid] {
+					inLoop[bid] = true
+					break
+				}
+			}
+		}
+		// clobbers[v] = program-order positions at which v's backing buffer may
+		// be freed or replaced, invalidating every alias into it.
+		clobbers := map[ValueID][]int{}
+		addClobber := func(v ValueID, at int) {
+			if v > NoVal {
+				clobbers[v] = append(clobbers[v], at)
+			}
+		}
+		for _, bid := range f.Blocks {
+			blk := m.Block(bid)
+			if blk == nil {
+				continue
+			}
+			for _, iid := range blk.Insts {
+				inst := m.Inst(iid)
+				if inst == nil {
+					continue
+				}
+				at := ord[iid]
+				switch inst.Op {
+				case OpMove:
+					// `dst = src` (EmitMoveInto records the target in Args[1]).
+					// Either shape replaces what dst held, and the drop that
+					// follows frees the old buffer.
+					addClobber(inst.Dst, at)
+					if len(inst.Args) >= 2 {
+						addClobber(inst.Args[1], at)
+					}
+				case OpCall, OpCallExtern, OpCallFFI:
+					// A callee handed the container may reassign, grow or free
+					// it; conservatively treat every argument as clobbered.
+					for _, a := range inst.Args {
+						addClobber(a, at)
+					}
+				}
+			}
+		}
+
+		// Demote every slice view that is not provably safe to an owned copy.
+		for _, bid := range f.Blocks {
+			blk := m.Block(bid)
+			if blk == nil {
+				continue
+			}
+			for _, iid := range blk.Insts {
+				inst := m.Inst(iid)
+				if inst == nil || inst.Op != OpSliceOp {
+					continue
+				}
+				if inst.Int&SliceFlagView == 0 {
+					continue
+				}
+				if escaped[inst.Dst] {
+					inst.Int &= ^int64(SliceFlagView)
+					continue
+				}
+				if len(inst.Args) == 0 {
+					continue
+				}
+				// The view aliases Args[0]'s buffer.
+				src := inst.Args[0]
+				at := ord[iid]
+				if inLoop[bid] {
+					if len(clobbers[src]) > 0 {
+						inst.Int &= ^int64(SliceFlagView)
+					}
+					continue
+				}
+				for _, c := range clobbers[src] {
+					if c >= at {
+						inst.Int &= ^int64(SliceFlagView)
+						break
+					}
+				}
+			}
+		}
+	}
+}
+
 func (m *Module) Analyze() *Report {
 	m.BuildCFG()
 	rep := &Report{}
@@ -53,10 +414,22 @@ func (m *Module) Analyze() *Report {
 		m.insertDrops(f, rep)
 		m.checkMoves(f, rep)
 		m.checkDropCount(f, rep)
+		m.checkBorrowEscapes(f, rep)
 	}
 	return rep
 }
 
+// isOwnedVal reports whether v is an OWNED value in the pre-existing sense
+// (`Type.Owned`: str / vec / []T / map / ?owned).
+//
+// This is the LOWERER-facing predicate, and its meaning is narrower than it
+// looks: hir2mir uses it (via isOwnedLocal) to decide whether a binding
+// `let x = y` ALIASES `y` or gets its own copied slot — owned values alias, so
+// only one drop is needed for the shared slot. Widening it would silently turn
+// every struct binding into an alias.
+//
+// The DROP machinery must therefore ask a different question; see
+// dropOwnsHeap below.
 func (m *Module) isOwnedVal(f *Function, v ValueID) bool {
 	if v <= NoVal {
 		return false
@@ -72,6 +445,135 @@ func (m *Module) isOwnedVal(f *Function, v ValueID) bool {
 		}
 	}
 	return false
+}
+
+// dropOwnsHeap reports whether v must be freed when it dies. It is
+// isOwnedVal's answer PLUS structs whose pointer layout gives them
+// separately-allocated pointees (Module.typeOwnsHeap).
+//
+// The two predicates are deliberately separate. `Type.Owned` is stamped into
+// TypeMap at intern time and doubles as the lowerer's "does a binding alias"
+// signal; a struct is not owned in that sense (binding one must COPY it), yet
+// it does own heap that a drop has to free.
+func (m *Module) dropOwnsHeap(f *Function, v ValueID) bool {
+	if v <= NoVal {
+		return false
+	}
+	if t, ok := f.LocalTypes[v]; ok {
+		if ty := m.Type(t); ty != nil {
+			return m.typeOwnsHeap(ty)
+		}
+	}
+	if val := m.Value(v); val != nil {
+		if ty := m.Type(val.Type); ty != nil {
+			return m.typeOwnsHeap(ty)
+		}
+	}
+	return false
+}
+
+// valueTypeOf resolves v's nolang type the same way isOwnedVal / dropOwnsHeap
+// (and codegen's ptype) do: the function-local type table first, then the value
+// table. Returns nil when the type is unknown.
+func (m *Module) valueTypeOf(f *Function, v ValueID) *Type {
+	if v <= NoVal {
+		return nil
+	}
+	if t, ok := f.LocalTypes[v]; ok {
+		if ty := m.Type(t); ty != nil {
+			return ty
+		}
+	}
+	if val := m.Value(v); val != nil {
+		if ty := m.Type(val.Type); ty != nil {
+			return ty
+		}
+	}
+	return nil
+}
+
+// readAfterInBlock reports whether v is read by any instruction that comes AFTER
+// `after` in the same block, in program order.
+//
+// Liveness alone cannot answer this. `liveOut[b][v]` says "v is read in some
+// SUCCESSOR of b", so a value whose last read sits in the same block as the
+// instruction under test reports liveOut == false even though it is plainly
+// still needed — and `h2 = h; print(h.p.x)` is exactly that shape, which would
+// wrongly classify a copy as a move.
+//
+// This mirrors the linear program-order index demoteUnsafeSliceViews builds
+// (`ord[InstID]`); a loop back-edge makes program order a conservative
+// approximation, which is the safe direction here: it can only make us choose
+// CLONE over MOVE.
+func (m *Module) readAfterInBlock(bid BlockID, after InstID, v ValueID) bool {
+	if v <= NoVal {
+		return false
+	}
+	blk := m.Block(bid)
+	if blk == nil {
+		return false
+	}
+	seen := false
+	for _, iid := range blk.Insts {
+		if iid == after {
+			seen = true
+			continue
+		}
+		if !seen {
+			continue
+		}
+		inst := m.Inst(iid)
+		if inst == nil {
+			continue
+		}
+		for _, a := range inst.Args {
+			if a == v {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// moveStructHasPtrFields reports whether an OpMove's payload is a struct with
+// pointer-laid-out fields, i.e. whether a bitwise copy of it would make the
+// source and destination SHARE their pointees.
+//
+// The test is on the DESTINATION when the move has one (the copy is typed by the
+// destination in emitMove), falling back to the source. Both shapes of OpMove
+// are covered: `b.Emit(OpMove, typ, [src])` (Dst set) and
+// `EmitMoveInto(dst, src)` (Dst NoVal, Args=[src, dst]).
+func (m *Module) moveStructHasPtrFields(f *Function, inst *Inst) bool {
+	if !FieldPtrLayout || inst.Op != OpMove || len(inst.Args) == 0 {
+		return false
+	}
+	dst := inst.Dst
+	if dst == NoVal && len(inst.Args) >= 2 {
+		dst = inst.Args[1]
+	}
+	if m.typeIsPtrStruct(f, dst) {
+		return true
+	}
+	return m.typeIsPtrStruct(f, inst.Args[0])
+}
+
+// typeIsPtrStruct reports whether value v has a struct type that owns
+// separately-allocated pointees.
+func (m *Module) typeIsPtrStruct(f *Function, v ValueID) bool {
+	if v <= NoVal {
+		return false
+	}
+	var tid TypeID = NoType
+	if t, ok := f.LocalTypes[v]; ok {
+		tid = t
+	} else if val := m.Value(v); val != nil {
+		tid = val.Type
+	}
+	ty := m.Type(tid)
+	if ty == nil || ty.Kind != KindStruct {
+		return false
+	}
+	return m.StructHasPtrFields(m.StructKeyOf(ty.Raw))
 }
 
 // isSliceViewOfArray reports whether inst is an OpSliceOp whose receiver is a
@@ -104,7 +606,9 @@ func (m *Module) isSliceViewOfArray(f *Function, inst *Inst) bool {
 // NOT be dropped by the reader. The owner (vec / array / str / map / struct)
 // owns and drops the element; a read merely borrows it.
 //
-// The only such op today is OpIndex (array/slice/str/map element read).
+// The ops that can yield a borrowed read are OpIndex (array/slice/str/map
+// element read) and OpGetField (struct field read); see each branch below for
+// the exact condition, which is NOT simply "the destination is owned".
 // emitIndex lowers it by GEP + load with NO clone — the destination aliases
 // the element in place (for constant elements the destination's data pointer
 // points straight into read-only global memory). Dropping a borrowed read
@@ -119,20 +623,35 @@ func (m *Module) isSliceViewOfArray(f *Function, inst *Inst) bool {
 func (m *Module) isBorrowRead(f *Function, inst *Inst) bool {
 	// OpIndex: array/slice/str/map element read aliases the owner's storage.
 	if inst.Op == OpIndex {
-		return m.isOwnedVal(f, inst.Dst)
+		return m.dropOwnsHeap(f, inst.Dst)
 	}
-	// OpGetField: struct field read aliases the struct's storage. A getfield
-	// of an owned field (e.g. self.keys: []str) returns a %vec whose data
-	// pointer points into the struct's heap buffer. Dropping it would free
-	// the struct's internal buffer, causing a double-free when the struct
-	// itself is later freed (or when another getfield re-reads the same
-	// field and the now-freed buffer is accessed). The struct owns its
-	// fields; a field read borrows. This mirrors the OpIndex rationale above.
-	// Codegen already clones owned %str-long fields (emitGetField), but owned
-	// %vec fields are NOT cloned (no @vec_clone in the runtime), so the drop
-	// must be suppressed here instead.
+	// OpGetField: struct field read. There are two shapes, and which one
+	// applies is decided by whether codegen CLONED the result:
+	//
+	//   - owned `str` field -> emitGetField calls @str_clone, so the read
+	//     result owns a PRIVATE heap buffer. This is not a borrow at all, and
+	//     suppressing its drop leaks one heap copy per read (a loop reading
+	//     `s.name` leaked a copy every iteration). Return false so insertDrops
+	//     frees it — the clone is exactly what makes that safe: the struct
+	//     frees its own buffer, the reader frees its copy, no double-free.
+	//   - every other owned field (e.g. `self.keys: []str` -> %vec) -> NOT
+	//     cloned (there is no @vec_clone in the runtime), so the result really
+	//     does alias the struct's storage. Dropping it would free the struct's
+	//     internal buffer, causing a double-free when the struct itself is
+	//     later freed (or when another getfield re-reads the same field and
+	//     the now-freed buffer is accessed). The struct owns its fields; a
+	//     field read borrows. This mirrors the OpIndex rationale above.
+	//
+	// The test must mirror emitGetField's clone condition EXACTLY. That
+	// condition is `owned && fieldLT == "%str-long"`, and ptype derives both
+	// halves from the same Type: llvmTypeOf(ty) == "%str-long" iff
+	// ty.Kind == KindStr, and owned == ty.Owned. Checking Raw == "str" instead
+	// would be a proxy that a future alias/qualified spelling could break.
 	if inst.Op == OpGetField {
-		return m.isOwnedVal(f, inst.Dst)
+		if ty := m.valueTypeOf(f, inst.Dst); ty != nil && ty.Owned && ty.Kind == KindStr {
+			return false
+		}
+		return m.dropOwnsHeap(f, inst.Dst)
 	}
 	return false
 }
@@ -154,11 +673,11 @@ func (m *Module) isBorrowRead(f *Function, inst *Inst) bool {
 //
 // Placement is computed from liveness:
 //
-//   (A) edge drop: for each CFG edge b->s, if v is live-in to b but NOT live-in
-//       to s, v dies on that edge and is dropped at the START of s (for a
-//       function's return edge, at the END of b before the return).
-//   (B) intra-block drop: if v is DEFINED in b and is not live-out of b, it dies
-//       at the end of b and is dropped there.
+//	(A) edge drop: for each CFG edge b->s, if v is live-in to b but NOT live-in
+//	    to s, v dies on that edge and is dropped at the START of s (for a
+//	    function's return edge, at the END of b before the return).
+//	(B) intra-block drop: if v is DEFINED in b and is not live-out of b, it dies
+//	    at the end of b and is dropped there.
 //
 // A move source (ownership transferred) is exempt; parameters and result params
 // are borrowed and owned by the caller, so they are never dropped here (dropping
@@ -178,6 +697,33 @@ func (m *Module) insertDrops(f *Function, rep *Report) {
 		for _, iid := range blk.Insts {
 			inst := m.Inst(iid)
 			if inst == nil {
+				continue
+			}
+			// STRUCT WITH POINTER FIELDS: `b = a` lowers to OpMove, and
+			// emitMove lowers OpMove as a BITWISE copy. Under the inline layout
+			// that *is* a value copy, so it was always correct. Under the
+			// pointer layout it copies only the POINTER, so `b` and `a` would
+			// share one pointee and `b.p.x = 9` would be visible through `a`
+			// (tests/mem-safety/nested-container-clone.no, test 8).
+			//
+			// Liveness answers the clone-vs-move question directly: liveOut is
+			// "this value is read on some path after here", which is exactly the
+			// may-read set the plan's L3 calls for.
+			//
+			//   source still live  -> CLONE. Rewrite to OpClone, which
+			//     isTransferringMove does NOT treat as a transfer, so BOTH sides
+			//     keep their drop and each frees its own pointee.
+			//   source provably dead -> MOVE. Keep the bitwise copy (zero-copy)
+			//     and exempt the source from dropping, as before.
+			//
+			// OpClone and OpMove have the same def/use shape, so rewriting the
+			// op does not invalidate the liveness sets computed above.
+			if m.moveStructHasPtrFields(f, inst) {
+				if liveOut[bid][inst.Args[0]] || m.readAfterInBlock(bid, iid, inst.Args[0]) {
+					inst.Op = OpClone
+				} else {
+					moveSrc[inst.Args[0]] = true
+				}
 				continue
 			}
 			if isTransferringMove(inst) {
@@ -205,16 +751,16 @@ func (m *Module) insertDrops(f *Function, rep *Report) {
 			// is dead after the store; a value still live afterwards keeps its
 			// drop at its last use.
 			// A tagged-enum constructor consumes its payload fields: the variant
-		// value holds them inline in its payload union, so their ownership
-		// transfers into the enum and they must not be reported as leaked.
-		if inst.Op == OpEnumNew {
-			for _, a := range inst.Args {
-				if a > NoVal {
-					moveSrc[a] = true
+			// value holds them inline in its payload union, so their ownership
+			// transfers into the enum and they must not be reported as leaked.
+			if inst.Op == OpEnumNew {
+				for _, a := range inst.Args {
+					if a > NoVal {
+						moveSrc[a] = true
+					}
 				}
 			}
-		}
-		if inst.Op == OpSetField && inst.MovesArg && len(inst.Args) >= 2 && inst.Args[1] > NoVal {
+			if inst.Op == OpSetField && inst.MovesArg && len(inst.Args) >= 2 && inst.Args[1] > NoVal {
 				if !liveOut[bid][inst.Args[1]] {
 					moveSrc[inst.Args[1]] = true
 				}
@@ -255,7 +801,7 @@ func (m *Module) insertDrops(f *Function, rep *Report) {
 			if inst == nil {
 				continue
 			}
-			if inst.Dst > NoVal && m.isOwnedVal(f, inst.Dst) && !isParam[inst.Dst] && !moveSrc[inst.Dst] && !m.isSliceViewOfArray(f, inst) && !m.isBorrowRead(f, inst) {
+			if inst.Dst > NoVal && m.dropOwnsHeap(f, inst.Dst) && !isParam[inst.Dst] && !moveSrc[inst.Dst] && !m.isSliceViewOfArray(f, inst) && !m.isBorrowRead(f, inst) {
 				droppable[inst.Dst] = true
 			}
 		}
@@ -729,44 +1275,44 @@ func (m *Module) checkDropCount(f *Function, rep *Report) {
 			if inst == nil {
 				continue
 			}
-		if inst.Op == OpMove {
-			// Only the moved-from source (Args[0]) is exempt from dropping; the
-			// destination keeps its own drop responsibility. EmitMoveInto carries
-			// Args=[src, dst], so we must not mark dst as a move source.
-			if len(inst.Args) > 0 && inst.Args[0] > NoVal {
-				moveSrc[inst.Args[0]] = true
-			}
-		}
-		// OpOptionWrap transfers ownership of its payload into the option (the
-		// option's single drop is the free site), so the payload, like a move
-		// source, must be exempt from dropping. Without this an owned payload
-		// (str/vec/heap-option) is reported as a leak even though it is freed
-		// exactly once by the option's drop.
-		if inst.Op == OpOptionWrap && len(inst.Args) > 0 && inst.Args[0] > NoVal {
-			moveSrc[inst.Args[0]] = true
-		}
-		// OpStrFromVec takes over the slice's buffer (see insertDrops above).
-		if inst.Op == OpStrFromVec && len(inst.Args) > 0 && inst.Args[0] > NoVal {
-			moveSrc[inst.Args[0]] = true
-		}
-		// A struct-literal field store consumes its value: ownership moves into
-		// the field, so the value is freed by the struct (not by its own drop).
-		// Exempt it here to match insertDrops, which suppresses its drop when it
-		// is dead after the store — otherwise the leak check spuriously reports
-		// `missing-drop` for every struct-literal field initializer.
-		if inst.Op == OpSetField && inst.MovesArg && len(inst.Args) >= 2 && inst.Args[1] > NoVal {
-			moveSrc[inst.Args[1]] = true
-		}
-		// A tagged-enum constructor CONSUMES its payload fields: the variant
-		// value holds them inline in its payload union, so ownership transfers
-		// into the enum and the fields must not be reported as leaked.
-		if inst.Op == OpEnumNew {
-			for _, a := range inst.Args {
-				if a > NoVal {
-					moveSrc[a] = true
+			if inst.Op == OpMove {
+				// Only the moved-from source (Args[0]) is exempt from dropping; the
+				// destination keeps its own drop responsibility. EmitMoveInto carries
+				// Args=[src, dst], so we must not mark dst as a move source.
+				if len(inst.Args) > 0 && inst.Args[0] > NoVal {
+					moveSrc[inst.Args[0]] = true
 				}
 			}
-		}
+			// OpOptionWrap transfers ownership of its payload into the option (the
+			// option's single drop is the free site), so the payload, like a move
+			// source, must be exempt from dropping. Without this an owned payload
+			// (str/vec/heap-option) is reported as a leak even though it is freed
+			// exactly once by the option's drop.
+			if inst.Op == OpOptionWrap && len(inst.Args) > 0 && inst.Args[0] > NoVal {
+				moveSrc[inst.Args[0]] = true
+			}
+			// OpStrFromVec takes over the slice's buffer (see insertDrops above).
+			if inst.Op == OpStrFromVec && len(inst.Args) > 0 && inst.Args[0] > NoVal {
+				moveSrc[inst.Args[0]] = true
+			}
+			// A struct-literal field store consumes its value: ownership moves into
+			// the field, so the value is freed by the struct (not by its own drop).
+			// Exempt it here to match insertDrops, which suppresses its drop when it
+			// is dead after the store — otherwise the leak check spuriously reports
+			// `missing-drop` for every struct-literal field initializer.
+			if inst.Op == OpSetField && inst.MovesArg && len(inst.Args) >= 2 && inst.Args[1] > NoVal {
+				moveSrc[inst.Args[1]] = true
+			}
+			// A tagged-enum constructor CONSUMES its payload fields: the variant
+			// value holds them inline in its payload union, so ownership transfers
+			// into the enum and the fields must not be reported as leaked.
+			if inst.Op == OpEnumNew {
+				for _, a := range inst.Args {
+					if a > NoVal {
+						moveSrc[a] = true
+					}
+				}
+			}
 		}
 	}
 	dropCount := map[ValueID]int{}
@@ -789,7 +1335,7 @@ func (m *Module) checkDropCount(f *Function, rep *Report) {
 					// Caller-owned out-param: not dropped by the callee.
 					continue
 				}
-				if m.isOwnedVal(f, inst.Dst) && !m.isSliceViewOfArray(f, inst) && !m.isBorrowRead(f, inst) {
+				if m.dropOwnsHeap(f, inst.Dst) && !m.isSliceViewOfArray(f, inst) && !m.isBorrowRead(f, inst) {
 					declared[inst.Dst] = true
 				}
 			}
@@ -914,6 +1460,22 @@ func sameSet(a, b map[ValueID]bool) bool {
 // debugging the drop-insertion / move analysis. Gated by NOLANG_MIR_DUMP_MIR.
 func (m *Module) DumpAnnotated() string {
 	var b strings.Builder
+	// Struct layouts with their definition-site field tags. Sorted, so map
+	// iteration order never leaks into the dump.
+	if len(m.StructFields) > 0 {
+		names := make([]string, 0, len(m.StructFields))
+		for name := range m.StructFields {
+			names = append(names, name)
+		}
+		sort.Strings(names)
+		fmt.Fprintf(&b, "### structs (%d)\n", len(names))
+		for _, name := range names {
+			fmt.Fprintf(&b, "  %s\n", name)
+			for _, f := range m.StructFields[name] {
+				fmt.Fprintf(&b, "    %s %s [%s]\n", f.Name, f.TypeRaw, f.Tag)
+			}
+		}
+	}
 	if len(m.Globals) > 0 {
 		fmt.Fprintf(&b, "### globals (%d)\n", len(m.Globals))
 		for _, g := range m.Globals {

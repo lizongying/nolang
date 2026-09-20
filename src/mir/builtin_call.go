@@ -290,18 +290,7 @@ func (c *codegen) structLLVMType(suffix string) string {
 // emitGetField/emitSetField so `uts.sysname` resolves its field layout even
 // though the receiver type is recorded as the bare `utsname`.
 func (c *codegen) structKeyOf(raw string) string {
-	if raw == "" {
-		return ""
-	}
-	if _, ok := c.mod.StructFields[raw]; ok {
-		return raw
-	}
-	for k := range c.mod.StructFields {
-		if k == raw || strings.HasSuffix(k, "."+raw) {
-			return k
-		}
-	}
-	return ""
+	return c.mod.StructKeyOf(raw)
 }
 
 // treg mints a unique virtual register with a readable prefix.
@@ -1644,12 +1633,25 @@ func (c *codegen) emitBuiltinVecPush(inst *Inst) error {
 			elemLL = elemTy
 		}
 	}
-	// 步長 = sizeof(elemLL)。mirStaticTypeSize 覆蓋純量 + %str-long + %vec；
-	// 其餘（使用者結構體）退回 8，與先前行為一致。
-	stride := int64(8)
-	if sz, ok := mirStaticTypeSize(elemLL); ok {
-		stride = sz
-	}
+	// 步長 = sizeof(elemLL)。**必須**用 LLVM 自己算出的尺寸，不能用估算值。
+	//
+	// 這裡原本是 `stride := 8; if sz, ok := mirStaticTypeSize(elemLL); ok { stride = sz }`，
+	// 註解寫「其餘（使用者結構體）退回 8，與先前行為一致」。那個回退是錯的：
+	// mirStaticTypeSize 只覆蓋純量 + %str-long + %vec，而緊接著的元素 store 走的是
+	// **型別化 GEP**（`getelementptr %person, %person* %ebase, i64 %len`），LLVM 按
+	// sizeof(%person) 縮放 —— 兩者用的是不同的「元素大小」。
+	//
+	// 後果是堆溢位，不只是數值錯：24 位元組的 %person 只 malloc 了 8 位元組，
+	// 卻把整個 24 位元組 store 進去；grow 時的 memcpy 也只搬 len*8 位元組，
+	// 既有元素被截斷。實測 tests/mem-safety/nested-container-clone.no：
+	// `[]person` 推入第二個元素時寫到 offset 24，而緩衝區只有 8 位元組
+	// → `signal: trace/BPT trap`（malloc 偵測到堆損壞）。
+	//
+	// 注意這與「元素步長 = sizeof(元素型別)」那條不變量並不矛盾 —— 不變量是對的，
+	// 錯的是這裡用了一個*估算*去近似 sizeof。typeSizeOperand 對已知型別給常數，
+	// 其餘給 `ptrtoint (getelementptr (T, ptr null, i64 1))`（由 opt 常數摺疊），
+	// 所以它與上面那個型別化 GEP 必然一致 —— 兩者都問 LLVM。
+	strideOp := c.typeSizeOperand(elemLL)
 	elemTy = elemLL
 	vv := c.treg("vpv")
 	c.sb.WriteString(fmt.Sprintf("  %s = load %%vec, %%vec* %s\n", vv, slot))
@@ -1671,11 +1673,11 @@ func (c *codegen) emitBuiltinVecPush(inst *Inst) error {
 	newCap := c.treg("vpnc")
 	c.sb.WriteString(fmt.Sprintf("  %s = select i1 %s, i64 %s, i64 %s\n", newCap, needGrow, growCap, capG))
 	sz := c.treg("vpsz")
-	c.sb.WriteString(fmt.Sprintf("  %s = mul i64 %s, %d\n", sz, newCap, stride))
+	c.sb.WriteString(fmt.Sprintf("  %s = mul i64 %s, %s\n", sz, newCap, strideOp))
 	newBuf := c.treg("vpnb")
 	c.sb.WriteString(fmt.Sprintf("  %s = call i8* @malloc(i64 %s)\n", newBuf, sz))
 	bytes := c.treg("vpby")
-	c.sb.WriteString(fmt.Sprintf("  %s = mul i64 %s, %d\n", bytes, lenG, stride))
+	c.sb.WriteString(fmt.Sprintf("  %s = mul i64 %s, %s\n", bytes, lenG, strideOp))
 	srcPtr := c.treg("vpsp")
 	c.sb.WriteString(fmt.Sprintf("  %s = inttoptr i64 %s to i8*\n", srcPtr, dataG))
 	c.sb.WriteString(fmt.Sprintf("  call void @llvm.memcpy.p0i8.p0i8.i64(i8* %s, i8* %s, i64 %s, i1 false)\n", newBuf, srcPtr, bytes))

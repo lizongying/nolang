@@ -2,6 +2,7 @@ package mir
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 )
 
@@ -21,6 +22,24 @@ func (m *Module) String() string {
 				own = " [owned]"
 			}
 			fmt.Fprintf(&b, "  %%t%d = %s%s\n", t.ID, t.Raw, own)
+		}
+	}
+	// struct layouts with their DEFINITION-SITE field tags. The tag is what
+	// decides the field's layout (Owned => pointer for a struct-typed field) and
+	// its drop, so printing it here is what makes a layout change auditable.
+	// Sorted: map iteration order must not leak into the dump.
+	if len(m.StructFields) > 0 {
+		names := make([]string, 0, len(m.StructFields))
+		for name := range m.StructFields {
+			names = append(names, name)
+		}
+		sort.Strings(names)
+		b.WriteString("structs:\n")
+		for _, name := range names {
+			fmt.Fprintf(&b, "  %s\n", name)
+			for _, f := range m.StructFields[name] {
+				fmt.Fprintf(&b, "    %s %s [%s]\n", f.Name, f.TypeRaw, f.Tag)
+			}
 		}
 	}
 	for fi := range m.Funcs {

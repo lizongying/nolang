@@ -542,23 +542,15 @@ func ValidateEmbedAnnotations(program *parser.Program, sourcePath string) []Vali
 
 // declaredResults returns the declared result parameters of a function/method
 // definition, with the implicit `self` receiver stripped for method
-// definitions.
+// definitions. It is a thin alias for parser.DeclaredResults, which owns the
+// rationale and the method-semantics contract.
 //
-// parser injects `self` as the *first output parameter* of every method
-// definition (see parser/decl.go; method semantics are
-// `type.method = (inputs) (self type, rest-results...) {}`). Any code that
-// reads `Results[0]` as "the return type" must therefore go through this
-// helper, otherwise a method gets misread as returning its receiver type
+// Within this package every read of `Results[0]` as "the return type" must go
+// through it, otherwise a method gets misread as returning its receiver type
 // (e.g. `sym = ht.decode-symbol(br)` -> "cannot assign bz-huffman value to
 // i64 variable 'sym'").
-//
-// Callers that need the index of the first real result can use the returned
-// slice directly: `rs := declaredResults(fd); if len(rs) > 0 { ... rs[0] ... }`.
 func declaredResults(fd *parser.FunctionDefinition) []*parser.Parameter {
-	if fd.IsMethodDef && len(fd.Results) > 0 && fd.Results[0] != nil && fd.Results[0].Name == "self" {
-		return fd.Results[1:]
-	}
-	return fd.Results
+	return parser.DeclaredResults(fd)
 }
 
 // ValidateDeprecatedLen reports deprecated bare `.len` property reads on
@@ -982,6 +974,13 @@ func ValidateTypes(program *parser.Program) []ValidateResult {
 	// Deprecated `.len` property pass (drives + enforces the .len() migration).
 	results = append(results, ValidateDeprecatedLen(program)...)
 
+	// View (`&T`) placement rules: methods' result lists only, borrowing the
+	// receiver's own type.
+	results = append(results, ValidateViewTypes(program)...)
+
+	// Field-level tag annotations (`#{inline}`): placement and acyclicity.
+	results = append(results, ValidateFieldTags(program)...)
+
 	return results
 }
 func ValidateUnionTypes(program *parser.Program) (map[string]*parser.TypeAlias, []ValidateResult) {
@@ -1091,6 +1090,11 @@ func collectUnionNamesFromType(t parser.Type, aliases map[string]*parser.TypeAli
 			out[n] = true
 		}
 	case *parser.PointerType:
+		sub := collectUnionNamesFromType(ty.Type, aliases)
+		for n := range sub {
+			out[n] = true
+		}
+	case *parser.ViewType:
 		sub := collectUnionNamesFromType(ty.Type, aliases)
 		for n := range sub {
 			out[n] = true
@@ -5551,6 +5555,267 @@ func overflowModeFromSem(sem *parser.SemanticContext, n parser.Node) string {
 //	frame          vs http2.frame   → true
 //	server.conn    vs tls.conn      → false（兩個都是限定名，後綴雖同但不互為前綴）
 //	?T             vs ?U             → 遞迴比較內層
+// isViewBorrow reports whether assigning a value of type src to a variable of
+// type dst is a VIEW BINDING: `v &T = x` (or `v ?&T = x`) where x is a T.
+//
+// A view BORROWS its source instead of copying it, so `T -> &T` is legal even
+// though the type strings differ — this is exactly the rule that makes
+// `json.get = (key str) (child ?&json) { child = self ... }` compile.
+func isViewBorrow(dst, src string) bool {
+	if !strings.HasPrefix(dst, "&") && !strings.HasPrefix(dst, "?&") {
+		return false
+	}
+	inner := strings.TrimPrefix(strings.TrimPrefix(dst, "?"), "&")
+	return typeNamesEquivalent(src, inner)
+}
+
+// ValidateViewTypes enforces the rules of the VIEW type (`&T`):
+//
+//  1. `&T` may only appear in the RESULT list of a METHOD. A borrow has no
+//     lifetime of its own; the only place the language can attach one is the
+//     method receiver (`self`), so a view in a parameter, in a plain
+//     function's result, or in a local declaration is rejected.
+//  2. The borrowed type must be the receiver's own type — `json.get` may
+//     return `?&json`, never `?&something-else`.
+//
+// Rule 3 ("only bind to self") is enforced at MIR lowering time, where the
+// binding's source expression is actually known.
+func ValidateViewTypes(program *parser.Program) []ValidateResult {
+	var results []ValidateResult
+	if program == nil {
+		return results
+	}
+	// viewInner returns the view type string ("&T") when t is a view or an
+	// option of one, and "" otherwise.
+	viewInner := func(t parser.Type) string {
+		if t == nil {
+			return ""
+		}
+		raw := strings.TrimPrefix(t.String(), "?")
+		if !strings.HasPrefix(raw, "&") {
+			return ""
+		}
+		return raw
+	}
+	add := func(pos lexer.Position, msg string) {
+		results = append(results, ValidateResult{
+			TraceID: "viewtyp01",
+			Line:    pos.Line,
+			Column:  pos.Column,
+			Message: msg,
+		})
+	}
+	// `&T` is a LIFETIME binding to a method's receiver, not a type: it says
+	// "this value borrows from `self`". A struct field has no receiver, so a
+	// field can never borrow — `holder { p &point }` is rejected. (An earlier
+	// iteration modelled `&T` as a pointer and allowed it in struct fields;
+	// that is wrong and was removed.)
+	for _, stmt := range program.Statements {
+		sd, ok := stmt.(*parser.StructDefinition)
+		if !ok {
+			continue
+		}
+		for _, f := range sd.Fields {
+			raw := viewInner(f.Type)
+			if raw == "" {
+				continue
+			}
+			add(f.Pos(), "view type "+raw+" is not allowed as a struct field: "+
+				"a view borrows its lifetime from a method receiver (`self`), and a "+
+				"field has no receiver to borrow from")
+		}
+	}
+	for _, stmt := range program.Statements {
+		fd, ok := stmt.(*parser.FunctionDefinition)
+		if !ok {
+			continue
+		}
+		for _, p := range fd.Parameters {
+			if raw := viewInner(p.Type); raw != "" {
+				p := p.Pos()
+				add(p, "view type "+raw+" is only allowed in a method's result list (a borrow has no lifetime outside a receiver)")
+			}
+		}
+		recvType := ""
+		if fd.IsMethodDef && len(fd.Results) > 0 && fd.Results[0].Name == "self" && fd.Results[0].Type != nil {
+			recvType = fd.Results[0].Type.String()
+		}
+		for _, r := range fd.Results {
+			if r.Name == "self" {
+				continue
+			}
+			raw := viewInner(r.Type)
+			if raw == "" {
+				continue
+			}
+			if !fd.IsMethodDef {
+				p := r.Pos()
+				add(p, "view type "+raw+" is only allowed in a method's result list (a borrow has no lifetime outside a receiver)")
+				continue
+			}
+			if strings.TrimPrefix(raw, "&") != recvType {
+				p := r.Pos()
+				add(p, "view result "+raw+" must borrow the receiver type ("+recvType+")")
+			}
+		}
+	}
+	return results
+}
+
+// ValidateFieldTags enforces the rules of the field-level semantic tag
+// annotations. Today the only such annotation is `#{inline}`, which opts a
+// STRUCT-typed field out of the default pointer layout and back into the
+// by-value layout:
+//
+//	holder {
+//	    #{inline} p pt     ; stored as %pt, inside the host
+//	    q pt               ; default: stored as %pt*, on the heap
+//	}
+//
+// Rules:
+//
+//  1. `#{inline}` must sit on a field whose declared type can actually be a
+//     struct. On a scalar / str / vec / array / slice / map / option / pointer
+//     it is a no-op that reads as if it did something; the language rejects it
+//     rather than hiding the ambiguity.
+//  2. Inline fields must not form a cycle. An inlined struct is stored INSIDE
+//     its host, so `a { #{inline} b b }` together with `b { #{inline} a a }`
+//     has no finite size. Direct self-reference is the degenerate case.
+//
+// A struct-typed field WITHOUT the annotation is always valid: that is the
+// default pointer layout, which is what makes recursive types possible.
+func ValidateFieldTags(program *parser.Program) []ValidateResult {
+	var results []ValidateResult
+	if program == nil {
+		return results
+	}
+	add := func(pos lexer.Position, msg string) {
+		results = append(results, ValidateResult{
+			TraceID: "fieldtag1",
+			Line:    pos.Line,
+			Column:  pos.Column,
+			Message: msg,
+		})
+	}
+
+	var structs []*parser.StructDefinition
+	known := map[string]bool{}
+	for _, stmt := range program.Statements {
+		if sd, ok := stmt.(*parser.StructDefinition); ok {
+			known[sd.Name] = true
+			structs = append(structs, sd)
+		}
+	}
+
+	// inlineEdges[a] lists the struct types `a` embeds BY VALUE: its inline
+	// fields, plus fixed-size arrays of a struct (which also store the element
+	// inline). Slices, maps, options and pointers embed only a handle.
+	inlineEdges := map[string][]string{}
+	for _, sd := range structs {
+		for _, f := range sd.Fields {
+			if f == nil || !hasFieldAnnotation(program, f, "inline") {
+				continue
+			}
+			raw := structFieldTypeString(f)
+			if raw == "" {
+				continue
+			}
+			if !canBeStructType(raw) {
+				add(f.Pos(), "#{inline} is only meaningful on a struct-typed field, but "+
+					sd.Name+"."+f.Name+" is declared "+raw+"; scalars, str/vec, arrays, "+
+					"slices, maps, options and pointers are always stored inline")
+				continue
+			}
+			inlineEdges[sd.Name] = append(inlineEdges[sd.Name], raw)
+		}
+	}
+
+	// Cycle detection over the by-value embedding graph. A type that is not a
+	// struct declared in this program (an alias, or a qualified std struct) is
+	// not resolved here and simply ends the walk.
+	const (
+		unvisited = 0
+		onStack   = 1
+		done      = 2
+	)
+	state := map[string]int{}
+	var cyclePath []string
+	var walk func(name string, path []string) bool
+	walk = func(name string, path []string) bool {
+		state[name] = onStack
+		path = append(path, name)
+		for _, next := range inlineEdges[name] {
+			if !known[next] {
+				continue
+			}
+			switch state[next] {
+			case onStack:
+				cyclePath = append(path, next)
+				return true
+			case unvisited:
+				if walk(next, path) {
+					return true
+				}
+			}
+		}
+		state[name] = done
+		return false
+	}
+	for _, sd := range structs {
+		if state[sd.Name] != unvisited {
+			continue
+		}
+		if walk(sd.Name, nil) {
+			add(sd.Pos(), "inline fields form a cycle: "+strings.Join(cyclePath, " -> ")+
+				" — an inlined struct is stored inside its host, so the size would be "+
+				"infinite; drop #{inline} on one of these fields to break the cycle")
+			break
+		}
+	}
+	return results
+}
+
+// hasFieldAnnotation reports whether the field carries the given `#{...}` key.
+// Both tables are consulted: ResolveProgram copies RawAnnotations into
+// Annotations, and the single-file / dependency-vet paths never run it.
+func hasFieldAnnotation(program *parser.Program, f *parser.StructField, key string) bool {
+	if program == nil || program.Sem == nil || f == nil {
+		return false
+	}
+	entries := program.Sem.AnnotationsOf(f)
+	if len(entries) == 0 {
+		entries = program.Sem.RawAnnotationsOf(f)
+	}
+	for _, e := range entries {
+		if e != nil && e.Key == key {
+			return true
+		}
+	}
+	return false
+}
+
+// canBeStructType reports whether a declared field type could name a struct.
+// It is a blacklist on purpose: anything it does not positively rule out (a
+// user struct name, a type alias, a module-qualified name) is left for the
+// layout pass to resolve, so an alias to a struct is not misreported here.
+func canBeStructType(raw string) bool {
+	if raw == "" {
+		return false
+	}
+	switch raw {
+	case "i8", "i16", "i32", "i64", "u8", "u16", "u32", "u64",
+		"f32", "f64", "bool", "byte", "char", "int", "str", "vec", "txt":
+		return false
+	}
+	switch raw[0] {
+	case '[', '*', '&', '?', '%':
+		// [N]T and [K]V (fixed array / map), []T (slice), *T, &T (view),
+		// ?T (option) and %T all embed a handle, not the value.
+		return false
+	}
+	return true
+}
+
 func typeNamesEquivalent(a, b string) bool {
 	if a == b {
 		return true
@@ -5558,8 +5823,8 @@ func typeNamesEquivalent(a, b string) bool {
 	if a == "" || b == "" {
 		return false
 	}
-	// 指標/可空前綴需一致，再比較其餘部分。
-	for _, prefix := range []string{"?", "*", "%"} {
+	// 指標/可空/view 前綴需一致，再比較其餘部分。
+	for _, prefix := range []string{"?", "*", "%", "&"} {
 		pa := strings.HasPrefix(a, prefix)
 		pb := strings.HasPrefix(b, prefix)
 		if pa != pb {
@@ -5853,6 +6118,7 @@ func validateStmtTypes(stmt parser.Statement, funcNames map[string]bool, funcTyp
 					}
 					if inferredType != "" && !typeNamesEquivalent(inferredType, existingType) && isConcreteType(existingType) && !isArrayAssign && !isOptionCtor &&
 						!isArgTypeCompatible(existingType, inferredType, s.Value) && !optionTypesCompatible(inferredType, existingType) &&
+						!isViewBorrow(existingType, inferredType) &&
 						// 整數字面量指派給已宣告型別的變數：常數轉換（如 -1 → byte == 255），不報窄化
 						!isIntLiteralNarrowingToDeclared(s.Value, existingType) {
 						valPos := s.Value.Pos()
@@ -6498,6 +6764,8 @@ func extractBaseTypeName(t parser.Type) string {
 	case *parser.NamedType:
 		return tt.Value
 	case *parser.NullableType:
+		return extractBaseTypeName(tt.Type)
+	case *parser.ViewType:
 		return extractBaseTypeName(tt.Type)
 	case *parser.PointerType:
 		return extractBaseTypeName(tt.Type)

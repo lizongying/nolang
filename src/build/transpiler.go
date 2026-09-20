@@ -1049,10 +1049,14 @@ func (t *Transpiler) preloadModuleSignatures(source string) (map[string][]string
 	collectSignaturesFromProg := func(modProg *parser.Program, modShort string) {
 		for _, stmt := range modProg.Statements {
 			if fd, ok := stmt.(*parser.FunctionDefinition); ok {
-				if len(fd.Results) > 0 {
-					rets := make([]string, len(fd.Results))
-					for i, r := range fd.Results {
-						rets[i] = r.Type.String()
+				// DeclaredResults 剔除方法定義的隱式 `self` 接收者（見其
+				// 註解）：這張表供 let 型別推斷使用（parser/type.go 的
+				// len(rets)==1 判定），留著 self 會讓無回傳值的方法被推成
+				// 「回傳接收者型別」，有回傳值的方法則因長度 2 查不到型別。
+				if decl := parser.DeclaredResults(fd); len(decl) > 0 {
+					rets := make([]string, 0, len(decl))
+					for _, r := range decl {
+						rets = append(rets, r.Type.String())
 					}
 				if fd.IsMethodDef && len(fd.Name) > 0 && fd.Name[0] != '[' {
 					fullKey := modShort + "." + fd.Name
@@ -1578,6 +1582,8 @@ func (t *Transpiler) collectReferencedStdModules(prog *parser.Program) map[strin
 			walkType(ty.Key)
 			walkType(ty.Value)
 		case *parser.NullableType:
+			walkType(ty.Type)
+		case *parser.ViewType:
 			walkType(ty.Type)
 		case *parser.PointerType:
 			walkType(ty.Type)
@@ -4015,6 +4021,11 @@ func resolveMethodCall(dot *parser.DotExpression, ce *parser.CallExpression,
 	// Stripping here mirrors the existing non-generic branch (recvTypeForMethod)
 	// and is semantically correct: methods on ?T dispatch on T.
 	recvType = strings.TrimPrefix(recvType, "?")
+	// A VIEW receiver (`&T` / `?&T`) dispatches on the borrowed type: `v.sum()`
+	// on a `&point` is `point.sum`. A view is `T*` at the LLVM level and a
+	// method's `self` parameter is `T*` too, so the receiver needs no
+	// conversion — only the callee name does.
+	recvType = strings.TrimPrefix(recvType, "&")
 	methodName := dot.Property
 	// Search for matching generic method FIRST, so that generic methods whose
 	// name collides with a builtin (e.g. "[n]t.sort-asc" on a fixed array
@@ -4866,6 +4877,9 @@ func substituteType(t parser.Type, subst map[string]string) parser.Type {
 	case *parser.NullableType:
 		newInner := substituteType(typ.Type, subst)
 		return &parser.NullableType{Token: typ.Token, Type: newInner, IsInferred: typ.IsInferred}
+	case *parser.ViewType:
+		newInner := substituteType(typ.Type, subst)
+		return &parser.ViewType{Token: typ.Token, Type: newInner}
 	case *parser.PointerType:
 		newInner := substituteType(typ.Type, subst)
 		return &parser.PointerType{Token: typ.Token, Type: newInner}

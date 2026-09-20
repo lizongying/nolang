@@ -5,6 +5,13 @@
 #   NOLANG_MIR=3 ./run-golden.sh           # run with MIR backend
 #   NOLANG_MIR=0 ./run-golden.sh           # run with legacy backend
 #   ./run-golden.sh -u                     # update baseline
+#
+# Requires bash 4+ (it uses `declare -A`), so macOS's stock /bin/bash 3.2 cannot
+# run it — use Homebrew bash, or drive the same comparison from Python.
+#
+# The baseline is SPACE-separated (`rc sha256 path`). Reading it with
+# IFS=$'\t' matched nothing and reported every test as NEW, so the read below
+# deliberately uses the default IFS.
 
 set -e
 
@@ -24,7 +31,7 @@ NEW=0
 # Read baseline into associative array
 declare -A BASE_RC
 declare -A BASE_HASH
-while IFS=$'\t' read -r rc hash file; do
+while read -r rc hash file; do
     BASE_RC["$file"]="$rc"
     BASE_HASH["$file"]="$hash"
 done < "tests/golden/$BASELINE"

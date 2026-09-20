@@ -801,6 +801,8 @@ func rewriteTypeRef(t parser.Type, typeOwner map[string]string) {
 		rewriteTypeRef(ty.Value, typeOwner)
 	case *parser.NullableType:
 		rewriteTypeRef(ty.Type, typeOwner)
+	case *parser.ViewType:
+		rewriteTypeRef(ty.Type, typeOwner)
 	case *parser.PointerType:
 		rewriteTypeRef(ty.Type, typeOwner)
 	case *parser.UnionType:

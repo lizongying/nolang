@@ -42,9 +42,10 @@ func isConcreteType(typeName string) bool {
 		"byte", "f64", "str", "txt", "bool", "char", "void":
 		return true
 	}
-	// 複合型別：切片、陣列、可空、指針
+	// 複合型別：切片、陣列、可空、指針、view（借用）
 	if strings.HasPrefix(typeName, "[]") || strings.HasPrefix(typeName, "[") ||
-		strings.HasPrefix(typeName, "?") || strings.HasPrefix(typeName, "ptr ") {
+		strings.HasPrefix(typeName, "?") || strings.HasPrefix(typeName, "ptr ") ||
+		strings.HasPrefix(typeName, "&") {
 		return true
 	}
 	// 已註冊的單具體型別別名（如 fd）視為具體型別，不再跳過型別檢查
@@ -1536,6 +1537,8 @@ func filterByExports(prog *parser.Program, libPath string, modFilePath string) *
 		case *parser.PointerType:
 			collectTypes(tt.Type, result)
 		case *parser.NullableType:
+			collectTypes(tt.Type, result)
+		case *parser.ViewType:
 			collectTypes(tt.Type, result)
 		}
 	}

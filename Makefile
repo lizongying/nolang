@@ -38,7 +38,12 @@ $(BINDIR):
 # ── STDSIG GEN ────────────────────────────────────
 # Generate stdsig_gen.go (baked-in std signature tables) before building no/lsp.
 STDSIG_GEN = src/checker/stdsig_gen.go
-STDSIG_GEN_SRCS := $(wildcard src/checker/genstdsig/*.go) src/checker/checker.go src/checker/stdsig_cache.go
+# The tables are collected by walking HIR, so the generator output depends on
+# the hir/parser/lexer packages just as much as on the checker itself: a change
+# to how a definition is lowered (e.g. dropping the implicit `self` result from
+# method signatures) alters the baked tables without touching checker/*.go.
+STDSIG_GEN_SRCS := $(wildcard src/checker/genstdsig/*.go) src/checker/checker.go src/checker/stdsig_cache.go \
+	$(wildcard src/hir/*.go) $(wildcard src/parser/*.go) $(wildcard src/lexer/*.go)
 
 $(STDSIG_GEN): $(STDSIG_GEN_SRCS) $(NO_SOURCES) src/go.mod src/go.sum
 	cd src && $(GO) run ./checker/genstdsig

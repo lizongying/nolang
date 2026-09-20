@@ -2968,6 +2968,64 @@ func TestFormatMultiIndexAssignRegression(t *testing.T) {
 	}
 }
 
+// TestFormatStructFieldAnnotation verifies that a field's OWN `#{...}`
+// annotation survives formatting. Fields are not statements, so the
+// statement-level annotation path (attachedAnnotations) never saw them and
+// `no fmt -w` used to DROP `#{inline}` — silently changing the field's layout
+// on the next build.
+func TestFormatStructFieldAnnotation(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		expected string
+	}{
+		{
+			name: "annotation on a non-first field is preserved",
+			input: `holder {
+    p pt
+    #{inline} q pt
+}`,
+			expected: `holder {
+    p pt
+    #{inline} q pt
+}`,
+		},
+		{
+			name: "annotation on the FIRST field is preserved",
+			input: `holder {
+    #{inline} p pt
+    q pt
+}`,
+			expected: `holder {
+    #{inline} p pt
+    q pt
+}`,
+		},
+		{
+			name: "multiple entries keep their order",
+			input: `holder {
+    #{inline, borrow} p pt
+}`,
+			expected: `holder {
+    #{inline, borrow} p pt
+}`,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := Format(tt.input)
+			if result != tt.expected {
+				t.Errorf("Format(%q) = %q, want %q", tt.input, result, tt.expected)
+			}
+			// Idempotency
+			result2 := Format(result)
+			if result2 != result {
+				t.Errorf("not idempotent:\nfirst:\n%s\nsecond:\n%s", result, result2)
+			}
+		})
+	}
+}
+
 // TestFormatAnnotationBlankLine verifies that a blank line is inserted before
 // attached annotations (#{...}) when there is a preceding statement.
 func TestFormatAnnotationBlankLine(t *testing.T) {

@@ -417,7 +417,11 @@ json-pool.parse-str = (node-idx i64, s str, pos i64) (next-pos i64, ok bool) {
             c == 34 -> {
                 #{overflow=wrap}
                 #{index-out = 0}
-                .nodes[node-idx].str-val.truncate(j)
+                ; str.truncate 尚未實作，改用 slice-bytes 截斷（est-cap 為預估容量）
+                sv str = .nodes[node-idx].str-val.slice-bytes(0, j)
+                #{index-out = 0}
+                .nodes[node-idx].str-val = sv
+                #{overflow=wrap}
                 next-pos = i + 1
                 ok = true
                 return
@@ -982,6 +986,8 @@ json.kind = () (k i64) {
 ; ═══════════════════════════════════════════════
 
 ; json.get: 從物件取得子節點作為 json
+; child 是 json 自身的子節點（沿用同一節點池，僅 root 指向子節點），
+; 不會新建物件；找不到或非物件時回傳 nil。
 ; 返回 child ?json: ok=找到, nil=未找到或非物件
 ; 用法：
 ;   child = j.get('key')
@@ -994,29 +1000,18 @@ json.get = (key str) (child ?json) {
     child = nil
     .root < 0 -> return
 
-    ; 確保為物件，若非物件則自動建立
-    k i64 = .pool.get-kind(.root)
-    {
-        k == JSON-KIND-NULL -> {
-            ; 將 root 轉為空物件
-            #{index-out = 0}
-            .pool.nodes[.root].kind = JSON-KIND-OBJ
-            #{index-out = 0}
-            .pool.nodes[.root].count = 0
-        }
+    ; 非物件直接回傳 nil（不在這裡把 root 變成新物件）
+    .pool.get-kind(.root) != JSON-KIND-OBJ -> return
 
-        k != JSON-KIND-OBJ -> return
-    }
     val-idx, found = .pool.get-key(.root, key)
     found == false -> return
+    val-idx < 0 -> return
 
-    ; 包裝為 json
-    c json
-    c = json {
+    ; 子節點仍屬於 json 自己的節點池，只換 root 指向它
+    child = json {
         pool: .pool
         root: val-idx
     }
-    child = c
 }
 
 ; json.get-str: 從物件取得字串值

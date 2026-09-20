@@ -1,0 +1,36 @@
+; view-basic — view（`&T`）基礎測試
+;
+; `&T` 是方法返回裡的**借用**：不拷貝、不分配、不用 free。
+; 生命週期自動綁定 `self`，因此只能綁 self。
+
+view-point {
+    x i64
+    y i64
+}
+
+; self-view: 返回 self 的視圖
+view-point.self-view = () (v &view-point) {
+    v = self
+}
+
+; sum: 一般方法，用來驗證透過 view 呼叫方法
+view-point.sum = () (s i64) {
+    #{overflow=wrap}
+    s = .x + .y
+}
+
+p = view-point { x: 7, y: 9 }
+
+; 1) view 讀取欄位（不拷貝）
+q = p.self-view()
+print(q.x)
+print(q.y)
+
+; 2) 透過 view 呼叫方法
+print(q.sum())
+
+; 3) 透過 view 寫入欄位 → 原對象同步改變（證明是別名，不是副本）
+q.x = 42
+print(p.x)
+print(q.x)
+print(q.y)

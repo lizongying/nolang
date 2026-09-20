@@ -1,0 +1,47 @@
+; field-tag — 結構體欄位標記與宣告順序
+;
+; 1) 首個欄位帶 #{...} 註解的結構體必須被辨識。
+;    否則 `{` 後第一個非 NEWLINE token 是 HASH_LBRACE，整個 `{...}` 被判成
+;    block statement，結構體根本不註冊（"'annotated' is not defined"）。
+; 2) 欄位型別引用「後面才宣告」的結構體必須正確。
+;    否則 internType 的裸識別字修正把未知名字折成 KindInt 並快取，
+;    欄位存取發出 `getelementptr inbounds i64`，LLVM 驗證失敗。
+; 3) #{inline} 不改變當前行為：欄位仍是內聯值。
+;    欄位標記（Owned / Inline）在定義處確定，可用 NOLANG_MIR_DUMP_MIR 檢視。
+
+; (2) 前向引用：holder 在 pt 之前宣告
+holder {
+    p pt
+}
+
+pt {
+    x i64
+    y i64
+}
+
+; (1) 首欄位註解 + (3) #{inline} 結構體欄位維持內聯值
+annotated {
+    #{inline} a pt
+    b i64
+}
+
+; (3) 結構體欄位：預設 Owned（未來的指針佈局），#{inline} 為 Inline
+box {
+    #{inline} inl pt
+    own pt
+}
+
+h = holder { p: pt { x: 7, y: 8 } }
+print(h.p.x)
+print(h.p.y)
+
+n = annotated { a: pt { x: 1, y: 2 }, b: 3 }
+print(n.a.x)
+print(n.a.y)
+print(n.b)
+
+k = box { inl: pt { x: 3, y: 4 }, own: pt { x: 5, y: 6 } }
+print(k.inl.x)
+print(k.inl.y)
+print(k.own.x)
+print(k.own.y)

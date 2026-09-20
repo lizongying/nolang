@@ -490,7 +490,35 @@ func (l *lowerer) enumVariantOf(prefer, variant string) (*TaggedEnumInfo, *Varia
 // OpGetField/OpSetField can resolve field indices and codegen can emit LLVM
 // struct type declarations. Field order is the child order of KStructField
 // nodes, which matches the GEP index order.
+// collectStructFields registers every struct's field layout, and with it each
+// field's DEFINITION-SITE semantic tag (see mir.FieldTag).
+//
+// It runs in two passes because a field's tag depends on whether its declared
+// type names a struct, and a struct may be declared AFTER the one that
+// references it:
+//
+//	holder { p pt }   ; pt is declared below
+//	pt { x i64  y i64 }
+//
+// Pass 1 therefore registers every struct NAME before any field type is
+// interned. Without it internType's bare-identifier fixup collapses `pt` to
+// KindInt and CACHES that in TypeMap, so the field stays mis-typed for the rest
+// of the compilation: the field access then emits
+// `getelementptr inbounds i64` and LLVM verification fails with "invalid
+// getelementptr indices".
 func (l *lowerer) collectStructFields() {
+	// Pass 1: names only.
+	for _, id := range l.pkg.Top {
+		n := l.pkg.Node(id)
+		if n == nil || n.Kind != hir.KStructDef {
+			continue
+		}
+		if name := l.pkg.Str(n.S); name != "" {
+			l.mod.StructNames[name] = true
+		}
+	}
+
+	// Pass 2: fields and their tags.
 	for _, id := range l.pkg.Top {
 		n := l.pkg.Node(id)
 		if n == nil || n.Kind != hir.KStructDef {
@@ -511,16 +539,56 @@ func (l *lowerer) collectStructFields() {
 			if fname == "" {
 				continue
 			}
-			fields = append(fields, FieldInfo{Name: fname, TypeRaw: ftype})
+			fields = append(fields, FieldInfo{
+				Name:    fname,
+				TypeRaw: ftype,
+				Tag:     l.fieldTag(c, ftype),
+			})
 			// Make sure the field type is interned so codegen can resolve it.
 			if ftype != "" {
 				l.b.Type(ftype)
 			}
 		}
-	if len(fields) > 0 {
-		l.mod.StructFields[name] = fields
+		if len(fields) > 0 {
+			l.mod.StructFields[name] = fields
+		}
 	}
+}
+
+// fieldTag computes a field's definition-site semantic tag from its declared
+// type plus its OWN annotation. It is a pure function of the declaration: no
+// use site is consulted, which is the whole point of the tag.
+//
+//	#{inline} on a struct-typed field -> Inline (by-value layout)
+//	struct-typed field (default)      -> Owned  (pointer; recursive drop)
+//	owned leaf (str/vec/[]T/map/?owned)-> Owned  (inline descriptor, owns heap)
+//	?T where T is a struct            -> Owned  (nullable pointer)
+//	everything else (scalars, txt)    -> Inline
+func (l *lowerer) fieldTag(fieldID int32, raw string) FieldTag {
+	if keys, _ := l.pkg.AnnotationKeys(fieldID); len(keys) > 0 {
+		for _, k := range keys {
+			if k == "inline" {
+				return FieldTagInline
+			}
+		}
 	}
+	if l.isStructType(raw) {
+		return FieldTagOwned
+	}
+	if strings.HasPrefix(raw, "?") && l.isStructType(strings.TrimPrefix(raw, "?")) {
+		return FieldTagOwned
+	}
+	if ClassifyOwnership(raw) {
+		return FieldTagOwned
+	}
+	return FieldTagInline
+}
+
+// isStructType reports whether raw names a struct whose layout this module
+// knows. The definition lives on Module (see Module.IsStructType) so the
+// analysis passes and codegen share it; this is the lowerer-side alias.
+func (l *lowerer) isStructType(raw string) bool {
+	return l.mod.IsStructType(raw)
 }
 
 // collectValueTypeAliases scans the HIR package for value-type alias
@@ -845,12 +913,29 @@ func LowerHIR(pkg *hir.Package, enumVariants map[string][]string) (*Module, *Rep
 	// Collect struct field layouts so OpGetField/OpSetField can resolve field
 	// indices. Builtins have a fixed, known layout; user/std structs come from
 	// HIR KStructDef nodes (field order = child order).
-	l.mod.StructFields["str"] = []FieldInfo{{Name: "len", TypeRaw: "i64"}, {Name: "cap", TypeRaw: "i64"}, {Name: "data", TypeRaw: "str"}}
-	l.mod.StructFields["vec"] = []FieldInfo{{Name: "len", TypeRaw: "i64"}, {Name: "cap", TypeRaw: "i64"}, {Name: "data", TypeRaw: "vec"}}
+	// The builtin descriptors are registered by hand, so their field tags are
+	// explicit. `str.data` / `vec.data` are the raw buffers the descriptor
+	// itself owns: the tag is Inline (the field slot owns no SEPARATE heap
+	// object) precisely so a drop walk stops here instead of freeing the buffer
+	// twice — the descriptor's own drop already freed it.
+	l.mod.StructFields["str"] = []FieldInfo{
+		{Name: "len", TypeRaw: "i64", Tag: FieldTagInline},
+		{Name: "cap", TypeRaw: "i64", Tag: FieldTagInline},
+		{Name: "data", TypeRaw: "str", Tag: FieldTagInline},
+	}
+	l.mod.StructFields["vec"] = []FieldInfo{
+		{Name: "len", TypeRaw: "i64", Tag: FieldTagInline},
+		{Name: "cap", TypeRaw: "i64", Tag: FieldTagInline},
+		{Name: "data", TypeRaw: "vec", Tag: FieldTagInline},
+	}
 	// txt: fixed 256-byte stack buffer { [255 x i8] data, i8 len } (capped at
 	// 255 bytes). Field order MUST match emitStructTypes' %txt layout so GEP
-	// indices stay consistent: data = field 0, len = field 1.
-	l.mod.StructFields["txt"] = []FieldInfo{{Name: "data", TypeRaw: "byte"}, {Name: "len", TypeRaw: "byte"}}
+	// indices stay consistent: data = field 0, len = field 1. A plain stack
+	// buffer owns nothing, so both fields are Inline.
+	l.mod.StructFields["txt"] = []FieldInfo{
+		{Name: "data", TypeRaw: "byte", Tag: FieldTagInline},
+		{Name: "len", TypeRaw: "byte", Tag: FieldTagInline},
+	}
 	l.collectStructFields()
 	l.collectTaggedEnums()
 	l.collectLocalEnumVariants()
@@ -988,6 +1073,10 @@ func LowerHIR(pkg *hir.Package, enumVariants map[string][]string) (*Module, *Rep
 			l.lowerFunction(name, id)
 		}
 	}
+	// Slice views alias their receiver's buffer, so a view that ESCAPES the
+	// frame would leave the caller holding a pointer into storage that dies
+	// with it. Demote those back to an owned copy before the analysis runs.
+	l.mod.demoteUnsafeSliceViews()
 	rep := l.mod.Analyze()
 	return l.mod, rep, l.diags
 }
@@ -2141,6 +2230,15 @@ func (l *lowerer) lowerStmt(id int32) {
 				childID = id
 			}
 		}
+		// VIEW binding (`&T` / `?&T`): `v &point = self` BORROWS the source's
+		// storage instead of copying it. No allocation, no ownership transfer,
+		// and no drop — this is what makes `json.get = (key str) (child ?&json)`
+		// cheap (a pointer, not a copy of the struct).
+		if val != NoVal && l.viewTargetType(name, n) != NoType {
+			if bv := l.lowerBorrow(childID); bv != NoVal {
+				val = bv
+			}
+		}
 		if val != NoVal {
 			// If the binding's declared type is an option (?T) but the
 			// initializer lowered to a bare scalar (e.g. `n ?i64 = 42`), wrap
@@ -2188,35 +2286,15 @@ func (l *lowerer) lowerStmt(id int32) {
 			// struct), which the memory analysis already handles with a single
 			// drop for the fresh slot — no double-free.
 		if name == "it" {
-			// Nested match arm: do NOT clobber the outer `it` (parser intent
-			// lowering.go:1138; legacy saves/restores g.varTypes["it"] in
-			// expr.go). matchDepth > 1 means this `let it = <matched>` is itself
-			// inside a nested match arm, so the matched subject belongs to the
-			// inner match — but nolang semantics (and legacy output) keep `it`
-			// pointing at the NEAREST ENCLOSING match's subject. Keep the
-			// existing outer `it` binding and drop the inner payload value so the
-			// memory analysis still accounts for it (it is otherwise unused).
-			if l.matchDepth > 1 {
-				if l.isOwnedLocal(val) {
-					l.b.EmitVoid(OpDrop, []ValueID{val}, "")
-				}
-				break
-			}
-			// Bind `it` as an ALIAS of the matched value rather than a
-			// transferring move. The match subject is routinely re-used by the
-			// arm body: e.g. after `s = parts[i]` the original `parts[i]` is
-			// referenced again for `s.len-bytes()` / `s.byte(j)`, so the same
-			// subject value id is live across `it`'s binding AND the body. A
-			// transferring OpMove would mark that shared subject value as moved
-			// while it is still needed -> [use-after-move] / double-free
-			// (str.replace-n: "value 1419 dropped after move"). Aliasing makes
-			// `it` and the subject the SAME value id, which the memory analysis
-			// drops exactly once — no double-free. Each arm's `let it` points at
-			// its own matched value id (the desugar materialises a per-arm
-			// subject), so per-arm types stay correct (test_fs_error_complete:
-			// err arm `it` is the str payload, wildcard arm `it` is the whole
-			// ?fs.file). Aliasing also avoids cloning a possibly-nil option's
-			// inner buffer, which would be unsound.
+			// A match arm's synthetic `let it = <matched>` rebinds `it` to that
+			// arm's own subject — including for a match NESTED inside another
+			// arm (`child: { ok -> it.get-str(...) }` must see `child`, not the
+			// outer match's subject). Previously the nested case was skipped and
+			// `it` kept pointing at the OUTER subject, so an inner arm silently
+			// read the parent value (tests/mem-safety/test-json-nested-match.no:
+			// `it.get-str('inner')` looked up the key on the PARENT object and
+			// reported "not found"). Bind unconditionally; `val` is consumed by
+			// the binding (aliased, not moved), so no drop is needed here.
 			if typ := l.valueTypeOf(val); typ != NoType && typ != l.voidType {
 				l.locals[name] = val
 				break
@@ -2871,6 +2949,36 @@ func (l *lowerer) lowerFor(n *hir.Node) {
 	}
 }
 
+// resultOutParamFor returns the MIR value of the enclosing function's result
+// out-parameter when `name` is currently bound to it, and NoVal otherwise.
+//
+// A Nolang function returns through named out-params (`skip-ws = (s str, pos i64)
+// (p i64)`), so a loop that uses the result name as its loop variable
+// (`p <- [pos..s.len-bytes()): { … }`) is writing the RETURN VALUE. Binding the
+// loop variable to a freshly minted local therefore left the out-param at its
+// zero-initialized default and the function always returned 0 — which made
+// json-pool.skip-ws return 0 for every input and broke json.parse. Reusing the
+// out-param's slot keeps the loop's writes visible to the caller.
+func (l *lowerer) resultOutParamFor(name string) ValueID {
+	if name == "" {
+		return NoVal
+	}
+	f := l.mod.Func(l.curFunc)
+	if f == nil {
+		return NoVal
+	}
+	cur, ok := l.locals[name]
+	if !ok || cur == NoVal {
+		return NoVal
+	}
+	for _, rv := range f.ResultParams {
+		if rv == cur {
+			return rv
+		}
+	}
+	return NoVal
+}
+
 // lowerRangeFor lowers a range-for: `for v in COLLECTION { body }` where v is
 // bound to each element of COLLECTION, and `for v in LO..HI { body }` where v is
 // bound to each integer in [LO, HI). It is the loop-variable-binding counterpart
@@ -2938,7 +3046,12 @@ func (l *lowerer) lowerRangeFor(n *hir.Node, iterID int32, bodyID int32, pre Blo
 		// when registered into f.Params, which loop vars are not) -> the init
 		// move would hit "move destination has no slot". Emitting a zero const
 		// gives it a Dst-backed slot; the init move below overwrites it.
-		iSlot := l.b.EmitInt(OpConst, elemT, 0, varName)
+		// resultOutParamFor: when the loop variable IS the function's named
+		// result out-param, drive that slot directly instead of a fresh local.
+		iSlot := l.resultOutParamFor(varName)
+		if iSlot == NoVal {
+			iSlot = l.b.EmitInt(OpConst, elemT, 0, varName)
+		}
 		l.locals[varName] = iSlot
 		// init v = lo +/- (leftInc?0:1), stepping toward hi. Nolang ranges are
 		// bidirectional: `for i in [5..0)` counts DOWN (5,4,3,2,1). The loop
@@ -3081,6 +3194,12 @@ func (l *lowerer) lowerRangeFor(n *hir.Node, iterID int32, bodyID int32, pre Blo
 	// once per iteration, reloading the current element into v's slot.
 	l.b.SetBlock(body)
 	iSlot := l.b.Emit(OpIndex, elemT, []ValueID{arrV, idxSlot}, "")
+	if outP := l.resultOutParamFor(varName); outP != NoVal {
+		// `for v in [a,b,c]` where v is the function's result out-param: move
+		// each element into the out-param slot so the caller sees it.
+		l.b.EmitMoveInto(outP, iSlot)
+		iSlot = outP
+	}
 	l.locals[varName] = iSlot
 	if bodyID != hir.NoID {
 		l.lowerBlock(bodyID)
@@ -4611,6 +4730,10 @@ func (l *lowerer) lowerSlice(n *hir.Node) ValueID {
 	}
 	var loV, hiV ValueID = NoVal, NoVal
 	var leftInc, rightInc bool = true, true
+	// Static values of the bounds, used to prove the range is FORWARD (see
+	// sliceForward below).
+	var loLit, hiLit int64
+	var haveLo, haveHi bool
 	if rangeID != hir.NoID {
 		rn := l.pkg.Node(rangeID)
 		if rn != nil {
@@ -4624,10 +4747,46 @@ func (l *lowerer) lowerSlice(n *hir.Node) ValueID {
 				switch l.pkg.Str(cn.S) {
 				case "start":
 					loV = l.lowerExpr(cn.First)
+					if bn := l.pkg.Node(cn.First); bn != nil && bn.Kind == hir.KIntLit && leftInc {
+						loLit, haveLo = bn.Val, true
+					}
 				case "end":
 					hiV = l.lowerExpr(cn.First)
+					if bn := l.pkg.Node(cn.First); bn != nil && bn.Kind == hir.KIntLit {
+						hiLit, haveHi = bn.Val, true
+					}
 				}
 			}
+		}
+	}
+	// sliceForward reports whether the sub-range is statically known to run
+	// FORWARD (lo <= hi'). Only then can it be represented as a contiguous
+	// borrow: a REVERSED range (a[3..1]) yields a different element order and
+	// has no aliasing representation, so it keeps the copying path.
+	//
+	// hi' is hi+1 when the upper bound is inclusive (matches emitSliceOp, which
+	// adds 1 for rightInc before taking abs(hi - lo)).
+	sliceForward := func() bool {
+		switch {
+		case !haveLo && !haveHi:
+			// `a[..]`: lo = 0, hi = len — always forward.
+			return true
+		case !haveLo && haveHi:
+			// `a[..n]`: lo = 0; forward iff hi' >= 0.
+			hiEff := hiLit
+			if rightInc {
+				hiEff++
+			}
+			return hiEff >= 0
+		case haveLo && haveHi:
+			hiEff := hiLit
+			if rightInc {
+				hiEff++
+			}
+			return hiEff >= loLit
+		default:
+			// `a[n..]`: hi is the container length, unknown at compile time.
+			return false
 		}
 	}
 	args := []ValueID{arrV}
@@ -4693,7 +4852,14 @@ func (l *lowerer) lowerSlice(n *hir.Node) ValueID {
 	// This is needed for BOTH forward and reverse slices; codegen takes
 	// abs(hi - lo) to handle reverse (start > end) correctly.
 	if rightInc {
-		l.mod.Insts[len(l.mod.Insts)-1].Int = 1
+		l.mod.Insts[len(l.mod.Insts)-1].Int = SliceFlagRightInc
+	}
+	// Mark the slice as a VIEW candidate: it aliases the receiver's buffer
+	// (cap = 0 ⇒ never freed) instead of copying it. Only a provably forward
+	// range qualifies. The safety pass (demoteUnsafeSliceViews) turns the flag
+	// back off for any result that outlives its source.
+	if sliceForward() {
+		l.mod.Insts[len(l.mod.Insts)-1].Int |= SliceFlagView
 	}
 	return sliceDst
 }
@@ -4797,6 +4963,16 @@ func (l *lowerer) lowerDotRead(n *hir.Node) ValueID {
 	// ("unknown callee port.to-str", test-opt-struct-field). emitGetField
 	// already emits the option peel, so only the lookup key needs fixing.
 	recvRaw = strings.TrimPrefix(recvRaw, "?")
+	// A VIEW (`&T`) read reaches transparently through the borrow: `v.x` on a
+	// `&point` resolves against `point`'s field layout, and codegen's
+	// emitGetField loads the pointer before the GEP. `viewOf` remembers the
+	// borrowed type so container properties (`.len` / `.cap`) can be dispatched
+	// on the POINTEE's kind rather than the pointer's.
+	viewOf := ""
+	if strings.HasPrefix(recvRaw, "&") {
+		viewOf = strings.TrimPrefix(recvRaw, "&")
+		recvRaw = viewOf
+	}
 
 	// Container builtin properties: `.len` / `.cap` are properties of the
 	// container itself, not struct fields. There is one such layout per
@@ -4805,9 +4981,15 @@ func (l *lowerer) lowerDotRead(n *hir.Node) ValueID {
 	// accounted for every "no struct layout for []byte (field len)" gap on the
 	// corpus. Dispatch on the type KIND and emit a dedicated op instead.
 	if ty := l.mod.Type(recvT); ty != nil {
+		effTy := ty
+		if viewOf != "" && ty.Elem != NoType {
+			if et := l.mod.Type(ty.Elem); et != nil {
+				effTy = et
+			}
+		}
 		if fieldName == "len" || fieldName == "cap" {
 			switch {
-			case ty.Kind == KindStr || ty.Kind == KindSlice || ty.Kind == KindArray || ty.Kind == KindMap:
+			case effTy.Kind == KindStr || effTy.Kind == KindSlice || effTy.Kind == KindArray || effTy.Kind == KindMap:
 				op := OpLen
 				if fieldName == "cap" {
 					op = OpCap
@@ -5101,6 +5283,13 @@ func (l *lowerer) resolveCallee(n *hir.Node) (callee string, recvV ValueID) {
 		}
 	}
 	recvTypeName = strings.TrimPrefix(recvTypeName, "?")
+	// A VIEW receiver (`&T`, e.g. a struct field declared `p &point`) reads
+	// through the borrow: the method is defined on the BORROWED type, so the
+	// callee must be `point.sum`, not `&point.sum` ("unknown callee
+	// &point.sum"). Only the NAME is stripped — the receiver VALUE stays the
+	// view, which is already `T*` and is passed to `self` unchanged by
+	// emitCallBody's view branch.
+	recvTypeName = strings.TrimPrefix(recvTypeName, "&")
 	// A slice/array method that the builtin table supplies for a vec/array
 	// receiver must be emitted as that BUILTIN, not as a call to the generic
 	// stub (see sliceMethodBuiltin). Otherwise `v.len()` lowers to
@@ -6630,6 +6819,122 @@ func (l *lowerer) enqueueCallee(callee string) {
 // the current function — i.e. defined by an instruction, not a parameter. Params
 // are borrowed (owned by the caller), so assignment to an owned local is the only
 // reassignment case that would leak under the v1 move model.
+// trimViewPrefix strips the option and view markers from a receiver type name
+// so a method call through a view resolves against the BORROWED type:
+// `?&point` / `&point` -> `point`. A view is `T*` at the LLVM level and a
+// method's `self` parameter is also `T*`, so the receiver passes through
+// unchanged — only the callee NAME needs the strip.
+func trimViewPrefix(raw string) string {
+	raw = strings.TrimPrefix(raw, "?")
+	raw = strings.TrimPrefix(raw, "&")
+	return raw
+}
+
+// isViewRaw reports whether a nolang type string is a VIEW type (`&T`) or an
+// option of one (`?&T`). Views are non-owning borrows: they are never dropped
+// (ClassifyOwnership returns false) and are represented as `T*` in LLVM.
+func isViewRaw(raw string) bool {
+	raw = strings.TrimPrefix(raw, "?")
+	return strings.HasPrefix(raw, "&")
+}
+
+// typeRaw returns the nolang type string of a MIR type id ("" when unknown).
+func (l *lowerer) typeRaw(t TypeID) string {
+	if t == NoType {
+		return ""
+	}
+	if ty := l.mod.Type(t); ty != nil {
+		return ty.Raw
+	}
+	return ""
+}
+
+// viewTargetType returns the type ID when `name` is a VIEW-typed binding
+// (already declared, or declared on this very `let`), and NoType otherwise.
+// Views are `&T` / `?&T` and are bound by borrow, not by copy.
+func (l *lowerer) viewTargetType(name string, n *hir.Node) TypeID {
+	if ex, ok := l.locals[name]; ok {
+		if t := l.valueTypeOf(ex); t != NoType && isViewRaw(l.typeRaw(t)) {
+			return t
+		}
+	}
+	if n == nil {
+		return NoType
+	}
+	if dt := l.letDeclaredType(n); dt != NoType && dt != l.voidType {
+		if dty := l.mod.Type(dt); dty != nil && isViewRaw(dty.Raw) {
+			return dt
+		}
+	}
+	return NoType
+}
+
+// lowerBorrow lowers the `&x` half of a view binding: it emits an OpBorrow on
+// the value `x` named by the HIR node id, yielding a `&T` pointer to x's
+// storage. Returns NoVal when the node is not a borrowable local/parameter
+// reference (the checker has already rejected such a binding).
+func (l *lowerer) lowerBorrow(id int32) ValueID {
+	n := l.pkg.Node(id)
+	if n == nil || n.Kind != hir.KIdent {
+		return NoVal
+	}
+	nm := l.pkg.Str(n.S)
+	// A view's lifetime is the RECEIVER's: it may only bind to `self`. Binding
+	// it to any other local would leave it dangling the moment the method
+	// returns, which is exactly what "view 只綁定 self" rules out.
+	if nm != "self" {
+		l.unsupported(l.curFuncName(), "view", "a view can only bind to 'self', not '"+nm+"' (the borrow would outlive it)")
+		return NoVal
+	}
+	src, ok := l.locals[nm]
+	if !ok {
+		return NoVal
+	}
+	st := l.valueTypeOf(src)
+	if st == NoType || st == l.voidType {
+		return NoVal
+	}
+	// The borrow's type is `&T` where T is the SOURCE's type. Strip a leading
+	// `?` so binding to an optional view (`v ?&point = self`) yields `&point`
+	// (the option wrap is applied afterwards) rather than `&?point`.
+	raw := strings.TrimPrefix(l.typeRaw(st), "?")
+	if raw == "" {
+		return NoVal
+	}
+	// A source that is ALREADY a view (e.g. the peeled payload of a `?&T`, or
+	// a `&T` local) is already a pointer — borrowing it again would produce a
+	// `&&T` and point at the view's own slot instead of the borrowed value.
+	// Leave those to the normal (copy / alias) path.
+	if strings.HasPrefix(raw, "&") {
+		return NoVal
+	}
+	return l.borrowValue(src)
+}
+
+// borrowValue emits an OpBorrow on an already-lowered value, yielding a `&T`
+// pointer to that value's storage.
+//
+// It is the generalized form of lowerBorrow: that one only ever borrows `self`
+// (a method-result view, whose lifetime is the receiver's), whereas a STRUCT
+// FIELD declared `f &T` borrows whatever value the field is initialized or
+// assigned from. Returns NoVal when the value has no addressable storage or is
+// already a pointer, in which case the caller falls back to the copy path.
+func (l *lowerer) borrowValue(v ValueID) ValueID {
+	if v == NoVal {
+		return NoVal
+	}
+	st := l.valueTypeOf(v)
+	if st == NoType || st == l.voidType {
+		return NoVal
+	}
+	raw := strings.TrimPrefix(l.typeRaw(st), "?")
+	if raw == "" || strings.HasPrefix(raw, "&") {
+		return NoVal
+	}
+	return l.b.Emit(OpBorrow, l.b.Type("&"+raw), []ValueID{v}, "")
+}
+
+
 func (l *lowerer) isOwnedLocal(v ValueID) bool {
 	if v <= NoVal {
 		return false
@@ -6845,6 +7150,23 @@ func (l *lowerer) lowerAssignNode(assignID int32) ValueID {
 			}
 		}
 	}
+	// VIEW binding (`&T` / `?&T`): assigning to a view-typed target BORROWS the
+	// source's storage instead of copying it. `json.get = (key str) (child ?&json)`
+	// binds `child` to `self` — no struct copy, no heap allocation, and nothing
+	// to free (ClassifyOwnership reports `&T` as not owned, so the analysis
+	// inserts no drop). The checker restricts the source to `self` (or a
+	// self-rooted lvalue), which is what keeps the borrow from dangling.
+	if v == NoVal && tn.Kind == hir.KIdent && value != hir.NoID {
+		if nm := l.pkg.Str(tn.S); nm != "" {
+			if slot, ok := l.locals[nm]; ok {
+				if t := l.valueTypeOf(slot); t != NoType && isViewRaw(l.typeRaw(t)) {
+					if bv := l.lowerBorrow(value); bv != NoVal {
+						v = bv
+					}
+				}
+			}
+		}
+	}
 	if v == NoVal {
 		v = l.lowerExpr(value)
 	}
@@ -6972,10 +7294,11 @@ func (l *lowerer) lowerAssignNode(assignID int32) ValueID {
 		if recvV == NoVal {
 			return NoVal
 		}
+		fieldName := l.pkg.Str(tn.S)
 		// Store the field name in inst.Str (not inst.Sym) so emitSetField's
 		// FieldIndex lookup matches the GETFIELD convention in lowerDotRead.
 		sid := l.b.EmitVoid(OpSetField, []ValueID{recvV, v}, "")
-		l.mod.Insts[sid].Str = l.pkg.Str(tn.S)
+		l.mod.Insts[sid].Str = fieldName
 		// The field assignment consumes the RHS value: ownership of an owned
 		// RHS (str/vec/option) transfers into the struct field, so the value's
 		// temporary must NOT be dropped separately — that would free a buffer

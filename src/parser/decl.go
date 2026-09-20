@@ -1253,6 +1253,39 @@ func (p *Parser) parseStructDefinition() Statement {
 				field.Type = buildType("*"+p.currentToken.Literal, p.currentToken)
 				p.nextToken() // skip type name
 			}
+		} else if p.currentToken.Type == lexer.QUESTION || p.currentToken.Type == lexer.AND {
+			// Option / VIEW field type: `field ?T`, `field &T`, `field ?&T`.
+			// `&` in a field's type position can only mean a view (non-owning
+			// borrow); in expression position it is still bitwise AND, and the
+			// two never share a parse site.
+			typeTok := p.currentToken
+			prefix := ""
+			for p.currentToken.Type == lexer.QUESTION || p.currentToken.Type == lexer.AND {
+				if p.currentToken.Type == lexer.QUESTION {
+					prefix = "?" + prefix
+				} else {
+					prefix += "&"
+				}
+				p.nextToken()
+			}
+			if p.currentToken.Type == lexer.IDENT || p.currentToken.Type == lexer.PTR {
+				typeStr := p.currentToken.Literal
+				p.nextToken()
+				for p.currentToken.Type == lexer.DOT {
+					typeStr += "."
+					p.nextToken()
+					if p.currentToken.Type == lexer.IDENT {
+						typeStr += p.currentToken.Literal
+						p.nextToken()
+					}
+				}
+				field.Type = buildType(prefix+typeStr, typeTok)
+			} else {
+				msg := fmt.Sprintf("line %d, column %d: expected field type after %q, got %s instead",
+					p.currentToken.Line, p.currentToken.Column, prefix, p.currentToken.Type.String())
+				p.saveError(msg)
+				return nil
+			}
 		} else if p.currentToken.Type == lexer.IDENT || p.currentToken.Type == lexer.PTR {
 			// 普通类型定义 (including ptr keyword)
 			typeStr := p.currentToken.Literal
@@ -1630,11 +1663,17 @@ func (p *Parser) parseFunctionBody(def *FunctionDefinition) {
 		p.nextToken()
 	}
 
-	// 收集函數簽名（結果型別），供後續 let 型別推斷使用
-	if len(def.Results) > 0 {
-		rets := make([]string, len(def.Results))
-		for i, r := range def.Results {
-			rets[i] = typeString(r.Type)
+	// 收集函數簽名（結果型別），供後續 let 型別推斷使用。
+	// 走 DeclaredResults 以剔除方法定義的隱式 `self` 接收者（它被 parser
+	// 插在 Results[0]，但不是回傳值）：type.go 的推斷把「長度 1 的結果列表」
+	// 讀成「呼叫回傳這個型別」，留著 self 會讓無回傳值的方法（如
+	// `path.dir = ()`）被推成回傳接收者型別，有回傳值的方法則變成
+	// 長度 2 而被 `len(rets) == 1` 守衛整條略過。
+	results := DeclaredResults(def)
+	if len(results) > 0 {
+		rets := make([]string, 0, len(results))
+		for _, r := range results {
+			rets = append(rets, typeString(r.Type))
 		}
 		if def.IsMethodDef && len(def.Name) > 0 && def.Name[0] != '[' {
 			// 結構體方法存入 methodSignatures
@@ -1882,6 +1921,8 @@ func detectImplicitGeneric(t Type, def *FunctionDefinition) {
 			addImplicitGeneric(typ.Value, def)
 		}
 	case *NullableType:
+		detectImplicitGeneric(typ.Type, def)
+	case *ViewType:
 		detectImplicitGeneric(typ.Type, def)
 	case *ArrayType:
 		// 陣列大小中的單字母 a-z 視為泛型大小參數

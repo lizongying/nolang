@@ -103,6 +103,59 @@ const (
 	blockMatch                // { pattern-> body } or { cond-> body }
 )
 
+// skipFieldAnnotation returns the look-index of the token that follows the
+// `#{...}` group beginning at look-index start (the `#{` itself), together with
+// that token and the one after it. Newlines between the group and its member
+// are skipped. ok is false when the group is unterminated or runs into EOF.
+//
+// Only look-ahead is used: no token is consumed, so classifyBlock stays a pure
+// predicate.
+func (p *Parser) skipFieldAnnotation(start int) (int, lexer.Token, lexer.Token, bool) {
+	var zero lexer.Token
+	const maxLook = 256
+	i := start
+	depth := 0
+	for n := 0; n < maxLook; n++ {
+		t := p.look(i)
+		if t.Type == lexer.EOF {
+			return 0, zero, zero, false
+		}
+		switch t.Type {
+		case lexer.HASH_LBRACE:
+			depth++
+		case lexer.RBRACE:
+			depth--
+			if depth <= 0 {
+				i++ // step past the closing `}`
+				for m := 0; m < maxLook; m++ {
+					t := p.look(i)
+					if t.Type == lexer.EOF {
+						return 0, zero, zero, false
+					}
+					if t.Type != lexer.NEWLINE {
+						return i, t, p.look(i + 1), true
+					}
+					i++
+				}
+				return 0, zero, zero, false
+			}
+		}
+		i++
+	}
+	return 0, zero, zero, false
+}
+
+// isFieldTypeStart reports whether tok can begin the type of a `name <type>`
+// struct field. Used to confirm that a member following a leading field
+// annotation really is a field and not a statement.
+func isFieldTypeStart(t lexer.TokenType) bool {
+	switch t {
+	case lexer.IDENT, lexer.PTR, lexer.MUL, lexer.AND, lexer.QUESTION, lexer.LBRACKET:
+		return true
+	}
+	return false
+}
+
 // classifyBlock 分類 `{ body }` 的型別（預測：不消耗 token，只讀 peekToken）
 // 必須在 p.peekToken == LBRACE 時呼叫。
 // 使用有限預測：檢查 { 後第一個非 NEWLINE token + 第二個 token。
@@ -121,6 +174,26 @@ func (p *Parser) classifyBlock() blockType {
 	}
 	tok1 := p.look(skip)
 	tok2 := p.look(skip + 1)
+
+	// The FIRST member of a struct may carry a field annotation:
+	//
+	//     holder {
+	//         #{inline} p pt
+	//     }
+	//
+	// tok1 is then HASH_LBRACE, which fell through to blockUnknown, so the whole
+	// `{ ... }` was parsed as a block statement and the struct was never
+	// registered ("'holder' is not defined"). Skip the annotation group and let
+	// the annotated member decide. The skip is only accepted when the member
+	// that follows has a field-declaration shape, so a statement block that
+	// merely starts with an annotation is left untouched.
+	if tok1.Type == lexer.HASH_LBRACE {
+		if s, t1, t2, ok := p.skipFieldAnnotation(skip); ok {
+			if t1.Type == lexer.IDENT && isFieldTypeStart(t2.Type) {
+				skip, tok1, tok2 = s, t1, t2
+			}
+		}
+	}
 
 	// Tokens that only appear in match arms, not struct/enum/iface
 	switch tok1.Type {
@@ -210,6 +283,27 @@ func (p *Parser) classifyBlock() blockType {
 	case lexer.LBRACKET:
 		// [N]type or []type — struct field with array/slice type (e.g., bytes [16]byte)
 		return blockStruct
+	case lexer.MUL, lexer.AND, lexer.QUESTION:
+		// Field type with a prefix operator: `f *T`, `f &T` (a VIEW borrow) or
+		// `f ?T` / `f ?&T`. Without this case the block was classified
+		// blockUnknown and the whole `{ ... }` was parsed as a block statement,
+		// so the struct was never registered ("'holder' is not defined").
+		// `&` is ambiguous with a match arm (`a & b -> ...`), so require the
+		// prefix chain to be followed by a type name and then a field
+		// terminator (NEWLINE / RBRACE / COMMA), which no match arm has.
+		i := skip + 2
+		for p.look(i).Type == lexer.MUL || p.look(i).Type == lexer.AND ||
+			p.look(i).Type == lexer.QUESTION {
+			i++
+		}
+		if t := p.look(i); t.Type != lexer.IDENT && t.Type != lexer.PTR {
+			return blockMatch
+		}
+		switch p.look(i + 1).Type {
+		case lexer.NEWLINE, lexer.RBRACE, lexer.COMMA:
+			return blockStruct
+		}
+		return blockMatch
 	case lexer.IDENT, lexer.NIL:
 		// Distinguish struct field (name type\n) from tagged enum variant (name type, ...)
 		tok3 := p.look(skip + 2)

@@ -1,0 +1,43 @@
+; view-optional — 可選 view（`?&T`）
+;
+; `?&T` = 可能有、也可能沒有的借用；nil 分支不指向任何東西，
+; 兩個分支都不需要 free。
+
+view-node {
+    v i64
+}
+
+; find: 找到就返回 self 的 view，找不到返回 nil
+view-node.find = (want i64) (v ?&view-node) {
+    v = nil
+    .v == want -> {
+        v = self
+    }
+}
+
+n = view-node { v: 5 }
+
+a = n.find(5)
+a: {
+    ok -> print(it.v)
+    nil -> print('missing')
+    err -> print('err')
+}
+
+b = n.find(6)
+b: {
+    ok -> print(it.v)
+    nil -> print('missing')
+    err -> print('err')
+}
+
+; 透過可選 view 修改原值
+c = n.find(5)
+c: {
+    ok -> {
+        it.v = 99
+        print(n.v)
+    }
+    nil -> print('missing')
+    err -> print('err')
+}

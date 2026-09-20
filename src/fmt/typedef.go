@@ -7,6 +7,16 @@ import (
 	"github.com/lizongying/nolang/parser"
 )
 
+// fieldAnnotations returns the `#{...}` entries the parser filed for a struct
+// field. Fields are not statements, so attachedAnnotations (which switches on
+// Statement types) never sees them.
+func (f *formatter) fieldAnnotations(field *parser.StructField) []*parser.AnnotationEntry {
+	if f.sem == nil || field == nil {
+		return nil
+	}
+	return f.sem.AnnotationsOf(field)
+}
+
 func (f *formatter) formatStructDefinition(s *parser.StructDefinition) {
 	f.write(s.Name)
 	if len(s.Implements) > 0 {
@@ -17,6 +27,22 @@ func (f *formatter) formatStructDefinition(s *parser.StructDefinition) {
 	f.indent++
 	for _, field := range s.Fields {
 		f.newline()
+		// A field's own `#{...}` annotations (`#{inline}`) are written inline,
+		// exactly as they are spelled in source. They live in the semantic
+		// side-table keyed by the field node; attachedAnnotations does NOT cover
+		// them because a field is not a statement. Omitting them here dropped
+		// `#{inline}` on every `no fmt -w`, which silently changed the field's
+		// layout on the next build.
+		if anns := f.fieldAnnotations(field); len(anns) > 0 {
+			f.write("#{")
+			for i, e := range anns {
+				if i > 0 {
+					f.write(", ")
+				}
+				f.write(e.String())
+			}
+			f.write("} ")
+		}
 		f.write(field.Name)
 		f.write(" ")
 		if field.IsSlice {

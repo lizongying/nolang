@@ -106,12 +106,10 @@ val-idx, found = p.get-key(root, 'active')
 }
 
 ; ── 測試 6: stringify ──
-out-n = p.stringify(root, out-buf, 0)
+; json-pool.stringify(node-idx) → str（舊的三參 out-buf 版本已移除）
+result = p.stringify(root)
 {
-    out-n > 0 -> {
-        result = out-buf.slice(0, out-n)
-        print('ok: stringify=' - result)
-    }
+    result.len() > 0 -> print('ok: stringify=' - result)
     -> print('fail: stringify')
 }
 val-idx, found = p.get-key(root, 'nonexistent')

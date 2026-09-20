@@ -78,6 +78,8 @@ func scanForMapTypes(t parser.Type, results *[]mapTypePair) {
 		scanForMapTypes(typ.Elem, results)
 	case *parser.NullableType:
 		scanForMapTypes(typ.Type, results)
+	case *parser.ViewType:
+		scanForMapTypes(typ.Type, results)
 	case *parser.PointerType:
 		scanForMapTypes(typ.Type, results)
 	case *parser.FunctionType:
@@ -332,6 +334,22 @@ func cloneMethod(fd *parser.FunctionDefinition, subst map[string]string, concret
 			Results:    newResults,
 		},
 		Body: substituteBody(fd.Body, subst),
+		// 必須傳承 IsMethodDef：模板方法定義的 Results[0] 是 parser 插入的
+		// 隱式 `self`（出參模型），而 tohir 只有在 IsMethodDef 為真時才打上
+		// hir.FlagMethod。丟掉它會讓 monomorph 出來的 hashmap-K-V.put/get 等
+		// 方法 IsMethod=false —— self 仍在 Results[0]（所以函式簽名裡沒有接收者
+		// 參數），但呼叫端 emitCallBody 的 selfOut 偏移不會生效，結果是接收者被
+		// 當成第一個實參、self 出參拿到一塊新的 %cres，IR 直接驗不過
+		// （"'%lv17' defined with type '%hashmap_str_i64' but expected
+		// '%str-long'"，tests/test-map.no）。OverflowMode 同理：它是由 AST 節點
+		// 欄位攜帶、決定函數體內有號整數相減溢位處置模式的資訊，不複製會讓
+		// 具現化副本靜默丟失註解。
+		//
+		// 刻意「不」傳承 BuiltinStub / BuiltinName / BuiltinGroup / Intrinsic：
+		// BuiltinStub 會讓 stripBuiltinStubs 跳過整個 codegen，而模板方法是真的
+		// 有函式體需要產生符號的；保持現狀（false）才是對的行為。
+		IsMethodDef:  fd.IsMethodDef,
+		OverflowMode: fd.OverflowMode,
 	}
 	// 傳承模板方法的來源檔 / 模組歸屬（理由同 transpiler 的泛型函式單態化：
 	// 不複製會讓 SourceFile 為空，造成診斷歸因錯誤與標準庫實例被誤判為主程式碼）。

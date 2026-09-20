@@ -270,6 +270,10 @@ func dumpNode(buf *strings.Builder, node parser.Node, depth int) {
 		fmt.Fprintf(buf, "%sPointerType\n", indent(depth))
 		dumpNode(buf, n.Type, depth+1)
 
+	case *parser.ViewType:
+		fmt.Fprintf(buf, "%sViewType\n", indent(depth))
+		dumpNode(buf, n.Type, depth+1)
+
 	case *parser.GroupedExpression:
 		fmt.Fprintf(buf, "%sGroupedExpression\n", indent(depth))
 		dumpNode(buf, n.Expression, depth+1)

@@ -887,6 +887,13 @@ func (c *hirConv) exprNode(e Expression) int32 {
 
 	case *PointerType:
 		return c.b.Add(hir.Node{Kind: hir.TPointer, Type: c.typeID(e.Type), Line: line, Col: col})
+
+	case *ViewType:
+		// A view is a borrow — pointer-like at the ABI level — so it lowers with
+		// the pointer type kind. The exact type string ("&json") still flows
+		// through c.typeID on the Parameter/Result nodes, which is what MIR
+		// reads to classify ownership (non-owned) and pick the LLVM type.
+		return c.b.Add(hir.Node{Kind: hir.TPointer, Type: c.typeID(e.Type), Line: line, Col: col})
 	}
 
 	return c.b.Add(hir.Node{Kind: hir.KUnknown, S: c.b.Intern(fmt.Sprintf("%T", e)), Line: line, Col: col})
