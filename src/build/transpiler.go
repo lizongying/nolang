@@ -764,7 +764,7 @@ func (t *Transpiler) parseFile(filePath string) (*parser.Program, error) {
 	}
 	prog := p.ParseProgram()
 	if len(p.Errors()) > 0 {
-		return nil, fmt.Errorf("%s: %v", filePath, p.Errors())
+		return nil, fmt.Errorf("%s: %s", filePath, parser.FormatDiagnostics(p.Diagnostics(), parser.SeverityError))
 	}
 	// W_SEMI_EAT warnings are handled by LSP diagnostics; build path no longer
 	// emits them to stderr to avoid noise during compilation.
@@ -797,7 +797,7 @@ func (t *Transpiler) parseEmbeddedProgram(filename string, data []byte) (*parser
 	}
 	prog := p.ParseProgram()
 	if len(p.Errors()) > 0 {
-		return nil, fmt.Errorf("%s: %v", filename, p.Errors())
+		return nil, fmt.Errorf("%s: %s", filename, parser.FormatDiagnostics(p.Diagnostics(), parser.SeverityError))
 	}
 	// W_SEMI_EAT warnings are handled by LSP diagnostics; build path no longer
 	// emits them to stderr to avoid noise during compilation.
@@ -1975,7 +1975,7 @@ func (t *Transpiler) CompileTarget(source string, _ Target) (string, error) {
 		}
 		program = p.ParseProgram()
 		if len(p.Errors()) > 0 {
-			return "", fmt.Errorf("parser errors: %v", p.Errors())
+			return "", fmt.Errorf("parser errors: %s", parser.FormatDiagnostics(p.Diagnostics(), parser.SeverityError))
 		}
 		// 移除標準庫內建樁函式（#{buildin=...}）：其真實實作位於 Go runtime，
 		// nolang 函式體僅為聲明，編譯器不處理（不校驗、不 codegen）。

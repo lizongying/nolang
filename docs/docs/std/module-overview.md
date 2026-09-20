@@ -24,6 +24,7 @@ sidebar_position: 4.3
 | time                | 核心   | 時間操作         |
 | log                 | 核心   | 分級日誌         |
 | json                | 核心   | JSON 解析/產生   |
+| toml                | 核心   | TOML 1.0 解析/產生 |
 | types               | 核心   | 型別定義文件     |
 | option              | 核心   | 選項型別         |
 | sort                | 核心   | 排序常量         |

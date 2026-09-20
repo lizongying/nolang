@@ -1,0 +1,501 @@
+; test-yaml.no — YAML 标准库模块测试
+;
+; 覆盖 YAML 1.2 core schema 的主要特性：
+;   块映射 / 块序列 / 流式集合 / 三种引号标量 / 块标量 | 与 >
+;   注释与空行 / 文档标记与多文档 / 锚点与别名 / 合并键 << / 显式键 ? k
+;   core schema 类型推断 / 点号路径查询 / JSON 与 YAML 序列化 / 错误报告
+;
+; 本测试为纯计算，不需要网络，可直接执行。
+
+; ═══════════════════════════════════════════════
+; 辅助
+; ═══════════════════════════════════════════════
+
+check = (name str, cond bool) {
+    cond -> print('ok: ' - name)
+    -> print('fail: ' - name)
+}
+
+; 断言字符串路径等于期望值
+check-str = (name str, src str, path str, want str) {
+    d ?yaml = yaml.parse(src)
+    d: {
+        nil -> print('fail: ' - name - ' (nil)')
+
+        err -> print('fail: ' - name - ' (err)')
+
+        -> {
+            got, found = it.find-str(path)
+            {
+                found && got == want -> print('ok: ' - name)
+                -> print('fail: ' - name - ' got=[' - got - ']')
+            }
+        }
+    }
+}
+
+; 断言整数路径等于期望值
+check-i64 = (name str, src str, path str, want i64) {
+    d ?yaml = yaml.parse(src)
+    d: {
+        nil -> print('fail: ' - name - ' (nil)')
+
+        err -> print('fail: ' - name - ' (err)')
+
+        -> {
+            got, found = it.find-i64(path)
+            {
+                found && got == want -> print('ok: ' - name)
+                -> print('fail: ' - name - ' got=[' - got.to-str() - ']')
+            }
+        }
+    }
+}
+
+; ═══════════════════════════════════════════════
+; 1. 块映射 + core schema 类型推断
+; ═══════════════════════════════════════════════
+
+t-scalars = () {
+    src = 'a-null: null\nb-tilde: ~\nc-empty:\nd-true: true\ne-false: FALSE\nf-yes: yes\ng-int: 42\nh-neg: -7\ni-hex: 0x1F\nj-oct: 0o17\nk-sep: 1_000\nl-float: 1.5\nm-exp: 1e3\nn-inf: .inf\no-nan: .nan\n'
+    d ?yaml = yaml.parse(src)
+    d: {
+        nil -> {
+            print('fail: scalars (nil)')
+            return
+        }
+
+        err -> {
+            print('fail: scalars (err)')
+            return
+        }
+
+        -> {
+            ; null 家族：str() 应当失败
+            v1, f1 = it.find-str('a-null')
+            v2, f2 = it.find-str('b-tilde')
+            v3, f3 = it.find-str('c-empty')
+            check('null / ~ / 空值均为 null', !f1 && !f2 && !f3)
+
+            b1, g1 = it.find-bool('d-true')
+            b2, g2 = it.find-bool('e-false')
+            check('bool true', g1 && b1)
+            check('bool FALSE', g2 && !b2)
+
+            ; YAML 1.2 core schema：yes 是字符串（不是 YAML 1.1 的布尔）
+            s1, h1 = it.find-str('f-yes')
+            check('yes 按 YAML 1.2 视为字符串', h1 && s1 == 'yes')
+
+            check-i64('十进制整数', src, 'g-int', 42)
+            check-i64('负整数', src, 'h-neg', -7)
+            check-i64('十六进制 0x1F', src, 'i-hex', 31)
+            check-i64('八进制 0o17', src, 'j-oct', 15)
+            check-i64('下划线分隔 1_000', src, 'k-sep', 1000)
+
+            r1, p1 = it.find-f64('l-float')
+            check('浮点 1.5', p1 && r1 == 1.5)
+
+            r2, p2 = it.find-f64('m-exp')
+            check('指数 1e3', p2 && r2 == 1000.0)
+
+            r3, p3 = it.find-f64('n-inf')
+            check('.inf', p3 && r3 > 1000000000.0)
+
+            r4, p4 = it.find-f64('o-nan')
+            check('.nan', p4 && r4 != r4)
+        }
+    }
+}
+
+; ═══════════════════════════════════════════════
+; 2. 块序列与嵌套
+; ═══════════════════════════════════════════════
+
+t-block-seq = () {
+    src = 'top:\n  - one\n  - two\n  - three\nnums:\n  - 1\n  - 2\n  - 3\npeople:\n  - name: Alice\n    age: 30\n  - name: Bob\n    age: 25\nmatrix:\n  - - 1\n    - 2\n  - - 3\n    - 4\n'
+    d ?yaml = yaml.parse(src)
+    d: {
+        nil -> print('fail: block seq (nil)')
+
+        err -> print('fail: block seq (err)')
+
+        -> {
+            check-str('序列元素 0', src, 'top.0', 'one')
+            check-str('序列元素 2', src, 'top.2', 'three')
+            check-i64('序列中的整数', src, 'nums.1', 2)
+            check-str('序列内映射字段', src, 'people.1.name', 'Bob')
+            check-i64('序列内映射整数', src, 'people.1.age', 25)
+            check-i64('嵌套序列', src, 'matrix.1.0', 3)
+            check-i64('嵌套序列末元素', src, 'matrix.1.1', 4)
+
+            n ?yaml = it.find('top')
+            n: {
+                nil -> print('fail: len (nil)')
+
+                err -> print('fail: len (err)')
+
+                -> {
+                    check('序列长度', it.len() == 3)
+                    check('is-seq', it.is-seq())
+                    check('is-map 为假', !it.is-map())
+                }
+            }
+        }
+    }
+}
+
+; ═══════════════════════════════════════════════
+; 3. 流式集合
+; ═══════════════════════════════════════════════
+
+t-flow = () {
+    src = 'flow-seq: [1, 2, three]\nflow-map: {a: 1, b: two}\nnested: {list: [1, {k: v}], n: 5}\nmultiline: [\n  1,\n  2\n]\nempty-seq: []\nempty-map: {}\n'
+    d ?yaml = yaml.parse(src)
+    d: {
+        nil -> print('fail: flow (nil)')
+
+        err -> print('fail: flow (err)')
+
+        -> {
+            check-i64('流式序列整数', src, 'flow-seq.0', 1)
+            check-str('流式序列字符串', src, 'flow-seq.2', 'three')
+            check-i64('流式映射值', src, 'flow-map.a', 1)
+            check-str('流式映射字符串值', src, 'flow-map.b', 'two')
+            check-str('流式嵌套 映射.序列', src, 'nested.list.1.k', 'v')
+            check-i64('流式嵌套 序列.映射', src, 'nested.n', 5)
+            check-i64('跨行流式序列', src, 'multiline.1', 2)
+
+            e1 ?yaml = it.find('empty-seq')
+            e1: {
+                nil -> print('fail: empty seq (nil)')
+
+                err -> print('fail: empty seq (err)')
+
+                -> check('空序列', it.is-seq() && it.len() == 0)
+            }
+
+            e2 ?yaml = it.find('empty-map')
+            e2: {
+                nil -> print('fail: empty map (nil)')
+
+                err -> print('fail: empty map (err)')
+
+                -> check('空映射', it.is-map() && it.len() == 0)
+            }
+        }
+    }
+}
+
+; ═══════════════════════════════════════════════
+; 4. 引号标量
+; ═══════════════════════════════════════════════
+
+t-quoted = () {
+    src = 'single: \'it\'\'s ok\'\ndouble: "a\\tb\\nc"\nplain-hash: a # comment\nquoted-hash: \'a # not comment\'\ndq-quote: "say \\"hi\\""\nempty-s: \'\'\nnum-as-str: \'123\'\nbool-as-str: "true"\ncolon-in-sq: \'a: b\'\n'
+    d ?yaml = yaml.parse(src)
+    d: {
+        nil -> print('fail: quoted (nil)')
+
+        err -> print('fail: quoted (err)')
+
+        -> {
+            check-str('单引号内 \'\' 转义', src, 'single', 'it\'s ok')
+            check-str('双引号 \\t \\n 转义', src, 'double', 'a\tb\nc')
+            check-str('注释被剥离', src, 'plain-hash', 'a')
+            check-str('引号内 # 不是注释', src, 'quoted-hash', 'a # not comment')
+            check-str('双引号内 \\" 转义', src, 'dq-quote', 'say "hi"')
+            check-str('空字符串', src, 'empty-s', '')
+            check-str('引号数字仍是字符串', src, 'num-as-str', '123')
+            check-str('双引号 true 仍是字符串', src, 'bool-as-str', 'true')
+            check-str('单引号内冒号', src, 'colon-in-sq', 'a: b')
+        }
+    }
+}
+
+; ═══════════════════════════════════════════════
+; 5. 块标量 | 与 >
+; ═══════════════════════════════════════════════
+
+t-block-scalar = () {
+    src = 'literal: |\n  line1\n  line2\nfolded: >\n  word1\n  word2\nstrip: |-\n  tail\nkeep: |+\n  kept\n\n'
+    d ?yaml = yaml.parse(src)
+    d: {
+        nil -> print('fail: block scalar (nil)')
+
+        err -> print('fail: block scalar (err)')
+
+        -> {
+            check-str('字面块 |', src, 'literal', 'line1\nline2\n')
+            check-str('折叠块 >', src, 'folded', 'word1 word2\n')
+            check-str('chomping |-', src, 'strip', 'tail')
+            k1, kk = it.find-str('keep')
+            check('chomping |+ 保留尾随换行', kk && k1.len-bytes() > 4)
+        }
+    }
+}
+
+; ═══════════════════════════════════════════════
+; 6. 注释、空行、文档标记
+; ═══════════════════════════════════════════════
+
+t-comments = () {
+    src = '# leading comment\n\n---\n# comment inside\nkey: value   # trailing\n\nother: 1\n...\n'
+    d ?yaml = yaml.parse(src)
+    d: {
+        nil -> print('fail: comments (nil)')
+
+        err -> print('fail: comments (err)')
+
+        -> {
+            check-str('前导注释与空行', src, 'key', 'value')
+            check-i64('文档标记 --- / ...', src, 'other', 1)
+        }
+    }
+}
+
+; ═══════════════════════════════════════════════
+; 7. 多文档
+; ═══════════════════════════════════════════════
+
+t-multi-doc = () {
+    src = '---\nname: first\n---\nname: second\n---\nname: third\n'
+    all ?yaml = yaml.parse-all(src)
+    all: {
+        nil -> print('fail: multi-doc (nil)')
+
+        err -> print('fail: multi-doc (err)')
+
+        -> {
+            check('文档数量为 3', it.doc-count() == 3)
+
+            d1 ?yaml = it.doc(0)
+            d1: {
+                nil -> print('fail: doc 0 (nil)')
+
+                err -> print('fail: doc 0 (err)')
+
+                -> {
+                    n1, g1 = it.find-str('name')
+                    check('doc(0).name = first', g1 && n1 == 'first')
+                }
+            }
+
+            d3 ?yaml = it.doc(2)
+            d3: {
+                nil -> print('fail: doc 2 (nil)')
+
+                err -> print('fail: doc 2 (err)')
+
+                -> {
+                    n3, g3 = it.find-str('name')
+                    check('doc(2).name = third', g3 && n3 == 'third')
+                }
+            }
+
+            dx ?yaml = it.doc(99)
+            dx: {
+                nil -> check('越界 doc() 返回 nil', true)
+
+                err -> print('fail: 越界 doc() 返回 err')
+
+                -> print('fail: 越界 doc() 返回了值')
+            }
+        }
+    }
+}
+
+; ═══════════════════════════════════════════════
+; 8. 锚点 / 别名 / 合并键 / 显式键
+; ═══════════════════════════════════════════════
+
+t-anchor-merge = () {
+    src = 'base: &b\n  x: 1\n  y: 2\nref: *b\nmerged:\n  <<: *b\n  y: 9\nexplicit:\n  ? complex key\n  : complex value\n'
+    d ?yaml = yaml.parse(src)
+    d: {
+        nil -> print('fail: anchor (nil)')
+
+        err -> print('fail: anchor (err)')
+
+        -> {
+            check-i64('锚点节点自身', src, 'base.x', 1)
+            check-i64('别名引用', src, 'ref.x', 1)
+            check-i64('别名引用 2', src, 'ref.y', 2)
+            check-i64('合并键引入的键', src, 'merged.x', 1)
+            check-i64('合并键被本地覆盖', src, 'merged.y', 9)
+            check-str('显式键 ? k', src, 'explicit.complex key', 'complex value')
+
+            t1 ?yaml = it.find('base')
+            t1: {
+                nil -> print('fail: tag/anchor (nil)')
+
+                err -> print('fail: tag/anchor (err)')
+
+                -> {
+                    check('anchor 记录', it.anchor() == 'b')
+                    check('line-of 有效', it.line-of() > 0)
+                }
+            }
+        }
+    }
+}
+
+; ═══════════════════════════════════════════════
+; 9. 遍历 API
+; ═══════════════════════════════════════════════
+
+t-walk = () {
+    src = 'a: 1\nb: two\nc: true\n'
+    d ?yaml = yaml.parse(src)
+    d: {
+        nil -> print('fail: walk (nil)')
+
+        err -> print('fail: walk (err)')
+
+        -> {
+            check('映射条目数', it.len() == 3)
+
+            k0, ok0 = it.key(0)
+            k1, ok1 = it.key(1)
+            k2, ok2 = it.key(2)
+            check('key(0..2)', ok0 && ok1 && ok2 && k0 == 'a' && k1 == 'b' && k2 == 'c')
+
+            v0 ?yaml = it.value(0)
+            v0: {
+                nil -> print('fail: value 0 (nil)')
+
+                err -> print('fail: value 0 (err)')
+
+                -> {
+                    iv, fv = it.i64()
+                    check('value(0) = 1', fv && iv == 1)
+                }
+            }
+
+            v1 ?yaml = it.at(1)
+            v1: {
+                nil -> print('fail: at 1 (nil)')
+
+                err -> print('fail: at 1 (err)')
+
+                -> {
+                    s1, q1 = it.str()
+                    check('at(1) = two', q1 && s1 == 'two')
+                }
+            }
+
+            ; 越界访问
+            vx ?yaml = it.at(99)
+            vx: {
+                nil -> check('越界 at() 返回 nil', true)
+
+                err -> print('fail: 越界 at() 返回 err')
+
+                -> print('fail: 越界 at() 返回了值')
+            }
+        }
+    }
+}
+
+; ═══════════════════════════════════════════════
+; 10. 序列化
+; ═══════════════════════════════════════════════
+
+t-serialize = () {
+    src = 'name: Alice\nage: 30\nactive: true\nnone: null\ntags:\n  - a\n  - b\n'
+    d ?yaml = yaml.parse(src)
+    d: {
+        nil -> print('fail: serialize (nil)')
+
+        err -> print('fail: serialize (err)')
+
+        -> {
+            js = it.to-json()
+            check('to-json 对象', js.contains('"name":"Alice"'))
+            check('to-json 数字', js.contains('"age":30'))
+            check('to-json 布尔', js.contains('"active":true'))
+            check('to-json null', js.contains('"none":null'))
+            check('to-json 数组', js.contains('"tags":["a","b"]'))
+
+            ys = it.stringify()
+            check('stringify 保留键值', ys.contains('name: Alice'))
+            check('stringify 缩进序列', ys.contains('- a'))
+
+            ; 往返：把输出重新解析，值应一致
+            again ?yaml = yaml.parse(ys)
+            again: {
+                nil -> print('fail: round-trip (nil)')
+
+                err -> print('fail: round-trip (err)')
+
+                -> {
+                    n2, g2 = it.find-str('name')
+                    a2, h2 = it.find-i64('age')
+                    check('往返 name', g2 && n2 == 'Alice')
+                    check('往返 age', h2 && a2 == 30)
+                }
+            }
+        }
+    }
+}
+
+; ═══════════════════════════════════════════════
+; 11. 错误报告
+; ═══════════════════════════════════════════════
+
+t-errors = () {
+    good = 'a: 1\n'
+    bad = 'a: 1\n  b: 2\n'
+    check('valid-of 接受合法输入', yaml.valid-of(good))
+    check('error-of 合法输入返回空串', yaml.error-of(good) == '')
+    check('valid-of 拒绝非法输入', !yaml.valid-of(bad))
+    msg = yaml.error-of(bad)
+    check('error-of 非法输入非空', msg.len-bytes() > 0)
+
+    b ?yaml = yaml.parse(bad)
+    b: {
+        nil -> print('fail: 非法输入返回 nil 而非 err')
+
+        err -> check('非法输入返回 err', true)
+
+        -> print('fail: 非法输入竟然解析成功')
+    }
+}
+
+; ═══════════════════════════════════════════════
+; 12. BOM
+; ═══════════════════════════════════════════════
+
+t-bom = () {
+    raw = '\xEF\xBB\xBFa: 1\n'
+    check('strip-bom 去掉 BOM', yaml.strip-bom(raw) == 'a: 1\n')
+    d ?yaml = yaml.parse(raw)
+    d: {
+        nil -> print('fail: bom (nil)')
+
+        err -> print('fail: bom (err)')
+
+        -> {
+            v, f = it.find-i64('a')
+            check('BOM 输入可解析', f && v == 1)
+        }
+    }
+}
+
+; ═══════════════════════════════════════════════
+; 驱动
+; ═══════════════════════════════════════════════
+
+print('start')
+t-scalars()
+t-block-seq()
+t-flow()
+t-quoted()
+t-block-scalar()
+t-comments()
+t-multi-doc()
+t-anchor-merge()
+t-walk()
+t-serialize()
+t-errors()
+t-bom()
+print('done')

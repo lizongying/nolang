@@ -48,6 +48,21 @@ func TestParseDocumentReportsPrefixAnnotationError(t *testing.T) {
 		t.Errorf("diagnostic character = %d, want 4 (the annotation column); msg=%q",
 			d.Range.Start.Character, hits[0])
 	}
+	// The editor must not be shown the position a second time, nor the raw
+	// diagnostic code glued into the prose: Range carries the position, Code
+	// carries the code, Message is the sentence alone.
+	if strings.Contains(d.Message, "line 3, column 4") {
+		t.Errorf("message must not repeat the position: %q", d.Message)
+	}
+	if strings.Contains(d.Message, "[E_") {
+		t.Errorf("message must not contain the raw code tag: %q", d.Message)
+	}
+	if d.Code != "E_GENERAL" {
+		t.Errorf("code = %v, want %q", d.Code, "E_GENERAL")
+	}
+	if !strings.Contains(d.Message, "前方同一行") {
+		t.Errorf("message lost its text: %q", d.Message)
+	}
 
 	// Control: the same annotation written trailing on the line is accepted.
 	okURI := "file:///test/ann_trailing.no"

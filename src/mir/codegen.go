@@ -6820,7 +6820,7 @@ func (c *codegen) emitCall(f *Function, inst *Inst) error {
 	cid, ok := c.mod.FuncByName[callee]
 	if !ok {
 		c.fail("unknown callee %s in func %s", callee, f.Name)
-		return fmt.Errorf("unknown callee %s", callee)
+		return fmt.Errorf("unknown callee %s in func %s", callee, f.Name)
 	}
 	cf := c.mod.Func(cid)
 	if cf == nil {

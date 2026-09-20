@@ -24,6 +24,7 @@ sidebar_position: 4.5
 | time                | Core   | Time operations                              |
 | log                 | Core   | Leveled logging                              |
 | json                | Core   | JSON parsing/generation                      |
+| toml                | Core   | TOML 1.0 parsing/generation                 |
 | types               | Core   | Type definitions document                    |
 | option              | Core   | Option type                                  |
 | sort                | Core   | Sort constants                               |

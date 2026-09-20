@@ -56,17 +56,26 @@ func VetFile(filePath string) []VetResult {
 	var results []VetResult
 
 	// 1. Parse errors
-	for _, errMsg := range p.Errors() {
-		var line, col int
-		fmt.Sscanf(errMsg, "line %d, column %d:", &line, &col)
+	//
+	// 用結構化的 p.Diagnostics() 而非 p.Errors() 的字串：後者每條都帶
+	// "<basename>:line L, column M: [CODE] msg" 前綴（p.Filename 恆為 basename），
+	// 既讓 Sscanf("line %d, column %d:") 失配（位置恆為 0），又把位置與診斷碼
+	// 一起塞進 Message，於是同一條診斷被渲染成
+	// "f.no: [ERROR] nolang-parser: f.no:line 24, column 23: [E_GENERAL] …"。
+	// 位置落在 Line/Column、診斷碼落在 TraceID，Message 只留人類可讀正文，
+	// 與 `no vet`（nolang-compile）的輸出一致。
+	for _, d := range p.Diagnostics() {
+		if d.Severity != parser.SeverityError {
+			continue
+		}
 		results = append(results, VetResult{
 			File:     filePath,
-			Line:     line,
-			Column:   col,
+			Line:     d.Pos.Line,
+			Column:   d.Pos.Column,
 			Severity: "error",
 			Source:   "nolang-parser",
-			TraceID: "jjhyd5re",
-			Message:  errMsg,
+			TraceID:  d.Code,
+			Message:  d.Message,
 		})
 	}
 

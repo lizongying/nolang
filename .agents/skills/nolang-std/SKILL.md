@@ -135,6 +135,7 @@ Usage: `# std/xxx` (core modules do not need to be imported).
   - [hash/rand-str — Random String Generation](#hashrand-str--random-string-generation)
 - [Data Exchange](#data-exchange)
   - [json — JSON Parsing and Generation](#json--json-parsing-and-generation)
+  - [toml — TOML Parsing and Generation](#toml--toml-parsing-and-generation)
 - [Others](#others)
   - [unicode — Unicode Support](#unicode--unicode-support)
   - [uuid — UUID v4 Generation and Parsing](#uuid--uuid-v4-generation-and-parsing)
@@ -2535,6 +2536,36 @@ s = pool.stringify()                   // Serialize from pool
 val = pool.get-key(key)                // Get by key
 ```
 
+#### toml — TOML Parsing and Generation
+
+The `toml` module supports the TOML 1.0 value grammar: comments, bare/quoted/dotted keys, tables, array-of-tables, basic/literal/multiline strings, decimal/hex/octal/binary integers, floats, booleans, date-time literals, arrays, and inline tables. Values are stored as bounded raw TOML literals, preserving syntax that does not have a dedicated Nolang runtime type.
+
+```no
+cfg = toml.parse('title = "Nolang"\n[server]\nport = 8080\n[[server.backends]]\nname = "local"')
+
+doc = toml.new()
+doc.put('name', '"nolang"')
+doc.put('server.port', '8080')
+doc.put('enabled', 'true')
+text = toml.stringify(doc)
+```
+
+API:
+
+```no
+doc = toml.new()                         // Create empty toml-doc
+cfg = toml.parse(text)                    // ?toml-doc
+doc.put(key, raw-value)                   // Insert/update a validated TOML value
+raw = toml.get(doc, key)                  // ?str raw literal
+s, ok = toml.get-str(doc, key)             // Basic/literal string
+n, ok = toml.get-i64(doc, key)              // Decimal/hex/octal/binary integer
+f, ok = toml.get-f64(doc, key)              // Float
+b, ok = toml.get-bool(doc, key)             // Boolean
+text = toml.stringify(doc)                 // Serialize TOML
+```
+
+The current bounded document model supports up to 4 keys, 2 ordinary tables, and 2 array-of-tables. Keys are limited to 32 bytes and values to 128 bytes.
+
 ---
 
 ### Others
@@ -2757,6 +2788,7 @@ ext = magic.get-extension(path)                // Extract file extension
 | time                | Time operations  |
 | log                 | Leveled logging  |
 | json                | JSON parse/generate |
+| toml                | TOML parse/generate |
 | types               | Type definitions |
 | option              | Option type      |
 | sort                | Sort constants   |

@@ -504,6 +504,31 @@ data []byte = s.to-bytes()
 - `int.to-str()` / `float.to-str()` — 數字轉字串
 - `std/hash/sha1`、`std/hash/sha256`、`std/hash/sha512` — 雜湊計算
 
+### TOML 設定檔（`toml`）
+
+標準庫 `toml` 提供 TOML 1.0 設定檔的解析與序列化。解析器支援註解、bare/quoted/dotted keys、`[table]`、`[[array-of-tables]]`、basic/literal/multiline strings、整數（十進位/十六進位/八進位/二進位）、浮點數、布林值、日期時間、陣列與 inline table。值以 TOML 原始字面值保存，因此不會遺失陣列、日期時間等資訊。
+
+```no
+cfg = toml.parse('title = "Nolang"\n[server]\nport = 8080\n[[server.backends]]\nname = "local"')
+
+doc = toml.new()
+doc.put('name', '"nolang"')
+doc.put('server.port', '8080')
+doc.put('enabled', 'true')
+text = toml.stringify(doc)
+```
+
+常用 API：
+
+- `toml.new()` — 建立空的 `toml-doc`
+- `toml.parse(text)` — 解析 TOML，回傳 `?toml-doc`
+- `doc.put(key, raw-value)` — 新增或更新原始 TOML 值；會拒絕非法值、重複鍵由解析器報錯
+- `toml.get(doc, key)` — 取得原始值（`?str`）
+- `toml.get-str(doc, key)`、`toml.get-i64(doc, key)`、`toml.get-f64(doc, key)`、`toml.get-bool(doc, key)` — 取得已轉換的 scalar
+- `toml.stringify(doc)` — 輸出 TOML；array-of-tables 會輸出 `[[...]]` 標頭
+
+目前文件模型限制單一文件最多 4 個 key、2 個普通表格與 2 個 array-of-tables；單一 key 最長 32 bytes、單一 value 最長 128 bytes，超出時應分割設定檔或由呼叫方處理。
+
 ## 檔案命名
 
 `.no` 檔名（含文件夾名）一律使用中連字符 `-` 連接單詞，**不使用下劃線 `_`**。這與變量名、函數名、結構體名等 Nolang 標識符的命名風格保持一致。
@@ -748,7 +773,8 @@ i <- [0..10): {
 > ⚠️ **`return`（及其符號形式 `...`）只能裸用，不能帶返回值。**
 > Nolang 函數沒有「返回值」機制——結果一律通過**具名結果參數（out-param）**在函數體內賦值傳出（見「函數定義」）。
 > 因此 `return <值>`、`return(expr)`、`... <值>` 都**被禁止**，編譯器 / formatter / LSP 都會報錯：
-> - 編譯器（`no build`）：`parser errors: 'return' 後不能跟返回值；Nolang 函數結果通過具名結果參數（out-param）傳出…`
+> - 編譯器（`no build`）：`Error: compilation error: parser errors: line L, column C: 'return' 後不能跟返回值；… [E_GENERAL]`
+> - `no vet`：`<file>:L:C: [ERROR] nolang-compile: 'return' 後不能跟返回值；… [E_GENERAL]`（與其他診斷同一格式，每條一行）
 > - `no fmt`：`format error: …` 並以非零狀態退出
 > - LSP：在對應行顯示紅色錯誤診斷
 >

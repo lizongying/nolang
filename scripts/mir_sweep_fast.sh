@@ -1,4 +1,25 @@
 #!/usr/bin/env bash
+# ⚠️ DEPRECATED — 這個腳本已經不可能產生有意義的結果，執行會直接退出（見下方 guard）。
+#
+# 原因：它的一切都建立在「兩個後端配對」上 —— NOLANG_MIR=2 是「會退回 legacy 的版本」
+# （parity baseline），NOLANG_MIR=3 是「MIR-only」。legacy 後端已刪除
+# （src/build/llvm/ 已移除），`NOLANG_MIR=0` 與 `=2` 現在是硬錯誤：
+#     NOLANG_MIR=2: the legacy codegen backend was removed and MIR is the only
+#     backend; unset NOLANG_MIR (or use NOLANG_MIR=1 for the lowering dump)
+# 於是 baseline 那一側對每個檔案都非 0，MATCH 恆為 0、MIR_GAP 恆為 0，
+# 而 **MIR_GAP 正是這個腳本存在的唯一理由**（「MIR 失敗、baseline 成功」）。
+# 換個環境變數救不了它：沒有第二個後端，這個分類在定義上就不存在。
+#
+# 後 legacy 時代的對應物是 scripts/mir_golden.sh —— 它把行為凍結成
+# tests/golden/{legacy,mir}-baseline.tsv（`<rc> <stdout-sha256> <path>`），
+# 再拿目前後端去對照，重新得到「輸出變了沒」的偵測能力。請改用它。
+# 需要單後端快速冒煙則用 scripts/mir_coverage_sweep.sh。
+#
+# 下面的 guard 故意不留 override：如果 legacy 後端哪天回來了，那個改動就該
+# 順手把這段拿掉（和 mir_golden.sh 裡「永不重凍 legacy golden」的 guard 同理）。
+# 原始實作保留在 guard 之後，方便日後參照。
+#
+# ── 以下是原本的說明（已失效，僅供考古）────────────────────────────────────
 # Fast parallel MIR coverage sweep.
 #
 # For every tests/**/*.no it runs the file twice — NOLANG_MIR=2 (lowering with
@@ -19,6 +40,15 @@
 # says nothing useful. Each run is wrapped in a portable alarm-based timeout
 # (macOS has no coreutils `timeout`) so one hanging server test cannot wedge
 # the sweep forever.
+
+echo "ERROR: scripts/mir_sweep_fast.sh 已廢棄 —— 它依賴已刪除的 legacy 後端" >&2
+echo "       （NOLANG_MIR=2 現在是硬錯誤），跑下去只會得到全 0 的假結果。" >&2
+echo >&2
+echo "       改用：scripts/mir_golden.sh          （對照凍結 golden，含 DIVERGE 偵測）" >&2
+echo "            scripts/mir_coverage_sweep.sh  （單後端快速冒煙）" >&2
+echo "            scripts/mir_coverage.sh        （建置覆蓋率 + 失敗原因分桶）" >&2
+exit 3
+
 export PATH="/usr/bin:/opt/homebrew/opt/llvm/bin:$PATH"
 cd /Users/lizongying/IdeaProjects/no || exit 1
 NO=./bin/no

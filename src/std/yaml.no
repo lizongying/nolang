@@ -1,0 +1,2956 @@
+; yaml — YAML 1.2 解析与生成
+;
+; 支持 YAML 1.2 core schema 的完整节点模型：
+;   - 块映射 / 块序列（缩进嵌套、序列内映射、映射内序列）
+;   - 流式集合 [a, b] / {k: v}（可跨行）
+;   - 标量：plain、单引号、双引号（含转义）、块标量 | 与 >（含 chomping / 缩进指示符）
+;   - 注释、空行、文档标记 --- / ... 、多文档、%YAML / %TAG 指令
+;   - 锚点 &a / 别名 *a、显式标签 !!str / !<...>、合并键 <<
+;   - 显式键 ? key / : value
+;   - core schema 类型推断：null / bool / int（十进制、0x、0o、_ 分隔）/ float（.inf/.nan/指数）
+;
+; 用法：
+;   doc ?yaml = yaml.parse(source)
+;   doc: {
+;       ok -> {
+;           host, found = it.find-str('server.host')
+;           port, found = it.find-i64('server.port')
+;       }
+;   }
+;
+; 说明：
+;   - 别名在解析期解析为共享同一子树的新节点（只读），可安全重复读取；
+;     自引用锚点不会被无限展开，序列化时按深度上限截断。
+;   - 键为标量时可直接用点号路径访问；非标量键请用 key(i) / value(i) 遍历。
+
+; ═══════════════════════════════════════════════
+; 常量
+; ═══════════════════════════════════════════════
+
+; 节点类型
+YAML-KIND-NULL = 0
+YAML-KIND-BOOL = 1
+YAML-KIND-INT = 2
+YAML-KIND-FLOAT = 3
+YAML-KIND-STR = 4
+YAML-KIND-SEQ = 5
+YAML-KIND-MAP = 6
+
+; 标量风格
+YAML-STYLE-PLAIN = 0
+YAML-STYLE-SINGLE = 1
+YAML-STYLE-DOUBLE = 2
+YAML-STYLE-LITERAL = 3
+YAML-STYLE-FOLDED = 4
+YAML-STYLE-ALIAS = 5
+
+; 集合风格
+YAML-STYLE-BLOCK = 6
+YAML-STYLE-FLOW = 7
+
+; 序列化递归深度上限（防御自引用锚点）
+YAML-MAX-DEPTH = 32
+
+; chomping 模式
+YAML-CHOMP-CLIP = 0
+YAML-CHOMP-STRIP = 1
+YAML-CHOMP-KEEP = 2
+
+; ═══════════════════════════════════════════════
+; 数据结构
+; ═══════════════════════════════════════════════
+
+; yaml-node: 树节点
+;   kind   节点类型（YAML-KIND-*）
+;   style  标量/集合风格（YAML-STYLE-*）
+;   tag    显式标签原文（无标签为 ''）
+;   anchor 锚点名（无锚点为 ''）
+;   text   标量原文（引号已解转义）；集合为空
+;   ival/fval/bval 解析后的标量值
+;   keys   映射键节点索引；kids 序列元素 / 映射值节点索引
+yaml-node {
+    kind i64
+    style i64
+    tag str
+    anchor str
+    text str
+    ival i64
+    fval f64
+    bval bool
+    keys []i64
+    kids []i64
+    line i64
+    col i64
+}
+
+; yaml-pool: 节点池
+yaml-pool {
+    nodes []yaml-node
+}
+
+; yaml: 已解析文档（可含多份文档）
+yaml {
+    pool yaml-pool
+    root i64
+    roots []i64
+    source str
+}
+
+; yaml-parser: 解析器状态（方法接收者为引用，可原地推进）
+yaml-parser {
+    src str
+    n i64
+    pos i64
+    line i64
+    nodes []yaml-node
+    anchor-names []str
+    anchor-ids []i64
+    err str
+    failed bool
+}
+
+; ═══════════════════════════════════════════════
+; 解析器：字符级基础操作
+; ═══════════════════════════════════════════════
+
+; byte-at: 取 src[i]，越界返回 0
+yaml-parser.byte-at = (i i64) (c i64) {
+    #{overflow=wrap}
+    c = 0
+    i < 0 -> return
+    i >= .n -> return
+    c = .src.byte(i)
+}
+
+; cur: 当前字节
+yaml-parser.cur = () (c i64) {
+    c = .byte-at(.pos)
+}
+
+; at: 相对当前位置偏移 k 的字节
+yaml-parser.at = (k i64) (c i64) {
+    #{overflow=wrap}
+    i = .pos + k
+    c = .byte-at(i)
+}
+
+; eof: 是否到达输入末尾
+yaml-parser.eof = () (yes bool) {
+    yes = .pos >= .n
+}
+
+; advance: 前进一个字节
+yaml-parser.advance = () {
+    #{overflow=wrap}
+    .pos = .pos + 1
+}
+
+; newline: 消费一个换行（\n 或 \r\n）
+yaml-parser.newline = () (yes bool) {
+    yes = false
+    c = .cur()
+    c == 13 -> {
+        .advance()
+        .cur() == 10 -> .advance()
+        yes = true
+        #{overflow=wrap}
+        .line = .line + 1
+        return
+    }
+    c == 10 -> {
+        .advance()
+        yes = true
+        #{overflow=wrap}
+        .line = .line + 1
+    }
+}
+
+; at-eol: 是否位于行尾（含 EOF）
+yaml-parser.at-eol = () (yes bool) {
+    c = .cur()
+    yes = c == 0 || c == 10 || c == 13
+}
+
+; skip-spaces: 跳过行内空格与制表符
+yaml-parser.skip-spaces = () {
+    {
+        c = .cur()
+        c == 32 -> {
+            .advance()
+            continue
+        }
+        c == 9 -> {
+            .advance()
+            continue
+        }
+        break
+    } (true)
+}
+
+; skip-to-eol: 跳过行尾空白与行注释（不消费换行）
+yaml-parser.skip-to-eol = () {
+    .skip-spaces()
+    c = .cur()
+    c == 35 -> {
+        {
+            .at-eol() -> break
+            .advance()
+        } (true)
+    }
+}
+
+; line-end-of: 返回 i 所在行的行尾偏移（指向换行或 n）
+yaml-parser.line-end-of = (i i64) (le i64) {
+    le = i
+    {
+        le >= .n -> return
+        c = .byte-at(le)
+        c == 10 || c == 13 -> return
+        #{overflow=wrap}
+        le = le + 1
+    } (le < .n)
+}
+
+; line-start-of: 返回 i 所在行的起始偏移
+yaml-parser.line-start-of = (i i64) (ls i64) {
+    ls = i
+    {
+        ls <= 0 -> return
+        #{overflow=wrap}
+        p = ls - 1
+        c = .byte-at(p)
+        c == 10 || c == 13 -> return
+        ls = p
+    } (ls > 0)
+}
+
+; indent-at: 当前位置距行首的空格数
+;
+; 先跳过行首空格再计数：调用点几乎都紧跟在 skip-blank-lines() 之后，
+; 此时 pos 停在行首（列 0），直接相减会恒得 0，导致嵌套块被判成「不缩进」。
+; 跳过后 pos 停在首个非空格字符，后续的 is-seq-dash / looks-like-map-entry /
+; at-doc-marker 也都需要这个位置。
+yaml-parser.indent-at = () (ind i64) {
+    .skip-spaces()
+    ls = .line-start-of(.pos)
+    #{overflow=wrap}
+    ind = .pos - ls
+}
+
+; fail: 记录解析错误
+yaml-parser.fail = (msg str) {
+    .failed -> return
+    .failed = true
+    .err = msg
+}
+
+; fail-at: 记录带位置的解析错误
+yaml-parser.fail-at = (msg str) {
+    .failed -> return
+    .failed = true
+    #{overflow=wrap}
+    col = .pos - .line-start-of(.pos) + 1
+    .err = 'line ' - .line.to-str() - ', column ' - col.to-str() - ': ' - msg
+}
+
+; push-node: 追加节点并返回索引
+yaml-parser.push-node = (nd yaml-node) (idx i64) {
+    .nodes.push(nd)
+    #{overflow=wrap}
+    idx = .nodes.len() - 1
+}
+
+; push-null: 追加空节点（null）
+yaml-parser.push-null = () (idx i64) {
+    nd = yaml-node {
+        kind: YAML-KIND-NULL
+        style: YAML-STYLE-PLAIN
+        tag: ''
+        anchor: ''
+        text: ''
+        ival: 0
+        fval: 0.0
+        bval: false
+        line: .line
+        col: 0
+    }
+    idx = .push-node(nd)
+}
+
+; set-props: 为节点附加标签与锚点（并登记锚点）
+yaml-parser.set-props = (idx i64, tag str, anchor str) {
+    #{index-out=0}
+    .nodes[idx].tag = tag
+    #{index-out=0}
+    .nodes[idx].anchor = anchor
+    anchor.len-bytes() > 0 -> .register-anchor(anchor, idx)
+}
+
+; register-anchor: 登记锚点
+yaml-parser.register-anchor = (name str, idx i64) {
+    .anchor-names.push(name)
+    .anchor-ids.push(idx)
+}
+
+; anchor-id: 查找锚点，未找到返回 -1
+yaml-parser.anchor-id = (name str) (idx i64) {
+    idx = -1
+    total = .anchor-names.len()
+    i <- [0..total): {
+        nm = yaml-str-at(.anchor-names, i)
+        nm.eq-full(name) -> {
+            idx = .anchor-ids[i]
+            return
+        }
+    }
+}
+
+; ═══════════════════════════════════════════════
+; 索引辅助
+; ═══════════════════════════════════════════════
+
+; yaml-str-at: 取 []str 的第 i 个元素（越界返回空串）
+;
+; 为什么需要这个 helper：`arr[i]`（arr 为 []str）默认返回 option<str>，
+; 而 MIR 后端在把 option<str> 当作调用实参/方法接收者时会产生非法 IR
+; （%option_str 与 %str-long 不匹配）。字符串拼接会自动解包 option，
+; 因此这里用 `out = out - a[i]` 取元素，既解包又满足 `no vet` 的越界检查。
+yaml-str-at = (a []str, i i64) (out str) {
+    out = ''
+    i < 0 -> return
+    i >= a.len() -> return
+    out = out - a[i] #{index-out=''}
+}
+
+; yaml-f-is-nan: 浮点是否为 NaN（NaN != NaN）
+; 不用 `float.is-nan`：模块内的接收者式调用在 MIR 后端解析不到该方法。
+yaml-f-is-nan = (x f64) (yes bool) {
+    yes = x != x
+}
+
+; yaml-f-is-inf: 浮点是否为正/负无穷
+;
+; 不用字面量比较：Nolang 的数值字面量不支持指数（`1e308` 会被切成 `1` + `e308`）。
+; 无穷的判据是「非零且减半后不变」；先用 `x != x` 排除 NaN。
+yaml-f-is-inf = (x f64) (yes bool) {
+    yes = false
+    x != x -> return
+    x == 0.0 -> return
+    half = x * 0.5
+    yes = half == x
+}
+
+; ═══════════════════════════════════════════════
+; 标量类型推断（YAML 1.2 core schema）
+; ═══════════════════════════════════════════════
+
+; yaml-inf: 正无穷
+yaml-inf = () (v f64) {
+    v = 1.0 / 0.0
+}
+
+; yaml-nan: 非数
+yaml-nan = () (v f64) {
+    v = 0.0 / 0.0
+}
+
+; yaml-hex-digit: 十六进制字符转数值，非十六进制返回 -1
+yaml-hex-digit = (c i64) (d i64) {
+    d = -1
+    c >= 48 && c <= 57 -> {
+        #{overflow=wrap}
+        d = c - 48
+        return
+    }
+    c >= 97 && c <= 102 -> {
+        #{overflow=wrap}
+        d = c - 97 + 10
+        return
+    }
+    c >= 65 && c <= 70 -> {
+        #{overflow=wrap}
+        d = c - 65 + 10
+    }
+}
+
+; yaml-parse-radix: 解析 radix 进制整数（忽略 _）
+yaml-parse-radix = (t str, start i64, radix i64) (kind i64, v i64) {
+    kind = YAML-KIND-STR
+    v = 0
+    i = start
+    n = t.len-bytes()
+    digits = 0
+    {
+        i >= n -> break
+        c = t.byte(i)
+        c == 95 -> {
+            #{overflow=wrap}
+            i = i + 1
+            continue
+        }
+        d = yaml-hex-digit(c)
+        d < 0 -> return
+        d >= radix -> return
+        #{overflow=wrap}
+        v = v * radix + d
+        #{overflow=wrap}
+        digits = digits + 1
+        #{overflow=wrap}
+        i = i + 1
+    } (i < n)
+    digits == 0 -> return
+    kind = YAML-KIND-INT
+}
+
+; yaml-parse-digits: 解析十进制数字串（忽略 _）
+yaml-parse-digits = (t str) (kind i64, v i64) {
+    kind = YAML-KIND-STR
+    v = 0
+    i = 0
+    n = t.len-bytes()
+    {
+        i >= n -> break
+        c = t.byte(i)
+        c == 95 -> {
+            #{overflow=wrap}
+            i = i + 1
+            continue
+        }
+        c < 48 || c > 57 -> return
+        #{overflow=wrap}
+        v = v * 10 + c - 48
+        #{overflow=wrap}
+        i = i + 1
+    } (i < n)
+    kind = YAML-KIND-INT
+}
+
+; yaml-to-f64: 文本转 f64（返回 nil 表示失败）
+yaml-to-f64 = (t str) (v ?f64) {
+    v = nil
+    r ?f64 = t.to-f64()
+    r: {
+        nil -> return
+
+        err -> return
+
+        -> v = it
+    }
+}
+
+; yaml-scan-number: 尝试把文本解析为整数或浮点数
+; 返回 kind = YAML-KIND-INT / YAML-KIND-FLOAT / YAML-KIND-STR（不是数字）
+yaml-scan-number = (t str) (kind i64, ival i64, fval f64) {
+    kind = YAML-KIND-STR
+    ival = 0
+    fval = 0.0
+    n = t.len-bytes()
+    n == 0 -> return
+    i = 0
+    neg = false
+    c = t.byte(0)
+    c == 45 -> {
+        neg = true
+        i = 1
+    }
+    c == 43 -> i = 1
+    i >= n -> return
+
+    ; 进制前缀 0x / 0o
+    c = t.byte(i)
+    c == 48 -> {
+        #{overflow=wrap}
+        j = i + 1
+        j < n -> {
+            x = t.byte(j)
+            x == 120 || x == 88 -> {
+                #{overflow=wrap}
+                s = j + 1
+                k = YAML-KIND-STR
+                v = 0
+                k, v = yaml-parse-radix(t, s, 16)
+                k == YAML-KIND-INT -> {
+                    #{overflow=wrap}
+                    neg -> v = 0 - v
+                    kind = YAML-KIND-INT
+                    ival = v
+                }
+                return
+            }
+            x == 111 || x == 79 -> {
+                #{overflow=wrap}
+                s = j + 1
+                k = YAML-KIND-STR
+                v = 0
+                k, v = yaml-parse-radix(t, s, 8)
+                k == YAML-KIND-INT -> {
+                    #{overflow=wrap}
+                    neg -> v = 0 - v
+                    kind = YAML-KIND-INT
+                    ival = v
+                }
+                return
+            }
+        }
+    }
+
+    ; 十进制
+    digits = 0
+    has-dot = false
+    has-exp = false
+    {
+        i >= n -> break
+        c = t.byte(i)
+        c == 95 -> {
+            #{overflow=wrap}
+            i = i + 1
+            continue
+        }
+        c >= 48 && c <= 57 -> {
+            #{overflow=wrap}
+            digits = digits + 1
+            #{overflow=wrap}
+            i = i + 1
+            continue
+        }
+        c == 46 -> {
+            has-dot -> break
+            has-dot = true
+            #{overflow=wrap}
+            i = i + 1
+            continue
+        }
+        c == 101 || c == 69 -> {
+            has-exp -> break
+            digits == 0 -> break
+            has-exp = true
+            #{overflow=wrap}
+            i = i + 1
+            i < n -> {
+                s = t.byte(i)
+                #{overflow=wrap}
+                s == 45 || s == 43 -> i = i + 1
+            }
+            continue
+        }
+        break
+    } (i < n)
+
+    i != n -> return
+    digits == 0 -> return
+
+    has-dot || has-exp -> {
+        fv ?f64 = yaml-to-f64(t)
+        fv: {
+            nil -> return
+
+            err -> return
+
+            -> {
+                kind = YAML-KIND-FLOAT
+                fval = it
+            }
+        }
+        return
+    }
+
+    k = YAML-KIND-STR
+    v = 0
+    k, v = yaml-parse-digits(t)
+    k == YAML-KIND-INT -> {
+        #{overflow=wrap}
+        neg -> v = 0 - v
+        kind = YAML-KIND-INT
+        ival = v
+    }
+}
+
+; yaml-resolve-plain: 按 core schema 推断 plain 标量类型
+yaml-resolve-plain = (text str) (kind i64, ival i64, fval f64, bval bool) {
+    kind = YAML-KIND-STR
+    ival = 0
+    fval = 0.0
+    bval = false
+    text.len-bytes() == 0 -> {
+        kind = YAML-KIND-NULL
+        return
+    }
+    {
+        text == '~' || text == 'null' || text == 'Null' || text == 'NULL' -> {
+            kind = YAML-KIND-NULL
+            return
+        }
+
+        text == 'true' || text == 'True' || text == 'TRUE' -> {
+            kind = YAML-KIND-BOOL
+            bval = true
+            return
+        }
+
+        text == 'false' || text == 'False' || text == 'FALSE' -> {
+            kind = YAML-KIND-BOOL
+            bval = false
+            return
+        }
+
+        text == '.inf' || text == '.Inf' || text == '.INF' -> {
+            kind = YAML-KIND-FLOAT
+            fval = yaml-inf()
+            return
+        }
+
+        text == '+.inf' || text == '+.Inf' || text == '+.INF' -> {
+            kind = YAML-KIND-FLOAT
+            fval = yaml-inf()
+            return
+        }
+
+        text == '-.inf' || text == '-.Inf' || text == '-.INF' -> {
+            kind = YAML-KIND-FLOAT
+            fval = 0.0 - yaml-inf()
+            return
+        }
+
+        text == '.nan' || text == '.NaN' || text == '.NAN' -> {
+            kind = YAML-KIND-FLOAT
+            fval = yaml-nan()
+            return
+        }
+    }
+    k = YAML-KIND-STR
+    iv = 0
+    fv = 0.0
+    k, iv, fv = yaml-scan-number(text)
+    {
+        k == YAML-KIND-INT -> {
+            kind = k
+            ival = iv
+            return
+        }
+
+        k == YAML-KIND-FLOAT -> {
+            kind = k
+            fval = fv
+        }
+    }
+}
+
+; yaml-tag-name: 归一化标签名（!!str / tag:yaml.org,2002:str → str）
+yaml-tag-name = (tag str) (name str) {
+    name = tag
+    name.starts-with('!<') -> {
+        n = name.len-bytes()
+        n >= 3 -> name = name.slice-bytes(2, n - 1)
+    }
+    name.starts-with('!!') -> name = name.slice-bytes(2, name.len-bytes())
+    name.starts-with('tag:yaml.org,2002:') -> name = name.slice-bytes(18, name.len-bytes())
+}
+
+; yaml-apply-tag: 按显式标签决定节点类型
+yaml-apply-tag = (tag str, kind i64) (k i64) {
+    k = kind
+    name = yaml-tag-name(tag)
+    {
+        name == 'str' -> {
+            k = YAML-KIND-STR
+            return
+        }
+
+        name == 'null' -> {
+            k = YAML-KIND-NULL
+            return
+        }
+
+        name == 'bool' -> {
+            k = YAML-KIND-BOOL
+            return
+        }
+
+        name == 'int' -> {
+            k = YAML-KIND-INT
+            return
+        }
+
+        name == 'float' -> {
+            k = YAML-KIND-FLOAT
+            return
+        }
+
+        -> k = kind
+    }
+}
+
+; yaml-unescape-double: 处理双引号转义序列
+yaml-unescape-double = (body str) (out str, ok bool) {
+    out = ''
+    ok = true
+    i = 0
+    n = body.len-bytes()
+    {
+        i >= n -> break
+        c = body.byte(i)
+        c != 92 -> {
+            out = out - char-to-str(c)
+            #{overflow=wrap}
+            i = i + 1
+            continue
+        }
+        #{overflow=wrap}
+        i = i + 1
+        i >= n -> {
+            ok = false
+            return
+        }
+        e = body.byte(i)
+        #{overflow=wrap}
+        i = i + 1
+        {
+            e == 110 -> out = out - '\n'
+
+            e == 116 -> out = out - '\t'
+
+            e == 114 -> out = out - '\r'
+
+            e == 48 -> out = out - char-to-str(0)
+
+            e == 97 -> out = out - char-to-str(7)
+
+            e == 98 -> out = out - char-to-str(8)
+
+            e == 118 -> out = out - char-to-str(11)
+
+            e == 102 -> out = out - char-to-str(12)
+
+            e == 101 -> out = out - char-to-str(27)
+
+            e == 34 -> out = out - char-to-str(34)
+
+            e == 47 -> out = out - '/'
+
+            e == 92 -> out = out - '\\'
+
+            e == 32 -> out = out - ' '
+
+            e == 120 -> {
+                #{overflow=wrap}
+                j = i + 2
+                j <= n -> {
+                    cp = 0
+                    k <- [0..2): {
+                        d = yaml-hex-digit(body.byte(i + k))
+                        d < 0 -> {
+                            ok = false
+                            return
+                        }
+                        #{overflow=wrap}
+                        cp = cp * 16 + d
+                    }
+                    i = j
+                    out = out - char-to-str(cp)
+                    continue
+                }
+                ok = false
+                return
+            }
+
+            e == 117 -> {
+                #{overflow=wrap}
+                j = i + 4
+                j <= n -> {
+                    cp = 0
+                    k <- [0..4): {
+                        d = yaml-hex-digit(body.byte(i + k))
+                        d < 0 -> {
+                            ok = false
+                            return
+                        }
+                        #{overflow=wrap}
+                        cp = cp * 16 + d
+                    }
+                    i = j
+                    out = out - char-to-str(cp)
+                    continue
+                }
+                ok = false
+                return
+            }
+
+            e == 85 -> {
+                #{overflow=wrap}
+                j = i + 8
+                j <= n -> {
+                    cp = 0
+                    k <- [0..8): {
+                        d = yaml-hex-digit(body.byte(i + k))
+                        d < 0 -> {
+                            ok = false
+                            return
+                        }
+                        #{overflow=wrap}
+                        cp = cp * 16 + d
+                    }
+                    i = j
+                    out = out - char-to-str(cp)
+                    continue
+                }
+                ok = false
+                return
+            }
+
+            -> {
+                ok = false
+                return
+            }
+        }
+    } (i < n)
+}
+
+; ═══════════════════════════════════════════════
+; 标量节点构造
+; ═══════════════════════════════════════════════
+
+; push-scalar: 依据风格与标签构造标量节点
+yaml-parser.push-scalar = (text str, style i64, tag str, anchor str) (idx i64) {
+    kind = YAML-KIND-STR
+    ival = 0
+    fval = 0.0
+    bval = false
+    style == YAML-STYLE-PLAIN -> {
+        kind, ival, fval, bval = yaml-resolve-plain(text)
+    }
+    tag.len-bytes() > 0 -> {
+        k = yaml-apply-tag(tag, kind)
+        k != kind -> {
+            kind = k
+            kind == YAML-KIND-STR -> {
+                ival = 0
+                fval = 0.0
+                bval = false
+            }
+            kind == YAML-KIND-NULL -> {
+                ival = 0
+                fval = 0.0
+                bval = false
+            }
+            kind == YAML-KIND-INT -> {
+                iv = 0
+                iv2 = 0
+                fv2 = 0.0
+                iv2, iv, fv2 = yaml-scan-number(text)
+                ival = iv
+            }
+            kind == YAML-KIND-FLOAT -> {
+                fv ?f64 = yaml-to-f64(text)
+                fv: {
+                    nil -> ival = 0
+
+                    err -> ival = 0
+
+                    -> fval = it
+                }
+            }
+            kind == YAML-KIND-BOOL -> {
+                lower = text.to-lower()
+                lower == 'true' -> bval = true
+                lower == 'false' -> bval = false
+                lower == 'yes' -> bval = true
+                lower == 'no' -> bval = false
+                lower == 'on' -> bval = true
+                lower == 'off' -> bval = false
+            }
+        }
+    }
+    nd = yaml-node {
+        kind: kind
+        style: style
+        tag: tag
+        anchor: anchor
+        text: text
+        ival: ival
+        fval: fval
+        bval: bval
+        line: .line
+        col: 0
+    }
+    idx = .push-node(nd)
+}
+
+; ═══════════════════════════════════════════════
+; 属性（锚点 / 标签）
+; ═══════════════════════════════════════════════
+
+; read-token: 读取一个不含分隔符的裸 token
+yaml-parser.read-token = () (out str) {
+    start = .pos
+    {
+        c = .cur()
+        c == 0 || c == 32 || c == 9 || c == 10 || c == 13 -> break
+        c == 44 || c == 91 || c == 93 || c == 123 || c == 125 -> break
+        .advance()
+    } (true)
+    out = .src.slice-bytes(start, .pos)
+}
+
+; read-tag: 读取一个标签（!!name / !name / !<verbatim> / !）
+yaml-parser.read-tag = () (out str) {
+    start = .pos
+    .at(1) == 60 -> {
+        .advance()
+        .advance()
+        {
+            c = .cur()
+            c == 0 || c == 10 || c == 13 -> break
+            c == 62 -> {
+                .advance()
+                break
+            }
+            .advance()
+        } (true)
+        out = .src.slice-bytes(start, .pos)
+        return
+    }
+    .advance()
+    {
+        c = .cur()
+        c == 0 || c == 32 || c == 9 || c == 10 || c == 13 -> break
+        c == 44 || c == 91 || c == 93 || c == 123 || c == 125 -> break
+        .advance()
+    } (true)
+    out = .src.slice-bytes(start, .pos)
+}
+
+; parse-props: 解析节点前缀的锚点与标签（顺序任意）
+yaml-parser.parse-props = () (tag str, anchor str) {
+    tag = ''
+    anchor = ''
+    {
+        c = .cur()
+        c == 38 -> {
+            .advance()
+            anchor = .read-token()
+            .skip-spaces()
+            continue
+        }
+        c == 33 -> {
+            tag = .read-tag()
+            .skip-spaces()
+            continue
+        }
+        break
+    } (true)
+}
+
+; ═══════════════════════════════════════════════
+; 结构探测
+; ═══════════════════════════════════════════════
+
+; is-seq-dash: 当前位置是否为序列项指示符 '- '
+yaml-parser.is-seq-dash = () (yes bool) {
+    yes = false
+    .cur() != 45 -> return
+    c = .at(1)
+    yes = c == 0 || c == 32 || c == 9 || c == 10 || c == 13
+}
+
+; looks-like-map-entry: 本行是否存在顶层 ': ' 或行尾 ':' 或显式键 '? '
+yaml-parser.looks-like-map-entry = () (yes bool) {
+    yes = false
+    i = .pos
+    depth = 0
+    in-s = false
+    in-d = false
+    {
+        i >= .n -> return
+        c = .src.byte(i)
+        c == 10 || c == 13 -> return
+        in-s -> {
+            c == 39 -> {
+                #{overflow=wrap}
+                j = i + 1
+                j < .n -> {
+                    #{index-out=0}
+                    .src.byte(j) == 39 -> {
+                        #{overflow=wrap}
+                        i = i + 2
+                        continue
+                    }
+                }
+                in-s = false
+            }
+            #{overflow=wrap}
+            i = i + 1
+            continue
+        }
+        in-d -> {
+            c == 92 -> {
+                #{overflow=wrap}
+                i = i + 2
+                continue
+            }
+            c == 34 -> in-d = false
+            #{overflow=wrap}
+            i = i + 1
+            continue
+        }
+        c == 39 -> {
+            in-s = true
+            #{overflow=wrap}
+            i = i + 1
+            continue
+        }
+        c == 34 -> {
+            in-d = true
+            #{overflow=wrap}
+            i = i + 1
+            continue
+        }
+        c == 91 || c == 123 -> {
+            #{overflow=wrap}
+            depth = depth + 1
+            #{overflow=wrap}
+            i = i + 1
+            continue
+        }
+        c == 93 || c == 125 -> {
+            #{overflow=wrap}
+            depth = depth - 1
+            #{overflow=wrap}
+            i = i + 1
+            continue
+        }
+        depth == 0 && c == 35 -> {
+            i == .pos -> return
+            #{overflow=wrap}
+            prev = .src.byte(i - 1)
+            prev == 32 || prev == 9 -> return
+        }
+        depth == 0 && c == 58 -> {
+            #{overflow=wrap}
+            j = i + 1
+            j >= .n -> {
+                yes = true
+                return
+            }
+            nc = .src.byte(j)
+            nc == 32 || nc == 9 || nc == 10 || nc == 13 -> {
+                yes = true
+                return
+            }
+        }
+        depth == 0 && c == 63 -> {
+            #{overflow=wrap}
+            j = i + 1
+            j >= .n -> {
+                yes = true
+                return
+            }
+            nc = .src.byte(j)
+            nc == 32 || nc == 9 || nc == 10 || nc == 13 -> {
+                yes = true
+                return
+            }
+        }
+        #{overflow=wrap}
+        i = i + 1
+    } (true)
+}
+
+; ═══════════════════════════════════════════════
+; 空行 / 注释跳过
+; ═══════════════════════════════════════════════
+
+; skip-blank-lines: 跳过空行与整行注释，停在下一行内容起始处
+yaml-parser.skip-blank-lines = () {
+    {
+        .eof() -> break
+        save = .pos
+        .skip-spaces()
+        .at-eol() -> {
+            .newline()
+            continue
+        }
+        .cur() == 35 -> {
+            .skip-to-eol()
+            .newline()
+            continue
+        }
+        .pos = save
+        break
+    } (true)
+}
+
+; read-line-content: 读取当前位置到行尾的内容（去掉行尾空白与注释）
+yaml-parser.read-line-content = () (out str) {
+    start = .pos
+    {
+        .at-eol() -> break
+        c = .cur()
+        c == 35 -> {
+            .pos > start -> {
+                #{overflow=wrap}
+                prev = .at(-1)
+                prev == 32 || prev == 9 -> break
+            }
+        }
+        .advance()
+    } (true)
+    out = .src.slice-bytes(start, .pos).trim()
+    .skip-to-eol()
+}
+
+; ═══════════════════════════════════════════════
+; 标量解析
+; ═══════════════════════════════════════════════
+
+; parse-plain: 解析 plain 标量（含跨行折叠）
+yaml-parser.parse-plain = (cont-min i64, key-mode bool, flow bool) (idx i64) {
+    start = .pos
+    {
+        .at-eol() -> break
+        c = .cur()
+        flow -> {
+            c == 44 || c == 93 || c == 125 -> break
+            c == 58 -> {
+                #{overflow=wrap}
+                j = .pos + 1
+                j >= .n -> break
+                nc = .src.byte(j)
+                nc == 32 || nc == 9 || nc == 10 || nc == 13 || nc == 44 || nc == 93 || nc == 125 -> break
+            }
+        }
+        key-mode -> {
+            c == 58 -> {
+                #{overflow=wrap}
+                j = .pos + 1
+                j >= .n -> break
+                nc = .src.byte(j)
+                nc == 32 || nc == 9 || nc == 10 || nc == 13 -> break
+            }
+        }
+        c == 35 -> {
+            .pos > start -> {
+                #{overflow=wrap}
+                prev = .at(-1)
+                prev == 32 || prev == 9 -> break
+            }
+        }
+        .advance()
+    } (true)
+    text = .src.slice-bytes(start, .pos).trim()
+
+    key-mode || flow -> {
+        idx = .push-scalar(text, YAML-STYLE-PLAIN, '', '')
+        return
+    }
+
+    ; 跨行折叠：仅块上下文
+    breaks = 0
+    stop = false
+    {
+        stop -> break
+        .skip-to-eol()
+        .eof() -> break
+        .newline()
+        .eof() -> break
+        {
+            ls = .pos
+            .skip-spaces()
+            .at-eol() -> {
+                .newline()
+                #{overflow=wrap}
+                breaks = breaks + 1
+                continue
+            }
+            #{overflow=wrap}
+            ind = .pos - ls
+            ind < cont-min -> {
+                .pos = ls
+                stop = true
+                break
+            }
+            breaks == 0 -> text = text - ' '
+            breaks > 0 -> {
+                k <- [0..breaks): text = text - '\n'
+            }
+            more = .read-line-content()
+            text = text - more
+            breaks = 0
+            break
+        } (true)
+    } (true)
+
+    idx = .push-scalar(text, YAML-STYLE-PLAIN, '', '')
+}
+
+; parse-single: 解析单引号标量
+yaml-parser.parse-single = () (idx i64) {
+    .advance()
+    out = ''
+    closed = false
+    {
+        .eof() -> break
+        c = .cur()
+        c == 39 -> {
+            .at(1) == 39 -> {
+                out = out - char-to-str(39)
+                .advance()
+                .advance()
+                continue
+            }
+            .advance()
+            closed = true
+            break
+        }
+        c == 10 || c == 13 -> {
+            .newline()
+            .skip-spaces()
+            out = out - ' '
+            continue
+        }
+        out = out - char-to-str(c)
+        .advance()
+    } (true)
+    closed == false -> .fail-at('unterminated single-quoted scalar')
+    idx = .push-scalar(out, YAML-STYLE-SINGLE, '', '')
+}
+
+; parse-double: 解析双引号标量
+yaml-parser.parse-double = () (idx i64) {
+    .advance()
+    raw = ''
+    closed = false
+    {
+        .eof() -> break
+        c = .cur()
+        c == 34 -> {
+            .advance()
+            closed = true
+            break
+        }
+        c == 10 || c == 13 -> {
+            .newline()
+            .skip-spaces()
+            raw = raw - ' '
+            continue
+        }
+        c == 92 -> {
+            raw = raw - '\\'
+            #{overflow=wrap}
+            i = .pos + 1
+            i < .n -> {
+                e = .src.byte(i)
+                raw = raw - char-to-str(e)
+                .advance()
+            }
+            .advance()
+            continue
+        }
+        raw = raw - char-to-str(c)
+        .advance()
+    } (true)
+    closed == false -> {
+        .fail-at('unterminated double-quoted scalar')
+        idx = .push-null()
+        return
+    }
+    text = ''
+    ok = true
+    text, ok = yaml-unescape-double(raw)
+    ok == false -> .fail-at('invalid escape sequence in double-quoted scalar')
+    idx = .push-scalar(text, YAML-STYLE-DOUBLE, '', '')
+}
+
+; parse-alias: 解析别名 *name
+yaml-parser.parse-alias = () (idx i64) {
+    .advance()
+    name = .read-token()
+    target = .anchor-id(name)
+    target < 0 -> {
+        .fail-at('unknown anchor *' - name)
+        idx = .push-null()
+        return
+    }
+    src = .nodes[target]
+    nd = yaml-node {
+        kind: src.kind
+        style: YAML-STYLE-ALIAS
+        tag: src.tag
+        anchor: ''
+        text: src.text
+        ival: src.ival
+        fval: src.fval
+        bval: src.bval
+        keys: src.keys
+        kids: src.kids
+        line: .line
+        col: 0
+    }
+    idx = .push-node(nd)
+}
+
+; parse-block-scalar: 解析块标量 | 与 >
+yaml-parser.parse-block-scalar = (cont-min i64) (idx i64) {
+    style = YAML-STYLE-LITERAL
+    .cur() == 62 -> style = YAML-STYLE-FOLDED
+    .advance()
+    chomp = YAML-CHOMP-CLIP
+    ind-ind = 0
+    {
+        c = .cur()
+        c == 45 -> {
+            chomp = YAML-CHOMP-STRIP
+            .advance()
+            continue
+        }
+        c == 43 -> {
+            chomp = YAML-CHOMP-KEEP
+            .advance()
+            continue
+        }
+        c >= 49 && c <= 57 -> {
+            #{overflow=wrap}
+            ind-ind = c - 48
+            .advance()
+            continue
+        }
+        c == 35 -> .skip-to-eol()
+        break
+    } (true)
+    .newline()
+    .eof() -> {
+        idx = .push-scalar('', style, '', '')
+        return
+    }
+
+    #{overflow=wrap}
+    parent-indent = cont-min - 1
+
+    content-ind = 0
+    ind-ind > 0 -> {
+        #{overflow=wrap}
+        content-ind = parent-indent + ind-ind
+    }
+    ind-ind == 0 -> {
+        save = .pos
+        {
+            .eof() -> break
+            ls = .pos
+            .skip-spaces()
+            .at-eol() -> {
+                .newline()
+                continue
+            }
+            #{overflow=wrap}
+            content-ind = .pos - ls
+            .pos = save
+            break
+        } (true)
+    }
+
+    lines []str = with-len(0)
+    {
+        .eof() -> break
+        ls = .pos
+        .skip-spaces()
+        #{overflow=wrap}
+        ind = .pos - ls
+        .at-eol() -> {
+            lines.push('')
+            .newline()
+            continue
+        }
+        ind < content-ind -> {
+            .pos = ls
+            break
+        }
+        le = .line-end-of(.pos)
+        #{overflow=wrap}
+        from = ls + content-ind
+        lines.push(.src.slice-bytes(from, le))
+        .pos = le
+        .newline()
+    } (true)
+
+    ; 尾部空行数
+    trail = 0
+    {
+        #{overflow=wrap}
+        last = lines.len() - 1 - trail
+        last < 0 -> break
+        tail = yaml-str-at(lines, last)
+        tail.len-bytes() == 0 -> {
+            #{overflow=wrap}
+            trail = trail + 1
+            continue
+        }
+        break
+    } (true)
+
+    content = ''
+    style == YAML-STYLE-LITERAL -> {
+        i <- [0..lines.len()): {
+            content = content - yaml-str-at(lines, i) - '\n'
+        }
+        content.len-bytes() > 0 -> {
+            #{overflow=wrap}
+            content = content.slice-bytes(0, content.len-bytes() - 1)
+        }
+    }
+    style == YAML-STYLE-FOLDED -> {
+        pending = 0
+        first = true
+        i <- [0..lines.len()): {
+            ln = yaml-str-at(lines, i)
+            ln.len-bytes() == 0 -> {
+                #{overflow=wrap}
+                pending = pending + 1
+                continue
+            }
+            more = ln.byte(0) == 32 || ln.byte(0) == 9
+            first -> {
+                content = ln
+                first = false
+                pending = 0
+                continue
+            }
+            more -> {
+                #{overflow=wrap}
+                k <- [0..pending + 1): content = content - '\n'
+            }
+            more == false -> {
+                pending == 0 -> content = content - ' '
+                pending > 0 -> {
+                    k <- [0..pending): content = content - '\n'
+                }
+            }
+            content = content - ln
+            pending = 0
+        }
+    }
+
+    {
+        chomp == YAML-CHOMP-STRIP -> {
+            ; 无尾随换行
+        }
+
+        chomp == YAML-CHOMP-KEEP -> {
+            content.len-bytes() > 0 || trail > 0 -> {
+                content = content - '\n'
+                k <- [0..trail): content = content - '\n'
+            }
+        }
+
+        -> {
+            content.len-bytes() > 0 -> content = content - '\n'
+        }
+    }
+
+    idx = .push-scalar(content, style, '', '')
+}
+
+; ═══════════════════════════════════════════════
+; 流式集合
+; ═══════════════════════════════════════════════
+
+; parse-flow-node: 解析一个流上下文节点
+yaml-parser.parse-flow-node = (cont-min i64, key-mode bool, flow bool) (idx i64) {
+    tag = ''
+    anchor = ''
+    tag, anchor = .parse-props()
+    .skip-spaces()
+    c = .cur()
+    {
+        c == 91 -> {
+            idx = .parse-flow-seq()
+            .set-props(idx, tag, anchor)
+            return
+        }
+
+        c == 123 -> {
+            idx = .parse-flow-map()
+            .set-props(idx, tag, anchor)
+            return
+        }
+
+        c == 34 -> {
+            idx = .parse-double()
+            .set-props(idx, tag, anchor)
+            return
+        }
+
+        c == 39 -> {
+            idx = .parse-single()
+            .set-props(idx, tag, anchor)
+            return
+        }
+
+        c == 42 -> {
+            idx = .parse-alias()
+            .set-props(idx, tag, anchor)
+            return
+        }
+
+        -> {
+            idx = .parse-plain(cont-min, key-mode, flow)
+            .set-props(idx, tag, anchor)
+        }
+    }
+}
+
+; parse-flow-seq: 解析 [a, b, ...]
+yaml-parser.parse-flow-seq = () (idx i64) {
+    .advance()
+    kids []i64 = with-len(0)
+    {
+        .skip-spaces()
+        .eof() -> break
+        .cur() == 93 -> {
+            .advance()
+            break
+        }
+        .cur() == 44 -> {
+            .advance()
+            continue
+        }
+        .cur() == 35 -> {
+            .skip-to-eol()
+            .newline()
+            continue
+        }
+        .at-eol() -> {
+            .newline()
+            continue
+        }
+        child = .parse-flow-node(0, false, true)
+        kids.push(child)
+        .failed -> break
+        .skip-spaces()
+        .eof() -> break
+        c = .cur()
+        c == 93 -> {
+            .advance()
+            break
+        }
+        c == 44 -> {
+            .advance()
+            continue
+        }
+        .fail-at('expected , or ] in flow sequence')
+        break
+    } (true)
+    nd = yaml-node {
+        kind: YAML-KIND-SEQ
+        style: YAML-STYLE-FLOW
+        tag: ''
+        anchor: ''
+        text: ''
+        ival: 0
+        fval: 0.0
+        bval: false
+        kids: kids
+        line: .line
+        col: 0
+    }
+    idx = .push-node(nd)
+}
+
+; parse-flow-map: 解析 {k: v, ...}
+yaml-parser.parse-flow-map = () (idx i64) {
+    .advance()
+    keys []i64 = with-len(0)
+    vals []i64 = with-len(0)
+    {
+        .skip-spaces()
+        .eof() -> break
+        .cur() == 125 -> {
+            .advance()
+            break
+        }
+        .cur() == 44 -> {
+            .advance()
+            continue
+        }
+        .cur() == 35 -> {
+            .skip-to-eol()
+            .newline()
+            continue
+        }
+        .at-eol() -> {
+            .newline()
+            continue
+        }
+        .cur() == 63 -> {
+            c2 = .at(1)
+            c2 == 32 || c2 == 9 || c2 == 10 || c2 == 13 -> .advance()
+        }
+        key = .parse-flow-node(0, true, true)
+        .failed -> break
+        .skip-spaces()
+        .eof() -> break
+        .cur() != 58 -> {
+            .fail-at('expected : in flow mapping')
+            break
+        }
+        .advance()
+        .skip-spaces()
+        val = .parse-flow-node(0, false, true)
+        .failed -> break
+        keys.push(key)
+        vals.push(val)
+        .skip-spaces()
+        .eof() -> break
+        c = .cur()
+        c == 125 -> {
+            .advance()
+            break
+        }
+        c == 44 -> {
+            .advance()
+            continue
+        }
+        .fail-at('expected , or } in flow mapping')
+        break
+    } (true)
+    nd = yaml-node {
+        kind: YAML-KIND-MAP
+        style: YAML-STYLE-FLOW
+        tag: ''
+        anchor: ''
+        text: ''
+        ival: 0
+        fval: 0.0
+        bval: false
+        keys: keys
+        kids: vals
+        line: .line
+        col: 0
+    }
+    idx = .push-node(nd)
+}
+
+; ═══════════════════════════════════════════════
+; 块结构
+; ═══════════════════════════════════════════════
+
+; parse-block-indented: 解析缩进更深的后续行作为值
+yaml-parser.parse-block-indented = (parent-indent i64) (idx i64) {
+    .skip-blank-lines()
+    .eof() -> {
+        idx = .push-null()
+        return
+    }
+    ind = .indent-at()
+    ind <= parent-indent -> {
+        idx = .push-null()
+        return
+    }
+    ind == 0 -> {
+        .at(0) == 45 && .at(1) == 45 && .at(2) == 45 -> {
+            idx = .push-null()
+            return
+        }
+        .at(0) == 46 && .at(1) == 46 && .at(2) == 46 -> {
+            idx = .push-null()
+            return
+        }
+    }
+    idx = .parse-block(ind, ind)
+}
+
+; parse-block-seq: 解析块序列
+yaml-parser.parse-block-seq = (indent i64) (idx i64) {
+    kids []i64 = with-len(0)
+    {
+        .advance()
+        .skip-spaces()
+        .at-eol() -> {
+            .skip-to-eol()
+            .newline()
+            child = .parse-block-indented(indent)
+        }
+
+        .cur() == 35 -> {
+            .skip-to-eol()
+            .newline()
+            child = .parse-block-indented(indent)
+        }
+
+        -> {
+            #{overflow=wrap}
+            child = .parse-block(.pos, indent + 1)
+        }
+    }
+    kids.push(child)
+    {
+        .failed -> break
+        .skip-to-eol()
+        .skip-blank-lines()
+        .eof() -> break
+        .indent-at() != indent -> break
+        .is-seq-dash() -> continue
+        break
+    } (true)
+    nd = yaml-node {
+        kind: YAML-KIND-SEQ
+        style: YAML-STYLE-BLOCK
+        tag: ''
+        anchor: ''
+        text: ''
+        ival: 0
+        fval: 0.0
+        bval: false
+        kids: kids
+        line: .line
+        col: 0
+    }
+    idx = .push-node(nd)
+}
+
+; merge-one: 把一个映射的条目合并进 keys/vals（不覆盖已有键）
+; 说明：MIR 后端不允许把入参 vec 直接 move 进另一个 vec（借用/所有权保护），
+;       因此这里逐元素复制，而不是 ok-keys = keys。
+yaml-parser.merge-one = (keys []i64, vals []i64, src i64) (ok-keys []i64, ok-vals []i64) {
+    ok-keys = with-len(0)
+    ok-vals = with-len(0)
+    base = keys.len()
+    b <- [0..base): {
+        ok-keys.push(keys[b])
+        ok-vals.push(vals[b])
+    }
+    src < 0 -> return
+    #{index-out=0}
+    .nodes[src].kind != YAML-KIND-MAP -> return
+    cnt = .nodes[src].keys.len()
+    i <- [0..cnt): {
+        k = .nodes[src].keys[i]
+        dup = false
+        total = ok-keys.len()
+        j <- [0..total): {
+            k2 = ok-keys[j]
+            yaml-key-eq(.nodes[k], .nodes[k2]) -> dup = true
+        }
+        dup == false -> {
+            ok-keys.push(k)
+            ok-vals.push(.nodes[src].kids[i])
+        }
+    }
+}
+
+; merge-into: 合并键 << 的处理（支持映射或映射序列）
+yaml-parser.merge-into = (keys []i64, vals []i64, src i64) (ok-keys []i64, ok-vals []i64) {
+    ok-keys = with-len(0)
+    ok-vals = with-len(0)
+    base = keys.len()
+    b <- [0..base): {
+        ok-keys.push(keys[b])
+        ok-vals.push(vals[b])
+    }
+    src < 0 -> return
+    k = .nodes[src].kind
+    k == YAML-KIND-MAP -> {
+        ok-keys, ok-vals = .merge-one(ok-keys, ok-vals, src)
+        return
+    }
+    k == YAML-KIND-SEQ -> {
+        cnt = .nodes[src].kids.len()
+        i <- [0..cnt): {
+            ok-keys, ok-vals = .merge-one(ok-keys, ok-vals, .nodes[src].kids[i])
+        }
+    }
+}
+
+; parse-block-map: 解析块映射
+yaml-parser.parse-block-map = (indent i64) (idx i64) {
+    keys []i64 = with-len(0)
+    vals []i64 = with-len(0)
+    {
+        key = -1
+        .cur() == 63 && (.at(1) == 32 || .at(1) == 9) -> {
+            .advance()
+            .skip-spaces()
+            .at-eol() -> {
+                .skip-to-eol()
+                .newline()
+                key = .parse-block-indented(indent)
+            }
+
+            -> {
+                #{overflow=wrap}
+                key = .parse-block(.pos, indent + 1)
+            }
+            .failed -> break
+            .skip-to-eol()
+            .skip-blank-lines()
+            .eof() -> break
+            .indent-at() != indent -> {
+                .fail-at('expected : for explicit key')
+                break
+            }
+            .cur() != 58 -> {
+                .fail-at('expected : for explicit key')
+                break
+            }
+            .advance()
+            .skip-spaces()
+        }
+
+        key < 0 -> {
+            #{overflow=wrap}
+            key = .parse-flow-node(indent + 1, true, false)
+            .failed -> break
+            .skip-spaces()
+            .cur() != 58 -> {
+                .fail-at('expected : after mapping key')
+                break
+            }
+            .advance()
+            .skip-spaces()
+        }
+
+        val = -1
+        .at-eol() -> {
+            .skip-to-eol()
+            .newline()
+            val = .parse-block-indented(indent)
+        }
+
+        .cur() == 35 -> {
+            .skip-to-eol()
+            .newline()
+            val = .parse-block-indented(indent)
+        }
+
+        val < 0 -> {
+            #{overflow=wrap}
+            val = .parse-block(.pos, indent + 1)
+        }
+        .failed -> break
+
+        is-merge = false
+        #{index-out=0}
+        .nodes[key].kind == YAML-KIND-STR -> {
+            #{index-out=0}
+            .nodes[key].text.eq-full('<<') -> is-merge = true
+        }
+        is-merge -> {
+            keys, vals = .merge-into(keys, vals, val)
+        }
+
+        is-merge == false -> {
+            keys.push(key)
+            vals.push(val)
+        }
+
+        .skip-to-eol()
+        .skip-blank-lines()
+        .eof() -> break
+        .indent-at() != indent -> break
+        .looks-like-map-entry() -> continue
+        break
+    } (true)
+    nd = yaml-node {
+        kind: YAML-KIND-MAP
+        style: YAML-STYLE-BLOCK
+        tag: ''
+        anchor: ''
+        text: ''
+        ival: 0
+        fval: 0.0
+        bval: false
+        keys: keys
+        kids: vals
+        line: .line
+        col: 0
+    }
+    idx = .push-node(nd)
+}
+
+; parse-block: 解析一个块上下文节点（当前位置即节点起始列）
+yaml-parser.parse-block = (indent i64, cont-min i64) (idx i64) {
+    tag = ''
+    anchor = ''
+    tag, anchor = .parse-props()
+    .skip-spaces()
+    c = .cur()
+
+    c == 124 || c == 62 -> {
+        idx = .parse-block-scalar(cont-min)
+        .set-props(idx, tag, anchor)
+        return
+    }
+
+    .at-eol() || c == 35 -> {
+        .skip-to-eol()
+        .newline()
+        #{overflow=wrap}
+        idx = .parse-block-indented(cont-min - 1)
+        .set-props(idx, tag, anchor)
+        return
+    }
+
+    c == 45 && .is-seq-dash() -> {
+        idx = .parse-block-seq(indent)
+        .set-props(idx, tag, anchor)
+        return
+    }
+
+    .looks-like-map-entry() -> {
+        idx = .parse-block-map(indent)
+        .set-props(idx, tag, anchor)
+        return
+    }
+
+    idx = .parse-flow-node(cont-min, false, false)
+    .set-props(idx, tag, anchor)
+}
+
+; ═══════════════════════════════════════════════
+; 文档
+; ═══════════════════════════════════════════════
+
+; skip-doc-preamble: 跳过空行、注释与指令行
+yaml-parser.skip-doc-preamble = () {
+    {
+        .eof() -> break
+        save = .pos
+        .skip-spaces()
+        .at-eol() -> {
+            .newline()
+            continue
+        }
+        c = .cur()
+        c == 35 || c == 37 -> {
+            .skip-to-eol()
+            .newline()
+            continue
+        }
+        .pos = save
+        break
+    } (true)
+}
+
+; at-doc-marker: 当前位置是否为 --- (1) 或 ... (2)
+yaml-parser.at-doc-marker = () (which i64) {
+    which = 0
+    .at(0) == 45 && .at(1) == 45 && .at(2) == 45 -> {
+        which = 1
+        return
+    }
+    .at(0) == 46 && .at(1) == 46 && .at(2) == 46 -> which = 2
+}
+
+; skip-to-doc-boundary: 跳过当前文档剩余内容，停在下一个 --- 或输入末尾
+yaml-parser.skip-to-doc-boundary = () {
+    {
+        .eof() -> break
+        .skip-to-eol()
+        .skip-blank-lines()
+        .eof() -> break
+        .indent-at() != 0 -> {
+            .fail-at('unexpected indented content after document')
+            break
+        }
+        w = .at-doc-marker()
+        w == 0 -> {
+            .fail-at('unexpected content after document')
+            break
+        }
+        w == 2 -> {
+            .advance()
+            .advance()
+            .advance()
+            continue
+        }
+        break
+    } (true)
+}
+
+; parse-document: 解析一份文档，返回根节点索引
+yaml-parser.parse-document = () (idx i64) {
+    w = .at-doc-marker()
+    w == 1 -> {
+        .advance()
+        .advance()
+        .advance()
+        .skip-spaces()
+        .at-eol() -> {
+            .skip-to-eol()
+            .newline()
+            .skip-blank-lines()
+            .eof() -> {
+                idx = .push-null()
+                return
+            }
+            .at-doc-marker() != 0 -> {
+                idx = .push-null()
+                return
+            }
+            ind = .indent-at()
+            idx = .parse-block(ind, ind)
+            return
+        }
+
+        .cur() == 35 -> {
+            .skip-to-eol()
+            .newline()
+            .skip-blank-lines()
+            .eof() -> {
+                idx = .push-null()
+                return
+            }
+            .at-doc-marker() != 0 -> {
+                idx = .push-null()
+                return
+            }
+            ind = .indent-at()
+            idx = .parse-block(ind, ind)
+            return
+        }
+
+        idx = .parse-block(.pos, .pos)
+        return
+    }
+
+    ind = .indent-at()
+    idx = .parse-block(ind, ind)
+}
+
+; parse-docs: 解析全部文档
+yaml-parser.parse-docs = () (roots []i64) {
+    roots = with-len(0)
+    prev = -1
+    {
+        .failed -> break
+        .pos == prev -> break
+        prev = .pos
+        .skip-doc-preamble()
+        .eof() -> break
+        idx = .parse-document()
+        .failed -> break
+        roots.push(idx)
+        .skip-to-doc-boundary()
+    } (true)
+}
+
+; ═══════════════════════════════════════════════
+; 入口
+; ═══════════════════════════════════════════════
+
+; yaml.parse: 解析 YAML 文本，返回第一份文档
+; 返回 ok(yaml) / err(消息)
+yaml.parse = (source str) (out ?yaml) {
+    out = yaml.parse-all(source)
+}
+
+; yaml.parse-all: 解析全部文档
+yaml.parse-all = (source str) (out ?yaml) {
+    out = nil
+    src = yaml.strip-bom(source)
+    p = yaml-parser {
+        src: src
+        n: src.len-bytes()
+        pos: 0
+        line: 1
+        err: ''
+        failed: false
+    }
+    roots []i64 = with-len(0)
+    roots = p.parse-docs()
+    p.failed -> {
+        out = err(p.err)
+        return
+    }
+    roots.len() == 0 -> {
+        idx = p.push-null()
+        roots.push(idx)
+    }
+    root = -1
+    roots.len() > 0 -> {
+        root = roots[0]
+    }
+    doc = yaml {
+        pool: yaml-pool {
+            nodes: p.nodes
+        }
+        root: root
+        roots: roots
+        source: src
+    }
+    out = doc
+}
+
+; yaml.strip-bom: 去掉开头的 UTF-8 BOM
+yaml.strip-bom = (s str) (out str) {
+    out = s
+    s.len-bytes() >= 3 -> {
+        b0 = s.byte(0)
+        b1 = s.byte(1)
+        b2 = s.byte(2)
+        b0 == 239 && b1 == 187 && b2 == 191 -> out = s.slice-bytes(3, s.len-bytes())
+    }
+}
+
+; ═══════════════════════════════════════════════
+; 查询 API
+; ═══════════════════════════════════════════════
+
+; yaml.valid: 本文档是否解析成功（能拿到 yaml 值即成功）
+yaml.valid = () (yes bool) {
+    yes = .roots.len() > 0 || .root >= 0
+}
+
+; yaml.error: 本文档的解析错误（解析成功时恒为空串）
+; 说明：解析失败时 yaml.parse 返回 err，拿不到 yaml 值；
+;       失败原因请用 yaml.error-of(source) 获取。
+yaml.error = () (msg str) {
+    msg = ''
+}
+
+; yaml.valid-of: 源文本是否可解析（不构造文档）
+yaml.valid-of = (source str) (yes bool) {
+    yes = false
+    s = yaml.strip-bom(source)
+    p = yaml-parser {
+        src: s
+        n: s.len-bytes()
+        pos: 0
+        line: 1
+        err: ''
+        failed: false
+    }
+    roots []i64 = with-len(0)
+    roots = p.parse-docs()
+    yes = ! p.failed
+}
+
+; yaml.error-of: 解析源文本并返回错误消息（成功时为空串）
+yaml.error-of = (source str) (msg str) {
+    msg = ''
+    s = yaml.strip-bom(source)
+    p = yaml-parser {
+        src: s
+        n: s.len-bytes()
+        pos: 0
+        line: 1
+        err: ''
+        failed: false
+    }
+    roots []i64 = with-len(0)
+    roots = p.parse-docs()
+    p.failed -> msg = p.err
+}
+
+; yaml.doc-count: 文档数量
+yaml.doc-count = () (n i64) {
+    n = .roots.len()
+}
+
+; yaml.doc: 取第 i 份文档
+yaml.doc = (i i64) (child ?yaml) {
+    child = nil
+    i < 0 -> return
+    i >= .roots.len() -> return
+    r = .roots[i]
+    c = yaml {
+        pool: .pool
+        root: r
+        roots: .roots
+        source: .source
+    }
+    child = c
+}
+
+; yaml.node-count: 节点总数
+yaml.node-count = () (n i64) {
+    n = .pool.nodes.len()
+}
+
+; yaml.kind: 当前节点类型
+yaml.kind = () (k i64) {
+    k = YAML-KIND-NULL
+    .root < 0 -> return
+    .root >= .pool.nodes.len() -> return
+    k = .pool.nodes[.root].kind
+}
+
+; yaml.style: 当前节点风格
+yaml.style = () (s i64) {
+    s = YAML-STYLE-PLAIN
+    .root < 0 -> return
+    .root >= .pool.nodes.len() -> return
+    s = .pool.nodes[.root].style
+}
+
+; yaml.tag: 当前节点显式标签
+yaml.tag = () (t str) {
+    t = ''
+    .root < 0 -> return
+    .root >= .pool.nodes.len() -> return
+    t = .pool.nodes[.root].tag
+}
+
+; yaml.anchor: 当前节点锚点名
+yaml.anchor = () (a str) {
+    a = ''
+    .root < 0 -> return
+    .root >= .pool.nodes.len() -> return
+    a = .pool.nodes[.root].anchor
+}
+
+; yaml.line-of: 当前节点起始行
+yaml.line-of = () (n i64) {
+    n = 0
+    .root < 0 -> return
+    .root >= .pool.nodes.len() -> return
+    n = .pool.nodes[.root].line
+}
+
+; yaml.is-null: 是否为 null
+yaml.is-null = () (yes bool) {
+    yes = .kind() == YAML-KIND-NULL
+}
+
+; yaml.is-bool: 是否为布尔
+yaml.is-bool = () (yes bool) {
+    yes = .kind() == YAML-KIND-BOOL
+}
+
+; yaml.is-int: 是否为整数
+yaml.is-int = () (yes bool) {
+    yes = .kind() == YAML-KIND-INT
+}
+
+; yaml.is-float: 是否为浮点
+yaml.is-float = () (yes bool) {
+    yes = .kind() == YAML-KIND-FLOAT
+}
+
+; yaml.is-num: 是否为数值
+yaml.is-num = () (yes bool) {
+    k = .kind()
+    yes = k == YAML-KIND-INT || k == YAML-KIND-FLOAT
+}
+
+; yaml.is-str: 是否为字符串
+yaml.is-str = () (yes bool) {
+    yes = .kind() == YAML-KIND-STR
+}
+
+; yaml.is-seq: 是否为序列
+yaml.is-seq = () (yes bool) {
+    yes = .kind() == YAML-KIND-SEQ
+}
+
+; yaml.is-map: 是否为映射
+yaml.is-map = () (yes bool) {
+    yes = .kind() == YAML-KIND-MAP
+}
+
+; yaml.len: 序列元素数 / 映射条目数
+yaml.len = () (n i64) {
+    n = 0
+    .root < 0 -> return
+    .root >= .pool.nodes.len() -> return
+    n = .pool.nodes[.root].kids.len()
+}
+
+; yaml.text: 当前节点的标量原文
+yaml.text = () (t str) {
+    t = ''
+    .root < 0 -> return
+    .root >= .pool.nodes.len() -> return
+    t = .pool.nodes[.root].text
+}
+
+; yaml.str: 取字符串值（数值/布尔返回其原文）
+yaml.str = () (val str, ok bool) {
+    ok = false
+    val = ''
+    .root < 0 -> return
+    .root >= .pool.nodes.len() -> return
+    k = .pool.nodes[.root].kind
+    k == YAML-KIND-SEQ || k == YAML-KIND-MAP || k == YAML-KIND-NULL -> return
+    val = .pool.nodes[.root].text
+    ok = true
+}
+
+; yaml.i64: 取整数值
+yaml.i64 = () (val i64, ok bool) {
+    ok = false
+    val = 0
+    .root < 0 -> return
+    .root >= .pool.nodes.len() -> return
+    k = .pool.nodes[.root].kind
+    k == YAML-KIND-INT -> {
+        val = .pool.nodes[.root].ival
+        ok = true
+        return
+    }
+    k == YAML-KIND-FLOAT -> {
+        val = .pool.nodes[.root].fval
+        ok = true
+    }
+}
+
+; yaml.f64: 取浮点值
+yaml.f64 = () (val f64, ok bool) {
+    ok = false
+    val = 0.0
+    .root < 0 -> return
+    .root >= .pool.nodes.len() -> return
+    k = .pool.nodes[.root].kind
+    k == YAML-KIND-FLOAT -> {
+        val = .pool.nodes[.root].fval
+        ok = true
+        return
+    }
+    k == YAML-KIND-INT -> {
+        val = number.i64-to-f64(.pool.nodes[.root].ival)
+        ok = true
+    }
+}
+
+; yaml.bool: 取布尔值
+yaml.bool = () (val bool, ok bool) {
+    ok = false
+    val = false
+    .root < 0 -> return
+    .root >= .pool.nodes.len() -> return
+    k = .pool.nodes[.root].kind
+    k == YAML-KIND-BOOL -> {
+        val = .pool.nodes[.root].bval
+        ok = true
+    }
+}
+
+; yaml.at: 取序列元素 / 映射第 i 个值
+yaml.at = (i i64) (child ?yaml) {
+    child = nil
+    i < 0 -> return
+    .root < 0 -> return
+    .root >= .pool.nodes.len() -> return
+    cnt = .pool.nodes[.root].kids.len()
+    i >= cnt -> return
+    k = .pool.nodes[.root].kids[i]
+    c = yaml {
+        pool: .pool
+        root: k
+        roots: .roots
+        source: .source
+    }
+    child = c
+}
+
+; yaml.key-node: 取映射第 i 个键节点
+yaml.key-node = (i i64) (child ?yaml) {
+    child = nil
+    i < 0 -> return
+    .root < 0 -> return
+    .root >= .pool.nodes.len() -> return
+    cnt = .pool.nodes[.root].keys.len()
+    i >= cnt -> return
+    k = .pool.nodes[.root].keys[i]
+    c = yaml {
+        pool: .pool
+        root: k
+        roots: .roots
+        source: .source
+    }
+    child = c
+}
+
+; yaml.key: 取映射第 i 个键的文本
+yaml.key = (i i64) (out str, ok bool) {
+    out = ''
+    ok = false
+    n ?yaml = .key-node(i)
+    n: {
+        nil -> return
+
+        err -> return
+
+        -> {
+            out, ok = it.scalar-text()
+        }
+    }
+}
+
+; yaml.value: 取映射第 i 个键对应的值节点
+yaml.value = (i i64) (child ?yaml) {
+    child = .at(i)
+}
+
+; yaml.get: 按标量键取映射值
+yaml.get = (key str) (child ?yaml) {
+    child = nil
+    .root < 0 -> return
+    .root >= .pool.nodes.len() -> return
+    #{index-out=0}
+    .pool.nodes[.root].kind != YAML-KIND-MAP -> return
+    cnt = .pool.nodes[.root].keys.len()
+    i <- [0..cnt): {
+        k = .pool.nodes[.root].keys[i]
+        yaml-key-text-eq(.pool.nodes[k], key) -> {
+            v = .pool.nodes[.root].kids[i]
+            c = yaml {
+                pool: .pool
+                root: v
+                roots: .roots
+                source: .source
+            }
+            child = c
+            return
+        }
+    }
+}
+
+; yaml.get-str: 按标量键取字符串
+yaml.get-str = (key str) (out str, ok bool) {
+    out = ''
+    ok = false
+    n ?yaml = .get(key)
+    n: {
+        nil -> return
+
+        err -> return
+
+        -> {
+            out, ok = it.str()
+        }
+    }
+}
+
+; yaml.get-i64: 按标量键取整数
+yaml.get-i64 = (key str) (out i64, ok bool) {
+    out = 0
+    ok = false
+    n ?yaml = .get(key)
+    n: {
+        nil -> return
+
+        err -> return
+
+        -> {
+            out, ok = it.i64()
+        }
+    }
+}
+
+; yaml.get-f64: 按标量键取浮点
+yaml.get-f64 = (key str) (out f64, ok bool) {
+    out = 0.0
+    ok = false
+    n ?yaml = .get(key)
+    n: {
+        nil -> return
+
+        err -> return
+
+        -> {
+            out, ok = it.f64()
+        }
+    }
+}
+
+; yaml.get-bool: 按标量键取布尔
+yaml.get-bool = (key str) (out bool, ok bool) {
+    out = false
+    ok = false
+    n ?yaml = .get(key)
+    n: {
+        nil -> return
+
+        err -> return
+
+        -> {
+            out, ok = it.bool()
+        }
+    }
+}
+
+; yaml.scalar-text: 当前节点的标量文本（容器返回 ok=false）
+yaml.scalar-text = () (out str, ok bool) {
+    out = ''
+    ok = false
+    .root < 0 -> return
+    .root >= .pool.nodes.len() -> return
+    k = .pool.nodes[.root].kind
+    k == YAML-KIND-SEQ || k == YAML-KIND-MAP -> return
+    out = .pool.nodes[.root].text
+    ok = true
+}
+
+; yaml.find: 按点号路径查找（序列可用数字下标）
+yaml.find = (path str) (child ?yaml) {
+    child = nil
+    cur = .root
+    cur < 0 -> return
+    parts = path.split('.')
+    i <- [0..parts.len()): {
+        cur < 0 -> return
+        seg = yaml-str-at(parts, i)
+        k = .pool.nodes[cur].kind
+        k == YAML-KIND-MAP -> {
+            found = -1
+            cnt = .pool.nodes[cur].keys.len()
+            j <- [0..cnt): {
+                kn = .pool.nodes[cur].keys[j]
+                yaml-key-text-eq(.pool.nodes[kn], seg) -> {
+                    found = .pool.nodes[cur].kids[j]
+                    break
+                }
+            }
+            cur = found
+            continue
+        }
+        k == YAML-KIND-SEQ -> {
+            idx = yaml-to-i64(seg)
+            idx < 0 -> {
+                cur = -1
+                break
+            }
+            cnt = .pool.nodes[cur].kids.len()
+            idx >= cnt -> {
+                cur = -1
+                break
+            }
+            cur = .pool.nodes[cur].kids[idx]
+            continue
+        }
+        cur = -1
+        break
+    }
+    (true)
+    cur < 0 -> return
+    c = yaml {
+        pool: .pool
+        root: cur
+        roots: .roots
+        source: .source
+    }
+    child = c
+}
+
+; yaml.find-str: 路径取字符串
+yaml.find-str = (path str) (out str, ok bool) {
+    out = ''
+    ok = false
+    n ?yaml = .find(path)
+    n: {
+        nil -> return
+
+        err -> return
+
+        -> {
+            out, ok = it.str()
+        }
+    }
+}
+
+; yaml.find-i64: 路径取整数
+yaml.find-i64 = (path str) (out i64, ok bool) {
+    out = 0
+    ok = false
+    n ?yaml = .find(path)
+    n: {
+        nil -> return
+
+        err -> return
+
+        -> {
+            out, ok = it.i64()
+        }
+    }
+}
+
+; yaml.find-f64: 路径取浮点
+yaml.find-f64 = (path str) (out f64, ok bool) {
+    out = 0.0
+    ok = false
+    n ?yaml = .find(path)
+    n: {
+        nil -> return
+
+        err -> return
+
+        -> {
+            out, ok = it.f64()
+        }
+    }
+}
+
+; yaml.find-bool: 路径取布尔
+yaml.find-bool = (path str) (out bool, ok bool) {
+    out = false
+    ok = false
+    n ?yaml = .find(path)
+    n: {
+        nil -> return
+
+        err -> return
+
+        -> {
+            out, ok = it.bool()
+        }
+    }
+}
+
+; ═══════════════════════════════════════════════
+; 键比较辅助
+; ═══════════════════════════════════════════════
+
+; yaml-key-text-eq: 标量键文本是否等于给定字符串
+yaml-key-text-eq = (nd yaml-node, key str) (yes bool) {
+    yes = false
+    nd.kind == YAML-KIND-SEQ || nd.kind == YAML-KIND-MAP -> return
+    yes = nd.text.eq-full(key)
+}
+
+; yaml-key-eq: 两个键节点是否等价（比较标量文本）
+yaml-key-eq = (a yaml-node, b yaml-node) (yes bool) {
+    yes = false
+    a.kind == YAML-KIND-SEQ || a.kind == YAML-KIND-MAP -> return
+    b.kind == YAML-KIND-SEQ || b.kind == YAML-KIND-MAP -> return
+    yes = a.text.eq-full(b.text)
+}
+
+; yaml-to-i64: 文本转 i64，失败返回 -1
+yaml-to-i64 = (s str) (v i64) {
+    v = -1
+    n = s.len-bytes()
+    n == 0 -> return
+    i = 0
+    acc = 0
+    {
+        i >= n -> break
+        c = s.byte(i)
+        c < 48 || c > 57 -> return
+        #{overflow=wrap}
+        acc = acc * 10 + c - 48
+        #{overflow=wrap}
+        i = i + 1
+    } (i < n)
+    v = acc
+}
+
+; ═══════════════════════════════════════════════
+; 序列化：JSON
+; ═══════════════════════════════════════════════
+
+; yaml-json-escape: JSON 字符串转义
+yaml-json-escape = (s str) (out str) {
+    out = char-to-str(34)
+    i <- [0..s.len-bytes()): {
+        c = s.byte(i)
+        {
+            c == 34 -> out = out - '\"'
+
+            c == 92 -> out = out - '\\'
+
+            c == 10 -> out = out - '\n'
+
+            c == 13 -> out = out - '\r'
+
+            c == 9 -> out = out - '\t'
+
+            c < 32 -> out = out - '?'
+
+            -> out = out - char-to-str(c)
+        }
+    }
+    out = out - char-to-str(34)
+}
+
+; yaml-json-of: 节点转 JSON
+yaml-json-of = (pool yaml-pool, idx i64, depth i64) (out str) {
+    out = 'null'
+    idx < 0 -> return
+    idx >= pool.nodes.len() -> return
+    depth > YAML-MAX-DEPTH -> return
+    nd = pool.nodes[idx]
+    {
+        nd.kind == YAML-KIND-NULL -> {
+            out = 'null'
+            return
+        }
+
+        nd.kind == YAML-KIND-BOOL -> {
+            out = 'false'
+            nd.bval -> out = 'true'
+            return
+        }
+
+        nd.kind == YAML-KIND-INT -> {
+            out = nd.ival.to-str()
+            return
+        }
+
+        nd.kind == YAML-KIND-FLOAT -> {
+            yaml-f-is-nan(nd.fval) -> {
+                out = 'null'
+                return
+            }
+            yaml-f-is-inf(nd.fval) -> {
+                out = 'null'
+                return
+            }
+            out = nd.fval.to-str()
+            return
+        }
+
+        nd.kind == YAML-KIND-STR -> {
+            out = yaml-json-escape(nd.text)
+            return
+        }
+
+        nd.kind == YAML-KIND-SEQ -> {
+            #{overflow=wrap}
+            d = depth + 1
+            out = '['
+            i <- [0..nd.kids.len()): {
+                i > 0 -> out = out - ','
+                k = nd.kids[i]
+                out = out - yaml-json-of(pool, k, d)
+            }
+            out = out - ']'
+            return
+        }
+
+        nd.kind == YAML-KIND-MAP -> {
+            #{overflow=wrap}
+            d = depth + 1
+            out = '{'
+            i <- [0..nd.kids.len()): {
+                i > 0 -> out = out - ','
+                kn = nd.keys[i]
+                out = out - yaml-json-escape(pool.nodes[kn].text) - ':'
+                out = out - yaml-json-of(pool, nd.kids[i], d)
+            }
+            out = out - '}'
+        }
+    }
+}
+
+; yaml.to-json: 当前文档转 JSON
+yaml.to-json = () (out str) {
+    out = 'null'
+    .root < 0 -> return
+    out = yaml-json-of(.pool, .root, 0)
+}
+
+; yaml.to-json-all: 全部文档转 JSON 数组
+yaml.to-json-all = () (out str) {
+    out = '['
+    total = .roots.len()
+    i <- [0..total): {
+        i > 0 -> out = out - ','
+        out = out - yaml-json-of(.pool, .roots[i], 1)
+    }
+    out = out - ']'
+}
+
+; ═══════════════════════════════════════════════
+; 序列化：YAML
+; ═══════════════════════════════════════════════
+
+; yaml-spaces: 生成 n 个空格
+yaml-spaces = (n i64) (out str) {
+    out = ''
+    i <- [0..n): out = out - ' '
+}
+
+; yaml-plain-safe: 文本可否作为 plain 标量原样输出
+yaml-plain-safe = (s str) (yes bool) {
+    yes = false
+    n = s.len-bytes()
+    n == 0 -> return
+    c = s.byte(0)
+    c == 32 || c == 9 -> return
+    c == 45 || c == 63 || c == 58 || c == 44 || c == 91 || c == 93 || c == 123 || c == 125 || c == 35 || c == 38 || c == 42 || c == 33 || c == 124 || c == 62 || c == 39 || c == 34 || c == 37 || c == 64 -> return
+    #{overflow=wrap}
+    last = s.byte(n - 1)
+    last == 32 || last == 9 -> return
+    i <- [0..n): {
+        ch = s.byte(i)
+        ch < 32 -> return
+        ch == 10 || ch == 13 -> return
+        ch == 58 -> {
+            #{overflow=wrap}
+            j = i + 1
+            j < n -> {
+                nx = s.byte(j)
+                nx == 32 || nx == 9 -> return
+            }
+        }
+        ch == 35 -> {
+            i > 0 -> {
+                #{overflow=wrap}
+                pv = s.byte(i - 1)
+                pv == 32 || pv == 9 -> return
+            }
+        }
+    }
+
+    ; 若会被 core schema 解释为非字符串，则必须加引号
+    kind = YAML-KIND-STR
+    iv = 0
+    fv = 0.0
+    bv = false
+    kind, iv, fv, bv = yaml-resolve-plain(s)
+    yes = kind == YAML-KIND-STR
+}
+
+; yaml-quote: 输出双引号 YAML 标量
+yaml-quote = (s str) (out str) {
+    out = char-to-str(34)
+    i <- [0..s.len-bytes()): {
+        c = s.byte(i)
+        {
+            c == 34 -> out = out - '\"'
+
+            c == 92 -> out = out - '\\'
+
+            c == 10 -> out = out - '\n'
+
+            c == 13 -> out = out - '\r'
+
+            c == 9 -> out = out - '\t'
+
+            c < 32 -> out = out - '?'
+
+            -> out = out - char-to-str(c)
+        }
+    }
+    out = out - char-to-str(34)
+}
+
+; yaml-scalar-repr: 标量的 YAML 表示
+yaml-scalar-repr = (nd yaml-node) (out str) {
+    out = ''
+    {
+        nd.kind == YAML-KIND-NULL -> {
+            out = 'null'
+            return
+        }
+
+        nd.kind == YAML-KIND-BOOL -> {
+            out = 'false'
+            nd.bval -> out = 'true'
+            return
+        }
+
+        nd.kind == YAML-KIND-INT -> {
+            out = nd.ival.to-str()
+            return
+        }
+
+        nd.kind == YAML-KIND-FLOAT -> {
+            yaml-f-is-nan(nd.fval) -> {
+                out = '.nan'
+                return
+            }
+            yaml-f-is-inf(nd.fval) -> {
+                out = '.inf'
+                nd.fval < 0.0 -> out = '-.inf'
+                return
+            }
+            out = nd.fval.to-str()
+            return
+        }
+
+        -> {
+            yaml-plain-safe(nd.text) -> {
+                out = nd.text
+                return
+            }
+            out = yaml-quote(nd.text)
+        }
+    }
+}
+
+; yaml-emit: 节点转块风格 YAML（不含尾随换行）
+yaml-emit = (pool yaml-pool, idx i64, indent i64, depth i64) (out str) {
+    out = ''
+    idx < 0 -> return
+    idx >= pool.nodes.len() -> return
+    depth > YAML-MAX-DEPTH -> return
+    nd = pool.nodes[idx]
+    {
+        nd.kind == YAML-KIND-SEQ -> {
+            #{overflow=wrap}
+            d = depth + 1
+            nd.kids.len() == 0 -> {
+                out = '[]'
+                return
+            }
+            total = nd.kids.len()
+            i <- [0..total): {
+                i > 0 -> out = out - '\n'
+                out = out - yaml-spaces(indent) - '-'
+                k = nd.kids[i]
+                ck = pool.nodes[k].kind
+                container = ck == YAML-KIND-SEQ || ck == YAML-KIND-MAP
+                container -> {
+                    inner = yaml-emit(pool, k, indent + 2, d)
+                    inner.len-bytes() > 0 -> out = out - ' ' - inner
+                    inner.len-bytes() == 0 -> {
+                        out = out - ' ' - yaml-scalar-repr(pool.nodes[k])
+                    }
+                }
+                container == false -> {
+                    out = out - ' ' - yaml-scalar-repr(pool.nodes[k])
+                }
+            }
+            return
+        }
+
+        nd.kind == YAML-KIND-MAP -> {
+            #{overflow=wrap}
+            d = depth + 1
+            nd.kids.len() == 0 -> {
+                out = '{}'
+                return
+            }
+            total = nd.kids.len()
+            i <- [0..total): {
+                i > 0 -> out = out - '\n'
+                kn = nd.keys[i]
+                ktext = yaml-scalar-repr(pool.nodes[kn])
+                out = out - yaml-spaces(indent) - ktext - ':'
+                k = nd.kids[i]
+                ck = pool.nodes[k].kind
+                container = ck == YAML-KIND-SEQ || ck == YAML-KIND-MAP
+                container -> {
+                    inner = yaml-emit(pool, k, indent + 2, d)
+                    inner.len-bytes() > 0 -> out = out - '\n' - inner
+                    inner.len-bytes() == 0 -> {
+                        out = out - ' ' - yaml-scalar-repr(pool.nodes[k])
+                    }
+                }
+                container == false -> {
+                    out = out - ' ' - yaml-scalar-repr(pool.nodes[k])
+                }
+            }
+            return
+        }
+
+        -> out = yaml-scalar-repr(nd)
+    }
+}
+
+; yaml.to-yaml: 当前文档重新输出为 YAML
+yaml.to-yaml = () (out str) {
+    out = ''
+    .root < 0 -> return
+    out = yaml-emit(.pool, .root, 0, 0)
+}
+
+; yaml.stringify: 别名，等同 to-yaml
+yaml.stringify = () (out str) {
+    out = .to-yaml()
+}
+
+; yaml.source-of: 原始输入文本
+yaml.source-of = () (out str) {
+    out = .source
+}

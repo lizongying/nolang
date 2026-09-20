@@ -44,6 +44,54 @@ func TestFormatDiags(t *testing.T) {
 	}
 }
 
+// TestFormatDiagnostics pins the canonical compile-error shape used by
+// `no build` / `no vet` for parser diagnostics. Three properties matter, and all
+// three were violated by the old `fmt.Errorf("parser errors: %v", p.Errors())`:
+//
+//  1. no filename — the caller owns the file context (the "validation errors: "
+//     channel does the same), and the consumer re-renders it;
+//  2. the location appears ONCE, as "line L, column C: " — never again inside
+//     the message, or the CLI prints it twice;
+//  3. the code goes in the trailing "[CODE]" slot the checker already uses, and
+//     the separator is "; " — never Go's slice rendering "[a b]", which glues
+//     the tail of one message onto the head of the next.
+func TestFormatDiagnostics(t *testing.T) {
+	diags := []Diagnostic{
+		{Filename: "sha3.no", Pos: lexer.Position{Line: 24, Column: 23}, Severity: SeverityError,
+			Code: "E_GENERAL", Message: "expected comma or right parenthesis, got ASSIGN(=) instead"},
+		{Filename: "sha3.no", Pos: lexer.Position{Line: 24, Column: 18}, Severity: SeverityError,
+			Code: "E_GENERAL", Message: "expected expression after operator '*'"},
+		{Filename: "sha3.no", Pos: lexer.Position{Line: 1, Column: 1}, Severity: SeverityWarning,
+			Code: "W_X", Message: "ignored"},
+	}
+
+	got := FormatDiagnostics(diags, SeverityError)
+	want := "line 24, column 23: expected comma or right parenthesis, got ASSIGN(=) instead [E_GENERAL]; " +
+		"line 24, column 18: expected expression after operator '*' [E_GENERAL]"
+	if got != want {
+		t.Fatalf("FormatDiagnostics =\n  %q\nwant\n  %q", got, want)
+	}
+	if strings.Contains(got, "sha3.no") {
+		t.Errorf("filename must not be embedded (caller owns the file context): %q", got)
+	}
+	if strings.Contains(got, "[") && strings.HasPrefix(got, "[") {
+		t.Errorf("must not be Go slice rendering: %q", got)
+	}
+
+	// A diagnostic without a code keeps the bare "line L, column C: message" shape.
+	bare := FormatDiagnostics([]Diagnostic{
+		{Pos: lexer.Position{Line: 2, Column: 7}, Severity: SeverityError, Message: "no code here"},
+	}, SeverityError)
+	if bare != "line 2, column 7: no code here" {
+		t.Fatalf("bare = %q", bare)
+	}
+
+	// Nothing of the requested severity -> empty string, not "[]".
+	if s := FormatDiagnostics(diags, Severity(42)); s != "" {
+		t.Fatalf("empty severity = %q, want \"\"", s)
+	}
+}
+
 // TestStructuredDiagnosticsThroughFatalf ensures that a deep fatal error:
 //   - is caught by the per-statement recover (no panic escapes ParseProgram),
 //   - is recorded as a structured Diagnostic (position + code + severity),

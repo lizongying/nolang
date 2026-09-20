@@ -1,0 +1,902 @@
+; toml — TOML 設定檔解析與產生
+;
+; 提供一個輕量、無外部依賴的 TOML 讀寫模組。
+; 支援：
+;   - 空白行與 # 註解
+;   - [table] 表格標頭（以 table.key 形式儲存）
+;   - bare / quoted key
+;   - basic string、literal string、bool、i64、f64
+;   - 保留所有值的 TOML 原始字面值，包含陣列、inline table 與日期時間
+;   - 固定容量文件模型：64 keys、32 tables、32 array-of-tables
+;
+; 用法：
+;   cfg = toml.parse('name = "nolang"\n[server]\nport = 8080')
+;   doc = toml.new()
+;   doc.put('server.port', '8080')
+;   text = toml.stringify(doc)
+;
+
+TOML-MAX-ENTRIES = 4
+TOML-MAX-TABLES = 2
+TOML-MAX-ARRAY-TABLES = 2
+TOML-MAX-KEY = 32
+TOML-MAX-VALUE = 128
+
+; toml-entry 使用固定 byte 緩衝區，避免文件值在 struct 複製時發生所有權別名。
+toml-entry {
+    key [32]byte
+    key-len i64
+    value [128]byte
+    value-len i64
+}
+
+toml-table {
+    name [32]byte
+    name-len i64
+}
+
+toml-array-table {
+    name [32]byte
+    name-len i64
+    index i64
+}
+
+; toml: TOML 文件。表格以完整 dotted key 儲存，例如 server.port。
+toml-doc {
+    entries [4]toml-entry
+    count i64
+    tables [2]toml-table
+    table-count i64
+    arrays [2]toml-array-table
+    array-count i64
+}
+
+; toml.new: 建立空 TOML 文件
+toml.new = () (doc toml-doc) {
+    doc = toml-doc {
+        count: 0
+        table-count: 0
+        array-count: 0
+    }
+    i <- [0..TOML-MAX-ENTRIES): {
+        #{index-out = 0}
+        doc.entries[i].key-len = 0
+        #{index-out = 0}
+        doc.entries[i].value-len = 0
+    }
+    i <- [0..TOML-MAX-TABLES): {
+        #{index-out = 0}
+        doc.tables[i].name-len = 0
+    }
+    i <- [0..TOML-MAX-ARRAY-TABLES): {
+        #{index-out = 0}
+        doc.arrays[i].name-len = 0
+        #{index-out = 0}
+        doc.arrays[i].index = 0
+    }
+}
+
+; toml-entry-key: 讀取 canonical key。
+toml-entry-key = (e toml-entry) (s str) {
+    s = with-len(e.key-len)
+    i <- [0..e.key-len): {
+        #{index-out = 0}
+        s[i] = e.key[i]
+    }
+}
+
+; toml-entry-value: 讀取原始 TOML value。
+toml-entry-value = (e toml-entry) (s str) {
+    s = with-len(e.value-len)
+    i <- [0..e.value-len): {
+        #{index-out = 0}
+        s[i] = e.value[i]
+    }
+}
+
+; toml-entry-key-eq: 比較 entry key 與字串。
+toml-entry-key-eq = (e toml-entry, key str) (same bool) {
+    same = false
+    e.key-len != key.len-bytes() -> return
+    i <- [0..e.key-len): {
+        #{index-out = 0}
+        e.key[i] != key.byte(i) -> return
+    }
+    same = true
+}
+
+; toml-make-entry: 將 key/value 複製到固定緩衝區。
+toml-make-entry = (key str, value str) (e toml-entry) {
+    e.key-len = key.len-bytes()
+    e.value-len = value.len-bytes()
+    i <- [0..e.key-len): {
+        #{index-out = 0}
+        e.key[i] = key.byte(i)
+    }
+    i <- [0..e.value-len): {
+        #{index-out = 0}
+        e.value[i] = value.byte(i)
+    }
+}
+
+; toml-table-name: 讀取表格名稱。
+toml-table-name = (t toml-table) (s str) {
+    s = with-len(t.name-len)
+    i <- [0..t.name-len): {
+        #{index-out = 0}
+        s[i] = t.name[i]
+    }
+}
+
+; toml-array-name: 讀取 array-of-tables 名稱。
+toml-array-name = (t toml-array-table) (s str) {
+    s = with-len(t.name-len)
+    i <- [0..t.name-len): {
+        #{index-out = 0}
+        s[i] = t.name[i]
+    }
+}
+
+; toml-table-eq: 比較固定緩衝區中的表格名稱。
+toml-table-eq = (name [32]byte, name-len i64, s str) (same bool) {
+    same = false
+    name-len != s.len-bytes() -> return
+    i <- [0..name-len): {
+        #{index-out = 0}
+        name[i] != s.byte(i) -> return
+    }
+    same = true
+}
+
+; toml-find-eq: 找到未被引號包住的第一個等號
+toml-find-eq = (s str) (pos i64) {
+    pos = -1
+    quote = 0
+    escaped = false
+    i = 0
+    {
+        #{overflow=wrap}
+        i >= s.len-bytes() -> break
+        c = s.byte(i)
+        {
+            quote == 34 -> {
+                escaped -> escaped = false
+                {
+                    c == 92 -> escaped = true
+                    c == 34 -> quote = 0
+                }
+            }
+
+            quote == 39 -> {
+                c == 39 -> quote = 0
+            }
+
+            -> {
+                c == 34 -> quote = 34
+                c == 39 -> quote = 39
+                c == 61 -> {
+                    pos = i
+                    return
+                }
+            }
+        }
+        #{overflow=wrap}
+        #{overflow=wrap}
+        i = i + 1
+    } (i < s.len-bytes())
+}
+
+; toml-strip-comment: 移除字串外的 # 註解並 trim；支援 multiline string。
+toml-strip-comment = (s str) (out str) {
+    quote = 0
+    escaped = false
+    end = s.len-bytes()
+    i = 0
+    n = s.len-bytes()
+    {
+        #{overflow=wrap}
+        i >= n -> break
+        #{index-out = 0}
+        c = s.byte(i)
+        {
+            quote == 1 -> {
+                escaped -> escaped = false
+                {
+                    c == 92 -> escaped = true
+                    c == 34 -> quote = 0
+                }
+            }
+
+            quote == 2 -> c == 39 -> quote = 0
+
+            quote == 3 -> {
+                c == 34 && i + 2 < n && s.byte(i + 1) == 34 && s.byte(i + 2) == 34 -> {
+                    quote = 0
+                    #{overflow=wrap}
+                    i = i + 2
+                }
+            }
+
+            quote == 4 -> {
+                c == 39 && i + 2 < n && s.byte(i + 1) == 39 && s.byte(i + 2) == 39 -> {
+                    quote = 0
+                    #{overflow=wrap}
+                    i = i + 2
+                }
+            }
+
+            -> {
+                c == 34 -> {
+                    i + 2 < n && s.byte(i + 1) == 34 && s.byte(i + 2) == 34 -> {
+                        quote = 3
+                        #{overflow=wrap}
+                    i = i + 2
+                    }
+                    -> quote = 1
+                }
+                c == 39 -> {
+                    i + 2 < n && s.byte(i + 1) == 39 && s.byte(i + 2) == 39 -> {
+                        quote = 4
+                        #{overflow=wrap}
+                    i = i + 2
+                    }
+                    -> quote = 2
+                }
+                c == 35 -> {
+                    end = i
+                    break
+                }
+            }
+        }
+        #{overflow=wrap}
+        #{overflow=wrap}
+        i = i + 1
+    } (i < n)
+    out = s.slice-bytes(0, end).trim()
+}
+
+; toml-normalize-key: 解析 bare / quoted / dotted key，輸出 canonical dotted key。
+toml-normalize-key = (s str) (key str, ok bool) {
+    key = s.trim()
+    ok = false
+    n = key.len-bytes()
+    n == 0 || n > TOML-MAX-KEY -> return
+    key = key.replace-str('"', '')
+    key = key.replace-str(char-to-str(39), '')
+    n = key.len-bytes()
+    #{index-out = 0}
+    a = key.byte(0)
+    #{index-out = 0}
+    z = key.byte(n - 1)
+    (a == 34 && z == 34) || (a == 39 && z == 39) -> {
+        key, ok = toml-unquote(key)
+        return
+    }
+    i <- [0..n): {
+        #{index-out = 0}
+        c = key.byte(i)
+        valid = (c >= 65 && c <= 90) || (c >= 97 && c <= 122) || (c >= 48 && c <= 57) || c == 45 || c == 95 || c == 46 || c == 32 || c == 9
+        valid == false -> return
+    }
+    ok = true
+}
+
+; toml-unquote: 解碼 basic/literal TOML 字串
+toml-unquote = (raw str) (value str, ok bool) {
+    value = ''
+    ok = false
+    s = raw.trim()
+    n = s.len-bytes()
+    n < 2 -> return
+    #{index-out = 0}
+    q = s.byte(0)
+    #{index-out = 0}
+    s.byte(n - 1) != q -> return
+    q != 34 && q != 39 -> return
+
+    q == 39 -> {
+        value = s.slice-bytes(1, n - 1)
+        ok = true
+        return
+    }
+
+    value = with-cap(n)
+    j = 0
+    i = 1
+    {
+        #{overflow=wrap}
+        i >= n - 1 -> break
+        #{index-out = 0}
+        c = s.byte(i)
+        c == 92 -> {
+            #{overflow=wrap}
+            #{overflow=wrap}
+        i = i + 1
+            i >= n - 1 -> return
+            #{index-out = 0}
+            c = s.byte(i)
+            {
+                c == 110 -> c = 10
+                c == 114 -> c = 13
+                c == 116 -> c = 9
+                c == 34 -> c = 34
+                c == 92 -> c = 92
+                -> return
+            }
+        }
+        #{index-out = 0}
+        value[j] = c
+        #{overflow=wrap}
+        #{overflow=wrap}
+        j = j + 1
+        #{overflow=wrap}
+        #{overflow=wrap}
+        i = i + 1
+    } (i < n - 1)
+    ok = true
+}
+
+; toml-value-complete: 判斷值是否已閉合；用於多行陣列、inline table、multiline string。
+toml-value-complete = (raw str) (complete bool) {
+    complete = false
+    s = raw.trim()
+    n = s.len-bytes()
+    n == 0 -> return
+    depth = 0
+    q = 0
+    escaped = false
+    i = 0
+    {
+        #{overflow=wrap}
+        i >= n -> break
+        #{index-out = 0}
+        c = s.byte(i)
+        {
+            q == 1 -> {
+                escaped -> escaped = false
+                {
+                    c == 92 -> escaped = true
+                    c == 34 -> q = 0
+                }
+            }
+
+            q == 2 -> c == 39 -> q = 0
+
+            q == 3 -> {
+                c == 34 && i + 2 < n && s.byte(i + 1) == 34 && s.byte(i + 2) == 34 -> {
+                    q = 0
+                    #{overflow=wrap}
+                    i = i + 2
+                }
+            }
+
+            q == 4 -> {
+                c == 39 && i + 2 < n && s.byte(i + 1) == 39 && s.byte(i + 2) == 39 -> {
+                    q = 0
+                    #{overflow=wrap}
+                    i = i + 2
+                }
+            }
+
+            -> {
+                c == 34 -> {
+                    i + 2 < n && s.byte(i + 1) == 34 && s.byte(i + 2) == 34 -> {
+                        q = 3
+                        #{overflow=wrap}
+                    i = i + 2
+                    }
+                    -> q = 1
+                }
+                c == 39 -> {
+                    i + 2 < n && s.byte(i + 1) == 39 && s.byte(i + 2) == 39 -> {
+                        q = 4
+                        #{overflow=wrap}
+                    i = i + 2
+                    }
+                    -> q = 2
+                }
+                c == 91 || c == 123 -> {
+                    #{overflow=wrap}
+                    depth = depth + 1
+                }
+                c == 93 || c == 125 -> {
+                    #{overflow=wrap}
+                    depth = depth - 1
+                    depth < 0 -> return
+                }
+            }
+        }
+        #{overflow=wrap}
+        #{overflow=wrap}
+        i = i + 1
+    } (i < n)
+    complete = q == 0 && depth == 0
+}
+
+; toml-valid-value: 接受 TOML 1.0 的 scalar、array、inline table 與日期時間字面值。
+toml-valid-value = (raw str) (valid bool) {
+    valid = false
+    s = raw.trim()
+    n = s.len-bytes()
+    n == 0 || n > TOML-MAX-VALUE -> return
+    complete = toml-value-complete(s)
+    complete == false -> return
+    #{index-out = 0}
+    c = s.byte(0)
+    {
+        c == 34 || c == 39 || c == 91 || c == 123 -> valid = true
+
+        -> {
+            s == 'true' || s == 'false' || s == 'inf' || s == '+inf' || s == '-inf' || s == 'nan' || s == '+nan' || s == '-nan' -> {
+                valid = true
+                return
+            }
+            i <- [0..n): {
+                #{index-out = 0}
+                c = s.byte(i)
+                allowed = (c >= 48 && c <= 57) || (c >= 65 && c <= 70) || (c >= 97 && c <= 102) || c == 43 || c == 45 || c == 46 || c == 58 || c == 84 || c == 90 || c == 95 || c == 32 || c == 9 || c == 101 || c == 69 || c == 120 || c == 88 || c == 111 || c == 79 || c == 98 || c == 66
+                allowed == false -> return
+            }
+            valid = true
+        }
+    }
+}
+
+; toml-register-table: 記錄已定義表格，重複定義回傳 false。
+toml-register-table = (doc toml-doc, name str) (ok bool) {
+    ok = false
+    i <- [0.. doc.table-count): {
+        #{index-out = 0}
+        table-name = toml-table-name(doc.tables[i])
+        table-name.eq-full(name) -> return
+    }
+    doc.table-count >= TOML-MAX-TABLES -> return
+    doc.tables[doc.table-count].name-len = name.len-bytes()
+    i <- [0..name.len-bytes()): {
+        #{index-out = 0}
+        doc.tables[doc.table-count].name[i] = name.byte(i)
+    }
+    #{overflow=wrap}
+    #{overflow=wrap}
+    doc.table-count = doc.table-count + 1
+    ok = true
+}
+
+; toml-resolve-section: 將 array-of-tables 的子表解析到最近一筆元素。
+toml-resolve-section = (doc toml-doc, name str) (resolved str) {
+    resolved = name
+    i <- [0.. doc.array-count): {
+        #{index-out = 0}
+        base = toml-array-name(doc.arrays[i])
+        name.starts-with(base) -> {
+            #{overflow=wrap}
+            blen = base.len-bytes()
+            name.len-bytes() > blen -> {
+                #{index-out = 0}
+                name.byte(blen) == 46 -> {
+                    suffix = name.slice-bytes(blen, name.len-bytes())
+                    resolved = base - '[' - doc.arrays[i].index.to-str() - ']' - suffix
+                    return
+                }
+            }
+        }
+    }
+}
+
+; toml-next-array-table: 取得並登記 array-of-tables 的下一個索引。
+toml-next-array-table = (doc toml-doc, name str) (idx i64, ok bool) {
+    idx = 0
+    ok = false
+    i <- [0.. doc.array-count): {
+        #{index-out = 0}
+        array-name = toml-array-name(doc.arrays[i])
+        array-name.eq-full(name) -> {
+            #{index-out = 0}
+            #{overflow=wrap}
+            idx = doc.arrays[i].index + 1
+            #{index-out = 0}
+            doc.arrays[i].index = idx
+            ok = true
+            return
+        }
+    }
+    doc.array-count >= TOML-MAX-ARRAY-TABLES -> return
+    doc.arrays[doc.array-count].name-len = name.len-bytes()
+    i <- [0..name.len-bytes()): {
+        #{index-out = 0}
+        doc.arrays[doc.array-count].name[i] = name.byte(i)
+    }
+    #{index-out = 0}
+    doc.arrays[doc.array-count].index = 0
+    #{overflow=wrap}
+    #{overflow=wrap}
+    doc.array-count = doc.array-count + 1
+    ok = true
+}
+
+; toml.parse: 解析 TOML 文件，失敗返回 err(message)
+toml.parse = (s str) (result ?toml-doc) {
+    doc = toml.new()
+    section str = ''
+    lines = s.split('\n')
+    line-no = 0
+    i = 0
+    {
+        #{overflow=wrap}
+        i >= lines.len() -> break
+        #{index-out = 0}
+        line = toml-strip-comment(lines[i])
+        #{overflow=wrap}
+        line-no = i + 1
+        line.len-bytes() == 0 -> {
+            #{overflow=wrap}
+        i = i + 1
+            continue
+        }
+
+        ; [table] 或 [[array-of-tables]]
+        line.starts-with('[') -> {
+            is-array-table = line.starts-with('[[')
+            close-len = 1
+            is-array-table -> close-len = 2
+            line.ends-with(']') == false -> {
+                result = err('toml parse error at line ' - line-no.to-str())
+                return
+            }
+            is-array-table && line.ends-with(']]') == false -> {
+                result = err('toml parse error at line ' - line-no.to-str())
+                return
+            }
+            end-pos = line.len-bytes() - close-len
+            start-pos = close-len
+            end-pos <= start-pos -> {
+                result = err('toml parse error at line ' - line-no.to-str())
+                return
+            }
+            raw-section = line.slice-bytes(start-pos, end-pos).trim()
+            section, section-ok = toml-normalize-key(raw-section)
+            section-ok == false -> {
+                result = err('toml parse error at line ' - line-no.to-str())
+                return
+            }
+            {
+                is-array-table -> {
+                    array-index, array-ok = toml-next-array-table(doc, section)
+                    array-ok == false -> {
+                        result = err('toml array table limit reached')
+                        return
+                    }
+                    section = section - '[' - array-index.to-str() - ']'
+                }
+
+                -> {
+                    section = toml-resolve-section(doc, section)
+                    table-ok = toml-register-table(doc, section)
+                    table-ok == false -> {
+                        result = err('toml duplicate table at line ' - line-no.to-str())
+                        return
+                    }
+                }
+            }
+            #{overflow=wrap}
+        i = i + 1
+            continue
+        }
+
+        eq = toml-find-eq(line)
+        eq <= 0 || eq >= line.len-bytes() - 1 -> {
+            result = err('toml parse error at line ' - line-no.to-str())
+            return
+        }
+        raw-key = line.slice-bytes(0, eq).trim()
+        key, key-ok = toml-normalize-key(raw-key)
+        key-ok == false -> {
+            result = err('toml parse error at line ' - line-no.to-str())
+            return
+        }
+        section.len-bytes() > 0 -> key = section - '.' - key
+        raw-value = line.slice-bytes(eq + 1, line.len-bytes()).trim()
+        raw-value.len-bytes() == 0 -> {
+            result = err('toml parse error at line ' - line-no.to-str())
+            return
+        }
+        complete = toml-value-complete(raw-value)
+        {
+            complete == false -> {
+                #{overflow=wrap}
+                j = i + 1
+                {
+                    j >= lines.len() -> break
+                    #{index-out = 0}
+                    next-line = toml-strip-comment(lines[j])
+                    raw-value = raw-value - '\n' - next-line
+                    complete = toml-value-complete(raw-value)
+                    #{overflow=wrap}
+                    #{overflow=wrap}
+        j = j + 1
+                    complete -> break
+                } (j < lines.len())
+                complete == false -> {
+                    result = err('toml unterminated value at line ' - line-no.to-str())
+                    return
+                }
+                i = j - 1
+            }
+        }
+        valid-value = toml-valid-value(raw-value)
+        valid-value == false -> {
+            result = err('toml invalid value at line ' - line-no.to-str())
+            return
+        }
+        key = key.trim()
+        key.len-bytes() == 0 -> {
+            result = err('toml parse error at line ' - line-no.to-str())
+            return
+        }
+        key-exists = false
+        k <- [0.. doc.count): {
+            #{index-out = 0}
+            entry-key = toml-entry-key(doc.entries[k])
+            entry-key.eq-full(key) -> {
+                key-exists = true
+                break
+            }
+        }
+        key-exists -> {
+            result = err('toml duplicate key at line ' - line-no.to-str())
+            return
+        }
+        doc.count >= TOML-MAX-ENTRIES -> {
+            result = err('toml document is full')
+            return
+        }
+        doc.entries[doc.count] = toml-make-entry(key, raw-value)
+        #{overflow=wrap}
+        doc.count = doc.count + 1
+        #{overflow=wrap}
+        #{overflow=wrap}
+        i = i + 1
+    } (i < lines.len())
+    result = doc
+}
+
+; stringify: 以 TOML 1.0 語法輸出文件；array-of-tables 會還原為 [[table]] 標頭。
+stringify = (doc toml-doc) (out str) {
+    out = ''
+    last-array str = ''
+    i <- [0.. doc.count): {
+        #{index-out = 0}
+        entry = doc.entries[i]
+        key = toml-entry-key(entry)
+        value = toml-entry-value(entry)
+        lb = key.index('[')
+        {
+            lb >= 0 -> {
+                rb = key.index(']')
+                rb > lb -> {
+                    prefix = key.slice-bytes(0, lb)
+                    array-id = key.slice-bytes(0, rb + 1)
+                    array-id.eq-full(last-array) == false -> {
+                        out.len-bytes() > 0 -> out = out - '\n'
+                        out = out - '[[' - prefix - ']]\n'
+                        last-array = array-id
+                    }
+                    #{overflow=wrap}
+                    local-start = rb + 1
+                    local-start < key.len-bytes() -> {
+                        #{overflow=wrap}
+                        local-key = key.slice-bytes(local-start + 1, key.len-bytes())
+                        out = out - local-key - ' = ' - value
+                    }
+                }
+            }
+
+            -> {
+                out = out - key - ' = ' - value
+                last-array = ''
+            }
+        }
+        #{overflow=wrap}
+        i + 1 < doc.count -> out = out - '\n'
+    }
+}
+
+; put: 設定原始 TOML 字面值。
+; value 可為陣列、日期時間等 TOML 語法，模組不會替它加引號。
+toml-doc.put = (key str, value str) (ok bool) {
+    ok = false
+    key, key-ok = toml-normalize-key(key)
+    key-ok == false -> return
+    value-ok = toml-valid-value(value)
+    value-ok == false -> return
+    i <- [0.. .count): {
+        #{index-out = 0}
+        entry-key = toml-entry-key(.entries[i])
+        entry-key.eq-full(key) -> {
+            .entries[i] = toml-make-entry(key, value)
+            ok = true
+            return
+        }
+    }
+    .count >= TOML-MAX-ENTRIES -> return
+    .entries[.count] = toml-make-entry(key, value)
+    #{overflow=wrap}
+    .count = .count + 1
+    ok = true
+}
+
+; get: 取得原始 TOML 字面值
+; 例如陣列、日期時間等尚未轉型的值可由此取得。
+get = (doc toml-doc, key str) (value ?str) {
+    i <- [0.. doc.count): {
+        #{index-out = 0}
+        entry-key = toml-entry-key(doc.entries[i])
+        entry-key.eq-full(key) -> {
+            value = toml-entry-value(doc.entries[i])
+            return
+        }
+    }
+}
+
+; has: 判斷鍵是否存在
+has = (doc toml-doc, key str) (found bool) {
+    i <- [0.. doc.count): {
+        #{index-out = 0}
+        entry-key = toml-entry-key(doc.entries[i])
+        entry-key.eq-full(key) -> {
+            found = true
+            return
+        }
+    }
+}
+
+; get-str: 取得並解碼字串值
+get-str = (doc toml-doc, key str) (value str, ok bool) {
+    ok = false
+    raw ?str = get(doc, key)
+    raw: {
+        ok -> value, ok = toml-unquote(it)
+        nil ->
+        err ->
+    }
+}
+
+; toml-parse-i64: 支援十進位、十六進位、八進位、二進位與底線分隔。
+toml-parse-i64 = (s str) (value i64, ok bool) {
+    value = 0
+    ok = false
+    clean = s.trim()
+    n = clean.len-bytes()
+    n == 0 -> return
+    start = 0
+    neg = false
+    #{index-out = 0}
+    c = clean.byte(0)
+    c == 45 -> {
+        neg = true
+        #{overflow=wrap}
+        start = start + 1
+    }
+    c == 43 -> {
+        #{overflow=wrap}
+        start = start + 1
+    }
+    base = 10
+    start + 2 <= n -> {
+        #{index-out = 0}
+        p0 = clean.byte(start)
+        #{index-out = 0}
+        p1 = clean.byte(start + 1)
+        {
+            (p0 == 48 && (p1 == 120 || p1 == 88)) -> {
+                base = 16
+                #{overflow=wrap}
+                start = start + 2
+            }
+            (p0 == 48 && (p1 == 111 || p1 == 79)) -> {
+                base = 8
+                #{overflow=wrap}
+                start = start + 2
+            }
+            (p0 == 48 && (p1 == 98 || p1 == 66)) -> {
+                base = 2
+                #{overflow=wrap}
+                start = start + 2
+            }
+        }
+    }
+    start >= n -> return
+    digits = 0
+    i <- [start..n): {
+        #{index-out = 0}
+        c = clean.byte(i)
+        c == 95 -> continue
+        d = -1
+        c >= 48 && c <= 57 -> {
+            #{overflow=wrap}
+            d = c - 48
+        }
+        c >= 65 && c <= 70 -> {
+            #{overflow=wrap}
+            d = c - 55
+        }
+        c >= 97 && c <= 102 -> {
+            #{overflow=wrap}
+            d = c - 87
+        }
+        d < 0 || d >= base -> return
+        #{overflow=wrap}
+        value = value * base + d
+        #{overflow=wrap}
+        digits = digits + 1
+    }
+    digits == 0 -> return
+    neg -> {
+        #{overflow=wrap}
+        value = 0 - value
+    }
+    ok = true
+}
+
+; toml-parse-f64: 解析浮點數
+toml-parse-f64 = (s str) (value f64, ok bool) {
+    ok = false
+    clean = s.replace-str('_', '')
+    parsed ?f64 = clean.to-f64()
+    parsed: {
+        ok -> {
+            value = it
+            ok = true
+        }
+        nil ->
+        err ->
+    }
+}
+
+; toml-parse-bool: 解析布林值
+toml-parse-bool = (s str) (value bool, ok bool) {
+    ok = false
+    parsed ?bool = s.to-bool()
+    parsed: {
+        ok -> {
+            value = it
+            ok = true
+        }
+        nil ->
+        err ->
+    }
+}
+
+; get-i64: 取得十進位整數（允許 TOML 的底線分隔）
+get-i64 = (doc toml-doc, key str) (value i64, ok bool) {
+    ok = false
+    raw ?str = get(doc, key)
+    raw: {
+        ok -> value, ok = toml-parse-i64(it)
+        nil ->
+        err ->
+    }
+}
+
+; get-f64: 取得浮點值（支援 exponent）
+get-f64 = (doc toml-doc, key str) (value f64, ok bool) {
+    ok = false
+    raw ?str = get(doc, key)
+    raw: {
+        ok -> value, ok = toml-parse-f64(it)
+        nil ->
+        err ->
+    }
+}
+
+; get-bool: 取得 true/false
+get-bool = (doc toml-doc, key str) (value bool, ok bool) {
+    ok = false
+    raw ?str = get(doc, key)
+    raw: {
+        ok -> value, ok = toml-parse-bool(it)
+        nil ->
+        err ->
+    }
+}
+

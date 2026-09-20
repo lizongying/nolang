@@ -431,6 +431,31 @@ Common standard library replacements:
 - `int.to-str()` / `float.to-str()` — number to string
 - `std/hash/sha1`, `std/hash/sha256`, `std/hash/sha512` — hash computation
 
+### TOML Configuration Files (`toml`)
+
+The `toml` standard-library module parses and serializes TOML 1.0 configuration files. It supports comments, bare/quoted/dotted keys, `[table]`, `[[array-of-tables]]`, basic/literal/multiline strings, decimal/hex/octal/binary integers, floats, booleans, date-time values, arrays, and inline tables. Values are retained as their original TOML literals so arrays and date-time values are not lost.
+
+```no
+cfg = toml.parse('title = "Nolang"\n[server]\nport = 8080\n[[server.backends]]\nname = "local"')
+
+doc = toml.new()
+doc.put('name', '"nolang"')
+doc.put('server.port', '8080')
+doc.put('enabled', 'true')
+text = toml.stringify(doc)
+```
+
+Common APIs:
+
+- `toml.new()` — create an empty `toml-doc`
+- `toml.parse(text)` — parse TOML and return `?toml-doc`
+- `doc.put(key, raw-value)` — insert or update a raw TOML value; invalid values are rejected
+- `toml.get(doc, key)` — retrieve the raw value (`?str`)
+- `toml.get-str(doc, key)`, `toml.get-i64(doc, key)`, `toml.get-f64(doc, key)`, `toml.get-bool(doc, key)` — retrieve converted scalar values
+- `toml.stringify(doc)` — serialize TOML; array-of-tables are emitted with `[[...]]` headers
+
+The current document model supports up to 4 keys, 2 ordinary tables, and 2 array-of-tables per document. A key is limited to 32 bytes and a value to 128 bytes.
+
 ## File Naming
 
 `.no` file names (including folder names) always use hyphens `-` to join words, **not underscores `_`**. This is consistent with the naming style of Nolang identifiers such as variable names, function names, and struct names.

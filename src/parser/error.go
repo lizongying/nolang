@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"regexp"
 	"strconv"
+	"strings"
 
 	"github.com/lizongying/nolang/lexer"
 )
@@ -85,6 +86,42 @@ func formatDiags(diags []Diagnostic, sev Severity) []string {
 		}
 	}
 	return out
+}
+
+// FormatDiagnostics renders the diagnostics of one severity in the canonical
+// compile-error shape
+//
+//	line L, column C: message [CODE]
+//
+// joined by "; ". This is the single place that decides how parser diagnostics
+// are embedded in the error returned by the compile pipeline, so that
+// `no build`, `no vet` and the LSP see the same shape as checker diagnostics
+// (see the "validation errors: " channel in build/transpiler.go):
+//
+//   - one location per diagnostic, no duplicated "line/col" prefix;
+//   - the code in the same trailing "[code]" slot the checker already uses,
+//     instead of an inline "[E_GENERAL]" glued to the message;
+//   - "; " as the separator, never Go's slice rendering ("%v" on []string),
+//     which prints "[a b]" and runs the last word of one message into the
+//     filename of the next.
+//
+// No filename is included: like the "validation errors: " channel, the caller
+// owns the file context and prefixes it when the diagnostics can come from a
+// file other than the one being compiled (see (*Transpiler).parseFile).
+func FormatDiagnostics(diags []Diagnostic, sev Severity) string {
+	parts := make([]string, 0, len(diags))
+	for _, d := range diags {
+		if d.Severity != sev {
+			continue
+		}
+		loc := fmt.Sprintf("line %d, column %d", d.Pos.Line, d.Pos.Column)
+		if d.Code != "" {
+			parts = append(parts, fmt.Sprintf("%s: %s [%s]", loc, d.Message, d.Code))
+			continue
+		}
+		parts = append(parts, fmt.Sprintf("%s: %s", loc, d.Message))
+	}
+	return strings.Join(parts, "; ")
 }
 
 // errorf records a structured error located at tok.

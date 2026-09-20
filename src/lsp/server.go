@@ -203,6 +203,14 @@ func (s *Server) publishDocumentDiagnostics(uri string, parseErrors []string, as
 	}
 }
 
+// parseErrorToDiagnostic converts a parser diagnostic string
+// ("[filename:]line L, column M: [CODE] message") into an LSP error diagnostic.
+//
+// The string is taken APART rather than dumped into Message: the position goes
+// to Range, the code to Code, and only the human text stays in Message. Keeping
+// the whole string rendered as "line 3, column 10: [E_GENERAL] …" in the editor
+// — the position printed twice (once by the editor's own gutter, once in the
+// prose) and the code glued into the sentence.
 func (s *Server) parseErrorToDiagnostic(errMsg string) Diagnostic {
 	var diagnostic Diagnostic
 	diagnostic.Source = "nolang-parser"
@@ -211,7 +219,9 @@ func (s *Server) parseErrorToDiagnostic(errMsg string) Diagnostic {
 	// 行/列保持 0 → 所有解析錯誤都被釘在 (0,0)。故先剝掉 "filename:" 前綴。
 	stripped := stripDiagFilename(errMsg)
 	line, col := 0, 0
-	fmt.Sscanf(stripped, "line %d, column %d:", &line, &col)
+	if n, _ := fmt.Sscanf(stripped, "line %d, column %d:", &line, &col); n < 2 {
+		line, col = 0, 0
+	}
 	if line > 0 {
 		diagnostic.Range.Start.Line = uint32(line - 1)
 	}
@@ -221,7 +231,28 @@ func (s *Server) parseErrorToDiagnostic(errMsg string) Diagnostic {
 	diagnostic.Range.End = diagnostic.Range.Start
 	diagnostic.Range.End.Character += 1
 	diagnostic.Severity = DiagnosticSeverityError
-	diagnostic.Message = stripped
+
+	// 位置前綴從正文移除（已由 Range 表達）。容忍無 column 的 "line L:" 形式。
+	msg := stripped
+	if line > 0 {
+		for _, prefix := range []string{
+			fmt.Sprintf("line %d, column %d:", line, col),
+			fmt.Sprintf("line %d:", line),
+		} {
+			if strings.HasPrefix(msg, prefix) {
+				msg = strings.TrimSpace(strings.TrimPrefix(msg, prefix))
+				break
+			}
+		}
+	}
+	// "[E_CODE] " 前綴 → Code 欄位（供編輯器過濾 / quickfix），不留在正文。
+	if strings.HasPrefix(msg, "[") {
+		if end := strings.Index(msg, "] "); end > 0 {
+			diagnostic.Code = msg[1:end]
+			msg = msg[end+2:]
+		}
+	}
+	diagnostic.Message = msg
 	return diagnostic
 }
 

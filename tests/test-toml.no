@@ -1,0 +1,25 @@
+; test-toml.no — TOML 1.0 standard-library regression test
+
+; Scalar values, comments, dotted keys, inline table, and multiline strings.
+source = '# comment\ntitle = "TOML"\nmultiline = """line one\nline two"""\nitems = [1, 2, {name = "x"}]\n[owner]\nname = "Tom"'
+cfg = toml.parse(source)
+cfg: {
+    ok -> print('toml parse: ok')
+    nil -> print('toml parse: nil')
+    err -> print('toml parse: err')
+}
+
+; Array-of-tables are represented using an indexed canonical key internally.
+arrays = '[[products]]\nname = "Hammer"\n[[products]]\nname = "Nail"'
+arr-cfg = toml.parse(arrays)
+arr-cfg: {
+    ok -> print('toml array-table: ok')
+    nil -> print('toml array-table: nil')
+    err -> print('toml array-table: err')
+}
+
+doc = toml.new()
+doc.put('name', '"nolang"')
+doc.put('server.port', '8080')
+doc.put('enabled', 'true')
+print(toml.stringify(doc))

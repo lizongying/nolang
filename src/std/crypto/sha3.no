@@ -3,27 +3,23 @@
 ; 實作 NIST FIPS 202 定義的 SHA-3 系列，基於 Keccak 海綿結構。
 ; 提供 SHA3-224、SHA3-256、SHA3-384、SHA3-512 四種輸出長度。
 ;
-#{index-out = 0}
 ; 內部狀態為 1600-bit（25 × 64-bit lanes），Keccak-f[1600] 含 24 輪。
 ;
 ; 用法：
-;   # std/hash/sha3
-;   hash28 = sha3-224(data)     // [28]byte
-;   hash32 = sha3-256(data)     // [32]byte
-;   hash48 = sha3-384(data)     // [48]byte
-;   hash64 = sha3-512(data)     // [64]byte
-;   hex = sha3-256-hex(data)    // 64 字元 hex
+;   # std/crypto/sha3
+;   hash28 = sha3.sha3-224(data)     // [28]byte
+;   hash32 = sha3.sha3-256(data)     // [32]byte
+;   hash48 = sha3.sha3-384(data)     // [48]byte
+;   hash64 = sha3.sha3-512(data)     // [64]byte
+;   hex = sha3.sha3-256-hex(data)    // 64 字元 hex
 
 ; ═══════════════════════════════════════════════
 ; 常量
 ; ═══════════════════════════════════════════════
 
 ; 旋轉偏移表（rho），25 個 lane 的旋轉量
-; 排列: lane[x][y] -> {
-    #{index-out = 0}
-    index = x + 5*y (x=0..4, y=0..4)
-}
-KECCAK-RC [25]u64 = [
+; 排列: lane[x][y] -> index = x + 5*y (x=0..4, y=0..4)
+KECCAK-RHO [25]i64 = [
     0, 1, 62, 28, 27, 36, 44, 6,
     55, 20, 3, 10, 43, 25, 39, 41,
     45, 15, 21, 8, 18, 2, 61, 56,
@@ -31,21 +27,45 @@ KECCAK-RC [25]u64 = [
 ]
 
 ; 輪常量（iota），24 輪
-KECCAK-RC-FINAL [24]u64 = [
-    1, 32898, 3416954152, 2772599054, 14509999238, 3278471570, 9380296890, 3715929624,
-    376424198, 1613126308, 266236955, 14559940080, 3098900490, 4858091956, 1613126308, 376424198,
-    14509999238, 2772599054, 3612105106, 3416954152, 32898, 1, 4293707772, 4294893224,
+; rc[t] 由 8-bit LFSR（x^8 + x^6 + x^5 + x^4 + 1）產生，
+; 位元分佈在 2^j - 1（j = 0..6，即 bit 0/1/3/7/15/31/63）。
+KECCAK-RC [24]u64 = [
+    1, 32898, 9223372036854808714, 9223372039002292224,
+    32907, 2147483649, 9223372039002292353, 9223372036854808585,
+    138, 136, 2147516425, 2147483658,
+    2147516555, 9223372036854775947, 9223372036854808713, 9223372036854808579,
+    9223372036854808578, 9223372036854775936, 32778, 9223372039002259466,
+    9223372039002292353, 9223372036854808704, 2147483649, 9223372039002292232,
 ]
 
 ; 64-bit 全 1 遮罩
 SHA3-MASK64 u64 = 18446744073709551615
 
+; 填充最高位元（0x80 落在 lane 的最高位元組時用，避免 i64 位移溢位）
+SHA3-PAD-HIGH u64 = 128
+
 ; ═══════════════════════════════════════════════
-#{index-out = 0}
+; 輔助函數
+; ═══════════════════════════════════════════════
+
+; rotl64: 64-bit 循環左移
+; x u64: 待旋轉的值
+; n i64: 旋轉量（0..63，會先 mod 64，避免位移 64 的未定義行為）
+rotl64 = (x u64, n i64) (r u64) {
+    #{overflow=wrap}
+    m = n % 64
+    m == 0 -> {
+        r = x & SHA3-MASK64
+        return
+    }
+    #{overflow=wrap}
+    r = ((x << m) | (x >> (64 - m))) & SHA3-MASK64
+}
+
+; ═══════════════════════════════════════════════
 ; Keccak-f[1600] 置換
 ; ═══════════════════════════════════════════════
 
-#{index-out = 0}
 ; keccak-f1600: 執行 Keccak-f[1600] 置換（24 輪）
 ; state []u64: 25 個 64-bit lane（輸入/輸出）
 keccak-f1600 = (state []u64) {
@@ -65,9 +85,7 @@ keccak-f1600 = (state []u64) {
             #{overflow=wrap}
             x4 = (x + 4) % 5
             #{index-out = 0}
-            d[x] = c[x1] ^ ((c[x4] << 1) | (c[x4] >> 63))
-            #{index-out = 0}
-            d[x] = d[x] & SHA3-MASK64
+            d[x] = c[x4] ^ rotl64(c[x1], 1)
         }
         x <- [0..5): {
             y <- [0..5): {
@@ -83,15 +101,13 @@ keccak-f1600 = (state []u64) {
             y <- [0..5): {
                 #{overflow=wrap}
                 #{index-out = 0}
-                rc = KECCAK-RC[x + 5 * y]
+                rc = KECCAK-RHO[x + 5 * y]
                 #{overflow=wrap}
                 #{index-out = 0}
                 val = state[x + 5 * y]
-                #{overflow=wrap}
-                rotated = ((val << rc) | (val >> (64 - rc))) & SHA3-MASK64
-                rc == 0 -> rotated = val
-
                 #{index-out = 0}
+                rotated = rotl64(val, rc)
+
                 ; π: new[x'][y'] where x' = y, y' = (2x+3y) % 5
                 nx = y
                 #{overflow=wrap}
@@ -117,7 +133,7 @@ keccak-f1600 = (state []u64) {
 
         ; ι (iota)
         #{index-out = 0}
-        state[0] = state[0] ^ KECCAK-RC-FINAL[round]
+        state[0] = state[0] ^ KECCAK-RC[round]
     }
 }
 
@@ -128,7 +144,7 @@ keccak-f1600 = (state []u64) {
 ; keccak-sponge: Keccak 海綿函數
 ; data []byte: 輸入資料
 ; rate i64: 位元率（以位元組為單位，必須是 8 的倍數）
-; capacity i64: 容量（以位元組為單位）
+; capacity i64: 容量（以位元組為單位，rate + capacity = 200）
 ; out-len i64: 輸出長度（位元組）
 ; suffix byte: 填充後綴（SHA-3 = 0x06, SHAKE = 0x1F）
 ; 返回 out []byte: 輸出雜湊值
@@ -137,74 +153,83 @@ keccak-sponge = (data []byte, rate i64, capacity i64, out-len i64, suffix byte) 
     out = with-len(out-len)
 
     ; 初始化狀態（25 個 64-bit lane，全零）
-    state []u64
+    state []u64 = with-len(25)
     i <- [0..25): {
-        #{overflow=wrap}
         #{index-out = 0}
         state[i] = 0
     }
     dlen = data.len()
 
     ; 吸收階段（absorbing）
-    ; 按 rate 位元組分塊處理
+    ; 先處理所有「完整」的 rate 位元組區塊，每區塊吸收後立即置換
     absorbed = 0
+    w u64 = 0
+    s-term u64 = suffix
     {
-
-        ; 將 rate 位元組 XOR 到狀態中（little-endian lane 方式）
         i <- [0..rate): {
             #{overflow=wrap}
-            absorbed + i < dlen -> {
-                #{overflow=wrap}
-                lane-idx = i / 8
-                byte-idx = i % 8
-                #{index-out = 0}
-                state[lane-idx] = state[lane-idx] ^ (data[absorbed + i] << (byte-idx * 8))
-            }
+            lane-idx = i / 8
+            #{overflow=wrap}
+            byte-idx = i % 8
+            #{index-out = 0}
+            w = data[absorbed + i]
+            #{overflow=wrap}
+            #{index-out = 0}
+            state[lane-idx] = state[lane-idx] ^ (w << (byte-idx * 8))
         }
 
         #{overflow=wrap}
         keccak-f1600(state)
         #{overflow=wrap}
         absorbed = absorbed + rate
-    } (absorbed < dlen)
+    } (absorbed + rate <= dlen)
 
-    ; 填充：suffix || 0x00... || 0x80（在 rate 邊界內）
-    ; SHA-3: domain separation bit = 0x06 (011 in binary, padded to 0x06...0x80)
-    ; 最後一個區塊
-    remaining = dlen % rate
-    remaining == 0 -> remaining = rate
+    ; 剩餘的最後一個區塊（0..rate-1 位元組）：只吸收，尚未置換
+    i <- [0..rate): {
+        absorbed + i < dlen -> {
+            #{overflow=wrap}
+            lane-idx = i / 8
+            #{overflow=wrap}
+            byte-idx = i % 8
+            #{index-out = 0}
+            w = data[absorbed + i]
+            #{overflow=wrap}
+            #{index-out = 0}
+            state[lane-idx] = state[lane-idx] ^ (w << (byte-idx * 8))
+        }
+    }
 
-    ; 在資料末尾添加填充
-    pad-byte-idx = remaining
-
-    ; 對最後一個區塊的填充位元組進行 XOR
+    ; 填充：suffix || 0x00... || 0x80（在同一個 rate 區塊內）
+    ; SHA-3: domain separation = 0x06，最後一個位元組的最高位元設為 1
+    ; remaining == rate - 1 時，suffix 與 0x80 落在同一位元組，兩次 XOR 自然合成 0x86
     #{overflow=wrap}
-    lane-idx = pad-byte-idx / 8
-    byte-idx = pad-byte-idx % 8
-
-    ; 添加 suffix
+    remaining = dlen - absorbed
+    #{overflow=wrap}
+    pad-lane-idx = remaining / 8
+    #{overflow=wrap}
+    pad-byte-idx = remaining % 8
     #{overflow=wrap}
     #{index-out = 0}
-    state[lane-idx] = state[lane-idx] ^ (suffix << (byte-idx * 8))
+    state[pad-lane-idx] = state[pad-lane-idx] ^ (s-term << (pad-byte-idx * 8))
 
-    ; 在 rate 末尾添加 0x80
     #{overflow=wrap}
     last-lane-idx = (rate - 1) / 8
     #{overflow=wrap}
     last-byte-idx = (rate - 1) % 8
     #{overflow=wrap}
     #{index-out = 0}
-    state[last-lane-idx] = state[last-lane-idx] ^ (128 << (last-byte-idx * 8))
+    state[last-lane-idx] = state[last-lane-idx] ^ (SHA3-PAD-HIGH << (last-byte-idx * 8))
+
     keccak-f1600(state)
 
     ; 擠出階段（squeezing）
     squeezed = 0
     {
         i <- [0..rate): {
-            #{overflow=wrap}
             squeezed + i < out-len -> {
                 #{overflow=wrap}
                 lane-idx = i / 8
+                #{overflow=wrap}
                 byte-idx = i % 8
                 #{index-out = 0}
                 out[squeezed + i] = (state[lane-idx] >> (byte-idx * 8)) & 255
@@ -212,9 +237,8 @@ keccak-sponge = (data []byte, rate i64, capacity i64, out-len i64, suffix byte) 
         }
 
         #{overflow=wrap}
-        squeezed + rate < out-len -> keccak-f1600(state)
-        #{overflow=wrap}
         squeezed = squeezed + rate
+        squeezed < out-len -> keccak-f1600(state)
     } (squeezed < out-len)
 }
 

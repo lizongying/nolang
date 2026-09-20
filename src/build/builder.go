@@ -354,11 +354,76 @@ func VetFileWithLints(inputPath string, opts BuildOptions) ([]checker.LintResult
 	return compiler.VetLints(), nil
 }
 
+// compileErrLocRe matches the location prefix of ONE diagnostic inside a joined
+// compile-error string: an optional "<file>: " prefix followed by the canonical
+// location, either the full "line L, column C:" or the column-less "line L:"
+// used by checkUnresolvedModuleCalls. It is used both to split the joined
+// string at real diagnostic boundaries and to pull the position out of a part.
+//
+// The file group is deliberately `[^:\n]+` (no colon) so it cannot swallow a
+// previous diagnostic's location, and `\s*` absorbs the single space that
+// fmt.Errorf("%s: %s", path, body) inserts after the path's colon.
+var compileErrLocRe = regexp.MustCompile(`(?:(?P<file>[^:\n]+):\s*)?line (?P<line>\d+)(?:, column (?P<col>\d+))?:`)
+
+// splitCompileErrParts splits a joined compile-error string into one string per
+// diagnostic. Empty/blank fragments are dropped, so a caller can range over the
+// result unconditionally.
+//
+// A plain strings.Split(msg, "; ") is wrong: message text legitimately contains
+// a semicolon (e.g. "export alias 'x' is the same as the function name; the
+// alias can be omitted"), which would be cut in half and the tail would become a
+// location-less lint. Splitting only where a location prefix follows the "; "
+// keeps such a message whole.
+func splitCompileErrParts(msg string) []string {
+	locs := compileErrLocRe.FindAllStringIndex(msg, -1)
+	if len(locs) == 0 {
+		if p := strings.TrimSpace(msg); p != "" {
+			return []string{p}
+		}
+		return nil
+	}
+	// A non-final fragment ends with the "; " separator, which must go; the last
+	// one has no separator, so its trailing text is message content and is left
+	// alone (a message could legitimately end in ';').
+	trimSep := func(s string) string {
+		s = strings.TrimSpace(s)
+		if strings.HasSuffix(s, ";") {
+			s = strings.TrimSpace(strings.TrimSuffix(s, ";"))
+		}
+		return s
+	}
+	var parts []string
+	// Anything before the first location is its own (location-less) diagnostic.
+	if head := trimSep(msg[:locs[0][0]]); head != "" {
+		parts = append(parts, head)
+	}
+	for i, loc := range locs {
+		if i+1 < len(locs) {
+			if p := trimSep(msg[loc[0]:locs[i+1][0]]); p != "" {
+				parts = append(parts, p)
+			}
+			continue
+		}
+		if p := strings.TrimSpace(msg[loc[0]:]); p != "" {
+			parts = append(parts, p)
+		}
+	}
+	return parts
+}
+
 // parseCompileErrorToLints 把 Compile() 返回的 error 字串解析為結構化
-// LintResult 條目。Compile 內部的錯誤格式有兩種：
-//   - "validation errors: line L, column C: msg1; line L, column C: msg2"
+// LintResult 條目。Compile 內部的錯誤格式有三種：
+//   - "validation errors: line L, column C: msg1 [id]; line L, column C: msg2 [id]"
+//   - "parser errors: line L, column C: msg1 [E_XXX]; line L, column C: msg2 [E_XXX]"
+//     （由 parser.FormatDiagnostics 產生，見 transpiler.go）
 //   - "check error: line L: msg"（來自 checkUnresolvedModuleCalls）
-// 每條提取行號/列號，統一標記為 error 級別。
+//
+// 可選的 "<file>: " 前綴（parseFile / parseEmbeddedProgram 為被匯入模組加上）
+// 會被提取到 LintResult.File，使診斷歸屬到真正的來源檔而非被 vet 的主檔。
+//
+// 每條提取行號/列號，統一標記為 error 級別。行號/列號一旦被提取，就從 Message
+// 中移除：呼叫方（printLintResults / LSP）會用自己的欄位重新渲染位置，留在
+// Message 裡只會讓同一條診斷印兩次 "line L, column C:"。
 func parseCompileErrorToLints(err error) []checker.LintResult {
 	if err == nil {
 		return nil
@@ -367,18 +432,16 @@ func parseCompileErrorToLints(err error) []checker.LintResult {
 	var results []checker.LintResult
 
 	// 去掉外層包裝前綴，保留含行號的原始消息
-	for _, prefix := range []string{"validation error: ", "validation errors: ", "check error: "} {
+	for _, prefix := range []string{
+		"validation error: ", "validation errors: ",
+		"parser error: ", "parser errors: ",
+		"check error: ",
+	} {
 		msg = strings.TrimPrefix(msg, prefix)
 	}
 
-	// 按分號分割多條錯誤（validation errors 用 "; " 連接）
-	parts := strings.Split(msg, "; ")
-	for _, part := range parts {
-		part = strings.TrimSpace(part)
-		if part == "" {
-			continue
-		}
-		// 提取並移除 [xxx] 後綴（由 transpiler.go 格式化注入）
+	for _, part := range splitCompileErrParts(msg) {
+		// 提取並移除 [xxx] 後綴（由 transpiler.go / parser 格式化注入）
 		// suffix 形如 " [traceid]"：suffix[0]=' '、suffix[1]='['，故 traceid 為
 		// suffix[2 : len-1]。注意勿寫死偏移量（曾誤用 8，把所有 trace id 截成末
 		// 兩字元，如 "ovfhndld"→"ld"）。len>=3 防護避免 " []" 之類切片越界。
@@ -396,13 +459,22 @@ func parseCompileErrorToLints(err error) []checker.LintResult {
 			Message:  part,
 			TraceID:  tid,
 		}
-		var line, col int
-		// 嘗試解析 "line L, column C: ..." 或 "line L: ..."
-		if n, _ := fmt.Sscanf(part, "line %d, column %d:", &line, &col); n >= 1 {
-			lr.Line = line
-			lr.Column = col
-		} else if n, _ := fmt.Sscanf(part, "line %d:", &line); n >= 1 {
-			lr.Line = line
+		// 提取位置（可選 "<file>: " 前綴 + "line L, column C:" / "line L:"），
+		// 並把位置前綴從消息正文中移除。
+		if m := compileErrLocRe.FindStringSubmatchIndex(part); m != nil && m[0] == 0 {
+			sub := func(name string) string {
+				i := compileErrLocRe.SubexpIndex(name)
+				if i < 0 || m[2*i] < 0 {
+					return ""
+				}
+				return part[m[2*i]:m[2*i+1]]
+			}
+			lr.File = sub("file")
+			lr.Line, _ = strconv.Atoi(sub("line"))
+			lr.Column, _ = strconv.Atoi(sub("col"))
+			if rest := strings.TrimSpace(part[m[1]:]); rest != "" {
+				lr.Message = rest
+			}
 		}
 		results = append(results, lr)
 	}

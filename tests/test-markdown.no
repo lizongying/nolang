@@ -1,0 +1,49 @@
+; test-markdown.no — Markdown 标准库回归测试
+
+heading = markdown.to-html('# Hello')
+heading.contains('<h1>Hello</h1>') -> print('ok: atx heading')
+heading.contains('<h1>Hello</h1>') == false -> print('fail: atx heading')
+
+setext = markdown.to-html('Title\n=====')
+setext.contains('<h1>Title</h1>') -> print('ok: setext heading')
+setext.contains('<h1>Title</h1>') == false -> print('fail: setext heading')
+
+inline = markdown.inline('This is **bold**, *em*, ~~gone~~ and `code`')
+inline.contains('<strong>bold</strong>') && inline.contains('<em>em</em>') && inline.contains('<del>gone</del>') && inline.contains('<code>code</code>') -> print('ok: inline marks')
+inline.contains('<strong>bold</strong>') == false -> print('fail: inline marks')
+
+link = markdown.inline('[site](https://example.com) ![logo](https://example.com/a.png)')
+link.contains('<a href="https://example.com">site</a>') && link.contains('<img src="https://example.com/a.png" alt="logo">') -> print('ok: link image')
+link.contains('<a href="https://example.com">site</a>') == false -> print('fail: link image')
+
+autolink = markdown.inline('<https://example.com>')
+autolink.contains('<a href="https://example.com">https://example.com</a>') -> print('ok: autolink')
+autolink.contains('<a href="https://example.com">https://example.com</a>') == false -> print('fail: autolink')
+
+escaped = markdown.escape-html('<script>alert("x")</script>')
+escaped.contains('&lt;script&gt;') && escaped.contains('&quot;x&quot;') -> print('ok: html escape')
+escaped.contains('&lt;script&gt;') == false -> print('fail: html escape')
+
+list = markdown.to-html('- one\n- [x] done\n\n1. first\n2. second')
+list.contains('<ul>') && list.contains('<input type="checkbox" checked disabled> done') && list.contains('<ol>') && list.contains('<li>second</li>') -> print('ok: lists')
+list.contains('<ul>') == false -> print('fail: lists')
+
+quote = markdown.to-html('> quoted\n> second')
+quote.contains('<blockquote>') && quote.contains('quoted') && quote.contains('second') -> print('ok: blockquote')
+quote.contains('<blockquote>') == false -> print('fail: blockquote')
+
+code = markdown.to-html('```go\nif x < 1 {}\n```')
+code.contains('<pre><code class="language-go">') && code.contains('if x &lt; 1 {}') && code.contains('</code></pre>') -> print('ok: fenced code')
+code.contains('<pre><code class="language-go">') == false -> print('fail: fenced code')
+
+table = markdown.to-html('| Name | Age |\n| --- | ---: |\n| Alice | 30 |')
+table.contains('<table>') && table.contains('<th>Name</th>') && table.contains('<td>30</td>') -> print('ok: table')
+table.contains('<table>') == false -> print('fail: table')
+
+hard = markdown.join-paragraph('one', 'two  ', true)
+hard.contains('one<br>') -> print('ok: hard break')
+hard.contains('one<br>') == false -> print('fail: hard break')
+
+rendered = markdown.render('text')
+rendered.contains('<p>text</p>') -> print('ok: render alias')
+rendered.contains('<p>text</p>') == false -> print('fail: render alias')
