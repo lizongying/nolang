@@ -266,16 +266,16 @@ func (f *formatter) attachedAnnotations(stmt parser.Statement) []*parser.Annotat
 		*parser.ForStatement, *parser.MultiAssignStatement,
 		*parser.TaggedEnumDefinition, *parser.EnumDefinition, *parser.InterfaceDefinition:
 		all := f.sem.AnnotationsOf(stmt)
-		// `#{index-out = ...}` 是「行注解」：永遠只以獨立 AnnotationStatement
-		// 形式印出（見 formatAnnotationStatement），不應作為附加註解再印一次
-		// （否則與獨立行形成雙印、破壞冪等）。故過濾掉該鍵，使其僅出現在
-		// 獨立註解行。
+		// `#{index-out = ...}` 是「行注解」：以獨立 AnnotationStatement 形式印出
+		// （見 formatAnnotationStatement），作為附加註解再印一次會雙印、破壞冪等，
+		// 故過濾掉該鍵。**尾隨寫法例外**（`stmt #{index-out=0}`）：它沒有獨立節點
+		// （parser 直接掛在陳述上），不在此輸出就會在 `no fmt -w` 時整條遺失。
 		if len(all) == 0 {
 			return nil
 		}
 		filtered := all[:0:0]
 		for _, e := range all {
-			if e != nil && e.Key == "index-out" {
+			if e != nil && e.Key == "index-out" && !e.Trailing {
 				continue
 			}
 			filtered = append(filtered, e)
@@ -300,6 +300,11 @@ func (f *formatter) hasAttachedAnnotations(stmt parser.Statement) bool {
 // 陳述都自帶一行，若讓它觸發間隙會在每條陳述前插入空行（破壞冪等且嚴重膨脹）。
 func (f *formatter) attachedAnnotationsWillEmit(stmt parser.Statement) bool {
 	for _, e := range f.attachedAnnotations(stmt) {
+		if e.Trailing {
+			// 尾隨註解輸出在陳述同一行後方，不佔用上方獨立行，故不觸發間隙
+			// （否則會在陳述前插入空行、破壞冪等）。
+			continue
+		}
 		if e.Key != "overflow" {
 			return true
 		}

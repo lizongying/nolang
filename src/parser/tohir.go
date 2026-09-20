@@ -601,7 +601,9 @@ func (c *hirConv) annValue(v AnnotationValue) int32 {
 
 	switch v := v.(type) {
 	case *AnnotationBoolValue:
-		return c.b.Add(hir.Node{Kind: hir.KBoolLit, Val: 1, Line: line, Col: col})
+		// 保留真假：`#{inline=false}` 必須與 `#{inline=true}` 區分開，否則
+		// HIR 側（Package.AnnotationBool）無法還原語義。
+		return c.b.Add(hir.Node{Kind: hir.KBoolLit, Val: u32i(v.Value), Line: line, Col: col})
 
 	case *AnnotationIntValue:
 		return c.b.Add(hir.Node{Kind: hir.KIntLit, Val: v.Value, Line: line, Col: col})

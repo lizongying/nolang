@@ -1,0 +1,103 @@
+; 結構體欄位的 `#{inline=true}` / `#{inline=false}` —— 端到端測試。
+;
+; `#{inline=false}` 不是「沒寫註解」的同義詞。兩者都是對全域預設（由
+; NOLANG_FIELD_PTR 選擇）的**覆寫**：
+;
+;   #{inline}        —— 簡寫，等於 inline=true：欄位的位元組放在宿主裡面
+;   #{inline=true}   —— 按值內聯（%pt）
+;   #{inline=false}  —— 欄位是指標（%pt*），pointee 在堆上、由該欄位擁有
+;
+; 差別只在「全域開關沒開」時看得出來：那時預設是按值內聯，`#{inline=false}`
+; 是唯一能讓單一欄位變成指標的寫法 —— 也是唯一能在不開全域開關的前提下
+; 寫出遞迴型別的寫法（見下面 ①）。
+;
+; 因此本檔真正的判別式是 ①：若 `next` 被當成按值內聯，`node` 就不可能有
+; 有限大小，程式根本無法編譯/執行。②③ 則確保三種寫法能並存且讀寫正確。
+
+; ① 遞迴型別：只有指標欄位才能成立
+node {
+    v i64
+    next node #{inline=false}
+}
+
+; ②③ 三種寫法並存於不同宿主
+pt {
+    x i64
+}
+
+by-value {
+    p pt #{inline=true}
+}
+
+explicit-ptr {
+    p pt #{inline=false}
+}
+
+bare {
+    p pt #{inline}
+}
+
+; 帶 owned 葉子的結構體：指標欄位的 pointee 也要能正確釋放
+person {
+    name str
+    age i64
+}
+
+owner-inline {
+    who person #{inline=true}
+}
+
+owner-ptr {
+    who person #{inline=false}
+}
+
+main = () {
+    ; ① 遞迴欄位可寫可讀 —— 這本身就證明了它是指標
+    n node
+    n.v = 1
+    n.next.v = 2
+    print(n.v)
+    print(n.next.v)
+
+    ; ②③ 三種寫法讀寫一致
+    a by-value
+    a.p.x = 10
+    print(a.p.x)
+
+    b explicit-ptr
+    b.p.x = 20
+    print(b.p.x)
+
+    c bare
+    c.p.x = 30
+    print(c.p.x)
+
+    ; 指標欄位的 pointee 必須是獨立的：`d = b` 之後改 d 不動 b
+    d = b
+    d.p.x = 21
+    print(b.p.x)
+    print(d.p.x)
+
+    ; inline 欄位帶 owned 葉子：覆寫舊值不能造成懸垂/雙重釋放
+    oi owner-inline
+    oi.who.name = 'alice'
+    oi.who.age = 1
+    print(oi.who.name)
+    oi.who.name = 'bob'
+    print(oi.who.name)
+
+    ; 指標欄位帶 owned 葉子：pointee 的葉子也要被釋放
+    op owner-ptr
+    op.who.name = 'carol'
+    op.who.age = 2
+    print(op.who.name)
+    op.who.name = 'dave'
+    print(op.who.name)
+
+    ; 反覆分配／釋放指標欄位的 pointee：洩漏或 double free 都會在這裡顯形
+    i <- [0..2000): {
+        t explicit-ptr
+        t.p.x = i
+    }
+    print('ok')
+}

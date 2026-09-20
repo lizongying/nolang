@@ -29,7 +29,11 @@ description: Reference for Nolang programming language syntax. Use when working 
   - [Async / Await (`run` / `awy`)](#async--await-run--awy)
   - [Multi-Assignment](#multi-assignment)
   - [Structs & Methods](#structs--methods)
+    - [Struct field inline tags](#struct-field-inline-tags)
+      - [Recursive types need `inline=false`](#recursive-types-need-inlinefalse)
   - [Enums](#enums)
+    - [Enum annotations and memory layout](#enum-annotations-and-memory-layout)
+      - [`#{inline}` — the three spellings](#inline--the-three-spellings)
   - [Method Conventions](#method-conventions)
   - [Slices (Views, Not New Types)](#slices-views-not-new-types)
   - [Standard Library Struct Pattern](#standard-library-struct-pattern)
@@ -1574,6 +1578,110 @@ user.greet = () {
 }
 ```
 
+### Struct field inline tags
+
+`#{inline}` on a **struct field** decides whether the field is stored **by value inside its host**
+(`%pt`) or as a **pointer** (`ptr`). The annotation goes **above** the field on its own line or
+**trailing** on the field's line — the same-line prefix form is a parse error, exactly as for every
+other annotation target:
+
+```no
+pt {
+    x i64
+    y i64
+}
+
+holder {
+    inl pt #{inline=true}    // by value: the struct lives inside holder
+    out pt #{inline=false}   // pointer: the field holds a pointer to pt
+    bare pt #{inline}        // shorthand for inline=true
+}
+```
+
+`#{inline}` is a **boolean**; see [`#{inline}` — the three spellings](#inline--the-three-spellings).
+The full truth table:
+
+| Spelling | Field layout |
+| --- | --- |
+| `#{inline}` / `#{inline=true}` / `#{inline=1}` | **by value**, inlined in the host (`%pt`) |
+| `#{inline=false}` / `#{inline=0}` | **pointer** (`ptr`) |
+| absent | depends on `NOLANG_FIELD_PTR` (see below) |
+| `#{inline=foo}`, `#{inline='true'}` | **compile error** — not a boolean |
+
+**The default when there is no annotation is decided by `NOLANG_FIELD_PTR`.** `mir.FieldPtrLayout`
+is `os.Getenv("NOLANG_FIELD_PTR") != ""` and is **off by default**; turning it on enables the
+"Phase 1 layout flip", which changes a struct field's default from by-value to pointer.
+
+| Field | Flag off (default) | Flag on (`NOLANG_FIELD_PTR=1`) |
+| --- | --- | --- |
+| no annotation | `%pt` (by value) | `ptr` (pointer) |
+| `#{inline}` / `#{inline=true}` | `%pt` | `%pt` |
+| `#{inline=false}` | `ptr` | `ptr` |
+
+In other words **the annotation is always honoured, regardless of that environment variable** — the
+flag only changes the default when no annotation is written. So under the default configuration
+`#{inline=false}` is "actively ask for a pointer" while `#{inline=true}` merely restates the layout
+that already applies; once the flip is enabled their roles swap.
+
+Two checker rules (TraceID `fieldtag1`, `ValidateFieldTags`):
+
+1. **Struct-typed fields only.** `#{inline}` on a scalar / `str` / `vec` / array / slice / map /
+   option / pointer field is rejected, because those are *always* stored inline — the annotation
+   would assert nothing. `#{inline=false}` on such a field is rejected too, since it would claim
+   the opposite of what the compiler does.
+2. **No by-value cycles.** An inlined struct is stored *inside* its host, so `a { #{inline} b b }`
+   together with `b { #{inline} a a }` has no finite size and is rejected (message: `inline fields
+   form a cycle: a -> b -> a`). Direct self-reference is the degenerate case. Only `=true` creates a
+   by-value edge, so mutually recursive structs are legal when **both sides write
+   `#{inline=false}`**.
+
+   > ⚠️ **"No annotation" does NOT mean "not inline".** Under the default configuration an
+   > unannotated struct-typed field *is* by-value, so `a { x b }` with `b { y a }` (neither
+   > annotated) is **not** legal by default — it fails with
+   > `identified structure type 'b' is recursive`. Omitting the annotation only means "pointer"
+   > when `NOLANG_FIELD_PTR=1`. See [Recursive types need `inline=false`](#recursive-types-need-inlinefalse)
+   > below for the full picture.
+   >
+   > And note the checker does **not** catch this: it only adds an edge for an *annotated* field, so
+   > the unannotated cycle reaches LLVM as an opaque `opt:` error. See the compiler-change skill.
+
+#### Recursive types need `inline=false`
+
+A struct that inlines itself has infinite size, so a self-reference cannot be by value. Since a
+struct field is by value under the default configuration, **`#{inline=false}` is the only way to
+write a self-referential type without flipping `NOLANG_FIELD_PTR` for the whole program**:
+
+```no
+node {
+    v i64
+    next node #{inline=false}   // pointer: gives node a finite size
+}
+
+n node
+n.next.v = 2
+print(n.next.v)                 // 2
+```
+
+Without it (or with `#{inline=true}`) LLVM rejects the type:
+`identified structure type 'node' is recursive`.
+
+Ownership of a forced-pointer field is handled by the compiler, not the author:
+
+- the pointee is allocated **lazily on first write** (`@__nolang_get_<T>`: malloc + zero);
+- the host's drop (`@__nolang_drop_<T>`) **null-checks and frees** it at scope exit;
+- a by-value copy (`b = a`, pass by value, container element write) **deep-copies** the pointee,
+  so two hosts never share one allocation and it is never freed twice.
+
+End-to-end coverage: `tests/test-field-inline-annotation.no` (its recursive case is the
+discriminator — if `inline=false` stopped forcing a pointer, that file would fail to compile).
+
+> Implementation note: layout lives on `FieldInfo.Layout` (`FieldLayoutInline` /
+> `FieldLayoutPointer` / `FieldLayoutDefault`) and is read by `Module.FieldIsPointer`. It is a
+> SEPARATE axis from `FieldInfo.Tag`, which still decides ownership — a forced pointer is
+> `FieldTagOwned` and is dropped like any other owning field. Never gate a decision on
+> `mir.FieldPtrLayout` when the real question is "is this field a pointer"; ask
+> `FieldIsPointer` / `StructHasPtrFields`, or `#{inline=false}` fields leak.
+
 ### Enums
 
 Enum definitions use the same syntax as structs, but with commas between values. Values auto-increment from 0.
@@ -1676,6 +1784,107 @@ option {
 
 `#{buildin}` takes no value (`#{buildin}`, not `#{buildin=NAME}`); it applies to builtin
 function stubs and builtin enums alike.
+
+#### Enum annotations and memory layout
+
+Enums accept `#{...}` annotations under the same placement rule as every other target (see
+[Annotation placement](#annotation-placement-only-two-legal-positions)): **above**, on its own
+line, or **trailing**, on the target's line after it. The same-line **prefix** spelling is a
+compile error.
+
+There are **two** legal places an enum annotation may sit:
+
+1. **Above the whole enum** — attaches to the enum definition itself (e.g. `#{buildin}`,
+   `#{inline=true}`);
+2. **On an individual member** — above it on its own line, or trailing on its line. This works
+   for the values of a C-style enum and the variants of a tagged enum alike.
+
+```no
+// 1. whole enum: own line above
+#{inline=true}
+box {
+    // 2. one variant: own line above
+    #{doc = 'has value'}
+    full(v i64),
+    // 2. one variant: trailing on its line
+    empty #{doc = 'empty'},
+}
+
+// `#{inline=false}` states the default explicitly
+#{inline=false}
+plain {
+    a,
+    b,
+}
+
+color {
+    // C-style enum values take the same two spellings
+    #{deprecated}
+    red,
+    green #{deprecated},
+    blue,
+}
+```
+
+**An annotation never changes the enum's structure.** Variant names, declaration order (tags),
+payload fields and their types are untouched, and matching / exhaustiveness checking are
+unaffected — an annotation is metadata on the definition.
+
+**Memory layout (the stack form).** A tagged enum is stored as a small by-value object rather
+than a heap-scattered payload:
+
+```llvm
+%tenum_<name> = type { i64 tag, [N x i64] payload }
+```
+
+- `tag` is the discriminant (`i64`), `0, 1, 2...` in declaration order;
+- `payload` is a slot array **shared by all variants** (union semantics — every variant writes
+  its fields into the same storage, so field access bitcasts at a slot offset);
+- `N` is the slot count of the **widest** variant, and is **at least 1** (never zero-width).
+
+| Case | `N` | Size |
+| --- | --- | --- |
+| every variant payload-less (a pure tag enum) | 1 | **16 bytes** |
+| widest variant is `i64` / `f64` / a pointer | 1 | 16 bytes |
+| widest variant is `?T` | 2 | 24 bytes |
+| widest variant is `str` / `vec` / `[]T` | 3 | 32 bytes |
+| widest variant is a struct `T` | sum of `T`'s fields' slots (expanded recursively) | depends on `T` |
+
+So the layout **starts at 16 bytes by default** and grows only when some variant's payload is
+actually wider — "fixed 16 bytes by default" and "size varies per variant" describe the same rule.
+
+#### `#{inline}` — the three spellings
+
+`inline` is a **boolean** annotation with three spellings, and the value is honoured:
+
+| Spelling | Meaning |
+| --- | --- |
+| `#{inline}` | shorthand for `inline=true` (a bare key is true) |
+| `#{inline=true}` | explicit true (`#{inline=1}` also works) |
+| `#{inline=false}` | explicit false (`#{inline=0}` also works) |
+
+A non-boolean value is a **compile error** (`#{inline=foo}`, `#{inline='true'}`), not a silent
+"true" — `ValidateFieldTags` (TraceID `fieldtag1`) reports it for both struct fields and enum
+definitions.
+
+Writing `#{inline=true}` **above the whole enum** is the explicit marker for the stack layout
+("this enum uses the stack form"); the compiler records it in `TaggedEnumInfo.Inline`. The
+default layout is already the stack form, so on an enum the annotation is byte-identical in
+codegen whichever value you write — `#{inline=false}` merely restates the default. The marker
+makes the intent explicit and is the stable switch should the default ever change.
+
+On a **struct field**, however, `#{inline}` is load-bearing — see
+[Struct field inline tags](#struct-field-inline-tags):
+
+- `#{inline}` / `#{inline=true}` → the field is stored **by value** inside its host (`%pt`);
+- `#{inline=false}` → the field is a **pointer** (`ptr`);
+- absent → whichever the `NOLANG_FIELD_PTR` flag selects (off by default: by value).
+
+Writing `#{inline=false}` on both sides is also what lets mutually recursive structs be legal
+with the choice spelled out.
+
+> `#{inline}` on an **individual variant** does **not** change layout today; it is retained only
+> as that variant's metadata.
 
 **Rule: enum values must always be referenced using qualified form `enum-type.value`, never as bare names.** This prevents naming conflicts and ensures external packages cannot use values directly without qualification.
 
@@ -1808,7 +2017,7 @@ safe-get = (arr []i64, i i64) (res ?i64) {
 }
 ```
 
-**2. `#{index-out=DEF} x = v[i]` — substitute a literal default on OOB.** The annotation may trail the assignment on the same line. `DEF` **must be a literal** (not an expression), typed by the element:
+**2. `x = v[i] #{index-out=DEF}` — substitute a literal default on OOB.** The annotation trails the assignment on the same line (or sits on its own line above it). `DEF` **must be a literal** (not an expression), typed by the element:
 - integer/char containers (`i8`–`i128`, `u8`–`u128`, `byte`, `char`): int or char literal, e.g. `0`, `'x'`
 - float containers (`f32`, `f64`): float literal, e.g. `0.0`
 - bool containers (`bool`): `true` / `false`
@@ -1819,7 +2028,9 @@ get-default = (arr []i64, i i64) (res i64) {
     res = arr[i]  #{index-out=0}   // OOB → res = 0
 }
 ```
-Leading form `#{index-out=0} res = arr[i]` is also accepted.
+The **prefix** form `#{index-out=0} res = arr[i]` is **not** accepted — it is a compile error. See
+[Annotation placement](#annotation-placement-only-two-legal-positions): writing the annotation in
+front of the target on the same line is rejected by both the compiler and nolang-lsp.
 
 **3. Bare `x = v[i]` inside an option-returning function — auto-rewrite to `?=`.** When the enclosing function returns `?T`, a bare safe-index assignment `x = v[i]` is automatically rewritten to `x ?= v[i]`, propagating OOB upward.
 
@@ -2639,6 +2850,7 @@ open = (dsn str) (d db-sqlite) {
 | Syntax | Type | Example |
 | --- | --- | --- |
 | Bare key | bool | `#{debug}` |
+| Boolean | bool | `#{inline=true}` / `#{inline=false}` |
 | Integer | int | `#{max=100}` |
 | String | string | `#{name='hello'}` |
 | Identifier | ident | `#{mode=fast}` |
@@ -2656,6 +2868,44 @@ Multiple key-value pairs are separated by commas:
 - `[a..b)` — left-closed, right-open
 - `(a..b)` — open on both ends
 - `(a..b]` — left-open, right-closed
+
+#### Annotation placement (only two legal positions)
+
+A `#{...}` group may be written in **exactly two** places:
+
+1. **Above** — on its own line, directly above the target (statement, struct field, enum member,
+   declaration, match arm);
+2. **Trailing** — on the target's same line, *after* it.
+
+A **prefix** annotation (`#{index-out=0} res = arr[i]`) — one that appears on the same line *in
+front of* its target — is a **compile error**, reported identically by the compiler and by
+nolang-lsp. The rule is decided the same way everywhere: if code still follows the group's closing
+`}` on the same line, it is a prefix. A newline, a `;`/`//` line comment, a closing `}`, or another
+`#{` group does **not** count as code.
+
+```no
+// ✓ above: own line
+#{overflow = wrap}
+x i8 = a + 100
+
+// ✓ trailing: end of the target's line
+x i8 = a + 100 #{overflow = wrap}
+
+// ✗ prefix: same line, in front -> compile error
+#{overflow = wrap} x i8 = a + 100
+```
+
+Two consequences that are easy to miss:
+
+- **A trailing annotation belongs to the statement it trails**, not to the one that follows it.
+  Attaching it forward made `res = arr[i] #{index-out = 0}` — the exact spelling the LSP quick fix
+  inserts — apply to the wrong statement and silently do nothing.
+- **`if <cond> #{...} {` is also a prefix position**, and is an error. That spot used to be
+  silently swallowed (no effect and no error), which made it the hardest form of failure to notice.
+
+Struct fields and enum members (C-style enum values, tagged-enum variants) follow the same rule,
+and the trailing spelling is the conventional one: `p pt #{inline}`, `green #{deprecated}`,
+`ok(v i64) #{inline}`.
 
 The FFI annotation `#{c}` is a special form of the annotation system. When an annotation contains an FFI language key (`c`, `cpp`, `rust`, etc.) and is followed by a function declaration, the compiler identifies it as an FFI binding:
 

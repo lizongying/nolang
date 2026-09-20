@@ -5668,17 +5668,38 @@ func ValidateViewTypes(program *parser.Program) []ValidateResult {
 // by-value layout:
 //
 //	holder {
-//	    #{inline} p pt     ; stored as %pt, inside the host
-//	    q pt               ; default: stored as %pt*, on the heap
+//	    #{inline=true} p pt   ; stored as %pt, inside the host
+//	    q pt                  ; default: stored as %pt*, on the heap
 //	}
+//
+// Three spellings are accepted:
+//
+//	#{inline}        the shorthand for `#{inline=true}`
+//	#{inline=true}   by-value layout: the field's bytes live inside the host
+//	#{inline=false}  pointer layout: the slot holds a `%T*`, the pointee is
+//	                 heap-allocated and owned by the field
+//
+// `#{inline=false}` is NOT a synonym for "no annotation". Both values OVERRIDE
+// the module-wide default that `NOLANG_FIELD_PTR` selects, so `#{inline=false}`
+// makes a field a pointer even when the rest of the program stores struct
+// fields by value — which is also how a recursive type is written
+// (`node { next node #{inline=false} }`) without flipping the global switch.
+//
+// The explicit forms are preferred precisely because they say which layout is
+// meant; `#{inline=false}` exists so a reader never has to work out whether a
+// missing annotation was deliberate.
 //
 // Rules:
 //
 //  1. `#{inline}` must sit on a field whose declared type can actually be a
 //     struct. On a scalar / str / vec / array / slice / map / option / pointer
 //     it is a no-op that reads as if it did something; the language rejects it
-//     rather than hiding the ambiguity.
-//  2. Inline fields must not form a cycle. An inlined struct is stored INSIDE
+//     rather than hiding the ambiguity. This holds for `=false` too: a scalar
+//     field is ALWAYS stored inline, so `#{inline=false}` on one asserts the
+//     opposite of what the compiler does.
+//  2. The value must be a boolean. `#{inline=foo}` is rejected rather than
+//     silently read as true.
+//  3. Inline fields must not form a cycle. An inlined struct is stored INSIDE
 //     its host, so `a { #{inline} b b }` together with `b { #{inline} a a }`
 //     has no finite size. Direct self-reference is the degenerate case.
 //
@@ -5713,7 +5734,17 @@ func ValidateFieldTags(program *parser.Program) []ValidateResult {
 	inlineEdges := map[string][]string{}
 	for _, sd := range structs {
 		for _, f := range sd.Fields {
-			if f == nil || !hasFieldAnnotation(program, f, "inline") {
+			if f == nil {
+				continue
+			}
+			present, value, ok := inlineAnnotationOf(program, f)
+			if !present {
+				continue
+			}
+			if !ok {
+				add(f.Pos(), "#{inline} takes a boolean: write `#{inline=true}` (or the "+
+					"shorthand `#{inline}`) for the by-value layout, or `#{inline=false}` "+
+					"for the default pointer layout; got a non-boolean value")
 				continue
 			}
 			raw := structFieldTypeString(f)
@@ -5726,7 +5757,31 @@ func ValidateFieldTags(program *parser.Program) []ValidateResult {
 					"slices, maps, options and pointers are always stored inline")
 				continue
 			}
-			inlineEdges[sd.Name] = append(inlineEdges[sd.Name], raw)
+			// Only `=true` embeds by value. `=false` is a pointer, so it adds
+			// no embedding edge and can never close a cycle — that is what
+			// makes `node { next node #{inline=false} }` legal.
+			if value {
+				inlineEdges[sd.Name] = append(inlineEdges[sd.Name], raw)
+			}
+		}
+	}
+
+	// Enum definitions carry `#{inline}` too (the enum-level annotation above
+	// the whole enum). Nothing embeds by value there, but the value must still
+	// be a boolean, otherwise `#{inline=foo}` would silently mean "true".
+	for _, stmt := range program.Statements {
+		var entries []*parser.AnnotationEntry
+		switch d := stmt.(type) {
+		case *parser.TaggedEnumDefinition:
+			entries = annotationEntriesOf(program, d)
+		case *parser.EnumDefinition:
+			entries = annotationEntriesOf(program, d)
+		default:
+			continue
+		}
+		if _, _, ok := parser.InlineAnnotationValue(entries); !ok {
+			add(stmt.Pos(), "#{inline} takes a boolean: write `#{inline=true}` (or the "+
+				"shorthand `#{inline}`), or `#{inline=false}`; got a non-boolean value")
 		}
 	}
 
@@ -5768,30 +5823,33 @@ func ValidateFieldTags(program *parser.Program) []ValidateResult {
 		if walk(sd.Name, nil) {
 			add(sd.Pos(), "inline fields form a cycle: "+strings.Join(cyclePath, " -> ")+
 				" — an inlined struct is stored inside its host, so the size would be "+
-				"infinite; drop #{inline} on one of these fields to break the cycle")
+				"infinite; write #{inline=false} on one of these fields (or drop the "+
+				"annotation) to break the cycle")
 			break
 		}
 	}
 	return results
 }
 
-// hasFieldAnnotation reports whether the field carries the given `#{...}` key.
+// annotationEntriesOf returns the `#{...}` entries attached to a node.
 // Both tables are consulted: ResolveProgram copies RawAnnotations into
 // Annotations, and the single-file / dependency-vet paths never run it.
-func hasFieldAnnotation(program *parser.Program, f *parser.StructField, key string) bool {
-	if program == nil || program.Sem == nil || f == nil {
-		return false
+func annotationEntriesOf(program *parser.Program, n parser.Node) []*parser.AnnotationEntry {
+	if program == nil || program.Sem == nil || n == nil {
+		return nil
 	}
-	entries := program.Sem.AnnotationsOf(f)
+	entries := program.Sem.AnnotationsOf(n)
 	if len(entries) == 0 {
-		entries = program.Sem.RawAnnotationsOf(f)
+		entries = program.Sem.RawAnnotationsOf(n)
 	}
-	for _, e := range entries {
-		if e != nil && e.Key == key {
-			return true
-		}
-	}
-	return false
+	return entries
+}
+
+// inlineAnnotationOf reads the `#{inline}` annotation off a struct field.
+// present=false means no annotation; ok=false means it carried a non-boolean
+// value. See parser.InlineAnnotationValue for the accepted spellings.
+func inlineAnnotationOf(program *parser.Program, f *parser.StructField) (present, value, ok bool) {
+	return parser.InlineAnnotationValue(annotationEntriesOf(program, f))
 }
 
 // canBeStructType reports whether a declared field type could name a struct.

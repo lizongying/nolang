@@ -234,6 +234,58 @@ fingerprint_one() {
 export -f fingerprint_one run_to sha_of
 export NO WORKDIR TMO MODE GOLDEN_MIR FORCE_MIR
 
+# ── PRE-FLIGHT POLLUTION GUARD ───────────────────────────────────────────────
+#
+# WHY: the fingerprint is "<rc> <sha256-of-stdout> <path>" and fingerprint_one
+# redirects with `>"$tmp" 2>/dev/null` — STDERR is discarded, STDOUT IS NOT. So
+# a stray `fmt.Printf("DEBUG ...")` anywhere in the compiler is captured into
+# every program's stdout and therefore into every fingerprint.
+#
+# The failure does not look like a failure. It looks like this:
+#
+#     SAME=      0
+#     DIVERGE=   409
+#     REGRESS=   3      <- unchanged
+#     IMPROVED=  6      <- unchanged
+#
+# Every rc=0 file "diverges", including files whose program output is EMPTY.
+# The rc column stays correct, which is what makes the report look credible.
+# It cost a 7-minute pass plus a second 7-minute pass to disprove.
+#
+# DETECTOR, generic on purpose: the golden itself says which files produced
+# empty stdout at rc=0, so take one and require it to STILL produce empty
+# stdout. No hardcoded paths, nothing to maintain as the corpus grows, and it
+# works in -update mode too (where freezing polluted output would destroy the
+# oracle rather than merely misreport it).
+EMPTY_SHA=e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+if [ ! -x "$NO" ]; then
+  echo "ERROR: no executable at NO=$NO — build it first ('make no')." >&2
+  exit 4
+fi
+if [ -f "$GOLDEN" ]; then
+  probe=$(awk -v e="$EMPTY_SHA" '$1=="0" && $2==e {print $3; exit}' "$GOLDEN")
+  if [ -n "$probe" ]; then
+    run_to 120 "$NO" run "$probe" >"$WORKDIR/pollution.probe" 2>/dev/null
+    prc=$?
+    ph=$(sha_of "$WORKDIR/pollution.probe"); [ -z "$ph" ] && ph="$EMPTY_SHA"
+    if [ "$prc" != 0 ] || [ "$ph" != "$EMPTY_SHA" ]; then
+      echo "ERROR: stdout pollution guard tripped on '$probe'." >&2
+      echo "       The golden records rc=0 with EMPTY stdout; got rc=$prc sha=$ph" >&2
+      echo >&2
+      echo "       Almost certainly the compiler is printing to stdout — a leftover" >&2
+      echo "       fmt.Printf/println in src/. This harness discards stderr but not" >&2
+      echo "       stdout, so every fingerprint would shift and the run below would" >&2
+      echo "       report ~all rc=0 files as DIVERGE. Not a real regression." >&2
+      echo >&2
+      echo "       Also check: was $NO rebuilt underneath you mid-run?" >&2
+      rm -f "$WORKDIR/pollution.probe"
+      exit 4
+    fi
+    rm -f "$WORKDIR/pollution.probe"
+  fi
+fi
+# ── END POLLUTION GUARD ──────────────────────────────────────────────────────
+
 find tests -name '*.no' -print0 | xargs -0 -P "$JOBS" -I{} bash -c 'fingerprint_one "$@"' _ {}
 
 sort -k3 "$WORKDIR/fp.txt" > "$WORKDIR/fp.sorted.tsv"

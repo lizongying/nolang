@@ -544,7 +544,12 @@ func (m *Module) readAfterInBlock(bid BlockID, after InstID, v ValueID) bool {
 // are covered: `b.Emit(OpMove, typ, [src])` (Dst set) and
 // `EmitMoveInto(dst, src)` (Dst NoVal, Args=[src, dst]).
 func (m *Module) moveStructHasPtrFields(f *Function, inst *Inst) bool {
-	if !FieldPtrLayout || inst.Op != OpMove || len(inst.Args) == 0 {
+	// NOT gated on FieldPtrLayout: typeIsPtrStruct walks FieldIsPointer, which
+	// is the authority on whether a field is a `%T*`. Gating on the global
+	// switch here would skip the clone promotion for a `#{inline=false}` field
+	// in the default state, leaving source and destination sharing one pointee
+	// that both then free.
+	if inst.Op != OpMove || len(inst.Args) == 0 {
 		return false
 	}
 	dst := inst.Dst
@@ -555,6 +560,52 @@ func (m *Module) moveStructHasPtrFields(f *Function, inst *Inst) bool {
 		return true
 	}
 	return m.typeIsPtrStruct(f, inst.Args[0])
+}
+
+// moveStructSharesHeap reports whether a BITWISE copy of this OpMove's payload
+// would leave source and destination sharing heap — either through
+// pointer-laid-out fields (pointees) or through an inline owned leaf (`str`),
+// whose {len,cap,data} descriptor is copied while its buffer is not.
+//
+// Both cases need the same treatment: promote to OpClone while the source is
+// still live, so each side ends up owning its own memory.
+//
+// The leaf half is deliberately NOT gated on FieldPtrLayout. Sharing an inline
+// str buffer is a property of the bitwise copy, not of the field layout flip —
+// and emitSetField now clones AND frees the old occupant unconditionally, so
+// leaving the copy sharing would make that free a use-after-free in BOTH switch
+// states, not just under the pointer layout.
+func (m *Module) moveStructSharesHeap(f *Function, inst *Inst) bool {
+	if m.moveStructHasPtrFields(f, inst) {
+		return true
+	}
+	if inst.Op != OpMove || len(inst.Args) == 0 {
+		return false
+	}
+	dst := inst.Dst
+	if dst == NoVal && len(inst.Args) >= 2 {
+		dst = inst.Args[1]
+	}
+	return m.typeIsLeafStruct(f, dst) || m.typeIsLeafStruct(f, inst.Args[0])
+}
+
+// typeIsLeafStruct reports whether value v has a struct type with an inline
+// owned leaf (`str`) that a bitwise copy would share.
+func (m *Module) typeIsLeafStruct(f *Function, v ValueID) bool {
+	if v <= NoVal {
+		return false
+	}
+	var tid TypeID = NoType
+	if t, ok := f.LocalTypes[v]; ok {
+		tid = t
+	} else if val := m.Value(v); val != nil {
+		tid = val.Type
+	}
+	ty := m.Type(tid)
+	if ty == nil || ty.Kind != KindStruct {
+		return false
+	}
+	return m.StructHasOwnedLeafFields(m.StructKeyOf(ty.Raw))
 }
 
 // typeIsPtrStruct reports whether value v has a struct type that owns
@@ -718,7 +769,7 @@ func (m *Module) insertDrops(f *Function, rep *Report) {
 			//
 			// OpClone and OpMove have the same def/use shape, so rewriting the
 			// op does not invalidate the liveness sets computed above.
-			if m.moveStructHasPtrFields(f, inst) {
+			if m.moveStructSharesHeap(f, inst) {
 				if liveOut[bid][inst.Args[0]] || m.readAfterInBlock(bid, iid, inst.Args[0]) {
 					inst.Op = OpClone
 				} else {

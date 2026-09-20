@@ -71,7 +71,13 @@ func (m *Module) IsStructType(raw string) bool {
 // FieldIsPointer reports whether a field's slot holds a `%T*` rather than an
 // inlined `%T`.
 //
-// Two guards, both deliberate:
+// Three guards, all deliberate:
+//
+//  0. An explicit `#{inline=...}` wins outright, and it wins in BOTH states of
+//     NOLANG_FIELD_PTR. That is the whole point of the annotation: it is how a
+//     field opts into the layout the module-wide default does not give it.
+//     `#{inline=false}` is therefore NOT a synonym for "no annotation" — it
+//     forces a pointer even when the default is by-value.
 //
 //  1. `FieldTagInline` short-circuits. Inline is the ZERO value of FieldTag, so
 //     any FieldInfo that never went through tag analysis keeps the pre-existing
@@ -83,13 +89,22 @@ func (m *Module) IsStructType(raw string) bool {
 //     layout must not change — `str.data` in particular is the descriptor's own
 //     raw buffer, and pointerizing it would add a hop and break the drop walk.
 //     `?T` (T a struct) is Owned as well, but its payload stays inline; giving
-//     it a pointer is a separate step (see the plan's L1 item 5).
+//     it a pointer is a separate step (see the plan's L1 item 5). The checker
+//     rejects `#{inline}` on any of these, so guard 0 can only ever be reached
+//     for a struct — the IsStructType below keeps that true even for a
+//     FieldInfo built without the checker having run.
 //
 // Note the test is on the field's WHOLE type, not its element: `[N]T` and `[]T`
 // are not structs, so their elements stay inline by design (the
 // container-element decision). That falls out of this check rather than being a
 // separate special case.
 func (m *Module) FieldIsPointer(f FieldInfo) bool {
+	switch f.Layout {
+	case FieldLayoutInline:
+		return false
+	case FieldLayoutPointer:
+		return m.IsStructType(f.TypeRaw)
+	}
 	if !FieldPtrLayout {
 		return false
 	}
@@ -137,6 +152,76 @@ func (m *Module) StructHasPtrFields(key string) bool {
 	return len(m.StructPtrFieldIdxs(key)) > 0
 }
 
+// StructOwnedLeafFieldIdxs returns the indices of key's fields whose descriptor
+// is INLINED in the struct yet owns a separately-allocated buffer — `str` today,
+// `vec` / `[]T` / `map` once they get a clone helper.
+//
+// These share EXACTLY like pointees do: a bitwise struct copy copies the
+// {len,cap,data} triple and both structs end up freeing the same buffer. The
+// only difference from a pointer field is that the descriptor is inline instead
+// of a `%T*`, which is why StructPtrFieldIdxs (and therefore every "does this
+// struct need a deep copy / a recursive drop" decision) never saw them.
+//
+// Deliberately restricted to types this backend can actually deep-copy: widening
+// it to every Owned leaf would make the analysis promise a copy that emitClone
+// cannot perform, which is worse than sharing (the destination would look
+// independent while still aliasing).
+func (m *Module) StructOwnedLeafFieldIdxs(key string) []int {
+	fields := m.StructFields[key]
+	var out []int
+	for i := range fields {
+		if m.IsStructType(fields[i].TypeRaw) {
+			continue // structs are handled by the pointee walk
+		}
+		ty := m.Type(m.internType(fields[i].TypeRaw))
+		if ty == nil || !ty.Owned || ty.Kind != KindStr {
+			continue
+		}
+		out = append(out, i)
+	}
+	return out
+}
+
+// StructHasOwnedLeafFields reports whether a bitwise copy of this struct would
+// share an inline owned buffer with the source.
+//
+// It looks THROUGH inline nested structs, because their storage is part of this
+// struct's own bytes — `outer { sub inner }` with `inner { name str }` shares
+// inner's buffer exactly as if `name` were declared on outer. Without the
+// recursion, outer is classified as owning no heap, so it gets neither a drop
+// nor a deep copy; the leaves then leak (measured: 206 MB vs 4.7 MB for the
+// equivalent single-level struct).
+//
+// The recursion is bounded and skips built-in containers: `%vec` and friends
+// ARE in StructFields (see the blocklist note in the plan), so an unguarded
+// walk would classify any struct holding a `[]str` field as owning a `str`.
+func (m *Module) StructHasOwnedLeafFields(key string) bool {
+	return m.structHasOwnedLeafFields(key, 0)
+}
+
+func (m *Module) structHasOwnedLeafFields(key string, depth int) bool {
+	if depth > 8 {
+		return false
+	}
+	if len(m.StructOwnedLeafFieldIdxs(key)) > 0 {
+		return true
+	}
+	for i := range m.StructFields[key] {
+		f := m.StructFields[key][i]
+		if m.FieldIsPointer(f) || !m.IsStructType(f.TypeRaw) {
+			continue // pointees are a separate allocation, not inline bytes
+		}
+		sub := m.StructKeyOf(f.TypeRaw)
+		if sub == "" || sub == "vec" || sub == "str" || sub == "txt" {
+			continue
+		}
+		if m.structHasOwnedLeafFields(sub, depth+1) {
+			return true
+		}
+	}
+	return false
+}
+
 // typeOwnsHeap is the drop machinery's ownership test: the pre-existing owner
 // set (`Type.Owned`: str / vec / []T / map / ?owned) OR a struct whose pointer
 // layout gives it separately-allocated pointees.
@@ -152,7 +237,26 @@ func (m *Module) typeOwnsHeap(ty *Type) bool {
 	if ty.Owned {
 		return true
 	}
-	if !FieldPtrLayout || ty.Kind != KindStruct {
+	if ty.Kind != KindStruct {
+		return false
+	}
+	// Inline owned leaves share exactly like pointees: a bitwise struct copy
+	// copies the {len,cap,data} triple, so without a deep copy BOTH copies
+	// would free one buffer. Now that every by-value write path deep-copies
+	// them — struct assignment (emitLeafStructClone), field set (emitSetField),
+	// and container element writes (cloneStructElemLeaves) — the drop can
+	// finally own them. Deliberately NOT gated on FieldPtrLayout: sharing an
+	// inline str buffer is a property of the bitwise copy, identical in both
+	// switch states, while the frees that make it observable run in both.
+	if m.StructHasOwnedLeafFields(m.StructKeyOf(ty.Raw)) {
+		return true
+	}
+	// NOT gated on FieldPtrLayout. A field can be a pointer WITHOUT the flag,
+	// via `#{inline=false}`: StructHasPtrFields already asks the real question
+	// (it goes through FieldIsPointer), so gating here on the global switch
+	// would under-report for exactly the field the annotation asked to
+	// pointerize — and an under-reported owner is a leaked pointee.
+	if ty.Kind != KindStruct {
 		return false
 	}
 	return m.StructHasPtrFields(m.StructKeyOf(ty.Raw))
@@ -465,6 +569,40 @@ type FieldInfo struct {
 	// site (see FieldTag). It is derived from the declared type plus the field's
 	// own annotations — never from cross-statement dataflow.
 	Tag FieldTag
+	// Layout is the field's explicit `#{inline=...}` override, if any. It
+	// decides the LAYOUT (bytes inside the host vs. a `%T*`); Tag decides the
+	// OWNERSHIP. Keeping the two apart is what lets `#{inline=false}` mean
+	// "pointer" without also meaning "does not own its pointee".
+	Layout FieldLayout
+}
+
+// FieldLayout is an explicit, per-field layout override written as
+// `#{inline=true}` / `#{inline=false}`. FieldLayoutDefault means the field
+// carries no such annotation, so the module-wide rule applies (the one
+// NOLANG_FIELD_PTR flips). An override therefore lets a single field be laid
+// out against the grain of the rest of the program.
+type FieldLayout uint8
+
+const (
+	// FieldLayoutDefault: no `#{inline}` on this field.
+	FieldLayoutDefault FieldLayout = iota
+	// FieldLayoutInline: `#{inline}` / `#{inline=true}`. Store the value inside
+	// the host even when the default is a pointer.
+	FieldLayoutInline
+	// FieldLayoutPointer: `#{inline=false}`. Store a `%T*` and heap-allocate
+	// the pointee, even when the default is by-value.
+	FieldLayoutPointer
+)
+
+// String renders the override using the spelling the language uses.
+func (l FieldLayout) String() string {
+	switch l {
+	case FieldLayoutInline:
+		return "inline"
+	case FieldLayoutPointer:
+		return "pointer"
+	}
+	return "default"
 }
 
 // FieldTag is the semantic tag nolang stamps on a struct field at its
@@ -543,10 +681,28 @@ type VariantInfo struct {
 // The payload is a UNION — every variant writes its fields into the same
 // storage — so all field reads/writes go through a bitcast to the field's real
 // type at its slot offset, never through a per-variant struct type.
+//
+// Inline records the boolean value of the enum definition's `#{inline}`
+// annotation (the enum-level annotation written on its own line above the whole
+// enum). All three spellings are accepted, and the explicit ones are the
+// preferred, self-documenting form:
+//
+//	#{inline}        -> true   (shorthand)
+//	#{inline=true}   -> true
+//	#{inline=false}  -> false  (explicitly not inline)
+//
+// The stack form above is a small object already: 16 bytes when every variant
+// is payload-less (PayloadSlots == 1) and growing only as far as the widest
+// variant needs. The annotation is the opt-in marker for that form, so an enum
+// declared with `#{inline=true}` is guaranteed to keep it. `#{inline=false}`
+// spells out the default instead of leaving it implicit; today both values
+// produce the same layout, because the stack form is what the default already
+// is.
 type TaggedEnumInfo struct {
 	Name         string
 	Variants     []VariantInfo
 	PayloadSlots int64
+	Inline       bool
 }
 
 type Type struct {

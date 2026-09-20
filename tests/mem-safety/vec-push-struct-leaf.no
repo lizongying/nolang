@@ -1,0 +1,96 @@
+; vec.push(結構體) 是「按值」寫入元素的 —— 元素裡 inline 的 owned `str` 葉子
+; ({len,cap,data} 描述符) 被原樣複製，因此與來源 local **共用同一個緩衝區**。
+;
+; 只要來源 local 後來覆寫自己的那個欄位（emitSetField 會 `@str_free` 舊值），
+; 容器元素就懸垂；讀出來是垃圾，或者在開啟「葉子作用域退出釋放」後直接
+; `trace/BPT trap`（double free / UAF）。
+;
+; 這條測試鎖定「容器元素寫入必須深拷貝結構體」這個不變量：
+; push / insert / `v[i] = x` 三條寫入路徑各一條子測試。
+
+person {
+    name str
+    age i64
+}
+
+; 測試 1：push 之後覆寫來源的欄位 ⇒ 元素不受影響
+test-push-struct-leaf-independent = () (ok bool) {
+    v []person
+    p person
+    p.name = 'Alice'
+    p.age = 30
+    v.push(p)
+    ; 覆寫來源：這會 free 掉 v[0].name 正在讀的緩衝（修復前）
+    p.name = 'Bob'
+    e = v[0]
+    e.name == 'Alice' -> ok = true
+    e.age == 30 -> ok = true
+    p.name == 'Bob' -> ok = true
+}
+
+; 測試 2：push 兩個元素，兩個都必須獨立
+test-push-two-structs = () (ok bool) {
+    v []person
+    p person
+    p.name = 'Alice'
+    p.age = 30
+    v.push(p)
+    p.name = 'Bob'
+    p.age = 25
+    v.push(p)
+    p.name = 'Zed'
+    e0 = v[0]
+    e1 = v[1]
+    e0.name == 'Alice' -> ok = true
+    e0.age == 30 -> ok = true
+    e1.name == 'Bob' -> ok = true
+    e1.age == 25 -> ok = true
+    v.len() == 2 -> ok = true
+}
+
+; 測試 3：`v[i] = p` 下標寫入同樣必須深拷貝
+test-index-store-struct-leaf = () (ok bool) {
+    v []person = with-len(2)
+    p person
+    p.name = 'Carol'
+    p.age = 40
+    v[0] = p
+    p.name = 'Dave'
+    e = v[0]
+    e.name == 'Carol' -> ok = true
+    e.age == 40 -> ok = true
+}
+
+; 測試 4：insert 同樣必須深拷貝
+test-insert-struct-leaf = () (ok bool) {
+    v []person
+    p person
+    p.name = 'Eve'
+    p.age = 50
+    v.push(p)
+    q person
+    q.name = 'Frank'
+    q.age = 60
+    v.insert(0, q)
+    q.name = 'Gina'
+    e0 = v[0]
+    e1 = v[1]
+    e0.name == 'Frank' -> ok = true
+    e0.age == 60 -> ok = true
+    e1.name == 'Eve' -> ok = true
+    v.len() == 2 -> ok = true
+}
+
+main = () {
+    ok1 = test-push-struct-leaf-independent()
+    print('test-push-struct-leaf-independent: {ok1}')
+
+    ok2 = test-push-two-structs()
+    print('test-push-two-structs: {ok2}')
+
+    ok3 = test-index-store-struct-leaf()
+    print('test-index-store-struct-leaf: {ok3}')
+
+    ok4 = test-insert-struct-leaf()
+    print('test-insert-struct-leaf: {ok4}')
+}

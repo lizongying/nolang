@@ -144,6 +144,11 @@ cd src && go test ./...
 ### 5. Validate the standard library with `no vet` (Mandatory)
 
 > **强制规则**：修改完代码后，必须运行 `no vet src/std` 检查标准库，**不允许出现 ERROR**。详见 [nolang-vet](file://../nolang-vet/SKILL.md)。
+>
+> ⚠️ 本项目有 **1 个既有基线 ERROR**（`src/std/crypto/sha3.no:24`，在 pristine HEAD 上同样存在），
+> 它**不算回归**，不要去"修"它 —— 详见 nolang-vet 的〈已知的既有 ERROR〉。另外
+> `grep -c '\[ERROR\]'` 会把标识符名里含 ERROR 的 `[HINT]` 一起数进来（如 `LEVEL-ERROR`、
+> `DNS-RCODE-FORMAT-ERROR`），所以**要看 `grep '\[ERROR\]'` 的内容，不要只数行数**。
 
 After the Go tests are green, rebuild the compiler and run `no vet` on the standard library to ensure no syntax or semantic errors were introduced:
 

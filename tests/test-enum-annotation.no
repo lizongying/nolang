@@ -1,0 +1,140 @@
+; 枚舉註解（enum annotations）+ `#{inline}` 顯式布爾值 —— 端到端測試。
+;
+; 規則：
+;   - 註解可放在整個 enum 的「上方」（獨立成行）；
+;   - 也可放在單個成員的「上方」或「同一行尾隨」；
+;   - 寫在目標「前方同一行」是編譯錯誤（見 tests/test-annotation-position.no）。
+;
+; 註解不改變 enum 的結構：變體名稱、宣告順序（tag）、載荷型別都不受影響，
+; 因此下面的匹配與輸出在加/不加註解時完全一致。
+;
+; `#{inline}` 有三種寫法，語義一一對應：
+;   #{inline}        —— 簡寫，等於 inline=true
+;   #{inline=true}   —— 明確要求 inline
+;   #{inline=false}  —— 明確要求默認（非 inline）佈局
+;
+; 內存佈局：標籤列舉採棧式 `{ i64 tag, [N x i64] payload }`，
+;   N = 最寬變體所需槽數（最小 1）。
+;     box   ：最寬變體是 i64           -> N=1 -> 16 位元組
+;     shape ：最寬變體是 rect(f64,f64) -> N=2 -> 24 位元組
+;   棧式佈局本來就是標籤列舉的默認佈局，`#{inline=true}` 是它的顯式標記；
+;   `#{inline=false}` 則把「默認」寫出來。兩者目前產生相同的佈局。
+;
+; 結構體欄位上的 `#{inline}` 有真正的效果：它直接決定欄位是「按值內聯」還是「指標」。
+;   #{inline} / #{inline=true} -> 按值內聯在宿主結構體內（%pt）
+;   #{inline=false}            -> 指標（ptr）
+;   （不寫則取決於 NOLANG_FIELD_PTR：旗標關＝按值、開＝指標。註解永遠生效，
+;     不受該旗標影響；詳見 docs/docs/lang/syntax.md〈結構體欄位上的 `#{inline}`〉。）
+;
+; 注意 ①：本檔案刻意把說明註解都放在 enum 之外 —— `no fmt` 會把 enum 體内部的
+; `;` 註解搬到 enum 之後（pristine HEAD 行為相同，屬既有怪癖）。
+;
+; 注意 ②：下面 box 的局部變數刻意命名為 `bx` 而不是 `b`。若叫 `b`，它會與
+; `plain` 的無載荷變體 `b` 同名，而 match 臂裡的裸識別字模式目前是走「普通
+; 識別字查找」，會被同名局部變數遮蔽，於是編譯器拿變數（%tenum_box）去跟
+; tag（i64）比較，產生非法 IR。此為既有 bug（pristine HEAD 重現同一條錯誤，
+; 與 `#{inline}` 無關），見本檔末尾說明。
+
+; ① 整個 enum 上方 + ② 單個值：一個獨立成行、一個同行尾隨
+#{inline=true}
+color {
+    #{doc = 'red'}
+    red,
+    green #{doc = 'green'},
+    blue,
+}
+
+; ① 整個 enum 上方 + ② 單個變體：一個獨立成行、一個同行尾隨
+#{inline=true}
+box {
+    #{doc = 'has value'}
+    full(v i64),
+    empty #{doc = 'empty'},
+}
+
+; 帶載荷的多欄位變體（尾隨註解同樣合法）
+shape {
+    circle(r f64),
+    rect(w f64, h f64) #{doc = 'rectangle'},
+    dot,
+}
+
+; `#{inline=false}`：明確寫出「不用 inline 佈局」
+#{inline=false}
+plain {
+    a,
+    b,
+}
+
+; 結構體欄位：三種寫法並存
+pt {
+    x i64
+    y i64
+}
+holder {
+    inl pt #{inline=true}
+    out pt #{inline=false}
+    bare pt #{inline}
+}
+
+main = () {
+    ; 註解不影響列舉值引用
+    c color = color.green
+    print(c)
+
+    ; 註解不影響 tag 順序：full = 0, empty = 1
+    ; （變數名用 bx，避開 plain 的變體 b —— 見檔首「注意 ②」）
+    bx box = full(7)
+    bx: {
+        full(v) -> print(v)
+        empty -> print('empty')
+    }
+
+    ; 註解不影響多欄位載荷的按位置綁定
+    s shape = rect(2.0, 3.0)
+    s: {
+        circle(r) -> print(r)
+        rect(w, h) -> print(w * h)
+        dot -> print('dot')
+    }
+
+    ; inline=false 的列舉照常工作
+    p plain = plain.a
+    p: {
+        a -> print('a')
+        b -> print('b')
+    }
+
+    ; 結構體欄位照常賦值／讀取
+    h holder = holder{
+        inl: pt{x: 1, y: 2},
+        out: pt{x: 3, y: 4},
+        bare: pt{x: 5, y: 6},
+    }
+    print(h.inl.x)
+    print(h.out.y)
+    print(h.bare.x)
+}
+
+; ── 已知的既有 bug（與本檔主題無關，僅記錄於此）────────────────────────────
+;
+; match 臂裡的「裸識別字」模式（無載荷變體，如上面的 `a` / `b`）目前走**普通識別字
+; 查找**，會被同名局部變數遮蔽。最小重現：
+;
+;     box   { full(v i64), empty, }
+;     plain { a, b, }
+;     main = () {
+;         b box = full(7)          ; 局部變數 `b`
+;         b: { full(v) -> print(v) empty -> print('empty') }
+;         p plain = plain.a
+;         p: { a -> print('a') b -> print('b') }   ; 這裡的 `b` 被解析成變數
+;     }
+;
+; 編譯器於是拿變數（%tenum_box）去跟 tag（i64）比較，產生非法 IR：
+;     %lv31 = load %tenum_box, %tenum_box* %v1.s
+;     %c16  = icmp eq i64 %lv30, %lv31     ; ← 型別不符
+;     opt: error: '%lv31' defined with type '%tenum_box' ... but expected 'i64'
+;
+; 於 pristine HEAD（b0c869f）上重現同一條錯誤 → **既有 bug**，非本次 `#{inline}` 改動
+; 所引入。把變數改名（如上面的 `bx`）或改掉變體名即可繞過。正確行為應是：臂中的
+; 裸識別字若為當前被匹配枚舉的變體，必須解析為變體（tag 常數），而不是外部同名變數。

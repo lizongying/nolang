@@ -1,0 +1,101 @@
+; ═════════════════════════════════════════════════════════════════
+; str 字段「寫」必須 deep-clone：emitSetField 的懸垂測試
+; ═════════════════════════════════════════════════════════════════
+;
+; 問題描述
+; --------
+; emitGetField（讀一個 owned str 字段）早就會 @str_clone，但 emitSetField（寫）
+; 是裸 `store %str-long` —— 只複製 {len,cap,data} 描述符，於是字段與源**共享**
+; 同一塊堆緩衝。源被重新賦值或被 drop 時 @str_free 一跑，字段就懸垂。
+;
+; 實測（修復前）：
+;   `s = 'C'; p.name = s; s = 'D'; print(p.name)`  ->  打印 ""
+;   str 參數 -> 字段 -> `?person` 返回：調用方先 str_free 實參，`it.name` 整個丟掉。
+;
+; 修復內容
+; --------
+; emitSetField 在 fieldLT == valLT == "%str-long" 時插入
+;   %cl = call %str-long @str_clone(%str-long %v)
+; 再 store。
+;
+; **為什麼不同時 free 舊值**（emitIndexStore 對 []str 是這麼做的）：
+; 整結構賦值 `b = a` 是按位拷貝、共享葉子緩衝；emitPtrStructClone 只對「含指針
+; 字段」的 struct 生效，所以 `person { name str }` 是共享的。在 `b.name = 'B'`
+; 裡 free 舊值會 free 掉 `a.name` 還在用的緩衝（實測把 leafshare 從 A/A/B
+; 打成 A//B）。free 那半要等「整結構拷貝深拷貝 owned 葉子」這個前置項。
+;
+; 預期行為
+; --------
+; 四個子測試全部 ok=true。
+; ═════════════════════════════════════════════════════════════════
+
+person {
+    name str
+    age i64
+}
+
+mkplain = (n str) (out person) {
+    p person
+    p.name = n
+    p.age = 7
+    out = p
+}
+
+mkopt = (n str) (out ?person) {
+    p person
+    p.name = n
+    p.age = 7
+    out = p
+}
+
+; 測試 1：字段寫入後源 local 被重新賦值 —— 字段必須保留舊值
+test-field-survives-source-reassign = () (ok bool) {
+    s = 'C'
+    p person
+    p.name = s
+    p.age = 7
+    s = 'D'
+    p.name == 'C' -> ok = true
+}
+
+; 測試 2：直接寫字面量（對照組，修復前也是對的）
+test-field-from-literal = () (ok bool) {
+    p person
+    p.name = 'B'
+    p.age = 7
+    p.name == 'B' -> ok = true
+}
+
+; 測試 3：str 參數 -> 字段 -> 結構體返回
+test-param-into-field-plain = () (ok bool) {
+    q = mkplain('A')
+    q.name == 'A' -> ok = true
+}
+
+; 測試 4：str 參數 -> 字段 -> option 結構體返回
+test-param-into-field-option = () (ok bool) {
+    got = 'zzz'
+    q = mkopt('B')
+    q: {
+        ok -> got = it.name
+        nil -> got = 'nil'
+        err -> got = 'err'
+    }
+    got == 'B' -> ok = true
+}
+
+main = () {
+    ok1 = test-field-survives-source-reassign()
+    print('test-field-survives-source-reassign: {ok1}')
+
+    ok2 = test-field-from-literal()
+    print('test-field-from-literal: {ok2}')
+
+    ok3 = test-param-into-field-plain()
+    print('test-param-into-field-plain: {ok3}')
+
+    ok4 = test-param-into-field-option()
+    print('test-param-into-field-option: {ok4}')
+
+    print('all done')
+}

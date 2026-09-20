@@ -582,7 +582,7 @@ func defaultLiteralFor(tok lexer.Token, elem string, defVal AnnotationValue) (Ex
 	case "bool":
 		switch val := defVal.(type) {
 		case *AnnotationBoolValue:
-			return &BooleanLiteral{Token: tok, Value: val.Token.Literal == "true"}, ""
+			return &BooleanLiteral{Token: tok, Value: val.Value}, ""
 		case *AnnotationIntValue:
 			return &BooleanLiteral{Token: tok, Value: val.Value != 0}, ""
 		}

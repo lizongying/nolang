@@ -1698,6 +1698,11 @@ func (c *codegen) emitBuiltinVecPush(inst *Inst) error {
 	eptr := c.treg("vpep")
 	c.sb.WriteString(fmt.Sprintf("  %s = getelementptr inbounds %s, %s* %s, i64 %s\n", eptr, elemTy, elemTy, ebase, lenG))
 	c.sb.WriteString(fmt.Sprintf("  store %s %s, %s* %s\n", elemTy, elemV, elemTy, eptr))
+	// A struct element is stored by value, so its inline owned `str` leaves
+	// would still point at the SOURCE local's buffers. Give the container its
+	// own copies — otherwise the source's drop frees buffers the vec still
+	// reads (see cloneStructElemLeaves).
+	c.cloneStructElemLeaves(eptr, elemTy)
 	newLen := c.treg("vpnl")
 	c.sb.WriteString(fmt.Sprintf("  %s = add i64 %s, 1\n", newLen, lenG))
 	dataI64 := c.treg("vpdi")
@@ -2080,6 +2085,8 @@ func (c *codegen) emitBuiltinVecInsert(inst *Inst) error {
 	eptr := c.treg("ivep")
 	c.sb.WriteString(fmt.Sprintf("  %s = getelementptr inbounds %s, %s* %s, i64 %s\n", eptr, elemLL, elemLL, ebase, idxClamp2))
 	c.sb.WriteString(fmt.Sprintf("  store %s %s, %s* %s\n", elemLL, elemV, elemLL, eptr))
+	// Same by-value sharing as emitBuiltinVecPush — see cloneStructElemLeaves.
+	c.cloneStructElemLeaves(eptr, elemLL)
 	restOff := c.treg("ivro")
 	c.sb.WriteString(fmt.Sprintf("  %s = add i64 %s, 1\n", restOff, idxClamp2))
 	srcRestOff := c.treg("ivsr")

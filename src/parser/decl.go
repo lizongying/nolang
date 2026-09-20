@@ -741,12 +741,34 @@ func (p *Parser) parseEnumDefinition() Statement {
 	p.nextToken() // skip LBRACE
 
 	nextVal := int64(0)
+	// valAnns 跨迭代保留：變體上方的獨立成行 `#{...}` 在 `continue` 後、下一輪
+	// 解析變體時才綁定，故不能聲明在迴圈體內（否則會在 continue 後被清空）。
+	var valAnns []*AnnotationEntry
 	for p.currentToken.Type != lexer.RBRACE && p.currentToken.Type != lexer.EOF {
 		for p.currentToken.Type == lexer.NEWLINE || p.currentToken.Type == lexer.COMMA {
 			p.nextToken()
 		}
 		if p.currentToken.Type == lexer.RBRACE {
 			break
+		}
+		// 變體上方的獨立成行 `#{...}` 註解。位置規則：必須獨立成行置於變體上方，
+		// 前綴寫法 `#{k} name` 視為非法（annotationPrefixIllegal 報錯）。
+		if p.currentToken.Type == lexer.HASH_LBRACE {
+			annotTok := p.currentToken
+			p.nextToken() // skip #{
+			valAnns = p.parseAnnotationBody()
+			if p.currentToken.Type != lexer.RBRACE {
+				msg := fmt.Sprintf("line %d, column %d: expected '}' to close enum value annotation, got %s instead",
+					p.currentToken.Line, p.currentToken.Column, p.currentToken.Type.String())
+				p.saveError(msg)
+				return nil
+			}
+			p.nextToken() // skip }
+			if annotationPrefixIllegal(p.currentToken.Type) {
+				p.errPrefixAnnotation(annotTok)
+			}
+			// 跳過註解尾隨的換行，下一輪解析緊接其後的變體。
+			continue
 		}
 		if p.currentToken.Type != lexer.IDENT {
 			msg := fmt.Sprintf("line %d, column %d: expected enum value name, got %s",
@@ -755,6 +777,7 @@ func (p *Parser) parseEnumDefinition() Statement {
 			return nil
 		}
 
+		nameTok := p.currentToken
 		variantName := p.currentToken.Literal
 		p.nextToken() // skip variant name
 
@@ -778,10 +801,31 @@ func (p *Parser) parseEnumDefinition() Statement {
 		}
 
 		ev := &EnumValue{
-			Token:    p.currentToken,
+			Token:    nameTok,
 			Name:     variantName,
 			Value:    variantValue,
 			Explicit: explicit,
+		}
+
+		// 變體同行的尾隨 `#{...}` 註解（如 `red #{a},`）。尾隨合法，
+		// 故不呼叫 annotationPrefixIllegal；僅當註解與變體同名行時才視為尾隨，
+		// 否則交由迴圈頂部以「變體上方獨立成行」形式處理。
+		if p.currentToken.Type == lexer.HASH_LBRACE && p.currentToken.Line == nameTok.Line {
+			p.nextToken() // skip #{
+			trailAnns := p.parseAnnotationBody()
+			if p.currentToken.Type != lexer.RBRACE {
+				msg := fmt.Sprintf("line %d, column %d: expected '}' to close enum value annotation, got %s instead",
+					p.currentToken.Line, p.currentToken.Column, p.currentToken.Type.String())
+				p.saveError(msg)
+				return nil
+			}
+			p.nextToken() // skip }
+			valAnns = append(valAnns, trailAnns...)
+		}
+
+		if len(valAnns) > 0 {
+			p.sem.SetRawAnnotations(ev, valAnns)
+			valAnns = nil
 		}
 
 		ed.Values = append(ed.Values, ev)
@@ -1025,6 +1069,9 @@ func (p *Parser) parseTaggedEnumDefinition() Statement {
 	p.nextToken() // skip LBRACE
 
 	idx := int64(0)
+	// varAnns 跨迭代保留：變體上方的獨立成行 `#{...}` 在 `continue` 後、下一輪
+	// 解析變體時才綁定，故不能聲明在迴圈體內（否則會在 continue 後被清空）。
+	var varAnns []*AnnotationEntry
 	for p.currentToken.Type != lexer.RBRACE && p.currentToken.Type != lexer.EOF {
 		// 跳過換行和逗號
 		for p.currentToken.Type == lexer.NEWLINE || p.currentToken.Type == lexer.COMMA {
@@ -1032,6 +1079,25 @@ func (p *Parser) parseTaggedEnumDefinition() Statement {
 		}
 		if p.currentToken.Type == lexer.RBRACE {
 			break
+		}
+		// 變體上方的獨立成行 `#{...}` 註解。位置規則：必須獨立成行置於變體上方，
+		// 前綴寫法 `#{k} name` 視為非法（annotationPrefixIllegal 報錯）。
+		if p.currentToken.Type == lexer.HASH_LBRACE {
+			annotTok := p.currentToken
+			p.nextToken() // skip #{
+			varAnns = p.parseAnnotationBody()
+			if p.currentToken.Type != lexer.RBRACE {
+				msg := fmt.Sprintf("line %d, column %d: expected '}' to close variant annotation, got %s instead",
+					p.currentToken.Line, p.currentToken.Column, p.currentToken.Type.String())
+				p.saveError(msg)
+				return nil
+			}
+			p.nextToken() // skip }
+			if annotationPrefixIllegal(p.currentToken.Type) {
+				p.errPrefixAnnotation(annotTok)
+			}
+			// 跳過註解尾隨的換行，下一輪解析緊接其後的變體。
+			continue
 		}
 		if p.currentToken.Type != lexer.IDENT && p.currentToken.Type != lexer.NIL {
 			msg := fmt.Sprintf("line %d, column %d: expected variant name in tagged enum, got %s instead",
@@ -1078,6 +1144,27 @@ func (p *Parser) parseTaggedEnumDefinition() Statement {
 			}
 		} else if ts := p.parseTaggedEnumVariantType(); ts != "" {
 			variant.Type = buildType(ts, variant.Token)
+		}
+
+		// 變體同行的尾隨 `#{...}` 註解（如 `ok(v i64) #{inline},`）。尾隨合法，
+		// 故不呼叫 annotationPrefixIllegal；僅當註解與變體同名行時才視為尾隨，
+		// 否則交由迴圈頂部以「變體上方獨立成行」形式處理。
+		if p.currentToken.Type == lexer.HASH_LBRACE && p.currentToken.Line == variant.Token.Line {
+			p.nextToken() // skip #{
+			trailAnns := p.parseAnnotationBody()
+			if p.currentToken.Type != lexer.RBRACE {
+				msg := fmt.Sprintf("line %d, column %d: expected '}' to close variant annotation, got %s instead",
+					p.currentToken.Line, p.currentToken.Column, p.currentToken.Type.String())
+				p.saveError(msg)
+				return nil
+			}
+			p.nextToken() // skip }
+			varAnns = append(varAnns, trailAnns...)
+		}
+
+		if len(varAnns) > 0 {
+			p.sem.SetRawAnnotations(variant, varAnns)
+			varAnns = nil
 		}
 
 		ted.Variants = append(ted.Variants, variant)
@@ -1191,7 +1278,9 @@ func (p *Parser) parseStructDefinition() Statement {
 			break
 		}
 
-		// 支援欄位前的 #{...} 註解
+		// 欄位註解：與陳述註解同一套位置規則——只允許「獨立成行置於欄位上方」或
+		// 「寫在欄位同一行後方（尾隨，`a pt #{inline}`）」。同一行前綴
+		// （`#{inline} a pt`）是非法位置，於解析當下報錯。
 		var fieldAnnotations []*AnnotationEntry
 		if p.currentToken.Type == lexer.HASH_LBRACE {
 			annotToken := p.currentToken
@@ -1204,7 +1293,11 @@ func (p *Parser) parseStructDefinition() Statement {
 				return nil
 			}
 			p.nextToken() // skip }
-			_ = annotToken
+			// `}` 之後同一行仍有欄位名 → 前綴寫法（非法）。必須在跳過換行「之前」
+			// 判定，否則獨立成行（換行分隔）的合法寫法也會被誤判。
+			if annotationPrefixIllegal(p.currentToken.Type) {
+				p.errPrefixAnnotation(annotToken)
+			}
 			// 跳過換行
 			for p.currentToken.Type == lexer.NEWLINE {
 				p.nextToken()
@@ -1334,6 +1427,30 @@ func (p *Parser) parseStructDefinition() Statement {
 			} else {
 				break
 			}
+		}
+
+		// 尾隨欄位註解：`a pt #{inline}` —— 與欄位同一行、位於型別（及修飾詞）之後。
+		// 與「獨立成行置於上方」的形式共用同一份欄位註解（fieldAnnotations），
+		// 合併後寫入語義副表。
+		if p.currentToken.Type == lexer.HASH_LBRACE && p.currentToken.Line == field.Token.Line {
+			for p.currentToken.Type == lexer.HASH_LBRACE {
+				p.nextToken() // skip #{
+				more := p.parseAnnotationBody()
+				for _, e := range more {
+					if e != nil {
+						e.Trailing = true
+					}
+				}
+				fieldAnnotations = append(fieldAnnotations, more...)
+				if p.currentToken.Type != lexer.RBRACE {
+					msg := fmt.Sprintf("line %d, column %d: expected '}' to close field annotation, got %s instead",
+						p.currentToken.Line, p.currentToken.Column, p.currentToken.Type.String())
+					p.saveError(msg)
+					return nil
+				}
+				p.nextToken() // skip }
+			}
+			p.sem.SetRawAnnotations(field, fieldAnnotations)
 		}
 
 		sd.Fields = append(sd.Fields, field)

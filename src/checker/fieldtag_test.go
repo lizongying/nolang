@@ -17,7 +17,7 @@ func TestValidateFieldTags(t *testing.T) {
     x i64
 }
 holder {
-    #{inline} p pt
+    p pt #{inline}
 }`,
 			want: 0,
 		},
@@ -34,14 +34,14 @@ holder {
 		{
 			name: "inline on a scalar field is rejected",
 			src: `holder {
-    #{inline} n i64
+    n i64 #{inline}
 }`,
 			want: 1,
 		},
 		{
 			name: "inline on a str field is rejected",
 			src: `holder {
-    #{inline} s str
+    s str #{inline}
 }`,
 			want: 1,
 		},
@@ -51,7 +51,7 @@ holder {
     x i64
 }
 holder {
-    #{inline} p ?pt
+    p ?pt #{inline}
 }`,
 			want: 1,
 		},
@@ -59,17 +59,17 @@ holder {
 			name: "inline self reference is rejected",
 			src: `node {
     val i64
-    #{inline} next node
+    next node #{inline}
 }`,
 			want: 1,
 		},
 		{
 			name: "inline cycle between two structs is rejected",
 			src: `a {
-    #{inline} b b
+    b b #{inline}
 }
 b {
-    #{inline} a a
+    a a #{inline}
 }`,
 			want: 1,
 		},
@@ -84,10 +84,10 @@ b {
 		{
 			name: "inline through a fixed array still counts as a cycle",
 			src: `a {
-    #{inline} b [2]b
+    b [2]b #{inline}
 }
 b {
-    #{inline} a a
+    a a #{inline}
 }`,
 			want: 1,
 		},

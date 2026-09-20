@@ -1,0 +1,76 @@
+; ═════════════════════════════════════════════════════════════════
+; 測試具名函式型別：透過**參數**呼叫時，返回值必須被接住
+; ═════════════════════════════════════════════════════════════════
+;
+; 問題描述
+; --------
+; `out = cb()`（cb 是函式型別參數）走 emitIndirectCall。emitCallBody 的結果回寫
+; 循環只認 inst.Results[i]，而間接呼叫把結果放在 inst.Dst、Results 為空 ——
+; 於是循環第一輪就 break，%cres 裡的值永遠沒人被取出，目標槽**未初始化**：
+;
+;     %cres30 = alloca i64
+;     call void %fnptr29(ptr %cres30)   ; cb() 把結果寫到這裡
+;     %mv31 = load i64, ptr %v2.s       ; 但 %v2.s 從未被 store 過
+;     store i64 %mv31, ptr %v0.s
+;     store i64 %lv31, ptr %p1          ; out 參數拿到的是棧垃圾
+;
+; 這是未定義行為，LLVM 有權「引爆」它。單次呼叫時垃圾值常常剛好等於期望值，
+; 所以 test-fn-type-return / test-fn-type-params / test-named-fn-type 此前只是
+; **碰巧**通過；一旦棧佈局被任何不相干的改動挪動，InstCombine 就會認出 undef，
+; 直接把整條 print 路徑刪掉 —— 症狀是 rc=0、stderr 全空、一個位元組都不打印。
+;
+; 修復內容
+; --------
+; emitCallBody 取一份局部 results：Results 為空且有 Dst、out-param 只有一個、
+; Dst 有槽時，把 Dst 當成唯一結果。修完 IR 變為
+;     %c23 = load i64, ptr %cres27
+;     store i64 %c23, ptr %v2.s
+;
+; 預期行為
+; --------
+; 三個子測試全部 ok=true，且三行都必須打印出來。
+; 修復前：只印出第一行（後續程式碼被優化器整段刪除）。
+; ═════════════════════════════════════════════════════════════════
+
+; 具名函式型別：無參，返回 i64
+ret-cb = () (i64)
+
+mk-1 = () (r i64) { r = 111 }
+mk-2 = () (r i64) { r = 222 }
+mk-3 = () (r i64) { r = 333 }
+
+apply-cb = (cb ret-cb) (out i64) { out = cb() }
+
+; 測試 1：單次呼叫（修復前也能過——垃圾值碰巧正確）
+test-single-callback = () (ok bool) {
+    a = apply-cb(mk-1)
+    a == 111 -> ok = true
+}
+
+; 測試 2：兩次不同回調，第二個必須拿到自己的值
+test-two-callbacks = () (ok bool) {
+    a = apply-cb(mk-1)
+    b = apply-cb(mk-2)
+    a == 111 && b == 222 -> ok = true
+}
+
+; 測試 3：三次不同回調
+test-three-callbacks = () (ok bool) {
+    a = apply-cb(mk-1)
+    b = apply-cb(mk-2)
+    c = apply-cb(mk-3)
+    a == 111 && b == 222 && c == 333 -> ok = true
+}
+
+main = () {
+    ok1 = test-single-callback()
+    print('test-single-callback: {ok1}')
+
+    ok2 = test-two-callbacks()
+    print('test-two-callbacks: {ok2}')
+
+    ok3 = test-three-callbacks()
+    print('test-three-callbacks: {ok3}')
+
+    print('all done')
+}

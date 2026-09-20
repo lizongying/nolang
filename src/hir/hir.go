@@ -406,6 +406,45 @@ func (p *Package) AnnotationKeys(id int32) (keys []string, hasValue []bool) {
 	return keys, hasValue
 }
 
+// AnnotationBool returns the boolean value of the named annotation attached to
+// id. present reports whether the annotation exists at all; value is its
+// boolean value. A bare flag (`#{inline}`) means true.
+//
+// The value lives in the entry's child node: `#{inline=true}` lowers to a
+// KBoolLit, `#{inline=1}` to a KIntLit, `#{inline=foo}` to a KIdent. Anything
+// not recognisable as a boolean falls back to true, i.e. the bare-flag meaning;
+// rejecting a non-boolean value is the checker's job, not this accessor's.
+func (p *Package) AnnotationBool(id int32, key string) (present, value bool) {
+	group := p.AnnotationsOf(id)
+	if group == NoID {
+		return false, false
+	}
+	for _, e := range p.Children(group) {
+		n := p.Node(e)
+		if n == nil || n.Kind != KAnnEntry {
+			continue
+		}
+		if p.Str(n.S) != key {
+			continue
+		}
+		if n.First == NoID {
+			return true, true // 獨立布爾鍵 `#{inline}`
+		}
+		v := p.Node(n.First)
+		if v == nil {
+			return true, true
+		}
+		switch v.Kind {
+		case KBoolLit, KIntLit:
+			return true, v.Bool()
+		case KIdent, KStrLit:
+			return true, p.Str(v.S) != "false"
+		}
+		return true, true
+	}
+	return false, false
+}
+
 // Walk visits id and all of its descendants in pre-order.
 func (p *Package) Walk(id int32, fn func(id int32, n *Node) bool) {
 	n := p.Node(id)

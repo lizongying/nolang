@@ -325,7 +325,8 @@ func (l *lowerer) collectTaggedEnum(pkg *hir.Package, id int32) {
 	if name == "" {
 		return
 	}
-	info := &TaggedEnumInfo{Name: name}
+	_, inlineVal := l.inlineAnnotation(id)
+	info := &TaggedEnumInfo{Name: name, Inline: inlineVal}
 	slots := int64(1) // never zero-width: a unit-only enum still needs a payload array
 	for _, c := range pkg.Children(id) {
 		vn := pkg.Node(c)
@@ -364,6 +365,24 @@ func (l *lowerer) collectTaggedEnum(pkg *hir.Package, id int32) {
 	}
 	info.PayloadSlots = slots
 	l.mod.TaggedEnums[name] = info
+}
+
+// inlineAnnotation returns the `#{inline}` annotation's boolean value on a
+// definition node. It is the shared reader for the inline opt-in marker, used
+// both for struct fields (fieldTag) and for the enum definition itself
+// (`#{inline}` on its own line above the whole enum), which guarantees the
+// stack-form enum layout.
+//
+// Three spellings, one meaning each:
+//
+//	#{inline}        -> true   (shorthand)
+//	#{inline=true}   -> true
+//	#{inline=false}  -> false  (explicitly the default, non-inline layout)
+//
+// present is false when there is no annotation at all, in which case the
+// caller keeps the default layout.
+func (l *lowerer) inlineAnnotation(id int32) (present, value bool) {
+	return l.pkg.AnnotationBool(id, "inline")
 }
 
 // enumFieldIndex returns the payload-field index that `name` binds in a
@@ -543,6 +562,7 @@ func (l *lowerer) collectStructFields() {
 				Name:    fname,
 				TypeRaw: ftype,
 				Tag:     l.fieldTag(c, ftype),
+				Layout:  l.fieldLayout(c),
 			})
 			// Make sure the field type is interned so codegen can resolve it.
 			if ftype != "" {
@@ -555,22 +575,43 @@ func (l *lowerer) collectStructFields() {
 	}
 }
 
+// fieldLayout reads a field's explicit `#{inline=...}` override. It is the
+// DECLARATION of intent, independent of the module-wide default: `#{inline}`
+// and `#{inline=true}` ask for the by-value layout, `#{inline=false}` asks for
+// a pointer, and no annotation asks for whatever the default is.
+//
+// This is deliberately a separate axis from fieldTag. Layout says where the
+// bytes live; the tag says who owns them. A pointer field is Owned either way,
+// so `#{inline=false}` must NOT change the tag — only where the pointee is
+// stored.
+func (l *lowerer) fieldLayout(fieldID int32) FieldLayout {
+	present, value := l.inlineAnnotation(fieldID)
+	if !present {
+		return FieldLayoutDefault
+	}
+	if value {
+		return FieldLayoutInline
+	}
+	return FieldLayoutPointer
+}
+
 // fieldTag computes a field's definition-site semantic tag from its declared
 // type plus its OWN annotation. It is a pure function of the declaration: no
 // use site is consulted, which is the whole point of the tag.
 //
-//	#{inline} on a struct-typed field -> Inline (by-value layout)
+//	#{inline} / #{inline=true} on a struct-typed field -> Inline (by-value layout)
+//	#{inline=false}                                   -> Owned  (forced pointer)
 //	struct-typed field (default)      -> Owned  (pointer; recursive drop)
 //	owned leaf (str/vec/[]T/map/?owned)-> Owned  (inline descriptor, owns heap)
 //	?T where T is a struct            -> Owned  (nullable pointer)
 //	everything else (scalars, txt)    -> Inline
+//
+// `#{inline=false}` falls through to the type-based rules on purpose: a forced
+// pointer field OWNS its pointee, which is exactly what a default struct-typed
+// field does. Only the layout differs, and that is fieldLayout's job.
 func (l *lowerer) fieldTag(fieldID int32, raw string) FieldTag {
-	if keys, _ := l.pkg.AnnotationKeys(fieldID); len(keys) > 0 {
-		for _, k := range keys {
-			if k == "inline" {
-				return FieldTagInline
-			}
-		}
+	if present, value := l.inlineAnnotation(fieldID); present && value {
+		return FieldTagInline
 	}
 	if l.isStructType(raw) {
 		return FieldTagOwned

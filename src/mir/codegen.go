@@ -1906,7 +1906,18 @@ func (c *codegen) emitFunc(f *Function) error {
 			}
 			_, payloadLT := c.optionType(elem)
 			c.sb.WriteString(fmt.Sprintf("  store %s { i64 1, %s zeroinitializer }, %s* %s\n", lt, payloadLT, lt, s))
-		} else if owned {
+		} else if owned || c.structSlotNeedsZero(lt) {
+			// A STRUCT THAT GETS A DROP must start zeroed even though it is
+			// not `owned` (Type.Owned is false for a struct — it is only true
+			// for str/vec/[]T/map/?owned). Before structs with inline owned
+			// `str` leaves had a destructor this was harmless: an
+			// uninitialized slot was simply never read. With the destructor,
+			// a struct local that every branch leaves unwritten (a loop that
+			// only assigns it in one arm) frees stack garbage —
+			// `free(0xffffffffffffffff)`, "pointer being freed was not
+			// allocated", abort. Verified: tests/test-diff-debug.no.
+			// Guarded by the SAME predicate as the drop, so a struct that is
+			// never dropped pays nothing.
 			c.sb.WriteString(fmt.Sprintf("  store %s zeroinitializer, %s* %s\n", lt, lt, s))
 		}
 		c.valSlot[v] = s
@@ -3206,7 +3217,7 @@ func (c *codegen) emitDrop(inst *Inst) error {
 		// STRUCT WITH POINTER FIELDS: free the pointees, recursively. Pass the
 		// SLOT address, not the loaded value — the destructor mutates nothing but
 		// needs the struct's address to GEP its fields.
-		if key := c.structKeyOfLLVM(lt); key != "" && c.mod.StructHasPtrFields(key) {
+		if key := c.structKeyOfLLVM(lt); key != "" && (c.mod.StructHasPtrFields(key) || c.mod.StructHasOwnedLeafFields(key)) {
 			if slot := c.valSlot[inst.Args[0]]; slot != "" {
 				c.emitStructDropHelper(lt, key)
 				c.sb.WriteString(fmt.Sprintf("  call void @%s(%s* %s)\n", structDropName(lt), lt, slot))
@@ -3434,13 +3445,17 @@ func (c *codegen) emitMove(inst *Inst) error {
 		// (tests/test-x25519-minimal.no, test-hmac, test-sha256, test-fe-ops, ...).
 		c.loadSeq++
 		u1 := fmt.Sprintf("%%mvu%d", c.loadSeq)
+		// payloadAddr is non-empty when the payload is a large aggregate, in
+		// which case loadVal handed back the option's SLOT and the payload must
+		// be addressed with a GEP rather than extractvalue.
+		payloadAddr := ""
 		if c.shouldUseMemcpy(payloadLT) {
 			// #83 SROA guard, symmetric with the WRAP path above: for a large
 			// payload loadVal returns the option's SLOT, not a loaded value, so
 			// `extractvalue` on it is invalid IR —
 			//   opt: "'%v14.s' defined with type 'ptr' but expected
 			//         '%option_json_json = type { i64, %json_json }'"
-			// Address the payload field with a GEP and load from there.
+			// Address the payload field with a GEP.
 			//
 			// NOTE: this gap was unreachable until computeTypeSize learned to
 			// size %json_json. Its payload type is `json.json-pool`, whose
@@ -3448,9 +3463,23 @@ func (c *codegen) emitMove(inst *Inst) error {
 			// resolve, so computeTypeSize failed and shouldUseMemcpy returned
 			// false for ?json — accidentally hiding this path entirely.
 			c.loadSeq++
-			pg := fmt.Sprintf("%%mvpf%d", c.loadSeq)
-			c.sb.WriteString(fmt.Sprintf("  %s = getelementptr inbounds %s, %s* %s, i32 0, i32 1\n", pg, optLT, optLT, sv))
-			c.sb.WriteString(fmt.Sprintf("  %s = load %s, %s* %s\n", u1, payloadLT, payloadLT, pg))
+			payloadAddr = fmt.Sprintf("%%mvpf%d", c.loadSeq)
+			c.sb.WriteString(fmt.Sprintf("  %s = getelementptr inbounds %s, %s* %s, i32 0, i32 1\n", payloadAddr, optLT, optLT, sv))
+			// A SAME-TYPE destination is a pure copy, so move the bytes with
+			// memcpy and never materialise the aggregate as an SSA value.
+			//
+			// This is the whole point of the guard above: `load %json_json`
+			// produces a ~36 KB first-class value, and SROA then splits it into
+			// one scalar per nested field — over 64 json-value elements each
+			// holding 16 strings and 16 integers. Measured on
+			// tests/mem-safety/test-json-nested-match.no: SROAPass 6.0 s and
+			// InstCombinePass 4.5 s of a 13.0 s opt, i.e. 81 % of the compile.
+			// memcpy is opaque to SROA, so the explosion disappears.
+			if (payloadLT == dstT || dstT == "") && dstSlot != "" {
+				c.emitMemcpy(dstSlot, payloadAddr, c.typeSizeOperand(payloadLT))
+				return nil
+			}
+			c.sb.WriteString(fmt.Sprintf("  %s = load %s, %s* %s\n", u1, payloadLT, payloadLT, payloadAddr))
 		} else {
 			c.sb.WriteString(fmt.Sprintf("  %s = extractvalue %s %s, 1\n", u1, optLT, sv))
 		}
@@ -3581,7 +3610,11 @@ func (c *codegen) emitMove(inst *Inst) error {
 // The destination's type wins when it has one (emitMove types the copy by the
 // destination), falling back to the source.
 func (c *codegen) clonePtrStructKey(inst *Inst) (string, bool) {
-	if !FieldPtrLayout || len(inst.Args) == 0 {
+	// NOT gated on FieldPtrLayout: `#{inline=false}` makes a field a pointer in
+	// the default state too, and the struct key test below asks FieldIsPointer,
+	// not the switch. Gating here would skip the deep copy for exactly that
+	// struct.
+	if len(inst.Args) == 0 {
 		return "", false
 	}
 	dstVal := inst.Dst
@@ -3631,7 +3664,152 @@ func (c *codegen) emitPtrStructClone(inst *Inst, key string) error {
 	c.emitMemcpy(dstSlot, srcSlot, c.typeSizeOperand(structLT))
 	// 2. Give every pointer field its own pointee, recursively.
 	c.emitPtrFieldsClone(dstSlot, srcSlot, structLT, key, map[string]bool{})
+	// 3. Give every inline owned `str` leaf its own buffer too. A struct can
+	//    have BOTH (pointees and leaves); without this the leaves stay shared.
+	c.emitLeafFieldsClone(dstSlot, structLT, key)
 	return nil
+}
+
+// cloneLeafStructKey returns the struct key of an OpClone payload that has no
+// pointer fields but DOES carry inline owned `str` leaves — the case
+// clonePtrStructKey rejects, and the common one (`person { name str }`).
+func (c *codegen) cloneLeafStructKey(inst *Inst) (string, bool) {
+	if len(inst.Args) == 0 {
+		return "", false
+	}
+	dstVal := inst.Dst
+	if dstVal == NoVal && len(inst.Args) >= 2 {
+		dstVal = inst.Args[1]
+	}
+	for _, v := range []ValueID{dstVal, inst.Args[0]} {
+		if v <= NoVal {
+			continue
+		}
+		t := c.mod.Type(c.localTypeOf(v))
+		if t == nil || t.Kind != KindStruct {
+			continue
+		}
+		if key := c.mod.StructKeyOf(t.Raw); key != "" && c.mod.StructHasOwnedLeafFields(key) {
+			return key, true
+		}
+	}
+	return "", false
+}
+
+// emitLeafStructClone lowers a deep copy of a struct whose only shared heap is
+// inline owned `str` leaves: a bitwise copy, then @str_clone per leaf. Without
+// it `b = a` leaves a.name and b.name pointing at one buffer, so the first
+// `b.name = x` would free a buffer `a` still reads (verified: leafshare.no went
+// from `A/A/B` to `A//B` when emitSetField freed the old occupant).
+func (c *codegen) emitLeafStructClone(inst *Inst, key string) error {
+	dstVal := inst.Dst
+	if dstVal == NoVal && len(inst.Args) >= 2 {
+		dstVal = inst.Args[1]
+	}
+	dstSlot := c.valSlot[dstVal]
+	srcSlot := c.valSlot[inst.Args[0]]
+	if dstSlot == "" || srcSlot == "" {
+		c.fail("clone: missing slot in func %d", c.cf)
+		return fmt.Errorf("clone slot")
+	}
+	structLT := "%" + sanitize(key)
+	if t := c.mod.Type(c.localTypeOf(dstVal)); t != nil {
+		if lt := c.llvmTypeOf(t); lt != "" {
+			structLT = lt
+		}
+	}
+	c.emitMemcpy(dstSlot, srcSlot, c.typeSizeOperand(structLT))
+	c.emitLeafFieldsClone(dstSlot, structLT, key)
+	return nil
+}
+
+// emitLeafFieldsClone replaces each inline owned `str` leaf of the struct at
+// dstSlot with a fresh @str_clone of it.
+//
+// Discarding the descriptor that the preceding bitwise copy installed is NOT a
+// leak: that buffer is the SOURCE's, and the source still owns and drops it.
+func (c *codegen) emitLeafFieldsClone(dstSlot, structLT, key string) {
+	c.emitLeafFieldsCloneR(dstSlot, structLT, key, 0)
+}
+
+// emitLeafFieldsCloneR is the recursive form. The recursion through inline
+// nested structs is NOT optional: emitStructDropHelper frees those nested
+// leaves too, so a clone that stopped at the top level would leave them shared
+// while both copies are dropped — a double free. Drop and clone must walk the
+// same shape.
+//
+// depth caps the walk. A by-value inline cycle is rejected by
+// ValidateFieldTags, so the cap is belt-and-braces against a StructFields
+// entry that resolves to itself.
+func (c *codegen) emitLeafFieldsCloneR(dstSlot, structLT, key string, depth int) {
+	if depth > 8 {
+		return
+	}
+	fields := c.mod.StructFields[key]
+	for _, i := range c.mod.StructOwnedLeafFieldIdxs(key) {
+		fLT := c.llvmTypeOf(c.mod.Type(c.mod.internType(fields[i].TypeRaw)))
+		if fLT != "%str-long" {
+			continue
+		}
+		g := c.treg("lfc")
+		c.sb.WriteString(fmt.Sprintf("  %s = getelementptr inbounds %s, %s* %s, i32 0, i32 %d\n", g, structLT, structLT, dstSlot, i))
+		v := c.treg("lfv")
+		c.sb.WriteString(fmt.Sprintf("  %s = load %s, %s* %s\n", v, fLT, fLT, g))
+		cl := c.treg("lfl")
+		c.sb.WriteString(fmt.Sprintf("  %s = call %s @str_clone(%s %s)\n", cl, fLT, fLT, v))
+		c.sb.WriteString(fmt.Sprintf("  store %s %s, %s* %s\n", fLT, cl, fLT, g))
+	}
+	for i := range fields {
+		if c.mod.FieldIsPointer(fields[i]) || !c.mod.IsStructType(fields[i].TypeRaw) {
+			continue
+		}
+		subKey := c.mod.StructKeyOf(fields[i].TypeRaw)
+		subLT := c.llvmTypeOf(c.mod.Type(c.mod.internType(fields[i].TypeRaw)))
+		if subKey == "" || isBuiltinContainerLT(subLT) {
+			continue
+		}
+		if !c.inlineSubOwnsLeavesOnly(subKey) {
+			continue
+		}
+		g := c.treg("lfs")
+		c.sb.WriteString(fmt.Sprintf("  %s = getelementptr inbounds %s, %s* %s, i32 0, i32 %d\n", g, structLT, structLT, dstSlot, i))
+		c.emitLeafFieldsCloneR(g, subLT, subKey, depth+1)
+	}
+}
+
+// cloneStructElemLeaves deep-copies the inline owned `str` leaves of the struct
+// element that was just stored BY VALUE at `eptr`.
+//
+// Container element writes (vec.push / vec.insert / v[i] = x) store the whole
+// struct by value, so without this the element keeps sharing the source local's
+// buffer. That sharing is invisible today only because nothing frees a struct's
+// leaves at scope exit; the moment a drop does, the source local's drop pulls
+// the buffer out from under the container (tests/test-diff-debug.no aborts with
+// trace/BPT trap: `op = diff-op {}`; `op.line = ...`; `ops.push(op)` inside a
+// loop, where `op` dies at the bottom of every iteration).
+//
+// Non-struct element types (scalars, %str-long, %vec) are left to their own
+// already-correct paths — structKeyOfLLVM returns "" for them and this is a
+// no-op.
+func (c *codegen) cloneStructElemLeaves(eptr, elemLL string) {
+	if !strings.HasPrefix(elemLL, "%") {
+		return
+	}
+	// Built-in container descriptors are NOT user structs, but they ARE in
+	// StructFields and %vec's `data` field is registered as an owned `str`.
+	// Letting the lookup below see them "deep clones" a vec element's data
+	// pointer as if it were a string: `store %str-long` (24 bytes) into an
+	// 8-byte field. Verified: tests/mem-safety/nested-container-clone.no
+	// aborts with trace/BPT trap before printing its first line, because
+	// `a.push(make-vec3(1,2,3))` on a `[][]i64` hits exactly this.
+	if isBuiltinContainerLT(elemLL) {
+		return
+	}
+	key := c.structKeyOfLLVM(elemLL)
+	if key == "" || !c.mod.StructHasOwnedLeafFields(key) {
+		return
+	}
+	c.emitLeafFieldsClone(eptr, elemLL, key)
 }
 
 // emitPtrFieldsClone replaces each pointer field of the struct at dstSlot with a
@@ -3675,8 +3853,19 @@ func (c *codegen) emitPtrFieldsClone(dstSlot, srcSlot, structLT, key string, onP
 		c.sb.WriteString(fmt.Sprintf("  %s = getelementptr inbounds %s, %s* %s, i32 0, i32 %d\n", sf, structLT, structLT, srcSlot, i))
 		sp := c.ptrFieldAddr(pointeeLT, sf)
 		c.emitMemcpy(dp, sp, c.typeSizeOperand(pointeeLT))
-		if sub := c.mod.StructKeyOf(fields[i].TypeRaw); sub != "" && c.mod.StructHasPtrFields(sub) {
-			c.emitPtrFieldsClone(dp, sp, pointeeLT, sub, onPath)
+		if sub := c.mod.StructKeyOf(fields[i].TypeRaw); sub != "" {
+			// The pointee's OWN inline leaves must be cloned too. The memcpy
+			// above copied the {len,cap,data} triples, so without this the two
+			// pointees share one buffer — and since emitStructDropHelper now
+			// frees a pointee's leaves, both sides would free it: a double
+			// free. This is the pointer-field mirror of the inline recursion
+			// in emitLeafFieldsCloneR.
+			if c.mod.StructHasOwnedLeafFields(sub) {
+				c.emitLeafFieldsClone(dp, pointeeLT, sub)
+			}
+			if c.mod.StructHasPtrFields(sub) {
+				c.emitPtrFieldsClone(dp, sp, pointeeLT, sub, onPath)
+			}
 		}
 	}
 }
@@ -3759,8 +3948,78 @@ func (c *codegen) emitStructDropHelper(lt, key string) {
 		b.WriteString(fmt.Sprintf("  br label %%%s\n", next))
 	}
 	b.WriteString(fmt.Sprintf("b%d:\n", len(idx)))
+	// Inline owned leaves: @str_free per `str` field. @str_free already skips
+	// cap==0 / null data, so a zero-initialised struct is a no-op and no
+	// null check is needed here.
+	for n, i := range c.mod.StructOwnedLeafFieldIdxs(key) {
+		fLT := c.llvmTypeOf(c.mod.Type(c.mod.internType(fields[i].TypeRaw)))
+		if fLT != "%str-long" {
+			continue
+		}
+		b.WriteString(fmt.Sprintf("  %%lf%d = getelementptr inbounds %s, %s* %%p, i32 0, i32 %d\n", n, lt, lt, i))
+		b.WriteString(fmt.Sprintf("  %%lv%d = load %s, %s* %%lf%d\n", n, fLT, fLT, n))
+		b.WriteString(fmt.Sprintf("  call void @str_free(%s %%lv%d)\n", fLT, n))
+	}
+	// Inline nested structs: their leaves are part of THIS struct's storage,
+	// so they must be freed by this destructor — and, symmetrically, cloned
+	// by emitLeafFieldsClone. A nested struct whose leaves are freed here
+	// while the clone left them shared is a double free, which is why the
+	// two walks must be the same traversal.
+	sub := 0
+	for i := range fields {
+		if c.mod.FieldIsPointer(fields[i]) || !c.mod.IsStructType(fields[i].TypeRaw) {
+			continue // pointees are handled above; non-structs own nothing
+		}
+		subKey := c.mod.StructKeyOf(fields[i].TypeRaw)
+		subLT := c.llvmTypeOf(c.mod.Type(c.mod.internType(fields[i].TypeRaw)))
+		if subKey == "" || isBuiltinContainerLT(subLT) {
+			continue
+		}
+		if !c.inlineSubOwnsLeavesOnly(subKey) {
+			continue
+		}
+		c.emitStructDropHelper(subLT, subKey)
+		b.WriteString(fmt.Sprintf("  %%ls%d = getelementptr inbounds %s, %s* %%p, i32 0, i32 %d\n", sub, lt, lt, i))
+		b.WriteString(fmt.Sprintf("  call void @%s(%s* %%ls%d)\n", structDropName(subLT), subLT, sub))
+		sub++
+	}
 	b.WriteString("  ret void\n}\n")
 	c.extraFuncsBody.WriteString(b.String())
+}
+
+// inlineSubOwnsLeavesOnly decides whether the drop/clone walk may recurse into
+// an INLINE nested struct. It requires owned leaves and NO pointer fields.
+//
+// Pointer fields are the disqualifier: emitLeafFieldsCloneR can only deep-copy
+// `str` leaves. If it recursed into a nested struct that owns pointees, the
+// drop would free those pointees while the clone left them shared — a double
+// free. Emitting nothing is the safe side to err on (it leaks, it does not
+// corrupt), and it is what emitPtrStructClone already does for self-reference.
+func (c *codegen) inlineSubOwnsLeavesOnly(subKey string) bool {
+	return c.mod.StructHasOwnedLeafFields(subKey) && !c.mod.StructHasPtrFields(subKey)
+}
+
+// structSlotNeedsZero reports whether a local of LLVM type lt will get a
+// destructor (emitDrop) and therefore must never be left uninitialized. It is
+// deliberately the same predicate as the drop: pointer fields OR inline owned
+// leaves, with containers excluded (see isBuiltinContainerLT).
+func (c *codegen) structSlotNeedsZero(lt string) bool {
+	if isBuiltinContainerLT(lt) {
+		return false
+	}
+	key := c.structKeyOfLLVM(lt)
+	if key == "" {
+		return false
+	}
+	return c.mod.StructHasPtrFields(key) || c.mod.StructHasOwnedLeafFields(key)
+}
+
+// isBuiltinContainerLT reports whether an LLVM type name is a runtime container
+// descriptor. Those ARE in StructFields (%vec's `data` is an owned `str`), so
+// any "does this type own leaves" test must reject them first — see
+// cloneStructElemLeaves.
+func isBuiltinContainerLT(lt string) bool {
+	return lt == "%vec" || lt == "%str-long" || strings.HasPrefix(lt, "%option")
 }
 
 func (c *codegen) emitClone(inst *Inst) error {
@@ -3783,6 +4042,9 @@ func (c *codegen) emitClone(inst *Inst) error {
 	// the two values sharing their pointees, so the clone must deep-copy them.
 	if key, ok := c.clonePtrStructKey(inst); ok {
 		return c.emitPtrStructClone(inst, key)
+	}
+	if key, ok := c.cloneLeafStructKey(inst); ok {
+		return c.emitLeafStructClone(inst, key)
 	}
 	return c.emitMove(inst)
 }
@@ -4320,25 +4582,71 @@ func (c *codegen) allocBytesOperand(capV, elemLT string) string {
 	return r
 }
 
-// ensureVecBuffer lazily allocates a backing buffer for an empty %vec whose data
-// pointer is still null (declared with no capacity), so that a `buf[i] = x` store
-// never writes through a null pointer. The MIR %vec layout is {i64 len, i64 cap,
-// i64 data} where data is stored as an i64 (inttoptr'd at use).
+// ensureVecBuffer makes a `buf[i] = x` store safe for the %vec at arrSlot: it
+// guarantees the backing buffer has room for element idxV, so the store can
+// never write through a null pointer NOR past the end of the buffer. The MIR
+// %vec layout is {i64 len, i64 cap, i64 data} where data is stored as an i64
+// (inttoptr'd at use).
 //
-// Mirrors the legacy backend, which materializes a real buffer (default cap 1024)
-// for an empty []byte at declaration time. We allocate lazily (only on the first
-// write) to avoid over-allocating slices that are only grown via push, but the
-// allocation is guarded by a data==0 check so it happens at most once per slot
-// (no leak). A borrowed view (string->[]byte coercion, cap==0 but a non-null
-// data pointing at constant memory) keeps its non-null data and is left alone.
+// TWO CASES, and the second one is why this function is not merely an allocator:
+//
+//  1. data == 0 (a slice declared with no capacity). Mirrors the legacy backend,
+//     which materializes a real buffer (default cap 1024) at declaration time.
+//     We allocate lazily, on the first write, so a slice that is only ever grown
+//     via push is not over-allocated. Guarded by the data==0 test, so it happens
+//     at most once per slot (no leak).
+//
+//  2. data != 0 AND cap > 0 AND idxV >= cap. This is a REAL GROW: allocate, copy
+//     the live elements, free the old buffer. It is not an optimisation, it is
+//     the fix for a heap overflow. The `cap > 0` conjunct is what excludes
+//     borrowed views (see the check block below); without it the grow frees
+//     memory this code does not own.
+//
+// WHY CASE 2 EXISTS. The capacity a %vec ends up with is decided by whoever grew
+// it last, and the two growers disagree:
+//
+//   - the builtin push (`emitBuiltinVecPush`) grows to max(1, cap*2), so after
+//     the first push cap is 1 and len == cap;
+//   - std `[]t.insert` / `[]t.remove` are ordinary std METHOD BODIES (they do NOT
+//     route to the vec-insert/vec-remove builtins — the std definition shadows
+//     the registry entry), and they write through `.[i] = v` at index == len
+//     WITHOUT growing capacity. Their own comment says so: "調用方需確保容量足夠"
+//     (the caller must ensure capacity is sufficient).
+//
+// So `v.push(a); v.insert(0, b)` stores at index 1 into a buffer sized for 1
+// element. That is a genuine out-of-bounds write; it only *looks* harmless for
+// small elements because malloc's size-class slack absorbs the overrun. With a
+// 24-byte struct element it corrupts the heap: verified by
+// tests/mem-safety/nested-container-clone.no-adjacent probe `[]person` +
+// push + insert, which segfaults before the fix and prints correctly after it.
+// The same shape is reachable without push, because `.[i] = v` on a slice whose
+// cap was reached extends len (emitExtendLen) without touching cap.
+//
+// A borrowed view (string->[]byte coercion: cap==0 with a non-null data pointing
+// at the source string's storage) is deliberately left ALONE, exactly as before —
+// case 2 does not apply to it. Writing through such a view is a separate,
+// pre-existing question; silently re-homing it here would free a buffer the
+// string still owns.
 func (c *codegen) ensureVecBuffer(arrSlot string, v ValueID, idxV, elemT string) {
 	const vecDefaultCap = int64(1024)
+	// Minimum capacity to allocate when growing. Matches the documented vec growth
+	// strategy in src/std/vec.no ("cap == 0 → new-cap = 4") and keeps insert's
+	// one-spare-slot requirement satisfiable without a second grow per element.
+	const vecMinCap = int64(4)
 	elemSz := c.typeSizeOperand(elemT)
+
+	// Fresh-allocation size (case 1): the legacy default capacity.
 	c.loadSeq++
 	sizeReg := fmt.Sprintf("%%vbsz%d", c.loadSeq)
 	c.sb.WriteString(fmt.Sprintf("  %s = mul i64 %s, %d\n", sizeReg, elemSz, vecDefaultCap))
 
-	// Load the data field (field 2) and branch if it is still null.
+	// The store needs room for element idxV, i.e. idxV+1 elements.
+	c.loadSeq++
+	needReg := fmt.Sprintf("%%vbneed%d", c.loadSeq)
+	c.sb.WriteString(fmt.Sprintf("  %s = add i64 %s, 1\n", needReg, idxV))
+
+	// Load data (field 2) and cap (field 1) once, in the entry block, so both
+	// dominate every branch below.
 	c.loadSeq++
 	dg := fmt.Sprintf("%%vbdg%d", c.loadSeq)
 	c.sb.WriteString(fmt.Sprintf("  %s = getelementptr inbounds %%vec, %%vec* %s, i32 0, i32 2\n", dg, arrSlot))
@@ -4346,15 +4654,24 @@ func (c *codegen) ensureVecBuffer(arrSlot string, v ValueID, idxV, elemT string)
 	di := fmt.Sprintf("%%vbdi%d", c.loadSeq)
 	c.sb.WriteString(fmt.Sprintf("  %s = load i64, i64* %s\n", di, dg))
 	c.loadSeq++
+	cg := fmt.Sprintf("%%vbcg%d", c.loadSeq)
+	c.sb.WriteString(fmt.Sprintf("  %s = getelementptr inbounds %%vec, %%vec* %s, i32 0, i32 1\n", cg, arrSlot))
+	c.loadSeq++
+	ci := fmt.Sprintf("%%vbci%d", c.loadSeq)
+	c.sb.WriteString(fmt.Sprintf("  %s = load i64, i64* %s\n", ci, cg))
+
+	c.loadSeq++
 	isnull := fmt.Sprintf("%%vbnull%d", c.loadSeq)
 	c.sb.WriteString(fmt.Sprintf("  %s = icmp eq i64 %s, 0\n", isnull, di))
 
 	c.loadSeq++
 	lAlloc := fmt.Sprintf("vbA%d", c.loadSeq)
+	lCheck := fmt.Sprintf("vbC%d", c.loadSeq)
+	lGrow := fmt.Sprintf("vbG%d", c.loadSeq)
 	lDone := fmt.Sprintf("vbD%d", c.loadSeq)
-	c.sb.WriteString(fmt.Sprintf("  br i1 %s, label %%%s, label %%%s\n", isnull, lAlloc, lDone))
+	c.sb.WriteString(fmt.Sprintf("  br i1 %s, label %%%s, label %%%s\n", isnull, lAlloc, lCheck))
 
-	// alloc block: malloc the default buffer, store data + cap back into the slot.
+	// alloc block (case 1): malloc the default buffer, store data + cap.
 	c.sb.WriteString(fmt.Sprintf("%s:\n", lAlloc))
 	c.loadSeq++
 	buf := fmt.Sprintf("%%vbbuf%d", c.loadSeq)
@@ -4368,17 +4685,99 @@ func (c *codegen) ensureVecBuffer(arrSlot string, v ValueID, idxV, elemT string)
 	ptri := fmt.Sprintf("%%vbptri%d", c.loadSeq)
 	c.sb.WriteString(fmt.Sprintf("  %s = ptrtoint i8* %s to i64\n", ptri, buf))
 	c.sb.WriteString(fmt.Sprintf("  store i64 %s, i64* %s\n", ptri, dg))
-	// cap is field 1
-	c.loadSeq++
-	cg := fmt.Sprintf("%%vbcap%d", c.loadSeq)
-	c.sb.WriteString(fmt.Sprintf("  %s = getelementptr inbounds %%vec, %%vec* %s, i32 0, i32 1\n", cg, arrSlot))
 	c.sb.WriteString(fmt.Sprintf("  store i64 %d, i64* %s\n", vecDefaultCap, cg))
+	c.sb.WriteString(fmt.Sprintf("  br label %%%s\n", lDone))
+
+	// check block (case 2): a buffer exists — is there room for element idxV?
+	//
+	// `cap > 0` is a LOAD-BEARING guard, not a sanity check. A borrowed view
+	// (string -> []byte coercion) is exactly `cap == 0` with a NON-NULL data
+	// pointer that aliases someone else's storage — the string's buffer. Such a
+	// view must be left alone, as it always was. Growing it would malloc a fresh
+	// buffer, memcpy min(len, 0) == 0 bytes, and then `free` a pointer this code
+	// does not own: the source string's buffer. That is a use-after-free, and it
+	// is not hypothetical — tests/test-tls-partial.no (`buf str` passed to
+	// `tls.put-u16(buf, ...)`) traps with SIGTRAP on the very first write when
+	// this guard is missing. A real vec with a non-null data pointer always has
+	// cap >= 1 (push grows 1,2,4…; the fresh path allocates 1024), so cap > 0
+	// separates the two cases exactly.
+	//
+	// Signed compare on purpose: a negative idxV must not wrap to a huge u64 and
+	// request a petabyte from malloc.
+	c.sb.WriteString(fmt.Sprintf("%s:\n", lCheck))
+	c.loadSeq++
+	posCap := fmt.Sprintf("%%vbpc%d", c.loadSeq)
+	c.sb.WriteString(fmt.Sprintf("  %s = icmp sgt i64 %s, 0\n", posCap, ci))
+	c.loadSeq++
+	full0 := fmt.Sprintf("%%vbfull%d", c.loadSeq)
+	c.sb.WriteString(fmt.Sprintf("  %s = icmp sgt i64 %s, %s\n", full0, needReg, ci))
+	c.loadSeq++
+	full := fmt.Sprintf("%%vbfull%d", c.loadSeq)
+	c.sb.WriteString(fmt.Sprintf("  %s = and i1 %s, %s\n", full, posCap, full0))
+	c.sb.WriteString(fmt.Sprintf("  br i1 %s, label %%%s, label %%%s\n", full, lGrow, lDone))
+
+	// grow block (case 2): newCap = max(cap*2, need, 4); copy the live elements,
+	// then free the old buffer. Freeing is safe: the elements are MOVED (a
+	// shallow copy of the descriptors), not duplicated — the new array takes over
+	// ownership of the same element payloads, and the vec's own drop later frees
+	// only the current (new) data pointer.
+	c.sb.WriteString(fmt.Sprintf("%s:\n", lGrow))
+	c.loadSeq++
+	dbl := fmt.Sprintf("%%vbdbl%d", c.loadSeq)
+	c.sb.WriteString(fmt.Sprintf("  %s = mul i64 %s, 2\n", dbl, ci))
+	c.loadSeq++
+	over := fmt.Sprintf("%%vbov%d", c.loadSeq)
+	c.sb.WriteString(fmt.Sprintf("  %s = icmp sgt i64 %s, %s\n", over, dbl, needReg))
+	c.loadSeq++
+	n1 := fmt.Sprintf("%%vbn1%d", c.loadSeq)
+	c.sb.WriteString(fmt.Sprintf("  %s = select i1 %s, i64 %s, i64 %s\n", n1, over, dbl, needReg))
+	c.loadSeq++
+	small := fmt.Sprintf("%%vbsm%d", c.loadSeq)
+	c.sb.WriteString(fmt.Sprintf("  %s = icmp slt i64 %s, %d\n", small, n1, vecMinCap))
+	c.loadSeq++
+	newCap := fmt.Sprintf("%%vbnc%d", c.loadSeq)
+	c.sb.WriteString(fmt.Sprintf("  %s = select i1 %s, i64 %d, i64 %s\n", newCap, small, vecMinCap, n1))
+	c.loadSeq++
+	gsz := fmt.Sprintf("%%vbgsz%d", c.loadSeq)
+	c.sb.WriteString(fmt.Sprintf("  %s = mul i64 %s, %s\n", gsz, newCap, elemSz))
+	c.loadSeq++
+	gbuf := fmt.Sprintf("%%vbgbuf%d", c.loadSeq)
+	c.sb.WriteString(fmt.Sprintf("  %s = call i8* @malloc(i64 %s)\n", gbuf, gsz))
+	c.decl("declare void @llvm.memset.p0i8.i64(i8*, i8, i64, i1)")
+	c.sb.WriteString(fmt.Sprintf("  call void @llvm.memset.p0i8.i64(i8* %s, i8 0, i64 %s, i1 false)\n", gbuf, gsz))
+	// Copy min(len, cap) elements — never more than the old buffer holds.
+	c.loadSeq++
+	lg := fmt.Sprintf("%%vblg%d", c.loadSeq)
+	c.sb.WriteString(fmt.Sprintf("  %s = getelementptr inbounds %%vec, %%vec* %s, i32 0, i32 0\n", lg, arrSlot))
+	c.loadSeq++
+	li := fmt.Sprintf("%%vbli%d", c.loadSeq)
+	c.sb.WriteString(fmt.Sprintf("  %s = load i64, i64* %s\n", li, lg))
+	c.loadSeq++
+	lenOver := fmt.Sprintf("%%vblo%d", c.loadSeq)
+	c.sb.WriteString(fmt.Sprintf("  %s = icmp sgt i64 %s, %s\n", lenOver, li, ci))
+	c.loadSeq++
+	copyN := fmt.Sprintf("%%vbcn%d", c.loadSeq)
+	c.sb.WriteString(fmt.Sprintf("  %s = select i1 %s, i64 %s, i64 %s\n", copyN, lenOver, ci, li))
+	c.loadSeq++
+	cbytes := fmt.Sprintf("%%vbcb%d", c.loadSeq)
+	c.sb.WriteString(fmt.Sprintf("  %s = mul i64 %s, %s\n", cbytes, copyN, elemSz))
+	c.loadSeq++
+	oldp := fmt.Sprintf("%%vbop%d", c.loadSeq)
+	c.sb.WriteString(fmt.Sprintf("  %s = inttoptr i64 %s to i8*\n", oldp, di))
+	c.decl("declare void @llvm.memcpy.p0i8.p0i8.i64(i8*, i8*, i64, i1)")
+	c.sb.WriteString(fmt.Sprintf("  call void @llvm.memcpy.p0i8.p0i8.i64(i8* %s, i8* %s, i64 %s, i1 false)\n", gbuf, oldp, cbytes))
+	c.decl("declare void @free(i8*)")
+	c.sb.WriteString(fmt.Sprintf("  call void @free(i8* %s)\n", oldp))
+	c.loadSeq++
+	ptri2 := fmt.Sprintf("%%vbpti%d", c.loadSeq)
+	c.sb.WriteString(fmt.Sprintf("  %s = ptrtoint i8* %s to i64\n", ptri2, gbuf))
+	c.sb.WriteString(fmt.Sprintf("  store i64 %s, i64* %s\n", ptri2, dg))
+	c.sb.WriteString(fmt.Sprintf("  store i64 %s, i64* %s\n", newCap, cg))
 	c.sb.WriteString(fmt.Sprintf("  br label %%%s\n", lDone))
 
 	// done block: merge point; the caller's subsequent store lands here.
 	c.sb.WriteString(fmt.Sprintf("%s:\n", lDone))
 	_ = v
-	_ = idxV
 }
 
 // elemTypeOfReceiver returns the LLVM *element* type for indexing/store into a
@@ -4589,6 +4988,10 @@ func (c *codegen) emitIndexStore(inst *Inst) error {
 		valV = cl
 	}
 	c.sb.WriteString(fmt.Sprintf("  store %s %s, %s* %s\n", elemT, valV, elemT, ep))
+	// Same by-value sharing as vec.push — see cloneStructElemLeaves. Only
+	// reached for struct element types (str/vec elements have their own
+	// clone path above, scalars own nothing).
+	c.cloneStructElemLeaves(ep, elemT)
 	if arrT == "%str-long" || arrT == "%vec" {
 		// Writing an element may extend the logical length. Two cases matter and
 		// both match the legacy codegen:
@@ -5145,6 +5548,37 @@ func (c *codegen) emitSetField(inst *Inst) error {
 			c.emitMemcpy(gep, srcSlot, sz)
 			return nil
 		}
+	}
+	// OWNED `str` FIELD: deep-clone the incoming value. A plain
+	// `store %str-long` copies only the {len,cap,data} descriptor, so the field
+	// ends up SHARING the source's heap buffer; when the source is reassigned or
+	// dropped, @str_free runs on it and the field dangles. Verified before this
+	// fix:
+	//   `s = 'C'; p.name = s; s = 'D'; print(p.name)`  ->  printed ""
+	//   `mk = (n str) (out ?person) { p.name = n; out = p }` -> the caller freed
+	//   the argument and `it.name` was lost entirely.
+	//
+	// The PREVIOUS occupant is freed, which is only sound because struct copies
+	// now deep-copy their owned leaves (emitLeafStructClone + the
+	// moveStructSharesHeap promotion). Before that, `b = a` shared the leaf
+	// buffer, so freeing the old occupant on `b.name = 'B'` freed a buffer
+	// `a.name` still read — verified, it turned `leafshare.no` from `A/A/B`
+	// into `A//B`. That is why the first version of this clone had to leak:
+	// measured at 206 MB vs 2.7 MB for 200 assignments of a 1 MiB string.
+	//
+	// Order matters: load the old descriptor, clone the incoming value, store
+	// the clone, then free. Cloning BEFORE the free keeps `p.name = p.name`
+	// correct (the clone is independent of the buffer being released).
+	if fieldLT == "%str-long" && valLT == "%str-long" {
+		c.loadSeq++
+		old := fmt.Sprintf("%%sfold%d", c.loadSeq)
+		c.sb.WriteString(fmt.Sprintf("  %s = load %s, %s* %s\n", old, fieldLT, fieldLT, gep))
+		c.loadSeq++
+		cl := fmt.Sprintf("%%sfcl%d", c.loadSeq)
+		c.sb.WriteString(fmt.Sprintf("  %s = call %s @str_clone(%s %s)\n", cl, fieldLT, fieldLT, valV))
+		c.sb.WriteString(fmt.Sprintf("  store %s %s, %s* %s\n", fieldLT, cl, fieldLT, gep))
+		c.sb.WriteString(fmt.Sprintf("  call void @str_free(%s %s)\n", fieldLT, old))
+		return nil
 	}
 	c.sb.WriteString(fmt.Sprintf("  store %s %s, %s* %s\n", fieldLT, valV, fieldLT, gep))
 	return nil
@@ -7296,11 +7730,30 @@ func (c *codegen) emitCallBody(f *Function, cf *Function, inst *Inst, calleeName
 	// (x, y = f()) lowers to one call with N out-params; inst.Results holds all
 	// N result values, so each resSlot[i] must be loaded and stored into
 	// inst.Results[i]'s slot — not just the first (inst.Dst).
+	// A call whose result lands in inst.Dst instead of inst.Results — an
+	// indirect call through a fn-typed parameter (emitIndirectCall) — has no
+	// Results entry, so the loop below breaks on the first iteration and the
+	// destination slot is left UNINITIALIZED: the callee writes into %cres but
+	// nothing ever copies it back out, so `out = cb()` returned stack garbage.
+	// Verified in IR (tests/test-fn-type-return.no, @apply_ret):
+	//     %cres30 = alloca i64
+	//     call void %fnptr29(ptr %cres30)   ; cb() writes here ...
+	//     %mv31 = load i64, ptr %v2.s       ; ... but %v2.s was never stored
+	//     store i64 %mv31, ptr %v0.s
+	//     store i64 %lv31, ptr %p1          ; so the out-param gets garbage
+	// The three fn-type tests passed only because the garbage happened to match
+	// the expected value. The read is undef, so LLVM may exploit it: with an
+	// unrelated change perturbing stack layout, InstCombine deleted the entire
+	// print path and the tests went silent.
+	results := inst.Results
+	if len(results) == 0 && inst.Dst > NoVal && len(resSlots) == 1 && c.valSlot[inst.Dst] != "" {
+		results = []ValueID{inst.Dst}
+	}
 	for i, rs := range resSlots {
-		if i >= len(inst.Results) {
+		if i >= len(results) {
 			break
 		}
-		rv := inst.Results[i]
+		rv := results[i]
 		if rv <= NoVal {
 			continue
 		}

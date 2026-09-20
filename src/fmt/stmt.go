@@ -57,6 +57,8 @@ func (f *formatter) formatStatement(stmt parser.Statement) bool {
 	// 區塊級：parser 的 propagateBlockScopedOverflow 已將其合併進區塊內每個陳述的
 	// side-table，若在此對每個陳述都輸出會重複印 N 次。故 overflow 走 activeOverflow
 	// 去重（模式不變則跳過），平台/泛型註解不受影響照常輸出。兩者分屬不同行。
+	// 尾隨註解（`stmt #{...}`）收集起來，待陳述本體輸出後寫在同一行後方。
+	var trailingAnns []*parser.AnnotationEntry
 	if anns := f.attachedAnnotations(stmt); len(anns) > 0 {
 		if os.Getenv("NOLANG_FMTDBG") != "" {
 			fmt.Fprintf(os.Stderr, "[DBG] formatStatement attached-overflow on %T\n", stmt)
@@ -65,6 +67,10 @@ func (f *formatter) formatStatement(stmt parser.Statement) bool {
 		var overflowModes []string
 		seenMode := make(map[string]bool)
 		for _, e := range anns {
+			if e.Trailing {
+				trailingAnns = append(trailingAnns, e)
+				continue
+			}
 			if e.Key == "overflow" {
 				if m := overflowModeStringOf(e); m != "" && !seenMode[m] {
 					seenMode[m] = true
@@ -150,6 +156,20 @@ func (f *formatter) formatStatement(stmt parser.Statement) bool {
 		if !f.formatAnnotationStatement(s) {
 			emitted = false
 		}
+	}
+
+	// 尾隨註解：寫回陳述同一行的後方（位置規則只允許「上方獨立成行」或「同一行
+	// 尾隨」，搬到上方或丟掉都會改變使用者寫下的位置；index-out 遺失更會直接
+	// 讓越界保護消失）。輸出在行內註釋之前，得到 `stmt #{...} ; comment`。
+	if len(trailingAnns) > 0 {
+		f.write(" #{")
+		for i, e := range trailingAnns {
+			if i > 0 {
+				f.write(", ")
+			}
+			f.write(e.String())
+		}
+		f.write("}")
 	}
 
 	// For FunctionDefinition and ForStatement, inline comment is handled inside the specific formatter.

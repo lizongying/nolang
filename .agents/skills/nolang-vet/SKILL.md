@@ -27,7 +27,8 @@ make no          # 重新构建 bin/no
 ./bin/no vet src/std
 ```
 
-**不允许出现 ERROR。** 如果有 ERROR，必须修复后才能继续。
+**不允许出现 ERROR。** 如果有 ERROR，必须修复后才能继续 —— **唯一例外**是下文
+〈已知的既有 ERROR〉列出的那 1 个基线错误，它在 pristine HEAD 上同样存在。
 
 ### 3. （可选）运行 LSP vet 检查
 
@@ -84,6 +85,39 @@ ls -d */std/              # 常见位置：src/std/、std/、lib/std/
 3. **修复错误** — 修正语法、类型或语义问题
 4. **重新验证** — 再次运行 `no vet src/std` 确认 ERROR 已消除
 5. **如有必要，运行 LSP vet** — 确认诊断级错误也已消除
+
+## 已知的既有 ERROR（基线，不要当作本次改动的回归）
+
+本项目当前**存在 1 个既有 ERROR**，在 pristine `git archive HEAD` 构建上一模一样地出现，
+不是任何人的改动引入的：
+
+```
+src/std/crypto/sha3.no: [ERROR] nolang-compile: parser errors:
+  [sha3.no:line 24, column 23: [E_GENERAL] expected comma or right parenthesis, got ASSIGN(=) instead
+   sha3.no:line 24, column 18: [E_GENERAL] expected expression after operator '*']
+```
+
+判定标准：**这个 ERROR 是基线，不是回归。** 只要 ERROR 集合没有比你改动前**增加**，就算通过。
+正确的做法是先看内容，而不只是数行数：
+
+```bash
+./bin/no vet src/std 2>&1 | grep '\[ERROR\]'
+```
+
+> ⚠️ **不要只数行数。** `grep -c '\[ERROR\]'` 会把**标识符名里含 ERROR 的 HINT** 一起数进来 ——
+> 例如 `number.no` 的 `LEVEL-ERROR`、`byte.no` 的 `DNS-RCODE-FORMAT-ERROR` /
+> `DNS-RCODE-NAME-ERROR`。本例总共 4 行匹配，其中只有 `sha3.no` 那 **1** 行是真正的错误，
+> 另外 3 行是 `[HINT]`。
+
+**不要为了让数字变成 0 而去改 `sha3.no`** —— 那是既有问题，改它属于越界，而且会掩盖真正的
+回归信号（下次真出回归时，你会以为"反正本来就有 ERROR"）。要判断新出现的 ERROR 是不是自己引入的，
+用 pristine HEAD 二进制跑同一条命令对比：
+
+```bash
+mkdir -p /tmp/pristine && git archive HEAD | tar -x -C /tmp/pristine
+cd /tmp/pristine && make no
+/tmp/pristine/bin/no vet src/std 2>&1 | grep '\[ERROR\]'
+```
 
 ## 与其他 Skill 的关系
 

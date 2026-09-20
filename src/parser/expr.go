@@ -1359,9 +1359,8 @@ func (p *Parser) parseIfExpression() Expression {
 	expr.Condition = p.parseExpression(LOWEST)
 
 	// 跳过条件表达式后面的所有令牌，直到找到左花括号
-	for p.currentToken.Type != lexer.LBRACE && p.currentToken.Type != lexer.EOF {
-		p.nextToken()
-	}
+	// （`#{...}` 夹在条件与 `{` 之间时会被整段吞掉，由 skipToBlockOpeningBrace 报错）
+	p.skipToBlockOpeningBrace()
 
 	// 解析左花括号
 	if p.currentToken.Type != lexer.LBRACE {
@@ -1383,9 +1382,8 @@ func (p *Parser) parseIfExpression() Expression {
 		p.nextToken() // 跳过 else 关键字
 
 		// 跳过 else 关键字后面的所有令牌，直到找到左花括号
-		for p.currentToken.Type != lexer.LBRACE && p.currentToken.Type != lexer.EOF {
-			p.nextToken()
-		}
+		// （同条件那一处：`#{...}` 被吞掉时由 skipToBlockOpeningBrace 报错）
+		p.skipToBlockOpeningBrace()
 
 		// 解析左花括号
 		if p.currentToken.Type != lexer.LBRACE {

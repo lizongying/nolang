@@ -177,6 +177,7 @@ func (p *Parser) parseBareMatchExpr() Expression {
 		// armAnnots，待臂 body 解析完成後附加到 body 區塊（保留 overflow 語意）。
 		var armAnnots []*AnnotationEntry
 		for p.currentToken.Type == lexer.HASH_LBRACE {
+			groupTok := p.currentToken
 			p.nextToken() // skip #{
 			armAnnots = append(armAnnots, p.parseAnnotationBody()...)
 			if p.currentToken.Type != lexer.RBRACE {
@@ -185,6 +186,11 @@ func (p *Parser) parseBareMatchExpr() Expression {
 				break
 			}
 			p.nextToken() // skip }
+			// 位置檢查：`}` 之後同一行仍有臂條件 → 「目標前方同一行」的前綴寫法。
+			// 必須在跳過行尾換行之前判定，否則獨立成行的合法寫法會被誤判。
+			if annotationPrefixIllegal(p.currentToken.Type) {
+				p.errPrefixAnnotation(groupTok)
+			}
 			// 跳過註解後的行尾換行，避免影響後續臂首判定
 			for p.currentToken.Type == lexer.NEWLINE {
 				p.nextToken()

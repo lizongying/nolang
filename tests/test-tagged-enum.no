@@ -38,8 +38,8 @@ shape {
 #{overflow = wrap}
 area = (s shape) (a f64) {
     s: {
-        circle(r) -> { #{overflow = wrap} a = r * 3.0 }
-        rect(w, h) -> { #{overflow = wrap} a = w * h }
+        circle(r) -> { a = r * 3.0 #{overflow = wrap} }
+        rect(w, h) -> { a = w * h #{overflow = wrap} }
         dot -> a = 0.0
     }
 }

@@ -1,0 +1,123 @@
+; ═════════════════════════════════════════════════════════════════
+; vec.insert 容量契約測試：push 之後的 insert 必須先擴容
+; ═════════════════════════════════════════════════════════════════
+;
+; 問題描述
+; --------
+; emitBuiltinVecPush 擴容到 max(1, cap*2)，所以**第一次 push 後 cap=1 且 len==cap**。
+; 而 std `[]t.insert`（src/std/vec.no:210）用 `.[i] = v` 在 index == len 處寫，
+; 它自己不擴容——註解寫明「調用方需確保容量足夠」。
+;
+; `.[i] = v` 落到 emitIndexStore → ensureVecBuffer，而它原本**只在 data == NULL 時分配**
+; （legacy 在聲明時就把 cap 設成 1024，所以 legacy 下 insert 永遠夠用；
+; MIR 改成惰性分配後 cap 變成 1，這個契約就斷了）。
+; 隨後的 emitExtendLen 只把 len 抬到 idx+1，**不動 cap**。
+;
+; ⇒ `v.push(a); v.insert(0, b)` 在「只夠 1 個元素的緩衝區」上寫下標 1：真·越界寫。
+; 小元素（[]i64，8 字節）被 malloc 的 size-class 餘量吸收，看起來沒事；
+; 24 字節的結構體元素就踩壞堆 → segmentation fault。
+;
+; 這是「元素尺寸放大」而不是「元素尺寸造成」：同一個越界寫，元素越大越早崩。
+;
+; 修復內容
+; --------
+; ensureVecBuffer 增加「data != 0 但 idx >= cap」的**真擴容**分支：
+;   newCap = max(cap*2, idx+1, 4)；malloc + memset + memcpy min(len, cap) 個元素
+;   + free 舊緩衝區，回寫 data/cap。元素是搬移（描述符淺拷貝）而非複製。
+;
+; 預期行為
+; --------
+; 所有子測試 ok=true，且進程正常結束。
+; 修復前：越界寫踩壞堆，進程在子測試 2（len==cap==4）被 killed。
+; 注意子測試 1 在舊二進制上有時能「僥倖通過」——OOB 寫究竟落在哪裡取決於堆佈局，
+; 這正是它危險的地方：它不是穩定地崩，而是偶爾靜默地讀到垃圾。
+; ═════════════════════════════════════════════════════════════════
+
+person {
+    name str
+    age i64
+}
+
+; 測試 1：結構體元素，push 一次（cap=1）後 insert —— 修復前 segfault
+test-struct-insert-after-push = () (ok bool) {
+    people []person
+    a person
+    a.name = 'A'
+    a.age = 1
+    people.push(a)
+    people.insert(0, a)
+
+    people.len() == 2 -> ok = true
+    people[0].name == 'A' -> ok = true
+    people[1].name == 'A' -> ok = true
+}
+
+; 測試 2：push 4 次把 cap 撐到 4（1→2→4），此時 len==cap==4，
+;         insert 寫下標 4 —— 證明與「初始 cap 是多少」無關
+test-insert-when-len-equals-cap = () (ok bool) {
+    people []person
+    p0 person
+    p0.name = 'n0'
+    p0.age = 0
+    people.push(p0)
+    p1 person
+    p1.name = 'n1'
+    p1.age = 1
+    people.push(p1)
+    p2 person
+    p2.name = 'n2'
+    p2.age = 2
+    people.push(p2)
+    p3 person
+    p3.name = 'n3'
+    p3.age = 3
+    people.push(p3)
+
+    people.len() == 4 -> ok = true
+    people.insert(0, people[0])
+    people.len() == 5 -> ok = true
+    people[0].name == 'n0' -> ok = true
+    people[4].name == 'n3' -> ok = true
+}
+
+; 測試 3：[]i64 —— 修復前「靠 malloc 餘量僥倖正確」，修復後必須真的正確
+test-i64-insert-after-push = () (ok bool) {
+    v []i64
+    v.push(10)
+    v.insert(0, 99)
+
+    v.len() == 2 -> ok = true
+    v[0] == 99 -> ok = true
+    v[1] == 10 -> ok = true
+}
+
+; 測試 4：insert 到中間（非 append 分支），並確認擴容後舊元素沒有遺失
+test-insert-middle-keeps-elements = () (ok bool) {
+    v []i64
+    v.push(1)
+    v.push(2)
+    v.push(3)
+    v.insert(1, 99)
+
+    v.len() == 4 -> ok = true
+    v[0] == 1 -> ok = true
+    v[1] == 99 -> ok = true
+    v[2] == 2 -> ok = true
+    v[3] == 3 -> ok = true
+}
+
+main = () {
+    ok1 = test-struct-insert-after-push()
+    print('test-struct-insert-after-push: {ok1}')
+
+    ok2 = test-insert-when-len-equals-cap()
+    print('test-insert-when-len-equals-cap: {ok2}')
+
+    ok3 = test-i64-insert-after-push()
+    print('test-i64-insert-after-push: {ok3}')
+
+    ok4 = test-insert-middle-keeps-elements()
+    print('test-insert-middle-keeps-elements: {ok4}')
+
+    print('all done')
+}

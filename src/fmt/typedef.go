@@ -17,6 +17,24 @@ func (f *formatter) fieldAnnotations(field *parser.StructField) []*parser.Annota
 	return f.sem.AnnotationsOf(field)
 }
 
+// variantAnnotations 返回 parser 語義副表為標籤列舉變體記錄的 `#{...}` 條目。
+// 變體不是陳述式，attachedAnnotations（僅切換陳述式型別）看不到它們，故獨立查詢。
+func (f *formatter) variantAnnotations(v *parser.TaggedEnumVariant) []*parser.AnnotationEntry {
+	if f.sem == nil || v == nil {
+		return nil
+	}
+	return f.sem.AnnotationsOf(v)
+}
+
+// valueAnnotations 返回 parser 語義副表為 C 風格列舉值記錄的 `#{...}` 條目。
+// 列舉值不是陳述式，attachedAnnotations（僅切換陳述式型別）看不到它們，故獨立查詢。
+func (f *formatter) valueAnnotations(v *parser.EnumValue) []*parser.AnnotationEntry {
+	if f.sem == nil || v == nil {
+		return nil
+	}
+	return f.sem.AnnotationsOf(v)
+}
+
 func (f *formatter) formatStructDefinition(s *parser.StructDefinition) {
 	f.write(s.Name)
 	if len(s.Implements) > 0 {
@@ -27,22 +45,13 @@ func (f *formatter) formatStructDefinition(s *parser.StructDefinition) {
 	f.indent++
 	for _, field := range s.Fields {
 		f.newline()
-		// A field's own `#{...}` annotations (`#{inline}`) are written inline,
-		// exactly as they are spelled in source. They live in the semantic
-		// side-table keyed by the field node; attachedAnnotations does NOT cover
-		// them because a field is not a statement. Omitting them here dropped
-		// `#{inline}` on every `no fmt -w`, which silently changed the field's
-		// layout on the next build.
-		if anns := f.fieldAnnotations(field); len(anns) > 0 {
-			f.write("#{")
-			for i, e := range anns {
-				if i > 0 {
-					f.write(", ")
-				}
-				f.write(e.String())
-			}
-			f.write("} ")
-		}
+		// A field's own `#{...}` annotations (`#{inline}`) are written as a
+		// trailing annotation at the end of the field line. They live in the
+		// semantic side-table keyed by the field node; attachedAnnotations does
+		// NOT cover them because a field is not a statement. Omitting them here
+		// dropped `#{inline}` on every `no fmt -w`, which silently changed the
+		// field's layout on the next build. The leading form (`#{inline} a pt`)
+		// is a parse error now, so the trailing form is the only spelling to emit.
 		f.write(field.Name)
 		f.write(" ")
 		if field.IsSlice {
@@ -80,6 +89,18 @@ func (f *formatter) formatStructDefinition(s *parser.StructDefinition) {
 		if field.Sealed {
 			f.write(" sealed")
 		}
+		// 欄位註解以「同一行尾隨」輸出（`a pt #{inline}`）：位置規則只允許獨立
+		// 成行置於目標上方或寫在目標同一行後方，前綴寫法已是解析錯誤。
+		if anns := f.fieldAnnotations(field); len(anns) > 0 {
+			f.write(" #{")
+			for i, e := range anns {
+				if i > 0 {
+					f.write(", ")
+				}
+				f.write(e.String())
+			}
+			f.write("}")
+		}
 	}
 	f.indent--
 	f.newline()
@@ -98,6 +119,18 @@ func (f *formatter) formatEnumDefinition(s *parser.EnumDefinition) {
 		if v.Explicit {
 			f.write(" = ")
 			f.write(strconv.FormatInt(v.Value, 10))
+		}
+		// 列舉值註解以「同一行尾隨」輸出（`red #{a},`）：位置規則只允許獨立
+		// 成行置於值上方或寫在值同一行後方，前綴寫法已是解析錯誤。
+		if anns := f.valueAnnotations(v); len(anns) > 0 {
+			f.write(" #{")
+			for i, e := range anns {
+				if i > 0 {
+					f.write(", ")
+				}
+				f.write(e.String())
+			}
+			f.write("}")
 		}
 		f.write(",")
 	}
@@ -133,6 +166,18 @@ func (f *formatter) formatTaggedEnumDefinition(s *parser.TaggedEnumDefinition) {
 			// 舊式空格分隔型別：val i64
 			f.write(" ")
 			f.write(v.Type.String())
+		}
+		// 變體註解以「同一行尾隨」輸出（`ok(v i64) #{inline},`）：位置規則只允許
+		// 獨立成行置於變體上方或寫在變體同一行後方，前綴寫法已是解析錯誤。
+		if anns := f.variantAnnotations(v); len(anns) > 0 {
+			f.write(" #{")
+			for i, e := range anns {
+				if i > 0 {
+					f.write(", ")
+				}
+				f.write(e.String())
+			}
+			f.write("}")
 		}
 		f.write(",")
 	}

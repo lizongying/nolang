@@ -1,0 +1,40 @@
+; test-annotation-position — `#{...}` 位置規則的端到端證據。
+;
+; 規則：註解只允許 (1) 獨立成行、置於目標上方，或 (2) 寫在目標同一行後方（尾隨）。
+; 寫在目標「前方同一行」（前綴）是解析錯誤，編譯器與 LSP 共用同一條診斷
+; （見 src/parser/annotation_position_test.go 的前綴 / 上方 / 尾隨三組測試）。
+;
+; 本檔只含合法寫法，且只用 `no fmt -w` 不會把註解丟掉或搬位置的寫法（尾隨 index-out
+; 在本次修正前會被 formatter 整條丟掉）。「上方」形式的 index-out 由
+; src/parser/annotation_position_test.go 與 src/std（json/des/process）覆蓋。
+
+; (1) 上方獨立成行：overflow 模式。註解若沒生效，checker 會以
+;     「整數運算默認在溢出時返回 option<int>」拒絕本檔。
+a i8 = 100
+#{overflow = wrap}
+b i8 = a + 100
+print(b)
+
+; (2) 同一行尾隨：overflow 模式
+c i8 = a + 100 #{overflow = wrap}
+print(c)
+
+; (3) 同一行尾隨：index-out 預設值（LSP quickfix 產生的寫法）。舊行為把尾隨註解
+;     掛到「下一條陳述」，該行的越界索引取不到預設值；現在必須掛在它所尾隨的
+;     那一條陳述上，越界 → 9。
+arr [3]i64 = [1, 2, 3]
+i = 5
+trail = arr[i] #{index-out = 9}
+print(trail)
+
+; (4) 結構體欄位註解：同一行尾隨（`p pt #{inline}`）
+pt {
+    x i64
+}
+holder {
+    p pt #{inline}
+    q i64
+}
+h = holder { p: pt { x: 4 }, q: 2 }
+print(h.p.x)
+print(h.q)

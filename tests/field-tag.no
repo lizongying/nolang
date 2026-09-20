@@ -1,13 +1,17 @@
 ; field-tag — 結構體欄位標記與宣告順序
 ;
-; 1) 首個欄位帶 #{...} 註解的結構體必須被辨識。
-;    否則 `{` 後第一個非 NEWLINE token 是 HASH_LBRACE，整個 `{...}` 被判成
-;    block statement，結構體根本不註冊（"'annotated' is not defined"）。
+; 1) 欄位註解（`a pt #{inline}`，同一行尾隨）必須被辨識。
+;    註解只允許「獨立成行置於欄位上方」或「寫在欄位同一行後方」；同一行前綴
+;    （`#{inline} a pt`）是解析錯誤。另外，若首個欄位用「獨立成行」寫法，`{` 後
+;    第一個非 NEWLINE token 會是 HASH_LBRACE，整個 `{...}` 會被判成 block
+;    statement、結構體根本不註冊（"'annotated' is not defined"）——故首欄位用尾隨寫法。
 ; 2) 欄位型別引用「後面才宣告」的結構體必須正確。
 ;    否則 internType 的裸識別字修正把未知名字折成 KindInt 並快取，
 ;    欄位存取發出 `getelementptr inbounds i64`，LLVM 驗證失敗。
-; 3) #{inline} 不改變當前行為：欄位仍是內聯值。
-;    欄位標記（Owned / Inline）在定義處確定，可用 NOLANG_MIR_DUMP_MIR 檢視。
+; 3) `#{inline}` 有三種寫法且值被遵循：`#{inline}` / `#{inline=true}` 為按值內聯，
+;    `#{inline=false}` 為指標，不寫則取決於 NOLANG_FIELD_PTR（預設關＝按值）。
+;    三者在此都必須正確賦值／讀取；欄位標記（Owned / Inline）在定義處確定，
+;    可用 NOLANG_MIR_DUMP_MIR 檢視。
 
 ; (2) 前向引用：holder 在 pt 之前宣告
 holder {
@@ -21,13 +25,15 @@ pt {
 
 ; (1) 首欄位註解 + (3) #{inline} 結構體欄位維持內聯值
 annotated {
-    #{inline} a pt
+    a pt #{inline}
     b i64
 }
 
-; (3) 結構體欄位：預設 Owned（未來的指針佈局），#{inline} 為 Inline
+; (3) 三種寫法並存：裸簡寫 / 顯式 true / 顯式 false / 不寫（預設）
 box {
-    #{inline} inl pt
+    inl pt #{inline}
+    tr pt #{inline=true}
+    fl pt #{inline=false}
     own pt
 }
 
@@ -40,8 +46,13 @@ print(n.a.x)
 print(n.a.y)
 print(n.b)
 
-k = box { inl: pt { x: 3, y: 4 }, own: pt { x: 5, y: 6 } }
+k = box {
+    inl: pt { x: 3, y: 4 }
+    tr: pt { x: 5, y: 6 }
+    fl: pt { x: 7, y: 8 }
+    own: pt { x: 9, y: 10 }
+}
 print(k.inl.x)
-print(k.inl.y)
-print(k.own.x)
+print(k.tr.x)
+print(k.fl.y)
 print(k.own.y)

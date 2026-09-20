@@ -887,15 +887,29 @@ type AnnotationValue interface {
 	String() string
 }
 
-// AnnotationBoolValue — 獨立布爾鍵（例如 #{debug} 中的 debug）
+// AnnotationBoolValue — 布爾值。
+//
+// 兩種來源：
+//   - **獨立布爾鍵**（`#{debug}`）：`AnnotationEntry.Value` 為 nil，鍵存在即語義 true；
+//   - **顯式布爾值**（`#{inline=true}` / `#{inline=false}`）：Value 保存真正的布爾。
+//
+// 顯式值必須被保留：`#{inline=false}` 與 `#{inline=true}` 語義相反，若在此丟掉
+// 真假（早期版本兩者都建成無值物件、String() 一律回 "true"），formatter 會把
+// `#{inline=false}` 印成 `#{inline=true}`——靜默反轉語義。
 type AnnotationBoolValue struct {
 	Token lexer.Token
+	Value bool
 }
 
 func (v *AnnotationBoolValue) annotationValueNode()   {}
 func (v *AnnotationBoolValue) Pos() lexer.Position    { return posFromToken(v.Token) }
 func (v *AnnotationBoolValue) EndPos() lexer.Position { return posFromToken(v.Token) }
-func (v *AnnotationBoolValue) String() string         { return "true" }
+func (v *AnnotationBoolValue) String() string {
+	if v.Value {
+		return "true"
+	}
+	return "false"
+}
 
 // AnnotationIntValue — 整數值（例如 max=100）
 type AnnotationIntValue struct {
@@ -991,6 +1005,11 @@ type AnnotationEntry struct {
 	Key   string          // 鍵名，如 "derive"、"range"、"max"、"debug"、"c"
 	Value AnnotationValue // 值；nil 表示布爾獨立鍵
 	Token lexer.Token     // 鍵名的 token
+	// Trailing 為 true 表示此條目以「同一行尾隨」寫法出現在目標之後
+	// （`stmt #{...}`、`field type #{inline}`）。註解只允許兩種位置——獨立成行
+	// 置於目標上方，或寫在目標同一行後方——formatter 靠這個旗標把尾隨註解
+	// 輸出回原位，而不是搬到上方或（對 index-out 而言）直接丟掉。
+	Trailing bool
 }
 
 func (e *AnnotationEntry) Pos() lexer.Position { return posFromToken(e.Token) }
@@ -1721,6 +1740,13 @@ type EnumValue struct {
 	Explicit bool
 }
 
+// Pos / EndPos 讓 EnumValue 實作 parser.Node，使其能作為語義副表
+// （SemanticContext.SetRawAnnotations）的鍵，承載列舉值級 `#{...}` 註解。
+func (ev *EnumValue) Pos() lexer.Position { return posFromToken(ev.Token) }
+func (ev *EnumValue) EndPos() lexer.Position {
+	return posFromToken(ev.Token)
+}
+
 type EnumDefinition struct {
 	Token  lexer.Token
 	Name   string
@@ -1812,6 +1838,20 @@ type TaggedEnumVariant struct {
 	// 供析構綁定 `rect(w, h) -> ...` 生成 `it.<欄位名>` 提取。
 	FieldNames []string
 	Index      int64
+}
+
+// Pos / EndPos 讓 TaggedEnumVariant 實作 parser.Node，使其能作為語義副表
+// （SemanticContext.SetRawAnnotations）的鍵，承載變體級 `#{...}` 註解
+// （與 StructField 同機制；變體註解不降級到 HIR，由 checker / fmt 直接讀副表）。
+func (v *TaggedEnumVariant) Pos() lexer.Position { return posFromToken(v.Token) }
+func (v *TaggedEnumVariant) EndPos() lexer.Position {
+	if len(v.Fields) > 0 && v.Fields[len(v.Fields)-1].Type != nil {
+		return v.Fields[len(v.Fields)-1].Type.EndPos()
+	}
+	if v.Type != nil {
+		return v.Type.EndPos()
+	}
+	return posFromToken(v.Token)
 }
 
 // TaggedEnumDefinition — 標籤列舉：option { ok(v t), nil, err(e str) }

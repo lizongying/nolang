@@ -1871,6 +1871,19 @@ func (p *Parser) parseBlockStatement() *BlockStatement {
 			}
 		}
 
+		// 尾隨註解（`stmt #{...}`，與上一條陳述同一行、位於其後方）屬於該陳述。
+		// 不在這裡攔截的話，註解會退化成「下一條陳述的前置註解」：`#{index-out}`
+		// 被套用到錯誤的目標（該行的越界索引仍被當成未處理），LSP 的
+		// 「Add #{index-out = 0}」quickfix（在該行行尾追加尾隨註解）也就形同無效。
+		if p.currentToken.Type == lexer.HASH_LBRACE && len(block.Statements) > 0 {
+			if prev := block.Statements[len(block.Statements)-1]; prev != nil && prev.EndPos().Line == p.currentToken.Line {
+				if trailing := p.parseTrailingAnnotation(); len(trailing) > 0 {
+					p.attachAnnotations(prev, trailing)
+					continue
+				}
+			}
+		}
+
 		doc := p.collectDocComments()
 		stmt := p.parseStatement()
 		if stmt != nil {

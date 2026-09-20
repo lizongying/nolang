@@ -44,9 +44,69 @@ func (p *Parser) parseTrailingAnnotation() []*AnnotationEntry {
 			return entries
 		}
 		p.nextToken() // skip }
+		for _, e := range more {
+			if e != nil {
+				e.Trailing = true
+			}
+		}
 		entries = append(entries, more...)
 	}
 	return entries
+}
+
+// annotationPrefixIllegal 報告註解群組結尾 `}` 之後、同一行上是否還有程式碼。
+//
+// nolang 的註解位置規則：`#{...}` 只允許「獨立成行置於目標上方」或「寫在目標
+// 同一行後方（尾隨）」兩種寫法。兩者的 `}` 之後在同一行都只會接換行（尾隨註解
+// 其後只可能有換行、`;` 行註釋，或另一個註解群組）。若 `}` 之後同一行仍有程式碼，
+// 那就是「目標前方同一行」的前綴寫法——非法位置，必須報錯。
+func annotationPrefixIllegal(t lexer.TokenType) bool {
+	switch t {
+	case lexer.NEWLINE, lexer.RBRACE, lexer.EOF, lexer.SEMICOLON, lexer.HASH_LBRACE:
+		return false
+	}
+	return true
+}
+
+// errPrefixAnnotation 對「寫在目標前方同一行」的註解群組報錯。訊息維持
+// "line %d, column %d: ..." 格式，LSP 的 parseErrorToDiagnostic 才能定位
+// （見 lsp/server.go），編譯與 LSP 因此共用同一條規則。
+func (p *Parser) errPrefixAnnotation(tok lexer.Token) {
+	p.saveError(fmt.Sprintf("line %d, column %d: `#{...}` 註解不能寫在目標前方同一行；請獨立成行置於目標上方，或寫在目標同一行尾隨",
+		tok.Line, tok.Column))
+}
+
+// skipToBlockOpeningBrace 跳過當前 token 直到左花括號（或 EOF），用於
+// `if <cond> { ... }` / `else { ... }` 這種「條件與 `{` 之間」的掃描。
+//
+// 這個掃描是寬鬆的：它會把條件與 `{` 之間的任何 token 整段吞掉。`#{...}` 註解
+// 正好落在那裡時（`if x > 0 #{overflow = wrap} {`）會被完全吞掉——註解既不生效
+// 也不報錯，是最難察覺的一種失效。該位置既不在目標上方、也不在目標同一行後方，
+// 屬於「前方同一行」的一種，因此比照其他呼叫點報錯。
+//
+// 迴圈的結束條件刻意與原寫法完全一致（第一個 LBRACE 就停），避免改變既有的
+// 寬鬆行為；註解內若出現巢狀 `{`（例如字串以外的結構字面量），depth 不會歸零，
+// 也就不會誤報。
+func (p *Parser) skipToBlockOpeningBrace() {
+	depth := 0
+	var annotTok lexer.Token
+	for p.currentToken.Type != lexer.LBRACE && p.currentToken.Type != lexer.EOF {
+		switch p.currentToken.Type {
+		case lexer.HASH_LBRACE:
+			if depth == 0 {
+				annotTok = p.currentToken
+			}
+			depth++
+		case lexer.RBRACE:
+			if depth > 0 {
+				depth--
+				if depth == 0 && annotationPrefixIllegal(p.peekToken.Type) {
+					p.errPrefixAnnotation(annotTok)
+				}
+			}
+		}
+		p.nextToken()
+	}
 }
 
 func (p *Parser) parseAnnotationStatement() Statement {
@@ -64,6 +124,10 @@ func (p *Parser) parseAnnotationStatement() Statement {
 		return nil
 	}
 	p.nextToken() // skip }
+	// 位置檢查：`}` 之後同一行還有程式碼 → 「目標前方同一行」的前綴寫法。
+	if annotationPrefixIllegal(p.currentToken.Type) {
+		p.errPrefixAnnotation(annotToken)
+	}
 
 	annotStmt := &AnnotationStatement{
 		Token:   annotToken,
@@ -102,6 +166,7 @@ func (p *Parser) parseAnnotationStatement() Statement {
 			break
 		}
 		// 解析下一個註解並合併條目
+		groupTok := p.currentToken
 		p.nextToken() // skip #{
 		moreEntries := p.parseAnnotationBody()
 		if p.currentToken.Type != lexer.RBRACE {
@@ -111,6 +176,9 @@ func (p *Parser) parseAnnotationStatement() Statement {
 			break
 		}
 		p.nextToken() // skip }
+		if annotationPrefixIllegal(p.currentToken.Type) {
+			p.errPrefixAnnotation(groupTok)
+		}
 		entries = append(entries, moreEntries...)
 		annotStmt.Entries = entries
 	}
@@ -183,23 +251,14 @@ func (p *Parser) parseAnnotationStatement() Statement {
 // 不再掛載到 AST 節點上；平台鍵/泛型參數/embed 由獨立 Resolver pass
 // （ResolveProgram）收尾計算並存入 side-table。
 func (p *Parser) attachAnnotations(stmt Statement, entries []*AnnotationEntry) {
-	// `#{index-out = ...}`（安全索引越界預設值）必須「單獨成行、置於目標陳述上方」，
-	// 不允許寫在陳述同行的「前綴」（`#{index-out=0} x = v[5]`）或「尾隨」
-	// （`x = v[5] #{index-out=0}`）位置。兩者都與陳述位於同一行，故在此統一攔截：
-	// 註解條目的行號等於陳述行號即視為非法同行註解，報錯且不上掛（退化為未處理，
-	// 由 checker 報 `nolang-index`，提示使用者改成行上獨立註解）。
-	// overflow 等其它註解不受影響（使用者未要求改變其同行行為）。
-	var filtered []*AnnotationEntry
-	stmtLine := stmt.Pos().Line
-	for _, e := range entries {
-		if e != nil && e.Key == "index-out" && e.Token.Line == stmtLine {
-			p.saveError(fmt.Sprintf("line %d, column %d: `#{index-out = ...}` 必须单独成行置于语句上方，不能写在语句同一行（前缀或后缀）",
-				e.Token.Line, e.Token.Column))
-			continue
-		}
-		filtered = append(filtered, e)
-	}
-	p.sem.SetRawAnnotations(stmt, filtered)
+	// 註解位置規則（統一）：`#{...}` 只允許
+	//  1) 獨立成行、置於目標上方（`#{...}` ⏎ 目標），或
+	//  2) 寫在目標同一行的後方（尾隨，`目標 #{...}`）。
+	// 「目標前方同一行」的前綴寫法（如 `#{index-out=0} x = v[5]`）在解析當下即
+	// 報錯（見 annotationPrefixIllegal 的三個呼叫點：parseAnnotationStatement、
+	// parseStructDefinition、match 臂首），故這裡對同一行的尾隨註解一律放行——
+	// `#{index-out = ...}` 也不例外（尾隨寫法與 LSP 的 quickfix 一致）。
+	p.sem.SetRawAnnotations(stmt, entries)
 	// 同步將 #{overflow = wrap|clamp0} 攜帶到陳述節點的 OverflowMode 欄位（與
 	// applyLineOverflowAnnotations → setStmtOverflowMode 對「獨立 AnnotationStatement
 	// 下一條陳述」的處理一致）。原因：merged/lowered 路徑下各標準庫模組由不同 Parser
@@ -434,6 +493,38 @@ func (p *Parser) indexOutEntries(entries []*AnnotationEntry) []*AnnotationEntry 
 		return nil
 	}
 	return out
+}
+
+// InlineAnnotationValue 取出 `#{inline}` 註解的布爾值，三種寫法等價關係為：
+//
+//	#{inline}        present=true, value=true   —— 簡寫，等於 inline=true
+//	#{inline=true}   present=true, value=true
+//	#{inline=false}  present=true, value=false
+//
+// present=false 表示該節點完全沒有 inline 註解（維持默認佈局）。
+//
+// ok=false 表示帶了值但不是布爾（`#{inline=foo}`）：呼叫方應報錯，而不是猜。
+// 整數 0/1 視為 false/true（無歧義），其餘型別一律視為不合法。
+func InlineAnnotationValue(entries []*AnnotationEntry) (present, value, ok bool) {
+	for _, e := range entries {
+		if e == nil || e.Key != "inline" {
+			continue
+		}
+		if e.Value == nil {
+			return true, true, true // 獨立布爾鍵 `#{inline}`
+		}
+		switch v := e.Value.(type) {
+		case *AnnotationBoolValue:
+			return true, v.Value, true
+		case *AnnotationIntValue:
+			if v.Value == 0 || v.Value == 1 {
+				return true, v.Value != 0, true
+			}
+			return true, false, false
+		}
+		return true, false, false
+	}
+	return false, false, true
 }
 
 // overflowEntries 從一組註解條目中挑出 overflow 鍵的條目（std 函式普遍以
@@ -931,13 +1022,17 @@ func (p *Parser) parseAnnotationSimpleValue() AnnotationValue {
 	case lexer.TRUE:
 		val := &AnnotationBoolValue{
 			Token: p.currentToken,
+			Value: true,
 		}
 		p.nextToken()
 		return val
 	case lexer.FALSE:
-		// false 作為布爾值，但鍵存在表示 true，這裡用特殊處理
+		// 顯式布爾值 `#{inline=false}`：真假必須保留（見 AnnotationBoolValue 的註解）。
+		// 獨立布爾鍵 `#{debug}` 走的是另一條路徑——parseAnnotationBody 在沒有 `=` 時
+		// 直接建 Value 為 nil 的條目，鍵存在即 true。
 		val := &AnnotationBoolValue{
 			Token: p.currentToken,
+			Value: false,
 		}
 		p.nextToken()
 		return val

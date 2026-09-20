@@ -145,6 +145,48 @@ func (p *Parser) skipFieldAnnotation(start int) (int, lexer.Token, lexer.Token, 
 	return 0, zero, zero, false
 }
 
+// scanAnnotationClose 從 lexer 的「絕對索引」annStart（應指向註解群組開頭的
+// `#{`）出發，掃描到配對的 `}`，回傳緊接其後的第一個非 NEWLINE token。
+//
+// 為何不重用 skipFieldAnnotation：後者以 p.look 的相對偏移掃描，而 look 在較深
+// 前向偏移會回傳陳舊 token（實測 look(5) 直接呼叫得到 COMMA，在深層掃描內卻得到
+// NEWLINE，源自 ring-buffer / lexer.TokenAt 的狀態）。改以 lexer.TokenAt 的絕對
+// 索引讀取可繞開此問題。掃描越界或遇 EOF 時回傳零值 token（Type == EOF）。
+func (p *Parser) scanAnnotationClose(annStart int) lexer.Token {
+	var zero lexer.Token
+	const maxLook = 1024
+	depth := 0
+	i := annStart
+	for n := 0; n < maxLook; n++ {
+		t := p.lexer.TokenAt(i)
+		if t.Type == lexer.EOF {
+			return zero
+		}
+		switch t.Type {
+		case lexer.HASH_LBRACE:
+			depth++
+		case lexer.RBRACE:
+			depth--
+			if depth <= 0 {
+				// 跳過 `}` 後的空行/換行，取下一個實質 token。
+				for m := 0; m < maxLook; m++ {
+					i++
+					nt := p.lexer.TokenAt(i)
+					if nt.Type == lexer.EOF {
+						return zero
+					}
+					if nt.Type != lexer.NEWLINE {
+						return nt
+					}
+				}
+				return zero
+			}
+		}
+		i++
+	}
+	return zero
+}
+
 // isFieldTypeStart reports whether tok can begin the type of a `name <type>`
 // struct field. Used to confirm that a member following a leading field
 // annotation really is a field and not a statement.
@@ -191,6 +233,11 @@ func (p *Parser) classifyBlock() blockType {
 		if s, t1, t2, ok := p.skipFieldAnnotation(skip); ok {
 			if t1.Type == lexer.IDENT && isFieldTypeStart(t2.Type) {
 				skip, tok1, tok2 = s, t1, t2
+			} else if t1.Type == lexer.IDENT || t1.Type == lexer.NIL {
+				// 標籤列舉 / 列舉：變體上方獨立成行 `#{...}` 註解，後接變體名
+				// （如 `color { #{a} red, green, blue }`）。否則 tok1 停留於
+				// HASH_LBRACE，整個區塊被誤判為 blockUnknown 而解析失敗。
+				skip, tok1, tok2 = s, t1, t2
 			}
 		}
 	}
@@ -215,6 +262,37 @@ func (p *Parser) classifyBlock() blockType {
 			return blockTaggedEnum
 		}
 		return blockEnum
+	case lexer.HASH_LBRACE:
+		// 首個成員後接同行尾隨 `#{...}` 註解，例如 `color { red #{a}, green, blue }`
+		// 或 `option { nil #{x}, ok(v i64) }`。tok1 為成員名（IDENT/NIL）、tok2 為
+		// HASH_LBRACE 表示成員名後方緊接註解群組；跳過群組後緊接的 token 即為
+		// ',' / '}'（C 風格列舉）或 '('（標籤列舉帶括號載荷變體），據以沿用 COMMA
+		// 分支的消歧邏輯。skip 仍指向成員名，使 paren 掃描能涵蓋整個區塊。
+		//
+		// 注意：不能經由 skipFieldAnnotation / look 掃描註解群組——look 在較深前向
+		// 偏移會回傳陳舊 token（已驗證 look(5) 直接呼叫得到 COMMA、在深層掃描內卻
+		// 得到 NEWLINE，源自 ring-buffer / lexer.TokenAt 的狀態）。改用 lexer 的
+		// 「絕對索引」TokenAt 直接掃描：tok1 在 look(skip)，對應絕對索引
+		// p.cur+skip+2，故 `#{` 在 p.cur+(skip+1)+2。
+		annStart := p.cur + (skip + 1) + 2
+		tok2b := p.scanAnnotationClose(annStart)
+		// 區塊內容首 token 的絕對索引：p.cur 為列舉名、peekToken 為 `{`，故內容自
+		// p.cur+2 起。paren 掃描必須用絕對索引版本（見 blockHasParenVariantAbs 註解）。
+		blockStart := p.cur + 2
+		switch tok2b.Type {
+		case lexer.COMMA, lexer.RBRACE:
+			if p.blockHasParenVariantAbs(blockStart) {
+				return blockTaggedEnum
+			}
+			return blockEnum
+		case lexer.LPAREN:
+			if p.blockIsTaggedEnumWithParens(skip) || p.blockIsTaggedEnumAllParens(skip) {
+				return blockTaggedEnum
+			}
+			return blockIface
+		default:
+			return blockUnknown
+		}
 	case lexer.ASSIGN:
 		// enum 顯式賦值：Name { VARIANT = value, ... }
 		return blockEnum
@@ -301,6 +379,9 @@ func (p *Parser) classifyBlock() blockType {
 		}
 		switch p.look(i + 1).Type {
 		case lexer.NEWLINE, lexer.RBRACE, lexer.COMMA:
+			return blockStruct
+		case lexer.HASH_LBRACE:
+			// 尾隨欄位註解（`f ?T #{inline}`）：註解是合法的欄位結尾，視為欄位。
 			return blockStruct
 		}
 		return blockMatch
@@ -425,6 +506,46 @@ func (p *Parser) blockHasParenVariant(start int) bool {
 			}
 			depth--
 		}
+	}
+	return false
+}
+
+// blockHasParenVariantAbs 與 blockHasParenVariant 同語義，但改以 lexer 的「絕對索引」
+// 掃描（自區塊內容首 token 的絕對索引 blockStart 起，跳過 COMMENT）。用於已用
+// scanAnnotationClose 掃過註解群組之後的消歧：此時 look 的相對偏移可能因 ring-buffer /
+// lexer.TokenAt 狀態而回傳陳舊 token，故必須以絕對索引重掃。
+func (p *Parser) blockHasParenVariantAbs(blockStart int) bool {
+	depth := 0
+	var prev lexer.Token
+	for i := blockStart; i < blockStart+400; i++ {
+		t := p.lexer.TokenAt(i)
+		if t.Type == lexer.COMMENT {
+			continue
+		}
+		switch t.Type {
+		case lexer.EOF:
+			return false
+		case lexer.LPAREN:
+			if depth == 0 && (prev.Type == lexer.IDENT || prev.Type == lexer.NIL) {
+				return true
+			}
+			depth++
+		case lexer.LBRACKET, lexer.LBRACE, lexer.HASH_LBRACE:
+			// HASH_LBRACE（`#{`）視為開括號：成員的尾隨註解 `#{...}` 其 `}` 不應被
+			// 誤判為區塊結尾。否則帶註解的首個成員會讓掃描在第一個 `}` 就提前結束。
+			depth++
+		case lexer.RPAREN, lexer.RBRACKET:
+			depth--
+			if depth < 0 {
+				return false
+			}
+		case lexer.RBRACE:
+			if depth == 0 {
+				return false
+			}
+			depth--
+		}
+		prev = t
 	}
 	return false
 }
@@ -1229,6 +1350,17 @@ func dbgLeakState(tag string, prog *Program) {
 func (p *Parser) ParseProgram() *Program {
 	program := &Program{Statements: []Statement{}}
 	for p.currentToken.Type != lexer.EOF {
+		// 尾隨註解（`stmt #{...}`，與上一條陳述同一行、位於其後方）屬於該陳述。
+		// 不攔截的話註解會退化成「下一條陳述的前置註解」，`#{index-out}` 便套用到
+		// 錯誤的目標（見 parseBlockStatement 的同名分支）。
+		if p.currentToken.Type == lexer.HASH_LBRACE && len(program.Statements) > 0 {
+			if prev := program.Statements[len(program.Statements)-1]; prev != nil && prev.EndPos().Line == p.currentToken.Line {
+				if trailing := p.parseTrailingAnnotation(); len(trailing) > 0 {
+					p.attachAnnotations(prev, trailing)
+					continue
+				}
+			}
+		}
 		doc := p.collectDocComments()
 		stmt := p.recoverStatement()
 		if stmt != nil {
