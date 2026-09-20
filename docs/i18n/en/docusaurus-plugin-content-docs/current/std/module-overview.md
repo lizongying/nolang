@@ -25,6 +25,7 @@ sidebar_position: 4.5
 | log                 | Core   | Leveled logging                              |
 | json                | Core   | JSON parsing/generation                      |
 | toml                | Core   | TOML 1.0 parsing/generation                 |
+| yaml                | Core   | YAML 1.2 parsing/generation                 |
 | types               | Core   | Type definitions document                    |
 | option              | Core   | Option type                                  |
 | sort                | Core   | Sort constants                               |
@@ -86,15 +87,10 @@ sidebar_position: 4.5
 | collection/map      | Submodule | Generic dynamic hash map                |
 | collection/static-hashmap | Submodule | Generic fixed-capacity hash map   |
 | database/sql        | Submodule | Database access interface               |
-| hash/aes            | Submodule | AES-128 encryption/decryption           |
-| hash/aes-128-enc    | Submodule | AES-128 encryption                      |
-| hash/aes-128-dec    | Submodule | AES-128 decryption                      |
-| hash/aes-256        | Submodule | AES-256 encryption/decryption           |
-| hash/aes-cbc        | Submodule | AES-CBC mode                            |
-| hash/aes-256-cbc    | Submodule | AES-256-CBC                             |
-| hash/aes-ctr        | Submodule | AES-CTR mode                            |
-| hash/aes-gcm        | Submodule | AES-GCM AEAD                           |
-| hash/aes-256-gcm    | Submodule | AES-256-GCM                            |
+| crypto/aes          | Submodule | AES block core (128/256)                |
+| crypto/aes-cbc      | Submodule | AES-CBC mode (128/256)                 |
+| crypto/aes-ctr      | Submodule | AES-CTR mode (128/256)                 |
+| crypto/aes-gcm      | Submodule | AES-GCM AEAD (128/256)                 |
 | hash/des            | Submodule | DES encryption/decryption               |
 | hash/des-enc        | Submodule | DES encryption                          |
 | hash/des-dec        | Submodule | DES decryption                          |

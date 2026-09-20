@@ -25,6 +25,7 @@ sidebar_position: 4.3
 | log                 | 核心   | 分級日誌         |
 | json                | 核心   | JSON 解析/產生   |
 | toml                | 核心   | TOML 1.0 解析/產生 |
+| yaml                | 核心   | YAML 1.2 解析/產生 |
 | types               | 核心   | 型別定義文件     |
 | option              | 核心   | 選項型別         |
 | sort                | 核心   | 排序常量         |
@@ -86,15 +87,10 @@ sidebar_position: 4.3
 | collection/map      | 子模組 | 泛型動態哈希映射 |
 | collection/static-hashmap | 子模組 | 泛型固定容量哈希映射 |
 | database/sql        | 子模組 | 資料庫存取介面   |
-| hash/aes            | 子模組 | AES-128 加解密   |
-| hash/aes-128-enc    | 子模組 | AES-128 加密     |
-| hash/aes-128-dec    | 子模組 | AES-128 解密     |
-| hash/aes-256        | 子模組 | AES-256 加解密   |
-| hash/aes-cbc        | 子模組 | AES-CBC 模式     |
-| hash/aes-256-cbc    | 子模組 | AES-256-CBC     |
-| hash/aes-ctr        | 子模組 | AES-CTR 模式     |
-| hash/aes-gcm        | 子模組 | AES-GCM AEAD    |
-| hash/aes-256-gcm    | 子模組 | AES-256-GCM     |
+| crypto/aes          | 子模組 | AES 區塊核心（128/256） |
+| crypto/aes-cbc      | 子模組 | AES-CBC 模式（128/256） |
+| crypto/aes-ctr      | 子模組 | AES-CTR 模式（128/256） |
+| crypto/aes-gcm      | 子模組 | AES-GCM AEAD（128/256） |
 | hash/des            | 子模組 | DES 加解密       |
 | hash/des-enc        | 子模組 | DES 加密         |
 | hash/des-dec        | 子模組 | DES 解密         |

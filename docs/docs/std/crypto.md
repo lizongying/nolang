@@ -4,14 +4,24 @@ sidebar_position: 4.0
 
 ## 密碼學與雜湊
 
-### hash/aes — AES-128 加解密（ECB 模式）
+### crypto/aes — AES 區塊加密核心（AES-128 / AES-256）
 
 ```no
-aes.aes-128-enc(plain, 16, key, out)   ; 加密 16-byte 區塊
-aes.aes-128-dec(cipher, 16, key, out)  ; 解密 16-byte 區塊
+; 單區塊（自帶金鑰擴展）
+out = aes.enc-128(in [16]byte, key [16]byte)   ; AES-128 加密
+out = aes.dec-128(in [16]byte, key [16]byte)   ; AES-128 解密
+out = aes.enc-256(in [16]byte, key [32]byte)   ; AES-256 加密
+out = aes.dec-256(in [16]byte, key [32]byte)   ; AES-256 解密
+
+; 多區塊：金鑰只展開一次，之後逐區塊加解密
+ek []byte = aes.key-expand(key [16]byte)       ; 176 位元組輪金鑰
+ek []byte = aes.key-expand-256(key [32]byte)   ; 240 位元組輪金鑰
+out = aes.enc-block(in [16]byte, ek)
+out = aes.dec-block(in [16]byte, ek)
 ```
 
-另含獨立模組 `hash/aes-128-enc` 和 `hash/aes-128-dec`。
+輪數由 `ek` 長度推導（`nr = ek.len() / 16 - 1`），AES-128 與 AES-256 共用同一份輪迴圈。
+工作模式位於 `crypto/aes-cbc`、`crypto/aes-ctr`、`crypto/aes-gcm`。
 
 ### hash/des — DES 加解密（ECB 模式）
 
@@ -100,49 +110,31 @@ x509.x509-fingerprint(cert, n, h0..h7)  ; SHA-256 憑證指紋
 x509.x509-rsa-e(cert, n, e)             ; RSA 公鑰指數提取
 ```
 
-### hash/aes-256 — AES-256 加解密（ECB 模式）
+### crypto/aes-cbc — AES-CBC 模式（含 PKCS7 填充，AES-128 / AES-256）
 
 ```no
-aes-256.aes-256-enc(in [16]byte, key [32]byte) (out [16]byte)   ; 加密
-aes-256.aes-256-dec(in [16]byte, key [32]byte) (out [16]byte)   ; 解密
-```
-
-### hash/aes-cbc — AES-CBC 模式（含 PKCS7 填充）
-
-```no
-out = aes-cbc.aes-128-cbc-enc(in []byte, key [16]byte, iv [16]byte)
-out = aes-cbc.aes-128-cbc-dec(in []byte, key [16]byte, iv [16]byte)
+out = aes-cbc.enc-128(in []byte, key [16]byte, iv [16]byte)
+out = aes-cbc.dec-128(in []byte, key [16]byte, iv [16]byte)
+out = aes-cbc.enc-256(in []byte, key [32]byte, iv [16]byte)
+out = aes-cbc.dec-256(in []byte, key [32]byte, iv [16]byte)
 out = aes-cbc.pkcs7-pad(in []byte)
 n = aes-cbc.pkcs7-unpad(in []byte)
 ```
 
-### hash/aes-256-cbc — AES-256-CBC 加解密
+### crypto/aes-ctr — AES-CTR 計數器模式（AES-128 / AES-256）
 
 ```no
-out = aes-256-cbc.aes-256-cbc-enc(in []byte, key [32]byte, iv [16]byte)
-out = aes-256-cbc.aes-256-cbc-dec(in []byte, key [32]byte, iv [16]byte)
+out = aes-ctr.crypt-128(in []byte, key [16]byte, iv [16]byte)
+out = aes-ctr.crypt-256(in []byte, key [32]byte, iv [16]byte)
 ```
 
-### hash/aes-ctr — AES-CTR 計數器模式
+### crypto/aes-gcm — AES-GCM AEAD（NIST SP 800-38D，AES-128 / AES-256）
 
 ```no
-out = aes-ctr.aes-128-ctr(in []byte, key [16]byte, iv [16]byte)
-out = aes-ctr.aes-256-ctr(in []byte, key [32]byte, iv [16]byte)
-```
-
-### hash/aes-gcm — AES-GCM AEAD
-
-```no
-; AES-128-GCM
-sealed = aes-gcm.aes-128-gcm-seal(key [16]byte, iv [12]byte, aad []byte, plain []byte)
-plain = aes-gcm.aes-128-gcm-open(key [16]byte, iv [12]byte, aad []byte, sealed []byte)
-```
-
-### hash/aes-256-gcm — AES-256-GCM AEAD（NIST SP 800-38D）
-
-```no
-sealed = aes-256-gcm.aes-256-gcm-seal(key [32]byte, iv [12]byte, aad []byte, plain []byte)
-plain = aes-256-gcm.aes-256-gcm-open(key [32]byte, iv [12]byte, aad []byte, sealed []byte)
+sealed = aes-gcm.seal-128(key [16]byte, iv [12]byte, aad []byte, plain []byte)
+plain = aes-gcm.open-128(key [16]byte, iv [12]byte, aad []byte, sealed []byte)
+sealed = aes-gcm.seal-256(key [32]byte, iv [12]byte, aad []byte, plain []byte)
+plain = aes-gcm.open-256(key [32]byte, iv [12]byte, aad []byte, sealed []byte)
 ```
 
 ### hash/hmac — HMAC 訊息認證碼

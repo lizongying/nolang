@@ -529,6 +529,35 @@ text = toml.stringify(doc)
 
 目前文件模型限制單一文件最多 4 個 key、2 個普通表格與 2 個 array-of-tables；單一 key 最長 32 bytes、單一 value 最長 128 bytes，超出時應分割設定檔或由呼叫方處理。
 
+### YAML 文件（`yaml`）
+
+標準庫 `yaml` 解析與產生 YAML 1.2 core schema 文件，支援塊映射、塊序列、流式集合、三種引號標量、塊標量 `|` / `>`、註解、多文檔、錨點與別名、合併鍵 `<<`、顯式鍵，以及型別推斷（null / bool / int / float / `.inf` / `.nan`）。
+
+```no
+doc ?yaml = yaml.parse('name: Alice\nserver:\n  port: 8080\ntags:\n  - a\n  - b\n')
+doc: {
+    nil -> print('nil')
+
+    err -> print(it)
+
+    -> {
+        name, ok = it.find-str('name')
+        port, ok2 = it.find-i64('server.port')
+        print(it.to-json())
+    }
+}
+```
+
+常用 API：
+
+- `yaml.parse(text)` / `yaml.parse-all(text)` — 解析，回傳 `?yaml`
+- `yaml.valid-of(text)` / `yaml.error-of(text)` — 只做校驗
+- `it.find(path)` / `it.get(key)` — 取子節點，回傳 `(yaml, ok)`
+- `it.find-str(path)`、`find-i64`、`find-f64`、`find-bool` — 便捷取值，回傳 `(值, ok)`
+- `it.to-json()` / `it.to-yaml()` — 序列化
+
+> 注意：子節點以 `(out yaml, ok bool)` 回傳而非 `?yaml`——MIR 後端目前不能安全地共享含切片的節點池。
+
 ## 檔案命名
 
 `.no` 檔名（含文件夾名）一律使用中連字符 `-` 連接單詞，**不使用下劃線 `_`**。這與變量名、函數名、結構體名等 Nolang 標識符的命名風格保持一致。

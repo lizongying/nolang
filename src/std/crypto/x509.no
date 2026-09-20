@@ -337,10 +337,10 @@ x509-rsa-n = (data []byte) (out []byte) {
         mod-len > 0 -> {
         #{index-out = 0}
         (data[mod-val-start]) == 0 -> {
-    }
-        #{overflow=wrap}
-        actual-start = mod-val-start + 1
-        actual-len = mod-len - 1
+            #{overflow=wrap}
+            actual-start = mod-val-start + 1
+            actual-len = mod-len - 1
+        }
     }
 
     ; 複製模數位元組

@@ -197,8 +197,6 @@ client.next-event = () (ev ?event) {
                     ; 跳過空行和註解行
                                         line.len-bytes() > 0 -> {
                         line[0] != 58 -> {
-                    }
-
                         ; 尋找冒號分隔符
                         colon = line.index(':')
                         field = line
@@ -243,6 +241,7 @@ client.next-event = () (ev ?event) {
                                     ok -> e-retry = it
                                 }
                             }
+                        }
                         }
                     }
                     pos = line-end + 1

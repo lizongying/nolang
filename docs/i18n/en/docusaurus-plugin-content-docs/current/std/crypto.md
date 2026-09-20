@@ -4,14 +4,25 @@ sidebar_position: 4.0
 
 ## Cryptography and Hashing
 
-### hash/aes — AES-128 Encryption/Decryption (ECB Mode)
+### crypto/aes — AES Block Cipher Core (AES-128 / AES-256)
 
 ```no
-aes.aes-128-enc(plain, 16, key, out)   ; Encrypt 16-byte block
-aes.aes-128-dec(cipher, 16, key, out)  ; Decrypt 16-byte block
+; Single block (expands the key itself)
+out = aes.enc-128(in [16]byte, key [16]byte)   ; AES-128 encrypt
+out = aes.dec-128(in [16]byte, key [16]byte)   ; AES-128 decrypt
+out = aes.enc-256(in [16]byte, key [32]byte)   ; AES-256 encrypt
+out = aes.dec-256(in [16]byte, key [32]byte)   ; AES-256 decrypt
+
+; Many blocks: expand once, then run per block
+ek []byte = aes.key-expand(key [16]byte)       ; 176-byte round keys
+ek []byte = aes.key-expand-256(key [32]byte)   ; 240-byte round keys
+out = aes.enc-block(in [16]byte, ek)
+out = aes.dec-block(in [16]byte, ek)
 ```
 
-Also includes standalone modules `hash/aes-128-enc` and `hash/aes-128-dec`.
+The round count is derived from the round-key length (`nr = ek.len() / 16 - 1`), so
+AES-128 and AES-256 share one round loop. Modes live in `crypto/aes-cbc`,
+`crypto/aes-ctr` and `crypto/aes-gcm`.
 
 ### hash/des — DES Encryption/Decryption (ECB Mode)
 
@@ -100,51 +111,32 @@ x509.x509-fingerprint(cert, n, h0..h7)  ; SHA-256 certificate fingerprint
 x509.x509-rsa-e(cert, n, e)             ; RSA public key exponent extraction
 ```
 
-### hash/aes-256 — AES-256 Encryption/Decryption (ECB Mode)
+### crypto/aes-cbc — AES-CBC Mode (with PKCS7 Padding, AES-128 / AES-256)
 
 ```no
-aes-256.aes-256-enc(in [16]byte, key [32]byte) (out [16]byte)   ; Encrypt
-aes-256.aes-256-dec(in [16]byte, key [32]byte) (out [16]byte)   ; Decrypt
-```
-
-### hash/aes-cbc — AES-CBC Mode (with PKCS7 Padding)
-
-```no
-out = aes-cbc.aes-128-cbc-enc(in []byte, key [16]byte, iv [16]byte)
-out = aes-cbc.aes-128-cbc-dec(in []byte, key [16]byte, iv [16]byte)
+out = aes-cbc.enc-128(in []byte, key [16]byte, iv [16]byte)
+out = aes-cbc.dec-128(in []byte, key [16]byte, iv [16]byte)
+out = aes-cbc.enc-256(in []byte, key [32]byte, iv [16]byte)
+out = aes-cbc.dec-256(in []byte, key [32]byte, iv [16]byte)
 out = aes-cbc.pkcs7-pad(in []byte)
 n = aes-cbc.pkcs7-unpad(in []byte)
 ```
 
-### hash/aes-256-cbc — AES-256-CBC Encryption/Decryption
+### crypto/aes-ctr — AES-CTR Counter Mode (AES-128 / AES-256)
 
 ```no
-out = aes-256-cbc.aes-256-cbc-enc(in []byte, key [32]byte, iv [16]byte)
-out = aes-256-cbc.aes-256-cbc-dec(in []byte, key [32]byte, iv [16]byte)
+out = aes-ctr.crypt-128(in []byte, key [16]byte, iv [16]byte)
+out = aes-ctr.crypt-256(in []byte, key [32]byte, iv [16]byte)
 ```
 
-### hash/aes-ctr — AES-CTR Counter Mode
+### crypto/aes-gcm — AES-GCM AEAD (NIST SP 800-38D, AES-128 / AES-256)
 
 ```no
-out = aes-ctr.aes-128-ctr(in []byte, key [16]byte, iv [16]byte)
-out = aes-ctr.aes-256-ctr(in []byte, key [32]byte, iv [16]byte)
+sealed = aes-gcm.seal-128(key [16]byte, iv [12]byte, aad []byte, plain []byte)
+plain = aes-gcm.open-128(key [16]byte, iv [12]byte, aad []byte, sealed []byte)
+sealed = aes-gcm.seal-256(key [32]byte, iv [12]byte, aad []byte, plain []byte)
+plain = aes-gcm.open-256(key [32]byte, iv [12]byte, aad []byte, sealed []byte)
 ```
-
-### hash/aes-gcm — AES-GCM AEAD
-
-```no
-; AES-128-GCM
-sealed = aes-gcm.aes-128-gcm-seal(key [16]byte, iv [12]byte, aad []byte, plain []byte)
-plain = aes-gcm.aes-128-gcm-open(key [16]byte, iv [12]byte, aad []byte, sealed []byte)
-```
-
-### hash/aes-256-gcm — AES-256-GCM AEAD (NIST SP 800-38D)
-
-```no
-sealed = aes-256-gcm.aes-256-gcm-seal(key [32]byte, iv [12]byte, aad []byte, plain []byte)
-plain = aes-256-gcm.aes-256-gcm-open(key [32]byte, iv [12]byte, aad []byte, sealed []byte)
-```
-
 ### hash/hmac — HMAC Message Authentication Code
 
 ```no

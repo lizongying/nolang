@@ -562,7 +562,7 @@ conn.encrypt-record = (ct i64, data []byte) (ok bool) {
 
     ; 5. AES-128-CBC 加密
     cipher []byte
-    cipher = aes-cbc.aes-128-cbc-enc(padded, .client-enc-key, iv)
+    cipher = aes-cbc.enc-128(padded, .client-enc-key, iv)
 
     ; 6. 構建記錄: type(1) + version(2) + length(2) + IV(16) + cipher
     #{overflow=wrap}
@@ -627,7 +627,7 @@ conn.decrypt-record = (buf []byte, expected-ct i64) (ct i64, out []byte) {
 
     ; AES-128-CBC 解密
     plain []byte
-    plain = aes-cbc.aes-128-cbc-dec(cipher, .server-enc-key, iv)
+    plain = aes-cbc.dec-128(cipher, .server-enc-key, iv)
     plain-len = cipher-len
 
     ; 移除 PKCS#7 填充
@@ -1919,7 +1919,7 @@ conn.encrypt-record-13 = (ct i64, data []byte, key [16]byte, iv [12]byte, seq i6
 
     ; AES-128-GCM 加密
     sealed []byte
-    sealed = aes-gcm.aes-128-gcm-seal(key, nonce, aad, plain)
+    sealed = aes-gcm.seal-128(key, nonce, aad, plain)
 
     ; 構建完整記錄: header(5) + sealed
     #{overflow=wrap}
@@ -1986,7 +1986,7 @@ conn.decrypt-record-13 = (rec []byte, key [16]byte, iv [12]byte, seq i64) (ct i6
 
     ; 解密
     plain []byte
-    plain = aes-gcm.aes-128-gcm-open(key, nonce, aad, sealed)
+    plain = aes-gcm.open-128(key, nonce, aad, sealed)
     plain.len() == 0 -> return
 
     ; 最後一個位元組是原始 content type
@@ -3246,7 +3246,7 @@ server-conn.encrypt-record = (ct i64, data []byte) (ok bool) {
 
     ; 5. AES-128-CBC 加密
     cipher []byte
-    cipher = aes-cbc.aes-128-cbc-enc(padded, .server-enc-key, iv)
+    cipher = aes-cbc.enc-128(padded, .server-enc-key, iv)
 
     ; 6. 構建記錄: type(1) + version(2) + length(2) + IV(16) + cipher
     #{overflow=wrap}
@@ -3312,7 +3312,7 @@ server-conn.decrypt-record = (buf []byte, expected-ct i64) (ct i64, out []byte) 
 
     ; AES-128-CBC 解密
     plain []byte
-    plain = aes-cbc.aes-128-cbc-dec(cipher, .client-enc-key, iv)
+    plain = aes-cbc.dec-128(cipher, .client-enc-key, iv)
 
     ; 移除 PKCS#7 填充
     unpad-n i64 = aes-cbc.pkcs7-unpad(plain)
@@ -3899,7 +3899,7 @@ server-conn.encrypt-record-13 = (ct i64, data []byte, key [16]byte, iv [12]byte,
 
     ; AES-128-GCM 加密
     sealed []byte
-    sealed = aes-gcm.aes-128-gcm-seal(key, nonce, aad, plain)
+    sealed = aes-gcm.seal-128(key, nonce, aad, plain)
 
     ; 構建完整記錄: header(5) + sealed
     #{overflow=wrap}
@@ -3966,7 +3966,7 @@ server-conn.decrypt-record-13 = (rec []byte, key [16]byte, iv [12]byte, seq i64)
 
     ; 解密
     plain []byte
-    plain = aes-gcm.aes-128-gcm-open(key, nonce, aad, sealed)
+    plain = aes-gcm.open-128(key, nonce, aad, sealed)
     plain.len() == 0 -> return
 
     ; 最後一個位元組是原始 content type

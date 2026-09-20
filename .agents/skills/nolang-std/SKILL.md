@@ -136,6 +136,7 @@ Usage: `# std/xxx` (core modules do not need to be imported).
 - [Data Exchange](#data-exchange)
   - [json — JSON Parsing and Generation](#json--json-parsing-and-generation)
   - [toml — TOML Parsing and Generation](#toml--toml-parsing-and-generation)
+  - [yaml — YAML 1.2 Parsing and Generation](#yaml--yaml-12-parsing-and-generation)
 - [Others](#others)
   - [unicode — Unicode Support](#unicode--unicode-support)
   - [uuid — UUID v4 Generation and Parsing](#uuid--uuid-v4-generation-and-parsing)
@@ -2566,6 +2567,91 @@ text = toml.stringify(doc)                 // Serialize TOML
 
 The current bounded document model supports up to 4 keys, 2 ordinary tables, and 2 array-of-tables. Keys are limited to 32 bytes and values to 128 bytes.
 
+#### yaml — YAML 1.2 Parsing and Generation
+
+`yaml` keeps a YAML 1.2 core-schema document tree in a node pool (`yaml-pool`). Supported: block mappings, block sequences, flow collections (`[...]` / `{...}`), single-quoted / double-quoted / plain scalars, block scalars (`|` / `>` with `-` / `+` chomping), comments, document markers (`---` / `...`) and multi-document streams, anchors (`&`) / aliases (`*`), merge keys `<<`, explicit keys (`? k`), core-schema type inference (null / bool / int / float / `.inf` / `.nan`), dotted-path lookup, and JSON / YAML serialization.
+
+```no
+doc ?yaml = yaml.parse('name: Alice\nserver:\n  port: 8080\ntags:\n  - a\n  - b\n')
+doc: {
+    nil -> print('nil')
+
+    err -> print(it)
+
+    -> {
+        name, ok = it.find-str('name')
+        port, ok2 = it.find-i64('server.port')
+        print(name)
+        print(port.to-str())
+        print(it.to-json())
+        print(it.to-yaml())
+    }
+}
+```
+
+API:
+
+```no
+// Entry points
+d = yaml.parse(text)                     // ?yaml — first document
+all = yaml.parse-all(text)               // ?yaml — every document
+yes = yaml.valid-of(text)                // Validate without building a document
+msg = yaml.error-of(text)                // '' when valid, else "line L, column C: ..."
+s = yaml.strip-bom(text)                 // Strip a UTF-8 BOM
+
+// Multi-document
+n = all.doc-count()
+d, ok = all.doc(i)                       // (out yaml, ok bool)
+j = all.to-json-all()
+
+// Node information (methods on a yaml value)
+k = d.kind()                             // YAML-KIND-* constant
+d.is-null()  d.is-bool()  d.is-int()  d.is-float()  d.is-nan()  d.is-num()
+d.is-str()   d.is-seq()   d.is-map()
+n = d.len()                              // Entries (map) or items (seq)
+t = d.text()                             // Raw scalar text
+s = d.tag()                              // Explicit tag, '' when absent
+a = d.anchor()                           // Anchor name, '' when absent
+ln = d.line-of()                         // 1-based source line
+st = d.style()                           // YAML-STYLE-* constant
+
+// Value access — all return (value, ok)
+s, ok = d.str()
+n, ok = d.i64()
+f, ok = d.f64()
+b, ok = d.bool()
+s, ok = d.scalar-text()                  // Fails for seq/map
+
+// Children — all return (out yaml, ok bool), NOT ?yaml
+child, ok = d.at(i)                      // Seq item / i-th map value
+child, ok = d.value(i)                   // Alias of at(i)
+child, ok = d.key-node(i)                // i-th map key node
+s, ok = d.key(i)                         // i-th map key text
+child, ok = d.get(key)                   // Map value by scalar key
+node, ok = d.find(path)                  // Dotted path; seq indices are numeric ('a.0.b')
+
+// Typed shortcuts
+s, ok = d.get-str(key)   n, ok = d.get-i64(key)
+f, ok = d.get-f64(key)   b, ok = d.get-bool(key)
+s, ok = d.find-str(path) n, ok = d.find-i64(path)
+f, ok = d.find-f64(path) b, ok = d.find-bool(path)
+
+// Serialization
+j = d.to-json()
+y = d.to-yaml()                          // Same as stringify()
+y = d.stringify()
+src = d.source-of()
+
+// Constants
+YAML-KIND-NULL = 0  BOOL = 1  INT = 2  FLOAT = 3  STR = 4  SEQ = 5  MAP = 6
+YAML-STYLE-PLAIN = 0  SINGLE = 1  DOUBLE = 2  LITERAL = 3  FOLDED = 4  ALIAS = 5
+YAML-STYLE-BLOCK = 6  FLOW = 7
+```
+
+> **Gotcha 1 — child views are `(out yaml, ok bool)`, never `?yaml`.** The MIR backend cannot safely share the node pool: once a struct containing a slice is boxed into an option and returned to the caller, dropping that option frees the parent document's node buffer, and the parent then reports `len() == 0`. Write `child, ok = d.at(i)` and guard with `ok -> { ... }`; do not write `child ?yaml = d.at(i)`.
+>
+> **Gotcha 2 — `.nan` has no f64 representation.** The backend emits fast-math FP, so a real NaN cannot be produced (`0.0 / 0.0` folds to `0`). Detect it with `d.is-nan()` (based on the node's source text); `d.f64()` returns `0.0` for it, `to-json()` emits `null`, and `to-yaml()` emits `.nan`.
+
 ---
 
 ### Others
@@ -2789,6 +2875,7 @@ ext = magic.get-extension(path)                // Extract file extension
 | log                 | Leveled logging  |
 | json                | JSON parse/generate |
 | toml                | TOML parse/generate |
+| yaml                | YAML 1.2 parse/generate |
 | types               | Type definitions |
 | option              | Option type      |
 | sort                | Sort constants   |

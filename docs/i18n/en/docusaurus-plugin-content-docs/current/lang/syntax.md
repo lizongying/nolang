@@ -456,6 +456,35 @@ Common APIs:
 
 The current document model supports up to 4 keys, 2 ordinary tables, and 2 array-of-tables per document. A key is limited to 32 bytes and a value to 128 bytes.
 
+### YAML Documents (`yaml`)
+
+The `yaml` standard-library module parses and generates YAML 1.2 core-schema documents: block mappings, block sequences, flow collections, all three quoting styles, block scalars `|` / `>`, comments, multi-document streams, anchors and aliases, merge keys `<<`, explicit keys, and type inference (null / bool / int / float / `.inf` / `.nan`).
+
+```no
+doc ?yaml = yaml.parse('name: Alice\nserver:\n  port: 8080\ntags:\n  - a\n  - b\n')
+doc: {
+    nil -> print('nil')
+
+    err -> print(it)
+
+    -> {
+        name, ok = it.find-str('name')
+        port, ok2 = it.find-i64('server.port')
+        print(it.to-json())
+    }
+}
+```
+
+Common APIs:
+
+- `yaml.parse(text)` / `yaml.parse-all(text)` — parse, returning `?yaml`
+- `yaml.valid-of(text)` / `yaml.error-of(text)` — validation only
+- `it.find(path)` / `it.get(key)` — child lookup, returning `(yaml, ok)`
+- `it.find-str(path)`, `find-i64`, `find-f64`, `find-bool` — typed shortcuts returning `(value, ok)`
+- `it.to-json()` / `it.to-yaml()` — serialization
+
+> Note: child views are returned as `(out yaml, ok bool)` rather than `?yaml` — the MIR backend cannot safely share a node pool that contains slices.
+
 ## File Naming
 
 `.no` file names (including folder names) always use hyphens `-` to join words, **not underscores `_`**. This is consistent with the naming style of Nolang identifiers such as variable names, function names, and struct names.

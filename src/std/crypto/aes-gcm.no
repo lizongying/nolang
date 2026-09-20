@@ -1,18 +1,17 @@
-; aes-gcm — AES-128-GCM AEAD 加密/解密（NIST SP 800-38D）
+; aes-gcm — AES-GCM AEAD 加密/解密（NIST SP 800-38D，AES-128 與 AES-256）
 ;
-; 在 AES-128-ECB 的基礎上實作 GCM（Galois/Counter Mode）。
 ; GCM = AES-CTR（計數器模式）+ GHASH（GF(2^128) 認證）。
+; 計數器遞增邏輯複用 aes-ctr.ctr-inc；金鑰長度不是檔案維度，
+; 差別只在入口用 aes.key-expand 還是 aes.key-expand-256。
 ;
 ; 用法：
-;   # std/hash/aes-gcm
 ;   key [16]byte
 ;   iv [12]byte
 ;   aad []byte = 'additional data'
 ;   plain []byte = 'plaintext'
-;   // 加密：返回 ciphertext + 16-byte tag
-;   sealed []byte = aes-128-gcm-seal(key, iv, aad, plain)
-;   // 解密：返回明文或 nil（認證失敗）
-;   opened []byte = aes-128-gcm-open(key, iv, aad, sealed)
+;   sealed = aes-gcm.seal-128(key, iv, aad, plain)   ; 密文 + 16-byte tag
+;   opened = aes-gcm.open-128(key, iv, aad, sealed)  ; 明文，認證失敗則長度 0
+;   ; AES-256 改用 key [32]byte 與 seal-256 / open-256
 
 ; ═══════════════════════════════════════════════
 ; 常量
@@ -89,7 +88,7 @@ ghash-mul = (x [16]byte, h [16]byte) (out [16]byte) {
         v[0] = v[0] >> 1
 
         ; 若 v_lsb == 1，v = v XOR R（R = 0xE1000...0）
-                v-lsb == 1 -> {
+        v-lsb == 1 -> {
             #{index-out = 0}
             v[0] = v[0] ^ 225
         }
@@ -266,16 +265,16 @@ ghash = (h [16]byte, aad []byte, cipher []byte) (out [16]byte) {
 }
 
 ; ═══════════════════════════════════════════════
-; AES-CTR 模式
+; AES-CTR 密鑰流
 ; ═══════════════════════════════════════════════
 
-; aes-128-ctr-xor: 使用 AES-CTR 模式生成密鑰流並 XOR
-; key [16]byte: 金鑰
+; ctr-xor: 以 AES-CTR 生成密鑰流並與資料 XOR
 ; icb [16]byte: 初始計數器區塊
 ; data []byte: 輸入資料
+; ek []byte: aes.key-expand / aes.key-expand-256 的結果
 ; 返回 out []byte: XOR 後的資料
-aes-128-ctr-xor = (key [16]byte, icb [16]byte, data []byte) (out []byte) {
-    cb [16]byte
+ctr-xor = (icb [16]byte, data []byte, ek []byte) (out []byte) {
+    cb []byte = with-len(16)
     i <- [0..16): {
         #{index-out = 0}
         cb[i] = icb[i]
@@ -286,8 +285,13 @@ aes-128-ctr-xor = (key [16]byte, icb [16]byte, data []byte) (out []byte) {
 
         ; 加密當前計數器區塊
         #{overflow=wrap}
+        blk [16]byte
+        i <- [0..16): {
+            #{index-out = 0}
+            blk[i] = cb[i]
+        }
         ks [16]byte
-        ks = aes.aes-128-enc(cb, key)
+        ks = aes.enc-block(blk, ek)
 
         ; XOR 16 位元組（或剩餘部分）
         n = 16
@@ -299,71 +303,18 @@ aes-128-ctr-xor = (key [16]byte, icb [16]byte, data []byte) (out []byte) {
             out[pos + i] = (data[pos + i]) ^ (ks[i])
         }
 
-        ; 遞增計數器（大端序，最低 32 位元）
-        j = 15
-        {
-            #{overflow=wrap}
-            #{index-out = 0}
-            cb[j] = (cb[j] + 1) & 255
-                        cb[j] != 0 -> {
-                #{index-out = 0}
-                break
-            }
-            #{overflow=wrap}
-            j = j - 1
-        } (j >= 12)
-
-        ; 若進位傳播到 byte 11 之後，繼續進位
-        #{overflow=wrap}
-        cb[12] == 0 && cb[13] == 0 && cb[14] == 0 && cb[15] == 0 -> {
-            j = 11
-            {
-                #{overflow=wrap}
-                #{index-out = 0}
-                cb[j] = (cb[j] + 1) & 255
-                                cb[j] != 0 -> {
-                    #{index-out = 0}
-                    break
-                }
-                j = j - 1
-            } (j >= 0)
-        }
+        aes-ctr.ctr-inc(cb)
         #{overflow=wrap}
         pos = pos + n
     } (pos < data.len())
 }
 
 ; ═══════════════════════════════════════════════
-; AES-128-GCM Seal/Open
+; GCM Seal / Open 核心（輪金鑰由呼叫端展開一次）
 ; ═══════════════════════════════════════════════
 
-; aes-128-gcm-seal: AES-128-GCM 加密
-; key [16]byte: 金鑰
-; iv [12]byte: IV（nonce）
-; aad []byte: 額外認證資料
-; plain []byte: 明文
-; 返回 sealed []byte: 密文 + 16 位元組 tag（長度 = plain.len() + 16）
-aes-128-gcm-seal = (key [16]byte, iv [12]byte, aad []byte, plain []byte) (sealed []byte) {
-
-    ; 1. 計算雜湊子金鑰 H = AES-enc(key, 0^128)
-    #{overflow=wrap}
-    zero-block [16]byte
-    i <- [0..16): {
-        #{overflow=wrap}
-        #{index-out = 0}
-        zero-block[i] = 0
-    }
-    h-bytes [16]byte
-    h-bytes = aes.aes-128-enc(zero-block, key)
-    h [16]byte
-    i <- [0..16): {
-        #{overflow=wrap}
-        #{index-out = 0}
-        h[i] = h-bytes[i]
-    }
-
-    ; 2. 構建 J0 = iv || 0x00000001
-    j0 [16]byte
+; gcm-j0: 由 12-byte IV 構建 J0 = iv || 0x00000001
+gcm-j0 = (iv [12]byte) (j0 [16]byte) {
     i <- [0..12): {
         #{overflow=wrap}
         #{index-out = 0}
@@ -377,40 +328,57 @@ aes-128-gcm-seal = (key [16]byte, iv [12]byte, aad []byte, plain []byte) (sealed
     j0[14] = 0
     #{index-out = 0}
     j0[15] = 1
+}
 
-    ; 3. 加密: CTR 從 J0+1 開始
-    ctr [16]byte
+; gcm-h: 計算雜湊子金鑰 H = AES-enc(0^128)
+gcm-h = (ek []byte) (h [16]byte) {
+    zero-block [16]byte
     i <- [0..16): {
         #{overflow=wrap}
         #{index-out = 0}
+        zero-block[i] = 0
+    }
+    h = aes.enc-block(zero-block, ek)
+}
+
+; gcm-seal: GCM 加密核心
+; iv [12]byte: IV（nonce）
+; aad []byte: 額外認證資料
+; plain []byte: 明文
+; ek []byte: aes.key-expand / aes.key-expand-256 的結果
+; 返回 sealed []byte: 密文 + 16 位元組 tag
+gcm-seal = (iv [12]byte, aad []byte, plain []byte, ek []byte) (sealed []byte) {
+
+    ; 1. H = AES-enc(key, 0^128)
+    h [16]byte
+    h = gcm-h(ek)
+
+    ; 2. J0 = iv || 0x00000001
+    j0 [16]byte
+    j0 = gcm-j0(iv)
+
+    ; 3. 加密: CTR 從 J0+1 開始
+    ctr []byte = with-len(16)
+    i <- [0..16): {
+        #{index-out = 0}
         ctr[i] = j0[i]
     }
-
-    ; 遞增 J0 → J0+1
-    j = 15
-    {
-        #{overflow=wrap}
+    aes-ctr.ctr-inc(ctr)
+    ctr0 [16]byte
+    i <- [0..16): {
         #{index-out = 0}
-        ctr[j] = (ctr[j] + 1) & 255
-                ctr[j] != 0 -> {
-            #{index-out = 0}
-            break
-        }
-        #{overflow=wrap}
-        j = j - 1
-    } (j >= 12)
-
-    ; 密文 = AES-CTR(key, J0+1, plain)
+        ctr0[i] = ctr[i]
+    }
     cipher []byte
-    cipher = aes-128-ctr-xor(key, ctr, plain)
+    cipher = ctr-xor(ctr0, plain, ek)
 
-    ; 4. 計算 GHASH
+    ; 4. GHASH
     ghash-out [16]byte
     ghash-out = ghash(h, aad, cipher)
 
-    ; 5. 計算 tag = AES-enc(key, J0) XOR GHASH
+    ; 5. tag = AES-enc(key, J0) XOR GHASH
     j0-enc [16]byte
-    j0-enc = aes.aes-128-enc(j0, key)
+    j0-enc = aes.enc-block(j0, ek)
     tag [16]byte
     i <- [0..16): {
         #{overflow=wrap}
@@ -433,51 +401,27 @@ aes-128-gcm-seal = (key [16]byte, iv [12]byte, aad []byte, plain []byte) (sealed
     }
 }
 
-; aes-128-gcm-open: AES-128-GCM 解密
-; key [16]byte: 金鑰
+; gcm-open: GCM 解密核心
 ; iv [12]byte: IV
 ; aad []byte: 額外認證資料
 ; sealed []byte: 密文 + 16 位元組 tag
+; ek []byte: aes.key-expand / aes.key-expand-256 的結果
 ; 返回 plain []byte: 明文（認證失敗時長度為 0）
-aes-128-gcm-open = (key [16]byte, iv [12]byte, aad []byte, sealed []byte) (plain []byte) {
+gcm-open = (iv [12]byte, aad []byte, sealed []byte, ek []byte) (plain []byte) {
     #{overflow=wrap}
     sealed.len() < 16 -> return
     #{overflow=wrap}
     cipher-len = sealed.len() - 16
 
-    ; 1. 計算 H
-    zero-block [16]byte
-    i <- [0..16): {
-        #{overflow=wrap}
-        #{index-out = 0}
-        zero-block[i] = 0
-    }
-    h-bytes [16]byte
-    h-bytes = aes.aes-128-enc(zero-block, key)
+    ; 1. H
     h [16]byte
-    i <- [0..16): {
-        #{overflow=wrap}
-        #{index-out = 0}
-        h[i] = h-bytes[i]
-    }
+    h = gcm-h(ek)
 
-    ; 2. 構建 J0
+    ; 2. J0
     j0 [16]byte
-    i <- [0..12): {
-        #{overflow=wrap}
-        #{index-out = 0}
-        j0[i] = iv[i]
-    }
-    #{index-out = 0}
-    j0[12] = 0
-    #{index-out = 0}
-    j0[13] = 0
-    #{index-out = 0}
-    j0[14] = 0
-    #{index-out = 0}
-    j0[15] = 1
+    j0 = gcm-j0(iv)
 
-    ; 3. 提取密文和 tag
+    ; 3. 拆出密文與 tag
     cipher []byte = with-len(cipher-len)
     i <- [0..cipher-len): {
         #{overflow=wrap}
@@ -495,7 +439,7 @@ aes-128-gcm-open = (key [16]byte, iv [12]byte, aad []byte, sealed []byte) (plain
     ghash-out [16]byte
     ghash-out = ghash(h, aad, cipher)
     j0-enc [16]byte
-    j0-enc = aes.aes-128-enc(j0, key)
+    j0-enc = aes.enc-block(j0, ek)
     exp-tag [16]byte
     i <- [0..16): {
         #{overflow=wrap}
@@ -517,23 +461,64 @@ aes-128-gcm-open = (key [16]byte, iv [12]byte, aad []byte, sealed []byte) (plain
     }
 
     ; 5. 解密
-    ctr [16]byte
+    ctr []byte = with-len(16)
     i <- [0..16): {
-        #{overflow=wrap}
         #{index-out = 0}
         ctr[i] = j0[i]
     }
-    j = 15
-    {
-        #{overflow=wrap}
+    aes-ctr.ctr-inc(ctr)
+    ctr0 [16]byte
+    i <- [0..16): {
         #{index-out = 0}
-        ctr[j] = (ctr[j] + 1) & 255
-                ctr[j] != 0 -> {
-            #{index-out = 0}
-            break
-        }
-        #{overflow=wrap}
-        j = j - 1
-    } (j >= 12)
-    plain = aes-128-ctr-xor(key, ctr, cipher)
+        ctr0[i] = ctr[i]
+    }
+    plain = ctr-xor(ctr0, cipher, ek)
+}
+
+; ═══════════════════════════════════════════════
+; AES-128 / AES-256 入口
+; ═══════════════════════════════════════════════
+
+; seal-128: AES-128-GCM 加密
+; key [16]byte: 金鑰
+; iv [12]byte: IV（nonce）
+; aad []byte: 額外認證資料
+; plain []byte: 明文
+; 返回 sealed []byte: 密文 + 16 位元組 tag（長度 = plain.len() + 16）
+seal-128 = (key [16]byte, iv [12]byte, aad []byte, plain []byte) (sealed []byte) {
+    ek []byte = aes.key-expand(key)
+    sealed = gcm-seal(iv, aad, plain, ek)
+}
+
+; open-128: AES-128-GCM 解密
+; key [16]byte: 金鑰
+; iv [12]byte: IV
+; aad []byte: 額外認證資料
+; sealed []byte: 密文 + 16 位元組 tag
+; 返回 plain []byte: 明文（認證失敗時長度為 0）
+open-128 = (key [16]byte, iv [12]byte, aad []byte, sealed []byte) (plain []byte) {
+    ek []byte = aes.key-expand(key)
+    plain = gcm-open(iv, aad, sealed, ek)
+}
+
+; seal-256: AES-256-GCM 加密
+; key [32]byte: 金鑰
+; iv [12]byte: IV（nonce）
+; aad []byte: 額外認證資料
+; plain []byte: 明文
+; 返回 sealed []byte: 密文 + 16 位元組 tag
+seal-256 = (key [32]byte, iv [12]byte, aad []byte, plain []byte) (sealed []byte) {
+    ek []byte = aes.key-expand-256(key)
+    sealed = gcm-seal(iv, aad, plain, ek)
+}
+
+; open-256: AES-256-GCM 解密
+; key [32]byte: 金鑰
+; iv [12]byte: IV
+; aad []byte: 額外認證資料
+; sealed []byte: 密文 + 16 位元組 tag
+; 返回 plain []byte: 明文（認證失敗時長度為 0）
+open-256 = (key [32]byte, iv [12]byte, aad []byte, sealed []byte) (plain []byte) {
+    ek []byte = aes.key-expand-256(key)
+    plain = gcm-open(iv, aad, sealed, ek)
 }

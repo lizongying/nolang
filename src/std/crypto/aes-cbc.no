@@ -1,28 +1,30 @@
-; aes-cbc — AES-128-CBC 加密/解密模式
+; aes-cbc — AES-CBC 加密/解密模式（AES-128 與 AES-256）
 ;
-; 在 AES-128-ECB 的基礎上實作 CBC（Cipher Block Chaining）模式。
+; 在 AES 區塊加密器之上實作 CBC（Cipher Block Chaining）模式。
 ; CBC 加密: C_i = AES_enc(P_i ⊕ C_{i-1}), C_0 = IV
 ; CBC 解密: P_i = AES_dec(C_i) ⊕ C_{i-1}, C_0 = IV
 ;
-; 不含填充（PKCS#7 填充由呼叫者處理），每個區塊 16 位元組。
+; 金鑰長度不是檔案維度：同一份 CBC 邏輯服務 AES-128 與 AES-256，
+; 差別只在入口用 aes.key-expand 還是 aes.key-expand-256。
 ;
 ; 用法：
-;   # std/hash/aes
-;   # std/hash/aes-cbc
 ;   iv [16]byte
 ;   key [16]byte
-;   aes-128-cbc-enc(plain, key, iv, cipher)
-;   aes-128-cbc-dec(cipher, key, iv, plain)
+;   padded = aes-cbc.pkcs7-pad(plain)
+;   cipher = aes-cbc.enc-128(padded, key, iv)
+;   plain  = aes-cbc.dec-128(cipher, key, iv)
+;   n      = aes-cbc.pkcs7-unpad(plain)
+;   ; AES-256 改用 key [32]byte 與 enc-256 / dec-256
 
 ; AES 區塊大小
 AES-BLOCK-SIZE = 16
 
-; aes-128-cbc-enc: AES-128-CBC 加密
+; cbc-enc: CBC 加密核心（輪金鑰由呼叫端展開一次）
 ; in []byte: 輸入資料（長度需為 16 的倍數）
-; key [16]byte: 金鑰
 ; iv [16]byte: 初始向量
+; ek []byte: aes.key-expand / aes.key-expand-256 的結果
 ; 返回 out []byte: 加密後的資料
-aes-128-cbc-enc = (in []byte, key [16]byte, iv [16]byte) (out []byte) {
+cbc-enc = (in []byte, iv [16]byte, ek []byte) (out []byte) {
 
     ; 上一個密文區塊（初始為 IV）
     prev [16]byte
@@ -46,14 +48,14 @@ aes-128-cbc-enc = (in []byte, key [16]byte, iv [16]byte) (out []byte) {
         }
 
         ; AES 加密
-        enc-block [16]byte
-        enc-block = aes.aes-128-enc(xored, key)
+        enc-blk [16]byte
+        enc-blk = aes.enc-block(xored, ek)
 
         ; 輸出密文
         i <- [0..16): {
             #{overflow=wrap}
             #{index-out = 0}
-            out[blk + i] = enc-block[i]
+            out[blk + i] = enc-blk[i]
         }
 
         ; 更新 prev 為當前密文區塊
@@ -67,12 +69,12 @@ aes-128-cbc-enc = (in []byte, key [16]byte, iv [16]byte) (out []byte) {
     } (blk < in.len())
 }
 
-; aes-128-cbc-dec: AES-128-CBC 解密
+; cbc-dec: CBC 解密核心（輪金鑰由呼叫端展開一次）
 ; in []byte: 輸入密文（長度需為 16 的倍數）
-; key [16]byte: 金鑰
 ; iv [16]byte: 初始向量
+; ek []byte: aes.key-expand / aes.key-expand-256 的結果
 ; 返回 out []byte: 解密後的資料
-aes-128-cbc-dec = (in []byte, key [16]byte, iv [16]byte) (out []byte) {
+cbc-dec = (in []byte, iv [16]byte, ek []byte) (out []byte) {
 
     ; 上一個密文區塊（初始為 IV）
     prev [16]byte
@@ -96,14 +98,14 @@ aes-128-cbc-dec = (in []byte, key [16]byte, iv [16]byte) (out []byte) {
         }
 
         ; AES 解密
-        dec-block [16]byte
-        dec-block = aes.aes-128-dec(cur-cipher, key)
+        dec-blk [16]byte
+        dec-blk = aes.dec-block(cur-cipher, ek)
 
         ; XOR 與 prev 得到明文
         i <- [0..16): {
             #{overflow=wrap}
             #{index-out = 0}
-            out[blk + i] = (dec-block[i]) ^ (prev[i])
+            out[blk + i] = (dec-blk[i]) ^ (prev[i])
         }
 
         ; 更新 prev 為當前密文區塊
@@ -117,9 +119,49 @@ aes-128-cbc-dec = (in []byte, key [16]byte, iv [16]byte) (out []byte) {
     } (blk < in.len())
 }
 
+; enc-128: AES-128-CBC 加密
+; in []byte: 輸入資料（長度需為 16 的倍數）
+; key [16]byte: 金鑰
+; iv [16]byte: 初始向量
+; 返回 out []byte: 加密後的資料
+enc-128 = (in []byte, key [16]byte, iv [16]byte) (out []byte) {
+    ek []byte = aes.key-expand(key)
+    out = cbc-enc(in, iv, ek)
+}
+
+; dec-128: AES-128-CBC 解密
+; in []byte: 輸入密文（長度需為 16 的倍數）
+; key [16]byte: 金鑰
+; iv [16]byte: 初始向量
+; 返回 out []byte: 解密後的資料
+dec-128 = (in []byte, key [16]byte, iv [16]byte) (out []byte) {
+    ek []byte = aes.key-expand(key)
+    out = cbc-dec(in, iv, ek)
+}
+
+; enc-256: AES-256-CBC 加密
+; in []byte: 輸入資料（長度需為 16 的倍數）
+; key [32]byte: 金鑰
+; iv [16]byte: 初始向量
+; 返回 out []byte: 加密後的資料
+enc-256 = (in []byte, key [32]byte, iv [16]byte) (out []byte) {
+    ek []byte = aes.key-expand-256(key)
+    out = cbc-enc(in, iv, ek)
+}
+
+; dec-256: AES-256-CBC 解密
+; in []byte: 輸入密文（長度需為 16 的倍數）
+; key [32]byte: 金鑰
+; iv [16]byte: 初始向量
+; 返回 out []byte: 解密後的資料
+dec-256 = (in []byte, key [32]byte, iv [16]byte) (out []byte) {
+    ek []byte = aes.key-expand-256(key)
+    out = cbc-dec(in, iv, ek)
+}
+
 ; pkcs7-pad: PKCS#7 填充
 ; in []byte: 輸入資料
-; 返回 out []byte: 填充後的資料
+; 返回 out []byte: 填充後的資料（長度為 16 的倍數）
 pkcs7-pad = (in []byte) (out []byte) {
     #{overflow=wrap}
     pad-len = 16 - (in.len() % 16)

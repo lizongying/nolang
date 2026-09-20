@@ -440,10 +440,10 @@ regexp.parse-class = (pattern str, i i64) (new-i i64) {
     #{overflow=wrap}
         ri < n -> {
         pattern[ri] == 94 -> {
-    }
-        #{overflow=wrap}
-        negated = 1
-        ri = ri + 1
+            #{overflow=wrap}
+            negated = 1
+            ri = ri + 1
+        }
     }
 
     ; ']' 在第一個位置視為常字元

@@ -461,7 +461,7 @@ apply-header-protection = (packet []byte, pn-offset i64, hp [16]byte, is-long-he
     }
 
     ; AES-128-ECB 加密樣本得到 mask
-    mask = aes.aes-128-enc(sample, hp)
+    mask = aes.enc-128(sample, hp)
 
     #{index-out = 0}
     ; Long Header: mask[0] 的低位 4 bits
@@ -837,7 +837,7 @@ conn.build-initial-packet = (crypto-data []byte) (packet []byte, ok bool) {
 
     ; Encrypt
     sealed []byte
-    sealed = aes-gcm.aes-128-gcm-seal(.client-initial-key, nonce, aad, plain)
+    sealed = aes-gcm.seal-128(.client-initial-key, nonce, aad, plain)
 
     ; 組合: header + sealed
     final-pos = pn-offset
@@ -966,7 +966,7 @@ conn.recv-initial = () (frames [32]frame, count i64, ok bool) {
 
     ; 解密
     plain []byte
-    plain = aes-gcm.aes-128-gcm-open(.server-initial-key, nonce, aad, sealed)
+    plain = aes-gcm.open-128(.server-initial-key, nonce, aad, sealed)
     plain.len() == 0 -> return
     frames, count = parse-frames(plain, 0, plain.len())
     count < 0 -> return

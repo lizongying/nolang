@@ -5,6 +5,9 @@
 ;   注释与空行 / 文档标记与多文档 / 锚点与别名 / 合并键 << / 显式键 ? k
 ;   core schema 类型推断 / 点号路径查询 / JSON 与 YAML 序列化 / 错误报告
 ;
+; 子节点视图以 (out yaml, ok bool) 返回，不用 ?yaml —— MIR 后端目前不能安全地
+; 把含 vec 的节点池装进 option 交还调用方（调用方释放时会连带释放父文档缓冲）。
+;
 ; 本测试为纯计算，不需要网络，可直接执行。
 
 ; ═══════════════════════════════════════════════
@@ -13,6 +16,7 @@
 
 check = (name str, cond bool) {
     cond -> print('ok: ' - name)
+
     -> print('fail: ' - name)
 }
 
@@ -28,6 +32,7 @@ check-str = (name str, src str, path str, want str) {
             got, found = it.find-str(path)
             {
                 found && got == want -> print('ok: ' - name)
+
                 -> print('fail: ' - name - ' got=[' - got - ']')
             }
         }
@@ -46,6 +51,7 @@ check-i64 = (name str, src str, path str, want i64) {
             got, found = it.find-i64(path)
             {
                 found && got == want -> print('ok: ' - name)
+
                 -> print('fail: ' - name - ' got=[' - got.to-str() - ']')
             }
         }
@@ -75,12 +81,12 @@ t-scalars = () {
             v1, f1 = it.find-str('a-null')
             v2, f2 = it.find-str('b-tilde')
             v3, f3 = it.find-str('c-empty')
-            check('null / ~ / 空值均为 null', !f1 && !f2 && !f3)
+            check('null / ~ / 空值均为 null', ! f1 && ! f2 && ! f3)
 
             b1, g1 = it.find-bool('d-true')
             b2, g2 = it.find-bool('e-false')
             check('bool true', g1 && b1)
-            check('bool FALSE', g2 && !b2)
+            check('bool FALSE', g2 && ! b2)
 
             ; YAML 1.2 core schema：yes 是字符串（不是 YAML 1.1 的布尔）
             s1, h1 = it.find-str('f-yes')
@@ -101,8 +107,12 @@ t-scalars = () {
             r3, p3 = it.find-f64('n-inf')
             check('.inf', p3 && r3 > 1000000000.0)
 
-            r4, p4 = it.find-f64('o-nan')
-            check('.nan', p4 && r4 != r4)
+            ; .nan：后端无法产生真正的 NaN，用 is-nan() 判定
+            nan, p4 = it.find('o-nan')
+            check('.nan', p4 && nan.is-nan())
+
+            js = it.to-json()
+            check('.nan 序列化为 null', js.contains('"o-nan":null'))
         }
     }
 }
@@ -128,17 +138,16 @@ t-block-seq = () {
             check-i64('嵌套序列', src, 'matrix.1.0', 3)
             check-i64('嵌套序列末元素', src, 'matrix.1.1', 4)
 
-            n ?yaml = it.find('top')
-            n: {
-                nil -> print('fail: len (nil)')
+            n, f = it.find('top')
+            f -> {
+                check('序列长度', n.len() == 3)
+                check('is-seq', n.is-seq())
+                check('is-map 为假', ! n.is-map())
 
-                err -> print('fail: len (err)')
-
-                -> {
-                    check('序列长度', it.len() == 3)
-                    check('is-seq', it.is-seq())
-                    check('is-map 为假', !it.is-map())
-                }
+                e0, e0ok = n.at(0)
+                check('at(0) 可用', e0ok)
+                s0, s0ok = e0.str()
+                check('at(0) = one', s0ok && s0 == 'one')
             }
         }
     }
@@ -162,26 +171,14 @@ t-flow = () {
             check-i64('流式映射值', src, 'flow-map.a', 1)
             check-str('流式映射字符串值', src, 'flow-map.b', 'two')
             check-str('流式嵌套 映射.序列', src, 'nested.list.1.k', 'v')
-            check-i64('流式嵌套 序列.映射', src, 'nested.n', 5)
+            check-i64('流式嵌套 映射.整数', src, 'nested.n', 5)
             check-i64('跨行流式序列', src, 'multiline.1', 2)
 
-            e1 ?yaml = it.find('empty-seq')
-            e1: {
-                nil -> print('fail: empty seq (nil)')
+            e1, o1 = it.find('empty-seq')
+            o1 -> check('空序列', e1.is-seq() && e1.len() == 0)
 
-                err -> print('fail: empty seq (err)')
-
-                -> check('空序列', it.is-seq() && it.len() == 0)
-            }
-
-            e2 ?yaml = it.find('empty-map')
-            e2: {
-                nil -> print('fail: empty map (nil)')
-
-                err -> print('fail: empty map (err)')
-
-                -> check('空映射', it.is-map() && it.len() == 0)
-            }
+            e2, o2 = it.find('empty-map')
+            o2 -> check('空映射', e2.is-map() && e2.len() == 0)
         }
     }
 }
@@ -268,38 +265,23 @@ t-multi-doc = () {
         -> {
             check('文档数量为 3', it.doc-count() == 3)
 
-            d1 ?yaml = it.doc(0)
-            d1: {
-                nil -> print('fail: doc 0 (nil)')
-
-                err -> print('fail: doc 0 (err)')
-
-                -> {
-                    n1, g1 = it.find-str('name')
-                    check('doc(0).name = first', g1 && n1 == 'first')
-                }
+            d1, o1 = it.doc(0)
+            o1 -> {
+                n1, g1 = d1.find-str('name')
+                check('doc(0).name = first', g1 && n1 == 'first')
             }
 
-            d3 ?yaml = it.doc(2)
-            d3: {
-                nil -> print('fail: doc 2 (nil)')
-
-                err -> print('fail: doc 2 (err)')
-
-                -> {
-                    n3, g3 = it.find-str('name')
-                    check('doc(2).name = third', g3 && n3 == 'third')
-                }
+            d3, o3 = it.doc(2)
+            o3 -> {
+                n3, g3 = d3.find-str('name')
+                check('doc(2).name = third', g3 && n3 == 'third')
             }
 
-            dx ?yaml = it.doc(99)
-            dx: {
-                nil -> check('越界 doc() 返回 nil', true)
+            dx, ox = it.doc(99)
+            check('越界 doc() 返回 ok=false', ! ox)
 
-                err -> print('fail: 越界 doc() 返回 err')
-
-                -> print('fail: 越界 doc() 返回了值')
-            }
+            ja = it.to-json-all()
+            check('to-json-all 含三份文档', ja.contains('first') && ja.contains('third'))
         }
     }
 }
@@ -324,16 +306,10 @@ t-anchor-merge = () {
             check-i64('合并键被本地覆盖', src, 'merged.y', 9)
             check-str('显式键 ? k', src, 'explicit.complex key', 'complex value')
 
-            t1 ?yaml = it.find('base')
-            t1: {
-                nil -> print('fail: tag/anchor (nil)')
-
-                err -> print('fail: tag/anchor (err)')
-
-                -> {
-                    check('anchor 记录', it.anchor() == 'b')
-                    check('line-of 有效', it.line-of() > 0)
-                }
+            t1, t1ok = it.find('base')
+            t1ok -> {
+                check('anchor 记录', t1.anchor() == 'b')
+                check('line-of 有效', t1.line-of() > 0)
             }
         }
     }
@@ -359,38 +335,29 @@ t-walk = () {
             k2, ok2 = it.key(2)
             check('key(0..2)', ok0 && ok1 && ok2 && k0 == 'a' && k1 == 'b' && k2 == 'c')
 
-            v0 ?yaml = it.value(0)
-            v0: {
-                nil -> print('fail: value 0 (nil)')
-
-                err -> print('fail: value 0 (err)')
-
-                -> {
-                    iv, fv = it.i64()
-                    check('value(0) = 1', fv && iv == 1)
-                }
+            v0, o0 = it.value(0)
+            o0 -> {
+                iv, fv = v0.i64()
+                check('value(0) = 1', fv && iv == 1)
             }
 
-            v1 ?yaml = it.at(1)
-            v1: {
-                nil -> print('fail: at 1 (nil)')
-
-                err -> print('fail: at 1 (err)')
-
-                -> {
-                    s1, q1 = it.str()
-                    check('at(1) = two', q1 && s1 == 'two')
-                }
+            v1, o1 = it.at(1)
+            o1 -> {
+                s1, q1 = v1.str()
+                check('at(1) = two', q1 && s1 == 'two')
             }
+
+            ; 取完子节点后父文档仍可用
+            check('父文档在取子节点后仍可用', it.len() == 3)
 
             ; 越界访问
-            vx ?yaml = it.at(99)
-            vx: {
-                nil -> check('越界 at() 返回 nil', true)
+            vx, ox = it.at(99)
+            check('越界 at() 返回 ok=false', ! ox)
 
-                err -> print('fail: 越界 at() 返回 err')
-
-                -> print('fail: 越界 at() 返回了值')
+            g1, g1ok = it.get('b')
+            g1ok -> {
+                s2, q2 = g1.str()
+                check('get(b) = two', q2 && s2 == 'two')
             }
         }
     }
@@ -447,7 +414,7 @@ t-errors = () {
     bad = 'a: 1\n  b: 2\n'
     check('valid-of 接受合法输入', yaml.valid-of(good))
     check('error-of 合法输入返回空串', yaml.error-of(good) == '')
-    check('valid-of 拒绝非法输入', !yaml.valid-of(bad))
+    check('valid-of 拒绝非法输入', ! yaml.valid-of(bad))
     msg = yaml.error-of(bad)
     check('error-of 非法输入非空', msg.len-bytes() > 0)
 
@@ -462,7 +429,54 @@ t-errors = () {
 }
 
 ; ═══════════════════════════════════════════════
-; 12. BOM
+; 12. 综合文档与输出往返
+; ═══════════════════════════════════════════════
+
+t-round-trip = () {
+    src = '# app config\nversion: 2\nname: "demo app"\ndebug: false\nratio: 0.75\nhex: 0xFF\nserver:\n  host: localhost\n  port: 8080\n  tags:\n    - web\n    - api\n  limits: {cpu: 2, mem: 512}\nusers:\n  - name: alice\n    roles: [admin, dev]\n  - name: bob\n    roles: []\ndesc: |\n  line one\n  line two\nempty-map: {}\nempty-seq: []\n'
+    d ?yaml = yaml.parse(src)
+    d: {
+        nil -> print('fail: round-trip big (nil)')
+
+        err -> print('fail: round-trip big (err)')
+
+        -> {
+            check-i64('综合文档 hex', src, 'hex', 255)
+            check-str('综合文档 嵌套序列', src, 'server.tags.1', 'api')
+            check-i64('综合文档 流式映射', src, 'server.limits.mem', 512)
+            check-str('综合文档 序列内映射', src, 'users.0.name', 'alice')
+            check-str('综合文档 流式序列', src, 'users.0.roles.1', 'dev')
+
+            js = it.to-json()
+            check('to-json 转义换行', js.contains('line one\\nline two\\n'))
+
+            ys = it.to-yaml()
+            check('to-yaml 空映射内联', ys.contains('empty-map: {}'))
+            check('to-yaml 空序列内联', ys.contains('empty-seq: []'))
+            check('to-yaml 序列内映射不重复缩进', ys.contains('- name: alice'))
+
+            ; 输出必须能被自己重新解析，且值保持一致
+            again ?yaml = yaml.parse(ys)
+            again: {
+                nil -> print('fail: big round-trip (nil)')
+
+                err -> print('fail: big round-trip (err)')
+
+                -> {
+                    h, fh = it.find-i64('hex')
+                    t1, ft = it.find-str('server.tags.1')
+                    u, fu = it.find-str('users.0.name')
+                    check('大文档往返 hex', fh && h == 255)
+                    check('大文档往返 tags.1', ft && t1 == 'api')
+                    check('大文档往返 users.0.name', fu && u == 'alice')
+                }
+            }
+        }
+    }
+}
+
+; ═══════════════════════════════════════════════
+; 13. BOM
 ; ═══════════════════════════════════════════════
 
 t-bom = () {
@@ -497,5 +511,6 @@ t-anchor-merge()
 t-walk()
 t-serialize()
 t-errors()
+t-round-trip()
 t-bom()
 print('done')

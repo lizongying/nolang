@@ -601,7 +601,7 @@ aes-plain [16]byte = [
 ]
 
 aes-out [16]byte
-aes-out = aes.aes-128-enc(aes-plain, aes-key)
+aes-out = aes.enc-128(aes-plain, aes-key)
 
 io.out('aes-enc=')
 i <- [0..16): {
@@ -610,7 +610,7 @@ i <- [0..16): {
 print('')
 
 aes-dec [16]byte
-aes-dec = aes.aes-128-dec(aes-out, aes-key)
+aes-dec = aes.dec-128(aes-out, aes-key)
 
 io.out('aes-dec=')
 i <- [0..16): {

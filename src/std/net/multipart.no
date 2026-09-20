@@ -20,7 +20,7 @@
 ;   w = multipart-create()
 ;   w.write-encrypted-file('secret', 'data.bin', 'application/octet-stream', file-data, key, iv)
 ;   w.close-form()
-;   // 接收端使用 multipart-reader 解析後，用 aes-256-gcm-open 解密
+;   // 接收端使用 multipart-reader 解析後，用 aes-gcm.open-256 解密
 ;
 ;   // 解析 multipart 回應
 ;   r = multipart-parse(boundary, body)
@@ -329,11 +329,10 @@ multipart-reader.next = () (has-part bool) {
     #{overflow=wrap}
         after-marker + 1 < .end -> {
         .data[after-marker] == 45 && .data[after-marker + 1] == 45 -> {
-    }
-
-        ; '--' = 結束邊界
-        .pos = .end
-        return
+            ; '--' = 結束邊界
+            .pos = .end
+            return
+        }
     }
 
     ; 跳過邊界行後的 CRLF
@@ -491,11 +490,11 @@ multipart-extract-boundary = (content-type str) (boundary str) {
     #{overflow=wrap}
         bstart < content-type.len-bytes() -> {
         content-type[bstart] == 34 -> {
-    }
-        bstart = bstart + 1
-        bend = content-type.index-from('"', bstart)
-        bend < 0 -> return
-        boundary = content-type.slice(bstart, bend)
+            bstart = bstart + 1
+            bend = content-type.index-from('"', bstart)
+            bend < 0 -> return
+            boundary = content-type.slice(bstart, bend)
+        }
     } -> {
         bend = content-type.index-from(';', bstart)
         bend < 0 -> bend = content-type.len-bytes()
@@ -524,7 +523,7 @@ multipart-writer.write-encrypted-file = (name str, filename str, content-type st
     ; 加密內容（AAD 為空，檔案加密不需要額外認證資料）
     plain []byte = content.to-bytes()
     aad []byte
-    sealed []byte = aes-256-gcm.aes-256-gcm-seal(key, iv, aad, plain)
+    sealed []byte = aes-gcm.seal-256(key, iv, aad, plain)
 
     ; 將 IV + 密文轉為 Base64 字串
     ; 格式: base64(iv || sealed)
@@ -578,7 +577,7 @@ multipart-writer.write-encrypted-field = (name str, value str, key [32]byte, iv 
     ; 加密值
     plain []byte = value.to-bytes()
     aad []byte = name.to-bytes()
-    sealed []byte = aes-256-gcm.aes-256-gcm-seal(key, iv, aad, plain)
+    sealed []byte = aes-gcm.seal-256(key, iv, aad, plain)
 
     ; 將 IV + 密文轉為 Base64
     combined []byte
@@ -655,7 +654,7 @@ multipart-decrypt-field = (encrypted-data str, key [32]byte, aad []byte) (plain 
     }
 
     ; 解密
-    opened []byte = aes-256-gcm.aes-256-gcm-open(key, iv, aad, sealed)
+    opened []byte = aes-gcm.open-256(key, iv, aad, sealed)
     opened.len() == 0 -> {
         plain = err('decryption failed')
         return

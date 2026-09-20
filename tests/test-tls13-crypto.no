@@ -107,7 +107,7 @@ test-aes-gcm-seal-open = () {
 
     ; 加密
     sealed []byte
-    sealed = aes-gcm.aes-128-gcm-seal(key, iv, aad, plain)
+    sealed = aes-gcm.seal-128(key, iv, aad, plain)
 
     ; sealed 長度應為 plain.len() + 16 (tag)
     #{overflow = wrap}
@@ -123,7 +123,7 @@ test-aes-gcm-seal-open = () {
 
     ; 解密
     opened []byte
-    opened = aes-gcm.aes-128-gcm-open(key, iv, aad, sealed)
+    opened = aes-gcm.open-128(key, iv, aad, sealed)
 
     ; 驗證解密結果與原文一致
     i <- [0..plain.len()): {
