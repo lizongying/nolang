@@ -328,6 +328,15 @@ const (
 	OpLen       // container length (str/vec/slice/array/map) — see lowerDotRead
 	OpCap       // container capacity (str/vec/slice/array)
 
+	// OpUtf8At: decode the UTF-8 code point that STARTS at a BYTE offset.
+	// Args = [strValue, byteOffset], Dst = char (i64 code point), -1 past the
+	// end. This is the `for c <- s` traversal primitive: the loop keeps a byte
+	// cursor and advances it by @nolang.utf8_width(cp), so the whole walk is a
+	// single O(n) pass. `s[i]` (OpIndex on a str receiver) is the code-point
+	// INDEXED form and is O(i) per read, which is why a loop must not use it.
+	// See docs/docs/lang/str.md.
+	OpUtf8At
+
 	// Tagged-enum primitives (§13.3.18). An enum value is
 	// `{ i64 tag, [N x i64] payload }`; the payload is a union shared by every
 	// variant, so field access is a bitcast at a slot offset rather than a
@@ -451,6 +460,7 @@ var opNames = [opCount]string{
 	OpSliceOp:   "sliceop",
 	OpLen:       "len",
 	OpCap:       "cap",
+	OpUtf8At:    "utf8-at",
 	OpAdd:       "add", OpSub: "sub", OpMul: "mul", OpDiv: "div", OpMod: "mod",
 	OpUDiv: "udiv", OpUMod: "umod",
 	OpNeg: "neg", OpNot: "not", OpAnd: "and", OpOr: "or", OpBitAnd: "bitand", OpBitOr: "bitor", OpXor: "xor", OpShl: "shl", OpShr: "shr",

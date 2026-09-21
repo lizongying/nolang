@@ -5410,8 +5410,45 @@ func isStringExpr(expr parser.Expression, stringSizes map[string]int64) bool {
 		// Array element access (e.g., req.headers[i], arr[i]) may return a string.
 		// Return type cannot be determined at validation time; defer to LLVM type checking.
 		return true
+	case *parser.SliceExpression:
+		// `s[1..3]` on a str yields a str (code-point sliced — see
+		// docs/docs/lang/str.md), so it is a valid initializer for a str
+		// variable. Slicing a []T / [N]T yields a []T instead; the validator
+		// cannot tell the two apart without type inference, and an explicit
+		// `x str = a[1..3]` over a non-str container is still rejected by the
+		// checker.
+		return true
 	}
 	return false
+}
+
+// isCharOrUntypedValue reports whether a `x str = <expr>` initializer is a plain
+// identifier that is either known to be a `char` or not typed by this pass at
+// all. Both are legal initializers for a str:
+//
+//   - `char` converts to `str` implicitly (the code point is UTF-8 encoded) —
+//     see checker.isArgTypeCompatible and docs/docs/lang/str.md. That covers
+//     `c char = "A"` followed by `s str = c`, and the iteration variable of
+//     `for ch <- s` once it has been declared.
+//   - an untyped name is a `for ch <- s` iteration variable (loop variables are
+//     not registered by collectVarTypesFromBody) or a global. The checker's own
+//     compatibility pass is the authority for those: it rejects a genuine
+//     i64/bool/struct initializer with "cannot assign <T> value to str
+//     variable". This front-end guard exists only to catch a scalar LITERAL or a
+//     variable whose non-string type this pass already knows.
+//
+// Slicing and indexing (`s[1..3]`, `s[0]`) are accepted by isStringExpr
+// directly, so they never reach here.
+func isCharOrUntypedValue(expr parser.Expression, varTypes map[string]string) bool {
+	id, ok := expr.(*parser.Identifier)
+	if !ok {
+		return false
+	}
+	t, known := varTypes[id.Value]
+	if !known {
+		return true
+	}
+	return t == "char"
 }
 
 // validateDuplicates checks for duplicate variable declarations
@@ -5786,7 +5823,7 @@ func validateStmtArrayBounds(stmt parser.Statement, arraySizes map[string]int64,
 				// return type is unknown at vet time; deferring to LLVM is safer.
 				isExplicitStr := s.Type != nil && (s.Type.String() == "str")
 				if isExplicitStr {
-					if !isStringExpr(s.Value, stringSizes) {
+					if !isStringExpr(s.Value, stringSizes) && !isCharOrUntypedValue(s.Value, varTypes) {
 						return fmt.Errorf("cannot assign non-string value to string variable '%s'", s.Name.Value)
 					}
 				}

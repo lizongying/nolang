@@ -2747,7 +2747,14 @@ func (c *codegen) emitBuiltinNetAcceptNb(inst *Inst) error {
 	if runtime.GOOS == "linux" {
 		nb = "2048"
 	}
-	c.sb.WriteString(fmt.Sprintf("  call i32 @fcntl(i32 %s, i32 4, i32 %s)\n", fdReg, nb))
+	// fcntl is VARIADIC (int fcntl(int, int, ...)). c.decl() rewrites the
+	// declaration to `declare i32 @fcntl(i32, i32, ...)`, so the CALL SITE must
+	// spell the variadic type out too — otherwise LLVM's textual parser builds a
+	// non-variadic call and llc passes the third argument in a register while
+	// libc's va_arg reads it from the stack (AAPCS64/Apple ARM64 passes variadic
+	// arguments on the stack). The O_NONBLOCK flag then arrives as garbage and
+	// F_SETFL clobbers the descriptor's flags instead of just adding O_NONBLOCK.
+	c.sb.WriteString(fmt.Sprintf("  call i32 (i32, i32, ...) @fcntl(i32 %s, i32 4, i32 %s)\n", fdReg, nb))
 	addr := c.treg("netanb.addr")
 	addrp := c.treg("netanb.addrp")
 	c.sb.WriteString(fmt.Sprintf("  %s = alloca [16 x i8]\n", addr))
@@ -3047,18 +3054,19 @@ func (c *codegen) emitBuiltinReadFile(inst *Inst) error {
 		return fmt.Errorf("read-file: cannot marshal path as C string")
 	}
 
-	// NOTE: `open` is already declared by the fs.open family as
-	// `declare i32 @open(i8*, i32, i32)`. Emitting a variadic form here would
-	// be a *different* signature for the same symbol and LLVM rejects it with
-	// "invalid redefinition of function 'open'", so match it exactly (the third
-	// argument is the creation mode, unused with O_RDONLY).
+	// NOTE: `open` is variadic (`int open(const char*, int, ...)`) and c.decl()
+	// normalises every declaration of it to `@open(i8*, i32, ...)`, so spelling
+	// the variadic type at the call site is NOT a redefinition — it is required
+	// to get the AAPCS64 varargs ABI right (see the note in emitClibCall). The
+	// third argument is the creation mode, unused with O_RDONLY, but it still
+	// has to be passed the way the callee reads it.
 	c.decl("declare i32 @open(i8*, i32, i32)")
 	c.decl("declare i64 @lseek(i32, i64, i32)")
 	c.decl("declare i64 @read(i32, i8*, i64)")
 	c.decl("declare i32 @close(i32)")
 
 	fd := c.treg("rf.fd")
-	c.sb.WriteString(fmt.Sprintf("  %s = call i32 @open(i8* %s, i32 0, i32 0)\n", fd, pathPtr))
+	c.sb.WriteString(fmt.Sprintf("  %s = call i32 (i8*, i32, ...) @open(i8* %s, i32 0, i32 0)\n", fd, pathPtr))
 	openOk := c.treg("rf.fdok")
 	c.sb.WriteString(fmt.Sprintf("  %s = icmp sge i32 %s, 0\n", openOk, fd))
 	end := c.treg("rf.end")
@@ -3142,7 +3150,13 @@ func (c *codegen) emitBuiltinWriteFile(inst *Inst) error {
 		openFlags = 577
 	}
 	fd := c.treg("wf.fd")
-	c.sb.WriteString(fmt.Sprintf("  %s = call i32 @open(i8* %s, i32 %d, i32 420)\n", fd, pathPtr, openFlags))
+	// VARIADIC call type is mandatory here — see the note in emitClibCall.
+	// Without it the creation mode is passed in x2 while libc's va_arg reads it
+	// from the stack, so every file write-file created ended up with garbage
+	// permissions (observed: 0000), which made the follow-up fs.open-read fail
+	// with EACCES and regressed tests/mem-safety/bug15-read-dowhile-copyfile.no
+	// from 5/5 PASS to 3/5.
+	c.sb.WriteString(fmt.Sprintf("  %s = call i32 (i8*, i32, ...) @open(i8* %s, i32 %d, i32 420)\n", fd, pathPtr, openFlags))
 	openOk := c.treg("wf.ok")
 	c.sb.WriteString(fmt.Sprintf("  %s = icmp sge i32 %s, 0\n", openOk, fd))
 

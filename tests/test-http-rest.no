@@ -20,11 +20,13 @@ req.init('PUT', 'http://example.com/api/item', '{"name":"test"}')
 
     -> print('fail: http-request.init url')
 }
-req.body == ' -> "name":"test"'
+; ⚠️ 這裡原本是 `req.body == ' -> "name":"test"'` + 兩個裸 print（外層 `{ }` 被吃掉），
+; 導致 ok / fail 兩行無條件都印，測試等於沒有斷言。還原成原本的短路群組寫法。
+{
+    req.body == '{"name":"test"}' -> print('ok: http-request.init body')
 
-print('ok: http-request.init body')
-
-print('fail: http-request.init body')
+    -> print('fail: http-request.init body')
+}
 {
     req.header-count == 0 -> print('ok: http-request.init header-count')
 

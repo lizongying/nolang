@@ -167,10 +167,10 @@ func (p *Parser) parseStatement() Statement {
 			// 而索引使用 "name[i]"（name 和 [ 紧连）。
 			// 通过比较 IDENT 结束列和 LBRACKET 列来区分。
 			state := p.saveState()
-			identTok := p.currentToken // save IDENT before skipping
-			p.nextToken()              // skip IDENT
+			identTok := p.currentToken    // save IDENT before skipping
+			p.nextToken()                 // skip IDENT
 			lbracketTok := p.currentToken // save LBRACKET position
-			p.nextToken()              // skip LBRACKET
+			p.nextToken()                 // skip LBRACKET
 			// hasSpaceBetweenIdentAndBracket: true when "name [" (type annotation form)
 			hasSpaceBeforeBracket := lbracketTok.Column > identTok.Column+len(identTok.Literal)
 			isRange := p.currentToken.Type == lexer.ELLIPSIS ||
@@ -1482,7 +1482,7 @@ func (p *Parser) parseStandaloneBody(tok lexer.Token) *BlockStatement {
 	return &BlockStatement{
 		Token:      tok,
 		Statements: []Statement{&ExpressionStatement{Token: tok, Expression: body}},
-		IsInline: true,
+		IsInline:   true,
 	}
 }
 
@@ -1538,7 +1538,7 @@ func (p *Parser) wrapStandaloneChainDepth(tok lexer.Token, body *BlockStatement,
 		}
 		p.sem.SetRTFlag(chained, RTStandalone)
 		body = &BlockStatement{
-			Token:    tok,
+			Token: tok,
 			Statements: []Statement{
 				&ExpressionStatement{
 					Token:      tok,
@@ -1694,7 +1694,23 @@ func (p *Parser) parseExpressionStatement() Statement {
 	}
 
 	// Standalone if-then: cond -> body (without enclosing { })
-	if p.currentToken.Type == lexer.RARROW && !p.ctx.contains(CTX_MATCH_ARM) && !p.ctx.contains(CTX_FOR_COND) {
+	//
+	// `->` is ALWAYS the short-circuit pipeline operator — its meaning never
+	// depends on whether an outer `var`/assignment is present. A node that is a
+	// side-effect call (no return value, e.g. `print("A")`) runs and leaves the
+	// pipeline state untouched, so the chain always proceeds to the next node;
+	// only a node returning `?T` can flip the state to Err and skip the rest.
+	//
+	// CTX_MATCH_ARM used to disable this branch, which silently truncated an
+	// INLINE arm body after its first node: `ok -> print('A') -> print('B')`
+	// printed only 'A' and the leftover `-> print('B')` was re-parsed as a new
+	// catch-all arm that never fires. The guard is not needed for that: arms are
+	// separated by NEWLINE (or by an option pattern start, see
+	// isOptionPatternStart), and `currentToken == RARROW` here already means the
+	// arrow is on the SAME line as the body — a NEWLINE token would be current
+	// otherwise. CTX_FOR_COND is still excluded: there `->` is the for-in
+	// separator.
+	if p.currentToken.Type == lexer.RARROW && !p.ctx.contains(CTX_FOR_COND) {
 		p.nextToken() // skip ->
 
 		conseq := p.parseStandaloneBody(tok)

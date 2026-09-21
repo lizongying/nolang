@@ -862,6 +862,51 @@ val: {
 }
 ```
 
+### Short-Circuit Pipeline (`->`)
+
+`->` is a **left-associative short-circuit pipeline operator**. Its meaning is fixed and **does not depend on the surrounding context** — a bare statement, a single-line match-arm body, and the right-hand side of an assignment all lower through the same code path.
+
+Nodes inside a pipeline fall into three classes:
+
+| node | effect on the pipeline state |
+| --- | --- |
+| side-effect call with no return (`print('A')`) | runs; **does not change state** — execution continues to the next node |
+| call returning `?T` (fallible, e.g. `might-fail()`) | runs; **overwrites state** — once it yields `nil`/`err`, **every later node is skipped** |
+| trailing plain value | evaluated only while the state is still ok |
+
+**Only a node returning `?T` can put the pipeline into a failed state**; a `print` never can. A chain made entirely of `print` calls *looks* like short-circuiting is off — it is not; there is simply no node capable of failing.
+
+```no
+; no fallible node -> everything runs
+ok -> print('A') -> print('B')
+
+; might-fail() returns ?T -> on failure print('B') is skipped
+ok -> print('A') -> might-fail(x) -> print('B')
+
+; same semantics on the right-hand side of an assignment
+r = print('E') -> might-fail(x) -> 42
+```
+
+**Boundary rules:**
+
+1. `->` has exactly one meaning. Bare statements and assignment expressions share one pipeline lowering; wrapping in an assignment does not switch modes.
+2. A `->` inside a match-arm body **continues that arm's pipeline; it does not start a new arm**. Arms are separated by **newlines**:
+
+```no
+; ✅ one arm whose body is a pipeline -> both print
+ok -> print('A') -> print('B')
+
+; ✅ two arms (newline-separated) -> 'miss' does not print when ok matched
+v: {
+    ok -> print('hit')
+    -> print('miss')
+}
+```
+
+> ⚠️ Because arms are newline-separated, `pat -> A -> B` written on ONE line is **one arm with a pipeline**, not "if A else B". For if/else, put the arms on separate lines or use a `{}` short-circuit group.
+
+3. A pipeline is for **effects and failure gating**. To produce a **value**, use a match with newline-separated arms or the ternary `cond ? a : b` — a trailing value node is not the pipeline's result.
+
 ### If / Else
 
 If-else groups (short-circuit) **must** be wrapped in `{}`. The first matching condition wins; later conditions are not checked.

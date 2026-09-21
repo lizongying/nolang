@@ -961,6 +961,14 @@ func isArgTypeCompatible(expectedType, argType string, arg parser.Expression) bo
 		(expectedType == "str" && argType == "txt") {
 		return true
 	}
+	// char → str 隱式轉換：char 是單個 Unicode 碼點，按 UTF-8 編碼成一個 str。
+	// `s[i]` / `s[a..b]` / `for c <- s` 都產生 char，這個轉換讓
+	// `a str = s[0]`、`f(str)` 傳 char 這類寫法可用
+	// （codegen 走 @str_from_cp；見 docs/docs/lang/str.md）。
+	// 反向 str → char 不開放：str 可能是多碼點，需要顯式 s[i] / to-chars()。
+	if expectedType == "str" && argType == "char" {
+		return true
+	}
 	// ?T 到 T 的隱式解包：在 ok 分支中，?T 變數已確認為有值，
 	// 傳給期望 T 的參數是安全的（代碼生成器會自動取值）。
 	if strings.HasPrefix(argType, "?") && argType[1:] == expectedType {

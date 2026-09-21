@@ -392,6 +392,9 @@ server-conn.get-header = (name str) (val ?str) {
             #{index-out = 0}
             matched = 0
         }
+        ; ⚠️ `{ arms }` 是 if/else-if 短路群組：只有第一個條件成立的臂會執行。
+        ; 原本兩個連續的 `matched == 1 ->` 臂會讓第二個永不執行 → 永遠回傳 nil。
+        ; 改成巢狀：比較完再判斷是否命中。
         {
             matched == 1 -> {
                 j <- [0..name.len-bytes()): {
@@ -409,14 +412,13 @@ server-conn.get-header = (name str) (val ?str) {
                         break
                     }
                 }
-            }
-
-            matched == 1 -> {
-                #{index-out = 0}
-                vlen = .header-values[i].len-bytes()
-                #{index-out = 0}
-                val = .header-values[i].slice(0, vlen)
-                return
+                matched == 1 -> {
+                    #{index-out = 0}
+                    vlen = .header-values[i].len-bytes()
+                    #{index-out = 0}
+                    val = .header-values[i].slice(0, vlen)
+                    return
+                }
             }
         }
     }
@@ -1066,6 +1068,9 @@ https-server-conn.get-header = (name str) (val ?str) {
             #{index-out = 0}
             matched = 0
         }
+        ; ⚠️ `{ arms }` 是 if/else-if 短路群組：只有第一個條件成立的臂會執行。
+        ; 原本兩個連續的 `matched == 1 ->` 臂會讓第二個永不執行 → 永遠回傳 nil。
+        ; 改成巢狀：比較完再判斷是否命中。
         {
             matched == 1 -> {
                 j <- [0..name.len-bytes()): {
@@ -1081,14 +1086,13 @@ https-server-conn.get-header = (name str) (val ?str) {
                         break
                     }
                 }
-            }
-
-            matched == 1 -> {
-                #{index-out = 0}
-                vlen = .header-values[i].len-bytes()
-                #{index-out = 0}
-                val = .header-values[i].slice(0, vlen)
-                return
+                matched == 1 -> {
+                    #{index-out = 0}
+                    vlen = .header-values[i].len-bytes()
+                    #{index-out = 0}
+                    val = .header-values[i].slice(0, vlen)
+                    return
+                }
             }
         }
     }

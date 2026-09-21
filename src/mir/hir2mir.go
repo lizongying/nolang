@@ -1376,7 +1376,15 @@ func (l *lowerer) valueRaw(v ValueID) string {
 func (l *lowerer) isInlineableLetType(raw string) bool {
 	switch raw {
 	case "i64", "i32", "i16", "i8", "u64", "u32", "u16", "u8", "byte",
-		"bool", "f64", "f32", "double", "str", "txt":
+		"bool", "f64", "f32", "double", "str", "txt",
+		// `char` is a scalar exactly like i64 (KindChar -> i64) and lowers the
+		// same way. Leaving it out made EVERY top-level `x char = <runtime
+		// value>` fall into the "non-inlineable" branch below and get dropped
+		// from the synthesized `main` entirely, so the name never bound and
+		// `print(x)` emitted nothing (codegen skipped the unresolved argument).
+		// That is the shape the new `s[i]`-returns-char semantics produce all
+		// the time (`c char = s[0]`), so it has to inline like any other scalar.
+		"char":
 		return true
 	}
 	if len(raw) > 0 && raw[0] == '[' {
@@ -2216,12 +2224,38 @@ func (l *lowerer) lowerStmt(id int32) {
 		// %vec into a %str-long slot. Legacy does that reinterpret directly; MIR
 		// needs an explicit conversion or every later use of `data` (concat,
 		// `==`) passes a %vec where a %str-long is expected and opt rejects it.
+		//
+		// The same applies to a binding DECLARED as `str` whose initializer is a
+		// `char` — the implicit `a str = s[0]` conversion (docs/docs/lang/str.md).
+		// When the initializer is not a bare identifier the binder ALIASES the
+		// name onto the initializer's value (`l.locals[name] = val`, further
+		// down), so without an explicit conversion the declared `str` was
+		// silently discarded and `a` stayed the char code point: `print(a)`
+		// printed "104" instead of "h" and `a - b` did integer arithmetic
+		// instead of concatenation. The conversion is an OpMove into `str`;
+		// codegen's emitMove sees a char source against a %str-long destination
+		// and encodes it with @str_from_cp (UTF-8) rather than @str_from_i64
+		// (decimal text).
 		if val != NoVal {
 			if dt := l.typeOfNode(n); dt != NoType && dt != l.voidType {
 				if dty := l.mod.Type(dt); dty != nil && dty.Raw == "str" {
 					if vt := l.valueTypeOf(val); vt != NoType && vt != l.voidType {
-						if vty := l.mod.Type(vt); vty != nil && vty.Kind == KindSlice {
-							val = l.b.Emit(OpStrFromVec, l.b.Type("str"), []ValueID{val}, "")
+						if vty := l.mod.Type(vt); vty != nil {
+							switch vty.Kind {
+							case KindSlice:
+								val = l.b.Emit(OpStrFromVec, l.b.Type("str"), []ValueID{val}, "")
+							case KindChar:
+								val = l.b.Emit(OpMove, l.b.Type("str"), []ValueID{val}, "")
+								// Pin the value's type to `str`. The generic
+								// LocalTypes back-fill further down derives the
+								// type from the HIR child node, and a KIndex
+								// child resolves to `char` — which would retype
+								// this %str-long value as char and make codegen
+								// emit a `store i64` into a %str-long slot.
+								if f := l.mod.Func(l.curFunc); f != nil {
+									f.LocalTypes[val] = l.b.Type("str")
+								}
+							}
 						}
 					}
 				}
@@ -3261,6 +3295,20 @@ func (l *lowerer) lowerRangeFor(n *hir.Node, iterID int32, bodyID int32, pre Blo
 	if arrV == NoVal {
 		return
 	}
+	// --- string form: for c <- s  (c is a CODE POINT, not a byte) ---
+	// docs/docs/lang/str.md promises that `for c <- s` walks Unicode code
+	// points and is the O(n) alternative to the O(n^2) `for i <- [0..s.len())`
+	// + `s[i]` pattern. The generic collection loop below indexes with a
+	// LINEAR index and steps by 1, which over a str walks BYTES (measured
+	// before this branch: '日本語' yielded 230,151,165,230,156,172,232,170,158
+	// instead of 26085,26412,35486). Give str its own loop: a byte cursor
+	// advanced by the decoded code point's UTF-8 width.
+	if ty := l.valueTypeOf(arrV); ty != NoType {
+		if sty := l.mod.Type(ty); sty != nil && sty.Raw == "str" {
+			l.lowerStrRangeFor(arrV, varName, bodyID, pre, enclosingCont)
+			return
+		}
+	}
 	elemT := l.elementTypeOf(arrV)
 	if elemT == l.voidType {
 		l.unsupported(l.curFuncName(), "for-range", "cannot determine element type of collection")
@@ -3331,6 +3379,104 @@ func (l *lowerer) lowerRangeFor(n *hir.Node, iterID int32, bodyID int32, pre Blo
 	one := l.b.EmitInt(OpConst, idxT, 1, "")
 	nextIdx := l.b.Emit(OpAdd, idxT, []ValueID{idxSlot, one}, "")
 	l.b.EmitMoveInto(idxSlot, nextIdx)
+	l.b.Terminate(OpBr, nil, []BlockID{header}, "")
+
+	l.b.SetBlock(exit)
+	if enclosingCont != NoBlock && l.mod.Block(exit).Term == nil {
+		l.b.Terminate(OpBr, nil, []BlockID{enclosingCont}, "")
+	}
+}
+
+// lowerStrRangeFor lowers `for c <- s` on a `str`: c is bound to each UTF-8
+// CODE POINT of s, in order, as an i64 `char` — the traversal counterpart of
+// the code-point indexed `s[i]` (see codegen.emitStrCpIndex and
+// docs/docs/lang/str.md).
+//
+// Shape:
+//
+//	off = 0
+//	while off < s.len-bytes() {
+//	    c   = utf8_at(s, off)        ; OpUtf8At — one sequence, O(1)
+//	    w   = 1 + (c >= 0x80) + (c >= 0x800) + (c >= 0x10000)
+//	    <body>
+//	    off = off + w
+//	}
+//
+// The byte length comes from OpLen (field 0 of %str-long, which is the BYTE
+// count — `s.len()` is a std function that counts code points on top of it).
+// The cursor advances by the width DERIVED FROM THE CODE POINT rather than by
+// re-scanning: the three UTF-8 length classes are nested thresholds, so the
+// arithmetic is exact, and the resulting walk is a single O(n) pass.
+//
+// The width is computed and parked in its own slot BEFORE the body runs, so a
+// body that reassigns the loop variable cannot shift the cursor. `c` is bound
+// to a private slot seeded from the decoded value; the body sees a copy.
+func (l *lowerer) lowerStrRangeFor(arrV ValueID, varName string, bodyID int32, pre BlockID, enclosingCont BlockID) {
+	idxT := l.b.Type("i64")
+	charT := l.b.Type("char")
+	boolT := l.b.Type("bool")
+	zero := func() ValueID { return l.b.EmitInt(OpConst, idxT, 0, "") }
+
+	// Byte length of the buffer (the cursor's bound).
+	byteLen := l.b.Emit(OpLen, idxT, []ValueID{arrV}, "")
+	// Each of these becomes a real Dst-backed alloca slot (see lowerRangeFor's
+	// note: a bare Param value id would have no slot and the moves would fail).
+	offSlot := l.b.EmitInt(OpConst, idxT, 0, varName+"#off")
+	cpSlot := l.b.EmitInt(OpConst, charT, 0, varName+"#cp")
+	widthSlot := l.b.EmitInt(OpConst, idxT, 0, varName+"#w")
+
+	l.b.SetBlock(pre)
+	l.b.EmitMoveInto(offSlot, zero())
+
+	header := l.b.NewBlock("for.header")
+	body := l.b.NewBlock("for.body")
+	update := l.b.NewBlock("for.update")
+	exit := l.b.NewBlock("for.exit")
+	l.loopStack = append(l.loopStack, loopCtx{exit: exit, update: update})
+	defer func() { l.loopStack = l.loopStack[:len(l.loopStack)-1] }()
+	// Register the loop continuation as the enclosing continuation so an empty
+	// if-merge inside the body redirects here (see lowerFor / lowerRangeFor).
+	l.contStack = append(l.contStack, update)
+	defer func() { l.contStack = l.contStack[:len(l.contStack)-1] }()
+
+	l.b.Terminate(OpBr, nil, []BlockID{header}, "")
+	l.b.SetBlock(header)
+	condV := l.b.Emit(OpLt, boolT, []ValueID{offSlot, byteLen}, "")
+	l.b.Terminate(OpCondBr, []ValueID{condV}, []BlockID{body, exit}, "")
+
+	l.b.SetBlock(body)
+	cpV := l.b.Emit(OpUtf8At, charT, []ValueID{arrV, offSlot}, "")
+	l.b.EmitMoveInto(cpSlot, cpV)
+	// w = 1 + (c >= 0x80) + (c >= 0x800) + (c >= 0x10000)
+	w := l.b.EmitInt(OpConst, idxT, 1, "")
+	for _, bound := range []int64{0x80, 0x800, 0x10000} {
+		ge := l.b.Emit(OpGe, boolT, []ValueID{cpSlot, l.b.EmitInt(OpConst, charT, bound, "")}, "")
+		gi := l.b.Emit(OpCast, idxT, []ValueID{ge}, "")
+		w = l.b.Emit(OpAdd, idxT, []ValueID{w, gi}, "")
+	}
+	l.b.EmitMoveInto(widthSlot, w)
+
+	// Bind the loop variable to a private slot holding this iteration's code
+	// point (the body must not be able to move the cursor by writing to it).
+	iSlot := l.b.EmitInt(OpConst, charT, 0, varName)
+	l.b.EmitMoveInto(iSlot, cpSlot)
+	if outP := l.resultOutParamFor(varName); outP != NoVal {
+		l.b.EmitMoveInto(outP, iSlot)
+		iSlot = outP
+	}
+	l.locals[varName] = iSlot
+	if bodyID != hir.NoID {
+		l.lowerBlock(bodyID)
+	}
+	if l.mod.Block(body).Term == nil {
+		l.b.Terminate(OpBr, nil, []BlockID{update}, "")
+	}
+	if cur := l.b.CurrentBlock(); cur != NoBlock && l.mod.Block(cur).Term == nil {
+		l.b.Terminate(OpBr, nil, []BlockID{update}, "")
+	}
+
+	l.b.SetBlock(update)
+	l.b.EmitMoveInto(offSlot, l.b.Emit(OpAdd, idxT, []ValueID{offSlot, widthSlot}, ""))
 	l.b.Terminate(OpBr, nil, []BlockID{header}, "")
 
 	l.b.SetBlock(exit)
@@ -3768,7 +3914,20 @@ func (l *lowerer) foldConstText(n *hir.Node, gtype string) string {
 	case hir.KIntLit:
 		return fmt.Sprintf("i64 %d", n.Val)
 	case hir.KCharLit:
-		return fmt.Sprintf("i64 %d", n.Val)
+		// The code point lives in S (the interned character TEXT), not in Val:
+		// tohir stores a char literal as `{Kind: KCharLit, S: <text>}` and
+		// leaves Val at 0 (see parser.tohir's *CharLiteral case). Reading Val
+		// here folded EVERY module-level char literal to `i64 0`, so a
+		// top-level `p char = 'p'` materialized as `@p = private global i64 0`
+		// and printed 0 instead of 112 — while the same literal inside a
+		// function printed 112 (lowerCharLit decodes S correctly). Decode it
+		// the same way lowerCharLit does.
+		cp := int64(0)
+		for _, r := range strings.Trim(l.pkg.Str(n.S), "'") {
+			cp = int64(r)
+			break
+		}
+		return fmt.Sprintf("i64 %d", cp)
 	case hir.KBoolLit:
 		if n.Bool() {
 			return "i1 1"
@@ -7112,12 +7271,20 @@ func (l *lowerer) elemTypeOfType(ty *Type) TypeID {
 			}
 			return ty.Elem
 		}
-		// A str is `{len, cap, i8* data}`; indexing a str yields a single byte
-		// (i8), not a struct element. Without this, `s[i]` lowered to void and
-		// every string-builder idiom (to-upper / replace / repeat / ...) that
-		// writes bytes in place produced `store void` IR that opt rejected.
+		// A str is `{len(bytes), cap, i8* data}`; `s[i]` reads the i-th CODE
+		// POINT as a nolang `char` (docs/docs/lang/str.md), not a byte. char
+		// lowers to i64 (KindChar -> i64), so the result is a full-width value
+		// and no i8->i64 promotion is needed. The raw type MUST be "char" and
+		// not "i64": it is the only carrier of the code-point identity, and it
+		// is what codegen.rawTypeOfValue consults to pick @str_from_cp (UTF-8
+		// encoding) over @str_from_i64 (decimal text) for the implicit
+		// `a str = s[0]` conversion — otherwise that printed "104" for "h".
+		//
+		// The BYTE identity is preserved on the write side: `s[i] = v` goes
+		// through OpIndexStore, whose element width comes from
+		// codegen.elemTypeOfReceiver (str -> i8), not from here.
 		if ty.Raw == "str" {
-			return l.b.Type("i8")
+			return l.b.Type("char")
 		}
 		// A txt is `{ [255 x i8], i8 }`; indexing a txt yields a single byte
 		// (i8), just like indexing a str. Without this, `t[0]` on a txt-typed

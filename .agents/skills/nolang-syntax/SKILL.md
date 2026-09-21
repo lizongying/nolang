@@ -1032,6 +1032,22 @@ val: {
 
 **nil vs err:** use `nil` when the absence is a normal/expected outcome (empty stack, key not found, EOF); use `err('msg')` when the absence represents an actual error condition (I/O failure, invalid input, connection refused).
 
+**Unwrapping an owned payload gives you a DEEP COPY, not a view.** `x = opt` does not transfer ownership (the same option can be unwrapped again later), so the value you get owns its own heap memory:
+
+```no
+v = m.get('items')        ; ?[]str  — the map's slice is copied, not aliased
+v: {
+    ok -> {
+        v.push('z')       ; mutates the COPY
+    }
+}
+w = m.get('items')        ; the map's slice is untouched
+```
+
+The same holds for `?str`: the unwrapped string gets its own buffer via `str_clone`. Mutating the unwrapped value never writes through to the container it came from, and dropping it never frees the container's buffer.
+
+> For `?[]T` the copy is element-aware: `[]str` elements are cloned one by one, and nested slices (`[][]T`) recurse. A slice of structs whose fields own strings still shares those inner buffers — avoid relying on isolation at that depth.
+
 **Exception:** when a function needs to return multiple independent values (e.g. `(name str, value str, ok bool)`), the multi-return pattern is acceptable.
 
 #### Error Propagation with `?=` (錯誤上拋)
@@ -1344,6 +1360,60 @@ x: {
 ```
 
 > **Multi-line arm body rule**: When an arm body contains multiple statements, it must be enclosed in braces `-> { ... }`. Single-line body can be written directly after `->`. If a multi-line body does not use braces, the `it` binding for option match will not be inserted correctly, causing a compile error.
+
+> **`->` is a short-circuit pipeline — the same operator everywhere.** It is
+> left-associative and its meaning never depends on the surrounding context
+> (bare statement, match-arm body, or the right-hand side of an assignment all
+> lower identically).
+>
+> | node | effect on the pipeline state |
+> | --- | --- |
+> | side-effect call with no return (`print('A')`, `m.put(k, v)`) | runs; **does not change state** — execution continues to the next node |
+> | call returning `?T` (`might-fail()`) | runs; **overwrites state** — if it yields `nil`/`err`, every later node is **skipped** |
+> | trailing plain value | evaluated only while the state is still ok |
+>
+> Only a node that returns `?T` can put the pipeline into a failed state; a
+> `print` never can.
+>
+> ```no
+> // no fallible node -> everything runs
+> ok -> print('A') -> print('B')
+>
+> // might-fail() returns ?T -> on failure print('B') is skipped
+> ok -> print('A') -> might-fail(x) -> print('B')
+>
+> // same semantics on the right-hand side of an assignment
+> r = print('E') -> might-fail(x) -> 42
+> ```
+>
+> ⚠️ **Consequently a `->` inside a match-arm body continues that arm's
+> pipeline; arms are separated by NEWLINES, not by `->`.** This is the fix for
+> a long-standing silent trap:
+>
+> ```no
+> // ✅ both statements run — this is one arm whose body is a pipeline
+> ok -> print('A') -> print('B')
+>
+> // ✅ the guard chain works: `ok = true` runs when the guard holds
+> ok -> v.len() == 2 -> ok = true
+>
+> // ✅ equivalent, and clearer for anything longer than one link
+> ok -> {
+>     print('A')
+>     print('B')
+> }
+>
+> // ❌ WRONG if you meant "else": these are two arms only when written on
+> //    separate lines. On one line `pat -> A -> B` is ONE arm with a pipeline.
+> v: {
+>     ok -> print('hit')
+>     -> print('miss')   ; catch-all arm, on its own line
+> }
+> ```
+>
+> A pipeline is for **effects and gating**. To produce a VALUE, use a match with
+> arms on separate lines, or the ternary `cond ? a : b` — a trailing value node
+> is not the pipeline's result.
 
 > **Match semantics inside for-in**: `i <- (a..b]: { 1 -> ... 2 -> ... }` executes the match body once for each iteration variable `i` (`1 ->` is equivalent to `i == 1 ->`, etc.). This is syntactic sugar for executing one match per iteration.
 
@@ -2041,7 +2111,7 @@ view[0] = 99       // modifies data[1] too — shared memory
 ### Indexing
 
 ```no
-// Get char from string (character, not byte)
+// str[i] -> char (Unicode code point, NOT a byte)
 str[i]
 
 // Get element from arr, vec
@@ -2051,6 +2121,8 @@ vec[i]
 // Get value from map
 map[str]
 ```
+
+> `str[i]` returns `char`; `str[a..b]` returns a `str` view; `char` implicitly converts to `str`. See [Indexing & Slicing](#indexing--slicing).
 
 ### Safe Indexing (安全索引)
 
@@ -3303,10 +3375,10 @@ s = 'Hello' * 3
 ```no
 s = 'Hello World'
 
-// Index to get char (character, not byte)
-c = s[0]           // c = 'H' code point
+// Index -> char (Unicode code point, NOT a byte)
+c char = s[0]      // 'H' (code point)
 
-// Slice (view, shares underlying memory)
+// Slice (view, shares underlying memory) -> str
 sub = s[6..]       // 'World'
 sub = s[6..11]     // 'World'
 sub = s[0..5)      // 'Hello'
@@ -3315,6 +3387,18 @@ sub = s[0..5)      // 'Hello'
 n = s.len-bytes()  // byte length
 n = s.count()      // code point count (Unicode character count)
 ```
+
+**Types & implicit conversion.** `str[i]` yields `char`; `str[a..b]` yields `str` (a code-point view). A `char` **implicitly converts to `str`** (UTF-8 encoded), so you never need an explicit `char.to-str()`:
+
+```no
+s = 'héllo'
+a str = s[1]            // 'é'  -- char -> str (implicit)
+b str = s[0..1]         // 'hé' -- slice result is already str
+msg = 'first: ' - s[0]  // concat promotes char -> str
+ok = s[0] == 'h'        // comparison promotes char -> str
+```
+
+> Slice bounds are **code points** (the same index space as `s[i]`), not bytes. Use `s.slice-bytes(start, end)` when you need byte offsets.
 
 ### String Methods
 

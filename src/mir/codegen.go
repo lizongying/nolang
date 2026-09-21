@@ -1061,6 +1061,131 @@ func (c *codegen) optPayloadAddr(optSlot, readLT string) string {
 // element as lowered to LLVM, `readLT` is the type the CALLER wants to read out
 // of the slot. They differ for the err-message type pun (readLT = %str-long out
 // of an option declared `?i64`, say).
+// vecCloneMaxDepth bounds the recursion in vecDeepClone for a slice of slices.
+// The element's own element type is only knowable one level at a time, so a
+// self-referential type would otherwise recurse forever. Past the limit the
+// innermost level degrades to a plain memcpy of its backing store, which is
+// what the pre-existing code did anyway.
+const vecCloneMaxDepth = 4
+
+// optSliceElemType returns the MIR type ID of the ELEMENT of the option's
+// declared slice element — `?[]str` -> `str`, `?[][]i64` -> `[]i64` — or NoType
+// when the option does not wrap a slice/array.
+func (c *codegen) optSliceElemType(v ValueID) TypeID {
+	val := c.mod.Value(v)
+	if val == nil {
+		return NoType
+	}
+	t := c.mod.Type(val.Type)
+	if t == nil || t.Kind != KindOption || t.Elem == NoType {
+		return NoType
+	}
+	inner := c.mod.Type(t.Elem)
+	if inner == nil || inner.Elem == NoType {
+		return NoType
+	}
+	return inner.Elem
+}
+
+// vecDeepClone emits (once per element type and depth) a helper that deep-copies
+// a %vec, and returns its @name. It returns "" when the element type is unknown,
+// in which case the caller keeps its old behaviour rather than emitting a call
+// to something half-typed.
+//
+// A %vec is type-erased ({i64 len, i64 cap, i64 data}), so `len * sizeof(elem)`
+// and "does an element own heap memory?" are both answerable only from the MIR
+// element type. That is what the helper is specialised on, and why it is one
+// function per element type rather than a single generic one.
+//
+// The copy is:
+//   - a fresh malloc of len*sizeof(elem) plus a memcpy of the backing store, so
+//     the destination never aliases the source's buffer; and
+//   - for element types that themselves own heap memory, a per-element fix-up
+//     of the freshly memcpy'd copy: @str_clone for a `str` element, a recursive
+//     call for a nested slice. Without it the copy's elements would still point
+//     at the source's per-element buffers and the same double free would happen
+//     one level down.
+//
+// cap is set to len: the copy holds exactly the elements it was given, and the
+// next push grows it.
+func (c *codegen) vecDeepClone(elemType TypeID, depth int) string {
+	t := c.mod.Type(elemType)
+	if t == nil {
+		return ""
+	}
+	elemLT := c.llvmTypeOf(t)
+	if elemLT == "" {
+		return ""
+	}
+	fn := fmt.Sprintf("__nolang_vec_clone_%d_%d", elemType, depth)
+	if c.extraFuncs[fn] {
+		return "@" + fn
+	}
+	c.extraFuncs[fn] = true
+
+	// What has to happen to each element AFTER the memcpy, decided once here.
+	// "" means the memcpy was the whole copy (scalars, POD structs).
+	perElem := ""
+	if depth < vecCloneMaxDepth {
+		switch {
+		case elemLT == "%str-long":
+			perElem = "str"
+		case elemLT == "%vec" && t.Elem != NoType:
+			if inner := c.vecDeepClone(t.Elem, depth+1); inner != "" {
+				perElem = "call:" + inner
+			}
+		}
+	}
+
+	b := &strings.Builder{}
+	fmt.Fprintf(b, "define %%vec @%s(%%vec %%v) {\n", fn)
+	b.WriteString("entry:\n")
+	b.WriteString("  %len = extractvalue %vec %v, 0\n")
+	b.WriteString("  %data = extractvalue %vec %v, 2\n")
+	// A slice that was never pushed to has data == 0; cloning it must not
+	// malloc(0) and must not hand back the source's (null) pointer.
+	b.WriteString("  %hasdata = icmp ne i64 %data, 0\n")
+	b.WriteString("  %nonempty = icmp ugt i64 %len, 0\n")
+	b.WriteString("  %do = and i1 %hasdata, %nonempty\n")
+	b.WriteString("  br i1 %do, label %cp, label %none\n")
+	b.WriteString("none:\n")
+	b.WriteString("  ret %vec { i64 0, i64 0, i64 0 }\n")
+	b.WriteString("cp:\n")
+	fmt.Fprintf(b, "  %%es = ptrtoint ptr getelementptr (%s, ptr null, i64 1) to i64\n", elemLT)
+	b.WriteString("  %bytes = mul i64 %len, %es\n")
+	b.WriteString("  %oldp = inttoptr i64 %data to i8*\n")
+	b.WriteString("  %newp = call i8* @malloc(i64 %bytes)\n")
+	b.WriteString("  call void @llvm.memcpy.p0.p0.i64(ptr %newp, ptr %oldp, i64 %bytes, i1 false)\n")
+	if perElem == "" {
+		b.WriteString("  br label %fin\n")
+	} else {
+		b.WriteString("  br label %lp\n")
+		b.WriteString("lp:\n")
+		b.WriteString("  %i = phi i64 [ 0, %cp ], [ %inext, %body ]\n")
+		b.WriteString("  %more = icmp ult i64 %i, %len\n")
+		b.WriteString("  br i1 %more, label %body, label %fin\n")
+		b.WriteString("body:\n")
+		fmt.Fprintf(b, "  %%ep = getelementptr inbounds %s, ptr %%newp, i64 %%i\n", elemLT)
+		fmt.Fprintf(b, "  %%ev = load %s, ptr %%ep\n", elemLT)
+		if perElem == "str" {
+			b.WriteString("  %cv = call %str-long @str_clone(%str-long %ev)\n")
+		} else {
+			fmt.Fprintf(b, "  %%cv = call %%vec %s(%%vec %%ev)\n", strings.TrimPrefix(perElem, "call:"))
+		}
+		fmt.Fprintf(b, "  store %s %%cv, ptr %%ep\n", elemLT)
+		b.WriteString("  %inext = add i64 %i, 1\n")
+		b.WriteString("  br label %lp\n")
+	}
+	b.WriteString("fin:\n")
+	b.WriteString("  %newi = ptrtoint i8* %newp to i64\n")
+	b.WriteString("  %r0 = insertvalue %vec undef, i64 %len, 0\n")
+	b.WriteString("  %r1 = insertvalue %vec %r0, i64 %len, 1\n")
+	b.WriteString("  %r2 = insertvalue %vec %r1, i64 %newi, 2\n")
+	b.WriteString("  ret %vec %r2\n}\n")
+	c.extraFuncsBody.WriteString(b.String())
+	return "@" + fn
+}
+
 func (c *codegen) optPayloadAddrAs(optSlot, declaredLT, readLT string) string {
 	slotAddr := c.optSlotAddr(optSlot)
 	if c.optionPayloadInline(readLT) {
@@ -2050,6 +2175,263 @@ entry:
   ret %str-long %s2
 }
 
+; ─────────────────────────────────────────────────────────────────────────────
+; UTF-8 code-point runtime for the code-point indexed string syntax.
+;
+; str[i] (read), str[a..b] and for c <- str are all defined in terms of
+; CODEPOINTS, not bytes — see docs/docs/lang/str.md. char is an i64 code
+; point. These four helpers are the single implementation of that contract;
+; std/str.no carries the equivalent nolang-level primitives (str.byte-index /
+; str.cp-index / str.decode-cp) for source-level use.
+;
+;   @nolang.utf8_off    cp index   -> byte offset   (clamped to len)
+;   @nolang.utf8_cp_at  cp index   -> code point    (-1 when out of range)
+;   @nolang.utf8_at     byte offset-> code point    (-1 when out of range)
+;   @nolang.utf8_width  code point -> 1..4 bytes
+;
+; The "is this byte a code point LEADER" test is b >= 0xC0, identical to
+; std/str.no's str.cp-index (b >= 0x80 && (b & 0xc0) == 0xc0), so the code
+; point COUNT reported by str.len() and the offsets produced here agree even on
+; malformed input (a stray continuation byte counts as one code point and
+; advances one byte in both).
+;
+; The two decoders clamp every continuation byte read to len-1: buffers are
+; malloc'd at exactly len bytes (no NUL terminator, see @str_from_const), so
+; sniffing b1..b3 past a truncated trailing sequence would read off the
+; allocation. Clamping keeps the read in-bounds and the garbage byte is masked
+; to 6 bits anyway.
+define internal i64 @nolang.utf8_width(i64 %cp) {
+entry:
+  %w2 = icmp uge i64 %cp, 128
+  %w3 = icmp uge i64 %cp, 2048
+  %w4 = icmp uge i64 %cp, 65536
+  %i2 = zext i1 %w2 to i64
+  %i3 = zext i1 %w3 to i64
+  %i4 = zext i1 %w4 to i64
+  %s1 = add i64 1, %i2
+  %s2 = add i64 %s1, %i3
+  %w = add i64 %s2, %i4
+  ret i64 %w
+}
+
+; @nolang.utf8_lead: width of the sequence starting with byte %b (1 for a
+; non-leader byte). Kept separate so utf8_off can advance without decoding.
+define internal i64 @nolang.utf8_lead(i8 %b) {
+entry:
+  %bu = zext i8 %b to i64
+  %w2 = icmp uge i64 %bu, 192
+  %w3 = icmp uge i64 %bu, 224
+  %w4 = icmp uge i64 %bu, 240
+  %i2 = zext i1 %w2 to i64
+  %i3 = zext i1 %w3 to i64
+  %i4 = zext i1 %w4 to i64
+  %s1 = add i64 1, %i2
+  %s2 = add i64 %s1, %i3
+  %w = add i64 %s2, %i4
+  ret i64 %w
+}
+
+define internal i64 @nolang.utf8_off(i8* %data, i64 %len, i64 %idx) {
+entry:
+  %neg = icmp slt i64 %idx, 0
+  br i1 %neg, label %out0, label %scan
+out0:
+  ret i64 0
+scan:
+  %off = phi i64 [ 0, %entry ], [ %noff, %adv ]
+  %k = phi i64 [ 0, %entry ], [ %nk, %adv ]
+  %hit = icmp sge i64 %k, %idx
+  br i1 %hit, label %done, label %cont
+cont:
+  %end = icmp sge i64 %off, %len
+  br i1 %end, label %done, label %adv
+adv:
+  %bp = getelementptr inbounds i8, i8* %data, i64 %off
+  %b = load i8, i8* %bp
+  %w = call i64 @nolang.utf8_lead(i8 %b)
+  %noff = add i64 %off, %w
+  %nk = add i64 %k, 1
+  br label %scan
+done:
+  ret i64 %off
+}
+
+; @nolang.utf8_dec: decode the sequence that STARTS at %off. Precondition:
+; 0 <= %off < %len (the two callers below establish it).
+define internal i64 @nolang.utf8_dec(i8* %data, i64 %len, i64 %off) {
+entry:
+  %last = sub i64 %len, 1
+  %p0 = getelementptr inbounds i8, i8* %data, i64 %off
+  %b0 = load i8, i8* %p0
+  %b0u = zext i8 %b0 to i64
+  %ascii = icmp ult i64 %b0u, 128
+  br i1 %ascii, label %one, label %multi
+one:
+  ret i64 %b0u
+multi:
+  %o1 = add i64 %off, 1
+  %c1 = icmp sle i64 %o1, %last
+  %o1c = select i1 %c1, i64 %o1, i64 %last
+  %p1 = getelementptr inbounds i8, i8* %data, i64 %o1c
+  %b1 = load i8, i8* %p1
+  %b1m = and i8 %b1, 63
+  %b1z = zext i8 %b1m to i64
+  %two_byte = icmp ult i64 %b0u, 224
+  br i1 %two_byte, label %w2, label %t3
+w2:
+  %lo2 = and i64 %b0u, 31
+  %sh2 = shl i64 %lo2, 6
+  %cp2 = or i64 %sh2, %b1z
+  ret i64 %cp2
+t3:
+  %o2 = add i64 %off, 2
+  %c2 = icmp sle i64 %o2, %last
+  %o2c = select i1 %c2, i64 %o2, i64 %last
+  %p2 = getelementptr inbounds i8, i8* %data, i64 %o2c
+  %b2 = load i8, i8* %p2
+  %b2m = and i8 %b2, 63
+  %b2z = zext i8 %b2m to i64
+  %three_byte = icmp ult i64 %b0u, 240
+  br i1 %three_byte, label %w3, label %w4
+w3:
+  %lo3 = and i64 %b0u, 15
+  %sh3a = shl i64 %lo3, 12
+  %sh3b = shl i64 %b1z, 6
+  %or3a = or i64 %sh3a, %sh3b
+  %cp3 = or i64 %or3a, %b2z
+  ret i64 %cp3
+w4:
+  %o3 = add i64 %off, 3
+  %c3 = icmp sle i64 %o3, %last
+  %o3c = select i1 %c3, i64 %o3, i64 %last
+  %p3 = getelementptr inbounds i8, i8* %data, i64 %o3c
+  %b3 = load i8, i8* %p3
+  %b3m = and i8 %b3, 63
+  %b3z = zext i8 %b3m to i64
+  %lo4 = and i64 %b0u, 7
+  %sh4a = shl i64 %lo4, 18
+  %sh4b = shl i64 %b1z, 12
+  %sh4c = shl i64 %b2z, 6
+  %or4a = or i64 %sh4a, %sh4b
+  %or4b = or i64 %or4a, %sh4c
+  %cp4 = or i64 %or4b, %b3z
+  ret i64 %cp4
+}
+
+; nolang.utf8_cp_at: the code point at CODE POINT index %idx (= s[i]).
+; -1 when %idx is negative or past the last code point.
+define internal i64 @nolang.utf8_cp_at(i8* %data, i64 %len, i64 %idx) {
+entry:
+  %neg = icmp slt i64 %idx, 0
+  br i1 %neg, label %err, label %ok
+ok:
+  %off = call i64 @nolang.utf8_off(i8* %data, i64 %len, i64 %idx)
+  %oob = icmp sge i64 %off, %len
+  br i1 %oob, label %err, label %dec
+dec:
+  %cp = call i64 @nolang.utf8_dec(i8* %data, i64 %len, i64 %off)
+  ret i64 %cp
+err:
+  ret i64 -1
+}
+
+; nolang.utf8_at: the code point that STARTS at byte offset %off. Used by the
+; for c <- str loop, which walks a byte cursor and advances by the decoded
+; width. -1 when %off is past the end.
+define internal i64 @nolang.utf8_at(i8* %data, i64 %len, i64 %off) {
+entry:
+  %neg = icmp slt i64 %off, 0
+  br i1 %neg, label %err, label %ok
+ok:
+  %oob = icmp sge i64 %off, %len
+  br i1 %oob, label %err, label %dec
+dec:
+  %cp = call i64 @nolang.utf8_dec(i8* %data, i64 %len, i64 %off)
+  ret i64 %cp
+err:
+  ret i64 -1
+}
+
+; str_from_cp: UTF-8 ENCODE an i64 code point into a fresh %str-long. This is
+; the char -> str implicit conversion (a str = s[0], f(str) with a char
+; argument). Distinct from @str_from_char, which takes an already-encoded
+; single BYTE (the byte -> str case used for []byte element rendering).
+define %str-long @str_from_cp(i64 %cp) {
+entry:
+  %buf = alloca [4 x i8]
+  %lt80 = icmp ult i64 %cp, 128
+  br i1 %lt80, label %w1, label %t2
+w1:
+  %c1 = trunc i64 %cp to i8
+  store i8 %c1, i8* %buf
+  br label %alloc
+t2:
+  %lt800 = icmp ult i64 %cp, 2048
+  br i1 %lt800, label %w2, label %t3
+w2:
+  %hi2 = lshr i64 %cp, 6
+  %hi2b = trunc i64 %hi2 to i8
+  %hi2c = or i8 %hi2b, -64
+  store i8 %hi2c, i8* %buf
+  %lo2 = trunc i64 %cp to i8
+  %lo2b = and i8 %lo2, 63
+  %lo2c = or i8 %lo2b, -128
+  %p2 = getelementptr i8, i8* %buf, i64 1
+  store i8 %lo2c, i8* %p2
+  br label %alloc
+t3:
+  %lt10000 = icmp ult i64 %cp, 65536
+  br i1 %lt10000, label %w3, label %w4
+w3:
+  %hi3 = lshr i64 %cp, 12
+  %hi3b = trunc i64 %hi3 to i8
+  %hi3c = or i8 %hi3b, -32
+  store i8 %hi3c, i8* %buf
+  %mid3 = lshr i64 %cp, 6
+  %mid3b = trunc i64 %mid3 to i8
+  %mid3c = and i8 %mid3b, 63
+  %mid3d = or i8 %mid3c, -128
+  %p3a = getelementptr i8, i8* %buf, i64 1
+  store i8 %mid3d, i8* %p3a
+  %lo3 = trunc i64 %cp to i8
+  %lo3b = and i8 %lo3, 63
+  %lo3c = or i8 %lo3b, -128
+  %p3b = getelementptr i8, i8* %buf, i64 2
+  store i8 %lo3c, i8* %p3b
+  br label %alloc
+w4:
+  %hi4 = lshr i64 %cp, 18
+  %hi4b = trunc i64 %hi4 to i8
+  %hi4c = or i8 %hi4b, -16
+  store i8 %hi4c, i8* %buf
+  %q2 = lshr i64 %cp, 12
+  %q2b = trunc i64 %q2 to i8
+  %q2c = and i8 %q2b, 63
+  %q2d = or i8 %q2c, -128
+  %p4a = getelementptr i8, i8* %buf, i64 1
+  store i8 %q2d, i8* %p4a
+  %q3 = lshr i64 %cp, 6
+  %q3b = trunc i64 %q3 to i8
+  %q3c = and i8 %q3b, 63
+  %q3d = or i8 %q3c, -128
+  %p4b = getelementptr i8, i8* %buf, i64 2
+  store i8 %q3d, i8* %p4b
+  %q4 = trunc i64 %cp to i8
+  %q4b = and i8 %q4, 63
+  %q4c = or i8 %q4b, -128
+  %p4c = getelementptr i8, i8* %buf, i64 3
+  store i8 %q4c, i8* %p4c
+  br label %alloc
+alloc:
+  %n = phi i64 [ 1, %w1 ], [ 2, %w2 ], [ 3, %w3 ], [ 4, %w4 ]
+  %nbuf = call i8* @malloc(i64 %n)
+  call void @llvm.memcpy.p0i8.p0i8.i64(i8* %nbuf, i8* %buf, i64 %n, i1 false)
+  %s0 = insertvalue %str-long { i64 0, i64 0, i8* null }, i64 %n, 0
+  %s1 = insertvalue %str-long %s0, i64 %n, 1
+  %s2 = insertvalue %str-long %s1, i8* %nbuf, 2
+  ret %str-long %s2
+}
+
 ; str_from_double: render a double as a freshly-allocated %str-long, mirroring
 ; print_double's %g convention (sign on integer part, trailing zeros trimmed).
 ; Used by emitCall's i64/double -> str auto-coercion when a double value is
@@ -2940,6 +3322,8 @@ func (c *codegen) emitInst(f *Function, inst *Inst, allocaFor func(ValueID) stri
 		return c.emitEnumField(inst)
 	case OpIndex:
 		return c.emitIndex(inst)
+	case OpUtf8At:
+		return c.emitUtf8At(inst)
 	case OpIndexStore:
 		return c.emitIndexStore(inst)
 	case OpGetField:
@@ -3158,11 +3542,16 @@ func (c *codegen) emitArith(f *Function, inst *Inst) error {
 			c.sb.WriteString(fmt.Sprintf("  store %s %%c%d, %s* %s\n", lt, inst.Dst, lt, slot))
 			return nil
 		}
+		// strFromScalar, not emitIntToStr: a `char` operand must be UTF-8
+		// ENCODED (so `'hi ' - s[0]` is "hi h"), while every other integer still
+		// renders as decimal text. Both are an i64 at the LLVM level, so only the
+		// value's source raw type can tell them apart — emitIntToStr rendered the
+		// code point, giving "hi 104" for a plain `'hi ' - s[0]`.
 		if aT != "%str-long" && isIntType(aT) {
-			aV = c.emitIntToStr(aV, aT)
+			aV = c.strFromScalar(inst.Args[0], aV, aT)
 		}
 		if bT != "%str-long" && isIntType(bT) {
-			bV = c.emitIntToStr(bV, bT)
+			bV = c.strFromScalar(inst.Args[1], bV, bT)
 		}
 		c.sb.WriteString(fmt.Sprintf("  %%c%d = call %s @str_concat(%s %s, %s %s)\n", inst.Dst, lt, lt, aV, lt, bV))
 		c.sb.WriteString(fmt.Sprintf("  store %s %%c%d, %s* %s\n", lt, inst.Dst, lt, slot))
@@ -3395,15 +3784,17 @@ func (c *codegen) emitCmp(inst *Inst) error {
 		}
 	}
 	// Mixed %str-long vs integer (char/byte/i64) comparison: nolang `char/byte
-	// == str` treats the integer as a single/decimal string, so promote it to
-	// %str-long and compare through @str_eq. A bare `icmp i8, %str-long` is
-	// illegal (opt rejects it). This is the test-path_char class of bug.
+	// == str` treats the integer as a string, so promote it to %str-long and
+	// compare through @str_eq. A bare `icmp i8, %str-long` is illegal (opt
+	// rejects it). This is the test-path_char class of bug. The promotion is
+	// SOURCE-type aware (see strFromScalar): a `char` becomes its UTF-8
+	// encoding (`'a'[0] == 'a'`), not the decimal text of its code point.
 	if aT == "%str-long" && isIntType(bT) {
-		bV = c.emitIntToStr(bV, bT)
+		bV = c.strFromScalar(inst.Args[1], bV, bT)
 		bT = "%str-long"
 	}
 	if bT == "%str-long" && isIntType(aT) {
-		aV = c.emitIntToStr(aV, aT)
+		aV = c.strFromScalar(inst.Args[0], aV, aT)
 		aT = "%str-long"
 	}
 	if aT == "%str-long" && bT == "%str-long" {
@@ -3542,12 +3933,16 @@ func (c *codegen) emitStrEq(inst *Inst) error {
 	// emitCmp uses, so the @str_eq call is type-correct and semantically right
 	// (char -> one-char string). `nil` against a str is already lowered to an
 	// empty %str-long by lowerNilLit, so this path only sees genuine integers.
+	//
+	// strFromScalar (not emitIntToStr) so a `char` becomes its UTF-8 encoding —
+	// `s[0] == 'h'` must compare "h" with "h", not "104" with "h". Same
+	// LLVM-type-vs-source-type distinction as emitArith's concat path.
 	if aT == "%str-long" && bT != "%str-long" && isIntType(bT) {
-		bV = c.emitIntToStr(bV, bT)
+		bV = c.strFromScalar(inst.Args[1], bV, bT)
 		bT = "%str-long"
 	}
 	if bT == "%str-long" && aT != "%str-long" && isIntType(aT) {
-		aV = c.emitIntToStr(aV, aT)
+		aV = c.strFromScalar(inst.Args[0], aV, aT)
 		aT = "%str-long"
 	}
 	c.sb.WriteString(fmt.Sprintf("  %%c%d = call i1 @str_eq(%s %s, %s %s)\n", inst.Dst, aT, aV, bT, bV))
@@ -3593,6 +3988,40 @@ func (c *codegen) emitIntToStr(v, t string) string {
 	av := c.coerceInt(v, t, "i64")
 	c.sb.WriteString(fmt.Sprintf("  %s = call %s @str_from_i64(i64 %s)\n", r, "%str-long", av))
 	return r
+}
+
+// rawTypeOfValue returns the source (MIR) type spelling of a value, or "" when
+// it cannot be resolved. Several conversions have to branch on `char` vs `i64`
+// even though BOTH are the LLVM i64 — the raw type is the only place the
+// distinction survives.
+func (c *codegen) rawTypeOfValue(v ValueID) string {
+	if ty := c.mirTypeOfValue(v); ty != nil {
+		return ty.Raw
+	}
+	return ""
+}
+
+// strFromScalar renders a scalar value as a %str-long, choosing the encoding
+// from the value's SOURCE type rather than its LLVM width:
+//
+//	char  -> UTF-8 encoding of the code point ("A" -> "A", U+4E2D -> 3 bytes).
+//	         This is the char -> str implicit conversion, e.g. `a str = s[0]`
+//	         or `s[0] == '日'`. Without it the i64 payload went through
+//	         @str_from_i64 and produced the DECIMAL TEXT of the code point
+//	         ("20320" for 中).
+//	byte/u8/i8 -> a single raw byte (already-encoded), via @str_from_char.
+//	anything else -> decimal text, via @str_from_i64.
+//
+// vT is the value's LLVM type; vID is used to look the source type up.
+func (c *codegen) strFromScalar(vID ValueID, v, vT string) string {
+	if c.rawTypeOfValue(vID) == "char" {
+		av := c.coerceInt(v, vT, "i64")
+		c.loadSeq++
+		r := fmt.Sprintf("%%ccp%d", c.loadSeq)
+		c.sb.WriteString(fmt.Sprintf("  %s = call %%str-long @str_from_cp(i64 %s)\n", r, av))
+		return r
+	}
+	return c.emitIntToStr(v, vT)
 }
 
 func (c *codegen) emitLogic(inst *Inst) error {
@@ -3855,6 +4284,22 @@ func (c *codegen) emitMove(inst *Inst) error {
 		c.fail("moving a borrowed %s parameter transfers ownership the callee does not hold (double-free risk); unsupported in MIR backend", dstT)
 		return fmt.Errorf("borrowed %s param move unsupported in MIR backend", dstT)
 	}
+	// char -> str implicit conversion: `a str = s[0]`. The source is an i64
+	// CODE POINT and the destination is a %str-long, so a bit-copy would write
+	// the code point's value into the {len, cap, data} header and hand back a
+	// garbage string. Encode instead (@str_from_cp uses UTF-8; a byte/u8/i8
+	// source keeps its single already-encoded byte). Without this branch the
+	// move emitted `store %str-long %lv, %str-long* %dst` with an i64 operand
+	// and opt-verify rejected the module.
+	if dstT == "%str-long" && isIntType(srcT) {
+		switch c.rawTypeOfValue(inst.Args[0]) {
+		case "char", "byte", "u8", "i8":
+			_, sv := c.loadVal(inst.Args[0])
+			conv := c.strFromScalar(inst.Args[0], sv, srcT)
+			c.sb.WriteString(fmt.Sprintf("  store %s %s, %s* %s\n", dstT, conv, dstT, dstSlot))
+			return nil
+		}
+	}
 	// Option-aware move. nolang `x ?t = y` wraps y into some(y) and `x = opt`
 	// peels the payload back out. Both directions go through the unified
 	// `%option = { i64 tag, [N x i64] slot }`: a plain
@@ -3927,6 +4372,34 @@ func (c *codegen) emitMove(inst *Inst) error {
 			c.sb.WriteString(fmt.Sprintf("  %s = call %%str-long @str_clone(%%str-long %s)\n", cl, u1))
 			c.sb.WriteString(fmt.Sprintf("  store %%str-long %s, %%str-long* %s\n", cl, dstSlot))
 			return nil
+		}
+		// Owned-slice payload: exactly the same hazard as the `?str` case
+		// above, one level down. A %vec is a 24-byte header {len,cap,data}, so
+		// a bitwise peel hands the destination a data pointer into the
+		// ORIGINAL backing store. The destination is owned, so its drop frees
+		// that store while the container the option came from (a map entry, a
+		// struct field) still points into it — and freeing it a second time is
+		// a `trace/BPT trap`.
+		//
+		//   m1 [str][]str ; m1.put('items', list1)
+		//   v = m1.get('items')      ; ?[]str
+		//   v: { ok -> { v.push('z') } }   ; or even just `v.len()`
+		//
+		// `?str` dodges this with @str_clone; `?[]T` had no equivalent because
+		// a %vec is type-erased and the element width is only recoverable from
+		// the MIR type. vecDeepClone is specialised on exactly that.
+		if payloadLT == "%vec" && dstT == "%vec" {
+			if fn := c.vecDeepClone(c.optSliceElemType(inst.Args[0]), 0); fn != "" {
+				addr := c.optPayloadTypedAddr(optSlot, payloadLT, "%vec")
+				c.loadSeq++
+				u1 := fmt.Sprintf("%%mvv%d", c.loadSeq)
+				c.sb.WriteString(fmt.Sprintf("  %s = load %%vec, %%vec* %s\n", u1, addr))
+				c.loadSeq++
+				cl := fmt.Sprintf("%%mvvc%d", c.loadSeq)
+				c.sb.WriteString(fmt.Sprintf("  %s = call %%vec %s(%%vec %s)\n", cl, fn, u1))
+				c.sb.WriteString(fmt.Sprintf("  store %%vec %s, %%vec* %s\n", cl, dstSlot))
+				return nil
+			}
 		}
 		// `err` arm: `it` is the err message `str` but the option's declared
 		// payload is the OK payload's type. The wrap side stores the message's
@@ -5192,6 +5665,57 @@ func (c *codegen) elemTypeOfReceiver(recv ValueID) string {
 	return "i8"
 }
 
+// mirTypeOfValue resolves a value's MIR type through the same two channels
+// c.ptype uses (the current function's LocalTypes table first, then the value's
+// own recorded Type). elemTypeOfReceiver only consults the latter, which is not
+// enough to decide whether a receiver is a `str`: LocalTypes is where the
+// declared type of a local lives, and a receiver whose Value.Type is the
+// element type of a container would otherwise be misclassified.
+func (c *codegen) mirTypeOfValue(v ValueID) *Type {
+	if v == NoVal {
+		return nil
+	}
+	if c.cf != NoFunc {
+		if f := c.mod.Func(c.cf); f != nil {
+			if t, ok := f.LocalTypes[v]; ok {
+				if ty := c.mod.Type(t); ty != nil {
+					return ty
+				}
+			}
+		}
+	}
+	if val := c.mod.Value(v); val != nil {
+		return c.mod.Type(val.Type)
+	}
+	return nil
+}
+
+// isStrReceiver reports whether v is a `str` (the code-point indexed string).
+// `txt` is deliberately NOT included: it is a fixed 256-byte buffer with no
+// heap header and its own std/byte-level contract (see docs/docs/lang/txt.md),
+// so `t[i]` stays a byte read.
+func (c *codegen) isStrReceiver(v ValueID) bool {
+	ty := c.mirTypeOfValue(v)
+	return ty != nil && ty.Raw == "str"
+}
+
+// strHeaderOf materializes the (data, len) pair of a `str` receiver: `len` is
+// the BYTE length (field 0 of %str-long), which is what @nolang.utf8_* expect.
+// Returns ("", "") when the receiver has no slot.
+func (c *codegen) strHeaderOf(v ValueID) (data, byteLen string) {
+	slot := c.valSlot[v]
+	if slot == "" {
+		return "", ""
+	}
+	rv := c.treg("srx")
+	c.sb.WriteString(fmt.Sprintf("  %s = load %%str-long, %%str-long* %s\n", rv, slot))
+	l := c.treg("srl")
+	c.sb.WriteString(fmt.Sprintf("  %s = extractvalue %%str-long %s, 0\n", l, rv))
+	d := c.treg("srd")
+	c.sb.WriteString(fmt.Sprintf("  %s = extractvalue %%str-long %s, 2\n", d, rv))
+	return d, l
+}
+
 // elemLTOfType is the type-driven half of elemTypeOfReceiver, split out so an
 // option can recurse into its own element (see the KindOption case).
 func (c *codegen) elemLTOfType(t *Type) string {
@@ -5234,6 +5758,20 @@ func (c *codegen) elemLTOfType(t *Type) string {
 
 func (c *codegen) emitIndex(inst *Inst) error {
 	arrT, _ := c.ptype(inst.Args[0])
+	// `str[i]` reads the i-th CODE POINT (docs/docs/lang/str.md), not the i-th
+	// byte. A str is {len(bytes), cap, i8* data}, so a byte load would hand back
+	// a UTF-8 fragment: `'héllo'[1]` returned 195 (0xC3, the lead byte of `é`)
+	// instead of 233 (U+00E9). Route str receivers through @nolang.utf8_cp_at,
+	// which walks whole sequences. Out-of-range reads yield -1 rather than
+	// reading past the malloc'd buffer (the old byte load produced garbage).
+	//
+	// `s[i] = v` (emitIndexStore) stays BYTE addressed on purpose: std builds
+	// strings byte by byte (`s[1] = 0x80 | …` in str.replace-char /
+	// char.to-str), and a code-point write would have to re-encode and possibly
+	// grow the string. See docs/docs/lang/str.md, "寫入仍為位元組級".
+	if c.isStrReceiver(inst.Args[0]) {
+		return c.emitStrCpIndex(inst)
+	}
 	elemT := c.elemTypeOfReceiver(inst.Args[0])
 	dstT, _ := c.ptype(inst.Dst)
 	arrSlot := c.valSlot[inst.Args[0]]
@@ -5278,6 +5816,70 @@ func (c *codegen) emitIndex(inst *Inst) error {
 		lv = cv
 	}
 	c.sb.WriteString(fmt.Sprintf("  store %s %s, %s* %s\n", dstT, lv, dstT, dstSlot))
+	return nil
+}
+
+// emitUtf8At lowers OpUtf8At: the code point that starts at the BYTE offset in
+// Args[1] of the str in Args[0]. The `for c <- s` lowering keeps a byte cursor
+// and advances it by the decoded code point's width, so this is the one O(1)
+// step of an O(n) traversal — unlike `s[i]`, which has to scan from the start
+// of the buffer to reach code point i.
+func (c *codegen) emitUtf8At(inst *Inst) error {
+	dstT, _ := c.ptype(inst.Dst)
+	dstSlot := c.valSlot[inst.Dst]
+	if dstSlot == "" {
+		c.fail("utf8-at result has no slot in func %d (dst=%d)", c.cf, inst.Dst)
+		return fmt.Errorf("utf8-at dst slot")
+	}
+	data, byteLen := c.strHeaderOf(inst.Args[0])
+	if data == "" {
+		c.fail("utf8-at receiver has no slot in func %d", c.cf)
+		return fmt.Errorf("utf8-at recv slot")
+	}
+	offT, offV := c.loadVal(inst.Args[1])
+	offV = c.coerceInt(offV, offT, "i64")
+	cp := c.treg("uac")
+	c.sb.WriteString(fmt.Sprintf("  %s = call i64 @nolang.utf8_at(i8* %s, i64 %s, i64 %s)\n", cp, data, byteLen, offV))
+	if cv := c.coerce("i64", cp, dstT); cv != "" {
+		cp = cv
+	}
+	c.sb.WriteString(fmt.Sprintf("  store %s %s, %s* %s\n", dstT, cp, dstT, dstSlot))
+	return nil
+}
+
+// emitStrCpIndex lowers the READ form `s[i]` on a str receiver: the code point
+// at CODE POINT index i, as an i64 (nolang `char`). -1 for an out-of-range
+// index. The receiver's index operand is already i64 (coerceIndex has run at
+// every call site, and the lowerer types the index slot i64), so the value is
+// passed straight through.
+//
+// Cost: O(i) — the helper scans forward from the start of the buffer. For a
+// string proven ASCII that scan is one byte per code point; for a multi-byte
+// string it is one sequence per code point. `for c <- s` (OpUtf8At over a byte
+// cursor) is the O(n) traversal and should be preferred inside loops — the same
+// guidance docs/docs/lang/str.md gives, and what `no vet` warns about.
+func (c *codegen) emitStrCpIndex(inst *Inst) error {
+	dstT, _ := c.ptype(inst.Dst)
+	dstSlot := c.valSlot[inst.Dst]
+	if dstSlot == "" {
+		dt, _ := c.ptype(inst.Dst)
+		c.fail("str index result has no slot in func %s (dst=%d type=%s)", c.fname[c.cf], inst.Dst, dt)
+		return fmt.Errorf("str index dst slot (dst=%d type=%s)", inst.Dst, dt)
+	}
+	data, byteLen := c.strHeaderOf(inst.Args[0])
+	if data == "" {
+		c.fail("str index receiver has no slot in func %d", c.cf)
+		return fmt.Errorf("str index recv slot")
+	}
+	_, idxV := c.loadVal(inst.Args[1])
+	idxVT, _ := c.ptype(inst.Args[1])
+	idxV = c.coerceIndex(inst.Args[1], idxVT, idxV)
+	cp := c.treg("scp")
+	c.sb.WriteString(fmt.Sprintf("  %s = call i64 @nolang.utf8_cp_at(i8* %s, i64 %s, i64 %s)\n", cp, data, byteLen, idxV))
+	if cv := c.coerce("i64", cp, dstT); cv != "" {
+		cp = cv
+	}
+	c.sb.WriteString(fmt.Sprintf("  store %s %s, %s* %s\n", dstT, cp, dstT, dstSlot))
 	return nil
 }
 
@@ -6361,6 +6963,43 @@ func (c *codegen) emitSliceOp(inst *Inst) error {
 		}
 	}
 
+	// `str[a..b]` selects CODE POINTS, like `str[i]` — see docs/docs/lang/str.md
+	// and std/str.no's str.slice (which is documented as "下標為「字符（碼點）位置」").
+	// The rest of this function is byte arithmetic (stride 1, `off = lo`), so both
+	// bounds are converted to BYTE OFFSETS here and the inclusive-upper-bound flag
+	// is consumed by the conversion rather than by the caller: the +1 belongs on
+	// the INDEX (`[a..b]` ends at the start of code point b+1), not on the byte
+	// length — `off(b) - off(a) + 1` would be one byte short for a multi-byte
+	// trailing character.
+	//
+	// After the conversion the value in loV/hiV is a byte offset, so `off = loV`
+	// and `bytes = |hiV - loV|` are already correct byte quantities and `rightInc`
+	// must NOT be applied a second time.
+	//
+	// Out-of-range bounds clamp to the byte length (that is precisely what
+	// @nolang.utf8_off does, and what str.slice does), so `s[1..999]` yields the
+	// tail and `s[9..]` on a short string yields ''.
+	//
+	// Known limit: a REVERSE str slice (`s[5..2]`, start > end) keeps working but
+	// its byte span is `|off(hi+inc) - off(lo)|`, i.e. exact only for single-byte
+	// characters. Reverse slicing is not part of the documented str surface
+	// (`str.slice` clamps start>=end to the empty string); it is supported for the
+	// array/vec case, where the conversion below does not run.
+	rightIncEff := inst.Int&SliceFlagRightInc != 0
+	if recvLT == "%str-long" {
+		if rightIncEff {
+			hiIdx := c.treg("sohx")
+			c.sb.WriteString(fmt.Sprintf("  %s = add i64 %s, 1\n", hiIdx, hiV))
+			hiV = hiIdx
+		}
+		loB := c.treg("sobc")
+		c.sb.WriteString(fmt.Sprintf("  %s = call i64 @nolang.utf8_off(i8* %s, i64 %s, i64 %s)\n", loB, srcPtr, rlen, loV))
+		hiB := c.treg("soec")
+		c.sb.WriteString(fmt.Sprintf("  %s = call i64 @nolang.utf8_off(i8* %s, i64 %s, i64 %s)\n", hiB, srcPtr, rlen, hiV))
+		loV, hiV = loB, hiB
+		rightIncEff = false
+	}
+
 	// rightInc: the SliceFlagRightInc bit of inst.Int means the upper bound is
 	// inclusive (']'). Test the BIT, not `inst.Int == 1`: SliceFlagView shares
 	// the same word, so a forward view slice carries 0b11 and an exact compare
@@ -6383,9 +7022,11 @@ func (c *codegen) emitSliceOp(inst *Inst) error {
 	absLen := c.treg("sonl")
 	c.sb.WriteString(fmt.Sprintf("  %s = select i1 %s, i64 %s, i64 %s\n", absLen, revCmp, revLen, fwdLen))
 
-	// Add 1 for inclusive upper bound (']')
+	// Add 1 for inclusive upper bound (']'). A str receiver has already folded
+	// the +1 into its index (see the code-point -> byte-offset conversion above
+	// the revCmp block), so rightIncEff is false there.
 	newLen := absLen
-	if inst.Int&SliceFlagRightInc != 0 {
+	if rightIncEff {
 		newLen = c.treg("sohi")
 		c.sb.WriteString(fmt.Sprintf("  %s = add i64 %s, 1\n", newLen, absLen))
 	}
@@ -8222,7 +8863,18 @@ func (c *codegen) emitCallBody(f *Function, cf *Function, inst *Inst, calleeName
 				// %str-long* %carg` has a type mismatch and opt-verify
 				// rejects the module (test-tls-prf-only.no,
 				// test-iout-autoconvert.no, ...).
-				if plt == "%str-long" && argT == "i64" {
+				if plt == "%str-long" && argT == "i64" && c.rawTypeOfValue(inst.Args[argIdx]) == "char" {
+					// char -> str: UTF-8 encode the code point (the char -> str
+					// implicit conversion). MUST precede the i64 branch below,
+					// which would render the code point as decimal text — a char
+					// is an i64 at the LLVM level, so its source type is the only
+					// thing that distinguishes the two.
+					c.loadSeq++
+					conv := fmt.Sprintf("%%cp%d", c.loadSeq)
+					c.sb.WriteString(fmt.Sprintf("  %s = call %%str-long @str_from_cp(i64 %s)\n", conv, av))
+					av = conv
+					argT = "%str-long"
+				} else if plt == "%str-long" && argT == "i64" {
 					c.loadSeq++
 					conv := fmt.Sprintf("%%ic%d", c.loadSeq)
 					c.sb.WriteString(fmt.Sprintf("  %s = call %%str-long @str_from_i64(i64 %s)\n", conv, av))
@@ -9271,6 +9923,24 @@ func (c *codegen) emitTerm(f *Function, t *Term) error {
 	case OpCondBr:
 		if len(t.Args) >= 1 && len(t.Targets) >= 2 {
 			vT, v := c.loadVal(t.Args[0])
+			// A `?T` used as a branch condition — the short-circuit pipeline's
+			// "did that node succeed?" test — means "the option HOLDS A VALUE",
+			// i.e. tag 0. That is a load of the tag, never a comparison of the
+			// option struct itself: an `%option` is a struct, so `icmp ne
+			// %option %v, 0` is not valid IR at all (opt-verify rejects it),
+			// which used to make any pipeline with a `?T` node in it fail to
+			// compile.
+			if isOptionType(vT) {
+				// loadVal hands back a LOADED struct here (not a slot pointer),
+				// so the tag comes from extractvalue rather than optLoadTag.
+				c.loadSeq++
+				tg := fmt.Sprintf("%%otg%d", c.loadSeq)
+				c.sb.WriteString(fmt.Sprintf("  %s = extractvalue %%option %s, 0\n", tg, v))
+				c.loadSeq++
+				nb := fmt.Sprintf("%%cb%d", c.loadSeq)
+				c.sb.WriteString(fmt.Sprintf("  %s = icmp eq i64 %s, 0\n", nb, tg))
+				vT, v = "i1", nb
+			}
 			// Nolang booleans ride on i64 (the HIR `bool` type), but LLVM `br`
 			// requires a strict i1. Coerce any non-i1 condition to i1 by testing
 			// non-zero: `&&`/`||` results arrive as i64, comparison results as

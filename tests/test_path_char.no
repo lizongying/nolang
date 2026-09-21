@@ -7,10 +7,19 @@ p = path {
 }
 print(p.p)
 
-dir = p.dir()
-print(dir)
+; ⚠️ path.dir() 是**原地修改 .p**（沒有回傳值），不是回傳目錄字串 ——
+; 原本寫成 `dir = p.dir()` 只會拿到空字串，而且 .p 已經被改成 '/usr/local'，
+; 導致下面 base() 印出 'local' 而不是 'bin'。用獨立的 path 物件各測一次。
+d = path {
+    p: '/usr/local/bin'
+}
+d.dir()
+print(d.p)
 
-base = p.base()
+b = path {
+    p: '/usr/local/bin'
+}
+base = b.base()
 print(base)
 
 ok = p.exists()

@@ -143,9 +143,60 @@ no build --option-inline-threshold=8   main.no   # 极小栈环境：option 只�
 为什么不能用一个统一规则：默认 slot（≥24）下 err 消息是内联的，它的前 8 字节 —— 字符串**长度** —— 就躺在 slot[0]，和一个箱子指针长得一模一样，所以 tag 必须参与判断；而 slot < 24 时 err 消息自己也装箱，此时把 tag 2 误判成「箱子是 824 字节的 `%sse_client`」就是一次越界读外加 `free()` 一个野指针（`malloc` 报 `pointer being freed was not allocated`），`tests/test-sse.no` 在阈值 8 下大约 12% 的复现率就是它。
 
 `optBoxClone` 的重装箱（`emitOptionBoxHelpers`）沿用同一套 tag 规则，并且**拷贝长度要按实际装箱的东西算**：`select(tag==0, sizeof(payloadLT), sizeof(%str-long))` —— 阈值 < 24 时一个 `?sse_client` 的 err 分支只装了 24 字节，按 824 字节 memcpy 就是堆越界读。
+
+### 4.3 剥壳 owned 载荷必须深拷（`?str` → `@str_clone`，`?[]T` → `vecDeepClone`）
+
+`x = opt`（Option 剥壳，`emitMove` 的 `!isOptionType(dstT) && isOptionType(srcT)` 分支）**不转移所有权**——同一个 `?str` 之后可能再被剥一次（`str.replace-n` 就这么做）。所以剥出来的值必须**自己拥有一份独立的堆内存**，否则「剥出来的副本」和「option 里的载荷」会各 drop 一次 → double free。
+
+- `payloadLT == "%str-long"` → `@str_clone`，副本拿到独立 buffer。
+- `payloadLT == "%vec"`（`?[]T`）→ `vecDeepClone`（见下）。
+
+**为什么 `%vec` 不能照抄 `@str_clone`**：`%vec = {i64 len, i64 cap, i64 data}` 是类型擦除的，`data` 只是个 i64。`len * sizeof(elem)` 和「元素自己是否还持有堆内存」两件事都只能从 MIR 的元素类型里问出来。所以 `vecDeepClone(elemType, depth)` 按**元素类型**特化出一份 helper（`@__nolang_vec_clone_<TypeID>_<depth>`，写进 `extraFuncsBody`，按需生成、去重）：
+
+```
+malloc(len * sizeof(elem)) + memcpy(整个 backing store)      ; 副本不再 alias 源 buffer
+per element（仅当元素自己持有堆内存时）:
+    elem == str      -> @str_clone，逐元素换掉 memcpy 进来的共享指针
+    elem == []T      -> 递归调用内层 helper（深度上限 vecCloneMaxDepth = 4）
+    elem == 标量/POD -> memcpy 就是全部，无需循环
+cap 设为 len（副本只装它拿到的元素，下次 push 再增长）
+```
+
+不做逐元素修好的话，副本的元素仍指向源的 buffer，同样的 double free 只是下沉了一层。
+
+**这个位置踩过的坑**（`tests/mem-safety/nested-container-clone.no`）：
+
+```
+m1 [str][]str ; m1.put('items', list1)
+v = m1.get('items')        ; ?[]str
+v: { ok -> { v.push('z') } }   ; 甚至只是 `v.len()`
+```
+
+`?[]T` 之前没有深拷，剥出来的副本直接 alias map 内部的 buffer；副本是 owned，区块结束 drop 时 `@vec_free` 把 map 的 buffer 释放掉，main 结尾 `m1`（hashmap 带 owned leaf）再 drop 一次 → `trace/BPT trap`。HEAD 上同样崩，与 `option-inline-threshold` 无关（8/16/24/64/512 每档都崩）。
+
+⚠️ 已知限制：`vecDeepClone` 只修 `%str-long` 元素和嵌套 `%vec` 元素。**元素是有 owned `str` 叶子的 struct 时仍然只做 memcpy**，共享会下沉一层 —— 真要收紧得把 `emitLeafFieldsClone` 也做成可复用的 helper。
+
 - `%txt` = `[255 x i8]`
 
 ---
+
+### 4.4 短路管道与 `?T` 闸控（`OpCondBr` 的 option 条件）
+
+语法层的 `->` 是**左结合的短路管道**，语义不随上下文变化（裸语句 / match 臂单行 body / 赋值右侧共用同一套 lowering）。HIR→MIR 把每个管道节点切成一个 block，节点后的 `cond-br` 决定是否进入下一个 block：
+
+- **无返回的副作用节点**（`print(...)`）：不产生新 state，节点后直接 `br`，没有 `cond-br`。
+- **返回 `?T` 的节点**：该值本身就是 `cond-br` 的条件。MIR 形如
+
+```
+block 2:  call dst=4:?i64 ...
+          TERM cond-br args=[4] targets=[5 6]
+block 5:  ; 下一个节点（state 仍 ok）
+block 6:  ; 短路目标
+```
+
+codegen 端（`emitTerm` 的 `OpCondBr`）必须把该条件**翻译成 tag 测试**：`%option` 是结构体，`icmp ne %option %v, 0` 根本不是合法 IR（opt-verify 直接拒），过去任何带 `?T` 节点的管道都编译失败。正确做法是先 `extractvalue %option %v, 0` 取 tag，再 `icmp eq i64 tag, 0`（只有 ok 才继续，nil/err 都短路）。
+
+> ⚠️ `loadVal` 在这里返回的是**已 load 的结构体值**，不是 slot 指针，所以取 tag 用 `extractvalue` 而不是 `optLoadTag`（后者要 `%option*`）。
 
 ## 5. 指令集（内存感知，已实现 `mir.go` Op 枚举）
 
@@ -304,6 +355,7 @@ MIR 专属运行时崩溃与 gap 的修复目录共 **#1–#86**，截至 2026-0
 - **#84**（json 运行期 SIGSEGV，原待修）：`test-json-parse-option.no` / `test-json-nested-match.no` 在本快照之后的编译器改动中已复测 rc=0（golden 已记 rc=0），`json.parse('')` 早返回路径不再崩溃。
 - **#85**（静默错误编译根因，原待修）：底层 lowering 已随 `lowerCall` 的三档 `resTyp` 回退 + `EmitCallMulti`（所有非 void 调用都填充 `inst.Results`）闭合；复测 `i.to-str()` 正确输出、`test-std-hash` 哈希全部正确。`Inst.Sym` 字段本就存在（mir.go），文档「需补 Sym」的子注已过时。
 - **5 处同形状空守卫体 bug**（`src/std/{regexp,x509,multipart×2,sse}.no`，2026-09-21）：内联 guard arm 体为空、本应在其内的语句落在 arm 外，已修复并 `make no` 重建，std `no vet` 零 ERROR。
+- **match 臂单行 body 里的 `->` 现在就是管道**（2026-09-21，parser `stmt.go`）：原先 `CTX_MATCH_ARM` 会掐断 standalone if-then，使得 `ok -> print('A') -> print('B')` 的第二个 `->` 被当成**新臂**（静默丢代码，`ok -> v.len() == 2 -> ok = true` 里的赋值永远不执行）。现在 `->` 语义唯一：臂由**换行**分隔，臂内的 `->` 是管道延续。配套修好 `OpCondBr` 对 `%option` 条件的处理（见 §4.4），带 `?T` 节点的管道不再编译失败。
 - **`test-x25519-fe-diag` 测试源漂移**（2026-09-21）：`fe-*` std 签名为输出在前，测试却把输出写在最后；`fe-frombytes(BYTES, OUT)` 把 10 个 i64 limb 写进 32 字节数组 ⇒ 越界 ⇒ abort trap。已把 8 处调用改为输出在前（对齐 `scratch-fe.no` 惯例），rc 1→0，`FEADD=21118`/`FESUB=1104` 与手算一致。
 
 ---

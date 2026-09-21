@@ -200,6 +200,10 @@ response.get-header = (name str) (val ?str) {
             #{index-out = 0}
             matched = 0
         }
+        ; ⚠️ `{ arms }` 是 if/else-if 短路群組：**只有第一個條件成立的臂會執行**
+        ; （見 docs/docs/lang/syntax.md「short-circuit if-else group」）。
+        ; 這裡原本寫了兩個連續的 `matched == 1 ->` 臂，第二個永遠不會執行，
+        ; 導致 get-header 永遠回傳 nil。改成巢狀：先比較，命中才取值。
         {
             matched == 1 -> {
                 j <- [0..name.len-bytes()): {
@@ -208,15 +212,14 @@ response.get-header = (name str) (val ?str) {
                         break
                     }
                 }
-            }
-
-            matched == 1 -> {
-                ; 用 slice 複製值到 val（slice 是 CallExpression，正確載入 str-long value）
-                #{index-out = 0}
-                vlen = .header-values[i].len-bytes()
-                #{index-out = 0}
-                val = .header-values[i].slice(0, vlen)
-                return
+                matched == 1 -> {
+                    ; 用 slice 複製值到 val（slice 是 CallExpression，正確載入 str-long value）
+                    #{index-out = 0}
+                    vlen = .header-values[i].len-bytes()
+                    #{index-out = 0}
+                    val = .header-values[i].slice(0, vlen)
+                    return
+                }
             }
         }
     }

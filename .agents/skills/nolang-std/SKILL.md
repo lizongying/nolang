@@ -168,7 +168,7 @@ Nolang type to LLVM mapping:
 
 - **Variable-length array `[]t`**: underlying `{ t*, i64 }` (data, len)
 - **Fixed-length array `[n]t`**: LLVM fixed-size array
-- **String `str`**: union type (short ≤127 bytes stored on stack / long stored on heap), supports `s[i]`, `s[i..j]`, `s + t`
+- **String `str`**: union type (short ≤127 bytes stored on stack / long stored on heap). `s[i]` returns `char` (a Unicode code point, NOT a byte); `s[a..b]` returns a `str` view with **code-point** bounds; a `char` implicitly converts to `str`; concat via `s - t` (or `s + t`)
 - **Enum/Union**: `option` tagged enum (`ok t` / `nil` / `err str`)
 - **Struct**: must be multi-line definition, fields without commas
 - **Map**: underlying linked-hash-map
@@ -247,6 +247,8 @@ c.to-bytes()       // Unicode → UTF-8 bytes (method)
 c.to-str()         // Unicode → string (UTF-8, method)
 ```
 
+> **`char` ↔ `str`:** `str[i]` returns `char`, and a `char` **implicitly converts to `str`** (UTF-8 encoded) — `a str = s[0]`, `'x' - s[0]`, and `s[0] == 'h'` all work without an explicit `char.to-str()`.
+
 #### str — String Operations
 
 ```no
@@ -304,6 +306,8 @@ fields = s.fields()           // Split into whitespace-delimited fields (method)
 parts = ss.join(sep)          // Join []str with separator (method)
 cp = s.at(idx)                // Get character at index (method)
 ```
+
+> **Indexing cost:** `s[i]` is **O(i)** — it scans forward over UTF-8 to the i-th code point (O(1) only when the compiler can prove the string is pure ASCII). For byte-wise access use the escape hatch `s.byte(i)`, which is always **O(1)**. `for c <- s` walks code points in a single **O(n)** pass — prefer it over `s[i]` inside a loop, which degrades to **O(n²)** (and triggers a `no vet` / LSP warning).
 
 #### number — Numeric Operations
 
@@ -2190,7 +2194,7 @@ sha512.sha512-block(s []u64, h0 u64, h1 u64, h2 u64, h3 u64, h4 u64, h5 u64, h6 
 #### crypto/crc-32 — CRC32 Checksum
 
 ```no
-crc-32.crc-32(s []byte, n, crc)
+crc-32.new(s []byte, n, crc)
 ```
 
 #### crypto/fnv-1a-32 — FNV-1a Non-cryptographic Hash
@@ -2297,7 +2301,7 @@ out = pbkdf2.pbkdf2-hmac-sha1(password []byte, salt []byte, iterations i64, key-
 #### crypto/argon2 — Argon2 Memory-hard Key Derivation
 
 ```no
-argon2.argon2id(password []byte, pw-n i64, salt []byte, salt-n i64, time i64, memory i64, parallel i64, out []byte, out-n i64)
+argon2.id(password []byte, pw-n i64, salt []byte, salt-n i64, time i64, memory i64, parallel i64, out []byte, out-n i64)
 ```
 
 #### crypto/scrypt — scrypt Key Derivation
@@ -2338,24 +2342,24 @@ hex = sha3.sha3-512-hex(data)               // SHA3-512 hex string
 #### crypto/blake2 — BLAKE2 Hash
 
 ```no
-hash = blake2.blake2b(data []byte) (hash [64]byte)
-hash = blake2.blake2b-256(data []byte) (hash [32]byte)
-hex = blake2.blake2b-hex(data []byte) (hex str)
-hash = blake2.blake2s(data []byte) (hash [32]byte)
-hex = blake2.blake2s-hex(data []byte) (hex str)```
+hash = blake2.b(data []byte) (hash [64]byte)
+hash = blake2.b-256(data []byte) (hash [32]byte)
+hex = blake2.b-hex(data []byte) (hex str)
+hash = blake2.s(data []byte) (hash [32]byte)
+hex = blake2.s-hex(data []byte) (hex str)```
 
 #### crypto/crc-16 — CRC16 Checksum
 
 ```no
-crc = crc-16.crc-16(data []byte, n i64) (crc i64)
-hex = crc-16.crc-16-hex(data []byte, n i64) (hex str)    // CRC16 hex string
+crc = crc-16.new(data []byte, n i64) (crc i64)
+hex = crc-16.hex(data []byte, n i64) (hex str)    // CRC16 hex string
 ```
 
 #### crypto/crc-64 — CRC64 Checksum
 
 ```no
-crc = crc-64.crc-64(data []byte, n i64) (crc i64)
-hex = crc-64.crc-64-hex(data []byte, n i64) (hex str)    // CRC64 hex string
+crc = crc-64.new(data []byte, n i64) (crc i64)
+hex = crc-64.hex(data []byte, n i64) (hex str)    // CRC64 hex string
 ```
 
 #### crypto/fnv — FNV-1 Hash

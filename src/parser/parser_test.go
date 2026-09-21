@@ -321,20 +321,32 @@ func TestRangeNotSliceLiteral(t *testing.T) {
 func TestUnboundedRangeParsing(t *testing.T) {
 	cases := []string{
 		// 無上限
-		`x = n: { [5..) -> 1 -> 0 }`,
-		`x = n: { [5..] -> 1 -> 0 }`,
-		`x = n: { (5..) -> 1 -> 0 }`,
-		`x = n: { (5..] -> 1 -> 0 }`,
+		`x = n: { [5..) -> 1
+-> 0 }`,
+		`x = n: { [5..] -> 1
+-> 0 }`,
+		`x = n: { (5..) -> 1
+-> 0 }`,
+		`x = n: { (5..] -> 1
+-> 0 }`,
 		// 無下限
-		`x = n: { [..5] -> 1 -> 0 }`,
-		`x = n: { [..5) -> 1 -> 0 }`,
-		`x = n: { (..5] -> 1 -> 0 }`,
-		`x = n: { (..5) -> 1 -> 0 }`,
+		`x = n: { [..5] -> 1
+-> 0 }`,
+		`x = n: { [..5) -> 1
+-> 0 }`,
+		`x = n: { (..5] -> 1
+-> 0 }`,
+		`x = n: { (..5) -> 1
+-> 0 }`,
 		// 完全無界
-		`x = n: { [..] -> 1 -> 0 }`,
-		`x = n: { [..) -> 1 -> 0 }`,
-		`x = n: { (..] -> 1 -> 0 }`,
-		`x = n: { (..) -> 1 -> 0 }`,
+		`x = n: { [..] -> 1
+-> 0 }`,
+		`x = n: { [..) -> 1
+-> 0 }`,
+		`x = n: { (..] -> 1
+-> 0 }`,
+		`x = n: { (..) -> 1
+-> 0 }`,
 	}
 	for i, src := range cases {
 		t.Run(fmt.Sprintf("case_%d", i), func(t *testing.T) {
@@ -355,7 +367,8 @@ func TestUnboundedRangeParsing(t *testing.T) {
 func TestUnboundedRangeDesugar(t *testing.T) {
 	t.Run("no_upper_bound_left_inclusive", func(t *testing.T) {
 		// [5..) → it >= 5
-		src := `x = n: { [5..) -> 1 -> 0 }`
+		src := `x = n: { [5..) -> 1
+-> 0 }`
 		l := lexer.New(src)
 		p := New(l)
 		prog := p.ParseProgram()
@@ -381,7 +394,8 @@ func TestUnboundedRangeDesugar(t *testing.T) {
 
 	t.Run("no_upper_bound_left_exclusive", func(t *testing.T) {
 		// (5..) → it > 5
-		src := `x = n: { (5..) -> 1 -> 0 }`
+		src := `x = n: { (5..) -> 1
+-> 0 }`
 		l := lexer.New(src)
 		p := New(l)
 		prog := p.ParseProgram()
@@ -407,7 +421,8 @@ func TestUnboundedRangeDesugar(t *testing.T) {
 
 	t.Run("no_lower_bound_right_inclusive", func(t *testing.T) {
 		// [..5] → it <= 5
-		src := `x = n: { [..5] -> 1 -> 0 }`
+		src := `x = n: { [..5] -> 1
+-> 0 }`
 		l := lexer.New(src)
 		p := New(l)
 		prog := p.ParseProgram()
@@ -433,7 +448,8 @@ func TestUnboundedRangeDesugar(t *testing.T) {
 
 	t.Run("no_lower_bound_right_exclusive", func(t *testing.T) {
 		// [..5) → it < 5
-		src := `x = n: { [..5) -> 1 -> 0 }`
+		src := `x = n: { [..5) -> 1
+-> 0 }`
 		l := lexer.New(src)
 		p := New(l)
 		prog := p.ParseProgram()
@@ -464,7 +480,8 @@ func TestUnboundedRangeDesugar(t *testing.T) {
 		// (..] → true (1)
 		forms := []string{`[..]`, `(..)`, `[..)`, `(..]`}
 		for _, form := range forms {
-			src := fmt.Sprintf(`x = n: { %s -> 1 -> 0 }`, form)
+			src := fmt.Sprintf(`x = n: { %s -> 1
+-> 0 }`, form)
 			l := lexer.New(src)
 			p := New(l)
 			prog := p.ParseProgram()
