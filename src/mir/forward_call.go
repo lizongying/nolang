@@ -60,10 +60,10 @@ const (
 	cArgBufPtr
 	// cArgFixed is a literal supplied by the spec (buffer sizes, option flags).
 	cArgFixed
-// cArgNull is an explicit NULL pointer argument.
-cArgNull
-// cArgI64ToPtr converts an i64 value to i8* via inttoptr (e.g. dir handles).
-cArgI64ToPtr
+	// cArgNull is an explicit NULL pointer argument.
+	cArgNull
+	// cArgI64ToPtr converts an i64 value to i8* via inttoptr (e.g. dir handles).
+	cArgI64ToPtr
 )
 
 // KeepAlive marks a cArgCStr buffer that the C function rewrites in place
@@ -333,9 +333,9 @@ var forwardCSpecs = map[string]cCallSpec{
 		Func: "utimensat",
 		Args: []cArgSpec{
 			{Kind: cArgFixed, Fixed: "-2", LLVM: "i32"}, // AT_FDCWD
-			{Kind: cArgCStr, From: 0},                    // path
-			{Kind: cArgNull},                              // NULL (times = now)
-			{Kind: cArgFixed, Fixed: "0", LLVM: "i32"},   // flags
+			{Kind: cArgCStr, From: 0},                   // path
+			{Kind: cArgNull},                            // NULL (times = now)
+			{Kind: cArgFixed, Fixed: "0", LLVM: "i32"},  // flags
 		},
 		Ret: cRetSpec{Kind: cRetBool, LLVM: "i32"},
 	},
@@ -628,8 +628,8 @@ func (c *codegen) emitCCall(inst *Inst, spec *cCallSpec) error {
 	return nil
 }
 
-// storeOptionFromPair stores a (value, okFlag) pair into a `?T` result as the
-// flat `%option { tag, data }`: tag 0 (ok/some) when the flag is set, tag 1
+// storeOptionFromPair stores a (value, okFlag) pair into a `?T` result as
+// `%option { tag, [3 x i64] slot }`: tag 0 (ok/some) when the flag is set, tag 1
 // (nil/none) otherwise; data is the value. This mirrors legacy's
 // generateOptionAssign for option-returning builtins.
 func (c *codegen) storeOptionFromPair(inst *Inst, val, okFlag string) error {
@@ -640,9 +640,9 @@ func (c *codegen) storeOptionFromPair(inst *Inst, val, okFlag string) error {
 		c.sb.WriteString(fmt.Sprintf("  %s = select i1 true, i64 0, i64 1\n", tag))
 	}
 	w1 := c.treg("optw")
-	c.sb.WriteString(fmt.Sprintf("  %s = insertvalue %%option { i64 0, i64 0 }, i64 %s, 0\n", w1, tag))
+	c.sb.WriteString(fmt.Sprintf("  %s = insertvalue %%option { i64 0, %s zeroinitializer }, i64 %s, 0\n", w1, c.optSlotLT, tag))
 	w2 := c.treg("optw")
-	c.sb.WriteString(fmt.Sprintf("  %s = insertvalue %%option %s, i64 %s, 1\n", w2, w1, val))
+	c.sb.WriteString(fmt.Sprintf("  %s = insertvalue %%option %s, i64 %s, 1, 0\n", w2, w1, val))
 	return c.storeResult(inst, 0, w2, "%option")
 }
 
@@ -689,8 +689,8 @@ func cArgLLVMType(a cArgSpec) string {
 		return "i32"
 	case cArgDouble:
 		return "double"
-case cArgCStr, cArgRawPtr, cArgBufPtr, cArgNull, cArgI64ToPtr:
-	return "i8*"
+	case cArgCStr, cArgRawPtr, cArgBufPtr, cArgNull, cArgI64ToPtr:
+		return "i8*"
 	case cArgFixed:
 		if a.LLVM != "" {
 			return a.LLVM

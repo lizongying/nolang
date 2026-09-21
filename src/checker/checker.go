@@ -290,6 +290,13 @@ func inferExprType(expr parser.Expression, varTypes map[string]string, funcTypes
 				} else if t, exists := varTypes[recv.Value]; exists {
 					typeName = t
 				}
+			} else if rt := inferExprType(e.Receiver, varTypes, funcTypes, selfType); rt != "" {
+				// 巢狀路徑：`p.nodes[i].str-val` 的 Receiver 是 IndexExpression，
+				// 不是純識別符。遞迴推斷它的型別（[4]json-value 的元素 → json-value），
+				// 才能查到 `str-val` 這個欄位。沒有這一步，任何「陣列元素再取欄位」
+				// 的路徑都推不出型別，唯讀容器欄位檢查（checkReadOnlyLenAssign）
+				// 在巢狀路徑上就永遠不會生效。
+				typeName = rt
 			}
 			if typeName != "" {
 				// Unwrap optional `?T` to its inner struct type so field access
@@ -327,11 +334,22 @@ func inferExprType(expr parser.Expression, varTypes map[string]string, funcTypes
 	case *parser.IndexExpression:
 		// Array/slice element access: str 下标返回 char（2026-09-06）。
 		if e.Left != nil {
-			if lt := inferExprType(e.Left, varTypes, funcTypes, selfType); lt == "str" {
+			lt := inferExprType(e.Left, varTypes, funcTypes, selfType)
+			if lt == "str" {
 				return "char"
 			}
+			// 陣列 / 切片元素型別：`[4]json-value` → `json-value`、`[]i64` → `i64`、
+			// `[2][3]i64` → `[3]i64`（只剝最外層）。
+			// 之前這裡一律回傳 ""，所以 `p.nodes[i].str-val` 這種「陣列元素再取欄位」
+			// 的巢狀路徑完全推不出型別，任何依賴推斷的檢查（唯讀容器欄位寫入等）
+			// 在巢狀路徑上都無從下手。
+			if strings.HasPrefix(lt, "[") {
+				if elem := extractArrayElemType(lt); elem != "" {
+					return elem
+				}
+			}
 		}
-		// 其他下标（数组/切片）无法在此可靠推断元素类型
+		// 其他下标无法在此可靠推断元素类型
 		return ""
 	case *parser.SliceExpression:
 		// Slicing [N]T returns []T; slicing str returns str
@@ -5914,6 +5932,58 @@ func optionTypesCompatible(inferred, existing string) bool {
 	return false
 }
 
+// isContainerLenOwner reports whether a value of type t owns a read-only `len`
+// (and `cap` / `len-bytes`) field that must never be written directly: strings,
+// arrays, slices and vec. Everything else — including a user struct that happens
+// to declare a real `len` field (e.g. `bag { items []i64; len i64 }`) or the
+// builtin `txt` — is a normal assignable field and must stay legal.
+func isContainerLenOwner(t string) bool {
+	switch {
+	case t == "str":
+		return true
+	case strings.HasPrefix(t, "["):
+		return true
+	case t == "vec" || t == "%vec":
+		return true
+	}
+	return false
+}
+
+// checkReadOnlyLenAssign rejects writing the read-only length field of a
+// container (`x.len = n`, `x.cap = n`, `x.len-bytes = n`).
+//
+// The transpiler has an equivalent guard, but it only fires when the write
+// target is a bare identifier that happens to be a tracked container variable,
+// so nested paths slipped through and were miscompiled into a null-pointer
+// store (see the call site in validateStmtTypes). This version infers the
+// receiver's TYPE instead, which is what makes nested paths reachable — and
+// which also keeps user structs with a real `len` field working.
+func checkReadOnlyLenAssign(a *parser.AssignExpression, varTypes, funcTypes map[string]string, selfType string) *ValidateResult {
+	if a == nil || a.Left == nil {
+		return nil
+	}
+	dot, ok := a.Left.(*parser.DotExpression)
+	if !ok {
+		return nil
+	}
+	switch dot.Property {
+	case "len", "cap", "len-bytes":
+	default:
+		return nil
+	}
+	rt := inferExprType(dot.Receiver, varTypes, funcTypes, selfType)
+	if !isContainerLenOwner(rt) {
+		return nil
+	}
+	pos := a.Left.Pos()
+	return &ValidateResult{
+		TraceID: "rdonlylen",
+		Line:    pos.Line,
+		Column:  pos.Column,
+		Message: fmt.Sprintf("cannot modify read-only field '%s' of %s; the length is derived from the buffer — use truncate(n) instead", dot.Property, rt),
+	}
+}
+
 func validateStmtTypes(stmt parser.Statement, funcNames map[string]bool, funcTypes map[string]string, selfType string, varTypes map[string]string, isBlockValue bool, sem *parser.SemanticContext, overflowMode string) []ValidateResult {
 	var results []ValidateResult
 
@@ -6060,6 +6130,16 @@ func validateStmtTypes(stmt parser.Statement, funcNames map[string]bool, funcTyp
 			}
 			// 型別推斷
 			inferredType := inferExprType(s.Value, varTypes, funcTypes, selfType)
+			// `err` 是變體標記，不是真型別：match 的 `err ->` 臂會為隱式綁定 `it`
+			// 合成一條 `let it t=err`。而 err 載荷**永遠是 str**
+			// （`option { ok(v t), nil, err(e str) }`，且統一佈局後標量 option
+			// 也真的存得下整條訊息），所以 err 臂的 `it` 就是一個字串值。
+			// 把它正規化成 "str"，否則 `msg = it` 會誤報
+			// 「cannot assign err value to str variable」(trace 15w45dqk)，
+			// 而且首次指派時變數會被推斷成根本不存在的型別 "err"。
+			if inferredType == "err" {
+				inferredType = "str"
+			}
 			// 有符號整數相減溢位：未標註 #{overflow} 時預設回傳 option<int>
 			// （溢出 err，永不 panic）；標註 wrap/clamp0 時回傳 int。
 			// i128 因 %option 無法容納，維持回傳 i128（codegen 退化為回繞）。
@@ -6237,6 +6317,18 @@ func validateStmtTypes(stmt parser.Statement, funcNames map[string]bool, funcTyp
 			break
 		}
 		if assign, ok := s.Expression.(*parser.AssignExpression); ok {
+			// 唯讀容器欄位寫入：`X.len = n` / `X.cap = n` / `X.len-bytes = n`。
+			// transpiler 那層的檢查（validateExprArrayBounds）只在 X 是**純識別符**、
+			// 且該名字剛好出現在 arraySizes / sliceSizes / stringSizes 裡才生效
+			// （那三張表是掃宣告建出來的，只收變數、不收結構體欄位）。所以巢狀路徑
+			// `p.nodes[i].str-val.len = 1` 會被放行：len 被原地改寫但 data 仍是 null，
+			// 下一個 `str-val[0] = 97` 對 null 做 GEP + store → SIGSEGV
+			// （tests/test-chain-copy.no 原本就死在這裡）。
+			//
+			// 這裡改用型別推斷補上這個洞：Receiver 推出來**真的是容器**才擋，
+			// 一般結構體欄位則放行 —— `bag { items []i64; len i64 }` 的
+			// `out.len = .len`、以及 `txt` 的 `dst.len = n` 都是合法指派，
+			// 「一律拒絕」會把它們打破。
 			if ident, ok := assign.Left.(*parser.Identifier); ok {
 				// 檢查是否對函式名稱賦值
 				if funcNames[ident.Value] {

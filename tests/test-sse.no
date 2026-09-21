@@ -43,16 +43,19 @@
 client = sse-connect('http://127.0.0.1:3000/events')
 client: {
     nil -> print('fail: connect')
+
     -> print('ok: connect')
 }
 
 ; 測試 2: is-connected
 client: {
     nil -> return
+
     -> {
         yes = client.is-connected()
         {
             yes -> print('ok: is-connected')
+
             -> print('fail: is-connected')
         }
     }
@@ -61,6 +64,9 @@ client: {
 ; 測試 3: next-event（讀取 3 個事件）
 client: {
     nil -> return
+
+    err -> print('err')
+
     -> {
         c = it
         count = 0
@@ -71,10 +77,12 @@ client: {
                     print('connection closed')
                     *
                 }
+
                 err -> {
                     print('error')
                     *
                 }
+
                 -> {
                     print('event: ' - ev.event)
                     print('data: ' - ev.data)
@@ -84,7 +92,7 @@ client: {
                         print('retry: ' - r)
                     }
                     print('---')
-                    #{overflow = wrap}
+                    #{overflow=wrap}
                     count = count + 1
                     count >= 3 -> *
                 }
@@ -96,11 +104,13 @@ client: {
 ; 測試 4: close
 client: {
     nil -> return
+
     -> {
         client.close()
         yes = client.is-connected()
         {
             yes -> print('fail: close')
+
             -> print('ok: close')
         }
     }
@@ -110,6 +120,7 @@ client: {
 https-client = sse-connect('https://example.com/events')
 https-client: {
     nil -> print('skip: HTTPS SSE (expected without live server)')
+
     -> {
         print('ok: HTTPS connect')
         https-client.close()
@@ -120,6 +131,8 @@ https-client: {
 bad = sse-connect('ftp://invalid')
 bad: {
     nil -> print('fail: expected err for invalid URL')
+
     err -> print('ok: invalid URL rejected')
+
     -> print('fail: expected err for invalid URL')
 }

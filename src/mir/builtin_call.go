@@ -355,7 +355,7 @@ func (c *codegen) dataPtrOf(v ValueID) string {
 	// PAYLOAD, and a `{tag, payload}` struct has no data field of its own.
 	if strings.HasPrefix(lt, "%option") {
 		_, sv := c.loadVal(v)
-		pv, pt := c.optionPayloadOf(sv, lt)
+		pv, pt := c.optionPayloadOf(v, sv, lt)
 		switch pt {
 		case "%str-long":
 			r := c.treg("dpl")
@@ -431,7 +431,7 @@ func (c *codegen) cstrOf(v ValueID) string {
 	// connect" outcome as a bad host string.
 	if strings.HasPrefix(lt, "%option") {
 		_, sv := c.loadVal(v)
-		pv, pt := c.optionPayloadOf(sv, lt)
+		pv, pt := c.optionPayloadOf(v, sv, lt)
 		if pt == "%str-long" || pt == "%vec" {
 			r := c.treg("cs")
 			c.sb.WriteString(fmt.Sprintf("  %s = call i8* @str_cstr(%s %s)\n", r, pt, pv))
@@ -659,7 +659,7 @@ func (c *codegen) emitBuiltinConv(f *Function, inst *Inst, bm *builtin.BuiltinMe
 	// An option flowing into a scalar conversion carries the value in its
 	// payload field (the nil/err arms have already returned at this point), so
 	// peel it before coercing. See peelOptionValue.
-	if pt, pv := c.peelOptionValue(srcTy, srcVal); pv != "" {
+	if pt, pv := c.peelOptionValue(inst.Args[0]); pv != "" {
 		srcTy, srcVal = pt, pv
 	}
 	if inst.Dst <= NoVal {
@@ -1433,18 +1433,16 @@ func (c *codegen) emitBuiltinStrToBool(inst *Inst) error {
 	// payload: 1 for "true", 0 otherwise (ok(false)/nil/err all use 0).
 	payload := c.treg("stbp")
 	c.sb.WriteString(fmt.Sprintf("  %s = select i1 %s, i64 1, i64 0\n", payload, eqTrue))
+	// Unified `%option = { i64 tag, [3 x i64] slot }`: write the discriminant
+	// (a runtime value here, hence insertvalue on a zeroed literal rather than
+	// the constant-tag optStoreTag) and then the i64 payload into slot[0].
 	optStore := func(lt string) {
 		s0 := c.treg("stbs0")
-		if lt == "%option" {
-			c.sb.WriteString(fmt.Sprintf("  %s = insertvalue %%option { i64 0, i64 0 }, i64 %s, 0\n", s0, tag))
-		} else {
-			c.sb.WriteString(fmt.Sprintf("  %s = insertvalue %s zeroinitializer, i64 %s, 0\n", s0, lt, tag))
-		}
-		s1 := c.treg("stbs1")
-		c.sb.WriteString(fmt.Sprintf("  %s = insertvalue %s %s, i64 %s, 1\n", s1, lt, s0, payload))
-		c.sb.WriteString(fmt.Sprintf("  store %s %s, %s* %s\n", lt, s1, lt, dstSlot))
+		c.sb.WriteString(fmt.Sprintf("  %s = insertvalue %%option { i64 0, %s zeroinitializer }, i64 %s, 0\n", s0, c.optSlotLT, tag))
+		c.sb.WriteString(fmt.Sprintf("  store %%option %s, %%option* %s\n", s0, dstSlot))
+		c.optStoreInlinePayload(dstSlot, "i64", payload)
 	}
-	if dstLT == "%option" || strings.HasPrefix(dstLT, "%option_") {
+	if dstLT == "%option" {
 		optStore(dstLT)
 		return nil
 	}
@@ -1559,9 +1557,10 @@ func (c *codegen) resolveReceiverSlot(recv ValueID) (string, bool) {
 		if !ok3 {
 			return slot, false
 		}
-		c.loadSeq++
-		pg := fmt.Sprintf("%%brf%d", c.loadSeq)
-		c.sb.WriteString(fmt.Sprintf("  %s = getelementptr inbounds %s, %s* %s, i32 0, i32 1\n", pg, gfRecvLT, gfRecvLT, gfRecvSlot))
+		// optPayloadTypedAddr, not a raw GEP to field 1: a payload larger than
+		// the slot is boxed, and field 1 then holds the box POINTER rather than
+		// the payload struct.
+		pg := c.optPayloadTypedAddr(gfRecvSlot, payloadLT, payloadLT)
 		c.loadSeq++
 		gep := fmt.Sprintf("%%brf%d", c.loadSeq)
 		c.sb.WriteString(fmt.Sprintf("  %s = getelementptr inbounds %s, %s* %s, i32 0, i32 %d\n", gep, payloadLT, payloadLT, pg, idx))
@@ -3556,7 +3555,8 @@ func (c *codegen) storeRawStr(inst *Inst, i int, lenReg, capReg, dataReg string)
 // emitBuiltinWaitpid lowers `process.waitpid(pid, options)` -> status i64.
 // Returns WEXITSTATUS: (status >> 8) & 0xFF, where status is the i32 written by
 // libc waitpid into an out-parameter. Mirrors call_stdlib.go process-waitpid.
-func (c *codegen) emitBuiltinWaitpid(inst *Inst) error {	if len(inst.Args) < 2 {
+func (c *codegen) emitBuiltinWaitpid(inst *Inst) error {
+	if len(inst.Args) < 2 {
 		return fmt.Errorf("waitpid: needs pid, options")
 	}
 	pid, err := c.marshalScalar(inst, 0, "i32")

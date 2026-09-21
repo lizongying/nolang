@@ -68,35 +68,35 @@ main = () {
 
     OUTB [32]byte
 
-    x25519.fe-add(A, B, OUT)
+    x25519.fe-add(OUT, A, B)
     print('FEADD')
     print(OUT[0]); print(' '); print(OUT[1]); print(' '); print(OUT[2]); print(' '); print(OUT[3]); print(' '); print(OUT[4]); print(' '); print(OUT[5]); print(' '); print(OUT[6]); print(' '); print(OUT[7]); print(' '); print(OUT[8]); print(' '); print(OUT[9]); print(' ')
 
-    x25519.fe-sub(A, B, OUT)
+    x25519.fe-sub(OUT, A, B)
     print('FESUB')
     print(OUT[0]); print(' '); print(OUT[1]); print(' '); print(OUT[2]); print(' '); print(OUT[3]); print(' '); print(OUT[4]); print(' '); print(OUT[5]); print(' '); print(OUT[6]); print(' '); print(OUT[7]); print(' '); print(OUT[8]); print(' '); print(OUT[9]); print(' ')
 
-    x25519.fe-mul(A, B, OUT)
+    x25519.fe-mul(OUT, A, B)
     print('FEMUL')
     print(OUT[0]); print(' '); print(OUT[1]); print(' '); print(OUT[2]); print(' '); print(OUT[3]); print(' '); print(OUT[4]); print(' '); print(OUT[5]); print(' '); print(OUT[6]); print(' '); print(OUT[7]); print(' '); print(OUT[8]); print(' '); print(OUT[9]); print(' ')
 
-    x25519.fe-sq(A, OUT)
+    x25519.fe-sq(OUT, A)
     print('FESQ')
     print(OUT[0]); print(' '); print(OUT[1]); print(' '); print(OUT[2]); print(' '); print(OUT[3]); print(' '); print(OUT[4]); print(' '); print(OUT[5]); print(' '); print(OUT[6]); print(' '); print(OUT[7]); print(' '); print(OUT[8]); print(' '); print(OUT[9]); print(' ')
 
-    x25519.fe-mul121665(A, OUT)
+    x25519.fe-mul121665(OUT, A)
     print('FEMUL121665')
     print(OUT[0]); print(' '); print(OUT[1]); print(' '); print(OUT[2]); print(' '); print(OUT[3]); print(' '); print(OUT[4]); print(' '); print(OUT[5]); print(' '); print(OUT[6]); print(' '); print(OUT[7]); print(' '); print(OUT[8]); print(' '); print(OUT[9]); print(' ')
 
-    x25519.fe-frombytes(BYTES, OUT)
+    x25519.fe-frombytes(OUT, BYTES)
     print('FEFROMBYTES')
     print(OUT[0]); print(' '); print(OUT[1]); print(' '); print(OUT[2]); print(' '); print(OUT[3]); print(' '); print(OUT[4]); print(' '); print(OUT[5]); print(' '); print(OUT[6]); print(' '); print(OUT[7]); print(' '); print(OUT[8]); print(' '); print(OUT[9]); print(' ')
 
-    x25519.fe-tobytes(S, OUTB)
+    x25519.fe-tobytes(OUTB, S)
     print('FETOBYTES_S')
     print(OUTB[0]); print(' '); print(OUTB[1]); print(' '); print(OUTB[2]); print(' '); print(OUTB[3]); print(' '); print(OUTB[4]); print(' '); print(OUTB[5]); print(' '); print(OUTB[6]); print(' '); print(OUTB[7]); print(' '); print(OUTB[8]); print(' '); print(OUTB[9]); print(' '); print(OUTB[10]); print(' '); print(OUTB[11]); print(' '); print(OUTB[12]); print(' '); print(OUTB[13]); print(' '); print(OUTB[14]); print(' '); print(OUTB[15]); print(' '); print(OUTB[16]); print(' '); print(OUTB[17]); print(' '); print(OUTB[18]); print(' '); print(OUTB[19]); print(' '); print(OUTB[20]); print(' '); print(OUTB[21]); print(' '); print(OUTB[22]); print(' '); print(OUTB[23]); print(' '); print(OUTB[24]); print(' '); print(OUTB[25]); print(' '); print(OUTB[26]); print(' '); print(OUTB[27]); print(' '); print(OUTB[28]); print(' '); print(OUTB[29]); print(' '); print(OUTB[30]); print(' '); print(OUTB[31]); print(' ')
 
-    x25519.fe-tobytes(A, OUTB)
+    x25519.fe-tobytes(OUTB, A)
     print('FETOBYTES_A')
     print(OUTB[0]); print(' '); print(OUTB[1]); print(' '); print(OUTB[2]); print(' '); print(OUTB[3]); print(' '); print(OUTB[4]); print(' '); print(OUTB[5]); print(' '); print(OUTB[6]); print(' '); print(OUTB[7]); print(' '); print(OUTB[8]); print(' '); print(OUTB[9]); print(' '); print(OUTB[10]); print(' '); print(OUTB[11]); print(' '); print(OUTB[12]); print(' '); print(OUTB[13]); print(' '); print(OUTB[14]); print(' '); print(OUTB[15]); print(' '); print(OUTB[16]); print(' '); print(OUTB[17]); print(' '); print(OUTB[18]); print(' '); print(OUTB[19]); print(' '); print(OUTB[20]); print(' '); print(OUTB[21]); print(' '); print(OUTB[22]); print(' '); print(OUTB[23]); print(' '); print(OUTB[24]); print(' '); print(OUTB[25]); print(' '); print(OUTB[26]); print(' '); print(OUTB[27]); print(' '); print(OUTB[28]); print(' '); print(OUTB[29]); print(' '); print(OUTB[30]); print(' '); print(OUTB[31]); print(' ')
 }

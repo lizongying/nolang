@@ -5,6 +5,7 @@ import (
 	"math"
 	"os"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/lizongying/nolang/builtin"
@@ -91,18 +92,30 @@ type codegen struct {
 	asyncWrappers   map[string]string
 	asyncWrapperSeq int
 
-	// optPayload maps a per-payload inline option LLVM type (%option_<elem>)
-	// to its payload field LLVM type, so print/compare code can peel field 1
-	// and route it to the correct scalar printer. Populated at type-decl time.
-	optPayload map[string]string
-
-	// optPrintHelper maps a per-payload inline option LLVM type (%option_<elem>)
-	// to the dedicated print helper function name (e.g. @print_option_str) that
-	// performs the nil-tag check and prints "nil" or the payload inside its OWN
-	// function body. Routed through from emitCall's print special-case so that
-	// no new basic blocks are emitted mid-function (which breaks LLVM
-	// verification). Populated at type-decl time alongside optPayload.
+	// optPrintHelper maps an option PAYLOAD LLVM type to the dedicated print
+	// helper function name (e.g. @print_option_str) that performs the nil-tag
+	// check and prints "nil" or the payload inside its OWN function body.
+	// Routed through from emitCall's print special-case so that no new basic
+	// blocks are emitted mid-function (which breaks LLVM verification).
 	optPrintHelper map[string]string
+
+	// optBoxRebox maps a BOXED option payload LLVM type to the re-box helper
+	// `@__nolang_opt_rebox_<key>`, which gives a freshly copied option its own
+	// heap block. Without it a 32-byte copy of a boxed option would alias the
+	// source's payload — something the old inline layout never did.
+	optBoxRebox map[string]string
+
+	// optSlotBytes / optSlotLT are the payload slot's size and its LLVM spelling
+	// (`[N x i64]`), resolved per module by initOptionSlot from the configured
+	// option-inline-threshold (default 24, minimum 8).
+	optSlotBytes int64
+	optSlotLT    string
+
+	// optBoxZero maps a BOXED option payload LLVM type to a private zero-filled
+	// global of that type, `@__nolang_opt_zero_<key>`. It is what
+	// optPayloadAddr returns for a non-ok tag — see there for why pointing at
+	// the slot instead is not an option.
+	optBoxZero map[string]string
 
 	// defInst maps a MIR value to the instruction that defined it (by InstID),
 	// so emitCallBody can detect when a method-call receiver is the result of an
@@ -329,8 +342,9 @@ func (m *Module) EmitLLVM() (out string, err error) {
 		resultParam:    map[ValueID]bool{},
 		strGlobals:     map[ValueID]strGlobal{},
 		extDecls:       map[string]bool{},
-		optPayload:     map[string]string{},
 		optPrintHelper: map[string]string{},
+		optBoxRebox:    map[string]string{},
+		optBoxZero:     map[string]string{},
 		defInst:        map[ValueID]InstID{},
 		extraFuncs:     map[string]bool{},
 	}
@@ -377,6 +391,7 @@ func (m *Module) EmitLLVM() (out string, err error) {
 		c.fname[f.ID] = name
 	}
 	c.collectStrings()
+	c.initOptionSlot()
 	c.emitPrelude()
 	c.emitStructTypes()
 	c.emitGlobals()
@@ -499,9 +514,9 @@ func (c *codegen) llvmTypeOf(t *Type) string {
 		}
 		return "i64"
 	case KindOption:
-		// Per-payload inline option type: ?fs.file -> %option_fs_file, ?str ->
-		// %option_str, ?i64 -> %option (flat {i64,i64}). The full payload is
-		// stored by-value, keeping every MIR code path self-consistent.
+		// Every ?T lowers to the SAME `%option`; the element survives only in
+		// the nolang type, so the payload must be re-punned from that when the
+		// slot is read (see optPayloadAddr / optPayloadLTOf).
 		if e, ok := parseOptionElem(t.Raw); ok {
 			lt, _ := c.optionType(e)
 			return lt
@@ -677,17 +692,21 @@ func (c *codegen) coerceInt(v, fromT, toT string) string {
 // non-negative, so unsigned integer types (i8/i16/i32/i1) are ZERO-extended —
 // not sign-extended — so a byte index like 200 stays 200 instead of wrapping to a
 // huge i64 (which would read past the array). i64 indices are returned unchanged.
-func (c *codegen) coerceIndex(idxT, idxV string) string {
+func (c *codegen) coerceIndex(idxSrc ValueID, idxT, idxV string) string {
 	// An option-typed index (`a[res]` where `res ?i64 = ...`) must be unwrapped
-	// to its payload before it can address memory: `%option` is a {tag,payload}
-	// struct and opt rejects it as a GEP index ("defined with type '%option'
-	// but expected 'i64'"). Legacy stores/reads the scalar payload for an
-	// option index, so do the same (tests/test-option-index.no).
+	// to its payload before it can address memory: `%option` is a struct and opt
+	// rejects it as a GEP index ("defined with type '%option' but expected
+	// 'i64'"). Legacy stores/reads the scalar payload for an option index, so do
+	// the same (tests/test-option-index.no).
+	//
+	// The peel goes through optionPayloadOf, NOT `extractvalue %option %v, 1`:
+	// field 1 is now the whole 24-byte `[3 x i64]` payload slot, so a raw
+	// extractvalue would hand the GEP an array where it wants an i64.
 	if isOptionType(idxT) {
-		c.loadSeq++
-		pl := fmt.Sprintf("%%ixp%d", c.loadSeq)
-		c.sb.WriteString(fmt.Sprintf("  %s = extractvalue %s %s, 1\n", pl, idxT, idxV))
-		idxT, idxV = "i64", pl
+		pv, pt := c.optionPayloadOf(idxSrc, idxV, idxT)
+		if pv != "" {
+			idxT, idxV = pt, pv
+		}
 	}
 	switch idxT {
 	case "i8", "i1", "i16", "i32":
@@ -699,16 +718,17 @@ func (c *codegen) coerceIndex(idxT, idxV string) string {
 	return idxV
 }
 
-// isOptionType reports whether lt is an option LLVM type — either the flat
-// scalar `%option` (= { i64, i64 }) or a per-payload inline type
-// `%option_<elem>` (= { i64 tag, <payload> }).
+// isOptionType reports whether lt is the option LLVM type. Every `?T` lowers to
+// the SAME 32-byte `%option = { i64 tag, [3 x i64] slot }`, so this is a plain
+// equality test; the element type is recovered from the MIR type when a caller
+// needs it (see optElemRawOf / optPayloadLTOf).
 func isOptionType(lt string) bool {
-	return lt == "%option" || strings.HasPrefix(lt, "%option_")
+	return lt == "%option"
 }
 
-// peelOptionValue unwraps a by-value option into its payload field: it emits
-// `extractvalue <optLT> <val>, 1` and returns the payload's LLVM type plus the
-// fresh register. Returns ("", "") when lt is not an option type, when the
+// peelOptionValue unwraps a by-value option into its payload field: it reads
+// the payload out of the 24-byte slot (dereferencing it first when the payload
+// is BOXED) and returns the payload's LLVM type plus the fresh register. Returns ("", "") when lt is not an option type, when the
 // payload type is unknown (nothing is emitted in that case), so callers can
 // apply it unconditionally and fall back to the original operand.
 //
@@ -719,22 +739,16 @@ func isOptionType(lt string) bool {
 // the payload must be peeled before the conversion. Without this the option
 // struct itself is handed to the converter and opt rejects the module:
 // "builtin number.f64-to-f32: cannot coerce %option_f64 to double".
-func (c *codegen) peelOptionValue(lt, val string) (string, string) {
-	if !isOptionType(lt) || val == "" {
+func (c *codegen) peelOptionValue(src ValueID) (string, string) {
+	if src <= NoVal {
 		return "", ""
 	}
-	payloadLT := "i64"
-	if lt != "%option" {
-		p, ok := c.optPayload[lt]
-		if !ok || p == "" {
-			return "", ""
-		}
-		payloadLT = p
+	lt, _ := c.ptype(src)
+	if !isOptionType(lt) {
+		return "", ""
 	}
-	c.loadSeq++
-	r := fmt.Sprintf("%%optpv%d", c.loadSeq)
-	c.sb.WriteString(fmt.Sprintf("  %s = extractvalue %s %s, 1\n", r, lt, val))
-	return payloadLT, r
+	v, t := c.optionPayloadOf(src, "", lt)
+	return t, v
 }
 
 // optionPayloadLLVMType returns the LLVM type of an option's payload field for
@@ -786,18 +800,566 @@ func (c *codegen) optionPayloadLLVMType(elemRaw string) string {
 	return "i64"
 }
 
-// optionType returns the (LLVM option type, payload LLVM type) for an option
-// whose element raw type is elemRaw. Scalar elements reuse the flat `%option =
-// { i64, i64 }`; everything else gets a per-payload inline type
-// `%option_<elem> = { i64 tag, <payload> }` so the payload is stored by-value
-// (no heap boxing). This keeps every MIR code path (construct / move / field
-// access / drop / compare / print) self-consistent.
-func (c *codegen) optionType(elemRaw string) (string, string) {
-	payload := c.optionPayloadLLVMType(elemRaw)
-	if payload == "i64" {
-		return "%option", "i64"
+// ---- unified option layout -------------------------------------------------
+//
+// EVERY `?T` lowers to the single 32-byte type
+//
+//	%option = type { i64 tag, [3 x i64] slot }
+//
+// The slot is 24 bytes because the payload that must ALWAYS fit is the err
+// message, a %str-long. The previous flat `%option = { i64, i64 }` could only
+// hold 8 bytes, so `err('msg')` into a narrow option (?i64 / ?bool / ?f64 /
+// ?byte ...) stored the message's heap POINTER as an integer and threw away
+// len/cap — the err arm printed a raw address (e.g. `err=4385955280`) and the
+// str_clone it took leaked. `?str` was fine only by accident: its per-payload
+// type `%option_str = { i64, %str-long }` happened to be 32 bytes.
+//
+// Two storage classes, decided per payload type by optionPayloadInline:
+//
+//   - INLINE (payload <= 24 bytes): the payload's bytes live in the slot,
+//     reached by bit-casting the slot address to `<payload>*`.
+//   - BOXED (payload > 24 bytes, or of unknown size): the payload is copied
+//     into a heap block and slot[0] holds that pointer (as i64).
+//
+// Boxing is ONLY used for the ok tag (0). nil (1) and err (2) always keep
+// their payload inline, because an err message is a 24-byte str and a nil has
+// no payload — allocating a 36 KB box for `err('bad json')` would be absurd.
+// Consequently every read of a payload that *may* be boxed goes through
+// optPayloadAddr, which selects between the box and a payload-sized zero
+// constant on `tag == 0`. It must NOT select the slot as the non-ok side:
+// a boxed payload is LARGER than the slot, so that would be an
+// out-of-bounds `getelementptr inbounds`, i.e. UB that LLVM resolves by
+// hoisting the load above the branch and dereferencing the err message
+// as a pointer (SIGSEGV only in the optimized build).
+
+// optSlotDefaultBytes is the default payload-slot size. The err payload is a
+// %str-long, which is exactly this wide — so at the default every err message
+// fits inline, and only payloads the user explicitly made bigger than this go
+// through a pointer.
+const optSlotDefaultBytes = 24
+
+// optSlotMinBytes is the smallest slot a user may ask for. Below it a payload
+// could not even hold an i64, so it is a hard compile error.
+const optSlotMinBytes = 8
+
+// initOptionSlot resolves the payload-slot size for this module and the LLVM
+// type that spells it. The slot is `[N x i64]`, so N is a whole number of
+// i64s and the size is rounded UP: a payload the user said fits (<= threshold)
+// must actually fit.
+//
+// Range rules (OptionInlineThreshold comes from package.jsonc's
+// compiler.option-inline-threshold or NOLANG_OPTION_INLINE_THRESHOLD):
+//
+//	unset / 0   -> optSlotDefaultBytes (24)
+//	< 8         -> compile error, clamped to 8 so the rest of the emitter
+//	               still produces verifiable IR
+//	8 .. 23     -> accepted, but WARN: the err message (a 24-byte %str-long)
+//	               no longer fits, so err payloads are heap-boxed
+//	>= 24       -> accepted
+func (c *codegen) initOptionSlot() {
+	t := int64(c.mod.OptionInlineThreshold)
+	switch {
+	case t == 0:
+		t = optSlotDefaultBytes
+	case t < optSlotMinBytes:
+		c.fail("option-inline-threshold %d is below the minimum %d (a payload must at least hold an i64)", t, optSlotMinBytes)
+		t = optSlotMinBytes
+	case t < optSlotDefaultBytes:
+		fmt.Fprintf(os.Stderr, "warning: option-inline-threshold %d is below %d: err payloads (a 24-byte str) no longer fit the slot and are heap-boxed\n", t, optSlotDefaultBytes)
 	}
-	return "%option_" + sanitize(elemRaw), payload
+	// Round up to a whole number of i64 slots.
+	n := (t + 7) / 8
+	c.optSlotBytes = n * 8
+	c.optSlotLT = fmt.Sprintf("[%d x i64]", n)
+}
+
+// optionType returns the (LLVM option type, payload LLVM type) for an option
+// whose element raw type is elemRaw. The option type is ALWAYS `%option`; the
+// payload type is returned separately because callers need it to pun the slot
+// correctly (the slot itself is untyped bytes).
+func (c *codegen) optionType(elemRaw string) (string, string) {
+	return "%option", c.optionPayloadLLVMType(elemRaw)
+}
+
+// optionPayloadInline reports whether a payload of LLVM type payloadLT is
+// stored inline in the 24-byte slot. Anything larger — or of a size we cannot
+// prove — is heap-boxed. The decision must be CONSERVATIVE: claiming a payload
+// fits when it does not corrupts the bytes after it, while boxing a payload
+// that would have fitted only costs a malloc.
+func (c *codegen) optionPayloadInline(payloadLT string) bool {
+	sz, ok := c.llvmTypeSizeUpper(payloadLT, map[string]bool{})
+	return ok && sz <= c.optSlotBytes
+}
+
+// llvmTypeSizeUpper returns a value >= sizeof(lt), or (0, false) when the size
+// cannot be determined. It is an UPPER BOUND on purpose: struct fields are
+// rounded up to 8 bytes each, so alignment padding can never make the real
+// size exceed the answer. Under-estimating here would be the dangerous
+// direction — it would let a payload be stored inline past the end of the slot.
+func (c *codegen) llvmTypeSizeUpper(lt string, visited map[string]bool) (int64, bool) {
+	if n, ok := mirScalarByteSize[lt]; ok {
+		return n, true
+	}
+	if strings.HasSuffix(lt, "*") {
+		return 8, true
+	}
+	switch lt {
+	case "%str-long", "%vec":
+		return 24, true
+	case "%option":
+		return 32, true
+	case "%txt":
+		return 256, true
+	}
+	// Fixed array: [N x T] -> N * sizeof(T).
+	if strings.HasPrefix(lt, "[") {
+		inner := lt[1:strings.LastIndex(lt, "]")]
+		xIdx := strings.Index(inner, " x ")
+		if xIdx < 0 {
+			return 0, false
+		}
+		n, err := strconv.ParseInt(strings.TrimSpace(inner[:xIdx]), 10, 64)
+		if err != nil {
+			return 0, false
+		}
+		esz, ok := c.llvmTypeSizeUpper(inner[xIdx+3:], visited)
+		if !ok {
+			return 0, false
+		}
+		return n * esz, true
+	}
+	if strings.HasPrefix(lt, "%") {
+		name := lt[1:]
+		if visited[name] {
+			return 0, false // recursive struct — size unknown, so BOX it
+		}
+		visited[name] = true
+		structKey := c.structKeyOf(unsanitize(name))
+		if structKey == "" {
+			structKey = unsanitize(name)
+		}
+		fields, ok := c.mod.StructFields[structKey]
+		if !ok {
+			fields, ok = c.mod.StructFields[name]
+		}
+		if !ok {
+			if k := c.sanitizedStructKey(name); k != "" {
+				fields, ok = c.mod.StructFields[k]
+			}
+		}
+		if !ok {
+			return 0, false
+		}
+		var total int64
+		for _, f := range fields {
+			if c.fieldIsPointer(f) {
+				total += 8
+				continue
+			}
+			fsz, ok := c.llvmTypeSizeUpper(c.nolangTypeToLLVM(f.TypeRaw), visited)
+			if !ok {
+				return 0, false
+			}
+			total += (fsz + 7) &^ 7 // round up: an over-estimate is safe
+		}
+		return total, true
+	}
+	return 0, false
+}
+
+// optSlotAddr returns a `[3 x i64]*` register pointing at the payload slot of
+// the option stored at optSlot (a `%option*`).
+func (c *codegen) optSlotAddr(optSlot string) string {
+	c.loadSeq++
+	r := fmt.Sprintf("%%osl%d", c.loadSeq)
+	c.sb.WriteString(fmt.Sprintf("  %s = getelementptr inbounds %%option, %%option* %s, i32 0, i32 1\n", r, optSlot))
+	return r
+}
+
+// optLoadTag loads the option's discriminant (field 0) out of optSlot.
+func (c *codegen) optLoadTag(optSlot string) string {
+	c.loadSeq++
+	tp := fmt.Sprintf("%%otp%d", c.loadSeq)
+	c.sb.WriteString(fmt.Sprintf("  %s = getelementptr inbounds %%option, %%option* %s, i32 0, i32 0\n", tp, optSlot))
+	c.loadSeq++
+	t := fmt.Sprintf("%%otg%d", c.loadSeq)
+	c.sb.WriteString(fmt.Sprintf("  %s = load i64, i64* %s\n", t, tp))
+	return t
+}
+
+// optStoreTag stores `tag` with a fully zeroed payload slot into optSlot. Every
+// payload store must be preceded by this: it clears the bytes of any previous,
+// longer payload so a later read of a shorter type cannot see stale data.
+func (c *codegen) optStoreTag(optSlot string, tag int64) {
+	c.sb.WriteString(fmt.Sprintf("  store %%option { i64 %d, %s zeroinitializer }, %%option* %s\n", tag, c.optSlotLT, optSlot))
+}
+
+// optSpill materialises a by-value `%option` register into a fresh stack slot
+// and returns the slot. Needed wherever an option arrives as an SSA value (a
+// call result, a load) but the payload must be addressed by pointer.
+func (c *codegen) optSpill(val string) string {
+	c.loadSeq++
+	s := fmt.Sprintf("%%ospi%d", c.loadSeq)
+	c.sb.WriteString(fmt.Sprintf("  %s = alloca %%option\n", s))
+	c.sb.WriteString(fmt.Sprintf("  store %%option %s, %%option* %s\n", val, s))
+	return s
+}
+
+// optSlotOfValue returns the `%option*` slot for an option held by MIR value v,
+// spilling when v has no slot of its own.
+func (c *codegen) optSlotOfValue(v ValueID) string {
+	if s := c.valSlot[v]; s != "" {
+		return s
+	}
+	_, val := c.loadVal(v)
+	if val == "" {
+		return ""
+	}
+	return c.optSpill(val)
+}
+
+// optPayloadAddr returns an i8* register holding the address of the option's
+// payload bytes for a payload being read as `payloadLT`.
+//
+// STORAGE CLASS IS A PROPERTY OF THE PAYLOAD TYPE, NOT OF THE TAG
+// ---------------------------------------------------------------
+// A payload is inline when sizeof(payloadLT) <= the slot, and boxed otherwise.
+// That is a compile-time fact here: `payloadLT` is the type the caller wants to
+// read, and it is exactly the type that was stored, so the size test decides
+// the storage class with no tag check. This matters because err payloads are
+// NOT always inline any more: an err message is a 24-byte %str-long, so once
+// the slot is configured below 24 ("option-inline-threshold 8..23") err uses a
+// pointer too.
+//
+// WHAT THE RUNTIME `select` IS FOR
+// --------------------------------
+// Only "was a box actually allocated?" is a runtime question. Nothing is boxed
+// for nil, nor for a bare `err()` with no message, and in both cases the slot
+// is zero — so `slot[0] == 0` selects the zero constant. Testing `tag == 0`
+// instead would be wrong twice over: it would miss a boxed err message, and it
+// would hand back an inline err message's first 8 bytes as a pointer.
+//
+// WHY THE NON-BOXED SIDE IS A GLOBAL AND NOT THE SLOT
+// ---------------------------------------------------
+// A boxed payload is by definition LARGER THAN THE SLOT, so reading it from the
+// slot is an out-of-bounds `getelementptr inbounds` — undefined behaviour on
+// exactly the branch where the box pointer is garbage. LLVM exploits it: SROA
+// turns the `select` into a branch, concludes the out-of-bounds side cannot
+// happen, and HOISTS THE LOAD above the branch. At -O0 the program is fine;
+// after `opt` it dereferences the err message's length field as a pointer and
+// dies (tests/test_fs_error_simple.no, tests/test-sse.no — both SEGFAULT only
+// in the optimized build). A zero-filled global of the payload's own type keeps
+// both sides of the select valid and in-bounds, so there is nothing to
+// speculate.
+func (c *codegen) optPayloadAddr(optSlot, payloadLT string) string {
+	slotAddr := c.optSlotAddr(optSlot)
+	if c.optionPayloadInline(payloadLT) {
+		c.loadSeq++
+		r := fmt.Sprintf("%%opa%d", c.loadSeq)
+		c.sb.WriteString(fmt.Sprintf("  %s = bitcast %s* %s to i8*\n", r, c.optSlotLT, slotAddr))
+		return r
+	}
+	// slot[0] holds the box pointer — as an i64, because the slot is typed
+	// [N x i64] so that N can follow the configured threshold.
+	c.loadSeq++
+	p0 := fmt.Sprintf("%%opp%d", c.loadSeq)
+	c.sb.WriteString(fmt.Sprintf("  %s = getelementptr inbounds %s, %s* %s, i64 0, i64 0\n", p0, c.optSlotLT, c.optSlotLT, slotAddr))
+	c.loadSeq++
+	bx := fmt.Sprintf("%%opb%d", c.loadSeq)
+	c.sb.WriteString(fmt.Sprintf("  %s = load i64, i64* %s\n", bx, p0))
+	// Which tag means "this payload is boxed" depends on whether err messages
+	// themselves fit the slot:
+	//
+	//   slot >= 24 -> an err message (a 24-byte %str-long) is INLINE, so its
+	//                 first 8 bytes — the string LENGTH — sit in slot[0] and
+	//                 look exactly like a box pointer. Only tag 0 can be boxed.
+	//   slot <  24 -> err messages are boxed too, so anything except nil is.
+	//
+	// Either way slot[0] must also be non-zero: nil stores nothing, and so does
+	// a bare `err()` with no message.
+	tg := c.optLoadTag(optSlot)
+	c.loadSeq++
+	hasTag := fmt.Sprintf("%%opk%d", c.loadSeq)
+	if c.optSlotBytes >= optSlotDefaultBytes {
+		c.sb.WriteString(fmt.Sprintf("  %s = icmp eq i64 %s, 0\n", hasTag, tg))
+	} else {
+		c.sb.WriteString(fmt.Sprintf("  %s = icmp ne i64 %s, 1\n", hasTag, tg))
+	}
+	c.loadSeq++
+	nz := fmt.Sprintf("%%opn%d", c.loadSeq)
+	c.sb.WriteString(fmt.Sprintf("  %s = icmp ne i64 %s, 0\n", nz, bx))
+	c.loadSeq++
+	has := fmt.Sprintf("%%oph%d", c.loadSeq)
+	c.sb.WriteString(fmt.Sprintf("  %s = and i1 %s, %s\n", has, hasTag, nz))
+	c.loadSeq++
+	bp := fmt.Sprintf("%%opq%d", c.loadSeq)
+	c.sb.WriteString(fmt.Sprintf("  %s = inttoptr i64 %s to i8*\n", bp, bx))
+	// Zero stand-in for "nothing was boxed". %str-long is registered
+	// unconditionally because an err message can be read out of ANY option,
+	// including one whose declared element is a scalar.
+	zero := c.optBoxZero[payloadLT]
+	c.loadSeq++
+	zg := fmt.Sprintf("%%opz%d", c.loadSeq)
+	if zero == "" {
+		c.fail("internal: no zero-initializer global for boxed option payload %s", payloadLT)
+		c.sb.WriteString(fmt.Sprintf("  %s = bitcast %s* %s to i8*\n", zg, c.optSlotLT, slotAddr))
+	} else {
+		c.sb.WriteString(fmt.Sprintf("  %s = getelementptr inbounds %s, ptr %s, i64 0\n", zg, payloadLT, zero))
+	}
+	c.loadSeq++
+	sel := fmt.Sprintf("%%opr%d", c.loadSeq)
+	c.sb.WriteString(fmt.Sprintf("  %s = select i1 %s, i8* %s, i8* %s\n", sel, has, bp, zg))
+	return sel
+}
+
+// optStoreInlinePayload stores a by-value payload of type payloadLT into the
+// option's slot. The slot must already have been cleared by optStoreTag.
+func (c *codegen) optStoreInlinePayload(optSlot, payloadLT, val string) {
+	slotAddr := c.optSlotAddr(optSlot)
+	c.loadSeq++
+	p := fmt.Sprintf("%%oip%d", c.loadSeq)
+	c.sb.WriteString(fmt.Sprintf("  %s = bitcast %s* %s to %s*\n", p, c.optSlotLT, slotAddr, payloadLT))
+	c.sb.WriteString(fmt.Sprintf("  store %s %s, %s* %s\n", payloadLT, val, payloadLT, p))
+}
+
+// optStoreBoxedPayload heap-allocates a box big enough for payloadLT, copies
+// srcAddr's bytes into it, and records the pointer in slot[0].
+func (c *codegen) optStoreBoxedPayload(optSlot string, tag int64, payloadLT, srcAddr string) {
+	c.optStoreTag(optSlot, tag)
+	sz := c.typeSizeOperand(payloadLT)
+	c.loadSeq++
+	m := fmt.Sprintf("%%obm%d", c.loadSeq)
+	c.sb.WriteString(fmt.Sprintf("  %s = call i8* @malloc(i64 %s)\n", m, sz))
+	c.emitMemcpy(m, srcAddr, sz)
+	c.loadSeq++
+	pi := fmt.Sprintf("%%obn%d", c.loadSeq)
+	c.sb.WriteString(fmt.Sprintf("  %s = ptrtoint i8* %s to i64\n", pi, m))
+	c.loadSeq++
+	w := fmt.Sprintf("%%obo%d", c.loadSeq)
+	c.sb.WriteString(fmt.Sprintf("  %s = insertvalue %%option { i64 %d, %s zeroinitializer }, i64 %s, 1, 0\n", w, tag, c.optSlotLT, pi))
+	c.sb.WriteString(fmt.Sprintf("  store %%option %s, %%option* %s\n", w, optSlot))
+}
+
+// addrOfValue returns an i8* register pointing at the storage of MIR value v,
+// spilling to a temporary alloca when v has no slot of its own (a transient
+// call result or a literal).
+func (c *codegen) addrOfValue(v ValueID, lt, val string) string {
+	if lt == "" || lt == "void" {
+		return ""
+	}
+	if s := c.valSlot[v]; s != "" {
+		c.loadSeq++
+		r := fmt.Sprintf("%%adv%d", c.loadSeq)
+		c.sb.WriteString(fmt.Sprintf("  %s = bitcast %s* %s to i8*\n", r, lt, s))
+		return r
+	}
+	c.loadSeq++
+	s := fmt.Sprintf("%%ads%d", c.loadSeq)
+	c.sb.WriteString(fmt.Sprintf("  %s = alloca %s\n", s, lt))
+	if val != "" {
+		c.sb.WriteString(fmt.Sprintf("  store %s %s, %s* %s\n", lt, val, lt, s))
+	}
+	c.loadSeq++
+	r := fmt.Sprintf("%%adv%d", c.loadSeq)
+	c.sb.WriteString(fmt.Sprintf("  %s = bitcast %s* %s to i8*\n", r, lt, s))
+	return r
+}
+
+// optStoreRawBytes stores a value whose type DIFFERS from the option's declared
+// payload — the type-pun case. The canonical one is `err(msg)` into a non-str
+// option: ok payloads and err messages are a union, so the message is stored
+// under whatever class its own size dictates.
+//
+//   - fits the slot  -> copied verbatim into the slot and read back verbatim.
+//     Only min(sizeof(src), slot) bytes are moved; the slot was zeroed first,
+//     so a shorter source leaves zero padding (which is what made a bare
+//     `err()` read back as an empty string).
+//   - does NOT fit   -> heap-boxed, exactly like an oversized ok payload. That
+//     is the option-inline-threshold < 24 case: the message is a 24-byte
+//     %str-long and no longer fits, so err goes through a pointer.
+//
+// A source of UNKNOWN size still goes through the inline path with a
+// zero-length copy rather than a bitcast+load pun — that pun read past the
+// source's alloca and SIGSEGV'd when the payload was much larger
+// (%str-long 24 B -> %json_json 36 KB).
+func (c *codegen) optStoreRawBytes(optSlot string, tag int64, srcLT string, src ValueID, sv string) {
+	srcAddr := c.addrOfValue(src, srcLT, sv)
+	if srcAddr == "" {
+		c.optStoreTag(optSlot, tag)
+		return
+	}
+	if !c.optionPayloadInline(srcLT) {
+		c.optStoreBoxedPayload(optSlot, tag, srcLT, srcAddr)
+		return
+	}
+	c.optStoreTag(optSlot, tag)
+	srcUpper, ok := c.llvmTypeSizeUpper(srcLT, map[string]bool{})
+	if !ok {
+		return
+	}
+	n := srcUpper
+	if n > c.optSlotBytes {
+		n = c.optSlotBytes
+	}
+	slotAddr := c.optSlotAddr(optSlot)
+	c.loadSeq++
+	dst := fmt.Sprintf("%%orb%d", c.loadSeq)
+	c.sb.WriteString(fmt.Sprintf("  %s = bitcast %s* %s to i8*\n", dst, c.optSlotLT, slotAddr))
+	c.emitMemcpy(dst, srcAddr, fmt.Sprintf("%d", n))
+}
+
+// optPayloadTypedAddr returns a `<wantLT>*` register for the option's payload.
+//
+// The storage class follows wantLT, the type being READ, because that is the
+// type that was stored: an err message read out of a scalar option is a
+// %str-long, so it is inline or boxed by %str-long's size — not by the size of
+// the option's declared element. (With the default 24-byte slot this is the
+// same thing for err messages; below 24 it is what makes err use a pointer.)
+func (c *codegen) optPayloadTypedAddr(optSlot, payloadLT, wantLT string) string {
+	lt := wantLT
+	if lt == "" {
+		lt = payloadLT
+	}
+	raw := c.optPayloadAddr(optSlot, lt)
+	if wantLT == "" {
+		return raw
+	}
+	c.loadSeq++
+	r := fmt.Sprintf("%%opt%d", c.loadSeq)
+	c.sb.WriteString(fmt.Sprintf("  %s = bitcast i8* %s to %s*\n", r, raw, wantLT))
+	return r
+}
+
+// optReadPayloadInto copies the option's payload out of optSlot into dstSlot as
+// type dstLT. It is the single peel implementation shared by OpMove and the
+// option-aware helpers.
+func (c *codegen) optReadPayloadInto(optSlot, payloadLT, dstLT, dstSlot string) bool {
+	if dstLT == "" || dstSlot == "" {
+		return false
+	}
+	addr := c.optPayloadTypedAddr(optSlot, payloadLT, dstLT)
+	if dstLT == payloadLT && c.shouldUseMemcpy(dstLT) {
+		c.loadSeq++
+		d := fmt.Sprintf("%%opd%d", c.loadSeq)
+		c.sb.WriteString(fmt.Sprintf("  %s = bitcast %s* %s to i8*\n", d, dstLT, dstSlot))
+		c.emitMemcpy(d, addr, c.typeSizeOperand(dstLT))
+		return true
+	}
+	c.loadSeq++
+	v := fmt.Sprintf("%%opv%d", c.loadSeq)
+	c.sb.WriteString(fmt.Sprintf("  %s = load %s, %s* %s\n", v, dstLT, dstLT, addr))
+	c.sb.WriteString(fmt.Sprintf("  store %s %s, %s* %s\n", dstLT, v, dstLT, dstSlot))
+	return true
+}
+
+// optBoxClone copies the option at srcSlot to dstSlot and then gives the copy
+// its OWN heap block when the payload is boxed. A boxed option is 32 bytes of
+// {tag, pointer}, so a bitwise copy would share the payload — the inline layout
+// copied the payload itself, and code that mutates through one binding must not
+// see the change through the other.
+//
+// The re-box is a helper call rather than inline branches because emitMove runs
+// mid-block: emitting new basic blocks there breaks LLVM verification.
+func (c *codegen) optBoxClone(srcSlot, dstSlot, payloadLT string) {
+	c.loadSeq++
+	v := fmt.Sprintf("%%obc%d", c.loadSeq)
+	c.sb.WriteString(fmt.Sprintf("  %s = load %%option, %%option* %s\n", v, srcSlot))
+	c.sb.WriteString(fmt.Sprintf("  store %%option %s, %%option* %s\n", v, dstSlot))
+	name, ok := c.optBoxRebox[payloadLT]
+	if !ok {
+		return
+	}
+	c.sb.WriteString(fmt.Sprintf("  call void %s(%%option* %s)\n", name, dstSlot))
+}
+
+// emitOptionBoxHelpers emits `@__nolang_opt_rebox_<key>` for a BOXED option
+// payload type: after a bitwise copy of the option it replaces slot[0] with a
+// freshly malloc'd copy of the box, but ONLY when the tag says ok (0). A nil or
+// err option keeps its payload inline, so there is nothing to re-box and the
+// pointer field must be left alone (it is a str's length in the err case).
+func (c *codegen) emitOptionBoxHelpers(payloadLT string) {
+	// Idempotent: the err message (%str-long) helper is registered up front, so
+	// a `?str` in the same module must not declare the same global twice.
+	if _, seen := c.optBoxZero[payloadLT]; seen {
+		return
+	}
+	key := strings.NewReplacer("%", "", "-", "_", ".", "_", "*", "_", " ", "_").Replace(payloadLT)
+	name := "@__nolang_opt_rebox_" + key
+	c.optBoxRebox[payloadLT] = name
+	// The zero-filled stand-in optPayloadAddr returns for a non-ok tag. It must
+	// be a real, in-bounds, payload-sized object — see optPayloadAddr.
+	zg := "@__nolang_opt_zero_" + key
+	c.optBoxZero[payloadLT] = zg
+	c.sb.WriteString(fmt.Sprintf("%s = private unnamed_addr constant %s zeroinitializer\n", zg, payloadLT))
+	sz := fmt.Sprintf("ptrtoint ptr getelementptr (%s, ptr null, i64 1) to i64", payloadLT)
+	c.sb.WriteString(fmt.Sprintf("define void %s(%%option* %%o) {\n", name))
+	c.sb.WriteString("entry:\n")
+	// Re-box only when a box is really there. The test is the same one
+	// optPayloadAddr uses (see there for the full argument): once err messages
+	// fit the slot, an inline err's first 8 bytes — the string LENGTH — sit in
+	// slot[0] and look exactly like a box pointer, so the tag has to say which
+	// it is.
+	c.sb.WriteString("  %tp = getelementptr inbounds %option, %option* %o, i32 0, i32 0\n")
+	c.sb.WriteString("  %t = load i64, i64* %tp\n")
+	if c.optSlotBytes >= optSlotDefaultBytes {
+		c.sb.WriteString("  %hastag = icmp eq i64 %t, 0\n")
+	} else {
+		c.sb.WriteString("  %hastag = icmp ne i64 %t, 1\n")
+	}
+	c.sb.WriteString("  %sp = getelementptr inbounds %option, %option* %o, i32 0, i32 1\n")
+	c.sb.WriteString(fmt.Sprintf("  %%p0 = getelementptr inbounds %s, %s* %%sp, i64 0, i64 0\n", c.optSlotLT, c.optSlotLT))
+	c.sb.WriteString("  %old = load i64, i64* %p0\n")
+	c.sb.WriteString("  %nonzero = icmp ne i64 %old, 0\n")
+	c.sb.WriteString("  %has = and i1 %hastag, %nonzero\n")
+	c.sb.WriteString("  br i1 %has, label %rb, label %done\n")
+	c.sb.WriteString("rb:\n")
+	c.sb.WriteString("  %oldp = inttoptr i64 %old to i8*\n")
+	// How many bytes to copy depends on WHAT was boxed, not on the declared
+	// element: with the default slot an err message is inline so only tag 0
+	// boxes (sizeof payloadLT), but once the slot is configured below 24 the
+	// message is boxed too — and it is only 24 bytes, so copying
+	// sizeof(payloadLT) (824 for ?sse_client) out of it is a heap over-read
+	// that aborts under malloc's guard pages.
+	if !c.optionPayloadInline("%str-long") {
+		// Both sizes as real registers: `ptrtoint ... getelementptr` is a
+		// constant expression, which LLVM only accepts inside a `select` in
+		// parenthesised form — materialising it keeps the IR simple.
+		c.sb.WriteString(fmt.Sprintf("  %%nOK = %s\n", sz))
+		c.sb.WriteString(fmt.Sprintf("  %%nERR = %s\n",
+			fmt.Sprintf("ptrtoint ptr getelementptr (%%str-long, ptr null, i64 1) to i64")))
+		c.sb.WriteString("  %isok = icmp eq i64 %t, 0\n")
+		c.sb.WriteString("  %n = select i1 %isok, i64 %nOK, i64 %nERR\n")
+	} else {
+		c.sb.WriteString(fmt.Sprintf("  %%n = %s\n", sz))
+	}
+	c.sb.WriteString("  %m = call i8* @malloc(i64 %n)\n")
+	c.sb.WriteString("  call void @llvm.memcpy.p0.p0.i64(ptr %m, ptr %oldp, i64 %n, i1 false)\n")
+	c.sb.WriteString("  %nm = ptrtoint i8* %m to i64\n")
+	c.sb.WriteString("  store i64 %nm, i64* %p0\n")
+	c.sb.WriteString("  ret void\n")
+	c.sb.WriteString("done:\n")
+	c.sb.WriteString("  ret void\n}\n")
+}
+
+// optPayloadLTOf returns the payload LLVM type of the option-typed MIR value v,
+// read from its nolang type. With a single `%option` for every element the LLVM
+// type no longer carries the element, so this is the only reliable source.
+func (c *codegen) optPayloadLTOf(v ValueID) string {
+	_, elem := c.optElemRawOf(v)
+	return c.optionPayloadLLVMType(elem)
+}
+
+// optElemRawOf returns the element raw type (?T -> T) of the option-typed MIR
+// value v, and whether v really is an option.
+func (c *codegen) optElemRawOf(v ValueID) (bool, string) {
+	if val := c.mod.Value(v); val != nil {
+		if t := c.mod.Type(val.Type); t != nil && t.Kind == KindOption {
+			if e, ok := parseOptionElem(t.Raw); ok {
+				return true, e
+			}
+		}
+	}
+	return false, ""
 }
 
 // optionElemRaw extracts the element raw type (?Elem) from an option raw type
@@ -820,7 +1382,10 @@ target triple = "arm64-apple-macosx15.0.0"
 
 %str-long = type { i64, i64, i8* }   ; len, cap, data
 %vec = type { i64, i64, i64 }
-%option = type { i64, i64 }
+`)
+	c.sb.WriteString(fmt.Sprintf("%%option = type { i64, %s }    ; tag, %d-byte payload slot (%d bytes total)\n",
+		c.optSlotLT, c.optSlotBytes, 8+c.optSlotBytes))
+	c.sb.WriteString(`
 
 ; async task runtime (mirrors legacy build/llvm cooperative scheduler).
 ; %task = { resume_fn, data(i64 ptr), done, cancelled }; 24 bytes.
@@ -1173,14 +1738,19 @@ entry:
 @.nilstr = private constant [3 x i8] c"nil"
 define void @print_option(%option %o) {
 entry:
-  %tag = extractvalue %option %o, 0
+  %os = alloca %option
+  store %option %o, %option* %os
+  %tp = getelementptr inbounds %option, %option* %os, i32 0, i32 0
+  %tag = load i64, i64* %tp
   %isnil = icmp eq i64 %tag, 1
   br i1 %isnil, label %nil, label %some
 nil:
   call i64 @write(i32 1, i8* getelementptr inbounds ([3 x i8], [3 x i8]* @.nilstr, i64 0, i64 0), i64 3)
   ret void
 some:
-  %inner = extractvalue %option %o, 1
+  %ps = getelementptr inbounds %option, %option* %os, i32 0, i32 1
+` + fmt.Sprintf("  %%pp = bitcast %s* %%ps to i64*\n", c.optSlotLT) + `
+  %inner = load i64, i64* %pp
   call void @print_i64(i64 %inner)
   ret void
 }
@@ -1192,14 +1762,19 @@ some:
 ; (see emitCall's print special-case), never through the generic @print_option.
 define void @print_option_bool(%option %o) {
 entry:
-  %tag = extractvalue %option %o, 0
+  %os = alloca %option
+  store %option %o, %option* %os
+  %tp = getelementptr inbounds %option, %option* %os, i32 0, i32 0
+  %tag = load i64, i64* %tp
   %isnil = icmp eq i64 %tag, 1
   br i1 %isnil, label %nil, label %some
 nil:
   call i64 @write(i32 1, i8* getelementptr inbounds ([3 x i8], [3 x i8]* @.nilstr, i64 0, i64 0), i64 3)
   ret void
 some:
-  %inner = extractvalue %option %o, 1
+  %ps = getelementptr inbounds %option, %option* %os, i32 0, i32 1
+` + fmt.Sprintf("  %%pp = bitcast %s* %%ps to i64*\n", c.optSlotLT) + `
+  %inner = load i64, i64* %pp
   %b = trunc i64 %inner to i1
   br i1 %b, label %ot, label %of
 ot:
@@ -1900,12 +2475,7 @@ func (c *codegen) emitFunc(f *Function) error {
 		// Written Dst/params overwrite this, so the extra store is dead for
 		// every value that is actually assigned.
 		if isOptionType(lt) {
-			elem := ""
-			if dv := c.mod.Value(v); dv != nil {
-				elem = optionElemRaw(c.mod.Type(dv.Type))
-			}
-			_, payloadLT := c.optionType(elem)
-			c.sb.WriteString(fmt.Sprintf("  store %s { i64 1, %s zeroinitializer }, %s* %s\n", lt, payloadLT, lt, s))
+			c.optStoreTag(s, 1)
 		} else if owned || c.structSlotNeedsZero(lt) {
 			// A STRUCT THAT GETS A DROP must start zeroed even though it is
 			// not `owned` (Type.Owned is false for a struct — it is only true
@@ -2238,52 +2808,32 @@ func (c *codegen) optionTag(v, optLT string) string {
 	return r
 }
 
-// optionPayloadOf extracts an option's payload (field 1) and returns it together
-// with its LLVM type. Used when an option is compared against a plain value, or
-// moved into a non-option destination.
-func (c *codegen) optionPayloadOf(v, optLT string) (string, string) {
-	payload := c.optionPayloadLLVMType(c.optionElemRawOf(optLT))
-	// #83 SROA guard: for large option types, loadVal returns a slot pointer,
-	// so extractvalue cannot be used. GEP field 1 (the payload) and load.
-	if c.shouldUseMemcpy(optLT) {
-		c.loadSeq++
-		gp := fmt.Sprintf("%%opg%d", c.loadSeq)
-		c.sb.WriteString(fmt.Sprintf("  %s = getelementptr inbounds %s, %s* %s, i32 0, i32 1\n", gp, optLT, optLT, v))
-		c.loadSeq++
-		r := fmt.Sprintf("%%op%d", c.loadSeq)
-		c.sb.WriteString(fmt.Sprintf("  %s = load %s, %s* %s\n", r, payload, payload, gp))
-		return r, payload
+// optionPayloadOf extracts an option's payload and returns it together with its
+// LLVM type. Used when an option is compared against a plain value, or handed to
+// a builtin that wants the bare element.
+//
+// With one `%option` for every element the payload type is no longer part of the
+// LLVM type, so `src` (the MIR value) is what identifies it. A BOXED payload is
+// returned as its ADDRESS rather than a loaded value — the same convention
+// loadVal uses for large aggregates, and it keeps a 36 KB `load %json_json`
+// away from SROA.
+func (c *codegen) optionPayloadOf(src ValueID, val, optLT string) (string, string) {
+	payload := c.optPayloadLTOf(src)
+	if payload == "" {
+		payload = "i64"
+	}
+	slot := c.optSlotOfValue(src)
+	if slot == "" {
+		return "", ""
+	}
+	addr := c.optPayloadTypedAddr(slot, payload, payload)
+	if c.shouldUseMemcpy(payload) {
+		return addr, payload
 	}
 	c.loadSeq++
 	r := fmt.Sprintf("%%op%d", c.loadSeq)
-	c.sb.WriteString(fmt.Sprintf("  %s = extractvalue %s %s, 1\n", r, optLT, v))
+	c.sb.WriteString(fmt.Sprintf("  %s = load %s, %s* %s\n", r, payload, payload, addr))
 	return r, payload
-}
-
-// optionElemRawOf recovers the element raw type from an option's LLVM type
-// (%option_str -> "str", %option_fs_file -> "fs.file"). The flat `%option`
-// (scalar payload, i64) yields "". The reverse mapping mirrors structLLVMSize:
-// sanitize() folded every non-alphanumeric rune to '_', so '_' is turned back
-// into '.', but a name that is itself a known struct key is preferred as-is so
-// a real underscore in a user type name is not mangled.
-func (c *codegen) optionElemRawOf(optLT string) string {
-	if optLT == "%option" {
-		return ""
-	}
-	suffix := strings.TrimPrefix(optLT, "%option_")
-	if suffix == optLT || suffix == "" {
-		return ""
-	}
-	if _, ok := c.mod.StructFields[suffix]; ok {
-		return suffix
-	}
-	if dot := strings.ReplaceAll(suffix, "_", "."); dot != suffix {
-		if _, ok := c.mod.StructFields[dot]; ok {
-			return dot
-		}
-		return dot
-	}
-	return suffix
 }
 
 func (c *codegen) emitInst(f *Function, inst *Inst, allocaFor func(ValueID) string) error {
@@ -2406,13 +2956,8 @@ func (c *codegen) emitConst(inst *Inst, allocaFor func(ValueID) string) error {
 		// load/store codegen, turning a `nil` into a non-nil some(0). The
 		// payload type is derived from the option's element raw type so both
 		// the flat `%option` ({ i64, i64 }) and per-payload inline types
-		// (`%option_fs_file` = { i64, %fs_file }) initialize correctly.
-		elem := ""
-		if dt := c.mod.Value(inst.Dst); dt != nil {
-			elem = optionElemRaw(c.mod.Type(dt.Type))
-		}
-		_, payloadLT := c.optionType(elem)
-		c.sb.WriteString(fmt.Sprintf("  store %s { i64 1, %s zeroinitializer }, %s* %s\n", lt, payloadLT, lt, slot))
+		// (`%option` = { i64 tag, [3 x i64] slot }) initialize correctly.
+		c.optStoreTag(slot, 1)
 		return nil
 	}
 	switch lt {
@@ -2429,14 +2974,14 @@ func (c *codegen) emitConst(inst *Inst, allocaFor func(ValueID) string) error {
 	return nil
 }
 
-// emitOptionWrap builds an inline ?T option value { i64 tag, payload } from a
+// emitOptionWrap builds a ?T option value `{ i64 tag, [3 x i64] slot }` from a
 // single payload argument. It backs the nolang ?T constructors val/ok/some (tag
 // 0) and err (tag 2). The discriminant comes from inst.Int (the tag set by the
 // lowerer); inst.Args[0] is the payload value, whose ownership has already been
 // transferred into the option by the move analysis (so it is exempt from
-// dropping, and this store is the only free site). The option's LLVM type
-// (%option for scalar payloads, %option_<elem> otherwise) and its payload type
-// are derived from the option type's element raw type.
+// dropping, and this store is the only free site). The payload's LLVM type is
+// derived from the option type's element raw type and decides whether the
+// payload goes inline into the 24-byte slot or into a heap box.
 func (c *codegen) emitOptionWrap(inst *Inst) error {
 	dstT, _ := c.ptype(inst.Dst)
 	if dstT == "void" || dstT == "" {
@@ -2448,195 +2993,64 @@ func (c *codegen) emitOptionWrap(inst *Inst) error {
 		return fmt.Errorf("option-wrap slot")
 	}
 	elem := optionElemRaw(c.mod.Type(inst.Type))
-	optLT, payloadLT := c.optionType(elem)
+	_, payloadLT := c.optionType(elem)
 	tag := inst.Int
 	if len(inst.Args) == 0 || inst.Args[0] == NoVal {
 		// No payload (bare err / val / ok / some constructor, or a zero-arg
 		// call): emit the discriminant with the requested tag and a zero
 		// payload. tag 0 = val/ok/some, tag 2 = err (NOT the "none" tag 1,
 		// which is reserved for nil / KNilLit).
-		c.sb.WriteString(fmt.Sprintf("  store %s { i64 %d, %s zeroinitializer }, %s* %s\n", optLT, tag, payloadLT, optLT, slot))
+		c.optStoreTag(slot, tag)
 		return nil
 	}
-	svType, sv := c.loadVal(inst.Args[0])
-	if payloadLT == "i64" {
-		// scalar payload: coerce the source to i64 (e.g. i8/u8 -> i64) before
-		// inserting it into the flat %option. An owned non-integer source (a
-		// string error message in str.to-i64, etc.) is heap-cloned and its
-		// pointer stored as the i64 payload — see optionScalarPayload.
-		srcT, _ := c.ptype(inst.Args[0])
-		sv = c.optionScalarPayload(srcT, sv)
-		c.loadSeq++
-		w1 := fmt.Sprintf("%%ow%d", c.loadSeq)
-		c.sb.WriteString(fmt.Sprintf("  %s = insertvalue %s { i64 0, i64 0 }, i64 %d, 0\n", w1, optLT, tag))
-		c.loadSeq++
-		w2 := fmt.Sprintf("%%ow%d", c.loadSeq)
-		c.sb.WriteString(fmt.Sprintf("  %s = insertvalue %s %s, i64 %s, 1\n", w2, optLT, w1, sv))
-		c.sb.WriteString(fmt.Sprintf("  store %s %s, %s* %s\n", optLT, w2, optLT, slot))
-		return nil
-	}
-	// non-scalar payload: store the payload value inline in the per-payload
-	// option type (%option_fs_file / %option_str / ...), by-value.
-	//
-	// Type-pun guard: nolang permits `err(msg)` / `val(x)` to wrap a value
-	// whose type differs from the option's declared payload element. The
-	// canonical case is `err(str-msg)` into a non-str option (?file, ?[]byte,
-	// ?i64's heap-err, ...): the err message is a %str-long, but the inline
-	// option slot is typed %fs_file / %vec / .... The legacy backend always
-	// lowers ?T to the FLAT `%option = { i64 tag, i64 data }` and stores the
-	// message's heap pointer (ptrtoint → i64) into the i64 data field, so the
-	// payload bytes are type-erased and only the tag is ever inspected at
-	// runtime. MIR's per-payload inline type is stricter; to keep the IR
-	// verifier-happy we re-pun the source value into the declared payload type
-	// via a pointer bitcast + load (the runtime only reads the tag, so the
-	// reinterpreted payload bytes are never used). Without this,
-	// `err(err-msg)` into `?file` emits `insertvalue %option_fs_file, %str-long
-	// %lv, 1` and opt rejects it ("defined with type %str-long but expected
-	// %fs_file").
-	//
-	// #84 guard: when the payload type is MUCH larger than the source (e.g.
-	// %str-long (24 bytes) → %json_json (22KB)), the bitcast+load reads past
-	// the source alloca → SIGSEGV. The type-pun is only safe when the source
-	// and payload types are the same size. When they differ in size, use
-	// zeroinitializer for the payload (the runtime only reads the tag for
-	// err/nil arms, so the payload bytes are never accessed).
-	if svType != "" && svType != payloadLT {
-		if c.typeSizeSafe(svType, payloadLT) {
-			sv = c.optionPayloadPun(inst.Args[0], svType, payloadLT, sv)
-		} else {
-			// Source smaller than payload (or either unknown): bitcast+load
-			// would read past the source alloca (e.g. %str-long 24B →
-			// %json_json 22KB → SIGSEGV). Use zeroinitializer; the runtime
-			// only reads the tag for err/nil arms, so payload bytes are safe
-			// to zero.
-			sv = "zeroinitializer"
-		}
-	}
-	// #83 SROA guard: for large aggregate payloads, loadVal returns a slot
-	// pointer (not a loaded value), so insertvalue cannot be used. Instead,
-	// store the tag via a small insertvalue (i64 tag only), then memcpy the
-	// payload from the source slot into the option's payload field.
-	if c.shouldUseMemcpy(payloadLT) {
-		// Build a partial option with just the tag set, store it, then
-		// memcpy the payload into field 1.
-		c.loadSeq++
-		w1 := fmt.Sprintf("%%ow%d", c.loadSeq)
-		c.sb.WriteString(fmt.Sprintf("  %s = insertvalue %s zeroinitializer, i64 %d, 0\n", w1, optLT, tag))
-		c.sb.WriteString(fmt.Sprintf("  store %s %s, %s* %s\n", optLT, w1, optLT, slot))
-		// GEP to the payload field (field 1) and memcpy from source.
-		if srcSlot := c.valSlot[inst.Args[0]]; srcSlot != "" {
-			c.loadSeq++
-			pg := fmt.Sprintf("%%owpf%d", c.loadSeq)
-			c.sb.WriteString(fmt.Sprintf("  %s = getelementptr inbounds %s, %s* %s, i32 0, i32 1\n", pg, optLT, optLT, slot))
-			sz := c.typeSizeOperand(payloadLT)
-			c.emitMemcpy(pg, srcSlot, sz)
-		}
-		return nil
-	}
-	c.loadSeq++
-	w1 := fmt.Sprintf("%%ow%d", c.loadSeq)
-	c.sb.WriteString(fmt.Sprintf("  %s = insertvalue %s zeroinitializer, i64 %d, 0\n", w1, optLT, tag))
-	c.loadSeq++
-	w2 := fmt.Sprintf("%%ow%d", c.loadSeq)
-	c.sb.WriteString(fmt.Sprintf("  %s = insertvalue %s %s, %s %s, 1\n", w2, optLT, w1, payloadLT, sv))
-	c.sb.WriteString(fmt.Sprintf("  store %s %s, %s* %s\n", optLT, w2, optLT, slot))
-	return nil
-}
-
-// optionPayloadPun coerces a source value into the payload field type of an
-// inline option (`%option_<elem> = { i64 tag, <payload> }`), returning the
-// LLVM value string to insert.
-//
-// Two shapes need it:
-//
-//  1. FIXED ARRAY -> slice payload. `out ?[]i64 = [10, 20, 30]` lowers the
-//     literal to a fixed `[3 x i64]` while the option's payload field is a
-//     `%vec`. A raw bitcast would reinterpret the ELEMENTS as the slice header
-//     (len=10, cap=20, data=30), so `out.len()` returned nonsense; inserting
-//     the array directly is rejected by the verifier ("defined with type
-//     '[3 x i64]' but expected '%vec'"). Build a real slice instead — a heap
-//     copy for trivially-copyable elements (test-uninit-output case7-slice).
-//
-//  2. Type-pun: nolang permits `err(msg)` / `val(x)` to wrap a value whose type
-//     differs from the option's declared payload element. The canonical case is
-//     `err(str-msg)` into a non-str option (?file, ?[]byte, ...): the message
-//     is a %str-long but the inline slot is typed %fs_file / %vec. The legacy
-//     backend always lowers ?T to the FLAT `%option = { i64 tag, i64 data }`
-//     and stores the message's heap pointer (ptrtoint -> i64), so the payload
-//     bytes are type-erased and only the tag is ever inspected at runtime. MIR's
-//     per-payload inline type is stricter, so the source is re-punned through a
-//     pointer bitcast + load. Without this, `err(err-msg)` into `?file` emits
-//     `insertvalue %option_fs_file, %str-long %lv, 1` and opt rejects it.
-//
-// typeSizeSafe reports whether the bitcast+load type-pun in optionPayloadPun
-// is safe: the source value's allocation must be at least as large as the
-// payload type. Returns false when either type's size is unknown (conservative).
-func (c *codegen) typeSizeSafe(svType, payloadLT string) bool {
-	srcSize, srcOk := mirStaticTypeSize(svType)
-	dstSize, dstOk := mirStaticTypeSize(payloadLT)
-	if !srcOk || !dstOk {
-		// At least one type is a user struct / unknown size.
-		// Only allow when the types are the same (no pun needed) or
-		// both are known scalars. Otherwise conservatively reject.
-		// Exception: array→vec pun is handled separately in optionPayloadPun.
-		if payloadLT == "%vec" && strings.HasPrefix(svType, "[") {
-			return true
-		}
-		return false
-	}
-	return srcSize >= dstSize
-}
-
-func (c *codegen) optionPayloadPun(srcVal ValueID, svType, payloadLT, sv string) string {
+	src := inst.Args[0]
+	svType, sv := c.loadVal(src)
+	// A fixed-array literal into a `?[]T` option must become a real slice
+	// first: its bytes are the ELEMENTS, so storing them raw would make the
+	// payload read back as {len=first-elem, cap=second-elem, ...}.
 	if payloadLT == "%vec" && strings.HasPrefix(svType, "[") {
-		arrSlot := c.valSlot[srcVal]
+		arrSlot := c.valSlot[src]
 		if arrSlot == "" {
-			// No slot (the value is a transient register): spill it to a temp
-			// stack slot so the array->slice helper has an addressable source.
-			arrSlot = c.treg("owa")
+			c.loadSeq++
+			arrSlot = fmt.Sprintf("%%owa%d", c.loadSeq)
 			c.sb.WriteString(fmt.Sprintf("  %s = alloca %s\n", arrSlot, svType))
 			c.sb.WriteString(fmt.Sprintf("  store %s %s, %s* %s\n", svType, sv, svType, arrSlot))
 		}
-		return c.vecFromArraySink(svType, arrSlot)
+		sv = c.vecFromArraySink(svType, arrSlot)
+		svType = "%vec"
 	}
-	if srcSlot := c.valSlot[srcVal]; srcSlot != "" {
-		c.loadSeq++
-		bc := fmt.Sprintf("%%owbc%d", c.loadSeq)
-		c.sb.WriteString(fmt.Sprintf("  %s = bitcast %s* %s to %s*\n", bc, svType, srcSlot, payloadLT))
-		c.loadSeq++
-		ld := fmt.Sprintf("%%owld%d", c.loadSeq)
-		c.sb.WriteString(fmt.Sprintf("  %s = load %s, %s* %s\n", ld, payloadLT, payloadLT, bc))
-		return ld
+	// Type-pun: the wrapped value's type differs from the declared payload.
+	// `err(msg)` into ?i64 / ?file / ?json is the canonical case — the message
+	// is a 24-byte %str-long that fits the slot exactly, so it is stored as
+	// raw bytes and read back as raw bytes by the err arm. This replaces the
+	// old `str_clone` + ptrtoint hack, which threw away len/cap (the err arm
+	// printed a raw heap address) and leaked the clone.
+	if svType != "" && svType != payloadLT {
+		c.optStoreRawBytes(slot, tag, svType, src, sv)
+		return nil
 	}
-	return sv
-}
-
-// optionScalarPayload coerces a constructor payload value into the i64 data
-// field of a flat scalar %option ({ i64 tag, i64 data }). nolang permits ANY
-// value to be wrapped by val/ok/some/err, even into a scalar option (?i64):
-// an integer source coerces to i64, while an owned non-integer source (a
-// string error message in str.to-i64 / str.to-u8 / ..., which all return ?X
-// but raise err('msg')) is heap-cloned and its pointer stored as the i64
-// payload. That mirrors the legacy backend's copyStrToData: the runtime only
-// inspects the tag (is-err / match arm), so the message survives as a heap
-// pointer (legacy leaks it too — acceptable for behavior parity).
-func (c *codegen) optionScalarPayload(srcT, sv string) string {
-	if srcT == "%str-long" {
-		cl := fmt.Sprintf("%%osspc%d", c.loadSeq)
-		c.loadSeq++
-		c.sb.WriteString(fmt.Sprintf("  %s = call %s @str_clone(%s %s)\n", cl, srcT, srcT, sv))
-		dp := fmt.Sprintf("%%osspd%d", c.loadSeq)
-		c.loadSeq++
-		c.sb.WriteString(fmt.Sprintf("  %s = extractvalue %s %s, 2\n", dp, srcT, cl))
-		pi := fmt.Sprintf("%%ospp%d", c.loadSeq)
-		c.loadSeq++
-		c.sb.WriteString(fmt.Sprintf("  %s = ptrtoint i8* %s to i64\n", pi, dp))
-		return pi
+	if sv == "" {
+		c.optStoreTag(slot, tag)
+		return nil
 	}
-	if cv := c.coerce(srcT, sv, "i64"); cv != "" {
-		return cv
+	if c.optionPayloadInline(payloadLT) {
+		// Scalars, str, vec, small structs / arrays: store by value into the
+		// (already zeroed) slot.
+		c.optStoreTag(slot, tag)
+		c.optStoreInlinePayload(slot, payloadLT, sv)
+		return nil
 	}
-	return sv
+	// Payload too big for the slot (or of unprovable size): heap-box it and
+	// record the pointer. This also removes the old #83 SROA hazard — the
+	// option is now a fixed 32 bytes regardless of how large the payload is,
+	// so no `load %json_json` ever reaches SROA.
+	srcAddr := c.addrOfValue(src, svType, sv)
+	if srcAddr == "" {
+		c.optStoreTag(slot, tag)
+		return nil
+	}
+	c.optStoreBoxedPayload(slot, tag, payloadLT, srcAddr)
+	return nil
 }
 
 // unwrapOptionOperand extracts the ok-payload of an %option operand when the
@@ -2646,12 +3060,16 @@ func (c *codegen) optionScalarPayload(srcT, sv string) string {
 // (`%c = mul i64 %x, %y` where %y is %option) opt rejects the IR as "defined
 // with type %option but expected i64". Mirroring legacy, the variable
 // contributes its scalar payload (tag 0 = ok), never the {tag,payload} struct.
-func (c *codegen) unwrapOptionOperand(t, v, dstLT string) (string, string) {
+func (c *codegen) unwrapOptionOperand(src ValueID, t, v, dstLT string) (string, string) {
 	if t == "%option" && dstLT != "%option" && dstLT != "" {
-		c.loadSeq++
-		pl := fmt.Sprintf("%%opu%d", c.loadSeq)
-		c.sb.WriteString(fmt.Sprintf("  %s = extractvalue %s %s, 1\n", pl, t, v))
-		return dstLT, pl
+		pv, pt := c.optionPayloadOf(src, v, t)
+		if pv == "" {
+			return t, v
+		}
+		if cv := c.coerce(pt, pv, dstLT); cv != "" {
+			return dstLT, cv
+		}
+		return pt, pv
 	}
 	return t, v
 }
@@ -2694,14 +3112,14 @@ func (c *codegen) emitArith(f *Function, inst *Inst) error {
 					_, payloadLT := c.optionType(elem)
 					resLT = payloadLT
 					wrapResult = true
-					aT, aV = c.unwrapOptionOperand(aT, aV, resLT)
-					bT, bV = c.unwrapOptionOperand(bT, bV, resLT)
+					aT, aV = c.unwrapOptionOperand(inst.Args[0], aT, aV, resLT)
+					bT, bV = c.unwrapOptionOperand(inst.Args[1], bT, bV, resLT)
 				}
 			}
 		}
 	} else {
-		aT, aV = c.unwrapOptionOperand(aT, aV, lt)
-		bT, bV = c.unwrapOptionOperand(bT, bV, lt)
+		aT, aV = c.unwrapOptionOperand(inst.Args[0], aT, aV, lt)
+		bT, bV = c.unwrapOptionOperand(inst.Args[1], bT, bV, lt)
 	}
 	// Coerce both operands to the (possibly unwrapped) result type: a str-byte
 	// (i8) arithmetic like `c - 32` feeds an i8 literal (i64) into an i8 op;
@@ -2754,24 +3172,12 @@ func (c *codegen) emitArith(f *Function, inst *Inst) error {
 	}
 	c.sb.WriteString(fmt.Sprintf("  %%c%d = %s %s %s, %s\n", inst.Dst, op, resLT, aV, bV))
 	if wrapResult {
-		c.loadSeq++
-		wreg := fmt.Sprintf("%%cw%d", c.loadSeq)
-		c.sb.WriteString(fmt.Sprintf("  %s = insertvalue %s %s, %s %%c%d, 1\n", wreg, lt, optionZeroLit(lt, resLT), resLT, inst.Dst))
-		c.sb.WriteString(fmt.Sprintf("  store %s %s, %s* %s\n", lt, wreg, lt, slot))
+		c.optStoreTag(slot, 0)
+		c.optStoreInlinePayload(slot, resLT, fmt.Sprintf("%%c%d", inst.Dst))
 	} else {
 		c.sb.WriteString(fmt.Sprintf("  store %s %%c%d, %s* %s\n", lt, inst.Dst, lt, slot))
 	}
 	return nil
-}
-
-// optionZeroLit returns an LLVM aggregate literal of the given option type with
-// both fields zeroed ({ i64 0, <payload> 0 }), used as the seed for
-// insertvalue when wrapping a scalar result into an option (tag 0 = ok).
-func optionZeroLit(optionLT, payloadLT string) string {
-	if payloadLT == "double" {
-		return "{ i64 0, double 0.0 }"
-	}
-	return fmt.Sprintf("{ i64 0, %s 0 }", payloadLT)
 }
 
 func (c *codegen) emitNeg(inst *Inst) error {
@@ -2787,12 +3193,12 @@ func (c *codegen) emitNeg(inst *Inst) error {
 					_, payloadLT := c.optionType(elem)
 					resLT = payloadLT
 					wrapResult = true
-					vT, v = c.unwrapOptionOperand(vT, v, resLT)
+					vT, v = c.unwrapOptionOperand(inst.Args[0], vT, v, resLT)
 				}
 			}
 		}
 	} else {
-		vT, v = c.unwrapOptionOperand(vT, v, lt)
+		vT, v = c.unwrapOptionOperand(inst.Args[0], vT, v, lt)
 	}
 	v = c.coerceInt(v, vT, resLT)
 	if resLT == "double" {
@@ -2801,10 +3207,8 @@ func (c *codegen) emitNeg(inst *Inst) error {
 		c.sb.WriteString(fmt.Sprintf("  %%c%d = sub %s 0, %s\n", inst.Dst, resLT, v))
 	}
 	if wrapResult {
-		c.loadSeq++
-		wreg := fmt.Sprintf("%%cw%d", c.loadSeq)
-		c.sb.WriteString(fmt.Sprintf("  %s = insertvalue %s %s, %s %%c%d, 1\n", wreg, lt, optionZeroLit(lt, resLT), resLT, inst.Dst))
-		c.sb.WriteString(fmt.Sprintf("  store %s %s, %s* %s\n", lt, wreg, lt, slot))
+		c.optStoreTag(slot, 0)
+		c.optStoreInlinePayload(slot, resLT, fmt.Sprintf("%%c%d", inst.Dst))
 	} else {
 		c.sb.WriteString(fmt.Sprintf("  store %s %%c%d, %s* %s\n", lt, inst.Dst, lt, slot))
 	}
@@ -2906,17 +3310,17 @@ func (c *codegen) emitCmp(inst *Inst) error {
 		// When the payload is an aggregate but the other side is a scalar
 		// (e.g. ?[]str vs bool), comparing the payload is meaningless and
 		// produces a type mismatch. Fall back to comparing the TAG.
-		payloadT := c.optionPayloadLLVMType(c.optionElemRawOf(aT))
+		payloadT := c.optPayloadLTOf(inst.Args[0])
 		if payloadT == bT || (isIntType(bT) && (payloadT == "i64" || payloadT == "i32" || payloadT == "i8" || payloadT == "i1")) || (bT == "%str-long" && payloadT == "%str-long") || (bT == "%vec" && payloadT == "%vec") {
-			aV, aT = c.optionPayloadOf(aV, aT)
+			aV, aT = c.optionPayloadOf(inst.Args[0], aV, aT)
 		} else {
 			aV = c.optionTag(aV, aT)
 			aT = "i64"
 		}
 	case bOpt:
-		payloadT := c.optionPayloadLLVMType(c.optionElemRawOf(bT))
+		payloadT := c.optPayloadLTOf(inst.Args[1])
 		if payloadT == aT || (isIntType(aT) && (payloadT == "i64" || payloadT == "i32" || payloadT == "i8" || payloadT == "i1")) || (aT == "%str-long" && payloadT == "%str-long") || (aT == "%vec" && payloadT == "%vec") {
-			bV, bT = c.optionPayloadOf(bV, bT)
+			bV, bT = c.optionPayloadOf(inst.Args[1], bV, bT)
 		} else {
 			bV = c.optionTag(bV, bT)
 			bT = "i64"
@@ -3165,14 +3569,14 @@ func (c *codegen) emitBitwise(inst *Inst) error {
 					_, payloadLT := c.optionType(elem)
 					resLT = payloadLT
 					wrapResult = true
-					aT, aV = c.unwrapOptionOperand(aT, aV, resLT)
-					bT, bV = c.unwrapOptionOperand(bT, bV, resLT)
+					aT, aV = c.unwrapOptionOperand(inst.Args[0], aT, aV, resLT)
+					bT, bV = c.unwrapOptionOperand(inst.Args[1], bT, bV, resLT)
 				}
 			}
 		}
 	} else {
-		aT, aV = c.unwrapOptionOperand(aT, aV, lt)
-		bT, bV = c.unwrapOptionOperand(bT, bV, lt)
+		aT, aV = c.unwrapOptionOperand(inst.Args[0], aT, aV, lt)
+		bT, bV = c.unwrapOptionOperand(inst.Args[1], bT, bV, lt)
 	}
 	aV = c.coerceInt(aV, aT, resLT)
 	bV = c.coerceInt(bV, bT, resLT)
@@ -3191,10 +3595,8 @@ func (c *codegen) emitBitwise(inst *Inst) error {
 	}
 	c.sb.WriteString(fmt.Sprintf("  %%c%d = %s %s %s, %s\n", inst.Dst, op, resLT, aV, bV))
 	if wrapResult {
-		c.loadSeq++
-		wreg := fmt.Sprintf("%%cw%d", c.loadSeq)
-		c.sb.WriteString(fmt.Sprintf("  %s = insertvalue %s %s, %s %%c%d, 1\n", wreg, lt, optionZeroLit(lt, resLT), resLT, inst.Dst))
-		c.sb.WriteString(fmt.Sprintf("  store %s %s, %s* %s\n", lt, wreg, lt, slot))
+		c.optStoreTag(slot, 0)
+		c.optStoreInlinePayload(slot, resLT, fmt.Sprintf("%%c%d", inst.Dst))
 	} else {
 		c.sb.WriteString(fmt.Sprintf("  store %s %%c%d, %s* %s\n", lt, inst.Dst, lt, slot))
 	}
@@ -3238,7 +3640,7 @@ func (c *codegen) emitDrop(inst *Inst) error {
 // emitOptionDrop frees an option's owned heap element. The element type is read
 // from the option value's nolang raw type (?str / ?vec / ?T) so we free with the
 // right helper; unknown/non-heap elements are left alone (safe no-op). optLT is
-// the option's concrete LLVM type (%option or %option_<elem>).
+// the option's single LLVM type (%option).
 func (c *codegen) emitOptionDrop(inst *Inst, v, optLT string) {
 	elemRaw := ""
 	if val := c.mod.Value(inst.Args[0]); val != nil {
@@ -3248,27 +3650,47 @@ func (c *codegen) emitOptionDrop(inst *Inst, v, optLT string) {
 			}
 		}
 	}
+	// A BOXED payload is by definition a payload that does not fit the slot,
+	// i.e. a struct — and a struct is never ClassifyOwnership-owned, so no drop
+	// is ever emitted for it (see insertDrops). Only ?str / ?vec / ?[]T reach
+	// this function, and all three are exactly 24 bytes, hence always INLINE.
+	// That is why there is no box-free branch here: leaking a box is impossible
+	// today, and a free guarded on `tag == 0` would be the first thing to break
+	// if an owned payload ever outgrew the slot.
+	slot := c.optSlotOfValue(inst.Args[0])
+	if slot == "" {
+		c.sb.WriteString(fmt.Sprintf("  ; drop %s (option element %q has no slot)\n", v, elemRaw))
+		return
+	}
 	switch elemRaw {
 	case "str":
-		// Per-payload inline option: field 1 is a by-value %str-long. Free its
-		// heap data buffer (field 2) directly.
+		// Inline %str-long payload: free its heap data buffer (field 2).
 		c.loadSeq++
 		pl := fmt.Sprintf("%%optpl%d", c.loadSeq)
-		c.sb.WriteString(fmt.Sprintf("  %s = extractvalue %s %s, 1\n", pl, optLT, v))
+		c.sb.WriteString(fmt.Sprintf("  %s = bitcast i8* %s to %%str-long*\n", pl, c.optPayloadAddr(slot, "%str-long")))
+		c.loadSeq++
+		pv := fmt.Sprintf("%%optpv%d", c.loadSeq)
+		c.sb.WriteString(fmt.Sprintf("  %s = load %%str-long, %%str-long* %s\n", pv, pl))
 		c.loadSeq++
 		pd := fmt.Sprintf("%%optpd%d", c.loadSeq)
-		c.sb.WriteString(fmt.Sprintf("  %s = extractvalue %%str-long %s, 2\n", pd, pl))
+		c.sb.WriteString(fmt.Sprintf("  %s = extractvalue %%str-long %s, 2\n", pd, pv))
 		c.sb.WriteString(fmt.Sprintf("  call void @free(i8* %s)\n", pd))
 	case "vec":
-		// Per-payload inline option: field 1 is a by-value %vec. Free its heap
-		// data buffer (field 2) directly.
+		// Inline %vec payload: free its backing store (field 2, a pointer held
+		// as i64).
 		c.loadSeq++
 		pl := fmt.Sprintf("%%optpl%d", c.loadSeq)
-		c.sb.WriteString(fmt.Sprintf("  %s = extractvalue %s %s, 1\n", pl, optLT, v))
+		c.sb.WriteString(fmt.Sprintf("  %s = bitcast i8* %s to %%vec*\n", pl, c.optPayloadAddr(slot, "%vec")))
+		c.loadSeq++
+		pv := fmt.Sprintf("%%optpv%d", c.loadSeq)
+		c.sb.WriteString(fmt.Sprintf("  %s = load %%vec, %%vec* %s\n", pv, pl))
 		c.loadSeq++
 		pd := fmt.Sprintf("%%optpd%d", c.loadSeq)
-		c.sb.WriteString(fmt.Sprintf("  %s = extractvalue %%vec %s, 2\n", pd, pl))
-		c.sb.WriteString(fmt.Sprintf("  call void @free(i8* %s)\n", pd))
+		c.sb.WriteString(fmt.Sprintf("  %s = extractvalue %%vec %s, 2\n", pd, pv))
+		c.loadSeq++
+		pp := fmt.Sprintf("%%optpp%d", c.loadSeq)
+		c.sb.WriteString(fmt.Sprintf("  %s = inttoptr i64 %s to i8*\n", pp, pd))
+		c.sb.WriteString(fmt.Sprintf("  call void @free(i8* %s)\n", pp))
 	default:
 		// ?i64 / ?bool / user-struct / unrecognized element: nothing heap-owned
 		// to free (or a shallow no-op for structs; deep-free is a follow-up).
@@ -3285,8 +3707,8 @@ func (c *codegen) emitOptionDrop(inst *Inst, v, optLT string) {
 // the address of the value's storage — so borrowing is a single store of the
 // slot pointer, with no load of the value itself.
 //
-//   &self  ->  store %json* %p0,        %json** %dst.s
-//   &local ->  store %json* %v3.s,      %json** %dst.s
+//	&self  ->  store %json* %p0,        %json** %dst.s
+//	&local ->  store %json* %v3.s,      %json** %dst.s
 func (c *codegen) emitBorrow(inst *Inst) error {
 	if len(inst.Args) < 1 || inst.Args[0] <= NoVal {
 		c.fail("borrow: missing source in func %d", c.cf)
@@ -3365,217 +3787,123 @@ func (c *codegen) emitMove(inst *Inst) error {
 		c.fail("moving a borrowed %s parameter transfers ownership the callee does not hold (double-free risk); unsupported in MIR backend", dstT)
 		return fmt.Errorf("borrowed %s param move unsupported in MIR backend", dstT)
 	}
-	// Option-aware move. nolang `x ?t = y` wraps y into some(y); the MIR
-	// subset models options with per-payload inline types (%option for scalars,
-	// %option_<elem> = { i64 tag, <payload> } for non-scalars), so the payload
-	// is stored by-value. Conversely `x = opt` (an option source into a
-	// non-option dst) extracts the payload field (field 1). A plain
-	// `load %option, %option* srcSlot` would misread the payload's bits as the
-	// discriminant and turn some(v) into nil / none into some(0).
+	// Option-aware move. nolang `x ?t = y` wraps y into some(y) and `x = opt`
+	// peels the payload back out. Both directions go through the unified
+	// `%option = { i64 tag, [3 x i64] slot }`: a plain
+	// `store %option %loaded, %option* dst` on the WRAP side would write y's
+	// bytes into the tag field and turn some(v) into nil (and, worse, copy a
+	// payload that no longer fits the slot).
 	if isOptionType(dstT) && !isOptionType(srcT) {
-		dstRaw := ""
-		if dt := c.mod.Value(dstVal); dt != nil {
-			if t := c.mod.Type(dt.Type); t != nil {
-				dstRaw = t.Raw
-			}
-		}
-		elem, _ := parseOptionElem(dstRaw)
-		optLT, payloadLT := c.optionType(elem)
-		_, sv := c.loadVal(inst.Args[0])
-		if payloadLT == "i64" {
-			// scalar payload: coerce to i64 and insertvalue into the flat %option.
-			// An owned non-integer source (string error message into a scalar
-			// option) is heap-cloned and its pointer stored — see
-			// optionScalarPayload.
-			sv = c.optionScalarPayload(srcT, sv)
-			c.loadSeq++
-			w1 := fmt.Sprintf("%%mvw%d", c.loadSeq)
-			c.sb.WriteString(fmt.Sprintf("  %s = insertvalue %%option { i64 0, i64 0 }, i64 0, 0\n", w1))
-			c.loadSeq++
-			w2 := fmt.Sprintf("%%mvw%d", c.loadSeq)
-			c.sb.WriteString(fmt.Sprintf("  %s = insertvalue %%option %s, i64 %s, 1\n", w2, w1, sv))
-			c.sb.WriteString(fmt.Sprintf("  store %%option %s, %%option* %s\n", w2, dstSlot))
-			return nil
-		}
-		// non-scalar payload: store the payload value inline in the per-payload
-		// option type (%option_fs_file / %option_str / ...). A source whose
-		// LLVM type differs from the declared payload must be coerced first
-		// (fixed array -> %vec slice payload, otherwise a type-pun) — see
-		// optionPayloadPun. Assigning a slice literal to a `?[]i64` out-param
-		// (`out = [10, 20, 30]`) reaches exactly this path, and inserting the
-		// raw `[3 x i64]` is rejected by the verifier (test-uninit-output).
-		if srcT != "" && srcT != payloadLT {
-			sv = c.optionPayloadPun(inst.Args[0], srcT, payloadLT, sv)
-		}
-		// #83 SROA guard: for large aggregate payloads, loadVal returns a
-		// slot pointer. Use tag-only insertvalue + memcpy like emitOptionWrap.
-		if c.shouldUseMemcpy(payloadLT) {
-			c.loadSeq++
-			w1 := fmt.Sprintf("%%mvw%d", c.loadSeq)
-			c.sb.WriteString(fmt.Sprintf("  %s = insertvalue %s zeroinitializer, i64 0, 0\n", w1, optLT))
-			c.sb.WriteString(fmt.Sprintf("  store %s %s, %s* %s\n", optLT, w1, optLT, dstSlot))
-			if srcSlot := c.valSlot[inst.Args[0]]; srcSlot != "" {
+		payloadLT := c.optPayloadLTOf(dstVal)
+		src := inst.Args[0]
+		_, sv := c.loadVal(src)
+		// `out ?[]i64 = [10, 20, 30]`: the literal's bytes are the ELEMENTS, so
+		// it must become a real slice before it can be a %vec payload.
+		if payloadLT == "%vec" && strings.HasPrefix(srcT, "[") {
+			arrSlot := c.valSlot[src]
+			if arrSlot == "" {
 				c.loadSeq++
-				pg := fmt.Sprintf("%%mvpf%d", c.loadSeq)
-				c.sb.WriteString(fmt.Sprintf("  %s = getelementptr inbounds %s, %s* %s, i32 0, i32 1\n", pg, optLT, optLT, dstSlot))
-				sz := c.typeSizeOperand(payloadLT)
-				c.emitMemcpy(pg, srcSlot, sz)
+				arrSlot = fmt.Sprintf("%%mva%d", c.loadSeq)
+				c.sb.WriteString(fmt.Sprintf("  %s = alloca %s\n", arrSlot, srcT))
+				c.sb.WriteString(fmt.Sprintf("  store %s %s, %s* %s\n", srcT, sv, srcT, arrSlot))
 			}
+			sv = c.vecFromArraySink(srcT, arrSlot)
+			srcT = "%vec"
+		}
+		// Type-pun (`x ?i64 = msg`): store the source's raw bytes. This is the
+		// err-message path and it is exactly what makes `err('msg')` survive in
+		// a narrow option — the old code str_clone'd and stored only the heap
+		// pointer, so len/cap were lost and the clone leaked.
+		if srcT != "" && srcT != payloadLT {
+			c.optStoreRawBytes(dstSlot, 0, srcT, src, sv)
 			return nil
 		}
-		c.loadSeq++
-		w1 := fmt.Sprintf("%%mvw%d", c.loadSeq)
-		c.sb.WriteString(fmt.Sprintf("  %s = insertvalue %s zeroinitializer, i64 0, 0\n", w1, optLT))
-		c.loadSeq++
-		w2 := fmt.Sprintf("%%mvw%d", c.loadSeq)
-		c.sb.WriteString(fmt.Sprintf("  %s = insertvalue %s %s, %s %s, 1\n", w2, optLT, w1, payloadLT, sv))
-		c.sb.WriteString(fmt.Sprintf("  store %s %s, %s* %s\n", optLT, w2, optLT, dstSlot))
+		if sv == "" {
+			c.optStoreTag(dstSlot, 0)
+			return nil
+		}
+		if c.optionPayloadInline(payloadLT) {
+			c.optStoreTag(dstSlot, 0)
+			c.optStoreInlinePayload(dstSlot, payloadLT, sv)
+			return nil
+		}
+		srcAddr := c.addrOfValue(src, srcT, sv)
+		if srcAddr == "" {
+			c.optStoreTag(dstSlot, 0)
+			return nil
+		}
+		c.optStoreBoxedPayload(dstSlot, 0, payloadLT, srcAddr)
 		return nil
 	}
 	if !isOptionType(dstT) && isOptionType(srcT) {
-		srcRaw := ""
-		if st := c.mod.Value(inst.Args[0]); st != nil {
-			if t := c.mod.Type(st.Type); t != nil {
-				srcRaw = t.Raw
-			}
+		payloadLT := c.optPayloadLTOf(inst.Args[0])
+		optSlot := c.optSlotOfValue(inst.Args[0])
+		if optSlot == "" || dstSlot == "" {
+			c.fail("option peel has no slot in func %d", c.cf)
+			return fmt.Errorf("option peel slot")
 		}
-		elem, _ := parseOptionElem(srcRaw)
-		optLT, payloadLT := c.optionType(elem)
-		_, sv := c.loadVal(inst.Args[0])
-		// Peel the payload. The payload's LLVM type is NOT the destination type
-		// in general: a scalar option is the FLAT `%option = { i64 tag, i64 data }`
-		// whatever its element, so unwrapping `?byte` yields an i64 that must be
-		// TRUNCATED to the i8 destination. Storing the raw payload is rejected by
-		// the verifier — opt: "'%mvu295' defined with type 'i64' but expected
-		// 'i8'" — which killed the whole `str[i]` -> `?byte` family
-		// (tests/test-x25519-minimal.no, test-hmac, test-sha256, test-fe-ops, ...).
-		c.loadSeq++
-		u1 := fmt.Sprintf("%%mvu%d", c.loadSeq)
-		// payloadAddr is non-empty when the payload is a large aggregate, in
-		// which case loadVal handed back the option's SLOT and the payload must
-		// be addressed with a GEP rather than extractvalue.
-		payloadAddr := ""
-		if c.shouldUseMemcpy(payloadLT) {
-			// #83 SROA guard, symmetric with the WRAP path above: for a large
-			// payload loadVal returns the option's SLOT, not a loaded value, so
-			// `extractvalue` on it is invalid IR —
-			//   opt: "'%v14.s' defined with type 'ptr' but expected
-			//         '%option_json_json = type { i64, %json_json }'"
-			// Address the payload field with a GEP.
-			//
-			// NOTE: this gap was unreachable until computeTypeSize learned to
-			// size %json_json. Its payload type is `json.json-pool`, whose
-			// sanitized name (%json_json_pool) the old reverse lookup could not
-			// resolve, so computeTypeSize failed and shouldUseMemcpy returned
-			// false for ?json — accidentally hiding this path entirely.
+		// Owned-string payload: extracting the payload copies the
+		// {len,cap,data} triple by value, so the destination would SHARE the
+		// option's heap buffer. nolang `x = opt` does NOT transfer ownership
+		// (the option may be unwrapped again later — str.replace-n unwraps the
+		// same `?str` twice), so both would drop the SAME buffer -> double
+		// free. Clone so the destination owns an independent buffer; the option
+		// keeps its own and frees it exactly once on its own drop.
+		if payloadLT == "%str-long" && dstT == "%str-long" {
+			addr := c.optPayloadTypedAddr(optSlot, payloadLT, "%str-long")
 			c.loadSeq++
-			payloadAddr = fmt.Sprintf("%%mvpf%d", c.loadSeq)
-			c.sb.WriteString(fmt.Sprintf("  %s = getelementptr inbounds %s, %s* %s, i32 0, i32 1\n", payloadAddr, optLT, optLT, sv))
-			// A SAME-TYPE destination is a pure copy, so move the bytes with
-			// memcpy and never materialise the aggregate as an SSA value.
-			//
-			// This is the whole point of the guard above: `load %json_json`
-			// produces a ~36 KB first-class value, and SROA then splits it into
-			// one scalar per nested field — over 64 json-value elements each
-			// holding 16 strings and 16 integers. Measured on
-			// tests/mem-safety/test-json-nested-match.no: SROAPass 6.0 s and
-			// InstCombinePass 4.5 s of a 13.0 s opt, i.e. 81 % of the compile.
-			// memcpy is opaque to SROA, so the explosion disappears.
-			if (payloadLT == dstT || dstT == "") && dstSlot != "" {
-				c.emitMemcpy(dstSlot, payloadAddr, c.typeSizeOperand(payloadLT))
-				return nil
-			}
-			c.sb.WriteString(fmt.Sprintf("  %s = load %s, %s* %s\n", u1, payloadLT, payloadLT, payloadAddr))
-		} else {
-			c.sb.WriteString(fmt.Sprintf("  %s = extractvalue %s %s, 1\n", u1, optLT, sv))
-		}
-		// Owned-string option peel: extractvalue copies the {len,cap,data} triple
-		// by value, so the destination SHARES the option's heap buffer. nolang
-		// `x = opt` does NOT transfer ownership (the option may be unwrapped again
-		// at a later use — str.replace-n unwraps the same `?str` twice), so BOTH the
-		// destination and the later re-unwrap would drop the SAME buffer -> double
-		// free (the str.replace-n trace/BPT trap). Clone the payload so the
-		// destination owns an independent buffer; the option keeps its own (freed
-		// exactly once on its own drop).
-		if payloadLT == "%str-long" {
+			u1 := fmt.Sprintf("%%mvu%d", c.loadSeq)
+			c.sb.WriteString(fmt.Sprintf("  %s = load %%str-long, %%str-long* %s\n", u1, addr))
 			c.loadSeq++
 			cl := fmt.Sprintf("%%mvucl%d", c.loadSeq)
 			c.sb.WriteString(fmt.Sprintf("  %s = call %%str-long @str_clone(%%str-long %s)\n", cl, u1))
 			c.sb.WriteString(fmt.Sprintf("  store %%str-long %s, %%str-long* %s\n", cl, dstSlot))
 			return nil
 		}
-		if payloadLT != dstT && dstT != "" {
-			if cv := c.coerce(payloadLT, u1, dstT); cv != "" {
-				c.sb.WriteString(fmt.Sprintf("  store %s %s, %s* %s\n", dstT, cv, dstT, dstSlot))
+		// `err` arm: `it` is the err message `str` but the option's declared
+		// payload is the OK payload's type. The wrap side stores the message's
+		// raw bytes in the slot, so read them back with the same raw view.
+		// Reading a %str-long out of the 24-byte slot is always in bounds —
+		// that width is the invariant the whole layout is built on.
+		if dstT == "%str-long" || dstT == payloadLT {
+			if c.optReadPayloadInto(optSlot, payloadLT, dstT, dstSlot) {
 				return nil
 			}
-			if dstT == "%str-long" {
-				// `err` arm: `it` is the err message `str` (%str-long, 24B)
-				// but the option's payload slot is typed for the OK payload —
-				// e.g. ?fs.file's slot is %fs_file (32B). Nolang lays the option
-				// payload out as a union with the err `str` in the FIRST 24
-				// bytes. Read exactly 24 bytes via alloca+bitcast+load so we
-				// don't overflow the %str-long slot (a plain `store %fs_file`
-				// would write 32 bytes into 24 and corrupt the stack) —
-				// tests/test_fs_error_complete.no, test-opt-struct-field.no.
-				// Buffer = the UNION of the payload and a %str-long, so it is
-				// guaranteed to hold EITHER, with LLVM computing both the size
-				// and the alignment. No size estimate is involved.
-				//
-				// WHY NOT computeTypeSize: it sums field sizes WITHOUT alignment
-				// padding, so it UNDER-estimates — `A { i64, i1 }` computes as 9
-				// but is really 16, and `B { x A, y A }` as 18 but really 32.
-				// Choosing the buffer from that number would overflow whenever
-				// the estimate fell below 24 while the real type was larger.
-				//
-				// The previous code sidestepped the question by allocating the
-				// PAYLOAD type itself and reading 24 bytes out of it. That was an
-				// 8-byte OVERREAD once the Phase-1 pointer layout shrank
-				// %json_json to 16B while the err message stayed a 24B
-				// %str-long — undefined behaviour, which opt exploited: at -O2
-				// the entire enclosing function was miscompiled so that EVERY arm
-				// of the match fell through
-				// (tests/mem-safety/test-json-parse-option.no printed neither
-				// `ok` nor `err` nor `nil`), while the same IR at -O0 was
-				// correct.
-				unionLT := fmt.Sprintf("{ %s, %s }", payloadLT, dstT)
-				c.loadSeq++
-				pa := fmt.Sprintf("%%mvpa%d", c.loadSeq)
-				c.sb.WriteString(fmt.Sprintf("  %s = alloca %s\n", pa, unionLT))
-				// Field 0 holds the payload; field 1 is a ZEROED %str-long so
-				// that when the payload is smaller than the message, the tail of
-				// the 24-byte read is zero. The inline layout read back
-				// {0,0,null} — an empty str — because the wrap path stores
-				// zeroinitializer for the payload on err paths that carry no
-				// message (json.parse), and that behaviour is preserved.
-				c.loadSeq++
-				f0 := fmt.Sprintf("%%mvpf0_%d", c.loadSeq)
-				c.sb.WriteString(fmt.Sprintf("  %s = getelementptr inbounds %s, %s* %s, i32 0, i32 0\n", f0, unionLT, unionLT, pa))
-				c.sb.WriteString(fmt.Sprintf("  store %s %s, %s* %s\n", payloadLT, u1, payloadLT, f0))
-				c.loadSeq++
-				f1 := fmt.Sprintf("%%mvpf1_%d", c.loadSeq)
-				c.sb.WriteString(fmt.Sprintf("  %s = getelementptr inbounds %s, %s* %s, i32 0, i32 1\n", f1, unionLT, unionLT, pa))
-				c.sb.WriteString(fmt.Sprintf("  store %s zeroinitializer, %s* %s\n", dstT, dstT, f1))
-				c.loadSeq++
-				bc := fmt.Sprintf("%%mvub%d", c.loadSeq)
-				c.sb.WriteString(fmt.Sprintf("  %s = bitcast %s* %s to %s*\n", bc, unionLT, pa, dstT))
-				c.loadSeq++
-				ld := fmt.Sprintf("%%mvul%d", c.loadSeq)
-				c.sb.WriteString(fmt.Sprintf("  %s = load %s, %s* %s\n", ld, dstT, dstT, bc))
-				c.sb.WriteString(fmt.Sprintf("  store %s %s, %s* %s\n", dstT, ld, dstT, dstSlot))
-				return nil
-			}
-			// Structurally incompatible payload/destination (a type-punned
-			// option): store through a bitcast pointer, mirroring
-			// optionPayloadPun. Only the tag is ever read at runtime.
-			c.loadSeq++
-			bc := fmt.Sprintf("%%mvub%d", c.loadSeq)
-			c.sb.WriteString(fmt.Sprintf("  %s = bitcast %s* %s to %s*\n", bc, dstT, dstSlot, payloadLT))
-			c.sb.WriteString(fmt.Sprintf("  store %s %s, %s* %s\n", payloadLT, u1, payloadLT, bc))
+		}
+		// Mismatched scalar widths: load the declared payload and coerce
+		// (`?byte` yields an i64 payload that must be truncated to i8 — storing
+		// the raw payload is rejected by opt and killed the whole `str[i]` ->
+		// `?byte` family).
+		addr := c.optPayloadTypedAddr(optSlot, payloadLT, payloadLT)
+		c.loadSeq++
+		u1 := fmt.Sprintf("%%mvu%d", c.loadSeq)
+		c.sb.WriteString(fmt.Sprintf("  %s = load %s, %s* %s\n", u1, payloadLT, payloadLT, addr))
+		if cv := c.coerce(payloadLT, u1, dstT); cv != "" {
+			c.sb.WriteString(fmt.Sprintf("  store %s %s, %s* %s\n", dstT, cv, dstT, dstSlot))
 			return nil
 		}
-		c.sb.WriteString(fmt.Sprintf("  store %s %s, %s* %s\n", dstT, u1, dstT, dstSlot))
+		// Structurally incompatible payload/destination (a type-punned
+		// option): store through a bitcast pointer. Only the tag is ever read
+		// at runtime.
+		c.loadSeq++
+		bc := fmt.Sprintf("%%mvub%d", c.loadSeq)
+		c.sb.WriteString(fmt.Sprintf("  %s = bitcast %s* %s to %s*\n", bc, dstT, dstSlot, payloadLT))
+		c.sb.WriteString(fmt.Sprintf("  store %s %s, %s* %s\n", payloadLT, u1, payloadLT, bc))
 		return nil
+	}
+	// An option→option assignment of a BOXED payload must deep-copy the box:
+	// a bitwise copy of the 32-byte option would make both sides share one
+	// heap block, which the inline layout never did (it copied the payload).
+	if isOptionType(dstT) && isOptionType(srcT) {
+		if ok, elem := c.optElemRawOf(inst.Args[0]); ok {
+			_, payloadLT := c.optionType(elem)
+			if !c.optionPayloadInline(payloadLT) {
+				if srcSlot := c.optSlotOfValue(inst.Args[0]); srcSlot != "" && dstSlot != "" {
+					c.optBoxClone(srcSlot, dstSlot, payloadLT)
+					return nil
+				}
+			}
+		}
 	}
 	// Fixed-array source into a slice (%vec) destination: `a = x` where x is a
 	// locally-materialized array literal. A plain `load %vec, [N x T]* src` would
@@ -4064,26 +4392,22 @@ func (c *codegen) emitClone(inst *Inst) error {
 //     single-level GEP does the right thing.
 //
 // Returns the element pointer register (typed `<elemT>*`).
-func (c *codegen) elemAddr(arrSlot, idxV, arrT, elemT string) string {
+func (c *codegen) elemAddr(src ValueID, arrSlot, idxV, arrT, elemT string) string {
 	// An option whose payload is a container is indexed through the payload
 	// (mirrors lowerer.elemTypeOfType): a match arm binds `it` to the option,
-	// so `it[0]` on `?[]byte` GEPs into `%option___byte` field 1 (the %vec)
+	// so `it[0]` on `?[]byte` GEPs through the option payload slot (%vec)
 	// first. Doing the GEP on the option struct directly is rejected by opt
 	// with "invalid getelementptr indices".
 	if isOptionType(arrT) {
-		payloadLT := "i64"
-		if arrT != "%option" {
-			p, ok := c.optPayload[arrT]
-			if !ok || p == "" {
-				// Unknown payload: fall through and let the existing path
-				// produce a diagnostic rather than silently mis-indexing.
-				return c.elemAddrRaw(arrSlot, idxV, arrT, elemT)
-			}
-			payloadLT = p
+		// The unified option is 32 bytes of {tag, slot}, and the payload is
+		// reached the same way everywhere else — through optPayloadAddr, so a
+		// BOXED payload is dereferenced rather than read out of the slot.
+		payloadLT := c.optPayloadLTOf(src)
+		if payloadLT == "" {
+			payloadLT = "i64"
 		}
-		g := c.treg("eg")
-		c.sb.WriteString(fmt.Sprintf("  %s = getelementptr inbounds %s, %s* %s, i32 0, i32 1\n", g, arrT, arrT, arrSlot))
-		return c.elemAddrRaw(g, idxV, payloadLT, elemT)
+		addr := c.optPayloadTypedAddr(arrSlot, payloadLT, payloadLT)
+		return c.elemAddrRaw(addr, idxV, payloadLT, elemT)
 	}
 	return c.elemAddrRaw(arrSlot, idxV, arrT, elemT)
 }
@@ -4136,9 +4460,23 @@ var mirScalarByteSize = map[string]int64{
 
 // mirStaticTypeSize returns sizeof(lt) when it is known at code-emission time.
 // It covers the scalars plus the three fixed MIR aggregates; every other type
-// (user struct, per-payload %option_<elem>, nested fixed array) is sized by the
+// (user struct, boxed option payload, nested fixed array) is sized by the
 // opt-foldable `getelementptr` trick in typeSizeOperand instead of duplicating
 // LLVM's layout rules here.
+// c.mirStaticTypeSize is the codegen-aware form: %option's size depends on the
+// module's payload-slot width, which is only known after initOptionSlot.
+//
+// The package-level mirStaticTypeSize below keeps the old signature for the
+// call sites that genuinely cannot see a codegen (none today) and defaults
+// %option to the DEFAULT slot size — correct for any module that did not
+// configure a threshold, and only ever used where an approximation is fine.
+func (c *codegen) mirStaticTypeSize(lt string) (int64, bool) {
+	if lt == "%option" && c.optSlotBytes > 0 {
+		return 8 + c.optSlotBytes, true
+	}
+	return mirStaticTypeSize(lt)
+}
+
 func mirStaticTypeSize(lt string) (int64, bool) {
 	if n, ok := mirScalarByteSize[lt]; ok {
 		return n, true
@@ -4147,7 +4485,7 @@ func mirStaticTypeSize(lt string) (int64, bool) {
 	case "%str-long", "%vec":
 		return 24, true // {i64,i64,i8*} / {i64,i64,i64}
 	case "%option":
-		return 16, true // {i64 tag, i64 payload}
+		return 8 + optSlotDefaultBytes, true // { i64 tag, [3 x i64] slot }
 	}
 	return 0, false
 }
@@ -4156,7 +4494,7 @@ func mirStaticTypeSize(lt string) (int64, bool) {
 // literal for the well-known types, otherwise a freshly emitted (and by opt
 // constant-folded) `ptrtoint (getelementptr (T, ptr null, i64 1))`.
 func (c *codegen) typeSizeOperand(lt string) string {
-	if n, ok := mirStaticTypeSize(lt); ok {
+	if n, ok := c.mirStaticTypeSize(lt); ok {
 		return fmt.Sprintf("%d", n)
 	}
 	c.loadSeq++
@@ -4247,7 +4585,7 @@ func (c *codegen) sanitizedStructKey(san string) string {
 // The visited map prevents infinite recursion on self-referential struct types.
 func (c *codegen) computeTypeSize(lt string, visited map[string]bool) (int64, bool) {
 	// Scalars and known-small builtins.
-	if n, ok := mirStaticTypeSize(lt); ok {
+	if n, ok := c.mirStaticTypeSize(lt); ok {
 		return n, true
 	}
 	if lt == "%txt" {
@@ -4283,42 +4621,8 @@ func (c *codegen) computeTypeSize(lt string, visited map[string]bool) (int64, bo
 			return 0, false // recursive struct — can't compute statically
 		}
 		visited[name] = true
-		// Per-payload option types: %option_T = { i64 tag, <payload> }.
-		if strings.HasPrefix(name, "option_") {
-			elemName := strings.TrimPrefix(name, "option_")
-			// Try multiple lookups: the sanitized name directly, and the
-			// unsanitized name (with _ -> . for module-qualified structs).
-			payloadLT := c.optionPayloadLLVMType(elemName)
-			if payloadLT == "i64" {
-				payloadLT = c.optionPayloadLLVMType(unsanitize(elemName))
-			}
-			if payloadLT == "i64" {
-				// Invert sanitize() using the real keys: unsanitize() only
-				// re-inserts '.', so a payload whose name contains another
-				// separator (e.g. `my-thing` -> %option_my_thing) would fall
-				// through to "i64" and be sized as a scalar (8B) instead of the
-				// real struct.
-				//
-				// Under-estimating here is NOT harmless, because this size is
-				// what shouldUseMemcpy compares against its threshold. That
-				// predicate does not merely pick an instruction: it decides
-				// whether loadVal returns the loaded VALUE or the SLOT POINTER,
-				// and every caller must branch accordingly. A wrong size
-				// therefore (a) sends genuinely large payloads down the
-				// SROA-exploding `load T; store T` path — measured at ~250s for
-				// tests/test-json.no, 6s once fixed — and (b) changes the shape of
-				// the value handed to callers, which is how the option-unwrap
-				// path was found emitting `extractvalue` on a slot pointer.
-				if k := c.sanitizedStructKey(elemName); k != "" {
-					payloadLT = c.optionPayloadLLVMType(k)
-				}
-			}
-			payloadSz, ok := c.computeTypeSize(payloadLT, visited)
-			if !ok {
-				return 0, false
-			}
-			return 8 + payloadSz, true // i64 tag + payload
-		}
+		// There is only one option type now (`%option`), and it is answered by
+		// mirStaticTypeSize above; %option_<T> no longer exists.
 		// Look up struct fields by the sanitized name (StructFields keys are
 		// raw nolang names; the LLVM type name has dots replaced with _).
 		structKey := c.structKeyOf(unsanitize(name))
@@ -4567,13 +4871,13 @@ func (c *codegen) emitMemcpy(dst, src, size string) {
 // byte count of a slice/string backing store with `cap` slots.
 //
 // A slice's backing store holds ELEMENT-sized slots: []str is an array of
-// 24-byte %str-long, []?i64 of 16-byte %option. Sizing it with a constant 8
+// 24-byte %str-long, []?i64 of 32-byte %option. Sizing it with a constant 8
 // under-allocates, and a later `a[i] = v` then loads a whole element out of the
 // end of the block, so the element's `data` field is heap garbage and
 // @str_free aborts with "pointer being freed was not allocated"
 // (SIGABRT at -O0, the same UB turning into SIGTRAP at -O3).
 func (c *codegen) allocBytesOperand(capV, elemLT string) string {
-	n, ok := mirStaticTypeSize(elemLT)
+	n, ok := c.mirStaticTypeSize(elemLT)
 	if ok && n == 1 {
 		return capV // str / []byte: one byte per slot
 	}
@@ -4850,14 +5154,14 @@ func (c *codegen) emitIndex(inst *Inst) error {
 	}
 	_, idxV := c.loadVal(inst.Args[1])
 	idxVT, _ := c.ptype(inst.Args[1])
-	idxV = c.coerceIndex(idxVT, idxV)
+	idxV = c.coerceIndex(inst.Args[1], idxVT, idxV)
 	dstSlot := c.valSlot[inst.Dst]
 	if dstSlot == "" {
 		dt, _ := c.ptype(inst.Dst)
 		c.fail("index result has no slot in func %s (dst=%d type=%s) arrT=%s elemT=%s", c.fname[c.cf], inst.Dst, dt, arrT, elemT)
 		return fmt.Errorf("index dst slot (dst=%d type=%s)", inst.Dst, dt)
 	}
-	ep := c.elemAddr(arrSlot, idxV, arrT, elemT)
+	ep := c.elemAddr(inst.Args[0], arrSlot, idxV, arrT, elemT)
 	c.loadSeq++
 	lv := fmt.Sprintf("%%lx%d", c.loadSeq)
 	c.sb.WriteString(fmt.Sprintf("  %s = load %s, %s* %s\n", lv, elemT, elemT, ep))
@@ -4927,7 +5231,7 @@ func (c *codegen) emitIndexStore(inst *Inst) error {
 	}
 	_, idxV := c.loadVal(inst.Args[1])
 	idxVT, _ := c.ptype(inst.Args[1])
-	idxV = c.coerceIndex(idxVT, idxV)
+	idxV = c.coerceIndex(inst.Args[1], idxVT, idxV)
 	// An empty slice (declared with no capacity) is zero-initialized to
 	// {len=0,cap=0,data=0}; a direct `buf[i] = x` would store through a null data
 	// pointer and crash. Legacy allocates a real backing buffer for an empty []byte,
@@ -4942,7 +5246,7 @@ func (c *codegen) emitIndexStore(inst *Inst) error {
 	if arrT == "%vec" {
 		c.ensureVecBuffer(arrSlot, inst.Args[0], idxV, elemT)
 	}
-	ep := c.elemAddr(arrSlot, idxV, arrT, elemT)
+	ep := c.elemAddr(inst.Args[0], arrSlot, idxV, arrT, elemT)
 	if elemOwned {
 		c.loadSeq++
 		old := fmt.Sprintf("%%old%d", c.loadSeq)
@@ -4960,10 +5264,14 @@ func (c *codegen) emitIndexStore(inst *Inst) error {
 		// payload, not the whole {tag,payload} struct). Without this, opt rejects
 		// the store as "defined with type '%option' but expected 'i64'" and the
 		// build fails under NOLANG_MIR=3 (regression of test-arr.no).
-		c.loadSeq++
-		pl := fmt.Sprintf("%%opay%d", c.loadSeq)
-		c.sb.WriteString(fmt.Sprintf("  %s = extractvalue %s %s, 1\n", pl, valT, valV))
-		if cv2 := c.coerce("i64", pl, elemT); cv2 != "" {
+		// optionPayloadOf, not `extractvalue %option %v, 1`: field 1 is the whole
+		// 24-byte slot, so a bare extractvalue yields an array where an i64 is
+		// wanted (and misses the box deref for an oversized payload).
+		plt, pl := c.optionPayloadOf(inst.Args[2], valV, valT)
+		if pl == "" {
+			pl, plt = valV, valT
+		}
+		if cv2 := c.coerce(plt, pl, elemT); cv2 != "" {
 			valV = cv2
 		} else {
 			valV = pl
@@ -5111,9 +5419,10 @@ func (c *codegen) lvalueAddrOf(v ValueID) (string, TypeID, bool) {
 				return slot, tid, false
 			}
 			_, payloadLT := c.optionType(elem)
-			g := c.treg("lvg")
-			c.sb.WriteString(fmt.Sprintf("  %s = getelementptr inbounds %s, %s* %s, i32 0, i32 1\n", g, baseLT, baseLT, basePtr))
-			basePtr = g
+			// optPayloadTypedAddr, not a raw GEP to field 1: field 1 is the 24-byte
+			// slot, and a payload larger than that is BOXED, so the struct lives
+			// behind the pointer in slot[0], not in the slot itself.
+			basePtr = c.optPayloadTypedAddr(basePtr, payloadLT, payloadLT)
 			baseLT = payloadLT
 			baseRaw = elem
 		}
@@ -5162,10 +5471,21 @@ func (c *codegen) lvalueAddrOf(v ValueID) (string, TypeID, bool) {
 			return slot, tid, false
 		}
 		elemLT := c.llvmTypeOf(c.mod.Type(elemT))
+		// A projection is only sound when the container's ELEMENT type is the
+		// same type as the value that was read out of it. `z = ba[0]` on a
+		// `[N]byte` / `[]byte` / `str` widens i8 -> i64: emitIndex zero-extends
+		// the byte into the value's own i64 slot, so the value is a COPY and not
+		// an alias of the element. Projecting it back to `&ba[0]` hands callers
+		// an `i8*` typed as `i64*` — `z.to-str()` (which takes `i64*`) then
+		// loads 8 bytes from a 1-byte element and prints garbage. Same class of
+		// type confusion for any other widening read.
+		if recElemLT := c.elemTypeOfReceiver(di.Args[0]); recElemLT != "" && recElemLT != elemLT {
+			return slot, tid, false
+		}
 		_, idxV := c.loadVal(di.Args[1])
 		idxVT, _ := c.ptype(di.Args[1])
-		idxV = c.coerceIndex(idxVT, idxV)
-		ep := c.elemAddr(bptr, idxV, c.llvmTypeOf(bt), elemLT)
+		idxV = c.coerceIndex(di.Args[1], idxVT, idxV)
+		ep := c.elemAddr(v, bptr, idxV, c.llvmTypeOf(bt), elemLT)
 		return ep, tid, true
 	}
 	return slot, tid, false
@@ -5248,9 +5568,10 @@ func (c *codegen) emitGetField(inst *Inst) error {
 		if fieldLT == "" {
 			fieldLT = "i64"
 		}
-		c.loadSeq++
-		pg := fmt.Sprintf("%%opg%d", c.loadSeq)
-		c.sb.WriteString(fmt.Sprintf("  %s = getelementptr inbounds %s, %s* %s, i32 0, i32 1\n", pg, recvLT, recvLT, recvSlot))
+		// optPayloadTypedAddr, not `getelementptr %option ... , 1`: a payload
+		// larger than the 24-byte slot is BOXED, and field 1 then holds the box
+		// POINTER rather than the struct (tests/test-opt-struct-field.no).
+		pg := c.optPayloadTypedAddr(recvSlot, payloadLT, payloadLT)
 		payloadBase := payloadLT
 		if viewElem && strings.HasSuffix(payloadLT, "*") {
 			// Load the view pointer out of the payload field (`%T**` -> `%T*`).
@@ -5358,6 +5679,86 @@ func containerFieldIndex(name string) (int, bool) {
 	return 0, false
 }
 
+// ensureContainerStorageForLen backs a `X.len = n` write on a slice/str whose
+// backing buffer is still NULL by allocating n elements' worth of storage and
+// publishing it through the container's data/cap fields, so the length that is
+// about to be stored is actually addressable.
+//
+// Deliberately NARROW: it only fires when data == NULL. When the container
+// already owns a buffer the emitted code is byte-for-byte what it was before,
+// which keeps the documented std contract intact — `src/std/vec.no` grows with
+// an inline `.len = cur + 1` and its comment says "調用方需確保容量足夠", i.e.
+// std relies on `.len = n` being a plain field write inside an already
+// allocated buffer. Growing (or realloc-ing) there too would change ownership
+// of every std slice/string write at once; this only removes the null-buffer
+// crash, which no correct program can depend on.
+//
+// Layouts: %str-long = { i64 len, i64 cap, i8* data } (a real pointer);
+// %vec = { i64 len, i64 cap, i64 data } (ptrtoint-encoded).
+func (c *codegen) ensureContainerStorageForLen(slot, recvLT string, ty *Type, nV string) {
+	// Element size: a str's backing store is bytes; a slice's is its element.
+	elemSz := "1"
+	if ty.Kind == KindSlice && ty.Elem != NoType {
+		if et := c.mod.Type(ty.Elem); et != nil {
+			elemSz = c.typeSizeOperand(c.llvmTypeOf(et))
+		}
+	}
+	dataLT := "i64"
+	if ty.Kind == KindStr {
+		dataLT = "i8*"
+	}
+	// Field 2 is data, field 1 is cap.
+	c.loadSeq++
+	dg := fmt.Sprintf("%%lsg%d", c.loadSeq)
+	c.sb.WriteString(fmt.Sprintf("  %s = getelementptr inbounds %s, %s* %s, i32 0, i32 2\n", dg, recvLT, recvLT, slot))
+	c.loadSeq++
+	dv := fmt.Sprintf("%%lsv%d", c.loadSeq)
+	c.sb.WriteString(fmt.Sprintf("  %s = load %s, %s* %s\n", dv, dataLT, dataLT, dg))
+	c.loadSeq++
+	cg := fmt.Sprintf("%%lcg%d", c.loadSeq)
+	c.sb.WriteString(fmt.Sprintf("  %s = getelementptr inbounds %s, %s* %s, i32 0, i32 1\n", cg, recvLT, recvLT, slot))
+
+	// is-null test: %str-long holds a pointer, %vec an integer.
+	c.loadSeq++
+	isnull := fmt.Sprintf("%%lsn%d", c.loadSeq)
+	if dataLT == "i8*" {
+		c.sb.WriteString(fmt.Sprintf("  %s = icmp eq i8* %s, null\n", isnull, dv))
+	} else {
+		c.sb.WriteString(fmt.Sprintf("  %s = icmp eq i64 %s, 0\n", isnull, dv))
+	}
+	c.loadSeq++
+	lAlloc := fmt.Sprintf("lsA%d", c.loadSeq)
+	lDone := fmt.Sprintf("lsD%d", c.loadSeq)
+	c.sb.WriteString(fmt.Sprintf("  br i1 %s, label %%%s, label %%%s\n", isnull, lAlloc, lDone))
+
+	c.sb.WriteString(fmt.Sprintf("%s:\n", lAlloc))
+	c.loadSeq++
+	sizeReg := fmt.Sprintf("%%lssz%d", c.loadSeq)
+	c.sb.WriteString(fmt.Sprintf("  %s = mul i64 %s, %s\n", sizeReg, nV, elemSz))
+	c.loadSeq++
+	buf := fmt.Sprintf("%%lsbuf%d", c.loadSeq)
+	c.sb.WriteString(fmt.Sprintf("  %s = call i8* @malloc(i64 %s)\n", buf, sizeReg))
+	// Zero it: for owned element types (e.g. []str) the first `a[i] = v` drops
+	// the previous element, and garbage there would free() a wild pointer.
+	c.decl("declare void @llvm.memset.p0i8.i64(i8*, i8, i64, i1)")
+	c.sb.WriteString(fmt.Sprintf("  call void @llvm.memset.p0i8.i64(i8* %s, i8 0, i64 %s, i1 false)\n", buf, sizeReg))
+	if dataLT == "i8*" {
+		c.sb.WriteString(fmt.Sprintf("  store i8* %s, i8** %s\n", buf, dg))
+	} else {
+		c.loadSeq++
+		ptri := fmt.Sprintf("%%lspi%d", c.loadSeq)
+		c.sb.WriteString(fmt.Sprintf("  %s = ptrtoint i8* %s to i64\n", ptri, buf))
+		c.sb.WriteString(fmt.Sprintf("  store i64 %s, i64* %s\n", ptri, dg))
+	}
+	// cap = n: the buffer is exactly big enough for the length being written,
+	// and cap > 0 marks the container as owning its buffer (cap == 0 means
+	// "borrowed view" and must never be freed).
+	c.sb.WriteString(fmt.Sprintf("  store i64 %s, i64* %s\n", nV, cg))
+	c.sb.WriteString(fmt.Sprintf("  br label %%%s\n", lDone))
+
+	c.sb.WriteString(fmt.Sprintf("%s:\n", lDone))
+}
+
 // emitSetField lowers `recv.field = v`: compute the field address via GEP into
 // the receiver's struct slot and store v there.
 func (c *codegen) emitSetField(inst *Inst) error {
@@ -5431,10 +5832,11 @@ func (c *codegen) emitSetField(inst *Inst) error {
 		// this, opt rejects the store as "defined with type '%option' but
 		// expected 'i64'" and the build fails under NOLANG_MIR=3.
 		if strings.HasPrefix(recvLT, "%option") && !strings.HasPrefix(fieldLT, "%option") && fieldLT != "%str-long" && fieldLT != "%vec" {
-			c.loadSeq++
-			pl := fmt.Sprintf("%%opay%d", c.loadSeq)
-			c.sb.WriteString(fmt.Sprintf("  %s = extractvalue %s %s, 1\n", pl, recvLT, valV))
-			if cv2 := c.coerce("i64", pl, fieldLT); cv2 != "" {
+			plt, pl := c.optionPayloadOf(inst.Args[1], valV, recvLT)
+			if pl == "" {
+				pl, plt = valV, recvLT
+			}
+			if cv2 := c.coerce(plt, pl, fieldLT); cv2 != "" {
 				valV = cv2
 			} else {
 				valV = pl
@@ -5450,9 +5852,7 @@ func (c *codegen) emitSetField(inst *Inst) error {
 				}
 			}
 		}
-		c.loadSeq++
-		pg := fmt.Sprintf("%%opg%d", c.loadSeq)
-		c.sb.WriteString(fmt.Sprintf("  %s = getelementptr inbounds %s, %s* %s, i32 0, i32 1\n", pg, recvLT, recvLT, recvSlot))
+		pg := c.optPayloadTypedAddr(recvSlot, payloadLT, payloadLT)
 		c.loadSeq++
 		gp := fmt.Sprintf("%%gp%d", c.loadSeq)
 		c.sb.WriteString(fmt.Sprintf("  %s = getelementptr inbounds %s, %s* %s, i32 0, i32 %d\n", gp, payloadLT, payloadLT, pg, idx))
@@ -5470,10 +5870,11 @@ func (c *codegen) emitSetField(inst *Inst) error {
 	// rejects the store as "defined with type '%option' but expected 'i64'" and
 	// the build fails under NOLANG_MIR=3. Mirrors emitIndexStore's unwrap.
 	if strings.HasPrefix(valLT, "%option") && !strings.HasPrefix(fieldLT, "%option") && fieldLT != "%str-long" && fieldLT != "%vec" {
-		c.loadSeq++
-		pl := fmt.Sprintf("%%opay%d", c.loadSeq)
-		c.sb.WriteString(fmt.Sprintf("  %s = extractvalue %s %s, 1\n", pl, valLT, valV))
-		if cv2 := c.coerce("i64", pl, fieldLT); cv2 != "" {
+		plt, pl := c.optionPayloadOf(inst.Args[1], valV, valLT)
+		if pl == "" {
+			pl, plt = valV, valLT
+		}
+		if cv2 := c.coerce(plt, pl, fieldLT); cv2 != "" {
 			valV = cv2
 		} else {
 			valV = pl
@@ -5485,6 +5886,15 @@ func (c *codegen) emitSetField(inst *Inst) error {
 	// like vec.push write `self.len = self.len + 1` under pure MIR.
 	if recvTy != nil && (recvTy.Kind == KindSlice || recvTy.Kind == KindStr) {
 		if idx, ok := containerFieldIndex(inst.Str); ok {
+			// `X.len = n` on a container that has NO buffer yet (a freshly
+			// zero-initialised str field, e.g. `p.nodes[i].str-val.len = 3`)
+			// used to write the length while leaving data NULL, so the very
+			// next `X[0] = b` / `X.len()` dereferenced null and SIGSEGV'd.
+			// Back the length write with an allocation so the container really
+			// has n elements' worth of storage.
+			if inst.Str == "len" {
+				c.ensureContainerStorageForLen(recvSlot, recvLT, recvTy, valV)
+			}
 			c.loadSeq++
 			gep := fmt.Sprintf("%%gp%d", c.loadSeq)
 			c.sb.WriteString(fmt.Sprintf("  %s = getelementptr inbounds %s, %s* %s, i32 0, i32 %d\n", gep, recvLT, recvLT, recvSlot, idx))
@@ -5765,7 +6175,7 @@ func (c *codegen) emitSliceOp(inst *Inst) error {
 	// cases (a literal) and the unknown ones (an LLVM-derived operand) work.
 	//
 	// WHY NOT elemStride: it falls back to 8 for every type it does not know
-	// (user structs, %option_<T>, fixed arrays). The sub-range START is then
+	// (user structs, boxed option payloads, fixed arrays). The sub-range START is then
 	// computed as a manual `lo * stride`, while the element ADDRESSES inside the
 	// buffer are typed GEPs that LLVM scales by the REAL size — so the two
 	// disagree and the slice reads from the wrong offset. Measured on
@@ -5779,7 +6189,7 @@ func (c *codegen) emitSliceOp(inst *Inst) error {
 	stride := int64(0) // statically known size; 0 => use strideOp
 	strideOp := "8"    // conservative default = elemStride's old fallback
 	setElemStride := func(elemLT string) {
-		if n, ok := mirStaticTypeSize(elemLT); ok {
+		if n, ok := c.mirStaticTypeSize(elemLT); ok {
 			stride, strideOp = n, fmt.Sprintf("%d", n)
 			return
 		}
@@ -6111,11 +6521,17 @@ func (c *codegen) emitStructTypes() {
 		}
 		c.sb.WriteString(fmt.Sprintf("%s = type { %s }\n", lt, strings.Join(parts, ", ")))
 	}
-	// Declare per-payload inline option types: %option_<elem> = { i64 tag,
-	// <payload> }. Scalar options (?i64, ?bool, ...) keep the flat `%option`
-	// ({ i64, i64 }) already in the prelude; only non-scalar payloads (str/vec/
-	// user-struct/fixed-array) get a dedicated type so the payload is stored
-	// by-value. Dedup by type name.
+	// The err message is a %str-long and can be read out of ANY option, whatever
+	// its declared element is, so its zero stand-in must exist even in a module
+	// that never mentions `?str` — and it must be declared before the helpers
+	// that reference it. Without it a boxed err read would fall through to the
+	// (UB) slot-pointer fallback.
+	if !c.optionPayloadInline("%str-long") {
+		c.emitOptionBoxHelpers("%str-long")
+	}
+	// Emit a print helper per distinct option PAYLOAD type. With one `%option`
+	// for every element the payload type is no longer recoverable from the LLVM
+	// type name, so the helper is keyed (and named) by the payload instead.
 	seenOpt := map[string]bool{}
 	for _, t := range c.mod.Types {
 		if t.Kind != KindOption {
@@ -6125,23 +6541,22 @@ func (c *codegen) emitStructTypes() {
 		if !ok {
 			continue
 		}
-		optLT, payloadLT := c.optionType(elem)
-		if optLT == "%option" {
+		_, payloadLT := c.optionType(elem)
+		if seenOpt[payloadLT] {
 			continue
 		}
-		if seenOpt[optLT] {
-			continue
+		seenOpt[payloadLT] = true
+		// The helper does the nil-tag branch INSIDE its own function so
+		// emitCall can route the print through a plain `call` without emitting
+		// new basic blocks mid-function (which breaks LLVM verification).
+		// Non-printable payloads (%vec / user-struct / fixed-array) are
+		// skipped; emitCall c.fail()s.
+		// Box helpers first: the print helper dereferences the boxed payload
+		// through the zero stand-in global they declare.
+		if !c.optionPayloadInline(payloadLT) {
+			c.emitOptionBoxHelpers(payloadLT)
 		}
-		seenOpt[optLT] = true
-		c.optPayload[optLT] = payloadLT
-		c.sb.WriteString(fmt.Sprintf("%s = type { i64, %s }\n", optLT, payloadLT))
-		// Emit a dedicated print helper for this per-payload option type when
-		// its payload has a scalar printer (str/i64/i8/double/bool). The helper
-		// does the nil-tag branch INSIDE its own function so emitCall can route
-		// the print through a plain `call` without emitting new basic blocks
-		// mid-function (which breaks LLVM verification). Non-printable payloads
-		// (%vec / user-struct / fixed-array) are skipped; emitCall c.fail()s.
-		c.emitOptionPrintHelper(optLT, payloadLT)
+		c.emitOptionPrintHelper(payloadLT)
 	}
 	// Tagged enums: %tenum_<name> = type { i64, [N x i64] }.
 	for raw, ei := range c.mod.TaggedEnums {
@@ -6394,17 +6809,18 @@ func enumRawOfType(m *Module, t TypeID) string {
 	return ""
 }
 
-// emitOptionPrintHelper emits a dedicated `define void @print_option_<elem>`
-// helper for a per-payload inline option type (%option_<elem>). The helper
-// extracts the tag (field 0), branches on nil (tag == 1) to print the literal
-// "nil", and otherwise peels the payload (field 1) and routes it to the
-// matching scalar printer — mirroring the flat-option @print_option helper.
+// emitOptionPrintHelper emits a dedicated `define void @print_option_<payload>`
+// helper for one option payload type. The helper spills the by-value `%option`,
+// reads the tag (field 0), branches on nil (tag == 1) to print the literal
+// "nil", and otherwise reads the payload out of the 24-byte slot and routes it
+// to the matching scalar printer — mirroring the generic @print_option helper.
 // Keeping the branch inside its own function lets emitCall route the print
 // through a plain `call` instead of synthesizing new basic blocks mid-function
 // (which breaks LLVM verification). Only payload types with a scalar printer
-// (str/i64/i8/double/bool) produce a helper; the rest are skipped and left to
-// emitCall's c.fail(). The helper name is stored in c.optPrintHelper[optLT].
-func (c *codegen) emitOptionPrintHelper(optLT, payloadLT string) {
+// (str/i64/i8/double/bool) produce a helper; the rest — including every BOXED
+// payload, which is by definition a large aggregate — are skipped and left to
+// emitCall's c.fail(). The helper name is stored in c.optPrintHelper[payloadLT].
+func (c *codegen) emitOptionPrintHelper(payloadLT string) {
 	var body string
 	switch payloadLT {
 	case "%str-long":
@@ -6418,21 +6834,31 @@ func (c *codegen) emitOptionPrintHelper(optLT, payloadLT string) {
 	case "i1":
 		body = "  call void @print_bool(i1 %p)\n"
 	default:
-		// %vec / user-struct / fixed-array: no scalar printer — skip.
+		// %vec / user-struct / fixed-array / boxed: no scalar printer — skip.
 		return
 	}
 	name := "@print_option_" + strings.NewReplacer("%", "", "-", "_", ".", "_", " ", "_", "*", "_").Replace(payloadLT)
-	c.optPrintHelper[optLT] = name
-	c.sb.WriteString(fmt.Sprintf("define void %s(%s %%o) {\n", name, optLT))
+	c.optPrintHelper[payloadLT] = name
+	c.sb.WriteString(fmt.Sprintf("define void %s(%%option %%o) {\n", name))
 	c.sb.WriteString("entry:\n")
-	c.sb.WriteString(fmt.Sprintf("  %%otag = extractvalue %s %%o, 0\n", optLT))
+	c.sb.WriteString("  %os = alloca %option\n")
+	c.sb.WriteString("  store %option %o, %option* %os\n")
+	// A BOXED payload lives behind slot[0]; an inline one sits in the slot.
+	// optPayloadAddr is a codegen helper, so inline the same select here.
+	c.sb.WriteString("  %otp = getelementptr inbounds %option, %option* %os, i32 0, i32 0\n")
+	c.sb.WriteString("  %otag = load i64, i64* %otp\n")
 	c.sb.WriteString("  %oisnil = icmp eq i64 %otag, 1\n")
 	c.sb.WriteString("  br i1 %oisnil, label %onil, label %osome\n")
 	c.sb.WriteString("onil:\n")
 	c.sb.WriteString("  call i64 @write(i32 1, i8* getelementptr inbounds ([3 x i8], [3 x i8]* @.nilstr, i64 0, i64 0), i64 3)\n")
 	c.sb.WriteString("  ret void\n")
 	c.sb.WriteString("osome:\n")
-	c.sb.WriteString(fmt.Sprintf("  %%p = extractvalue %s %%o, 1\n", optLT))
+	// optPayloadAddr, not a raw GEP to field 1: when the slot is configured
+	// below 24 even a %str-long payload is heap-boxed, and field 1 then holds
+	// the box POINTER rather than the string.
+	raw := c.optPayloadAddr("%os", payloadLT)
+	c.sb.WriteString(fmt.Sprintf("  %%pp = bitcast i8* %s to %s*\n", raw, payloadLT))
+	c.sb.WriteString(fmt.Sprintf("  %%p = load %s, %s* %%pp\n", payloadLT, payloadLT))
 	c.sb.WriteString(body)
 	c.sb.WriteString("  ret void\n}\n")
 }
@@ -6570,42 +6996,33 @@ func (c *codegen) emitCall(f *Function, inst *Inst) error {
 				// legacy backend, NOT the discriminant tag. The dedicated
 				// print_option helper handles the flat scalar %option = { i64
 				// tag, i64 data } by reading the inner field; for per-payload
-				// inline options (%option_<elem>) the payload is by-value, so we
+				// inline option payloads the bytes are by-value, so we
 				// peel field 1 and print it with the matching scalar printer —
 				// the payload is NOT always i64 (a ?str option carries a
 				// %str-long payload, a ?User option a %User struct payload), so
 				// routing to print_i64 unconditionally is wrong and trips the
 				// LLVM verifier (e.g. `%optpl19` defined as %str-long but
 				// expected i64 at `call @print_i64`).
-				if argT == "%option" {
-					// Flat scalar option `{ i64 tag, i64 payload }`. The element
-					// type is lost in LLVM IR, so recover it from the nolang type
-					// table: a `?bool` must print "true"/"false" (via
-					// @print_option_bool), every other scalar option prints the raw
-					// payload via @print_option (matching legacy print of ?i64/?u8/...).
-					if c.optionElemKind(a) == KindBool {
-						c.sb.WriteString(fmt.Sprintf("  call void @print_option_bool(%s %s)\n", argT, argV))
-					} else {
-						c.sb.WriteString(fmt.Sprintf("  call void @print_option(%s %s)\n", argT, argV))
-					}
-				} else {
-					// Inline per-payload option (%option_<elem>). Route the entire
-					// print through a dedicated helper function (e.g.
-					// @print_option_str) that performs the nil-tag check and prints
-					// "nil" or the payload inside its OWN function body. Emitting the
-					// branch inline here (mid-function, inside emitCall) breaks LLVM
-					// verification, so a plain `call` keeps emitCall block-free while
-					// still matching legacy output (nil -> "nil", some -> payload).
-					if helper, ok := c.optPrintHelper[argT]; ok {
-						c.sb.WriteString(fmt.Sprintf("  call void %s(%s %s)\n", helper, argT, argV))
-					} else {
-						// Payload type (%vec / user-struct / fixed-array) has no
-						// scalar printer in MIR yet; legacy prints via to-str. Skip
-						// rather than crash the verifier.
-						c.fail("print of option payload type %s unsupported in func %s", argT, f.Name)
-					}
+				// The element type is not part of `%option` any more, so it is
+				// recovered from the nolang type table and the print is routed to
+				// the helper generated for that payload type. A `?bool` must
+				// print "true"/"false" (@print_option_bool); every other
+				// printable payload goes through @print_option_<payload>, which
+				// performs the nil-tag check and prints "nil" or the payload
+				// inside its OWN function body — emitting the branch inline here
+				// (mid-function, inside emitCall) breaks LLVM verification.
+				if c.optionElemKind(a) == KindBool {
+					c.sb.WriteString(fmt.Sprintf("  call void @print_option_bool(%%option %s)\n", argV))
 					continue
 				}
+				if helper, ok := c.optPrintHelper[c.optPayloadLTOf(a)]; ok {
+					c.sb.WriteString(fmt.Sprintf("  call void %s(%%option %s)\n", helper, argV))
+					continue
+				}
+				// Payload type (%vec / user-struct / fixed-array / boxed) has no
+				// scalar printer in MIR yet; legacy prints via to-str. Skip
+				// rather than crash the verifier.
+				c.fail("print of option payload type %s unsupported in func %s", c.optPayloadLTOf(a), f.Name)
 				continue
 			}
 			switch argT {
@@ -7184,7 +7601,7 @@ func (c *codegen) vecOwnedFromArray(argT, arrSlot string) string {
 	}
 	// Element size for the malloc and the memcpy. Do NOT use elemStride: it
 	// falls back to 8 for any type it does not know, so coercing `[N x struct]`
-	// (or `[N x %option_<T>]`, or a nested fixed array) to a slice allocated
+	// (or `[N x %option]`, or a nested fixed array) to a slice allocated
 	// and copied only 8 bytes per element — a heap overflow, and the copy
 	// truncated every element. typeSizeOperand asks LLVM, which is the same
 	// authority the element GEPs below use.
@@ -7196,7 +7613,7 @@ func (c *codegen) vecOwnedFromArray(argT, arrSlot string) string {
 	case elemT == "":
 		total = fmt.Sprintf("%d", n*8) // no element type parsed — old fallback
 	default:
-		if sz, ok := mirStaticTypeSize(elemT); ok {
+		if sz, ok := c.mirStaticTypeSize(elemT); ok {
 			total = fmt.Sprintf("%d", n*sz)
 		} else {
 			tt := c.treg("bva")
@@ -7339,7 +7756,7 @@ func (c *codegen) emitCallBody(f *Function, cf *Function, inst *Inst, calleeName
 	if cf.IsMethod && len(outParams) > 0 {
 		selfOut = 1 // the first out-param is self
 	}
-	nOut := len(outParams) - selfOut // real out-params (excluding self)
+	nOut := len(outParams) - selfOut    // real out-params (excluding self)
 	effArgs := len(inst.Args) - selfOut // inst.Args[0] is the receiver
 	if !cf.Variadic && nOut > 0 && effArgs == len(inParams)+nOut {
 		effArgs -= nOut
@@ -7486,9 +7903,10 @@ func (c *codegen) emitCallBody(f *Function, cf *Function, inst *Inst, calleeName
 					// passed where the callee expects the inner type — reading
 					// the option's {tag, vec} as a %vec yields a bogus length
 					// and crashes (trace/BPT trap).
-					c.loadSeq++
-					pg := fmt.Sprintf("%%optrcv%d", c.loadSeq)
-					c.sb.WriteString(fmt.Sprintf("  %s = getelementptr inbounds %s, %s* %s, i32 0, i32 1\n", pg, recvLT, recvLT, rs))
+					// optPayloadTypedAddr, not a raw GEP to field 1: a payload
+					// larger than the slot is boxed, and field 1 then holds the
+					// box POINTER rather than the inner value.
+					pg := c.optPayloadTypedAddr(rs, plt, plt)
 					if owned || byPointerLLVM(plt, owned) || recvOwned {
 						callArgs = append(callArgs, plt+"* "+pg)
 					} else {
@@ -7854,10 +8272,7 @@ func (c *codegen) mallocBytesFor(lt string) int64 {
 	case "%str-long", "%vec":
 		return 24
 	case "%option":
-		return 16
-	}
-	if strings.HasPrefix(lt, "%option_") {
-		return 16
+		return 8 + c.optSlotBytes // i64 tag + payload slot (configured width)
 	}
 	if strings.HasPrefix(lt, "%") {
 		// named user struct: approximate with its emitted layout size.
@@ -8604,7 +9019,7 @@ func (c *codegen) emitBuiltinAlloc(inst *Inst, ff string) error {
 	}
 	// The backing store holds ELEMENT-sized slots, so the stride comes from the
 	// destination's own element type ([]str -> 24-byte %str-long, []?i64 ->
-	// 16-byte %option), not from a constant 8. elemTypeOfReceiver returns "i8"
+	// 32-byte %option), not from a constant 8. elemTypeOfReceiver returns "i8"
 	// for a str destination, which is exactly the 1-byte-per-slot string case.
 	var szStr string
 	if lt == "%str-long" {

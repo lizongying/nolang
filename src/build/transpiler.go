@@ -3,14 +3,6 @@ package build
 import (
 	"bytes"
 	"fmt"
-	"os"
-	"os/exec"
-	"path/filepath"
-	"reflect"
-	"regexp"
-	"sort"
-	"strconv"
-	"strings"
 	nolang "github.com/lizongying/nolang"
 	"github.com/lizongying/nolang/builtin"
 	"github.com/lizongying/nolang/cache"
@@ -20,7 +12,16 @@ import (
 	"github.com/lizongying/nolang/mir"
 	"github.com/lizongying/nolang/package"
 	"github.com/lizongying/nolang/parser"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"reflect"
+	"regexp"
+	"sort"
+	"strconv"
+	"strings"
 )
+
 // mangleOverloads 對同名函數進行名稱修飾，並更新調用點
 func mangleOverloads(program *parser.Program, varTypes map[string]string) {
 	// 1. 構建重載表
@@ -126,6 +127,7 @@ func mangleOverloads(program *parser.Program, varTypes map[string]string) {
 	// 也用於回退查找（無參數類型匹配時的前端保底）
 	_ = varTypes
 }
+
 // callSignature 生成調用簽名 key，用於查找
 func callSignature(name string, params []*parser.Parameter) string {
 	parts := []string{name}
@@ -134,6 +136,7 @@ func callSignature(name string, params []*parser.Parameter) string {
 	}
 	return strings.Join(parts, "_")
 }
+
 // platformAwareCallSignature 生成包含平台標註的調用簽名 key。
 // 用於 mangleOverloads 去重：不同平台標註（#{mac-arm64} vs #{wasi-wasm32}）
 // 的同名同參數函數視為不同函數，不應被去重。
@@ -149,6 +152,7 @@ func platformAwareCallSignature(name string, params []*parser.Parameter, platfor
 	sort.Strings(sorted)
 	return sig + "\x00" + strings.Join(sorted, ",")
 }
+
 // sanitizeTypeForName 將型別字串轉成 LLVM 識別符安全的形式：
 // - "[]byte"   → "slice.byte"
 // - "?i64"     → "opt.i64"
@@ -166,295 +170,7 @@ func sanitizeTypeForName(s string) string {
 	)
 	return r.Replace(s)
 }
-                                                                                                                             
-                 
-           
-  
-                          
-                             
-                                                        
-                        
-                                                                        
-                
-   
-              
-                           
-              
-                            
-              
-                             
-               
-                          
-               
-                          
-               
-                           
-                 
-                         
-                                     
-                                                           
-                                   
-               
-    
-           
-   
-                           
-                             
-                          
-                                                       
-                                                
-                                    
-                           
-                                 
-      
-     
-    
-                                                    
-                                                         
-                                                                                      
-                                                                                     
-                                          
-                 
-     
-                  
-    
-                                                                                    
-                                                                          
-                       
-                                                                                
-                
-    
-            
-   
-                                                     
-                                                        
-                      
-                                                         
-                             
-                                                  
-                        
-                                                                
-                        
-     
-                                                                
-                                                                     
-                    
-                                                                       
-                                                                                 
-                                  
-                                                                                                 
-                                                           
-                                       
-                                                             
-                                                          
-                            
-        
-       
-      
-     
-                                                                  
-                                                                                            
-                                                             
-             
-    
-                      
-                                                                                            
-                                                                                             
-                                                                          
-                                      
-                          
-                   
-                  
-                   
-                  
-                   
-                  
-                    
-                   
-                   
-                  
-                   
-                  
-      
-     
-                                               
-                                                         
-                   
-     
-                                                                          
-                                                 
-                                                         
-                                 
-      
-     
-                                                                                    
-                                                                                       
-                                                                                           
-                                                                                                                  
-                         
-                                             
-                 
-                                   
-                    
-                  
-                 
-     
-    
-            
-    
-                                                                                               
-                                                                                           
-                                                         
-                                                 
-                                             
-                               
-                  
-      
-                          
-                                                                                  
-                  
-      
-     
-    
-   
-                                                                                                   
-                                                                                      
-           
-                              
-                                                                                        
-                                                                                                                                    
-                     
-                                                    
-                
-                          
-                                    
-                                                                   
-                      
-                   
-    
-           
-                                
-                                                                                       
-                                                                 
-                                                                  
-                                                  
-                  
-   
-           
-         
-           
-  
-                             
-                                            
-                    
-                         
-   
-           
-                               
-                        
-                
-   
-                                                  
-                                                              
-                            
-                                                            
-                                                         
-                                    
-                      
-                                                       
-                             
-                        
-                                                         
-                 
-     
-    
-                      
-                                                           
-                                                 
-                      
-      
-     
-    
-   
-           
-                              
-                                                                        
-           
-                              
-                                                      
-                    
-                                                                   
-                                        
-                                                                                   
-                                   
-     
-    
-                         
-                
-    
-                  
-   
-           
-                                
-                                                                   
-                                    
-                                               
-                                                                                
-                                                                                
-                                                                  
-                         
-   
-                            
-                         
-   
-           
-                            
-                                                                 
-                   
-                
-   
-                                                                                                     
-           
-                           
-                                                            
-                          
-                                                                          
-                     
-                                                          
-   
-  
-           
-                           
-                                                           
-                          
-                                                                          
-                     
-                                       
-   
-  
-           
-                              
-                                                                                    
-                                                           
-             
-                         
-                                                                               
-                       
-                            
-   
-                                                      
-                       
-                                                                          
-                                                                            
-                                      
-                                        
-    
-   
-           
-         
-              
-  
- 
+
 // updateCallNames 遞迴更新 CallExpression 中的函數名
 func updateCallNames(expr parser.Expression, overloads map[string][]*parser.FunctionDefinition,
 	mangled map[string]string, varTypes map[string]string) {
@@ -555,12 +271,19 @@ func updateCallNamesInStmt(stmt parser.Statement, overloads map[string][]*parser
 		}
 	}
 }
+
 type Transpiler struct {
-	pkg              *Package // 當前套件（用於路徑解析）
-	sourcePath       string   // 當前編譯的源碼檔案路徑（用於 std 庫檢測）
-	allowAnonymousFn bool     // 是否允許匿名函式型別參數（來自 package.jsonc）
-	vetMode          bool     // vet 模式：只做語法+型別檢查，跳過 LLVM IR 生成
-	vetStrict        bool     // vet 模式下是否將 warning/hint 升級為 error
+	pkg              *Package             // 當前套件（用於路徑解析）
+	sourcePath       string               // 當前編譯的源碼檔案路徑（用於 std 庫檢測）
+	allowAnonymousFn bool                 // 是否允許匿名函式型別參數（來自 package.jsonc）
+	// optionInlineThreshold 是 `?T` 載荷內聯的字節閾值（0 = 用 MIR 預設值 24）。
+	// 來源依序為 NOLANG_OPTION_INLINE_THRESHOLD 環境變數、package.jsonc 的
+	// compiler.option-inline-threshold。它決定 MIR 的
+	// `%option = { i64 tag, [N x i64] slot }` 裡 slot 的寬度：載荷 sizeof 不
+	// 大於它則內聯，大於它則堆裝箱、slot[0] 存指針。
+	optionInlineThreshold int
+	vetMode          bool                 // vet 模式：只做語法+型別檢查，跳過 LLVM IR 生成
+	vetStrict        bool                 // vet 模式下是否將 warning/hint 升級為 error
 	vetLints         []checker.LintResult // vet 模式下收集的 lint 結果
 	// chainedIfHints 收集主程序（非 std 库）中链式 -> 条件的 lint 提示，
 	// 由 buildWithPkg 在编译成功后打印到 stderr，提醒用户改用合并条件或 { } 块。
@@ -578,22 +301,33 @@ type Transpiler struct {
 	// ldFlags: -ld-KEY=VALUE pairs injected as compile-time global constants.
 	// Set via SetLDFlags before Compile; the synthetic LetStatements are
 	// prepended to the parsed program in CompileTarget.
-	ldFlags          map[string]string
+	ldFlags map[string]string
 	// fileCache: per-Transpiler AST 解析快取，消除單次 CompileTarget 內的重复解析。
 	// 同一 std 模組檔案在一次編譯中最多被解析 4 次（preload/checker.ValidateFuncArgs/merge/auto-load），
 	// 快取後降至 1 次。安全性：preload 和 checker.ValidateFuncArgs 只讀不修改 AST，
 	// merge 步驟的 prefixModuleStatements/alias 改名是冪等的（已帶前綴的名稱會被跳過）。
 	fileCache map[string]*parser.Program
 }
+
 func NewTranspiler(pkg *Package) *Transpiler {
 	t := &Transpiler{
 		pkg: pkg,
 	}
 	if pkg != nil {
 		t.allowAnonymousFn = pkg.Compiler.AnonymousFnType
+		t.optionInlineThreshold = pkg.Compiler.OptionInlineThreshold
+	}
+	// 環境變數覆寫 package.jsonc，方便不改專案檔就能做 A/B。
+	if v := os.Getenv("NOLANG_OPTION_INLINE_THRESHOLD"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil {
+			t.optionInlineThreshold = n
+		} else {
+			fmt.Fprintf(os.Stderr, "warning: NOLANG_OPTION_INLINE_THRESHOLD=%q is not an integer, ignored\n", v)
+		}
 	}
 	return t
 }
+
 // SetTargetPlatform sets the target (GOOS, GOARCH) for platform-variant filtering
 // during code generation. Empty strings fall back to the host runtime platform.
 // This is propagated to the underlying LLVM generator before Generate is called.
@@ -601,6 +335,7 @@ func (t *Transpiler) SetTargetPlatform(goos, goarch string) {
 	t.targetGoos = goos
 	t.targetGoarch = goarch
 }
+
 // SetNoBoundsCheck configures whether bounds checks are skipped in generated code.
 // When true (unsafe mode), array/slice/string indexing does not emit bounds checks.
 func (t *Transpiler) SetNoBoundsCheck(skip bool) {
@@ -727,11 +462,14 @@ func injectLDFlags(program *parser.Program, ldFlags map[string]string) {
 		program.Statements = append(synthetic, program.Statements...)
 	}
 }
+
 type Target int
+
 const (
 	TargetUnknown Target = iota
 	TargetLLVM
 )
+
 func (t *Transpiler) parseFile(filePath string) (*parser.Program, error) {
 	// 快取命中：同一檔案在單次編譯中可能被 resolveUse 調用多次
 	if t.fileCache != nil {
@@ -773,6 +511,7 @@ func (t *Transpiler) parseFile(filePath string) (*parser.Program, error) {
 	}
 	return prog, nil
 }
+
 // parseEmbeddedProgram 從內嵌 FS 的位元組資料解析 Nolang 程式。
 // 與 parseFile 平行，但來源為 embed.FS.ReadFile 的結果而非磁碟檔案。
 // 用於 js/ 相容層模組解析（# js/<module>）。
@@ -806,6 +545,7 @@ func (t *Transpiler) parseEmbeddedProgram(filename string, data []byte) (*parser
 	}
 	return prog, nil
 }
+
 // workspaceRoot 回傳當前編譯的工作區根目錄（workspace.jsonc 所在目錄）。
 // 優先使用套件宣告的 WorkspaceRoot，否則從 sourcePath 向上查找 workspace.jsonc。
 // 這是所有本地導入路徑解析的單一基準，編譯器不再以當前源碼檔目錄作為相對基準。
@@ -984,6 +724,7 @@ func (t *Transpiler) resolveUse(use *parser.UseStatement) (*parser.Program, erro
 	}
 	return t.resolveFile(filepath.Clean(modulePath))
 }
+
 // resolveFile parses a .no file and applies lib.no export filtering if present.
 func (t *Transpiler) resolveFile(filePath string) (*parser.Program, error) {
 	prog, err := t.parseFile(filePath)
@@ -1011,6 +752,7 @@ func (t *Transpiler) Compile(source string) (string, error) {
 	// 而非每次 Compile 調用都清空。
 	return t.CompileTarget(source, TargetLLVM)
 }
+
 // preloadModuleSignatures 掃描源碼中的 use 語句，預載入模組的函數簽名和 struct 欄位型別。
 // 這些簽名會注入到 parser 中，使 let 型別推斷能處理跨文件方法調用。
 // 也預載入所有已知 std 模組的簽名，因為 transpiler 會自動載入這些模組。
@@ -1058,21 +800,21 @@ func (t *Transpiler) preloadModuleSignatures(source string) (map[string][]string
 					for _, r := range decl {
 						rets = append(rets, r.Type.String())
 					}
-				if fd.IsMethodDef && len(fd.Name) > 0 && fd.Name[0] != '[' {
-					fullKey := modShort + "." + fd.Name
-					methodSigs[fullKey] = rets
-					// Also register with fd.Name as key (e.g., "str.starts-with")
-					// so that type inference can find it via receiverType + "." + dot.Property
-					// where receiverType is just the type name (e.g., "str"), not "module.struct".
-					if strings.Contains(fd.Name, ".") {
-						methodSigs[fd.Name] = rets
+					if fd.IsMethodDef && len(fd.Name) > 0 && fd.Name[0] != '[' {
+						fullKey := modShort + "." + fd.Name
+						methodSigs[fullKey] = rets
+						// Also register with fd.Name as key (e.g., "str.starts-with")
+						// so that type inference can find it via receiverType + "." + dot.Property
+						// where receiverType is just the type name (e.g., "str"), not "module.struct".
+						if strings.Contains(fd.Name, ".") {
+							methodSigs[fd.Name] = rets
+						}
+					} else if len(fd.Name) > 0 && fd.Name[0] != '[' {
+						funcSigs[modShort+"."+fd.Name] = rets
+					} else {
+						// 陣列/切片型別方法（如 []t.method）：以裸名存入 funcSigs
+						funcSigs[fd.Name] = rets
 					}
-				} else if len(fd.Name) > 0 && fd.Name[0] != '[' {
-					funcSigs[modShort+"."+fd.Name] = rets
-				} else {
-					// 陣列/切片型別方法（如 []t.method）：以裸名存入 funcSigs
-					funcSigs[fd.Name] = rets
-				}
 				}
 			}
 			if sd, ok := stmt.(*parser.StructDefinition); ok {
@@ -1315,26 +1057,26 @@ func (t *Transpiler) programUsesPrint(progs ...*parser.Program) bool {
 				walkExpr(st.Expression)
 			case *parser.LetStatement:
 				walkExpr(st.Value)
-		case *parser.FunctionDefinition:
-			for _, st2 := range st.Body.Statements {
-				if used {
-					return
+			case *parser.FunctionDefinition:
+				for _, st2 := range st.Body.Statements {
+					if used {
+						return
+					}
+					walkStmt(st2)
 				}
-				walkStmt(st2)
 			}
 		}
-	}
-	for _, st := range prog.Statements {
-		if used {
-			break
+		for _, st := range prog.Statements {
+			if used {
+				break
+			}
+			walkStmt(st)
 		}
-		walkStmt(st)
+		if used {
+			return true
+		}
 	}
-	if used {
-		return true
-	}
-}
-return false
+	return false
 }
 
 // loadStdModuleBody 解析並合併單個 std 模組體到 merged 程式（按推斷載入的
@@ -1649,7 +1391,7 @@ func (t *Transpiler) collectReferencedStdModules(prog *parser.Program) map[strin
 				if recv, ok := dot.Receiver.(*parser.Identifier); ok {
 					if _, isMod := lookup[recv.Value]; !isMod {
 						for _, modName := range stdModuleMethodPrefixes {
-							if strings.HasPrefix(dot.Property, modName + "-") || dot.Property == modName {
+							if strings.HasPrefix(dot.Property, modName+"-") || dot.Property == modName {
 								addRef(modName)
 								break
 							}
@@ -2284,17 +2026,17 @@ func (t *Transpiler) CompileTarget(source string, _ Target) (string, error) {
 				}
 				// FFI extern 宣告必須隨模組一起合併，否則 codegen 的 externFuncs
 				// 會缺少條目，導致 extern 呼叫走 Nolang by-reference 路徑而非 FFI 路徑。
-			if es, ok := ms.(*parser.ExternStatement); ok {
-				merged.Statements = append(merged.Statements, es)
-				parser.SetSourceFile(es, modFile)
+				if es, ok := ms.(*parser.ExternStatement); ok {
+					merged.Statements = append(merged.Statements, es)
+					parser.SetSourceFile(es, modFile)
+				}
 			}
 		}
+		return nil
 	}
-	return nil
-}
 
-for _, stmt := range program.Statements {
-	if use, ok := stmt.(*parser.UseStatement); ok {
+	for _, stmt := range program.Statements {
+		if use, ok := stmt.(*parser.UseStatement); ok {
 			if err := processUseAndMerge(use); err != nil {
 				return "", err
 			}
@@ -2776,6 +2518,7 @@ for _, stmt := range program.Statements {
 			func() {
 				defer func() { recover() }()
 				mod, rep, ldiags := mir.LowerHIR(hirPkg, checker.CollectStdEnumVariants())
+	t.applyOptionInlineThreshold(mod)
 				if mod != nil {
 					if f, err := os.CreateTemp("", "nolang-mir-*.txt"); err == nil {
 						fmt.Fprintf(f, "=== NOLANG_MIR verification for %s ===\n", t.sourcePath)
@@ -2913,6 +2656,7 @@ func (t *Transpiler) emitMIR(hirPkg *hir.Package) (out string, reason string) {
 		}
 	}()
 	mod, rep, diags := mir.LowerHIR(hirPkg, checker.CollectStdEnumVariants())
+	t.applyOptionInlineThreshold(mod)
 	if os.Getenv("NOLANG_MIR_DUMP_HIR") != "" {
 		fmt.Fprintf(os.Stderr, "[HIR-DUMP]\n%s\n", hirPkg.Dump())
 	}
@@ -2972,6 +2716,15 @@ func (t *Transpiler) emitMIR(hirPkg *hir.Package) (out string, reason string) {
 // the MIR backend cannot emit correctly, together with true. Benign lower gaps
 // (kind "ident"/"dot") are intentionally NOT fatal — they emit a best-effort
 // form that works for the v1 subset.
+// applyOptionInlineThreshold 把配置的 `?T` 載荷內聯閾值交給 MIR。0（未配置）
+// 交給 MIR 自己取預設值 24，讓 MIR 單獨使用時也有正確行為。
+func (t *Transpiler) applyOptionInlineThreshold(mod *mir.Module) {
+	if mod == nil || t.optionInlineThreshold == 0 {
+		return
+	}
+	mod.OptionInlineThreshold = t.optionInlineThreshold
+}
+
 func firstFatalLowerDiag(diags []mir.LowerDiag) (mir.LowerDiag, bool) {
 	for _, d := range diags {
 		if d.Kind == "interp" {
@@ -3079,6 +2832,7 @@ func monomorphizeGenerics(program *parser.Program, varTypes map[string]string, t
 	}
 	program.Statements = append(program.Statements, newStmts...)
 }
+
 // isGenericMethod checks if a function name like "[n]t.method" has generic type params
 func isGenericMethod(name string) bool {
 	if len(name) > 3 && name[0] == '[' {
@@ -3106,6 +2860,7 @@ func isGenericMethod(name string) bool {
 	}
 	return false
 }
+
 // scanStmtForGenericCalls recursively scans statements for generic calls
 func scanStmtForGenericCalls(stmt parser.Statement, genericFns map[string]*parser.FunctionDefinition,
 	varTypes map[string]string, program *parser.Program, newStmts *[]parser.Statement, typeOwner map[string]string) {
@@ -3184,6 +2939,7 @@ func scanStmtForGenericCalls(stmt parser.Statement, genericFns map[string]*parse
 		}
 	}
 }
+
 // scanIfExpressionForGenericCalls recursively scans an IfExpression's Condition,
 // Consequence, and Alternative for method calls that need resolution.
 func scanIfExpressionForGenericCalls(ie *parser.IfExpression, genericFns map[string]*parser.FunctionDefinition,
@@ -3215,6 +2971,7 @@ func scanIfExpressionForGenericCalls(ie *parser.IfExpression, genericFns map[str
 		}
 	}
 }
+
 // scanExprForGenericCalls recursively walks an expression tree to find
 // CallExpressions (including method calls) that need generic/method resolution.
 func scanExprForGenericCalls(expr parser.Expression, genericFns map[string]*parser.FunctionDefinition,
@@ -3236,6 +2993,7 @@ func scanExprForGenericCalls(expr parser.Expression, genericFns map[string]*pars
 		scanExprForGenericCalls(e.Expression, genericFns, varTypes, program, newStmts, typeOwner)
 	}
 }
+
 // monomorphizeUnions 對聯合型別（union type alias）進行單態化。
 // 對每個帶有 ..T（T 為 union alias）的函數（variadic），或參數/結果
 // 使用 union alias 的非 variadic 函數，生成 N 個函數（每個 union
@@ -3326,6 +3084,7 @@ func monomorphizeUnions(program *parser.Program) {
 	}
 	program.Statements = append(program.Statements, newStmts...)
 }
+
 // rewriteUnionCalls 重寫對聯合型別泛型函數的呼叫。
 // 在 monomorphizeUnions 之後，原函數被改名為 "<name>__<union>_TEMPLATE"，
 // 具體版本為 "<name>__<memberType>"。此函數遍歷所有呼叫點，
@@ -3373,6 +3132,7 @@ func rewriteUnionCalls(program *parser.Program, varTypes map[string]string) {
 	// 遍歷所有語句，重寫呼叫
 	rewriteUnionCallStmts(program.Statements, templates, varTypes)
 }
+
 // rewriteUnionCallStmts 遍歷語句列表，對每個語句中的聯合型別泛型呼叫進行重寫。
 // 此函數與 rewriteUnionCallExpr 互相遞迴：rewriteUnionCallExpr 處理 IfExpression
 // 的 Consequence/Alternative 時會呼叫本函數，以正確走訪所有語句類型
@@ -3437,12 +3197,14 @@ func rewriteUnionCallStmts(stmts []parser.Statement, templates map[string]*union
 		}
 	}
 }
+
 // unionTemplateInfo 記錄聯合型別模板函數的資訊
 type unionTemplateInfo struct {
 	origName  string
 	unionName string
 	members   []string
 }
+
 // rewriteUnionCallExpr 遞迴重寫表達式中的聯合型別呼叫
 func rewriteUnionCallExpr(expr parser.Expression, templates map[string]*unionTemplateInfo, varTypes map[string]string) {
 	if expr == nil {
@@ -3535,6 +3297,7 @@ func rewriteUnionCallExpr(expr parser.Expression, templates map[string]*unionTem
 		rewriteUnionCallExpr(e.Value, templates, varTypes)
 	}
 }
+
 // inferArgMemberType 從呼叫引數推斷應使用的聯合成員型別
 func inferArgMemberType(call *parser.CallExpression, tpl *unionTemplateInfo, varTypes map[string]string) string {
 	if len(call.Arguments) == 0 {
@@ -3545,6 +3308,7 @@ func inferArgMemberType(call *parser.CallExpression, tpl *unionTemplateInfo, var
 	firstArg := call.Arguments[0]
 	return inferExprMemberType(firstArg, varTypes)
 }
+
 // inferExprMemberType 從表達式推斷聯合成員型別
 func inferExprMemberType(expr parser.Expression, varTypes map[string]string) string {
 	switch v := expr.(type) {
@@ -3567,6 +3331,7 @@ func inferExprMemberType(expr parser.Expression, varTypes map[string]string) str
 	}
 	return "i64"
 }
+
 // inferTypeFromExpr 嘗試從值表達式推斷變數型別。無法推斷時返回空白字串。
 func inferTypeFromExpr(expr parser.Expression) string {
 	switch e := expr.(type) {
@@ -3659,6 +3424,7 @@ func inferTypeFromExpr(expr parser.Expression) string {
 	}
 	return ""
 }
+
 // isValidType 檢查是否為有效的 Nolang 型別名
 func isValidType(name string) bool {
 	switch name {
@@ -3667,6 +3433,7 @@ func isValidType(name string) bool {
 	}
 	return false
 }
+
 // cloneUnionVariant 為 union 函數的某個成員型別複製一份具體實例。
 // 替換函數簽名中的 variadic 元素型別為該成員（若為 variadic），
 // 並將所有 union 別名的參數/結果型別替換為具體成員型別。
@@ -3725,6 +3492,7 @@ func cloneUnionVariant(fd *parser.FunctionDefinition, memberType string, aliases
 	clone.Body = cloneBlockForUnion(fd.Body, fd.Name, clone.Name, memberType)
 	return &clone
 }
+
 // cloneBlockForUnion 深拷貝一個 block，遞迴地把對 <oldName> 的呼叫
 // 改名為 <newName>。<memberType> 是當前單態化的具體型別。
 func cloneBlockForUnion(bs *parser.BlockStatement, oldName, newName, memberType string) *parser.BlockStatement {
@@ -3854,6 +3622,7 @@ func cloneExprForUnion(expr parser.Expression, oldName, newName, memberType stri
 	}
 	return expr
 }
+
 // processCallExpression handles a single CallExpression for generic resolution
 func processCallExpression(ce *parser.CallExpression, genericFns map[string]*parser.FunctionDefinition,
 	varTypes map[string]string, program *parser.Program, newStmts *[]parser.Statement, typeOwner map[string]string) {
@@ -3864,19 +3633,19 @@ func processCallExpression(ce *parser.CallExpression, genericFns map[string]*par
 			if len(genericArgs) == 0 {
 				genericArgs = inferGenericArgs(fd, ce, program)
 			}
-		if len(genericArgs) > 0 {
-			concrete := cloneAndSubstitute(fd, genericArgs)
-			// 攜帶模板函數的註解（如 #{overflow = wrap}）到單態化複本，
-			// 否則 generic 方法體內的有符號相減會遺失溢出模式而誤用預設 option 路徑。
-			if program.Sem != nil {
-				if ents := program.Sem.AnnotationsOf(fd); len(ents) > 0 {
-					program.Sem.SetRawAnnotations(concrete, ents)
+			if len(genericArgs) > 0 {
+				concrete := cloneAndSubstitute(fd, genericArgs)
+				// 攜帶模板函數的註解（如 #{overflow = wrap}）到單態化複本，
+				// 否則 generic 方法體內的有符號相減會遺失溢出模式而誤用預設 option 路徑。
+				if program.Sem != nil {
+					if ents := program.Sem.AnnotationsOf(fd); len(ents) > 0 {
+						program.Sem.SetRawAnnotations(concrete, ents)
+					}
 				}
+				*newStmts = append(*newStmts, concrete)
+				fnName.Value = concrete.Name
+				ce.GenericArgs = nil
 			}
-			*newStmts = append(*newStmts, concrete)
-			fnName.Value = concrete.Name
-			ce.GenericArgs = nil
-		}
 		}
 		// Check format string for :v spec on container variables.
 		// When {var:v} is used with a container type (vec, arr, map, struct),
@@ -3967,6 +3736,7 @@ func isContainerTypeNolang(typeStr string) bool {
 	}
 	return false
 }
+
 // fnExistsInProgram checks if a function or method with the given name exists
 // in the program's top-level statements. Method definitions (e.g. f64.to-str,
 // int.to-str) are stored as *parser.FunctionDefinition with the full dotted
@@ -3982,6 +3752,7 @@ func fnExistsInProgram(program *parser.Program, name string) bool {
 	}
 	return false
 }
+
 // isBuiltinType reports whether name is a builtin primitive type (str, i64, etc.)
 func isBuiltinType(name string) bool {
 	switch name {
@@ -4261,6 +4032,7 @@ func resolveMethodCall(dot *parser.DotExpression, ce *parser.CallExpression,
 	}
 	return true
 }
+
 // matchTypePattern matches a type pattern like "[n]t" against a concrete type like "[4]i64".
 // Returns generic args (e.g., n=4, t=i64) or nil if no match.
 func matchTypePattern(pattern, concrete string, fd *parser.FunctionDefinition) []parser.Expression {
@@ -4281,36 +4053,36 @@ func matchTypePattern(pattern, concrete string, fd *parser.FunctionDefinition) [
 					if sizeParam != "" && argSize == "" {
 						return nil
 					}
-				var args []parser.Expression
-				if sizeParam != "" {
-					if isLowerLetter(sizeParam) {
-						// [n]t pattern requires a numeric size; non-numeric
-						// argSize (e.g. MapType [str]i64 where argSize="str")
-						// must not match.
-						val, err := strconv.ParseInt(argSize, 10, 64)
-						if err != nil {
+					var args []parser.Expression
+					if sizeParam != "" {
+						if isLowerLetter(sizeParam) {
+							// [n]t pattern requires a numeric size; non-numeric
+							// argSize (e.g. MapType [str]i64 where argSize="str")
+							// must not match.
+							val, err := strconv.ParseInt(argSize, 10, 64)
+							if err != nil {
+								return nil
+							}
+							args = append(args, &parser.IntegerLiteral{Value: val})
+						} else if sizeParam != argSize {
+							// Concrete size (e.g. "4"): must match exactly.
 							return nil
 						}
-						args = append(args, &parser.IntegerLiteral{Value: val})
-					} else if sizeParam != argSize {
-						// Concrete size (e.g. "4"): must match exactly.
-						return nil
 					}
-				}
-				if elemParam != "" {
-					if len(elemParam) == 1 && isLowerLetter(elemParam) {
-						// Generic element variable (e.g. `t`): bind any concrete type.
-						args = append(args, &parser.StringLiteral{Value: argElem})
-					} else if elemParam == argElem {
-						// Concrete element type: exact match only.
-						args = append(args, &parser.StringLiteral{Value: argElem})
-					} else {
-						return nil
+					if elemParam != "" {
+						if len(elemParam) == 1 && isLowerLetter(elemParam) {
+							// Generic element variable (e.g. `t`): bind any concrete type.
+							args = append(args, &parser.StringLiteral{Value: argElem})
+						} else if elemParam == argElem {
+							// Concrete element type: exact match only.
+							args = append(args, &parser.StringLiteral{Value: argElem})
+						} else {
+							return nil
+						}
 					}
-				}
-				if len(args) > 0 {
-					return args
-				}
+					if len(args) > 0 {
+						return args
+					}
 				}
 			}
 		}
@@ -4338,6 +4110,7 @@ func matchTypePattern(pattern, concrete string, fd *parser.FunctionDefinition) [
 	}
 	return nil
 }
+
 // isGenericReceiver reports whether the genericArgs resolved by matchTypePattern
 // indicate that the method receiver itself is generic (e.g. a call to
 // self.foo() inside a generic function whose receiver is `[]t`). In that case the
@@ -4378,6 +4151,7 @@ func isGenericReceiver(pattern string, args []parser.Expression) bool {
 	}
 	return false
 }
+
 // inferGenericArgs 從函數呼叫的引數型別推斷泛型參數
 // 例如 fn(arr [n]t) 被以 [8]byte 引數呼叫 → n=8, t=byte
 func inferGenericArgs(fd *parser.FunctionDefinition, call *parser.CallExpression, program *parser.Program) []parser.Expression {
@@ -4509,6 +4283,7 @@ func stmtCount(body *parser.BlockStatement) int {
 	}
 	return len(body.Statements)
 }
+
 // cloneAndSubstitute 複製泛型函數並以具體值替換泛型參數
 func cloneAndSubstitute(fd *parser.FunctionDefinition, genericArgs []parser.Expression) *parser.FunctionDefinition {
 	if len(genericArgs) == 0 {
@@ -4634,6 +4409,7 @@ func cloneAndSubstitute(fd *parser.FunctionDefinition, genericArgs []parser.Expr
 	parser.SetModuleOwner(nf, parser.GetModuleOwner(fd))
 	return nf
 }
+
 // substituteBody 遞迴替換函數體中的泛型參數
 func substituteBody(body *parser.BlockStatement, subst map[string]string) *parser.BlockStatement {
 	if body == nil || len(subst) == 0 {
@@ -4665,10 +4441,10 @@ func substituteStmt(stmt parser.Statement, subst map[string]string) parser.State
 		}
 	case *parser.ForStatement:
 		newFor := &parser.ForStatement{
-			Token:          s.Token,
-			Body:           substituteBody(s.Body, subst),
-			Label:          s.Label,
-			IsCondWrapper:  s.IsCondWrapper,
+			Token:         s.Token,
+			Body:          substituteBody(s.Body, subst),
+			Label:         s.Label,
+			IsCondWrapper: s.IsCondWrapper,
 		}
 		if s.IterRange != nil {
 			newFor.IterRange = &parser.IterationExpr{
@@ -4848,6 +4624,7 @@ func substituteRange(r *parser.RangeExpression, subst map[string]string) *parser
 		End:      substituteExpr(r.End, subst),
 	}
 }
+
 // substituteType 替換類型中的泛型參數
 // 遞迴處理所有 Type 節點
 func substituteType(t parser.Type, subst map[string]string) parser.Type {
@@ -4890,6 +4667,7 @@ func substituteType(t parser.Type, subst map[string]string) parser.Type {
 		return t
 	}
 }
+
 // collectVarTypesFromBody recursively collects variable types from a function body
 func collectVarTypesFromBody(body *parser.BlockStatement, varTypes map[string]string) {
 	if body == nil {
@@ -4933,11 +4711,15 @@ func collectVarTypesFromBodyIn(body *parser.BlockStatement, varTypes map[string]
 			}
 		}
 		if bs, ok := stmt.(*parser.BlockStatement); ok {
-			collectVarTypesFromBodyIn(bs, varTypes, declared)
+			collectItScoped(varTypes, func() {
+				collectVarTypesFromBodyIn(bs, varTypes, declared)
+			})
 		}
 		if fs, ok := stmt.(*parser.ForStatement); ok {
 			if fs.Body != nil {
-				collectVarTypesFromBodyIn(fs.Body, varTypes, declared)
+				collectItScoped(varTypes, func() {
+					collectVarTypesFromBodyIn(fs.Body, varTypes, declared)
+				})
 			}
 		}
 		// ExpressionStatement may wrap an IfExpression (e.g. `cond -> { body }`
@@ -4945,10 +4727,13 @@ func collectVarTypesFromBodyIn(body *parser.BlockStatement, varTypes map[string]
 		// alternative blocks so that local LetStatements inside match arms
 		// shadow globals / outer-locals correctly during method resolution.
 		if es, ok := stmt.(*parser.ExpressionStatement); ok {
-			collectVarTypesFromExpr(es.Expression, varTypes)
+			collectItScoped(varTypes, func() {
+				collectVarTypesFromExpr(es.Expression, varTypes)
+			})
 		}
 	}
 }
+
 // collectVarTypesFromExpr recurses into expression nodes that contain
 // BlockStatement bodies (IfExpression, etc.) and collects local variable types.
 func collectVarTypesFromExpr(expr parser.Expression, varTypes map[string]string) {
@@ -4957,16 +4742,50 @@ func collectVarTypesFromExpr(expr parser.Expression, varTypes map[string]string)
 	}
 	switch e := expr.(type) {
 	case *parser.IfExpression:
-		collectVarTypesFromBody(e.Consequence, varTypes)
-		collectVarTypesFromBody(e.Alternative, varTypes)
-		collectVarTypesFromBody(e.DotValBody, varTypes)
+		// Each branch is its own `it` scope: a match arm desugars to a branch
+		// whose first statement is the synthetic `let it = <subject>`, and a
+		// match NESTED inside that arm rebinds `it` to the INNER subject. The
+		// sibling branches must not see each other's `it` (see collectItScoped).
+		collectItScoped(varTypes, func() { collectVarTypesFromBody(e.Consequence, varTypes) })
+		collectItScoped(varTypes, func() { collectVarTypesFromBody(e.Alternative, varTypes) })
+		collectItScoped(varTypes, func() { collectVarTypesFromBody(e.DotValBody, varTypes) })
 	case *parser.GroupedExpression:
 		collectVarTypesFromExpr(e.Expression, varTypes)
 	case *parser.ConditionalExpression:
-		collectVarTypesFromExpr(e.Consequence, varTypes)
-		collectVarTypesFromExpr(e.Alternative, varTypes)
+		collectItScoped(varTypes, func() { collectVarTypesFromExpr(e.Consequence, varTypes) })
+		collectItScoped(varTypes, func() { collectVarTypesFromExpr(e.Alternative, varTypes) })
 	}
 }
+
+// collectItScoped runs fn with `it` block-scoped, restoring the enclosing
+// binding afterwards.
+//
+// `it` is a single function-global name: every match arm prepends a synthetic
+// `let it = <subject>`, so a flat collection pass lets the LAST arm (including
+// arms of a match NESTED inside an outer arm) win. Method calls are resolved
+// against this table during parse/lower, so the outer arm's `it.show()` was
+// resolved as `bool.show` when a nested `w ?bool` match followed it:
+//
+//	t ?thing = mk()
+//	t: { -> {
+//	        s = it.show()      ; resolved as bool.show -> "unknown callee"
+//	        w ?bool = it.get()
+//	        w: { -> ... }      ; nested arm rebinds it = bool
+//	    } }
+//
+// Restoring around each nested body keeps `it` = the nearest enclosing arm's
+// subject, mirroring the per-level restore the MIR lowering does for the
+// runtime value (hir2mir lowerIf).
+func collectItScoped(varTypes map[string]string, fn func()) {
+	saved, had := varTypes["it"]
+	fn()
+	if had {
+		varTypes["it"] = saved
+	} else {
+		delete(varTypes, "it")
+	}
+}
+
 // makeIdent 建立 Identifier AST 節點
 func makeIdent(name string) *parser.Identifier {
 	return &parser.Identifier{
@@ -4974,6 +4793,7 @@ func makeIdent(name string) *parser.Identifier {
 		Value: name,
 	}
 }
+
 // makeMethodCall 建立 varName.methodName() 的 ExpressionStatement
 func makeMethodCall(varName, method string) *parser.ExpressionStatement {
 	return &parser.ExpressionStatement{
@@ -4989,6 +4809,7 @@ func makeMethodCall(varName, method string) *parser.ExpressionStatement {
 		},
 	}
 }
+
 // injectEnterLeave 為實現了 enter()/leave() 的類型自動插入作用域調用
 func injectEnterLeave(program *parser.Program) {
 	// 1. 收集實現了 enter/leave 的類型
@@ -5091,6 +4912,7 @@ func injectEnterLeave(program *parser.Program) {
 		}
 	}
 }
+
 // findTypeForVar 從區塊語句中查找變數的類型（簡化版）
 func findTypeForVar(varName string, block *parser.BlockStatement, lifecycleTypes map[string]bool) string {
 	for _, stmt := range block.Statements {
@@ -5106,15 +4928,16 @@ func findTypeForVar(varName string, block *parser.BlockStatement, lifecycleTypes
 	}
 	return ""
 }
+
 // buildArraySizeMap 構建變數名 → 陣列大小的映射
 // 從所有 LetStatement 中收集 ArraySize
 // sizeMaps 儲存陣列、切片、字串的大小映射，由 buildSizeMaps 單次遍歷填充。
 // 合併三個原本各自獨立遍歷 AST 的函數（buildArraySizeMap/buildSliceSizeMap/buildStringSizeMap），
 // 將遍歷次數從 3 次降至 1 次，顯著減少大型程序的校驗開銷。
 type sizeMaps struct {
-	arraySizes    map[string]int64
-	sliceSizes    map[string]int64
-	stringSizes   map[string]int64
+	arraySizes     map[string]int64
+	sliceSizes     map[string]int64
+	stringSizes    map[string]int64
 	funcStrReturns map[string]bool // user-defined functions returning str
 }
 
@@ -5124,6 +4947,7 @@ type sizeMaps struct {
 // FunctionDefinition case of validateStmtArrayBounds with a fresh per-function
 // stringSizes map) can access funcStrReturns without a signature change.
 var validateFuncStrReturns map[string]bool
+
 // buildVarTypes 從程式的頂層陳述句中收集變數型別映射。
 // 用於在模組合併後重新建構 varTypes，使 validateArrayBounds 等檢查能應用於 merged 程式。
 func buildVarTypes(program *parser.Program) map[string]string {
@@ -5159,9 +4983,9 @@ func buildVarTypes(program *parser.Program) map[string]string {
 // 替代原本獨立呼叫 buildArraySizeMap + buildSliceSizeMap + buildStringSizeMap 的 3 次遍歷。
 func buildSizeMaps(program *parser.Program) *sizeMaps {
 	sm := &sizeMaps{
-		arraySizes:    make(map[string]int64),
-		sliceSizes:    make(map[string]int64),
-		stringSizes:   make(map[string]int64),
+		arraySizes:     make(map[string]int64),
+		sliceSizes:     make(map[string]int64),
+		stringSizes:    make(map[string]int64),
 		funcStrReturns: make(map[string]bool),
 	}
 	// Pre-scan: collect names of user-defined functions whose single result
@@ -5189,6 +5013,7 @@ func buildSizeMaps(program *parser.Program) *sizeMaps {
 	}
 	return sm
 }
+
 // collectSizesFromStmt 遞迴遍歷 AST 節點，同時收集三種大小映射。
 // 合併自 collectArraySizesFromStmt / collectSliceSizeMapFromStmt / collectStringSizeMapFromStmt。
 func collectSizesFromStmt(stmt parser.Statement, sm *sizeMaps) {
@@ -5228,16 +5053,16 @@ func collectSizesFromStmt(stmt parser.Statement, sm *sizeMaps) {
 			} else {
 				sm.stringSizes[s.Name.Value] = 0 // unknown size, mark as string but no bound check
 			}
-} else if isStringExprForCollect(s.Value, sm.stringSizes, sm.funcStrReturns) {
-		// Also detect string from inferred expression (StringLiteral, string concatenation,
-		// string method calls like slice/repeat, char-to-str, copy from known string var,
-		// or calls to user-defined functions returning str)
-		if sl, ok := s.Value.(*parser.StringLiteral); ok {
-			sm.stringSizes[s.Name.Value] = int64(len(sl.Value))
-		} else {
-			sm.stringSizes[s.Name.Value] = 0 // unknown size, mark as string but no bound check
+		} else if isStringExprForCollect(s.Value, sm.stringSizes, sm.funcStrReturns) {
+			// Also detect string from inferred expression (StringLiteral, string concatenation,
+			// string method calls like slice/repeat, char-to-str, copy from known string var,
+			// or calls to user-defined functions returning str)
+			if sl, ok := s.Value.(*parser.StringLiteral); ok {
+				sm.stringSizes[s.Name.Value] = int64(len(sl.Value))
+			} else {
+				sm.stringSizes[s.Name.Value] = 0 // unknown size, mark as string but no bound check
+			}
 		}
-	}
 	case *parser.FunctionDefinition:
 		// 字串參數與返回值收集（僅 buildStringSizeMap 有此邏輯）
 		for _, p := range s.Parameters {
@@ -5344,6 +5169,7 @@ func collectArraySizesFromStmt(stmt parser.Statement, sizes map[string]int64) {
 		}
 	}
 }
+
 // buildSliceSizeMap collects names of slice variables and their initial element count
 func buildSliceSizeMap(program *parser.Program) map[string]int64 {
 	slices := make(map[string]int64)
@@ -5400,6 +5226,7 @@ func collectSliceSizeMapFromStmt(stmt parser.Statement, slices map[string]int64)
 		}
 	}
 }
+
 // buildStringSizeMap collects names of string variables and their literal length
 func buildStringSizeMap(program *parser.Program) map[string]int64 {
 	strSizes := make(map[string]int64)
@@ -5417,9 +5244,9 @@ func collectStringSizeMapFromStmt(stmt parser.Statement, strSizes map[string]int
 			} else {
 				strSizes[s.Name.Value] = 0 // unknown size, mark as string but no bound check
 			}
-} else if isStringExprForCollect(s.Value, strSizes, validateFuncStrReturns) {
-	// Also detect string from inferred expression (StringLiteral, string concatenation,
-	// string method calls like slice/repeat, char-to-str, copy from known string var,
+		} else if isStringExprForCollect(s.Value, strSizes, validateFuncStrReturns) {
+			// Also detect string from inferred expression (StringLiteral, string concatenation,
+			// string method calls like slice/repeat, char-to-str, copy from known string var,
 			if sl, ok := s.Value.(*parser.StringLiteral); ok {
 				strSizes[s.Name.Value] = int64(len(sl.Value))
 			} else {
@@ -5543,6 +5370,7 @@ func isStringExprForCollect(expr parser.Expression, strSizes map[string]int64, f
 	}
 	return false
 }
+
 // isStringExpr checks if an expression is a string type
 func isStringExpr(expr parser.Expression, stringSizes map[string]int64) bool {
 	switch e := expr.(type) {
@@ -5576,6 +5404,7 @@ func isStringExpr(expr parser.Expression, stringSizes map[string]int64) bool {
 	}
 	return false
 }
+
 // validateDuplicates checks for duplicate variable declarations
 func validateDuplicates(program *parser.Program) error {
 	seen := make(map[string]bool)
@@ -5671,6 +5500,7 @@ func validateStmtDuplicates(sem *parser.SemanticContext, stmt parser.Statement, 
 	}
 	return nil
 }
+
 // validateLoopScopedVars detects variables that are first declared inside a
 // ForStatement body and then used after the loop exits. Because the loop might
 // execute zero iterations, such variables would be undef at the point of use,
@@ -5697,6 +5527,7 @@ func validateLoopScopedVars(program *parser.Program) error {
 	}
 	return nil
 }
+
 // validateLoopScopedStmts walks a statement list sequentially, tracking which
 // variables are first declared inside a ForStatement body. After a ForStatement,
 // it checks ALL subsequent statements for uses of those loop-only variables.
@@ -5911,6 +5742,7 @@ func stmtPosLine(stmt parser.Statement) int {
 	}
 	return stmt.Pos().Line
 }
+
 // validateArrayBounds 編譯期陣列邊界檢查
 // 檢查所有 IndexExpression 中的常數索引是否超出陣列長度
 func validateArrayBounds(program *parser.Program, arraySizes map[string]int64, sliceSizes map[string]int64, stringSizes map[string]int64, varTypes map[string]string) error {
@@ -5983,19 +5815,19 @@ func validateStmtArrayBounds(stmt parser.Statement, arraySizes map[string]int64,
 				funcSliceSizes[p.Name] = 0
 			}
 		}
-	for _, p := range s.Results {
-		if p.Type != nil {
-			funcVarTypes[p.Name] = p.Type.String()
-			if p.Type.String() == "str" {
-				funcStringSizes[p.Name] = 0
+		for _, p := range s.Results {
+			if p.Type != nil {
+				funcVarTypes[p.Name] = p.Type.String()
+				if p.Type.String() == "str" {
+					funcStringSizes[p.Name] = 0
+				}
+			}
+			// Skip 'self' (now in Results) to allow vec.truncate/extend
+			// and other low-level slice methods to modify .len internally.
+			if p.Name != "self" && isSliceTypeOrOptionSlice(p.Type) {
+				funcSliceSizes[p.Name] = 0
 			}
 		}
-		// Skip 'self' (now in Results) to allow vec.truncate/extend
-		// and other low-level slice methods to modify .len internally.
-		if p.Name != "self" && isSliceTypeOrOptionSlice(p.Type) {
-			funcSliceSizes[p.Name] = 0
-		}
-	}
 		if s.Body != nil {
 			collectVarTypesFromBody(s.Body, funcVarTypes)
 			for _, ss := range s.Body.Statements {
@@ -6035,6 +5867,7 @@ func validateStmtArrayBounds(stmt parser.Statement, arraySizes map[string]int64,
 	}
 	return nil
 }
+
 // tryEvalConstInt 嘗試在編譯期求值整數常數表達式。
 // 支援：IntegerLiteral、PrefixExpression(-)、InfixExpression(+,-,*)、GroupedExpression。
 // 若成功求值回傳 (value, true)，否則回傳 (0, false)。
@@ -6069,6 +5902,7 @@ func tryEvalConstInt(expr parser.Expression) (int64, bool) {
 	}
 	return 0, false
 }
+
 // checkConstIndexBounds 檢查常數索引是否越界（負數或 >= size）。
 // 若索引非常數或 size <= 0 則跳過。回傳錯誤或 nil。
 func checkConstIndexBounds(idxExpr parser.Expression, size int64, varName string, typeName string) error {
@@ -6087,6 +5921,7 @@ func checkConstIndexBounds(idxExpr parser.Expression, size int64, varName string
 	}
 	return nil
 }
+
 // isArrOrSliceTypeName reports whether a resolved type name denotes a fixed array
 // ([N x T]), a slice ([]T), or a vec (%vec). These are the container types whose
 // .len property is being deprecated in favour of the .len() method.
@@ -6200,234 +6035,15 @@ func validateExprArrayBounds(expr parser.Expression, arraySizes map[string]int64
 	}
 	return nil
 }
+
 // ── 型別檢查 ──────────────────────────────────────────────
 // checker.ValidateResult 型別檢查結果
-                            
-              
-              
-              
-                 
- 
+
 // ValidateEmbedAnnotations 校驗 #{embed=...} 註解的用法是否正確。
 // sourcePath 用於解析相對路徑（相對於包根目錄）。
-                                                                                            
-                             
-                                          
-                                       
-          
-           
-   
-                                               
-                      
-                                        
-                                                       
-                            
-            
-    
-                     
-                                                                 
-                        
-                                                                       
-                        
-    
-   
-                        
-           
-   
-                       
-                        
-                                            
-                      
-                                            
-                  
-                 
-                                                         
-     
-   
-                                                   
-                     
-                                            
-                  
-                 
-                                                                                                
-     
-          
-                              
-                       
-                                        
-                                                 
-                                                  
-                                                
-                        
-      
-     
-    
-                                                 
-                                                  
-                                                
-                        
-      
-     
-    
-                    
-                                             
-                   
-                  
-                                                                                                      
-      
-    
-   
-                                  
-                      
-                            
-                                  
-                 
-                         
-                                                  
-     
-                      
-                                       
-     
-                                                    
-    
-                                                   
-                                             
-                   
-                  
-                                                                                               
-      
-    
-   
-  
-               
- 
+
 // checker.ValidateTypes 對 Program 進行型別檢查，回傳錯誤列表（包含行號）
-                                                              
-                             
-                               
-                                   
-                                          
-                                                      
-                            
-   
-  
-                                                             
-                                     
-                                          
-                                                      
-                                                        
-                                                    
-    
-   
-                                                   
-                                                        
-                                                          
-    
-   
-  
-                                                                                                    
-                                        
-                           
-                           
-                            
-                            
-                            
-                           
-                           
-                           
-                           
-                           
-  
-                                      
-                                         
-                   
-   
-  
-                                                                         
-                                                                 
-                                          
-                                                      
-                          
-                                    
-                                                    
-    
-                                                              
-                                                                                         
-                                                                                        
-                                                   
-                       
-                                
-                                    
-           
-                                                    
-                                       
-                                             
-     
-    
-                          
-                              
-                                                
-                                  
-          
-     
-    
-                              
-                                             
-                            
-                              
-                                                                                                                   
-      
-           
-                               
-                               
-     
-    
-   
-  
-                                        
-                                                                                                      
-                                                      
-                                                                                         
-                                                                     
-                                                                    
-                                                                                                        
-                                                                                
-                                           
-                                                
-                                                             
-                                       
-   
-  
-                                                                               
-                                                                  
-                                            
-                                          
-                                                
-                                                                                     
-                                                              
-                                                       
-     
-    
-   
-  
-                                          
-                                  
-                
-                                                      
-                                                                 
-                                             
-    
-   
-                                                                          
-                                          
-                                      
-                       
-   
-                                                                                
-                                    
-  
-               
- 
+
 // checker.ValidateUnionTypes 收集 type alias（單型別和 union）並對函數的
 // 聯合型別/泛型變體做檢查：
 //   - 記錄每個 alias 名稱 -> 解析後的具體型別列表
@@ -6435,677 +6051,39 @@ func validateExprArrayBounds(expr parser.Expression, arraySizes map[string]int64
 //   - 對每個 type alias，遞迴展開成扁平化的 []Type，供 codegen 使用
 //
 // 不在這裡阻擋編譯；錯誤一律以 checker.ValidateResult 報告（warning 級別）。
-                                                                                                   
-                                              
-                             
-                                   
-                                          
-                                    
-          
-           
-   
-                                            
-                                            
-                           
-                             
-                                                             
-     
-           
-   
-                       
-  
-                                                                             
-                                                                      
-                                          
-                                             
-                            
-           
-   
-                              
-           
-   
-                                             
-                       
-           
-   
-                                                                                           
-                                                          
-                     
-           
-   
-                                                      
-                              
-   
-  
-                                                                                             
-                                                                                     
-                            
-                                          
-                                             
-                           
-           
-   
-                            
-           
-   
-                                               
-                      
-                              
-   
-  
-                        
- 
+
 // findSingleUnionName 檢查函數的參數與結果型別，找出唯一使用的 union alias。
 // 若函數只涉及一個 union alias，則返回該名稱；否則返回空字串。
 // 對於 variadic 函數，返回空字串（variadic 由 VariadicUnion 處理）。
-                                                                                                      
-                                    
-                                  
-                                                    
-                       
-                       
-   
-  
-                               
-                                                    
-                       
-                       
-   
-  
-                          
-                             
-           
-   
-  
-          
- 
+
 // collectUnionNamesFromType 從型別中收集所有 union alias 名稱。
-                                                                                                     
-                             
-              
-            
-  
-                        
-                        
-                                                      
-                       
-   
-                        
-                                                    
-                      
-                
-   
-                        
-                                                    
-                      
-                
-   
-                          
-                                                    
-                      
-                
-   
-                           
-                                                    
-                      
-                
-   
-                           
-                                                        
-  
-           
- 
+
 // FlattenUnion 將一個 union alias（或單型別 alias）扁平化為具體型別列表。
 // 對於 union：對每個成員遞迴展開（若成員是另一個 union alias 會被展開）。
 // 對於單型別 alias：返回 [Type]（長度 1）。
 // 對於已知的 builtin（i8/i16/.../f64/bool/byte/char/str）：原樣返回。
-                                                                                    
-                                                          
-              
-                                
-                            
-               
-                                
-                                                      
-  
-                        
-         
-                                            
-                                                      
-  
-                     
-                       
-                                    
-                                           
-                                            
-                                                         
-           
-                        
-    
-   
-            
-  
-                    
-                                                
-                                         
-   
-                               
-  
-           
- 
+
 // isValidVarName 檢查名稱是否只包含小寫字母（a-z）、中連接符（-）和數字，且不能以數字開頭
-                                       
-                
-             
-  
-                          
-             
-                           
-                              
-                
-    
-   
-                                                                    
-               
-   
-  
-            
- 
+
 // checker.ValidateNaming 檢查所有變數/函數名稱是否符合命名規範（只用小寫和中劃線）
-                                                               
-                             
-                                                                
-                                                                    
-                                           
-                                          
-                                               
-           
-   
-                                                              
-  
-               
- 
-                                                                                      
-                             
-                          
-                                 
-                                                                                              
-                       
-                                                              
-                                   
-   
-                                   
-                                            
-                          
-                            
-                                                                                       
-     
-   
-                    
-                                            
-                                                                
-    
-   
-                           
-                                                                       
-                                                                      
-                                                
-                 
-   
-                                                     
-                                            
-                               
-                                 
-                                                                                             
-     
-   
-                             
-                                      
-                                                               
-   
-                                  
-                                                            
-                                 
-                                                                             
-    
-                                 
-                                                                             
-    
-   
-  
-               
- 
+
 // checker.ValidateAsyncNaming 檢查所有由 'run' 調用的函數名稱是否以 '-async' 結尾
-                                                                    
-                             
-                                                     
-               
- 
-                                                                                  
-                             
-                           
-                                  
-                     
-                                                      
-    
-                            
-                      
-                                         
-                                                           
-                           
-                                                            
-      
-     
-    
-                              
-                                                
-                                   
-                           
-                                              
-                                                              
-                                   
-                                                                    
-      
-                                   
-                                                                    
-      
-     
-    
-                            
-                     
-                                                      
-    
-   
-  
- 
+
 // checkRunAsyncNaming 檢查單個表達式是否為 RunExpression，並驗證其調用的函數名稱
-                                                                             
-                                            
-         
-        
-  
-                                                  
-         
-        
-  
-                                      
-                  
-        
-  
-                                          
-                                             
-                               
-                                 
-                                                                                          
-    
-  
- 
-                                                                
-                                                         
-                    
-  
-                                                          
-                     
-  
-          
- 
+
 // checker.ValidateUnusedVars detects top-level variables that are defined but never used.
-                                                                   
-                             
-                                        
-                                                            
-                      
-                                          
-                                                
-                                              
-                                                             
-                                
-                                  
-     
-                                              
-    
-   
-  
-                            
-            
-  
-                                      
-                                  
-                                          
-                                                         
-  
-                                     
-                                
-                      
-                            
-                                            
-                        
-                          
-                                          
-                                                                   
-     
-   
-  
-               
- 
+
 // markReferencesInStatement walks a statement tree, finding Identifier references to top-level vars.
-                                                                                                                               
-                          
-                           
-                                                    
-                     
-                                                  
-   
-                                  
-                          
-                                                       
-   
-                                 
-                    
-                                            
-                                                      
-    
-   
-                              
-                           
-                                                        
-   
-                             
-                                      
-                                                     
-   
-                           
-                    
-                                                      
-   
-                         
-                                                      
-   
-                      
-                                                        
-   
-                                                                                     
-                         
-                                
-                                       
-                                                                    
-     
-                                     
-                                                                  
-     
-    
-                                    
-                                                                 
-    
-   
-                                                 
-                         
-                                                      
-   
-                    
-                                            
-                                                      
-    
-   
-                                   
-                                                  
-                                                                 
-                                    
-                                                 
-   
-                     
-                                                  
-   
-  
- 
+
 // markReferencesInExpr walks an expression tree, marking Identifiers found in varSet as used.
-                                                                                                                           
-                          
-                         
-                                           
-                           
-   
-                              
-                    
-                                                 
-   
-                     
-                                                  
-   
-                               
-                     
-                                                  
-   
-                             
-                        
-                                                     
-   
-                                   
-                                              
-   
-                            
-                        
-                                                     
-   
-                                
-                          
-                                                       
-   
-                           
-                         
-                                                      
-   
-                           
-                                                   
-                                                      
-    
-   
-                           
-                                                   
-                                                      
-    
-   
-                           
-                                   
-                                               
-   
-                           
-                                   
-                                               
-   
-                              
-                    
-                                                 
-   
-                     
-                                                  
-   
-                               
-                    
-                                                 
-   
-                     
-                                                  
-   
-                              
-                    
-                                            
-                                                      
-    
-   
-                              
-                    
-                                                 
-   
-                     
-                            
-                                                         
-    
-                          
-                                                       
-    
-   
-                                    
-                         
-                                                      
-   
-                           
-                                                        
-   
-                           
-                                                        
-   
-                            
-                              
-                      
-                                                   
-    
-   
-                            
-                                                                  
-                                                              
-                                                                
-                                                             
-                                                    
-                 
-         
-   
-                                
-                        
-            
-    
-                                                   
-                                   
-    
-   
-  
- 
+
 // CollectDefinedVars performs the first pass: collects all top-level defined
 // names (LetStatements, FunctionDefinitions, ExternStatements) from the program.
 // Shared by checker.ValidateNaming (to skip global variable reassignments) and
 // checker.ValidateUndefinedVars (as the base for its more comprehensive collection).
-                                                                  
-                                     
-                                          
-                                                                  
-                                    
-   
-                                                      
-                              
-   
-                                                                     
-                                    
-   
-                                             
-                              
-   
-  
-                   
- 
+
 // checker.ValidateUndefinedVars detects references to variables that are not defined.
-                                                                                      
-                             
-                                                    
-                                           
-                                                     
-                                                                      
-                                                           
-                                          
-                                                      
-                            
-   
-                                                                     
-                                  
-   
-  
-                                                                         
-                                                                          
-                                           
-                                
-                       
-  
-                                                            
-                                  
-                       
-                                                                         
-                                                           
-                                                                           
-                                                
-                         
-                                
-   
-  
-                                                                
-                                                     
-                                                            
-                                          
-                                                                       
-                       
-                                 
-           
-                                    
-    
-   
-                                                  
-           
-   
-  
-                                                                         
-                                                                          
-                                                      
-                   
-                                
-                                           
-                                         
-           
-            
-    
-                                                             
-                                                              
-                          
-            
-    
-                                        
-                      
-            
-    
-                                          
-                                                                     
-                                                           
-                                                
-                                       
-                                     
-      
-     
-                                                      
-                                
-                              
-     
-                                                                  
-                                      
-     
-    
-   
-  
-                                                                           
-                                          
-                                                  
-                                
-                              
-    
-   
-                                                         
-                                   
-                              
-    
-   
-  
-                                                         
-                                          
-                                                                                      
-  
-               
- 
+
 // checker.ValidateUninitOutputParams checks that ?T (nullable) output parameters are
 // directly assigned in the function body before being read. A ?T output
 // parameter that is read (used in an expression) but never assigned via '='
@@ -7116,2452 +6094,167 @@ func validateExprArrayBounds(expr parser.Expression, arraySizes map[string]int64
 //   - Case 7 (?T 先賦值再用 → 允許): param IS assigned → no error.
 //   - Case 8 (?T 空函數體 → 返回 nil): param NOT read → no error.
 //   - Case 6 (?T 未初始化使用 → 報錯): param read but NOT assigned → error.
-                                                                           
-                             
-                                          
-                                             
-                            
-           
-   
-                                      
-                             
-              
-           
-           
-   
-                                    
-                                
-                    
-            
-    
-                                                  
-                                                          
-                  
-                        
-                          
-      
-    
-   
-                               
-           
-   
-                                                             
-                                   
-                                                    
-                                                
-                               
-                                            
-                                                                
-                                    
-                                         
-                                             
-                     
-                    
-                                                                                                                                                               
-      
-    
-   
-  
-               
- 
+
 // collectAssignedNames walks statements recursively and collects variable names
 // that are directly assigned via '=' (LetStatement.Name or MultiAssignStatement
 // Identifier targets). IndexExpression/DotExpression targets are NOT direct
 // assignments — they read the base variable to write to a field/element.
-                                                                               
-                             
-                  
-           
-   
-                           
-                            
-                     
-                                 
-    
-                      
-                                                 
-    
-                                    
-                                     
-                                                     
-                                 
-     
-                                                                    
-    
-                      
-                                                 
-    
-                              
-                                               
-                            
-                     
-                                                              
-    
-                     
-                                                     
-    
-                                   
-                           
-                                                      
-    
-                               
-                            
-                                                       
-    
-   
-  
- 
+
 // collectAssignedNamesInExpr walks expressions for nested statements (if/else)
 // that may contain assignments. Does NOT recurse into nested function literals.
-                                                                                   
-                 
-        
-  
-                          
-                           
-                           
-                                                           
-   
-                           
-                                                           
-   
-                                    
-                                                             
-  
- 
+
 // collectReadNames walks statements recursively and collects variable names
 // that are read (used in expressions). Direct assignment targets (LetStatement.Name,
 // MultiAssignStatement Identifier targets) are NOT reads. However, IndexExpression.Left
 // and DotExpression.Receiver ARE reads — out[i]=val reads 'out' to get the data ptr.
-                                                                       
-                             
-                  
-           
-   
-                           
-                            
-                      
-                                         
-    
-                                    
-                                     
-                               
-                                 
-                                                              
-                                         
-                                          
-                               
-                                                             
-                                             
-     
-                                                       
-    
-                      
-                                         
-    
-                              
-                                       
-                            
-                     
-                                                      
-    
-                          
-                                             
-    
-                       
-                                                        
-    
-                          
-                                     
-                                                        
-     
-                                 
-                                        
-                                                           
-      
-                                      
-                                                         
-      
-     
-    
-                     
-                                             
-    
-                                   
-                           
-                                              
-    
-                               
-                            
-                                               
-    
-   
-  
- 
+
 // collectReadNamesInExpr walks an expression tree and collects all variable names
 // that are read. Handles all expression types including DotExpression.Receiver,
 // IndexExpression.Left, CallExpression args, etc.
-                                                                           
-                 
-        
-  
-                          
-                         
-                      
-                             
-                                          
-                                   
-                                    
-   
-                            
-                                           
-                                          
-                              
-                               
-                                      
-                                       
-                              
-                                      
-                     
-                            
-                                               
-    
-                          
-                                             
-    
-   
-                              
-                    
-                                       
-   
-                     
-                                        
-   
-                               
-                     
-                                        
-   
-                                
-                          
-                                             
-   
-                           
-                         
-                                            
-   
-                           
-                                                   
-   
-                           
-                                                   
-   
-                               
-                                                               
-                                                    
-                                             
-   
-                                                      
-                                         
-                                          
-   
-                     
-                                        
-   
-                                    
-                         
-                                            
-   
-                           
-                                              
-   
-                           
-                                              
-   
-                           
-                                   
-                                     
-   
-                           
-                                   
-                                     
-   
-                            
-                              
-                      
-                                         
-    
-   
-                         
-                                
-                                         
-                                           
-   
-                            
-                    
-                                       
-   
-                              
-                     
-                                        
-   
-                             
-                    
-                                       
-   
-                                                                                            
-                                                                       
-  
- 
+
 // checker.ValidateInterfaceImplementation matches dotted-name function definitions
 // (e.g. `i8.gt = ...`) against generic-receiver interface method
 // declarations (e.g. `ord { t.gt(b t) (res bool) }`). Emits a warning
 // when an implementing type is missing or its method signature does not
 // match the interface constraint.
-                                                                                
-                             
-                          
-                 
-                 
-                                             
-                   
-                      
-  
-                                                                   
-                                          
-                                              
-          
-           
-   
-                           
-                                
-                            
-            
-    
-                                                                        
-                                   
-                      
-                                                   
-     
-    
-                                
-                      
-                                                     
-     
-    
-                                
-   
-                           
-  
-                                          
-                                             
-                             
-           
-   
-                                                            
-          
-           
-   
-                                                             
-                                                             
-                             
-                                                          
-                              
-   
-                           
-                                  
-                              
-                             
-             
-     
-                                         
-                                              
-                               
-                                 
-                                                
-                                                                                      
-                                                             
-       
-             
-     
-                                  
-                       
-              
-      
-                                 
-                                                                      
-                               
-                                               
-                               
-                                 
-                                               
-                                                                               
-                                                        
-        
-      
-     
-                                           
-                                              
-                               
-                                 
-                                                
-                                                                                   
-                                                               
-       
-            
-                                    
-                        
-               
-       
-                                
-                                                                        
-                              
-                                                
-                                
-                                  
-                                                
-                                                                             
-                                                       
-         
-       
-      
-     
-    
-   
-  
-               
- 
+
 // splitDottedMethodName splits a function name like "i8.gt" or
 // "[]ord.ast" or "[?]ord.desc" into (implType, methodName). Returns
 // false if the name does not contain a dotted-method form.
-                                                                
-                                    
-             
-                      
-  
-                       
-                           
-                                        
-                      
-  
-                                  
- 
+
 // checker.ValidateUseKeyword warns when "use" keyword is used instead of "#".
-                                                                   
-                             
-                                          
-                                                                             
-                                            
-                           
-                             
-                                                                                        
-     
-   
-  
-               
- 
+
 // checker.ValidateUseAlias warns when 'as' keyword is used for import aliasing and suggests direct alias style.
-                                                                 
-                             
-                                          
-                                                                                           
-                                            
-                           
-                             
-                                                                                                                                        
-     
-   
-  
-               
- 
+
 // checker.ValidateRedundantTypeAnnotation produces hints when a variable's explicit type
 // annotation is redundant — the type can be inferred from the value (e.g. `m i64 = 100`).
-                                                                                
-                             
-                                     
-                                              
-                                          
-                                                      
-                                                        
-                                                              
-    
-   
-                                                   
-                                                        
-                                                                    
-    
-   
-  
-                                    
-                                          
-                                                                        
-  
-               
- 
-                                                                                                   
-                 
-            
-  
-                          
-                           
-                              
-                                                                                  
-                                   
-                                                                            
-                                                           
-                                             
-                                
-                                  
-                                                                                                      
-      
-    
-                                                 
-                                         
-   
-                
-                                 
-                    
-                                        
-                               
-                     
-    
-                                   
-                      
-                                         
-     
-    
-                                
-                                      
-                                         
-     
-    
-                               
-                                         
-                                                                          
-    
-                 
-   
-                             
-                              
-                                   
-                                                                       
-   
-                
-  
-           
- 
+
 // checker.ValidateDuplicateVars checks for duplicate variable declarations and returns diagnostics.
-                                                                      
-                             
-                                  
-                                          
-                                                                               
-  
-               
- 
-                                                                                                                            
-                          
-                           
-                    
-             
-   
-                                                            
-                                                                     
-                                      
-                                                                                         
-                                                                                    
-                                        
-                            
-                              
-                                                  
-          
-                                                        
-                                     
-                                                                 
-    
-   
-                              
-                                                                                             
-                                                                                              
-                                                                                          
-                                         
-                                       
-                                    
-                                     
-                              
-                            
-                              
-                                                                                
-       
-     
-    
-                                                                    
-                                    
-                        
-    
-                        
-                                                                        
-                                                  
-                     
-                                    
-                                     
-                     
-          
-     
-    
-                  
-                                     
-                         
-     
-    
-   
-                                 
-                    
-                                        
-                                            
-                                                           
-                         
-                   
-     
-    
-   
-                             
-                                      
-                                                      
-                        
-                  
-    
-   
-  
-           
- 
+
 // checker.ValidateDependencyImports checks that URL-style import paths (e.g., github.com/...)
 // are declared in package.jsonc dependencies. rootDir is the directory to search upward
 // from for the project's package.jsonc.
-                                                                                          
-                   
-            
-  
-                               
-                                              
-            
-  
-                             
-                                          
-                                       
-          
-           
-   
-                 
-                                                                   
-                                          
-                                    
-           
-   
-                                      
-                                                           
-                                            
-                           
-                             
-                                                                                                     
-     
-   
-  
-               
- 
+
 // checker.ValidateExportSymbols checks that all export declarations in lib.no reference
 // symbols that actually exist in the corresponding module source files.
-                                                                                      
-                              
-                                           
-            
-  
-                                
-                             
-                                          
-                                          
-          
-           
-   
-                        
-           
-   
-                                 
-               
-                 
-                                   
-                                                                         
-                                                              
-                         
-   
-                    
-           
-   
-                          
-                                     
-                 
-                                            
-                           
-                             
-                                                               
-     
-           
-   
-                                
-                    
-                             
-                          
-           
-   
-                                               
-                
-                                              
-                               
-                                   
-                              
-                 
-     
-                                 
-                              
-                 
-     
-                               
-                              
-                 
-     
-                                     
-                              
-                 
-     
-                                    
-                              
-                 
-     
-                             
-                                                     
-                 
-     
-    
-   
-             
-                                            
-                           
-                             
-                                                                                                          
-     
-   
-  
-               
- 
+
 // checker.ValidateStringConcat warns when "+" is used with string operands and suggests "-" instead.
-                                                                     
-                             
-                                          
-                                                             
-  
-               
- 
-                                                                      
-                             
-                          
-                                  
-                          
-                                                                      
-   
-                           
-                     
-                                                                 
-   
-                                 
-                    
-                                               
-                                                                   
-    
-   
-                             
-                                         
-                                                                  
-   
-                              
-                           
-                                                                       
-   
-                           
-                    
-                                                                
-   
-                         
-                                                                     
-   
-                      
-                                                                  
-   
-                    
-                                               
-                                                                   
-    
-   
-  
-               
- 
-                                                                       
-                             
-                          
-                              
-                        
-                                                 
-                       
-                                                   
-                      
-                                                           
-                      
-    
-                   
-                                             
-                           
-                             
-                                                             
-      
-    
-   
-                                 
-                                                               
-                                                                
-                             
-                                   
-                                                             
-   
-                            
-                                                                   
-                               
-                                                                
-                                
-                                                                     
-                              
-                                                               
-                                                                
-  
-               
- 
+
 // checker.ValidateHexCase 檢查十六進位字面量是否使用了大寫字母。
 // Nolang 慣例：hex 一律小寫（0xff 而非 0xFF）。
 // 格式化工具會自動將大寫轉為小寫，此檢查產生 hint 提醒。
-                                                                
-                             
-                                          
-                                                        
-  
-               
- 
-                                                                 
-                             
-                          
-                                  
-                          
-                                                                 
-   
-                           
-                     
-                                                            
-   
-                                 
-                    
-                                               
-                                                              
-    
-   
-                             
-                                         
-                                                             
-   
-                              
-                           
-                                                                  
-   
-                           
-                    
-                                                           
-   
-                         
-                                                                
-   
-                      
-                                                             
-   
-                    
-                                               
-                                                              
-    
-   
-  
-               
- 
+
 // hasUpperHex returns true if a hex literal contains uppercase hex digits
 // or an uppercase '0X' prefix.
-                                       
-                                                                 
-             
-  
-                                                                 
-                                 
-                            
-               
-    
-   
-  
-                                            
-                                 
-                            
-               
-    
-   
-  
-             
- 
-                                                                  
-                             
-                          
-                             
-                                   
-                                            
-                          
-                            
-                                                                                                                           
-     
-   
-                          
-                                   
-                                            
-                          
-                            
-                                                                                                                               
-     
-   
-                              
-                                                          
-                                                           
-                               
-                                                           
-                                
-                                                                
-                             
-                                   
-                                                        
-   
-                            
-                                                              
-                              
-                                                          
-                                                           
-                               
-                                                           
-                                    
-                                                               
-                                                                 
-                                                                 
-                           
-                                   
-                                                         
-   
-                           
-                                   
-                                                         
-   
-                            
-                                  
-                          
-                                                                 
-    
-   
-                         
-                                
-                                                             
-                                                               
-   
-                             
-                                                          
-  
-               
- 
+
 // checker.ValidatePrintFormat 檢查 print/printf/eprint/eprintf/sprintf 呼叫中的具名格式字串。
 // 對於第一個參數為 StringLiteral 的呼叫，解析 {name:spec} 欄位並驗證：
 //   - 欄位名稱在當前作用域內已定義（否則 "undefined variable '<name>' in format string"）
 //   - 規格字串可被 ParseFormatSpec 解析（否則 "invalid format spec"）
 //   - 規格類型字元與變數型別相容（整數類型對應 b/c/d/o/x/X；
 //     浮點數對應 e/E/f/F/g/G/%；str/bool 對應 s）
-                                                                    
-                             
-                                                                     
-                                             
-                                                                                                    
-                                              
-                                          
-                                                      
-                                                        
-                                                              
-    
-   
-                                                   
-                                                        
-                                                                    
-    
-   
-  
-                                                                                             
-                                                                                   
-                                        
-                            
-                            
-                            
-                            
-                             
-                             
-                             
-                            
-                            
-                            
-                           
-                            
-                            
-                            
-                            
-                             
-                            
-                                 
-                            
-                            
-                            
-  
-                                      
-                                                   
-                             
-   
-  
-                                              
-                                                                                   
-                                    
-                                          
-                                                                                    
-  
-               
- 
+
 // isPrintFormatCall 判斷呼叫是否為 print/eprint/format/printf/eprintf/sprintf（含 fmt. 前綴）
 // printf/eprintf/sprintf 為已廢棄的別名，仍保留以維持向後相容。
-                                            
-                
-                                                                  
-                                          
-                                             
-             
-  
-             
- 
+
 // checkPrintFormatInStmt 走訪敘述並驗證 print 格式字串，同時追蹤變數作用域。
-                                                                                                                                            
-                 
-            
-  
-                          
-                                  
-                          
-                                                                      
-   
-                           
-                              
-                     
-                                                                                        
-                                                                           
-                                                                                                   
-                                                                  
-                     
-                                               
-                                             
-                                                            
-                                                                                       
-     
-    
-                 
-   
-                                     
-                                     
-                                           
-   
-                                   
-                     
-                               
-                                                                                        
-                                          
-                                     
-                                                     
-                                                     
-                                
-      
-     
-    
-                 
-   
-                                 
-                                                                    
-                                       
-                              
-                    
-   
-                                  
-                     
-                                        
-    
-   
-                               
-                                     
-                                        
-    
-   
-                    
-                               
-                                         
-                                                                                      
-    
-                 
-   
-                             
-                              
-                                   
-                                                                                   
-   
-                
-                           
-                              
-                                                            
-                                                       
-                                                            
-                                          
-    
-   
-                                                 
-                         
-                                                                                            
-   
-                    
-                                                                                       
-   
-                         
-                                                                                            
-   
-                      
-                                                                                         
-   
-                    
-                                         
-                                                                                    
-    
-   
-                
-                              
-                           
-                                                                       
-   
-  
-           
- 
+
 // checkPrintFormatInExpr 走訪表達式並驗證 print 格式字串。
-                                                                                                                                             
-                 
-            
-  
-                             
-                          
-                             
-                                                      
-                                                       
-                                                              
-                                                                                    
-    
-   
-                                         
-                                   
-                                                                                    
-   
-                              
-                    
-                                                                                       
-   
-                     
-                                                                                        
-   
-                               
-                     
-                                                                                        
-   
-                                
-                          
-                                                                                             
-   
-                           
-                         
-                                                                                            
-   
-                           
-                                                
-                                                                                    
-    
-   
-                           
-                                                
-                                                                                    
-    
-   
-                              
-                    
-                                                                                       
-   
-                     
-                                                                                        
-   
-                               
-                     
-                                                                                        
-   
-                                    
-                         
-                                                                                            
-   
-                           
-                                                                                              
-   
-                           
-                                                                                              
-   
-                           
-                                   
-                                                                                     
-   
-                           
-                                   
-                                                                                     
-   
-                            
-                              
-                      
-                                                                                         
-    
-   
-                              
-                    
-                                         
-                                                                                    
-    
-   
-  
-               
- 
+
 // validatePrintFormatCall 驗證單個 print/printf/eprint/eprintf/sprintf 呼叫的格式字串。
 // 只驗證含 '{' 的具名格式字串；C-style printf('...%d...', args) 不含 '{' 時跳過，
 // 保留向後相容性。
-                                                                                                                                                
-                                                     
-         
-                                                                             
-            
-  
-                                                            
-                                                                                        
-                                          
-            
-  
-                                                        
-                
-                           
-                              
-                                
-                                                        
-    
-  
-                             
-                               
-                       
-           
-   
-                    
-                                         
-                                                                                            
-                                          
-               
-                                                            
-                                   
-                                         
-    
-   
-               
-                                            
-                               
-                                 
-                                                                                 
-     
-           
-   
-                                                                                      
-                    
-           
-   
-                                                                                  
-                          
-           
-   
-                                                        
-                                                                                          
-                                            
-                               
-                                 
-                 
-     
-   
-  
-               
- 
+
 // checkFormatSpecTypeCompat 檢查規格類型字元與變數型別是否相容。
 // 回傳非空字串表示錯誤訊息。
-                                                                               
-                   
-                                               
-           
-  
-                  
-                                   
-                 
-                                 
-                                                                                                                
-   
-                                        
-                    
-                               
-                                                                                                              
-   
-          
-                       
-                                                                          
-                                                                                                              
-   
-  
-          
- 
+
 // isIntegerTypeStr 判斷型別字串是否為整數類型
-                                      
-           
-                                                                           
-             
-  
-             
- 
+
 // isFloatTypeStr 判斷型別字串是否為浮點數類型
-                                    
-                                
- 
+
 // collectModuleNames returns all known module ShortNames (from #use + auto-imported std modules).
-                                                           
-                              
-                   
-                                         
-                            
-                              
-                                        
-   
-  
-                                          
-                                                 
-                                     
-                    
-                      
-                                
-    
-   
-                                                  
-           
-   
-  
-             
- 
+
 // checker.ModuleExport holds an exported name and its string value from a module file.
-                          
-             
-             
-             
- 
+
 // Per-module export cache: parsing a module's .no file to extract its exports
 // is expensive, and the std modules are identical across all vet calls in a
 // process. Cache the parsed exports keyed by module name.
-     
-                                
-                                                       
- 
+
 // checker.GetModuleExports resolves module .no files and extracts their top-level
 // LetStatement names with values (for hover) and function names.
 // Results are cached per-module-name for the lifetime of the process.
-                                                            
-                              
-                           
-                                
-                                                        
-                             
-                                     
-                               
-          
-                                                  
-                                 
-                              
-                                 
-                                
-   
-                            
-                    
-            
-    
-                      
-                               
-   
-  
-               
- 
+
 // parseModuleExports resolves a single module's .no file and extracts its
 // top-level exports (constants, functions, externs).
 // 只從內嵌 StdFS 讀取,支援單二進制分發。
-                                                           
-                                         
-                                                                                                  
-                                              
-                                                                 
-                                             
-    
-   
-  
-           
- 
+
 // parseModuleExportsFromSource 從原始碼位元組解析模組導出列表。
 // 被 parseModuleExports 調用，支援磁碟和內嵌 StdFS 兩種來源。
-                                                                 
-                               
-                   
-                            
-                         
-            
-  
-                           
-                                          
-                                                                  
-                                   
-                
-                      
-                              
-    
-                                                                                          
-   
-                                                      
-                                                                    
-   
-                                                                     
-                                                         
-                                             
-            
-    
-                                                                          
-   
-  
-               
- 
+
 // moduleExprValue extracts the string representation of a module-level expression value.
-                                                     
-                 
-           
-  
-                          
-                             
-                                                                                    
-                                                                            
-                            
-                         
-   
-                                   
-                           
-                  
-               
-   
-                                   
-                            
-                              
-                             
-              
-                
-   
-                
-                         
-              
-         
-           
-  
- 
+
 // collectModuleExports tries to resolve each module's .no file and extract its
 // top-level LetStatement names (constants) and function names.
-                                                                                   
-                                         
-                   
-                            
-                               
-  
-             
- 
+
 // resolveModulePath tries to locate a .no file for the given module name.
 // It consults the checker.KnownStdModules() lookup table, matching by ShortPath
 // (which omits the redundant directory name when dir==file), then uses
 // FullPath to resolve the actual file.
-                                                  
-                                            
-                                                                          
-                                                           
-                                                              
-                                                                 
-                                                                
-                                         
-                                                                                                  
-                                             
-                                              
-                  
-    
-   
-  
-                                                                            
-                                        
-                                            
-                
-  
-                                    
-                        
-                              
-                                  
-  
-                               
-                                       
-           
-   
-  
-          
- 
+
 // checker.ResolveStdModulePath is the exported version of resolveModulePath,
 // for use by the LSP server to locate std module source files.
-                                                     
-                                     
- 
-                                                                                                               
-                             
-                          
-                                  
-                          
-                                                                                                      
-   
-                           
-                                                                       
-                     
-                                                                                                 
-   
-                    
-                                   
-   
-                                   
-                                                
-                                    
-                                                    
-                                   
-    
-   
-                     
-                                                                                                 
-   
-                                 
-                                                                           
-                                                                         
-                                                                    
-                                    
-                                 
-                   
-   
-                                  
-                             
-                           
-   
-                                      
-                               
-                             
-   
-                               
-                    
-                              
-                            
-    
-   
-                    
-                                               
-                                                                                          
-    
-   
-                             
-                                         
-                                                                                           
-   
-                           
-                                    
-                                 
-                   
-   
-                                                       
-                                         
-   
-                                                                 
-                                                                    
-                                                                
-                                                           
-                                                                                 
-                                                                         
-                      
-                                                                                       
-                                                            
-                               
-     
-    
-          
-                     
-                                                                                        
-    
-                          
-                                                                                                    
-    
-                       
-                                                                                          
-    
-   
-                    
-                                               
-                                                                                          
-    
-   
-                              
-                           
-                                                                                                       
-   
-                              
-                    
-                                   
-                                 
-   
-  
-               
- 
-                                                                                                                                    
-                             
-                 
-            
-  
-                          
-                         
-                                                               
-                            
-                                               
-                          
-              
-    
-                                                 
-              
-    
-                                                              
-                                                                    
-                                                                
-                                         
-              
-    
-                                                             
-                         
-                                             
-                           
-                             
-                                                                                                          
-      
-           
-                                             
-                           
-                             
-                                                          
-      
-    
-   
-                             
-                                                                
-                        
-                                                                          
-                                                                
-                                                                                                    
-   
-                                   
-                                                                                            
-   
-                            
-                                                                            
-                                                             
-                              
-                    
-                                                                                                
-   
-                     
-                                                                                                 
-   
-                               
-                     
-                                                                                                 
-   
-                                
-                          
-                                                                                                      
-   
-                           
-                         
-                                                                                                     
-   
-                           
-                                                       
-                                                                                             
-    
-   
-                           
-                                                       
-                                                                                             
-    
-   
-                              
-                    
-                                                                                                
-   
-                     
-                                                                                                 
-   
-                              
-                    
-                                                                                                
-   
-                     
-                            
-                                                                                                        
-    
-                          
-                                                                                                      
-    
-   
-                               
-                                                              
-                     
-                                                                                                 
-   
-                                    
-                         
-                                                                                                     
-   
-                           
-                                                                                                       
-   
-                           
-                                                                                                       
-   
-                           
-                                   
-                                                                                              
-   
-                           
-                                   
-                                                                                              
-   
-                            
-                              
-                      
-                                                                                                  
-    
-   
-                              
-                    
-                                                
-                                                                                             
-    
-   
-  
-               
- 
+
 // validateStmtTypes 檢查單個語句的型別問題
-                                                                                                                                                                     
-                             
-                          
-                                 
-                                         
-                                       
-                          
-                                  
-                     
-                                        
-    
-   
-                                
-                               
-                     
-                                        
-    
-   
-                                         
-                            
-                                                              
-                                                 
-   
-                    
-                                            
-                                                                                      
-                                      
-    
-   
-                           
-                                                                                   
-                    
-                                                                                 
-                                              
-                                            
-    
-        
-   
-                                      
-                              
-                                            
-                          
-                            
-                                                                             
-     
-   
-                                        
-                                                      
-                           
-                                                                                 
-                                                
-                  
-                                              
-                            
-                              
-                                                                                          
-       
-     
-                   
-                                            
-         
-    
-                                                
-                                                              
-                                                                    
-                                              
-                            
-                              
-                                                                                          
-       
-     
-         
-    
-                                         
-                                            
-                          
-                            
-                                                                                       
-     
-        
-   
-                 
-                                                                                
-                                                                                                   
-                                                    
-                                            
-    
-   
-                     
-                                                                               
-                                                        
-                                                            
-                            
-                           
-                                               
-                             
-                               
-                                                                                                                                
-        
-      
-     
-    
-                  
-                                                                        
-                          
-                                                               
-                                               
-                                                                                                          
-                                                 
-                                                    
-                                                                                     
-                                                           
-                                                                    
-                                                             
-                       
-                                                    
-                         
-                                       
-                   
-                                                          
-               
-                                                          
-        
-                                      
-                                                                          
-                                                            
-                                                             
-                                                  
-                                
-                                  
-                                                                                                                                                                    
-           
-         
-        
-       
-      
-                                                                      
-                                                                                               
-                          
-                                                         
-                                               
-                          
-       
-      
-                                                          
-                                                              
-                                                   
-                                                 
-                            
-         
-        
-                              
-                                                                                    
-                             
-                                                 
-                               
-                                 
-                                                                                                                                  
-          
-                           
-        
-       
-      
-                                                                                      
-                                                               
-                                                              
-                                   
-                                                                                             
-                          
-                                                           
-                                                        
-                                                                            
-                                                                                    
-                                                                                                          
-                           
-        
-       
-      
-                                                                                                                                
-                                                                 
-                             
-                                               
-                            
-                              
-                                                                                                                                                                 
-        
-      
-            
-                                         
-                                          
-     
-    
-   
-                                  
-                                                                               
-                                                            
-                                                                                 
-                         
-                                             
-                           
-                             
-                                                                                                                              
-      
-    
-   
-                        
-                                                            
-                                                           
-                                                                                   
-                                                                                              
-                                 
-                                                         
-                                                                               
-                                       
-     
-    
-                                 
-                                                         
-                                                                               
-                                       
-     
-    
-        
-   
-                                                                
-                                                         
-                                        
-                               
-                                              
-                                
-                                  
-                                                                              
-       
-     
-                                          
-                        
-                                                             
-                       
-                                                               
-                                                
-                                                
-                                  
-                                    
-                                                                                           
-         
-       
-      
-     
-                            
-                     
-                                                             
-                                                                         
-                                                                       
-                                                                   
-                           
-                                                                
-                                                               
-                                                    
-                                                  
-                             
-          
-         
-                               
-                              
-                                                  
-                                
-                                  
-                                                                                                                                   
-           
-                            
-         
-        
-       
-                                                                                                     
-                                                                  
-                                                                                      
-                                                        
-                                                           
-                                                                                       
-                         
-                                                      
-                           
-                                         
-                     
-                                                                 
-                 
-                                                                 
-          
-                                        
-                                                                            
-                                                              
-                                                               
-                                                    
-                                       
-                                         
-                                                                                                                                                                     
-             
-           
-          
-         
-               
-                                                 
-                                    
-                                      
-                                                                                                                                                        
-          
-        
-       
-                        
-                                          
-                                                                           
-                        
-                                      
-       
-      
-     
-    
-   
-                           
-                    
-                                            
-                                                                              
-                                      
-    
-   
-                             
-                                      
-                                                                             
-                                     
-   
-                                   
-                                                                             
-                                                                            
-                                                    
-                     
-                                                       
-                           
-                                                            
-                
-                                                                
-                         
-                                                                        
-                          
-                                                 
-                                                           
-                                        
-      
-     
-                     
-                                                                                       
-                                                                                
-                                                                               
-                                              
-                                                                
-                                
-      
-     
-    
-                                               
-                                     
-                                                     
-                                                               
-                              
-                                    
-                                                                
-                                                     
-                                       
-                                       
-                                                               
-                                                 
-                               
-                                 
-                                                                                                                     
-          
-        
-              
-                                                    
-                              
-                                            
-        
-       
-      
-     
-                                                                   
-                                                                                   
-    
-   
-  
-               
- 
+
 // moduleShortName extracts the last path segment as the module name.
 // "std/math" → "math", "fmt" → "fmt", "crypto/md5" → "md5"
-                                          
-                                                   
-                     
-  
-            
- 
-     
-                              
-                                    
-                                                                    
-                                                                      
-                                                                      
-                            
-                                      
-                                               
-                                                                                           
-                                                                                                   
- 
+
 // checker.StdModuleInfo holds information about a standard library module.
-                           
-                                                                       
-                                                                          
-                                                                                                        
- 
+
 // debugCountHashFns is a no-op placeholder retained for call-site compatibility.
 // All temporary debugging output has been removed.
-                                                              
-          
-           
- 
+
 // checker.knownStdModules returns all embedded standard library modules.
 // Uses //go:embed to discover all .no files in src/std/ at compile time.
-                                        
-                                
-                           
-                               
-                              
-                              
-                                            
-                  
-          
-    
-                              
-                                
-                  
-                  
-                                                  
-                                            
-                                               
-                         
-                           
-                           
-                                                            
-                                   
-       
-                                                          
-                                                                    
-                           
-                                                            
-                            
-                               
-                       
-                        
-        
-       
-                                          
-                            
-                           
-                            
-        
-      
-     
-    
-   
-                
-                             
-   
-                           
- 
+
 // checker.GetStdModules returns checker.StdModuleInfo for all embedded standard library modules.
-                                      
-                         
- 
+
 // checker.JsModuleInfo 描述一個 JS 相容層模組（src/js/ 下的 .no 檔案）。
 // 與 checker.StdModuleInfo 結構相同，但用於 js/ 命名空間。
-                          
-                                                                         
-                                                      
-                                                                                                           
- 
-     
-                             
-                                  
- 
+
 // knownJsModules 回傳所有內嵌的 JS 相容層模組。
 // 使用 //go:embed js 在編譯時發現 src/js/ 下的所有 .no 檔案。
 // 與 checker.knownStdModules 機制平行。
-                                      
-                               
-                          
-                               
-                              
-                              
-                                           
-                  
-          
-    
-                              
-                                
-                  
-                  
-                                                  
-                                           
-                                               
-                         
-                           
-                           
-                                                            
-                                   
-       
-                           
-                                                            
-                                
-                               
-                           
-                        
-        
-       
-                                         
-                            
-                           
-                            
-        
-      
-     
-    
-   
-               
-                            
-   
-                          
- 
+
 // checker.GetJsModules returns checker.JsModuleInfo for all embedded JS compatibility modules.
-                                    
-                        
- 
+
 // checker.CollectStdModuleSignatures parses all std module source files and returns
 // function signatures (funcName → return types) and struct field types
 // (structName → field name → field type). This is used by the LSP to inject
 // extern signatures into the parser so that type inference (e.g. option match
 // `it` binding) works correctly for cross-module method calls.
-                                                                                       
-                        
-                                       
-                                                    
-                                    
-                                                                           
-                                          
-                                                        
-                                              
-                                                  
-                  
-            
-    
-                                 
-                     
-                           
-                           
-            
-    
-                                         
-                                                        
-                             
-                                             
-                                    
-                                
-       
-                              
-      
-     
-                                                      
-                                      
-                                  
-                                                             
-                               
-       
-      
-                                   
-                                                                                
-                                                  
-                                         
-      
-     
-                                                                              
-                                                                                       
-                                                                                    
-                                                      
-                                                 
-                                          
-       
-      
-     
-    
-   
-                         
-                               
-                           
-                               
-   
-                                    
- 
+
 // checker.CollectStdConcreteAliases returns the cached single concrete type aliases
 // collected from std modules (e.g. "fd" → "i64" from fs.no). Triggers
 // checker.CollectStdModuleSignatures via sync.Once to populate the cache.
-                                                    
-                                                              
-                       
- 
+
 // checker.CollectStdStructModules returns a map from struct name to the short name
 // of the module that defines it (e.g. "conn" → "tls"). Used by
 // checker.ValidateCrossModuleTypeRefs to enforce module-prefix on cross-module type
 // references. Triggers checker.CollectStdModuleSignatures via sync.Once.
-                                                  
-                                                              
-                         
- 
+
 // extractBaseTypeName unwraps NullableType, PointerType, ArrayType, and
 // SliceType wrappers to find the innermost NamedType value string.
 // Returns "" if the type is nil or not a NamedType (after unwrapping).
-                                                
-              
-           
-  
-                        
-                        
-                 
-                           
-                                     
-                          
-                                     
-                        
-                                     
-                        
-                                     
-  
-          
- 
+
 // isInferredType recursively checks if a type node was inferred by the parser
 // (not explicitly written by the user). Used by checker.ValidateCrossModuleTypeRefs to
 // skip inferred types — they are auto-derived from function call return types,
 // so flagging them for missing module prefix would be a false positive.
-                                         
-              
-              
-  
-                        
-                        
-                      
-                           
-                                                 
-                          
-                                
-                        
-                                                 
-                        
-                                                 
-  
-             
- 
+
 // isBuiltinType returns true for primitive type names that don't require
 // a module prefix.
-                                      
-              
-                                
-                            
-               
-                        
-             
-  
-             
- 
+
 // checker.ValidateCrossModuleTypeRefs checks that struct field types, variable
 // declaration types, and function parameter/result types use the proper
 // module prefix when referencing a struct defined in another module.
@@ -9575,190 +6268,18 @@ func validateExprArrayBounds(expr parser.Expression, arraySizes map[string]int64
 //   - Types already using a module prefix (contain a dot)
 //   - Types defined locally in the current file (structs, type aliases)
 //   - Type aliases collected via checker.CollectStdConcreteAliases (e.g. "fd" → "i64")
-                                                                            
-                             
-                                                                        
-                                       
-                         
-                
-  
-                                                                   
-                                    
-                                          
-                                                    
-                             
-   
-                                             
-                             
-   
-  
-                                                                             
-                                 
-                                             
-                      
-  
-                                                                           
-                                  
-                                                                  
-                                    
-                     
-         
-   
-                                                              
-                                      
-         
-   
-                                                 
-                              
-         
-   
-                                               
-                           
-         
-   
-                                                            
-                                               
-                     
-         
-   
-                                         
-                      
-                    
-               
-                 
-                    
-                   
-                    
-    
-   
-                                           
-                 
-                
-                                                                                                   
-    
-  
-                                     
-                                          
-                           
-                                
-                               
-                      
-                                                    
-     
-    
-                            
-                                                
-                                                   
-    
-                                  
-                                   
-                      
-                                                    
-     
-    
-                                
-                      
-                                                    
-     
-    
-                                                                    
-                                                                   
-                                                                    
-                                                          
-                     
-                                                
-                                                                                                     
-                                                        
-      
-     
-    
-                               
-                                   
-                      
-                                                    
-     
-    
-                                
-                      
-                                                    
-     
-    
-   
-  
-               
- 
+
 // checker.GetStdModuleShortNames returns the short names of all embedded standard library
 // modules (for use in definedVars and module name registration).
-                                        
-                           
-                                    
-                             
-                           
-  
-             
- 
+
 // GetStdModuleFullPaths returns the full paths of all embedded standard library
 // modules (for use in file resolution and auto-loading).
-                                       
-                           
-                                    
-                             
-                          
-  
-             
- 
+
 // resolveModuleCalls walks the program and rewrites module.fn() calls
 // where the DotExpression receiver chain matches an imported module ShortName.
 // Supports single-level (base64.encode-std → encode-std) module paths.
 // Also rewrites module.CONST constant accesses (e.g. base64.BASE64-STD → BASE64-STD).
-                                                                            
-                               
-        
-  
-                                
-                                    
-                  
-  
-                                                                         
-                                                                    
-                                                                              
-                                   
-                                                                              
-                                                                          
-                                                             
-                                      
-                                          
-                                                      
-                       
-                             
-    
-   
-                                                                  
-                                                                                                      
-                                                                                             
-                                                                                     
-                                                                                                   
-                                                                                             
-                                     
-                                      
-    
-                                                                         
-                                                                      
-                                                                          
-                                                                        
-                                                                         
-                                                             
-                                                           
-                                              
-                                    
-     
-    
-   
-  
-                                          
-                                                                 
-  
- 
+
 // extractModulePathAndFunc walks a DotExpression chain to extract the
 // module path (joined with "/") and the final property (function name).
 // For example:
@@ -9768,186 +6289,7 @@ func validateExprArrayBounds(expr parser.Expression, arraySizes map[string]int64
 //	                                              → ("crypto/sha256", "sha256")
 //
 // Returns ("", "") if the chain contains non-Identifier nodes.
-                                                                                
-                      
-                      
-                    
-      
-                                               
-                                                       
-                   
-                                                       
-                                                        
-        
-          
-                
-   
-  
-                                   
-                    
- 
-                                                                                                                                       
-                          
-                                  
-                          
-                                                                                         
-   
-                           
-                     
-                                                                               
-   
-                                   
-                     
-                                                                               
-   
-                                 
-                    
-                                               
-                                                                       
-    
-   
-                             
-                                         
-                                                                      
-   
-                           
-                         
-                                                                                       
-   
-                    
-                                                                    
-   
-                      
-                                                                      
-   
-                    
-                                               
-                                                                       
-    
-   
-  
- 
-                                                                                                                                                          
-                 
-            
-  
-                          
-                             
-                                                                   
-                                                                       
-                                                               
-                                                               
-                                                                                     
-   
-                                                                 
-                                                                             
-                                                             
-                                                        
-                                                   
-                                                             
-                                      
-                                    
-                                                            
-                   
-     
-    
-   
-                           
-                                   
-                                                                                  
-   
-          
-                            
-                                                                                              
-                                                                                                                 
-                                                                                                  
-                                                  
-                                                                 
-                             
-                                                             
-                    
-    
-   
-                                                                       
-                                                                                    
-          
-                              
-                    
-                                                                             
-   
-                     
-                                                                               
-   
-          
-                               
-                     
-                                                                               
-   
-          
-                                    
-                         
-                                                                                       
-   
-                           
-                                                                                           
-   
-                           
-                                                                                           
-   
-          
-                           
-                         
-                                                                                       
-   
-                           
-                                                      
-                                                                       
-    
-   
-                           
-                                                      
-                                                                       
-    
-   
-          
-                                
-                          
-                                                                                         
-   
-          
-                              
-                    
-                                                                             
-   
-                     
-                                                                               
-   
-          
-                              
-                    
-                                                                             
-   
-                     
-                            
-                                                                                            
-    
-                          
-                                                                                        
-    
-   
-          
-                               
-                    
-                                                                             
-   
-                     
-                                                                               
-   
-          
-         
-          
-  
- 
+
 // resolveSelfMethodCalls rewrites self.method(args) calls inside method bodies
 // to StructType.method(self, args), where StructType is derived from the
 // function's implicit self parameter.
@@ -9957,24 +6299,7 @@ func validateExprArrayBounds(expr parser.Expression, arraySizes map[string]int64
 // are dispatched to the field's type method. This mirrors the self.method()
 // rewrite and is required because the LLVM generator only handles Identifier
 // receivers, not DotExpression receivers.
-                                                      
-                                             
-                                          
-                                             
-          
-           
-   
-                                                                 
-           
-   
-                                            
-                     
-                                                
-                                                       
-    
-   
-  
- 
+
 // resolveMethodCalls rewrites user-written `Type.method(args)` static method
 // calls to `module.Type.method(args)` using the typeOwner registry.
 //
@@ -9993,667 +6318,43 @@ func validateExprArrayBounds(expr parser.Expression, arraySizes map[string]int64
 // whose receiver is a bare Identifier matching a typeOwner key are rewritten;
 // instance method calls (var.method()) and already-prefixed calls are left
 // untouched.
-                                                                               
-                         
-        
-  
-                                                                         
-                                                                            
-                                                     
-                                        
-                                          
-                                                      
-                      
-                                  
-    
-   
-  
-                                          
-                                                           
-  
- 
-                                                                                                                   
-                 
-        
-  
-                          
-                                  
-                          
-                                                                                   
-   
-                           
-                     
-                                                                         
-   
-                                   
-                     
-                                                                         
-   
-                                 
-                    
-                                               
-                                                                 
-    
-   
-                             
-                                         
-                                                                
-   
-                           
-                         
-                                                                                 
-   
-                    
-                                                              
-   
-                      
-                                                                
-   
-                    
-                                               
-                                                                 
-    
-   
-                              
-                           
-                                                                                     
-   
-  
- 
-                                                                                                                                      
-                 
-            
-  
-                          
-                             
-                                                                        
-                                                                   
-                                                      
-                                                        
-                                                         
-                          
-                                                        
-                                                          
-                                  
-                                      
-                                                                
-                       
-       
-      
-     
-    
-   
-                                            
-                                                               
-                                                                              
-   
-                                   
-                                                                            
-   
-          
-                            
-                                                                              
-          
-                              
-                    
-                                                                       
-   
-                     
-                                                                         
-   
-          
-                               
-                     
-                                                                         
-   
-          
-                              
-                    
-                                                                       
-   
-                     
-                                                                         
-   
-          
-                           
-                         
-                                                                                 
-   
-                           
-                                                
-                                                           
-    
-   
-                           
-                                                
-                                                           
-    
-   
-          
-                                    
-                         
-                                                                                 
-   
-                           
-                                                                                     
-   
-                           
-                                                                                     
-   
-          
-  
-            
- 
+
 // collectStructFields builds a map from struct name to field name → field type
 // string. Used by resolveSelfInExpr to look up field types when rewriting
 // .field.method(args) calls.
 // structFieldTypeString returns the full type string of a struct field,
 // taking into account ArraySize and IsSlice flags that are stored separately
 // from f.Type (which only holds the element type).
-                                                          
-                   
-           
-  
-                           
-                     
-                                                    
-  
-               
-                       
-  
-               
- 
-                                                                                
-                                             
-                                          
-                                           
-          
-           
-   
-                                   
-                               
-                                                          
-                            
-    
-   
-                          
-  
-              
- 
+
 // collectConcreteTypeAliases builds a map from single concrete type alias
 // name to its underlying type string (e.g. "fd" → "i64"). Only aliases of
 // the form `name = known-type` (non-union, non-function-type) are collected.
 // Used by isConcreteType / isArgTypeCompatible to enforce newtype semantics.
-                                                                            
-                                  
-                                          
-                                    
-          
-           
-   
-                                                                   
-                                                                            
-                                        
-           
-   
-                                                  
-           
-   
-                                    
-  
-              
- 
-                                                                                                           
-                          
-                                  
-                          
-                                                          
-   
-                           
-                     
-                                                     
-   
-                                   
-                     
-                                                     
-   
-                                 
-                    
-                                               
-                                                       
-    
-   
-                             
-                                         
-                                                      
-   
-                           
-                         
-                                                         
-   
-                    
-                                               
-                                                       
-    
-   
-                              
-                           
-                                                           
-   
-  
- 
-                                                                                                            
-                 
-        
-  
-                          
-                             
-                                                        
-                                                                 
-                                                                                 
-                                                 
-                                    
-                                                                  
-                         
-     
-                                      
-                       
-                   
-     
-                                                                          
-    
-                                                                    
-                                                                                 
-                                                                
-                                                                                                 
-                                   
-                                                  
-                                                 
-                                                     
-                                       
-                                                                     
-                            
-        
-                                             
-                                            
-                                 
-                            
-                                     
-                                                                
-                       
-          
-        
-                                                                             
-       
-      
-     
-    
-                                                                            
-                                                                
-                                                                 
-                                                                 
-                                                                                                  
-                                    
-                                                   
-                                                  
-                                                           
-                                                       
-                                                             
-                                             
-                                                      
-                                         
-                                                                       
-                              
-          
-                                                     
-                                                
-                               
-                                      
-                                    
-                               
-                                        
-                                                                   
-                          
-             
-            
-                               
-          
-                                                                               
-         
-        
-       
-      
-     
-    
-   
-                                                               
-                                                       
-   
-                                   
-                                                 
-   
-                              
-                                                   
-                                                    
-                               
-                                                    
-                           
-                           
-                                               
-                                                
-    
-   
-                           
-                                               
-                                                
-    
-   
-                                
-                                                         
-                                    
-                                                        
-                                                          
-                                                          
-  
- 
+
 // isConstantExpr returns true if the expression is a compile-time constant literal.
-                                                  
-                     
-                             
-             
-                           
-             
-                            
-             
-  
-             
- 
+
 // isConstantName 判斷名稱是否符合 Nolang 大寫常數命名規範。
 // 規則：首字元為大寫 ASCII 字母（A-Z），且名稱中不含小寫 ASCII 字母（a-z）。
 // 例：SBOX, FNV-OFFSET, O-EXCL, A, MAX-LEN 為常數；sum, i, myVar, Foo 不為常數。
 // 用於重複定義偵測——大寫常數即使無顯式型別註記也應禁止重複賦值。
-                                       
-                
-              
-  
-                                    
-              
-  
-                                 
-              
-                           
-               
-   
-  
-            
- 
+
 // matchesTargetPlatform 檢查宣告的 PlatformKeys 是否符合目標平台。
 // 無 PlatformKeys（平台通用宣告）永遠回傳 true。
 // goos/goarch 為空時（未設定目標平台），也回傳 true（向後相容）。
-                                                                             
-                            
-             
-  
-                                
-                                                                       
-  
-                                               
-                     
-                                                  
-  
-                                  
-                      
-              
-   
-  
-             
- 
+
 // resolveModuleConstants walks the program and replaces Identifier references to
 // module constants with their literal values, allowing module functions like
 // degrees() to reference pi/e directly.
-                                                                                              
-                         
-        
-  
-                                          
-                                                    
-  
- 
-                                                                                                                          
-                          
-                                  
-                          
-                                                                               
-   
-                           
-                     
-                                                                     
-   
-                                   
-                     
-                                                                     
-   
-                                 
-                    
-                                      
-                     
-                              
-                      
-     
-    
-                                   
-                             
-    
-                                
-                     
-                              
-     
-    
-                                        
-                                               
-                                                                 
-    
-   
-                             
-                                         
-                                                            
-   
-                           
-                         
-                                                                             
-   
-                    
-                                                          
-   
-                      
-                                                            
-   
-                    
-                                               
-                                                             
-    
-   
-                              
-                           
-                                                                                 
-   
-  
- 
-                                                                              
-                  
-        
-  
-                                        
-                                                                  
-                               
-   
-                                                      
-                      
-                                     
-                          
-     
-                                  
-                      
-                           
-      
-     
-                                      
-    
-   
-                                                
-                      
-                                                                       
-                                 
-     
-    
-                      
-                                                           
-                                         
-     
-                                      
-    
-   
-                                                  
-                                
-   
-  
- 
-                                                                                                                                             
-                 
-            
-  
-                          
-                         
-                                                                       
-                                                                  
-                                                                     
-                                          
-                                                              
-           
-   
-                                                          
-                                       
-           
-   
-                                        
-             
-   
-          
-                             
-                                                                          
-                                   
-                                                                        
-   
-          
-                              
-                    
-                                                                   
-   
-                     
-                                                                     
-   
-          
-                               
-                     
-                                                                     
-   
-          
-                                    
-                         
-                                                                             
-   
-                           
-                                                                                 
-   
-                           
-                                                                                 
-   
-          
-                           
-                         
-                                                                             
-   
-                           
-                                                      
-                                                             
-    
-   
-                           
-                                                      
-                                                             
-    
-   
-          
-                                
-                          
-                                                                               
-   
-          
-                              
-                    
-                                                                   
-   
-                     
-                                                                     
-   
-          
-                              
-                    
-                                                                   
-   
-                     
-                            
-                                                                                  
-    
-                          
-                                                                              
-    
-   
-          
-                               
-                    
-                                                                   
-   
-                     
-                                                                     
-   
-          
-         
-          
-  
- 
+
 // checker.ValidateFuncArgs checks that function call argument types match the function signature.
 // rootDir is optional — if empty, only locally defined function signatures are checked.
 // If provided, imported function signatures from module files are also resolved.
 // funcSigFromDef extracts the parameter and result type info from a function
 // definition, used to build the signature table for type inference.
-                                                             
-                                                
-                                  
-         
-                                
-                      
-   
-                                                                                
-  
-                                              
-                               
-         
-                                
-                      
-   
-                                               
-  
-                                                          
- 
+
 // funcSigFirstReturnType returns the type of the function's first result
 // parameter, or "" if the function has no results.
-                                                  
-                                             
-           
-  
-                               
- 
+
 // processEmbeds 遍歷 program 中帶有 #{embed=...} 註解的 LetStatement，
 // 在編譯期讀取指定文件並填充 EmbedData 字段。
 // 路徑相對於包根目錄（package.jsonc 所在目錄）解析。
@@ -10728,6 +6429,7 @@ func (t *Transpiler) processEmbeds(program *parser.Program, sourcePath string) e
 	}
 	return nil
 }
+
 // findPackageRootFromFile walks up from a file path to find the directory containing package.jsonc.
 func findPackageRootFromFile(filePath string) string {
 	dir := filepath.Dir(filePath)

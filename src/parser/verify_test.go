@@ -18,6 +18,9 @@ func TestVerifyItBindingTypes(t *testing.T) {
 		// nil arm → it: nil
 		// wildcard after ok → complement of listed variants
 		expected []string
+		// wantErr: `it` in a catch-all arm that may still be more than one of
+		// ok / err / nil is rejected (see lowerSurfaceMatch.rejectItInNonOkArm).
+		wantErr bool
 	}{
 		{
 			name:     "ok+nil+wildcard",
@@ -28,31 +31,37 @@ func TestVerifyItBindingTypes(t *testing.T) {
 			name:     "ok+wildcard",
 			input:    "x ?i64\nx: { ok -> log(it)\n-> log(it) }",
 			expected: []string{"i64", "err | nil"},
+			wantErr:  true,
 		},
 		{
-			name:     "err+nil+wildcard",
-			input:    "x ?i64\nx: { err -> log(it)\nnil -> log(it)\n-> log(it) }",
-			expected: []string{"err", "nil", "i64"},
+			name: "err+nil+wildcard",
+			// ?str, not ?i64: `it` in an err arm of a SCALAR option is rejected
+			// (a str error payload does not fit in the 8-byte payload slot).
+			input:    "x ?str\nx: { err -> log(it)\nnil -> log(it)\n-> log(it) }",
+			expected: []string{"err", "nil", "str"},
 		},
 		{
 			name:     "err+nil+ok",
-			input:    "x ?i64\nx: { err -> log(it)\nnil -> log(it)\nok -> log(it) }",
-			expected: []string{"err", "nil", "i64"},
+			input:    "x ?str\nx: { err -> log(it)\nnil -> log(it)\nok -> log(it) }",
+			expected: []string{"err", "nil", "str"},
 		},
 		{
 			name:     "wildcard-only",
 			input:    "x ?i64\nx: { -> log(it) }",
 			expected: []string{"i64"},
+			wantErr:  true,
 		},
 		{
 			name:     "nil+wildcard",
 			input:    "x ?i64\nx: { nil -> log(it)\n-> log(it) }",
 			expected: []string{"nil", "i64"},
+			wantErr:  true,
 		},
 		{
 			name:     "err+wildcard",
 			input:    "x ?i64\nx: { err -> log(it)\n-> log(it) }",
 			expected: []string{"err", "i64"},
+			wantErr:  true,
 		},
 		// Enum type test cases
 		{
@@ -85,6 +94,7 @@ func TestVerifyItBindingTypes(t *testing.T) {
 			name:     "unknown_type_err_only",
 			input:    "f = () { b = .read-bytes()\nb: { err -> log(it)\n-> log(it) } }",
 			expected: []string{"err"},
+			wantErr:  true,
 		},
 	}
 
@@ -94,6 +104,12 @@ func TestVerifyItBindingTypes(t *testing.T) {
 			p := New(lex)
 			prog := p.ParseProgram()
 
+			if tt.wantErr {
+				if len(p.Errors()) == 0 {
+					t.Fatalf("expected a parse error for an ambiguous `it` arm, got none")
+				}
+				return
+			}
 			if len(p.Errors()) > 0 {
 				t.Fatalf("parser errors: %v", p.Errors())
 			}

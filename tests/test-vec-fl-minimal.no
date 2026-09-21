@@ -10,12 +10,18 @@ test-fl = () {
     print('first:')
     f: {
         nil -> print('nil')
+
+        err -> print('err')
+
         -> print(it)
     }
     l = v.last()
     print('last:')
     l: {
         nil -> print('nil')
+
+        err -> print('err')
+
         -> print(it)
     }
 }

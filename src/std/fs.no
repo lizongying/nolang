@@ -759,6 +759,8 @@ write-str = (p str, data str) (ok ?bool) {
     f: {
         err -> ok = err('open failed')
 
+        nil -> ok = err('open failed')
+
         -> {
             ok = it.write-str(data)
             it.close()
@@ -782,6 +784,8 @@ write-bytes = (p str, data []byte) (ok ?bool) {
     })
     f: {
         err -> ok = err('open failed')
+
+        nil -> ok = err('open failed')
 
         -> {
             ok = it.write-bytes(data)

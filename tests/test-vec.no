@@ -77,6 +77,9 @@ test-vec-remove = () {
     r = v.remove(1)
     r: {
         nil -> print('nil')
+
+        err -> print('err')
+
         -> print(it)
     }
     print(v[0])
@@ -84,6 +87,7 @@ test-vec-remove = () {
     r2 = v.remove(99)
     r2: {
         nil -> print('nil ok')
+
         -> print('not nil')
     }
 }
@@ -109,22 +113,30 @@ test-vec-first-last = () {
     f = v.first()
     f: {
         nil -> print('nil')
+
+        err -> print('err')
+
         -> print(it)
     }
     l = v.last()
     l: {
         nil -> print('nil')
+
+        err -> print('err')
+
         -> print(it)
     }
     e []i64 = with-cap(0)
     fe = e.first()
     fe: {
         nil -> print('nil ok')
+
         -> print('not nil')
     }
     le = e.last()
     le: {
         nil -> print('nil ok')
+
         -> print('not nil')
     }
 }
@@ -138,16 +150,21 @@ test-vec-at = () {
     a = v.at(1)
     a: {
         nil -> print('nil')
+
+        err -> print('err')
+
         -> print(it)
     }
     a2 = v.at(5)
     a2: {
         nil -> print('nil ok')
+
         -> print('not nil')
     }
     a3 = v.at(-1)
     a3: {
         nil -> print('nil ok')
+
         -> print('not nil')
     }
 }
@@ -175,17 +192,24 @@ test-vec-max-min = () {
     m = v.max()
     m: {
         nil -> print('nil')
+
+        err -> print('err')
+
         -> print(it)
     }
     mn = v.min()
     mn: {
         nil -> print('nil')
+
+        err -> print('err')
+
         -> print(it)
     }
     e []i64 = with-cap(0)
     me = e.max()
     me: {
         nil -> print('nil ok')
+
         -> print('not nil')
     }
 }

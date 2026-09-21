@@ -69,10 +69,10 @@ func (p *Parser) lowerProgram(prog *Program) {
 
 type lowerer struct {
 	p           *Parser
-	visited     map[uintptr]bool // 指標去重：AST 有共享節點（如 MatchedExpr），避免重複遍歷
-	curFuncName string          // current function being lowered, for function-scoped VarType lookup
+	visited     map[uintptr]bool    // 指標去重：AST 有共享節點（如 MatchedExpr），避免重複遍歷
+	curFuncName string              // current function being lowered, for function-scoped VarType lookup
 	curFuncDef  *FunctionDefinition // current function definition, for result param lookup
-	optTmpSeq   int             // 單調計數器：為 compound `?=` 的 __opt_N 暫存變數產生全函式唯一名
+	optTmpSeq   int                 // 單調計數器：為 compound `?=` 的 __opt_N 暫存變數產生全函式唯一名
 }
 
 var surfaceMatchPtrType = reflect.TypeOf((*SurfaceMatch)(nil))
@@ -186,16 +186,16 @@ func (l *lowerer) walk(v reflect.Value) {
 		var savedFuncDef *FunctionDefinition
 		isFuncDef := false
 		if v.CanAddr() {
-		if fd, ok := v.Addr().Interface().(*FunctionDefinition); ok {
-			savedFuncName = l.curFuncName
-			savedFuncDef = l.curFuncDef
-			l.curFuncName = fd.Name
-			l.curFuncDef = fd
-			// 預掃描區域變數容器型別（如 `av = a.to-vec()`），使其被安全索引
-			// 降級辨識（isSafeIndexBase / inferIndexElemType 依賴 FuncVarType）。
-			l.collectLocalTypes(fd)
-			isFuncDef = true
-		}
+			if fd, ok := v.Addr().Interface().(*FunctionDefinition); ok {
+				savedFuncName = l.curFuncName
+				savedFuncDef = l.curFuncDef
+				l.curFuncName = fd.Name
+				l.curFuncDef = fd
+				// 預掃描區域變數容器型別（如 `av = a.to-vec()`），使其被安全索引
+				// 降級辨識（isSafeIndexBase / inferIndexElemType 依賴 FuncVarType）。
+				l.collectLocalTypes(fd)
+				isFuncDef = true
+			}
 		}
 		for i := 0; i < v.NumField(); i++ {
 			if t.Field(i).PkgPath != "" {
@@ -352,7 +352,7 @@ func (l *lowerer) recordIndexLocalType(funcName, name, lt string) {
 }
 
 // maybeAutoPropagateIndex 偵測 option 回傳函式內的裸安全索引賦值
-//（`x = v[5]`，v 為 arr/vec/slice），將其就地改寫為 `x ?= v[5]` 以便
+// （`x = v[5]`，v 為 arr/vec/slice），將其就地改寫為 `x ?= v[5]` 以便
 // 越界時向上傳播錯誤。返回 *UnwrapAssignStatement；非候選則回傳 nil。
 //
 // 註解 `#{index-out=...}` 的賦值走預設值路徑（由 checker/codegen 處理），
@@ -424,7 +424,7 @@ func (l *lowerer) maybeAutoPropagateIndex(stmt interface{}) Statement {
 }
 
 // maybeIndexOutAssign 偵測帶 `#{index-out=DEF}` 註解的安全索引賦值
-//（`x = v[5]`，v 為 arr/vec/slice，DEF 為字面量預設值），將其就地改寫為
+// （`x = v[5]`，v 為 arr/vec/slice，DEF 為字面量預設值），將其就地改寫為
 // match：越界時用 DEF 替代，否則取出元素。返回 *BlockStatement；非候選則回傳 nil。
 //
 // 這條路徑與 `x ?= v[5]` 共用安全索引 codegen（`__tmp = v[5]` 產生 %option，
@@ -502,11 +502,11 @@ func (l *lowerer) maybeIndexOutAssign(stmt interface{}) Statement {
 	tmpIdent := &Identifier{Token: tok, Value: tmpName}
 	l.p.setVarType(tmpName, "?"+elem)
 	tmpAssign := &LetStatement{
-		Token:      tok,
-		Name:       tmpIdent,
+		Token:       tok,
+		Name:        tmpIdent,
 		IsSynthetic: true, // 防止 walk 時被 maybeAutoPropagateIndex 二次改寫
-		Type:       &NullableType{Token: tok, Type: &NamedType{Token: tok, Value: elem}},
-		Value:      idx,
+		Type:        &NullableType{Token: tok, Type: &NamedType{Token: tok, Value: elem}},
+		Value:       idx,
 	}
 	// 建構預設值字面量（依元素型別解釋 DEF）。
 	defLit, errMsg := defaultLiteralFor(tok, elem, defVal)
@@ -678,6 +678,179 @@ func (l *lowerer) preRegisterEnumArmBindings(sm *SurfaceMatch) {
 	}
 }
 
+// matchArmCovers reports which of the option's three cases (nil / err / ok) an
+// arm claims. A combined arm (`nil || err ->`) claims both.
+func matchArmCovers(a *matchArm) (nilOK, errOK, okOK bool) {
+	for _, pat := range a.multiOptionPatterns {
+		switch pat {
+		case "nil":
+			nilOK = true
+		case "err":
+			errOK = true
+		case "ok":
+			okOK = true
+		}
+	}
+	switch c := a.condition.(type) {
+	case *NilLiteral:
+		nilOK = true
+	case *Identifier:
+		switch c.Value {
+		case "nil":
+			nilOK = true
+		case "err":
+			errOK = true
+		case "ok":
+			okOK = true
+		}
+	}
+	// `ok ->` is the dotVal arm; `ok(cond) ->` carries a raw boolean condition.
+	if a.isDotVal || a.isRawCond {
+		okOK = true
+	}
+	return nilOK, errOK, okOK
+}
+
+// rejectItInNonOkArm rejects `it` inside a catch-all `->` arm that is not
+// provably the ok arm.
+//
+// `it` is meaningful only where the matched option is known to hold a value:
+// an explicit `ok ->` arm, or a catch-all `->` that runs only after BOTH `nil`
+// and `err` have been claimed by earlier arms. A bare `->` with no such arms
+// still receives nil/err, so `it` there is uninitialized payload — the
+// compiler must say so instead of silently emitting a deref.
+func (l *lowerer) rejectItInNonOkArm(sm *SurfaceMatch) {
+	if sm == nil {
+		return
+	}
+	// 只對 option 型別的 match 生效。enum / 純值 match 的 catch-all 臂裡 `it`
+	// 就是被匹配的值本身（不存在 nil / err 的可能），不能報錯。
+	if ident, ok := sm.Matched.(*Identifier); ok {
+		if t, ok := l.p.sem.FuncVarType(l.curFuncName, ident.Value); ok {
+			if _, isEnum := l.p.sem.EnumVariantsOf(t); isEnum {
+				return
+			}
+			if !strings.HasPrefix(t, "?") && !strings.Contains(t, "|") {
+				return
+			}
+		}
+	} else {
+		// 非識別符主體：無從判定是否為 option，不報。裸 match（`{ cond -> ... }`）
+		// 沒有主體，`it` 指的是外層 match 綁的那個值，也不該由這裡判定。
+		return
+	}
+	var nilCovered, errCovered, okCovered bool
+	for i := range sm.Arms {
+		n, e, o := matchArmCovers(&sm.Arms[i])
+		nilCovered = nilCovered || n
+		errCovered = errCovered || e
+		okCovered = okCovered || o
+	}
+	// The catch-all arm gets every case the explicit arms did NOT claim. `it`
+	// has a single well-defined meaning only when exactly one case is left:
+	//   nil+err claimed -> `->` is ok  (it = the value)
+	//   ok+nil  claimed -> `->` is err (it = the error message)
+	//   ok+err  claimed -> `->` is nil (it = nil)
+	// Anything else means `it` may be any of several unrelated things.
+	remaining := 0
+	if !nilCovered {
+		remaining++
+	}
+	if !errCovered {
+		remaining++
+	}
+	if !okCovered {
+		remaining++
+	}
+	if remaining <= 1 {
+		return
+	}
+	for i := range sm.Arms {
+		a := &sm.Arms[i]
+		// Only the catch-all `->` arm is ambiguous. `ok ->` (isDotVal) and
+		// explicit pattern arms are fine.
+		if !a.isWildcard || a.isDotVal || a.skipItBinding {
+			continue
+		}
+		if !armUsesIt(a.body) {
+			continue
+		}
+		line, col := a.pos.Line, a.pos.Column
+		if line == 0 && a.body != nil && len(a.body.Statements) > 0 {
+			line = a.body.Statements[0].Pos().Line
+			col = a.body.Statements[0].Pos().Column
+		}
+		var missing []string
+		if !nilCovered {
+			missing = append(missing, "nil")
+		}
+		if !errCovered {
+			missing = append(missing, "err")
+		}
+		if !okCovered {
+			missing = append(missing, "ok")
+		}
+		l.p.saveError(fmt.Sprintf("line %d, column %d: `it` is not valid in this arm: the catch-all `->` arm may receive %s; claim them with explicit arms (e.g. `nil ->` / `err ->`) or use `ok ->` before reading `it`",
+			line, col, strings.Join(missing, " / ")))
+	}
+}
+
+// armUsesIt reports whether an arm body references the implicit `it` binding.
+// Nested matches are NOT scanned except for their subject: their arms bind
+// their own `it`, which belongs to the inner match, not this one.
+func armUsesIt(body *BlockStatement) bool {
+	if body == nil {
+		return false
+	}
+	seen := make(map[uintptr]bool)
+	var scan func(v reflect.Value) bool
+	scan = func(v reflect.Value) bool {
+		switch v.Kind() {
+		case reflect.Ptr:
+			if v.IsNil() {
+				return false
+			}
+			p := v.Pointer()
+			if seen[p] {
+				return false
+			}
+			seen[p] = true
+			switch n := v.Interface().(type) {
+			case *Identifier:
+				return n.Value == "it"
+			case *SurfaceMatch:
+				return n.Matched != nil && scan(reflect.ValueOf(n.Matched))
+			}
+			return scan(v.Elem())
+		case reflect.Interface:
+			if v.IsNil() {
+				return false
+			}
+			if v.Elem().Type() == surfaceMatchPtrType {
+				sm, ok := v.Elem().Interface().(*SurfaceMatch)
+				if ok {
+					return sm.Matched != nil && scan(reflect.ValueOf(sm.Matched))
+				}
+			}
+			return scan(v.Elem())
+		case reflect.Slice, reflect.Array:
+			for i := 0; i < v.Len(); i++ {
+				if scan(v.Index(i)) {
+					return true
+				}
+			}
+		case reflect.Struct:
+			for i := 0; i < v.NumField(); i++ {
+				if scan(v.Field(i)) {
+					return true
+				}
+			}
+		}
+		return false
+	}
+	return scan(reflect.ValueOf(body))
+}
+
 // lowerSurfaceMatch 將單個表層 match 節點展開為核心 AST。
 // 先自底向上處理 matched 與各 arm 內部（嵌套 match），再建 if 鏈。
 func (l *lowerer) lowerSurfaceMatch(sm *SurfaceMatch) Expression {
@@ -692,6 +865,12 @@ func (l *lowerer) lowerSurfaceMatch(sm *SurfaceMatch) Expression {
 	}
 	// 先把析構綁定名/型別登記進符號表，內層 match 才能解析其主體型別。
 	l.preRegisterEnumArmBindings(sm)
+	// `it` 只在「可證明是 ok」的臂裡有效：catch-all `->` 臂若前面沒有把 nil 與
+	// err 都處理掉，走到這裡時值仍可能是 nil 或 err，讀 `it` 沒有意義（且會
+	// 讀到未初始化的載荷）。此時若臂體用到 `it`，直接報錯——必須改用 `ok ->`
+	// 或補上 `nil ->` / `err ->`。檢查必須在 walk 之前做：walk 會把內層 match
+	// 展開成 if/else 並插入它自己的合成 `let it`，那之後就分不清 `it` 屬於哪層。
+	l.rejectItInNonOkArm(sm)
 	l.walk(reflect.ValueOf(&sm.Matched))
 	for i := range sm.Arms {
 		a := &sm.Arms[i]
@@ -861,19 +1040,19 @@ func (p *Parser) buildMatchDesugar(sm *SurfaceMatch) Expression {
 			if os.Getenv("NOLANG_DEBUG_IT") != "" {
 				fmt.Fprintf(os.Stderr, "[debug-it] buildMatchDesugar: matched=%q matchedVarType=%q\n", ident.Value, matchedVarType)
 			}
-	} else {
-		if os.Getenv("NOLANG_DEBUG_IT") != "" {
-			fmt.Fprintf(os.Stderr, "[debug-it] buildMatchDesugar: matched=%q FuncVarType NOT FOUND curFunc=%q\n", ident.Value, p.curFuncName)
-			// Dump FuncVarTypes for curFuncName to see what's registered
-			if vars, ok := p.sem.FuncVarTypes[p.curFuncName]; ok {
-				for k, v := range vars {
-					fmt.Fprintf(os.Stderr, "[debug-it]   FuncVarTypes[%q][%q]=%q\n", p.curFuncName, k, v)
+		} else {
+			if os.Getenv("NOLANG_DEBUG_IT") != "" {
+				fmt.Fprintf(os.Stderr, "[debug-it] buildMatchDesugar: matched=%q FuncVarType NOT FOUND curFunc=%q\n", ident.Value, p.curFuncName)
+				// Dump FuncVarTypes for curFuncName to see what's registered
+				if vars, ok := p.sem.FuncVarTypes[p.curFuncName]; ok {
+					for k, v := range vars {
+						fmt.Fprintf(os.Stderr, "[debug-it]   FuncVarTypes[%q][%q]=%q\n", p.curFuncName, k, v)
+					}
+				} else {
+					fmt.Fprintf(os.Stderr, "[debug-it]   FuncVarTypes[%q] map not found\n", p.curFuncName)
 				}
-			} else {
-				fmt.Fprintf(os.Stderr, "[debug-it]   FuncVarTypes[%q] map not found\n", p.curFuncName)
 			}
 		}
-	}
 	}
 
 	// Determine element type from option type for per-arm `it` type inference.
@@ -1413,7 +1592,7 @@ func (p *Parser) buildMatchDesugar(sm *SurfaceMatch) Expression {
 					Consequence:     defaultBody,
 					MatchedExpr:     matched,
 					EqualityPattern: &Identifier{Token: tok, Value: "ok"},
-					DotValBody:       defaultBody,
+					DotValBody:      defaultBody,
 				}
 				p.sem.SetRTFlag(ifExpr, RTBareMatch|RTMatchWildcard)
 			} else {
@@ -1991,17 +2170,17 @@ func (l *lowerer) lowerUnwrapAssign(uas *UnwrapAssignStatement) Statement {
 		// 觸發 option 變數的「值比較」代碼路徑（對 err/nil 關鍵字做 load，
 		// 產生未定義的 %err / 錯誤的 %nil 比較）；獨立 arm 走 tag 比較路徑。
 		arms = append(arms, matchArm{
-			condition:    &Identifier{Token: tok, Value: "nil"},
-			body:         &BlockStatement{Token: tok, Statements: []Statement{&ReturnStatement{Token: tok}}},
-			isBlockBody:  true,
-			pos:          posFromToken(tok),
+			condition:     &Identifier{Token: tok, Value: "nil"},
+			body:          &BlockStatement{Token: tok, Statements: []Statement{&ReturnStatement{Token: tok}}},
+			isBlockBody:   true,
+			pos:           posFromToken(tok),
 			skipItBinding: true,
 		})
 		arms = append(arms, matchArm{
-			condition:    &Identifier{Token: tok, Value: "err"},
-			body:         &BlockStatement{Token: tok, Statements: []Statement{&ReturnStatement{Token: tok}}},
-			isBlockBody:  true,
-			pos:          posFromToken(tok),
+			condition:     &Identifier{Token: tok, Value: "err"},
+			body:          &BlockStatement{Token: tok, Statements: []Statement{&ReturnStatement{Token: tok}}},
+			isBlockBody:   true,
+			pos:           posFromToken(tok),
 			skipItBinding: true,
 		})
 	} else if resultName != "" {
@@ -2019,34 +2198,34 @@ func (l *lowerer) lowerUnwrapAssign(uas *UnwrapAssignStatement) Statement {
 			}}
 		}
 		arms = append(arms, matchArm{
-			condition:    &Identifier{Token: tok, Value: "nil"},
-			body:         propagate(),
-			isBlockBody:  true,
-			pos:          posFromToken(tok),
+			condition:     &Identifier{Token: tok, Value: "nil"},
+			body:          propagate(),
+			isBlockBody:   true,
+			pos:           posFromToken(tok),
 			skipItBinding: true,
 		})
 		arms = append(arms, matchArm{
-			condition:    &Identifier{Token: tok, Value: "err"},
-			body:         propagate(),
-			isBlockBody:  true,
-			pos:          posFromToken(tok),
+			condition:     &Identifier{Token: tok, Value: "err"},
+			body:          propagate(),
+			isBlockBody:   true,
+			pos:           posFromToken(tok),
 			skipItBinding: true,
 		})
 	} else {
 		// No option result param — emit a parse error placeholder body.
 		l.p.saveError(fmt.Sprintf("line %d, column %d: `?=` can only be used inside a function with an option-typed result param", tok.Line, tok.Column))
 		arms = append(arms, matchArm{
-			condition:    &Identifier{Token: tok, Value: "nil"},
-			body:         &BlockStatement{Token: tok, Statements: []Statement{&ReturnStatement{Token: tok}}},
-			isBlockBody:  true,
-			pos:          posFromToken(tok),
+			condition:     &Identifier{Token: tok, Value: "nil"},
+			body:          &BlockStatement{Token: tok, Statements: []Statement{&ReturnStatement{Token: tok}}},
+			isBlockBody:   true,
+			pos:           posFromToken(tok),
 			skipItBinding: true,
 		})
 		arms = append(arms, matchArm{
-			condition:    &Identifier{Token: tok, Value: "err"},
-			body:         &BlockStatement{Token: tok, Statements: []Statement{&ReturnStatement{Token: tok}}},
-			isBlockBody:  true,
-			pos:          posFromToken(tok),
+			condition:     &Identifier{Token: tok, Value: "err"},
+			body:          &BlockStatement{Token: tok, Statements: []Statement{&ReturnStatement{Token: tok}}},
+			isBlockBody:   true,
+			pos:           posFromToken(tok),
 			skipItBinding: true,
 		})
 	}

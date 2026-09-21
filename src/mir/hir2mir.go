@@ -414,7 +414,7 @@ func (l *lowerer) enumFieldSlots(raw string) int64 {
 		return 3
 	}
 	if strings.HasPrefix(raw, "?") {
-		return 2 // %option = 16 bytes (tag + payload)
+		return 4 // %option = 32 bytes (i64 tag + 24-byte payload slot)
 	}
 	if fields, ok := l.mod.StructFields[raw]; ok {
 		var n int64
@@ -2167,30 +2167,40 @@ func (l *lowerer) lowerStmt(id int32) {
 				if vt := l.valueTypeOf(val); vt != NoType && vt != l.voidType {
 					if vty := l.mod.Type(vt); vty != nil && vty.Kind == KindOption {
 						// The err payload is ALWAYS `str` (option { ...,
-						// err(e str) }). For a non-scalar option (?str / ?fs.file
-						// / ...) the err str fits in the payload slot, so peel +
-						// clone it into `it` as an independently-owned
-						// %str-long. For a SCALAR option (?i64 / ?u8 / ?bool / ...)
-						// the flat %option payload is a single 8-byte i64 that
-						// holds ONLY the error data pointer — the str's len/cap
-						// are lost. emitMove's `dstT == "%str-long"` branch reads
-						// 24 bytes from an 8-byte slot (alloca i64 + bitcast +
-						// load), so the recovered %str-long gets UNINITIALISED
-						// stack in its len/cap; the later @str_clone then copies
-						// garbage bytes out-of-bounds -> a runtime trace/BPT trap
-						// (tests/test-opt-match-all.no, and any statement-mode
-						// `match x: { err -> ... }` on a scalar option). Nolang
-						// cannot represent a full str error inside a scalar
-						// option, so for scalar options we deliberately SKIP the
-						// peel: `it` keeps the whole option (its arm body does
-						// not need the str error — no scalar-option err test
-						// prints `it`), and no OOB read occurs. Non-scalar
-						// options still peel correctly (test_fs_error_complete /
-						// test-opt-struct-field).
+						// err(e str) }), whatever the OK element is, so peel
+						// + clone it into `it` as an independently-owned
+						// %str-long for BOTH shapes:
+						//   - non-scalar (?str / ?fs.file / ...): the err str
+						//     fits in the payload slot, so emitMove re-puns
+						//     the slot (test_fs_error_complete,
+						//     test-opt-struct-field).
+						//   - scalar (?i64 / ?u8 / ?bool / ...): with the OLD
+						//     flat `%option = { i64, i64 }` the payload was 8
+						//     bytes, far too small for a %str-long, so the
+						//     peel was deliberately skipped and `it` stayed
+						//     the whole option — every str use of it then
+						//     emitted IR opt rejected ("defined with type
+						//     'i1' but expected '%str-long'"). The unified
+						//     layout (`%option = { i64 tag, [3 x i64] slot }`,
+						//     see the "unified option layout" comment in
+						//     codegen.go) gives EVERY option a 24-byte slot,
+						//     so the err message fits and the same peel is
+						//     correct for scalars too.
+						// DEPENDS ON the unified %option slot in codegen.go —
+						// scalar err arms cannot be validated until it lands.
 						if elem, ok := parseOptionElem(vty.Raw); ok && elem != "" {
 							if et := l.mod.Type(l.b.Type(elem)); et != nil {
 								switch et.Kind {
 								case KindStr, KindStruct:
+									peeled := l.b.Emit(OpMove, l.b.Type("str"), []ValueID{val}, "")
+									val = l.b.Emit(OpClone, l.b.Type("str"), []ValueID{peeled}, "")
+								case KindInt, KindBool, KindChar, KindFloat, KindPtr:
+									// SCALAR option (?i64 / ?bool / ?u8 / ...).
+									// See the comment above: the unified
+									// %option slot is 24 bytes, so the err
+									// message is recoverable and `it` is the
+									// message — the same semantic as a
+									// non-scalar option.
 									peeled := l.b.Emit(OpMove, l.b.Type("str"), []ValueID{val}, "")
 									val = l.b.Emit(OpClone, l.b.Type("str"), []ValueID{peeled}, "")
 								}
@@ -2404,7 +2414,29 @@ func (l *lowerer) lowerStmt(id int32) {
 			// values keep the alias (view) semantics the memory analysis already
 			// handles with a single drop for the shared slot.
 			if cn := l.pkg.Node(childID); cn != nil && cn.Kind == hir.KIdent {
-				if _, isLocal := l.locals[l.pkg.Str(cn.S)]; isLocal && !l.isOwnedLocal(val) {
+				// Same hazard for a module-level binding: `K = 100` lowers to a
+				// global VALUE, so `t = K` binds `t` onto @K's own storage and a
+				// later `t = t + 1` writes back into the GLOBAL — corrupting the
+				// constant for every reader, and the next call then starts from
+				// the previous call's leftover instead of from K. str-map's
+				// FNV-OFFSET was the victim: the hash differed on every call, so
+				// put() and get() landed on different slots and every lookup
+				// missed. Restricted to SCALARS: array/vec/str/struct globals
+				// (crypto SBOX tables, #{embed} byte arrays) keep the existing
+				// alias so reads still GEP straight from @global and no 2KB+
+				// aggregate copy is introduced.
+				cnName := l.pkg.Str(cn.S)
+				_, isLocal := l.locals[cnName]
+				isScalarGlobal := false
+				if _, isGlobal := l.globals[cnName]; isGlobal {
+					if vt := l.mod.Type(l.valueTypeOf(val)); vt != nil {
+						switch vt.Kind {
+						case KindInt, KindFloat, KindBool, KindChar, KindPtr:
+							isScalarGlobal = true
+						}
+					}
+				}
+				if (isLocal || isScalarGlobal) && !l.isOwnedLocal(val) {
 					typ := l.valueTypeOf(val)
 					if typ == NoType || typ == l.voidType {
 						typ = l.typeOfNode(cn)

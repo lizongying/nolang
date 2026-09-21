@@ -810,6 +810,40 @@ outer: {
 > across levels, copy it into a named local (`doc = it`) or use a destructuring binding
 > `ok(v) -> ...` to bind the payload to your own name.
 
+### `it` is only usable in an arm with a single provable case
+
+A catch-all `->` arm receives every case the explicit arms did not claim. `it` has one
+unambiguous meaning only when exactly **one** case remains:
+
+```no
+; ✅ -> is ok (nil and err are both claimed)
+v: {
+    nil -> log('empty')
+    err -> log(it)
+    -> process(it)
+}
+
+; ✅ -> is err (ok and nil are both claimed)
+v: {
+    ok -> process(it)
+    nil -> log('empty')
+    -> log(it)
+}
+
+; ❌ -> may be nil or err — compile error
+v: {
+    ok -> process(it)
+    -> log(it)
+}
+```
+
+Add the missing `nil ->` / `err ->` arm, or switch to `ok ->`. Enum matches and bare matches
+(`{ cond -> ... }`) are exempt: `it` there is the matched value itself, with no nil/err case.
+
+> In the `err ->` arm `it` is **always the error message (`str`)**, regardless of the option's
+> element type — the builtin is `option { ok(v t), nil, err(e str) }`. So even for a scalar
+> option such as `?i64` / `?bool`, `it` in the `err ->` arm is a string and `msg = it` works.
+
 ```no
 ; ✅ Combined option pattern: nil || err -> body
 ; When the option is nil or err, share the same branch

@@ -1,4 +1,10 @@
 ; 測試鏈式存取
+;
+; 註：原版本用 `x.len = n` 直接寫字串長度（再用 `[i] = b` 逐字節填）。那種寫法對
+; 一般變數會被擋（「cannot modify read-only field 'len' of string」），只是在
+; 巢狀路徑 `p.nodes[i].str-val.len` 上沒被擋到，於是 len 被改成 1 但 data 仍是
+; null，下一個 `[0] = 97` 就 SIGSEGV。這裡改用正常的字串指派，一樣能測到
+; `p.nodes[i].keys[j]` 這種多層鏈式存取。
 
 json-kind {
     null,
@@ -29,9 +35,9 @@ json-pool.init = () {
     i <- [0..4): {
         .nodes[i].count = 0
         .nodes[i].kind = json-kind.null
-        .nodes[i].str-val.len = 0
+        .nodes[i].str-val = ''
         j <- [0..16): {
-            .nodes[i].keys[j].len = 0
+            .nodes[i].keys[j] = ''
         }
     }
 }
@@ -40,11 +46,11 @@ json-pool.alloc = () (idx i64) {
     idx = -1
     .count >= 4 -> return
     idx = .count
-    #{overflow = wrap}
+    #{overflow=wrap}
     .count = .count + 1
     .nodes[idx].count = 0
     .nodes[idx].kind = json-kind.null
-    .nodes[idx].str-val.len = 0
+    .nodes[idx].str-val = ''
 }
 print('start')
 p = json-pool {}
@@ -57,17 +63,12 @@ node-idx = p.alloc()
 key-idx = p.alloc()
 
 p.nodes[key-idx].kind = json-kind.str
-p.nodes[key-idx].str-val.len = 1
-p.nodes[key-idx].str-val[0] = 97
+p.nodes[key-idx].str-val = 'a'
 
 print('before copy')
 
 cnt i64 = 0
-p.nodes[node-idx].keys[cnt].len = p.nodes[key-idx].str-val.len-bytes()
-print('set len ok')
-j <- [0..p.nodes[key-idx].str-val.len-bytes()): {
-    p.nodes[node-idx].keys[cnt][j] = p.nodes[key-idx].str-val[j]
-}
+p.nodes[node-idx].keys[cnt] = p.nodes[key-idx].str-val
 print('copy ok')
 
 val i64 = p.nodes[node-idx].keys[cnt][0]

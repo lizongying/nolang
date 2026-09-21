@@ -8,6 +8,9 @@ test-last-minimal = () {
     l = v.last()
     l: {
         nil -> print('nil')
+
+        err -> print('err')
+
         -> print(it)
     }
 }

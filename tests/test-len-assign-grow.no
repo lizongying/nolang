@@ -1,0 +1,57 @@
+; test-len-assign-grow.no — `X.len = n` 在緩衝區尚未分配時的寫入
+;
+; `.len = n` 是**裸欄位寫入**（emitSetField 的 container 分支就是 GEP + store i64），
+; 不會分配緩衝區。當目標容器還沒有緩衝區時（data == null），len 被改了但 data 沒變，
+; 緊接著的 `X[0] = b` 或 `X.len()` 就會對 null 做解引用 → SIGSEGV。
+;
+; 現在 len 的寫入會在 data == null 時先分配 n 個元素的空間，所以下面全部可用。
+; 注意：這**不**改變「已分配緩衝區」時的行為 —— std 的 `vec.no` 用 `.len = cur + 1`
+; 做 inline push，其註解明寫「調用方需確保容量足夠」，那個契約照舊成立。
+
+bag {
+    s str
+    v []i64
+    arr [4]str
+}
+
+main = () {
+    ; (1) 結構體欄位：str 從零值增長到 3 後可寫可讀
+    b = bag {}
+    b.s.len = 3
+    b.s[0] = 97
+    b.s[1] = 98
+    b.s[2] = 99
+    b.s.len() == 3 -> print('ok: str field grow from null')
+
+    -> print('fail: str field len got=' - b.s.len().to-str())
+
+    ; (2) 增長出來的緩衝區是真的可寫的（能讀回寫進去的位元組）
+    b.s == 'abc' -> print('ok: grown str buffer is writable')
+
+    -> print('fail: grown str got=[' - b.s - ']')
+
+    ; (3) 結構體欄位：slice 從零值增長到 2 後可寫可讀
+    b.v.len = 2
+    b.v[0] = 7
+    b.v[1] = 8
+    b.v[0] == 7 && b.v[1] == 8 -> print('ok: slice field grow from null')
+
+    -> print('fail: slice field grow')
+
+    ; (4) 陣列元素（巢狀路徑）—— 原本崩潰的形狀
+    b.arr[1].len = 2
+    b.arr[1][0] = 65
+    b.arr[1][1] = 66
+    b.arr[1] == 'AB' -> print('ok: array element str grow from null')
+
+    -> print('fail: array element grow got=[' - b.arr[1] - ']')
+
+    ; (5) 已指派過的容器做 .len = n 仍是純欄位寫入（縮短）——
+    ;     這裡用欄位是因為一般變數的 `s.len = n` 本來就被 validator 擋下
+    ;     （cannot modify read-only field 'len' of string）。
+    b.s = 'abcd'
+    b.s.len = 2
+    b.s == 'ab' -> print('ok: shrink on an allocated str still works')
+
+    -> print('fail: shrink got=[' - b.s - ']')
+}

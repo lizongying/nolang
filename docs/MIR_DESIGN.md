@@ -1,8 +1,8 @@
 # Nolang MIR — 工业级中端中间表示设计（实施记录 v2.26）
 
-> **当前状态（截至 2026-09-21）**：legacy 后端已删除，MIR 是唯一后端（`NOLANG_MIR` 未设置即 MIR-only；`=0`/`=2` 明确报错，`=1` 保留为 lowering 转储）。上一份全量扫描快照为 `SAME=409 / DIVERGE=0 / REGRESS=0 / BOTH_FAIL=13`（后续约 11）；红线目标仍是 MIR 专属运行时崩溃 = 0、MIR 专属 gap = 0。
+> **当前状态（截至 2026-09-21）**：legacy 后端已删除，MIR 是唯一后端（`NOLANG_MIR` 未设置即 MIR-only；`=0`/`=2` 明确报错，`=1` 保留为 lowering 转储）。实测全量 428 条中 **rc≠0 仅剩 4 条**（3 条 FFI/接口分派特性缺失 + 1 条有意死循环）；红线目标仍是 MIR 专属运行时崩溃 = 0、MIR 专属 gap = 0。
 >
-> **当前已闭合**：#83（`afa8d92`，sroa 大聚合爆炸）、#84（json 早返回 SIGSEGV）、#85（调用结果 NoVal / 静默错误编译）、5 处同形状空守卫体 bug（`regexp`/`x509`/`multipart`×2/`sse`）。#84/#85 已用 `./bin/no` 重建后二次点测；全量统计需另行重扫。
+> **当前已闭合**：#83（`afa8d92`，sroa 大聚合爆炸）、#84（json 早返回 SIGSEGV）、#85（调用结果 NoVal / 静默错误编译）、5 处同形状空守卫体 bug（`regexp`/`x509`/`multipart`×2/`sse`）、`test-x25519-fe-diag` 测试源漂移（fe-* 参数顺序）。
 > 作者：编译器工作流
 > 关联：`src/hir`（HIR）、`src/parser/tohir.go`（AST→HIR）、`src/mir`（本层）。~~`src/build/llvm`（legacy LLVM 后端）~~ 已删除（见 §13.3）
 
@@ -94,7 +94,13 @@ type Type struct {
 
 - `%vec` = `{ i64 len, i64 cap, i64 data_ptr }`（堆 slice）
 - `%str-long` = `{ i64 len, i64 cap, i8* data }`
-- `%option` = `{ i64 tag, i64 payload }`（tag：0=some/ok，1=nil/none，2=err）
+- `%option` = `{ i64 tag, [3 x i64] slot }`（32 字节；tag：0=some/ok，1=nil/none，2=err）
+  - **每个 `?T` 都是这同一个类型**，payload 类型不再体现在 LLVM 类型名里，需要时由 MIR 类型表还原（`optPayloadLTOf`）。
+  - slot 是 **24 字节**，因为必须永远放得下的是 err 消息（一个 `%str-long`）。旧的 `{ i64, i64 }` 只有 8 字节，`err('msg')` 进 `?i64/?bool/?f64` 时只能存下堆指针（len/cap 丢失，err 臂打印出裸地址，且那次 `str_clone` 泄漏）。
+  - payload ≤ 24 字节 → **内联**（scalars / str / vec / 小结构体 / 小定长数组），按位存入 slot。
+  - payload > 24 字节（或大小无法证明）→ **装箱**：`malloc` 一块堆内存，slot[0] 存其指针。只有 tag 0（ok）会装箱；nil/err 的载荷永远是内联的短字节。读装箱载荷走 `optPayloadAddr` 的 `select(tag==0, box, @__nolang_opt_zero_<T>)`。
+  - ⚠️ 非 ok 那一侧**不能**取 slot 地址：装箱载荷比 slot 大，从 slot 读它就是越界 `getelementptr inbounds` = UB，LLVM 会判定该分支不可达并把 load 提到分支之上，于是优化后解引用 err 消息当指针 → SIGSEGV（`-O0` 下完全正常，只在 `opt` 之后复现）。故非 ok 侧指向一个 payload 大小的零常量。
+  - 装箱载荷目前只可能是结构体，而结构体不被 `ClassifyOwnership` 视为 owned，因此不会 drop → 不会 double free（也不会释放；`optBoxClone` 每次拷贝还会再 malloc 一块，属于已知的可接受泄漏）。
 - `%txt` = `[255 x i8]`
 
 ---
@@ -211,7 +217,8 @@ MIR 专属运行时崩溃与 gap 的修复目录共 **#1–#86**，截至 2026-0
 
 ### 13.1 MIR 专属回归（已闭环）
 - **`test-arr.no` 的 `option/i64` opt-verify 失配**：已于 2026-09-11 闭环，`emitIndexStore` 加 `%option`→标量解包。
-- **`emitSetField` 同类解包**：`emitSetField`（`codegen.go`）的常规 store 路径与 `?T.field` 分支均加同法 option→标量解包（当 RHS 为 `%option` 且目标字段为标量时 `extractvalue %option %valV, 1` 取 ok payload 再 store）。标量赋值 `x = v` 走 `OpMove`/`emitMove`，无独立 `emitStore`，故 sink 站点已覆盖 `emitIndexStore`+`emitSetField`。
+- **`emitSetField` 同类解包**：`emitSetField`（`codegen.go`）的常规 store 路径与 `?T.field` 分支均加同法 option→标量解包（当 RHS 为 `%option` 且目标字段为标量时用 `optionPayloadOf` 取 ok payload 再 store）。标量赋值 `x = v` 走 `OpMove`/`emitMove`，无独立 `emitStore`，故 sink 站点已覆盖 `emitIndexStore`+`emitSetField`。
+  ⚠️ 统一 slot 之后**不能**再写 `extractvalue %option %v, 1` / `getelementptr %option ..., 0, 1`：field 1 是 24 字节 slot，装箱载荷还多一层指针。统一走 `optionPayloadOf` / `optPayloadAddr` / `optPayloadTypedAddr`。
 
 ### 13.2 预存 crash/hang（非 MIR 专属，legacy 同崩/同挂）
 实测根因（两模式各跑，超时 8s）：
@@ -226,26 +233,28 @@ MIR 专属运行时崩溃与 gap 的修复目录共 **#1–#86**，截至 2026-0
 
 ### 13.3 当前状态与待修
 
-**最新权威全量扫描（2026-09-17，421 文件）**：`SAME=409 / DIVERGE=0 / REGRESS=0 / BOTH_FAIL=13`；后续又拉出 `nested-container-clone`、`test-basic`，当前 `BOTH_FAIL` 约 **11**。默认口径 `no build` 通过率 **92.2%**（388/421）。
+**当前口径（2026-09-21 实测，`./bin/no run` + `tests/golden/mir-baseline.tsv`）**：全量 428 条中 **rc≠0 仅剩 4 条**（原快照为 10 条）。
 
-**红线已达标**：MIR 专属运行时崩溃 = 0、MIR 专属 gap = 0（持续达标）。
+**红线目标**：MIR 专属运行时崩溃 = 0、MIR 专属 gap = 0。
 
-#### 待修问题（未闭环）
-
-> 见 §16 开放风险与下方 BOTH_FAIL 余集。原记录的 #84 / #85 已于 2026-09-21 在本快照之后的编译器改动中闭合（见「已修 / 近期闭环」）。
-
-#### BOTH_FAIL 余集（约 11，按性质分类；需重扫校准）
+#### BOTH_FAIL 余集（4 条，按性质分类）
 
 | 类别 | 文件 | 性质 |
 |---|---|---|
-| FFI / 外部库 | `test-database-sql`、`test-ffi-mysql`、`test-ffi-sqlite`、`test-sse` | 需实现 FFI，非 MIR 缺口 |
-| 测试源与 std 漂移 | `test-json` | 修测试（`p.stringify` 3 参 vs 现行 `(node-idx i64)(out str)`），别改编译器 |
-| 深层运行时崩溃 | `test-https-server`、`test-x25519-fe-diag` | SIGSEGV / abort trap，需逐个挖 |
-| 有意死循环 | `test-for2` | rc=124，设计使然，不用修 |
-| 负测试 | `i.no` | `print(a.len())` 本就该编译失败 |
+| FFI / 外部库 + 接口分派 | `test-database-sql`、`test-ffi-mysql`、`test-ffi-sqlite` | 均报 `unknown callee sql.db.exec`。`sql.db`/`rows`/`stmt` 是**接口**（只声明方法）；具体实现在外部驱动（`example/sqlite-driver` 的 `db-sqlite sql.db`）。需实现接口分派 + C FFI 库链接（libsqlite3 / libmysqlclient），属**特性缺失**，非 MIR 缺口 |
+| 有意死循环 | `test-for2` | rc=124；源码全文为 `{ } (true)`（`while(true){}`），设计使然，不用修 |
 
 > ⚠️ **BOTH_FAIL 桶不比哈希**——“编译失败”与“编译成功但程序自己失败”被压成同一桶。判读必须直接 `diff` 指纹行，否则“编译失败”完全不可见。
-> ⚠️ 下列原记录项**已在本快照之后闭合**（2026-09-21 复测 rc=0、golden 已记 rc=0，不再属于 BOTH_FAIL）：`test-json-parse-option` / `test-json-nested-match`（原 #84 SIGSEGV）、`test-std-hash`（原 #85 家族 `des_block` NoVal）。
+
+#### 本轮（2026-09-21）由 rc≠0 转 rc=0 的条目（已更新 golden）
+
+| 文件 | 原 rc | 说明 |
+|---|---|---|
+| `test-x25519-fe-diag` | 1（abort trap） | **测试源漂移**：`fe-*` 的 std 签名是输出在前（`fe-add = (h []i64, f []i64, g []i64)`、`fe-frombytes = (h []i64, s [32]byte)`、`fe-tobytes = (s [32]byte, h []i64)`），而测试把输出写在**最后**，`fe-frombytes(BYTES, OUT)` 把 10 个 i64 limb 写进 32 字节数组 ⇒ 越界 ⇒ abort trap。已按 `scratch-fe.no` 的正确惯例把 8 处调用改为输出在前 |
+| `test-json-parse-option` | 1 | #84 闭合 |
+| `test-json`、`test-https-server`、`test-sse`、`i.no` | 1 | 随本轮编译器修复（module-namespace 方法 receiver 合成等）自然转 rc=0 |
+
+> ⚠️ 改测试前先确认 std 的**真实签名**，不要改编译器去迁就漂移的测试源。`i.no` 现输出 `3`（`'abc'.len()`），是正确行为，不是「接受了非法输入」。
 
 #### 已修 / 近期闭环
 
@@ -253,6 +262,7 @@ MIR 专属运行时崩溃与 gap 的修复目录共 **#1–#86**，截至 2026-0
 - **#84**（json 运行期 SIGSEGV，原待修）：`test-json-parse-option.no` / `test-json-nested-match.no` 在本快照之后的编译器改动中已复测 rc=0（golden 已记 rc=0），`json.parse('')` 早返回路径不再崩溃。
 - **#85**（静默错误编译根因，原待修）：底层 lowering 已随 `lowerCall` 的三档 `resTyp` 回退 + `EmitCallMulti`（所有非 void 调用都填充 `inst.Results`）闭合；复测 `i.to-str()` 正确输出、`test-std-hash` 哈希全部正确。`Inst.Sym` 字段本就存在（mir.go），文档「需补 Sym」的子注已过时。
 - **5 处同形状空守卫体 bug**（`src/std/{regexp,x509,multipart×2,sse}.no`，2026-09-21）：内联 guard arm 体为空、本应在其内的语句落在 arm 外，已修复并 `make no` 重建，std `no vet` 零 ERROR。
+- **`test-x25519-fe-diag` 测试源漂移**（2026-09-21）：`fe-*` std 签名为输出在前，测试却把输出写在最后；`fe-frombytes(BYTES, OUT)` 把 10 个 i64 limb 写进 32 字节数组 ⇒ 越界 ⇒ abort trap。已把 8 处调用改为输出在前（对齐 `scratch-fe.no` 惯例），rc 1→0，`FEADD=21118`/`FESUB=1104` 与手算一致。
 
 ---
 
@@ -264,7 +274,8 @@ MIR 专属运行时崩溃与 gap 的修复目录共 **#1–#86**，截至 2026-0
 - **checker 侧**：`ValidateUnhandledOverflow` 对未注解/未 `?=` 的算术报错（硬错阻断构建）；std 豁免已撤除，131 处已用 `#{overflow=wrap}` 修。
 - **MIR 侧**：HIR 算术节点已被打成 `?i64`，`OpOptionWrap` 构造 `{tag,payload}`；sink 站点（`emitIndexStore`/`emitSetField`）解包、算术/负号结果包回、`emitBitwise`、`print` payload 路由、`err/ok/some` 构造器 CALL 均已闭环。
 
-**剩余**（非算术的表达式路径，需在对应 emit 处加 `unwrapOptionOperand` + 包回）：字符串算术运算符重载推断 / async void 操作数 / struct-field-on-option GEP / void 数组 alloca。
+**剩余**（非算术的表达式路径，需在对应 emit 处加 `unwrapOptionOperand` + 包回）：字符串算术运算符重载推断 / async void 操作数 / void 数组 alloca。
+（struct-field-on-option GEP 已闭环：`emitGetField`/`emitSetField`/`lvalueAddrOf` 的 `?T.field` 一律走 `optPayloadTypedAddr`，装箱载荷自动解引用；`tests/test-opt-struct-field.no` 与 HEAD 输出逐字节一致。）
 
 ### NOLANG_MIR_DUMP_* 调试开关
 

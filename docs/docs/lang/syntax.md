@@ -1015,6 +1015,40 @@ outer: {
 > 不要在 match 之外使用 `it`。需要跨層使用時請存到具名變數（`doc = it`），或用析構綁定
 > `ok(v) -> ...` 把載荷綁到自己的名字上。
 
+### `it` 只能在「可證明是單一情況」的臂裡使用
+
+catch-all `->` 臂承接的是前面沒有被顯式臂認領的所有情況。只有當剩下的情況**恰好一種**
+時 `it` 才有單一明確的意義：
+
+```no
+; ✅ -> 就是 ok（nil / err 都已被認領）
+v: {
+    nil -> log('empty')
+    err -> log(it)
+    -> process(it)
+}
+
+; ✅ -> 就是 err（ok / nil 都已被認領）
+v: {
+    ok -> process(it)
+    nil -> log('empty')
+    -> log(it)
+}
+
+; ❌ -> 可能是 nil 也可能是 err —— 編譯錯誤
+v: {
+    ok -> process(it)
+    -> log(it)
+}
+```
+
+補上 `nil ->` / `err ->`，或改用 `ok ->`，即可通過。enum 與裸 match（`{ cond -> ... }`）
+不在此限：`it` 指的是被匹配的值本身，沒有 nil / err 的可能。
+
+> `err ->` 臂的 `it` **永遠是錯誤訊息（`str`）**，與 option 的元素型別無關——
+> `option { ok(v t), nil, err(e str) }`。所以就算匹配的是 `?i64` / `?bool` 這類
+> 純量 option，`err ->` 臂裡的 `it` 也是字串，可以直接 `msg = it`。
+
 ```no
 ; ✅ 組合 option 模式：nil || err -> body
 ; 當 option 為 nil 或 err 時共用同一個分支

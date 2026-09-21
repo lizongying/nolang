@@ -73,14 +73,9 @@ str-map.put = (key str, val str) (is-new bool) {
         #{index-out = 0}
         eq = .str-eq(.keys[idx], key)
         eq -> {
+            ; 直接指派；結構欄位寫入會深拷貝 inline str，不需要手動 .len + 逐字節拷貝
             #{index-out = 0}
             .vals[idx] = val
-            #{index-out = 0}
-            .vals[idx].len = val.len-bytes()
-            i <- [0..val.len-bytes()): {
-                #{index-out = 0}
-                .vals[idx][i] = val[i]
-            }
             is-new = false
             return
         }
@@ -90,23 +85,14 @@ str-map.put = (key str, val str) (is-new bool) {
     #{index-out = 0}
     } (.occ[idx] == 1)
 
-    ; 複製 key
+    ; 複製 key / val。
+    ; 不能用 `.keys[idx].len = key.len-bytes()` 再逐字節寫：`.len = n` 是裸欄位寫入，
+    ; 不會分配緩衝區，而新槽位的 keys[idx] 緩衝區還是 null，下一個 [i] = 會對 null
+    ; 做 GEP+store（SIGSEGV）。直接指派會深拷貝，才是正確寫法。
     #{index-out = 0}
-    .keys[idx].len = key.len-bytes()
-    i <- [0..key.len-bytes()): {
-        #{overflow=wrap}
-        #{index-out = 0}
-        .keys[idx][i] = key[i]
-    }
-
-    ; 複製 val
+    .keys[idx] = key
     #{index-out = 0}
-    .vals[idx].len = val.len-bytes()
-    i <- [0..val.len-bytes()): {
-        #{overflow=wrap}
-        #{index-out = 0}
-        .vals[idx][i] = val[i]
-    }
+    .vals[idx] = val
     #{index-out = 0}
     .occ[idx] = 1
     #{overflow=wrap}

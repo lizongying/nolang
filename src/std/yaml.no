@@ -2335,7 +2335,8 @@ yaml.i64 = () (val i64, ok bool) {
         return
     }
     k == YAML-KIND-FLOAT -> {
-        val = .pool.nodes[.root].fval
+        ; val 是 i64 出參，fval 是 f64：必須顯式轉換，不能靠隱式截斷
+        val = f64-to-i64(.pool.nodes[.root].fval)
         ok = true
     }
 }

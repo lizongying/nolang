@@ -2284,7 +2284,7 @@ func TestFormatMatch(t *testing.T) {
 			name: "deep nesting",
 			input: `
 test-match = () {
-    x ?i64
+    x ?str
 
     // 保存的時候會改變，不要變成if/else 修復它
     // 直接->是else
@@ -2301,10 +2301,10 @@ test-match = () {
         ok -> log(it)
     }
 
-    // 這裡-> 有else的意思
+    // 這裡-> 有else的意思；catch-all 臂讀 it 已不合法，故用字面量
     x: {
         ok -> log(it)
-        -> log(it)
+        -> log('none')
     }
 
     // 這是if/else
@@ -2315,7 +2315,7 @@ test-match = () {
 }
             `,
 			expected: `test-match = () {
-    x ?i64
+    x ?str
 
     ; 保存的時候會改變，不要變成if/else 修復它
     ; 直接->是else
@@ -2336,11 +2336,11 @@ test-match = () {
         ok -> log(it)
     }
 
-    ; 這裡-> 有else的意思
+    ; 這裡-> 有else的意思；catch-all 臂讀 it 已不合法，故用字面量
     x: {
         ok -> log(it)
 
-        -> log(it)
+        -> log('none')
     }
 
     ; 這是if/else
