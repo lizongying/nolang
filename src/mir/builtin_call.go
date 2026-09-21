@@ -1649,11 +1649,43 @@ func (c *codegen) emitBuiltinVecPush(inst *Inst) error {
 		elemV = c.txtValueFromStr(elemV)
 		elemTy = "%txt"
 	}
+	// `[]byte.push('a')` / `[]u8.push('x')`: the element is i8, but a single-char
+	// str literal/value lowers to %str-long. This is the push mirror of
+	// emitIndexStore's `strIntoByteElem` branch (`b[0] = 'a'` -> 97): take byte 0
+	// of the str. Without it the fallback below kept the ARGUMENT's %str-long as
+	// the element type, so push allocated a 24-byte stride for i8 elements and
+	// stored a 24-byte %str-long into it — heap corruption, not merely a wrong
+	// value. The guard further down then reported it as an error instead, but
+	// `b.push('a')` is a natural operation and has to work.
+	if elemLL == "i8" && elemTy == "%str-long" {
+		if dp := c.dataPtrOf(elem); dp != "" {
+			c.loadSeq++
+			by := fmt.Sprintf("%%vby%d", c.loadSeq)
+			c.sb.WriteString(fmt.Sprintf("  %s = load i8, i8* %s\n", by, dp))
+			elemV = by
+			elemTy = "i8"
+		}
+	}
 	if elemTy != elemLL {
 		if conv := c.coerce(elemTy, elemV, elemLL); conv != "" {
 			elemV = conv
+		} else if elemLL != "" && elemTy != "%option" && elemLL != "%option" &&
+			isScalarLLVM(elemLL) != isScalarLLVM(elemTy) {
+			// 純量 <-> 聚合且無轉換路徑（例如 `[]i64.push('x')`：引數是
+			// %str-long，元素是 i64）。此處**不能**沿用引數型別：那會讓 push
+			// 以 24 位元組步長寫入 8 位元組的元素，而索引路徑
+			// （emitIndex/emitIndexStore 用 elemTypeOfReceiver）仍以 8 位元組
+			// 讀 —— 正是本函式開頭警告的「寫讀寬度不一致」，且是堆溢位：
+			//   a []i64 = [1, 2, 3]
+			//   a.push('x')        ; 24 位元組寫進 8 位元組的 slot
+			// 實測 `signal: abort trap`（malloc 偵測到堆損壞）。舊行為下
+			// `no vet` 也是 0 error（內建方法引數不做型別檢查），所以這是
+			// 「vet 過、run 炸」的靜默記憶體錯誤。寧可在此明確拒絕。
+			c.fail("vec.push: cannot push a value of type '%s' into '%s': the element type is '%s' but the argument is '%s', and no conversion exists between them",
+				c.rawTypeOfValue(elem), c.rawTypeOfValue(recv), elemLL, elemTy)
+			return nil
 		} else {
-			// 無法轉換的元素（結構體、%option 等）：沿用引數值型別，
+			// 無法轉換的元素（結構體等）：沿用引數值型別，
 			// 保持與索引路徑相同的位元組寬度假設。
 			elemLL = elemTy
 		}

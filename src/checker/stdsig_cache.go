@@ -34,6 +34,11 @@ var (
 	embeddedStdSigKey        = ""
 	embeddedStdFuncSigs       = map[string][]string{}
 	embeddedStdMethodSigs    = map[string][]string{}
+	// Parameter-type tables, keyed exactly like the result tables above. They
+	// let the checker type-check std call ARGUMENTS (see checkCallArgsInExpr);
+	// with result types alone a method call's arguments were never visited.
+	embeddedStdFuncParams    = map[string][]string{}
+	embeddedStdMethodParams = map[string][]string{}
 	embeddedStdStructFields  = map[string]map[string]string{}
 	embeddedStdAliases       = map[string]string{}
 	embeddedStdStructMod     = map[string]string{}

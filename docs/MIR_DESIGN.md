@@ -101,7 +101,7 @@ type Type struct {
   - `sizeof(payload) > threshold`（或大小无法证明）→ **装箱**：`malloc` 一块堆内存，slot[0] 存其指针。读装箱载荷一律走 `optPayloadAddr` / `optPayloadAddrAs` / `optPayloadTypedAddr`。
   - ⚠️ 非装箱那一侧**不能**取 slot 地址：装箱载荷比 slot 大，从 slot 读它就是越界 `getelementptr inbounds` = UB，LLVM 会判定该分支不可达并把 load 提到分支之上，于是优化后解引用 err 消息当指针 → SIGSEGV（`-O0` 下完全正常，只在 `opt` 之后复现）。故那一侧指向一个 payload 大小的零常量 `@__nolang_opt_zero_<T>`。
   - ⚠️ "slot[0] 里是箱子吗" 要看 tag，而且**没有一个统一规则**：箱子是按「实际存进去的那个类型」的尺寸 malloc 的，所以只有 tag 与读取类型匹配时才能当作该类型解引用。详见 §4.2。
-  - 装箱载荷目前只可能是结构体（或阈值 < 24 时的 err 消息），而结构体不被 `ClassifyOwnership` 视为 owned，因此不会 drop → 不会 double free（也不会释放；`optBoxClone` 每次拷贝还会再 malloc 一块，属于已知的可接受泄漏）。
+  - **载荷所有权与释放见 §4.1.2**：`?T` 在「载荷本身 owned」或「载荷放不进 slot、必须堆装箱」时拥有堆，`insertDrops` 据此插 drop，`@__nolang_opt_drop_<payload>` 按 tag 释放载荷内容与箱子。（旧的「装箱载荷永不释放」泄漏已消除：实测 20 万次 `v ?big = b` + match 的常驻内存从 104.5 MB 降到 1.67 MB。）
 - `char` = **`i32`**：代表单个 Unicode 纯量码点（合法范围 `0 ..= 0x10FFFF`，21 bit 足够，无需 i64）。底层存储就是 i32（`codegen.llvmTypeOf`：`KindChar → "i32"`），**不是 i64**。
   - **唯一出现 i64 的地方是调用边界。** `@str_from_cp` 的 IR 签名取 `i64 %cp`（这是外部 runtime 函数的 ABI 约定），所以每个调用点把 char 的 i32 参数**零扩展**（`zext i32 → i64`）后再传入。这只是参数准备阶段的临时转换，**不改变 char 自身的类型与存储宽度**——形如 C 里 `char c='a'; f((long)c);`：变量仍是 1 字节，只是调用时临时提升。
   - 源码层签名写作 `str_from_cp(cp char) -> ?str`，参数类型是 `char`（i32）；i32→i64 的 zext 由 codegen 完成（`codegen.zextCharToI64`），用于两处：`strFromScalar`（char → str 隐式转换）与 `emitCall` 的 str 形参提升。
@@ -133,6 +133,60 @@ no build --option-inline-threshold=8   main.no   # 极小栈环境：option 只�
 
 > 阈值调小**不是免费的**：`?str`（24 字节）在阈值 < 24 时会变成堆装箱，每次 option 拷贝 `optBoxClone` 都会再 malloc 一块。调小前先确认目标场景真的缺栈空间。
 
+#### 4.1.2 option 载荷的所有权与释放（2026-09-21）
+
+**问题**：统一 32 字节布局下，放不进 slot 的载荷由 codegen `malloc` 装箱。旧实现里 `?T` 从不被认作 owned（`ClassifyOwnership` 不把结构体算作 owned），于是 `insertDrops` 不给 option 插 drop —— 装箱载荷**永不释放**，而且 `optBoxClone` 每次 option 拷贝还会再 malloc 一块。20 万次 `v ?big = b` + match 的实测常驻内存 104.5 MB（基线 1.67 MB）。
+
+**判定（`Module.OptionOwnsHeap`）**：`?T` 拥有堆，当且仅当
+
+1. 载荷本身 owned —— `ClassifyOwnership(elem)` 为真（`?str` / `?vec` / `?[]T` / `?map`）；**或**
+2. 载荷放不进 slot、必须堆装箱 —— `Module.OptionPayloadBoxed(elem)` 为真。这条让 `?big`（载荷是 POD 结构体、自身不 owned）也拥有那个 malloc 出来的箱子。
+
+`typeOwnsHeap` 在 `KindOption` 上分派到它，`insertDrops` 才会为 option 插 drop。`?i64` 两条都不满足，保留原来（正确）的 no-op drop。
+
+> ⚠️ `OptionPayloadBoxed` **走 emitter 自己的代码**（临时 `codegen` + `optionPayloadLLVMType` + `llvmTypeSizeUpper`），不重新实现一遍尺寸规则；而 slot 宽度的唯一来源是 `optionSlotBytesFor`，由 emitter 的 `initOptionSlot` 与分析共用。两侧若对「是否装箱」有分歧，就会出现一边 `free` 而另一边仍在共用同一个箱子。
+
+**释放（`@__nolang_opt_drop_<payload>`）**：helper 必须定义在函数体外（函数体内插新 basic block 会破坏 LLVM 验证），按 tag 分支：
+
+| tag | 动作 |
+|---|---|
+| 0（ok/some） | 先释放载荷内容：`%str-long` → `@str_free`；`%vec` → `free(data)`；带 owned 叶子的结构体 → `@__nolang_drop_<T>`。**装箱时**再 `free(box)`。 |
+| 2（err） | err 消息是 `%str-long`；**它自己也装箱时**（阈值 < 24）同样 `@str_free` + `free(box)`。 |
+| 1（nil） | 什么都不做。 |
+
+⚠️ **tag 守卫是必须的**：默认 slot 下 err 消息内联，它的前 8 字节是字符串**长度**，看起来与箱子指针一模一样。
+
+**为什么不会 double free**：箱子从不共享 —— wrap 每次新 `malloc`，option→option 拷贝在 `OpClone` 下由 `optBoxClone` 重新装箱并深拷。至于**载荷内容**是否共享，交给 `insertDrops` 既有的 liveness 规则（与普通结构体赋值同一套机制）：`moveStructSharesHeap` 通过 `optionCopySharesHeap` 认出两种「把共享堆的载荷存进 option」的形态 ——
+
+- **wrap**（`o ?T = x`，`OpOptionWrap`）：载荷是按位存入 box / inline slot 的，所以 option 的叶子别名 x 的；
+- **装箱的 option→option 拷贝**：`emitClone` 会重装箱（`optBoxClone`），所以这次拷贝并不消耗源。
+
+两种形态都按同一个规则处理：
+
+- 源**还活着** → 改写成 `OpClone`，`emitClone` 把载荷**深拷**进 option（`emitLeafFieldsClone` / `emitPtrFieldsClone`，或 option→option 走 `optBoxClone`），两侧各自拥有、各自 drop；
+- 源**已死** → 保持按位 move（真正的所有权转移）：`insertDrops` 的 `OpOptionWrap` 规则豁免源，option 的 drop 是唯一释放点。
+
+> **第三条路径是「剥壳」**（`x = opt`）：它不消耗 option，所以 option 仍然要 drop，剥出来的值就必须深拷（§4.3）。`err` 臂的 `it` 是这条路径上最容易漏的一种形态。
+
+> 反例（修前实测）：`o ?conn = c` 后 `c.path = 'second value'` 会 `str_free` 掉箱子仍指向的缓冲区，`print(o.path)` 读到 NUL；`o = c` 的重新赋值形态（`EmitMoveInto`）更直接印出空白 —— 都因为「分析说是 move、emitter 其实是浅拷贝」这一处不一致。
+
+> **末注 · 一个尚未修的既有坑（与本次改动无关）**：同一个 option 上再叠一次
+> option→option 拷贝，会让**更靠前**的那个 match 把载荷读成空串。最小重现：
+>
+> ```
+> o ?big = b               ; b.name = 'hello world'
+> o:  { -> print(it.name) }   ; 打印空行
+> print(b.name)               ; hello world
+> q ?big = o
+> q:  { -> print(it.name) }   ; hello world（后一个反而正常）
+> ```
+>
+> 去掉末尾的 `q ?big = o` 则前两行都正常。这一段 **HEAD 与修后输出逐字节一致**，
+> 所以是既有的 lowering 缺陷，不是本次改动引入的；`tests/test-opt-box-drop.no`
+> 刻意让每个小节用自己的一套变量，就是为了不把它写进回归测试的期望里。
+> （顺带一提：去掉那段拷贝后 HEAD 反而会印出空白的 `b.name` —— 那是 §4.1.2
+> 正文里「wrap 浅拷贝」那类旧 bug，本次一并修好了。）
+
 ### 4.2 装箱载荷的读取规则（`optPayloadAddrAs`）
 
 箱子是按「存进去的那个类型」的尺寸分配的，因此**"slot[0] 是不是我想要的那个箱子"必须同时看 tag 和读取类型**：
@@ -155,6 +209,9 @@ no build --option-inline-threshold=8   main.no   # 极小栈环境：option 只�
 
 - `payloadLT == "%str-long"` → `@str_clone`，副本拿到独立 buffer。
 - `payloadLT == "%vec"`（`?[]T`）→ `vecDeepClone`（见下）。
+- **err 消息的类型双关**：`dstT == "%str-long"` 而 `payloadLT != "%str-long"`（`?json` / `?i64` 这类 option 的 `err` 臂里 `it` 就是那条消息，而声明载荷是 ok 载荷的类型）→ 同样 `@str_clone`。`emitMove` 的剥壳分支按 `payloadLT` 选深拷方式，这条第三种形态曾经**漏掉**：读出来的 `%str-long` 直接按位存进目标，于是剥出来的 `it` 与 option 共用同一条消息 buffer，`drop it` 释放一次、option 自己的 drop 再释放一次 → `trace/BPT trap`。
+
+> 触发面比看起来大：任何返回 `err(...)` 的 std 调用（`json.parse('')` 就够）只要调用方 match 到 `err` 臂就会踩到，而修前 option 从不被 drop，所以这个缺陷一直只是潜伏（剥出来的副本释放了 buffer，option 留着悬垂指针）。`isOptionPeelMove` 让 option 保留所有权，就必须让剥壳目标真正拥有一份自己的内存 —— 三者缺一不可。
 
 **为什么 `%vec` 不能照抄 `@str_clone`**：`%vec = {i64 len, i64 cap, i64 data}` 是类型擦除的，`data` 只是个 i64。`len * sizeof(elem)` 和「元素自己是否还持有堆内存」两件事都只能从 MIR 的元素类型里问出来。所以 `vecDeepClone(elemType, depth)` 按**元素类型**特化出一份 helper（`@__nolang_vec_clone_<TypeID>_<depth>`，写进 `extraFuncsBody`，按需生成、去重）：
 

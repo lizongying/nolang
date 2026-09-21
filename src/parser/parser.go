@@ -198,6 +198,61 @@ func isFieldTypeStart(t lexer.TokenType) bool {
 	return false
 }
 
+// isStructFieldValueShape reports whether `tok3` (the token right after the
+// COLON of a `name : ...` member) begins a struct-literal field VALUE.
+//
+// This exists because the caller's shape list is a hand-maintained allowlist of
+// value shapes, and an incomplete one silently misclassifies the whole `{ ... }`
+// as a match block: only the FIRST field is inspected, so
+//
+//	P { items: [1, 2, 3] }      ; first field value starts with '[' → blockMatch
+//	P { name: 'x'  items: [1] } ; first field value is a literal → blockStruct
+//
+// behaved differently, and the first form reported "'P' is not defined".
+// `tok3 == LBRACE` is intentionally excluded: `name : {` is a labelled
+// block/match, not a struct literal.
+func isStructFieldValueShape(tok3, tok4 lexer.Token) bool {
+	switch tok3.Type {
+	// Value shapes that can only start an expression, never a match arm.
+	case lexer.LBRACKET, lexer.LPAREN, lexer.NOT, lexer.SUB,
+		lexer.UNDERSCORE, lexer.FLOAT, lexer.CHAR, lexer.REGEX:
+		return true
+	}
+	// name : <literal> <binop> ...   e.g. 1 + 2, 'a' - 'b' - 'c'
+	if isFieldValueStart(tok3.Type) && isBinaryOp(tok4.Type) {
+		return true
+	}
+	// name : <ident>[...]            e.g. arr[0], arr[0..2]
+	if tok3.Type == lexer.IDENT && tok4.Type == lexer.LBRACKET {
+		return true
+	}
+	return false
+}
+
+// isFieldValueStart reports whether t can begin the value expression of a
+// `name : value` struct-literal field.
+func isFieldValueStart(t lexer.TokenType) bool {
+	switch t {
+	case lexer.IDENT, lexer.INT, lexer.FLOAT, lexer.STRING, lexer.CHAR,
+		lexer.BYTE, lexer.REGEX, lexer.TRUE, lexer.FALSE, lexer.NIL,
+		lexer.LBRACKET, lexer.LPAREN, lexer.NOT, lexer.SUB, lexer.UNDERSCORE:
+		return true
+	}
+	return false
+}
+
+// isBinaryOp reports whether t is an infix binary operator.
+func isBinaryOp(t lexer.TokenType) bool {
+	switch t {
+	case lexer.ADD, lexer.SUB, lexer.MUL, lexer.QUO, lexer.MOD,
+		lexer.AND, lexer.OR, lexer.XOR, lexer.SHL, lexer.SHR,
+		lexer.EQUALS, lexer.NOT_EQUALS, lexer.LESS, lexer.LESS_EQUALS,
+		lexer.GREATER, lexer.GREATER_EQUALS, lexer.LAND, lexer.LOR:
+		return true
+	}
+	return false
+}
+
 // classifyBlock 分類 `{ body }` 的型別（預測：不消耗 token，只讀 peekToken）
 // 必須在 p.peekToken == LBRACE 時呼叫。
 // 使用有限預測：檢查 { 後第一個非 NEWLINE token + 第二個 token。
@@ -353,6 +408,18 @@ func (p *Parser) classifyBlock() blockType {
 			if tok4.Type == lexer.LBRACE {
 				return blockStruct
 			}
+		}
+		// Struct literal: name : <value expression>
+		//
+		// Only the FIRST field decides how the whole `{ ... }` is classified, and
+		// the shapes above only cover bare literals plus a few identifier-led
+		// expressions. Every other value shape fell through to blockMatch, so a
+		// struct literal whose first field was e.g. `items: [1, 2, 3]` was parsed
+		// as a match arm and the struct name was then reported as undefined
+		// ("'P' is not defined"). `name : {` is deliberately NOT covered here —
+		// that form is a labelled block/match.
+		if isStructFieldValueShape(tok3, tok4) {
+			return blockStruct
 		}
 		return blockMatch
 	case lexer.EQUALS, lexer.NOT_EQUALS, lexer.LESS, lexer.GREATER,
@@ -775,6 +842,18 @@ func (p *Parser) classifyBlockAtCurrent() blockType {
 			if tok4.Type == lexer.LBRACE {
 				return blockStruct
 			}
+		}
+		// Struct literal: name : <value expression>
+		//
+		// Only the FIRST field decides how the whole `{ ... }` is classified, and
+		// the shapes above only cover bare literals plus a few identifier-led
+		// expressions. Every other value shape fell through to blockMatch, so a
+		// struct literal whose first field was e.g. `items: [1, 2, 3]` was parsed
+		// as a match arm and the struct name was then reported as undefined
+		// ("'P' is not defined"). `name : {` is deliberately NOT covered here —
+		// that form is a labelled block/match.
+		if isStructFieldValueShape(tok3, tok4) {
+			return blockStruct
 		}
 		return blockMatch
 	case lexer.DOT:

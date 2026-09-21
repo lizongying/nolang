@@ -535,6 +535,40 @@ func (m *Module) readAfterInBlock(bid BlockID, after InstID, v ValueID) bool {
 	return false
 }
 
+// readNonDropAfterInBlock is readAfterInBlock minus OpDrop: it answers "is v's
+// DATA still used after this point", which is what decides clone-vs-transfer for
+// a bitwise-copied value. readAfterInBlock itself is left alone because the
+// struct-pointer path wants the conservative answer (any later mention).
+func (m *Module) readNonDropAfterInBlock(bid BlockID, after InstID, v ValueID) bool {
+	if v <= NoVal {
+		return false
+	}
+	blk := m.Block(bid)
+	if blk == nil {
+		return false
+	}
+	seen := false
+	for _, iid := range blk.Insts {
+		if iid == after {
+			seen = true
+			continue
+		}
+		if !seen {
+			continue
+		}
+		inst := m.Inst(iid)
+		if inst == nil || inst.Op == OpDrop {
+			continue
+		}
+		for _, a := range inst.Args {
+			if a == v {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 // moveStructHasPtrFields reports whether an OpMove's payload is a struct with
 // pointer-laid-out fields, i.e. whether a bitwise copy of it would make the
 // source and destination SHARE their pointees.
@@ -576,6 +610,25 @@ func (m *Module) moveStructHasPtrFields(f *Function, inst *Inst) bool {
 // leaving the copy sharing would make that free a use-after-free in BOTH switch
 // states, not just under the pointer layout.
 func (m *Module) moveStructSharesHeap(f *Function, inst *Inst) bool {
+	// A WRAP into an option (`o ?T = y`) shares heap for exactly the same
+	// reason a struct copy does: the payload is stored by a BITWISE copy
+	// (memcpy'd into the box, or straight into the inline slot), so the
+	// option's leaves and pointees alias y's. It therefore goes through the
+	// same liveness rule as any other heap-sharing copy — live source ->
+	// OpClone (emitClone deep-copies the payload into the option, so each side
+	// owns its memory and each is dropped once), dead source -> bitwise move (a
+	// real transfer: insertDrops' OpOptionWrap rule exempts the source and the
+	// option's drop is the single free site).
+	//
+	// This used to be excluded here, because emitClone's struct-clone paths
+	// resolve the SOURCE's struct key and memcpy the whole struct over the
+	// destination — which for a 32-byte %option writes the struct across the
+	// tag and slot, so `o = c` read back EMPTY (verified on HEAD). emitClone
+	// now has its own option branch and never routes a wrap through those
+	// paths, so the liveness rule is safe to apply.
+	if m.optionCopySharesHeap(f, inst) {
+		return true
+	}
 	if m.moveStructHasPtrFields(f, inst) {
 		return true
 	}
@@ -587,6 +640,106 @@ func (m *Module) moveStructSharesHeap(f *Function, inst *Inst) bool {
 		dst = inst.Args[1]
 	}
 	return m.typeIsLeafStruct(f, dst) || m.typeIsLeafStruct(f, inst.Args[0])
+}
+
+// optionCopySharesHeap reports whether inst STORES a heap-sharing payload into
+// an option — either shape:
+//
+//   - a WRAP (`o ?T = y`, OpOptionWrap): the payload is stored by a BITWISE
+//     copy (memcpy'd into the box, or straight into the inline slot), so the
+//     option's leaves and pointees alias y's.
+//   - an option-to-option copy of a BOXED payload: emitClone re-boxes it
+//     (optBoxClone — a fresh malloc plus a deep copy), so the copy does not
+//     consume the source.
+//
+// Both must go through the live-source liveness rule instead of being assumed
+// to consume the source; see the call site in moveStructSharesHeap.
+func (m *Module) optionCopySharesHeap(f *Function, inst *Inst) bool {
+	switch inst.Op {
+	case OpOptionWrap:
+		// `?str` / `?[]T` payloads are deliberately NOT included: the option's
+		// drop frees the payload itself and the wrap is the transfer that hands
+		// it over, so a bitwise move is exactly right there.
+		if len(inst.Args) == 0 || inst.Args[0] <= NoVal {
+			return false
+		}
+		src := m.valueTypeOf(f, inst.Args[0])
+		if src == nil || src.Kind != KindStruct {
+			return false
+		}
+		key := m.StructKeyOf(src.Raw)
+		return key != "" && (m.StructHasOwnedLeafFields(key) || m.StructHasPtrFields(key))
+	case OpMove:
+		if len(inst.Args) == 0 || inst.Args[0] <= NoVal {
+			return false
+		}
+		st := m.valueTypeOf(f, inst.Args[0])
+		if st == nil || st.Kind != KindOption {
+			return false
+		}
+		dst := inst.Dst
+		if dst == NoVal && len(inst.Args) >= 2 {
+			dst = inst.Args[1]
+		}
+		if dst <= NoVal {
+			return false
+		}
+		dt := m.valueTypeOf(f, dst)
+		if dt == nil || dt.Kind != KindOption {
+			return false
+		}
+		elem, ok := parseOptionElem(st.Raw)
+		if !ok {
+			return false
+		}
+		return m.OptionPayloadBoxed(elem)
+	}
+	return false
+}
+
+// moveStrSharesHeap reports whether an OpMove copies an owned `str` BITWISE,
+// which leaves the source and the destination pointing at the SAME heap buffer.
+//
+// %str-long = { i64 len, i64 cap, i8* data } and `data` is malloc'd, so a
+// load+store (what emitMove emits) duplicates the TRIPLE, not the bytes. That is
+// only safe when the source dies right there and hands its drop responsibility to
+// the destination; if the source is read again, both values' drops free the same
+// pointer.
+//
+// The classic repro is a loop re-assigning one string from another:
+//
+//	src str = 'hello'
+//	back str = 'seed'
+//	j <- [0..3): { back = src }
+//
+// Each iteration drops `back` (freeing the buffer that is also `src`'s) and then
+// bitwise-copies `src` into it again — iteration 2 frees src's buffer and
+// iteration 3 frees it a second time -> `trace/BPT trap`; with no reads in
+// between the symptom is just `back.len() == 0`. i64 and %txt are unaffected:
+// neither owns heap (i64 is scalar, %txt keeps its bytes inline).
+func (m *Module) moveStrSharesHeap(f *Function, inst *Inst) bool {
+	if inst.Op != OpMove || len(inst.Args) == 0 {
+		return false
+	}
+	src := inst.Args[0]
+	if src <= NoVal {
+		return false
+	}
+	dst := inst.Dst
+	if dst == NoVal && len(inst.Args) >= 2 {
+		dst = inst.Args[1]
+	}
+	if dst <= NoVal || dst == src {
+		return false
+	}
+	return m.typeIsOwnedStr(f, src) && m.typeIsOwnedStr(f, dst)
+}
+
+// typeIsOwnedStr reports whether v is an owned `str` — i.e. a %str-long whose
+// `data` pointer is a heap allocation this value is responsible for freeing.
+func (m *Module) typeIsOwnedStr(f *Function, v ValueID) bool {
+	t := m.valueTypeOf(f, v)
+	return t != nil && t.Kind == KindStr && t.Owned
 }
 
 // typeIsLeafStruct reports whether value v has a struct type with an inline
@@ -784,6 +937,29 @@ func (m *Module) insertDrops(f *Function, rep *Report) {
 			// op does not invalidate the liveness sets computed above.
 			if m.moveStructSharesHeap(f, inst) {
 				if liveOut[bid][inst.Args[0]] || m.readAfterInBlock(bid, iid, inst.Args[0]) {
+					inst.Op = OpClone
+				} else {
+					moveSrc[inst.Args[0]] = true
+				}
+				continue
+			}
+			// Same question, one level down: a plain `str` move. A %str-long
+			// bitwise copy shares the heap buffer, so it is only safe when the
+			// source is provably dead here. When the source is still live (the
+			// loop case in moveStrSharesHeap's comment) rewrite to OpClone:
+			// emitClone deep-copies through @str_clone, and because
+			// isTransferringMove only recognises OpMove, BOTH sides keep their
+			// drop and each frees its own buffer.
+			if m.moveStrSharesHeap(f, inst) {
+				// A later OpDrop of the source does NOT count as "still live":
+				// that is the source releasing its own ownership, not a use of
+				// the bytes. Counting it would clone on `w = v` followed by
+				// `drop v`, which is the transfer case the use-after-move check
+				// exists to catch (and TestAnalyzeUseAfterMoveDetected asserts).
+				// Every other later use — including the source being read again
+				// as the next iteration's move source — is a genuine read and
+				// forces a clone.
+				if liveOut[bid][inst.Args[0]] || m.readNonDropAfterInBlock(bid, iid, inst.Args[0]) {
 					inst.Op = OpClone
 				} else {
 					moveSrc[inst.Args[0]] = true
@@ -1177,16 +1353,39 @@ func equalSet(a, b valueSet) bool {
 // followed by `v.len().to-str()` (which peels) and then `v[0]` read freed memory
 // and printed 0. The option keeps ownership and frees the payload exactly once
 // on its own drop; isBorrowRead exempts the extracted copy (no @vec_clone).
+// isOptionPeelMove reports whether inst is the option PEEL shape `x = opt`,
+// i.e. a move out of an option into a NON-option destination.
+//
+// A peel does not consume the option. emitMove's peel branch gives the
+// destination its OWN copy of the payload (@str_clone for `?str`, vecDeepClone
+// for `?[]T`, plus a leaf/pointee deep copy for a struct payload), and the
+// option keeps its payload — it may be peeled again (str.replace-n unwraps the
+// same `?str` twice) and it drops on its own. So the option must NOT be exempt
+// from dropping, which is what returning true here achieves.
+//
+// The test used to be "the destination is a slice", which left every other peel
+// — including `it.pad[0]` on a `?big` match arm — marking the option as a move
+// source and suppressing its drop. With a boxed payload that meant the box was
+// never freed: 200k iterations of `v ?big = b` leaked 104 MB.
 func (m *Module) isOptionPeelMove(f *Function, inst *Inst) bool {
-	if inst == nil || inst.Op != OpMove || len(inst.Args) == 0 || inst.Args[0] <= NoVal || inst.Dst <= NoVal {
+	if inst == nil || inst.Op != OpMove || len(inst.Args) == 0 || inst.Args[0] <= NoVal {
 		return false
 	}
 	st := m.valueTypeOf(f, inst.Args[0])
 	if st == nil || st.Kind != KindOption {
 		return false
 	}
-	dt := m.valueTypeOf(f, inst.Dst)
-	return dt != nil && dt.Kind == KindSlice
+	// Both OpMove shapes: `dst = src` (Dst set) and EmitMoveInto (Dst NoVal,
+	// destination in Args[1]).
+	dst := inst.Dst
+	if dst == NoVal && len(inst.Args) >= 2 {
+		dst = inst.Args[1]
+	}
+	if dst <= NoVal {
+		return false
+	}
+	dt := m.valueTypeOf(f, dst)
+	return dt != nil && dt.Kind != KindOption
 }
 
 func isTransferringMove(inst *Inst) bool {

@@ -24,6 +24,17 @@ type SymbolTable struct {
 	// Methods maps "module.name" to its result type list, plus the bare
 	// dotted name when the method name already carries a receiver prefix.
 	Methods map[string][]string
+	// FuncParams maps "module.fn" to its PARAMETER type list, keyed exactly
+	// like Funcs. The receiver is never included: a method's `self` is a
+	// KResult, not a KParam (see the KFuncDef case in collectInto).
+	//
+	// This is what lets the checker type-check std call ARGUMENTS. The result
+	// tables alone only tell it what a call returns, so a call like
+	// `t.eq([1,2,3])` on a `[]i64` went completely unchecked.
+	FuncParams map[string][]string
+	// MethodParams maps "module.name" to its parameter type list, keyed
+	// exactly like Methods.
+	MethodParams map[string][]string
 	// Structs maps a struct name to its field name -> type string map.
 	// Names that several modules define are additionally registered under
 	// "module.name".
@@ -38,12 +49,14 @@ type SymbolTable struct {
 
 func NewSymbolTable() *SymbolTable {
 	return &SymbolTable{
-		Funcs:     make(map[string][]string),
-		Methods:   make(map[string][]string),
-		Structs:   make(map[string]map[string]string),
-		Aliases:   make(map[string]string),
-		StructMod: make(map[string]string),
-		Enums:     make(map[string][]string),
+		Funcs:        make(map[string][]string),
+		Methods:      make(map[string][]string),
+		FuncParams:   make(map[string][]string),
+		MethodParams: make(map[string][]string),
+		Structs:      make(map[string]map[string]string),
+		Aliases:      make(map[string]string),
+		StructMod:    make(map[string]string),
+		Enums:        make(map[string][]string),
 	}
 }
 
@@ -150,20 +163,37 @@ func collectInto(st *SymbolTable, pkg *Package, moduleShort string, structCount 
 				}
 				rets = append(rets, qualify(pkg.Type(pkg.Nodes[c].Type)))
 			}
+			// Parameter type list, collected over the SAME child iteration
+			// order as the results so the two stay index-aligned with the
+			// declaration. A KParam is never the receiver (that is the
+			// "self" KResult skipped above), so params[0] is the first real
+			// argument. Always non-nil so a zero-arg function stays
+			// distinguishable from an absent key.
+			params := make([]string, 0)
+			for c := n.First; c != NoID; c = pkg.Nodes[c].Next {
+				if pkg.Nodes[c].Kind != KParam {
+					continue
+				}
+				params = append(params, qualify(pkg.Type(pkg.Nodes[c].Type)))
+			}
 			switch {
 			case !isMethod:
 				st.Funcs[moduleShort+"."+name] = rets
+				st.FuncParams[moduleShort+"."+name] = params
 			case strings.HasPrefix(name, "["):
 				// Receiver-generic array/slice method: the receiver is part
 				// of the name, so the bare name is already unique.
 				st.Funcs[name] = rets
+				st.FuncParams[name] = params
 			default:
 				st.Methods[moduleShort+"."+name] = rets
+				st.MethodParams[moduleShort+"."+name] = params
 				// A name that already carries a receiver prefix
 				// ("str.starts-with") is also registered bare so that type
 				// inference can look it up as receiverType + "." + property.
 				if strings.Contains(name, ".") {
 					st.Methods[name] = rets
+					st.MethodParams[name] = params
 				}
 			}
 
@@ -231,6 +261,16 @@ func (dst *SymbolTable) Merge(src *SymbolTable) {
 	for k, v := range src.Methods {
 		if _, ok := dst.Methods[k]; !ok {
 			dst.Methods[k] = v
+		}
+	}
+	for k, v := range src.FuncParams {
+		if _, ok := dst.FuncParams[k]; !ok {
+			dst.FuncParams[k] = v
+		}
+	}
+	for k, v := range src.MethodParams {
+		if _, ok := dst.MethodParams[k]; !ok {
+			dst.MethodParams[k] = v
 		}
 	}
 	for k, v := range src.Structs {

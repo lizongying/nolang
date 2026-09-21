@@ -1,0 +1,144 @@
+; test-opt-box-drop — ?T 的装箱载荷（以及载荷内容）必须被释放
+;
+; 为什么需要这个测试：统一 32 字节 %option 布局下，放不进 slot 的载荷由 codegen
+; malloc 装箱。2026-09-21 之前 `?T` 从不被认作 owned（ClassifyOwnership 不把结构体
+; 算作 owned），于是 insertDrops 不给 option 插 drop —— 装箱载荷**永不释放**，
+; 而且 optBoxClone 每次 option 拷贝还会再 malloc 一块。
+;
+; 修法见 docs/MIR_DESIGN.md §4.1.2：
+;   - Module.OptionOwnsHeap 把「载荷本身 owned」与「载荷必须堆装箱」都算作拥有堆；
+;   - @__nolang_opt_drop_<payload> 按 tag 释放载荷内容与箱子（tag 1 = nil 不动；
+;     默认 slot 下 err 消息内联，其前 8 字节是字符串长度而非箱子指针，所以 tag
+;     守卫必须留着）；
+;   - 载荷内容是否共享交给 insertDrops 既有的 liveness 规则（optionCopySharesHeap）：
+;     源还活着 -> OpClone 深拷进 option；源已死 -> 按位 move（所有权转移）；
+;   - 剥壳（x = opt）**不消耗** option，所以剥出来的值必须自己拥有一份内存
+;     （§4.3）：?str -> @str_clone、?[]T -> vecDeepClone，以及 err 臂的 it
+;     （类型双关出来的 %str-long）同样要 @str_clone —— 否则 option 与 it 共用
+;     同一条消息 buffer，两边各释放一次。
+;
+; 本测试是行为 + 内存双重回归：末尾两个大循环若重新开始泄漏，RSS 会明显上涨
+;（修前 20 万次约 104 MB，修后约 1.7 MB）。
+;
+; 注意：每个小节刻意用自己的一套变量。同一 option 上再叠一次 option->option
+; 拷贝会触发一个**既有的** match 读取异常（与本次改动无关：HEAD 与修后输出
+; 完全一致，见 §4.1.2 末注），所以不把它写进本回归测试的期望里。
+
+print('=== opt box drop ===')
+
+; big 是 24 + 32 = 56 字节 > 默认阈值 24 -> 装箱，且带一个 owned 的 str 叶子
+big {
+    name str
+    pad [4]i64
+}
+; person 正好 24 字节 -> 内联，不装箱
+person { name str }
+
+print('--- boxed payload round-trip ---')
+b big
+b.name = 'hello world'
+b.pad[0] = 7
+o ?big = b
+o: {
+    err -> { print('err') }
+    nil -> { print('nil') }
+    -> {
+        print(it.name)
+        print(it.pad[0])
+    }
+}
+; 源在 wrap 之后仍被读取 -> 必须是深拷，两边各自拥有自己的 name
+print(b.name)
+
+print('--- option -> option copy, both sides live ---')
+sb big
+sb.name = 'copy me'
+o1 ?big = sb
+q1 ?big = o1
+print(q1.name)
+print(o1.name)
+
+print('--- inline payload (?person 不装箱) ---')
+p person
+p.name = 'inline'
+ip ?person = p
+ip: {
+    err -> { print('err') }
+    nil -> { print('nil') }
+    -> { print(it.name) }
+}
+print(p.name)
+
+print('--- wrap into an already-bound option (EmitMoveInto shape) ---')
+c big
+c.name = 'first'
+w ?big
+w = c
+w: {
+    err -> { print('err') }
+    nil -> { print('nil') }
+    -> { print(it.name) }
+}
+
+print('--- err message in a narrow option ---')
+e ?i64 = err('boom')
+e: {
+    err -> { print('got err') }
+    nil -> { print('nil') }
+    -> { print(it) }
+}
+
+print('--- 200000 boxed wraps in a loop (leak / double-free stress) ---')
+t i64 = 0
+j <- [0..200000): {
+    bb big
+    bb.name = 'loop'
+    bb.pad[0] = 3
+    v ?big = bb
+    v: {
+        err -> { t = t }
+        nil -> { t = t }
+        -> { t = it.pad[0] }
+    }
+}
+print(t)
+
+print('--- 50000 boxed option -> option copies ---')
+s2 big
+s2.name = 'seed'
+o2 ?big = s2
+u i64 = 0
+k <- [0..50000): {
+    q2 ?big = o2
+    q2: {
+        err -> { u = u }
+        nil -> { u = u }
+        -> { u = it.pad[0] }
+    }
+}
+print(u)
+print(o2.name)
+
+print('--- err arm of a std call: it must own its own message ---')
+; json.parse('') 返回 err，调用方 match 到 err 臂。剥出来的 it 是 option 载荷的
+; 按位副本，而 option 自己仍然要 drop —— 修前两者共用同一条消息 buffer：drop it
+; 释放一次、option 的 drop 再释放一次 -> trace/BPT trap。这不是边角情形：
+; 任何返回 err(...) 的 std 调用只要被 match 到 err 臂就会踩到
+;（tests/mem-safety/test-json-parse-option.no 与 tests/test-sse.no 就是这么挂的）。
+; 见 docs/MIR_DESIGN.md §4.3。
+j1 = json.parse('')
+j1: {
+    ok -> { print('fail: expected err') }
+    nil -> { print('fail: expected err') }
+    err -> { print(it) }
+}
+
+print('--- err arm without reading it ---')
+j2 = json.parse('')
+j2: {
+    ok -> { print('fail: expected err') }
+    nil -> { print('fail: expected err') }
+    err -> { print('err arm') }
+}
+
+print('=== done ===')

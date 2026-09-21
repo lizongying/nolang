@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 
 	"github.com/lizongying/nolang/builtin"
 	"github.com/lizongying/nolang/cache"
@@ -1201,6 +1202,332 @@ func uint64FromLiteral(expr parser.Expression) (uint64, bool) {
 	}
 	return 0, false
 }
+
+// genericElemOfKey returns the type variable of a receiver-generic std method
+// key, e.g. "[]t.eq" -> "t". It returns "" for every concrete key ("[]byte.index",
+// "str.starts-with", "json.get-str"), which is what marks those as checkable.
+//
+// A type variable is a single lowercase letter; a concrete element is a real
+// type name ("byte", "str", "char", "ord"), so the length test separates them.
+func genericElemOfKey(key string) string {
+	dot := strings.Index(key, ".")
+	if dot < 0 {
+		return ""
+	}
+	// A slice type is written `[]T` — empty brackets FOLLOWED by the element
+	// (NOT `[T]`) — so the element starts at index 2 of the receiver part.
+	recv := key[:dot]
+	if !strings.HasPrefix(recv, "[]") {
+		return ""
+	}
+	elem := recv[2:]
+	if len(elem) != 1 || elem[0] < 'a' || elem[0] > 'z' {
+		return ""
+	}
+	return elem
+}
+
+// isTypeIdentByte reports whether c can appear inside a nolang type/identifier
+// name. Type names may contain '-' (e.g. "server-conn"), so it counts too.
+func isTypeIdentByte(c byte) bool {
+	return c == '_' || c == '-' ||
+		(c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9')
+}
+
+// stdStructMethodMods indexes "struct.method" -> the set of std modules that
+// define it, built from the MODULE-QUALIFIED keys ("tls.server-conn.send").
+//
+// Several std modules define the same bare struct name (server-conn lives in
+// tls, ws and sse; conn lives in net and tls). The signature table registers a
+// bare "server-conn.send" too, but it is last-wins over those modules, so its
+// parameter types belong to whichever module happened to be merged last.
+// Resolving a call through such a key reports the wrong expected type — a
+// `str` argument flagged against the `i64` parameter of another module's
+// send(). Anything with more than one owning module is therefore treated as
+// unresolvable rather than guessed at.
+var (
+	stdStructMethodMods     map[string]map[string]bool
+	stdStructMethodModsOnce sync.Once
+)
+
+func initStdStructMethodMods() {
+	stdStructMethodModsOnce.Do(func() {
+		stdStructMethodMods = make(map[string]map[string]bool)
+		record := func(key string) {
+			dot := strings.Index(key, ".")
+			if dot < 0 {
+				return
+			}
+			rest := key[dot+1:]
+			// Only "module.struct.method" shape qualifies; "module.method"
+			// has no second dot and is not a struct method.
+			if !strings.Contains(rest, ".") {
+				return
+			}
+			if stdStructMethodMods[rest] == nil {
+				stdStructMethodMods[rest] = make(map[string]bool)
+			}
+			stdStructMethodMods[rest][key[:dot]] = true
+		}
+		CollectStdModuleSignatures() // warm the caches (sync.Once)
+		for k := range stdMethodParamsCache {
+			record(k)
+		}
+		for k := range stdFuncParamsCache {
+			record(k)
+		}
+	})
+}
+
+// structMethodIsAmbiguous reports whether "struct.method" is defined by more
+// than one std module, which makes its bare table entry untrustworthy.
+func structMethodIsAmbiguous(key string) bool {
+	initStdStructMethodMods()
+	return len(stdStructMethodMods[key]) > 1
+}
+
+// sliceElemOf returns the element type of an array/slice type: "[]i64" -> "i64",
+// "[3]i64" -> "i64".
+//
+// It deliberately returns "" for anything whose element is not knowable:
+//
+//   - a MAP is written "[K]V" — it also starts with '[', but a non-numeric key
+//     means there is no element type (and no generic slice method applies);
+//   - the builtin "vec" has no element at all. THIS is the case that must not
+//     be inferred: a slice read as `vec` carries no element information, so any
+//     parameter check built on it would be a guess.
+func sliceElemOf(t string) string {
+	if strings.HasPrefix(t, "[]") {
+		return t[2:]
+	}
+	if !strings.HasPrefix(t, "[") {
+		return ""
+	}
+	idx := strings.Index(t, "]")
+	if idx <= 1 {
+		return ""
+	}
+	key := t[1:idx]
+	for i := 0; i < len(key); i++ {
+		if key[i] < '0' || key[i] > '9' {
+			return "" // not "[N]T" — a map key, so no element type
+		}
+	}
+	return t[idx+1:]
+}
+
+// substituteTypeVar replaces every whole-token occurrence of the type variable
+// `tv` in `t` with `elem`: with tv="t" and elem="i64", "t" -> "i64",
+// "[]t" -> "[]i64", "?t" -> "?i64", and "txt"/"i64" are left alone.
+func substituteTypeVar(t, tv, elem string) string {
+	var b strings.Builder
+	start := -1
+	for i := 0; i <= len(t); i++ {
+		if i < len(t) && isTypeIdentByte(t[i]) {
+			if start < 0 {
+				start = i
+			}
+			continue
+		}
+		if start >= 0 {
+			if tok := t[start:i]; tok == tv {
+				b.WriteString(elem)
+			} else {
+				b.WriteString(tok)
+			}
+			start = -1
+		}
+		if i < len(t) {
+			b.WriteByte(t[i])
+		}
+	}
+	return b.String()
+}
+
+// stdMethodParamTypes resolves the declared parameter types of a std call
+// `recv.method(...)`. It returns the parameter list, the key it was found
+// under (the key decides whether a parameter is still generic), and whether the
+// types came from the builtin registry rather than a std declaration.
+//
+// `storage` matters because a builtin-only method has no declared signature:
+// its parameter types describe the STORAGE SHAPE the codegen writes, so an
+// integer argument is simply narrowed/widened to the element stride and is not
+// a type error (see builtinSliceMethodParamTypes).
+func stdMethodParamTypes(recvType, method string) ([]string, string, bool) {
+	if recvType == "" || method == "" {
+		return nil, "", false
+	}
+	CollectStdModuleSignatures() // warm the caches (sync.Once)
+	keys := make([]string, 0, 3)
+	keys = append(keys, recvType+"."+method)
+	// Receiver-generic fallback: `[]t.eq` is registered under the literal
+	// element name `t`, so a concrete slice receiver (`[]i64`) resolves here.
+	//
+	// Must test for the TWO characters "[]": a slice is empty brackets followed
+	// by the element. A map is written `[K]V`, which also starts with '[' but
+	// is NOT a slice — routing `[str]i64.remove` through `[]t.remove` picked
+	// up the slice index parameter (i64) and flagged the map's str KEY.
+	if strings.HasPrefix(recvType, "[]") {
+		keys = append(keys, "[]t."+method)
+	}
+	for _, key := range keys {
+		if structMethodIsAmbiguous(key) {
+			continue // several modules define it: parameters are a coin flip
+		}
+		if params, ok := stdMethodParamsCache[key]; ok {
+			return params, key, false
+		}
+		if params, ok := stdFuncParamsCache[key]; ok {
+			return params, key, false
+		}
+	}
+	params, key := builtinSliceMethodParamTypes(recvType, method)
+	return params, key, len(params) > 0
+}
+
+// builtinSliceMethodParamTypes resolves a slice method that exists ONLY in the
+// builtin registry (src/builtin/vec.go) and therefore has no std declaration
+// and never reaches the signature tables.
+//
+// The std tables already cover every slice method that takes a value EXCEPT
+// push: std/vec.no declares []t.pop / []t.insert / []t.remove / []t.truncate
+// itself, and there the index-vs-element distinction is written literally
+// (`[]t.insert = (i i64, val t)`), so `[]str.remove(0)` is checked as an i64
+// index and passes. push is NOT declared in std — it is a global `#{buildin}`
+// stub (`vec-push = (val t)`) precisely so that no `[]t.push` method body is
+// created — and clear/sort-asc/sort-desc take no arguments, so push is the
+// only builtin-only method with anything to check.
+//
+// The types come from BuiltinMethod.ElemParams, NOT from BuiltinMethod.Params:
+// Params records i64 for every such parameter because the registry is
+// element-type-agnostic, so substituting the element type into it would reject
+// a legal `[]str.remove(0)` — that is precisely the reason this table used to
+// be considered unhookable. ElemParams marks which positions are the
+// receiver's element; unmarked positions keep their scalar type.
+//
+// The types describe the STORAGE SHAPE, not a declared signature: codegen
+// derives the push stride from the receiver's element type
+// (emitBuiltinVecPush / elemTypeOfReceiver, pinned by
+// tests/test-push-narrow.no), so pushing an i64 into a []byte truncates to one
+// byte by design. src/std relies on that (zip-writer.put takes `b i64` and
+// pushes it into a []byte), so integer-vs-integer is not reported as an error
+// here — only a mismatch of KIND is (see checkStdMethodCallArgs).
+func builtinSliceMethodParamTypes(recvType, method string) ([]string, string) {
+	if !strings.HasPrefix(recvType, "[]") {
+		return nil, "" // not a slice: no element to substitute
+	}
+	key := "[]t." + method
+	bm := builtin.FindBuiltinMethod(key)
+	if bm == nil || len(bm.Params) == 0 {
+		return nil, ""
+	}
+	params := make([]string, len(bm.Params))
+	for i := range params {
+		if i < len(bm.ElemParams) && bm.ElemParams[i] {
+			params[i] = "t" // the receiver's element type
+			continue
+		}
+		params[i] = bm.Params[i].String()
+	}
+	// Returning the receiver-generic key is what makes the caller substitute
+	// the element type from the receiver (see genericElemOfKey).
+	return params, key
+}
+
+// isIntegerTypeName reports whether t is one of the integer types (including
+// the aliases byte/char and u8..u64). It is used to tell "the same kind stored
+// at a different stride" apart from a genuine type mismatch.
+func isIntegerTypeName(t string) bool {
+	_, _, ok := intTypeRange(t)
+	return ok
+}
+
+// checkStdMethodCallArgs type-checks the arguments of `recv.method(args)`
+// against the std signature tables.
+//
+// The deliberate rule here is DO NOT INFER. A receiver-generic method such as
+// `[]t.eq` declares its parameter as `[]t`; at a `[]i64` call site the element
+// type is only recoverable by substituting into the receiver, and any guess
+// (notably reading a slice as the builtin `vec`) produces false diagnostics.
+// Parameters that still mention the type variable are therefore skipped rather
+// than checked. Only fully concrete parameters — `[]byte.index` expecting
+// `str`, `[]str.join` expecting `str` — are verified.
+func checkStdMethodCallArgs(e *parser.CallExpression, dot *parser.DotExpression, varTypes map[string]string, structFields map[string]map[string]string) []ValidateResult {
+	if dot == nil || len(e.Arguments) == 0 {
+		return nil
+	}
+	recvType := resolveExprType(dot.Receiver, varTypes, structFields)
+	params, key, storage := stdMethodParamTypes(recvType, dot.Property)
+	if len(params) == 0 {
+		return nil
+	}
+	var results []ValidateResult
+	for i, arg := range e.Arguments {
+		if i >= len(params) {
+			break
+		}
+		paramType := params[i]
+		if paramType == "" {
+			continue // unnamed / untyped parameter in the std source
+		}
+		if tv := genericElemOfKey(key); tv != "" {
+			// Receiver-generic method (`[]t.eq`). The element type is DERIVED
+			// from the receiver, not guessed: "[]i64" pins t = i64. When the
+			// receiver carries no element — a map, or the builtin `vec` — there
+			// is nothing to substitute and the parameter is skipped. Reading a
+			// slice as `vec` and then checking against it is exactly the
+			// mis-inference this must never do.
+			elem := sliceElemOf(recvType)
+			if elem == "" {
+				continue
+			}
+			paramType = substituteTypeVar(paramType, tv, elem)
+			if paramType == "" {
+				continue
+			}
+		}
+		argType := resolveExprType(arg, varTypes, structFields)
+		if argType == "" {
+			continue // unknown argument type: nothing to assert
+		}
+		// `storage` types describe the builtin's STORAGE SHAPE, not a declared
+		// signature, and the codegen stores the value at the receiver's element
+		// stride — an i64 pushed into a []byte is truncated to one byte by
+		// design. Integer-vs-integer is therefore never an error there; only a
+		// mismatch of KIND is reported (a str pushed into a []i64 and friends).
+		if storage && isIntegerTypeName(paramType) && isIntegerTypeName(argType) {
+			continue
+		}
+		// An option-typed argument is also skipped. varTypes does not always
+		// track that a `?T` was already unwrapped by an enclosing `ok ->` arm,
+		// so asserting on it here reports real std calls as errors (net.no's
+		// `e.init(c, key)` was flagged this way). The dedicated option rule
+		// (fxxoptarg) already covers user-defined calls, where the flow is
+		// known precisely.
+		if strings.HasPrefix(argType, "?") {
+			continue
+		}
+		if typeNamesEquivalent(paramType, argType) {
+			continue
+		}
+		if isArgTypeCompatible(paramType, argType, arg) {
+			continue
+		}
+		line, col := e.Token.Line, e.Token.Column
+		if p := arg.Pos(); p.Line > 0 {
+			line, col = p.Line, p.Column
+		}
+		results = append(results, ValidateResult{
+			TraceID: "stdargtyp",
+			Line:    line,
+			Column:  col,
+			Message: fmt.Sprintf("argument %d of '%s.%s': expected '%s', got '%s'",
+				i+1, recvType, dot.Property, paramType, argType),
+		})
+	}
+	return results
+}
+
 func checkCallArgsInExpr(expr parser.Expression, sigs map[string]*funcSig, varTypes map[string]string, structFields map[string]map[string]string, underUnwrap bool) []ValidateResult {
 	if expr == nil {
 		return nil
@@ -1328,6 +1655,12 @@ func checkCallArgsInExpr(expr parser.Expression, sigs map[string]*funcSig, varTy
 					}
 				}
 			}
+		} else if dot, ok := e.Function.(*parser.DotExpression); ok {
+			// `recv.method(args)`: the callee is a DotExpression, which the
+			// branch above does not handle, so method arguments used to go
+			// completely unchecked. The std signature tables now carry
+			// parameter types, so they can be checked here.
+			results = append(results, checkStdMethodCallArgs(e, dot, varTypes, structFields)...)
 		}
 		// Recurse into arguments for nested calls
 		for _, arg := range e.Arguments {

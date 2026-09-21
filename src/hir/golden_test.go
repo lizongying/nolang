@@ -67,7 +67,7 @@ func stdModules(t *testing.T) []hir.ModulePackage {
 // migration: all six signature tables, produced from HIR slices, must equal
 // the ones the checker produces by parsing.
 func TestSignatureTablesMatchChecker(t *testing.T) {
-	wantFuncs, wantMethods, wantStructs, wantAliases, wantStructMod, wantEnums, err :=
+	wantFuncs, wantMethods, wantFuncParams, wantMethodParams, wantStructs, wantAliases, wantStructMod, wantEnums, err :=
 		checker.CollectStdSigsFromFS(nolang.StdFS)
 	if err != nil {
 		t.Fatalf("checker.CollectStdSigsFromFS: %v", err)
@@ -85,14 +85,22 @@ func TestSignatureTablesMatchChecker(t *testing.T) {
 
 	diffStringSliceMap(t, "Funcs", wantFuncs, got.Funcs)
 	diffStringSliceMap(t, "Methods", wantMethods, got.Methods)
+	diffStringSliceMap(t, "FuncParams", wantFuncParams, got.FuncParams)
+	diffStringSliceMap(t, "MethodParams", wantMethodParams, got.MethodParams)
 	diffStringMap(t, "Aliases", wantAliases, got.Aliases)
 	diffStringMap(t, "StructMod", wantStructMod, got.StructMod)
 	diffStringSliceMap(t, "Enums", wantEnums, got.Enums)
 	diffStructFields(t, wantStructs, got.Structs)
 
-	t.Logf("compared %d funcs, %d methods, %d structs, %d aliases, %d structMod, %d enums",
-		len(wantFuncs), len(wantMethods), len(wantStructs),
-		len(wantAliases), len(wantStructMod), len(wantEnums))
+	// A parameter table that is silently empty would make the diff above pass
+	// vacuously, so hold it to the same floor as the result tables.
+	if len(wantFuncParams) < 500 {
+		t.Fatalf("reference func param table has only %d entries; expected 1000+", len(wantFuncParams))
+	}
+
+	t.Logf("compared %d funcs, %d methods, %d funcParams, %d methodParams, %d structs, %d aliases, %d structMod, %d enums",
+		len(wantFuncs), len(wantMethods), len(wantFuncParams), len(wantMethodParams),
+		len(wantStructs), len(wantAliases), len(wantStructMod), len(wantEnums))
 }
 
 // TestModuleExportsMatchChecker covers the other extraction path: the export

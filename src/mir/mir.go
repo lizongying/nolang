@@ -237,6 +237,12 @@ func (m *Module) typeOwnsHeap(ty *Type) bool {
 	if ty.Owned {
 		return true
 	}
+	// An OPTION owns heap through its PAYLOAD — see OptionOwnsHeap. `?i64`
+	// owns nothing and keeps its (correct) no-op drop; `?big` owns the box the
+	// codegen had to malloc because `big` does not fit the payload slot.
+	if ty.Kind == KindOption {
+		return m.OptionOwnsHeap(ty.Raw)
+	}
 	if ty.Kind != KindStruct {
 		return false
 	}
@@ -260,6 +266,70 @@ func (m *Module) typeOwnsHeap(ty *Type) bool {
 		return false
 	}
 	return m.StructHasPtrFields(m.StructKeyOf(ty.Raw))
+}
+
+// OptionOwnsHeap reports whether a `?T` value owns heap memory and therefore
+// needs a real drop (emitOptionDrop) rather than the no-op a scalar option
+// gets.
+//
+// An option owns heap in exactly two ways:
+//
+//   - the PAYLOAD owns heap — `?str`, `?vec`, `?[]T`, `?map`. This is the same
+//     question ClassifyOwnership already answers for a plain value.
+//
+//   - the payload is heap-BOXED, i.e. it does not fit the inline payload slot
+//     (§4.1: anything above `option-inline-threshold` bytes, default 24). The
+//     BOX is a malloc the codegen made for this option, so it is the option's
+//     to free — even when the payload is a POD struct that owns nothing itself
+//     (`big { pad [32]i64 }`).
+//
+// A struct payload is deliberately NOT claimed here on the strength of its
+// leaves alone: a payload small enough to be inline is stored by a bitwise
+// copy that SHARES those leaves with the value it was wrapped from, and
+// emitOptionDrop does not free inline struct payloads for exactly that reason.
+// Only the boxed case — where the option has its own heap block — is claimed.
+func (m *Module) OptionOwnsHeap(raw string) bool {
+	elem, ok := parseOptionElem(raw)
+	if !ok {
+		return false
+	}
+	if ClassifyOwnership(elem) {
+		return true
+	}
+	return m.OptionPayloadBoxed(elem)
+}
+
+// OptionPayloadBoxed reports whether a payload of raw type elemRaw is heap-
+// boxed, i.e. does not fit the inline payload slot.
+//
+// The measurement goes through the EMITTER's own code — a throwaway codegen
+// with only `mod` set, then optionPayloadLLVMType + llvmTypeSizeUpper, which
+// are pure functions of the Module (they reach it through c.mod). That matters:
+// this answer decides whether the analysis exempts an option→option copy's
+// source from dropping, and the emitter decides whether it re-boxes it. If the
+// two ever disagreed, one side would free a box the other shared.
+// Reimplementing the size rules here instead is precisely how they would drift.
+//
+// An unsizable payload counts as boxed: the emitter boxes what it cannot prove
+// fits (see optionPayloadInline), and over-reporting here only costs a drop
+// that emitOptionDrop turns into a no-op.
+func (m *Module) OptionPayloadBoxed(elemRaw string) bool {
+	if v, ok := m.optBoxed[elemRaw]; ok {
+		return v
+	}
+	c := &codegen{mod: m, optSlotBytes: optionSlotBytesFor(m.OptionInlineThreshold)}
+	lt := c.optionPayloadLLVMType(elemRaw)
+	boxed := true
+	if lt != "" {
+		if sz, ok := c.llvmTypeSizeUpper(lt, map[string]bool{}); ok {
+			boxed = sz > c.optSlotBytes
+		}
+	}
+	if m.optBoxed == nil {
+		m.optBoxed = map[string]bool{}
+	}
+	m.optBoxed[elemRaw] = boxed
+	return boxed
 }
 
 // ---------------------------------------------------------------------------
@@ -967,6 +1037,12 @@ type Module struct {
 	// compiler.option-inline-threshold（或 NOLANG_OPTION_INLINE_THRESHOLD）
 	// 填入，0 表示取默认值。
 	OptionInlineThreshold int
+
+	// optBoxed memoizes OptionPayloadBoxed per element raw type. The answer is
+	// a pure function of (element type, OptionInlineThreshold), but computing
+	// it stands up a throwaway codegen, so it is cached. Not part of the
+	// module's identity — purely a query cache.
+	optBoxed map[string]bool
 
 	Funcs     []Function
 	Blocks    []Block

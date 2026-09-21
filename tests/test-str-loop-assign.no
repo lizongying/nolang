@@ -1,0 +1,103 @@
+; test-str-loop-assign — 迴圈內的 str 變數 -> 變數 指派（既有的 double free）
+;
+; 為什麼需要這個測試：2026-09-21 之前，迴圈內把一個 str 變數指派給另一個會
+; **double free**。
+;
+;   src str = 'hello-world'
+;   back str = 'seed'
+;   j <- [0..3): { back = src }
+;   print(back.len())     ; -> 0（應 11）；若在迴圈內 print 則 trace/BPT trap
+;
+; 機制：`back = src` 是 {len,cap,data} 的**位元複製**（emitMove 就是 load+store），
+; 所以兩者**共享同一個 heap buffer**。迴圈每次迭代結束會 drop 目的端
+;（free 掉 back 目前指向的 buffer）—— 而那個 buffer 就是 src 的：
+; 第 2 次迭代 free 掉 src 的 buffer，第 3 次再 free 一次 -> double free。
+;
+; 修法：analysis.insertDrops 對「來源在 move 之後仍被讀取」的 str move
+; 改寫成 OpClone（emitClone 走 @str_clone 深拷），兩邊各自擁有自己的 buffer、
+; 各自 drop 一次。來源若真的死了，就維持原本零拷貝的 move（所有權轉移）。
+;
+; 這與 moveStructSharesHeap 對「含指標欄位的 struct」做的事是同一套判斷。
+;
+; i64（純量、無 heap）與 txt（內聯緩衝區、無 heap）都不受影響 —— 這個測試
+; 刻意三種都測，作為對照組。
+
+print('=== str loop assign ===')
+
+print('--- for loop: str var -> var ---')
+src str = 'hello-world'
+back str = 'seed'
+j <- [0..3): {
+    back = src
+}
+print(back)
+print(back.len())
+print(src)
+print(src.len())
+
+print('--- for loop: str var -> var, read inside ---')
+s2 str = 'abcdef'
+b2 str = 'seed'
+k2 <- [0..3): {
+    b2 = s2
+    print(b2.len())
+}
+print(b2.len())
+
+print('--- do-while: str var -> var ---')
+s3 str = 'hello-world'
+b3 str = 'seed'
+n3 = 0
+{
+    b3 = s3
+    #{overflow = wrap}
+    n3 = n3 + 1
+} (n3 < 5)
+print(b3)
+print(b3.len())
+
+print('--- inside a function ---')
+loopy = () (out i64) {
+    a str = 'hello-world'
+    b str = 'seed'
+    i <- [0..5): {
+        b = a
+    }
+    out = b.len()
+}
+print(loopy())
+
+print('--- control: i64 (no heap) ---')
+ai i64 = 42
+bi i64 = 0
+i3 <- [0..5): {
+    bi = ai
+}
+print(bi)
+
+print('--- control: txt (inline buffer, no heap) ---')
+at txt = 'hello-txt'
+bt txt = 'seed'
+i4 <- [0..5): {
+    bt = at
+}
+print(bt)
+print(bt.len())
+
+print('--- 20000 iterations (leak / double-free stress) ---')
+ss str = 'hello-world-padding-padding'
+bs str = 'seed'
+i5 <- [0..20000): {
+    bs = ss
+}
+print(bs.len())
+
+print('--- allocating assignment in a loop stays correct ---')
+sa str = 'hello-world'
+ba str = 'seed'
+i6 <- [0..5): {
+    ba = sa + '-xy'
+}
+print(ba.len())
+
+print('=== done ===')

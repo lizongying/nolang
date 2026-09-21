@@ -41,7 +41,7 @@ func main() {
 	srcDir := filepath.Join(repoRoot, "src")
 	fsys := os.DirFS(srcDir)
 
-	funcSigs, methodSigs, structFields, aliases, structMod, enumVariants, err := checker.CollectStdSigsFromFS(fsys)
+	funcSigs, methodSigs, funcParams, methodParams, structFields, aliases, structMod, enumVariants, err := checker.CollectStdSigsFromFS(fsys)
 	if err != nil {
 		fatal(fmt.Sprintf("genstdsig: collect failed: %v", err))
 	}
@@ -54,12 +54,20 @@ func main() {
 	buf.WriteString(header)
 	buf.WriteString("func init() {\n")
 	buf.WriteString("\tembeddedStdSigReady = true\n")
-	buf.WriteString("\tembeddedStdSigVersion = 1\n")
+	// Bumped to 2: the table now carries PARAMETER types alongside result
+	// types (embeddedStdFuncParams / embeddedStdMethodParams). A binary built
+	// against version 1 has no param tables, so the version guard is what
+	// tells them apart.
+	buf.WriteString("\tembeddedStdSigVersion = 2\n")
 	fmt.Fprintf(&buf, "\tembeddedStdSigKey = %s\n", strconv.Quote(key))
 	buf.WriteString("\tembeddedStdFuncSigs = ")
 	writeMapStringSliceInline(&buf, funcSigs)
 	buf.WriteString("\tembeddedStdMethodSigs = ")
 	writeMapStringSliceInline(&buf, methodSigs)
+	buf.WriteString("\tembeddedStdFuncParams = ")
+	writeMapStringSliceInline(&buf, funcParams)
+	buf.WriteString("\tembeddedStdMethodParams = ")
+	writeMapStringSliceInline(&buf, methodParams)
 	buf.WriteString("\tembeddedStdStructFields = ")
 	writeMapStringMapInline(&buf, structFields)
 	buf.WriteString("\tembeddedStdAliases = ")
@@ -84,8 +92,8 @@ func main() {
 	if err := os.WriteFile(outPath, formatted, 0o644); err != nil {
 		fatal(fmt.Sprintf("genstdsig: write %s: %v", outPath, err))
 	}
-	fmt.Printf("genstdsig: wrote %s (%d funcSigs, %d methodSigs, %d structs, %d aliases, %d enumTypes)\n",
-		outPath, len(funcSigs), len(methodSigs), len(structFields), len(aliases), len(enumVariants))
+	fmt.Printf("genstdsig: wrote %s (%d funcSigs, %d methodSigs, %d funcParams, %d methodParams, %d structs, %d aliases, %d enumTypes)\n",
+		outPath, len(funcSigs), len(methodSigs), len(funcParams), len(methodParams), len(structFields), len(aliases), len(enumVariants))
 }
 
 func writeMapStringSliceInline(buf *bytes.Buffer, m map[string][]string) {

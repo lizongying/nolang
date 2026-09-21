@@ -246,6 +246,18 @@ func isScalarLLVM(lt string) bool {
 	return false
 }
 
+// isAggregateLLVM reports whether an LLVM type is an aggregate — a named struct
+// / %vec / %option / %txt (`%`-prefixed), a fixed array (`[N x T]`), or an
+// anonymous struct (`{...}`). Used to tell "a value of the wrong KIND" (a real
+// type error) apart from "a scalar of a different width" (which coerceInt can
+// legitimately convert).
+func isAggregateLLVM(lt string) bool {
+	if lt == "" {
+		return false
+	}
+	return strings.HasPrefix(lt, "%") || strings.HasPrefix(lt, "[") || strings.HasPrefix(lt, "{")
+}
+
 // byPointerLLVM reports whether a parameter / argument of LLVM type lt must be
 // passed BY POINTER in the function signature rather than by value. Scalars and
 // already-pointer types are passed by value; every aggregate (fixed array
@@ -891,20 +903,40 @@ const optSlotMinBytes = 8
 //	               no longer fits, so err payloads are heap-boxed
 //	>= 24       -> accepted
 func (c *codegen) initOptionSlot() {
-	t := int64(c.mod.OptionInlineThreshold)
+	// Diagnostics first, then the NUMBER from optionSlotBytesFor. Keeping the
+	// arithmetic in that one function is what lets the analysis ask the same
+	// question (Module.OptionPayloadBoxed) and be guaranteed the same answer.
+	if t := c.mod.OptionInlineThreshold; t != 0 && t < optSlotMinBytes {
+		c.fail("option-inline-threshold %d is below the minimum %d (a payload must at least hold an i64)", t, optSlotMinBytes)
+	} else if t >= optSlotMinBytes && t < optSlotDefaultBytes {
+		fmt.Fprintf(os.Stderr, "warning: option-inline-threshold %d is below %d: err payloads (a 24-byte str) no longer fit the slot and are heap-boxed\n", t, optSlotDefaultBytes)
+	}
+	c.optSlotBytes = optionSlotBytesFor(c.mod.OptionInlineThreshold)
+	// Round up to a whole number of i64 slots.
+	c.optSlotLT = fmt.Sprintf("[%d x i64]", c.optSlotBytes/8)
+}
+
+// optionSlotBytesFor applies initOptionSlot's range rules to a threshold and
+// returns the resulting payload-slot width in bytes, WITHOUT emitting any
+// diagnostic. It is the single source of truth for the width: the emitter
+// (initOptionSlot) and the ownership analysis (Module.OptionPayloadBoxed) both
+// go through it, so the two can never disagree about whether a payload is
+// boxed — which would mean one side freeing a box the other still shares.
+//
+//	unset / 0   -> 24
+//	< 8         -> 8 (clamped)
+//	8 .. 23     -> accepted as-is
+//	>= 24       -> accepted as-is
+func optionSlotBytesFor(threshold int) int64 {
+	t := int64(threshold)
 	switch {
 	case t == 0:
 		t = optSlotDefaultBytes
 	case t < optSlotMinBytes:
-		c.fail("option-inline-threshold %d is below the minimum %d (a payload must at least hold an i64)", t, optSlotMinBytes)
 		t = optSlotMinBytes
-	case t < optSlotDefaultBytes:
-		fmt.Fprintf(os.Stderr, "warning: option-inline-threshold %d is below %d: err payloads (a 24-byte str) no longer fit the slot and are heap-boxed\n", t, optSlotDefaultBytes)
 	}
 	// Round up to a whole number of i64 slots.
-	n := (t + 7) / 8
-	c.optSlotBytes = n * 8
-	c.optSlotLT = fmt.Sprintf("[%d x i64]", n)
+	return ((t + 7) / 8) * 8
 }
 
 // optionType returns the (LLVM option type, payload LLVM type) for an option
@@ -1432,8 +1464,34 @@ func (c *codegen) optReadPayloadInto(optSlot, payloadLT, dstLT, dstSlot string) 
 	return true
 }
 
-// optBoxClone copies the option at srcSlot to dstSlot and then gives the copy
-// its OWN heap block when the payload is boxed. A boxed option is 32 bytes of
+// cloneOptionPayloadInto gives the payload just peeled out of the option at
+// optSlot its own copy of every owned leaf / pointee it still shares with the
+// option's payload. It is the struct counterpart of the `?str` / `?[]T` clone
+// branches in emitMove: a peel COPIES, and the option keeps its own payload to
+// free, so a shared buffer would be freed twice.
+func (c *codegen) cloneOptionPayloadInto(optSlot, payloadLT, dstSlot string) {
+	if isBuiltinContainerLT(payloadLT) {
+		return // %str-long / %vec have their own, earlier branches
+	}
+	key := c.structKeyOfLLVM(payloadLT)
+	if key == "" {
+		return
+	}
+	hasPtr := c.mod.StructHasPtrFields(key)
+	hasLeaf := c.mod.StructHasOwnedLeafFields(key)
+	if !hasPtr && !hasLeaf {
+		return
+	}
+	if hasPtr {
+		src := c.optPayloadTypedAddr(optSlot, payloadLT, payloadLT)
+		c.emitPtrFieldsClone(dstSlot, src, payloadLT, key, map[string]bool{})
+	}
+	if hasLeaf {
+		c.emitLeafFieldsClone(dstSlot, payloadLT, key)
+	}
+}
+
+// optBoxClone copies the option at srcSlot to dstSlot and then gives the copy// its OWN heap block when the payload is boxed. A boxed option is 32 bytes of
 // {tag, pointer}, so a bitwise copy would share the payload — the inline layout
 // copied the payload itself, and code that mutates through one binding must not
 // see the change through the other.
@@ -1522,6 +1580,30 @@ func (c *codegen) emitOptionBoxHelpers(payloadLT string) {
 	}
 	c.sb.WriteString("  %m = call i8* @malloc(i64 %n)\n")
 	c.sb.WriteString("  call void @llvm.memcpy.p0.p0.i64(ptr %m, ptr %oldp, i64 %n, i1 false)\n")
+	// The box's OWNED contents must be deep-copied as well. The option owns
+	// what is inside its box — emitOptionDropHelper frees it — so a shared
+	// buffer would be freed once per option, i.e. a double free the moment both
+	// copies die. The memcpy above duplicated the payload's {len,cap,data}
+	// triples and pointer fields verbatim, so each one is replaced with a
+	// private copy, exactly as emitPtrStructClone does for a struct local.
+	//
+	// Built-in container descriptors are excluded: `%vec` IS in StructFields
+	// and its `data` field is registered as an owned `str`, so an unguarded
+	// lookup would "deep clone" a vec's data pointer as if it were a string.
+	if !isBuiltinContainerLT(payloadLT) {
+		if key := c.structKeyOfLLVM(payloadLT); key != "" {
+			mb := c.treg("mrc")
+			c.sb.WriteString(fmt.Sprintf("  %s = bitcast i8* %%m to %s*\n", mb, payloadLT))
+			if c.mod.StructHasPtrFields(key) {
+				ob := c.treg("mro")
+				c.sb.WriteString(fmt.Sprintf("  %s = bitcast i8* %%oldp to %s*\n", ob, payloadLT))
+				c.emitPtrFieldsClone(mb, ob, payloadLT, key, map[string]bool{})
+			}
+			if c.mod.StructHasOwnedLeafFields(key) {
+				c.emitLeafFieldsClone(mb, payloadLT, key)
+			}
+		}
+	}
 	c.sb.WriteString("  %nm = ptrtoint i8* %m to i64\n")
 	c.sb.WriteString("  store i64 %nm, i64* %p0\n")
 	c.sb.WriteString("  ret void\n")
@@ -3487,17 +3569,34 @@ func (c *codegen) emitConst(inst *Inst, allocaFor func(ValueID) string) error {
 // derived from the option type's element raw type and decides whether the
 // payload goes inline into the 24-byte slot or into a heap box.
 func (c *codegen) emitOptionWrap(inst *Inst) error {
-	dstT, _ := c.ptype(inst.Dst)
+	// OpOptionWrap itself always defines a fresh value (Dst set). The
+	// EmitMoveInto shape (Dst == NoVal, destination in Args[1]) reaches here
+	// when insertDrops promotes a WRAP to OpClone: `o = c` into an
+	// already-bound `o` lowers to EmitMoveInto, which carries neither
+	// inst.Type nor a payload tag, so both are resolved from the destination
+	// value instead. The tag defaults to 0 (val/ok/some), which is what a wrap
+	// assignment means.
+	dstVal := inst.Dst
+	if dstVal == NoVal && len(inst.Args) >= 2 {
+		dstVal = inst.Args[1]
+	}
+	if dstVal <= NoVal {
+		c.fail("option-wrap has no destination in func %d", c.cf)
+		return fmt.Errorf("option-wrap dst")
+	}
+	dstT, _ := c.ptype(dstVal)
 	if dstT == "void" || dstT == "" {
 		return nil
 	}
-	slot := c.valSlot[inst.Dst]
+	slot := c.valSlot[dstVal]
 	if slot == "" {
 		c.fail("option-wrap destination has no slot in func %d", c.cf)
 		return fmt.Errorf("option-wrap slot")
 	}
-	elem := optionElemRaw(c.mod.Type(inst.Type))
-	_, payloadLT := c.optionType(elem)
+	payloadLT := c.optPayloadLTOf(dstVal)
+	if payloadLT == "" {
+		_, payloadLT = c.optionType(optionElemRaw(c.mod.Type(inst.Type)))
+	}
 	tag := inst.Int
 	if len(inst.Args) == 0 || inst.Args[0] == NoVal {
 		// No payload (bare err / val / ok / some constructor, or a zero-arg
@@ -4284,10 +4383,26 @@ func (c *codegen) emitDrop(inst *Inst) error {
 	return nil
 }
 
-// emitOptionDrop frees an option's owned heap element. The element type is read
-// from the option value's nolang raw type (?str / ?vec / ?T) so we free with the
-// right helper; unknown/non-heap elements are left alone (safe no-op). optLT is
-// the option's single LLVM type (%option).
+// emitOptionDrop frees an option's owned heap. The element type is read from
+// the option value's nolang raw type (?str / ?vec / ?T) so we free with the
+// right helper; an element that owns nothing is left alone (safe no-op).
+// optLT is the option's single LLVM type (%option).
+//
+// An option owns two things, and both are freed here:
+//
+//   - the PAYLOAD's heap, when the payload type owns any (`?str`, `?vec`,
+//     `?[]T`, `?S` for a struct S with owned leaves / pointees); and
+//   - the BOX, when the payload does not fit the inline slot and the codegen
+//     therefore malloc'd one (see §4.1). The box is per-option, so it is
+//     exactly as owned as the option itself.
+//
+// The free is TAG-GUARDED and lives in a helper function, because for `?T` the
+// err message (tag 2) is a %str-long stored in the payload slot whatever T is.
+// Freeing the payload "as a T" on tag 2 would read the message's LENGTH as a
+// box pointer, or call a struct destructor on a string — a wild free. The
+// guard cannot be an inline branch here: emitDrop runs mid-block, and opening
+// new basic blocks there breaks LLVM verification (the same reason
+// emitOptionBoxHelpers and emitStructDropHelper are functions).
 func (c *codegen) emitOptionDrop(inst *Inst, v, optLT string) {
 	elemRaw := ""
 	if val := c.mod.Value(inst.Args[0]); val != nil {
@@ -4297,16 +4412,20 @@ func (c *codegen) emitOptionDrop(inst *Inst, v, optLT string) {
 			}
 		}
 	}
-	// A BOXED payload is by definition a payload that does not fit the slot,
-	// i.e. a struct — and a struct is never ClassifyOwnership-owned, so no drop
-	// is ever emitted for it (see insertDrops). Only ?str / ?vec / ?[]T reach
-	// this function, and all three are exactly 24 bytes, hence always INLINE.
-	// That is why there is no box-free branch here: leaking a box is impossible
-	// today, and a free guarded on `tag == 0` would be the first thing to break
-	// if an owned payload ever outgrew the slot.
 	slot := c.optSlotOfValue(inst.Args[0])
 	if slot == "" {
 		c.sb.WriteString(fmt.Sprintf("  ; drop %s (option element %q has no slot)\n", v, elemRaw))
+		return
+	}
+	_, payloadLT := c.optionType(elemRaw)
+	if !c.optionPayloadInline(payloadLT) {
+		// BOXED payload: free what is inside the box, then the box itself.
+		// This is the leak the unified 32-byte layout introduced — the payload
+		// is copied into a fresh malloc on every wrap (optStoreBoxedPayload)
+		// and re-malloc'd on every option copy (optBoxClone), and nothing ever
+		// freed either.
+		fn := c.emitOptionDropHelper(elemRaw, payloadLT)
+		c.sb.WriteString(fmt.Sprintf("  call void %s(%%option* %s)\n", fn, slot))
 		return
 	}
 	switch elemRaw {
@@ -4339,9 +4458,145 @@ func (c *codegen) emitOptionDrop(inst *Inst, v, optLT string) {
 		c.sb.WriteString(fmt.Sprintf("  %s = inttoptr i64 %s to i8*\n", pp, pd))
 		c.sb.WriteString(fmt.Sprintf("  call void @free(i8* %s)\n", pp))
 	default:
-		// ?i64 / ?bool / user-struct / unrecognized element: nothing heap-owned
-		// to free (or a shallow no-op for structs; deep-free is a follow-up).
-		c.sb.WriteString(fmt.Sprintf("  ; drop %s (option element %q owns nothing / shallow)\n", v, elemRaw))
+		// INLINE payload that still owns heap: a small struct whose owned `str`
+		// leaves live inside the payload slot (e.g. `?person` with
+		// `person { name str }`, 24 bytes). Its destructor is the same
+		// recursive one a plain struct local gets, called on the payload
+		// address — but tag-guarded, so a nil (tag 1) or an err message
+		// (tag 2, a %str-long in the same slot) is not mistaken for a struct.
+		if key := c.structKeyOf(elemRaw); key != "" && c.mod.StructHasOwnedLeafFields(key) {
+			fn := c.emitOptionDropHelper(elemRaw, payloadLT)
+			c.sb.WriteString(fmt.Sprintf("  call void %s(%%option* %s)\n", fn, slot))
+			return
+		}
+		// ?i64 / ?bool / a POD struct payload: nothing heap-owned to free.
+		c.sb.WriteString(fmt.Sprintf("  ; drop %s (option element %q owns nothing)\n", v, elemRaw))
+	}
+}
+
+// optDropName is the LLVM name of the tag-guarded destructor for one option
+// payload type. Keyed by the PAYLOAD type, not the element: `?[]i64` and
+// `?[]str` share one `%vec` payload and free it identically.
+func optDropName(payloadLT string) string {
+	return "__nolang_opt_drop_" + sanitize(strings.TrimPrefix(payloadLT, "%"))
+}
+
+// emitOptionDropHelper emits (once per payload type) and returns the name of
+// `@__nolang_opt_drop_<payload>`, which frees everything an `%option*` owns:
+//
+//	tag 0 (ok)  : the payload's owned heap at its storage address, then the box
+//	              when the payload is boxed;
+//	tag 2 (err) : the error message — a %str-long, inline in the slot or in its
+//	              own 24-byte box when option-inline-threshold < 24;
+//	tag 1 (nil) : nothing (the slot is fully zeroed).
+//
+// See emitOptionDrop for why the tag test must exist and why this is a
+// function rather than inline code.
+func (c *codegen) emitOptionDropHelper(elemRaw, payloadLT string) string {
+	fn := optDropName(payloadLT)
+	if c.extraFuncs[fn] {
+		return "@" + fn
+	}
+	c.extraFuncs[fn] = true
+	c.decl("declare void @free(i8*)")
+
+	key := c.structKeyOf(elemRaw)
+	boxed := !c.optionPayloadInline(payloadLT)
+	// Whether an ERR MESSAGE is boxed is a separate question from whether the
+	// ok payload is: the message is always a 24-byte %str-long, so with the
+	// default 24-byte slot it is inline even when the declared payload is not.
+	errBoxed := !c.optionPayloadInline("%str-long")
+
+	var b strings.Builder
+	fmt.Fprintf(&b, "define void @%s(%%option* %%o) {\n", fn)
+	b.WriteString("entry:\n")
+	b.WriteString("  %tp = getelementptr inbounds %option, %option* %o, i32 0, i32 0\n")
+	b.WriteString("  %t = load i64, i64* %tp\n")
+	// The payload slot pointer is computed in ENTRY: both the ok and the err
+	// branch use it, and a value defined inside `ok` would not dominate its use
+	// in `err`.
+	b.WriteString("  %sp = getelementptr inbounds %option, %option* %o, i32 0, i32 1\n")
+	b.WriteString("  %isok = icmp eq i64 %t, 0\n")
+	b.WriteString("  br i1 %isok, label %ok, label %notok\n")
+	b.WriteString("notok:\n")
+	b.WriteString("  %iserr = icmp eq i64 %t, 2\n")
+	b.WriteString("  br i1 %iserr, label %err, label %done\n")
+
+	// ---- tag 0: the ok payload -------------------------------------------
+	b.WriteString("ok:\n")
+	if boxed {
+		b.WriteString(fmt.Sprintf("  %%okp0 = getelementptr inbounds %s, %s* %%sp, i64 0, i64 0\n", c.optSlotLT, c.optSlotLT))
+		b.WriteString("  %raw = load i64, i64* %okp0\n")
+		// A nil/err slot is zeroed, so slot[0] is 0 and there is no box. Check
+		// it rather than dereferencing: the payload read below goes through the
+		// pointer.
+		b.WriteString("  %nobox = icmp eq i64 %raw, 0\n")
+		b.WriteString("  br i1 %nobox, label %done, label %okfree\n")
+		b.WriteString("okfree:\n")
+		b.WriteString("  %box = inttoptr i64 %raw to i8*\n")
+		b.WriteString(fmt.Sprintf("  %%op = bitcast i8* %%box to %s*\n", payloadLT))
+	} else {
+		b.WriteString(fmt.Sprintf("  %%ok8 = bitcast %s* %%sp to i8*\n", c.optSlotLT))
+		b.WriteString(fmt.Sprintf("  %%op = bitcast i8* %%ok8 to %s*\n", payloadLT))
+	}
+	c.emitOptionPayloadContentFree(&b, elemRaw, payloadLT, key)
+	if boxed {
+		b.WriteString("  call void @free(i8* %box)\n")
+	}
+	b.WriteString("  br label %done\n")
+
+	// ---- tag 2: the err message (always a %str-long) ----------------------
+	b.WriteString("err:\n")
+	if errBoxed {
+		b.WriteString(fmt.Sprintf("  %%erp0 = getelementptr inbounds %s, %s* %%sp, i64 0, i64 0\n", c.optSlotLT, c.optSlotLT))
+		b.WriteString("  %eraw = load i64, i64* %erp0\n")
+		b.WriteString("  %noebox = icmp eq i64 %eraw, 0\n")
+		b.WriteString("  br i1 %noebox, label %done, label %errfree\n")
+		b.WriteString("errfree:\n")
+		b.WriteString("  %ebox = inttoptr i64 %eraw to i8*\n")
+		b.WriteString("  %eop = bitcast i8* %ebox to %str-long*\n")
+		b.WriteString("  %ev = load %str-long, %str-long* %eop\n")
+		b.WriteString("  call void @str_free(%str-long %ev)\n")
+		b.WriteString("  call void @free(i8* %ebox)\n")
+	} else {
+		// The message occupies the first 24 bytes of the payload slot — the
+		// invariant the whole 24-byte default is built on.
+		b.WriteString(fmt.Sprintf("  %%err8 = bitcast %s* %%sp to i8*\n", c.optSlotLT))
+		b.WriteString("  %eop = bitcast i8* %err8 to %str-long*\n")
+		b.WriteString("  %ev = load %str-long, %str-long* %eop\n")
+		b.WriteString("  call void @str_free(%str-long %ev)\n")
+	}
+	b.WriteString("  br label %done\n")
+	b.WriteString("done:\n")
+	b.WriteString("  ret void\n}\n")
+	c.extraFuncsBody.WriteString(b.String())
+	return "@" + fn
+}
+
+// emitOptionPayloadContentFree appends the "free what the ok payload owns"
+// instructions, given `%op`, a `<payloadLT>*` pointing at the payload (inside
+// its box, or at the payload slot itself for an inline payload).
+//
+// It is the option's mirror of emitDrop's switch, and it must free exactly what
+// emitStructDropHelper / the payload's own drop would: the struct destructor
+// covers a struct's pointees AND its inline owned leaves, and it deliberately
+// does NOT free the struct itself (the caller owns that storage) — which is why
+// the box is freed separately by emitOptionDropHelper.
+func (c *codegen) emitOptionPayloadContentFree(b *strings.Builder, elemRaw, payloadLT, key string) {
+	switch {
+	case payloadLT == "%str-long":
+		b.WriteString("  %cv = load %str-long, %str-long* %op\n")
+		b.WriteString("  call void @str_free(%str-long %cv)\n")
+	case payloadLT == "%vec":
+		b.WriteString("  %cv = load %vec, %vec* %op\n")
+		b.WriteString("  %cd = extractvalue %vec %cv, 2\n")
+		b.WriteString("  %cdp = inttoptr i64 %cd to i8*\n")
+		b.WriteString("  call void @free(i8* %cdp)\n")
+	case key != "" && (c.mod.StructHasPtrFields(key) || c.mod.StructHasOwnedLeafFields(key)):
+		c.emitStructDropHelper(payloadLT, key)
+		b.WriteString(fmt.Sprintf("  call void @%s(%s* %%op)\n", structDropName(payloadLT), payloadLT))
+	default:
+		// POD payload: the box itself is the only thing to free.
 	}
 }
 
@@ -4566,6 +4821,36 @@ func (c *codegen) emitMove(inst *Inst) error {
 		// that width is the invariant the whole layout is built on.
 		if dstT == "%str-long" || dstT == payloadLT {
 			if c.optReadPayloadInto(optSlot, payloadLT, dstT, dstSlot) {
+				// The read above is a BY-VALUE bit copy, so the destination
+				// SHARES whatever heap the option holds — and a peel does not
+				// consume the option (it is not exempt from dropping; see
+				// isOptionPeelMove), so both would free the same buffer. Give
+				// the copy its own memory.
+				switch {
+				case dstT == payloadLT:
+					// STRUCT payload copied by value, so the destination now
+					// shares the option's owned leaves / pointees: the struct
+					// counterpart of the @str_clone and vecDeepClone branches
+					// above.
+					c.cloneOptionPayloadInto(optSlot, payloadLT, dstSlot)
+				case dstT == "%str-long":
+					// ERR-MESSAGE peel: the option's declared payload is the OK
+					// type (e.g. `?json`), but the slot holds the err message, a
+					// %str-long. Exactly the `?str` hazard one branch up, and it
+					// needs the same cure: without this clone the option and the
+					// peeled `it` share ONE buffer, so `drop it` frees it and the
+					// option's own drop frees it again -> trace/BPT trap. Seen on
+					// `json.parse('')` + a match with an `err` arm; the same shape
+					// makes every std call that returns `err(...)` fatal once
+					// options own their payload.
+					c.loadSeq++
+					u1 := fmt.Sprintf("%%mve%d", c.loadSeq)
+					c.sb.WriteString(fmt.Sprintf("  %s = load %%str-long, %%str-long* %s\n", u1, dstSlot))
+					c.loadSeq++
+					cl := fmt.Sprintf("%%mvec%d", c.loadSeq)
+					c.sb.WriteString(fmt.Sprintf("  %s = call %%str-long @str_clone(%%str-long %s)\n", cl, u1))
+					c.sb.WriteString(fmt.Sprintf("  store %%str-long %s, %%str-long* %s\n", cl, dstSlot))
+				}
 				return nil
 			}
 		}
@@ -4590,20 +4875,14 @@ func (c *codegen) emitMove(inst *Inst) error {
 		c.sb.WriteString(fmt.Sprintf("  store %s %s, %s* %s\n", payloadLT, u1, payloadLT, bc))
 		return nil
 	}
-	// An option→option assignment of a BOXED payload must deep-copy the box:
-	// a bitwise copy of the 32-byte option would make both sides share one
-	// heap block, which the inline layout never did (it copied the payload).
-	if isOptionType(dstT) && isOptionType(srcT) {
-		if ok, elem := c.optElemRawOf(inst.Args[0]); ok {
-			_, payloadLT := c.optionType(elem)
-			if !c.optionPayloadInline(payloadLT) {
-				if srcSlot := c.optSlotOfValue(inst.Args[0]); srcSlot != "" && dstSlot != "" {
-					c.optBoxClone(srcSlot, dstSlot, payloadLT)
-					return nil
-				}
-			}
-		}
-	}
+	// An option→option assignment is deliberately NOT handled here. Under
+	// OpMove it is a genuine bitwise TRANSFER of the 32 bytes: the destination
+	// shares the source's box and becomes its owner (insertDrops exempts the
+	// source, so the destination's drop is the single free site — see
+	// optionCopySharesHeap). The DEEP copy lives in emitClone, which
+	// insertDrops selects exactly when the source is still live. Re-boxing
+	// here instead would deep-copy in both cases and orphan the source's box
+	// whenever the copy was really a transfer.
 	// Fixed-array source into a slice (%vec) destination: `a = x` where x is a
 	// locally-materialized array literal. A plain `load %vec, [N x T]* src` would
 	// reinterpret the array's first three elements as {len,cap,data} (len=first
@@ -5080,8 +5359,17 @@ func isBuiltinContainerLT(lt string) bool {
 
 func (c *codegen) emitClone(inst *Inst) error {
 	if lt, _ := c.ptype(inst.Args[0]); lt == "%str-long" {
-		dstT, _ := c.ptype(inst.Dst)
-		dstSlot := c.valSlot[inst.Dst]
+		// Resolve the destination the way emitMove does: OpClone shares OpMove's
+		// two shapes, and the EmitMoveInto one (Dst == NoVal, destination in
+		// Args[1]) is exactly what a RE-assignment lowers to — which is the shape
+		// insertDrops rewrites to OpClone when the source is still live. Reading
+		// inst.Dst there yields NoVal, so ptype/valSlot fell back to i64/"".
+		dstVal := inst.Dst
+		if dstVal == NoVal && len(inst.Args) >= 2 {
+			dstVal = inst.Args[1]
+		}
+		dstT, _ := c.ptype(dstVal)
+		dstSlot := c.valSlot[dstVal]
 		_, srcV := c.loadVal(inst.Args[0])
 		// A true deep copy: @str_clone duplicates the buffer at the SAME length.
 		// The previous code used @str_concat(s, s), which concatenates the
@@ -5092,6 +5380,72 @@ func (c *codegen) emitClone(inst *Inst) error {
 		tmp := fmt.Sprintf("%%cl%d", inst.ID)
 		c.sb.WriteString(fmt.Sprintf("  %s = call %s @str_clone(%s %s)\n", tmp, dstT, dstT, srcV))
 		c.sb.WriteString(fmt.Sprintf("  store %s %s, %s* %s\n", dstT, tmp, dstT, dstSlot))
+		return nil
+	}
+	// An OPTION destination is never a struct deep copy. clonePtrStructKey /
+	// cloneLeafStructKey resolve the SOURCE's struct key and then emit a
+	// memcpy of that struct's bytes into the destination — which for a 32-byte
+	// %option writes the struct straight over the option's tag and payload
+	// slot, so the option reads back EMPTY (observed on HEAD: `o = c` with
+	// `o ?conn` printed a blank line instead of the string). Any option copy is
+	// emitMove's job.
+	//
+	// option -> option IS a real clone, though: emitMove's bitwise transfer
+	// leaves the two sides sharing a boxed payload, and insertDrops picks
+	// OpClone precisely when the source is still live — i.e. when both sides
+	// will be dropped and must therefore own a block each. Copy, then re-box
+	// the copy (optBoxClone mallocs a fresh block and deep-copies the payload's
+	// owned contents into it).
+	dstVal := inst.Dst
+	if dstVal == NoVal && len(inst.Args) >= 2 {
+		dstVal = inst.Args[1]
+	}
+	if t := c.mod.Type(c.localTypeOf(dstVal)); t != nil && t.Kind == KindOption {
+		dstSlot := c.valSlot[dstVal]
+		if st := c.mod.Type(c.localTypeOf(inst.Args[0])); st != nil && st.Kind == KindOption {
+			// option -> option: emitMove's bitwise transfer leaves both sides
+			// sharing one box, so copy and then re-box the copy.
+			if ok, elem := c.optElemRawOf(inst.Args[0]); ok {
+				_, payloadLT := c.optionType(elem)
+				if !c.optionPayloadInline(payloadLT) {
+					if srcSlot := c.optSlotOfValue(inst.Args[0]); srcSlot != "" && dstSlot != "" {
+						c.optBoxClone(srcSlot, dstSlot, payloadLT)
+						return nil
+					}
+				}
+			}
+			// An inline payload: a bitwise copy is the whole story (the option's
+			// drop deliberately does not free an inline struct payload's leaves,
+			// because this copy shares them — see emitOptionDrop).
+			return c.emitMove(inst)
+		}
+		// A WRAP promoted to a clone: `o ?T = y` with y still live. emitOptionWrap
+		// has already stored the payload, but that store is SHALLOW — memcpy'd
+		// into the box (or straight into the inline slot) — so the option's
+		// payload aliases y's owned leaves and pointees while BOTH sides are
+		// dropped. Give the payload its own memory: the option-destination
+		// counterpart of emitLeafStructClone / emitPtrStructClone. No re-box is
+		// needed (emitOptionWrap mallocs a box sized for this payload); only the
+		// deep copy of what it points at.
+		if err := c.emitOptionWrap(inst); err != nil {
+			return err
+		}
+		if srcTy := c.mod.Type(c.localTypeOf(inst.Args[0])); srcTy != nil && srcTy.Kind == KindStruct {
+			payloadLT := c.optPayloadLTOf(dstVal)
+			key := c.structKeyOf(srcTy.Raw)
+			srcSlot := c.valSlot[inst.Args[0]]
+			if key != "" && srcSlot != "" && dstSlot != "" && payloadLT != "" {
+				payloadAddr := c.optPayloadTypedAddr(dstSlot, payloadLT, payloadLT)
+				if payloadAddr != "" {
+					if c.mod.StructHasPtrFields(key) {
+						c.emitPtrFieldsClone(payloadAddr, srcSlot, payloadLT, key, map[string]bool{})
+					}
+					if c.mod.StructHasOwnedLeafFields(key) {
+						c.emitLeafFieldsClone(payloadAddr, payloadLT, key)
+					}
+				}
+			}
+		}
 		return nil
 	}
 	// STRUCT WITH POINTER FIELDS: a bitwise copy (what emitMove would do) leaves
@@ -6087,6 +6441,58 @@ func (c *codegen) emitIndexStore(inst *Inst) error {
 		valV = c.txtValueFromStr(valV)
 		valT = "%txt"
 	}
+	// The mirror: a `[]str` / `[N]str` element written from a `txt` VALUE. The
+	// store below is typed by `elemT`, so it emitted
+	//   store %str-long %txt_value, %str-long* %ep
+	// -> opt-verify: "'%lv31' defined with type '%txt' but expected '%str-long'".
+	// Convert to an OWNED %str-long (@str_from_const mallocs, so the element does
+	// not borrow the txt's inline buffer, which dies with the txt).
+	if elemT == "%str-long" && valT == "%txt" {
+		valV = c.strValueFromTxtValue(valV)
+		valT = "%str-long"
+	}
+	// Refuse any other element/value pair that no conversion can bridge. `coerce`
+	// handles integer/float conversions only and returns "" otherwise, while the
+	// store is typed by `elemT` — so a `str` or `txt` written into an i64 element
+	// emitted `store i64 %str-long_value`:
+	//   a []i64 = [1,2,3] ; a[0] = 'abc'
+	//   -> "'%lv10' defined with type '%str-long' but expected 'i64'"
+	//   a[0] = t          ; t is a txt
+	//   -> "'%lv18' defined with type '%txt' but expected 'i64'"
+	// Same family as the argument-marshalling guards: `no vet` reports 0 errors
+	// (element assignment types are not checked) and only `no run` fails, with an
+	// internal opt-verify dump. `%vec`/`%str-long` are excluded on both sides —
+	// layout-identical 24-byte triples the codebase deliberately puns — and
+	// `%option` is excluded because a store into a `[]?T` element is auto-wrapped
+	// during lowering.
+	// The ONE legitimate cross-type pair is a `str` value written into a BYTE
+	// element — the `valT == "%str-long" && elemT == "i8"` branch below takes its
+	// first byte (`b[0] = 'a'` -> 97). Everything else that reaches the store
+	// with a type `coerce` cannot bridge is a genuine mismatch.
+	strIntoByteElem := valT == "%str-long" && elemT == "i8"
+	// A `[]str` / `[N]str` element written from a SCALAR — `ss[0] = 42`, or an
+	// array literal of ints landing in a `[]str` field (`box { v []str }` ;
+	// `b.v = [1,2,3]`, whose literal is typed `[3]i64`). `coerce` cannot bridge
+	// i64 -> %str-long, so the store went out as `store %str-long <i64>` and
+	// opt-verify rejected the module:
+	//   '%lv19' defined with type 'i64' but expected '%str-long = type { i64, i64, ptr }'
+	// The general check below deliberately keeps `%str-long` elements out of its
+	// exclusions (a `%txt` source is converted just above), so scalars need this
+	// clause of their own.
+	if elemT == "%str-long" && valT != "" && valT != "%str-long" && valT != "%txt" &&
+		valT != "%option" && isScalarLLVM(valT) {
+		msg := fmt.Sprintf("index-store of a '%s' value into a '%s' element — no conversion exists", valT, elemT)
+		c.fail("%s", msg)
+		return fmt.Errorf("%s", msg)
+	}
+	if valT != "" && elemT != "" && valT != elemT && !strIntoByteElem &&
+		valT != "%option" && elemT != "%option" &&
+		valT != "%vec" && elemT != "%vec" && elemT != "%str-long" &&
+		(isAggregateLLVM(valT) || isAggregateLLVM(elemT)) {
+		msg := fmt.Sprintf("index-store of a '%s' value into a '%s' element — no conversion exists", valT, elemT)
+		c.fail("%s", msg)
+		return fmt.Errorf("%s", msg)
+	}
 	// Ownership of the OVERWRITTEN slot is determined by the ELEMENT type we are
 	// writing INTO, not the value's type. A char/byte buffer (i8) is not owned,
 	// so storing into it must NOT emit @str_free on an i8 as if it were a
@@ -6849,6 +7255,79 @@ func (c *codegen) emitSetField(inst *Inst) error {
 		c.fail("setfield: field %q not found on %q in func %d", inst.Str, recvRaw, c.cf)
 		return fmt.Errorf("setfield field")
 	}
+	// The field's DECLARED type is authoritative — `fieldLT` above is derived
+	// from the RHS (`c.ptype(inst.Args[1])`), which is the same value only when
+	// the assignment is well-typed. Two cases where it is not:
+	//
+	// 1. A `str` field receiving a `txt` VALUE (the mirror of the `txt` field
+	//    case handled further down). `fieldLT` was `%txt` while the field is a
+	//    `%str-long`, and because an owned `str` field is a POINTER field the
+	//    store took the pointer-field branch: it wrote through `ptrFieldAddr`
+	//    and then ran the owned-leaf clone walk with `%txt` as the STRUCT type
+	//    while indexing the DECLARED struct's field list, emitting
+	//      getelementptr inbounds %txt, ptr %gp14, i32 0, i32 2
+	//    — field 2 of a 2-field struct -> "invalid getelementptr indices".
+	//    Repro: `point { s str }` ; `p.s = t` where t is a txt.
+	//    Convert to an OWNED %str-long: @str_from_const mallocs, so the field
+	//    must not borrow the txt's inline buffer (it dies with the txt).
+	//
+	// 2. Any other aggregate whose layout differs from the declared field's
+	//    (e.g. an array assigned to a `txt` field). `no vet` reports 0 errors
+	//    for this — struct field assignment types are not checked — and the
+	//    old behaviour wrote the RHS's bytes into the field, leaving the `%txt`
+	//    length byte at 0 so every read came back empty. Refuse instead.
+	//    `%vec`/`%str-long` are excluded on both sides: they are layout-identical
+	//    24-byte triples and the codebase relies on that pun (a fixed-array RHS
+	//    reaching a slice field is converted just below, and a slice RHS
+	//    reaching a fixed-array field is accepted).
+	//
+	// 3. A SLICE field (`%vec`) is handled separately, before the generic case:
+	//    all slices share the same `%vec` LLVM type whatever their element, so
+	//    an element-type mismatch is invisible to the store and only shows up
+	//    later when the DECLARED element stride is used to read the buffer.
+	//    See sliceFieldStoreMismatch for the measured symptoms.
+	if f, ok := c.fieldAt(structKey, idx); ok {
+		if ft := c.mod.Type(c.mod.internType(f.TypeRaw)); ft != nil {
+			declaredLT := c.llvmTypeOf(ft)
+			switch {
+			case declaredLT == "%str-long" && valLT == "%txt":
+				valV = c.strValueFromTxtValue(valV)
+				valLT = "%str-long"
+				fieldLT = "%str-long"
+			case declaredLT == "%vec":
+				if reason := c.sliceFieldStoreMismatch(ft, inst.Args[1], valLT); reason != "" {
+					// Include the detail in the returned error too: returning
+					// from here short-circuits before EmitLLVM aggregates
+					// c.errs, so a bare `fmt.Errorf("setfield ...")` would hide
+					// it from the user.
+					msg := fmt.Sprintf("field %q of %q is declared '%s' but the assigned value is '%s': %s",
+						inst.Str, recvRaw, ft.Raw, c.rawTypeOfValue(inst.Args[1]), reason)
+					c.fail("setfield: %s", msg)
+					return fmt.Errorf("setfield: %s", msg)
+				}
+			case declaredLT == "%txt" && valLT == "%vec":
+				// A slice VALUE into a `txt` field. The generic case below
+				// excludes `%vec`, so this used to slip through and store a
+				// 24-byte {len,cap,data} header into the 256-byte txt buffer:
+				// the i8 length byte (offset 255) kept its 0, so the field read
+				// back empty while `.len()` reported the vec's length.
+				msg := fmt.Sprintf("field %q of %q is declared '%s' but the assigned value is '%s' — a slice cannot back a fixed 256-byte txt buffer",
+					inst.Str, recvRaw, ft.Raw, c.rawTypeOfValue(inst.Args[1]))
+				c.fail("setfield: %s", msg)
+				return fmt.Errorf("setfield: %s", msg)
+			case declaredLT != fieldLT && isAggregateLLVM(declaredLT) && isAggregateLLVM(fieldLT) &&
+				declaredLT != "%vec" && declaredLT != "%str-long" &&
+				fieldLT != "%vec" && fieldLT != "%str-long":
+				// Include the detail in the returned error too: returning from
+				// here short-circuits before EmitLLVM aggregates c.errs, so a
+				// bare `fmt.Errorf("setfield ...")` would hide it from the user.
+				msg := fmt.Sprintf("field %q of %q is declared '%s' but the assigned value is '%s' — different aggregate layouts cannot be stored",
+					inst.Str, recvRaw, declaredLT, fieldLT)
+				c.fail("setfield: %s", msg)
+				return fmt.Errorf("setfield: %s", msg)
+			}
+		}
+	}
 	// Fixed-array RHS stored into a slice-typed field (`c.data = [1,2,3]` where
 	// `data []i64`): coerce [N x T] -> %vec borrow view (len=N, cap=0,
 	// data=&arr[0]) so the field holds a real slice header. Legacy treats [N]T
@@ -6959,6 +7438,94 @@ func (c *codegen) emitSetField(inst *Inst) error {
 	c.sb.WriteString(fmt.Sprintf("  store %s %s, %s* %s\n", fieldLT, valV, fieldLT, gep))
 	c.cloneStructFieldLeaves(structKey, idx, gep, fieldLT)
 	return nil
+}
+
+// sliceFieldStoreMismatch reports why a slice-typed struct field may not accept
+// the value at `val`, or "" when the store is legal.
+//
+// Every slice is `%vec` — a 24-byte {len, cap, data} header — whatever its
+// element type, so a slice-to-slice store never fails at the LLVM level: the
+// header shape is identical, and under opaque pointers even `%str-long*` and
+// `%vec*` are the same `ptr`. The damage appears later, when the DECLARED
+// element stride is used to read the buffer. Measured before this guard, all
+// with `no vet` reporting 0 errors:
+//
+//	[]i64 -> []str field : trace/BPT trap (element 1 read at offset 8 as a
+//	                       {len,cap,data}, then freed as a heap pointer)
+//	[]str -> []i64 field : printed 4 — element 1 read at offset 8, the len
+//	                       field of element 0, instead of at offset 24
+//	[]txt -> []str field : empty string — offset 24 instead of 256
+//	txt   -> []i64 field : len printed 478560413032
+//	txt   -> []byte field: len printed 478560413032
+//	str   -> []i64 field : len 2 (a BYTE count) read as i64 elements
+//	str   -> []str field : len 2, elements are byte fragments
+//
+// The element LLVM type must therefore match. The documented puns stay legal
+// and are deliberately let through:
+//
+//   - `[N]T -> []T`: the array->slice conversion below copies with the ARRAY's
+//     element width while every later read uses the FIELD's stride. A fixed
+//     array reaching a slice field is what std relies on, so this direction is
+//     not rejected wholesale: only the unsafe element pairs are (see the array
+//     branch in the body).
+//   - `str -> []byte`: both sides are the same {len,cap,data} header AND the
+//     element is i8, so the byte view is exactly what std relies on.
+func (c *codegen) sliceFieldStoreMismatch(declared *Type, val ValueID, valLT string) string {
+	de := c.elemLTOfType(declared)
+	valRaw := c.rawTypeOfValue(val)
+	switch {
+	case valLT == "%vec":
+		// Slice to slice: every later read uses the FIELD's element stride, so
+		// the element types must match exactly.
+		vt := c.mirTypeOfValue(val)
+		if vt == nil {
+			return ""
+		}
+		if ve := c.elemLTOfType(vt); ve != de {
+			return fmt.Sprintf("a slice read uses the field's element stride, so storing '%s' (element LLVM %s) into a '%s' field (element LLVM %s) would misread every element",
+				valRaw, ve, declared.Raw, de)
+		}
+	case strings.HasPrefix(valLT, "["):
+		// Fixed array decaying to the slice. The conversion below
+		// (vecFromArraySink) copies with the ARRAY's element width while every
+		// later read uses the FIELD's stride, so only the UNSAFE directions are
+		// refused:
+		//   - an AGGREGATE field element — a %str-long/%txt read at a 24/256
+		//     byte stride over a buffer sized for the array's element. This is
+		//     the `[3]i64 -> []str` trace/BPT trap.
+		//   - a field element WIDER than the array's — an 8-byte read at
+		//     offset 0 of a narrower buffer.
+		// A NARROWER scalar field element stays allowed: `[3]i64 -> []byte` is
+		// what an anonymous struct literal produces when its field type is not
+		// propagated to the array literal, and every read stays inside the
+		// buffer, so it is the pre-existing wrong-VALUE behaviour (elements read
+		// at the wrong width) rather than a memory error.
+		// tests/test-uninit-output.no depends on this staying rc=0; making it
+		// correct needs the lowering to infer `[3]byte` from the field type.
+		vt := c.mirTypeOfValue(val)
+		if vt == nil {
+			return ""
+		}
+		ve := c.elemLTOfType(vt)
+		if ve == de {
+			return ""
+		}
+		if isAggregateLLVM(de) {
+			return fmt.Sprintf("the field's element '%s' is an aggregate read over a buffer sized for '%s' elements, so storing '%s' into a '%s' field would read out of bounds",
+				de, ve, valRaw, declared.Raw)
+		}
+		if dSz, dOk := mirStaticTypeSize(de); dOk {
+			if vSz, vOk := mirStaticTypeSize(ve); vOk && dSz > vSz {
+				return fmt.Sprintf("the field's element '%s' is wider than the array's '%s' element, so storing '%s' into a '%s' field would read past the buffer",
+					de, ve, valRaw, declared.Raw)
+			}
+		}
+	case valLT == "%txt":
+		return fmt.Sprintf("a txt is a fixed 256-byte inline buffer, not a slice header, so it cannot back a '%s' field", declared.Raw)
+	case valLT == "%str-long" && de != "i8":
+		return fmt.Sprintf("a str is a byte sequence, so it can only fill a []byte field, not a '%s' one", declared.Raw)
+	}
+	return ""
 }
 
 // cloneStructFieldLeaves deep-copies the inline owned `str` leaves of the
@@ -9493,6 +10060,30 @@ func (c *codegen) emitCallBody(f *Function, cf *Function, inst *Inst, calleeName
 			c.sb.WriteString(fmt.Sprintf("  store i8 %s, i8* %s\n", l8, lx))
 			callArgs = append(callArgs, "%txt* "+slot)
 		} else if byPointerLLVM(plt, owned) {
+			// Refuse an aggregate actual whose layout differs from the
+			// parameter's. This branch passes the ARGUMENT'S slot address as a
+			// `plt*` — with opaque pointers LLVM accepts the type pun, so the
+			// callee reads the parameter's layout out of an object of a
+			// different size. Repro (a std method call, so the checker never
+			// validates it — see the method-argument gap):
+			//   t txt = 'hello'
+			//   b = t.eq([1, 2, 3])
+			// emitted `call void @txt_eq(%txt* %v1.s, %txt* %v2.s, i1* %cres)`
+			// where %v2.s is `alloca [3 x i64]` (24 B): the callee read 256 B
+			// out of it (the `%txt` len byte at offset 255 happened to be 0, so
+			// it returned a stable-but-wrong `false` — a silent stack OOB read).
+			//
+			// `%vec` and `%str-long` are deliberately EXCLUDED on both sides:
+			// they are layout-identical 24-byte triples and the codebase relies
+			// on that pun (e.g. a `[]byte` parameter receiving a `str`, and a
+			// fixed array argument reaching a slice parameter).
+			if argT != plt && isAggregateLLVM(argT) && isAggregateLLVM(plt) &&
+				plt != "%vec" && plt != "%str-long" &&
+				argT != "%vec" && argT != "%str-long" {
+				c.fail("func %s: argument %d of '%s': parameter '%s' expects '%s' but the argument is '%s' — different aggregate layouts cannot be passed by pointer",
+					c.fname[c.cf], i+1, calleeName, c.rawTypeOfValue(p), plt, argT)
+				continue
+			}
 			// Non-owned aggregate parameter (fixed array / non-owned struct):
 			// pass the address of the argument's local slot so the callee's
 			// by-pointer param is satisfied. The argument is copied by value
@@ -9519,6 +10110,29 @@ func (c *codegen) emitCallBody(f *Function, cf *Function, inst *Inst, calleeName
 			// ints are i64 by default but byte/i8 values may be passed to an i64
 			// parameter (e.g. byte.to-str calling u64-to-str); without the sext
 			// LLVM rejects `i64 %reg` where %reg is defined as i8.
+			//
+			// Refuse an AGGREGATE actual where a SCALAR parameter is expected.
+			// coerceInt knows only integer/float conversions and returns the value
+			// UNCHANGED for anything else, so this branch used to emit
+			// `store i32 %str-long_val, i32* %carg` and LLVM rejected the whole
+			// module in opt-verify:
+			//   call void @str_replace_char(%str-long* %v0.s, i32 %lv1, ...)
+			//   opt: '%lv1' defined with type '%str-long' but expected 'i32'
+			// The user-visible symptom was bad: `no vet` reported 0 errors — std
+			// method signatures carry only RETURN types (embeddedStdFuncSigs is
+			// map[string][]string), so method arguments are never type-checked —
+			// and only `no run` failed, with an internal opt-verify dump pointing
+			// at a temp .ll file. Repro:
+			//   s str = 'hello'
+			//   r str = s.replace-char('-', '*')   ; '-' is a STR, not a char
+			// (the correct spelling uses char literals: "-", "*").
+			// Failing here converts that into a located compiler diagnostic.
+			if isScalarLLVM(plt) && argT != plt &&
+				(strings.HasPrefix(argT, "%") || strings.HasPrefix(argT, "[") || strings.HasPrefix(argT, "{")) {
+				c.fail("func %s: argument %d of '%s': parameter '%s' expects a scalar (LLVM %s) but the argument has aggregate type '%s' (LLVM %s) — an aggregate cannot be passed where a scalar is expected",
+					c.fname[c.cf], i+1, calleeName, c.rawTypeOfValue(p), plt, c.rawTypeOfValue(inst.Args[argIdx]), argT)
+				continue
+			}
 			av = c.coerceInt(av, argT, plt)
 			callArgs = append(callArgs, plt+" "+av)
 		}

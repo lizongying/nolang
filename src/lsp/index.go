@@ -273,7 +273,15 @@ func (idx *SymbolIndex) AddBuiltinSymbols() {
 		}
 		params := make([]ParamInfo, len(m.Params))
 		for i, p := range m.Params {
-			params[i] = ParamInfo{Name: p.String(), Type: p.String()}
+			// A parameter that is the RECEIVER'S ELEMENT TYPE is registered as
+			// i64 (the registry serves every []T from one entry), so hovering
+			// `[]t.push` would read "push(i64)". ElemParams marks those
+			// positions: render them as `t`, the element type variable.
+			typ := p.String()
+			if i < len(m.ElemParams) && m.ElemParams[i] {
+				typ = "t"
+			}
+			params[i] = ParamInfo{Name: p.String(), Type: typ}
 		}
 		// 語言層返回型別：option-return 內建（stat-size/fstat-size/file-size）
 		// 的註冊表 Return 是原始 C pair (T, ok)，但 std 宣告是單一 ?T，

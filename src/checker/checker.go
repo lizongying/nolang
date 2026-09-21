@@ -6958,6 +6958,10 @@ var (
 	stdSigsOnce          sync.Once
 	stdSigsCache         map[string][]string // 模塊函數簽名（鍵：module.fn 或裸名 fn）
 	stdMethodSigsCache   map[string][]string // 結構體方法簽名（鍵：module.struct.method）
+	// 參數型別表，與上面兩張「回傳型別表」同鍵。有了它 checker 才能檢查
+	// std 呼叫的引數；沒有它，方法引數從來沒被走訪過（見 checkCallArgsInExpr）。
+	stdFuncParamsCache   map[string][]string // 模塊函數參數型別（鍵同 stdSigsCache）
+	stdMethodParamsCache map[string][]string // 方法參數型別（鍵同 stdMethodSigsCache）
 	stdFieldsCache       map[string]map[string]string
 	stdAliasesCache      map[string]string   // 單具體型別別名快取（如 "fd" → "i64"）
 	stdStructModCache    map[string]string   // struct name → module short name（如 "conn" → "tls"）
@@ -7157,9 +7161,11 @@ func GetJsModules() []JsModuleInfo {
 
 //go:generate go run ./genstdsig
 
-func setStdSigCaches(funcSigs map[string][]string, methodSigs map[string][]string, structFields map[string]map[string]string, aliases map[string]string, structMod map[string]string, enumVariants map[string][]string) {
+func setStdSigCaches(funcSigs map[string][]string, methodSigs map[string][]string, funcParams map[string][]string, methodParams map[string][]string, structFields map[string]map[string]string, aliases map[string]string, structMod map[string]string, enumVariants map[string][]string) {
 	stdSigsCache = funcSigs
 	stdMethodSigsCache = methodSigs
+	stdFuncParamsCache = funcParams
+	stdMethodParamsCache = methodParams
 	stdFieldsCache = structFields
 	stdAliasesCache = aliases
 	stdStructModCache = structMod
@@ -7176,15 +7182,15 @@ func CollectStdModuleSignatures() (map[string][]string, map[string]map[string]st
 		// keys differ and we fall through to full collection.
 		if embeddedStdSigReady {
 			if key, err := computeStdSigKey(); err == nil && embeddedStdSigKey == key {
-				setStdSigCaches(embeddedStdFuncSigs, embeddedStdMethodSigs, embeddedStdStructFields, embeddedStdAliases, embeddedStdStructMod, embeddedStdEnumVariants)
+				setStdSigCaches(embeddedStdFuncSigs, embeddedStdMethodSigs, embeddedStdFuncParams, embeddedStdMethodParams, embeddedStdStructFields, embeddedStdAliases, embeddedStdStructMod, embeddedStdEnumVariants)
 				warmStdTokenCache()
 				return
 			}
 		}
 
 		// ---- full collection from embedded StdFS ----
-		funcSigs, methodSigs, structFields, aliases, structMod, enumVariants, _ := collectStdSigsFromFS(nolang.StdFS)
-		setStdSigCaches(funcSigs, methodSigs, structFields, aliases, structMod, enumVariants)
+		funcSigs, methodSigs, funcParams, methodParams, structFields, aliases, structMod, enumVariants, _ := collectStdSigsFromFS(nolang.StdFS)
+		setStdSigCaches(funcSigs, methodSigs, funcParams, methodParams, structFields, aliases, structMod, enumVariants)
 		warmStdTokenCache()
 	})
 	return stdSigsCache, stdFieldsCache
@@ -7193,7 +7199,7 @@ func CollectStdModuleSignatures() (map[string][]string, map[string]map[string]st
 // CollectStdSigsFromFS is the exported, FS-parameterized entry point used by
 // the signature-table generator (genstdsig) to collect the five signature
 // tables from the on-disk src/ tree at `no` build time.
-func CollectStdSigsFromFS(fsys fs.FS) (map[string][]string, map[string][]string, map[string]map[string]string, map[string]string, map[string]string, map[string][]string, error) {
+func CollectStdSigsFromFS(fsys fs.FS) (map[string][]string, map[string][]string, map[string][]string, map[string][]string, map[string]map[string]string, map[string]string, map[string]string, map[string][]string, error) {
 	return collectStdSigsFromFS(fsys)
 }
 
@@ -7202,7 +7208,11 @@ func CollectStdSigsFromFS(fsys fs.FS) (map[string][]string, map[string][]string,
 // type aliases, struct→module map) needed by the parser's type inference. It is
 // the FS-parameterized core of CollectStdModuleSignatures: the runtime passes
 // nolang.StdFS, the generator passes an os.DirFS over src/ on disk.
-func collectStdSigsFromFS(fsys fs.FS) (map[string][]string, map[string][]string, map[string]map[string]string, map[string]string, map[string]string, map[string][]string, error) {
+// Returns (funcSigs, methodSigs, funcParams, methodParams, structFields,
+// aliases, structMod, enumVariants, error). The two *Params tables are keyed
+// exactly like their result-type counterparts and carry the declared
+// PARAMETER types, so callers can type-check arguments.
+func collectStdSigsFromFS(fsys fs.FS) (map[string][]string, map[string][]string, map[string][]string, map[string][]string, map[string]map[string]string, map[string]string, map[string]string, map[string][]string, error) {
 	// PASS 1: 解析所有模組並暫存，同時統計裸 struct 名的跨模組定義數。
 	// 多模組同名結構體（如 server-conn 定義於 server/tls/sse/ws）的裸名
 	// 有歧義：函數簽名快照若記錄裸名（?server-conn），解析期 it 綁定會
@@ -7278,7 +7288,7 @@ func collectStdSigsFromFS(fsys fs.FS) (map[string][]string, map[string][]string,
 	}
 	st := hir.CollectModuleSignatures(modulePkgs)
 
-	return st.Funcs, st.Methods, st.Structs, st.Aliases, st.StructMod, st.Enums, nil
+	return st.Funcs, st.Methods, st.FuncParams, st.MethodParams, st.Structs, st.Aliases, st.StructMod, st.Enums, nil
 }
 func CollectStdConcreteAliases() map[string]string {
 	CollectStdModuleSignatures() // 觸發 sync.Once 填充快取

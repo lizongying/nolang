@@ -41,10 +41,27 @@ const (
 )
 
 type BuiltinMethod struct {
-	ReceiverType  ReceiverKind
-	MethodName    string
-	Params        []parser.Type
-	Return        []parser.Type
+	ReceiverType ReceiverKind
+	MethodName   string
+	Params       []parser.Type
+	// ElemParams marks, positionally, which entries of Params are the
+	// RECEIVER'S ELEMENT TYPE rather than a plain scalar (an index, a length).
+	//
+	// The registry is element-type-agnostic — a slice method is registered once
+	// and serves every []T — so Params can only record the LOWEST-LEVEL shape,
+	// which is i64 for both `[]t.push` (element) and `[]t.remove` (index).
+	// Without this marker a consumer cannot tell them apart, and substituting
+	// the receiver's element type into every parameter rejects a legal
+	// `[]str.remove(0)` as "expected 'str', got 'i64'".
+	//
+	// Len(ElemParams) may be shorter than len(Params); unmarked positions are
+	// scalar. Only consumers that need a language-level signature read it
+	// (LSP hover, the checker's argument check); codegen dispatches on the
+	// method name and ignores Params entirely.
+	ElemParams []bool
+	Return     []parser.Type
+	// Doc / ForwardFunc / LLVMIntrinsic / CLibCall / LLVMConv are aligned with
+	// the block above; gofmt owns this spacing.
 	Doc           string
 	ForwardFunc   string
 	LLVMIntrinsic string

@@ -234,6 +234,56 @@ fingerprint_one() {
 export -f fingerprint_one run_to sha_of
 export NO WORKDIR TMO MODE GOLDEN_MIR FORCE_MIR
 
+# ── PRE-FLIGHT LINK SMOKE TEST ───────────────────────────────────────────────
+#
+# WHY: every number this script prints rests on one assumption — that
+# `$NO run <file>` can turn source into a RUNNING BINARY. When the C toolchain
+# cannot link, every corpus file exits non-zero with EMPTY stdout, and the
+# report renders that as hundreds of REGRESS/DIVERGE lines, i.e. "your backend
+# change broke everything".
+#
+# The dangerous part is the reflex that follows: reaching for `-update` to make
+# the noise stop. That would freeze an all-fail capture over a good oracle and
+# leave no trace of what the backend really computed. So fail BEFORE the sweep,
+# with the actual cause.
+#
+# (The pollution guard below would also trip on a dead linker, but it blames
+# "the compiler is printing to stdout" — a wrong diagnosis — and it only runs
+# when a golden file exists. This check is unconditional and specific.)
+#
+# MEASURED FAILURE (2026-09-22): CommandLineTools was updated to 27.0 (clang
+# 21, SDK MacOSX27.0) while xcode-select still pointed at Xcode.app 26.2
+# (clang 17). /usr/bin/clang therefore paired clang 17 with SDK-27 .tbd files:
+#     ld: tapi error: malformed file ... unknown architecture arm64e.x1-macos
+# Fix EITHER side of that mismatch — a toolchain that matches the SDK:
+#     export DEVELOPER_DIR=/Library/Developer/CommandLineTools
+#     sudo xcode-select -s /Library/Developer/CommandLineTools   (permanent)
+# or an SDK the old clang can parse:
+#     export SDKROOT=/Library/Developer/CommandLineTools/SDKs/MacOSX26.5.sdk
+printf 'print(1)\n' > "$WORKDIR/smoke.no"
+run_to 120 "$NO" run "$WORKDIR/smoke.no" >"$WORKDIR/smoke.out" 2>"$WORKDIR/smoke.err"
+smoke_rc=$?
+smoke_out=$(cat "$WORKDIR/smoke.out" 2>/dev/null)
+if [ "$smoke_rc" != 0 ] || [ "$smoke_out" != "1" ]; then
+  echo "ERROR: link smoke test failed — '$NO run' produced no working binary." >&2
+  echo "       rc=$smoke_rc stdout='$smoke_out'" >&2
+  echo >&2
+  echo "       Nothing below would mean anything: every corpus file would exit" >&2
+  echo "       non-zero with empty stdout and read as a mass regression. Do NOT" >&2
+  echo "       'fix' this with -update — that would freeze the breakage as the" >&2
+  echo "       baseline. Fix the toolchain first. Last stderr lines:" >&2
+  tail -5 "$WORKDIR/smoke.err" >&2
+  echo >&2
+  echo "       On macOS, the usual cause is an SDK/toolchain version mismatch" >&2
+  echo "       (clang from one Xcode, SDK from another). Check:" >&2
+  echo "         xcode-select -p ; xcrun --show-sdk-path ; clang --version" >&2
+  echo "       then either point DEVELOPER_DIR at the matching toolchain or set" >&2
+  echo "       SDKROOT to an SDK that clang can parse (both verified working)." >&2
+  rm -f "$WORKDIR/smoke.no" "$WORKDIR/smoke.out" "$WORKDIR/smoke.err"
+  exit 4
+fi
+rm -f "$WORKDIR/smoke.no" "$WORKDIR/smoke.out" "$WORKDIR/smoke.err"
+
 # ── PRE-FLIGHT POLLUTION GUARD ───────────────────────────────────────────────
 #
 # WHY: the fingerprint is "<rc> <sha256-of-stdout> <path>" and fingerprint_one

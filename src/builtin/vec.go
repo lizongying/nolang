@@ -30,8 +30,13 @@ func init() {
 		ReceiverType: ReceiverVec,
 		MethodName:   "push",
 		Params:       []parser.Type{parser.TypeI64},
-		Return:       []parser.Type{},
-		Doc:          "Push an element to the end of the slice (auto-grow)",
+		// The single parameter is the ELEMENT, not an index: []str.push('x')
+		// is legal while []str.push(0) is not. Params records i64 only because
+		// the registry is element-type-agnostic; ElemParams carries the
+		// distinction (see BuiltinMethod.ElemParams).
+		ElemParams:  []bool{true},
+		Return:      []parser.Type{},
+		Doc:         "Push an element to the end of the slice (auto-grow)",
 		ForwardFunc: "vec-push",
 	})
 
@@ -41,9 +46,10 @@ func init() {
 		ReceiverType: ReceiverVec,
 		MethodName:   "vec.push",
 		Params:       []parser.Type{parser.TypeI64},
+		ElemParams:   []bool{true},
 		Return:       []parser.Type{},
 		Doc:          "Push an element to the end of the slice (auto-grow)",
-		ForwardFunc: "vec-push",
+		ForwardFunc:  "vec-push",
 	})
 
 	// vec.clear: clear slice in-place (set len=0, no free/shrink)
@@ -136,11 +142,11 @@ func init() {
 	// of the concrete element type. The ForwardFunc targets match the existing
 	// vec.*/bare builtins so the legacy path is unaffected.
 	BuiltinMethodList = append(BuiltinMethodList,
-		BuiltinMethod{ReceiverType: ReceiverVec, MethodName: "[]t.push", Params: []parser.Type{parser.TypeI64}, Return: []parser.Type{}, Doc: "Push an element to the end of the slice (auto-grow)", ForwardFunc: "vec-push"},
+		BuiltinMethod{ReceiverType: ReceiverVec, MethodName: "[]t.push", Params: []parser.Type{parser.TypeI64}, ElemParams: []bool{true}, Return: []parser.Type{}, Doc: "Push an element to the end of the slice (auto-grow)", ForwardFunc: "vec-push"},
 		BuiltinMethod{ReceiverType: ReceiverVec, MethodName: "[]t.clear", Params: []parser.Type{}, Return: []parser.Type{}, Doc: "Clear slice in-place (set len=0, cap/data unchanged)", ForwardFunc: "vec-clear"},
 		BuiltinMethod{ReceiverType: ReceiverVec, MethodName: "[]t.pop", Params: []parser.Type{}, Return: []parser.Type{parser.TypeI64}, Doc: "Pop the last element from the slice", ForwardFunc: "vec-pop"},
 		BuiltinMethod{ReceiverType: ReceiverVec, MethodName: "[]t.reverse", Params: []parser.Type{}, Return: []parser.Type{}, Doc: "Reverse the slice in-place", ForwardFunc: "vec-reverse"},
-		BuiltinMethod{ReceiverType: ReceiverVec, MethodName: "[]t.insert", Params: []parser.Type{parser.TypeI64, parser.TypeI64}, Return: []parser.Type{}, Doc: "Insert element at index (shifts right)", ForwardFunc: "vec-insert"},
+		BuiltinMethod{ReceiverType: ReceiverVec, MethodName: "[]t.insert", Params: []parser.Type{parser.TypeI64, parser.TypeI64}, ElemParams: []bool{false, true}, Return: []parser.Type{}, Doc: "Insert element at index (shifts right)", ForwardFunc: "vec-insert"},
 		BuiltinMethod{ReceiverType: ReceiverVec, MethodName: "[]t.remove", Params: []parser.Type{parser.TypeI64}, Return: []parser.Type{parser.TypeI64}, Doc: "Remove element at index (shifts left, returns it)", ForwardFunc: "vec-remove"},
 		BuiltinMethod{ReceiverType: ReceiverVec, MethodName: "[]t.sort-asc", Params: []parser.Type{}, Return: []parser.Type{}, Doc: "Sort the slice in ascending order in-place (insertion sort)", ForwardFunc: "vec-sort-asc"},
 		BuiltinMethod{ReceiverType: ReceiverVec, MethodName: "[]t.sort-desc", Params: []parser.Type{}, Return: []parser.Type{}, Doc: "Sort the slice in descending order in-place (insertion sort)", ForwardFunc: "vec-sort-desc"},
