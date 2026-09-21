@@ -701,7 +701,7 @@ bzip2-compress = (data []byte) (out []byte) {
     out.push(0x59)
 
     ; 區塊 CRC (32 bits) — 使用 CRC32
-    crc = crc-32.crc-32(data, data.len())
+    crc = crc-32.new(data, data.len())
     out.push((crc >> 24) & 0xff)
     out.push((crc >> 16) & 0xff)
     out.push((crc >> 8) & 0xff)

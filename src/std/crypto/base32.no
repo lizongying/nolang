@@ -4,16 +4,16 @@
 ; 每 5 位元組編碼為 8 個字元，不足部分以 '=' 填充。
 ;
 ; 用法：
-;   encoded = base32-encode(data)
-;   decoded = base32-decode(encoded)
+;   encoded = encode(data)
+;   decoded = decode(encoded)
 
 ; Base32 字母表
 BASE32-ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567'
 
-; base32-encode: Base32 編碼
+; encode: Base32 編碼
 ; data []byte: 輸入資料
 ; 返回 out str: Base32 編碼字串
-base32-encode = (data []byte) (out str) {
+encode = (data []byte) (out str) {
     #{overflow=wrap}
     dlen = data.len()
 
@@ -182,10 +182,10 @@ base32-encode = (data []byte) (out str) {
     }
 }
 
-; base32-decode: Base32 解碼
+; decode: Base32 解碼
 ; in str: Base32 編碼字串
 ; 返回 out []byte: 解碼後的資料
-base32-decode = (in str) (out []byte) {
+decode = (in str) (out []byte) {
     #{overflow=wrap}
     out = with-cap(in.len-bytes() * 5 / 8)
     in-len = in.len-bytes()

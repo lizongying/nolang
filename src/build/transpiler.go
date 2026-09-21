@@ -273,18 +273,18 @@ func updateCallNamesInStmt(stmt parser.Statement, overloads map[string][]*parser
 }
 
 type Transpiler struct {
-	pkg              *Package             // 當前套件（用於路徑解析）
-	sourcePath       string               // 當前編譯的源碼檔案路徑（用於 std 庫檢測）
-	allowAnonymousFn bool                 // 是否允許匿名函式型別參數（來自 package.jsonc）
+	pkg              *Package // 當前套件（用於路徑解析）
+	sourcePath       string   // 當前編譯的源碼檔案路徑（用於 std 庫檢測）
+	allowAnonymousFn bool     // 是否允許匿名函式型別參數（來自 package.jsonc）
 	// optionInlineThreshold 是 `?T` 載荷內聯的字節閾值（0 = 用 MIR 預設值 24）。
 	// 來源依序為 NOLANG_OPTION_INLINE_THRESHOLD 環境變數、package.jsonc 的
 	// compiler.option-inline-threshold。它決定 MIR 的
 	// `%option = { i64 tag, [N x i64] slot }` 裡 slot 的寬度：載荷 sizeof 不
 	// 大於它則內聯，大於它則堆裝箱、slot[0] 存指針。
 	optionInlineThreshold int
-	vetMode          bool                 // vet 模式：只做語法+型別檢查，跳過 LLVM IR 生成
-	vetStrict        bool                 // vet 模式下是否將 warning/hint 升級為 error
-	vetLints         []checker.LintResult // vet 模式下收集的 lint 結果
+	vetMode               bool                 // vet 模式：只做語法+型別檢查，跳過 LLVM IR 生成
+	vetStrict             bool                 // vet 模式下是否將 warning/hint 升級為 error
+	vetLints              []checker.LintResult // vet 模式下收集的 lint 結果
 	// chainedIfHints 收集主程序（非 std 库）中链式 -> 条件的 lint 提示，
 	// 由 buildWithPkg 在编译成功后打印到 stderr，提醒用户改用合并条件或 { } 块。
 	chainedIfHints []string
@@ -338,6 +338,15 @@ func (t *Transpiler) SetTargetPlatform(goos, goarch string) {
 
 // SetNoBoundsCheck configures whether bounds checks are skipped in generated code.
 // When true (unsafe mode), array/slice/string indexing does not emit bounds checks.
+// SetOptionInlineThreshold 以命令列 `--option-inline-threshold=N` 覆寫閾值。
+// 優先序：命令列 > NOLANG_OPTION_INLINE_THRESHOLD > package.jsonc；0 表示「未指定」，
+// 保留 NewTranspiler 已經解析好的值。
+func (t *Transpiler) SetOptionInlineThreshold(n int) {
+	if n > 0 {
+		t.optionInlineThreshold = n
+	}
+}
+
 func (t *Transpiler) SetNoBoundsCheck(skip bool) {
 	t.noBoundsCheck = skip
 }
@@ -2518,7 +2527,7 @@ func (t *Transpiler) CompileTarget(source string, _ Target) (string, error) {
 			func() {
 				defer func() { recover() }()
 				mod, rep, ldiags := mir.LowerHIR(hirPkg, checker.CollectStdEnumVariants())
-	t.applyOptionInlineThreshold(mod)
+				t.applyOptionInlineThreshold(mod)
 				if mod != nil {
 					if f, err := os.CreateTemp("", "nolang-mir-*.txt"); err == nil {
 						fmt.Fprintf(f, "=== NOLANG_MIR verification for %s ===\n", t.sourcePath)

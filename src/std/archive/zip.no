@@ -365,7 +365,7 @@ zip-writer {
 ; add-file: 添加檔案到歸檔（自動計算 CRC32）
 zip-writer.add-file = (name str, content []byte) {
     #{overflow=wrap}
-    crc = crc-32.crc-32(content, content.len())
+    crc = crc-32.new(content, content.len())
     off = .data.len()
     .write-local-file(name, content, crc)
     .write-cd-entry(name, off, content.len(), content.len(), crc)

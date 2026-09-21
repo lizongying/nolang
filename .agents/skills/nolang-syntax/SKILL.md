@@ -54,6 +54,7 @@ description: Reference for Nolang programming language syntax. Use when working 
   - [Safe Indexing (安全索引)](#safe-indexing-安全索引)
   - [Platform annotations (`#{mac-arm64}`, `#{linux-amd64}`, etc.)](#platform-annotations)
   - [JS Backend (`--js`, `--browser`)](#js-backend)
+- [Option Payload Inline Threshold (`--option-inline-threshold`)](#option-payload-inline-threshold---option-inline-threshold)
 - [String Operations](#string-operations)
 - [Standard Library](#standard-library)
 - [See Also — Nolang References](#see-also--nolang-references)
@@ -3192,6 +3193,7 @@ The `compiler` block in `package.jsonc` controls compiler behavior:
 - `emit` (string): Output target backend. `"js"` = use JS backend (type erasure, no LLVM toolchain). Default empty = LLVM native backend. Command-line `--js` flag takes precedence.
 - `anonymous-fn-type` (bool): Whether anonymous function type syntax is permitted. Default false.
 - `link-libs` ([]string): C libraries to link.
+- `option-inline-threshold` (int): Byte threshold for inlining a `?T` payload into the option struct. Default **24**, minimum **8** (below 8 is a compile error, 8..23 warns). Command-line `--option-inline-threshold=N` and env `NOLANG_OPTION_INLINE_THRESHOLD=N` take precedence over this file. See the dedicated section below.
 
 The `range` annotation is particularly useful for `num` type (`num = int | float`) to mark valid value ranges. Range bounds can be integers or identifiers (e.g. constants):
 
@@ -3201,6 +3203,44 @@ val i8 = 100
 ```
 
 If an annotation is not followed by a declaration, it remains a standalone `AnnotationStatement`.
+
+## Option Payload Inline Threshold (`--option-inline-threshold`)
+
+`?T` (Option/Result) stores its payload either **inline** in the option struct or **behind a heap pointer**. Which one it is depends on one global compiler setting: the payload-inline threshold.
+
+```bash
+# default: payload <= 24 bytes is inline, bigger is heap-boxed
+no build main.no
+
+# more types inline, fewer heap allocations — handy when hunting a leak
+no build --option-inline-threshold=128 main.no
+
+# tiny-stack / embedded: option is only 16 bytes, almost everything is boxed
+no build --option-inline-threshold=8 main.no
+```
+
+| | Scope | Controls |
+| --- | --- | --- |
+| struct field `#{inline=false}` | one struct field | that **struct's own** layout (field by value vs. heap pointer) |
+| `--option-inline-threshold=N` | every `?T` in the compilation unit | how the **Option container** carries its payload |
+
+The two are independent and do not conflict: the annotation shapes a struct, the flag shapes Option/Result return values.
+
+**Configuration precedence (highest first)**
+
+1. command line `--option-inline-threshold=N` (`no build` and `no run`)
+2. environment `NOLANG_OPTION_INLINE_THRESHOLD=N`
+3. `package.jsonc` → `compiler.option-inline-threshold`
+
+**Rules**
+
+- Default **24**: an err message is a 24-byte string, so at the default every err message fits inline.
+- Minimum **8**: a payload must at least hold an `i64`. Values below 8 are a **compile error**.
+- **8..23** compiles but **warns**: `err payloads (a 24-byte str) no longer fit the slot and are heap-boxed`. In this range err messages *and* `?str` payloads go through a pointer — that is the intended consequence of asking for a smaller option, not a degradation.
+- The threshold is rounded up to a whole number of `i64`s, so the option struct is `8 + 8*ceil(N/8)` bytes.
+- **Semantics never change.** This is a codegen/layout switch only: source stays `?T`, program output stays identical, only performance and allocation behaviour move. Do not use it to "fix" a behaviour difference — a difference across thresholds is a compiler bug.
+
+> Tuning it down is not free: `?str` is 24 bytes, so below 24 it becomes heap-boxed and every Option copy allocates another box. Only go below 24 when the target really is short on stack.
 
 ## String Operations
 

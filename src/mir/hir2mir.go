@@ -2181,7 +2181,7 @@ func (l *lowerer) lowerStmt(id int32) {
 						//     the whole option — every str use of it then
 						//     emitted IR opt rejected ("defined with type
 						//     'i1' but expected '%str-long'"). The unified
-						//     layout (`%option = { i64 tag, [3 x i64] slot }`,
+						//     layout (`%option = { i64 tag, [N x i64] slot }`,
 						//     see the "unified option layout" comment in
 						//     codegen.go) gives EVERY option a 24-byte slot,
 						//     so the err message fits and the same peel is

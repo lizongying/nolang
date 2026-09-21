@@ -629,7 +629,7 @@ func (c *codegen) emitCCall(inst *Inst, spec *cCallSpec) error {
 }
 
 // storeOptionFromPair stores a (value, okFlag) pair into a `?T` result as
-// `%option { tag, [3 x i64] slot }`: tag 0 (ok/some) when the flag is set, tag 1
+// `%option { tag, [N x i64] slot }`: tag 0 (ok/some) when the flag is set, tag 1
 // (nil/none) otherwise; data is the value. This mirrors legacy's
 // generateOptionAssign for option-returning builtins.
 func (c *codegen) storeOptionFromPair(inst *Inst, val, okFlag string) error {

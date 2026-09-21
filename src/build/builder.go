@@ -99,17 +99,20 @@ func CheckToolchain(cc string) error {
 
 // BuildOptions holds all options for a build operation.
 type BuildOptions struct {
-	CC              string            // C compiler: "clang" or "zig"
-	Target          string            // target triple (e.g. "x86_64-linux-gnu", "" = auto)
-	Verbose         bool
-	Output          string            // optional output path ("" = auto)
-	NoBoundsCheck   bool              // skip bounds checks (unsafe mode, for max performance)
-	UseDirectWasm   bool              // use Direct WASM backend (no LLVM toolchain required)
-	UseJS           bool              // use JS backend (emit JavaScript source, no LLVM toolchain)
-	BrowserMode     bool              // when true with UseJS, generate browser-targeted JS + HTML wrapper
-	CompilerVersion string            // current compiler version (for package.jsonc compatibility check)
-	Strict          bool              // vet mode: treat all lint warnings/hints as errors
-	LDFlags         map[string]string // -ld-KEY=VALUE pairs injected as compile-time global constants
+	CC            string // C compiler: "clang" or "zig"
+	Target        string // target triple (e.g. "x86_64-linux-gnu", "" = auto)
+	Verbose       bool
+	Output        string // optional output path ("" = auto)
+	NoBoundsCheck bool   // skip bounds checks (unsafe mode, for max performance)
+	UseDirectWasm bool   // use Direct WASM backend (no LLVM toolchain required)
+	UseJS         bool   // use JS backend (emit JavaScript source, no LLVM toolchain)
+	BrowserMode   bool   // when true with UseJS, generate browser-targeted JS + HTML wrapper
+	// OptionInlineThreshold 覆寫 `?T` 載荷內聯的字節閾值（0 = 沿用 package.jsonc
+	// / NOLANG_OPTION_INLINE_THRESHOLD 的解析結果）。見 transpiler.SetOptionInlineThreshold。
+	OptionInlineThreshold int
+	CompilerVersion       string            // current compiler version (for package.jsonc compatibility check)
+	Strict                bool              // vet mode: treat all lint warnings/hints as errors
+	LDFlags               map[string]string // -ld-KEY=VALUE pairs injected as compile-time global constants
 }
 
 // versionCompatible 檢查 package.jsonc 中聲明的編譯器版本是否與當前編譯器版本兼容。
@@ -553,6 +556,7 @@ func buildWithPkg(inputPath string, pkg *Package, opts BuildOptions, buffered bo
 	goos, goarch := parseTargetPlatform(opts.Target)
 	compiler.SetTargetPlatform(goos, goarch)
 	compiler.SetNoBoundsCheck(opts.NoBoundsCheck)
+	compiler.SetOptionInlineThreshold(opts.OptionInlineThreshold)
 	compiler.SetLDFlags(opts.LDFlags)
 	code, err := compiler.Compile(string(source))
 

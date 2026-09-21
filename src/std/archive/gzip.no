@@ -540,7 +540,7 @@ gzip-compress = (data []byte) (out []byte) {
     }
 
     ; CRC32（原始資料的 CRC32，小端序）
-    crc = crc-32.crc-32(data, data.len())
+    crc = crc-32.new(data, data.len())
     result.push(crc & 255)
     result.push((crc >> 8) & 255)
     result.push((crc >> 16) & 255)

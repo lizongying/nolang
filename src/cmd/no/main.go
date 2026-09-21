@@ -1340,6 +1340,7 @@ func buildCommand(args []string) {
 	cc := fs.String("cc", "clang", "C compiler: clang (default), zig")
 	target := fs.String("target", "", "Target triple (e.g. x86_64-linux-gnu, aarch64-macos-gnu, x86_64-windows-gnu, wasm32-wasi)")
 	unsafe := fs.Bool("unsafe", false, "Skip bounds checks for maximum performance (unsafe)")
+	optInlineThreshold := fs.Int("option-inline-threshold", 0, "Byte threshold for inlining an option (?T) payload into the option struct (default 24, minimum 8); payloads above it are heap-boxed")
 	wasmDirect := fs.Bool("wasm-direct", false, "Use Direct WASM backend (no LLVM toolchain required, browser-compatible)")
 	jsBackend := fs.Bool("js", false, "Use JS backend (emit JavaScript source, no LLVM toolchain required)")
 	browserMode := fs.Bool("browser", false, "Generate browser-targeted output (HTML + JS, requires --js)")
@@ -1356,17 +1357,18 @@ func buildCommand(args []string) {
 		fmt.Println("For wasm32-wasi target, set $WASI_SYSROOT to your wasi-sysroot path.")
 		fmt.Println("Use --wasm-direct to bypass LLVM toolchain and emit WASM directly (browser-compatible).")
 		fmt.Println("Use --js to bypass LLVM toolchain and emit JavaScript source (Node.js/browser-compatible).")
-	fmt.Println("Use --browser with --js to generate browser-targeted JS and an HTML wrapper.")
-	fmt.Println("Use -v to emit LLVM IR (.ll) files for analysis alongside the build.")
-	fmt.Println("")
-	fmt.Println("Examples:")
-	fmt.Println("  no build                  build current directory or workspace.jsonc projects")
+		fmt.Println("Use --browser with --js to generate browser-targeted JS and an HTML wrapper.")
+		fmt.Println("Use -v to emit LLVM IR (.ll) files for analysis alongside the build.")
+		fmt.Println("")
+		fmt.Println("Examples:")
+		fmt.Println("  no build                  build current directory or workspace.jsonc projects")
 		fmt.Println("  no build main.no")
 		fmt.Println("  no build -o output main.no")
 		fmt.Println("  no build -cc zig main.no")
 		fmt.Println("  no build -target x86_64-linux-gnu main.no")
 		fmt.Println("  no build -target wasm32-wasi main.no")
 		fmt.Println("  no build -unsafe main.no  build without bounds checks (max performance)")
+		fmt.Println("  no build --option-inline-threshold=8 main.no   box every ?T payload bigger than 8 bytes")
 		fmt.Println("  no build --wasm-direct -target wasm32-wasi main.no  emit WASM without LLVM toolchain")
 		fmt.Println("  no build --wasm-direct -o out.wasm main.no        Direct WASM backend with explicit output")
 		fmt.Println("  no build --js main.no                              emit JavaScript (type erasure)")
@@ -1400,16 +1402,17 @@ func buildCommand(args []string) {
 	}
 
 	opts := nbuild.BuildOptions{
-		CC:              *cc,
-		Target:          targetStr,
-		Verbose:         verbose,
-		Output:          *outputFile,
-		NoBoundsCheck:   *unsafe,
-		UseDirectWasm:   *wasmDirect,
-		UseJS:           useJS,
-		BrowserMode:     *browserMode,
-		CompilerVersion: version,
-		LDFlags:         ldFlags,
+		CC:                    *cc,
+		Target:                targetStr,
+		Verbose:               verbose,
+		Output:                *outputFile,
+		NoBoundsCheck:         *unsafe,
+		OptionInlineThreshold: *optInlineThreshold,
+		UseDirectWasm:         *wasmDirect,
+		UseJS:                 useJS,
+		BrowserMode:           *browserMode,
+		CompilerVersion:       version,
+		LDFlags:               ldFlags,
 	}
 
 	// JS 後端路徑：繞過 LLVM 工具鏈，直接發射 JavaScript 原始碼（型別擦除）。
@@ -1544,6 +1547,7 @@ func runCommand(args []string) {
 	cc := fs.String("cc", "clang", "C compiler: clang (default), zig")
 	target := fs.String("target", "", "Target triple (e.g. x86_64-linux-gnu, aarch64-macos-gnu, x86_64-windows-gnu, wasm32-wasi)")
 	unsafe := fs.Bool("unsafe", false, "Skip bounds checks for maximum performance (unsafe)")
+	optInlineThreshold := fs.Int("option-inline-threshold", 0, "Byte threshold for inlining an option (?T) payload into the option struct (default 24, minimum 8); payloads above it are heap-boxed")
 	wasmDirect := fs.Bool("wasm-direct", false, "Use Direct WASM backend (no LLVM toolchain required, browser-compatible)")
 	jsBackend := fs.Bool("js", false, "Use JS backend (emit JavaScript, run with node)")
 	browserMode := fs.Bool("browser", false, "Open in browser (requires --js)")
@@ -1753,14 +1757,15 @@ func runCommand(args []string) {
 
 	outPath := filepath.Join(tmpDir, "out")
 	opts := nbuild.BuildOptions{
-		CC:              *cc,
-		Target:          targetStr,
-		Output:          outPath,
-		Verbose:         verbose,
-		NoBoundsCheck:   *unsafe,
-		UseDirectWasm:   *wasmDirect,
-		CompilerVersion: version,
-		LDFlags:         ldFlags,
+		CC:                    *cc,
+		Target:                targetStr,
+		Output:                outPath,
+		Verbose:               verbose,
+		NoBoundsCheck:         *unsafe,
+		OptionInlineThreshold: *optInlineThreshold,
+		UseDirectWasm:         *wasmDirect,
+		CompilerVersion:       version,
+		LDFlags:               ldFlags,
 	}
 	// Build + run. There is no transparent retry: MIR is the only backend, so a
 	// build error or a non-zero runtime exit is reported as-is.

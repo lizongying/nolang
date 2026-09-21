@@ -94,13 +94,55 @@ type Type struct {
 
 - `%vec` = `{ i64 len, i64 cap, i64 data_ptr }`（堆 slice）
 - `%str-long` = `{ i64 len, i64 cap, i8* data }`
-- `%option` = `{ i64 tag, [3 x i64] slot }`（32 字节；tag：0=some/ok，1=nil/none，2=err）
+- `%option` = `{ i64 tag, [N x i64] slot }`（tag：0=some/ok，1=nil/none，2=err）
   - **每个 `?T` 都是这同一个类型**，payload 类型不再体现在 LLVM 类型名里，需要时由 MIR 类型表还原（`optPayloadLTOf`）。
-  - slot 是 **24 字节**，因为必须永远放得下的是 err 消息（一个 `%str-long`）。旧的 `{ i64, i64 }` 只有 8 字节，`err('msg')` 进 `?i64/?bool/?f64` 时只能存下堆指针（len/cap 丢失，err 臂打印出裸地址，且那次 `str_clone` 泄漏）。
-  - payload ≤ 24 字节 → **内联**（scalars / str / vec / 小结构体 / 小定长数组），按位存入 slot。
-  - payload > 24 字节（或大小无法证明）→ **装箱**：`malloc` 一块堆内存，slot[0] 存其指针。只有 tag 0（ok）会装箱；nil/err 的载荷永远是内联的短字节。读装箱载荷走 `optPayloadAddr` 的 `select(tag==0, box, @__nolang_opt_zero_<T>)`。
-  - ⚠️ 非 ok 那一侧**不能**取 slot 地址：装箱载荷比 slot 大，从 slot 读它就是越界 `getelementptr inbounds` = UB，LLVM 会判定该分支不可达并把 load 提到分支之上，于是优化后解引用 err 消息当指针 → SIGSEGV（`-O0` 下完全正常，只在 `opt` 之后复现）。故非 ok 侧指向一个 payload 大小的零常量。
-  - 装箱载荷目前只可能是结构体，而结构体不被 `ClassifyOwnership` 视为 owned，因此不会 drop → 不会 double free（也不会释放；`optBoxClone` 每次拷贝还会再 malloc 一块，属于已知的可接受泄漏）。
+  - **`N` 由 `option-inline-threshold` 决定**（见下），默认 24 → 32 字节的 option。
+  - `sizeof(payload) <= threshold` → **内联**，按位存入 slot。
+  - `sizeof(payload) > threshold`（或大小无法证明）→ **装箱**：`malloc` 一块堆内存，slot[0] 存其指针。读装箱载荷一律走 `optPayloadAddr` / `optPayloadAddrAs` / `optPayloadTypedAddr`。
+  - ⚠️ 非装箱那一侧**不能**取 slot 地址：装箱载荷比 slot 大，从 slot 读它就是越界 `getelementptr inbounds` = UB，LLVM 会判定该分支不可达并把 load 提到分支之上，于是优化后解引用 err 消息当指针 → SIGSEGV（`-O0` 下完全正常，只在 `opt` 之后复现）。故那一侧指向一个 payload 大小的零常量 `@__nolang_opt_zero_<T>`。
+  - ⚠️ "slot[0] 里是箱子吗" 要看 tag，而且**没有一个统一规则**：箱子是按「实际存进去的那个类型」的尺寸 malloc 的，所以只有 tag 与读取类型匹配时才能当作该类型解引用。详见 §4.2。
+  - 装箱载荷目前只可能是结构体（或阈值 < 24 时的 err 消息），而结构体不被 `ClassifyOwnership` 视为 owned，因此不会 drop → 不会 double free（也不会释放；`optBoxClone` 每次拷贝还会再 malloc 一块，属于已知的可接受泄漏）。
+
+#### 4.1.1 `option-inline-threshold`：payload 内联阈值
+
+`?T` 的容器要不要内联载荷，是**编译期全局策略**，和结构体字段的 `#{inline=...}` 注解是**两套独立的东西**：
+
+| | 作用域 | 控制什么 |
+|---|---|---|
+| 结构体字段 `#{inline=false}` / `#{layout}` | 单个结构体字段 | 该结构体**自身**的内存布局（字段是按值还是堆指针） |
+| `--option-inline-threshold=N` | 整个编译单元所有 `?T` | Option 容器**装载荷**的方式（内联 vs 堆装箱） |
+
+阈值**只改变底层布局，不改变语言语义**：无论设成多少，源码依旧统一写 `?T`，程序执行结果不变，变化的只是性能与内存分配行为。
+
+```
+no build --option-inline-threshold=128 main.no   # 多一点类型走内联，少堆分配，方便排查泄漏
+no build --option-inline-threshold=24  main.no   # 默认：平衡栈开销与堆分配
+no build --option-inline-threshold=8   main.no   # 极小栈环境：option 只有 16 字节
+```
+
+- **配置来源（优先级从高到低）**：命令行 `--option-inline-threshold=N` → 环境变量 `NOLANG_OPTION_INLINE_THRESHOLD=N` → `package.jsonc` 的 `compiler.option-inline-threshold`。
+- **默认 24**，因为必须永远放得下的是 err 消息（一个 `%str-long` 正好 24 字节）。旧的 `{ i64, i64 }` 只有 8 字节，`err('msg')` 进 `?i64/?bool/?f64` 时只能存下堆指针（len/cap 丢失，err 臂打印出裸地址，且那次 `str_clone` 泄漏）。
+- **可调范围**：最小值 **8**（一个 payload 至少得放得下一个 i64）；`< 8` 是**编译错误**。
+- **8..23 会打编译警告**：`err payloads (a 24-byte str) no longer fit the slot and are heap-boxed`。此时 err 消息也走指针，`?str` 的 ok 载荷同样装箱 —— 这是这个模式的设计后果，不是退化。
+- 阈值向上取整到 i64 的整数倍，于是 `%option` = `8 + 8*ceil(N/8)` 字节。
+
+> 阈值调小**不是免费的**：`?str`（24 字节）在阈值 < 24 时会变成堆装箱，每次 option 拷贝 `optBoxClone` 都会再 malloc 一块。调小前先确认目标场景真的缺栈空间。
+
+### 4.2 装箱载荷的读取规则（`optPayloadAddrAs`）
+
+箱子是按「存进去的那个类型」的尺寸分配的，因此**"slot[0] 是不是我想要的那个箱子"必须同时看 tag 和读取类型**：
+
+| 读取类型 `readLT` | 与声明载荷 `declaredLT` 的关系 | 哪些 tag 下 slot[0] 是 `readLT` 的箱子 |
+|---|---|---|
+| 非 `%str-long`（即声明载荷本身） | `readLT == declaredLT` | 只有 **tag 0**（ok 载荷） |
+| `%str-long` | `declaredLT == %str-long`（`?str`） | **tag 0**（ok 字符串）和 **tag 2**（err 消息）都是，只有 tag 1（nil）不是 |
+| `%str-long` | `declaredLT != %str-long`（err 消息类型双关，如 `?i64` 里的 `err('msg')`） | 只有 **tag 2** |
+
+三者之外（nil、无消息的 `err()`）slot 都是零，靠 `slot[0] != 0` 排除。
+
+为什么不能用一个统一规则：默认 slot（≥24）下 err 消息是内联的，它的前 8 字节 —— 字符串**长度** —— 就躺在 slot[0]，和一个箱子指针长得一模一样，所以 tag 必须参与判断；而 slot < 24 时 err 消息自己也装箱，此时把 tag 2 误判成「箱子是 824 字节的 `%sse_client`」就是一次越界读外加 `free()` 一个野指针（`malloc` 报 `pointer being freed was not allocated`），`tests/test-sse.no` 在阈值 8 下大约 12% 的复现率就是它。
+
+`optBoxClone` 的重装箱（`emitOptionBoxHelpers`）沿用同一套 tag 规则，并且**拷贝长度要按实际装箱的东西算**：`select(tag==0, sizeof(payloadLT), sizeof(%str-long))` —— 阈值 < 24 时一个 `?sse_client` 的 err 分支只装了 24 字节，按 824 字节 memcpy 就是堆越界读。
 - `%txt` = `[255 x i8]`
 
 ---

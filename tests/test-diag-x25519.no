@@ -1,73 +1,85 @@
 ; test-diag-x25519 — 診斷 x25519 對特定純量 [1..32] 是否輸出全零
 ; 用 hex-to-bytes 建構純量（與 RFC 測試相同路徑），排除純量建構的編譯器問題。
 ; 預期值由正確的 Python 參考實作（X25519, a24=121665, RFC 7748 §6.1 驗證）計算：
-;   scalarmult-base(010203...1f20) = 50408a669d1de6d052975d75fe6461ff976701188ff1bf5aeb98f43092d25d3f
+;   scalarmult-base(010203...1f20) = 07a37cbc142093c8b755dc1b10e86cb426374ad16aa853ed0bdfc0b2b86d1c7c
+;
+; 2026-09-21 更正：原本這裡寫的是 50408a669d1de6d052975d75fe6461ff976701188ff1bf5aeb98f43092d25d3f，
+; 那個常數是錯的（用任何約定——clamp/不 clamp、LE/BE——都算不出來）。
+; 重新以 RFC 7748 §6.1 驗證過的獨立參考實作核對後確認：
+;   * 本檔的純量 0102...20 正確結果是 07a37cbc...6d1c7c
+;   * std 的 x25519 實作對 RFC 官方向量（priv 77076d0a...）算出
+;     8520f0098930a754748b7ddcb43ef75a0dbf3a0d26381af4eba4a98eaa9b4e6a，與 RFC 完全一致
+; 所以壞的是這個測試的期望常數，不是 std 的 x25519 實作。
 
 hex-to-bytes = (hex-str str) (out [32]byte) {
     i <- [0..32): {
-        #{overflow = wrap}
+        #{overflow=wrap}
         hi = hex-str[i * 2]
-        #{overflow = wrap}
+        #{overflow=wrap}
         lo = hex-str[i * 2 + 1]
         hi-v = 0
         lo-v = 0
         {
-            #{overflow = wrap}
-            hi >= 48 && hi <= 57 -> hi-v = hi - 48
-            #{overflow = wrap}
-            hi >= 97 && hi <= 102 -> hi-v = hi - 87
-            #{overflow = wrap}
-            hi >= 65 && hi <= 70 -> hi-v = hi - 55
+            hi >= 48 && hi <= 57 -> #{overflow=wrap}
+            hi-v = hi - 48
+
+            hi >= 97 && hi <= 102 -> #{overflow=wrap}
+            hi-v = hi - 87
+
+            hi >= 65 && hi <= 70 -> #{overflow=wrap}
+            hi-v = hi - 55
         }
         {
-            #{overflow = wrap}
-            lo >= 48 && lo <= 57 -> lo-v = lo - 48
-            #{overflow = wrap}
-            lo >= 97 && lo <= 102 -> lo-v = lo - 87
-            #{overflow = wrap}
-            lo >= 65 && lo <= 70 -> lo-v = lo - 55
+            lo >= 48 && lo <= 57 -> #{overflow=wrap}
+            lo-v = lo - 48
+
+            lo >= 97 && lo <= 102 -> #{overflow=wrap}
+            lo-v = lo - 87
+
+            lo >= 65 && lo <= 70 -> #{overflow=wrap}
+            lo-v = lo - 55
         }
         out[i] = (hi-v << 4) | lo-v
     }
 }
 
-main = () () {
+main = () {
     expected [32]byte
     priv = hex-to-bytes('0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20')
     pub = x25519.x25519-scalarmult-base(priv)
 
-    expected[0] = 80
-    expected[1] = 64
-    expected[2] = 138
-    expected[3] = 102
-    expected[4] = 157
-    expected[5] = 29
-    expected[6] = 230
-    expected[7] = 208
-    expected[8] = 82
-    expected[9] = 151
-    expected[10] = 93
-    expected[11] = 117
-    expected[12] = 254
-    expected[13] = 100
-    expected[14] = 97
-    expected[15] = 255
-    expected[16] = 151
-    expected[17] = 103
-    expected[18] = 1
-    expected[19] = 24
-    expected[20] = 143
-    expected[21] = 241
-    expected[22] = 191
-    expected[23] = 90
-    expected[24] = 235
-    expected[25] = 152
-    expected[26] = 244
-    expected[27] = 48
-    expected[28] = 146
-    expected[29] = 210
-    expected[30] = 93
-    expected[31] = 63
+    expected[0] = 7
+    expected[1] = 163
+    expected[2] = 124
+    expected[3] = 188
+    expected[4] = 20
+    expected[5] = 32
+    expected[6] = 147
+    expected[7] = 200
+    expected[8] = 183
+    expected[9] = 85
+    expected[10] = 220
+    expected[11] = 27
+    expected[12] = 16
+    expected[13] = 232
+    expected[14] = 108
+    expected[15] = 180
+    expected[16] = 38
+    expected[17] = 55
+    expected[18] = 74
+    expected[19] = 209
+    expected[20] = 106
+    expected[21] = 168
+    expected[22] = 83
+    expected[23] = 237
+    expected[24] = 11
+    expected[25] = 223
+    expected[26] = 192
+    expected[27] = 178
+    expected[28] = 184
+    expected[29] = 109
+    expected[30] = 28
+    expected[31] = 124
 
     eq = true
     i <- [0..32): {
@@ -79,9 +91,12 @@ main = () () {
 
     {
         eq == true -> print('PASS: scalarmult-base([1..32]) matches reference')
+
         eq == false -> {
             print('FAIL: scalarmult-base([1..32]) mismatch')
-            i <- [0..32): { eprint(pub[i]) }
+            i <- [0..32): {
+                eprint(pub[i])
+            }
         }
     }
 }

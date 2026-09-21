@@ -704,6 +704,19 @@ func (m *Module) isBorrowRead(f *Function, inst *Inst) bool {
 		}
 		return m.dropOwnsHeap(f, inst.Dst)
 	}
+	// OpMove that peels an option into a SLICE: emitMove copies the %vec triple
+	// out of the option's payload slot, so the result ALIASES the option's
+	// backing store (only the %str-long peel clones, via @str_clone). Dropping
+	// the copy frees the option's buffer out from under it. The option is the
+	// owner and frees the payload on its own drop (see the matching exemption
+	// from `moveSrc` in insertDrops).
+	if inst.Op == OpMove && len(inst.Args) > 0 && inst.Args[0] > NoVal && inst.Dst > NoVal {
+		if st := m.valueTypeOf(f, inst.Args[0]); st != nil && st.Kind == KindOption {
+			if dt := m.valueTypeOf(f, inst.Dst); dt != nil && dt.Kind == KindSlice {
+				return m.dropOwnsHeap(f, inst.Dst)
+			}
+		}
+	}
 	return false
 }
 
@@ -777,7 +790,7 @@ func (m *Module) insertDrops(f *Function, rep *Report) {
 				}
 				continue
 			}
-			if isTransferringMove(inst) {
+			if isTransferringMove(inst) && !m.isOptionPeelMove(f, inst) {
 				moveSrc[inst.Args[0]] = true
 			}
 			// OpOptionWrap transfers ownership of its payload into the option
@@ -1154,6 +1167,28 @@ func equalSet(a, b valueSet) bool {
 // nothing: treating it as a transfer made the very next `drop x` look like a
 // double-free ("value 1400 dropped after move"), which blocked the MIR backend
 // on tests/test-str.no (std str.replace-n).
+// isOptionPeelMove reports whether inst is the OpMove that reads an option's
+// payload out into a slice value (`x = opt` where opt : ?[]T). That move is a
+// BORROW, not an ownership transfer: emitMove copies the %vec triple out of the
+// option's payload slot (only a %str-long peel clones, via @str_clone), so the
+// extracted slice ALIASES the option's backing store. Treating it as a transfer
+// exempted the OPTION from dropping and left the copy as the only free site, so
+// the buffer was freed while the option was still live — `v ?[]i64 = [10,20,30]`
+// followed by `v.len().to-str()` (which peels) and then `v[0]` read freed memory
+// and printed 0. The option keeps ownership and frees the payload exactly once
+// on its own drop; isBorrowRead exempts the extracted copy (no @vec_clone).
+func (m *Module) isOptionPeelMove(f *Function, inst *Inst) bool {
+	if inst == nil || inst.Op != OpMove || len(inst.Args) == 0 || inst.Args[0] <= NoVal || inst.Dst <= NoVal {
+		return false
+	}
+	st := m.valueTypeOf(f, inst.Args[0])
+	if st == nil || st.Kind != KindOption {
+		return false
+	}
+	dt := m.valueTypeOf(f, inst.Dst)
+	return dt != nil && dt.Kind == KindSlice
+}
+
 func isTransferringMove(inst *Inst) bool {
 	if inst == nil || inst.Op != OpMove || len(inst.Args) == 0 || inst.Args[0] <= NoVal {
 		return false
@@ -1244,7 +1279,7 @@ func (m *Module) checkMoves(f *Function, rep *Report) {
 				if inst == nil {
 					continue
 				}
-				if isTransferringMove(inst) {
+				if isTransferringMove(inst) && !m.isOptionPeelMove(f, inst) {
 					cur[inst.Args[0]] = true
 				}
 			}
@@ -1290,7 +1325,7 @@ func (m *Module) checkMoves(f *Function, rep *Report) {
 					})
 				}
 			}
-			if isTransferringMove(inst) {
+			if isTransferringMove(inst) && !m.isOptionPeelMove(f, inst) {
 				cur[inst.Args[0]] = true
 			}
 		}

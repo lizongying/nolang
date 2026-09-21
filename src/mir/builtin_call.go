@@ -1433,7 +1433,7 @@ func (c *codegen) emitBuiltinStrToBool(inst *Inst) error {
 	// payload: 1 for "true", 0 otherwise (ok(false)/nil/err all use 0).
 	payload := c.treg("stbp")
 	c.sb.WriteString(fmt.Sprintf("  %s = select i1 %s, i64 1, i64 0\n", payload, eqTrue))
-	// Unified `%option = { i64 tag, [3 x i64] slot }`: write the discriminant
+	// Unified `%option = { i64 tag, [N x i64] slot }`: write the discriminant
 	// (a runtime value here, hence insertvalue on a zeroed literal rather than
 	// the constant-tag optStoreTag) and then the i64 payload into slot[0].
 	optStore := func(lt string) {

@@ -84,7 +84,7 @@ sha512.sha512-block(s []u64, h0 u64, h1 u64, h2 u64, h3 u64, h4 u64, h5 u64, h6 
 ### crypto/crc-32 — CRC32 Checksum
 
 ```no
-crc-32.crc-32(s []byte, n, crc)
+crc-32.new(s []byte, n, crc)
 ```
 
 ### crypto/fnv-1a-32 — FNV-1a Non-Cryptographic Hash
@@ -162,7 +162,7 @@ out = pbkdf2.pbkdf2-hmac-sha1(password []byte, salt []byte, iterations i64, key-
 ### crypto/argon2 — Argon2 Memory-Hard Key Derivation
 
 ```no
-argon2.argon2id(password []byte, pw-n i64, salt []byte, salt-n i64, time i64, memory i64, parallel i64, out []byte, out-n i64)
+argon2.id(password []byte, pw-n i64, salt []byte, salt-n i64, time i64, memory i64, parallel i64, out []byte, out-n i64)
 ```
 
 ### crypto/scrypt — scrypt Key Derivation
@@ -195,22 +195,22 @@ hash = sha3.sha3-512(data []byte) (hash [64]byte)
 ### crypto/blake2 — BLAKE2 Hash
 
 ```no
-hash = blake2.blake2b(data []byte) (hash [64]byte)
-hash = blake2.blake2b-256(data []byte) (hash [32]byte)
-hex = blake2.blake2b-hex(data []byte) (hex str)
-hash = blake2.blake2s(data []byte) (hash [32]byte)
-hex = blake2.blake2s-hex(data []byte) (hex str)```
+hash = blake2.b(data []byte) (hash [64]byte)
+hash = blake2.b-256(data []byte) (hash [32]byte)
+hex = blake2.b-hex(data []byte) (hex str)
+hash = blake2.s(data []byte) (hash [32]byte)
+hex = blake2.s-hex(data []byte) (hex str)```
 
 ### crypto/crc-16 — CRC16 Checksum
 
 ```no
-crc = crc-16.crc-16(data []byte, n i64) (crc i64)
+crc = crc-16.new(data []byte, n i64) (crc i64)
 ```
 
 ### crypto/crc-64 — CRC64 Checksum
 
 ```no
-crc = crc-64.crc-64(data []byte, n i64) (crc i64)
+crc = crc-64.new(data []byte, n i64) (crc i64)
 ```
 
 ### crypto/fnv — FNV-1 Hash
@@ -222,8 +222,8 @@ h = fnv.fnv-1a-64(data []byte) (hash u64)```
 ### crypto/base32 — Base32 Encoding/Decoding (RFC 4648)
 
 ```no
-out = base32.base32-encode(data []byte, n i64) (out str)
-out = base32.base32-decode(s str, n i64) (out []byte)
+out = base32.encode(data []byte) (out str)
+out = base32.decode(s str) (out []byte)
 ```
 
 ### crypto/chacha20-poly1305 — ChaCha20-Poly1305 AEAD

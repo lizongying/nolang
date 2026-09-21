@@ -1,13 +1,13 @@
-; blake2b — BLAKE2b 哈希算法（RFC 7693）
+; b — BLAKE2b 哈希算法（RFC 7693）
 ;
 ; BLAKE2b 針對 64 位元平台優化，輸出最長 64 位元組。
 ; 區塊大小 128 位元組，12 輪，使用 64-bit 字。
 ;
 ; 用法：
-;   # std/crypto/blake2b
-;   hash = blake2b(data)           // [64]byte，預設輸出 64 位元組
-;   hash32 = blake2b-256(data)     // [32]byte，輸出 32 位元組
-;   hex = blake2b-hex(data)        // 128 字元 hex 字串
+;   # std/crypto/b
+;   hash = b(data)           // [64]byte，預設輸出 64 位元組
+;   hash32 = b-256(data)     // [32]byte，輸出 32 位元組
+;   hex = b-hex(data)        // 128 字元 hex 字串
 
 ; ═══════════════════════════════════════════════
 ; 常量
@@ -58,7 +58,7 @@ rotr64 = (x u64, n i64) (r u64) {
 }
 
 ; G 函數（混合函數）
-blake2b-g = (v []u64, a i64, b i64, c i64, d i64, x u64, y u64) {
+b-g = (v []u64, a i64, b i64, c i64, d i64, x u64, y u64) {
     #{overflow=wrap}
     #{index-out = 0}
     v[a] = (v[a] + v[b] + x) & BLAKE2B-MASK
@@ -86,7 +86,7 @@ blake2b-g = (v []u64, a i64, b i64, c i64, d i64, x u64, y u64) {
 ; block []byte: 128 位元組區塊
 ; t u64: 偏移量（已處理的位元組數）
 ; last i64: 是否為最後一個區塊（0 或 1）
-blake2b-compress = (h []u64, block []byte, t u64, last i64) {
+b-compress = (h []u64, block []byte, t u64, last i64) {
 
     ; 初始化工作向量 v[0..15]
     v []u64
@@ -137,21 +137,21 @@ blake2b-compress = (h []u64, block []byte, t u64, last i64) {
             s[i] = BLAKE2B-SIGMA[base + i]
         }
         #{index-out = 0}
-        blake2b-g(v, 0, 4, 8, 12, m[s[0]], m[s[1]])
+        b-g(v, 0, 4, 8, 12, m[s[0]], m[s[1]])
         #{index-out = 0}
-        blake2b-g(v, 1, 5, 9, 13, m[s[2]], m[s[3]])
+        b-g(v, 1, 5, 9, 13, m[s[2]], m[s[3]])
         #{index-out = 0}
-        blake2b-g(v, 2, 6, 10, 14, m[s[4]], m[s[5]])
+        b-g(v, 2, 6, 10, 14, m[s[4]], m[s[5]])
         #{index-out = 0}
-        blake2b-g(v, 3, 7, 11, 15, m[s[6]], m[s[7]])
+        b-g(v, 3, 7, 11, 15, m[s[6]], m[s[7]])
         #{index-out = 0}
-        blake2b-g(v, 0, 5, 10, 15, m[s[8]], m[s[9]])
+        b-g(v, 0, 5, 10, 15, m[s[8]], m[s[9]])
         #{index-out = 0}
-        blake2b-g(v, 1, 6, 11, 12, m[s[10]], m[s[11]])
+        b-g(v, 1, 6, 11, 12, m[s[10]], m[s[11]])
         #{index-out = 0}
-        blake2b-g(v, 2, 7, 8, 13, m[s[12]], m[s[13]])
+        b-g(v, 2, 7, 8, 13, m[s[12]], m[s[13]])
         #{index-out = 0}
-        blake2b-g(v, 3, 4, 9, 14, m[s[14]], m[s[15]])
+        b-g(v, 3, 4, 9, 14, m[s[14]], m[s[15]])
     }
 
     #{index-out = 0}
@@ -167,10 +167,10 @@ blake2b-compress = (h []u64, block []byte, t u64, last i64) {
 ; BLAKE2b 公開 API
 ; ═══════════════════════════════════════════════
 
-; blake2b: 計算 BLAKE2b 雜湊（64 位元組輸出）
+; b: 計算 BLAKE2b 雜湊（64 位元組輸出）
 ; data []byte: 輸入資料
 ; 返回 hash [64]byte: 64 位元組雜湊值
-blake2b = (data []byte) (hash [64]byte) {
+b = (data []byte) (hash [64]byte) {
 
     #{index-out = 0}
     ; 初始化狀態: h = IV，h[0] ^= 0x01010000 | out_len
@@ -193,7 +193,7 @@ blake2b = (data []byte) (hash [64]byte) {
         #{overflow=wrap}
         t = (t + 128) & BLAKE2B-MASK
         #{index-out = 0}
-        blake2b-compress(h, data[offset..], t, 0)
+        b-compress(h, data[offset..], t, 0)
         #{overflow=wrap}
         offset = offset + 128
     } (offset + 128 < dlen)
@@ -216,7 +216,7 @@ blake2b = (data []byte) (hash [64]byte) {
     }
     #{overflow=wrap}
     t = (t + remaining) & BLAKE2B-MASK
-    blake2b-compress(h, last-block, t, 1)
+    b-compress(h, last-block, t, 1)
 
     ; 輸出（小端序）
     i <- [0..8): {
@@ -248,10 +248,10 @@ blake2b = (data []byte) (hash [64]byte) {
     }
 }
 
-; blake2b-256: 計算 BLAKE2b 雜湊（32 位元組輸出）
+; b-256: 計算 BLAKE2b 雜湊（32 位元組輸出）
 ; data []byte: 輸入資料
 ; 返回 hash [32]byte: 32 位元組雜湊值
-blake2b-256 = (data []byte) (hash [32]byte) {
+b-256 = (data []byte) (hash [32]byte) {
 
     #{index-out = 0}
     ; 初始化狀態: h = IV，h[0] ^= 0x01010000 | 32
@@ -273,7 +273,7 @@ blake2b-256 = (data []byte) (hash [32]byte) {
         #{overflow=wrap}
         t = (t + 128) & BLAKE2B-MASK
         #{index-out = 0}
-        blake2b-compress(h, data[offset..], t, 0)
+        b-compress(h, data[offset..], t, 0)
         #{overflow=wrap}
         offset = offset + 128
     } (offset + 128 < dlen)
@@ -292,7 +292,7 @@ blake2b-256 = (data []byte) (hash [32]byte) {
     }
     #{overflow=wrap}
     t = (t + remaining) & BLAKE2B-MASK
-    blake2b-compress(h, last-block, t, 1)
+    b-compress(h, last-block, t, 1)
 
     ; 輸出前 32 位元組（小端序）
     i <- [0..4): {
@@ -324,11 +324,11 @@ blake2b-256 = (data []byte) (hash [32]byte) {
     }
 }
 
-; blake2b-hex: 計算 BLAKE2b 並返回 hex 字串
+; b-hex: 計算 BLAKE2b 並返回 hex 字串
 ; data []byte: 輸入資料
 ; 返回 hex str: 128 字元 hex 字串
-blake2b-hex = (data []byte) (hex str) {
-    hash = blake2b(data)
+b-hex = (data []byte) (hex str) {
+    hash = b(data)
     hex-chars = '0123456789abcdef'
     hex = with-len(128)
     i <- [0..64): {
@@ -341,11 +341,11 @@ blake2b-hex = (data []byte) (hex str) {
     }
 }
 
-; blake2b-256-hex: 計算 BLAKE2b-256 並返回 hex 字串
+; b-256-hex: 計算 BLAKE2b-256 並返回 hex 字串
 ; data []byte: 輸入資料
 ; 返回 hex str: 64 字元 hex 字串
-blake2b-256-hex = (data []byte) (hex str) {
-    hash = blake2b-256(data)
+b-256-hex = (data []byte) (hex str) {
+    hash = b-256(data)
     hex-chars = '0123456789abcdef'
     hex = with-len(64)
     i <- [0..32): {
@@ -399,7 +399,7 @@ rotr32 = (x u32, n i64) (r u32) {
 }
 
 ; G 函數
-blake2s-g = (v []u32, a i64, b i64, c i64, d i64, x u32, y u32) {
+s-g = (v []u32, a i64, b i64, c i64, d i64, x u32, y u32) {
     #{overflow=wrap}
     #{index-out = 0}
     v[a] = (v[a] + v[b] + x) & BLAKE2S-MASK
@@ -423,7 +423,7 @@ blake2s-g = (v []u32, a i64, b i64, c i64, d i64, x u32, y u32) {
 }
 
 ; BLAKE2s 壓縮函數
-blake2s-compress = (h []u32, block []byte, t u32, last i64) {
+s-compress = (h []u32, block []byte, t u32, last i64) {
     v []u32
     i <- [0..8): {
         #{index-out = 0}
@@ -458,21 +458,21 @@ blake2s-compress = (h []u32, block []byte, t u32, last i64) {
             s[i] = BLAKE2S-SIGMA[base + i]
         }
         #{index-out = 0}
-        blake2s-g(v, 0, 4, 8, 12, m[s[0]], m[s[1]])
+        s-g(v, 0, 4, 8, 12, m[s[0]], m[s[1]])
         #{index-out = 0}
-        blake2s-g(v, 1, 5, 9, 13, m[s[2]], m[s[3]])
+        s-g(v, 1, 5, 9, 13, m[s[2]], m[s[3]])
         #{index-out = 0}
-        blake2s-g(v, 2, 6, 10, 14, m[s[4]], m[s[5]])
+        s-g(v, 2, 6, 10, 14, m[s[4]], m[s[5]])
         #{index-out = 0}
-        blake2s-g(v, 3, 7, 11, 15, m[s[6]], m[s[7]])
+        s-g(v, 3, 7, 11, 15, m[s[6]], m[s[7]])
         #{index-out = 0}
-        blake2s-g(v, 0, 5, 10, 15, m[s[8]], m[s[9]])
+        s-g(v, 0, 5, 10, 15, m[s[8]], m[s[9]])
         #{index-out = 0}
-        blake2s-g(v, 1, 6, 11, 12, m[s[10]], m[s[11]])
+        s-g(v, 1, 6, 11, 12, m[s[10]], m[s[11]])
         #{index-out = 0}
-        blake2s-g(v, 2, 7, 8, 13, m[s[12]], m[s[13]])
+        s-g(v, 2, 7, 8, 13, m[s[12]], m[s[13]])
         #{index-out = 0}
-        blake2s-g(v, 3, 4, 9, 14, m[s[14]], m[s[15]])
+        s-g(v, 3, 4, 9, 14, m[s[14]], m[s[15]])
     }
     i <- [0..8): {
         #{overflow=wrap}
@@ -481,10 +481,10 @@ blake2s-compress = (h []u32, block []byte, t u32, last i64) {
     }
 }
 
-; blake2s: 計算 BLAKE2s 雜湊（32 位元組輸出）
+; s: 計算 BLAKE2s 雜湊（32 位元組輸出）
 ; data []byte: 輸入資料
 ; 返回 hash [32]byte: 32 位元組雜湊值
-blake2s = (data []byte) (hash [32]byte) {
+s = (data []byte) (hash [32]byte) {
     #{overflow=wrap}
     h []u32
     i <- [0..8): {
@@ -503,7 +503,7 @@ blake2s = (data []byte) (hash [32]byte) {
         #{overflow=wrap}
         t = (t + 64) & BLAKE2S-MASK
         #{index-out = 0}
-        blake2s-compress(h, data[offset..], t, 0)
+        s-compress(h, data[offset..], t, 0)
         #{overflow=wrap}
         offset = offset + 64
     } (offset + 64 < dlen)
@@ -522,7 +522,7 @@ blake2s = (data []byte) (hash [32]byte) {
     }
     #{overflow=wrap}
     t = (t + remaining) & BLAKE2S-MASK
-    blake2s-compress(h, last-block, t, 1)
+    s-compress(h, last-block, t, 1)
 
     i <- [0..8): {
         #{overflow=wrap}
@@ -541,11 +541,11 @@ blake2s = (data []byte) (hash [32]byte) {
     }
 }
 
-; blake2s-hex: 計算 BLAKE2s 並返回 hex 字串
+; s-hex: 計算 BLAKE2s 並返回 hex 字串
 ; data []byte: 輸入資料
 ; 返回 hex str: 64 字元 hex 字串
-blake2s-hex = (data []byte) (hex str) {
-    hash = blake2s(data)
+s-hex = (data []byte) (hex str) {
+    hash = s(data)
     hex-chars = '0123456789abcdef'
     hex = with-len(64)
     i <- [0..32): {

@@ -20,20 +20,20 @@
 ; ═══════════════════════════════════════════
 
 ; crc32("")=00000000
-h = crc-32.crc-32('', 0)
+h = crc-32.new('', 0)
 io.out('crc32("")=')
 io.out(format('{h:08x}'))
 print('')
 
 ; crc32("hello")=3610a686
-h = crc-32.crc-32('hello', 5)
+h = crc-32.new('hello', 5)
 io.out('crc32("hello")=')
 io.out(format('{h:08x}'))
 print('')
 
 ; crc32("fox")=414fa339
 s = 'The quick brown fox jumps over the lazy dog'
-h = crc-32.crc-32(s, 43)
+h = crc-32.new(s, 43)
 io.out('crc32("fox")=')
 io.out(format('{h:08x}'))
 print('')
@@ -653,7 +653,7 @@ b2-fox []byte = 'The quick brown fox jumps over the lazy dog'.to-bytes()
 
 ; blake2b("")=786a02f742015903c6c6fd852552d272912f4740e15847618a86e217f71f5419d25e1031afee585313896444934eb04b903a685b1448b755d56f701afe9be2ce
 b2-out [64]byte
-b2-out = blake2.blake2b(b2-empty)
+b2-out = blake2.b(b2-empty)
 io.out('blake2b("")=')
 i <- [0..64): {
     io.out(format('{b2-out[i]:02x}'))
@@ -661,7 +661,7 @@ i <- [0..64): {
 print('')
 
 ; blake2b("abc")=ba80a53f981c4d0d6a2797b69f12f6e94c212f14685ac4b74b12bb6fdbffa2d17d87c5392aab792dc252d5de4533cc9518d38aa8dbf1925ab92386edd4009923
-b2-out = blake2.blake2b(b2-abc)
+b2-out = blake2.b(b2-abc)
 io.out('blake2b("abc")=')
 i <- [0..64): {
     io.out(format('{b2-out[i]:02x}'))
@@ -669,7 +669,7 @@ i <- [0..64): {
 print('')
 
 ; blake2b("fox")=a8add4bdddfd93e4877d2746e62817b116364a1fa7bc148d95090bc7333b3673f82401cf7aa2e4cb1ecd90296e3f14cb5413f8ed77be73045b13914cdcd6a918
-b2-out = blake2.blake2b(b2-fox)
+b2-out = blake2.b(b2-fox)
 io.out('blake2b("fox")=')
 i <- [0..64): {
     io.out(format('{b2-out[i]:02x}'))
@@ -678,7 +678,7 @@ print('')
 
 ; blake2b-256("")=0e5751c026e543b2e8ab2eb06099daa1d1e5df47778f7787faab45cdf12fe3a8
 b2-256-out [32]byte
-b2-256-out = blake2.blake2b-256(b2-empty)
+b2-256-out = blake2.b-256(b2-empty)
 io.out('blake2b-256("")=')
 i <- [0..32): {
     io.out(format('{b2-256-out[i]:02x}'))
@@ -686,7 +686,7 @@ i <- [0..32): {
 print('')
 
 ; blake2b-256("abc")=bddd813c634239723171ef3fee98579b94964e3bb1cb3e427262c8c068d52319
-b2-256-out = blake2.blake2b-256(b2-abc)
+b2-256-out = blake2.b-256(b2-abc)
 io.out('blake2b-256("abc")=')
 i <- [0..32): {
     io.out(format('{b2-256-out[i]:02x}'))
@@ -694,7 +694,7 @@ i <- [0..32): {
 print('')
 
 ; blake2b-256("fox")=01718cec35cd3d796dd00020e0bfecb473ad23457d063b75eff29c0ffa2e58a9
-b2-256-out = blake2.blake2b-256(b2-fox)
+b2-256-out = blake2.b-256(b2-fox)
 io.out('blake2b-256("fox")=')
 i <- [0..32): {
     io.out(format('{b2-256-out[i]:02x}'))
@@ -703,7 +703,7 @@ print('')
 
 ; blake2s("")=69217a3079908094e11121d042354a7c1f55b6482ca1a51e1b250dfd1ed0eef9
 b2s-out [32]byte
-b2s-out = blake2.blake2s(b2-empty)
+b2s-out = blake2.s(b2-empty)
 io.out('blake2s("")=')
 i <- [0..32): {
     io.out(format('{b2s-out[i]:02x}'))
@@ -711,7 +711,7 @@ i <- [0..32): {
 print('')
 
 ; blake2s("abc")=508c5e8c327c14e2e1a72ba34eeb452f37458b209ed63a294d999b4c86675982
-b2s-out = blake2.blake2s(b2-abc)
+b2s-out = blake2.s(b2-abc)
 io.out('blake2s("abc")=')
 i <- [0..32): {
     io.out(format('{b2s-out[i]:02x}'))
@@ -719,7 +719,7 @@ i <- [0..32): {
 print('')
 
 ; blake2s("fox")=606beeec743ccbeff6cbcdf5d5302aa855c256c29b88c8ed331ea1a6bf3c8812
-b2s-out = blake2.blake2s(b2-fox)
+b2s-out = blake2.s(b2-fox)
 io.out('blake2s("fox")=')
 i <- [0..32): {
     io.out(format('{b2s-out[i]:02x}'))
