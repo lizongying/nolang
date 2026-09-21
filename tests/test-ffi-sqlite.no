@@ -8,7 +8,7 @@
 # std/database/sql
 
 ; 測試 1: 開啟記憶體資料庫
-d db = fs.open(':memory:', { mode: file-mode.read-write })
+d db = sqlite.open(':memory:')
 d.handle == 0 -> {
     print('fail: open database')
     return

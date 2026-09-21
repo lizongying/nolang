@@ -42,6 +42,19 @@ func TestUnhandledOverflowDetectsLeaks(t *testing.T) {
 }`,
 			wantMin: 1,
 		},
+		{
+			// 不得為了放行 char 而放寬整數檢查：字串迭代迴圈體內的 i64 運算
+			// 仍是沉默泄漏，必須照報。
+			name: "int_arithmetic_inside_str_loop_still_leaks",
+			src: `f = (s str) () {
+    for ch <- s {
+        v i64 = 5
+        u = v + 2
+        io.outln(u)
+    }
+}`,
+			wantMin: 1,
+		},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -114,6 +127,35 @@ func TestUnhandledOverflowAllowed(t *testing.T) {
 			name: "unsigned_division",
 			src: `f = (a u64, b u64) (out u64) {
     out = a / b
+}`,
+		},
+		{
+			// char 算術：char 不在 isIntType 之內，其 + - * / 不產生 option<int>，
+			// 因此「由 a 算出 z」是正常寫法，不得誤報。
+			name: "char_arithmetic_top_level",
+			src: `a char = 'A'
+z = a + 25
+io.outln(z)`,
+		},
+		{
+			// 迭代變數原本未登記型別 → 被保守當成整數 → `ch - 32` 誤報。
+			// 字串孿生迭代的元素是 char，登記後不得再誤報（見 iterElemType）。
+			name: "char_arithmetic_in_str_loop_literal",
+			src: `f = () () {
+    for ch <- 'abc' {
+        u = ch - 32
+        io.outln(u)
+    }
+}`,
+		},
+		{
+			// 同上，迭代源是 str 型別的識別字時亦然。
+			name: "char_arithmetic_in_str_loop_var",
+			src: `f = (s str) () {
+    for ch <- s {
+        u = ch - 32
+        io.outln(u)
+    }
 }`,
 		},
 	}

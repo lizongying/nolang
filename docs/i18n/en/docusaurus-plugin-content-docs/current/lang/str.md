@@ -28,19 +28,52 @@ Use the `*` operator to repeat a string:
 s = 'Hello' * 3
 ```
 
+### Comparison (`==` / `!=` / `str.compare`)
+
+`str` implements **equality only**: `==` / `!=` go through the runtime `@str_eq`
+helper, so multi-character strings are fine.
+
+The ordering operators (<code>&lt;</code> `>` <code>&lt;=</code> `>=`) have **no
+lexicographic string semantics**; using them on a string is a compile error:
+
+- **Allowed**: a **one-character** string literal `'a'`, implicitly a `char` (its
+  code point), comparable with another one-character literal or a `char` (`"a"`).
+- **Rejected**: multi-character strings — `'ab'`, a `str` variable, or a call
+  returning `str` (these used to **silently return false**).
+
+For lexicographic order use `str.compare(b)`:
+
+```no
+s = 'abc'
+b = 'abd'
+c = s.compare(b)      ; -1 (s < b) / 0 (equal) / 1 (s > b)
+
+'a' <= 'z'            ; true — one-char string is implicitly a char
+ch >= 'a'             ; ch is a char, fine
+s < b                 ; compile error: multi-character string
+s.compare(b) < 0      ; the correct form
+```
+
 ## Indexing & Slicing
+
+**Index**: the type of `s[i]` is **`char`** (a Unicode code point), not `byte`. For a string containing multi-byte characters, `s[i]` decodes UTF-8 forward from the start of the string and counts to the i-th code point (see the performance notes below).
 
 ```no
 s = 'Hello World'
+c char = s[0]      ; the code point of 'H' (type char)
+```
 
-; Index returns char (character, not byte)
-c = s[0]           ; c = code point of 'H'
+**Slicing**: `s[a..b]` returns a **view** of the underlying string; the type is still **`str`** (it shares the memory and does not copy). Slice indices are **code-point positions**, consistent with `s[i]`:
 
-; Slice (view, shares underlying memory)
+```no
 sub = s[6..]       ; 'World'
 sub = s[6..11]     ; 'World'
-sub = s[0..5)      ; 'Hello'
+sub = s[0..5)      ; 'Hello' (left-closed, right-open)
+```
 
+> Slice indices are **code-point positions**, not byte offsets. If you need a byte-offset slice (for example to pair with an `s.byte(i)` walk), use `s.slice-bytes(start, end)`.
+
+```no
 ; Length
 n = s.len()          ; code point count (Unicode character count)
 n = s.count()        ; same (legacy method name, still available)
@@ -48,6 +81,32 @@ n = s.len-bytes()    ; byte length (UTF-8 byte count)
 ; Note: bare s.len (struct field) is no longer supported — both read and write
 ; error at compile time. Use s.len() / s.len-bytes() instead.
 ```
+
+### Implicit Conversion (char → str)
+
+A `char` **converts implicitly** to `str`: the code point is UTF-8 encoded into a new string. All of the following are therefore legal, with **no need** to call `char.to-str()` by hand:
+
+```no
+s = 'héllo'              ; 'h' 'é' 'l' 'l' 'o' ('é' is multi-byte)
+
+; 1) a char from s[i] assigned straight to a str variable → implicitly a one-character string
+a str = s[0]             ; 'h'
+
+; 2) the slice result already has type str, so it can be assigned directly
+b str = s[0..1]          ; 'hé' (indices 0..1, both ends inclusive)
+
+; 3) a char in string concatenation (-) is implicitly converted to str
+msg = 'first: ' - s[0]   ; 'first: h'
+
+; 4) a char compared with a str is implicitly converted to str
+ok = s[0] == 'h'         ; true
+```
+
+> Implicit conversion encodes a **single code point** as `str`. If what you want is the numeric value, use the `char` itself (e.g. `print(c)` prints the decimal value of that code point); if you want an explicit conversion, `c.to-str()` still works (it is equivalent to the implicit one).
+>
+> A `char` represents a single Unicode scalar value, and its underlying storage type is **`i32`** (valid range `0 ..= 0x10FFFF`).
+>
+> A `char` **takes part in integer arithmetic normally** (e.g. `z = a + 25`, `u = ch - 32`), computed on the code point value at i32 width; unlike the integer family it does not default to returning `option<int>`, so it never triggers an "unhandled integer overflow" compile error.
 
 ## ASCII Optimization & Performance Notes
 
@@ -78,10 +137,10 @@ A single `s[i]` outside a loop (just one O(n) lookup) does **not** warn, and a d
 
 Prefer a faster alternative:
 
-- If you need to iterate over every character, use `for c <- s`, which performs a single O(n) forward scan and avoids the O(n²) of repeated `s[i]`:
+- If you need to iterate over every character, use `for c <- s` — the preferred single O(n) forward scan, which avoids the O(n²) of repeated `s[i]`. The compiler advances by **UTF-8 code point (Unicode character)**, storing the decoded code point value into the loop variable `c` on each step; this is semantically equivalent to `for c <- s.to-chars()`:
   ```no
   for c <- s {
-      ; process each code point
+      ; c is the current code point, type char (already UTF-8 decoded, not a byte)
   }
   ```
 - If you only need byte access (e.g. encode/decode, hashing, memcmp), use the escape hatch `s.byte(i)` — it always addresses the i-th byte directly, is **always O(1)**, and does not enter the std function body:

@@ -297,6 +297,18 @@ func RunAllLints(program *parser.Program, opts LintOptions) []LintResult {
 		})
 	}
 
+	// 19d. 關係運算子（< <= > >=）的多字元字串運算元。
+	// nolang 沒有字串字典序比較：codegen 的 str 分支只有 @str_eq（相等），
+	// `a >= b`（a/b 為 str）會靜默退化成恆假。單字元字串字面量（'a'）隱式當
+	// char，仍合法；多字元 / str 變數 / 回傳 str 的呼叫則在此拒絕。
+	for _, u := range ValidateStrOrdering(program) {
+		results = append(results, LintResult{
+			Line: u.Line, Column: u.Column, File: u.File,
+			Severity: LintError, Source: "nolang-type-checker",
+			Message: u.Message, TraceID: u.TraceID,
+		})
+	}
+
 	// 19. print 格式字串校驗
 	for _, u := range ValidatePrintFormat(program) {
 		results = append(results, LintResult{

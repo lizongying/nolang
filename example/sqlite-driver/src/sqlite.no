@@ -56,9 +56,14 @@ db-sqlite sql.db {
 ; rows-sqlite: 查詢結果集，實作 sql.rows 介面
 ; stmt i64: 預編譯陳述式控制代碼
 ; n-cols i64: 欄位數量
+; owned bool: 是否擁有 stmt 控制代碼（決定 close 是否 finalize）
+;   db-sqlite.query  自行 prepare ⇒ owned=true，close 負責 finalize
+;   stmt-sqlite.query 借用既有 stmt ⇒ owned=false，finalize 由 stmt.close 負責
+;   （否則 rows.close 與 stmt.close 會對同一 handle 二次 finalize ⇒ double free）
 rows-sqlite sql.rows {
     stmt i64
     n-cols i64
+    owned bool
 }
 
 ; stmt-sqlite: 預編譯陳述式，實作 sql.stmt 介面
@@ -135,6 +140,7 @@ db-sqlite.query = (sql str) (rs rows-sqlite) {
     }
     rs.stmt = stmt-handle
     rs.n-cols = _sqlite3-column-count(stmt-handle)
+    rs.owned = true
 }
 
 ; db-sqlite.prepare: 準備預編譯陳述式
@@ -190,8 +196,13 @@ rows-sqlite.scan-float = (col i64) (v f64) {
 ; rows-sqlite.close: 關閉結果集
 ; 返回 ok bool: true=成功
 rows-sqlite.close = () (ok bool) {
-    rc = _sqlite3-finalize(.stmt)
-    ok = rc == SQLITE-OK
+    ok = true
+    {
+        .owned -> {
+            frc = _sqlite3-finalize(.stmt)
+            ok = frc == SQLITE-OK
+        }
+    }
 }
 
 ; ============================================================================
@@ -251,6 +262,8 @@ stmt-sqlite.exec = () (r sql.result) {
 stmt-sqlite.query = () (rs rows-sqlite) {
     rs.stmt = .handle
     rs.n-cols = _sqlite3-column-count(.handle)
+    ; 借用 .handle：所有權仍在 stmt，rows.close 不得 finalize
+    rs.owned = false
 }
 
 ; stmt-sqlite.close: 關閉預編譯陳述式

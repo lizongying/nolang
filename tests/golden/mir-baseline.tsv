@@ -47,7 +47,7 @@
 0 cad32e0c78ada68728fea346b79eb1cd960314e9cf7216384710eca902bb51f9 tests/mem-safety/struct-field-shallow-copy-bug.no
 0 2718e43e18cc1ad8a3df3d30cac6efb1bba0bf05bfb2f9706094c18d1ddf4837 tests/mem-safety/struct-field-uaf-bug.no
 0 b9aba70c39cb2f37b26433222c53d00a68e850386e3e0590e4caa5c4a3cdd522 tests/mem-safety/struct-move-is-moved.no
-0 89b6d06552763fd52dbab2bf68f5267e461340aa89c921efb6928ca7b5f20459 tests/mem-safety/test-json-nested-match.no
+0 8bfac0c320923446bd4b59b539a22b49e180cd02b448765e761e27d4081433e2 tests/mem-safety/test-json-nested-match.no
 0 12f6ccffa054a5672cee8f923f899e1ddb4149790ad4074226323bdf2d992193 tests/mem-safety/test-json-parse-option.no
 0 39faeddcd6da38f8455751df9bf822944f4ab6c5fb88ed45f4fa1cb05d73c7a4 tests/mem-safety/test-minimal-option-str.no
 0 39faeddcd6da38f8455751df9bf822944f4ab6c5fb88ed45f4fa1cb05d73c7a4 tests/mem-safety/test-minimal-str-map.no
@@ -229,6 +229,7 @@
 0 cfba7798ddff9c6db2cf59d833a01d972ddd8719fffe22a43c9f8e491844b614 tests/test-option.no
 0 8227dfc953db468c96b3006a5344118c53742dd14925347e6ff4f3d66340ccbe tests/test-parse-grouped.no
 0 7abe9426bdc6cb0d6f4dda879ab0bf6a375d4d7ac04862c5c249323e20d793e5 tests/test-parse-min.no
+0 462729b5b7ad5bf31f8579ba77da2b4bd2e9d933c7f4f4b18800a72592ec2516 tests/test-pipeline-value.no
 0 eea8254c7500ba3de996aa8ad6af399183f04e17d4a8102fde539dbc93a90012 tests/test-platform-const.no
 0 277220728137402f15011736a8cc982d7549a924a123f07da7656b20b7f79e69 tests/test-platform.no
 0 ca93307207fce6953ed551850726efab11c73c9d827a5a43bb7789665c63c75b tests/test-process-run.no
@@ -279,7 +280,7 @@
 0 74c210c66ae5842877b91a7ae55631bf74ef3a7c69e84ef95f590cc338a131d0 tests/test-std-hash.no
 0 29efc88a2d8b19045b5ff1514e30e90f0aa221a3f9c50c82b92a155c08f4785a tests/test-std-lib.no
 0 25fb9f702719e3dacc7d7cbb81dee086efd31ed8d869e4e3147b349f33579361 tests/test-std-net-ext.no
-0 225302b161718d242160ac9ed06de70920b91412497e4f5990a27061b157ba40 tests/test-std-new.no
+0 40549726eb5690ad9464e8493a6ee81e13046dac51272af10a6b8042b1362139 tests/test-std-new.no
 0 077c96c48e567fb2bce58475890a837fd11f68d84ea1bb7ab4c3b8640c579049 tests/test-std-str-map.no
 0 f875cc4bc9f0c09d86131283b3e885855a5f97a8836388c0527d05772f139abb tests/test-std-unix-fs-os-2.no
 0 1e1b934a40e8bcef5d845fc317a03f838eaf7d22856a4f2045d0166cd3fd71ae tests/test-std-unix-fs-os.no
@@ -296,6 +297,7 @@
 0 5fc8079070462d454b26180a64b3e70b97a5b83e3543d4a80d3679b67d375825 tests/test-str-minimal2.no
 0 bb93364b07f4f7e27221c4f97bd427e532c729516149f23029f789246ece3820 tests/test-str-minimal3.no
 0 532adb4fcff060f3644d6c9938caa3650454a35915e580e42c42851d668e94cb tests/test-str-ops.no
+0 f2195bffbe9d2ca21802877c64e9567670bca5f304d894b47859315dd1802139 tests/test-str-order.no
 0 f25b2228a6b27981ebd1cd8ebc3aaa1da1328b6d148f69a26dbcaa3a371ff881 tests/test-str-repeat-only.no
 0 16e5eed73e4e7920acb1d285150f99dd3fc15bad43c747c7ea7effda1563ae48 tests/test-str-repeat.no
 0 ec19e3e6c4be5fd5d88a431af18e298a9dc8491023e48e2344f924142fc2202c tests/test-str-repeat2.no
@@ -306,7 +308,7 @@
 0 f33ae3bc9a22cd7564990a794789954409977013966fb1a8f43c35776b833a95 tests/test-string-literal-recv.no
 0 9314a0de2850faebf82e7ec78cf6a528ae8404b26f2b834087da86782a181699 tests/test-struct-field-leaf-clone.no
 0 90afb49a553d85f8750f0b49cbdd82657f6323997946f680e4bc362961208fd2 tests/test-tagged-enum.no
-0 efb94942591d7fb009946828c2bde15a8dbb8ee57014fec5f424f0663f5092bf tests/test-tcp-fork.no
+0 7353688270cedfb4ae8628ab67e608506efb6a18d2dd3b0ed381b67704f3a239 tests/test-tcp-fork.no
 0 15e1f39e09fed434456cdc629ce57a83f6e2fec80441a141d18dc7252758dc1c tests/test-time.no
 0 b7a42d847d241277f7141ac0d80070923b3fc37d01e55c22996cf49a93b6282c tests/test-tls-debug.no
 0 9afdbdf2aa07de8533eef8e3642d3265e8a041d921caca4a678fdac1a9e20f65 tests/test-tls-import-repeat.no
@@ -327,7 +329,7 @@
 0 f33ae3bc9a22cd7564990a794789954409977013966fb1a8f43c35776b833a95 tests/test-to-i64-simple.no
 0 5da6bc4d1e0e442c6a1032c6c59597e8b4fdd99a0592c5198ef9c75670742631 tests/test-toml.no
 0 2333ba693fd34027ee67943e434896cc093adfea1b0252eb7563f40558a369f6 tests/test-trim-isolate.no
-0 f238e6481e0abda3f1c9419e5cb28ab249092678f4e8c34b889cf8c53857eedc tests/test-txt.no
+0 53e4ac8734c19c5f46dccc928831c8236c055e80a048ccf2bb699d944b79c590 tests/test-txt.no
 0 59d13eb9f1ec948470ca8e695dbe4f2918fc925168b8375e81e7c4818cebf77e tests/test-typeowner-basic.no
 0 3d54c34068217a915a90ccbee71ed7a8386f875dd0c542db51f7a95ab1cddef1 tests/test-typeowner-duplicate.no
 0 bb06862c50753584f9a3ce5edd3c97e6b98a62636d9caf5a3b4f434042325e19 tests/test-typeowner-ws-only.no
@@ -450,3 +452,9 @@
 0 6f549d313a2753768aaa15da0b44a9ebdddb74b5aaafa7051194dde5d71e3b1b tests/zz-strindex-lint.no
 0 5934c1f36f5122b8554ec7958744e7013b486f142def4d93911cca6ecab479c2 tests/zz_min_cond3.no
 0 5891b5b522d5df086d0ff0b110fbd9d21bb4fc7163af34d08286a2e846f6be03 tests/zz_pushtest.no
+0 3b58c9a6a6d7040b6cd37cea59ea3967a5ede6b922cb67ede218271a888961cd tests/view-basic.no
+0 e1c451e0a5c67f6484fa9ef08411cee06fae87e978716d5bed993446705894e9 tests/view-optional.no
+0 402c70a5326b61f2b9d2c2bc4e188ba3ce1901e61076841ffb0bd5a226540c99 tests/mem-safety/str-field-set-clone.no
+0 1935c10b5a10f9d7c9cbdcf28cca4e76693b6ebd2f388424b2e972c5eea9177d tests/mem-safety/vec-insert-capacity.no
+0 a8cd15b077faacdd3b33269f1e920b41c8d910c0cc7447b6a79872691f610212 tests/mem-safety/vec-push-struct-leaf.no
+0 5d78f7e82449010fb690c46ea9975502e8052d35b9c5f31d01f4e3d4f21b289c tests/test-txt-methods.no

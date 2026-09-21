@@ -259,7 +259,17 @@ url-info.set-query = (key str, value str) {
         pos = next-amp + 1
     } (true)
     #{overflow=wrap}
-    found == false -> new-query.len-bytes() > 0 -> new-query = new-query - '&' - key - '=' - value -> new-query = key - '=' - value
+    ; ⚠️ 不要寫成一整行 `a -> b -> c -> d` 的 `->` 管線：
+    ; `->` 是**短路管線運算子**，語義不因是否賦值而改變 —— 條件不成立只會跳過後續節點，
+    ; 沒有 else 分支，所以這種寫法既是錯的（兩個指派會互相覆蓋 / 該跑的沒跑），
+    ; 又會讓 checker 抱怨型別（`cannot assign i64 value to str variable`），
+    ; 還會讓 `no fmt` 不冪等（formatter 把它印成 `...: { }` 後重新解析成別的結構）。
+    ; 要「二選一」就用下面這種 `{}` if/else-if 群組（與上面 251-255 行的寫法一致）。
+    found == false -> {
+        new-query.len-bytes() > 0 -> new-query = new-query - '&' - key - '=' - value
+
+        -> new-query = key - '=' - value
+    }
     .query = new-query
 }
 

@@ -215,7 +215,7 @@ func (c *codegen) optionElemKind(v ValueID) TypeKind {
 
 func supportedLLVM(lt string) bool {
 	switch lt {
-	case "i64", "double", "i1", "void", "%str-long", "i8", "%txt", "%vec", "%option":
+	case "i64", "i32", "double", "i1", "void", "%str-long", "i8", "%txt", "%vec", "%option":
 		return true
 	}
 	// Fixed arrays of supported element types are emitted as [N x elem]; the
@@ -235,12 +235,12 @@ func supportedLLVM(lt string) bool {
 	return false
 }
 
-// isScalarLLVM reports whether an LLVM type is a non-pointer scalar (i64, i1,
-// double, i8). Such parameters are passed BY VALUE in the MIR call ABI; every
+// isScalarLLVM reports whether an LLVM type is a non-pointer scalar (i64, i32,
+// i1, double, i8). Such parameters are passed BY VALUE in the MIR call ABI; every
 // other type (aggregate / pointer / struct) is passed BY POINTER.
 func isScalarLLVM(lt string) bool {
 	switch lt {
-	case "i64", "i1", "double", "i8":
+	case "i64", "i32", "i1", "double", "i8":
 		return true
 	}
 	return false
@@ -475,13 +475,53 @@ func (c *codegen) collectStrings() {
 	}
 }
 
+// viewPtrType renders the LLVM type of a view (`&T`) as a pointer to the
+// pointee's LLVM type: `&view-point` -> `%view-point*`, `&str` -> `%str-long*`,
+// `&[]i64` -> `%vec*`, `&i64` -> `i64*`.
+//
+// A view is an ALIAS: writing through it must be visible on the original
+// object, so the value it carries is the address, never a copy.
+func (c *codegen) viewPtrType(t *Type) string {
+	if t.Elem != NoType {
+		if et := c.mod.Type(t.Elem); et != nil {
+			return c.llvmTypeOf(et) + "*"
+		}
+	}
+	if et := c.mod.internType(strings.TrimPrefix(t.Raw, "&")); et != NoType {
+		if ety := c.mod.Type(et); ety != nil {
+			return c.llvmTypeOf(ety) + "*"
+		}
+	}
+	return "i8*"
+}
+
 func (c *codegen) llvmTypeOf(t *Type) string {
+	// VIEW (`&T`) lowers to a POINTER regardless of T's kind — and it must be
+	// handled BEFORE the kind switch below, because KindOfRaw deliberately
+	// reports `&T` as T's OWN kind (`&` is a lifetime annotation bound to
+	// `self`, not a distinct type; see mir.KindOfRaw). The `case KindPtr`
+	// branch below is therefore unreachable for views, and without this early
+	// return every `&T` lowers to the bare pointee type: emitGetField's view
+	// auto-deref (`HasSuffix(recvLT, "*")`) then never fires and the field GEP
+	// indexes into the pointer slot itself -> "getfield field"
+	// (tests/view-basic.no / tests/view-optional.no).
+	if strings.HasPrefix(t.Raw, "&") {
+		return c.viewPtrType(t)
+	}
 	switch t.Kind {
-	case KindInt, KindChar:
+	case KindInt:
 		if t.Raw == "byte" || t.Raw == "u8" || t.Raw == "i8" {
 			return "i8"
 		}
 		return "i64"
+	case KindChar:
+		// `char` is a single Unicode scalar value (0 ..= 0x10FFFF), which fits
+		// in 21 bits — i32 is the storage type, deliberately NOT i64. The only
+		// place a char widens to i64 is the call boundary into @str_from_cp,
+		// whose IR signature takes i64; that zero-extension is a transient
+		// call argument, it does not change the char's own type (see
+		// strFromScalar and the str-parameter promotion in emitCall).
+		return "i32"
 	case KindFloat:
 		return "double"
 	case KindBool:
@@ -540,17 +580,11 @@ func (c *codegen) llvmTypeOf(t *Type) string {
 		// `&str` -> `%str-long*`, `&i64` -> `i64*`. Because aggregates are
 		// already passed as `T*` in the MIR call ABI, a view can be handed
 		// straight to a method as its `self` receiver with no conversion.
+		//
+		// NOTE: views never reach this case (see the `&` early return above);
+		// this stays for any future KindPtr that is not spelled `&T`.
 		if strings.HasPrefix(t.Raw, "&") {
-			if t.Elem != NoType {
-				if et := c.mod.Type(t.Elem); et != nil {
-					return c.llvmTypeOf(et) + "*"
-				}
-			}
-			if et := c.mod.internType(strings.TrimPrefix(t.Raw, "&")); et != NoType {
-				if ety := c.mod.Type(et); ety != nil {
-					return c.llvmTypeOf(ety) + "*"
-				}
-			}
+			return c.viewPtrType(t)
 		}
 		return "i8*"
 	case KindFunc:
@@ -1631,6 +1665,12 @@ done:
   ret i1 %res
 }
 
+; NOTE: there is deliberately no @txt_eq runtime helper here. %txt is declared
+; in the type section, which is emitted AFTER this prelude, so a helper taking
+; %txt by value would reference a type that is still unresolved at this point
+; (opt-verify: "invalid type for function argument"). txt equality is therefore
+; lowered INLINE at the comparison site -- see txtEqInline.
+
 ; vec_free: free a %vec's backing store. %vec = { i64 len, i64 cap, i64 data }
 ; (data is a heap pointer stored as an integer). The 3rd field is the malloc'd
 ; buffer; free it unless null. The %vec struct itself is by-value (stack/inline)
@@ -2179,8 +2219,10 @@ entry:
 ; UTF-8 code-point runtime for the code-point indexed string syntax.
 ;
 ; str[i] (read), str[a..b] and for c <- str are all defined in terms of
-; CODEPOINTS, not bytes — see docs/docs/lang/str.md. char is an i64 code
-; point. These four helpers are the single implementation of that contract;
+; CODEPOINTS, not bytes — see docs/docs/lang/str.md. char is i32 (a single
+; Unicode scalar value); these helpers compute the code point as i64 and the
+; caller truncates it into the i32 char slot. These four helpers are the single
+; implementation of that contract;
 ; std/str.no carries the equivalent nolang-level primitives (str.byte-index /
 ; str.cp-index / str.decode-cp) for source-level use.
 ;
@@ -2356,6 +2398,11 @@ err:
 ; the char -> str implicit conversion (a str = s[0], f(str) with a char
 ; argument). Distinct from @str_from_char, which takes an already-encoded
 ; single BYTE (the byte -> str case used for []byte element rendering).
+;
+; The i64 parameter is this runtime helper's ABI, NOT char's storage width:
+; nolang char is i32 (a Unicode scalar value, 0..=0x10FFFF). Every caller
+; zero-extends its i32 char argument to i64 here at the CALL BOUNDARY
+; (codegen.zextCharToI64) -- the same shape as C: char c='a'; f((long)c);
 define %str-long @str_from_cp(i64 %cp) {
 entry:
   %buf = alloca [4 x i8]
@@ -3415,6 +3462,11 @@ func (c *codegen) emitConst(inst *Inst, allocaFor func(ValueID) string) error {
 	switch lt {
 	case "i64":
 		c.sb.WriteString(fmt.Sprintf("  store i64 %d, i64* %s\n", inst.Int, slot))
+	case "i32":
+		// `char` is the i32 scalar (lowerCharLit emits OpConst with type char).
+		// Without this case a char constant fell into the zeroinitializer
+		// default and every char literal materialized as 0.
+		c.sb.WriteString(fmt.Sprintf("  store i32 %d, i32* %s\n", inst.Int, slot))
 	case "i1":
 		c.sb.WriteString(fmt.Sprintf("  store i1 %d, i1* %s\n", inst.Int, slot))
 	case "double":
@@ -3552,6 +3604,20 @@ func (c *codegen) emitArith(f *Function, inst *Inst) error {
 		}
 		if bT != "%str-long" && isIntType(bT) {
 			bV = c.strFromScalar(inst.Args[1], bV, bT)
+		}
+		// A %txt operand must be widened to %str-long before @str_concat: the
+		// result of the concat is a str (bounded txts cannot grow), and passing
+		// the %txt value straight through emitted
+		// `call %str-long @str_concat(%str-long %txt_value, ...)`, which
+		// opt-verify rejects. strValueFromTxtValue gives the callee an owned
+		// buffer, so the txt's inline storage is untouched.
+		if aT == "%txt" {
+			aV = c.strValueFromTxtValue(aV)
+			aT = "%str-long"
+		}
+		if bT == "%txt" {
+			bV = c.strValueFromTxtValue(bV)
+			bT = "%str-long"
 		}
 		c.sb.WriteString(fmt.Sprintf("  %%c%d = call %s @str_concat(%s %s, %s %s)\n", inst.Dst, lt, lt, aV, lt, bV))
 		c.sb.WriteString(fmt.Sprintf("  store %s %%c%d, %s* %s\n", lt, inst.Dst, lt, slot))
@@ -3797,6 +3863,49 @@ func (c *codegen) emitCmp(inst *Inst) error {
 		aV = c.strFromScalar(inst.Args[0], aV, aT)
 		aT = "%str-long"
 	}
+	// Mixed %txt vs %str-long: promote the string side to the inline layout. The
+	// txt side cannot be narrowed to a %str-long without copying, and without
+	// this both operands would be compared with an `icmp` on a %txt aggregate
+	// (illegal — opt-verify rejects it). Mirrors the int -> %str-long promotion
+	// above.
+	if aT == "%txt" && bT == "%str-long" {
+		bV = c.txtValueFromStr(bV)
+		bT = "%txt"
+	}
+	if bT == "%txt" && aT == "%str-long" {
+		aV = c.txtValueFromStr(aV)
+		aT = "%txt"
+	}
+	// Ordering comparisons (<, <=, >, >=) have NO string semantics: @str_eq only
+	// implements equality, so a %str-long operand here would silently answer
+	// `false` for every pair of unequal strings. checker.ValidateStrOrdering
+	// rejects multi-character strings before codegen (only one-character string
+	// literals are allowed, and hir2mir folds those to their code point above);
+	// reaching this point with a string operand means one escaped that check, so
+	// fail loudly instead of emitting the wrong answer. %txt is in the same
+	// boat: it is an aggregate, so an ordering icmp on it is not even legal IR.
+	if (aT == "%str-long" || bT == "%str-long" || aT == "%txt" || bT == "%txt") &&
+		(inst.Op == OpLt || inst.Op == OpLe || inst.Op == OpGt || inst.Op == OpGe) {
+		c.fail("ordering comparison %s with a string operand: nolang only implements string "+
+			"equality (@str_eq / @txt_eq), so the result would always be false; compare one-character "+
+			"strings ('a', implicitly a char), chars (\"a\") or numbers, or use == / !=", inst.Op)
+	}
+	// %txt == %txt must be compared structurally, for exactly the reason
+	// @str_eq exists: `icmp eq %txt` on a { [255 x i8], i8 } aggregate is
+	// rejected by opt ("icmp requires integer operands"). `!=` inverts it.
+	if aT == "%txt" && bT == "%txt" {
+		if inst.Op == OpNe {
+			// `!=` is the negation of ==; a bare OpNe(eq, false) would be
+			// `eq != false`, which is just `eq` -- not a negation.
+			eqR := fmt.Sprintf("%%c%de", inst.Dst)
+			c.txtEqInline(aV, bV, eqR)
+			c.sb.WriteString(fmt.Sprintf("  %%c%d = xor i1 %s, true\n", inst.Dst, eqR))
+		} else {
+			c.txtEqInline(aV, bV, fmt.Sprintf("%%c%d", inst.Dst))
+		}
+		c.sb.WriteString(fmt.Sprintf("  store %s %%c%d, %s* %s\n", lt, inst.Dst, lt, slot))
+		return nil
+	}
 	if aT == "%str-long" && bT == "%str-long" {
 		// The comparison is always performed as EQUALITY (that is what the
 		// runtime @str_eq helper provides); `!=` must explicitly invert it.
@@ -3945,6 +4054,25 @@ func (c *codegen) emitStrEq(inst *Inst) error {
 		aV = c.strFromScalar(inst.Args[0], aV, aT)
 		aT = "%str-long"
 	}
+	// Mixed %str-long vs %txt (`s == t` with the str on the LEFT). hir2mir routes
+	// a comparison to OpStrEq whenever the LEFT operand's raw type is `str`, so a
+	// txt on the right lands here even though @str_eq knows nothing about it:
+	// `call i1 @str_eq(%str-long %a, %txt %b)` is a type mismatch that silently
+	// answers false (`'hello' == 'hello'` -> 0). Compare in the %txt layout
+	// instead, exactly as emitCmp does for the txt-on-the-left spelling.
+	if aT == "%txt" && bT == "%str-long" {
+		bV = c.txtValueFromStr(bV)
+		bT = "%txt"
+	}
+	if bT == "%txt" && aT == "%str-long" {
+		aV = c.txtValueFromStr(aV)
+		aT = "%txt"
+	}
+	if aT == "%txt" && bT == "%txt" {
+		c.txtEqInline(aV, bV, fmt.Sprintf("%%c%d", inst.Dst))
+		c.sb.WriteString(fmt.Sprintf("  store %s %%c%d, %s* %s\n", lt, inst.Dst, lt, slot))
+		return nil
+	}
 	c.sb.WriteString(fmt.Sprintf("  %%c%d = call i1 @str_eq(%s %s, %s %s)\n", inst.Dst, aT, aV, bT, bV))
 	c.sb.WriteString(fmt.Sprintf("  store %s %%c%d, %s* %s\n", lt, inst.Dst, lt, slot))
 	return nil
@@ -3991,9 +4119,11 @@ func (c *codegen) emitIntToStr(v, t string) string {
 }
 
 // rawTypeOfValue returns the source (MIR) type spelling of a value, or "" when
-// it cannot be resolved. Several conversions have to branch on `char` vs `i64`
-// even though BOTH are the LLVM i64 — the raw type is the only place the
-// distinction survives.
+// it cannot be resolved. Conversions that must tell `char` apart from an
+// ordinary integer have to branch on the raw type: char is i32, which the LLVM
+// width alone does not reveal as a code point, and the raw type is the only
+// place that identity survives (e.g. @str_from_cp's UTF-8 encoding vs
+// @str_from_i64's decimal text).
 func (c *codegen) rawTypeOfValue(v ValueID) string {
 	if ty := c.mirTypeOfValue(v); ty != nil {
 		return ty.Raw
@@ -4015,13 +4145,33 @@ func (c *codegen) rawTypeOfValue(v ValueID) string {
 // vT is the value's LLVM type; vID is used to look the source type up.
 func (c *codegen) strFromScalar(vID ValueID, v, vT string) string {
 	if c.rawTypeOfValue(vID) == "char" {
-		av := c.coerceInt(v, vT, "i64")
+		// char is i32; @str_from_cp's IR signature takes i64. Zero-extend at
+		// the CALL BOUNDARY only — the code point is non-negative (< 2^21), so
+		// the extension is exact and the char's own type stays i32. This is the
+		// same shape as C's `char c='A'; f((long)c);`: the argument is promoted
+		// for the call, the variable is not reinterpreted.
+		av := c.zextCharToI64(v, vT)
 		c.loadSeq++
 		r := fmt.Sprintf("%%ccp%d", c.loadSeq)
 		c.sb.WriteString(fmt.Sprintf("  %s = call %%str-long @str_from_cp(i64 %s)\n", r, av))
 		return r
 	}
 	return c.emitIntToStr(v, vT)
+}
+
+// zextCharToI64 widens a `char` to the i64 that the @str_from_cp IR ABI
+// requires. A code point is always in 0 ..= 0x10FFFF, so this is a
+// ZERO-extension — deliberately not the sign-extension coerceInt picks for a
+// generic signed i32 (a wrapped negative i32 would print/encode as garbage).
+// This is a call-argument conversion, NOT a change to char's storage width.
+func (c *codegen) zextCharToI64(v, vT string) string {
+	if vT == "i32" {
+		c.loadSeq++
+		r := fmt.Sprintf("%%czx%d", c.loadSeq)
+		c.sb.WriteString(fmt.Sprintf("  %s = zext i32 %s to i64\n", r, v))
+		return r
+	}
+	return c.coerceInt(v, vT, "i64")
 }
 
 func (c *codegen) emitLogic(inst *Inst) error {
@@ -4273,7 +4423,14 @@ func (c *codegen) emitMove(inst *Inst) error {
 	// %str-long clones via @str_clone; %vec / heap-option have no clone helper yet,
 	// so we reject (clean fallback to the proven legacy path) rather than emit a
 	// binary that would double-free at runtime.
-	if c.curFn != nil && isFuncParam(c.curFn, inst.Args[0]) && (dstT == "%str-long" || dstT == "%vec") {
+	// `srcT != "%txt"` is load-bearing: a %txt owns NO heap, so this clone path
+	// must not claim it. It used to fire for `f = (v txt) (out str) { out = v }`,
+	// handing a %txt to `call %str-long @str_clone(%str-long %v)` — a mismatched
+	// argument opt-verify rejects. txt -> str is handled further down by
+	// strValueFromTxt, which already produces an independent (malloc'd) buffer,
+	// so skipping the clone costs nothing.
+	if c.curFn != nil && isFuncParam(c.curFn, inst.Args[0]) && srcT != "%txt" &&
+		(dstT == "%str-long" || dstT == "%vec") {
 		if dstT == "%str-long" {
 			_, sv := c.loadVal(inst.Args[0])
 			tmp := fmt.Sprintf("%%cl%d", inst.ID)
@@ -4284,13 +4441,14 @@ func (c *codegen) emitMove(inst *Inst) error {
 		c.fail("moving a borrowed %s parameter transfers ownership the callee does not hold (double-free risk); unsupported in MIR backend", dstT)
 		return fmt.Errorf("borrowed %s param move unsupported in MIR backend", dstT)
 	}
-	// char -> str implicit conversion: `a str = s[0]`. The source is an i64
-	// CODE POINT and the destination is a %str-long, so a bit-copy would write
-	// the code point's value into the {len, cap, data} header and hand back a
-	// garbage string. Encode instead (@str_from_cp uses UTF-8; a byte/u8/i8
+	// char -> str implicit conversion: `a str = s[0]`. The source is a char
+	// (i32) CODE POINT and the destination is a %str-long, so a bit-copy would
+	// write the code point's value into the {len, cap, data} header and hand
+	// back a garbage string. Encode instead (@str_from_cp uses UTF-8 and takes
+	// the code point zero-extended to i64 at the call boundary; a byte/u8/i8
 	// source keeps its single already-encoded byte). Without this branch the
-	// move emitted `store %str-long %lv, %str-long* %dst` with an i64 operand
-	// and opt-verify rejected the module.
+	// move emitted `store %str-long %lv, %str-long* %dst` with an integer
+	// operand and opt-verify rejected the module.
 	if dstT == "%str-long" && isIntType(srcT) {
 		switch c.rawTypeOfValue(inst.Args[0]) {
 		case "char", "byte", "u8", "i8":
@@ -4454,6 +4612,29 @@ func (c *codegen) emitMove(inst *Inst) error {
 	if dstT == "%vec" && strings.HasPrefix(srcT, "[") {
 		v := c.vecFromArraySink(srcT, srcSlot)
 		c.sb.WriteString(fmt.Sprintf("  store %%vec %s, %%vec* %s\n", v, dstSlot))
+		return nil
+	}
+	// %txt <-> %str-long move. The tail of this function types the copy by the
+	// DESTINATION (`load %T, %T* srcSlot`), which is harmless while both sides
+	// share a layout but reads out of bounds the moment one side is a %txt:
+	//   - str -> txt: `load %txt, %txt* <24-byte str slot>` reads 256 bytes off
+	//     the stack and bit-copies them, so the txt's i8 len byte keeps its STALE
+	//     value while the buffer holds a {len,cap,data} triple -> the value
+	//     prints empty and reports the previous length.
+	//   - txt -> str: `load %str-long, %str-long* <256-byte txt slot>` makes
+	//     len/cap out of TEXT bytes and "data" out of the rest, so the result is
+	//     garbage and dropping it frees a wild pointer -> `trace/BPT trap`.
+	// The two layouts have no coerce() between them, so each direction has to
+	// materialize the other one explicitly.
+	if dstT == "%txt" && srcT == "%str-long" {
+		_, sv := c.loadVal(inst.Args[0])
+		conv := c.txtValueFromStr(sv)
+		c.sb.WriteString(fmt.Sprintf("  store %%txt %s, %%txt* %s\n", conv, dstSlot))
+		return nil
+	}
+	if dstT == "%str-long" && srcT == "%txt" {
+		conv := c.strValueFromTxt(srcSlot)
+		c.sb.WriteString(fmt.Sprintf("  store %%str-long %s, %%str-long* %s\n", conv, dstSlot))
 		return nil
 	}
 	// #83 SROA guard: for large aggregate types (user structs like %json_json
@@ -5896,6 +6077,16 @@ func (c *codegen) emitIndexStore(inst *Inst) error {
 	// per index and overruns the array.
 	elemT := c.elemTypeOfReceiver(inst.Args[0])
 	valT, valV := c.loadVal(inst.Args[2])
+	// `[]txt` / `[N]txt` element written from a str: materialize a real %txt.
+	// coerce() has no %str-long -> %txt case (different layouts), so the store
+	// below emitted `store %txt %str-long_value` and opt-verify rejected the
+	// module:
+	//   r []txt ; r.push('aaaa') ; r[0] = 'cccc'
+	//   -> "'%lvN' defined with type '%str-long' but expected '%txt'"
+	if elemT == "%txt" && valT == "%str-long" {
+		valV = c.txtValueFromStr(valV)
+		valT = "%txt"
+	}
 	// Ownership of the OVERWRITTEN slot is determined by the ELEMENT type we are
 	// writing INTO, not the value's type. A char/byte buffer (i8) is not owned,
 	// so storing into it must NOT emit @str_free on an i8 as if it were a
@@ -6503,6 +6694,56 @@ func (c *codegen) emitSetField(inst *Inst) error {
 			recvTy = c.mod.Type(id)
 		}
 	}
+	// `%txt` length write. %txt = { [255 x i8] buf, i8 len } -- the length is an
+	// **i8 at field 1**, not the i64 field 0 that %str-long/%vec use. The generic
+	// path below takes the store type from the RHS (an i64), so it emitted
+	//   store i64 %n, i64* <gep to %txt field 1>
+	// an 8-byte write starting one byte before the end of the 256-byte struct:
+	// out of bounds, i.e. UB, and the length byte then reads back as garbage
+	// (observed: 0). Every txt method that publishes its result via `out.len = n`
+	// (txt.slice / txt.split / txt.replace-n / ...) therefore returned an EMPTY
+	// value, which is also why txt.split produced the right number of empty
+	// parts. Truncate to i8 and clamp into 0..255 so the write stays in bounds.
+	if recvLT == "%txt" && inst.Str == "len" {
+		_, valV := c.loadVal(inst.Args[1])
+		valLT, _ := c.ptype(inst.Args[1])
+		if valLT == "" {
+			valLT = "i64"
+		}
+		v := valV
+		switch {
+		case valLT == "i8":
+			// already byte-sized
+		case valLT == "i32":
+			c.loadSeq++
+			t := fmt.Sprintf("%%tlx%d", c.loadSeq)
+			c.sb.WriteString(fmt.Sprintf("  %s = trunc i32 %s to i8\n", t, v))
+			v = t
+		default:
+			// i64 (and any other integral): clamp into [0, 255] first.
+			c.loadSeq++
+			lt0 := fmt.Sprintf("%%tln%d", c.loadSeq)
+			c.sb.WriteString(fmt.Sprintf("  %s = icmp slt i64 %s, 0\n", lt0, v))
+			c.loadSeq++
+			cl0 := fmt.Sprintf("%%tlz%d", c.loadSeq)
+			c.sb.WriteString(fmt.Sprintf("  %s = select i1 %s, i64 0, i64 %s\n", cl0, lt0, v))
+			c.loadSeq++
+			gt := fmt.Sprintf("%%tlg%d", c.loadSeq)
+			c.sb.WriteString(fmt.Sprintf("  %s = icmp ugt i64 %s, 255\n", gt, cl0))
+			c.loadSeq++
+			cl := fmt.Sprintf("%%tlc%d", c.loadSeq)
+			c.sb.WriteString(fmt.Sprintf("  %s = select i1 %s, i64 255, i64 %s\n", cl, gt, cl0))
+			c.loadSeq++
+			t := fmt.Sprintf("%%tlt%d", c.loadSeq)
+			c.sb.WriteString(fmt.Sprintf("  %s = trunc i64 %s to i8\n", t, cl))
+			v = t
+		}
+		c.loadSeq++
+		gep := fmt.Sprintf("%%tlp%d", c.loadSeq)
+		c.sb.WriteString(fmt.Sprintf("  %s = getelementptr inbounds %%txt, %%txt* %s, i32 0, i32 1\n", gep, recvSlot))
+		c.sb.WriteString(fmt.Sprintf("  store i8 %s, i8* %s\n", v, gep))
+		return nil
+	}
 	if isOptionType(recvLT) {
 		// `?T.field = v`: peel the option (field 1 holds the inline payload),
 		// then GEP into the inner struct's field and store v there.
@@ -6684,6 +6925,26 @@ func (c *codegen) emitSetField(inst *Inst) error {
 	// Order matters: load the old descriptor, clone the incoming value, store
 	// the clone, then free. Cloning BEFORE the free keeps `p.name = p.name`
 	// correct (the clone is independent of the buffer being released).
+	// A `txt` FIELD written from a str value.
+	//
+	// fieldLT above is derived from the RHS (`c.ptype(inst.Args[1])`), not from
+	// the field's declaration, so a `txt` field was handed `%str-long`. The
+	// clone block below then loaded/cloned/stored a 24-byte %str-long descriptor
+	// into a 256-byte %txt field: the i8 length byte (field 1, offset 255) kept
+	// its zeroinitializer value 0, so EVERY read of the field came back empty.
+	//   point { s txt }
+	//   p = point { s: 'a-b-c' }
+	//   print(p.s)            ; printed "" and p.s.len() == 0
+	// (a `str` field is unaffected: there fieldLT == the real field type.)
+	if valLT == "%str-long" {
+		if f, ok := c.fieldAt(structKey, idx); ok {
+			if ft := c.mod.Type(c.mod.internType(f.TypeRaw)); ft != nil && c.llvmTypeOf(ft) == "%txt" {
+				valV = c.txtValueFromStr(valV)
+				valLT = "%txt"
+				fieldLT = "%txt"
+			}
+		}
+	}
 	if fieldLT == "%str-long" && valLT == "%str-long" {
 		c.loadSeq++
 		old := fmt.Sprintf("%%sfold%d", c.loadSeq)
@@ -7659,7 +7920,19 @@ func (c *codegen) emitTxtFromStr(inst *Inst) error {
 		c.fail("txt-from-str dst has no slot in func %d", c.cf)
 		return fmt.Errorf("txt dst slot")
 	}
-	srcT, srcV := c.loadVal(inst.Args[0]) // %str-long
+	srcT, srcV := c.loadVal(inst.Args[0]) // %str-long -- but see below
+	// ⚠️ The source is NOT always %str-long despite the op name.
+	// Lowering also emits OpTxtFromStr for a txt -> txt copy, e.g.
+	//   t txt = 'a-b-c'
+	//   r = t.replace-n('-', '+', 2)      ; replace-n returns txt
+	// %txt = { [255 x i8] buf, i8 len } has only two fields and field 0 is the
+	// *buffer*, not the length, so the %str-long indices used below (0=len,
+	// 2=data) emit `extractvalue %txt %v, 0` typed `[255 x i8]` and
+	// `extractvalue %txt %v, 2` out of range -> opt-verify:
+	//   "'%tlsN' defined with type '[255 x i8]' but expected 'i64'"
+	if srcT == "%txt" {
+		return c.emitTxtFromTxt(inst.Args[0], srcV, dstSlot)
+	}
 	c.loadSeq++
 	sl := fmt.Sprintf("%%tls%d", c.loadSeq)
 	c.sb.WriteString(fmt.Sprintf("  %s = extractvalue %s %s, 0\n", sl, srcT, srcV))
@@ -7688,6 +7961,173 @@ func (c *codegen) emitTxtFromStr(inst *Inst) error {
 	c.sb.WriteString(fmt.Sprintf("  %s = getelementptr inbounds %%txt, %%txt* %s, i32 0, i32 1\n", lx, dstSlot))
 	c.sb.WriteString(fmt.Sprintf("  store i8 %s, i8* %s\n", l8, lx))
 	return nil
+}
+
+// emitTxtFromTxt copies an existing %txt value into a %txt slot: the inline
+// byte buffer plus the i8 length byte. It backs OpTxtFromStr when the source
+// is already a %txt (see the comment in emitTxtFromStr).
+//
+// %txt = { [255 x i8] buf, i8 len } -- note len is field 1 and is i8, so it
+// can never exceed the 255-byte buffer and needs no clamping.
+func (c *codegen) emitTxtFromTxt(a ValueID, srcV, dstSlot string) error {
+	slot := c.valSlot[a]
+	if slot == "" {
+		// No memory home for the value yet: spill it so we can GEP the buffer.
+		// (Inline alloca matches what the rest of this backend emits, e.g.
+		// `%cresN = alloca %txt` for call results.)
+		c.loadSeq++
+		slot = fmt.Sprintf("%%ttsl%d", c.loadSeq)
+		c.sb.WriteString(fmt.Sprintf("  %s = alloca %%txt\n", slot))
+		c.sb.WriteString(fmt.Sprintf("  store %%txt %s, %%txt* %s\n", srcV, slot))
+	}
+	// length -> i64
+	c.loadSeq++
+	lg := fmt.Sprintf("%%ttlg%d", c.loadSeq)
+	c.sb.WriteString(fmt.Sprintf("  %s = getelementptr inbounds %%txt, %%txt* %s, i32 0, i32 1\n", lg, slot))
+	c.loadSeq++
+	ll := fmt.Sprintf("%%ttll%d", c.loadSeq)
+	c.sb.WriteString(fmt.Sprintf("  %s = load i8, i8* %s\n", ll, lg))
+	c.loadSeq++
+	ln := fmt.Sprintf("%%ttl6%d", c.loadSeq)
+	c.sb.WriteString(fmt.Sprintf("  %s = zext i8 %s to i64\n", ln, ll))
+	// source buffer -> i8*
+	c.loadSeq++
+	dg := fmt.Sprintf("%%ttdg%d", c.loadSeq)
+	c.sb.WriteString(fmt.Sprintf("  %s = getelementptr inbounds %%txt, %%txt* %s, i32 0, i32 0, i64 0\n", dg, slot))
+	c.loadSeq++
+	dp := fmt.Sprintf("%%ttdp%d", c.loadSeq)
+	c.sb.WriteString(fmt.Sprintf("  %s = bitcast [255 x i8]* %s to i8*\n", dp, dg))
+	// dst buffer -> i8*, memcpy, then the length byte
+	c.loadSeq++
+	dx := fmt.Sprintf("%%ttdx%d", c.loadSeq)
+	c.sb.WriteString(fmt.Sprintf("  %s = getelementptr inbounds %%txt, %%txt* %s, i32 0, i32 0, i64 0\n", dx, dstSlot))
+	c.sb.WriteString(fmt.Sprintf("  call void @llvm.memcpy.p0i8.p0i8.i64(i8* %s, i8* %s, i64 %s, i1 false)\n", dx, dp, ln))
+	c.loadSeq++
+	l8 := fmt.Sprintf("%%ttl8%d", c.loadSeq)
+	c.sb.WriteString(fmt.Sprintf("  %s = trunc i64 %s to i8\n", l8, ln))
+	c.loadSeq++
+	lx := fmt.Sprintf("%%ttlx%d", c.loadSeq)
+	c.sb.WriteString(fmt.Sprintf("  %s = getelementptr inbounds %%txt, %%txt* %s, i32 0, i32 1\n", lx, dstSlot))
+	c.sb.WriteString(fmt.Sprintf("  store i8 %s, i8* %s\n", l8, lx))
+	return nil
+}
+
+// txtValueFromStr materializes a %str-long VALUE as a %txt value.
+//
+// %txt = { [255 x i8] buf, i8 len } is not layout-compatible with
+// %str-long = { i64 len, i64 cap, i8* data }, and there is no coerce() between
+// them, so every site that must put a str into a `txt` slot has to build the
+// inline representation explicitly. Returns the register holding the %txt.
+//
+// The value is staged through a fresh stack slot because a 255-byte inline
+// buffer cannot be assembled as an SSA aggregate in practice.
+func (c *codegen) txtValueFromStr(strV string) string {
+	sl := c.treg("tfsl")
+	c.sb.WriteString(fmt.Sprintf("  %s = extractvalue %%str-long %s, 0\n", sl, strV))
+	gt := c.treg("tfsg")
+	c.sb.WriteString(fmt.Sprintf("  %s = icmp ugt i64 %s, 255\n", gt, sl))
+	cl := c.treg("tfsc")
+	c.sb.WriteString(fmt.Sprintf("  %s = select i1 %s, i64 255, i64 %s\n", cl, gt, sl))
+	dp := c.treg("tfsd")
+	c.sb.WriteString(fmt.Sprintf("  %s = extractvalue %%str-long %s, 2\n", dp, strV))
+	slot := c.treg("tfss")
+	c.sb.WriteString(fmt.Sprintf("  %s = alloca %%txt\n", slot))
+	dx := c.treg("tfsb")
+	c.sb.WriteString(fmt.Sprintf("  %s = getelementptr inbounds %%txt, %%txt* %s, i32 0, i32 0, i64 0\n", dx, slot))
+	c.sb.WriteString(fmt.Sprintf("  call void @llvm.memcpy.p0i8.p0i8.i64(i8* %s, i8* %s, i64 %s, i1 false)\n", dx, dp, cl))
+	l8 := c.treg("tfs8")
+	c.sb.WriteString(fmt.Sprintf("  %s = trunc i64 %s to i8\n", l8, cl))
+	lx := c.treg("tfsn")
+	c.sb.WriteString(fmt.Sprintf("  %s = getelementptr inbounds %%txt, %%txt* %s, i32 0, i32 1\n", lx, slot))
+	c.sb.WriteString(fmt.Sprintf("  store i8 %s, i8* %s\n", l8, lx))
+	v := c.treg("tfsv")
+	c.sb.WriteString(fmt.Sprintf("  %s = load %%txt, %%txt* %s\n", v, slot))
+	return v
+}
+
+// strValueFromTxt materializes a %txt SLOT as an OWNED %str-long value.
+//
+// This is the mirror of txtValueFromStr, and the reason it cannot just borrow
+// the txt's inline buffer: %str-long = { i64 len, i64 cap, i8* data } is owned,
+// so its drop frees `data`. Handing out a pointer into the txt's own storage
+// would make the string's lifetime the txt's lifetime — and for a txt living on
+// the stack the string would outlive it. @str_from_const mallocs and memcpy's,
+// so the result owns an independent buffer.
+func (c *codegen) strValueFromTxt(txtSlot string) string {
+	lx := c.treg("tsfl")
+	c.sb.WriteString(fmt.Sprintf("  %s = getelementptr inbounds %%txt, %%txt* %s, i32 0, i32 1\n", lx, txtSlot))
+	l8 := c.treg("tsfb")
+	c.sb.WriteString(fmt.Sprintf("  %s = load i8, i8* %s\n", l8, lx))
+	ln := c.treg("tsfn")
+	c.sb.WriteString(fmt.Sprintf("  %s = zext i8 %s to i64\n", ln, l8))
+	bp := c.treg("tsfp")
+	c.sb.WriteString(fmt.Sprintf("  %s = getelementptr inbounds %%txt, %%txt* %s, i32 0, i32 0, i64 0\n", bp, txtSlot))
+	v := c.treg("tsfv")
+	c.sb.WriteString(fmt.Sprintf("  %s = call %%str-long @str_from_const(i8* %s, i64 %s)\n", v, bp, ln))
+	return v
+}
+
+// strValueFromTxtValue is strValueFromTxt for a %txt that is only available as
+// an SSA VALUE rather than a slot (a call argument, say). It spills to a fresh
+// alloca first, because the buffer has to be addressed with a GEP.
+func (c *codegen) strValueFromTxtValue(txtV string) string {
+	slot := c.treg("tsxs")
+	c.sb.WriteString(fmt.Sprintf("  %s = alloca %%txt\n", slot))
+	c.sb.WriteString(fmt.Sprintf("  store %%txt %s, %%txt* %s\n", txtV, slot))
+	return c.strValueFromTxt(slot)
+}
+
+// txtEqInline lowers `a == b` for two %txt VALUES and returns the i1 register
+// holding "equal".
+//
+// There is no @txt_eq runtime helper (see the note in the prelude: %txt is
+// declared after it), and there cannot be an `icmp eq %txt` either -- %txt is
+// an aggregate, so opt rejects it. The comparison is BRANCHLESS on purpose: it
+// is emitted in the middle of an expression, where introducing basic blocks is
+// not an option.
+//
+//	equal  iff  len(a) == len(b)  AND  memcmp(buf(a), buf(b), min(len)) == 0
+//
+// Comparing min(len) bytes is always in bounds (<= 255) and is sufficient:
+// when the lengths differ the answer is false whatever memcmp says, so the
+// length test alone decides those cases. Only len bytes are ever compared --
+// the tail of the buffer is stale from whatever the slot previously held, so a
+// 255-byte memcmp would report two equal txts with different histories as
+// unequal.
+func (c *codegen) txtEqInline(aV, bV, dst string) {
+	sa := c.treg("txqa")
+	c.sb.WriteString(fmt.Sprintf("  %s = alloca %%txt\n", sa))
+	c.sb.WriteString(fmt.Sprintf("  store %%txt %s, %%txt* %s\n", aV, sa))
+	sb := c.treg("txqb")
+	c.sb.WriteString(fmt.Sprintf("  %s = alloca %%txt\n", sb))
+	c.sb.WriteString(fmt.Sprintf("  store %%txt %s, %%txt* %s\n", bV, sb))
+	lap := c.treg("txqla")
+	c.sb.WriteString(fmt.Sprintf("  %s = getelementptr inbounds %%txt, %%txt* %s, i32 0, i32 1\n", lap, sa))
+	lbp := c.treg("txqlb")
+	c.sb.WriteString(fmt.Sprintf("  %s = getelementptr inbounds %%txt, %%txt* %s, i32 0, i32 1\n", lbp, sb))
+	la8 := c.treg("txq8a")
+	c.sb.WriteString(fmt.Sprintf("  %s = load i8, i8* %s\n", la8, lap))
+	lb8 := c.treg("txq8b")
+	c.sb.WriteString(fmt.Sprintf("  %s = load i8, i8* %s\n", lb8, lbp))
+	leq := c.treg("txqle")
+	c.sb.WriteString(fmt.Sprintf("  %s = icmp eq i8 %s, %s\n", leq, la8, lb8))
+	lan := c.treg("txqna")
+	c.sb.WriteString(fmt.Sprintf("  %s = zext i8 %s to i64\n", lan, la8))
+	lbn := c.treg("txqnb")
+	c.sb.WriteString(fmt.Sprintf("  %s = zext i8 %s to i64\n", lbn, lb8))
+	lt := c.treg("txqsl")
+	c.sb.WriteString(fmt.Sprintf("  %s = icmp ult i64 %s, %s\n", lt, lan, lbn))
+	n := c.treg("txqmn")
+	c.sb.WriteString(fmt.Sprintf("  %s = select i1 %s, i64 %s, i64 %s\n", n, lt, lan, lbn))
+	ap := c.treg("txqpa")
+	c.sb.WriteString(fmt.Sprintf("  %s = getelementptr inbounds %%txt, %%txt* %s, i32 0, i32 0, i64 0\n", ap, sa))
+	bp := c.treg("txqpb")
+	c.sb.WriteString(fmt.Sprintf("  %s = getelementptr inbounds %%txt, %%txt* %s, i32 0, i32 0, i64 0\n", bp, sb))
+	d := c.treg("txqd")
+	c.sb.WriteString(fmt.Sprintf("  %s = call i32 @memcmp(i8* %s, i8* %s, i64 %s)\n", d, ap, bp, n))
+	beq := c.treg("txqbe")
+	c.sb.WriteString(fmt.Sprintf("  %s = icmp eq i32 %s, 0\n", beq, d))
+	c.sb.WriteString(fmt.Sprintf("  %s = and i1 %s, %s\n", dst, leq, beq))
 }
 
 func (c *codegen) emitCall(f *Function, inst *Inst) error {
@@ -7811,6 +8251,15 @@ func (c *codegen) emitCall(f *Function, inst *Inst) error {
 				c.loadSeq++
 				z := fmt.Sprintf("%%ptz%d", c.loadSeq)
 				c.sb.WriteString(fmt.Sprintf("  %s = %s i8 %s to i64\n", z, ext, argV))
+				c.sb.WriteString(fmt.Sprintf("  call void @print_i64(i64 %s)\n", z))
+			case "i32":
+				// char is the i32 scalar. A code point is non-negative, so this
+				// is a zero-extension, and it prints the DECIMAL value of the
+				// code point (Go-like `fmt.Println('A')` -> 65), matching what
+				// `print(c)` has always done for a char.
+				c.loadSeq++
+				z := fmt.Sprintf("%%pz3%d", c.loadSeq)
+				c.sb.WriteString(fmt.Sprintf("  %s = zext i32 %s to i64\n", z, argV))
 				c.sb.WriteString(fmt.Sprintf("  call void @print_i64(i64 %s)\n", z))
 			case "double":
 				c.sb.WriteString(fmt.Sprintf("  call void @print_double(%s %s)\n", argT, argV))
@@ -8069,6 +8518,56 @@ func mirFFITypeToLLVM(t string) string {
 	}
 }
 
+// normFFIRaw 把 `#{c}` 宣告裡的 Nolang 指標寫法歸一到 mirFFITypeToLLVM 與
+// emitExternCall 參數搬運 switch 使用的 C 側詞彙（"ptr" / "pptr" / "ppptr"）。
+//
+// 使用者在 FFI 宣告裡寫的是 Nolang 型別語法（見
+// example/sqlite-driver/src/sqlite.no 的 `db **byte`、`callback *byte`），而
+// 上述兩張表認的是 "ptr"/"pptr"/"ppptr"。不歸一的話 `*byte`/`**byte` 會雙雙
+// 落到 default 分支被當成 i64：
+//
+//   - declare 把 `sqlite3**` 寫成 i64：`declare i32 @sqlite3_open(ptr, i64)`
+//   - 呼叫點傳的是 handle 的**值**（0）而不是它的位址：
+//     `call i32 @sqlite3_open(ptr %cs48, i64 %lv49)`
+//     sqlite3 收到 NULL 的 ppDb，直接回 SQLITE_MISUSE(21)，handle 永遠取不回來。
+//
+// 歸一後走 "pptr" 分支：alloca 一個 i8* 槽、傳槽的位址給 C、呼叫後把 C 寫入的
+// 指標讀回來存進呼叫方的變數。這正是 driver 的 `_sqlite3-open(dsn, handle)`
+// 這種「傳變數、由 C 回填」寫法所期望的語義。
+func normFFIRaw(raw string) string {
+	switch raw {
+	case "", "ptr", "pptr", "ppptr":
+		return raw
+	}
+	if strings.HasPrefix(raw, "*") {
+		levels := 0
+		for levels < len(raw) && raw[levels] == '*' {
+			levels++
+		}
+		switch levels {
+		case 1:
+			return "ptr"
+		case 2:
+			return "pptr"
+		case 3:
+			return "ppptr"
+		}
+		return raw
+	}
+	// `ptr T` / `ptr ptr T` 的空白寫法
+	if strings.HasPrefix(raw, "ptr") && strings.Contains(raw, " ") {
+		switch strings.Count(raw, "ptr") {
+		case 1:
+			return "ptr"
+		case 2:
+			return "pptr"
+		case 3:
+			return "ppptr"
+		}
+	}
+	return raw
+}
+
 // emitExternCall lowers a call to a user-declared FFI extern function
 // (`#{c} name = (...) (...)`) using the C calling convention, replicating the
 // legacy build/llvm callExtern ABI exactly so output matches byte-for-byte:
@@ -8093,20 +8592,34 @@ func (c *codegen) emitExternCall(f *Function, inst *Inst, cf *Function) error {
 
 	// Emit the `declare` once (MIR has no separate declaration pass). Function.
 	// Params holds ValueIDs; the Nolang FFI type name lives on each param's type.
+	// cf.Params 也包含出參：hir2mir 把 KResult 的 value 一併 append 進 params
+	// （hir2mir.go:1783 的註解：「the caller-passed out-pointer, so it must appear
+	// in params as well as ResultParams」）。但出參在 C ABI 裡是**回傳值**、
+	// 不是入參，照抄進 declare 就會多出一個參數：
+	//   declare i32 @sqlite3_open(ptr, i64, i32)   ← 末尾 i32 其實是 rc 的型別
+	// 而呼叫點只傳兩個實參（下方 argIdx 迴圈在 i >= len(inst.Args) 時 break，
+	// 剛好只取到入參），call 與 declare 簽名不一致。
+	isOutParam := make(map[ValueID]bool, len(cf.ResultParams))
+	for _, p := range cf.ResultParams {
+		isOutParam[p] = true
+	}
 	declParams := make([]string, 0, len(cf.Params))
 	for _, p := range cf.Params {
+		if isOutParam[p] {
+			continue
+		}
 		raw := ""
 		if val := c.mod.Value(p); val != nil {
 			if t := c.mod.Type(val.Type); t != nil {
 				raw = t.Raw
 			}
 		}
-		declParams = append(declParams, mirFFITypeToLLVM(raw))
+		declParams = append(declParams, mirFFITypeToLLVM(normFFIRaw(raw)))
 	}
 	retRaw := ""
 	if len(cf.Results) > 0 {
 		if t := c.mod.Type(cf.Results[0]); t != nil {
-			retRaw = t.Raw
+			retRaw = normFFIRaw(t.Raw)
 		}
 	}
 	retLLVM := "void"
@@ -8134,6 +8647,7 @@ func (c *codegen) emitExternCall(f *Function, inst *Inst, cf *Function) error {
 				raw = t.Raw
 			}
 		}
+		raw = normFFIRaw(raw)
 		av, avV := c.loadVal(inst.Args[i])
 		switch raw {
 		case "str":
@@ -8159,17 +8673,26 @@ func (c *codegen) emitExternCall(f *Function, inst *Inst, cf *Function) error {
 			c.sb.WriteString(fmt.Sprintf("  %s = inttoptr i64 %s to i8*\n", reg, avV))
 			callArgs = append(callArgs, "i8* "+reg)
 		case "pptr":
+			// inttoptr 必須是獨立指令：LLVM 禁止在 store 的運算元裡內聯
+			// `inttoptr (i64 %lv to i8*)` 這種「常量表達式引用函式內局部值」
+			// （opt -verify: invalid use of function-local name）。
+			c.loadSeq++
+			pv := fmt.Sprintf("%%extpv%d", c.loadSeq)
+			c.sb.WriteString(fmt.Sprintf("  %s = inttoptr i64 %s to i8*\n", pv, avV))
 			c.loadSeq++
 			slot := fmt.Sprintf("%%extpp%d", c.loadSeq)
 			c.sb.WriteString(fmt.Sprintf("  %s = alloca i8*\n", slot))
-			c.sb.WriteString(fmt.Sprintf("  store i8* inttoptr (i64 %s to i8*), i8** %s\n", avV, slot))
+			c.sb.WriteString(fmt.Sprintf("  store i8* %s, i8** %s\n", pv, slot))
 			callArgs = append(callArgs, "i8** "+slot)
 			pptrs = append(pptrs, pptrSlot{slotReg: slot, argVal: inst.Args[i], levels: 1})
 		case "ppptr":
 			c.loadSeq++
+			pv := fmt.Sprintf("%%extpv%d", c.loadSeq)
+			c.sb.WriteString(fmt.Sprintf("  %s = inttoptr i64 %s to i8**\n", pv, avV))
+			c.loadSeq++
 			slot := fmt.Sprintf("%%extpp%d", c.loadSeq)
 			c.sb.WriteString(fmt.Sprintf("  %s = alloca i8**\n", slot))
-			c.sb.WriteString(fmt.Sprintf("  store i8** inttoptr (i64 %s to i8**), i8*** %s\n", avV, slot))
+			c.sb.WriteString(fmt.Sprintf("  store i8** %s, i8*** %s\n", pv, slot))
 			callArgs = append(callArgs, "i8*** "+slot)
 			pptrs = append(pptrs, pptrSlot{slotReg: slot, argVal: inst.Args[i], levels: 2})
 		default:
@@ -8863,12 +9386,14 @@ func (c *codegen) emitCallBody(f *Function, cf *Function, inst *Inst, calleeName
 				// %str-long* %carg` has a type mismatch and opt-verify
 				// rejects the module (test-tls-prf-only.no,
 				// test-iout-autoconvert.no, ...).
-				if plt == "%str-long" && argT == "i64" && c.rawTypeOfValue(inst.Args[argIdx]) == "char" {
+				if plt == "%str-long" && (argT == "i32" || argT == "i64") && c.rawTypeOfValue(inst.Args[argIdx]) == "char" {
 					// char -> str: UTF-8 encode the code point (the char -> str
 					// implicit conversion). MUST precede the i64 branch below,
-					// which would render the code point as decimal text — a char
-					// is an i64 at the LLVM level, so its source type is the only
-					// thing that distinguishes the two.
+					// which would render the code point as decimal text — the
+					// value's SOURCE type is the only thing that distinguishes
+					// the two. char is i32, so widen (zext) to the i64 that
+					// @str_from_cp's IR ABI expects.
+					av = c.zextCharToI64(av, argT)
 					c.loadSeq++
 					conv := fmt.Sprintf("%%cp%d", c.loadSeq)
 					c.sb.WriteString(fmt.Sprintf("  %s = call %%str-long @str_from_cp(i64 %s)\n", conv, av))
@@ -8903,18 +9428,70 @@ func (c *codegen) emitCallBody(f *Function, cf *Function, inst *Inst, calleeName
 					c.loadSeq++
 					freg := fmt.Sprintf("%%bf%d", c.loadSeq)
 					c.sb.WriteString(fmt.Sprintf("  %s = call %%str-long @str_from_const(ptr getelementptr inbounds ([5 x i8], ptr @.mir.false, i64 0, i64 0), i64 5)\n", freg))
-					c.loadSeq++
-					conv := fmt.Sprintf("%%bc%d", c.loadSeq)
-					c.sb.WriteString(fmt.Sprintf("  %s = select i1 %s, %%str-long %s, %%str-long %s\n", conv, av, treg, freg))
-					av = conv
-					argT = "%str-long"
-				}
+				c.loadSeq++
+				conv := fmt.Sprintf("%%bc%d", c.loadSeq)
+				c.sb.WriteString(fmt.Sprintf("  %s = select i1 %s, %%str-long %s, %%str-long %s\n", conv, av, treg, freg))
+				av = conv
+				argT = "%str-long"
+			} else if plt == "%str-long" && argT == "%txt" {
+				// txt -> str argument coercion, the mirror of the %txt branch
+				// further down. `show(t)` with `show = (s str)` used to fall
+				// through to `store %str-long %txt_value, %str-long* %carg`,
+				// which opt-verify rejects. @str_from_const mallocs an
+				// independent buffer, so the callee's str owns its own heap and
+				// the caller's txt keeps its inline storage.
+				av = c.strValueFromTxtValue(av)
+				argT = "%str-long"
+			}
 				c.loadSeq++
 				slot := fmt.Sprintf("%%carg%d", c.loadSeq)
 				c.sb.WriteString(fmt.Sprintf("  %s = alloca %s\n", slot, plt))
 				c.sb.WriteString(fmt.Sprintf("  store %s %s, %s* %s\n", plt, av, plt, slot))
 				callArgs = append(callArgs, plt+"* "+slot)
 			}
+		} else if plt == "%txt" && argT == "%str-long" {
+			// str -> txt argument coercion.
+			//
+			// `txt` is a BOUNDED INLINE string: %txt = { [255 x i8] buf, i8 len }.
+			// It is NOT layout-compatible with %str-long
+			// ({ i64 len, i64 cap, i8* data }), and this backend had no
+			// conversion for it, so the caller handed its %str-long slot
+			// straight to a `%txt*` parameter (the byPointerLLVM branch below).
+			// The callee then read a 255-byte buffer out of a 24-byte object:
+			// `txt.replace-n` saw a garbage separator length and returned an
+			// empty string. Repro:
+			//   t txt = 'a-b-c'
+			//   print(t.replace-n('-', '+', 2))   ; was "" instead of "a+b+c"
+			//
+			// Build a fresh %txt: memcpy at most 255 bytes of the string's data
+			// into the inline buffer, then store the (clamped) length as i8.
+			c.loadSeq++
+			sl := fmt.Sprintf("%%atxl%d", c.loadSeq)
+			c.sb.WriteString(fmt.Sprintf("  %s = extractvalue %%str-long %s, 0\n", sl, av))
+			c.loadSeq++
+			gt := fmt.Sprintf("%%atxg%d", c.loadSeq)
+			c.sb.WriteString(fmt.Sprintf("  %s = icmp ugt i64 %s, 255\n", gt, sl))
+			c.loadSeq++
+			cl := fmt.Sprintf("%%atxc%d", c.loadSeq)
+			c.sb.WriteString(fmt.Sprintf("  %s = select i1 %s, i64 255, i64 %s\n", cl, gt, sl))
+			c.loadSeq++
+			dp := fmt.Sprintf("%%atxd%d", c.loadSeq)
+			c.sb.WriteString(fmt.Sprintf("  %s = extractvalue %%str-long %s, 2\n", dp, av))
+			c.loadSeq++
+			slot := fmt.Sprintf("%%carg%d", c.loadSeq)
+			c.sb.WriteString(fmt.Sprintf("  %s = alloca %%txt\n", slot))
+			c.loadSeq++
+			dx := fmt.Sprintf("%%atxb%d", c.loadSeq)
+			c.sb.WriteString(fmt.Sprintf("  %s = getelementptr inbounds %%txt, %%txt* %s, i32 0, i32 0, i64 0\n", dx, slot))
+			c.sb.WriteString(fmt.Sprintf("  call void @llvm.memcpy.p0i8.p0i8.i64(i8* %s, i8* %s, i64 %s, i1 false)\n", dx, dp, cl))
+			c.loadSeq++
+			l8 := fmt.Sprintf("%%atx8%d", c.loadSeq)
+			c.sb.WriteString(fmt.Sprintf("  %s = trunc i64 %s to i8\n", l8, cl))
+			c.loadSeq++
+			lx := fmt.Sprintf("%%atxn%d", c.loadSeq)
+			c.sb.WriteString(fmt.Sprintf("  %s = getelementptr inbounds %%txt, %%txt* %s, i32 0, i32 1\n", lx, slot))
+			c.sb.WriteString(fmt.Sprintf("  store i8 %s, i8* %s\n", l8, lx))
+			callArgs = append(callArgs, "%txt* "+slot)
 		} else if byPointerLLVM(plt, owned) {
 			// Non-owned aggregate parameter (fixed array / non-owned struct):
 			// pass the address of the argument's local slot so the callee's

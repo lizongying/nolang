@@ -335,6 +335,17 @@ func (c *codegen) coerce(srcTy, srcVal, wantTy string) string {
 		c.sb.WriteString(fmt.Sprintf("  %s = zext i1 %s to i32\n", r, srcVal))
 	case srcTy == "i32" && wantTy == "i64":
 		c.sb.WriteString(fmt.Sprintf("  %s = sext i32 %s to i64\n", r, srcVal))
+	case srcTy == "i32" && wantTy == "i8":
+		// char -> byte-sized slot: e.g. `s[i] = c` writing a char code point
+		// into a str's i8 element. Without this trunc the store emitted
+		// `store i8 <i32 val>` and opt rejected the module.
+		c.sb.WriteString(fmt.Sprintf("  %s = trunc i32 %s to i8\n", r, srcVal))
+	case srcTy == "i8" && wantTy == "i32":
+		c.sb.WriteString(fmt.Sprintf("  %s = zext i8 %s to i32\n", r, srcVal))
+	case srcTy == "i32" && wantTy == "double":
+		c.sb.WriteString(fmt.Sprintf("  %s = sitofp i32 %s to double\n", r, srcVal))
+	case srcTy == "double" && wantTy == "i32":
+		c.sb.WriteString(fmt.Sprintf("  %s = fptosi double %s to i32\n", r, srcVal))
 	case srcTy == "i8*" && wantTy == "i64":
 		c.sb.WriteString(fmt.Sprintf("  %s = ptrtoint i8* %s to i64\n", r, srcVal))
 	case srcTy == "i64" && wantTy == "i8*":
@@ -1623,6 +1634,21 @@ func (c *codegen) emitBuiltinVecPush(inst *Inst) error {
 	// 都是 i64（見 llvmTypeOf 的 KindInt 分支），elemTypeOfReceiver 正是這個
 	// 事實的唯一出口，push 必須與它對齊。
 	elemLL := c.elemTypeOfReceiver(recv)
+	// `[]txt` element: the element is a 256-byte %txt ({ [255 x i8] buf, i8 len }),
+	// but a str literal/value lowers to %str-long. There is NO coerce() between
+	// those two layouts, so the fallback below (`elemLL = elemTy`) silently kept
+	// the ARGUMENT's %str-long type: push wrote with a 24-byte stride and stored
+	// a %str-long, while emitIndex reads with a 256-byte stride as %txt. Every
+	// pushed element therefore read back empty:
+	//   r []txt
+	//   r.push('alpha')     ; r[0] printed "" and r[0].len() == 0
+	// (note `x txt = 'hi'; r.push(x)` was fine — that argument was already %txt,
+	// so elemTy == elemLL and no conversion was needed.)
+	// Materialize a real %txt element instead of falling back.
+	if elemLL == "%txt" && elemTy == "%str-long" {
+		elemV = c.txtValueFromStr(elemV)
+		elemTy = "%txt"
+	}
 	if elemTy != elemLL {
 		if conv := c.coerce(elemTy, elemV, elemLL); conv != "" {
 			elemV = conv

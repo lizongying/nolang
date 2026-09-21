@@ -7,14 +7,15 @@ p = path {
 }
 print(p.p)
 
-; ⚠️ path.dir() 是**原地修改 .p**（沒有回傳值），不是回傳目錄字串 ——
-; 原本寫成 `dir = p.dir()` 只會拿到空字串，而且 .p 已經被改成 '/usr/local'，
-; 導致下面 base() 印出 'local' 而不是 'bin'。用獨立的 path 物件各測一次。
+; path.dir() 會**原地修改 .p**，同時回傳修改後的結果。
+; 早期版本只有原地修改、沒有回傳值，`dir = p.dir()` 會拿到空字串，
+; 而且 .p 被改成 '/usr/local' 之後，下面 base() 會印出 'local' 而不是 'bin'。
+; 現在兩種用法都可用，這裡用回傳值（並各自用獨立物件，避免互相干擾）。
 d = path {
     p: '/usr/local/bin'
 }
-d.dir()
-print(d.p)
+dir = d.dir()
+print(dir)
 
 b = path {
     p: '/usr/local/bin'

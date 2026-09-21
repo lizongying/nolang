@@ -750,6 +750,56 @@ func (t *Transpiler) resolveFile(filePath string) (*parser.Program, error) {
 	}
 	return prog, nil
 }
+
+// LinkLibs 收集本次編譯「實際載入」的每個源檔所屬套件在 package.jsonc 中宣告的
+// compiler.link-libs，去重後回傳（套件根排序，保證結果穩定）。
+//
+// 為什麼需要：link-libs 原本只從「被建置的套件」（opts 的 pkg）取得。但
+//
+//	no run tests/test-ffi-sqlite.no
+//
+// 這類直接編譯單一 .no 檔的入口 pkg == nil，而該檔以 `# <path>` 直接引用驅動
+// 源檔（example/sqlite-driver/src/sqlite.no）。驅動的 #{c} 外部函式需要
+// -lsqlite3，卻因為只有驅動自己的 package.jsonc 宣告過這件事而拿不到連結參數，
+// 連結期報：
+//
+//	"_sqlite3_open", referenced from: _sqlite.open in ...
+//
+// 這裡沿著實際載入的源檔回溯其套件根，把鏈路上每個套件的 link-libs 一併帶上。
+func (t *Transpiler) LinkLibs() []string {
+	if len(t.fileCache) == 0 {
+		return nil
+	}
+	seenRoot := make(map[string]bool)
+	roots := make([]string, 0, len(t.fileCache))
+	for path := range t.fileCache {
+		root := findPackageRootFromFile(path)
+		if root == "" || seenRoot[root] {
+			continue
+		}
+		seenRoot[root] = true
+		roots = append(roots, root)
+	}
+	sort.Strings(roots)
+	seenLib := make(map[string]bool)
+	var out []string
+	for _, root := range roots {
+		p, err := pkg.LoadPackage(root)
+		if err != nil || p == nil {
+			continue
+		}
+		for _, lib := range p.Compiler.LinkLibs {
+			lib = strings.TrimSpace(lib)
+			if lib == "" || seenLib[lib] {
+				continue
+			}
+			seenLib[lib] = true
+			out = append(out, lib)
+		}
+	}
+	return out
+}
+
 func (t *Transpiler) Compile(source string) (string, error) {
 	// 初始化 per-Transpiler AST 解析快取，消除單次編譯內的重复解析。
 	// 同一 std 模組在 preloadModuleSignatures、checker.ValidateFuncArgs、merge 步驟中
@@ -1854,6 +1904,14 @@ func (t *Transpiler) CompileTarget(source string, _ Target) (string, error) {
 			allValidateErrs = append(allValidateErrs, fmt.Sprintf("line %d, column %d: %s [%s]", e.Line, e.Column, e.Message, e.TraceID))
 		}
 	}
+	// 關係運算子（< <= > >=）的多字元字串運算元（編譯硬錯誤）：nolang 沒有字串
+	// 字典序比較，codegen 的 str 分支只有 @str_eq（相等），`a >= b`（a/b 為 str）
+	// 會靜默退化成恆假。單字元字串字面量（'a'）隱式當 char，仍合法。
+	if strOrderErrs := checker.ValidateStrOrdering(program); len(strOrderErrs) > 0 {
+		for _, e := range strOrderErrs {
+			allValidateErrs = append(allValidateErrs, fmt.Sprintf("line %d, column %d: %s [%s]", e.Line, e.Column, e.Message, e.TraceID))
+		}
+	}
 	// 未處理的溢出 option 檢查（編譯硬錯誤）：未標註 #{overflow} 的整數運算預設回傳
 	// option<int>，若結果未被 ?= 上拋 / match 解構 / 作為 ?T 返回或宣告，即「沉默泄漏」，
 	// 必須顯式處理（加 #{overflow} 註解回普通 int、用 ?= 上拋、或顯式宣告 ?T）。
@@ -2209,6 +2267,10 @@ func (t *Transpiler) CompileTarget(source string, _ Target) (string, error) {
 	// 解析 self.method() 呼叫：將方法體內的 self.method(args) 重寫為 Type.method(self, args)
 	checker.ResolveSelfMethodCalls(merged)
 	checker.DebugCountHashFns("after-resolveSelfMethodCalls", merged)
+	// 介面具象化：把「宣告型別是介面、且具體實作可靜態唯一確定」的變數換成實作
+	// 型別。必須在 resolveMethodCalls（方法呼叫攤平）之前執行，否則攤平會依介面
+	// 名生成不存在的介面方法名（sql.db.exec）。
+	devirtualizeInterfaceVars(program, merged, varTypes, typeOwner)
 	// 非函數定義的陳述句（頂層呼叫）加入 merged
 	// 必須在 monomorphizeGenerics 之前添加，否則頂層的方法呼叫（如 a.clone()）
 	// 不會被解析與單態化；也必須在 monomorphizeUnions/rewriteUnionCalls 之前添加，
@@ -3774,6 +3836,119 @@ func isBuiltinType(name string) bool {
 	return false
 }
 
+// devirtualizeInterfaceVars 把「宣告型別是介面、而具體實作可靜態唯一確定」的
+// 變數具象化（devirtualization）：`ls.Type` 與 `varTypes` 一併換成具體實作型別。
+//
+// nolang 是單態化編譯器，介面宣告（`db enter, leave { ... }`，見
+// src/std/database/sql.no）表達的是「一組方法簽名的約束」，不是執行期型別。
+// `d db = sqlite.open(':memory:')` 之後 d 的實際型別就是驅動回傳的 `db-sqlite`。
+// 若不具象化，方法攤平時會依介面名生成 `sql.db.exec` —— 一個不存在的函式，
+// MIR 端報：
+//
+//	EmitLLVM: unknown callee sql.db.exec in func main
+//
+// 而且 `d.handle` 這類具體欄位存取也無從解析（介面本身沒有欄位）。
+//
+// 判據刻意保守：只有在「該介面在整個編譯單元裡恰好只有一個實作者」時才具象化。
+// 多個實作者（例如同時 import sqlite 與 mysql 驅動）時保持原樣 —— 寧可讓下游
+// 給出明確診斷，也不要猜一個實作而產生錯誤分派。
+// ifaceImplTable 記錄「介面 -> 實作者型別」映射，由 devirtualizeInterfaceVars
+// 在每次編譯時重建。resolveMethodCall 在接收者的靜態型別是介面名時靠它回退到
+// 唯一實作者 —— 介面本身只有方法簽名、沒有方法體可呼叫。
+//
+// 為什麼不能只靠 varTypes：合併後 buildVarTypes(merged) 會從 AST 重建一份
+// 變數型別表，重建結果與 CompileTarget 早期那張表並非同一個 map，時序上無法
+// 保證具象化寫入一定活到攤平那一刻。這張表按「介面名」查詢，與 varTypes 的
+// 生命周期解耦。key 同時含完整名（sql.db）與去掉模組前綴的裸名（db），因為
+// 不同 pass 拿到的名字形態不一致。
+var ifaceImplTable = make(map[string][]string)
+
+func devirtualizeInterfaceVars(mainProg, merged *parser.Program,
+	varTypes map[string]string, typeOwner map[string]string) {
+	if mainProg == nil || merged == nil || varTypes == nil {
+		return
+	}
+	interfaces := make(map[string]bool)
+	impls := make(map[string][]string)
+	for _, stmt := range merged.Statements {
+		switch s := stmt.(type) {
+		case *parser.InterfaceDefinition:
+			interfaces[s.Name] = true
+		case *parser.StructDefinition:
+			for _, im := range s.Implements {
+				if im == "" {
+					continue
+				}
+				impls[im] = append(impls[im], s.Name)
+			}
+		}
+	}
+	if len(interfaces) == 0 {
+		return
+	}
+	// 供 resolveMethodCall 回退使用（見 ifaceImplTable 的說明）。
+	for k, v := range impls {
+		ifaceImplTable[k] = v
+		if i := strings.LastIndex(k, "."); i >= 0 {
+			bare := k[i+1:]
+			if _, exists := ifaceImplTable[bare]; !exists {
+				ifaceImplTable[bare] = v
+			}
+		}
+	}
+	// 宣告型別可能是 bare 名（尚未前綴化）或已前綴名，兩者都認定為介面。
+	isIfaceName := func(name string) bool {
+		return name != "" && (interfaces[name] || interfaces[prefixTypeName(name, typeOwner)])
+	}
+	// 第一遍：從主程序決定「變數名 -> 具體實作型別」。
+	concreteByVar := make(map[string]string)
+	for _, stmt := range mainProg.Statements {
+		ls, ok := stmt.(*parser.LetStatement)
+		if !ok || ls.Type == nil || ls.Name == nil {
+			continue
+		}
+		declared := ls.Type.String()
+		if !isIfaceName(declared) {
+			continue
+		}
+		key := declared
+		if !interfaces[key] {
+			key = prefixTypeName(declared, typeOwner)
+		}
+		if list := impls[key]; len(list) == 1 {
+			concreteByVar[ls.Name.Value] = list[0]
+		}
+	}
+	if len(concreteByVar) == 0 {
+		return
+	}
+	// 第二遍：主程序與 merged 一併套用。merged 裡可能存在主程序語句的**副本**，
+	// 只改主程序那一份不足以影響後續 buildVarTypes(merged) 的重建（它會把
+	// varTypes 從 AST 重新讀一遍，把具象化結果覆蓋回介面名）。套用時仍要求
+	// 該宣告本身的型別是介面，避免誤傷其他模組裡恰好同名的變數。
+	applyTo := func(prog *parser.Program) {
+		if prog == nil {
+			return
+		}
+		for _, stmt := range prog.Statements {
+			ls, ok := stmt.(*parser.LetStatement)
+			if !ok || ls.Type == nil || ls.Name == nil {
+				continue
+			}
+			concrete, ok := concreteByVar[ls.Name.Value]
+			if !ok || !isIfaceName(ls.Type.String()) {
+				continue
+			}
+			ls.Type = &parser.NamedType{Value: concrete, IsInferred: true}
+		}
+	}
+	applyTo(mainProg)
+	applyTo(merged)
+	for name, c := range concreteByVar {
+		varTypes[name] = c
+	}
+}
+
 // resolveMethodCall resolves a DotExpression-based method call.
 // Returns true if the call was resolved and rewritten.
 func resolveMethodCall(dot *parser.DotExpression, ce *parser.CallExpression,
@@ -3785,6 +3960,10 @@ func resolveMethodCall(dot *parser.DotExpression, ce *parser.CallExpression,
 		return false
 	}
 	recvType, ok := varTypes[recvIdent.Value]
+	if os.Getenv("NOLANG_DEBUG_DEVIRT") != "" {
+		fmt.Fprintf(os.Stderr, "[devirt] flatten recv=%s ok=%v recvType=%q method=%s\n",
+			recvIdent.Value, ok, recvType, dot.Property)
+	}
 	if !ok {
 		return false
 	}
@@ -3806,6 +3985,13 @@ func resolveMethodCall(dot *parser.DotExpression, ce *parser.CallExpression,
 	// method's `self` parameter is `T*` too, so the receiver needs no
 	// conversion — only the callee name does.
 	recvType = strings.TrimPrefix(recvType, "&")
+	// 接收者靜態型別是介面（`d : db`）時，介面只有方法簽名、沒有方法體，
+	// 攤平成 `sql.db.exec` 會得到不存在的函式（MIR: unknown callee）。
+	// 回退到唯一實作者 —— 多個實作者時保持原樣，讓下游給出明確診斷，
+	// 而不是猜一個實作產生錯誤分派。
+	if impl := ifaceImplTable[recvType]; len(impl) == 1 {
+		recvType = impl[0]
+	}
 	methodName := dot.Property
 	// Search for matching generic method FIRST, so that generic methods whose
 	// name collides with a builtin (e.g. "[n]t.sort-asc" on a fixed array

@@ -40,20 +40,13 @@ txt.len = () (n i64) {
 ; }
 
 ; txt.eq: 比较两个 txt 是否相等
+; ⚠️ 2026-09-21 重写。旧实现用一条 `->` 管线（`.byte(k) - b.byte(k); c != 0 -> ok = 0;
+; k == an - 1 -> ok == 0 -> eq = false; k = k + 1`）在**最后一个字节**才回头判定，
+; 于是 `t('hello').eq('world')` 这种「长度相同、内容不同」的情况永远回传 true
+; —— `tests/test-txt.no` 的 `neq:` 一行一直在打印 1，并且被冻进了 golden baseline。
+; txt.compare 已经是逐字节比较且长度不同时正确分流的版本，直接复用即可。
 txt.eq = (b txt) (eq bool) {
-    eq = true
-    an i64 = .len()
-    bn i64 = b.len()
-    an != bn -> eq = false
-    i <- [0..an): {
-        i == 0 -> {
-            #{overflow=wrap}
-            ok = 1
-            k = 0
-            #{overflow=wrap}
-            c = .byte(k) - b.byte(k); c != 0 -> ok = 0; k == an - 1 -> ok == 0 -> eq = false; k = k + 1 } (k < an)
-        }
-    }
+    eq = .compare(b) == 0
 }
 
 ; txt.copy: 复制 txt
@@ -1193,8 +1186,17 @@ txt.replace-n = (old txt, new txt, n i64) (val txt) {
     i <- [0..np): {
         #{overflow=wrap}
         i > 0 -> {
-            #{overflow=wrap}
-            i <= repl -> total = total + new.len() -> total = total + old.len()
+            ; ⚠️ 原本寫成 `i <= repl -> total = total + new.len() -> total = total + old.len()`。
+            ; `->` 是**短路管線運算子**，不是 if/else：條件成立時兩個指派**都會**執行
+            ; （副作用節點不會把 state 切成失敗），條件不成立時**兩個都不會**執行
+            ; —— 分隔符長度怎麼算都是錯的。要二選一就得用 `{}` if/else-if 群組。
+            ; （同一個寫法也讓 `no fmt` 不冪等，見 url.no 的同款註解。）
+            {
+                #{overflow=wrap}
+                i <= repl -> total = total + new.len()
+
+                -> total = total + old.len()
+            }
         }
         #{overflow=wrap}
         #{index-out = 0}

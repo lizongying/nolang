@@ -102,6 +102,11 @@ type Type struct {
   - ⚠️ 非装箱那一侧**不能**取 slot 地址：装箱载荷比 slot 大，从 slot 读它就是越界 `getelementptr inbounds` = UB，LLVM 会判定该分支不可达并把 load 提到分支之上，于是优化后解引用 err 消息当指针 → SIGSEGV（`-O0` 下完全正常，只在 `opt` 之后复现）。故那一侧指向一个 payload 大小的零常量 `@__nolang_opt_zero_<T>`。
   - ⚠️ "slot[0] 里是箱子吗" 要看 tag，而且**没有一个统一规则**：箱子是按「实际存进去的那个类型」的尺寸 malloc 的，所以只有 tag 与读取类型匹配时才能当作该类型解引用。详见 §4.2。
   - 装箱载荷目前只可能是结构体（或阈值 < 24 时的 err 消息），而结构体不被 `ClassifyOwnership` 视为 owned，因此不会 drop → 不会 double free（也不会释放；`optBoxClone` 每次拷贝还会再 malloc 一块，属于已知的可接受泄漏）。
+- `char` = **`i32`**：代表单个 Unicode 纯量码点（合法范围 `0 ..= 0x10FFFF`，21 bit 足够，无需 i64）。底层存储就是 i32（`codegen.llvmTypeOf`：`KindChar → "i32"`），**不是 i64**。
+  - **唯一出现 i64 的地方是调用边界。** `@str_from_cp` 的 IR 签名取 `i64 %cp`（这是外部 runtime 函数的 ABI 约定），所以每个调用点把 char 的 i32 参数**零扩展**（`zext i32 → i64`）后再传入。这只是参数准备阶段的临时转换，**不改变 char 自身的类型与存储宽度**——形如 C 里 `char c='a'; f((long)c);`：变量仍是 1 字节，只是调用时临时提升。
+  - 源码层签名写作 `str_from_cp(cp char) -> ?str`，参数类型是 `char`（i32）；i32→i64 的 zext 由 codegen 完成（`codegen.zextCharToI64`），用于两处：`strFromScalar`（char → str 隐式转换）与 `emitCall` 的 str 形参提升。
+  - 配套的口径修正：`isScalarLLVM` 把 i32 计入「按值传递」的标量（char 形参必须按值传），`supportedLLVM` 也包含 i32；`coerce` 补上 `i32→i8`（trunc，写进 str 的 i8 元素）、`i8→i32`（zext）等转换。
+  - 因为 char 现在是独立的 i32 lane，凡是「按 LLVM 宽度猜类型」的地方都必须改看**源码类型**（`rawTypeOfValue`）：i64 与 i32 不再同宽，`@str_from_cp`（UTF-8 编码）与 `@str_from_i64`（十进制文本）才不会走错。
 
 #### 4.1.1 `option-inline-threshold`：payload 内联阈值
 
@@ -197,6 +202,16 @@ block 6:  ; 短路目标
 codegen 端（`emitTerm` 的 `OpCondBr`）必须把该条件**翻译成 tag 测试**：`%option` 是结构体，`icmp ne %option %v, 0` 根本不是合法 IR（opt-verify 直接拒），过去任何带 `?T` 节点的管道都编译失败。正确做法是先 `extractvalue %option %v, 0` 取 tag，再 `icmp eq i64 tag, 0`（只有 ok 才继续，nil/err 都短路）。
 
 > ⚠️ `loadVal` 在这里返回的是**已 load 的结构体值**，不是 slot 指针，所以取 tag 用 `extractvalue` 而不是 `optLoadTag`（后者要 `%option*`）。
+
+**管道的产值（`x = A -> B -> V`）**
+
+赋值右侧的管道整体就是赋值的值，结果是末尾的值节点。parser 把它建成 `IfExpression{Condition=A, Consequence=if B { V }}`（`parseLetStatement`，与裸语句的 standalone if-then 同一套嵌套），HIR→MIR 走既有的 `exprCapture`：把 `if` 当语句 lower，每个臂的末尾值存进共享 slot `l.exprSink`，再把 `x` 绑定到那个 slot。
+
+> ⚠️ **共享 slot 必须在支配两个分支的 block 里播种**（`lowerIf` 末尾的 seed）。`captureArmValue` 是「第一个产出值的臂」才惰性建 slot，于是它的零初始化落在**那个臂里面** —— 任何没走到产出臂的路径（条件为假、被 `?T` 节点短路、match 没有任何臂命中）读到的都是**未初始化的栈**。这个洞很隐蔽，因为残留的栈垃圾常常正好等于臂里的值：`x = cond -> 42` 在假分支上打印 42，`x = print('F') -> might-fail(bad) -> 99` 则完全无视短路。
+>
+> 播种值取 `l.exprSinkInit`（外层绑定在 lower 之前记下的 `x` 当前值，owned 类型走 `OpClone`），没有则取该类型的零常量 —— 也就是「失败时赋值不生效」，与叙述形式 `{ cond -> x = 42 }` 一致。往已终结的 block 追加指令是安全的：MIR 把 `Term` 与 `Insts` 分开存，codegen 先发 `Insts` 再发 `Term`。
+
+**类型推断**：`checker.inferExprType` 原先对 `IfExpression` 走 `default` 分支返回 `i64`，所以 `s str = 'old'; s = cond -> 'new'` 会报 `cannot assign i64 value to str variable`（既有的 `x = subject: { arms }` match 取值形式同样中招）。现在 `IfExpression` 取**臂末尾表达式**的类型（`blockTrailingExprType`；else 链本身还是 `IfExpression`，递归即可走到最后一臂），`str`/`?T` 都能正确推断。
 
 ## 5. 指令集（内存感知，已实现 `mir.go` Op 枚举）
 

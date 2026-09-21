@@ -1030,6 +1030,35 @@ func (p *Parser) parseLetStatement() Statement {
 	}
 	p.ctx.pop()
 
+	// `x = A -> B -> V` — the WHOLE pipeline is the assignment's value, and the
+	// pipeline's result is its trailing value expression. It is NOT
+	// `(x = A) -> B -> V`, which is what used to happen (the `=` was parsed as
+	// its own node and the arrows became a following standalone if-then, so
+	// `x` ended up holding the first node instead of the last one).
+	//
+	// The chain is built exactly like parseExpressionStatement's standalone
+	// if-then: `A -> B -> V` nests as `if A { if B { V } }`, so every node must
+	// succeed for V to be produced. The one difference is RTStandalone, which
+	// is deliberately NOT set here — this if-then is a VALUE, not a statement.
+	if stmt.Value != nil && p.currentToken.Type == lexer.RARROW &&
+		!p.ctx.contains(CTX_MATCH_ARM) && !p.ctx.contains(CTX_FOR_COND) {
+		p.nextToken() // skip ->
+		conseq := p.parseStandaloneBody(nameToken)
+		conseq = p.wrapStandaloneChain(nameToken, conseq)
+		var alt *BlockStatement
+		if p.currentToken.Type == lexer.RARROW && p.prevToken.Type != lexer.NEWLINE {
+			p.nextToken() // skip ->
+			alt = p.parseStandaloneBody(nameToken)
+			alt = p.wrapStandaloneChain(nameToken, alt)
+		}
+		stmt.Value = &IfExpression{
+			Token:       nameToken,
+			Condition:   stmt.Value,
+			Consequence: conseq,
+			Alternative: alt,
+		}
+	}
+
 	if stmt.Value == nil {
 		if stmt.Type != nil {
 			typeStr := typeString(stmt.Type)

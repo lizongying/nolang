@@ -33,12 +33,34 @@ sidebar_position: 4
 
 ## Comparison Operators
 
-- `==` ; Equal to
-- `!=` ; Not equal to
+- `==` ; Equal to (real string equality for `str`, multi-character allowed)
+- `!=` ; Not equal to (same as above)
 - <code>&lt;</code> ; Less than
 - `>` ; Greater than
 - <code>&lt;=</code> ; Less than or equal to
 - `>=` ; Greater than or equal to
+
+:::warning Ordering operators (<code>&lt;</code> `>` <code>&lt;=</code> `>=`) have no string semantics
+
+`str` only implements equality (`==` / `!=`). Ordering a string used to **silently
+return false**; it is now a compile error.
+
+- Allowed: a **one-character** string literal `'a'`, implicitly a `char` (its code
+  point), comparable with another one-character literal or with a `char` (`"a"`).
+  Numbers are unaffected.
+- Rejected: multi-character strings — the literal `'ab'`, a `str` variable, or a call
+  returning `str`.
+- For lexicographic order use `str.compare(b)` (returns -1 / 0 / 1).
+
+```nolang
+'a' <= 'z'      ; true  — one-char string is implicitly a char
+ch >= 'a'       ; ch is a char, fine
+'a' > "b"       ; one-char string vs char, fine
+'abc' < 'abd'   ; compile error: multi-character string
+s1 < s2         ; compile error: str variables
+s1.compare(s2) > 0   ; the correct form
+```
+:::
 
 ## Logical Operators
 

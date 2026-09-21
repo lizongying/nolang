@@ -7,12 +7,12 @@ p = path {
 }
 print(p.p)
 
-; ⚠️ path.join() 也是**原地修改 .p**（無回傳值）；
-; 原本 `joined = p2.join(...)` 只會拿到空字串。
+; path.join() 會**原地修改 .p**，同時回傳拼接後的結果。
+; 早期版本無回傳值，`joined = p2.join(...)` 只會拿到空字串。
 p2 = path {
     p: '/usr'
 }
-p2.join('local/bin')
-print(p2.p)
+joined = p2.join('local/bin')
+print(joined)
 
 print('=== done ===')

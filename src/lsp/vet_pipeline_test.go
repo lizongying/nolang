@@ -5,6 +5,7 @@ package lsp
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -179,5 +180,83 @@ func TestVetFile_StructuredFormat(t *testing.T) {
 	}
 	if !found {
 		t.Errorf("期望至少一条 error 级别诊断（类型错误），实际: %+v", results)
+	}
+}
+
+// TestVetFile_StrOrderingMultiChar 验证 LSP 路径对 str 的关系运算（< <= > >=）报错。
+//
+// 背景：nolang 没有字串字典序比较，str 只有 @str_eq（相等）。过去 `a >= b`（a/b 为
+// str）会编译通过并静默回传 false，现在由 checker.ValidateStrOrdering 在编译期拒绝。
+// LSP 走 RunAllLints（与 publishDocumentDiagnostics 同一条路径），必须同样报错。
+func TestVetFile_StrOrderingMultiChar(t *testing.T) {
+	tmpDir := t.TempDir()
+	path := filepath.Join(tmpDir, "str-order.no")
+
+	source := `main = () {
+	a str = 'e'
+	b str = 'a'
+	print(a >= b)
+}
+`
+	if err := os.WriteFile(path, []byte(source), 0644); err != nil {
+		t.Fatalf("写入测试文件失败: %v", err)
+	}
+
+	found := false
+	for _, r := range VetFile(path) {
+		if r.Severity == "error" && r.Source == "nolang-type-checker" &&
+			strings.Contains(r.Message, "multi-character string") {
+			if r.Line != 4 {
+				t.Errorf("期望报在第 4 行（`a >= b`），实际: %+v", r)
+			}
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("期望一条 str 关系运算的 error 诊断，实际: %+v", VetFile(path))
+	}
+}
+
+// TestVetFile_StrOrderingSingleCharAllowed 验证单字元字串字面量与 char 的关系运算
+// 不被报错（隐式按 char 处理），同时确认多字元字面量仍被拒绝。
+func TestVetFile_StrOrderingSingleCharAllowed(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	ok := filepath.Join(tmpDir, "ok.no")
+	okSrc := `main = () {
+	s = 'hello'
+	for ch <- s: {
+		{
+			ch >= 'a' && ch <= 'z' -> print('lower')
+		}
+
+		-> print('other')
+	}
+	print('e' >= 'a')
+	print('e' >= "a")
+	print('ab' == 'ab')
+}
+`
+	if err := os.WriteFile(ok, []byte(okSrc), 0644); err != nil {
+		t.Fatalf("写入测试文件失败: %v", err)
+	}
+	for _, r := range VetFile(ok) {
+		if r.Severity == "error" {
+			t.Errorf("单字元/char/相等比较不应报错，实际: %+v", r)
+		}
+	}
+
+	bad := filepath.Join(tmpDir, "bad.no")
+	if err := os.WriteFile(bad, []byte("main = () {\n\tprint('ab' < 'c')\n}\n"), 0644); err != nil {
+		t.Fatalf("写入测试文件失败: %v", err)
+	}
+	found := false
+	for _, r := range VetFile(bad) {
+		if r.Severity == "error" && strings.Contains(r.Message, "multi-character string") {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("多字元字串的关系运算应报错，实际: %+v", VetFile(bad))
 	}
 }

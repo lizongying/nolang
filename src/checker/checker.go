@@ -294,8 +294,10 @@ func inferExprType(expr parser.Expression, varTypes map[string]string, funcTypes
 				// 巢狀路徑：`p.nodes[i].str-val` 的 Receiver 是 IndexExpression，
 				// 不是純識別符。遞迴推斷它的型別（[4]json-value 的元素 → json-value），
 				// 才能查到 `str-val` 這個欄位。沒有這一步，任何「陣列元素再取欄位」
-				// 的路徑都推不出型別，唯讀容器欄位檢查（checkReadOnlyLenAssign）
-				// 在巢狀路徑上就永遠不會生效。
+				// 的路徑都推不出型別。
+				// （舊註解說這會讓 checkReadOnlyLenAssign 在巢狀路徑失效、需要補洞 ——
+				//  那是錯的：欄位的 `X.len = n` 本來就是支援的增長操作，見
+				//  checkReadOnlyLenAssign 上的說明與 tests/test-len-assign-grow.no。）
 				typeName = rt
 			}
 			if typeName != "" {
@@ -422,9 +424,37 @@ func inferExprType(expr parser.Expression, varTypes map[string]string, funcTypes
 			}
 		}
 		return ""
+	case *parser.IfExpression:
+		// `x = cond -> v` (short-circuit pipeline) and `x = subject: { arms }`
+		// (a match used as a value) both lower to an if-chain whose VALUE is an
+		// arm's trailing expression. Falling through to the `default` returned
+		// "i64" for every one of them, so `s = cond -> 'new'` failed with
+		// "cannot assign i64 value to str variable" — and so did the
+		// pre-existing match-as-value form. The else-chain is itself an
+		// IfExpression, so recursing into the alternative walks to the last arm.
+		if t := blockTrailingExprType(e.Consequence, varTypes, funcTypes, selfType); t != "" {
+			return t
+		}
+		return blockTrailingExprType(e.Alternative, varTypes, funcTypes, selfType)
 	default:
 		return "i64"
 	}
+}
+
+// blockTrailingExprType reports the type of the value a block yields when it is
+// used as an expression: its last statement, when that statement is a bare
+// expression (MIR captures exactly that; see captureArmValue). A block ending in
+// an assignment or a call-with-no-value yields nothing, hence "".
+func blockTrailingExprType(b *parser.BlockStatement, varTypes map[string]string, funcTypes map[string]string, selfType string) string {
+	if b == nil || len(b.Statements) == 0 {
+		return ""
+	}
+	last := b.Statements[len(b.Statements)-1]
+	es, ok := last.(*parser.ExpressionStatement)
+	if !ok {
+		return ""
+	}
+	return inferExprType(es.Expression, varTypes, funcTypes, selfType)
 }
 
 type ValidateResult struct {
@@ -3172,6 +3202,12 @@ func collectLetsInStmts(stmts []parser.Statement, types map[string]string) {
 			if s.Init != nil {
 				collectLetsInStmts([]parser.Statement{s.Init}, types)
 			}
+			// 迭代變數（`for ch <- s`）不是 let，原本從未登記型別；字串迭代的
+			// 元素是 char，不登記會被保守當成整數，把 `ch - 32` 這類字元算術
+			// 誤報為未處理的整數溢位（見 iterElemType）。
+			if et := iterElemType(s.IterRange, types, ""); et != "" {
+				types[s.IterRange.Variable] = et
+			}
 			if s.Body != nil {
 				collectLetsInStmts(s.Body.Statements, types)
 			}
@@ -3181,7 +3217,44 @@ func collectLetsInStmts(stmts []parser.Statement, types map[string]string) {
 	}
 }
 
+// iterElemType 推斷 `for x <- src` 迭代變數 x 的元素型別，供溢位校驗的型別表登記。
+//
+// 只對「確定非整數家族」的迭代源回傳型別——str 字面量 / 字串切片 / 型別為 str 的
+// 識別字，其元素皆是 char；數值區間（`for i <- [0..3]`）與推斷不出的來源一律回
+// ""，呼叫方據此不登記，維持既有的「型別未知 → 保守視為整數」語意。因此本函式
+// 只會消除誤報，不會放寬整數溢位（+ - * / 預設 option<int>）的檢查。
+//
+// 動機：迭代變數原本從未進入型別表，於是
+//
+//	for ch <- s { u = ch - 32 }   // s str
+//
+// 裡的 ch 型別未知 → 被當成整數 → 字元減法被誤報 [ovfhndld]。char 本身不在
+// isIntType 之內（其算術不產生 option），登記為 char 後即不再誤報。
+func iterElemType(ie *parser.IterationExpr, varTypes map[string]string, selfType string) string {
+	if ie == nil || ie.Variable == "" {
+		return ""
+	}
+	// `for ch <- 'abc'`：迭代字串字面量，元素是 char。
+	if ie.RangeStr != "" {
+		return "char"
+	}
+	if ie.RangeExpr == nil {
+		return ""
+	}
+	if _, ok := ie.RangeExpr.(*parser.StringLiteral); ok {
+		return "char"
+	}
+	// `for ch <- s` / `for ch <- s[a..b]`：迭代源為 str 時元素是 char。
+	// 陣列 / 切片 / 未知型別的迭代源一律回 "" → 不登記（保守路徑不變）。
+	if inferExprType(ie.RangeExpr, varTypes, nil, selfType) == "str" {
+		return "char"
+	}
+	return ""
+}
+
 // collectTopLevelLets 收集模組頂層 let 的顯式型別，供頂層（非函數）語句掃描使用。
+// 非 let 的頂層陳述（for / 區塊）另行遞迴收集其內部型別，使頂層 `for ch <- s`
+// 的迭代變數也能帶上 char 型別（見 iterElemType），避免字元算術被誤報。
 func collectTopLevelLets(program *parser.Program) map[string]string {
 	types := map[string]string{}
 	if program == nil {
@@ -3194,7 +3267,9 @@ func collectTopLevelLets(program *parser.Program) map[string]string {
 					types[ls.Name.Value] = nt.Value
 				}
 			}
+			continue
 		}
+		collectLetsInStmts([]parser.Statement{stmt}, types)
 	}
 	return types
 }
@@ -3590,6 +3665,12 @@ func ValidateUnhandledOverflow(program *parser.Program, mainFile string) []Valid
 					varTypes[ls.Name.Value] = ls.Type.String()
 				}
 				walkStmt(s.Init, fnReturnsOption, effOverflow, varTypes, selfType, curFile)
+			}
+			// 迭代變數（`for ch <- s`）同樣要登記：字串迭代的元素是 char，
+			// 不登記其型別未知 → 保守當成整數 → `ch - 32` 被誤報為未處理的
+			// 整數溢位 [ovfhndld]。char 的算術不產生 option，見 iterElemType。
+			if et := iterElemType(s.IterRange, varTypes, selfType); et != "" {
+				varTypes[s.IterRange.Variable] = et
 			}
 			if s.Condition != nil {
 				walkExpr(s.Condition, fnReturnsOption, effOverflow, true, varTypes, selfType, curFile)
@@ -4450,6 +4531,319 @@ func checkStrIndexInExpr(e parser.Expression, sem *parser.SemanticContext, ascii
 		}
 	}
 	return results
+}
+
+// ---------------------------------------------------------------------------
+// 關係運算子（< <= > >=）的字串運算元校驗
+// ---------------------------------------------------------------------------
+
+// strOrderingOps 是 nolang「對字串沒有定義」的關係運算子。== / != 刻意不在此列：
+// 它們由 runtime 的 @str_eq 實作真正的字串相等比較，多字元字串完全合法。
+var strOrderingOps = map[string]bool{"<": true, "<=": true, ">": true, ">=": true}
+
+// strOrderingRuneCount 回報字串字面量的碼點數。AST 的字面量在不同階段可能帶引號
+// （'a' / "a"），統一先去掉引號再數。
+func strOrderingRuneCount(v string) int {
+	return len([]rune(strings.Trim(v, "'\"")))
+}
+
+// strOrderingBadOperand 回報運算元是否為關係運算子無法處理的字串。
+//
+// 合法（回 false）：
+//   - 單字元字串字面量 'a'：隱式 char（碼點），hir2mir 會折成整數比較。
+//   - char 字面量 "a"：本身就是碼點整數。
+//   - 數值型別（i64 / f64 / byte / …）。
+//   - 型別推斷不出來的運算元：保守放行（維持既有行為，由 LLVM 端把關）。
+//
+// 非法（回 true）：型別為 str / txt 的運算元 —— 多字元字面量、str 變數、回傳 str
+// 的呼叫。nolang 沒有字串字典序比較，codegen 的 str 分支只有 @str_eq（相等），
+// 關係運算子會退化成「恆假」。與其執行期靜默給錯答案，這裡在編譯期拒絕。
+func strOrderingBadOperand(e parser.Expression, funcTypes, varTypes map[string]string, selfType string) bool {
+	switch x := e.(type) {
+	case nil:
+		return false
+	case *parser.GroupedExpression:
+		return strOrderingBadOperand(x.Expression, funcTypes, varTypes, selfType)
+	case *parser.StringLiteral:
+		return strOrderingRuneCount(x.Value) != 1
+	case *parser.CharLiteral:
+		return false
+	}
+	return isStrLikeType(inferExprType(e, varTypes, funcTypes, selfType))
+}
+
+// strOrderingMessage 是關係運算子遇到多字元字串時回報的訊息。
+const strOrderingMessage = "relational operator on a multi-character string: nolang has no lexicographic " +
+	"string comparison, so the result would always be false. Compare single-character strings " +
+	"('a', implicitly a char), chars (\"a\") or numbers; use == / != for whole strings."
+
+// walkStrOrderingExpr 遞迴掃描表達式：對 < <= > >= 的可疑字串運算元回報錯誤，並在
+// 遇到 if / 閉包時下潛其區塊。file 為當前節點所屬來源檔（節點級，避開合併模式下
+// std 與使用者程式碼行號重疊）。
+func walkStrOrderingExpr(e parser.Expression, funcTypes, varTypes map[string]string, selfType, file string, results *[]ValidateResult) {
+	if e == nil {
+		return
+	}
+	switch x := e.(type) {
+	case *parser.InfixExpression:
+		if strOrderingOps[x.Operator] &&
+			(strOrderingBadOperand(x.Left, funcTypes, varTypes, selfType) ||
+				strOrderingBadOperand(x.Right, funcTypes, varTypes, selfType)) {
+			*results = append(*results, ValidateResult{
+				TraceID: "go7p9knv",
+				Line:    x.Token.Line,
+				Column:  x.Token.Column,
+				File:    file,
+				Message: strOrderingMessage,
+			})
+		}
+		walkStrOrderingExpr(x.Left, funcTypes, varTypes, selfType, file, results)
+		walkStrOrderingExpr(x.Right, funcTypes, varTypes, selfType, file, results)
+	case *parser.PrefixExpression:
+		walkStrOrderingExpr(x.Right, funcTypes, varTypes, selfType, file, results)
+	case *parser.GroupedExpression:
+		walkStrOrderingExpr(x.Expression, funcTypes, varTypes, selfType, file, results)
+	case *parser.DotExpression:
+		walkStrOrderingExpr(x.Receiver, funcTypes, varTypes, selfType, file, results)
+	case *parser.IndexExpression:
+		walkStrOrderingExpr(x.Left, funcTypes, varTypes, selfType, file, results)
+		walkStrOrderingExpr(x.Index, funcTypes, varTypes, selfType, file, results)
+	case *parser.SliceExpression:
+		walkStrOrderingExpr(x.Left, funcTypes, varTypes, selfType, file, results)
+		if x.Range != nil {
+			walkStrOrderingExpr(x.Range.Start, funcTypes, varTypes, selfType, file, results)
+			walkStrOrderingExpr(x.Range.End, funcTypes, varTypes, selfType, file, results)
+		}
+	case *parser.AssignExpression:
+		walkStrOrderingExpr(x.Left, funcTypes, varTypes, selfType, file, results)
+		walkStrOrderingExpr(x.Value, funcTypes, varTypes, selfType, file, results)
+	case *parser.CallExpression:
+		walkStrOrderingExpr(x.Function, funcTypes, varTypes, selfType, file, results)
+		for _, a := range x.Arguments {
+			walkStrOrderingExpr(a, funcTypes, varTypes, selfType, file, results)
+		}
+	case *parser.ConditionalExpression:
+		walkStrOrderingExpr(x.Condition, funcTypes, varTypes, selfType, file, results)
+		walkStrOrderingExpr(x.Consequence, funcTypes, varTypes, selfType, file, results)
+		walkStrOrderingExpr(x.Alternative, funcTypes, varTypes, selfType, file, results)
+	case *parser.CastExpression:
+		walkStrOrderingExpr(x.Expr, funcTypes, varTypes, selfType, file, results)
+	case *parser.RunExpression:
+		walkStrOrderingExpr(x.Call, funcTypes, varTypes, selfType, file, results)
+	case *parser.AwaitExpression:
+		walkStrOrderingExpr(x.Right, funcTypes, varTypes, selfType, file, results)
+	case *parser.ArrayLiteral:
+		walkStrOrderingExpr(x.Size, funcTypes, varTypes, selfType, file, results)
+		for _, el := range x.Elements {
+			walkStrOrderingExpr(el, funcTypes, varTypes, selfType, file, results)
+		}
+	case *parser.SliceLiteral:
+		for _, el := range x.Elements {
+			walkStrOrderingExpr(el, funcTypes, varTypes, selfType, file, results)
+		}
+	case *parser.MapLiteral:
+		for _, p := range x.Pairs {
+			walkStrOrderingExpr(p.Key, funcTypes, varTypes, selfType, file, results)
+			walkStrOrderingExpr(p.Value, funcTypes, varTypes, selfType, file, results)
+		}
+	case *parser.StructLiteral:
+		for _, f := range x.Fields {
+			walkStrOrderingExpr(f.Value, funcTypes, varTypes, selfType, file, results)
+		}
+	case *parser.IfExpression:
+		// 只走 Condition（match 臂的 desugar 結果已在其中），不走 EqualityPattern /
+		// ValuePatterns / RawCond —— 它們與 Condition 共用同一批子運算式，會重複回報。
+		walkStrOrderingExpr(x.Condition, funcTypes, varTypes, selfType, file, results)
+		walkStrOrderingBlock(x.Consequence, funcTypes, varTypes, selfType, file, results)
+		walkStrOrderingBlock(x.Alternative, funcTypes, varTypes, selfType, file, results)
+		walkStrOrderingBlock(x.DotValBody, funcTypes, varTypes, selfType, file, results)
+	case *parser.FunctionLiteral:
+		// 閉包體是獨立作用域：參數 + 自身 let 各自登記。
+		local := make(map[string]string)
+		for _, p := range x.Parameters {
+			if p.Type != nil {
+				local[p.Name] = typeNodeString(p.Type)
+			}
+		}
+		for _, p := range x.Results {
+			if p.Type != nil {
+				local[p.Name] = typeNodeString(p.Type)
+			}
+		}
+		if x.Body != nil {
+			for _, b := range x.Body.Statements {
+				walkStrOrderingStmt(b, funcTypes, local, selfType, file, results)
+			}
+		}
+	}
+}
+
+// walkStrOrderingBlock 掃描一個區塊（可能為 nil）。
+func walkStrOrderingBlock(b *parser.BlockStatement, funcTypes, varTypes map[string]string, selfType, file string, results *[]ValidateResult) {
+	if b == nil {
+		return
+	}
+	for _, stmt := range b.Statements {
+		walkStrOrderingStmt(stmt, funcTypes, varTypes, selfType, file, results)
+	}
+}
+
+// walkStrOrderingStmt 依序掃描語句，並把 let 綁定的型別登記進 varTypes（顯式標註
+// 優先，其次由右值推斷），使後續語句裡的 `s < t` 能判定 s 是否為 str。
+func walkStrOrderingStmt(stmt parser.Statement, funcTypes, varTypes map[string]string, selfType, file string, results *[]ValidateResult) {
+	if stmt == nil {
+		return
+	}
+	switch s := stmt.(type) {
+	case *parser.ExpressionStatement:
+		walkStrOrderingExpr(s.Expression, funcTypes, varTypes, selfType, file, results)
+	case *parser.LetStatement:
+		// 編譯器合成語句（match 臂 `it` 綁定、`?=` 傳播賦值）不是使用者寫的，跳過。
+		if s.IsSynthetic || s.IsPropagation {
+			return
+		}
+		walkStrOrderingExpr(s.Value, funcTypes, varTypes, selfType, file, results)
+		if s.Name != nil {
+			t := typeNodeString(s.Type)
+			if t == "" {
+				t = inferExprType(s.Value, varTypes, funcTypes, selfType)
+			}
+			if t != "" {
+				varTypes[s.Name.Value] = t
+			}
+		}
+	case *parser.MultiAssignStatement:
+		for _, tgt := range s.Targets {
+			walkStrOrderingExpr(tgt, funcTypes, varTypes, selfType, file, results)
+		}
+		walkStrOrderingExpr(s.Value, funcTypes, varTypes, selfType, file, results)
+	case *parser.UnwrapAssignStatement:
+		walkStrOrderingExpr(s.Target, funcTypes, varTypes, selfType, file, results)
+		walkStrOrderingExpr(s.Value, funcTypes, varTypes, selfType, file, results)
+	case *parser.ReturnStatement:
+		walkStrOrderingExpr(s.ReturnValue, funcTypes, varTypes, selfType, file, results)
+	case *parser.FunctionDefinition:
+		// 跳過單態化副本（名稱含 `__`）與泛型模板：型別參數未特化，推斷不可靠。
+		if strings.Contains(s.Name, "__") || len(s.GenericParams) > 0 || strings.HasPrefix(s.Name, "[") {
+			return
+		}
+		fnFile := parser.GetSourceFile(s)
+		if fnFile == "" {
+			fnFile = file
+		}
+		local := make(map[string]string)
+		for _, p := range s.Parameters {
+			if p.Type != nil {
+				local[p.Name] = typeNodeString(p.Type)
+			}
+		}
+		for _, p := range s.Results {
+			if p.Type != nil {
+				local[p.Name] = typeNodeString(p.Type)
+			}
+		}
+		bodySelf := selfType
+		if len(s.Results) > 0 && s.Results[0].Name == "self" {
+			bodySelf = typeNodeString(s.Results[0].Type)
+		}
+		if s.Body != nil {
+			for _, b := range s.Body.Statements {
+				walkStrOrderingStmt(b, funcTypes, local, bodySelf, fnFile, results)
+			}
+		}
+	case *parser.BlockStatement:
+		walkStrOrderingBlock(s, funcTypes, varTypes, selfType, file, results)
+	case *parser.ForStatement:
+		walkStrOrderingStmt(s.Init, funcTypes, varTypes, selfType, file, results)
+		walkStrOrderingExpr(s.Condition, funcTypes, varTypes, selfType, file, results)
+		walkStrOrderingExpr(s.CountExpr, funcTypes, varTypes, selfType, file, results)
+		walkStrOrderingStmt(s.Update, funcTypes, varTypes, selfType, file, results)
+		if s.IterRange != nil {
+			walkStrOrderingExpr(s.IterRange.RangeExpr, funcTypes, varTypes, selfType, file, results)
+			if r := s.IterRange.Range; r != nil {
+				walkStrOrderingExpr(r.Start, funcTypes, varTypes, selfType, file, results)
+				walkStrOrderingExpr(r.End, funcTypes, varTypes, selfType, file, results)
+			}
+			// `for ch <- s` 的迭代變數是 char（見 iterElemType）。
+			if et := iterElemType(s.IterRange, varTypes, selfType); et != "" {
+				varTypes[s.IterRange.Variable] = et
+			}
+		}
+		walkStrOrderingBlock(s.Body, funcTypes, varTypes, selfType, file, results)
+	}
+}
+
+// collectStrOrderingFuncTypes 收集「回傳型別」表（使用者函式 + extern 宣告 +
+// 常用 stdlib 方法），供 inferExprType 判定呼叫結果是否為 str。
+func collectStrOrderingFuncTypes(program *parser.Program) map[string]string {
+	funcTypes := make(map[string]string)
+	for _, stmt := range program.Statements {
+		if fd, ok := stmt.(*parser.FunctionDefinition); ok {
+			if rs := declaredResults(fd); len(rs) > 0 && rs[0].Type != nil {
+				funcTypes[fd.Name] = rs[0].Type.String()
+			}
+		}
+		if es, ok := stmt.(*parser.ExternStatement); ok {
+			if len(es.Results) > 0 && es.Results[0].Type != nil {
+				funcTypes[es.Name.Value] = es.Results[0].Type.String()
+			}
+		}
+	}
+	// std 方法定義在 src/std/*.no，校驗階段尚未合併，回傳型別先預填。
+	for k, v := range map[string]string{
+		"str.index":       "i64",
+		"str.slice":       "str",
+		"str.contains":    "bool",
+		"str.starts-with": "bool",
+		"str.ends-with":   "bool",
+		"str.to-upper":    "str",
+		"str.to-lower":    "str",
+		"str.trim":        "str",
+		"str.repeat":      "str",
+		"str.copy":        "str",
+	} {
+		if _, exists := funcTypes[k]; !exists {
+			funcTypes[k] = v
+		}
+	}
+	return funcTypes
+}
+
+// ValidateStrOrdering 檢查關係運算子（< <= > >=）的字串運算元。
+//
+// nolang 沒有字串的字典序比較：str 在 codegen 走的是 @str_eq（只做相等），關係
+// 運算子會退化成「恆假」。規則：
+//   - 單字元字串字面量 'a' → 合法，隱式視為 char（碼點）。
+//   - 單字元字串字面量與 char（"a"）混合比較 → 合法，同樣按 char。
+//   - 數值型別 → 合法。
+//   - 其他 str / txt（多字元字面量、str 變數、回傳 str 的呼叫）→ 報錯。
+func ValidateStrOrdering(program *parser.Program) []ValidateResult {
+	if program == nil {
+		return nil
+	}
+	funcTypes := collectStrOrderingFuncTypes(program)
+	varTypes := make(map[string]string)
+	var results []ValidateResult
+	for _, stmt := range program.Statements {
+		walkStrOrderingStmt(stmt, funcTypes, varTypes, "", parser.GetSourceFile(stmt), &results)
+	}
+	// 去重：一個 match 的區間臂 `['a'..'m')` 會被 desugar 成
+	// `(s >= 'a') && (s < 'm')`，兩個 InfixExpression 落在同一行同一列，
+	// 不去重會對同一個臂報兩條完全相同的錯誤。
+	if len(results) < 2 {
+		return results
+	}
+	seen := make(map[string]bool, len(results))
+	deduped := results[:0]
+	for _, r := range results {
+		key := fmt.Sprintf("%d:%d:%s:%s", r.Line, r.Column, r.File, r.Message)
+		if seen[key] {
+			continue
+		}
+		seen[key] = true
+		deduped = append(deduped, r)
+	}
+	return deduped
 }
 
 func ValidateHexCase(program *parser.Program) []ValidateResult {
@@ -5573,6 +5967,7 @@ func overflowModeFromSem(sem *parser.SemanticContext, n parser.Node) string {
 //	frame          vs http2.frame   → true
 //	server.conn    vs tls.conn      → false（兩個都是限定名，後綴雖同但不互為前綴）
 //	?T             vs ?U             → 遞迴比較內層
+//
 // isViewBorrow reports whether assigning a value of type src to a variable of
 // type dst is a VIEW BINDING: `v &T = x` (or `v ?&T = x`) where x is a T.
 //
@@ -5952,12 +6347,19 @@ func isContainerLenOwner(t string) bool {
 // checkReadOnlyLenAssign rejects writing the read-only length field of a
 // container (`x.len = n`, `x.cap = n`, `x.len-bytes = n`).
 //
-// The transpiler has an equivalent guard, but it only fires when the write
-// target is a bare identifier that happens to be a tracked container variable,
-// so nested paths slipped through and were miscompiled into a null-pointer
-// store (see the call site in validateStmtTypes). This version infers the
-// receiver's TYPE instead, which is what makes nested paths reachable — and
-// which also keeps user structs with a real `len` field working.
+// ⚠️ INTENTIONALLY NOT CALLED (2026-09-21). See the call-site note in
+// validateStmtTypes: writing `.len` on a container **struct field** (including
+// nested ones like `b.arr[1].len = 2`) is a supported grow/shrink operation —
+// codegen allocates the buffer when data == null, and
+// tests/test-len-assign-grow.no covers it. Wiring this in would reject those
+// and break that test. Plain container variables are already rejected by the
+// transpiler's own guard ("cannot modify read-only field 'len' of ...").
+//
+// Original rationale (kept for context): the transpiler's guard only fires for
+// bare identifiers present in arraySizes / sliceSizes / stringSizes, so nested
+// paths slipped through and were miscompiled into a null-pointer store. That
+// hole was since fixed on the CODEGEN side (allocation on null), not by
+// rejecting the write — so this type-inference based check is redundant.
 func checkReadOnlyLenAssign(a *parser.AssignExpression, varTypes, funcTypes map[string]string, selfType string) *ValidateResult {
 	if a == nil || a.Left == nil {
 		return nil
@@ -6318,17 +6720,20 @@ func validateStmtTypes(stmt parser.Statement, funcNames map[string]bool, funcTyp
 		}
 		if assign, ok := s.Expression.(*parser.AssignExpression); ok {
 			// 唯讀容器欄位寫入：`X.len = n` / `X.cap = n` / `X.len-bytes = n`。
-			// transpiler 那層的檢查（validateExprArrayBounds）只在 X 是**純識別符**、
-			// 且該名字剛好出現在 arraySizes / sliceSizes / stringSizes 裡才生效
-			// （那三張表是掃宣告建出來的，只收變數、不收結構體欄位）。所以巢狀路徑
-			// `p.nodes[i].str-val.len = 1` 會被放行：len 被原地改寫但 data 仍是 null，
-			// 下一個 `str-val[0] = 97` 對 null 做 GEP + store → SIGSEGV
-			// （tests/test-chain-copy.no 原本就死在這裡）。
 			//
-			// 這裡改用型別推斷補上這個洞：Receiver 推出來**真的是容器**才擋，
-			// 一般結構體欄位則放行 —— `bag { items []i64; len i64 }` 的
-			// `out.len = .len`、以及 `txt` 的 `dst.len = n` 都是合法指派，
-			// 「一律拒絕」會把它們打破。
+			// ⚠️ 實際契約（2026-09-21 實測確認，別再照舊註解去「補洞」）：
+			//   - **純變數**容器（`s = 'abc'; s.len = 2`）→ **拒絕**。由 transpiler 那層
+			//     的表（arraySizes / sliceSizes / stringSizes）攔下，錯誤訊息
+			//     "cannot modify read-only field 'len' of string 's'"。
+			//   - **結構體欄位**容器（`b.s.len = 3`，含巢狀 `b.arr[1].len = 2`）
+			//     → **放行，而且是刻意支援的功能**：寫入時若 data == null 會先分配
+			//     緩衝區（codegen 的 ensureContainerStorageForLen），所以「從零值增長」
+			//     是合法的，`tests/test-len-assign-grow.no` 五個案例全靠這個行為。
+			//     早年 `p.nodes[i].str-val.len = 1` 對 null 做 GEP + store 會 SIGSEGV，
+			//     那個洞已經由上面的分配邏輯補掉（不是靠拒絕）。
+			//
+			// 結論：這裡**不要**接 checkReadOnlyLenAssign —— 那會把欄位寫入也擋掉，
+			// 直接打破 test-len-assign-grow.no。該函式刻意保持不被呼叫。
 			if ident, ok := assign.Left.(*parser.Identifier); ok {
 				// 檢查是否對函式名稱賦值
 				if funcNames[ident.Value] {

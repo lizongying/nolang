@@ -79,8 +79,12 @@ path.current = () (out path) {
 
 ; path.join: 拼接兩個路徑元素
 ; 處理尾綴/首綴 '/' 的各種組合
-; 原地修改 .p，將 b 拼接到 .p 末尾
-path.join = (b str) {
+; 原地修改 .p，將 b 拼接到 .p 末尾；**並回傳拼接後的 .p**。
+;
+; ⚠️ API 一致性：早期 join()/dir() 只做原地修改、沒有回傳值，而 base()/ext()
+; 是回傳 str，導致 `x = p.join(...)` 拿到空字串這種陷阱。現在四個方法**都回傳**
+; str（join/dir 仍會一併更新 .p，保留既有的原地用法）。
+path.join = (b str) (out str) {
     bn = b.len-bytes()
     out-n = .p.len-bytes()
 
@@ -122,6 +126,7 @@ path.join = (b str) {
         #{overflow=wrap}
         out-n = out-n + 1
     }
+    out = .p
 }
 
 ; ═══════════════════════════════════════════════
@@ -154,8 +159,8 @@ path.base = () (out str) {
 }
 
 ; path.dir: 取出路徑的目錄部分
-; 原地修改 .p
-path.dir = () {
+; 原地修改 .p；**並回傳修改後的 .p**（與 base()/ext()/join() 一致，見 join 上的說明）
+path.dir = () (out str) {
 
     ; 找最右邊的 '/'
     last-sep = -1
@@ -170,6 +175,7 @@ path.dir = () {
             #{index-out = 0}
             .p[0] = DOT
             .p.len = 1
+            out = .p
             return
         }
 
@@ -181,9 +187,11 @@ path.dir = () {
                 #{index-out = 0}
                 .p[0] = SEP
                 .p.len = 1
+                out = .p
                 return
             }
             .p.len = out-n
+            out = .p
         }
     }
 }

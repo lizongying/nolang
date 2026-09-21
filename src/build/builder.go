@@ -574,6 +574,30 @@ func buildWithPkg(inputPath string, pkg *Package, opts BuildOptions, buffered bo
 	if pkg != nil {
 		linkLibs = pkg.Compiler.LinkLibs
 	}
+	// 編譯單元內每個被載入套件自己宣告的 link-libs（見 Transpiler.LinkLibs）。
+	// `no run <file>` / `# <path>` 直引源檔時 pkg == nil，這是唯一的連結庫來源：
+	// tests/test-ffi-sqlite.no 直接引用 example/sqlite-driver/src/sqlite.no，
+	// 驅動的 #{c} 外部函式需要 -lsqlite3。
+	for _, lib := range compiler.LinkLibs() {
+		dup := false
+		for _, have := range linkLibs {
+			if have == lib {
+				dup = true
+				break
+			}
+		}
+		if !dup {
+			linkLibs = append(linkLibs, lib)
+		}
+	}
+	// NOLANG_LINK_LIBS 為顯式覆寫／診斷開關（逗號分隔的庫名，不含 -l）。
+	if env := os.Getenv("NOLANG_LINK_LIBS"); env != "" {
+		for _, l := range strings.Split(env, ",") {
+			if l = strings.TrimSpace(l); l != "" {
+				linkLibs = append(linkLibs, l)
+			}
+		}
+	}
 
 	err = buildLLVMInternal(code, fileName, outPath, opts.CC, opts.Target, opts.Verbose, linkLibs, sink)
 	if err != nil {

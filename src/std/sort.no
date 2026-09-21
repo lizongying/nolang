@@ -51,7 +51,9 @@ char.gt = (b char) (res bool) {
 }
 
 str.gt = (b str) (res bool) {
-    res = . > b
+    ; nolang 的關係運算子（< <= > >=）沒有字串字典序語意（str 只有 @str_eq
+    ; 相等比較），`res = . > b` 會恆為假。字典序必須走 str.compare。
+    res = .compare(b) > 0
 }
 
 ; [n]ord.sort-asc: 升序原地排序（插入排序）

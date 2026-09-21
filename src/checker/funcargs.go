@@ -869,6 +869,15 @@ func isIntLiteralNarrowingToDeclared(expr parser.Expression, targetType string) 
 // 對有號目標型別：提示位元窄化不適用（符號位元截斷語義不明確）。
 // 非整數型別或非窄化場景回傳空字串。
 func narrowingHint(fromType, toType string) string {
+	// char 的約束是「值域」而不是「位寬」：合法值是 Unicode 純量碼點
+	// 0..=0x10FFFF（21 bit），超出該範圍的值無法表示，位元遮罩也救不回來
+	// （`0x110000 & 0xFFFFF` 只會得到一個不相關的碼點）。所以這裡先用值域
+	// 口徑給出提示，而不是走下面的位寬/遮罩邏輯。
+	if toType == "char" {
+		if _, _, ok := intTypeRange(fromType); ok {
+			return "; hint: char holds a Unicode code point in 0..=0x10FFFF (1114111 is the last valid value)"
+		}
+	}
 	fromBits := intTypeBits(fromType)
 	toBits := intTypeBits(toType)
 	if fromBits == 0 || toBits == 0 || fromBits <= toBits {
@@ -1578,7 +1587,19 @@ func filterByExports(prog *parser.Program, libPath string, modFilePath string) *
 			funcDefs[fd.Name] = fd
 		}
 	}
+	// 同模組的全大寫常量（nolang 常量命名約定，如 SQLITE-OK / SQLITE-ROW）。
+	// 驅動的方法體會直接引用它們做結果碼比較；若不同步導出，呼叫端攤平後
+	// MIR 解析不到該名字，會退化成 undef（`icmp ne i64 %rc, undef`），
+	// 比較結果恆為真、錯誤分支永遠走不到。
+	definedConstants := make(map[string]bool)
+	for _, stmt := range prog.Statements {
+		if ls, ok := stmt.(*parser.LetStatement); ok && ls.Name != nil && isConstantName(ls.Name.Value) {
+			definedConstants[ls.Name.Value] = true
+		}
+	}
 	calledFuncs := make(map[string]bool)
+	// referencedConsts：被保留函式／方法體「直接引用」（非呼叫）的同模組常量名。
+	referencedConsts := make(map[string]bool)
 	var collectCalledFuncs func(body *parser.BlockStatement)
 	var walkExpr func(expr parser.Expression)
 	var walkStmts func(stmts []parser.Statement)
@@ -1587,6 +1608,12 @@ func filterByExports(prog *parser.Program, libPath string, modFilePath string) *
 			return
 		}
 		switch e := expr.(type) {
+		case *parser.Identifier:
+			// 裸識別字引用（常量）。只收同模組的全大寫常量，避免誤抓區域變數
+			// 或 std 名，把不相關的 LetStatement 一併帶進導出集。
+			if definedConstants[e.Value] {
+				referencedConsts[e.Value] = true
+			}
 		case *parser.CallExpression:
 			if ident, ok := e.Function.(*parser.Identifier); ok {
 				if defined[ident.Value] {
@@ -1684,6 +1711,31 @@ func filterByExports(prog *parser.Program, libPath string, modFilePath string) *
 		}
 		walkStmts(body.Statements)
 	}
+	// 導出型別時自動導出其方法（Type.method）。
+	// 驅動套件（如 example/sqlite-driver）在 lib.no 中只導出型別：
+	//   @ /src/sqlite.db-sqlite
+	//   @ /src/sqlite.open
+	// 但介面方法的實作定義在同檔案的 `db-sqlite.exec = (...) {...}` 形式
+	// （AST 上是名為 "db-sqlite.exec" 的 FunctionDefinition）。這些方法既不在
+	// 導出清單中、也不被任何已導出函式呼叫，會被本函式過濾掉。呼叫端把
+	// `d.exec(...)` 攤平為 `sqlite.db-sqlite.exec(d, ...)` 後找不到函式定義，
+	// MIR codegen 報 "unknown callee sqlite.db-sqlite.exec"。
+	// 型別一旦導出，其方法就屬於該型別的公開 ABI，必須一併導出。
+	// 必須放在下方 worklist 傳遞閉包「之前」：方法體會呼叫 FFI 宣告與其他
+	// 同模組 helper，那些依賴要靠閉包一併帶出。
+	for _, stmt := range prog.Statements {
+		fd, ok := stmt.(*parser.FunctionDefinition)
+		if !ok {
+			continue
+		}
+		dot := strings.Index(fd.Name, ".")
+		if dot <= 0 {
+			continue
+		}
+		if _, ok := exported[fd.Name[:dot]]; ok {
+			exported[fd.Name] = ""
+		}
+	}
 	// Iteratively expand the keep set with call dependencies (transitive closure)
 	worklist := make([]string, 0, len(exported))
 	for name := range exported {
@@ -1698,6 +1750,13 @@ func filterByExports(prog *parser.Program, libPath string, modFilePath string) *
 		}
 		prevLen := len(calledFuncs)
 		collectCalledFuncs(fd.Body)
+		// 方法體直接引用的同模組常量一併導出（見 referencedConsts 的說明）。
+		for c := range referencedConsts {
+			if _, alreadyKept := exported[c]; !alreadyKept {
+				exported[c] = ""
+				worklist = append(worklist, c)
+			}
+		}
 		// Add newly discovered called functions to worklist and exported set
 		if len(calledFuncs) > prevLen {
 			for called := range calledFuncs {
@@ -1716,6 +1775,14 @@ func filterByExports(prog *parser.Program, libPath string, modFilePath string) *
 			// Always keep UseStatements so that transitive imports are processed.
 			// Without this, a lib.no's `# /path/to/impl` would be filtered out,
 			// preventing the actual function definitions from being loaded.
+			filtered.Statements = append(filtered.Statements, s)
+		case *parser.ExternStatement:
+			// #{c} FFI 宣告（如 _sqlite3-open）必須無條件保留。它們只是簽名
+			// 宣告、不產生任何程式碼，只有被呼叫時才需要對應的 C 符號；而被
+			// 保留的函式／方法體正是唯一可能呼叫它們的地方。把它們按導出清單
+			// 過濾會讓驅動套件（lib.no 只導出型別與 open）的所有 FFI 呼叫在
+			// 連結期變成 undefined symbol：
+			//   "_sqlite3_open", referenced from: _sqlite.open in ...
 			filtered.Statements = append(filtered.Statements, s)
 		case *parser.FunctionDefinition:
 			if _, ok := exported[s.Name]; ok {

@@ -500,6 +500,8 @@ Configure mirror addresses in the `mirrors` array of `package.jsonc` to accelera
 
 **Optional (nullable) types:** prefix with `?` — e.g. `?i64`, `?str`, `?[]str`
 
+**String ordering (`<` `<=` `>` `>=`):** `str` implements only equality (`==` / `!=`, real string compare). An ordering operator accepts a **one-character** string literal (`'a'`, implicitly a `char` / code point) or a `char` (`"a"`), but **rejects multi-character strings** — `'ab'`, a `str` variable, or a call returning `str` is a compile error (it used to silently evaluate to false). Use `str.compare(b)` (returns -1 / 0 / 1) for lexicographic order.
+
 ### Type Aliases & Union Types
 
 Type aliases create a new name for an existing type. Use the equals syntax `name = type`, supporting single type aliases and multi-type unions.
@@ -1411,9 +1413,23 @@ x: {
 > }
 > ```
 >
-> A pipeline is for **effects and gating**. To produce a VALUE, use a match with
-> arms on separate lines, or the ternary `cond ? a : b` — a trailing value node
-> is not the pipeline's result.
+> **A pipeline produces a VALUE on the right-hand side of an assignment**: the
+> result is its trailing value node, evaluated only while the state is still ok.
+>
+> ```no
+> n = 7
+> x = 1 > 2 -> 42                          ; false -> x keeps 7
+> y = 2 > 1 -> 42                          ; y == 42
+> s str = 'old'
+> s = 1 > 2 -> 'new'                       ; short-circuited -> s is still 'old'
+> r = print('E') -> might-fail(bad) -> 99  ; middle node failed -> r unchanged
+> ```
+>
+> When the pipeline fails the **assignment does not happen** — the variable keeps
+> its previous value (zero for a first binding), exactly like the statement form
+> `{ 1 > 2 -> x = 42 }`. The value's type is inferred from the arm's trailing
+> expression (`str` / `i64` / `?T`), the same inference the match-as-value form
+> `x = subject: { arms }` uses.
 
 > **Match semantics inside for-in**: `i <- (a..b]: { 1 -> ... 2 -> ... }` executes the match body once for each iteration variable `i` (`1 ->` is equivalent to `i == 1 ->`, etc.). This is syntactic sugar for executing one match per iteration.
 
@@ -3324,7 +3340,7 @@ Nolang supports three kinds of string/char literals:
 
 1. **Single-quoted strings** (`'...'`): Standard string literal with escape processing (`\n`, `\t`, `\\`, `\'`, `\0`, etc.). Type: `str`.
 
-2. **Double-quoted char** (`"x"`): Single Unicode character (rune). Type: `char` (i32). Only one character allowed.
+2. **Double-quoted char** (`"x"`): Single Unicode scalar value (rune). Type: `char`, **stored as i32** (not i64). Only one character allowed. A char must be a valid code point in `0 ..= 0x10FFFF` — an out-of-range literal (e.g. `c char = 0x110000`) is a **compile-time error**. **char arithmetic is allowed and normal** — `z = a + 25`, `u = ch - 32` (`ch` from `for ch <- s`) work and compute on the code-point value at i32 width. Unlike the integer family, char `+ - * /` does **not** default to `option<int>`, so it never trips the unhandled-overflow compile error. Only the range matters: for offsets/counters or wide/bignum math, convert to `i32`/`i64` first for clarity.
 
 3. **Raw strings** (backtick-delimited): Multi-line, no escape processing. Type: `str`.
 

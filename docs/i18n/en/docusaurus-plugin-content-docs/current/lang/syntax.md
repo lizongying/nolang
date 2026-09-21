@@ -64,8 +64,8 @@ Basic types
 
 - byte
 - bool ; lowercase only
-- char ; character type; one Chinese character counts as one char, no quotes
-- str ; string type, wrapped in single quotes
+- char ; character type: a single Unicode scalar value (rune), stored as i32. Wrapped in double quotes, e.g. "中"
+- str ; string type, wrapped in single quotes 'hello', or backtick raw strings `multi-line`
 - i8
 - i16
 - i32
@@ -95,6 +95,17 @@ Advanced types
 
 - bigint
 - err
+
+### The `char` Type (Unicode Code Point)
+
+`char` represents a **single Unicode scalar value**. Its underlying storage type is **`i32`**, not `i64`:
+
+- **Valid range:** `0 ..= 0x10FFFF` (that is, `0 ..= 1114111`). The largest code point needs only 21 bits, so `i32` holds it comfortably.
+- **Out of range is an error:** when a literal falls outside that range, the compiler **rejects it outright** at compile time (including under `no vet`). For example `c char = 0x110000` ✗ and `c char = 1114112` ✗, while `c char = 1114111` ✓.
+- **Arithmetic is allowed:** a `char` **can participate in integer arithmetic directly**. `z = a + 25` and `u = ch - 32` (where `ch` is the loop variable of `for ch <- s`) are both **perfectly normal** and operate on the code point value. Arithmetic always happens at **i32 width** and the result is treated as an ordinary integer value; precisely because of this, `+ - * /` on a `char` **does not default to `option<int>` the way the integer family does**, so it never triggers an "unhandled integer overflow" compile error. The only thing to watch is range: the largest code point is `0x10FFFF`, so when a value is meant to go beyond i32/code-point semantics (an offset, a running counter), convert to `i32`/`i64` explicitly first — it makes the intent clearer.
+- **Relationship to `str`:** `s[i]` returns a `char`, and a `char` converts implicitly to `str` (UTF-8 encoded). See [Strings — Implicit Conversion](str.md).
+
+> **"Underlying type" and "call-site conversion" are two different things.** A `char` *is* `i32`. The builtin `str_from_cp(cp char) -> ?str` takes `char` in its **source signature**; only when **calling into the external runtime** does the compiler **zero-extend** that i32 argument (`zext i32 → i64`) to match the IR parameter of `@str_from_cp` — a temporary conversion during argument preparation that **does not change the type of `char`**. It is like C's `char c='a'; f((long)c);`: `c` itself is one byte and is only promoted for the call.
 
 ## Type Aliases and Union Types
 
@@ -194,6 +205,13 @@ name = 'world'
 ; String concatenation
 greeting = 'hello, ' - name
 
+; Raw string (backtick-wrapped, multi-line, no escape processing)
+sql = `
+SELECT id,name
+FROM user
+WHERE id > 100
+`
+
 ; Explicit type annotation
 a u64 = 10
 
@@ -209,8 +227,8 @@ PORT i64 = 0x0303        ; ok: explicit i64, value = 771
 ; - Recommendation: use decimal for general integer constants; use hex with
 ;   explicit i64 type annotation only for protocol/bitmask constants.
 
-; Character (no quotes)
-c char = 中
+; Character (double quotes = char/rune, a single character)
+c = "中"
 
 ; byte type
 b = x00
@@ -229,6 +247,40 @@ typed [3]u16 = [1, 2, 3]
 
 ; Length automatically inferred (i64)
 a [?] = [1, 2, 3]
+```
+
+## Raw String
+
+A raw string is declared with a pair of backticks (`` ` ``) and has type `str`.
+
+### Syntax
+
+```
+sql = `
+SELECT id,name
+FROM user
+WHERE id > 100
+`
+```
+
+### Mandatory Formatting Rules
+
+1. The **opening** `` ` `` must be **immediately followed by a source newline**;
+2. The **closing** `` ` `` must **sit on a line of its own**, and that line may contain nothing but whitespace plus the closing backtick;
+3. **The two backtick lines are not part of the string content** — they serve only as delimiters;
+4. **Escaping:** every `\`, `\n`, `\t`, `\'`, `\"` inside is **kept verbatim**, with no escape processing of any kind;
+5. **Source newlines and indentation are preserved exactly** in the string's bytes;
+6. **A backtick character cannot be embedded directly.** If you need one, concatenate an ordinary single-quoted string instead.
+
+### Example
+
+```
+; The content is "SELECT id,name\nFROM user\nWHERE id > 100\n"
+; Escape sequences \n \t are kept verbatim, not interpreted
+raw = `
+line1\nline2
+\ttabbed
+`
 ```
 
 ## Regex Literals
@@ -294,25 +346,58 @@ re = regexp-compile('\\d+')
 
 `regexp-compile` is defined in `std/regexp.no`; it creates a `regexp` struct and calls `.compile()`.
 
+### Usage Examples
+
+```no
+; Create a regex and match against it
+re = /\d+/
+matched = re.matches('hello 123 world')
+print(matched)  ; true
+
+; Find a match
+re = /[a-z]+/g
+result = re.find('hello 42 world')
+print(result)  ; "hello"
+
+; As a function argument
+result = match-text(/\d+/, text)
+```
+
 > **Note:** Empty pattern `//` collides with line comments (same as JavaScript). Use `/(?:)/` for an empty match.
 
 ## Naming Rules
 
 Variable names, function names, struct names, etc. can start with an underscore, followed by hyphens, letters, and digits. They cannot start with a digit, cannot end with a hyphen, and cannot contain consecutive hyphens.
 
-**Case conventions:**
-- **Global constants, global variables**: use uppercase letters (e.g., `NOLANG`, `MAX-SIZE`). Private globals use underscore prefix followed by uppercase (e.g., `_NOLANG`, `_PRIVATE-CONST`).
+**Case conventions (mandatory):**
+- **Global constants, global variables**: **must** start with an uppercase letter (e.g., `NOLANG`, `MAX-SIZE`, `HEX-CHARS`). Private globals use an underscore prefix followed by uppercase (e.g., `_NOLANG`, `_PRIVATE-CONST`).
 - **Local variables, function parameters**: use lowercase letters (e.g., `hex-chars`, `data-len`). Do **NOT** use the `_` prefix for local variables — they are inherently private to their scope and do not need a visibility marker. The `_` prefix is reserved for private globals and FFI private declarations only.
 - **Function names, struct names**: use lowercase letters (e.g., `sha1-block`, `db-mysql`)
 
+**Function naming conventions (strongly recommended):**
+- **Do not prefix function names with the module name.** A function inside a module only needs a short, intuitive name; the module prefix is supplied automatically as `ShortName.` at cross-module call sites. For example, define the entry function `tail` (not `tail-run`) and the helper `atoi` (not `tail-atoi`) in `tail.no`. The code stays cleaner, and cross-module calls read more naturally as `tail.tail()`.
+- **Entry functions** are best named after the module itself (e.g. `ping.no` → `ping`, `cat.no` → `cat`). A cross-module import looks like `# /src/tail.tail`.
+- **Avoid keywords:** `run` (the async keyword) and `match` (the conditional-match keyword) cannot be used as function names. Pick another name for that meaning (e.g. `main` is deprecated — just use the module name).
+
+> **Global variables must start with an uppercase letter.** This is an enforced rule, not a convention. A top-level variable starting with a lowercase letter is treated by the compiler as a local variable, which can lead to undefined-reference errors.
+
 ```no
-; Global data uses uppercase letters, including global constants, global variables, etc.
+; ✅ Correct: global data uses uppercase letters
 NOLANG = 'nolang'
+MAX-SIZE = 1024
+HEX-CHARS = '0123456789abcdef'
 
-; Private global: underscore prefix + uppercase
+; ✅ Private globals: underscore prefix, still uppercase after it
 _NOLANG = 'nolang'
+_PRIVATE-CONST = 42
 
-; Local variables (inside functions): lowercase, no _ prefix
+; ❌ Wrong: global variables must not start with a lowercase letter
+; x1 = 10
+; x = 10
+; foo-bar = 42
+; hello-world = 'Hello World'
+
+; ✅ Local variables (inside functions) use lowercase, no _ prefix
 ; fn-example = () {
 ;     x1 = 10
 ;     x = 10
@@ -412,10 +497,10 @@ The Nolang standard library provides a rich set of common functionality, includi
 str-to-bytes = (s str) (out []byte) {
     n = s.len-bytes()
     i = 0
-    for i < n {
+    {
         out[i] = s[i]
         i = i + 1
-    }
+    } (i < n)
 }
 
 ; ✅ Correct: use the standard library str.to-bytes() method
@@ -507,20 +592,38 @@ utils/
 
 ## Function Definition
 
-Functions use a **read-only input / writable output** parameter model; `...` is only used for early termination and cannot be followed by a result.
+A function can emit results through **named result parameters**; this is essentially
+sugar for **out-parameters**, and `...` is only for early termination — it cannot carry a result.
+
+The Nolang function form is `name = (in-params) (out-params) { body }`: the second
+parenthesis group `(out-params)` declares the named result parameters (the sugar). The body
+assigns to them (they are reference types just like ordinary input parameters);
+**the variable that actually receives the result must be defined at the call site** — the
+result parameter names in the definition are only placeholders, and the caller's LHS
+(or trailing argument) decides which variable the result lands in:
+
+```no
+parse-line = (s str, max-fields i64 = 1024) (fields []str) {
+    ...            ; the body assigns to fields
+}
+
+; The call site defines the receiving variable (LHS binding; the type is inferred from the signature)
+fields = parse-line(line)
+; Multiple results bind in order
+a, b = swap(x, y)
+; Or the trailing-argument form: res is passed in as an extra output argument
+add1(5, 3, res)
+```
 
 Nolang functions have the following characteristics:
 
-- Functions have no return value by default; all data exchange is done through output parameters
+- **Named result parameters are sugar**: underneath, results still travel through input
+  parameters (out-parameters); no new return-value object is created, so it is internally safe.
 - **Input parameters are read-only**: scalars are passed by value; composite types are passed by read-only reference. Writing to input parameters or their sub-fields inside the function body is prohibited.
-- **Output parameters are writable**: the caller may bind an existing variable to an output slot, in which case the function modifies that variable's memory directly. The caller may also leave outputs unbound, in which case the function generates fresh values.
-- Variables inside a function are automatically destroyed when the function exits
+- **Output parameters are writable**: the caller may bind an existing variable to an output slot, in which case the function modifies that memory directly; or leave the output unbound and let the function produce a fresh value.
+- Variables inside a function are automatically destroyed when the function exits.
+- The call site must supply a receiving variable (LHS or trailing argument). Saying "the function has no return value" is imprecise — precisely: results are passed through named result parameters (sugar for out-parameters) and are bound by the call site.
 - **Alias rule**: an input read-only reference and an output slot may point to the same object. As long as writes occur only in the output area and inputs are only read, this is legal; the compiler does not perform static alias checking.
-- **Type method sugar**: `type.method = (inputs) (rest-outputs...) {}` desugars to `method = (inputs) (self type, rest-outputs...) {}`. Calling `instance.method(args)` binds the instance to the first output parameter `self`; the function body uses `.` to refer to `self`; writes to `self` directly modify the original instance.
-
-Nolang functions do not provide a return value mechanism; all output results are accomplished through named output parameters.
-
-System functions allow a syntactic-sugar form of return values for user convenience. Since the underlying mechanism still works through output parameters, no new variable is returned, and the interior is safe.
 
 ### Parameter Default Values
 
@@ -593,6 +696,11 @@ a, b = swap(5, 3)
     ...
 } ()
 
+; Conditional loop (checks cond, runs the body while true)
+{
+    do-something()
+} (x == 1)
+
 ; Limited execution count
 {
 } * 10
@@ -606,7 +714,9 @@ a, b = swap(5, 3)
     print('will not execute either')
 } * -3
 
-; Range syntax (will support map, arr, vec in the future)
+; Range syntax (i64/u8 and other numeric types, arr, vec and str are supported)
+; 16 combinations in total: '[' includes the left endpoint, '(' excludes it; ']' includes the right endpoint, ')' excludes it.
+; Bounded (4): both ends have a value
 i <- [a..b]: {     ; closed interval: a ≤ i ≤ b
 }
 i <- (a..b]: {     ; left-open right-closed: a < i ≤ b
@@ -614,6 +724,33 @@ i <- (a..b]: {     ; left-open right-closed: a < i ≤ b
 i <- [a..b): {     ; left-closed right-open: a ≤ i < b
 }
 i <- (a..b): {     ; open interval: a < i < b
+}
+; No upper bound (4): the right endpoint is omitted, iterating to the type's maximum
+i <- [a..]: {      ; a ≤ i ≤ type max
+}
+i <- [a..): {      ; a ≤ i < type max
+}
+i <- (a..]: {      ; a < i ≤ type max
+}
+i <- (a..): {      ; a < i < type max
+}
+; No lower bound (4): the left endpoint is omitted, starting from the type's minimum
+i <- [..b]: {      ; type min ≤ i ≤ b
+}
+i <- [..b): {      ; type min ≤ i < b
+}
+i <- (..b]: {      ; type min < i ≤ b
+}
+i <- (..b): {      ; type min < i < b
+}
+; Fully unbounded (4): both ends omitted, based on the type's minimum/maximum
+i <- [..]: {       ; type min ≤ i ≤ type max
+}
+i <- [..): {       ; type min ≤ i < type max
+}
+i <- (..]: {       ; type min < i ≤ type max
+}
+i <- (..): {       ; type min < i < type max
 }
 i <- [5..0]: {   ; decrement — runtime direction detection: start > end → decrement
 }
@@ -628,6 +765,15 @@ i <- 'abc': {   ; iterate over each character in the string
 ;   (5..1)  → 4 3 2       left-open right-open, descending
 ;   (3..0]  → 2 1 0       left-open right-closed, descending to zero
 ; When start <= end, iteration increments as usual (step +1).
+;
+; The endpoints of an unbounded range come from the variable's static type:
+;   [..]  on i64  from i64.MIN (-9223372036854775808) to i64.MAX (9223372036854775807)
+;   [..]  on u8   from 0 to 255
+;   [..)  on i64  from i64.MIN to i64.MAX - 1 (maximum excluded)
+;   (..]  on i64  from i64.MIN + 1 to i64.MAX (minimum excluded)
+;   (..)  on i64  from i64.MIN + 1 to i64.MAX - 1 (both ends excluded)
+; Rule: '[' includes the type minimum, '(' starts at minimum+1;
+;       ']' includes the type maximum, ')' stops at maximum-1.
 
 ; ❌ Explicitly rejected
 ;   Range bounds must be integers; nested expressions are not supported
@@ -641,11 +787,11 @@ i <- 'abc': {   ; iterate over each character in the string
 ;   Use self.len() instead of .len() to disambiguate: i <- [0..self.len()): { }
 ;   (self and . are semantically equivalent inside method bodies)
 
-; Conditional loop (the for keyword form is retained for non-1 steps or complex conditions)
+; Conditional loop (the new { } (cond) form replaces the old for cond { })
 ; In most cases, range-for can be used instead: i <- [0..n): { }
-for x == 1 {
+{
     do-something()
-}
+} (x == 1)
 ```
 
 ### Break / Skip / Early Return
@@ -654,9 +800,41 @@ for x == 1 {
 i <- [0..10): {
     *      ; break
     **     ; continue
-    ...    ; return/terminate
+    ...    ; return/terminate (early return; only terminates the function)
+}
+
+; The English keywords also work (consistent with C/Rust, which helps when porting code — they compile and run normally):
+i <- [0..10): {
+    break     ; equivalent to *
+    continue  ; equivalent to **
+    return    ; equivalent to ..., only terminates the function early
 }
 ```
+
+> ⚠️ **`return` (and its symbolic form `...`) can only be used bare — it cannot carry a return value.**
+> Nolang functions have no "return value" mechanism — results are always handed out by assigning to
+> **named result parameters (out-params)** inside the body (see "Function Definition").
+> So `return <value>`, `return(expr)` and `... <value>` are all **forbidden**, and the compiler /
+> formatter / LSP all report them:
+> - Compiler (`no build`): `Error: compilation error: parser errors: line L, column C: 'return' 後不能跟返回值；… [E_GENERAL]`
+> - `no vet`: `<file>:L:C: [ERROR] nolang-compile: 'return' 後不能跟返回值；… [E_GENERAL]` (same format as the other diagnostics, one line each; the message text itself is emitted in Chinese)
+> - `no fmt`: `format error: …` and exits with a non-zero status
+> - LSP: a red error diagnostic on the offending line
+>
+> Wrong:
+> ```no
+> has = (n i64) (r i64) {
+>     n == 0 -> return 0        ; ❌ compiler / formatter / LSP all report an error
+>     r = n
+> }
+> ```
+> Correct (assign the result parameter first, then use a bare `return` to terminate early):
+> ```no
+> has = (n i64) (r i64) {
+>     n == 0 -> { r = 0; return }   ; ✓
+>     r = n
+> }
+> ```
 
 ### Match
 
@@ -686,9 +864,51 @@ user: {
 score: {
     [0..59] -> print('fail')
     [60..89] -> print('good')
-    [90..=100] -> print('excellent')
+    [90..100] -> print('excellent')
     -> print('invalid score')
 }
+
+; Range syntax has 16 combinations in total. The rule: '[' includes the left endpoint, '(' excludes it;
+;                     ']' includes the right endpoint, ')' excludes it.
+;
+; [Bounded] (4) — both ends have a concrete value
+;   [a..b]  → x >= a && x <= b   both ends inclusive
+;   [a..b)  → x >= a && x <  b   left inclusive, right exclusive
+;   (a..b]  → x >  a && x <= b   left exclusive, right inclusive
+;   (a..b)  → x >  a && x <  b   both ends exclusive
+;
+; [No upper bound] (4) — right endpoint omitted (End=nil); only the lower bound is checked
+;   [a..)   → x >= a              left inclusive, no upper bound
+;   [a..]   → x >= a              left inclusive, no upper bound
+;   (a..)   → x >  a              left exclusive, no upper bound
+;   (a..]   → x >  a              left exclusive, no upper bound
+;
+; [No lower bound] (4) — left endpoint omitted (Start=nil); only the upper bound is checked
+;   [..b]   → x <= b              no lower bound, right inclusive
+;   [..b)   → x <  b              no lower bound, right exclusive
+;   (..b]   → x <= b              no lower bound, right inclusive
+;   (..b)   → x <  b              no lower bound, right exclusive
+;
+; [Fully unbounded] (4) — both ends omitted, based on the type's minimum/maximum
+;   [..]    → true                type min ≤ x ≤ type max (both ends inclusive)
+;   [..)    → true                type min ≤ x < type max
+;   (..]    → true                type min < x ≤ type max
+;   (..)    → true                type min < x < type max
+;
+; In a match, a fully unbounded range is based on the matched variable's type domain (necessarily true, equivalent to a catch-all).
+; In range-for it is based on the iterator variable's type range (e.g. [..] on i64 runs from i64.MIN to i64.MAX).
+;
+; Example: using unbounded ranges for a complete classification
+v = 85
+result = v: {
+    [..0)    -> 'negative'
+    [0..60)  -> 'fail'
+    [60..80) -> 'pass'
+    [80..90) -> 'good'
+    [90..100]-> 'excellent'
+    (100..)  -> 'extraordinary'
+}
+print(result)
 
 num: {
     1 || 3 || 5 || 7 -> print('small odd number')
@@ -905,7 +1125,20 @@ v: {
 
 > ⚠️ Because arms are newline-separated, `pat -> A -> B` written on ONE line is **one arm with a pipeline**, not "if A else B". For if/else, put the arms on separate lines or use a `{}` short-circuit group.
 
-3. A pipeline is for **effects and failure gating**. To produce a **value**, use a match with newline-separated arms or the ternary `cond ? a : b` — a trailing value node is not the pipeline's result.
+3. **A pipeline can produce a value.** On the right-hand side of an assignment the pipeline's result is its **trailing value node** (evaluated only while the state is still ok).
+
+```no
+n = 7
+x = 1 > 2 -> 42        ; condition false -> x keeps its previous value, 7
+y = 2 > 1 -> 42        ; y == 42
+s str = 'old'
+s = 1 > 2 -> 'new'     ; short-circuited -> s is still 'old'
+r = print('E') -> might-fail(bad) -> 99   ; middle node failed -> r keeps its previous value
+```
+
+  When the pipeline fails (false condition, or a `?T` node that short-circuited) **the assignment does not happen**: the variable keeps its previous value, or the type's zero value if this is its first binding. That matches the statement form — `{ 1 > 2 -> x = 42 }` also leaves `x` alone.
+
+  The value's type is inferred from the arm's trailing expression (`str` / `i64` / `?T` all work), sharing the inference used by the existing match-as-value form `x = subject: { arms }`.
 
 ### If / Else
 
@@ -1025,6 +1258,11 @@ swap = (a i64, b i64) (x i64, y i64) {
 ; Multiple assignment
 a, b = swap(5, 3)
 
+; Use _ to ignore return values you do not need (placeholder variable)
+_, b = swap(5, 3)   ; take only the second value, ignore the first
+a, _ = swap(5, 3)   ; take only the first value, ignore the second
+_, _ = swap(5, 3)   ; ignore every return value (the call is made for its side effects)
+
 ; Also supported as the body of a match arm
 val: {
     ok -> a, b = parse-pair(it)
@@ -1075,19 +1313,22 @@ Internally, a slice only records a pointer to the original buffer, a length, and
 ; Supports ranges, consistent with for <- notation
 nums [5]u8 = [0, 1, 2, 3, 4]
 
-nums[..] ;  [0 1 2 3 4]
-nums[1..] ; [1 2 3 4]
-nums[..4] ; [0 1 2 3 4]
-nums[2..3] ; [2 3]
-nums[1..3] ; [1 2 3]
-nums[1..3) ; [1 2]
-nums(1..3) ; [2]
+nums[..] ;  [0 1 2 3 4]   fully unbounded, equivalent to the whole slice
+nums[1..] ; [1 2 3 4]     no upper bound, from index 1 to the end
+nums[..4] ; [0 1 2 3 4]   no lower bound, from the start to index 4
+nums[2..3] ; [2 3]        bounded, both ends inclusive
+nums[1..3] ; [1 2 3]      bounded, both ends inclusive
+nums[1..3) ; [1 2]        left-closed, right-open
+nums(1..3) ; [2]          both ends exclusive
 
-; String
+; String (the slice result has type str view and shares the underlying memory; indices are code-point positions, consistent with s[i])
 s = 'abc'
 s[1..]   ; 'bc'
 s[1..s.len()) ; 'bc'
+b str = s[0..1]   ; the slice result is already str, so it can be assigned to a str variable directly
 ```
+
+> Slice syntax supports the same 16 range combinations as match/range-for. In a slice context, unbounded ranges are relative to the slice's length: `[..]` means the whole slice, `[a..]` means from index a to the end, and `[..b]` means from the start to index b.
 
 **Types and methods of slices:**
 
@@ -1127,8 +1368,8 @@ view[0] = 99         ; modify an element of view
 
 ```no
 
-; Get a char from a string (character, not byte)
-str[i]
+; String indexing → returns char (a Unicode code point, not a byte)
+c char = str[i]
 
  ; Get an element from arr or vec
 arr[i]
@@ -1138,6 +1379,76 @@ vec[i]
 map[str]
 
 ```
+
+> **The type of `str[i]` is `char`** (a Unicode code point); **the slice `str[a..b]` returns `str`** (a code-point-semantics view that shares the underlying memory).
+> A `char` **converts implicitly to `str`** (encoded as a single-character string), so all of the following are legal — there is no need to call `char.to-str()` by hand:
+
+```no
+s = 'héllo'
+c char = s[1]               ; 'é' (a char whose code point is 233)
+a str  = s[1]               ; 'é' (implicit char → str conversion)
+b str  = s[0..1]            ; 'hé' (the slice result already is str)
+msg    = 'first: ' - s[0]   ; concatenating (-) a char converts it to str implicitly
+ok     = s[0] == 'h'        ; comparing a char with a str converts it to str implicitly
+```
+
+### Safe Indexing
+
+For a direct index `v[i]` on `arr` / `vec` / `slice` (`[]T`), an out-of-range index aborts outright in the ordinary form (runtime error: index out of bounds). Nolang provides three **safe** forms that guarantee no silent crash on out-of-range access:
+
+**1. `x ?= v[i]` — propagate the error upwards**
+
+Safe indexing treats `v[i]` as an operation returning `?elem`: out of range yields `None`, otherwise `some(element)`. Combined with `?=` unwrapping, the out-of-range error propagates upwards automatically (when the function returns `?T`).
+
+```no
+safe-get = (arr []i64, i i64) (res ?i64) {
+    x ?= arr[i]   ; out of range → res = None (no crash)
+}
+```
+
+**2. `x = v[i] #{index-out=DEF}` — substitute a literal default when out of range**
+
+With the `#{index-out=DEF}` annotation (on its own line above the assignment, or trailing on the same line), an out-of-range index does not crash; it substitutes `DEF` instead. `DEF` **must be a literal**, and the kinds allowed depend on the container's element type:
+
+- Integer / character containers (`i8`~`i128`, `u8`~`u128`, `byte`, `char`): an integer or character literal, e.g. `0`, `'x'`
+- Floating-point containers (`f32`, `f64`): a float literal, e.g. `0.0`
+- Boolean containers (`bool`): `true` / `false`
+- String containers (`str`): a string literal, e.g. `''`
+
+```no
+get-default = (arr []i64, i i64) (res i64) {
+    res = arr[i]  #{index-out=0}   ; out of range → res = 0
+}
+
+get-ch = (arr []byte, i i64) (res byte) {
+    res = arr[i]  #{index-out=0}   ; byte container defaults to 0
+}
+```
+
+> The annotation may also go on its own line above the assignment: `#{index-out=0}` ⏎ `res = arr[i]`. Writing it on the **same line in front of** the assignment (`#{index-out=0} res = arr[i]`) is an error (see "Annotation Placement").
+
+**3. A bare `x = v[i]` inside a function returning an option — automatically rewritten to `?=`**
+
+When the enclosing function returns a `?T` result, a bare safe-index assignment `x = v[i]` is rewritten automatically to `x ?= v[i]`, so an out-of-range index propagates upwards (equivalent to writing `?=` by hand):
+
+```no
+auto-prop = (arr []i64, i i64) (res ?i64) {
+    x = arr[i]   ; automatically equivalent to x ?= arr[i]; out of range → res = None
+}
+```
+
+`vec` (including an unannotated local produced by `to-vec()`) is just as safe:
+
+```no
+get-vec-default = (a [4]i64, i i64) (res i64) {
+    v = a.to-vec()          ; v's element type is derived from a, no annotation needed
+    res = v[i]  #{index-out=0}   ; out of range → res = 0 (no crash)
+}
+```
+
+> **Scope:** safe indexing only applies to a **direct variable index** on `arr` / `vec` / `slice` (`v[i]`, where `v` is an identifier). Indexing a `str` / `txt` still returns a character (different semantics); `receiver.field[i]` (indexing a struct field) goes through the original bounds-check path and is not rewritten into the safe form.
+>
+> **Core guarantee:** whichever form you use, an out-of-range index never makes the program crash silently — it either returns `None`, returns the default value, or propagates the error upwards.
 
 ## Structs
 
@@ -1158,6 +1469,50 @@ u.age = 25
 print(u.name)
 ```
 
+### Structs Implementing Interfaces
+
+A struct can implement one or more interfaces; the interface names follow the struct name, separated by commas.
+
+```no
+; Implement a single interface
+user json {
+    name str
+    age i64
+}
+
+; Implement multiple interfaces
+file enter, leave {
+    path str
+    fd i64
+}
+```
+
+#### Cross-Module Interface Implementation
+
+When implementing an interface defined in **another module**, the interface name must carry the module prefix (`ShortName.`). See [Cross-Module Call Prefix](module.md).
+
+```no
+; ❌ Wrong: db, rows and stmt are interfaces defined by the sql module; the prefix cannot be omitted
+db-mysql db {
+    fd i64
+}
+
+; ✅ Correct: use sql.db, sql.rows, sql.stmt
+db-mysql sql.db {
+    fd i64
+}
+
+rows-mysql sql.rows {
+    fd i64
+}
+
+stmt-mysql sql.stmt {
+    fd i64
+}
+```
+
+> Built-in interfaces (`enter`, `leave`) and interfaces defined in the same file need no module prefix.
+
 ## Methods
 
 Methods are defined on types and use `.` to reference the receiver.
@@ -1176,6 +1531,11 @@ type.method-name = (params) (results) {
 2. The receiver does not need to be declared as an explicit parameter; it is referenced via `.` within the method body
 3. Calls use the `receiver.method(args)` syntax
 4. Return values are placed in the second set of parentheses, consistent with ordinary functions
+5. **Syntactic-sugar desugaring**: `type.method = (inputs) (rest-outputs...) {}` is equivalent to the ordinary
+   function `method = (inputs) (self type, rest-outputs...) {}`. When `instance.method(args)` is called, the
+   instance binds to the first parameter of the output list, `self`; inside the body `.` refers to the output
+   slot `self`; writes to `self` modify the original instance directly. The remaining outputs in the list
+   (everything except `self`) may optionally be received by destructuring, or simply dropped.
 
 ### Example
 
@@ -1289,23 +1649,81 @@ struct-name {
 }
 ```
 
-### Enum Value References
+### Tagged Enums (with Payload)
 
-**Rule: Enum values must be referenced using the qualified `EnumType.value` form; bare values cannot be used directly.**
-This prevents naming conflicts and also prevents external packages from using the concrete values directly.
+A variant may carry named payload fields, written in the parenthesized form `variant(field type)`; a payload-less variant is written as a bare name.
+A single variant may carry **multiple** fields (a multi-field payload is represented on the heap as a synthesized struct):
 
 ```no
-; ❌ Wrong: using a bare value directly
-kind = null
-yes = e.is(io)
+; Tagged enum: variants may carry a payload; tags are 0,1,2... in declaration order
+result {
+    ok(v t),        ; has a value: payload field v of type t
+    nil,            ; null value: no payload
+    err(e str),     ; error: payload field e of type str
+}
 
-; ✅ Correct: using the qualified form
-kind = json-kind.null
-yes = e.is(code.io)
+shape {
+    circle(r f64),           ; single field
+    rect(w f64, h f64),      ; multiple fields
+    dot,                     ; no payload
+}
 ```
 
-> Enum types can be used as struct field types, function parameter types, and return value types.
-> Both inside and outside the module that defines an enum, enum values should be referenced using the `EnumType.value` form.
+In a match, the variant name is used as the arm pattern; a variant with a payload can destructure-bind its payload (multiple fields bind positionally, one to one):
+
+```no
+r result = ok(42)
+r: {
+    ok(v) -> print(v)    ; bind ok's payload to v
+    nil -> print('empty')
+    err(e) -> print(e)
+}
+
+s shape = rect(3.0, 4.0)
+s: {
+    circle(r) -> print(r)        ; bind the single field
+    rect(w, h) -> print(w * h)   ; bind multiple fields positionally
+    dot -> print('dot')
+}
+```
+
+A variant can also be constructed directly in **expression position**, as a function argument or as another variant's payload:
+
+```no
+x f64 = perimeter(rect(3.0, 4.0))   ; constructed inline and passed as an argument
+o outer = wrap(a(5))                ; an enum payload that is itself another enum
+```
+
+> **Namespaces and bare-name resolution**: internally the compiler registers variants under a
+> fully-qualified name (`module.Enum.variant`, e.g. `option.option.ok`, `some-mod.my-result.ok`), so
+> same-named variants of different enums never collide. Users only write the bare name (`ok`, `rect`),
+> and the compiler fills in the full name **from the static type of the variable being matched or
+> constructed**. Two enums can therefore both have an `ok` variant with different tag orders and still
+> be told apart correctly.
+>
+> The older space-separated form `ok t` may also be written; it is equivalent to `ok(v t)` (the field name omitted).
+> A tagged enum's variant names are registered in the compiler's enum-variant table for matching and exhaustiveness checking.
+
+### Built-in Tagged Enums (`#{buildin}`)
+
+Prefixing a tagged enum with `#{buildin}` marks it as a **built-in enum**: its variants (names, order,
+payload types) are used for matching and exhaustiveness checking, but the underlying representation and
+construction come from the runtime/builtin — **no user-visible struct/union is generated**. `?t` option
+is declared this way:
+
+```no
+; src/std/option.no
+#{buildin}
+option {
+    ok(v t),
+    nil,
+    err(e str),
+}
+```
+
+`option`'s tags are `0=ok`, `1=nil`, `2=err` in that order, matching the built-in option representation.
+Users do not need to declare option themselves; the `#{buildin}` here makes the built-in option's
+variant source single-sourced (see "Nullable Types (option)").
 
 ### Enum Annotations and Memory Layout
 
@@ -1503,6 +1921,24 @@ End-to-end coverage lives in `tests/test-field-inline-annotation.no`.
 > | `#{inline}` / `#{inline=true}` | `%pt` | `%pt` |
 > | `#{inline=false}` | `ptr` | `ptr` |
 
+### Enum Value References
+
+**Rule: Enum values must be referenced using the qualified `EnumType.value` form; bare values cannot be used directly.**
+This prevents naming conflicts and also prevents external packages from using the concrete values directly.
+
+```no
+; ❌ Wrong: using a bare value directly
+kind = null
+yes = e.is(io)
+
+; ✅ Correct: using the qualified form
+kind = json-kind.null
+yes = e.is(code.io)
+```
+
+> Enum types can be used as struct field types, function parameter types, and return value types.
+> Both inside and outside the module that defines an enum, enum values should be referenced using the `EnumType.value` form.
+
 ## enter/leave
 
 Types that implement the `enter` / `leave` interfaces are automatically called when the scope is entered and left:
@@ -1538,6 +1974,21 @@ read-file = () {
 Adding `?` before a type indicates a nullable type:
 
 A nullable type variable can legitimately hold a null value or an error value; the compiler will perform the corresponding null checks.
+
+`?t` is a built-in tagged enum whose variants are defined in `src/std/option.no`:
+
+```no
+#{buildin}
+option {
+    ok(v t),        ; tag 0: has a value
+    nil,            ; tag 1: null value
+    err(e str),     ; tag 2: error
+}
+```
+
+`#{buildin}` means the underlying representation and construction are provided by the built-in runtime (the `%option`
+type, and the `ok(...)`/`nil`/`err(...)` constructors); the `option` enum declaration exists only for matching and
+exhaustiveness checking. See "Tagged Enums" and "Built-in Tagged Enums".
 
 ```no
 
@@ -1624,11 +2075,298 @@ val: {
 
 **Exception:** When a function needs to return multiple independent values (such as `(name str, value str, ok bool)`), the multiple-return-value pattern may be retained.
 
+## Integer Overflow (the `#{overflow}` Annotation)
+
+Nolang has no panic — any operation that could overflow must be handled with an `option` or an explicit annotation,
+and an integer overflow is never thrown as a runtime exception. The overflow behaviour of the following **integer
+arithmetic operations** is controlled by the `#{overflow = ...}` annotation:
+
+- Signed and unsigned **`+` `-` `*`**: applies whenever the operands are integers (including `int` literals);
+- Signed **`/`**: only `INT_MIN / -1` can overflow (unsigned division `a/b ≤ a` never overflows and is not affected).
+
+> The `+ - *` of unsigned integers (`u8`/`u16`/`u32`/`u64`/`u128`) **follow exactly the same rules** as signed
+> integers: unannotated, they also default to returning `option<int>`, with overflow → `err`. This is a deliberate
+> design choice — "if it cannot be proven at compile time that overflow is impossible, treat it by the same rules".
+
+| Mode | Annotation | On overflow | Return type | Suitable for |
+| --- | --- | --- | --- | --- |
+| **Default (unannotated)** | — | overflow → `err`, otherwise → `ok(value)` | `option<int>` | operations that need overflow detection |
+| **Wrap** | `#{overflow = wrap}` | silent two's-complement wrap | `int` (plain) | hashing, cryptography, counters — semantics that tolerate wrapping |
+| **Clamp to zero** | `#{overflow = clamp0}` | overflow (above or below) becomes `0` | `int` (plain) | semantics where a difference must not go negative (e.g. a remaining amount) |
+| **Clamp to minimum** | `#{overflow = min}` | overflow clamps to the type's minimum | `int` (plain) | counter lower bounds, index protection |
+| **Clamp to maximum** | `#{overflow = max}` | overflow clamps to the type's maximum | `int` (plain) | capacity limits, saturating accumulation |
+| **Saturate** | `#{overflow = saturate}` | above → maximum, below → minimum | `int` (plain) | signal/colour saturation, etc. |
+
+All modes also support a **type-prefixed form** that pins the saturation bound to a specific narrow type, e.g.
+`#{overflow = u8-max}`, `#{overflow = i8-min}`, `#{overflow = u16-saturate}`. When the annotation appears at
+function level, the prefixed type applies to every matching operation in that function body.
+
+> **Annotation granularity**: placed **above a function definition**, `#{overflow = ...}` applies to every applicable
+> integer operation in the whole function body (function level); placed **above a single binding**, it applies only to
+> the one operation statement that immediately follows (statement level). An annotation only affects the first
+> definition/binding after it.
+
+> **LSP quick fix**: the editor (nolang-lsp) raises a Hint (`nolang-overflow`) on unannotated integer arithmetic and
+> offers five quickfixes — **Add `#{overflow = wrap}`** / **`clamp0`** / **`min`** / **`max`** / **`saturate`** — which
+> insert the corresponding annotation above the statement holding the operation, using that line's indentation,
+> turning the default `option<int>` result into a plain `int`.
+
+### Default: returns `option<int>`
+
+Unannotated, the result type of `a - b` is `option<int>`. The receiver must be a `?T` (nullable type), and a match
+must destructure the three branches `err` / `nil` / `ok`:
+
+```no
+main = () {
+    x i64 = 100
+    d ?i64 = x - 1          ; default: returns option<i64>
+    d: {
+        err -> print(-1)    ; overflow (e.g. x - 2^63 underflow)
+        nil -> print(0)
+        -> print(1)         ; ok(value): the normal result
+    }
+}
+main()
+```
+
+> `%option`'s `data` field is an `i64`; a narrow type's result (`i8`/`i16`/`i32`) is sign-extended (sext) before being
+> stored, and truncated back to its original width on unwrap.
+
+### wrap: silent wrapping
+
+```no
+#{overflow = wrap}
+sub-wrap = (a i64, b i64) (r i64) {
+    r = a - b              ; silently wraps (two's complement) on overflow; returns plain i64
+}
+```
+
+Statement level:
+
+```no
+x i64 = -9223372036854775807
+#{overflow = wrap}
+w i64 = x - 2             ; underflow wraps → 9223372036854775807
+print(w)
+```
+
+### clamp0: overflow becomes zero
+
+```no
+x i64 = -9223372036854775807
+#{overflow = clamp0}
+c i64 = x - 2             ; underflow → 0 (overflow also becomes 0)
+print(c)
+```
+
+### min / max / saturate: saturating clamps
+
+These three modes "squeeze" an overflowing result into the type's representable range instead of wrapping or zeroing:
+
+```no
+#{overflow = min}
+floor = (a i64, b i64) (r i64) {
+    r = a - b              ; underflow → i64 minimum; overflow → i64 maximum
+}
+
+#{overflow = max}
+cap = (a i64, b i64) (r i64) {
+    r = a * b              ; overflow → i64 maximum; underflow → i64 minimum
+}
+
+#{overflow = saturate}
+sat = (a i64, b i64) (r i64) {
+    r = a + b              ; overflow → max, underflow → min
+}
+```
+
+The type-prefixed form pins the saturation bound for a narrow type precisely (a function-level annotation applies to
+every matching operation in the body):
+
+```no
+#{overflow = u8-max}
+inc = (x u8) (r u8) {
+    r = x + 1              ; x = 255 overflows → 255 (instead of wrapping to 0)
+}
+
+#{overflow = i8-min}
+dec = (x i8) (r i8) {
+    r = x - 1              ; x = -128 underflows → -128 (instead of wrapping to 127)
+}
+```
+
+### Compiler Enforcement
+
+- An unannotated integer operation assigned to an **explicitly plain `int`** variable is a compile error
+  (`cannot assign ?i64 value to i64 variable`), forcing you to add `#{overflow = wrap}` / `#{overflow = clamp0}` /
+  `#{overflow = min}` / `#{overflow = max}` / `#{overflow = saturate}` (or a type-prefixed form), or to use a named `?T`.
+- An unannotated integer operation assigned to a variable with **no type annotation** (`d = x - 1`) is a compile error
+  that suggests adding the annotation or declaring `?i64`, so that invalid IR is never produced.
+- Unsigned integer operations (`u8`/`u16`/`u32`/`u64`/`u128`) are **subject to the same mechanism**: unannotated,
+  `+ - *` default to returning `option<int>` with overflow → `err`, matching the signed rules.
+- `i128` operations do not support the `option` path (the data field is only `i64`) and uniformly fall back to silent
+  wrapping to preserve correctness.
+
+> **Why is the default `option` rather than `wrap`?** Silent wrapping hides overflow bugs; returning an `option` by
+> default forces the caller to handle overflow explicitly (or to annotate `wrap` and declare "I accept wrapping
+> semantics"), turning "is overflow acceptable here?" into a visible design decision.
+
+### Error Propagation (the `?=` Operator)
+
+When a function returns an option type, the `?=` operator can unwrap the option automatically and throw the error
+upwards, simplifying error handling.
+
+**Syntax:**
+
+```no
+v ?= expr
+```
+
+**Semantics:**
+- If `expr` returns `ok(value)`, `v` is assigned the unwrapped inner value (automatic unwrap)
+- If `expr` returns `nil` or `err`, the current function's option result parameter is set to that value and `return` runs (automatic propagation)
+
+**Restriction:** `?=` can only be used inside a function that has an option-typed result parameter. If the current function has no option result parameter, the compiler reports an error.
+
+**Example:**
+
+```no
+; Read a file line by line and process it — using ?= to simplify error propagation
+process-file = (path str) (result ?str) {
+    result = nil
+    f ?= open(path)             ; on failure, result = f automatically; return
+    line ?= f.read-line()      ; EOF or error propagates automatically
+    result = line
+}
+```
+
+The equivalent expanded form (the match chain the compiler generates automatically):
+
+```no
+process-file = (path str) (result ?str) {
+    result = nil
+    __tmp = open(path)
+    __tmp: {
+        nil || err -> {
+            result = __tmp
+            return
+        }
+        -> f = it
+    }
+    __tmp2 = f.read-line()
+    __tmp2: {
+        nil || err -> {
+            result = __tmp2
+            return
+        }
+        -> line = it
+    }
+    result = line
+}
+```
+
+**Chained use:** several `?=` can be chained to achieve pipeline-style error propagation:
+
+```no
+pipeline = (input str) (result ?str) {
+    result = nil
+    a ?= step1(input)     ; propagate on failure
+    b ?= step2(a)         ; propagate on failure
+    result = b
+}
+```
+
+**Bare arithmetic:** the right-hand side of `?=` is not limited to function calls — any integer operation returning an
+`option` (an unannotated `a - b`, `a + b`, `a * b`) can be propagated directly with `?=`, without binding it to an
+intermediate variable first:
+
+```no
+; on overflow, result = err automatically; return; otherwise v unwraps to the inner value
+sub-safe = (a i64, b i64) (result ?i64) {
+    result = nil
+    v ?= a - b          ; underflow/overflow → err propagates; otherwise v = the inner i64
+    result = v
+}
+
+add-safe = (a i64, b i64) (result ?i64) {
+    result = nil
+    v ?= a + b          ; same as above; applies to + * and signed /
+    result = v
+}
+```
+
+Equivalent expansion (generated automatically by the compiler):
+
+```no
+sub-safe = (a i64, b i64) (result ?i64) {
+    result = nil
+    __unwrap = a - b            ; option<i64>
+    __unwrap: {
+        nil -> { result = __unwrap; return }
+        err -> { result = __unwrap; return }
+        -> v = it               ; ok(value): unwrap the inner value
+    }
+    result = v
+}
+```
+
+**Compound RHS:** the right-hand side of `?=` may be a compound expression with several option operands. Every option
+operand is unwrapped automatically and a propagation guard is injected — if any operand is `nil` / `err`, the current
+function's option result parameter is set to that value and `return` runs (propagating upwards); only if all succeed is
+the inner value assigned to the LHS:
+
+```no
+sum3 = () (result ?i64) {
+    result = nil
+    a ?i64 = ok(10)
+    b ?i64 = ok(20)
+    c ?i64 = ok(30)
+    total ?= a + b + c          ; every option operand is unwrapped and propagated automatically
+    result = total
+}
+
+comp = () (result ?i64) {
+    result = nil
+    a ?i64 = ok(4)
+    b ?i64 = ok(6)
+    v ?= dbl(a + b)            ; a + b may be an option; it is likewise unwrapped and propagated automatically
+    result = v
+}
+```
+
+> Only options in an **operand position** are unwrapped automatically (e.g. `a + b + c`, `f(b + c)`); an option
+> variable passed directly as a function argument is not — it follows the existing bare-option-argument exemption for
+> `?=` (`a ?= f(v)`, where `v` is `?i64` and `f` takes a plain `i64`).
+
+**Non-option RHS is an error:** to avoid accidentally writing `=` as `?=` on a large scale, when the right-hand side can
+be determined at compile time to be "definitely not an option", the compiler reports an error and suggests using `=`:
+
+- Literals: `v ?= 42`
+- Constant-foldable integer arithmetic: `v ?= 10 + 20`
+- A local variable of known, non-option type: `v ?= x` (where `x i64 = 5`)
+
+The message looks like: `` `?=` RHS `42` is not an option — use `=` instead ``.
+
+> An arithmetic operation is treated as "possibly an option" — and therefore allowed — as soon as any operand is an
+> option (or of unknown type, or a function call that may return an option), so there is no false positive: for example
+> `v ?= a + b + c` (a/b/c are `?i64`) or `v ?= b + c` (b/c of unknown type) both compile fine.
+
+**Applicable scenarios:**
+- Container operations that may be empty, such as `pop` / `peek` → `?t` (`nil` = empty)
+- I/O operations such as `read-line` / `read-byte` → `?str` / `?i64` (`nil` = EOF, `err` = error)
+- Lookup operations such as `lookup` / `get` → `?t` (`nil` = not found)
+- Parsing operations such as `parse` / `from-str` → `?t` (`nil` = empty, `err` = invalid input)
+- Network connections such as `accept` / `dial` → `?conn` (`nil` = no connection, `err` = error)
+
+**nil vs err:** use `nil` when the absence is a normal/expected result (empty stack, missing key, EOF); use `err('msg')` when the absence represents an actual error state (I/O failure, invalid input, connection refused).
+
+**Exception:** when a function needs to return several independent values (such as `(name str, value str, ok bool)`), the multiple-return-value pattern may be kept.
+
 ### Generics
 
 ```no
 arr_to_vec = (arr [n]t) (out []t) {
-    for i in [0..n) {
+    i <- [0..n): {
         out[i] = arr[i]
     }
 }
@@ -1849,11 +2587,27 @@ Multiple key-value pairs are separated by commas:
 #{derive=[Serialize, Deserialize], range=[0..256), max=100, debug}
 ```
 
-Range syntax supports four bracket combinations:
-- `[a..b]` — closed at both ends
-- `[a..b)` — left-closed, right-open
-- `(a..b)` — open at both ends
-- `(a..b]` — left-open, right-closed
+Range syntax supports 16 bracket combinations (the rule: `[` includes the left endpoint, `(` excludes it; `]` includes the right endpoint, `)` excludes it):
+
+**Bounded (4)** — both ends have a value:
+- `[a..b]` — closed at both ends (`x >= a && x <= b`)
+- `[a..b)` — left-closed, right-open (`x >= a && x < b`)
+- `(a..b]` — left-open, right-closed (`x > a && x <= b`)
+- `(a..b)` — open at both ends (`x > a && x < b`)
+
+**No upper bound (4)** — the right endpoint is omitted:
+- `[a..]`, `[a..)` — left-inclusive, no upper bound (`x >= a`)
+- `(a..]`, `(a..)` — left-exclusive, no upper bound (`x > a`)
+
+**No lower bound (4)** — the left endpoint is omitted:
+- `[..b]`, `(..b]` — no lower bound, right-inclusive (`x <= b`)
+- `[..b)`, `(..b)` — no lower bound, right-exclusive (`x < b`)
+
+**Fully unbounded (4)** — both ends omitted, based on the type's minimum/maximum:
+- `[..]` — type min ≤ x ≤ type max (both ends inclusive)
+- `[..)` — type min ≤ x < type max
+- `(..]` — type min < x ≤ type max
+- `(..)` — type min < x < type max
 
 #### Annotation Placement
 

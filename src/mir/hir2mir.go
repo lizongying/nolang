@@ -159,6 +159,14 @@ type lowerer struct {
 	// they are unaffected (no regression of the 260 MATCH tests).
 	exprCapture bool
 
+	// exprSinkInit is the binding's CURRENT value while a capture is lowered.
+	// The capture slot is seeded with it so a path that produces NO value —
+	// a false condition, or a `?T` node that short-circuited the pipeline —
+	// leaves the binding HOLDING ITS PREVIOUS VALUE instead of reading a slot
+	// that was never stored to (uninitialised stack). Set by the enclosing
+	// `let`/`assign` alongside exprCapture, NoVal when the binding is new.
+	exprSinkInit ValueID
+
 	// stmtVal carries the value produced by the most recent lowerStmt, so
 	// lowerBlock can return the LAST statement's value (needed to capture a
 	// match/if-arm's result into exprSink). Reset by lowerStmt at entry;
@@ -1168,8 +1176,14 @@ func (l *lowerer) typeOfNode(n *hir.Node) TypeID {
 			return l.b.Type(raw)
 		}
 		return l.inferredTypeOf(n)
-	case hir.KIntLit, hir.KCharLit, hir.KByteLit:
+	case hir.KIntLit, hir.KByteLit:
 		return l.b.Type("i64")
+	case hir.KCharLit:
+		// A char literal's value is produced by lowerCharLit with type `char`
+		// (i32). Reporting i64 here would type the node wider than the value
+		// actually materialized, so `c = 'A'` allocated an i64 slot and then
+		// tried to store an i32 into it.
+		return l.b.Type("char")
 	case hir.KFloatLit:
 		return l.b.Type("f64")
 	case hir.KBoolLit:
@@ -1377,13 +1391,14 @@ func (l *lowerer) isInlineableLetType(raw string) bool {
 	switch raw {
 	case "i64", "i32", "i16", "i8", "u64", "u32", "u16", "u8", "byte",
 		"bool", "f64", "f32", "double", "str", "txt",
-		// `char` is a scalar exactly like i64 (KindChar -> i64) and lowers the
-		// same way. Leaving it out made EVERY top-level `x char = <runtime
-		// value>` fall into the "non-inlineable" branch below and get dropped
-		// from the synthesized `main` entirely, so the name never bound and
-		// `print(x)` emitted nothing (codegen skipped the unresolved argument).
-		// That is the shape the new `s[i]`-returns-char semantics produce all
-		// the time (`c char = s[0]`), so it has to inline like any other scalar.
+		// `char` is a scalar like any other integer lane (KindChar -> i32) and
+		// lowers the same way. Leaving it out made EVERY top-level `x char =
+		// <runtime value>` fall into the "non-inlineable" branch below and get
+		// dropped from the synthesized `main` entirely, so the name never bound
+		// and `print(x)` emitted nothing (codegen skipped the unresolved
+		// argument). That is the shape the `s[i]`-returns-char semantics produce
+		// all the time (`c char = s[0]`), so it has to inline like any other
+		// scalar.
 		"char":
 		return true
 	}
@@ -1682,8 +1697,13 @@ func (l *lowerer) letTypeRaw(n *hir.Node) string {
 		switch cn.Kind {
 		case hir.KStructLit:
 			return l.pkg.Str(cn.S) // struct name, e.g. "fs.file"
-		case hir.KStrLit, hir.KCharLit:
+		case hir.KStrLit:
 			return "str"
+		case hir.KCharLit:
+			// A char literal is a `char` (i32 code point), NOT a str. This
+			// fallback previously mapped it to "str", which mistyped any
+			// top-level `c = 'A'` whose type could not be recovered elsewhere.
+			return "char"
 		case hir.KIntLit, hir.KByteLit:
 			return "i64"
 		case hir.KFloatLit:
@@ -2080,8 +2100,16 @@ func (l *lowerer) lowerStmt(id int32) {
 			// with capture active, so their arms converge into the same slot.
 			if cn != nil && cn.Kind == hir.KIf && name != "" {
 				savedCap := l.exprCapture
+				savedInit := l.exprSinkInit
 				l.exprCapture = true
 				l.exprSink = NoVal
+				// Seed for a path that produces no value (see exprSinkInit).
+				// A re-assignment keeps the binding's current value; a fresh
+				// binding has none and falls back to the slot's zero.
+				l.exprSinkInit = NoVal
+				if old, ok := l.locals[name]; ok {
+					l.exprSinkInit = old
+				}
 				l.lowerIf(cn)
 				if l.exprSink != NoVal {
 					l.locals[name] = l.exprSink
@@ -2097,6 +2125,7 @@ func (l *lowerer) lowerStmt(id int32) {
 				}
 				l.exprCapture = savedCap
 				l.exprSink = NoVal
+				l.exprSinkInit = savedInit
 				break
 			}
 			// An anonymous `{...}` initializer takes its struct type from the
@@ -2660,6 +2689,9 @@ func (l *lowerer) lowerIf(n *hir.Node) {
 	elseBlk := l.b.NewBlock("if.else")
 	mergeBlk := l.b.NewBlock("if.merge")
 	l.contStack = append(l.contStack, mergeBlk)
+	// initBlk dominates both arms; it is where the capture slot's seed has to
+	// be stored (see the seeding block at the end of this function).
+	initBlk := l.b.CurBlock
 	if condID != hir.NoID {
 		// An arm condition may be a tagged-enum variant pattern
 		// (`s: { circle(r) -> ... }`), which the parser desugars into an
@@ -2789,6 +2821,39 @@ func (l *lowerer) lowerIf(n *hir.Node) {
 	}
 	if l.mod.Block(elseBlk).Term == nil {
 		l.b.Terminate(OpBr, nil, []BlockID{mergeBlk}, "")
+	}
+
+	// Seed the capture slot in the block that DOMINATES both arms.
+	//
+	// captureArmValue creates the slot lazily, on the first arm that produces a
+	// value — which puts its zero-initialiser INSIDE that arm. Any path that
+	// skips the value-producing arm (a false condition, a `?T` pipeline node
+	// that short-circuited, a match with no arm matching) therefore read a slot
+	// that was never stored to, i.e. uninitialised stack. The garbage happened
+	// to be the arm's value often enough to hide it: `x = cond -> 42` printed
+	// 42 on the false path, and `x = print('F') -> might-fail(bad) -> 99`
+	// ignored the short circuit entirely.
+	//
+	// Seeding here — in initBlk, after the arms are known — is defined for
+	// every path: the arms overwrite it when they produce a value, and
+	// everything else reads either the binding's previous value or zero.
+	// (Appending an instruction to an already-terminated block is safe: MIR
+	// keeps Term separate from Insts and codegen emits Insts first.)
+	if l.exprCapture && l.exprSink != NoVal {
+		st := l.valueTypeOf(l.exprSink)
+		src := l.exprSinkInit
+		if src == NoVal || l.valueTypeOf(src) != st {
+			src = l.b.EmitInt(OpConst, st, 0, "")
+		}
+		savedBlk := l.b.CurBlock
+		l.b.SetBlock(initBlk)
+		// Owned seed: the binding's own slot still drops its copy, so the seed
+		// must own a separate one.
+		if l.isOwnedLocal(src) {
+			src = l.b.Emit(OpClone, st, []ValueID{src}, "")
+		}
+		l.b.EmitMoveInto(l.exprSink, src)
+		l.b.SetBlock(savedBlk)
 	}
 
 	// Pop OUR merge before deciding its fate so that any nested construct that
@@ -3388,7 +3453,7 @@ func (l *lowerer) lowerRangeFor(n *hir.Node, iterID int32, bodyID int32, pre Blo
 }
 
 // lowerStrRangeFor lowers `for c <- s` on a `str`: c is bound to each UTF-8
-// CODE POINT of s, in order, as an i64 `char` — the traversal counterpart of
+// CODE POINT of s, in order, as a `char` (i32) — the traversal counterpart of
 // the code-point indexed `s[i]` (see codegen.emitStrCpIndex and
 // docs/docs/lang/str.md).
 //
@@ -3927,7 +3992,9 @@ func (l *lowerer) foldConstText(n *hir.Node, gtype string) string {
 			cp = int64(r)
 			break
 		}
-		return fmt.Sprintf("i64 %d", cp)
+		// char is i32 (Unicode scalar value), so the global's declared type and
+		// its initializer must agree at that width.
+		return fmt.Sprintf("i32 %d", cp)
 	case hir.KBoolLit:
 		if n.Bool() {
 			return "i1 1"
@@ -4534,6 +4601,31 @@ func (l *lowerer) lowerExpr(id int32) ValueID {
 				}
 			}
 		}
+		// ORDERING comparison against a ONE-character string literal is a CHAR
+		// comparison (`'e' >= 'a'`, `'e' >= "a"`, `['a'..'m')`): fold the literal
+		// to its code point so both sides are integers. nolang has no
+		// lexicographic string comparison — without this the operands stayed
+		// %str-long, fell into the @str_eq path in codegen, and EVERY ordering
+		// comparison returned false (only `==` was ever meaningful).
+		// The checker (checker.ValidateStrOrdering) rejects the multi-character
+		// case at compile time, so a %str-long operand surviving here is a bug
+		// (codegen fails loudly rather than answering `false`).
+		// Equality is deliberately excluded: `s == 'A'` / `'ab' == 'ab'` are real
+		// string comparisons and must stay in the @str_eq path.
+		if isCmp && (srcOp == "<" || srcOp == "<=" || srcOp == ">" || srcOp == ">=") {
+			if sn := l.pkg.Node(lr[0]); sn != nil && sn.Kind == hir.KStrLit {
+				if b, ok := singleCharStrByte(l.pkg.Str(sn.S)); ok {
+					lv = l.b.EmitInt(OpConst, l.b.Type("i64"), b, "")
+					lStr = false
+				}
+			}
+			if sn := l.pkg.Node(lr[1]); sn != nil && sn.Kind == hir.KStrLit {
+				if b, ok := singleCharStrByte(l.pkg.Str(sn.S)); ok {
+					rv = l.b.EmitInt(OpConst, l.b.Type("i64"), b, "")
+					rStr = false
+				}
+			}
+		}
 		// `str <op> char` (`hi - "B"`) is concatenation with the character
 		// rendered as a ONE-character string, not as its decimal code — legacy
 		// uses byteToSingleCharStr here. Materialize the character as a str
@@ -4734,10 +4826,10 @@ func (l *lowerer) lowerRegexLit(n *hir.Node) ValueID {
 	return l.b.Emit(OpConst, reT, nil, "")
 }
 
-// lowerDotRead lowers a standalone field/property access `recv.field` to an
-// lowerCharLit lowers a character literal `'a'` to an i64 constant holding its
-// codepoint (Nolang char is a 64-bit codepoint, matching KindChar -> i64 in
-// codegen).
+// lowerCharLit lowers a character literal `'a'` to a `char` (i32) constant
+// holding its Unicode code point. Nolang char is a single Unicode scalar value
+// stored as i32 (matching KindChar -> i32 in codegen); a code point needs only
+// 21 bits, so i32 is exact.
 func (l *lowerer) lowerCharLit(n *hir.Node) ValueID {
 	s := strings.Trim(l.pkg.Str(n.S), "'")
 	var cp int64
@@ -7273,9 +7365,10 @@ func (l *lowerer) elemTypeOfType(ty *Type) TypeID {
 		}
 		// A str is `{len(bytes), cap, i8* data}`; `s[i]` reads the i-th CODE
 		// POINT as a nolang `char` (docs/docs/lang/str.md), not a byte. char
-		// lowers to i64 (KindChar -> i64), so the result is a full-width value
-		// and no i8->i64 promotion is needed. The raw type MUST be "char" and
-		// not "i64": it is the only carrier of the code-point identity, and it
+		// lowers to i32 (KindChar -> i32) — a code point fits in 21 bits — so
+		// the i64 the UTF-8 runtime returns is truncated into the i32 slot by
+		// emitStrCpIndex. The raw type MUST be "char" and not an integer
+		// spelling: it is the only carrier of the code-point identity, and it
 		// is what codegen.rawTypeOfValue consults to pick @str_from_cp (UTF-8
 		// encoding) over @str_from_i64 (decimal text) for the implicit
 		// `a str = s[0]` conversion — otherwise that printed "104" for "h".

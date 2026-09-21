@@ -1,6 +1,6 @@
 ---
 name: nolang-builtin
-description: Nolang 内建函数（builtin）注册与查找机制参考。用于理解 fs.read-file、os.get-env 等内建函数的注册位置、查找流程、模块前缀解析，以及编写或修改 builtin 注册代码、排查 builtin 找不到的问题。涵盖 src/builtin/ 下所有 Go 文件（os.go、fmt.go、math.go、str.go、net.go、process.go、database.go、async.go、bits.go、ffi.go 等）。
+description: Nolang 内建函数（builtin）注册与查找机制参考。用于理解 fs.read-file、os.get-env 等内建函数的注册位置、查找流程、模块前缀解析，以及编写或修改 builtin 注册代码、排查 builtin 找不到的问题。涵盖 src/builtin/ 下所有 Go 文件（os.go、fmt.go、math.go、str.go、net.go、process.go、async.go、bits.go、vec.go 等）。
 ---
 
 # Nolang Builtin Function Mechanism
@@ -27,11 +27,13 @@ src/builtin/
 ├── str.go           # with-cap, with-len, with-cap-len
 ├── net.go           # net-listen, net-dial, net-accept, etc.
 ├── process.go       # process-exec, process-kill, process-dup2, etc.
-├── database.go      # db-open, db-exec, db-query, etc.
 ├── async.go         # async-cancel, async-cancelled, async-yield
 ├── bits.go          # rotate-left, rotate-right, load-le-u16/u32/u64
-└── ffi.go           # ffi-cstr-at, ffi-cstr-at-int, ffi-cstr-at-float
+└── vec.go           # vec 容器内建（push 等）
 ```
+
+> 已删除（2026-09-21）：`database.go`（15 个 `db-*`）与 `ffi.go`（3 个 `ffi-cstr-*`）。
+> 原因见下文「半条命陷阱」——只注册、无 lowering。
 
 ### 3. BuiltinMethod 结构体
 
@@ -128,10 +130,11 @@ func FindBuiltinMethod(name string) *BuiltinMethod {
    - "read-file" 不是 moduleFns（不是 .no 文件中定义的函数）
    - 不改写，保持 DotExpression 原样
 
-4. build/llvm/expr.go codegen:
+4. MIR codegen (`src/mir/builtins.go` `lookupBuiltin` → `src/mir/builtin_call.go` `emitCall`):
    - 遇到 DotExpression { Receiver: Identifier, Property: string }
    - Receiver 是模块名 → 用 Property 裸名查 FindBuiltinMethod
    - 找到 → 按 ForwardFunc/CLibCall/LLVMIntrinsic 生成 IR
+   - 找不到 → 报 `'xxx' is not defined`
 ```
 
 ### 同名冲突处理
@@ -178,11 +181,42 @@ grep -r 'MethodName.*"read-file"' src/builtin/
    ; }
    ```
 
-3. 在 `src/build/llvm/expr.go` 或 `transpiler.go` 中实现 codegen 逻辑（ForwardFunc 的 case 分支）。
+3. 在 MIR 后端实现 lowering：`src/mir/forward_call.go` 的 `forwardCSpecs`（C 调用规格）加一项，
+   或在 `src/mir/builtin_call.go` 写专用 emitter（`emitBuiltin*`）。
+   ⚠️ **只做第 1 步不做第 3 步 = 半条命陷阱**，见下一节。legacy 后端 `src/build/llvm/` 已于
+   c7febdb（2026-09-16）整体删除，不要再往那里加东西。
 
 4. 在标准库 skill 文档（`nolang-std/SKILL.md`）中添加 API 说明。
 
 5. 运行 `no vet src/std` 确保无错误。
+
+## ⚠️ 半条命陷阱：只注册、无 lowering
+
+`src/builtin/` 的注册是**名字解析**的唯一来源；能不能真正生成 IR，取决于 MIR 有没有对应的
+lowering。两者脱钩时（注册在、lowering 没了）症状极坏：
+
+```
+$ ./bin/no vet x.no     # 0 error(s), 0 warning(s), 292 hint(s)   ← 看起来干净
+$ ./bin/no run x.no     # Error: ... EmitLLVM: unsupported builtin db-open
+```
+
+机制：`lookupBuiltin`（`src/mir/builtins.go:62`）按名字命中 `BuiltinMethodList` ⇒ MIR 认定它是
+内建、走内置 lowering ⇒ 没有 spec ⇒ 硬错。**lint/CI 给不出任何信号。**
+
+已发生的实例：`db-*`（15 个）与 `ffi-cstr-*`（3 个）。二者由 cb24869（2026-07-03）注册，
+lowering 写在 legacy `src/build/llvm/call_stdlib.go` 的 `callDatabase`；该目录随 c7febdb
+（2026-09-16）整体删除后**从未移植到 MIR**（`forwardCSpecs` 无对应项）。2026-09-21 已把这两组
+注册连同 `src/std/database/sql.no` 的 `#{buildin}` 桩一并删除并 `make gen` 重生 stdsig，
+调用方现在得到干净的 `'db-open' is not defined`。
+
+规则：
+
+- 新增 builtin **必须**同时有 MIR lowering，否则不要注册；
+- 判断某个 builtin 是否「活的」：`grep -rE '<ForwardFunc>' src/mir/`，空 = 死；
+- 纯 FFI 封装（SQLite/MySQL 之类的 C API）**不应该做成 builtin** —— 在驱动里用 `#{c}` 直呼，
+  见 `example/sqlite-driver`、`example/mysql-driver`；
+- 删 builtin 注册时，同步删 `src/std` 里对应的 `#{buildin}` 桩，再 `make gen` 重生 stdsig
+  （否则烘焙表里仍留着这些名字）。
 
 ## 常见问题排查
 

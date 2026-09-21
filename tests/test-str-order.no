@@ -1,0 +1,64 @@
+; test-str-order — ordering comparisons (< <= > >=) on one-character strings
+; and chars.
+;
+; nolang has no lexicographic string comparison: str only implements equality
+; (runtime @str_eq). So `a >= b` on str used to COMPILE and silently return
+; false — only `==` was ever meaningful. The rule now is:
+;
+;   - a ONE-character string literal ('a') is implicitly a char (its code
+;     point), so it may take part in < <= > >=
+;   - it may be compared with another one-char literal or with a char ("a")
+;   - a multi-character string (literal / str variable / call returning str)
+;     is rejected at compile time (checker.ValidateStrOrdering), and codegen
+;     fails loudly if one ever slips through
+;   - equality (== / !=) is unaffected: it is a real string comparison
+
+print('=== one-char string literals ===')
+print('e' >= 'a'); 1
+print('a' >= 'e'); 0
+print('e' > 'a'); 1
+print('a' < 'e'); 1
+print('e' <= 'a'); 0
+print('a' <= 'a'); 1
+
+print('=== one-char string vs char (implicit char either way) ===')
+print('e' >= "a"); 1
+print("e" >= 'a'); 1
+print("e" >= "a"); 1
+print('a' >= "e"); 0
+
+print('=== string equality / inequality is unaffected ===')
+print('a' == 'a'); 1
+print('ab' == 'ab'); 1
+print('ab' == 'cd'); 0
+print('ab' != 'cd'); 1
+
+print('=== iterating a string yields chars ===')
+s = 'Hi There'
+for ch <- s: {
+    {
+        ch >= 'a' && ch <= 'z' -> print('lower')
+    }
+
+    {
+        ch >= 'A' && ch <= 'Z' -> print('upper')
+    }
+
+    -> print('other')
+}
+
+print('=== range patterns still work (chars) ===')
+n i64 = 5
+n: {
+    [1..10) -> print('in range')
+
+    -> print('out of range')
+}
+c char = "m"
+c: {
+    ["a".."z") -> print('alpha')
+
+    -> print('not alpha')
+}
+
+print('=== done ===')

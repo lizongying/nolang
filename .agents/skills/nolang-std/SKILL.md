@@ -230,7 +230,7 @@ io.err('err-no-newline')       // Low-level command, no newline (stderr)
 
 #### char — Character Operations
 
-char is essentially i32 (Unicode code point), all operations are provided as methods:
+char is a single **Unicode scalar value** (valid range `0 ..= 0x10FFFF`), stored as **`i32`** — deliberately not i64 (a code point needs only 21 bits). All operations are provided as methods:
 
 ```no
 c char = 'A'
@@ -248,6 +248,10 @@ c.to-str()         // Unicode → string (UTF-8, method)
 ```
 
 > **`char` ↔ `str`:** `str[i]` returns `char`, and a `char` **implicitly converts to `str`** (UTF-8 encoded) — `a str = s[0]`, `'x' - s[0]`, and `s[0] == 'h'` all work without an explicit `char.to-str()`.
+>
+> **Storage & range:** `char` is stored as **i32** and must hold a valid code point (`0 ..= 0x10FFFF`); an out-of-range literal (`c char = 0x110000`) is a **compile-time error**. **char arithmetic is allowed and normal** (`z = a + 25`, `u = ch - 32`), evaluated at i32 width on the code point; unlike the integer family it does **not** default to `option<int>`, so it never triggers the unhandled-overflow error. For offsets/counters or wide/bignum math, convert to `i32`/`i64` first.
+>
+> **`str_from_cp(cp char) -> ?str`:** the source signature takes a `char`. Only when calling the external runtime is that i32 argument **zero-extended to i64** to match `@str_from_cp`'s IR parameter — a call-boundary conversion that does not make `char` itself an i64.
 
 #### str — String Operations
 
