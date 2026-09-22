@@ -1,5 +1,16 @@
 # 更新日誌
 
+## v0.3.1
+
+- feat(mir): add os.args builtins and improve fs.read-file result handling
+- feat(checker): add std method parameter type checking for method calls
+- fix(fmt): preserve index-out annotations and improve blank line handling
+- refactor(checker): add file context to integer overflow lint analysis
+- refactor(cmd): remove legacy overflow migration commands and tools
+- refactor(mysql-driver): standardize loop syntax and overflow annotations
+- refactor(mir_golden): improve subset run support and update safeguards
+- docs: update control flow syntax reference and remove database and ffi builtins
+
 ## v0.3.0
 
 - feat(mir): make MIR the default backend and retire the legacy LLVM backend
