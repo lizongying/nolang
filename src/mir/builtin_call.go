@@ -3608,18 +3608,22 @@ func (c *codegen) emitBuiltinGetGroups(inst *Inst) error {
 	c.sb.WriteString(fmt.Sprintf("  %s = alloca i64\n", ip))
 	c.sb.WriteString(fmt.Sprintf("  store i64 0, i64* %s\n", ip))
 
-	condL := c.treg("gg.wcond")
-	bodyL := c.treg("gg.wbody")
-	endL := c.treg("gg.wend")
+	// Labels are emitted through `%%%s` (the format adds the '%'), so they must
+	// come from c.label (bare name). Using c.treg here — which already returns a
+	// '%'-prefixed name — produced `br label %%gg.wcond<N>`, an IR parse error
+	// ("expected value token") on the first module that materialized getgroups.
+	condL := c.label("gg.wcond")
+	bodyL := c.label("gg.wbody")
+	endL := c.label("gg.wend")
 	c.sb.WriteString(fmt.Sprintf("  br label %%%s\n", condL))
-	c.sb.WriteString(fmt.Sprintf("%%%s:\n", condL))
+	c.sb.WriteString(fmt.Sprintf("%s:\n", condL))
 	i := c.treg("gg.i")
 	c.sb.WriteString(fmt.Sprintf("  %s = load i64, i64* %s\n", i, ip))
 	more := c.treg("gg.more")
 	c.sb.WriteString(fmt.Sprintf("  %s = icmp ult i64 %s, %s\n", more, i, cnt))
 	c.sb.WriteString(fmt.Sprintf("  br i1 %s, label %%%s, label %%%s\n", more, bodyL, endL))
 
-	c.sb.WriteString(fmt.Sprintf("%%%s:\n", bodyL))
+	c.sb.WriteString(fmt.Sprintf("%s:\n", bodyL))
 	sp := c.treg("gg.sp")
 	c.sb.WriteString(fmt.Sprintf("  %s = getelementptr [%d x i32], [%d x i32]* %s, i64 0, i64 %s\n", sp, getGroupsCap, getGroupsCap, buf, i))
 	sv := c.treg("gg.sv")
@@ -3637,7 +3641,7 @@ func (c *codegen) emitBuiltinGetGroups(inst *Inst) error {
 	c.sb.WriteString(fmt.Sprintf("  %s = add i64 %s, 1\n", i1, i))
 	c.sb.WriteString(fmt.Sprintf("  store i64 %s, i64* %s\n", i1, ip))
 	c.sb.WriteString(fmt.Sprintf("  br label %%%s\n", condL))
-	c.sb.WriteString(fmt.Sprintf("%%%s:\n", endL))
+	c.sb.WriteString(fmt.Sprintf("%s:\n", endL))
 
 	// --- build the %vec { len, cap, data } ---------------------------------
 	lenGEP := c.treg("gg.lgep")

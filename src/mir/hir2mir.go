@@ -7292,17 +7292,23 @@ func (l *lowerer) lowerCallArgs(n *hir.Node, recvV ValueID, callee string) []Val
 		}
 	}
 	for i, a := range args {
-		// Seed the EXPECTED TYPE at an argument position so a tagged-enum
-		// variant constructor written inline can be resolved to its enum:
-		// `area(rect(2.0, 3.0))` only knows `rect` belongs to `shape` from the
-		// parameter's declared type (tests/tagged-enum.no). Restricted to
-		// parameters whose declared type IS a tagged enum, so no other call
-		// site changes the type hint it exposes to its argument expressions.
+		// The EXPECTED TYPE at an argument position is the CALLEE's declared
+		// parameter type — NOT the enclosing statement's hint. Letting the
+		// statement hint through leaked an OPTION type into plain-`T`
+		// parameters: in `r = fs.read-str(files[fi])` the binding `r` is
+		// inferred `?str` (read-str returns ?str), that hint reached the
+		// `files[fi]` argument, and the index then lowered as a SAFE index
+		// yielding `?str`, which was stored into read-str's plain-`str`
+		// parameter slot — opt-verify: "%lv defined with type '%option' but
+		// expected '%str-long'". Seeding from paramRaws also covers the
+		// tagged-enum case this code originally existed for: `area(rect(2.0,
+		// 3.0))` only knows `rect` belongs to `shape` from the parameter's
+		// declared type (tests/tagged-enum.no).
 		saved := l.typeHint
 		if pi := i + argOffset; pi < len(paramRaws) {
 			if raw := paramRaws[pi]; raw != "" {
-				if _, isEnum := l.mod.TaggedEnums[raw]; isEnum {
-					l.typeHint = l.b.Type(raw)
+				if t := l.b.Type(raw); t != NoType && t != l.voidType {
+					l.typeHint = t
 				}
 			}
 		}

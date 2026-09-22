@@ -10,7 +10,11 @@
 ;   fields = csv.parse-line(line, 3)        // 限制最多 3 個欄位
 
 ; parse-field: 解析 CSV 中的一個欄位
-#{index-out=0}
+; 從 s[pos] 開始解析，處理雙引號和逗號
+; s str: CSV 文字
+; pos i64: 開始位置
+; 返回 field str: 解析出的欄位內容
+; 返回 new-pos i64: 解析後的新位置
 parse-field = (s str, pos i64) (field str, new-pos i64) {
     r-pos = pos
     fn = 0
