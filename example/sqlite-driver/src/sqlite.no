@@ -262,6 +262,7 @@ stmt-sqlite.exec = () (r sql.result) {
 stmt-sqlite.query = () (rs rows-sqlite) {
     rs.stmt = .handle
     rs.n-cols = _sqlite3-column-count(.handle)
+
     ; 借用 .handle：所有權仍在 stmt，rows.close 不得 finalize
     rs.owned = false
 }

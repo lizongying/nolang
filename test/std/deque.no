@@ -9,7 +9,12 @@
 
 t-init-empty = () {
     buf []i64 = with-len(16)
-    d = deque { buf: buf, cap: 16, head: 0, tail: 0 }
+    d = deque {
+        buf: buf
+        cap: 16
+        head: 0
+        tail: 0
+    }
     sz i64 = d.size()
     runner.eq(sz, 0, 'init size == 0')
     yes bool = d.empty()
@@ -18,7 +23,12 @@ t-init-empty = () {
 
 t-push-back-pop-front = () {
     buf []i64 = with-len(16)
-    d = deque { buf: buf, cap: 16, head: 0, tail: 0 }
+    d = deque {
+        buf: buf
+        cap: 16
+        head: 0
+        tail: 0
+    }
     d.push-back(10)
     d.push-back(20)
     d.push-back(30)
@@ -29,6 +39,7 @@ t-push-back-pop-front = () {
     v1 = d.pop-front()
     v1: {
         nil -> ok1 = false
+
         -> ok1 = v1 == 10
     }
     runner.is-true(ok1, 'pop-front 1st == 10')
@@ -37,6 +48,7 @@ t-push-back-pop-front = () {
     v2 = d.pop-front()
     v2: {
         nil -> ok2 = false
+
         -> ok2 = v2 == 20
     }
     runner.is-true(ok2, 'pop-front 2nd == 20')
@@ -47,7 +59,12 @@ t-push-back-pop-front = () {
 
 t-push-front-pop-back = () {
     buf []i64 = with-len(16)
-    d = deque { buf: buf, cap: 16, head: 0, tail: 0 }
+    d = deque {
+        buf: buf
+        cap: 16
+        head: 0
+        tail: 0
+    }
     d.push-front(10)
     d.push-front(20)
     d.push-front(30)
@@ -58,6 +75,7 @@ t-push-front-pop-back = () {
     v1 = d.pop-back()
     v1: {
         nil -> ok1 = false
+
         -> ok1 = v1 == 10
     }
     runner.is-true(ok1, 'pop-back 1st == 10')
@@ -66,6 +84,7 @@ t-push-front-pop-back = () {
     v2 = d.pop-back()
     v2: {
         nil -> ok2 = false
+
         -> ok2 = v2 == 20
     }
     runner.is-true(ok2, 'pop-back 2nd == 20')
@@ -73,7 +92,12 @@ t-push-front-pop-back = () {
 
 t-peek = () {
     buf []i64 = with-len(16)
-    d = deque { buf: buf, cap: 16, head: 0, tail: 0 }
+    d = deque {
+        buf: buf
+        cap: 16
+        head: 0
+        tail: 0
+    }
     d.push-back(100)
     d.push-back(200)
 
@@ -81,6 +105,7 @@ t-peek = () {
     pf = d.peek-front()
     pf: {
         nil -> ok1 = false
+
         -> ok1 = pf == 100
     }
     runner.is-true(ok1, 'peek-front == 100')
@@ -89,6 +114,7 @@ t-peek = () {
     pb = d.peek-back()
     pb: {
         nil -> ok2 = false
+
         -> ok2 = pb == 200
     }
     runner.is-true(ok2, 'peek-back == 200')
@@ -99,11 +125,17 @@ t-peek = () {
 
 t-pop-empty = () {
     buf []i64 = with-len(16)
-    d = deque { buf: buf, cap: 16, head: 0, tail: 0 }
+    d = deque {
+        buf: buf
+        cap: 16
+        head: 0
+        tail: 0
+    }
     is-nil1 bool = false
     v1 = d.pop-front()
     v1: {
         nil -> is-nil1 = true
+
         -> is-nil1 = false
     }
     runner.is-true(is-nil1, 'pop-front empty == nil')
@@ -112,6 +144,7 @@ t-pop-empty = () {
     v2 = d.pop-back()
     v2: {
         nil -> is-nil2 = true
+
         -> is-nil2 = false
     }
     runner.is-true(is-nil2, 'pop-back empty == nil')
@@ -119,7 +152,12 @@ t-pop-empty = () {
 
 t-clear = () {
     buf []i64 = with-len(16)
-    d = deque { buf: buf, cap: 16, head: 0, tail: 0 }
+    d = deque {
+        buf: buf
+        cap: 16
+        head: 0
+        tail: 0
+    }
     d.push-back(1)
     d.push-back(2)
     d.push-back(3)
@@ -143,5 +181,6 @@ total = runner.summary()
 f = runner.failed-count()
 {
     f > 0 -> os.exit(1)
+
     -> os.exit(0)
 }

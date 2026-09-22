@@ -1293,9 +1293,18 @@ func stmtTokenEndLine(stmt Statement) int {
 		return stmtExprEndLine(s.Expression)
 	case *FunctionDefinition:
 		// Use the function's body closing brace
+		if s.Body == nil {
+			// 防禦：解析失敗（缺參數串/缺函數體等）可能留下 nil Body。
+			// 回退到函數定義本身的行號，避免對 nil 解參考造成 panic
+			//（見 tmp/bug-comment/test-type.no 觸發的 SIGSEGV）。
+			return s.Token.Line
+		}
 		return s.Body.Token.Line
 	case *ForStatement:
 		// Use the for body's closing brace
+		if s.Body == nil {
+			return s.Token.Line
+		}
 		return s.Body.Token.Line
 	case *BreakStatement:
 		return s.Token.Line

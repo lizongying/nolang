@@ -29,6 +29,7 @@ t-push-pop = () {
     v1 = h.pop()
     v1: {
         nil -> ok1 = false
+
         -> ok1 = v1 == 1
     }
     runner.is-true(ok1, 'pop 1st == 1')
@@ -37,6 +38,7 @@ t-push-pop = () {
     v2 = h.pop()
     v2: {
         nil -> ok2 = false
+
         -> ok2 = v2 == 3
     }
     runner.is-true(ok2, 'pop 2nd == 3')
@@ -45,6 +47,7 @@ t-push-pop = () {
     v3 = h.pop()
     v3: {
         nil -> ok3 = false
+
         -> ok3 = v3 == 5
     }
     runner.is-true(ok3, 'pop 3rd == 5')
@@ -53,6 +56,7 @@ t-push-pop = () {
     v4 = h.pop()
     v4: {
         nil -> ok4 = false
+
         -> ok4 = v4 == 7
     }
     runner.is-true(ok4, 'pop 4th == 7')
@@ -72,6 +76,7 @@ t-peek = () {
     p = h.peek()
     p: {
         nil -> ok = false
+
         -> ok = p == 2
     }
     runner.is-true(ok, 'peek == 2 (minimum)')
@@ -87,6 +92,7 @@ t-pop-empty = () {
     v = h.pop()
     v: {
         nil -> is-nil = true
+
         -> is-nil = false
     }
     runner.is-true(is-nil, 'pop empty == nil')
@@ -95,6 +101,7 @@ t-pop-empty = () {
     p = h.peek()
     p: {
         nil -> is-nil2 = true
+
         -> is-nil2 = false
     }
     runner.is-true(is-nil2, 'peek empty == nil')
@@ -111,6 +118,7 @@ t-duplicates = () {
     v1 = h.pop()
     v1: {
         nil -> ok1 = false
+
         -> ok1 = v1 == 5
     }
     runner.is-true(ok1, 'dup pop 1st == 5')
@@ -119,6 +127,7 @@ t-duplicates = () {
     v2 = h.pop()
     v2: {
         nil -> ok2 = false
+
         -> ok2 = v2 == 5
     }
     runner.is-true(ok2, 'dup pop 2nd == 5')
@@ -139,5 +148,6 @@ total = runner.summary()
 f = runner.failed-count()
 {
     f > 0 -> os.exit(1)
+
     -> os.exit(0)
 }

@@ -14,7 +14,9 @@ t-parse-obj = () {
     ok bool = false
     j: {
         ok -> ok = true
+
         nil -> ok = false
+
         err -> ok = false
     }
     runner.is-true(ok, 'parse obj ok')
@@ -22,7 +24,9 @@ t-parse-obj = () {
     is-obj bool = false
     j: {
         ok -> is-obj = it.is-obj()
+
         nil -> is-obj = false
+
         err -> is-obj = false
     }
     runner.is-true(is-obj, 'parsed is-obj')
@@ -33,7 +37,9 @@ t-parse-arr = () {
     ok bool = false
     j: {
         ok -> ok = true
+
         nil -> ok = false
+
         err -> ok = false
     }
     runner.is-true(ok, 'parse arr ok')
@@ -41,7 +47,9 @@ t-parse-arr = () {
     is-arr bool = false
     j: {
         ok -> is-arr = it.is-arr()
+
         nil -> is-arr = false
+
         err -> is-arr = false
     }
     runner.is-true(is-arr, 'parsed is-arr')
@@ -52,7 +60,9 @@ t-parse-str = () {
     ok bool = false
     j: {
         ok -> ok = it.is-str()
+
         nil -> ok = false
+
         err -> ok = false
     }
     runner.is-true(ok, 'parse str ok')
@@ -63,7 +73,9 @@ t-parse-num = () {
     ok bool = false
     j: {
         ok -> ok = it.is-num()
+
         nil -> ok = false
+
         err -> ok = false
     }
     runner.is-true(ok, 'parse num ok')
@@ -74,7 +86,9 @@ t-parse-bool = () {
     ok bool = false
     j: {
         ok -> ok = it.is-bool()
+
         nil -> ok = false
+
         err -> ok = false
     }
     runner.is-true(ok, 'parse bool ok')
@@ -85,7 +99,9 @@ t-parse-null = () {
     ok bool = false
     j: {
         ok -> ok = it.is-null()
+
         nil -> ok = false
+
         err -> ok = false
     }
     runner.is-true(ok, 'parse null ok')
@@ -96,7 +112,9 @@ t-parse-error = () {
     is-err bool = false
     j: {
         ok -> is-err = false
+
         nil -> is-err = false
+
         err -> is-err = true
     }
     runner.is-true(is-err, 'parse empty -> err')
@@ -109,8 +127,12 @@ t-get-str = () {
     ok bool = false
     val str
     j: {
-        ok -> val, ok = it.get-str('name')
+        ok -> {
+            val, ok = it.get-str('name')
+        }
+
         nil -> ok = false
+
         err -> ok = false
     }
     runner.is-true(ok, 'get-str ok')
@@ -122,8 +144,12 @@ t-get-num = () {
     ok bool = false
     val f64 = 0.0
     j: {
-        ok -> val, ok = it.get-num('pi')
+        ok -> {
+            val, ok = it.get-num('pi')
+        }
+
         nil -> ok = false
+
         err -> ok = false
     }
     runner.is-true(ok, 'get-num ok')
@@ -136,8 +162,12 @@ t-get-i64 = () {
     ok bool = false
     val i64 = 0
     j: {
-        ok -> val, ok = it.get-i64('count')
+        ok -> {
+            val, ok = it.get-i64('count')
+        }
+
         nil -> ok = false
+
         err -> ok = false
     }
     runner.is-true(ok, 'get-i64 ok')
@@ -149,8 +179,12 @@ t-get-bool = () {
     ok bool = false
     val bool = false
     j: {
-        ok -> val, ok = it.get-bool('active')
+        ok -> {
+            val, ok = it.get-bool('active')
+        }
+
         nil -> ok = false
+
         err -> ok = false
     }
     runner.is-true(ok, 'get-bool ok')
@@ -164,7 +198,9 @@ t-arr-len = () {
     n i64 = 0
     j: {
         ok -> n = it.arr-len()
+
         nil -> n = 0
+
         err -> n = 0
     }
     runner.eq(n, 5, 'arr-len == 5')
@@ -178,14 +214,25 @@ t-arr-get = () {
         ok -> {
             elem = it.arr-get(1)
             elem: {
-                ok -> val, ok = it.get-str('') 
-                nil -> {}
-                err -> {}
+                ok -> {
+                    val, ok = it.get-str('')
+                }
+
+                nil -> {
+                }
+
+                err -> {
+                }
             }
         }
-        nil -> {}
-        err -> {}
+
+        nil -> {
+        }
+
+        err -> {
+        }
     }
+
     ; arr-get 返回 ?json，對 string 元素用 str() 取值
     ok2 bool = false
     val2 str
@@ -193,12 +240,18 @@ t-arr-get = () {
         ok -> {
             elem = it.arr-get(0)
             elem: {
-                ok -> val2, ok2 = it.str()
+                ok -> {
+                    val2, ok2 = it.str()
+                }
+
                 nil -> ok2 = false
+
                 err -> ok2 = false
             }
         }
+
         nil -> ok2 = false
+
         err -> ok2 = false
     }
     runner.is-true(ok2, 'arr-get(0) str ok')
@@ -212,8 +265,12 @@ t-stringify-obj = () {
     s = ''
     j: {
         ok -> s = it.stringify()
-        nil -> {}
-        err -> {}
+
+        nil -> {
+        }
+
+        err -> {
+        }
     }
     runner.gt(s.len-bytes(), 5, 'stringify obj len > 5')
     runner.str-eq(s, '{"a":1}', 7, 'stringify obj content')
@@ -224,8 +281,12 @@ t-stringify-arr = () {
     s = ''
     j: {
         ok -> s = it.stringify()
-        nil -> {}
-        err -> {}
+
+        nil -> {
+        }
+
+        err -> {
+        }
     }
     runner.str-eq(s, '[1,2,3]', 7, 'stringify arr content')
 }
@@ -268,8 +329,12 @@ t-roundtrip = () {
     s = ''
     j: {
         ok -> s = it.stringify()
-        nil -> {}
-        err -> {}
+
+        nil -> {
+        }
+
+        err -> {
+        }
     }
     runner.str-eq(s, '{"x":1,"y":"abc","z":true}', 25, 'roundtrip')
 }
@@ -301,5 +366,6 @@ total = runner.summary()
 f = runner.failed-count()
 {
     f > 0 -> os.exit(1)
+
     -> os.exit(0)
 }

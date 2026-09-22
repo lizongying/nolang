@@ -35,10 +35,11 @@ t-detect-by-extension = () {
 ; ── detect-type (extension-based, via temp file) ──
 
 t-detect-type-txt = () {
+
     ; 使用 open/write 建立臨時檔案
     tmp = '/tmp/nolang_magic_test.txt'
     fs.remove(tmp)
-    f = fs.open(tmp, {
+    f = fs.open(tmp,  {
         mode: file-mode.write
         perm: file-perm.perm-644
         excl: false
@@ -47,7 +48,9 @@ t-detect-type-txt = () {
     })
     f: {
         err -> runner.is-true(false, 'detect-type-txt: open failed')
+
         nil -> runner.is-true(false, 'detect-type-txt: open nil')
+
         -> {
             it.write('hello', 5)
             it.close()
@@ -84,5 +87,6 @@ total = runner.summary()
 f = runner.failed-count()
 {
     f > 0 -> os.exit(1)
+
     -> os.exit(0)
 }

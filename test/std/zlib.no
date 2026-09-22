@@ -14,11 +14,13 @@ t-adler-32 = () {
 t-adler-32-empty = () {
     data []byte = with-cap(0)
     sum i64 = zlib.adler-32(data, 0)
+
     ; 空資料的 Adler-32 = 1（初始值 a=1, b=0）
     runner.eq(sum, 1, 'adler-32 empty == 1')
 }
 
 t-adler-32-known = () {
+
     ; "hello" = [104, 101, 108, 108, 111]
     ; Adler-32 of "hello" = 0x062c0215
     data []byte = [104, 101, 108, 108, 111]
@@ -27,7 +29,7 @@ t-adler-32-known = () {
 }
 
 t-compress = () {
-    data []byte = [72, 101, 108, 108, 111]  ; "Hello"
+    data []byte = [72, 101, 108, 108, 111]; "Hello"
     compressed = zlib.zlib-compress(data)
     runner.gt(compressed.len(), 6, 'compressed len > 6 (zlib header + data)')
 }
@@ -43,5 +45,6 @@ total = runner.summary()
 f = runner.failed-count()
 {
     f > 0 -> os.exit(1)
+
     -> os.exit(0)
 }

@@ -3085,3 +3085,18 @@ x = 3`,
 		})
 	}
 }
+
+// TestFormatMalformedNoPanics 回歸：對含有非法陳述（如函數體內的
+// `dec.out []byte`）的 .no 檔，formatter 必須回報解析錯誤並原樣返回，
+// 絕不能 panic（見 tmp/bug-comment/test-type.no 曾觸發的 SIGSEGV：
+// stmtTokenEndLine 對 nil Body 解參考）。
+func TestFormatMalformedNoPanics(t *testing.T) {
+	src := "f = () {\n    dec Thing = Thing {}\n    dec.out []byte\n}\n"
+	out, errs := FormatFileWithErrors(src)
+	if len(errs) == 0 {
+		t.Fatalf("expected parse errors for malformed input, got none")
+	}
+	if out != src {
+		t.Errorf("malformed input must be returned unchanged; got:\n%q", out)
+	}
+}

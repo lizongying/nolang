@@ -13,7 +13,7 @@ t-compress = () {
 }
 
 t-compress-decompress = () {
-    data []byte = [72, 101, 108, 108, 111]  ; "Hello"
+    data []byte = [72, 101, 108, 108, 111]; "Hello"
     compressed = gzip.gzip-compress(data)
     runner.gt(compressed.len(), 10, 'compressed len > 10 (gzip header)')
 
@@ -26,6 +26,7 @@ t-compress-decompress = () {
 t-deflate-stored = () {
     data []byte = [10, 20, 30, 40, 50]
     deflated = gzip.deflate-stored(data)
+
     ; stored block: 1 (header) + 2 (LEN) + 2 (NLEN) + 5 (data) = 10
     runner.eq(deflated.len(), 10, 'deflated len == 10')
     runner.eq(deflated[5], 10, 'deflated data[0] == 10')
@@ -33,10 +34,14 @@ t-deflate-stored = () {
 }
 
 t-inflate-stored = () {
+
     ; 手動構造一個 DEFLATE stored block：
     ; BFINAL=1, BTYPE=00, LEN=5, NLEN=~5, data=1,2,3,4,5
     ; 位元組：01 05 00 FA FF 01 02 03 04 05
-    deflate-data []byte = [0x01, 0x05, 0x00, 0xFA, 0xFF, 1, 2, 3, 4, 5]
+    deflate-data []byte = [
+        0x01, 0x05, 0x00, 0xfa, 0xff, 1, 2, 3,
+        4, 5,
+    ]
     inflated = gzip.inflate-decompress(deflate-data, 5)
     runner.eq(inflated.len(), 5, 'inflated len == 5')
     runner.eq(inflated[0], 1, 'inflated[0] == 1')
@@ -54,5 +59,6 @@ total = runner.summary()
 f = runner.failed-count()
 {
     f > 0 -> os.exit(1)
+
     -> os.exit(0)
 }

@@ -20,6 +20,7 @@ t-level-constants = () {
 
 t-set-level-info = () {
     log.set-level(1)
+
     ; info 應在 level <= 1 時輸出，不會報錯
     log.info('test info message')
     runner.eq(0, 0, 'set-level + info completed')
@@ -67,5 +68,6 @@ total = runner.summary()
 f = runner.failed-count()
 {
     f > 0 -> os.exit(1)
+
     -> os.exit(0)
 }

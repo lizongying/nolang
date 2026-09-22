@@ -10,9 +10,10 @@ TMP-FILE = '/tmp/nolang_bufio_test.txt'
 ; ── reader.init ──────────────────────────────
 
 t-reader-init = () {
+
     ; 先建立臨時檔案
     fs.remove(TMP-FILE)
-    f = fs.open(TMP-FILE, {
+    f = fs.open(TMP-FILE,  {
         mode: file-mode.write
         perm: file-perm.perm-644
         excl: false
@@ -21,7 +22,9 @@ t-reader-init = () {
     })
     f: {
         err ->
+
         nil ->
+
         -> {
             it.write('ABC', 3)
             it.close()
@@ -45,7 +48,7 @@ t-reader-init = () {
 
 t-reader-read-byte = () {
     fs.remove(TMP-FILE)
-    f = fs.open(TMP-FILE, {
+    f = fs.open(TMP-FILE,  {
         mode: file-mode.write
         perm: file-perm.perm-644
         excl: false
@@ -54,7 +57,9 @@ t-reader-read-byte = () {
     })
     f: {
         err ->
+
         nil ->
+
         -> {
             it.write('XYZ', 3)
             it.close()
@@ -74,6 +79,7 @@ t-reader-read-byte = () {
     b1 = r.read-byte()
     b1: {
         nil -> ok1 = false
+
         -> ok1 = b1 == 88
     }
     runner.is-true(ok1, 'read-byte 1st == X (88)')
@@ -83,6 +89,7 @@ t-reader-read-byte = () {
     b2 = r.read-byte()
     b2: {
         nil -> ok2 = false
+
         -> ok2 = b2 == 89
     }
     runner.is-true(ok2, 'read-byte 2nd == Y (89)')
@@ -100,5 +107,6 @@ total = runner.summary()
 f = runner.failed-count()
 {
     f > 0 -> os.exit(1)
+
     -> os.exit(0)
 }

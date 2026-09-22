@@ -22,15 +22,19 @@ t-parse-spec = () {
 }
 
 t-apply-spec = () {
+
     ; 右對齊（預設）：'   42'
     r = fmt.fmt-apply-spec('42', 32, 0, 5)
     runner.str-eq(r, '   42', 5, 'apply-spec right align')
+
     ; 左對齊：'42   '
     l = fmt.fmt-apply-spec('42', 32, 60, 5)
     runner.str-eq(l, '42   ', 5, 'apply-spec left align')
+
     ; 置中：pad=3 → left=1, right=2 → ' 42  '
     c = fmt.fmt-apply-spec('42', 32, 94, 5)
     runner.str-eq(c, ' 42  ', 5, 'apply-spec center align')
+
     ; 寬度小於內容：原樣
     n = fmt.fmt-apply-spec('42', 32, 0, 1)
     runner.str-eq(n, '42', 2, 'apply-spec width < len unchanged')
@@ -43,6 +47,7 @@ t-int = () {
     runner.str-eq(b, '   42', 5, 'fmt-int width 5 right')
     c = fmt.fmt-int(42, '<5')
     runner.str-eq(c, '42   ', 5, 'fmt-int left align')
+
     ; zero 旗標現在被正確解析，'05' 產生零填充
     d = fmt.fmt-int(42, '05')
     runner.str-eq(d, '00042', 5, 'fmt-int zero-leading width')
@@ -110,5 +115,6 @@ total = runner.summary()
 f = runner.failed-count()
 {
     f > 0 -> os.exit(1)
+
     -> os.exit(0)
 }

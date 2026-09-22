@@ -9,7 +9,7 @@ package checker
 func init() {
 	embeddedStdSigReady = true
 	embeddedStdSigVersion = 2
-	embeddedStdSigKey = "4bba7a87b75a8309338ca2a84e7ef5334eda767f86e96cc430e18f834dd8c914"
+	embeddedStdSigKey = "e3e4ddfa23927176d5dd6ed7693ca48e9cfa7d6c8a3ffc2c98730fcd031e2c39"
 	embeddedStdFuncSigs = map[string][]string{
 		"[]byte.index":                     {"i64"},
 		"[]byte.index-from":                {"i64"},

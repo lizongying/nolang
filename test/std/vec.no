@@ -20,6 +20,7 @@ t-len-push = () {
 }
 
 t-push-grow = () {
+
     ; 超出初始容量自動擴容
     v []i64 = with-cap(2)
     i <- [0..10): {
@@ -51,6 +52,7 @@ t-first-last = () {
     f = v.first()
     f: {
         nil -> ok1 = false
+
         -> ok1 = f == 5
     }
     runner.is-true(ok1, 'first == 5')
@@ -58,6 +60,7 @@ t-first-last = () {
     l = v.last()
     l: {
         nil -> ok2 = false
+
         -> ok2 = l == 7
     }
     runner.is-true(ok2, 'last == 7')
@@ -66,6 +69,7 @@ t-first-last = () {
     f2 = e.first()
     f2: {
         nil -> is-nil1 = true
+
         -> is-nil1 = false
     }
     runner.is-true(is-nil1, 'first empty == nil')
@@ -77,6 +81,7 @@ t-at = () {
     a = v.at(1)
     a: {
         nil -> ok1 = false
+
         -> ok1 = a == 2
     }
     runner.is-true(ok1, 'at(1) == 2')
@@ -84,12 +89,14 @@ t-at = () {
     a2 = v.at(10)
     a2: {
         nil -> is-nil = true
+
         -> is-nil = false
     }
     runner.is-true(is-nil, 'at(10) OOB == nil')
 }
 
 t-insert = () {
+
     ; 用 push 構造避免編譯期定長檢查（insert 後 len 是運行期值）
     v []i64 = with-cap(4)
     v.push(1)
@@ -106,6 +113,7 @@ t-remove = () {
     r = v.remove(1)
     r: {
         nil -> ok = false
+
         -> ok = r == 2
     }
     runner.is-true(ok, 'remove(1) returns 2')
@@ -200,5 +208,6 @@ total = runner.summary()
 f = runner.failed-count()
 {
     f > 0 -> os.exit(1)
+
     -> os.exit(0)
 }

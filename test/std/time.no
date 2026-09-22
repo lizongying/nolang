@@ -114,6 +114,7 @@ t-parse-date = () {
     ts = time.parse-date('2024-01-15 12:30:45')
     ts: {
         nil -> ok = false
+
         -> ok = ts == 1705321845
     }
     runner.is-true(ok, 'parse-date 2024-01-15 12:30:45 == 1705324245')
@@ -122,6 +123,7 @@ t-parse-date = () {
     ts2 = time.parse-date('2024-01-15')
     ts2: {
         nil -> ok2 = false
+
         -> ok2 = ts2 == 1705276800
     }
     runner.is-true(ok2, 'parse-date 2024-01-15 == 1705276800')
@@ -131,6 +133,7 @@ t-parse-date = () {
     ts3 = time.parse-date('invalid')
     ts3: {
         nil -> is-nil = true
+
         -> is-nil = false
     }
     runner.is-true(is-nil, 'parse-date invalid == nil')
@@ -177,5 +180,6 @@ total = runner.summary()
 f = runner.failed-count()
 {
     f > 0 -> os.exit(1)
+
     -> os.exit(0)
 }

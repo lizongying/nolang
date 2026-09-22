@@ -9,7 +9,10 @@
 # /test/runner
 
 t-init-empty = () {
-    s = arr-stack { cap: 16, top: 0 }
+    s = arr-stack {
+        cap: 16
+        top: 0
+    }
     sz i64 = s.size()
     runner.eq(sz, 0, 'init size == 0')
     yes bool = s.empty()
@@ -19,8 +22,12 @@ t-init-empty = () {
 }
 
 t-size-after-push = () {
+
     ; 模擬 push 3 個元素：top = 3
-    s = arr-stack { cap: 16, top: 3 }
+    s = arr-stack {
+        cap: 16
+        top: 3
+    }
     sz i64 = s.size()
     runner.eq(sz, 3, 'after 3 pushes size == 3')
     yes bool = s.empty()
@@ -28,7 +35,10 @@ t-size-after-push = () {
 }
 
 t-full = () {
-    s = arr-stack { cap: 4, top: 4 }
+    s = arr-stack {
+        cap: 4
+        top: 4
+    }
     yes bool = s.full()
     runner.is-true(yes, 'arr-stack full when top == cap')
     no bool = s.empty()
@@ -36,7 +46,10 @@ t-full = () {
 }
 
 t-clear = () {
-    s = arr-stack { cap: 16, top: 5 }
+    s = arr-stack {
+        cap: 16
+        top: 5
+    }
     s.clear()
     sz i64 = s.size()
     runner.eq(sz, 0, 'after clear size == 0')
@@ -55,5 +68,6 @@ total = runner.summary()
 f = runner.failed-count()
 {
     f > 0 -> os.exit(1)
+
     -> os.exit(0)
 }

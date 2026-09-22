@@ -530,3 +530,19 @@ func TestSliceLiteralStillWorks(t *testing.T) {
 		t.Errorf("expected 3 elements, got %d", len(sl.Elements))
 	}
 }
+
+// TestStmtTokenEndLineNilBody 防止 formatter 在解析失敗（函數/迴圈體 Body 為
+// nil）時對 nil 解參考而 panic（見 tmp/bug-comment/test-type.no 觸發的
+// SIGSEGV：stmtTokenEndLine 讀 s.Body.Token.Line）。Body 為 nil 時應回退到
+// 定義本身的行號，而非崩潰。
+func TestStmtTokenEndLineNilBody(t *testing.T) {
+	tok := lexer.Token{Type: lexer.IDENT, Literal: "f", Line: 7, Column: 1}
+	fd := &FunctionDefinition{Token: tok, Name: "f", Body: nil}
+	if got := stmtTokenEndLine(fd); got != 7 {
+		t.Errorf("FunctionDefinition with nil Body: expected fallback line 7, got %d", got)
+	}
+	fs := &ForStatement{Token: tok, Body: nil}
+	if got := stmtTokenEndLine(fs); got != 7 {
+		t.Errorf("ForStatement with nil Body: expected fallback line 7, got %d", got)
+	}
+}

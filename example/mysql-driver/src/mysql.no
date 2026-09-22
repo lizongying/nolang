@@ -67,8 +67,9 @@ mysql-read-exact = (fd fd, n i64) (data str, ok bool) {
     tmp = space.repeat(MYSQL-RECV-BUF)
 
     total = 0
-    {
-        #{overflow = wrap}
+    (total < n) {
+
+        #{overflow=wrap}
         remaining = n - total
         {
             remaining > MYSQL-RECV-BUF -> remaining = MYSQL-RECV-BUF
@@ -80,14 +81,16 @@ mysql-read-exact = (fd fd, n i64) (data str, ok bool) {
 
         ; 複製到位據
         i = 0
-        {
+        (i < read-n) {
             data[total + i] = tmp[i]
-            #{overflow = wrap}
+
+            #{overflow=wrap}
             i = i + 1
-        } (i < read-n)
-        #{overflow = wrap}
+        }
+
+        #{overflow=wrap}
         total = total + read-n
-    } (total < n)
+    }
     ok = true
 }
 
@@ -158,24 +161,31 @@ mysql-read-lenenc = (data str, pos i64) (val i64, is-null bool, new-pos i64) {
 
     ; 預設：< 251 的單位元組值
     val = first
-    #{overflow = wrap}
+
+    #{overflow=wrap}
     new-pos = pos + 1
 
     {
         first == 251 -> is-null = true
+
         first == 252 -> {
             val = data[pos + 1] | (data[pos + 2] << 8)
-            #{overflow = wrap}
+
+            #{overflow=wrap}
             new-pos = pos + 3
         }
+
         first == 253 -> {
             val = data[pos + 1] | (data[pos + 2] << 8) | (data[pos + 3] << 16)
-            #{overflow = wrap}
+
+            #{overflow=wrap}
             new-pos = pos + 4
         }
+
         first == 254 -> {
             val = data[pos + 1] | (data[pos + 2] << 8) | (data[pos + 3] << 16) | (data[pos + 4] << 24) | (data[pos + 5] << 32) | (data[pos + 6] << 40) | (data[pos + 7] << 48) | (data[pos + 8] << 56)
-            #{overflow = wrap}
+
+            #{overflow=wrap}
             new-pos = pos + 9
         }
     }
@@ -201,28 +211,31 @@ mysql-native-password = (password str, seed [20]byte) (token [20]byte) {
     ; combined = seed + stage2 (40 bytes)
     combined [40]byte
     i = 0
-    {
+    (i < 20) {
         combined[i] = seed[i]
-        #{overflow = wrap}
+
+        #{overflow=wrap}
         i = i + 1
-    } (i < 20)
+    }
     i = 0
-    {
+    (i < 20) {
         combined[20 + i] = stage2[i]
-        #{overflow = wrap}
+
+        #{overflow=wrap}
         i = i + 1
-    } (i < 20)
+    }
 
     ; stage3 = SHA1(combined)
     stage3 [20]byte = sha1.sha1(combined.to-vec())
 
     ; token = stage1 XOR stage3
     i = 0
-    {
+    (i < 20) {
         token[i] = stage1[i] ^ stage3[i]
-        #{overflow = wrap}
+
+        #{overflow=wrap}
         i = i + 1
-    } (i < 20)
+    }
 }
 
 ; ============================================================================
@@ -315,16 +328,18 @@ open = (dsn str) (d db-mysql) {
             port-str = host-port.slice(hp-colon + 1, host-port.len-bytes())
             p = 0
             i = 0
-            {
+            (i < port-str.len-bytes()) {
                 c = port-str[i]
                 {
                     c < 48 || c > 57 -> return
                 }
-                #{overflow = wrap}
+
+                #{overflow=wrap}
                 p = p * 10 + c - 48
-                #{overflow = wrap}
+
+                #{overflow=wrap}
                 i = i + 1
-            } (i < port-str.len-bytes())
+            }
             port = p
         }
     }
@@ -390,82 +405,91 @@ open = (dsn str) (d db-mysql) {
     pos = 1
 
     ; 跳過 server version（null-terminated）
-    {
+    (pos < hs-len) {
         {
             handshake[pos] == 0 -> break
         }
-        #{overflow = wrap}
+
+        #{overflow=wrap}
         pos = pos + 1
-    } (pos < hs-len)
-    #{overflow = wrap}
+    }
+
+    #{overflow=wrap}
     pos = pos + 1; skip null terminator
 
     ; thread_id (4 bytes) — skip
-    #{overflow = wrap}
+    #{overflow=wrap}
     pos = pos + 4
 
     ; auth_seed_part1 (8 bytes)
     seed [20]byte
     i = 0
-    {
+    (i < 8) {
         seed[i] = handshake[pos + i]
-        #{overflow = wrap}
+
+        #{overflow=wrap}
         i = i + 1
-    } (i < 8)
-    #{overflow = wrap}
+    }
+
+    #{overflow=wrap}
     pos = pos + 8
 
     ; filler (1 byte)
-    #{overflow = wrap}
+    #{overflow=wrap}
     pos = pos + 1
 
     ; capabilities_lower (2 bytes)
-    #{overflow = wrap}
+    #{overflow=wrap}
     pos = pos + 2
 
     ; charset (1 byte)
-    #{overflow = wrap}
+    #{overflow=wrap}
     pos = pos + 1
 
     ; status (2 bytes)
-    #{overflow = wrap}
+    #{overflow=wrap}
     pos = pos + 2
 
     ; capabilities_upper (2 bytes)
-    #{overflow = wrap}
+    #{overflow=wrap}
     pos = pos + 2
 
     ; auth_plugin_data_len (1 byte)
     auth-plugin-data-len = handshake[pos]
-    #{overflow = wrap}
+
+    #{overflow=wrap}
     pos = pos + 1
 
     ; reserved (10 bytes)
-    #{overflow = wrap}
+    #{overflow=wrap}
     pos = pos + 10
 
     ; auth_seed_part2（max(13, auth_plugin_data_len - 8) bytes + null）
     seed2-len = 12
     {
         auth-plugin-data-len > 8 -> {
-            #{overflow = wrap}
+
+            #{overflow=wrap}
             seed2-len = auth-plugin-data-len - 8
         }
     }
     i = 0
-    {
+    (i < seed2-len) {
         seed[8 + i] = handshake[pos + i]
-        #{overflow = wrap}
+
+        #{overflow=wrap}
         i = i + 1
-    } (i < seed2-len)
-    #{overflow = wrap}
+    }
+
+    #{overflow=wrap}
     pos = pos + seed2-len
 
     ; 跳過 seed2 後的 null
     {
         pos < hs-len -> {
             handshake[pos] == 0 -> {
-                #{overflow = wrap}
+
+                #{overflow=wrap}
                 pos = pos + 1
             }
         }
@@ -506,64 +530,77 @@ open = (dsn str) (d db-mysql) {
 
     ; Reserved (23 bytes of 0x00)
     i = 0
-    {
+    (i < 23) {
         resp[9 + i] = 0
-        #{overflow = wrap}
+
+        #{overflow=wrap}
         i = i + 1
-    } (i < 23)
+    }
     wpos = 32
 
     ; Username (null-terminated)
     i = 0
-    {
+    (i < user.len-bytes()) {
         resp[wpos] = user[i]
-        #{overflow = wrap}
+
+        #{overflow=wrap}
         wpos = wpos + 1
-        #{overflow = wrap}
+
+        #{overflow=wrap}
         i = i + 1
-    } (i < user.len-bytes())
+    }
     resp[wpos] = 0
-    #{overflow = wrap}
+
+    #{overflow=wrap}
     wpos = wpos + 1
 
     ; Auth response length (1 byte) + auth response (20 bytes)
     resp[wpos] = 20
-    #{overflow = wrap}
+
+    #{overflow=wrap}
     wpos = wpos + 1
     i = 0
-    {
+    (i < 20) {
         resp[wpos] = auth-token[i]
-        #{overflow = wrap}
+
+        #{overflow=wrap}
         wpos = wpos + 1
-        #{overflow = wrap}
+
+        #{overflow=wrap}
         i = i + 1
-    } (i < 20)
+    }
 
     ; Database (null-terminated)
     i = 0
-    {
+    (i < dbname.len-bytes()) {
         resp[wpos] = dbname[i]
-        #{overflow = wrap}
+
+        #{overflow=wrap}
         wpos = wpos + 1
-        #{overflow = wrap}
+
+        #{overflow=wrap}
         i = i + 1
-    } (i < dbname.len-bytes())
+    }
     resp[wpos] = 0
-    #{overflow = wrap}
+
+    #{overflow=wrap}
     wpos = wpos + 1
 
     ; Auth plugin name (null-terminated)
     plugin-name = 'mysql_native_password'
     i = 0
-    {
+    (i < plugin-name.len-bytes()) {
         resp[wpos] = plugin-name[i]
-        #{overflow = wrap}
+
+        #{overflow=wrap}
         wpos = wpos + 1
-        #{overflow = wrap}
+
+        #{overflow=wrap}
         i = i + 1
-    } (i < plugin-name.len-bytes())
+    }
     resp[wpos] = 0
-    #{overflow = wrap}
+
+    #{overflow=wrap}
     wpos = wpos + 1
 
     ; 發送握手回應
@@ -633,12 +670,14 @@ db-mysql.exec = (sql str) (r sql.result) {
     payload = space.repeat(sql.len-bytes() + 1)
     payload[0] = COM-QUERY
     i = 0
-    {
+    (i < sql.len-bytes()) {
         payload[1 + i] = sql[i]
-        #{overflow = wrap}
+
+        #{overflow=wrap}
         i = i + 1
-    } (i < sql.len-bytes())
-    #{overflow = wrap}
+    }
+
+    #{overflow=wrap}
     payload-len = 1 + sql.len-bytes()
 
     ; 發送（每個新命令 seq 從 0 開始）
@@ -684,12 +723,14 @@ db-mysql.query = (sql str) (rs rows-mysql) {
     payload = space.repeat(sql.len-bytes() + 1)
     payload[0] = COM-QUERY
     i = 0
-    {
+    (i < sql.len-bytes()) {
         payload[1 + i] = sql[i]
-        #{overflow = wrap}
+
+        #{overflow=wrap}
         i = i + 1
-    } (i < sql.len-bytes())
-    #{overflow = wrap}
+    }
+
+    #{overflow=wrap}
     payload-len = 1 + sql.len-bytes()
 
     ; 發送
@@ -730,7 +771,7 @@ db-mysql.query = (sql str) (rs rows-mysql) {
 
     ; 跳過欄位定義封包
     i = 0
-    {
+    (i < n-cols) {
         col-def, cd-len, cd-seq, cd-ok = mysql-pkt-recv(.fd)
         {
             cd-ok == false -> {
@@ -738,9 +779,10 @@ db-mysql.query = (sql str) (rs rows-mysql) {
                 return
             }
         }
-        #{overflow = wrap}
+
+        #{overflow=wrap}
         i = i + 1
-    } (i < n-cols)
+    }
     eof-pkt, eof-len, eof-seq, eof-ok = mysql-pkt-recv(.fd)
     {
         eof-ok == false -> {
@@ -818,15 +860,16 @@ rows-mysql.scan-int = (col i64) (v i64) {
 
     ; 跳過前 col 個欄位
     c = 0
-    {
+    (c < col) {
         fl, fn, np = mysql-read-lenenc(.row-data, .row-pos)
         .row-pos = np
         {
             fn == false -> .row-pos = .row-pos + fl
         }
-        #{overflow = wrap}
+
+        #{overflow=wrap}
         c = c + 1
-    } (c < col)
+    }
     field-len, is-null, new-pos = mysql-read-lenenc(.row-data, .row-pos)
     .row-pos = new-pos
     {
@@ -835,32 +878,37 @@ rows-mysql.scan-int = (col i64) (v i64) {
 
     ; 將欄位資料解析為 i64
     neg = 0
-    #{overflow = wrap}
+
+    #{overflow=wrap}
     end = .row-pos + field-len
     i = .row-pos
     {
         i < end -> {
             .row-data[i] == 45 -> {
                 neg = 1
-                #{overflow = wrap}
+
+                #{overflow=wrap}
                 i = i + 1
             }
         }
     }
-    {
+    (i < end) {
         ch = .row-data[i]
         {
             ch >= 48 && ch <= 57 -> {
-                #{overflow = wrap}
+
+                #{overflow=wrap}
                 v = v * 10 + ch - 48
             }
         }
-        #{overflow = wrap}
+
+        #{overflow=wrap}
         i = i + 1
-    } (i < end)
+    }
     {
         neg == 1 -> {
-            #{overflow = wrap}
+
+            #{overflow=wrap}
             v = 0 - v
         }
     }
@@ -871,15 +919,16 @@ rows-mysql.scan-str = (col i64) (v str) {
 
     ; 跳過前 col 個欄位
     c = 0
-    {
+    (c < col) {
         fl, fn, np = mysql-read-lenenc(.row-data, .row-pos)
         .row-pos = np
         {
             fn == false -> .row-pos = .row-pos + fl
         }
-        #{overflow = wrap}
+
+        #{overflow=wrap}
         c = c + 1
-    } (c < col)
+    }
     field-len, is-null, new-pos = mysql-read-lenenc(.row-data, .row-pos)
     .row-pos = new-pos
     {
@@ -897,15 +946,16 @@ rows-mysql.scan-float = (col i64) (v f64) {
 
     ; 跳過前 col 個欄位
     c = 0
-    {
+    (c < col) {
         fl, fn, np = mysql-read-lenenc(.row-data, .row-pos)
         .row-pos = np
         {
             fn == false -> .row-pos = .row-pos + fl
         }
-        #{overflow = wrap}
+
+        #{overflow=wrap}
         c = c + 1
-    } (c < col)
+    }
     field-len, is-null, new-pos = mysql-read-lenenc(.row-data, .row-pos)
     .row-pos = new-pos
     {
@@ -928,21 +978,24 @@ rows-mysql.scan-float = (col i64) (v f64) {
             }
         }
     }
-    {
+    (i < field-len) {
         ch = .row-data[base + i]
         {
             ch >= 48 && ch <= 57 -> {
                 has-dot == 0 -> int-part = int-part * 10.0 + (ch - 48)
+
                 -> {
                     frac-part = frac-part * 10.0 + (ch - 48)
                     frac-div = frac-div * 10.0
                 }
             }
+
             ch == 46 -> has-dot = 1
         }
-        #{overflow = wrap}
+
+        #{overflow=wrap}
         i = i + 1
-    } (i < field-len)
+    }
     v = int-part + frac-part / frac-div
     {
         neg == 1 -> v = 0.0 - v
@@ -1038,12 +1091,14 @@ stmt-mysql.exec = () (r sql.result) {
     payload = space.repeat(.bound.len-bytes() + 1)
     payload[0] = COM-QUERY
     i = 0
-    {
+    (i < .bound.len-bytes()) {
         payload[1 + i] = .bound[i]
-        #{overflow = wrap}
+
+        #{overflow=wrap}
         i = i + 1
-    } (i < .bound.len-bytes())
-    #{overflow = wrap}
+    }
+
+    #{overflow=wrap}
     payload-len = 1 + .bound.len-bytes()
 
     ; 發送
@@ -1082,12 +1137,14 @@ stmt-mysql.query = () (rs rows-mysql) {
     payload = space.repeat(.bound.len-bytes() + 1)
     payload[0] = COM-QUERY
     i = 0
-    {
+    (i < .bound.len-bytes()) {
         payload[1 + i] = .bound[i]
-        #{overflow = wrap}
+
+        #{overflow=wrap}
         i = i + 1
-    } (i < .bound.len-bytes())
-    #{overflow = wrap}
+    }
+
+    #{overflow=wrap}
     payload-len = 1 + .bound.len-bytes()
 
     ; 發送
@@ -1118,7 +1175,7 @@ stmt-mysql.query = () (rs rows-mysql) {
 
     ; 跳過欄位定義封包
     i = 0
-    {
+    (i < n-cols) {
         col-def, cd-len, cd-seq, cd-ok = mysql-pkt-recv(.fd)
         {
             cd-ok == false -> {
@@ -1126,9 +1183,10 @@ stmt-mysql.query = () (rs rows-mysql) {
                 return
             }
         }
-        #{overflow = wrap}
+
+        #{overflow=wrap}
         i = i + 1
-    } (i < n-cols)
+    }
     eof-pkt, eof-len, eof-seq, eof-ok = mysql-pkt-recv(.fd)
     {
         eof-ok == false -> {

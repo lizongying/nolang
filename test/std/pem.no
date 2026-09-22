@@ -24,7 +24,9 @@ t-encode-decode = () {
             match2 = it.data[0] == 1 && it.data[4] == 5
             ok = match && match2
         }
+
         nil -> ok = false
+
         err -> ok = false
     }
     runner.is-true(ok, 'roundtrip decode matches original')
@@ -39,5 +41,6 @@ total = runner.summary()
 f = runner.failed-count()
 {
     f > 0 -> os.exit(1)
+
     -> os.exit(0)
 }

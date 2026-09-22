@@ -99,11 +99,13 @@ t-to-bytes = () {
 }
 
 t-to-i64 = () {
+
     ; 注意：option 值需在 match 分支內比較
     ok bool = false
     v = '123'.to-i64()
     v: {
         nil -> ok = false
+
         -> ok = v == 123
     }
     runner.is-true(ok, 'to-i64 123 == 123')
@@ -112,6 +114,7 @@ t-to-i64 = () {
     n = '-45'.to-i64()
     n: {
         nil -> ok2 = false
+
         -> ok2 = n == -45
     }
     runner.is-true(ok2, 'to-i64 -45 == -45')
@@ -121,7 +124,9 @@ t-to-i64 = () {
     bad = 'abc'.to-i64()
     bad: {
         nil -> bad-state = 1
+
         err -> bad-state = 2
+
         -> bad-state = 3
     }
     runner.eq(bad-state, 2, 'to-i64 abc == err')
@@ -203,5 +208,6 @@ total = runner.summary()
 f = runner.failed-count()
 {
     f > 0 -> os.exit(1)
+
     -> os.exit(0)
 }

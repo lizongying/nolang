@@ -14,6 +14,7 @@ TMP-FILE2 = '/tmp/nolang_fs_test_file2.txt'
 ; ── 檔案存在性檢查 ────────────────────────────
 
 t-is-file = () {
+
     ; /tmp should be a directory, not a file
     yes bool = fs.is-file('/tmp')
     runner.is-false(yes, 'is-file /tmp == false')
@@ -29,11 +30,12 @@ t-is-dir = () {
 ; ── open + write + read + close ──────────────
 
 t-open-write-read = () {
+
     ; 清理可能殘留的檔案
     fs.remove(TMP-FILE)
 
     ; 開啟檔案寫入
-    f = fs.open(TMP-FILE, {
+    f = fs.open(TMP-FILE,  {
         mode: file-mode.write
         perm: file-perm.perm-644
         excl: false
@@ -43,7 +45,9 @@ t-open-write-read = () {
     ok-write bool = false
     f: {
         err -> ok-write = false
+
         nil -> ok-write = false
+
         -> {
             ok-write = true
             n = it.write('hello fs', 8)
@@ -57,7 +61,7 @@ t-open-write-read = () {
     runner.is-true(yes, 'written file exists')
 
     ; 讀取檔案
-    f-r = fs.open(TMP-FILE, {
+    f-r = fs.open(TMP-FILE,  {
         mode: file-mode.read
         perm: file-perm.perm-644
         excl: false
@@ -68,7 +72,9 @@ t-open-write-read = () {
     read-content = ''
     f-r: {
         err -> ok-read = false
+
         nil -> ok-read = false
+
         -> {
             ok-read = true
             buf str = with-cap(64)
@@ -86,9 +92,10 @@ t-open-write-read = () {
 ; ── stat-size ────────────────────────────────
 
 t-stat-size = () {
+
     ; 建立檔案並檢查大小
     fs.remove(TMP-FILE)
-    f = fs.open(TMP-FILE, {
+    f = fs.open(TMP-FILE,  {
         mode: file-mode.write
         perm: file-perm.perm-644
         excl: false
@@ -97,7 +104,9 @@ t-stat-size = () {
     })
     f: {
         err ->
+
         nil ->
+
         -> {
             it.write('0123456789', 10)
             it.close()
@@ -115,7 +124,7 @@ t-copy-file = () {
     fs.remove(TMP-FILE2)
 
     ; 建立來源檔案
-    f = fs.open(TMP-FILE, {
+    f = fs.open(TMP-FILE,  {
         mode: file-mode.write
         perm: file-perm.perm-644
         excl: false
@@ -124,7 +133,9 @@ t-copy-file = () {
     })
     f: {
         err ->
+
         nil ->
+
         -> {
             it.write('copy me', 7)
             it.close()
@@ -168,5 +179,6 @@ total = runner.summary()
 f = runner.failed-count()
 {
     f > 0 -> os.exit(1)
+
     -> os.exit(0)
 }

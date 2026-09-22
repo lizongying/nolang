@@ -3,15 +3,15 @@ fib = (n i64) (o i64) {
     a = 0
     b = 1
     i = 2
-    {
+    (i <= n) {
         c = a + b
         a = b
         b = c
         i = i + 1
-    } (i <= n)
+    }
     o = b
 }
-{
+10000000 * {
     result = fib(40)
     print('{result}')
-} * 10000000
+}

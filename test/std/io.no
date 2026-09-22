@@ -66,6 +66,7 @@ t-writer-stderr = () {
 
 t-reader-stdin = () {
     r = reader.from-stdin()
+
     ; 只驗證 fd 是否為 0 (STDIN)
     runner.eq(r.fd, 0, 'reader.from-stdin fd == 0')
 }
@@ -86,5 +87,6 @@ total = runner.summary()
 f = runner.failed-count()
 {
     f > 0 -> os.exit(1)
+
     -> os.exit(0)
 }

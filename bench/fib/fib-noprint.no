@@ -4,14 +4,16 @@ fib = (n i64) (o i64) {
     a = 0
     b = 1
     i = 2
-    {
-        #{overflow = wrap}
+    (i <= n) {
+
+        #{overflow=wrap}
         c = a + b
         a = b
         b = c
-        #{overflow = wrap}
+
+        #{overflow=wrap}
         i = i + 1
-    } (i <= n)
+    }
     o = b
 }
 sink = 0
@@ -20,6 +22,7 @@ iter <- [0..10000000): {
     n = iter
     {
         iter < 5000000 -> n = 40
+
         iter >= 5000000 -> n = 41
     }
     result = fib(n)

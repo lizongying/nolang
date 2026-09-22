@@ -18,6 +18,7 @@ t-to-str = () {
     u = uuid.new-v4(42)
     s = u.to-str()
     runner.eq(s.len(), 36, 'to-str len == 36')
+
     ; 檢查連字號位置
     dash0 i64 = s[8]
     runner.eq(dash0, 45, 'to-str [8] == dash')
@@ -96,5 +97,6 @@ total = runner.summary()
 f = runner.failed-count()
 {
     f > 0 -> os.exit(1)
+
     -> os.exit(0)
 }

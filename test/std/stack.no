@@ -7,7 +7,10 @@
 
 t-init-empty = () {
     buf []i64 = with-len(32)
-    s = stack { data: buf, n: 0 }
+    s = stack {
+        data: buf
+        n: 0
+    }
     sz i64 = s.size()
     runner.eq(sz, 0, 'init size == 0')
     yes bool = s.empty()
@@ -16,7 +19,10 @@ t-init-empty = () {
 
 t-push-pop = () {
     buf []i64 = with-len(32)
-    s = stack { data: buf, n: 0 }
+    s = stack {
+        data: buf
+        n: 0
+    }
     s.push(10)
     s.push(20)
     s.push(30)
@@ -28,6 +34,7 @@ t-push-pop = () {
     v1 = s.pop()
     v1: {
         nil -> ok1 = false
+
         -> ok1 = v1 == 30
     }
     runner.is-true(ok1, 'pop 1st == 30')
@@ -36,6 +43,7 @@ t-push-pop = () {
     v2 = s.pop()
     v2: {
         nil -> ok2 = false
+
         -> ok2 = v2 == 20
     }
     runner.is-true(ok2, 'pop 2nd == 20')
@@ -44,6 +52,7 @@ t-push-pop = () {
     v3 = s.pop()
     v3: {
         nil -> ok3 = false
+
         -> ok3 = v3 == 10
     }
     runner.is-true(ok3, 'pop 3rd == 10')
@@ -54,7 +63,10 @@ t-push-pop = () {
 
 t-peek = () {
     buf []i64 = with-len(32)
-    s = stack { data: buf, n: 0 }
+    s = stack {
+        data: buf
+        n: 0
+    }
     s.push(10)
     s.push(20)
 
@@ -62,6 +74,7 @@ t-peek = () {
     p = s.peek()
     p: {
         nil -> ok = false
+
         -> ok = p == 20
     }
     runner.is-true(ok, 'peek == 20 (top)')
@@ -72,11 +85,15 @@ t-peek = () {
 
 t-pop-empty = () {
     buf []i64 = with-len(32)
-    s = stack { data: buf, n: 0 }
+    s = stack {
+        data: buf
+        n: 0
+    }
     is-nil bool = false
     v = s.pop()
     v: {
         nil -> is-nil = true
+
         -> is-nil = false
     }
     runner.is-true(is-nil, 'pop empty == nil')
@@ -85,6 +102,7 @@ t-pop-empty = () {
     p = s.peek()
     p: {
         nil -> is-nil2 = true
+
         -> is-nil2 = false
     }
     runner.is-true(is-nil2, 'peek empty == nil')
@@ -92,7 +110,10 @@ t-pop-empty = () {
 
 t-clear = () {
     buf []i64 = with-len(32)
-    s = stack { data: buf, n: 0 }
+    s = stack {
+        data: buf
+        n: 0
+    }
     s.push(1)
     s.push(2)
     s.push(3)
@@ -115,5 +136,6 @@ total = runner.summary()
 f = runner.failed-count()
 {
     f > 0 -> os.exit(1)
+
     -> os.exit(0)
 }

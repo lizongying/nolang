@@ -20,6 +20,7 @@ eq = (a t, b t, msg str) (ok bool) {
             print('FAIL: eq')
             print(msg)
         }
+
         -> ok = true
     }
 }
@@ -32,6 +33,7 @@ ne = (a t, b t, msg str) (ok bool) {
             print('FAIL: ne')
             print(msg)
         }
+
         -> ok = true
     }
 }
@@ -44,6 +46,7 @@ true = (val bool, msg str) (ok bool) {
             print('FAIL: true')
             print(msg)
         }
+
         -> ok = true
     }
 }
@@ -56,6 +59,7 @@ false = (val bool, msg str) (ok bool) {
             print('FAIL: false')
             print(msg)
         }
+
         -> ok = true
     }
 }
@@ -68,6 +72,7 @@ gt = (a t, b t, msg str) (ok bool) {
             print('FAIL: gt')
             print(msg)
         }
+
         -> ok = true
     }
 }
@@ -80,6 +85,7 @@ ge = (a t, b t, msg str) (ok bool) {
             print('FAIL: ge')
             print(msg)
         }
+
         -> ok = true
     }
 }
@@ -92,6 +98,7 @@ lt = (a t, b t, msg str) (ok bool) {
             print('FAIL: lt')
             print(msg)
         }
+
         -> ok = true
     }
 }
@@ -104,6 +111,7 @@ le = (a t, b t, msg str) (ok bool) {
             print('FAIL: le')
             print(msg)
         }
+
         -> ok = true
     }
 }
@@ -122,6 +130,7 @@ f64-eq = (a f64, b f64, eps f64, msg str) (ok bool) {
             print('FAIL: f64-eq')
             print(msg)
         }
+
         -> ok = true
     }
 }
@@ -136,6 +145,7 @@ f64-ne = (a f64, b f64, eps f64, msg str) (ok bool) {
             print('FAIL: f64-ne')
             print(msg)
         }
+
         -> ok = true
     }
 }
@@ -152,6 +162,7 @@ str-eq = (a str, b str, n i64, msg str) (ok bool) {
             print('FAIL: str-eq')
             print(msg)
         }
+
         -> ok = true
     }
 }
@@ -164,6 +175,7 @@ str-ne = (a str, b str, n i64, msg str) (ok bool) {
             print('FAIL: str-ne')
             print(msg)
         }
+
         -> ok = true
     }
 }
@@ -176,6 +188,7 @@ str-empty = (s str, n i64, msg str) (ok bool) {
             print('FAIL: str-empty')
             print(msg)
         }
+
         -> ok = true
     }
 }
@@ -188,6 +201,7 @@ str-not-empty = (s str, n i64, msg str) (ok bool) {
             print('FAIL: str-not-empty')
             print(msg)
         }
+
         -> ok = true
     }
 }
@@ -204,6 +218,7 @@ is-nil = (p i64, msg str) (ok bool) {
             print('FAIL: is-nil')
             print(msg)
         }
+
         -> ok = true
     }
 }
@@ -216,6 +231,7 @@ not-nil = (p i64, msg str) (ok bool) {
             print('FAIL: not-nil')
             print(msg)
         }
+
         -> ok = true
     }
 }
