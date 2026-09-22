@@ -676,7 +676,7 @@ a, b = swap(5, 3)
 | `{ } (cond)` conditional loop       | `(cond) { }` (empty `()` means false, not executed) |
 | `{ } ()` not executed               | `! { }` or `false { }` or `() { }`                  |
 | `{ } * n` constant count            | `n * { }` (N <= 0 skips the body)                   |
-| `for i=0, i<n, i++ { }` counting    | `{ } * n` (constant count) or `i <- [0..n): { }` (variable) |
+| `for i=0, i<n, i++ { }` counting    | `n * { }` (constant count) or `i <- [0..n): { }` (variable) |
 | `for i <- [a..b] { }` range         | `i <- [a..b]: { }`                                  |
 | `for i in [a..b) { }` range         | `i <- [a..b): { }`                                  |
 | `match x { ... }` matching          | `x: { ... }`                                        |
@@ -838,11 +838,12 @@ i <- 'abc': {   ; iterate over each character in the string
 ;   Use self.len() instead of .len() to disambiguate: i <- [0..self.len()): { }
 ;   (self and . are semantically equivalent inside method bodies)
 
-; Conditional loop (the new { } (cond) form replaces the old for cond { })
+; Conditional loop (new style: prefix (cond) { }, the `no fmt` default; replaces the old for cond { })
+; The suffix form { } (cond) is fully equivalent (legacy spelling)
 ; In most cases, range-for can be used instead: i <- [0..n): { }
-{
+(x == 1) {
     do-something()
-} (x == 1)
+}
 ```
 
 ### Break / Skip / Early Return

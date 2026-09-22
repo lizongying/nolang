@@ -13,7 +13,7 @@ A disciplined test-first workflow for diagnosing and fixing bugs in the Nolang c
 
 > **Nolang 檔名使用中連字符 `-`**（如 `string-helper.no`），**不使用下劃線 `_`**。詳見 [nolang-syntax-reference](./nolang-syntax-reference/SKILL.md)。
 
-> **Deprecation warnings**：舊式流程控制語法（`for { }`、`for cond { }`、`for i=0,i<n,i++ { }`、`for i <- [...] { }`、`for i in [...] { }`、`match x { }`、`if/elif/else { }`）會輸出 deprecation warning 但仍可解析。建議改用新式（`{ } (true)`、`{ } (cond)`、`{ } * n`、`i <- [..]: { }`、`x: { }`、`{ cond -> body }`）。詳見 [nolang-syntax-reference](./nolang-syntax-reference/SKILL.md) 的 Control Flow 段落。
+> **Deprecation warnings**：舊式流程控制語法（`for { }`、`for cond { }`、`for i=0,i<n,i++ { }`、`for i <- [...] { }`、`for i in [...] { }`、`match x { }`、`if/elif/else { }`）會輸出 deprecation warning 但仍可解析。建議改用新式前置式（`no fmt` 預設）：`!! { }`（恆真）、`(cond) { }`（條件）、`! { }`（不執行）、`n * { }`（計數），以及 `i <- [..]: { }`、`x: { }`、`{ cond -> body }`。後綴式 `{ } (cond)` / `{ } (true)` / `{ } * n` 與前置式語意等價，但屬舊式寫法（`no fmt -loop-style=suffix` 可切換）。詳見 [nolang-syntax-reference](./nolang-syntax-reference/SKILL.md) 的 Control Flow 段落。
 
 Always:
 
