@@ -18,7 +18,7 @@ import (
 //
 // That is how `des-block` in src/std/crypto/des.no lost its tail (the selector
 // computation, the pre-output loop and the byte push loop) while `no build`
-// still reported success, and it is why `tests/test-std-hash.no` produced
+// still reported success, and it is why `tests/std-hash.no` produced
 // wrong DES output with rc=0.
 //
 // The guard must therefore be loud. This test pins both halves: the broken

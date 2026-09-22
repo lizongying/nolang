@@ -27,7 +27,7 @@
 # 124 is "the harness's own alarm fired", i.e. "no verdict". It is NOT a
 # property of the file. Three very different things land there:
 #   (a) genuine infinite loop        -> 124 at ANY timeout. The corpus used to
-#       carry one on purpose: tests/test-for2.no was `{} (true)`. It has since
+#       carry one on purpose: tests/for2.no was `{} (true)`. It has since
 #       been commented out (2026-09-22) — deliberately, and it should stay out:
 #       a file that stalls for the full 300s on EVERY sweep is a real cost, and
 #       the alarm only bounds the damage, it does not remove it. If this class
@@ -35,7 +35,7 @@
 #       walk (tests/ is swept wholesale) or cover it with a unit test.
 #   (b) slow-but-finite compile      -> 124 only below its cost
 #   (c) contention                  -> 124 when -P parallelism starves the box
-# (c) is not hypothetical, it is measured: tests/test-parse-min.no takes
+# (c) is not hypothetical, it is measured: tests/parse-min.no takes
 # 32.9s / rc=0 run alone, yet recorded **124** in the frozen mir-baseline
 # because the sweep runs 8 builds at once and LLVM opt is CPU-bound. Its
 # fingerprint hash is the empty-stdout hash, which is the tell: a program

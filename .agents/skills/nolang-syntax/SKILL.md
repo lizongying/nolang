@@ -1855,7 +1855,7 @@ Ownership of a forced-pointer field is handled by the compiler, not the author:
 - a by-value copy (`b = a`, pass by value, container element write) **deep-copies** the pointee,
   so two hosts never share one allocation and it is never freed twice.
 
-End-to-end coverage: `tests/test-field-inline-annotation.no` (its recursive case is the
+End-to-end coverage: `tests/field-inline-annotation.no` (its recursive case is the
 discriminator — if `inline=false` stopped forcing a pointer, that file would fail to compile).
 
 > Implementation note: layout lives on `FieldInfo.Layout` (`FieldLayoutInline` /

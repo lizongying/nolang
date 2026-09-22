@@ -1,0 +1,100 @@
+; struct-field-leaf-clone.no — 結構體欄位寫入必須深拷貝行內 str
+;
+; 回歸：`T { f: <struct> }` 這類欄位寫入曾經只是逐位元拷貝，於是被拷貝進去的
+; 行內 `str` 只複製了 {len,cap,data} 描述子，沒有複製緩衝區。欄位和來源共用
+; 同一塊記憶體，兩邊又各自 drop，先被釋放的一方會把另一方的資料抽空：
+;
+;   outer { p inner }        inner { name str }
+;   c = outer { p: obj.p }   ; obj 是借用來的參數
+;   ... 釋放 c ...           ; 父物件的 p.name 就讀到已釋放的記憶體
+;
+; 修復前 a1 印出空字串（父物件被銷毀），修復後印出 alice。
+
+check-str = (name str, got str, want str) {
+    got == want -> print('ok: ' - name)
+
+    -> print('fail: ' - name - ' got=[' - got - '] want=[' - want - ']')
+}
+
+inner {
+    name str
+}
+
+outer {
+    p inner
+    root i64
+}
+
+mk-owned = () (out outer) {
+    p = inner {
+        name: 'alice'
+    }
+    out = outer {
+        p: p
+        root: 0
+    }
+}
+
+mk-opt = () (out ?outer) {
+    p = inner {
+        name: 'alice'
+    }
+    d = outer {
+        p: p
+        root: 0
+    }
+    out = d
+}
+
+; get-child: 從借用來的參數建一個子視圖，交還給呼叫方
+get-child = (obj outer, i i64) (c ?outer) {
+    c = outer {
+        p: obj.p
+        root: i
+    }
+}
+
+main = () {
+    ; 情境一：父物件是具名局部變數
+    a = mk-owned()
+    check-str('寫入前父物件', a.p.name, 'alice')
+    c1 ?outer = get-child(a, 1)
+    c1: {
+        nil -> print('fail: c1 nil')
+
+        err -> print('fail: c1 err')
+
+        -> check-str('子視圖', it.p.name, 'alice')
+    }
+    check-str('子視圖釋放後父物件仍完好', a.p.name, 'alice')
+
+    ; 情境二：父物件來自 option
+    b ?outer = mk-opt()
+    b: {
+        nil -> print('fail: b nil')
+
+        err -> print('fail: b err')
+
+        -> {
+            doc = it
+            check-str('option 父物件', doc.p.name, 'alice')
+            c2 ?outer = get-child(doc, 1)
+            c2: {
+                nil -> print('fail: c2 nil')
+
+                err -> print('fail: c2 err')
+
+                -> check-str('option 子視圖', it.p.name, 'alice')
+            }
+            check-str('option 父物件仍完好', doc.p.name, 'alice')
+        }
+    }
+
+    ; 直接指派（不是字面量）也不能共用緩衝區
+    src = mk-owned()
+    dst = mk-owned()
+    dst.p = src.p
+    src.p.name = 'bob'
+    check-str('指派後目標不受來源影響', dst.p.name, 'alice')
+    check-str('來源自身正確', src.p.name, 'bob')
+}

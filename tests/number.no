@@ -1,0 +1,11 @@
+; number.no — 數字操作測試
+
+demo-number = () {
+    r = 0
+    number.max(10, 20, r)
+    print(r)
+
+    number.min(10, 20, r)
+    print(r)
+}
+demo-number()

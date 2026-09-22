@@ -19,7 +19,7 @@ import "testing"
 // out NoType, llvmTypeOf's KindArray fallback rendered it as the ZERO-BYTE
 // `[0 x i64]`, and the enclosing struct was laid out 512 bytes too small. Every
 // `cls[i] = c` then wrote past the allocation and aborted with SIGBUS
-// (tests/test-dump2.no, test-chain-copy.no, test-regexp.no, ...).
+// (tests/dump2.no, chain-copy.no, regexp.no, ...).
 //
 // Each case below interns its composite type on a FRESH module so the element raw
 // is still unknown at that moment; that is the ordering the bug required.

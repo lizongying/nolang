@@ -269,7 +269,7 @@ func isAggregateLLVM(lt string) bool {
 // Without this, a non-owned fixed-array receiver (e.g. `[3 x i64] %p0`) is
 // declared by value while the body emits `getelementptr [3 x i64], [3 x i64]*
 // %p0`, and opt rejects it ("%p0 defined with type '[3 x i64]' but expected
-// 'ptr'"). See tests/test-arr.no.
+// 'ptr'"). See tests/arr-test.no.
 func byPointerLLVM(lt string, owned bool) bool {
 	if owned {
 		return true
@@ -743,7 +743,7 @@ func (c *codegen) coerceIndex(idxSrc ValueID, idxT, idxV string) string {
 	// to its payload before it can address memory: `%option` is a struct and opt
 	// rejects it as a GEP index ("defined with type '%option' but expected
 	// 'i64'"). Legacy stores/reads the scalar payload for an option index, so do
-	// the same (tests/test-option-index.no).
+	// the same (tests/option-index.no).
 	//
 	// The peel goes through optionPayloadOf, NOT `extractvalue %option %v, 1`:
 	// field 1 is now the whole `[N x i64]` payload slot, so a raw
@@ -1113,7 +1113,7 @@ func (c *codegen) optSlotOfValue(v ValueID) string {
 // turns the `select` into a branch, concludes the out-of-bounds side cannot
 // happen, and HOISTS THE LOAD above the branch. At -O0 the program is fine;
 // after `opt` it dereferences the err message's length field as a pointer and
-// dies (tests/test_fs_error_simple.no, tests/test-sse.no — both SEGFAULT only
+// dies (tests/fs-error-simple.no, tests/sse.no — both SEGFAULT only
 // in the optimized build). A zero-filled global of the payload's own type keeps
 // both sides of the select valid and in-bounds, so there is nothing to
 // speculate.
@@ -3057,7 +3057,7 @@ func (c *codegen) emitFunc(f *Function) error {
 		// write-back then published either uninitialized garbage or a stale
 		// `ok` from a previously reused slot, so a removed key still came back
 		// "found" carrying the previous call's payload
-		// (tests/mem-safety/map-tombstone.no, tests/test-map-generics.no).
+		// (tests/mem-safety/map-tombstone.no, tests/map-generics.no).
 		// Written Dst/params overwrite this, so the extra store is dead for
 		// every value that is actually assigned.
 		if isOptionType(lt) {
@@ -3071,7 +3071,7 @@ func (c *codegen) emitFunc(f *Function) error {
 			// a struct local that every branch leaves unwritten (a loop that
 			// only assigns it in one arm) frees stack garbage —
 			// `free(0xffffffffffffffff)`, "pointer being freed was not
-			// allocated", abort. Verified: tests/test-diff-debug.no.
+			// allocated", abort. Verified: tests/diff-debug.no.
 			// Guarded by the SAME predicate as the drop, so a struct that is
 			// never dropped pays nothing.
 			c.sb.WriteString(fmt.Sprintf("  store %s zeroinitializer, %s* %s\n", lt, lt, s))
@@ -3300,7 +3300,7 @@ func (c *codegen) loadVal(v ValueID) (string, string) {
 		// — so both backends recognised the condition and only one reported
 		// it. Ringing here restores that parity: the only two corpus files that
 		// reach this branch (tests/mem-safety/str-concat-leak.no and
-		// tests/test-std-hash.no) both carry legacy-baseline rc=1, and after
+		// tests/std-hash.no) both carry legacy-baseline rc=1, and after
 		// the guard their fingerprints are BYTE-IDENTICAL to that frozen
 		// semantic oracle (`1 e3b0c442…`, empty stdout). So this is the
 		// oracle's own verdict, not a regression — see docs/MIR_DESIGN.md
@@ -3908,7 +3908,7 @@ func (c *codegen) emitCmp(inst *Inst) error {
 	// `?str` became the string "0", so `content == 'Hello World'` was never
 	// true, and the follow-up `x != v -> ...` arm was equally false, leaving
 	// both arms of the guard silently skipped
-	// (tests/test-process-run.no: `out.trim()`-style checks on `?str` values
+	// (tests/process-run.no: `out.trim()`-style checks on `?str` values
 	// coming out of `[]byte.to-str`).
 	// Tagged-enum operands. A match arm compiles to
 	// `subject == <variant constructor>` (the parser desugars
@@ -5126,7 +5126,7 @@ func (c *codegen) emitLeafFieldsCloneR(dstSlot, structLT, key string, depth int)
 // struct by value, so without this the element keeps sharing the source local's
 // buffer. That sharing is invisible today only because nothing frees a struct's
 // leaves at scope exit; the moment a drop does, the source local's drop pulls
-// the buffer out from under the container (tests/test-diff-debug.no aborts with
+// the buffer out from under the container (tests/diff-debug.no aborts with
 // trace/BPT trap: `op = diff-op {}`; `op.line = ...`; `ops.push(op)` inside a
 // loop, where `op` dies at the bottom of every iteration).
 //
@@ -6089,7 +6089,7 @@ func (c *codegen) ensureVecBuffer(arrSlot string, v ValueID, idxV, elemT string)
 	// view must be left alone, as it always was. Growing it would malloc a fresh
 	// buffer, memcpy min(len, 0) == 0 bytes, and then `free` a pointer this code
 	// does not own: the source string's buffer. That is a use-after-free, and it
-	// is not hypothetical — tests/test-tls-partial.no (`buf str` passed to
+	// is not hypothetical — tests/tls-partial.no (`buf str` passed to
 	// `tls.put-u16(buf, ...)`) traps with SIGTRAP on the very first write when
 	// this guard is missing. A real vec with a non-null data pointer always has
 	// cap >= 1 (push grows 1,2,4…; the fresh path allocates 1024), so cap > 0
@@ -6341,7 +6341,7 @@ func (c *codegen) emitIndex(inst *Inst) error {
 	// @str_eq, producing wrong results or crashes. This mirrors the write
 	// side (emitIndexStore) which already calls @str_clone on assignment.
 	//
-	// test-diff-debug.no was the canonical victim: `s = lines2[i]` inside an
+	// diff-debug.no was the canonical victim: `s = lines2[i]` inside an
 	// eprint('{s}') loop shared the buffer, the drop freed it, and the
 	// subsequent diff-engine-lcs compared against dangling strings → every
 	// `compare == 0` was false → the DP table stayed all zeros → segfault
@@ -6557,7 +6557,7 @@ func (c *codegen) emitIndexStore(inst *Inst) error {
 		// the ok payload, matching the legacy codegen (which stores the scalar
 		// payload, not the whole {tag,payload} struct). Without this, opt rejects
 		// the store as "defined with type '%option' but expected 'i64'" and the
-		// build fails under NOLANG_MIR=3 (regression of test-arr.no).
+		// build fails under NOLANG_MIR=3 (regression of arr-test.no).
 		// optionPayloadOf, not `extractvalue %option %v, 1`: field 1 is the whole
 		// 24-byte slot, so a bare extractvalue yields an array where an i64 is
 		// wanted (and misses the box deref for an oversized payload).
@@ -6811,7 +6811,7 @@ func (c *codegen) emitGetField(inst *Inst) error {
 	// re-wrapped. Using Value.Type here mis-classified `?conn.path` as a plain
 	// `conn` getfield and emitted a GEP that skipped the option peel, producing
 	// `getelementptr inbounds %net_conn, ...` against an %option_conn slot
-	// (invalid getelementptr indices, opt-verify) — tests/test-opt-struct-field.no.
+	// (invalid getelementptr indices, opt-verify) — tests/opt-struct-field.no.
 	if f := c.mod.Func(c.cf); f != nil {
 		if tid, ok := f.LocalTypes[inst.Args[0]]; ok {
 			if t := c.mod.Type(tid); t != nil {
@@ -6871,7 +6871,7 @@ func (c *codegen) emitGetField(inst *Inst) error {
 		}
 		// optPayloadTypedAddr, not `getelementptr %option ... , 1`: a payload
 		// larger than the 24-byte slot is BOXED, and field 1 then holds the box
-		// POINTER rather than the struct (tests/test-opt-struct-field.no).
+		// POINTER rather than the struct (tests/opt-struct-field.no).
 		pg := c.optPayloadTypedAddr(recvSlot, payloadLT, payloadLT)
 		payloadBase := payloadLT
 		if viewElem && strings.HasSuffix(payloadLT, "*") {
@@ -7507,7 +7507,7 @@ func (c *codegen) sliceFieldStoreMismatch(declared *Type, val ValueID, valLT str
 		// propagated to the array literal, and every read stays inside the
 		// buffer, so it is the pre-existing wrong-VALUE behaviour (elements read
 		// at the wrong width) rather than a memory error.
-		// tests/test-uninit-output.no depends on this staying rc=0; making it
+		// tests/uninit-output.no depends on this staying rc=0; making it
 		// correct needs the lowering to infer `[3]byte` from the field type.
 		vt := c.mirTypeOfValue(val)
 		if vt == nil {
@@ -7904,7 +7904,7 @@ func (c *codegen) emitSliceOp(inst *Inst) error {
 	// (a) hand out a pointer that dies with the enclosing scope rather than with
 	// the frame, and (b) change what an out-of-range sub-range reads (the copy
 	// path lands in fresh malloc'd memory, the view reads neighbouring stack
-	// slots — tests/test-slice-heavy.no prints `a[2..5]` of a `[5]i64`).
+	// slots — tests/slice-heavy.no prints `a[2..5]` of a `[5]i64`).
 	// Heap containers (str / vec / slice) keep the zero-copy view.
 	isView := inst.Int&SliceFlagView != 0 && !isFixedArray &&
 		(dstLT == "%vec" || dstLT == "%str-long")
@@ -8341,7 +8341,7 @@ func (c *codegen) emitEnumField(inst *Inst) error {
 	}
 	// The payload array's declared width must match the enum's real layout:
 	// a str payload occupies 3 slots, so a hard-coded `[1 x i64]` GEP read the
-	// wrong element type and yielded 0 (tests/test-tagged-enum.no: `b-res`).
+	// wrong element type and yielded 0 (tests/tagged-enum.no: `b-res`).
 	nSlots := int64(1)
 	if ei := c.taggedEnumOf(enumRawOfType(c.mod, c.mod.Value(inst.Args[0]).Type)); ei != nil && ei.PayloadSlots > 0 {
 		nSlots = ei.PayloadSlots
@@ -9037,14 +9037,29 @@ func (c *codegen) emitCall(f *Function, inst *Inst) error {
 	// builtins, LLVM intrinsics, FFI-free forwards — rather than as a regular
 	// module function call. This clears the whole `callee:<name>` gap class
 	// (with-cap / with-len / eprint / sqrt / ...).
-	bm, exact, ok := lookupBuiltin(callee)
+	bm, _, ok := lookupBuiltin(callee)
 	if ok {
-		// A fallback (bare-name) match must not shadow a real Nolang function
-		// that merely shares the bare builtin name. `fs.read-dir` is a module
-		// function; the global builtin `read-dir` would otherwise be emitted
-		// for it and fail. When the qualified callee is a known function,
-		// route it to the normal function-call path below.
-		if exact || !c.mod.KnownFuncs[callee] {
+		// A builtin match must not shadow a real Nolang function that merely
+		// shares its name. The FALLBACK form is the documented case: `fs.read-dir`
+		// is a module function while the global builtin `read-dir` is a
+		// different thing, so `lookupBuiltin` reports the bare-name match and
+		// the function wins.
+		//
+		// The EXACT form needs the same guard, and for the same reason. A
+		// module whose entry function is named like the module itself
+		// (`printf.no` defines `printf`) reaches the HIR as the UNQUALIFIED
+		// function name `printf`, which is exactly the name of the deprecated
+		// global `printf` builtin — so `printf.printf()` in the caller lowered
+		// to callee `printf`, matched the builtin exactly, and died in
+		// emitBuiltin with "unsupported builtin printf" (notools cmd printf).
+		// The HIR function is the intended callee: the frontend only includes
+		// a module function some call site actually referenced, so a same-named
+		// known function is never an accident.
+		//
+		// `print` is unaffected — it is special-cased above this block. The
+		// colliding names are rare in practice (printf / degrees / radians in
+		// the notools corpus, the latter two never called).
+		if !c.mod.KnownFuncs[callee] {
 			if err := c.emitBuiltin(f, inst, bm); err != nil {
 				return err
 			}
@@ -9680,7 +9695,7 @@ func (c *codegen) emitCallBody(f *Function, cf *Function, inst *Inst, calleeName
 		// instead, which is exactly how `tls.conn.append-hs` came to be called
 		// as append-hs(self, self): the []byte parameter received the receiver
 		// pointer, the callee read it as a %vec header, and the process
-		// segfaulted on a null data pointer (tests/test-tls.no).
+		// segfaulted on a null data pointer (tests/tls.no).
 		argIdx := i + selfOut
 		if variadicLast && i == len(inParams)-1 {
 			// Collect every remaining call argument into a borrow %vec view and
@@ -9958,8 +9973,8 @@ func (c *codegen) emitCallBody(f *Function, cf *Function, inst *Inst, calleeName
 				// runtime); MIR must emit an explicit conversion to produce
 				// a valid %str-long. Without this, `store %str-long %lv,
 				// %str-long* %carg` has a type mismatch and opt-verify
-				// rejects the module (test-tls-prf-only.no,
-				// test-iout-autoconvert.no, ...).
+				// rejects the module (tls-prf-only.no,
+				// iout-autoconvert.no, ...).
 				if plt == "%str-long" && (argT == "i32" || argT == "i64") && c.rawTypeOfValue(inst.Args[argIdx]) == "char" {
 					// char -> str: UTF-8 encode the code point (the char -> str
 					// implicit conversion). MUST precede the i64 branch below,
@@ -10168,7 +10183,7 @@ func (c *codegen) emitCallBody(f *Function, cf *Function, inst *Inst, calleeName
 	// Results entry, so the loop below breaks on the first iteration and the
 	// destination slot is left UNINITIALIZED: the callee writes into %cres but
 	// nothing ever copies it back out, so `out = cb()` returned stack garbage.
-	// Verified in IR (tests/test-fn-type-return.no, @apply_ret):
+	// Verified in IR (tests/fn-type-return.no, @apply_ret):
 	//     %cres30 = alloca i64
 	//     call void %fnptr29(ptr %cres30)   ; cb() writes here ...
 	//     %mv31 = load i64, ptr %v2.s       ; ... but %v2.s was never stored
@@ -10213,7 +10228,7 @@ func (c *codegen) emitCallBody(f *Function, cf *Function, inst *Inst, calleeName
 // task to completion: if not yet done it synchronously calls resume_fn(task);
 // then it reads the result from the args struct's field 0. This mirrors the
 // legacy build/llvm model; for flat (top-level) await trees — the only shape
-// tests/test-async.no uses — the synchronous drive yields byte-identical
+// tests/async.no uses — the synchronous drive yields byte-identical
 // output to the legacy event loop without ever entering nolang_async_run.
 
 // mallocBytesFor returns a heap size (bytes) large enough to hold an LLVM value

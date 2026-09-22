@@ -1,0 +1,116 @@
+; ffi-mysql.no — MySQL 驅動完整流程測試
+;
+; 測試 open/exec/query/scan/prepare/bind 完整流程。
+; 驅動包 example/mysql-driver 以**純 Nolang**實作 MySQL 協議（不使用 FFI，
+; 故不需要 libmysqlclient）；只需要一個正在運行的 MySQL 伺服器。
+;
+; 注意：本測試需要 live MySQL server，無伺服器時僅做語法／型別驗證（vet），不執行。
+; 執行前需建立資料庫 testdb 並設定 root/secret 帳密，DSN 格式：
+;   user:password@host[:port]/dbname   （port 預設 3306）
+
+# /example/mysql-driver/src/mysql
+# std/database/sql
+
+; 測試 1: 以 DSN 連線
+d db = mysql.open('root:secret@localhost/testdb')
+d.connected == false -> {
+    print('fail: open database')
+    return
+}
+print('ok: open database')
+
+; 測試 2: 建表
+r = d.exec('CREATE TABLE IF NOT EXISTS users (id INT AUTO_INCREMENT PRIMARY KEY, name VARCHAR(255), age DOUBLE)')
+print('ok: create table')
+
+; 測試 3: 插入資料
+d.exec('DELETE FROM users')
+r = d.exec('INSERT INTO users (name, age) VALUES (\'Alice\', 30.5)')
+{
+    r.affected == 1 -> print('ok: insert')
+    -> {
+        print('fail: insert affected=')
+        print(r.affected)
+    }
+}
+
+; 測試 4: 查詢並掃描
+rs rows = d.query('SELECT id, name, age FROM users')
+rs.n-cols == 0 -> {
+    print('fail: query')
+    d.close()
+    return
+}
+count i64 = 0
+{
+    id i64 = rs.scan-int(0)
+    name = rs.scan-str(1)
+    age = rs.scan-float(2)
+    {
+        id == 1 -> {
+            name == 'Alice' -> {
+                age > 30.0 -> {
+                    age < 31.0 -> print('ok: query scan')
+                    -> print('fail: age too high')
+                }
+                -> print('fail: age too low')
+            }
+            -> print('fail: name mismatch')
+        }
+        -> print('fail: id mismatch')
+    }
+    #{overflow = wrap}
+    count = count + 1
+} (rs.next())
+rs.close()
+
+; 測試 5: 預編譯陳述式（插入，字串替換模式）
+s stmt = d.prepare('INSERT INTO users (name, age) VALUES (?, ?)')
+s.bind-str(1, 'Bob')
+s.bind-int(2, 25)
+r2 = s.exec()
+{
+    r2.affected == 1 -> print('ok: prepared insert')
+    -> print('fail: prepared insert')
+}
+s.close()
+
+; 測試 6: 預編譯陳述式（查詢，字串替換模式）
+s2 stmt = d.prepare('SELECT name FROM users WHERE id = ?')
+s2.bind-int(1, 2)
+rs2 rows = s2.query()
+rs2.n-cols == 0 -> {
+    print('fail: prepared query')
+    s2.close()
+    d.close()
+    return
+}
+{
+    name2 = rs2.scan-str(0)
+    {
+        name2 == 'Bob' -> print('ok: prepared query scan')
+        -> print('fail: prepared query name mismatch')
+    }
+} (rs2.next())
+rs2.close()
+s2.close()
+
+; 測試 7: 驗證總列數
+rs3 rows = d.query('SELECT id FROM users')
+rs3.n-cols != 0 -> {
+    total i64 = 0
+    {
+        #{overflow = wrap}
+        total = total + 1
+    } (rs3.next())
+    {
+        total == 2 -> print('ok: total rows')
+        -> {
+            print('fail: total rows=')
+            print(total)
+        }
+    }
+    rs3.close()
+}
+d.close()
+print('ok: all tests done')

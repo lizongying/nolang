@@ -22,7 +22,7 @@ set -u
 cd "$(dirname "$0")/.."
 
 NO=./no
-TEST=tests/test-vec-to-str-flaky.no
+TEST=tests/vec-to-str-flaky.no
 EXPECT='[1, 2, 3, 10, 20, 256]'
 N="${1:-50}"
 

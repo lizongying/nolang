@@ -1,0 +1,727 @@
+; # std/crypto/sha1
+; # std/crypto/sha256
+; # std/crypto/sha512
+; # std/crypto/md5
+; # std/crypto/aes
+; # std/crypto/des
+; # std/crypto/crc-32
+; # std/crypto/fnv-1a-32
+; # std/crypto/blake2
+; # std/io
+
+; std-hash.no — 標準庫 hash 模組測試
+;
+; 輸出 KEY=VALUE 格式，與 tests/compare/compare.go 一致。
+; 執行：nolang run tests/std-hash.no > tests/nolang-output.txt
+; 比對：diff tests/compare/go-output.txt tests/nolang-output.txt
+
+; ═══════════════════════════════════════════
+; CRC32
+; ═══════════════════════════════════════════
+
+; crc32("")=00000000
+h = crc-32.new('', 0)
+io.out('crc32("")=')
+io.out(format('{h:08x}'))
+print('')
+
+; crc32("hello")=3610a686
+h = crc-32.new('hello', 5)
+io.out('crc32("hello")=')
+io.out(format('{h:08x}'))
+print('')
+
+; crc32("fox")=414fa339
+s = 'The quick brown fox jumps over the lazy dog'
+h = crc-32.new(s, 43)
+io.out('crc32("fox")=')
+io.out(format('{h:08x}'))
+print('')
+
+; ═══════════════════════════════════════════
+; FNV-1a-32
+; ═══════════════════════════════════════════
+
+; fnv1a32("")=811c9dc5
+h = fnv-1a-32.fnv-1a-32('', 0)
+io.out('fnv1a32("")=')
+io.out(format('{h:08x}'))
+print('')
+
+; fnv1a32("hello")=4f9f2cab
+h = fnv-1a-32.fnv-1a-32('hello', 5)
+io.out('fnv1a32("hello")=')
+io.out(format('{h:08x}'))
+print('')
+
+; fnv1a32("fox")=048fff90
+h = fnv-1a-32.fnv-1a-32(s, 43)
+io.out('fnv1a32("fox")=')
+io.out(format('{h:08x}'))
+print('')
+
+; ═══════════════════════════════════════════
+; MD5
+; ═══════════════════════════════════════════
+
+md5-out [16]byte
+
+; md5("")=d41d8cd98f00b204e9800998ecf8427e
+md5-out = md5.md5('')
+io.out('md5("")=')
+i <- [0..16): {
+    io.out(format('{md5-out[i]:02x}'))
+}
+print('')
+
+; md5("hello")=5d41402abc4b2a76b9719d911017c592
+md5-out = md5.md5('hello')
+io.out('md5("hello")=')
+i <- [0..16): {
+    io.out(format('{md5-out[i]:02x}'))
+}
+print('')
+
+; md5("fox")=9e107d9d372bb6826bd81d3542a419d6
+md5-out = md5.md5(s)
+io.out('md5("fox")=')
+i <- [0..16): {
+    io.out(format('{md5-out[i]:02x}'))
+}
+print('')
+
+; ═══════════════════════════════════════════
+; SHA-1（zero block 壓縮測試）
+; ═══════════════════════════════════════════
+
+; Declare hash state variables with correct types (u32 for SHA-1/256)
+h0 u32 = 0
+h1 u32 = 0
+h2 u32 = 0
+h3 u32 = 0
+h4 u32 = 0
+
+block1 []u32 = [
+    0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0,
+]
+
+; sha1-zero-block=92b404e556588ced6c1acd4ebf053f6809f73a93
+h0 = 1732584193
+h1 = 4023233417
+h2 = 2562383102
+h3 = 271733878
+h4 = 3285377520
+h0, h1, h2, h3, h4 = sha1.sha1-block(block1, h0, h1, h2, h3, h4)
+io.out('sha1-zero-block=')
+io.out(format('{h0:08x}'))
+io.out(format('{h1:08x}'))
+io.out(format('{h2:08x}'))
+io.out(format('{h3:08x}'))
+io.out(format('{h4:08x}'))
+print('')
+
+; ═══════════════════════════════════════════
+; SHA-1（空字串填充區塊）
+; ═══════════════════════════════════════════
+
+block1empty []u32 = [
+    2147483648, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0,
+]
+
+h0 = 1732584193
+h1 = 4023233417
+h2 = 2562383102
+h3 = 271733878
+h4 = 3285377520
+h0, h1, h2, h3, h4 = sha1.sha1-block(block1empty, h0, h1, h2, h3, h4)
+io.out('sha1-empty=')
+io.out(format('{h0:08x}'))
+io.out(format('{h1:08x}'))
+io.out(format('{h2:08x}'))
+io.out(format('{h3:08x}'))
+io.out(format('{h4:08x}'))
+print('')
+
+; ═══════════════════════════════════════════
+; SHA-1（"abc" 填充區塊）
+; ═══════════════════════════════════════════
+
+block1abc []u32 = [
+    1633837952, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 24,
+]
+
+h0 = 1732584193
+h1 = 4023233417
+h2 = 2562383102
+h3 = 271733878
+h4 = 3285377520
+h0, h1, h2, h3, h4 = sha1.sha1-block(block1abc, h0, h1, h2, h3, h4)
+io.out('sha1-abc=')
+io.out(format('{h0:08x}'))
+io.out(format('{h1:08x}'))
+io.out(format('{h2:08x}'))
+io.out(format('{h3:08x}'))
+io.out(format('{h4:08x}'))
+print('')
+
+; ═══════════════════════════════════════════
+; SHA-1（完整哈希：""）
+; ═══════════════════════════════════════════
+
+h0 = 1732584193
+h1 = 4023233417
+h2 = 2562383102
+h3 = 271733878
+h4 = 3285377520
+h0, h1, h2, h3, h4 = sha1.sha1-block(block1empty, h0, h1, h2, h3, h4)
+io.out('sha1("")=')
+io.out(format('{h0:08x}'))
+io.out(format('{h1:08x}'))
+io.out(format('{h2:08x}'))
+io.out(format('{h3:08x}'))
+io.out(format('{h4:08x}'))
+print('')
+
+; ═══════════════════════════════════════════
+; SHA-1（完整哈希："hello"）
+; ═══════════════════════════════════════════
+
+block1hello []u32 = [
+    1751477356, 1870659584, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 40,
+]
+
+h0 = 1732584193
+h1 = 4023233417
+h2 = 2562383102
+h3 = 271733878
+h4 = 3285377520
+h0, h1, h2, h3, h4 = sha1.sha1-block(block1hello, h0, h1, h2, h3, h4)
+io.out('sha1("hello")=')
+io.out(format('{h0:08x}'))
+io.out(format('{h1:08x}'))
+io.out(format('{h2:08x}'))
+io.out(format('{h3:08x}'))
+io.out(format('{h4:08x}'))
+print('')
+
+; ═══════════════════════════════════════════
+; SHA-1（完整哈希："The quick brown fox..."）
+; ═══════════════════════════════════════════
+
+block1fox []u32 = [
+    1416127776, 1903520099, 1797284466, 1870097952, 1718581280, 1786080624, 1931505526, 1701978228,
+    1751457900, 1635416352, 1685022592, 0, 0, 0, 0, 344,
+]
+
+h0 = 1732584193
+h1 = 4023233417
+h2 = 2562383102
+h3 = 271733878
+h4 = 3285377520
+h0, h1, h2, h3, h4 = sha1.sha1-block(block1fox, h0, h1, h2, h3, h4)
+io.out('sha1("fox")=')
+io.out(format('{h0:08x}'))
+io.out(format('{h1:08x}'))
+io.out(format('{h2:08x}'))
+io.out(format('{h3:08x}'))
+io.out(format('{h4:08x}'))
+print('')
+
+; ═══════════════════════════════════════════
+; SHA-256（zero block 壓縮測試）
+; ═══════════════════════════════════════════
+
+h5 u32 = 0
+h6 u32 = 0
+h7 u32 = 0
+
+block256 []u32 = [
+    0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0,
+]
+
+; sha256-zero-block=da5698be17b9b46962335799779fbeca8ce5d491c0d26243bafef9ea1837a9d8
+h0 = 1779033703
+h1 = 3144134277
+h2 = 1013904242
+h3 = 2773480762
+h4 = 1359893119
+h5 = 2600822924
+h6 = 528734635
+h7 = 1541459225
+h0, h1, h2, h3, h4, h5, h6, h7 = sha256.sha256-block(block256, h0, h1, h2, h3, h4, h5, h6, h7)
+io.out('sha256-zero-block=')
+io.out(format('{h0:08x}'))
+io.out(format('{h1:08x}'))
+io.out(format('{h2:08x}'))
+io.out(format('{h3:08x}'))
+io.out(format('{h4:08x}'))
+io.out(format('{h5:08x}'))
+io.out(format('{h6:08x}'))
+io.out(format('{h7:08x}'))
+print('')
+
+; ═══════════════════════════════════════════
+; SHA-256（空字串填充區塊）
+; ═══════════════════════════════════════════
+
+block256empty []u32 = [
+    2147483648, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0,
+]
+
+h0 = 1779033703
+h1 = 3144134277
+h2 = 1013904242
+h3 = 2773480762
+h4 = 1359893119
+h5 = 2600822924
+h6 = 528734635
+h7 = 1541459225
+h0, h1, h2, h3, h4, h5, h6, h7 = sha256.sha256-block(block256empty, h0, h1, h2, h3, h4, h5, h6, h7)
+io.out('sha256-empty=')
+io.out(format('{h0:08x}'))
+io.out(format('{h1:08x}'))
+io.out(format('{h2:08x}'))
+io.out(format('{h3:08x}'))
+io.out(format('{h4:08x}'))
+io.out(format('{h5:08x}'))
+io.out(format('{h6:08x}'))
+io.out(format('{h7:08x}'))
+print('')
+
+; ═══════════════════════════════════════════
+; SHA-256（"abc" 填充區塊）
+; ═══════════════════════════════════════════
+
+block256abc []u32 = [
+    1633837952, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 24,
+]
+
+h0 = 1779033703
+h1 = 3144134277
+h2 = 1013904242
+h3 = 2773480762
+h4 = 1359893119
+h5 = 2600822924
+h6 = 528734635
+h7 = 1541459225
+h0, h1, h2, h3, h4, h5, h6, h7 = sha256.sha256-block(block256abc, h0, h1, h2, h3, h4, h5, h6, h7)
+io.out('sha256-abc=')
+io.out(format('{h0:08x}'))
+io.out(format('{h1:08x}'))
+io.out(format('{h2:08x}'))
+io.out(format('{h3:08x}'))
+io.out(format('{h4:08x}'))
+io.out(format('{h5:08x}'))
+io.out(format('{h6:08x}'))
+io.out(format('{h7:08x}'))
+print('')
+
+; ═══════════════════════════════════════════
+; SHA-256（完整哈希：""）
+; ═══════════════════════════════════════════
+
+h0 = 1779033703
+h1 = 3144134277
+h2 = 1013904242
+h3 = 2773480762
+h4 = 1359893119
+h5 = 2600822924
+h6 = 528734635
+h7 = 1541459225
+h0, h1, h2, h3, h4, h5, h6, h7 = sha256.sha256-block(block256empty, h0, h1, h2, h3, h4, h5, h6, h7)
+io.out('sha256("")=')
+io.out(format('{h0:08x}'))
+io.out(format('{h1:08x}'))
+io.out(format('{h2:08x}'))
+io.out(format('{h3:08x}'))
+io.out(format('{h4:08x}'))
+io.out(format('{h5:08x}'))
+io.out(format('{h6:08x}'))
+io.out(format('{h7:08x}'))
+print('')
+
+; ═══════════════════════════════════════════
+; SHA-256（完整哈希："hello"）
+; ═══════════════════════════════════════════
+
+block256hello []u32 = [
+    1751477356, 1870659584, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 40,
+]
+
+h0 = 1779033703
+h1 = 3144134277
+h2 = 1013904242
+h3 = 2773480762
+h4 = 1359893119
+h5 = 2600822924
+h6 = 528734635
+h7 = 1541459225
+h0, h1, h2, h3, h4, h5, h6, h7 = sha256.sha256-block(block256hello, h0, h1, h2, h3, h4, h5, h6, h7)
+io.out('sha256("hello")=')
+io.out(format('{h0:08x}'))
+io.out(format('{h1:08x}'))
+io.out(format('{h2:08x}'))
+io.out(format('{h3:08x}'))
+io.out(format('{h4:08x}'))
+io.out(format('{h5:08x}'))
+io.out(format('{h6:08x}'))
+io.out(format('{h7:08x}'))
+print('')
+
+; ═══════════════════════════════════════════
+; SHA-256（完整哈希："The quick brown fox..."）
+; ═══════════════════════════════════════════
+
+block256fox []u32 = [
+    1416127776, 1903520099, 1797284466, 1870097952, 1718581280, 1786080624, 1931505526, 1701978228,
+    1751457900, 1635416352, 1685022592, 0, 0, 0, 0, 344,
+]
+
+h0 = 1779033703
+h1 = 3144134277
+h2 = 1013904242
+h3 = 2773480762
+h4 = 1359893119
+h5 = 2600822924
+h6 = 528734635
+h7 = 1541459225
+h0, h1, h2, h3, h4, h5, h6, h7 = sha256.sha256-block(block256fox, h0, h1, h2, h3, h4, h5, h6, h7)
+io.out('sha256("fox")=')
+io.out(format('{h0:08x}'))
+io.out(format('{h1:08x}'))
+io.out(format('{h2:08x}'))
+io.out(format('{h3:08x}'))
+io.out(format('{h4:08x}'))
+io.out(format('{h5:08x}'))
+io.out(format('{h6:08x}'))
+io.out(format('{h7:08x}'))
+print('')
+
+; ═══════════════════════════════════════════
+; SHA-512（zero block 壓縮測試）
+; ═══════════════════════════════════════════
+
+test-sha512 = () {
+    h0 u64 = 0
+    h1 u64 = 0
+    h2 u64 = 0
+    h3 u64 = 0
+    h4 u64 = 0
+    h5 u64 = 0
+    h6 u64 = 0
+    h7 u64 = 0
+
+    block512 []u64 = [
+        0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0,
+    ]
+
+    ; sha512-zero-block=cf7881d5774acbe8533362e0fbc780700267639d87460eda3086cb40e85931b0717dc95288a023a396bab2c14ce0b5e06fc4fe04eae33e0b91f4d80cbd668bee
+    h0 = 7640891576956012808
+    h1 = 13503953896175478587
+    h2 = 4354685564936845355
+    h3 = 11912009170470909681
+    h4 = 5840696475078001361
+    h5 = 11170449401992604703
+    h6 = 2270897969802886507
+    h7 = 6620516959819538809
+    h0, h1, h2, h3, h4, h5, h6, h7 = sha512.sha512-block(block512, h0, h1, h2, h3, h4, h5, h6, h7)
+    io.out('sha512-zero-block=')
+    io.out(format('{h0:016x}'))
+    io.out(format('{h1:016x}'))
+    io.out(format('{h2:016x}'))
+    io.out(format('{h3:016x}'))
+    io.out(format('{h4:016x}'))
+    io.out(format('{h5:016x}'))
+    io.out(format('{h6:016x}'))
+    io.out(format('{h7:016x}'))
+    print('')
+
+    ; ═══════════════════════════════════════════
+    ; SHA-512（空字串填充區塊）
+    ; ═══════════════════════════════════════════
+
+    block512empty []u64 = [
+        9223372036854775808, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0,
+    ]
+
+    h0 = 7640891576956012808
+    h1 = 13503953896175478587
+    h2 = 4354685564936845355
+    h3 = 11912009170470909681
+    h4 = 5840696475078001361
+    h5 = 11170449401992604703
+    h6 = 2270897969802886507
+    h7 = 6620516959819538809
+    h0, h1, h2, h3, h4, h5, h6, h7 = sha512.sha512-block(block512empty, h0, h1, h2, h3, h4, h5, h6, h7)
+    io.out('sha512-empty=')
+    io.out(format('{h0:016x}'))
+    io.out(format('{h1:016x}'))
+    io.out(format('{h2:016x}'))
+    io.out(format('{h3:016x}'))
+    io.out(format('{h4:016x}'))
+    io.out(format('{h5:016x}'))
+    io.out(format('{h6:016x}'))
+    io.out(format('{h7:016x}'))
+    print('')
+
+    ; ═══════════════════════════════════════════
+    ; SHA-512（"abc" 填充區塊）
+    ; ═══════════════════════════════════════════
+
+    block512abc []u64 = [
+        7017280570803617792, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 24,
+    ]
+
+    h0 = 7640891576956012808
+    h1 = 13503953896175478587
+    h2 = 4354685564936845355
+    h3 = 11912009170470909681
+    h4 = 5840696475078001361
+    h5 = 11170449401992604703
+    h6 = 2270897969802886507
+    h7 = 6620516959819538809
+    h0, h1, h2, h3, h4, h5, h6, h7 = sha512.sha512-block(block512abc, h0, h1, h2, h3, h4, h5, h6, h7)
+    io.out('sha512-abc=')
+    io.out(format('{h0:016x}'))
+    io.out(format('{h1:016x}'))
+    io.out(format('{h2:016x}'))
+    io.out(format('{h3:016x}'))
+    io.out(format('{h4:016x}'))
+    io.out(format('{h5:016x}'))
+    io.out(format('{h6:016x}'))
+    io.out(format('{h7:016x}'))
+    print('')
+
+    ; ═══════════════════════════════════════════
+    ; SHA-512（完整哈希：""）
+    ; ═══════════════════════════════════════════
+
+    h0 = 7640891576956012808
+    h1 = 13503953896175478587
+    h2 = 4354685564936845355
+    h3 = 11912009170470909681
+    h4 = 5840696475078001361
+    h5 = 11170449401992604703
+    h6 = 2270897969802886507
+    h7 = 6620516959819538809
+    h0, h1, h2, h3, h4, h5, h6, h7 = sha512.sha512-block(block512empty, h0, h1, h2, h3, h4, h5, h6, h7)
+    io.out('sha512("")=')
+    io.out(format('{h0:016x}'))
+    io.out(format('{h1:016x}'))
+    io.out(format('{h2:016x}'))
+    io.out(format('{h3:016x}'))
+    io.out(format('{h4:016x}'))
+    io.out(format('{h5:016x}'))
+    io.out(format('{h6:016x}'))
+    io.out(format('{h7:016x}'))
+    print('')
+
+    ; ═══════════════════════════════════════════
+    ; SHA-512（完整哈希："hello"）
+    ; ═══════════════════════════════════════════
+
+    block512hello []u64 = [
+        7522537965575208960, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 40,
+    ]
+
+    h0 = 7640891576956012808
+    h1 = 13503953896175478587
+    h2 = 4354685564936845355
+    h3 = 11912009170470909681
+    h4 = 5840696475078001361
+    h5 = 11170449401992604703
+    h6 = 2270897969802886507
+    h7 = 6620516959819538809
+    h0, h1, h2, h3, h4, h5, h6, h7 = sha512.sha512-block(block512hello, h0, h1, h2, h3, h4, h5, h6, h7)
+    io.out('sha512("hello")=')
+    io.out(format('{h0:016x}'))
+    io.out(format('{h1:016x}'))
+    io.out(format('{h2:016x}'))
+    io.out(format('{h3:016x}'))
+    io.out(format('{h4:016x}'))
+    io.out(format('{h5:016x}'))
+    io.out(format('{h6:016x}'))
+    io.out(format('{h7:016x}'))
+    print('')
+
+    ; ═══════════════════════════════════════════
+    ; SHA-512（完整哈希："The quick brown fox..."）
+    ; ═══════════════════════════════════════════
+
+    block512fox []u64 = [
+        6082222486780733795, 7719278004948921888, 7381250394903899504, 8295753067915255924, 7522454402456254752, 7237116925661151232, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 344,
+    ]
+
+    h0 = 7640891576956012808
+    h1 = 13503953896175478587
+    h2 = 4354685564936845355
+    h3 = 11912009170470909681
+    h4 = 5840696475078001361
+    h5 = 11170449401992604703
+    h6 = 2270897969802886507
+    h7 = 6620516959819538809
+    h0, h1, h2, h3, h4, h5, h6, h7 = sha512.sha512-block(block512fox, h0, h1, h2, h3, h4, h5, h6, h7)
+    io.out('sha512("fox")=')
+    io.out(format('{h0:016x}'))
+    io.out(format('{h1:016x}'))
+    io.out(format('{h2:016x}'))
+    io.out(format('{h3:016x}'))
+    io.out(format('{h4:016x}'))
+    io.out(format('{h5:016x}'))
+    io.out(format('{h6:016x}'))
+    io.out(format('{h7:016x}'))
+    print('')
+}
+test-sha512()
+
+; ═══════════════════════════════════════════
+; AES-128（NIST test vector）
+; ═══════════════════════════════════════════
+
+aes-key [16]byte = [
+    0x2b, 0x7e, 0x15, 0x16, 0x28, 0xae, 0xd2, 0xa6,
+    0xab, 0xf7, 0x15, 0x88, 0x09, 0xcf, 0x4f, 0x3c,
+]
+aes-plain [16]byte = [
+    0x6b, 0xc1, 0xbe, 0xe2, 0x2e, 0x40, 0x9f, 0x96,
+    0xe9, 0x3d, 0x7e, 0x11, 0x73, 0x93, 0x17, 0x2a,
+]
+
+aes-out [16]byte
+aes-out = aes.enc-128(aes-plain, aes-key)
+
+io.out('aes-enc=')
+i <- [0..16): {
+    io.out(format('{aes-out[i]:02x}'))
+}
+print('')
+
+aes-dec [16]byte
+aes-dec = aes.dec-128(aes-out, aes-key)
+
+io.out('aes-dec=')
+i <- [0..16): {
+    io.out(format('{aes-dec[i]:02x}'))
+}
+print('')
+
+; ═══════════════════════════════════════════
+; DES
+; ═══════════════════════════════════════════
+
+des-key [8]byte = [0x13, 0x34, 0x57, 0x79, 0x9b, 0xbc, 0xdf, 0xf1]
+des-plain = '\x01\x23\x45\x67\x89\xab\xcd\xef'
+
+des-out []byte
+des-out = des.des-enc(des-plain, 8, des-key)
+
+io.out('des-enc=')
+i <- [0..8): {
+    io.out(format('{des-out[i]:02x}'))
+}
+print('')
+
+des-decrypted []byte
+des-decrypted = des.des-dec(des-out, 8, des-key)
+
+io.out('des-dec=')
+i <- [0..8): {
+    io.out(format('{des-decrypted[i]:02x}'))
+}
+print('')
+
+; ═══════════════════════════════════════════
+; BLAKE2（RFC 7693 已知答案測試 / KAT）
+; ═══════════════════════════════════════════
+
+b2-empty []byte = with-len(0)
+b2-abc []byte = 'abc'.to-bytes()
+b2-fox []byte = 'The quick brown fox jumps over the lazy dog'.to-bytes()
+
+; blake2b("")=786a02f742015903c6c6fd852552d272912f4740e15847618a86e217f71f5419d25e1031afee585313896444934eb04b903a685b1448b755d56f701afe9be2ce
+b2-out [64]byte
+b2-out = blake2.b(b2-empty)
+io.out('blake2b("")=')
+i <- [0..64): {
+    io.out(format('{b2-out[i]:02x}'))
+}
+print('')
+
+; blake2b("abc")=ba80a53f981c4d0d6a2797b69f12f6e94c212f14685ac4b74b12bb6fdbffa2d17d87c5392aab792dc252d5de4533cc9518d38aa8dbf1925ab92386edd4009923
+b2-out = blake2.b(b2-abc)
+io.out('blake2b("abc")=')
+i <- [0..64): {
+    io.out(format('{b2-out[i]:02x}'))
+}
+print('')
+
+; blake2b("fox")=a8add4bdddfd93e4877d2746e62817b116364a1fa7bc148d95090bc7333b3673f82401cf7aa2e4cb1ecd90296e3f14cb5413f8ed77be73045b13914cdcd6a918
+b2-out = blake2.b(b2-fox)
+io.out('blake2b("fox")=')
+i <- [0..64): {
+    io.out(format('{b2-out[i]:02x}'))
+}
+print('')
+
+; blake2b-256("")=0e5751c026e543b2e8ab2eb06099daa1d1e5df47778f7787faab45cdf12fe3a8
+b2-256-out [32]byte
+b2-256-out = blake2.b-256(b2-empty)
+io.out('blake2b-256("")=')
+i <- [0..32): {
+    io.out(format('{b2-256-out[i]:02x}'))
+}
+print('')
+
+; blake2b-256("abc")=bddd813c634239723171ef3fee98579b94964e3bb1cb3e427262c8c068d52319
+b2-256-out = blake2.b-256(b2-abc)
+io.out('blake2b-256("abc")=')
+i <- [0..32): {
+    io.out(format('{b2-256-out[i]:02x}'))
+}
+print('')
+
+; blake2b-256("fox")=01718cec35cd3d796dd00020e0bfecb473ad23457d063b75eff29c0ffa2e58a9
+b2-256-out = blake2.b-256(b2-fox)
+io.out('blake2b-256("fox")=')
+i <- [0..32): {
+    io.out(format('{b2-256-out[i]:02x}'))
+}
+print('')
+
+; blake2s("")=69217a3079908094e11121d042354a7c1f55b6482ca1a51e1b250dfd1ed0eef9
+b2s-out [32]byte
+b2s-out = blake2.s(b2-empty)
+io.out('blake2s("")=')
+i <- [0..32): {
+    io.out(format('{b2s-out[i]:02x}'))
+}
+print('')
+
+; blake2s("abc")=508c5e8c327c14e2e1a72ba34eeb452f37458b209ed63a294d999b4c86675982
+b2s-out = blake2.s(b2-abc)
+io.out('blake2s("abc")=')
+i <- [0..32): {
+    io.out(format('{b2s-out[i]:02x}'))
+}
+print('')
+
+; blake2s("fox")=606beeec743ccbeff6cbcdf5d5302aa855c256c29b88c8ed331ea1a6bf3c8812
+b2s-out = blake2.s(b2-fox)
+io.out('blake2s("fox")=')
+i <- [0..32): {
+    io.out(format('{b2s-out[i]:02x}'))
+}
+print('')

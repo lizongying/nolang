@@ -50,8 +50,8 @@ After rebind, b and a point to the same stack slot, so any later read of b obser
 Stack-slot rebind only affects the **value copy** semantics of stack-type `b = a`; it is fully orthogonal to the deep-clone / move (output param) paths of heap-owning types, which are unaffected by `slotRebindSafe`.
 
 ### Test references
-- `tests/test-slot-rebind.no`: i64/u64 rebind, i128/u128 via `==`, txt via `.len-bytes()`, degrade-to-copy (`da` reused → `db`/`dc` copy), reassign-after (`ra`=10), param-move (`pm_fn` source is a param → copy), rebind-then-reassign (`rr_fn` → `rr`=99), consume (`consume(m)` → `cm`=84). Expected output: `42 7 1 1 17 5 5 10 100 99 84`.
-- `tests/test-slot-rebind-unsafe.no`: coroutine (`run`/`awy`) capturing a stack variable, verifying `curHasUnsafeConstruct` disables rebind and output matches baseline.
+- `tests/slot-rebind.no`: i64/u64 rebind, i128/u128 via `==`, txt via `.len-bytes()`, degrade-to-copy (`da` reused → `db`/`dc` copy), reassign-after (`ra`=10), param-move (`pm_fn` source is a param → copy), rebind-then-reassign (`rr_fn` → `rr`=99), consume (`consume(m)` → `cm`=84). Expected output: `42 7 1 1 17 5 5 10 100 99 84`.
+- `tests/slot-rebind-unsafe.no`: coroutine (`run`/`awy`) capturing a stack variable, verifying `curHasUnsafeConstruct` disables rebind and output matches baseline.
 
 ### Compiler-Inserted Free
 - Function exit: free all non-moved local heap variables
@@ -233,7 +233,7 @@ When a variable is reassigned (`b = ...`), `delete(g.varAlias, name)` clears any
 
 Stack-slot rebind only affects stack types; it does not involve ownership transfer or `free`, and is fully independent of the heap clone/move machinery.
 
-**Test**: `tests/test-slot-rebind.no` (covers i64/u64/i128/u128/txt rebind, degrade-to-copy, alias invalidation after target reassignment, param-move degrade, consume passthrough; expected output `42 7 1 1 17 5 5 10 100 99 84`).
+**Test**: `tests/slot-rebind.no` (covers i64/u64/i128/u128/txt rebind, degrade-to-copy, alias invalidation after target reassignment, param-move degrade, consume passthrough; expected output `42 7 1 1 17 5 5 10 100 99 84`).
 
 ## FFI extern str Return Values
 

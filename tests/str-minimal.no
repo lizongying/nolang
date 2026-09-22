@@ -1,0 +1,8 @@
+; str-minimal.no
+test-str-len = () {
+    s = 'hello'
+    n = s.len-bytes()
+    print(n)
+}
+test-str-len()
+print(0)

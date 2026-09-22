@@ -1,0 +1,245 @@
+; database-sql.no — std/database/sql 介面契約測試（經 SQLite 驅動）
+;
+; std/database/sql 只「宣告」介面（db / rows / stmt / result），實作由驅動提供；
+; 本測試以 example/sqlite-driver（#{c} FFI 直呼 libsqlite3）作為實作，
+; 驗證介面契約本身：介面變數分派、sql.result 語義、綁定參數型別、close 回傳值。
+;
+; 與 ffi-sqlite.no 的分工（兩者互補，非同義重複）：
+;   ffi-sqlite.no   — FFI 驅動端到端流程（open/exec/query/scan/prepare/bind）
+;   database-sql.no — std 介面契約（last-id 遞增、affected 多列語義、
+;                          bind-bool、stmt.exec() 寫入、close() 回傳值）
+;
+; 需系統安裝 libsqlite3（macOS/Linux 通常已內建）。
+
+# /example/sqlite-driver/src/sqlite
+# std/database/sql
+
+; 測試 1: 介面型別變數取得驅動實作（d db = 驅動的 open）
+d db = sqlite.open(':memory:')
+d.handle == 0 -> {
+    print('fail: open database')
+    return
+}
+print('ok: open database')
+
+; 測試 2: 建表
+r = d.exec('CREATE TABLE users (id INTEGER PRIMARY KEY, name TEXT, age REAL, active INTEGER)')
+print('ok: create table')
+
+; 測試 3: INSERT 的 result 語義 — affected == 1
+r = d.exec('INSERT INTO users (name, age, active) VALUES (\'Alice\', 30.5, 1)')
+{
+    r.affected == 1 -> print('ok: insert affected')
+    -> {
+        print('fail: insert affected=')
+        print(r.affected)
+    }
+}
+
+; 測試 4: last-id 逐列遞增（INTEGER PRIMARY KEY 的 rowid）
+{
+    r.last-id == 1 -> print('ok: insert last-id')
+    -> {
+        print('fail: insert last-id=')
+        print(r.last-id)
+    }
+}
+r = d.exec('INSERT INTO users (name, age, active) VALUES (\'Bob\', 25.0, 0)')
+{
+    r.last-id == 2 -> print('ok: insert last-id increments')
+    -> {
+        print('fail: insert last-id=')
+        print(r.last-id)
+    }
+}
+
+; 測試 5: 查詢（介面型別 rows）+ 三種 scan
+rs rows = d.query('SELECT id, name, age FROM users ORDER BY id')
+rs.stmt == 0 -> {
+    print('fail: query')
+    d.close()
+    return
+}
+n i64 = 0
+sum-id i64 = 0
+alice-ok i64 = 0
+bob-ok i64 = 0
+{
+    id = rs.scan-int(0)
+    nm = rs.scan-str(1)
+    age = rs.scan-float(2)
+    #{overflow = wrap}
+    n = n + 1
+    #{overflow = wrap}
+    sum-id = sum-id + id
+    {
+        nm == 'Alice' -> {
+            age > 30.0 -> {
+                age < 31.0 -> alice-ok = 1
+                -> alice-ok = 0
+            }
+            -> alice-ok = 0
+        }
+        -> {
+            nm == 'Bob' -> {
+                age > 24.0 -> {
+                    age < 26.0 -> bob-ok = 1
+                    -> bob-ok = 0
+                }
+                -> bob-ok = 0
+            }
+            -> bob-ok = 0
+        }
+    }
+} (rs.next())
+{
+    n == 2 -> print('ok: query row count')
+    -> {
+        print('fail: row count=')
+        print(n)
+    }
+}
+{
+    sum-id == 3 -> print('ok: query sum-id')
+    -> {
+        print('fail: sum-id=')
+        print(sum-id)
+    }
+}
+{
+    alice-ok == 1 -> print('ok: scan row Alice')
+    -> print('fail: scan row Alice')
+}
+{
+    bob-ok == 1 -> print('ok: scan row Bob')
+    -> print('fail: scan row Bob')
+}
+rc-rs = rs.close()
+{
+    rc-rs -> print('ok: rows.close')
+    -> print('fail: rows.close')
+}
+
+; 測試 6: 預編譯陳述式 + 三種綁定型別（含 bind-bool）
+s stmt = d.prepare('INSERT INTO users (name, age, active) VALUES (?, ?, ?)')
+s.handle == 0 -> {
+    print('fail: prepare insert')
+    d.close()
+    return
+}
+ok-bind i64 = 0
+{
+    s.bind-str(1, 'Carol') -> {
+        #{overflow = wrap}
+        ok-bind = ok-bind + 1
+    }
+    -> ok-bind = 0
+}
+{
+    s.bind-int(2, 40) -> {
+        #{overflow = wrap}
+        ok-bind = ok-bind + 1
+    }
+    -> ok-bind = 0
+}
+{
+    s.bind-bool(3, true) -> {
+        #{overflow = wrap}
+        ok-bind = ok-bind + 1
+    }
+    -> ok-bind = 0
+}
+{
+    ok-bind == 3 -> print('ok: bind-str/bind-int/bind-bool')
+    -> {
+        print('fail: bind count=')
+        print(ok-bind)
+    }
+}
+r2 = s.exec()
+{
+    r2.affected == 1 -> print('ok: prepared insert affected')
+    -> {
+        print('fail: prepared insert affected=')
+        print(r2.affected)
+    }
+}
+{
+    r2.last-id == 3 -> print('ok: prepared insert last-id')
+    -> {
+        print('fail: prepared insert last-id=')
+        print(r2.last-id)
+    }
+}
+rc-s = s.close()
+{
+    rc-s -> print('ok: stmt.close')
+    -> print('fail: stmt.close')
+}
+
+; 測試 7: 預編譯查詢以 bind-bool 過濾（active = false ⇒ Bob）
+s2 stmt = d.prepare('SELECT name FROM users WHERE active = ?')
+s2.handle == 0 -> {
+    print('fail: prepare select')
+    d.close()
+    return
+}
+s2.bind-bool(1, false)
+rs2 rows = s2.query()
+rs2.stmt == 0 -> {
+    print('fail: prepared query')
+    s2.close()
+    d.close()
+    return
+}
+name2 = ''
+{
+    name2 = rs2.scan-str(0)
+} (rs2.next())
+{
+    name2 == 'Bob' -> print('ok: prepared query bind-bool filter')
+    -> {
+        print('fail: prepared query name=')
+        print(name2)
+    }
+}
+rs2.close()
+s2.close()
+
+; 測試 8: stmt.exec() 的寫入語義 — affected 多列（DELETE active = true ⇒ Alice + Carol）
+s3 stmt = d.prepare('DELETE FROM users WHERE active = ?')
+s3.bind-bool(1, true)
+r3 = s3.exec()
+{
+    r3.affected == 2 -> print('ok: stmt.exec multi-row affected')
+    -> {
+        print('fail: stmt.exec affected=')
+        print(r3.affected)
+    }
+}
+s3.close()
+
+; 測試 9: 刪除後列數應為 1（只剩 Bob）
+rs3 rows = d.query('SELECT id FROM users')
+total i64 = 0
+{
+    #{overflow = wrap}
+    total = total + 1
+} (rs3.next())
+{
+    total == 1 -> print('ok: rows after delete')
+    -> {
+        print('fail: rows after delete=')
+        print(total)
+    }
+}
+rs3.close()
+
+; 測試 10: db.close() 回傳值
+rc-db = d.close()
+{
+    rc-db -> print('ok: db.close')
+    -> print('fail: db.close')
+}
+
+print('ok: all tests done')

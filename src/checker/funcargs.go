@@ -1408,7 +1408,7 @@ func stdMethodParamTypes(recvType, method string) ([]string, string, bool) {
 // The types describe the STORAGE SHAPE, not a declared signature: codegen
 // derives the push stride from the receiver's element type
 // (emitBuiltinVecPush / elemTypeOfReceiver, pinned by
-// tests/test-push-narrow.no), so pushing an i64 into a []byte truncates to one
+// tests/push-narrow.no), so pushing an i64 into a []byte truncates to one
 // byte by design. src/std relies on that (zip-writer.put takes `b i64` and
 // pushes it into a []byte), so integer-vs-integer is not reported as an error
 // here — only a mismatch of KIND is (see checkStdMethodCallArgs).

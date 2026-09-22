@@ -26,7 +26,7 @@ func init() {
 		Params:       []parser.Type{parser.TypeStr, parser.TypeStr},
 		Return:       []parser.Type{parser.TypeBool},
 		Doc:          "Set the value of an environment variable",
-		CLibCall:     &CLibCall{FuncName: "setenv", ArgTypes: []LLVMArgType{LLVMStrPtr, LLVMStrPtr, LLVMI32}, RetType: LLVMI32, RetExt: &i64Type, FixedArgs: map[int]string{2: "1"}},
+		CLibCall:     &CLibCall{FuncName: "setenv", ArgTypes: []LLVMArgType{LLVMStrPtr, LLVMStrPtr, LLVMI32}, RetType: LLVMI32, CmpRet: true, FixedArgs: map[int]string{2: "1"}},
 	})
 
 	// get-wd: get current working directory (uses @.os-buf)

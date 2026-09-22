@@ -1938,7 +1938,7 @@ print(n.next.v)                 ; 2
 - 按值拷貝（`b = a`、作為參數傳遞、寫入容器）會**深拷貝** pointee，因此兩個宿主
   不會共用同一塊記憶體、也不會被釋放兩次。
 
-端到端測試見 `tests/test-field-inline-annotation.no`。
+端到端測試見 `tests/field-inline-annotation.no`。
 
 ### 枚舉值引用
 

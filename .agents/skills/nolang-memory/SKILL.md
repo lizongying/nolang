@@ -518,7 +518,7 @@ if srcHeapType != "%vec" && srcHeapType != "%arr" && srcHeapType != "%str-long" 
 
 **调试**：设 `NOLANG_DEBUG_OPT=1` 可见 `[debug-opt] slot-rebind <name> -> <src> (type=...)`；含闭包/协程的函数该函数内不应出现此行（证明 `curHasUnsafeConstruct` 已禁用）。
 
-**测试**：`tests/test-slot-rebind.no`（期望输出 `42 7 1 1 17 5 5 10 100 99 84`）；`tests/test-slot-rebind-unsafe.no`（协程 capture 栈变量，验证 `curHasUnsafeConstruct` 禁用后输出与基线一致）；`tests/test-slot-rebind-gaps.no`（覆盖引用扫描边界：`BlockStatement` 写源、`?=`、裸区块——期望 `5 42 9`，且与 `no-baseline` 一致；注意该测试**故意不用 for-range**，因 in-tree 的 on-demand-std transpiler 重构当前对 for-range 体内的 `print` 会漏加载 `fmt` 而 `@fmt-int` 未定义，属 transpiler WIP 非 slot-rebind 范畴）。
+**测试**：`tests/slot-rebind.no`（期望输出 `42 7 1 1 17 5 5 10 100 99 84`）；`tests/slot-rebind-unsafe.no`（协程 capture 栈变量，验证 `curHasUnsafeConstruct` 禁用后输出与基线一致）；`tests/slot-rebind-gaps.no`（覆盖引用扫描边界：`BlockStatement` 写源、`?=`、裸区块——期望 `5 42 9`，且与 `no-baseline` 一致；注意该测试**故意不用 for-range**，因 in-tree 的 on-demand-std transpiler 重构当前对 for-range 体内的 `print` 会漏加载 `fmt` 而 `@fmt-int` 未定义，属 transpiler WIP 非 slot-rebind 范畴）。
 
 ## 7. %arr → %vec 轉换（varAlias）
 
@@ -599,7 +599,7 @@ clib 路徑（`generator.go:1763`）用於內建函數（`get-env`、`get-wd`、
 | `clone-reset-is-moved.no` | clone 後重置 moved 狀態 |
 | `struct-move-is-moved.no` | 結構體 move 後 isMovedVar 正確 |
 | `async-str-result.no` / `async-str-stress.no` / `async-module-awy.no` / `async-shared-race.no` / `async-alloca-escape.no` | async 場景記憶體安全 |
-| `test-minimal-option-str.no` / `test-minimal-str-map.no` / `test-minimal-str-map2.no` / `test-option-str-match.no` | 最小化 option/map str 場景 |
+| `minimal-option-str.no` / `minimal-str-map.no` / `minimal-str-map2.no` / `option-str-match.no` | 最小化 option/map str 場景 |
 | `bug19-struct-field-corruption.no` | 局部結構體 str 字段跨函數傳遞 + str-range clone（§5.9） |
 | `bug12-builtin-slice-to-str.no` | Builtin 返回 []byte 賦值到 str 變數（§5.10） |
 | `bug13-bool-coercion.no` + `bug13-helper.no` | Bool 返回值的型別強轉（§5.11） |

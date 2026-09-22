@@ -297,7 +297,7 @@ func inferExprType(expr parser.Expression, varTypes map[string]string, funcTypes
 				// 的路徑都推不出型別。
 				// （舊註解說這會讓 checkReadOnlyLenAssign 在巢狀路徑失效、需要補洞 ——
 				//  那是錯的：欄位的 `X.len = n` 本來就是支援的增長操作，見
-				//  checkReadOnlyLenAssign 上的說明與 tests/test-len-assign-grow.no。）
+				//  checkReadOnlyLenAssign 上的說明與 tests/len-assign-grow.no。）
 				typeName = rt
 			}
 			if typeName != "" {
@@ -6406,7 +6406,7 @@ func isContainerLenOwner(t string) bool {
 // validateStmtTypes: writing `.len` on a container **struct field** (including
 // nested ones like `b.arr[1].len = 2`) is a supported grow/shrink operation —
 // codegen allocates the buffer when data == null, and
-// tests/test-len-assign-grow.no covers it. Wiring this in would reject those
+// tests/len-assign-grow.no covers it. Wiring this in would reject those
 // and break that test. Plain container variables are already rejected by the
 // transpiler's own guard ("cannot modify read-only field 'len' of ...").
 //
@@ -6783,12 +6783,12 @@ func validateStmtTypes(stmt parser.Statement, funcNames map[string]bool, funcTyp
 			//   - **結構體欄位**容器（`b.s.len = 3`，含巢狀 `b.arr[1].len = 2`）
 			//     → **放行，而且是刻意支援的功能**：寫入時若 data == null 會先分配
 			//     緩衝區（codegen 的 ensureContainerStorageForLen），所以「從零值增長」
-			//     是合法的，`tests/test-len-assign-grow.no` 五個案例全靠這個行為。
+			//     是合法的，`tests/len-assign-grow.no` 五個案例全靠這個行為。
 			//     早年 `p.nodes[i].str-val.len = 1` 對 null 做 GEP + store 會 SIGSEGV，
 			//     那個洞已經由上面的分配邏輯補掉（不是靠拒絕）。
 			//
 			// 結論：這裡**不要**接 checkReadOnlyLenAssign —— 那會把欄位寫入也擋掉，
-			// 直接打破 test-len-assign-grow.no。該函式刻意保持不被呼叫。
+			// 直接打破 len-assign-grow.no。該函式刻意保持不被呼叫。
 			if ident, ok := assign.Left.(*parser.Identifier); ok {
 				// 檢查是否對函式名稱賦值
 				if funcNames[ident.Value] {

@@ -1,0 +1,93 @@
+; match-it-type-scope.no — 臂內顯式 `?T` 宣告不得汙染 `it` 的型別
+;
+; 回歸：`it` 的型別記錄在函式級的單一表裡。只要臂內出現「顯式 `?T` 宣告的變數」
+; 且之後又對它做 match，內層臂的 `let it` 就會把 `it` 的型別寫成 T，而方法呼叫的
+; callee 在 parse 期就定死了，於是**連內層 match 之前**的 `it.show()` 都一起壞掉：
+;
+;   t ?thing = mk()
+;   t: {
+;       nil -> print('nil')
+;       err -> print('err')
+;       -> {
+;           s = it.show()        ; 修復前：unknown callee bool.show
+;           w ?bool = it.get()   ; 顯式 ?bool 是觸發條件
+;           w: { -> print(...) }
+;           print(it.show())     ; 修復前：unknown callee bool.show
+;       }
+;   }
+;
+; 修復方式是讓 collectVarTypesFromBody 對 `it` 做逐層作用域（巢狀區塊結束後還原），
+; 與 MIR 端對 `it` **值**的還原（hir2mir lowerIf）對稱。
+; 註：寫成 `w = it.get()`（不帶 ?T）本來就正常，這裡刻意保留 ?T 以守住回歸。
+
+check-str = (name str, got str, want str) {
+    got == want -> print('ok: ' - name)
+
+    -> print('fail: ' - name - ' got=[' - got - '] want=[' - want - ']')
+}
+
+thing {
+    n i64
+}
+
+thing.get = () (out ?bool) {
+    out = true
+}
+
+thing.show = () (out str) {
+    out = 'n=' - .n.to-str()
+}
+
+mk = () (out ?thing) {
+    out = thing {
+        n: 7
+    }
+}
+
+main = () {
+    ; 1. 臂內顯式 ?T 宣告 + 巢狀 match：前後的 it 都必須仍是 thing
+    a ?thing = mk()
+    got1 = ''
+    a: {
+        nil -> print('a nil')
+
+        err -> print('a err')
+
+        -> {
+            got1 = it.show()
+            w ?bool = it.get()
+            w: {
+                nil -> print('  w nil')
+
+                err -> print('  w err')
+
+                -> got1 = got1 - '|w=' - it.to-str()
+            }
+            got1 = got1 - '|after=' - it.show()
+        }
+    }
+    check-str('explicit-?T-in-arm', got1, 'n=7|w=true|after=n=7')
+
+    ; 2. 對照組：不帶 ?T 的寫法
+    b ?thing = mk()
+    got2 = ''
+    b: {
+        nil -> print('b nil')
+
+        err -> print('b err')
+
+        -> {
+            got2 = it.show()
+            w = it.get()
+            w: {
+                nil -> print('  w nil')
+
+                err -> print('  w err')
+
+                -> got2 = got2 - '|w=' - it.to-str()
+            }
+            got2 = got2 - '|after=' - it.show()
+        }
+    }
+    check-str('inferred-in-arm', got2, 'n=7|w=true|after=n=7')
+}

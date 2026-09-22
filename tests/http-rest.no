@@ -1,0 +1,155 @@
+; http-rest.no — HTTP REST 層測試
+;
+; 本測試為 vet-only，需要實際 HTTP 伺服器才能執行。
+; 測試 Phase 3 新增的 REST 支援：http-request struct、自訂標頭、
+; http-put / http-delete / http-patch 便捷函數、http-do-req、
+; http.response.parse-headers / get-header。
+
+# std/net/http
+
+; ── 測試 1: http-request 結構體與 init ──
+req = http.request {}
+req.init('PUT', 'http://example.com/api/item', '{"name":"test"}')
+{
+    req.method == 'PUT' -> print('ok: http-request.init method')
+
+    -> print('fail: http-request.init method')
+}
+{
+    req.url == 'http://example.com/api/item' -> print('ok: http-request.init url')
+
+    -> print('fail: http-request.init url')
+}
+; ⚠️ 這裡原本是 `req.body == ' -> "name":"test"'` + 兩個裸 print（外層 `{ }` 被吃掉），
+; 導致 ok / fail 兩行無條件都印，測試等於沒有斷言。還原成原本的短路群組寫法。
+{
+    req.body == '{"name":"test"}' -> print('ok: http-request.init body')
+
+    -> print('fail: http-request.init body')
+}
+{
+    req.header-count == 0 -> print('ok: http-request.init header-count')
+
+    -> print('fail: http-request.init header-count')
+}
+
+; ── 測試 2: add-header ──
+ok1 bool = req.add-header('Content-Type', 'application/json')
+{
+    ok1 -> print('ok: add-header Content-Type')
+
+    -> print('fail: add-header Content-Type')
+}
+{
+    req.header-count == 1 -> print('ok: header-count after add')
+
+    -> print('fail: header-count after add')
+}
+ok2 bool = req.add-header('Authorization', 'Bearer token123')
+{
+    ok2 && req.header-count == 2 -> print('ok: add-header Authorization')
+
+    -> print('fail: add-header Authorization')
+}
+
+; ── 測試 3: http.response 擴充欄位 ──
+r = http.response {}
+r.status-code = 200
+r.status-text = 'OK'
+r.headers = 'Content-Type: text/html\r\nContent-Length: 13'
+r.body = '<html></html>'
+{
+    r.status-code == 200 -> print('ok: http.response status-code')
+
+    -> print('fail: http.response status-code')
+}
+
+; ── 測試 4: parse-headers（手動填充 headers 後解析）
+r.parse-headers()
+{
+    r.header-count == 2 -> print('ok: parse-headers count=2')
+
+    -> {
+        print('fail: parse-headers count')
+        print(r.header-count)
+    }
+}
+
+; ── 測試 5: get-header ──
+ct = r.get-header('Content-Type')
+ct: {
+    nil -> print('fail: get-header Content-Type not found')
+
+    -> {
+        it == 'text/html' -> print('ok: get-header Content-Type')
+
+        err -> print('err')
+
+        err -> print('err')
+
+        -> {
+            print('fail: get-header Content-Type value')
+            print(it)
+        }
+    }
+}
+cl = r.get-header('Content-Length')
+cl: {
+    nil -> print('fail: get-header Content-Length')
+
+    -> {
+        it == '13' -> print('ok: get-header Content-Length')
+
+        -> print('fail: get-header Content-Length')
+    }
+}
+
+; 不存在的標頭
+none = r.get-header('X-Nonexistent')
+none: {
+    nil -> print('ok: get-header nonexistent returns nil')
+
+    -> print('fail: get-header nonexistent should return nil')
+}
+
+; ── 測試 6: http-put 便捷函數（vet-only，需網路才能執行）
+resp = http.put('http://example.com/api/item', 'data')
+resp: {
+    nil -> print('skip: http-put (no network)')
+
+    err -> print('err')
+
+    -> {
+        print('ok: http-put connected')
+        print(it.status-code)
+    }
+}
+
+; ── 測試 7: http-delete 便捷函數
+resp2 = http.delete('http://example.com/api/item/1')
+resp2: {
+    nil -> print('skip: http-delete (no network)')
+
+    -> print('ok: http-delete connected')
+}
+
+; ── 測試 8: http-patch 便捷函數
+resp3 = http.patch('http://example.com/api/item/1', '{"key":"v"}')
+resp3: {
+    nil -> print('skip: http-patch (no network)')
+
+    -> print('ok: http-patch connected')
+}
+
+; ── 測試 9: http-do-req（自訂標頭）
+req2 = http.request {}
+req2.init('POST', 'http://example.com/api/auth', '{"user":"admin"}')
+req2.add-header('Content-Type', 'application/json')
+req2.add-header('X-Request-Id', 'abc123')
+resp4 = http.do-req(req2)
+resp4: {
+    nil -> print('skip: http-do-req (no network)')
+
+    -> print('ok: http-do-req connected')
+}
+print('ok: all tests done')

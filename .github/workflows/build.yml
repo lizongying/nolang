@@ -205,7 +205,7 @@ jobs:
 
       - name: Build and run test-wasi-hello
         run: |
-          ./bin/no build -cc zig -target wasm32-wasi -o /tmp/hello.wasm tests/test-wasi-hello.no
+          ./bin/no build -cc zig -target wasm32-wasi -o /tmp/hello.wasm tests/wasi-hello.no
           output=$(wasmtime run /tmp/hello.wasm)
           echo "Output: $output"
           if [ "$output" != "Hello, WASI!" ]; then
@@ -215,7 +215,7 @@ jobs:
 
       - name: Build and run test-wasi-fib
         run: |
-          ./bin/no build -cc zig -target wasm32-wasi -o /tmp/fib.wasm tests/test-wasi-fib.no
+          ./bin/no build -cc zig -target wasm32-wasi -o /tmp/fib.wasm tests/wasi-fib.no
           output=$(wasmtime run /tmp/fib.wasm)
           echo "Output: $output"
           # Verify fib-loop results (recursion has a known compiler bug, see test file)

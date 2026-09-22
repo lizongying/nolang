@@ -1098,7 +1098,7 @@ type Module struct {
 	// the discriminant, and the emission of the enum's LLVM layout.
 	//
 	// Variants are NAME-SPACED BY ENUM: two enums may both define `ok` with
-	// different tags and different payloads (see tests/test-tagged-enum.no).
+	// different tags and different payloads (see tests/tagged-enum.no).
 	// Resolution therefore always goes through the target enum's own table,
 	// never a global variant-name index.
 	TaggedEnums map[string]*TaggedEnumInfo
@@ -1117,7 +1117,7 @@ type Module struct {
 	// a newtype receiver (`fd.to-str`) to the method table key the legacy
 	// backend actually emits (`i64.to-str`) — otherwise the bare alias name
 	// forms a callee (`fd.to-str`) that no function matches
-	// ("unknown callee fd.to-str", tests/test_errno_basic.no).
+	// ("unknown callee fd.to-str", tests/errno-basic.no).
 	ValueTypeAliases map[string]string
 }
 
@@ -1266,7 +1266,7 @@ func (m *Module) internType(raw string) TypeID {
 	// with Elem == NoType, and llvmTypeOf's KindArray fallback then rendered it
 	// as the ZERO-BYTE `[0 x i64]` — silently shrinking the struct by 512 bytes,
 	// so every index-store through the field wrote past the allocation and
-	// aborted with SIGBUS (tests/test-dump2.no, test-chain-copy.no, test-regexp.no
+	// aborted with SIGBUS (tests/dump2.no, chain-copy.no, regexp.no
 	// and the other regexp tests).
 	//
 	// So: resolve every nested type into a local first, and re-index m.Types

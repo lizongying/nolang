@@ -2160,7 +2160,7 @@ func (l *lowerer) lowerUnwrapAssign(uas *UnwrapAssignStatement) Statement {
 			// FuncVarTypes，避免 codegen 退回被全域 VarTypes 同名污染
 			// （std 常見 x:str → %str-long）而把 x 誤當字串，導致
 			// `%x.val defined with type '%str-long' but expected 'i64'`
-			// （見 test-safe-index-utl.no 的 safe-utl）。寫入當前函數作用域
+			// （見 safe-index-utl.no 的 safe-utl）。寫入當前函數作用域
 			// （非全域）確保不跨函數污染 std。
 			if uas.Name != nil {
 				l.p.sem.SetFuncVarType(l.curFuncName, uas.Name.Value, elem)

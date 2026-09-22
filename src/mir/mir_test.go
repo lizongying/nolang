@@ -86,7 +86,7 @@ func TestAnalyzeUseAfterMoveDetected(t *testing.T) {
 	// bytes stay valid), so only a SECOND DROP of v is a real hazard — it frees
 	// the same heap pointer that w now owns -> double-free. That is what we must
 	// catch (the legacy read-after-move check was a false positive that blocked
-	// test-std-hash.no, where md5 reads its `data` []byte many times after
+	// std-hash.no, where md5 reads its `data` []byte many times after
 	// moving it in).
 	b.Emit(OpDrop, b.Type("void"), []ValueID{v}, "")
 	b.Emit(OpCall, b.Type("void"), []ValueID{w}, "print")

@@ -242,6 +242,13 @@ var forwardCSpecs = map[string]cCallSpec{
 		Func: "getlogin",
 		Ret:  cRetSpec{Kind: cRetCStrToStr, LLVM: "i8*"},
 	},
+	"ttyname": {
+		// ttyname(fd) -> char* (NULL when fd is not a tty). cRetCStrToStr maps
+		// NULL to the empty string, which is exactly the documented contract.
+		Func: "ttyname",
+		Args: []cArgSpec{{Kind: cArgI32, From: 0}},
+		Ret:  cRetSpec{Kind: cRetCStrToStr, LLVM: "i8*"},
+	},
 	"mkdtemp": {
 		// mkdtemp(tmpl) -> (name, ok). Like mkstemp it rewrites the template
 		// buffer in place and returns the same pointer (NULL on failure), so
@@ -584,7 +591,7 @@ func (c *codegen) emitCCall(inst *Inst, spec *cCallSpec) error {
 		// a second result — exactly what legacy's generateOptionAssign does
 		// (build/llvm/stmt.go). Emitting a bare i64 instead leaves `?=`
 		// comparisons against `err` untyped -> `icmp eq i64 %v, undef` ->
-		// `unreachable` -> SIGTRAP (tests/test-open-read.no).
+		// `unreachable` -> SIGTRAP (tests/open-read.no).
 		if lt, ok := c.resultType(inst, 0); ok && isOptionType(lt) {
 			return c.storeOptionFromPair(inst, v, okCmp)
 		}

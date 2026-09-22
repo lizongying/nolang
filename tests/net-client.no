@@ -1,0 +1,78 @@
+; net-client.no — 高階 TCP client 測試
+;
+; 測試 client 結構體的 connect/send/recv/request/send-line/reconnect/is-connected/close。
+; 需 live TCP echo server 才能執行（vet-only，不執行）。
+;
+; 可用 nc -l 8080 作為 echo server 手動測試。
+
+; # std/net/client
+
+; 測試 1: connect
+c client.client =  {}
+ok = c.connect('127.0.0.1', 8080)
+{
+    ok -> print('ok: connect')
+    -> {
+        print('fail: connect')
+        return
+    }
+}
+
+; 測試 2: is-connected
+yes = c.is-connected()
+{
+    yes -> print('ok: is-connected')
+    -> print('fail: is-connected')
+}
+
+; 測試 3: send / recv
+buf str = ''
+written = c.send('hello')
+{
+    written > 0 -> print('ok: send')
+    -> print('fail: send')
+}
+read-n = c.recv(buf, 1024)
+{
+    read-n > 0 -> print('ok: recv')
+    -> print('fail: recv')
+}
+
+; 測試 4: send-line / recv-line
+written2 = c.send-line('world')
+{
+    written2 > 0 -> print('ok: send-line')
+    -> print('fail: send-line')
+}
+line = c.recv-line()
+line: {
+    nil -> print('fail: recv-line')
+    -> print('ok: recv-line')
+}
+
+; 測試 5: close
+c.close()
+yes2 = c.is-connected()
+{
+    yes2 == false -> print('ok: close')
+    -> print('fail: close')
+}
+
+; 測試 6: reconnect
+re-ok = c.reconnect()
+{
+    re-ok -> print('ok: reconnect')
+    -> print('fail: reconnect')
+}
+
+; 測試 7: 便捷函數 net-client
+c2 = client.client-create('127.0.0.1', 8080)
+c2: {
+    nil -> print('fail: net-client')
+    -> {
+        print('ok: net-client')
+
+        .close()
+    }
+}
+print('ok: all tests done')

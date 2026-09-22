@@ -1008,7 +1008,7 @@ func (m *Module) insertDrops(f *Function, rep *Report) {
 			// A tagged-enum constructor CONSUMES its payload fields: the
 			// variant value holds them inline in its payload union, so the
 			// source temporaries must not be freed separately — that would
-			// leave the enum holding a freed buffer (tests/test-tagged-enum.no:
+			// leave the enum holding a freed buffer (tests/tagged-enum.no:
 			// `q b-res = ok('hi')` printed nothing because the string was
 			// freed at the end of the enclosing block).
 			if inst.Op == OpEnumNew {
@@ -1342,7 +1342,7 @@ func equalSet(a, b valueSet) bool {
 // redundant re-assignment such as `x = x`) copies a slot onto itself and moves
 // nothing: treating it as a transfer made the very next `drop x` look like a
 // double-free ("value 1400 dropped after move"), which blocked the MIR backend
-// on tests/test-str.no (std str.replace-n).
+// on tests/str-test.no (std str.replace-n).
 // isOptionPeelMove reports whether inst is the OpMove that reads an option's
 // payload out into a slice value (`x = opt` where opt : ?[]T). That move is a
 // BORROW, not an ownership transfer: emitMove copies the %vec triple out of the
@@ -1402,7 +1402,7 @@ func isTransferringMove(inst *Inst) bool {
 // (emitMove does load+store), NOT a C++-style move that invalidates the source,
 // so a plain READ of a moved value is always SAFE and is deliberately NOT
 // flagged. Flagging reads was a false positive that blocked the MIR backend on
-// test-std-hash.no (md5 reads its `data` []byte many times after moving it in).
+// std-hash.no (md5 reads its `data` []byte many times after moving it in).
 //
 // The analysis is path-sensitive. The original implementation kept a single
 // module-wide "moved at inst X" map, which falsely flagged a value moved on one
@@ -1499,7 +1499,7 @@ func (m *Module) checkMoves(f *Function, rep *Report) {
 	// We therefore flag OpDrop of a moved value, and never flag reads of one.
 	// This matches the legacy backend, where md5 passes its `data` []byte to
 	// `load-le-u32` many times without moving it — flagging the reads there was
-	// a false positive that blocked the MIR backend on test-std-hash.no.
+	// a false positive that blocked the MIR backend on std-hash.no.
 	for _, bid := range f.Blocks {
 		blk := m.Block(bid)
 		if blk == nil {

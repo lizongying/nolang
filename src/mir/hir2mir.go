@@ -264,7 +264,7 @@ func copiedEnumVariants(src map[string][]string) map[string][]string {
 // std enums (checker.CollectStdEnumVariants). Without this a user enum's
 // variant names were invisible to MIR: `c color = green` lowered to a void
 // const and `c: { red -> ... }` could not resolve `red`
-// (tests/test-tagged-enum.no).
+// (tests/tagged-enum.no).
 //
 // Only KEnumDef is registered here. A tagged enum (KTaggedEnumDef) is a
 // struct value, not a plain i64 discriminant, so adding its variant names to
@@ -646,7 +646,7 @@ func (l *lowerer) isStructType(raw string) bool {
 // underlying `i64`, but its type Raw keeps the alias name (`fd`), so a method
 // call `fd.to-str()` would otherwise form the callee `fd.to-str` instead of the
 // `i64.to-str` the legacy backend emits. Expanding the alias at method-dispatch
-// time fixes "unknown callee fd.to-str" (tests/test_errno_basic.no). Function
+// time fixes "unknown callee fd.to-str" (tests/errno-basic.no). Function
 // type aliases (FlagFuncType) and unions (FlagUnion) are excluded — the former
 // are tracked by mod.TypeAliases, the latter have no single underlying type.
 func (l *lowerer) collectValueTypeAliases() {
@@ -674,7 +674,7 @@ func (l *lowerer) collectValueTypeAliases() {
 				// `test-cb` to the KindFunc type (e.g. `fn()`), not a
 				// misclassified KindInt. This lets resolveCallee detect
 				// fn-typed parameters and emit indirect calls
-				// (tests/test-named-fn-type.no).
+				// (tests/named-fn-type.no).
 				l.mod.TypeAliases[name] = l.b.Type(target)
 				if i := strings.LastIndex(name, "."); i >= 0 {
 					bare := name[i+1:]
@@ -1039,25 +1039,72 @@ func LowerHIR(pkg *hir.Package, enumVariants map[string][]string) (*Module, *Rep
 			// left for synthesizeMainForTopLevel, which inlines the inlineable
 			// ones as locals (test-fd-newtype). For a real module (hasExplicitMain)
 			// all top-level `let`s stay module-level globals, as before.
+			// fixedGlobalType overrides the global's declared type when the
+			// binding's own type cannot describe its constant initializer (a
+			// slice-typed array literal folds to a FIXED array). See the
+			// !hasExplicitMain guard below.
+			fixedGlobalType := ""
 			if !hasExplicitMain {
 				raw := l.letTypeRaw(n)
-				if raw == "" || l.foldConstText(n, raw) == "" {
-					continue
+				gname := pkg.Str(n.S)
+				// A top-level binding that a named FUNCTION references must be
+				// module storage, even when the rules below would normally skip
+				// it. Those rules exist because a script's top-level binding is
+				// materialized as a LOCAL of the synthetic main, which is correct
+				// only while main is its sole consumer — a local of main cannot
+				// serve another frame, so a helper function referencing the name
+				// resolved it to a void `const` placeholder. Two shapes hit this:
+				//
+				//  1. A DECLARATION-ONLY binding (`zw-data []byte`, no
+				//     initializer), written by add-file/finalize and read by
+				//     create in notools' zip.no: "vec.push: needs receiver and
+				//     element" / "write-file: data arg has no slot (arg type
+				//     void)". There is no initializer to fold and no
+				//     inline-as-local alternative, so register it as a mutable
+				//     global — codegen emits `private global <T>
+				//     zeroinitializer` for an empty ConstText, the correct
+				//     zero-initialized shared state.
+				//
+				//  2. A CONSTANT array literal (`XZ-MAGIC = [0xfd, 0x37, ...]`)
+				//     read by a std function (std/archive/xz.no's xz-decompress
+				//     does `data[i] != XZ-MAGIC[i]`). Its inferred type is a slice
+				//     (`[]i64`) but foldConstText lowers the literal to a FIXED
+				//     array `[6 x i64] [...]`, so the global must be declared with
+				//     the fixed-array type or the declaration and initializer
+				//     disagree and the verifier rejects the module.
+				//
+				// A binding WITH a runtime initializer and a non-fixed type
+				// (e.g. `x = compute()`) is deliberately NOT covered: it would
+				// need the initializer statement to write into the global plus
+				// owned-value move/clone bookkeeping this path does not have.
+				referencedByFunc := gname != "" && l.nameUsedInFuncBodies(gname)
+				declOnly := n.First == hir.NoID && raw != "" && raw != "void"
+				constArr := false
+				if referencedByFunc && l.isUnsafeInlineType(raw) {
+					if ft := l.fixedArrayConstGlobalType(n, raw); ft != "" {
+						fixedGlobalType = ft
+						constArr = true
+					}
 				}
-				// A top-level slice/array/option/vec `let` in a SCRIPT (no
-				// explicit `fn main`) is NOT a module-scope constant that must
-				// outlive every function — its only consumer is the synthetic
-				// `main`, which materializes it as a local (synthesizeMainForTop-
-				// Level inlines it). Registering it here would emit a broken
-				// `@name = global <slice-type> <fixed-array-constant>` whose type
-				// and initializer disagree: foldConstText lowers a slice literal
-				// (`v []i64 = [10,20,30]`) to a fixed array `[3 x i64]`, but the
-				// binding type is a slice (`%vec`), so the LLVM verifier rejects
-				// the module and every later read resolves to a void `const`
-				// (test-oob-ok: `v[0]` -> "index slot: value ... void"). Skip the
-				// global registration so it is inlined as a real local instead.
-				if l.isUnsafeInlineType(raw) {
-					continue
+				if !(referencedByFunc && (declOnly || constArr)) {
+					if raw == "" || l.foldConstText(n, raw) == "" {
+						continue
+					}
+					// A top-level slice/array/option/vec `let` in a SCRIPT (no
+					// explicit `fn main`) is NOT a module-scope constant that must
+					// outlive every function — its only consumer is the synthetic
+					// `main`, which materializes it as a local (synthesizeMainForTop-
+					// Level inlines it). Registering it here would emit a broken
+					// `@name = global <slice-type> <fixed-array-constant>` whose type
+					// and initializer disagree: foldConstText lowers a slice literal
+					// (`v []i64 = [10,20,30]`) to a fixed array `[3 x i64]`, but the
+					// binding type is a slice (`%vec`), so the LLVM verifier rejects
+					// the module and every later read resolves to a void `const`
+					// (test-oob-ok: `v[0]` -> "index slot: value ... void"). Skip the
+					// global registration so it is inlined as a real local instead.
+					if l.isUnsafeInlineType(raw) {
+						continue
+					}
 				}
 			}
 			gname := pkg.Str(n.S)
@@ -1076,7 +1123,12 @@ func LowerHIR(pkg *hir.Package, enumVariants map[string][]string) (*Module, *Rep
 				// lowerStmt/lowerAssignNode emit the store. Guard with existence
 				// so reassignments never overwrite the declaration's slot.
 				if _, exists := l.globals[gname]; !exists {
-					if dt := l.typeOfNode(n); dt != NoType && dt != l.voidType {
+					// A fixed-array override wins: the binding's own type is a
+					// slice, which cannot describe the fixed-array constant its
+					// initializer folds to (see fixedArrayConstGlobalType).
+					if fixedGlobalType != "" {
+						l.globalTypes[gname] = fixedGlobalType
+					} else if dt := l.typeOfNode(n); dt != NoType && dt != l.voidType {
 						l.globalTypes[gname] = l.mod.Types[dt].Raw
 					}
 					l.globals[gname] = NoVal // marker: declared, not yet materialized
@@ -2133,7 +2185,7 @@ func (l *lowerer) lowerStmt(id int32) {
 			// lowerCallArgs (see noteAnonymousStructLit); a let / re-assignment is
 			// seeded here. Without it the literal stayed untyped, OpSetField had no
 			// struct layout to index and the whole module failed with
-			// "setfield field" (tests/test-uninit-output.no: `out = { val: 42,
+			// "setfield field" (tests/uninit-output.no: `out = { val: 42,
 			// data: [...] }` where `out ?uninit-struct` is the result parameter, so
 			// the declared type is option-wrapped — strip the marker and let the
 			// option-wrap path below re-add it).
@@ -2191,8 +2243,8 @@ func (l *lowerer) lowerStmt(id int32) {
 		// previous code let `it` keep the WHOLE option type (?fs.file / ?[]byte /
 		// ...), so uses like `print('...' - it)` peeled to the OK payload
 		// (fs.file / []byte) instead of the err message (str) — tripping
-		// opt-verify with a type mismatch (tests/test_fs_error_complete.no,
-		// test-opt-struct-field.no).
+		// opt-verify with a type mismatch (tests/fs-error-complete.no,
+		// opt-struct-field.no).
 		// Clone the peeled payload: the option ALSO owns the err-payload buffer,
 		// so sharing it would double-free on drop — the same trap as the ?str
 		// receiver unwrap (resolveCallee). The err payload is bitcast-compatible
@@ -2297,14 +2349,14 @@ func (l *lowerer) lowerStmt(id int32) {
 		// `__unwrap_606.data.gep`); MIR must do the same. Without this the
 		// binding stays `?T` and every later use — `size == 0`,
 		// `size - total`, `with-len(size)` — passes the whole %option struct
-		// where an i64 is expected (tests/test-open-read.no).
+		// where an i64 is expected (tests/open-read.no).
 		if val != NoVal {
 			// A declared type of `err` / `err | nil` is a VARIANT MARKER the
 			// parser puts on the synthetic `it` binding of a match arm
 			// (`let s=it t=err`), not a real type. Taking it literally retypes
 			// the binding as "err", and the next `it.read-bytes()` then
 			// resolves to `err.read-bytes` — "unknown callee"
-			// (tests/test-open-read.no, tests/test-fs-struct.no).
+			// (tests/open-read.no, tests/fs-struct.no).
 			if dt := l.letDeclaredType(n); dt != NoType && dt != l.voidType {
 				if dty := l.mod.Type(dt); dty != nil && dty.Kind != KindOption {
 					if vt := l.valueTypeOf(val); vt != NoType && vt != l.voidType {
@@ -2316,13 +2368,46 @@ func (l *lowerer) lowerStmt(id int32) {
 							// it, i.e. a real double-free that checkMoves
 							// reports as "value N dropped after move". That is
 							// exactly the match-arm narrowing (`n ?str` narrowed
-							// to `str` in the default arm) — tests/test-option.no
-							// and tests/test-option-match.no, which the legacy
+							// to `str` in the default arm) — tests/option-test.no
+							// and tests/option-match.no, which the legacy
 							// backend handles by keeping the option intact.
 							if elem, ok := parseOptionElem(vty.Raw); ok {
 								if et := l.b.Type(elem); et != NoType {
 									if ety := l.mod.Type(et); ety == nil || !ety.Owned {
 										val = l.b.Emit(OpMove, dt, []ValueID{val}, "")
+									} else if dty.Raw == elem {
+										// Owned payload (?str -> str,
+										// ?Struct -> Struct) whose type IS
+										// the binding's declared type: the
+										// match-arm narrowing (`it` in an
+										// `ok ->` arm of a `?str` match) and
+										// the `#{index-out=DEF}` desugar's
+										// `x = it` arm both land here.
+										//
+										// A bare OpMove would alias the
+										// option's heap buffer — the binding
+										// gets its OWN drop while the option
+										// keeps its own, so the same bytes
+										// would be freed twice. That is why
+										// this used to be skipped outright
+										// (option-test.no / option-match.no).
+										// Skipping is not an option either: the
+										// binding's slot is allocated as the
+										// payload type, so leaving the %option
+										// in it made every later use emit IR
+										// the verifier rejects ("'%lv' defined
+										// with type '%option' ... but expected
+										// '%str-long'") — `#{index-out=0}
+										// s = xs[i]` followed by `f(s)` was the
+										// first live case (nonpm cmd-add).
+										//
+										// Peel + CLONE instead, exactly as the
+										// err arm above does: the binding owns
+										// an independent copy, the option keeps
+										// its own, and each owner frees its
+										// buffer exactly once.
+										peeled := l.b.Emit(OpMove, dt, []ValueID{val}, "")
+										val = l.b.Emit(OpClone, dt, []ValueID{peeled}, "")
 									}
 								}
 							}
@@ -2390,7 +2475,7 @@ func (l *lowerer) lowerStmt(id int32) {
 				// OpClone, but the f1 ok arm then retyped value 24 to %fs_file, so
 				// at codegen time `ptype(24)` was %fs_file and the err clone emitted
 				// `call %fs_file @str_clone` — an opt-verify mismatch
-				// (tests/test_fs_error_complete.no). The fix is to give EACH arm its
+				// (tests/fs-error-complete.no). The fix is to give EACH arm its
 				// OWN value for `it` (a fresh move of the arm's matched value) and
 				// repoint `locals["it"]` at it, leaving the prior arm's value id and
 				// its type untouched. Resolution of `it.foo` then uses the correct
@@ -2404,7 +2489,7 @@ func (l *lowerer) lowerStmt(id int32) {
 					// arm (`child: { ok -> it.get-str(...) }` must see `child`, not the
 					// outer match's subject). Previously the nested case was skipped and
 					// `it` kept pointing at the OUTER subject, so an inner arm silently
-					// read the parent value (tests/mem-safety/test-json-nested-match.no:
+					// read the parent value (tests/mem-safety/json-nested-match.no:
 					// `it.get-str('inner')` looked up the key on the PARENT object and
 					// reported "not found"). Bind unconditionally; `val` is consumed by
 					// the binding (aliased, not moved), so no drop is needed here.
@@ -2749,7 +2834,7 @@ func (l *lowerer) lowerIf(n *hir.Node) {
 		// A NESTED match arm (matchDepth > 0 before the increment) rebinds the
 		// function-global `it` slot to its own subject — that rebinding is
 		// REQUIRED, the arm body must see the inner value
-		// (tests/mem-safety/test-json-nested-match.no). But `it` has to revert
+		// (tests/mem-safety/json-nested-match.no). But `it` has to revert
 		// to the enclosing arm's subject once this arm ENDS, otherwise every
 		// `it` read after the nested match silently resolves to the INNER
 		// subject:
@@ -2920,7 +3005,7 @@ func (l *lowerer) captureArmValue(v ValueID) {
 // MIR had NO case for KCond at all, so the whole expression lowered to NoVal:
 // `max = sum > 10 ? sum : 10` never bound `max`, and every later read of it
 // cascaded into "unresolved identifier" / "unresolved format field max"
-// (tests/test-all.no). A DECLARED binding (`max i64 = c ? a : b`) took the
+// (tests/all.no). A DECLARED binding (`max i64 = c ? a : b`) took the
 // "declaration with no initializer" zero-init fallback, so it compiled but
 // silently always held 0 — worse than an error, because the wrong value is
 // invisible.
@@ -3768,7 +3853,7 @@ var mangleTypeReplacer = strings.NewReplacer(
 //
 // Without this the callee missed `funcNames` entirely, `resultTypesOfCallee`
 // returned nothing, and every one of the four multi-assign targets was bound to
-// an i64 zero placeholder (tests/test-process-run.no then reported the bogus
+// an i64 zero placeholder (tests/process-run.no then reported the bogus
 // "unknown callee i64.trim" for `out.trim()`, because `out` had become an i64).
 //
 // The substitution is verified, never guessed: a candidate is accepted only
@@ -3899,6 +3984,99 @@ func (l *lowerer) lowerArrayElems(elems []int32) ValueID {
 
 // lowerEmbedBinding materializes an `#{embed='file'}` top-level binding as a
 // module-level `%vec` global over a private constant byte array. The global's
+// fixedArrayConstGlobalType returns the Nolang FIXED-ARRAY type (`[N]i64`) that
+// a slice-typed top-level slice-literal binding's constant initializer actually
+// folds to, or "" when the binding is not such a literal (or its elements do not
+// all fold).
+//
+// The type must be the fixed-array form, not the slice form the binding infers:
+// a slice literal folds to `[N x i64] [...]`, so declaring the global as `%vec`
+// would disagree with its initializer and the LLVM verifier would reject the
+// module. The candidate type is confirmed against the SAME fold that produces the
+// initializer, so the two can never drift; a literal whose elements do not fold
+// stays on the previous skip path rather than silently registering a
+// zero-initialized global carrying the wrong bytes.
+func (l *lowerer) fixedArrayConstGlobalType(n *hir.Node, raw string) string {
+	if n == nil || !strings.HasPrefix(raw, "[]") {
+		return ""
+	}
+	var init *hir.Node
+	for _, c := range l.pkg.Children(n.Id) {
+		init = l.pkg.Node(c)
+		break
+	}
+	if init == nil || init.Kind != hir.KSliceLit {
+		return ""
+	}
+	count := 0
+	for _, c := range l.pkg.Children(init.Id) {
+		if l.pkg.Node(c) == nil {
+			return ""
+		}
+		count++
+	}
+	if count == 0 {
+		return ""
+	}
+	ft := fmt.Sprintf("[%d]i64", count)
+	if l.foldConstText(n, ft) == "" {
+		return ""
+	}
+	return ft
+}
+
+// nameUsedInFuncBodies reports whether a top-level binding name is referenced
+// from inside any top-level FUNCTION body (as opposed to only from the
+// top-level statement sequence, which the synthetic main inlines).
+//
+// This is the discriminator that decides whether a script's top-level binding
+// may be materialized as a local of the synthetic main or must live in module
+// storage. A local of main is invisible to every other frame, so a helper
+// function reading/writing the name would otherwise resolve it to a void
+// `const` placeholder — see the guard in LowerHIR for the concrete failure
+// (zip.no's `zw-data []byte`).
+func (l *lowerer) nameUsedInFuncBodies(name string) bool {
+	if name == "" {
+		return false
+	}
+	for _, id := range l.pkg.Top {
+		n := l.pkg.Node(id)
+		if n == nil {
+			continue
+		}
+		if n.Kind != hir.KFuncDef && n.Kind != hir.KExtern {
+			continue
+		}
+		if !nodeMatchesPlatform(l.pkg, id) {
+			continue
+		}
+		if l.subtreeHasIdent(n, name) {
+			return true
+		}
+	}
+	return false
+}
+
+// subtreeHasIdent walks n's First/Next subtree looking for a KIdent interned to
+// name. Used by nameUsedInFuncBodies.
+func (l *lowerer) subtreeHasIdent(n *hir.Node, name string) bool {
+	for c := n.First; c != hir.NoID; {
+		cn := l.pkg.Node(c)
+		if cn == nil {
+			break
+		}
+		if cn.Kind == hir.KIdent && l.pkg.Str(cn.S) == name {
+			return true
+		}
+		if l.subtreeHasIdent(cn, name) {
+			return true
+		}
+		c = cn.Next
+	}
+	return false
+}
+
+// lowerEmbedBinding resolves a `#{embed=...}` binding to a module global whose
 // LLVM initializer is `%vec { N, N, ptrtoint([N x i8]* @.embed.<name> to i64) }`
 // and its bytes are stashed on the GlobalDecl so codegen emits the backing
 // `@.embed.<name>` constant. cap == len marks the vec owned, so the binding
@@ -3978,6 +4156,17 @@ func (l *lowerer) foldConstText(n *hir.Node, gtype string) string {
 		return ""
 	case hir.KIntLit:
 		return fmt.Sprintf("i64 %d", n.Val)
+	case hir.KByteLit:
+		// A byte literal (`0xfd`, `b'a'`) carries its value in Val and is
+		// emitted as an i64 in the generic array fold (`[N x i64] [...]`), so it
+		// must fold like an int literal. Without this case the generic branch of
+		// KArrayLit hit an unfoldable element and returned "", leaving the whole
+		// array constant unregistered — a top-level `XZ-MAGIC = [0xfd, ...]`
+		// read from a std function then resolved to a void `const` and
+		// `XZ-MAGIC[i]` failed with "index slot: value ... void". (The
+		// `[N]byte` byteArrayRe branch above handles KByteLit itself, so
+		// substitution boxes were unaffected.)
+		return fmt.Sprintf("i64 %d", n.Val&0xff)
 	case hir.KCharLit:
 		// The code point lives in S (the interned character TEXT), not in Val:
 		// tohir stores a char literal as `{Kind: KCharLit, S: <text>}` and
@@ -4099,6 +4288,34 @@ func (l *lowerer) foldConstText(n *hir.Node, gtype string) string {
 			parts = append(parts, ct)
 		}
 		return fmt.Sprintf("[%d x i64] [%s]", len(elems), strings.Join(parts, ", "))
+	case hir.KSliceLit:
+		// A SLICE literal used as a module constant (`XZ-MAGIC = [0xfd, ...]`).
+		// Its children ARE the element expressions — unlike KArrayLit, there are
+		// no "elem" slots to unwrap.
+		//
+		// Folded ONLY when the requested type is a FIXED array. A slice-typed
+		// binding must stay unfoldable: registering `@x = global %vec <fixed
+		// array constant>` makes the declaration and initializer disagree and
+		// the LLVM verifier reject the module, which is exactly why LowerHIR's
+		// isUnsafeInlineType guard skips slice literals in scripts. Keeping the
+		// `gtype` test here means the guard's behaviour is unchanged for every
+		// slice-typed binding, and the fixed-array type supplied by
+		// fixedArrayConstGlobalType is the only thing that unlocks the fold.
+		if !strings.HasPrefix(gtype, "[") {
+			return ""
+		}
+		var parts []string
+		for _, c := range l.pkg.Children(n.Id) {
+			ct := l.foldConstText(l.pkg.Node(c), "i64")
+			if ct == "" {
+				return ""
+			}
+			parts = append(parts, ct)
+		}
+		if len(parts) == 0 {
+			return ""
+		}
+		return fmt.Sprintf("[%d x i64] [%s]", len(parts), strings.Join(parts, ", "))
 	}
 	return ""
 }
@@ -4175,7 +4392,7 @@ func (l *lowerer) lowerExpr(id int32) ValueID {
 		// garbage into ok(...) and the `ok` arm then assigned it — a silent
 		// wrong answer at best, and for owned element types (str) a wild
 		// buffer pointer that SIGSEGVs on the first use
-		// (tests/test-safe-index.no: `get-default OOB`).
+		// (tests/safe-index.no: `get-default OOB`).
 		if l.typeHint != NoType && l.typeHint != l.voidType {
 			if ht := l.mod.Type(l.typeHint); ht != nil && ht.Kind == KindOption {
 				return l.lowerSafeIndex(arrV, idxV, elemT, l.typeHint)
@@ -4240,7 +4457,7 @@ func (l *lowerer) lowerExpr(id int32) ValueID {
 			// the option variant keyword: the keyword path below would emit a
 			// plain const of the enum type, leaving the arm to compare against
 			// discriminant 0 regardless of the variant's real tag
-			// (tests/test-tagged-enum.no prints `0` instead of `hi`).
+			// (tests/tagged-enum.no prints `0` instead of `hi`).
 			if ei, vi := l.enumVariantOf(l.enumPrefer(), name); ei != nil && vi != nil {
 				return l.lowerEnumUnit(ei, vi)
 			}
@@ -4311,7 +4528,7 @@ func (l *lowerer) lowerExpr(id int32) ValueID {
 		// passed BY VALUE) falls through to "unresolved identifier" because the
 		// name is neither a local nor a global. Emit an OpFuncRef that yields a
 		// KindFunc-typed value whose Name carries the function name; codegen's
-		// loadVal resolves it to `@funcname` (tests/test-named-fn-type.no).
+		// loadVal resolves it to `@funcname` (tests/named-fn-type.no).
 		if hirID, ok := l.funcNames[name]; ok {
 			fnStr := l.funcSigRaw(hirID)
 			fnTyp := l.b.Type(fnStr)
@@ -4549,7 +4766,7 @@ func (l *lowerer) lowerExpr(id int32) ValueID {
 		// value, so `size ?= fstat-size(.fd)` leaves `size` typed `?T` and
 		// `size - total` would otherwise hand the whole `%option` struct to
 		// `sub` (EmitLLVM: "cannot coerce arg from %option to i64",
-		// tests/test-open-read.no). Moving into the element type lowers to an
+		// tests/open-read.no). Moving into the element type lowers to an
 		// `extractvalue` of the payload field. Comparisons are left alone:
 		// `x == err` / `x == nil` are TAG comparisons handled above.
 		unwrapped := false
@@ -4564,7 +4781,7 @@ func (l *lowerer) lowerExpr(id int32) ValueID {
 		// one-rune string literals, so `"A"` folds to 65 and the result is 66.
 		// Without this the literal stayed a %str-long, the infix fell through to
 		// `add i64 <str>, 1`, and LLVM verification rejected the module
-		// (tests/test-str-ops.no). Comparisons are left alone — `s == "A"` is a
+		// (tests/str-ops.no). Comparisons are left alone — `s == "A"` is a
 		// string compare, handled by the OpStrEq path below.
 		// Determine str-ness of each operand BEFORE any byte folding below.
 		rawOf := func(v ValueID) string {
@@ -4582,7 +4799,7 @@ func (l *lowerer) lowerExpr(id int32) ValueID {
 		// Nolang quoting: `'...'` is a StringLiteral, `"..."` is a CharLiteral
 		// (already a byte-valued i64 here). A ONE-character StringLiteral paired
 		// with a non-string operand is BYTE arithmetic, not concatenation:
-		// `'A' + 1` is 66 (tests/test-str-ops.no). Legacy's isStringExpr gates
+		// `'A' + 1` is 66 (tests/str-ops.no). Legacy's isStringExpr gates
 		// this on the sibling NOT being a string, so `'a' + 'b'` stays "ab".
 		// It applies to `+`/`-` only — for `*` a string literal is always a
 		// string (`'x' * 5` is repeat -> "xxxxx"), never a byte.
@@ -4657,7 +4874,7 @@ func (l *lowerer) lowerExpr(id int32) ValueID {
 			// the node's declared type is still the `?T` the operand carried,
 			// but the arithmetic result is a plain `T`. Keeping `?T` made
 			// `size - total` an option, which then failed to coerce to the i64
-			// argument of `read(...)` (tests/test-open-read.no).
+			// argument of `read(...)` (tests/open-read.no).
 			if lt := l.valueTypeOf(lv); lt != l.voidType && lt != NoType {
 				resTyp = lt
 			}
@@ -4677,7 +4894,7 @@ func (l *lowerer) lowerExpr(id int32) ValueID {
 		// String concatenation (`a - b` / `a + b` with a str operand) yields a
 		// str, never void or a scalar. Without this the infix result value is
 		// typed i64 and emitArith emits an illegal `sub i64 %str-long, ...`
-		// (tests/test-str-ops.no: `hi - "B"`).
+		// (tests/str-ops.no: `hi - "B"`).
 		//
 		// A single str operand is enough: mixed `str + int` promotes the int to
 		// a decimal string (emitArith does exactly that), and `str * int` is
@@ -5312,6 +5529,21 @@ func (l *lowerer) lowerDotRead(n *hir.Node) ValueID {
 		return NoVal
 	}
 
+	v, _ := l.lowerFieldReadOn(recvV, fieldName)
+	return v
+}
+
+// lowerFieldReadOn reads `fieldName` off the value recvV.
+//
+// It is the shared tail of lowerDotRead (an explicit `recv.field` in HIR) and
+// lookupFormatValue's `ident.field` format-field pattern. The latter has no HIR
+// node of its own — a format string carries SOURCE TEXT (`{img.width}`) and MIR
+// only sees the base binding — so the receiver arrives as a bare ValueID.
+//
+// Reports failure with (NoVal,false); the caller decides how to diagnose (an
+// explicit `recv.field` records an "unsupported" lower gap, a format field
+// refuses the field so the print-family call can fall back).
+func (l *lowerer) lowerFieldReadOn(recvV ValueID, fieldName string) (ValueID, bool) {
 	recvRaw := ""
 	recvT := l.valueTypeOf(recvV)
 	if t := l.mod.Type(recvT); t != nil {
@@ -5319,7 +5551,7 @@ func (l *lowerer) lowerDotRead(n *hir.Node) ValueID {
 	}
 	if recvRaw == "" {
 		l.unsupported(l.curFuncName(), "dot", "field "+fieldName+": cannot determine receiver type")
-		return NoVal
+		return NoVal, false
 	}
 	// A `?T.field` read peels the option to reach the inner struct's layout.
 	// The method-call path already strips the leading '?' (see resolveCallee:
@@ -5361,11 +5593,11 @@ func (l *lowerer) lowerDotRead(n *hir.Node) ValueID {
 				if fieldName == "cap" {
 					op = OpCap
 				}
-				return l.b.Emit(op, l.b.Type("i64"), []ValueID{recvV}, "")
+				return l.b.Emit(op, l.b.Type("i64"), []ValueID{recvV}, ""), true
 			case recvRaw == "txt" && fieldName == "len":
 				// txt.len reads the i8 len byte and zero-extends to i64 (legacy
 				// semantics); cap is not meaningful for a fixed buffer.
-				return l.b.Emit(OpLen, l.b.Type("i64"), []ValueID{recvV}, "")
+				return l.b.Emit(OpLen, l.b.Type("i64"), []ValueID{recvV}, ""), true
 			}
 		}
 	}
@@ -5386,7 +5618,7 @@ func (l *lowerer) lowerDotRead(n *hir.Node) ValueID {
 	}
 	if !ok {
 		l.unsupported(l.curFuncName(), "dot", "no struct layout for "+recvRaw+" (field "+fieldName+")")
-		return NoVal
+		return NoVal, false
 	}
 	idx := -1
 	var fieldTypeRaw string
@@ -5399,13 +5631,13 @@ func (l *lowerer) lowerDotRead(n *hir.Node) ValueID {
 	}
 	if idx < 0 {
 		l.unsupported(l.curFuncName(), "dot", "field "+fieldName+" not found on "+recvRaw)
-		return NoVal
+		return NoVal, false
 	}
 	fieldT := l.b.Type(fieldTypeRaw)
 	v := l.b.Emit(OpGetField, fieldT, []ValueID{recvV}, "")
 	// carry the field name on the instruction for codegen index resolution
 	l.mod.Insts[len(l.mod.Insts)-1].Str = fieldName
-	return v
+	return v, true
 }
 
 // sliceMangledName returns the transpiler's mangled form of a slice/array type
@@ -5481,7 +5713,7 @@ func (l *lowerer) resolveCallee(n *hir.Node) (callee string, recvV ValueID) {
 		// empty callee so lowerCall emits an OpCall with inst.Callee set
 		// (triggering emitIndirectCall in codegen). Without this the callee
 		// falls through to canonSliceRecv("setup") which is not a registered
-		// function name -> "unknown callee setup" (tests/test-named-fn-type.no).
+		// function name -> "unknown callee setup" (tests/named-fn-type.no).
 		if v, ok := l.locals[name]; ok && v != NoVal {
 			if vt := l.valueTypeOf(v); vt != NoType {
 				if ty := l.mod.Type(vt); ty != nil && ty.Kind == KindFunc {
@@ -5545,10 +5777,10 @@ func (l *lowerer) resolveCallee(n *hir.Node) (callee string, recvV ValueID) {
 		// body: in a match arm the enclosing subject is bound to `it`, so
 		// `.method()` there denotes `it.method()` — precisely the explicit form
 		// the sibling arm pattern uses (`it.write-str(payload)`, cf.
-		// tests/test-open-read.no, which already lowers correctly). Without this
+		// tests/open-read.no, which already lowers correctly). Without this
 		// the unbound `self` fell into the module-namespace branch below and the
 		// callee became "self.write-str" -> "unknown callee self.write-str"
-		// (tests/test-open-perm.no, test-open-write.no, test_fs_error_complete.no).
+		// (tests/open-perm.no, open-write.no, fs-error-complete.no).
 		var implicitIt ValueID = NoVal
 		if rn := l.pkg.Node(recvID); rn != nil && rn.Kind == hir.KIdent &&
 			l.pkg.Str(rn.S) == "self" {
@@ -5626,7 +5858,7 @@ func (l *lowerer) resolveCallee(n *hir.Node) (callee string, recvV ValueID) {
 		// payloads in a dedicated `%option_<elem>` struct, so the peel is only
 		// explicit here: without it `r.len()` on `r ?[]byte` reached
 		// emitBuiltinLen with a `%option___byte` receiver -> "unsupported receiver
-		// type %option___byte" (tests/test-fs-struct.no).
+		// type %option___byte" (tests/fs-struct.no).
 		if strings.HasPrefix(recvTypeName, "?") {
 			if uv := l.unwrapOptionOperand(rv); uv != NoVal {
 				rv = uv
@@ -5971,6 +6203,32 @@ func (l *lowerer) lowerFormatField(f *parser.FormatField) (ValueID, bool) {
 		l.unsupported(l.curFuncName(), "interp", "unresolved format field "+f.Name)
 		return NoVal, false
 	}
+	// A format field whose value is an `?T` option must be PEELED before it
+	// reaches a fmt-* helper, because the helpers are typed on the payload
+	// (fmt-str takes a %str-long, fmt-int an i64) and never on the option.
+	//
+	// The option case is the common one, not a corner: the parser types a
+	// match arm's synthetic `it` binding as the option's PAYLOAD
+	// (`let it=matched t=str` for an `ok ->` arm of a `?str` match — see
+	// buildItBindingForArm), but the let-lowering deliberately refuses to peel
+	// an OWNED payload, so `it` keeps the whole %option end-to-end. `print(it)`
+	// is fine (emitCall has a dedicated option-print path), but
+	// `print('{it} is installed')` lowered the field straight into fmt-str and
+	// emitted `store %str-long %lv<option>` -> LLVM verifier "defined with
+	// type '%option' ... but expected '%str-long'" (nonpm cmd-why).
+	//
+	// Mirror the optional-RECEIVER unwrap in resolveCallee: extractvalue the
+	// payload, and CLONE an owned payload so the temp owns an independent
+	// buffer — the unwrapped value aliases the option's data pointer, and the
+	// option keeps its own drop, so sharing would free the same bytes twice.
+	if t := l.mod.Type(l.valueTypeOf(v)); t != nil && t.Kind == KindOption {
+		if uv := l.unwrapOptionOperand(v); uv != NoVal {
+			v = uv
+			if ty := l.mod.Type(l.valueTypeOf(v)); ty != nil && ty.Kind == KindStr {
+				v = l.b.Emit(OpClone, l.b.Type("str"), []ValueID{v}, "")
+			}
+		}
+	}
 	raw := ""
 	if t := l.mod.Type(l.valueTypeOf(v)); t != nil {
 		raw = t.Raw
@@ -6054,6 +6312,13 @@ var fmtIndexFieldRe = regexp.MustCompile(`^([A-Za-z_][A-Za-z0-9_-]*)\[([A-Za-z_]
 // full re-parse.
 var fmtMethodFieldRe = regexp.MustCompile(`^([A-Za-z_][A-Za-z0-9_-]*)\.([A-Za-z_][A-Za-z0-9_-]*)\(\)$`)
 
+// fmtDotFieldRe matches a single property/field read on a simple identifier:
+// `ident.field` (e.g. `{img.width}`, `{resolved.len}`). Struct fields and the
+// container properties `.len` / `.cap` both land here — lowerFieldReadOn
+// dispatches on the receiver's kind. Exactly ONE dot is accepted: a chained
+// `{a.b.c}` still has no lowering.
+var fmtDotFieldRe = regexp.MustCompile(`^([A-Za-z_][A-Za-z0-9_-]*)\.([A-Za-z_][A-Za-z0-9_-]*)$`)
+
 // lookupFormatValue resolves the value a {name} format field refers to.
 //
 // A field name is SOURCE TEXT (`hash[i]`, `content.len-bytes()`), and MIR sees
@@ -6066,6 +6331,9 @@ var fmtMethodFieldRe = regexp.MustCompile(`^([A-Za-z_][A-Za-z0-9_-]*)\.([A-Za-z_
 //     to OpIndex.
 //   - `ident.method()` (e.g. `{content.len-bytes()}`) — zero-argument method
 //     call, lowered to OpCall with the receiver as the first argument.
+//   - `ident.field` (e.g. `{img.width}`, `{resolved.len}`) — struct field or
+//     container property read on the base binding, lowered through
+//     lowerFieldReadOn (the shared tail of `recv.field`).
 //
 // General expression fields (e.g. `{a.b.c}`, `{f(x)}`) are still refused.
 func (l *lowerer) lookupFormatValue(name string) (ValueID, bool) {
@@ -6094,6 +6362,19 @@ func (l *lowerer) lookupFormatValue(name string) (ValueID, bool) {
 			return NoVal, false
 		}
 		return l.b.Emit(OpIndex, elemT, []ValueID{base, idxV}, ""), true
+	}
+	// ident.field pattern — struct field / container property read. Checked
+	// AFTER the method pattern so `ident.method()` never reaches it (the
+	// trailing `()` makes the two regexes disjoint anyway, but the order keeps
+	// the intent explicit).
+	if m := fmtDotFieldRe.FindStringSubmatch(name); m != nil {
+		if base, ok := l.lookupFormatValue(m[1]); ok {
+			if v, ok := l.lowerFieldReadOn(base, m[2]); ok {
+				return v, true
+			}
+		}
+		// Fall through to the refusal below: an unresolvable base or a field
+		// that does not exist on it must still be reported as an interp gap.
 	}
 	// ident.method() pattern — zero-argument method call
 	if m := fmtMethodFieldRe.FindStringSubmatch(name); m != nil {
@@ -6247,7 +6528,7 @@ func (l *lowerer) lowerCall(n *hir.Node) ValueID {
 	// Checked BEFORE the option constructors below, because a tagged enum may
 	// legitimately declare a variant named `ok` — and when it does, the
 	// expected type at this site is the enum, not an option
-	// (tests/test-tagged-enum.no: `a-res` and `b-res` both declare `ok` with
+	// (tests/tagged-enum.no: `a-res` and `b-res` both declare `ok` with
 	// different payload types and different tags).
 	if ei, vi := l.enumVariantOf(l.enumPrefer(), callee); ei != nil && vi != nil {
 		return l.lowerEnumCtor(n, ei, vi)
@@ -6261,7 +6542,7 @@ func (l *lowerer) lowerCall(n *hir.Node) ValueID {
 	// discriminant and payload type. The generic call path mis-resolves `err`
 	// to the std io.err stderr-writer (i64 result) and the caller then inserts
 	// that i64 into the %str-long option payload slot, which opt rejects
-	// (tests/test-option.no, tests/test-option-match.no, ...). This is the
+	// (tests/option-test.no, tests/option-match.no, ...). This is the
 	// documented intent of Builder.EmitOptionWrap — see its comment.
 	if callee == "err" || callee == "ok" || callee == "some" {
 		argv := l.lowerCallArgs(n, recvV, callee)
@@ -6411,7 +6692,7 @@ func (l *lowerer) lowerCall(n *hir.Node) ValueID {
 	// recovered from an option hint, which a non-option i64 cannot supply —
 	// so it degrades to a void `undef` constant, `icmp eq i64 %size, undef`
 	// folds to `unreachable`, and the program dies with SIGTRAP
-	// (tests/test-open-read.no).
+	// (tests/open-read.no).
 	optRet := callee != "" && builtin.IsOptionReturnBuiltin(bareCalleeName(callee))
 	if optRet {
 		resTyp = l.b.Type("?i64")
@@ -7014,7 +7295,7 @@ func (l *lowerer) lowerCallArgs(n *hir.Node, recvV ValueID, callee string) []Val
 		// Seed the EXPECTED TYPE at an argument position so a tagged-enum
 		// variant constructor written inline can be resolved to its enum:
 		// `area(rect(2.0, 3.0))` only knows `rect` belongs to `shape` from the
-		// parameter's declared type (tests/test-tagged-enum.no). Restricted to
+		// parameter's declared type (tests/tagged-enum.no). Restricted to
 		// parameters whose declared type IS a tagged enum, so no other call
 		// site changes the type hint it exposes to its argument expressions.
 		saved := l.typeHint
@@ -7041,7 +7322,7 @@ func (l *lowerer) lowerCallArgs(n *hir.Node, recvV ValueID, callee string) []Val
 //
 // Without it the argument reaches codegen as a raw `%vec` / fixed array and
 // print fails with "print unsupported arg type %vec"
-// (tests/test-slice-heavy.no). Scalar types (including `str`, whose Kind is
+// (tests/slice-heavy.no). Scalar types (including `str`, whose Kind is
 // KindStr rather than KindSlice) are returned untouched.
 func (l *lowerer) printableValue(v ValueID) ValueID {
 	if v == NoVal {
@@ -7355,7 +7636,7 @@ func (l *lowerer) elemTypeOfType(ty *Type) TypeID {
 		// returned by `'6162'.from-hex()` must unwrap twice: `?[]byte` ->
 		// `[]byte` -> `byte`. Without this the index result was typed `[]byte`
 		// and codegen GEP'd into the option struct itself, which opt rejects
-		// with "invalid getelementptr indices" (tests/test-strconv.no,
+		// with "invalid getelementptr indices" (tests/strconv.no,
 		// test-from-hex-even).
 		if ty.Kind == KindOption && ty.Elem != NoType {
 			if et := l.mod.Type(ty.Elem); et != nil {
@@ -7382,7 +7663,7 @@ func (l *lowerer) elemTypeOfType(ty *Type) TypeID {
 		// A txt is `{ [255 x i8], i8 }`; indexing a txt yields a single byte
 		// (i8), just like indexing a str. Without this, `t[0]` on a txt-typed
 		// value lowered to void and codegen failed with "index dst slot
-		// (type=void)" (tests/test-txt.no).
+		// (type=void)" (tests/txt.no).
 		if ty.Raw == "txt" {
 			return l.b.Type("i8")
 		}
@@ -7465,7 +7746,7 @@ func (l *lowerer) lowerAssignNode(assignID int32) ValueID {
 		// needs the FIELD's type as a hint, not the receiver's. Without this,
 		// `.hs-buf = with-cap(65536)` inside a method lowers the call to void
 		// (no typeHint set), the field gets NoVal, and codegen fails with
-		// "builtin with-cap: no result slot" (tests/test-net-http.no, which
+		// "builtin with-cap: no result slot" (tests/net-http.no, which
 		// pulls in tls.no's conn.init).
 		//
 		// For implicit-self field assignments (`.keys = with-len(16)` inside
@@ -7474,7 +7755,7 @@ func (l *lowerer) lowerAssignNode(assignID int32) ValueID {
 		// typeHint is never set and `with-len` lowers to void (NoVal Dst),
 		// causing "builtin with-len: no result slot" at codegen. This affects
 		// all hashmap methods (init/rehash/clear) that use `with-len` to
-		// allocate keys/vals/occ slices (tests/test-map.no, test-basic.no).
+		// allocate keys/vals/occ slices (tests/map.no, basic.no).
 		fieldName := l.pkg.Str(tn.S)
 		if fieldName != "" {
 			var recvID int32
@@ -7502,7 +7783,7 @@ func (l *lowerer) lowerAssignNode(assignID int32) ValueID {
 		// Indexed assignment `a[i] = with-len(n)`: the LHS-inferred builtin
 		// needs the ELEMENT type as a hint. Without this, `.keys[cnt] = with-len(...)`
 		// inside json.no lowers the call to void (no typeHint), and codegen fails
-		// with "builtin with-len: no result slot" (tests/mem-safety/test-json-nested-match.no).
+		// with "builtin with-len: no result slot" (tests/mem-safety/json-nested-match.no).
 		var arrID int32
 		for _, c := range l.pkg.Children(target) {
 			arrID = c
@@ -7558,7 +7839,7 @@ func (l *lowerer) lowerAssignNode(assignID int32) ValueID {
 		// bound `it`, later arms re-assign it (same slot) rather than
 		// declaring it, so a `let`-only update missed every arm but the first
 		// and projected the field names onto the FIRST arm's subject
-		// (tests/test-tagged-enum.no printed an empty string for `b-res`).
+		// (tests/tagged-enum.no printed an empty string for `b-res`).
 		if nm == "it" && v != NoVal {
 			l.itSrc = v
 		}
@@ -7683,7 +7964,7 @@ func (l *lowerer) lowerAssignNode(assignID int32) ValueID {
 		// lowerStructLit's MovesArg; without it, `.keys = with-len(n)` inside
 		// hashmap.rehash drops the freshly allocated slice immediately after
 		// the setfield, and every subsequent index/getfield on it crashes
-		// (tests/test-map.no).
+		// (tests/map.no).
 		l.mod.Insts[sid].MovesArg = true
 		return v
 	default:
@@ -7755,7 +8036,7 @@ func isArithOrBitwiseOp(op Op) bool {
 // singleCharStrByte returns the byte value of a one-rune string literal
 // (`"A"` -> 65). In arithmetic context nolang treats a single-character string
 // literal as a BYTE, not a string — legacy's isStringExpr returns false for it,
-// which is why `"A" + 1` is 66 and not "A1" (tests/test-str-ops.no). Returns
+// which is why `"A" + 1` is 66 and not "A1" (tests/str-ops.no). Returns
 // false for the empty string and for multi-rune literals, which stay strings.
 // charLitCode returns the code point of a char literal node's text. The raw
 // text may or may not still carry quotes (`'B'`, `"B"` or bare `B` depending on

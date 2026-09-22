@@ -3391,7 +3391,16 @@ func inferExprMemberType(expr parser.Expression, varTypes map[string]string) str
 		// Look up the variable's actual type, default to i64
 		if varTypes != nil {
 			if t, ok := varTypes[v.Value]; ok {
-				return t
+				// A union method reached through an OPTIONAL receiver dispatches
+				// on the PAYLOAD type: the implicit option unwrap (`size ?i64`
+				// -> `size.to-str()` calls `i64.to-str`) happens before the
+				// union is consulted. Keeping the marker made "?i64" fail the
+				// template's membership test below, so the call kept the
+				// un-instantiated template name and the backend reported
+				// "unknown callee number.int.to-str" (notools ls-run:
+				// `size = fs.stat-size(full)` then `size.to-str()`). Strip the
+				// option / view markers so the member type matches.
+				return strings.TrimPrefix(strings.TrimPrefix(t, "?"), "&")
 			}
 		}
 		return "i64"

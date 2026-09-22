@@ -1,3 +1,0 @@
-; test-wasi-hello.no — wasm32-wasi 端對端驗證
-; 預期輸出：Hello, WASI!
-print('Hello, WASI!')

@@ -1,8 +1,0 @@
-; test-mod.no — 測試取模運算
-test = () {
-    a = 12
-    b = 18
-    r = a % b
-    print(r)
-}
-test()

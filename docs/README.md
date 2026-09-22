@@ -112,5 +112,5 @@ GitHub Actions（`.github/workflows/build.yml`）中的 `wasm-smoke` job 會在�
 
 - 構建 `no.wasm` 與 `lsp.wasm`（`wasip1` 目標）
 - 以 `wasmtime` 驗證 `no.wasm version` 與 `lsp.wasm -version` 輸出版本號
-- 構建並運行 `tests/test-wasi-hello.no` 與 `tests/test-wasi-fib.no`（`wasm32-wasi` 目標，使用 Zig）
+- 構建並運行 `tests/wasi-hello.no` 與 `tests/wasi-fib.no`（`wasm32-wasi` 目標，使用 Zig）
 

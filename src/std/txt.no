@@ -40,7 +40,7 @@ txt.len = () (n i64) {
 ; ⚠️ 2026-09-21 重写。旧实现用一条 `->` 管线（`.byte(k) - b.byte(k); c != 0 -> ok = 0;
 ; k == an - 1 -> ok == 0 -> eq = false; k = k + 1`）在**最后一个字节**才回头判定，
 ; 于是 `t('hello').eq('world')` 这种「长度相同、内容不同」的情况永远回传 true
-; —— `tests/test-txt.no` 的 `neq:` 一行一直在打印 1，并且被冻进了 golden baseline。
+; —— `tests/txt.no` 的 `neq:` 一行一直在打印 1，并且被冻进了 golden baseline。
 ; txt.compare 已经是逐字节比较且长度不同时正确分流的版本，直接复用即可。
 txt.eq = (b txt) (eq bool) {
     eq = .compare(b) == 0

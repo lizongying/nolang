@@ -2264,11 +2264,11 @@ int = i8 | i16`
 	}
 }
 
-// TestFormatMatchIdempotent verifies formatting test-match.no is idempotent.
+// TestFormatMatchIdempotent verifies formatting match-test.no is idempotent.
 func TestFormatMatchIdempotent(t *testing.T) {
-	data, err := os.ReadFile("../../tests/test-match.no")
+	data, err := os.ReadFile("../../tests/match-test.no")
 	if err != nil {
-		t.Fatalf("read test-match.no: %v", err)
+		t.Fatalf("read match-test.no: %v", err)
 	}
 	input := string(data)
 	result := Format(input)

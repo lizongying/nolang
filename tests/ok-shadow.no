@@ -1,0 +1,10 @@
+; ok-shadow.no — minimal test for ok variable shadowing
+
+ok bool = false
+print('start')
+ok = true
+print('ok=' - ok.to-str())
+{
+    ok -> print('ok: if works')
+    -> print('fail: if broken')
+}

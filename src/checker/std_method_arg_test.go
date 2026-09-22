@@ -167,7 +167,7 @@ func TestStdMethodArgAmbiguousReceiverSkipped(t *testing.T) {
 // '[' prefix routed `[str]i64.remove` through the receiver-generic
 // `[]t.remove`, whose parameter is the slice INDEX (i64), and flagged the map's
 // str KEY as "expected 'i64', got 'str'" — which regressed
-// tests/test-map-generics.no and tests/mem-safety/map-tombstone.no. A slice is
+// tests/map-generics.no and tests/mem-safety/map-tombstone.no. A slice is
 // the two characters "[]"; anything else starting with '[' must be skipped.
 func TestStdMethodArgMapReceiverNotTreatedAsSlice(t *testing.T) {
 	src := `test = () {
@@ -216,7 +216,7 @@ print(v.len())
 
 // TestStdMethodArgPushIntegerStrideAllowed guards the STORAGE rule: push stores
 // the argument at the receiver's element stride (emitBuiltinVecPush /
-// elemTypeOfReceiver, pinned by tests/test-push-narrow.no), so pushing an i64
+// elemTypeOfReceiver, pinned by tests/push-narrow.no), so pushing an i64
 // into a []byte truncates to one byte by design. src/std depends on it —
 // zip-writer.put takes `b i64` and pushes it into a []byte — so integer-vs-
 // integer must never be reported. Only a mismatch of KIND is (see
@@ -234,7 +234,7 @@ func TestStdMethodArgPushIntegerStrideAllowed(t *testing.T) {
 
 // TestStdMethodArgPushNarrowingLiteralAllowed guards integer literals: they are
 // inferred i64 but narrow to the element type when the value fits, so the
-// existing tests/test-push-narrow.no style (`by []byte; by.push(1)`) must not
+// existing tests/push-narrow.no style (`by []byte; by.push(1)`) must not
 // be flagged.
 func TestStdMethodArgPushNarrowingLiteralAllowed(t *testing.T) {
 	src := `b []byte = [1,2]

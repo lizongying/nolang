@@ -1,0 +1,65 @@
+; opt-struct-field.no — ?struct 载荷字段访问 (?T.field 剥离 %option)
+;
+; 回归测试：D23 之后的特性缺口 —— opt.field 直接访问（不经过 it 解包）。
+; 验证 ?T 类型的变量可以直接用 .field 访问其内层 struct 的字段，
+; 编译器需剥离 %option 包装（{i64 tag, <inner>* payload}）取出 payload
+; 指针后再 GEP 到内层 struct 的字段，并且字段的类型推断（含堆持有类型
+; 如 str 的深拷贝）也必须正确。
+;
+; 运行: no test tests/opt-struct-field.no
+
+conn {
+  path str
+  port i64
+}
+
+make-conn = () (result ?conn) {
+  result = nil
+  #{overflow = wrap}
+  c = conn{path: '/api/health', port: 8080}
+  result = c
+}
+
+; 直接访问 ?struct 的字段（不经 it 解包）
+test-opt-field = () {
+  opt = make-conn()
+  ; str 字段直接访问
+  p = opt.path
+  print(p); expect: /api/health
+  ; i64 字段直接访问
+  port = opt.port
+  print(port); expect: 8080
+  ; str 字段参与字符串拼接（触发堆持有类型的深拷贝）
+  #{overflow = wrap}
+  s = 'path=' - p
+  print(s); expect: path=/api/health
+  ; 多个字段组合
+  #{overflow = wrap}
+  combined = p - ':' - port.to-str()
+  print(combined); expect: /api/health:8080
+}
+test-opt-field()
+print(0)
+
+; 多个不同的 ?struct 类型，验证内层类型推断互不干扰
+server {
+  host str
+  connections i64
+}
+
+make-server = () (result ?server) {
+  result = nil
+  s = server{host: 'localhost', connections: 42}
+  result = s
+}
+
+test-opt-multi = () {
+  a = make-conn()
+  b = make-server()
+  print(a.path); expect: /api/health
+  print(b.host); expect: localhost
+  print(a.port); expect: 8080
+  print(b.connections); expect: 42
+}
+test-opt-multi()
+print(1)

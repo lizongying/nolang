@@ -1,0 +1,71 @@
+; 安全索引：固定陣列 [N]T 與 vec[T] 也必須安全（越界不崩潰）。
+; 與 safe-index.no 互補：那個只測了切片 []T。
+; 容器以區域變數宣告（避免參數型別語法）；索引用執行期變數以觸發
+; 執行期安全降級（固定陣列的常數越界會在編譯期就被擋下，更嚴格）。
+; 說明：本測試用「結果參數res（已標型別）」承接安全索引，以確認 %arr/%vec
+; 的降級路徑（bounds-check + none/ok 分支）正確；未標型別區域變數 x 承接
+; 固定陣列 ?= 會受全域 VarTypes 同名污染（std 常見 x:str），屬另一獨立議題。
+
+; --- 固定陣列 [N]i64：#{index-out} 預設值 ---
+get-default-arr = (i i64) (res i64) {
+    a [4]i64 = [10, 20, 30, 40]
+    #{index-out=0}
+    res = a[i]
+}
+
+; --- vec[T]：#{index-out} 預設值 ---
+get-default-vec = (i i64) (res i64) {
+    a [4]i64 = [10, 20, 30, 40]
+    av = a.to-vec()
+    #{index-out=0}
+    res = av[i]
+}
+
+; --- 固定陣列 [N]i64：?=（結果參數直接承接） ---
+safe-get-arr = (i i64) (res ?i64) {
+    a [4]i64 = [10, 20, 30, 40]
+    res = a[i]    ; 安全索引回傳 ?i64，直接賦值給 ?i64 結果
+}
+
+; --- vec[T]：?=（結果參數直接承接） ---
+safe-get-vec = (i i64) (res ?i64) {
+    a [4]i64 = [10, 20, 30, 40]
+    av = a.to-vec()
+    res = av[i]
+}
+
+main = () () {
+    oob i64 = 9
+    ib i64 = 1
+
+    ; 固定陣列：#{index-out} 越界 → 0
+    dao = get-default-arr(oob)
+    io.out('arr #{index-out} OOB -> ')
+    io.out(dao)
+    print('')
+    ; 固定陣列：範圍內正確
+    dao2 = get-default-arr(ib)
+    io.out('arr #{index-out} in-bounds[1] -> ')
+    io.out(dao2)
+    print('')
+
+    ; vec：#{index-out} 越界 → 0
+    dvo = get-default-vec(oob)
+    io.out('vec #{index-out} OOB -> ')
+    io.out(dvo)
+    print('')
+    ; vec：範圍內正確
+    dvo2 = get-default-vec(2)
+    io.out('vec #{index-out} in-bounds[2] -> ')
+    io.out(dvo2)
+    print('')
+
+    ; 固定陣列：?= 越界不崩（回傳 none）
+    safe-get-arr(oob)
+    io.out('arr ?= OOB: no-crash')
+    print('')
+    ; vec：?= 越界不崩
+    safe-get-vec(oob)
+    io.out('vec ?= OOB: no-crash')
+    print('')
+}

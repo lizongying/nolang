@@ -1,0 +1,16 @@
+; minimal-it2.no — 測試 it 後續有其他函數
+test-val-it = () {
+    n ?i64 = 42
+    r = n: {
+        err -> 0
+        nil -> 0
+        -> 0
+    }
+    print(r)
+}
+
+test-other = () {
+    print('other')
+}
+test-val-it()
+test-other()

@@ -1960,7 +1960,7 @@ A pointer field **owns** its pointee, and the compiler manages its lifetime:
 - a by-value copy (`b = a`, passing by value, writing into a container) **deep-copies** the
   pointee, so two hosts never share one allocation and it is never freed twice.
 
-End-to-end coverage lives in `tests/test-field-inline-annotation.no`.
+End-to-end coverage lives in `tests/field-inline-annotation.no`.
 
 > **The annotation is always honoured; `NOLANG_FIELD_PTR` only changes the default when there is
 > no annotation.** `mir.FieldPtrLayout` is `os.Getenv("NOLANG_FIELD_PTR") != ""` and is **off by

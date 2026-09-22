@@ -271,7 +271,7 @@ func (c *codegen) structLLVMType(suffix string) string {
 	// depending on Go map iteration order — producing an option payload type
 	// with the WRONG layout and a `getelementptr ... i32 0, i32 1` that indexes
 	// a one-field struct (invalid getelementptr indices, opt-verify) for
-	// `?conn.field` access — tests/test-opt-struct-field.no.
+	// `?conn.field` access — tests/opt-struct-field.no.
 	if _, ok := c.mod.StructFields[suffix]; ok {
 		return "%" + sanitize(suffix)
 	}
@@ -794,6 +794,8 @@ func (c *codegen) emitBuiltinForward(f *Function, inst *Inst, bm *builtin.Builti
 		return c.emitBuiltinPipe(inst)
 	case "process-exec-shell":
 		return c.emitBuiltinExecShell(inst)
+	case "process-exec":
+		return c.emitBuiltinProcessExec(inst)
 	case "load-le-u16", "load-le-u32", "load-le-u64":
 		return c.emitBuiltinLoadLE(f, inst, bm.ForwardFunc)
 	case "store-le-u32":
@@ -818,6 +820,10 @@ func (c *codegen) emitBuiltinForward(f *Function, inst *Inst, bm *builtin.Builti
 		return c.emitBuiltinArgsCount(inst)
 	case "args-get":
 		return c.emitBuiltinArgsGet(inst)
+	case "getgroups":
+		return c.emitBuiltinGetGroups(inst)
+	case "syslog":
+		return c.emitBuiltinSyslog(inst)
 	}
 	// Generic C call: the whole point of forward_call.go. Consulted LAST so a
 	// bespoke handler always wins, but it turns "add a POSIX builtin" from a new
@@ -834,7 +840,7 @@ func (c *codegen) emitBuiltinForward(f *Function, inst *Inst, bm *builtin.Builti
 // whether they are equal. Mirrors the legacy backend (build/llvm/call.go
 // "eq-raw"), which emits memcmp(a_data, b_data, n) == 0 and zero-extends the
 // i1 to the boolean result slot. Without it the generic dispatch fell through
-// to "unsupported builtin str.eq" (tests/test-str.no).
+// to "unsupported builtin str.eq" (tests/str-test.no).
 func (c *codegen) emitBuiltinEqRaw(inst *Inst) error {
 	if len(inst.Args) < 3 {
 		return fmt.Errorf("eq-raw: needs (receiver, b, n)")
@@ -3204,7 +3210,8 @@ func (c *codegen) emitBuiltinWriteFile(inst *Inst) error {
 	// Extract len and data pointer from the []byte (%vec) argument.
 	dataSlot := c.valSlot[inst.Args[1]]
 	if dataSlot == "" {
-		return fmt.Errorf("write-file: data arg has no slot")
+		dlt, _ := c.ptype(inst.Args[1])
+		return fmt.Errorf("write-file: data arg has no slot (func %s, arg type %s)", c.curFuncNameForFail(), dlt)
 	}
 	lenGEP := c.treg("wf.lgep")
 	c.sb.WriteString(fmt.Sprintf("  %s = getelementptr inbounds %%vec, %%vec* %s, i32 0, i32 0\n", lenGEP, dataSlot))
@@ -3524,6 +3531,187 @@ func (c *codegen) emitBuiltinArgsGet(inst *Inst) error {
 	return c.storeCStrResult(inst, 0, argp)
 }
 
+// getGroupsCap is the number of supplementary group slots the scratch buffer
+// offers getgroups(2). The POSIX floor is NGROUPS_MAX (16); every real system
+// allows far more (macOS 16 by default, Linux 65536). 256 is comfortably above
+// any realistic membership list while keeping the stack buffer at 1 KiB.
+const getGroupsCap = 256
+
+// emitBuiltinGetGroups lowers `os.getgroups()` -> (gids []i64, n i64).
+//
+// POSIX `getgroups(int gidsetsize, gid_t list[])` fills a caller buffer with
+// gid_t values (u32 on both macOS and Linux) and returns how many it wrote, or
+// -1 on error. Nolang's builtin exposes them as an `[]i64`, so the u32 values
+// must be widened into 8-byte slots — the one step that makes this more than a
+// table entry in forward_call.go, which has no "adopt a C-filled buffer as a
+// widened slice" result kind.
+//
+// The emitted shape:
+//
+//	buf  = alloca [256 x i32]              ; scratch for the C call
+//	n32  = call i32 @getgroups(256, buf)   ; -1 -> 0
+//	heap = malloc(n * 8); memset(heap, 0)  ; the slice's backing store
+//	loop i < n: heap[i] = sext(buf[i])     ; widen u32 -> i64
+//	store %vec { n, n, ptrtoint(heap) } -> result 0
+//	store n -> result 1
+//
+// The widen loop is emitted straight into the current function body. That is
+// safe because MIR emits a block's instructions and only then its terminator
+// (see emitFunc/emitBlock), so the `br` below ends the surrounding block and the
+// label starts a fresh one; the block's own terminator then closes the tail.
+// The loop counter lives in an alloca rather than a phi so no predecessor label
+// has to be known here.
+func (c *codegen) emitBuiltinGetGroups(inst *Inst) error {
+	if runtime.GOOS == "windows" {
+		// No getgroups(2); the builtin is only declared for POSIX platforms
+		// (see the platform guards in std/os.no).
+		c.fail("getgroups: unsupported on windows in func %s", c.curFuncNameForFail())
+		return fmt.Errorf("getgroups: unsupported on windows")
+	}
+	if len(inst.Results) < 2 {
+		return fmt.Errorf("getgroups: needs 2 results (gids, n)")
+	}
+	gidsSlot := c.valSlot[inst.Results[0]]
+	nSlot := c.valSlot[inst.Results[1]]
+	if gidsSlot == "" || nSlot == "" {
+		return fmt.Errorf("getgroups: missing result slot")
+	}
+
+	c.decl("declare i32 @getgroups(i32, i8*)")
+	c.decl("declare void @llvm.memset.p0i8.i64(i8*, i8, i64, i1)")
+
+	// --- scratch buffer + the C call -------------------------------------
+	buf := c.treg("gg.buf")
+	c.sb.WriteString(fmt.Sprintf("  %s = alloca [%d x i32]\n", buf, getGroupsCap))
+	bp := c.treg("gg.bp")
+	c.sb.WriteString(fmt.Sprintf("  %s = bitcast [%d x i32]* %s to i8*\n", bp, getGroupsCap, buf))
+	n32 := c.treg("gg.n32")
+	c.sb.WriteString(fmt.Sprintf("  %s = call i32 @getgroups(i32 %d, i8* %s)\n", n32, getGroupsCap, bp))
+
+	// --- clamp -1 (error) to 0 -------------------------------------------
+	n := c.treg("gg.n")
+	c.sb.WriteString(fmt.Sprintf("  %s = sext i32 %s to i64\n", n, n32))
+	neg := c.treg("gg.neg")
+	c.sb.WriteString(fmt.Sprintf("  %s = icmp slt i64 %s, 0\n", neg, n))
+	cnt := c.treg("gg.cnt")
+	c.sb.WriteString(fmt.Sprintf("  %s = select i1 %s, i64 0, i64 %s\n", cnt, neg, n))
+
+	// --- backing store for the []i64 --------------------------------------
+	bytes := c.treg("gg.bytes")
+	c.sb.WriteString(fmt.Sprintf("  %s = mul i64 %s, 8\n", bytes, cnt))
+	heap := c.treg("gg.heap")
+	c.sb.WriteString(fmt.Sprintf("  %s = call i8* @malloc(i64 %s)\n", heap, bytes))
+	c.sb.WriteString(fmt.Sprintf("  call void @llvm.memset.p0i8.i64(i8* %s, i8 0, i64 %s, i1 false)\n", heap, bytes))
+
+	// --- widen loop --------------------------------------------------------
+	ip := c.treg("gg.ip")
+	c.sb.WriteString(fmt.Sprintf("  %s = alloca i64\n", ip))
+	c.sb.WriteString(fmt.Sprintf("  store i64 0, i64* %s\n", ip))
+
+	condL := c.treg("gg.wcond")
+	bodyL := c.treg("gg.wbody")
+	endL := c.treg("gg.wend")
+	c.sb.WriteString(fmt.Sprintf("  br label %%%s\n", condL))
+	c.sb.WriteString(fmt.Sprintf("%%%s:\n", condL))
+	i := c.treg("gg.i")
+	c.sb.WriteString(fmt.Sprintf("  %s = load i64, i64* %s\n", i, ip))
+	more := c.treg("gg.more")
+	c.sb.WriteString(fmt.Sprintf("  %s = icmp ult i64 %s, %s\n", more, i, cnt))
+	c.sb.WriteString(fmt.Sprintf("  br i1 %s, label %%%s, label %%%s\n", more, bodyL, endL))
+
+	c.sb.WriteString(fmt.Sprintf("%%%s:\n", bodyL))
+	sp := c.treg("gg.sp")
+	c.sb.WriteString(fmt.Sprintf("  %s = getelementptr [%d x i32], [%d x i32]* %s, i64 0, i64 %s\n", sp, getGroupsCap, getGroupsCap, buf, i))
+	sv := c.treg("gg.sv")
+	c.sb.WriteString(fmt.Sprintf("  %s = load i32, i32* %s\n", sv, sp))
+	wv := c.treg("gg.wv")
+	c.sb.WriteString(fmt.Sprintf("  %s = sext i32 %s to i64\n", wv, sv))
+	off := c.treg("gg.off")
+	c.sb.WriteString(fmt.Sprintf("  %s = mul i64 %s, 8\n", off, i))
+	dp := c.treg("gg.dp")
+	c.sb.WriteString(fmt.Sprintf("  %s = getelementptr i8, i8* %s, i64 %s\n", dp, heap, off))
+	dpi := c.treg("gg.dpi")
+	c.sb.WriteString(fmt.Sprintf("  %s = bitcast i8* %s to i64*\n", dpi, dp))
+	c.sb.WriteString(fmt.Sprintf("  store i64 %s, i64* %s\n", wv, dpi))
+	i1 := c.treg("gg.i1")
+	c.sb.WriteString(fmt.Sprintf("  %s = add i64 %s, 1\n", i1, i))
+	c.sb.WriteString(fmt.Sprintf("  store i64 %s, i64* %s\n", i1, ip))
+	c.sb.WriteString(fmt.Sprintf("  br label %%%s\n", condL))
+	c.sb.WriteString(fmt.Sprintf("%%%s:\n", endL))
+
+	// --- build the %vec { len, cap, data } ---------------------------------
+	lenGEP := c.treg("gg.lgep")
+	c.sb.WriteString(fmt.Sprintf("  %s = getelementptr inbounds %%vec, %%vec* %s, i32 0, i32 0\n", lenGEP, gidsSlot))
+	c.sb.WriteString(fmt.Sprintf("  store i64 %s, i64* %s\n", cnt, lenGEP))
+	capGEP := c.treg("gg.cgep")
+	c.sb.WriteString(fmt.Sprintf("  %s = getelementptr inbounds %%vec, %%vec* %s, i32 0, i32 1\n", capGEP, gidsSlot))
+	c.sb.WriteString(fmt.Sprintf("  store i64 %s, i64* %s\n", cnt, capGEP))
+	dataGEP := c.treg("gg.dgep")
+	c.sb.WriteString(fmt.Sprintf("  %s = getelementptr inbounds %%vec, %%vec* %s, i32 0, i32 2\n", dataGEP, gidsSlot))
+	dataInt := c.treg("gg.data")
+	c.sb.WriteString(fmt.Sprintf("  %s = ptrtoint i8* %s to i64\n", dataInt, heap))
+	c.sb.WriteString(fmt.Sprintf("  store i64 %s, i64* %s\n", dataInt, dataGEP))
+
+	// --- count result ------------------------------------------------------
+	c.sb.WriteString(fmt.Sprintf("  store i64 %s, i64* %s\n", cnt, nSlot))
+	return nil
+}
+
+// emitBuiltinSyslog lowers `syslog(priority i64, msg str)` -> void.
+//
+// POSIX syslog(3) is variadic — `void syslog(int priority, const char *format,
+// ...)` — so the Nolang two-argument builtin cannot be expressed as a plain
+// cCallSpec (forward_call.go has no variadic form). The message is passed as the
+// single vararg under a "%s" format, which is the exact shape the legacy LLVM
+// backend emitted (@.str.fmt + `getelementptr`). Passing `msg` as the format
+// itself would make a stray '%' in the message undefined behaviour.
+//
+// The emitted shape:
+//
+//	%p = trunc i64 <priority> to i32
+//	%m = call i8* @str_cstr(%str-long <msg>)   ; NUL-terminated heap copy
+//	call void @syslog(i32 %p, i8* @.mir.syslog.fmt, i8* %m)
+//	call void @free(i8* %m)
+func (c *codegen) emitBuiltinSyslog(inst *Inst) error {
+	if runtime.GOOS == "windows" {
+		// No syslog(3) on Windows; the builtin is only declared for POSIX
+		// platforms (see the platform guards in std/os.no).
+		c.fail("syslog: unsupported on windows in func %s", c.curFuncNameForFail())
+		return fmt.Errorf("syslog: unsupported on windows")
+	}
+	prio, err := c.marshalScalar(inst, 0, "i32")
+	if err != nil {
+		return fmt.Errorf("syslog: %v", err)
+	}
+	msgV, err := c.argIndex(inst, 1)
+	if err != nil {
+		return err
+	}
+	msg := c.cstrOf(msgV)
+	if msg == "" {
+		return fmt.Errorf("syslog: cannot marshal arg 1 as C string")
+	}
+
+	c.decl("declare void @syslog(i32, i8*, ...)")
+	c.global("@.mir.syslog.fmt = private unnamed_addr constant [3 x i8] c\"%s\\00\"")
+	c.sb.WriteString(fmt.Sprintf(
+		"  call void @syslog(i32 %s, i8* getelementptr inbounds ([3 x i8], [3 x i8]* @.mir.syslog.fmt, i64 0, i64 0), i8* %s)\n",
+		prio, msg))
+	// str_cstr hands back a malloc'd copy; release it now that C is done.
+	c.sb.WriteString(fmt.Sprintf("  call void @free(i8* %s)\n", msg))
+	return nil
+}
+
+// curFuncNameForFail returns the current function's name for diagnostics, or
+// "?" when the codegen is not inside a function (defensive: the builtin
+// emitters only run while a body is being emitted).
+func (c *codegen) curFuncNameForFail() string {
+	if f := c.mod.Func(c.cf); f != nil {
+		return f.Name
+	}
+	return "?"
+}
+
 // emitBuiltinGetLine lowers `fs.get-line()` (ForwardFunc read-stdin-line): read
 // one line from stdin into a freshly malloc'd 4096-byte buffer via fgets(3),
 // strip a trailing '\n', and return (line str, ok bool). ok is false on EOF
@@ -3796,4 +3984,45 @@ func (c *codegen) emitBuiltinExecShell(inst *Inst) error {
 	c.sb.WriteString(fmt.Sprintf("  %s = call i32 (i8*, i8*, ...) @execlp(i8* %s, i8* %s, i8* %s, i8* %s, i8* null)\n", ret, sh, sh, dc, cmdPtr))
 	c.sb.WriteString(fmt.Sprintf("  call void @free(i8* %s)\n", cmdPtr))
 	return nil
+}
+
+// emitBuiltinProcessExec lowers `process.process-exec(prog, arg)` -> i64.
+//
+// It replaces the current process image with `prog arg` via
+// execlp(prog, prog, arg, NULL) — the exact shape the legacy LLVM backend
+// emitted (build/llvm/call_stdlib.go "process-exec"). execlp(3) returns only on
+// failure (errno), which the Nolang builtin reports as an i64, so the i32 result
+// is sign-extended. The two NUL-terminated copies are freed before the store:
+// on success the image is gone, but the allocator release must still be emitted
+// for the failure path.
+func (c *codegen) emitBuiltinProcessExec(inst *Inst) error {
+	if len(inst.Args) < 2 {
+		return fmt.Errorf("process-exec: needs (prog, arg)")
+	}
+	progV, err := c.argIndex(inst, 0)
+	if err != nil {
+		return err
+	}
+	argV, err := c.argIndex(inst, 1)
+	if err != nil {
+		return err
+	}
+	prog := c.cstrOf(progV)
+	if prog == "" {
+		return fmt.Errorf("process-exec: cannot marshal prog as C string")
+	}
+	arg := c.cstrOf(argV)
+	if arg == "" {
+		return fmt.Errorf("process-exec: cannot marshal arg as C string")
+	}
+	c.decl("declare i32 @execlp(i8*, i8*, ...)") // variadic
+	ret := c.treg("pe.ret")
+	c.sb.WriteString(fmt.Sprintf(
+		"  %s = call i32 (i8*, i8*, ...) @execlp(i8* %s, i8* %s, i8* %s, i8* null)\n",
+		ret, prog, prog, arg))
+	ext := c.treg("pe.ext")
+	c.sb.WriteString(fmt.Sprintf("  %s = sext i32 %s to i64\n", ext, ret))
+	c.sb.WriteString(fmt.Sprintf("  call void @free(i8* %s)\n", prog))
+	c.sb.WriteString(fmt.Sprintf("  call void @free(i8* %s)\n", arg))
+	return c.storeResult(inst, 0, ext, "i64")
 }
