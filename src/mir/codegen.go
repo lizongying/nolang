@@ -2883,7 +2883,14 @@ func (c *codegen) emitEntry(main *Function) {
 	// garbage/null pointer, which -O3 folds to `unreachable` (SIGTRAP) and the
 	// epilogue (globals free + ret) is deleted — the crash behind
 	// tests/mem-safety/cross-fn-str-return-dfree.no.
+	// Capture the C entry's argc/argv into module globals so the os.args /
+	// os.arg builtins (ForwardFunc args-count / args-get) can read them. The
+	// MIR backend otherwise discards them after the entry prologue.
+	c.sb.WriteString("@nolang_argc = global i32 0\n")
+	c.sb.WriteString("@nolang_argv = global i8** null\n")
 	c.sb.WriteString("define i32 @main(i32 %0, i8** %1) {\nentry:\n")
+	c.sb.WriteString("  store i32 %0, i32* @nolang_argc\n")
+	c.sb.WriteString("  store i8** %1, i8*** @nolang_argv\n")
 	if main != nil && len(main.ResultParams) > 0 {
 		rt, _ := c.ptype(main.ResultParams[0])
 		if rt == "" {

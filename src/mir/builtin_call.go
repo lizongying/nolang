@@ -814,6 +814,10 @@ func (c *codegen) emitBuiltinForward(f *Function, inst *Inst, bm *builtin.Builti
 		return c.emitBuiltinReadDir(inst)
 	case "str-truncate":
 		return c.emitBuiltinStrTruncate(inst)
+	case "args-count":
+		return c.emitBuiltinArgsCount(inst)
+	case "args-get":
+		return c.emitBuiltinArgsGet(inst)
 	}
 	// Generic C call: the whole point of forward_call.go. Consulted LAST so a
 	// bespoke handler always wins, but it turns "add a POSIX builtin" from a new
@@ -3100,8 +3104,8 @@ func (c *codegen) emitBuiltinReadFile(inst *Inst) error {
 	if dstSlot == "" {
 		return fmt.Errorf("read-file: no result slot")
 	}
-	if dstLT != "%vec" {
-		return fmt.Errorf("read-file: result type %s is not a slice", dstLT)
+	if dstLT != "%vec" && dstLT != "%str-long" {
+		return fmt.Errorf("read-file: result type %s is not a slice or string", dstLT)
 	}
 	pathV, err := c.argIndex(inst, 0)
 	if err != nil {
@@ -3146,18 +3150,34 @@ func (c *codegen) emitBuiltinReadFile(inst *Inst) error {
 	ln := c.treg("rf.len")
 	c.sb.WriteString(fmt.Sprintf("  %s = select i1 %s, i64 %s, i64 0\n", ln, allOk, nr))
 
-	// %vec = { i64 len, i64 cap, i64 data } — data is a heap pointer as i64.
-	lenGEP := c.treg("rf.lgep")
-	c.sb.WriteString(fmt.Sprintf("  %s = getelementptr inbounds %%vec, %%vec* %s, i32 0, i32 0\n", lenGEP, dstSlot))
-	c.sb.WriteString(fmt.Sprintf("  store i64 %s, i64* %s\n", ln, lenGEP))
-	capGEP := c.treg("rf.cgep")
-	c.sb.WriteString(fmt.Sprintf("  %s = getelementptr inbounds %%vec, %%vec* %s, i32 0, i32 1\n", capGEP, dstSlot))
-	c.sb.WriteString(fmt.Sprintf("  store i64 %s, i64* %s\n", ln, capGEP))
-	dataGEP := c.treg("rf.dgep")
-	c.sb.WriteString(fmt.Sprintf("  %s = getelementptr inbounds %%vec, %%vec* %s, i32 0, i32 2\n", dataGEP, dstSlot))
-	dataInt := c.treg("rf.data")
-	c.sb.WriteString(fmt.Sprintf("  %s = ptrtoint i8* %s to i64\n", dataInt, buf))
-	c.sb.WriteString(fmt.Sprintf("  store i64 %s, i64* %s\n", dataInt, dataGEP))
+	if dstLT == "%vec" {
+		// Legacy API: fs.read-file returns a []byte (a %vec { len, cap, data-as-i64 }).
+		lenGEP := c.treg("rf.lgep")
+		c.sb.WriteString(fmt.Sprintf("  %s = getelementptr inbounds %%vec, %%vec* %s, i32 0, i32 0\n", lenGEP, dstSlot))
+		c.sb.WriteString(fmt.Sprintf("  store i64 %s, i64* %s\n", ln, lenGEP))
+		capGEP := c.treg("rf.cgep")
+		c.sb.WriteString(fmt.Sprintf("  %s = getelementptr inbounds %%vec, %%vec* %s, i32 0, i32 1\n", capGEP, dstSlot))
+		c.sb.WriteString(fmt.Sprintf("  store i64 %s, i64* %s\n", ln, capGEP))
+		dataGEP := c.treg("rf.dgep")
+		c.sb.WriteString(fmt.Sprintf("  %s = getelementptr inbounds %%vec, %%vec* %s, i32 0, i32 2\n", dataGEP, dstSlot))
+		dataInt := c.treg("rf.data")
+		c.sb.WriteString(fmt.Sprintf("  %s = ptrtoint i8* %s to i64\n", dataInt, buf))
+		c.sb.WriteString(fmt.Sprintf("  store i64 %s, i64* %s\n", dataInt, dataGEP))
+		return nil
+	}
+	// New API: fs.read-file returns a str. Reinterpret the malloc'd buffer as a
+	// %str-long { i64 len, i64 cap, i8* data } (the data field is a real pointer,
+	// not a ptrtoint'd i64 like %vec). The buffer is heap-owned via @malloc and
+	// must NOT be freed here; it becomes the string's owned storage.
+	strLenGEP := c.treg("rf.sl")
+	c.sb.WriteString(fmt.Sprintf("  %s = getelementptr inbounds %%str-long, %%str-long* %s, i32 0, i32 0\n", strLenGEP, dstSlot))
+	c.sb.WriteString(fmt.Sprintf("  store i64 %s, i64* %s\n", ln, strLenGEP))
+	strCapGEP := c.treg("rf.sc")
+	c.sb.WriteString(fmt.Sprintf("  %s = getelementptr inbounds %%str-long, %%str-long* %s, i32 0, i32 1\n", strCapGEP, dstSlot))
+	c.sb.WriteString(fmt.Sprintf("  store i64 %s, i64* %s\n", ln, strCapGEP))
+	strDataGEP := c.treg("rf.sd")
+	c.sb.WriteString(fmt.Sprintf("  %s = getelementptr inbounds %%str-long, %%str-long* %s, i32 0, i32 2\n", strDataGEP, dstSlot))
+	c.sb.WriteString(fmt.Sprintf("  store i8* %s, i8** %s\n", buf, strDataGEP))
 	return nil
 }
 
@@ -3476,6 +3496,32 @@ func (c *codegen) emitBuiltinGetErrno(inst *Inst) error {
 	ext := c.treg("ge.ext")
 	c.sb.WriteString(fmt.Sprintf("  %s = sext i32 %s to i64\n", ext, eLoad))
 	return c.storeResult(inst, 0, ext, "i64")
+}
+
+// emitBuiltinArgsCount lowers `os.args()` (ForwardFunc args-count): the number of
+// command-line arguments (including the program name). Reads the @nolang_argc
+// global captured in the C entry prologue (see emitEntry).
+func (c *codegen) emitBuiltinArgsCount(inst *Inst) error {
+	ac := c.treg("ac")
+	c.sb.WriteString(fmt.Sprintf("  %s = load i32, i32* @nolang_argc\n", ac))
+	ac64 := c.treg("ac64")
+	c.sb.WriteString(fmt.Sprintf("  %s = zext i32 %s to i64\n", ac64, ac))
+	return c.storeResult(inst, 0, ac64, "i64")
+}
+
+// emitBuiltinArgsGet lowers `os.arg(i)` (ForwardFunc args-get): the i-th
+// command-line argument as a str. Indexes the @nolang_argv vector captured in the
+// C entry prologue and adopts the NUL-terminated C string as an owned %str-long.
+func (c *codegen) emitBuiltinArgsGet(inst *Inst) error {
+	idxT, idxV := c.loadVal(inst.Args[0])
+	idx := c.coerce(idxT, idxV, "i64")
+	av := c.treg("agv")
+	c.sb.WriteString(fmt.Sprintf("  %s = load i8**, i8*** @nolang_argv\n", av))
+	gep := c.treg("agp")
+	c.sb.WriteString(fmt.Sprintf("  %s = getelementptr i8*, i8** %s, i64 %s\n", gep, av, idx))
+	argp := c.treg("agc")
+	c.sb.WriteString(fmt.Sprintf("  %s = load i8*, i8** %s\n", argp, gep))
+	return c.storeCStrResult(inst, 0, argp)
 }
 
 // emitBuiltinGetLine lowers `fs.get-line()` (ForwardFunc read-stdin-line): read
