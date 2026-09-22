@@ -37,14 +37,17 @@ reader.fill = () (ok bool) {
 ; read-byte: 讀取一個位元組
 ; 返回 b ?byte: ok=位元組值, nil=EOF 或錯誤
 reader.read-byte = () (b ?byte) {
+
     #{overflow=wrap}
     ok = .fill()
     ok == false -> {
         b = nil
         return
     }
-    #{index-out = 0}
+
+    #{index-out=0}
     b = .buf[.pos]
+
     #{overflow=wrap}
     .pos = .pos + 1
 }
@@ -52,28 +55,31 @@ reader.read-byte = () (b ?byte) {
 ; read-line: 讀取一行
 reader.read-line = () (line str, ok bool) {
     n = 0
-    {
+    !! {
         ok = .fill()
         ok == false -> {
             n > 0 -> ok = true
             return
         }
-        {
-            #{overflow=wrap}
-            #{index-out = 0}
+        (.pos < .avail) {
+
+            #{index-out=0, overflow=wrap}
             c = .buf[.pos]
+
             #{overflow=wrap}
             .pos = .pos + 1
             c == 10 -> {
                 ok = true
                 return
             }
-            #{index-out = 0}
+
+            #{index-out=0}
             line[n] = c
+
             #{overflow=wrap}
             n = n + 1
-        } (.pos < .avail)
-    } (true)
+        }
+    }
 }
 
 ; close: 關閉

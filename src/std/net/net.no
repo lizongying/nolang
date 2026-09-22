@@ -216,18 +216,20 @@ conn.recv-all = () (content str, total i64) {
     total = 0
     .fd < 0 -> return
     buf str = with-len(NET-BUF-SIZE)
-    {
+    !! {
+
         #{overflow=wrap}
         chunk-n = net-recv(.fd, buf, NET-BUF-SIZE)
         chunk-n <= 0 -> *
         i <- [0..chunk-n): {
-            #{overflow=wrap}
-            #{index-out = 0}
+
+            #{index-out=0, overflow=wrap}
             content[total + i] = buf[i]
         }
+
         #{overflow=wrap}
         total = total + chunk-n
-    } (true)
+    }
 }
 
 ; close: 關閉連接
@@ -504,7 +506,6 @@ dial-timeout = (host str, port i64, timeout-ms i64) (c ?conn) {
 
 ; enc-conn: 加密 TCP 連接封裝
 ; 底層使用 conn 進行 TCP 通訊，使用 AES-256-GCM 進行端對端加密。
-#{index-out = 0}
 ; 每條訊息格式: [4-byte length][12-byte IV][N-byte ciphertext+tag]
 ; length 欄位為 IV + ciphertext + tag 的總長度（大端序）。
 ;
@@ -535,18 +536,22 @@ enc-conn.init = (c conn, key [32]byte) {
 ; enc-conn.gen-iv: 生成下一個 IV（nonce）
 ; 返回 iv [12]byte: 12 位元組 IV
 enc-conn.gen-iv = () (iv [12]byte) {
+
     #{overflow=wrap}
     .send-seq = .send-seq + 1
     seq = .send-seq
 
     ; IV = seq (4 bytes) || random (8 bytes)
-    #{index-out = 0}
+    #{index-out=0}
     iv[0] = (seq >> 24) & 255
-    #{index-out = 0}
+
+    #{index-out=0}
     iv[1] = (seq >> 16) & 255
-    #{index-out = 0}
+
+    #{index-out=0}
     iv[2] = (seq >> 8) & 255
-    #{index-out = 0}
+
+    #{index-out=0}
     iv[3] = seq & 255
 
     ; 用 rand 生成剩餘 8 bytes
@@ -555,7 +560,8 @@ enc-conn.gen-iv = () (iv [12]byte) {
 
         #{overflow=wrap}
         .rand-seed = s
-        #{index-out = 0}
+
+        #{index-out=0}
         iv[i] = r & 255
     }
 }
@@ -564,6 +570,7 @@ enc-conn.gen-iv = () (iv [12]byte) {
 ; data str: 明文資料
 ; 返回 ok bool: true=成功
 enc-conn.send-encrypted = (data str) (ok bool) {
+
     #{overflow=wrap}
     ok = false
     .underlying.fd < 0 -> return
@@ -577,35 +584,39 @@ enc-conn.send-encrypted = (data str) (ok bool) {
     sealed []byte = aes-gcm.seal-256(.key, iv, aad, plain)
     sealed-n = sealed.len()
 
-    #{index-out = 0}
     ; 封包格式: [4-byte length][12-byte IV][sealed]
     ; length = 12 + sealed-n
-    #{overflow=wrap}
+    #{index-out=0, overflow=wrap}
     payload-len = 12 + sealed-n
     packet []byte
-    #{index-out = 0}
+
+    #{index-out=0}
     packet[0] = (payload-len >> 24) & 255
-    #{index-out = 0}
+
+    #{index-out=0}
     packet[1] = (payload-len >> 16) & 255
-    #{index-out = 0}
+
+    #{index-out=0}
     packet[2] = (payload-len >> 8) & 255
-    #{index-out = 0}
+
+    #{index-out=0}
     packet[3] = payload-len & 255
 
     ; 複製 IV
     i <- [0..12): {
-        #{overflow=wrap}
-        #{index-out = 0}
+
+        #{index-out=0, overflow=wrap}
         packet[4 + i] = iv[i]
     }
 
     ; 複製密文
     i <- [0..sealed-n): {
-        #{overflow=wrap}
-        #{index-out = 0}
+
+        #{index-out=0, overflow=wrap}
         packet[16 + i] = sealed[i]
     }
     packet-str = packet.to-str()
+
     #{overflow=wrap}
     packet-total = 4 + payload-len
     written = net-send(.underlying.fd, packet-str, packet-total)
@@ -615,6 +626,7 @@ enc-conn.send-encrypted = (data str) (ok bool) {
 ; enc-conn.recv-encrypted: 接收並解密資料
 ; 返回 data ?str: ok=解密後明文, nil=失敗
 enc-conn.recv-encrypted = () (data ?str) {
+
     #{overflow=wrap}
     data = nil
     .underlying.fd < 0 -> return
@@ -623,7 +635,8 @@ enc-conn.recv-encrypted = () (data ?str) {
     len-buf str = with-len(4)
     n = net-recv(.underlying.fd, len-buf, 4)
     n != 4 -> return
-    #{index-out = 0}
+
+    #{index-out=0}
     payload-len = ((len-buf[0]) << 24) | ((len-buf[1]) << 16) | ((len-buf[2]) << 8) | (len-buf[3])
     payload-len < 12 || payload-len > 65536 -> return
 
@@ -635,8 +648,8 @@ enc-conn.recv-encrypted = () (data ?str) {
     ; 提取 IV
     iv [12]byte
     i <- [0..12): {
-        #{overflow=wrap}
-        #{index-out = 0}
+
+        #{index-out=0, overflow=wrap}
         iv[i] = payload-buf[i]
     }
 
@@ -645,8 +658,8 @@ enc-conn.recv-encrypted = () (data ?str) {
     sealed-n = payload-len - 12
     sealed []byte
     i <- [0..sealed-n): {
-        #{overflow=wrap}
-        #{index-out = 0}
+
+        #{index-out=0, overflow=wrap}
         sealed[i] = payload-buf[12 + i]
     }
 
@@ -761,43 +774,48 @@ icmp-conn.close = () {
 icmp-conn.build-echo = (pkt []byte, seq i64) {
 
     ; Type = 8 (Echo Request)
-    #{index-out = 0}
+    #{index-out=0}
     pkt[0] = ICMP-ECHO-REQUEST
 
     ; Code = 0
-    #{index-out = 0}
+    #{index-out=0}
     pkt[1] = 0
 
     ; Checksum = 0 (先填 0，之後計算)
-    #{index-out = 0}
+    #{index-out=0}
     pkt[2] = 0
-    #{index-out = 0}
+
+    #{index-out=0}
     pkt[3] = 0
 
     ; Identifier (big-endian)
-    #{index-out = 0}
+    #{index-out=0}
     pkt[4] = (.ident >> 8) & 255
-    #{index-out = 0}
+
+    #{index-out=0}
     pkt[5] = .ident & 255
 
     ; Sequence (big-endian)
-    #{index-out = 0}
+    #{index-out=0}
     pkt[6] = (seq >> 8) & 255
-    #{index-out = 0}
+
+    #{index-out=0}
     pkt[7] = seq & 255
 
     ; Payload: 填入序號作為資料（用於驗證回應）
     i <- [0..ICMP-PAYLOAD-SIZE): {
-        #{overflow=wrap}
-        #{index-out = 0}
+
+        #{index-out=0, overflow=wrap}
         pkt[ICMP-HEADER-SIZE + i] = (seq + i) & 255
     }
 
     ; 計算並填入 checksum
     cksum = icmp-checksum(pkt, ICMP-PACKET-SIZE)
-    #{index-out = 0}
+
+    #{index-out=0}
     pkt[2] = (cksum >> 8) & 255
-    #{index-out = 0}
+
+    #{index-out=0}
     pkt[3] = cksum & 255
 }
 
@@ -806,35 +824,37 @@ icmp-conn.build-echo = (pkt []byte, seq i64) {
 ; len i64: 封包長度
 ; 返回 checksum i64（16 位元）
 icmp-checksum = (data []byte, len i64) (checksum i64) {
+
     #{overflow=wrap}
     checksum = 0
     i = 0
-    {
+    (i < len) {
+
         #{overflow=wrap}
         i + 1 < len -> {
 
-            #{index-out = 0}
             ; 16-bit word: data[i] << 8 | data[i+1]
-            #{overflow=wrap}
-            #{index-out = 0}
+            #{index-out=0, index-out=0, overflow=wrap}
             w = ((data[i]) << 8) | (data[i + 1])
             checksum = checksum + w
 
             ; 處理進位
             checksum > 65535 -> checksum = (checksum & 65535) + (checksum >> 16)
         }
+
         #{overflow=wrap}
         i = i + 2
-    } (i < len)
+    }
 
     ; 奇數長度：補零處理最後一個位元組
     #{overflow=wrap}
     len & 1 == 1 -> {
-        #{overflow=wrap}
-        #{index-out = 0}
+
+        #{index-out=0, overflow=wrap}
         checksum = checksum + ((data[len - 1]) << 8)
         checksum > 65535 -> checksum = (checksum & 65535) + (checksum >> 16)
     }
+
     #{overflow=wrap}
     checksum = (checksum & 65535) + (checksum >> 16)
     checksum = (~checksum) & 65535
@@ -845,6 +865,7 @@ icmp-checksum = (data []byte, len i64) (checksum i64) {
 ; timeout-ms i64: 逾時毫秒數
 ; 返回 rtt ?i64: ok=往返延遲（微秒）, nil=失敗
 icmp-conn.ping-once = (host str, timeout-ms i64) (rtt ?i64) {
+
     #{overflow=wrap}
     rtt = nil
     .fd < 0 -> return
@@ -854,6 +875,7 @@ icmp-conn.ping-once = (host str, timeout-ms i64) (rtt ?i64) {
 
     ; 建構 ICMP Echo Request
     pkt []byte = with-len(ICMP-PACKET-SIZE)
+
     #{overflow=wrap}
     .seq = .seq + 1
     .build-echo(pkt, .seq)
@@ -875,17 +897,18 @@ icmp-conn.ping-once = (host str, timeout-ms i64) (rtt ?i64) {
 
     ; 判斷是否有 IP 標頭（Linux SOCK_RAW 回傳 IP+ICMP，macOS SOCK_DGRAM 只回傳 ICMP）
     offset = 0
+
     #{overflow=wrap}
     {
         n >= 20 -> {
+
             ; 檢查 IP 版本 (byte 0 >> 4 == 4 表示 IPv4)
-            #{index-out = 0}
+            #{index-out=0}
             ver = (recv-buf[0] >> 4) & 15
             ver == 4 -> {
 
                 ; IHL = (byte 0 & 0x0F) * 4
-                #{overflow=wrap}
-                #{index-out = 0}
+                #{index-out=0, overflow=wrap}
                 ihl = (recv-buf[0] & 15) * 4
                 offset = ihl
             }
@@ -897,19 +920,17 @@ icmp-conn.ping-once = (host str, timeout-ms i64) (rtt ?i64) {
     n - offset < ICMP-HEADER-SIZE -> return
 
     ; 驗證 ICMP Type = 0 (Echo Reply)
-    #{index-out = 0}
+    #{index-out=0}
     icmp-type = recv-buf[offset]
     icmp-type != ICMP-ECHO-REPLY -> return
 
     ; 驗證 Identifier
-    #{overflow=wrap}
-    #{index-out = 0}
+    #{index-out=0, overflow=wrap}
     recv-ident = ((recv-buf[offset + 4]) << 8) | (recv-buf[offset + 5])
     recv-ident != .ident -> return
 
     ; 驗證 Sequence（只比較低 16 位）
-    #{overflow=wrap}
-    #{index-out = 0}
+    #{index-out=0, overflow=wrap}
     recv-seq = ((recv-buf[offset + 6]) << 8) | (recv-buf[offset + 7])
     recv-seq != (.seq & 65535) -> return
 
@@ -925,12 +946,13 @@ icmp-conn.ping-once = (host str, timeout-ms i64) (rtt ?i64) {
 icmp-conn.ping-host = (host str, count i64, timeout-ms i64) {
     i <- [0..count): {
         r ?i64 = .ping-once(host, timeout-ms)
-        {
+        (r) {
+
             #{overflow=wrap}
             nil -> print(host + ': ping timeout (seq=' + (.seq & 65535).to-str() + ')')
 
             -> print(host + ': seq=' + (.seq & 65535).to-str() + ' rtt=' + it.to-str() + ' us')
-        } (r)
+        }
 
         ; 間隔 1 秒
         count > 1 -> os.sleep(1)
@@ -1028,20 +1050,22 @@ ifconfig-list = () (ifs []if-info) {
     ; 冒號前為介面名，冒號後為空白分隔的 16 個統計欄位
     lines = content.split('\n')
     i <- [2..lines.len-bytes()): {
-        #{overflow=wrap}
-        #{index-out = 0}
+
+        #{index-out=0, overflow=wrap}
         line = lines[i]
         line.len-bytes() == 0 -> *
         colon-pos = line.index(':')
         colon-pos < 0 -> *
         name = line.slice(0, colon-pos).trim()
+
         #{overflow=wrap}
         stats-str = line.slice(colon-pos + 1, line.len-bytes()).trim()
         fields = split-ws(stats-str)
         fields.len-bytes() >= 10 -> {
             info = if-info {}
             info.name = name
-            #{index-out = 0}
+
+            #{index-out=0}
             v0 ?i64 = fields[0].to-i64()
             v0: {
                 ok -> info.rx-bytes = it
@@ -1050,7 +1074,8 @@ ifconfig-list = () (ifs []if-info) {
 
                 err -> *
             }
-            #{index-out = 0}
+
+            #{index-out=0}
             v1 ?i64 = fields[1].to-i64()
             v1: {
                 ok -> info.rx-packets = it
@@ -1059,7 +1084,8 @@ ifconfig-list = () (ifs []if-info) {
 
                 err -> *
             }
-            #{index-out = 0}
+
+            #{index-out=0}
             v8 ?i64 = fields[8].to-i64()
             v8: {
                 ok -> info.tx-bytes = it
@@ -1068,7 +1094,8 @@ ifconfig-list = () (ifs []if-info) {
 
                 err -> *
             }
-            #{index-out = 0}
+
+            #{index-out=0}
             v9 ?i64 = fields[9].to-i64()
             v9: {
                 ok -> info.tx-packets = it
@@ -1106,21 +1133,27 @@ route-list = () (routes []route-info) {
     ; Iface Destination Gateway Flags RefCnt Use Metric Mask MTU Window IRTT
     lines = content.split('\n')
     i <- [1..lines.len-bytes()): {
-        #{index-out = 0}
+
+        #{index-out=0}
         line = lines[i]
         line.len-bytes() == 0 -> *
         fields = split-ws(line)
         fields.len-bytes() >= 11 -> {
             r = route-info {}
-            #{index-out = 0}
+
+            #{index-out=0}
             r.iface = fields[0]
-            #{index-out = 0}
+
+            #{index-out=0}
             r.destination = fields[1]
-            #{index-out = 0}
+
+            #{index-out=0}
             r.gateway = fields[2]
-            #{index-out = 0}
+
+            #{index-out=0}
             r.flags = fields[3]
-            #{index-out = 0}
+
+            #{index-out=0}
             r.mask = fields[7]
             routes.push(r)
         }
@@ -1151,21 +1184,27 @@ arp-list = () (arps []arp-info) {
     ; IP address   HW type  Flags   HW address  Mask  Device
     lines = content.split('\n')
     i <- [1..lines.len-bytes()): {
-        #{index-out = 0}
+
+        #{index-out=0}
         line = lines[i]
         line.len-bytes() == 0 -> *
         fields = split-ws(line)
         fields.len-bytes() >= 6 -> {
             a = arp-info {}
-            #{index-out = 0}
+
+            #{index-out=0}
             a.ip = fields[0]
-            #{index-out = 0}
+
+            #{index-out=0}
             a.hw-type = fields[1]
-            #{index-out = 0}
+
+            #{index-out=0}
             a.flags = fields[2]
-            #{index-out = 0}
+
+            #{index-out=0}
             a.mac = fields[3]
-            #{index-out = 0}
+
+            #{index-out=0}
             a.iface = fields[5]
             arps.push(a)
         }
@@ -1188,15 +1227,17 @@ arp-list = () (arps []arp-info) {
 split-ws = (s str) (out []str) {
     n = s.len-bytes()
     i = 0
-    {
+    (i < n) {
 
         ; 跳過前導空白
-        {
+        (i < n && (s[i] == 32 || s[i] == 9)) {
             i < n -> {
-                #{index-out = 0}
+
+                #{index-out=0}
                 c = s[i]
                 {
                     c == 32 || c == 9 -> {
+
                         #{overflow=wrap}
                         i = i + 1
                     }
@@ -1204,23 +1245,26 @@ split-ws = (s str) (out []str) {
                     -> *
                 }
             }
-        #{index-out = 0}
-        } (i < n && (s[i] == 32 || s[i] == 9))
+
+            #{index-out=0}
+        }
         i >= n -> *
 
         ; 找到欄位結束
         start = i
-        {
+        (i < n && s[i] != 32 && s[i] != 9) {
             i < n -> {
-                #{overflow=wrap}
-                #{index-out = 0}
+
+                #{index-out=0, overflow=wrap}
                 c = s[i]
                 c == 32 || c == 9 -> *
+
                 #{overflow=wrap}
                 i = i + 1
             }
-        #{index-out = 0}
-        } (i < n && s[i] != 32 && s[i] != 9)
+
+            #{index-out=0}
+        }
         out.push(s.slice(start, i))
-    } (i < n)
+    }
 }

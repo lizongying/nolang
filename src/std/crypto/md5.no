@@ -20,6 +20,7 @@ md5 = (data []byte) (out [16]byte) {
     h3 u32 = 271733878
 
     dlen = data.len()
+
     #{overflow=wrap}
     blen = dlen * 8
 
@@ -38,37 +39,53 @@ md5 = (data []byte) (out [16]byte) {
 
     ; 處理全塊：直接從 data 載入 16 個 32-bit 字（load-le-u32 使用指標運算，無邊界檢查）
     bidx <- [0..num-full): {
+
         #{overflow=wrap}
         off = bidx * 64
         w0 = data.load-le-u32(off)
+
         #{overflow=wrap}
         w1 = data.load-le-u32(off + 4)
+
         #{overflow=wrap}
         w2 = data.load-le-u32(off + 8)
+
         #{overflow=wrap}
         w3 = data.load-le-u32(off + 12)
+
         #{overflow=wrap}
         w4 = data.load-le-u32(off + 16)
+
         #{overflow=wrap}
         w5 = data.load-le-u32(off + 20)
+
         #{overflow=wrap}
         w6 = data.load-le-u32(off + 24)
+
         #{overflow=wrap}
         w7 = data.load-le-u32(off + 28)
+
         #{overflow=wrap}
         w8 = data.load-le-u32(off + 32)
+
         #{overflow=wrap}
         w9 = data.load-le-u32(off + 36)
+
         #{overflow=wrap}
         w10 = data.load-le-u32(off + 40)
+
         #{overflow=wrap}
         w11 = data.load-le-u32(off + 44)
+
         #{overflow=wrap}
         w12 = data.load-le-u32(off + 48)
+
         #{overflow=wrap}
         w13 = data.load-le-u32(off + 52)
+
         #{overflow=wrap}
         w14 = data.load-le-u32(off + 56)
+
         #{overflow=wrap}
         w15 = data.load-le-u32(off + 60)
 
@@ -80,347 +97,480 @@ md5 = (data []byte) (out [16]byte) {
 
         ; 第 1 輪 (F): f = d ^ (b & (c ^ d))
         f = d ^ (b & (c ^ d))
+
         #{overflow=wrap}
         t = a + f + w0 + 3614090360
+
         #{overflow=wrap}
         a = b + number.rotate-left(t, 7)
         f = c ^ (a & (b ^ c))
+
         #{overflow=wrap}
         t = d + f + w1 + 3905402710
+
         #{overflow=wrap}
         d = a + number.rotate-left(t, 12)
         f = b ^ (d & (a ^ b))
+
         #{overflow=wrap}
         t = c + f + w2 + 606105819
+
         #{overflow=wrap}
         c = d + number.rotate-left(t, 17)
         f = a ^ (c & (d ^ a))
+
         #{overflow=wrap}
         t = b + f + w3 + 3250441966
+
         #{overflow=wrap}
         b = c + number.rotate-left(t, 22)
         f = d ^ (b & (c ^ d))
+
         #{overflow=wrap}
         t = a + f + w4 + 4118548399
+
         #{overflow=wrap}
         a = b + number.rotate-left(t, 7)
         f = c ^ (a & (b ^ c))
+
         #{overflow=wrap}
         t = d + f + w5 + 1200080426
+
         #{overflow=wrap}
         d = a + number.rotate-left(t, 12)
         f = b ^ (d & (a ^ b))
+
         #{overflow=wrap}
         t = c + f + w6 + 2821735955
+
         #{overflow=wrap}
         c = d + number.rotate-left(t, 17)
         f = a ^ (c & (d ^ a))
+
         #{overflow=wrap}
         t = b + f + w7 + 4249261313
+
         #{overflow=wrap}
         b = c + number.rotate-left(t, 22)
         f = d ^ (b & (c ^ d))
+
         #{overflow=wrap}
         t = a + f + w8 + 1770035416
+
         #{overflow=wrap}
         a = b + number.rotate-left(t, 7)
         f = c ^ (a & (b ^ c))
+
         #{overflow=wrap}
         t = d + f + w9 + 2336552879
+
         #{overflow=wrap}
         d = a + number.rotate-left(t, 12)
         f = b ^ (d & (a ^ b))
+
         #{overflow=wrap}
         t = c + f + w10 + 4294925233
+
         #{overflow=wrap}
         c = d + number.rotate-left(t, 17)
         f = a ^ (c & (d ^ a))
+
         #{overflow=wrap}
         t = b + f + w11 + 2304563134
+
         #{overflow=wrap}
         b = c + number.rotate-left(t, 22)
         f = d ^ (b & (c ^ d))
+
         #{overflow=wrap}
         t = a + f + w12 + 1804603682
+
         #{overflow=wrap}
         a = b + number.rotate-left(t, 7)
         f = c ^ (a & (b ^ c))
+
         #{overflow=wrap}
         t = d + f + w13 + 4254626195
+
         #{overflow=wrap}
         d = a + number.rotate-left(t, 12)
         f = b ^ (d & (a ^ b))
+
         #{overflow=wrap}
         t = c + f + w14 + 2792965006
+
         #{overflow=wrap}
         c = d + number.rotate-left(t, 17)
         f = a ^ (c & (d ^ a))
+
         #{overflow=wrap}
         t = b + f + w15 + 1236535329
+
         #{overflow=wrap}
         b = c + number.rotate-left(t, 22)
 
         ; 第 2 輪 (G): f = c ^ (d & (b ^ c))
         f = c ^ (d & (b ^ c))
+
         #{overflow=wrap}
         t = a + f + w1 + 4129170786
+
         #{overflow=wrap}
         a = b + number.rotate-left(t, 5)
         f = b ^ (c & (a ^ b))
+
         #{overflow=wrap}
         t = d + f + w6 + 3225465664
+
         #{overflow=wrap}
         d = a + number.rotate-left(t, 9)
         f = a ^ (b & (d ^ a))
+
         #{overflow=wrap}
         t = c + f + w11 + 643717713
+
         #{overflow=wrap}
         c = d + number.rotate-left(t, 14)
         f = d ^ (a & (c ^ d))
+
         #{overflow=wrap}
         t = b + f + w0 + 3921069994
+
         #{overflow=wrap}
         b = c + number.rotate-left(t, 20)
         f = c ^ (d & (b ^ c))
+
         #{overflow=wrap}
         t = a + f + w5 + 3593408605
+
         #{overflow=wrap}
         a = b + number.rotate-left(t, 5)
         f = b ^ (c & (a ^ b))
+
         #{overflow=wrap}
         t = d + f + w10 + 38016083
+
         #{overflow=wrap}
         d = a + number.rotate-left(t, 9)
         f = a ^ (b & (d ^ a))
+
         #{overflow=wrap}
         t = c + f + w15 + 3634488961
+
         #{overflow=wrap}
         c = d + number.rotate-left(t, 14)
         f = d ^ (a & (c ^ d))
+
         #{overflow=wrap}
         t = b + f + w4 + 3889429448
+
         #{overflow=wrap}
         b = c + number.rotate-left(t, 20)
         f = c ^ (d & (b ^ c))
+
         #{overflow=wrap}
         t = a + f + w9 + 568446438
+
         #{overflow=wrap}
         a = b + number.rotate-left(t, 5)
         f = b ^ (c & (a ^ b))
+
         #{overflow=wrap}
         t = d + f + w14 + 3275163606
+
         #{overflow=wrap}
         d = a + number.rotate-left(t, 9)
         f = a ^ (b & (d ^ a))
+
         #{overflow=wrap}
         t = c + f + w3 + 4107603335
+
         #{overflow=wrap}
         c = d + number.rotate-left(t, 14)
         f = d ^ (a & (c ^ d))
+
         #{overflow=wrap}
         t = b + f + w8 + 1163531501
+
         #{overflow=wrap}
         b = c + number.rotate-left(t, 20)
         f = c ^ (d & (b ^ c))
+
         #{overflow=wrap}
         t = a + f + w13 + 2850285829
+
         #{overflow=wrap}
         a = b + number.rotate-left(t, 5)
         f = b ^ (c & (a ^ b))
+
         #{overflow=wrap}
         t = d + f + w2 + 4243563512
+
         #{overflow=wrap}
         d = a + number.rotate-left(t, 9)
         f = a ^ (b & (d ^ a))
+
         #{overflow=wrap}
         t = c + f + w7 + 1735328473
+
         #{overflow=wrap}
         c = d + number.rotate-left(t, 14)
         f = d ^ (a & (c ^ d))
+
         #{overflow=wrap}
         t = b + f + w12 + 2368359562
+
         #{overflow=wrap}
         b = c + number.rotate-left(t, 20)
 
         ; 第 3 輪 (H): f = x ^ y ^ z
         f = b ^ c ^ d
+
         #{overflow=wrap}
         t = a + f + w5 + 4294588738
+
         #{overflow=wrap}
         a = b + number.rotate-left(t, 4)
         f = a ^ b ^ c
+
         #{overflow=wrap}
         t = d + f + w8 + 2272392833
+
         #{overflow=wrap}
         d = a + number.rotate-left(t, 11)
         f = d ^ a ^ b
+
         #{overflow=wrap}
         t = c + f + w11 + 1839030562
+
         #{overflow=wrap}
         c = d + number.rotate-left(t, 16)
         f = c ^ d ^ a
+
         #{overflow=wrap}
         t = b + f + w14 + 4259657740
+
         #{overflow=wrap}
         b = c + number.rotate-left(t, 23)
         f = b ^ c ^ d
+
         #{overflow=wrap}
         t = a + f + w1 + 2763975236
+
         #{overflow=wrap}
         a = b + number.rotate-left(t, 4)
         f = a ^ b ^ c
+
         #{overflow=wrap}
         t = d + f + w4 + 1272893353
+
         #{overflow=wrap}
         d = a + number.rotate-left(t, 11)
         f = d ^ a ^ b
+
         #{overflow=wrap}
         t = c + f + w7 + 4139469664
+
         #{overflow=wrap}
         c = d + number.rotate-left(t, 16)
         f = c ^ d ^ a
+
         #{overflow=wrap}
         t = b + f + w10 + 3200236656
+
         #{overflow=wrap}
         b = c + number.rotate-left(t, 23)
         f = b ^ c ^ d
+
         #{overflow=wrap}
         t = a + f + w13 + 681279174
+
         #{overflow=wrap}
         a = b + number.rotate-left(t, 4)
         f = a ^ b ^ c
+
         #{overflow=wrap}
         t = d + f + w0 + 3936430074
+
         #{overflow=wrap}
         d = a + number.rotate-left(t, 11)
         f = d ^ a ^ b
+
         #{overflow=wrap}
         t = c + f + w3 + 3572445317
+
         #{overflow=wrap}
         c = d + number.rotate-left(t, 16)
         f = c ^ d ^ a
+
         #{overflow=wrap}
         t = b + f + w6 + 76029189
+
         #{overflow=wrap}
         b = c + number.rotate-left(t, 23)
         f = b ^ c ^ d
+
         #{overflow=wrap}
         t = a + f + w9 + 3654602809
+
         #{overflow=wrap}
         a = b + number.rotate-left(t, 4)
         f = a ^ b ^ c
+
         #{overflow=wrap}
         t = d + f + w12 + 3873151461
+
         #{overflow=wrap}
         d = a + number.rotate-left(t, 11)
         f = d ^ a ^ b
+
         #{overflow=wrap}
         t = c + f + w15 + 530742520
+
         #{overflow=wrap}
         c = d + number.rotate-left(t, 16)
         f = c ^ d ^ a
+
         #{overflow=wrap}
         t = b + f + w2 + 3299628645
+
         #{overflow=wrap}
         b = c + number.rotate-left(t, 23)
 
         ; 第 4 輪 (I): f = y ^ (x | ~z)  — ~d 即按位取反
         f = c ^ (b | ~d)
+
         #{overflow=wrap}
         t = a + f + w0 + 4096336452
+
         #{overflow=wrap}
         a = b + number.rotate-left(t, 6)
         f = b ^ (a | ~c)
+
         #{overflow=wrap}
         t = d + f + w7 + 1126891415
+
         #{overflow=wrap}
         d = a + number.rotate-left(t, 10)
         f = a ^ (d | ~b)
+
         #{overflow=wrap}
         t = c + f + w14 + 2878612391
+
         #{overflow=wrap}
         c = d + number.rotate-left(t, 15)
         f = d ^ (c | ~a)
+
         #{overflow=wrap}
         t = b + f + w5 + 4237533241
+
         #{overflow=wrap}
         b = c + number.rotate-left(t, 21)
         f = c ^ (b | ~d)
+
         #{overflow=wrap}
         t = a + f + w12 + 1700485571
+
         #{overflow=wrap}
         a = b + number.rotate-left(t, 6)
         f = b ^ (a | ~c)
+
         #{overflow=wrap}
         t = d + f + w3 + 2399980690
+
         #{overflow=wrap}
         d = a + number.rotate-left(t, 10)
         f = a ^ (d | ~b)
+
         #{overflow=wrap}
         t = c + f + w10 + 4293915773
+
         #{overflow=wrap}
         c = d + number.rotate-left(t, 15)
         f = d ^ (c | ~a)
+
         #{overflow=wrap}
         t = b + f + w1 + 2240044497
+
         #{overflow=wrap}
         b = c + number.rotate-left(t, 21)
         f = c ^ (b | ~d)
+
         #{overflow=wrap}
         t = a + f + w8 + 1873313359
+
         #{overflow=wrap}
         a = b + number.rotate-left(t, 6)
         f = b ^ (a | ~c)
+
         #{overflow=wrap}
         t = d + f + w15 + 4264355552
+
         #{overflow=wrap}
         d = a + number.rotate-left(t, 10)
         f = a ^ (d | ~b)
+
         #{overflow=wrap}
         t = c + f + w6 + 2734768916
+
         #{overflow=wrap}
         c = d + number.rotate-left(t, 15)
         f = d ^ (c | ~a)
+
         #{overflow=wrap}
         t = b + f + w13 + 1309151649
+
         #{overflow=wrap}
         b = c + number.rotate-left(t, 21)
         f = c ^ (b | ~d)
+
         #{overflow=wrap}
         t = a + f + w4 + 4149444226
+
         #{overflow=wrap}
         a = b + number.rotate-left(t, 6)
         f = b ^ (a | ~c)
+
         #{overflow=wrap}
         t = d + f + w11 + 3174756917
+
         #{overflow=wrap}
         d = a + number.rotate-left(t, 10)
         f = a ^ (d | ~b)
+
         #{overflow=wrap}
         t = c + f + w2 + 718787259
+
         #{overflow=wrap}
         c = d + number.rotate-left(t, 15)
         f = d ^ (c | ~a)
+
         #{overflow=wrap}
         t = b + f + w9 + 3951481745
+
         #{overflow=wrap}
         b = c + number.rotate-left(t, 21)
 
         ; 累加回初始值（u32 自然溢出）
         #{overflow=wrap}
         h0 = h0 + a
+
         #{overflow=wrap}
         h1 = h1 + b
+
         #{overflow=wrap}
         h2 = h2 + c
+
         #{overflow=wrap}
         h3 = h3 + d
     }
 
     ; 處理末塊（含填充）
     buf [64]byte
+
     #{overflow=wrap}
     off = num-full * 64
+
     #{overflow=wrap}
     dremain = dlen - off
 
@@ -428,27 +578,32 @@ md5 = (data []byte) (out [16]byte) {
     #{overflow=wrap}
     num-copy-words = dremain / 4
     j <- [0..num-copy-words): {
+
         #{overflow=wrap}
         buf.store-le-u32(j * 4, data.load-le-u32(off + j * 4))
     }
 
     ; 處理剩餘 0-3 位元組
     copy-rem = dremain % 4
+
     #{overflow=wrap}
     copy-rem > 0 -> {
+
         #{overflow=wrap}
         base = num-copy-words * 4
-        #{index-out = 0}
+
+        #{index-out=0}
         k <- [0..copy-rem): buf[base + k] = data[off + base + k]
     }
 
     ; 添加 0x80 填充和長度
-    #{index-out = 0}
+    #{index-out=0}
     buf[dremain] = 128
 
     ; 僅清零 dremain+1 ~ 55 這一段，是MD5規範要求補0的區間
     dremain < 55 -> {
-        #{index-out = 0}
+
+        #{index-out=0}
         pad-idx <- (dremain..56): buf[pad-idx] = 0
     }
     buf.store-le-u32(56, blen & 4294967295)
@@ -480,339 +635,470 @@ md5 = (data []byte) (out [16]byte) {
 
     ; 第 1 輪 (F): f = d ^ (b & (c ^ d))
     f = d ^ (b & (c ^ d))
+
     #{overflow=wrap}
     t = a + f + w0 + 3614090360
+
     #{overflow=wrap}
     a = b + number.rotate-left(t, 7)
     f = c ^ (a & (b ^ c))
+
     #{overflow=wrap}
     t = d + f + w1 + 3905402710
+
     #{overflow=wrap}
     d = a + number.rotate-left(t, 12)
     f = b ^ (d & (a ^ b))
+
     #{overflow=wrap}
     t = c + f + w2 + 606105819
+
     #{overflow=wrap}
     c = d + number.rotate-left(t, 17)
     f = a ^ (c & (d ^ a))
+
     #{overflow=wrap}
     t = b + f + w3 + 3250441966
+
     #{overflow=wrap}
     b = c + number.rotate-left(t, 22)
     f = d ^ (b & (c ^ d))
+
     #{overflow=wrap}
     t = a + f + w4 + 4118548399
+
     #{overflow=wrap}
     a = b + number.rotate-left(t, 7)
     f = c ^ (a & (b ^ c))
+
     #{overflow=wrap}
     t = d + f + w5 + 1200080426
+
     #{overflow=wrap}
     d = a + number.rotate-left(t, 12)
     f = b ^ (d & (a ^ b))
+
     #{overflow=wrap}
     t = c + f + w6 + 2821735955
+
     #{overflow=wrap}
     c = d + number.rotate-left(t, 17)
     f = a ^ (c & (d ^ a))
+
     #{overflow=wrap}
     t = b + f + w7 + 4249261313
+
     #{overflow=wrap}
     b = c + number.rotate-left(t, 22)
     f = d ^ (b & (c ^ d))
+
     #{overflow=wrap}
     t = a + f + w8 + 1770035416
+
     #{overflow=wrap}
     a = b + number.rotate-left(t, 7)
     f = c ^ (a & (b ^ c))
+
     #{overflow=wrap}
     t = d + f + w9 + 2336552879
+
     #{overflow=wrap}
     d = a + number.rotate-left(t, 12)
     f = b ^ (d & (a ^ b))
+
     #{overflow=wrap}
     t = c + f + w10 + 4294925233
+
     #{overflow=wrap}
     c = d + number.rotate-left(t, 17)
     f = a ^ (c & (d ^ a))
+
     #{overflow=wrap}
     t = b + f + w11 + 2304563134
+
     #{overflow=wrap}
     b = c + number.rotate-left(t, 22)
     f = d ^ (b & (c ^ d))
+
     #{overflow=wrap}
     t = a + f + w12 + 1804603682
+
     #{overflow=wrap}
     a = b + number.rotate-left(t, 7)
     f = c ^ (a & (b ^ c))
+
     #{overflow=wrap}
     t = d + f + w13 + 4254626195
+
     #{overflow=wrap}
     d = a + number.rotate-left(t, 12)
     f = b ^ (d & (a ^ b))
+
     #{overflow=wrap}
     t = c + f + w14 + 2792965006
+
     #{overflow=wrap}
     c = d + number.rotate-left(t, 17)
     f = a ^ (c & (d ^ a))
+
     #{overflow=wrap}
     t = b + f + w15 + 1236535329
+
     #{overflow=wrap}
     b = c + number.rotate-left(t, 22)
 
     ; 第 2 輪 (G): f = c ^ (d & (b ^ c))
     f = c ^ (d & (b ^ c))
+
     #{overflow=wrap}
     t = a + f + w1 + 4129170786
+
     #{overflow=wrap}
     a = b + number.rotate-left(t, 5)
     f = b ^ (c & (a ^ b))
+
     #{overflow=wrap}
     t = d + f + w6 + 3225465664
+
     #{overflow=wrap}
     d = a + number.rotate-left(t, 9)
     f = a ^ (b & (d ^ a))
+
     #{overflow=wrap}
     t = c + f + w11 + 643717713
+
     #{overflow=wrap}
     c = d + number.rotate-left(t, 14)
     f = d ^ (a & (c ^ d))
+
     #{overflow=wrap}
     t = b + f + w0 + 3921069994
+
     #{overflow=wrap}
     b = c + number.rotate-left(t, 20)
     f = c ^ (d & (b ^ c))
+
     #{overflow=wrap}
     t = a + f + w5 + 3593408605
+
     #{overflow=wrap}
     a = b + number.rotate-left(t, 5)
     f = b ^ (c & (a ^ b))
+
     #{overflow=wrap}
     t = d + f + w10 + 38016083
+
     #{overflow=wrap}
     d = a + number.rotate-left(t, 9)
     f = a ^ (b & (d ^ a))
+
     #{overflow=wrap}
     t = c + f + w15 + 3634488961
+
     #{overflow=wrap}
     c = d + number.rotate-left(t, 14)
     f = d ^ (a & (c ^ d))
+
     #{overflow=wrap}
     t = b + f + w4 + 3889429448
+
     #{overflow=wrap}
     b = c + number.rotate-left(t, 20)
     f = c ^ (d & (b ^ c))
+
     #{overflow=wrap}
     t = a + f + w9 + 568446438
+
     #{overflow=wrap}
     a = b + number.rotate-left(t, 5)
     f = b ^ (c & (a ^ b))
+
     #{overflow=wrap}
     t = d + f + w14 + 3275163606
+
     #{overflow=wrap}
     d = a + number.rotate-left(t, 9)
     f = a ^ (b & (d ^ a))
+
     #{overflow=wrap}
     t = c + f + w3 + 4107603335
+
     #{overflow=wrap}
     c = d + number.rotate-left(t, 14)
     f = d ^ (a & (c ^ d))
+
     #{overflow=wrap}
     t = b + f + w8 + 1163531501
+
     #{overflow=wrap}
     b = c + number.rotate-left(t, 20)
     f = c ^ (d & (b ^ c))
+
     #{overflow=wrap}
     t = a + f + w13 + 2850285829
+
     #{overflow=wrap}
     a = b + number.rotate-left(t, 5)
     f = b ^ (c & (a ^ b))
+
     #{overflow=wrap}
     t = d + f + w2 + 4243563512
+
     #{overflow=wrap}
     d = a + number.rotate-left(t, 9)
     f = a ^ (b & (d ^ a))
+
     #{overflow=wrap}
     t = c + f + w7 + 1735328473
+
     #{overflow=wrap}
     c = d + number.rotate-left(t, 14)
     f = d ^ (a & (c ^ d))
+
     #{overflow=wrap}
     t = b + f + w12 + 2368359562
+
     #{overflow=wrap}
     b = c + number.rotate-left(t, 20)
 
     ; 第 3 輪 (H): f = x ^ y ^ z
     f = b ^ c ^ d
+
     #{overflow=wrap}
     t = a + f + w5 + 4294588738
+
     #{overflow=wrap}
     a = b + number.rotate-left(t, 4)
     f = a ^ b ^ c
+
     #{overflow=wrap}
     t = d + f + w8 + 2272392833
+
     #{overflow=wrap}
     d = a + number.rotate-left(t, 11)
     f = d ^ a ^ b
+
     #{overflow=wrap}
     t = c + f + w11 + 1839030562
+
     #{overflow=wrap}
     c = d + number.rotate-left(t, 16)
     f = c ^ d ^ a
+
     #{overflow=wrap}
     t = b + f + w14 + 4259657740
+
     #{overflow=wrap}
     b = c + number.rotate-left(t, 23)
     f = b ^ c ^ d
+
     #{overflow=wrap}
     t = a + f + w1 + 2763975236
+
     #{overflow=wrap}
     a = b + number.rotate-left(t, 4)
     f = a ^ b ^ c
+
     #{overflow=wrap}
     t = d + f + w4 + 1272893353
+
     #{overflow=wrap}
     d = a + number.rotate-left(t, 11)
     f = d ^ a ^ b
+
     #{overflow=wrap}
     t = c + f + w7 + 4139469664
+
     #{overflow=wrap}
     c = d + number.rotate-left(t, 16)
     f = c ^ d ^ a
+
     #{overflow=wrap}
     t = b + f + w10 + 3200236656
+
     #{overflow=wrap}
     b = c + number.rotate-left(t, 23)
     f = b ^ c ^ d
+
     #{overflow=wrap}
     t = a + f + w13 + 681279174
+
     #{overflow=wrap}
     a = b + number.rotate-left(t, 4)
     f = a ^ b ^ c
+
     #{overflow=wrap}
     t = d + f + w0 + 3936430074
+
     #{overflow=wrap}
     d = a + number.rotate-left(t, 11)
     f = d ^ a ^ b
+
     #{overflow=wrap}
     t = c + f + w3 + 3572445317
+
     #{overflow=wrap}
     c = d + number.rotate-left(t, 16)
     f = c ^ d ^ a
+
     #{overflow=wrap}
     t = b + f + w6 + 76029189
+
     #{overflow=wrap}
     b = c + number.rotate-left(t, 23)
     f = b ^ c ^ d
+
     #{overflow=wrap}
     t = a + f + w9 + 3654602809
+
     #{overflow=wrap}
     a = b + number.rotate-left(t, 4)
     f = a ^ b ^ c
+
     #{overflow=wrap}
     t = d + f + w12 + 3873151461
+
     #{overflow=wrap}
     d = a + number.rotate-left(t, 11)
     f = d ^ a ^ b
+
     #{overflow=wrap}
     t = c + f + w15 + 530742520
+
     #{overflow=wrap}
     c = d + number.rotate-left(t, 16)
     f = c ^ d ^ a
+
     #{overflow=wrap}
     t = b + f + w2 + 3299628645
+
     #{overflow=wrap}
     b = c + number.rotate-left(t, 23)
 
     ; 第 4 輪 (I): f = y ^ (x | ~z)  — ~d 即按位取反
     f = c ^ (b | ~d)
+
     #{overflow=wrap}
     t = a + f + w0 + 4096336452
+
     #{overflow=wrap}
     a = b + number.rotate-left(t, 6)
     f = b ^ (a | ~c)
+
     #{overflow=wrap}
     t = d + f + w7 + 1126891415
+
     #{overflow=wrap}
     d = a + number.rotate-left(t, 10)
     f = a ^ (d | ~b)
+
     #{overflow=wrap}
     t = c + f + w14 + 2878612391
+
     #{overflow=wrap}
     c = d + number.rotate-left(t, 15)
     f = d ^ (c | ~a)
+
     #{overflow=wrap}
     t = b + f + w5 + 4237533241
+
     #{overflow=wrap}
     b = c + number.rotate-left(t, 21)
     f = c ^ (b | ~d)
+
     #{overflow=wrap}
     t = a + f + w12 + 1700485571
+
     #{overflow=wrap}
     a = b + number.rotate-left(t, 6)
     f = b ^ (a | ~c)
+
     #{overflow=wrap}
     t = d + f + w3 + 2399980690
+
     #{overflow=wrap}
     d = a + number.rotate-left(t, 10)
     f = a ^ (d | ~b)
+
     #{overflow=wrap}
     t = c + f + w10 + 4293915773
+
     #{overflow=wrap}
     c = d + number.rotate-left(t, 15)
     f = d ^ (c | ~a)
+
     #{overflow=wrap}
     t = b + f + w1 + 2240044497
+
     #{overflow=wrap}
     b = c + number.rotate-left(t, 21)
     f = c ^ (b | ~d)
+
     #{overflow=wrap}
     t = a + f + w8 + 1873313359
+
     #{overflow=wrap}
     a = b + number.rotate-left(t, 6)
     f = b ^ (a | ~c)
+
     #{overflow=wrap}
     t = d + f + w15 + 4264355552
+
     #{overflow=wrap}
     d = a + number.rotate-left(t, 10)
     f = a ^ (d | ~b)
+
     #{overflow=wrap}
     t = c + f + w6 + 2734768916
+
     #{overflow=wrap}
     c = d + number.rotate-left(t, 15)
     f = d ^ (c | ~a)
+
     #{overflow=wrap}
     t = b + f + w13 + 1309151649
+
     #{overflow=wrap}
     b = c + number.rotate-left(t, 21)
     f = c ^ (b | ~d)
+
     #{overflow=wrap}
     t = a + f + w4 + 4149444226
+
     #{overflow=wrap}
     a = b + number.rotate-left(t, 6)
     f = b ^ (a | ~c)
+
     #{overflow=wrap}
     t = d + f + w11 + 3174756917
+
     #{overflow=wrap}
     d = a + number.rotate-left(t, 10)
     f = a ^ (d | ~b)
+
     #{overflow=wrap}
     t = c + f + w2 + 718787259
+
     #{overflow=wrap}
     c = d + number.rotate-left(t, 15)
     f = d ^ (c | ~a)
+
     #{overflow=wrap}
     t = b + f + w9 + 3951481745
+
     #{overflow=wrap}
     b = c + number.rotate-left(t, 21)
 
     ; 累加回初始值（u32 自然溢出）
     #{overflow=wrap}
     h0 = h0 + a
+
     #{overflow=wrap}
     h1 = h1 + b
+
     #{overflow=wrap}
     h2 = h2 + c
+
     #{overflow=wrap}
     h3 = h3 + d
 

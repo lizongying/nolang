@@ -107,12 +107,14 @@ client.request = (data str) (response ?str) {
 ; send-line: 發送一行（附加換行符 \n）
 ; 返回 written=實際發送位元組數（-1=錯誤）
 client.send-line = (line str) (written i64) {
+
     #{overflow=wrap}
     written = -1
     .connected == false -> return
 
     ; char-to-str(10) = 換行符 \n（ASCII 10）
     nl = number.char-to-str(10)
+
     #{overflow=wrap}
     written = .c.send(line - nl)
 }

@@ -19,7 +19,8 @@ new = (data []byte) (crc u64) {
     poly u64 = 14180682008813511362
     crc = 0
     i <- [0..data.len()): {
-        #{index-out = 0}
+
+        #{index-out=0}
         crc = crc ^ (data[i])
         j <- [0..8): {
             {
@@ -39,8 +40,8 @@ hex = (data []byte) (hex str) {
     hex-chars = '0123456789abcdef'
     hex str = with-len(16)
     i <- [0..16): {
-        #{overflow=wrap}
-        #{index-out = 0}
+
+        #{index-out=0, overflow=wrap}
         hex[i] = hex-chars[(crc >> (60 - i * 4)) & 15]
     }
 }

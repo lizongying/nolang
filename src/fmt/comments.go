@@ -266,16 +266,21 @@ func (f *formatter) attachedAnnotations(stmt parser.Statement) []*parser.Annotat
 		*parser.ForStatement, *parser.MultiAssignStatement, *parser.ReturnStatement,
 		*parser.TaggedEnumDefinition, *parser.EnumDefinition, *parser.InterfaceDefinition:
 		all := f.sem.AnnotationsOf(stmt)
-		// `#{index-out = ...}` 是「行注解」：以獨立 AnnotationStatement 形式印出
-		// （見 formatAnnotationStatement），作為附加註解再印一次會雙印、破壞冪等，
-		// 故過濾掉該鍵。**尾隨寫法例外**（`stmt #{index-out=0}`）：它沒有獨立節點
-		// （parser 直接掛在陳述上），不在此輸出就會在 `no fmt -w` 時整條遺失。
+		// `#{index-out = ...}` 有兩種來源：
+		//  1) 獨立成行寫在本陳述正上方：parser 對 IDENT 起始的陳述會把註解直接
+		//     attachAnnotations 到本陳述（Propagated=false、無獨立節點），此時**必須**
+		//     由附加註解路徑輸出，否則 `no fmt -w` 會整條遺失越界保護。
+		//  2) 由上一行獨立 AnnotationStatement 節點、或 for 迴圈表頭，經
+		//     applyLineIndexOutAnnotations 複製進本陳述 side-table 的副本
+		//     （Propagated=true）：其顯示已由該節點/表頭負責，此处再印一次會雙印、
+		//     非冪等，故只過濾掉 Propagated 副本。
+		// 尾隨寫法（`stmt #{index-out=0}`）無獨立節點，永遠保留。
 		if len(all) == 0 {
 			return nil
 		}
 		filtered := all[:0:0]
 		for _, e := range all {
-			if e != nil && e.Key == "index-out" && !e.Trailing {
+			if e != nil && e.Key == "index-out" && !e.Trailing && e.Propagated {
 				continue
 			}
 			filtered = append(filtered, e)
@@ -292,12 +297,13 @@ func (f *formatter) hasAttachedAnnotations(stmt parser.Statement) bool {
 }
 
 // attachedAnnotationsWillEmit reports whether formatting this statement will emit
-// a #{...} line before its body for a **non-overflow** entry (platform/generic
-// annotations such as #{mac-arm64}). It is used by the gap logic to decide
-// whether to insert a separating blank line.
+// a `#{...}` line before its body — any non-trailing entry (platform / generic /
+// overflow / index-out). It is used by the gap logic to decide whether to insert
+// a separating blank line.
 //
-// overflow 條目**不再**計入：`#{overflow=...}` 現為行注解，幾乎每條含算術的
-// 陳述都自帶一行，若讓它觸發間隙會在每條陳述前插入空行（破壞冪等且嚴重膨脹）。
+// 只要陳述上方會印出獨立一行註解，就必須與上方程式碼以一個空行分隔：整組
+// 「註釋 → 註解 → 陳述」是一個 node（見 nodeHeadWillEmit），node 之間以空行分隔。
+// overflow / index-out 也是行注解、同樣佔用陳述上方的一行，故一併計入。
 func (f *formatter) attachedAnnotationsWillEmit(stmt parser.Statement) bool {
 	for _, e := range f.attachedAnnotations(stmt) {
 		if e.Trailing {
@@ -305,32 +311,38 @@ func (f *formatter) attachedAnnotationsWillEmit(stmt parser.Statement) bool {
 			// （否則會在陳述前插入空行、破壞冪等）。
 			continue
 		}
-		if e.Key != "overflow" {
-			return true
-		}
+		return true
 	}
 	return false
 }
 
-// attachedAnnotationsWillEmitAny 與 attachedAnnotationsWillEmit 相同，但**不**排除
-// overflow 條目：只要有任何「非尾隨」附加註解會在陳述上方印出獨立一行就回傳 true。
+// annotationNodeWillEmit reports whether formatting stmt starts with a `#{...}`
+// line of its own — either a standalone AnnotationStatement node or one emitted
+// from the statement's attached annotations.
+func (f *formatter) annotationNodeWillEmit(stmt parser.Statement) bool {
+	if as, ok := stmt.(*parser.AnnotationStatement); ok {
+		return f.annotationStatementEmits(as)
+	}
+	return f.attachedAnnotationsWillEmit(stmt)
+}
+
+// nodeHeadWillEmit reports whether formatting stmt writes anything *above* its own
+// body — a doc comment and/or an annotation line. Such a statement is the
+// 「註釋 + 註解 + 陳述」node the layout keeps separated by a blank line from what
+// precedes it (see the gap logic in formatBlockInner / formatProgram).
+func (f *formatter) nodeHeadWillEmit(stmt parser.Statement) bool {
+	return f.hasDocComment(stmt) || f.annotationNodeWillEmit(stmt)
+}
+
+// attachedAnnotationsWillEmitAny 保留為 attachedAnnotationsWillEmit 的別名：內聯
+// 守衛（isStandaloneInline / writeBareMatchArm 的 canInline）要求「只要上方會有一行
+// 註解就不得內聯」。
 //
-// 用途僅限「內聯守衛」（isStandaloneInline / writeBareMatchArm 的 canInline）。
 // 內聯會把註解寫成 `cond -> #{overflow=wrap}`，而解析器會把 `#{...}` 當成 arm
 // 本體、二次格式化再產生 `overflow = wrap` 之類的錯亂（非冪等）。因此只要該陳述
 // 上方會有一行註解，就必須強制區塊形式 `cond -> { #{...} ... }`。
-//
-// 不可用於間隙（gap）判斷：overflow 是行註解，幾乎每條含算術的陳述都自帶一行，
-// 若讓它觸發間隙會在每條陳述前插入空行（破壞冪等且嚴重膨脹）——間隙判斷請用
-// attachedAnnotationsWillEmit。
 func (f *formatter) attachedAnnotationsWillEmitAny(stmt parser.Statement) bool {
-	for _, e := range f.attachedAnnotations(stmt) {
-		if e.Trailing {
-			continue
-		}
-		return true
-	}
-	return false
+	return f.attachedAnnotationsWillEmit(stmt)
 }
 
 // overflowModeStringOf 從一個 overflow 註解條目取出正規化模式字串

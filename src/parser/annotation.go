@@ -23,6 +23,33 @@ import (
 //
 // 對於非 FFI 註解，若後續為宣告（let、struct definition、function definition），
 // 註解條目會附加到該宣告上；否則作為獨立 AnnotationStatement 保留。
+// annotationImmediatelyTrails 判斷當前 token（呼叫時必為 `#{`）是否為「尾隨註解」
+// ——即緊跟在「同一行」的前一個非註釋 token 之後。
+//
+// 為何用 prevToken 的行號，而不是陳述的 Pos()/EndPos()：兩者都不等於「陳述真正
+// 結束的那一行」。
+//   - Pos() 是陳述的**第一行**。多行陳述（值跨行、區塊收尾的 `}` 自成一行）的尾隨
+//     註解與它不同行，於是被誤判為「下一條陳述的前置註解」：`#{index-out=0}` 被
+//     套用到錯誤目標（該行越界索引仍被當成未處理），LSP 的「Add #{index-out = 0}」
+//     quickfix 追加在行尾的註解也就形同無效。
+//   - EndPos() 對呼叫表達式只回到**最後一個引數**（CallExpression.EndPos），
+//     所以 `f(\n a,\n b\n) #{...}` 的 `)` 自成一行時仍對不上。
+//
+// prevToken 由 nextToken 維護，且 advanceCollect 會跳過 COMMENT（註釋只進
+// p.comments 緩衝），故 prevToken 恆為前一個**非註釋** token——正是陳述的最後一個
+// token。NEWLINE/EOF 一律不算（換行後的 `#{` 是「獨立成行置於目標上方」的前置註解，
+// 見 annotationPrefixIllegal 的說明）。
+func (p *Parser) annotationImmediatelyTrails() bool {
+	if p.currentToken.Type != lexer.HASH_LBRACE {
+		return false
+	}
+	switch p.prevToken.Type {
+	case lexer.NEWLINE, lexer.EOF, lexer.ILLEGAL:
+		return false
+	}
+	return p.prevToken.Line == p.currentToken.Line
+}
+
 // parseTrailingAnnotation 解析緊跟在陳述句之後的尾隨 #{...} 註解（同一行），
 // 回傳註解條目。呼叫方負責將其附加到剛解析的陳述句（parseBlockStatement 會
 // 在解析完 stmt 後呼叫）。這支援 `x = v[5] #{index-out=0}` 這類尾隨註解語法，
@@ -182,6 +209,24 @@ func (p *Parser) parseAnnotationStatement() Statement {
 		entries = append(entries, moreEntries...)
 		annotStmt.Entries = entries
 	}
+	// 取出「註解行之後、目標陳述之前」的註釋：它們夾在註解與目標之間，屬於同一個
+	// node。輸出規範為「註釋 → 註解 → 陳述」，故下方把它們掛成目標陳述的 Doc
+	// （formatter 先印 Doc、再印附加註解），而不是留給下一條陳述（註釋會整條搬到
+	// 下一條陳述上、順序也反了）。
+	//
+	// 判定必須用行號而非「進入本函式時的緩衝長度」：nextToken 為了算出 peekToken
+	// 會預先收集更前方的註釋（見 advanceCollect），跳過註解群組的 `}` 那一步就已
+	// 把下一行的註釋收進緩衝，以長度為基準會永遠取不到。
+	between := p.takeCommentsBetween(annotToken.Line, p.currentToken.Line)
+	restoreBetween := func() {
+		if len(between) == 0 {
+			return
+		}
+		// 目標不是可附加的陳述（獨立 AnnotationStatement / 解析失敗）時原樣歸還，
+		// 保持「註釋屬於後續陳述的 Doc」的既有行為。
+		p.comments = append(append([]lexer.Token{}, between...), p.comments...)
+		between = nil
+	}
 
 	// 若後續為 IDENT 開頭的宣告，附加註解。
 	// 亦含 IN（`in` 為關鍵字但常被當作參數名，如 `in []byte`）：形如
@@ -202,6 +247,12 @@ func (p *Parser) parseAnnotationStatement() Statement {
 		stmt := p.parseStatement()
 		if stmt != nil {
 			p.attachAnnotations(stmt, entries)
+			// 註解行與目標陳述之間的註釋屬於同一 node，掛成目標陳述的 Doc
+			// （輸出規範：註釋 → 註解 → 陳述）。
+			if len(between) > 0 {
+				setDoc(stmt, commentGroupFromTokens(between))
+				between = nil
+			}
 			p.pendingAnnotations = nil
 			// 將註解同時標記到緊接其後的「同名多載」函式定義。nolang 以連續
 			// `name = ...` 表達 arity 多載（如 global.no 的
@@ -241,8 +292,10 @@ func (p *Parser) parseAnnotationStatement() Statement {
 			return stmt
 		}
 		p.pendingAnnotations = nil
+		restoreBetween()
 	}
 
+	restoreBetween()
 	p.skipToStatementEnd()
 	return annotStmt
 }
@@ -416,7 +469,7 @@ func (p *Parser) applyLineIndexOutAnnotations(block *BlockStatement) {
 				continue
 			}
 			if p.indexOutEntries(p.sem.RawAnnotationsOf(bs)) == nil {
-				p.mergeAnnotations(bs, entries)
+				p.mergeIndexOutAnnotations(bs, entries)
 			}
 		}
 		_ = selfOut
@@ -444,7 +497,7 @@ func (p *Parser) applyLineIndexOutAnnotations(block *BlockStatement) {
 				// 供 desugar（maybeIndexOutAssign / maybeIndexOutReturn）辨識。
 				// 若下一條陳述已自帶 index-out，不覆蓋（避免重複套用）。
 				if p.indexOutEntries(p.sem.RawAnnotationsOf(next)) == nil {
-					p.mergeAnnotations(next, entries)
+					p.mergeIndexOutAnnotations(next, entries)
 				}
 				// 若下一條是 for 迴圈（含 `k <- [0..N):` 計數迴圈），其體內的
 				// 索引讀取 `buf[base+k] = data[off+base+k]` 才是真正需要降級的
@@ -470,7 +523,7 @@ func (p *Parser) applyLineIndexOutAnnotations(block *BlockStatement) {
 							continue
 						}
 						if p.indexOutEntries(p.sem.RawAnnotationsOf(bs)) == nil {
-							p.mergeAnnotations(bs, entries)
+							p.mergeIndexOutAnnotations(bs, entries)
 						}
 					}
 				}
@@ -746,6 +799,27 @@ func (p *Parser) mergeAnnotations(n Node, entries []*AnnotationEntry) {
 	} else {
 		p.sem.SetRawAnnotations(n, entries)
 	}
+}
+
+// mergeIndexOutAnnotations 把上一行獨立 `#{index-out=DEF}` 的條目複製進目標陳述的
+// side-table，供 desugar（maybeIndexOutAssign / maybeIndexOutReturn）辨識。副本一律
+// 標記 Propagated=true，讓 formatter 的 attachedAnnotations 跳過它們——否則同一行
+// index-out 會被同時印到每個受影響的陳述（for 迴圈體每條、或獨立節點的下一條）上方，
+// 造成雙印且非冪等。克隆條目避免污染來源節點自身的 Entries（同為 index-out 顯示用）。
+func (p *Parser) mergeIndexOutAnnotations(n Node, entries []*AnnotationEntry) {
+	if isNil(n) || len(entries) == 0 {
+		return
+	}
+	copies := make([]*AnnotationEntry, 0, len(entries))
+	for _, e := range entries {
+		if e == nil {
+			continue
+		}
+		c := *e
+		c.Propagated = true
+		copies = append(copies, &c)
+	}
+	p.mergeAnnotations(n, copies)
 }
 
 // annoKey 回傳註解條目的去重鍵（key + value 字串）。

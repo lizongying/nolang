@@ -51,48 +51,61 @@ char.gt = (b char) (res bool) {
 }
 
 str.gt = (b str) (res bool) {
+
     ; nolang 的關係運算子（< <= > >=）沒有字串字典序語意（str 只有 @str_eq
     ; 相等比較），`res = . > b` 會恆為假。字典序必須走 str.compare。
     res = .compare(b) > 0
 }
 
 ; [n]ord.sort-asc: 升序原地排序（插入排序）
-#{index-out = 0}
+#{index-out=0}
 [n]ord.sort-asc = () {
     i <- [1..n): {
+
         #{overflow=wrap}
         key = .[i]
+
         #{overflow=wrap}
         j = i - 1
-        {
+        (j >= 0) {
+
             #{overflow=wrap}
             .[j] <= key -> break
+
             #{overflow=wrap}
             .[j + 1] = .[j]
+
             #{overflow=wrap}
             j = j - 1
-        } (j >= 0)
+        }
+
         #{overflow=wrap}
         .[j + 1] = key
     }
 }
 
 ; [n]ord.sort-desc: 降序原地排序（插入排序）
-#{index-out = 0}
+#{index-out=0}
 [n]ord.sort-desc = () {
     i <- [1..n): {
+
         #{overflow=wrap}
         key = .[i]
+
         #{overflow=wrap}
         j = i - 1
-        {
+        (j >= 0) {
+
             #{overflow=wrap}
             .[j] >= key -> break
+
             #{overflow=wrap}
             .[j + 1] = .[j]
+
             #{overflow=wrap}
             j = j - 1
-        } (j >= 0)
+        }
+
         #{overflow=wrap}
         .[j + 1] = key
     }
@@ -102,18 +115,24 @@ str.gt = (b str) (res bool) {
 []ord.sort-asc = () {
     sz = .len()
     i <- [1..sz): {
+
         #{overflow=wrap}
         key = .[i]
+
         #{overflow=wrap}
         j = i - 1
-        {
+        (j >= 0) {
+
             #{overflow=wrap}
             .[j] <= key -> break
+
             #{overflow=wrap}
             .[j + 1] = .[j]
+
             #{overflow=wrap}
             j = j - 1
-        } (j >= 0)
+        }
+
         #{overflow=wrap}
         .[j + 1] = key
     }
@@ -123,18 +142,24 @@ str.gt = (b str) (res bool) {
 []ord.sort-desc = () {
     sz = .len()
     i <- [1..sz): {
+
         #{overflow=wrap}
         key = .[i]
+
         #{overflow=wrap}
         j = i - 1
-        {
+        (j >= 0) {
+
             #{overflow=wrap}
             .[j] >= key -> break
+
             #{overflow=wrap}
             .[j + 1] = .[j]
+
             #{overflow=wrap}
             j = j - 1
-        } (j >= 0)
+        }
+
         #{overflow=wrap}
         .[j + 1] = key
     }

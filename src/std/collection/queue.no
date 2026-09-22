@@ -48,7 +48,7 @@ queue {
 ; [n]t.queue-init: 初始化佇列狀態
 ; cap 自動設為陣列大小 n
 ; 返回 q queue: 初始化後的佇列狀態
-#{index-out = 0}
+#{index-out=0}
 [n]t.queue-init = () (q queue) {
     q.cap = n
     q.head = 0
@@ -59,15 +59,19 @@ queue {
 ; q queue: 佇列狀態
 ; val t: 要推入的值
 ; 返回 ok bool: true=成功, false=佇列已滿
-#{index-out = 0}
+#{index-out=0}
 [n]t.queue-push = (q queue, val t) (ok bool) {
+
     #{overflow=wrap}
     ok = false
+
     #{overflow=wrap}
     sz = q.tail - q.head
+
     #{overflow=wrap}
     sz >= q.cap - 1 -> return
     idx = q.tail
+
     #{overflow=wrap}
     {
         idx >= 0 -> idx = idx % q.cap
@@ -75,6 +79,7 @@ queue {
         -> idx = q.cap - ((-idx) % q.cap)
     }
     .[idx] = val
+
     #{overflow=wrap}
     q.tail = q.tail + 1
     ok = true
@@ -83,8 +88,9 @@ queue {
 ; [n]t.queue-pop: 從佇列前端彈出元素
 ; q queue: 佇列狀態
 ; 返回 val ?t: ok=彈出值, nil=佇列為空
-#{index-out = 0}
+#{index-out=0}
 [n]t.queue-pop = (q queue) (val ?t) {
+
     #{overflow=wrap}
     sz = q.tail - q.head
     sz <= 0 -> {
@@ -92,6 +98,7 @@ queue {
         return
     }
     idx = q.head
+
     #{overflow=wrap}
     {
         idx >= 0 -> idx = idx % q.cap
@@ -99,6 +106,7 @@ queue {
         -> idx = q.cap - ((-idx) % q.cap)
     }
     val = .[idx]
+
     #{overflow=wrap}
     q.head = q.head + 1
 }
@@ -106,8 +114,9 @@ queue {
 ; [n]t.queue-peek: 查看隊首元素（不移除）
 ; q queue: 佇列狀態
 ; 返回 val ?t: ok=隊首值, nil=佇列為空
-#{index-out = 0}
+#{index-out=0}
 [n]t.queue-peek = (q queue) (val ?t) {
+
     #{overflow=wrap}
     sz = q.tail - q.head
     sz <= 0 -> {
@@ -115,6 +124,7 @@ queue {
         return
     }
     idx = q.head
+
     #{overflow=wrap}
     {
         idx >= 0 -> idx = idx % q.cap
@@ -131,6 +141,7 @@ queue {
 ; size: 返回佇列中元素數量
 ; 返回 sz i64: 元素數量
 queue.size = () (sz i64) {
+
     #{overflow=wrap}
     sz = .tail - .head
 }
@@ -144,6 +155,7 @@ queue.empty = () (yes bool) {
 ; full: 判斷佇列是否已滿
 ; 返回 yes bool: true=已滿, false=未滿
 queue.full = () (yes bool) {
+
     #{overflow=wrap}
     yes = .tail - .head >= .cap - 1
 }

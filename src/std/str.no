@@ -26,7 +26,6 @@
 ; }
 
 ; str.len: 返回字符串的「字符（碼點）數量」
-#{index-out = 0}
 ; 與 s[i] 的碼點索引語義一致；要字節數請用 s.len-bytes()
 str.len = () (n i64) {
     n = .cp-index(.len-bytes())
@@ -39,12 +38,9 @@ str.len = () (n i64) {
 ;    n = .cap
 ; }
 
-#{index-out = 0}
 ; str[n]: 返回指定位置的字节值
 ; build-in
-#{index-out = 0}
 ; str[n] = (i i64) (c byte) {
-#{index-out = 0}
 ;     c = s[i]
 ; }
 
@@ -58,7 +54,8 @@ eq-raw = (b str, n i64) (eq bool) {
 str.copy = () (dst str) {
     dst = with-cap(.len-bytes())
     i <- [0...len-bytes()): {
-        #{index-out = 0}
+
+        #{index-out=0}
         dst[i] = .byte(i)
     }
 }
@@ -87,18 +84,21 @@ str.decode-cp = (i i64) (cp i64, clen i64) {
         }
 
         b < 0xe0 -> {
+
             #{overflow=wrap}
             cp = ((b & 0x1f) << 6) | (.byte(i + 1) & 0x3f)
             clen = 2
         }
 
         b < 0xf0 -> {
+
             #{overflow=wrap}
             cp = ((b & 0x0f) << 12) | ((.byte(i + 1) & 0x3f) << 6) | (.byte(i + 2) & 0x3f)
             clen = 3
         }
 
         -> {
+
             #{overflow=wrap}
             cp = ((b & 0x07) << 18) | ((.byte(i + 1) & 0x3f) << 12) | ((.byte(i + 2) & 0x3f) << 6) | (.byte(i + 3) & 0x3f)
             clen = 4
@@ -118,6 +118,7 @@ str.decode-cp = (i i64) (cp i64, clen i64) {
 ; from-byte 為起始字節位置；split 等內部按字節切片時使用
 str.find-byte-from = (target str, from-byte i64) (pos i64) {
     r-from = from-byte
+
     #{overflow=wrap}
     pos = -1
     r-from < 0 -> r-from = 0
@@ -133,9 +134,11 @@ str.find-byte-from = (target str, from-byte i64) (pos i64) {
     limit = n - m
     r-from > limit -> return
     i <- [r-from..limit]: {
+
         #{overflow=wrap}
         matched = 1
         j <- [0..m): {
+
             #{overflow=wrap}
 
             .byte(i + j) != target.byte(j) -> {
@@ -154,6 +157,7 @@ str.find-byte-from = (target str, from-byte i64) (pos i64) {
 ; 返回 target 最後一次出現的「字節偏移」（>= from-byte），未找到返回 -1
 str.rfind-byte-from = (target str, from-byte i64) (pos i64) {
     r-from = from-byte
+
     #{overflow=wrap}
     pos = -1
     r-from < 0 -> r-from = 0
@@ -170,10 +174,12 @@ str.rfind-byte-from = (target str, from-byte i64) (pos i64) {
     limit = .len-bytes() - target.len-bytes()
     r-from > limit -> return
     i = limit
-    {
+    (i >= r-from) {
+
         #{overflow=wrap}
         matched = 1
         j <- [0..target.len-bytes()): {
+
             #{overflow=wrap}
 
             .byte(i + j) != target.byte(j) -> {
@@ -188,7 +194,7 @@ str.rfind-byte-from = (target str, from-byte i64) (pos i64) {
 
         #{overflow=wrap}
         i = i - 1
-    } (i >= r-from)
+    }
 }
 
 ; str.cp-index: 將字節偏移轉為碼點（字符）下標
@@ -196,6 +202,7 @@ str.rfind-byte-from = (target str, from-byte i64) (pos i64) {
 str.cp-index = (byte-pos i64) (cp i64) {
     cp = 0
     i <- [0..byte-pos): {
+
         #{overflow=wrap}
         b = .byte(i)
 
@@ -212,15 +219,18 @@ str.cp-index = (byte-pos i64) (cp i64) {
 str.byte-index = (cp-pos i64) (byte i64) {
     byte = 0
     cp = 0
-    {
+    (byte < .len-bytes()) {
+
         #{overflow=wrap}
         cp >= cp-pos -> return
         b = .byte(byte)
+
         #{overflow=wrap}
         {
             b < 0x80 -> byte = byte + 1
 
             -> {
+
                 #{overflow=wrap}
                 b >= 0xf0 -> byte = byte + 4
 
@@ -232,13 +242,12 @@ str.byte-index = (cp-pos i64) (byte i64) {
 
         #{overflow=wrap}
         cp = cp + 1
-    } (byte < .len-bytes())
+    }
     byte = .len-bytes()
 }
 
 ; str.index: 在 s 中查找 target 子串
 ; 使用 Sunday 算法，平均 O(n/m)，最壞 O(n*m)
-#{index-out = 0}
 ; 返回首次出現的「碼點（字符）位置」，與 s[i] 碼點索引語義一致；未找到返回 -1
 str.index = (target str) (pos i64) {
     b = .find-byte-from(target, 0)
@@ -289,6 +298,7 @@ str.starts-with = (target str) (yes bool) {
 ; str.ends-with: 判断 s 是否以 target 结尾
 ; 返回 true=是, false=否
 str.ends-with = (target str) (yes bool) {
+
     #{overflow=wrap}
     yes = true
     target.len-bytes() > .len-bytes() -> {
@@ -322,13 +332,14 @@ str.to-upper = () (val str) {
         c = .byte(i)
         {
             c >= 97 && c <= 122 -> {
-                #{overflow=wrap}
-                #{index-out = 0}
+
+                #{index-out=0, overflow=wrap}
                 val[i] = c - 32
             }
 
-             -> {
-                #{index-out = 0}
+            -> {
+
+                #{index-out=0}
                 val[i] = c
             }
         }
@@ -343,13 +354,14 @@ str.to-lower = () (val str) {
         c = .byte(i)
         {
             c >= 65 && c <= 90 -> {
-                #{overflow=wrap}
-                #{index-out = 0}
+
+                #{index-out=0, overflow=wrap}
                 val[i] = c + 32
             }
 
-             -> {
-                #{index-out = 0}
+            -> {
+
+                #{index-out=0}
                 val[i] = c
             }
         }
@@ -360,6 +372,7 @@ str.to-lower = () (val str) {
 ; 返回新字符串
 str.trim = () (val str) {
     start <- [0...len-bytes()): {
+
         #{overflow=wrap}
         c = .byte(start)
         c != 32 && c != 9 && c != 10 && c != 13 -> break
@@ -367,14 +380,15 @@ str.trim = () (val str) {
 
     #{overflow=wrap}
     end = .len-bytes() - 1
-    {
+    (end >= start) {
+
         #{overflow=wrap}
         c = .byte(end)
         c != 32 && c != 9 && c != 10 && c != 13 -> break
 
         #{overflow=wrap}
         end = end - 1
-    } (end >= start)
+    }
 
     #{overflow=wrap}
     n = end - start + 1
@@ -382,8 +396,7 @@ str.trim = () (val str) {
     val = with-cap(n)
     i <- [0..n): {
 
-        #{overflow=wrap}
-        #{index-out = 0}
+        #{index-out=0, overflow=wrap}
         val[i] = .byte(start + i)
     }
 }
@@ -395,24 +408,24 @@ str.trim = () (val str) {
 ; str.repeat: 将字符串重复 times 次
 ; 返回新字符串
 str.repeat = (times i64) (val str) {
+
     #{overflow=wrap}
     val = with-cap(.len-bytes() * times)
     i <- [0..times): {
         j <- [0...len-bytes()): {
 
-            #{overflow=wrap}
-            #{index-out = 0}
+            #{index-out=0, overflow=wrap}
             val[i * .len-bytes() + j] = .byte(j)
         }
     }
 }
 
 ; str.slice: 截取子串 [start, end)，下標為「字符（碼點）位置」
-#{index-out = 0}
 ; 與 s[i] 碼點索引語義一致；要按字節偏移切片請用 s.slice-bytes()
 str.slice = (start i64, end i64) (val str) {
     r-start = start
     r-end = end
+
     #{overflow=wrap}
     ncp = .len()
     r-start < 0 -> r-start = 0
@@ -426,8 +439,7 @@ str.slice = (start i64, end i64) (val str) {
     val = with-cap(n)
     i <- [0..n): {
 
-        #{overflow=wrap}
-        #{index-out = 0}
+        #{index-out=0, overflow=wrap}
         val[i] = .byte(sb + i)
     }
 }
@@ -437,6 +449,7 @@ str.slice = (start i64, end i64) (val str) {
 str.slice-bytes = (start i64, end i64) (val str) {
     r-start = start
     r-end = end
+
     #{overflow=wrap}
     r-start < 0 -> r-start = 0
     r-end > .len-bytes() -> r-end = .len-bytes()
@@ -447,8 +460,7 @@ str.slice-bytes = (start i64, end i64) (val str) {
     val = with-cap(n)
     i <- [0..n): {
 
-        #{overflow=wrap}
-        #{index-out = 0}
+        #{index-out=0, overflow=wrap}
         val[i] = .byte(r-start + i)
     }
 }
@@ -461,7 +473,8 @@ str.slice-bytes = (start i64, end i64) (val str) {
 str.to-bytes = () (val []byte) {
     val = with-len(.len-bytes())
     i <- [0...len-bytes()): {
-        #{index-out = 0}
+
+        #{index-out=0}
         val[i] = .byte(i)
     }
 }
@@ -472,6 +485,7 @@ str.to-bytes = () (val []byte) {
 ;   nil    - 空字串
 ;   err('msg') - 含非數字字元、孤立 +/- 或格式錯誤
 str.to-i64 = () (val ?i64) {
+
     #{overflow=wrap}
     .len-bytes() == 0 -> {
         val = nil
@@ -501,6 +515,7 @@ str.to-i64 = () (val ?i64) {
     }
     limit = 922337203685477580
     i <- [start...len-bytes()): {
+
         #{overflow=wrap}
         c = .byte(i)
         c < 48 || c > 57 -> {
@@ -514,6 +529,7 @@ str.to-i64 = () (val ?i64) {
             val = err('out of range for i64')
             return
         }
+
         #{overflow=wrap}
         n == limit -> {
             neg == 1 -> {
@@ -573,6 +589,7 @@ str.to-i8 = () (val ?i8) {
         nil -> return
 
         ok -> {
+
             #{overflow=wrap}
             n = it
 
@@ -597,6 +614,7 @@ str.to-i16 = () (val ?i16) {
         nil -> return
 
         ok -> {
+
             #{overflow=wrap}
             n = it
 
@@ -621,6 +639,7 @@ str.to-i32 = () (val ?i32) {
         nil -> return
 
         ok -> {
+
             #{overflow=wrap}
             n = it
 
@@ -660,6 +679,7 @@ str.to-u8 = () (val ?u8) {
         }
     }
     i <- [start...len-bytes()): {
+
         #{overflow=wrap}
         c = .byte(i)
         c < 48 || c > 57 -> {
@@ -705,6 +725,7 @@ str.to-u16 = () (val ?u16) {
         }
     }
     i <- [start...len-bytes()): {
+
         #{overflow=wrap}
         c = .byte(i)
         c < 48 || c > 57 -> {
@@ -750,6 +771,7 @@ str.to-u32 = () (val ?u32) {
         }
     }
     i <- [start...len-bytes()): {
+
         #{overflow=wrap}
         c = .byte(i)
         c < 48 || c > 57 -> {
@@ -783,6 +805,7 @@ str.to-u64 = () (val ?u64) {
     start = 0
     c == 43 -> start = 1
     i <- [start...len-bytes()): {
+
         #{overflow=wrap}
         c = .byte(i)
         c < 48 || c > 57 -> {
@@ -824,6 +847,7 @@ str.to-byte = () (val ?byte) {
         }
     }
     i <- [start...len-bytes()): {
+
         #{overflow=wrap}
         c = .byte(i)
         c < 48 || c > 57 -> {
@@ -842,10 +866,10 @@ str.to-byte = () (val ?byte) {
 }
 
 ; str-to-f64: 將字串解析為 f64（底層實作）
-#{index-out = 0}
 ; 支援格式：[空白][+-][數字][.數字][eE[+-]數字]
 ; 空字串或無數字回傳 0.0
 str-to-f64 = (s str) (result f64) {
+
     #{overflow=wrap}
     n i64 = s.len-bytes()
     n == 0 -> return
@@ -860,23 +884,27 @@ str-to-f64 = (s str) (result f64) {
     c i64 = 0
 
     ; 跳過前導空白
-    {
+    (i < n) {
+
         #{overflow=wrap}
         c = s.byte(i)
+
         #{overflow=wrap}
         {
             c == 32 || c == 9 || c == 10 || c == 13 -> i = i + 1
 
             -> break
         }
-    } (i < n)
+    }
     i >= n -> return
 
     ; 處理正負號
     c = s.byte(i)
+
     #{overflow=wrap}
     {
         c == 45 -> {
+
             #{overflow=wrap}
             sign = -1.0
 
@@ -887,12 +915,15 @@ str-to-f64 = (s str) (result f64) {
     }
 
     ; 解析整數部分
-    {
+    (i < n) {
+
         #{overflow=wrap}
         c = s.byte(i)
+
         #{overflow=wrap}
         {
             c >= 48 && c <= 57 -> {
+
                 #{overflow=wrap}
                 int-part = int-part * 10.0 + number.i64-to-f64(c - 48)
                 has-digit = 1
@@ -902,7 +933,7 @@ str-to-f64 = (s str) (result f64) {
 
             -> break
         }
-    } (i < n)
+    }
 
     ; 解析小數部分
     #{overflow=wrap}
@@ -912,11 +943,13 @@ str-to-f64 = (s str) (result f64) {
 
             #{overflow=wrap}
             i = i + 1
-            {
+            (i < n) {
+
                 #{overflow=wrap}
                 c = s.byte(i)
                 {
                     c >= 48 && c <= 57 -> {
+
                         #{overflow=wrap}
                         frac-part = frac-part * 10.0 + number.i64-to-f64(c - 48)
 
@@ -928,7 +961,7 @@ str-to-f64 = (s str) (result f64) {
 
                     -> break
                 }
-            } (i < n)
+            }
         }
     }
     has-digit == 0 -> return
@@ -942,9 +975,11 @@ str-to-f64 = (s str) (result f64) {
             #{overflow=wrap}
             i = i + 1
             i < n -> {
+
                 #{overflow=wrap}
                 c = s.byte(i)
                 c == 45 -> {
+
                     #{overflow=wrap}
                     exp-sign = -1
 
@@ -953,11 +988,13 @@ str-to-f64 = (s str) (result f64) {
 
                 c == 43 -> i = i + 1
             }
-            {
+            (i < n) {
+
                 #{overflow=wrap}
                 c = s.byte(i)
                 {
                     c >= 48 && c <= 57 -> {
+
                         #{overflow=wrap}
                         exp = exp * 10 + (c - 48)
 
@@ -966,7 +1003,7 @@ str-to-f64 = (s str) (result f64) {
 
                     -> break
                 }
-            } (i < n)
+            }
         }
     }
 
@@ -974,6 +1011,7 @@ str-to-f64 = (s str) (result f64) {
 
     #{overflow=wrap}
     result = int-part + frac-part / frac-div
+
     #{overflow=wrap}
     exp != 0 -> {
 
@@ -981,13 +1019,13 @@ str-to-f64 = (s str) (result f64) {
         #{overflow=wrap}
         p f64 = 1.0
         ei i64 = exp
-        {
+        (ei > 0) {
 
             #{overflow=wrap}
             p = p * 10.0
 
             ei = ei - 1
-        } (ei > 0)
+        }
 
         exp-sign == 1 -> result = result * p
 
@@ -1077,6 +1115,7 @@ str.to-bool = () (val ?bool) {
         }
 
         .len-bytes() == 4 -> {
+
             ; 比較 "true" (4 bytes)
             .byte(0) == 116 && .byte(1) == 114 && .byte(2) == 117 && .byte(3) == 101 -> {
                 val = true
@@ -1085,6 +1124,7 @@ str.to-bool = () (val ?bool) {
         }
 
         .len-bytes() == 5 -> {
+
             ; 比較 "false" (5 bytes)
             .byte(0) == 102 && .byte(1) == 97 && .byte(2) == 108 && .byte(3) == 115 && .byte(4) == 101 -> {
                 val = false
@@ -1105,8 +1145,7 @@ str.reverse = () (val str) {
     val = with-cap(.len-bytes())
     i <- [0...len-bytes()): {
 
-        #{overflow=wrap}
-        #{index-out = 0}
+        #{index-out=0, overflow=wrap}
         val[i] = .byte(.len-bytes() - 1 - i)
     }
 }
@@ -1151,9 +1190,11 @@ str.compare = (b str) (r i64) {
 str.count = () (cnt i64) {
     cnt = 0
     i = 0
-    {
+    (i < .len-bytes()) {
+
         #{overflow=wrap}
         b = .byte(i)
+
         #{overflow=wrap}
         {
             b < 0x80 -> i = i + 1
@@ -1167,7 +1208,7 @@ str.count = () (cnt i64) {
 
         #{overflow=wrap}
         cnt = cnt + 1
-    } (i < .len-bytes())
+    }
 }
 
 ; ═══════════════════════════════════════════════
@@ -1181,11 +1222,13 @@ str.replace-char = (old-ch char, new-ch char) (val str) {
     ; 第一遍：計算輸出長度
     out-n = 0
     i = 0
-    {
+    (i < .len-bytes()) {
+
         #{overflow=wrap}
         b = .byte(i)
         cp i64 = b
         clen = 1
+
         #{overflow=wrap}
         {
             b < 0x80 -> {
@@ -1194,26 +1237,31 @@ str.replace-char = (old-ch char, new-ch char) (val str) {
             }
 
             b < 0xe0 -> {
+
                 #{overflow=wrap}
                 cp = ((b & 0x1f) << 6) | (.byte(i + 1) & 0x3f)
                 clen = 2
             }
 
             b < 0xf0 -> {
+
                 #{overflow=wrap}
                 cp = ((b & 0x0f) << 12) | ((.byte(i + 1) & 0x3f) << 6) | (.byte(i + 2) & 0x3f)
                 clen = 3
             }
 
             -> {
+
                 #{overflow=wrap}
                 cp = ((b & 0x07) << 18) | ((.byte(i + 1) & 0x3f) << 12) | ((.byte(i + 2) & 0x3f) << 6) | (.byte(i + 3) & 0x3f)
                 clen = 4
             }
         }
+
         #{overflow=wrap}
         {
             cp == old-ch -> {
+
                 #{overflow=wrap}
                 new-ch < 0x80 -> out-n = out-n + 1
 
@@ -1229,17 +1277,19 @@ str.replace-char = (old-ch char, new-ch char) (val str) {
 
         #{overflow=wrap}
         i = i + clen
-    } (i < .len-bytes())
+    }
 
     ; 第二遍：写入输出
     val str = with-cap(out-n)
     j = 0
     i = 0
-    {
+    (i < .len-bytes()) {
+
         #{overflow=wrap}
         b = .byte(i)
         cp = b
         clen = 1
+
         #{overflow=wrap}
         {
             b < 0x80 -> {
@@ -1248,71 +1298,75 @@ str.replace-char = (old-ch char, new-ch char) (val str) {
             }
 
             b < 0xe0 -> {
+
                 #{overflow=wrap}
                 cp = ((b & 0x1f) << 6) | (.byte(i + 1) & 0x3f)
                 clen = 2
             }
 
             b < 0xf0 -> {
+
                 #{overflow=wrap}
                 cp = ((b & 0x0f) << 12) | ((.byte(i + 1) & 0x3f) << 6) | (.byte(i + 2) & 0x3f)
                 clen = 3
             }
 
             -> {
+
                 #{overflow=wrap}
                 cp = ((b & 0x07) << 18) | ((.byte(i + 1) & 0x3f) << 12) | ((.byte(i + 2) & 0x3f) << 6) | (.byte(i + 3) & 0x3f)
                 clen = 4
             }
         }
+
         #{overflow=wrap}
         {
             cp == old-ch -> {
                 new-ch < 0x80 -> {
-                    #{overflow=wrap}
-                    #{index-out = 0}
+
+                    #{index-out=0, overflow=wrap}
                     val[j] = new-ch
 
                     j = j + 1
                 }
 
                 new-ch < 0x800 -> {
-                    #{overflow=wrap}
-                    #{index-out = 0}
+
+                    #{index-out=0, overflow=wrap}
                     val[j] = 0xc0 | ((new-ch >> 6) & 0x1f)
 
-                    #{index-out = 0}
+                    #{index-out=0}
                     val[j + 1] = 0x80 | (new-ch & 0x3f)
 
                     j = j + 2
                 }
 
                 new-ch < 0x10000 -> {
-                    #{overflow=wrap}
-                    #{index-out = 0}
+
+                    #{index-out=0, overflow=wrap}
                     val[j] = 0xe0 | ((new-ch >> 12) & 0x0f)
 
-                    #{index-out = 0}
+                    #{index-out=0}
                     val[j + 1] = 0x80 | ((new-ch >> 6) & 0x3f)
 
-                    #{index-out = 0}
+                    #{index-out=0}
                     val[j + 2] = 0x80 | (new-ch & 0x3f)
 
                     j = j + 3
                 }
 
                 -> {
-                    #{overflow=wrap}
-                    #{index-out = 0}
+
+                    #{index-out=0, overflow=wrap}
                     val[j] = 0xf0 | ((new-ch >> 18) & 0x07)
 
-                    #{index-out = 0}
+                    #{index-out=0}
                     val[j + 1] = 0x80 | ((new-ch >> 12) & 0x3f)
 
-                    #{index-out = 0}
+                    #{index-out=0}
                     val[j + 2] = 0x80 | ((new-ch >> 6) & 0x3f)
 
-                    #{index-out = 0}
+                    #{index-out=0}
                     val[j + 3] = 0x80 | (new-ch & 0x3f)
 
                     j = j + 4
@@ -1322,8 +1376,7 @@ str.replace-char = (old-ch char, new-ch char) (val str) {
             -> {
                 k <- [0..clen): {
 
-                    #{overflow=wrap}
-                    #{index-out = 0}
+                    #{index-out=0, overflow=wrap}
                     val[j + k] = .byte(i + k)
                 }
 
@@ -1334,7 +1387,7 @@ str.replace-char = (old-ch char, new-ch char) (val str) {
 
         #{overflow=wrap}
         i = i + clen
-    } (i < .len-bytes())
+    }
 }
 
 ; ═══════════════════════════════════════════════
@@ -1347,11 +1400,13 @@ str.trim-char = (ch char) (val str) {
     ; 前向裁剪：跳过所有等于 ch 的 code point
     #{overflow=wrap}
     start = 0
-    {
+    (start < .len-bytes()) {
+
         #{overflow=wrap}
         b = .byte(start)
         cp i64 = b
         clen = 1
+
         #{overflow=wrap}
         {
             b < 0x80 -> {
@@ -1360,18 +1415,21 @@ str.trim-char = (ch char) (val str) {
             }
 
             b < 0xe0 -> {
+
                 #{overflow=wrap}
                 cp = ((b & 0x1f) << 6) | (.byte(start + 1) & 0x3f)
                 clen = 2
             }
 
             b < 0xf0 -> {
+
                 #{overflow=wrap}
                 cp = ((b & 0x0f) << 12) | ((.byte(start + 1) & 0x3f) << 6) | (.byte(start + 2) & 0x3f)
                 clen = 3
             }
 
             -> {
+
                 #{overflow=wrap}
                 cp = ((b & 0x07) << 18) | ((.byte(start + 1) & 0x3f) << 12) | ((.byte(start + 2) & 0x3f) << 6) | (.byte(start + 3) & 0x3f)
                 clen = 4
@@ -1381,16 +1439,18 @@ str.trim-char = (ch char) (val str) {
 
         #{overflow=wrap}
         start = start + clen
-    } (start < .len-bytes())
+    }
 
     ; 後向裁剪：從 start 開始掃描，找到最後一個不等於 ch 的 code point 的結束位置
     end = start
     i = start
-    {
+    (i < .len-bytes()) {
+
         #{overflow=wrap}
         b = .byte(i)
         cp = b
         clen = 1
+
         #{overflow=wrap}
         {
             b < 0x80 -> {
@@ -1399,18 +1459,21 @@ str.trim-char = (ch char) (val str) {
             }
 
             b < 0xe0 -> {
+
                 #{overflow=wrap}
                 cp = ((b & 0x1f) << 6) | (.byte(i + 1) & 0x3f)
                 clen = 2
             }
 
             b < 0xf0 -> {
+
                 #{overflow=wrap}
                 cp = ((b & 0x0f) << 12) | ((.byte(i + 1) & 0x3f) << 6) | (.byte(i + 2) & 0x3f)
                 clen = 3
             }
 
             -> {
+
                 #{overflow=wrap}
                 cp = ((b & 0x07) << 18) | ((.byte(i + 1) & 0x3f) << 12) | ((.byte(i + 2) & 0x3f) << 6) | (.byte(i + 3) & 0x3f)
                 clen = 4
@@ -1422,7 +1485,7 @@ str.trim-char = (ch char) (val str) {
 
         #{overflow=wrap}
         i = i + clen
-    } (i < .len-bytes())
+    }
 
     #{overflow=wrap}
     n = end - start
@@ -1430,8 +1493,7 @@ str.trim-char = (ch char) (val str) {
     val str = with-len(n)
     j <- [0..n): {
 
-        #{overflow=wrap}
-        #{index-out = 0}
+        #{index-out=0, overflow=wrap}
         val[j] = .byte(start + j)
     }
 }
@@ -1496,18 +1558,21 @@ hex-val = (c i64) (v i64) {
     v = -1
     {
         c >= 48 && c <= 57 -> {
+
             #{overflow=wrap}
             v = c - 48
             return
         }
 
         c >= 65 && c <= 70 -> {
+
             #{overflow=wrap}
             v = c - 65 + 10
             return
         }
 
         c >= 97 && c <= 102 -> {
+
             #{overflow=wrap}
             v = c - 97 + 10
         }
@@ -1520,6 +1585,7 @@ hex-val = (c i64) (v i64) {
 ;   nil        - 空字串
 ;   err('msg') - 含無效十六進制字元
 str.from-hex = () (out ?[]byte) {
+
     #{overflow=wrap}
     n = .len-bytes()
     n == 0 -> {
@@ -1546,7 +1612,8 @@ str.from-hex = () (out ?[]byte) {
             out = err('invalid hex character')
             return
         }
-        #{index-out = 0}
+
+        #{index-out=0}
         out[i] = (hi << 4) | lo
     }
 }
@@ -1569,14 +1636,15 @@ str.split = (sep str) (out []str) {
     }
     start = 0
     pos = .find-byte-from(sep, start)
-    {
+    (pos >= 0) {
+
         #{overflow=wrap}
         result.push(.slice-bytes(start, pos))
 
         #{overflow=wrap}
         start = pos + sep.len-bytes()
         pos = .find-byte-from(sep, start)
-    } (pos >= 0)
+    }
     result.push(.slice-bytes(start, .len-bytes()))
     out = result
 }
@@ -1601,8 +1669,8 @@ str.split = (sep str) (out []str) {
     i <- [0..n): {
         i > 0 -> {
             j <- [0..sep.len-bytes()): {
-                #{overflow=wrap}
-                #{index-out = 0}
+
+                #{index-out=0, overflow=wrap}
                 out[pos] = sep.byte(j)
 
                 #{overflow=wrap}
@@ -1611,8 +1679,8 @@ str.split = (sep str) (out []str) {
         }
         s = .[i]
         j <- [0..s.len-bytes()): {
-            #{overflow=wrap}
-            #{index-out = 0}
+
+            #{index-out=0, overflow=wrap}
             out[pos] = s.byte(j)
 
             #{overflow=wrap}
@@ -1642,18 +1710,19 @@ str.replace-str = (old str, new str) (val str) {
     new-len = new.len-bytes()
     out-len = 0
     i = 0
-    {
+    (i < n) {
 
         ; 嘗試在位置 i 匹配 old
         match = true
         j = 0
-        {
+        (j < old-len) {
 
             #{overflow=wrap}
             i + j >= n -> {
                 match = false
                 break
             }
+
             #{overflow=wrap}
             .byte(i + j) != old.byte(j) -> {
                 match = false
@@ -1662,7 +1731,7 @@ str.replace-str = (old str, new str) (val str) {
 
             #{overflow=wrap}
             j = j + 1
-        } (j < old-len)
+        }
 
         match -> {
 
@@ -1681,24 +1750,25 @@ str.replace-str = (old str, new str) (val str) {
             #{overflow=wrap}
             i = i + 1
         }
-    } (i < n)
+    }
 
     ; 第二遍：寫入結果
     val str = with-cap(out-len)
     pos = 0
     i = 0
-    {
+    (i < n) {
 
         ; 嘗試在位置 i 匹配 old
         match = true
         j = 0
-        {
+        (j < old-len) {
 
             #{overflow=wrap}
             i + j >= n -> {
                 match = false
                 break
             }
+
             #{overflow=wrap}
             .byte(i + j) != old.byte(j) -> {
                 match = false
@@ -1707,12 +1777,12 @@ str.replace-str = (old str, new str) (val str) {
 
             #{overflow=wrap}
             j = j + 1
-        } (j < old-len)
+        }
 
         match -> {
             k <- [0..new-len): {
-                #{overflow=wrap}
-                #{index-out = 0}
+
+                #{index-out=0, overflow=wrap}
                 val[pos] = new.byte(k)
 
                 #{overflow=wrap}
@@ -1724,8 +1794,8 @@ str.replace-str = (old str, new str) (val str) {
         }
 
         -> {
-            #{overflow=wrap}
-            #{index-out = 0}
+
+            #{index-out=0, overflow=wrap}
             val[pos] = .byte(i)
 
             #{overflow=wrap}
@@ -1734,7 +1804,7 @@ str.replace-str = (old str, new str) (val str) {
             #{overflow=wrap}
             i = i + 1
         }
-    } (i < n)
+    }
 }
 
 ; ═══════════════════════════════════════════════
@@ -1792,6 +1862,7 @@ f64-to-str-fixed = (x f64, precision i64) (out str) {
     #{overflow=wrap}
     {
         x == 0.0 -> {
+
             #{overflow=wrap}
             neg = 0
 
@@ -1805,25 +1876,26 @@ f64-to-str-fixed = (x f64, precision i64) (out str) {
             out = with-cap(total)
             pos = 0
             neg == 1 -> {
-                #{overflow=wrap}
-                #{index-out = 0}
+
+                #{index-out=0, overflow=wrap}
                 out[pos] = 45
 
                 pos = pos + 1
             }
-            #{index-out = 0}
+
+            #{index-out=0}
             out[pos] = 48
 
             pos = pos + 1
             precision > 0 -> {
-                #{overflow=wrap}
-                #{index-out = 0}
+
+                #{index-out=0, overflow=wrap}
                 out[pos] = 46
 
                 pos = pos + 1
                 i <- [0..precision): {
-                    #{overflow=wrap}
-                    #{index-out = 0}
+
+                    #{index-out=0, overflow=wrap}
                     out[pos] = 48
 
                     pos = pos + 1
@@ -1833,6 +1905,7 @@ f64-to-str-fixed = (x f64, precision i64) (out str) {
         }
 
         x + x == x -> {
+
             ; 無限
 
             x < 0.0 -> {
@@ -1847,8 +1920,10 @@ f64-to-str-fixed = (x f64, precision i64) (out str) {
     ; 符號處理
     neg = 0
     ax f64 = x
+
     #{overflow=wrap}
     x < 0.0 -> {
+
         #{overflow=wrap}
         neg = 1
 
@@ -1895,10 +1970,11 @@ f64-to-str-fixed = (x f64, precision i64) (out str) {
     precision > 0 -> total = total + 1
     out = with-cap(total)
     pos = 0
+
     #{overflow=wrap}
     neg == 1 -> {
-        #{overflow=wrap}
-        #{index-out = 0}
+
+        #{index-out=0, overflow=wrap}
         out[pos] = 45
 
         pos = pos + 1
@@ -1906,15 +1982,18 @@ f64-to-str-fixed = (x f64, precision i64) (out str) {
 
     ; 整數部分
     j <- [0..int-len): {
+
         #{overflow=wrap}
         {
-                        j < pad -> {
-                #{index-out = 0}
+            j < pad -> {
+
+                #{index-out=0}
                 out[pos] = 48
             }
 
-             -> {
-                #{index-out = 0}
+            -> {
+
+                #{index-out=0}
                 out[pos] = mstr.byte(j - pad)
             }
         }
@@ -1926,8 +2005,8 @@ f64-to-str-fixed = (x f64, precision i64) (out str) {
     ; 小數部分
     #{overflow=wrap}
     precision > 0 -> {
-        #{overflow=wrap}
-        #{index-out = 0}
+
+        #{index-out=0, overflow=wrap}
         out[pos] = 46
 
         pos = pos + 1
@@ -1936,13 +2015,15 @@ f64-to-str-fixed = (x f64, precision i64) (out str) {
             #{overflow=wrap}
             idx = int-len + j
             {
-                                idx < pad -> {
-                    #{index-out = 0}
+                idx < pad -> {
+
+                    #{index-out=0}
                     out[pos] = 48
                 }
 
-                 -> {
-                    #{index-out = 0}
+                -> {
+
+                    #{index-out=0}
                     out[pos] = mstr.byte(idx - pad)
                 }
             }
@@ -1969,6 +2050,7 @@ f64-to-str-sci = (x f64, precision i64) (out str) {
     #{overflow=wrap}
     {
         x == 0.0 -> {
+
             #{overflow=wrap}
             neg = 0
 
@@ -1982,48 +2064,54 @@ f64-to-str-sci = (x f64, precision i64) (out str) {
             out = with-cap(total)
             pos = 0
             neg == 1 -> {
-                #{overflow=wrap}
-                #{index-out = 0}
+
+                #{index-out=0, overflow=wrap}
                 out[pos] = 45
 
                 pos = pos + 1
             }
-            #{index-out = 0}
+
+            #{index-out=0}
             out[pos] = 48
 
             pos = pos + 1
             precision > 0 -> {
-                #{overflow=wrap}
-                #{index-out = 0}
+
+                #{index-out=0, overflow=wrap}
                 out[pos] = 46
 
                 pos = pos + 1
                 i <- [0..precision): {
-                    #{overflow=wrap}
-                    #{index-out = 0}
+
+                    #{index-out=0, overflow=wrap}
                     out[pos] = 48
 
                     pos = pos + 1
                 }
             }
-            #{index-out = 0}
+
+            #{index-out=0}
             out[pos] = 101
 
             pos = pos + 1
-            #{index-out = 0}
+
+            #{index-out=0}
             out[pos] = 43
 
             pos = pos + 1
-            #{index-out = 0}
+
+            #{index-out=0}
             out[pos] = 48
 
             pos = pos + 1
-            #{index-out = 0}
+
+            #{index-out=0}
             out[pos] = 48
             return
         }
 
         x + x == x -> {
+
             ; 無限
 
             x < 0.0 -> {
@@ -2038,8 +2126,10 @@ f64-to-str-sci = (x f64, precision i64) (out str) {
     ; 符號處理
     neg = 0
     ax f64 = x
+
     #{overflow=wrap}
     x < 0.0 -> {
+
         #{overflow=wrap}
         neg = 1
 
@@ -2058,6 +2148,7 @@ f64-to-str-sci = (x f64, precision i64) (out str) {
 
     #{overflow=wrap}
     base f64 = math.exp(number.i64-to-f64(e) * ln10)
+
     #{overflow=wrap}
     ax < base -> {
 
@@ -2080,12 +2171,14 @@ f64-to-str-sci = (x f64, precision i64) (out str) {
 
     ; 四捨五入溢出處理（m 變成 10^(precision+1)）
     overflow = 1
+
     #{overflow=wrap}
     i <- [0..precision + 1): {
 
         #{overflow=wrap}
         overflow = overflow * 10
     }
+
     #{overflow=wrap}
     m >= overflow -> {
 
@@ -2127,17 +2220,18 @@ f64-to-str-sci = (x f64, precision i64) (out str) {
     elen < 2 -> total = total + 1
     out = with-cap(total)
     pos = 0
+
     #{overflow=wrap}
     neg == 1 -> {
-        #{overflow=wrap}
-        #{index-out = 0}
+
+        #{index-out=0, overflow=wrap}
         out[pos] = 45
 
         pos = pos + 1
     }
 
     ; 第一位數字
-    #{index-out = 0}
+    #{index-out=0}
     out[pos] = mstr.byte(0)
 
     #{overflow=wrap}
@@ -2146,8 +2240,8 @@ f64-to-str-sci = (x f64, precision i64) (out str) {
     ; 小數部分
     #{overflow=wrap}
     precision > 0 -> {
-        #{overflow=wrap}
-        #{index-out = 0}
+
+        #{index-out=0, overflow=wrap}
         out[pos] = 46
 
         pos = pos + 1
@@ -2156,13 +2250,15 @@ f64-to-str-sci = (x f64, precision i64) (out str) {
             #{overflow=wrap}
             idx = j + 1
             {
-                                idx < mn -> {
-                    #{index-out = 0}
+                idx < mn -> {
+
+                    #{index-out=0}
                     out[pos] = mstr.byte(idx)
                 }
 
-                 -> {
-                    #{index-out = 0}
+                -> {
+
+                    #{index-out=0}
                     out[pos] = 48
                 }
             }
@@ -2172,19 +2268,21 @@ f64-to-str-sci = (x f64, precision i64) (out str) {
     }
 
     ; 'e' 和符號
-    #{index-out = 0}
+    #{index-out=0}
     out[pos] = 101
 
     #{overflow=wrap}
     pos = pos + 1
     {
-                e < 0 -> {
-            #{index-out = 0}
+        e < 0 -> {
+
+            #{index-out=0}
             out[pos] = 45
         }
 
-         -> {
-            #{index-out = 0}
+        -> {
+
+            #{index-out=0}
             out[pos] = 43
         }
     }
@@ -2195,17 +2293,18 @@ f64-to-str-sci = (x f64, precision i64) (out str) {
     ; 指數位數（至少 2 位，前導補零）
     estr = number.i64-to-str(ae)
     elen2 = estr.len-bytes()
+
     #{overflow=wrap}
     elen2 == 1 -> {
-        #{overflow=wrap}
-        #{index-out = 0}
+
+        #{index-out=0, overflow=wrap}
         out[pos] = 48
 
         pos = pos + 1
     }
     j <- [0..elen2): {
-        #{overflow=wrap}
-        #{index-out = 0}
+
+        #{index-out=0, overflow=wrap}
         out[pos] = estr.byte(j)
 
         #{overflow=wrap}
@@ -2230,6 +2329,7 @@ f64-to-str-general = (x f64, precision i64) (out str) {
     #{overflow=wrap}
     {
         x == 0.0 -> {
+
             #{overflow=wrap}
             neg = 0
 
@@ -2238,18 +2338,20 @@ f64-to-str-general = (x f64, precision i64) (out str) {
             out = with-cap(2)
             pos = 0
             neg == 1 -> {
-                #{overflow=wrap}
-                #{index-out = 0}
+
+                #{index-out=0, overflow=wrap}
                 out[pos] = 45
 
                 pos = pos + 1
             }
-            #{index-out = 0}
+
+            #{index-out=0}
             out[pos] = 48
             return
         }
 
         x + x == x -> {
+
             ; 無限
 
             x < 0.0 -> {
@@ -2264,8 +2366,10 @@ f64-to-str-general = (x f64, precision i64) (out str) {
     ; 符號處理
     neg = 0
     ax f64 = x
+
     #{overflow=wrap}
     x < 0.0 -> {
+
         #{overflow=wrap}
         neg = 1
 
@@ -2284,6 +2388,7 @@ f64-to-str-general = (x f64, precision i64) (out str) {
 
     #{overflow=wrap}
     base f64 = math.exp(number.i64-to-f64(e) * ln10)
+
     #{overflow=wrap}
     ax < base -> {
 
@@ -2314,6 +2419,7 @@ f64-to-str-general = (x f64, precision i64) (out str) {
         #{overflow=wrap}
         overflow = overflow * 10
     }
+
     #{overflow=wrap}
     m >= overflow -> {
 
@@ -2336,7 +2442,7 @@ f64-to-str-general = (x f64, precision i64) (out str) {
 
     #{overflow=wrap}
     i = precision - 1
-    {
+    (i >= 0) {
 
         #{overflow=wrap}
         idx = i - pad
@@ -2347,7 +2453,7 @@ f64-to-str-general = (x f64, precision i64) (out str) {
 
         #{overflow=wrap}
         i = i - 1
-    } (i >= 0)
+    }
 
     ; 決定格式：%g 規則
     use-sci = 0
@@ -2356,6 +2462,7 @@ f64-to-str-general = (x f64, precision i64) (out str) {
 
         e >= precision -> use-sci = 1
     }
+
     #{overflow=wrap}
     use-sci == 1 -> {
 
@@ -2379,8 +2486,8 @@ f64-to-str-general = (x f64, precision i64) (out str) {
         out = with-cap(total)
         pos = 0
         neg == 1 -> {
-            #{overflow=wrap}
-            #{index-out = 0}
+
+            #{index-out=0, overflow=wrap}
             out[pos] = 45
 
             pos = pos + 1
@@ -2388,13 +2495,15 @@ f64-to-str-general = (x f64, precision i64) (out str) {
 
         ; 第一位數字
         {
-                        pad > 0 -> {
-                #{index-out = 0}
+            pad > 0 -> {
+
+                #{index-out=0}
                 out[pos] = 48
             }
 
-             -> {
-                #{index-out = 0}
+            -> {
+
+                #{index-out=0}
                 out[pos] = mstr.byte(0)
             }
         }
@@ -2403,8 +2512,8 @@ f64-to-str-general = (x f64, precision i64) (out str) {
 
         ; 小數部分
         last-nz >= 1 -> {
-            #{overflow=wrap}
-            #{index-out = 0}
+
+            #{index-out=0, overflow=wrap}
             out[pos] = 46
 
             pos = pos + 1
@@ -2413,13 +2522,15 @@ f64-to-str-general = (x f64, precision i64) (out str) {
                 #{overflow=wrap}
                 idx = j - pad
                 {
-                                        idx >= 0 && idx < mn -> {
-                        #{index-out = 0}
+                    idx >= 0 && idx < mn -> {
+
+                        #{index-out=0}
                         out[pos] = mstr.byte(idx)
                     }
 
-                     -> {
-                        #{index-out = 0}
+                    -> {
+
+                        #{index-out=0}
                         out[pos] = 48
                     }
                 }
@@ -2429,18 +2540,20 @@ f64-to-str-general = (x f64, precision i64) (out str) {
         }
 
         ; 'e' 和符號
-        #{index-out = 0}
+        #{index-out=0}
         out[pos] = 101
 
         pos = pos + 1
         {
-                        e < 0 -> {
-                #{index-out = 0}
+            e < 0 -> {
+
+                #{index-out=0}
                 out[pos] = 45
             }
 
-             -> {
-                #{index-out = 0}
+            -> {
+
+                #{index-out=0}
                 out[pos] = 43
             }
         }
@@ -2451,15 +2564,15 @@ f64-to-str-general = (x f64, precision i64) (out str) {
         estr = number.i64-to-str(ae)
         elen2 = estr.len-bytes()
         elen2 == 1 -> {
-            #{overflow=wrap}
-            #{index-out = 0}
+
+            #{index-out=0, overflow=wrap}
             out[pos] = 48
 
             pos = pos + 1
         }
         j <- [0..elen2): {
-            #{overflow=wrap}
-            #{index-out = 0}
+
+            #{index-out=0, overflow=wrap}
             out[pos] = estr.byte(j)
 
             pos = pos + 1
@@ -2484,8 +2597,8 @@ f64-to-str-general = (x f64, precision i64) (out str) {
         out = with-cap(total)
         pos = 0
         neg == 1 -> {
-            #{overflow=wrap}
-            #{index-out = 0}
+
+            #{index-out=0, overflow=wrap}
             out[pos] = 45
 
             pos = pos + 1
@@ -2495,13 +2608,15 @@ f64-to-str-general = (x f64, precision i64) (out str) {
             #{overflow=wrap}
             idx = j - pad
             {
-                                idx >= 0 && idx < mn -> {
-                    #{index-out = 0}
+                idx >= 0 && idx < mn -> {
+
+                    #{index-out=0}
                     out[pos] = mstr.byte(idx)
                 }
 
-                 -> {
-                    #{index-out = 0}
+                -> {
+
+                    #{index-out=0}
                     out[pos] = 48
                 }
             }
@@ -2509,8 +2624,8 @@ f64-to-str-general = (x f64, precision i64) (out str) {
             pos = pos + 1
         }
         frac-digits > 0 -> {
-            #{overflow=wrap}
-            #{index-out = 0}
+
+            #{index-out=0, overflow=wrap}
             out[pos] = 46
 
             pos = pos + 1
@@ -2519,13 +2634,15 @@ f64-to-str-general = (x f64, precision i64) (out str) {
                 #{overflow=wrap}
                 idx = int-digits + j - pad
                 {
-                                        idx >= 0 && idx < mn -> {
-                        #{index-out = 0}
+                    idx >= 0 && idx < mn -> {
+
+                        #{index-out=0}
                         out[pos] = mstr.byte(idx)
                     }
 
-                     -> {
-                        #{index-out = 0}
+                    -> {
+
+                        #{index-out=0}
                         out[pos] = 48
                     }
                 }
@@ -2548,45 +2665,51 @@ f64-to-str-general = (x f64, precision i64) (out str) {
     neg == 1 -> total = total + 1
     out str = with-cap(total)
     pos = 0
+
     #{overflow=wrap}
     neg == 1 -> {
-        #{overflow=wrap}
-        #{index-out = 0}
+
+        #{index-out=0, overflow=wrap}
         out[pos] = 45
 
         pos = pos + 1
     }
-    #{index-out = 0}
+
+    #{index-out=0}
     out[pos] = 48
 
     #{overflow=wrap}
     pos = pos + 1
-    #{index-out = 0}
+
+    #{index-out=0}
     out[pos] = 46
 
     #{overflow=wrap}
     pos = pos + 1
     j <- [0..lead-zeros): {
-        #{overflow=wrap}
-        #{index-out = 0}
+
+        #{index-out=0, overflow=wrap}
         out[pos] = 48
 
         #{overflow=wrap}
         pos = pos + 1
     }
+
     #{overflow=wrap}
     j <- [0..last-nz + 1): {
 
         #{overflow=wrap}
         idx = j - pad
         {
-                        idx >= 0 && idx < mn -> {
-                #{index-out = 0}
+            idx >= 0 && idx < mn -> {
+
+                #{index-out=0}
                 out[pos] = mstr.byte(idx)
             }
 
-             -> {
-                #{index-out = 0}
+            -> {
+
+                #{index-out=0}
                 out[pos] = 48
             }
         }
@@ -2662,6 +2785,7 @@ str.rindex-from = (target str, from i64) (pos i64) {
 ; n i64: 最大替換次數，n <= 0 不替換
 ; 返回 val str: 替換後字串
 str.replace-n = (old str, new str, n i64) (val str) {
+
     #{overflow=wrap}
     n <= 0 -> {
         val = .slice-bytes(0, .len-bytes())
@@ -2683,6 +2807,7 @@ str.replace-n = (old str, new str, n i64) (val str) {
     repl > n -> repl = n
     total = 0
     i <- [0..np): {
+
         #{overflow=wrap}
         i > 0 -> {
             i <= repl -> {
@@ -2694,30 +2819,31 @@ str.replace-n = (old str, new str, n i64) (val str) {
             }
         }
 
-        #{overflow=wrap}
-        #{index-out = 0}
+        #{index-out=0, overflow=wrap}
         total = total + parts[i].len-bytes()
     }
     val = with-cap(total)
     pos = 0
     i <- [0..np): {
+
         #{overflow=wrap}
         i > 0 -> {
             sep = new
             i > repl -> sep = old
             j <- [0..sep.len-bytes()): {
-                #{overflow=wrap}
-                #{index-out = 0}
+
+                #{index-out=0, overflow=wrap}
                 val[pos] = sep.byte(j)
 
                 pos = pos + 1
             }
         }
-        #{index-out = 0}
+
+        #{index-out=0}
         s = parts[i]
         j <- [0..s.len-bytes()): {
-            #{overflow=wrap}
-            #{index-out = 0}
+
+            #{index-out=0, overflow=wrap}
             val[pos] = s.byte(j)
 
             #{overflow=wrap}
@@ -2748,7 +2874,8 @@ str.split-n = (sep str, maxsplit i64) (out []str) {
     start = 0
     pos = .find-byte-from(sep, start)
     count = 0
-    {
+    (pos >= 0) {
+
         #{overflow=wrap}
         count >= maxsplit -> {
             result.push(.slice-bytes(start, .len-bytes()))
@@ -2763,7 +2890,7 @@ str.split-n = (sep str, maxsplit i64) (out []str) {
         #{overflow=wrap}
         count = count + 1
         pos = .find-byte-from(sep, start)
-    } (pos >= 0)
+    }
     result.push(.slice-bytes(start, .len-bytes()))
     out = result
 }
@@ -2780,11 +2907,14 @@ str.lines = () (out []str) {
     result []str
     start = 0
     i = 0
-    {
+    (i < .len-bytes()) {
+
         #{overflow=wrap}
         c = .byte(i)
+
         #{overflow=wrap}
         c == 10 -> {
+
             #{overflow=wrap}
             end = i
             i > start -> {
@@ -2801,7 +2931,7 @@ str.lines = () (out []str) {
 
         #{overflow=wrap}
         i = i + 1
-    } (i < .len-bytes())
+    }
     start < .len-bytes() -> result.push(.slice-bytes(start, .len-bytes()))
     out = result
 }
@@ -2814,6 +2944,7 @@ str.lines = () (out []str) {
 ; 每字節轉兩個十六進制字符（小寫）
 ; 返回 out str: 十六進制字串
 str.to-hex = () (out str) {
+
     #{overflow=wrap}
     .len-bytes() == 0 -> return
 
@@ -2821,15 +2952,14 @@ str.to-hex = () (out str) {
     out = with-cap(.len-bytes() * 2)
     hex = '0123456789abcdef'
     i <- [0...len-bytes()): {
+
         #{overflow=wrap}
         b = .byte(i)
 
-        #{overflow=wrap}
-        #{index-out = 0}
+        #{index-out=0, overflow=wrap}
         out[i * 2] = hex[b >> 4]
 
-        #{overflow=wrap}
-        #{index-out = 0}
+        #{index-out=0, overflow=wrap}
         out[i * 2 + 1] = hex[b & 15]
     }
 }
@@ -2866,7 +2996,8 @@ str.to-txt = () (out txt) {
     n = .len-bytes()
     n > 255 -> n = 255
     i <- [0..n): {
-        #{index-out = 0}
+
+        #{index-out=0}
         out[i] = .byte(i)
     }
     out.len = n

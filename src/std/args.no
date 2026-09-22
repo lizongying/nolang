@@ -39,9 +39,11 @@ has-flag = (flag str, flagn i64) (yes bool) {
         matched = true
         flagn == 0 -> matched = false
         j <- [0..flagn): {
-            #{index-out = 0}
+
+            #{index-out=0}
             ac = arg[j]
-            #{index-out = 0}
+
+            #{index-out=0}
             fc = flag[j]
             ac != fc -> {
                 matched = false
@@ -68,9 +70,11 @@ get-option = (key str, keyn i64, val str) (ok bool) {
         ; 檢查 arg 是否以 key + '=' 開頭
         matched-prefix = 1
         j <- [0..keyn): {
-            #{index-out = 0}
+
+            #{index-out=0}
             ac = arg[j]
-            #{index-out = 0}
+
+            #{index-out=0}
             kc = key[j]
             ac != kc -> {
                 matched-prefix = 0
@@ -80,7 +84,7 @@ get-option = (key str, keyn i64, val str) (ok bool) {
         matched-prefix == 1 -> {
 
             ; 檢查 key 後是 '='
-            #{index-out = 0}
+            #{index-out=0}
             eq = arg[keyn]
             eq == 61 -> {
 
@@ -88,18 +92,21 @@ get-option = (key str, keyn i64, val str) (ok bool) {
                 #{overflow=wrap}
                 k = keyn + 1
                 vn = 0
-                {
-                    #{overflow=wrap}
-                    #{index-out = 0}
+                !! {
+
+                    #{index-out=0, overflow=wrap}
                     c = arg[k]
                     c == 0 -> break
-                    #{index-out = 0}
+
+                    #{index-out=0}
                     val[vn] = c
+
                     #{overflow=wrap}
                     vn = vn + 1
+
                     #{overflow=wrap}
                     k = k + 1
-                } (true)
+                }
                 ok = true
                 return
             }
@@ -116,50 +123,59 @@ get-positional = (idx i64) (val str, ok bool) {
     n = count()
     pos = 0
     j = 1
-    {
+    (j < n) {
+
         #{overflow=wrap}
         arg = get(j)
 
         ; 跳過以 '-' 開頭的參數
-        #{index-out = 0}
+        #{index-out=0}
         c0 = arg[0]
+
         #{overflow=wrap}
         c0 == 45 -> {
+
             #{overflow=wrap}
             j = j + 1
 
             ; 如果是 --key value 形式，也跳過下一個
-            #{index-out = 0}
+            #{index-out=0}
             c1 = arg[1]
             c1 != 45 -> j < n -> {
+
                 #{overflow=wrap}
                 next = get(j)
-                #{index-out = 0}
+
+                #{index-out=0}
                 nc = next[0]
                 nc != 45 -> j = j + 1
             }
             continue
         }
+
         #{overflow=wrap}
         pos == idx -> {
 
             ; 複製 arg 到 val
             k = 0
-            {
-                #{overflow=wrap}
-                #{index-out = 0}
+            !! {
+
+                #{index-out=0, overflow=wrap}
                 c = arg[k]
                 c == 0 -> break
-                #{index-out = 0}
+
+                #{index-out=0}
                 val[k] = c
                 k = k + 1
-            } (true)
+            }
             ok = true
             return
         }
+
         #{overflow=wrap}
         pos = pos + 1
+
         #{overflow=wrap}
         j = j + 1
-    } (j < n)
+    }
 }

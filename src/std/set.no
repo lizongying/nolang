@@ -13,17 +13,22 @@
 ; add: 加入元素到集合（若不存在）
 ; 返回新的大小
 add = (s []i64, n i64, val i64) (new-n i64) {
+
     #{overflow=wrap}
     new-n = n
     i <- [0..n): {
+
         #{overflow=wrap}
-                s[i] == val -> {
-            #{index-out = 0}
+        s[i] == val -> {
+
+            #{index-out=0}
             return
         }
     }
-    #{index-out = 0}
+
+    #{index-out=0}
     s[n] = val
+
     #{overflow=wrap}
     new-n = n + 1
 }
@@ -36,9 +41,9 @@ set-remove = (s []i64, n i64, val i64) (new-n i64) {
         s[i] == val -> {
 
             ; 將最後一個元素移到該位置
-            #{overflow=wrap}
-            #{index-out = 0}
+            #{index-out=0, overflow=wrap}
             s[i] = s[n - 1]
+
             #{overflow=wrap}
             new-n = n - 1
             return
@@ -63,7 +68,8 @@ contains = (s []i64, n i64, val i64) (yes bool) {
 union = (a []i64, an i64, b []i64, bn i64) (new-an i64) {
     new-an = an
     i <- [0..bn): {
-        #{index-out = 0}
+
+        #{index-out=0}
         v = b[i]
         found = false
         j <- [0..an): {
@@ -73,9 +79,10 @@ union = (a []i64, an i64, b []i64, bn i64) (new-an i64) {
             }
         }
         found == false -> {
-            #{overflow=wrap}
-            #{index-out = 0}
+
+            #{index-out=0, overflow=wrap}
             a[new-an] = v
+
             #{overflow=wrap}
             new-an = new-an + 1
         }
@@ -89,13 +96,15 @@ intersection = (a []i64, an i64, b []i64, bn i64) (out []i64, out-n i64) {
     out-n = 0
     out = with-cap(an)
     i <- [0..an): {
-        #{index-out = 0}
+
+        #{index-out=0}
         v = a[i]
         j <- [0..bn): {
             b[j] == v -> {
-                #{overflow=wrap}
-                #{index-out = 0}
+
+                #{index-out=0, overflow=wrap}
                 out[out-n] = v
+
                 #{overflow=wrap}
                 out-n = out-n + 1
                 break
@@ -110,7 +119,8 @@ difference = (a []i64, an i64, b []i64, bn i64) (out []i64, out-n i64) {
     out-n = 0
     out = with-cap(an)
     i <- [0..an): {
-        #{index-out = 0}
+
+        #{index-out=0}
         v = a[i]
         found = false
         j <- [0..bn): {
@@ -120,9 +130,10 @@ difference = (a []i64, an i64, b []i64, bn i64) (out []i64, out-n i64) {
             }
         }
         found == false -> {
-            #{overflow=wrap}
-            #{index-out = 0}
+
+            #{index-out=0, overflow=wrap}
             out[out-n] = v
+
             #{overflow=wrap}
             out-n = out-n + 1
         }
@@ -133,7 +144,8 @@ difference = (a []i64, an i64, b []i64, bn i64) (out []i64, out-n i64) {
 to-vec = (s []i64, n i64) (out []i64) {
     out = with-len(n)
     i <- [0..n): {
-        #{index-out = 0}
+
+        #{index-out=0}
         out[i] = s[i]
     }
 }

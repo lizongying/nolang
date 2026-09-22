@@ -15,25 +15,21 @@
 ;
 ; vec-slice
 ;
-#{index-out = 0}
 ; []t[..]
 ; []t[..)
 ; []t(..]
 ; []t(..)
 ;
-#{index-out = 0}
 ; []t[n0..]
 ; []t[n0..)
 ; []t(n0..]
 ; []t(n0..)
 ;
-#{index-out = 0}
 ; []t[..n1]
 ; []t[..n1)
 ; []t(..n1]
 ; []t(..n1)
 ;
-#{index-out = 0}
 ; []t[n0..n1]
 ; []t[n0..n1)
 ; []t(n0..n1]
@@ -134,8 +130,10 @@ vec-clear = () {
 []t.pop = () (val ?t) {
     {
         .len() > 0 -> {
+
             #{overflow=wrap}
             idx = .len()
+
             #{overflow=wrap}
             idx = idx - 1
             val = .[idx]
@@ -163,28 +161,34 @@ vec-clear = () {
 
 ; []t.reverse: 反轉
 []t.reverse = () {
+
     #{overflow=wrap}
     i = 0
     j = .len()
+
     #{overflow=wrap}
     j = j - 1
-    {
+    (i < j) {
+
         #{overflow=wrap}
         tmp = .[i]
         .[i] = .[j]
         .[j] = tmp
+
         #{overflow=wrap}
         i = i + 1
+
         #{overflow=wrap}
         j = j - 1
-    } (i < j)
+    }
 }
 
 ; []t.clone: 複製切片
 []t.clone = () (dst []t) {
     dst = with-len(.len())
     i <- [0...len()): {
-        #{index-out = 0}
+
+        #{index-out=0}
         dst[i] = .[i]
     }
 }
@@ -199,7 +203,8 @@ vec-clear = () {
 ; []t.to-arr: 切片方法，轉為 [n]t 陣列
 []t.to-arr = () (out [?]t) {
     i <- [0...len()): {
-        #{index-out = 0}
+
+        #{index-out=0}
         out[i] = .[i]
     }
 }
@@ -211,34 +216,42 @@ vec-clear = () {
 []t.insert = (i i64, val t) {
     {
         i >= .len() -> {
+
             #{overflow=wrap}
             cur = .len()
+
             #{overflow=wrap}
             .len = cur + 1
             .[cur] = val
         }
 
         -> {
+
             ; 先在末尾增長一格作為佔位（內聯 push）
             #{overflow=wrap}
             last = .len()
+
             #{overflow=wrap}
             last = last - 1
             cur = .len()
+
             #{overflow=wrap}
             .len = cur + 1
             .[cur] = .[last]
 
             ; 從末尾向前平移元素到 i+1
             k = .len()
+
             #{overflow=wrap}
             k = k - 2
-            {
+            (k >= i) {
+
                 #{overflow=wrap}
                 .[k + 1] = .[k]
+
                 #{overflow=wrap}
                 k = k - 1
-            } (k >= i)
+            }
             .[i] = val
         }
     }
@@ -253,19 +266,24 @@ vec-clear = () {
         i >= .len() -> val = nil
 
         -> {
+
             #{overflow=wrap}
             val = .[i]
             bound = .len()
+
             #{overflow=wrap}
             bound = bound - 1
             j = i
-            {
+            (j < bound) {
+
                 #{overflow=wrap}
                 j = j + 1
+
                 #{overflow=wrap}
                 .[j - 1] = .[j]
-            } (j < bound)
+            }
             newlen = .len()
+
             #{overflow=wrap}
             newlen = newlen - 1
             .len = newlen
@@ -307,6 +325,7 @@ vec-clear = () {
         sz == 0 -> val = nil
 
         -> {
+
             #{overflow=wrap}
             v = .[sz - 1]
             val = v
@@ -381,6 +400,7 @@ vec-clear = () {
     sz = .len()
     acc = 0
     i <- [0...len()): {
+
         #{overflow=wrap}
         acc = acc + .[i]
     }
@@ -402,17 +422,21 @@ vec-clear = () {
 []t.extend = (b []t) {
     blen = b.len()
     i = 0
-    {
+    (i < blen) {
+
         #{overflow=wrap}
         i >= blen -> break
         cur = .len()
+
         #{overflow=wrap}
         .len = cur + 1
-        #{index-out = 0}
+
+        #{index-out=0}
         .[cur] = b[i]
+
         #{overflow=wrap}
         i = i + 1
-    } (i < blen)
+    }
 }
 
 ; ═══════════════════════════════════════════════
@@ -447,17 +471,22 @@ vec-reverse = (a i64) {
         .len() == 0 -> out = '[]'
 
         -> {
+
             #{overflow=wrap}
             out = '['
             last = .len()
+
             #{overflow=wrap}
             last = last - 1
             i <- [0...len()): {
+
                 #{overflow=wrap}
                 out = out - number.i64-to-str(.[i])
+
                 #{overflow=wrap}
                 i < last -> out = out - ', '
             }
+
             #{overflow=wrap}
             out = out - ']'
         }

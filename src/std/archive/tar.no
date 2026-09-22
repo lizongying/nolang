@@ -72,55 +72,65 @@ tar.count = () (count i64) {
 
     ; 先檢查再執行，避免資料不足時越界
     #{overflow=wrap}
-    {
+    (off + TAR-BLOCK <= n) {
 
         ; 檢查是否為結束標記（全零區塊）
         #{overflow=wrap}
         empty = 1
         i <- [0..TAR-BLOCK): {
+
             #{overflow=wrap}
-                        (.data[off + i]) != 0 -> {
-                #{index-out = 0}
+            (.data[off + i]) != 0 -> {
+
+                #{index-out=0}
                 empty = 0
             }
         }
         empty == 1 -> return
+
         #{overflow=wrap}
         count = count + 1
 
         ; 讀取 size 欄位（偏移 124，12 位元組八進制）
         sz = 0
         j <- [0..12): {
-            #{overflow=wrap}
-            #{index-out = 0}
+
+            #{index-out=0, overflow=wrap}
             c = .data[off + 124 + j]
+
             #{overflow=wrap}
             c >= 48 && c <= 57 -> sz = sz * 8 + (c - 48)
         }
+
         #{overflow=wrap}
         blocks = (sz + 511) / TAR-BLOCK
         blocks < 0 -> blocks = 0
+
         #{overflow=wrap}
         off = off + TAR-BLOCK + blocks * TAR-BLOCK
-    } (off + TAR-BLOCK <= n)
+    }
 }
 
 ; offset: 計算第 idx 個條目的實際位元組偏移（遍歷前面所有條目）
 tar.offset = (idx i64) (off i64) {
     off = 0
     i <- [0..idx): {
+
         #{overflow=wrap}
         sz = 0
         j <- [0..12): {
-            #{overflow=wrap}
-            #{index-out = 0}
+
+            #{index-out=0, overflow=wrap}
             c = .data[off + 124 + j]
+
             #{overflow=wrap}
             c >= 48 && c <= 57 -> sz = sz * 8 + (c - 48)
         }
+
         #{overflow=wrap}
         blocks = (sz + 511) / TAR-BLOCK
         blocks < 0 -> blocks = 0
+
         #{overflow=wrap}
         off = off + TAR-BLOCK + blocks * TAR-BLOCK
     }
@@ -137,10 +147,11 @@ tar.name = (idx i64) (name str) {
     hdr = .offset(idx)
     name = ''
     i <- [0..100): {
-        #{overflow=wrap}
-        #{index-out = 0}
+
+        #{index-out=0, overflow=wrap}
         c = .data[hdr + i]
         c == 0 -> break
+
         #{overflow=wrap}
         name = name - number.char-to-str(c)
     }
@@ -151,9 +162,10 @@ tar.size = (idx i64) (sz i64) {
     hdr = .offset(idx)
     sz = 0
     i <- [0..12): {
-        #{overflow=wrap}
-        #{index-out = 0}
+
+        #{index-out=0, overflow=wrap}
         c = .data[hdr + 124 + i]
+
         #{overflow=wrap}
         c >= 48 && c <= 57 -> sz = sz * 8 + (c - 48)
     }
@@ -162,10 +174,11 @@ tar.size = (idx i64) (sz i64) {
 ; type: 讀取第 idx 個條目的類型字串
 ; 返回 "file"、"dir" 或 "unknown"
 tar.type = (idx i64) (typ str) {
+
     #{overflow=wrap}
     hdr = .offset(idx)
-    #{overflow=wrap}
-    #{index-out = 0}
+
+    #{index-out=0, overflow=wrap}
     c = .data[hdr + 156]
     typ = 'unknown'
     {
@@ -177,20 +190,22 @@ tar.type = (idx i64) (typ str) {
 
 ; is-dir: 判斷第 idx 個條目是否為目錄
 tar.is-dir = (idx i64) (yes bool) {
+
     #{overflow=wrap}
     hdr = .offset(idx)
-    #{overflow=wrap}
-    #{index-out = 0}
+
+    #{index-out=0, overflow=wrap}
     c = .data[hdr + 156]
     yes = (c == 53)
 }
 
 ; is-file: 判斷第 idx 個條目是否為普通檔案
 tar.is-file = (idx i64) (yes bool) {
+
     #{overflow=wrap}
     hdr = .offset(idx)
-    #{overflow=wrap}
-    #{index-out = 0}
+
+    #{index-out=0, overflow=wrap}
     c = .data[hdr + 156]
     yes = (c == 48 || c == 0)
 }
@@ -201,8 +216,8 @@ tar.read = (idx i64) (out []byte) {
     hdr = .offset(idx)
     sz > 0 -> {
         i <- [0..sz): {
-            #{overflow=wrap}
-            #{index-out = 0}
+
+            #{index-out=0, overflow=wrap}
             out.push(.data[hdr + TAR-BLOCK + i])
         }
     }
@@ -213,9 +228,10 @@ tar.mode = (idx i64) (mode i64) {
     hdr = .offset(idx)
     mode = 0
     i <- [0..8): {
-        #{overflow=wrap}
-        #{index-out = 0}
+
+        #{index-out=0, overflow=wrap}
         c = .data[hdr + 100 + i]
+
         #{overflow=wrap}
         c >= 48 && c <= 55 -> mode = mode * 8 + (c - 48)
     }
@@ -226,9 +242,10 @@ tar.mtime = (idx i64) (ts i64) {
     hdr = .offset(idx)
     ts = 0
     i <- [0..12): {
-        #{overflow=wrap}
-        #{index-out = 0}
+
+        #{index-out=0, overflow=wrap}
         c = .data[hdr + 136 + i]
+
         #{overflow=wrap}
         c >= 48 && c <= 57 -> ts = ts * 8 + (c - 48)
     }
@@ -241,10 +258,11 @@ tar-entry.name = () (name str) {
     hdr = .idx
     name = ''
     i <- [0..100): {
-        #{overflow=wrap}
-        #{index-out = 0}
+
+        #{index-out=0, overflow=wrap}
         c = .data[hdr + i]
         c == 0 -> break
+
         #{overflow=wrap}
         name = name - number.char-to-str(c)
     }
@@ -255,9 +273,10 @@ tar-entry.size = () (sz i64) {
     hdr = .idx
     sz = 0
     i <- [0..12): {
-        #{overflow=wrap}
-        #{index-out = 0}
+
+        #{index-out=0, overflow=wrap}
         c = .data[hdr + 124 + i]
+
         #{overflow=wrap}
         c >= 48 && c <= 57 -> sz = sz * 8 + (c - 48)
     }
@@ -265,10 +284,11 @@ tar-entry.size = () (sz i64) {
 
 ; type: 讀取條目類型
 tar-entry.type = () (typ str) {
+
     #{overflow=wrap}
     hdr = .idx
-    #{overflow=wrap}
-    #{index-out = 0}
+
+    #{index-out=0, overflow=wrap}
     c = .data[hdr + 156]
     typ = 'unknown'
     {
@@ -280,20 +300,22 @@ tar-entry.type = () (typ str) {
 
 ; is-dir: 判斷是否為目錄
 tar-entry.is-dir = () (yes bool) {
+
     #{overflow=wrap}
     hdr = .idx
-    #{overflow=wrap}
-    #{index-out = 0}
+
+    #{index-out=0, overflow=wrap}
     c = .data[hdr + 156]
     yes = (c == 53)
 }
 
 ; is-file: 判斷是否為普通檔案
 tar-entry.is-file = () (yes bool) {
+
     #{overflow=wrap}
     hdr = .idx
-    #{overflow=wrap}
-    #{index-out = 0}
+
+    #{index-out=0, overflow=wrap}
     c = .data[hdr + 156]
     yes = (c == 48 || c == 0)
 }
@@ -304,8 +326,8 @@ tar-entry.read = () (out []byte) {
     hdr = .idx
     sz > 0 -> {
         i <- [0..sz): {
-            #{overflow=wrap}
-            #{index-out = 0}
+
+            #{index-out=0, overflow=wrap}
             out.push(.data[hdr + TAR-BLOCK + i])
         }
     }
@@ -316,9 +338,10 @@ tar-entry.mode = () (mode i64) {
     hdr = .idx
     mode = 0
     i <- [0..8): {
-        #{overflow=wrap}
-        #{index-out = 0}
+
+        #{index-out=0, overflow=wrap}
         c = .data[hdr + 100 + i]
+
         #{overflow=wrap}
         c >= 48 && c <= 55 -> mode = mode * 8 + (c - 48)
     }
@@ -329,9 +352,10 @@ tar-entry.mtime = () (ts i64) {
     hdr = .idx
     ts = 0
     i <- [0..12): {
-        #{overflow=wrap}
-        #{index-out = 0}
+
+        #{index-out=0, overflow=wrap}
         c = .data[hdr + 136 + i]
+
         #{overflow=wrap}
         c >= 48 && c <= 57 -> ts = ts * 8 + (c - 48)
     }
@@ -350,28 +374,32 @@ tar-builder.pre-alloc = (size i64) {
 
 ; add-file: 新增檔案條目
 tar-builder.add-file = (name str, content []byte) {
+
     #{overflow=wrap}
     .write-header(name, TAR-TYPE-FILE, len(content))
 
     ; 寫入檔案內容
     sz = len(content)
     i <- [0..sz): {
-        #{overflow=wrap}
-        #{index-out = 0}
+
+        #{index-out=0, overflow=wrap}
         .buf[.pos + i] = content[i]
     }
+
     #{overflow=wrap}
     .pos = .pos + sz
 
     ; 補齊到 512 邊界
     rem = sz % TAR-BLOCK
+
     #{overflow=wrap}
     rem > 0 -> {
+
         #{overflow=wrap}
         pad = TAR-BLOCK - rem
         j <- [0..pad): {
-            #{overflow=wrap}
-            #{index-out = 0}
+
+            #{index-out=0, overflow=wrap}
             .buf[.pos + j] = 0
         }
         .pos = .pos + pad
@@ -385,26 +413,30 @@ tar-builder.add-dir = (name str) {
 
 ; add-bytes: 新增原始位元組條目
 tar-builder.add-bytes = (name str, content []byte, typ i64) {
+
     #{overflow=wrap}
     .write-header(name, typ, len(content))
     sz = len(content)
     i <- [0..sz): {
-        #{overflow=wrap}
-        #{index-out = 0}
+
+        #{index-out=0, overflow=wrap}
         .buf[.pos + i] = content[i]
     }
+
     #{overflow=wrap}
     .pos = .pos + sz
 
     ; 補齊到 512 邊界
     rem = sz % TAR-BLOCK
+
     #{overflow=wrap}
     rem > 0 -> {
+
         #{overflow=wrap}
         pad = TAR-BLOCK - rem
         j <- [0..pad): {
-            #{overflow=wrap}
-            #{index-out = 0}
+
+            #{index-out=0, overflow=wrap}
             .buf[.pos + j] = 0
         }
         .pos = .pos + pad
@@ -416,8 +448,8 @@ tar-builder.write-header = (name str, typ i64, sz i64) {
 
     ; 清零 header 區
     i <- [0..TAR-BLOCK): {
-        #{overflow=wrap}
-        #{index-out = 0}
+
+        #{index-out=0, overflow=wrap}
         .buf[.pos + i] = 0
     }
 
@@ -425,9 +457,11 @@ tar-builder.write-header = (name str, typ i64, sz i64) {
     #{overflow=wrap}
     name-len = len(name)
     i <- [0..name-len): {
+
         #{overflow=wrap}
-                i < 100 -> {
-            #{index-out = 0}
+        i < 100 -> {
+
+            #{index-out=0}
             .buf[.pos + i] = name[i]
         }
     }
@@ -448,69 +482,66 @@ tar-builder.write-header = (name str, typ i64, sz i64) {
     .write-octal(136, 11, 0)
 
     ; 類型（偏移 156，1 位元組）
-    #{overflow=wrap}
-    #{index-out = 0}
+    #{index-out=0, overflow=wrap}
     .buf[.pos + 156] = typ
 
     ; ustar magic（偏移 257，6 位元組 "ustar\0"）
-    #{overflow=wrap}
-    #{index-out = 0}
+    #{index-out=0, overflow=wrap}
     .buf[.pos + 257] = 117
-    #{overflow=wrap}
-    #{index-out = 0}
+
+    #{index-out=0, overflow=wrap}
     .buf[.pos + 258] = 115
-    #{overflow=wrap}
-    #{index-out = 0}
+
+    #{index-out=0, overflow=wrap}
     .buf[.pos + 259] = 116
-    #{overflow=wrap}
-    #{index-out = 0}
+
+    #{index-out=0, overflow=wrap}
     .buf[.pos + 260] = 97
-    #{overflow=wrap}
-    #{index-out = 0}
+
+    #{index-out=0, overflow=wrap}
     .buf[.pos + 261] = 114
-    #{overflow=wrap}
-    #{index-out = 0}
+
+    #{index-out=0, overflow=wrap}
     .buf[.pos + 262] = 0
 
     ; 計算校驗和（偏移 148，8 位元組）
     ; 先填空白
-    #{overflow=wrap}
-    #{index-out = 0}
+    #{index-out=0, overflow=wrap}
     .buf[.pos + 148] = 32
-    #{overflow=wrap}
-    #{index-out = 0}
+
+    #{index-out=0, overflow=wrap}
     .buf[.pos + 149] = 32
-    #{overflow=wrap}
-    #{index-out = 0}
+
+    #{index-out=0, overflow=wrap}
     .buf[.pos + 150] = 32
-    #{overflow=wrap}
-    #{index-out = 0}
+
+    #{index-out=0, overflow=wrap}
     .buf[.pos + 151] = 32
-    #{overflow=wrap}
-    #{index-out = 0}
+
+    #{index-out=0, overflow=wrap}
     .buf[.pos + 152] = 32
-    #{overflow=wrap}
-    #{index-out = 0}
+
+    #{index-out=0, overflow=wrap}
     .buf[.pos + 153] = 32
-    #{overflow=wrap}
-    #{index-out = 0}
+
+    #{index-out=0, overflow=wrap}
     .buf[.pos + 154] = 32
-    #{overflow=wrap}
-    #{index-out = 0}
+
+    #{index-out=0, overflow=wrap}
     .buf[.pos + 155] = 32
 
     checksum = 0
     i <- [0..TAR-BLOCK): {
-        #{overflow=wrap}
-        #{index-out = 0}
+
+        #{index-out=0, overflow=wrap}
         checksum = checksum + (.buf[.pos + i])
     }
     .write-octal(148, 6, checksum)
-    #{overflow=wrap}
-    #{index-out = 0}
+
+    #{index-out=0, overflow=wrap}
     .buf[.pos + 154] = 0
-    #{overflow=wrap}
-    #{index-out = 0}
+
+    #{index-out=0, overflow=wrap}
     .buf[.pos + 155] = 32
 
     #{overflow=wrap}
@@ -519,31 +550,35 @@ tar-builder.write-header = (name str, typ i64, sz i64) {
 
 ; write-octal: 在指定偏移寫入八進制數字（內部方法）
 tar-builder.write-octal = (offset i64, width i64, val i64) {
+
     #{overflow=wrap}
     base = .pos + offset
 
     ; 先填空白
     i <- [0..width): {
-        #{overflow=wrap}
-        #{index-out = 0}
+
+        #{index-out=0, overflow=wrap}
         .buf[base + i] = 32
     }
 
     ; 從右往左填數字
     v = val
+
     #{overflow=wrap}
     pos = width - 1
-    {
-        #{overflow=wrap}
-        #{index-out = 0}
+    (v > 0) {
+
+        #{index-out=0, overflow=wrap}
         .buf[base + pos] = 48 + (v % 8)
+
         #{overflow=wrap}
         v = v / 8
+
         #{overflow=wrap}
         pos = pos - 1
-    } (v > 0)
-    #{overflow=wrap}
-    #{index-out = 0}
+    }
+
+    #{index-out=0, overflow=wrap}
     .buf[base + width] = 0
 }
 
@@ -553,8 +588,8 @@ tar-builder.finish = () (archive tar) {
     ; 寫入兩個全零區塊作為結束標記
     #{overflow=wrap}
     i <- [0..TAR-BLOCK * 2): {
-        #{overflow=wrap}
-        #{index-out = 0}
+
+        #{index-out=0, overflow=wrap}
         .buf[.pos + i] = 0
     }
 

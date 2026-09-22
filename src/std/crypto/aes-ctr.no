@@ -16,31 +16,33 @@
 ; ctr-inc: 計數器遞增（大端序，先加最低 32 位元，進位再往高位傳播）
 ctr-inc = (cb []byte) {
     j = 15
-    {
-        #{overflow=wrap}
-        #{index-out = 0}
+    (j >= 12) {
+
+        #{index-out=0, overflow=wrap}
         cb[j] = (cb[j] + 1) & 255
         cb[j] != 0 -> {
             break
         }
+
         #{overflow=wrap}
         j = j - 1
-    } (j >= 12)
+    }
 
     ; 進位傳播
     #{overflow=wrap}
     cb[12] == 0 && cb[13] == 0 && cb[14] == 0 && cb[15] == 0 -> {
         j = 11
-        {
-            #{overflow=wrap}
-            #{index-out = 0}
+        (j >= 0) {
+
+            #{index-out=0, overflow=wrap}
             cb[j] = (cb[j] + 1) & 255
             cb[j] != 0 -> {
                 break
             }
+
             #{overflow=wrap}
             j = j - 1
-        } (j >= 0)
+        }
     }
 }
 
@@ -54,18 +56,20 @@ ctr-crypt = (in []byte, iv [16]byte, ek []byte) (out []byte) {
     ; 計數器（初始為 IV）
     cb []byte = with-len(16)
     i <- [0..16): {
-        #{index-out = 0}
+
+        #{index-out=0}
         cb[i] = iv[i]
     }
     out = with-len(in.len())
     pos = 0
-    {
+    (pos < in.len()) {
 
         ; 加密當前計數器區塊
         #{overflow=wrap}
         blk [16]byte
         i <- [0..16): {
-            #{index-out = 0}
+
+            #{index-out=0}
             blk[i] = cb[i]
         }
         ks [16]byte
@@ -73,18 +77,20 @@ ctr-crypt = (in []byte, iv [16]byte, ek []byte) (out []byte) {
 
         ; XOR
         n = 16
+
         #{overflow=wrap}
         pos + n > in.len() -> n = in.len() - pos
         i <- [0..n): {
-            #{overflow=wrap}
-            #{index-out = 0}
+
+            #{index-out=0, overflow=wrap}
             out[pos + i] = (in[pos + i]) ^ (ks[i])
         }
 
         ctr-inc(cb)
+
         #{overflow=wrap}
         pos = pos + n
-    } (pos < in.len())
+    }
 }
 
 ; crypt-128: AES-128-CTR 加密/解密（對稱操作）

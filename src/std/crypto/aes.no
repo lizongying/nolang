@@ -104,9 +104,11 @@ gf-mul2 = (x i64) (r i64) {
 ; sub-bytes: 使用 S-box 取代狀態中每個位元組
 sub-bytes = (state []byte, n i64) {
     i <- [0..16): {
-        #{index-out = 0}
+
+        #{index-out=0}
         b = state[i]
-        #{index-out = 0}
+
+        #{index-out=0}
         state[i] = SBOX[b]
     }
 }
@@ -114,82 +116,116 @@ sub-bytes = (state []byte, n i64) {
 ; inv-sub-bytes: 使用逆 S-box 取代
 inv-sub-bytes = (state []byte, n i64) {
     i <- [0..16): {
-        #{index-out = 0}
+
+        #{index-out=0}
         b = state[i]
-        #{index-out = 0}
+
+        #{index-out=0}
         state[i] = INV-SBOX[b]
     }
 }
 
 ; shift-rows: 列位移（第 i 列左旋轉 i 個位元組）
 shift-rows = (state []byte) {
-    #{index-out = 0}
+
+    #{index-out=0}
     t = state[1]
-    #{index-out = 0}
+
+    #{index-out=0}
     state[1] = state[5]
-    #{index-out = 0}
+
+    #{index-out=0}
     state[5] = state[9]
-    #{index-out = 0}
+
+    #{index-out=0}
     state[9] = state[13]
-    #{index-out = 0}
+
+    #{index-out=0}
     state[13] = t
-    #{index-out = 0}
+
+    #{index-out=0}
     t0 = state[2]
-    #{index-out = 0}
+
+    #{index-out=0}
     t1 = state[6]
-    #{index-out = 0}
+
+    #{index-out=0}
     state[2] = state[10]
-    #{index-out = 0}
+
+    #{index-out=0}
     state[6] = state[14]
-    #{index-out = 0}
+
+    #{index-out=0}
     state[10] = t0
-    #{index-out = 0}
+
+    #{index-out=0}
     state[14] = t1
-    #{index-out = 0}
+
+    #{index-out=0}
     t = state[15]
-    #{index-out = 0}
+
+    #{index-out=0}
     state[15] = state[11]
-    #{index-out = 0}
+
+    #{index-out=0}
     state[11] = state[7]
-    #{index-out = 0}
+
+    #{index-out=0}
     state[7] = state[3]
-    #{index-out = 0}
+
+    #{index-out=0}
     state[3] = t
 }
 
 ; inv-shift-rows: 逆向列位移（右旋轉）
 inv-shift-rows = (state []byte) {
-    #{index-out = 0}
+
+    #{index-out=0}
     t = state[13]
-    #{index-out = 0}
+
+    #{index-out=0}
     state[13] = state[9]
-    #{index-out = 0}
+
+    #{index-out=0}
     state[9] = state[5]
-    #{index-out = 0}
+
+    #{index-out=0}
     state[5] = state[1]
-    #{index-out = 0}
+
+    #{index-out=0}
     state[1] = t
-    #{index-out = 0}
+
+    #{index-out=0}
     t0 = state[2]
-    #{index-out = 0}
+
+    #{index-out=0}
     t1 = state[6]
-    #{index-out = 0}
+
+    #{index-out=0}
     state[2] = state[10]
-    #{index-out = 0}
+
+    #{index-out=0}
     state[6] = state[14]
-    #{index-out = 0}
+
+    #{index-out=0}
     state[10] = t0
-    #{index-out = 0}
+
+    #{index-out=0}
     state[14] = t1
-    #{index-out = 0}
+
+    #{index-out=0}
     t = state[3]
-    #{index-out = 0}
+
+    #{index-out=0}
     state[3] = state[7]
-    #{index-out = 0}
+
+    #{index-out=0}
     state[7] = state[11]
-    #{index-out = 0}
+
+    #{index-out=0}
     state[11] = state[15]
-    #{index-out = 0}
+
+    #{index-out=0}
     state[15] = t
 }
 
@@ -215,45 +251,65 @@ mix-columns = (state []byte) {
     d1 = 0
     d2 = 0
     d3 = 0
-    #{index-out = 0}
+
+    #{index-out=0}
     d0, d1, d2, d3 = mix-col(state[0], state[1], state[2], state[3])
-    #{index-out = 0}
+
+    #{index-out=0}
     state[0] = d0
-    #{index-out = 0}
+
+    #{index-out=0}
     state[1] = d1
-    #{index-out = 0}
+
+    #{index-out=0}
     state[2] = d2
-    #{index-out = 0}
+
+    #{index-out=0}
     state[3] = d3
-    #{index-out = 0}
+
+    #{index-out=0}
     d0, d1, d2, d3 = mix-col(state[4], state[5], state[6], state[7])
-    #{index-out = 0}
+
+    #{index-out=0}
     state[4] = d0
-    #{index-out = 0}
+
+    #{index-out=0}
     state[5] = d1
-    #{index-out = 0}
+
+    #{index-out=0}
     state[6] = d2
-    #{index-out = 0}
+
+    #{index-out=0}
     state[7] = d3
-    #{index-out = 0}
+
+    #{index-out=0}
     d0, d1, d2, d3 = mix-col(state[8], state[9], state[10], state[11])
-    #{index-out = 0}
+
+    #{index-out=0}
     state[8] = d0
-    #{index-out = 0}
+
+    #{index-out=0}
     state[9] = d1
-    #{index-out = 0}
+
+    #{index-out=0}
     state[10] = d2
-    #{index-out = 0}
+
+    #{index-out=0}
     state[11] = d3
-    #{index-out = 0}
+
+    #{index-out=0}
     d0, d1, d2, d3 = mix-col(state[12], state[13], state[14], state[15])
-    #{index-out = 0}
+
+    #{index-out=0}
     state[12] = d0
-    #{index-out = 0}
+
+    #{index-out=0}
     state[13] = d1
-    #{index-out = 0}
+
+    #{index-out=0}
     state[14] = d2
-    #{index-out = 0}
+
+    #{index-out=0}
     state[15] = d3
 }
 
@@ -294,52 +350,73 @@ inv-mix-columns = (state []byte) {
     d1 = 0
     d2 = 0
     d3 = 0
-    #{index-out = 0}
+
+    #{index-out=0}
     d0, d1, d2, d3 = inv-mix-col(state[0], state[1], state[2], state[3])
-    #{index-out = 0}
+
+    #{index-out=0}
     state[0] = d0
-    #{index-out = 0}
+
+    #{index-out=0}
     state[1] = d1
-    #{index-out = 0}
+
+    #{index-out=0}
     state[2] = d2
-    #{index-out = 0}
+
+    #{index-out=0}
     state[3] = d3
-    #{index-out = 0}
+
+    #{index-out=0}
     d0, d1, d2, d3 = inv-mix-col(state[4], state[5], state[6], state[7])
-    #{index-out = 0}
+
+    #{index-out=0}
     state[4] = d0
-    #{index-out = 0}
+
+    #{index-out=0}
     state[5] = d1
-    #{index-out = 0}
+
+    #{index-out=0}
     state[6] = d2
-    #{index-out = 0}
+
+    #{index-out=0}
     state[7] = d3
-    #{index-out = 0}
+
+    #{index-out=0}
     d0, d1, d2, d3 = inv-mix-col(state[8], state[9], state[10], state[11])
-    #{index-out = 0}
+
+    #{index-out=0}
     state[8] = d0
-    #{index-out = 0}
+
+    #{index-out=0}
     state[9] = d1
-    #{index-out = 0}
+
+    #{index-out=0}
     state[10] = d2
-    #{index-out = 0}
+
+    #{index-out=0}
     state[11] = d3
-    #{index-out = 0}
+
+    #{index-out=0}
     d0, d1, d2, d3 = inv-mix-col(state[12], state[13], state[14], state[15])
-    #{index-out = 0}
+
+    #{index-out=0}
     state[12] = d0
-    #{index-out = 0}
+
+    #{index-out=0}
     state[13] = d1
-    #{index-out = 0}
+
+    #{index-out=0}
     state[14] = d2
-    #{index-out = 0}
+
+    #{index-out=0}
     state[15] = d3
 }
 
 ; add-round-key: 將狀態與輪金鑰 XOR
 add-round-key = (state []byte, rk []byte) {
     i <- [0..16): {
-        #{index-out = 0}
+
+        #{index-out=0}
         state[i] = (state[i]) ^ (rk[i])
     }
 }
@@ -350,24 +427,39 @@ add-round-key = (state []byte, rk []byte) {
 rcon-val = (round i64) (r i64) {
     {
         round == 1 -> r = 1
+
         round == 2 -> r = 2
+
         round == 3 -> r = 4
+
         round == 4 -> r = 8
+
         round == 5 -> r = 16
+
         round == 6 -> r = 32
+
         round == 7 -> r = 64
+
         round == 8 -> r = 128
+
         round == 9 -> r = 27
+
         round == 10 -> r = 54
+
         round == 11 -> r = 108
+
         round == 12 -> r = 216
+
         round == 13 -> r = 171
+
         round == 14 -> r = 77
+
         -> r = 0
     }
 }
 
 rot-word = (w i64) (r i64) {
+
     #{overflow=wrap}
     r = ((w << 8) | (w >> 24)) & 4294967295
 }
@@ -377,14 +469,19 @@ sub-word = (w i64) (r i64) {
     b1 = 0
     b2 = 0
     b3 = 0
-    #{index-out = 0}
+
+    #{index-out=0}
     b0 = SBOX[(w >> 24) & 255]
-    #{index-out = 0}
+
+    #{index-out=0}
     b1 = SBOX[(w >> 16) & 255]
-    #{index-out = 0}
+
+    #{index-out=0}
     b2 = SBOX[(w >> 8) & 255]
-    #{index-out = 0}
+
+    #{index-out=0}
     b3 = SBOX[w & 255]
+
     #{overflow=wrap}
     r = (b0 << 24) | (b1 << 16) | (b2 << 8) | b3
 }
@@ -395,7 +492,8 @@ sub-word = (w i64) (r i64) {
 key-expand = (key [16]byte) (ek []byte) {
     ek = with-len(176)
     i <- [0..16): {
-        #{index-out = 0}
+
+        #{index-out=0}
         ek[i] = key[i]
     }
     i <- [4..44): {
@@ -405,6 +503,7 @@ key-expand = (key [16]byte) (ek []byte) {
 
         #{overflow=wrap}
         w = (ek[off] << 24) | (ek[off + 1] << 16) | (ek[off + 2] << 8) | ek[off + 3]
+
         #{overflow=wrap}
         {
             i % 4 == 0 -> {
@@ -423,12 +522,16 @@ key-expand = (key [16]byte) (ek []byte) {
                 w = (w-prev ^ w) & 4294967295
             }
         }
+
         #{overflow=wrap}
         ek[i * 4] = (w >> 24) & 255
+
         #{overflow=wrap}
         ek[i * 4 + 1] = (w >> 16) & 255
+
         #{overflow=wrap}
         ek[i * 4 + 2] = (w >> 8) & 255
+
         #{overflow=wrap}
         ek[i * 4 + 3] = w & 255
     }
@@ -446,15 +549,18 @@ gf-mul3 = (x i64) (r i64) {
 key-expand-256 = (key [32]byte) (ek []byte) {
     ek = with-len(240)
     i <- [0..32): {
-        #{index-out = 0}
+
+        #{index-out=0}
         ek[i] = key[i]
     }
     i <- [8..60): {
 
         #{overflow=wrap}
         off = (i - 1) * 4
+
         #{overflow=wrap}
         w = (ek[off] << 24) | (ek[off + 1] << 16) | (ek[off + 2] << 8) | ek[off + 3]
+
         #{overflow=wrap}
         {
             i % 8 == 0 -> {
@@ -480,12 +586,16 @@ key-expand-256 = (key [32]byte) (ek []byte) {
                 w = (w-prev8 ^ w) & 4294967295
             }
         }
+
         #{overflow=wrap}
         ek[i * 4] = (w >> 24) & 255
+
         #{overflow=wrap}
         ek[i * 4 + 1] = (w >> 16) & 255
+
         #{overflow=wrap}
         ek[i * 4 + 2] = (w >> 8) & 255
+
         #{overflow=wrap}
         ek[i * 4 + 3] = w & 255
     }
@@ -503,8 +613,8 @@ key-expand-256 = (key [32]byte) (ek []byte) {
 ; add-round-key-at: 將狀態與第 off 位元組起的輪金鑰 XOR
 add-round-key-at = (state []byte, rk []byte, off i64) {
     i <- [0..16): {
-        #{overflow=wrap}
-        #{index-out = 0}
+
+        #{index-out=0, overflow=wrap}
         state[i] = (state[i]) ^ (rk[off + i])
     }
 }
@@ -514,33 +624,39 @@ add-round-key-at = (state []byte, rk []byte, off i64) {
 ; ek []byte: 輪金鑰（key-expand / key-expand-256 的結果）
 ; 返回 out [16]byte: 加密後的區塊
 enc-block = (in [16]byte, ek []byte) (out [16]byte) {
+
     #{overflow=wrap}
     nr = ek.len() / 16 - 1
 
     st []byte = with-len(16)
     i <- [0..16): {
-        #{index-out = 0}
+
+        #{index-out=0}
         st[i] = in[i]
     }
 
     add-round-key-at(st, ek, 0)
     round <- [1..nr): {
+
         #{overflow=wrap}
         sub-bytes(st, 16)
         shift-rows(st)
         mix-columns(st)
+
         #{overflow=wrap}
         rk-off = round * 16
         add-round-key-at(st, ek, rk-off)
     }
     sub-bytes(st, 16)
     shift-rows(st)
+
     #{overflow=wrap}
     rk-off = nr * 16
     add-round-key-at(st, ek, rk-off)
 
     i <- [0..16): {
-        #{index-out = 0}
+
+        #{index-out=0}
         out[i] = st[i]
     }
 }
@@ -550,21 +666,25 @@ enc-block = (in [16]byte, ek []byte) (out [16]byte) {
 ; ek []byte: 輪金鑰（key-expand / key-expand-256 的結果）
 ; 返回 out [16]byte: 解密後的區塊
 dec-block = (in [16]byte, ek []byte) (out [16]byte) {
+
     #{overflow=wrap}
     nr = ek.len() / 16 - 1
 
     st []byte = with-len(16)
     i <- [0..16): {
-        #{index-out = 0}
+
+        #{index-out=0}
         st[i] = in[i]
     }
 
     #{overflow=wrap}
     rk-off = nr * 16
     add-round-key-at(st, ek, rk-off)
+
     #{overflow=wrap}
     round = nr - 1
-    {
+    (round > 0) {
+
         #{overflow=wrap}
         inv-shift-rows(st)
         inv-sub-bytes(st, 16)
@@ -573,15 +693,17 @@ dec-block = (in [16]byte, ek []byte) (out [16]byte) {
         rk-off = round * 16
         add-round-key-at(st, ek, rk-off)
         inv-mix-columns(st)
+
         #{overflow=wrap}
         round = round - 1
-    } (round > 0)
+    }
     inv-shift-rows(st)
     inv-sub-bytes(st, 16)
     add-round-key-at(st, ek, 0)
 
     i <- [0..16): {
-        #{index-out = 0}
+
+        #{index-out=0}
         out[i] = st[i]
     }
 }

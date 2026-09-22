@@ -377,6 +377,7 @@ func TestFormatBasic(t *testing.T) {
         n == 16 -> t4 = 1
 
         -> {
+
             ; 部分區塊：設置對應位元
             t0 = t0 | (1 << (n * 8))
         }
@@ -1058,6 +1059,7 @@ aes-128-dec= (in str, n i64, key str, out str) {
 ; key: 16-byte 金鑰
 ; out: 輸出明文（16 位元組）
 aes-128-dec = (in str, n i64, key str, out str) {
+
     ; 展開金鑰
     ek = '(16+160 bytes)'
     aes-key-expand(key, ek)
@@ -1456,6 +1458,7 @@ sha512-block=(s str, h0 u64, h1 u64, h2 u64, h3 u64, h4 u64, h5 u64, h6 u64, h7 
 ; s []u64: 16 個 64-bit 字 (big-endian)
 ; h0 u64, h1 u64, h2 u64, h3 u64, h4 u64, h5 u64, h6 u64, h7 u64: 輸入/輸出 512-bit 哈希狀態
 sha512-block = (s str, h0 u64, h1 u64, h2 u64, h3 u64, h4 u64, h5 u64, h6 u64, h7 u64) {
+
     ; 64-bit 全 1 遮罩（用於位元 NOT）
     MASK64 = -1
 
@@ -1720,6 +1723,7 @@ INVSBOX = '\x52\x09\x6a\xd5\x30\x36\xa5\x38\xbf\x40\xa3\x9e\x81\xf3\xd7\xfb' +
 `,
 			expected: `f = () {
     tg-ok == true -> {
+
         ; skip . and .. entries
         tg-entry == '.' -> {}
         tg-entry == '..' -> {}

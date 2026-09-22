@@ -166,6 +166,7 @@ strerror = (errnum i64) (msg str) {
         errnum == 113 -> msg = 'No route to host'
 
         -> {
+
             #{overflow=wrap}
             msg = 'Unknown error: ' + errnum.to-str()
         }
@@ -416,14 +417,13 @@ args = () (count i64) {
 arg = (idx i64) (val str) {
 }
 
-#{index-out = 0}
 ;     // LLVM: access argv[idx]
 ; }
 ; ═══════════════════════════════════════════════
 ; Windows 平台專用（內建）
 ; ═══════════════════════════════════════════════
 ; win-find-first-file: Windows 目錄搜尋（FindFirstFileA），返回 bufPtr（0=失敗）
-#{buildin}
+#{index-out=0, buildin}
 win-find-first-file = (path str) (bufptr i64) {
 }
 

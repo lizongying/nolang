@@ -53,7 +53,6 @@ with-cap-len = (cap i64, len i64) {
 ; ── 输出/格式化 ────────────────────────────────────────────
 ;
 ; 格式说明符 spec 语法（各字段顺序固定，均可省略）：
-#{index-out = 0}
 ;   [[fill]align][sign][#][0][width][grouping][.precision][type]
 ;
 ;   fill     — 填充字符（默认空格），需与 align 一起使用

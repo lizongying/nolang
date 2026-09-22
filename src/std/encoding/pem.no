@@ -54,21 +54,28 @@ pem-encode = (label str, data []byte) (out str) {
     ; 構建頭尾
     #{overflow=wrap}
     header = '-----BEGIN ' - label - '-----'
+
     #{overflow=wrap}
     footer = '-----END ' - label - '-----'
 
     ; 計算輸出長度
     b64-len = b64.len-bytes()
+
     #{overflow=wrap}
     num-lines = b64-len / PEM-LINE-LEN
+
     #{overflow=wrap}
     b64-len % PEM-LINE-LEN != 0 -> num-lines = num-lines + 1
+
     #{overflow=wrap}
     total = header.len-bytes() + 1
+
     #{overflow=wrap}
     total = total + b64-len
+
     #{overflow=wrap}
     total = total + num-lines
+
     #{overflow=wrap}
     total = total + footer.len-bytes() + 1
 
@@ -77,51 +84,63 @@ pem-encode = (label str, data []byte) (out str) {
 
     ; 寫入 header
     i <- [0..header.len-bytes()): {
-        #{overflow=wrap}
-        #{index-out = 0}
+
+        #{index-out=0, overflow=wrap}
         out[pos] = header[i]
+
         #{overflow=wrap}
         pos = pos + 1
     }
-    #{index-out = 0}
+
+    #{index-out=0}
     out[pos] = 10
+
     #{overflow=wrap}
     pos = pos + 1
 
     ; 寫入 Base64（每行 64 字元）
     src = 0
-    {
+    !! {
+
         #{overflow=wrap}
         src >= b64-len -> break
+
         #{overflow=wrap}
         remaining = b64-len - src
         line-len = PEM-LINE-LEN
         remaining < PEM-LINE-LEN -> line-len = remaining
         j <- [0..line-len): {
-            #{overflow=wrap}
-            #{index-out = 0}
+
+            #{index-out=0, overflow=wrap}
             out[pos] = b64[src + j]
+
             #{overflow=wrap}
             pos = pos + 1
         }
-        #{index-out = 0}
+
+        #{index-out=0}
         out[pos] = 10
+
         #{overflow=wrap}
         pos = pos + 1
+
         #{overflow=wrap}
         src = src + PEM-LINE-LEN
-    } (true)
+    }
 
     ; 寫入 footer
     i <- [0..footer.len-bytes()): {
-        #{overflow=wrap}
-        #{index-out = 0}
+
+        #{index-out=0, overflow=wrap}
         out[pos] = footer[i]
+
         #{overflow=wrap}
         pos = pos + 1
     }
-    #{index-out = 0}
+
+    #{index-out=0}
     out[pos] = 10
+
     #{overflow=wrap}
     pos = pos + 1
 }
@@ -134,6 +153,7 @@ pem-encode = (label str, data []byte) (out str) {
 ; pem-str: PEM 格式字串
 ; 返回 ?pem-block: ok=解析成功, nil=解析失敗
 pem-decode = (pem-str str) (result ?pem-block) {
+
     #{overflow=wrap}
     n = pem-str.len-bytes()
     n < 10 -> return
@@ -160,9 +180,10 @@ pem-decode = (pem-str str) (result ?pem-block) {
 
     ; 跳過換行符
     #{overflow=wrap}
-        b64-start < n -> {
-                pem-str[b64-start] == 10 -> {
-            #{index-out = 0}
+    b64-start < n -> {
+        pem-str[b64-start] == 10 -> {
+
+            #{index-out=0}
             b64-start = b64-start + 1
         }
     }
@@ -174,12 +195,13 @@ pem-decode = (pem-str str) (result ?pem-block) {
 
     ; 提取 Base64 資料（去除換行符）
     b64-data str
+
     #{overflow=wrap}
     b64-data = with-cap(end-pos - b64-start)
     dst = 0
     i <- [b64-start..end-pos): {
-        #{overflow=wrap}
-        #{index-out = 0}
+
+        #{index-out=0, overflow=wrap}
         c = pem-str[i]
 
         ; 跳過換行符和空白
@@ -191,10 +213,11 @@ pem-decode = (pem-str str) (result ?pem-block) {
 
             c == 32 -> skip = true
         }
+
         #{overflow=wrap}
         skip == false -> {
-            #{overflow=wrap}
-            #{index-out = 0}
+
+            #{index-out=0, overflow=wrap}
             b64-data[dst] = c
             dst = dst + 1
         }

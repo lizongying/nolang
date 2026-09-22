@@ -184,29 +184,33 @@ SHIFT-TBL [16]byte = [
 permute = (input i64, tbl []byte, n i64, width i64) (r i64) {
     r = 0
     i = 0
-    {
-        #{overflow=wrap}
-        #{index-out = 0}
+    (i < n) {
+
+        #{index-out=0, overflow=wrap}
         pos = width - (tbl[i])
         bit = (input >> pos) & 1
+
         #{overflow=wrap}
         r = r | (bit << (n - 1 - i))
+
         #{overflow=wrap}
         i = i + 1
-    } (i < n)
+    }
 }
 
 ; sbox-lookup: 查詢 S-box
 ; input 為 6 位元值（MSB-first），b1 b2 b3 b4 b5 b6。
 ; row = b1*2 + b6，col = b2 b3 b4 b5。
 sbox-lookup = (input i64, box []byte) (r i64) {
+
     #{overflow=wrap}
     v = input & 63
+
     #{overflow=wrap}
     row = ((v >> 5) & 1) * 2 + (v & 1)
     col = (v >> 1) & 15
-    #{overflow=wrap}
-    #{index-out = 0}
+
+    #{index-out=0, overflow=wrap}
     r = box[row * 16 + col] & 15
 }
 
@@ -251,56 +255,64 @@ f = (r i64, k i64) (out i64) {
 des-key-schedule = (key [8]byte) (ks [96]byte) {
     k64 = 0
     i <- [0..8): {
-        #{index-out = 0}
+
+        #{index-out=0}
         k64 = (k64 << 8) | (key[i])
     }
     c = 0
     d = 0
     i <- [0..28): {
-        #{overflow=wrap}
-        #{index-out = 0}
+
+        #{index-out=0, overflow=wrap}
         pos = 64 - (PC1-C[i])
         bit = (k64 >> pos) & 1
+
         #{overflow=wrap}
         c = c | (bit << (27 - i))
-        #{overflow=wrap}
-        #{index-out = 0}
+
+        #{index-out=0, overflow=wrap}
         pos2 = 64 - (PC1-D[i])
         bit2 = (k64 >> pos2) & 1
+
         #{overflow=wrap}
         d = d | (bit2 << (27 - i))
     }
     round <- [0..16): {
-        #{overflow=wrap}
-        #{index-out = 0}
+
+        #{index-out=0, overflow=wrap}
         shift = SHIFT-TBL[round]
+
         #{overflow=wrap}
         cm = (1 << 28) - 1
+
         #{overflow=wrap}
         c = ((c << shift) | (c >> (28 - shift))) & cm
+
         #{overflow=wrap}
         d = ((d << shift) | (d >> (28 - shift))) & cm
         cd = (c << 28) | d
         sk = 0
         sk = permute(cd, PC2-TBL, 48, 56)
+
         #{overflow=wrap}
         off = round * 6
-        #{index-out = 0}
+
+        #{index-out=0}
         ks[off] = (sk >> 40) & 255
-        #{overflow=wrap}
-        #{index-out = 0}
+
+        #{index-out=0, overflow=wrap}
         ks[off + 1] = (sk >> 32) & 255
-        #{overflow=wrap}
-        #{index-out = 0}
+
+        #{index-out=0, overflow=wrap}
         ks[off + 2] = (sk >> 24) & 255
-        #{overflow=wrap}
-        #{index-out = 0}
+
+        #{index-out=0, overflow=wrap}
         ks[off + 3] = (sk >> 16) & 255
-        #{overflow=wrap}
-        #{index-out = 0}
+
+        #{index-out=0, overflow=wrap}
         ks[off + 4] = (sk >> 8) & 255
-        #{overflow=wrap}
-        #{index-out = 0}
+
+        #{index-out=0, overflow=wrap}
         ks[off + 5] = sk & 255
     }
 }
@@ -311,7 +323,8 @@ des-key-schedule = (key [8]byte) (ks [96]byte) {
 des-block = (in []byte, n i64, ks [96]byte, encrypt i64) (out []byte) {
     block = 0
     i <- [0..8): {
-        #{index-out = 0}
+
+        #{index-out=0}
         block = (block << 8) | (in[i])
     }
     ip = 0
@@ -322,6 +335,7 @@ des-block = (in []byte, n i64, ks [96]byte, encrypt i64) (out []byte) {
     r = ip & 4294967295
 
     round <- [0..16): {
+
         #{overflow=wrap}
         {
             encrypt == 1 -> sk-off = round * 6
@@ -329,17 +343,17 @@ des-block = (in []byte, n i64, ks [96]byte, encrypt i64) (out []byte) {
             -> sk-off = (15 - round) * 6
         }
         sk = 0
-        #{overflow=wrap}
+
         ; 單一 #{index-out} 註解涵蓋整個陳述（本行的所有 ks[...] 讀取共用同一個
         ; 越界預設值）。注意：`#{...}` 必須自成一行置於目標陳述「上方」——若把它
         ; 插在多行運算式的續行之間（換行 + `#{...}` + 續行運算元），語句會在該處
         ; 被切斷，後續陳述被收編到外層區塊，函式體因而被靜默截斷。
-        #{index-out = 0}
+        #{index-out=0, overflow=wrap}
         sk = (ks[sk-off] << 40) |
-            (ks[sk-off + 1] << 32) |
-            (ks[sk-off + 2] << 24) |
-            (ks[sk-off + 3] << 16) |
-            (ks[sk-off + 4] << 8) | ks[sk-off + 5]
+(ks[sk-off + 1] << 32) |
+(ks[sk-off + 2] << 24) |
+(ks[sk-off + 3] << 16) |
+(ks[sk-off + 4] << 8) | ks[sk-off + 5]
         fout = f(r, sk)
         new-l = r
         r = l ^ fout
@@ -349,6 +363,7 @@ des-block = (in []byte, n i64, ks [96]byte, encrypt i64) (out []byte) {
     fp = permute(pre-out, FP-TBL, 64, 64)
 
     i <- [0..8): {
+
         #{overflow=wrap}
         out.push((fp >> (56 - i * 8)) & 255)
     }

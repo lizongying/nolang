@@ -115,6 +115,7 @@ yaml-parser {
 
 ; byte-at: 取 src[i]，越界返回 0
 yaml-parser.byte-at = (i i64) (c i64) {
+
     #{overflow=wrap}
     c = 0
     i < 0 -> return
@@ -129,6 +130,7 @@ yaml-parser.cur = () (c i64) {
 
 ; at: 相对当前位置偏移 k 的字节
 yaml-parser.at = (k i64) (c i64) {
+
     #{overflow=wrap}
     i = .pos + k
     c = .byte-at(i)
@@ -141,6 +143,7 @@ yaml-parser.eof = () (yes bool) {
 
 ; advance: 前进一个字节
 yaml-parser.advance = () {
+
     #{overflow=wrap}
     .pos = .pos + 1
 }
@@ -153,6 +156,7 @@ yaml-parser.newline = () (yes bool) {
         .advance()
         .cur() == 10 -> .advance()
         yes = true
+
         #{overflow=wrap}
         .line = .line + 1
         return
@@ -160,6 +164,7 @@ yaml-parser.newline = () (yes bool) {
     c == 10 -> {
         .advance()
         yes = true
+
         #{overflow=wrap}
         .line = .line + 1
     }
@@ -173,7 +178,7 @@ yaml-parser.at-eol = () (yes bool) {
 
 ; skip-spaces: 跳过行内空格与制表符
 yaml-parser.skip-spaces = () {
-    {
+    !! {
         c = .cur()
         c == 32 -> {
             .advance()
@@ -184,7 +189,7 @@ yaml-parser.skip-spaces = () {
             continue
         }
         break
-    } (true)
+    }
 }
 
 ; skip-to-eol: 跳过行尾空白与行注释（不消费换行）
@@ -192,36 +197,38 @@ yaml-parser.skip-to-eol = () {
     .skip-spaces()
     c = .cur()
     c == 35 -> {
-        {
+        !! {
             .at-eol() -> break
             .advance()
-        } (true)
+        }
     }
 }
 
 ; line-end-of: 返回 i 所在行的行尾偏移（指向换行或 n）
 yaml-parser.line-end-of = (i i64) (le i64) {
     le = i
-    {
+    (le < .n) {
         le >= .n -> return
         c = .byte-at(le)
         c == 10 || c == 13 -> return
+
         #{overflow=wrap}
         le = le + 1
-    } (le < .n)
+    }
 }
 
 ; line-start-of: 返回 i 所在行的起始偏移
 yaml-parser.line-start-of = (i i64) (ls i64) {
     ls = i
-    {
+    (ls > 0) {
         ls <= 0 -> return
+
         #{overflow=wrap}
         p = ls - 1
         c = .byte-at(p)
         c == 10 || c == 13 -> return
         ls = p
-    } (ls > 0)
+    }
 }
 
 ; indent-at: 当前位置距行首的空格数
@@ -233,6 +240,7 @@ yaml-parser.line-start-of = (i i64) (ls i64) {
 yaml-parser.indent-at = () (ind i64) {
     .skip-spaces()
     ls = .line-start-of(.pos)
+
     #{overflow=wrap}
     ind = .pos - ls
 }
@@ -248,8 +256,10 @@ yaml-parser.fail = (msg str) {
 yaml-parser.fail-at = (msg str) {
     .failed -> return
     .failed = true
+
     #{overflow=wrap}
     col = .pos - .line-start-of(.pos) + 1
+
     #{overflow=wrap}
     .err = 'line ' - .line.to-str() - ', column ' - col.to-str() - ': ' - msg
 }
@@ -257,6 +267,7 @@ yaml-parser.fail-at = (msg str) {
 ; push-node: 追加节点并返回索引
 yaml-parser.push-node = (nd yaml-node) (idx i64) {
     .nodes.push(nd)
+
     #{overflow=wrap}
     idx = .nodes.len() - 1
 }
@@ -280,8 +291,10 @@ yaml-parser.push-null = () (idx i64) {
 
 ; set-props: 为节点附加标签与锚点（并登记锚点）
 yaml-parser.set-props = (idx i64, tag str, anchor str) {
+
     #{index-out=0}
     .nodes[idx].tag = tag
+
     #{index-out=0}
     .nodes[idx].anchor = anchor
     anchor.len-bytes() > 0 -> .register-anchor(anchor, idx)
@@ -363,16 +376,19 @@ yaml-nan = () (v f64) {
 yaml-hex-digit = (c i64) (d i64) {
     d = -1
     c >= 48 && c <= 57 -> {
+
         #{overflow=wrap}
         d = c - 48
         return
     }
     c >= 97 && c <= 102 -> {
+
         #{overflow=wrap}
         d = c - 97 + 10
         return
     }
     c >= 65 && c <= 70 -> {
+
         #{overflow=wrap}
         d = c - 65 + 10
     }
@@ -385,10 +401,11 @@ yaml-parse-radix = (t str, start i64, radix i64) (kind i64, v i64) {
     i = start
     n = t.len-bytes()
     digits = 0
-    {
+    (i < n) {
         i >= n -> break
         c = t.byte(i)
         c == 95 -> {
+
             #{overflow=wrap}
             i = i + 1
             continue
@@ -396,13 +413,16 @@ yaml-parse-radix = (t str, start i64, radix i64) (kind i64, v i64) {
         d = yaml-hex-digit(c)
         d < 0 -> return
         d >= radix -> return
+
         #{overflow=wrap}
         v = v * radix + d
+
         #{overflow=wrap}
         digits = digits + 1
+
         #{overflow=wrap}
         i = i + 1
-    } (i < n)
+    }
     digits == 0 -> return
     kind = YAML-KIND-INT
 }
@@ -444,17 +464,20 @@ yaml-scan-number = (t str) (kind i64, ival i64, fval f64) {
     ; 进制前缀 0x / 0o
     c = t.byte(i)
     c == 48 -> {
+
         #{overflow=wrap}
         j = i + 1
         j < n -> {
             x = t.byte(j)
             x == 120 || x == 88 -> {
+
                 #{overflow=wrap}
                 s = j + 1
                 k = YAML-KIND-STR
                 v = 0
                 k, v = yaml-parse-radix(t, s, 16)
                 k == YAML-KIND-INT -> {
+
                     #{overflow=wrap}
                     neg -> v = 0 - v
                     kind = YAML-KIND-INT
@@ -463,12 +486,14 @@ yaml-scan-number = (t str) (kind i64, ival i64, fval f64) {
                 return
             }
             x == 111 || x == 79 -> {
+
                 #{overflow=wrap}
                 s = j + 1
                 k = YAML-KIND-STR
                 v = 0
                 k, v = yaml-parse-radix(t, s, 8)
                 k == YAML-KIND-INT -> {
+
                     #{overflow=wrap}
                     neg -> v = 0 - v
                     kind = YAML-KIND-INT
@@ -483,17 +508,20 @@ yaml-scan-number = (t str) (kind i64, ival i64, fval f64) {
     digits = 0
     has-dot = false
     has-exp = false
-    {
+    (i < n) {
         i >= n -> break
         c = t.byte(i)
         c == 95 -> {
+
             #{overflow=wrap}
             i = i + 1
             continue
         }
         c >= 48 && c <= 57 -> {
+
             #{overflow=wrap}
             digits = digits + 1
+
             #{overflow=wrap}
             i = i + 1
             continue
@@ -501,6 +529,7 @@ yaml-scan-number = (t str) (kind i64, ival i64, fval f64) {
         c == 46 -> {
             has-dot -> break
             has-dot = true
+
             #{overflow=wrap}
             i = i + 1
             continue
@@ -509,17 +538,19 @@ yaml-scan-number = (t str) (kind i64, ival i64, fval f64) {
             has-exp -> break
             digits == 0 -> break
             has-exp = true
+
             #{overflow=wrap}
             i = i + 1
             i < n -> {
                 s = t.byte(i)
+
                 #{overflow=wrap}
                 s == 45 || s == 43 -> i = i + 1
             }
             continue
         }
         break
-    } (i < n)
+    }
 
     i != n -> return
     digits == 0 -> return
@@ -543,6 +574,7 @@ yaml-scan-number = (t str) (kind i64, ival i64, fval f64) {
     v = 0
     k, v = yaml-parse-radix(t, start, 10)
     k == YAML-KIND-INT -> {
+
         #{overflow=wrap}
         neg -> v = 0 - v
         kind = YAML-KIND-INT
@@ -625,6 +657,7 @@ yaml-tag-name = (tag str) (name str) {
     name = tag
     name.starts-with('!<') -> {
         n = name.len-bytes()
+
         #{overflow=wrap}
         n >= 3 -> name = name.slice-bytes(2, n - 1)
     }
@@ -672,15 +705,17 @@ yaml-unescape-double = (body str) (out str, ok bool) {
     ok = true
     i = 0
     n = body.len-bytes()
-    {
+    (i < n) {
         i >= n -> break
         c = body.byte(i)
         c != 92 -> {
             out = out - char-to-str(c)
+
             #{overflow=wrap}
             i = i + 1
             continue
         }
+
         #{overflow=wrap}
         i = i + 1
         i >= n -> {
@@ -688,6 +723,7 @@ yaml-unescape-double = (body str) (out str, ok bool) {
             return
         }
         e = body.byte(i)
+
         #{overflow=wrap}
         i = i + 1
         {
@@ -718,17 +754,20 @@ yaml-unescape-double = (body str) (out str, ok bool) {
             e == 32 -> out = out - ' '
 
             e == 120 -> {
+
                 #{overflow=wrap}
                 j = i + 2
                 j <= n -> {
                     cp = 0
                     k <- [0..2): {
+
                         #{overflow=wrap}
                         d = yaml-hex-digit(body.byte(i + k))
                         d < 0 -> {
                             ok = false
                             return
                         }
+
                         #{overflow=wrap}
                         cp = cp * 16 + d
                     }
@@ -741,17 +780,20 @@ yaml-unescape-double = (body str) (out str, ok bool) {
             }
 
             e == 117 -> {
+
                 #{overflow=wrap}
                 j = i + 4
                 j <= n -> {
                     cp = 0
                     k <- [0..4): {
+
                         #{overflow=wrap}
                         d = yaml-hex-digit(body.byte(i + k))
                         d < 0 -> {
                             ok = false
                             return
                         }
+
                         #{overflow=wrap}
                         cp = cp * 16 + d
                     }
@@ -764,17 +806,20 @@ yaml-unescape-double = (body str) (out str, ok bool) {
             }
 
             e == 85 -> {
+
                 #{overflow=wrap}
                 j = i + 8
                 j <= n -> {
                     cp = 0
                     k <- [0..8): {
+
                         #{overflow=wrap}
                         d = yaml-hex-digit(body.byte(i + k))
                         d < 0 -> {
                             ok = false
                             return
                         }
+
                         #{overflow=wrap}
                         cp = cp * 16 + d
                     }
@@ -791,7 +836,7 @@ yaml-unescape-double = (body str) (out str, ok bool) {
                 return
             }
         }
-    } (i < n)
+    }
 }
 
 ; ═══════════════════════════════════════════════
@@ -871,12 +916,12 @@ yaml-parser.push-scalar = (text str, style i64, tag str, anchor str) (idx i64) {
 ; read-token: 读取一个不含分隔符的裸 token
 yaml-parser.read-token = () (out str) {
     start = .pos
-    {
+    !! {
         c = .cur()
         c == 0 || c == 32 || c == 9 || c == 10 || c == 13 -> break
         c == 44 || c == 91 || c == 93 || c == 123 || c == 125 -> break
         .advance()
-    } (true)
+    }
     out = .src.slice-bytes(start, .pos)
 }
 
@@ -886,7 +931,7 @@ yaml-parser.read-tag = () (out str) {
     .at(1) == 60 -> {
         .advance()
         .advance()
-        {
+        !! {
             c = .cur()
             c == 0 || c == 10 || c == 13 -> break
             c == 62 -> {
@@ -894,17 +939,17 @@ yaml-parser.read-tag = () (out str) {
                 break
             }
             .advance()
-        } (true)
+        }
         out = .src.slice-bytes(start, .pos)
         return
     }
     .advance()
-    {
+    !! {
         c = .cur()
         c == 0 || c == 32 || c == 9 || c == 10 || c == 13 -> break
         c == 44 || c == 91 || c == 93 || c == 123 || c == 125 -> break
         .advance()
-    } (true)
+    }
     out = .src.slice-bytes(start, .pos)
 }
 
@@ -912,7 +957,7 @@ yaml-parser.read-tag = () (out str) {
 yaml-parser.parse-props = () (tag str, anchor str) {
     tag = ''
     anchor = ''
-    {
+    !! {
         c = .cur()
         c == 38 -> {
             .advance()
@@ -926,7 +971,7 @@ yaml-parser.parse-props = () (tag str, anchor str) {
             continue
         }
         break
-    } (true)
+    }
 }
 
 ; ═══════════════════════════════════════════════
@@ -948,17 +993,20 @@ yaml-parser.looks-like-map-entry = () (yes bool) {
     depth = 0
     in-s = false
     in-d = false
-    {
+    !! {
         i >= .n -> return
         c = .src.byte(i)
         c == 10 || c == 13 -> return
         in-s -> {
             c == 39 -> {
+
                 #{overflow=wrap}
                 j = i + 1
                 j < .n -> {
+
                     #{index-out=0}
                     .src.byte(j) == 39 -> {
+
                         #{overflow=wrap}
                         i = i + 2
                         continue
@@ -966,54 +1014,65 @@ yaml-parser.looks-like-map-entry = () (yes bool) {
                 }
                 in-s = false
             }
+
             #{overflow=wrap}
             i = i + 1
             continue
         }
         in-d -> {
             c == 92 -> {
+
                 #{overflow=wrap}
                 i = i + 2
                 continue
             }
             c == 34 -> in-d = false
+
             #{overflow=wrap}
             i = i + 1
             continue
         }
         c == 39 -> {
             in-s = true
+
             #{overflow=wrap}
             i = i + 1
             continue
         }
         c == 34 -> {
             in-d = true
+
             #{overflow=wrap}
             i = i + 1
             continue
         }
         c == 91 || c == 123 -> {
+
             #{overflow=wrap}
             depth = depth + 1
+
             #{overflow=wrap}
             i = i + 1
             continue
         }
         c == 93 || c == 125 -> {
+
             #{overflow=wrap}
             depth = depth - 1
+
             #{overflow=wrap}
             i = i + 1
             continue
         }
         depth == 0 && c == 35 -> {
             i == .pos -> return
+
             #{overflow=wrap}
             prev = .src.byte(i - 1)
             prev == 32 || prev == 9 -> return
         }
         depth == 0 && c == 58 -> {
+
             #{overflow=wrap}
             j = i + 1
             j >= .n -> {
@@ -1027,6 +1086,7 @@ yaml-parser.looks-like-map-entry = () (yes bool) {
             }
         }
         depth == 0 && c == 63 -> {
+
             #{overflow=wrap}
             j = i + 1
             j >= .n -> {
@@ -1039,9 +1099,10 @@ yaml-parser.looks-like-map-entry = () (yes bool) {
                 return
             }
         }
+
         #{overflow=wrap}
         i = i + 1
-    } (true)
+    }
 }
 
 ; ═══════════════════════════════════════════════
@@ -1050,7 +1111,7 @@ yaml-parser.looks-like-map-entry = () (yes bool) {
 
 ; skip-blank-lines: 跳过空行与整行注释，停在下一行内容起始处
 yaml-parser.skip-blank-lines = () {
-    {
+    !! {
         .eof() -> break
         save = .pos
         .skip-spaces()
@@ -1065,24 +1126,25 @@ yaml-parser.skip-blank-lines = () {
         }
         .pos = save
         break
-    } (true)
+    }
 }
 
 ; read-line-content: 读取当前位置到行尾的内容（去掉行尾空白与注释）
 yaml-parser.read-line-content = () (out str) {
     start = .pos
-    {
+    !! {
         .at-eol() -> break
         c = .cur()
         c == 35 -> {
             .pos > start -> {
+
                 #{overflow=wrap}
                 prev = .at(-1)
                 prev == 32 || prev == 9 -> break
             }
         }
         .advance()
-    } (true)
+    }
     out = .src.slice-bytes(start, .pos).trim()
     .skip-to-eol()
 }
@@ -1094,12 +1156,13 @@ yaml-parser.read-line-content = () (out str) {
 ; parse-plain: 解析 plain 标量（含跨行折叠）
 yaml-parser.parse-plain = (cont-min i64, key-mode bool, flow bool) (idx i64) {
     start = .pos
-    {
+    !! {
         .at-eol() -> break
         c = .cur()
         flow -> {
             c == 44 || c == 93 || c == 125 -> break
             c == 58 -> {
+
                 #{overflow=wrap}
                 j = .pos + 1
                 j >= .n -> break
@@ -1109,6 +1172,7 @@ yaml-parser.parse-plain = (cont-min i64, key-mode bool, flow bool) (idx i64) {
         }
         key-mode -> {
             c == 58 -> {
+
                 #{overflow=wrap}
                 j = .pos + 1
                 j >= .n -> break
@@ -1118,13 +1182,14 @@ yaml-parser.parse-plain = (cont-min i64, key-mode bool, flow bool) (idx i64) {
         }
         c == 35 -> {
             .pos > start -> {
+
                 #{overflow=wrap}
                 prev = .at(-1)
                 prev == 32 || prev == 9 -> break
             }
         }
         .advance()
-    } (true)
+    }
     text = .src.slice-bytes(start, .pos).trim()
 
     key-mode || flow -> {
@@ -1135,21 +1200,23 @@ yaml-parser.parse-plain = (cont-min i64, key-mode bool, flow bool) (idx i64) {
     ; 跨行折叠：仅块上下文
     breaks = 0
     stop = false
-    {
+    !! {
         stop -> break
         .skip-to-eol()
         .eof() -> break
         .newline()
         .eof() -> break
-        {
+        !! {
             ls = .pos
             .skip-spaces()
             .at-eol() -> {
                 .newline()
+
                 #{overflow=wrap}
                 breaks = breaks + 1
                 continue
             }
+
             #{overflow=wrap}
             ind = .pos - ls
             ind < cont-min -> {
@@ -1169,9 +1236,11 @@ yaml-parser.parse-plain = (cont-min i64, key-mode bool, flow bool) (idx i64) {
                 stop = true
                 break
             }
+
             #{overflow=wrap}
             breaks == 0 -> text = text - ' '
             breaks > 0 -> {
+
                 #{overflow=wrap}
                 k <- [0..breaks): text = text - '\n'
             }
@@ -1179,8 +1248,8 @@ yaml-parser.parse-plain = (cont-min i64, key-mode bool, flow bool) (idx i64) {
             text = text - more
             breaks = 0
             break
-        } (true)
-    } (true)
+        }
+    }
 
     idx = .push-scalar(text, YAML-STYLE-PLAIN, '', '')
 }
@@ -1190,7 +1259,7 @@ yaml-parser.parse-single = () (idx i64) {
     .advance()
     out = ''
     closed = false
-    {
+    !! {
         .eof() -> break
         c = .cur()
         c == 39 -> {
@@ -1212,7 +1281,7 @@ yaml-parser.parse-single = () (idx i64) {
         }
         out = out - char-to-str(c)
         .advance()
-    } (true)
+    }
     closed == false -> .fail-at('unterminated single-quoted scalar')
     idx = .push-scalar(out, YAML-STYLE-SINGLE, '', '')
 }
@@ -1222,7 +1291,7 @@ yaml-parser.parse-double = () (idx i64) {
     .advance()
     raw = ''
     closed = false
-    {
+    !! {
         .eof() -> break
         c = .cur()
         c == 34 -> {
@@ -1238,6 +1307,7 @@ yaml-parser.parse-double = () (idx i64) {
         }
         c == 92 -> {
             raw = raw - '\\'
+
             #{overflow=wrap}
             i = .pos + 1
             i < .n -> {
@@ -1250,7 +1320,7 @@ yaml-parser.parse-double = () (idx i64) {
         }
         raw = raw - char-to-str(c)
         .advance()
-    } (true)
+    }
     closed == false -> {
         .fail-at('unterminated double-quoted scalar')
         idx = .push-null()
@@ -1269,6 +1339,7 @@ yaml-parser.parse-alias = () (idx i64) {
     name = .read-token()
     target = .anchor-id(name)
     target < 0 -> {
+
         #{overflow=wrap}
         .fail-at('unknown anchor *' - name)
         idx = .push-null()
@@ -1299,7 +1370,7 @@ yaml-parser.parse-block-scalar = (cont-min i64) (idx i64) {
     .advance()
     chomp = YAML-CHOMP-CLIP
     ind-ind = 0
-    {
+    !! {
         c = .cur()
         c == 45 -> {
             chomp = YAML-CHOMP-STRIP
@@ -1312,6 +1383,7 @@ yaml-parser.parse-block-scalar = (cont-min i64) (idx i64) {
             continue
         }
         c >= 49 && c <= 57 -> {
+
             #{overflow=wrap}
             ind-ind = c - 48
             .advance()
@@ -1319,7 +1391,7 @@ yaml-parser.parse-block-scalar = (cont-min i64) (idx i64) {
         }
         c == 35 -> .skip-to-eol()
         break
-    } (true)
+    }
     .newline()
     .eof() -> {
         idx = .push-scalar('', style, '', '')
@@ -1331,12 +1403,13 @@ yaml-parser.parse-block-scalar = (cont-min i64) (idx i64) {
 
     content-ind = 0
     ind-ind > 0 -> {
+
         #{overflow=wrap}
         content-ind = parent-indent + ind-ind
     }
     ind-ind == 0 -> {
         save = .pos
-        {
+        !! {
             .eof() -> break
             ls = .pos
             .skip-spaces()
@@ -1344,18 +1417,20 @@ yaml-parser.parse-block-scalar = (cont-min i64) (idx i64) {
                 .newline()
                 continue
             }
+
             #{overflow=wrap}
             content-ind = .pos - ls
             .pos = save
             break
-        } (true)
+        }
     }
 
     lines []str = with-len(0)
-    {
+    !! {
         .eof() -> break
         ls = .pos
         .skip-spaces()
+
         #{overflow=wrap}
         ind = .pos - ls
         .at-eol() -> {
@@ -1368,35 +1443,40 @@ yaml-parser.parse-block-scalar = (cont-min i64) (idx i64) {
             break
         }
         le = .line-end-of(.pos)
+
         #{overflow=wrap}
         from = ls + content-ind
         lines.push(.src.slice-bytes(from, le))
         .pos = le
         .newline()
-    } (true)
+    }
 
     ; 尾部空行数
     trail = 0
-    {
+    !! {
+
         #{overflow=wrap}
         last = lines.len() - 1 - trail
         last < 0 -> break
         tail = yaml-str-at(lines, last)
         tail.len-bytes() == 0 -> {
+
             #{overflow=wrap}
             trail = trail + 1
             continue
         }
         break
-    } (true)
+    }
 
     content = ''
     style == YAML-STYLE-LITERAL -> {
         i <- [0..lines.len()): {
+
             #{overflow=wrap}
             content = content - yaml-str-at(lines, i) - '\n'
         }
         content.len-bytes() > 0 -> {
+
             #{overflow=wrap}
             content = content.slice-bytes(0, content.len-bytes() - 1)
         }
@@ -1407,6 +1487,7 @@ yaml-parser.parse-block-scalar = (cont-min i64) (idx i64) {
         i <- [0..lines.len()): {
             ln = yaml-str-at(lines, i)
             ln.len-bytes() == 0 -> {
+
                 #{overflow=wrap}
                 pending = pending + 1
                 continue
@@ -1419,6 +1500,7 @@ yaml-parser.parse-block-scalar = (cont-min i64) (idx i64) {
                 continue
             }
             more -> {
+
                 #{overflow=wrap}
                 k <- [0..pending + 1): content = content - '\n'
             }
@@ -1504,7 +1586,7 @@ yaml-parser.parse-flow-node = (cont-min i64, key-mode bool, flow bool) (idx i64)
 
 ; skip-flow-ws: 流式上下文的空白——行内空格、换行与注释
 yaml-parser.skip-flow-ws = () {
-    {
+    !! {
         .skip-spaces()
         .at-eol() -> {
             .newline()
@@ -1516,14 +1598,14 @@ yaml-parser.skip-flow-ws = () {
             continue
         }
         break
-    } (true)
+    }
 }
 
 ; parse-flow-seq: 解析 [a, b, ...]
 yaml-parser.parse-flow-seq = () (idx i64) {
     .advance()
     kids []i64 = with-len(0)
-    {
+    !! {
         .skip-spaces()
         .eof() -> break
         .cur() == 93 -> {
@@ -1559,7 +1641,7 @@ yaml-parser.parse-flow-seq = () (idx i64) {
         }
         .fail-at('expected , or ] in flow sequence')
         break
-    } (true)
+    }
     nd = yaml-node {
         kind: YAML-KIND-SEQ
         style: YAML-STYLE-FLOW
@@ -1581,7 +1663,7 @@ yaml-parser.parse-flow-map = () (idx i64) {
     .advance()
     keys []i64 = with-len(0)
     vals []i64 = with-len(0)
-    {
+    !! {
         .skip-spaces()
         .eof() -> break
         .cur() == 125 -> {
@@ -1632,7 +1714,7 @@ yaml-parser.parse-flow-map = () (idx i64) {
         }
         .fail-at('expected , or } in flow mapping')
         break
-    } (true)
+    }
     nd = yaml-node {
         kind: YAML-KIND-MAP
         style: YAML-STYLE-FLOW
@@ -1682,7 +1764,8 @@ yaml-parser.parse-block-indented = (parent-indent i64) (idx i64) {
 ; parse-block-seq: 解析块序列
 yaml-parser.parse-block-seq = (indent i64) (idx i64) {
     kids []i64 = with-len(0)
-    {
+    !! {
+
         ; 消费 '-'
         .advance()
         .skip-spaces()
@@ -1700,6 +1783,7 @@ yaml-parser.parse-block-seq = (indent i64) (idx i64) {
 
         -> {
             col = .indent-at()
+
             #{overflow=wrap}
             child = .parse-block(col, indent + 1)
         }
@@ -1712,7 +1796,7 @@ yaml-parser.parse-block-seq = (indent i64) (idx i64) {
         ia != indent -> break
         .is-seq-dash() -> continue
         break
-    } (true)
+    }
     nd = yaml-node {
         kind: YAML-KIND-SEQ
         style: YAML-STYLE-BLOCK
@@ -1741,6 +1825,7 @@ yaml-parser.merge-one = (keys []i64, vals []i64, src i64) (ok-keys []i64, ok-val
         ok-vals.push(vals[b])
     }
     src < 0 -> return
+
     #{index-out=0}
     .nodes[src].kind != YAML-KIND-MAP -> return
     cnt = .nodes[src].keys.len()
@@ -1786,7 +1871,7 @@ yaml-parser.merge-into = (keys []i64, vals []i64, src i64) (ok-keys []i64, ok-va
 yaml-parser.parse-block-map = (indent i64) (idx i64) {
     keys []i64 = with-len(0)
     vals []i64 = with-len(0)
-    {
+    !! {
         key = -1
         .cur() == 63 && (.at(1) == 32 || .at(1) == 9) -> {
             .advance()
@@ -1799,6 +1884,7 @@ yaml-parser.parse-block-map = (indent i64) (idx i64) {
 
             -> {
                 kc = .indent-at()
+
                 #{overflow=wrap}
                 key = .parse-block(kc, indent + 1)
             }
@@ -1819,6 +1905,7 @@ yaml-parser.parse-block-map = (indent i64) (idx i64) {
         }
 
         key < 0 -> {
+
             #{overflow=wrap}
             key = .parse-flow-node(indent + 1, true, false)
             .failed -> break
@@ -1846,14 +1933,17 @@ yaml-parser.parse-block-map = (indent i64) (idx i64) {
 
         val < 0 -> {
             vc = .indent-at()
+
             #{overflow=wrap}
             val = .parse-block(vc, indent + 1)
         }
         .failed -> break
 
         is-merge = false
+
         #{index-out=0}
         .nodes[key].kind == YAML-KIND-STR -> {
+
             #{index-out=0}
             .nodes[key].text.eq-full('<<') -> is-merge = true
         }
@@ -1862,6 +1952,7 @@ yaml-parser.parse-block-map = (indent i64) (idx i64) {
         }
 
         is-merge == false -> {
+
             ; 同名键：本地值覆盖已有条目（YAML 合并键语义）
             dup = -1
             total = keys.len()
@@ -1885,7 +1976,7 @@ yaml-parser.parse-block-map = (indent i64) (idx i64) {
         .indent-at() != indent -> break
         .looks-like-map-entry() -> continue
         break
-    } (true)
+    }
     nd = yaml-node {
         kind: YAML-KIND-MAP
         style: YAML-STYLE-BLOCK
@@ -1920,6 +2011,7 @@ yaml-parser.parse-block = (indent i64, cont-min i64) (idx i64) {
     .at-eol() || c == 35 -> {
         .skip-to-eol()
         .newline()
+
         #{overflow=wrap}
         idx = .parse-block-indented(cont-min - 1)
         .set-props(idx, tag, anchor)
@@ -1948,7 +2040,7 @@ yaml-parser.parse-block = (indent i64, cont-min i64) (idx i64) {
 
 ; skip-doc-preamble: 跳过空行、注释与指令行
 yaml-parser.skip-doc-preamble = () {
-    {
+    !! {
         .eof() -> break
         save = .pos
         .skip-spaces()
@@ -1964,7 +2056,7 @@ yaml-parser.skip-doc-preamble = () {
         }
         .pos = save
         break
-    } (true)
+    }
 }
 
 ; at-doc-marker: 当前位置是否为 --- (1) 或 ... (2)
@@ -1979,7 +2071,7 @@ yaml-parser.at-doc-marker = () (which i64) {
 
 ; skip-to-doc-boundary: 跳过当前文档剩余内容，停在下一个 --- 或输入末尾
 yaml-parser.skip-to-doc-boundary = () {
-    {
+    !! {
         .eof() -> break
         .skip-to-eol()
         .skip-blank-lines()
@@ -2000,7 +2092,7 @@ yaml-parser.skip-to-doc-boundary = () {
             continue
         }
         break
-    } (true)
+    }
 }
 
 ; parse-document: 解析一份文档，返回根节点索引
@@ -2058,7 +2150,7 @@ yaml-parser.parse-document = () (idx i64) {
 yaml-parser.parse-docs = () (roots []i64) {
     roots = with-len(0)
     prev = -1
-    {
+    !! {
         .failed -> break
         .pos == prev -> break
         prev = .pos
@@ -2068,7 +2160,7 @@ yaml-parser.parse-docs = () (roots []i64) {
         .failed -> break
         roots.push(idx)
         .skip-to-doc-boundary()
-    } (true)
+    }
 }
 
 ; ═══════════════════════════════════════════════
@@ -2344,6 +2436,7 @@ yaml.i64 = () (val i64, ok bool) {
         return
     }
     k == YAML-KIND-FLOAT -> {
+
         ; val 是 i64 出參，fval 是 f64：必須顯式轉換，不能靠隱式截斷
         val = f64-to-i64(.pool.nodes[.root].fval)
         ok = true
@@ -2455,6 +2548,7 @@ yaml.get = (key str) (out yaml, ok bool) {
     }
     .root < 0 -> return
     .root >= .pool.nodes.len() -> return
+
     #{index-out=0}
     .pool.nodes[.root].kind != YAML-KIND-MAP -> return
     cnt = .pool.nodes[.root].keys.len()
@@ -2649,15 +2743,17 @@ yaml-to-i64 = (s str) (v i64) {
     n == 0 -> return
     i = 0
     acc = 0
-    {
+    (i < n) {
         i >= n -> break
         c = s.byte(i)
         c < 48 || c > 57 -> return
+
         #{overflow=wrap}
         acc = acc * 10 + c - 48
+
         #{overflow=wrap}
         i = i + 1
-    } (i < n)
+    }
     v = acc
 }
 
@@ -2682,11 +2778,13 @@ yaml-node-is-nan = (nd yaml-node) (yes bool) {
 ; yaml-hex-char: 单个十六进制数字（0-15）转字符
 yaml-hex-char = (v i64) (ch str) {
     ch = '0'
+
     #{overflow=wrap}
     v < 10 -> {
         ch = char-to-str(48 + v)
         return
     }
+
     #{overflow=wrap}
     ch = char-to-str(87 + v)
 }
@@ -2697,34 +2795,56 @@ yaml-json-escape = (s str) (out str) {
     i <- [0..s.len-bytes()): {
         c = s.byte(i)
         {
-            #{overflow=wrap}
-            c == 34 -> out = out - '\\' - char-to-str(34)
+            c == 34 -> {
 
-            #{overflow=wrap}
-            c == 92 -> out = out - '\\' - '\\'
+                #{overflow=wrap}
+                out = out - '\\' - char-to-str(34)
+            }
 
-            #{overflow=wrap}
-            c == 10 -> out = out - '\\' - 'n'
+            c == 92 -> {
 
-            #{overflow=wrap}
-            c == 13 -> out = out - '\\' - 'r'
+                #{overflow=wrap}
+                out = out - '\\' - '\\'
+            }
 
-            #{overflow=wrap}
-            c == 9 -> out = out - '\\' - 't'
+            c == 10 -> {
+
+                #{overflow=wrap}
+                out = out - '\\' - 'n'
+            }
+
+            c == 13 -> {
+
+                #{overflow=wrap}
+                out = out - '\\' - 'r'
+            }
+
+            c == 9 -> {
+
+                #{overflow=wrap}
+                out = out - '\\' - 't'
+            }
 
             c < 32 -> {
+
                 #{overflow=wrap}
                 hi = c / 16
+
                 #{overflow=wrap}
                 lo = c - hi * 16
+
                 #{overflow=wrap}
                 out = out - '\\' - 'u' - '0' - '0' - yaml-hex-char(hi) - yaml-hex-char(lo)
             }
 
-            #{overflow=wrap}
-            -> out = out - char-to-str(c)
+            -> {
+
+                #{overflow=wrap}
+                out = out - char-to-str(c)
+            }
         }
     }
+
     #{overflow=wrap}
     out = out - char-to-str(34)
 }
@@ -2772,6 +2892,7 @@ yaml-json-of = (pool yaml-pool, idx i64, depth i64) (out str) {
         }
 
         nd.kind == YAML-KIND-SEQ -> {
+
             #{overflow=wrap}
             d = depth + 1
             out = '['
@@ -2785,12 +2906,14 @@ yaml-json-of = (pool yaml-pool, idx i64, depth i64) (out str) {
         }
 
         nd.kind == YAML-KIND-MAP -> {
+
             #{overflow=wrap}
             d = depth + 1
             out = '{'
             i <- [0..nd.kids.len()): {
                 i > 0 -> out = out - ','
                 kn = nd.keys[i]
+
                 #{overflow=wrap}
                 out = out - yaml-json-escape(pool.nodes[kn].text) - ':'
                 out = out - yaml-json-of(pool, nd.kids[i], d)
@@ -2836,6 +2959,7 @@ yaml-plain-safe = (s str) (yes bool) {
     c = s.byte(0)
     c == 32 || c == 9 -> return
     c == 45 || c == 63 || c == 58 || c == 44 || c == 91 || c == 93 || c == 123 || c == 125 || c == 35 || c == 38 || c == 42 || c == 33 || c == 124 || c == 62 || c == 39 || c == 34 || c == 37 || c == 64 -> return
+
     #{overflow=wrap}
     last = s.byte(n - 1)
     last == 32 || last == 9 -> return
@@ -2844,6 +2968,7 @@ yaml-plain-safe = (s str) (yes bool) {
         ch < 32 -> return
         ch == 10 || ch == 13 -> return
         ch == 58 -> {
+
             #{overflow=wrap}
             j = i + 1
             j < n -> {
@@ -2853,6 +2978,7 @@ yaml-plain-safe = (s str) (yes bool) {
         }
         ch == 35 -> {
             i > 0 -> {
+
                 #{overflow=wrap}
                 pv = s.byte(i - 1)
                 pv == 32 || pv == 9 -> return
@@ -2875,34 +3001,56 @@ yaml-quote = (s str) (out str) {
     i <- [0..s.len-bytes()): {
         c = s.byte(i)
         {
-            #{overflow=wrap}
-            c == 34 -> out = out - '\\' - char-to-str(34)
+            c == 34 -> {
 
-            #{overflow=wrap}
-            c == 92 -> out = out - '\\' - '\\'
+                #{overflow=wrap}
+                out = out - '\\' - char-to-str(34)
+            }
 
-            #{overflow=wrap}
-            c == 10 -> out = out - '\\' - 'n'
+            c == 92 -> {
 
-            #{overflow=wrap}
-            c == 13 -> out = out - '\\' - 'r'
+                #{overflow=wrap}
+                out = out - '\\' - '\\'
+            }
 
-            #{overflow=wrap}
-            c == 9 -> out = out - '\\' - 't'
+            c == 10 -> {
+
+                #{overflow=wrap}
+                out = out - '\\' - 'n'
+            }
+
+            c == 13 -> {
+
+                #{overflow=wrap}
+                out = out - '\\' - 'r'
+            }
+
+            c == 9 -> {
+
+                #{overflow=wrap}
+                out = out - '\\' - 't'
+            }
 
             c < 32 -> {
+
                 #{overflow=wrap}
                 hi = c / 16
+
                 #{overflow=wrap}
                 lo = c - hi * 16
+
                 #{overflow=wrap}
                 out = out - '\\' - 'u' - '0' - '0' - yaml-hex-char(hi) - yaml-hex-char(lo)
             }
 
-            #{overflow=wrap}
-            -> out = out - char-to-str(c)
+            -> {
+
+                #{overflow=wrap}
+                out = out - char-to-str(c)
+            }
         }
     }
+
     #{overflow=wrap}
     out = out - char-to-str(34)
 }
@@ -2960,6 +3108,7 @@ yaml-emit = (pool yaml-pool, idx i64, indent i64, depth i64) (out str) {
     nd = pool.nodes[idx]
     {
         nd.kind == YAML-KIND-SEQ -> {
+
             #{overflow=wrap}
             d = depth + 1
             nd.kids.len() == 0 -> {
@@ -2969,6 +3118,7 @@ yaml-emit = (pool yaml-pool, idx i64, indent i64, depth i64) (out str) {
             total = nd.kids.len()
             i <- [0..total): {
                 i > 0 -> out = out - '\n'
+
                 #{overflow=wrap}
                 out = out - yaml-spaces(indent) - '-'
                 k = nd.kids[i]
@@ -2981,21 +3131,25 @@ yaml-emit = (pool yaml-pool, idx i64, indent i64, depth i64) (out str) {
                         -> out = out - ' {}'
                     }
                     pool.nodes[k].kids.len() > 0 -> {
+
                         #{overflow=wrap}
                         cut = indent + 2
                         inner = yaml-emit(pool, k, cut, d)
                         inner.len-bytes() > 0 -> {
                             rest = inner.slice-bytes(cut, inner.len-bytes())
+
                             #{overflow=wrap}
                             out = out - ' ' - rest
                         }
                         inner.len-bytes() == 0 -> {
+
                             #{overflow=wrap}
                             out = out - ' ' - yaml-scalar-repr(pool.nodes[k])
                         }
                     }
                 }
                 container == false -> {
+
                     #{overflow=wrap}
                     out = out - ' ' - yaml-scalar-repr(pool.nodes[k])
                 }
@@ -3004,6 +3158,7 @@ yaml-emit = (pool yaml-pool, idx i64, indent i64, depth i64) (out str) {
         }
 
         nd.kind == YAML-KIND-MAP -> {
+
             #{overflow=wrap}
             d = depth + 1
             nd.kids.len() == 0 -> {
@@ -3015,6 +3170,7 @@ yaml-emit = (pool yaml-pool, idx i64, indent i64, depth i64) (out str) {
                 i > 0 -> out = out - '\n'
                 kn = nd.keys[i]
                 ktext = yaml-scalar-repr(pool.nodes[kn])
+
                 #{overflow=wrap}
                 out = out - yaml-spaces(indent) - ktext - ':'
                 k = nd.kids[i]
@@ -3027,17 +3183,21 @@ yaml-emit = (pool yaml-pool, idx i64, indent i64, depth i64) (out str) {
                         -> out = out - ' {}'
                     }
                     pool.nodes[k].kids.len() > 0 -> {
+
                         #{overflow=wrap}
                         inner = yaml-emit(pool, k, indent + 2, d)
+
                         #{overflow=wrap}
                         inner.len-bytes() > 0 -> out = out - '\n' - inner
                         inner.len-bytes() == 0 -> {
+
                             #{overflow=wrap}
                             out = out - ' ' - yaml-scalar-repr(pool.nodes[k])
                         }
                     }
                 }
                 container == false -> {
+
                     #{overflow=wrap}
                     out = out - ' ' - yaml-scalar-repr(pool.nodes[k])
                 }

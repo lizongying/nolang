@@ -128,7 +128,7 @@ func (f *formatter) formatProgram(p *parser.Program) {
 				if prevEndLine == 0 {
 					prevEndLine = stmtTokenEndLine(p.Statements[i-1])
 				}
-				if f.hasBlankLineBetween(prevEndLine, currStartLine) || (prevIsFunc && currIsFunc) || f.hasDocComment(stmt) || f.attachedAnnotationsWillEmit(stmt) {
+				if f.hasBlankLineBetween(prevEndLine, currStartLine) || (prevIsFunc && currIsFunc) || f.nodeHeadWillEmit(stmt) {
 					f.newline()
 				}
 				f.newline()

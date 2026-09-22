@@ -24,9 +24,10 @@ stack {
 
 ; push: 推入元素到堆疊頂端
 stack.push = (val i64) {
-    #{overflow=wrap}
-    #{index-out = 0}
+
+    #{index-out=0, overflow=wrap}
     .data[.n] = val
+
     #{overflow=wrap}
     .n = .n + 1
 }
@@ -34,27 +35,31 @@ stack.push = (val i64) {
 ; pop: 從堆疊頂端彈出元素
 ; 返回 val ?i64: ok=彈出值, nil=堆疊為空
 stack.pop = () (val ?i64) {
+
     #{overflow=wrap}
     .n == 0 -> {
         val = nil
         return
     }
+
     #{overflow=wrap}
     .n = .n - 1
-    #{index-out = 0}
+
+    #{index-out=0}
     val = .data[.n]
 }
 
 ; peek: 查看堆疊頂端元素（不移除）
 ; 返回 val ?i64: ok=頂端值, nil=堆疊為空
 stack.peek = () (val ?i64) {
+
     #{overflow=wrap}
     .n == 0 -> {
         val = nil
         return
     }
-    #{overflow=wrap}
-    #{index-out = 0}
+
+    #{index-out=0, overflow=wrap}
     val = .data[.n - 1]
 }
 

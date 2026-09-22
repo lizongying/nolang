@@ -1159,8 +1159,20 @@ func (p *Parser) collectDocComments() *CommentGroup {
 	if len(p.comments) == 0 {
 		return nil
 	}
+	group := commentGroupFromTokens(p.comments)
+	p.comments = nil
+	return group
+}
+
+// commentGroupFromTokens 把收集到的註釋 token 轉成 CommentGroup。
+// 與 collectDocComments 相同的轉換，但**不**清空 p.comments —— 供「只取其中一段」
+// 的呼叫方使用（例如註解行與目標陳述之間的註釋要掛成目標陳述的 Doc）。
+func commentGroupFromTokens(toks []lexer.Token) *CommentGroup {
+	if len(toks) == 0 {
+		return nil
+	}
 	group := &CommentGroup{}
-	for _, c := range p.comments {
+	for _, c := range toks {
 		comment := &Comment{
 			Pos:    posFromToken(c),
 			End:    lexer.Position{Line: c.Line, Column: c.Column + len(c.Literal)},
@@ -1170,12 +1182,34 @@ func (p *Parser) collectDocComments() *CommentGroup {
 		}
 		group.List = append(group.List, comment)
 	}
-	if len(group.List) > 0 {
-		group.Start = group.List[0].Pos
-		group.End = group.List[len(group.List)-1].End
-	}
-	p.comments = nil
+	group.Start = group.List[0].Pos
+	group.End = group.List[len(group.List)-1].End
 	return group
+}
+
+// takeCommentsBetween 從註釋緩衝取出「位於 (afterLine, beforeLine) 之間」的註釋
+// token，並把它們從緩衝移除（其餘原樣保留）。
+//
+// 用於「註解行與目標陳述之間的註釋屬於同一 node」的歸位（見 parseAnnotationStatement）。
+// 以行號判定而非緩衝長度，因為 nextToken 為了算出 peekToken 會預先收集更前方的
+// 註釋（advanceCollect），跳過註解群組 `}` 的那一步就已把下一行的註釋收進緩衝。
+func (p *Parser) takeCommentsBetween(afterLine, beforeLine int) []lexer.Token {
+	if len(p.comments) == 0 {
+		return nil
+	}
+	var taken, keep []lexer.Token
+	for _, c := range p.comments {
+		if c.Line > afterLine && (beforeLine <= 0 || c.Line < beforeLine) {
+			taken = append(taken, c)
+			continue
+		}
+		keep = append(keep, c)
+	}
+	if len(taken) == 0 {
+		return nil
+	}
+	p.comments = keep
+	return taken
 }
 
 // setComment sets the Comment field on any Statement that supports it
@@ -1218,27 +1252,26 @@ func setComment(stmt Statement, comment *CommentGroup) {
 // attachInlineComment checks if the first collected comment is on the same line
 // as the statement's last token. If so, it's an inline comment — move it to stmt.Comment.
 func (p *Parser) attachInlineComment(stmt Statement) {
-	if len(p.comments) == 0 {
+	p.attachInlineCommentOnLine(stmt, stmtTokenEndLine(stmt))
+}
+
+// attachInlineCommentOnLine 把緩衝區中第一條、且位於 line 行上的註釋掛成 stmt 的
+// 行內註釋（`stmt ; comment` 的 comment）。
+//
+// 之所以需要指定行號的變體：尾隨 `#{...}` 群組（`stmt #{ann}`）解析完之後，同一行
+// 後方可能還有註釋（`stmt #{ann} ; comment`）。此時 stmtTokenEndLine 可能與實際的
+// 尾隨行不同（例如多行值），而尾隨註解群組的 `#{` 行號才是唯一可靠的錨點，故由
+// 呼叫方傳入。輸出規範為「語句、註解、註釋」：這條註釋必須留在原行，否則會退化成
+// 下一條陳述的 Doc（整條註釋搬到下一行、註解與註釋被拆散）。
+func (p *Parser) attachInlineCommentOnLine(stmt Statement, line int) {
+	if stmt == nil || line <= 0 || len(p.comments) == 0 {
 		return
 	}
-	stmtLastLine := stmtTokenEndLine(stmt)
-	if stmtLastLine > 0 && p.comments[0].Line == stmtLastLine {
-		c := p.comments[0]
-		comment := &Comment{
-			Pos:    posFromToken(c),
-			End:    lexer.Position{Line: c.Line, Column: c.Column + len(c.Literal)},
-			Kind:   NormalComment,
-			Text:   c.Literal,
-			Marker: c.Marker,
-		}
-		group := &CommentGroup{
-			List:  []*Comment{comment},
-			Start: comment.Pos,
-			End:   comment.End,
-		}
-		setComment(stmt, group)
-		p.comments = p.comments[1:]
+	if p.comments[0].Line != line {
+		return
 	}
+	setComment(stmt, commentGroupFromTokens(p.comments[:1]))
+	p.comments = p.comments[1:]
 }
 
 // stmtTokenEndLine returns the line number of the last token in a statement.
@@ -1434,9 +1467,14 @@ func (p *Parser) ParseProgram() *Program {
 		// 不攔截的話註解會退化成「下一條陳述的前置註解」，`#{index-out}` 便套用到
 		// 錯誤的目標（見 parseBlockStatement 的同名分支）。
 		if p.currentToken.Type == lexer.HASH_LBRACE && len(program.Statements) > 0 {
-			if prev := program.Statements[len(program.Statements)-1]; prev != nil && prev.EndPos().Line == p.currentToken.Line {
+			if prev := program.Statements[len(program.Statements)-1]; prev != nil && (prev.EndPos().Line == p.currentToken.Line || p.annotationImmediatelyTrails()) {
+				annLine := p.currentToken.Line
 				if trailing := p.parseTrailingAnnotation(); len(trailing) > 0 {
 					p.attachAnnotations(prev, trailing)
+					// 尾隨註解之後、同一行的註釋仍屬於同一條陳述：輸出規範為
+					// 「語句、註解、註釋」，註釋必須留在原行（見
+					// attachInlineCommentOnLine），不能退化成下一條陳述的 Doc。
+					p.attachInlineCommentOnLine(prev, annLine)
 					continue
 				}
 			}

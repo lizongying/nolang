@@ -59,7 +59,8 @@ reader.read-byte = () (b ?i64) {
     buf []byte = with-len(1)
     n = fs.read(.fd, buf, 1)
     n > 0 -> {
-        #{index-out = 0}
+
+        #{index-out=0}
         b = buf[0]
     }
 }
@@ -130,7 +131,8 @@ writer.write-byte = (b i64) (written i64) {
     written = 0
     .fd < 0 -> return
     buf []byte = with-len(1)
-    #{index-out = 0}
+
+    #{index-out=0}
     buf[0] = b & 255
     written = fs.write(.fd, buf, 1)
 }
@@ -138,15 +140,18 @@ writer.write-byte = (b i64) (written i64) {
 ; write-line: 寫入字串並附加換行符
 ; 返回實際寫入的位元組數
 writer.write-line = (s str) (written i64) {
+
     #{overflow=wrap}
     written = 0
     .fd < 0 -> return
     b = s.to-bytes()
     n = fs.write(.fd, b, b.len())
     nl []byte = with-len(1)
-    #{index-out = 0}
+
+    #{index-out=0}
     nl[0] = 10
     written = fs.write(.fd, nl, 1)
+
     #{overflow=wrap}
     written = written + n
 }
@@ -163,13 +168,16 @@ out = (s str) (n i64) {
 
 ; outln: 寫入字串到標準輸出並換行
 outln = (s str) (n i64) {
+
     #{overflow=wrap}
     b = s.to-bytes()
     n = fs.write(STDOUT-FD, b, b.len())
     nl []byte = with-len(1)
-    #{index-out = 0}
+
+    #{index-out=0}
     nl[0] = 10
     m = fs.write(STDOUT-FD, nl, 1)
+
     #{overflow=wrap}
     n = n + m
 }
@@ -182,13 +190,16 @@ err = (s str) (n i64) {
 
 ; errln: 寫入字串到標準錯誤並換行
 errln = (s str) (n i64) {
+
     #{overflow=wrap}
     b = s.to-bytes()
     n = fs.write(STDERR-FD, b, b.len())
     nl []byte = with-len(1)
-    #{index-out = 0}
+
+    #{index-out=0}
     nl[0] = 10
     m = fs.write(STDERR-FD, nl, 1)
+
     #{overflow=wrap}
     n = n + m
 }

@@ -20,23 +20,25 @@ rc4 = (in []byte, key []byte) (out []byte) {
     ; KSA: 金鑰排程
     s [256]byte
     i <- [0..256): {
-        #{index-out = 0}
+
+        #{index-out=0}
         s[i] = i
     }
     key-len = key.len()
     j = 0
     i <- [0..256): {
-        #{overflow=wrap}
-        #{index-out = 0}
+
+        #{index-out=0, overflow=wrap}
         j = (j + (s[i]) + (key[i % key-len])) % 256
 
-        #{index-out = 0}
         ; Swap s[i] and s[j]
-        #{index-out = 0}
+        #{index-out=0}
         t = s[i]
-        #{index-out = 0}
+
+        #{index-out=0}
         s[i] = s[j]
-        #{index-out = 0}
+
+        #{index-out=0}
         s[j] = t
     }
 
@@ -45,26 +47,28 @@ rc4 = (in []byte, key []byte) (out []byte) {
     i = 0
     j = 0
     pos <- [0..in.len()): {
+
         #{overflow=wrap}
         i = (i + 1) % 256
-        #{overflow=wrap}
-        #{index-out = 0}
+
+        #{index-out=0, overflow=wrap}
         j = (j + (s[i])) % 256
 
-        #{index-out = 0}
         ; Swap s[i] and s[j]
-        #{index-out = 0}
+        #{index-out=0}
         t = s[i]
-        #{index-out = 0}
+
+        #{index-out=0}
         s[i] = s[j]
-        #{index-out = 0}
+
+        #{index-out=0}
         s[j] = t
 
         ; 生成密鑰流位元組
-        #{overflow=wrap}
-        #{index-out = 0}
+        #{index-out=0, overflow=wrap}
         k = s[((s[i]) + (s[j])) % 256]
-        #{index-out = 0}
+
+        #{index-out=0}
         out[pos] = (in[pos]) ^ (k & 255)
     }
 }

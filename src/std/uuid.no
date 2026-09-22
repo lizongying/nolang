@@ -35,41 +35,43 @@ new-v4 = (state i64) (out uuid) {
 
     ; 生成 16 個隨機位元組（每次 rand 產生 4 位元組）
     i = 0
-    {
+    (i < 16) {
         state, r = rand.rand(state)
 
-        #{overflow=wrap}
-        #{index-out = 0}
+        #{index-out=0, overflow=wrap}
         out.bytes[i] = r & 255
+
         #{overflow=wrap}
         {
-                        i + 1 < 16 -> {
-                #{index-out = 0}
+            i + 1 < 16 -> {
+
+                #{index-out=0}
                 out.bytes[i + 1] = (r >> 8) & 255
             }
 
-                        i + 2 < 16 -> {
-                #{index-out = 0}
+            i + 2 < 16 -> {
+
+                #{index-out=0}
                 out.bytes[i + 2] = (r >> 16) & 255
             }
 
-                        i + 3 < 16 -> {
-                #{index-out = 0}
+            i + 3 < 16 -> {
+
+                #{index-out=0}
                 out.bytes[i + 3] = (r >> 24) & 255
             }
         }
+
         #{overflow=wrap}
         i = i + 4
-    } (i < 16)
+    }
 
-    #{index-out = 0}
     ; 設定版本位：byte[6] 的高 4 位 = 0100 (version 4)
-    #{index-out = 0}
+    #{index-out=0, index-out=0}
     out.bytes[6] = (out.bytes[6] & 15) | 64
 
-    #{index-out = 0}
     ; 設定變體位：byte[8] 的高 2 位 = 10 (RFC 4122)
-    #{index-out = 0}
+    #{index-out=0, index-out=0}
     out.bytes[8] = (out.bytes[8] & 63) | 128
 }
 
@@ -86,71 +88,82 @@ uuid.to-str = () (out str) {
     out = with-len(36)
 
     ; byte 0-3 → position 0-7
-    #{index-out = 0}
+    #{index-out=0}
     hex-byte(.bytes[0], 0, out)
-    #{index-out = 0}
+
+    #{index-out=0}
     hex-byte(.bytes[1], 2, out)
-    #{index-out = 0}
+
+    #{index-out=0}
     hex-byte(.bytes[2], 4, out)
-    #{index-out = 0}
+
+    #{index-out=0}
     hex-byte(.bytes[3], 6, out)
 
     ; 連字號
-    #{index-out = 0}
+    #{index-out=0}
     out[8] = 45
 
     ; byte 4-5 → position 9-12
-    #{index-out = 0}
+    #{index-out=0}
     hex-byte(.bytes[4], 9, out)
-    #{index-out = 0}
+
+    #{index-out=0}
     hex-byte(.bytes[5], 11, out)
 
     ; 連字號
-    #{index-out = 0}
+    #{index-out=0}
     out[13] = 45
 
     ; byte 6-7 → position 14-17
-    #{index-out = 0}
+    #{index-out=0}
     hex-byte(.bytes[6], 14, out)
-    #{index-out = 0}
+
+    #{index-out=0}
     hex-byte(.bytes[7], 16, out)
 
     ; 連字號
-    #{index-out = 0}
+    #{index-out=0}
     out[18] = 45
 
     ; byte 8-9 → position 19-22
-    #{index-out = 0}
+    #{index-out=0}
     hex-byte(.bytes[8], 19, out)
-    #{index-out = 0}
+
+    #{index-out=0}
     hex-byte(.bytes[9], 21, out)
 
     ; 連字號
-    #{index-out = 0}
+    #{index-out=0}
     out[23] = 45
 
     ; byte 10-15 → position 24-35
-    #{index-out = 0}
+    #{index-out=0}
     hex-byte(.bytes[10], 24, out)
-    #{index-out = 0}
+
+    #{index-out=0}
     hex-byte(.bytes[11], 26, out)
-    #{index-out = 0}
+
+    #{index-out=0}
     hex-byte(.bytes[12], 28, out)
-    #{index-out = 0}
+
+    #{index-out=0}
     hex-byte(.bytes[13], 30, out)
-    #{index-out = 0}
+
+    #{index-out=0}
     hex-byte(.bytes[14], 32, out)
-    #{index-out = 0}
+
+    #{index-out=0}
     hex-byte(.bytes[15], 34, out)
 }
 
 ; hex-byte: 將一個位元組寫為兩個 hex 字元到 out 的 pos 位置
 hex-byte = (b byte, pos i64, out str) {
-    #{overflow=wrap}
-    #{index-out = 0}
+
+    #{index-out=0, overflow=wrap}
     out[pos] = HEX[(b >> 4) & 15]
-    #{overflow=wrap}
-    #{index-out = 0}
+
+    #{index-out=0, overflow=wrap}
     out[pos + 1] = HEX[b & 15]
 }
 
@@ -159,55 +172,75 @@ hex-byte = (b byte, pos i64, out str) {
 uuid.to-str-upper = () (out str) {
     out = with-len(36)
     hex-u = '0123456789ABCDEF'
-    #{index-out = 0}
+
+    #{index-out=0}
     hex-byte-upper(.bytes[0], 0, out, hex-u)
-    #{index-out = 0}
+
+    #{index-out=0}
     hex-byte-upper(.bytes[1], 2, out, hex-u)
-    #{index-out = 0}
+
+    #{index-out=0}
     hex-byte-upper(.bytes[2], 4, out, hex-u)
-    #{index-out = 0}
+
+    #{index-out=0}
     hex-byte-upper(.bytes[3], 6, out, hex-u)
-    #{index-out = 0}
+
+    #{index-out=0}
     out[8] = 45
-    #{index-out = 0}
+
+    #{index-out=0}
     hex-byte-upper(.bytes[4], 9, out, hex-u)
-    #{index-out = 0}
+
+    #{index-out=0}
     hex-byte-upper(.bytes[5], 11, out, hex-u)
-    #{index-out = 0}
+
+    #{index-out=0}
     out[13] = 45
-    #{index-out = 0}
+
+    #{index-out=0}
     hex-byte-upper(.bytes[6], 14, out, hex-u)
-    #{index-out = 0}
+
+    #{index-out=0}
     hex-byte-upper(.bytes[7], 16, out, hex-u)
-    #{index-out = 0}
+
+    #{index-out=0}
     out[18] = 45
-    #{index-out = 0}
+
+    #{index-out=0}
     hex-byte-upper(.bytes[8], 19, out, hex-u)
-    #{index-out = 0}
+
+    #{index-out=0}
     hex-byte-upper(.bytes[9], 21, out, hex-u)
-    #{index-out = 0}
+
+    #{index-out=0}
     out[23] = 45
-    #{index-out = 0}
+
+    #{index-out=0}
     hex-byte-upper(.bytes[10], 24, out, hex-u)
-    #{index-out = 0}
+
+    #{index-out=0}
     hex-byte-upper(.bytes[11], 26, out, hex-u)
-    #{index-out = 0}
+
+    #{index-out=0}
     hex-byte-upper(.bytes[12], 28, out, hex-u)
-    #{index-out = 0}
+
+    #{index-out=0}
     hex-byte-upper(.bytes[13], 30, out, hex-u)
-    #{index-out = 0}
+
+    #{index-out=0}
     hex-byte-upper(.bytes[14], 32, out, hex-u)
-    #{index-out = 0}
+
+    #{index-out=0}
     hex-byte-upper(.bytes[15], 34, out, hex-u)
 }
 
 ; hex-byte-upper: 大寫 hex 位元組寫入
 hex-byte-upper = (b byte, pos i64, out str, table str) {
-    #{overflow=wrap}
-    #{index-out = 0}
+
+    #{index-out=0, overflow=wrap}
     out[pos] = table[(b >> 4) & 15]
-    #{overflow=wrap}
-    #{index-out = 0}
+
+    #{index-out=0, overflow=wrap}
     out[pos + 1] = table[b & 15]
 }
 
@@ -225,7 +258,8 @@ from-str = (s str, out uuid) (ok bool) {
 
     ; 跳過空白
     pos <- [0..s.len-bytes()): {
-        #{index-out = 0}
+
+        #{index-out=0}
         c = s[pos]
         c != 32 && c != 9 && c != 10 && c != 13 -> break
     }
@@ -240,22 +274,30 @@ from-str = (s str, out uuid) (ok bool) {
 
 ; parse-with-dashes: 解析帶連字號的 UUID
 parse-with-dashes = (s str, pos i64, out uuid) (ok bool) {
+
     #{overflow=wrap}
     ok = true
     v0 = parse-hex-byte(s, pos)
+
     #{overflow=wrap}
     v1 = parse-hex-byte(s, pos + 2)
+
     #{overflow=wrap}
     v2 = parse-hex-byte(s, pos + 4)
+
     #{overflow=wrap}
     v3 = parse-hex-byte(s, pos + 6)
-    #{index-out = 0}
+
+    #{index-out=0}
     out.bytes[0] = v0
-    #{index-out = 0}
+
+    #{index-out=0}
     out.bytes[1] = v1
-    #{index-out = 0}
+
+    #{index-out=0}
     out.bytes[2] = v2
-    #{index-out = 0}
+
+    #{index-out=0}
     out.bytes[3] = v3
 
     ; 跳過連字號
@@ -264,68 +306,95 @@ parse-with-dashes = (s str, pos i64, out uuid) (ok bool) {
         ok = false
         return
     }
+
     #{overflow=wrap}
     v4 = parse-hex-byte(s, pos + 9)
+
     #{overflow=wrap}
     v5 = parse-hex-byte(s, pos + 11)
-    #{index-out = 0}
+
+    #{index-out=0}
     out.bytes[4] = v4
-    #{index-out = 0}
+
+    #{index-out=0}
     out.bytes[5] = v5
+
     #{overflow=wrap}
     s[pos + 13] != 45 -> {
         ok = false
         return
     }
+
     #{overflow=wrap}
     v6 = parse-hex-byte(s, pos + 14)
+
     #{overflow=wrap}
     v7 = parse-hex-byte(s, pos + 16)
-    #{index-out = 0}
+
+    #{index-out=0}
     out.bytes[6] = v6
-    #{index-out = 0}
+
+    #{index-out=0}
     out.bytes[7] = v7
+
     #{overflow=wrap}
     s[pos + 18] != 45 -> {
         ok = false
         return
     }
+
     #{overflow=wrap}
     v8 = parse-hex-byte(s, pos + 19)
+
     #{overflow=wrap}
     v9 = parse-hex-byte(s, pos + 21)
-    #{index-out = 0}
+
+    #{index-out=0}
     out.bytes[8] = v8
-    #{index-out = 0}
+
+    #{index-out=0}
     out.bytes[9] = v9
+
     #{overflow=wrap}
     s[pos + 23] != 45 -> {
         ok = false
         return
     }
+
     #{overflow=wrap}
     v10 = parse-hex-byte(s, pos + 24)
+
     #{overflow=wrap}
     v11 = parse-hex-byte(s, pos + 26)
+
     #{overflow=wrap}
     v12 = parse-hex-byte(s, pos + 28)
+
     #{overflow=wrap}
     v13 = parse-hex-byte(s, pos + 30)
+
     #{overflow=wrap}
     v14 = parse-hex-byte(s, pos + 32)
+
     #{overflow=wrap}
     v15 = parse-hex-byte(s, pos + 34)
-    #{index-out = 0}
+
+    #{index-out=0}
     out.bytes[10] = v10
-    #{index-out = 0}
+
+    #{index-out=0}
     out.bytes[11] = v11
-    #{index-out = 0}
+
+    #{index-out=0}
     out.bytes[12] = v12
-    #{index-out = 0}
+
+    #{index-out=0}
     out.bytes[13] = v13
-    #{index-out = 0}
+
+    #{index-out=0}
     out.bytes[14] = v14
-    #{index-out = 0}
+
+    #{index-out=0}
     out.bytes[15] = v15
 }
 
@@ -333,24 +402,26 @@ parse-with-dashes = (s str, pos i64, out uuid) (ok bool) {
 parse-no-dashes = (s str, pos i64, out uuid) (ok bool) {
     ok = true
     i <- [0..16): {
+
         #{overflow=wrap}
         v = parse-hex-byte(s, pos + i * 2)
         v < 0 -> {
             ok = false
             return
         }
-        #{index-out = 0}
+
+        #{index-out=0}
         out.bytes[i] = v
     }
 }
 
 ; parse-hex-byte: 從字串解析兩個 hex 字元為一個位元組
 parse-hex-byte = (s str, pos i64) (v i64) {
-    #{overflow=wrap}
-    #{index-out = 0}
+
+    #{index-out=0, overflow=wrap}
     c0 = s[pos]
-    #{overflow=wrap}
-    #{index-out = 0}
+
+    #{index-out=0, overflow=wrap}
     c1 = s[pos + 1]
     h0 = str.hex-val(c0)
     h1 = str.hex-val(c1)
@@ -369,30 +440,30 @@ parse-hex-byte = (s str, pos i64) (v i64) {
 uuid.validate = () (ok bool) {
     ok = true
 
-    #{index-out = 0}
     ; 檢查版本位（byte[6] 的 4-7 位應為 4）
-    #{index-out = 0}
+    #{index-out=0, index-out=0}
     ver = (.bytes[6] >> 4) & 15
     ver != 4 -> {
         ; 不強制版本，只檢查變體
     }
 
-    #{index-out = 0}
     ; 檢查變體位（byte[8] 的 6-7 位應為 10）
-    #{index-out = 0}
+    #{index-out=0, index-out=0}
     var = (.bytes[8] >> 6) & 3
     var != 2 -> ok = false
 }
 
 ; version: 取得 UUID 版本
 uuid.version = () (v i64) {
-    #{index-out = 0}
+
+    #{index-out=0}
     v = (.bytes[6] >> 4) & 15
 }
 
 ; variant: 取得 UUID 變體
 uuid.variant = () (v i64) {
-    #{index-out = 0}
+
+    #{index-out=0}
     v = (.bytes[8] >> 6) & 3
 }
 
@@ -426,9 +497,11 @@ uuid.eq = (b uuid) (yes bool) {
 uuid.cmp = (b uuid) (r i64) {
     r = 0
     i <- [0..16): {
-        #{index-out = 0}
+
+        #{index-out=0}
         ab = .bytes[i]
-        #{index-out = 0}
+
+        #{index-out=0}
         bb = b.bytes[i]
         {
             ab < bb -> {
@@ -453,18 +526,21 @@ hex-val = (c i64) (v i64) {
     v = -1
     {
         c >= 48 && c <= 57 -> {
+
             #{overflow=wrap}
             v = c - 48
             return
         }
 
         c >= 65 && c <= 70 -> {
+
             #{overflow=wrap}
             v = c - 65 + 10
             return
         }
 
         c >= 97 && c <= 102 -> {
+
             #{overflow=wrap}
             v = c - 97 + 10
         }
@@ -474,7 +550,8 @@ hex-val = (c i64) (v i64) {
 ; nil-uuid: 建立空 UUID（全零）
 nil-uuid = (out uuid) {
     i <- [0..16): {
-        #{index-out = 0}
+
+        #{index-out=0}
         out.bytes[i] = 0
     }
 }

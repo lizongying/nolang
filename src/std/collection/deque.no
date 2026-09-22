@@ -26,33 +26,41 @@ deque {
 
 ; push-front: 從前端推入元素
 deque.push-front = (val i64) {
+
     #{overflow=wrap}
     n = .tail - .head
     n >= .cap -> return
+
     #{overflow=wrap}
     new-head = .head - 1
     idx = new-head
+
     #{overflow=wrap}
     idx < 0 -> idx = idx + .cap
-    #{index-out = 0}
+
+    #{index-out=0}
     .buf[idx] = val
     .head = new-head
 }
 
 ; push-back: 從後端推入元素
 deque.push-back = (val i64) {
+
     #{overflow=wrap}
     n = .tail - .head
     n >= .cap -> return
     idx = .tail
+
     #{overflow=wrap}
     {
         idx >= 0 -> idx = idx % .cap
 
         -> idx = .cap - ((-idx) % .cap)
     }
-    #{index-out = 0}
+
+    #{index-out=0}
     .buf[idx] = val
+
     #{overflow=wrap}
     .tail = .tail + 1
 }
@@ -60,6 +68,7 @@ deque.push-back = (val i64) {
 ; pop-front: 從前端彈出元素
 ; 返回 val ?i64: ok=彈出值, nil=佇列為空
 deque.pop-front = () (val ?i64) {
+
     #{overflow=wrap}
     n = .tail - .head
     n <= 0 -> {
@@ -67,14 +76,17 @@ deque.pop-front = () (val ?i64) {
         return
     }
     idx = .head
+
     #{overflow=wrap}
     {
         idx >= 0 -> idx = idx % .cap
 
         -> idx = .cap - ((-idx) % .cap)
     }
-    #{index-out = 0}
+
+    #{index-out=0}
     val = .buf[idx]
+
     #{overflow=wrap}
     .head = .head + 1
 }
@@ -82,22 +94,26 @@ deque.pop-front = () (val ?i64) {
 ; pop-back: 從後端彈出元素
 ; 返回 val ?i64: ok=彈出值, nil=佇列為空
 deque.pop-back = () (val ?i64) {
+
     #{overflow=wrap}
     n = .tail - .head
     n <= 0 -> {
         val = nil
         return
     }
+
     #{overflow=wrap}
     new-tail = .tail - 1
     idx = new-tail
+
     #{overflow=wrap}
     {
         idx >= 0 -> idx = idx % .cap
 
         -> idx = .cap - ((-idx) % .cap)
     }
-    #{index-out = 0}
+
+    #{index-out=0}
     val = .buf[idx]
     .tail = new-tail
 }
@@ -105,6 +121,7 @@ deque.pop-back = () (val ?i64) {
 ; peek-front: 查看前端元素（不移除）
 ; 返回 val ?i64: ok=前端值, nil=佇列為空
 deque.peek-front = () (val ?i64) {
+
     #{overflow=wrap}
     n = .tail - .head
     n <= 0 -> {
@@ -112,39 +129,46 @@ deque.peek-front = () (val ?i64) {
         return
     }
     idx = .head
+
     #{overflow=wrap}
     {
         idx >= 0 -> idx = idx % .cap
 
         -> idx = .cap - ((-idx) % .cap)
     }
-    #{index-out = 0}
+
+    #{index-out=0}
     val = .buf[idx]
 }
 
 ; peek-back: 查看後端元素（不移除）
 ; 返回 val ?i64: ok=後端值, nil=佇列為空
 deque.peek-back = () (val ?i64) {
+
     #{overflow=wrap}
     n = .tail - .head
     n <= 0 -> {
         val = nil
         return
     }
+
     #{overflow=wrap}
     idx = .tail - 1
+
     #{overflow=wrap}
     {
         idx >= 0 -> idx = idx % .cap
 
         -> idx = .cap - ((-idx) % .cap)
     }
-    #{index-out = 0}
+
+    #{index-out=0}
     val = .buf[idx]
 }
 
 ; size: 返回雙端佇列大小
 deque.size = () (sz i64) {
+
     #{overflow=wrap}
     sz = .tail - .head
 }

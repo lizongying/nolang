@@ -232,14 +232,15 @@ get-line = () (line ?str) {
 read-stdin = () (content ?[]byte) {
     buf []byte
     tmp []byte = with-len(4096)
-    {
+    !! {
         n = read(STDIN-FD, tmp, 4096)
         n <= 0 -> break
         i <- [0..n): {
-            #{index-out = 0}
+
+            #{index-out=0}
             buf.push(tmp[i])
         }
-    } (true)
+    }
     buf.len() == 0 -> {
         content = nil
         return
@@ -614,17 +615,18 @@ file.read-bytes = () (content ?[]byte) {
 
     ; 循環 read 直到讀完或 EOF
     total = 0
-    {
+    (total < size) {
+
         #{overflow=wrap}
         total >= size -> break
 
-        #{overflow=wrap}
-        #{index-out = 0}
+        #{index-out=0, overflow=wrap}
         n = read(.fd, buf[total..], size - total)
         n <= 0 -> break
+
         #{overflow=wrap}
         total = total + n
-    } (total < size)
+    }
 
     ; 截斷到實際讀取長度
     buf.truncate(total)
@@ -647,17 +649,18 @@ file.write-str = (data str) (ok ?bool) {
     }
     s = data.to-bytes()
     total = 0
-    {
+    (total < s.len()) {
+
         #{overflow=wrap}
         total >= s.len() -> break
 
-        #{overflow=wrap}
-        #{index-out = 0}
+        #{index-out=0, overflow=wrap}
         n = write(.fd, s[total..], s.len() - total)
         n <= 0 -> break
+
         #{overflow=wrap}
         total = total + n
-    } (total < s.len())
+    }
     total == s.len() -> ok = true
 }
 
@@ -672,17 +675,18 @@ file.write-bytes = (data []byte) (ok ?bool) {
         return
     }
     total = 0
-    {
+    (total < data.len()) {
+
         #{overflow=wrap}
         total >= data.len() -> break
 
-        #{overflow=wrap}
-        #{index-out = 0}
+        #{index-out=0, overflow=wrap}
         n = write(.fd, data[total..], data.len() - total)
         n <= 0 -> break
+
         #{overflow=wrap}
         total = total + n
-    } (total < data.len())
+    }
     total == data.len() -> ok = true
 }
 
@@ -835,11 +839,11 @@ file.copy-to = (dst-path str) (ok bool) {
     fd-w = open-file(dst-path, 1537, 420)
     fd-w < 0 -> return
     buf []byte = with-len(4096)
-    {
+    !! {
         n = read(.fd, buf, 4096)
         n <= 0 -> *
         write(fd-w, buf, n)
-    } (true)
+    }
     close(fd-w)
     ok = true
 }
@@ -859,11 +863,11 @@ copy-file = (src str, dst str) (ok bool) {
         return
     }
     buf []byte = with-len(4096)
-    {
+    !! {
         n = read(fd-r, buf, 4096)
         n <= 0 -> break
         write(fd-w, buf, n)
-    } (true)
+    }
     close(fd-r)
     close(fd-w)
     ok = true
@@ -879,7 +883,6 @@ copy-file = (src str, dst str) (ok bool) {
 ; 用法：
 ;   names = list-dir('/path/to/dir')
 ;   i <- [0..names.len()): {
-#{index-out = 0}
 ;       print(names[i])
 ;   }
 #{mac-amd64, mac-arm64, linux-amd64, linux-arm64}
@@ -890,10 +893,10 @@ list-dir = (dirpath str) (entries []str) {
     }
     result []str
     ok = true
-    {
+    (ok == true) {
         name, ok = read-dir(dirp)
         ok -> result.push(name)
-    } (ok == true)
+    }
     close-dir(dirp)
     entries = result
 }
@@ -902,6 +905,7 @@ list-dir = (dirpath str) (entries []str) {
 ; FindFirstFileA 需要路徑附加 '\*' 萬用字元
 #{win-amd64, win-arm64}
 list-dir = (dirpath str) (entries []str) {
+
     #{overflow=wrap}
     winpath = dirpath - '\\*'
     bufptr = os.win-find-first-file(winpath)
@@ -910,12 +914,12 @@ list-dir = (dirpath str) (entries []str) {
     }
     result []str
     ok = true
-    {
+    (ok == true) {
         name, ok = os.win-find-next-file(bufptr)
 
         #{overflow=wrap}
         ok -> result.push(name)
-    } (ok == true)
+    }
     os.win-find-close(bufptr)
     entries = result
 }
@@ -930,10 +934,10 @@ list-dir = (dirpath str) (entries []str) {
     }
     result []str
     ok = true
-    {
+    (ok == true) {
         name, ok = read-dir(dirp)
         ok -> result.push(name)
-    } (ok == true)
+    }
     close-dir(dirp)
     entries = result
 }
@@ -948,7 +952,6 @@ list-dir = (dirpath str) (entries []str) {
 ; 用法：
 ;   names = dir-entries('/path/to/dir')
 ;   i <- [0..names.len()): {
-#{index-out = 0}
 ;       print(names[i])
 ;   }
 dir-entries = (dirpath str) (entries []str) {
@@ -956,15 +959,18 @@ dir-entries = (dirpath str) (entries []str) {
     all = list-dir(dirpath)
     n = all.len()
     i <- [0..n): {
-        #{index-out = 0}
+
+        #{index-out=0}
         name = all[i]
         skip = false
-                name.len-bytes() == 1 && name[0] == 46 -> {
-            #{index-out = 0}
+        name.len-bytes() == 1 && name[0] == 46 -> {
+
+            #{index-out=0}
             skip = true
         }
-                name.len-bytes() == 2 && name[0] == 46 && name[1] == 46 -> {
-            #{index-out = 0}
+        name.len-bytes() == 2 && name[0] == 46 && name[1] == 46 -> {
+
+            #{index-out=0}
             skip = true
         }
         skip == false -> entries.push(name)
@@ -982,7 +988,6 @@ dir-entries = (dirpath str) (entries []str) {
 ; 用法：
 ;   paths = walk('/path/to/dir')
 ;   i <- [0..paths.len()): {
-#{index-out = 0}
 ;       print(paths[i])
 ;   }
 walk = (root str) (paths []str) {
@@ -998,15 +1003,17 @@ walk-collect = (dirpath str, paths []str) (out []str) {
     n == 0 -> return
     sep = 47
     i <- [0..n): {
-        #{index-out = 0}
+
+        #{index-out=0}
         name = names[i]
         fullpath str
         {
             dirpath.len-bytes() > 0 -> {
-                #{overflow=wrap}
-                #{index-out = 0}
+
+                #{index-out=0, overflow=wrap}
                 last = dirpath[dirpath.len-bytes() - 1]
                 last == sep -> fullpath = dirpath - name
+
                 #{overflow=wrap}
                 last != sep -> fullpath = dirpath - '/' - name
             }

@@ -1010,6 +1010,14 @@ type AnnotationEntry struct {
 	// 置於目標上方，或寫在目標同一行後方——formatter 靠這個旗標把尾隨註解
 	// 輸出回原位，而不是搬到上方或（對 index-out 而言）直接丟掉。
 	Trailing bool
+	// Propagated 為 true 表示此條目不是使用者直接寫在該陳述上方的「原始」註解，
+	// 而是 parser 為了讓 desugar 找到目標，把上一行獨立 `#{index-out=DEF}` 的條目
+	// 複製（合併）進本陳述 side-table 的副本（見 applyLineIndexOutAnnotations /
+	// mergeAnnotations）。原始寫法所在位置已由獨立 AnnotationStatement 節點、或由
+	// 緊跟其下的那條陳述的「非 Propagated」條目負責輸出；formatter 據此旗標跳過這些
+	// 副本，避免同一行 `#{index-out}` 被重複印到每個受影響的陳述上方（雙印、非冪等）。
+	// 對 codegen 透明：desugar 只看 Key/Value，不看此旗標。
+	Propagated bool
 }
 
 func (e *AnnotationEntry) Pos() lexer.Position { return posFromToken(e.Token) }

@@ -24,69 +24,88 @@ heap.init = (data []i64) (h heap) {
 
 ; push: 向堆積推入一個元素
 heap.push = (val i64) {
-    #{overflow=wrap}
-    #{index-out = 0}
+
+    #{index-out=0, overflow=wrap}
     .data[.n] = val
+
     #{overflow=wrap}
     .n = .n + 1
+
     #{overflow=wrap}
     i = .n - 1
-    {
+    (i > 0) {
+
         #{overflow=wrap}
         parent = (i - 1) / 2
-                .data[i] >= .data[parent] -> {
-            #{index-out = 0}
+        .data[i] >= .data[parent] -> {
+
+            #{index-out=0}
             break
         }
-        #{index-out = 0}
+
+        #{index-out=0}
         tmp = .data[i]
-        #{index-out = 0}
+
+        #{index-out=0}
         .data[i] = .data[parent]
-        #{index-out = 0}
+
+        #{index-out=0}
         .data[parent] = tmp
         i = parent
-    } (i > 0)
+    }
 }
 
 ; pop: 從堆積彈出最小元素
 ; 返回 val ?i64: ok=最小值, nil=堆積為空
 heap.pop = () (val ?i64) {
+
     #{overflow=wrap}
     .n == 0 -> {
         val = nil
         return
     }
-    #{index-out = 0}
+
+    #{index-out=0}
     val = .data[0]
+
     #{overflow=wrap}
     .n = .n - 1
-    #{index-out = 0}
+
+    #{index-out=0}
     .data[0] = .data[.n]
     i = 0
-    {
+    !! {
+
         #{overflow=wrap}
         smallest = i
+
         #{overflow=wrap}
         left = 2 * i + 1
+
         #{overflow=wrap}
         right = 2 * i + 2
-                left < .n && .data[left] < .data[smallest] -> {
-            #{index-out = 0}
+        left < .n && .data[left] < .data[smallest] -> {
+
+            #{index-out=0}
             smallest = left
         }
-                right < .n && .data[right] < .data[smallest] -> {
-            #{index-out = 0}
+        right < .n && .data[right] < .data[smallest] -> {
+
+            #{index-out=0}
             smallest = right
         }
         smallest == i -> break
-        #{index-out = 0}
+
+        #{index-out=0}
         tmp = .data[i]
-        #{index-out = 0}
+
+        #{index-out=0}
         .data[i] = .data[smallest]
-        #{index-out = 0}
+
+        #{index-out=0}
         .data[smallest] = tmp
         i = smallest
-    } (true)
+    }
 }
 
 ; peek: 查看最小元素（不移除）
@@ -96,7 +115,8 @@ heap.peek = () (val ?i64) {
         val = nil
         return
     }
-    #{index-out = 0}
+
+    #{index-out=0}
     val = .data[0]
 }
 

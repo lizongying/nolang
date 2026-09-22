@@ -31,16 +31,18 @@ bit-reader {
 ; read-bit: 讀取一個位元
 ; 越界時返回 0，避免 DEFLATE 解碼器讀超時崩潰
 bit-reader.read-bit = () (bit i64) {
+
     #{overflow=wrap}
     .bit-cnt == 0 -> .pos < .data.len() -> {
-        #{overflow=wrap}
-        #{index-out = 0}
+
+        #{index-out=0, overflow=wrap}
         .bit-buf = .data[.pos]
         .pos = .pos + 1
         .bit-cnt = 8
     }
     bit = .bit-buf & 1
     .bit-buf = .bit-buf >> 1
+
     #{overflow=wrap}
     .bit-cnt = .bit-cnt - 1
 }
@@ -61,13 +63,16 @@ bit-reader.skip-to-byte = () {
 
 ; read-u16-le: 讀取 2 位元組小端序整數（位元組對齊時）
 bit-reader.read-u16-le = () (v i64) {
-    #{overflow=wrap}
-    #{index-out = 0}
+
+    #{index-out=0, overflow=wrap}
     lo = .data[.pos]
+
     #{overflow=wrap}
     .pos = .pos + 1
-    #{index-out = 0}
+
+    #{index-out=0}
     hi = .data[.pos]
+
     #{overflow=wrap}
     .pos = .pos + 1
     v = lo | (hi << 8)
@@ -90,47 +95,53 @@ huffman.build = (lengths []i64, n i64) {
 
     ; 初始化 count[0..16] = 0
     i <- [0..17): {
-        #{index-out = 0}
+
+        #{index-out=0}
         .count[i] = 0
     }
 
     ; 計算各長度的碼數
     i <- [0..n): {
-        #{overflow=wrap}
-        #{index-out = 0}
+
+        #{index-out=0, overflow=wrap}
         l = lengths[i]
-        #{overflow=wrap}
-        #{index-out = 0}
+
+        #{index-out=0, overflow=wrap}
         .count[l] = .count[l] + 1
     }
-    #{index-out = 0}
+
+    #{index-out=0}
     .count[0] = 0
 
     ; 計算各長度的起始偏移
     offs [17]i64
     i <- [0..17): {
-        #{index-out = 0}
+
+        #{index-out=0}
         offs[i] = 0
     }
     i <- [1..16): {
-        #{overflow=wrap}
-        #{index-out = 0}
+
+        #{index-out=0, overflow=wrap}
         offs[i + 1] = offs[i] + .count[i]
     }
 
     ; 排序符號
     i <- [0..n): {
-        #{index-out = 0}
+
+        #{index-out=0}
         .symbol[i] = 0
     }
     i <- [0..n): {
         lengths[i] != 0 -> {
-            #{overflow=wrap}
-            #{index-out = 0}
+
+            #{index-out=0, overflow=wrap}
             idx = offs[lengths[i]]
-            #{index-out = 0}
+
+            #{index-out=0}
             .symbol[idx] = i
-            #{index-out = 0, overflow=wrap}
+
+            #{index-out=0, overflow=wrap}
             offs[lengths[i]] = offs[lengths[i]] + 1
         }
     }
@@ -142,28 +153,34 @@ huffman.decode = (br bit-reader) (sym i64) {
     first = 0
     index = 0
     len = 1
-    {
+    (len <= 15) {
+
         #{overflow=wrap}
         bit = br.read-bit()
         code = code | bit
-        #{index-out = 0}
+
+        #{index-out=0}
         cnt = .count[len]
+
         #{overflow=wrap}
         code - first < cnt -> {
-            #{overflow=wrap}
-            #{index-out = 0}
+
+            #{index-out=0, overflow=wrap}
             sym = .symbol[index + (code - first)]
             return
         }
+
         #{overflow=wrap}
         index = index + cnt
+
         #{overflow=wrap}
         first = first + cnt
         first = first << 1
         code = code << 1
+
         #{overflow=wrap}
         len = len + 1
-    } (len <= 15)
+    }
     sym = -1
 }
 
@@ -201,16 +218,20 @@ build-fixed = (lc huffman, dc huffman) {
 
 ; build-dynamic: 從位元串流建構動態 Huffman 表
 build-dynamic = (br bit-reader, lc huffman, dc huffman) {
+
     #{overflow=wrap}
     hlit = br.read-bits(5) + 257
+
     #{overflow=wrap}
     hdist = br.read-bits(5) + 1
+
     #{overflow=wrap}
     hclen = br.read-bits(4) + 4
 
     ; 讀取碼長度碼的碼長度
     clens []i64
     i <- [0..19): {
+
         #{overflow=wrap}
         clens.push(0)
     }
@@ -221,8 +242,8 @@ build-dynamic = (br bit-reader, lc huffman, dc huffman) {
     ]
 
     i <- [0..hclen): {
-        #{overflow=wrap}
-        #{index-out = 0}
+
+        #{index-out=0, overflow=wrap}
         clens[code-order[i]] = br.read-bits(3)
     }
 
@@ -232,64 +253,72 @@ build-dynamic = (br bit-reader, lc huffman, dc huffman) {
 
     ; 解碼字面/長度和距離碼長度
     lengths []i64
+
     #{overflow=wrap}
     total = hlit + hdist
     i <- [0..total): {
+
         #{overflow=wrap}
         lengths.push(0)
     }
     idx = 0
-    {
+    (idx < total) {
+
         #{overflow=wrap}
         sym = clcodec.decode(br)
+
         #{overflow=wrap}
         {
             sym < 16 -> {
-                #{overflow=wrap}
-                #{index-out = 0}
+
+                #{index-out=0, overflow=wrap}
                 lengths[idx] = sym
                 idx = idx + 1
             }
 
             sym == 16 -> {
+
                 ; 複製前一個碼長度 3-6 次
                 #{overflow=wrap}
                 cnt = br.read-bits(2) + 3
-                #{index-out = 0}
+
+                #{index-out=0}
                 prev = lengths[idx - 1]
                 j <- [0..cnt): {
-                    #{overflow=wrap}
-                    #{index-out = 0}
+
+                    #{index-out=0, overflow=wrap}
                     lengths[idx] = prev
                     idx = idx + 1
                 }
             }
 
             sym == 17 -> {
+
                 ; 重複零 3-10 次
                 #{overflow=wrap}
                 cnt = br.read-bits(3) + 3
                 j <- [0..cnt): {
-                    #{overflow=wrap}
-                    #{index-out = 0}
+
+                    #{index-out=0, overflow=wrap}
                     lengths[idx] = 0
                     idx = idx + 1
                 }
             }
 
             sym == 18 -> {
+
                 ; 重複零 11-138 次
                 #{overflow=wrap}
                 cnt = br.read-bits(7) + 11
                 j <- [0..cnt): {
-                    #{overflow=wrap}
-                    #{index-out = 0}
+
+                    #{index-out=0, overflow=wrap}
                     lengths[idx] = 0
                     idx = idx + 1
                 }
             }
         }
-    } (idx < total)
+    }
 
     ; 建構字面/長度 Huffman 表
     lc.build(lengths, hlit)
@@ -297,12 +326,13 @@ build-dynamic = (br bit-reader, lc huffman, dc huffman) {
     ; 建構距離 Huffman 表
     dlengths []i64
     i <- [0..hdist): {
+
         #{overflow=wrap}
         dlengths.push(0)
     }
     i <- [0..hdist): {
-        #{overflow=wrap}
-        #{index-out = 0}
+
+        #{index-out=0, overflow=wrap}
         dlengths[i] = lengths[hlit + i]
     }
     dc.build(dlengths, hdist)
@@ -357,7 +387,7 @@ inflate-decompress = (data []byte, out-size i64) (out []byte) {
     ]
 
     final = 0
-    {
+    (final == 0) {
         final = br.read-bit()
         btype = br.read-bits(2)
 
@@ -368,15 +398,17 @@ inflate-decompress = (data []byte, out-size i64) (out []byte) {
                 blen = br.read-u16-le()
                 br.read-u16-le()
                 i <- [0..blen): {
-                    #{overflow=wrap}
-                    #{index-out = 0}
+
+                    #{index-out=0, overflow=wrap}
                     result.push(data[br.pos])
+
                     #{overflow=wrap}
                     br.pos = br.pos + 1
                 }
             }
 
             btype == 1 -> {
+
                 ; Fixed Huffman (method 1)
 
                 lc = huffman {}
@@ -384,7 +416,7 @@ inflate-decompress = (data []byte, out-size i64) (out []byte) {
                 build-fixed(lc, dc)
 
                 done = 0
-                {
+                (done == 0) {
                     sym = lc.decode(br)
                     sym == 256 -> done = 1
                     sym < 256 -> result.push(sym)
@@ -393,17 +425,23 @@ inflate-decompress = (data []byte, out-size i64) (out []byte) {
                         ; 長度/距離回參考
                         #{overflow=wrap}
                         code = sym - 257
-                        #{index-out = 0}
+
+                        #{index-out=0}
                         length = length-base[code]
-                        #{index-out = 0}
+
+                        #{index-out=0}
                         extra = length-extra[code]
+
                         #{overflow=wrap}
                         extra > 0 -> length = length + br.read-bits(extra)
                         dsym = dc.decode(br)
-                        #{index-out = 0}
+
+                        #{index-out=0}
                         distance = dist-base[dsym]
-                        #{index-out = 0}
+
+                        #{index-out=0}
                         dextra = dist-extra[dsym]
+
                         #{overflow=wrap}
                         dextra > 0 -> distance = distance + br.read-bits(dextra)
 
@@ -411,15 +449,16 @@ inflate-decompress = (data []byte, out-size i64) (out []byte) {
                         #{overflow=wrap}
                         src = result.len() - distance
                         i <- [0..length): {
-                            #{overflow=wrap}
-                            #{index-out = 0}
+
+                            #{index-out=0, overflow=wrap}
                             result.push(result[src + i])
                         }
                     }
-                } (done == 0)
+                }
             }
 
             btype == 2 -> {
+
                 ; Dynamic Huffman (method 2)
 
                 lc = huffman {}
@@ -427,7 +466,7 @@ inflate-decompress = (data []byte, out-size i64) (out []byte) {
                 build-dynamic(br, lc, dc)
 
                 done = 0
-                {
+                (done == 0) {
                     sym = lc.decode(br)
                     sym == 256 -> done = 1
                     sym < 256 -> result.push(sym)
@@ -436,17 +475,23 @@ inflate-decompress = (data []byte, out-size i64) (out []byte) {
                         ; 長度/距離回參考
                         #{overflow=wrap}
                         code = sym - 257
-                        #{index-out = 0}
+
+                        #{index-out=0}
                         length = length-base[code]
-                        #{index-out = 0}
+
+                        #{index-out=0}
                         extra = length-extra[code]
+
                         #{overflow=wrap}
                         extra > 0 -> length = length + br.read-bits(extra)
                         dsym = dc.decode(br)
-                        #{index-out = 0}
+
+                        #{index-out=0}
                         distance = dist-base[dsym]
-                        #{index-out = 0}
+
+                        #{index-out=0}
                         dextra = dist-extra[dsym]
+
                         #{overflow=wrap}
                         dextra > 0 -> distance = distance + br.read-bits(dextra)
 
@@ -454,15 +499,15 @@ inflate-decompress = (data []byte, out-size i64) (out []byte) {
                         #{overflow=wrap}
                         src = result.len() - distance
                         i <- [0..length): {
-                            #{overflow=wrap}
-                            #{index-out = 0}
+
+                            #{index-out=0, overflow=wrap}
                             result.push(result[src + i])
                         }
                     }
-                } (done == 0)
+                }
             }
         }
-    } (final == 0)
+    }
     out = result
 }
 
@@ -476,7 +521,7 @@ deflate-stored = (data []byte) (out []byte) {
     pos = 0
     n = data.len()
 
-    {
+    (pos < n) {
 
         ; 區塊大小（最大 65535）
         #{overflow=wrap}
@@ -485,6 +530,7 @@ deflate-stored = (data []byte) (out []byte) {
 
         ; BFINAL: 1 = 最後區塊
         final = 0
+
         #{overflow=wrap}
         pos + blen >= n -> final = 1
 
@@ -503,13 +549,14 @@ deflate-stored = (data []byte) (out []byte) {
 
         ; 資料
         i <- [0..blen): {
-            #{overflow=wrap}
-            #{index-out = 0}
+
+            #{index-out=0, overflow=wrap}
             result.push(data[pos + i])
         }
+
         #{overflow=wrap}
         pos = pos + blen
-    } (pos < n)
+    }
     out = result
 }
 
@@ -536,7 +583,8 @@ gzip-compress = (data []byte) (out []byte) {
     ; DEFLATE 資料（stored blocks）
     deflated = deflate-stored(data)
     i <- [0..deflated.len()): {
-        #{index-out = 0}
+
+        #{index-out=0}
         result.push(deflated[i])
     }
 
@@ -568,17 +616,18 @@ gzip-decompress = (data []byte) (out []byte) {
     pos = 10
 
     ; 檢查 FLG 處理額外欄位
-    #{index-out = 0}
+    #{index-out=0}
     flg = data[3]
 
     ; FEXTRA (bit 2)
     #{overflow=wrap}
     (flg & 4) != 0 -> {
-        #{overflow=wrap}
-        #{index-out = 0}
+
+        #{index-out=0, overflow=wrap}
         xlen = data[pos]
         pos = pos + 1
-        #{index-out = 0}
+
+        #{index-out=0}
         xlen = xlen | ((data[pos]) << 8)
         pos = pos + xlen
     }
@@ -586,25 +635,25 @@ gzip-decompress = (data []byte) (out []byte) {
     ; FNAME (bit 3) — 以 \0 結尾的字串
     #{overflow=wrap}
     (flg & 8) != 0 -> {
-        {
-            #{overflow=wrap}
-            #{index-out = 0}
+        (pos < data.len()) {
+
+            #{index-out=0, overflow=wrap}
             c = data[pos]
             pos = pos + 1
             c == 0 -> break
-        } (pos < data.len())
+        }
     }
 
     ; FCOMMENT (bit 4) — 以 \0 結尾的字串
     #{overflow=wrap}
     (flg & 16) != 0 -> {
-        {
-            #{overflow=wrap}
-            #{index-out = 0}
+        (pos < data.len()) {
+
+            #{index-out=0, overflow=wrap}
             c = data[pos]
             pos = pos + 1
             c == 0 -> break
-        } (pos < data.len())
+        }
     }
 
     ; FHCRC (bit 0) — 2 bytes CRC16
@@ -619,14 +668,13 @@ gzip-decompress = (data []byte) (out []byte) {
     #{overflow=wrap}
     deflate-end = data.len() - 8
     i <- [pos..deflate-end): {
-        #{overflow=wrap}
-        #{index-out = 0}
+
+        #{index-out=0, overflow=wrap}
         deflate-data.push(data[i])
     }
 
     ; 預期大小 = ISIZE（最後 4 bytes）
-    #{overflow=wrap}
-    #{index-out = 0}
+    #{index-out=0, overflow=wrap}
     isize = (data[data.len() - 4]) | ((data[data.len() - 3]) << 8) | ((data[data.len() - 2]) << 16) | ((data[data.len() - 1]) << 24)
 
     out = inflate-decompress(deflate-data, isize)

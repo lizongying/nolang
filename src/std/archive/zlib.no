@@ -28,9 +28,10 @@ adler-32 = (data []byte, n i64) (sum i64) {
     a i64 = 1
     b i64 = 0
     i <- [0..n): {
-        #{overflow=wrap}
-        #{index-out = 0}
+
+        #{index-out=0, overflow=wrap}
         a = (a + data[i]) % MOD
+
         #{overflow=wrap}
         b = (b + a) % MOD
     }
@@ -59,7 +60,8 @@ zlib-compress = (data []byte) (out []byte) {
     ; DEFLATE 資料（stored blocks）
     deflated []byte = gzip.deflate-stored(data)
     i <- [0..deflated.len()): {
-        #{index-out = 0}
+
+        #{index-out=0}
         result.push(deflated[i])
     }
 
@@ -86,13 +88,15 @@ zlib-compress = (data []byte) (out []byte) {
 ; 透過 gzip.inflate-decompress 進行解壓。
 ; 先嘗試 stored-block 掃描（快速路徑），失敗則使用 inflate 解壓。
 zlib-decompress = (data []byte) (out []byte, ok bool) {
+
     #{overflow=wrap}
     ok = false
     data.len() < 6 -> return
 
     ; 檢查 zlib header（應以 0x78 開頭）
-        data[0] != 0x78 -> {
-        #{index-out = 0}
+    data[0] != 0x78 -> {
+
+        #{index-out=0}
         return
     }
 
@@ -101,8 +105,8 @@ zlib-decompress = (data []byte) (out []byte, ok bool) {
     deflate-len i64 = data.len() - 6; 去掉 2-byte header + 4-byte Adler-32
     deflate-data []byte
     i <- [0..deflate-len): {
-        #{overflow=wrap}
-        #{index-out = 0}
+
+        #{index-out=0, overflow=wrap}
         deflate-data.push(data[2 + i])
     }
 
@@ -130,32 +134,37 @@ zlib-decompress-stored = (data []byte) (out []byte, ok bool) {
     data.len() < 6 -> return
 
     p i64 = 2; 跳過 2-byte zlib header
-    {
+    !! {
+
         #{overflow=wrap}
         p >= data.len() -> break
-        #{index-out = 0}
+
+        #{index-out=0}
         hdr i64 = data[p]
         bfinal i64 = hdr & 1
         btype i64 = (hdr >> 1) & 3
         btype != 0 -> return
+
         #{overflow=wrap}
         p = p + 1
-        #{overflow=wrap}
-        #{index-out = 0}
+
+        #{index-out=0, overflow=wrap}
         blk-len i64 = data[p] | (data[p + 1] << 8)
+
         #{overflow=wrap}
         p = p + 4; 跳過 LEN(2) + NLEN(2)
 
         ; 提取 payload
         i <- [0..blk-len): {
-            #{overflow=wrap}
-            #{index-out = 0}
+
+            #{index-out=0, overflow=wrap}
             out.push(data[p + i])
         }
+
         #{overflow=wrap}
         p = p + blk-len
         bfinal == 1 -> break
-    } (true)
+    }
     ok = true
 }
 
@@ -163,28 +172,34 @@ zlib-decompress-stored = (data []byte) (out []byte, ok bool) {
 ;   data: 從偏移 0 開始的 zlib 串流 ([]byte)
 ;   返回 consumed: 總消耗位元組數（含 header 和 Adler-32），0 表示非 stored 區塊
 zlib-consumed-stored = (data []byte) (consumed i64) {
+
     #{overflow=wrap}
     consumed = 0
     data.len() < 6 -> return
 
     p i64 = 2; 跳過 2-byte zlib header
-    {
+    !! {
+
         #{overflow=wrap}
         p >= data.len() -> return
-        #{index-out = 0}
+
+        #{index-out=0}
         bfinal i64 = data[p] & 1
-        #{index-out = 0}
+
+        #{index-out=0}
         btype i64 = (data[p] >> 1) & 3
         btype != 0 -> return
+
         #{overflow=wrap}
         p = p + 1
-        #{overflow=wrap}
-        #{index-out = 0}
+
+        #{index-out=0, overflow=wrap}
         blk-len i64 = (data[p] & 255) | ((data[p + 1] & 255) << 8)
+
         #{overflow=wrap}
         p = p + 4 + blk-len
         bfinal == 1 -> break
-    } (true)
+    }
 
     ; p 現在指向 Adler-32（4 bytes）
     #{overflow=wrap}

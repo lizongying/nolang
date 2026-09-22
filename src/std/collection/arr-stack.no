@@ -45,7 +45,7 @@ arr-stack {
 ; [n]t.arr-stack-init: 初始化堆疊狀態
 ; cap 自動設為陣列大小 n
 ; 返回 s arr-stack: 初始化後的堆疊狀態
-#{index-out = 0}
+#{index-out=0}
 [n]t.arr-stack-init = () (s arr-stack) {
     s.cap = n
     s.top = 0
@@ -55,12 +55,14 @@ arr-stack {
 ; s arr-stack: 堆疊狀態
 ; val t: 要推入的值
 ; 返回 ok bool: true=成功, false=堆疊已滿
-#{index-out = 0}
+#{index-out=0}
 [n]t.arr-stack-push = (s arr-stack, val t) (ok bool) {
+
     #{overflow=wrap}
     ok = false
     s.top >= s.cap -> return
     .[s.top] = val
+
     #{overflow=wrap}
     s.top = s.top + 1
     ok = true
@@ -69,13 +71,15 @@ arr-stack {
 ; [n]t.arr-stack-pop: 從堆疊頂端彈出元素
 ; s arr-stack: 堆疊狀態
 ; 返回 val ?t: ok=彈出值, nil=堆疊為空
-#{index-out = 0}
+#{index-out=0}
 [n]t.arr-stack-pop = (s arr-stack) (val ?t) {
+
     #{overflow=wrap}
     s.top <= 0 -> {
         val = nil
         return
     }
+
     #{overflow=wrap}
     s.top = s.top - 1
     val = .[s.top]
@@ -84,13 +88,15 @@ arr-stack {
 ; [n]t.arr-stack-peek: 查看堆疊頂端元素（不移除）
 ; s arr-stack: 堆疊狀態
 ; 返回 val ?t: ok=頂端值, nil=堆疊為空
-#{index-out = 0}
+#{index-out=0}
 [n]t.arr-stack-peek = (s arr-stack) (val ?t) {
+
     #{overflow=wrap}
     s.top <= 0 -> {
         val = nil
         return
     }
+
     #{overflow=wrap}
     val = .[s.top - 1]
 }

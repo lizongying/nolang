@@ -53,6 +53,7 @@ config {
 ; password str: 認證密碼
 ; 返回 fd fd: 隧道 socket fd（-1=失敗）
 connect = (proxy-host str, proxy-port i64, target-host str, target-port i64, username str, password str) (fd fd) {
+
     #{overflow=wrap}
     fd = -1
 
@@ -61,13 +62,16 @@ connect = (proxy-host str, proxy-port i64, target-host str, target-port i64, use
     fd < 0 -> return
     cr = number.char-to-str(13)
     lf = number.char-to-str(10)
+
     #{overflow=wrap}
     crlf = cr - lf
 
     ; 建構 CONNECT 請求
     target-port-s = target-port.to-str()
+
     #{overflow=wrap}
     req = 'CONNECT ' - target-host - ':' - target-port-s - ' HTTP/1.1' - crlf
+
     #{overflow=wrap}
     req = req - 'Host: ' - target-host - ':' - target-port-s - crlf
 
@@ -82,6 +86,7 @@ connect = (proxy-host str, proxy-port i64, target-host str, target-port i64, use
         enc-str = base64.encode-std(auth-bytes)
         req = req - 'Proxy-Authorization: Basic ' - enc-str - crlf
     }
+
     #{overflow=wrap}
     req = req - crlf
 
@@ -95,14 +100,17 @@ connect = (proxy-host str, proxy-port i64, target-host str, target-port i64, use
 
     ; 接收回應（雙緩衝區：buf 接收, raw 累積）
     buf str = with-len(PROXY-BUF-SIZE)
+
     #{overflow=wrap}
     raw str = with-len(PROXY-BUF-SIZE * 4)
     total = 0
+
     #{overflow=wrap}
     separator = crlf - crlf
     sep-pos i64 = -1
 
-    {
+    !! {
+
         #{overflow=wrap}
         total > PROXY-BUF-SIZE * 4 - PROXY-BUF-SIZE -> {
             fs.close(fd)
@@ -116,16 +124,17 @@ connect = (proxy-host str, proxy-port i64, target-host str, target-port i64, use
             return
         }
         i <- [0..n): {
-            #{overflow=wrap}
-            #{index-out = 0}
+
+            #{index-out=0, overflow=wrap}
             raw[total + i] = buf[i]
         }
+
         #{overflow=wrap}
         total = total + n
         data = raw.slice(0, total)
         sep-pos = data.index(separator)
         sep-pos >= 0 -> break
-    } (true)
+    }
 
     ; 解析狀態行
     head = raw.slice(0, sep-pos)
@@ -140,6 +149,7 @@ connect = (proxy-host str, proxy-port i64, target-host str, target-port i64, use
         fd = -1
         return
     }
+
     #{overflow=wrap}
     after-code = status-line.slice(sp1 + 1, status-line.len-bytes())
     sp2 = after-code.index(' ')
@@ -147,14 +157,15 @@ connect = (proxy-host str, proxy-port i64, target-host str, target-port i64, use
     sp2 >= 0 -> code-str = after-code.slice(0, sp2)
     code = 0
     i <- [0..code-str.len-bytes()): {
-        #{overflow=wrap}
-        #{index-out = 0}
+
+        #{index-out=0, overflow=wrap}
         ch = code-str[i]
         ch < 48 || ch > 57 -> {
             fs.close(fd)
             fd = -1
             return
         }
+
         #{overflow=wrap}
         code = code * 10 + ch - 48
     }
@@ -223,6 +234,7 @@ proxy-tls-dial = (proxy-host str, proxy-port i64, target-host str, target-port i
     ok = c.read-server-hello-13()
     {
         ok -> {
+
             ; TLS 1.3 路徑
             ok = c.connect-13()
             ok == false -> {
@@ -232,6 +244,7 @@ proxy-tls-dial = (proxy-host str, proxy-port i64, target-host str, target-port i
         }
 
         -> {
+
             ; TLS 1.2 fallback
             c.version = tls.TLS-VERSION
 
@@ -249,14 +262,16 @@ proxy-tls-dial = (proxy-host str, proxy-port i64, target-host str, target-port i
 
             ; 生成 premaster secret
             premaster []byte
-            #{index-out = 0}
+
+            #{index-out=0}
             premaster[0] = 0x03
-            #{index-out = 0}
+
+            #{index-out=0}
             premaster[1] = 0x03
             rand-bytes []byte = tls.rand-bytes(c.rand-state, 46)
             i <- [0..46): {
-                #{overflow=wrap}
-                #{index-out = 0}
+
+                #{index-out=0, overflow=wrap}
                 premaster[2 + i] = rand-bytes[i]
             }
             c.derive-keys(premaster)
@@ -341,14 +356,16 @@ config.tls-connect = (target-host str, target-port i64) (tc ?tls.conn) {
                 return
             }
             premaster []byte
-            #{index-out = 0}
+
+            #{index-out=0}
             premaster[0] = 0x03
-            #{index-out = 0}
+
+            #{index-out=0}
             premaster[1] = 0x03
             rand-bytes []byte = tls.rand-bytes(c.rand-state, 46)
             i <- [0..46): {
-                #{overflow=wrap}
-                #{index-out = 0}
+
+                #{index-out=0, overflow=wrap}
                 premaster[2 + i] = rand-bytes[i]
             }
             c.derive-keys(premaster)
@@ -407,6 +424,7 @@ SOCKS5-ATYP-DOMAIN = 3
 ; password str: 認證密碼
 ; 返回 fd fd: socket fd（-1=失敗）
 socks5-connect = (proxy-host str, proxy-port i64, target-host str, target-port i64, username str, password str) (fd fd) {
+
     #{overflow=wrap}
     fd = -1
 
@@ -416,26 +434,33 @@ socks5-connect = (proxy-host str, proxy-port i64, target-host str, target-port i
 
     ; 1. 握手 — 方法協商
     req []byte
-    #{index-out = 0}
+
+    #{index-out=0}
     req[0] = SOCKS5-VERSION
     {
         username.len-bytes() > 0 -> {
-            #{index-out = 0}
+
+            #{index-out=0}
             req[1] = 2
-            #{index-out = 0}
+
+            #{index-out=0}
             req[2] = SOCKS5-METHOD-NO-AUTH
-            #{index-out = 0}
+
+            #{index-out=0}
             req[3] = SOCKS5-METHOD-USER-PASS
         }
 
         -> {
-            #{index-out = 0}
+
+            #{index-out=0}
             req[1] = 1
-            #{index-out = 0}
+
+            #{index-out=0}
             req[2] = SOCKS5-METHOD-NO-AUTH
         }
     }
     req-str = req.to-str()
+
     #{overflow=wrap}
     written = net.net-send(fd, req-str, req.len() + 1)
     written < 0 -> {
@@ -452,9 +477,11 @@ socks5-connect = (proxy-host str, proxy-port i64, target-host str, target-port i
         fd = -1
         return
     }
-    #{index-out = 0}
+
+    #{index-out=0}
     ver = resp[0]
-    #{index-out = 0}
+
+    #{index-out=0}
     method = resp[1]
     ver != SOCKS5-VERSION || method == SOCKS5-METHOD-NONE-ACCEPTABLE -> {
         fs.close(fd)
@@ -465,27 +492,31 @@ socks5-connect = (proxy-host str, proxy-port i64, target-host str, target-port i
     ; 如果需要用戶名/密碼認證
     #{overflow=wrap}
     method == SOCKS5-METHOD-USER-PASS -> {
+
         #{overflow=wrap}
         auth-req []byte
         pos = 0
-        #{index-out = 0}
+
+        #{index-out=0}
         auth-req[pos] = 1
         pos = pos + 1
-        #{index-out = 0}
+
+        #{index-out=0}
         auth-req[pos] = username.len-bytes() & 255
         pos = pos + 1
         i <- [0..username.len-bytes()): {
-            #{overflow=wrap}
-            #{index-out = 0}
+
+            #{index-out=0, overflow=wrap}
             auth-req[pos] = username[i]
             pos = pos + 1
         }
-        #{index-out = 0}
+
+        #{index-out=0}
         auth-req[pos] = password.len-bytes() & 255
         pos = pos + 1
         i <- [0..password.len-bytes()): {
-            #{overflow=wrap}
-            #{index-out = 0}
+
+            #{index-out=0, overflow=wrap}
             auth-req[pos] = password[i]
             pos = pos + 1
         }
@@ -515,41 +546,55 @@ socks5-connect = (proxy-host str, proxy-port i64, target-host str, target-port i
     ; 2. 連接請求
     conn-req []byte
     pos = 0
-    #{index-out = 0}
+
+    #{index-out=0}
     conn-req[pos] = SOCKS5-VERSION
+
     #{overflow=wrap}
     pos = pos + 1
-    #{index-out = 0}
+
+    #{index-out=0}
     conn-req[pos] = SOCKS5-CMD-CONNECT
+
     #{overflow=wrap}
     pos = pos + 1
-    #{index-out = 0}
+
+    #{index-out=0}
     conn-req[pos] = 0
+
     #{overflow=wrap}
     pos = pos + 1
 
     ; 使用域名地址類型
-    #{index-out = 0}
+    #{index-out=0}
     conn-req[pos] = SOCKS5-ATYP-DOMAIN
+
     #{overflow=wrap}
     pos = pos + 1
-    #{index-out = 0}
+
+    #{index-out=0}
     conn-req[pos] = target-host.len-bytes() & 255
+
     #{overflow=wrap}
     pos = pos + 1
     i <- [0..target-host.len-bytes()): {
-        #{overflow=wrap}
-        #{index-out = 0}
+
+        #{index-out=0, overflow=wrap}
         conn-req[pos] = target-host[i]
+
         #{overflow=wrap}
         pos = pos + 1
     }
-    #{index-out = 0}
+
+    #{index-out=0}
     conn-req[pos] = (target-port >> 8) & 255
+
     #{overflow=wrap}
     pos = pos + 1
-    #{index-out = 0}
+
+    #{index-out=0}
     conn-req[pos] = target-port & 255
+
     #{overflow=wrap}
     pos = pos + 1
     conn-str = conn-req.to-str()
@@ -573,7 +618,8 @@ socks5-connect = (proxy-host str, proxy-port i64, target-host str, target-port i
         fd = -1
         return
     }
-    #{index-out = 0}
+
+    #{index-out=0}
     rep = reply[1]
     rep != 0 -> {
         fs.close(fd)

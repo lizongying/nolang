@@ -10,12 +10,7 @@
 ;   fields = csv.parse-line(line, 3)        // 限制最多 3 個欄位
 
 ; parse-field: 解析 CSV 中的一個欄位
-#{index-out = 0}
-; 從 s[pos] 開始解析，處理雙引號和逗號
-; s str: CSV 文字
-; pos i64: 開始位置
-; 返回 field str: 解析出的欄位內容
-; 返回 new-pos i64: 解析後的新位置
+#{index-out=0}
 parse-field = (s str, pos i64) (field str, new-pos i64) {
     r-pos = pos
     fn = 0
@@ -24,10 +19,12 @@ parse-field = (s str, pos i64) (field str, new-pos i64) {
         new-pos = r-pos
         return
     }
-    #{index-out = 0}
+
+    #{index-out=0}
     c = s[r-pos]
     {
         c == 44 -> {
+
             ; 空欄位（逗號開頭）
             #{overflow=wrap}
             new-pos = r-pos + 1
@@ -35,24 +32,25 @@ parse-field = (s str, pos i64) (field str, new-pos i64) {
         }
 
         c == 34 -> {
+
             ; 雙引號包圍的欄位
             #{overflow=wrap}
             r-pos = r-pos + 1
-            {
-                #{overflow=wrap}
-                #{index-out = 0}
+            (r-pos < s.len-bytes()) {
+
+                #{index-out=0, overflow=wrap}
                 c = s[r-pos]
                 c == 34 -> {
 
                     ; 檢查是否為跳脫的雙引號
                     #{overflow=wrap}
                     r-pos + 1 < s.len-bytes() -> {
-                        #{overflow=wrap}
-                        #{index-out = 0}
+
+                        #{index-out=0, overflow=wrap}
                         nc = s[r-pos + 1]
                         nc == 34 -> {
-                            #{overflow=wrap}
-                            #{index-out = 0}
+
+                            #{index-out=0, overflow=wrap}
                             field[fn] = 34
                             fn = fn + 1
                             r-pos = r-pos + 2
@@ -66,9 +64,10 @@ parse-field = (s str, pos i64) (field str, new-pos i64) {
 
                     ; 跳過後續逗號
                     r-pos < s.len-bytes() -> {
-                        #{overflow=wrap}
-                        #{index-out = 0}
+
+                        #{index-out=0, overflow=wrap}
                         nc = s[r-pos]
+
                         #{overflow=wrap}
                         nc == 44 -> r-pos = r-pos + 1
                     }
@@ -78,35 +77,41 @@ parse-field = (s str, pos i64) (field str, new-pos i64) {
                 c == 10 || c == 13 -> {
 
                     ; 換行在引號內視為換行字元
-                    #{overflow=wrap}
-                    #{index-out = 0}
+                    #{index-out=0, overflow=wrap}
                     field[fn] = c
+
                     #{overflow=wrap}
                     fn = fn + 1
+
                     #{overflow=wrap}
                     r-pos = r-pos + 1
                     continue
                 }
-                #{index-out = 0}
+
+                #{index-out=0}
                 field[fn] = c
+
                 #{overflow=wrap}
                 fn = fn + 1
+
                 #{overflow=wrap}
                 r-pos = r-pos + 1
-            } (r-pos < s.len-bytes())
+            }
             new-pos = r-pos
             return
         }
     }
 
     ; 普通欄位（無引號）
-    {
-        #{overflow=wrap}
-        #{index-out = 0}
+    (r-pos < s.len-bytes()) {
+
+        #{index-out=0, overflow=wrap}
         c = s[r-pos]
+
         #{overflow=wrap}
         {
             c == 44 -> {
+
                 #{overflow=wrap}
                 r-pos = r-pos + 1
                 new-pos = r-pos
@@ -114,18 +119,22 @@ parse-field = (s str, pos i64) (field str, new-pos i64) {
             }
 
             c == 10 || c == 13 -> {
+
                 ; 換行結束欄位（不消耗換行）
                 new-pos = r-pos
                 return
             }
         }
-        #{index-out = 0}
+
+        #{index-out=0}
         field[fn] = c
+
         #{overflow=wrap}
         fn = fn + 1
+
         #{overflow=wrap}
         r-pos = r-pos + 1
-    } (r-pos < s.len-bytes())
+    }
     new-pos = r-pos
 }
 
@@ -137,13 +146,14 @@ parse-line = (s str, max-fields i64 = 1024) (fields []str) {
     n = 0
     pos = 0
     fields = with-cap(max-fields)
-    {
-        #{index-out = 0}
+    (pos < s.len-bytes() && n < max-fields) {
+
+        #{index-out=0}
         fields[n], pos = parse-field(s, pos)
 
         #{overflow=wrap}
         n = n + 1
-    } (pos < s.len-bytes() && n < max-fields)
+    }
     fields.truncate(n)
 }
 
@@ -152,11 +162,12 @@ parse-line = (s str, max-fields i64 = 1024) (fields []str) {
 ; field str: 要編碼的欄位
 ; 返回 out str: CSV 編碼後的字串
 encode-field = (field str) (out str) {
+
     #{overflow=wrap}
     need-quote = false
     i <- [0..field.len-bytes()): {
-        #{overflow=wrap}
-        #{index-out = 0}
+
+        #{index-out=0, overflow=wrap}
         c = field[i]
         c == 44 || c == 34 || c == 10 || c == 13 -> {
             need-quote = true
@@ -168,35 +179,43 @@ encode-field = (field str) (out str) {
         return
     }
     j = 0
+
     #{overflow=wrap}
     out = with-cap(field.len-bytes() * 2 + 2)
-    #{index-out = 0}
+
+    #{index-out=0}
     out[j] = 34
+
     #{overflow=wrap}
     j = j + 1
     i <- [0..field.len-bytes()): {
-        #{overflow=wrap}
-        #{index-out = 0}
+
+        #{index-out=0, overflow=wrap}
         c = field[i]
+
         #{overflow=wrap}
         {
             c == 34 -> {
-                #{overflow=wrap}
-                #{index-out = 0}
+
+                #{index-out=0, overflow=wrap}
                 out[j] = 34
                 j = j + 1
-                #{index-out = 0}
+
+                #{index-out=0}
                 out[j] = 34
             }
 
-             -> {
-                #{index-out = 0}
+            -> {
+
+                #{index-out=0}
                 out[j] = c
             }
         }
+
         #{overflow=wrap}
         j = j + 1
     }
-    #{index-out = 0}
+
+    #{index-out=0}
     out[j] = 34
 }

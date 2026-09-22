@@ -104,6 +104,7 @@ client {
 ;   nil   = 連線已關閉（EOF）
 ;   err = 錯誤
 client.next-event = () (ev ?event) {
+
     #{overflow=wrap}
     ev = nil
     .connected == false -> {
@@ -112,14 +113,17 @@ client.next-event = () (ev ?event) {
     }
     cr = number.char-to-str(13)
     lf = number.char-to-str(10)
+
     #{overflow=wrap}
     crlf = cr - lf
+
     #{overflow=wrap}
     lf-lf = lf - lf
+
     #{overflow=wrap}
     crlf-crlf = crlf - crlf
 
-    {
+    !! {
 
         ; 建立緩衝區視圖（slice 會複製，安全）
         #{overflow=wrap}
@@ -155,9 +159,11 @@ client.next-event = () (ev ?event) {
 
             ->
         }
+
         #{overflow=wrap}
         {
             sep-pos >= 0 -> {
+
                 ; 找到事件邊界
                 #{overflow=wrap}
                 event-block = data.slice(0, sep-pos)
@@ -166,8 +172,8 @@ client.next-event = () (ev ?event) {
 
                 ; 將剩餘資料移到緩衝區開頭
                 i <- [0..remaining.len-bytes()): {
-                    #{overflow=wrap}
-                    #{index-out = 0}
+
+                    #{index-out=0, overflow=wrap}
                     .recv-buf[i] = remaining[i]
                 }
                 .recv-buf-len = remaining.len-bytes()
@@ -179,7 +185,8 @@ client.next-event = () (ev ?event) {
                 e-retry i64 = -1
                 has-data = false
                 pos = 0
-                {
+                (pos < event-block.len-bytes()) {
+
                     #{overflow=wrap}
                     nl = event-block.index-from(lf, pos)
                     line-end = nl
@@ -187,65 +194,70 @@ client.next-event = () (ev ?event) {
                     line = event-block.slice(pos, line-end)
 
                     ; 去除行尾 \r
-                                        line.len-bytes() > 0 -> {
-                                                line[line.len-bytes() - 1] == 13 -> {
-                            #{index-out = 0}
+                    line.len-bytes() > 0 -> {
+                        line[line.len-bytes() - 1] == 13 -> {
+
+                            #{index-out=0}
                             line = line.slice(0, line.len-bytes() - 1)
                         }
                     }
 
                     ; 跳過空行和註解行
-                                        line.len-bytes() > 0 -> {
+                    line.len-bytes() > 0 -> {
                         line[0] != 58 -> {
-                        ; 尋找冒號分隔符
-                        colon = line.index(':')
-                        field = line
-                        value = ''
-                        colon >= 0 -> {
-                            #{overflow=wrap}
-                            field = line.slice(0, colon)
-                            val-start = colon + 1
-                                                        val-start < line.len-bytes() -> {
-                                                                line[val-start] == 32 -> {
-                                    #{index-out = 0}
-                                    val-start = val-start + 1
-                                }
-                            }
-                            value = line.slice(val-start, line.len-bytes())
-                        }
-                        {
-                            field == 'data' -> {
+
+                            ; 尋找冒號分隔符
+                            colon = line.index(':')
+                            field = line
+                            value = ''
+                            colon >= 0 -> {
+
                                 #{overflow=wrap}
-                                has-data -> e-data = e-data - lf - value
+                                field = line.slice(0, colon)
+                                val-start = colon + 1
+                                val-start < line.len-bytes() -> {
+                                    line[val-start] == 32 -> {
 
-                                -> {
-                                    e-data = value
-                                    has-data = true
+                                        #{index-out=0}
+                                        val-start = val-start + 1
+                                    }
+                                }
+                                value = line.slice(val-start, line.len-bytes())
+                            }
+                            {
+                                field == 'data' -> {
+
+                                    #{overflow=wrap}
+                                    has-data -> e-data = e-data - lf - value
+
+                                    -> {
+                                        e-data = value
+                                        has-data = true
+                                    }
+                                }
+
+                                field == 'event' -> e-event = value
+
+                                field == 'id' -> {
+                                    e-id = value
+                                    .last-event-id = value
+                                }
+
+                                field == 'retry' -> {
+                                    retry-val ?i64 = value.to-i64()
+                                    retry-val: {
+                                        nil -> e-retry = -1
+
+                                        err -> e-retry = -1
+
+                                        ok -> e-retry = it
+                                    }
                                 }
                             }
-
-                            field == 'event' -> e-event = value
-
-                            field == 'id' -> {
-                                e-id = value
-                                .last-event-id = value
-                            }
-
-                            field == 'retry' -> {
-                                retry-val ?i64 = value.to-i64()
-                                retry-val: {
-                                    nil -> e-retry = -1
-
-                                    err -> e-retry = -1
-
-                                    ok -> e-retry = it
-                                }
-                            }
-                        }
                         }
                     }
                     pos = line-end + 1
-                } (pos < event-block.len-bytes())
+                }
 
                 ; 只有包含 data 的事件才回傳
                 has-data -> {
@@ -261,6 +273,7 @@ client.next-event = () (ev ?event) {
             }
 
             sep-pos < 0 -> {
+
                 ; 未找到完整事件，接收更多資料
                 #{overflow=wrap}
                 .recv-buf-len >= SSE-BUF-SIZE -> {
@@ -291,14 +304,14 @@ client.next-event = () (ev ?event) {
 
                 ; 複製到緩衝區末尾
                 i <- [0..n): {
-                    #{overflow=wrap}
-                    #{index-out = 0}
+
+                    #{index-out=0, overflow=wrap}
                     .recv-buf[.recv-buf-len + i] = tmp[i]
                 }
                 .recv-buf-len = .recv-buf-len + n
             }
         }
-    } (true)
+    }
 }
 
 ; close: 關閉 SSE 連線
@@ -320,6 +333,7 @@ client.is-connected = () (yes bool) {
 ; reconnect: 重新連線（使用 last-event-id 繼續接收）
 ; 返回 ok bool: true=成功
 client.reconnect = () (ok bool) {
+
     #{overflow=wrap}
     ok = false
     req = ''
@@ -327,6 +341,7 @@ client.reconnect = () (ok bool) {
     .connected -> .close()
     cr = number.char-to-str(13)
     lf = number.char-to-str(10)
+
     #{overflow=wrap}
     crlf = cr - lf
 
@@ -347,43 +362,59 @@ client.reconnect = () (ok bool) {
 
     ; 建構 SSE 請求
     req = 'GET '
+
     #{overflow=wrap}
     req = req - .path
+
     #{overflow=wrap}
     req = req - ' HTTP/1.1'
+
     #{overflow=wrap}
     req = req - crlf
+
     #{overflow=wrap}
     req = req - 'Host: '
+
     #{overflow=wrap}
     req = req - .host
+
     #{overflow=wrap}
     req = req - crlf
+
     #{overflow=wrap}
     req = req - 'Accept: text/event-stream'
+
     #{overflow=wrap}
     req = req - crlf
+
     #{overflow=wrap}
     req = req - 'Cache-Control: no-cache'
+
     #{overflow=wrap}
     req = req - crlf
+
     #{overflow=wrap}
     req = req - 'Connection: keep-alive'
+
     #{overflow=wrap}
     req = req - crlf
 
     ; 如有 last-event-id，加入標頭
     #{overflow=wrap}
     .last-event-id.len-bytes() > 0 -> {
+
         #{overflow=wrap}
         req = req - 'Last-Event-ID: '
         req = req - .last-event-id
         req = req - crlf
     }
+
     #{overflow=wrap}
     req = req - 'User-Agent: nolang-sse/1.0'
+
     #{overflow=wrap}
     req = req - crlf
+
     #{overflow=wrap}
     req = req - crlf
 
@@ -416,11 +447,13 @@ client.reconnect = () (ok bool) {
     tmp str = with-len(SSE-RECV-SIZE)
     total = 0
     n = 0
+
     #{overflow=wrap}
     separator = crlf - crlf
     sep-pos i64 = -1
 
-    {
+    !! {
+
         #{overflow=wrap}
         total + SSE-RECV-SIZE > SSE-BUF-SIZE -> {
             .close()
@@ -443,16 +476,17 @@ client.reconnect = () (ok bool) {
             return
         }
         i <- [0..n): {
-            #{overflow=wrap}
-            #{index-out = 0}
+
+            #{index-out=0, overflow=wrap}
             raw[total + i] = tmp[i]
         }
+
         #{overflow=wrap}
         total = total + n
         data = raw.slice(0, total)
         sep-pos = data.index(separator)
         sep-pos >= 0 -> *
-    } (true)
+    }
 
     ; 驗證狀態碼
     head = raw.slice(0, sep-pos)
@@ -464,6 +498,7 @@ client.reconnect = () (ok bool) {
         .close()
         return
     }
+
     #{overflow=wrap}
     after-code = status-line.slice(sp1 + 1, status-line.len-bytes())
     sp2 = after-code.index(' ')
@@ -471,13 +506,14 @@ client.reconnect = () (ok bool) {
     sp2 >= 0 -> code-str = after-code.slice(0, sp2)
     status-code = 0
     i <- [0..code-str.len-bytes()): {
-        #{overflow=wrap}
-        #{index-out = 0}
+
+        #{index-out=0, overflow=wrap}
         c = code-str[i]
         c < 48 || c > 57 -> {
             .close()
             return
         }
+
         #{overflow=wrap}
         status-code = status-code * 10 + c - 48
     }
@@ -494,8 +530,8 @@ client.reconnect = () (ok bool) {
     .recv-buf = with-len(SSE-BUF-SIZE)
     .recv-buf-len = remaining.len-bytes()
     i <- [0..remaining.len-bytes()): {
-        #{overflow=wrap}
-        #{index-out = 0}
+
+        #{index-out=0, overflow=wrap}
         .recv-buf[i] = remaining[i]
     }
     ok = true
@@ -512,6 +548,7 @@ client.reconnect = () (ok bool) {
 ;   nil   = 連線失敗
 ;   err = 錯誤訊息
 sse-connect = (url str) (client ?client) {
+
     #{overflow=wrap}
     client = nil
 
@@ -548,15 +585,17 @@ sse-connect = (url str) (client ?client) {
         }
     }
     colon-pos = host.index(':')
+
     #{overflow=wrap}
     colon-pos >= 0 -> {
+
         #{overflow=wrap}
         host-only = host.slice(0, colon-pos)
         port-str = host.slice(colon-pos + 1, host.len-bytes())
         p = 0
         i <- [0..port-str.len-bytes()): {
-            #{overflow=wrap}
-            #{index-out = 0}
+
+            #{index-out=0, overflow=wrap}
             c = port-str[i]
             c < 48 || c > 57 -> {
                 client = err('invalid port')
@@ -595,37 +634,53 @@ sse-connect = (url str) (client ?client) {
     ; ── 建構 SSE 請求 ──
     cr = number.char-to-str(13)
     lf = number.char-to-str(10)
+
     #{overflow=wrap}
     crlf = cr - lf
     req = 'GET '
+
     #{overflow=wrap}
     req = req - path
+
     #{overflow=wrap}
     req = req - ' HTTP/1.1'
+
     #{overflow=wrap}
     req = req - crlf
+
     #{overflow=wrap}
     req = req - 'Host: '
+
     #{overflow=wrap}
     req = req - host
+
     #{overflow=wrap}
     req = req - crlf
+
     #{overflow=wrap}
     req = req - 'Accept: text/event-stream'
+
     #{overflow=wrap}
     req = req - crlf
+
     #{overflow=wrap}
     req = req - 'Cache-Control: no-cache'
+
     #{overflow=wrap}
     req = req - crlf
+
     #{overflow=wrap}
     req = req - 'Connection: keep-alive'
+
     #{overflow=wrap}
     req = req - crlf
+
     #{overflow=wrap}
     req = req - 'User-Agent: nolang-sse/1.0'
+
     #{overflow=wrap}
     req = req - crlf
+
     #{overflow=wrap}
     req = req - crlf
 
@@ -660,11 +715,13 @@ sse-connect = (url str) (client ?client) {
     tmp str = with-len(SSE-RECV-SIZE)
     total = 0
     n = 0
+
     #{overflow=wrap}
     separator = crlf - crlf
     sep-pos i64 = -1
 
-    {
+    !! {
+
         #{overflow=wrap}
         total + SSE-RECV-SIZE > SSE-BUF-SIZE -> {
             use-tls -> tls-c.close()
@@ -692,16 +749,17 @@ sse-connect = (url str) (client ?client) {
             return
         }
         i <- [0..n): {
-            #{overflow=wrap}
-            #{index-out = 0}
+
+            #{index-out=0, overflow=wrap}
             raw[total + i] = tmp[i]
         }
+
         #{overflow=wrap}
         total = total + n
         data = raw.slice(0, total)
         sep-pos = data.index(separator)
         sep-pos >= 0 -> *
-    } (true)
+    }
 
     ; ── 驗證狀態碼 ──
     head = raw.slice(0, sep-pos)
@@ -715,6 +773,7 @@ sse-connect = (url str) (client ?client) {
         client = err('invalid status line')
         return
     }
+
     #{overflow=wrap}
     after-code = status-line.slice(sp1 + 1, status-line.len-bytes())
     sp2 = after-code.index(' ')
@@ -722,8 +781,8 @@ sse-connect = (url str) (client ?client) {
     sp2 >= 0 -> code-str = after-code.slice(0, sp2)
     status-code = 0
     i <- [0..code-str.len-bytes()): {
-        #{overflow=wrap}
-        #{index-out = 0}
+
+        #{index-out=0, overflow=wrap}
         c = code-str[i]
         c < 48 || c > 57 -> {
             use-tls -> tls-c.close()
@@ -731,11 +790,14 @@ sse-connect = (url str) (client ?client) {
             client = err('invalid status code')
             return
         }
+
         #{overflow=wrap}
         status-code = status-code * 10 + c - 48
     }
+
     #{overflow=wrap}
     status-code != 200 -> {
+
         #{overflow=wrap}
         use-tls -> tls-c.close()
         use-tls == false -> fs.close(fd)
@@ -751,8 +813,8 @@ sse-connect = (url str) (client ?client) {
 
     rb str = with-len(SSE-BUF-SIZE)
     i <- [0..remaining.len-bytes()): {
-        #{overflow=wrap}
-        #{index-out = 0}
+
+        #{index-out=0, overflow=wrap}
         rb[i] = remaining[i]
     }
     cli client = client {
@@ -848,13 +910,16 @@ server.close = () {
 ; 讀取客戶端 HTTP 請求，驗證方法為 GET，發送 SSE 回應標頭。
 ; 返回 ok bool: true=成功
 server-conn.handshake = () (ok bool) {
+
     #{overflow=wrap}
     ok = false
     .fd < 0 -> return
     cr = number.char-to-str(13)
     lf = number.char-to-str(10)
+
     #{overflow=wrap}
     crlf = cr - lf
+
     #{overflow=wrap}
     separator = crlf - crlf
 
@@ -863,23 +928,25 @@ server-conn.handshake = () (ok bool) {
     total = 0
     sep-pos i64 = -1
 
-    {
+    !! {
+
         #{overflow=wrap}
         total + SSE-RECV-SIZE > SSE-BUF-SIZE -> return
         tmp str = with-len(SSE-RECV-SIZE)
         n = net.net-recv(.fd, tmp, SSE-RECV-SIZE)
         n <= 0 -> return
         i <- [0..n): {
-            #{overflow=wrap}
-            #{index-out = 0}
+
+            #{index-out=0, overflow=wrap}
             raw[total + i] = tmp[i]
         }
+
         #{overflow=wrap}
         total = total + n
         data = raw.slice(0, total)
         sep-pos = data.index(separator)
         sep-pos >= 0 -> *
-    } (true)
+    }
 
     ; 解析請求行
     head = raw.slice(0, sep-pos)
@@ -891,8 +958,10 @@ server-conn.handshake = () (ok bool) {
     sp1 = request-line.index(' ')
     sp1 < 0 -> return
     method = request-line.slice(0, sp1)
+
     #{overflow=wrap}
     method != 'GET' -> {
+
         #{overflow=wrap}
         resp = 'HTTP/1.1 405 Method Not Allowed' - crlf
         resp = resp - 'Content-Length: 0' - crlf
@@ -905,14 +974,19 @@ server-conn.handshake = () (ok bool) {
     ; 發送 SSE 回應標頭
     #{overflow=wrap}
     resp = 'HTTP/1.1 200 OK' - crlf
+
     #{overflow=wrap}
     resp = resp - 'Content-Type: text/event-stream' - crlf
+
     #{overflow=wrap}
     resp = resp - 'Cache-Control: no-cache' - crlf
+
     #{overflow=wrap}
     resp = resp - 'Connection: keep-alive' - crlf
+
     #{overflow=wrap}
     resp = resp - 'Access-Control-Allow-Origin: *' - crlf
+
     #{overflow=wrap}
     resp = resp - crlf
     written = net.net-send(.fd, resp, resp.len-bytes())
@@ -928,6 +1002,7 @@ server-conn.handshake = () (ok bool) {
 ; retry i64: 重連等待毫秒數（-1=不發送 retry 欄位）
 ; 返回 ok bool: true=成功
 server-conn.send-event = (event str, data str, id str, retry i64) (ok bool) {
+
     #{overflow=wrap}
     ok = false
     .connected == false -> return
@@ -943,7 +1018,8 @@ server-conn.send-event = (event str, data str, id str, retry i64) (ok bool) {
     {
         data.len-bytes() > 0 -> {
             pos = 0
-            {
+            !! {
+
                 #{overflow=wrap}
                 nl = data.index-from(lf, pos)
                 line-end = nl
@@ -952,15 +1028,18 @@ server-conn.send-event = (event str, data str, id str, retry i64) (ok bool) {
                 msg = msg - 'data: ' - line - lf
                 nl < 0 -> *
                 pos = nl + 1
-            } (true)
+            }
         }
 
         -> msg = msg - 'data: ' - lf
     }
+
     #{overflow=wrap}
     id.len-bytes() > 0 -> msg = msg - 'id: ' - id - lf
+
     #{overflow=wrap}
     retry >= 0 -> {
+
         #{overflow=wrap}
         retry-s = retry.to-str()
         msg = msg - 'retry: ' - retry-s - lf
@@ -982,10 +1061,12 @@ server-conn.send-event = (event str, data str, id str, retry i64) (ok bool) {
 ; comment str: 註解內容
 ; 返回 ok bool: true=成功
 server-conn.send-comment = (comment str) (ok bool) {
+
     #{overflow=wrap}
     ok = false
     .connected == false -> return
     lf = number.char-to-str(10)
+
     #{overflow=wrap}
     msg = ':' - comment - lf - lf
 

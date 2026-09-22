@@ -1944,9 +1944,14 @@ func (p *Parser) parseBlockStatement() *BlockStatement {
 		// 被套用到錯誤的目標（該行的越界索引仍被當成未處理），LSP 的
 		// 「Add #{index-out = 0}」quickfix（在該行行尾追加尾隨註解）也就形同無效。
 		if p.currentToken.Type == lexer.HASH_LBRACE && len(block.Statements) > 0 {
-			if prev := block.Statements[len(block.Statements)-1]; prev != nil && prev.EndPos().Line == p.currentToken.Line {
+			if prev := block.Statements[len(block.Statements)-1]; prev != nil && (prev.EndPos().Line == p.currentToken.Line || p.annotationImmediatelyTrails()) {
+				annLine := p.currentToken.Line
 				if trailing := p.parseTrailingAnnotation(); len(trailing) > 0 {
 					p.attachAnnotations(prev, trailing)
+					// 尾隨註解之後、同一行的註釋仍屬於同一條陳述：輸出規範為
+					// 「語句、註解、註釋」，註釋必須留在原行（見
+					// attachInlineCommentOnLine），不能退化成下一條陳述的 Doc。
+					p.attachInlineCommentOnLine(prev, annLine)
 					continue
 				}
 			}
@@ -1968,9 +1973,21 @@ func (p *Parser) parseBlockStatement() *BlockStatement {
 			// `#{overflow = wrap}` 後接裸配對臂），交給 parseAnnotationStatement
 			// 附加到後續 stmt。否則新行 #{...} 會被誤併入上一條 stmt，導致
 			// 溢出註解無法作用於其後的裸配對臂。
-			if p.currentToken.Type == lexer.HASH_LBRACE && p.currentToken.Line == stmt.Pos().Line {
+			//
+			// 「同一行」以「前一個非註釋 token（= 陳述的最後一個 token）與 #{ 同
+			// 行」判定（annotationImmediatelyTrails），而不是 stmt.Pos().Line：
+			// 後者是陳述的**第一行**，多行陳述（值跨行、或收尾的 `}` 自成一行）的
+			// 尾隨註解會被誤判成下一條陳述的前置註解，使 `#{index-out=0}` 套用到
+			// 錯誤目標。stmt.Pos().Line 的舊條件保留為超集（單行陳述時兩者等價）。
+			if p.annotationImmediatelyTrails() || (p.currentToken.Type == lexer.HASH_LBRACE && p.currentToken.Line == stmt.Pos().Line) {
+				annLine := p.currentToken.Line
 				if trailing := p.parseTrailingAnnotation(); len(trailing) > 0 {
 					p.attachAnnotations(stmt, trailing)
+					// 同一行後方若還有註釋（`stmt #{ann} ; comment`），它屬於
+					// 本陳述（輸出規範：語句、註解、註釋）。attachInlineComment
+					// 已在上方（解析完 stmt、尚未見到 #{...} 時）執行過，故需
+					// 在此再補掛一次。
+					p.attachInlineCommentOnLine(stmt, annLine)
 				}
 			}
 			block.Statements = append(block.Statements, stmt)

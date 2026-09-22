@@ -639,7 +639,7 @@ func (f *formatter) formatBlockInner(body *parser.BlockStatement, openBraceLine 
 					// 相同的排版（else 另起一行時補一個空行），否則前置
 					// `#{...}` 註解造成的非鏈式 AST 會與鏈式版本輸出不同 →
 					// 非冪等（fmt.no / net.no 的漂移）。
-					if f.hasBlankLineBetween(prevEndLine, currStartLine) || f.hasDocComment(stmt) || f.attachedAnnotationsWillEmit(stmt) || f.isBareElseAfterIfThen(lastEmitStmt, stmt) {
+					if f.hasBlankLineBetween(prevEndLine, currStartLine) || f.nodeHeadWillEmit(stmt) || f.isBareElseAfterIfThen(lastEmitStmt, stmt) {
 						f.write("\n") // blank line (no indent)
 					}
 					f.newline()
@@ -652,13 +652,11 @@ func (f *formatter) formatBlockInner(body *parser.BlockStatement, openBraceLine 
 			// 用 hasBlankLineBetween 偵測「真實空白行」而非單純行號落差：後者會因
 			// formatter 自身輸出的註解（如區塊級 #{overflow=wrap}）推移首陳述行號，
 			// 導致二次格式化時誤插入空白行而非冪等。
-			// 注意：不能加 `|| f.hasDocComment(stmt)`——那會在源碼無空行時於
-			// `{` 與首條帶註解陳述之間憑空插入空行（頂層語句間隔由 api.go 的
-			// 程式級迴圈負責，區塊內一律以源碼空白為準）。區塊內「第二條及
-			// 之後」的陳述則相反：帶 doc 註解會強制空一行，見上方 i > 0 分支。
+			// 注意：不能只靠源碼空白——帶註釋/註解的 node 一律與 `{` 以一個空行
+			// 分隔（nodeHeadWillEmit），其餘仍以源碼空白為準。
 			if emits {
 				firstDocStartLine := stmtFirstLine(stmt)
-				if openBraceLine > 0 && f.hasBlankLineBetween(openBraceLine, firstDocStartLine) {
+				if f.nodeHeadWillEmit(stmt) || (openBraceLine > 0 && f.hasBlankLineBetween(openBraceLine, firstDocStartLine)) {
 					f.write("\n") // blank line (no indent)
 				}
 				f.newline()

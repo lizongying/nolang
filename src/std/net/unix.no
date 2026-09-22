@@ -185,18 +185,20 @@ unix-conn.recv-all = () (content str, total i64) {
     total = 0
     .fd < 0 -> return
     buf str = with-len(UNIX-BUF-SIZE)
-    {
+    !! {
+
         #{overflow=wrap}
         chunk-n = net.net-recv(.fd, buf, UNIX-BUF-SIZE)
         chunk-n <= 0 -> break
         i <- [0..chunk-n): {
-            #{overflow=wrap}
-            #{index-out = 0}
+
+            #{index-out=0, overflow=wrap}
             content[total + i] = buf[i]
         }
+
         #{overflow=wrap}
         total = total + chunk-n
-    } (true)
+    }
 }
 
 ; set-recv-timeout: 設定接收逾時

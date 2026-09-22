@@ -27,26 +27,32 @@ str-map.init = () {
     .cap = 256
     .size = 0
     i <- [0..256): {
-        #{index-out = 0}
+
+        #{index-out=0}
         .occ[i] = 0
-        #{index-out = 0}
+
+        #{index-out=0}
         .keys[i].len = 0
-        #{index-out = 0}
+
+        #{index-out=0}
         .vals[i].len = 0
     }
 }
 
 ; hash: FNV-1a 字串雜湊
 str-map.hash = (key str) (idx i64) {
+
     #{overflow=wrap}
     h = FNV-OFFSET
     i <- [0..key.len-bytes()): {
-        #{overflow=wrap}
-        #{index-out = 0}
+
+        #{index-out=0, overflow=wrap}
         h = h ^ (key[i])
+
         #{overflow=wrap}
         h = h * FNV-PRIME
     }
+
     #{overflow=wrap}
     idx = h & (.cap - 1)
 }
@@ -55,8 +61,9 @@ str-map.hash = (key str) (idx i64) {
 str-map.str-eq = (a str, b str) (eq bool) {
     a.len-bytes() != b.len-bytes() -> return
     i <- [0..a.len-bytes()): {
-                a[i] != b[i] -> {
-            #{index-out = 0}
+        a[i] != b[i] -> {
+
+            #{index-out=0}
             return
         }
     }
@@ -65,36 +72,43 @@ str-map.str-eq = (a str, b str) (eq bool) {
 
 ; put: 插入或更新 key→value，回傳是否新增
 str-map.put = (key str, val str) (is-new bool) {
+
     #{overflow=wrap}
     idx = .hash(key)
 
-    {
-        #{overflow=wrap}
-        #{index-out = 0}
+    (.occ[idx] == 1) {
+
+        #{index-out=0, overflow=wrap}
         eq = .str-eq(.keys[idx], key)
         eq -> {
+
             ; 直接指派；結構欄位寫入會深拷貝 inline str，不需要手動 .len + 逐字節拷貝
-            #{index-out = 0}
+            #{index-out=0}
             .vals[idx] = val
             is-new = false
             return
         }
+
         #{overflow=wrap}
         idx = idx + 1
         idx >= .cap -> idx = 0
-    #{index-out = 0}
-    } (.occ[idx] == 1)
+
+        #{index-out=0}
+    }
 
     ; 複製 key / val。
     ; 不能用 `.keys[idx].len = key.len-bytes()` 再逐字節寫：`.len = n` 是裸欄位寫入，
     ; 不會分配緩衝區，而新槽位的 keys[idx] 緩衝區還是 null，下一個 [i] = 會對 null
     ; 做 GEP+store（SIGSEGV）。直接指派會深拷貝，才是正確寫法。
-    #{index-out = 0}
+    #{index-out=0}
     .keys[idx] = key
-    #{index-out = 0}
+
+    #{index-out=0}
     .vals[idx] = val
-    #{index-out = 0}
+
+    #{index-out=0}
     .occ[idx] = 1
+
     #{overflow=wrap}
     .size = .size + 1
     is-new = true
@@ -105,20 +119,23 @@ str-map.get = (key str) (result ?str) {
     .size == 0 -> return
     idx = .hash(key)
 
-    {
-        #{overflow=wrap}
-        #{index-out = 0}
+    (.occ[idx] == 1) {
+
+        #{index-out=0, overflow=wrap}
         eq = .str-eq(.keys[idx], key)
         eq -> {
-            #{index-out = 0}
+
+            #{index-out=0}
             result = .vals[idx]
             return
         }
+
         #{overflow=wrap}
         idx = idx + 1
         idx >= .cap -> idx = 0
-    #{index-out = 0}
-    } (.occ[idx] == 1)
+
+        #{index-out=0}
+    }
 }
 
 ; contains: 檢查 key 是否存在
@@ -138,38 +155,46 @@ str-map.remove = (key str) (removed bool) {
     .size == 0 -> return
     idx = .hash(key)
 
-    {
-        #{overflow=wrap}
-        #{index-out = 0}
+    (.occ[idx] == 1) {
+
+        #{index-out=0, overflow=wrap}
         eq = .str-eq(.keys[idx], key)
+
         #{overflow=wrap}
         eq -> {
-            #{overflow=wrap}
-            #{index-out = 0}
+
+            #{index-out=0, overflow=wrap}
             .occ[idx] = 0
-            #{index-out = 0}
+
+            #{index-out=0}
             .keys[idx].len = 0
-            #{index-out = 0}
+
+            #{index-out=0}
             .vals[idx].len = 0
             .size = .size - 1
             removed = true
             return
         }
+
         #{overflow=wrap}
         idx = idx + 1
         idx >= .cap -> idx = 0
-    #{index-out = 0}
-    } (.occ[idx] == 1)
+
+        #{index-out=0}
+    }
 }
 
 ; clear: 清空
 str-map.clear = () {
     i <- [0...cap): {
-        #{index-out = 0}
+
+        #{index-out=0}
         .occ[i] = 0
-        #{index-out = 0}
+
+        #{index-out=0}
         .keys[i].len = 0
-        #{index-out = 0}
+
+        #{index-out=0}
         .vals[i].len = 0
     }
     .size = 0
@@ -189,9 +214,11 @@ str-map.is-empty = () (empty bool) {
 str-map.for-each = () (k str, v str) {
     i <- [0...cap): {
         .occ[i] == 1 -> {
-            #{index-out = 0}
+
+            #{index-out=0}
             k = .keys[i]
-            #{index-out = 0}
+
+            #{index-out=0}
             v = .vals[i]
         }
     }

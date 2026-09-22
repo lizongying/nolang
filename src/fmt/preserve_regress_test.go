@@ -20,12 +20,22 @@ import (
 // condition, which likewise had to accept lexer.IN.
 func TestFormatInIdentifierNotSwallowed(t *testing.T) {
 	in := "f = (in []byte) (out i64) {\n    #{overflow=wrap}\n    in.len() == 0 -> out = 1\n    out = 0\n}\n"
+	// The annotation line is a node head, so it is separated from `{` by one
+	// blank line; the `in` identifier itself must stay intact.
+	want := "f = (in []byte) (out i64) {\n\n    #{overflow=wrap}\n    in.len() == 0 -> out = 1\n    out = 0\n}\n"
 	out, errs := FormatFileWithErrors(in)
 	if len(errs) > 0 {
 		t.Fatalf("format errors: %v", errs)
 	}
-	if out != in {
-		t.Fatalf("`in` identifier corrupted by formatter:\n--- want ---\n%q\n--- got ---\n%q", in, out)
+	if !strings.Contains(out, "in.len() == 0") {
+		t.Fatalf("`in` identifier corrupted by formatter:\n--- want ---\n%q\n--- got ---\n%q", want, out)
+	}
+	if out != want {
+		t.Fatalf("output not stable:\n--- want ---\n%q\n--- got ---\n%q", want, out)
+	}
+	out2, _ := FormatFileWithErrors(out)
+	if out2 != out {
+		t.Fatalf("not idempotent:\n--- pass1 ---\n%q\n--- pass2 ---\n%q", out, out2)
 	}
 }
 
@@ -165,7 +175,8 @@ func TestFormatStandaloneCommentPlusOverflowBeforeBareMatch(t *testing.T) {
 //
 // With line-scoped annotations, the source keeps one `#{overflow=wrap}` directly
 // above every statement that needs wrap mode, and `no fmt` reproduces it
-// byte-for-byte (idempotent).
+// byte-for-byte (idempotent) — each annotated statement being its own node, it is
+// separated from the code above by one blank line.
 func TestFormatLineScopedOverflowPreservedInPlace(t *testing.T) {
 	in := "f = (spec []i64, n i64) (out i64) {\n" +
 		"    last-wi = 0\n" +
@@ -179,6 +190,20 @@ func TestFormatLineScopedOverflowPreservedInPlace(t *testing.T) {
 		"    }\n" +
 		"    out = last-wi\n" +
 		"}\n"
+	want := "f = (spec []i64, n i64) (out i64) {\n" +
+		"    last-wi = 0\n" +
+		"    wi <- [0..n): {\n" +
+		"        c = spec[wi]\n" +
+		"        c < 48 || c > 57 -> break\n" +
+		"\n" +
+		"        #{overflow=wrap}\n" +
+		"        width-v = width-v * 10 + c - 48\n" +
+		"\n" +
+		"        #{overflow=wrap}\n" +
+		"        last-wi = wi + 1\n" +
+		"    }\n" +
+		"    out = last-wi\n" +
+		"}\n"
 	out, errs := FormatFileWithErrors(in)
 	if len(errs) > 0 {
 		t.Fatalf("format errors: %v", errs)
@@ -186,8 +211,8 @@ func TestFormatLineScopedOverflowPreservedInPlace(t *testing.T) {
 	if strings.Count(out, "#{overflow") != 2 {
 		t.Fatalf("expected exactly 2 line-scoped overflow annotations, got:\n%q", out)
 	}
-	if out != in {
-		t.Fatalf("line-scoped overflow annotation not preserved in place:\n--- want ---\n%q\n--- got ---\n%q", in, out)
+	if out != want {
+		t.Fatalf("line-scoped overflow annotation not preserved in place:\n--- want ---\n%q\n--- got ---\n%q", want, out)
 	}
 	// Idempotency: a second pass must reproduce the same output.
 	out2, _ := FormatFileWithErrors(out)

@@ -59,6 +59,7 @@ url-info {
 ; url-str str: 完整 URL
 ; 返回 u url-info: 解析結果（u.ok=true=成功）
 url-parse = (url-str str) (u url-info) {
+
     #{overflow=wrap}
     u.ok = false
     u.scheme = ''
@@ -84,13 +85,16 @@ url-parse = (url-str str) (u url-info) {
         return
     }
     u.scheme = url-str.slice(0, scheme-end)
+
     #{overflow=wrap}
     pos = scheme-end + 3
 
     ; 解析 fragment（#）
     frag-pos = url-str.index-from('#', pos)
+
     #{overflow=wrap}
     frag-pos >= 0 -> {
+
         #{overflow=wrap}
         u.fragment = url-str.slice(frag-pos + 1, n)
         n = frag-pos
@@ -98,8 +102,10 @@ url-parse = (url-str str) (u url-info) {
 
     ; 解析 query（?）
     query-pos = url-str.index-from('?', pos)
+
     #{overflow=wrap}
     query-pos >= 0 && query-pos < n -> {
+
         #{overflow=wrap}
         u.query = url-str.slice(query-pos + 1, n)
         n = query-pos
@@ -112,20 +118,23 @@ url-parse = (url-str str) (u url-info) {
         n = path-pos
     }
 
-    #{index-out = 0}
     ; 剩餘部分為 authority (host[:port] 或 user:pass@host:port)
+    #{index-out=0}
     authority = url-str.slice(pos, n)
 
     ; 解析 user:pass@
     at-pos = authority.index('@')
+
     #{overflow=wrap}
     at-pos >= 0 -> {
+
         #{overflow=wrap}
         userinfo = authority.slice(0, at-pos)
         authority = authority.slice(at-pos + 1, authority.len-bytes())
         colon-pos = userinfo.index(':')
         {
             colon-pos >= 0 -> {
+
                 #{overflow=wrap}
                 u.user = userinfo.slice(0, colon-pos)
                 u.password = userinfo.slice(colon-pos + 1, userinfo.len-bytes())
@@ -137,17 +146,19 @@ url-parse = (url-str str) (u url-info) {
 
     ; 解析 host:port
     colon-pos = authority.index(':')
+
     #{overflow=wrap}
     {
         colon-pos >= 0 -> {
+
             #{overflow=wrap}
             u.host = authority.slice(0, colon-pos)
             port-str = authority.slice(colon-pos + 1, authority.len-bytes())
             p = 0
             valid = true
             i <- [0..port-str.len-bytes()): {
-                #{overflow=wrap}
-                #{index-out = 0}
+
+                #{index-out=0, overflow=wrap}
                 ch = port-str[i]
                 ch < 48 || ch > 57 -> {
                     valid = false
@@ -180,7 +191,8 @@ url-info.get-query = (key str) (val ?str) {
     .query.len-bytes() == 0 -> return
     q = .query
     pos = 0
-    {
+    !! {
+
         #{overflow=wrap}
         pos >= q.len-bytes() -> *
 
@@ -190,9 +202,11 @@ url-info.get-query = (key str) (val ?str) {
         pair-end < 0 -> pair-end = q.len-bytes()
         pair = q.slice(pos, pair-end)
         eq-pos = pair.index('=')
+
         #{overflow=wrap}
         {
             eq-pos >= 0 -> {
+
                 #{overflow=wrap}
                 k = pair.slice(0, eq-pos)
                 v = pair.slice(eq-pos + 1, pair.len-bytes())
@@ -210,17 +224,20 @@ url-info.get-query = (key str) (val ?str) {
             }
         }
         next-amp < 0 -> *
+
         #{overflow=wrap}
         pos = next-amp + 1
-    } (true)
+    }
 }
 
 ; url-info.set-query: 設定查詢參數值
 ; key str: 參數名
 ; value str: 參數值
 url-info.set-query = (key str, value str) {
+
     #{overflow=wrap}
     .query.len-bytes() == 0 -> {
+
         #{overflow=wrap}
         .query = key - '=' - value
         return
@@ -231,7 +248,8 @@ url-info.set-query = (key str, value str) {
     q = .query
     new-query = ''
     pos = 0
-    {
+    !! {
+
         #{overflow=wrap}
         pos >= q.len-bytes() -> *
         next-amp = q.index-from('&', pos)
@@ -239,15 +257,18 @@ url-info.set-query = (key str, value str) {
         pair-end < 0 -> pair-end = q.len-bytes()
         pair = q.slice(pos, pair-end)
         eq-pos = pair.index('=')
+
         #{overflow=wrap}
         eq-pos >= 0 -> {
             k = pair.slice(0, eq-pos)
             k == key -> {
+
                 #{overflow=wrap}
                 pair = key - '=' - value
                 found = true
             }
         }
+
         #{overflow=wrap}
         {
             new-query.len-bytes() > 0 -> new-query = new-query - '&' - pair
@@ -255,16 +276,18 @@ url-info.set-query = (key str, value str) {
             -> new-query = pair
         }
         next-amp < 0 -> *
+
         #{overflow=wrap}
         pos = next-amp + 1
-    } (true)
-    #{overflow=wrap}
+    }
+
     ; ⚠️ 不要寫成一整行 `a -> b -> c -> d` 的 `->` 管線：
     ; `->` 是**短路管線運算子**，語義不因是否賦值而改變 —— 條件不成立只會跳過後續節點，
     ; 沒有 else 分支，所以這種寫法既是錯的（兩個指派會互相覆蓋 / 該跑的沒跑），
     ; 又會讓 checker 抱怨型別（`cannot assign i64 value to str variable`），
     ; 還會讓 `no fmt` 不冪等（formatter 把它印成 `...: { }` 後重新解析成別的結構）。
     ; 要「二選一」就用下面這種 `{}` if/else-if 群組（與上面 251-255 行的寫法一致）。
+    #{overflow=wrap}
     found == false -> {
         new-query.len-bytes() > 0 -> new-query = new-query - '&' - key - '=' - value
 
@@ -276,17 +299,22 @@ url-info.set-query = (key str, value str) {
 ; url-info.to-str: 將 URL 重新組裝為字串
 ; 返回 out str: 完整 URL
 url-info.to-str = () (out str) {
+
     #{overflow=wrap}
     out = ''
+
     #{overflow=wrap}
     .scheme.len-bytes() > 0 -> out = out - .scheme - '://'
+
     #{overflow=wrap}
     .user.len-bytes() > 0 -> {
+
         #{overflow=wrap}
         out = out - .user
         .password.len-bytes() > 0 -> out = out - ':' - .password
         out = out - '@'
     }
+
     #{overflow=wrap}
     out = out - .host
 
@@ -307,23 +335,29 @@ url-info.to-str = () (out str) {
 
         ->
     }
+
     #{overflow=wrap}
     show-port -> {
+
         #{overflow=wrap}
         port-s = .port.to-str()
         out = out - ':' - port-s
     }
+
     #{overflow=wrap}
     {
-                .path.len-bytes() > 0 && .path[0] == 47 -> {
-            #{index-out = 0}
+        .path.len-bytes() > 0 && .path[0] == 47 -> {
+
+            #{index-out=0}
             out = out - .path
         }
 
         .path.len-bytes() > 0 -> out = out - '/' - .path
     }
+
     #{overflow=wrap}
     .query.len-bytes() > 0 -> out = out - '?' - .query
+
     #{overflow=wrap}
     .fragment.len-bytes() > 0 -> out = out - '#' - .fragment
 }
@@ -339,7 +373,8 @@ url-encode = (s str) (out str) {
     hex-chars = '0123456789ABCDEF'
     out = ''
     i <- [0..s.len-bytes()): {
-        #{index-out = 0}
+
+        #{index-out=0}
         c = s[i]
 
         ; 不編碼的字元：A-Z, a-z, 0-9, -, _, ., ~
@@ -362,17 +397,21 @@ url-encode = (s str) (out str) {
             ->
         }
         {
-                        keep -> {
-                #{index-out = 0}
+            keep -> {
+
+                #{index-out=0}
                 out[out.len-bytes()] = c
             }
 
             -> {
-                #{index-out = 0}
+
+                #{index-out=0}
                 out[out.len-bytes()] = 37
-                #{index-out = 0}
+
+                #{index-out=0}
                 out[out.len-bytes()] = hex-chars[c >> 4]
-                #{index-out = 0}
+
+                #{index-out=0}
                 out[out.len-bytes()] = hex-chars[c & 15]
             }
         }
@@ -386,7 +425,8 @@ url-encode-component = (s str) (out str) {
     hex-chars = '0123456789ABCDEF'
     out = ''
     i <- [0..s.len-bytes()): {
-        #{index-out = 0}
+
+        #{index-out=0}
         c = s[i]
 
         ; 只保留 A-Z, a-z, 0-9, -, _, ., ~
@@ -409,17 +449,21 @@ url-encode-component = (s str) (out str) {
             ->
         }
         {
-                        keep -> {
-                #{index-out = 0}
+            keep -> {
+
+                #{index-out=0}
                 out[out.len-bytes()] = c
             }
 
             -> {
-                #{index-out = 0}
+
+                #{index-out=0}
                 out[out.len-bytes()] = 37
-                #{index-out = 0}
+
+                #{index-out=0}
                 out[out.len-bytes()] = hex-chars[c >> 4]
-                #{index-out = 0}
+
+                #{index-out=0}
                 out[out.len-bytes()] = hex-chars[c & 15]
             }
         }
@@ -432,20 +476,22 @@ url-encode-component = (s str) (out str) {
 url-decode = (s str) (out str) {
     out = ''
     i = 0
-    {
-        #{overflow=wrap}
-        #{index-out = 0}
+    (i < s.len-bytes()) {
+
+        #{index-out=0, overflow=wrap}
         c = s[i]
+
         #{overflow=wrap}
         {
             c == 37 -> {
                 i + 2 < s.len-bytes() -> {
+
                     ; %XX
 
-                    #{overflow=wrap}
-                    #{index-out = 0}
+                    #{index-out=0, overflow=wrap}
                     h1 = s[i + 1]
-                    #{index-out = 0}
+
+                    #{index-out=0}
                     h2 = s[i + 2]
                     val = 0
 
@@ -468,25 +514,29 @@ url-decode = (s str) (out str) {
 
                         ->
                     }
-                    #{index-out = 0}
+
+                    #{index-out=0}
                     out[out.len-bytes()] = val & 255
                     i = i + 2
                 }
             }
 
-                        c == 43 -> {
-                #{index-out = 0}
+            c == 43 -> {
+
+                #{index-out=0}
                 out[out.len-bytes()] = 32; + 號轉空格
             }
 
-             -> {
-                #{index-out = 0}
+            -> {
+
+                #{index-out=0}
                 out[out.len-bytes()] = c
             }
         }
+
         #{overflow=wrap}
         i = i + 1
-    } (i < s.len-bytes())
+    }
 }
 
 ; ═══════════════════════════════════════════════
@@ -501,13 +551,16 @@ url-decode = (s str) (out str) {
 url-build-query = (keys [16]str, values [16]str, count i64) (out str) {
     out = ''
     i <- [0..count): {
-        #{overflow=wrap}
-        #{index-out = 0}
+
+        #{index-out=0, overflow=wrap}
         enc-k = url-encode(keys[i])
-        #{index-out = 0}
+
+        #{index-out=0}
         enc-v = url-encode(values[i])
+
         #{overflow=wrap}
         out.len-bytes() > 0 -> out = out - '&'
+
         #{overflow=wrap}
         out = out - enc-k - '=' - enc-v
     }
@@ -532,9 +585,11 @@ url-join = (base str, path-str str) (out str) {
         u url-info
         u = url-parse(base)
         u.ok -> {
+
             #{overflow=wrap}
             out = u.scheme - '://' - u.host
             u.port > 0 -> {
+
                 #{overflow=wrap}
                 port-s = u.port.to-str()
                 out = out - ':' - port-s
@@ -546,27 +601,33 @@ url-join = (base str, path-str str) (out str) {
 
     ; 相對路徑：找到最後一個 / 並替換
     slash-pos = -1
+
     #{overflow=wrap}
     i = base.len-bytes() - 1
-    {
+    (i >= 0) {
+
         #{overflow=wrap}
         base[i] == 47 -> {
             slash-pos = i
             break
         }
+
         #{overflow=wrap}
         i = i - 1
-    } (i >= 0)
+    }
+
     #{overflow=wrap}
     {
         slash-pos >= 0 -> {; 確保不是 protocol:// 中的 //
             {
                 slash-pos > 0 && base[slash-pos - 1] == 58 -> {
+
                     #{overflow=wrap}
                     out = base - '/' - path-str
                 }
 
                 -> {
+
                     #{overflow=wrap}
                     out = base.slice(0, slash-pos + 1) - path-str
                 }
@@ -592,6 +653,7 @@ url-basic-auth = (user str, password str) (out str) {
     raw = user - ':' - password
     raw-bytes []byte = raw.to-bytes()
     enc-str = base64.encode-std(raw-bytes)
+
     #{overflow=wrap}
     out = 'Basic ' - enc-str
 }
@@ -601,6 +663,7 @@ url-basic-auth = (user str, password str) (out str) {
 ; 返回 user str: 用戶名（空=解析失敗）
 ; 返回 password str: 密碼
 url-parse-basic-auth = (header str) (user str, password str) {
+
     #{overflow=wrap}
     user = ''
     password = ''
@@ -622,6 +685,7 @@ url-parse-basic-auth = (header str) (user str, password str) {
     ; 尋找冒號分隔符
     colon = -1
     i <- [0..raw.len()): {
+
         #{overflow=wrap}
         raw[i] == 58 -> {
             colon = i
@@ -633,18 +697,20 @@ url-parse-basic-auth = (header str) (user str, password str) {
     ; 提取 user 和 password
     user-bytes []byte
     j <- [0..colon): {
-        #{overflow=wrap}
-        #{index-out = 0}
+
+        #{index-out=0, overflow=wrap}
         user-bytes[j] = raw[j]
     }
     user = user-bytes.to-str()
     pass-bytes []byte
     k = 0
+
     #{overflow=wrap}
     j <- [colon + 1..raw.len()): {
-        #{overflow=wrap}
-        #{index-out = 0}
+
+        #{index-out=0, overflow=wrap}
         pass-bytes[k] = raw[j]
+
         #{overflow=wrap}
         k = k + 1
     }

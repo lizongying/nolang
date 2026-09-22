@@ -65,6 +65,7 @@ char.is-lower = () (result bool) {
 char.to-upper = () (result char) {
     {
         . >= 97 && . <= 122 -> {
+
             #{overflow=wrap}
             result = . - 32
         }
@@ -77,6 +78,7 @@ char.to-upper = () (result char) {
 char.to-lower = () (result char) {
     {
         . >= 65 && . <= 90 -> {
+
             #{overflow=wrap}
             result = . + 32
         }
@@ -95,44 +97,55 @@ char.to-bytes = () (out []byte) {
     len = 0
     {
         . < 0x80 -> {
-            #{index-out = 0}
+
+            #{index-out=0}
             buf[0] = .
             len = 1
         }
 
         . < 0x800 -> {
-            #{index-out = 0}
+
+            #{index-out=0}
             buf[0] = 0xc0 | ((. >> 6) & 0x1f)
-            #{index-out = 0}
+
+            #{index-out=0}
             buf[1] = 0x80 | (. & 0x3f)
             len = 2
         }
 
         . < 0x10000 -> {
-            #{index-out = 0}
+
+            #{index-out=0}
             buf[0] = 0xe0 | ((. >> 12) & 0x0f)
-            #{index-out = 0}
+
+            #{index-out=0}
             buf[1] = 0x80 | ((. >> 6) & 0x3f)
-            #{index-out = 0}
+
+            #{index-out=0}
             buf[2] = 0x80 | (. & 0x3f)
             len = 3
         }
 
         -> {
-            #{index-out = 0}
+
+            #{index-out=0}
             buf[0] = 0xf0 | ((. >> 18) & 0x07)
-            #{index-out = 0}
+
+            #{index-out=0}
             buf[1] = 0x80 | ((. >> 12) & 0x3f)
-            #{index-out = 0}
+
+            #{index-out=0}
             buf[2] = 0x80 | ((. >> 6) & 0x3f)
-            #{index-out = 0}
+
+            #{index-out=0}
             buf[3] = 0x80 | (. & 0x3f)
             len = 4
         }
     }
     out = with-len(len)
     i <- [0..len): {
-        #{index-out = 0}
+
+        #{index-out=0}
         out[i] = buf[i]
     }
 }
@@ -141,35 +154,45 @@ char.to-bytes = () (out []byte) {
 char.to-str = () (s str) {
     s = with-cap(4)
     {
-                . < 0x80 -> {
-            #{index-out = 0}
+        . < 0x80 -> {
+
+            #{index-out=0}
             s[0] = .
         }
 
         . < 0x800 -> {
-            #{index-out = 0}
+
+            #{index-out=0}
             s[0] = 0xc0 | ((. >> 6) & 0x1f)
-            #{index-out = 0}
+
+            #{index-out=0}
             s[1] = 0x80 | (. & 0x3f)
         }
 
         . < 0x10000 -> {
-            #{index-out = 0}
+
+            #{index-out=0}
             s[0] = 0xe0 | ((. >> 12) & 0x0f)
-            #{index-out = 0}
+
+            #{index-out=0}
             s[1] = 0x80 | ((. >> 6) & 0x3f)
-            #{index-out = 0}
+
+            #{index-out=0}
             s[2] = 0x80 | (. & 0x3f)
         }
 
         -> {
-            #{index-out = 0}
+
+            #{index-out=0}
             s[0] = 0xf0 | ((. >> 18) & 0x07)
-            #{index-out = 0}
+
+            #{index-out=0}
             s[1] = 0x80 | ((. >> 12) & 0x3f)
-            #{index-out = 0}
+
+            #{index-out=0}
             s[2] = 0x80 | ((. >> 6) & 0x3f)
-            #{index-out = 0}
+
+            #{index-out=0}
             s[3] = 0x80 | (. & 0x3f)
         }
     }
@@ -181,7 +204,6 @@ char.to-str = () (s str) {
 
 ; []char.to-str: 将字符切片转为字符串（按 UTF-8 编码每个码点）
 ; 每个码点按 UTF-8 写成 1~4 字节，push 进一个 []byte 临时切片；最后用循环下标
-#{index-out = 0}
 ; 把临时字节切片一次性拷入 out（out[j] = tmp[j]，下标用循环变量 j）。
 ;
 ; ⚠️ 注意：截至 2026-09-06，nolang 编译器对 []char 切片类型的支持不完整，本方法尚不可用：
@@ -193,12 +215,14 @@ char.to-str = () (s str) {
 ;     直接报 "unknown callee []t.to-chars"，无法编译通过。
 ; 在编译器修复 []char 切片支持前，请勿依赖 to-chars / []char.to-str。
 []char.to-str = () (out str) {
+
     #{overflow=saturate}
     n = .len()
 
     #{overflow=saturate}
     tmp []byte = with-cap(n * 4)
     i <- [0..n): {
+
         #{overflow=saturate}
         cp = .[i]
         {
@@ -226,8 +250,8 @@ char.to-str = () (s str) {
     m = tmp.len()
     out = with-len(m)
     j <- [0..m): {
-        #{overflow=saturate}
-        #{index-out = 0}
+
+        #{index-out=0, overflow=saturate}
         out[j] = tmp[j]
     }
 }

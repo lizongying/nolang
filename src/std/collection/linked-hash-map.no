@@ -28,48 +28,60 @@ linked-hash-map.init = () {
     .tail = -1
     .size = 0
     i <- [0..64): {
-        #{index-out = 0}
+
+        #{index-out=0}
         .occ[i] = 0
-        #{index-out = 0}
+
+        #{index-out=0}
         .nxt[i] = -1
-        #{index-out = 0}
+
+        #{index-out=0}
         .prv[i] = -1
     }
 }
 
 ; hash: 計算索引
 linked-hash-map.hash = (key i64) (idx i64) {
+
     #{overflow=wrap}
     idx = key & (.cap - 1)
 }
 
 ; put: 插入或更新 key→value
 linked-hash-map.put = (key i64, val i64) (is-new bool) {
+
     #{overflow=wrap}
     idx = .hash(key)
 
-    {
+    (.occ[idx] == 1) {
+
         #{overflow=wrap}
         .keys[idx] == key -> {
-            #{index-out = 0}
+
+            #{index-out=0}
             .vals[idx] = val
             is-new = false
             return
         }
+
         #{overflow=wrap}
         idx = idx + 1
         idx >= .cap -> idx = 0
-    #{index-out = 0}
-    } (.occ[idx] == 1)
-    #{index-out = 0}
+    }
+
+    #{index-out=0}
     .keys[idx] = key
-    #{index-out = 0}
+
+    #{index-out=0}
     .vals[idx] = val
-    #{index-out = 0}
+
+    #{index-out=0}
     .occ[idx] = 1
-    #{index-out = 0}
+
+    #{index-out=0}
     .nxt[idx] = -1
-    #{index-out = 0}
+
+    #{index-out=0}
     .prv[idx] = .tail
 
     {
@@ -79,11 +91,13 @@ linked-hash-map.put = (key i64, val i64) (is-new bool) {
         }
 
         -> {
-            #{index-out = 0}
+
+            #{index-out=0}
             .nxt[.tail] = idx
             .tail = idx
         }
     }
+
     #{overflow=wrap}
     .size = .size + 1
     is-new = true
@@ -94,18 +108,20 @@ linked-hash-map.get = (key i64) (result ?i64) {
     .size == 0 -> return
     idx = .hash(key)
 
-    {
+    (.occ[idx] == 1) {
+
         #{overflow=wrap}
         .keys[idx] == key -> {
-            #{index-out = 0}
+
+            #{index-out=0}
             result = .vals[idx]
             return
         }
+
         #{overflow=wrap}
         idx = idx + 1
         idx >= .cap -> idx = 0
-    #{index-out = 0}
-    } (.occ[idx] == 1)
+    }
 }
 
 ; contains: 檢查 key 是否存在
@@ -124,47 +140,55 @@ linked-hash-map.contains = (key i64) (found bool) {
 linked-hash-map.remove = (key i64) (removed bool) {
     idx = .hash(key)
 
-    {
+    (.occ[idx] == 1) {
+
         #{overflow=wrap}
         .keys[idx] == key -> {
-            #{overflow=wrap}
-            #{index-out = 0}
+
+            #{index-out=0, overflow=wrap}
             .occ[idx] = 0
             .size = .size - 1
-            #{index-out = 0}
+
+            #{index-out=0}
             prev = .prv[idx]
-            #{index-out = 0}
+
+            #{index-out=0}
             next = .nxt[idx]
             {
                 prev == -1 -> .head = next
 
-                 -> {
-                    #{index-out = 0}
+                -> {
+
+                    #{index-out=0}
                     .nxt[prev] = next
                 }
             }
             {
                 next == -1 -> .tail = prev
 
-                 -> {
-                    #{index-out = 0}
+                -> {
+
+                    #{index-out=0}
                     .prv[next] = prev
                 }
             }
             removed = true
             return
         }
+
         #{overflow=wrap}
         idx = idx + 1
         idx >= .cap -> idx = 0
-    #{index-out = 0}
-    } (.occ[idx] == 1)
+
+        #{index-out=0}
+    }
 }
 
 ; clear: 清空
 linked-hash-map.clear = () {
     i <- [0...cap): {
-        #{index-out = 0}
+
+        #{index-out=0}
         .occ[i] = 0
     }
     .head = -1
@@ -185,14 +209,17 @@ linked-hash-map.is-empty = () (empty bool) {
 ; for-each: 按插入順序遍歷所有 (key, value)
 linked-hash-map.for-each = () (k i64, v i64) {
     idx = .head
-    {
+    (idx != -1) {
         .occ[idx] == 1 -> {
-            #{index-out = 0}
+
+            #{index-out=0}
             k = .keys[idx]
-            #{index-out = 0}
+
+            #{index-out=0}
             v = .vals[idx]
         }
-        #{index-out = 0}
+
+        #{index-out=0}
         idx = .nxt[idx]
-    } (idx != -1)
+    }
 }

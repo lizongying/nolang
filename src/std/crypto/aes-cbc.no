@@ -29,21 +29,22 @@ cbc-enc = (in []byte, iv [16]byte, ek []byte) (out []byte) {
     ; 上一個密文區塊（初始為 IV）
     prev [16]byte
     i <- [0..16): {
-        #{index-out = 0}
+
+        #{index-out=0}
         prev[i] = iv[i]
     }
 
     ; 逐區塊加密
     out = with-len(in.len())
     blk = 0
-    {
+    (blk < in.len()) {
 
         ; XOR 當前區塊與 prev
         #{overflow=wrap}
         xored [16]byte
         i <- [0..16): {
-            #{overflow=wrap}
-            #{index-out = 0}
+
+            #{index-out=0, overflow=wrap}
             xored[i] = (in[blk + i]) ^ (prev[i])
         }
 
@@ -53,20 +54,21 @@ cbc-enc = (in []byte, iv [16]byte, ek []byte) (out []byte) {
 
         ; 輸出密文
         i <- [0..16): {
-            #{overflow=wrap}
-            #{index-out = 0}
+
+            #{index-out=0, overflow=wrap}
             out[blk + i] = enc-blk[i]
         }
 
         ; 更新 prev 為當前密文區塊
         i <- [0..16): {
-            #{overflow=wrap}
-            #{index-out = 0}
+
+            #{index-out=0, overflow=wrap}
             prev[i] = out[blk + i]
         }
+
         #{overflow=wrap}
         blk = blk + 16
-    } (blk < in.len())
+    }
 }
 
 ; cbc-dec: CBC 解密核心（輪金鑰由呼叫端展開一次）
@@ -79,21 +81,22 @@ cbc-dec = (in []byte, iv [16]byte, ek []byte) (out []byte) {
     ; 上一個密文區塊（初始為 IV）
     prev [16]byte
     i <- [0..16): {
-        #{index-out = 0}
+
+        #{index-out=0}
         prev[i] = iv[i]
     }
 
     ; 逐區塊解密
     out = with-len(in.len())
     blk = 0
-    {
+    (blk < in.len()) {
 
         ; 保存當前密文區塊（解密前）
         #{overflow=wrap}
         cur-cipher [16]byte
         i <- [0..16): {
-            #{overflow=wrap}
-            #{index-out = 0}
+
+            #{index-out=0, overflow=wrap}
             cur-cipher[i] = in[blk + i]
         }
 
@@ -103,20 +106,21 @@ cbc-dec = (in []byte, iv [16]byte, ek []byte) (out []byte) {
 
         ; XOR 與 prev 得到明文
         i <- [0..16): {
-            #{overflow=wrap}
-            #{index-out = 0}
+
+            #{index-out=0, overflow=wrap}
             out[blk + i] = (dec-blk[i]) ^ (prev[i])
         }
 
         ; 更新 prev 為當前密文區塊
         i <- [0..16): {
-            #{overflow=wrap}
-            #{index-out = 0}
+
+            #{index-out=0, overflow=wrap}
             prev[i] = cur-cipher[i]
         }
+
         #{overflow=wrap}
         blk = blk + 16
-    } (blk < in.len())
+    }
 }
 
 ; enc-128: AES-128-CBC 加密
@@ -163,19 +167,21 @@ dec-256 = (in []byte, key [32]byte, iv [16]byte) (out []byte) {
 ; in []byte: 輸入資料
 ; 返回 out []byte: 填充後的資料（長度為 16 的倍數）
 pkcs7-pad = (in []byte) (out []byte) {
+
     #{overflow=wrap}
     pad-len = 16 - (in.len() % 16)
     pad-len == 0 -> pad-len = 16
+
     #{overflow=wrap}
     out = with-len(in.len() + pad-len)
     i <- [0..in.len()): {
-        #{overflow=wrap}
-        #{index-out = 0}
+
+        #{index-out=0, overflow=wrap}
         out[i] = in[i]
     }
     i <- [0..pad-len): {
-        #{overflow=wrap}
-        #{index-out = 0}
+
+        #{index-out=0, overflow=wrap}
         out[in.len() + i] = pad-len
     }
 }
@@ -184,13 +190,14 @@ pkcs7-pad = (in []byte) (out []byte) {
 ; in []byte: 輸入資料（含填充）
 ; 返回 out-n i64: 去填充後的長度（-1=填充錯誤）
 pkcs7-unpad = (in []byte) (out-n i64) {
+
     #{overflow=wrap}
     in.len() == 0 -> {
         out-n = -1
         return
     }
-    #{overflow=wrap}
-    #{index-out = 0}
+
+    #{index-out=0, overflow=wrap}
     pad-len = in[in.len() - 1]
     pad-len == 0 || pad-len > 16 -> {
         out-n = -1
@@ -199,12 +206,14 @@ pkcs7-unpad = (in []byte) (out-n i64) {
 
     ; 驗證填充
     i <- [0..pad-len): {
+
         #{overflow=wrap}
         (in[in.len() - 1 - i]) != pad-len -> {
             out-n = -1
             return
         }
     }
+
     #{overflow=wrap}
     out-n = in.len() - pad-len
 }
