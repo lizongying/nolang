@@ -1,4 +1,4 @@
-; tmp-async-coop.no — 協作式自我取消檢查（async-cancelled 在 -async 目標內）
+; async-coop.no — 協作式自我取消檢查（async-cancelled 在 -async 目標內）
 
 ; 目標函數在入口檢查自身是否已被取消；未取消則返回 n，已取消則返回 0。
 selfcheck-async = (n i64) (r i64) {

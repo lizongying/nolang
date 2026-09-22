@@ -1,4 +1,4 @@
-; tmp-async-yield.no — async-yield 在 -async 目標內（讓出控制權）
+; async-yield.no — async-yield 在 -async 目標內（讓出控制權）
 
 yielder-async = (n i64) (r i64) {
     async-yield()

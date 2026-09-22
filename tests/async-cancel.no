@@ -1,4 +1,4 @@
-; tmp-async-cancel.no — async-cancel / async-cancelled / async-yield 探针
+; async-cancel.no — async-cancel / async-cancelled / async-yield 探针
 
 worker-async = (n i64) (r i64) {
     #{overflow = wrap}
