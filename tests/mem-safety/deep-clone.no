@@ -2,7 +2,7 @@
 
 ; 測試 1：[]i64 深層 clone
 test-clone-vec = () (ok bool) {
-    a []i64 = [10, 20, 30]
+    a = [10, 20, 30]
     b = a
     b[0] = 99
     a[0] == 10 -> ok = true

@@ -11,7 +11,7 @@
 
 t-parse-obj = () {
     j = json.parse('{"name":"Alice","age":30}')
-    ok bool = false
+    ok = false
     j: {
         ok -> ok = true
 
@@ -21,7 +21,7 @@ t-parse-obj = () {
     }
     runner.is-true(ok, 'parse obj ok')
 
-    is-obj bool = false
+    is-obj = false
     j: {
         ok -> is-obj = it.is-obj()
 
@@ -34,7 +34,7 @@ t-parse-obj = () {
 
 t-parse-arr = () {
     j = json.parse('[1, 2, 3]')
-    ok bool = false
+    ok = false
     j: {
         ok -> ok = true
 
@@ -44,7 +44,7 @@ t-parse-arr = () {
     }
     runner.is-true(ok, 'parse arr ok')
 
-    is-arr bool = false
+    is-arr = false
     j: {
         ok -> is-arr = it.is-arr()
 
@@ -57,7 +57,7 @@ t-parse-arr = () {
 
 t-parse-str = () {
     j = json.parse('"hello"')
-    ok bool = false
+    ok = false
     j: {
         ok -> ok = it.is-str()
 
@@ -70,7 +70,7 @@ t-parse-str = () {
 
 t-parse-num = () {
     j = json.parse('42.5')
-    ok bool = false
+    ok = false
     j: {
         ok -> ok = it.is-num()
 
@@ -83,7 +83,7 @@ t-parse-num = () {
 
 t-parse-bool = () {
     j = json.parse('true')
-    ok bool = false
+    ok = false
     j: {
         ok -> ok = it.is-bool()
 
@@ -96,7 +96,7 @@ t-parse-bool = () {
 
 t-parse-null = () {
     j = json.parse('null')
-    ok bool = false
+    ok = false
     j: {
         ok -> ok = it.is-null()
 
@@ -109,7 +109,7 @@ t-parse-null = () {
 
 t-parse-error = () {
     j = json.parse('')
-    is-err bool = false
+    is-err = false
     j: {
         ok -> is-err = false
 
@@ -124,7 +124,7 @@ t-parse-error = () {
 
 t-get-str = () {
     j = json.parse('{"name":"Alice","age":30}')
-    ok bool = false
+    ok = false
     val str
     j: {
         ok -> {
@@ -141,8 +141,8 @@ t-get-str = () {
 
 t-get-num = () {
     j = json.parse('{"pi":3.14}')
-    ok bool = false
-    val f64 = 0.0
+    ok = false
+    val = 0.0
     j: {
         ok -> {
             val, ok = it.get-num('pi')
@@ -153,14 +153,14 @@ t-get-num = () {
         err -> ok = false
     }
     runner.is-true(ok, 'get-num ok')
-    eps f64 = 0.001 / 1000.0
+    eps = 0.001 / 1000.0
     runner.f64-eq(val, 3.14, eps, 'get-num 3.14')
 }
 
 t-get-i64 = () {
     j = json.parse('{"count":42}')
-    ok bool = false
-    val i64 = 0
+    ok = false
+    val = 0
     j: {
         ok -> {
             val, ok = it.get-i64('count')
@@ -176,8 +176,8 @@ t-get-i64 = () {
 
 t-get-bool = () {
     j = json.parse('{"active":true}')
-    ok bool = false
-    val bool = false
+    ok = false
+    val = false
     j: {
         ok -> {
             val, ok = it.get-bool('active')
@@ -195,7 +195,7 @@ t-get-bool = () {
 
 t-arr-len = () {
     j = json.parse('[1, 2, 3, 4, 5]')
-    n i64 = 0
+    n = 0
     j: {
         ok -> n = it.arr-len()
 
@@ -208,7 +208,7 @@ t-arr-len = () {
 
 t-arr-get = () {
     j = json.parse('["a", "b", "c"]')
-    ok bool = false
+    ok = false
     val str
     j: {
         ok -> {
@@ -234,7 +234,7 @@ t-arr-get = () {
     }
 
     ; arr-get 返回 ?json，對 string 元素用 str() 取值
-    ok2 bool = false
+    ok2 = false
     val2 str
     j: {
         ok -> {

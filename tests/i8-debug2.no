@@ -9,6 +9,7 @@ test2 = () {
     m = i8.MIN
     {
         m == -128 -> print('i8.MIN access ok')
+
         -> print('i8.MIN access bad')
     }
     print(m)
@@ -20,6 +21,7 @@ test3 = () {
     m = i8.MAX
     {
         m == 127 -> print('i8.MAX access ok')
+
         -> print('i8.MAX access bad')
     }
     print(m)

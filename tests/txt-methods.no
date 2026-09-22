@@ -19,7 +19,7 @@
 ; 一直是好的 —— 這個測試刻意只用 txt receiver。
 
 ; bug 6：txt 當**結構體欄位**。emitSetField 的 fieldLT 是從**右值**推出來的
-;（c.ptype(inst.Args[1])），不是欄位宣告型別，所以 txt 欄位拿到 %str-long：
+; （c.ptype(inst.Args[1])），不是欄位宣告型別，所以 txt 欄位拿到 %str-long：
 ; clone/store 按 24 bytes 寫進 256 bytes 的 %txt 欄位，i8 長度 byte 保持 0
 ; -> 讀出來永遠是空的。str 欄位不受影響（那時 fieldLT 剛好就是欄位型別）。
 point {
@@ -94,7 +94,7 @@ print(r)
 ; bug 4：[]txt 的元素是 256-byte 的 %txt，但 str 字面量降成 %str-long（24 bytes）。
 ; push / 索引寫入若沿用引數型別，就會「按 24 bytes 寫、按 256 bytes 讀」——
 ; 元素讀回來全是空的；索引寫入則直接被 opt-verify 擋下
-;（'%str-long' but expected '%txt'）。
+; （'%str-long' but expected '%txt'）。
 vt []txt
 vt.push('alpha')
 vt.push('beta')
@@ -130,7 +130,9 @@ pt.s = pt.s.replace-n('-', '+', 2)
 print(pt.s)
 
 o = outer {
-    i: inner { t: 'deep' }
+    i: inner {
+        t: 'deep'
+    }
     name: 'outer'
 }
 print(o.name)
@@ -142,19 +144,19 @@ print(bx.s)
 print(bx.s.len())
 
 ; bug 7：str <-> txt 的**變數 / 出參賦值**。emitMove 的收尾用「目的端型別」載入來源
-;（`load %T, %T* srcSlot`）—— 兩端同型別沒事，一端是 %txt 就越界：
+; （`load %T, %T* srcSlot`）—— 兩端同型別沒事，一端是 %txt 就越界：
 ;   - str -> txt：`load %txt, %txt* <24 bytes 的 str slot>` 讀 256 bytes 出來，
 ;     而且長度 byte 還是**舊值**（緩衝區塞的是 {len,cap,data}）-> 印出空白、
 ;     長度回報上一個值。
 ;   - txt -> str：把 txt 內聯緩衝區的前 24 bytes 當 {len,cap,data}
 ;     -> 長度是文字位元組、data 是垃圾指標，drop 時 free 野指標 -> trace/BPT trap。
-src7 str = 'from-str'
+src7 = 'from-str'
 dst7 txt = 'seed-txt'
 dst7 = src7
 print(dst7)
 print(dst7.len())
 
-back7 str = 'seed-str'
+back7 = 'seed-str'
 back7 = dst7
 print(back7)
 print(back7.len())
@@ -167,7 +169,7 @@ print(o7)
 print(o7.len())
 
 ; bug 8：`txt == txt` 之前會降成 `icmp eq %txt`（聚合體），opt-verify 直接拒絕
-;（"icmp requires integer operands"）。現在走無分支的 memcmp 結構比較。
+; （"icmp requires integer operands"）。現在走無分支的 memcmp 結構比較。
 e1 txt = 'aa'
 e2 txt = 'aa'
 e3 txt = 'ab'
@@ -178,9 +180,9 @@ print(e1 != e3)
 ; bug 8b：**混合** txt / str 比較。hir2mir 只在「左運算元的 raw type 是 str」時
 ; 把比較導向 OpStrEq，所以 `s == t`（str 在左）會繞過 emitCmp，直接降成
 ; `call i1 @str_eq(%str-long %a, %txt %b)` —— 型別不匹配的呼叫，靜默回傳 false
-;（`'hello' == 'hello'` -> 0）。兩個方向都要各自正確。
-ms str = 'aa'
-md str = 'ab'
+; （`'hello' == 'hello'` -> 0）。兩個方向都要各自正確。
+ms = 'aa'
+md = 'ab'
 print(e1 == ms)
 print(e1 == md)
 print(ms == e1)

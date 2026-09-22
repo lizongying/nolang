@@ -48,13 +48,13 @@ for ch <- s: {
 }
 
 print('=== range patterns still work (chars) ===')
-n i64 = 5
+n = 5
 n: {
     [1..10) -> print('in range')
 
     -> print('out of range')
 }
-c char = "m"
+c = "m"
 c: {
     ["a".."z") -> print('alpha')
 

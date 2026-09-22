@@ -28,7 +28,8 @@ test-hkdf-extract = () {
 test-hkdf-expand = () {
     prk [32]byte
     i <- [0..32): {
-        #{overflow = wrap}
+
+        #{overflow=wrap}
         prk[i] = i + 1
     }
     info []byte = with-cap(2)
@@ -53,7 +54,8 @@ test-hkdf-expand = () {
 test-hkdf-expand-label = () {
     prk [32]byte
     i <- [0..32): {
-        #{overflow = wrap}
+
+        #{overflow=wrap}
         prk[i] = i + 1
     }
     ctx []byte = with-cap(2)
@@ -80,14 +82,16 @@ test-aes-gcm-seal-open = () {
     ; 16-byte key
     key [16]byte
     i <- [0..16): {
-        #{overflow = wrap}
+
+        #{overflow=wrap}
         key[i] = i + 1
     }
 
     ; 12-byte IV
     iv [12]byte
     i <- [0..12): {
-        #{overflow = wrap}
+
+        #{overflow=wrap}
         iv[i] = i + 10
     }
 
@@ -110,7 +114,7 @@ test-aes-gcm-seal-open = () {
     sealed = aes-gcm.seal-128(key, iv, aad, plain)
 
     ; sealed 長度應為 plain.len() + 16 (tag)
-    #{overflow = wrap}
+    #{overflow=wrap}
     expected-len = plain.len() + 16
     sealed-nonzero = 0
     i <- [0..expected-len): {
@@ -141,7 +145,8 @@ test-x25519-scalarmult = () {
     ; 生成私鑰（固定值）
     priv [32]byte
     i <- [0..32): {
-        #{overflow = wrap}
+
+        #{overflow=wrap}
         priv[i] = i + 1
     }
 

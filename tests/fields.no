@@ -4,7 +4,7 @@
 
 print('=== str.fields ===')
 
-fstr str = '  hello   world  nolang  '
+fstr = '  hello   world  nolang  '
 fields []str
 fields = fstr.fields()
 n = fields.len()

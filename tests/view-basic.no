@@ -10,16 +10,20 @@ view-point {
 
 ; self-view: 返回 self 的視圖
 view-point.self-view = () (v &view-point) {
-    v = self
+    v = .
 }
 
 ; sum: 一般方法，用來驗證透過 view 呼叫方法
 view-point.sum = () (s i64) {
+
     #{overflow=wrap}
     s = .x + .y
 }
 
-p = view-point { x: 7, y: 9 }
+p = view-point {
+    x: 7
+    y: 9
+}
 
 ; 1) view 讀取欄位（不拷貝）
 q = p.self-view()

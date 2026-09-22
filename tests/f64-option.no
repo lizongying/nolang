@@ -3,7 +3,9 @@ test-f64-ok = () {
     f = '3.14'.to-f64()
     {
         f == nil -> print('nil')
+
         f == err -> print('err')
+
         -> print(f)
     }
 }
@@ -12,7 +14,9 @@ test-f64-neg = () {
     f = '-2.5'.to-f64()
     {
         f == nil -> print('nil')
+
         f == err -> print('err')
+
         -> print(f)
     }
 }
@@ -21,7 +25,9 @@ test-f64-zero = () {
     f = '0.0'.to-f64()
     {
         f == nil -> print('nil')
+
         f == err -> print('err')
+
         -> print(f)
     }
 }
@@ -30,7 +36,9 @@ test-f64-empty = () {
     f = ''.to-f64()
     {
         f == nil -> print('nil')
+
         f == err -> print('err')
+
         -> print(f)
     }
 }
@@ -39,7 +47,9 @@ test-f64-invalid = () {
     f = 'abc'.to-f64()
     {
         f == nil -> print('nil')
+
         f == err -> print('err')
+
         -> print(f)
     }
 }
@@ -48,7 +58,9 @@ test-f64-int = () {
     f = '42'.to-f64()
     {
         f == nil -> print('nil')
+
         f == err -> print('err')
+
         -> print(f)
     }
 }
@@ -57,7 +69,9 @@ test-f64-sci = () {
     f = '1.5e3'.to-f64()
     {
         f == nil -> print('nil')
+
         f == err -> print('err')
+
         -> print(f)
     }
 }

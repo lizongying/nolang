@@ -14,6 +14,7 @@ tree-set.test-match = (key i64) (ok bool) {
     cur = .root
     {
         key < .keys[cur] -> cur = .left[cur]
+
         -> cur = .right[cur]
     }
     ok = true

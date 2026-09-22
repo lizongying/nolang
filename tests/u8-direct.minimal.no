@@ -3,7 +3,9 @@ test-method = () {
     n = 'abc'.to-i64()
     {
         n == nil -> print('nil')
+
         n == err -> print('err')
+
         -> {
             print('val=')
             print(n)

@@ -3,9 +3,9 @@
 ;      codegen 取 a[res] 時未對 %option 索引解包，
 ;      導致 "defined with type '%option' but expected 'i64'"。
 ; 修復後應輸出 x=3。
-main = () () {
-    a [4]i64 = [1, 2, 3, 4]
-    off i64 = 0
+main = () {
+    a = [1, 2, 3, 4]
+    off = 0
     res ?i64 = a[off + 1]
     x = a[res]
     io.out('x=')

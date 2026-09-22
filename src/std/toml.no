@@ -609,7 +609,7 @@ toml-next-array-table = (doc toml-doc, name str) (idx i64, ok bool) {
 ; toml.parse: 解析 TOML 文件，失敗返回 err(message)
 toml.parse = (s str) (result ?toml-doc) {
     doc = toml.new()
-    section str = ''
+    section = ''
     lines = s.split('\n')
     line-no = 0
     i = 0
@@ -800,7 +800,7 @@ toml.parse = (s str) (result ?toml-doc) {
 ; stringify: 以 TOML 1.0 語法輸出文件；array-of-tables 會還原為 [[table]] 標頭。
 stringify = (doc toml-doc) (out str) {
     out = ''
-    last-array str = ''
+    last-array = ''
     i <- [0..doc.count): {
 
         #{index-out=0}
@@ -906,7 +906,7 @@ has = (doc toml-doc, key str) (found bool) {
 ; get-str: 取得並解碼字串值
 get-str = (doc toml-doc, key str) (value str, ok bool) {
     ok = false
-    raw ?str = get(doc, key)
+    raw = get(doc, key)
     raw: {
         ok -> {
             value, ok = toml-unquote(it)
@@ -1050,7 +1050,7 @@ toml-parse-bool = (s str) (value bool, ok bool) {
 ; get-i64: 取得十進位整數（允許 TOML 的底線分隔）
 get-i64 = (doc toml-doc, key str) (value i64, ok bool) {
     ok = false
-    raw ?str = get(doc, key)
+    raw = get(doc, key)
     raw: {
         ok -> {
             value, ok = toml-parse-i64(it)
@@ -1065,7 +1065,7 @@ get-i64 = (doc toml-doc, key str) (value i64, ok bool) {
 ; get-f64: 取得浮點值（支援 exponent）
 get-f64 = (doc toml-doc, key str) (value f64, ok bool) {
     ok = false
-    raw ?str = get(doc, key)
+    raw = get(doc, key)
     raw: {
         ok -> {
             value, ok = toml-parse-f64(it)
@@ -1080,7 +1080,7 @@ get-f64 = (doc toml-doc, key str) (value f64, ok bool) {
 ; get-bool: 取得 true/false
 get-bool = (doc toml-doc, key str) (value bool, ok bool) {
     ok = false
-    raw ?str = get(doc, key)
+    raw = get(doc, key)
     raw: {
         ok -> {
             value, ok = toml-parse-bool(it)

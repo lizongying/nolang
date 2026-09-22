@@ -1,6 +1,6 @@
 ; test-str-repeat-only — 測試 str.repeat 是否正常
 print('start')
-space str = ' '
+space = ' '
 print('before repeat')
 buf str = space.repeat(8)
 print('after repeat')

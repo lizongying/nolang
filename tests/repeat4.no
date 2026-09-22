@@ -1,6 +1,6 @@
 ; test-repeat4 — str.repeat 簡化測試
 print('start')
-space str = ' '
+space = ' '
 print('space created')
 buf str = space.repeat(3)
 print('buf created')

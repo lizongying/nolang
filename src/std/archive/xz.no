@@ -707,7 +707,7 @@ lzma-decompress = (data []byte) (out []byte) {
     unpacked-size < 0 -> unpacked-size = -1
 
     ; 建立解碼器
-    dec lzma-decoder = lzma-decoder {
+    dec = lzma-decoder {
         prev-byte: 0
     }
     dec.lc = lc

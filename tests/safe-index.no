@@ -9,6 +9,7 @@ safe-get = (arr []i64, i i64) (res ?i64) {
 }
 
 get-default = (arr []i64, i i64) (res i64) {
+
     #{index-out=0}
     res = arr[i]
 }
@@ -50,7 +51,7 @@ unwrap-call-rhs = (n i64) (r ?i64) {
 ; B) 變數 RHS（?i64 變數）：預期 21
 unwrap-var-rhs = (n i64) (r ?i64) {
     r = nil
-    v ?i64 = opt-f(n)
+    v = opt-f(n)
     res ?= v
     io.out('unwrap-var-rhs res = ')
     io.out(res)
@@ -61,9 +62,9 @@ unwrap-var-rhs = (n i64) (r ?i64) {
 ; C) 算術 RHS 含 option 子表達式：自動解箱各項後相加，預期 63
 unwrap-infix-rhs = (n i64) (r ?i64) {
     r = nil
-    b ?i64 = opt-f(n)
-    c ?i64 = opt-f(n)
-    d ?i64 = opt-f(n)
+    b = opt-f(n)
+    c = opt-f(n)
+    d = opt-f(n)
     a ?= b + c + d
     io.out('unwrap-infix-rhs a = ')
     io.out(a)
@@ -73,36 +74,41 @@ unwrap-infix-rhs = (n i64) (r ?i64) {
 
 ; float 元素 + 浮點預設值
 get-default-f = (arr []f64, i i64) (res f64) {
+
     #{index-out=1.5}
     res = arr[i]
 }
 
 ; str 元素 + 字串預設值
 get-default-str = (arr []str, i i64) (res str) {
+
     #{index-out='-'}
     res = arr[i]
 }
 
 ; bool 元素 + 布林預設值
 get-default-bool = (arr []bool, i i64) (res bool) {
+
     #{index-out=true}
     res = arr[i]
 }
 
 ; byte(u8) 元素 + 整數預設值
 get-default-byte = (arr []u8, i i64) (res u8) {
+
     #{index-out=0}
     res = arr[i]
 }
 
 ; char 元素 + 字元預設值（字面量）
 get-default-char = (arr []char, i i64) (res char) {
+
     #{index-out='x'}
     res = arr[i]
 }
 
-main = () () {
-    a []i64 = [10, 20, 30]
+main = () {
+    a = [10, 20, 30]
 
     ; 1) ?= 傳播：越界回傳 none/err，不崩潰
     safe-get(a, 5)
@@ -137,13 +143,14 @@ main = () () {
 
     ; 4b) ?= 範圍內取值正確（解箱後印字元碼）
     v = safe-get(a, 2)
-    match v:
-        nil -> io.out('safe-get in-bounds: none')
-        -> io.out('safe-get in-bounds: some')
+    v
+    nil -> io.out('safe-get in-bounds: none')
+
+    -> io.out('safe-get in-bounds: some')
     print('')
 
     ; 5) float 預設值 + 範圍內
-    fa []f64 = [1.0, 2.0, 3.0]
+    fa = [1.0, 2.0, 3.0]
     fdef = get-default-f(fa, 9)
     io.out('get-default-f OOB -> ')
     io.out(fdef)
@@ -154,7 +161,7 @@ main = () () {
     print('')
 
     ; 6) str 預設值 + 範圍內
-    sa []str = ['a', 'b', 'c']
+    sa = ['a', 'b', 'c']
     sdef = get-default-str(sa, 9)
     io.out('get-default-str OOB -> ')
     io.out(sdef)
@@ -165,7 +172,7 @@ main = () () {
     print('')
 
     ; 7) bool 預設值 + 範圍內
-    ba []bool = [false, true, false]
+    ba = [false, true, false]
     bdef = get-default-bool(ba, 9)
     io.out('get-default-bool OOB -> ')
     io.out(bdef)
@@ -187,7 +194,7 @@ main = () () {
     print('')
 
     ; 9) char 預設值 + 範圍內
-    ca []char = ["p", "q", "r"]
+    ca = ["p", "q", "r"]
     cdef = get-default-char(ca, 9)
     io.out('get-default-char OOB -> ')
     io.out(cdef)

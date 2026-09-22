@@ -2,13 +2,15 @@
 
 ; 異步函數：返回輸入值的兩倍
 compute-async = (n i64) (r i64) {
-    #{overflow = wrap}
+
+    #{overflow=wrap}
     r = n * 2
 }
 
 ; 異步函數：多參數
 add-async = (a i64, b i64) (r i64) {
-    #{overflow = wrap}
+
+    #{overflow=wrap}
     r = a + b
 }
 
@@ -16,7 +18,9 @@ add-async = (a i64, b i64) (r i64) {
 classify-async = (n i64) (r i64) {
     {
         n > 0 -> r = 1
+
         n < 0 -> r = -1
+
         n == 0 -> r = 0
     }
 }
@@ -49,7 +53,8 @@ test-concurrent = () {
     h2 = run compute-async(20)
     r1 = awy h1
     r2 = awy h2
-    #{overflow = wrap}
+
+    #{overflow=wrap}
     print(r1 + r2); expect: 60
 }
 
@@ -61,7 +66,8 @@ test-lazy-future = () {
     h2 = run f2
     r1 = awy h1
     r2 = awy h2
-    #{overflow = wrap}
+
+    #{overflow=wrap}
     print(r1 + r2); expect: 60
 }
 

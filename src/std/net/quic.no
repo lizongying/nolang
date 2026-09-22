@@ -236,7 +236,7 @@ varint-decode = (buf []byte, pos i64) (val i64, next-pos i64) {
 ; len i64: CID 長度（通常 8）
 ; 返回 cid []byte: 隨機 CID
 gen-cid = (len i64) (cid []byte) {
-    state i64 = 0
+    state = 0
     state, cid-r = rand.rand(0)
     cid = with-len(len)
     i <- [0..len): {
@@ -719,7 +719,7 @@ conn.build-initial-packet = (crypto-data []byte) (packet []byte, ok bool) {
     #{overflow=wrap}
     ok = false
     pn = .initial-pn
-    pn-len i64 = 4
+    pn-len = 4
 
     ; ── 構建未保護的封包 ──
     pos = 0

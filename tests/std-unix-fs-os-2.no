@@ -18,6 +18,7 @@ fd-w >= 0 -> {
     print(link-ok.to-str())
     {
         link-ok -> print('PASS: link succeeded')
+
         link-ok == false -> print('FAIL: link failed')
     }
     fs.remove(link-src)
@@ -37,6 +38,7 @@ fd-w2 >= 0 -> {
     print(trunc-ok.to-str())
     {
         trunc-ok -> print('PASS: truncate succeeded')
+
         trunc-ok == false -> print('FAIL: truncate failed')
     }
     fs.remove(trunc-path)
@@ -104,6 +106,7 @@ fd-w3 >= 0 -> {
     print(flock-ok.to-str())
     {
         flock-ok -> print('PASS: flock succeeded')
+
         flock-ok == false -> print('FAIL: flock failed')
     }
 

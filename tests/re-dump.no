@@ -10,12 +10,19 @@ i <- [0..re.n): {
     a2 = re.arg2[i]
     {
         op == 1 -> print(i, ': CHAR', a1)
+
         op == 2 -> print(i, ': ANY')
+
         op == 3 -> print(i, ': CLASS', a1)
+
         op == 7 -> print(i, ': JUMP', a1)
+
         op == 8 -> print(i, ': SPLIT', a1, ',', a2)
+
         op == 9 -> print(i, ': MATCH')
+
         op == 10 -> print(i, ': START')
+
         op == 11 -> print(i, ': END')
     }
 }
@@ -32,12 +39,19 @@ i <- [0..re2.n): {
     a2 = re2.arg2[i]
     {
         op == 1 -> print(i, ': CHAR', a1)
+
         op == 2 -> print(i, ': ANY')
+
         op == 3 -> print(i, ': CLASS', a1)
+
         op == 7 -> print(i, ': JUMP', a1)
+
         op == 8 -> print(i, ': SPLIT', a1, ',', a2)
+
         op == 9 -> print(i, ': MATCH')
+
         op == 10 -> print(i, ': START')
+
         op == 11 -> print(i, ': END')
     }
 }

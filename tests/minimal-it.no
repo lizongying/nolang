@@ -3,7 +3,9 @@ test-it = () {
     n ?i64 = 42
     r = n: {
         err -> 0
+
         nil -> 0
+
         -> 0
     }
     print(r)

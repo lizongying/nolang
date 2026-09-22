@@ -35,20 +35,20 @@ t-push-grow = () {
 ; 與 []t.max/min 同類，暫不測試。
 
 t-contains = () {
-    v []i64 = [10, 20, 30]
+    v = [10, 20, 30]
     runner.is-true(v.contains(20), 'contains 20')
     runner.is-false(v.contains(99), 'not contains 99')
 }
 
 t-index-of = () {
-    v []i64 = [10, 20, 30]
+    v = [10, 20, 30]
     runner.eq(v.index-of(20), 1, 'index-of 20 == 1')
     runner.eq(v.index-of(99), -1, 'index-of 99 == -1')
 }
 
 t-first-last = () {
-    v []i64 = [5, 6, 7]
-    ok1 bool = false
+    v = [5, 6, 7]
+    ok1 = false
     f = v.first()
     f: {
         nil -> ok1 = false
@@ -56,7 +56,7 @@ t-first-last = () {
         -> ok1 = f == 5
     }
     runner.is-true(ok1, 'first == 5')
-    ok2 bool = false
+    ok2 = false
     l = v.last()
     l: {
         nil -> ok2 = false
@@ -65,7 +65,7 @@ t-first-last = () {
     }
     runner.is-true(ok2, 'last == 7')
     e []i64 = with-cap(0)
-    is-nil1 bool = false
+    is-nil1 = false
     f2 = e.first()
     f2: {
         nil -> is-nil1 = true
@@ -76,8 +76,8 @@ t-first-last = () {
 }
 
 t-at = () {
-    v []i64 = [1, 2, 3]
-    ok1 bool = false
+    v = [1, 2, 3]
+    ok1 = false
     a = v.at(1)
     a: {
         nil -> ok1 = false
@@ -85,7 +85,7 @@ t-at = () {
         -> ok1 = a == 2
     }
     runner.is-true(ok1, 'at(1) == 2')
-    is-nil bool = false
+    is-nil = false
     a2 = v.at(10)
     a2: {
         nil -> is-nil = true
@@ -108,8 +108,8 @@ t-insert = () {
 }
 
 t-remove = () {
-    v []i64 = [1, 2, 3]
-    ok bool = false
+    v = [1, 2, 3]
+    ok = false
     r = v.remove(1)
     r: {
         nil -> ok = false
@@ -122,7 +122,7 @@ t-remove = () {
 }
 
 t-reverse = () {
-    v []i64 = [1, 2, 3, 4]
+    v = [1, 2, 3, 4]
     v.reverse()
     runner.eq(v[0], 4, 'reverse [0] == 4')
     runner.eq(v[1], 3, 'reverse [1] == 3')
@@ -131,14 +131,14 @@ t-reverse = () {
 }
 
 t-swap = () {
-    v []i64 = [1, 2]
+    v = [1, 2]
     v.swap(0, 1)
     runner.eq(v[0], 2, 'swap [0] == 2')
     runner.eq(v[1], 1, 'swap [1] == 1')
 }
 
 t-clone = () {
-    v []i64 = [1, 2, 3]
+    v = [1, 2, 3]
     c = v.clone()
     runner.eq(c.len(), 3, 'clone len == 3')
     runner.eq(c[0], 1, 'clone [0] == 1')
@@ -149,23 +149,23 @@ t-clone = () {
 }
 
 t-fill = () {
-    v []i64 = [0, 0, 0]
+    v = [0, 0, 0]
     v.fill(7)
     runner.eq(v[0], 7, 'fill [0] == 7')
     runner.eq(v[2], 7, 'fill [2] == 7')
 }
 
 t-clear = () {
-    v []i64 = [1, 2, 3]
+    v = [1, 2, 3]
     v.clear()
     runner.eq(v.len(), 0, 'clear len == 0')
 }
 
 ; []t.eq 返回值無法賦值（void-call 預存 bug），以逐元素比較代替
 t-eq = () {
-    a []i64 = [1, 2, 3]
-    b []i64 = [1, 2, 3]
-    c []i64 = [1, 2, 4]
+    a = [1, 2, 3]
+    b = [1, 2, 3]
+    c = [1, 2, 4]
     runner.eq(a[0], b[0], 'eq element 0')
     runner.eq(a[1], b[1], 'eq element 1')
     runner.eq(a[2], b[2], 'eq element 2')

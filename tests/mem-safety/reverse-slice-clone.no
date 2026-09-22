@@ -3,7 +3,7 @@
 
 ; 測試 1：vec 正向切片（回歸測試）
 test-forward-slice = () (ok bool) {
-    a []i64 = [10, 20, 30, 40, 50]
+    a = [10, 20, 30, 40, 50]
     b = a[1..3]
     b[0] == 20 -> ok = true
     b[1] == 30 -> ok = true
@@ -12,7 +12,7 @@ test-forward-slice = () (ok bool) {
 
 ; 測試 2：vec 反向切片 [3..1]（兩端包含）
 test-vec-reverse-inclusive = () (ok bool) {
-    a []i64 = [10, 20, 30, 40, 50]
+    a = [10, 20, 30, 40, 50]
     b = a[3..1]
     b[0] == 40 -> ok = true
     b[1] == 30 -> ok = true
@@ -22,7 +22,7 @@ test-vec-reverse-inclusive = () (ok bool) {
 
 ; 測試 3：vec 反向切片 [3..1)（右端不包含）
 test-vec-reverse-exclusive = () (ok bool) {
-    a []i64 = [10, 20, 30, 40, 50]
+    a = [10, 20, 30, 40, 50]
     b = a[3..1)
     b[0] == 40 -> ok = true
     b[1] == 30 -> ok = true
@@ -31,7 +31,7 @@ test-vec-reverse-exclusive = () (ok bool) {
 
 ; 測試 4：vec 反向切片 (3..1]（左端不包含）
 test-vec-reverse-left-excl = () (ok bool) {
-    a []i64 = [10, 20, 30, 40, 50]
+    a = [10, 20, 30, 40, 50]
     b = a(3..1]
     b[0] == 50 -> ok = true
     b[1] == 40 -> ok = true
@@ -54,7 +54,7 @@ test-str-reverse = () (ok bool) {
 
 ; 測試 6：vec 反向切片獨立性（修改源不影響結果）
 test-vec-reverse-independence = () (ok bool) {
-    a []i64 = [10, 20, 30, 40, 50]
+    a = [10, 20, 30, 40, 50]
     b = a[4..0]
     a[0] = 99
     b[4] == 10 -> ok = true
@@ -63,7 +63,7 @@ test-vec-reverse-independence = () (ok bool) {
 
 ; 測試 7：vec 反向切片字面量索引 [4..2]
 test-vec-reverse-simple = () (ok bool) {
-    a []i64 = [10, 20, 30, 40, 50]
+    a = [10, 20, 30, 40, 50]
     b = a[4..2]
     b[0] == 50 -> ok = true
     b[1] == 40 -> ok = true

@@ -2,7 +2,7 @@
 
 ; # std/str
 
-fstr str = '  hello   world  nolang  '
+fstr = '  hello   world  nolang  '
 n = fstr.len-bytes()
 print('len:' - n.to-str())
 

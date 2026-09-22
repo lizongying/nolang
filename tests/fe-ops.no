@@ -116,27 +116,51 @@ test-scalarmult-base = () (pass bool) {
     scalar [32]byte
     hex-str = '77076d0a7318a57d3c16c17251b26645df4c2f87ebc0992ab177fba51db92c2a'
     i <- [0..32): {
-        #{overflow = wrap}
+
+        #{overflow=wrap}
         hi = hex-str[i * 2]
-        #{overflow = wrap}
+
+        #{overflow=wrap}
         lo = hex-str[i * 2 + 1]
         hi-v = 0
         lo-v = 0
         {
-            #{overflow = wrap}
-            hi >= 48 && hi <= 57 -> hi-v = hi - 48
-            #{overflow = wrap}
-            hi >= 97 && hi <= 102 -> hi-v = hi - 87
-            #{overflow = wrap}
-            hi >= 65 && hi <= 70 -> hi-v = hi - 55
+            hi >= 48 && hi <= 57 -> {
+
+                #{overflow=wrap}
+                hi-v = hi - 48
+            }
+
+            hi >= 97 && hi <= 102 -> {
+
+                #{overflow=wrap}
+                hi-v = hi - 87
+            }
+
+            hi >= 65 && hi <= 70 -> {
+
+                #{overflow=wrap}
+                hi-v = hi - 55
+            }
         }
         {
-            #{overflow = wrap}
-            lo >= 48 && lo <= 57 -> lo-v = lo - 48
-            #{overflow = wrap}
-            lo >= 97 && lo <= 102 -> lo-v = lo - 87
-            #{overflow = wrap}
-            lo >= 65 && lo <= 70 -> lo-v = lo - 55
+            lo >= 48 && lo <= 57 -> {
+
+                #{overflow=wrap}
+                lo-v = lo - 48
+            }
+
+            lo >= 97 && lo <= 102 -> {
+
+                #{overflow=wrap}
+                lo-v = lo - 87
+            }
+
+            lo >= 65 && lo <= 70 -> {
+
+                #{overflow=wrap}
+                lo-v = lo - 55
+            }
         }
         scalar[i] = (hi-v << 4) | lo-v
     }
@@ -162,7 +186,7 @@ test-scalarmult-base = () (pass bool) {
         eprint(' ')
         eprint(expected[i])
     }
-    match-val i64 = 1
+    match-val = 1
     i <- [0..32): {
         (pub[i]) != expected[i] -> {
             match-val = 0
@@ -182,26 +206,31 @@ main = () {
     p1 = test-fe-add()
     {
         p1 == true -> print('PASS: fe-add')
+
         p1 == false -> print('FAIL: fe-add')
     }
     p2 = test-fe-mul()
     {
         p2 == true -> print('PASS: fe-mul')
+
         p2 == false -> print('FAIL: fe-mul')
     }
     p3 = test-fe-sq()
     {
         p3 == true -> print('PASS: fe-sq')
+
         p3 == false -> print('FAIL: fe-sq')
     }
     p4 = test-fe-frombytes()
     {
         p4 == true -> print('PASS: fe-frombytes')
+
         p4 == false -> print('FAIL: fe-frombytes')
     }
     p5 = test-scalarmult-base()
     {
         p5 == true -> print('PASS: scalarmult-base')
+
         p5 == false -> print('FAIL: scalarmult-base')
     }
 }

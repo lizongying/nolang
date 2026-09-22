@@ -21,6 +21,7 @@ fill-str = () (out ?str) {
 }
 
 main = () {
+
     ; (1) option 包 slice：.len() 必須是 3，不是 tag 0
     v = fill-slice()
     v.len() == 3 -> print('ok: ?[]i64 len peels the option')

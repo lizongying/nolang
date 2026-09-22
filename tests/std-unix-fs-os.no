@@ -104,6 +104,7 @@ fd-w >= 0 -> {
     print(ut-ok.to-str())
     {
         ut-ok -> print('PASS: utime succeeded')
+
         ut-ok == false -> print('FAIL: utime failed')
     }
     fs.remove(ut-path)

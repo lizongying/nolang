@@ -498,7 +498,7 @@ open = (dsn str) (d db-mysql) {
     ; auth_plugin_name — 跳過，假設 mysql_native_password
 
     ; ── 計算認證權杖 ──
-    auth-token [20]byte = mysql-native-password(password, seed)
+    auth-token = mysql-native-password(password, seed)
 
     ; ── 建構握手回應封包 ──
     ; 能力：PROTOCOL_41 | SECURE_CONNECTION | PLUGIN_AUTH | CONNECT_WITH_DB

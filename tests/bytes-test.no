@@ -1,4 +1,4 @@
-line str = ''
+line = ''
 ok = false
 line, ok = fs.get-line()
 ok == false -> {
@@ -7,10 +7,10 @@ ok == false -> {
 }
 bs []byte = with-cap(4096)
 bs = line.to-bytes()
-n i64 = bs.len()
+n = bs.len()
 print('bs.len = {n}')
 j = 0
-c i64 = 0
+c = 0
 j <- [0..bs.len()): {
     c = bs[j]
     print('byte[{j}] = {c}')

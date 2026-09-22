@@ -26,13 +26,14 @@
 
 ; 測試 1：參數所有權隔離 — run 的參數被深拷貝，不共享 data
 modify-async = (v []i64) (r i64) {
+
     ; async runtime deep-copies v, so modifying v[0] is safe
     v[0] = 999; 修改的是深拷貝副本，不影響調用方的 shared
     r = v[0]
 }
 
 race-test = () (out i64) {
-    shared []i64 = [1, 2, 3]
+    shared = [1, 2, 3]
     task = run modify-async(shared); shared 被深拷貝，子線程不共享 data
     shared[0] = 100; 主線程修改自己的 shared，不影響子線程的副本
     out = awy task; awy 取回結果（999），子線程修改的是副本
@@ -42,7 +43,7 @@ print(r); 預期 999（子線程修改的是深拷貝副本）
 
 ; 測試 2：未 awy 的 task 被同步驅動到完成並釋放
 no-await-test = () (out i64) {
-    shared []i64 = [10, 20, 30]
+    shared = [10, 20, 30]
     task = run modify-async(shared); 創建 task 但不 awy
     shared[0] = 200; 主線程修改自己的 shared
     out = 42
@@ -56,7 +57,7 @@ str-modify-async = (s str) (r str) {
 }
 
 str-race-test = () {
-    shared str = 'hello'
+    shared = 'hello'
     task = run str-modify-async(shared); shared 被深拷貝
     result = awy task
     print(result); 預期 hello

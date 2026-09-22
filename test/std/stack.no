@@ -30,7 +30,7 @@ t-push-pop = () {
     runner.eq(sz, 3, 'push x3 size == 3')
 
     ; LIFO: pop 順序應為 30, 20, 10
-    ok1 bool = false
+    ok1 = false
     v1 = s.pop()
     v1: {
         nil -> ok1 = false
@@ -39,7 +39,7 @@ t-push-pop = () {
     }
     runner.is-true(ok1, 'pop 1st == 30')
 
-    ok2 bool = false
+    ok2 = false
     v2 = s.pop()
     v2: {
         nil -> ok2 = false
@@ -48,7 +48,7 @@ t-push-pop = () {
     }
     runner.is-true(ok2, 'pop 2nd == 20')
 
-    ok3 bool = false
+    ok3 = false
     v3 = s.pop()
     v3: {
         nil -> ok3 = false
@@ -70,7 +70,7 @@ t-peek = () {
     s.push(10)
     s.push(20)
 
-    ok bool = false
+    ok = false
     p = s.peek()
     p: {
         nil -> ok = false
@@ -89,7 +89,7 @@ t-pop-empty = () {
         data: buf
         n: 0
     }
-    is-nil bool = false
+    is-nil = false
     v = s.pop()
     v: {
         nil -> is-nil = true
@@ -98,7 +98,7 @@ t-pop-empty = () {
     }
     runner.is-true(is-nil, 'pop empty == nil')
 
-    is-nil2 bool = false
+    is-nil2 = false
     p = s.peek()
     p: {
         nil -> is-nil2 = true

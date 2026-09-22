@@ -37,20 +37,43 @@ box {
     own pt
 }
 
-h = holder { p: pt { x: 7, y: 8 } }
+h = holder {
+    p: pt {
+        x: 7
+        y: 8
+    }
+}
 print(h.p.x)
 print(h.p.y)
 
-n = annotated { a: pt { x: 1, y: 2 }, b: 3 }
+n = annotated {
+    a: pt {
+        x: 1
+        y: 2
+    }
+    b: 3
+}
 print(n.a.x)
 print(n.a.y)
 print(n.b)
 
 k = box {
-    inl: pt { x: 3, y: 4 }
-    tr: pt { x: 5, y: 6 }
-    fl: pt { x: 7, y: 8 }
-    own: pt { x: 9, y: 10 }
+    inl: pt {
+        x: 3
+        y: 4
+    }
+    tr: pt {
+        x: 5
+        y: 6
+    }
+    fl: pt {
+        x: 7
+        y: 8
+    }
+    own: pt {
+        x: 9
+        y: 10
+    }
 }
 print(k.inl.x)
 print(k.tr.x)

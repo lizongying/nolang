@@ -5,7 +5,8 @@
 ; 測試函數返回的 [32]byte 是否正確
 fill-bytes = () (out [32]byte) {
     i <- [0..32): {
-        #{overflow = wrap}
+
+        #{overflow=wrap}
         out[i] = (i + 1) & 255
     }
 }
@@ -13,7 +14,8 @@ fill-bytes = () (out [32]byte) {
 ; fill-bytes-param: 輸出填充好的 [32]byte
 fill-bytes-param = () (out [32]byte) {
     i <- [0..32): {
-        #{overflow = wrap}
+
+        #{overflow=wrap}
         out[i] = (i + 100) & 255
     }
 }
@@ -28,7 +30,8 @@ test-direct-return = () (pass bool) {
 
     ; 檢查前 8 bytes 是否為 1..8
     i <- [0..8): {
-        #{overflow = wrap}
+
+        #{overflow=wrap}
         expected = (i + 1) & 255
         arr[i] != expected -> {
             print('FAIL: direct return byte mismatch at index')
@@ -45,7 +48,8 @@ test-direct-return = () (pass bool) {
     ; 打印所有 bytes 用於 debug
     hex = ''
     i <- [0..32): {
-        #{overflow = wrap}
+
+        #{overflow=wrap}
         hex = hex - (arr[i]).to-str() - ' '
     }
     eprint('direct return bytes:')
@@ -63,7 +67,8 @@ test-param-pass = () (pass bool) {
 
     ; 檢查前 8 bytes
     i <- [0..8): {
-        #{overflow = wrap}
+
+        #{overflow=wrap}
         expected = (i + 100) & 255
         arr[i] != expected -> {
             print('FAIL: param pass byte mismatch at index')
@@ -84,11 +89,13 @@ main = () {
     p1 = test-direct-return()
     {
         p1 == true -> print('PASS: direct return')
+
         p1 == false -> print('FAIL: direct return')
     }
     p2 = test-param-pass()
     {
         p2 == true -> print('PASS: param pass')
+
         p2 == false -> print('FAIL: param pass')
     }
 }

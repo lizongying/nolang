@@ -4,9 +4,9 @@ word[1] = 101
 word[2] = 108
 word[3] = 108
 word[4] = 111
-wlen i64 = 5
+wlen = 5
 
-tmp-word str = ''
+tmp-word = ''
 tmp-word = with-cap(64)
 print('tmp-word type test')
 k = 0

@@ -15,7 +15,7 @@
 ; ═══════════════════════════════════════════════
 print('=== str.replace-str ===')
 
-s str = 'hello world, hello nolang'
+s = 'hello world, hello nolang'
 replaced str
 replaced = s.replace-str('hello', 'HI')
 print(replaced)
@@ -37,7 +37,7 @@ print(replaced)
 ; ═══════════════════════════════════════════════
 print('=== str.fields ===')
 
-fstr str = '  hello   world  nolang  '
+fstr = '  hello   world  nolang  '
 fields []str
 fields = fstr.fields()
 n = fields.len()
@@ -62,7 +62,7 @@ print('whitespace fields:' - fields.len().to-str())
 print('=== time ===')
 
 ; 已知時間戳：2000-01-01 00:00:00 UTC = 946684800
-ts i64 = 946684800
+ts = 946684800
 d time.date
 d = time.unix-to-date(ts)
 print('year:' - d.year.to-str())
@@ -84,10 +84,13 @@ ts2: {
         print('roundtrip:' - v.to-str())
         {
             v == 946684800 -> print('PASS')
+
             -> print('FAIL')
         }
     }
+
     nil -> print('FAIL: parse returned nil')
+
     err -> print('FAIL: parse error')
 }
 
@@ -95,7 +98,9 @@ ts2: {
 ts3 ?i64 = time.parse-date('2024-07-22')
 ts3: {
     ok -> print('date-only ts:' - it.to-str())
+
     nil -> print('FAIL: date-only parse')
+
     err -> print('FAIL: date-only parse error')
 }
 
@@ -130,10 +135,13 @@ decoded: {
         }
         {
             ok2 -> print('PEM roundtrip: PASS')
+
             -> print('PEM roundtrip: FAIL')
         }
     }
+
     nil -> print('PEM decode: FAIL')
+
     err -> print('PEM decode: ERROR')
 }
 

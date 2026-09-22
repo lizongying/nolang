@@ -20,6 +20,7 @@ test-push-struct-leaf-independent = () (ok bool) {
     p.name = 'Alice'
     p.age = 30
     v.push(p)
+
     ; 覆寫來源：這會 free 掉 v[0].name 正在讀的緩衝（修復前）
     p.name = 'Bob'
     e = v[0]

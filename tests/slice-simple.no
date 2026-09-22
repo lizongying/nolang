@@ -2,6 +2,7 @@
 main = () {
     s = 'hello,world'
     val = s.slice(0, 5)
-    #{overflow = wrap}
+
+    #{overflow=wrap}
     print('slice: ' + val)
 }

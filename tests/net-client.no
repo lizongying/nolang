@@ -12,6 +12,7 @@ c client.client =  {}
 ok = c.connect('127.0.0.1', 8080)
 {
     ok -> print('ok: connect')
+
     -> {
         print('fail: connect')
         return
@@ -22,19 +23,22 @@ ok = c.connect('127.0.0.1', 8080)
 yes = c.is-connected()
 {
     yes -> print('ok: is-connected')
+
     -> print('fail: is-connected')
 }
 
 ; 測試 3: send / recv
-buf str = ''
+buf = ''
 written = c.send('hello')
 {
     written > 0 -> print('ok: send')
+
     -> print('fail: send')
 }
 read-n = c.recv(buf, 1024)
 {
     read-n > 0 -> print('ok: recv')
+
     -> print('fail: recv')
 }
 
@@ -42,11 +46,13 @@ read-n = c.recv(buf, 1024)
 written2 = c.send-line('world')
 {
     written2 > 0 -> print('ok: send-line')
+
     -> print('fail: send-line')
 }
 line = c.recv-line()
 line: {
     nil -> print('fail: recv-line')
+
     -> print('ok: recv-line')
 }
 
@@ -55,6 +61,7 @@ c.close()
 yes2 = c.is-connected()
 {
     yes2 == false -> print('ok: close')
+
     -> print('fail: close')
 }
 
@@ -62,6 +69,7 @@ yes2 = c.is-connected()
 re-ok = c.reconnect()
 {
     re-ok -> print('ok: reconnect')
+
     -> print('fail: reconnect')
 }
 
@@ -69,6 +77,7 @@ re-ok = c.reconnect()
 c2 = client.client-create('127.0.0.1', 8080)
 c2: {
     nil -> print('fail: net-client')
+
     -> {
         print('ok: net-client')
 

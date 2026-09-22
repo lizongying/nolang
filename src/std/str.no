@@ -873,15 +873,15 @@ str-to-f64 = (s str) (result f64) {
     #{overflow=wrap}
     n i64 = s.len-bytes()
     n == 0 -> return
-    i i64 = 0
-    sign f64 = 1.0
-    int-part f64 = 0.0
-    frac-part f64 = 0.0
-    frac-div f64 = 1.0
-    exp i64 = 0
-    exp-sign i64 = 1
-    has-digit i64 = 0
-    c i64 = 0
+    i = 0
+    sign = 1.0
+    int-part = 0.0
+    frac-part = 0.0
+    frac-div = 1.0
+    exp = 0
+    exp-sign = 1
+    has-digit = 0
+    c = 0
 
     ; 跳過前導空白
     (i < n) {
@@ -1919,7 +1919,7 @@ f64-to-str-fixed = (x f64, precision i64) (out str) {
 
     ; 符號處理
     neg = 0
-    ax f64 = x
+    ax = x
 
     #{overflow=wrap}
     x < 0.0 -> {
@@ -1931,7 +1931,7 @@ f64-to-str-fixed = (x f64, precision i64) (out str) {
     }
 
     ; m = round(ax * 10^precision)
-    scale f64 = 1.0
+    scale = 1.0
     pi <- [0..precision): {
 
         #{overflow=wrap}
@@ -1939,7 +1939,7 @@ f64-to-str-fixed = (x f64, precision i64) (out str) {
     }
 
     #{overflow=wrap}
-    scaled f64 = ax * scale
+    scaled = ax * scale
 
     #{overflow=wrap}
     m i64 = number.f64-to-i64(scaled + 0.5)
@@ -2125,7 +2125,7 @@ f64-to-str-sci = (x f64, precision i64) (out str) {
 
     ; 符號處理
     neg = 0
-    ax f64 = x
+    ax = x
 
     #{overflow=wrap}
     x < 0.0 -> {
@@ -2137,7 +2137,7 @@ f64-to-str-sci = (x f64, precision i64) (out str) {
     }
 
     ; 計算指數 e = floor(log10(ax))
-    ln10 f64 = 2.302585092994046
+    ln10 = 2.302585092994046
     e i64 = number.f64-to-i64(math.floor(math.log10(ax)))
 
     #{overflow=wrap}
@@ -2159,7 +2159,7 @@ f64-to-str-sci = (x f64, precision i64) (out str) {
     }
 
     ; m = round(ax / base * 10^precision)
-    scale f64 = 1.0
+    scale = 1.0
     pi <- [0..precision): {
 
         #{overflow=wrap}
@@ -2193,7 +2193,7 @@ f64-to-str-sci = (x f64, precision i64) (out str) {
     mn = mstr.len-bytes()
 
     ; 指數位數
-    ae i64 = e
+    ae = e
 
     #{overflow=wrap}
     e < 0 -> ae = 0 - ae
@@ -2365,7 +2365,7 @@ f64-to-str-general = (x f64, precision i64) (out str) {
 
     ; 符號處理
     neg = 0
-    ax f64 = x
+    ax = x
 
     #{overflow=wrap}
     x < 0.0 -> {
@@ -2377,7 +2377,7 @@ f64-to-str-general = (x f64, precision i64) (out str) {
     }
 
     ; 計算指數
-    ln10 f64 = 2.302585092994046
+    ln10 = 2.302585092994046
     e i64 = number.f64-to-i64(math.floor(math.log10(ax)))
 
     #{overflow=wrap}
@@ -2401,8 +2401,8 @@ f64-to-str-general = (x f64, precision i64) (out str) {
     ; m = round(ax / base * 10^(precision-1))
 
     #{overflow=wrap}
-    p-1 i64 = precision - 1
-    scale f64 = 1.0
+    p-1 = precision - 1
+    scale = 1.0
     pi <- [0..p-1): {
 
         #{overflow=wrap}

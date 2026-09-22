@@ -174,7 +174,7 @@ txt.ends-with = (sub txt) (yes bool) {
 
     #{overflow=wrap}
     yes = false
-    sn i64 = sub.len()
+    sn = sub.len()
     n i64 = .len()
     sn == 0 -> yes = true
     n < sn -> yes = false
@@ -224,7 +224,7 @@ txt.append-str = (s str) {
 txt.append-txt = (t txt) {
 
     #{overflow=wrap}
-    tn i64 = t.len()
+    tn = t.len()
     n i64 = .len()
 
     #{overflow=wrap}
@@ -256,7 +256,7 @@ txt.truncate = (n i64) {
 ; 返回 -1(a<b), 0(相等), 1(a>b)
 txt.compare = (b txt) (r i64) {
     an i64 = .len()
-    bn i64 = b.len()
+    bn = b.len()
     min-n = an
     bn < min-n -> min-n = bn
     i <- [0..min-n): {
@@ -629,7 +629,7 @@ txt.index-from = (target txt, from i64) (pos i64) {
     pos = -1
     r-from < 0 -> r-from = 0
     n i64 = .len()
-    m i64 = target.len()
+    m = target.len()
     m == 0 -> r-from <= n -> pos = r-from
     n < m -> pos = -1
 
@@ -660,7 +660,7 @@ txt.rindex = (target txt) (pos i64) {
     #{overflow=wrap}
     pos = -1
     n i64 = .len()
-    m i64 = target.len()
+    m = target.len()
     m == 0 -> pos = n
     n < m -> pos = -1
 
@@ -697,7 +697,7 @@ txt.rindex-from = (target txt, from i64) (pos i64) {
     pos = -1
     r-from < 0 -> r-from = 0
     n i64 = .len()
-    m i64 = target.len()
+    m = target.len()
     m == 0 -> r-from <= n -> pos = n
     n < m -> pos = -1
 
@@ -1196,8 +1196,8 @@ txt.replace-str = (old txt, new txt) (val txt) {
         return
     }
     n i64 = .len()
-    old-len i64 = old.len()
-    new-len i64 = new.len()
+    old-len = old.len()
+    new-len = new.len()
     cap = 255
     pos = 0
     i = 0

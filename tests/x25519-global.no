@@ -7,27 +7,51 @@ g-priv [32]byte
 ; hex-to-bytes: 將 hex 字串轉為 [32]byte
 hex-to-bytes = (hex-str str) (out [32]byte) {
     i <- [0..32): {
-        #{overflow = wrap}
+
+        #{overflow=wrap}
         hi = hex-str[i * 2]
-        #{overflow = wrap}
+
+        #{overflow=wrap}
         lo = hex-str[i * 2 + 1]
         hi-v = 0
         lo-v = 0
         {
-            #{overflow = wrap}
-            hi >= 48 && hi <= 57 -> hi-v = hi - 48
-            #{overflow = wrap}
-            hi >= 97 && hi <= 102 -> hi-v = hi - 87
-            #{overflow = wrap}
-            hi >= 65 && hi <= 70 -> hi-v = hi - 55
+            hi >= 48 && hi <= 57 -> {
+
+                #{overflow=wrap}
+                hi-v = hi - 48
+            }
+
+            hi >= 97 && hi <= 102 -> {
+
+                #{overflow=wrap}
+                hi-v = hi - 87
+            }
+
+            hi >= 65 && hi <= 70 -> {
+
+                #{overflow=wrap}
+                hi-v = hi - 55
+            }
         }
         {
-            #{overflow = wrap}
-            lo >= 48 && lo <= 57 -> lo-v = lo - 48
-            #{overflow = wrap}
-            lo >= 97 && lo <= 102 -> lo-v = lo - 87
-            #{overflow = wrap}
-            lo >= 65 && lo <= 70 -> lo-v = lo - 55
+            lo >= 48 && lo <= 57 -> {
+
+                #{overflow=wrap}
+                lo-v = lo - 48
+            }
+
+            lo >= 97 && lo <= 102 -> {
+
+                #{overflow=wrap}
+                lo-v = lo - 87
+            }
+
+            lo >= 65 && lo <= 70 -> {
+
+                #{overflow=wrap}
+                lo-v = lo - 55
+            }
         }
         out[i] = (hi-v << 4) | lo-v
     }
@@ -58,6 +82,7 @@ main = () {
     ok1 = bytes-eq(local-pub, expected-pub)
     {
         ok1 == true -> print('PASS: local priv -> correct pub')
+
         ok1 == false -> print('FAIL: local priv -> wrong pub')
     }
 
@@ -68,7 +93,8 @@ main = () {
     eprint('g-priv: ')
     s = ''
     i <- [0..32): {
-        #{overflow = wrap}
+
+        #{overflow=wrap}
         s = s - (g-priv[i]).to-str() - ' '
     }
     eprint(s)
@@ -79,7 +105,8 @@ main = () {
     eprint('global-pub: ')
     s = ''
     i <- [0..32): {
-        #{overflow = wrap}
+
+        #{overflow=wrap}
         s = s - (global-pub[i]).to-str() - ' '
     }
     eprint(s)
@@ -87,6 +114,7 @@ main = () {
     ok2 = bytes-eq(global-pub, expected-pub)
     {
         ok2 == true -> print('PASS: global priv -> correct pub')
+
         ok2 == false -> print('FAIL: global priv -> wrong pub')
     }
 
@@ -94,6 +122,7 @@ main = () {
     ok3 = bytes-eq(local-pub, global-pub)
     {
         ok3 == true -> print('PASS: local pub == global pub')
+
         ok3 == false -> print('FAIL: local pub != global pub (global passing bug)')
     }
 }

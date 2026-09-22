@@ -28,10 +28,12 @@ main = () {
     ; 驗證
     {
         a[0] == 100 -> print('PASS: a swapped')
+
         a[0] != 100 -> print('FAIL: a not swapped')
     }
     {
         b[0] == 1 -> print('PASS: b swapped')
+
         b[0] != 1 -> print('FAIL: b not swapped')
     }
 
@@ -45,10 +47,12 @@ main = () {
 
     {
         a[0] == 100 -> print('PASS: a not swapped (mask=0)')
+
         a[0] != 100 -> print('FAIL: a swapped (mask=0)')
     }
     {
         b[0] == 1 -> print('PASS: b not swapped (mask=0)')
+
         b[0] != 1 -> print('FAIL: b swapped (mask=0)')
     }
 }

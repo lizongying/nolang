@@ -11,10 +11,12 @@
 ; read-file), it loads %vec and stores as %str-long (same {i64,i64,i64} layout).
 
 main = () {
+
     ; Create test file
-    #{overflow = wrap}
+    #{overflow=wrap}
     content = 'hello world test' - '\n'
-    #{overflow = wrap}
+
+    #{overflow=wrap}
     fd = fs.open-write('/tmp/bug12-mem-safety-test.txt')
     b = content.to-bytes()
     fs.write(fd, b, b.len())
@@ -23,13 +25,16 @@ main = () {
     ; Direct assignment: data str = fs.read-file(...)
     ; read-file returns []byte (%vec*) but data is %str-long.
     ; Without fix: LLVM type error (store i64 %rf.vec.N, i64* %data)
-    #{overflow = wrap}
+    #{overflow=wrap}
     data str = fs.read-file('/tmp/bug12-mem-safety-test.txt')
-    #{overflow = wrap}
+
+    #{overflow=wrap}
     print('data=[' - data - ']')
+
     ; Expected: data=[hello world test]
 
     ; Verify correctness
     data == 'hello world test\n' -> print('bug12: PASS')
+
     -> print('bug12: FAIL')
 }

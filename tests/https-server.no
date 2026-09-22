@@ -26,10 +26,12 @@ test-tls-server-init = () (pass bool) {
             print('FAIL: server-init returned nil')
             return
         }
+
         err -> {
             print('FAIL: server-init returned err')
             return
         }
+
         ok -> {
             c = it
 
@@ -93,19 +95,23 @@ run-https-e2e-client = (host str, port i64) (ok bool) {
             print('FAIL: e2e dial nil')
             return
         }
+
         err -> {
             print('FAIL: e2e dial err')
             return
         }
+
         ok -> {
             tc = it
 
             ; 發送 HTTP GET 請求
             cr = char-to-str(13)
             lf = char-to-str(10)
-            #{overflow = wrap}
+
+            #{overflow=wrap}
             crlf = cr - lf
-            #{overflow = wrap}
+
+            #{overflow=wrap}
             req = 'GET / HTTP/1.1' - crlf - 'Host: 127.0.0.1' - crlf - 'Connection: close' - crlf - crlf
 
             send-ok = false
@@ -116,11 +122,13 @@ run-https-e2e-client = (host str, port i64) (ok bool) {
                     tc.close()
                     return
                 }
+
                 err -> {
                     print('FAIL: e2e send err')
                     tc.close()
                     return
                 }
+
                 ok -> send-ok = true
             }
             send-ok == false -> {
@@ -133,27 +141,30 @@ run-https-e2e-client = (host str, port i64) (ok bool) {
             recv-buf = space.repeat(4096)
             recv-total = 0
             found = false
-            {
+            (found == false) {
                 found -> *
                 recv-total >= 4000 -> *
                 tmp = space.repeat(2048)
                 rn = tc.recv(tmp, 2048)
                 rn <= 0 -> *
                 i <- [0..rn): {
-                    #{overflow = wrap}
+
+                    #{overflow=wrap}
                     recv-buf[recv-total + i] = tmp[i]
                 }
-                #{overflow = wrap}
+
+                #{overflow=wrap}
                 recv-total = recv-total + rn
 
                 pos = recv-buf.index-from('hello from nolang https', 0)
                 pos >= 0 -> found = true
-            } (found == false)
+            }
             {
                 found -> {
                     print('PASS: e2e got expected response')
                     ok = true
                 }
+
                 found == false -> print('FAIL: e2e did not receive expected response')
             }
             tc.close()
@@ -182,6 +193,7 @@ test-https-e2e = () (pass bool) {
             srv.close()
             return
         }
+
         pid == 0 -> {
 
             ; === 子進程: 伺服器 (處理一個連線後退出) ===
@@ -218,19 +230,23 @@ run-https-e2e-client-12 = (host str, port i64) (ok bool) {
             print('FAIL: e2e-12 dial-12 nil')
             return
         }
+
         err -> {
             print('FAIL: e2e-12 dial-12 err')
             return
         }
+
         ok -> {
             tc = it
 
             ; 發送 HTTP GET 請求
             cr = char-to-str(13)
             lf = char-to-str(10)
-            #{overflow = wrap}
+
+            #{overflow=wrap}
             crlf = cr - lf
-            #{overflow = wrap}
+
+            #{overflow=wrap}
             req = 'GET / HTTP/1.1' - crlf - 'Host: 127.0.0.1' - crlf - 'Connection: close' - crlf - crlf
 
             send-ok = false
@@ -241,11 +257,13 @@ run-https-e2e-client-12 = (host str, port i64) (ok bool) {
                     tc.close()
                     return
                 }
+
                 err -> {
                     print('FAIL: e2e-12 send err')
                     tc.close()
                     return
                 }
+
                 ok -> send-ok = true
             }
             send-ok == false -> {
@@ -258,27 +276,30 @@ run-https-e2e-client-12 = (host str, port i64) (ok bool) {
             recv-buf = space.repeat(4096)
             recv-total = 0
             found = false
-            {
+            (found == false) {
                 found -> *
                 recv-total >= 4000 -> *
                 tmp = space.repeat(2048)
                 rn = tc.recv(tmp, 2048)
                 rn <= 0 -> *
                 i <- [0..rn): {
-                    #{overflow = wrap}
+
+                    #{overflow=wrap}
                     recv-buf[recv-total + i] = tmp[i]
                 }
-                #{overflow = wrap}
+
+                #{overflow=wrap}
                 recv-total = recv-total + rn
 
                 pos = recv-buf.index-from('hello from nolang https 1.2', 0)
                 pos >= 0 -> found = true
-            } (found == false)
+            }
             {
                 found -> {
                     print('PASS: e2e-12 got expected response')
                     ok = true
                 }
+
                 found == false -> print('FAIL: e2e-12 did not receive expected response')
             }
             tc.close()
@@ -307,6 +328,7 @@ test-https-e2e-12 = () (pass bool) {
             srv.close()
             return
         }
+
         pid == 0 -> {
 
             ; === 子進程: 伺服器 (處理一個連線後退出) ===
@@ -334,26 +356,31 @@ main = () {
     p1 = test-https-listen()
     {
         p1 == true -> print('PASS: https-server.listen')
+
         p1 == false -> print('FAIL: https-server.listen')
     }
     p2 = test-tls-server-init()
     {
         p2 == true -> print('PASS: server-init')
+
         p2 == false -> print('FAIL: server-init')
     }
     p3 = test-https-server-struct()
     {
         p3 == true -> print('PASS: https-server-conn struct')
+
         p3 == false -> print('FAIL: https-server-conn struct')
     }
     p4 = test-https-e2e()
     {
         p4 == true -> print('PASS: https-e2e')
+
         p4 == false -> print('FAIL: https-e2e')
     }
     p5 = test-https-e2e-12()
     {
         p5 == true -> print('PASS: https-e2e-tls12')
+
         p5 == false -> print('FAIL: https-e2e-tls12')
     }
 }

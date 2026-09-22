@@ -20,7 +20,8 @@ test-run = (name str, cb greet-cb) {
 }
 
 add-one = (n i64) (r i64) {
-    #{overflow = wrap}
+
+    #{overflow=wrap}
     r = n + 1
 }
 
@@ -33,9 +34,10 @@ test-run('hello', greet)
 print('ok: greet')
 
 ; 測試 2: 帶參數回呼
-result i64 = 0
+result = 0
 result = apply(41, add-one)
 {
     result == 42 -> print('ok: apply')
+
     -> print('fail: apply')
 }

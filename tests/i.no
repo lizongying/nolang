@@ -1,7 +1,7 @@
 ; cd src && go run ./cmd/cli/. build ../tests/i.no
 ; a = 1
 
-a str = 'abc'
+a = 'abc'
 
 ; a = 2
 

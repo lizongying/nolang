@@ -11,23 +11,29 @@ view-node {
 view-node.find = (want i64) (v ?&view-node) {
     v = nil
     .v == want -> {
-        v = self
+        v = .
     }
 }
 
-n = view-node { v: 5 }
+n = view-node {
+    v: 5
+}
 
 a = n.find(5)
 a: {
     ok -> print(it.v)
+
     nil -> print('missing')
+
     err -> print('err')
 }
 
 b = n.find(6)
 b: {
     ok -> print(it.v)
+
     nil -> print('missing')
+
     err -> print('err')
 }
 
@@ -38,6 +44,8 @@ c: {
         it.v = 99
         print(n.v)
     }
+
     nil -> print('missing')
+
     err -> print('err')
 }

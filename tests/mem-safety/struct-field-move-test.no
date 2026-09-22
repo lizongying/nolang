@@ -9,7 +9,7 @@ container {
 }
 
 extract-data = (c container) (out []i64) {
-    out = c.data   ; move: c.data 的所有权转移给 out
+    out = c.data; move: c.data 的所有权转移给 out
     ; c.name 仍由 c 拥有，函数结束时应 free c.name
     ; c.data 已 move，emitStructFieldsFree 应跳过 c.data 的 free
 }

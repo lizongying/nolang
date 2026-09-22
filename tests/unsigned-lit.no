@@ -15,7 +15,7 @@
 ; 注意：本檔刻意把斷言放進 main() —— 腳本頂層的綁定會被降成 global（拿到真實
 ; i8 槽位），走的不是這條路徑。
 
-main = () () {
+main = () {
     b byte = -1
     print('byte -1 = ')
     print(b)
@@ -43,7 +43,7 @@ main = () () {
     print(s)
     print('\n')
 
-    n i64 = -1
+    n = -1
     print('i64 -1 = ')
     print(n)
     print('\n')

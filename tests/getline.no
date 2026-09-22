@@ -1,4 +1,4 @@
-line str = ''
+line = ''
 ok = false
 line, ok = fs.get-line()
 ok == false -> {

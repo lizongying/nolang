@@ -6,7 +6,7 @@
 ; # std/net/http
 
 ; 測試 1: http.response 結構體
-r http.response = http.response {}
+r = http.response {}
 r.status-code = 200
 r.status-text = 'OK'
 r.headers = 'Content-Type: text/html'

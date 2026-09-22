@@ -11,7 +11,7 @@ check = (name str, cond bool) {
 }
 
 nan-of = () (v f64) {
-    zero f64 = 0.0
+    zero = 0.0
     v = zero / zero
 }
 

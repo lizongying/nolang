@@ -400,7 +400,7 @@ server-conn.handshake = () {
     ; 讀取 HTTP 請求（直到 \r\n\r\n）
     raw str = with-len(WS-BUF-SIZE)
     total = 0
-    sep-pos i64 = -1
+    sep-pos = -1
 
     !! {
 
@@ -635,7 +635,7 @@ server-conn.recv = () (msg ?message) {
 
     ; 收集分片訊息
     acc-data = ''
-    acc-opcode i64 = 0
+    acc-opcode = 0
     has-acc = false
 
     !! {
@@ -1189,7 +1189,7 @@ client.recv = () (msg ?message) {
         return
     }
     acc-data = ''
-    acc-opcode i64 = 0
+    acc-opcode = 0
     has-acc = false
 
     !! {
@@ -1653,7 +1653,7 @@ connect = (url str) (c ?client) {
     raw str = with-len(WS-BUF-SIZE)
     tmp str = with-len(WS-RECV-SIZE)
     total = 0
-    sep-pos i64 = -1
+    sep-pos = -1
 
     #{overflow=wrap}
     separator = crlf - crlf

@@ -8,6 +8,7 @@ test-nan-inf = () {
     a.is-nan(yes)
     {
         yes -> print(1)
+
         -> print(0)
     }
 
@@ -17,6 +18,7 @@ test-nan-inf = () {
     a.is-inf(yes)
     {
         yes -> print(1)
+
         -> print(0)
     }
 
@@ -24,11 +26,12 @@ test-nan-inf = () {
     ; expect: 0
 
     ; NaN = 0.0 / 0.0
-    #{overflow = wrap}
+    #{overflow=wrap}
     b = 0.0 / 0.0
     b.is-nan(yes)
     {
         yes -> print(1)
+
         -> print(0)
     }
 
@@ -38,6 +41,7 @@ test-nan-inf = () {
     b.is-inf(yes)
     {
         yes -> print(1)
+
         -> print(0)
     }
 
@@ -45,11 +49,12 @@ test-nan-inf = () {
     ; expect: 0
 
     ; +Inf = 1.0 / 0.0
-    #{overflow = wrap}
+    #{overflow=wrap}
     c = 1.0 / 0.0
     c.is-nan(yes)
     {
         yes -> print(1)
+
         -> print(0)
     }
 
@@ -59,6 +64,7 @@ test-nan-inf = () {
     c.is-inf(yes)
     {
         yes -> print(1)
+
         -> print(0)
     }
 
@@ -66,11 +72,12 @@ test-nan-inf = () {
     ; expect: 0 (not printed)
 
     ; -Inf = -1.0 / 0.0
-    #{overflow = wrap}
+    #{overflow=wrap}
     d = -1.0 / 0.0
     d.is-nan(yes)
     {
         yes -> print(1)
+
         -> print(0)
     }
 
@@ -80,6 +87,7 @@ test-nan-inf = () {
     d.is-inf(yes)
     {
         yes -> print(1)
+
         -> print(0)
     }
     ; expect: 1

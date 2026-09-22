@@ -25,7 +25,7 @@ t-outln = () {
 
 t-err = () {
     n i64 = io.err('E')
-    ok bool = n >= 0
+    ok = n >= 0
     runner.is-true(ok, 'err returns >= 0')
 }
 

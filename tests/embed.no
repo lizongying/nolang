@@ -7,10 +7,12 @@ n = DATA.len()
 print('embed len: {n}')
 {
     n == 5 -> print('len OK')
+
     -> print('len FAIL')
 }
 b = DATA[0]
 {
     b == 72 -> print('first byte OK')
+
     -> print('first byte FAIL')
 }

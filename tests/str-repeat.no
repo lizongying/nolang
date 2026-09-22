@@ -2,7 +2,7 @@
 ; # std/net/tls
 
 print('=== str.repeat Test ===')
-space str = ' '
+space = ' '
 print('space created')
 buf str = space.repeat(8)
 print('buf created')

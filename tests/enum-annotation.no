@@ -38,24 +38,22 @@
 ; ① 整個 enum 上方 + ② 單個值：一個獨立成行、一個同行尾隨
 #{inline=true}
 color {
-    #{doc = 'red'}
-    red,
-    green #{doc = 'green'},
+    red #{doc='red'},
+    green #{doc='green'},
     blue,
 }
 
 ; ① 整個 enum 上方 + ② 單個變體：一個獨立成行、一個同行尾隨
 #{inline=true}
 box {
-    #{doc = 'has value'}
-    full(v i64),
-    empty #{doc = 'empty'},
+    full(v i64) #{doc='has value'},
+    empty #{doc='empty'},
 }
 
 ; 帶載荷的多欄位變體（尾隨註解同樣合法）
 shape {
     circle(r f64),
-    rect(w f64, h f64) #{doc = 'rectangle'},
+    rect(w f64, h f64) #{doc='rectangle'},
     dot,
 }
 
@@ -78,6 +76,7 @@ holder {
 }
 
 main = () {
+
     ; 註解不影響列舉值引用
     c color = color.green
     print(c)
@@ -87,6 +86,7 @@ main = () {
     bx box = full(7)
     bx: {
         full(v) -> print(v)
+
         empty -> print('empty')
     }
 
@@ -94,7 +94,9 @@ main = () {
     s shape = rect(2.0, 3.0)
     s: {
         circle(r) -> print(r)
+
         rect(w, h) -> print(w * h)
+
         dot -> print('dot')
     }
 
@@ -102,14 +104,24 @@ main = () {
     p plain = plain.a
     p: {
         a -> print('a')
+
         b -> print('b')
     }
 
     ; 結構體欄位照常賦值／讀取
-    h holder = holder{
-        inl: pt{x: 1, y: 2},
-        out: pt{x: 3, y: 4},
-        bare: pt{x: 5, y: 6},
+    h = holder {
+        inl: pt {
+            x: 1
+            y: 2
+        }
+        out: pt {
+            x: 3
+            y: 4
+        }
+        bare: pt {
+            x: 5
+            y: 6
+        }
     }
     print(h.inl.x)
     print(h.out.y)

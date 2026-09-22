@@ -6,21 +6,21 @@
 print('start')
 
 ; ── 所有變數頂層宣告（遵循 http-no 慣例）──
-json-str str = '{"name":"Alice","age":30,"items":[1,2,3],"active":true}'
-root i64 = -1
-next i64 = 0
-ok bool = false
-val-idx i64 = -1
-found bool = false
-str-val str = ''
-num-val f64 = 0.0
-bool-val bool = false
-arr-idx i64 = -1
-n i64 = 0
-elem-idx i64 = -1
-out-buf str = ''
-out-n i64 = 0
-result str = ''
+json-str = '{"name":"Alice","age":30,"items":[1,2,3],"active":true}'
+root = -1
+next = 0
+ok = false
+val-idx = -1
+found = false
+str-val = ''
+num-val = 0.0
+bool-val = false
+arr-idx = -1
+n = 0
+elem-idx = -1
+out-buf = ''
+out-n = 0
+result = ''
 
 ; ── 測試 1: 剖析物件 ──
 p = json-pool {}
@@ -28,6 +28,7 @@ p.init()
 root, next, ok = p.parse(json-str, 0)
 {
     ok -> print('ok: parse object')
+
     -> {
         print('fail: parse object')
         return
@@ -39,9 +40,11 @@ val-idx, found = p.get-key(root, 'name')
         str-val, ok = p.get-str(val-idx)
         {
             ok -> print('ok: name=' - str-val)
+
             -> print('fail: get-str name')
         }
     }
+
     -> print('fail: get-key name')
 }
 val-idx, found = p.get-key(root, 'age')
@@ -54,12 +57,15 @@ val-idx, found = p.get-key(root, 'age')
                 ; 用比較驗證，避免 f64.to-str 的 codegen bug
                 {
                     num-val == 30.0 -> print('ok: age=30')
+
                     -> print('fail: age should be 30')
                 }
             }
+
             -> print('fail: get-num age')
         }
     }
+
     -> print('fail: get-key age')
 }
 arr-idx, found = p.get-key(root, 'items')
@@ -68,6 +74,7 @@ arr-idx, found = p.get-key(root, 'items')
         n = p.arr-len(arr-idx)
         {
             n == 3 -> print('ok: items len=3')
+
             -> {
                 print('fail: items len')
                 print(n)
@@ -80,14 +87,18 @@ arr-idx, found = p.get-key(root, 'items')
                 {
                     ok -> {
                         num-val == 1.0 -> print('ok: items[0]=1')
+
                         -> print('fail: items[0] should be 1')
                     }
+
                     -> print('fail: get-num items[0]')
                 }
             }
+
             -> print('fail: arr-get items[0]')
         }
     }
+
     -> print('fail: get-key items')
 }
 val-idx, found = p.get-key(root, 'active')
@@ -97,11 +108,14 @@ val-idx, found = p.get-key(root, 'active')
         {
             ok -> {
                 bool-val -> print('ok: active=true')
+
                 -> print('fail: active should be true')
             }
+
             -> print('fail: get-bool active')
         }
     }
+
     -> print('fail: get-key active')
 }
 
@@ -110,11 +124,13 @@ val-idx, found = p.get-key(root, 'active')
 result = p.stringify(root)
 {
     result.len() > 0 -> print('ok: stringify=' - result)
+
     -> print('fail: stringify')
 }
 val-idx, found = p.get-key(root, 'nonexistent')
 {
     found == false -> print('ok: nonexistent key not found')
+
     -> print('fail: nonexistent key should not be found')
 }
 print('ok: all tests done')

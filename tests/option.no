@@ -6,13 +6,17 @@
 x = 3
 x: {
     1 -> print(11)
+
     2 -> print(22)
+
     -> print(33)
 }
 x = 4
 x: {
     1 -> print(111)
+
     2 -> print(222)
+
     -> print(333)
 }
 
@@ -20,12 +24,11 @@ x: {
 a = 100
 b = 101
 result = x: {
-    1 -> {
+    ; 单一值
+    1 -> 1
 
-        ; 单一值
-        1
-    }
     2 -> 2 + 1; 簡單表達式
+
     -> a + b
 }
 print(result)
@@ -39,6 +42,8 @@ print(result)
         ; todo      print(a+b)
         print(b)
     }
+
     a == 2 -> print('a')
+
     -> print('b')
 }

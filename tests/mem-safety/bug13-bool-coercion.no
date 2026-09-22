@@ -11,24 +11,30 @@
 # /tests/mem-safety/bug13-helper
 
 main = () {
+
     ; Step 1: Get a str from a cross-module call
     ch str = helper.compute-str('commit')
-    #{overflow = wrap}
+
+    #{overflow=wrap}
     print('step1 ch=[' - ch - ']')
+
     ; Expected: step1 ch=[commit-1234567890abcdef]
 
     ; Step 2: Cross-module call with str + i64 params returning bool
     ; This triggers bug13: bool return via voidSingleOutput
     ok bool = helper.use-str-and-bool(ch, 42)
     ok == true -> print('step2 ok=true')
+
     -> print('step2 ok=false')
 
     ; Step 3: Access ch again — should still be valid
-    #{overflow = wrap}
+    #{overflow=wrap}
     print('step3 ch=[' - ch - ']')
+
     ; Expected: step3 ch=[commit-1234567890abcdef]
 
     ; Verify correctness
     ch == 'commit-1234567890abcdef' -> print('bug13: PASS')
+
     -> print('bug13: FAIL')
 }

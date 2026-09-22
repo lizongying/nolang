@@ -25,7 +25,7 @@ n = fs.write(my-stdout, msg, msg.len())
 n == 9 -> print('ok: write fd param')
 
 ; ── 4. fd 變量之間賦值（同類型賦值） ──
-copy-fd fd = my-stdin
+copy-fd = my-stdin
 copy-fd == 0 -> print('ok: fd-to-fd assignment')
 
 ; ── 5. STDOUT-FD 標準常量使用 ──

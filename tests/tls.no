@@ -21,7 +21,7 @@ test-tls-get-u16 = () {
     buf []byte = with-cap(2)
     buf[0] = 0xab
     buf[1] = 0xcd
-    val i64 = 0
+    val = 0
     val = tls.get-u16(buf, 0)
     val != 0xabcd -> {
         print('FAIL: expected 0xABCD')
@@ -55,7 +55,7 @@ test-tls-get-u24 = () {
     buf[0] = 0x12
     buf[1] = 0x34
     buf[2] = 0x56
-    val i64 = 0
+    val = 0
     val = tls.get-u24(buf, 0)
     val != 0x123456 -> {
         print('FAIL: expected 0x123456')
@@ -139,7 +139,7 @@ test-tls-bn-to-bytes = () {
 
 ; test-tls-rand-bytes: 測試隨機位元組生成
 test-tls-rand-bytes = () {
-    state i64 = 12345
+    state = 12345
     out []byte
     out = tls.rand-bytes(state, 16)
 

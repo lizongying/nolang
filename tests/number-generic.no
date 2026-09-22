@@ -55,7 +55,7 @@ test-sign = () {
     r = sign(5)
     print(r); expect: 1
 
-    #{overflow = wrap}
+    #{overflow=wrap}
     r = sign(0 - 3)
     print(r); expect: -1
 
@@ -113,7 +113,7 @@ test-gcd = () {
     r = number.gcd(0, 12)
     print(r); expect: 12
 
-    #{overflow = wrap}
+    #{overflow=wrap}
     r = number.gcd(0 - 12, 8)
     print(r); expect: 4
 }

@@ -4,11 +4,13 @@ main = () {
     print('start')
     v ?str = 'hello'
     print('assigned')
+
     ; 直接比较
     {
         v == ok -> {
             print('ok branch')
         }
+
         -> {
             print('not ok')
         }

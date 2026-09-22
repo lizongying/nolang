@@ -86,6 +86,8 @@ t-i64-method-to-str = () {
     s = v.to-str()
     runner.eq(s.len-bytes(), 3, 'i64.to-str 123 len')
     runner.str-eq(s, '123', 3, 'i64.to-str 123 content')
+
+    #{overflow=wrap}
     n = 0 - 789
     ns = n.to-str()
     runner.eq(ns.len-bytes(), 4, 'i64.to-str -789 len')
@@ -112,7 +114,7 @@ t-f64-to-str = () {
 }
 
 t-f64-method-to-str = () {
-    v f64 = 2.5
+    v = 2.5
     s = v.to-str()
     runner.str-eq(s, '2.5', 3, 'f64.to-str 2.5')
 }

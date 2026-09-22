@@ -61,7 +61,7 @@ bb-out[0] != 0x01 -> {
 print('PASS: bn-to-bytes')
 
 ; test-tls-rand-bytes
-state i64 = 12345
+state = 12345
 r-out []byte
 r-out = tls.rand-bytes(state, 16)
 print('PASS: rand-bytes')

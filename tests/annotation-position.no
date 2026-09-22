@@ -11,20 +11,21 @@
 ; (1) 上方獨立成行：overflow 模式。註解若沒生效，checker 會以
 ;     「整數運算默認在溢出時返回 option<int>」拒絕本檔。
 a i8 = 100
-#{overflow = wrap}
-b i8 = a + 100
+
+#{overflow=wrap}
+b = a + 100
 print(b)
 
 ; (2) 同一行尾隨：overflow 模式
-c i8 = a + 100 #{overflow = wrap}
+c = a + 100 #{overflow=wrap}
 print(c)
 
 ; (3) 同一行尾隨：index-out 預設值（LSP quickfix 產生的寫法）。舊行為把尾隨註解
 ;     掛到「下一條陳述」，該行的越界索引取不到預設值；現在必須掛在它所尾隨的
 ;     那一條陳述上，越界 → 9。
-arr [3]i64 = [1, 2, 3]
+arr = [1, 2, 3]
 i = 5
-trail = arr[i] #{index-out = 9}
+trail = arr[i] #{index-out=9}
 print(trail)
 
 ; (4) 結構體欄位註解：同一行尾隨（`p pt #{inline}`）
@@ -35,6 +36,11 @@ holder {
     p pt #{inline}
     q i64
 }
-h = holder { p: pt { x: 4 }, q: 2 }
+h = holder {
+    p: pt {
+        x: 4
+    }
+    q: 2
+}
 print(h.p.x)
 print(h.q)

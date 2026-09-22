@@ -12,8 +12,8 @@ mk = () (out []i64) {
 a = mk()
 b = a[1..3]
 a[1] = 99
-print(b[0])     ; 99 —— view 与原容器共享存储（clone 语义下是 2）
-print(b[1])     ; 3
+print(b[0]); 99 —— view 与原容器共享存储（clone 语义下是 2）
+print(b[1]); 3
 
 ; ── 2. 逃逸到输出参数：自动 clone ────────────────────────────
 get-sub = () (out []i64) {
@@ -21,8 +21,8 @@ get-sub = () (out []i64) {
     out = src[1..3]
 }
 v = get-sub()
-print(v[0])     ; 20
-print(v[1])     ; 30
+print(v[0]); 20
+print(v[1]); 30
 
 ; ── 3. 经由变量逃逸：自动 clone ──────────────────────────────
 get-sub2 = () (out []i64) {
@@ -31,16 +31,16 @@ get-sub2 = () (out []i64) {
     out = tmp
 }
 v2 = get-sub2()
-print(v2[0])    ; 20
-print(v2[1])    ; 30
+print(v2[0]); 20
+print(v2[1]); 30
 
 ; ── 4. 源被重新赋值：自动 clone，视图不悬垂 ──────────────────
 f = () {
     s = [1, 2, 3, 4, 5]
     w = s[1..3]
-    s = [9, 9, 9]   ; 旧 buffer 被释放，w 必须已是独立副本
-    print(w[0])     ; 2
-    print(w[1])     ; 3
+    s = [9, 9, 9]; 旧 buffer 被释放，w 必须已是独立副本
+    print(w[0]); 2
+    print(w[1]); 3
 }
 f()
 

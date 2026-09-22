@@ -10,7 +10,8 @@
 ; 本測試在 MIR=2（legacy）與 MIR=3（純 MIR）下都應編譯通過並輸出相同結果。
 ; 若 MIR=3 再次回歸，會 CRASH（編譯失敗）→ mir_cov 標記為非 MATCH。
 
-main = () () {
+main = () {
+
     ; str（堆分配可變長字串）的 raw-byte 存取
     s = 'ABC'
     print(s.byte(0))

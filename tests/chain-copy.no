@@ -46,6 +46,7 @@ json-pool.alloc = () (idx i64) {
     idx = -1
     .count >= 4 -> return
     idx = .count
+
     #{overflow=wrap}
     .count = .count + 1
     .nodes[idx].count = 0
@@ -56,8 +57,8 @@ print('start')
 p = json-pool {}
 p.init()
 
-node-idx i64 = 0
-key-idx i64 = 0
+node-idx = 0
+key-idx = 0
 
 node-idx = p.alloc()
 key-idx = p.alloc()
@@ -67,7 +68,7 @@ p.nodes[key-idx].str-val = 'a'
 
 print('before copy')
 
-cnt i64 = 0
+cnt = 0
 p.nodes[node-idx].keys[cnt] = p.nodes[key-idx].str-val
 print('copy ok')
 

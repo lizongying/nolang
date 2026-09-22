@@ -42,7 +42,7 @@ t-open-write-read = () {
         truncate: false
         append: false
     })
-    ok-write bool = false
+    ok-write = false
     f: {
         err -> ok-write = false
 
@@ -68,7 +68,7 @@ t-open-write-read = () {
         truncate: false
         append: false
     })
-    ok-read bool = false
+    ok-read = false
     read-content = ''
     f-r: {
         err -> ok-read = false
@@ -112,8 +112,16 @@ t-stat-size = () {
             it.close()
         }
     }
-    sz = fs.stat-size(TMP-FILE)
-    runner.eq(sz, 10, 'stat-size == 10')
+    ; stat-size 回傳 ?i64（檔案不存在或 stat 失敗時為 nil/err），
+    ; MIR 需要顯式 ?i64 標註 + 三分支 match 才能取值。
+    sz ?i64 = fs.stat-size(TMP-FILE)
+    sz: {
+        ok(v) -> runner.eq(v, 10, 'stat-size == 10')
+
+        nil -> runner.is-true(false, 'stat-size == nil')
+
+        err -> runner.is-true(false, 'stat-size == err')
+    }
     fs.remove(TMP-FILE)
 }
 
@@ -151,8 +159,14 @@ t-copy-file = () {
     runner.is-true(yes, 'copied file exists')
 
     ; 驗證目標檔案大小
-    sz = fs.stat-size(TMP-FILE2)
-    runner.eq(sz, 7, 'copied file size == 7')
+    sz ?i64 = fs.stat-size(TMP-FILE2)
+    sz: {
+        ok(v) -> runner.eq(v, 7, 'copied file size == 7')
+
+        nil -> runner.is-true(false, 'copied size == nil')
+
+        err -> runner.is-true(false, 'copied size == err')
+    }
 
     ; 清理
     fs.remove(TMP-FILE)

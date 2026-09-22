@@ -216,7 +216,7 @@ server-conn.parse = () (ok bool) {
     separator = crlf - crlf
 
     ; 讀取直到找到 \r\n\r\n（標頭結束）
-    sep-pos i64 = -1
+    sep-pos = -1
     !! {
 
         ; 檢查緩衝區中是否已有分隔符
@@ -943,7 +943,7 @@ https-server-conn.parse = () (ok bool) {
     separator = crlf - crlf
 
     ; 讀取直到找到 \r\n\r\n（標頭結束）
-    sep-pos i64 = -1
+    sep-pos = -1
     !! {
 
         #{overflow=wrap}

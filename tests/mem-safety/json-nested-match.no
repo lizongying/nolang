@@ -11,13 +11,18 @@ j: {
             ok -> {
                 val, found2 = it.get-str('inner')
                 found2 -> print('ok: nested=' - val)
+
                 -> print('fail: nested not found')
             }
+
             nil -> print('fail: child nil')
+
             err -> print('fail: child err')
         }
     }
+
     nil -> print('fail: parse nil')
+
     err -> print('fail: parse err')
 }
 

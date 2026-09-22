@@ -12,7 +12,9 @@ f = fs.open(tmp,  {
 })
 f: {
     err -> print('fail: open-write err')
+
     nil -> print('fail: open-write nil')
+
     -> {
         .write-str('hello')
 

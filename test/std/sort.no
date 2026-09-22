@@ -6,11 +6,14 @@
 ;       i64.gt / str.gt
 
 # /test/runner
+; sort 模組的 i64.gt / str.gt 是 std 裡的一般函式（不是內建），
+; 必須顯式導入才會被 MIR 拉進來，否則 codegen 報 unknown callee。
+# std/sort
 
 ; ── 切片排序 ──────────────────────────────────
 
 t-slice-sort-asc = () {
-    v []i64 = [5, 3, 8, 1, 9, 2, 7]
+    v = [5, 3, 8, 1, 9, 2, 7]
     v.sort-asc()
     runner.eq(v[0], 1, 'sort-asc [0] == 1')
     runner.eq(v[1], 2, 'sort-asc [1] == 2')
@@ -22,7 +25,7 @@ t-slice-sort-asc = () {
 }
 
 t-slice-sort-desc = () {
-    v []i64 = [5, 3, 8, 1, 9, 2, 7]
+    v = [5, 3, 8, 1, 9, 2, 7]
     v.sort-desc()
     runner.eq(v[0], 9, 'sort-desc [0] == 9')
     runner.eq(v[1], 8, 'sort-desc [1] == 8')
@@ -32,20 +35,20 @@ t-slice-sort-desc = () {
 }
 
 t-slice-sort-two = () {
-    v []i64 = [2, 1]
+    v = [2, 1]
     v.sort-asc()
     runner.eq(v[0], 1, 'sort-asc two [0] == 1')
     runner.eq(v[1], 2, 'sort-asc two [1] == 2')
 }
 
 t-slice-sort-single = () {
-    v []i64 = [42]
+    v = [42]
     v.sort-asc()
     runner.eq(v[0], 42, 'sort-asc single == 42')
 }
 
 t-slice-sort-duplicates = () {
-    v []i64 = [3, 1, 3, 1, 3]
+    v = [3, 1, 3, 1, 3]
     v.sort-asc()
     runner.eq(v[0], 1, 'sort-asc dup [0] == 1')
     runner.eq(v[1], 1, 'sort-asc dup [1] == 1')
@@ -57,7 +60,7 @@ t-slice-sort-duplicates = () {
 ; ── 固定陣列排序 ──────────────────────────────
 
 t-array-sort-asc = () {
-    a [8]i64 = [5, 3, 8, 1, 9, 2, 7, 4]
+    a = [5, 3, 8, 1, 9, 2, 7, 4]
     a.sort-asc()
     runner.eq(a[0], 1, 'array sort-asc [0] == 1')
     runner.eq(a[1], 2, 'array sort-asc [1] == 2')
@@ -70,7 +73,7 @@ t-array-sort-asc = () {
 }
 
 t-array-sort-desc = () {
-    a [8]i64 = [5, 3, 8, 1, 9, 2, 7, 4]
+    a = [5, 3, 8, 1, 9, 2, 7, 4]
     a.sort-desc()
     runner.eq(a[0], 9, 'array sort-desc [0] == 9')
     runner.eq(a[7], 1, 'array sort-desc [7] == 1')

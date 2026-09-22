@@ -52,17 +52,17 @@ t-to-hex-lower = () {
 
 t-index = () {
     data []byte = [72, 73, 0, 72, 73]
-    pos i64 = data.index('HI')
+    pos = data.index('HI')
     runner.eq(pos, 0, 'index HI == 0')
-    pos2 i64 = data.index('xyz')
+    pos2 = data.index('xyz')
     runner.eq(pos2, -1, 'index xyz == -1')
 }
 
 t-index-from = () {
     data []byte = [65, 66, 65, 66]
-    pos i64 = data.index-from('AB', 1)
+    pos = data.index-from('AB', 1)
     runner.eq(pos, 2, 'index-from AB@1 == 2')
-    pos2 i64 = data.index-from('AB', 0)
+    pos2 = data.index-from('AB', 0)
     runner.eq(pos2, 0, 'index-from AB@0 == 0')
 }
 
@@ -81,28 +81,60 @@ t-slice = () {
 ; ── 執行 ──────────────────────────────────────
 
 p1, f1 = runner.test('byte.to-i64-be', t-to-i64-be)
+
+#{overflow=wrap}
 passed = passed + p1
+
+#{overflow=wrap}
 failed = failed + f1
 p2, f2 = runner.test('byte.to-i64-le', t-to-i64-le)
+
+#{overflow=wrap}
 passed = passed + p2
+
+#{overflow=wrap}
 failed = failed + f2
 p3, f3 = runner.test('byte.to-i64-le short', t-to-i64-le-short)
+
+#{overflow=wrap}
 passed = passed + p3
+
+#{overflow=wrap}
 failed = failed + f3
 p4, f4 = runner.test('byte.to-hex', t-to-hex)
+
+#{overflow=wrap}
 passed = passed + p4
+
+#{overflow=wrap}
 failed = failed + f4
 p5, f5 = runner.test('byte.to-hex-lower', t-to-hex-lower)
+
+#{overflow=wrap}
 passed = passed + p5
+
+#{overflow=wrap}
 failed = failed + f5
 p6, f6 = runner.test('byte.index', t-index)
+
+#{overflow=wrap}
 passed = passed + p6
+
+#{overflow=wrap}
 failed = failed + f6
 p7, f7 = runner.test('byte.index-from', t-index-from)
+
+#{overflow=wrap}
 passed = passed + p7
+
+#{overflow=wrap}
 failed = failed + f7
 p8, f8 = runner.test('byte.slice', t-slice)
+
+#{overflow=wrap}
 passed = passed + p8
+
+#{overflow=wrap}
 failed = failed + f8
 
 total = runner.summary()

@@ -75,7 +75,7 @@ t-reader-read-byte = () {
     runner.is-true(ok, 'fill returns true')
 
     ; 讀取第一個位元組
-    ok1 bool = false
+    ok1 = false
     b1 = r.read-byte()
     b1: {
         nil -> ok1 = false
@@ -85,7 +85,7 @@ t-reader-read-byte = () {
     runner.is-true(ok1, 'read-byte 1st == X (88)')
 
     ; 讀取第二個位元組
-    ok2 bool = false
+    ok2 = false
     b2 = r.read-byte()
     b2: {
         nil -> ok2 = false

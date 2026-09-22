@@ -13,8 +13,8 @@
 
 reassign-after-move = () (out []i64) {
     a = [1, 2, 3]
-    b = a          ; move a→b（a 后续只有纯写重赋值，无读引用）
-    a = [4, 5, 6]  ; 纯写重赋值，freeOldHeapValue 跳过 moved 的 a
+    b = a; move a→b（a 后续只有纯写重赋值，无读引用）
+    a = [4, 5, 6]; 纯写重赋值，freeOldHeapValue 跳过 moved 的 a
     out = b
 }
 r1 = reassign-after-move()
@@ -26,8 +26,8 @@ r1.len() == 3 -> print('test1 pass: len=3')
 
 rhs-read-source = () (out []i64) {
     a = [1, 2, 3]
-    b = a          ; 应 clone（a 在后续 RHS 中被读取）
-    a = [a.len()]   ; RHS 读取 a.len() → 阻止 move
+    b = a; 应 clone（a 在后续 RHS 中被读取）
+    a = [a.len()]; RHS 读取 a.len() → 阻止 move
     out = b
 }
 r1b = rhs-read-source()
@@ -44,10 +44,11 @@ mutual-exclusive-branch = (flag bool) (out []i64) {
     a = [10, 20, 30]
     {
         flag -> {
-            out = a     ; then 分支: move a→out（输出参数，有运行时位图）
+            out = a; then 分支: move a→out（输出参数，有运行时位图）
         }
+
         -> {
-            print(a.len())  ; else 分支: 读 a（与 then 互斥，不阻止 then 的 move）
+            print(a.len()); else 分支: 读 a（与 then 互斥，不阻止 then 的 move）
             out = a
         }
     }
@@ -65,9 +66,9 @@ r2b.len() == 3 -> print('test2b pass: len=3')
 
 loop-body-read = () (out i64) {
     a = [1, 2, 3]
-    b = a          ; 应 clone（a 在循环体内被读取）
+    b = a; 应 clone（a 在循环体内被读取）
     i <- [0, 1, 2]: {
-        print(a[i])  ; 循环体内读 a → 阻止 move
+        print(a[i]); 循环体内读 a → 阻止 move
     }
     out = a[0]
 }
@@ -80,10 +81,10 @@ r3 == 1 -> print('test3 pass: loop-body-read')
 
 non-exclusive-branch = (flag bool) (out []i64) {
     a = [1, 2, 3]
-    b = a          ; 应 clone（a 在后续 if 分支中被读取）
+    b = a; 应 clone（a 在后续 if 分支中被读取）
     {
         flag -> {
-            print(a.len())  ; 顶层 b=a 之后，if 分支读 a → 阻止 move
+            print(a.len()); 顶层 b=a 之后，if 分支读 a → 阻止 move
         }
     }
     out = b
@@ -97,8 +98,8 @@ r4.len() == 3 -> print('test4 pass: len=3')
 
 clone-then-move = () (a []i64, b []i64) {
     x = [10, 20, 30]
-    a = x   ; clone（x 后续被 b = x 引用）
-    b = x   ; move（x 后续未引用）
+    a = x; clone（x 后续被 b = x 引用）
+    b = x; move（x 后续未引用）
 }
 ra, rb = clone-then-move()
 ra[0] == 10 -> print('test5 pass: clone-then-move a')

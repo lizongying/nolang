@@ -1,15 +1,16 @@
 ; test parse min
 
 print('start')
-json-str str = '"hello"'
-root i64 = -1
-next i64 = 0
-ok bool = false
+json-str = '"hello"'
+root = -1
+next = 0
+ok = false
 p = json-pool {}
 p.init()
 root, next, ok = p.parse(json-str, 0)
 {
     ok -> print('ok: parse str')
+
     -> print('fail: parse str')
 }
 print('next=')

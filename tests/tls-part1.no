@@ -13,7 +13,7 @@ buf[0] != 0x12 -> {
 print('PASS: put-u16')
 
 ; test-tls-get-u16
-val i64 = 0
+val = 0
 val = tls.get-u16(buf, 0)
 val != 0x1234 -> {
     print('FAIL: get-u16')

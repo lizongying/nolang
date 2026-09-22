@@ -85,7 +85,7 @@ print('test-reassign: ok')
 ; 測試 4：option-to-option 局部賦值走深層 clone
 test-clone = () {
     a ?str = 'original'
-    b ?str = a
+    b = a
     print(a)
     print(b)
     ; a 和 b 應各自獨立擁有 box，離開作用域時各自 free（不 double-free）
@@ -100,7 +100,7 @@ make-opt = () (out ?str) {
     ; a 走 move 到 out，a 標記 moved，函數結束時跳過 a 的 free
     ; out 由呼叫者管理
 }
-r ?str = make-opt()
+r = make-opt()
 print(r)
 print('test-move-out: ok')
 

@@ -2,12 +2,12 @@ arr []f64 = with-cap(3)
 arr.push(1.5)
 arr.push(2.5)
 arr.push(3.5)
-a f64 = arr[0]
-b f64 = arr[1]
-c f64 = a * b
+a = arr[0]
+b = arr[1]
+c = a * b
 print('a = {a:.17g}')
 print('b = {b:.17g}')
 print('a*b = {c:.17g}')
-sum f64 = 0.0
+sum = 0.0
 sum = sum + a * b
 print('sum = {sum:.17g}')

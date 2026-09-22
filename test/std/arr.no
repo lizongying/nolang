@@ -10,44 +10,56 @@ passed = 0
 failed = 0
 
 t-len = () {
-    a [5]i64 = [1, 2, 3, 4, 5]
+    a = [1, 2, 3, 4, 5]
     runner.eq(a.len(), 5, 'arr.len == 5')
 }
 
 t-element-access = () {
-    a [3]i64 = [10, 20, 30]
+    a = [10, 20, 30]
     runner.eq(a[0], 10, 'a[0] == 10')
     runner.eq(a[1], 20, 'a[1] == 20')
     runner.eq(a[2], 30, 'a[2] == 30')
 }
 
 t-mutate = () {
-    a [3]i64 = [1, 2, 3]
+    a = [1, 2, 3]
     a[1] = 99
     runner.eq(a[1], 99, 'mutated a[1] == 99')
     runner.eq(a[0], 1, 'a[0] unchanged')
 }
 
 t-max = () {
-    a [3]i64 = [1, 2, 3]
-    mx = a.max()
-    runner.eq(mx, 3, 'arr.max == 3')
+    a = [1, 2, 3]
+    mx ?i64 = a.max()
+    mx: {
+        ok(v) -> runner.eq(v, 3, 'arr.max == 3')
+
+        nil -> runner.is-true(false, 'arr.max == nil')
+
+        err -> runner.is-true(false, 'arr.max == err')
+    }
 }
 
 t-min = () {
-    a [3]i64 = [3, 1, 2]
-    mn = a.min()
-    runner.eq(mn, 1, 'arr.min == 1')
+    a = [3, 1, 2]
+    mn ?i64 = a.min()
+    mn: {
+        ok(v) -> runner.eq(v, 1, 'arr.min == 1')
+
+        nil -> runner.is-true(false, 'arr.min == nil')
+
+        err -> runner.is-true(false, 'arr.min == err')
+    }
 }
 
 t-sum = () {
-    a [3]i64 = [1, 2, 3]
+    a = [1, 2, 3]
     s = a.sum()
     runner.eq(s, 6, 'arr.sum == 6')
 }
 
 t-contains = () {
-    a [3]i64 = [1, 2, 3]
+    a = [1, 2, 3]
     runner.eq(a.contains(2), true, 'arr.contains(2)')
     runner.eq(a.contains(9), false, 'arr.contains(9) false')
 }
@@ -55,25 +67,53 @@ t-contains = () {
 ; ── 執行 ──────────────────────────────────────
 
 p1, f1 = runner.test('arr.len', t-len)
+
+#{overflow=wrap}
 passed = passed + p1
+
+#{overflow=wrap}
 failed = failed + f1
 p2, f2 = runner.test('arr.element-access', t-element-access)
+
+#{overflow=wrap}
 passed = passed + p2
+
+#{overflow=wrap}
 failed = failed + f2
 p3, f3 = runner.test('arr.mutate', t-mutate)
+
+#{overflow=wrap}
 passed = passed + p3
+
+#{overflow=wrap}
 failed = failed + f3
 p4, f4 = runner.test('arr.max', t-max)
+
+#{overflow=wrap}
 passed = passed + p4
+
+#{overflow=wrap}
 failed = failed + f4
 p5, f5 = runner.test('arr.min', t-min)
+
+#{overflow=wrap}
 passed = passed + p5
+
+#{overflow=wrap}
 failed = failed + f5
 p6, f6 = runner.test('arr.sum', t-sum)
+
+#{overflow=wrap}
 passed = passed + p6
+
+#{overflow=wrap}
 failed = failed + f6
 p7, f7 = runner.test('arr.contains', t-contains)
+
+#{overflow=wrap}
 passed = passed + p7
+
+#{overflow=wrap}
 failed = failed + f7
 
 total = runner.summary()

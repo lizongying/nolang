@@ -8,12 +8,12 @@ msg[1] = 0x62
 msg[2] = 0x63
 
 ; 模擬 sha256 的前幾步
-dlen i64 = 3
+dlen = 3
 print('dlen')
 print(dlen)
 
-#{overflow = wrap}
-bit-len i64 = dlen * 8
+#{overflow=wrap}
+bit-len = dlen * 8
 print('bit-len')
 print(bit-len)
 
@@ -21,14 +21,15 @@ mod-val i64 = (dlen + 9) % 64
 print('mod-val')
 print(mod-val)
 
-pad-len i64 = 0
-#{overflow = wrap}
+pad-len = 0
+
+#{overflow=wrap}
 mod-val != 0 -> pad-len = 64 - mod-val
 print('pad-len')
 print(pad-len)
 
-#{overflow = wrap}
-total-len i64 = dlen + 1 + pad-len + 8
+#{overflow=wrap}
+total-len = dlen + 1 + pad-len + 8
 print('total-len')
 print(total-len)
 

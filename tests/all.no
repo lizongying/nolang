@@ -1,7 +1,5 @@
 ; Nolang 综合测试
-#{overflow = wrap}
-
-; 变量声明（隐式类型推断）
+#{overflow=wrap}
 x = 1; int64
 y = 1.0; float64
 name = 'hello'; string
@@ -16,13 +14,15 @@ hello-world = 'Hello World'
 
 ; 函数定义
 add = (a i64, b i64) {
-    #{overflow = wrap}
+
+    #{overflow=wrap}
     result = a + b
     print('result: {result}')
 }
 
 add1 = (a i64, b i64) (c i64, d i64) {
-    #{overflow = wrap}
+
+    #{overflow=wrap}
     result = a + b
     print('result: {result}')
 }
@@ -35,7 +35,8 @@ f = (x i64, out i64) {
 ; 条件循环
 sum = 0
 j <- [0..5): {
-    #{overflow = wrap}
+
+    #{overflow=wrap}
     sum = sum + j
 }
 i = 5
@@ -59,8 +60,11 @@ f(a, 10)
 
 ; 5 次循環
 {
-    #{overflow = wrap}
+
+    #{overflow=wrap}
     sum = sum + i
-    #{overflow = wrap}
+
+    #{overflow=wrap}
     i = i + 1
-} * 5
+}
+5

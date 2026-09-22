@@ -29,6 +29,7 @@ main = () {
 
     {
         ra == rb -> print('FAIL: different seeds produced same value')
+
         ra != rb -> print('PASS: different seeds produce different values')
     }
 
@@ -47,6 +48,7 @@ main = () {
 
     {
         x1 == x2 -> print('FAIL: state not evolving (x1==x2)')
+
         x1 != x2 -> print('PASS: state evolves (x1!=x2)')
     }
 
@@ -58,7 +60,8 @@ main = () {
     ka-priv = ''
     i <- [0..4): {
         ka-state, ka-r = rand(ka-state)
-        #{overflow = wrap}
+
+        #{overflow=wrap}
         ka-priv = ka-priv - (ka-state & 255).to-str() - ' '
     }
     eprint('seed-a priv bytes (first 4): ')
@@ -68,7 +71,8 @@ main = () {
     kb-priv = ''
     i <- [0..4): {
         kb-state, kb-r = rand(kb-state)
-        #{overflow = wrap}
+
+        #{overflow=wrap}
         kb-priv = kb-priv - (kb-state & 255).to-str() - ' '
     }
     eprint('seed-b priv bytes (first 4): ')
@@ -76,6 +80,7 @@ main = () {
 
     {
         ka-priv == kb-priv -> print('FAIL: different seeds produce same priv key bytes')
+
         ka-priv != kb-priv -> print('PASS: different seeds produce different priv key bytes')
     }
 }

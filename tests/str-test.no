@@ -473,7 +473,8 @@ print(21)
 ; 综合测试：字符串拼接后操作
 ; ═══════════════════════════════════════════════
 test-integration = () {
-    #{overflow = wrap}
+
+    #{overflow=wrap}
     s = 'Hello' - ' ' - 'World'
     n = s.len-bytes()
     print(n); expect: 11
@@ -661,7 +662,9 @@ test-at = () {
     v1 = 'abc'.at(0)
     v1: {
         nil -> print('nil')
+
         err -> print('err')
+
         -> print(it)
     }
 
@@ -670,7 +673,9 @@ test-at = () {
     v2 = 'abc'.at(5)
     v2: {
         nil -> print('nil')
+
         err -> print('err')
+
         -> print(it)
     }
 
@@ -679,7 +684,9 @@ test-at = () {
     v3 = 'abc'.at(-1)
     v3: {
         nil -> print('nil')
+
         err -> print('err')
+
         -> print(it)
     }
 
@@ -688,7 +695,9 @@ test-at = () {
     v4 = 'abc'.at(2)
     v4: {
         nil -> print('nil')
+
         err -> print('err')
+
         -> print(it)
     }
     ; expect: 99

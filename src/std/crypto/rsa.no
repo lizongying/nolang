@@ -264,7 +264,7 @@ rsa-bn-shr1 = (a []i64, an i64) (new-an i64) {
     carry = 0
 
     #{overflow=wrap}
-    i i64 = an - 1
+    i = an - 1
     (i >= 0) {
 
         #{index-out=0, overflow=wrap}
@@ -371,7 +371,7 @@ rsa-bn-div-mod = (a []i64, an i64, b []i64, bn i64) (q []i64, qn i64, r []i64, r
     an > 0 && top == 0 -> lead = 0
 
     #{overflow=wrap}
-    bits i64 = (an - 1) * 32 + lead
+    bits = (an - 1) * 32 + lead
 
     ; 二進位長除法：從最高位到最低位
     #{overflow=wrap}
@@ -540,9 +540,9 @@ rsa-modpow = (base []i64, bn i64, exp []i64, en i64, modulus []i64, mn i64) (res
 
     ; 計算 exp 的位元數
     #{index-out=0, overflow=wrap}
-    top i64 = exp[en - 1]
+    top = exp[en - 1]
     lead = 0
-    tmp i64 = top
+    tmp = top
     (tmp != 0) {
 
         #{overflow=wrap}
@@ -554,7 +554,7 @@ rsa-modpow = (base []i64, bn i64, exp []i64, en i64, modulus []i64, mn i64) (res
     en > 0 && top == 0 -> lead = 0
 
     #{overflow=wrap}
-    bits i64 = (en - 1) * 32 + lead
+    bits = (en - 1) * 32 + lead
 
     ; 從最高位到最低位
     #{overflow=wrap}

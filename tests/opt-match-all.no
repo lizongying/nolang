@@ -5,7 +5,9 @@ test-err = () {
     n ?i64 = err('boom')
     r = n: {
         err -> 'got-err'
+
         nil -> 'got-nil'
+
         -> 'got-val'
     }
     print(r)
@@ -15,7 +17,9 @@ test-nil = () {
     n ?i64 = nil
     r = n: {
         err -> 'got-err'
+
         nil -> 'got-nil'
+
         -> 'got-val'
     }
     print(r)
@@ -25,7 +29,9 @@ test-val = () {
     n ?i64 = 42
     r = n: {
         err -> 'got-err'
+
         nil -> 'got-nil'
+
         -> 'got-val'
     }
     print(r)
@@ -35,6 +41,7 @@ test-err-only = () {
     n ?i64 = err('oops')
     r = n: {
         err -> 'only-err'
+
         -> 'otherwise'
     }
     print(r)

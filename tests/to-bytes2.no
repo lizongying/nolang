@@ -2,7 +2,7 @@
 ; # std/net/tls
 
 print('start')
-s str = 'test label'
+s = 'test label'
 print('before to-bytes')
 b []byte = s.to-bytes()
 print('after to-bytes')

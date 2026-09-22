@@ -6,16 +6,20 @@
 main = () {
 
     ; 特殊值（使用顯式 f64 型別，繞過編譯器對直接除法表達式的型別推導 bug）
-    nan-val f64 = 0.0
-    #{overflow = wrap}
+    nan-val = 0.0
+
+    #{overflow=wrap}
     nan-val = nan-val / nan-val
-    inf-val f64 = 1.0
-    #{overflow = wrap}
+    inf-val = 1.0
+
+    #{overflow=wrap}
     inf-val = inf-val / 0.0
-    neg-inf-val f64 = 0.0
-    #{overflow = wrap}
+    neg-inf-val = 0.0
+
+    #{overflow=wrap}
     neg-inf-val = neg-inf-val - 1.0
-    #{overflow = wrap}
+
+    #{overflow=wrap}
     neg-inf-val = neg-inf-val / 0.0
 
     print('=== f64-to-str-fixed ===')

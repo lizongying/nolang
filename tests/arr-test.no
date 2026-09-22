@@ -181,14 +181,17 @@ test-arr-at = () {
     v-1 = a.at(-1)
     v0: {
         nil -> print('nil')
+
         -> print('ok')
     }
     v5: {
         nil -> print('nil')
+
         -> print('ok')
     }
     v-1: {
         nil -> print('nil')
+
         -> print('ok')
     }
 }

@@ -33,11 +33,17 @@ count-failed = 0
 eq = (a i64, b i64, msg str) {
     {
         a != b -> {
+
+            #{overflow=wrap}
             count-failed = count-failed + 1
             print('FAIL: eq -', msg)
         }
 
-        -> count-passed = count-passed + 1
+        -> {
+
+            #{overflow=wrap}
+            count-passed = count-passed + 1
+        }
     }
 }
 
@@ -45,11 +51,17 @@ eq = (a i64, b i64, msg str) {
 ne = (a i64, b i64, msg str) {
     {
         a == b -> {
+
+            #{overflow=wrap}
             count-failed = count-failed + 1
             print('FAIL: ne -', msg)
         }
 
-        -> count-passed = count-passed + 1
+        -> {
+
+            #{overflow=wrap}
+            count-passed = count-passed + 1
+        }
     }
 }
 
@@ -57,11 +69,17 @@ ne = (a i64, b i64, msg str) {
 gt = (a i64, b i64, msg str) {
     {
         a <= b -> {
+
+            #{overflow=wrap}
             count-failed = count-failed + 1
             print('FAIL: gt -', msg)
         }
 
-        -> count-passed = count-passed + 1
+        -> {
+
+            #{overflow=wrap}
+            count-passed = count-passed + 1
+        }
     }
 }
 
@@ -69,11 +87,17 @@ gt = (a i64, b i64, msg str) {
 lt = (a i64, b i64, msg str) {
     {
         a >= b -> {
+
+            #{overflow=wrap}
             count-failed = count-failed + 1
             print('FAIL: lt -', msg)
         }
 
-        -> count-passed = count-passed + 1
+        -> {
+
+            #{overflow=wrap}
+            count-passed = count-passed + 1
+        }
     }
 }
 
@@ -85,11 +109,17 @@ lt = (a i64, b i64, msg str) {
 is-true = (val bool, msg str) {
     {
         val == false -> {
+
+            #{overflow=wrap}
             count-failed = count-failed + 1
             print('FAIL: is-true -', msg)
         }
 
-        -> count-passed = count-passed + 1
+        -> {
+
+            #{overflow=wrap}
+            count-passed = count-passed + 1
+        }
     }
 }
 
@@ -97,11 +127,17 @@ is-true = (val bool, msg str) {
 is-false = (val bool, msg str) {
     {
         val == true -> {
+
+            #{overflow=wrap}
             count-failed = count-failed + 1
             print('FAIL: is-false -', msg)
         }
 
-        -> count-passed = count-passed + 1
+        -> {
+
+            #{overflow=wrap}
+            count-passed = count-passed + 1
+        }
     }
 }
 
@@ -113,11 +149,17 @@ is-false = (val bool, msg str) {
 str-eq = (a str, b str, n i64, msg str) {
     {
         a.eq(b, n) == false -> {
+
+            #{overflow=wrap}
             count-failed = count-failed + 1
             print('FAIL: str-eq -', msg)
         }
 
-        -> count-passed = count-passed + 1
+        -> {
+
+            #{overflow=wrap}
+            count-passed = count-passed + 1
+        }
     }
 }
 
@@ -131,11 +173,17 @@ f64-eq = (a f64, b f64, eps f64, msg str) {
     diff < 0.0 -> diff = 0.0 - diff
     {
         diff >= eps -> {
+
+            #{overflow=wrap}
             count-failed = count-failed + 1
             print('FAIL: f64-eq -', msg)
         }
 
-        -> count-passed = count-passed + 1
+        -> {
+
+            #{overflow=wrap}
+            count-passed = count-passed + 1
+        }
     }
 }
 
@@ -154,6 +202,8 @@ summary = () (total i64) {
     print('--- Test Summary ---')
     print('passed:', count-passed)
     print('failed:', count-failed)
+
+    #{overflow=wrap}
     total = count-passed + count-failed
     print('total:', total)
     {
@@ -180,10 +230,14 @@ test = (name str, cb callback) (passed i64, failed i64) {
 
 ; pass: 記錄一筆測試通過（兼容舊用法）
 pass = (passed i64) (new-passed i64) {
+
+    #{overflow=wrap}
     new-passed = passed + 1
 }
 
 ; fail: 記錄一筆測試失敗（兼容舊用法）
 fail = (failed i64) (new-failed i64) {
+
+    #{overflow=wrap}
     new-failed = failed + 1
 }

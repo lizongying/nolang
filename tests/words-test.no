@@ -1,9 +1,9 @@
 words []str = with-cap(256)
 counts []i64 = with-cap(256)
 word [64]byte
-wlen i64 = 0
-n i64 = 0
-tmp-word str = ''
+wlen = 0
+n = 0
+tmp-word = ''
 
 ; 模擬單詞 "hello"
 word[0] = 104
@@ -37,8 +37,8 @@ k <- [0..wlen): {
 }
 
 ; 線性搜尋
-found i64 = 0
-cmp-result i64 = 0
+found = 0
+cmp-result = 0
 k <- [0..n): {
     found == 0 -> {
         cmp-result = tmp-word.compare(words[k])
@@ -51,7 +51,8 @@ k <- [0..n): {
 found == 0 -> {
     words.push(tmp-word)
     counts.push(1)
-    #{overflow = wrap}
+
+    #{overflow=wrap}
     n = n + 1
 }
 

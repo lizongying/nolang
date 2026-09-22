@@ -12,6 +12,7 @@ e = err.new(code.io, 'disk full')
 yes = e.is(code.io)
 {
     yes -> print('ok: new code')
+
     -> print('fail: new code')
 }
 
@@ -23,11 +24,13 @@ print('ok: error.msg')
 yes = e.is(code.io)
 {
     yes -> print('ok: error.is true')
+
     -> print('fail: error.is true')
 }
 yes = e.is(code.not-found)
 {
     yes == false -> print('ok: error.is false')
+
     -> print('fail: error.is false')
 }
 
@@ -35,6 +38,7 @@ yes = e.is(code.not-found)
 mc = e.code()
 {
     mc == code.io -> print('ok: error.code')
+
     -> print('fail: error.code')
 }
 
@@ -43,6 +47,7 @@ e2 = err.err-from-errno(2)
 yes2 = e2.is(code.not-found)
 {
     yes2 -> print('ok: err-from-errno code')
+
     -> print('fail: err-from-errno code')
 }
 errno-msg = e2.msg()
@@ -52,5 +57,6 @@ print('ok: err-from-errno msg')
 s = e.format()
 {
     s.len-bytes() > 0 -> print('ok: error.format')
+
     -> print('fail: error.format')
 }

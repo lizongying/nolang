@@ -9,45 +9,52 @@
 ; ── i64 型別的「泛型」函式 ──
 
 gen-add-i64 = (a i64, b i64) (r i64) {
-    #{overflow = wrap}
+
+    #{overflow=wrap}
     r = a + b
 }
 
 gen-sub-i64 = (a i64, b i64) (d i64) {
-    #{overflow = wrap}
+
+    #{overflow=wrap}
     d = a - b
 }
 
 gen-mul-i64 = (a i64, b i64) (r i64) {
-    #{overflow = wrap}
+
+    #{overflow=wrap}
     r = a * b
 }
 
 ; ── i32 型別的「泛型」函式 ──
 
 gen-add-i32 = (a i32, b i32) (r i32) {
-    #{overflow = wrap}
+
+    #{overflow=wrap}
     r = a + b
 }
 
 gen-sub-i32 = (a i32, b i32) (d i32) {
-    #{overflow = wrap}
+
+    #{overflow=wrap}
     d = a - b
 }
 
 ; ── 1. gen-add-i64 加法 ──
-r i64 = 0
+r = 0
 r = gen-add-i64(40, 2)
 {
     r == 42 -> print('ok: gen-add-i64')
+
     -> print('fail: gen-add-i64')
 }
 
 ; ── 2. gen-eq i64（透過 sub + == 0）──
-d i64 = 0
+d = 0
 d = gen-sub-i64(42, 42)
 {
     d == 0 -> print('ok: gen-eq i64 true')
+
     -> print('fail: gen-eq i64 true')
 }
 
@@ -55,6 +62,7 @@ d = gen-sub-i64(42, 42)
 d = gen-sub-i64(42, 43)
 {
     d != 0 -> print('ok: gen-ne i64')
+
     -> print('fail: gen-ne i64')
 }
 
@@ -62,6 +70,7 @@ d = gen-sub-i64(42, 43)
 r = gen-mul-i64(6, 7)
 {
     r == 42 -> print('ok: gen-mul-i64')
+
     -> print('fail: gen-mul-i64')
 }
 
@@ -70,6 +79,7 @@ r32 i32 = 0
 r32 = gen-add-i32(40, 2)
 {
     r32 == 42 -> print('ok: gen-add-i32')
+
     -> print('fail: gen-add-i32')
 }
 
@@ -78,5 +88,6 @@ d32 i32 = 0
 d32 = gen-sub-i32(100, 100)
 {
     d32 == 0 -> print('ok: gen-eq i32')
+
     -> print('fail: gen-eq i32')
 }

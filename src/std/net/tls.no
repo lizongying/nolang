@@ -595,7 +595,7 @@ conn.encrypt-record = (ct i64, data []byte) (ok bool) {
 
     ; 4. 生成隨機 IV
     iv [16]byte
-    iv-bytes []byte = rand-bytes(.rand-state, 16)
+    iv-bytes = rand-bytes(.rand-state, 16)
     i <- [0..16): {
 
         #{index-out=0, overflow=wrap}
@@ -650,7 +650,7 @@ conn.decrypt-record = (buf []byte, expected-ct i64) (ct i64, out []byte) {
     #{overflow=wrap}
     ct = -1
 
-    rlen i64 = get-u16(buf, 3)
+    rlen = get-u16(buf, 3)
     rlen < 16 -> return
 
     ; 提取 IV
@@ -884,7 +884,7 @@ conn.send-client-hello = () (ok bool) {
     pos = pos + 2
 
     ; random (32 bytes)
-    rand-bytes-val []byte = rand-bytes(.rand-state, 32)
+    rand-bytes-val = rand-bytes(.rand-state, 32)
     i <- [0..32): {
 
         #{index-out=0, overflow=wrap}
@@ -967,7 +967,7 @@ conn.read-server-hello = () (ok bool) {
     #{index-out=0}
     msg-type = buf[5]
     msg-type != TLS-HS-SERVER-HELLO -> return
-    msg-len i64 = get-u24(buf, 6)
+    msg-len = get-u24(buf, 6)
 
     ; version（buf[9..10]）
     #{overflow=wrap}
@@ -991,7 +991,7 @@ conn.read-server-hello = () (ok bool) {
     pos = pos + 1 + sid-len
 
     ; cipher_suite
-    cipher i64 = get-u16(buf, pos)
+    cipher = get-u16(buf, pos)
 
     #{overflow=wrap}
     pos = pos + 2
@@ -1029,13 +1029,13 @@ conn.read-certificate = (cert-out []byte) (ok bool) {
     pos = 9
 
     ; total certs length (3 bytes)
-    total-len i64 = get-u24(buf, pos)
+    total-len = get-u24(buf, pos)
 
     #{overflow=wrap}
     pos = pos + 3
 
     ; first cert length (3 bytes)
-    cert-len i64 = get-u24(buf, pos)
+    cert-len = get-u24(buf, pos)
 
     #{overflow=wrap}
     pos = pos + 3
@@ -1397,7 +1397,7 @@ conn.send-client-hello-13 = () (ok bool) {
     pos = pos + 2
 
     ; random (32 bytes)
-    rand-bytes-val []byte = rand-bytes(.rand-state, 32)
+    rand-bytes-val = rand-bytes(.rand-state, 32)
 
     #{overflow=wrap}
     .rand-state = .rand-state + 32
@@ -1728,7 +1728,7 @@ conn.read-server-hello-13 = () (ok bool) {
     pos = pos + 1 + sid-len
 
     ; cipher_suite
-    cipher i64 = get-u16(buf, pos)
+    cipher = get-u16(buf, pos)
 
     #{overflow=wrap}
     pos = pos + 2
@@ -1745,7 +1745,7 @@ conn.read-server-hello-13 = () (ok bool) {
         .version = TLS-VERSION
         return
     }
-    ext-len i64 = get-u16(buf, pos)
+    ext-len = get-u16(buf, pos)
 
     #{overflow=wrap}
     pos = pos + 2
@@ -2144,7 +2144,7 @@ conn.decrypt-record-13 = (rec []byte, key [16]byte, iv [12]byte, seq i64) (ct i6
     #{overflow=wrap}
     ct = -1
 
-    rlen i64 = get-u16(rec, 3)
+    rlen = get-u16(rec, 3)
     rlen < 16 -> return
 
     ; 提取密文+tag
@@ -2268,7 +2268,7 @@ conn.read-encrypted-handshake-13 = () (msg-type i64, msg-data []byte) {
     msg-type = .hs-plain-buf[pos]
 
     #{overflow=wrap}
-    msg-len i64 = get-u24(.hs-plain-buf, pos + 1)
+    msg-len = get-u24(.hs-plain-buf, pos + 1)
 
     ; 檢查是否有足夠的資料
     #{overflow=wrap}
@@ -2610,7 +2610,7 @@ conn.connect-12 = (host str, port i64) (ok bool) {
 
     #{index-out=0}
     premaster[1] = 0x03
-    rand-bytes-val []byte = rand-bytes(.rand-state, 46)
+    rand-bytes-val = rand-bytes(.rand-state, 46)
     i <- [0..46): {
 
         #{index-out=0, overflow=wrap}
@@ -2712,7 +2712,7 @@ conn.recv = (buf str, n i64) (read-n i64) {
 
     ; 宣告於函式作用域，確保分支內賦值能傳播
     plain []byte
-    d-ct i64 = -1
+    d-ct = -1
 
     {
         .version == TLS-VERSION-1-3 -> {
@@ -3099,7 +3099,7 @@ server-conn.send-server-hello = () (ok bool) {
     pos = pos + 2
 
     ; random (32 bytes)
-    rand-bytes-val []byte = rand-bytes(.rand-state, 32)
+    rand-bytes-val = rand-bytes(.rand-state, 32)
 
     #{overflow=wrap}
     .rand-state = .rand-state + 32
@@ -3502,7 +3502,7 @@ server-conn.encrypt-record = (ct i64, data []byte) (ok bool) {
 
     ; 4. 生成隨機 IV
     iv [16]byte
-    iv-bytes []byte = rand-bytes(.rand-state, 16)
+    iv-bytes = rand-bytes(.rand-state, 16)
 
     #{overflow=wrap}
     .rand-state = .rand-state + 16
@@ -3561,7 +3561,7 @@ server-conn.decrypt-record = (buf []byte, expected-ct i64) (ct i64, out []byte) 
     #{overflow=wrap}
     ct = -1
 
-    rlen i64 = get-u16(buf, 3)
+    rlen = get-u16(buf, 3)
     rlen < 16 -> return
 
     ; 提取 IV
@@ -3853,7 +3853,7 @@ server-conn.send-server-hello-13 = () (ok bool) {
     pos = pos + 2
 
     ; random (32 bytes)
-    rand-bytes-val []byte = rand-bytes(.rand-state, 32)
+    rand-bytes-val = rand-bytes(.rand-state, 32)
 
     #{overflow=wrap}
     .rand-state = .rand-state + 32
@@ -4275,7 +4275,7 @@ server-conn.decrypt-record-13 = (rec []byte, key [16]byte, iv [12]byte, seq i64)
     #{overflow=wrap}
     ct = -1
 
-    rlen i64 = get-u16(rec, 3)
+    rlen = get-u16(rec, 3)
     rlen < 16 -> return
 
     ; 提取密文+tag
@@ -4377,7 +4377,7 @@ server-conn.read-encrypted-handshake-13 = () (msg-type i64, msg-data []byte) {
     msg-type = .hs-plain-buf[pos]
 
     #{overflow=wrap}
-    msg-len i64 = get-u24(.hs-plain-buf, pos + 1)
+    msg-len = get-u24(.hs-plain-buf, pos + 1)
 
     #{overflow=wrap}
     pos + 4 + msg-len > .hs-plain-len -> return
@@ -4737,7 +4737,7 @@ server-conn.recv = (buf str, n i64) (read-n i64) {
     read-n = -1
     .encrypted == false -> return
     plain []byte
-    d-ct i64 = -1
+    d-ct = -1
 
     {
         .is-tls13 -> {

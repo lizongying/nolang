@@ -46,6 +46,7 @@ type codegen struct {
 	labelFor    map[BlockID]string
 	valSlot     map[ValueID]string // MIR value -> alloca name
 	globalSlots map[ValueID]string // module-global ValueID -> "@name" (preserved across functions)
+	globalName  []string           // parallel to mod.Globals: emitted symbol (disambiguated vs functions)
 	paramPtr    map[ValueID]string // MIR param value -> incoming llvm param name
 	resultParam map[ValueID]bool   // MIR value is an out-param
 	strGlobals  map[ValueID]strGlobal
@@ -328,6 +329,54 @@ func isFuncParam(f *Function, v ValueID) bool {
 	return false
 }
 
+// isSymChar reports whether c can appear in a sanitize()d LLVM symbol name.
+func isSymChar(c byte) bool {
+	return c == '_' || c == '.' || c == '$' ||
+		(c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9')
+}
+
+// definedSymbols returns every LLVM symbol a module fragment DEFINES: the name
+// of each `define ... @name(...)` function and of each `@name = ...` global.
+// `declare` lines are not definitions and are skipped. EmitLLVM uses this to
+// reserve the prelude's runtime helper names before naming user functions, so a
+// user function that sanitizes onto a helper (e.g. `str-eq` -> `str_eq`) is
+// suffixed instead of emitting a second definition that opt rejects.
+func definedSymbols(text string) []string {
+	var out []string
+	for _, line := range strings.Split(text, "\n") {
+		trimmed := strings.TrimSpace(line)
+		var at int
+		isGlobal := false
+		switch {
+		case strings.HasPrefix(trimmed, "define"):
+			at = strings.IndexByte(trimmed, '@')
+			if at < 0 {
+				continue
+			}
+			at++ // first char of the name
+		case strings.HasPrefix(trimmed, "@"):
+			at, isGlobal = 1, true
+		default:
+			continue
+		}
+		end := at
+		for end < len(trimmed) && isSymChar(trimmed[end]) {
+			end++
+		}
+		if end == at {
+			continue
+		}
+		if isGlobal {
+			// Only `@name = ...` defines a symbol; anything else is not a def.
+			if !strings.HasPrefix(strings.TrimSpace(trimmed[end:]), "=") {
+				continue
+			}
+		}
+		out = append(out, trimmed[at:end])
+	}
+	return out
+}
+
 // EmitLLVM lowers the analyzed MIR module into a complete, linkable LLVM IR
 // string. It returns an error if any construct is outside the v1 subset, so the
 // caller can fall back to the legacy codegen.
@@ -378,7 +427,33 @@ func (m *Module) EmitLLVM() (out string, err error) {
 	// to the correct FuncID; c.fname[that FuncID] then yields the (suffixed,
 	// unique) symbol used by both the definition and the call site. The call
 	// graph is therefore preserved and no two definitions collide.
+	//
+	// The PRELUDE's own symbols must be reserved too. emitPrelude() defines the
+	// runtime helpers (`str_eq`, `str_free`, `str_clone`, `str_from_const`, ...)
+	// and is emitted before every user function, so a user function that
+	// sanitizes to one of those names produced a SECOND `define @str_eq` and opt
+	// rejected the module with "invalid redefinition of function 'str_eq'".
+	// nogit hits this exactly: src/util.no declares a top-level `str-eq`, which
+	// sanitizes to `str_eq`. Emit the prelude first, harvest every symbol it
+	// defines, and seed usedFname with them so the loop below suffixes the user
+	// function instead. collectStrings/initOptionSlot do not consult c.fname, and
+	// emitPrelude needs initOptionSlot's optSlotLT/optSlotBytes, so hoisting them
+	// ahead of the prelude is safe.
+	c.collectStrings()
+	c.initOptionSlot()
 	usedFname := map[string]bool{}
+	preludeStart := c.sb.Len()
+	c.emitPrelude()
+	for _, sym := range definedSymbols(c.sb.String()[preludeStart:]) {
+		usedFname[sym] = true
+	}
+	// Declarations/globals that emitPrelude buffered (c.decl/c.global) are
+	// flushed later, so harvest them out of extraGlobals as well.
+	for _, g := range c.extraGlobals {
+		for _, sym := range definedSymbols(g) {
+			usedFname[sym] = true
+		}
+	}
 	for i := range m.Funcs {
 		f := &m.Funcs[i]
 		if f.ID == NoFunc {
@@ -402,9 +477,33 @@ func (m *Module) EmitLLVM() (out string, err error) {
 		usedFname[name] = true
 		c.fname[f.ID] = name
 	}
-	c.collectStrings()
-	c.initOptionSlot()
-	c.emitPrelude()
+	// LLVM functions and globals share ONE symbol namespace, and emitGlobals
+	// emits each module global as `@<name>` — so a global whose name equals a
+	// function's (already reserved above) yields `@s = global ...` beside
+	// `define ... @s(...)` and opt rejects the whole module with "redefinition
+	// of function '@s'". tests/std-hash.no is exactly that shape: a top-level
+	// variable `s` (the "quick brown fox" input) and the std blake2 `s`
+	// function. Disambiguate the GLOBAL here (the function keeps its name, so
+	// externs still match their C symbol) and record the chosen symbol so both
+	// the definition in emitGlobals and every reference (globalSlots/valSlot)
+	// agree on it. This mirrors the function-name reservation just above.
+	// Keyed by INDEX, not by g.Init: hir2mir appends backing globals (e.g. the
+	// `.gstr.<name>` byte array behind a top-level string) with Init left at
+	// zero, so every one of them would share the key 0 and collapse onto a
+	// single name.
+	c.globalName = make([]string, len(m.Globals))
+	for i := range m.Globals {
+		nm := m.Globals[i].Name
+		if usedFname[nm] {
+			k := 1
+			for usedFname[fmt.Sprintf("%s_%d", nm, k)] {
+				k++
+			}
+			nm = fmt.Sprintf("%s_%d", nm, k)
+		}
+		usedFname[nm] = true
+		c.globalName[i] = nm
+	}
 	c.emitStructTypes()
 	c.emitGlobals()
 	// Async cooperative scheduler runtime (globals + nolang_async_* functions).
@@ -417,9 +516,16 @@ func (m *Module) EmitLLVM() (out string, err error) {
 	// Module globals resolve to their @name (a pointer); register the slot so
 	// any instruction referencing the global value emits `@name` directly.
 	c.globalSlots = map[ValueID]string{}
-	for _, g := range m.Globals {
-		c.globalSlots[g.Init] = "@" + g.Name
-		c.valSlot[g.Init] = "@" + g.Name
+	for i, g := range m.Globals {
+		nm := ""
+		if i < len(c.globalName) {
+			nm = c.globalName[i]
+		}
+		if nm == "" {
+			nm = g.Name
+		}
+		c.globalSlots[g.Init] = "@" + nm
+		c.valSlot[g.Init] = "@" + nm
 	}
 	for i := range m.Funcs {
 		f := &m.Funcs[i]
@@ -2802,7 +2908,20 @@ entry:
 
 func (c *codegen) emitGlobals() {
 	// Module-level constant bindings (SBOX, TLS-FINISHED-SIZE, perm-600, ...).
-	for _, g := range c.mod.Globals {
+	for i, g := range c.mod.Globals {
+		// The emitted symbol may differ from g.Name when the name collides with
+		// a function (see the globalName reservation in EmitLLVM, keyed by
+		// INDEX). References (globalSlots/valSlot) go through the same slice,
+		// so use it here too. The `#{embed}` symbol below deliberately KEEPS the
+		// raw g.Name: it is baked into the global's ConstText as
+		// `@.embed.<g.Name>`, so renaming it would break that initializer.
+		gname := ""
+		if i < len(c.globalName) {
+			gname = c.globalName[i]
+		}
+		if gname == "" {
+			gname = g.Name
+		}
 		// `#{embed='file'}` binding: emit the embedded bytes as a private
 		// constant byte array. The `%vec` global below references it through a
 		// `ptrtoint([N x i8]* @.embed.<name> to i64)` initializer, so the
@@ -2826,10 +2945,10 @@ func (c *codegen) emitGlobals() {
 			if lt == "" || lt == "void" {
 				// Type not resolvable: keep the (benign) external form rather
 				// than emit malformed IR.
-				c.sb.WriteString(fmt.Sprintf("@%s = external constant %s\n", g.Name, lt))
+				c.sb.WriteString(fmt.Sprintf("@%s = external constant %s\n", gname, lt))
 				continue
 			}
-			c.sb.WriteString(fmt.Sprintf("@%s = private global %s zeroinitializer\n", g.Name, lt))
+			c.sb.WriteString(fmt.Sprintf("@%s = private global %s zeroinitializer\n", gname, lt))
 			continue
 		}
 		// Module-level bindings (SBOX, data, ...) are mutable in nolang — a
@@ -2839,7 +2958,7 @@ func (c *codegen) emitGlobals() {
 		// constant global is dropped), so the mutation silently disappears.
 		// Emit mutable `global` instead; only the string-literal globals
 		// (strGlobals) stay `constant`, and those are never written.
-		c.sb.WriteString(fmt.Sprintf("@%s = private global %s\n", g.Name, g.ConstText))
+		c.sb.WriteString(fmt.Sprintf("@%s = private global %s\n", gname, g.ConstText))
 	}
 	var vids []ValueID
 	for vid := range c.strGlobals {
@@ -5388,6 +5507,44 @@ func (c *codegen) emitClone(inst *Inst) error {
 		c.sb.WriteString(fmt.Sprintf("  %s = call %s @str_clone(%s %s)\n", tmp, dstT, dstT, srcV))
 		c.sb.WriteString(fmt.Sprintf("  store %s %s, %s* %s\n", dstT, tmp, dstT, dstSlot))
 		return nil
+	}
+	// Plain slice (heap %vec) clone. A bitwise OpMove of a %vec copies the
+	// {len, cap, data} triple and SHARES the backing store, which is only safe
+	// when the source is provably dead (an ownership transfer). A fresh binding
+	// has no pre-existing slot to move INTO, so it must always receive an
+	// independent copy: a later reassignment or move of the source must not
+	// rewrite the binding's buffer. Concretely, `b = a` followed by `a = [..]`
+	// must leave `b` holding a's ORIGINAL elements, not the reassigned ones
+	// (tests/mem-safety/move-eligibility-improved.no: `b = a` then `a = [4,5,6]`
+	// used to leave `out = b` returning [4,5,6] with r1[0] == 4 instead of 1).
+	// vecDeepClone mallocs a fresh buffer and memcpy's the elements, so the clone
+	// owns its own data and is dropped independently of the source.
+	if srcLT, _ := c.ptype(inst.Args[0]); srcLT == "%vec" {
+		elemType := NoType
+		if t := c.mod.Type(inst.Type); t != nil && t.Kind == KindSlice && t.Elem != NoType {
+			elemType = t.Elem
+		}
+		if elemType == NoType {
+			if t := c.mod.Type(c.localTypeOf(inst.Args[0])); t != nil && t.Kind == KindSlice && t.Elem != NoType {
+				elemType = t.Elem
+			}
+		}
+		if elemType != NoType {
+			if fn := c.vecDeepClone(elemType, 0); fn != "" {
+				dstVal := inst.Dst
+				if dstVal == NoVal && len(inst.Args) >= 2 {
+					dstVal = inst.Args[1]
+				}
+				dstSlot := c.valSlot[dstVal]
+				if dstSlot != "" {
+					_, srcV := c.loadVal(inst.Args[0])
+					tmp := fmt.Sprintf("%%cl%d", inst.ID)
+					c.sb.WriteString(fmt.Sprintf("  %s = call %%vec %s(%%vec %s)\n", tmp, fn, srcV))
+					c.sb.WriteString(fmt.Sprintf("  store %%vec %s, %%vec* %s\n", tmp, dstSlot))
+					return nil
+				}
+			}
+		}
 	}
 	// An OPTION destination is never a struct deep copy. clonePtrStructKey /
 	// cloneLeafStructKey resolve the SOURCE's struct key and then emit a
@@ -10099,12 +10256,44 @@ func (c *codegen) emitCallBody(f *Function, cf *Function, inst *Inst, calleeName
 			// they are layout-identical 24-byte triples and the codebase relies
 			// on that pun (e.g. a `[]byte` parameter receiving a `str`, and a
 			// fixed array argument reaching a slice parameter).
+			//
+			// The exclusion is only safe BETWEEN the two triples, though. A
+			// slice literal used to lower to a stack `[N x elem]` and now
+			// lowers to a real `%vec` (see lowerArrayElems), so the `argT !=
+			// "%vec"` escape hatch started swallowing `take-txt([1, 2, 3])`:
+			// a 24-byte %vec reaching a 256-byte %txt parameter, which read
+			// 232 bytes past the end of the argument. Same-family puns stay
+			// allowed; a triple reaching any OTHER aggregate is rejected.
 			if argT != plt && isAggregateLLVM(argT) && isAggregateLLVM(plt) &&
 				plt != "%vec" && plt != "%str-long" &&
 				argT != "%vec" && argT != "%str-long" {
 				c.fail("func %s: argument %d of '%s': parameter '%s' expects '%s' but the argument is '%s' — different aggregate layouts cannot be passed by pointer",
 					c.fname[c.cf], i+1, calleeName, c.rawTypeOfValue(p), plt, argT)
 				continue
+			}
+			if argT != plt && isAggregateLLVM(plt) && (argT == "%vec" || argT == "%str-long") &&
+				plt != "%vec" && plt != "%str-long" && !strings.HasPrefix(plt, "[") {
+				c.fail("func %s: argument %d of '%s': parameter '%s' expects '%s' but the argument is '%s' — different aggregate layouts cannot be passed by pointer",
+					c.fname[c.cf], i+1, calleeName, c.rawTypeOfValue(p), plt, argT)
+				continue
+			}
+			// A %vec argument reaching a FIXED-ARRAY parameter. A slice literal
+			// used to lower to a stack `[N x elem]`, so handing its slot address
+			// to a `[5 x i64]` parameter let the callee read the elements
+			// straight out of it; now that it lowers to a real `%vec` the slot
+			// holds the {len, cap, data} TRIPLE and the callee would read len
+			// and cap as if they were elements — `get-at(a, 1)` on
+			// `a = [10,20,30,40,50]` returned the cap field, so
+			// tests/index-heavy.no printed 5/-5/-5/-5 instead of 20/40/60/60.
+			// Marshal to the vec's DATA pointer instead: the buffer holds
+			// exactly the elements the parameter's shape describes.
+			if argT == "%vec" && plt != argT && strings.HasPrefix(plt, "[") && strings.HasSuffix(plt, "]") {
+				if dp := c.dataPtrOf(inst.Args[argIdx]); dp != "" {
+					bc := c.treg("vab")
+					c.sb.WriteString(fmt.Sprintf("  %s = bitcast i8* %s to %s*\n", bc, dp, plt))
+					callArgs = append(callArgs, plt+"* "+bc)
+					continue
+				}
 			}
 			// Non-owned aggregate parameter (fixed array / non-owned struct):
 			// pass the address of the argument's local slot so the callee's

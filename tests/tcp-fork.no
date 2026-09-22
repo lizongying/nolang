@@ -22,6 +22,7 @@ test-tcp-fork-basic = () (pass bool) {
             fs.close(listen-fd)
             return
         }
+
         pid == 0 -> {
 
             ; === 子進程: 伺服器 ===
@@ -37,7 +38,8 @@ test-tcp-fork-basic = () (pass bool) {
             ; 接收資料
             buf = ' '.repeat(64)
             n = net.net-recv(client-fd, buf, 64)
-            #{overflow = wrap}
+
+            #{overflow=wrap}
             io.errln('[TEST] tcp: child recv n=' - n.to-str())
 
             ; 回應
@@ -66,12 +68,14 @@ test-tcp-fork-basic = () (pass bool) {
     ; 接收
     buf = ' '.repeat(64)
     n = net.net-recv(fd, buf, 64)
-    #{overflow = wrap}
+
+    #{overflow=wrap}
     io.errln('[TEST] tcp: parent recv n=' - n.to-str())
 
     n > 0 -> {
         resp = buf.slice(0, n)
-        #{overflow = wrap}
+
+        #{overflow=wrap}
         io.errln('[TEST] tcp: parent got=' - resp)
         pass = true
     }
@@ -85,6 +89,7 @@ main = () {
     p = test-tcp-fork-basic()
     {
         p -> print('PASS: tcp-fork-basic')
+
         p == false -> print('FAIL: tcp-fork-basic')
     }
     io.errln('=== TCP Fork Tests Done ===')

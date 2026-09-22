@@ -11,10 +11,11 @@
 
 ; 迴圈版本：fib(10) = 55, fib(30) = 832040
 fib-loop = (n i64) (r i64) {
-    a i64 = 0
-    b i64 = 1
+    a = 0
+    b = 1
     i <- [0..n): {
-        #{overflow = wrap}
+
+        #{overflow=wrap}
         t = a + b
         a = b
         b = t
@@ -29,11 +30,14 @@ fib-rec = (n i64) (r i64) {
         r = n
         return
     }
-    #{overflow = wrap}
+
+    #{overflow=wrap}
     p1 = fib-rec(n - 1)
-    #{overflow = wrap}
+
+    #{overflow=wrap}
     p2 = fib-rec(n - 2)
-    #{overflow = wrap}
+
+    #{overflow=wrap}
     r = p1 + p2
 }
 loop10 = fib-loop(10)

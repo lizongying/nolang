@@ -51,7 +51,7 @@ t-encode-url-3bytes = () {
 t-decode-std = () {
     s = 'QUJD'
     result = base64.decode(s, base64.BASE64-STD)
-    ok bool = false
+    ok = false
     result: {
         ok -> {
             ok = it.len() == 3
@@ -62,7 +62,7 @@ t-decode-std = () {
         err -> ok = false
     }
     runner.is-true(ok, 'decode QUJD len == 3')
-    ok2 bool = false
+    ok2 = false
     result: {
         ok -> ok2 = it[0] == 65 && it[1] == 66 && it[2] == 67
 
@@ -76,7 +76,7 @@ t-decode-std = () {
 t-decode-padding = () {
     s = 'QQ=='
     result = base64.decode(s, base64.BASE64-STD)
-    ok bool = false
+    ok = false
     result: {
         ok -> ok = it.len() == 1 && it[0] == 65
 
@@ -96,7 +96,7 @@ t-roundtrip = () {
     ]
     encoded = base64.encode-std(data)
     result = base64.decode(encoded, base64.BASE64-STD)
-    ok bool = false
+    ok = false
     result: {
         ok -> {
             match = it.len() == 10
@@ -114,28 +114,60 @@ t-roundtrip = () {
 ; ── 執行 ──────────────────────────────────────
 
 p1, f1 = runner.test('base64.encode-std 3 bytes', t-encode-std-3bytes)
+
+#{overflow=wrap}
 passed = passed + p1
+
+#{overflow=wrap}
 failed = failed + f1
 p2, f2 = runner.test('base64.encode-std 1 byte', t-encode-std-1byte)
+
+#{overflow=wrap}
 passed = passed + p2
+
+#{overflow=wrap}
 failed = failed + f2
 p3, f3 = runner.test('base64.encode-std 2 bytes', t-encode-std-2bytes)
+
+#{overflow=wrap}
 passed = passed + p3
+
+#{overflow=wrap}
 failed = failed + f3
 p4, f4 = runner.test('base64.encode-std empty', t-encode-std-empty)
+
+#{overflow=wrap}
 passed = passed + p4
+
+#{overflow=wrap}
 failed = failed + f4
 p5, f5 = runner.test('base64.encode-url', t-encode-url-3bytes)
+
+#{overflow=wrap}
 passed = passed + p5
+
+#{overflow=wrap}
 failed = failed + f5
 p6, f6 = runner.test('base64.decode-std', t-decode-std)
+
+#{overflow=wrap}
 passed = passed + p6
+
+#{overflow=wrap}
 failed = failed + f6
 p7, f7 = runner.test('base64.decode-padding', t-decode-padding)
+
+#{overflow=wrap}
 passed = passed + p7
+
+#{overflow=wrap}
 failed = failed + f7
 p8, f8 = runner.test('base64.roundtrip', t-roundtrip)
+
+#{overflow=wrap}
 passed = passed + p8
+
+#{overflow=wrap}
 failed = failed + f8
 
 total = runner.summary()

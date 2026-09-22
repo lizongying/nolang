@@ -17,40 +17,40 @@ by []byte
 by.push(1)
 by.push(2)
 by.push(3)
-print(by.len())          ; 3
-print(by[0])             ; 1
-print(by[1])             ; 2
-print(by[2])             ; 3
+print(by.len()); 3
+print(by[0]); 1
+print(by[1]); 2
+print(by[2]); 3
 
 ; ── []i16 / []i32: MIR stores these as i64, push must agree ──
 w []i16
 w.push(258)
 w.push(515)
-print(w.len())           ; 2
-print(w[0])              ; 258
-print(w[1])              ; 515
+print(w.len()); 2
+print(w[0]); 258
+print(w[1]); 515
 
 d []i32
 d.push(16909060)
 d.push(84281096)
-print(d.len())           ; 2
-print(d[0])              ; 16909060
-print(d[1])              ; 84281096
+print(d.len()); 2
+print(d[0]); 16909060
+print(d[1]); 84281096
 
 ; ── []i64 / []str: must not regress (stride 8 / 24) ──────
 a []i64
 a.push(10)
 a.push(20)
-print(a.len())           ; 2
-print(a[0])              ; 10
-print(a[1])              ; 20
+print(a.len()); 2
+print(a[0]); 10
+print(a[1]); 20
 
 s []str
 s.push('ab')
 s.push('cd')
-print(s.len())           ; 2
-print(s[0])              ; ab
-print(s[1])              ; cd
+print(s.len()); 2
+print(s[0]); ab
+print(s[1]); cd
 
 ; ── nested []vec: element stride is 24, not 8 ────────────
 n [][]i64
@@ -58,15 +58,16 @@ r []i64
 r.push(7)
 r.push(8)
 n.push(r)
-print(n.len())           ; 1
-print(n[0].len())        ; 2
-print(n[0][0])           ; 7
-print(n[0][1])           ; 8
+print(n.len()); 1
+print(n[0].len()); 2
+print(n[0][0]); 7
+print(n[0][1]); 8
 
 ; ── a pushed-then-read byte is a real byte, not a truncated i64 ──
-sum i64 = 0
+sum = 0
+
 #{overflow=wrap}
 i <- [0..by.len()): {
     sum = sum + by[i]
 }
-print(sum)               ; 6
+print(sum); 6

@@ -7,7 +7,9 @@ test-str-i64-match = () {
             print('err:')
             print(n)
         }
+
         n == nil -> print('nil')
+
         -> print(n)
     }
 }

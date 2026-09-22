@@ -3,7 +3,9 @@ test1 = () {
     b = 'true'.to-bool()
     {
         b == nil -> print('nil')
+
         b == err -> print('err')
+
         -> {
             print('val=')
             print(b)

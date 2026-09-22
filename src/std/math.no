@@ -148,7 +148,7 @@ fmod = (x f64, y f64) (res f64) {
     }
 
     #{overflow=wrap}
-    q f64 = x / y
+    q = x / y
 
     #{overflow=wrap}
     res = x - trunc(q) * y

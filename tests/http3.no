@@ -167,7 +167,7 @@ test-quic-derive-initial-keys = () {
     expected-key[14] = 0x68
     expected-key[15] = 0xa1
 
-    match-val i64 = 1
+    match-val = 1
     i <- [0..16): {
         key[i] != expected-key[i] -> {
             match-val = 0
@@ -262,7 +262,8 @@ test-qpack-encode-decode = () {
     names [16]str
     values [16]str
     names[0] = 'content-type'
-    #{overflow = wrap}
+
+    #{overflow=wrap}
     values[0] = 'text/plain'
     buf []byte
     n = 0
@@ -286,7 +287,8 @@ test-qpack-encode-decode = () {
         print(name)
         return
     }
-    #{overflow = wrap}
+
+    #{overflow=wrap}
     value != 'text/plain' -> {
         print('FAIL: decode-header value mismatch: ')
         print(value)
@@ -318,10 +320,11 @@ test-udp-open-close = () {
 ; test-http3-parse-url: 測試 URL 解析
 test-http3-parse-url = () {
     host = ''
-    port i64 = 0
+    port = 0
     path = ''
     ok = false
-    #{overflow = wrap}
+
+    #{overflow=wrap}
     host, port, path, ok = http3.parse-url('https://example.com:8443/api/v1')
     ok == false -> {
         print('FAIL: http3-parse-url returned ok=false')
@@ -337,7 +340,8 @@ test-http3-parse-url = () {
         print(port.to-str())
         return
     }
-    #{overflow = wrap}
+
+    #{overflow=wrap}
     path != '/api/v1' -> {
         print('FAIL: http3-parse-url path mismatch: ')
         print(path)
@@ -346,7 +350,7 @@ test-http3-parse-url = () {
 
     ; 測試無埠號的 URL
     host2 = ''
-    port2 i64 = 0
+    port2 = 0
     path2 = ''
     ok2 = false
     host2, port2, path2, ok2 = http3.parse-url('https://example.com/')

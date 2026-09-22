@@ -712,24 +712,24 @@ dec-block = (in [16]byte, ek []byte) (out [16]byte) {
 
 ; enc-128: 加密一個 16-byte 區塊（AES-128）
 enc-128 = (in [16]byte, key [16]byte) (out [16]byte) {
-    ek []byte = key-expand(key)
+    ek = key-expand(key)
     out = enc-block(in, ek)
 }
 
 ; dec-128: 解密一個 16-byte 區塊（AES-128）
 dec-128 = (in [16]byte, key [16]byte) (out [16]byte) {
-    ek []byte = key-expand(key)
+    ek = key-expand(key)
     out = dec-block(in, ek)
 }
 
 ; enc-256: 加密一個 16-byte 區塊（AES-256）
 enc-256 = (in [16]byte, key [32]byte) (out [16]byte) {
-    ek []byte = key-expand-256(key)
+    ek = key-expand-256(key)
     out = enc-block(in, ek)
 }
 
 ; dec-256: 解密一個 16-byte 區塊（AES-256）
 dec-256 = (in [16]byte, key [32]byte) (out [16]byte) {
-    ek []byte = key-expand-256(key)
+    ek = key-expand-256(key)
     out = dec-block(in, ek)
 }

@@ -26,6 +26,15 @@ pid = os.get-pid()
 name = os.host-name()
 arch = os.get-arch()
 msg = os.strerror(errnum)
+errno = os.get-errno()
+
+; 檔案屬性與使用者（權限取得在 os，非 fs）
+mode = os.stat-mode(path)           ; 取得檔案模式（st_mode，返回 mode, ok）
+uid = os.stat-uid(path)             ; 取得檔案所有者 uid（返回 uid, ok）
+gid = os.stat-gid(path)             ; 取得檔案群組 gid（返回 gid, ok）
+mtime = os.stat-mtime(path)         ; 取得修改時間（Unix 秒，返回 mtime, ok）
+self-uid = os.getuid()              ; 目前使用者 ID
+self-gid = os.getgid()              ; 目前群組 ID
 
 ; 時間
 sec = os.now()
@@ -143,10 +152,8 @@ ok = fs.is-dir(path)                ; 判斷是否為目錄
 sz = fs.stat-size(path)             ; 取得檔案大小（返回 ?i64）
 sz = fs.file-size(path)             ; 同 stat-size（返回 ?i64）
 sz = fs.fstat-size(fd)              ; 透過 fstat(fd) 取得大小，消除 TOCTOU（返回 ?i64）
-mode = fs.stat-mode(path)           ; 取得檔案模式（st_mode，返回 i64）
-uid = fs.stat-uid(path)             ; 取得檔案所有者 uid（返回 i64）
-gid = fs.stat-gid(path)             ; 取得檔案群組 gid（返回 i64）
-mtime = fs.stat-mtime(path)         ; 取得修改時間（Unix 秒，返回 i64）
+; 注：檔案模式/擁有者/修改時間的取得函式位於 `os` 模組
+;     （os.stat-mode / os.stat-uid / os.stat-gid / os.stat-mtime）
 ok = fs.lstat(path)                 ; 取得符號連結資訊（不跟隨連結目標）
 
 ; 目錄操作
@@ -199,9 +206,9 @@ embed {
 }
 
 ; Windows 平台特定（僅 win-amd64/win-arm64 可用）
-bufptr = fs.win-find-first-file(path) ; FindFirstFileA，返回控制代碼（0=失敗）
-name = fs.win-find-next-file(bufptr)  ; FindNextFileA，返回 (name, ok)
-ok = fs.win-find-close(bufptr)        ; FindClose
+bufptr = os.win-find-first-file(path) ; FindFirstFileA，返回控制代碼（0=失敗）
+name = os.win-find-next-file(bufptr)  ; FindNextFileA，返回 (name, ok)
+ok = os.win-find-close(bufptr)        ; FindClose
 
 ; open() 旗標常量（平台特定，此處顯示 macOS 值）
 O-RDONLY = 0
@@ -431,10 +438,13 @@ o = process.cmdopts{
     timeout: 200,
     merge-err: false
 }
-out, code, err = process.exec('echo', ['hello'], o)
+; exec-result { stdout str, stderr str, code i64 }
+res = process.exec('echo', ['hello'], o)     ; 回傳 exec-result（res.stdout / res.code ...）
 
-; 便捷函數（舊，後續取捨）
-status = process.process-run(cmd)           ; 執行 shell 命令
+; 便捷函數
+code = process.shell(cmd)                     ; 透過 shell 執行命令，回傳退出碼
+pid = process.spawn(cmd)                      ; 產生子進程，回傳 pid
+status = process.wait(pid)                    ; 等待指定 pid 結束
 content, code = process.new().output(program, arg) ; 執行並捕獲輸出
 ```
 
@@ -474,8 +484,8 @@ c.close()                           ; 關閉連接
 fd = c.fd-of()                       ; 取得 fd
 
 ; 便捷函數
-l = net.net-listen-on(host, port)        ; 建立監聽器並開始監聽（?listener）
-c = net.net-dial-to(host, port)          ; 建立連接並撥號（?conn）
+l = net.listen-on(host, port)              ; 建立監聽器並開始監聽（?listener）
+c = net.dial-to(host, port)                ; 建立連接並撥號（?conn）
 ```
 
 ### net/ip — IP 地址操作
@@ -577,7 +587,7 @@ ok = client.reconnect()             ; 重新連線（使用 last-event-id）
 
 ```no
 ; 結構體
-http-request {
+http.request {
     method str
     url str
     body str
@@ -597,16 +607,25 @@ http.response {
 ; 便捷函數
 resp = http.get(url)                        ; GET 請求（?http.response）
 resp = http.post(url, body)                  ; POST 請求（?http.response）
+resp = http.put(url, body)                   ; PUT 請求（?http.response）
+resp = http.delete(url)                      ; DELETE 請求（?http.response）
+resp = http.patch(url, body)                 ; PATCH 請求（?http.response）
 resp = http.do(method, url, body)            ; 自訂方法（?http.response）
+resp = http.get-auth(url, user, password)    ; 帶 Basic 認證的 GET（?http.response）
+resp = http.post-auth(url, body, user, password) ; 帶 Basic 認證的 POST（?http.response）
 
 ; 使用 request 物件
-req = http-request{}
+req = http.request{}
 req.init('POST', url, body)
 req.add-header('Content-Type', 'application/json')
+ok = http.set-basic-auth(req, user, password)   ; 設定 Basic 認證標頭（bool）
+ok = http.set-bearer-auth(req, token)           ; 設定 Bearer 標頭（bool）
+ok = http.set-api-key(req, header-name, api-key) ; 設定 API-key 標頭（bool）
 resp = http.do-req(req)                      ; 發送請求（?http.response）
 
-; 解析回應標頭
+; 解析與讀取回應標頭
 resp.parse-headers()
+val = resp.get-header(name)                  ; 查詢標頭值（?str）
 ```
 
 ### net/http2 — HTTP/2.0 客戶端（RFC 7540）
@@ -661,14 +680,14 @@ HTTP3-METHOD-OPTIONS = 'OPTIONS'
 
 ; 便捷函數
 c = http3.connect(host, port)                ; 建立 QUIC 連線（?http3-conn）
-resp = http3.send-request(c, method, path, headers, body) ; 發送請求（?http.response）
+resp = http3.send-request(c, method, path, host, body) ; 發送請求（?http.response）
 resp = http3.get(url)                        ; GET 請求（?http.response）
 resp = http3.post(url, body)                 ; POST 請求（?http.response）
 
 ; QPACK 標頭編解碼
-buf, n = http3.qpack-encode-header(name, value)
-buf, n = http3.qpack-encode-headers(names, values, count)
-name, value, pos = http3.qpack-decode-header(buf, pos)
+buf, n = http3.encode-header(name, value)
+buf, n = http3.encode-headers(names, values, count)
+name, value, pos = http3.decode-header(buf, pos)
 ```
 
 ### net/ws — WebSocket 客戶端與服務端（RFC 6455）
@@ -705,7 +724,7 @@ c.close()
 
 ```no
 ; 連接
-c = tls.tls-dial(host, port)                     ; 建立 TLS 連接（?tls.conn）
+c = tls.dial(host, port)                       ; 建立 TLS 連接（?tls.conn）
 n = c.send(data)                             ; 發送加密資料（?i64）
 n = c.recv(buf, n)                           ; 接收解密資料（?i64）
 c.close()
@@ -716,12 +735,13 @@ c.close()
 封裝 `conn` 結構體，提供自動重連等功能：
 
 ```no
-c = client.net-client(host, port)                   ; 建立客戶端（?client）
+c = client.client-create(host, port)               ; 建立客戶端（?client）
 ok = c.connect(host, port)                   ; 連接
 ok = c.reconnect()                           ; 重連
 written = c.send(data)                       ; 發送
 read-n = c.recv(buf, n)                      ; 接收
 line = c.recv-line()                         ; 接收一行（?str）
+written = c.send-line(line)                  ; 發送一行（i64）
 response = c.request(data)                   ; 請求-回應模式（?str）
 yes = c.is-connected()                       ; 連接狀態
 c.close()
@@ -745,7 +765,7 @@ c.close()
 ```no
 s = server{}
 ok = s.listen(host, port)                    ; 開始監聽
-ok = s.serve()                               ; 處理請求
+c = s.accept()                               ; 接受一條連接（?server-conn）
 s.close()
 ```
 
@@ -781,8 +801,14 @@ s = c.to-str()
 提供 multipart/form-data 的解析與建構：
 
 ```no
-out = multipart.multipart-encode(fields, boundary)
-fields = multipart.multipart-parse(data, boundary)
+; 寫入（建構 multipart/form-data）
+w = multipart.multipart-create()           ; 建立寫入器（?multipart-writer）
+w.write-field(name, value)                 ; 寫入欄位
+body = w.body-of()                         ; 取得編碼後的 body
+ct = w.content-type()                      ; 取得 content-type（含 boundary）
+
+; 解析
+r = multipart.multipart-parse(content-type, body) ; 解析（?multipart-reader）
 ```
 
 ### net/hpack — HPACK 標頭壓縮（HTTP/2）
@@ -790,8 +816,21 @@ fields = multipart.multipart-parse(data, boundary)
 提供 HPACK 演算法的編解碼，用於 HTTP/2 標頭壓縮：
 
 ```no
-buf, n = hpack.encode(headers)
-headers = hpack.decode(buf, n)
+; 標頭表操作
+t = hpack.tables{}
+t.init()                                 ; 初始化靜態+動態表
+out = t.encode-header(name, value)       ; 編碼單一標頭（str）
+names, values, count, ok = t.decode-headers(data) ; 解碼標頭（[]str）
+t.dyn-add(name, value)                   ; 加入動態表
+idx = t.find(name, value)                ; 查完整 name/value
+idx = t.find-name(name)                  ; 僅按 name 查
+name, value, ok = t.lookup(idx)           ; 按索引查
+
+; 整數/字串原語編解碼
+out = hpack.encode-int(val, prefix-bits, prefix-byte)
+val, next-pos = hpack.decode-int(data, pos, prefix-bits)
+out = hpack.encode-str(s)
+out, next-pos = hpack.decode-str(data, pos)
 ```
 
 ### net/proxy — 代理支援
@@ -819,9 +858,10 @@ p.close()
 提供 Unix 域套接字通訊：
 
 ```no
-fd = unix.unix-listen(path)                       ; 監聽
-fd = unix.unix-dial(path)                         ; 連接
-fd = unix.unix-accept(listen-fd)                  ; 接受連接
+fd = unix.unix-listen(path)                       ; 監聽（回傳 fd）
+fd = unix.unix-dial(path)                         ; 連接（回傳 fd）
+l = unix.unix-listen-on(path)                     ; 建立監聽器（?unix-listener）
+c = l.accept()                                    ; 接受連接（?unix-conn）
 ```
 
 ---

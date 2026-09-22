@@ -8,8 +8,8 @@
 
 get-pair = () (a []i64, b []i64) {
     x = [1, 2, 3]
-    a = x   ; x 后续被引用 → clone，a 独立拥有 data
-    b = x   ; x 后续未引用 → move，b 接管 x 的 data
+    a = x; x 后续被引用 → clone，a 独立拥有 data
+    b = x; x 后续未引用 → move，b 接管 x 的 data
 }
 
 main = () {

@@ -16,7 +16,7 @@ t-encode-decode = () {
     encoded = pem.pem-encode('CERTIFICATE', data)
     runner.gt(encoded.len(), 0, 'encoded len > 0')
 
-    ok bool = false
+    ok = false
     result = pem.pem-decode(encoded)
     result: {
         ok -> {

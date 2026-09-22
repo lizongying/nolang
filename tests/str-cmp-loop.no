@@ -9,6 +9,7 @@ i <- [0..n): {
     }
     {
         is-ws -> print('WS')
+
         -> print('non-WS')
     }
 }

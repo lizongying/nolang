@@ -35,7 +35,7 @@ t-push-back-pop-front = () {
     sz i64 = d.size()
     runner.eq(sz, 3, 'push-back x3 size == 3')
 
-    ok1 bool = false
+    ok1 = false
     v1 = d.pop-front()
     v1: {
         nil -> ok1 = false
@@ -44,7 +44,7 @@ t-push-back-pop-front = () {
     }
     runner.is-true(ok1, 'pop-front 1st == 10')
 
-    ok2 bool = false
+    ok2 = false
     v2 = d.pop-front()
     v2: {
         nil -> ok2 = false
@@ -71,7 +71,7 @@ t-push-front-pop-back = () {
     sz i64 = d.size()
     runner.eq(sz, 3, 'push-front x3 size == 3')
 
-    ok1 bool = false
+    ok1 = false
     v1 = d.pop-back()
     v1: {
         nil -> ok1 = false
@@ -80,7 +80,7 @@ t-push-front-pop-back = () {
     }
     runner.is-true(ok1, 'pop-back 1st == 10')
 
-    ok2 bool = false
+    ok2 = false
     v2 = d.pop-back()
     v2: {
         nil -> ok2 = false
@@ -101,7 +101,7 @@ t-peek = () {
     d.push-back(100)
     d.push-back(200)
 
-    ok1 bool = false
+    ok1 = false
     pf = d.peek-front()
     pf: {
         nil -> ok1 = false
@@ -110,7 +110,7 @@ t-peek = () {
     }
     runner.is-true(ok1, 'peek-front == 100')
 
-    ok2 bool = false
+    ok2 = false
     pb = d.peek-back()
     pb: {
         nil -> ok2 = false
@@ -131,7 +131,7 @@ t-pop-empty = () {
         head: 0
         tail: 0
     }
-    is-nil1 bool = false
+    is-nil1 = false
     v1 = d.pop-front()
     v1: {
         nil -> is-nil1 = true
@@ -140,7 +140,7 @@ t-pop-empty = () {
     }
     runner.is-true(is-nil1, 'pop-front empty == nil')
 
-    is-nil2 bool = false
+    is-nil2 = false
     v2 = d.pop-back()
     v2: {
         nil -> is-nil2 = true

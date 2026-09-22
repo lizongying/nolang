@@ -195,6 +195,13 @@ main = () () {
 // vet` reports 0 errors (struct field assignment types are not checked) and the
 // old behaviour wrote the array's bytes into the 256-byte `%txt`, leaving the
 // i8 length byte at 0 so every read came back empty.
+//
+// The literal's MIR type moved with the slice-literal fix: `[1, 2, 3]` used to
+// lower to a stack `[3 x i64]` and now lowers to a real `%vec` (a slice literal
+// is `[]i64`, so `[]t.*` builtins read it as `%vec { len, cap, data }`). For a
+// `txt` field that means emitSetField's SLICE-specific branch fires — a more
+// precise diagnostic than the generic layout one, but a different string. Both
+// are a rejection, which is what this test pins; accept either.
 func TestEmitLLVMRejectsArrayIntoTxtField(t *testing.T) {
 	src := `point { s txt }
 main = () () {
@@ -207,7 +214,8 @@ main = () () {
 	if err == nil {
 		t.Fatal("expected EmitLLVM to reject an array assigned to a txt field, got nil error")
 	}
-	if !strings.Contains(err.Error(), "different aggregate layouts cannot be stored") {
+	if !strings.Contains(err.Error(), "different aggregate layouts cannot be stored") &&
+		!strings.Contains(err.Error(), "a slice cannot back a fixed 256-byte txt buffer") {
 		t.Fatalf("expected the setfield aggregate-layout diagnostic, got: %v", err)
 	}
 }

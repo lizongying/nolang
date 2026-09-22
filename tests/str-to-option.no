@@ -7,7 +7,9 @@ test-to-i64-ok = () {
     n = '12345'.to-i64()
     {
         n == nil -> print('nil')
+
         n == err -> print('err')
+
         -> {
             print('val=')
             print(n)
@@ -19,7 +21,9 @@ test-to-i64-neg = () {
     n = '-42'.to-i64()
     {
         n == nil -> print('nil')
+
         n == err -> print('err')
+
         -> {
             print('val=')
             print(n)
@@ -31,7 +35,9 @@ test-to-i64-empty = () {
     n = ''.to-i64()
     {
         n == nil -> print('nil')
+
         n == err -> print('err')
+
         -> {
             print('val=')
             print(n)
@@ -43,7 +49,9 @@ test-to-i64-invalid = () {
     n = 'abc'.to-i64()
     {
         n == nil -> print('nil')
+
         n == err -> print('err')
+
         -> {
             print('val=')
             print(n)
@@ -56,7 +64,9 @@ test-to-i8-ok = () {
     n = '127'.to-i8()
     {
         n == nil -> print('nil')
+
         n == err -> print('err')
+
         -> {
             print('val=')
             print(n)
@@ -68,7 +78,9 @@ test-to-i8-neg = () {
     n = '-128'.to-i8()
     {
         n == nil -> print('nil')
+
         n == err -> print('err')
+
         -> {
             print('val=')
             print(n)
@@ -80,7 +92,9 @@ test-to-i8-overflow = () {
     n = '128'.to-i8()
     {
         n == nil -> print('nil')
+
         n == err -> print('err')
+
         -> {
             print('val=')
             print(n)
@@ -92,7 +106,9 @@ test-to-i8-invalid = () {
     n = '12a'.to-i8()
     {
         n == nil -> print('nil')
+
         n == err -> print('err')
+
         -> {
             print('val=')
             print(n)
@@ -105,7 +121,9 @@ test-to-i16-ok = () {
     n = '32767'.to-i16()
     {
         n == nil -> print('nil')
+
         n == err -> print('err')
+
         -> {
             print('val=')
             print(n)
@@ -117,7 +135,9 @@ test-to-i16-overflow = () {
     n = '32768'.to-i16()
     {
         n == nil -> print('nil')
+
         n == err -> print('err')
+
         -> {
             print('val=')
             print(n)
@@ -130,7 +150,9 @@ test-to-i32-ok = () {
     n = '2147483647'.to-i32()
     {
         n == nil -> print('nil')
+
         n == err -> print('err')
+
         -> {
             print('val=')
             print(n)
@@ -142,7 +164,9 @@ test-to-i32-overflow = () {
     n = '2147483648'.to-i32()
     {
         n == nil -> print('nil')
+
         n == err -> print('err')
+
         -> {
             print('val=')
             print(n)
@@ -155,7 +179,9 @@ test-to-u8-ok = () {
     n = '255'.to-u8()
     {
         n == nil -> print('nil')
+
         n == err -> print('err')
+
         -> {
             print('val=')
             print(n)
@@ -167,7 +193,9 @@ test-to-u8-overflow = () {
     n = '256'.to-u8()
     {
         n == nil -> print('nil')
+
         n == err -> print('err')
+
         -> {
             print('val=')
             print(n)
@@ -179,7 +207,9 @@ test-to-u8-negative = () {
     n = '-1'.to-u8()
     {
         n == nil -> print('nil')
+
         n == err -> print('err')
+
         -> {
             print('val=')
             print(n)
@@ -192,7 +222,9 @@ test-to-u16-ok = () {
     n = '65535'.to-u16()
     {
         n == nil -> print('nil')
+
         n == err -> print('err')
+
         -> {
             print('val=')
             print(n)
@@ -204,7 +236,9 @@ test-to-u16-overflow = () {
     n = '65536'.to-u16()
     {
         n == nil -> print('nil')
+
         n == err -> print('err')
+
         -> {
             print('val=')
             print(n)
@@ -217,7 +251,9 @@ test-to-u32-ok = () {
     n = '4294967295'.to-u32()
     {
         n == nil -> print('nil')
+
         n == err -> print('err')
+
         -> {
             print('val=')
             print(n)
@@ -229,7 +265,9 @@ test-to-u32-overflow = () {
     n = '4294967296'.to-u32()
     {
         n == nil -> print('nil')
+
         n == err -> print('err')
+
         -> {
             print('val=')
             print(n)
@@ -242,7 +280,9 @@ test-to-u64-ok = () {
     n = '99999'.to-u64()
     {
         n == nil -> print('nil')
+
         n == err -> print('err')
+
         -> {
             print('val=')
             print(n)
@@ -254,7 +294,9 @@ test-to-u64-negative = () {
     n = '-1'.to-u64()
     {
         n == nil -> print('nil')
+
         n == err -> print('err')
+
         -> {
             print('val=')
             print(n)
@@ -267,7 +309,9 @@ test-to-bool-true = () {
     b = 'true'.to-bool()
     {
         b == nil -> print('nil')
+
         b == err -> print('err')
+
         -> {
             print('val=')
             print(b)
@@ -279,7 +323,9 @@ test-to-bool-false = () {
     b = 'false'.to-bool()
     {
         b == nil -> print('nil')
+
         b == err -> print('err')
+
         -> {
             print('val=')
             print(b)
@@ -291,7 +337,9 @@ test-to-bool-empty = () {
     b = ''.to-bool()
     {
         b == nil -> print('nil')
+
         b == err -> print('err')
+
         -> {
             print('val=')
             print(b)
@@ -303,7 +351,9 @@ test-to-bool-invalid = () {
     b = 'yes'.to-bool()
     {
         b == nil -> print('nil')
+
         b == err -> print('err')
+
         -> {
             print('val=')
             print(b)

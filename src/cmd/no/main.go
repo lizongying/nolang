@@ -1145,7 +1145,7 @@ func fmtCommand(args []string) {
 	fs := flag.NewFlagSet("fmt", flag.ExitOnError)
 	writeInPlace := fs.Bool("w", false, "write result to source file")
 	diffMode := fs.Bool("d", false, "output colored diff instead of formatted result")
-	fixClass := fs.String("fix", "", "apply automatic fixes for one problem class, e.g. 'overflow' (adds #{overflow=wrap} to unannotated integer arithmetic)")
+	fixClass := fs.String("fix", "", "apply automatic fixes for one problem class: 'overflow' (adds #{overflow=wrap} to unannotated integer arithmetic) or 'redundant' (removes type annotations that equal the inferred type, e.g. `x str = ''` -> `x = ''`)")
 	loopStyle := fs.String("loop-style", "prefix", "default loop spelling: 'prefix' -> '(cond) { }', 'N * { }', '!! { }', '! { }'; 'suffix' -> '{ } (cond)', '{ } * N', '{ } (true)', '{ } ()'")
 	fs.Usage = func() {
 		fmt.Println("Usage: no fmt [flags] <file|dir>")
@@ -1256,7 +1256,13 @@ func fmtProcessFile(filename string, writeInPlace bool, diffMode bool, fixClass 
 	original := string(data)
 	var result string
 	{
-		r, perrs := nfmt.FormatFileWithErrorsAndLoopStyle(original, loopStyle)
+		// 預設 no fmt：先手術式移除冗餘型別標註（與 --fix=redundant 同邏輯），再正常格式化。
+		// 這樣 `no fmt -w` 會自動去掉 `x str = ''` 的 `str`，且 -d 預覽也含此變更。
+		reduced := original
+		if r, ok := fixRedundantTypeSource(original); ok {
+			reduced = r
+		}
+		r, perrs := nfmt.FormatFileWithErrorsAndLoopStyle(reduced, loopStyle)
 		if len(perrs) > 0 {
 			for _, e := range perrs {
 				fmt.Fprintf(os.Stderr, "%s: format error: %s\n", filename, e)
@@ -1319,7 +1325,13 @@ func fmtProcessDirectory(dirname string, writeInPlace bool, diffMode bool, fixCl
 				}
 				return nil
 			}
-			result, perrs := nfmt.FormatFileWithErrors(string(data))
+			src := string(data)
+			// 預設 no fmt：先移除冗餘型別標註再格式化，與 fmtProcessFile 保持一致。
+			reduced := src
+			if r, ok := fixRedundantTypeSource(src); ok {
+				reduced = r
+			}
+			result, perrs := nfmt.FormatFileWithErrors(reduced)
 			if len(perrs) > 0 {
 				for _, e := range perrs {
 					fmt.Fprintf(os.Stderr, "%s: format error: %s\n", path, e)
@@ -1329,7 +1341,7 @@ func fmtProcessDirectory(dirname string, writeInPlace bool, diffMode bool, fixCl
 				}
 				return nil
 			}
-			if result != string(data) {
+			if result != src {
 				fmt.Println(path)
 				needFormat++
 			}
@@ -1450,8 +1462,11 @@ func fmtProcessFixDirectory(dirname string, writeInPlace bool, diffMode bool, fi
 // 走的是內嵌 StdFS，磁碟修改必須重編 bin/no 才會反映，否則報告行號與磁碟檔錯位，
 // 會把註解插到錯誤的陳述上。
 func fmtOverflowFixes(arg string, fixClass string) (map[string]string, error) {
+	if fixClass == "redundant" {
+		return fixRedundantTypeFixes(arg), nil
+	}
 	if fixClass != "overflow" {
-		return nil, fmt.Errorf("unknown fix class %q (supported: overflow)", fixClass)
+		return nil, fmt.Errorf("unknown fix class %q (supported: overflow, redundant)", fixClass)
 	}
 	info, err := os.Stat(arg)
 	if err != nil {
@@ -1653,6 +1668,301 @@ func mergeAnnotationLine(s, add string) string {
 		return s + add
 	}
 	return s[:idx] + add + s[idx:]
+}
+
+// fixRedundantTypeFixes 對被 checker.ValidateRedundantTypeAnnotation 標記為「與推斷型別相同、
+// 可省略」的型別標註做「手術式」文本移除（如 `x str = ''` 的 `str`），回傳
+// 「絕對檔名 -> 修復後源碼」。只刪除型別標註本身及其前導空白，不重排、不動其它註解/排版，
+// 因此對 std 這類手寫風格檔案安全；重跑冪等：已移除的標註不再被報告。
+//
+// 分析來源是「磁碟檔案自身」：解析後跑 checker.ValidateRedundantTypeAnnotation。這與 `no vet`
+// 的實質報告一致。刻意不呼叫 `no vet <pkg>` 取行號：`no vet src/std` 對 std 模組走的是內嵌
+// StdFS，磁碟修改必須重編 bin/no 才會反映，否則報告行號與磁碟檔錯位，會把標註從錯誤的位置刪除。
+func fixRedundantTypeFixes(arg string) map[string]string {
+	info, err := os.Stat(arg)
+	if err != nil {
+		return nil
+	}
+	var files []string
+	if info.IsDir() {
+		_ = filepath.Walk(arg, func(path string, fi os.FileInfo, werr error) error {
+			if werr != nil || fi == nil || fi.IsDir() {
+				return nil
+			}
+			if strings.HasSuffix(path, ".no") {
+				files = append(files, path)
+			}
+			return nil
+		})
+	} else {
+		files = append(files, arg)
+	}
+	sort.Strings(files)
+	fixes := map[string]string{}
+	for _, f := range files {
+		fixed, ok := fixRedundantTypeInFile(f)
+		if !ok {
+			continue
+		}
+		abs, aerr := filepath.Abs(f)
+		if aerr != nil {
+			abs = f
+		}
+		fixes[filepath.Clean(abs)] = fixed
+	}
+	return fixes
+}
+
+// fmtRemoval 記錄一處待移除的 [start, end) byte 區間（型別標註 + 前導空白）。
+type fmtRemoval struct {
+	start int
+	end   int
+}
+
+// fixRedundantTypeSource 對單份源碼字串移除「標註型別 == 推斷型別」的型別標註，
+// 回傳修復後源碼與 ok（無可移除處時 ok=false、回傳空字串）。
+// 與 --fix=redundant 同一套手術式邏輯；被 fixRedundantTypeInFile（磁碟檔）與預設
+// `no fmt`（先去冗餘再正常格式化）共用。
+func fixRedundantTypeSource(src string) (string, bool) {
+	lx := lexer.New(src)
+	p := parser.New(lx)
+	p.SkipUnwrapLowering = true
+	p.SkipSafeIndexLowering = true
+	program := p.ParseProgram()
+	if len(p.Errors()) > 0 {
+		return "", false
+	}
+	results := checker.ValidateRedundantTypeAnnotation(program)
+	if len(results) == 0 {
+		return "", false
+	}
+	lineStarts := buildLineStarts(src)
+	var removals []fmtRemoval
+	for _, r := range results {
+		node := findRedundantTypeNode(program, r.Line, r.Column)
+		if node == nil || node.Type == nil {
+			continue
+		}
+		// 防禦：linter 對十六進位字面量採「0xNN -> byte」啟發式（checker.inferExprType），
+		// 與編譯器「無標註時整数字面量預設 i64」的實際語義不一致。因此
+		// `IP-TBL [64]byte = [0x3a, ...]` 會被誤判成「標註冗餘」，一旦移除，字面量便退化成
+		// i64 元素（`[64]i64`），導致 `expected '[]byte', got '[]i64'` 型別錯誤。
+		// 值運算式含十六進位字面量時一律不移除——寧可保守，不可改壞語義。
+		if exprHasHexIntLiteral(node.Value) {
+			continue
+		}
+		pos := node.Type.Pos()
+		sl, sc := pos.Line, pos.Column
+		if sl < 1 || sl > len(lineStarts) {
+			continue
+		}
+		// 型別標註首 byte。注意：NamedType.EndPos() 與 Pos() 相同（都回傳 token 起點），
+		// 無法取得型別文本長度；故改為從 typeStart 向前掃描，直到遇到分隔符
+		// （空白 / = / ; / ) / 換行），精準圈出型別文本。型別標註在源碼中緊鄰這些分隔符，
+		// 且型別本身不含空白，因此掃描可靠。
+		typeStart := lineStarts[sl-1] + (sc - 1)
+		typeEndExcl := typeStart
+		for typeEndExcl < len(src) {
+			c := src[typeEndExcl]
+			if c == ' ' || c == '\t' || c == '\n' || c == '\r' ||
+				c == '=' || c == ';' || c == ')' || c == '}' {
+				break
+			}
+			typeEndExcl++
+		}
+		if typeEndExcl >= len(src) {
+			// 未遇分隔符（型別位於檔案末端且無 = ）—— 理論上不應發生（lint 要求有值），跳過。
+			continue
+		}
+		if src[typeEndExcl] == '\n' || src[typeEndExcl] == '\r' {
+			// 跨行型別標註（極少見）：跳過，避免破壞排版，交由手動處理。
+			continue
+		}
+		if typeEndExcl <= typeStart {
+			continue
+		}
+		// 防禦：linter 對十六進位字面量採「0xNN -> byte」啟發式（checker.inferExprType），
+		// 與編譯器「無標註時整数字面量預設 i64」的實際語義不一致。因此
+		// `t [4]byte = [0x01, ...]`、`s []byte = [0x50, ...]`、`IP-TBL [64]byte = [0x3a, ...]`
+		// 都會被誤判成「標註冗餘」，移除後字面量退化成 i64 元素，導致
+		// `expected '[]byte', got '[]i64'` 型別錯誤。值運算式含十六進位字面量時一律不移除。
+		// 以文本判斷而非 AST：切片字面量與固定陣列字面量的 AST 節點型別不同，走 AST 會漏一種。
+		if valueHasHexLiteral(src, typeEndExcl) {
+			continue
+		}
+		// 移除型別前導空白（name 與型別之間的空格/tab）；型別後的空白（即 `=` 前的分隔）
+		// 保留，因此結果為 `name = value`，恰好一個空格。
+		//
+		// 可空型別 `?T`：NamedType.Pos() 指向 `T`（`?` 之後），故移除起點必須往回延伸
+		// 吃掉 `?` 及其前導空白，否則會留下懸空 `?` 造成語法錯：
+		//   `c ?conn = f()` -> （未修正）`c ? = f()`  ✗  -> （修正後）`c = f()`  ✓
+		wsStart := typeStart
+		for {
+			for wsStart-1 >= lineStarts[sl-1] && (src[wsStart-1] == ' ' || src[wsStart-1] == '\t') {
+				wsStart--
+			}
+			if wsStart-1 >= lineStarts[sl-1] && src[wsStart-1] == '?' {
+				wsStart--
+				continue // 支援 ??T 等多層可空
+			}
+			break
+		}
+		removals = append(removals, fmtRemoval{wsStart, typeEndExcl})
+	}
+	if len(removals) == 0 {
+		return "", false
+	}
+	return applyRemovals(src, removals), true
+}
+
+// applyRemovals 按升序拼接移除區間，得到修復後源碼。區間互不重疊（同一陳述至多一個冗餘標註）。
+func applyRemovals(src string, removals []fmtRemoval) string {
+	sort.Slice(removals, func(i, j int) bool { return removals[i].start < removals[j].start })
+	var b strings.Builder
+	prev := 0
+	for _, rm := range removals {
+		if rm.start < prev {
+			continue // 防禦：理論上不重疊
+		}
+		b.WriteString(src[prev:rm.start])
+		prev = rm.end
+	}
+	b.WriteString(src[prev:])
+	return b.String()
+}
+
+// fixRedundantTypeInFile 讀入單檔（磁碟內容），移除冗餘型別標註，回傳修復後源碼。
+// 若無任何可移除處則回傳 ok=false。
+func fixRedundantTypeInFile(filename string) (string, bool) {
+	data, err := os.ReadFile(filename)
+	if err != nil {
+		return "", false
+	}
+	return fixRedundantTypeSource(string(data))
+}
+
+// findRedundantTypeNode 在程式中尋找「型別標註位置恰好為 (line, col)」的 LetStatement。
+// 與 checker.ValidateRedundantTypeAnnotation 的報告位置對齊（該報告的 Line/Column 即取自
+// s.Type.Pos()），因此能精準定位要移除的型別節點。
+// exprHasHexIntLiteral 判斷運算式（含陣列/切片字面量元素）是否含有十六進位整数字面量。
+// 供 fixRedundantTypeSource 過濾 linter 的 byte 啟發式誤判，見該處註解。
+func exprHasHexIntLiteral(expr parser.Expression) bool {
+	switch e := expr.(type) {
+	case nil:
+		return false
+	case *parser.IntegerLiteral:
+		raw := e.Raw
+		if raw == "" {
+			raw = e.Token.Literal
+		}
+		return len(raw) > 2 && raw[0] == '0' && (raw[1] == 'x' || raw[1] == 'X')
+	case *parser.ArrayLiteral:
+		for _, el := range e.Elements {
+			if exprHasHexIntLiteral(el) {
+				return true
+			}
+		}
+		return false
+	}
+	return false
+}
+
+// valueHasHexLiteral 從型別標註結尾（typeEndExcl）往後掃到該陳述結尾（括號/方括號平衡後
+// 的第一個換行或分號），檢查值運算式的原始文本是否含十六進位字面量（0x / 0X）。
+// 以文本而非 AST 判斷，是因為切片字面量與固定陣列字面量的 AST 節點型別不同，
+// 走 AST 會漏掉其中一種（實測 `s []byte = [0x50, ...]` 會漏）。
+func valueHasHexLiteral(src string, typeEndExcl int) bool {
+	i := typeEndExcl
+	// 值運算式起點：型別之後的 '='
+	for i < len(src) && src[i] != '=' && src[i] != '\n' && src[i] != ';' {
+		i++
+	}
+	if i >= len(src) || src[i] != '=' {
+		return false
+	}
+	i++
+	depth := 0
+	for i < len(src) {
+		switch src[i] {
+		case '[', '(':
+			depth++
+		case ']', ')':
+			if depth > 0 {
+				depth--
+			}
+		case '\n', ';':
+			if depth == 0 {
+				// 陳述結束：回傳值運算式區間是否含十六進位字面量
+				seg := src[typeEndExcl:i]
+				return strings.Contains(seg, "0x") || strings.Contains(seg, "0X")
+			}
+		}
+		i++
+	}
+	seg := src[typeEndExcl:]
+	return strings.Contains(seg, "0x") || strings.Contains(seg, "0X")
+}
+
+func findRedundantTypeNode(program *parser.Program, line, col int) *parser.LetStatement {
+	var found *parser.LetStatement
+	var walk func(stmts []parser.Statement)
+	walk = func(stmts []parser.Statement) {
+		for _, s := range stmts {
+			if s == nil {
+				continue
+			}
+			if ls, ok := s.(*parser.LetStatement); ok {
+				if ls.Type != nil && ls.Type.Pos().Line == line && ls.Type.Pos().Column == col {
+					found = ls
+					return
+				}
+			}
+			switch v := s.(type) {
+			case *parser.FunctionDefinition:
+				if v.Body != nil {
+					walk(v.Body.Statements)
+				}
+			case *parser.ForStatement:
+				if v.Init != nil {
+					walk([]parser.Statement{v.Init})
+				}
+				if v.Update != nil {
+					walk([]parser.Statement{v.Update})
+				}
+				if v.Body != nil {
+					walk(v.Body.Statements)
+				}
+			case *parser.BlockStatement:
+				walk(v.Statements)
+			case *parser.ExpressionStatement:
+				if ie, ok := v.Expression.(*parser.IfExpression); ok {
+					if ie.Consequence != nil {
+						walk(ie.Consequence.Statements)
+					}
+					if ie.Alternative != nil {
+						walk(ie.Alternative.Statements)
+					}
+				}
+			case *parser.LetStatement:
+				if fl, ok := v.Value.(*parser.FunctionLiteral); ok && fl.Body != nil {
+					walk(fl.Body.Statements)
+				}
+			}
+		}
+	}
+	walk(program.Statements)
+	return found
+}
+
+// buildLineStarts 回傳每行（1-based）起始的 byte 偏移；lineStarts[i] 為第 i+1 行的起點。
+func buildLineStarts(src string) []int {
+	starts := []int{0}
+	for i := 0; i < len(src); i++ {
+		if src[i] == '\n' {
+			starts = append(starts, i+1)
+		}
+	}
+	return starts
 }
 
 // leadingWhitespace 傳回字串開頭的空白（縮排），用於新插入註解行對齊陳述。

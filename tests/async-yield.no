@@ -2,7 +2,8 @@
 
 yielder-async = (n i64) (r i64) {
     async-yield()
-    #{overflow = wrap}
+
+    #{overflow=wrap}
     r = n + 1
 }
 

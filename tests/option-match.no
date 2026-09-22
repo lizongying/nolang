@@ -9,7 +9,9 @@ test-err = () {
     r = ''
     n: {
         err -> r = 'got-err'
+
         nil -> r = 'got-nil'
+
         -> r = 'got-val'
     }
     print(r)
@@ -21,7 +23,9 @@ test-nil = () {
     r = ''
     n: {
         err -> r = 'got-err'
+
         nil -> r = 'got-nil'
+
         -> r = 'got-val'
     }
     print(r)
@@ -33,7 +37,9 @@ test-val = () {
     r = ''
     n: {
         err -> r = 'got-err'
+
         nil -> r = 'got-nil'
+
         -> r = 'got-val'
     }
     print(r)
@@ -45,6 +51,7 @@ test-err-only = () {
     r = ''
     n: {
         err -> r = 'only-err'
+
         -> r = 'otherwise'
     }
     print(r)

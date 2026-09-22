@@ -5,7 +5,9 @@ source = '# comment\ntitle = "TOML"\nmultiline = """line one\nline two"""\nitems
 cfg = toml.parse(source)
 cfg: {
     ok -> print('toml parse: ok')
+
     nil -> print('toml parse: nil')
+
     err -> print('toml parse: err')
 }
 
@@ -14,7 +16,9 @@ arrays = '[[products]]\nname = "Hammer"\n[[products]]\nname = "Nail"'
 arr-cfg = toml.parse(arrays)
 arr-cfg: {
     ok -> print('toml array-table: ok')
+
     nil -> print('toml array-table: nil')
+
     err -> print('toml array-table: err')
 }
 

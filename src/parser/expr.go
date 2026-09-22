@@ -901,6 +901,40 @@ func (p *Parser) parseMatchExprFrom(matched Expression) Expression {
 			break
 		}
 
+		// 消费臂首的 #{...} 前置註解（例如臂條件前的 `#{overflow = wrap}`），
+		// 與 parseMatchExpression（match.go）保持一致。若不在此消費，
+		// HASH_LBRACE 會落到下面的通用分支被當成臂條件，parseExpression 解析失敗
+		// 後本函式回傳 nil，呼叫端 fallback 成 while 迴圈——把
+		// `cmd: { 'init' -> ... }` 變成 `while cmd { ... }`（nogit/main.no 的
+		// 指令分派正是此形態；MIR 拿 str 當迴圈條件，產生
+		// `icmp ne %str-long %v, 0`，opt 以 "integer constant must have integer
+		// type" 拒絕）。條目暫存於 armAnnots，待臂 body 解析完成後附加到 body
+		// 區塊與臂體內每條陳述（見下方 bodyBlock.Statements 之後）。
+		var armAnnots []*AnnotationEntry
+		for p.currentToken.Type == lexer.HASH_LBRACE {
+			groupTok := p.currentToken
+			p.nextToken() // skip #{
+			armAnnots = append(armAnnots, p.parseAnnotationBody()...)
+			if p.currentToken.Type != lexer.RBRACE {
+				p.saveError(fmt.Sprintf("line %d, column %d: expected '}' to close annotation, got %s",
+					p.currentToken.Line, p.currentToken.Column, p.currentToken.Type.String()))
+				break
+			}
+			p.nextToken() // skip }
+			// 位置檢查：`}` 之後同一行仍有臂條件 → 「目標前方同一行」的前綴寫法。
+			// 必須在跳過行尾換行之前判定，否則獨立成行的合法寫法會被誤判。
+			if annotationPrefixIllegal(p.currentToken.Type) {
+				p.errPrefixAnnotation(groupTok)
+			}
+			// 跳過註解後的行尾換行，避免影響後續臂首判定
+			for p.currentToken.Type == lexer.NEWLINE {
+				p.nextToken()
+			}
+		}
+		if p.currentToken.Type == lexer.RBRACE || p.currentToken.Type == lexer.EOF {
+			break
+		}
+
 		if os.Getenv("NOLANG_DEBUG_IT") != "" {
 			fmt.Fprintf(os.Stderr, "[debug-it] parseMatchExprFrom: arm loop start cur=%s(%s) peek=%s\n", p.currentToken.Type.String(), p.currentToken.Literal, p.peekToken.Type.String())
 		}
@@ -1234,6 +1268,25 @@ func (p *Parser) parseMatchExprFrom(matched Expression) Expression {
 		}
 
 		bodyBlock.Statements = bodyStmts
+		// 將臂首前置註解（如 #{overflow = wrap}）附加到臂體區塊與臂體內的每一條
+		// 陳述：codegen 的 overflowModeFromNode 只從「陳述層級」節點讀取
+		// #{overflow = ...}，若只掛在 bodyBlock 上，inline 臂體
+		// （如 `cond -> out[pos] = d + 48`）的整數運算會退回預設 option 模式，
+		// 產生 %option 後被 trunc 到窄型別而讓 LLVM 報錯。
+		// （與 parseMatchExpression 的 armAnnots 處理完全一致。）
+		if len(armAnnots) > 0 {
+			for _, s := range bodyStmts {
+				if existing := p.sem.AnnotationsOf(s); len(existing) > 0 {
+					merged := make([]*AnnotationEntry, 0, len(existing)+len(armAnnots))
+					merged = append(merged, existing...)
+					merged = append(merged, armAnnots...)
+					p.sem.SetRawAnnotations(s, merged)
+				} else {
+					p.sem.SetRawAnnotations(s, armAnnots)
+				}
+			}
+			p.sem.SetRawAnnotations(bodyBlock, armAnnots)
+		}
 		// Preserve comments (TrailingComments) from the parsed block so that
 		// comment-only block bodies (e.g. `c == 46 -> { // 允許 }`) are not lost.
 		if parsedBlock != nil {

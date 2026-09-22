@@ -1,9 +1,9 @@
 main = () {
     a = 'hello'
     b = 'world'
-    n i64 = 123
-    pi f64 = 3.14
-    flag bool = true
+    n = 123
+    pi = 3.14
+    flag = true
 
     ; 多参数空格分隔
     print(a, b)

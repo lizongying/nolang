@@ -37,7 +37,8 @@ main = () {
     eprint('priv-a: ')
     s = ''
     i <- [0..32): {
-        #{overflow = wrap}
+
+        #{overflow=wrap}
         s = s - (ga-priv[i]).to-str() - ' '
     }
     eprint(s)
@@ -46,7 +47,8 @@ main = () {
     eprint('priv-b: ')
     s = ''
     i <- [0..32): {
-        #{overflow = wrap}
+
+        #{overflow=wrap}
         s = s - (gb-priv[i]).to-str() - ' '
     }
     eprint(s)
@@ -55,7 +57,8 @@ main = () {
     eprint('pub-a: ')
     s = ''
     i <- [0..32): {
-        #{overflow = wrap}
+
+        #{overflow=wrap}
         s = s - (ga-pub[i]).to-str() - ' '
     }
     eprint(s)
@@ -64,7 +67,8 @@ main = () {
     eprint('pub-b: ')
     s = ''
     i <- [0..32): {
-        #{overflow = wrap}
+
+        #{overflow=wrap}
         s = s - (gb-pub[i]).to-str() - ' '
     }
     eprint(s)
@@ -82,10 +86,12 @@ main = () {
     }
     {
         priv-same == true -> print('FAIL: different seeds produce same priv')
+
         priv-same == false -> print('PASS: different seeds produce different priv')
     }
     {
         pub-same == true -> print('FAIL: different seeds produce same pub')
+
         pub-same == false -> print('PASS: different seeds produce different pub')
     }
 
@@ -98,7 +104,8 @@ main = () {
     eprint('shared-a: ')
     s = ''
     i <- [0..32): {
-        #{overflow = wrap}
+
+        #{overflow=wrap}
         s = s - (g-shared-a[i]).to-str() - ' '
     }
     eprint(s)
@@ -107,7 +114,8 @@ main = () {
     eprint('shared-b: ')
     s = ''
     i <- [0..32): {
-        #{overflow = wrap}
+
+        #{overflow=wrap}
         s = s - (g-shared-b[i]).to-str() - ' '
     }
     eprint(s)
@@ -118,6 +126,7 @@ main = () {
     }
     {
         shared-same == true -> print('PASS: ECDH shared secrets match')
+
         shared-same == false -> print('FAIL: ECDH shared secrets mismatch')
     }
 }

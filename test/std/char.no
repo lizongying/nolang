@@ -15,7 +15,11 @@ t-placeholder = () {
 }
 
 p1, f1 = runner.test('char.placeholder', t-placeholder)
+
+#{overflow=wrap}
 passed = passed + p1
+
+#{overflow=wrap}
 failed = failed + f1
 
 total = runner.summary()

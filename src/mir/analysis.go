@@ -735,6 +735,44 @@ func (m *Module) moveStrSharesHeap(f *Function, inst *Inst) bool {
 	return m.typeIsOwnedStr(f, src) && m.typeIsOwnedStr(f, dst)
 }
 
+// typeIsOwnedSlice reports whether v is an owned slice — i.e. a %vec whose
+// backing buffer is a heap allocation this value is responsible for freeing.
+func (m *Module) typeIsOwnedSlice(f *Function, v ValueID) bool {
+	t := m.valueTypeOf(f, v)
+	return t != nil && t.Kind == KindSlice && t.Owned
+}
+
+// moveSliceSharesHeap reports whether inst is a slice move that shares the heap
+// backing store. A %vec is {len, cap, data}; a bitwise OpMove copies the triple
+// and aliases the SAME data pointer, so a later drop of the destination frees
+// the source's buffer too. That is only safe as a transfer when the source is
+// provably dead. When the source is still live (read or reassigned after the
+// move) the move must be rewritten to OpClone — vecDeepClone gives the
+// destination an independent buffer — exactly the move-vs-clone rule already
+// applied to str and struct moves.
+//
+// Concretely, `a = x; b = x` with x used twice makes `a = x` a clone (a owns
+// its own copy) and `b = x` a transfer; without this, both a and b aliased x's
+// buffer and the caller double-freed it (tests/mem-safety/
+// move-eligibility-improved.no: clone-then-move lost rb[0]).
+func (m *Module) moveSliceSharesHeap(f *Function, inst *Inst) bool {
+	if inst.Op != OpMove || len(inst.Args) == 0 {
+		return false
+	}
+	src := inst.Args[0]
+	if src <= NoVal {
+		return false
+	}
+	dst := inst.Dst
+	if dst == NoVal && len(inst.Args) >= 2 {
+		dst = inst.Args[1]
+	}
+	if dst <= NoVal || dst == src {
+		return false
+	}
+	return m.typeIsOwnedSlice(f, src) && m.typeIsOwnedSlice(f, dst)
+}
+
 // typeIsOwnedStr reports whether v is an owned `str` — i.e. a %str-long whose
 // `data` pointer is a heap allocation this value is responsible for freeing.
 func (m *Module) typeIsOwnedStr(f *Function, v ValueID) bool {
@@ -959,6 +997,19 @@ func (m *Module) insertDrops(f *Function, rep *Report) {
 				// Every other later use — including the source being read again
 				// as the next iteration's move source — is a genuine read and
 				// forces a clone.
+				if liveOut[bid][inst.Args[0]] || m.readNonDropAfterInBlock(bid, iid, inst.Args[0]) {
+					inst.Op = OpClone
+				} else {
+					moveSrc[inst.Args[0]] = true
+				}
+				continue
+			}
+			// Same liveness rule for an owned-slice move: a bitwise copy of a
+			// %vec aliases the backing buffer, so the destination and source
+			// would share one malloc. Promote to OpClone (vecDeepClone) when the
+			// source is still live; otherwise treat it as a transfer that
+			// exempts the source from dropping.
+			if m.moveSliceSharesHeap(f, inst) {
 				if liveOut[bid][inst.Args[0]] || m.readNonDropAfterInBlock(bid, iid, inst.Args[0]) {
 					inst.Op = OpClone
 				} else {

@@ -685,7 +685,7 @@ enc-conn.close = () {
 ; 返回 ec ?enc-conn: ok=加密連接, nil=失敗
 enc-dial = (host str, port i64, key [32]byte) (ec ?enc-conn) {
     ec = nil
-    c ?conn = dial-to(host, port)
+    c = dial-to(host, port)
     c: {
         nil -> return
 

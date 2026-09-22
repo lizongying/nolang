@@ -58,6 +58,14 @@ type lowerer struct {
 	// magnitude loop for i64.MIN). Populated from the KLet declaration's type
 	// annotation; reassignments (no type) leave the earlier entry intact.
 	localRaw  map[string]string
+	// movedSlots records ownership-transferred source slots. When an owned
+	// value is moved (its heap ownership transferred into another slot / a
+	// result param), its slot must NOT be re-dropped if that same slot is
+	// later re-assigned: the original buffer already belongs to the move
+	// destination, so dropping it again would double-free (trace/BPT trap).
+	// See the `reassign-after-move` case in tests/mem-safety/move-eligibility-improved.no
+	// and tests/mem-safety/clone-reset-is-moved.no.
+	movedSlots map[ValueID]bool
 	curFunc   FuncID
 	voidType  TypeID
 	curRecv   ValueID // current method's implicit `self` receiver value (first param)
@@ -1086,7 +1094,23 @@ func LowerHIR(pkg *hir.Package, enumVariants map[string][]string) (*Module, *Rep
 						constArr = true
 					}
 				}
-				if !(referencedByFunc && (declOnly || constArr)) {
+				//  3. A top-level STRING constant (`TMP-FILE = '/tmp/nolang_x.txt'`)
+				//     read from a helper function. foldConstText has no KStrLit
+				//     case — a %str-long initializer needs its own backing
+				//     byte-array global, which a pure fold of one node cannot
+				//     express — so the `foldConstText(...) == ""` test below
+				//     rejected it and the binding was never registered. The
+				//     helper then resolved the name to a void `const`, and
+				//     every builtin that marshals it as a C string failed with
+				//     "builtin fs.is-file: cannot marshal arg 0 as C string"
+				//     (test/std/fs.no). lowerGlobalRef materializes a KStrLit
+				//     global properly (backing array + %str-long initializer),
+				//     so registering it here is enough.
+				constStr := false
+				if referencedByFunc && raw == "str" {
+					constStr = l.topLevelStrConst(n)
+				}
+				if !(referencedByFunc && (declOnly || constArr || constStr)) {
 					if raw == "" || l.foldConstText(n, raw) == "" {
 						continue
 					}
@@ -1853,6 +1877,7 @@ func (l *lowerer) lowerFunction(name string, hirID int32) {
 		l.curRecv = resultVals[0]
 	}
 	l.locals = map[string]ValueID{}
+	l.movedSlots = map[ValueID]bool{}
 	// Build l.locals: each KParam/KResult name maps to its value. The params
 	// slice is built in HIR children order (interleaving KParam and KResult),
 	// so a simple index loop over paramNames is wrong when KResult (self)
@@ -2518,9 +2543,24 @@ func (l *lowerer) lowerStmt(id int32) {
 				// transfers ownership of the new value via move; the memory analysis
 				// inserts the slot's exit drop, which frees the NEW content.
 				if l.isOwnedLocal(existing) {
-					l.b.EmitVoid(OpDrop, []ValueID{existing}, "")
+					// Skip the manual drop when `existing` has already been
+					// moved: its heap ownership was transferred into another
+					// slot / a result parameter, so its buffer now belongs to
+					// that destination. Dropping it here would free the SAME
+					// buffer a second time when the destination is dropped ->
+					// trace/BPT trap (tests/mem-safety/clone-reset-is-moved.no:
+					// `out = b` moves b, then `b = a` reassigns b).
+					if !l.movedSlots[existing] {
+						l.b.EmitVoid(OpDrop, []ValueID{existing}, "")
+					}
 				}
 				l.b.EmitMoveInto(existing, val)
+				// A transferring move hands `val`'s heap ownership to
+				// `existing`; record that `val` is no longer drop-responsible
+				// so a later reassign of `val` does not double-free it.
+				if l.isOwnedLocal(val) {
+					l.movedSlots[val] = true
+				}
 				break
 			}
 			// Re-binding a MODULE-LEVEL binding. A script-level `px2 = 0.0`
@@ -2602,6 +2642,42 @@ func (l *lowerer) lowerStmt(id int32) {
 							}
 						}
 						break
+					}
+				}
+			}
+			// Owned SLICE (heap %vec) new binding: bind the name to an
+			// INDEPENDENT deep copy, never to the source's slot. Aliasing the
+			// source's slot means a later reassignment / move of the source
+			// silently rewrites this binding's value — `b = a` then `a = [..]`
+			// used to leave `b` holding a's reassigned buffer
+			// (tests/mem-safety/move-eligibility-improved.no: r1[0] came out 4
+			// instead of 1, and rhs-read-source / clone-then-move lost their
+			// index-0 element for the same reason). A clone mallocs a fresh
+			// buffer, so the binding owns its own data and is dropped
+			// independently of the source. This is the binding-time counterpart
+			// of the move-vs-clone handling the memory analysis already applies
+			// to str/struct moves; a fresh binding has no pre-existing slot to
+			// move into, so it always clones.
+			// Only a NAME reference to an EXISTING owned local aliases a slot
+			// that must stay independent: a fresh temporary (call result, slice
+			// literal) is already uniquely owned by this binding, so cloning it
+			// is both wasteful and observably wrong — a zero-length result
+			// clones to a NULL-data vec where the temporary carried a harmless
+			// non-null buffer, turning a benign out-of-range read into a NULL
+			// dereference (tests/default-params.no: `fields = csv.parse-line(..)`
+			// with the default max-fields, then `fields[0]`).
+			cloneSrc := false
+			if cn := l.pkg.Node(childID); cn != nil && cn.Kind == hir.KIdent {
+				if _, isLocal := l.locals[l.pkg.Str(cn.S)]; isLocal && l.isOwnedLocal(val) {
+					cloneSrc = true
+				}
+			}
+			if cloneSrc {
+				if vt := l.valueTypeOf(val); vt != NoType && vt != l.voidType {
+					if vty := l.mod.Type(vt); vty != nil && vty.Kind == KindSlice {
+						if fresh := l.b.Emit(OpClone, vt, []ValueID{val}, ""); fresh != NoVal {
+							val = fresh
+						}
 					}
 				}
 			}
@@ -3921,11 +3997,41 @@ func (l *lowerer) mangledSuffixMatches(id int32, suffix string) bool {
 	return len(parts) > 0 && strings.Join(parts, "_") == suffix
 }
 
-// lowerArrayElems materializes a fixed array [N]elem from a list of element
-// expression node ids, storing each element into its slot. Shared by KArrayLit
-// (elems come from "elem" slots) and KSliceLit (elems are direct children).
-func (l *lowerer) lowerArrayElems(elems []int32) ValueID {
+// lowerArrayElems materializes a list of element expression node ids into a
+// container, storing each element into its slot. Shared by KArrayLit (elems
+// come from "elem" slots) and KSliceLit (elems are direct children).
+//
+// asSlice selects the container KIND, and it must mirror what the frontend
+// decided: HIR emits `slice-lit` for a SLICE literal (`v = [1,2,3]` — the
+// checker types the binding `[]i64`) and `array-lit` for a FIXED ARRAY literal
+// (`a [3]i64 = [1,2,3]`). Materializing a slice literal as a stack `[N x elem]`
+// is what MIR used to do unconditionally, and it is WRONG: every slice builtin
+// (`[]t.sort-asc` -> vec-sort-asc, `[]t.push` -> vec-push, ...) reads its
+// receiver as `%vec { len, cap, data }`, so it interpreted the array's first
+// three ELEMENTS as len/cap/data and dereferenced element 2 as a pointer —
+// `v = [5,3,8]; v.sort-asc()` read len=5, cap=3, data=8 and segfaulted on the
+// first store (test/std/sort.no, tests reaching sort/push on a literal).
+// A slice therefore gets a real heap-backed %vec: `with-len(N)` allocates and
+// zero-fills the buffer and sets len=cap=N, then each element is stored through
+// OpIndexStore exactly like `[n]t.to-vec` does, so owned element types (str,
+// nested vec) keep their ownership instead of being memcpy'd into a second
+// owner. Fixed arrays keep the stack `[N x elem]` form.
+func (l *lowerer) lowerArrayElems(elems []int32, asSlice bool) ValueID {
 	if len(elems) == 0 {
+		// An EMPTY slice literal still has to produce a VALUE when it is not
+		// immediately bound to a declared binding — most visibly as a call
+		// argument (`process.cmd('echo', args, '', '', [], 0, false)`), where
+		// NoVal reached the call as operand 0 and codegen rejected the whole
+		// function (bug #85's "consumer reads value 0 (NoVal)" diagnostic,
+		// test/std/process.no). Yield a zero-initialized %vec of the type the
+		// site expects (len=cap=0, data=null — the same shape `v []i64 = []`
+		// gets from its declared type), so `push` can extend it later.
+		// A fixed-array literal has no length to infer, so it stays NoVal.
+		if asSlice && l.typeHint != NoType && l.typeHint != l.voidType {
+			if ht := l.mod.Type(l.typeHint); ht != nil && ht.Kind == KindSlice {
+				return l.b.Emit(OpConst, l.typeHint, nil, "")
+			}
+		}
 		return NoVal
 	}
 	// Determine the element type. Priority:
@@ -3965,9 +4071,23 @@ func (l *lowerer) lowerArrayElems(elems []int32) ValueID {
 	if elemRaw == "" || elemRaw == "void" {
 		elemRaw = "i64"
 	}
-	arrRaw := fmt.Sprintf("[%d]%s", len(elems), elemRaw)
-	arrT := l.b.Type(arrRaw)
-	arrV := l.b.Emit(OpConst, arrT, nil, "")
+	// Pick the container. A slice literal gets a heap-backed %vec via the
+	// `with-len` builtin (dispatched by Inst.Sym at codegen time, so no callee
+	// has to be enqueued here); anything else keeps the stack [N x elem] form.
+	container := NoVal
+	if asSlice {
+		if sliceT := l.b.Type("[]" + elemRaw); sliceT != NoType {
+			if st := l.mod.Type(sliceT); st != nil && st.Kind == KindSlice {
+				nV := l.b.EmitInt(OpConst, l.b.Type("i64"), int64(len(elems)), "")
+				container = l.b.Emit(OpCall, sliceT, []ValueID{nV}, "with-len")
+			}
+		}
+	}
+	if container == NoVal {
+		arrRaw := fmt.Sprintf("[%d]%s", len(elems), elemRaw)
+		arrT := l.b.Type(arrRaw)
+		container = l.b.Emit(OpConst, arrT, nil, "")
+	}
 	for k, e := range elems {
 		ev := firstVal
 		if k != 0 || ev == NoVal {
@@ -3977,9 +4097,9 @@ func (l *lowerer) lowerArrayElems(elems []int32) ValueID {
 			return NoVal
 		}
 		idxV := l.b.EmitInt(OpConst, l.b.Type("i64"), int64(k), "")
-		l.b.EmitVoid(OpIndexStore, []ValueID{arrV, idxV, ev}, "")
+		l.b.EmitVoid(OpIndexStore, []ValueID{container, idxV, ev}, "")
 	}
-	return arrV
+	return container
 }
 
 // lowerEmbedBinding materializes an `#{embed='file'}` top-level binding as a
@@ -4076,6 +4196,27 @@ func (l *lowerer) subtreeHasIdent(n *hir.Node, name string) bool {
 	return false
 }
 
+// topLevelStrConst reports whether n is a top-level `let` whose initializer
+// expression is a plain STRING literal (`TMP-FILE = '/tmp/nolang_x.txt'`,
+// `VERSION = '1.2.0'`).
+//
+// It exists because foldConstText deliberately has no KStrLit case: a
+// %str-long constant cannot be written as a single self-contained initializer,
+// it needs a second global holding the backing bytes. That makes the
+// "does this fold?" test in the global-registration loop answer NO for every
+// string constant, which is why the loop needs this separate predicate.
+func (l *lowerer) topLevelStrConst(n *hir.Node) bool {
+	if n == nil || n.Kind != hir.KLet {
+		return false
+	}
+	for _, c := range l.pkg.Children(n.Id) {
+		if cn := l.pkg.Node(c); cn != nil && cn.Kind == hir.KStrLit {
+			return true
+		}
+	}
+	return false
+}
+
 // lowerEmbedBinding resolves a `#{embed=...}` binding to a module global whose
 // LLVM initializer is `%vec { N, N, ptrtoint([N x i8]* @.embed.<name> to i64) }`
 // and its bytes are stashed on the GlobalDecl so codegen emits the backing
@@ -4122,11 +4263,49 @@ func (l *lowerer) lowerGlobalRef(name string) ValueID {
 	// Fold the constant initializer from the recorded top-level node.
 	if nid, ok := l.globalNodes[name]; ok {
 		if nn := l.pkg.Node(nid); nn != nil {
-			ct := l.foldConstText(nn, gtype)
-			for i := range l.mod.Globals {
-				if l.mod.Globals[i].Init == gv {
-					l.mod.Globals[i].ConstText = ct
+			// Descend through the KLet wrapper to the actual initializer
+			// expression (foldConstText does the same for non-global constants).
+			initNode := nn
+			for initNode.Kind == hir.KLet {
+				descended := false
+				for _, c := range l.pkg.Children(initNode.Id) {
+					initNode = l.pkg.Node(c)
+					descended = true
 					break
+				}
+				if !descended {
+					break
+				}
+			}
+			if initNode.Kind == hir.KStrLit {
+				// Module-level `VERSION = '...'` (and any top-level str constant):
+				// emit a backing byte-array constant plus a %str-long struct
+				// initializer so readers see the REAL string instead of an empty
+				// (zeroinitializer) global. foldConstText has no KStrLit case and
+				// falls through to "", which produced the empty `version` output
+				// for every subproject (nogit/nonpm/noimg/nouv).
+				text := l.pkg.Str(initNode.S)
+				nb := len([]byte(text))
+				backing := ".gstr." + name
+				l.mod.Globals = append(l.mod.Globals, GlobalDecl{
+					Name:      backing,
+					Type:      l.b.Type("str"),
+					ConstText: fmt.Sprintf("[%d x i8] c\"%s\"", nb, dataStr(text)),
+				})
+				ct := fmt.Sprintf("%%str-long { i64 %d, i64 %d, i8* bitcast ([%d x i8]* @%s to i8*) }", nb, nb, nb, backing)
+				for i := range l.mod.Globals {
+					if l.mod.Globals[i].Init == gv {
+						l.mod.Globals[i].ConstText = ct
+						break
+					}
+				}
+			} else {
+				ct := l.foldConstText(nn, gtype)
+				for i := range l.mod.Globals {
+					if l.mod.Globals[i].Init == gv {
+						l.mod.Globals[i].ConstText = ct
+						break
+					}
 				}
 			}
 		}
@@ -4404,16 +4583,17 @@ func (l *lowerer) lowerExpr(id int32) ValueID {
 		// has a "size" slot followed by "elem" slots; gather the element
 		// expressions via slotArgs and store each into its slot.
 		elems := l.slotArgs(id, "elem")
-		return l.lowerArrayElems(elems)
+		return l.lowerArrayElems(elems, false)
 	case hir.KSliceLit:
-		// Untyped slice literal: `[e0, e1, ...]`. In HIR the elements are direct
-		// children (no "size"/"elem" slots). Materialize as a fixed array so it
-		// can be indexed and iterated like a KArrayLit.
+		// Slice literal: `[e0, e1, ...]`. In HIR the elements are direct
+		// children (no "size"/"elem" slots). It materializes as a heap-backed
+		// %vec — see lowerArrayElems; the frontend types the binding `[]T`, and
+		// every `[]t.*` builtin reads its receiver as `%vec { len, cap, data }`.
 		var elems []int32
 		for _, c := range l.pkg.Children(id) {
 			elems = append(elems, c)
 		}
-		return l.lowerArrayElems(elems)
+		return l.lowerArrayElems(elems, true)
 	case hir.KIdent:
 		name := l.pkg.Str(n.S)
 		// Tagged-enum arm destructuring, checked BEFORE any local binding.
@@ -5214,7 +5394,20 @@ func (l *lowerer) lowerStructLit(n *hir.Node) ValueID {
 			valID = c
 			break
 		}
+		// Publish the FIELD's declared type as the hint while lowering the
+		// field's initializer. An array/slice literal takes its ELEMENT type
+		// from the hint, so `data []byte` + `data: [1, 2, 3]` lowers to a
+		// []byte with 1-byte elements instead of falling back to the integer
+		// literal's own i64 — which emitSetField rejects as an element-stride
+		// mismatch ("declared '[]byte' but the assigned value is '[]i64'",
+		// tests/uninit-output.no). Only the literal's own lowering sees the
+		// hint; the enclosing context is restored immediately after.
+		savedHint := l.typeHint
+		if fr := l.structFieldTypeRaw(raw, fieldName); fr != "" {
+			l.typeHint = l.b.Type(fr)
+		}
 		vv := l.lowerExpr(valID)
+		l.typeHint = savedHint
 		if vv == NoVal {
 			continue
 		}
@@ -5231,6 +5424,36 @@ func (l *lowerer) lowerStructLit(n *hir.Node) ValueID {
 		l.mod.Insts[sid].MovesArg = true
 	}
 	return res
+}
+
+// structFieldTypeRaw returns the declared nolang type string of fieldName on
+// the struct structRaw, or "" when the struct layout or the field is unknown.
+// Modeled on the resolution lowerDotRead already uses: std structs are
+// registered under their module-qualified raw name (e.g. `os.utsname`) while a
+// literal only knows the bare name, so fall back to a suffix match.
+func (l *lowerer) structFieldTypeRaw(structRaw, fieldName string) string {
+	if structRaw == "" || fieldName == "" {
+		return ""
+	}
+	fields, ok := l.mod.StructFields[structRaw]
+	if !ok {
+		for k := range l.mod.StructFields {
+			if k == structRaw || strings.HasSuffix(k, "."+structRaw) {
+				fields = l.mod.StructFields[k]
+				ok = true
+				break
+			}
+		}
+	}
+	if !ok {
+		return ""
+	}
+	for i := range fields {
+		if fields[i].Name == fieldName {
+			return fields[i].TypeRaw
+		}
+	}
+	return ""
 }
 
 // lowerMapLit lowers a map literal `{ k1:v1, k2:v2, ... }` into a series of
@@ -7898,7 +8121,15 @@ func (l *lowerer) lowerAssignNode(assignID int32) ValueID {
 			// analysis inserts a drop for the slot at every exit path, which frees
 			// the NEW content; the manual drop here frees the OLD content. So each
 			// physical allocation is freed exactly once.
-			l.b.EmitVoid(OpDrop, []ValueID{slot}, "")
+			//
+			// Skip the manual drop when `slot` has already been moved (its heap
+			// ownership transferred into another slot / a result parameter) —
+			// dropping it again would double-free the destination's buffer
+			// (tests/mem-safety/clone-reset-is-moved.no: `out = b` moves b, then
+			// `b = a` reassigns b).
+			if !l.movedSlots[slot] {
+				l.b.EmitVoid(OpDrop, []ValueID{slot}, "")
+			}
 		}
 		// Implicit `ok(v)` wrap: assigning a non-option value `v` to an
 		// option-typed local (`val ?bool = true`) must build the option
@@ -7912,6 +8143,12 @@ func (l *lowerer) lowerAssignNode(assignID int32) ValueID {
 		// test-min-u8-bool.minimal and the §16 bool-print family).
 		v = l.wrapOptionIfNeeded(l.valueTypeOf(slot), v)
 		l.b.EmitMoveInto(slot, v)
+		// A transferring move hands `v`'s heap ownership to `slot`; record that
+		// `v` is no longer drop-responsible so a later reassign of `v` does not
+		// double-free it.
+		if l.isOwnedLocal(v) {
+			l.movedSlots[v] = true
+		}
 		return v
 	case hir.KIndex:
 		// a[i] = v  -> store v into element i of a.

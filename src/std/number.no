@@ -244,7 +244,7 @@ i64-to-str = (n i64) (out str) {
         mag = n
     }
     digits = 0
-    tmp u64 = mag
+    tmp = mag
     (tmp != 0) {
 
         #{overflow=wrap}
@@ -525,7 +525,7 @@ f64-to-str = (x f64) (out str) {
 
     ; 符號處理
     neg = 0
-    ax f64 = x
+    ax = x
 
     #{overflow=wrap}
     x < 0.0 -> {
@@ -536,7 +536,7 @@ f64-to-str = (x f64) (out str) {
     }
 
     ; 計算指數 e = floor(log10(ax))
-    e i64 = f64-to-i64(math.floor(math.log10(ax)))
+    e = f64-to-i64(math.floor(math.log10(ax)))
 
     ; 邊界調整：若 ax >= 10^(e+1)，則 e++
     #{overflow=wrap}
@@ -559,7 +559,7 @@ f64-to-str = (x f64) (out str) {
     }
 
     #{overflow=wrap}
-    m i64 = f64-to-i64(ax / base * 100000.0 + 0.5)
+    m = f64-to-i64(ax / base * 100000.0 + 0.5)
 
     ; 四捨五入溢出處理
     #{overflow=wrap}
@@ -791,7 +791,7 @@ f64.to-str = () (out str) {
 ; f32.to-str: f32 轉字串（方法）
 ; 透過 f32-to-f64 拓寬後委託 f64-to-str，取代 sprintf %g CLibCall
 f32.to-str = () (out str) {
-    d f64 = f32-to-f64(.)
+    d = f32-to-f64(.)
     out = f64-to-str(d)
 }
 

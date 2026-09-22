@@ -3,7 +3,7 @@
 ; # std/str
 
 ; 簡單替換
-s str = 'abc'
+s = 'abc'
 r str
 r = s.replace-str('b', 'X')
 print('result: ' - r)

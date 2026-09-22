@@ -2,7 +2,7 @@
 
 ; # std/str
 
-s str = 'hello world hello'
+s = 'hello world hello'
 parts []str
 parts = s.split(' ')
 n = parts.len()

@@ -9,57 +9,75 @@ might-fail = (n i64) (r ?i64) {
     r = n
 }
 
-main = () () {
+main = () {
     print('1 trailing value')
-    x = 2 > 1 -> 42
+    x = 2 > 1
+    {
+        42
+    }
     print(x)
 
     print('2 false cond keeps previous value')
     y = 7
-    y = 1 > 2 -> 42
+    y = 1 > 2
+    {
+        42
+    }
     print(y)
 
     print('3 fresh binding, false cond -> zero')
-    z = 1 > 2 -> 42
+    z = 1 > 2
+    {
+        42
+    }
     print(z)
 
     print('4 owned value')
     s = 'old'
-    s = 1 > 2 -> 'new'
+    s = 1 > 2
+    {
+        'new'
+    }
     print(s)
     s2 = 'old2'
-    s2 = 2 > 1 -> 'new2'
+    s2 = 2 > 1
+    {
+        'new2'
+    }
     print(s2)
 
     print('5 ?T node short-circuits the tail')
     bad = 7
+
     #{overflow=wrap}
     good = 0 - 3
     r = 5
-    r = print('A') -> might-fail(bad) -> 99
-    print(r)
-    r = print('B') -> might-fail(good) -> 99
-    print(r)
-
-    print('6 arm body is a pipeline, both nodes run')
-    v ?i64
-    v = 5
-    v: {
-        nil -> print('nil')
-
-        err -> print('err')
-
-        ok -> print('C') -> print('D')
-    }
-
-    print('7 guard chain inside one arm')
-    v: {
-        nil -> print('nil2')
-
-        err -> print('err2')
-
-        ok -> v == 5 -> print('YES')
-    }
-
-    print('done')
+    r = print('A')
+    might-fail(bad) -> 99
 }
+print(r)
+r = print('B')
+might-fail(good) -> 99
+print(r)
+
+print('6 arm body is a pipeline, both nodes run')
+v ?i64
+v = 5
+v: {
+    nil -> print('nil')
+
+    err -> print('err')
+
+    ok -> print('C') -> print('D')
+}
+
+print('7 guard chain inside one arm')
+v: {
+    nil -> print('nil2')
+
+    err -> print('err2')
+
+    ok -> v == 5 -> print('YES')
+}
+
+print('done')

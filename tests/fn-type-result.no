@@ -35,11 +35,21 @@
 ; 具名函式型別：無參，返回 i64
 ret-cb = () (i64)
 
-mk-1 = () (r i64) { r = 111 }
-mk-2 = () (r i64) { r = 222 }
-mk-3 = () (r i64) { r = 333 }
+mk-1 = () (r i64) {
+    r = 111
+}
 
-apply-cb = (cb ret-cb) (out i64) { out = cb() }
+mk-2 = () (r i64) {
+    r = 222
+}
+
+mk-3 = () (r i64) {
+    r = 333
+}
+
+apply-cb = (cb ret-cb) (out i64) {
+    out = cb()
+}
 
 ; 測試 1：單次呼叫（修復前也能過——垃圾值碰巧正確）
 test-single-callback = () (ok bool) {

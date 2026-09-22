@@ -477,12 +477,10 @@ os.set-env(key, val)
 dir = os.get-wd()
 os.ch-dir(dir)
 os.mkdir(path, mode)
-os.rmdir(path)                         // Remove empty directory
 
 // Process
 os.exit(code)
 pid = os.get-pid()
-ppid = os.get-parent-pid()             // Parent process ID
 
 // System information
 name = os.host-name()
@@ -649,11 +647,10 @@ ok = fs.is-dir(path)                // Check if directory
 sz = fs.stat-size(path)             // Get file size (returns ?i64)
 sz = fs.file-size(path)             // Same as stat-size (returns ?i64)
 sz = fs.fstat-size(fd)              // Get file size via fstat(fd), eliminates TOCTOU (returns ?i64)
-mode = fs.stat-mode(path)           // Get file mode (st_mode, returns i64)
-uid = fs.stat-uid(path)             // Get file owner uid (returns i64)
-gid = fs.stat-gid(path)             // Get file group gid (returns i64)
-mtime = fs.stat-mtime(path)         // Get file modification time (Unix seconds, returns i64)
 ok = fs.lstat(path)                 // Get symlink info (does not follow link target)
+
+// note: file mode/owner/mtime getters live in the `os` package
+// (os.stat-mode / os.stat-uid / os.stat-gid / os.stat-mtime)
 
 // Directory operations
 dirp = fs.open-dir(path)             // Open directory (returns handle, 0 on failure)
@@ -705,9 +702,10 @@ embed {
 }
 
 // Windows-specific (only available on win-amd64/win-arm64)
-bufptr = fs.win-find-first-file(path) // FindFirstFileA, returns handle (0=failure)
-name = fs.win-find-next-file(bufptr)  // FindNextFileA, returns (name, ok)
-ok = fs.win-find-close(bufptr)        // FindClose
+// (these directory-scan helpers are registered in the `os` package)
+bufptr = os.win-find-first-file(path) // FindFirstFileA, returns handle (0=failure)
+name = os.win-find-next-file(bufptr)  // FindNextFileA, returns (name, ok)
+ok = os.win-find-close(bufptr)        // FindClose
 
 // open() flag constants (platform-specific, shown for macOS)
 O-RDONLY = 0
@@ -915,13 +913,12 @@ pid = process.parent-pid()          // Parent process ID
 p.close()                          // Close all pipes and wait
 
 // Convenience functions
-status = process.process-run(cmd)           // Execute shell command
-content, code = process.new().output(program, arg) // Execute and capture output
-status = process.cmd(cmd)                     // Execute command string
-status = process.shell(cmd)                   // Execute via shell
-status = process.exec(program, args)          // Execute with args
-status = process.spawn(program, args)         // Spawn child process
-status = process.wait(pid)                    // Wait for specific PID
+code = process.shell(cmd)                   // Execute via shell, return exit code
+pid = process.spawn(cmd)                    // Spawn child process, return pid
+status = process.wait(pid)                  // Wait for specific PID
+content, code = process.new().output(program, arg) // Execute and capture stdout
+out, stderr, code, err = process.cmd(program, args, dir, input, env, timeout, merge-err) // Run command
+res = process.exec(program, args, opts)     // opts cmdopts, returns exec-result
 
 // Process listing
 pids = process.list-all()                     // List all processes
@@ -1117,7 +1114,7 @@ Provides an HTTP/1.1 protocol client, supporting GET, POST, PUT, DELETE, PATCH a
 
 ```no
 // Structs
-http-request {
+http.request {
     method str
     url str
     body str
@@ -1135,18 +1132,27 @@ http.response {
 }
 
 // Convenience functions
-resp = http.http-get(url)                        // GET request (?http.response)
-resp = http.http-post(url, body)                  // POST request (?http.response)
-resp = http.http-do(method, url, body)            // Custom method (?http.response)
+resp = http.get(url)                              // GET request (?http.response)
+resp = http.post(url, body)                       // POST request (?http.response)
+resp = http.put(url, body)                        // PUT request (?http.response)
+resp = http.delete(url)                           // DELETE request (?http.response)
+resp = http.patch(url, body)                      // PATCH request (?http.response)
+resp = http.do(method, url, body)                 // Custom method (?http.response)
+resp = http.get-auth(url, user, password)         // GET with basic auth (?http.response)
+resp = http.post-auth(url, body, user, password)  // POST with basic auth (?http.response)
 
 // Using request object
-req = http-request{}
+req = http.request{}
 req.init('POST', url, body)
 req.add-header('Content-Type', 'application/json')
-resp = http.http-do-req(req)                      // Send request (?http.response)
+ok = http.set-basic-auth(req, user, password)     // Set Basic auth header (bool)
+ok = http.set-bearer-auth(req, token)             // Set Bearer token header (bool)
+ok = http.set-api-key(req, header-name, api-key)  // Set API-key header (bool)
+resp = http.do-req(req)                           // Send request (?http.response)
 
-// Parse response headers
+// Parse & read response headers
 resp.parse-headers()
+val = resp.get-header(name)                       // Look up a header value (?str)
 ```
 
 #### net/http2 — HTTP/2.0 Client (RFC 7540)
@@ -1297,12 +1303,13 @@ ok = tls.https-serve-once(fd, cert, key)        // Handle one HTTPS request
 Wraps the `conn` struct, providing auto-reconnect and other features:
 
 ```no
-c = client.net-client(host, port)                   // Create client (?client)
+c = client.client-create(host, port)               // Create client (?client)
 ok = c.connect(host, port)                   // Connect
 ok = c.reconnect()                           // Reconnect
 written = c.send(data)                       // Send
 read-n = c.recv(buf, n)                      // Receive
 line = c.recv-line()                         // Receive one line (?str)
+written = c.send-line(line)                  // Send one line (i64)
 response = c.request(data)                   // Request-response mode (?str)
 yes = c.is-connected()                       // Connection state
 c.close()
@@ -1456,18 +1463,21 @@ data = multipart-decrypt-field(encrypted, key) // Decrypt field
 #### net/hpack — HPACK Header Compression (HTTP/2)
 
 ```no
-buf, n = hpack.hpack-encode(headers)
-headers = hpack.hpack-decode(buf, n)
-
 // Table operations
-t = hpack-tables{}
-t.init()
-pos = t.encode-header(buf, pos, name, value)
-pos = t.decode-headers(buf, pos)              // Decode headers
-pos = t.dyn-add(name, value)                  // Add to dynamic table
-idx = t.find(name)                          // Find in table
-idx = t.find-name(name)                      // Find by name only
-name, value = t.lookup(idx)                  // Lookup by index
+t = hpack.tables{}
+t.init()                                      // Initialize static+dynamic table
+out = t.encode-header(name, value)            // Encode one header (str)
+names, values, count, ok = t.decode-headers(data) // Decode headers ([]str)
+t.dyn-add(name, value)                        // Add to dynamic table
+idx = t.find(name, value)                     // Find full name/value pair
+idx = t.find-name(name)                       // Find by name only
+name, value, ok = t.lookup(idx)               // Lookup by index
+
+// Primitive integer/string codecs
+out = hpack.encode-int(val, prefix-bits, prefix-byte)   // Encode integer (str)
+val, next-pos = hpack.decode-int(data, pos, prefix-bits) // Decode integer
+out = hpack.encode-str(s)                     // Encode string literal (str)
+out, next-pos = hpack.decode-str(data, pos)   // Decode string literal
 ```
 
 #### net/proxy — Proxy Support
@@ -1537,30 +1547,33 @@ c.close()
 sec = time.now-s()                   // Current Unix timestamp (seconds)
 ms = time.now-ms()                   // Current timestamp (milliseconds)
 us = time.now-us()                   // Current timestamp (microseconds)
+ns = time.now-ns()                   // Current timestamp (nanoseconds)
 sec = time.since-s(start)             // Elapsed since start (seconds)
 ms = time.since-ms(start)             // Elapsed since start (milliseconds)
 us = time.since-us(start)             // Elapsed since start (microseconds)
-out = time.format-time(t, fmt)        // Format time
-time.sleep-ms(ms)                    // Sleep (milliseconds)
 time.sleep-s(sec)                    // Sleep (seconds)
+time.sleep-ms(ms)                    // Sleep (milliseconds)
+time.sleep-us(us)                    // Sleep (microseconds)
+time.sleep-ns(ns)                    // Sleep (nanoseconds)
 d = time.duration-between(start, end) // Elapsed (seconds)
 d = time.duration-ms-between(s, e)    // Elapsed (milliseconds)
 d = time.duration-us-between(s, e)    // Elapsed (microseconds)
 
 // Date operations
 yes = time.is-leap(year)               // Check if year is a leap year
-unix = time.date-to-unix(year, month, day, hour, min, sec) // Date to Unix timestamp
-d = time.now-date()                   // Get current date struct
-ok = time.parse-date(s, str)          // Parse date string (?date)
-s = time.format-date(d)               // Format date to string
-d = time.unix-to-date(ts)             // Convert Unix timestamp to date struct
 days = time.days-in-month-fn(year, month) // Get days in month
+d = time.unix-to-date(ts)             // Convert Unix timestamp to date struct
+ts = time.date-to-unix(d)              // Date struct to Unix timestamp
+d = time.now-date()                   // Get current date struct
+s = time.format-date(d)               // Format date struct to string
+s = time.format-time-str(ts)          // Format Unix timestamp to time string
+ts = time.parse-date(s)                // Parse date string (?i64)
 s = time.format-duration(sec)         // Format duration to human-readable string
-s = time.format-time-str(t, fmt)      // Format time string
 
 // Timer struct
 t = timer{}
-t = t.start()                         // Start timer
+t.start()                             // Start timer
+t.stop()                              // Stop timer
 us = t.elapsed-us()                   // Elapsed microseconds
 ms = t.elapsed-ms()                   // Elapsed milliseconds
 s = t.elapsed-s()                     // Elapsed seconds
@@ -1579,13 +1592,12 @@ LEVEL-WARN  = 2
 LEVEL-ERROR = 3
 LEVEL-FATAL = 4
 
-log.set-level(lvl)
-lvl = log.level()                      // Get current log level
+log.set-level(lvl)                     // Set minimum log level
 log.debug(msg)
 log.info(msg)
 log.warn(msg)
 log.error(msg)
-log.fatal(msg)
+log.fatal(msg, code)                   // Log and exit with status code
 ```
 
 ---
@@ -2375,8 +2387,8 @@ h = fnv.fnv-1a-64(data []byte) (hash u64)```
 #### crypto/base32 — Base32 Encoding/Decoding (RFC 4648)
 
 ```no
-out = base32.base32-encode(data []byte, n i64) (out str)
-out = base32.base32-decode(s str, n i64) (out []byte)
+out = base32.encode(data []byte) (out str)
+out = base32.decode(in str) (out []byte)
 ```
 
 #### crypto/chacha20-poly1305 — ChaCha20-Poly1305 AEAD

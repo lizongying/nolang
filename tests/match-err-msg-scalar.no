@@ -33,8 +33,9 @@ fail-str = () (out ?str) {
 }
 
 main = () {
+
     ; 1. ?i64：err 臂的 it 是訊息，不是整數也不是整顆 option
-    a ?i64 = fail-i64()
+    a = fail-i64()
     got1 = ''
     a: {
         err -> got1 = it
@@ -46,7 +47,7 @@ main = () {
     check-str('?i64 err message', got1, 'boom-i64')
 
     ; 2. ?bool：同上（bool 的載荷只有 1 位元，最能逼出這個 bug）
-    b ?bool = fail-bool()
+    b = fail-bool()
     got2 = ''
     b: {
         err -> got2 = it
@@ -58,7 +59,7 @@ main = () {
     check-str('?bool err message', got2, 'boom-bool')
 
     ; 3. 對照組：?str 本來就讀得到（非純量載荷槽塞得下）
-    c ?str = fail-str()
+    c = fail-str()
     got3 = ''
     c: {
         err -> got3 = it
@@ -70,7 +71,7 @@ main = () {
     check-str('?str err message', got3, 'boom-str')
 
     ; 4. 訊息必須完整（len 正確），不能被截斷成前幾個字節
-    d ?i64 = fail-i64()
+    d = fail-i64()
     got4 = ''
     d: {
         err -> got4 = 'len=' - it.len().to-str()

@@ -36,9 +36,10 @@ loop-concat = () (out str) {
 
         ; 每次迭代的字串拼接結果 malloc 新 buffer
         ; 但前一輪的 buffer 不被釋放 → 洩漏 99 次
-        #{overflow = wrap}
+        #{overflow=wrap}
         tmp = 'item' + i.to-str()
-        #{overflow = wrap}
+
+        #{overflow=wrap}
         out = out + tmp
     }
 }

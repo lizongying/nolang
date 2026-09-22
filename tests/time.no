@@ -5,28 +5,31 @@
 ; # std/time
 
 ; ── 1. now-s 回傳正值 ──
-ts i64 = 0
+ts = 0
 ts = time.now-s()
 {
     ts > 0 -> print('ok: now-s')
+
     -> print('fail: now-s')
 }
 
 ; ── 2. now-ms 回傳正值 ──
-ms i64 = 0
+ms = 0
 ms = time.now-ms()
 {
     ms > 0 -> print('ok: now-ms')
+
     -> print('fail: now-ms')
 }
 
 ; ── 3. duration-between 計算差值 ──
-start i64 = 1000
-end i64 = 1010
-diff i64 = 0
+start = 1000
+end = 1010
+diff = 0
 diff = time.duration-between(start, end)
 {
     diff == 10 -> print('ok: duration-between')
+
     -> print('fail: duration-between')
 }
 
@@ -35,13 +38,14 @@ time.sleep-ms(100)
 print('ok: sleep-ms')
 
 ; ── 5. since-ms 計算經過時間 ──
-before i64 = 0
+before = 0
 before = time.now-ms()
 time.sleep-ms(50)
-elapsed i64 = 0
+elapsed = 0
 elapsed = time.since-ms(before)
 {
     elapsed >= 50 -> print('ok: since-ms')
+
     -> print('fail: since-ms')
 }
 
@@ -53,10 +57,11 @@ t time.timer = timer {
 t.start()
 time.sleep-ms(50)
 t.stop()
-t-ms i64 = 0
+t-ms = 0
 t-ms = t.elapsed-ms()
 {
     t-ms >= 50 -> print('ok: timer elapsed-ms')
+
     -> print('fail: timer elapsed-ms')
 }
 

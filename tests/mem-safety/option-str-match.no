@@ -2,13 +2,14 @@
 ; 验证 synthetic it = val 的 LLVM 类型匹配
 
 test-simple = () {
-    m [str]str = { }
+    m =  {}
     m.init()
     m.put('k', 'v')
 
     v = m.get('k')
     v: {
         ok -> print(v)
+
         nil -> print('nil')
     }
 }

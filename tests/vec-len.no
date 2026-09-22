@@ -2,7 +2,7 @@
 print('start')
 msg []byte = with-cap(2)
 print('before len')
-n i64 = msg.len()
+n = msg.len()
 print('after len')
 print(n)
 msg[0] = 0x61

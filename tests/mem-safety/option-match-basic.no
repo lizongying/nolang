@@ -15,9 +15,11 @@ main = () {
                 print('ok branch')
                 print(it)
             }
+
             nil -> {
                 print('FAIL: nil')
             }
+
             err -> {
                 print('FAIL: err')
             }

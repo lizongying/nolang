@@ -10,9 +10,11 @@ main = () {
                 print('ok branch')
                 print(it)
             }
+
             nil -> {
                 print('nil branch')
             }
+
             err -> {
                 print('err branch')
             }

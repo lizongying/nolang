@@ -450,7 +450,7 @@ client.reconnect = () (ok bool) {
 
     #{overflow=wrap}
     separator = crlf - crlf
-    sep-pos i64 = -1
+    sep-pos = -1
 
     !! {
 
@@ -718,7 +718,7 @@ sse-connect = (url str) (client ?client) {
 
     #{overflow=wrap}
     separator = crlf - crlf
-    sep-pos i64 = -1
+    sep-pos = -1
 
     !! {
 
@@ -817,7 +817,7 @@ sse-connect = (url str) (client ?client) {
         #{index-out=0, overflow=wrap}
         rb[i] = remaining[i]
     }
-    cli client = client {
+    cli = client {
         fd: fd
         tls-c: tls-c
         use-tls: use-tls
@@ -926,7 +926,7 @@ server-conn.handshake = () (ok bool) {
     ; 讀取 HTTP 請求（直到 \r\n\r\n）
     raw str = with-len(SSE-BUF-SIZE)
     total = 0
-    sep-pos i64 = -1
+    sep-pos = -1
 
     !! {
 

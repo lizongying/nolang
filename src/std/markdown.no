@@ -67,7 +67,7 @@ markdown.prefix-count = (s str, c i64) (n i64) {
 ; markdown.heading: 取得 ATX 标题等级与标题文字。
 markdown.heading = (line str) (out markdown-heading) {
     level-v = 0
-    title-v str = ''
+    title-v = ''
     s = line.trim()
     n = markdown.prefix-count(s, 35)
     n > 0 && n <= 6 && n < s.len-bytes() && s.byte(n) == 32 -> {
@@ -149,7 +149,7 @@ markdown.thematic-break = (line str) (yes bool) {
 ; markdown.list-item: 解析列表项。kind=1 无序，kind=2 有序。
 markdown.list-item = (line str) (out markdown-list) {
     kind-v = 0
-    content-v str = ''
+    content-v = ''
     index-v = 0
     s = line.trim()
     n = s.len-bytes()
@@ -215,7 +215,7 @@ markdown.list-content = (content str) (out str) {
 
 ; markdown.blockquote: 移除引用行首的 > 标记。
 markdown.blockquote = (line str) (out markdown-quote) {
-    content-v str = ''
+    content-v = ''
     found = false
     s = line.trim()
     n = s.len-bytes()
@@ -236,7 +236,7 @@ markdown.fence = (line str) (out markdown-fence) {
     yes-v = false
     marker-v = 0
     width-v = 0
-    info-v str = ''
+    info-v = ''
     s = line.trim()
     n = s.len-bytes()
     n >= 3 -> {
@@ -310,7 +310,7 @@ markdown.table-row = (line str, tag str) (out str) {
 
 ; markdown.inline: 渲染 Markdown 行内语法。
 markdown.inline = (s str) (out str) {
-    result str = ''
+    result = ''
     strong = false
     emphasis = false
     strike = false
@@ -509,7 +509,7 @@ markdown.inline = (s str) (out str) {
 ; markdown.join-paragraph: 追加一行到段落，专门处理硬换行。
 markdown.join-paragraph = (paragraph str, line str, hard-break bool) (out str) {
     clean = line.trim()
-    separator str = '\n'
+    separator = '\n'
     hard-break -> {
         clean = line.slice-bytes(0, line.len-bytes() - 2).trim()
         separator = '<br>\n'
@@ -521,7 +521,7 @@ markdown.join-paragraph = (paragraph str, line str, hard-break bool) (out str) {
 
 ; markdown.render-code: 输出代码块。
 markdown.render-code = (code str, info str) (out str) {
-    class str = ''
+    class = ''
 
     #{overflow=wrap}
     info.len-bytes() > 0 -> class = ' class="language-' - markdown.escape-html(info) - '"'
@@ -532,7 +532,7 @@ markdown.render-code = (code str, info str) (out str) {
 
 ; markdown.read-line: 从 byte 游标读取一行，避免对 []str 做不安全的动态索引。
 markdown.read-line = (source str, pos i64) (out markdown-line) {
-    line-v str = ''
+    line-v = ''
     next-v = pos
     valid-v = false
     n = source.len-bytes()
@@ -568,16 +568,16 @@ markdown.read-line = (source str, pos i64) (out markdown-line) {
 
 ; markdown.to-html: 将 Markdown 文档渲染为 HTML。
 markdown.to-html = (source str) (out str) {
-    result str = ''
+    result = ''
     normalized = source.replace-str('\r\n', '\n').replace-str('\r', '\n')
-    paragraph str = ''
-    code-buffer str = ''
-    quote-buffer str = ''
-    pending-line str = ''
+    paragraph = ''
+    code-buffer = ''
+    quote-buffer = ''
+    pending-line = ''
     in-code = false
     code-marker = 0
     code-width = 0
-    code-info str = ''
+    code-info = ''
     list-kind = 0
     in-quote = false
     pending = false

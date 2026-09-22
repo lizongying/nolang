@@ -23,6 +23,7 @@ print('ok: create table')
 r = d.exec('INSERT INTO users (name, age) VALUES (\'Alice\', 30.5)')
 {
     r.affected == 1 -> print('ok: insert')
+
     -> {
         print('fail: insert affected=')
         print(r.affected)
@@ -36,8 +37,8 @@ rs.stmt == 0 -> {
     d.close()
     return
 }
-count i64 = 0
-{
+count = 0
+(rs.next()) {
     id i64 = rs.scan-int(0)
     name = rs.scan-str(1)
     age = rs.scan-float(2)
@@ -46,17 +47,22 @@ count i64 = 0
             name == 'Alice' -> {
                 age > 30.0 -> {
                     age < 31.0 -> print('ok: query scan')
+
                     -> print('fail: age too high')
                 }
+
                 -> print('fail: age too low')
             }
+
             -> print('fail: name mismatch')
         }
+
         -> print('fail: id mismatch')
     }
-    #{overflow = wrap}
+
+    #{overflow=wrap}
     count = count + 1
-} (rs.next())
+}
 rs.close()
 
 ; 測試 5: 預編譯陳述式（插入）
@@ -71,6 +77,7 @@ s.bind-int(2, 25)
 r2 = s.exec()
 {
     r2.affected == 1 -> print('ok: prepared insert')
+
     -> print('fail: prepared insert')
 }
 s.close()
@@ -90,13 +97,14 @@ rs2.stmt == 0 -> {
     d.close()
     return
 }
-{
+(rs2.next()) {
     name2 = rs2.scan-str(0)
     {
         name2 == 'Bob' -> print('ok: prepared query scan')
+
         -> print('fail: prepared query name mismatch')
     }
-} (rs2.next())
+}
 rs2.close()
 s2.close()
 
@@ -104,12 +112,14 @@ s2.close()
 rs3 rows = d.query('SELECT id FROM users')
 rs3.stmt != 0 -> {
     total i64 = 0
-    {
-        #{overflow = wrap}
+    (rs3.next()) {
+
+        #{overflow=wrap}
         total = total + 1
-    } (rs3.next())
+    }
     {
         total == 2 -> print('ok: total rows')
+
         -> {
             print('fail: total rows=')
             print(total)

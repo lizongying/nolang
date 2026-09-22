@@ -25,7 +25,9 @@ test-option-4 = () {
     x4 = err('error msg')
     x4: {
         err -> print(it)
+
         nil -> print(0)
+
         -> print(1)
     }
 }
@@ -36,7 +38,9 @@ test-option-5 = () {
     x5 = nil
     x5: {
         err -> print(100)
+
         nil -> print(200)
+
         -> print(300)
     }
 }
@@ -47,7 +51,9 @@ test-option-6 = () {
     x6 = 'test'
     x6: {
         err -> print(1000)
+
         nil -> print(2000)
+
         -> print(3000)
     }
 }

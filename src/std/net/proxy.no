@@ -107,7 +107,7 @@ connect = (proxy-host str, proxy-port i64, target-host str, target-port i64, use
 
     #{overflow=wrap}
     separator = crlf - crlf
-    sep-pos i64 = -1
+    sep-pos = -1
 
     !! {
 

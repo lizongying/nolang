@@ -16,9 +16,11 @@
 ; Both backends must agree on the length-based formatting.
 
 main = () {
+
     ; fixed-array str literal -> [3]str
     a = ['a', 'b', 'c']
     print(a.to-str())
+
     ; heap vec[str]: v[0] reads the owned element by borrow; to-str formats lengths
     v = ['hello', 'world', 'foo']
     print(v[0])

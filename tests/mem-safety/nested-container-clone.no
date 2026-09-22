@@ -18,6 +18,7 @@ test-nested-clone-vec = () (ok bool) {
     a.push(make-vec3(1, 2, 3))
     a.push(make-vec3(4, 5, 6))
     b = a
+
     ; 驗證 a 和 b 的內容相同（透過臨時變數避免嵌套索引讀取）
     a0 = a[0]
     b0 = b[0]
@@ -41,16 +42,21 @@ test-nested-clone-modify = () (ok bool) {
     a.push(make-vec2(1, 2))
     a.push(make-vec2(3, 4))
     b = a
+
     ; 對 b 的第一個子切片 push 新元素（透過臨時變數避免嵌套索引方法調用）
     b0 = b[0]
+
     ; a 的第一個子切片長度應仍為 2
     a0 = a[0]
     a0.len() == 2 -> ok = true
+
     ; b 的第一個子切片長度應為 2
     b0.len() == 2 -> ok = true
+
     ; 驗證值
     b0[0] == 1 -> ok = true
     b0[1] == 2 -> ok = true
+
     ; a 的第二個子切片不變
     a1 = a[1]
     b1 = b[1]
@@ -64,11 +70,13 @@ test-nested-element-assign = () (ok bool) {
     a.push(make-vec3(1, 2, 3))
     a.push(make-vec3(4, 5, 6))
     x = a[0]
+
     ; x 是獨立拷貝
     x.len() == 3 -> ok = true
     x[0] == 1 -> ok = true
     x[1] == 2 -> ok = true
     x[2] == 3 -> ok = true
+
     ; a 應不受影響
     a0 = a[0]
     a0.len() == 3 -> ok = true
@@ -81,6 +89,7 @@ test-nested-reassign = () (ok bool) {
     a.push(make-vec2(1, 2))
     a.push(make-vec2(3, 4))
     b = a
+
     ; 重複賦值 b 觸發舊值深層釋放（測試深層 free 不 double-free）
     b = a
     b0 = b[0]
@@ -133,10 +142,12 @@ test-struct-clone-str = () (ok bool) {
     p1.name = 'Alice'
     p1.age = 30
     p2 = p1
+
     ; 驗證內容相同
     p2.name == 'Alice' -> ok = true
     p2.age == 30 -> ok = true
     p1.name == 'Alice' -> ok = true
+
     ; 修改 p2 不影響 p1
     p2.name = 'Bob'
     p2.name == 'Bob' -> ok = true
@@ -160,17 +171,21 @@ test-struct-clone-vec-field = () (ok bool) {
     g1.members.push('bob')
     g1.scores.push(100)
     g1.scores.push(200)
+
     ; 深拷貝
     g2 = g1
+
     ; 驗證內容相同
     g2.name == 'team-a' -> ok = true
     g2.members.len() == 2 -> ok = true
     g2.scores.len() == 2 -> ok = true
+
     ; 修改 g2 的切片欄位不影響 g1
     g2.members.len() == 2 -> ok = true
     g2.scores.len() == 2 -> ok = true
     g1.members.len() == 2 -> ok = true
     g1.scores.len() == 2 -> ok = true
+
     ; 驗證原始值不變
     g1.name == 'team-a' -> ok = true
 }
@@ -194,10 +209,12 @@ test-nested-struct-clone = () (ok bool) {
     e1.addr.street = 'Main St'
     e1.addr.city = 'NYC'
     e2 = e1
+
     ; 驗證內容相同
     e2.name == 'John' -> ok = true
     e2.addr.street == 'Main St' -> ok = true
     e2.addr.city == 'NYC' -> ok = true
+
     ; 修改 e2 的嵌套 struct 欄位不影響 e1
     e2.addr.street = 'Oak Ave'
     e2.addr.city = 'LA'
@@ -215,8 +232,10 @@ test-map-clone = () (ok bool) {
     m1.put('a', 1)
     m1.put('b', 2)
     m1.put('c', 3)
+
     ; 深拷貝
     m2 = m1
+
     ; 驗證內容相同
     v1 = m2.get('a')
     v1: {
@@ -230,6 +249,7 @@ test-map-clone = () (ok bool) {
     v3: {
         ok -> v3 == 3 -> ok = true
     }
+
     ; 修改 m2 不影響 m1
     m2.put('a', 100)
     v4 = m1.get('a')
@@ -240,6 +260,7 @@ test-map-clone = () (ok bool) {
     v5: {
         ok -> v5 == 100 -> ok = true
     }
+
     ; m1 大小不變
     m1.len() == 3 -> ok = true
     m2.len() == 3 -> ok = true
@@ -254,8 +275,10 @@ test-map-vec-value-clone = () (ok bool) {
     list1.push('x')
     list1.push('y')
     m1.put('items', list1)
+
     ; 深拷貝
     m2 = m1
+
     ; 取出 m2 的切片並修改
     v = m2.get('items')
     v: {
@@ -264,6 +287,7 @@ test-map-vec-value-clone = () (ok bool) {
             v.len() == 3 -> ok = true
         }
     }
+
     ; m1 的切片不應受影響
     v2 = m1.get('items')
     v2: {
@@ -290,11 +314,14 @@ test-struct-nested-vec-clone = () (ok bool) {
     row2.push('c')
     row2.push('d')
     m1.rows.push(row2)
+
     ; 深拷貝
     m2 = m1
+
     ; 驗證內容相同
     m2.name == 'data' -> ok = true
     m2.rows.len() == 2 -> ok = true
+
     ; 修改 m2 的嵌套容器不影響 m1
     r0 = m2.rows[0]
     m1r0 = m1.rows[0]
@@ -317,13 +344,16 @@ test-struct-array-clone = () (ok bool) {
     p2.name = 'Bob'
     p2.age = 25
     people.push(p2)
+
     ; 深拷貝
     copy = people
+
     ; 驗證內容相同
     copy.len() == 2 -> ok = true
     c0 = copy[0]
     c0.name == 'Alice' -> ok = true
     c0.age == 30 -> ok = true
+
     ; 修改 copy 不影響 original
     c0b = copy[0]
     c0b.name = 'Charlie'

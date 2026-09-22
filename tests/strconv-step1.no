@@ -43,6 +43,7 @@ test-str-to-bool = () {
     b = 'true'.to-bool()
     {
         b -> print(1)
+
         -> print(0)
     }
 }

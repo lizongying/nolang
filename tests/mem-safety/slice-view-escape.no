@@ -28,7 +28,7 @@
 
 ; 測試 1：out = view（view 是 vec 切片視圖，目標是輸出參數）
 get-view = () (out []i64) {
-    local []i64 = [100, 200, 300, 400]
+    local = [100, 200, 300, 400]
     view = local[1..3]
     out = view
 }
@@ -38,7 +38,7 @@ print(v[1]); 預期 300
 
 ; 測試 2：v []i64 = view（view 是切片視圖，目標是顯式 []T 型別）
 test-explicit-type = () {
-    local []i64 = [10, 20, 30, 40, 50]
+    local = [10, 20, 30, 40, 50]
     view = local[1..4]
     v []i64 = view; 顯式 []T 型別，應 clone
     print(v[0]); 預期 20
@@ -54,7 +54,7 @@ print(v2[1]); 預期 300
 
 ; 測試 4：view 來自固定陣列（堆分配的 vec）
 get-view2 = () (out []i64) {
-    arr [4]i64 = [1, 2, 3, 4]
+    arr = [1, 2, 3, 4]
     view = arr[0..2]
     out = view
 }

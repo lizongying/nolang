@@ -47,7 +47,7 @@ sleep-s = (s i64) {
 sleep-ms = (ms i64) {
 
     #{overflow=wrap}
-    us i64 = ms * 1000
+    us = ms * 1000
     sleep-us(us)
 }
 
@@ -100,7 +100,7 @@ since-s = (start i64) (diff i64) {
 since-ms = (start i64) (diff i64) {
 
     #{overflow=wrap}
-    end i64 = now-ms()
+    end = now-ms()
 
     #{overflow=wrap}
     diff = end - start
@@ -110,7 +110,7 @@ since-ms = (start i64) (diff i64) {
 since-us = (start i64) (diff i64) {
 
     #{overflow=wrap}
-    end i64 = now-us()
+    end = now-us()
 
     #{overflow=wrap}
     diff = end - start
@@ -125,11 +125,11 @@ since-us = (start i64) (diff i64) {
 format-duration = (seconds i64) (out str) {
 
     #{overflow=wrap}
-    h i64 = seconds / 3600
+    h = seconds / 3600
     rem i64 = seconds % 3600
 
     #{overflow=wrap}
-    m i64 = rem / 60
+    m = rem / 60
     sec i64 = rem % 60
     h-s = number.i64-to-str(h)
     m-s = number.i64-to-str(m)

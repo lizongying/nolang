@@ -101,7 +101,7 @@ t-to-bytes = () {
 t-to-i64 = () {
 
     ; 注意：option 值需在 match 分支內比較
-    ok bool = false
+    ok = false
     v = '123'.to-i64()
     v: {
         nil -> ok = false
@@ -110,7 +110,7 @@ t-to-i64 = () {
     }
     runner.is-true(ok, 'to-i64 123 == 123')
 
-    ok2 bool = false
+    ok2 = false
     n = '-45'.to-i64()
     n: {
         nil -> ok2 = false
@@ -120,7 +120,7 @@ t-to-i64 = () {
     runner.is-true(ok2, 'to-i64 -45 == -45')
 
     ; 非數字 → err
-    bad-state i64 = 0
+    bad-state = 0
     bad = 'abc'.to-i64()
     bad: {
         nil -> bad-state = 1
@@ -162,46 +162,102 @@ t-fill = () {
 ; ── 執行 ──────────────────────────────────────
 
 p1, f1 = runner.test('str.len()', t-len)
+
+#{overflow=wrap}
 passed = passed + p1
+
+#{overflow=wrap}
 failed = failed + f1
 p2, f2 = runner.test('str.index', t-index)
+
+#{overflow=wrap}
 passed = passed + p2
+
+#{overflow=wrap}
 failed = failed + f2
 p3, f3 = runner.test('str.index-from', t-index-from)
+
+#{overflow=wrap}
 passed = passed + p3
+
+#{overflow=wrap}
 failed = failed + f3
 p4, f4 = runner.test('str.contains', t-contains)
+
+#{overflow=wrap}
 passed = passed + p4
+
+#{overflow=wrap}
 failed = failed + f4
 p5, f5 = runner.test('str.starts-with/ends-with', t-starts-ends)
+
+#{overflow=wrap}
 passed = passed + p5
+
+#{overflow=wrap}
 failed = failed + f5
 p6, f6 = runner.test('str.to-upper/to-lower', t-case)
+
+#{overflow=wrap}
 passed = passed + p6
+
+#{overflow=wrap}
 failed = failed + f6
 p7, f7 = runner.test('str.trim', t-trim)
+
+#{overflow=wrap}
 passed = passed + p7
+
+#{overflow=wrap}
 failed = failed + f7
 p8, f8 = runner.test('str.repeat', t-repeat)
+
+#{overflow=wrap}
 passed = passed + p8
+
+#{overflow=wrap}
 failed = failed + f8
 p9, f9 = runner.test('str.slice', t-slice)
+
+#{overflow=wrap}
 passed = passed + p9
+
+#{overflow=wrap}
 failed = failed + f9
 p10, f10 = runner.test('str.to-bytes', t-to-bytes)
+
+#{overflow=wrap}
 passed = passed + p10
+
+#{overflow=wrap}
 failed = failed + f10
 p11, f11 = runner.test('str.to-i64', t-to-i64)
+
+#{overflow=wrap}
 passed = passed + p11
+
+#{overflow=wrap}
 failed = failed + f11
 p12, f12 = runner.test('str.eq', t-eq)
+
+#{overflow=wrap}
 passed = passed + p12
+
+#{overflow=wrap}
 failed = failed + f12
 p13, f13 = runner.test('str.copy', t-copy)
+
+#{overflow=wrap}
 passed = passed + p13
+
+#{overflow=wrap}
 failed = failed + f13
 p14, f14 = runner.test('str.fill', t-fill)
+
+#{overflow=wrap}
 passed = passed + p14
+
+#{overflow=wrap}
 failed = failed + f14
 
 total = runner.summary()

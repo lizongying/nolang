@@ -45,8 +45,9 @@ mk = () (out ?thing) {
 }
 
 main = () {
+
     ; 1. 臂內顯式 ?T 宣告 + 巢狀 match：前後的 it 都必須仍是 thing
-    a ?thing = mk()
+    a = mk()
     got1 = ''
     a: {
         nil -> print('a nil')
@@ -69,7 +70,7 @@ main = () {
     check-str('explicit-?T-in-arm', got1, 'n=7|w=true|after=n=7')
 
     ; 2. 對照組：不帶 ?T 的寫法
-    b ?thing = mk()
+    b = mk()
     got2 = ''
     b: {
         nil -> print('b nil')

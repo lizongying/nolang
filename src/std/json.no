@@ -26,12 +26,12 @@
 ; ═══════════════════════════════════════════════
 
 ; json-kind: JSON 值的類型（使用常量替代枚舉，避免編譯器枚舉值不遞增的 bug）
-JSON-KIND-NULL i64 = 0
-JSON-KIND-BOOL i64 = 1
-JSON-KIND-NUM i64 = 2
-JSON-KIND-STR i64 = 3
-JSON-KIND-ARR i64 = 4
-JSON-KIND-OBJ i64 = 5
+JSON-KIND-NULL = 0
+JSON-KIND-BOOL = 1
+JSON-KIND-NUM = 2
+JSON-KIND-STR = 3
+JSON-KIND-ARR = 4
+JSON-KIND-OBJ = 5
 
 ; 池最大節點數
 JSON-MAX-NODES = 64
@@ -857,7 +857,7 @@ json-pool.stringify = (node-idx i64) (out str) {
     i = 0
     j = 0
     child-str = ''
-    num-val f64 = 0.0
+    num-val = 0.0
     num-str = ''
     key-str = ''
 
@@ -1231,7 +1231,7 @@ json.set = (key str, val-idx i64) (ok bool) {
         #{index-out=0}
         .pool.nodes[.root].count = 0
     }
-    k i64 = JSON-KIND-NULL
+    k = JSON-KIND-NULL
     .root >= 0 && .root < .pool.count -> {
 
         #{index-out=0}
@@ -1443,7 +1443,7 @@ json.arr-push = (val json) (ok bool) {
         #{index-out=0}
         .pool.nodes[.root].count = 0
     }
-    k i64 = JSON-KIND-NULL
+    k = JSON-KIND-NULL
     .root >= 0 && .root < .pool.count -> {
 
         #{index-out=0}

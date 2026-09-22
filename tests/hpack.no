@@ -54,11 +54,11 @@ test-encode-int-multi = () {
 
 ; test-decode-int-small: 解碼小整數
 test-decode-int-small = () {
-    space str = ' '
+    space = ' '
     data str = space.repeat(HPACK-TEST-BUF)
     data[0] = 10
-    val i64 = 0
-    next i64 = 0
+    val = 0
+    next = 0
     hpack.decode-int(data, 0, 5)(val, next)
     val != 10 -> {
         print('FAIL: expected val=10')
@@ -73,13 +73,13 @@ test-decode-int-small = () {
 
 ; test-decode-int-multi: 解碼多 byte 整數
 test-decode-int-multi = () {
-    space str = ' '
+    space = ' '
     data str = space.repeat(HPACK-TEST-BUF)
     data[0] = 31
     data[1] = 170
     data[2] = 10
-    val i64 = 0
-    next i64 = 0
+    val = 0
+    next = 0
     hpack.decode-int(data, 0, 5)(val, next)
     val != 1337 -> {
         print('FAIL: expected val=1337')
@@ -115,14 +115,14 @@ test-encode-str = () {
 
 ; test-decode-str: 解碼字串
 test-decode-str = () {
-    space str = ' '
+    space = ' '
     data str = space.repeat(HPACK-TEST-BUF)
     data[0] = 3
     data[1] = 97
     data[2] = 98
     data[3] = 99
-    out str = ''
-    next i64 = 0
+    out = ''
+    next = 0
     hpack.decode-str(data, 0)(out, next)
     next != 4 -> {
         print('FAIL: expected next=4')
@@ -146,7 +146,7 @@ test-static-table = () {
     t.init()
 
     ; 查找 :method GET (靜態表索引 2)
-    idx i64 = 0
+    idx = 0
     t.find(':method', 'GET')(idx)
     idx != 2 -> {
         print('FAIL: expected idx=2 for :method GET')
@@ -170,7 +170,7 @@ test-dyn-table = () {
     t.dyn-add('x-custom', 'hello')
 
     ; 動態表索引從 62 開始
-    idx i64 = 0
+    idx = 0
     t.find('x-custom', 'hello')(idx)
     idx != 62 -> {
         print('FAIL: expected idx=62 for x-custom')
@@ -178,9 +178,9 @@ test-dyn-table = () {
     }
 
     ; lookup 驗證
-    name str = ''
-    value str = ''
-    found bool = false
+    name = ''
+    value = ''
+    found = false
     t.lookup(62)(name, value, found)
     found == false -> {
         print('FAIL: lookup not found')
@@ -222,7 +222,7 @@ test-encode-header-indexed = () {
 
 ; test-decode-headers: 解碼標頭塊
 test-decode-headers = () {
-    space str = ' '
+    space = ' '
     t hpack.tables
     t.init()
 
@@ -234,14 +234,14 @@ test-decode-headers = () {
     enc2 = t.encode-header(':path', '/')
 
     ; 合併
-    #{overflow = wrap}
+    #{overflow=wrap}
     enc-out = enc-out - enc2
 
     ; 解碼
     names [128]str
     values [128]str
-    count i64 = 0
-    ok bool = false
+    count = 0
+    ok = false
     t.decode-headers(enc-out)(names, values, count, ok)
     ok == false -> {
         print('FAIL: decode failed')

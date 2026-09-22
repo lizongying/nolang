@@ -226,7 +226,7 @@ process.start-with-opts = (program str, args []str, dir str, input str, merge-er
     .running = 0
 
     ; 構建命令字串
-    cmdline str = program
+    cmdline = program
     is-sh-c = false
     {
         ; 直接執行 `sh -c <script>` 時避免雙重嵌套 sh -c（詳見 cmd）
@@ -263,8 +263,8 @@ process.start-with-opts = (program str, args []str, dir str, input str, merge-er
     out-write = out-fds & 0xffffffff
 
     ; 建立 stderr 管道（除非 merge-err）
-    err-read i64 = -1
-    err-write i64 = -1
+    err-read = -1
+    err-write = -1
     {
         ! merge-err -> {
             err-fds = process-pipe()
@@ -281,8 +281,8 @@ process.start-with-opts = (program str, args []str, dir str, input str, merge-er
     }
 
     ; 建立 stdin 管道（如有 input）
-    in-read i64 = -1
-    in-write i64 = -1
+    in-read = -1
+    in-write = -1
     {
         input.len-bytes() > 0 -> {
             in-fds = process-pipe()
@@ -635,7 +635,7 @@ cmd = (program str, args []str, dir str, input str, env []str, timeout i64, merg
     err = ''
 
     ; 構建命令字串
-    cmdline str = program
+    cmdline = program
     is-sh-c = false
     {
         ; 直接執行 `sh -c <script>` 時避免雙重嵌套 sh -c：
@@ -695,8 +695,8 @@ cmd = (program str, args []str, dir str, input str, env []str, timeout i64, merg
     out-write = out-fds & 0xffffffff
 
     ; 建立 stderr 管道（除非 merge-err）
-    err-read i64 = -1
-    err-write i64 = -1
+    err-read = -1
+    err-write = -1
     {
         ! merge-err -> {
             err-fds = process-pipe()
@@ -714,8 +714,8 @@ cmd = (program str, args []str, dir str, input str, env []str, timeout i64, merg
     }
 
     ; 建立 stdin 管道（如有 input）
-    in-read i64 = -1
-    in-write i64 = -1
+    in-read = -1
+    in-write = -1
     {
         input.len-bytes() > 0 -> {
             in-fds = process-pipe()
@@ -940,7 +940,7 @@ cmd = (program str, args []str, dir str, input str, env []str, timeout i64, merg
     err = ''
 
     ; 構建命令列字串：program + " " + arg1 + " " + arg2 + ...
-    cmdline str = program
+    cmdline = program
     i <- [0..args.len()): {
 
         #{index-out=0}
@@ -972,8 +972,8 @@ cmd = (program str, args []str, dir str, input str, env []str, timeout i64, merg
     out-write = out-fds & 0xffffffff
 
     ; 建立 stderr 管道（除非 merge-err）
-    err-read i64 = 0
-    err-write i64 = 0
+    err-read = 0
+    err-write = 0
     {
         ! merge-err -> {
             err-fds = win-create-pipe()
@@ -991,8 +991,8 @@ cmd = (program str, args []str, dir str, input str, env []str, timeout i64, merg
     }
 
     ; 建立 stdin 管道（如有 input）
-    in-read i64 = 0
-    in-write i64 = 0
+    in-read = 0
+    in-write = 0
     {
         input.len-bytes() > 0 -> {
             in-fds = win-create-pipe()
@@ -1021,9 +1021,9 @@ cmd = (program str, args []str, dir str, input str, env []str, timeout i64, merg
     parent-stderr = win-get-std-handle(2)
 
     ; 決定傳給子進程的標準 handle
-    child-stdin i64 = 0
-    child-stdout i64 = 0
-    child-stderr i64 = 0
+    child-stdin = 0
+    child-stdout = 0
+    child-stderr = 0
     child-stdin = in-read != 0 ? in-read : parent-stdin
     child-stdout = out-write
     child-stderr = merge-err ? out-write : err-write
@@ -1267,7 +1267,7 @@ find-match = (pname str, target str) (yes bool) {
 ; name: 進程名稱（部分匹配，大小寫不敏感）
 ; 返回匹配的 PID 列表
 find-by-name = (name str) (pids []i64) {
-    all []proc-info = list-all()
+    all = list-all()
     i <- [0..all.len()): {
 
         #{index-out=0}

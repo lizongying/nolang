@@ -2,7 +2,7 @@
 
 ; # std/str
 
-x i64 = 5
+x = 5
 
 x == 5 -> print('five')
 -> print('not five')

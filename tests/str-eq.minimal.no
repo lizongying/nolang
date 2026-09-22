@@ -3,6 +3,7 @@ test-str-eq = () {
     s = 'true'
     {
         s == 'true' -> print('equal true')
+
         -> print('not equal true')
     }
 }
@@ -11,6 +12,7 @@ test-str-eq-2 = () {
     s = 'false'
     {
         s == 'true' -> print('equal true')
+
         -> print('not equal true')
     }
 }

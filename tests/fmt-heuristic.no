@@ -3,7 +3,7 @@
 ; # std/str
 
 ; 1. Inferred types (no type annotation)
-n i64 = 42
+n = 42
 s = 'hello'
 f = 3.14
 b = true
@@ -17,14 +17,19 @@ fixed [3]u16 = [1, 2, 3]
 ; 4. Match with range patterns
 grade = n: {
     [0..60) -> 'F'
+
     [60..80) -> 'C'
+
     [80..90) -> 'B'
+
     [90..100] -> 'A'
+
     -> 'invalid'
 }
 
 ; 5. Match with raw condition pattern
 sign = fixed: {
     ok -> 'positive'
+
     -> 'zero'
 }

@@ -5,7 +5,8 @@
 ; 模擬 fe-tobytes(h []i64) (s [32]byte) 的行為
 inner-write = () (s [32]byte) {
     i <- [0..32): {
-        #{overflow = wrap}
+
+        #{overflow=wrap}
         s[i] = (i + 1) & 255
     }
 }
@@ -26,7 +27,8 @@ test-via-inner = () (pass bool) {
     ; 打印所有 bytes
     hex = ''
     i <- [0..32): {
-        #{overflow = wrap}
+
+        #{overflow=wrap}
         hex = hex - (arr[i]).to-str() - ' '
     }
     eprint('via inner bytes:')
@@ -34,7 +36,8 @@ test-via-inner = () (pass bool) {
 
     ; 檢查前 8 bytes
     i <- [0..8): {
-        #{overflow = wrap}
+
+        #{overflow=wrap}
         expected = (i + 1) & 255
         arr[i] != expected -> {
             print('FAIL: via inner byte mismatch')
@@ -62,7 +65,8 @@ inner-write-i64 = (h []i64) (s [32]byte) {
 outer-call-i64 = () (out [32]byte) {
     h []i64 = with-len(10)
     i <- [0..10): {
-        #{overflow = wrap}
+
+        #{overflow=wrap}
         h[i] = (i + 1) * 10
     }
     out = inner-write-i64(h)
@@ -78,7 +82,8 @@ test-via-i64 = () (pass bool) {
     ; 打印所有 bytes
     hex = ''
     i <- [0..32): {
-        #{overflow = wrap}
+
+        #{overflow=wrap}
         hex = hex - (arr[i]).to-str() - ' '
     }
     eprint('via i64 bytes:')
@@ -88,7 +93,7 @@ test-via-i64 = () (pass bool) {
     i <- [0..8): {
 
         ; h[0] = 10, h[1] = 20, ...
-        #{overflow = wrap}
+        #{overflow=wrap}
         expected = ((i + 1) * 10) & 255
         arr[i] != expected -> {
             print('FAIL: via i64 byte mismatch')
@@ -109,11 +114,13 @@ main = () {
     p1 = test-via-inner()
     {
         p1 == true -> print('PASS: via inner')
+
         p1 == false -> print('FAIL: via inner')
     }
     p2 = test-via-i64()
     {
         p2 == true -> print('PASS: via i64')
+
         p2 == false -> print('FAIL: via i64')
     }
 }

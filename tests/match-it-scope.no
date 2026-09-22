@@ -30,7 +30,7 @@ mk-inner = () (out ?i64) {
 ; 最小重現：兩層 option match
 probe-min = () (out str) {
     out = ''
-    a ?i64 = mk-outer()
+    a = mk-outer()
     a: {
         nil -> out = 'nil'
 
@@ -59,7 +59,7 @@ probe-min = () (out str) {
 ; 三層巢狀：每一層都要各自還原
 probe-deep = () (out str) {
     out = ''
-    a ?i64 = mk-outer()
+    a = mk-outer()
     a: {
         nil -> out = 'nil'
 
@@ -98,7 +98,7 @@ probe-deep = () (out str) {
 ; else 臂（wildcard）裡的巢狀 match 也要還原
 probe-else = () (out str) {
     out = ''
-    a ?i64 = mk-outer()
+    a = mk-outer()
     a: {
         nil -> out = 'nil'
 

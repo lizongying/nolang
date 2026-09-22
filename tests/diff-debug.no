@@ -16,7 +16,8 @@ diff-split-lines = (content str) (lines []str) {
     i <- [0..content.len-bytes()): {
         content[i] == 10 -> {
             lines.push(content.slice(start, i))
-            #{overflow = wrap}
+
+            #{overflow=wrap}
             start = i + 1
         }
     }
@@ -29,21 +30,27 @@ diff-split-lines = (content str) (lines []str) {
 diff-engine-lcs = (a []str, b []str) (ops []diff-op) {
     na = a.len()
     nb = b.len()
-    #{overflow = wrap}
+
+    #{overflow=wrap}
     cols = nb + 1
-    #{overflow = wrap}
+
+    #{overflow=wrap}
     total = (na + 1) * cols
     dp []i64 = with-len(total)
 
-    #{overflow = wrap}
+    #{overflow=wrap}
     ai <- [na - 1..0]: {
-        #{overflow = wrap}
+
+        #{overflow=wrap}
         aj <- [nb - 1..0]: {
-            #{overflow = wrap}
+
+            #{overflow=wrap}
             a[ai].compare(b[aj]) == 0 -> dp[ai * cols + aj] = dp[(ai + 1) * cols + (aj + 1)] + 1
-            #{overflow = wrap}
+
+            #{overflow=wrap}
             dp[ai * cols + aj] < dp[(ai + 1) * cols + aj] -> dp[ai * cols + aj] = dp[(ai + 1) * cols + aj]
-            #{overflow = wrap}
+
+            #{overflow=wrap}
             dp[ai * cols + aj] < dp[ai * cols + (aj + 1)] -> dp[ai * cols + aj] = dp[ai * cols + (aj + 1)]
         }
     }
@@ -51,59 +58,73 @@ diff-engine-lcs = (a []str, b []str) (ops []diff-op) {
     ; Debug: print dp table
     eprint('DEBUG dp table:')
     eprint('  na={na} nb={nb} cols={cols} total={total}')
-    #{overflow = wrap}
+
+    #{overflow=wrap}
     ai <- [0..na + 1): {
         row = ''
-        #{overflow = wrap}
+
+        #{overflow=wrap}
         aj <- [0..nb + 1): {
-            #{overflow = wrap}
+
+            #{overflow=wrap}
             v = dp[ai * cols + aj]
-            #{overflow = wrap}
+
+            #{overflow=wrap}
             row = row - ' ' - v.to-str()
         }
         eprint('  {row}')
     }
     i = 0
     j = 0
-    {
+    (i < na || j < nb) {
         i < na && j < nb -> {
             a[i].compare(b[j]) == 0 -> {
                 op = diff-op {}
                 op.kind = 0
                 tmp-line = a[i]
                 op.line = tmp-line
-                #{overflow = wrap}
+
+                #{overflow=wrap}
                 op.a-no = i + 1
-                #{overflow = wrap}
+
+                #{overflow=wrap}
                 op.b-no = j + 1
                 ops.push(op)
-                #{overflow = wrap}
+
+                #{overflow=wrap}
                 i = i + 1
-                #{overflow = wrap}
+
+                #{overflow=wrap}
                 j = j + 1
             }
-            #{overflow = wrap}
+
+            #{overflow=wrap}
             dp[(i + 1) * cols + j] >= dp[i * cols + (j + 1)] -> {
                 op = diff-op {}
                 op.kind = 1
                 tmp-line = a[i]
                 op.line = tmp-line
-                #{overflow = wrap}
+
+                #{overflow=wrap}
                 op.a-no = i + 1
                 ops.push(op)
-                #{overflow = wrap}
+
+                #{overflow=wrap}
                 i = i + 1
             }
-            #{overflow = wrap}
+
+            #{overflow=wrap}
             dp[(i + 1) * cols + j] < dp[i * cols + (j + 1)] -> {
                 op = diff-op {}
                 op.kind = 2
                 tmp-line = b[j]
                 op.line = tmp-line
-                #{overflow = wrap}
+
+                #{overflow=wrap}
                 op.b-no = j + 1
                 ops.push(op)
-                #{overflow = wrap}
+
+                #{overflow=wrap}
                 j = j + 1
             }
         }
@@ -112,10 +133,12 @@ diff-engine-lcs = (a []str, b []str) (ops []diff-op) {
             op.kind = 1
             tmp-line = a[i]
             op.line = tmp-line
-            #{overflow = wrap}
+
+            #{overflow=wrap}
             op.a-no = i + 1
             ops.push(op)
-            #{overflow = wrap}
+
+            #{overflow=wrap}
             i = i + 1
         }
         j < nb -> {
@@ -123,13 +146,15 @@ diff-engine-lcs = (a []str, b []str) (ops []diff-op) {
             op.kind = 2
             tmp-line = b[j]
             op.line = tmp-line
-            #{overflow = wrap}
+
+            #{overflow=wrap}
             op.b-no = j + 1
             ops.push(op)
-            #{overflow = wrap}
+
+            #{overflow=wrap}
             j = j + 1
         }
-    } (i < na || j < nb)
+    }
 }
 
 main = () {

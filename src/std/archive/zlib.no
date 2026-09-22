@@ -24,9 +24,9 @@
 ;   n: 資料長度 (i64)
 ;   返回 sum: 32 位校驗和 (i64)
 adler-32 = (data []byte, n i64) (sum i64) {
-    MOD i64 = 65521
-    a i64 = 1
-    b i64 = 0
+    MOD = 65521
+    a = 1
+    b = 0
     i <- [0..n): {
 
         #{index-out=0, overflow=wrap}
@@ -66,7 +66,7 @@ zlib-compress = (data []byte) (out []byte) {
     }
 
     ; Adler-32 checksum（big-endian 4 bytes）
-    adler i64 = adler-32(data, data.len())
+    adler = adler-32(data, data.len())
     result.push((adler >> 24) & 255)
     result.push((adler >> 16) & 255)
     result.push((adler >> 8) & 255)
@@ -102,7 +102,7 @@ zlib-decompress = (data []byte) (out []byte, ok bool) {
 
     ; 跳過 2-byte zlib header，取 raw DEFLATE 資料
     #{overflow=wrap}
-    deflate-len i64 = data.len() - 6; 去掉 2-byte header + 4-byte Adler-32
+    deflate-len = data.len() - 6; 去掉 2-byte header + 4-byte Adler-32
     deflate-data []byte
     i <- [0..deflate-len): {
 
@@ -112,7 +112,7 @@ zlib-decompress = (data []byte) (out []byte, ok bool) {
 
     ; 預估輸出大小：100 倍輸入（上限 1MB，下限 64 bytes）
     #{overflow=wrap}
-    est-out i64 = deflate-len * 100
+    est-out = deflate-len * 100
     est-out > 1048576 -> est-out = 1048576
     est-out < 64 -> est-out = 64
 
@@ -133,7 +133,7 @@ zlib-decompress-stored = (data []byte) (out []byte, ok bool) {
     ok = false
     data.len() < 6 -> return
 
-    p i64 = 2; 跳過 2-byte zlib header
+    p = 2; 跳過 2-byte zlib header
     !! {
 
         #{overflow=wrap}
@@ -177,7 +177,7 @@ zlib-consumed-stored = (data []byte) (consumed i64) {
     consumed = 0
     data.len() < 6 -> return
 
-    p i64 = 2; 跳過 2-byte zlib header
+    p = 2; 跳過 2-byte zlib header
     !! {
 
         #{overflow=wrap}

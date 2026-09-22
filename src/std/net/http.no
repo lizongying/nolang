@@ -258,7 +258,7 @@ do = (method str, url str, body str) (resp ?response) {
 
     ; ── 字串變數（頂層宣告，供 if 區塊內使用）──
     ; scheme 初始化為空字串，在 URL 解析分支中只賦值一次（避免重新賦值觸發 double-free）
-    scheme-len i64 = 7
+    scheme-len = 7
     rest = ''
     host = ''
     port i64 = HTTP-DEFAULT-PORT
@@ -528,7 +528,7 @@ do-req = (req request) (resp ?response) {
     r response
 
     ; ── 字串變數 ──
-    scheme-len i64 = 7
+    scheme-len = 7
     rest = ''
     host = ''
     port i64 = HTTP-DEFAULT-PORT

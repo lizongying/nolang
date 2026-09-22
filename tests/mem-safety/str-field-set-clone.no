@@ -78,7 +78,9 @@ test-param-into-field-option = () (ok bool) {
     q = mkopt('B')
     q: {
         ok -> got = it.name
+
         nil -> got = 'nil'
+
         err -> got = 'err'
     }
     got == 'B' -> ok = true

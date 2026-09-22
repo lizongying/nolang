@@ -63,9 +63,9 @@ vy[0] = -py2 / sm
 vz[0] = -pz2 / sm
 
 ; print initial values for debugging
-tvx f64 = vx[0]
-tvy f64 = vy[0]
-tvz f64 = vz[0]
+tvx = vx[0]
+tvy = vy[0]
+tvz = vz[0]
 print('vx[0] = {tvx:.17g}')
 print('vy[0] = {tvy:.17g}')
 print('vz[0] = {tvz:.17g}')

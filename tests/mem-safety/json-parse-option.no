@@ -9,15 +9,19 @@ j: {
     ok -> {
         name, found = it.get-str('name')
         found -> print('ok: name=' - name)
+
         -> print('fail: name not found')
-        
+
         age, found2 = it.get-num('age')
         found2 -> print('ok: age found')
+
         -> print('fail: age not found')
     }
+
     nil -> {
         print('fail: parse returned nil')
     }
+
     err -> {
         print('fail: parse returned error')
     }
@@ -27,7 +31,9 @@ j: {
 j2 = json.parse('')
 j2: {
     ok -> print('fail: empty string should not be ok')
+
     nil -> print('ok: empty string returns nil')
+
     err -> print('ok: empty string returns err')
 }
 
@@ -35,7 +41,9 @@ j2: {
 j3 = json.parse('{invalid}')
 j3: {
     ok -> print('fail: invalid json should not be ok')
+
     nil -> print('ok: invalid json returns nil')
+
     err -> print('ok: invalid json returns err')
 }
 
@@ -43,7 +51,9 @@ j3: {
 j4 = json.parse('[1,2,3]')
 j4: {
     ok -> print('ok: array parsed')
+
     nil -> print('fail: array returns nil')
+
     err -> print('fail: array returns err')
 }
 

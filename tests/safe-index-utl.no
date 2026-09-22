@@ -9,19 +9,21 @@
 ; 不會執行，因此越界也不會崩潰。
 
 safe-utl = (i i64) (res ?i64) {
-    a [4]i64 = [10, 20, 30, 40]
-    x = a[i]          ; 未標型別區域變數承接安全索引 → 自動 x ?= a[i]
+    a = [10, 20, 30, 40]
+    x = a[i]; 未標型別區域變數承接安全索引 → 自動 x ?= a[i]
     io.out('untyped-local x = ')
-    io.out(x)         ; 應印出 20（ib=1），證明 x 正確推論為 i64 而非被污染成 str
+    io.out(x); 應印出 20（ib=1），證明 x 正確推論為 i64 而非被污染成 str
     print('')
     res = x
 }
 
-main = () () {
-    ib i64 = 1
-    oob i64 = 9
+main = () {
+    ib = 1
+    oob = 9
+
     ; 範圍內：x 正確解箱為 i64，印出 20
     safe-utl(ib)
+
     ; 越界：res=none，safe-utl 提前 return，不崩潰
     safe-utl(oob)
     io.out('utl OOB: no-crash')

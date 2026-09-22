@@ -30,6 +30,7 @@ print('ok: create table')
 r = d.exec('INSERT INTO users (name, age, active) VALUES (\'Alice\', 30.5, 1)')
 {
     r.affected == 1 -> print('ok: insert affected')
+
     -> {
         print('fail: insert affected=')
         print(r.affected)
@@ -39,6 +40,7 @@ r = d.exec('INSERT INTO users (name, age, active) VALUES (\'Alice\', 30.5, 1)')
 ; 測試 4: last-id 逐列遞增（INTEGER PRIMARY KEY 的 rowid）
 {
     r.last-id == 1 -> print('ok: insert last-id')
+
     -> {
         print('fail: insert last-id=')
         print(r.last-id)
@@ -47,6 +49,7 @@ r = d.exec('INSERT INTO users (name, age, active) VALUES (\'Alice\', 30.5, 1)')
 r = d.exec('INSERT INTO users (name, age, active) VALUES (\'Bob\', 25.0, 0)')
 {
     r.last-id == 2 -> print('ok: insert last-id increments')
+
     -> {
         print('fail: insert last-id=')
         print(r.last-id)
@@ -60,40 +63,49 @@ rs.stmt == 0 -> {
     d.close()
     return
 }
-n i64 = 0
-sum-id i64 = 0
-alice-ok i64 = 0
-bob-ok i64 = 0
-{
+n = 0
+sum-id = 0
+alice-ok = 0
+bob-ok = 0
+(rs.next()) {
     id = rs.scan-int(0)
     nm = rs.scan-str(1)
     age = rs.scan-float(2)
-    #{overflow = wrap}
+
+    #{overflow=wrap}
     n = n + 1
-    #{overflow = wrap}
+
+    #{overflow=wrap}
     sum-id = sum-id + id
     {
         nm == 'Alice' -> {
             age > 30.0 -> {
                 age < 31.0 -> alice-ok = 1
+
                 -> alice-ok = 0
             }
+
             -> alice-ok = 0
         }
+
         -> {
             nm == 'Bob' -> {
                 age > 24.0 -> {
                     age < 26.0 -> bob-ok = 1
+
                     -> bob-ok = 0
                 }
+
                 -> bob-ok = 0
             }
+
             -> bob-ok = 0
         }
     }
-} (rs.next())
+}
 {
     n == 2 -> print('ok: query row count')
+
     -> {
         print('fail: row count=')
         print(n)
@@ -101,6 +113,7 @@ bob-ok i64 = 0
 }
 {
     sum-id == 3 -> print('ok: query sum-id')
+
     -> {
         print('fail: sum-id=')
         print(sum-id)
@@ -108,15 +121,18 @@ bob-ok i64 = 0
 }
 {
     alice-ok == 1 -> print('ok: scan row Alice')
+
     -> print('fail: scan row Alice')
 }
 {
     bob-ok == 1 -> print('ok: scan row Bob')
+
     -> print('fail: scan row Bob')
 }
 rc-rs = rs.close()
 {
     rc-rs -> print('ok: rows.close')
+
     -> print('fail: rows.close')
 }
 
@@ -127,30 +143,37 @@ s.handle == 0 -> {
     d.close()
     return
 }
-ok-bind i64 = 0
+ok-bind = 0
 {
     s.bind-str(1, 'Carol') -> {
-        #{overflow = wrap}
+
+        #{overflow=wrap}
         ok-bind = ok-bind + 1
     }
+
     -> ok-bind = 0
 }
 {
     s.bind-int(2, 40) -> {
-        #{overflow = wrap}
+
+        #{overflow=wrap}
         ok-bind = ok-bind + 1
     }
+
     -> ok-bind = 0
 }
 {
     s.bind-bool(3, true) -> {
-        #{overflow = wrap}
+
+        #{overflow=wrap}
         ok-bind = ok-bind + 1
     }
+
     -> ok-bind = 0
 }
 {
     ok-bind == 3 -> print('ok: bind-str/bind-int/bind-bool')
+
     -> {
         print('fail: bind count=')
         print(ok-bind)
@@ -159,6 +182,7 @@ ok-bind i64 = 0
 r2 = s.exec()
 {
     r2.affected == 1 -> print('ok: prepared insert affected')
+
     -> {
         print('fail: prepared insert affected=')
         print(r2.affected)
@@ -166,6 +190,7 @@ r2 = s.exec()
 }
 {
     r2.last-id == 3 -> print('ok: prepared insert last-id')
+
     -> {
         print('fail: prepared insert last-id=')
         print(r2.last-id)
@@ -174,6 +199,7 @@ r2 = s.exec()
 rc-s = s.close()
 {
     rc-s -> print('ok: stmt.close')
+
     -> print('fail: stmt.close')
 }
 
@@ -193,11 +219,12 @@ rs2.stmt == 0 -> {
     return
 }
 name2 = ''
-{
+(rs2.next()) {
     name2 = rs2.scan-str(0)
-} (rs2.next())
+}
 {
     name2 == 'Bob' -> print('ok: prepared query bind-bool filter')
+
     -> {
         print('fail: prepared query name=')
         print(name2)
@@ -212,6 +239,7 @@ s3.bind-bool(1, true)
 r3 = s3.exec()
 {
     r3.affected == 2 -> print('ok: stmt.exec multi-row affected')
+
     -> {
         print('fail: stmt.exec affected=')
         print(r3.affected)
@@ -221,13 +249,15 @@ s3.close()
 
 ; 測試 9: 刪除後列數應為 1（只剩 Bob）
 rs3 rows = d.query('SELECT id FROM users')
-total i64 = 0
-{
-    #{overflow = wrap}
+total = 0
+(rs3.next()) {
+
+    #{overflow=wrap}
     total = total + 1
-} (rs3.next())
+}
 {
     total == 1 -> print('ok: rows after delete')
+
     -> {
         print('fail: rows after delete=')
         print(total)
@@ -239,6 +269,7 @@ rs3.close()
 rc-db = d.close()
 {
     rc-db -> print('ok: db.close')
+
     -> print('fail: db.close')
 }
 

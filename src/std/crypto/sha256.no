@@ -30,28 +30,28 @@ sha256-block = (s []u32, h0 u32, h1 u32, h2 u32, h3 u32, h4 u32, h5 u32, h6 u32,
     mask u32 = 4294967295
 
     ; 初始狀態
-    a u32 = h0
-    b u32 = h1
-    c u32 = h2
-    d u32 = h3
-    e u32 = h4
-    f u32 = h5
-    g u32 = h6
-    h u32 = h7
+    a = h0
+    b = h1
+    c = h2
+    d = h3
+    e = h4
+    f = h5
+    g = h6
+    h = h7
 
     ; ---- 第 0 輪 (K = 0x428A2F98 = 1116352408) ----
-    s1 u32 = ((e >> 6) | (e << 26)) & mask
+    s1 = ((e >> 6) | (e << 26)) & mask
     s1 = s1 ^ ((e >> 11) | (e << 21)) ^ ((e >> 25) | (e << 7))
-    ch u32 = (e & f) ^ ((mask ^ e) & g)
-    s0 u32 = ((a >> 2) | (a << 30)) & mask
+    ch = (e & f) ^ ((mask ^ e) & g)
+    s0 = ((a >> 2) | (a << 30)) & mask
     s0 = s0 ^ ((a >> 13) | (a << 19)) ^ ((a >> 22) | (a << 10))
-    maj u32 = (a & b) ^ (a & c) ^ (b & c)
+    maj = (a & b) ^ (a & c) ^ (b & c)
 
     #{index-out=0, overflow=wrap}
-    t1 u32 = (h + s1 + ch + 1116352408 + s[0]) & mask
+    t1 = (h + s1 + ch + 1116352408 + s[0]) & mask
 
     #{overflow=wrap}
-    t2 u32 = (s0 + maj) & mask
+    t2 = (s0 + maj) & mask
     h = g
     g = f
     f = e
@@ -458,65 +458,65 @@ sha256-block = (s []u32, h0 u32, h1 u32, h2 u32, h3 u32, h4 u32, h5 u32, h6 u32,
     ; ---- 第 16-63 輪：擴展訊息排程 + 壓縮 ----
     ; 預計算所有 W[16..63]
     #{index-out=0}
-    w0 u32 = s[0]
+    w0 = s[0]
 
     #{index-out=0}
-    w1 u32 = s[1]
+    w1 = s[1]
 
     #{index-out=0}
-    w2 u32 = s[2]
+    w2 = s[2]
 
     #{index-out=0}
-    w3 u32 = s[3]
+    w3 = s[3]
 
     #{index-out=0}
-    w4 u32 = s[4]
+    w4 = s[4]
 
     #{index-out=0}
-    w5 u32 = s[5]
+    w5 = s[5]
 
     #{index-out=0}
-    w6 u32 = s[6]
+    w6 = s[6]
 
     #{index-out=0}
-    w7 u32 = s[7]
+    w7 = s[7]
 
     #{index-out=0}
-    w8 u32 = s[8]
+    w8 = s[8]
 
     #{index-out=0}
-    w9 u32 = s[9]
+    w9 = s[9]
 
     #{index-out=0}
-    w10 u32 = s[10]
+    w10 = s[10]
 
     #{index-out=0}
-    w11 u32 = s[11]
+    w11 = s[11]
 
     #{index-out=0}
-    w12 u32 = s[12]
+    w12 = s[12]
 
     #{index-out=0}
-    w13 u32 = s[13]
+    w13 = s[13]
 
     #{index-out=0}
-    w14 u32 = s[14]
+    w14 = s[14]
 
     #{index-out=0}
-    w15 u32 = s[15]
+    w15 = s[15]
 
     ; W[16]: σ1(w14) + w9 + σ0(w1) + w0
-    s0-r7 u32 = ((w1 >> 7) | (w1 << 25)) & mask
-    s0-r18 u32 = ((w1 >> 18) | (w1 << 14)) & mask
-    s0-sh3 u32 = w1 >> 3
-    s0-w1 u32 = s0-r7 ^ s0-r18 ^ s0-sh3
-    s1-r17 u32 = ((w14 >> 17) | (w14 << 15)) & mask
-    s1-r19 u32 = ((w14 >> 19) | (w14 << 13)) & mask
-    s1-sh10 u32 = w14 >> 10
-    s1-w14 u32 = s1-r17 ^ s1-r19 ^ s1-sh10
+    s0-r7 = ((w1 >> 7) | (w1 << 25)) & mask
+    s0-r18 = ((w1 >> 18) | (w1 << 14)) & mask
+    s0-sh3 = w1 >> 3
+    s0-w1 = s0-r7 ^ s0-r18 ^ s0-sh3
+    s1-r17 = ((w14 >> 17) | (w14 << 15)) & mask
+    s1-r19 = ((w14 >> 19) | (w14 << 13)) & mask
+    s1-sh10 = w14 >> 10
+    s1-w14 = s1-r17 ^ s1-r19 ^ s1-sh10
 
     #{overflow=wrap}
-    w16 u32 = (w0 + s0-w1 + w9 + s1-w14) & mask
+    w16 = (w0 + s0-w1 + w9 + s1-w14) & mask
 
     ; W[17]: σ1(w15) + w10 + σ0(w2) + w1
     s0-r7 = ((w2 >> 7) | (w2 << 25)) & mask
@@ -529,7 +529,7 @@ sha256-block = (s []u32, h0 u32, h1 u32, h2 u32, h3 u32, h4 u32, h5 u32, h6 u32,
     s1-w15 = s1-r17 ^ s1-r19 ^ s1-sh10
 
     #{overflow=wrap}
-    w17 u32 = (w1 + s0-w2 + w10 + s1-w15) & mask
+    w17 = (w1 + s0-w2 + w10 + s1-w15) & mask
 
     ; W[18]: σ1(w16) + w11 + σ0(w3) + w2
     s0-r7 = ((w3 >> 7) | (w3 << 25)) & mask
@@ -542,7 +542,7 @@ sha256-block = (s []u32, h0 u32, h1 u32, h2 u32, h3 u32, h4 u32, h5 u32, h6 u32,
     s1-w16 = s1-r17 ^ s1-r19 ^ s1-sh10
 
     #{overflow=wrap}
-    w18 u32 = (w2 + s0-w3 + w11 + s1-w16) & mask
+    w18 = (w2 + s0-w3 + w11 + s1-w16) & mask
 
     ; W[19]: σ1(w17) + w12 + σ0(w4) + w3
     s0-r7 = ((w4 >> 7) | (w4 << 25)) & mask
@@ -555,7 +555,7 @@ sha256-block = (s []u32, h0 u32, h1 u32, h2 u32, h3 u32, h4 u32, h5 u32, h6 u32,
     s1-w17 = s1-r17 ^ s1-r19 ^ s1-sh10
 
     #{overflow=wrap}
-    w19 u32 = (w3 + s0-w4 + w12 + s1-w17) & mask
+    w19 = (w3 + s0-w4 + w12 + s1-w17) & mask
 
     ; W[20]: σ1(w18) + w13 + σ0(w5) + w4
     s0-r7 = ((w5 >> 7) | (w5 << 25)) & mask
@@ -568,7 +568,7 @@ sha256-block = (s []u32, h0 u32, h1 u32, h2 u32, h3 u32, h4 u32, h5 u32, h6 u32,
     s1-w18 = s1-r17 ^ s1-r19 ^ s1-sh10
 
     #{overflow=wrap}
-    w20 u32 = (w4 + s0-w5 + w13 + s1-w18) & mask
+    w20 = (w4 + s0-w5 + w13 + s1-w18) & mask
 
     ; W[21]: σ1(w19) + w14 + σ0(w6) + w5
     s0-r7 = ((w6 >> 7) | (w6 << 25)) & mask
@@ -581,7 +581,7 @@ sha256-block = (s []u32, h0 u32, h1 u32, h2 u32, h3 u32, h4 u32, h5 u32, h6 u32,
     s1-w19 = s1-r17 ^ s1-r19 ^ s1-sh10
 
     #{overflow=wrap}
-    w21 u32 = (w5 + s0-w6 + w14 + s1-w19) & mask
+    w21 = (w5 + s0-w6 + w14 + s1-w19) & mask
 
     ; W[22]: σ1(w20) + w15 + σ0(w7) + w6
     s0-r7 = ((w7 >> 7) | (w7 << 25)) & mask
@@ -594,7 +594,7 @@ sha256-block = (s []u32, h0 u32, h1 u32, h2 u32, h3 u32, h4 u32, h5 u32, h6 u32,
     s1-w20 = s1-r17 ^ s1-r19 ^ s1-sh10
 
     #{overflow=wrap}
-    w22 u32 = (w6 + s0-w7 + w15 + s1-w20) & mask
+    w22 = (w6 + s0-w7 + w15 + s1-w20) & mask
 
     ; W[23]: σ1(w21) + w16 + σ0(w8) + w7
     s0-r7 = ((w8 >> 7) | (w8 << 25)) & mask
@@ -607,7 +607,7 @@ sha256-block = (s []u32, h0 u32, h1 u32, h2 u32, h3 u32, h4 u32, h5 u32, h6 u32,
     s1-w21 = s1-r17 ^ s1-r19 ^ s1-sh10
 
     #{overflow=wrap}
-    w23 u32 = (w7 + s0-w8 + w16 + s1-w21) & mask
+    w23 = (w7 + s0-w8 + w16 + s1-w21) & mask
 
     ; W[24]: σ1(w22) + w17 + σ0(w9) + w8
     s0-r7 = ((w9 >> 7) | (w9 << 25)) & mask
@@ -620,7 +620,7 @@ sha256-block = (s []u32, h0 u32, h1 u32, h2 u32, h3 u32, h4 u32, h5 u32, h6 u32,
     s1-w22 = s1-r17 ^ s1-r19 ^ s1-sh10
 
     #{overflow=wrap}
-    w24 u32 = (w8 + s0-w9 + w17 + s1-w22) & mask
+    w24 = (w8 + s0-w9 + w17 + s1-w22) & mask
 
     ; W[25]: σ1(w23) + w18 + σ0(w10) + w9
     s0-r7 = ((w10 >> 7) | (w10 << 25)) & mask
@@ -633,7 +633,7 @@ sha256-block = (s []u32, h0 u32, h1 u32, h2 u32, h3 u32, h4 u32, h5 u32, h6 u32,
     s1-w23 = s1-r17 ^ s1-r19 ^ s1-sh10
 
     #{overflow=wrap}
-    w25 u32 = (w9 + s0-w10 + w18 + s1-w23) & mask
+    w25 = (w9 + s0-w10 + w18 + s1-w23) & mask
 
     ; W[26]: σ1(w24) + w19 + σ0(w11) + w10
     s0-r7 = ((w11 >> 7) | (w11 << 25)) & mask
@@ -646,7 +646,7 @@ sha256-block = (s []u32, h0 u32, h1 u32, h2 u32, h3 u32, h4 u32, h5 u32, h6 u32,
     s1-w24 = s1-r17 ^ s1-r19 ^ s1-sh10
 
     #{overflow=wrap}
-    w26 u32 = (w10 + s0-w11 + w19 + s1-w24) & mask
+    w26 = (w10 + s0-w11 + w19 + s1-w24) & mask
 
     ; W[27]: σ1(w25) + w20 + σ0(w12) + w11
     s0-r7 = ((w12 >> 7) | (w12 << 25)) & mask
@@ -659,7 +659,7 @@ sha256-block = (s []u32, h0 u32, h1 u32, h2 u32, h3 u32, h4 u32, h5 u32, h6 u32,
     s1-w25 = s1-r17 ^ s1-r19 ^ s1-sh10
 
     #{overflow=wrap}
-    w27 u32 = (w11 + s0-w12 + w20 + s1-w25) & mask
+    w27 = (w11 + s0-w12 + w20 + s1-w25) & mask
 
     ; W[28]: σ1(w26) + w21 + σ0(w13) + w12
     s0-r7 = ((w13 >> 7) | (w13 << 25)) & mask
@@ -672,7 +672,7 @@ sha256-block = (s []u32, h0 u32, h1 u32, h2 u32, h3 u32, h4 u32, h5 u32, h6 u32,
     s1-w26 = s1-r17 ^ s1-r19 ^ s1-sh10
 
     #{overflow=wrap}
-    w28 u32 = (w12 + s0-w13 + w21 + s1-w26) & mask
+    w28 = (w12 + s0-w13 + w21 + s1-w26) & mask
 
     ; W[29]: σ1(w27) + w22 + σ0(w14) + w13
     s0-r7 = ((w14 >> 7) | (w14 << 25)) & mask
@@ -685,7 +685,7 @@ sha256-block = (s []u32, h0 u32, h1 u32, h2 u32, h3 u32, h4 u32, h5 u32, h6 u32,
     s1-w27 = s1-r17 ^ s1-r19 ^ s1-sh10
 
     #{overflow=wrap}
-    w29 u32 = (w13 + s0-w14 + w22 + s1-w27) & mask
+    w29 = (w13 + s0-w14 + w22 + s1-w27) & mask
 
     ; W[30]: σ1(w28) + w23 + σ0(w15) + w14
     s0-r7 = ((w15 >> 7) | (w15 << 25)) & mask
@@ -698,7 +698,7 @@ sha256-block = (s []u32, h0 u32, h1 u32, h2 u32, h3 u32, h4 u32, h5 u32, h6 u32,
     s1-w28 = s1-r17 ^ s1-r19 ^ s1-sh10
 
     #{overflow=wrap}
-    w30 u32 = (w14 + s0-w15 + w23 + s1-w28) & mask
+    w30 = (w14 + s0-w15 + w23 + s1-w28) & mask
 
     ; W[31]: σ1(w29) + w24 + σ0(w16) + w15
     s0-r7 = ((w16 >> 7) | (w16 << 25)) & mask
@@ -711,7 +711,7 @@ sha256-block = (s []u32, h0 u32, h1 u32, h2 u32, h3 u32, h4 u32, h5 u32, h6 u32,
     s1-w29 = s1-r17 ^ s1-r19 ^ s1-sh10
 
     #{overflow=wrap}
-    w31 u32 = (w15 + s0-w16 + w24 + s1-w29) & mask
+    w31 = (w15 + s0-w16 + w24 + s1-w29) & mask
 
     ; W[32]: σ1(w30) + w25 + σ0(w17) + w16
     s0-r7 = ((w17 >> 7) | (w17 << 25)) & mask
@@ -724,7 +724,7 @@ sha256-block = (s []u32, h0 u32, h1 u32, h2 u32, h3 u32, h4 u32, h5 u32, h6 u32,
     s1-w30 = s1-r17 ^ s1-r19 ^ s1-sh10
 
     #{overflow=wrap}
-    w32 u32 = (w16 + s0-w17 + w25 + s1-w30) & mask
+    w32 = (w16 + s0-w17 + w25 + s1-w30) & mask
 
     ; W[33]: σ1(w31) + w26 + σ0(w18) + w17
     s0-r7 = ((w18 >> 7) | (w18 << 25)) & mask
@@ -737,7 +737,7 @@ sha256-block = (s []u32, h0 u32, h1 u32, h2 u32, h3 u32, h4 u32, h5 u32, h6 u32,
     s1-w31 = s1-r17 ^ s1-r19 ^ s1-sh10
 
     #{overflow=wrap}
-    w33 u32 = (w17 + s0-w18 + w26 + s1-w31) & mask
+    w33 = (w17 + s0-w18 + w26 + s1-w31) & mask
 
     ; W[34]: σ1(w32) + w27 + σ0(w19) + w18
     s0-r7 = ((w19 >> 7) | (w19 << 25)) & mask
@@ -750,7 +750,7 @@ sha256-block = (s []u32, h0 u32, h1 u32, h2 u32, h3 u32, h4 u32, h5 u32, h6 u32,
     s1-w32 = s1-r17 ^ s1-r19 ^ s1-sh10
 
     #{overflow=wrap}
-    w34 u32 = (w18 + s0-w19 + w27 + s1-w32) & mask
+    w34 = (w18 + s0-w19 + w27 + s1-w32) & mask
 
     ; W[35]: σ1(w33) + w28 + σ0(w20) + w19
     s0-r7 = ((w20 >> 7) | (w20 << 25)) & mask
@@ -763,7 +763,7 @@ sha256-block = (s []u32, h0 u32, h1 u32, h2 u32, h3 u32, h4 u32, h5 u32, h6 u32,
     s1-w33 = s1-r17 ^ s1-r19 ^ s1-sh10
 
     #{overflow=wrap}
-    w35 u32 = (w19 + s0-w20 + w28 + s1-w33) & mask
+    w35 = (w19 + s0-w20 + w28 + s1-w33) & mask
 
     ; W[36]: σ1(w34) + w29 + σ0(w21) + w20
     s0-r7 = ((w21 >> 7) | (w21 << 25)) & mask
@@ -776,7 +776,7 @@ sha256-block = (s []u32, h0 u32, h1 u32, h2 u32, h3 u32, h4 u32, h5 u32, h6 u32,
     s1-w34 = s1-r17 ^ s1-r19 ^ s1-sh10
 
     #{overflow=wrap}
-    w36 u32 = (w20 + s0-w21 + w29 + s1-w34) & mask
+    w36 = (w20 + s0-w21 + w29 + s1-w34) & mask
 
     ; W[37]: σ1(w35) + w30 + σ0(w22) + w21
     s0-r7 = ((w22 >> 7) | (w22 << 25)) & mask
@@ -789,7 +789,7 @@ sha256-block = (s []u32, h0 u32, h1 u32, h2 u32, h3 u32, h4 u32, h5 u32, h6 u32,
     s1-w35 = s1-r17 ^ s1-r19 ^ s1-sh10
 
     #{overflow=wrap}
-    w37 u32 = (w21 + s0-w22 + w30 + s1-w35) & mask
+    w37 = (w21 + s0-w22 + w30 + s1-w35) & mask
 
     ; W[38]: σ1(w36) + w31 + σ0(w23) + w22
     s0-r7 = ((w23 >> 7) | (w23 << 25)) & mask
@@ -802,7 +802,7 @@ sha256-block = (s []u32, h0 u32, h1 u32, h2 u32, h3 u32, h4 u32, h5 u32, h6 u32,
     s1-w36 = s1-r17 ^ s1-r19 ^ s1-sh10
 
     #{overflow=wrap}
-    w38 u32 = (w22 + s0-w23 + w31 + s1-w36) & mask
+    w38 = (w22 + s0-w23 + w31 + s1-w36) & mask
 
     ; W[39]: σ1(w37) + w32 + σ0(w24) + w23
     s0-r7 = ((w24 >> 7) | (w24 << 25)) & mask
@@ -815,7 +815,7 @@ sha256-block = (s []u32, h0 u32, h1 u32, h2 u32, h3 u32, h4 u32, h5 u32, h6 u32,
     s1-w37 = s1-r17 ^ s1-r19 ^ s1-sh10
 
     #{overflow=wrap}
-    w39 u32 = (w23 + s0-w24 + w32 + s1-w37) & mask
+    w39 = (w23 + s0-w24 + w32 + s1-w37) & mask
 
     ; W[40]: σ1(w38) + w33 + σ0(w25) + w24
     s0-r7 = ((w25 >> 7) | (w25 << 25)) & mask
@@ -828,7 +828,7 @@ sha256-block = (s []u32, h0 u32, h1 u32, h2 u32, h3 u32, h4 u32, h5 u32, h6 u32,
     s1-w38 = s1-r17 ^ s1-r19 ^ s1-sh10
 
     #{overflow=wrap}
-    w40 u32 = (w24 + s0-w25 + w33 + s1-w38) & mask
+    w40 = (w24 + s0-w25 + w33 + s1-w38) & mask
 
     ; W[41]: σ1(w39) + w34 + σ0(w26) + w25
     s0-r7 = ((w26 >> 7) | (w26 << 25)) & mask
@@ -841,7 +841,7 @@ sha256-block = (s []u32, h0 u32, h1 u32, h2 u32, h3 u32, h4 u32, h5 u32, h6 u32,
     s1-w39 = s1-r17 ^ s1-r19 ^ s1-sh10
 
     #{overflow=wrap}
-    w41 u32 = (w25 + s0-w26 + w34 + s1-w39) & mask
+    w41 = (w25 + s0-w26 + w34 + s1-w39) & mask
 
     ; W[42]: σ1(w40) + w35 + σ0(w27) + w26
     s0-r7 = ((w27 >> 7) | (w27 << 25)) & mask
@@ -854,7 +854,7 @@ sha256-block = (s []u32, h0 u32, h1 u32, h2 u32, h3 u32, h4 u32, h5 u32, h6 u32,
     s1-w40 = s1-r17 ^ s1-r19 ^ s1-sh10
 
     #{overflow=wrap}
-    w42 u32 = (w26 + s0-w27 + w35 + s1-w40) & mask
+    w42 = (w26 + s0-w27 + w35 + s1-w40) & mask
 
     ; W[43]: σ1(w41) + w36 + σ0(w28) + w27
     s0-r7 = ((w28 >> 7) | (w28 << 25)) & mask
@@ -867,7 +867,7 @@ sha256-block = (s []u32, h0 u32, h1 u32, h2 u32, h3 u32, h4 u32, h5 u32, h6 u32,
     s1-w41 = s1-r17 ^ s1-r19 ^ s1-sh10
 
     #{overflow=wrap}
-    w43 u32 = (w27 + s0-w28 + w36 + s1-w41) & mask
+    w43 = (w27 + s0-w28 + w36 + s1-w41) & mask
 
     ; W[44]: σ1(w42) + w37 + σ0(w29) + w28
     s0-r7 = ((w29 >> 7) | (w29 << 25)) & mask
@@ -880,7 +880,7 @@ sha256-block = (s []u32, h0 u32, h1 u32, h2 u32, h3 u32, h4 u32, h5 u32, h6 u32,
     s1-w42 = s1-r17 ^ s1-r19 ^ s1-sh10
 
     #{overflow=wrap}
-    w44 u32 = (w28 + s0-w29 + w37 + s1-w42) & mask
+    w44 = (w28 + s0-w29 + w37 + s1-w42) & mask
 
     ; W[45]: σ1(w43) + w38 + σ0(w30) + w29
     s0-r7 = ((w30 >> 7) | (w30 << 25)) & mask
@@ -893,7 +893,7 @@ sha256-block = (s []u32, h0 u32, h1 u32, h2 u32, h3 u32, h4 u32, h5 u32, h6 u32,
     s1-w43 = s1-r17 ^ s1-r19 ^ s1-sh10
 
     #{overflow=wrap}
-    w45 u32 = (w29 + s0-w30 + w38 + s1-w43) & mask
+    w45 = (w29 + s0-w30 + w38 + s1-w43) & mask
 
     ; W[46]: σ1(w44) + w39 + σ0(w31) + w30
     s0-r7 = ((w31 >> 7) | (w31 << 25)) & mask
@@ -906,7 +906,7 @@ sha256-block = (s []u32, h0 u32, h1 u32, h2 u32, h3 u32, h4 u32, h5 u32, h6 u32,
     s1-w44 = s1-r17 ^ s1-r19 ^ s1-sh10
 
     #{overflow=wrap}
-    w46 u32 = (w30 + s0-w31 + w39 + s1-w44) & mask
+    w46 = (w30 + s0-w31 + w39 + s1-w44) & mask
 
     ; W[47]: σ1(w45) + w40 + σ0(w32) + w31
     s0-r7 = ((w32 >> 7) | (w32 << 25)) & mask
@@ -919,7 +919,7 @@ sha256-block = (s []u32, h0 u32, h1 u32, h2 u32, h3 u32, h4 u32, h5 u32, h6 u32,
     s1-w45 = s1-r17 ^ s1-r19 ^ s1-sh10
 
     #{overflow=wrap}
-    w47 u32 = (w31 + s0-w32 + w40 + s1-w45) & mask
+    w47 = (w31 + s0-w32 + w40 + s1-w45) & mask
 
     ; W[48]: σ1(w46) + w41 + σ0(w33) + w32
     s0-r7 = ((w33 >> 7) | (w33 << 25)) & mask
@@ -932,7 +932,7 @@ sha256-block = (s []u32, h0 u32, h1 u32, h2 u32, h3 u32, h4 u32, h5 u32, h6 u32,
     s1-w46 = s1-r17 ^ s1-r19 ^ s1-sh10
 
     #{overflow=wrap}
-    w48 u32 = (w32 + s0-w33 + w41 + s1-w46) & mask
+    w48 = (w32 + s0-w33 + w41 + s1-w46) & mask
 
     ; W[49]: σ1(w47) + w42 + σ0(w34) + w33
     s0-r7 = ((w34 >> 7) | (w34 << 25)) & mask
@@ -945,7 +945,7 @@ sha256-block = (s []u32, h0 u32, h1 u32, h2 u32, h3 u32, h4 u32, h5 u32, h6 u32,
     s1-w47 = s1-r17 ^ s1-r19 ^ s1-sh10
 
     #{overflow=wrap}
-    w49 u32 = (w33 + s0-w34 + w42 + s1-w47) & mask
+    w49 = (w33 + s0-w34 + w42 + s1-w47) & mask
 
     ; W[50]: σ1(w48) + w43 + σ0(w35) + w34
     s0-r7 = ((w35 >> 7) | (w35 << 25)) & mask
@@ -958,7 +958,7 @@ sha256-block = (s []u32, h0 u32, h1 u32, h2 u32, h3 u32, h4 u32, h5 u32, h6 u32,
     s1-w48 = s1-r17 ^ s1-r19 ^ s1-sh10
 
     #{overflow=wrap}
-    w50 u32 = (w34 + s0-w35 + w43 + s1-w48) & mask
+    w50 = (w34 + s0-w35 + w43 + s1-w48) & mask
 
     ; W[51]: σ1(w49) + w44 + σ0(w36) + w35
     s0-r7 = ((w36 >> 7) | (w36 << 25)) & mask
@@ -971,7 +971,7 @@ sha256-block = (s []u32, h0 u32, h1 u32, h2 u32, h3 u32, h4 u32, h5 u32, h6 u32,
     s1-w49 = s1-r17 ^ s1-r19 ^ s1-sh10
 
     #{overflow=wrap}
-    w51 u32 = (w35 + s0-w36 + w44 + s1-w49) & mask
+    w51 = (w35 + s0-w36 + w44 + s1-w49) & mask
 
     ; W[52]: σ1(w50) + w45 + σ0(w37) + w36
     s0-r7 = ((w37 >> 7) | (w37 << 25)) & mask
@@ -984,7 +984,7 @@ sha256-block = (s []u32, h0 u32, h1 u32, h2 u32, h3 u32, h4 u32, h5 u32, h6 u32,
     s1-w50 = s1-r17 ^ s1-r19 ^ s1-sh10
 
     #{overflow=wrap}
-    w52 u32 = (w36 + s0-w37 + w45 + s1-w50) & mask
+    w52 = (w36 + s0-w37 + w45 + s1-w50) & mask
 
     ; W[53]: σ1(w51) + w46 + σ0(w38) + w37
     s0-r7 = ((w38 >> 7) | (w38 << 25)) & mask
@@ -997,7 +997,7 @@ sha256-block = (s []u32, h0 u32, h1 u32, h2 u32, h3 u32, h4 u32, h5 u32, h6 u32,
     s1-w51 = s1-r17 ^ s1-r19 ^ s1-sh10
 
     #{overflow=wrap}
-    w53 u32 = (w37 + s0-w38 + w46 + s1-w51) & mask
+    w53 = (w37 + s0-w38 + w46 + s1-w51) & mask
 
     ; W[54]: σ1(w52) + w47 + σ0(w39) + w38
     s0-r7 = ((w39 >> 7) | (w39 << 25)) & mask
@@ -1010,7 +1010,7 @@ sha256-block = (s []u32, h0 u32, h1 u32, h2 u32, h3 u32, h4 u32, h5 u32, h6 u32,
     s1-w52 = s1-r17 ^ s1-r19 ^ s1-sh10
 
     #{overflow=wrap}
-    w54 u32 = (w38 + s0-w39 + w47 + s1-w52) & mask
+    w54 = (w38 + s0-w39 + w47 + s1-w52) & mask
 
     ; W[55]: σ1(w53) + w48 + σ0(w40) + w39
     s0-r7 = ((w40 >> 7) | (w40 << 25)) & mask
@@ -1023,7 +1023,7 @@ sha256-block = (s []u32, h0 u32, h1 u32, h2 u32, h3 u32, h4 u32, h5 u32, h6 u32,
     s1-w53 = s1-r17 ^ s1-r19 ^ s1-sh10
 
     #{overflow=wrap}
-    w55 u32 = (w39 + s0-w40 + w48 + s1-w53) & mask
+    w55 = (w39 + s0-w40 + w48 + s1-w53) & mask
 
     ; W[56]: σ1(w54) + w49 + σ0(w41) + w40
     s0-r7 = ((w41 >> 7) | (w41 << 25)) & mask
@@ -1036,7 +1036,7 @@ sha256-block = (s []u32, h0 u32, h1 u32, h2 u32, h3 u32, h4 u32, h5 u32, h6 u32,
     s1-w54 = s1-r17 ^ s1-r19 ^ s1-sh10
 
     #{overflow=wrap}
-    w56 u32 = (w40 + s0-w41 + w49 + s1-w54) & mask
+    w56 = (w40 + s0-w41 + w49 + s1-w54) & mask
 
     ; W[57]: σ1(w55) + w50 + σ0(w42) + w41
     s0-r7 = ((w42 >> 7) | (w42 << 25)) & mask
@@ -1049,7 +1049,7 @@ sha256-block = (s []u32, h0 u32, h1 u32, h2 u32, h3 u32, h4 u32, h5 u32, h6 u32,
     s1-w55 = s1-r17 ^ s1-r19 ^ s1-sh10
 
     #{overflow=wrap}
-    w57 u32 = (w41 + s0-w42 + w50 + s1-w55) & mask
+    w57 = (w41 + s0-w42 + w50 + s1-w55) & mask
 
     ; W[58]: σ1(w56) + w51 + σ0(w43) + w42
     s0-r7 = ((w43 >> 7) | (w43 << 25)) & mask
@@ -1062,7 +1062,7 @@ sha256-block = (s []u32, h0 u32, h1 u32, h2 u32, h3 u32, h4 u32, h5 u32, h6 u32,
     s1-w56 = s1-r17 ^ s1-r19 ^ s1-sh10
 
     #{overflow=wrap}
-    w58 u32 = (w42 + s0-w43 + w51 + s1-w56) & mask
+    w58 = (w42 + s0-w43 + w51 + s1-w56) & mask
 
     ; W[59]: σ1(w57) + w52 + σ0(w44) + w43
     s0-r7 = ((w44 >> 7) | (w44 << 25)) & mask
@@ -1075,7 +1075,7 @@ sha256-block = (s []u32, h0 u32, h1 u32, h2 u32, h3 u32, h4 u32, h5 u32, h6 u32,
     s1-w57 = s1-r17 ^ s1-r19 ^ s1-sh10
 
     #{overflow=wrap}
-    w59 u32 = (w43 + s0-w44 + w52 + s1-w57) & mask
+    w59 = (w43 + s0-w44 + w52 + s1-w57) & mask
 
     ; W[60]: σ1(w58) + w53 + σ0(w45) + w44
     s0-r7 = ((w45 >> 7) | (w45 << 25)) & mask
@@ -1088,7 +1088,7 @@ sha256-block = (s []u32, h0 u32, h1 u32, h2 u32, h3 u32, h4 u32, h5 u32, h6 u32,
     s1-w58 = s1-r17 ^ s1-r19 ^ s1-sh10
 
     #{overflow=wrap}
-    w60 u32 = (w44 + s0-w45 + w53 + s1-w58) & mask
+    w60 = (w44 + s0-w45 + w53 + s1-w58) & mask
 
     ; W[61]: σ1(w59) + w54 + σ0(w46) + w45
     s0-r7 = ((w46 >> 7) | (w46 << 25)) & mask
@@ -1101,7 +1101,7 @@ sha256-block = (s []u32, h0 u32, h1 u32, h2 u32, h3 u32, h4 u32, h5 u32, h6 u32,
     s1-w59 = s1-r17 ^ s1-r19 ^ s1-sh10
 
     #{overflow=wrap}
-    w61 u32 = (w45 + s0-w46 + w54 + s1-w59) & mask
+    w61 = (w45 + s0-w46 + w54 + s1-w59) & mask
 
     ; W[62]: σ1(w60) + w55 + σ0(w47) + w46
     s0-r7 = ((w47 >> 7) | (w47 << 25)) & mask
@@ -1114,7 +1114,7 @@ sha256-block = (s []u32, h0 u32, h1 u32, h2 u32, h3 u32, h4 u32, h5 u32, h6 u32,
     s1-w60 = s1-r17 ^ s1-r19 ^ s1-sh10
 
     #{overflow=wrap}
-    w62 u32 = (w46 + s0-w47 + w55 + s1-w60) & mask
+    w62 = (w46 + s0-w47 + w55 + s1-w60) & mask
 
     ; W[63]: σ1(w61) + w56 + σ0(w48) + w47
     s0-r7 = ((w48 >> 7) | (w48 << 25)) & mask
@@ -1127,7 +1127,7 @@ sha256-block = (s []u32, h0 u32, h1 u32, h2 u32, h3 u32, h4 u32, h5 u32, h6 u32,
     s1-w61 = s1-r17 ^ s1-r19 ^ s1-sh10
 
     #{overflow=wrap}
-    w63 u32 = (w47 + s0-w48 + w56 + s1-w61) & mask
+    w63 = (w47 + s0-w48 + w56 + s1-w61) & mask
 
     ; ---- 第 16 輪 (K = 0xE49B69C1 = 3835390401) ----
     s1 = ((e >> 6) | (e << 26)) & mask

@@ -5,7 +5,9 @@ test-val = () {
     n ?i64 = 42
     n: {
         err -> print('got-err')
+
         nil -> print('got-nil')
+
         -> {
             s = it.to-str()
             print(s)

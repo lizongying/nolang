@@ -5,6 +5,7 @@
 ;   - 直接遍历字符串 for c <- s：无 s[i]，不告警（内部应按码点迭代）
 ;   - 字节访问 s.byte(i)：不是 IndexExpression，不告警
 test-str-index-lint = () {
+
     ; ASCII 字面量：a[i] 单独一次，不告警
     a = 'hello'
     xa = a[1]
@@ -21,7 +22,8 @@ test-str-index-lint = () {
     sumB = 0
     for i <- [0..b.count()): {
         ch = b[i]
-        #{overflow = wrap}
+
+        #{overflow=wrap}
         sumB = sumB + 1
     }
     print(sumB)
@@ -30,7 +32,8 @@ test-str-index-lint = () {
     sumA = 0
     for j <- [0..a.count()): {
         ch = a[j]
-        #{overflow = wrap}
+
+        #{overflow=wrap}
         sumA = sumA + 1
     }
     print(sumA)
@@ -38,7 +41,8 @@ test-str-index-lint = () {
     ; 直接遍历字符串：无 s[i]，不告警
     sumC = 0
     for cc <- b: {
-        #{overflow = wrap}
+
+        #{overflow=wrap}
         sumC = sumC + 1
     }
     print(sumC)

@@ -1,10 +1,12 @@
 ; mkstemp-debug.no — minimal repro for fs.mkstemp multi-assign issue
 
 test-mkstemp = () {
-    #{overflow = wrap}
+
+    #{overflow=wrap}
     name, fd = fs.mkstemp('/tmp/test.XXXXXX')
     {
         fd >= 0 -> print(name)
+
         -> print('failed')
     }
 }

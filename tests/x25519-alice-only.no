@@ -4,27 +4,51 @@
 ; hex-to-bytes: 將 hex 字串轉為 [32]byte
 hex-to-bytes = (hex-str str) (out [32]byte) {
     i <- [0..32): {
-        #{overflow = wrap}
+
+        #{overflow=wrap}
         hi = hex-str[i * 2]
-        #{overflow = wrap}
+
+        #{overflow=wrap}
         lo = hex-str[i * 2 + 1]
         hi-v = 0
         lo-v = 0
         {
-            #{overflow = wrap}
-            hi >= 48 && hi <= 57 -> hi-v = hi - 48
-            #{overflow = wrap}
-            hi >= 97 && hi <= 102 -> hi-v = hi - 87
-            #{overflow = wrap}
-            hi >= 65 && hi <= 70 -> hi-v = hi - 55
+            hi >= 48 && hi <= 57 -> {
+
+                #{overflow=wrap}
+                hi-v = hi - 48
+            }
+
+            hi >= 97 && hi <= 102 -> {
+
+                #{overflow=wrap}
+                hi-v = hi - 87
+            }
+
+            hi >= 65 && hi <= 70 -> {
+
+                #{overflow=wrap}
+                hi-v = hi - 55
+            }
         }
         {
-            #{overflow = wrap}
-            lo >= 48 && lo <= 57 -> lo-v = lo - 48
-            #{overflow = wrap}
-            lo >= 97 && lo <= 102 -> lo-v = lo - 87
-            #{overflow = wrap}
-            lo >= 65 && lo <= 70 -> lo-v = lo - 55
+            lo >= 48 && lo <= 57 -> {
+
+                #{overflow=wrap}
+                lo-v = lo - 48
+            }
+
+            lo >= 97 && lo <= 102 -> {
+
+                #{overflow=wrap}
+                lo-v = lo - 87
+            }
+
+            lo >= 65 && lo <= 70 -> {
+
+                #{overflow=wrap}
+                lo-v = lo - 55
+            }
         }
         out[i] = (hi-v << 4) | lo-v
     }
@@ -65,6 +89,7 @@ main = () {
     ok = bytes-eq(alice-pub, alice-pub-expected)
     {
         ok == true -> print('PASS: Alice only')
+
         ok == false -> {
             print('FAIL: Alice only')
             eprint('expected: ')

@@ -70,7 +70,7 @@ client: {
     -> {
         c = it
         count = 0
-        {
+        !! {
             ev = c.next-event()
             ev: {
                 nil -> {
@@ -92,12 +92,13 @@ client: {
                         print('retry: ' - r)
                     }
                     print('---')
+
                     #{overflow=wrap}
                     count = count + 1
                     count >= 3 -> *
                 }
             }
-        } (true)
+        }
     }
 }
 

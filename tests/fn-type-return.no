@@ -16,9 +16,10 @@ get-42 = () (r i64) {
 apply-ret = (cb ret-cb) (out i64) {
     out = cb()
 }
-result i64 = 0
+result = 0
 result = apply-ret(get-42)
 {
     result == 42 -> print('ok: fn-type-return')
+
     -> print('fail: fn-type-return')
 }

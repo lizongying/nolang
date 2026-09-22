@@ -4,7 +4,7 @@ sidebar_position: 1
 
 # Nolang Introduction
 
-Nolang is an experimental systems programming language: memory-safe with no GC, semantically intuitive, and minimally syntactic. It adopts a pass-by-reference model and a safe scope model to achieve absolute memory safety.
+Nolang is a memory-safe, GC-free systems programming language with intuitive semantics and minimal syntax.
 
 ## Core Features
 

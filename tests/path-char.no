@@ -26,5 +26,6 @@ print(base)
 ok = p.exists()
 {
     ok -> print('exists: ok')
+
     -> print('not exists: ok')
 }

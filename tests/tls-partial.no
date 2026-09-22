@@ -4,7 +4,7 @@
 print('=== TLS Partial Tests ===')
 
 ; 測試 1: tls-put-u16
-space str = ' '
+space = ' '
 buf str = space.repeat(8)
 tls.put-u16(buf, 0, 0x1234)
 buf[0] != 0x12 -> {
@@ -17,7 +17,7 @@ print('PASS: tls-put-u16')
 buf2 str = space.repeat(8)
 buf2[0] = 0xab
 buf2[1] = 0xcd
-val i64 = 0
+val = 0
 val = tls.get-u16(buf2, 0)
 val != 0xabcd -> {
     print('FAIL: get-u16 expected 0xABCD')
@@ -39,7 +39,7 @@ buf4 str = space.repeat(8)
 buf4[0] = 0x12
 buf4[1] = 0x34
 buf4[2] = 0x56
-val2 i64 = 0
+val2 = 0
 val2 = tls.get-u24(buf4, 0)
 val2 != 0x123456 -> {
     print('FAIL: get-u24 expected 0x123456')

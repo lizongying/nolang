@@ -3,7 +3,7 @@
 
 ; test-frame-parse: 影格標頭解析
 test-frame-parse = () {
-    space str = ' '
+    space = ' '
     data str = space.repeat(16)
 
     ; 構建一個 HEADERS 影格標頭
@@ -45,14 +45,14 @@ test-frame-parse = () {
 
 ; test-frame-serialize: 影格標頭序列化
 test-frame-serialize = () {
-    space str = ' '
+    space = ' '
     f http2.frame
     f.length = 10
     f.frame-type = 1
     f.flags = 4
     f.stream-id = 1
     buf str = space.repeat(16)
-    next i64 = 0
+    next = 0
     next = f.serialize(buf, 0)
     next != 9 -> {
         print('FAIL: expected next=9')
@@ -113,7 +113,7 @@ test-http2-do-req-signature = () {
 
     ; 此測試只驗證函數可被正確呼叫，不實際連線
     ; 這行會嘗試連線並失敗，但驗證了函數簽名正確
-    #{overflow = wrap}
+    #{overflow=wrap}
     resp = http2.do-req('GET', 'http://127.0.0.1:1/test', '')
 
     ; 預期 nil（連線失敗）
@@ -126,7 +126,8 @@ test-http2-do-req-signature = () {
 
 ; test-http2-get-signature: http2-get 函數簽名驗證（vet-only）
 test-http2-get-signature = () {
-    #{overflow = wrap}
+
+    #{overflow=wrap}
     resp = http2.get('http://127.0.0.1:1/test')
     resp != nil -> {
         print('FAIL: expected connection failure')
@@ -137,7 +138,8 @@ test-http2-get-signature = () {
 
 ; test-http2-post-signature: http2-post 函數簽名驗證（vet-only）
 test-http2-post-signature = () {
-    #{overflow = wrap}
+
+    #{overflow=wrap}
     resp = http2.post('http://127.0.0.1:1/test', 'body')
     resp != nil -> {
         print('FAIL: expected connection failure')
@@ -148,7 +150,8 @@ test-http2-post-signature = () {
 
 ; test-run-all: 執行所有測試
 test-run-all = () {
-    #{overflow = wrap}
+
+    #{overflow=wrap}
     print('=== HTTP/2 Tests ===')
     test-frame-parse()
     test-frame-serialize()
@@ -156,6 +159,7 @@ test-run-all = () {
     test-http2-do-req-signature()
     test-http2-get-signature()
     test-http2-post-signature()
-    #{overflow = wrap}
+
+    #{overflow=wrap}
     print('=== HTTP/2 Tests Done ===')
 }

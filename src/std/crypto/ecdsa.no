@@ -500,9 +500,9 @@ ec-point-double = (p []byte) (r []byte) {
     ; Y' = M * (S - X') - 8 * Y⁴
     ; Z' = 2 * Y * Z
 
-    x []byte = p[0..32]
-    y []byte = p[32..64]
-    z []byte = p[64..96]
+    x = p[0..32]
+    y = p[32..64]
+    z = p[64..96]
 
     ; Z²
     z2 [32]byte
@@ -578,12 +578,12 @@ ec-point-double = (p []byte) (r []byte) {
 ; ec-point-add: 點加法 R = P + Q（P 在 Jacobian，Q 在 Jacobian）
 ; 返回 r []byte: 96 位元組
 ec-point-add = (p []byte, q []byte) (r []byte) {
-    x1 []byte = p[0..32]
-    y1 []byte = p[32..64]
-    z1 []byte = p[64..96]
-    x2 []byte = q[0..32]
-    y2 []byte = q[32..64]
-    z2 []byte = q[64..96]
+    x1 = p[0..32]
+    y1 = p[32..64]
+    z1 = p[64..96]
+    x2 = q[0..32]
+    y2 = q[32..64]
+    z2 = q[64..96]
 
     ; 檢查 P 是否為無窮遠點
     p-inf = 1
@@ -789,9 +789,9 @@ ec-scalar-mult = (k [32]byte, p []byte) (r []byte) {
 ; p []byte: Jacobian 點 (96 位元組)
 ; 返回 out [65]byte: 04 || x || y
 ec-point-to-bytes = (p []byte) (out [65]byte) {
-    px []byte = p[0..32]
-    py []byte = p[32..64]
-    pz []byte = p[64..96]
+    px = p[0..32]
+    py = p[32..64]
+    pz = p[64..96]
 
     ; 檢查無窮遠點
     z-is-zero = 1

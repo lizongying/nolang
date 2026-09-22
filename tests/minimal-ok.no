@@ -3,6 +3,7 @@ test-ok = () {
     n ?i64 = 200
     r = n: {
         ok(it > 127) -> 'too-big'
+
         -> 'in-range'
     }
     print(r)

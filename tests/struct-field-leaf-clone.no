@@ -55,10 +55,11 @@ get-child = (obj outer, i i64) (c ?outer) {
 }
 
 main = () {
+
     ; 情境一：父物件是具名局部變數
     a = mk-owned()
     check-str('寫入前父物件', a.p.name, 'alice')
-    c1 ?outer = get-child(a, 1)
+    c1 = get-child(a, 1)
     c1: {
         nil -> print('fail: c1 nil')
 
@@ -69,7 +70,7 @@ main = () {
     check-str('子視圖釋放後父物件仍完好', a.p.name, 'alice')
 
     ; 情境二：父物件來自 option
-    b ?outer = mk-opt()
+    b = mk-opt()
     b: {
         nil -> print('fail: b nil')
 

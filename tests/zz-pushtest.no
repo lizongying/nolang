@@ -1,4 +1,4 @@
 v []str
-s str = 'hello'
+s = 'hello'
 v.push(s)
 print(v[0])
