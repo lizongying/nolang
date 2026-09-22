@@ -80,19 +80,28 @@ func (f *formatter) formatStatement(stmt parser.Statement) bool {
 				others = append(others, e)
 			}
 		}
-		if len(others) > 0 {
+		if len(others) > 0 || len(overflowModes) > 0 {
+			// 多個註解合併為單行：#{intrinsic, overflow=wrap}。overflow 與
+			// 平台/泛型等其它鍵同屬一行，避免為 overflow 多佔一行（否則幾乎
+			// 每條含算術的陳述都自帶一行、嚴重膨脹且影響冪等）。
 			f.write("#{")
-			for i, e := range others {
-				if i > 0 {
+			first := true
+			for _, e := range others {
+				if !first {
 					f.write(", ")
 				}
 				f.write(e.String())
+				first = false
+			}
+			if len(overflowModes) > 0 {
+				if !first {
+					f.write(", ")
+				}
+				f.write("overflow=")
+				f.write(strings.Join(overflowModes, ","))
 			}
 			f.write("}")
 			f.newline()
-		}
-		if len(overflowModes) > 0 {
-			f.emitOverflowAnnotation(strings.Join(overflowModes, ","), true)
 		}
 	}
 
@@ -797,27 +806,27 @@ func (f *formatter) formatAnnotationStatement(s *parser.AnnotationStatement) boo
 		}
 	}
 	emitted := false
-	if len(others) > 0 {
+	if len(others) > 0 || len(overflowModes) > 0 {
+		// 多個註解合併為單行：#{intrinsic, overflow=wrap}（與
+		// formatStatement 的附加註解路徑一致）。
 		f.write("#{")
-		for i, e := range others {
-			if i > 0 {
+		first := true
+		for _, e := range others {
+			if !first {
 				f.write(", ")
 			}
 			f.write(e.String())
+			first = false
+		}
+		if len(overflowModes) > 0 {
+			if !first {
+				f.write(", ")
+			}
+			f.write("overflow=")
+			f.write(strings.Join(overflowModes, ","))
 		}
 		f.write("}")
 		emitted = true
-	}
-	if len(overflowModes) > 0 {
-		// 與 others 分屬不同行：若已印過 others 先換行。
-		if emitted {
-			f.newline()
-		}
-		// 獨立註解陳述：不帶尾隨換行，換行由間隙邏輯統一負責（避免與下一
-		// 陳述的間隙 newline 疊加產生空行、破壞冪等）。
-		if f.emitOverflowAnnotation(strings.Join(overflowModes, ","), false) {
-			emitted = true
-		}
 	}
 	return emitted
 }

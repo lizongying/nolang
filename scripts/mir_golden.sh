@@ -26,7 +26,13 @@
 # -------------------------------------------------------
 # 124 is "the harness's own alarm fired", i.e. "no verdict". It is NOT a
 # property of the file. Three very different things land there:
-#   (a) genuine infinite loop        -> 124 at ANY timeout  (tests/test-for2.no)
+#   (a) genuine infinite loop        -> 124 at ANY timeout. The corpus used to
+#       carry one on purpose: tests/test-for2.no was `{} (true)`. It has since
+#       been commented out (2026-09-22) — deliberately, and it should stay out:
+#       a file that stalls for the full 300s on EVERY sweep is a real cost, and
+#       the alarm only bounds the damage, it does not remove it. If this class
+#       ever needs a marker again, put it somewhere the corpus sweep does not
+#       walk (tests/ is swept wholesale) or cover it with a unit test.
 #   (b) slow-but-finite compile      -> 124 only below its cost
 #   (c) contention                  -> 124 when -P parallelism starves the box
 # (c) is not hypothetical, it is measured: tests/test-parse-min.no takes
@@ -43,6 +49,17 @@
 # run by hand after backend changes, not in a loop.
 #   MIR_GOLDEN_TIMEOUT=<sec>   (default 300) raise to separate (b) from (a)
 #   MIR_GOLDEN_JOBS=<n>        (default 4)   lower to reduce (c)
+#   MIR_GOLDEN_GLOB=<glob>     (default '*.no') run ONLY a subset of the corpus.
+#
+#     MIR_GOLDEN_GLOB='test-str*.no' GOLDEN=tests/golden/mir-baseline.tsv scripts/mir_golden.sh
+#
+#   The subset flag exists because a full pass costs minutes, and cost is the
+#   only reason this oracle ever gets skipped. Comparing only the files your
+#   change could plausibly touch turns it into a seconds-scale check you will
+#   actually run. It is a FILTER, not a different oracle: the golden is still
+#   the same file, the buckets mean the same thing, and files outside the glob
+#   are simply not reported (they are not "SAME", they are unmeasured). Do the
+#   full pass before declaring a change neutral.
 #
 # USAGE
 #   GOLDEN=tests/golden/mir-baseline.tsv GOLDEN_MIR=default scripts/mir_golden.sh -update
@@ -82,12 +99,27 @@ cd /Users/lizongying/IdeaProjects/no || exit 1
 NO=${NO:-./bin/no}
 GOLDEN=${GOLDEN:-tests/golden/legacy-baseline.tsv}
 GOLDEN_MIR=${GOLDEN_MIR:-0}
+# GOLDEN_OUT: where `-update` WRITES. Defaults to $GOLDEN (overwrite in place).
+#
+# Set it to a scratch path to stage a re-freeze instead of applying it:
+#
+#   GOLDEN_OUT=/tmp/mir-baseline.candidate.tsv GOLDEN_MIR=default \
+#     GOLDEN=tests/golden/mir-baseline.tsv scripts/mir_golden.sh -update
+#   diff tests/golden/mir-baseline.tsv /tmp/mir-baseline.candidate.tsv
+#
+# WHY: a re-freeze is the one operation here that destroys evidence — it
+# replaces "what the backend used to compute" with "what it computes now", so
+# any regression baked in by the change being measured becomes invisible
+# forever. Staging it makes the diff reviewable before it lands, and costs one
+# extra command.
+GOLDEN_OUT=${GOLDEN_OUT:-$GOLDEN}
 WORKDIR=/tmp/mir_golden
 # 300s, not 90s: see the "WHAT rc=124 MEANS" block above. At 90s the three
 # json/parse files never yield a verdict, so their rc=1 runtime failure (the
 # thing a regression oracle exists to catch) is structurally unobservable.
 TMO=${MIR_GOLDEN_TIMEOUT:-300}
 JOBS=${MIR_GOLDEN_JOBS:-4}
+GLOB=${MIR_GOLDEN_GLOB:-'*.no'}
 # Files whose stdout is legitimately NONDETERMINISTIC, so a hash mismatch is
 # not evidence of a regression. They are reported as UNSTABLE rather than
 # DIVERGE: DIVERGE must stay a clean signal, and an entry that can never match
@@ -140,14 +172,18 @@ fi
 # the file is then mislabelled as a legacy capture (the label is derived from the
 # basename, see the compare mode) and every later semantic comparison becomes
 # self-referential. The name is the only marker of intent we have; honour it.
-case "$(basename "$GOLDEN")" in
-  *legacy*)
-    echo "ERROR: refusing to overwrite '$GOLDEN' — its name marks it as the" >&2
-    echo "       captured LEGACY backend, which can no longer be produced." >&2
-    echo "       Capture the current backend into mir-baseline.tsv instead:" >&2
-    echo "         GOLDEN=tests/golden/mir-baseline.tsv GOLDEN_MIR=default $0 -update" >&2
-    exit 2 ;;
-esac
+# Checked against the DESTINATION too (see GOLDEN_OUT): staging a capture into
+# /tmp/legacy-whatever.tsv is the same mistake wearing a different path.
+for _dst in "$GOLDEN" "$GOLDEN_OUT"; do
+  case "$(basename "$_dst")" in
+    *legacy*)
+      echo "ERROR: refusing to overwrite '$_dst' — its name marks it as the" >&2
+      echo "       captured LEGACY backend, which can no longer be produced." >&2
+      echo "       Capture the current backend into mir-baseline.tsv instead:" >&2
+      echo "         GOLDEN=tests/golden/mir-baseline.tsv GOLDEN_MIR=default $0 -update" >&2
+      exit 2 ;;
+  esac
+done
 
 # In COMPARE mode the backend under test is ALWAYS the current default — the
 # golden file is the only thing that differs between a "semantic" run (vs the
@@ -336,17 +372,41 @@ if [ -f "$GOLDEN" ]; then
 fi
 # ── END POLLUTION GUARD ──────────────────────────────────────────────────────
 
-find tests -name '*.no' -print0 | xargs -0 -P "$JOBS" -I{} bash -c 'fingerprint_one "$@"' _ {}
+find tests -name "$GLOB" -print0 | xargs -0 -P "$JOBS" -I{} bash -c 'fingerprint_one "$@"' _ {}
+if [ "$GLOB" != '*.no' ]; then
+  echo "(subset run: MIR_GOLDEN_GLOB=$GLOB — files outside the glob are UNMEASURED, not SAME)"
+fi
 
 sort -k3 "$WORKDIR/fp.txt" > "$WORKDIR/fp.sorted.tsv"
 
 if [ "$MODE" = "update" ]; then
-  cp "$WORKDIR/fp.sorted.tsv" "$GOLDEN"
+  # GUARD 3: never freeze from a SUBSET run. `cp fp.sorted.tsv $GOLDEN` replaces
+  # the whole file, so a filtered pass would leave an oracle containing only the
+  # files in the glob — every other entry silently gone, and the next full
+  # compare would call all of them NEW while reporting zero regressions. The
+  # failure is quiet and looks like a clean run. Surgical edits to single lines
+  # are the supported way to refresh a few entries.
+  if [ "$GLOB" != '*.no' ]; then
+    echo "ERROR: refusing '-update' with MIR_GOLDEN_GLOB=$GLOB." >&2
+    echo "       The capture would contain ONLY the matching files and overwrite" >&2
+    echo "       the whole golden with it. Re-run without MIR_GOLDEN_GLOB." >&2
+    exit 2
+  fi
+  cp "$WORKDIR/fp.sorted.tsv" "$GOLDEN_OUT"
   echo "=== GOLDEN FROZEN ==="
-  echo "file: $GOLDEN"
-  echo "entries: $(wc -l < "$GOLDEN" | tr -d ' ')"
-  echo "rc=0 entries: $(awk '$1==0' "$GOLDEN" | wc -l | tr -d ' ')"
-  echo "rc!=0 entries: $(awk '$1!=0' "$GOLDEN" | wc -l | tr -d ' ')"
+  echo "file: $GOLDEN_OUT"
+  echo "entries: $(wc -l < "$GOLDEN_OUT" | tr -d ' ')"
+  echo "rc=0 entries: $(awk '$1==0' "$GOLDEN_OUT" | wc -l | tr -d ' ')"
+  echo "rc!=0 entries: $(awk '$1!=0' "$GOLDEN_OUT" | wc -l | tr -d ' ')"
+  if [ "$GOLDEN_OUT" != "$GOLDEN" ]; then
+    echo ""
+    echo "STAGED (GOLDEN_OUT != GOLDEN) — nothing in the repo was touched."
+    echo "Review it before it becomes the oracle:"
+    echo "  diff $GOLDEN $GOLDEN_OUT"
+    echo "  diff $GOLDEN $GOLDEN_OUT | grep -c '^<'   # entries that changed/vanished"
+    echo "Apply only once the diff is explained:"
+    echo "  cp $GOLDEN_OUT $GOLDEN"
+  fi
   exit 0
 fi
 

@@ -348,6 +348,18 @@ func (s *SemanticContext) AnnotationsOf(n Node) []*AnnotationEntry {
 	return nil
 }
 
+// SetAnnotations 直接設定節點的「已解析」註解條目（ns.Annotations）。
+// 供工具（如 `no fmt --fix=overflow`）在 ParseProgram 之後、不重跑
+// ResolveProgram（重跑會把 #{generic=[K,V]} 等泛型參數重複附加到函式定義）
+// 的前提下，把新增的註解條目（如 overflow=wrap）寫入解析側表，使 formatter
+// 的 attachedAnnotations 能讀到並輸出。nil receiver / nil 節點安全。
+func (s *SemanticContext) SetAnnotations(n Node, entries []*AnnotationEntry) {
+	if s == nil || n == nil {
+		return
+	}
+	s.ensure(n).Annotations = entries
+}
+
 // RawAnnotationsOf 返回節點在「解析期」由 #{...} 收集的原始註解條目（無則 nil）。
 // 解析期 Annotations 尚未由 ResolveProgram 從 RawAnnotations 拷貝，故解析期邏輯
 // （如 blockLevelOverflowMode / propagateOverflowInStmts）必須讀此欄位，否則永遠看不到

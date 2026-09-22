@@ -14,6 +14,42 @@ func NewFormatter() *Formatter {
 	return &Formatter{}
 }
 
+// LoopStyle 決定 formatter 輸出「循環」時使用的預設寫法。同一個 ForStatement
+// AST（條件 / 計數 / 恆真 / 恆假）可以寫成條件前置或條件後置，兩者語義相同，
+// 差別只是閱讀順序：
+//
+//	prefix（預設）: (cond) { }   N * { }   !! { }   ! { }
+//	suffix（舊式）: { } (cond)   { } * N   { } (true)   { } ()
+type LoopStyle int
+
+const (
+	// LoopStylePrefix 條件前置（預設）：`(cond) { }`、`N * { }`、
+	// 恆真 `!! { }`、恆假 `! { }`。
+	LoopStylePrefix LoopStyle = iota
+	// LoopStyleSuffix 條件後置（舊式）：`{ } (cond)`、`{ } * N`、
+	// 恆真 `{ } (true)`、恆假 `{ } ()`。
+	LoopStyleSuffix
+)
+
+// LoopStyleFromName 把 `-loop-style=` 的字串值轉成 LoopStyle。
+// 接受 "prefix" / "suffix"（大小寫不敏感）；空字串回傳預設值 prefix。
+func LoopStyleFromName(s string) (LoopStyle, bool) {
+	switch strings.ToLower(strings.TrimSpace(s)) {
+	case "", "prefix":
+		return LoopStylePrefix, true
+	case "suffix":
+		return LoopStyleSuffix, true
+	}
+	return LoopStylePrefix, false
+}
+
+func (s LoopStyle) String() string {
+	if s == LoopStyleSuffix {
+		return "suffix"
+	}
+	return "prefix"
+}
+
 type formatter struct {
 	buf         strings.Builder
 	indent      int
@@ -21,6 +57,7 @@ type formatter struct {
 	column      int                     // current output column (0-based)
 	stringAlign int                     // alignment column for multi-line string concat continuation lines
 	sem         *parser.SemanticContext // 語義 side-table（來自 program.Sem，可為 nil）
+	loopStyle   LoopStyle               // 循環預設寫法（prefix = 條件前置）
 
 	// synthRT 存放 formatter 內部臨時合成節點的往返標誌（如
 	// formatBareMatchExpression 為 wildcard arm 合成的 IfExpression），
@@ -132,6 +169,11 @@ func (f *formatter) formatProgram(p *parser.Program) {
 // empty/whitespace-only input the bool is false, out is empty, and errs holds
 // the parser errors (nil for the empty-input case).
 func formatProgram(code string) (out string, ok bool, errs []string) {
+	return formatProgramWithLoopStyle(code, LoopStylePrefix)
+}
+
+// formatProgramWithLoopStyle 同 formatProgram，但可指定循環輸出風格。
+func formatProgramWithLoopStyle(code string, style LoopStyle) (out string, ok bool, errs []string) {
 	if strings.TrimSpace(code) == "" {
 		return "", false, nil
 	}
@@ -151,7 +193,7 @@ func formatProgram(code string) (out string, ok bool, errs []string) {
 		return "", false, p.Errors()
 	}
 
-	return formatProgramAST(program, code)
+	return formatProgramASTWithLoopStyle(program, code, style)
 }
 
 // formatProgramAST formats an already-parsed program. The original source is
@@ -166,6 +208,11 @@ func formatProgram(code string) (out string, ok bool, errs []string) {
 // (e.g. the LSP, which parses each document for indexing) should parse once and
 // call this instead of re-lexing and re-parsing the source.
 func formatProgramAST(program *parser.Program, code string) (out string, ok bool, errs []string) {
+	return formatProgramASTWithLoopStyle(program, code, LoopStylePrefix)
+}
+
+// formatProgramASTWithLoopStyle 同 formatProgramAST，但可指定循環輸出風格。
+func formatProgramASTWithLoopStyle(program *parser.Program, code string, style LoopStyle) (out string, ok bool, errs []string) {
 	if program == nil || len(program.Statements) == 0 {
 		return "", false, nil
 	}
@@ -174,6 +221,7 @@ func formatProgramAST(program *parser.Program, code string) (out string, ok bool
 	f := &formatter{
 		sourceLines: sourceLines,
 		sem:         program.Sem,
+		loopStyle:   style,
 	}
 	f.formatProgram(program)
 
@@ -249,11 +297,27 @@ func FormatFile(code string) string {
 // such as `no fmt` can report them to the user instead of silently leaving the
 // file untouched. errs is nil when formatting succeeded.
 func FormatFileWithErrors(code string) (out string, errs []string) {
-	o, ok, perrs := formatProgram(code)
+	return FormatFileWithErrorsAndLoopStyle(code, LoopStylePrefix)
+}
+
+// FormatFileWithErrorsAndLoopStyle behaves like FormatFileWithErrors but also
+// selects the loop-spelling style (see LoopStyle).
+func FormatFileWithErrorsAndLoopStyle(code string, style LoopStyle) (out string, errs []string) {
+	o, ok, perrs := formatProgramWithLoopStyle(code, style)
 	if !ok {
 		return code, perrs
 	}
 	return ensureTrailingNewline(o), nil
+}
+
+// FormatFileWithLoopStyle behaves like FormatFile but renders loops in the
+// requested style (see LoopStyle).
+func FormatFileWithLoopStyle(code string, style LoopStyle) string {
+	out, ok, _ := formatProgramWithLoopStyle(code, style)
+	if !ok {
+		return code
+	}
+	return ensureTrailingNewline(out)
 }
 
 // FormatProgram formats an already-parsed program. The original source must be

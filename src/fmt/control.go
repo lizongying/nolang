@@ -584,15 +584,17 @@ func (f *formatter) formatForStatement(s *parser.ForStatement) {
 		return
 	}
 
-	// Counted loop: { body } * N（新式語法；Token 非 FOR）
+	// Counted loop: N * { body }（前置式，預設）或 { body } * N（後置式）
 	if s.CountExpr != nil && s.Token.Type != lexer.FOR {
-		f.write("{")
-		f.indent++
-		f.formatBlockInner(s.Body, s.Body.Token.Line)
-		f.indent--
-		f.newline()
-		f.write("} * ")
+		if f.loopStyle == LoopStyleSuffix {
+			f.writeLoopBodyBlock(s)
+			f.write(" * ")
+			f.formatExpression(s.CountExpr)
+			return
+		}
 		f.formatExpression(s.CountExpr)
+		f.write(" * ")
+		f.writeLoopBodyBlock(s)
 		return
 	}
 
@@ -646,25 +648,52 @@ func (f *formatter) formatForStatement(s *parser.ForStatement) {
 			cond = ifExpr.Condition
 		}
 	}
-	// BooleanLiteral{Value: false} → 空括號 ()（不執行）
-	if bl, ok := cond.(*parser.BooleanLiteral); ok && !bl.Value {
+	// 布林字面量條件：前置式輸出 `!! { }`（恆真）/ `! { }`（恆假，不執行）；
+	// 後置式輸出 `{ } (true)` / `{ } ()`（空括號代表 false，不執行）。
+	if bl, ok := cond.(*parser.BooleanLiteral); ok {
+		if f.loopStyle == LoopStyleSuffix {
+			f.writeLoopBodyBlock(s)
+			if bl.Value {
+				f.write(" (true)")
+			} else {
+				f.write(" ()")
+			}
+			return
+		}
+		if bl.Value {
+			f.write("!! ")
+		} else {
+			f.write("! ")
+		}
 		f.writeLoopBodyBlock(s)
-		f.write(" ()")
 		return
 	}
+	// 一般條件：前置式 `(cond) { }`；後置式 `{ } (cond)`。
 	if cond != nil {
-		f.writeLoopBodyBlock(s)
-		f.write(" (")
+		if f.loopStyle == LoopStyleSuffix {
+			f.writeLoopBodyBlock(s)
+			f.write(" (")
+			f.formatExpression(cond)
+			f.write(")")
+			return
+		}
+		f.write("(")
 		f.formatExpression(cond)
-		f.write(")")
+		f.write(") ")
+		f.writeLoopBodyBlock(s)
 		return
 	}
 
-	// 無限循環：{ body } (true)
+	// 無條件 → 無限循環。前置式 `!! { }`；後置式 `{ } (true)`
 	// 涵蓋舊式 !! { } / for { }（Condition 保持 nil 的歷史路徑，現已改為 BooleanLiteral{true}）。
 	// 空括號 () 代表 false（不執行），因此無限循環必須顯式輸出 (true)。
+	if f.loopStyle == LoopStyleSuffix {
+		f.writeLoopBodyBlock(s)
+		f.write(" (true)")
+		return
+	}
+	f.write("!! ")
 	f.writeLoopBodyBlock(s)
-	f.write(" (true)")
 }
 
 func (f *formatter) formatRangeBrackets(re *parser.RangeExpression) {

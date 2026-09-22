@@ -341,10 +341,12 @@ func RunAllLints(program *parser.Program, opts LintOptions) []LintResult {
 	}
 
 	// 20c. 整數四則運算溢出提示（#{overflow = wrap|clamp0|min|max|saturate} 註解）
+	// 已由「溢出改成error」需求从 HINT 升为 ERROR：未标注 #{overflow} 的整数
+	// 运算直接报校验错误，强制显式标注或显式处理 option。
 	for _, u := range ValidateIntOverflow(program) {
 		results = append(results, LintResult{
 			Line: u.Line, Column: u.Column,
-			Severity: LintHint, Source: "nolang-overflow",
+			Severity: LintError, Source: "nolang-overflow",
 			Message: u.Message, TraceID: u.TraceID,
 		})
 	}

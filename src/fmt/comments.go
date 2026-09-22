@@ -263,7 +263,7 @@ func stmtTokenLine(stmt parser.Statement) int {
 func (f *formatter) attachedAnnotations(stmt parser.Statement) []*parser.AnnotationEntry {
 	switch stmt.(type) {
 	case *parser.LetStatement, *parser.FunctionDefinition, *parser.StructDefinition, *parser.ExpressionStatement,
-		*parser.ForStatement, *parser.MultiAssignStatement,
+		*parser.ForStatement, *parser.MultiAssignStatement, *parser.ReturnStatement,
 		*parser.TaggedEnumDefinition, *parser.EnumDefinition, *parser.InterfaceDefinition:
 		all := f.sem.AnnotationsOf(stmt)
 		// `#{index-out = ...}` 是「行注解」：以獨立 AnnotationStatement 形式印出

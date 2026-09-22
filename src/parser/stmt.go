@@ -47,6 +47,12 @@ func (p *Parser) parseStatement() Statement {
 	case lexer.AT:
 		return p.parseExportStatement()
 	case lexer.IDENT, lexer.TRUE, lexer.FALSE, lexer.NIL, lexer.MATCH, lexer.UNDERSCORE:
+		// 布林字面量循環：`true { }` 恆真（無限循環）、`false { }` 恆假（不執行）。
+		// 只有 `{` 緊接字面量時才算循環；`true -> ...`、`x = true` 等不受影響。
+		if (p.currentToken.Type == lexer.TRUE || p.currentToken.Type == lexer.FALSE) &&
+			p.isBoolLiteralLoopFirst() {
+			return p.parseBoolLiteralLoop()
+		}
 		// `match` keyword followed by an expression is the deprecated
 		// `match expr { ... }` syntax — skip the keyword and let the
 		// expression be parsed normally (same as the old default path).
@@ -370,6 +376,20 @@ func (p *Parser) parseStatement() Statement {
 	case lexer.RETURN:
 		return p.parseReturnStatement()
 
+	case lexer.LPAREN:
+		// (cond) { body } 前置條件循環（與後綴式 `{ body } (cond)` 同義）
+		if p.isCondLoopPrefix() {
+			return p.parseCondLoopPrefix()
+		}
+		return p.parseExpressionStatement()
+
+	case lexer.INT, lexer.SUB:
+		// N * { body } 前置計數循環（N 為整數字面量，可帶負號）
+		if p.isCountLoopPrefix() {
+			return p.parseCountLoopPrefix()
+		}
+		return p.parseExpressionStatement()
+
 	case lexer.LBRACE:
 		// { body } * N 計數循環（新式語法，取代舊的 N * { }）
 		if p.isCountedLoopBlockFirst() {
@@ -479,16 +499,16 @@ func (p *Parser) parseStatement() Statement {
 		return nil
 
 	case lexer.NOT:
-		// ! { } → 無限循環（!! 的單驚嘆號變體，向後相容舊語法）
+		// ! { } → 不執行（`!` = 假）；!! { } → 無限循環（`!!` = 真）
 		if p.peekToken.Type == lexer.LBRACE {
-			return p.parseBangLoop()
+			return p.parseBangLoop(false)
 		}
 		return p.parseExpressionStatement()
 
 	case lexer.BANG_BANG:
 		// 無限循環 !! { }
 		if p.peekToken.Type == lexer.LBRACE {
-			return p.parseBangLoop()
+			return p.parseBangLoop(true)
 		}
 		return p.parseExpressionStatement()
 
@@ -1812,7 +1832,10 @@ func isStatementBoundary(t lexer.TokenType) bool {
 	case lexer.IF, lexer.IDENT, lexer.RBRACE, lexer.FOR,
 		lexer.RETURN, lexer.BREAK, lexer.CONTINUE,
 		lexer.LPAREN, lexer.LBRACE, lexer.SEMICOLON,
-		lexer.DOT, lexer.NOT, lexer.INT, lexer.STRING,
+		// `-` 必須是語句邊界，否則 skipToStatementEnd 會跨過換行把下一行開頭的
+		// `-` 吃掉 —— 這正是 `-N * { }` 前置計數循環被讀成 `N * { }`（負號丟失，
+		// 靜默地多跑 N 次）的原因。語料庫中沒有以 `-` 續行的多行運算式。
+		lexer.DOT, lexer.NOT, lexer.INT, lexer.STRING, lexer.SUB,
 		lexer.TRUE, lexer.FALSE, lexer.NIL, lexer.USE, lexer.AT,
 		lexer.SWITCH, lexer.TILDE, lexer.FLOAT, lexer.BYTE,
 		lexer.LBRACKET, lexer.HASH_LBRACE,
@@ -2431,17 +2454,205 @@ func (p *Parser) parseForRange(ir *IterationExpr) {
 	}
 }
 
-// parseBangLoop 解析 !! { } 無限循環
-func (p *Parser) parseBangLoop() Statement {
-	stmt := &ForStatement{Token: p.currentToken}
-	// !! / ! 後直接接 {
+// parseBangLoop 解析 `!! { }`（恆真、無限循環）與 `! { }`（恆假、不執行）。
+// loop = true → Condition 為 BooleanLiteral{true}；loop = false → false。
+// 符號約定見 docs/docs/lang/symbol.md：`!!` = 真，`!` = 假。
+func (p *Parser) parseBangLoop(loop bool) Statement {
 	bangTok := p.currentToken
+	stmt := &ForStatement{Token: bangTok}
+	// !! / ! 後直接接 {
 	p.nextToken() // skip !! / !
 	stmt.Body = p.parseBlockStatement()
 	p.nextToken() // skip body's }
-	stmt.Condition = &BooleanLiteral{Token: bangTok, Value: true}
-	p.saveWarning(fmt.Sprintf("line %d, column %d: '%s { }' is deprecated, use '{ } (true)' infinite loop instead",
-		bangTok.Line, bangTok.Column, bangTok.Literal))
+	stmt.Condition = &BooleanLiteral{Token: bangTok, Value: loop}
+	return stmt
+}
+
+// parseBoolLiteralLoop 解析 `true { }`（恆真、無限循環）與
+// `false { }`（恆假、不執行）。前提：currentToken 為 TRUE/FALSE 且
+// 緊接 LBRACE（由 parseStatement / parseLabeledStatement 保證）。
+func (p *Parser) parseBoolLiteralLoop() Statement {
+	tok := p.currentToken
+	stmt := &ForStatement{Token: tok}
+	p.nextToken() // skip true / false
+	stmt.Body = p.parseBlockStatement()
+	p.nextToken() // skip body's }
+	stmt.Condition = &BooleanLiteral{Token: tok, Value: tok.Type == lexer.TRUE}
+	return stmt
+}
+
+// isBoolLiteralLoopFirst 報告當前位置是否為 `true { }` / `false { }` 布林字面量循環。
+// 前提：p.currentToken.Type 為 lexer.TRUE 或 lexer.FALSE。
+// 只有當 `{` 緊接字面量（同行）時才算循環；`true` 單獨一行後接區塊是別的語法
+// （例如 match 臂或條件判斷），不能誤判。
+func (p *Parser) isBoolLiteralLoopFirst() bool {
+	return p.peekToken.Type == lexer.LBRACE
+}
+
+// isCondLoopPrefix 報告當前位置是否為前置條件循環 `(cond) { ... }`。
+// 前提：p.currentToken.Type == LPAREN。
+// 掃描匹配的右括號後，下一個 token 必須是 `{`（因此必然與 `)` 同行 ——
+// peek/look 會回傳 NEWLINE token，所以「換行後的 `{`」不會被誤判為循環，
+// 與既有後綴式 `{ } (cond)` 的同行約定一致）。
+// 匿名函式字面量 `(a i64, b) { }` 不算循環，由 isFunctionLiteral 排除。
+func (p *Parser) isCondLoopPrefix() bool {
+	// token at index k: k==0 → currentToken; k==1 → peekToken; k>=2 → look(k-2)
+	tokAt := func(k int) lexer.Token {
+		switch k {
+		case 0:
+			return p.currentToken
+		case 1:
+			return p.peekToken
+		default:
+			return p.look(k - 2)
+		}
+	}
+	depth := 0
+	k := 0
+	var inner []lexer.Token // depth==1 內部的 token（即括號內容）
+	for {
+		t := tokAt(k)
+		if t.Type == lexer.EOF {
+			return false
+		}
+		if t.Type == lexer.LPAREN {
+			depth++
+		} else if t.Type == lexer.RPAREN {
+			depth--
+			if depth == 0 {
+				break
+			}
+		} else if depth == 1 {
+			inner = append(inner, t)
+		}
+		k++
+	}
+	// k 在匹配的 ) 處；下一個 token (k+1) 必須是 {
+	if tokAt(k+1).Type != lexer.LBRACE {
+		return false
+	}
+	// 排除匿名函式字面量 `(a i64, b) { }` / `(a, b) { }`。
+	// 這裡不能用 isFunctionLiteral：它對 `(n < 3) { }` 也回傳 true（它只掃到
+	// 匹配的 `)` 再看後面是否 `{`，不檢查括號內容是否像參數列），會把條件循環
+	// 誤判成函式字面量。參數列只能由 IDENT（可帶一個型別 IDENT）與逗號組成，
+	// 而條件式必然含有運算子，因此：
+	//   - 括號內出現逗號 → 參數列
+	//   - 括號內只有 1 個或 2 個 IDENT → 參數列（`(a)` / `(a i64)`）
+	//   - 其餘（含空括號 `()`）→ 條件
+	for _, t := range inner {
+		if t.Type == lexer.COMMA {
+			return false
+		}
+	}
+	if len(inner) == 1 && inner[0].Type == lexer.IDENT {
+		return false
+	}
+	if len(inner) == 2 && inner[0].Type == lexer.IDENT && inner[1].Type == lexer.IDENT {
+		return false
+	}
+	return true
+}
+
+// parseCondLoopPrefix 解析 `(cond) { body }` 前置條件循環。
+// 前提：p.currentToken.Type == LPAREN，且 isCondLoopPrefix() 為 true。
+// `(true)` → 無限循環；`(false)` / `()` → 不執行；`(cond)` → 條件循環。
+// 語義與後綴式 `{ body } (cond)` 完全相同（皆為先測條件再執行主體）。
+func (p *Parser) parseCondLoopPrefix() Statement {
+	stmt := &ForStatement{Token: p.currentToken} // (
+	p.nextToken()                                // skip (
+	// 空括號 () → 視為 false（不執行）
+	if p.currentToken.Type == lexer.RPAREN {
+		stmt.Condition = &BooleanLiteral{Token: p.currentToken, Value: false}
+		p.nextToken() // skip )
+	} else {
+		p.ctx.push(CTX_FOR_COND)
+		stmt.Condition = p.parseExpression(LOWEST)
+		p.ctx.pop()
+		if p.currentToken.Type != lexer.RPAREN {
+			p.saveError(fmt.Sprintf("line %d, column %d: expected ')' to close loop condition, got %s",
+				p.currentToken.Line, p.currentToken.Column, p.currentToken.Type.String()))
+			return stmt
+		}
+		p.nextToken() // skip )
+	}
+	if p.currentToken.Type != lexer.LBRACE {
+		p.saveError(fmt.Sprintf("line %d, column %d: expected '{' to open loop body, got %s",
+			p.currentToken.Line, p.currentToken.Column, p.currentToken.Type.String()))
+		return stmt
+	}
+	stmt.Body = p.parseBlockStatement()
+	p.nextToken() // skip body's }
+	return stmt
+}
+
+// isCountLoopPrefix 報告當前位置是否為前置計數循環 `N * { ... }`
+// （N 為整數字面量，可帶負號；`-3 * { }` 亦屬此式）。
+// 前提：p.currentToken.Type 為 lexer.INT 或 lexer.SUB。
+// 與乘法區分：`*` 之後必須緊接 `{`（乘法不可能以區塊為右運算元）。
+func (p *Parser) isCountLoopPrefix() bool {
+	// token at index k: k==1 → peekToken; k>=2 → look(k-2)
+	tokAt := func(k int) lexer.Token {
+		if k == 1 {
+			return p.peekToken
+		}
+		return p.look(k - 2)
+	}
+	k := 1
+	if p.currentToken.Type == lexer.SUB {
+		// 負號後必須是整數字面量
+		if tokAt(k).Type != lexer.INT {
+			return false
+		}
+		k++
+	}
+	if tokAt(k).Type != lexer.MUL {
+		return false
+	}
+	return tokAt(k+1).Type == lexer.LBRACE
+}
+
+// parseCountLoopPrefix 解析 `N * { body }` 前置計數循環。
+// 前提：p.currentToken.Type 為 INT/SUB，且 isCountLoopPrefix() 為 true。
+// 語義與後綴式 `{ body } * N` 相同（N ≤ 0 時不執行）。
+func (p *Parser) parseCountLoopPrefix() Statement {
+	tok := p.currentToken
+	stmt := &ForStatement{Token: tok}
+	negative := false
+	if p.currentToken.Type == lexer.SUB {
+		negative = true
+		p.nextToken() // skip -
+	}
+	intToken := p.currentToken
+	if intToken.Type != lexer.INT {
+		p.saveError(fmt.Sprintf("line %d, column %d: expected integer count before '*' in counted loop, got %s",
+			intToken.Line, intToken.Column, intToken.Type.String()))
+		return stmt
+	}
+	value, err := strconv.ParseInt(intToken.Literal, 10, 64)
+	if err != nil {
+		p.saveError(fmt.Sprintf("line %d, column %d: could not parse %q as integer",
+			intToken.Line, intToken.Column, intToken.Literal))
+		return stmt
+	}
+	if negative {
+		value = -value
+		intToken.Literal = "-" + intToken.Literal
+	}
+	stmt.CountExpr = &IntegerLiteral{Token: intToken, Value: value}
+	p.nextToken() // skip INT
+	if p.currentToken.Type != lexer.MUL {
+		p.saveError(fmt.Sprintf("line %d, column %d: expected '*' between count and loop body, got %s",
+			p.currentToken.Line, p.currentToken.Column, p.currentToken.Type.String()))
+		return stmt
+	}
+	p.nextToken() // skip *
+	if p.currentToken.Type != lexer.LBRACE {
+		p.saveError(fmt.Sprintf("line %d, column %d: expected '{' to open counted loop body, got %s",
+			p.currentToken.Line, p.currentToken.Column, p.currentToken.Type.String()))
+		return stmt
+	}
+	stmt.Body = p.parseBlockStatement()
+	p.nextToken() // skip body's }
 	return stmt
 }
 
@@ -2504,7 +2715,37 @@ func (p *Parser) parseLabeledStatement() Statement {
 	var stmt Statement
 	switch p.currentToken.Type {
 	case lexer.BANG_BANG:
-		stmt = p.parseBangLoop()
+		stmt = p.parseBangLoop(true)
+	case lexer.NOT:
+		// #1 ! { } → 不執行
+		stmt = p.parseBangLoop(false)
+	case lexer.LPAREN:
+		// #1 (cond) { } 前置條件循環
+		if p.isCondLoopPrefix() {
+			stmt = p.parseCondLoopPrefix()
+		} else {
+			p.saveError(fmt.Sprintf("line %d, column %d: expected loop body after label #%s, got '(' without '(cond) { }'",
+				p.currentToken.Line, p.currentToken.Column, label))
+			return nil
+		}
+	case lexer.TRUE, lexer.FALSE:
+		// #1 true { } / #1 false { }
+		if p.isBoolLiteralLoopFirst() {
+			stmt = p.parseBoolLiteralLoop()
+		} else {
+			p.saveError(fmt.Sprintf("line %d, column %d: expected loop body after label #%s, got %s without '{ }'",
+				p.currentToken.Line, p.currentToken.Column, label, p.currentToken.Literal))
+			return nil
+		}
+	case lexer.INT, lexer.SUB:
+		// #1 N * { } 前置計數循環
+		if p.isCountLoopPrefix() {
+			stmt = p.parseCountLoopPrefix()
+		} else {
+			p.saveError(fmt.Sprintf("line %d, column %d: expected loop body after label #%s, got %s without '* N' or '* { }'",
+				p.currentToken.Line, p.currentToken.Column, label, p.currentToken.Literal))
+			return nil
+		}
 	case lexer.LBRACE:
 		// Counted loop: #1 { ... } * N
 		if p.isCountedLoopBlockFirst() {

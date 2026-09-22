@@ -1145,6 +1145,8 @@ func fmtCommand(args []string) {
 	fs := flag.NewFlagSet("fmt", flag.ExitOnError)
 	writeInPlace := fs.Bool("w", false, "write result to source file")
 	diffMode := fs.Bool("d", false, "output colored diff instead of formatted result")
+	fixClass := fs.String("fix", "", "apply automatic fixes for one problem class, e.g. 'overflow' (adds #{overflow=wrap} to unannotated integer arithmetic)")
+	loopStyle := fs.String("loop-style", "prefix", "default loop spelling: 'prefix' -> '(cond) { }', 'N * { }', '!! { }', '! { }'; 'suffix' -> '{ } (cond)', '{ } * N', '{ } (true)', '{ } ()'")
 	fs.Usage = func() {
 		fmt.Println("Usage: no fmt [flags] <file|dir>")
 		fmt.Println("")
@@ -1169,8 +1171,15 @@ func fmtCommand(args []string) {
 		fmt.Println("  no fmt -w src/              format all .no files in src/ in-place")
 		fmt.Println("  no fmt -d src/              show diff for all .no files in src/")
 		fmt.Println("  echo 'x=1' | no fmt         format from stdin")
+		fmt.Println("  no fmt -loop-style=suffix f.no   format loops as '{ } (cond)' / '{ } * N'")
 	}
 	_ = fs.Parse(args)
+
+	style, ok := nfmt.LoopStyleFromName(*loopStyle)
+	if !ok {
+		fmt.Fprintf(os.Stderr, "fmt: unknown -loop-style %q (want 'prefix' or 'suffix')\n", *loopStyle)
+		os.Exit(1)
+	}
 
 	remaining := fs.Args()
 
@@ -1183,7 +1192,7 @@ func fmtCommand(args []string) {
 				os.Exit(1)
 			}
 			original := string(data)
-			result, perrs := nfmt.FormatFileWithErrors(original)
+			result, perrs := nfmt.FormatFileWithErrorsAndLoopStyle(original, style)
 			if len(perrs) > 0 {
 				for _, e := range perrs {
 					fmt.Fprintf(os.Stderr, "format error: %s\n", e)
@@ -1219,12 +1228,12 @@ func fmtCommand(args []string) {
 		}
 
 		if info.IsDir() {
-			if err := fmtProcessDirectory(arg, *writeInPlace, *diffMode); err != nil {
+			if err := fmtProcessDirectory(arg, *writeInPlace, *diffMode, *fixClass, style); err != nil {
 				fmt.Fprintf(os.Stderr, "Error processing directory %s: %v\n", arg, err)
 				hadError = true
 			}
 		} else {
-			if err := fmtProcessFile(arg, *writeInPlace, *diffMode); err != nil {
+			if err := fmtProcessFile(arg, *writeInPlace, *diffMode, *fixClass, style); err != nil {
 				fmt.Fprintf(os.Stderr, "Error processing file %s: %v\n", arg, err)
 				hadError = true
 			}
@@ -1235,19 +1244,32 @@ func fmtCommand(args []string) {
 	}
 }
 
-func fmtProcessFile(filename string, writeInPlace bool, diffMode bool) error {
+func fmtProcessFile(filename string, writeInPlace bool, diffMode bool, fixClass string, loopStyle nfmt.LoopStyle) error {
 	data, err := os.ReadFile(filename)
 	if err != nil {
 		return err
 	}
 
 	original := string(data)
-	result, perrs := nfmt.FormatFileWithErrors(original)
-	if len(perrs) > 0 {
-		for _, e := range perrs {
-			fmt.Fprintf(os.Stderr, "%s: format error: %s\n", filename, e)
+	var result string
+	if fixClass != "" {
+		r, perrs := fmtApplyFix(original, fixClass)
+		if len(perrs) > 0 {
+			for _, e := range perrs {
+				fmt.Fprintf(os.Stderr, "%s: format error: %s\n", filename, e)
+			}
+			return fmt.Errorf("format failed: %d parse error(s)", len(perrs))
 		}
-		return fmt.Errorf("format failed: %d parse error(s)", len(perrs))
+		result = r
+	} else {
+		r, perrs := nfmt.FormatFileWithErrorsAndLoopStyle(original, loopStyle)
+		if len(perrs) > 0 {
+			for _, e := range perrs {
+				fmt.Fprintf(os.Stderr, "%s: format error: %s\n", filename, e)
+			}
+			return fmt.Errorf("format failed: %d parse error(s)", len(perrs))
+		}
+		result = r
 	}
 
 	if diffMode {
@@ -1265,7 +1287,7 @@ func fmtProcessFile(filename string, writeInPlace bool, diffMode bool) error {
 	return nil
 }
 
-func fmtProcessDirectory(dirname string, writeInPlace bool, diffMode bool) error {
+func fmtProcessDirectory(dirname string, writeInPlace bool, diffMode bool, fixClass string, loopStyle nfmt.LoopStyle) error {
 	var firstErr error
 	checked := 0
 	needFormat := 0
@@ -1300,7 +1322,13 @@ func fmtProcessDirectory(dirname string, writeInPlace bool, diffMode bool) error
 				}
 				return nil
 			}
-			result, perrs := nfmt.FormatFileWithErrors(string(data))
+			var result string
+			var perrs []string
+			if fixClass != "" {
+				result, perrs = fmtApplyFix(string(data), fixClass)
+			} else {
+				result, perrs = nfmt.FormatFileWithErrors(string(data))
+			}
 			if len(perrs) > 0 {
 				for _, e := range perrs {
 					fmt.Fprintf(os.Stderr, "%s: format error: %s\n", path, e)
@@ -1316,7 +1344,7 @@ func fmtProcessDirectory(dirname string, writeInPlace bool, diffMode bool) error
 			}
 			return nil
 		}
-		if ferr := fmtProcessFile(path, writeInPlace, diffMode); ferr != nil && firstErr == nil {
+		if ferr := fmtProcessFile(path, writeInPlace, diffMode, fixClass, loopStyle); ferr != nil && firstErr == nil {
 			firstErr = ferr
 		}
 		return nil
@@ -1329,6 +1357,230 @@ func fmtProcessDirectory(dirname string, writeInPlace bool, diffMode bool) error
 		}
 	}
 	return firstErr
+}
+
+// fmtApplyFix 套用某一類問題的自動修復，回傳修復後的源碼與解析錯誤。
+// 目前支援：
+//   - "overflow"：對未標註 #{overflow} 的整數四則運算，將 #{overflow=wrap}
+//     綁定到其所在陳述節點的語義副表；formatter 輸出為該陳述上方的
+//     `#{overflow=wrap}`（若該陳述已有其它註解如 #{intrinsic}，則合併為
+//     `#{intrinsic, overflow=wrap}` 單行）。修復精準：只處理 lint 實際
+//     報告的陳述，不污染無溢出的陳述，且重跑冪等（已標註者跳過）。
+func fmtApplyFix(src string, fixClass string) (string, []string) {
+	switch fixClass {
+	case "overflow":
+		return fmtFixOverflow(src)
+	default:
+		// 未知修復類別：退回普通格式化（不修改語意）。
+		return nfmt.FormatFileWithErrors(src)
+	}
+}
+
+// fmtFixOverflow 對未標註 #{overflow} 的整數溢位運算，做「手術式」文字插入：
+// 在 lint 實際報告的陳述上方插入 `#{overflow=wrap}`；若該陳述上方已有其它
+// 單行註解（如 #{intrinsic} / #{index-out=0}），則合併為單行
+// `#{intrinsic, overflow=wrap}`。只改必要之處：不改動其它註解、不改排版、
+// 不重跑 formatter，故不會污染無溢出的陳述，也不會破壞 std 中依賴手寫排版的
+// `#{index-out}` 行註解。重跑冪等：已帶 overflow 註解者跳過。
+func fmtFixOverflow(src string) (string, []string) {
+	l := lexer.New(src)
+	p := parser.New(l)
+	p.SkipUnwrapLowering = true
+	p.SkipSafeIndexLowering = true
+	program := p.ParseProgram()
+	if len(p.Errors()) > 0 {
+		return "", p.Errors()
+	}
+	results := checker.ValidateIntOverflow(program)
+	if len(results) == 0 {
+		return src, nil
+	}
+	// 報告行 -> 目標陳述節點（lint 實際標註的陳述，取包含該行的最小可標註陳述）。
+	targets := map[parser.Statement]bool{}
+	for _, r := range results {
+		if stmt := findFixTargetNode(program, r.Line); stmt != nil {
+			targets[stmt] = true
+		}
+	}
+	if len(targets) == 0 {
+		fmt.Fprintf(os.Stderr, "DEBUG fmtFixOverflow results=%d targets=%d\n", len(results), len(targets))
+		return src, nil
+	}
+	fmt.Fprintf(os.Stderr, "DEBUG fmtFixOverflow results=%d targets=%d\n", len(results), len(targets))
+	lines := strings.Split(src, "\n")
+	type insertOp struct {
+		beforeLine int
+		fullLine   string
+	}
+	inserts := []insertOp{}
+	merges := map[int]string{} // 原始行號(1-based) -> 要插入到該行 `#{...}` 的內容
+	for stmt := range targets {
+		if stmtHasOverflow(program.Sem, stmt) {
+			continue // 已帶 overflow 註解，跳過（冪等）
+		}
+		firstLine := stmt.Pos().Line
+		if firstLine < 1 || firstLine > len(lines) {
+			continue
+		}
+		indent := leadingWhitespace(lines[firstLine-1])
+		// 尋找緊鄰上方（跳過空白行）的 `#{...}` 註解行，若有則合併。
+		mergeAt := 0
+		for k := firstLine - 2; k >= 0; k-- {
+			t := strings.TrimSpace(lines[k])
+			if t == "" {
+				continue
+			}
+			if strings.HasPrefix(t, "#{") && !strings.Contains(t, "overflow") {
+				mergeAt = k + 1
+			}
+			break // 遇到第一個非空行即停止（無論是否為註解）
+		}
+		if mergeAt > 0 {
+			merges[mergeAt] = ", overflow=wrap"
+		} else {
+			inserts = append(inserts, insertOp{beforeLine: firstLine, fullLine: indent + "#{overflow=wrap}"})
+		}
+	}
+	if len(inserts) == 0 && len(merges) == 0 {
+		return src, nil
+	}
+	out := make([]string, 0, len(lines)+len(inserts))
+	for i := 1; i <= len(lines); i++ {
+		for _, ins := range inserts {
+			if ins.beforeLine == i {
+				out = append(out, ins.fullLine)
+			}
+		}
+		if add, ok := merges[i]; ok {
+			out = append(out, mergeAnnotationLine(lines[i-1], add))
+		} else {
+			out = append(out, lines[i-1])
+		}
+	}
+	return strings.Join(out, "\n"), nil
+}
+
+// isOverflowFixableType 報告該陳述型別是否可被 #{overflow} 註解標註
+// （checker.overflowAnnotatedNode 認可的型別：Let/Expression/Return/For/MultiAssign）。
+func isOverflowFixableType(s parser.Statement) bool {
+	switch s.(type) {
+	case *parser.LetStatement, *parser.ExpressionStatement, *parser.ReturnStatement,
+		*parser.ForStatement, *parser.MultiAssignStatement:
+		return true
+	}
+	return false
+}
+
+// findFixTargetNode 在程式中尋找「包含 line 行」的最小（最內層）可標註陳述節點。
+// 用 span 包含而非精確行號比對，可正確處理跨行陳述（算術在續行）與嵌套：
+// 例如 `val[j] = .byte(start + j)` 跨多行時，取其最小 span 的陳述。
+// 找不到可標註節點（如同行只有 break 等非運算陳述）時回傳 nil（該報告跳過）。
+func findFixTargetNode(program *parser.Program, line int) parser.Statement {
+	var best parser.Statement
+	bestSpan := 1 << 30
+	var walk func(stmts []parser.Statement)
+	walk = func(stmts []parser.Statement) {
+		for _, s := range stmts {
+			if s == nil {
+				continue
+			}
+			pl, pe := s.Pos().Line, s.EndPos().Line
+			if line >= pl && line <= pe && isOverflowFixableType(s) {
+				span := pe - pl + 1
+				if span < bestSpan {
+					bestSpan = span
+					best = s
+				}
+			}
+			switch v := s.(type) {
+			case *parser.FunctionDefinition:
+				if v.Body != nil {
+					walk(v.Body.Statements)
+				}
+			case *parser.ForStatement:
+				if v.Init != nil {
+					walk([]parser.Statement{v.Init})
+				}
+				if v.Update != nil {
+					walk([]parser.Statement{v.Update})
+				}
+				if v.Body != nil {
+					walk(v.Body.Statements)
+				}
+			case *parser.BlockStatement:
+				walk(v.Statements)
+			case *parser.ExpressionStatement:
+				if ie, ok := v.Expression.(*parser.IfExpression); ok {
+					if ie.Consequence != nil {
+						walk(ie.Consequence.Statements)
+					}
+					if ie.Alternative != nil {
+						walk(ie.Alternative.Statements)
+					}
+				}
+			case *parser.LetStatement:
+				if fl, ok := v.Value.(*parser.FunctionLiteral); ok && fl.Body != nil {
+					walk(fl.Body.Statements)
+				}
+			}
+		}
+	}
+	walk(program.Statements)
+	return best
+}
+
+// stmtHasOverflow 回報該陳述是否已帶 overflow 註解（取自語義副表或節點 OverflowMode
+// 欄位），用於重跑冪等：已標註者不再插入。檢查三個來源以對齊 checker 的
+// overflowAnnotatedNode：AnnotationsOf、RawAnnotationsOf、以及節點自身的 OverflowMode 欄位。
+func stmtHasOverflow(sem *parser.SemanticContext, stmt parser.Statement) bool {
+	for _, e := range sem.AnnotationsOf(stmt) {
+		if e != nil && e.Key == "overflow" {
+			return true
+		}
+	}
+	for _, e := range sem.RawAnnotationsOf(stmt) {
+		if e != nil && e.Key == "overflow" {
+			return true
+		}
+	}
+	switch v := stmt.(type) {
+	case *parser.LetStatement:
+		if v.OverflowMode != "" {
+			return true
+		}
+	case *parser.ExpressionStatement:
+		if v.OverflowMode != "" {
+			return true
+		}
+	case *parser.ReturnStatement:
+		if v.OverflowMode != "" {
+			return true
+		}
+	case *parser.ForStatement:
+		if v.OverflowMode != "" {
+			return true
+		}
+	case *parser.MultiAssignStatement:
+		if v.OverflowMode != "" {
+			return true
+		}
+	}
+	return false
+}
+
+// mergeAnnotationLine 在 `#{...}` 行的最後一個 `}` 前插入 add（如 ", overflow=wrap"），
+// 實現「多註解合併成單行」。
+func mergeAnnotationLine(s, add string) string {
+	idx := strings.LastIndex(s, "}")
+	if idx < 0 {
+		return s + add
+	}
+	return s[:idx] + add + s[idx:]
+}
+
+// leadingWhitespace 傳回字串開頭的空白（縮排），用於新插入註解行對齊陳述。
+func leadingWhitespace(s string) string {
+	return s[:len(s)-len(strings.TrimLeft(s, " \t"))]
 }
 
 func buildCommand(args []string) {

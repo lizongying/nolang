@@ -2979,14 +2979,41 @@ var nonIntTypeNames = map[string]bool{
 }
 
 // overflowAnnotatedNode 報告節點是否攜帶 #{overflow = ...} 註解。
+//
+// 與編譯期檢查 stmtOverflowAnnotated（ValidateUnhandledOverflow 使用）嚴格一致：
+// 同時查詢 AnnotationsOf（ResolveProgram 後）與 RawAnnotationsOf（解析期 side-table），
+// 並回退到節點的 OverflowMode 欄位。原因：活躍的「行註解」路徑
+// （parser.applyLineOverflowAnnotations）只把溢出模式寫入陳述節點的 OverflowMode
+// 欄位、不寫入 side-table；而 std 函式庫正是以「每條陳述前一行 #{overflow=wrap}」的
+// 寫法逐站修復沉默泄漏。若本檢查只讀 AnnotationsOf，就會把這些已正確標註的程式
+// 誤報為 ovf-int-default，與編譯期檢查（讀欄位）自相矛盾。兩者統一後，lint 與
+// 編譯對「已標註」的判定一致，已帶 #{overflow} 的程式不再被重複報錯。
 func overflowAnnotatedNode(sem *parser.SemanticContext, n parser.Node) bool {
 	if sem == nil || n == nil {
 		return false
 	}
-	for _, e := range sem.AnnotationsOf(n) {
-		if e != nil && e.Key == "overflow" {
-			return true
+	hasOverflow := func(entries []*parser.AnnotationEntry) bool {
+		for _, e := range entries {
+			if e != nil && e.Key == "overflow" {
+				return true
+			}
 		}
+		return false
+	}
+	if hasOverflow(sem.AnnotationsOf(n)) || hasOverflow(sem.RawAnnotationsOf(n)) {
+		return true
+	}
+	switch s := n.(type) {
+	case *parser.ForStatement:
+		return s.OverflowMode != ""
+	case *parser.ExpressionStatement:
+		return s.OverflowMode != ""
+	case *parser.LetStatement:
+		return s.OverflowMode != ""
+	case *parser.ReturnStatement:
+		return s.OverflowMode != ""
+	case *parser.MultiAssignStatement:
+		return s.OverflowMode != ""
 	}
 	return false
 }
@@ -3142,7 +3169,13 @@ func walkStmtForOverflow(stmt parser.Statement, sem *parser.SemanticContext, dec
 	case *parser.MultiAssignStatement:
 		emitSubs(s.Value)
 	case *parser.UnwrapAssignStatement:
-		emitSubs(s.Value)
+		// 顯式 `?=` 已主動處理溢出（將 option 上拋給呼叫者），是 ovf-int-default
+		// 訊息明列的合法替代方案，不再重複提示。僅當 IsAutoPropagated 為真時
+		// （原始碼是普通 `=`，因右值為 option 被 lowering 改成 `?=`，使用者
+		// 並未顯式處理）才提示——此時溢出確實未被處理。
+		if s.IsAutoPropagated {
+			emitSubs(s.Value)
+		}
 	case *parser.ForStatement:
 		emitSubs(s.Condition)
 		if s.Init != nil {
@@ -3287,7 +3320,7 @@ func ValidateIntOverflow(program *parser.Program) []ValidateResult {
 		results = append(results, ValidateResult{
 			Line:    line,
 			Column:  col,
-			Message: "整數運算 `a OP b` 預設在溢出時回傳 option<int>。若希望回傳普通 int，可加註解 `#{overflow = wrap}`（無聲回繞）/`clamp0`（下溢歸零）/`min`/`max`/`saturate`（飽和箝位）；亦可用型別前綴形式如 `#{overflow = u8-max}` 或 `#{overflow = i8-min}`。",
+			Message: "整數運算 `a OP b` 預設在溢出時回傳 option<int>，現已列為錯誤。請二選一：①加註解 `#{overflow = wrap}`（無聲回繞）/`clamp0`（下溢歸零）/`min`/`max`/`saturate`（飽和箝位），或用型別前綴形式如 `#{overflow = u8-max}`、`#{overflow = i8-min}` 回普通 int；②顯式以 `?T` 接收並用 `?=` / match 處理 overflow。",
 			TraceID: "ovf-int-default",
 		})
 	}
