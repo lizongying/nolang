@@ -2474,6 +2474,7 @@ conn.send = (data str) (written ?i64) {
             #{overflow=wrap}
             ok = .encrypt-record-13(TLS-CT-APP-DATA, data-bytes, .ap-client-key, .ap-client-iv, .ap-write-seq)
             ok == false -> return
+            #{overflow=wrap}
             .ap-write-seq = .ap-write-seq + 1
         }
 
@@ -4345,6 +4346,7 @@ server-conn.send = (data str) (written ?i64) {
             #{overflow=wrap}
             ok = .encrypt-record-13(TLS-CT-APP-DATA, data-bytes, .ap-server-key, .ap-server-iv, .ap-write-seq)
             ok == false -> return
+            #{overflow=wrap}
             .ap-write-seq = .ap-write-seq + 1
         }
 
@@ -4374,6 +4376,7 @@ server-conn.recv = (buf str, n i64) (read-n i64) {
             ct = 0
             out []byte
             ct, out = .read-encrypted-record-13(.ap-client-key, .ap-client-iv, .ap-read-seq)
+            #{overflow=wrap}
             .ap-read-seq = .ap-read-seq + 1
             {
                 ct < 0 -> return
@@ -4549,6 +4552,7 @@ https-serve-once = (listen-fd fd, status i64, body str) (ok bool) {
             recv-len = 0
             cr = number.char-to-str(13)
             lf = number.char-to-str(10)
+            #{overflow=wrap}
             crlf = cr - lf
             #{overflow=wrap}
             separator = crlf - crlf
@@ -4557,6 +4561,7 @@ https-serve-once = (listen-fd fd, status i64, body str) (ok bool) {
             {
                 #{overflow=wrap}
                 sep-found -> *
+                #{overflow=wrap}
                 recv-len + 4096 > 8192 -> *
                 tmp str = with-len(4096)
                 rn = c.recv(tmp, 4096)
@@ -4588,6 +4593,7 @@ https-serve-once = (listen-fd fd, status i64, body str) (ok bool) {
             len-s = body-len.to-str()
 
             ; 構建完整回應（一次發送，避免多次 send 的 option 處理）
+            #{overflow=wrap}
             response = 'HTTP/1.1 ' - status-s - ' ' - status-text - crlf - 'Content-Type: text/plain; charset=utf-8' - crlf - 'Content-Length: ' - len-s - crlf - 'Connection: close' - crlf - 'Server: nolang-https/1.0' - crlf - crlf - body
 
             w1 = c.send(response)

@@ -50,6 +50,7 @@ lzma-rd.normalize = () {
         #{overflow=wrap}
         #{index-out = 0}
         .code = (.code << 8) | .data[.pos]
+        #{overflow=wrap}
         .pos = .pos + 1
         .range = .range << 8
     }

@@ -268,7 +268,7 @@ json-pool.parse = (s str, pos i64) (node-idx i64, next-pos i64, ok bool) {
                 cnt >= JSON-MAX-CHILDREN -> return
                 #{index-out = 0}
                 .nodes[node-idx].children[cnt] = child-idx
-                #{index-out = 0}
+                #{index-out = 0, overflow=wrap}
                 .nodes[node-idx].count = cnt + 1
                 p = child-next
                 p = .skip-ws(s, p)
@@ -359,7 +359,7 @@ json-pool.parse = (s str, pos i64) (node-idx i64, next-pos i64, ok bool) {
                 ; (length preset by with-len(key-len) above)
                 #{index-out = 0}
                 .nodes[node-idx].children[cnt] = val-idx
-                #{index-out = 0}
+                #{index-out = 0, overflow=wrap}
                 .nodes[node-idx].count = cnt + 1
                 p = val-next
                 p = .skip-ws(s, p)
@@ -843,6 +843,7 @@ json-pool.stringify = (node-idx i64) (out str) {
                 i > 0 -> out = out - ','
                 #{index-out = 0}
                 key-str = .nodes[node-idx].keys[i]
+                #{overflow=wrap}
                 out = out - '"' - key-str - '":'
                 #{index-out = 0}
                 child-str = .stringify(.nodes[node-idx].children[i])
@@ -1458,7 +1459,7 @@ json.delete-key = (key str) (ok bool) {
                 #{overflow=wrap}
                 #{index-out = 0}
                 .pool.nodes[.root].keys[jj - 1] = .pool.nodes[.root].keys[jj]
-                #{index-out = 0}
+                #{index-out = 0, overflow=wrap}
                 .pool.nodes[.root].children[jj - 1] = .pool.nodes[.root].children[jj]
             }
             #{overflow=wrap}

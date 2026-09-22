@@ -41,6 +41,7 @@ zs-bit-reader.read-bit = () (bit i64) {
                 #{overflow=wrap}
                 #{index-out = 0}
                 .bit-buf = .data[.pos]
+                #{overflow=wrap}
                 .pos = .pos + 1
                 .bit-cnt = 8
             }
@@ -50,6 +51,7 @@ zs-bit-reader.read-bit = () (bit i64) {
             #{overflow=wrap}
             bit = .bit-buf & 1
             .bit-buf = .bit-buf >> 1
+            #{overflow=wrap}
             .bit-cnt = .bit-cnt - 1
         }
     }

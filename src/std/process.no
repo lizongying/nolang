@@ -346,6 +346,7 @@ process.start-with-opts = (program str, args []str, dir str, input str, merge-er
 
             ; exec 失敗：寫錯誤訊息到 stderr（fd 2），供父進程歸一化為 code=-1
             exec-rc != 0 -> {
+                #{overflow=wrap}
                 exec-err str = 'exec: ' - cmdline - ': command not found\n'
                 exec-err-bytes = exec-err.to-bytes()
                 fs.write(2, exec-err-bytes, exec-err-bytes.len())
@@ -662,9 +663,10 @@ cmd = (program str, args []str, dir str, input str, env []str, timeout i64, merg
         env.len() > 0 -> {
             envline str = 'env'
             ei <- [0..env.len()): {
-                #{index-out = 0}
+                #{index-out = 0, overflow=wrap}
                 envline = envline - ' ' - env[ei]
             }
+            #{overflow=wrap}
             cmdline = envline - ' ' - cmdline
         }
     }
@@ -768,6 +770,7 @@ cmd = (program str, args []str, dir str, input str, env []str, timeout i64, merg
 
             ; exec 失敗：寫錯誤訊息到 stderr（fd 2），供父進程歸一化為 code=-1
             exec-rc != 0 -> {
+                #{overflow=wrap}
                 exec-err str = 'exec: ' - cmdline - ': command not found\n'
                 exec-err-bytes = exec-err.to-bytes()
                 fs.write(2, exec-err-bytes, exec-err-bytes.len())
@@ -1195,6 +1198,7 @@ list-all = () (procs []proc-info) {
                 p.pid = it
 
                 ; 讀取 /proc/<pid>/comm 取得進程名
+                #{overflow=wrap}
                 comm-path = '/proc/' - name - '/comm'
                 comm = fs.read-file(comm-path).to-str()
                 comm.len() > 0 -> p.name = comm.trim()

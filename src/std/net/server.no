@@ -405,7 +405,9 @@ server-conn.get-header = (name str) (val ?str) {
                     c2 = name[j]
 
                     ; 大小寫不敏感比較
+                    #{overflow=wrap}
                     c1 >= 65 && c1 <= 90 -> c1 = c1 + 32
+                    #{overflow=wrap}
                     c2 >= 65 && c2 <= 90 -> c2 = c2 + 32
                     c1 != c2 -> {
                         matched = 0
@@ -1079,7 +1081,9 @@ https-server-conn.get-header = (name str) (val ?str) {
                     c1 = .header-names[i][j]
                     #{index-out = 0}
                     c2 = name[j]
+                    #{overflow=wrap}
                     c1 >= 65 && c1 <= 90 -> c1 = c1 + 32
+                    #{overflow=wrap}
                     c2 >= 65 && c2 <= 90 -> c2 = c2 + 32
                     c1 != c2 -> {
                         matched = 0

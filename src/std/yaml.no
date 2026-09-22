@@ -250,6 +250,7 @@ yaml-parser.fail-at = (msg str) {
     .failed = true
     #{overflow=wrap}
     col = .pos - .line-start-of(.pos) + 1
+    #{overflow=wrap}
     .err = 'line ' - .line.to-str() - ', column ' - col.to-str() - ': ' - msg
 }
 
@@ -624,6 +625,7 @@ yaml-tag-name = (tag str) (name str) {
     name = tag
     name.starts-with('!<') -> {
         n = name.len-bytes()
+        #{overflow=wrap}
         n >= 3 -> name = name.slice-bytes(2, n - 1)
     }
     name.starts-with('!!') -> name = name.slice-bytes(2, name.len-bytes())
@@ -721,6 +723,7 @@ yaml-unescape-double = (body str) (out str, ok bool) {
                 j <= n -> {
                     cp = 0
                     k <- [0..2): {
+                        #{overflow=wrap}
                         d = yaml-hex-digit(body.byte(i + k))
                         d < 0 -> {
                             ok = false
@@ -743,6 +746,7 @@ yaml-unescape-double = (body str) (out str, ok bool) {
                 j <= n -> {
                     cp = 0
                     k <- [0..4): {
+                        #{overflow=wrap}
                         d = yaml-hex-digit(body.byte(i + k))
                         d < 0 -> {
                             ok = false
@@ -765,6 +769,7 @@ yaml-unescape-double = (body str) (out str, ok bool) {
                 j <= n -> {
                     cp = 0
                     k <- [0..8): {
+                        #{overflow=wrap}
                         d = yaml-hex-digit(body.byte(i + k))
                         d < 0 -> {
                             ok = false
@@ -1164,8 +1169,10 @@ yaml-parser.parse-plain = (cont-min i64, key-mode bool, flow bool) (idx i64) {
                 stop = true
                 break
             }
+            #{overflow=wrap}
             breaks == 0 -> text = text - ' '
             breaks > 0 -> {
+                #{overflow=wrap}
                 k <- [0..breaks): text = text - '\n'
             }
             more = .read-line-content()
@@ -1262,6 +1269,7 @@ yaml-parser.parse-alias = () (idx i64) {
     name = .read-token()
     target = .anchor-id(name)
     target < 0 -> {
+        #{overflow=wrap}
         .fail-at('unknown anchor *' - name)
         idx = .push-null()
         return
@@ -1385,6 +1393,7 @@ yaml-parser.parse-block-scalar = (cont-min i64) (idx i64) {
     content = ''
     style == YAML-STYLE-LITERAL -> {
         i <- [0..lines.len()): {
+            #{overflow=wrap}
             content = content - yaml-str-at(lines, i) - '\n'
         }
         content.len-bytes() > 0 -> {
@@ -2688,14 +2697,19 @@ yaml-json-escape = (s str) (out str) {
     i <- [0..s.len-bytes()): {
         c = s.byte(i)
         {
+            #{overflow=wrap}
             c == 34 -> out = out - '\\' - char-to-str(34)
 
+            #{overflow=wrap}
             c == 92 -> out = out - '\\' - '\\'
 
+            #{overflow=wrap}
             c == 10 -> out = out - '\\' - 'n'
 
+            #{overflow=wrap}
             c == 13 -> out = out - '\\' - 'r'
 
+            #{overflow=wrap}
             c == 9 -> out = out - '\\' - 't'
 
             c < 32 -> {
@@ -2703,12 +2717,15 @@ yaml-json-escape = (s str) (out str) {
                 hi = c / 16
                 #{overflow=wrap}
                 lo = c - hi * 16
+                #{overflow=wrap}
                 out = out - '\\' - 'u' - '0' - '0' - yaml-hex-char(hi) - yaml-hex-char(lo)
             }
 
+            #{overflow=wrap}
             -> out = out - char-to-str(c)
         }
     }
+    #{overflow=wrap}
     out = out - char-to-str(34)
 }
 
@@ -2774,6 +2791,7 @@ yaml-json-of = (pool yaml-pool, idx i64, depth i64) (out str) {
             i <- [0..nd.kids.len()): {
                 i > 0 -> out = out - ','
                 kn = nd.keys[i]
+                #{overflow=wrap}
                 out = out - yaml-json-escape(pool.nodes[kn].text) - ':'
                 out = out - yaml-json-of(pool, nd.kids[i], d)
             }
@@ -2857,14 +2875,19 @@ yaml-quote = (s str) (out str) {
     i <- [0..s.len-bytes()): {
         c = s.byte(i)
         {
+            #{overflow=wrap}
             c == 34 -> out = out - '\\' - char-to-str(34)
 
+            #{overflow=wrap}
             c == 92 -> out = out - '\\' - '\\'
 
+            #{overflow=wrap}
             c == 10 -> out = out - '\\' - 'n'
 
+            #{overflow=wrap}
             c == 13 -> out = out - '\\' - 'r'
 
+            #{overflow=wrap}
             c == 9 -> out = out - '\\' - 't'
 
             c < 32 -> {
@@ -2872,12 +2895,15 @@ yaml-quote = (s str) (out str) {
                 hi = c / 16
                 #{overflow=wrap}
                 lo = c - hi * 16
+                #{overflow=wrap}
                 out = out - '\\' - 'u' - '0' - '0' - yaml-hex-char(hi) - yaml-hex-char(lo)
             }
 
+            #{overflow=wrap}
             -> out = out - char-to-str(c)
         }
     }
+    #{overflow=wrap}
     out = out - char-to-str(34)
 }
 
@@ -2943,6 +2969,7 @@ yaml-emit = (pool yaml-pool, idx i64, indent i64, depth i64) (out str) {
             total = nd.kids.len()
             i <- [0..total): {
                 i > 0 -> out = out - '\n'
+                #{overflow=wrap}
                 out = out - yaml-spaces(indent) - '-'
                 k = nd.kids[i]
                 ck = pool.nodes[k].kind
@@ -2959,14 +2986,17 @@ yaml-emit = (pool yaml-pool, idx i64, indent i64, depth i64) (out str) {
                         inner = yaml-emit(pool, k, cut, d)
                         inner.len-bytes() > 0 -> {
                             rest = inner.slice-bytes(cut, inner.len-bytes())
+                            #{overflow=wrap}
                             out = out - ' ' - rest
                         }
                         inner.len-bytes() == 0 -> {
+                            #{overflow=wrap}
                             out = out - ' ' - yaml-scalar-repr(pool.nodes[k])
                         }
                     }
                 }
                 container == false -> {
+                    #{overflow=wrap}
                     out = out - ' ' - yaml-scalar-repr(pool.nodes[k])
                 }
             }
@@ -2985,6 +3015,7 @@ yaml-emit = (pool yaml-pool, idx i64, indent i64, depth i64) (out str) {
                 i > 0 -> out = out - '\n'
                 kn = nd.keys[i]
                 ktext = yaml-scalar-repr(pool.nodes[kn])
+                #{overflow=wrap}
                 out = out - yaml-spaces(indent) - ktext - ':'
                 k = nd.kids[i]
                 ck = pool.nodes[k].kind
@@ -2998,13 +3029,16 @@ yaml-emit = (pool yaml-pool, idx i64, indent i64, depth i64) (out str) {
                     pool.nodes[k].kids.len() > 0 -> {
                         #{overflow=wrap}
                         inner = yaml-emit(pool, k, indent + 2, d)
+                        #{overflow=wrap}
                         inner.len-bytes() > 0 -> out = out - '\n' - inner
                         inner.len-bytes() == 0 -> {
+                            #{overflow=wrap}
                             out = out - ' ' - yaml-scalar-repr(pool.nodes[k])
                         }
                     }
                 }
                 container == false -> {
+                    #{overflow=wrap}
                     out = out - ' ' - yaml-scalar-repr(pool.nodes[k])
                 }
             }

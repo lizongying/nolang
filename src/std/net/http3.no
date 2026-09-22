@@ -68,6 +68,7 @@ encode-header = (name str, value str) (buf []byte, n i64) {
     pos = 0
     name-bytes []byte = name.to-bytes()
     value-bytes []byte = value.to-bytes()
+    #{overflow=wrap}
     buf = with-cap(name.len-bytes() + value.len-bytes() + 16)
 
     ; 字面標頭前綴: 0010 0000（不使用靜態表參考，名稱為字面值）
@@ -91,7 +92,7 @@ encode-header = (name str, value str) (buf []byte, n i64) {
             #{overflow=wrap}
             #{index-out = 0}
             buf[pos] = 0x40 | ((name-bytes.len() >> 8) & 255)
-            #{index-out = 0}
+            #{index-out = 0, overflow=wrap}
             buf[pos + 1] = name-bytes.len() & 255
             #{overflow=wrap}
             pos = pos + 2
@@ -121,7 +122,7 @@ encode-header = (name str, value str) (buf []byte, n i64) {
             #{overflow=wrap}
             #{index-out = 0}
             buf[pos] = 0x40 | ((value-bytes.len() >> 8) & 255)
-            #{index-out = 0}
+            #{index-out = 0, overflow=wrap}
             buf[pos + 1] = value-bytes.len() & 255
             #{overflow=wrap}
             pos = pos + 2
@@ -201,6 +202,7 @@ decode-header = (buf []byte, pos i64) (name str, value str, next-pos i64) {
     name-len = buf[r-pos] & 63
     #{overflow=wrap}
     r-pos = r-pos + 1
+    #{overflow=wrap}
     r-pos + name-len > buf.len() -> return
 
     ; 讀取名稱
@@ -215,6 +217,7 @@ decode-header = (buf []byte, pos i64) (name str, value str, next-pos i64) {
     value-len = buf[r-pos] & 63
     #{overflow=wrap}
     r-pos = r-pos + 1
+    #{overflow=wrap}
     r-pos + value-len > buf.len() -> return
 
     ; 讀取值
@@ -339,6 +342,7 @@ parse-frame = (buf []byte, pos i64) (frame-type i64, payload []byte, next-pos i6
     len-np < 0 -> return
     r-pos = len-np
 
+    #{overflow=wrap}
     r-pos + len-val > buf.len() -> return
     payload = with-len(len-val)
     i <- [0..len-val): {
@@ -416,6 +420,7 @@ parse-url = (url str) (host str, port i64, path str, ok bool) {
     colon-pos >= 0 -> {
         #{overflow=wrap}
         host-only = host.slice(0, colon-pos)
+        #{overflow=wrap}
         port-str = host.slice(colon-pos + 1, host.len-bytes())
         p = 0
         i <- [0..port-str.len-bytes()): {
@@ -468,6 +473,7 @@ send-request = (conn quic.conn, method str, path str, host str, body str) (resp 
     hdr-names[hdr-count] = ':method'
     #{index-out = 0}
     hdr-values[hdr-count] = method
+    #{overflow=wrap}
     hdr-count = hdr-count + 1
 
     ; :path
@@ -475,6 +481,7 @@ send-request = (conn quic.conn, method str, path str, host str, body str) (resp 
     hdr-names[hdr-count] = ':path'
     #{index-out = 0}
     hdr-values[hdr-count] = path
+    #{overflow=wrap}
     hdr-count = hdr-count + 1
 
     ; :scheme
@@ -482,6 +489,7 @@ send-request = (conn quic.conn, method str, path str, host str, body str) (resp 
     hdr-names[hdr-count] = ':scheme'
     #{index-out = 0}
     hdr-values[hdr-count] = 'https'
+    #{overflow=wrap}
     hdr-count = hdr-count + 1
 
     ; :authority
@@ -489,6 +497,7 @@ send-request = (conn quic.conn, method str, path str, host str, body str) (resp 
     hdr-names[hdr-count] = ':authority'
     #{index-out = 0}
     hdr-values[hdr-count] = host
+    #{overflow=wrap}
     hdr-count = hdr-count + 1
 
     ; user-agent
@@ -496,6 +505,7 @@ send-request = (conn quic.conn, method str, path str, host str, body str) (resp 
     hdr-names[hdr-count] = 'user-agent'
     #{index-out = 0}
     hdr-values[hdr-count] = 'nolang-http3/1.0'
+    #{overflow=wrap}
     hdr-count = hdr-count + 1
 
     ; content-length（如有主體）
@@ -505,6 +515,7 @@ send-request = (conn quic.conn, method str, path str, host str, body str) (resp 
         hdr-names[hdr-count] = 'content-length'
         #{index-out = 0}
         hdr-values[hdr-count] = body.len-bytes().to-str()
+        #{overflow=wrap}
         hdr-count = hdr-count + 1
     }
 
@@ -526,12 +537,14 @@ send-request = (conn quic.conn, method str, path str, host str, body str) (resp 
         #{index-out = 0}
         stream-data[stream-pos + i] = hdr-buf[i]
     }
+    #{overflow=wrap}
     stream-pos = stream-pos + hdr-n
     i <- [0..data-n): {
         #{overflow=wrap}
         #{index-out = 0}
         stream-data[stream-pos + i] = data-buf[i]
     }
+    #{overflow=wrap}
     stream-pos = stream-pos + data-n
 
     ; ── 構建 QUIC STREAM 影格 ──
@@ -552,6 +565,7 @@ send-request = (conn quic.conn, method str, path str, host str, body str) (resp 
         #{index-out = 0}
         pkt[pkt-pos + i] = stream-ft[i]
     }
+    #{overflow=wrap}
     pkt-pos = pkt-pos + stream-ft-n
 
     ; 串流 ID
@@ -563,6 +577,7 @@ send-request = (conn quic.conn, method str, path str, host str, body str) (resp 
         #{index-out = 0}
         pkt[pkt-pos + i] = sid-buf[i]
     }
+    #{overflow=wrap}
     pkt-pos = pkt-pos + sid-n
 
     ; Offset = 0
@@ -574,6 +589,7 @@ send-request = (conn quic.conn, method str, path str, host str, body str) (resp 
         #{index-out = 0}
         pkt[pkt-pos + i] = off-buf[i]
     }
+    #{overflow=wrap}
     pkt-pos = pkt-pos + off-n
 
     ; Length
@@ -585,6 +601,7 @@ send-request = (conn quic.conn, method str, path str, host str, body str) (resp 
         #{index-out = 0}
         pkt[pkt-pos + i] = len-buf[i]
     }
+    #{overflow=wrap}
     pkt-pos = pkt-pos + len-n
 
     ; 資料
@@ -593,6 +610,7 @@ send-request = (conn quic.conn, method str, path str, host str, body str) (resp 
         #{index-out = 0}
         pkt[pkt-pos + i] = stream-data[i]
     }
+    #{overflow=wrap}
     pkt-pos = pkt-pos + stream-pos
 
     ; ── 發送 QUIC 封包（1-RTT 短標頭 + STREAM 影格）──
@@ -652,6 +670,7 @@ send-request = (conn quic.conn, method str, path str, host str, body str) (resp 
                         r.header-names[r.header-count] = name
                         #{index-out = 0}
                         r.header-values[r.header-count] = value
+                        #{overflow=wrap}
                         r.header-count = r.header-count + 1
                     }
                 } (qpack-pos < payload.len())

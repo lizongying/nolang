@@ -3075,7 +3075,7 @@ var overflowArithOps = map[string]bool{
 //
 // line 為包容此表達式的「葉」語句所在行（插入註解的位置）；sem 用於遞迴進入 if
 // 分支區塊時對其中的子語句做註解感知掃描。
-func walkExprForIntOverflow(e parser.Expression, line int, sem *parser.SemanticContext, declared map[string]string, emit func(line, col int)) {
+func walkExprForIntOverflow(e parser.Expression, file string, line int, sem *parser.SemanticContext, declared map[string]string, emit func(file string, line, col int)) {
 	if e == nil {
 		return
 	}
@@ -3095,57 +3095,66 @@ func walkExprForIntOverflow(e parser.Expression, line int, sem *parser.SemanticC
 					prompt = true
 				}
 				if prompt {
-					emit(line, x.Token.Column)
+					emit(file, line, x.Token.Column)
 				}
 			}
 		}
-		walkExprForIntOverflow(x.Left, line, sem, declared, emit)
-		walkExprForIntOverflow(x.Right, line, sem, declared, emit)
+		walkExprForIntOverflow(x.Left, file, line, sem, declared, emit)
+		walkExprForIntOverflow(x.Right, file, line, sem, declared, emit)
 	case *parser.PrefixExpression:
-		walkExprForIntOverflow(x.Right, line, sem, declared, emit)
+		walkExprForIntOverflow(x.Right, file, line, sem, declared, emit)
 	case *parser.CallExpression:
-		walkExprForIntOverflow(x.Function, line, sem, declared, emit)
+		walkExprForIntOverflow(x.Function, file, line, sem, declared, emit)
 		for _, a := range x.Arguments {
-			walkExprForIntOverflow(a, line, sem, declared, emit)
+			walkExprForIntOverflow(a, file, line, sem, declared, emit)
 		}
 	case *parser.IfExpression:
-		walkExprForIntOverflow(x.Condition, line, sem, declared, emit)
+		walkExprForIntOverflow(x.Condition, file, line, sem, declared, emit)
 		if x.Consequence != nil {
 			for _, s := range x.Consequence.Statements {
-				walkStmtForOverflow(s, sem, declared, emit)
+				walkStmtForOverflow(s, file, sem, declared, emit)
 			}
 		}
 		if x.Alternative != nil {
 			for _, s := range x.Alternative.Statements {
-				walkStmtForOverflow(s, sem, declared, emit)
+				walkStmtForOverflow(s, file, sem, declared, emit)
 			}
 		}
 	case *parser.IndexExpression:
-		walkExprForIntOverflow(x.Left, line, sem, declared, emit)
-		walkExprForIntOverflow(x.Index, line, sem, declared, emit)
+		walkExprForIntOverflow(x.Left, file, line, sem, declared, emit)
+		walkExprForIntOverflow(x.Index, file, line, sem, declared, emit)
 	case *parser.AssignExpression:
-		walkExprForIntOverflow(x.Left, line, sem, declared, emit)
-		walkExprForIntOverflow(x.Value, line, sem, declared, emit)
+		walkExprForIntOverflow(x.Left, file, line, sem, declared, emit)
+		walkExprForIntOverflow(x.Value, file, line, sem, declared, emit)
 	case *parser.ArrayLiteral:
 		for _, el := range x.Elements {
-			walkExprForIntOverflow(el, line, sem, declared, emit)
+			walkExprForIntOverflow(el, file, line, sem, declared, emit)
 		}
 	}
 }
 
 // walkStmtForOverflow 註解感知地遍歷語句樹，對每個未標註的「葉」語句掃描其表達式
-// 內的有號整數相減，並以該語句所在行（插入註解的位置）呼叫 emit(line, col)。
-// col 為「-」運算子的欄位，供 LSP 高亮。
-func walkStmtForOverflow(stmt parser.Statement, sem *parser.SemanticContext, declared map[string]string, emit func(line, col int)) {
+// 內的有號整數相減，並以該語句所在行（插入註解的位置）呼叫 emit(file, line, col)。
+// col 為運算子的欄位，供 LSP 高亮；file 為語句所屬來源檔。
+//
+// file 由外層（頂層函式 / 語句）逐層傳入，而非取節點自身的 SourceFile：合併模式下
+// 只有頂層語句被 SetSourceFile 標記，嵌套語句的 SourceFile 為空；若在此處取空值，
+// RunAllLints 的行號範圍回退歸因會把不同模組的同名行號張冠李戴（例如把 str.no 的
+// 整數運算算到 byte.no 頭上）。節點若確有自身 SourceFile，則以該值覆蓋。
+func walkStmtForOverflow(stmt parser.Statement, file string, sem *parser.SemanticContext, declared map[string]string, emit func(file string, line, col int)) {
 	if stmt == nil {
 		return
 	}
 	// 函式定義：受函式級註解管轄；以本函數自身作用域的宣告型別掃描。
 	if fn, ok := stmt.(*parser.FunctionDefinition); ok {
 		if fn.OverflowMode == "" && fn.Body != nil {
+			fnFile := parser.GetSourceFile(fn)
+			if fnFile == "" {
+				fnFile = file
+			}
 			fnDeclared := collectFuncDeclared(fn)
 			for _, b := range fn.Body.Statements {
-				walkStmtForOverflow(b, sem, fnDeclared, emit)
+				walkStmtForOverflow(b, fnFile, sem, fnDeclared, emit)
 			}
 		}
 		return
@@ -3154,13 +3163,24 @@ func walkStmtForOverflow(stmt parser.Statement, sem *parser.SemanticContext, dec
 	if overflowAnnotatedNode(sem, stmt) {
 		return
 	}
+	if f := parser.GetSourceFile(stmt); f != "" {
+		file = f
+	}
 	emitSubs := func(e parser.Expression) {
 		if e != nil {
-			walkExprForIntOverflow(e, stmt.Pos().Line, sem, declared, emit)
+			walkExprForIntOverflow(e, file, stmt.Pos().Line, sem, declared, emit)
 		}
 	}
 	switch s := stmt.(type) {
 	case *parser.LetStatement:
+		// 顯式宣告成 option 型別（`d ?i64 = x - 1`）是訊息明列的合法方案②
+		// 「用 ?T 接收，再以 match / ?= 消費」，不該再報。lowering 亦會把
+		// `t ?= a - b` 合成為 `__unwrap_N ?i64 = a - b`（見 lowerUnwrapAssign），
+		// 故同一豁免同時覆蓋 `?=` 形式。此處與編譯期檢查 ValidateUnhandledOverflow
+		// 的 declaredOption 豁免保持一致，否則 lint 會誤報、而 `no build` 卻通過。
+		if s.Type != nil && strings.HasPrefix(s.Type.String(), "?") {
+			return
+		}
 		emitSubs(s.Value)
 	case *parser.ReturnStatement:
 		emitSubs(s.ReturnValue)
@@ -3179,19 +3199,19 @@ func walkStmtForOverflow(stmt parser.Statement, sem *parser.SemanticContext, dec
 	case *parser.ForStatement:
 		emitSubs(s.Condition)
 		if s.Init != nil {
-			walkStmtForOverflow(s.Init, sem, declared, emit)
+			walkStmtForOverflow(s.Init, file, sem, declared, emit)
 		}
 		if s.Update != nil {
-			walkStmtForOverflow(s.Update, sem, declared, emit)
+			walkStmtForOverflow(s.Update, file, sem, declared, emit)
 		}
 		if s.Body != nil {
 			for _, b := range s.Body.Statements {
-				walkStmtForOverflow(b, sem, declared, emit)
+				walkStmtForOverflow(b, file, sem, declared, emit)
 			}
 		}
 	case *parser.BlockStatement:
 		for _, b := range s.Statements {
-			walkStmtForOverflow(b, sem, declared, emit)
+			walkStmtForOverflow(b, file, sem, declared, emit)
 		}
 	}
 }
@@ -3316,8 +3336,9 @@ func ValidateIntOverflow(program *parser.Program) []ValidateResult {
 	}
 	sem := program.Sem
 	var results []ValidateResult
-	emit := func(line, col int) {
+	emit := func(file string, line, col int) {
 		results = append(results, ValidateResult{
+			File:    file,
 			Line:    line,
 			Column:  col,
 			Message: "整數運算 `a OP b` 預設在溢出時回傳 option<int>，現已列為錯誤。請二選一：①加註解 `#{overflow = wrap}`（無聲回繞）/`clamp0`（下溢歸零）/`min`/`max`/`saturate`（飽和箝位），或用型別前綴形式如 `#{overflow = u8-max}`、`#{overflow = i8-min}` 回普通 int；②顯式以 `?T` 接收並用 `?=` / match 處理 overflow。",
@@ -3330,14 +3351,15 @@ func ValidateIntOverflow(program *parser.Program) []ValidateResult {
 				// 作用域限定：僅用本函數自身的參數 / let 型別，避免與 std 模組
 				// 同名參數互相污染（nolang vet 會合併 std 進同一 program）。
 				declared := collectFuncDeclared(fn)
+				file := parser.GetSourceFile(fn)
 				for _, b := range fn.Body.Statements {
-					walkStmtForOverflow(b, sem, declared, emit)
+					walkStmtForOverflow(b, file, sem, declared, emit)
 				}
 			}
 			continue
 		}
 		declared := collectTopLevelLets(program)
-		walkStmtForOverflow(stmt, sem, declared, emit)
+		walkStmtForOverflow(stmt, parser.GetSourceFile(stmt), sem, declared, emit)
 	}
 	return results
 }

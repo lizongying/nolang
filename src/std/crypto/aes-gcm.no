@@ -118,6 +118,7 @@ ghash = (h [16]byte, aad []byte, cipher []byte) (out [16]byte) {
 
     ; 處理 AAD（每 16 位元組一區塊）
     pos = 0
+    #{overflow=wrap}
     {
         i <- [0..16): {
             #{overflow=wrap}
@@ -163,6 +164,7 @@ ghash = (h [16]byte, aad []byte, cipher []byte) (out [16]byte) {
 
     ; 處理密文
     pos = 0
+    #{overflow=wrap}
     {
         i <- [0..16): {
             #{overflow=wrap}

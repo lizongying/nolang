@@ -34,6 +34,7 @@ bz-bit-reader.read-bit = () (bit i64) {
                 #{overflow=wrap}
                 #{index-out = 0}
                 .bit-buf = .data[.pos]
+                #{overflow=wrap}
                 .pos = .pos + 1
                 .bit-cnt = 8
             }
@@ -43,6 +44,7 @@ bz-bit-reader.read-bit = () (bit i64) {
             #{overflow=wrap}
             bit = .bit-buf >> 7
             .bit-buf = .bit-buf & 0x7f
+            #{overflow=wrap}
             .bit-cnt = .bit-cnt - 1
         }
     }
@@ -577,7 +579,7 @@ bzip2-decompress = (data []byte) (out []byte) {
                 v = bwt-out[i]
                                 v >= 0 -> {
                                         v < 256 -> {
-                        #{index-out = 0}
+                        #{index-out = 0, overflow=wrap}
                         count[v] = count[v] + 1
                     }
                 }
@@ -619,7 +621,7 @@ bzip2-decompress = (data []byte) (out []byte) {
                     #{overflow=wrap}
                     #{index-out = 0}
                     lf[i] = cum[v] + rank[v]
-                    #{index-out = 0}
+                    #{index-out = 0, overflow=wrap}
                     rank[v] = rank[v] + 1
                 }
             }

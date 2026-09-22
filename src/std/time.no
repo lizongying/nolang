@@ -495,6 +495,7 @@ parse-date = (s str) (ts ?i64) {
             #{index-out = 0}
             c = s[i]
             c < 48 || c > 57 -> return
+            #{overflow=wrap}
             d.hour = d.hour * 10 + (c - 48)
         }
                 s[13] != 58 -> {
@@ -506,6 +507,7 @@ parse-date = (s str) (ts ?i64) {
             #{index-out = 0}
             c = s[i]
             c < 48 || c > 57 -> return
+            #{overflow=wrap}
             d.min = d.min * 10 + (c - 48)
         }
                 s[16] != 58 -> {
@@ -517,6 +519,7 @@ parse-date = (s str) (ts ?i64) {
             #{index-out = 0}
             c = s[i]
             c < 48 || c > 57 -> return
+            #{overflow=wrap}
             d.sec = d.sec * 10 + (c - 48)
         }
         d.hour > 23 -> return

@@ -189,6 +189,7 @@ b = (data []byte) (hash [64]byte) {
 
     ; 處理完整區塊（while loop: 只在有完整 128-byte 區塊時才執行）
     offset = 0
+    #{overflow=wrap}
     {
         #{overflow=wrap}
         t = (t + 128) & BLAKE2B-MASK
@@ -269,6 +270,7 @@ b-256 = (data []byte) (hash [32]byte) {
     t u64 = 0
 
     offset = 0
+    #{overflow=wrap}
     {
         #{overflow=wrap}
         t = (t + 128) & BLAKE2B-MASK
@@ -499,6 +501,7 @@ s = (data []byte) (hash [32]byte) {
     t u32 = 0
 
     offset = 0
+    #{overflow=wrap}
     {
         #{overflow=wrap}
         t = (t + 64) & BLAKE2S-MASK

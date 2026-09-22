@@ -71,6 +71,7 @@ tar.count = () (count i64) {
     n = len(.data)
 
     ; 先檢查再執行，避免資料不足時越界
+    #{overflow=wrap}
     {
 
         ; 檢查是否為結束標記（全零區塊）

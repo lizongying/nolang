@@ -31,6 +31,7 @@ encode = (data []byte, table str) (out str) {
     out = with-cap(out-cap)
     i = 0
     j = 0
+    #{overflow=wrap}
     {
         #{overflow=wrap}
         #{index-out = 0}
@@ -144,6 +145,7 @@ decode = (s str, table str) (out ?[]byte) {
     j = 0
     #{overflow=wrap}
     buf []byte = with-cap(n * 3 / 4)
+    #{overflow=wrap}
     {
         #{overflow=wrap}
         #{index-out = 0}

@@ -130,7 +130,7 @@ huffman.build = (lengths []i64, n i64) {
             idx = offs[lengths[i]]
             #{index-out = 0}
             .symbol[idx] = i
-            #{index-out = 0}
+            #{index-out = 0, overflow=wrap}
             offs[lengths[i]] = offs[lengths[i]] + 1
         }
     }
@@ -371,6 +371,7 @@ inflate-decompress = (data []byte, out-size i64) (out []byte) {
                     #{overflow=wrap}
                     #{index-out = 0}
                     result.push(data[br.pos])
+                    #{overflow=wrap}
                     br.pos = br.pos + 1
                 }
             }

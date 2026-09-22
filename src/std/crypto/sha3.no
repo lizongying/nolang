@@ -165,13 +165,14 @@ keccak-sponge = (data []byte, rate i64, capacity i64, out-len i64, suffix byte) 
     absorbed = 0
     w u64 = 0
     s-term u64 = suffix
+    #{overflow=wrap}
     {
         i <- [0..rate): {
             #{overflow=wrap}
             lane-idx = i / 8
             #{overflow=wrap}
             byte-idx = i % 8
-            #{index-out = 0}
+            #{index-out = 0, overflow=wrap}
             w = data[absorbed + i]
             #{overflow=wrap}
             #{index-out = 0}
@@ -186,12 +187,13 @@ keccak-sponge = (data []byte, rate i64, capacity i64, out-len i64, suffix byte) 
 
     ; 剩餘的最後一個區塊（0..rate-1 位元組）：只吸收，尚未置換
     i <- [0..rate): {
+        #{overflow=wrap}
         absorbed + i < dlen -> {
             #{overflow=wrap}
             lane-idx = i / 8
             #{overflow=wrap}
             byte-idx = i % 8
-            #{index-out = 0}
+            #{index-out = 0, overflow=wrap}
             w = data[absorbed + i]
             #{overflow=wrap}
             #{index-out = 0}
@@ -226,12 +228,13 @@ keccak-sponge = (data []byte, rate i64, capacity i64, out-len i64, suffix byte) 
     squeezed = 0
     {
         i <- [0..rate): {
+            #{overflow=wrap}
             squeezed + i < out-len -> {
                 #{overflow=wrap}
                 lane-idx = i / 8
                 #{overflow=wrap}
                 byte-idx = i % 8
-                #{index-out = 0}
+                #{index-out = 0, overflow=wrap}
                 out[squeezed + i] = (state[lane-idx] >> (byte-idx * 8)) & 255
             }
         }

@@ -1198,38 +1198,88 @@ int.to-str = () (out str) {
 
 ### Control Flow
 
-> **Old syntax (deprecated, will be removed after version n)**: `!! { }` / `! { }` / `for { }` / `for cond { }` / `while cond { }` / `for i=0,i<n,i++ { }` / `for i <- [...] { }` / `for i in [...] { }` / `match x { }` / `if/elif/else { }` can still be parsed but will output a deprecation warning. Please use the "new style" syntax in the table below.
+> **Old syntax (deprecated, will be removed after version n)**: `for { }` / `for cond { }` / `while cond { }` / `for i=0,i<n,i++ { }` / `for i <- [...] { }` / `for i in [...] { }` / `match x { }` / `if/elif/else { }` can still be parsed but will output a deprecation warning. Please use the "new style" syntax in the table below.
+>
+> ⚠️ **`!! { }` and `! { }` are NOT deprecated** — they are canonical *prefix* forms: `!!` means "always execute", `!` means "never execute".
 
-| Purpose          | New syntax                     | Old (deprecated)                         |
-| ---------------- | ------------------------------ | ---------------------------------------- |
-| Infinite loop    | `{ } (true)`                  | `!! { }` / `! { }` / `for { }`           |
-| Conditional loop | `{ } (cond)`                   | `for cond { }` / `while cond { }`        |
-| Counted loop     | `{ } * n` or `i <- [0..n): { }` | `for i=0, i<n, i++ { }`                  |
-| Range iteration  | `i <- [a..b]: { }`             | `for i <- [a..b] { }` / `for i in [...]` |
-| Conditional match| `x: { ... }`                   | `match x { ... }`                        |
-| Branch selection | `{ cond -> body }` (short-circuit) | `if/elif/else { }`                       |
-| Skip iteration   | `continue` (temporarily retained) | `**` (planned, not yet replaced)      |
-| Break loop       | `break` (temporarily retained) | `*` (planned, not yet replaced)          |
-| Early return     | `return` (temporarily retained) | `...` (planned, not yet replaced)       |
+| Purpose          | Prefix (new style, `no fmt` default)     | Suffix (equivalent legacy spelling) |
+| ---------------- | ---------------------------------------- | ----------------------------------- |
+| Infinite loop    | `!! { }` / `true { }`                    | `{ } (true)`                        |
+| Conditional loop | `(cond) { }`                             | `{ } (cond)`                        |
+| Never execute    | `! { }` / `false { }` / `() { }`         | `{ } ()`                            |
+| Counted loop     | `n * { }` (N ≤ 0 skips the body)         | `{ } * n`                           |
+| Range iteration  | `i <- [a..b]: { }`                       | —                                   |
+| Conditional match| `x: { ... }`                             | —                                   |
+| Branch selection | `{ cond -> body }` (short-circuit)       | —                                   |
+| Skip iteration   | `**` (planned)                           | `continue` (temporarily retained)   |
+| Break loop       | `*` (planned)                            | `break` (temporarily retained)      |
+| Early return     | `...` (planned)                          | `return` (temporarily retained)     |
 
-The new loop syntax puts the body block **first**, followed by the loop kind suffix:
+Every loop has **two equivalent spellings** — prefix `(cond) { }` and suffix `{ } (cond)`.
+The semantics are identical; only the order of condition and body differs. `no fmt` emits the
+**prefix** form by default; `no fmt -loop-style=suffix` switches back. Both spellings are
+format-idempotent, and a label may be written before the condition (`#1 (cond) { }`).
 
-- `{ body } (true)` — infinite loop (condition is always true)
+The **prefix** form puts the loop kind **first**, then the body:
+
+- `!! { body }` / `true { body }` — infinite loop (condition always true)
+- `! { body }` / `false { body }` / `() { body }` — not executed (false)
+- `(cond) { body }` — conditional loop (checked before each iteration)
+- `N * { body }` — counted loop (body repeats `N` times; N ≤ 0 skips)
+
+The **suffix** form puts the body **first**, followed by the loop kind:
+
+- `{ body } (true)` — infinite loop
 - `{ body } ()` — not executed (empty parens mean false)
-- `{ body } (cond)` — conditional loop (condition in parens, checked before each iteration)
-- `{ body } * N` — counted loop (body repeats `N` times)
-
-This "body-first" ordering is intentional: it mirrors how you read the block, and the suffix
-unambiguously declares the loop variant. The `(true)` reads as "loop forever"; `(cond)` reads
-as "loop while condition holds"; `()` reads as "do not execute" (false).
+- `{ body } (cond)` — conditional loop
+- `{ body } * N` — counted loop
 
 ```no
-// Infinite loop (new style)
+// === Prefix form (loop kind before the body) ===
+
+// Infinite loop
+!! {
+    // body
+}
+true {
+    // body
+}
+
+// Never executed
+! {
+    // body
+}
+() {
+    // body
+}
+
+// Conditional loop — condition checked before each iteration
+(i < 5) {
+    i = i + 1
+}
+
+// Five iterations
+5 * {
+    // body
+}
+
+// When N <= 0 the loop body is skipped
+0 * { }    // skipped
+-3 * { }   // skipped
+
+// Labeled
+#1 (i < 5) {
+    i = i + 1
+}
+
+// === Suffix form (body first, legacy) ===
+
+// Infinite loop
 {
     // body
 } (true)
 
-// Conditional loop (new style) — condition checked before each iteration
+// Conditional loop
 {
     i = i + 1
 } (i < 5)
@@ -2845,12 +2895,16 @@ External packages can only access exports declared in `lib.no` when importing vi
 - `@` — export module
 - `..` — parent (super) / range operator (`[a..b)`)
 - `.` — self (⚠️ in range bounds, use `self.method` not `.method` to avoid `...` ambiguity with the return operator)
-- `!` — false (planned, currently still uses `false`)
-- `!!` — true (planned, currently still uses `true`)
-- `{ } (true)` — infinite loop (new style; `!! { }` is deprecated)
-- `{ } ()` — not executed (empty parens mean false)
-- `{ } (cond)` — conditional loop (new style; `for cond { }` is deprecated)
-- `{ } * N` — counted loop (body repeats N times; N ≤ 0 skips the body)
+- `!` — false; also the "never execute" loop prefix (`! { }` never runs)
+- `!!` — true; also the "always execute" loop prefix (`!! { }` loops forever)
+- `!! { }` / `true { }` — infinite loop (**prefix** form; `no fmt` default)
+- `! { }` / `false { }` / `() { }` — not executed (false)
+- `(cond) { }` — conditional loop (**prefix** form)
+- `N * { }` — counted loop (**prefix** form; N ≤ 0 skips the body)
+- `{ } (true)` — infinite loop (**suffix** form, legacy)
+- `{ } ()` — not executed (empty parens mean false; **suffix** form)
+- `{ } (cond)` — conditional loop (**suffix** form; `for cond { }` is deprecated)
+- `{ } * N` — counted loop (**suffix** form; body repeats N times; N ≤ 0 skips the body)
 - `**` — continue (skip current iteration) (planned, currently still uses `continue`)
 - `*` — break (exit loop) (planned, currently still uses `break`)
 - `...` — return/terminate (planned, currently still uses `return`)
@@ -3451,25 +3505,25 @@ Modes (all return plain `int`):
 - **`#{overflow = max}`** → clamp to the type's maximum. Use for capacity caps / saturating accumulation.
 - **`#{overflow = saturate}`** → over-flow → max, under-flow → min.
 
-All modes also support **type-prefixed forms** that pin the exact narrow-type bound, e.g. `#{overflow = u8-max}`, `#{overflow = i8-min}`, `#{overflow = u16-saturate}`. A function-level annotation of a prefixed form applies to every same-type operation in the body.
+All modes also support **type-prefixed forms** that pin the exact narrow-type bound, e.g. `#{overflow = u8-max}`, `#{overflow = i8-min}`, `#{overflow = u16-saturate}`.
 
-Annotation granularity: above a **function definition** → applies to all covered integer operations in the function body (function-level). Above a **`let` binding** → applies only to the immediately following operation statement (statement-level). One annotation affects only its first following definition/binding.
+Annotation granularity: `#{overflow = ...}` is a **line annotation** — it applies only to the statement immediately following it. That is the only fully supported form: both the runtime semantics (codegen) and the `ovfhndld` hard error honour it. ⚠️ **An annotation above a function definition no longer covers the function body**: it only makes the `ovf-int-default` lint skip the whole function, while unannotated operations inside the body still raise the `ovfhndld` hard error (measured to behave exactly like writing no annotation at all).
 
-**LSP quick fix:** the language server (nolang-lsp) emits a Hint (`nolang-overflow`) on every un-annotated integer operation and offers five code actions — **Add `#{overflow = wrap}`** / **`clamp0`** / **`min`** / **`max`** / **`saturate}`** — that insert the annotation above the operation's enclosing statement at the matching indentation, switching the default `option<int>` result back to plain `int`.
+**LSP quick fix:** the language server (nolang-lsp) reports un-annotated integer arithmetic as an **error** (`nolang-overflow`, trace id `ovf-int-default`) and offers five code actions — **Add `#{overflow = wrap}`** / **`clamp0`** / **`min`** / **`max`** / **`saturate`** — that insert the annotation above the operation's enclosing statement at the matching indentation, switching the default `option<int>` result back to plain `int`. The command-line equivalent is `no fmt --fix=overflow`, which fixes a whole file or directory in place (`-w`), prints a diff (`-d`), or prints to stdout; it is precise (only lint-reported statements are touched) and idempotent.
 
 ```no
-#{overflow = wrap}
 sub-wrap = (a i64, b i64) (r i64) {
+    #{overflow = wrap}
     r = a - b              ; plain i64, silent wrap on overflow
 }
 
-#{overflow = u8-max}
 inc = (x u8) (r u8) {
+    #{overflow = u8-max}
     r = x + 1              ; x = 255 → 255 (no wrap to 0)
 }
 
-#{overflow = i8-min}
 dec = (x i8) (r i8) {
+    #{overflow = i8-min}
     r = x - 1              ; x = -128 → -128 (no wrap to 127)
 }
 

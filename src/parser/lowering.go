@@ -143,6 +143,13 @@ func (l *lowerer) walk(v reflect.Value) {
 			replaced := false
 			if v.Index(i).CanSet() {
 				stmt := v.Index(i).Interface()
+				// carryFrom 保存「未展開」的外層陳述：行註解（`#{overflow=...}`）
+				// 掛在最外層陳述上（side-table 條目或 OverflowMode 欄位），
+				// desugar 產生取代節點後必須由它把模式帶過去，否則註解失效。
+				var carryFrom Node
+				if n, isNode := stmt.(Node); isNode {
+					carryFrom = n
+				}
 				// 展开 ExpressionStatement → AssignExpression：索引寫入
 				//（`k[i] = key[i]`、`obj.field = arr[i]`）在 AST 上為
 				// ExpressionStatement 包裹 AssignExpression，必須取出內層
@@ -167,9 +174,11 @@ func (l *lowerer) walk(v reflect.Value) {
 				}
 				if !l.p.SkipSafeIndexLowering {
 					if repl := l.maybeIndexOutAssign(stmt); repl != nil {
+						l.carryOverflowAnnotation(carryFrom, repl)
 						v.Index(i).Set(reflect.ValueOf(repl))
 						replaced = true
 					} else if repl := l.maybeAutoPropagateIndex(stmt); repl != nil {
+						l.carryOverflowAnnotation(carryFrom, repl)
 						v.Index(i).Set(reflect.ValueOf(repl))
 						replaced = true
 					}
@@ -554,6 +563,63 @@ func (l *lowerer) maybeIndexOutAssign(stmt interface{}) Statement {
 		stmts = []Statement{tmpAssign, &ExpressionStatement{Token: tok, Expression: lowered}}
 	}
 	return &BlockStatement{Token: tok, Statements: stmts}
+}
+
+// carryOverflowAnnotation 把被安全索引 desugar 取代的原陳述之 `#{overflow = ...}`
+// 條目轉掛到取代節點上。
+//
+// 安全索引 desugar 會以全新的 match/Block 取代原陳述（`arr[idx] = v` →
+// `__tmp = arr[idx]` + match），而 `#{overflow = wrap}` 這類**行註解**是綁在原陳述
+// 節點上的。若不轉移，取代節點就變成「未標註」：
+//   - lint（checker.ValidateIntOverflow，跑在 lowering 之後的程式上）會把
+//     索引算式 `arr[base + i]` 裡真正的整數運算當成未處理而繼續報告
+//     （ovf-int-default），即使原始碼上方明明寫了 `#{overflow=wrap}`；
+//   - 型別校驗（checker.overflowModeFromSem）也讀不到模式。
+// 這正是「加了註解卻仍被誤報」的根因，故在此把 overflow 條目一併帶到取代節點
+// （只帶 overflow，不帶 index-out：index-out 的語意已由 desugar 本身實現）。
+//
+// 註解來源有兩個：側表條目（Ident 開頭的陳述由 parser 直接附加），以及
+// OverflowMode 欄位（`.field[i] = v` / `return ...` 這類無法直接附加的陳述，
+// 行注解只寫欄位而不進側表，以免 formatter 把同一行註解印兩次）。
+func (l *lowerer) carryOverflowAnnotation(from Node, to Statement) {
+	if l.p.sem == nil || to == nil || isNil(from) {
+		return
+	}
+	entries := l.p.overflowEntries(l.p.sem.RawAnnotationsOf(from))
+	if len(entries) == 0 {
+		entries = l.p.overflowEntries(l.p.sem.AnnotationsOf(from))
+	}
+	if len(entries) == 0 {
+		if mode := overflowModeFieldOf(from); mode != "" {
+			entries = []*AnnotationEntry{{
+				Key:   "overflow",
+				Value: &AnnotationIdentValue{Value: mode},
+			}}
+		}
+	}
+	if len(entries) == 0 {
+		return
+	}
+	l.p.sem.SetRawAnnotations(to, entries)
+	l.p.sem.ensure(to).Annotations = entries
+}
+
+// overflowModeFieldOf 讀取陳述節點的 OverflowMode 欄位（行注解在無法直接附加
+// 註解的陳述上只寫此欄位）。欄位集合與 setStmtOverflowMode 保持一致。
+func overflowModeFieldOf(n Node) string {
+	switch s := n.(type) {
+	case *ForStatement:
+		return s.OverflowMode
+	case *ExpressionStatement:
+		return s.OverflowMode
+	case *LetStatement:
+		return s.OverflowMode
+	case *ReturnStatement:
+		return s.OverflowMode
+	case *MultiAssignStatement:
+		return s.OverflowMode
+	}
+	return ""
 }
 
 // defaultLiteralFor 依元素型別 elem 解釋 #{index-out} 的預設註解值 defVal，

@@ -245,8 +245,10 @@
             i <- [0..n): {
                 #{overflow=wrap}
                 out = out - number.i64-to-str(.[i])
+                #{overflow=wrap}
                 i < last -> out = out - ', '
             }
+            #{overflow=wrap}
             out = out - ']'
         }
     }

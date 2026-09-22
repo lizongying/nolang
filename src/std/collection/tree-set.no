@@ -360,6 +360,7 @@ tree-set.add = (key i64) (ok bool) {
                     .left[cur] = idx
                     #{index-out = 0}
                     .parent[idx] = cur
+                    #{overflow=wrap}
                     .size = .size + 1
                     ok = true
                     .rebalance-up(cur)
@@ -380,6 +381,7 @@ tree-set.add = (key i64) (ok bool) {
                     .right[cur] = idx
                     #{index-out = 0}
                     .parent[idx] = cur
+                    #{overflow=wrap}
                     .size = .size + 1
                     ok = true
                     .rebalance-up(cur)

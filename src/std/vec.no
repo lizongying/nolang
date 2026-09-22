@@ -136,6 +136,7 @@ vec-clear = () {
         .len() > 0 -> {
             #{overflow=wrap}
             idx = .len()
+            #{overflow=wrap}
             idx = idx - 1
             val = .[idx]
             .len = idx
@@ -212,6 +213,7 @@ vec-clear = () {
         i >= .len() -> {
             #{overflow=wrap}
             cur = .len()
+            #{overflow=wrap}
             .len = cur + 1
             .[cur] = val
         }
@@ -223,6 +225,7 @@ vec-clear = () {
             #{overflow=wrap}
             last = last - 1
             cur = .len()
+            #{overflow=wrap}
             .len = cur + 1
             .[cur] = .[last]
 
@@ -253,14 +256,17 @@ vec-clear = () {
             #{overflow=wrap}
             val = .[i]
             bound = .len()
+            #{overflow=wrap}
             bound = bound - 1
             j = i
             {
                 #{overflow=wrap}
                 j = j + 1
+                #{overflow=wrap}
                 .[j - 1] = .[j]
             } (j < bound)
             newlen = .len()
+            #{overflow=wrap}
             newlen = newlen - 1
             .len = newlen
         }
@@ -449,8 +455,10 @@ vec-reverse = (a i64) {
             i <- [0...len()): {
                 #{overflow=wrap}
                 out = out - number.i64-to-str(.[i])
+                #{overflow=wrap}
                 i < last -> out = out - ', '
             }
+            #{overflow=wrap}
             out = out - ']'
         }
     }

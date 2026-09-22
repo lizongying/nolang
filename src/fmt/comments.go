@@ -312,6 +312,27 @@ func (f *formatter) attachedAnnotationsWillEmit(stmt parser.Statement) bool {
 	return false
 }
 
+// attachedAnnotationsWillEmitAny 與 attachedAnnotationsWillEmit 相同，但**不**排除
+// overflow 條目：只要有任何「非尾隨」附加註解會在陳述上方印出獨立一行就回傳 true。
+//
+// 用途僅限「內聯守衛」（isStandaloneInline / writeBareMatchArm 的 canInline）。
+// 內聯會把註解寫成 `cond -> #{overflow=wrap}`，而解析器會把 `#{...}` 當成 arm
+// 本體、二次格式化再產生 `overflow = wrap` 之類的錯亂（非冪等）。因此只要該陳述
+// 上方會有一行註解，就必須強制區塊形式 `cond -> { #{...} ... }`。
+//
+// 不可用於間隙（gap）判斷：overflow 是行註解，幾乎每條含算術的陳述都自帶一行，
+// 若讓它觸發間隙會在每條陳述前插入空行（破壞冪等且嚴重膨脹）——間隙判斷請用
+// attachedAnnotationsWillEmit。
+func (f *formatter) attachedAnnotationsWillEmitAny(stmt parser.Statement) bool {
+	for _, e := range f.attachedAnnotations(stmt) {
+		if e.Trailing {
+			continue
+		}
+		return true
+	}
+	return false
+}
+
 // overflowModeStringOf 從一個 overflow 註解條目取出正規化模式字串
 // （wrap/clamp0/min/max/saturate）；非 overflow 條目、無值或無法識別時回傳 ""。
 func overflowModeStringOf(e *parser.AnnotationEntry) string {

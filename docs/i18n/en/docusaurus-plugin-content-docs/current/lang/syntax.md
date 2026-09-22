@@ -670,23 +670,74 @@ a, b = swap(5, 3)
 
 ### Old vs. New Comparison
 
-| Old                             | New                                                |
-| ---------------------------- | -------------------------------------------------- |
-| `for { }` infinite loop      | `{ } (true)`                                     |
-| `for cond { }` conditional loop | `{ } (cond)` (empty `()` means false, not executed) |
-| `for i=0, i<n, i++ { }` counting | `{ } * n` (constant count) or `i <- [0..n): { }` (variable) |
-| `for i <- [a..b] { }` range  | `i <- [a..b]: { }`                                 |
-| `for i in [a..b) { }` range  | `i <- [a..b): { }`                                 |
-| `match x { ... }` matching   | `x: { ... }`                                       |
-| `if/elif/else { }` branching | `{ cond -> body }`                                 |
-| `continue`                   | `**`                                               |
-| `break`                      | `*`                                                |
-| `return`                     | `...`                                              |
+| Old / suffix (suffix)               | Prefix (prefix, `no fmt` default)                    |
+| ----------------------------------- | ---------------------------------------------------- |
+| `{ } (true)` infinite loop          | `!! { }` or `true { }`                              |
+| `{ } (cond)` conditional loop       | `(cond) { }` (empty `()` means false, not executed) |
+| `{ } ()` not executed               | `! { }` or `false { }` or `() { }`                  |
+| `{ } * n` constant count            | `n * { }` (N <= 0 skips the body)                   |
+| `for i=0, i<n, i++ { }` counting    | `{ } * n` (constant count) or `i <- [0..n): { }` (variable) |
+| `for i <- [a..b] { }` range         | `i <- [a..b]: { }`                                  |
+| `for i in [a..b) { }` range         | `i <- [a..b): { }`                                  |
+| `match x { ... }` matching          | `x: { ... }`                                        |
+| `if/elif/else { }` branching        | `{ cond -> body }`                                  |
+| `continue`                          | `**`                                                |
+| `break`                             | `*`                                                 |
+| `return`                            | `...`                                               |
 
 ### Loop / While / for-in
 
+> **Two equivalent spellings**: every loop supports a **prefix** form `(cond) { }` and a
+> **suffix** form `{ } (cond)` — the semantics are identical, only the order of condition
+> and body differs. `no fmt` emits the **prefix** form by default; use
+> `no fmt -loop-style=suffix` to switch back (both spellings are format-idempotent).
+
 ```no
-; Infinite loop (condition is always true)
+; === Prefix form (condition before the body) ===
+
+; Infinite loop (condition is always true) — these two are equivalent
+!! {
+    ...
+}
+true {
+    ...
+}
+
+; Not executed (condition is always false) — these three are equivalent
+! {
+    ...
+}
+false {
+    ...
+}
+() {
+    ...
+}
+
+; Conditional loop (checks cond, runs the body while true)
+(x == 1) {
+    do-something()
+}
+
+; Limited execution count (prefix counted loop)
+10 * {
+    do-something()
+}
+
+; When N <= 0 the loop body does not execute (zero or negative count is skipped)
+0 * {
+    print('will not execute')
+}
+-3 * {
+    print('will not execute either')
+}
+
+; A label may be attached (the label goes before the condition / count)
+#1 (x == 1) {
+    do-something()
+}
+
+; === Suffix form (condition after the body, legacy) ===
 {
     ...
 } (true)
@@ -696,7 +747,7 @@ a, b = swap(5, 3)
     ...
 } ()
 
-; Conditional loop (checks cond, runs the body while true)
+; Conditional loop
 {
     do-something()
 } (x == 1)
@@ -2098,18 +2149,22 @@ arithmetic operations** is controlled by the `#{overflow = ...}` annotation:
 | **Saturate** | `#{overflow = saturate}` | above → maximum, below → minimum | `int` (plain) | signal/colour saturation, etc. |
 
 All modes also support a **type-prefixed form** that pins the saturation bound to a specific narrow type, e.g.
-`#{overflow = u8-max}`, `#{overflow = i8-min}`, `#{overflow = u16-saturate}`. When the annotation appears at
-function level, the prefixed type applies to every matching operation in that function body.
+`#{overflow = u8-max}`, `#{overflow = i8-min}`, `#{overflow = u16-saturate}`.
 
-> **Annotation granularity**: placed **above a function definition**, `#{overflow = ...}` applies to every applicable
-> integer operation in the whole function body (function level); placed **above a single binding**, it applies only to
-> the one operation statement that immediately follows (statement level). An annotation only affects the first
-> definition/binding after it.
+> **Annotation granularity**: `#{overflow = ...}` is a **line annotation** — it applies only to the statement
+> immediately following it. That is the only fully supported form: both the runtime semantics (codegen) and the
+> `ovfhndld` hard error honour it.
+>
+> ⚠️ **An annotation above a function definition no longer covers the function body.** It only makes the
+> `ovf-int-default` lint skip the whole function (so the report looks clean), while unannotated operations inside
+> the body **still raise the `ovfhndld` hard error** — measured to behave exactly like writing no annotation at
+> all. Annotate statement by statement; `no fmt --fix=overflow` emits exactly this per-statement form.
 
-> **LSP quick fix**: the editor (nolang-lsp) raises a Hint (`nolang-overflow`) on unannotated integer arithmetic and
-> offers five quickfixes — **Add `#{overflow = wrap}`** / **`clamp0`** / **`min`** / **`max`** / **`saturate`** — which
-> insert the corresponding annotation above the statement holding the operation, using that line's indentation,
-> turning the default `option<int>` result into a plain `int`.
+> **LSP quick fix**: the editor (nolang-lsp) reports unannotated integer arithmetic as an **error**
+> (`nolang-overflow`, trace id `ovf-int-default`) and offers five quickfixes — **Add `#{overflow = wrap}`** /
+> **`clamp0`** / **`min`** / **`max`** / **`saturate`** — which insert the corresponding annotation above the
+> statement holding the operation, using that line's indentation, turning the default `option<int>` result into a
+> plain `int`. The command-line equivalent is `no fmt --fix=overflow`.
 
 ### Default: returns `option<int>`
 
@@ -2210,6 +2265,53 @@ dec = (x i8) (r i8) {
 > **Why is the default `option` rather than `wrap`?** Silent wrapping hides overflow bugs; returning an `option` by
 > default forces the caller to handle overflow explicitly (or to annotate `wrap` and declare "I accept wrapping
 > semantics"), turning "is overflow acceptable here?" into a visible design decision.
+
+`no vet` reports **unannotated** integer arithmetic as an **error** (trace id `ovf-int-default`), not a hint. The
+reason: the default `option<int>` silently drifts in meaning the moment it is used as a plain integer, so the choice
+must be explicit — add a `#{overflow = ...}` annotation, or handle the overflow with `?T` plus `?=` / match.
+
+### Automatic fix: `no fmt --fix=overflow`
+
+Instead of hand-writing annotations in bulk, use `no fmt`'s fix-class argument:
+
+```bash
+no fmt --fix=overflow -w src/std          # fix a whole directory in place
+no fmt --fix=overflow -d src/std/str.no   # print the diff only, do not write
+no fmt --fix=overflow src/std/str.no      # print the fixed content
+```
+
+The fix is **precise and non-polluting**: it inserts `#{overflow=wrap}` only above the statement holding the
+operation the lint actually reported — no other statement is touched, nothing is re-laid-out, existing annotations
+are left alone, and re-running is idempotent (already-annotated statements never change). This differs from running
+`no fmt -w`, which reformats the entire file.
+
+> Re-run `no vet` after fixing to confirm it reaches zero. In the overwhelming majority of cases one pass clears
+> everything (`src/std` went from 4728 to 0). The one known exception: a report that lands on a match **arm
+> condition** while the arm body holds no annotatable statement — a line annotation applies only to the statement
+> immediately after it, so it cannot cover the arm's own condition arithmetic, and `no vet` reports it again. In
+> that case hoist the operation into its own statement first, then annotate it.
+
+### Annotation binding and single-line merging
+
+`#{...}` annotations are **bound to the node**, so a single statement can carry several keys at once, and multiple
+annotations are always **merged onto one line**:
+
+```nolang
+i <- [0..16): {
+    #{index-out = 0, overflow=wrap}
+    buf[base + i] = data[i]
+}
+```
+
+This one statement needs two meanings at once: "out-of-range access yields the default" (`index-out`) and "on
+overflow, wrap" (`overflow`). Writing them on two separate lines parses identically, but
+`no fmt --fix=overflow` produces the merged single-line form.
+
+> **Scope of a line annotation**: `#{overflow = ...}` applies only to the **statement immediately following it**.
+> An unrelated annotation in between (such as `#{index-out = 0}`) does not stop it from reaching that statement.
+> Safe indexed writes (`arr[base + i] = v`, `.buf[.pos + i] = v`) are desugared into a match form, and
+> `#{overflow = wrap}` is carried over to the desugared node, so the index arithmetic is governed by the
+> annotation too and is not misreported as unannotated.
 
 ### Error Propagation (the `?=` Operator)
 

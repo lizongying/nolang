@@ -664,6 +664,7 @@ regexp.emit-quantized = (atom-type i64, atom-char i64, atom-cls i64, atom-i i64)
         .arg1[split-pc] = l1
         #{index-out = 0}
         .arg2[split-pc] = .n
+        #{overflow=wrap}
         .tmp-next-i = atom-i + 1
         return
     }
@@ -673,7 +674,9 @@ regexp.emit-quantized = (atom-type i64, atom-char i64, atom-cls i64, atom-i i64)
         #{overflow=wrap}
         l1 = .n
         .emit-atom(atom-type, atom-char, atom-cls)
+        #{overflow=wrap}
         .emit(RE-OP-SPLIT, l1, .n + 1)
+        #{overflow=wrap}
         .tmp-next-i = atom-i + 1
         return
     }
@@ -689,6 +692,7 @@ regexp.emit-quantized = (atom-type i64, atom-char i64, atom-cls i64, atom-i i64)
         .arg1[split-pc] = l1
         #{index-out = 0}
         .arg2[split-pc] = .n
+        #{overflow=wrap}
         .tmp-next-i = atom-i + 1
         return
     }
@@ -803,7 +807,7 @@ regexp.match-at = (pc i64, sp i64, text str) (ok bool) {
                 op == RE-OP-CHAR -> {
                         sp < text.len-bytes() -> {
                                 (text[sp]) == .arg1[pc] -> {
-                    #{index-out = 0}
+                    #{index-out = 0, overflow=wrap}
                     result-ok = .match-at(pc + 1, sp + 1, text)
                 }
             }
@@ -811,7 +815,7 @@ regexp.match-at = (pc i64, sp i64, text str) (ok bool) {
                 op == RE-OP-ANY -> {
                         sp < text.len-bytes() -> {
                                 (text[sp]) != 10 -> {
-                    #{index-out = 0}
+                    #{index-out = 0, overflow=wrap}
                     result-ok = .match-at(pc + 1, sp + 1, text)
                 }
             }
@@ -822,6 +826,7 @@ regexp.match-at = (pc i64, sp i64, text str) (ok bool) {
             ch = text[sp]
             #{index-out = 0}
             yes = .in-class(.arg1[pc], ch)
+            #{overflow=wrap}
             yes -> result-ok = .match-at(pc + 1, sp + 1, text)
         }
         op == RE-OP-SPLIT -> {
@@ -844,7 +849,9 @@ regexp.match-at = (pc i64, sp i64, text str) (ok bool) {
             result-ok = true
             .match-end = sp
         }
+        #{overflow=wrap}
         op == RE-OP-START -> sp == 0 -> result-ok = .match-at(pc + 1, sp, text)
+        #{overflow=wrap}
         op == RE-OP-END -> sp == text.len-bytes() -> result-ok = .match-at(pc + 1, sp, text)
     }
     ok = result-ok

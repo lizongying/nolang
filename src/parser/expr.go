@@ -1934,6 +1934,14 @@ func (p *Parser) isFunctionLiteral() bool {
 
 	// (a, b, ...) or (a) — scan to closing ) then check for {
 	for p.currentToken.Type != lexer.RPAREN && p.currentToken.Type != lexer.EOF {
+		// 參數列只能由識別符、逗號與型別前綴（* ? [ .）組成；
+		// 出現二元運算符（< > + - 等）表示這不是函式字面量，
+		// 而是像 `(a < b) { }` 這類條件循環前綴，應交給分組表達式解析。
+		if infixOperators[p.currentToken.Type] ||
+			p.currentToken.Type == lexer.RARROW ||
+			p.currentToken.Type == lexer.ASSIGN {
+			return false
+		}
 		p.nextToken()
 	}
 	if p.currentToken.Type != lexer.RPAREN {

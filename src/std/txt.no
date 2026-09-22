@@ -682,6 +682,7 @@ txt.to-i8 = () (val ?i8) {
         ok -> {
             #{overflow=wrap}
             n = it
+            #{overflow=wrap}
             n >= 0 - 128 && n <= 127 -> val = n
 
             -> val = err('out of range for i8')
@@ -700,6 +701,7 @@ txt.to-i16 = () (val ?i16) {
         ok -> {
             #{overflow=wrap}
             n = it
+            #{overflow=wrap}
             n >= 0 - 32768 && n <= 32767 -> val = n
 
             -> val = err('out of range for i16')
@@ -718,6 +720,7 @@ txt.to-i32 = () (val ?i32) {
         ok -> {
             #{overflow=wrap}
             n = it
+            #{overflow=wrap}
             n >= 0 - 2147483648 && n <= 2147483647 -> val = n
 
             -> val = err('out of range for i32')
@@ -1426,10 +1429,13 @@ txt.from-hex = () (out ?txt) {
             return
         }
     }
+    #{overflow=wrap}
     n i64 = .len() / 2
     out2 txt
     i <- [0..n): {
+        #{overflow=wrap}
         hi = txt-hex-val(.byte(i * 2))
+        #{overflow=wrap}
         lo = txt-hex-val(.byte(i * 2 + 1))
         hi < 0 || lo < 0 -> {
             out = err('invalid hex character')

@@ -97,6 +97,7 @@ pool.get = () (c ?net.conn) {
             .conns[.count] = cn
             #{index-out = 0}
             .in-use[.count] = true
+            #{overflow=wrap}
             .count = .count + 1
             c = cn
         }

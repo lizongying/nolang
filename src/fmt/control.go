@@ -48,7 +48,8 @@ func (f *formatter) isStandaloneInline(body *parser.BlockStatement) bool {
 	// side-table 合併、或平台註解 #{mac-arm64}），內聯為 `cond -> #{...}` 形式無法
 	// 被解析器還原（註解會被誤判為 arm 本體，或二次格式化產生 `overflow = wrap`
 	// 之類的錯亂）。此時強制區塊形式 `cond -> { #{...} ... }` 以保證冪等與可重解析。
-	if f.attachedAnnotationsWillEmit(body.Statements[0]) {
+	// 此處用「含 overflow」的版本：overflow 同樣會印出獨立一行，同樣不能內聯。
+	if f.attachedAnnotationsWillEmitAny(body.Statements[0]) {
 		return false
 	}
 	switch body.Statements[0].(type) {
@@ -326,15 +327,16 @@ func (f *formatter) writeBareMatchArm(e *parser.IfExpression) {
 	// （如區塊級 #{overflow=wrap} 經 side-table 合併到該語句、或平台註解 #{mac-arm64}），
 	// 內聯成 `cond -> #{...}` 形式無法被解析器還原（註解會被誤判為 arm 本體，或二次格式化
 	// 產生 `overflow = wrap` 之類的錯亂）。此時強制區塊形式 `cond -> { #{...} ... }`，
-	// 保證冪等與可重解析。attachedAnnotationsWillEmit 只在「註解確實會被印出」時為真
-	// （模式與 f.activeOverflow 不同、或非 overflow 註解），故已生效的區塊級 overflow
-	// 不會誤觸此守衛，避免大範圍無謂的 block 化。
+	// 保證冪等與可重解析。
+	// 注意：此處必須用「含 overflow」的版本。overflow 也是會在該語句上方印出獨立一行的
+	// 行注解，內聯同樣無法還原；早期誤用不含 overflow 的版本，導致帶 overflow 的 arm
+	// body 被印成 `cond -> #{overflow=wrap}` 而二次格式化錯亂。
 	canInline := (e.Consequence.IsInline || f.isBareMatchBody(statements)) &&
 		len(statements) == 1 &&
 		e.Consequence.TrailingComments == nil &&
 		e.Consequence.ClosingBraceComment == nil &&
 		f.obcOf(e.Consequence) == nil &&
-		!f.attachedAnnotationsWillEmit(statements[0])
+		!f.attachedAnnotationsWillEmitAny(statements[0])
 	if canInline {
 		switch statements[0].(type) {
 		case *parser.ExpressionStatement, *parser.LetStatement,

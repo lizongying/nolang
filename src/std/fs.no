@@ -1007,6 +1007,7 @@ walk-collect = (dirpath str, paths []str) (out []str) {
                 #{index-out = 0}
                 last = dirpath[dirpath.len-bytes() - 1]
                 last == sep -> fullpath = dirpath - name
+                #{overflow=wrap}
                 last != sep -> fullpath = dirpath - '/' - name
             }
 

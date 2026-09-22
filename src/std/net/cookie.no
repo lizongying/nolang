@@ -324,6 +324,7 @@ jar.set = (name str, value str, domain str, path str, max-age i64) {
         .domains[.count] = domain
         #{index-out = 0}
         .paths[.count] = path
+        #{overflow=wrap}
         .count = .count + 1
     }
 }
@@ -403,6 +404,7 @@ jar.delete = (name str, domain str, path str) {
                 #{index-out = 0}
                 .paths[i] = .paths[last]
             }
+            #{overflow=wrap}
             .count = .count - 1
             return
         }
@@ -419,6 +421,7 @@ jar.build-header = (domain str, path str) (out str) {
 
         ; 域名匹配
         domain-match = false
+        #{overflow=wrap}
         {
                         .domains[i].len-bytes() == 0 -> {
                 #{index-out = 0}
@@ -452,7 +455,7 @@ jar.build-header = (domain str, path str) (out str) {
         domain-match && path-match -> {
             #{overflow=wrap}
             out.len-bytes() > 0 -> out = out - '; '
-            #{index-out = 0}
+            #{index-out = 0, overflow=wrap}
             out = out - .names[i] - '=' - .values[i]
         }
     }
@@ -486,6 +489,7 @@ jar.parse-response = (set-cookie-str str, domain str, path str) {
             i = i - 1
         } (i >= 0)
         {
+            #{overflow=wrap}
             slash-pos >= 0 -> c.path = path.slice(0, slash-pos + 1)
 
             -> c.path = '/'

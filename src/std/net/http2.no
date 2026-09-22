@@ -77,16 +77,18 @@ conn {
 frame.parse = (data str, pos i64) (next-pos ?i64) {
     #{overflow=wrap}
     next-pos = nil
+    #{overflow=wrap}
     pos + HTTP2-FRAME-HEADER-SIZE > data.len-bytes() -> return; 24-bit length（big-endian）
 
-    #{index-out = 0}
+    #{index-out = 0, overflow=wrap}
     .length = (data[pos] << 16) | (data[pos + 1] << 8) | data[pos + 2]
-    #{index-out = 0}
+    #{index-out = 0, overflow=wrap}
     .frame-type = data[pos + 3]
-    #{index-out = 0}
+    #{index-out = 0, overflow=wrap}
     .flags = data[pos + 4]; 31-bit stream-id（big-endian，高位保留）
-    #{index-out = 0}
+    #{index-out = 0, overflow=wrap}
     .stream-id = ((data[pos + 5] & 127) << 24) | (data[pos + 6] << 16) | (data[pos + 7] << 8) | data[pos + 8]
+    #{overflow=wrap}
     next-pos = pos + HTTP2-FRAME-HEADER-SIZE
 }
 
@@ -96,21 +98,21 @@ frame.serialize = (buf str, pos i64) (next-pos i64) {
     #{overflow=wrap}
     #{index-out = 0}
     buf[pos] = (.length >> 16) & 255
-    #{index-out = 0}
+    #{index-out = 0, overflow=wrap}
     buf[pos + 1] = (.length >> 8) & 255
-    #{index-out = 0}
+    #{index-out = 0, overflow=wrap}
     buf[pos + 2] = .length & 255
-    #{index-out = 0}
+    #{index-out = 0, overflow=wrap}
     buf[pos + 3] = .frame-type & 255
-    #{index-out = 0}
+    #{index-out = 0, overflow=wrap}
     buf[pos + 4] = .flags & 255
-    #{index-out = 0}
+    #{index-out = 0, overflow=wrap}
     buf[pos + 5] = (.stream-id >> 24) & 127
-    #{index-out = 0}
+    #{index-out = 0, overflow=wrap}
     buf[pos + 6] = (.stream-id >> 16) & 255
-    #{index-out = 0}
+    #{index-out = 0, overflow=wrap}
     buf[pos + 7] = (.stream-id >> 8) & 255
-    #{index-out = 0}
+    #{index-out = 0, overflow=wrap}
     buf[pos + 8] = .stream-id & 255
     #{overflow=wrap}
     next-pos = pos + HTTP2-FRAME-HEADER-SIZE
@@ -193,8 +195,10 @@ conn.recv-frame = () (frame ?frame) {
         #{overflow=wrap}
         hdr-total >= HTTP2-FRAME-HEADER-SIZE -> *
         {
+            #{overflow=wrap}
             .use-tls -> recv-n = .tls-c.recv(hdr-buf, HTTP2-FRAME-HEADER-SIZE - hdr-total)
 
+            #{overflow=wrap}
             -> recv-n = net.net-recv(.fd, hdr-buf, HTTP2-FRAME-HEADER-SIZE - hdr-total)
         }
         recv-n <= 0 -> return
@@ -202,9 +206,10 @@ conn.recv-frame = () (frame ?frame) {
         #{index-out = 0}
         ; net-recv 覆寫 buf[0]，需要位移複製
         i <- [0..recv-n): {
-            #{index-out = 0}
+            #{index-out = 0, overflow=wrap}
             hdr-buf[hdr-total + i] = hdr-buf[i]
         }
+        #{overflow=wrap}
         hdr-total = hdr-total + recv-n
     } (true)
 
@@ -225,15 +230,18 @@ conn.recv-frame = () (frame ?frame) {
             #{overflow=wrap}
             payload-total >= f.length -> *
             {
+                #{overflow=wrap}
                 .use-tls -> recv-n = .tls-c.recv(f.payload, f.length - payload-total)
 
+                #{overflow=wrap}
                 -> recv-n = net.net-recv(.fd, f.payload, f.length - payload-total)
             }
             recv-n <= 0 -> return
             i <- [0..recv-n): {
-                #{index-out = 0}
+                #{index-out = 0, overflow=wrap}
                 f.payload[payload-total + i] = f.payload[i]
             }
+            #{overflow=wrap}
             payload-total = payload-total + recv-n
         } (true)
     }
@@ -279,7 +287,7 @@ conn.send-headers = (stream-id i64, names [64]str, values [64]str, count i64, en
 
         ; 複製到 block
         j <- [0..hdr-out.len-bytes()): {
-            #{index-out = 0}
+            #{index-out = 0, overflow=wrap}
             block[block-n + j] = hdr-out[j]
         }
         #{overflow=wrap}
@@ -334,6 +342,7 @@ connect = (host str, port i64) (conn ?conn) {
     ; 1. 送出連線 preface
     cr = number.char-to-str(13)
     lf = number.char-to-str(10)
+    #{overflow=wrap}
     preface = 'PRI * HTTP/2.0' - cr - lf - cr - lf - 'SM' - cr - lf - cr - lf
     written = net.net-send(fd, preface, preface.len-bytes())
     written != preface.len-bytes() -> {
@@ -381,6 +390,7 @@ connect-tls = (host str, port i64) (conn ?conn) {
     ; 2. 送出連線 preface（透過 TLS）
     cr = number.char-to-str(13)
     lf = number.char-to-str(10)
+    #{overflow=wrap}
     preface = 'PRI * HTTP/2.0' - cr - lf - cr - lf - 'SM' - cr - lf - cr - lf
     w = tls-c.send(preface)
     w: {
@@ -438,6 +448,7 @@ conn.request = (method str, path str, host str, body str) (names [32]str, values
     resp-body str = with-len(HTTP2-MAX-PAYLOAD)
     .fd < 0 -> return
     stream-id = .next-stream-id
+    #{overflow=wrap}
     .next-stream-id = .next-stream-id + 2
 
     ; 構建標頭
@@ -550,7 +561,7 @@ conn.request = (method str, path str, host str, body str) (names [32]str, values
             f.frame-type == FRAME-DATA -> {
                 ; 複製到 resp-body
                 i <- [0..f.payload.len-bytes()): {
-                    #{index-out = 0}
+                    #{index-out = 0, overflow=wrap}
                     resp-body[resp-n + i] = f.payload[i]
                 }
                 #{overflow=wrap}
@@ -642,10 +653,11 @@ do = (method str, url str, body str) (names [32]str, values [32]str, header-coun
     colon-idx >= 0 -> {
         #{overflow=wrap}
         host-only = host.slice(0, colon-idx)
+        #{overflow=wrap}
         port-str = host.slice(colon-idx + 1, host.len-bytes())
         port = 0
         i <- [0..port-str.len-bytes()): {
-            #{index-out = 0}
+            #{index-out = 0, overflow=wrap}
             port = port * 10 + (port-str[i] - 48)
         }
         host = host-only

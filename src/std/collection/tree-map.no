@@ -369,6 +369,7 @@ tree-map.put = (key i64, val i64) (ok bool) {
                     .left[cur] = idx
                     #{index-out = 0}
                     .parent[idx] = cur
+                    #{overflow=wrap}
                     .size = .size + 1
                     ok = true
                     .rebalance-up(cur)
@@ -391,6 +392,7 @@ tree-map.put = (key i64, val i64) (ok bool) {
                     .right[cur] = idx
                     #{index-out = 0}
                     .parent[idx] = cur
+                    #{overflow=wrap}
                     .size = .size + 1
                     ok = true
                     .rebalance-up(cur)

@@ -348,9 +348,17 @@ func (p *Parser) applyLineOverflowAnnotations(block *BlockStatement) {
 				if next == nil {
 					continue
 				}
-				// 連續的獨立註解：以最後一條為準（前一條不覆蓋後一條的目標）。
-				if _, isAnn := next.(*AnnotationStatement); isAnn {
-					break
+				// 連續的獨立註解：若後一條**也帶 overflow**，以最後一條為準
+				//（前一條不覆蓋後一條的目標）。但若後一條與 overflow 無關
+				//（如緊跟在 `#{overflow=wrap}` 之後的 `#{index-out=0}`），
+				// 不能就此中斷——否則 `#{overflow=wrap}` + `#{index-out=0}` 這種
+				// std 常見組合會讓 overflow 註解完全失效（陳述仍被
+				// ovf-int-default 誤報）。此時略過該註解行，繼續找真正的目標陳述。
+				if as2, isAnn := next.(*AnnotationStatement); isAnn {
+					if p.overflowEntries(as2.Entries) != nil {
+						break
+					}
+					continue
 				}
 				// 行注解語意：overflow 模式只寫入下一條陳述的 OverflowMode 欄位
 				//（供 codegen 的 overflowModeFromNode 讀取），**不**合併進其註解

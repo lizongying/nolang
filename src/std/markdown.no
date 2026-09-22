@@ -76,6 +76,7 @@ markdown.heading = (line str) (out markdown-heading) {
         title-v.ends-with(' #') -> {
             end = title-v.len-bytes()
             {
+                #{overflow=wrap}
                 end <= 0 || title-v.byte(end - 1) != 35 -> break
                 #{overflow=wrap}
                 end = end - 1
@@ -158,6 +159,7 @@ markdown.list-item = (line str) (out markdown-list) {
             #{overflow=wrap}
             i = i + 1
         } (i < n)
+        #{overflow=wrap}
         i > 0 && i + 1 < n && s.byte(i) == 46 && s.byte(i + 1) == 32 -> {
             kind-v = 2
             digits = s.slice-bytes(0, i)
@@ -170,6 +172,7 @@ markdown.list-item = (line str) (out markdown-list) {
                 #{overflow=wrap}
                 d = d + 1
             } (d < digits.len-bytes())
+            #{overflow=wrap}
             content-v = s.slice-bytes(i + 2, n)
         }
     }
@@ -183,10 +186,12 @@ markdown.list-item = (line str) (out markdown-list) {
 markdown.list-content = (content str) (out str) {
     s = content.trim()
     s.starts-with('[ ] ') -> {
+        #{overflow=wrap}
         out = '<input type="checkbox" disabled> ' - markdown.inline(s.slice-bytes(4, s.len-bytes()))
         return
     }
     s.starts-with('[x] ') || s.starts-with('[X] ') -> {
+        #{overflow=wrap}
         out = '<input type="checkbox" checked disabled> ' - markdown.inline(s.slice-bytes(4, s.len-bytes()))
         return
     }
@@ -271,12 +276,14 @@ markdown.table-separator = (line str) (yes bool) {
 markdown.table-row = (line str, tag str) (out str) {
     s = line.trim()
     s.starts-with('|') -> s = s.slice-bytes(1, s.len-bytes())
+    #{overflow=wrap}
     s.ends-with('|') -> s = s.slice-bytes(0, s.len-bytes() - 1)
     cells = s.split('|')
     out = '<tr>\n'
     i <- [0..cells.len()): {
         #{index-out=0}
         cell = cells[i].trim()
+        #{overflow=wrap}
         out = out - '<' - tag - '>' - markdown.inline(cell) - '</' - tag - '>\n'
     }
     out = out - '</tr>\n'
@@ -296,7 +303,9 @@ markdown.inline = (s str) (out str) {
         c = s.byte(i)
 
         ; 反斜杠转义 ASCII 标记。
+        #{overflow=wrap}
         c == 92 && i + 1 < n -> {
+            #{overflow=wrap}
             result = result - markdown.escape-html(s.slice-bytes(i + 1, i + 2))
             #{overflow=wrap}
             i = i + 2
@@ -305,9 +314,11 @@ markdown.inline = (s str) (out str) {
 
         ; code span：取下一个反引号，不解析其中的 Markdown。
         c == 96 -> {
+            #{overflow=wrap}
             close = s.find-byte-from('`', i + 1)
             close > i -> {
                 code-text = s.slice-bytes(i + 1, close).trim()
+                #{overflow=wrap}
                 result = result - '<code>' - markdown.escape-html(code-text) - '</code>'
                 #{overflow=wrap}
                 i = close + 1
@@ -316,13 +327,21 @@ markdown.inline = (s str) (out str) {
         }
 
         ; 图片与链接，目标只允许普通 URL，属性始终转义。
+        #{overflow=wrap}
         c == 33 && i + 1 < n && s.byte(i + 1) == 91 -> {
+            #{overflow=wrap}
             close = s.find-byte-from(']', i + 2)
+            #{overflow=wrap}
             close >= 0 && close + 1 < n && s.byte(close + 1) == 40 -> {
+                #{overflow=wrap}
                 end = s.find-byte-from(')', close + 2)
+                #{overflow=wrap}
                 end > close + 2 -> {
+                    #{overflow=wrap}
                     alt = s.slice-bytes(i + 2, close)
+                    #{overflow=wrap}
                     url = s.slice-bytes(close + 2, end)
+                    #{overflow=wrap}
                     result = result - '<img src="' - markdown.escape-html(url) - '" alt="' - markdown.escape-html(alt) - '">'
                     #{overflow=wrap}
                     i = end + 1
@@ -331,12 +350,19 @@ markdown.inline = (s str) (out str) {
             }
         }
         c == 91 -> {
+            #{overflow=wrap}
             close = s.find-byte-from(']', i + 1)
+            #{overflow=wrap}
             close >= 0 && close + 1 < n && s.byte(close + 1) == 40 -> {
+                #{overflow=wrap}
                 end = s.find-byte-from(')', close + 2)
+                #{overflow=wrap}
                 end > close + 2 -> {
+                    #{overflow=wrap}
                     label = s.slice-bytes(i + 1, close)
+                    #{overflow=wrap}
                     url = s.slice-bytes(close + 2, end)
+                    #{overflow=wrap}
                     result = result - '<a href="' - markdown.escape-html(url) - '">' - markdown.inline(label) - '</a>'
                     #{overflow=wrap}
                     i = end + 1
@@ -347,10 +373,13 @@ markdown.inline = (s str) (out str) {
 
         ; 自动链接 <http://...> / <https://...> / <mailto:...>。
         c == 60 -> {
+            #{overflow=wrap}
             close = s.find-byte-from('>', i + 1)
             close > i -> {
+                #{overflow=wrap}
                 target = s.slice-bytes(i + 1, close)
                 target.starts-with('http://') || target.starts-with('https://') || target.starts-with('mailto:') -> {
+                    #{overflow=wrap}
                     result = result - '<a href="' - markdown.escape-html(target) - '">' - markdown.escape-html(target) - '</a>'
                     #{overflow=wrap}
                     i = close + 1
@@ -360,6 +389,7 @@ markdown.inline = (s str) (out str) {
         }
 
         ; 删除线、粗体、斜体。
+        #{overflow=wrap}
         c == 126 && i + 1 < n && s.byte(i + 1) == 126 -> {
             strike -> result = result - '</del>'
             -> result = result - '<del>'
@@ -368,6 +398,7 @@ markdown.inline = (s str) (out str) {
             i = i + 2
             continue
         }
+        #{overflow=wrap}
         c == 42 && i + 1 < n && s.byte(i + 1) == 42 -> {
             strong -> result = result - '</strong>'
             -> result = result - '<strong>'
@@ -376,6 +407,7 @@ markdown.inline = (s str) (out str) {
             i = i + 2
             continue
         }
+        #{overflow=wrap}
         c == 95 && i + 1 < n && s.byte(i + 1) == 95 -> {
             strong -> result = result - '</strong>'
             -> result = result - '<strong>'
@@ -387,7 +419,9 @@ markdown.inline = (s str) (out str) {
         c == 42 || c == 95 -> {
             prev-word = false
             next-word = false
+            #{overflow=wrap}
             i > 0 -> prev-word = markdown.is-word-byte(s.byte(i - 1))
+            #{overflow=wrap}
             i + 1 < n -> next-word = markdown.is-word-byte(s.byte(i + 1))
             c == 95 && prev-word && next-word -> {
                 result = result - '_'
@@ -422,13 +456,16 @@ markdown.join-paragraph = (paragraph str, line str, hard-break bool) (out str) {
         clean = line.slice-bytes(0, line.len-bytes() - 2).trim()
         separator = '<br>\n'
     }
+    #{overflow=wrap}
     out = paragraph - separator - clean
 }
 
 ; markdown.render-code: 输出代码块。
 markdown.render-code = (code str, info str) (out str) {
     class str = ''
+    #{overflow=wrap}
     info.len-bytes() > 0 -> class = ' class="language-' - markdown.escape-html(info) - '"'
+    #{overflow=wrap}
     out = '<pre><code' - class - '>' - markdown.escape-html(code) - '</code></pre>\n'
 }
 
@@ -504,6 +541,7 @@ markdown.to-html = (source str) (out str) {
                 code-info = ''
                 in-code = false
             }
+            #{overflow=wrap}
             -> code-buffer = code-buffer - line - '\n'
             continue
         }
@@ -515,6 +553,7 @@ markdown.to-html = (source str) (out str) {
         info = fence-info.info
         fence -> {
             paragraph.len-bytes() > 0 -> {
+                #{overflow=wrap}
                 result = result - '<p>' - markdown.inline(paragraph) - '</p>\n'
                 paragraph = ''
             }
@@ -524,6 +563,7 @@ markdown.to-html = (source str) (out str) {
                 list-kind = 0
             }
             in-quote -> {
+                #{overflow=wrap}
                 result = result - '<blockquote>\n' - markdown.inline(quote-buffer) - '\n</blockquote>\n'
                 quote-buffer = ''
                 in-quote = false
@@ -537,6 +577,7 @@ markdown.to-html = (source str) (out str) {
 
         trimmed.len-bytes() == 0 -> {
             paragraph.len-bytes() > 0 -> {
+                #{overflow=wrap}
                 result = result - '<p>' - markdown.inline(paragraph) - '</p>\n'
                 paragraph = ''
             }
@@ -546,6 +587,7 @@ markdown.to-html = (source str) (out str) {
                 list-kind = 0
             }
             in-quote -> {
+                #{overflow=wrap}
                 result = result - '<blockquote>\n' - markdown.inline(quote-buffer) - '\n</blockquote>\n'
                 quote-buffer = ''
                 in-quote = false
@@ -558,6 +600,7 @@ markdown.to-html = (source str) (out str) {
         heading = heading-info.text
         level > 0 -> {
             paragraph.len-bytes() > 0 -> {
+                #{overflow=wrap}
                 result = result - '<p>' - markdown.inline(paragraph) - '</p>\n'
                 paragraph = ''
             }
@@ -567,16 +610,19 @@ markdown.to-html = (source str) (out str) {
                 list-kind = 0
             }
             in-quote -> {
+                #{overflow=wrap}
                 result = result - '<blockquote>\n' - markdown.inline(quote-buffer) - '\n</blockquote>\n'
                 quote-buffer = ''
                 in-quote = false
             }
+            #{overflow=wrap}
             result = result - '<h' - level.to-str() - '>' - markdown.inline(heading) - '</h' - level.to-str() - '>\n'
             continue
         }
 
         markdown.thematic-break(trimmed) -> {
             paragraph.len-bytes() > 0 -> {
+                #{overflow=wrap}
                 result = result - '<p>' - markdown.inline(paragraph) - '</p>\n'
                 paragraph = ''
             }
@@ -594,6 +640,7 @@ markdown.to-html = (source str) (out str) {
         item = item-info.text
         item-kind > 0 -> {
             paragraph.len-bytes() > 0 -> {
+                #{overflow=wrap}
                 result = result - '<p>' - markdown.inline(paragraph) - '</p>\n'
                 paragraph = ''
             }
@@ -604,6 +651,7 @@ markdown.to-html = (source str) (out str) {
                 -> result = result - '<ol>\n'
                 list-kind = item-kind
             }
+            #{overflow=wrap}
             result = result - '<li>' - markdown.list-content(item) - '</li>\n'
             continue
         }
@@ -613,6 +661,7 @@ markdown.to-html = (source str) (out str) {
         is-quote = quote-info.yes
         is-quote -> {
             paragraph.len-bytes() > 0 -> {
+                #{overflow=wrap}
                 result = result - '<p>' - markdown.inline(paragraph) - '</p>\n'
                 paragraph = ''
             }
@@ -621,6 +670,7 @@ markdown.to-html = (source str) (out str) {
                 -> result = result - '</ol>\n'
                 list-kind = 0
             }
+            #{overflow=wrap}
             in-quote -> quote-buffer = quote-buffer - '\n' - quote
             -> {
                 in-quote = true
@@ -630,6 +680,7 @@ markdown.to-html = (source str) (out str) {
         }
 
         in-quote -> {
+            #{overflow=wrap}
             result = result - '<blockquote>\n' - markdown.inline(quote-buffer) - '\n</blockquote>\n'
             quote-buffer = ''
             in-quote = false
@@ -649,6 +700,7 @@ markdown.to-html = (source str) (out str) {
         look-valid -> {
             setext = markdown.setext-level(look-line)
             setext > 0 && paragraph.len-bytes() == 0 -> {
+                #{overflow=wrap}
                 result = result - '<h' - setext.to-str() - '>' - markdown.inline(trimmed) - '</h' - setext.to-str() - '>\n'
                 pos = look-pos
                 continue
@@ -656,9 +708,11 @@ markdown.to-html = (source str) (out str) {
 
             trimmed.contains('|') && markdown.table-separator(look-line) -> {
                 paragraph.len-bytes() > 0 -> {
+                    #{overflow=wrap}
                     result = result - '<p>' - markdown.inline(paragraph) - '</p>\n'
                     paragraph = ''
                 }
+                #{overflow=wrap}
                 result = result - '<table>\n<thead>\n' - markdown.table-row(trimmed, 'th') - '</thead>\n<tbody>\n'
                 pos = look-pos
                 {
@@ -690,10 +744,12 @@ markdown.to-html = (source str) (out str) {
         ; 缩进四格代码块。
         line.starts-with('    ') -> {
             paragraph.len-bytes() > 0 -> {
+                #{overflow=wrap}
                 result = result - '<p>' - markdown.inline(paragraph) - '</p>\n'
                 paragraph = ''
             }
             code-line = line.slice-bytes(4, line.len-bytes())
+            #{overflow=wrap}
             result = result - '<pre><code>' - markdown.escape-html(code-line) - '\n</code></pre>\n'
             continue
         }
@@ -706,7 +762,9 @@ markdown.to-html = (source str) (out str) {
     } (pos < n-source || pending)
 
     in-code -> result = result - markdown.render-code(code-buffer, code-info)
+    #{overflow=wrap}
     in-quote -> result = result - '<blockquote>\n' - markdown.inline(quote-buffer) - '\n</blockquote>\n'
+    #{overflow=wrap}
     paragraph.len-bytes() > 0 -> result = result - '<p>' - markdown.inline(paragraph) - '</p>\n'
     list-kind == 1 -> result = result - '</ul>\n'
     list-kind == 2 -> result = result - '</ol>\n'

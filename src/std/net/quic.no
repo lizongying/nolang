@@ -794,6 +794,7 @@ conn.build-initial-packet = (crypto-data []byte) (packet []byte, ok bool) {
     pos = pos + crypto-data.len()
 
     ; PADDING to reach 1200 bytes
+    #{overflow=wrap}
     {
         #{overflow=wrap}
         #{index-out = 0}

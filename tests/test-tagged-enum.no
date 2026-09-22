@@ -35,7 +35,6 @@ shape {
     dot,
 }
 
-#{overflow = wrap}
 area = (s shape) (a f64) {
     s: {
         circle(r) -> { a = r * 3.0 #{overflow = wrap} }

@@ -2778,6 +2778,7 @@ der-enc-integer-bytes = (data []byte) (out []byte) {
 
     ; 跳過前導零
     start = 0
+    #{overflow=wrap}
     {
         #{overflow=wrap}
                 start < n - 1 && data[start] == 0 -> {

@@ -415,6 +415,7 @@ div-mod = (a bigint, b bigint) (q bigint, r bigint) {
     bt = b.limbs[bl - 1] & MASK
     shift = 0
     tmp = bt
+    #{overflow=wrap}
     {
         #{overflow=wrap}
         tmp = tmp << 1
@@ -688,6 +689,7 @@ bigint.shl1 = () {
         #{overflow=wrap}
         #{index-out = 0}
         .limbs[.len] = carry
+        #{overflow=wrap}
         .len = .len + 1
     }
 }
@@ -734,6 +736,7 @@ shr = (a bigint, n i64) (c bigint) {
 
 ; bigint.normalize: 移除前導零，確保 len >= 1
 bigint.normalize = () {
+    #{overflow=wrap}
     {
         #{overflow=wrap}
         .len = .len - 1
@@ -828,6 +831,7 @@ from-str = (s str) (out bigint) {
                 #{overflow=wrap}
                 tmp-bigint = mul-i64(out, 10)
                 out = tmp-bigint
+                #{overflow=wrap}
                 out = out.add-i64(c - 48)
                 #{overflow=wrap}
                 pos = pos + 1
@@ -922,6 +926,7 @@ from-hex = (s str) (out bigint) {
                 #{overflow=wrap}
                 tmp-bigint = mul-i64(out, 16)
                 out = tmp-bigint
+                #{overflow=wrap}
                 out = out.add-i64(c - 48)
             }
 
@@ -929,6 +934,7 @@ from-hex = (s str) (out bigint) {
                 #{overflow=wrap}
                 tmp-bigint = mul-i64(out, 16)
                 out = tmp-bigint
+                #{overflow=wrap}
                 out = out.add-i64(c - 87)
             }
 
@@ -936,6 +942,7 @@ from-hex = (s str) (out bigint) {
                 #{overflow=wrap}
                 tmp-bigint = mul-i64(out, 16)
                 out = tmp-bigint
+                #{overflow=wrap}
                 out = out.add-i64(c - 55)
             }
         }

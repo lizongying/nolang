@@ -30,6 +30,7 @@ encode = (data []byte) (out str) {
     out-pos = 0
 
     pos = 0
+    #{overflow=wrap}
     {
 
         ; 提取 5 位元組 → 40 位元 → 8 個 5-bit 值
@@ -209,6 +210,7 @@ decode = (in str) (out []byte) {
     } (i >= 0)
     out-pos = 0
     pos = 0
+    #{overflow=wrap}
     {
 
         ; 解碼 8 個字元 → 5 位元組

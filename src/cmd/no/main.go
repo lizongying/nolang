@@ -1245,6 +1245,9 @@ func fmtCommand(args []string) {
 }
 
 func fmtProcessFile(filename string, writeInPlace bool, diffMode bool, fixClass string, loopStyle nfmt.LoopStyle) error {
+	if fixClass != "" {
+		return fmtProcessFixFile(filename, writeInPlace, diffMode, fixClass)
+	}
 	data, err := os.ReadFile(filename)
 	if err != nil {
 		return err
@@ -1252,16 +1255,7 @@ func fmtProcessFile(filename string, writeInPlace bool, diffMode bool, fixClass 
 
 	original := string(data)
 	var result string
-	if fixClass != "" {
-		r, perrs := fmtApplyFix(original, fixClass)
-		if len(perrs) > 0 {
-			for _, e := range perrs {
-				fmt.Fprintf(os.Stderr, "%s: format error: %s\n", filename, e)
-			}
-			return fmt.Errorf("format failed: %d parse error(s)", len(perrs))
-		}
-		result = r
-	} else {
+	{
 		r, perrs := nfmt.FormatFileWithErrorsAndLoopStyle(original, loopStyle)
 		if len(perrs) > 0 {
 			for _, e := range perrs {
@@ -1288,6 +1282,9 @@ func fmtProcessFile(filename string, writeInPlace bool, diffMode bool, fixClass 
 }
 
 func fmtProcessDirectory(dirname string, writeInPlace bool, diffMode bool, fixClass string, loopStyle nfmt.LoopStyle) error {
+	if fixClass != "" {
+		return fmtProcessFixDirectory(dirname, writeInPlace, diffMode, fixClass)
+	}
 	var firstErr error
 	checked := 0
 	needFormat := 0
@@ -1322,13 +1319,7 @@ func fmtProcessDirectory(dirname string, writeInPlace bool, diffMode bool, fixCl
 				}
 				return nil
 			}
-			var result string
-			var perrs []string
-			if fixClass != "" {
-				result, perrs = fmtApplyFix(string(data), fixClass)
-			} else {
-				result, perrs = nfmt.FormatFileWithErrors(string(data))
-			}
+			result, perrs := nfmt.FormatFileWithErrors(string(data))
 			if len(perrs) > 0 {
 				for _, e := range perrs {
 					fmt.Fprintf(os.Stderr, "%s: format error: %s\n", path, e)
@@ -1359,54 +1350,182 @@ func fmtProcessDirectory(dirname string, writeInPlace bool, diffMode bool, fixCl
 	return firstErr
 }
 
-// fmtApplyFix 套用某一類問題的自動修復，回傳修復後的源碼與解析錯誤。
-// 目前支援：
-//   - "overflow"：對未標註 #{overflow} 的整數四則運算，將 #{overflow=wrap}
-//     綁定到其所在陳述節點的語義副表；formatter 輸出為該陳述上方的
-//     `#{overflow=wrap}`（若該陳述已有其它註解如 #{intrinsic}，則合併為
-//     `#{intrinsic, overflow=wrap}` 單行）。修復精準：只處理 lint 實際
-//     報告的陳述，不污染無溢出的陳述，且重跑冪等（已標註者跳過）。
-func fmtApplyFix(src string, fixClass string) (string, []string) {
-	switch fixClass {
-	case "overflow":
-		return fmtFixOverflow(src)
-	default:
-		// 未知修復類別：退回普通格式化（不修改語意）。
-		return nfmt.FormatFileWithErrors(src)
+// fmtProcessFixFile 對單一檔案套用 --fix。修復集合以「package 目錄」的合併 vet
+// 為準（見 fmtOverflowFixes），故能修到單檔 vet 漏報的站點。
+func fmtProcessFixFile(filename string, writeInPlace bool, diffMode bool, fixClass string) error {
+	data, err := os.ReadFile(filename)
+	if err != nil {
+		return err
 	}
+	original := string(data)
+	result := original
+	fixes, ferr := fmtOverflowFixes(filename, fixClass)
+	if ferr != nil {
+		return ferr
+	}
+	if abs, aerr := filepath.Abs(filename); aerr == nil {
+		if fx, ok := fixes[filepath.Clean(abs)]; ok {
+			result = fx
+		}
+	}
+	if diffMode {
+		if diff := generateDiff(filename, original, result); diff != "" {
+			fmt.Print(diff)
+		}
+		return nil
+	}
+	if writeInPlace {
+		if result == original {
+			return nil
+		}
+		return os.WriteFile(filename, []byte(result), 0644)
+	}
+	fmt.Print(result)
+	return nil
 }
 
-// fmtFixOverflow 對未標註 #{overflow} 的整數溢位運算，做「手術式」文字插入：
-// 在 lint 實際報告的陳述上方插入 `#{overflow=wrap}`；若該陳述上方已有其它
-// 單行註解（如 #{intrinsic} / #{index-out=0}），則合併為單行
-// `#{intrinsic, overflow=wrap}`。只改必要之處：不改動其它註解、不改排版、
-// 不重跑 formatter，故不會污染無溢出的陳述，也不會破壞 std 中依賴手寫排版的
-// `#{index-out}` 行註解。重跑冪等：已帶 overflow 註解者跳過。
-func fmtFixOverflow(src string) (string, []string) {
-	l := lexer.New(src)
-	p := parser.New(l)
+// fmtProcessFixDirectory 對目錄套用 --fix：以合併 vet 取得全部修復（檔名 -> 修復後源碼），
+// 再依 -w / -d / 檢查模式處理每個有變動的檔案。
+func fmtProcessFixDirectory(dirname string, writeInPlace bool, diffMode bool, fixClass string) error {
+	fixes, err := fmtOverflowFixes(dirname, fixClass)
+	if err != nil {
+		return err
+	}
+	if len(fixes) == 0 {
+		return nil
+	}
+	fmtPkg, _ := nbuild.LoadPackage(dirname)
+	checkMode := !writeInPlace && !diffMode
+	// 穩定順序輸出。
+	files := make([]string, 0, len(fixes))
+	for f := range fixes {
+		files = append(files, f)
+	}
+	sort.Strings(files)
+	var firstErr error
+	for _, f := range files {
+		if fmtPkg != nil && fmtPkg.IsIgnored(f) {
+			continue
+		}
+		data, rerr := os.ReadFile(f)
+		if rerr != nil {
+			if firstErr == nil {
+				firstErr = rerr
+			}
+			continue
+		}
+		original := string(data)
+		result := fixes[f]
+		if result == original {
+			continue
+		}
+		switch {
+		case diffMode:
+			if diff := generateDiff(f, original, result); diff != "" {
+				fmt.Print(diff)
+			}
+		case writeInPlace:
+			if werr := os.WriteFile(f, []byte(result), 0644); werr != nil && firstErr == nil {
+				firstErr = werr
+			}
+		default:
+			if checkMode {
+				fmt.Println(f)
+			}
+		}
+	}
+	return firstErr
+}
+
+// fmtOverflowFixes 對未標註 #{overflow} 的整數溢位運算做「手術式」文字插入，
+// 回傳「絕對檔名 -> 修復後源碼」。只有真正未標註的整數運算才會被插入
+// `#{overflow=wrap}`（若該陳述上方緊鄰已有其它單行註解，如 #{intrinsic} /
+// #{index-out=0}，則合併為單行 `#{intrinsic, overflow=wrap}`），不污染無溢出的
+// 陳述、不改排版、不改動其它註解，因此對 std 這種含手寫 `#{index-out}` 行註解的
+// 檔案安全。重跑冪等：已標註的陳述不再被報告。
+//
+// 分析來源是「磁碟檔案自身」：解析後跑 checker.ValidateIntOverflow。這與 `no vet`
+// 的實質報告一致（`no vet` 原始輸出會把同一站點因模組重複引用而印很多次，去重後
+// 的行號完全相同）。刻意不呼叫 `no vet <pkg>` 取行號：`no vet src/std` 對 std 模組
+// 走的是內嵌 StdFS，磁碟修改必須重編 bin/no 才會反映，否則報告行號與磁碟檔錯位，
+// 會把註解插到錯誤的陳述上。
+func fmtOverflowFixes(arg string, fixClass string) (map[string]string, error) {
+	if fixClass != "overflow" {
+		return nil, fmt.Errorf("unknown fix class %q (supported: overflow)", fixClass)
+	}
+	info, err := os.Stat(arg)
+	if err != nil {
+		return nil, err
+	}
+	var files []string
+	if info.IsDir() {
+		walkErr := filepath.Walk(arg, func(path string, fi os.FileInfo, werr error) error {
+			if werr != nil || fi == nil || fi.IsDir() {
+				return nil
+			}
+			if strings.HasSuffix(path, ".no") {
+				files = append(files, path)
+			}
+			return nil
+		})
+		if walkErr != nil {
+			return nil, walkErr
+		}
+	} else {
+		files = append(files, arg)
+	}
+	sort.Strings(files)
+	fixes := map[string]string{}
+	for _, f := range files {
+		fixed, ok := fixOverflowInFile(f)
+		if !ok {
+			continue
+		}
+		abs, aerr := filepath.Abs(f)
+		if aerr != nil {
+			abs = f
+		}
+		fixes[filepath.Clean(abs)] = fixed
+	}
+	return fixes, nil
+}
+
+// fixOverflowInFile 讀入單檔（磁碟內容），將其未標註的整數運算所在陳述的首行上方
+// 插入 `#{overflow=wrap}`（或合併到緊鄰的 `#{...}` 行），回傳修復後源碼。
+// 若無任何可插入處則回傳 ok=false。
+func fixOverflowInFile(filename string) (string, bool) {
+	data, err := os.ReadFile(filename)
+	if err != nil {
+		return "", false
+	}
+	src := string(data)
+	lx := lexer.New(src)
+	p := parser.New(lx)
 	p.SkipUnwrapLowering = true
 	p.SkipSafeIndexLowering = true
 	program := p.ParseProgram()
 	if len(p.Errors()) > 0 {
-		return "", p.Errors()
+		return "", false
 	}
 	results := checker.ValidateIntOverflow(program)
 	if len(results) == 0 {
-		return src, nil
+		return "", false
 	}
-	// 報告行 -> 目標陳述節點（lint 實際標註的陳述，取包含該行的最小可標註陳述）。
 	targets := map[parser.Statement]bool{}
 	for _, r := range results {
 		if stmt := findFixTargetNode(program, r.Line); stmt != nil {
+			if os.Getenv("NOLANG_FIXDBG") != "" {
+				fmt.Fprintf(os.Stderr, "[FIXDBG] report line=%d col=%d -> %T span=%d..%d\n",
+					r.Line, r.Column, stmt, stmt.Pos().Line, stmt.EndPos().Line)
+			}
 			targets[stmt] = true
+		} else if os.Getenv("NOLANG_FIXDBG") != "" {
+			fmt.Fprintf(os.Stderr, "[FIXDBG] report line=%d col=%d -> NO TARGET\n", r.Line, r.Column)
 		}
 	}
 	if len(targets) == 0 {
-		fmt.Fprintf(os.Stderr, "DEBUG fmtFixOverflow results=%d targets=%d\n", len(results), len(targets))
-		return src, nil
+		return "", false
 	}
-	fmt.Fprintf(os.Stderr, "DEBUG fmtFixOverflow results=%d targets=%d\n", len(results), len(targets))
 	lines := strings.Split(src, "\n")
 	type insertOp struct {
 		beforeLine int
@@ -1415,15 +1534,12 @@ func fmtFixOverflow(src string) (string, []string) {
 	inserts := []insertOp{}
 	merges := map[int]string{} // 原始行號(1-based) -> 要插入到該行 `#{...}` 的內容
 	for stmt := range targets {
-		if stmtHasOverflow(program.Sem, stmt) {
-			continue // 已帶 overflow 註解，跳過（冪等）
-		}
 		firstLine := stmt.Pos().Line
 		if firstLine < 1 || firstLine > len(lines) {
 			continue
 		}
 		indent := leadingWhitespace(lines[firstLine-1])
-		// 尋找緊鄰上方（跳過空白行）的 `#{...}` 註解行，若有則合併。
+		// 尋找緊鄰上方（跳過空白行）的 `#{...}` 註解行，若有則合併為單行。
 		mergeAt := 0
 		for k := firstLine - 2; k >= 0; k-- {
 			t := strings.TrimSpace(lines[k])
@@ -1442,7 +1558,7 @@ func fmtFixOverflow(src string) (string, []string) {
 		}
 	}
 	if len(inserts) == 0 && len(merges) == 0 {
-		return src, nil
+		return "", false
 	}
 	out := make([]string, 0, len(lines)+len(inserts))
 	for i := 1; i <= len(lines); i++ {
@@ -1457,7 +1573,7 @@ func fmtFixOverflow(src string) (string, []string) {
 			out = append(out, lines[i-1])
 		}
 	}
-	return strings.Join(out, "\n"), nil
+	return strings.Join(out, "\n"), true
 }
 
 // isOverflowFixableType 報告該陳述型別是否可被 #{overflow} 註解標註
@@ -1527,45 +1643,6 @@ func findFixTargetNode(program *parser.Program, line int) parser.Statement {
 	}
 	walk(program.Statements)
 	return best
-}
-
-// stmtHasOverflow 回報該陳述是否已帶 overflow 註解（取自語義副表或節點 OverflowMode
-// 欄位），用於重跑冪等：已標註者不再插入。檢查三個來源以對齊 checker 的
-// overflowAnnotatedNode：AnnotationsOf、RawAnnotationsOf、以及節點自身的 OverflowMode 欄位。
-func stmtHasOverflow(sem *parser.SemanticContext, stmt parser.Statement) bool {
-	for _, e := range sem.AnnotationsOf(stmt) {
-		if e != nil && e.Key == "overflow" {
-			return true
-		}
-	}
-	for _, e := range sem.RawAnnotationsOf(stmt) {
-		if e != nil && e.Key == "overflow" {
-			return true
-		}
-	}
-	switch v := stmt.(type) {
-	case *parser.LetStatement:
-		if v.OverflowMode != "" {
-			return true
-		}
-	case *parser.ExpressionStatement:
-		if v.OverflowMode != "" {
-			return true
-		}
-	case *parser.ReturnStatement:
-		if v.OverflowMode != "" {
-			return true
-		}
-	case *parser.ForStatement:
-		if v.OverflowMode != "" {
-			return true
-		}
-	case *parser.MultiAssignStatement:
-		if v.OverflowMode != "" {
-			return true
-		}
-	}
-	return false
 }
 
 // mergeAnnotationLine 在 `#{...}` 行的最後一個 `}` 前插入 add（如 ", overflow=wrap"），

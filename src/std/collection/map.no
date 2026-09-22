@@ -565,6 +565,7 @@ hashmap-bool-tmpl.remove = (key bool) (removed bool) {
         #{overflow=wrap}
         #{index-out = 0}
         .occ[idx] = 2
+        #{overflow=wrap}
         .size = .size - 1
         removed = true
     }
