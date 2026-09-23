@@ -1,5 +1,17 @@
 # 更新日誌
 
+## v0.3.2
+
+- feat(mir): implement recoverable integer division and modulo with option error handling
+- fix(parser): infer option type for signed integer division and modulo operations
+- fix(checker): add compile-time check for integer division by zero
+- fix(module): prevent bare-name hijack of std qualified calls
+- feat(nolang-docs-i18n): add English i18n documentation parity skill
+- refactor(format): automatically remove redundant type annotations
+- refactor(tests): drop tmp- and test- prefixes from corpus .no filenames
+- refactor(dataflow): remove outdated dataflow analysis documentation
+- chore(git): ignore and remove compiled python cache files
+
 ## v0.3.1
 
 - feat(mir): add os.args builtins and improve fs.read-file result handling
