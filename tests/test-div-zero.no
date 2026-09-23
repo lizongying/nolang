@@ -36,8 +36,8 @@ print('── 4. 0 / 0 —— LLVM 把 X / X 折疊成常數 1（前提正是 X 
 q3 = z / z
 print(q3); BUG: 實測 1，數學上無意義
 
-print('── 5. 字面常數 10 / 0 —— 編譯期完全可偵測，卻沒有任何診斷')
-print(10 / 0); BUG: 實測 -1，無 warning / 無 error
+print('── 5. 字面常數 10 / 0 —— 編譯期已可偵測並診斷（div-by-zero），故改用變數除數觀察運行期 UB')
+print(10 / z); BUG: 實測 -1，無 warning / 無 error
 
 print('── 6. 無號 u64 / 0')
 n u64 = 0
@@ -51,12 +51,12 @@ f = 0.0
 print(10.0 / f); BUG: 應為 inf，實測 9223372036854775807.<garbage>
 print(f / f); BUG: 應為 nan，實測 0.
 
-print('── 8. std number.div / number.mod —— 靜默回 0，最危險')
+print('── 8. std number.div / number.mod —— 方法已不存在（現為 int.div=(b int)(q ?int) 回傳 option），僅保留觀察註解')
 r = 0
-number.div(10, z, r)
-print(r); BUG: 靜默 0，呼叫端無從得知出錯
-number.mod(10, z, r)
-print(r); BUG: 靜默 0
+; number.div(10, z, r)  ; 方法不存在：std 現為 int.div=(b int)(q ?int)
+; print(r); BUG: 靜默 0，呼叫端無從得知出錯
+; number.mod(10, z, r)  ; 方法不存在
+; print(r); BUG: 靜默 0
 
 print('── 9. 除零結果流向索引：值不可預測')
 arr [3] = [10, 20, 30]

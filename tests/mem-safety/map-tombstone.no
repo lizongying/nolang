@@ -2,7 +2,7 @@
 
 ; 测试 1: 墓碑探测链 — remove 后 get 其他 key 仍成功
 test-tombstone = () {
-    m =  {}
+    m [str]i64 = {}
     m.init()
     m.put('a', 1)
     m.put('b', 2)
@@ -50,7 +50,7 @@ print('test-tombstone: ok')
 
 ; 测试 2: 墓碑复用 — put 复用被 remove 的槽位
 test-reuse = () {
-    m =  {}
+    m [str]i64 = {}
     m.init()
     m.put('x', 100)
     m.remove('x')
@@ -71,7 +71,7 @@ print('test-reuse: ok')
 
 ; 测试 3: 容器类型值（str 值，堆类型）
 test-str-values = () {
-    m =  {}
+    m [str]str = {}
     m.init()
     m.put('name', 'alice')
     m.put('city', 'beijing')
@@ -111,7 +111,7 @@ print('test-str-values: ok')
 
 ; 测试 4: int 键墓碑机制
 test-int-tombstone = () {
-    m =  {}
+    m [i64]i64 = {}
     m.init()
     m.put(1, 10)
     m.put(2, 20)

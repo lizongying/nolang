@@ -146,26 +146,26 @@ test-quic-derive-initial-keys = () {
         return
     }
 
-    ; 驗證 RFC 9001 Appendix A 的金鑰
-    ; client_initial_key = 0xb99d6cd1c3d9c78c
-    ;                     0c3f8d37c09d68a1
+    ; 驗證 RFC 9001 Appendix A.1 的金鑰
+    ; client_initial_key = 0x1f369613dd76d546
+    ;                     0x7730efcbe3b1a22d
     expected-key []byte
-    expected-key[0] = 0xb9
-    expected-key[1] = 0x9d
-    expected-key[2] = 0x6c
-    expected-key[3] = 0xd1
-    expected-key[4] = 0xc3
-    expected-key[5] = 0xd9
-    expected-key[6] = 0xc7
-    expected-key[7] = 0x8c
-    expected-key[8] = 0x0c
-    expected-key[9] = 0x3f
-    expected-key[10] = 0x8d
-    expected-key[11] = 0x37
-    expected-key[12] = 0xc0
-    expected-key[13] = 0x9d
-    expected-key[14] = 0x68
-    expected-key[15] = 0xa1
+    expected-key[0] = 0x1f
+    expected-key[1] = 0x36
+    expected-key[2] = 0x96
+    expected-key[3] = 0x13
+    expected-key[4] = 0xdd
+    expected-key[5] = 0x76
+    expected-key[6] = 0xd5
+    expected-key[7] = 0x46
+    expected-key[8] = 0x77
+    expected-key[9] = 0x30
+    expected-key[10] = 0xef
+    expected-key[11] = 0xcb
+    expected-key[12] = 0xe3
+    expected-key[13] = 0xb1
+    expected-key[14] = 0xa2
+    expected-key[15] = 0x2d
 
     match-val = 1
     i <- [0..16): {
@@ -273,11 +273,11 @@ test-qpack-encode-decode = () {
         return
     }
 
-    ; 解碼
+    ; 解碼（跳過 2 位元組的 QPACK 欄位區段前綴）
     name = ''
     value = ''
     np = 0
-    name, value, np = http3.decode-header(buf, 0)
+    name, value, np = http3.decode-header(buf, 2)
     np < 0 -> {
         print('FAIL: decode-header failed')
         return

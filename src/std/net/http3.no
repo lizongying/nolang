@@ -227,7 +227,7 @@ decode-header = (buf []byte, pos i64) (name str, value str, next-pos i64) {
 
     ; 讀取名稱
     #{index-out=0}
-    name = buf[r-pos..r-pos + name-len].to-str()
+    name = buf[r-pos..r-pos + name-len).to-str()
 
     #{overflow=wrap}
     r-pos = r-pos + name-len
@@ -246,7 +246,7 @@ decode-header = (buf []byte, pos i64) (name str, value str, next-pos i64) {
 
     ; 讀取值
     #{index-out=0}
-    value = buf[r-pos..r-pos + value-len].to-str()
+    value = buf[r-pos..r-pos + value-len).to-str()
 
     #{overflow=wrap}
     r-pos = r-pos + value-len
@@ -321,7 +321,7 @@ encode-headers-frame = (names [16]str, values [16]str, count i64) (buf []byte, n
     qpack-buf, qpack-n = encode-headers(names, values, count)
 
     #{index-out=0}
-    buf, n = encode-frame(0x01, qpack-buf[..qpack-n])
+    buf, n = encode-frame(0x01, qpack-buf[..qpack-n))
 }
 
 ; encode-data-frame: 編碼 DATA 影格
@@ -704,7 +704,8 @@ send-request = (conn quic.conn, method str, path str, host str, body str) (resp 
         ; HEADERS 影格: 解析 QPACK 標頭區塊
         {
             ft == 0x01 -> {
-                qpack-pos = 0
+                ; 跳過 QPACK 欄位區段前綴（required insert count + delta base，各 1 位元組）
+                qpack-pos = 2
                 (qpack-pos < payload.len()) {
                     name = ''
                     value = ''

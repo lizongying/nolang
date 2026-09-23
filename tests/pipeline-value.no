@@ -11,37 +11,32 @@ might-fail = (n i64) (r ?i64) {
 
 main = () {
     print('1 trailing value')
-    x = 2 > 1
-    {
+    x = 2 > 1 -> {
         42
     }
     print(x)
 
     print('2 false cond keeps previous value')
     y = 7
-    y = 1 > 2
-    {
+    y = 1 > 2 -> {
         42
     }
     print(y)
 
     print('3 fresh binding, false cond -> zero')
-    z = 1 > 2
-    {
+    z = 1 > 2 -> {
         42
     }
     print(z)
 
     print('4 owned value')
     s = 'old'
-    s = 1 > 2
-    {
+    s = 1 > 2 -> {
         'new'
     }
     print(s)
     s2 = 'old2'
-    s2 = 2 > 1
-    {
+    s2 = 2 > 1 -> {
         'new2'
     }
     print(s2)

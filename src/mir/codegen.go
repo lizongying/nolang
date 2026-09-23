@@ -5011,13 +5011,39 @@ func (c *codegen) emitMove(inst *Inst) error {
 	// strValueFromTxt, which already produces an independent (malloc'd) buffer,
 	// so skipping the clone costs nothing.
 	if c.curFn != nil && isFuncParam(c.curFn, inst.Args[0]) && srcT != "%txt" &&
-		(dstT == "%str-long" || dstT == "%vec") {
+		(dstT == "%str-long" || (dstT == "%vec" && srcT == "%vec")) {
 		if dstT == "%str-long" {
 			_, sv := c.loadVal(inst.Args[0])
 			tmp := fmt.Sprintf("%%cl%d", inst.ID)
 			c.sb.WriteString(fmt.Sprintf("  %s = call %s @str_clone(%s %s)\n", tmp, dstT, dstT, sv))
 			c.sb.WriteString(fmt.Sprintf("  store %s %s, %s* %s\n", dstT, tmp, dstT, dstSlot))
 			return nil
+		}
+		// dstT == "%vec": the callee does NOT own the borrowed parameter's
+		// backing store (the caller passes owned args by reference and drops
+		// them at its own scope), so a bitwise {len,cap,data} copy would alias
+		// the caller's buffer and double-free. Hand the destination an
+		// independent deep copy via vecDeepClone — the same clone the
+		// non-parameter %vec move branch below uses. Only when the element type
+		// cannot be resolved do we keep the old hard failure (never emit an
+		// aliasing copy). Fixes tests/uninit-output.no (`?[]i64` output params).
+		elemType := NoType
+		if t := c.mod.Type(inst.Type); t != nil && t.Kind == KindSlice && t.Elem != NoType {
+			elemType = t.Elem
+		}
+		if elemType == NoType {
+			if t := c.mod.Type(c.localTypeOf(inst.Args[0])); t != nil && t.Kind == KindSlice && t.Elem != NoType {
+				elemType = t.Elem
+			}
+		}
+		if elemType != NoType {
+			if fn := c.vecDeepClone(elemType, 0); fn != "" {
+				_, sv := c.loadVal(inst.Args[0])
+				tmp := fmt.Sprintf("%%cl%d", inst.ID)
+				c.sb.WriteString(fmt.Sprintf("  %s = call %%vec %s(%%vec %s)\n", tmp, fn, sv))
+				c.sb.WriteString(fmt.Sprintf("  store %%vec %s, %%vec* %s\n", tmp, dstSlot))
+				return nil
+			}
 		}
 		c.fail("moving a borrowed %s parameter transfers ownership the callee does not hold (double-free risk); unsupported in MIR backend", dstT)
 		return fmt.Errorf("borrowed %s param move unsupported in MIR backend", dstT)

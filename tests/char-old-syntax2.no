@@ -1,7 +1,9 @@
 ; test_char_old_syntax2
+; 注意：nolang 引號規則為 '' = str、"" = char。本測試驗 char.is-upper，
+; 故 c 必須是 char 字面量（"A"），舊語法 'A'（str）會解析成 str 而找不到 str.is-upper。
 print('start')
 
-c = 'A'
+c = "A"
 print(c.is-upper())
 
 print('done')

@@ -236,8 +236,11 @@ varint-decode = (buf []byte, pos i64) (val i64, next-pos i64) {
 ; len i64: CID 長度（通常 8）
 ; 返回 cid []byte: 隨機 CID
 gen-cid = (len i64) (cid []byte) {
-    state = 0
-    state, cid-r = rand.rand(0)
+    ; xorshift32 的 0 是固定點（0 永遠產生 0），必須以非零種子起算。
+    ; 與 tls.no 的 .rand-state 初始化方式一致。
+    state = time.now-ns() ^ os.get-pid()
+    state == 0 -> state = 1
+    state, cid-r = rand.rand(state)
     cid = with-len(len)
     i <- [0..len): {
         state, cid-r = rand.rand(state)
