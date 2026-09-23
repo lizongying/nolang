@@ -280,6 +280,16 @@ type Package struct {
 	Top     []int32 // top-level node ids, in source order
 	Anns    []Ann   // annotation groups, sorted by Owner
 	Embeds  []Embed // embed data groups, sorted by Owner
+	// FuncOwners maps each top-level free-function name (as registered in
+	// the package) to the short name of the module that DEFINES it ("" =
+	// the main program). Filled by parser.ASTToHIRWithMap from the AST
+	// ModuleOwner side-table. The MIR backend uses it to validate bare-name
+	// fallbacks for module-qualified calls: `fs.is-file()` may only resolve
+	// to a bare `is-file` definition when that definition is actually owned
+	// by `fs` — otherwise a user function from an unrelated module (or the
+	// main program) would hijack the std call (and, when its body itself
+	// calls `fs.is-file()`, recurse infinitely: stack-overflow SIGSEGV).
+	FuncOwners map[string]string
 	// Inferred holds the checker's inferred type strings, keyed by node id.
 	// HIR nodes only carry *declared* types in Node.Type; the rich inferred
 	// types (which the checker computes by mutating the AST) live here so

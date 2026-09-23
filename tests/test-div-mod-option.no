@@ -3,7 +3,7 @@
 
 a int = 10
 b int = 2
-q ?int = a / b
+q = a / b
 q: {
     err -> print('div-err')
     nil -> print('div-nil')
@@ -11,28 +11,28 @@ q: {
 }
 
 z int = 0
-q0 ?int = a / z
+q0 = a / z
 q0: {
     err -> print('div-zero-err')
     nil -> print('div-zero-nil')
     -> print(it)
 }
 
-r0 ?int = a % z
+r0 = a % z
 r0: {
     err -> print('mod-zero-err')
     nil -> print('mod-zero-nil')
     -> print(it)
 }
 
-m ?int = a.mod(b)
+m = a.mod(b)
 m: {
     err -> print('method-mod-err')
     nil -> print('method-mod-nil')
     -> print(it)
 }
 
-d ?int = a.div(z)
+d = a.div(z)
 d: {
     err -> print('method-div-zero-err')
     nil -> print('method-div-zero-nil')

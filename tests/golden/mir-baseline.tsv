@@ -460,3 +460,4 @@
 0 8d62399f17ca3c8c943ccca1b31b97ce2fb3436d1e01db25b568162e57fad080 tests/zz-strindex-lint.no
 0 5934c1f36f5122b8554ec7958744e7013b486f142def4d93911cca6ecab479c2 tests/zz-min-cond3.no
 0 5891b5b522d5df086d0ff0b110fbd9d21bb4fc7163af34d08286a2e846f6be03 tests/zz-pushtest.no
+0 d0db33b46f819ab0fdcc12e5ce5fef7c33e74d036940e5f0d7535e83aab5146d tests/modfn-builtin-collision.no

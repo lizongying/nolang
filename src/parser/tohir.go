@@ -3,6 +3,7 @@ package parser
 import (
 	"fmt"
 	"reflect"
+	"strings"
 
 	"github.com/lizongying/nolang/hir"
 )
@@ -57,7 +58,29 @@ func ASTToHIRWithMap(prog *Program) (*hir.Package, map[Node]int32) {
 	for _, stmt := range prog.Statements {
 		c.top(c.stmt(stmt))
 	}
-	return b.Package(), c.astOf
+	pkg := b.Package()
+	// Record the owning module of every top-level free function so backends
+	// can validate module-qualified bare-name resolution (see
+	// hir.Package.FuncOwners). Names are taken AFTER build.mangleOverloads /
+	// prefixCollidingFunctions have run, so they match the registered HIR
+	// function names exactly.
+	pkg.FuncOwners = make(map[string]string, len(prog.Statements))
+	for _, stmt := range prog.Statements {
+		switch s := stmt.(type) {
+		case *FunctionDefinition:
+			if !s.IsMethodDef {
+				pkg.FuncOwners[s.Name] = GetModuleOwner(stmt)
+			}
+		case *LetStatement:
+			if s.Name == nil {
+				continue
+			}
+			if _, isFn := s.Value.(*FunctionLiteral); isFn && !strings.Contains(s.Name.Value, ".") {
+				pkg.FuncOwners[s.Name.Value] = GetModuleOwner(stmt)
+			}
+		}
+	}
+	return pkg, c.astOf
 }
 
 type hirConv struct {

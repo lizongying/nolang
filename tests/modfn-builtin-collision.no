@@ -1,0 +1,29 @@
+; Regression: a user function sharing a std builtin's BARE name must not
+; hijack qualified std calls. Before the fix, checker.resolveModuleCalls /
+; mir.resolveModuleCallName flattened `fs.is-file()` to the bare name without
+; checking which module owns the definition, so the call resolved to THIS
+; module's `is-file` — whose body calls `fs.is-file()` — direct
+; self-recursion: a stack-overflow SIGSEGV at runtime (no compile error).
+; The std builtin stub (#{buildin}) is never merged, so no `fs`-owned
+; definition exists and the qualified call must route to the builtin.
+is-file = (p str) (ok bool) {
+    ok = fs.is-file(p)
+}
+print('start')
+; qualified std call on a directory: must be false via the builtin
+fs.is-file('/tmp') -> {
+    print('BAD: fs.is-file says /tmp is a file')
+}
+; the user wrapper resolves by its bare name and must NOT recurse
+wrap-ok = is-file('/tmp')
+wrap-ok -> {
+    print('BAD: wrapper says /tmp is a file')
+}
+; both agree on a real file
+fs.is-file('/dev/null') -> {
+    print('fs: /dev/null is a file')
+}
+is-file('/dev/null') -> {
+    print('wrap: /dev/null is a file')
+}
+print('done')

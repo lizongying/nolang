@@ -183,6 +183,16 @@ func (l *lowerer) walk(v reflect.Value) {
 						replaced = true
 					}
 				}
+				// 有號整數 `/` `%` 的結果本質是 option（除零/溢出時為 err）。
+				// 未標註型別的綁定 `q = a / b` 就地補上推斷出的 `?T` 註解
+				// （等同顯式寫 `q ?int = a / b`），讓下游 checker（ovfhndld /
+				// ovf-int-default）與 MIR（typeHint → 除零守衛）走已驗證的
+				// 顯式路徑。fmt 路徑跳過，formatter 永遠看不到合成註解。
+				if !l.p.SkipUnwrapLowering {
+					if ls, ok := stmt.(*LetStatement); ok {
+						l.inferOptionDivMod(ls)
+					}
+				}
 			}
 			l.walk(v.Index(i))
 			_ = replaced
@@ -358,6 +368,127 @@ func (l *lowerer) recordIndexLocalType(funcName, name, lt string) {
 		l.p.idxLocalTypes[funcName] = make(map[string]string)
 	}
 	l.p.idxLocalTypes[funcName][name] = lt
+}
+
+// inferOptionDivMod — 有號整數 `/` `%` 產生 option（除零為 err）。顯式宣告
+// `q ?int = a / b` 為既有路徑；此處讓未標註的 `q = a / b` 等價可寫：在 lowering
+// 階段就地補上推斷出的 `?T` 型別註解（合成 NullableType）並註冊變數型別，使
+// checker（ovfhndld declaredOption 豁免、ovf-int-default lint）與 MIR（KLet typeHint
+// → 除零守衛）完全復用顯式路徑。推斷不出（運算元型別未知/非有號整數/已標註/
+// 帶 overflow 註解）時保守不改寫，維持原有行為。
+func (l *lowerer) inferOptionDivMod(s *LetStatement) {
+	if s == nil || s.IsSynthetic || s.Name == nil || s.Value == nil {
+		return
+	}
+	// 顯式標註（含 ?T）一律不碰：用戶意圖優先，也保證冪等（重解析不重複改寫）。
+	if s.Type != nil {
+		return
+	}
+	inf, ok := unwrapLowerExpr(s.Value).(*InfixExpression)
+	if !ok || (inf.Operator != "/" && inf.Operator != "%") {
+		return
+	}
+	// `#{overflow=...}` 行註解表示用戶已顯式處理溢出語義（wrap 等），不改寫。
+	if s.OverflowMode != "" {
+		return
+	}
+	if l.p.sem != nil {
+		for _, e := range l.p.sem.RawAnnotationsOf(s) {
+			if e != nil && e.Key == "overflow" {
+				return
+			}
+		}
+	}
+	lt, okLT := l.signedIntOperandType(inf.Left)
+	rt, okRT := l.signedIntOperandType(inf.Right)
+	if !okLT || !okRT {
+		return
+	}
+	base := lt
+	if len(rt) > len(base) {
+		base = rt
+	}
+	// 合成與顯式寫法同形的註解 `?base`（如 ?int）並註冊型別。
+	nullTok := s.Token
+	innerTok := s.Token
+	innerTok.Literal = base
+	s.Type = &NullableType{
+		Token:      nullTok,
+		Type:       &NamedType{Token: innerTok, Value: base},
+		IsInferred: true,
+	}
+	l.p.setVarType(s.Name.Value, "?"+base)
+}
+
+// signedIntOperandType 回傳運算元的有號整數型別名（int/i64/...）。僅在型別
+//  statically 可知且有號時回傳 ok：整數字面量 → i64；識別符 → 語義表查詢
+// （self 用方法 receiver 型別）；括號展開。型別未知或非整數回 ok=false，
+// 保守跳過推斷（i128 除外：codegen 對其退化為 wrap，不產生 option）。
+func (l *lowerer) signedIntOperandType(e Expression) (string, bool) {
+	switch x := unwrapLowerExpr(e).(type) {
+	case *IntegerLiteral:
+		return "i64", true
+	case *Identifier:
+		name := x.Value
+		if name == "self" || name == "." {
+			return l.lowerSelfType()
+		}
+		typ := ""
+		if l.p.sem != nil {
+			if t, has := l.p.sem.FuncVarType(l.curFuncName, name); has {
+				typ = t
+			}
+		}
+		return lowerSignedIntName(typ)
+	default:
+		return "", false
+	}
+}
+
+// lowerSelfType 回傳當前方法 receiver（self）的有號整數型別；非方法或
+// 非整數接收者回 ok=false。
+func (l *lowerer) lowerSelfType() (string, bool) {
+	fd := l.curFuncDef
+	if fd == nil || !fd.IsMethodDef || len(fd.Results) == 0 {
+		return "", false
+	}
+	if r := fd.Results[0]; r != nil && r.Name == "self" && r.Type != nil {
+		return lowerSignedIntName(typeString(r.Type))
+	}
+	return "", false
+}
+
+// unwrapLowerExpr 剝除括號節點，回傳內層表達式。
+func unwrapLowerExpr(e Expression) Expression {
+	for {
+		g, ok := e.(*GroupedExpression)
+		if !ok || g.Expression == nil {
+			return e
+		}
+		e = g.Expression
+	}
+}
+
+// lowerSignedIntName 判定型別字串是否為可產生 option 的有號整數型別：
+// 接受 int/i8/i16/i32/i64（含 number.int 等限定名與 *int 指標形式），
+// 拒絕無號（u8..u128/byte）、i128（codegen 退化 wrap）、f32/f64、str 等
+// 已宣告型別、以及已為 option（?T）的型別。
+func lowerSignedIntName(typ string) (string, bool) {
+	typ = strings.TrimSpace(typ)
+	if typ == "" || strings.HasPrefix(typ, "?") {
+		return "", false
+	}
+	for strings.HasPrefix(typ, "*") {
+		typ = strings.TrimSpace(typ[1:])
+	}
+	if i := strings.LastIndex(typ, "."); i >= 0 {
+		typ = typ[i+1:]
+	}
+	switch typ {
+	case "int", "i8", "i16", "i32", "i64":
+		return typ, true
+	}
+	return "", false
 }
 
 // maybeAutoPropagateIndex 偵測 option 回傳函式內的裸安全索引賦值

@@ -3915,7 +3915,20 @@ func (l *lowerer) resolveModuleCallName(recvName, method string) string {
 		return qualified
 	}
 	if _, ok := l.funcNames[method]; ok {
-		return method
+		// The bare-name fallback only serves module functions the merge kept
+		// under their bare name. It MUST be validated against the defining
+		// module: an unrelated same-named user function (main program or a
+		// different module) would hijack a std-qualified call like
+		// `fs.is-file()` — and if that function's body itself calls
+		// `fs.is-file()`, the hijack is direct self-recursion: a
+		// stack-overflow SIGSEGV at runtime instead of a compile error. When
+		// the bare definition is owned by a different module, keep the
+		// qualified name: a std builtin name still resolves via
+		// lookupBuiltin's bare fallback in codegen, and a genuine mismatch
+		// surfaces as "unknown callee" at compile time.
+		if owner, recorded := l.pkg.FuncOwners[method]; !recorded || owner == recvName {
+			return method
+		}
 	}
 	return l.resolveOverloadedFuncName(qualified)
 }

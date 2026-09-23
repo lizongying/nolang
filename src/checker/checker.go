@@ -3845,7 +3845,7 @@ func ValidateUnhandledOverflow(program *parser.Program, mainFile string) []Valid
 			// 運算 → 沉默泄漏。函式回傳 ?T 時，區域 option 中間值是合約內預期行為 → 不報。
 			if !fnReturnsOption && !effOverflow {
 				declaredOption := s.Type != nil && strings.HasPrefix(s.Type.String(), "?")
-				if !declaredOption && isDirectOverflowValue(s.Value, varTypes, selfType) {
+								if !declaredOption && isDirectOverflowValue(s.Value, varTypes, selfType) {
 					report(s, "整数运算 `a OP b` 默认在溢出时返回 option<int>。此 option 未被处理：请加 `#{overflow = wrap}` 注解回普通 int，或用 `?=` 上抛（如 `x ?= a + b`），或显式声明为 option 类型（如 `x ?i64 = a + b`）。", curFile)
 				}
 			}
@@ -7173,9 +7173,9 @@ var (
 	// Cache for CollectStdModuleSignatures: parsing all std modules is
 	// expensive (~0.5s). VetFile is called once per .no file, so without
 	// caching a full std vet spends ~95% of its time re-parsing modules.
-	stdSigsOnce          sync.Once
-	stdSigsCache         map[string][]string // 模塊函數簽名（鍵：module.fn 或裸名 fn）
-	stdMethodSigsCache   map[string][]string // 結構體方法簽名（鍵：module.struct.method）
+	stdSigsOnce        sync.Once
+	stdSigsCache       map[string][]string // 模塊函數簽名（鍵：module.fn 或裸名 fn）
+	stdMethodSigsCache map[string][]string // 結構體方法簽名（鍵：module.struct.method）
 	// 參數型別表，與上面兩張「回傳型別表」同鍵。有了它 checker 才能檢查
 	// std 呼叫的引數；沒有它，方法引數從來沒被走訪過（見 checkCallArgsInExpr）。
 	stdFuncParamsCache   map[string][]string // 模塊函數參數型別（鍵同 stdSigsCache）
@@ -7862,7 +7862,23 @@ func resolveModuleCalls(program *parser.Program, importedModules []string, prefi
 	// Collect simple (non-dotted) function names — these are module-level
 	// functions like `degrees` (from math.no). Method definitions like
 	// `str.starts-with` or `path.exists` have dots and are NOT module functions.
-	moduleFns := make(map[string]bool)
+	// The value records the SET OF OWNING MODULES ("" = the main program) that
+	// define each bare name: `module.fn()` may only be flattened to the bare
+	// `fn()` when `fn` actually belongs to `module`. Without the owner check a
+	// qualified std call like `fs.is-file()` was hijacked by any same-named
+	// user function `is-file` from an unrelated module — std `#{buildin}` stubs
+	// are never merged into the program (transpiler skips BuiltinStub), so `fs`
+	// owns no definition here and only the user's bare `is-file` exists. When
+	// that user function's body itself calls `fs.is-file()`, the flattening made
+	// it call ITSELF: infinite recursion → stack-overflow SIGSEGV at runtime.
+	// Keeping the DotExpression lets codegen route the call to the builtin.
+	moduleFns := make(map[string]map[string]bool)
+	addModFn := func(name, owner string) {
+		if moduleFns[name] == nil {
+			moduleFns[name] = map[string]bool{}
+		}
+		moduleFns[name][owner] = true
+	}
 	// Collect top-level constant names (LetStatement) — these are module-level
 	// constants like `BASE64-STD` (from encoding/base64.no), used to rewrite
 	// module.CONST dotted accesses to bare constant references.
@@ -7870,7 +7886,7 @@ func resolveModuleCalls(program *parser.Program, importedModules []string, prefi
 	for _, stmt := range program.Statements {
 		if fd, ok := stmt.(*parser.FunctionDefinition); ok {
 			if !fd.IsMethodDef {
-				moduleFns[fd.Name] = true
+				addModFn(fd.Name, parser.GetModuleOwner(stmt))
 			}
 		}
 		if ls, ok := stmt.(*parser.LetStatement); ok && ls.Name != nil {
@@ -7890,7 +7906,7 @@ func resolveModuleCalls(program *parser.Program, importedModules []string, prefi
 			// names, so variables assigned from them default to i64).
 			if _, isFn := ls.Value.(*parser.FunctionLiteral); isFn {
 				if !strings.Contains(ls.Name.Value, ".") {
-					moduleFns[ls.Name.Value] = true
+					addModFn(ls.Name.Value, parser.GetModuleOwner(stmt))
 				}
 			}
 		}
@@ -7917,7 +7933,7 @@ func extractModulePathAndFunc(dot *parser.DotExpression) (path, fnName string) {
 	path = strings.Join(segments, "/")
 	return path, fnName
 }
-func resolveModuleCallsInStmt(stmt parser.Statement, sem *parser.SemanticContext, modSet map[string]bool, moduleFns map[string]bool, moduleConsts map[string]bool, prefixedFns map[string]bool) {
+func resolveModuleCallsInStmt(stmt parser.Statement, sem *parser.SemanticContext, modSet map[string]bool, moduleFns map[string]map[string]bool, moduleConsts map[string]bool, prefixedFns map[string]bool) {
 	switch s := stmt.(type) {
 	case *parser.ExpressionStatement:
 		if s.Expression != nil {
@@ -7958,7 +7974,7 @@ func resolveModuleCallsInStmt(stmt parser.Statement, sem *parser.SemanticContext
 		}
 	}
 }
-func resolveModuleCallsInExpr(expr parser.Expression, sem *parser.SemanticContext, modSet map[string]bool, moduleFns map[string]bool, moduleConsts map[string]bool, prefixedFns map[string]bool) parser.Expression {
+func resolveModuleCallsInExpr(expr parser.Expression, sem *parser.SemanticContext, modSet map[string]bool, moduleFns map[string]map[string]bool, moduleConsts map[string]bool, prefixedFns map[string]bool) parser.Expression {
 	if expr == nil {
 		return nil
 	}
@@ -7995,9 +8011,10 @@ func resolveModuleCallsInExpr(expr parser.Expression, sem *parser.SemanticContex
 					if sem != nil {
 						sem.SetCallee(e, parser.CalleeModuleFn)
 					}
-				} else if moduleFns[fnName] {
+				} else if owners := moduleFns[fnName]; owners[short] {
 					// We are in this branch because fnName is a real top-level
-					// module function (moduleFns[fnName] == true). For a
+					// module function OWNED BY THIS MODULE (the module `short`
+					// appears in its owner set). For a
 					// module.fn() call the module function is the correct target
 					// even when fnName also names a builtin method — e.g.
 					// math.degrees is the std function (def @degrees), NOT the
