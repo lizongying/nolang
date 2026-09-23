@@ -3189,10 +3189,19 @@ func walkStmtForOverflow(stmt parser.Statement, file string, sem *parser.Semanti
 		// (e.g. `q = . / b` where `q` is a function result param declared as `?int`).
 		// If the target is a known option-type result param, the overflow IS being
 		// handled — suppress the lint to avoid a false positive.
+		//
+		// 同一豁免也涵蓋 lowering 捕獲 pass 的產物：`a = b + c / d` 展開成
+		// `a ?T = nil` 預宣告 + ok 臂 `a = b + __cap_1`（後者不帶型別節點），
+		// `a` 由 collectLetsInStmts 以 `?T` 登記，故這裡讀得到。
 		if s.Type == nil && s.Name != nil {
 			if t := declared[s.Name.Value]; strings.HasPrefix(t, "?") {
 				return
 			}
+		}
+		// `_ = expr`：顯式捨棄，求值本身在執行期安全（捕獲推斷走 option 路徑），
+		// 使用者已表明不要這個值與其錯誤 → 與 ValidateUnhandledOverflow 一致地豁免。
+		if s.Name != nil && s.Name.Value == "_" {
+			return
 		}
 		emitSubs(s.Value)
 	case *parser.ReturnStatement:
@@ -3203,12 +3212,7 @@ func walkStmtForOverflow(stmt parser.Statement, file string, sem *parser.Semanti
 		emitSubs(s.Value)
 	case *parser.UnwrapAssignStatement:
 		// 顯式 `?=` 已主動處理溢出（將 option 上拋給呼叫者），是 ovf-int-default
-		// 訊息明列的合法替代方案，不再重複提示。僅當 IsAutoPropagated 為真時
-		// （原始碼是普通 `=`，因右值為 option 被 lowering 改成 `?=`，使用者
-		// 並未顯式處理）才提示——此時溢出確實未被處理。
-		if s.IsAutoPropagated {
-			emitSubs(s.Value)
-		}
+		// 訊息明列的合法替代方案，不再重複提示。
 	case *parser.ForStatement:
 		emitSubs(s.Condition)
 		if s.Init != nil {
@@ -3268,6 +3272,14 @@ func collectLetsInStmts(stmts []parser.Statement, types map[string]string) {
 			if s.Name != nil && s.Type != nil {
 				if nt, ok := s.Type.(*parser.NamedType); ok {
 					types[s.Name.Value] = nt.Value
+				} else {
+					// `?T` 等非具名型別：以字串形式登記（`?i64`），供
+					// walkStmtForOverflow 的 declared-option 豁免判定。lowering 的
+					// 捕獲 pass 會合成 `a ?T = nil` 預宣告，其 ok 臂的最終賦值
+					// （`a = b + __cap_1`）不帶型別節點，只能靠這裡登記的 `?T`
+					// 認出「目標是 option → 溢出已就地捕獲」，否則該賦值會被
+					// 誤報為 ovf-int-default（訊息卻正是推薦這種寫法）。
+					types[s.Name.Value] = s.Type.String()
 				}
 			}
 		case *parser.FunctionDefinition:
@@ -3341,6 +3353,11 @@ func collectTopLevelLets(program *parser.Program) map[string]string {
 			if ls.Name != nil && ls.Type != nil {
 				if nt, ok := ls.Type.(*parser.NamedType); ok {
 					types[ls.Name.Value] = nt.Value
+				} else {
+					// 與 collectLetsInStmts 同：`?T` 以字串形式登記，讓頂層指令稿
+					// 的捕獲賦值（`a = b + c / d` → `a ?T = nil` 預宣告）同樣豁免
+					// ovf-int-default。
+					types[ls.Name.Value] = ls.Type.String()
 				}
 			}
 			continue
@@ -3364,7 +3381,7 @@ func ValidateIntOverflow(program *parser.Program) []ValidateResult {
 			File:    file,
 			Line:    line,
 			Column:  col,
-			Message: "整數運算 `a OP b` 預設在溢出時回傳 option<int>，現已列為錯誤。請二選一：①加註解 `#{overflow = wrap}`（無聲回繞）/`clamp0`（下溢歸零）/`min`/`max`/`saturate`（飽和箝位），或用型別前綴形式如 `#{overflow = u8-max}`、`#{overflow = i8-min}` 回普通 int；②顯式以 `?T` 接收並用 `?=` / match 處理 overflow。",
+			Message: "整數運算 `a OP b` 預設在溢出時回傳 option<int>，現已列為錯誤。請二選一：①加註解 `#{overflow = wrap}`（無聲回繞）/`clamp0`（下溢歸零）/`min`/`max`/`saturate`（飽和箝位），或用型別前綴形式如 `#{overflow = u8-max}`、`#{overflow = i8-min}` 回普通 int；②以 `?T` 接收（`a ?i64 = x + y`）或直接 `a = x + y` 讓編譯器推斷成 option 就地捕獲錯誤，再用 `?=` / match 處理；③`_ = x + y` 顯式丟棄。",
 			TraceID: "ovf-int-default",
 		})
 	}
@@ -3843,10 +3860,16 @@ func ValidateUnhandledOverflow(program *parser.Program, mainFile string) []Valid
 			}
 			// 普通 `=`：未被註解處理且 LHS 未顯式宣告 ?T，且其結果本質是未標註溢出
 			// 運算 → 沉默泄漏。函式回傳 ?T 時，區域 option 中間值是合約內預期行為 → 不報。
+			//
+			// LHS 為 `_`（`_ = expr`）是顯式捨棄：使用者已表明不要這個值與其錯誤，
+			// 求值本身在執行期是安全的（捕獲推斷會讓除零/越界走 option 路徑，不 UB），
+			// 故豁免。這與「裸表達式陳述」（無 `_ =`，下方 ExpressionStatement 分支）
+			// 不同：後者多半是誤寫，仍報錯。
 			if !fnReturnsOption && !effOverflow {
 				declaredOption := s.Type != nil && strings.HasPrefix(s.Type.String(), "?")
-				if !declaredOption && isDirectOverflowValue(s.Value, varTypes, selfType) {
-					report(s, "整数运算 `a OP b` 默认在溢出时返回 option<int>。此 option 未被处理：请加 `#{overflow = wrap}` 注解回普通 int，或用 `?=` 上抛（如 `x ?= a + b`），或显式声明为 option 类型（如 `x ?i64 = a + b`）。", curFile)
+				discarded := s.Name != nil && s.Name.Value == "_"
+				if !declaredOption && !discarded && isDirectOverflowValue(s.Value, varTypes, selfType) {
+					report(s, "整数运算 `a OP b` 默认在溢出时返回 option<int>。此 option 未被处理：请加 `#{overflow = wrap}` 注解回普通 int，或用 `?=` 上抛（如 `x ?= a + b`），或显式声明为 option 类型（如 `x ?i64 = a + b`）以就地捕获错误，或用 `_ = a + b` 显式丢弃。", curFile)
 				}
 			}
 			if s.Value != nil {
@@ -3856,7 +3879,7 @@ func ValidateUnhandledOverflow(program *parser.Program, mainFile string) []Valid
 			if !effOverflow {
 				// 函式回傳 ?T 時，回傳 option 是合約內預期行為 → 不報。
 				if isDirectOverflowValue(s.ReturnValue, varTypes, selfType) && !fnReturnsOption {
-					report(s, "返回的整数运算默认返回 option<int>，但本函数不返回 option 类型。请加 `#{overflow = wrap}` 注解回普通 int，或让函数返回 ?T 并用 `result ?= expr` 上抛。", curFile)
+					report(s, "返回的整数运算默认返回 option<int>，但本函数不返回 option 类型。请加 `#{overflow = wrap}` 注解回普通 int，或让函数返回 ?T 并用 `result ?= expr` 上抛（或用 `result = expr` 就地捕获错误）。", curFile)
 				}
 			}
 			if s.ReturnValue != nil {
@@ -3865,7 +3888,7 @@ func ValidateUnhandledOverflow(program *parser.Program, mainFile string) []Valid
 		case *parser.ExpressionStatement:
 			if !fnReturnsOption && !effOverflow {
 				if isDirectOverflowValue(s.Expression, varTypes, selfType) {
-					report(s, "整数运算结果默认是 option<int>，作为表达式语句被丢弃（未处理）。请加 `#{overflow = wrap}` 注解回普通 int，或用 `?=` 上抛。", curFile)
+					report(s, "整数运算结果默认是 option<int>，作为表达式语句被丢弃（未处理）。请加 `#{overflow = wrap}` 注解回普通 int，或用 `?=` 上抛，或用 `_ = expr` 显式丢弃。", curFile)
 				}
 			}
 			if s.Expression != nil {
@@ -3936,10 +3959,10 @@ const unhandledIndexTraceID = "idxhndld"
 // {tag,data} 結構，直接當 elem 解引用會錯）。本規則在編譯期攔截這種「產生 option
 // 卻沒處理」的寫法，迫使程式設計師顯式二選一：
 //  1. 用 `a ?= b[i]` 上拋（錯誤傳給呼叫者）；在返回 ?T 的函式中 `a = b[i]`
-//     會被 lowering 自動改寫為 `a ?= b[i]`（自動上拋）；
+//     會被 lowering 捕獲：`a` 推斷為 `?elem`，越界時就地存 `nil`（不提前 return）；
 //  2. 加 `#{index-out = DEF}` 註解（DEF 為字面量），越界時取預設值 DEF。
 //
-// 與 parser 的 isSafeIndexBase / maybeAutoPropagateIndex / maybeIndexOutAssign
+// 與 parser 的 isSafeIndexBase / maybeIndexOutAssign
 // 保持一致：str/txt 索引回傳字元（非 option，不報）；struct field 索引（receiver.field[i]）
 // 走既有 bounds_check 路徑（不報）；只有直接變數基底的 arr/vec/slice 索引會產生
 // option 並需被處理。
@@ -4004,7 +4027,7 @@ func ValidateUnhandledIndex(program *parser.Program, mainFile string) []Validate
 		if !lineHasIdentIndexRead(curFile, line) {
 			return
 		}
-		msg := "数组/切片索引 `arr[i]` 默认在越界时返回 option<elem>。此 option 未被处理：请用 `a ?= arr[i]` 上抛（在返回 ?T 的函数中可直接 `a = arr[i]` 自动上抛），或加 `#{index-out = DEF}` 注解以越界时取默认值 DEF。"
+		msg := "数组/切片索引 `arr[i]` 默认在越界时返回 option<elem>。此 option 未被处理：请用 `a ?= arr[i]` 上抛（在返回 ?T 的函数中可直接 `a = arr[i]` 就地捕获错误），或加 `#{index-out = DEF}` 注解以越界时取默认值 DEF，或显式声明为 option 类型（如 `a ?elem = arr[i]`）以就地捕获错误，或用 `_ = arr[i]` 显式丢弃。"
 		key := fmt.Sprintf("%s|%d:%d", canonPath(curFile), line, col)
 		if seen[key] {
 			return
@@ -4067,7 +4090,8 @@ func ValidateUnhandledIndex(program *parser.Program, mainFile string) []Validate
 	}
 
 	// Pass 1：收錄「已處理」的索引表達式指標。
-	//   - `a ?= b[i]`（UnwrapAssignStatement，含自動上拋改寫）
+	//   - `a ?= b[i]`（UnwrapAssignStatement）
+	//   - option 回傳函式內裸 `a = b[i]` 的就地捕獲（lowering 捕獲 pass）
 	//   - `#{index-out = DEF}` 降級產生的合成 tmp：`__idx_out_L_C = b[i]`（IsSynthetic）
 	handled := map[*parser.IndexExpression]bool{}
 
@@ -4140,10 +4164,11 @@ func ValidateUnhandledIndex(program *parser.Program, mainFile string) []Validate
 			}
 			// 非合成 `x = b[i]`：若 LHS 顯式宣告 ?T（option 本地）則已接納
 			// 越界 option；否則（非 option 函式，或結果參數非 ?T）越界 option
-			// 未被處理 → 報錯。
+			// 未被處理 → 報錯。LHS 為 `_`（`_ = b[i]`）是顯式捨棄 → 豁免。
 			if !s.IsSynthetic {
 				if idx, ok := s.Value.(*parser.IndexExpression); ok {
-					if isSafeBase(curFunc, idx) && !(s.Type != nil && strings.HasPrefix(s.Type.String(), "?")) {
+					discarded := s.Name != nil && s.Name.Value == "_"
+					if isSafeBase(curFunc, idx) && !discarded && !(s.Type != nil && strings.HasPrefix(s.Type.String(), "?")) {
 						cf := s.SourceFile
 						if cf == "" {
 							cf = curFile
@@ -4161,13 +4186,13 @@ func ValidateUnhandledIndex(program *parser.Program, mainFile string) []Validate
 		case *parser.ExpressionStatement:
 			// `b = arr[i]`（既有變數的裸賦值）以 ExpressionStatement 包裹
 			// AssignExpression 出現：LHS 為 ?T 或處於 option 函式（codegen 自動
-			// wrap）時已接納；否則越界 option 未被處理 → 報錯。
+			// wrap）時已接納；否則越界 option 未被處理 → 報錯。LHS 為 `_` 時豁免。
 			if ae, ok := s.Expression.(*parser.AssignExpression); ok {
 				if idx, ok := ae.Value.(*parser.IndexExpression); ok {
 					if isSafeBase(curFunc, idx) {
 						handledByType := false
 						if id, ok := ae.Left.(*parser.Identifier); ok {
-							handledByType = lhsIsOption(curFunc, id.Value)
+							handledByType = id.Value == "_" || lhsIsOption(curFunc, id.Value)
 						}
 						if !handledByType && !fnOpt {
 							cf := s.SourceFile

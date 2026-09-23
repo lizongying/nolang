@@ -1,0 +1,106 @@
+; 回歸測試：「Option 捕獲賦值」（`=` 就地捕獲錯誤，見 docs/docs/lang/syntax.md）。
+;
+; 語意：`a = expr` 中 expr 含可錯源（`/` `%`、安全索引、option 運算元）時，a 自動
+; 推斷為 `?T`，nil/err 就地存進 a、流程繼續，之後用 `a: { ok -> ... }` 消費。
+; 純算術（`+ - * <<` 取負）本身不是可錯源，但在 option 路徑上帶運行期溢出檢查。
+
+; ── 1. 內部除零捕獲：`a = b + c / d` ────────────────────────────────
+; 缺陷修正：以前 `a ?i64 = b + c / d` 會把 c/d 的 payload 無條件解包再包 ok，
+; 除零得到錯誤數值、錯誤完全遺失。現在 c/d 被就地捕獲成 __cap_N。
+div-capture = (b i64, c i64, d i64) {
+    a = b + c / d
+    a: {
+        err -> print('div-capture: err')
+        nil -> print('div-capture: nil')
+        -> print('div-capture: ok')
+    }
+}
+
+; ── 2. 越界捕獲：`a = v[100]` → nil ─────────────────────────────────
+; 安全索引的捕獲以「所在函式有 option 結果參數」為閘門（鏡像被取代的
+; maybeAutoPropagateIndex 的既有範圍）。
+oob-capture = (i i64) (res ?i64) {
+    a = [10, 20, 30]
+    x = a[i]
+    x: {
+        err -> print('oob: err')
+        nil -> print('oob: nil')
+        -> print('oob: ok')
+    }
+    res = x
+}
+
+; ── 3. 溢出捕獲：option 包裝路徑上的 sadd/ssub/smul/neg ─────────────
+; 顯式 `?T` 標註讓算術結果落在 option 包裝路徑，溢出 → err（而非靜默回繞）。
+overflow-add = (x i64) {
+    a ?i64 = x + 1
+    a: {
+        err -> print('ovf-add: err')
+        nil -> print('ovf-add: nil')
+        -> print('ovf-add: ok')
+    }
+}
+
+overflow-mul = (x i64) {
+    a ?i64 = x * 2
+    a: {
+        err -> print('ovf-mul: err')
+        nil -> print('ovf-mul: nil')
+        -> print('ovf-mul: ok')
+    }
+}
+
+overflow-neg = (x i64) {
+    a ?i64 = -x
+    a: {
+        err -> print('ovf-neg: err')
+        nil -> print('ovf-neg: nil')
+        -> print('ovf-neg: ok')
+    }
+}
+
+; ── 4. option 函式內 `?=` 仍上拋；plain 函式內捕獲；`_ =` 捨棄 ────────
+; `out ?= c / d`：上拋語義（要求函式有 option 結果參數），nil/err 提前 return。
+propagate = (c i64, d i64) (out ?i64) {
+    out = nil
+    out ?= c / d
+}
+
+discard = (b i64, c i64) {
+    _ = b / c
+    print('discard: no-error')
+}
+
+main = () {
+    print('-- div-capture --')
+    div-capture(1, 6, 2)
+    div-capture(1, 6, 0)
+
+    print('-- oob-capture --')
+    oob-capture(1)
+    oob-capture(100)
+
+    print('-- overflow --')
+    overflow-add(1)
+    overflow-add(9223372036854775807)
+    overflow-mul(1)
+    overflow-mul(9223372036854775807)
+    overflow-neg(1)
+
+    print('-- propagate --')
+    p1 = propagate(6, 2)
+    p1: {
+        err -> print('prop: err')
+        nil -> print('prop: nil')
+        -> print('prop: ok')
+    }
+    p2 = propagate(6, 0)
+    p2: {
+        err -> print('prop: err')
+        nil -> print('prop: nil')
+        -> print('prop: ok')
+    }
+
+    print('-- discard --')
+    discard(1, 0)
+}

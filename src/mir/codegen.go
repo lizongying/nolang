@@ -1799,6 +1799,59 @@ func optionElemRaw(t *Type) string {
 	return ""
 }
 
+// intMinLiteral returns the LLVM literal for the minimum value of an integer
+// LLVM type. It is needed because `sdiv`/`srem` with (MIN, -1) is *undefined
+// behaviour* in LLVM, exactly like a zero divisor: the result cannot be
+// represented. Returns ("", false) for any width we do not guard, in which
+// case the caller must fall back to the plain (unguarded) arithmetic.
+func intMinLiteral(lt string) (string, bool) {
+	switch lt {
+	case "i8":
+		return "-128", true
+	case "i16":
+		return "-32768", true
+	case "i32":
+		return "-2147483648", true
+	case "i64":
+		return "-9223372036854775808", true
+	}
+	return "", false
+}
+
+// overflowCheckable reports whether LLVM provides a `*.with.overflow`
+// intrinsic for this integer LLVM type. Scalar option payloads are widened to
+// i64, but the check is written against the real result type so a future
+// narrower payload does not silently emit a non-existent intrinsic.
+func overflowCheckable(lt string) bool {
+	switch lt {
+	case "i8", "i16", "i32", "i64":
+		return true
+	}
+	return false
+}
+
+// emitOverflowIntrinsic emits `@llvm.<s|u><add|sub|mul>.with.overflow.<lt>`
+// and returns (computedValue, overflowFlag) SSA operand strings. The flag is
+// i1 and is meant to be folded into the option's err tag by the caller.
+func (c *codegen) emitOverflowIntrinsic(unsigned bool, kind, lt, aV, bV string) (string, string) {
+	prefix := "s"
+	if unsigned {
+		prefix = "u"
+	}
+	tuple := fmt.Sprintf("{ %s, i1 }", lt)
+	c.loadSeq++
+	res := fmt.Sprintf("%%ovr%d", c.loadSeq)
+	c.sb.WriteString(fmt.Sprintf("  %s = call %s @llvm.%s%s.with.overflow.%s(%s %s, %s %s)\n",
+		res, tuple, prefix, kind, lt, lt, aV, lt, bV))
+	c.loadSeq++
+	val := fmt.Sprintf("%%ovv%d", c.loadSeq)
+	c.sb.WriteString(fmt.Sprintf("  %s = extractvalue %s %s, 0\n", val, tuple, res))
+	c.loadSeq++
+	ovf := fmt.Sprintf("%%ovf%d", c.loadSeq)
+	c.sb.WriteString(fmt.Sprintf("  %s = extractvalue %s %s, 1\n", ovf, tuple, res))
+	return val, ovf
+}
+
 // ---- prelude / runtime ----
 
 func (c *codegen) emitPrelude() {
@@ -3862,6 +3915,10 @@ func (c *codegen) emitArith(f *Function, inst *Inst) error {
 	// %option operands to their scalar payload, compute in the scalar element
 	// type, then wrap the result back into the option (tag 0 = ok) for storage.
 	resLT := lt
+	// elemRaw keeps the option's DECLARED element (`i64` vs `u64`) around: the
+	// payload is widened to i64 for storage, so signedness can only be recovered
+	// from the declaration, and it decides s* vs u* overflow intrinsics.
+	elemRaw := ""
 	wrapResult := false
 	if strings.HasPrefix(lt, "%option") {
 		if val := c.mod.Value(inst.Dst); val != nil {
@@ -3869,6 +3926,7 @@ func (c *codegen) emitArith(f *Function, inst *Inst) error {
 				if elem := optionElemRaw(t); elem != "" {
 					_, payloadLT := c.optionType(elem)
 					resLT = payloadLT
+					elemRaw = elem
 					wrapResult = true
 					aT, aV = c.unwrapOptionOperand(inst.Args[0], aT, aV, resLT)
 					bT, bV = c.unwrapOptionOperand(inst.Args[1], bT, bV, resLT)
@@ -3947,26 +4005,77 @@ func (c *codegen) emitArith(f *Function, inst *Inst) error {
 	// a harmless divisor before emitting the arithmetic and make the option tag
 	// conditional: tag=2 (err) for zero, tag=0 (ok) otherwise. The payload of an
 	// err is deliberately zero-like/ignored; ?int has no owned payload to drop.
-	zeroDiv := ""
+	// `sdiv`/`srem` with (MIN, -1) is UB for the same reason (the result is not
+	// representable), so it joins the same "dangerous divisor" set — but only
+	// when no overflow annotation asked for the old wrapping behaviour.
+	// errCond is the single i1 "this operation produced an err" flag for the
+	// whole instruction (divisor guard OR arithmetic overflow).
+	errCond := ""
+	badDiv := ""
 	if wrapResult && !isFloat && (inst.Op == OpDiv || inst.Op == OpMod || inst.Op == OpUDiv || inst.Op == OpUMod) {
 		c.loadSeq++
-		zeroDiv = fmt.Sprintf("%%dz%d", c.loadSeq)
+		zeroDiv := fmt.Sprintf("%%dz%d", c.loadSeq)
 		c.sb.WriteString(fmt.Sprintf("  %s = icmp eq %s %s, 0\n", zeroDiv, resLT, bV))
+		badDiv = zeroDiv
+		signedDiv := inst.Op == OpDiv || inst.Op == OpMod
+		if signedDiv && !inst.OvfAnnotated {
+			if minLit, ok := intMinLiteral(resLT); ok {
+				c.loadSeq++
+				isMin := fmt.Sprintf("%%dmn%d", c.loadSeq)
+				c.sb.WriteString(fmt.Sprintf("  %s = icmp eq %s %s, %s\n", isMin, resLT, aV, minLit))
+				c.loadSeq++
+				isNeg1 := fmt.Sprintf("%%dn1%d", c.loadSeq)
+				c.sb.WriteString(fmt.Sprintf("  %s = icmp eq %s %s, -1\n", isNeg1, resLT, bV))
+				c.loadSeq++
+				both := fmt.Sprintf("%%db%d", c.loadSeq)
+				c.sb.WriteString(fmt.Sprintf("  %s = and i1 %s, %s\n", both, isMin, isNeg1))
+				c.loadSeq++
+				badDiv = fmt.Sprintf("%%dall%d", c.loadSeq)
+				c.sb.WriteString(fmt.Sprintf("  %s = or i1 %s, %s\n", badDiv, zeroDiv, both))
+			}
+		}
 		c.loadSeq++
 		safeDivisor := fmt.Sprintf("%%ds%d", c.loadSeq)
-		c.sb.WriteString(fmt.Sprintf("  %s = select i1 %s, %s 1, %s %s\n", safeDivisor, zeroDiv, resLT, resLT, bV))
+		c.sb.WriteString(fmt.Sprintf("  %s = select i1 %s, %s 1, %s %s\n", safeDivisor, badDiv, resLT, resLT, bV))
 		bV = safeDivisor
+		errCond = badDiv
 	}
-	c.sb.WriteString(fmt.Sprintf("  %%c%d = %s %s %s, %s\n", inst.Dst, op, resLT, aV, bV))
+	// add/sub/mul: signed/unsigned overflow becomes err, but ONLY on the option
+	// path (wrapResult) and only when the statement did not opt out with an
+	// overflow annotation. Plain arithmetic keeps emitting a bare add/sub/mul
+	// so every existing (annotated or non-option) program is bit-identical.
+	resVal := fmt.Sprintf("%%c%d", inst.Dst)
+	useIntrinsic := false
+	if wrapResult && !isFloat && !inst.OvfAnnotated && overflowCheckable(resLT) {
+		var kind string
+		switch inst.Op {
+		case OpAdd:
+			kind = "add"
+		case OpSub:
+			kind = "sub"
+		case OpMul:
+			kind = "mul"
+		}
+		if kind != "" {
+			unsigned := strings.HasPrefix(elemRaw, "u") || elemRaw == "byte"
+			val, ovf := c.emitOverflowIntrinsic(unsigned, kind, resLT, aV, bV)
+			resVal = val
+			errCond = ovf
+			useIntrinsic = true
+		}
+	}
+	if !useIntrinsic {
+		c.sb.WriteString(fmt.Sprintf("  %%c%d = %s %s %s, %s\n", inst.Dst, op, resLT, aV, bV))
+	}
 	if wrapResult {
 		c.optStoreTag(slot, 0)
-		if zeroDiv != "" {
+		if errCond != "" {
 			c.loadSeq++
 			errTag := fmt.Sprintf("%%de%d", c.loadSeq)
-			c.sb.WriteString(fmt.Sprintf("  %s = select i1 %s, i64 2, i64 0\n", errTag, zeroDiv))
+			c.sb.WriteString(fmt.Sprintf("  %s = select i1 %s, i64 2, i64 0\n", errTag, errCond))
 			c.optStoreTagValue(slot, errTag)
 		}
-		c.optStoreInlinePayload(slot, resLT, fmt.Sprintf("%%c%d", inst.Dst))
+		c.optStoreInlinePayload(slot, resLT, resVal)
 	} else {
 		c.sb.WriteString(fmt.Sprintf("  store %s %%c%d, %s* %s\n", lt, inst.Dst, lt, slot))
 	}
@@ -3994,14 +4103,29 @@ func (c *codegen) emitNeg(inst *Inst) error {
 		vT, v = c.unwrapOptionOperand(inst.Args[0], vT, v, lt)
 	}
 	v = c.coerceInt(v, vT, resLT)
-	if resLT == "double" {
+	// `-x` is `0 - x`, so it overflows for exactly one input: MIN. Emit it as a
+	// checked subtraction on the option path (same gate as emitArith) instead of
+	// a bare `sub`, which would silently produce MIN again.
+	resVal := fmt.Sprintf("%%c%d", inst.Dst)
+	errCond := ""
+	if wrapResult && resLT != "double" && !inst.OvfAnnotated && overflowCheckable(resLT) {
+		val, ovf := c.emitOverflowIntrinsic(false, "sub", resLT, "0", v)
+		resVal = val
+		errCond = ovf
+	} else if resLT == "double" {
 		c.sb.WriteString(fmt.Sprintf("  %%c%d = fneg double %s\n", inst.Dst, v))
 	} else {
 		c.sb.WriteString(fmt.Sprintf("  %%c%d = sub %s 0, %s\n", inst.Dst, resLT, v))
 	}
 	if wrapResult {
 		c.optStoreTag(slot, 0)
-		c.optStoreInlinePayload(slot, resLT, fmt.Sprintf("%%c%d", inst.Dst))
+		if errCond != "" {
+			c.loadSeq++
+			errTag := fmt.Sprintf("%%de%d", c.loadSeq)
+			c.sb.WriteString(fmt.Sprintf("  %s = select i1 %s, i64 2, i64 0\n", errTag, errCond))
+			c.optStoreTagValue(slot, errTag)
+		}
+		c.optStoreInlinePayload(slot, resLT, resVal)
 	} else {
 		c.sb.WriteString(fmt.Sprintf("  store %s %%c%d, %s* %s\n", lt, inst.Dst, lt, slot))
 	}
@@ -4478,6 +4602,8 @@ func (c *codegen) emitBitwise(inst *Inst) error {
 	// i64 fails LLVM verification ("defined with type 'i64' but expected
 	// '%option'") (test-vec-assign).
 	resLT := lt
+	// See emitArith: signedness is only recoverable from the DECLARED element.
+	elemRaw := ""
 	wrapResult := false
 	if strings.HasPrefix(lt, "%option") {
 		if val := c.mod.Value(inst.Dst); val != nil {
@@ -4485,6 +4611,7 @@ func (c *codegen) emitBitwise(inst *Inst) error {
 				if elem := optionElemRaw(t); elem != "" {
 					_, payloadLT := c.optionType(elem)
 					resLT = payloadLT
+					elemRaw = elem
 					wrapResult = true
 					aT, aV = c.unwrapOptionOperand(inst.Args[0], aT, aV, resLT)
 					bT, bV = c.unwrapOptionOperand(inst.Args[1], bT, bV, resLT)
@@ -4510,10 +4637,38 @@ func (c *codegen) emitBitwise(inst *Inst) error {
 	case OpShr:
 		op = "lshr"
 	}
-	c.sb.WriteString(fmt.Sprintf("  %%c%d = %s %s %s, %s\n", inst.Dst, op, resLT, aV, bV))
+	// `x << n` loses bits when the shifted-out bits are not zero. There is no
+	// `shl.with.overflow` intrinsic, so detect it by shifting back and
+	// comparing: `(x << n) >> n != x` (ashr for signed, lshr for unsigned).
+	resVal := fmt.Sprintf("%%c%d", inst.Dst)
+	errCond := ""
+	if wrapResult && inst.Op == OpShl && !inst.OvfAnnotated && overflowCheckable(resLT) {
+		c.loadSeq++
+		shl := fmt.Sprintf("%%sl%d", c.loadSeq)
+		c.sb.WriteString(fmt.Sprintf("  %s = shl %s %s, %s\n", shl, resLT, aV, bV))
+		back := "ashr"
+		if strings.HasPrefix(elemRaw, "u") || elemRaw == "byte" {
+			back = "lshr"
+		}
+		c.loadSeq++
+		rt := fmt.Sprintf("%%sr%d", c.loadSeq)
+		c.sb.WriteString(fmt.Sprintf("  %s = %s %s %s, %s\n", rt, back, resLT, shl, bV))
+		c.loadSeq++
+		errCond = fmt.Sprintf("%%sf%d", c.loadSeq)
+		c.sb.WriteString(fmt.Sprintf("  %s = icmp ne %s %s, %s\n", errCond, resLT, rt, aV))
+		resVal = shl
+	} else {
+		c.sb.WriteString(fmt.Sprintf("  %%c%d = %s %s %s, %s\n", inst.Dst, op, resLT, aV, bV))
+	}
 	if wrapResult {
 		c.optStoreTag(slot, 0)
-		c.optStoreInlinePayload(slot, resLT, fmt.Sprintf("%%c%d", inst.Dst))
+		if errCond != "" {
+			c.loadSeq++
+			errTag := fmt.Sprintf("%%de%d", c.loadSeq)
+			c.sb.WriteString(fmt.Sprintf("  %s = select i1 %s, i64 2, i64 0\n", errTag, errCond))
+			c.optStoreTagValue(slot, errTag)
+		}
+		c.optStoreInlinePayload(slot, resLT, resVal)
 	} else {
 		c.sb.WriteString(fmt.Sprintf("  store %s %%c%d, %s* %s\n", lt, inst.Dst, lt, slot))
 	}

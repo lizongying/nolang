@@ -4,7 +4,8 @@ import "testing"
 
 // 本檔案是 ValidateUnhandledIndex 的回歸測試：arr/vec/slice 索引 b[i] 越界時
 // 預設回傳 option<elem>（永不 panic），若結果既沒被 `?=` 上拋、沒被 `#{index-out
-// = DEF}` 註解處理、也沒在返回 ?T 的函式中自動上拋，即「沉默泄漏」，必須報錯
+// = DEF}` 註解處理、也沒在返回 ?T 的函式中被就地捕獲（`a = b[i]` → `a: ?elem`），
+// 即「沉默泄漏」，必須報錯
 // （no vet / LSP 診斷，TraceID = idxhndld）。本規則僅作為診斷（非編譯硬錯誤），
 // 以免讓 `no build` / `no run` / `no test` 對既有（含 std）廣泛使用的舊式越界
 // panic 寫法全面失敗。

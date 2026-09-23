@@ -80,11 +80,34 @@ huff.forget = (n i64) (sym i64) {
 }
 
 // TestOptReturningMethodAbsorbsIndexOut 驗證回傳 ?T 的方法，其函式體內的越界
-// 索引視為被 option 吸收，不再報未處理索引（ValidateUnhandledIndex 的 fnOpt）。
-// 與 unhandled_index_test.go 的 option_fn_auto_propagate 對應，差別在接收者。
-// 註：此不變式目前同時由 lowering 的自動改寫（`v = arr[i]` -> `v ?= arr[i]`）
-// 保證，故 fnOpt 這一處修正目前是行為中性的；測試釘住的是語意本身。
+// 索引在「目標可容納 option」時就地捕獲，不再報未處理索引。
+//
+// 語意變更（見 .trae/documents/option-capture-assign.md §1/§3）：此不變式先前靠
+// lowering 的自動改寫（`v = arr[i]` -> `v ?= arr[i]`，maybeAutoPropagateIndex）
+// 保證；該自動上拋已移除，改由「捕獲推導」接手 —— `v = arr[i]` 會把 `v` 推斷成
+// `?elem`（合成 ?T 註解）並就地捕獲越界錯誤，故仍不報。
 func TestOptReturningMethodAbsorbsIndexOut(t *testing.T) {
+	src := `huff {
+    tab []i64
+}
+
+huff.pick = (arr []i64, i i64) (out ?i64) {
+    out = nil
+    v = arr[i]
+    out = v
+}`
+	res := ValidateUnhandledIndex(parseProg(t, src), "src/app.no")
+	for _, r := range res {
+		if r.TraceID == unhandledIndexTraceID {
+			t.Fatalf("index-out reported inside ?T-returning method: L%d:C%d %s", r.Line, r.Column, r.Message)
+		}
+	}
+}
+
+// TestPlainLocalReassignToIndexIsReported 是上一個測試的對照組：目標已顯式宣告為
+// plain `i64` 時**無法**容納越界 option，捕獲推導依規格不碰它（見方案 §1 觸發條件
+// 「變數已宣告為非 option 型別 → 不碰」），因此必須報錯而不是靜默改寫為 `?=`。
+func TestPlainLocalReassignToIndexIsReported(t *testing.T) {
 	src := `huff {
     tab []i64
 }
@@ -96,10 +119,14 @@ huff.pick = (arr []i64, i i64) (out ?i64) {
     out = v
 }`
 	res := ValidateUnhandledIndex(parseProg(t, src), "src/app.no")
+	found := false
 	for _, r := range res {
 		if r.TraceID == unhandledIndexTraceID {
-			t.Fatalf("index-out reported inside ?T-returning method: L%d:C%d %s", r.Line, r.Column, r.Message)
+			found = true
 		}
+	}
+	if !found {
+		t.Fatalf("expected index-out to be reported when the target is a plain i64 local, got %+v", res)
 	}
 }
 

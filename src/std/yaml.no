@@ -2197,6 +2197,10 @@ yaml.parse-all = (source str) (out ?yaml) {
     }
     root = -1
     roots.len() > 0 -> {
+        ; root 已在上方宣告為純量（`root = -1`），無法就地捕獲越界 option
+        ; （`x = v[i]` 只在首次宣告時推斷為 `?elem`），故顯式標註越界語義。
+        ; `roots.len() > 0` 已保證索引 0 合法，此預設值不可達。
+        #{index-out = 0}
         root = roots[0]
     }
     doc = yaml {

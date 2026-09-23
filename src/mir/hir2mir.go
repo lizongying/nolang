@@ -4909,6 +4909,16 @@ func (l *lowerer) lowerExpr(id int32) ValueID {
 				rt = ot
 			}
 		}
+		// `-x` whose target is an option (`a ?i64 = -x`) must keep `?T` so
+		// codegen takes the wrapResult path and reports the single overflowing
+		// input (MIN) as err. Mirrors the infix promotion above.
+		if op == OpNeg && l.typeHint != NoType && l.typeHint != l.voidType {
+			if ht := l.mod.Type(l.typeHint); ht != nil && (ht.Kind == KindOption || strings.HasPrefix(ht.Raw, "?")) {
+				if ty := l.mod.Type(l.valueTypeOf(ov)); ty != nil && ty.Kind == KindInt {
+					rt = l.typeHint
+				}
+			}
+		}
 		v := l.b.Emit(op, rt, []ValueID{ov}, "")
 		if l.stmtOvfAnnotated && op == OpNeg && v != NoVal {
 			l.b.Mod.Insts[len(l.b.Mod.Insts)-1].OvfAnnotated = true
@@ -5143,6 +5153,30 @@ func (l *lowerer) lowerExpr(id int32) ValueID {
 			}
 		}
 		if !isCmp && (srcOp == "/" || srcOp == "%") && l.typeHint != NoType && l.typeHint != l.voidType {
+			if ht := l.mod.Type(l.typeHint); ht != nil && (ht.Kind == KindOption || strings.HasPrefix(ht.Raw, "?")) {
+				isIntValue := func(v ValueID) bool {
+					raw := l.valueRaw(v)
+					if raw == "int" || strings.HasSuffix(raw, ".int") {
+						return true
+					}
+					if ty := l.mod.Type(l.valueTypeOf(v)); ty != nil {
+						return ty.Kind == KindInt
+					}
+					return false
+				}
+				if isIntValue(lv) && isIntValue(rv) {
+					resTyp = l.typeHint
+				}
+			}
+		}
+		// Same promotion for `+ - *` and `<<`, so that an assignment whose
+		// target is an OPTION (`a ?i64 = m + 1`) keeps `?T` on the arithmetic
+		// itself. codegen then takes the wrapResult path and can publish
+		// tag=err on signed overflow instead of silently wrapping around.
+		// A non-option target is deliberately NOT promoted: plain arithmetic
+		// must stay a plain add/sub/mul, or every expression in the corpus
+		// would become an option and std would fall over.
+		if !isCmp && (srcOp == "+" || srcOp == "-" || srcOp == "*" || srcOp == "<<") && l.typeHint != NoType && l.typeHint != l.voidType {
 			if ht := l.mod.Type(l.typeHint); ht != nil && (ht.Kind == KindOption || strings.HasPrefix(ht.Raw, "?")) {
 				isIntValue := func(v ValueID) bool {
 					raw := l.valueRaw(v)

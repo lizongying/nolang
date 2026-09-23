@@ -1479,15 +1479,22 @@ get-ch = (arr []byte, i i64) (res byte) {
 
 > The annotation may also go on its own line above the assignment: `#{index-out=0}` ⏎ `res = arr[i]`. Writing it on the **same line in front of** the assignment (`#{index-out=0} res = arr[i]`) is an error (see "Annotation Placement").
 
-**3. A bare `x = v[i]` inside a function returning an option — automatically rewritten to `?=`**
+**3. A bare `x = v[i]` inside a function returning an option — captured in place**
 
-When the enclosing function returns a `?T` result, a bare safe-index assignment `x = v[i]` is rewritten automatically to `x ?= v[i]`, so an out-of-range index propagates upwards (equivalent to writing `?=` by hand):
+When the enclosing function returns a `?T` result, a bare safe-index assignment `x = v[i]` makes `x` infer `?elem`: on an out-of-range index, `x` is stored as `nil` **in place** (no crash, and no early `return`), and flow continues. Consume it later with `x: { ... }`. The difference from form 1 (`?=`) is that the failure **stays where it happened** rather than propagating upwards:
 
 ```no
-auto-prop = (arr []i64, i i64) (res ?i64) {
-    x = arr[i]   ; automatically equivalent to x ?= arr[i]; out of range → res = None
+capture-prop = (arr []i64, i i64) (res ?i64) {
+    x = arr[i]        ; x infers ?i64; out of range → x = nil
+    x: {
+        nil -> {}     ; out of range: handled right here
+        err -> {}
+        -> { res = it }   ; success: res = the element
+    }
 }
 ```
+
+> **Scope (important):** this capture rule fires **only inside functions that return a `?T` result** — the same scope as `?=`. In functions without an option result param, and in top-level scripts, `x = v[i]` keeps its ordinary "plain element read" meaning; for out-of-range safety there use form 1 (`?=`, which requires an option result param) or form 2 (`#{index-out=DEF}`).
 
 `vec` (including an unannotated local produced by `to-vec()`) is just as safe:
 
@@ -2253,11 +2260,30 @@ dec = (x i8) (r i8) {
 
 ### Compiler Enforcement
 
+An unannotated integer operation defaults to returning `option<int>`, so an *unhandled* one is caught. **What counts as "handled" is judged in parallel** — satisfying any of the following silences the error:
+
+- **`?=` propagation** (requires the function to have an option result param);
+- **In-place capture**: binding with `=` to a **new** variable (the variable is inferred as `?T`), or an explicit `?T` declaration (e.g. `x ?i64 = a + b`);
+- **`_ = expr` explicit discard** (the expression is still evaluated on the safe path; the error is ignored too);
+- **An annotation** — `#{overflow = wrap}` / `clamp0` / `min` / `max` / `saturate` (or a type-prefixed form such as `u8-max`, `i8-min`) — declaring that wrapping / saturating semantics are accepted.
+
+Only when none of the four is present does the compiler report an error (`ovfhndld`).
+
+> **Pure arithmetic is not a fallible source:** `+ - * <<` and negation do not *trigger* capture (otherwise every arithmetic expression would become an option and the standard library would explode). So `d = x - 1` (no `/`, no `%`, no safe index, no option operand) still errors — add an annotation, or write `d ?i64 = x - 1`.
+>
+> **Existing variables keep their type:** capture only applies to a target first declared by that statement. If the variable already exists (e.g. `d = 0` followed by `d = x - 1`, or `v i64 = 0` followed by `v = arr[i]`), the compiler will not turn it into an option in place; it reports an error asking you to choose the semantics explicitly.
+
+Two hard errors are unaffected by the exemptions above:
+
 - An unannotated integer operation assigned to an **explicitly plain `int`** variable is a compile error
   (`cannot assign ?i64 value to i64 variable`), forcing you to add `#{overflow = wrap}` / `#{overflow = clamp0}` /
   `#{overflow = min}` / `#{overflow = max}` / `#{overflow = saturate}` (or a type-prefixed form), or to use a named `?T`.
-- An unannotated integer operation assigned to a variable with **no type annotation** (`d = x - 1`) is a compile error
-  that suggests adding the annotation or declaring `?i64`, so that invalid IR is never produced.
+- An unannotated integer operation assigned to an **already-existing** variable whose type is not an option (`d = x - 1`
+  after `d = 0`) is a compile error that suggests adding the annotation or declaring `?i64`, so that invalid IR is never
+  produced.
+
+The remaining rules:
+
 - Unsigned integer operations (`u8`/`u16`/`u32`/`u64`/`u128`) are **subject to the same mechanism**: unannotated,
   `+ - *` default to returning `option<int>` with overflow → `err`, matching the signed rules.
 - `i128` operations do not support the `option` path (the data field is only `i64`) and uniformly fall back to silent
@@ -2330,6 +2356,8 @@ v ?= expr
 - If `expr` returns `nil` or `err`, the current function's option result parameter is set to that value and `return` runs (automatic propagation)
 
 **Restriction:** `?=` can only be used inside a function that has an option-typed result parameter. If the current function has no option result parameter, the compiler reports an error.
+
+> **Capture vs. propagate:** `?=` means "throw the error upward" — it requires an option result param and performs an early `return` on failure. If you want to handle the failure **in place** and keep going, use plain `=` instead (see *Error Capture Assignment* below).
 
 **Example:**
 
@@ -2464,6 +2492,58 @@ The message looks like: `` `?=` RHS `42` is not an option — use `=` instead ``
 **nil vs err:** use `nil` when the absence is a normal/expected result (empty stack, missing key, EOF); use `err('msg')` when the absence represents an actual error state (I/O failure, invalid input, connection refused).
 
 **Exception:** when a function needs to return several independent values (such as `(name str, value str, ok bool)`), the multiple-return-value pattern may be kept.
+
+### Error Capture Assignment (capture with `=`)
+
+`?=` means "throw the error upward" — it requires the enclosing function to have an option result param and returns early on failure. When you don't want an early return but would rather handle the error in place, use the ordinary `=`: as long as the right-hand side contains a **fallible source**, the target variable is inferred as `?T`, and the `nil` / `err` is stored **into that variable** while flow continues.
+
+```no
+handle = (b i64, c i64, d i64) (r i64) {
+    a = b + c / d        ; a infers ?i64; divide-by-zero → a = err
+    a: {
+        err -> { r = -1 }    ; handle the error in place
+        nil -> { r = -1 }
+        -> { r = it }        ; success: r = b + c/d
+    }
+}
+```
+
+**Fallible sources (capture triggers):**
+
+| Source | Example | Capture result |
+|---|---|---|
+| Integer division / modulo | `a = b + c / d`, `a = b % c` | divide-by-zero, `MIN / -1` → `err` |
+| Safe index | `a = v[i]` (`arr` / `vec` / `slice`) | out of range → `nil` |
+| Option-typed operand | `a = x + 1` where `x ?i64` | `x` is `nil` / `err` → stored as-is into `a` |
+| Call returning an option (used as an arithmetic operand) | `a = f(x) + 1` where `f` returns `?i64` | same as above |
+
+> An option passed **directly as a function argument** is not in this list — that is the callee's business (consistent with the bare-option-argument exemption for `?=`).
+
+**Pure arithmetic is not a fallible source:** `+ - * <<` and negation do not trigger capture on their own (otherwise every arithmetic expression would become an option). But once an expression lands on the option path (for example the RHS also contains `/`, or the target is explicitly declared `?T`), those operations carry **runtime overflow checks**, and overflow → `err`:
+
+```no
+ovf = (x i64) (r i64) {
+    a ?i64 = x + 1        ; explicit ?T → takes the option-wrap path
+    a: {
+        err -> { r = 0 }     ; x = i64-max → overflow → err
+        nil -> { r = 0 }
+        -> { r = it }
+    }
+}
+```
+
+**Capture vs. propagate:**
+
+| Form | On failure | Needs an option result param | Reading the value later |
+|---|---|---|---|
+| `a ?= expr` | sets the result param to `nil`/`err` and `return`s (early return) | yes | n/a (already returned) |
+| `a = expr` | stores `nil`/`err` into `a` in place; flow continues | no | `a: { ok -> ... }` |
+| `a ?T = expr` | same as `=` (explicit annotation; inner fallible subexpressions included) | no | same as above |
+| `_ = expr` | evaluates but discards both the value and the error (no error, no unused lint) | no | n/a |
+
+**Scope:** capture from safe indexing — like `?=` — fires **only inside functions that return a `?T` result** (see *Safe Indexing*, form 3). Capture from `/` `%` and from option operands applies in all functions.
+
+**Existing variables keep their type:** capture only applies to a target **first declared by that statement**. If the target already exists (`v = arr[i]` after `v i64 = 0`, or `d = x - 1` after `d = 0`), the compiler does **not** change its type in place — it reports an error asking you to pick a semantics explicitly (add an `#{overflow=...}` / `#{index-out=...}` annotation, use `?=`, or declare `?T`).
 
 ### Generics
 

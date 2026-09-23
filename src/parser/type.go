@@ -89,6 +89,17 @@ func (p *Parser) resolveReceiverType(receiver Expression) string {
 //   - 結構體方法（receiver.method）查 p.methodSignatures
 //     本模組方法以 "struct.method" 為鍵，跨模組 std 方法以 "module.struct.method" 為鍵。
 func (p *Parser) inferTypeFromCallExpr(call *CallExpression) string {
+	return p.filterInferableType(p.returnTypeFromCallExpr(call))
+}
+
+// returnTypeFromCallExpr 回報呼叫的回傳型別原文（不做 filterInferableType 過濾）。
+//
+// inferTypeFromCallExpr 會把 i64/i32/f64 等基本型別濾成 ""（那是為「可安全推斷的
+// 接收者型別」而設），但捕獲 pass 需要真實回傳型別來決定 option 內部型別 T
+// （`a = g(b / c)` 的 T 就是 g 的回傳型別），故另設此不過濾的入口。
+//
+// 查找規則同 inferTypeFromCallExpr。
+func (p *Parser) returnTypeFromCallExpr(call *CallExpression) string {
 	if call.Function == nil {
 		return ""
 	}
@@ -97,7 +108,7 @@ func (p *Parser) inferTypeFromCallExpr(call *CallExpression) string {
 		fnName := ident.Value
 		if p.funcSignatures != nil {
 			if rets, ok := p.funcSignatures[fnName]; ok && len(rets) == 1 {
-				return p.filterInferableType(rets[0])
+				return rets[0]
 			}
 		}
 		return ""
@@ -121,14 +132,14 @@ func (p *Parser) inferTypeFromCallExpr(call *CallExpression) string {
 				// 兩種鍵均以 receiverType + "." + dot.Property 查找即可。
 				key := receiverType + "." + dot.Property
 				if rets, ok := p.methodSignatures[key]; ok && len(rets) == 1 {
-					return p.filterInferableType(rets[0])
+					return rets[0]
 				}
 			}
 			// array/slice type methods (如 []t.len()) 仍存於 funcSignatures
 			if p.funcSignatures != nil {
 				fnName := receiverType + "." + dot.Property
 				if rets, ok := p.funcSignatures[fnName]; ok && len(rets) == 1 {
-					return p.filterInferableType(rets[0])
+					return rets[0]
 				}
 			}
 			return ""
@@ -158,18 +169,18 @@ func (p *Parser) inferTypeFromCallExpr(call *CallExpression) string {
 			// 先查方法簽名（如 bufio.reader.init 在 methodSigs 中）
 			if p.methodSignatures != nil {
 				if rets, ok := p.methodSignatures[fullPath]; ok && len(rets) == 1 {
-					return p.filterInferableType(rets[0])
+					return rets[0]
 				}
 			}
 			if p.funcSignatures != nil {
 				if rets, ok := p.funcSignatures[fullPath]; ok && len(rets) == 1 {
-					return p.filterInferableType(rets[0])
+					return rets[0]
 				}
 			}
 		}
 		if modName != "" && p.funcSignatures != nil {
 			if rets, ok := p.funcSignatures[modName+"."+dot.Property]; ok && len(rets) == 1 {
-				return p.filterInferableType(rets[0])
+				return rets[0]
 			}
 		}
 		return ""
@@ -183,6 +194,7 @@ func (p *Parser) inferTypeFromCallExpr(call *CallExpression) string {
 //   - 結構體型別（如 bufio.reader）：使 codegen 能正確分配結構體記憶體
 //   - str 型別：方法調用（如 deps.split）依賴正確的 receiver 型別
 //   - 切片型別（[]byte, []str 等）：同上
+//
 // 不可推斷的型別：整數和浮點數型別，因為整數字面量已有專用推斷路徑。
 func (p *Parser) filterInferableType(retType string) string {
 	if retType == "" {
@@ -227,7 +239,7 @@ func containerElemType(lt string) string {
 		}
 	}
 	if strings.HasPrefix(lt, "vec[") && strings.HasSuffix(lt, "]") {
-		return lt[len("vec["):len(lt)-1]
+		return lt[len("vec[") : len(lt)-1]
 	}
 	return ""
 }
@@ -306,7 +318,7 @@ func (p *Parser) isSafeIndexBase(idx *IndexExpression) bool {
 		lt = strings.TrimPrefix(t, "?")
 	} else if t, ok := p.sem.FuncVarType(p.curFuncName, ident.Value); ok && t != "" {
 		lt = strings.TrimPrefix(t, "?")
-	} else 	if t, ok := p.sem.VarTypes[ident.Value]; ok {
+	} else if t, ok := p.sem.VarTypes[ident.Value]; ok {
 		lt = strings.TrimPrefix(t, "?")
 	}
 	return containerElemType(lt) != ""
@@ -1137,6 +1149,23 @@ func markInferred(t Type) Type {
 		markInferred(typ.Type)
 	}
 	return t
+}
+
+// typeIsInferred 回報型別節點是否由 parser 推斷而來（非源碼顯式標注）。
+// 與 markInferred 對稱；捕獲 pass 用它區分「用戶寫下的 plain 型別」與
+// 「parse 期替 `v = arr[i]` 推斷出的元素型別」——只有後者允許被改寫成 ?elem。
+func typeIsInferred(t Type) bool {
+	switch typ := t.(type) {
+	case *NamedType:
+		return typ.IsInferred
+	case *ArrayType:
+		return typ.IsInferred
+	case *SliceType:
+		return typ.IsInferred
+	case *NullableType:
+		return typ.IsInferred
+	}
+	return false
 }
 
 // buildType 將型別字串轉換為 Type 節點

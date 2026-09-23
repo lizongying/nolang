@@ -814,10 +814,9 @@ func (p *Parser) parseUnwrapAssignStatement() Statement {
 	}
 
 	return &UnwrapAssignStatement{
-		Token:            tok,
-		Name:             &Identifier{Token: nameTok, Value: nameTok.Literal},
-		Value:            val,
-		IsAutoPropagated: false,
+		Token: tok,
+		Name:  &Identifier{Token: nameTok, Value: nameTok.Literal},
+		Value: val,
 	}
 }
 
@@ -1855,7 +1854,12 @@ func isStatementBoundary(t lexer.TokenType) bool {
 		// following `.`, silently rewriting `in.len()` into `self.len()`
 		// (implicit-receiver form) — a semantic change, and the formatted
 		// output is non-idempotent.
-		lexer.IN:
+		//
+		// `_` 必須是語句邊界，否則 `_ = expr` 捨棄陳述在「緊接於另一條陳述之後」
+		// 時被 skipToStatementEnd 吃掉開頭的 `_` 與 `=`，只剩右值被當成裸表達式
+		// 陳述（`_ = 1 / zz` 靜默退化成 `1 / zz`）。UNDERSCORE 不是 IDENT，
+		// 沒有這一項就無法在 `_` 上停下。
+		lexer.IN, lexer.UNDERSCORE:
 		return true
 	}
 	return false

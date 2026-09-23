@@ -150,14 +150,9 @@ func (f *formatter) formatStatement(stmt parser.Statement) bool {
 		} else {
 			f.formatExpression(s.Name)
 		}
-		// IsAutoPropagated=True 表示此節點由 lowering 從普通 `x = v[5]` 自動
-		// 提升而來（來源中並非顯式 `?=`），formatter 須渲染回 `=` 以忠實還原
-		// 來源（見 ast.go 對 UnwrapAssignStatement.IsAutoPropagated 的說明）。
-		if s.IsAutoPropagated {
-			f.write(" = ")
-		} else {
-			f.write(" ?= ")
-		}
+		// lowering 只會為來源中顯式寫下的 `?=` 產生此節點（自動上拋的
+		// maybeAutoPropagateIndex 已移除），故一律渲染回 `?=`。
+		f.write(" ?= ")
 		f.formatExpression(s.Value)
 	case *parser.ExternStatement:
 		f.formatExternStatement(s)

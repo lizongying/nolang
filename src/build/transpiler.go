@@ -5694,6 +5694,18 @@ func validateStmtDuplicates(sem *parser.SemanticContext, stmt parser.Statement, 
 					hasExplicitType = false
 				}
 			}
+			// NullableType（?T）：lowering 的捕獲 pass 與 inferOptionDivMod 會就地
+			// 合成推斷出的 `?T` 註解（IsInferred: true，Token 取陳述的 name token）。
+			// 這與用戶手寫的 `?T`（Token 在 `?` 位置）語義不同：前者是推斷，重新
+			// 賦值（`e0 = v[0]` 之後再 `e0 = v[1]`）必須放行。少了這一項，推斷出的
+			// `?T` 會被當成顯式標註，同一變數的第二次賦值就報 duplicate variable。
+			// 判定方式鏡像上面的 NamedType/SliceType/ArrayType：Token 與 name 同行
+			// 同列即為 parser 推斷。
+			if nt, ok := s.Type.(*parser.NullableType); ok {
+				if nt.Token.Line == s.Name.Token.Line && nt.Token.Column == s.Name.Token.Column {
+					hasExplicitType = false
+				}
+			}
 			if s.Type.String() == s.Name.Value {
 				// Parser artifact: Type.String() == Name.Value
 				hasExplicitType = false

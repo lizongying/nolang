@@ -71,7 +71,8 @@ type Parser struct {
 	SkipUnwrapLowering bool
 
 	// SkipSafeIndexLowering 控制是否跳過安全索引的 lowering（#\{index-out=DEF\}
-	// 展開為 match 區塊、option 回傳函式內裸 `x = v[i]` 自動上拋展開為 `x ?= v[i]`）。
+	// 展開為 match 區塊、option 回傳函式內裸 `x = v[i]` 就地捕獲展開為
+	// `x: ?elem` 包裝）。
 	// 預設 false：編譯器需要展開後的 IR。
 	// `no fmt` 設定為 true，使 formatter 取得 surface AST 中的 `x = v[i]` 與
 	// 獨立行上的 `#{index-out = DEF}` 註解，直接渲染原始寫法，避免輸出不可重解析

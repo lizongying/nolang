@@ -39,14 +39,18 @@ func TestFormatInIdentifierNotSwallowed(t *testing.T) {
 	}
 }
 
-// REGRESSION GUARD (auto-propagated index assignment must render as `=`).
+// REGRESSION GUARD (a plain index assignment must stay `=`).
 //
-// parser/lowering.go maybeAutoPropagateIndex rewrites `x = v[i]` (an index
-// expression yielding an option) into UnwrapAssignStatement{IsAutoPropagated:
-// true} even in format-only mode (SkipUnwrapLowering gates the *expansion*, not
-// the promotion). fmt/stmt.go used to render every UnwrapAssignStatement as
-// `?=`, ignoring IsAutoPropagated, so `no fmt` silently rewrote `=` into `?=`
-// on every save (semantically equivalent but a lossy, noisy diff).
+// `x = v[i]` in an option-returning function used to be promoted by
+// parser/lowering.go maybeAutoPropagateIndex into an
+// UnwrapAssignStatement{IsAutoPropagated: true} even in format-only mode
+// (SkipUnwrapLowering gates the *expansion*, not the promotion). fmt/stmt.go
+// rendered every UnwrapAssignStatement as `?=`, so `no fmt` silently rewrote
+// `=` into `?=` on every save.
+//
+// That promotion is gone (the capture pass replaced it, and it is fully gated
+// by SkipUnwrapLowering), so the formatter must never see a synthetic `?=`
+// here: `x = v[0]` has to round-trip verbatim.
 func TestFormatAutoPropagatedIndexKeepsAssign(t *testing.T) {
 	in := "f = (v []i64) (result ?i64) {\n    result = nil\n    x = v[0]\n    result = x\n}\n"
 	out, errs := FormatFileWithErrors(in)
@@ -61,12 +65,13 @@ func TestFormatAutoPropagatedIndexKeepsAssign(t *testing.T) {
 	}
 }
 
-// REGRESSION GUARD (doc comment above an auto-promoted index assignment).
+// REGRESSION GUARD (doc comment above a plain index assignment).
 //
-// The auto-promotion above used to drop the statement's CommentedNode, so a doc
-// comment sitting directly above `x = v[i]` vanished on format. The comment must
-// survive, and a blank line must be inserted between the preceding statement and
-// the comment (the block-inner doc-comment blank-line rule).
+// While `x = v[i]` was auto-promoted to `?=` the promotion dropped the
+// statement's CommentedNode, so a doc comment sitting directly above it vanished
+// on format. The comment must survive, and a blank line must be inserted between
+// the preceding statement and the comment (the block-inner doc-comment blank-line
+// rule).
 func TestFormatDocCommentBeforeAutoPromotedIndex(t *testing.T) {
 	in := "f = (v []i64) (result ?i64) {\n    result = nil\n    ; read the first element\n    x = v[0]\n    result = x\n}\n"
 	want := "f = (v []i64) (result ?i64) {\n    result = nil\n\n    ; read the first element\n    x = v[0]\n    result = x\n}\n"

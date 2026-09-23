@@ -569,10 +569,6 @@ type UnwrapAssignStatement struct {
 	// 或 `target = it`（AssignExpression）。
 	Target Expression
 	Value  Expression
-	// IsAutoPropagated 標記此節點由 lowering 的 maybeAutoPropagateIndex 從
-	// 普通 `x = v[5]` 自動改寫而來（非來源中的顯式 `?=`）。formatter 據此
-	// 渲染為 `=` 以忠實還原來源（跳過展開的格式化場景）。
-	IsAutoPropagated bool
 	CommentedNode
 }
 
@@ -617,7 +613,7 @@ type LetStatement struct {
 	// Replaces the external map[string]Expression moduleConstants.
 	IsModuleConst bool
 	// IsPropagation marks a compiler-generated `result = __unwrap_N` assignment
-	// emitted by lowering's `?=` (and safe-index auto-propagation) error paths:
+	// emitted by lowering's `?=` (and safe-index capture) error paths:
 	// the whole option value is copied into an option-typed result parameter so
 	// that a nil/err outcome propagates out of the function.
 	//

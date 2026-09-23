@@ -1,19 +1,24 @@
-; 驗證未標型別區域變數承接安全索引（option 回傳函式內裸 `x = a[i]`）不受
-; 全域 VarTypes 同名污染（std 常見 x:str）。若污染，codegen 會把 x 當 %str-long，
-; 提取出的就不是 i64 元素值，io.out(x) 會印出垃圾而非 20。
+; 驗證未標型別區域變數承接安全索引（`x = a[i]`）不受全域 VarTypes 同名污染
+; （std 常見 x:str）。若污染，codegen 會把 x 當 %str-long，取出的就不是 i64
+; 元素值，match 的 ok 臂會印出垃圾而非 20。
 ;
-; 本測試在 option 回傳函式內直接承接 `x = a[i]`（自動改寫為 `x ?= a[i]`），
-; 並在 some 分支內用 io.out(x) 印出解箱後的區域變數 x，確認其正確推論為 i64。
-;
-; 越界時 none 分支會把 res 設為 none 並提前 return，some 分支（含 io.out(x)）
-; 不會執行，因此越界也不會崩潰。
+; 語意（捕獲賦值，見 docs/docs/lang/syntax.md「錯誤捕獲賦值」）：`x = a[i]`
+; 讓 x 推斷為 `?i64` 並就地捕獲越界錯誤 —— 不再是自動改寫為 `x ?= a[i]` 上拋。
+; 因此越界時**不會**提前 return，函式照常執行完；本測試以 match 只在 ok 臂輸出，
+; 使越界呼叫不產生任何輸出。
 
 safe-utl = (i i64) (res ?i64) {
     a = [10, 20, 30, 40]
-    x = a[i]; 未標型別區域變數承接安全索引 → 自動 x ?= a[i]
-    io.out('untyped-local x = ')
-    io.out(x); 應印出 20（ib=1），證明 x 正確推論為 i64 而非被污染成 str
-    print('')
+    x = a[i]; 未標型別區域變數承接安全索引 → 捕獲 x: ?i64
+    x: {
+        nil -> {}
+        err -> {}
+        -> {
+            io.out('untyped-local x = ')
+            io.out(it); 應印出 20（ib=1），證明 payload 正確推論為 i64 而非被污染成 str
+            print('')
+        }
+    }
     res = x
 }
 
@@ -21,10 +26,10 @@ main = () {
     ib = 1
     oob = 9
 
-    ; 範圍內：x 正確解箱為 i64，印出 20
+    ; 範圍內：x 正確捕獲為 ok(20)，印出 20
     safe-utl(ib)
 
-    ; 越界：res=none，safe-utl 提前 return，不崩潰
+    ; 越界：x 捕獲為 nil，不提前 return、不輸出、不崩潰
     safe-utl(oob)
     io.out('utl OOB: no-crash')
     print('')
