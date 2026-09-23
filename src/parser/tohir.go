@@ -268,7 +268,8 @@ func (c *hirConv) stmtNode(s Statement) int32 {
 			S2:   c.b.Intern(s.ItArmType),
 			Type: c.typeID(s.Type),
 			Flags: hir.FlagSynthetic*u32(s.IsSynthetic) |
-				hir.FlagModuleConst*u32(s.IsModuleConst),
+				hir.FlagModuleConst*u32(s.IsModuleConst) |
+				overflowModeFlags(s.OverflowMode),
 			First: c.expr(s.Value),
 			Line:  line, Col: col,
 		})

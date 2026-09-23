@@ -959,6 +959,13 @@ type Inst struct {
 	// points to). The drop pass treats it as a move source when it is dead after
 	// the store.
 	MovesArg bool
+	// OvfAnnotated marks an arithmetic/bitwise instruction whose enclosing
+	// statement/function carries an explicit `#{overflow=...}` annotation. When
+	// set, codegen suppresses the runtime overflow check it would otherwise
+	// emit on the option-wrapping path (a plain `a = x + y` with `a: ?i64`
+	// captures overflow as err; an annotated `a = #{overflow=wrap} x + y`
+	// wraps instead of erroring, per the annotation's chosen semantics).
+	OvfAnnotated bool
 }
 
 type Term struct {

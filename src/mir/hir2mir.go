@@ -38,6 +38,13 @@ type LowerDiag struct {
 	Msg  string
 }
 
+// ovfFlagMask is the union of the five `#{overflow = ...}` HIR flag bits (see
+// hir.FlagOverflowWrap). A node with ANY of these bits carries an explicit
+// overflow annotation, which lowers to Inst.OvfAnnotated on its arithmetic
+// instructions so codegen skips the option-wrapping runtime overflow check.
+const ovfFlagMask = hir.FlagOverflowWrap | hir.FlagOverflowClamp0 | hir.FlagOverflowMin |
+	hir.FlagOverflowMax | hir.FlagOverflowSaturate
+
 type loopCtx struct {
 	exit   BlockID
 	update BlockID
@@ -145,6 +152,19 @@ type lowerer struct {
 	// identifier" gap. It is set for the duration of a KLet's value expression
 	// and cleared immediately afterwards.
 	typeHint TypeID
+
+	// funcOvfAnnotated records whether the current function carries a
+	// function-level `#{overflow = ...}` annotation (KFuncDef flags). It is the
+	// BASE mode for every arithmetic instruction lowered inside the function.
+	funcOvfAnnotated bool
+	// stmtOvfAnnotated records whether the statement currently being lowered
+	// (or any enclosing statement, e.g. a for-body let) carries a statement-
+	// level `#{overflow = ...}` annotation. lowerStmt sets it on entry from the
+	// node's own flags OR'd with the saved outer value (so nested statements
+	// inherit) and the function-level default, and restores the outer value on
+	// exit. Arithmetic Emits check it to set Inst.OvfAnnotated, which codegen
+	// consults to SKIP the runtime overflow check on the option-wrapping path.
+	stmtOvfAnnotated bool
 
 	// exprSink is the value slot that a control-flow expression (a `match`/`if`
 	// used as a value, e.g. `r = n: { ok(v) -> v+1 }`) must write its RESULT
@@ -1852,7 +1872,15 @@ func (l *lowerer) lowerFunction(name string, hirID int32) {
 	// Reset the declared-raw-type table so each function starts clean (the
 	// signedness lookup for unsigned division must not leak across functions).
 	l.localRaw = make(map[string]string)
+	// A function-level `#{overflow = ...}` annotation is the default overflow
+	// mode for every arithmetic instruction in this function; per-statement
+	// annotations OR on top of it in lowerStmt.
+	l.funcOvfAnnotated = false
+	l.stmtOvfAnnotated = false
 	n := l.pkg.Node(hirID)
+	if n != nil && n.Flags&ovfFlagMask != 0 {
+		l.funcOvfAnnotated = true
+	}
 
 	var params []ValueID
 	var paramNames []string
@@ -2131,7 +2159,23 @@ func (l *lowerer) tryUnsignedLitFold(nodeID int32, raw string) (ValueID, bool) {
 	return l.b.EmitInt(OpConst, l.b.Type("i64"), folded, ""), true
 }
 
+// lowerStmt lowers one statement node, tracking the statement-level
+// `#{overflow = ...}` annotation scope. A statement carrying an overflow
+// annotation — or one nested inside an annotated statement, or any statement
+// of an annotated function — makes every arithmetic instruction it lowers
+// carry Inst.OvfAnnotated, which codegen consults to skip the option-wrapping
+// runtime overflow check (the annotation opts into wrap/clamp/... semantics
+// instead of the default err-on-overflow capture).
 func (l *lowerer) lowerStmt(id int32) {
+	saved := l.stmtOvfAnnotated
+	if n := l.pkg.Node(id); n != nil && n.Flags&ovfFlagMask != 0 {
+		l.stmtOvfAnnotated = true
+	}
+	l.lowerStmtInner(id)
+	l.stmtOvfAnnotated = saved
+}
+
+func (l *lowerer) lowerStmtInner(id int32) {
 	l.stmtVal = NoVal
 	n := l.pkg.Node(id)
 	if n == nil {
@@ -4865,7 +4909,11 @@ func (l *lowerer) lowerExpr(id int32) ValueID {
 				rt = ot
 			}
 		}
-		return l.b.Emit(op, rt, []ValueID{ov}, "")
+		v := l.b.Emit(op, rt, []ValueID{ov}, "")
+		if l.stmtOvfAnnotated && op == OpNeg && v != NoVal {
+			l.b.Mod.Insts[len(l.b.Mod.Insts)-1].OvfAnnotated = true
+		}
+		return v
 	case hir.KInfix:
 		var lr [2]int32
 		i := 0
@@ -5188,7 +5236,14 @@ func (l *lowerer) lowerExpr(id int32) ValueID {
 				}
 			}
 		}
-		return l.b.Emit(op, resTyp, []ValueID{lv, rv}, "")
+		v := l.b.Emit(op, resTyp, []ValueID{lv, rv}, "")
+		// Carry the statement/function-level `#{overflow = ...}` annotation onto
+		// the arithmetic instruction so codegen's option-wrapping path skips the
+		// runtime overflow check (the annotation chooses wrap/clamp/... instead).
+		if l.stmtOvfAnnotated && isArithOrBitwiseOp(op) && v != NoVal {
+			l.b.Mod.Insts[len(l.b.Mod.Insts)-1].OvfAnnotated = true
+		}
+		return v
 	case hir.KCall:
 		return l.lowerCall(n)
 	case hir.KRun:
