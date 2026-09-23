@@ -486,6 +486,78 @@ func TestFormatBasic(t *testing.T) {
 			expected: "! a",
 		},
 		{
+			name:     "bool cmp eq true",
+			input:    "f == true",
+			expected: "f",
+		},
+		{
+			name:     "bool cmp eq false",
+			input:    "f == false",
+			expected: "! f",
+		},
+		{
+			name:     "bool cmp ne true",
+			input:    "f != true",
+			expected: "! f",
+		},
+		{
+			name:     "bool cmp ne false",
+			input:    "f != false",
+			expected: "f",
+		},
+		{
+			name:     "bool cmp mirrored lhs",
+			input:    "true == f",
+			expected: "f",
+		},
+		{
+			name:     "bool cmp dot receiver",
+			input:    "a.b == false",
+			expected: "! a.b",
+		},
+		{
+			name:     "bool cmp call",
+			input:    "isReady() == true",
+			expected: "isReady()",
+		},
+		{
+			name:     "bool cmp non-atomic negated parenthesized",
+			input:    "a + b == false",
+			expected: "! (a + b)",
+		},
+		{
+			name:     "bool literal cmp untouched",
+			input:    "true == false",
+			expected: "true == false",
+		},
+		{
+			// `!!` parses as standalone `true` (BooleanLiteral), so the same
+			// simplification must fire: `f == !!` → `f`.
+			name:     "bool cmp bang-bang rhs",
+			input:    "f == !!",
+			expected: "f",
+		},
+		{
+			// a bare `!` parses as standalone `false`, so `f == !` → `! f`.
+			name:     "bool cmp bang rhs",
+			input:    "f == !",
+			expected: "! f",
+		},
+		{
+			// regression: `!` before a match/if-then `->` must still parse as
+			// standalone `false` (RARROW terminator) so the whole arm simplifies
+			// to `! f -> return` rather than mis-parsing the `!` as a prefix-NOT.
+			name: "bool cmp bang rhs before arrow",
+			input: `f = () {
+    flag == ! -> return
+    other == !! -> go-on()
+}`,
+			expected: `f = () {
+    ! flag -> return
+    other -> go-on()
+}`,
+		},
+		{
 			name: "method_definition",
 			input: strings.TrimSpace(`
 str.len: () (n    i64)      {
@@ -1647,7 +1719,7 @@ INVSBOX = '\x52\x09\x6a\xd5\x30\x36\xa5\x38\xbf\x40\xa3\x9e\x81\xf3\xd7\xfb' +
 }
 `,
 			expected: `f = () {
-    ok == true -> {}
+    ok -> {}
     x = 1
 }`,
 		},
@@ -1662,7 +1734,7 @@ INVSBOX = '\x52\x09\x6a\xd5\x30\x36\xa5\x38\xbf\x40\xa3\x9e\x81\xf3\xd7\xfb' +
 `,
 			expected: `f = () {
     o, ok = oid-from-hex(hx)
-    ok == true -> {}
+    ok -> {}
 }`,
 		},
 		{
@@ -1700,7 +1772,7 @@ INVSBOX = '\x52\x09\x6a\xd5\x30\x36\xa5\x38\xbf\x40\xa3\x9e\x81\xf3\xd7\xfb' +
 }
 `,
 			expected: `f = () {
-    ok == true -> {
+    ok -> {
         ; intentionally empty
     }
     x = 1
@@ -1722,7 +1794,7 @@ INVSBOX = '\x52\x09\x6a\xd5\x30\x36\xa5\x38\xbf\x40\xa3\x9e\x81\xf3\xd7\xfb' +
 }
 `,
 			expected: `f = () {
-    tg-ok == true -> {
+    tg-ok -> {
 
         ; skip . and .. entries
         tg-entry == '.' -> {}
@@ -2809,7 +2881,7 @@ func TestFormatScalarSlicePerLine8(t *testing.T) {
 			// next line on format.
 			name:     "standalone_if_then_else_arm_inline_semicolon_comment",
 			input:    "foo = () {\n    bare == false -> {\n        os.mkdir(x, 493) -> {}\n        -> return; 493 = 0755\n    }\n}\n",
-			expected: "foo = () {\n    bare == false -> {\n        os.mkdir(x, 493) -> {}\n\n        -> return; 493 = 0755\n    }\n}\n",
+			expected: "foo = () {\n    ! bare -> {\n        os.mkdir(x, 493) -> {}\n\n        -> return; 493 = 0755\n    }\n}\n",
 		},
 		{
 			// regression: a block containing standalone if-then statements

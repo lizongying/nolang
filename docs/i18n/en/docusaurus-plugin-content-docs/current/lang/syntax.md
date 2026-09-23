@@ -197,6 +197,10 @@ name = 'nolang'
 flag = true
 flag = false
 
+; bool shorthand: !! equals true, ! equals false (standalone literals)
+flag = !!    ; true
+flag = !     ; false
+
 ; Variable assignment
 ; Same names are not allowed; if a name already exists, it is treated as modifying the variable
 name = 'hello'

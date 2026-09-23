@@ -934,6 +934,51 @@ verbatim. Verify with `no fmt <file>`.
 - `Format(code)` is the pure fragment formatter (no trailing newline) used by
   unit tests; prefer `FormatFile` whenever you write a real source file.
 
+#### Boolean literals & `== true` / `== false` simplification (implemented 2026-09-24)
+
+Beyond the `true` / `false` keywords, Nolang accepts two **shorthand boolean
+literals**:
+
+- `!!` (token `BANG_BANG`) — a standalone literal equal to `true`.
+- `!` (token `NOT`, only when it is *not* a prefix operator) — a standalone
+  literal equal to `false`. The lexer/parser treats `!` as prefix-NOT only when
+  the next token can start an expression; a bare `!` followed by `NEWLINE` /
+  `;` / EOF / `)` / `}` / `]` / `->` is parsed as the `false` literal.
+
+At **parse time** both shorthands become an ordinary `BooleanLiteral` (with the
+original text kept in `Token.Literal`), so all four of
+`f == true` / `f == !!` / `f == false` / `f == !` are syntactically equivalent
+and flow through the same logic.
+
+Do not confuse these *expression-position* literals with the loop-position
+prefix forms `!! { }` ("always execute") and `! { }` ("never execute") described
+under [Control Flow](#control-flow) — same tokens, different context.
+
+**Formatter behavior** (`src/fmt/expr.go`, `tryFormatBoolComparison`):
+
+- **Standalone literals normalize to the keyword spelling.** `c = !!` → `c = true`,
+  `c = !` → `c = false`.
+- **Redundant boolean comparisons collapse.** When exactly one operand of `==`
+  / `!=` is a boolean literal, the formatter emits the simplified form:
+
+  | Source                          | Formatted    |
+  | ------------------------------- | ------------ |
+  | `f == true` / `f == !!`        | `f`          |
+  | `f == false` / `f == !`        | `! f`        |
+  | `f != true` / `f != !!`        | `! f`        |
+  | `f != false` / `f != !`        | `f`          |
+  | `true == f` (mirrored lhs)      | `f`          |
+
+  The `!=` operator simply flips the polarity. `true == false` (both literals)
+  is left untouched.
+- **Works inside `->` arms / standalone if-then conditions**: `flag == ! ->
+  return` → `! flag -> return`.
+- **Precedence-safe negation**: when the surviving operand is not an atomic /
+  postfix expression it is parenthesized so the emitted `!` cannot re-bind —
+  `a + b == false` → `! (a + b)`, never `! a + b`. Negation is written `! `
+  (with a space) to match the prefix-operator convention, which keeps `no fmt`
+  idempotent.
+
 ### Functions
 
 Nolang functions use a **read-only input / writable output** parameter model:

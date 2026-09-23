@@ -1,0 +1,77 @@
+; 回歸測試：`(flag) { ... }` 必須是**條件迴圈**，不是死碼。
+;
+; 歷史（2026-09-24）：parser 的 isCondLoopPrefix（src/parser/stmt.go）把「括號內只有
+; 單一 IDENT」誤判為匿名函式字面量的參數列 → `(flag) { ... }` 被解析成一個什麼都不做的
+; 函式字面量表達式敘述（死碼），迴圈一次都不執行。這正是 rsa.no 的長度修剪全數失效、
+; 進而使 rsa-modpow 越界讀取並在 tests/https-server.no 造成 SIGSEGV 的根因。
+;
+; 單元測試見 src/parser/cond_loop_single_ident_test.go（AST 層）；本檔驗證端到端語義。
+
+; 1) 旗標迴圈會執行（核心回歸）
+count = 0
+keep = true
+(keep) {
+
+    #{overflow=wrap}
+    count = count + 1
+
+    #{overflow=wrap}
+    count >= 3 -> keep = false
+}
+print('1 flag-loop ran: ' + count.to-str())
+
+; 2) 條件為假時不執行 —— 前置測試（while），不是 do-while
+ran = false
+(false) { ran = true }
+print('2 false cond skipped: ' + ran.to-str())
+
+; 3) 一般比較條件仍是迴圈
+n = 5
+iter = 0
+(n > 0) {
+
+    #{overflow=wrap}
+    n = n - 1
+
+    #{overflow=wrap}
+    iter = iter + 1
+}
+print('3 ident-cmp loop iters: ' + iter.to-str())
+
+; 4) rsa.no 式「前導零 limb 修剪」慣用寫法（旗標 + 巢狀 guard）—— 真正的病灶
+arr = [7, 0, 0, 0]
+cn = 4
+keep-trimming = true
+(keep-trimming) {
+    keep-trimming -> {
+
+        #{overflow=wrap}
+        cn > 1 -> {
+
+            #{index-out=0, overflow=wrap}
+            arr[cn - 1] == 0 -> {
+
+                #{overflow=wrap}
+                cn = cn - 1
+            }
+
+            #{index-out=0, overflow=wrap}
+            arr[cn - 1] != 0 -> keep-trimming = false
+        }
+        cn <= 1 -> keep-trimming = false
+    }
+}
+print('4 trim leading zeros: cn=' + cn.to-str())
+
+; 5) 帶標籤的旗標迴圈（#1 (flag) { } 在舊 parser 是硬 parse error）
+hits = 0
+go = true
+#1 (go) {
+
+    #{overflow=wrap}
+    hits = hits + 1
+
+    #{overflow=wrap}
+    hits >= 2 -> break #1
+}
+print('5 labeled flag-loop hits: ' + hits.to-str())

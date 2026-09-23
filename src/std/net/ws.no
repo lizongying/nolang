@@ -908,16 +908,27 @@ server-conn.recv-nb = () (msg ?message) {
     #{overflow=wrap}
     crlf = cr - lf
 
-    ; 1) 非阻塞填充 recv-buf，直到 would-block（-2）或緩衝區已滿
+    ; 1) 非阻塞填充 recv-buf，直到 would-block（-2）或緩衝區不足以再收一輪
     ;    注意（nolang 語意坑）：cond -> stmt 是「順序 guard」，不是 if-else 鏈；
     ;    裸 -> 是無條件執行。所以 would-block（-2）與 closed（<=0）必須互斥：
     ;    would-block 直接 return（recv-buf 不變，呼叫方解析階段回傳 nil），
     ;    這樣才不會落入下方的 n<=0（err）與 append 程式碼。
+    ;    ⚠️ 迴圈條件是單一 IDENT `(fill)`。2026-09-24 之前 parser 的
+    ;    isCondLoopPrefix 把「括號內只有單一 IDENT」誤判成匿名函式字面量，
+    ;    所以 `(fill) { ... }` 是死碼 —— recv-buf 永不填充，recv-nb 永遠回 nil。
+    ;    parser 修好後此迴圈才真正執行，因此守衛也一併改對：原本只檢查
+    ;    `.recv-buf-len < WS-BUF-SIZE`，但單輪會收 WS-RECV-SIZE(4096) bytes，
+    ;    buf-len 5000 時寫入會越界 8192；改成與阻塞版 recv 相同的守衛
+    ;    （見本檔 line 408 `total + WS-RECV-SIZE > WS-BUF-SIZE -> return`）。
     fill = true
     (fill) {
 
+        ; 空間不足以再收一輪 → 停止填充，直接進入下方解析階段
         #{overflow=wrap}
-        .recv-buf-len < WS-BUF-SIZE -> {
+        .recv-buf-len + WS-RECV-SIZE > WS-BUF-SIZE -> fill = false
+
+        #{overflow=wrap}
+        .recv-buf-len + WS-RECV-SIZE <= WS-BUF-SIZE -> {
 
             #{overflow=wrap}
             tmp str = with-len(WS-RECV-SIZE)
@@ -936,10 +947,10 @@ server-conn.recv-nb = () (msg ?message) {
                 #{index-out=0, overflow=wrap}
                 .recv-buf[.recv-buf-len + i] = tmp[i]
             }
+
+            #{overflow=wrap}
             .recv-buf-len = .recv-buf-len + n
         }
-
-        -> fill = false
     }
 
     ; 2) 只從已緩衝的 recv-buf 解析一個完整 frame；資料不足則回傳 nil（would-block）

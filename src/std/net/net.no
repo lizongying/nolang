@@ -946,12 +946,16 @@ icmp-conn.ping-once = (host str, timeout-ms i64) (rtt ?i64) {
 icmp-conn.ping-host = (host str, count i64, timeout-ms i64) {
     i <- [0..count): {
         r ?i64 = .ping-once(host, timeout-ms)
-        (r) {
+        r: {
 
             #{overflow=wrap}
             nil -> print(host + ': ping timeout (seq=' + (.seq & 65535).to-str() + ')')
 
-            -> print(host + ': seq=' + (.seq & 65535).to-str() + ' rtt=' + it.to-str() + ' us')
+            #{overflow=wrap}
+            err -> print(host + ': ping failed (seq=' + (.seq & 65535).to-str() + ')')
+
+            #{overflow=wrap}
+            ok -> print(host + ': seq=' + (.seq & 65535).to-str() + ' rtt=' + it.to-str() + ' us')
         }
 
         ; 間隔 1 秒

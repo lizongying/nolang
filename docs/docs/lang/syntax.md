@@ -201,6 +201,10 @@ name = 'nolang'
 flag = true
 flag = false
 
+; bool 簡寫：!! 等價 true、! 等價 false（獨立字面量）
+flag = !!    ; true
+flag = !     ; false
+
 ; 變量賦值
 ; 不允許同名，如果同名則視為修改變量
 name = 'hello'

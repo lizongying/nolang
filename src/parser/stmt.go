@@ -2560,15 +2560,24 @@ func (p *Parser) isCondLoopPrefix() bool {
 	// 誤判成函式字面量。參數列只能由 IDENT（可帶一個型別 IDENT）與逗號組成，
 	// 而條件式必然含有運算子，因此：
 	//   - 括號內出現逗號 → 參數列
-	//   - 括號內只有 1 個或 2 個 IDENT → 參數列（`(a)` / `(a i64)`）
-	//   - 其餘（含空括號 `()`）→ 條件
+	//   - 括號內是「名字 + 型別」兩個 IDENT → 參數列（`(a i64)`）
+	//   - 其餘（含空括號 `()` 與單一 IDENT `(flag)`）→ 條件
+	//
+	// ⚠️ 單一 IDENT `(flag) { }` **必須**算條件循環。Nolang 的函式字面量參數
+	// 一律要寫型別（parseFunctionLiteral 對 `(x)` 會報 "expected parameter type"），
+	// 所以 `(flag)` 根本不是合法的參數列；它在敘述位置唯一可能的意義就是條件
+	// 循環（`while flag { ... }`）。而本函式只在敘述位置被呼叫（parseStatement
+	// 與 parseLabeledStatement），因此不存在「這裡其實是函式字面量」的情況。
+	//
+	// 歷史：這裡曾有一條 `len(inner) == 1 && IDENT → return false`，把 `(flag) { }`
+	// 判成參數列 → 解析成什麼都不做的函式字面量敘述（死碼），迴圈一次都不執行。
+	// 這正是 2026-09-24 修掉的 bug：rsa.no 的長度修剪全數失效，未修剪的 rn 讓
+	// rsa-modpow 越界讀取並在 tests/https-server.no 造成 SIGSEGV；net.no 的
+	// option match 與 ws.no 的填緩衝迴圈也一併變成死碼。
 	for _, t := range inner {
 		if t.Type == lexer.COMMA {
 			return false
 		}
-	}
-	if len(inner) == 1 && inner[0].Type == lexer.IDENT {
-		return false
 	}
 	if len(inner) == 2 && inner[0].Type == lexer.IDENT && inner[1].Type == lexer.IDENT {
 		return false

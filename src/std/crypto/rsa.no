@@ -14,7 +14,15 @@
 ; - 所有內部函數命名為 rsa-bn-* 以避免與 ecdsa.no 的 bn-* 函數衝突
 ;   （兩者同屬 crypto 套件，未加模組前綴會被解析到錯誤的函數）
 ; - Nolang 的 && 不會短路求值，因此 trim 迴圈不可使用 && 作為條件
-;   需使用 keep-trimming 旗標變數替代
+;   需使用 keep-trimming 旗標變數替代。
+; - ⚠️ 歷史上 `(keep-trimming) { ... }` 曾是**死碼**：parser 的 isCondLoopPrefix
+;   （src/parser/stmt.go）把「括號內只有單一 IDENT」誤判為匿名函式字面量的參數列，
+;   於是 `(flag) { ... }` 不是迴圈，而是一個什麼都不做的敘述 —— 迴圈一次都不執行，
+;   長度也就不會被修剪。當時的權宜寫法是 `(flag == true) { ... }`。
+;   2026-09-24 已在 parser 修掉（Nolang 的函式字面量參數一律要寫型別，`(flag)`
+;   根本不是合法參數列），因此現在**直接寫 `(keep-trimming) { ... }` 即可**，
+;   下面 4 處皆已改回此寫法。此 bug 曾讓未修剪的 rn 使 rsa-modpow 越界讀取，
+;   並在 tests/https-server.no 造成 SIGSEGV。
 
 ; ─── 大數比較 ─────────────────────────────────────
 

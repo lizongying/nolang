@@ -277,8 +277,12 @@ func (p *Parser) parseExpression(precedence int) Expression {
 
 	case lexer.NOT:
 		// ! = false (standalone), !expr = prefix NOT
+		// RARROW is included so a bare `!` acting as `false` terminates before a
+		// match/if-then `->` (e.g. `f == ! -> body` parses as `f == false -> body`,
+		// letting the formatter simplify it to `! f -> body`). `->` never starts an
+		// expression, so a real prefix-NOT (`!x -> body`, peek is IDENT) is unaffected.
 		switch p.peekToken.Type {
-		case lexer.NEWLINE, lexer.SEMICOLON, lexer.EOF, lexer.RPAREN, lexer.RBRACE, lexer.RBRACKET:
+		case lexer.NEWLINE, lexer.SEMICOLON, lexer.EOF, lexer.RPAREN, lexer.RBRACE, lexer.RBRACKET, lexer.RARROW:
 			leftExp = &BooleanLiteral{Token: p.currentToken, Value: false}
 			p.nextToken()
 		default:
@@ -308,7 +312,7 @@ func (p *Parser) parseExpression(precedence int) Expression {
 		// identifier so parseIdentifier + DOT path handles it correctly.
 		if p.peekToken.Type == lexer.DOT {
 			leftExp = &Identifier{
-				Token:  p.currentToken,
+				Token: p.currentToken,
 				Value: p.currentToken.Literal,
 			}
 			p.nextToken()
