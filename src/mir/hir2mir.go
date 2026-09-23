@@ -7537,6 +7537,28 @@ func (l *lowerer) lowerCallArgs(n *hir.Node, recvV ValueID, callee string) []Val
 		}
 		v := l.lowerExpr(a)
 		l.typeHint = saved
+		// A match arm's shared `it` binding keeps the WHOLE %option at the value
+		// level (the parser types it as the payload, but let-lowering deliberately
+		// refuses to peel an owned payload — see the format-field unwrap in
+		// lowerFormatField). When such an `it` flows STRAIGHT into a call argument
+		// whose declared parameter type is the plain payload (e.g. `str`) — as in
+		// `toml.parse-array(it)` / `utils.starts-with-str(it, x)` — the raw %option
+		// would otherwise be stored into the callee's plain-%str-long argument slot:
+		// opt-verify "%lv defined with type '%option' but expected '%str-long'"
+		// (nouv config.no get-dev-dependencies/get-name). Peel it to the payload
+		// exactly like the `v = it` local-move and the format-field path: emit an
+		// OpMove(payload,[option]) that the MIR→LLVM backend already lowers with
+		// the correct peel+clone. Only applies when the parameter is a NON-option
+		// type and the argument value is an option whose payload resolves.
+		if pi := i + argOffset; pi < len(paramRaws) {
+			if praw := paramRaws[pi]; praw != "" && !strings.HasPrefix(praw, "?") {
+				if t := l.mod.Type(l.valueTypeOf(v)); t != nil && t.Kind == KindOption {
+					if uv := l.unwrapOptionOperand(v); uv != NoVal && uv != v {
+						v = uv
+					}
+				}
+			}
+		}
 		if wrapArgs {
 			v = l.printableValue(v)
 		}

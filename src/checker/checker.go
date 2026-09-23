@@ -3364,6 +3364,146 @@ func ValidateIntOverflow(program *parser.Program) []ValidateResult {
 	return results
 }
 
+// ValidateDivByZero 對整數除法 / 與取模 % 的「字面常數零除數」發出編譯期錯誤。
+//
+// 背景：Nolang 的整數除法/取模在 MIR 後端直接發射裸 sdiv/srem/udiv/urem，對零除數
+// 沒有任何執行時期檢查。LLVM 語言參考明定「除以零是未定義行為（UB）」，除數為 0 時
+// 產生 poison，且最佳化器會假設除數永遠非 0（如將 X/X 折疊成常數 1，前提正是 X≠0）。
+// 這會造成靜默的錯誤結果甚至 trace/BPT trap，且同一支程式在 --js 後端語意完全不同
+// （Infinity/NaN）。src/ 內搜尋不到任何 div-by-zero 防護，src/std/number.no 亦自註
+// 「b 為 0 時行為未定義」。
+//
+// 本規則只攔截「除數為整數字面量 0」這種可在編譯期靜態判定的情形（如 `10 / 0`、`a % 0`、
+// `x / 0`），與溢出檢查無關（不受 #{overflow} 註解豁免）。浮點 / 0.0 屬 IEEE-754 定義
+// （±inf / nan），不在管轄範圍；執行時期才確定的零除數（如 `a / b` 且 b 來自外部輸入）
+// 無法靜態偵測，留待未來的執行時期檢查處理。
+func ValidateDivByZero(program *parser.Program) []ValidateResult {
+	if program == nil {
+		return nil
+	}
+	var results []ValidateResult
+	emit := func(file string, line, col int) {
+		results = append(results, ValidateResult{
+			File:    file,
+			Line:    line,
+			Column:  col,
+			Message: "整數除法 / 取模的除數是字面常數 0，會觸發 LLVM 未定義行為（sdiv/srem 除以零），產生不可預測的結果。請改以執行時期零檢查，或讓函式以 option 回傳錯誤。",
+			TraceID: "div-by-zero",
+		})
+	}
+	for _, stmt := range program.Statements {
+		walkStmtDivByZero(stmt, "", emit)
+	}
+	return results
+}
+
+// walkStmtDivByZero 遞迴走訪陳述，對每個表達式呼叫 walkExprDivByZero。
+// file 由頂層逐層傳入（同 walkStmtForOverflow 的歸因邏輯），故不取節點自身 SourceFile。
+func walkStmtDivByZero(stmt parser.Statement, file string, emit func(file string, line, col int)) {
+	if stmt == nil {
+		return
+	}
+	if f := parser.GetSourceFile(stmt); f != "" {
+		file = f
+	}
+	switch s := stmt.(type) {
+	case *parser.FunctionDefinition:
+		if s.Body != nil {
+			for _, b := range s.Body.Statements {
+				walkStmtDivByZero(b, file, emit)
+			}
+		}
+	case *parser.LetStatement:
+		walkExprDivByZero(s.Value, file, emit)
+	case *parser.ReturnStatement:
+		walkExprDivByZero(s.ReturnValue, file, emit)
+	case *parser.ExpressionStatement:
+		walkExprDivByZero(s.Expression, file, emit)
+	case *parser.MultiAssignStatement:
+		walkExprDivByZero(s.Value, file, emit)
+	case *parser.UnwrapAssignStatement:
+		walkExprDivByZero(s.Value, file, emit)
+	case *parser.ForStatement:
+		walkExprDivByZero(s.Condition, file, emit)
+		if s.Init != nil {
+			walkStmtDivByZero(s.Init, file, emit)
+		}
+		if s.Update != nil {
+			walkStmtDivByZero(s.Update, file, emit)
+		}
+		if s.Body != nil {
+			for _, b := range s.Body.Statements {
+				walkStmtDivByZero(b, file, emit)
+			}
+		}
+	case *parser.BlockStatement:
+		for _, b := range s.Statements {
+			walkStmtDivByZero(b, file, emit)
+		}
+	}
+}
+
+// walkExprDivByZero 遞迴走訪表達式；對 / 與 % 且右運算元為整數字面量 0 的節點報錯。
+func walkExprDivByZero(e parser.Expression, file string, emit func(file string, line, col int)) {
+	if e == nil {
+		return
+	}
+	switch x := e.(type) {
+	case *parser.InfixExpression:
+		if x.Operator == "/" || x.Operator == "%" {
+			if isLiteralZeroDivisor(x.Right) {
+				emit(file, x.Token.Line, x.Token.Column)
+			}
+		}
+		walkExprDivByZero(x.Left, file, emit)
+		walkExprDivByZero(x.Right, file, emit)
+	case *parser.PrefixExpression:
+		walkExprDivByZero(x.Right, file, emit)
+	case *parser.GroupedExpression:
+		walkExprDivByZero(x.Expression, file, emit)
+	case *parser.CallExpression:
+		walkExprDivByZero(x.Function, file, emit)
+		for _, a := range x.Arguments {
+			walkExprDivByZero(a, file, emit)
+		}
+	case *parser.IfExpression:
+		walkExprDivByZero(x.Condition, file, emit)
+		if x.Consequence != nil {
+			for _, st := range x.Consequence.Statements {
+				walkStmtDivByZero(st, file, emit)
+			}
+		}
+		if x.Alternative != nil {
+			for _, st := range x.Alternative.Statements {
+				walkStmtDivByZero(st, file, emit)
+			}
+		}
+	case *parser.IndexExpression:
+		walkExprDivByZero(x.Index, file, emit)
+	case *parser.AssignExpression:
+		walkExprDivByZero(x.Left, file, emit)
+		walkExprDivByZero(x.Value, file, emit)
+	case *parser.ArrayLiteral:
+		for _, el := range x.Elements {
+			walkExprDivByZero(el, file, emit)
+		}
+	}
+}
+
+// isLiteralZeroDivisor 報告除數表達式是否為整數字面量 0（或前置負號包住的 0）。
+// 浮點字面量 0.0 不算（IEEE-754 定義除法為 inf/nan，非 UB）。
+func isLiteralZeroDivisor(e parser.Expression) bool {
+	switch v := e.(type) {
+	case *parser.IntegerLiteral:
+		return v.Value == 0
+	case *parser.PrefixExpression:
+		if v.Operator == "-" {
+			return isLiteralZeroDivisor(v.Right)
+		}
+	}
+	return false
+}
+
 // ─────────────────────────────────────────────────────────────
 // 未處理的溢出 option（編譯硬錯誤）
 //

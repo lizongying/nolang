@@ -479,13 +479,24 @@ func checkCallArgsInStmtWithResultParams(stmt parser.Statement, sigs map[string]
 				if s.Name != nil && !resultParamNames[s.Name.Value] {
 					if s.Type != nil && s.Type.String() != "" {
 						varTypes[s.Name.Value] = s.Type.String()
-					} else if _, exists := varTypes[s.Name.Value]; !exists {
+					} else {
+						// Untyped shared `it` binding (ok/wildcard arm whose matched
+						// type is unknown at parse time). Arms share one varTypes map,
+						// so a preceding sentinel (nil/err) arm's typed `it` binding may
+						// have recorded "err"/"nil" into varTypes["it"]; that stale type
+						// must NOT leak into this arm, or `x = it` here infers the wrong
+						// type (spurious "expected str, got err", trace 6fgg3htw). Always
+						// re-derive the unwrapped payload from the matched value; if it
+						// cannot be resolved, clear `it` so it stays unknown - mirroring
+						// the equivalent guard in ValidateTypes (trace 15w45dqk).
 						inferred := inferExprType(s.Value, varTypes, nil, "")
 						if strings.HasPrefix(inferred, "?") {
 							inferred = strings.TrimPrefix(inferred, "?")
 						}
 						if inferred != "" {
 							varTypes[s.Name.Value] = inferred
+						} else if s.Name.Value == "it" {
+							delete(varTypes, "it")
 						}
 					}
 				}

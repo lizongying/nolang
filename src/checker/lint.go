@@ -352,6 +352,17 @@ func RunAllLints(program *parser.Program, opts LintOptions) []LintResult {
 		})
 	}
 
+	// 20c-bis. 整數除法/取模的字面零除數（編譯硬錯誤）。與 20c 獨立：不受 #{overflow}
+	// 註解豁免，只要除數是整數字面量 0 即報錯。
+	for _, d := range ValidateDivByZero(program) {
+		results = append(results, LintResult{
+			File:   d.File,
+			Line:   d.Line, Column: d.Column,
+			Severity: LintError, Source: "nolang-div-zero",
+			Message: d.Message, TraceID: d.TraceID,
+		})
+	}
+
 	// 20d. 未處理的溢出 option（編譯硬錯誤，與 20c 互補：20c 是「建議加註解」的
 	// Hint，本規則是「option 被產生卻未被處理」的 ERROR）。未標註 #{overflow} 的
 	// 整數運算預設回傳 option<int>；若結果既沒被 ?= 上拋、沒被 match 解構、也沒作為

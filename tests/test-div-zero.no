@@ -1,0 +1,103 @@
+; test-div-zero.no — 除零（division by zero）行為探針
+;
+; ═══ 結論（2026-09-23 實測，aarch64-apple-darwin / LLVM via MIR 後端）═══
+;
+; 整數 `/` 與 `%` 在除數為 0 時，Nolang **不做任何執行時期檢查**。MIR 直接
+; 發射裸 `sdiv` / `srem` / `udiv` / `urem`（src/mir/codegen.go emitArith），
+; 而 LLVM 語言參考規定「除以零是 UB」。src/ 內搜尋 div-by-zero / DivZero
+; 相關防護：**零筆**。src/std/number.no 自己註明「b 為 0 時行為未定義」。
+;
+; 後果：
+;   1. 不崩潰、不拋錯、不回傳 option —— 靜默產生 poison（無意義值）。
+;   2. 最佳化器假設「除數永遠非 0」並據此改寫程式（見 case 4：X/X → 1）。
+;   3. poison 流進索引 → 真的會 signal: trace/BPT trap（見 case 11）。
+;   4. 同一支程式在 --js 後端語意完全不同（Infinity/NaN，無 UB）。
+;
+; 本檔只印觀察值，不做 assert。因為是 UB，數值會隨最佳化等級 / target /
+; LLVM 版本而變動 —— 這個「不可預測」本身就是結論。
+
+z = 0
+
+print('── 1. 對照組：正常除法')
+print(10 / 5); expect: 2
+
+print('── 2. 整數 / 0（變數）—— 應 panic 或回 option，實為 poison')
+#{overflow=wrap}
+q1 = 10 / z
+print(q1); BUG: 實測 -2
+
+print('── 3. 整數 % 0 —— 同上')
+#{overflow=wrap}
+q2 = 10 % z
+print(q2); BUG: 實測 -2
+
+print('── 4. 0 / 0 —— LLVM 把 X / X 折疊成常數 1（前提正是 X != 0）')
+#{overflow=wrap}
+q3 = z / z
+print(q3); BUG: 實測 1，數學上無意義
+
+print('── 5. 字面常數 10 / 0 —— 編譯期完全可偵測，卻沒有任何診斷')
+print(10 / 0); BUG: 實測 -1，無 warning / 無 error
+
+print('── 6. 無號 u64 / 0')
+n u64 = 0
+m u64 = 10
+#{overflow=wrap}
+q4 = m / n
+print(q4); BUG: 實測 -1（還印成有號）
+
+print('── 7. 浮點 / 0 —— IEEE-754 有定義（±inf / nan），但沒有格式化路徑')
+f = 0.0
+print(10.0 / f); BUG: 應為 inf，實測 9223372036854775807.<garbage>
+print(f / f); BUG: 應為 nan，實測 0.
+
+print('── 8. std number.div / number.mod —— 靜默回 0，最危險')
+r = 0
+number.div(10, z, r)
+print(r); BUG: 靜默 0，呼叫端無從得知出錯
+number.mod(10, z, r)
+print(r); BUG: 靜默 0
+
+print('── 9. 除零結果流向索引：值不可預測')
+arr [3] = [10, 20, 30]
+#{overflow=wrap}
+idx = 100 / z
+print(idx); 實測 -0
+
+print('── 10. 除法之後的零檢查（此例未被最佳化器刪除）')
+zz = 0
+#{overflow=wrap}
+q5 = 10 / zz
+{
+    zz == 0 -> print('zero-check still holds')
+    -> print('zero-check optimized away')
+}
+
+print('── done (rc=0，全程沒有任何錯誤)')
+
+; ══════════════════════════════════════════════════════════════════════
+; 以下為「會崩潰」的重現檔，故保留為註解 —— 不要取消註解後放進自動化 sweep。
+;
+; fdiv = (a i64, b i64) (r i64) {
+;     #{overflow=wrap}
+;     r = a / b
+; }
+; arr [3] = [10, 20, 30]
+; z = 0
+; idx = fdiv(100, z)      ; poison
+; print(arr[idx])         ; Error: signal: trace/BPT trap  (rc=1)
+;                         ; safe 與 --unsafe 都會崩
+;
+; ── 後端差異（同一支 dz2 程式）──
+;   native (LLVM/MIR): 10/0 -> -2 , 10%0 -> -2 , 0/0 -> 1      (UB)
+;   --js             : 10/0 -> Infinity , 10%0 -> NaN , 0/0 -> NaN
+;
+; ── 順帶發現（獨立的 memory-safety 洞）──
+;   固定大小陣列沒有執行時期 bounds check，safe 與 --unsafe 都一樣：
+;       arr [3] = [10, 20, 30]
+;       #{overflow=wrap}
+;       i = 2 * 49 + 1
+;       print(arr[i])     ; -> -9，rc=0（讀到堆疊垃圾，無診斷）
+;   對照：slice `s = [10,20,30]` 配常數索引 `s[99]` 會被 checker 擋下
+;   （"index 99 out of bounds for slice"），但固定陣列不會。
+; ══════════════════════════════════════════════════════════════════════

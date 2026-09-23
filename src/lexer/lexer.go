@@ -470,7 +470,8 @@ func (l *Lexer) isRegexStart() bool {
 		TRUE, FALSE, NIL,
 		RPAREN, RBRACKET, RBRACE,
 		INC, DEC,
-		SELF, IT, SUPER, UNDERSCORE:
+		SELF, IT, SUPER, UNDERSCORE,
+		DOT:
 		return false
 	}
 	// After import/export directive tokens (USE, LABEL, HASH_LBRACE, AT)

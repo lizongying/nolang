@@ -7,7 +7,7 @@
 
 ; max: 回傳最大值（variadic，支援 num 所有成員）
 
-int = i8 | i16 | i32 | i64 | u8 | u16 | u32 | u64
+int = i8 | i16 | i32 | i64 | i128 | u8 | u16 | u32 | u64 | u128
 float = f32 | f64
 num = int | float
 
@@ -52,6 +52,8 @@ u64.MIN = 0
 
 #{overflow=wrap}
 u64.MAX = 0 - 1
+
+INF = 1.0 / 0.0
 
 max = (a ..num) (r num) {
 
@@ -802,10 +804,12 @@ f32.to-str = () (out str) {
 
 ; div: 整數除法，回傳商（a ÷ b）
 ; b 為 0 時行為未定義（執行時期錯誤）
-div = (a int, b int) (q int) {
+int.div = (b int) (q ?int) {
+    q = . / b
+}
 
-    #{overflow=wrap}
-    q = a / b
+float.div = (b float) (q float) {
+    q = . / b
 }
 
 ; mod: 整數取模，回傳餘數（a % b）

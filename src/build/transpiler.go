@@ -2505,6 +2505,14 @@ func (t *Transpiler) CompileTarget(source string, _ Target) (string, error) {
 		}
 		return "", fmt.Errorf("function argument errors: %s", strings.Join(msgs, "; "))
 	}
+	// 字面零除數檢查：整數 / 與 % 的除數為字面常數 0 會觸發 LLVM UB，編譯期攔截。
+	if divZeroErrs := checker.ValidateDivByZero(merged); len(divZeroErrs) > 0 {
+		var msgs []string
+		for _, e := range divZeroErrs {
+			msgs = append(msgs, fmt.Sprintf("line %d, column %d: %s [%s]", e.Line, e.Column, e.Message, e.TraceID))
+		}
+		return "", fmt.Errorf("validation errors: %s", strings.Join(msgs, "; "))
+	}
 	// vet 模式：前端驗證（語法+型別+模組合併+單態化）已全部完成，
 	// 跳過 LLVM IR 生成以大幅加速 `no vet`。
 	// 在返回前對 merged 執行全部 lint 校驗（命名、未用變數、embed、
