@@ -1229,18 +1229,20 @@ func (p *Parser) parseLetStatement() Statement {
 			// 从元素推断切片类型
 			elemValue := "i64"
 			if len(v.Elements) > 0 {
-				switch v.Elements[0].(type) {
-				case *IntegerLiteral:
-					elemValue = "i64"
-				case *FloatLiteral:
-					elemValue = "f64"
-				case *StringLiteral:
-					elemValue = "str"
-				case *BooleanLiteral:
-					elemValue = "bool"
-				default:
-					elemValue = "i64"
-				}
+			switch v.Elements[0].(type) {
+			case *IntegerLiteral:
+				elemValue = "i64"
+			case *FloatLiteral:
+				elemValue = "f64"
+			case *StringLiteral:
+				elemValue = "str"
+			case *BooleanLiteral:
+				elemValue = "bool"
+			case *CharLiteral:
+				elemValue = ValueTypeChar.String()
+			default:
+				elemValue = "i64"
+			}
 			}
 			stmt.Type = &SliceType{
 				Token:      nameToken,

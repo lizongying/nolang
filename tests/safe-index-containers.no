@@ -16,7 +16,7 @@ get-default-arr = (i i64) (res i64) {
 
 ; --- vec[T]：#{index-out} 預設值 ---
 get-default-vec = (i i64) (res i64) {
-    a = [10, 20, 30, 40]
+    a [4] = [10, 20, 30, 40]
     av = a.to-vec()
 
     #{index-out=0}
@@ -31,7 +31,7 @@ safe-get-arr = (i i64) (res ?i64) {
 
 ; --- vec[T]：?=（結果參數直接承接） ---
 safe-get-vec = (i i64) (res ?i64) {
-    a = [10, 20, 30, 40]
+    a [4] = [10, 20, 30, 40]
     av = a.to-vec()
     res = av[i]
 }

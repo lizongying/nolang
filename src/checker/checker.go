@@ -7811,14 +7811,21 @@ func ValidateCrossModuleTypeRefs(program *parser.Program) []ValidateResult {
 				checkType(s.Type, s.Token.Line, s.Token.Column)
 			}
 		case *parser.FunctionDefinition:
-			// 方法定義的第一個參數是 parser 合成的 receiver（`self`），
-			// 由 parser/decl.go 在解析 `t.method = …` 時自動插到最前面，
-			// 並非使用者撰寫的參數型別標註。對其套用跨模組前綴檢查會產生
-			// 誤報：例如 JS 平台宣告 `json.parse = …` / `timer.x = …`，
-			// 其 receiver 名稱 `json` / `timer` 恰好與 std 模組中的 struct
-			// 同名，於是噴出 "type 'json' not found; did you mean
-			// 'json.json'?"——但這裡的 `json` 是 JS 全域命名空間而非型別。
-			// 故跳過合成的首個參數，只檢查使用者實際撰寫的參數/回傳型別。
+			// 方法定義的合成 receiver `self` 由 parser/decl.go 在解析
+			// `t.method = …` 時注入到 **Results 的最前面**（而非 Parameters），
+			// 其型別即接收者名稱（如 `json.parse` 的 `json`）。它並非使用者
+			// 撰寫的型別標註，套用跨模組前綴檢查會產生誤報：例如 JS 平台宣告
+			// `json.parse = …` / `timer.x = …`，其 receiver 名稱 `json` /
+			// `timer` 恰好與 std 模組中的 struct 同名，於是噴出
+			// "type 'json' not found; did you mean 'json.json'?"——但這裡的
+			// `json` 是 JS 全域命名空間而非型別。故跳過 Results[0] 的合成
+			// receiver，只檢查使用者實際撰寫的參數 / 回傳型別。
+			resStart := 0
+			if s.IsMethodDef && len(s.Results) > 0 {
+				resStart = 1
+			}
+			// 既有行為：方法定義的輸入參數從首個起全檢（receiver 不在
+			// Parameters 中），此處保留 paramStart 以不變動既有輸入檢查語意。
 			paramStart := 0
 			if s.IsMethodDef && len(s.Parameters) > 0 {
 				paramStart = 1
@@ -7828,7 +7835,7 @@ func ValidateCrossModuleTypeRefs(program *parser.Program) []ValidateResult {
 					checkType(p.Type, p.Token.Line, p.Token.Column)
 				}
 			}
-			for _, r := range s.Results {
+			for _, r := range s.Results[resStart:] {
 				if r.Type != nil {
 					checkType(r.Type, r.Token.Line, r.Token.Column)
 				}

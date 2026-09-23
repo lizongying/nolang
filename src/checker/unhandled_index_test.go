@@ -124,18 +124,20 @@ func TestUnhandledIndexAllowed(t *testing.T) {
 	}
 }
 
-// TestUnhandledIndexStdExempt 驗證標準庫（std）豁免：std 內部以舊式越界 panic
-// 寫法（數千處）出現，暫不強制處理。mainFile 含 "/std/" 片段（絕對路徑或目錄
-// 形態）皆應豁免。
-func TestUnhandledIndexStdExempt(t *testing.T) {
+// TestUnhandledIndexNoStdExempt 驗證撤銷標準庫豁免後的統一檢查：不再因
+// mainFile 路徑含 std 而放行。原本的 std 豁免是為了繞開 merged 歸因不準導致的
+// 偽報，現歸因已修好且 std 自身沉默泄漏已以 `#{index-out = DEF}` / `?=` 逐站
+// 修復，故對所有程式碼（含路徑看似 std 的檔）一律檢查未處理索引。此與
+// ValidateUnhandledOverflow 的 TestUnhandledOverflowNoStdExempt 保持對齊。
+func TestUnhandledIndexNoStdExempt(t *testing.T) {
 	cases := []struct {
 		mainFile string
 		want     int
 	}{
-		{mainFile: "std/str.no", want: 0},
-		{mainFile: "/repo/src/std/str.no", want: 0},
-		{mainFile: "src/std/byte.no", want: 0},
-		{mainFile: "src/std/", want: 0}, // vet 目錄形態
+		{mainFile: "std/str.no", want: 1},
+		{mainFile: "/repo/src/std/str.no", want: 1},
+		{mainFile: "src/std/byte.no", want: 1},
+		{mainFile: "src/std/", want: 1}, // vet 目錄形態
 		{mainFile: "src/app.no", want: 1},
 		{mainFile: "", want: 1}, // 無來源資訊時保守檢查，避免漏報
 	}

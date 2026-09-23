@@ -78,7 +78,9 @@ func (p *Parser) parseTrailingAnnotation() []*AnnotationEntry {
 		}
 		entries = append(entries, more...)
 	}
-	return entries
+	// 收斂同名註解：同一行連續的尾隨 #{...}（如 `x = v[i] #{index-out=0} #{index-out=1}`）
+	// 被合併為同一組條目，依 key 去重、取最後一次（後面的替換前面的）。
+	return dedupeAnnotationEntries(entries)
 }
 
 // annotationPrefixIllegal 報告註解群組結尾 `}` 之後、同一行上是否還有程式碼。
@@ -209,6 +211,13 @@ func (p *Parser) parseAnnotationStatement() Statement {
 		entries = append(entries, moreEntries...)
 		annotStmt.Entries = entries
 	}
+	// 收斂同名註解：連續的 #{...} 群組（以空行分隔）被解析期合併為同一節點，
+	// 若其中出現同名鍵（如 `#{index-out=0} #{index-out=1}` 或跨行連續
+	// `#{index-out=0}` / `#{index-out=1}`），依 key 去重、取最後一次
+	// （後面的替換前面的），避免輸出 `#{index-out=0, index-out=1}` 且讓
+	// desugar 讀到正確（最後一個）的預設值。
+	entries = dedupeAnnotationEntries(entries)
+	annotStmt.Entries = entries
 	// 取出「註解行之後、目標陳述之前」的註釋：它們夾在註解與目標之間，屬於同一個
 	// node。輸出規範為「註釋 → 註解 → 陳述」，故下方把它們掛成目標陳述的 Doc
 	// （formatter 先印 Doc、再印附加註解），而不是留給下一條陳述（註釋會整條搬到
@@ -304,6 +313,10 @@ func (p *Parser) parseAnnotationStatement() Statement {
 // 不再掛載到 AST 節點上；平台鍵/泛型參數/embed 由獨立 Resolver pass
 // （ResolveProgram）收尾計算並存入 side-table。
 func (p *Parser) attachAnnotations(stmt Statement, entries []*AnnotationEntry) {
+	// 收斂同名註解：同一陳述上可能因尾隨/前置多個 #{...} 而帶入同名鍵，
+	// 依 key 去重、取最後一次（後面的替換前面的），避免重複印出且讓
+	// desugar 讀到正確的預設值。
+	entries = dedupeAnnotationEntries(entries)
 	// 註解位置規則（統一）：`#{...}` 只允許
 	//  1) 獨立成行、置於目標上方（`#{...}` ⏎ 目標），或
 	//  2) 寫在目標同一行的後方（尾隨，`目標 #{...}`）。
@@ -767,8 +780,12 @@ func setStmtOverflowMode(s Statement, mode string) {
 }
 
 // mergeAnnotations 將 entries 合併（無則直接設定）到節點 n 的註解副表。
-// 合併時按 (key, value 字串) 去重，避免區塊級 overflow 傳播與語句自帶的同名
-// 註解疊加成 [wrap, wrap]（會讓 `no fmt` 非冪等：每格式化一輪多印一次）。
+//
+// 去重按 key 進行（而非 key+value）：同一 key 只保留最後一次出現的條目，
+// 後到的 value 覆寫先前的——例如 `#{index-out=0, index-out=1}` 會收斂成
+// `#{index-out=1}`（後面的替換前面的）。這同時涵蓋區塊級 overflow 傳播與語句
+// 自帶同名註解疊加成 [wrap, wrap] 的場景（同 key 同 value 自然去重，不會讓
+// `no fmt` 非冪等：每格式化一輪多印一次）。
 func (p *Parser) mergeAnnotations(n Node, entries []*AnnotationEntry) {
 	if isNil(n) || len(entries) == 0 {
 		return
@@ -781,18 +798,25 @@ func (p *Parser) mergeAnnotations(n Node, entries []*AnnotationEntry) {
 		existing = p.sem.RawAnnotationsOf(n)
 	}
 	if len(existing) > 0 {
-		seen := make(map[string]bool, len(existing))
+		// key -> 在 merged 中的位置（同 key 後到者就地覆寫）。
+		pos := make(map[string]int, len(existing))
 		merged := make([]*AnnotationEntry, 0, len(existing)+len(entries))
 		for _, e := range existing {
-			seen[annoKey(e)] = true
+			k := e.Key
+			if i, ok := pos[k]; ok {
+				merged[i] = e // 同 key：existing 內部亦取最後一次
+				continue
+			}
+			pos[k] = len(merged)
 			merged = append(merged, e)
 		}
 		for _, e := range entries {
-			k := annoKey(e)
-			if seen[k] {
+			k := e.Key
+			if i, ok := pos[k]; ok {
+				merged[i] = e // 後到的 entries 覆寫 existing（最後一次獲勝）
 				continue
 			}
-			seen[k] = true
+			pos[k] = len(merged)
 			merged = append(merged, e)
 		}
 		p.sem.SetRawAnnotations(n, merged)
@@ -822,15 +846,28 @@ func (p *Parser) mergeIndexOutAnnotations(n Node, entries []*AnnotationEntry) {
 	p.mergeAnnotations(n, copies)
 }
 
-// annoKey 回傳註解條目的去重鍵（key + value 字串）。
-func annoKey(e *AnnotationEntry) string {
-	if e == nil {
-		return ""
+// dedupeAnnotationEntries 依 key 去重，同名鍵只保留最後一次出現的條目
+// （後到的 value 覆寫先前的）。例如 [index-out=0, index-out=1] 收斂成
+// [index-out=1]。這避免同一陳述上寫多個同名註解時輸出
+// `#{index-out=0, index-out=1}`，並讓 desugar 取用正確（最後一個）的預設值。
+func dedupeAnnotationEntries(entries []*AnnotationEntry) []*AnnotationEntry {
+	if len(entries) <= 1 {
+		return entries
 	}
-	if e.Value == nil {
-		return e.Key
+	pos := make(map[string]int, len(entries))
+	out := make([]*AnnotationEntry, 0, len(entries))
+	for _, e := range entries {
+		if e == nil {
+			continue
+		}
+		if i, ok := pos[e.Key]; ok {
+			out[i] = e // 後到的覆寫先前的（同 key 取最後一次）
+			continue
+		}
+		pos[e.Key] = len(out)
+		out = append(out, e)
 	}
-	return e.Key + "=" + e.Value.String()
+	return out
 }
 
 // NormalizeOverflowMode 將 #{overflow = ...} 的值正規化為內部模式名：
