@@ -104,6 +104,16 @@ func TestUnhandledOverflowAllowed(t *testing.T) {
 }`,
 		},
 		{
+			// 有號整數 `/` `%` 本身就產生 option，故 `q = a / b` 的綁定型別由
+			// lowering 推斷為 `?T`（無需用戶顯式標註），不得再報沉默泄漏。
+			name: "div_mod_binding_inferred_to_option",
+			src: `f = (a i64, b i64) (ok bool) {
+    q = a / b
+    r = a % b
+    ok = true
+}`,
+		},
+		{
 			// 字串拼接：str 的 `-` 不是整數運算，不產生 option，不得誤報。
 			name: "string_concat_not_int_arith",
 			src: `f = (seg str) () {
@@ -209,4 +219,3 @@ func TestUnhandledOverflowWiredIntoLints(t *testing.T) {
 		t.Fatalf("ValidateUnhandledOverflow not surfaced through RunAllLints")
 	}
 }
-

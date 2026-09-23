@@ -3845,7 +3845,7 @@ func ValidateUnhandledOverflow(program *parser.Program, mainFile string) []Valid
 			// 運算 → 沉默泄漏。函式回傳 ?T 時，區域 option 中間值是合約內預期行為 → 不報。
 			if !fnReturnsOption && !effOverflow {
 				declaredOption := s.Type != nil && strings.HasPrefix(s.Type.String(), "?")
-								if !declaredOption && isDirectOverflowValue(s.Value, varTypes, selfType) {
+				if !declaredOption && isDirectOverflowValue(s.Value, varTypes, selfType) {
 					report(s, "整数运算 `a OP b` 默认在溢出时返回 option<int>。此 option 未被处理：请加 `#{overflow = wrap}` 注解回普通 int，或用 `?=` 上抛（如 `x ?= a + b`），或显式声明为 option 类型（如 `x ?i64 = a + b`）。", curFile)
 				}
 			}

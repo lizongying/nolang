@@ -183,11 +183,12 @@ func (l *lowerer) walk(v reflect.Value) {
 						replaced = true
 					}
 				}
-				// 有號整數 `/` `%` 的結果本質是 option（除零/溢出時為 err）。
-				// 未標註型別的綁定 `q = a / b` 就地補上推斷出的 `?T` 註解
-				// （等同顯式寫 `q ?int = a / b`），讓下游 checker（ovfhndld /
-				// ovf-int-default）與 MIR（typeHint → 除零守衛）走已驗證的
-				// 顯式路徑。fmt 路徑跳過，formatter 永遠看不到合成註解。
+				// 有號整數 `/` `%` 本身就會產生 option（除零/溢出時為 err），
+				// 因此以普通 `=` 綁定其結果時，變數型別必然是 `?T`：無需用戶
+				// 顯式標註，在此就地補上推斷出的註解（等同寫 `q ?int = a / b`），
+				// 讓下游 checker（ovfhndld / ovf-int-default）與 MIR（typeHint →
+				// 除零守衛）走已驗證的顯式路徑。
+				// fmt 路徑跳過，formatter 永遠看不到合成註解。
 				if !l.p.SkipUnwrapLowering {
 					if ls, ok := stmt.(*LetStatement); ok {
 						l.inferOptionDivMod(ls)
@@ -370,12 +371,13 @@ func (l *lowerer) recordIndexLocalType(funcName, name, lt string) {
 	l.p.idxLocalTypes[funcName][name] = lt
 }
 
-// inferOptionDivMod — 有號整數 `/` `%` 產生 option（除零為 err）。顯式宣告
-// `q ?int = a / b` 為既有路徑；此處讓未標註的 `q = a / b` 等價可寫：在 lowering
-// 階段就地補上推斷出的 `?T` 型別註解（合成 NullableType）並註冊變數型別，使
-// checker（ovfhndld declaredOption 豁免、ovf-int-default lint）與 MIR（KLet typeHint
-// → 除零守衛）完全復用顯式路徑。推斷不出（運算元型別未知/非有號整數/已標註/
-// 帶 overflow 註解）時保守不改寫，維持原有行為。
+// inferOptionDivMod — 有號整數 `/` `%` 本身產生 option（除零/溢出為 err），
+// 故普通 `=` 綁定其結果時變數型別必然是 `?T`，無需用戶顯式標註：在
+// lowering 階段就地補上推斷出的 `?T` 型別註解（合成 NullableType）並註冊
+// 變數型別，使 checker（ovfhndld declaredOption 豁免、ovf-int-default lint）
+// 與 MIR（KLet typeHint → 除零守衛）完全復用顯式路徑 `q ?int = a / b`。
+// 推斷不出（運算元型別未知/非有號整數/已標註/帶 overflow 註解）時保守
+// 不改寫，維持原有行為。
 func (l *lowerer) inferOptionDivMod(s *LetStatement) {
 	if s == nil || s.IsSynthetic || s.Name == nil || s.Value == nil {
 		return
@@ -421,7 +423,9 @@ func (l *lowerer) inferOptionDivMod(s *LetStatement) {
 }
 
 // signedIntOperandType 回傳運算元的有號整數型別名（int/i64/...）。僅在型別
-//  statically 可知且有號時回傳 ok：整數字面量 → i64；識別符 → 語義表查詢
+//
+//	statically 可知且有號時回傳 ok：整數字面量 → i64；識別符 → 語義表查詢
+//
 // （self 用方法 receiver 型別）；括號展開。型別未知或非整數回 ok=false，
 // 保守跳過推斷（i128 除外：codegen 對其退化為 wrap，不產生 option）。
 func (l *lowerer) signedIntOperandType(e Expression) (string, bool) {
@@ -706,6 +710,7 @@ func (l *lowerer) maybeIndexOutAssign(stmt interface{}) Statement {
 //     索引算式 `arr[base + i]` 裡真正的整數運算當成未處理而繼續報告
 //     （ovf-int-default），即使原始碼上方明明寫了 `#{overflow=wrap}`；
 //   - 型別校驗（checker.overflowModeFromSem）也讀不到模式。
+//
 // 這正是「加了註解卻仍被誤報」的根因，故在此把 overflow 條目一併帶到取代節點
 // （只帶 overflow，不帶 index-out：index-out 的語意已由 desugar 本身實現）。
 //

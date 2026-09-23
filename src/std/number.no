@@ -124,12 +124,16 @@ num.sign = () (r num) {
 
 ; even: 是否為偶數 — 對所有整數型別（含無符號）通用
 even = (a int) (yes bool) {
+
+    #{overflow=wrap}
     r = a % 2
     yes = (r == 0)
 }
 
 ; odd: 是否為奇數 — 對所有整數型別（含無符號）通用
 odd = (a int) (yes bool) {
+
+    #{overflow=wrap}
     r = a % 2
     yes = (r != 0)
 }

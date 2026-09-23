@@ -250,6 +250,8 @@ unix-to-date = (ts i64) (d date) {
     ; 分離天數和秒數
     #{overflow=wrap}
     days = ts / 86400
+
+    #{overflow=wrap}
     rem = ts % 86400
 
     #{overflow=wrap}
