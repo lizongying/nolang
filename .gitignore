@@ -36,3 +36,4 @@ docs/.docusaurus
 *.log
 *.wasm
 /*.no
+__pycache__
