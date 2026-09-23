@@ -2973,7 +2973,11 @@ var unsignedIntTypeNames = map[string]bool{
 
 // nonIntTypeNames 是確定「非整數」（float / str / char / bool / byte / rune）的
 // 型別集合；這些型別的算術不回傳 option，故不應提示 #{overflow} 註解（避免誤報）。
+// "float" 是 number.no 中定義的型別別名（float = f32 | f64），必須在此註冊，
+// 否則 operandIntKind 對 float 型變數會保守回退為 "signed"，導致 float.div
+// （`q = . / b`）被誤報為整數溢出。
 var nonIntTypeNames = map[string]bool{
+	"float": true, "num": true, "number.float": true, "number.num": true,
 	"f32": true, "f64": true,
 	"str": true, "char": true, "bool": true, "byte": true, "rune": true,
 }
@@ -3181,6 +3185,15 @@ func walkStmtForOverflow(stmt parser.Statement, file string, sem *parser.Semanti
 		if s.Type != nil && strings.HasPrefix(s.Type.String(), "?") {
 			return
 		}
+		// When s.Type is nil the variable has no explicit annotation in the source
+		// (e.g. `q = . / b` where `q` is a function result param declared as `?int`).
+		// If the target is a known option-type result param, the overflow IS being
+		// handled — suppress the lint to avoid a false positive.
+		if s.Type == nil && s.Name != nil {
+			if t := declared[s.Name.Value]; strings.HasPrefix(t, "?") {
+				return
+			}
+		}
 		emitSubs(s.Value)
 	case *parser.ReturnStatement:
 		emitSubs(s.ReturnValue)
@@ -3228,6 +3241,16 @@ func collectFuncDeclared(fn *parser.FunctionDefinition) map[string]string {
 			if nt, ok := p.Type.(*parser.NamedType); ok {
 				types[p.Name] = nt.Value
 			}
+		}
+	}
+	// Also register result params (including the implicit `self` receiver added
+	// by the parser for method definitions, e.g. float.div → self has type "float").
+	// Using Type.String() so that option result params like `q ?int` appear as "?int",
+	// which walkStmtForOverflow uses to suppress the ovf-int-default false positive
+	// when the overflow-aware result is being assigned to an already-option target.
+	for _, p := range fn.FuncSignature.Results {
+		if p.Type != nil {
+			types[p.Name] = p.Type.String()
 		}
 	}
 	if fn.Body != nil {

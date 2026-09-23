@@ -814,8 +814,8 @@ float.div = (b float) (q float) {
 
 ; mod: 整數取模，回傳餘數（a % b）
 ; b 為 0 時行為未定義（執行時期錯誤）
-mod = (a int, b int) (r int) {
-    r = a % b
+int.mod = (b int) (r ?int) {
+    r = . % b
 }
 
 ; swap: 交換兩個值

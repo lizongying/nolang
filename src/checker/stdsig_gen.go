@@ -9,7 +9,7 @@ package checker
 func init() {
 	embeddedStdSigReady = true
 	embeddedStdSigVersion = 2
-	embeddedStdSigKey = "79ac5b3f7b49c60353a9c74bb75156934c7dfd59af544c37128d565394cbe733"
+	embeddedStdSigKey = "446831c1cb2cb0059c322898a81caefee9259b7f4ff1ff964846515b30ba1de3"
 	embeddedStdFuncSigs = map[string][]string{
 		"[]byte.index":                     {"i64"},
 		"[]byte.index-from":                {"i64"},
@@ -494,7 +494,6 @@ func init() {
 		"number.lcm":                               {"int"},
 		"number.max":                               {"num"},
 		"number.min":                               {"num"},
-		"number.mod":                               {"int"},
 		"number.odd":                               {"bool"},
 		"number.pow":                               {"int"},
 		"number.rotate-left":                       {"i64"},
@@ -1230,6 +1229,7 @@ func init() {
 		"icmp-conn.ping-host":                              {},
 		"icmp-conn.ping-once":                              {"?i64"},
 		"int.div":                                          {"?int"},
+		"int.mod":                                          {"?int"},
 		"int.to-str":                                       {"str"},
 		"io.reader.from-fd":                                {"io.reader"},
 		"io.reader.from-stdin":                             {"io.reader"},
@@ -1601,6 +1601,7 @@ func init() {
 		"number.i64.to-str":                                {"str"},
 		"number.i8.to-str":                                 {"str"},
 		"number.int.div":                                   {"?int"},
+		"number.int.mod":                                   {"?int"},
 		"number.int.to-str":                                {"str"},
 		"number.num.clamp":                                 {"num"},
 		"number.num.sign":                                  {"num"},
@@ -3335,7 +3336,6 @@ func init() {
 		"number.lcm":                               {"int", "int"},
 		"number.max":                               {"[]num"},
 		"number.min":                               {"[]num"},
-		"number.mod":                               {"int", "int"},
 		"number.odd":                               {"int"},
 		"number.pow":                               {"int", "int"},
 		"number.rotate-left":                       {"i64", "i64"},
@@ -4071,6 +4071,7 @@ func init() {
 		"icmp-conn.ping-host":                              {"str", "i64", "i64"},
 		"icmp-conn.ping-once":                              {"str", "i64"},
 		"int.div":                                          {"int"},
+		"int.mod":                                          {"int"},
 		"int.to-str":                                       {},
 		"io.reader.from-fd":                                {"fd"},
 		"io.reader.from-stdin":                             {},
@@ -4442,6 +4443,7 @@ func init() {
 		"number.i64.to-str":                                {},
 		"number.i8.to-str":                                 {},
 		"number.int.div":                                   {"int"},
+		"number.int.mod":                                   {"int"},
 		"number.int.to-str":                                {},
 		"number.num.clamp":                                 {"num", "num"},
 		"number.num.sign":                                  {},

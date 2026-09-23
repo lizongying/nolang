@@ -1267,8 +1267,28 @@ func (l *lowerer) typeOfNode(n *hir.Node) TypeID {
 	case hir.KStrLit:
 		return l.b.Type("str")
 	case hir.KInfix:
-		if _, isCmp := infixOp(l.pkg.Str(n.S)); isCmp {
+		operator := l.pkg.Str(n.S)
+		if _, isCmp := infixOp(operator); isCmp {
 			return l.b.Type("bool")
+		}
+		// Integer division and remainder are recoverable operations: when the
+		// enclosing assignment expects an option (`q ?int = a / b`), preserve
+		// that option type here instead of deriving the plain payload type from
+		// the left operand. This is what lets emitArith install the runtime
+		// divisor-zero guard and write tag=err (2) rather than executing LLVM's
+		// undefined sdiv/srem-by-zero. The same path is used by int.div/int.mod,
+		// whose result parameters are ?int.
+		if operator == "/" || operator == "%" {
+			if ht := l.typeHint; ht != NoType && ht != l.voidType {
+				if hty := l.mod.Type(ht); hty != nil && (hty.Kind == KindOption || strings.HasPrefix(hty.Raw, "?")) {
+					if c := n.First; c != hir.NoID {
+						if lt := l.mod.Type(l.typeOfNode(l.pkg.Node(c))); lt != nil &&
+							(lt.Kind == KindInt || lt.Raw == "int" || strings.HasSuffix(lt.Raw, ".int")) {
+							return ht
+						}
+					}
+				}
+			}
 		}
 		if c := n.First; c != hir.NoID {
 			if t := l.typeOfNode(l.pkg.Node(c)); t != l.voidType {
@@ -5052,13 +5072,33 @@ func (l *lowerer) lowerExpr(id int32) ValueID {
 		} else if unwrapped {
 			// Both operands were option payloads (see unwrapOptionOperand):
 			// the node's declared type is still the `?T` the operand carried,
-			// but the arithmetic result is a plain `T`. Keeping `?T` made
-			// `size - total` an option, which then failed to coerce to the i64
-			// argument of `read(...)` (tests/open-read.no).
+			// but ordinary arithmetic on unwrapped payloads computes a plain
+			// `T`. Division/remainder are the exception when the surrounding
+			// target is an option: they must keep `?T` so the zero-divisor guard
+			// below can publish tag=err instead of losing the option in a later
+			// implicit wrap.
 			if lt := l.valueTypeOf(lv); lt != l.voidType && lt != NoType {
 				resTyp = lt
 			}
-		} else if resTyp == l.voidType || resTyp == NoType {
+		}
+		if !isCmp && (srcOp == "/" || srcOp == "%") && l.typeHint != NoType && l.typeHint != l.voidType {
+			if ht := l.mod.Type(l.typeHint); ht != nil && (ht.Kind == KindOption || strings.HasPrefix(ht.Raw, "?")) {
+				isIntValue := func(v ValueID) bool {
+					raw := l.valueRaw(v)
+					if raw == "int" || strings.HasSuffix(raw, ".int") {
+						return true
+					}
+					if ty := l.mod.Type(l.valueTypeOf(v)); ty != nil {
+						return ty.Kind == KindInt
+					}
+					return false
+				}
+				if isIntValue(lv) && isIntValue(rv) {
+					resTyp = l.typeHint
+				}
+			}
+		}
+		if !isCmp && (resTyp == l.voidType || resTyp == NoType) {
 			// Arithmetic result type unknown here (e.g. an operand is a
 			// module-level global whose KIdent type resolves to void, or a
 			// char-code expression `c + 1`). Derive it from the lowered operand
@@ -5985,6 +6025,16 @@ func (l *lowerer) resolveCallee(n *hir.Node) (callee string, recvV ValueID) {
 				}
 			}
 		}
+		// Union-method dispatch (bug #85): a method declared on a union type
+		// (e.g. `number.int.div`) is monomorphized into a union-level TEMPLATE
+		// (`number.int.div__number.int_TEMPLATE`) whose params/result carry the
+		// union type. When the receiver is a union-typed value (not a
+		// statically-known member) the call site keeps the bare `union.method`
+		// name. Resolve it to the template so the union value flows through
+		// directly — MIR supports union-typed locals/params/results.
+		if tmpl := l.unionTemplateCalleeFromName(name); tmpl != "" {
+			return tmpl, NoVal
+		}
 		return canonSliceRecv(name), NoVal
 	case hir.KDot:
 		method := l.pkg.Str(fnn.S) // property name, e.g. "to-bytes"
@@ -6160,9 +6210,67 @@ func (l *lowerer) resolveCallee(n *hir.Node) (callee string, recvV ValueID) {
 		if _, ok := l.funcNames[concrete]; ok {
 			return concrete, rv
 		}
+		// Union-method dispatch (bug #85): a method declared on a union type
+		// (e.g. `num.clamp`, `int.div`, `float.is-nan`, `num.sign`) is
+		// monomorphized by the front end into per-member variants
+		// (`num.clamp__i64`, ...) PLUS a union-level TEMPLATE
+		// (`num.clamp__num_TEMPLATE`) whose `self`/`params`/`result` carry the
+		// UNION type itself. When the receiver is a union-typed value (not a
+		// statically-known member) the call site keeps the bare
+		// `union.method` name, which never matches a registered function. Route
+		// it to the template so the union value flows through directly — MIR
+		// supports union-typed locals/params/results, so the template body
+		// (which operates on `self: num`) lowers correctly.
+		//
+		// The template name is `<union>.<method>__<union>_TEMPLATE`. Try both
+		// the fully-qualified receiver type and its bare tail (module prefix
+		// variants) since either may be the registered HIR fn name.
+		if tmpl := l.unionTemplateCallee(recvTypeName, method); tmpl != "" {
+			return tmpl, rv
+		}
 		return canonSliceRecv(concrete), rv
 	}
 	return "", NoVal
+}
+
+// unionTemplateCallee returns the monomorphized union-template callee name for
+// a method call on a union-typed receiver, or "" when none matches. See the
+// bug #85 note in resolveCallee.
+func (l *lowerer) unionTemplateCallee(recvTypeName, method string) string {
+	if recvTypeName == "" || method == "" {
+		return ""
+	}
+	candidates := []string{
+		recvTypeName + "." + method + "__" + recvTypeName + "_TEMPLATE",
+	}
+	// Also try the bare tail of a module-qualified receiver type
+	// (e.g. `number.num` -> `num`), in case the HIR registered the template
+	// under the unqualified union name.
+	if idx := strings.LastIndex(recvTypeName, "."); idx >= 0 {
+		short := recvTypeName[idx+1:]
+		if short != recvTypeName {
+			candidates = append(candidates, short+"."+method+"__"+short+"_TEMPLATE")
+		}
+	}
+	for _, c := range candidates {
+		if _, ok := l.funcNames[c]; ok {
+			return c
+		}
+	}
+	return ""
+}
+
+// unionTemplateCalleeFromName resolves a bare `union.method` callee name (e.g.
+// `number.int.div`, as produced by the checker for a method call on a
+// union-typed receiver) to its monomorphized union-template function. See the
+// bug #85 note in resolveCallee.
+func (l *lowerer) unionTemplateCalleeFromName(name string) string {
+	if i := strings.LastIndex(name, "."); i > 0 {
+		recvTypeName := name[:i]
+		method := name[i+1:]
+		return l.unionTemplateCallee(recvTypeName, method)
+	}
+	return ""
 }
 
 // sliceMethodBuiltin reports the BARE builtin method name to use for a

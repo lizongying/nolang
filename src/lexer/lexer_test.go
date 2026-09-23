@@ -383,3 +383,44 @@ func TestLexerBitwiseAssignOperators(t *testing.T) {
 		})
 	}
 }
+
+
+// TestLexerDotSelfArith 釘住：裸 `.`（self 的簡寫）後紧跟算術運算子時，
+// 詞法器必須把 `/`、`%` 等當作運算子，而不是正則字面量的開始。
+// 根因：commit 84d6180f 前 `isRegexStart()` 未把 DOT 列入「產生值的前一個
+// token」，導致 `. / b` 中的 `/` 被當作正則起始、吞掉 `b` 後找不到閉合 `/`，
+// 觸發「expected expression after operator '/'」。此測試防止回歸。
+func TestLexerDotSelfArith(t *testing.T) {
+	tests := []struct {
+		name   string
+		input  string
+		tokens []TokenType
+	}{
+		{name: "dot div", input: "q = . / b", tokens: []TokenType{IDENT, ASSIGN, DOT, QUO, IDENT, EOF}},
+		{name: "dot mod", input: "r = . % b", tokens: []TokenType{IDENT, ASSIGN, DOT, MOD, IDENT, EOF}},
+		{name: "dot add", input: ". + b", tokens: []TokenType{DOT, ADD, IDENT, EOF}},
+		{name: "dot sub", input: ". - b", tokens: []TokenType{DOT, SUB, IDENT, EOF}},
+		{name: "dot mul", input: ". * b", tokens: []TokenType{DOT, MUL, IDENT, EOF}},
+		// 對照：`.` 後接標識仍是成員存取（DOT IDENT），不得被上述規則影響。
+		{name: "dot member", input: ". foo", tokens: []TokenType{DOT, IDENT, EOF}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			lex := New(tt.input)
+			i := 0
+			for tok := lex.NextToken(); ; tok = lex.NextToken() {
+				if i >= len(tt.tokens) {
+					t.Fatalf("%s: unexpected extra token: %s (literal=%q)", tt.name, tok.Type.String(), tok.Literal)
+				}
+				if tok.Type != tt.tokens[i] {
+					t.Fatalf("%s: token %d: expected %s, got %s (literal=%q)",
+						tt.name, i, tt.tokens[i].String(), tok.Type.String(), tok.Literal)
+				}
+				if tok.Type == EOF {
+					break
+				}
+				i++
+			}
+		})
+	}
+}

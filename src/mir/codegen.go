@@ -1166,6 +1166,16 @@ func (c *codegen) optStoreTag(optSlot string, tag int64) {
 	c.sb.WriteString(fmt.Sprintf("  store %%option { i64 %d, %s zeroinitializer }, %%option* %s\n", tag, c.optSlotLT, optSlot))
 }
 
+// optStoreTagValue overwrites only the discriminant of an option already
+// initialized by optStoreTag. It is used by recoverable arithmetic whose tag is
+// selected at runtime (for example division by zero -> err).
+func (c *codegen) optStoreTagValue(optSlot, tagValue string) {
+	c.loadSeq++
+	addr := fmt.Sprintf("%%ots%d", c.loadSeq)
+	c.sb.WriteString(fmt.Sprintf("  %s = getelementptr inbounds %%option, %%option* %s, i32 0, i32 0\n", addr, optSlot))
+	c.sb.WriteString(fmt.Sprintf("  store i64 %s, i64* %s\n", tagValue, addr))
+}
+
 // optSpill materialises a by-value `%option` register into a fresh stack slot
 // and returns the slot. Needed wherever an option arrives as an SSA value (a
 // call result, a load) but the payload must be addressed by pointer.
@@ -3912,15 +3922,50 @@ func (c *codegen) emitArith(f *Function, inst *Inst) error {
 			op = "srem"
 		}
 	case OpUDiv:
-		// Unsigned division (nolang u64 family). Never float.
-		op = "udiv"
+		// Unsigned division (nolang u64 family). MIR routes a `/` here when an
+		// operand's DECLARED type is unsigned (e.g. a []byte element), but the
+		// result may still be float when the LEFT operand (which decides the
+		// result type) is f64 — e.g. `dct[i] / qt[i]` with qt []byte. When the
+		// coerced result type is float, emit fdiv, not udiv (udiv on doubles is
+		// invalid IR).
+		if isFloat {
+			op = "fdiv"
+		} else {
+			op = "udiv"
+		}
 	case OpUMod:
-		// Unsigned remainder (nolang u64 family). Never float.
-		op = "urem"
+		// Unsigned remainder (nolang u64 family). Same float guard as OpUDiv:
+		// `f64 % <unsigned int>` must lower to frem, not urem.
+		if isFloat {
+			op = "frem"
+		} else {
+			op = "urem"
+		}
+	}
+	// Integer / and % are option-producing operations when wrapResult is true.
+	// LLVM treats sdiv/srem/udiv/urem by zero as undefined behaviour, so select
+	// a harmless divisor before emitting the arithmetic and make the option tag
+	// conditional: tag=2 (err) for zero, tag=0 (ok) otherwise. The payload of an
+	// err is deliberately zero-like/ignored; ?int has no owned payload to drop.
+	zeroDiv := ""
+	if wrapResult && !isFloat && (inst.Op == OpDiv || inst.Op == OpMod || inst.Op == OpUDiv || inst.Op == OpUMod) {
+		c.loadSeq++
+		zeroDiv = fmt.Sprintf("%%dz%d", c.loadSeq)
+		c.sb.WriteString(fmt.Sprintf("  %s = icmp eq %s %s, 0\n", zeroDiv, resLT, bV))
+		c.loadSeq++
+		safeDivisor := fmt.Sprintf("%%ds%d", c.loadSeq)
+		c.sb.WriteString(fmt.Sprintf("  %s = select i1 %s, %s 1, %s %s\n", safeDivisor, zeroDiv, resLT, resLT, bV))
+		bV = safeDivisor
 	}
 	c.sb.WriteString(fmt.Sprintf("  %%c%d = %s %s %s, %s\n", inst.Dst, op, resLT, aV, bV))
 	if wrapResult {
 		c.optStoreTag(slot, 0)
+		if zeroDiv != "" {
+			c.loadSeq++
+			errTag := fmt.Sprintf("%%de%d", c.loadSeq)
+			c.sb.WriteString(fmt.Sprintf("  %s = select i1 %s, i64 2, i64 0\n", errTag, zeroDiv))
+			c.optStoreTagValue(slot, errTag)
+		}
 		c.optStoreInlinePayload(slot, resLT, fmt.Sprintf("%%c%d", inst.Dst))
 	} else {
 		c.sb.WriteString(fmt.Sprintf("  store %s %%c%d, %s* %s\n", lt, inst.Dst, lt, slot))
@@ -11108,28 +11153,83 @@ func (c *codegen) emitReturn(f *Function) error {
 // CLibCall is checked first because a builtin may carry several annotations and
 // the C-call ABI is the one flavour that a single generic implementation covers
 // completely; everything else needs a name-specific lowering.
+// removedMathIntrinsic maps LLVM intrinsics that were removed in LLVM 21 (the
+// transcendental math intrinsics, deprecated in LLVM 20 with no intrinsic
+// replacement) to their libm function names. emitBuiltin routes these calls to a
+// plain external C function so the generated IR verifies on LLVM 21+. Intrinsics
+// that still exist (sqrt/fabs/floor/ceil/round/trunc/copysign/maxnum/minnum/...)
+// are intentionally absent and keep their `@llvm.*.f64` form.
+var removedMathIntrinsic = map[string]string{
+	"llvm.sin.f64":   "sin",
+	"llvm.cos.f64":   "cos",
+	"llvm.tan.f64":   "tan",
+	"llvm.asin.f64":  "asin",
+	"llvm.acos.f64":  "acos",
+	"llvm.atan.f64":  "atan",
+	"llvm.atan2.f64": "atan2",
+	"llvm.sinh.f64":  "sinh",
+	"llvm.cosh.f64":  "cosh",
+	"llvm.tanh.f64":  "tanh",
+	"llvm.exp.f64":   "exp",
+	"llvm.exp2.f64":  "exp2",
+	"llvm.exp10.f64": "exp10",
+	"llvm.log.f64":   "log",
+	"llvm.log2.f64":  "log2",
+	"llvm.log10.f64": "log10",
+	"llvm.pow.f64":   "pow",
+}
+
 func (c *codegen) emitBuiltin(f *Function, inst *Inst, bm *builtin.BuiltinMethod) error {
 	switch {
 	case bm.CLibCall != nil:
 		return c.emitBuiltinCLib(f, inst, bm)
 	case bm.LLVMIntrinsic != "":
 		// Scalar LLVM intrinsic (sqrt/fabs/...): double args -> double result.
+		// LLVM 21 removed the transcendental intrinsics (sin/cos/tan/asin/acos/
+		// atan/atan2/sinh/cosh/tanh/exp/exp2/exp10/log/log2/log10/pow) and left no
+		// intrinsic replacement — code must call the libm functions instead.
+		// Emitting `@llvm.cos.f64` now fails LLVM verification with "invalid
+		// intrinsic signature", so route the removed names to their libm
+		// equivalents, declared as external C functions (a regular function call
+		// needs an explicit declare; implicit declarations are illegal in LLVM IR).
 		var argTys, argRegs []string
 		for _, a := range inst.Args {
 			lt, v := c.loadVal(a)
 			argTys = append(argTys, lt)
 			argRegs = append(argRegs, v)
 		}
+		callee := bm.LLVMIntrinsic
+		isLibm := false
+		if libm, ok := removedMathIntrinsic[callee]; ok {
+			callee = libm
+			isLibm = true
+			// libm transcendental functions have a fixed `double` ABI. Declare the
+			// canonical signature (all `double` args) rather than the call-site
+			// operand types: a call site whose argument collapsed to an integer
+			// would otherwise emit `declare double @cos(i64)` and collide with a
+			// `@cos(double)` call elsewhere ("invalid redefinition of function").
+			declArgs := make([]string, len(argTys))
+			for i := range declArgs {
+				declArgs[i] = "double"
+			}
+			c.decl(fmt.Sprintf("declare double @%s(%s)", callee, strings.Join(declArgs, ", ")))
+		}
 		argStr := ""
 		for i, t := range argTys {
+			v := argRegs[i]
+			if isLibm {
+				// Coerce a non-double argument (sitofp) to the fixed `double` ABI.
+				v = c.coerceInt(v, t, "double")
+				t = "double"
+			}
 			if i > 0 {
 				argStr += ", "
 			}
-			argStr += t + " " + argRegs[i]
+			argStr += t + " " + v
 		}
 		resSlot := c.valSlot[inst.Dst]
 		if resSlot == "" {
-			c.sb.WriteString(fmt.Sprintf("  call double @%s(%s)\n", bm.LLVMIntrinsic, argStr))
+			c.sb.WriteString(fmt.Sprintf("  call double @%s(%s)\n", callee, argStr))
 			return nil
 		}
 		rl, _ := c.ptype(inst.Dst)
@@ -11138,7 +11238,7 @@ func (c *codegen) emitBuiltin(f *Function, inst *Inst, bm *builtin.BuiltinMethod
 		}
 		r := fmt.Sprintf("%%bi%d", c.loadSeq)
 		c.loadSeq++
-		c.sb.WriteString(fmt.Sprintf("  %s = call %s @%s(%s)\n", r, rl, bm.LLVMIntrinsic, argStr))
+		c.sb.WriteString(fmt.Sprintf("  %s = call %s @%s(%s)\n", r, rl, callee, argStr))
 		c.sb.WriteString(fmt.Sprintf("  store %s %s, %s* %s\n", rl, r, rl, resSlot))
 		return nil
 	case bm.LLVMConv != nil:
