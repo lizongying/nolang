@@ -49,10 +49,37 @@ t-join = () {
     runner.str-eq(j.to-str(), 'a.b.c.d', 7, 'txt-join')
 }
 
+; 直接字面量数组（['a','b','c','d'] → []str）的索引主体 option-match：
+; 修前 parts 的 []str 型别未登记到语义表，inferIndexElemType 回 ""，
+; match 退化为 streq(parts[i],'')、与 nil/err tag 比较触发 LLVM verifier
+; 崩溃（trace/BPT trap）。现 parser 为 SliceLiteral/ArrayLiteral 赋值登记
+; []elem 型别，使其被识别为 slice 基底、归一化为安全索引（%option）。
+t-literal-in-bounds = () {
+    parts = ['a', 'b', 'c', 'd']
+    i = 1
+    parts[i]: {
+        ok -> { p = it }
+        -> { p = 'MISS' }
+    }
+    runner.str-eq(p, 'b', 1, 'literal in-bounds payload == b')
+}
+
+t-literal-out-of-bounds = () {
+    parts = ['a', 'b', 'c', 'd']
+    j = 9
+    parts[j]: {
+        ok -> { p = it }
+        -> { p = 'OOB' }
+    }
+    runner.str-eq(p, 'OOB', 1, 'literal out-of-bounds -> nil arm == OOB')
+}
+
 p1, f1 = runner.test('in-bounds', t-in-bounds)
 p2, f2 = runner.test('out-of-bounds', t-out-of-bounds)
 p3, f3 = runner.test('replace-n', t-replace-n)
 p4, f4 = runner.test('join', t-join)
+p5, f5 = runner.test('literal-in-bounds', t-literal-in-bounds)
+p6, f6 = runner.test('literal-out-of-bounds', t-literal-out-of-bounds)
 total = runner.summary()
 f = runner.failed-count()
 {
