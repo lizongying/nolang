@@ -47,6 +47,35 @@ t-parse_empty_line = () {
     runner.eq(fields.len(), 0, 'parse empty line len == 0')
 }
 
+; ── parse-field（直接測試，守衛 KIndex 下沉修復）──
+; 直接測 parse-field 能確保欄位內字元寫入（field[fn] = c 下標 sink）
+; 與回傳的多值都正確；這是 fields[n], pos = parse-field(...) 多返回值
+; 寫入陣列元素下沉限制的守衛。
+
+t-parse-field-basic = () {
+    f, np = csv.parse-field('a,b,c', 0)
+    runner.str-eq(f, 'a', 1, 'parse-field basic field == a')
+    runner.eq(np, 2, 'parse-field basic new-pos == 2')
+    f2, np2 = csv.parse-field('a,b,c', 2)
+    runner.str-eq(f2, 'b', 1, 'parse-field second field == b')
+    runner.eq(np2, 4, 'parse-field second new-pos == 4')
+    f3, np3 = csv.parse-field('a,b,c', 4)
+    runner.str-eq(f3, 'c', 1, 'parse-field third field == c')
+    runner.eq(np3, 5, 'parse-field third new-pos == 5')
+}
+
+t-parse-field-quoted = () {
+    f, np = csv.parse-field('"hello,world"', 0)
+    runner.str-eq(f, 'hello,world', 11, 'parse-field quoted == hello,world')
+    runner.eq(np, 13, 'parse-field quoted new-pos == 13')
+}
+
+t-parse-field-empty = () {
+    f, np = csv.parse-field('', 0)
+    runner.eq(f.len(), 0, 'parse-field empty field len == 0')
+    runner.eq(np, 0, 'parse-field empty new-pos == 0')
+}
+
 ; ── encode-field ─────────────────────────────
 
 t-encode-simple = () {
@@ -76,6 +105,9 @@ p6, f6 = runner.test('csv.parse-empty-line', t-parse_empty_line)
 p7, f7 = runner.test('csv.encode-simple', t-encode-simple)
 p8, f8 = runner.test('csv.encode-comma', t-encode-comma)
 p9, f9 = runner.test('csv.encode-quote', t-encode-quote)
+p10, f10 = runner.test('csv.parse-field-basic', t-parse-field-basic)
+p11, f11 = runner.test('csv.parse-field-quoted', t-parse-field-quoted)
+p12, f12 = runner.test('csv.parse-field-empty', t-parse-field-empty)
 
 total = runner.summary()
 f = runner.failed-count()

@@ -25,7 +25,7 @@ Mapping of Nolang types to LLVM:
 - **Variable-length array `[]t`**: underlying `{ t*, i64 }` (data, len)
 - **Fixed-length array `[n]t`**: LLVM fixed-size array
 - **String `str`**: heap-allocated byte sequence `{*byte, i64, i64}` (data, len, cap), supports `s[i]`, `s[i..j]`, `s + t`
-- **Fixed string `txt`**: fixed 256-byte struct `{ [255]byte data, byte len }`, 255 bytes data + 1 byte length (0-255), no heap allocation, requires type annotation (`t txt = 'abc'`)
+- **Fixed string `txt`**: fixed 256-byte struct `{ [255]byte data, byte len }`, 255 bytes data + 1 byte storing the **byte** length (0-255), no heap allocation, requires type annotation (`t txt = 'abc'`); `t.len()` returns the code point count (aligned with `str`, equal to `t.count()`), `t.len-bytes()` returns the byte count
 - **Enum/Union**: `option` tagged enum (`ok t` / `nil` / `err str`)
 - **Struct**: must be defined across multiple lines; fields are not comma-separated
 - **Map**: underlying linked-hash-map

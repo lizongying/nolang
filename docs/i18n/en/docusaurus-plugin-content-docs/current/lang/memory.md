@@ -111,17 +111,17 @@ a, b = get-pair()  ; a owns x's data, b owns y's data
 
 **Note**: If `a` and `b` reference the same source variable (e.g., `a = x; b = x`), within the callee only one move occurs (x marked moved); both a and b receive a shallow copy of x (sharing the same data pointer). But in the caller, a and b are independent local variables, each tracked as a heap variable, and both will be freed at function exit → **double-free**. Nolang currently has no reference/borrow semantics; b does not automatically become an alias of a. **Avoid this pattern**.
 
-### Implicit move in vec.push
+### Deep clone in vec.push
 ```no
 inner = [1, 2, 3]
 outer.push(inner)
-; inner marked as moved, data ownership transferred to outer
-; inner skips free at function exit, outer deep-frees inner's data
+; inner's data is deep-cloned into outer's new element slot
+; inner still owns its independent data; at function exit inner and outer each free separately
 ```
 
-push only shallow-copies inner's struct into outer's element slot **without cloning data**. Thus the source variable and the outer vec share the same data pointer; the source must be marked as moved to avoid double-free.
+For heap-owning element types (`%str-long`/`%vec`/`%arr`/user structs), push performs a deep clone: malloc a new data buffer + memcpy + recursively clone the elements. The source variable and the outer vec each own independent data, so **no move marking is needed**, which avoids double-free. For primitive element types (i64/f64 etc.) the value is stored directly.
 
-### Runtime move tracking (function-level u64 bitmap variable)
+### Runtime move tracking (bitmap indexed by heap-variable slot)
 
 Move under conditional branches poses a challenge: the compiler cannot statically determine whether a move actually occurs.
 
@@ -136,29 +136,53 @@ cond-move = (flag i64) (out []i64) {
 }
 ```
 
-Nolang uses **dual checking** to solve this:
+Nolang solves this with a **bitmap indexed by heap-variable slot**. At compile time each local heap variable is assigned a unique `varIdx`, and each bit of the runtime bitmap corresponds to one heap variable (not an output parameter).
 
-1. **Compile-time marking**: `movedVars[source]=true` indicates a move code path exists
-2. **Runtime bitmap**: each function with output parameters allocates a `u64` bitmap variable `%__move_bitmap` on the stack; each bit corresponds to one output parameter position
-3. **When move occurs**: set bitmap bit=1 (`or i64 %old, (1<<idx)`)
-4. **At function-exit free**: check the bitmap — `bit=1` means move occurred, ownership transferred, skip free; `bit=0` means move did not occur (branch not taken), still owns data, must free
+#### Compiler state
+
+| Field | Type | Purpose |
+|------|------|------|
+| `heapVarIndex` | `map[string]int` | heap-variable name -> `varIdx` (local heap variables only) |
+| `outBindState` | `[]int` | the heap-variable slot currently bound to each output parameter (-1 = unbound, -2 = indeterminate) |
+| `movedVarBitset` | `[]uint64` | compile-time moved bitmap (used when there is no runtime bitmap) |
+| `movedBitmapBase` | `string` | runtime bitmap variable-name prefix (e.g. `%__mb`, empty = not allocated) |
+| `bitmapCount` | `int` | number of u64 bitmap blocks (= maxVarIdx/64 + 1) |
+
+#### Index mapping rule
+
+One `u64` block holds 64 marker bits; for a heap-variable slot `varIdx`:
+
+- block number = `varIdx / 64`
+- offset within the block = `varIdx % 64`
+- mask = `1u64 << offset`
+
+These are computed as constants at compile time, so there is no runtime computation cost. Multiple `u64` blocks support an arbitrary number of heap variables, with **no parameter/result count limit**.
+
+#### Move-assignment handling (overwrite clears the old bit)
+
+Each time a heap variable is moved into an output parameter:
+
+1. If that output parameter was previously bound to a different variable (`outBindState[outIdx] >= 0`), clear the bit of the old variable first
+2. Then set the bit corresponding to the current variable to 1
+3. Update the variable slot bound to that output parameter (`outBindState[outIdx] = srcVarIdx`)
+
+#### Free at function end
+
+Walk all heap variables, laying out independent `if` checks: free when the corresponding bit is 0; a bit of 1 means ownership was moved away, so skip the free.
+
+#### On-demand bitmap allocation
+
+The bitmap variable is allocated only **when necessary**, avoiding overhead in branch-free code:
+
+| Scenario | Bitmap allocation | Free behavior |
+|------|---------|----------|
+| No move | none | free all |
+| move not in a branch (deterministic move) | none | compile-time `movedVarBitset` skips the free directly |
+| move in a branch (conditional move) | allocate | runtime bitmap check: bit=1 skip, bit=0 free |
+
+Before generating the function body, the compiler pre-scans the AST (`detectBranchMoveToOut`) to detect whether a move assignment to an output parameter exists inside an `IfExpression`/`ForStatement`/`ConditionalExpression` branch, and allocates the runtime bitmap variable only when such a pattern is present. The bitmap `alloca` is inserted after the function body is generated (at which point `nextHeapVarIdx` has its final value) and written into the entry block.
 
 This mechanism applies to all heap types (`vec`/`str-long`/`arr`/user structs).
-
-### Parameter and result count limit
-
-Because the `u64` bitmap variable tracks at most 64 output parameters, the **parameter and result count limit of a function is 64**. When exceeded, the compiler reports an error:
-
-```
-Error: compilation error: line 2, column 1: function foo has 65 parameters,
-exceeding the 64-parameter limit; use a container type (vec/arr/struct) to
-bundle multiple values
-```
-
-To pass many values, use a container type to bundle them:
-- `[]i64` (slice) — multiple values of the same type
-- `[N]T` (fixed array) — fixed-length values of the same type
-- struct — heterogeneous multiple values
 
 ## Deep Clone (Assignment Between Locals)
 
@@ -361,3 +385,17 @@ arr = [9, 8, 7]    ; free old arr.data → view dangling
 
 ### async Shared Data
 When async threads share heap data with the main thread, free order is nondeterministic.
+
+### Imprecise free-skip heuristic for a global variable's first assignment
+
+The compiler uses a compile-time map `globalFirstAssigned` to track whether a global variable has already had its first assignment: the first assignment skips freeing the old value (the old value is `zeroinitializer`, not heap data), and only later reassignments free the previous heap value.
+
+This map is initialized once for the whole compilation, is never reset per function, and does not distinguish conditional branch paths. If a global variable's first assignment happens inside a conditional branch, the compiler processes it in AST order: the first assignment statement is treated as the "first" one (skipping free), while a second assignment statement (even in a different branch) takes the reassignment path (attempting to free the old value). If at runtime the second branch executes first, the global is still `zeroinitializer` (`data=NULL, len=0`) and it attempts to free an uninitialized old value.
+
+**Current mitigations (effective)**:
+- Shallow containers (`%str-long`): `emitNullCheckFree` emits a runtime `icmp eq i8* dataPtr, null` check, skipping `call @free` when NULL
+- Deep containers (`%vec/%arr`): `emitDeepContainerFree` additionally has a `len == 0` short-circuit check; `zeroinitializer` has len 0, so the whole free loop is skipped directly
+
+These two layers of runtime protection mean that, even though the compile-time judgment is imprecise, no actual crash occurs. But logically this relies on runtime NULL checks as a safety net rather than precise compile-time judgment.
+
+**Possible improvement**: turn `globalFirstAssigned` from a compile-time map into a runtime tracking mechanism (a bitmap like `movedVarBitset`), but this would add runtime overhead, and the current mitigations are already sufficient.

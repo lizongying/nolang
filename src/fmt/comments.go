@@ -311,6 +311,11 @@ func (f *formatter) attachedAnnotationsWillEmit(stmt parser.Statement) bool {
 			// （否則會在陳述前插入空行、破壞冪等）。
 			continue
 		}
+		if e.Key == "overflow" && !f.overflowEntryEffective(stmt) {
+			// 無效 overflow（管轄陳述不含整數運算）不會真正輸出，故不觸發間隙，
+			// 避免在陳述前留下空行（否則 formatStatement 實際未印出、產生空白行）。
+			continue
+		}
 		return true
 	}
 	return false

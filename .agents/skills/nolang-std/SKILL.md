@@ -380,14 +380,17 @@ HEX-LOWER = '0123456789abcdef'
 #### txt — Fixed-length Text Type
 
 `txt` is a fixed 256-byte string type:
-- Layout: `{ [255]byte data, byte len }` — 255 bytes data + 1 byte length = 256 bytes total
+- Layout: `{ [255]byte data, byte len }` — 255 bytes data + 1 byte length = 256 bytes total (the `len` **field** stores the BYTE count, 0-255)
 - No heap allocation (all on stack)
 - Must use type annotation: `t txt = 'abc'`
 - Max content length: 255 bytes
 
+> **Length semantics (aligned with `str`):** `t.len()` returns the **code-point count** (equal to `t.count()`); `t.len-bytes()` returns the **byte count**. Index/slice/append/compare are all byte-based, so loop bounds over `.byte(i)` / `t[i]` **must use `t.len-bytes()`**, not `t.len()`. For pure ASCII they are equal; with multi-byte UTF-8 content, `t.len() < t.len-bytes()`.
+
 ```no
 t txt = 'hello'              // Must use type annotation
-n = t.len()                  // Return length (i64)
+n = t.len()                  // Code-point count (i64), == t.count()
+b = t.len-bytes()            // Byte count (i64) — use this for byte loop bounds
 c = t[0]                     // Index access (byte)
 ok = t.eq(b txt)             // Equality comparison
 dst = t.copy()               // Copy

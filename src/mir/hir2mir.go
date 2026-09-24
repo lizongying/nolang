@@ -5490,6 +5490,39 @@ func (l *lowerer) paramRawTypesOfCallee(callee string) []string {
 	return out
 }
 
+// paramNodesOfCallee returns the callee's real (non-receiver) KParam node IDs
+// in declaration order. Each such node's First child is the default-value
+// expression (hir.NoID when the parameter has no default). This is used by
+// lowerCallArgs to synthesize default arguments for trailing parameters the
+// caller omitted — e.g. `csv.parse-line(s)` fills `max-fields = 1024`. The
+// returned order matches paramRawTypesOfCallee's entries *excluding* the
+// prepended receiver (for methods the receiver is a KResult, not a KParam, so
+// it is absent here by construction).
+func (l *lowerer) paramNodesOfCallee(callee string) []int32 {
+	if callee == "" {
+		return nil
+	}
+	id, ok := l.funcNames[callee]
+	if !ok {
+		return nil
+	}
+	fnNode := l.pkg.Node(id)
+	if fnNode == nil {
+		return nil
+	}
+	var out []int32
+	// Methods prepend the receiver (a KResult), not a KParam, so KParam
+	// children already start at the first real parameter here.
+	for _, c := range l.pkg.Children(id) {
+		cn := l.pkg.Node(c)
+		if cn == nil || cn.Kind != hir.KParam {
+			continue
+		}
+		out = append(out, c)
+	}
+	return out
+}
+
 // noteAnonymousStructLit records the struct type an anonymous `{...}` literal
 // argument should take, derived from the callee's parameter type at that
 // position. Only bare literals (empty n.S) and non-option parameter types are
@@ -6123,12 +6156,15 @@ func (l *lowerer) resolveCallee(n *hir.Node) (callee string, recvV ValueID) {
 					if bm := sliceMethodBuiltin(recvRaw, method); bm != "" {
 						return bm, l.curRecv
 					}
-					// txt.len / txt.cap: txt is a fixed buffer, not a slice, so
-					// sliceMethodBuiltin does not match. Its .len() method body
-					// calls .len() which re-enters txt.len (same cycle as []t.len).
-					// lowerDotRead already handles txt.len as OpLen, so route the
-					// method call to the bare builtin "len" to avoid the cycle.
-					if (method == "len" || method == "cap") && recvRaw == "txt" {
+					// txt.cap: txt is a fixed buffer, cap is not meaningful, so
+					// keep routing cap() to the bare builtin. txt.len() is NOT
+					// routed here anymore: it now dispatches to the std txt.len
+					// method (which returns the UTF-8 codepoint count, aligning txt
+					// with str). The byte length stays reachable via the `.len`
+					// property (lowerDotRead -> OpLen) and `.len-bytes()`, which is
+					// what every internal byte-indexed loop now uses, so the old
+					// self-recursion cycle no longer exists.
+					if method == "cap" && recvRaw == "txt" {
 						return method, l.curRecv
 					}
 					return canonSliceRecv(name), l.curRecv
@@ -7727,6 +7763,9 @@ func (l *lowerer) lowerCallArgs(n *hir.Node, recvV ValueID, callee string) []Val
 	// parameter types before lowering, so lowerStructLit can emit a typed
 	// structlit (see structLitTypes).
 	paramRaws := l.paramRawTypesOfCallee(callee)
+	// Real (non-receiver) KParam node IDs, in declaration order. Used to fill
+	// trailing parameters the caller omitted via their default expressions.
+	paramNodes := l.paramNodesOfCallee(callee)
 	for i, a := range args {
 		if pi := i + argOffset; pi < len(paramRaws) {
 			l.noteAnonymousStructLit(a, paramRaws[pi])
@@ -7781,6 +7820,45 @@ func (l *lowerer) lowerCallArgs(n *hir.Node, recvV ValueID, callee string) []Val
 			v = l.printableValue(v)
 		}
 		argv = append(argv, v)
+	}
+	// Fill trailing omitted parameters with their default expressions.
+	// `args` are the caller-supplied argument nodes (NOT counting an implicit
+	// receiver); `paramNodes` are the real parameters. When the caller passes
+	// fewer than declared, the remaining ones must take their declared defaults
+	// (e.g. `csv.parse-line(s)` → `max-fields = 1024`). Variadic callees are
+	// skipped: their trailing args are packed into the %vec, not bound to named
+	// params, so synthesizing defaults would corrupt the variadic spread.
+	if fid, ok := l.funcNames[callee]; ok {
+		if fdef := l.pkg.Node(fid); fdef != nil && fdef.Has(hir.FlagVariadic) {
+			// variadic: trailing args are real, do not synthesize defaults
+		} else if len(args) < len(paramNodes) {
+			for pi := len(args); pi < len(paramNodes); pi++ {
+				pn := l.pkg.Node(paramNodes[pi])
+				if pn == nil {
+					continue
+				}
+				deID := pn.First
+				if deID == hir.NoID {
+					// Caller omitted a parameter that has no default: the checker
+					// should have rejected this; skip rather than emit garbage.
+					continue
+				}
+				saved := l.typeHint
+				if pi+argOffset < len(paramRaws) {
+					if raw := paramRaws[pi+argOffset]; raw != "" {
+						if t := l.b.Type(raw); t != NoType && t != l.voidType {
+							l.typeHint = t
+						}
+					}
+				}
+				dv := l.lowerExpr(deID)
+				l.typeHint = saved
+				if dv == NoVal {
+					continue
+				}
+				argv = append(argv, dv)
+			}
+		}
 	}
 	return argv
 }
@@ -7853,6 +7931,47 @@ func (l *lowerer) toStrCalleeFor(ty *Type) string {
 func (l *lowerer) bindTarget(targetID int32, v ValueID) {
 	tn := l.pkg.Node(targetID)
 	if tn == nil {
+		return
+	}
+	if tn.Kind == hir.KIndex {
+		// a[i] = v — the multi-assign form of an indexed store. Mirrors the
+		// KIndex case of lowerAssignNode so `fields[n], pos = f()` writes each
+		// returned value into the container element instead of dropping the
+		// target. Previously this hit `unsupported`, which left the element
+		// unwritten and the slot unbound: csv.parse-line ran the loop (pos/n
+		// advanced) but every fields[n] store was silently discarded, so the
+		// returned slice had n elements that were all empty/uninitialised.
+		if v == NoVal {
+			return
+		}
+		var arrID, idxID int32
+		i := 0
+		for _, c := range l.pkg.Children(targetID) {
+			if i == 0 {
+				arrID = c
+			} else {
+				idxID = c
+				break
+			}
+			i++
+		}
+		arrV := l.lowerExpr(arrID)
+		// An index expression is ALWAYS integer-typed. Lower it with a cleared
+		// typeHint so the read's target type never leaks into the index
+		// arithmetic (mirrors lowerAssignNode's KIndex case).
+		savedIdxHint := l.typeHint
+		l.typeHint = NoType
+		idxV := l.lowerExpr(idxID)
+		l.typeHint = savedIdxHint
+		if arrV == NoVal || idxV == NoVal {
+			return
+		}
+		// Implicit `ok(v)` wrap for `a[i] = scalar` where `a` is a `[]?T`
+		// (same rule as the KIdent reassignment / lowerAssignNode paths).
+		if eT := l.indexElemType(arrV); eT != NoType {
+			v = l.wrapOptionIfNeeded(eT, v)
+		}
+		l.b.EmitVoid(OpIndexStore, []ValueID{arrV, idxV, v}, "")
 		return
 	}
 	if tn.Kind != hir.KIdent {

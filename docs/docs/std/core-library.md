@@ -149,13 +149,19 @@ s = byte.to-str()               ; byte 轉 str（方法）
 
 `txt` 是固定 256 字節的文字類型，適合短文字場景：
 - 前 255 字節存儲數據（`data [255]byte`）
-- 最後 1 字節存儲長度（`len byte`，範圍 0-255）
+- 最後 1 字節存儲長度（`len byte`，單位是「字節」，範圍 0-255）
 - 無需堆分配，全部在棧上
 - 必須類型標註
 
+長度語義（與 `str` 對齊）：
+- `t.len()` → 字元（code point）數量（等價 `t.count()`）
+- `t.len-bytes()` → 字節數量（底層 UTF-8 緩衝區實際長度）
+- 索引 / 切片 / 追加等字節操作以 `len-bytes()` 為準；ASCII 下兩者相等，含多字節 UTF-8 時 `len() < len-bytes()`
+
 ```no
 t txt = 'hello'              ; 必須類型標註
-n = t.len()                  ; 返回長度（i64）
+n = t.len()                  ; 字元（code point）數量（i64）
+b = t.len-bytes()            ; 字節數量（i64）
 c = t[0]                     ; 索引存取（byte）
 ok = t.eq(b txt)             ; 相等比較
 dst = t.copy()               ; 複製

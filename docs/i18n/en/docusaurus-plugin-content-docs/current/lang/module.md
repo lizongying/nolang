@@ -40,6 +40,35 @@ net.NET-BUF-SIZE
 math.PI
 ```
 
+### Function Naming Convention
+
+**Do not prefix function names with the module name.** Functions inside a module should just use short, intuitive names; the `ShortName.` prefix on cross-module calls already carries the module information.
+
+```no
+; ✅ Correct: concise function names, no module prefix
+; tail.no
+tail = () { ... }              ; entry function uses the module name directly
+atoi = (s str) (v i64) { ... } ; helper functions use short names
+
+; ❌ Avoid: redundantly prefixing function names with the module name
+; tail-run = () { ... }
+; tail-atoi = (s str) (v i64) { ... }
+```
+
+Keep the same convention when importing across modules:
+
+```no
+; ✅ Concise and intuitive
+# /src/tail.tail
+# /src/mktemp.mktemp
+
+; ❌ Redundant
+; # /src/tail.tail-run
+; # /src/mktemp.mktemp-run
+```
+
+> **Avoid keywords**: `run` (async keyword), `match` (conditional-match keyword), etc. cannot be used as function names. It is recommended that the entry function use the module name itself (e.g. `ping.no` → `ping`).
+
 ## When Prefix is Not Required
 
 The following cases do not require a prefix:
@@ -82,6 +111,7 @@ print(a, b, c)                   ; Multiple args, space-separated
 print()                          ; No args, just a newline
 s = format('x={x}')              ; Returns formatted string
 eprint('err: {n}')               ; Writes to stderr with newline
+eprint('err:', a, b)             ; Multiple args, space-separated on stderr
 print('id {id:06} amount {money:.2f}')  ; Supports align, fill, width, precision
 
 ; Low-level commands (module prefix required)
@@ -107,7 +137,7 @@ The `spec` in `{name[:spec]}` supports the following fields (fixed order, all op
 - `0` — Zero-pad numbers to specified width
 - `width` — Minimum field width
 - `.precision` — Decimal places for floats / max length for strings
-- `type` — `d`(int), `x`/`X`(hex), `o`(octal), `b`(binary), `c`(char), `f`(fixed), `e`/`E`(scientific), `g`/`G`(general), `s`(string, default)
+- `type` — `d`(int), `x`/`X`(hex), `o`(octal), `b`(binary), `c`(char), `f`(fixed), `e`/`E`(scientific), `g`/`G`(general), `s`(string, default), `t`(type name, resolved at compile time), `v`(literal value: strings wrapped in single quotes, vec calls to-str)
 
 ```no
 x i64 = 42
@@ -121,6 +151,8 @@ print('{pi:.2f}')            ; 3.14
 print('{pi:8.3e}')           ; 3.142e+00
 print('{s:<10}')             ; hello     (left-aligned)
 print('{s:.3}')              ; hel (truncated to 3 chars)
+print('{x:t}')              ; i64 (prints the type name of variable x)
+print('{s:v}')              ; 'hello' (string wrapped in single quotes)
 ```
 
 Use `{{` and `}}` to output literal `{` and `}`.
@@ -191,12 +223,87 @@ In `fs.fil()`, `fs` is the module's ShortName, and `fil` is the module-level fun
 
 > **Important**: Even within the same module, calling a same-module module-level function uses no prefix (`cmd(...)`), while struct methods are invoked via the implicit `self` or `.method()` syntax.
 
+## Cross-Module Type References
+
+When referencing types (structs, interfaces, enums, etc.) defined in **other modules**, the `ShortName.` prefix is required. This applies to:
+
+### Struct Implementing an Interface
+
+When a struct implements an interface defined in another module, the interface name must carry the module prefix:
+
+```no
+; ❌ Wrong: db, rows, stmt are interfaces defined by the sql module; the prefix cannot be omitted
+db-mysql db {
+    fd i64
+}
+
+; ✅ Correct: use sql.db, sql.rows, sql.stmt
+db-mysql sql.db {
+    fd i64
+}
+
+rows-mysql sql.rows {
+    fd i64
+}
+
+stmt-mysql sql.stmt {
+    fd i64
+}
+```
+
+### Function Parameter and Return Types
+
+Cross-module types in function signatures likewise require a prefix:
+
+```no
+; ✅ Correct: the return type uses sql.result
+db-mysql.exec = (sql str) (r sql.result) {
+    ...
+}
+```
+
+### Struct Field Types
+
+```no
+; ✅ Correct: the field type uses sql.connection
+conn-mysql sql.db {
+    handle sql.connection
+}
+```
+
+### Cases That Do Not Need a Prefix
+
+- **Types defined in the same module**: structs, interfaces, and enums defined in the same `.no` file are used directly by type name
+- **Built-in types**: built-in types such as `str`, `i64`, `bool`, `byte` need no prefix
+- **Built-in interfaces**: language built-in interfaces such as `enter`, `leave` need no prefix
+
+```no
+; Types defined in the same file need no prefix
+result {
+    last-id i64
+    affected i64
+}
+
+; enter/leave are built-in interfaces, no prefix needed
+; result is a struct defined in the same file, no prefix needed
+db enter, leave {
+    close() (ok bool)
+    exec(sql str) (r result)
+}
+```
+
 ## Complete Example
 
 ```no
 ; Standard library modules are auto-loaded, no explicit import needed
 
 ; --- No prefix needed ---
+
+; Global functions (declared in global.no, named format strings, no prefix)
+s str = with-cap(256)
+v []i64 = with-len(100)
+print('hello {n}')
+s = format('x={x}')
 
 ; Same-file function
 sha256(data)
@@ -211,10 +318,6 @@ f = fs.open(path, opts)
 f.read(buf, n)
 f.close()
 
-; print/eprint/format (named format strings, no prefix)
-print('hello {n}')
-s = format('x={x}')
-
 ; --- Prefix required ---
 
 ; Module-level function
@@ -227,4 +330,11 @@ math.degrees(rad)
 ; Module constant
 net.NET-BUF-SIZE
 math.PI
+
+; Cross-module type references (interface impl, param/return types, field types)
+db-mysql sql.db {
+    fd i64
+}
+
+r sql.result = d.exec('CREATE TABLE ...')
 ```

@@ -173,16 +173,21 @@ func (s *Server) publishDocumentDiagnostics(uri string, parseErrors []string, as
 					tags = []DiagnosticTag{DiagnosticTagUnnecessary}
 				}
 			}
-			// 有號整數相減溢出提示帶固定 Code，供 code action 識別並提供
-			// 「插入 #{overflow = wrap|clamp0}」quickfix。
-			if l.Source == "nolang-overflow" {
-				code = "overflow-wrap"
-			}
-			// 未處理越界索引帶固定 Code，供 code action 識別並提供
-			// 「插入 #{index-out = 0}」quickfix（越界取預設值）。
-			if l.Source == "nolang-index" {
-				code = "safe-index"
-			}
+		// 有號整數相減溢出提示帶固定 Code，供 code action 識別並提供
+		// 「插入 #{overflow = wrap|clamp0}」quickfix。
+		if l.Source == "nolang-overflow" {
+			code = "overflow-wrap"
+		}
+		// 未處理越界索引帶固定 Code，供 code action 識別並提供
+		// 「插入 #{index-out = 0}」quickfix（越界取預設值）。
+		if l.Source == "nolang-index" {
+			code = "safe-index"
+		}
+		// 無效 overflow 註解（管轄陳述不含整數運算）帶固定 Code，供 code action
+		// 識別並提供「移除 #{overflow}」quickfix。
+		if l.Source == "nolang-overflow-ineffective" {
+			code = "overflow-ineffective"
+		}
 			diagnostics = append(diagnostics, Diagnostic{
 				Range: Range{
 					Start: Position{Line: uint32(l.Line - 1), Character: uint32(l.Column - 1)},
@@ -906,6 +911,17 @@ func (s *Server) handleTextDocumentCodeAction(params CodeActionParams) (any, err
 					Edit:        edit,
 				})
 			}
+		case "overflow-ineffective":
+			// 無效 overflow 註解的 quickfix：移除該 #{overflow = ...}（交由 formatter
+			// 依 no fmt 語意移除無效 overflow 並清理因此變空的整行註解）。
+			if edit := s.removeIneffectiveOverflowEdit(uri); edit != nil {
+				actions = append(actions, CodeAction{
+					Title:       "Remove ineffective #{overflow}",
+					Kind:        CodeActionKindQuickFix,
+					Diagnostics: []Diagnostic{diag},
+					Edit:        edit,
+				})
+			}
 		}
 	}
 	if actions == nil {
@@ -974,6 +990,32 @@ func (s *Server) safeIndexAnnotationEdit(uri string, line uint32) *WorkspaceEdit
 	}
 	return &WorkspaceEdit{
 		Changes: map[string][]TextEdit{uri: {te}},
+	}
+}
+
+// removeIneffectiveOverflowEdit 移除文件中所有「無效」的 #{overflow = ...} 註解
+// （管轄陳述不含整數運算，如整行僅字串拼接），並清理因此變空的整行註解。實作上
+// 直接復用 no fmt 的 overflow 移除語意（FormatProgramWithOverflow），保證 LSP 與
+// 命令列 `no fmt` 行為完全一致。若無任何變更則回傳 nil。
+func (s *Server) removeIneffectiveOverflowEdit(uri string) *WorkspaceEdit {
+	doc, err := s.documents.GetDocument(uri)
+	if err != nil || doc == nil {
+		return nil
+	}
+	prog := doc.AST
+	if prog == nil {
+		return nil
+	}
+	relevant, governed := checker.OverflowAnnotationRelevance(prog)
+	if relevant == nil {
+		return nil
+	}
+	formatted := nolangfmt.FormatProgramWithOverflow(prog, doc.Text, relevant, governed)
+	if formatted == doc.Text {
+		return nil
+	}
+	return &WorkspaceEdit{
+		Changes: map[string][]TextEdit{uri: computeTextEdits(doc.Text, formatted)},
 	}
 }
 

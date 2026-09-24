@@ -25,7 +25,7 @@ Nolang 型別到 LLVM 的對映關係：
 - **變長數組 `[]t`**：底層 `{ t*, i64 }`（data, len）
 - **定長數組 `[n]t`**：LLVM 固定大小陣列
 - **字串 `str`**：堆分配的位元組序列 `{*byte, i64, i64}`（data, len, cap），支援 `s[i]`、`s[i..j]`、`s + t`
-- **固定字串 `txt`**：固定 256 字節結構 `{ [255]byte data, byte len }`，前 255 字節存儲數據，最後 1 字節存儲長度（0-255），無需堆分配，必須類型標註（`t txt = 'abc'`）
+- **固定字串 `txt`**：固定 256 字節結構 `{ [255]byte data, byte len }`，前 255 字節存儲數據，最後 1 字節存儲**字節**長度（0-255），無需堆分配，必須類型標註（`t txt = 'abc'`）；`t.len()` 回傳 code point 數量（與 `str` 對齊，等價 `t.count()`），`t.len-bytes()` 回傳字節數量
 - **列舉/Union**：`option` tagged enum（`ok t` / `nil` / `err str`）
 - **結構體**：必須多行定義，欄位不加逗號
 - **配列**：底層 linked-hash-map

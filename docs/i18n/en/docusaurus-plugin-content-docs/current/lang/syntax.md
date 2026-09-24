@@ -186,6 +186,10 @@ b = x00
 ; i8 — if the variable name matches the type name, the type annotation can be omitted
 i8 = 3
 
+; An explicit annotation equal to the inferred type is redundant (no vet reports tcpoxtfd; no fmt --fix=redundant removes it automatically)
+x str = ''
+x = ''          ; equivalent, the annotation is redundant
+
 ; Default zero value
 ; Variable definitions do not need to be declared in advance
 u16
@@ -2297,6 +2301,8 @@ The remaining rules:
 > default forces the caller to handle overflow explicitly (or to annotate `wrap` and declare "I accept wrapping
 > semantics"), turning "is overflow acceptable here?" into a visible design decision.
 
+### Unannotated operations reported as errors (`ovf-int-default`)
+
 `no vet` reports **unannotated** integer arithmetic as an **error** (trace id `ovf-int-default`), not a hint. The
 reason: the default `option<int>` silently drifts in meaning the moment it is used as a plain integer, so the choice
 must be explicit — add a `#{overflow = ...}` annotation, or handle the overflow with `?T` plus `?=` / match.
@@ -2321,6 +2327,47 @@ are left alone, and re-running is idempotent (already-annotated statements never
 > condition** while the arm body holds no annotatable statement — a line annotation applies only to the statement
 > immediately after it, so it cannot cover the arm's own condition arithmetic, and `no vet` reports it again. In
 > that case hoist the operation into its own statement first, then annotate it.
+
+### Automatic fix: redundant type annotations
+
+When a variable declaration's **type annotation is exactly the same as the type inferred from the right-hand value**, the annotation is redundant (reported by `no vet` as the hint `tcpoxtfd`, `type annotation '<T>' can be omitted (inferred from value)`).
+
+- **Removed by the default `no fmt`**: `no fmt -w` removes redundant annotations while formatting (performing a normal reformat at the same time), `no fmt -d` previews including this change, `-w` writes in place.
+
+```bash
+no fmt -w main.no          # format and remove redundant annotations
+no fmt -d main.no          # print the diff only (including annotation removal)
+no fmt -w src/             # a whole directory
+```
+
+- **`--fix=redundant` (surgical, touches only annotations)**: if you only want to remove redundant annotations without a full reformat (e.g. for `src/std`, since `no fmt` would drop `#{index-out}`), use this fix class — it deletes only annotations and does not re-lay-out:
+
+```bash
+no fmt --fix=redundant -w src/std          # remove redundant annotations across a directory in place (no re-layout)
+no fmt --fix=redundant -d src/std/str.no   # print the diff only, do not write
+no fmt --fix=redundant src/std/str.no      # print the fixed content
+```
+
+```no
+; before the fix
+x str = ''
+b i64 = 5
+m [str]i64 = make-map()
+
+; after the fix (annotation == inferred type, removed)
+x = ''
+b = 5
+m = make-map()
+```
+
+Key rules:
+
+- Removed **only when the annotated type == the inferred type** (e.g. `str`/`i64`/`[str]i64` matching their inferred value).
+- Cases that are **implicitly convertible but not equal** are **not** removed — keeping the annotation preserves the conversion semantics. For example `c i16 = 5` (`5` infers as `i64`, not equal to `i16`), `p ?i64 = nil`, `last txt = ''` (`txt` and `str` convert implicitly but are different types).
+- Forms **without a type annotation** (e.g. `d = 'x'`) are never reported in the first place, so they are left alone.
+- **Any value containing a hexadecimal literal always keeps its annotation** (a conservative exception). `no vet`'s type inference uses an "infer as `byte`" heuristic for `0xNN`, which differs from the compiler's actual semantics ("integer literals default to `i64` when unannotated"), so `IP-TBL [64]byte = [0x3a, ...]` and `s []byte = [0x50, 0x4b]` are misjudged as redundant; once removed, the literals degrade to `i64` elements and produce type errors like `expected '[]byte', got '[]i64'`. So whenever `0x`/`0X` appears in the value expression text, the annotation is not removed (`no vet` still emits the hint, which is a known false positive).
+
+Whether via the default `no fmt` or `--fix=redundant`, removal only deletes the reported type annotation and its leading whitespace, and re-running is idempotent (already-removed ones do not change again). After fixing, it is recommended to run `no vet` once more to confirm `tcpoxtfd` reaches zero.
 
 ### Annotation binding and single-line merging
 

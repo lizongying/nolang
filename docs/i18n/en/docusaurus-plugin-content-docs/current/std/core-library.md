@@ -124,10 +124,12 @@ i8.MIN / MAX                  ; -128 / 127
 i16.MIN / MAX                 ; -32768 / 32767
 i32.MIN / MAX                 ; -2147483648 / 2147483647
 i64.MIN / MAX                 ; -2^63 / 2^63-1
+i128.MIN / MAX                ; -2^127 / 2^127-1
 u8.MIN / MAX                  ; 0 / 255
 u16.MIN / MAX                 ; 0 / 65535
 u32.MIN / MAX                 ; 0 / 4294967295
 u64.MIN / MAX                 ; 0 / 2^64-1
+u128.MIN / MAX                ; 0 / 2^128-1
 ```
 
 ### byte — Byte Operations
@@ -141,6 +143,40 @@ s = []byte.to-str()             ; []byte to str (method)
 s = []byte.to-hex()             ; []byte -> uppercase hex string
 s = []byte.to-hex-lower()       ; []byte -> lowercase hex string
 s = byte.to-str()               ; byte to str (method)
+```
+
+### txt — Fixed-length Text Type
+
+`txt` is a fixed 256-byte text type, suited to short strings:
+- The first 255 bytes store the data (`data [255]byte`)
+- The last byte stores the length (`len byte`, the unit is **bytes**, range 0-255)
+- No heap allocation (everything on the stack)
+- Requires a type annotation
+
+Length semantics (aligned with `str`):
+- `t.len()` → code point count (equal to `t.count()`)
+- `t.len-bytes()` → byte count (the actual length of the underlying UTF-8 buffer)
+- Indexing / slicing / appending and other byte operations are based on `len-bytes()`; the two are equal for pure ASCII, and `len() < len-bytes()` when multi-byte UTF-8 is present
+
+```no
+t txt = 'hello'              ; Requires a type annotation
+n = t.len()                  ; Code point count (i64)
+b = t.len-bytes()            ; Byte count (i64)
+c = t[0]                     ; Index access (byte)
+ok = t.eq(b txt)             ; Equality comparison
+dst = t.copy()               ; Copy
+s = t.to-str()              ; Convert to str
+out = t.to-bytes()           ; Convert to []byte
+pos = t.index(sub txt)       ; Find substring
+ok = t.contains(sub txt)     ; Contains
+ok = t.starts-with(sub txt)  ; Prefix check
+ok = t.ends-with(sub txt)    ; Suffix check
+t.append(b byte)             ; Append a single byte
+t.append-str(s str)          ; Append str
+t.append-txt(t2 txt)         ; Append txt
+out = t.reverse()            ; Reverse
+out = t.slice(start, end)    ; Slice [start, end)
+r = t.compare(b txt)         ; Lexicographic comparison (-1/0/1)
 ```
 
 ### vec — Slice Operations

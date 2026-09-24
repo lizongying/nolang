@@ -74,6 +74,75 @@ type LintOptions struct {
 	// 不再被讀取。
 }
 
+// LintIneffectiveOverflow 報告「無效」的 #{overflow = ...} 註解：其管轄陳述不含
+// 整數溢出運算（例如整行僅字串拼接，中劃線是拼接而非減法），註解對溢出毫無作用，
+// 應建議刪除。採 WARNING 層級（不強制），與「未標註整數運算」的 ERROR 區分。
+//
+// 採用 OverflowAnnotationRelevance 的保守（超集）語意：relevant 集合中的陳述未必
+// 真的需要註解，但不在其中的陳述註解必定無效——因此本 lint 只會對「確定無效」的
+// 註解發出，不會誤報有效的 overflow 註解。
+func LintIneffectiveOverflow(program *parser.Program) []LintResult {
+	if program == nil {
+		return nil
+	}
+	relevant, governed := OverflowAnnotationRelevance(program)
+	if relevant == nil {
+		return nil
+	}
+	const msg = "此 #{overflow=...} 註解對應的陳述不含整數運算（如整行僅字串拼接），不會發生溢出，建議刪除。"
+	var results []LintResult
+	// 獨立成行註解節點：governed 直接給出管轄陳述。
+	for as, gov := range governed {
+		if gov == nil || !relevant[gov] {
+			results = append(results, LintResult{
+				Line:     as.Pos().Line,
+				Column:   as.Pos().Column,
+				Severity: LintWarning,
+				Source:   "nolang-overflow-ineffective",
+				Message:  msg,
+			})
+		}
+	}
+	// 附加（IDENT 起始）註解：遍歷所有陳述，檢查其 side-table 中的 overflow 條目。
+	var collect func(stmts []parser.Statement)
+	collect = func(stmts []parser.Statement) {
+		for _, stmt := range stmts {
+			if stmt == nil {
+				continue
+			}
+			if program.Sem != nil {
+				for _, e := range program.Sem.AnnotationsOf(stmt) {
+					if e != nil && e.Key == "overflow" && !e.Trailing {
+						if !relevant[stmt] {
+							results = append(results, LintResult{
+								Line:     e.Pos().Line,
+								Column:   e.Pos().Column,
+								Severity: LintWarning,
+								Source:   "nolang-overflow-ineffective",
+								Message:  msg,
+							})
+						}
+					}
+				}
+			}
+			switch v := stmt.(type) {
+			case *parser.FunctionDefinition:
+				if v.Body != nil {
+					collect(v.Body.Statements)
+				}
+			case *parser.BlockStatement:
+				collect(v.Statements)
+			case *parser.ForStatement:
+				if v.Body != nil {
+					collect(v.Body.Statements)
+				}
+			}
+		}
+	}
+	collect(program.Statements)
+	return results
+}
+
 // RunAllLints 對 program 執行全部 lint 校驗，返回匯總結果。
 // 調用者可根據 LintOptions.Strict 決定是否將 warning/hint 視為錯誤。
 //
@@ -361,6 +430,12 @@ func RunAllLints(program *parser.Program, opts LintOptions) []LintResult {
 			Severity: LintError, Source: "nolang-div-zero",
 			Message: d.Message, TraceID: d.TraceID,
 		})
+	}
+
+	// 20c-ter. 無效 overflow 註解（WARNING）：管轄陳述不含整數運算，註解對溢出
+	// 無作用，建議刪除。採保守（超集）判定，不會誤報有效註解。
+	for _, u := range LintIneffectiveOverflow(program) {
+		results = append(results, u)
 	}
 
 	// 20d. 未處理的溢出 option（編譯硬錯誤，與 20c 互補：20c 是「建議加註解」的

@@ -149,6 +149,133 @@ The `-cc` parameter specifies the C compiler backend:
 - `clang` (default) — requires LLVM installed
 - `zig` — requires Zig installed, suitable for cross-compilation
 
+## JavaScript Backend
+
+Nolang supports compiling `.no` source directly to JavaScript, with no LLVM toolchain required. The JS backend uses a **type erasure** strategy: all Nolang type annotations (`int`/`str`/`bool`/`vec[T]`/`[N]T`/`?T` etc.) are not preserved in the JS output; only the runtime behavior is generated.
+
+### Building to JavaScript
+
+```bash
+# Compile to JS (outputs to dist/<name>.js)
+no build --js main.no
+
+# Specify the output path
+no build --js -o app.js main.no
+
+# Browser mode: generate JS + HTML wrapper
+no build --js --browser main.no
+# Outputs: dist/<name>.js and dist/<name>.html
+```
+
+### Running JavaScript
+
+```bash
+# Compile to JS and run with node
+no run --js main.no
+
+# Compile to browser JS + HTML and open in the default browser
+no run --js --browser main.no
+```
+
+### JavaScript Backend Features
+
+| Feature | Description |
+| --- | --- |
+| **No LLVM required** | Emits JS source directly from the AST, with no dependency on the clang/LLVM toolchain |
+| **Type erasure** | JS is dynamically typed; Nolang type annotations are not preserved |
+| **Node.js mode** | Default target; Node APIs such as `require('fs')` are available |
+| **Browser mode** | `--browser` generates an HTML wrapper; `print()` output is redirected to the `#nolang-output` div |
+| **Platform annotations** | `#{js}` marks JS-backend-only declarations; `#{js-browser}` marks browser-only code |
+
+### JavaScript Backend Standard Library
+
+The `src/js/` directory provides JS-backend-only modules, all carrying the `#{js}` platform annotation and effective only when compiling for the JS backend:
+
+| Module | Description |
+| --- | --- |
+| `js/dom` | DOM manipulation (create-element, query-selector, set-text, set-style, etc.) |
+| `js/canvas` | Canvas 2D drawing (fill-rect, stroke, begin-path, etc.) |
+| `js/events` | Event handling (on-click, on-load) |
+| `js/storage` | localStorage (set-item, get-item) |
+| `js/fetch` | Fetch API (async fetch of URL data) |
+| `js/console-log` | console.log wrapper |
+| `js/fs-read-file` | Node.js fs.readFileSync wrapper |
+| `js/fs-write-file` | Node.js fs.writeFileSync wrapper |
+| `js/http-fetch` | fetch API wrapper (Node 18+ / browser) |
+| `js/process-exit` | process.exit wrapper |
+| `js/location` | Location API (href, search, redirect) |
+| `js/history` | History API (back, forward, push) |
+| `js/animation` | Animation frames (request-frame, cancel-frame) |
+
+### Browser Application Example
+
+```no
+; main.no — browser application
+# js/dom
+# js/canvas
+# js/events
+# js/storage
+
+; DOM: create an element and append it to body
+heading = dom.create-element('h2')
+heading.set-text('Hello from Nolang!')
+body = dom.body()
+body.append-child(heading)
+
+; events: button click
+btn = dom.create-element('button')
+btn.set-text('Click me')
+body.append-child(btn)
+events.on-click(btn, () {
+    print('button was clicked!')
+})
+
+; localStorage: save and read
+storage.set-item('greeting', 'Hello from localStorage')
+g = storage.get-item('greeting')
+print('stored:', g)
+```
+
+Build and open:
+
+```bash
+no build --js --browser main.no
+# Outputs: dist/main.js and dist/main.html
+# Open dist/main.html in the browser
+```
+
+### Builtin Function Mapping
+
+The JS backend maps Nolang builtin functions to their JavaScript equivalents:
+
+| Nolang | JavaScript |
+| --- | --- |
+| `print(x)` | `console.log(x)` |
+| `eprint(x)` | `console.error(x)` |
+| `format(...)` | string concatenation |
+| `len(x)` | `x.length` |
+| `with-len(n)` | `new Array(n)` |
+
+### Platform Annotations
+
+Use the `#{js}` and `#{js-browser}` annotations to control the platform visibility of code:
+
+```no
+; kept only when compiling for the JS backend
+#{js}
+js-helper = () {
+    print('JS only code')
+}
+
+; kept only in browser mode
+#{js-browser}
+print('running in browser mode')
+
+; kept only on the native backend
+#{mac-arm64}
+print('running on macOS ARM64')
+```
+
 ## Entry Point Rules
 
 - **main.no** — Program entry point

@@ -6944,7 +6944,7 @@ func (c *codegen) emitIndexStore(inst *Inst) error {
 		// optionPayloadOf, not `extractvalue %option %v, 1`: field 1 is the whole
 		// 24-byte slot, so a bare extractvalue yields an array where an i64 is
 		// wanted (and misses the box deref for an oversized payload).
-		plt, pl := c.optionPayloadOf(inst.Args[2], valV, valT)
+		pl, plt := c.optionPayloadOf(inst.Args[2], valV, valT)
 		if pl == "" {
 			pl, plt = valV, valT
 		}
@@ -7566,7 +7566,7 @@ func (c *codegen) emitSetField(inst *Inst) error {
 		// this, opt rejects the store as "defined with type '%option' but
 		// expected 'i64'" and the build fails under NOLANG_MIR=3.
 		if strings.HasPrefix(recvLT, "%option") && !strings.HasPrefix(fieldLT, "%option") && fieldLT != "%str-long" && fieldLT != "%vec" {
-			plt, pl := c.optionPayloadOf(inst.Args[1], valV, recvLT)
+			pl, plt := c.optionPayloadOf(inst.Args[1], valV, recvLT)
 			if pl == "" {
 				pl, plt = valV, recvLT
 			}
@@ -7604,7 +7604,7 @@ func (c *codegen) emitSetField(inst *Inst) error {
 	// rejects the store as "defined with type '%option' but expected 'i64'" and
 	// the build fails under NOLANG_MIR=3. Mirrors emitIndexStore's unwrap.
 	if strings.HasPrefix(valLT, "%option") && !strings.HasPrefix(fieldLT, "%option") && fieldLT != "%str-long" && fieldLT != "%vec" {
-		plt, pl := c.optionPayloadOf(inst.Args[1], valV, valLT)
+		pl, plt := c.optionPayloadOf(inst.Args[1], valV, valLT)
 		if pl == "" {
 			pl, plt = valV, valLT
 		}

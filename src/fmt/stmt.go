@@ -75,7 +75,7 @@ func (f *formatter) formatStatement(stmt parser.Statement) bool {
 				// 無效 overflow：被標註陳述不含整數溢出運算（如整行僅字串拼接），
 				// 註解對溢出毫無作用，`no fmt` 應移除。overflowRelevant 為 nil 時
 				// 退回舊行為（保留）。
-				if f.overflowRelevant != nil && !f.overflowRelevant[stmt] {
+				if !f.overflowEntryEffective(stmt) {
 					continue
 				}
 				if m := overflowModeStringOf(e); m != "" && !seenMode[m] {
@@ -259,12 +259,42 @@ func (f *formatter) statementEmitsSomething(stmt parser.Statement) bool {
 	return true
 }
 
+// overflowEntryEffective 報告一個 overflow 註解條目是否「有效」（其管轄陳述含整數
+// 運算，會真的發生溢出）。gov 為該 overflow 註解所管轄的陳述：獨立成行節點路徑透過
+// f.overflowGoverned 查得；附加（IDENT 起始）路徑直接以被標註陳述本身傳入。
+//
+// 當未提供 overflowRelevant / overflowGoverned（任一為 nil）時，退回「保留所有
+// overflow 註解」的舊行為，視所有 overflow 為有效。此保守設計確保無型別資訊的場景
+// （如 LSP 純格式化）不會誤刪。governed 為 nil（註解後方無被管轄陳述）亦視為無效。
+func (f *formatter) overflowEntryEffective(gov parser.Statement) bool {
+	if f.overflowRelevant == nil || f.overflowGoverned == nil {
+		return true
+	}
+	if gov == nil {
+		return false
+	}
+	return f.overflowRelevant[gov]
+}
+
 // annotationStatementEmits reports whether a standalone #{...} annotation
 // statement will actually emit output. With `#{overflow=...}` as a line
 // annotation (no more cross-statement de-duplication) every entry is emitted
-// verbatim, so any entry yields output.
+// verbatim, so any non-overflow entry — or an effective overflow entry — yields
+// output. An annotation whose only entry is an *ineffective* overflow (its
+// governed statement has no integer arithmetic) emits nothing and must report
+// false here so the enclosing gap logic does not leave a dangling blank line.
 func (f *formatter) annotationStatementEmits(s *parser.AnnotationStatement) bool {
-	return len(s.Entries) > 0
+	gov := f.overflowGoverned[s]
+	for _, e := range s.Entries {
+		if e.Key == "overflow" {
+			if f.overflowEntryEffective(gov) {
+				return true
+			}
+			continue
+		}
+		return true
+	}
+	return false
 }
 
 func (f *formatter) formatUseStatement(s *parser.UseStatement) {
@@ -800,11 +830,8 @@ func (f *formatter) formatAnnotationStatement(s *parser.AnnotationStatement) boo
 			// 字串拼接），註解對溢出毫無作用，`no fmt` 應移除。overflowRelevant /
 			// overflowGoverned 為 nil 時退回舊行為（保留）。gov 為 nil（註解後方無
 			// 被管轄陳述）亦視為無效。
-			if f.overflowRelevant != nil && f.overflowGoverned != nil {
-				gov := f.overflowGoverned[s]
-				if gov == nil || !f.overflowRelevant[gov] {
-					continue
-				}
+			if !f.overflowEntryEffective(f.overflowGoverned[s]) {
+				continue
 			}
 			if m := overflowModeStringOf(e); m != "" && !seenMode[m] {
 				seenMode[m] = true
