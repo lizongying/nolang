@@ -2,17 +2,24 @@
 ;
 ; txt 是固定 256 字节的文本类型：
 ;   - 前 255 字节存储数据（data [255]byte）
-;   - 最后 1 字节存储长度（len byte，范围 0-255）
+;   - 最后 1 字节存储长度（len byte，范围 0-255，单位是「字节」）
 ;   - 整个结构固定 256 字节，不需要堆分配
+;
+; 长度语义（与 str 对齐）：
+;   - t.len()        返回「字符（code point）数量」，等价于 t.count()
+;   - t.len-bytes()  返回「字节数量」（底层 UTF-8 缓冲区实际长度）
+;   - 内部 len 字段  仍是字节长度；索引/切片/写入等字节操作都以 len-bytes() 为准
+;   ASCII 内容下三者相等；含多字节 UTF-8 时 len() < len-bytes()
 ;
 ; 用法（必须类型标注）：
 ;   t txt = 'hello'
-;   n = t.len()
+;   n = t.len()          ; 字符数
+;   b = t.len-bytes()    ; 字节数
 ;   c = t[0]
 ;
 ; txt {
 ;     data [255]byte read-only   // 数据区域
-;     len byte read-only          // 实际长度（0-255）
+;     len byte read-only          // 字节长度（0-255）
 ; }
 ;
 ; 与 str 的区别：
@@ -25,9 +32,9 @@
 ; 基础操作
 ; ═══════════════════════════════════════════════
 
-; txt.len: 返回文本长度
+; txt.len: 返回字符（code point）数量（与 str.len 对齐；字节长度用 txt.len-bytes()）
 txt.len = () (n i64) {
-    n = .len()
+    n = .count()
 }
 
 ; txt[i]: 返回指定位置的字节值
@@ -48,13 +55,13 @@ txt.eq = (b txt) (eq bool) {
 
 ; txt.copy: 复制 txt
 txt.copy = () (dst txt) {
-    n i64 = .len()
+    n i64 = .len-bytes()
     i <- [0..n): {
 
         #{index-out=0}
         dst[i] = .byte(i)
     }
-    dst.len = .len()
+    dst.len = .len-bytes()
 }
 
 ; txt.fill: 用 byte 值填充整个数据区域
@@ -72,7 +79,7 @@ txt.clear = () {
 ; txt.empty: 判断是否为空
 txt.empty = () (yes bool) {
     yes = true
-    .len() != 0 -> yes = false
+    .len-bytes() != 0 -> yes = false
 }
 
 ; ═══════════════════════════════════════════════
@@ -81,7 +88,7 @@ txt.empty = () (yes bool) {
 
 ; txt.to-str: 将 txt 转换为 str
 txt.to-str = () (out str) {
-    n i64 = .len()
+    n i64 = .len-bytes()
     out = with-len(n)
     i <- [0..n): {
 
@@ -92,7 +99,7 @@ txt.to-str = () (out str) {
 
 ; txt.to-bytes: 将 txt 转换为 []byte
 txt.to-bytes = () (out []byte) {
-    n i64 = .len()
+    n i64 = .len-bytes()
     out = with-len(n)
     i <- [0..n): {
 
@@ -106,7 +113,7 @@ txt.to-hex = () (out str) {
 
     #{overflow=wrap}
     HEX = '0123456789ABCDEF'
-    n i64 = .len()
+    n i64 = .len-bytes()
 
     #{overflow=wrap}
     out = with-len(n * 2)
@@ -142,7 +149,6 @@ txt.from-bytes = (b []byte) (out txt) {
     n = b.len()
     n > 255 -> n = 255
     i <- [0..n): {
-
         #{index-out=0}
         out[i] = b[i]
     }
@@ -174,8 +180,8 @@ txt.ends-with = (sub txt) (yes bool) {
 
     #{overflow=wrap}
     yes = false
-    sn = sub.len()
-    n i64 = .len()
+    sn = sub.len-bytes()
+    n i64 = .len-bytes()
     sn == 0 -> yes = true
     n < sn -> yes = false
 
@@ -192,7 +198,7 @@ txt.ends-with = (sub txt) (yes bool) {
 txt.append = (b byte) {
 
     #{overflow=wrap}
-    n i64 = .len()
+    n i64 = .len-bytes()
     n >= 255 -> return
     .[n] = b
 
@@ -205,7 +211,7 @@ txt.append-str = (s str) {
 
     #{overflow=wrap}
     sn i64 = s.len-bytes()
-    n i64 = .len()
+    n i64 = .len-bytes()
 
     #{overflow=wrap}
     remain = 255 - n
@@ -224,8 +230,8 @@ txt.append-str = (s str) {
 txt.append-txt = (t txt) {
 
     #{overflow=wrap}
-    tn = t.len()
-    n i64 = .len()
+    tn = t.len-bytes()
+    n i64 = .len-bytes()
 
     #{overflow=wrap}
     remain = 255 - n
@@ -244,7 +250,7 @@ txt.append-txt = (t txt) {
 txt.truncate = (n i64) {
     rn = n
     rn > 255 -> rn = 255
-    .len() < rn -> return
+    .len-bytes() < rn -> return
     .len = rn
 }
 
@@ -255,8 +261,8 @@ txt.truncate = (n i64) {
 ; txt.compare: 字典序比较
 ; 返回 -1(a<b), 0(相等), 1(a>b)
 txt.compare = (b txt) (r i64) {
-    an i64 = .len()
-    bn = b.len()
+    an i64 = .len-bytes()
+    bn = b.len-bytes()
     min-n = an
     bn < min-n -> min-n = bn
     i <- [0..min-n): {
@@ -289,7 +295,7 @@ txt.compare = (b txt) (r i64) {
 
 ; txt.reverse: 反转文本内容
 txt.reverse = () (out txt) {
-    n i64 = .len()
+    n i64 = .len-bytes()
     i <- [0..n): {
 
         #{index-out=0, overflow=wrap}
@@ -305,7 +311,7 @@ txt.slice = (start i64, end i64) (out txt) {
 
     #{overflow=wrap}
     r-start < 0 -> r-start = 0
-    cur-len i64 = .len()
+    cur-len i64 = .len-bytes()
     r-end > cur-len -> r-end = cur-len
     r-start >= r-end -> return
 
@@ -323,7 +329,7 @@ txt.slice = (start i64, end i64) (out txt) {
 ; txt.at: 获取指定位置的 byte
 txt.at = (idx i64) (b byte) {
     b = 0
-    cur-len i64 = .len()
+    cur-len i64 = .len-bytes()
     idx < 0 -> return
     idx >= cur-len -> return
     b = .byte(idx)
@@ -375,7 +381,7 @@ txt.decode-cp = (i i64) (cp i64, clen i64) {
 ; txt.to-upper: 將文字轉為大寫（ASCII）
 ; 返回新 txt
 txt.to-upper = () (val txt) {
-    n i64 = .len()
+    n i64 = .len-bytes()
     i <- [0..n): {
         c = .byte(i)
         {
@@ -398,7 +404,7 @@ txt.to-upper = () (val txt) {
 ; txt.to-lower: 將文字轉為小寫（ASCII）
 ; 返回新 txt
 txt.to-lower = () (val txt) {
-    n i64 = .len()
+    n i64 = .len-bytes()
     i <- [0..n): {
         c = .byte(i)
         {
@@ -427,7 +433,7 @@ txt.to-lower = () (val txt) {
 txt.trim = () (val txt) {
 
     #{overflow=wrap}
-    n i64 = .len()
+    n i64 = .len-bytes()
     start <- [0..n): {
 
         #{overflow=wrap}
@@ -463,7 +469,7 @@ txt.trim = () (val txt) {
 txt.trim-char = (ch char) (val txt) {
 
     #{overflow=wrap}
-    n i64 = .len()
+    n i64 = .len-bytes()
     start = 0
     (start < n) {
 
@@ -568,7 +574,7 @@ txt.trim-char = (ch char) (val txt) {
 ; txt.repeat: 將內容重複 times 次（上限 255 位元組）
 ; 返回新 txt
 txt.repeat = (times i64) (val txt) {
-    n i64 = .len()
+    n i64 = .len-bytes()
     cap = 255
     pos = 0
     i <- [0..times): {
@@ -593,7 +599,7 @@ txt.repeat = (times i64) (val txt) {
 ; txt.count: 統計 code point 數量
 txt.count = () (cnt i64) {
     cnt = 0
-    n i64 = .len()
+    n i64 = .len-bytes()
     i = 0
     (i < n) {
 
@@ -628,8 +634,8 @@ txt.index-from = (target txt, from i64) (pos i64) {
     #{overflow=wrap}
     pos = -1
     r-from < 0 -> r-from = 0
-    n i64 = .len()
-    m = target.len()
+    n i64 = .len-bytes()
+    m = target.len-bytes()
     m == 0 -> r-from <= n -> pos = r-from
     n < m -> pos = -1
 
@@ -659,8 +665,8 @@ txt.rindex = (target txt) (pos i64) {
 
     #{overflow=wrap}
     pos = -1
-    n i64 = .len()
-    m = target.len()
+    n i64 = .len-bytes()
+    m = target.len-bytes()
     m == 0 -> pos = n
     n < m -> pos = -1
 
@@ -696,8 +702,8 @@ txt.rindex-from = (target txt, from i64) (pos i64) {
     #{overflow=wrap}
     pos = -1
     r-from < 0 -> r-from = 0
-    n i64 = .len()
-    m = target.len()
+    n i64 = .len-bytes()
+    m = target.len-bytes()
     m == 0 -> r-from <= n -> pos = n
     n < m -> pos = -1
 
@@ -797,7 +803,7 @@ txt.to-i32 = () (val ?i32) {
 
 ; txt.to-u8: 解析為 u8（範圍 0~255）
 txt.to-u8 = () (val ?u8) {
-    .len() == 0 -> {
+    .len-bytes() == 0 -> {
         val = nil
         return
     }
@@ -812,7 +818,7 @@ txt.to-u8 = () (val ?u8) {
 
         c == 43 -> {
             start = 1
-            .len() == 1 -> {
+            .len-bytes() == 1 -> {
                 val = err('invalid number: lone plus')
                 return
             }
@@ -839,7 +845,7 @@ txt.to-u8 = () (val ?u8) {
 
 ; txt.to-u16: 解析為 u16（範圍 0~65535）
 txt.to-u16 = () (val ?u16) {
-    .len() == 0 -> {
+    .len-bytes() == 0 -> {
         val = nil
         return
     }
@@ -854,7 +860,7 @@ txt.to-u16 = () (val ?u16) {
 
         c == 43 -> {
             start = 1
-            .len() == 1 -> {
+            .len-bytes() == 1 -> {
                 val = err('invalid number: lone plus')
                 return
             }
@@ -881,7 +887,7 @@ txt.to-u16 = () (val ?u16) {
 
 ; txt.to-u32: 解析為 u32（範圍 0~4294967295）
 txt.to-u32 = () (val ?u32) {
-    .len() == 0 -> {
+    .len-bytes() == 0 -> {
         val = nil
         return
     }
@@ -896,7 +902,7 @@ txt.to-u32 = () (val ?u32) {
 
         c == 43 -> {
             start = 1
-            .len() == 1 -> {
+            .len-bytes() == 1 -> {
                 val = err('invalid number: lone plus')
                 return
             }
@@ -923,7 +929,7 @@ txt.to-u32 = () (val ?u32) {
 
 ; txt.to-u64: 解析為 u64（拒絕負號）
 txt.to-u64 = () (val ?u64) {
-    .len() == 0 -> {
+    .len-bytes() == 0 -> {
         val = nil
         return
     }
@@ -952,7 +958,7 @@ txt.to-u64 = () (val ?u64) {
 
 ; txt.to-byte: 解析為 byte（與 u8 等價）
 txt.to-byte = () (val ?byte) {
-    .len() == 0 -> {
+    .len-bytes() == 0 -> {
         val = nil
         return
     }
@@ -967,7 +973,7 @@ txt.to-byte = () (val ?byte) {
 
         c == 43 -> {
             start = 1
-            .len() == 1 -> {
+            .len-bytes() == 1 -> {
                 val = err('invalid number: lone plus')
                 return
             }
@@ -1019,19 +1025,19 @@ txt.to-f32 = () (val ?f32) {
 ; txt.to-bool: 將 "true"/"false" 解析為 bool
 txt.to-bool = () (val ?bool) {
     {
-        .len() == 0 -> {
+        .len-bytes() == 0 -> {
             val = nil
             return
         }
 
-        .len() == 4 -> {
+        .len-bytes() == 4 -> {
             .byte(0) == 116 && .byte(1) == 114 && .byte(2) == 117 && .byte(3) == 101 -> {
                 val = true
                 return
             }
         }
 
-        .len() == 5 -> {
+        .len-bytes() == 5 -> {
             .byte(0) == 102 && .byte(1) == 97 && .byte(2) == 108 && .byte(3) == 115 && .byte(4) == 101 -> {
                 val = false
                 return
@@ -1048,7 +1054,7 @@ txt.to-bool = () (val ?bool) {
 ; txt.replace-char: 將所有 old-ch 替換為 new-ch（UTF-8 碼點）
 ; 返回新 txt（超過 255 位元組則截斷）
 txt.replace-char = (old-ch char, new-ch char) (val txt) {
-    n i64 = .len()
+    n i64 = .len-bytes()
     cap = 255
     pos = 0
     i = 0
@@ -1191,13 +1197,13 @@ txt.replace-char = (old-ch char, new-ch char) (val txt) {
 ; txt.replace-str: 將所有 old 子串替換為 new 子串
 ; 返回新 txt（超過 255 位元組則截斷）
 txt.replace-str = (old txt, new txt) (val txt) {
-    old.len() == 0 -> {
-        val = .slice(0, .len())
+    old.len-bytes() == 0 -> {
+        val = .slice(0, .len-bytes())
         return
     }
-    n i64 = .len()
-    old-len = old.len()
-    new-len = new.len()
+    n i64 = .len-bytes()
+    old-len = old.len-bytes()
+    new-len = new.len-bytes()
     cap = 255
     pos = 0
     i = 0
@@ -1260,17 +1266,17 @@ txt.replace-n = (old txt, new txt, n i64) (val txt) {
 
     #{overflow=wrap}
     n <= 0 -> {
-        val = .slice(0, .len())
+        val = .slice(0, .len-bytes())
         return
     }
-    old.len() == 0 -> {
-        val = .slice(0, .len())
+    old.len-bytes() == 0 -> {
+        val = .slice(0, .len-bytes())
         return
     }
     parts = .split(old)
     np = parts.len()
     np <= 1 -> {
-        val = .slice(0, .len())
+        val = .slice(0, .len-bytes())
         return
     }
 
@@ -1292,15 +1298,15 @@ txt.replace-n = (old txt, new txt, n i64) (val txt) {
                 i <= repl -> {
 
                     #{overflow=wrap}
-                    total = total + new.len()
+                    total = total + new.len-bytes()
                 }
 
-                -> total = total + old.len()
+                -> total = total + old.len-bytes()
             }
         }
 
         #{index-out=0, overflow=wrap}
-        total = total + parts[i].len()
+        total = total + parts[i].len-bytes()
     }
     total > 255 -> total = 255
     cap = 255
@@ -1311,7 +1317,7 @@ txt.replace-n = (old txt, new txt, n i64) (val txt) {
         i > 0 -> {
             sep = new
             i > repl -> sep = old
-            j <- [0..sep.len()): {
+            j <- [0..sep.len-bytes()): {
                 pos < cap -> {
 
                     #{index-out=0, overflow=wrap}
@@ -1321,9 +1327,16 @@ txt.replace-n = (old txt, new txt, n i64) (val txt) {
             }
         }
 
-        #{index-out=0}
-        s = parts[i]
-        j <- [0..s.len()): {
+        parts[i]: {
+            ok -> {
+                s = it
+            }
+
+            -> {
+                s = ''
+            }
+        }
+        j <- [0..s.len-bytes()): {
 
             #{overflow=wrap}
             pos < cap -> {
@@ -1344,8 +1357,8 @@ txt.replace-n = (old txt, new txt, n i64) (val txt) {
 ; txt.split: 用分隔符分割為 []txt
 txt.split = (sep txt) (out []txt) {
     result []txt
-    sep.len() == 0 -> {
-        result.push(.slice(0, .len()))
+    sep.len-bytes() == 0 -> {
+        result.push(.slice(0, .len-bytes()))
         out = result
         return
     }
@@ -1357,10 +1370,10 @@ txt.split = (sep txt) (out []txt) {
         result.push(.slice(start, pos))
 
         #{overflow=wrap}
-        start = pos + sep.len()
+        start = pos + sep.len-bytes()
         pos = .index-from(sep, start)
     }
-    result.push(.slice(start, .len()))
+    result.push(.slice(start, .len-bytes()))
     out = result
 }
 
@@ -1368,8 +1381,8 @@ txt.split = (sep txt) (out []txt) {
 ; sep txt, maxsplit i64: 最大分割次數（<=0 不限制）
 txt.split-n = (sep txt, maxsplit i64) (out []txt) {
     result []txt
-    sep.len() == 0 -> {
-        result.push(.slice(0, .len()))
+    sep.len-bytes() == 0 -> {
+        result.push(.slice(0, .len-bytes()))
         out = result
         return
     }
@@ -1384,20 +1397,20 @@ txt.split-n = (sep txt, maxsplit i64) (out []txt) {
 
         #{overflow=wrap}
         count >= maxsplit -> {
-            result.push(.slice(start, .len()))
+            result.push(.slice(start, .len-bytes()))
             out = result
             return
         }
         result.push(.slice(start, pos))
 
         #{overflow=wrap}
-        start = pos + sep.len()
+        start = pos + sep.len-bytes()
 
         #{overflow=wrap}
         count = count + 1
         pos = .index-from(sep, start)
     }
-    result.push(.slice(start, .len()))
+    result.push(.slice(start, .len-bytes()))
     out = result
 }
 
@@ -1413,7 +1426,7 @@ txt-join = (parts []txt, sep txt) (out txt) {
     pos = 0
     i <- [0..n): {
         i > 0 -> {
-            sj <- [0..sep.len()): {
+            sj <- [0..sep.len-bytes()): {
                 pos < cap -> {
 
                     #{index-out=0, overflow=wrap}
@@ -1425,9 +1438,16 @@ txt-join = (parts []txt, sep txt) (out txt) {
             }
         }
 
-        #{index-out=0}
-        s = parts[i]
-        sl i64 = s.len()
+        parts[i]: {
+            ok -> {
+                s = it
+            }
+
+            -> {
+                s = ''
+            }
+        }
+        sl i64 = s.len-bytes()
         sj <- [0..sl): {
             pos < cap -> {
 
@@ -1444,7 +1464,7 @@ txt-join = (parts []txt, sep txt) (out txt) {
 
 ; txt.fields: 按空白分割為 []txt（連續空白視為單一分隔符）
 txt.fields = () (out []txt) {
-    n i64 = .len()
+    n i64 = .len-bytes()
     n == 0 -> return
     result []txt
     start = -1
@@ -1469,7 +1489,7 @@ txt.fields = () (out []txt) {
 
 ; txt.lines: 按換行符分割為 []txt（支援 \n 與 \r\n）
 txt.lines = () (out []txt) {
-    n i64 = .len()
+    n i64 = .len-bytes()
     n == 0 -> return
     result []txt
     start = 0
@@ -1535,19 +1555,19 @@ txt-hex-val = (c i64) (v i64) {
 ; 返回 Option：ok(txt) / nil（空）/ err('msg')
 txt.from-hex = () (out ?txt) {
     {
-        .len() == 0 -> {
+        .len-bytes() == 0 -> {
             out = nil
             return
         }
 
-        .len() % 2 != 0 -> {
+        .len-bytes() % 2 != 0 -> {
             out = err('odd-length hex string')
             return
         }
     }
 
     #{overflow=wrap}
-    n i64 = .len() / 2
+    n i64 = .len-bytes() / 2
     out2 txt
     i <- [0..n): {
 
@@ -1574,9 +1594,9 @@ txt.from-hex = () (out ?txt) {
 
 ; txt.eq-full: 全等比較兩個 txt（長度 + 逐位元組）
 txt.eq-full = (b txt) (yes bool) {
-    .len() != b.len() -> return
+    .len-bytes() != b.len-bytes() -> return
     yes = true
-    n i64 = .len()
+    n i64 = .len-bytes()
     i <- [0..n): {
         .byte(i) != b.byte(i) -> {
             yes = false
