@@ -15,7 +15,7 @@ import (
 	"github.com/lizongying/nolang/builtin"
 	"github.com/lizongying/nolang/cache"
 	"github.com/lizongying/nolang/lexer"
-	"github.com/lizongying/nolang/package"
+	pkg "github.com/lizongying/nolang/package"
 	"github.com/lizongying/nolang/parser"
 )
 

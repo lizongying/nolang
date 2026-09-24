@@ -10645,21 +10645,21 @@ func (c *codegen) emitCallBody(f *Function, cf *Function, inst *Inst, calleeName
 					c.loadSeq++
 					freg := fmt.Sprintf("%%bf%d", c.loadSeq)
 					c.sb.WriteString(fmt.Sprintf("  %s = call %%str-long @str_from_const(ptr getelementptr inbounds ([5 x i8], ptr @.mir.false, i64 0, i64 0), i64 5)\n", freg))
-				c.loadSeq++
-				conv := fmt.Sprintf("%%bc%d", c.loadSeq)
-				c.sb.WriteString(fmt.Sprintf("  %s = select i1 %s, %%str-long %s, %%str-long %s\n", conv, av, treg, freg))
-				av = conv
-				argT = "%str-long"
-			} else if plt == "%str-long" && argT == "%txt" {
-				// txt -> str argument coercion, the mirror of the %txt branch
-				// further down. `show(t)` with `show = (s str)` used to fall
-				// through to `store %str-long %txt_value, %str-long* %carg`,
-				// which opt-verify rejects. @str_from_const mallocs an
-				// independent buffer, so the callee's str owns its own heap and
-				// the caller's txt keeps its inline storage.
-				av = c.strValueFromTxtValue(av)
-				argT = "%str-long"
-			}
+					c.loadSeq++
+					conv := fmt.Sprintf("%%bc%d", c.loadSeq)
+					c.sb.WriteString(fmt.Sprintf("  %s = select i1 %s, %%str-long %s, %%str-long %s\n", conv, av, treg, freg))
+					av = conv
+					argT = "%str-long"
+				} else if plt == "%str-long" && argT == "%txt" {
+					// txt -> str argument coercion, the mirror of the %txt branch
+					// further down. `show(t)` with `show = (s str)` used to fall
+					// through to `store %str-long %txt_value, %str-long* %carg`,
+					// which opt-verify rejects. @str_from_const mallocs an
+					// independent buffer, so the callee's str owns its own heap and
+					// the caller's txt keeps its inline storage.
+					av = c.strValueFromTxtValue(av)
+					argT = "%str-long"
+				}
 				c.loadSeq++
 				slot := fmt.Sprintf("%%carg%d", c.loadSeq)
 				c.sb.WriteString(fmt.Sprintf("  %s = alloca %s\n", slot, plt))

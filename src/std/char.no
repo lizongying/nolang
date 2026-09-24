@@ -145,8 +145,17 @@ char.to-bytes = () (out []byte) {
     out = with-len(len)
     i <- [0..len): {
 
-        #{index-out=0}
-        out[i] = buf[i]
+        {
+            __idx_out_149_16: {
+                ok -> {
+                    out[i] = it
+                }
+
+                -> {
+                    out[i] = =
+                }
+            }
+        }
     }
 }
 
@@ -261,7 +270,7 @@ char.to-txt = () (out txt) {
     out = with-len(m)
     j <- [0..m): {
 
-        #{index-out=0, overflow=saturate}
-        out[j] = tmp[j]
+        #{index-out=0}
+        out.set-byte(j, tmp[j])
     }
 }

@@ -241,6 +241,8 @@ s = s.slice(0, 5)             ; code-point truncation (consistent with s[i])
 s = s.slice-bytes(0, 5)      ; byte truncation
 ```
 
+> **`str` writes are byte-level, `txt` writes are code-point level (intentional divergence)**: the `s[i] = v` above treats `v` as a single **byte** written directly into slot `i` of the underlying buffer (`len` becomes `max(len, i+1)`). For the fixed string `txt`, `t[i] = c` works on **code points**: `c` is re-encoded as UTF-8, the trailing bytes shift, it appends when `i` equals the code-point count, and bytes beyond the 255-byte cap are dropped. Both reads (`s[i]` / `t[i]`) return a code-point `char`; only the write semantics differ. To do a raw byte-level write on a `txt`, use `t.set-byte(i, b)`.
+
 ## Pre-allocation (Builtin Syntax)
 
 The three builtins `with-cap`, `with-len`, and `with-cap-len` pre-allocate heap memory, avoiding repeated reallocation on subsequent `push` / `s[i]=` operations:

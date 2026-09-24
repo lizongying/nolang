@@ -1105,6 +1105,7 @@ txt.replace-char = (old-ch char, new-ch char) (val txt) {
         #{overflow=wrap}
         {
             cp == old-ch -> {
+
                 ; 先把 new-ch 依 UTF-8 編成 1~4 個位元組，用**迴圈**逐位元組 set-byte 寫入
                 ; （不可用多個相鄰 `pos < cap -> { }` 短路易式陳述——實測只有第一個會執行，
                 ;  與 replace-str 相同的迴圈寫法才可靠。）
@@ -1302,7 +1303,6 @@ txt.replace-n = (old txt, new txt, n i64) (val txt) {
                 }
             }
         }
-
         parts[i]: {
             ok -> {
                 s = it
@@ -1413,7 +1413,6 @@ txt-join = (parts []txt, sep txt) (out txt) {
                 }
             }
         }
-
         parts[i]: {
             ok -> {
                 s = it

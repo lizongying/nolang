@@ -1,0 +1,62 @@
+; test-txt-codepoint: txt 码点索引回归（读 + 写，MIR 后端）
+; 每次 `no run` 输出应为纯 ok 行；任何 FAIL 行都代表回归。
+
+ck = (label str, cond bool) {
+    ! cond -> print('FAIL', label)
+    cond -> print('ok', label)
+}
+
+; ── 读取：码点索引 → char（UTF-8 解码）──
+t txt = 'A中B'
+ck('read-ascii-0', t[0] == 65)
+ck('read-cjk-1', t[1] == 20013)
+ck('read-ascii-2', t[2] == 66)
+ck('read-oob-neg1', t[3] == -1)
+
+; 4 字节码点（🌍 = U+1F30D）
+e txt = '🌍x'
+ck('read-emoji-0', e[0] == 127757)
+ck('read-emoji-1', e[1] == 120)
+ck('count-mixed', e.count() == 2)
+ck('bytes-mixed', e.len-bytes() == 5)
+
+; ── 写入：增长（1 字节 → 3 字节，后移尾部）──
+g txt = 'aX'
+g[0] = "中"
+ck('grow-cp0', g[0] == 20013)
+ck('grow-cp1', g[1] == 88)
+ck('grow-bytes', g.len-bytes() == 4)
+ck('grow-count', g.count() == 2)
+
+; ── 写入：收缩（3 字节 → 1 字节）──
+s txt = '中X'
+s[0] = "a"
+ck('shrink-cp0', s[0] == 97)
+ck('shrink-cp1', s[1] == 88)
+ck('shrink-bytes', s.len-bytes() == 2)
+
+; ── 写入：在 count 处追加 ──
+w txt = 'ab'
+w[2] = "中"
+ck('append-cp2', w[2] == 20013)
+ck('append-bytes', w.len-bytes() == 5)
+ck('append-count', w.count() == 3)
+
+; ── 255 字节上限：填满后超界的码点写入被丢弃 ──
+b txt = ''
+i <- [0..300): {
+    b.append(97)
+}
+ck('cap-full-bytes', b.len-bytes() == 255)
+ck('cap-full-count', b.count() == 255)
+b[255] = "中"
+ck('cap-drop-bytes', b.len-bytes() == 255)
+ck('cap-tail-intact', b[254] == 97)
+
+; ── set-byte / byte：原始字节读写（长度不变）──
+r txt = 'abc'
+r.set-byte(0, 90)
+ck('setbyte-raw', r.byte(0) == 90)
+ck('setbyte-cp', r[0] == 90)
+ck('setbyte-len', r.len-bytes() == 3)
+print('done')

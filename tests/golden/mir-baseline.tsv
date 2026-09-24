@@ -461,3 +461,4 @@
 0 5934c1f36f5122b8554ec7958744e7013b486f142def4d93911cca6ecab479c2 tests/zz-min-cond3.no
 0 5891b5b522d5df086d0ff0b110fbd9d21bb4fc7163af34d08286a2e846f6be03 tests/zz-pushtest.no
 0 d0db33b46f819ab0fdcc12e5ce5fef7c33e74d036940e5f0d7535e83aab5146d tests/modfn-builtin-collision.no
+0 ef278381fbbfe77c489767721ec9f45a4417ee53de0b9d3df40045696ea62846 tests/txt-codepoint.no

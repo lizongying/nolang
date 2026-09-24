@@ -25,7 +25,7 @@ Nolang 型別到 LLVM 的對映關係：
 - **變長數組 `[]t`**：底層 `{ t*, i64 }`（data, len）
 - **定長數組 `[n]t`**：LLVM 固定大小陣列
 - **字串 `str`**：堆分配的位元組序列 `{*byte, i64, i64}`（data, len, cap），支援 `s[i]`、`s[i..j]`、`s + t`
-- **固定字串 `txt`**：固定 256 字節結構 `{ [255]byte data, byte len }`，前 255 字節存儲數據，最後 1 字節存儲**字節**長度（0-255），無需堆分配，必須類型標註（`t txt = 'abc'`）；`t.len()` 回傳 code point 數量（與 `str` 對齊，等價 `t.count()`），`t.len-bytes()` 回傳字節數量
+- **固定字串 `txt`**：固定 256 字節結構 `{ [255]byte data, byte len }`，前 255 字節存儲數據，最後 1 字節存儲**字節**長度（0-255），無需堆分配，必須類型標註（`t txt = 'abc'`）；`t.len()` 回傳 code point 數量（與 `str` 對齊，等價 `t.count()`），`t.len-bytes()` 回傳字節數量；索引 `t[i]` 讀寫均以**碼點**為單位——讀回該碼點的 `char`（越界回傳 `-1`），寫入 `t[i] = c` 會把 `c` 重新 UTF-8 編碼並後移尾部字節（`i` 等於碼點數時為追加，總字節長超過 255 的部分丟棄）；字節級原始讀寫使用成對的 `t.byte(i)` / `t.set-byte(i, b)`。注意 `str` 的 `s[i] = v` 仍是**字節級**寫入，與 `txt` 在此有意分叉
 - **列舉/Union**：`option` tagged enum（`ok t` / `nil` / `err str`）
 - **結構體**：必須多行定義，欄位不加逗號
 - **配列**：底層 linked-hash-map
