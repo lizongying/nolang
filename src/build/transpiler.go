@@ -330,10 +330,16 @@ func NewTranspiler(pkg *Package) *Transpiler {
 
 // SetTargetPlatform sets the target (GOOS, GOARCH) for platform-variant filtering
 // during code generation. Empty strings fall back to the host runtime platform.
-// This is propagated to the underlying LLVM generator before Generate is called.
+// This is propagated to the underlying LLVM generator before Generate is called,
+// and to the MIR backend (mir.SetTargetPlatform) so `-target` drives BOTH the
+// #{mac-*}/#{linux-*} annotation filter (src/mir/platform.go) and the
+// target-specific C symbols in the built-in shims (errno, stdin, struct stat
+// layout, ...). Without the MIR side, a darwin binary built on a Linux host
+// linked against glibc symbols (___errno_location, _stdin) and failed to link.
 func (t *Transpiler) SetTargetPlatform(goos, goarch string) {
 	t.targetGoos = goos
 	t.targetGoarch = goarch
+	mir.SetTargetPlatform(goos, goarch)
 }
 
 // SetNoBoundsCheck configures whether bounds checks are skipped in generated code.
@@ -2533,11 +2539,12 @@ func (t *Transpiler) CompileTarget(source string, _ Target) (string, error) {
 	// legacy HIR-based generator both lived in src/build/llvm/ and were removed
 	// once the full-corpus gate was clean (docs/MIR_DESIGN.md §13.3.13).
 	//
-	// targetGoos/targetGoarch are still honoured, but in the merge pass above
-	// (checker.MatchesTargetPlatform at the std-module import sites), so IMPORTED
-	// platform variants follow `-target`. A MAIN-file variant is left to the
-	// backend, which filters those by HOST platform (src/mir/platform.go) — see
-	// the cross-compilation caveat in §15.
+	// targetGoos/targetGoarch are honoured in two places: the merge pass above
+	// (checker.MatchesTargetPlatform at the std-module import sites) and the MIR
+	// backend (mir.SetTargetPlatform, set from SetTargetPlatform), which filters
+	// MAIN-file #{platform} variants and picks target-specific C symbols. The
+	// backend still falls back to the host when the triple did not resolve to a
+	// complete (goos, goarch) pair — see src/mir/platform.go.
 	var ir string
 	{
 		if os.Getenv("NOLANG_DEBUG_SELF") != "" {

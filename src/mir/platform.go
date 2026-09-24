@@ -2,20 +2,66 @@ package mir
 
 import (
 	"runtime"
+	"sync/atomic"
 
 	"github.com/lizongying/nolang/hir"
 	nopkg "github.com/lizongying/nolang/package"
 )
 
-// mirTargetPlatform returns the (goos, goarch) pair the MIR backend lowers for.
+// mirPlatform is a (goos, goarch) pair set by the driver to declare the
+// compilation target. Fields mirror the runtime.GOOS/GOARCH vocabulary so the
+// same string comparisons work for host and target alike.
+type mirPlatform struct{ goos, goarch string }
+
+// mirTarget holds the -target platform. nil = not set → lower for the host.
+var mirTarget atomic.Pointer[mirPlatform]
+
+// SetTargetPlatform declares the (GOOS, GOARCH) pair the MIR backend compiles
+// for. The build driver calls it from Transpiler.SetTargetPlatform with the
+// values parsed from `-target <triple>`. Empty strings reset it to the host
+// fallback (native builds, and any target the triple parser could not fully
+// resolve), which is also what an unset target means.
 //
-// The MIR pipeline has no target-platform plumbing of its own: it lowers for
-// the HOST, exactly like the runtime shims in builtin_call.go which branch on
-// runtime.GOOS. Cross-compilation under NOLANG_MIR=3 is therefore unsupported
-// (the C prelude and the syscall shims are host-specific too), so the host
-// triple is the honest answer here rather than a silently wrong one.
+// Before this existed the MIR backend lowered EVERYTHING for the host:
+// nodeMatchesPlatform picked platform annotation variants by runtime.GOOS, and
+// the C shims in builtin_call.go / forward_call.go hardcoded host symbols
+// (glibc's __errno_location, Linux's stdin). Cross-compiling from a Linux
+// runner to darwin then linked a macOS binary against ___errno_location and
+// _stdin — symbols that only exist in glibc — and the link died on undefined
+// symbols even though the #{mac-*}/#{linux-*} annotations were ALSO filtered
+// by the wrong platform.
+func SetTargetPlatform(goos, goarch string) {
+	if goos == "" || goarch == "" {
+		mirTarget.Store(nil)
+		return
+	}
+	mirTarget.Store(&mirPlatform{goos: goos, goarch: goarch})
+}
+
+// mirTargetPlatform returns the (goos, goarch) pair the MIR backend lowers
+// for: the -target platform when SetTargetPlatform declared one, the host
+// otherwise.
 func mirTargetPlatform() (string, string) {
+	if p := mirTarget.Load(); p != nil {
+		return p.goos, p.goarch
+	}
 	return runtime.GOOS, runtime.GOARCH
+}
+
+// targetGOOS / targetGOARCH are the single source of truth for every
+// platform-dependent decision in lowering and codegen: annotation filtering,
+// libc symbol names (__errno_location vs __error, stdin vs __stdinp),
+// struct layouts, errno/fcntl constants. They must be used INSTEAD OF
+// runtime.GOOS/GOARCH so a -target build emits code for the TARGET, not the
+// machine running the compiler.
+func targetGOOS() string {
+	goos, _ := mirTargetPlatform()
+	return goos
+}
+
+func targetGOARCH() string {
+	_, goarch := mirTargetPlatform()
+	return goarch
 }
 
 // nodeMatchesPlatform reports whether a HIR node carrying platform annotations

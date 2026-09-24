@@ -26,7 +26,9 @@ import (
 //
 // Every test derives the expected platform from the HOST (mirTargetPlatform)
 // instead of hard-coding darwin/arm64, so the suite stays meaningful on any
-// machine that has a key in package.PlatformKeys.
+// machine that has a key in package.PlatformKeys. The -target override
+// (SetTargetPlatform) is covered by TestSetTargetPlatformOverridesHostFiltering
+// at the bottom of this file.
 // ---------------------------------------------------------------------------
 
 // hostPlatformKey returns the annotation key denoting the platform the MIR
@@ -283,5 +285,71 @@ func TestFunctionBodyPlatformVariantIsNotFiltered(t *testing.T) {
 	}
 	if len(mod.Globals) != 0 {
 		t.Errorf("in-body lets must not be materialised as globals, got %v", globalNames(mod))
+	}
+}
+
+// --- the -target override (SetTargetPlatform) ------------------------------
+
+// TestSetTargetPlatformOverridesHostFiltering is the cross-compilation
+// regression: a darwin binary built on a Linux runner used to keep the LINUX
+// variants of #{linux-*}/#{mac-*} pairs (the host always won) and the C shims
+// emitted glibc symbols (__errno_location, stdin) into the Mach-O module —
+// linking failed with "undefined symbol: ___errno_location" and
+// "undefined symbol: _stdin". After the fix, nodeMatchesPlatform (and the
+// targetGOOS/targetGOARCH consumers built on the same mirTargetPlatform) follow
+// the declared target instead of the host.
+func TestSetTargetPlatformOverridesHostFiltering(t *testing.T) {
+	host := hostPlatformKey(t)
+	other := otherPlatformKey(t, host)
+	m := nopkg.PlatformKeys[other]
+	defer SetTargetPlatform("", "") // restore the host fallback for later tests
+	SetTargetPlatform(m.GOOS, m.GOARCH)
+
+	// The filter decision must flip relative to the host default.
+	pkg := parseHIR(t, fmt.Sprintf("#{%s}\nV = 1\n", host))
+	if nodeMatchesPlatform(pkg, pkg.Top[0]) {
+		t.Errorf("#{%s} must be filtered out when the target is %s/%s", host, m.GOOS, m.GOARCH)
+	}
+	pkg = parseHIR(t, fmt.Sprintf("#{%s}\nV = 2\n", other))
+	if !nodeMatchesPlatform(pkg, pkg.Top[0]) {
+		t.Errorf("#{%s} must be kept when the target is %s/%s", other, m.GOOS, m.GOARCH)
+	}
+
+	// End to end through LowerHIR: the TARGET variant's value survives, the
+	// host variant's does not — the exact opposite of
+	// TestScriptModePlatformVariantKeepsHostValue on the same machine.
+	src := fmt.Sprintf("#{%s}\nPV = 111\n\n#{%s}\nPV = 222\n\nprint(PV)\n", host, other)
+	mod := lowerHIR(t, src)
+	if len(mod.Globals) != 1 {
+		t.Fatalf("expected exactly 1 global (the target variant), got %d: %v", len(mod.Globals), globalNames(mod))
+	}
+	if g := mod.Globals[0]; !strings.Contains(g.ConstText, "222") {
+		t.Errorf("global %q holds %q, want the TARGET variant value 222", g.Name, g.ConstText)
+	}
+	if hasConstInt(mod, 111) {
+		t.Errorf("the host variant (111) leaked into a %s/%s build; MIR dump:\n%s", m.GOOS, m.GOARCH, mod.String())
+	}
+}
+
+// TestSetTargetPlatformEmptyFallsBackToHost: an unset or partially-resolved
+// target (native builds, unparseable triples) must keep the pre-fix host
+// behavior — exactly the host variant survives.
+func TestSetTargetPlatformEmptyFallsBackToHost(t *testing.T) {
+	host := hostPlatformKey(t)
+	defer SetTargetPlatform("", "")
+	SetTargetPlatform("", "")
+	goos, goarch := mirTargetPlatform()
+	if goos != runtime.GOOS || goarch != runtime.GOARCH {
+		t.Errorf("mirTargetPlatform() = %s/%s after reset, want host %s/%s", goos, goarch, runtime.GOOS, runtime.GOARCH)
+	}
+	// A partial target must fall back too (empty component is never a real GOOS/GOARCH).
+	SetTargetPlatform("", "amd64")
+	if goos, _ := mirTargetPlatform(); goos != runtime.GOOS {
+		t.Errorf("partial target kept goarch but goos = %q, want host %q", goos, runtime.GOOS)
+	}
+	src := fmt.Sprintf("#{%s}\nPV = 111\n\nprint(PV)\n", host)
+	mod := lowerHIR(t, src)
+	if len(mod.Globals) != 1 || !strings.Contains(mod.Globals[0].ConstText, "111") {
+		t.Errorf("host fallback lost the host variant: %v", globalNames(mod))
 	}
 }

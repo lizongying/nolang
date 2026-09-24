@@ -1557,6 +1557,52 @@ func (p *Parser) buildMatchDesugar(sm *SurfaceMatch) Expression {
 		return nil
 	}
 
+	// 索引表達式主體（如 `parts[i]`）的安全索引回傳 Option（?elem）。當 match
+	// 是 option match（arm 含 ok/nil/err 或 `ok ->`）時，把主體歸一化為合成的
+	// ?elem 區域變數，複用識別符 option-match desugar 路徑：
+	//
+	//   `parts[i]: { ok -> ... -> ... }`  →
+	//   `if 1 { __match_subj_L_C ?elem = parts[i]; __match_subj_L_C: { ok -> ... -> ... } }`
+	//
+	// 這樣 `it` 正確綁定 payload、條件走 tag 比較，而非退化成
+	// `streq(parts[i], '')` 字串比較（那會讓 `s = it` 變成 void，codegen 後
+	// 報 "receiver has no slot"）。歸一化只在 option match 上觸發：值 match
+	// （如 `arr[i]: { 0 -> }`）保持原本的裸元素比對，不受影響。
+	origMatched := matched
+	subjName := ""
+	subjElem := ""
+	if idx, ok := matched.(*IndexExpression); ok && p.isSafeIndexBase(idx) {
+		isOptMatch := false
+		for _, a := range arms {
+			if a.isDotVal {
+				isOptMatch = true
+				break
+			}
+			if ident, ok := a.condition.(*Identifier); ok {
+				if ident.Value == "ok" || ident.Value == "nil" || ident.Value == "err" {
+					isOptMatch = true
+					break
+				}
+			} else if _, ok := a.condition.(*NilLiteral); ok {
+				isOptMatch = true
+				break
+			}
+		}
+		if isOptMatch {
+			if elem := p.inferIndexElemType(idx); elem != "" {
+				subjElem = elem
+				subjName = fmt.Sprintf("__match_subj_%d_%d", tok.Line, tok.Column)
+				subjType := "?" + elem
+				if strings.HasPrefix(elem, "?") {
+					subjType = elem
+				}
+				p.sem.SetFuncVarType(p.curFuncName, subjName, subjType)
+				p.setVarType(subjName, subjType)
+				matched = &Identifier{Token: tok, Value: subjName}
+			}
+		}
+	}
+
 	// 類型推斷結果取自語義副表（Resolver pass 寫入 p.sem），不再依賴解析期快照。
 	// Use function-scoped lookup (curFuncName) to avoid cross-function type
 	// pollution when same-named locals exist in different functions.
@@ -2161,6 +2207,32 @@ func (p *Parser) buildMatchDesugar(sm *SurfaceMatch) Expression {
 		p.sem.SetRTFlag(ifExpr, RTBareMatch|RTMatchWrapper)
 	}
 
+	// 索引主體歸一化：把 `let __match_subj ?elem = <orig index>` 包在 `if 1 { ... }`
+	// 外層，使 match 主體（__match_subj）成為安全索引產生的 %option 變數，
+	// 後續 arm 的 `it` 綁定與 `== ok/nil/err` 條件都走識別符 option 路徑。
+	if subjName != "" && subjElem != "" && ifExpr != nil {
+		subjAssign := &LetStatement{
+			Token:       tok,
+			Name:        &Identifier{Token: tok, Value: subjName},
+			IsSynthetic: true,
+			Type:        &NullableType{Token: tok, Type: &NamedType{Token: tok, Value: subjElem}},
+			Value:       origMatched,
+		}
+		ifExpr = &IfExpression{
+			Token:     tok,
+			Condition: &IntegerLiteral{Token: tok, Value: 1},
+			Consequence: &BlockStatement{
+				Token: tok,
+				Statements: []Statement{
+					subjAssign,
+					&ExpressionStatement{Token: tok, Expression: ifExpr},
+				},
+			},
+			MatchedExpr: &Identifier{Token: tok, Value: subjName},
+		}
+		p.sem.SetRTFlag(ifExpr, RTBareMatch|RTMatchWrapper)
+	}
+
 	return ifExpr
 }
 
@@ -2256,8 +2328,11 @@ func (p *Parser) desugarRangeCondition(tok lexer.Token, matched Expression, rng 
 // binding with Type = nil is created. The codegen determines the type from
 // g.varTypes at generation time.
 func (p *Parser) buildItBinding(tok lexer.Token, matched Expression) *LetStatement {
-	_, ok := matched.(*Identifier)
-	if !ok {
+	// 識別符與索引表達式（如 `parts[i]`）都可作為 option-match 主體：索引主體
+	// 回傳的選項 rvalue 需綁定到 `it`，後續臂體 `s = it` 才能取到 payload。
+	switch matched.(type) {
+	case *Identifier, *IndexExpression:
+	default:
 		return nil
 	}
 	// Create the binding regardless of whether the type is known at parse time.

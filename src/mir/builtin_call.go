@@ -22,7 +22,6 @@ package mir
 import (
 	"fmt"
 	"os"
-	"runtime"
 	"strings"
 
 	"github.com/lizongying/nolang/builtin"
@@ -1276,7 +1275,7 @@ func (c *codegen) emitBuiltinMath(inst *Inst, ff string) error {
 }
 
 // emitBuiltinArch lowers `get-arch()`: the CPU architecture as a compile-time
-// constant string. Legacy derives it from runtime.GOARCH and heap-allocates it
+// constant string. Legacy derives it from the GOARCH vocabulary and heap-allocates it
 // so emitHeapFree can release it; MIR does the same through @str_from_const
 // (which mallocs), keeping ownership uniform with every other MIR string.
 func (c *codegen) emitBuiltinArch(inst *Inst) error {
@@ -1287,7 +1286,7 @@ func (c *codegen) emitBuiltinArch(inst *Inst) error {
 	if dstSlot == "" {
 		return fmt.Errorf("builtin get-arch: no result slot")
 	}
-	arch := runtime.GOARCH
+	arch := targetGOARCH()
 	c.global(fmt.Sprintf("@.mir.arch = private constant [%d x i8] c\"%s\"", len(arch), dataStr(arch)))
 	r := c.treg("arch")
 	c.sb.WriteString(fmt.Sprintf("  %s = call %%str-long @str_from_const(i8* getelementptr inbounds ([%d x i8], [%d x i8]* @.mir.arch, i64 0, i64 0), i64 %d)\n",
@@ -2402,7 +2401,7 @@ func (c *codegen) emitBuiltinUname(inst *Inst) error {
 	}
 
 	fieldLen := int64(256)
-	if runtime.GOOS == "linux" {
+	if targetGOOS() == "linux" {
 		fieldLen = 65
 	}
 	totalSize := fieldLen * 5
@@ -2439,7 +2438,7 @@ func (c *codegen) emitBuiltinUname(inst *Inst) error {
 // Returns the fd (>=0 on success, -1 on error). Mirrors the legacy backend
 // (build/llvm/call_stdlib.go net-icmp-open), which emits the @socket call inline
 // rather than through a C shim. The OS-specific sockType is chosen at codegen
-// time from runtime.GOOS (the prelude is compiled for the host).
+// time from the compilation target (see targetGOOS in platform.go).
 func (c *codegen) emitBuiltinNetIcmpOpen(inst *Inst) error {
 	dstSlot := c.valSlot[inst.Dst]
 	if dstSlot == "" {
@@ -2450,7 +2449,7 @@ func (c *codegen) emitBuiltinNetIcmpOpen(inst *Inst) error {
 		dstLT = "i64"
 	}
 	sockType := int32(3) // SOCK_RAW (Linux)
-	if runtime.GOOS == "darwin" {
+	if targetGOOS() == "darwin" {
 		sockType = 2 // SOCK_DGRAM (macOS unprivileged ICMP)
 	}
 	c.decl("declare i32 @socket(i32, i32, i32)")
@@ -2490,7 +2489,7 @@ func (c *codegen) emitBuiltinNetDial(inst *Inst) error {
 	}
 	_, portReg := c.loadVal(inst.Args[1])
 
-	darwin := runtime.GOOS == "darwin"
+	darwin := targetGOOS() == "darwin"
 	familyOff := int64(0)
 	if darwin {
 		familyOff = 1
@@ -2581,7 +2580,7 @@ func (c *codegen) emitBuiltinNetListen(inst *Inst) error {
 	}
 	_, portReg := c.loadVal(inst.Args[1])
 
-	darwin := runtime.GOOS == "darwin"
+	darwin := targetGOOS() == "darwin"
 	familyOff := int64(0)
 	if darwin {
 		familyOff = 1
@@ -2812,7 +2811,7 @@ func (c *codegen) emitBuiltinNetAcceptNb(inst *Inst) error {
 	c.decl("@.mir.errno = external global i32")
 	// fcntl(fd, F_SETFL=4, O_NONBLOCK) — macOS 0x0004, Linux 0x800
 	nb := "4"
-	if runtime.GOOS == "linux" {
+	if targetGOOS() == "linux" {
 		nb = "2048"
 	}
 	// fcntl is VARIADIC (int fcntl(int, int, ...)). c.decl() rewrites the
@@ -2836,7 +2835,7 @@ func (c *codegen) emitBuiltinNetAcceptNb(inst *Inst) error {
 	// -1 with EAGAIN/EWOULDBLOCK -> -2 (would block). macOS EAGAIN=35,
 	// Linux EAGAIN=11.
 	eagain := "35"
-	if runtime.GOOS == "linux" {
+	if targetGOOS() == "linux" {
 		eagain = "11"
 	}
 	isErr := c.treg("netanb.iserr")
@@ -2925,7 +2924,7 @@ func (c *codegen) emitBuiltinNetUdpSendTo(inst *Inst) error {
 	// Build sockaddr_in exactly like emitBuiltinNetDial: 16 zeroed bytes with
 	// (darwin) sin_len@0, sin_family@0|1 = AF_INET, sin_port@2 = htons(port)
 	// and sin_addr@4 filled by inet_pton.
-	darwin := runtime.GOOS == "darwin"
+	darwin := targetGOOS() == "darwin"
 	familyOff := int64(0)
 	if darwin {
 		familyOff = 1
@@ -3073,7 +3072,7 @@ func (c *codegen) emitBuiltinNetSetRecvTimeout(inst *Inst) error {
 
 	solSocket := "65535"
 	soRcvtimeo := "4102"
-	if runtime.GOOS == "linux" {
+	if targetGOOS() == "linux" {
 		solSocket = "1"
 		soRcvtimeo = "20"
 	}
@@ -3231,7 +3230,7 @@ func (c *codegen) emitBuiltinWriteFile(inst *Inst) error {
 	// open(path, O_WRONLY|O_CREAT|O_TRUNC, 0644=420)
 	// macOS: 1 | 512 | 1024 = 1537; Linux: 1 | 64 | 512 = 577
 	openFlags := 1537
-	if runtime.GOOS == "linux" {
+	if targetGOOS() == "linux" {
 		openFlags = 577
 	}
 	fd := c.treg("wf.fd")
@@ -3302,7 +3301,7 @@ func (c *codegen) emitBuiltinReadDir(inst *Inst) error {
 	// + d_namlen(2) + d_type(1) = 21). Linux: d_ino(8) + d_off(8) +
 	// d_reclen(2) + d_type(1) = 19.
 	dnameOff := int64(21)
-	if runtime.GOOS == "linux" {
+	if targetGOOS() == "linux" {
 		dnameOff = 19
 	}
 	nameGep := c.treg("rd.ng")
@@ -3445,10 +3444,15 @@ func (c *codegen) emitBuiltinUtime(inst *Inst) error {
 }
 
 // errnoFnName returns the platform-specific C function that yields a pointer to
-// the thread-local errno. macOS/BSD use __error(); glibc uses __errno_location.
+// the thread-local errno. macOS/BSD use __error(); glibc uses __errno_location;
+// MSVCRT uses _errno(). The choice follows the COMPILATION TARGET, not the
+// host, so a darwin binary built on a Linux runner links against __error.
 func (c *codegen) errnoFnName() string {
-	if runtime.GOOS == "linux" {
+	switch targetGOOS() {
+	case "linux":
 		return "__errno_location"
+	case "windows":
+		return "_errno"
 	}
 	return "__error"
 }
@@ -3562,7 +3566,7 @@ const getGroupsCap = 256
 // The loop counter lives in an alloca rather than a phi so no predecessor label
 // has to be known here.
 func (c *codegen) emitBuiltinGetGroups(inst *Inst) error {
-	if runtime.GOOS == "windows" {
+	if targetGOOS() == "windows" {
 		// No getgroups(2); the builtin is only declared for POSIX platforms
 		// (see the platform guards in std/os.no).
 		c.fail("getgroups: unsupported on windows in func %s", c.curFuncNameForFail())
@@ -3677,7 +3681,7 @@ func (c *codegen) emitBuiltinGetGroups(inst *Inst) error {
 //	call void @syslog(i32 %p, i8* @.mir.syslog.fmt, i8* %m)
 //	call void @free(i8* %m)
 func (c *codegen) emitBuiltinSyslog(inst *Inst) error {
-	if runtime.GOOS == "windows" {
+	if targetGOOS() == "windows" {
 		// No syslog(3) on Windows; the builtin is only declared for POSIX
 		// platforms (see the platform guards in std/os.no).
 		c.fail("syslog: unsupported on windows in func %s", c.curFuncNameForFail())
@@ -3732,11 +3736,12 @@ func (c *codegen) emitBuiltinGetLine(inst *Inst) error {
 	}
 	c.decl("declare i8* @fgets(i8*, i32, i8*)")
 	c.decl("declare void @llvm.memset.p0i8.i64(i8*, i8, i64, i1)")
-	// macOS uses __stdinp (i8**); Linux/others use stdin (i8**). The MIR prelude
-	// is currently hardcoded to arm64-apple-macosx, so default to __stdinp and
-	// only fall back to stdin for an explicit linux target.
+	// macOS/BSD use __stdinp (i8**); Linux/glibc use stdin (i8**). The symbol is
+	// picked from the COMPILATION TARGET (targetGOOS), not the host — a darwin
+	// binary produced on a Linux runner must reference __stdinp or the link
+	// dies on undefined _stdin.
 	stdinSym := "@__stdinp"
-	if runtime.GOOS == "linux" {
+	if targetGOOS() == "linux" {
 		stdinSym = "@stdin"
 	}
 	c.global(stdinSym + " = external global i8*")

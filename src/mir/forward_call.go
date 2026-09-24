@@ -35,7 +35,6 @@ package mir
 
 import (
 	"fmt"
-	"runtime"
 	"strings"
 )
 
@@ -197,8 +196,8 @@ type statLayout struct {
 }
 
 func statLayoutFor() statLayout {
-	if runtime.GOOS == "linux" {
-		if runtime.GOARCH == "arm64" {
+	if targetGOOS() == "linux" {
+		if targetGOARCH() == "arm64" {
 			return statLayout{Size: 128, ModeOff: 16, UidOff: 24, GidOff: 28, MtimeOff: 88, SizeOff: 48}
 		}
 		return statLayout{Size: 144, ModeOff: 24, UidOff: 28, GidOff: 32, MtimeOff: 88, SizeOff: 48}
@@ -212,7 +211,7 @@ func statLayoutFor() statLayout {
 func statBufArg() cArgSpec { return cArgSpec{Kind: cArgBufPtr, From: -1, Size: statLayoutFor().Size} }
 
 func sysconfNProc() string {
-	if runtime.GOOS == "linux" {
+	if targetGOOS() == "linux" {
 		return "84" // glibc _SC_NPROCESSORS_ONLN
 	}
 	return "58" // darwin _SC_NPROCESSORS_ONLN
