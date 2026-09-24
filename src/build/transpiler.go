@@ -3,15 +3,6 @@ package build
 import (
 	"bytes"
 	"fmt"
-	nolang "github.com/lizongying/nolang"
-	"github.com/lizongying/nolang/builtin"
-	"github.com/lizongying/nolang/cache"
-	"github.com/lizongying/nolang/checker"
-	"github.com/lizongying/nolang/hir"
-	"github.com/lizongying/nolang/lexer"
-	"github.com/lizongying/nolang/mir"
-	"github.com/lizongying/nolang/package"
-	"github.com/lizongying/nolang/parser"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -20,6 +11,16 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+
+	nolang "github.com/lizongying/nolang"
+	"github.com/lizongying/nolang/builtin"
+	"github.com/lizongying/nolang/cache"
+	"github.com/lizongying/nolang/checker"
+	"github.com/lizongying/nolang/hir"
+	"github.com/lizongying/nolang/lexer"
+	"github.com/lizongying/nolang/mir"
+	pkg "github.com/lizongying/nolang/package"
+	"github.com/lizongying/nolang/parser"
 )
 
 // mangleOverloads 對同名函數進行名稱修飾，並更新調用點

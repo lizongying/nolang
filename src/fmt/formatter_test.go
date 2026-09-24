@@ -488,42 +488,42 @@ func TestFormatBasic(t *testing.T) {
 		{
 			name:     "bool cmp eq true",
 			input:    "f == true",
-			expected: "f",
+			expected: "f == true",
 		},
 		{
 			name:     "bool cmp eq false",
 			input:    "f == false",
-			expected: "! f",
+			expected: "f == false",
 		},
 		{
 			name:     "bool cmp ne true",
 			input:    "f != true",
-			expected: "! f",
+			expected: "f != true",
 		},
 		{
 			name:     "bool cmp ne false",
 			input:    "f != false",
-			expected: "f",
+			expected: "f != false",
 		},
 		{
 			name:     "bool cmp mirrored lhs",
 			input:    "true == f",
-			expected: "f",
+			expected: "true == f",
 		},
 		{
 			name:     "bool cmp dot receiver",
 			input:    "a.b == false",
-			expected: "! a.b",
+			expected: "a.b == false",
 		},
 		{
 			name:     "bool cmp call",
 			input:    "isReady() == true",
-			expected: "isReady()",
+			expected: "isReady() == true",
 		},
 		{
 			name:     "bool cmp non-atomic negated parenthesized",
 			input:    "a + b == false",
-			expected: "! (a + b)",
+			expected: "a + b == false",
 		},
 		{
 			name:     "bool literal cmp untouched",
@@ -535,13 +535,13 @@ func TestFormatBasic(t *testing.T) {
 			// simplification must fire: `f == !!` → `f`.
 			name:     "bool cmp bang-bang rhs",
 			input:    "f == !!",
-			expected: "f",
+			expected: "f == true",
 		},
 		{
 			// a bare `!` parses as standalone `false`, so `f == !` → `! f`.
 			name:     "bool cmp bang rhs",
 			input:    "f == !",
-			expected: "! f",
+			expected: "f == false",
 		},
 		{
 			// regression: `!` before a match/if-then `->` must still parse as
@@ -553,8 +553,8 @@ func TestFormatBasic(t *testing.T) {
     other == !! -> go-on()
 }`,
 			expected: `f = () {
-    ! flag -> return
-    other -> go-on()
+    flag == false -> return
+    other == true -> go-on()
 }`,
 		},
 		{
@@ -1719,7 +1719,7 @@ INVSBOX = '\x52\x09\x6a\xd5\x30\x36\xa5\x38\xbf\x40\xa3\x9e\x81\xf3\xd7\xfb' +
 }
 `,
 			expected: `f = () {
-    ok -> {}
+    ok == true -> {}
     x = 1
 }`,
 		},
@@ -1734,7 +1734,7 @@ INVSBOX = '\x52\x09\x6a\xd5\x30\x36\xa5\x38\xbf\x40\xa3\x9e\x81\xf3\xd7\xfb' +
 `,
 			expected: `f = () {
     o, ok = oid-from-hex(hx)
-    ok -> {}
+    ok == true -> {}
 }`,
 		},
 		{
@@ -1772,7 +1772,7 @@ INVSBOX = '\x52\x09\x6a\xd5\x30\x36\xa5\x38\xbf\x40\xa3\x9e\x81\xf3\xd7\xfb' +
 }
 `,
 			expected: `f = () {
-    ok -> {
+    ok == true -> {
         ; intentionally empty
     }
     x = 1
@@ -1794,7 +1794,7 @@ INVSBOX = '\x52\x09\x6a\xd5\x30\x36\xa5\x38\xbf\x40\xa3\x9e\x81\xf3\xd7\xfb' +
 }
 `,
 			expected: `f = () {
-    tg-ok -> {
+    tg-ok == true -> {
 
         ; skip . and .. entries
         tg-entry == '.' -> {}
@@ -2895,7 +2895,7 @@ func TestFormatScalarSlicePerLine8(t *testing.T) {
 			// next line on format.
 			name:     "standalone_if_then_else_arm_inline_semicolon_comment",
 			input:    "foo = () {\n    bare == false -> {\n        os.mkdir(x, 493) -> {}\n        -> return; 493 = 0755\n    }\n}\n",
-			expected: "foo = () {\n    ! bare -> {\n        os.mkdir(x, 493) -> {}\n\n        -> return; 493 = 0755\n    }\n}\n",
+			expected: "foo = () {\n    bare == false -> {\n        os.mkdir(x, 493) -> {}\n\n        -> return; 493 = 0755\n    }\n}\n",
 		},
 		{
 			// regression: a block containing standalone if-then statements

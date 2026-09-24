@@ -142,12 +142,14 @@ func (f *formatter) formatPrefixExpression(e *parser.PrefixExpression) {
 }
 
 func (f *formatter) formatInfixExpression(e *parser.InfixExpression) {
-	// Boolean-comparison simplification: collapse the redundant `== true` /
-	// `== false` (and their `!=` complements) idioms so the source reads as
-	// plain `f` / `! f` instead of `f == true` / `f == false`.
-	if f.tryFormatBoolComparison(e) {
-		return
-	}
+	// Boolean-comparison simplification (`x == true` -> `x`, `x == false` ->
+	// `! x`) used to be performed here. It was removed on purpose: the rewrite
+	// is unsound for operands whose type the formatter cannot observe - most
+	// notably an option<?T> such as the result of process.wait-nohang().
+	// `exited == true` lowers to a valid option/bool comparison, but the
+	// collapsed `exited` / `! exited` used as a control-flow guard triggers a
+	// MIR "option-as-i1" codegen crash. Always emit the comparison verbatim
+	// through the normal infix path below.
 	f.formatExpression(e.Left)
 
 	// Detect multi-line expressions (right operand starts on a different line)
@@ -172,81 +174,6 @@ func (f *formatter) formatInfixExpression(e *parser.InfixExpression) {
 		f.write(" ")
 		f.formatExpression(e.Right)
 	}
-}
-
-// tryFormatBoolComparison handles `x == true`, `x == false`, `x != true` and
-// `x != false` (plus the mirrored `true == x` forms) by emitting the simplified
-// boolean expression directly. It returns true when it produced output, false
-// when the caller should fall back to the normal infix formatting. The rewrite
-// only fires when *exactly one* operand is a boolean literal, so `true ==
-// false` is left untouched. `x == true` → `x`; `x == false` → `! x`; and `!=`
-// flips the polarity. When the surviving operand is not atomic it is wrapped in
-// parentheses so the emitted `!` cannot silently re-bind (e.g. `a + b == false`
-// → `! (a + b)`, not `! a + b`).
-func (f *formatter) tryFormatBoolComparison(e *parser.InfixExpression) bool {
-	if e.Operator != "==" && e.Operator != "!=" {
-		return false
-	}
-	lb, lok := e.Left.(*parser.BooleanLiteral)
-	rb, rok := e.Right.(*parser.BooleanLiteral)
-	if lok && rok {
-		return false
-	}
-	var operand parser.Expression
-	var expectTrue bool
-	switch {
-	case rok:
-		operand, expectTrue = e.Left, rb.Value
-	case lok:
-		operand, expectTrue = e.Right, lb.Value
-	default:
-		return false
-	}
-	if e.Operator == "!=" {
-		expectTrue = !expectTrue
-	}
-	if expectTrue {
-		f.formatExpression(operand)
-	} else {
-		f.write("! ")
-		if boolOperandIsAtomic(operand) {
-			f.formatExpression(operand)
-		} else {
-			f.write("(")
-			f.formatExpression(operand)
-			f.write(")")
-		}
-	}
-	return true
-}
-
-// boolOperandIsAtomic reports whether an expression can follow a prefix `!`
-// without parentheses — i.e. it is a primary/postfix form whose own precedence
-// is at least that of unary not.
-func boolOperandIsAtomic(e parser.Expression) bool {
-	switch e.(type) {
-	case *parser.Identifier,
-		*parser.IntegerLiteral,
-		*parser.FloatLiteral,
-		*parser.StringLiteral,
-		*parser.CharLiteral,
-		*parser.ByteLiteral,
-		*parser.RegexLiteral,
-		*parser.BooleanLiteral,
-		*parser.NilLiteral,
-		*parser.CallExpression,
-		*parser.DotExpression,
-		*parser.IndexExpression,
-		*parser.SliceExpression,
-		*parser.GroupedExpression,
-		*parser.ArrayLiteral,
-		*parser.SliceLiteral,
-		*parser.StructLiteral,
-		*parser.MapLiteral,
-		*parser.PrefixExpression:
-		return true
-	}
-	return false
 }
 
 func (f *formatter) formatCallExpression(e *parser.CallExpression) {
