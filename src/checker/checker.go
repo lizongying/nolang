@@ -3404,6 +3404,276 @@ func ValidateIntOverflow(program *parser.Program) []ValidateResult {
 	return results
 }
 
+// StatementsWithIntOverflow 回傳「包含至少一個會溢出的整數運算」的陳述集合
+// （含巢狀 for / 區塊 / 函式體內的葉陳述，以及包容它們的容器陳述）。
+//
+// 用途：判斷某條 #{overflow = ...} 註解是否「實際生效」。若被標註的陳述不在本集合
+// 中，該註解對整數溢出毫無作用（例如整行只是字串拼接，中劃線 `-` 是拼接而非減法），
+// 應提示刪除、並在 `no fmt` 時移除。
+//
+// 與 ValidateIntOverflow / ValidateUnhandledOverflow 共用同一套型別推斷（inferExprType /
+// isIntExpr / isDirectOverflowValue），且對「型別未知」的運算元保守視為整數（寧可多報，
+// 因為這樣只會讓我們「保留」註解、不會「誤刪」有效的註解）。因此本集合是超集性質：
+// 落在集合中的陳述未必真的需要註解，但不在集合中的陳述註解必定無效。
+func StatementsWithIntOverflow(program *parser.Program) map[parser.Statement]bool {
+	if program == nil {
+		return nil
+	}
+	relevant := map[parser.Statement]bool{}
+
+	// 先宣告兩個遞迴閉包變數（互相參考），再於下方指派，避免前向參考未定義。
+	var exprHasIntOverflow func(e parser.Expression, declared map[string]string, selfType string) bool
+	var stmtHasIntOverflow func(stmt parser.Statement, declared map[string]string, selfType string) bool
+
+	// exprHasIntOverflow 遞迴判斷表達式（含 if 分支陳述）是否含整數溢出運算。
+	// 對 InfixExpression 直接取用 isDirectOverflowValue（頂層運算元皆為整數時回 true，
+	// 未知型別保守視為整數）；對其它結構遞迴進子表達式 / 子陳述。
+	exprHasIntOverflow = func(e parser.Expression, declared map[string]string, selfType string) bool {
+		if e == nil {
+			return false
+		}
+		switch x := e.(type) {
+		case *parser.InfixExpression:
+			if isDirectOverflowValue(x, declared, selfType) {
+				return true
+			}
+			return exprHasIntOverflow(x.Left, declared, selfType) ||
+				exprHasIntOverflow(x.Right, declared, selfType)
+		case *parser.PrefixExpression:
+			return exprHasIntOverflow(x.Right, declared, selfType)
+		case *parser.CallExpression:
+			if exprHasIntOverflow(x.Function, declared, selfType) {
+				return true
+			}
+			for _, a := range x.Arguments {
+				if exprHasIntOverflow(a, declared, selfType) {
+					return true
+				}
+			}
+		case *parser.IfExpression:
+			if exprHasIntOverflow(x.Condition, declared, selfType) {
+				return true
+			}
+			if x.Consequence != nil {
+				for _, s := range x.Consequence.Statements {
+					if stmtHasIntOverflow(s, declared, selfType) {
+						return true
+					}
+				}
+			}
+			if x.Alternative != nil {
+				for _, s := range x.Alternative.Statements {
+					if stmtHasIntOverflow(s, declared, selfType) {
+						return true
+					}
+				}
+			}
+		case *parser.IndexExpression:
+			return exprHasIntOverflow(x.Left, declared, selfType) ||
+				exprHasIntOverflow(x.Index, declared, selfType)
+		case *parser.AssignExpression:
+			return exprHasIntOverflow(x.Left, declared, selfType) ||
+				exprHasIntOverflow(x.Value, declared, selfType)
+		case *parser.ArrayLiteral:
+			for _, el := range x.Elements {
+				if exprHasIntOverflow(el, declared, selfType) {
+					return true
+				}
+			}
+		}
+		return false
+	}
+
+	// stmtHasIntOverflow 遞迴判斷陳述（含其巢狀子陳述）是否含整數溢出運算；
+	// 含溢出則標記該陳述與所有包容它的容器陳述為 relevant。
+	stmtHasIntOverflow = func(stmt parser.Statement, declared map[string]string, selfType string) bool {
+		if stmt == nil {
+			return false
+		}
+		found := false
+		switch s := stmt.(type) {
+		case *parser.FunctionDefinition:
+			fd := collectFuncDeclared(s)
+			ft := methodSelfType(s)
+			if s.Body != nil {
+				for _, b := range s.Body.Statements {
+					if stmtHasIntOverflow(b, fd, ft) {
+						found = true
+					}
+				}
+			}
+		case *parser.ForStatement:
+			if exprHasIntOverflow(s.Condition, declared, selfType) {
+				found = true
+			}
+			if s.Init != nil && stmtHasIntOverflow(s.Init, declared, selfType) {
+				found = true
+			}
+			if s.Update != nil && stmtHasIntOverflow(s.Update, declared, selfType) {
+				found = true
+			}
+			if s.Body != nil {
+				for _, b := range s.Body.Statements {
+					if stmtHasIntOverflow(b, declared, selfType) {
+						found = true
+					}
+				}
+			}
+		case *parser.BlockStatement:
+			for _, b := range s.Statements {
+				if stmtHasIntOverflow(b, declared, selfType) {
+					found = true
+				}
+			}
+		case *parser.LetStatement:
+			if exprHasIntOverflow(s.Value, declared, selfType) {
+				found = true
+			}
+		case *parser.ReturnStatement:
+			if exprHasIntOverflow(s.ReturnValue, declared, selfType) {
+				found = true
+			}
+		case *parser.ExpressionStatement:
+			if exprHasIntOverflow(s.Expression, declared, selfType) {
+				found = true
+			}
+		case *parser.MultiAssignStatement:
+			if exprHasIntOverflow(s.Value, declared, selfType) {
+				found = true
+			}
+		case *parser.UnwrapAssignStatement:
+			if exprHasIntOverflow(s.Value, declared, selfType) {
+				found = true
+			}
+		}
+		if found {
+			relevant[stmt] = true
+		}
+		return found
+	}
+
+	for _, stmt := range program.Statements {
+		if fn, ok := stmt.(*parser.FunctionDefinition); ok {
+			fd := collectFuncDeclared(fn)
+			ft := methodSelfType(fn)
+			if fn.Body != nil {
+				for _, b := range fn.Body.Statements {
+					if stmtHasIntOverflow(b, fd, ft) {
+						relevant[stmt] = true
+					}
+				}
+			}
+			continue
+		}
+		declared := collectTopLevelLets(program)
+		if stmtHasIntOverflow(stmt, declared, "") {
+			relevant[stmt] = true
+		}
+	}
+	return relevant
+}
+
+// OverflowAnnotationRelevance 回傳兩組資訊，供 `no fmt` 與 LSP 判斷並移除「無效」的
+// #{overflow = ...} 註解：
+//
+//   - relevant：與 StatementsWithIntOverflow 相同，是「含整數溢出運算」的陳述集合
+//     （超集性質：落在集合中的陳述未必真的需要註解，但不在其中的註解必定無效）。
+//   - governed：把「獨立成行」的 #{overflow = ...} 註解節點（*parser.AnnotationStatement）
+//     對應到它「行注解」語意下所管轄的下一條陳述（*parser.Statement；若後方沒有任何
+//     被管轄的陳述則為 nil）。語意與 parser.applyLineOverflowAnnotations 完全一致：
+//     連續的非 overflow 註解（如緊跟的 #{index-out=0}）會被略過，直到遇到第一條非
+//     註解陳述（即被管轄者）；若下一條是另一個含 overflow 的註解，則本註解不轄制任何
+//     陳述（gov 為 nil）。
+//
+// 使用方式：formatter 在輸出 overflow 註解時，
+//   - 對「附加」路徑（IDENT 起始陳述被 parser 直接附加的 overflow）以被標註陳述本身
+//     查 relevant；
+//   - 對「獨立節點」路徑以 governed 查 relevant。
+//
+// 兩組皆為 nil 時退回「保留所有 overflow 註解」的舊行為（不刪除），確保無型別資訊的
+// 場景（如 LSP 純格式化）不會誤刪。
+func OverflowAnnotationRelevance(program *parser.Program) (relevant map[parser.Statement]bool, governed map[*parser.AnnotationStatement]parser.Statement) {
+	if program == nil {
+		return nil, nil
+	}
+	relevant = StatementsWithIntOverflow(program)
+	governed = map[*parser.AnnotationStatement]parser.Statement{}
+
+	// scanList 在「同一個陳述列表」內掃描獨立 overflow 註解，並依行注解語意計算其
+	// 管轄陳述（僅限同一列表內的下一條陳述——與 parser 逐區塊處理的語意一致）。
+	scanList := func(stmts []parser.Statement) {
+		for i, s := range stmts {
+			as, ok := s.(*parser.AnnotationStatement)
+			if !ok {
+				continue
+			}
+			if !hasOverflowEntry(as.Entries) {
+				continue
+			}
+			for j := i + 1; j < len(stmts); j++ {
+				next := stmts[j]
+				if next == nil {
+					continue
+				}
+				if as2, isAnn := next.(*parser.AnnotationStatement); isAnn {
+					if hasOverflowEntry(as2.Entries) {
+						break
+					}
+					continue
+				}
+				governed[as] = next
+				break
+			}
+		}
+	}
+
+	// collect 遞迴走遍所有陳述列表（頂層、函式體、區塊體、for 迴圈體），每個列表
+	// 各自獨立掃描（與 parser 對每個 BlockStatement 呼叫 applyLineOverflowAnnotations
+	// 的語意一致）。
+	var collect func(stmts []parser.Statement)
+	collect = func(stmts []parser.Statement) {
+		scanList(stmts)
+		for _, s := range stmts {
+			switch v := s.(type) {
+			case *parser.FunctionDefinition:
+				if v.Body != nil {
+					collect(v.Body.Statements)
+				}
+			case *parser.BlockStatement:
+				collect(v.Statements)
+			case *parser.ForStatement:
+				if v.Body != nil {
+					collect(v.Body.Statements)
+				}
+			}
+		}
+	}
+	collect(program.Statements)
+	return relevant, governed
+}
+
+// hasOverflowEntry 報告註解條目中是否含有 overflow 鍵。
+func hasOverflowEntry(entries []*parser.AnnotationEntry) bool {
+	for _, e := range entries {
+		if e != nil && e.Key == "overflow" {
+			return true
+		}
+	}
+	return false
+}
+
+// methodSelfType 回傳方法定義接收者 self 的型別字串（如 "str"），供
+// inferExprType 推斷 self.x 成員型別；非方法定義回傳 ""。
+func methodSelfType(fn *parser.FunctionDefinition) string {
+	if fn == nil || !fn.IsMethodDef {
+		return ""
+	}
+	if len(fn.FuncSignature.Parameters) > 0 && fn.FuncSignature.Parameters[0].Type != nil {
+		return fn.FuncSignature.Parameters[0].Type.String()
+	}
+	return ""
+}
+
 // ValidateDivByZero 對整數除法 / 與取模 % 的「字面常數零除數」發出編譯期錯誤。
 //
 // 背景：Nolang 的整數除法/取模在 MIR 後端直接發射裸 sdiv/srem/udiv/urem，對零除數

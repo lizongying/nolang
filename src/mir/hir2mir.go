@@ -4616,7 +4616,15 @@ func (l *lowerer) lowerExpr(id int32) ValueID {
 			i++
 		}
 		arrV := l.lowerExpr(arrID)
+		// An index expression is ALWAYS integer-typed. Lower it with a cleared
+		// typeHint so the read's target type (e.g. the `str`/`?str` binding of a
+		// safe index `x = lines[pre + k]`) can never leak into the index
+		// arithmetic and pollute its result type — which otherwise emitted
+		// `add %str-long ...` and made the bounds-check ge/lt see string operands.
+		savedIdxHint := l.typeHint
+		l.typeHint = NoType
 		idxV := l.lowerExpr(idxID)
+		l.typeHint = savedIdxHint
 		if arrV == NoVal || idxV == NoVal {
 			return NoVal
 		}
@@ -8396,7 +8404,15 @@ func (l *lowerer) lowerAssignNode(assignID int32) ValueID {
 			i++
 		}
 		arrV := l.lowerExpr(arrID)
+		// An index expression is ALWAYS integer-typed. Lower it with a cleared
+		// typeHint so the read's target type (e.g. the `str`/`?str` binding of a
+		// safe index `x = lines[pre + k]`) can never leak into the index
+		// arithmetic and pollute its result type — which otherwise emitted
+		// `add %str-long ...` and made the bounds-check ge/lt see string operands.
+		savedIdxHint := l.typeHint
+		l.typeHint = NoType
 		idxV := l.lowerExpr(idxID)
+		l.typeHint = savedIdxHint
 		if arrV == NoVal || idxV == NoVal {
 			return NoVal
 		}

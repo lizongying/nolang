@@ -1,0 +1,77 @@
+; bigint-uuid-byte-indexing.no — 回歸測試：bigint / uuid 解析的字串讀取必須用 byte 游標
+;
+; 背景：bigint.from-str / bigint.from-hex / uuid.from-str 都以「位元組游標」（`pos <- [0..s.len-bytes())`
+; 或 `pos < s.len-bytes()`）遍歷字串，卻一度用 `s[pos]`（碼點索引，回傳 char）讀取。
+; 對純 ASCII 輸入兩者數值相同，但這是錯誤的單位用法；本檔把讀取改成 `s.byte(pos)`
+; （回傳無號數值，與 str.hex-val 的 `(c i64)` 簽名一致）。
+;
+; 本檔修復的讀取點：
+;   bigint.no ：from-str 的 `c = s[pos]` / `s[pos]==45('+')`/ `s[pos]==43('-')` 與 from-hex 的 `c = s[i]`
+;               （共 5 處，皆為 byte 游標）
+;   uuid.no   ：from-str 跳空白 `c = s[pos]`、parse-with-dashes 的 `s[pos+8|13|18|23] != 45`（'-' 檢查）、
+;               parse-hex-byte 的 `c0 = s[pos]` / `c1 = s[pos+1]`（共 7 處，皆為 byte 游標）
+;
+; 實測對照（同一測試檔在修復前/後執行）：
+;   修復前：uuid 部分與修復後**行為完全一致**（uuid 輸入必為 ASCII hex/dash，碼點讀取恰好等於位元組值），
+;           故本檔主要價值在「釘住 uuid 解析未被改壞」+ 為 bigint/uuid 的 byte 游標寫法留下可讀的基線。
+;   修復後：uuid 全部 PASS（5/5 執行 stdout sha 一致）。
+;
+; ⚠️ 刻意未設 bigint 斷言：bigint 整個模組（from-str / from-hex / to-str / to-hex）在
+;   **修復前與修復後的 binary 上都以 `bus error` 崩潰**（與本任務的 `.byte()` 改動無關——
+;   `.byte()` 只動讀取，不碰 to-str / from-i64）。這是既有的、獨立的 bigint 後端崩潰，
+;   故 bigint 不進回歸守衛（與 path.join / url.url-encode 的處置一致：標記既有、不釘斷言）。
+;
+; 註：`\t` 在 Nolang 字串字面量中不解析成 tab，所以「跳空白」用例用真實空格即可，不測 tab 跳過。
+
+main = () {
+    print('=== bigint-uuid-byte-indexing ===')
+
+    ; ─────────────────────────────────────────────
+    ; 1. uuid：帶連字號格式解析 + 回寫 round trip
+    ; ─────────────────────────────────────────────
+    u1 = uuid {}
+    ok1 = uuid.from-str('550e8400-e29b-41d4-a716-446655440000', u1)
+    ok1 == true -> print('PASS: 1a uuid dash-format parse ok=true')
+    -> print('FAIL: 1a uuid dash-format parse ok=' - ok1.to-str())
+
+    u1.to-str() == '550e8400-e29b-41d4-a716-446655440000' -> print('PASS: 1b uuid dash round-trip to-str')
+    -> print('FAIL: 1b uuid dash to-str=[' - u1.to-str() - ']')
+
+    ; ─────────────────────────────────────────────
+    ; 2. uuid：不帶連字號格式解析（parse-no-dashes 的 byte 游標）
+    ; ─────────────────────────────────────────────
+    u2 = uuid {}
+    ok2 = uuid.from-str('550e8400e29b41d4a716446655440000', u2)
+    ok2 == true -> print('PASS: 2a uuid no-dash parse ok=true')
+    -> print('FAIL: 2a uuid no-dash parse ok=' - ok2.to-str())
+
+    u2.to-str() == '550e8400-e29b-41d4-a716-446655440000' -> print('PASS: 2b uuid no-dash normalizes to dashed')
+    -> print('FAIL: 2b uuid no-dash to-str=[' - u2.to-str() - ']')
+
+    ; ─────────────────────────────────────────────
+    ; 3. uuid：大寫輸入（parse-hex-byte 的 byte 游標讀取）
+    ; ─────────────────────────────────────────────
+    u3 = uuid {}
+    ok3 = uuid.from-str('550E8400-E29B-41D4-A716-446655440000', u3)
+    ok3 == true -> print('PASS: 3a uuid uppercase parse ok=true')
+    -> print('FAIL: 3a uuid uppercase parse ok=' - ok3.to-str())
+
+    u3.to-str() == '550e8400-e29b-41d4-a716-446655440000' -> print('PASS: 3b uuid uppercase normalizes lowercase')
+    -> print('FAIL: 3b uuid uppercase to-str=[' - u3.to-str() - ']')
+
+    ; ─────────────────────────────────────────────
+    ; 4. uuid：to-str-upper 變體（hex-byte-upper 的 byte 游標寫入）
+    ; ─────────────────────────────────────────────
+    u4 = uuid {}
+    uuid.from-str('550e8400-e29b-41d4-a716-446655440000', u4)
+    u4.to-str-upper() == '550E8400-E29B-41D4-A716-446655440000' -> print('PASS: 4a uuid to-str-upper')
+    -> print('FAIL: 4a uuid to-str-upper=[' - u4.to-str-upper() - ']')
+
+    ; ─────────────────────────────────────────────
+    ; 5. uuid：非法輸入應回傳 ok=false（byte 游標越界/格式檢查不崩潰）
+    ; ─────────────────────────────────────────────
+    u5 = uuid {}
+    ok5 = uuid.from-str('not-a-uuid', u5)
+    ok5 == false -> print('PASS: 5a uuid invalid input rejected')
+    -> print('FAIL: 5a uuid invalid input ok=' - ok5.to-str())
+}

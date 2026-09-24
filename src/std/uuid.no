@@ -260,7 +260,7 @@ from-str = (s str, out uuid) (ok bool) {
     pos <- [0..s.len-bytes()): {
 
         #{index-out=0}
-        c = s[pos]
+        c = s.byte(pos)
         c != 32 && c != 9 && c != 10 && c != 13 -> break
     }
 
@@ -302,7 +302,7 @@ parse-with-dashes = (s str, pos i64, out uuid) (ok bool) {
 
     ; 跳過連字號
     #{overflow=wrap}
-    s[pos + 8] != 45 -> {
+    s.byte(pos + 8) != 45 -> {
         ok = false
         return
     }
@@ -320,7 +320,7 @@ parse-with-dashes = (s str, pos i64, out uuid) (ok bool) {
     out.bytes[5] = v5
 
     #{overflow=wrap}
-    s[pos + 13] != 45 -> {
+    s.byte(pos + 13) != 45 -> {
         ok = false
         return
     }
@@ -338,7 +338,7 @@ parse-with-dashes = (s str, pos i64, out uuid) (ok bool) {
     out.bytes[7] = v7
 
     #{overflow=wrap}
-    s[pos + 18] != 45 -> {
+    s.byte(pos + 18) != 45 -> {
         ok = false
         return
     }
@@ -356,7 +356,7 @@ parse-with-dashes = (s str, pos i64, out uuid) (ok bool) {
     out.bytes[9] = v9
 
     #{overflow=wrap}
-    s[pos + 23] != 45 -> {
+    s.byte(pos + 23) != 45 -> {
         ok = false
         return
     }
@@ -419,10 +419,10 @@ parse-no-dashes = (s str, pos i64, out uuid) (ok bool) {
 parse-hex-byte = (s str, pos i64) (v i64) {
 
     #{index-out=0, overflow=wrap}
-    c0 = s[pos]
+    c0 = s.byte(pos)
 
     #{index-out=0, overflow=wrap}
-    c1 = s[pos + 1]
+    c1 = s.byte(pos + 1)
     h0 = str.hex-val(c0)
     h1 = str.hex-val(c1)
     h0 < 0 || h1 < 0 -> {

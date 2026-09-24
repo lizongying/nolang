@@ -907,7 +907,7 @@ from-str = (s str) (out bigint) {
     (pos < s.len-bytes()) {
 
         #{index-out=0, overflow=wrap}
-        c = s[pos]
+        c = s.byte(pos)
         c != 32 && c != 9 && c != 10 && c != 13 -> break
 
         #{overflow=wrap}
@@ -916,7 +916,7 @@ from-str = (s str) (out bigint) {
     pos < s.len-bytes() -> {
 
         #{overflow=wrap}
-        s[pos] == 45 -> {
+        s.byte(pos) == 45 -> {
 
             #{overflow=wrap}
             out.sign = -1
@@ -924,7 +924,7 @@ from-str = (s str) (out bigint) {
         }
 
         #{overflow=wrap}
-        s[pos] == 43 -> {
+        s.byte(pos) == 43 -> {
 
             #{index-out=0}
             pos = pos + 1
@@ -933,7 +933,7 @@ from-str = (s str) (out bigint) {
     (pos < s.len-bytes()) {
 
         #{index-out=0}
-        c = s[pos]
+        c = s.byte(pos)
         {
             c >= 48 && c <= 57 -> {
 
@@ -1045,7 +1045,7 @@ from-hex = (s str) (out bigint) {
     i <- [0..s.len-bytes()): {
 
         #{index-out=0}
-        c = s[i]
+        c = s.byte(i)
         {
             c >= 48 && c <= 57 -> {
 

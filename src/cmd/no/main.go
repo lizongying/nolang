@@ -1262,14 +1262,24 @@ func fmtProcessFile(filename string, writeInPlace bool, diffMode bool, fixClass 
 		if r, ok := fixRedundantTypeSource(original); ok {
 			reduced = r
 		}
-		r, perrs := nfmt.FormatFileWithErrorsAndLoopStyle(reduced, loopStyle)
-		if len(perrs) > 0 {
-			for _, e := range perrs {
-				fmt.Fprintf(os.Stderr, "%s: format error: %s\n", filename, e)
+		// 先解析（與 formatter 內部解析選項一致）。解析失敗則退回舊路徑回報錯誤；
+		// 解析成功則 best-effort 計算「無效 overflow 註解」資訊，交由 formatter 移除。
+		// OverflowAnnotationRelevance 採超集（保守）設計：不會誤判「有效 overflow」為無效，
+		// 故移除只會發生在註解確實無效之處；即便回傳空集合（程式確實無整數運算）移除也安全。
+		lp := parseProgramForFmt(reduced)
+		if lp == nil {
+			r, perrs := nfmt.FormatFileWithErrorsAndLoopStyle(reduced, loopStyle)
+			if len(perrs) > 0 {
+				for _, e := range perrs {
+					fmt.Fprintf(os.Stderr, "%s: format error: %s\n", filename, e)
+				}
+				return fmt.Errorf("format failed: %d parse error(s)", len(perrs))
 			}
-			return fmt.Errorf("format failed: %d parse error(s)", len(perrs))
+			result = r
+		} else {
+			relevant, governed := checker.OverflowAnnotationRelevance(lp)
+			result = nfmt.FormatProgramWithOverflow(lp, reduced, relevant, governed)
 		}
-		result = r
 	}
 
 	if diffMode {
@@ -1503,6 +1513,21 @@ func fmtOverflowFixes(arg string, fixClass string) (map[string]string, error) {
 		fixes[filepath.Clean(abs)] = fixed
 	}
 	return fixes, nil
+}
+
+// parseProgramForFmt 以與 formatter 內部一致的選項（SkipUnwrapLowering /
+// SkipSafeIndexLowering）解析源碼，回傳 *parser.Program；解析失敗（含任何 parser
+// 錯誤）時回傳 nil，供呼叫方退回舊的格式化/錯誤回報路徑。
+func parseProgramForFmt(src string) *parser.Program {
+	lx := lexer.New(src)
+	p := parser.New(lx)
+	p.SkipUnwrapLowering = true
+	p.SkipSafeIndexLowering = true
+	program := p.ParseProgram()
+	if len(p.Errors()) > 0 {
+		return nil
+	}
+	return program
 }
 
 // fixOverflowInFile 讀入單檔（磁碟內容），將其未標註的整數運算所在陳述的首行上方

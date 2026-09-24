@@ -25,7 +25,7 @@ parse-field = (s str, pos i64) (field str, new-pos i64) {
     }
 
     #{index-out=0}
-    c = s[r-pos]
+    c = s.byte(r-pos)
     {
         c == 44 -> {
 
@@ -43,7 +43,7 @@ parse-field = (s str, pos i64) (field str, new-pos i64) {
             (r-pos < s.len-bytes()) {
 
                 #{index-out=0, overflow=wrap}
-                c = s[r-pos]
+                c = s.byte(r-pos)
                 c == 34 -> {
 
                     ; 檢查是否為跳脫的雙引號
@@ -51,7 +51,7 @@ parse-field = (s str, pos i64) (field str, new-pos i64) {
                     r-pos + 1 < s.len-bytes() -> {
 
                         #{index-out=0, overflow=wrap}
-                        nc = s[r-pos + 1]
+                        nc = s.byte(r-pos + 1)
                         nc == 34 -> {
 
                             #{index-out=0, overflow=wrap}
@@ -70,7 +70,7 @@ parse-field = (s str, pos i64) (field str, new-pos i64) {
                     r-pos < s.len-bytes() -> {
 
                         #{index-out=0, overflow=wrap}
-                        nc = s[r-pos]
+                        nc = s.byte(r-pos)
 
                         #{overflow=wrap}
                         nc == 44 -> r-pos = r-pos + 1
@@ -110,7 +110,7 @@ parse-field = (s str, pos i64) (field str, new-pos i64) {
     (r-pos < s.len-bytes()) {
 
         #{index-out=0, overflow=wrap}
-        c = s[r-pos]
+        c = s.byte(r-pos)
 
         #{overflow=wrap}
         {

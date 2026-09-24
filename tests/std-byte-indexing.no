@@ -9,10 +9,11 @@
 ;       → 非 ASCII 路徑被從多位元組字元中間切開（path.base/ext/dir/split 曾如此）。
 ;
 ; 受影響且已修：collection/{map,str-map,str-set,static-hashmap}、byte([]byte.index)、
-; json、fmt、path、archive/{tar,zip}、encoding/pem。
+; json（parse 的非 ASCII 文本）、fmt、path、archive/{tar,zip}、encoding/pem、
+; encoding/csv（encode-field 與 parse-field）。
 ; 本檔把其中可無 socket、無檔案系統副作用地驗證的部分釘住。
 ;
-; 實測對照（同一測試檔分別在修復前/後執行，共 24 條斷言）：
+; 實測對照（同一測試檔分別在修復前/後執行，共 29 條斷言）：
 ;   修復前 FAIL 11 條：2b 2c（str-set 非 ASCII 鍵）、3a（[]byte.index 非 ASCII needle）、
 ;                      4a 4b 4c 4d（path 的 base/ext/dir/split 全錯，輸出被從多位元組
 ;                      字元中間切開）、5b（json 非 ASCII 鍵查不到）、7（path.clean）、
@@ -166,6 +167,23 @@ main = () {
     }
 
     ; ─────────────────────────────────────────────
+    ; 5d. json.parse 必須能解析**含非 ASCII 的 JSON 文本**
+    ;     修前：'{"名前":"日本語"}' 直接回 err —— 解析器用位元組游標（sn = s.len-bytes()、
+    ;     p = p + 1）卻以 s[p] 做碼點讀取 ⇒ **完全無法解析任何 UTF-8 JSON**。
+    ;     修後：ok=true，get-str('名前') == '日本語'（9 bytes）。
+    ; ─────────────────────────────────────────────
+    jp = json.parse('{"名前":"日本語"}')
+    jp: {
+        err -> print('FAIL: 5d json.parse non-ascii -> err')
+        nil -> print('FAIL: 5d json.parse non-ascii -> nil')
+        -> {
+            jpv, jpok = it.get-str('名前')
+            jpok && jpv == '日本語' -> print('PASS: 5d json.parse non-ascii key+value')
+            -> print('FAIL: 5d json.parse non-ascii got=[' - jpv - '] ok=' - jpok.to-str())
+        }
+    }
+
+    ; ─────────────────────────────────────────────
     ; 6. fmt：非 ASCII 字串的寬度填充與精度截斷（逐位元組複製）
     ; ─────────────────────────────────────────────
     padded = fmt.fmt-str('日本語', '10')
@@ -212,4 +230,27 @@ main = () {
     cf2 = csv.encode-field('日本語')
     cf2 == '日本語' -> print('PASS: 9b csv.encode-field leaves plain non-ascii unquoted')
     -> print('FAIL: 9b csv.encode-field got=[' - cf2 - ']')
+
+    ; ─────────────────────────────────────────────
+    ; 10. csv.parse-field（**解析端**）：非 ASCII 欄位必須逐位元組讀取
+    ;     修前 `c = s[r-pos]` 是碼點讀取，而 `r-pos` 是位元組游標 ⇒
+    ;     '日本語,中文' 解析成 `�,�`（3 bytes）、`new-pos` 只前進 4（碼點數）而非 10（位元組數）。
+    ;     修後為 `日本語`（9 bytes, new-pos=10）。
+    ;     ⚠️ `csv.parse-line` 本身另有既有缺陷（回傳 0 個欄位，與位元組索引無關），
+    ;     故本節直接測 `parse-field`，不經 `parse-line`。
+    ; ─────────────────────────────────────────────
+    cp-f, cp-np = csv.parse-field('日本語,中文', 0)
+    cp-f == '日本語' -> print('PASS: 10a csv.parse-field non-ascii field')
+    -> print('FAIL: 10a csv.parse-field got=[' - cp-f - '] (expect 日本語)')
+
+    cp-np == 10 -> print('PASS: 10b csv.parse-field new-pos advances by BYTES (10, not 4 codepoints)')
+    -> print('FAIL: 10b csv.parse-field new-pos=' - cp-np.to-str() - ' (expect 10)')
+
+    cp-h, cp-np3 = csv.parse-field('"日本語,含む",b', 0)
+    cp-h == '日本語,含む' -> print('PASS: 10c csv.parse-field quoted non-ascii w/ comma')
+    -> print('FAIL: 10c csv.parse-field quoted got=[' - cp-h - '] (expect 日本語,含む)')
+
+    cp-g, cp-np2 = csv.parse-field('abc,def', 0)
+    cp-g == 'abc' && cp-np2 == 4 -> print('PASS: 10d csv.parse-field ascii unchanged')
+    -> print('FAIL: 10d csv.parse-field ascii got=[' - cp-g - '] pos=' - cp-np2.to-str())
 }

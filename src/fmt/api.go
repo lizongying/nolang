@@ -63,6 +63,16 @@ type formatter struct {
 	// formatBareMatchExpression 為 wildcard arm 合成的 IfExpression），
 	// 不污染 program.Sem。
 	synthRT map[*parser.IfExpression]parser.RTFlag
+
+	// overflowRelevant 由 checker 計算：標註「含整數溢出運算」的陳述集合。
+	// 當非 nil 時，formatter 會移除「無效」的 #{overflow = ...} 註解——亦即其
+	// 管轄陳述不在集合中的 overflow 註解（例如整行僅字串拼接，中劃線是拼接而非
+	// 減法）。為 nil 時退回「保留所有 overflow 註解」的舊行為（不刪除）。
+	overflowRelevant map[parser.Statement]bool
+	// overflowGoverned 把「獨立成行」的 #{overflow = ...} 註解節點對應到其行注解
+	// 語意下所管轄的陳述（可能為 nil）。與 overflowRelevant 配套使用：對獨立節點
+	// 路徑以 governed 查 relevant。
+	overflowGoverned map[*parser.AnnotationStatement]parser.Statement
 }
 
 // hasRT 查詢 IfExpression 的 fmt 往返標誌：先查 formatter 本地合成表，
@@ -226,6 +236,37 @@ func formatProgramASTWithLoopStyle(program *parser.Program, code string, style L
 	f.formatProgram(program)
 
 	return f.buf.String(), true, nil
+}
+
+// formatProgramASTWithOverflow 同 formatProgramASTWithLoopStyle，但傳入由 checker
+// 計算的 overflow 註解相關性資訊（relevant / governed）。relevant 為 nil 時退回舊行為
+// （不移除任何 overflow 註解）；governed 配合 relevant 處理「獨立成行」overflow 註解。
+func formatProgramASTWithOverflow(program *parser.Program, code string, style LoopStyle, relevant map[parser.Statement]bool, governed map[*parser.AnnotationStatement]parser.Statement) (out string, ok bool, errs []string) {
+	if program == nil || len(program.Statements) == 0 {
+		return "", false, nil
+	}
+
+	sourceLines := strings.Split(code, "\n")
+	f := &formatter{
+		sourceLines:      sourceLines,
+		sem:              program.Sem,
+		loopStyle:        style,
+		overflowRelevant: relevant,
+		overflowGoverned: governed,
+	}
+	f.formatProgram(program)
+
+	return f.buf.String(), true, nil
+}
+
+// FormatProgramWithOverflow 與 FormatProgram 同，但移除「無效」的 #{overflow = ...}
+// 註解（其管轄陳述不含整數運算，如整行僅字串拼接）。relevant 為 nil 時退回舊行為。
+func FormatProgramWithOverflow(program *parser.Program, source string, relevant map[parser.Statement]bool, governed map[*parser.AnnotationStatement]parser.Statement) string {
+	out, ok, _ := formatProgramASTWithOverflow(program, source, LoopStylePrefix, relevant, governed)
+	if !ok {
+		return source
+	}
+	return ensureTrailingNewline(out)
 }
 
 // Format reformats a code fragment. It does NOT add a trailing newline; callers

@@ -72,6 +72,12 @@ func (f *formatter) formatStatement(stmt parser.Statement) bool {
 				continue
 			}
 			if e.Key == "overflow" {
+				// 無效 overflow：被標註陳述不含整數溢出運算（如整行僅字串拼接），
+				// 註解對溢出毫無作用，`no fmt` 應移除。overflowRelevant 為 nil 時
+				// 退回舊行為（保留）。
+				if f.overflowRelevant != nil && !f.overflowRelevant[stmt] {
+					continue
+				}
 				if m := overflowModeStringOf(e); m != "" && !seenMode[m] {
 					seenMode[m] = true
 					overflowModes = append(overflowModes, m)
@@ -790,6 +796,16 @@ func (f *formatter) formatAnnotationStatement(s *parser.AnnotationStatement) boo
 	seenMode := make(map[string]bool)
 	for _, e := range s.Entries {
 		if e.Key == "overflow" {
+			// 無效 overflow：獨立成行註解所管轄的陳述不含整數溢出運算（如整行僅
+			// 字串拼接），註解對溢出毫無作用，`no fmt` 應移除。overflowRelevant /
+			// overflowGoverned 為 nil 時退回舊行為（保留）。gov 為 nil（註解後方無
+			// 被管轄陳述）亦視為無效。
+			if f.overflowRelevant != nil && f.overflowGoverned != nil {
+				gov := f.overflowGoverned[s]
+				if gov == nil || !f.overflowRelevant[gov] {
+					continue
+				}
+			}
 			if m := overflowModeStringOf(e); m != "" && !seenMode[m] {
 				seenMode[m] = true
 				overflowModes = append(overflowModes, m)
