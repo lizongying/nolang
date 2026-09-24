@@ -184,20 +184,44 @@ func (f *formatter) formatIfExpression(e *parser.IfExpression) {
 //   - 對於非 wildcard arm，Alternative 為 BlockStatement{ExpressionStatement{next IfExpression}}
 //   - 對於 wildcard arm，Alternative 為直接的 BlockStatement
 func (f *formatter) formatBareMatchExpression(e *parser.IfExpression) {
+	f.formatBareMatchExpressionSubj(e, nil)
+}
+
+// formatBareMatchExpressionSubj 輸出裸 match。subjOverride 非 nil 時取代
+// e.MatchedExpr 作為 match 主體顯示——專供「索引主體歸一化」包裝層還原原始表達式
+// （如 `parts[i]: { ok -> ... }`）：parser 為讓 `it` 綁定與 ok/nil/err tag 比較正確
+// 下發，把主體替換成合成變數 `__match_subj_L_C`，但該合成名不可回填到來源碼，
+// 否則輸出會變成 `IDENT: { ... }`（標籤+區塊）而無法再解析。原始表達式保存在
+// 包裝層內那條合成的 `__match_subj_L_C = <orig>` LetStatement.Value。
+func (f *formatter) formatBareMatchExpressionSubj(e *parser.IfExpression, subjOverride parser.Expression) {
 	// RTMatchWrapper: rawCond 包裝層 `if 1 { it = matched; <if-chain> }`
 	// 跳過包裝層，直接格式化內部的 if-chain。
 	if f.hasRT(e, parser.RTMatchWrapper) {
+		if subjOverride == nil {
+			// 索引主體歸一化：從合成 LetStatement 還原原始主體表達式供顯示。
+			for _, stmt := range e.Consequence.Statements {
+				if ls, ok := stmt.(*parser.LetStatement); ok && ls.IsSynthetic && ls.Name != nil {
+					if strings.HasPrefix(ls.Name.Value, "__match_subj_") {
+						subjOverride = ls.Value
+					}
+				}
+			}
+		}
 		for _, stmt := range e.Consequence.Statements {
 			if es, ok := stmt.(*parser.ExpressionStatement); ok {
 				if inner, ok := es.Expression.(*parser.IfExpression); ok && f.hasRT(inner, parser.RTBareMatch) {
-					f.formatBareMatchExpression(inner)
+					f.formatBareMatchExpressionSubj(inner, subjOverride)
 					return
 				}
 			}
 		}
 	}
-	if e.MatchedExpr != nil {
-		f.formatExpression(e.MatchedExpr)
+	displaySubj := e.MatchedExpr
+	if subjOverride != nil {
+		displaySubj = subjOverride
+	}
+	if displaySubj != nil {
+		f.formatExpression(displaySubj)
 		f.write(": {")
 	} else {
 		f.write("{")

@@ -2839,17 +2839,8 @@ str.replace-n = (old str, new str, n i64) (val str) {
             }
         }
 
-        {
-            __idx_out_2843_9: {
-                ok -> {
-                    s = it
-                }
-
-                -> {
-                    s = ''
-                }
-            }
-        }
+        #{index-out=0}
+        s = parts[i]
         j <- [0..s.len-bytes()): {
 
             #{index-out=0, overflow=wrap}

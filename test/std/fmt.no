@@ -75,6 +75,20 @@ t-uint-base = () {
     runner.str-eq(d, '255', 3, 'uint-base decimal')
     e = fmt.fmt-uint-base(255, 8, false)
     runner.str-eq(e, '377', 3, 'uint-base octal')
+
+    ; u64 高位（>= 2^63）：位模式在 i64 語意下為負數。舊實作以 `ru > 0`
+    ; 為迴圈條件，負數時一次都不執行 -> 空字串（再被 `016x` 補成全 0），
+    ; 使 sha512 每個高位字組都印成 0000000000000000。現改移位+掩碼取位。
+    f = fmt.fmt-uint-base(9223372036854775808, 16, false)
+    runner.str-eq(f, '8000000000000000', 16, 'uint-base hex 2^63')
+    g = fmt.fmt-uint-base(18446744073709551615, 16, false)
+    runner.str-eq(g, 'ffffffffffffffff', 16, 'uint-base hex u64 max')
+    h = fmt.fmt-uint-base(18446744073709551615, 16, true)
+    runner.str-eq(h, 'FFFFFFFFFFFFFFFF', 16, 'uint-base hex u64 max upper')
+    i2 = fmt.fmt-uint-base(18446744073709551615, 2, false)
+    runner.str-eq(i2, '1111111111111111111111111111111111111111111111111111111111111111', 64, 'uint-base binary u64 max')
+    j2 = fmt.fmt-uint-base(9223372036854775808, 8, false)
+    runner.str-eq(j2, '1000000000000000000000', 22, 'uint-base octal 2^63')
 }
 
 t-f64 = () {

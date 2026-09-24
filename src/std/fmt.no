@@ -295,65 +295,162 @@ fmt-apply-spec = (s str, fill i64, align i64, width i64) (out str) {
 ; fmt-uint-base: 將 u64 按指定進制轉為字串
 ; base: 2/8/10/16；upper: hex 是否大寫
 fmt-uint-base = (u u64, base i64, upper bool) (out str) {
-    ru = u
+    ; 2 的冪進制（2/8/16）走「移位 + 掩碼」：掩碼只保留低位，即使 >> 是算術
+    ; 右移，符號擴充位也會被掩掉，故對整個 u64 區間（含 >= 2^63）都正確。
+    ;   原除法實作以 `tmp > 0` / `ru > 0` 為迴圈條件，而 u64 >= 2^63 的位模式
+    ;   在 i64 語意下是負數，兩個迴圈一次都不執行 -> digits = 0 -> 輸出空字串，
+    ;   再被 `016x` 的零填充補成 16 個 '0'（sha512 每個高位字組都印成
+    ;   0000000000000000）。
+    ; 非 2 的冪（十進位等）無法用移位取位，保留原除法實作。
+    is-pow2 = 0
+    base == 2 -> is-pow2 = 1
+    base == 8 -> is-pow2 = 1
+    base == 16 -> is-pow2 = 1
 
-    #{overflow=wrap}
-    ru == 0 -> {
+    is-pow2 == 0 -> {
+        ru = u
+
+        #{overflow=wrap}
+        ru == 0 -> {
+            out = with-cap(1)
+
+            #{index-out=0}
+            out[0] = 48
+            return
+        }
+        tmp u64 = ru
+        digits = 0
+        (tmp > 0) {
+
+            #{overflow=wrap}
+            digits = digits + 1
+
+            #{overflow=wrap}
+            tmp = tmp / base
+        }
+        out = with-cap(digits)
+
+        #{overflow=wrap}
+        pos = digits - 1
+        (ru > 0) {
+
+            #{overflow=wrap}
+            d = ru % base
+
+            #{overflow=wrap}
+            {
+                d < 10 -> {
+
+                    #{index-out=0}
+                    out[pos] = d + 48
+                }
+
+                -> {
+
+                    #{overflow=wrap}
+                    upper == true -> {
+
+                        #{index-out=0}
+                        out[pos] = d - 10 + 65
+                    }
+
+                    -> {
+
+                        #{index-out=0}
+                        out[pos] = d - 10 + 97
+                    }
+                }
+            }
+
+            #{overflow=wrap}
+            ru = ru / base
+
+            #{overflow=wrap}
+            pos = pos - 1
+        }
+        return
+    }
+
+    ; ── 以下為 2 的冪進制：移位 + 掩碼 ──
+    ; 每個 digit 的位數與 64-bit 下的最大位數
+    bpd = 1
+    maxd = 64
+    base == 8 -> {
+        bpd = 3
+        maxd = 22
+    }
+    base == 16 -> {
+        bpd = 4
+        maxd = 16
+    }
+
+    ; 跳過前導零，找出第一個（最高位）非零 digit 的位置
+    start = 0
+    seen = 0
+    i <- [0..maxd): {
+
+        #{overflow=wrap}
+        sh = bpd * (maxd - 1 - i)
+
+        #{overflow=wrap}
+        m = base - 1
+
+        ; 最高位 digit 可能不足 bpd 個位元（如 base 8 的頂端只剩 1 bit），
+        ; 此時收窄掩碼，避免把符號擴充位（算術右移時）算進來
+        #{overflow=wrap}
+        avail = 64 - sh
+        avail < bpd -> {
+            m = 1
+        }
+
+        #{overflow=wrap}
+        d = (u >> sh) & m
+        seen == 0 -> {
+            d > 0 -> {
+                start = i
+                seen = 1
+            }
+        }
+    }
+
+    ; 全為零 -> "0"
+    seen == 0 -> {
         out = with-cap(1)
 
         #{index-out=0}
         out[0] = 48
         return
     }
-    tmp u64 = ru
-    digits = 0
-    (tmp > 0) {
 
-        #{overflow=wrap}
-        digits = digits + 1
-
-        #{overflow=wrap}
-        tmp = tmp / base
-    }
-    out = with-cap(digits)
-
+    ; 由高到低逐位輸出
     #{overflow=wrap}
-    pos = digits - 1
-    (ru > 0) {
+    n = maxd - start
+    out = with-cap(n)
+    k <- [0..n): {
 
         #{overflow=wrap}
-        d = ru % base
+        sh = bpd * (maxd - 1 - start - k)
 
         #{overflow=wrap}
-        {
-            d < 10 -> {
+        m = base - 1
 
-                #{index-out=0}
-                out[pos] = d + 48
-            }
-
-            -> {
-
-                #{overflow=wrap}
-                upper == true -> {
-
-                    #{index-out=0}
-                    out[pos] = d - 10 + 65
-                }
-
-                -> {
-
-                    #{index-out=0}
-                    out[pos] = d - 10 + 97
-                }
-            }
+        #{overflow=wrap}
+        avail = 64 - sh
+        avail < bpd -> {
+            m = 1
         }
 
         #{overflow=wrap}
-        ru = ru / base
+        d = (u >> sh) & m
 
-        #{overflow=wrap}
-        pos = pos - 1
+        #{index-out=0, overflow=wrap}
+        {
+            d < 10 -> out[k] = d + 48
+            -> {
+                upper == true -> out[k] = d - 10 + 65
+                -> out[k] = d - 10 + 97
+            }
+        }
     }
 }
 
