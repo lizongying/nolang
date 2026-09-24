@@ -198,6 +198,16 @@ char.to-str = () (s str) {
     }
 }
 
+; to-txt: 轉為 UTF-8 編碼的 txt（固定 256 字節結構）
+; 復用 char.to-bytes 得到 1~4 字節的 UTF-8 序列，再逐字節拷入 txt 緩衝區。
+; 與 str.to-txt / []byte.to-txt 一致，回傳普通 txt（單碼點轉換不會失敗，無需 ?txt）。
+; 有了它，txt.to-upper / to-lower 等可透過「取 char → char.to-lower → char.to-txt 串接」
+; 重寫，無須再依賴會回傳 char 的 txt[i] 下標寫入。
+char.to-txt = () (out txt) {
+    b []byte = .to-bytes()
+    out = b.to-txt()
+}
+
 ; ═══════════════════════════════════════════════
 ; []char 切片 → 字符串
 ; ═══════════════════════════════════════════════

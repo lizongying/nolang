@@ -1873,6 +1873,7 @@ declare i8* @malloc(i64)
 declare void @free(i8*)
 declare i64 @write(i32, i8*, i64)
 declare void @llvm.memcpy.p0i8.p0i8.i64(i8*, i8*, i64, i1)
+declare void @llvm.memmove.p0i8.p0i8.i64(i8*, i8*, i64, i1)
 declare i32 @memcmp(i8*, i8*, i64)
 
 define void @str_free(%str-long %s) {
@@ -2477,10 +2478,12 @@ entry:
 ; std/str.no carries the equivalent nolang-level primitives (str.byte-index /
 ; str.cp-index / str.decode-cp) for source-level use.
 ;
-;   @nolang.utf8_off    cp index   -> byte offset   (clamped to len)
-;   @nolang.utf8_cp_at  cp index   -> code point    (-1 when out of range)
-;   @nolang.utf8_at     byte offset-> code point    (-1 when out of range)
-;   @nolang.utf8_width  code point -> 1..4 bytes
+;   @nolang.utf8_off     cp index   -> byte offset   (clamped to len)
+;   @nolang.utf8_cp_at   cp index   -> code point    (-1 when out of range)
+;   @nolang.utf8_at      byte offset-> code point    (-1 when out of range)
+;   @nolang.utf8_width   code point -> 1..4 bytes
+;   @nolang.utf8_cp_put  code point WRITE at cp index onto a TXT buffer
+;                        (re-encode + shift, 255-byte cap) — see below
 ;
 ; The "is this byte a code point LEADER" test is b >= 0xC0, identical to
 ; std/str.no's str.cp-index (b >= 0x80 && (b & 0xc0) == 0xc0), so the code
@@ -2643,6 +2646,139 @@ dec:
   ret i64 %cp
 err:
   ret i64 -1
+}
+
+; nolang.utf8_cp_put: the WRITE counterpart of utf8_cp_at, used by txt[i] = v
+; (code-point indexed, unlike str[i] = v, which stays byte addressed). Writes
+; the UTF-8 encoding of code point %cp at CODE POINT index %cpIdx of an inline
+; txt buffer (%data = the [255 x i8] array, %lenP = pointer to its byte-length
+; i8 field): the replaced sequence's tail shifts by the width delta, and the
+; total length is capped at 255 — bytes pushed past the cap are dropped, and a
+; write whose encoding alone does not fit is dropped entirely (buffer kept
+; intact so no dangling continuation bytes are left behind). An append
+; (cpIdx == the code point count) behaves like replacing an empty sequence.
+; A negative %cpIdx is ignored.
+define internal void @nolang.utf8_cp_put(i8* %data, i8* %lenP, i64 %cpIdx, i64 %cp) {
+entry:
+  %neg = icmp slt i64 %cpIdx, 0
+  br i1 %neg, label %ret, label %load
+load:
+  %len8 = load i8, i8* %lenP
+  %len = zext i8 %len8 to i64
+  %off = call i64 @nolang.utf8_off(i8* %data, i64 %len, i64 %cpIdx)
+  %inrange = icmp ult i64 %off, %len
+  br i1 %inrange, label %have, label %gt
+have:
+  %lp = getelementptr inbounds i8, i8* %data, i64 %off
+  %lb = load i8, i8* %lp
+  %oldw = call i64 @nolang.utf8_lead(i8 %lb)
+  br label %gt
+;
+; %oldw0 merges the replaced width: 0 when %off sits at/past the end (append).
+;
+; The byte constants below are SIGNED i8 — -64=0xC0, -128=0x80, -32=0xE0,
+; -16=0xF0 — identical to @str_from_cp.
+gt:
+  %oldw0 = phi i64 [ 0, %load ], [ %oldw, %have ]
+  %neww = call i64 @nolang.utf8_width(i64 %cp)
+  %end = add i64 %off, %neww
+  %fits = icmp ule i64 %end, 255
+  br i1 %fits, label %shift, label %ret
+shift:
+  %tail = sub i64 %len, %off
+  %ts = sub i64 %tail, %oldw0
+  %sp = getelementptr inbounds i8, i8* %data, i64 %off
+  %src = getelementptr i8, i8* %sp, i64 %oldw0
+  %dp = getelementptr i8, i8* %data, i64 %end
+  %room = sub i64 255, %end
+  %mfit = icmp ult i64 %ts, %room
+  %moved = select i1 %mfit, i64 %ts, i64 %room
+  br label %mloop
+mloop:
+  %k = phi i64 [ 0, %shift ], [ %k1, %mbody ]
+  %kd = icmp ult i64 %k, %moved
+  br i1 %kd, label %mbody, label %enc
+mbody:
+  %soff = add i64 %k, %off
+  %sop = add i64 %soff, %oldw0
+  %s1 = getelementptr inbounds i8, i8* %data, i64 %sop
+  %b1 = load i8, i8* %s1
+  %dop = add i64 %k, %end
+  %d1 = getelementptr inbounds i8, i8* %data, i64 %dop
+  store i8 %b1, i8* %d1
+  %k1 = add i64 %k, 1
+  br label %mloop
+enc:
+  %lt80 = icmp ult i64 %cp, 128
+  br i1 %lt80, label %e1, label %t2
+e1:
+  %c1 = trunc i64 %cp to i8
+  store i8 %c1, i8* %sp
+  br label %fin
+t2:
+  %lt800 = icmp ult i64 %cp, 2048
+  br i1 %lt800, label %e2, label %t3
+e2:
+  %hi2 = lshr i64 %cp, 6
+  %hi2b = trunc i64 %hi2 to i8
+  %hi2c = or i8 %hi2b, -64
+  store i8 %hi2c, i8* %sp
+  %lo2 = trunc i64 %cp to i8
+  %lo2b = and i8 %lo2, 63
+  %lo2c = or i8 %lo2b, -128
+  %p2 = getelementptr inbounds i8, i8* %sp, i64 1
+  store i8 %lo2c, i8* %p2
+  br label %fin
+t3:
+  %lt10000 = icmp ult i64 %cp, 65536
+  br i1 %lt10000, label %e3, label %e4
+e3:
+  %hi3 = lshr i64 %cp, 12
+  %hi3b = trunc i64 %hi3 to i8
+  %hi3c = or i8 %hi3b, -32
+  store i8 %hi3c, i8* %sp
+  %mid3 = lshr i64 %cp, 6
+  %mid3b = trunc i64 %mid3 to i8
+  %mid3c = and i8 %mid3b, 63
+  %mid3d = or i8 %mid3c, -128
+  %p3a = getelementptr inbounds i8, i8* %sp, i64 1
+  store i8 %mid3d, i8* %p3a
+  %lo3 = trunc i64 %cp to i8
+  %lo3b = and i8 %lo3, 63
+  %lo3c = or i8 %lo3b, -128
+  %p3b = getelementptr inbounds i8, i8* %sp, i64 2
+  store i8 %lo3c, i8* %p3b
+  br label %fin
+e4:
+  %hi4 = lshr i64 %cp, 18
+  %hi4b = trunc i64 %hi4 to i8
+  %hi4c = or i8 %hi4b, -16
+  store i8 %hi4c, i8* %sp
+  %q2 = lshr i64 %cp, 12
+  %q2b = trunc i64 %q2 to i8
+  %q2c = and i8 %q2b, 63
+  %q2d = or i8 %q2c, -128
+  %p4a = getelementptr inbounds i8, i8* %sp, i64 1
+  store i8 %q2d, i8* %p4a
+  %q3 = lshr i64 %cp, 6
+  %q3b = trunc i64 %q3 to i8
+  %q3c = and i8 %q3b, 63
+  %q3d = or i8 %q3c, -128
+  %p4b = getelementptr inbounds i8, i8* %sp, i64 2
+  store i8 %q3d, i8* %p4b
+  %q4 = trunc i64 %cp to i8
+  %q4b = and i8 %q4, 63
+  %q4c = or i8 %q4b, -128
+  %p4c = getelementptr inbounds i8, i8* %sp, i64 3
+  store i8 %q4c, i8* %p4c
+  br label %fin
+fin:
+  %nlen = add i64 %end, %moved
+  %nlen8 = trunc i64 %nlen to i8
+  store i8 %nlen8, i8* %lenP
+  ret void
+ret:
+  ret void
 }
 
 ; str_from_cp: UTF-8 ENCODE an i64 code point into a fresh %str-long. This is
@@ -6616,12 +6752,20 @@ func (c *codegen) mirTypeOfValue(v ValueID) *Type {
 }
 
 // isStrReceiver reports whether v is a `str` (the code-point indexed string).
-// `txt` is deliberately NOT included: it is a fixed 256-byte buffer with no
-// heap header and its own std/byte-level contract (see docs/docs/lang/txt.md),
-// so `t[i]` stays a byte read.
+// `txt` has its own receiver test (isTxtReceiver): reads are code-point
+// indexed the same way, but WRITES diverge — str[i]=v stays byte addressed
+// while txt[i]=v re-encodes UTF-8 in place (see emitTxtCpPut).
 func (c *codegen) isStrReceiver(v ValueID) bool {
 	ty := c.mirTypeOfValue(v)
 	return ty != nil && ty.Raw == "str"
+}
+
+// isTxtReceiver reports whether v is a `txt` (the fixed 256-byte inline
+// string: { [255 x i8] data, i8 len }). txt[i] reads decode the code point at
+// CODE POINT index i, like str.
+func (c *codegen) isTxtReceiver(v ValueID) bool {
+	ty := c.mirTypeOfValue(v)
+	return ty != nil && ty.Raw == "txt"
 }
 
 // strHeaderOf materializes the (data, len) pair of a `str` receiver: `len` is
@@ -6639,6 +6783,34 @@ func (c *codegen) strHeaderOf(v ValueID) (data, byteLen string) {
 	d := c.treg("srd")
 	c.sb.WriteString(fmt.Sprintf("  %s = extractvalue %%str-long %s, 2\n", d, rv))
 	return d, l
+}
+
+// txtHeaderOf materializes the (data, lenPtr, byteLen) triple of a `txt`
+// receiver: field 0 of %txt is the inline [255 x i8] buffer (its address IS
+// the data pointer — no bitcast needed), field 1 is the BYTE length stored as
+// an i8. The len POINTER is returned alongside so writes (utf8_cp_put) can
+// update the length in place.
+func (c *codegen) txtHeaderOf(v ValueID) (data, lenPtr, byteLen string) {
+	slot := c.valSlot[v]
+	if slot == "" {
+		return "", "", ""
+	}
+	return c.txtHeaderOfSlot(slot)
+}
+
+// txtHeaderOfSlot is txtHeaderOf over an already-resolved %txt* slot, so the
+// index-store path (which may have projected arrSlot to the real container
+// address) can share the same addressing sequence.
+func (c *codegen) txtHeaderOfSlot(slot string) (data, lenPtr, byteLen string) {
+	data = c.treg("txd")
+	c.sb.WriteString(fmt.Sprintf("  %s = getelementptr inbounds %%txt, %%txt* %s, i32 0, i32 0, i64 0\n", data, slot))
+	lenPtr = c.treg("txlp")
+	c.sb.WriteString(fmt.Sprintf("  %s = getelementptr inbounds %%txt, %%txt* %s, i32 0, i32 1\n", lenPtr, slot))
+	l8 := c.treg("txl8")
+	c.sb.WriteString(fmt.Sprintf("  %s = load i8, i8* %s\n", l8, lenPtr))
+	byteLen = c.treg("txl")
+	c.sb.WriteString(fmt.Sprintf("  %s = zext i8 %s to i64\n", byteLen, l8))
+	return data, lenPtr, byteLen
 }
 
 // elemLTOfType is the type-driven half of elemTypeOfReceiver, split out so an
@@ -6694,8 +6866,17 @@ func (c *codegen) emitIndex(inst *Inst) error {
 	// strings byte by byte (`s[1] = 0x80 | …` in str.replace-char /
 	// char.to-str), and a code-point write would have to re-encode and possibly
 	// grow the string. See docs/docs/lang/str.md, "寫入仍為位元組級".
+	//
+	// `txt[i]` reads the same contract — the code point at CODE POINT index i,
+	// -1 out of range — via @nolang.utf8_cp_at over the inline buffer. Unlike
+	// str, `txt[i] = v` is ALSO code-point indexed (emitTxtCpPut re-encodes and
+	// shifts within the 255-byte cap); builders that need raw byte access use
+	// the .byte / set-byte pair.
 	if c.isStrReceiver(inst.Args[0]) {
 		return c.emitStrCpIndex(inst)
+	}
+	if c.isTxtReceiver(inst.Args[0]) {
+		return c.emitTxtCpIndex(inst)
 	}
 	elemT := c.elemTypeOfReceiver(inst.Args[0])
 	dstT, _ := c.ptype(inst.Dst)
@@ -6805,6 +6986,57 @@ func (c *codegen) emitStrCpIndex(inst *Inst) error {
 		cp = cv
 	}
 	c.sb.WriteString(fmt.Sprintf("  store %s %s, %s* %s\n", dstT, cp, dstT, dstSlot))
+	return nil
+}
+
+// emitTxtCpIndex lowers the READ form `t[i]` on a txt receiver: the code point
+// at CODE POINT index i (same contract as str, see emitStrCpIndex), decoded
+// over the inline [255 x i8] buffer. -1 for an out-of-range index.
+func (c *codegen) emitTxtCpIndex(inst *Inst) error {
+	dstT, _ := c.ptype(inst.Dst)
+	dstSlot := c.valSlot[inst.Dst]
+	if dstSlot == "" {
+		dt, _ := c.ptype(inst.Dst)
+		c.fail("txt index result has no slot in func %s (dst=%d type=%s)", c.fname[c.cf], inst.Dst, dt)
+		return fmt.Errorf("txt index dst slot (dst=%d type=%s)", inst.Dst, dt)
+	}
+	data, _, byteLen := c.txtHeaderOf(inst.Args[0])
+	if data == "" {
+		c.fail("txt index receiver has no slot in func %d", c.cf)
+		return fmt.Errorf("txt index recv slot")
+	}
+	_, idxV := c.loadVal(inst.Args[1])
+	idxVT, _ := c.ptype(inst.Args[1])
+	idxV = c.coerceIndex(inst.Args[1], idxVT, idxV)
+	cp := c.treg("tcp")
+	c.sb.WriteString(fmt.Sprintf("  %s = call i64 @nolang.utf8_cp_at(i8* %s, i64 %s, i64 %s)\n", cp, data, byteLen, idxV))
+	if cv := c.coerce("i64", cp, dstT); cv != "" {
+		cp = cv
+	}
+	c.sb.WriteString(fmt.Sprintf("  store %s %s, %s* %s\n", dstT, cp, dstT, dstSlot))
+	return nil
+}
+
+// emitTxtCpPut lowers the WRITE form `t[i] = v` on a txt receiver: encode the
+// code point v at CODE POINT index i, shifting the trailing bytes by the width
+// delta inside the 255-byte buffer (bytes that no longer fit are dropped, a
+// write whose own encoding cannot fit is dropped entirely). DIVERGES from
+// str[i] = v, which stays byte addressed — txt is a fixed-size builder whose
+// length field utf8_cp_put maintains, so builders that need raw byte access
+// go through the set-byte builtin instead of this path.
+func (c *codegen) emitTxtCpPut(arrSlot, idxV, valT, valV string) error {
+	data, lenPtr, _ := c.txtHeaderOfSlot(arrSlot)
+	cpV := valV
+	if valT != "i64" {
+		if cv := c.coerce(valT, valV, "i64"); cv != "" {
+			cpV = cv
+		} else if valT != "" && !isScalarLLVM(valT) {
+			msg := fmt.Sprintf("index-store of a '%s' value into a 'txt' code-point slot — no conversion exists", valT)
+			c.fail("%s", msg)
+			return fmt.Errorf("%s", msg)
+		}
+	}
+	c.sb.WriteString(fmt.Sprintf("  call void @nolang.utf8_cp_put(i8* %s, i8* %s, i64 %s, i64 %s)\n", data, lenPtr, idxV, cpV))
 	return nil
 }
 
@@ -6922,6 +7154,13 @@ func (c *codegen) emitIndexStore(inst *Inst) error {
 	// the old null location, and the store would still segfault.
 	if arrT == "%vec" {
 		c.ensureVecBuffer(arrSlot, inst.Args[0], idxV, elemT)
+	}
+	// `txt[i] = v` writes a CODE POINT at code-point index i (re-encode + shift
+	// inside the 255-byte cap, length field maintained) — see emitTxtCpPut.
+	// arrT is the RECEIVER's LLVM type, so a `[]txt` container (arrT=%vec,
+	// elemT=%txt) still takes the generic element-store path below.
+	if arrT == "%txt" {
+		return c.emitTxtCpPut(arrSlot, idxV, valT, valV)
 	}
 	ep := c.elemAddr(inst.Args[0], arrSlot, idxV, arrT, elemT)
 	if elemOwned {
@@ -9291,6 +9530,12 @@ func (c *codegen) emitCall(f *Function, inst *Inst) error {
 	if callee == "str.byte" || callee == "txt.byte" {
 		return c.emitBuiltinRawByteAt(f, inst)
 	}
+	// set-byte is the raw-byte WRITER paired with the .byte reader above —
+	// same interception shape (qualified callee kept by the lowerer, expanded
+	// inline as GEP+store), so it is dispatched right beside it.
+	if callee == "str.set-byte" || callee == "txt.set-byte" {
+		return c.emitBuiltinRawBytePut(f, inst)
+	}
 	// `.zero()` is a receiver-mutating method (`data.zero()` / `buf.zero()`)
 	// with NO body in the HIR package — the legacy backend rewrites it to
 	// `<recvType>.zero(recv)` and intercepts the suffix to emit llvm.memset on
@@ -11293,6 +11538,61 @@ func (c *codegen) emitBuiltinRawByteAt(f *Function, inst *Inst) error {
 		return fmt.Errorf("builtin %s: cannot store i64 into %s", inst.Sym, dstLT)
 	}
 	c.sb.WriteString(fmt.Sprintf("  store %s %s, %s* %s\n", dstLT, v, dstLT, dstSlot))
+	return nil
+}
+
+// emitBuiltinRawBytePut lowers `txt.set-byte(i, b)` / `str.set-byte(i, b)`:
+// the raw-byte WRITER paired with emitBuiltinRawByteAt's reader. Stores the
+// low byte of b at BYTE index i of the receiver's underlying buffer, leaving
+// the length untouched. It exists because txt indexing became code-point
+// based: `t[i] = v` now re-encodes UTF-8 via utf8_cp_put, so std byte-fill
+// builders (from-bytes, to-upper, the []byte/str -> txt copiers) must write
+// raw bytes through this builtin to stay byte-addressed. Mirrors the reader's
+// addressing (GEP on the inline %txt buffer / the %str-long data pointer);
+// no bounds check is emitted, consistent with the reader.
+func (c *codegen) emitBuiltinRawBytePut(f *Function, inst *Inst) error {
+	if len(inst.Args) < 3 {
+		c.fail("builtin %s: missing receiver, index, or value", inst.Sym)
+		return fmt.Errorf("builtin %s: bad args", inst.Sym)
+	}
+	rt, _ := c.ptype(inst.Args[0])
+	rslot := c.valSlot[inst.Args[0]]
+	if rslot == "" {
+		c.fail("builtin %s: receiver has no slot", inst.Sym)
+		return fmt.Errorf("builtin %s: no receiver slot", inst.Sym)
+	}
+	_, idxV := c.loadVal(inst.Args[1])
+	idxVT, _ := c.ptype(inst.Args[1])
+	idxV = c.coerceIndex(inst.Args[1], idxVT, idxV)
+	_, valV := c.loadVal(inst.Args[2])
+	valT, _ := c.ptype(inst.Args[2])
+	b8 := valV
+	if valT != "i8" {
+		if cv := c.coerce(valT, valV, "i8"); cv != "" {
+			b8 = cv
+		} else {
+			c.fail("builtin %s: cannot coerce %s to i8", inst.Sym, valT)
+			return fmt.Errorf("builtin %s: bad value type %s", inst.Sym, valT)
+		}
+	}
+	var dataPtr string
+	c.loadSeq++
+	dGEP := fmt.Sprintf("%%bpg%d", c.loadSeq)
+	if rt == "%txt" {
+		// %txt = [255 x i8] at field 0; the field address IS the data pointer.
+		c.sb.WriteString(fmt.Sprintf("  %s = getelementptr inbounds %%txt, %%txt* %s, i32 0, i32 0, i64 0\n", dGEP, rslot))
+		dataPtr = dGEP
+	} else {
+		// %str-long = { i64 len, i64 cap, i8* data } — field 2 is the data ptr.
+		c.sb.WriteString(fmt.Sprintf("  %s = getelementptr inbounds %%str-long, %%str-long* %s, i32 0, i32 2\n", dGEP, rslot))
+		c.loadSeq++
+		dataPtr = fmt.Sprintf("%%bpd%d", c.loadSeq)
+		c.sb.WriteString(fmt.Sprintf("  %s = load i8*, i8** %s\n", dataPtr, dGEP))
+	}
+	c.loadSeq++
+	gep := fmt.Sprintf("%%bpv%d", c.loadSeq)
+	c.sb.WriteString(fmt.Sprintf("  %s = getelementptr i8, i8* %s, i64 %s\n", gep, dataPtr, idxV))
+	c.sb.WriteString(fmt.Sprintf("  store i8 %s, i8* %s\n", b8, gep))
 	return nil
 }
 

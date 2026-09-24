@@ -16,7 +16,7 @@ sidebar_position: 4
 - `.` ; Self (current struct/type) (⚠️ in range bounds, use `self.method` not `.method` to avoid `...` ambiguity with the return operator)
 - `?` ; Option type prefix (e.g., `?i64`, `?str`)
 - `(cond) { }` ; Conditional loop (prefix form, the new default; equivalent to the suffix `{ } (cond)`)
-- `N * { }` ; Counted loop (prefix form, the new default; equivalent to the suffix `{ } * N`; N <= 0 skips)
+- `N * { }` ; Counted loop (prefix form, the new default; equivalent to the suffix `{ } * N`; N ≤ 0 skips)
 - `!` ; False; also the "never execute" loop prefix (`! { }` never runs)
 - `!!` ; True; also the "always execute" loop prefix (`!! { }` loops forever)
 - `{ } ()` ; Not executed (empty parens mean false; suffix form, legacy spelling); prefix `! { }` / `false { }` / `() { }` is equivalent and is the new default

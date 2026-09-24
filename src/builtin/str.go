@@ -58,6 +58,25 @@ func init() {
 		Intercepted:  true,
 	})
 
+	// txt.set-byte / str.set-byte: raw-byte WRITER, the paired escape hatch of
+	// the `.byte` reader. NOT a real function — intercepted by the MIR codegen
+	// (emitBuiltinRawBytePut) and expanded inline to a GEP+store on the
+	// receiver's underlying byte buffer, leaving the length untouched. Needed
+	// once txt[i]/txt[i]= became CODE-POINT indexed: std routines that fill a
+	// txt byte by byte must no longer go through `out[i] = b` (which would
+	// re-encode and shift), they write raw bytes with set-byte instead.
+	// ReceiverType is ReceiverStr only for table-matching purposes: like the
+	// "byte" entry above, lookupBuiltin's bare-name fallback resolves both
+	// "txt.set-byte" and "str.set-byte".
+	BuiltinMethodList = append(BuiltinMethodList, BuiltinMethod{
+		ReceiverType: ReceiverStr,
+		MethodName:   "set-byte",
+		Params:       []parser.Type{parser.TypeI64, parser.TypeI64},
+		Return:       []parser.Type{},
+		Doc:          "Write raw byte b at BYTE index i of the underlying UTF-8 buffer (raw byte access, length unchanged)",
+		Intercepted:  true,
+	})
+
 	// str.clear: clear string in-place (set len=0, no storage switch)
 	// SSO: store 0x80 (0 | SSO tag) to len byte
 	// Long: store i64 0 to len field, cap/ptr unchanged

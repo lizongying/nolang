@@ -6214,10 +6214,17 @@ func validateExprArrayBounds(expr parser.Expression, arraySizes map[string]int64
 					return err
 				}
 			}
-			// Also check string index bounds
+			// Also check string index bounds.
+			// CODE-POINT indexing made a constant over-the-end index DEFINED
+			// behavior rather than UB: a read decodes to -1 (@nolang.utf8_cp_at)
+			// and a write clamps to an append (@nolang.utf8_cp_put maintains the
+			// byte length), so the upper bound is no longer a compile error — and
+			// the collected size is a BYTE length anyway, which cannot decide a
+			// CODE-POINT index. Only a negative constant stays an error: no index
+			// is negative under either semantics.
 			if size, exists := stringSizes[ident.Value]; exists {
-				if err := checkConstIndexBounds(e.Index, size, ident.Value, "string"); err != nil {
-					return err
+				if idx, ok := tryEvalConstInt(e.Index); ok && idx < 0 {
+					return fmt.Errorf("index %d out of bounds for string '%s' of size %d", idx, ident.Value, size)
 				}
 			}
 		}

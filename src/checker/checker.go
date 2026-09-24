@@ -335,9 +335,11 @@ func inferExprType(expr parser.Expression, varTypes map[string]string, funcTypes
 		return ""
 	case *parser.IndexExpression:
 		// Array/slice element access: str 下标返回 char（2026-09-06）。
+		// txt 下标自 code-point 化後與 str 一致：`t[i]` 回傳碼點 char（越界 -1），
+		// `t[i] = v` 亦以碼點寫入（重編碼＋搬移，255 位元組上限）。
 		if e.Left != nil {
 			lt := inferExprType(e.Left, varTypes, funcTypes, selfType)
-			if lt == "str" {
+			if lt == "str" || lt == "txt" {
 				return "char"
 			}
 			// 陣列 / 切片元素型別：`[4]json-value` → `json-value`、`[]i64` → `i64`、

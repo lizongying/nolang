@@ -364,9 +364,7 @@ HEX-LOWER = '0123456789abcdef'
     n = .len()
     n > 255 -> n = 255
     i <- [0..n): {
-
-        #{index-out=0}
-        out[i] = .[i]
+        out.set-byte(i, .[i])
     }
     out.len = n
 }

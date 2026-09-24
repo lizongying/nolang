@@ -2996,9 +2996,7 @@ str.to-txt = () (out txt) {
     n = .len-bytes()
     n > 255 -> n = 255
     i <- [0..n): {
-
-        #{index-out=0}
-        out[i] = .byte(i)
+        out.set-byte(i, .byte(i))
     }
     out.len = n
 }

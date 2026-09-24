@@ -9,7 +9,7 @@ package checker
 func init() {
 	embeddedStdSigReady = true
 	embeddedStdSigVersion = 2
-	embeddedStdSigKey = "0afe6533222dd9ecc08ede6730f9397a969dd6292da3fc9bc99d99d6ed828f26"
+	embeddedStdSigKey = "63efa7a17178454c2afaf80f55fdddfe220bdb2b95233bb80bc9ea27282bb5f9"
 	embeddedStdFuncSigs = map[string][]string{
 		"[]byte.index":                     {"i64"},
 		"[]byte.index-from":                {"i64"},
@@ -939,6 +939,7 @@ func init() {
 		"char.char.to-bytes":                               {"[]byte"},
 		"char.char.to-lower":                               {"char"},
 		"char.char.to-str":                                 {"str"},
+		"char.char.to-txt":                                 {"txt"},
 		"char.char.to-upper":                               {"char"},
 		"char.gt":                                          {"bool"},
 		"char.is-alnum":                                    {"bool"},
@@ -951,6 +952,7 @@ func init() {
 		"char.to-bytes":                                    {"[]byte"},
 		"char.to-lower":                                    {"char"},
 		"char.to-str":                                      {"str"},
+		"char.to-txt":                                      {"txt"},
 		"char.to-upper":                                    {"char"},
 		"client.client.close":                              {},
 		"client.client.connect":                            {"bool"},
@@ -2371,6 +2373,7 @@ func init() {
 		"txt.fields":                                       {"[]txt"},
 		"txt.fill":                                         {},
 		"txt.from-bytes":                                   {"txt"},
+		"txt.from-chars":                                   {"?txt"},
 		"txt.from-hex":                                     {"?txt"},
 		"txt.from-str":                                     {"txt"},
 		"txt.index":                                        {"i64"},
@@ -2426,6 +2429,7 @@ func init() {
 		"txt.txt.fields":                                   {"[]txt"},
 		"txt.txt.fill":                                     {},
 		"txt.txt.from-bytes":                               {"txt"},
+		"txt.txt.from-chars":                               {"?txt"},
 		"txt.txt.from-hex":                                 {"?txt"},
 		"txt.txt.from-str":                                 {"txt"},
 		"txt.txt.index":                                    {"i64"},
@@ -3781,6 +3785,7 @@ func init() {
 		"char.char.to-bytes":                               {},
 		"char.char.to-lower":                               {},
 		"char.char.to-str":                                 {},
+		"char.char.to-txt":                                 {},
 		"char.char.to-upper":                               {},
 		"char.gt":                                          {"char"},
 		"char.is-alnum":                                    {},
@@ -3793,6 +3798,7 @@ func init() {
 		"char.to-bytes":                                    {},
 		"char.to-lower":                                    {},
 		"char.to-str":                                      {},
+		"char.to-txt":                                      {},
 		"char.to-upper":                                    {},
 		"client.client.close":                              {},
 		"client.client.connect":                            {"str", "i64"},
@@ -5213,6 +5219,7 @@ func init() {
 		"txt.fields":                                       {},
 		"txt.fill":                                         {"byte"},
 		"txt.from-bytes":                                   {"[]byte"},
+		"txt.from-chars":                                   {"[]char"},
 		"txt.from-hex":                                     {},
 		"txt.from-str":                                     {"str"},
 		"txt.index":                                        {"txt"},
@@ -5268,6 +5275,7 @@ func init() {
 		"txt.txt.fields":                                   {},
 		"txt.txt.fill":                                     {"byte"},
 		"txt.txt.from-bytes":                               {"[]byte"},
+		"txt.txt.from-chars":                               {"[]char"},
 		"txt.txt.from-hex":                                 {},
 		"txt.txt.from-str":                                 {"str"},
 		"txt.txt.index":                                    {"txt"},

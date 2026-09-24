@@ -665,9 +665,11 @@ func resolveExprType(expr parser.Expression, varTypes map[string]string, structF
 		// Array/slice element access: extract element type from [N]type or []type
 		leftType := resolveExprType(e.Left, varTypes, structFields)
 		// str 下标返回 char（2026-09-06，应需求方要求：str[i] 返回字符而非字节）。
+		// txt 自 code-point 索引化后与 str 相同：`t[i]` 返回码点 char，写值亦以
+		// 码点计（raw byte 存取改用 .byte / set-byte 内建）。
 		// 值仍走编译器统一的 i64 整数表示（char 在代码生成层以 i64 传递，与 .eq/.cmp
 		// 等对比一致），仅类型层面标注为 char，使字符方法分发与 `c = s[i]` 类型推断生效。
-		if leftType == "str" {
+		if leftType == "str" || leftType == "txt" {
 			return "char"
 		}
 		if strings.HasPrefix(leftType, "[") {

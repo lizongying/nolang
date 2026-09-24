@@ -683,7 +683,7 @@ a, b = swap(5, 3)
 | `{ } (true)` infinite loop          | `!! { }` or `true { }`                              |
 | `{ } (cond)` conditional loop       | `(cond) { }` (empty `()` means false, not executed) |
 | `{ } ()` not executed               | `! { }` or `false { }` or `() { }`                  |
-| `{ } * n` constant count            | `n * { }` (N <= 0 skips the body)                   |
+| `{ } * n` constant count            | `n * { }` (N ≤ 0 skips the body)                   |
 | `for i=0, i<n, i++ { }` counting    | `n * { }` (constant count) or `i <- [0..n): { }` (variable) |
 | `for i <- [a..b] { }` range         | `i <- [a..b]: { }`                                  |
 | `for i in [a..b) { }` range         | `i <- [a..b): { }`                                  |

@@ -1,5 +1,18 @@
 # 更新日誌
 
+## v0.3.3
+
+- feat(compiler): implement option capture assignment
+- feat(mir): add overflow annotation support to arithmetic instructions
+- feat(platform): support cross-compilation target platform in MIR and codegen
+- fix(parser): preserve comments in option-match arms and correctly parse single-identifier condition loops
+- fix(checker): scope ASCII string variables by function and handle synthesized method receivers
+- fix(mir): deep clone borrowed %vec parameters to avoid double-free
+- refactor(txt): unify length semantics to byte-based operations
+- fix(fmt): revert boolean comparison simplification and remove irrelevant overflow annotations
+- docs(std): clarify fixed-length txt type length semantics
+- test(index): add tests for literal array indexing with option-match
+
 ## v0.3.2
 
 - feat(mir): implement recoverable integer division and modulo with option error handling

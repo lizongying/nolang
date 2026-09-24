@@ -9,13 +9,21 @@
 ;   - t.len()        返回「字符（code point）数量」，等价于 t.count()
 ;   - t.len-bytes()  返回「字节数量」（底层 UTF-8 缓冲区实际长度）
 ;   - 内部 len 字段  仍是字节长度；索引/切片/写入等字节操作都以 len-bytes() 为准
-;   ASCII 内容下三者相等；含多字节 UTF-8 时 len() < len-bytes()
+;   - ASCII 内容下三者相等；含多字节 UTF-8 时 len() < len-bytes()
+;
+; 索引语义（按码点，与 str 的读取行为对齐）：
+;   - txt[i] 读取：返回码点索引 i 处的 char（UTF-8 解码），越界返回 -1
+;   - txt[i] = v 写入：把 v 作为码点重新 UTF-8 编码写回，后移尾部字节；
+;     i == 码点数时等价追加；总字节长超过 255 的部分丢弃
+;     （注意：str 的 s[i] = v 仍是字节级写入，两者在此有意分叉）
+;   - 字节级原始读写用 .byte(i) / .set-byte(i, b) 成对方法（缓冲区构建代码专用）
 ;
 ; 用法（必须类型标注）：
 ;   t txt = 'hello'
 ;   n = t.len()          ; 字符数
 ;   b = t.len-bytes()    ; 字节数
-;   c = t[0]
+;   c = t[0]             ; 首个码点（char）
+;   b = t.byte(0)        ; 首个字节（byte）
 ;
 ; txt {
 ;     data [255]byte read-only   // 数据区域
@@ -37,7 +45,9 @@ txt.len = () (n i64) {
     n = .count()
 }
 
-; txt[i]: 返回指定位置的字节值
+; txt[i]: 按码点索引读取，返回 char（UTF-8 解码，越界返回 -1）；
+; txt[i] = v 按码点索引写入（重新 UTF-8 编码并移动尾部字节，超 255 字节部分丢弃）。
+; 字节级原始访问请用 .byte(i) / .set-byte(i, b)。
 ; build-in
 ; txt[i] = (i i64) (c byte) {
 ;     c = .[i]
@@ -57,9 +67,7 @@ txt.eq = (b txt) (eq bool) {
 txt.copy = () (dst txt) {
     n i64 = .len-bytes()
     i <- [0..n): {
-
-        #{index-out=0}
-        dst[i] = .byte(i)
+        dst.set-byte(i, .byte(i))
     }
     dst.len = .len-bytes()
 }
@@ -67,7 +75,7 @@ txt.copy = () (dst txt) {
 ; txt.fill: 用 byte 值填充整个数据区域
 txt.fill = (val byte) {
     i <- [0..255): {
-        .[i] = val
+        .set-byte(i, val)
     }
 }
 
@@ -91,9 +99,7 @@ txt.to-str = () (out str) {
     n i64 = .len-bytes()
     out = with-len(n)
     i <- [0..n): {
-
-        #{index-out=0}
-        out[i] = .byte(i)
+        out.set-byte(i, .byte(i))
     }
 }
 
@@ -102,9 +108,7 @@ txt.to-bytes = () (out []byte) {
     n i64 = .len-bytes()
     out = with-len(n)
     i <- [0..n): {
-
-        #{index-out=0}
-        out[i] = .byte(i)
+        out.set-byte(i, .byte(i))
     }
 }
 
@@ -122,11 +126,11 @@ txt.to-hex = () (out str) {
         #{overflow=wrap}
         b = .byte(i)
 
-        #{index-out=0, overflow=wrap}
-        out[i * 2] = HEX[b >> 4]
+        #{overflow=wrap}
+        out.set-byte(i * 2, HEX[b >> 4])
 
-        #{index-out=0, overflow=wrap}
-        out[i * 2 + 1] = HEX[b & 15]
+        #{overflow=wrap}
+        out.set-byte(i * 2 + 1, HEX[b & 15])
     }
 }
 
@@ -136,9 +140,7 @@ txt.from-str = (s str) (out txt) {
     n = s.len-bytes()
     n > 255 -> n = 255
     i <- [0..n): {
-
-        #{index-out=0}
-        out[i] = s.byte(i)
+        out.set-byte(i, s.byte(i))
     }
     out.len = n
 }
@@ -149,8 +151,7 @@ txt.from-bytes = (b []byte) (out txt) {
     n = b.len()
     n > 255 -> n = 255
     i <- [0..n): {
-        #{index-out=0}
-        out[i] = b[i]
+        out.set-byte(i, b[i])
     }
     out.len = n
 }
@@ -200,7 +201,7 @@ txt.append = (b byte) {
     #{overflow=wrap}
     n i64 = .len-bytes()
     n >= 255 -> return
-    .[n] = b
+    .set-byte(n, b)
 
     #{overflow=wrap}
     .len = n + 1
@@ -219,7 +220,7 @@ txt.append-str = (s str) {
     i <- [0..sn): {
 
         #{overflow=wrap}
-        .[n + i] = s.byte(i)
+        .set-byte(n + i, s.byte(i))
     }
 
     #{overflow=wrap}
@@ -239,7 +240,7 @@ txt.append-txt = (t txt) {
     i <- [0..tn): {
 
         #{overflow=wrap}
-        .[n + i] = t.byte(i)
+        .set-byte(n + i, t.byte(i))
     }
 
     #{overflow=wrap}
@@ -298,8 +299,8 @@ txt.reverse = () (out txt) {
     n i64 = .len-bytes()
     i <- [0..n): {
 
-        #{index-out=0, overflow=wrap}
-        out[i] = .byte(n - 1 - i)
+        #{overflow=wrap}
+        out.set-byte(i, .byte(n - 1 - i))
     }
     out.len = n
 }
@@ -320,8 +321,8 @@ txt.slice = (start i64, end i64) (out txt) {
     n > 255 -> n = 255
     i <- [0..n): {
 
-        #{index-out=0, overflow=wrap}
-        out[i] = .byte(r-start + i)
+        #{overflow=wrap}
+        out.set-byte(i, .byte(r-start + i))
     }
     out.len = n
 }
@@ -387,14 +388,12 @@ txt.to-upper = () (val txt) {
         {
             c >= 97 && c <= 122 -> {
 
-                #{index-out=0, overflow=wrap}
-                val[i] = c - 32
+                #{overflow=wrap}
+                val.set-byte(i, c - 32)
             }
 
             -> {
-
-                #{index-out=0}
-                val[i] = c
+                val.set-byte(i, c)
             }
         }
     }
@@ -410,18 +409,29 @@ txt.to-lower = () (val txt) {
         {
             c >= 65 && c <= 90 -> {
 
-                #{index-out=0, overflow=wrap}
-                val[i] = c + 32
+                #{overflow=wrap}
+                val.set-byte(i, c + 32)
             }
 
             -> {
-
-                #{index-out=0}
-                val[i] = c
+                val.set-byte(i, c)
             }
         }
     }
     val.len = n
+}
+
+; txt.from-chars: 從 char 切片構造新 txt（逐碼點寫入，UTF-8 編碼；超過 255 字節的內容自動丟棄）
+; 結果參數 t 是 ?txt，不能直接 t[i] 下標寫入；照 to-upper 的模式，
+; 用局部 val txt 做碼點下標賦值（val[i] = cs[i] 即第 i 個碼點，寫入自動維護字節長度），
+; 最後 t = val 一次性賦值回 option 結果。
+txt.from-chars = (cs []char) (t ?txt) {
+    val txt
+    n i64 = cs.len()
+    i <- [0..n): {
+        val[i] = cs[i]
+    }
+    t = val
 }
 
 ; ═══════════════════════════════════════════════
@@ -458,8 +468,8 @@ txt.trim = () (val txt) {
     m < 0 -> return
     i <- [0..m): {
 
-        #{index-out=0, overflow=wrap}
-        val[i] = .byte(start + i)
+        #{overflow=wrap}
+        val.set-byte(i, .byte(start + i))
     }
     val.len = m
 }
@@ -561,8 +571,8 @@ txt.trim-char = (ch char) (val txt) {
     m < 0 -> return
     j <- [0..m): {
 
-        #{index-out=0, overflow=wrap}
-        val[j] = .byte(start + j)
+        #{overflow=wrap}
+        val.set-byte(j, .byte(start + j))
     }
     val.len = m
 }
@@ -580,9 +590,7 @@ txt.repeat = (times i64) (val txt) {
     i <- [0..times): {
         j <- [0..n): {
             pos < cap -> {
-
-                #{index-out=0, overflow=wrap}
-                val[pos] = .byte(j)
+                val.set-byte(pos, .byte(j))
 
                 #{overflow=wrap}
                 pos = pos + 1
@@ -1097,80 +1105,48 @@ txt.replace-char = (old-ch char, new-ch char) (val txt) {
         #{overflow=wrap}
         {
             cp == old-ch -> {
-                new-ch < 0x80 -> {
-                    pos < cap -> {
+                ; 先把 new-ch 依 UTF-8 編成 1~4 個位元組，用**迴圈**逐位元組 set-byte 寫入
+                ; （不可用多個相鄰 `pos < cap -> { }` 短路易式陳述——實測只有第一個會執行，
+                ;  與 replace-str 相同的迴圈寫法才可靠。）
+                encw i64 = 1
+                lead i64 = 0
+                {
+                    new-ch < 0x80 -> {
+                        encw = 1
+                        lead = 0
+                    }
 
-                        #{index-out=0, overflow=wrap}
-                        val[pos] = new-ch
-                        pos = pos + 1
+                    new-ch < 0x800 -> {
+                        encw = 2
+                        lead = 0xc0
+                    }
+
+                    new-ch < 0x10000 -> {
+                        encw = 3
+                        lead = 0xe0
+                    }
+
+                    -> {
+                        encw = 4
+                        lead = 0xf0
                     }
                 }
+                enc <- [0..encw): {
 
-                new-ch < 0x800 -> {
-                    pos < cap -> {
+                    #{overflow=wrap}
+                    shift = (encw - 1 - enc) * 6
 
-                        #{index-out=0, overflow=wrap}
-                        val[pos] = 0xc0 | ((new-ch >> 6) & 0x1f)
-                        pos = pos + 1
+                    #{overflow=wrap}
+                    bv = 0x80 | ((new-ch >> shift) & 0x3f)
+                    enc == 0 -> {
+
+                        #{overflow=wrap}
+                        bv = lead | (new-ch >> shift)
                     }
-
                     pos < cap -> {
 
-                        #{index-out=0, overflow=wrap}
-                        val[pos] = 0x80 | (new-ch & 0x3f)
-                        pos = pos + 1
-                    }
-                }
-
-                new-ch < 0x10000 -> {
-                    pos < cap -> {
-
-                        #{index-out=0, overflow=wrap}
-                        val[pos] = 0xe0 | ((new-ch >> 12) & 0x0f)
-                        pos = pos + 1
-                    }
-
-                    pos < cap -> {
-
-                        #{index-out=0, overflow=wrap}
-                        val[pos] = 0x80 | ((new-ch >> 6) & 0x3f)
-                        pos = pos + 1
-                    }
-
-                    pos < cap -> {
-
-                        #{index-out=0, overflow=wrap}
-                        val[pos] = 0x80 | (new-ch & 0x3f)
-                        pos = pos + 1
-                    }
-                }
-
-                -> {
-                    pos < cap -> {
-
-                        #{index-out=0, overflow=wrap}
-                        val[pos] = 0xf0 | ((new-ch >> 18) & 0x07)
-                        pos = pos + 1
-                    }
-
-                    pos < cap -> {
-
-                        #{index-out=0, overflow=wrap}
-                        val[pos] = 0x80 | ((new-ch >> 12) & 0x3f)
-                        pos = pos + 1
-                    }
-
-                    pos < cap -> {
-
-                        #{index-out=0, overflow=wrap}
-                        val[pos] = 0x80 | ((new-ch >> 6) & 0x3f)
-                        pos = pos + 1
-                    }
-
-                    pos < cap -> {
-
-                        #{index-out=0, overflow=wrap}
-                        val[pos] = 0x80 | (new-ch & 0x3f)
+                        #{overflow=wrap}
+                        val.set-byte(pos, bv)
                         pos = pos + 1
                     }
                 }
@@ -1180,8 +1156,8 @@ txt.replace-char = (old-ch char, new-ch char) (val txt) {
                 k <- [0..clen): {
                     pos < cap -> {
 
-                        #{index-out=0, overflow=wrap}
-                        val[pos] = .byte(i + k)
+                        #{overflow=wrap}
+                        val.set-byte(pos, .byte(i + k))
                         pos = pos + 1
                     }
                 }
@@ -1233,8 +1209,8 @@ txt.replace-str = (old txt, new txt) (val txt) {
                 #{overflow=wrap}
                 pos < cap -> {
 
-                    #{index-out=0, overflow=wrap}
-                    val[pos] = new.byte(k)
+                    #{overflow=wrap}
+                    val.set-byte(pos, new.byte(k))
                     pos = pos + 1
                 }
             }
@@ -1248,8 +1224,8 @@ txt.replace-str = (old txt, new txt) (val txt) {
             #{overflow=wrap}
             pos < cap -> {
 
-                #{index-out=0, overflow=wrap}
-                val[pos] = .byte(i)
+                #{overflow=wrap}
+                val.set-byte(pos, .byte(i))
                 pos = pos + 1
             }
 
@@ -1305,7 +1281,7 @@ txt.replace-n = (old txt, new txt, n i64) (val txt) {
             }
         }
 
-        #{index-out=0, overflow=wrap}
+        #{overflow=wrap}
         total = total + parts[i].len-bytes()
     }
     total > 255 -> total = 255
@@ -1320,8 +1296,8 @@ txt.replace-n = (old txt, new txt, n i64) (val txt) {
             j <- [0..sep.len-bytes()): {
                 pos < cap -> {
 
-                    #{index-out=0, overflow=wrap}
-                    val[pos] = sep.byte(j)
+                    #{overflow=wrap}
+                    val.set-byte(pos, sep.byte(j))
                     pos = pos + 1
                 }
             }
@@ -1341,8 +1317,8 @@ txt.replace-n = (old txt, new txt, n i64) (val txt) {
             #{overflow=wrap}
             pos < cap -> {
 
-                #{index-out=0, overflow=wrap}
-                val[pos] = s.byte(j)
+                #{overflow=wrap}
+                val.set-byte(pos, s.byte(j))
                 pos = pos + 1
             }
         }
@@ -1429,8 +1405,8 @@ txt-join = (parts []txt, sep txt) (out txt) {
             sj <- [0..sep.len-bytes()): {
                 pos < cap -> {
 
-                    #{index-out=0, overflow=wrap}
-                    out[pos] = sep.byte(sj)
+                    #{overflow=wrap}
+                    out.set-byte(pos, sep.byte(sj))
 
                     #{overflow=wrap}
                     pos = pos + 1
@@ -1451,8 +1427,8 @@ txt-join = (parts []txt, sep txt) (out txt) {
         sj <- [0..sl): {
             pos < cap -> {
 
-                #{index-out=0, overflow=wrap}
-                out[pos] = s.byte(sj)
+                #{overflow=wrap}
+                out.set-byte(pos, s.byte(sj))
 
                 #{overflow=wrap}
                 pos = pos + 1
@@ -1580,9 +1556,7 @@ txt.from-hex = () (out ?txt) {
             out = err('invalid hex character')
             return
         }
-
-        #{index-out=0}
-        out2[i] = (hi << 4) | lo
+        out2.set-byte(i, (hi << 4) | lo)
     }
     out2.len = n
     out = out2
