@@ -1,5 +1,11 @@
 # 更新日誌
 
+## v0.3.4
+
+- feat(txt): implement code-point indexing and updating for txt type
+- docs(str): clarify difference between str and txt write semantics
+- fix(fmt): recover original match subject in bare match formatting
+
 ## v0.3.3
 
 - feat(compiler): implement option capture assignment
