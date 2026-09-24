@@ -375,7 +375,7 @@ url-encode = (s str) (out str) {
     i <- [0..s.len-bytes()): {
 
         #{index-out=0}
-        c = s[i]
+        c = s.byte(i)
 
         ; 不編碼的字元：A-Z, a-z, 0-9, -, _, ., ~
         keep = false
@@ -427,7 +427,7 @@ url-encode-component = (s str) (out str) {
     i <- [0..s.len-bytes()): {
 
         #{index-out=0}
-        c = s[i]
+        c = s.byte(i)
 
         ; 只保留 A-Z, a-z, 0-9, -, _, ., ~
         keep = false
@@ -479,7 +479,7 @@ url-decode = (s str) (out str) {
     (i < s.len-bytes()) {
 
         #{index-out=0, overflow=wrap}
-        c = s[i]
+        c = s.byte(i)
 
         #{overflow=wrap}
         {
@@ -489,10 +489,10 @@ url-decode = (s str) (out str) {
                     ; %XX
 
                     #{index-out=0, overflow=wrap}
-                    h1 = s[i + 1]
+                    h1 = s.byte(i + 1)
 
                     #{index-out=0}
-                    h2 = s[i + 2]
+                    h2 = s.byte(i + 2)
                     val = 0
 
                     ; 解析十六進制

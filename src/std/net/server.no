@@ -190,7 +190,7 @@ server-conn.recv-more = () (n i64) {
         i <- [0..n): {
 
             #{index-out=0, overflow=wrap}
-            .recv-buf[.recv-buf-len + i] = tmp[i]
+            .recv-buf[.recv-buf-len + i] = tmp.byte(i)
         }
 
         #{overflow=wrap}
@@ -425,7 +425,7 @@ server-conn.get-header = (name str) (val ?str) {
                     c1 = .header-names[i][j]
 
                     #{index-out=0}
-                    c2 = name[j]
+                    c2 = name.byte(j)
 
                     ; 大小寫不敏感比較
                     #{overflow=wrap}
@@ -779,7 +779,7 @@ secure-compare = (a str, b str) (ok bool) {
     i <- [0..a.len-bytes()): {
 
         #{index-out=0}
-        diff = diff | (a[i] ^ b[i])
+        diff = diff | (a.byte(i) ^ b.byte(i))
     }
     diff == 0 -> ok = true
 }
@@ -919,7 +919,7 @@ https-server-conn.recv-more = () (n i64) {
         i <- [0..n): {
 
             #{index-out=0, overflow=wrap}
-            .recv-buf[.recv-buf-len + i] = tmp[i]
+            .recv-buf[.recv-buf-len + i] = tmp.byte(i)
         }
 
         #{overflow=wrap}
@@ -1147,7 +1147,7 @@ https-server-conn.get-header = (name str) (val ?str) {
                     c1 = .header-names[i][j]
 
                     #{index-out=0}
-                    c2 = name[j]
+                    c2 = name.byte(j)
 
                     #{overflow=wrap}
                     c1 >= 65 && c1 <= 90 -> c1 = c1 + 32

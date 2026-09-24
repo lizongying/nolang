@@ -220,7 +220,7 @@ i64.to-bytes-le = () (out [?]byte) {
             sj = .[i + j]
 
             #{index-out=0}
-            tj = target[j]
+            tj = target.byte(j)
             sj != tj -> {
                 matched = 0
                 break
@@ -264,7 +264,7 @@ i64.to-bytes-le = () (out [?]byte) {
             sj = .[i + j]
 
             #{index-out=0}
-            tj = target[j]
+            tj = target.byte(j)
             sj != tj -> {
                 matched = 0
                 break

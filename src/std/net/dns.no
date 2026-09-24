@@ -448,7 +448,7 @@ resolve-from = (server str, domain str) (ip ?str) {
     i <- [0..n): {
 
         #{index-out=0}
-        resp[i] = resp-str[i]
+        resp[i] = resp-str.byte(i)
     }
     ip = parse-response(resp)
 }
@@ -493,7 +493,7 @@ resolve-all = (domain str) (ip ?str) {
     i <- [0..n): {
 
         #{index-out=0}
-        resp[i] = resp-str[i]
+        resp[i] = resp-str.byte(i)
     }
     ip = parse-response(resp)
 }

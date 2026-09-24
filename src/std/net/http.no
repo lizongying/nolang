@@ -221,7 +221,7 @@ response.get-header = (name str) (val ?str) {
         {
             matched == 1 -> {
                 j <- [0..name.len-bytes()): {
-                    .header-names[i][j] != name[j] -> {
+                    .header-names[i][j] != name.byte(j) -> {
                         matched = 0
                         break
                     }
@@ -447,7 +447,7 @@ do = (method str, url str, body str) (resp ?response) {
         i <- [0..n): {
 
             #{index-out=0, overflow=wrap}
-            raw[total + i] = buf[i]
+            raw[total + i] = buf.byte(i)
         }
 
         #{overflow=wrap}
@@ -723,7 +723,7 @@ do-req = (req request) (resp ?response) {
         i <- [0..n): {
 
             #{index-out=0, overflow=wrap}
-            raw[total + i] = buf[i]
+            raw[total + i] = buf.byte(i)
         }
 
         #{overflow=wrap}

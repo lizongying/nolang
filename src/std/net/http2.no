@@ -83,16 +83,16 @@ frame.parse = (data str, pos i64) (next-pos ?i64) {
     pos + HTTP2-FRAME-HEADER-SIZE > data.len-bytes() -> return; 24-bit length（big-endian）
 
     #{index-out=0, overflow=wrap}
-    .length = (data[pos] << 16) | (data[pos + 1] << 8) | data[pos + 2]
+    .length = (data.byte(pos) << 16) | (data.byte(pos + 1) << 8) | data.byte(pos + 2)
 
     #{index-out=0, overflow=wrap}
-    .frame-type = data[pos + 3]
+    .frame-type = data.byte(pos + 3)
 
     #{index-out=0, overflow=wrap}
-    .flags = data[pos + 4]; 31-bit stream-id（big-endian，高位保留）
+    .flags = data.byte(pos + 4); 31-bit stream-id（big-endian，高位保留）
 
     #{index-out=0, overflow=wrap}
-    .stream-id = ((data[pos + 5] & 127) << 24) | (data[pos + 6] << 16) | (data[pos + 7] << 8) | data[pos + 8]
+    .stream-id = ((data.byte(pos + 5) & 127) << 24) | (data.byte(pos + 6) << 16) | (data.byte(pos + 7) << 8) | data.byte(pos + 8)
 
     #{overflow=wrap}
     next-pos = pos + HTTP2-FRAME-HEADER-SIZE
@@ -230,7 +230,7 @@ conn.recv-frame = () (frame ?frame) {
         i <- [0..recv-n): {
 
             #{index-out=0, overflow=wrap}
-            hdr-buf[hdr-total + i] = hdr-buf[i]
+            hdr-buf[hdr-total + i] = hdr-buf.byte(i)
         }
 
         #{overflow=wrap}
@@ -271,7 +271,7 @@ conn.recv-frame = () (frame ?frame) {
             i <- [0..recv-n): {
 
                 #{index-out=0, overflow=wrap}
-                f.payload[payload-total + i] = f.payload[i]
+                f.payload[payload-total + i] = f.payload.byte(i)
             }
 
             #{overflow=wrap}
@@ -325,7 +325,7 @@ conn.send-headers = (stream-id i64, names [64]str, values [64]str, count i64, en
         j <- [0..hdr-out.len-bytes()): {
 
             #{index-out=0, overflow=wrap}
-            block[block-n + j] = hdr-out[j]
+            block[block-n + j] = hdr-out.byte(j)
         }
 
         #{overflow=wrap}
@@ -617,7 +617,7 @@ conn.request = (method str, path str, host str, body str) (names [32]str, values
                 i <- [0..f.payload.len-bytes()): {
 
                     #{index-out=0, overflow=wrap}
-                    resp-body[resp-n + i] = f.payload[i]
+                    resp-body[resp-n + i] = f.payload.byte(i)
                 }
 
                 #{overflow=wrap}

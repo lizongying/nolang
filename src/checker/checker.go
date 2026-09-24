@@ -4386,22 +4386,23 @@ func ValidateStrIndexComplexity(program *parser.Program) []ValidateResult {
 
 // collectStrIndexAscii 收集可证明为纯 ASCII 的字符串变量，规则镜像 codegen 的
 // collectAsciiVars：显式 #{ascii} 注解、字符串字面量、标识符传播、- 拼接两侧均 ASCII。
-func collectStrIndexAscii(stmts []parser.Statement, sem *parser.SemanticContext, asciiVars map[string]bool) {
+// funcName 用于 asciiVars 的作用域限定键（见 strIndexAsciiKey）。
+func collectStrIndexAscii(stmts []parser.Statement, sem *parser.SemanticContext, asciiVars map[string]bool, funcName string) {
 	for _, s := range stmts {
 		switch st := s.(type) {
 		case *parser.LetStatement:
-			noteStrIndexASCIILet(st, sem, asciiVars)
-			scanStrIndexExpr(st.Value, sem, asciiVars)
+			noteStrIndexASCIILet(st, sem, asciiVars, funcName)
+			scanStrIndexExpr(st.Value, sem, asciiVars, funcName)
 		case *parser.FunctionDefinition:
 			if st.Body != nil {
-				collectStrIndexAscii(st.Body.Statements, sem, asciiVars)
+				collectStrIndexAscii(st.Body.Statements, sem, asciiVars, st.Name)
 			}
 		case *parser.BlockStatement:
-			collectStrIndexAscii(st.Statements, sem, asciiVars)
+			collectStrIndexAscii(st.Statements, sem, asciiVars, funcName)
 		case *parser.ExpressionStatement:
-			scanStrIndexExpr(st.Expression, sem, asciiVars)
+			scanStrIndexExpr(st.Expression, sem, asciiVars, funcName)
 		case *parser.ReturnStatement:
-			scanStrIndexExpr(st.ReturnValue, sem, asciiVars)
+			scanStrIndexExpr(st.ReturnValue, sem, asciiVars, funcName)
 		}
 	}
 }
@@ -4423,14 +4424,23 @@ func collectStrIndexTypes(stmts []parser.Statement, sem *parser.SemanticContext,
 		return scopeTypes[fn]
 	}
 	for _, s := range stmts {
+		// std 檔案不參與收集。no vet 合併模式會把整個標準庫併入 program，而
+		// asciiVars/scopeTypes 是以「變數名」為鍵（非作用域限定）。std 裡有大量
+		// 名為 s / n / i / out / pos / val / target / limit … 的區域變數被賦予 ASCII
+		// 字面量，一旦進入 asciiVars，使用者程式碼中的同名變數就會被誤判為
+		// 「已證明純 ASCII」，使 STR_INDEX_COMPLEXITY 告警完全失效（實測 s 被 std 污染）。
+		// std 本來也在回報端被 isStdSourceFile 跳過，此處提前排除可同時避免污染。
+		if isStdSourceFile(parser.GetSourceFile(s)) {
+			continue
+		}
 		switch st := s.(type) {
 		case *parser.LetStatement:
 			if st.Name != nil {
 				scope := ensureScope(funcName)
 				scope[st.Name.Value] = exprTypeString(st.Type, st.Value, scopeTypes, funcName, funcReturns)
 			}
-			noteStrIndexASCIILet(st, sem, asciiVars)
-			scanStrIndexExpr(st.Value, sem, asciiVars)
+			noteStrIndexASCIILet(st, sem, asciiVars, funcName)
+			scanStrIndexExpr(st.Value, sem, asciiVars, funcName)
 		case *parser.FunctionDefinition:
 			scope := ensureScope(st.Name)
 			for _, p := range st.FuncSignature.Parameters {
@@ -4446,9 +4456,9 @@ func collectStrIndexTypes(stmts []parser.Statement, sem *parser.SemanticContext,
 		case *parser.BlockStatement:
 			collectStrIndexTypes(st.Statements, sem, funcName, scopeTypes, funcReturns, asciiVars)
 		case *parser.ExpressionStatement:
-			scanStrIndexExpr(st.Expression, sem, asciiVars)
+			scanStrIndexExpr(st.Expression, sem, asciiVars, funcName)
 		case *parser.ReturnStatement:
-			scanStrIndexExpr(st.ReturnValue, sem, asciiVars)
+			scanStrIndexExpr(st.ReturnValue, sem, asciiVars, funcName)
 		}
 	}
 }
@@ -4515,7 +4525,18 @@ func lookupVarType(scopeTypes map[string]map[string]string, funcName, name strin
 	return ""
 }
 
-func noteStrIndexASCIILet(st *parser.LetStatement, sem *parser.SemanticContext, asciiVars map[string]bool) {
+// strIndexAsciiKey 是 asciiVars 的作用域限定鍵。
+//
+// 「已證明純 ASCII」是**每個變數宣告**的性質，不是名稱的性質。原本 asciiVars 以裸
+// 變數名為鍵，於是不同函式裡同名的區域變數（s / n / i / out / pos / val / target …）
+// 會互相污染：只要任一處賦了 ASCII 字面量，其他所有同名變數都被誤判為「已證明
+// ASCII」，使 STR_INDEX_COMPLEXITY 對這些名字**靜默失效**。以 funcName + NUL + name
+// 為鍵即可消除同名跨作用域污染。頂層語句的 funcName 為 ""。
+func strIndexAsciiKey(funcName, name string) string {
+	return funcName + "\x00" + name
+}
+
+func noteStrIndexASCIILet(st *parser.LetStatement, sem *parser.SemanticContext, asciiVars map[string]bool, funcName string) {
 	if st == nil || st.Name == nil {
 		return
 	}
@@ -4525,13 +4546,13 @@ func noteStrIndexASCIILet(st *parser.LetStatement, sem *parser.SemanticContext, 
 		case *parser.StringLiteral:
 			proven = isASCIIString(v.Value)
 		case *parser.Identifier:
-			proven = asciiVars[v.Value]
+			proven = asciiVars[strIndexAsciiKey(funcName, v.Value)]
 		case *parser.InfixExpression:
 			if v.Operator == "-" {
 				l, lok := v.Left.(*parser.Identifier)
 				r, rok := v.Right.(*parser.Identifier)
 				if lok && rok {
-					proven = asciiVars[l.Value] && asciiVars[r.Value]
+					proven = asciiVars[strIndexAsciiKey(funcName, l.Value)] && asciiVars[strIndexAsciiKey(funcName, r.Value)]
 				}
 				if lr, ok := v.Left.(*parser.StringLiteral); ok {
 					lok = isASCIIString(lr.Value)
@@ -4546,7 +4567,7 @@ func noteStrIndexASCIILet(st *parser.LetStatement, sem *parser.SemanticContext, 
 		}
 	}
 	if proven {
-		asciiVars[st.Name.Value] = true
+		asciiVars[strIndexAsciiKey(funcName, st.Name.Value)] = true
 	}
 }
 
@@ -4562,23 +4583,23 @@ func hasStrIndexASCIIAnnotation(sem *parser.SemanticContext, n parser.Node) bool
 	return false
 }
 
-func scanStrIndexExpr(e parser.Expression, sem *parser.SemanticContext, asciiVars map[string]bool) {
+func scanStrIndexExpr(e parser.Expression, sem *parser.SemanticContext, asciiVars map[string]bool, funcName string) {
 	switch x := e.(type) {
 	case *parser.IfExpression:
 		if x.Consequence != nil {
-			collectStrIndexAscii(x.Consequence.Statements, sem, asciiVars)
+			collectStrIndexAscii(x.Consequence.Statements, sem, asciiVars, funcName)
 		}
 		if x.Alternative != nil {
-			collectStrIndexAscii(x.Alternative.Statements, sem, asciiVars)
+			collectStrIndexAscii(x.Alternative.Statements, sem, asciiVars, funcName)
 		}
 	case *parser.FunctionLiteral:
 		if x.Body != nil {
-			collectStrIndexAscii(x.Body.Statements, sem, asciiVars)
+			collectStrIndexAscii(x.Body.Statements, sem, asciiVars, funcName)
 		}
 	case *parser.CallExpression:
-		scanStrIndexExpr(x.Function, sem, asciiVars)
+		scanStrIndexExpr(x.Function, sem, asciiVars, funcName)
 		for _, a := range x.Arguments {
-			scanStrIndexExpr(a, sem, asciiVars)
+			scanStrIndexExpr(a, sem, asciiVars, funcName)
 		}
 	}
 }
@@ -4715,7 +4736,7 @@ func checkStrIndexInExpr(e parser.Expression, sem *parser.SemanticContext, ascii
 			if id, ok := x.Left.(*parser.Identifier); ok {
 				dt := lookupVarType(scopeTypes, funcName, id.Value)
 				dok := dt != ""
-				if dok && isStrLikeType(dt) && !asciiVars[id.Value] {
+				if dok && isStrLikeType(dt) && !asciiVars[strIndexAsciiKey(funcName, id.Value)] {
 					results = append(results, ValidateResult{
 						Line:    x.Token.Line,
 						Column:  x.Token.Column,

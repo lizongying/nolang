@@ -171,7 +171,7 @@ ip-addr.to-str = () (out str) {
     j <- [0..tmp.len-bytes()): {
 
         #{index-out=0, overflow=wrap}
-        out[n + 1 + j] = tmp[j]
+        out[n + 1 + j] = tmp.byte(j)
     }
     n = out.len-bytes()
 
@@ -182,7 +182,7 @@ ip-addr.to-str = () (out str) {
     j <- [0..tmp.len-bytes()): {
 
         #{index-out=0, overflow=wrap}
-        out[n + 1 + j] = tmp[j]
+        out[n + 1 + j] = tmp.byte(j)
     }
     n = out.len-bytes()
 
@@ -193,7 +193,7 @@ ip-addr.to-str = () (out str) {
     j <- [0..tmp.len-bytes()): {
 
         #{index-out=0, overflow=wrap}
-        out[n + 1 + j] = tmp[j]
+        out[n + 1 + j] = tmp.byte(j)
     }
 }
 

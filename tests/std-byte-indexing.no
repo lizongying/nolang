@@ -1,0 +1,215 @@
+; std-byte-indexing.no — 回歸測試：`str` 當「原始位元組緩衝區」時，讀取必須用 `.byte(i)`
+;
+; 背景見 tests/net-byte-fidelity.no。該檔覆蓋 src/std/net/；本檔覆蓋 net/ 之外的 std。
+;
+; 共同錯誤形狀有兩種，都只在「位元組長度 != 碼點長度」（即含非 ASCII）時才顯形：
+;   (A) 迴圈上界用 <s>.len-bytes()（位元組數），讀取卻寫成 <s>[k]（碼點索引）
+;       → 索引越過碼點數後讀到 0/垃圾（str 越界讀不 trap，但結果錯誤）。
+;   (B) 掃描用 .p[i] 找到「碼點位置」，卻把該位置當「位元組游標」去做切片/拷貝
+;       → 非 ASCII 路徑被從多位元組字元中間切開（path.base/ext/dir/split 曾如此）。
+;
+; 受影響且已修：collection/{map,str-map,str-set,static-hashmap}、byte([]byte.index)、
+; json、fmt、path、archive/{tar,zip}、encoding/pem。
+; 本檔把其中可無 socket、無檔案系統副作用地驗證的部分釘住。
+;
+; 實測對照（同一測試檔分別在修復前/後執行，共 24 條斷言）：
+;   修復前 FAIL 11 條：2b 2c（str-set 非 ASCII 鍵）、3a（[]byte.index 非 ASCII needle）、
+;                      4a 4b 4c 4d（path 的 base/ext/dir/split 全錯，輸出被從多位元組
+;                      字元中間切開）、5b（json 非 ASCII 鍵查不到）、7（path.clean）、
+;                      9（csv.encode-field 漏掉逗號不加引號 → CSV 損壞）、
+;                      6c（fmt 填充把原字串弄壞，hex=E52C9EFFFF…）。
+;   修復後 24 條全 PASS（5/5 執行 stdout sha 完全一致）。
+;   ⚠️ 刻意未設斷言的兩處：`path.join` 與 `url.url-encode` —— 兩者的 `c = s[i]` /
+;   `b[j]` 都已改成 `.byte()`，但它們另有用 `x[x.len-bytes()] = v` 逐位元組追加的
+;   **既有**成長缺陷（HEAD 與修復後表現一致：內容錯 / trace-BPT trap），掛斷言會不穩定。
+; 註：§1（str-map）在修復前後都 PASS —— put 與 get 用同一個 hash、str-eq 亦為逐元素
+; 比較，故碼點讀取對「查得到/查不到」是可觀察等價的。該處的修正價值在於消除
+; 越界讀取、並讓 FNV-1a 真正按位元組計算（與 str-set 一致），非行為修復。
+
+main = () {
+    print('=== std-byte-indexing ===')
+
+    ; ─────────────────────────────────────────────
+    ; 1. str-map：非 ASCII 鍵（位元組長度 != 碼點長度）
+    ; ─────────────────────────────────────────────
+    m = str-map {}
+    m.init()
+    m.put('日本語', 'nihongo')
+    m.put('中文', 'zhongwen')
+    m.put('ascii', 'plain')
+
+    m.len() == 3 -> print('PASS: 1a str-map size=3')
+    -> print('FAIL: 1a str-map size=' - m.len().to-str() - ' (expect 3)')
+
+    g = m.get('日本語')
+    g: {
+        err -> print('FAIL: 1b str-map get 日本語 -> err')
+        nil -> print('FAIL: 1b str-map get 日本語 -> nil')
+        -> {
+            it == 'nihongo' -> print('PASS: 1b str-map non-ascii key round trip')
+            -> print('FAIL: 1b str-map get 日本語 got=[' - it - ']')
+        }
+    }
+
+    g2 = m.get('中文')
+    g2: {
+        err -> print('FAIL: 1c str-map get 中文 -> err')
+        nil -> print('FAIL: 1c str-map get 中文 -> nil')
+        -> {
+            it == 'zhongwen' -> print('PASS: 1c str-map second non-ascii key')
+            -> print('FAIL: 1c str-map get 中文 got=[' - it - ']')
+        }
+    }
+
+    m.contains('ascii') -> print('PASS: 1d str-map contains ascii')
+    -> print('FAIL: 1d str-map contains ascii')
+
+    ; ─────────────────────────────────────────────
+    ; 2. str-set：非 ASCII 鍵的 add/contains
+    ;    add 內有「逐位元組複製鍵」的迴圈，用 key[i] 會把碼點值當位元組寫入 → 鍵被弄壞
+    ; ─────────────────────────────────────────────
+    s = str-set {}
+    s.init()
+    s.add('日本語')
+    s.add('中文')
+    s.add('ascii')
+
+    s.len() == 3 -> print('PASS: 2a str-set size=3')
+    -> print('FAIL: 2a str-set size=' - s.len().to-str() - ' (expect 3)')
+
+    s.contains('日本語') -> print('PASS: 2b str-set contains 日本語')
+    -> print('FAIL: 2b str-set contains 日本語 -> false')
+
+    s.contains('中文') -> print('PASS: 2c str-set contains 中文')
+    -> print('FAIL: 2c str-set contains 中文 -> false')
+
+    s.contains('nope') -> print('FAIL: 2d str-set contains nope -> true')
+    -> print('PASS: 2d str-set rejects absent key')
+
+    ; ─────────────────────────────────────────────
+    ; 3. []byte.index：非 ASCII needle
+    ;    上界 tn = target.len-bytes() 但讀 target[j]（碼點）→ 永遠比不中
+    ; ─────────────────────────────────────────────
+    b = 'ab日本語cd'.to-bytes()
+    pos = b.index('日本語')
+    pos == 2 -> print('PASS: 3a []byte.index finds non-ascii needle at 2')
+    -> print('FAIL: 3a []byte.index got ' - pos.to-str() - ' (expect 2)')
+
+    pos2 = b.index('cd')
+    pos2 == 11 -> print('PASS: 3b []byte.index ascii needle at 11 (after 9 bytes)')
+    -> print('FAIL: 3b []byte.index ascii got ' - pos2.to-str() - ' (expect 11)')
+
+    pos3 = b.index('zz')
+    pos3 == -1 -> print('PASS: 3c []byte.index absent -> -1')
+    -> print('FAIL: 3c []byte.index absent got ' - pos3.to-str())
+
+    ; ─────────────────────────────────────────────
+    ; 4. path：非 ASCII 路徑（(B) 類：掃描位置被當位元組游標）
+    ; ─────────────────────────────────────────────
+    p1 = path {
+        p: '/tmp/日本語/ファイル.txt'
+    }
+    base = p1.base()
+    base == 'ファイル.txt' -> print('PASS: 4a path.base non-ascii')
+    -> print('FAIL: 4a path.base got=[' - base - '] (expect ファイル.txt)')
+
+    p2 = path {
+        p: '/tmp/日本語/ファイル.txt'
+    }
+    ext = p2.ext()
+    ext == '.txt' -> print('PASS: 4b path.ext non-ascii')
+    -> print('FAIL: 4b path.ext got=[' - ext - '] (expect .txt)')
+
+    p3 = path {
+        p: '/tmp/日本語/ファイル.txt'
+    }
+    dir = p3.dir()
+    dir == '/tmp/日本語' -> print('PASS: 4c path.dir non-ascii')
+    -> print('FAIL: 4c path.dir got=[' - dir - '] (expect /tmp/日本語)')
+
+    p4 = path {
+        p: '/tmp/日本語/ファイル.txt'
+    }
+    fname = p4.split()
+    fname == 'ファイル.txt' -> print('PASS: 4d path.split non-ascii')
+    -> print('FAIL: 4d path.split got=[' - fname - '] (expect ファイル.txt)')
+
+    ; ⚠️ 刻意**不測** `path.join`：它另有「原地成長 .p」的既有記憶體安全問題 ——
+    ; `path.join` 是 `.p[out-n] = b.byte(j)` 直接往原 str 寫，需要擴容時不可靠。
+    ; 實測（純 ASCII、長後綴強迫擴容）：`path{p:'/tmp/aaa'}.join(<601 bytes>)` 內容錯
+    ; （len-bytes 對但內容是垃圾）且最終 segfault —— **HEAD 與修復後完全一致**，
+    ; 屬既有缺陷，與位元組索引無關。故本檔不為 join 設斷言，避免掛上不穩定的守衛。
+
+    ; ─────────────────────────────────────────────
+    ; 5. json：非 ASCII 鍵與值
+    ; ─────────────────────────────────────────────
+    j = json.parse('{"name":"Alice"}')
+    j: {
+        err -> print('FAIL: 5 json.parse -> err')
+        nil -> print('FAIL: 5 json.parse -> nil')
+        -> {
+            ok-set = it.set-str('日本語', 'にほんご')
+            ok-set -> print('PASS: 5a json.set-str non-ascii key+value')
+            -> print('FAIL: 5a json.set-str returned false')
+
+            val, found = it.get-str('日本語')
+            found -> {
+                val == 'にほんご' -> print('PASS: 5b json.get-str non-ascii round trip')
+                -> print('FAIL: 5b json.get-str got=[' - val - '] (expect にほんご)')
+            }
+            -> print('FAIL: 5b json.get-str key not found')
+
+            s-val, s-ok = it.get-str('name')
+            s-ok && s-val == 'Alice' -> print('PASS: 5c json ascii value intact')
+            -> print('FAIL: 5c json ascii value broken')
+        }
+    }
+
+    ; ─────────────────────────────────────────────
+    ; 6. fmt：非 ASCII 字串的寬度填充與精度截斷（逐位元組複製）
+    ; ─────────────────────────────────────────────
+    padded = fmt.fmt-str('日本語', '10')
+    padded.len-bytes() == 10 -> print('PASS: 6a fmt-str pads by bytes (9+1=10)')
+    -> print('FAIL: 6a fmt-str len-bytes=' - padded.len-bytes().to-str() - ' (expect 10)')
+
+    padded2 = fmt.fmt-apply-spec('日本語', 32, 60, 12)
+    padded2.len-bytes() == 12 -> print('PASS: 6b fmt-apply-spec left-align keeps bytes')
+    -> print('FAIL: 6b fmt-apply-spec len-bytes=' - padded2.len-bytes().to-str() - ' (expect 12)')
+
+    ; 填充後原字串必須完整保留（不能在中間被碼點讀取破壞）
+    ; padded2 為左對齊（原字串在前，尾隨 3 個空白），故前 9 位元組就是原字串。
+    padded2.slice-bytes(0, 9) == '日本語' -> print('PASS: 6c fmt padding preserved original bytes')
+    -> print('FAIL: 6c fmt padding corrupted original, hex=' - padded2.to-bytes().to-hex())
+
+    ; ─────────────────────────────────────────────
+    ; 7. path.clean：折疊重複分隔符（非 ASCII 路徑）
+    ;    註：clean 的 '..' 回退在**純 ASCII 路徑上本來就失效**（`/tmp/aaa/bbb/../a.txt`
+    ;    → `/tmp/aaa/bbba.txt`，修復前後一致），那是既有問題、與位元組索引無關，
+    ;    故本檔只釘住與位元組索引相關的「折疊重複分隔符」行為。
+    ; ─────────────────────────────────────────────
+    p6 = path {
+        p: '日本語//ファイル.txt'
+    }
+    p6.clean()
+    p6.p == '日本語/ファイル.txt' -> print('PASS: 7 path.clean collapses // on non-ascii path')
+    -> print('FAIL: 7 path.clean got=[' - p6.p - '] (expect 日本語/ファイル.txt)')
+
+    ; ⚠️ 刻意**不測** `url.url-encode`：它的 `c = s[i]` 已改為 `s.byte(i)`（這是正確的
+    ; 修正 —— 修前 `c` 是碼點 0x65E5，`hex-chars[c >> 4]` 直接越界而 trace/BPT trap；
+    ; 修後單獨執行可得正確的 `%E6%97%A5%E6%9C%AC%E8%AA%9E`），但它與 `path.join` 一樣用
+    ; `out[out.len-bytes()] = x` 逐字節追加，仍有「成長不可靠」的既有問題：在本檔這樣
+    ; 較長的流程裡，回傳值會被截斷/與後續字串緩衝區互相污染（`url-encode-component` 甚至
+    ; 在 HEAD 與修復後都直接 trace/BPT trap）。故不在此設斷言，避免掛上不穩定的守衛。
+
+    ; ─────────────────────────────────────────────
+    ; 9. csv.encode-field：非 ASCII 欄位含逗號時必須加引號
+    ;    修前掃描用碼點索引會**漏掉**逗號 → 不加引號 → CSV 損壞。
+    ; ─────────────────────────────────────────────
+    cf = csv.encode-field('日本語,含む')
+    cf == '"日本語,含む"' -> print('PASS: 9 csv.encode-field quotes non-ascii field with comma')
+    -> print('FAIL: 9 csv.encode-field got=[' - cf - ']')
+
+    cf2 = csv.encode-field('日本語')
+    cf2 == '日本語' -> print('PASS: 9b csv.encode-field leaves plain non-ascii unquoted')
+    -> print('FAIL: 9b csv.encode-field got=[' - cf2 - ']')
+}

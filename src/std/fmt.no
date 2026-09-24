@@ -237,7 +237,7 @@ fmt-apply-spec = (s str, fill i64, align i64, width i64) (out str) {
             i <- [0..slen): {
 
                 #{index-out=0}
-                out[i] = s[i]
+                out[i] = s.byte(i)
             }
             i <- [0..pad): {
 
@@ -261,7 +261,7 @@ fmt-apply-spec = (s str, fill i64, align i64, width i64) (out str) {
             i <- [0..slen): {
 
                 #{index-out=0, overflow=wrap}
-                out[left + i] = s[i]
+                out[left + i] = s.byte(i)
             }
             i <- [0..right): {
 
@@ -282,7 +282,7 @@ fmt-apply-spec = (s str, fill i64, align i64, width i64) (out str) {
             i <- [0..slen): {
 
                 #{index-out=0, overflow=wrap}
-                out[pad + i] = s[i]
+                out[pad + i] = s.byte(i)
             }
         }
     }
@@ -723,7 +723,7 @@ fmt-str = (s str, spec str) (out str) {
         i <- [0..precision): {
 
             #{index-out=0}
-            body[i] = s[i]
+            body[i] = s.byte(i)
         }
     }
 

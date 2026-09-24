@@ -390,7 +390,7 @@ json-pool.parse = (s str, pos i64) (node-idx i64, next-pos i64, ok bool) {
                 j <- [0..key-len): {
 
                     #{index-out=0, overflow=wrap}
-                    .nodes[node-idx].keys[cnt][j] = .nodes[key-idx].str-val[j]
+                    .nodes[node-idx].keys[cnt][j] = .nodes[key-idx].str-val.byte(j)
                 }
 
                 ; (length preset by with-len(key-len) above)
@@ -726,7 +726,7 @@ json-pool.set-key = (obj-idx i64, key str, val-idx i64) (ok bool) {
     j <- [0..key.len-bytes()): {
 
         #{index-out=0, overflow=wrap}
-        .nodes[obj-idx].keys[cnt][j] = key[j]
+        .nodes[obj-idx].keys[cnt][j] = key.byte(j)
     }
 
     ; (length preset by with-len(key.len-bytes()) above)
@@ -1283,7 +1283,7 @@ json.set = (key str, val-idx i64) (ok bool) {
     j <- [0..key.len-bytes()): {
 
         #{index-out=0, overflow=wrap}
-        .pool.nodes[.root].keys[cnt][j] = key[j]
+        .pool.nodes[.root].keys[cnt][j] = key.byte(j)
     }
 
     #{index-out=0}
@@ -1317,7 +1317,7 @@ json.set-str = (key str, val str) (ok bool) {
     i <- [0..val.len-bytes()): {
 
         #{index-out=0}
-        .pool.nodes[idx].str-val[i] = val[i]
+        .pool.nodes[idx].str-val[i] = val.byte(i)
     }
 
     #{index-out=0}
@@ -1489,7 +1489,7 @@ json.arr-push-str = (val str) (ok bool) {
     i <- [0..val.len-bytes()): {
 
         #{index-out=0}
-        .pool.nodes[idx].str-val[i] = val[i]
+        .pool.nodes[idx].str-val[i] = val.byte(i)
     }
 
     #{index-out=0}

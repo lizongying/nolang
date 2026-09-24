@@ -478,7 +478,7 @@ tables.dyn-add = (name str, value str) {
     j <- [0..name.len-bytes()): {
 
         #{index-out=0, overflow=wrap}
-        dn0-tmp[j] = name[j]
+        dn0-tmp[j] = name.byte(j)
     }
 
     #{index-out=0}
@@ -487,7 +487,7 @@ tables.dyn-add = (name str, value str) {
     j <- [0..value.len-bytes()): {
 
         #{index-out=0, overflow=wrap}
-        dv0-tmp[j] = value[j]
+        dv0-tmp[j] = value.byte(j)
     }
 
     #{index-out=0}
@@ -519,7 +519,7 @@ tables.find = (name str, value str) (idx i64) {
         sn-len == nm-len -> {
             matched = 1
             j <- [0..nm-len): {
-                .static-names[i][j] != name[j] -> {
+                .static-names[i][j] != name.byte(j) -> {
                     matched = 0
                     break
                 }
@@ -531,7 +531,7 @@ tables.find = (name str, value str) (idx i64) {
                 sv-len == vm-len -> {
                     v-matched = 1
                     j <- [0..vm-len): {
-                        .static-values[i][j] != value[j] -> {
+                        .static-values[i][j] != value.byte(j) -> {
                             v-matched = 0
                             break
                         }
@@ -555,7 +555,7 @@ tables.find = (name str, value str) (idx i64) {
         dn-len == nm-len -> {
             matched = 1
             j <- [0..nm-len): {
-                .dyn-names[i][j] != name[j] -> {
+                .dyn-names[i][j] != name.byte(j) -> {
                     matched = 0
                     break
                 }
@@ -567,7 +567,7 @@ tables.find = (name str, value str) (idx i64) {
                 dv-len == vm-len -> {
                     v-matched = 1
                     j <- [0..vm-len): {
-                        .dyn-values[i][j] != value[j] -> {
+                        .dyn-values[i][j] != value.byte(j) -> {
                             v-matched = 0
                             break
                         }
@@ -596,7 +596,7 @@ tables.find-name = (name str) (idx i64) {
         sn-len == nm-len -> {
             matched = 1
             j <- [0..nm-len): {
-                .static-names[i][j] != name[j] -> {
+                .static-names[i][j] != name.byte(j) -> {
                     matched = 0
                     break
                 }
@@ -616,7 +616,7 @@ tables.find-name = (name str) (idx i64) {
         dn-len == nm-len -> {
             matched = 1
             j <- [0..nm-len): {
-                .dyn-names[i][j] != name[j] -> {
+                .dyn-names[i][j] != name.byte(j) -> {
                     matched = 0
                     break
                 }
@@ -751,7 +751,7 @@ decode-int = (data str, pos i64, prefix-bits i64) (val i64, next-pos i64) {
     max-prefix = (1 << prefix-bits) - 1
 
     #{index-out=0}
-    first = data[pos] & max-prefix
+    first = data.byte(pos) & max-prefix
     val = first
 
     #{overflow=wrap}
@@ -769,7 +769,7 @@ decode-int = (data str, pos i64, prefix-bits i64) (val i64, next-pos i64) {
         }
 
         #{index-out=0}
-        b = data[next-pos]
+        b = data.byte(next-pos)
 
         #{overflow=wrap}
         next-pos = next-pos + 1
@@ -806,7 +806,7 @@ encode-str = (s str) (out str) {
     i <- [0..len-out.len-bytes()): {
 
         #{index-out=0, overflow=wrap}
-        out[i] = len-out[i]
+        out[i] = len-out.byte(i)
     }
     out-n = len-out.len-bytes()
 
@@ -814,7 +814,7 @@ encode-str = (s str) (out str) {
     i <- [0..s.len-bytes()): {
 
         #{index-out=0, overflow=wrap}
-        out[out-n + i] = s[i]
+        out[out-n + i] = s.byte(i)
     }
 }
 
@@ -829,7 +829,7 @@ decode-str = (data str, pos i64) (out str, next-pos i64) {
     }
 
     #{index-out=0}
-    first = data[pos]
+    first = data.byte(pos)
 
     ; H bit = first & 128，本實作不支援 Huffman
     ; 長度用 7-bit prefix
@@ -855,7 +855,7 @@ decode-str = (data str, pos i64) (out str, next-pos i64) {
     i <- [0..len): {
 
         #{index-out=0, overflow=wrap}
-        out[i] = data[p + i]
+        out[i] = data.byte(p + i)
     }
 
     #{overflow=wrap}
@@ -901,7 +901,7 @@ tables.encode-header = (name str, value str) (out str) {
         i <- [0..idx-out.len-bytes()): {
 
             #{index-out=0}
-            out[i] = idx-out[i]
+            out[i] = idx-out.byte(i)
         }
         out-n = idx-out.len-bytes()
 
@@ -911,7 +911,7 @@ tables.encode-header = (name str, value str) (out str) {
         i <- [0..val-out.len-bytes()): {
 
             #{index-out=0, overflow=wrap}
-            out[out-n + i] = val-out[i]
+            out[out-n + i] = val-out.byte(i)
         }
 
         ; 加入動態表
@@ -931,7 +931,7 @@ tables.encode-header = (name str, value str) (out str) {
     i <- [0..name-out.len-bytes()): {
 
         #{index-out=0, overflow=wrap}
-        out[out-n + i] = name-out[i]
+        out[out-n + i] = name-out.byte(i)
     }
 
     #{overflow=wrap}
@@ -943,7 +943,7 @@ tables.encode-header = (name str, value str) (out str) {
     i <- [0..val-out.len-bytes()): {
 
         #{index-out=0, overflow=wrap}
-        out[out-n + i] = val-out[i]
+        out[out-n + i] = val-out.byte(i)
     }
 
     ; 加入動態表
@@ -977,7 +977,7 @@ tables.decode-headers = (data str) (names [128]str, values [128]str, count i64, 
         count >= 128 -> *
 
         #{index-out=0}
-        b = data[pos]
+        b = data.byte(pos)
 
         ; Indexed Header Field（6.1）：1xxxxxxx
         {
@@ -999,7 +999,7 @@ tables.decode-headers = (data str) (names [128]str, values [128]str, count i64, 
                 j <- [0..lk-name.len-bytes()): {
 
                     #{index-out=0, overflow=wrap}
-                    ln-tmp[j] = lk-name[j]
+                    ln-tmp[j] = lk-name.byte(j)
                 }
 
                 #{index-out=0}
@@ -1008,7 +1008,7 @@ tables.decode-headers = (data str) (names [128]str, values [128]str, count i64, 
                 j <- [0..lk-val.len-bytes()): {
 
                     #{index-out=0, overflow=wrap}
-                    lv-tmp[j] = lk-val[j]
+                    lv-tmp[j] = lk-val.byte(j)
                 }
 
                 #{index-out=0}
@@ -1054,7 +1054,7 @@ tables.decode-headers = (data str) (names [128]str, values [128]str, count i64, 
                 j <- [0..name.len-bytes()): {
 
                     #{index-out=0, overflow=wrap}
-                    nb-tmp[j] = name[j]
+                    nb-tmp[j] = name.byte(j)
                 }
 
                 #{index-out=0}
@@ -1063,7 +1063,7 @@ tables.decode-headers = (data str) (names [128]str, values [128]str, count i64, 
                 j <- [0..value.len-bytes()): {
 
                     #{index-out=0, overflow=wrap}
-                    vb-tmp[j] = value[j]
+                    vb-tmp[j] = value.byte(j)
                 }
 
                 #{index-out=0}
@@ -1109,7 +1109,7 @@ tables.decode-headers = (data str) (names [128]str, values [128]str, count i64, 
                 j <- [0..name.len-bytes()): {
 
                     #{index-out=0, overflow=wrap}
-                    nb-tmp[j] = name[j]
+                    nb-tmp[j] = name.byte(j)
                 }
 
                 #{index-out=0}
@@ -1118,7 +1118,7 @@ tables.decode-headers = (data str) (names [128]str, values [128]str, count i64, 
                 j <- [0..value.len-bytes()): {
 
                     #{index-out=0, overflow=wrap}
-                    vb-tmp[j] = value[j]
+                    vb-tmp[j] = value.byte(j)
                 }
 
                 #{index-out=0}
@@ -1161,7 +1161,7 @@ tables.decode-headers = (data str) (names [128]str, values [128]str, count i64, 
                 j <- [0..name.len-bytes()): {
 
                     #{index-out=0, overflow=wrap}
-                    nb-tmp[j] = name[j]
+                    nb-tmp[j] = name.byte(j)
                 }
 
                 #{index-out=0}
@@ -1170,7 +1170,7 @@ tables.decode-headers = (data str) (names [128]str, values [128]str, count i64, 
                 j <- [0..value.len-bytes()): {
 
                     #{index-out=0, overflow=wrap}
-                    vb-tmp[j] = value[j]
+                    vb-tmp[j] = value.byte(j)
                 }
 
                 #{index-out=0}

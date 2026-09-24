@@ -86,7 +86,7 @@ pem-encode = (label str, data []byte) (out str) {
     i <- [0..header.len-bytes()): {
 
         #{index-out=0, overflow=wrap}
-        out[pos] = header[i]
+        out[pos] = header.byte(i)
 
         #{overflow=wrap}
         pos = pos + 1
@@ -132,7 +132,7 @@ pem-encode = (label str, data []byte) (out str) {
     i <- [0..footer.len-bytes()): {
 
         #{index-out=0, overflow=wrap}
-        out[pos] = footer[i]
+        out[pos] = footer.byte(i)
 
         #{overflow=wrap}
         pos = pos + 1

@@ -1,0 +1,73 @@
+; 回歸測試：`str` 當「原始位元組緩衝區」時，讀取**必須**用 `.byte(i)`，不能用 `s[i]`。
+;
+; 背景：`s[i]` 是**碼點索引**且回傳 `char`（見 docs/docs/lang/str.md:55），
+; 對 >= 0x80 的位元組會做 UTF-8 解碼 → 位元組損壞。位元組級存取要用 `s.byte(i)`。
+; 注意寫入 `s[i] = v` 本來就是位元組索引 —— 只有**讀取**是碼點語義，這個不對稱正是陷阱。
+;
+; 這個陷阱曾讓 src/std/net/ 整層的協定解析壞掉：
+;   - tls.no read-record：TLS 記錄長度 0x94 被讀成 1（body-len 0x90 被讀成 3），
+;     使 e2e 握手失敗（tests/https-server.no 的 4 條 label FAIL）
+;   - ws.no 的 mask-key / frame 標頭、http2.no 的 frame 長度、net.no 的 4-byte 長度前綴
+; 修法：src/std/net/*.no 內所有「str 緩衝區的讀取」改成 .byte(i)。
+;
+; 本檔以「無 socket」的確定性方式把語義釘住。
+
+; 1) []byte -> str 的原始位元組往返（0..255 全值），用 .byte(i) 讀回必須完全一致
+src []byte = with-len(256)
+i1 <- [0..256): {
+
+    #{index-out=0, overflow=wrap}
+    src[i1] = i1
+}
+s = src.to-bytes-str()
+
+bad1 = false
+i2 <- [0..256): {
+
+    #{index-out=0}
+    s.byte(i2) != src[i2] -> bad1 = true
+}
+
+bad1 -> print('FAIL: 1 byte-fidelity: some of 0..255 corrupted')
+bad1 == false -> print('PASS: 1 byte-fidelity: all 0..255 preserved (len-bytes=' + s.len-bytes().to-str() + ')')
+
+; 2) 高位元組必須保持原值（碼點讀取會在這裡出錯）
+print('2 high bytes: 0x80=' + s.byte(128).to-str() + ' 0x90=' + s.byte(144).to-str() + ' 0x94=' + s.byte(148).to-str() + ' 0xff=' + s.byte(255).to-str())
+
+; 3) 真實病灶場景：TLS 記錄標頭 16 03 03 00 94 → rlen 必須是 148
+;    （用碼點索引會得到 1 或 20，正是 e2e 握手失敗的直接原因）
+hdr []byte = with-len(5)
+
+#{index-out=0, overflow=wrap}
+hdr[0] = 0x16
+
+#{index-out=0, overflow=wrap}
+hdr[1] = 0x03
+
+#{index-out=0, overflow=wrap}
+hdr[2] = 0x03
+
+#{index-out=0, overflow=wrap}
+hdr[3] = 0x00
+
+#{index-out=0, overflow=wrap}
+hdr[4] = 0x94
+
+h = hdr.to-bytes-str()
+
+#{overflow=wrap}
+rlen = ((h.byte(3)) << 8) | (h.byte(4))
+
+rlen == 148 -> print('PASS: 3 tls record rlen=148')
+rlen != 148 -> print('FAIL: 3 tls record rlen=' + rlen.to-str() + ' (expect 148)')
+
+; 4) 對照：[]byte 的元素存取本來就是位元組（x[i]），應與 str 的 .byte(i) 一致
+bad4 = false
+i3 <- [0..5): {
+
+    #{index-out=0}
+    hdr[i3] != h.byte(i3) -> bad4 = true
+}
+
+bad4 -> print('FAIL: 4 []byte[i] vs str.byte(i) differ')
+bad4 == false -> print('PASS: 4 []byte[i] == str.byte(i)')

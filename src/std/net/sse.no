@@ -174,7 +174,7 @@ client.next-event = () (ev ?event) {
                 i <- [0..remaining.len-bytes()): {
 
                     #{index-out=0, overflow=wrap}
-                    .recv-buf[i] = remaining[i]
+                    .recv-buf[i] = remaining.byte(i)
                 }
                 .recv-buf-len = remaining.len-bytes()
 
@@ -306,7 +306,7 @@ client.next-event = () (ev ?event) {
                 i <- [0..n): {
 
                     #{index-out=0, overflow=wrap}
-                    .recv-buf[.recv-buf-len + i] = tmp[i]
+                    .recv-buf[.recv-buf-len + i] = tmp.byte(i)
                 }
                 .recv-buf-len = .recv-buf-len + n
             }
@@ -478,7 +478,7 @@ client.reconnect = () (ok bool) {
         i <- [0..n): {
 
             #{index-out=0, overflow=wrap}
-            raw[total + i] = tmp[i]
+            raw[total + i] = tmp.byte(i)
         }
 
         #{overflow=wrap}
@@ -532,7 +532,7 @@ client.reconnect = () (ok bool) {
     i <- [0..remaining.len-bytes()): {
 
         #{index-out=0, overflow=wrap}
-        .recv-buf[i] = remaining[i]
+        .recv-buf[i] = remaining.byte(i)
     }
     ok = true
 }
@@ -751,7 +751,7 @@ sse-connect = (url str) (client ?client) {
         i <- [0..n): {
 
             #{index-out=0, overflow=wrap}
-            raw[total + i] = tmp[i]
+            raw[total + i] = tmp.byte(i)
         }
 
         #{overflow=wrap}
@@ -815,7 +815,7 @@ sse-connect = (url str) (client ?client) {
     i <- [0..remaining.len-bytes()): {
 
         #{index-out=0, overflow=wrap}
-        rb[i] = remaining[i]
+        rb[i] = remaining.byte(i)
     }
     cli = client {
         fd: fd
@@ -938,7 +938,7 @@ server-conn.handshake = () (ok bool) {
         i <- [0..n): {
 
             #{index-out=0, overflow=wrap}
-            raw[total + i] = tmp[i]
+            raw[total + i] = tmp.byte(i)
         }
 
         #{overflow=wrap}

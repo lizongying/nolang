@@ -1805,6 +1805,20 @@ INVSBOX = '\x52\x09\x6a\xd5\x30\x36\xa5\x38\xbf\x40\xa3\x9e\x81\xf3\xd7\xfb' +
     }
 }`,
 		},
+		// regression: a line comment on the same line as an empty arm body`s
+		// `}` (e.g. `cond -> {}; comment`) was swallowed into the block and
+		// re-emitted as `cond -> {; comment}`, corrupting the structure
+		// (notools/nogit repository.no compile regression).
+		{
+			name:     "standalone_if_then_empty_block_samelined_comment",
+			input:    "f = () {\n\tdiff != 0 -> {}; comment\n\treturn\n}\n",
+			expected: "f = () {\n    diff != 0 -> {}; comment\n    return\n}",
+		},
+		{
+			name:     "empty_block_samelined_semi_comment_repo_pattern",
+			input:    "f = () {\n\tos.mkdir(base-dir, 493) -> {}; 493 = 0755\n\tv = 1\n}\n",
+			expected: "f = () {\n    os.mkdir(base-dir, 493) -> {}; 493 = 0755\n    v = 1\n}",
+		},
 	}
 
 	for _, tt := range tests {

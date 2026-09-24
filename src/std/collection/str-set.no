@@ -43,7 +43,7 @@ str-set.hash = (key str) (idx i64) {
     i <- [0..key.len-bytes()): {
 
         #{index-out=0, overflow=wrap}
-        h = h ^ (key[i])
+        h = h ^ (key.byte(i))
 
         #{overflow=wrap}
         h = h * SS-FNV-PRIME
@@ -57,7 +57,7 @@ str-set.hash = (key str) (idx i64) {
 str-set.str-eq = (a str, b str) (eq bool) {
     a.len-bytes() != b.len-bytes() -> return
     i <- [0..a.len-bytes()): {
-        a[i] != b[i] -> {
+        a.byte(i) != b.byte(i) -> {
 
             #{index-out=0}
             return
@@ -94,7 +94,7 @@ str-set.add = (key str) (is-new bool) {
     i <- [0..key.len-bytes()): {
 
         #{index-out=0, overflow=wrap}
-        .keys[idx][i] = key[i]
+        .keys[idx][i] = key.byte(i)
     }
 
     #{index-out=0}

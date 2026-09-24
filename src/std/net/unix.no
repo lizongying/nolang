@@ -193,7 +193,7 @@ unix-conn.recv-all = () (content str, total i64) {
         i <- [0..chunk-n): {
 
             #{index-out=0, overflow=wrap}
-            content[total + i] = buf[i]
+            content[total + i] = buf.byte(i)
         }
 
         #{overflow=wrap}

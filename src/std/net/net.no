@@ -637,7 +637,7 @@ enc-conn.recv-encrypted = () (data ?str) {
     n != 4 -> return
 
     #{index-out=0}
-    payload-len = ((len-buf[0]) << 24) | ((len-buf[1]) << 16) | ((len-buf[2]) << 8) | (len-buf[3])
+    payload-len = ((len-buf.byte(0)) << 24) | ((len-buf.byte(1)) << 16) | ((len-buf.byte(2)) << 8) | (len-buf.byte(3))
     payload-len < 12 || payload-len > 65536 -> return
 
     ; 讀取 payload (IV + sealed)
@@ -650,7 +650,7 @@ enc-conn.recv-encrypted = () (data ?str) {
     i <- [0..12): {
 
         #{index-out=0, overflow=wrap}
-        iv[i] = payload-buf[i]
+        iv[i] = payload-buf.byte(i)
     }
 
     ; 提取密文
@@ -660,7 +660,7 @@ enc-conn.recv-encrypted = () (data ?str) {
     i <- [0..sealed-n): {
 
         #{index-out=0, overflow=wrap}
-        sealed[i] = payload-buf[12 + i]
+        sealed[i] = payload-buf.byte(12 + i)
     }
 
     ; 解密

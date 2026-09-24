@@ -7,11 +7,19 @@
 ; 單引號在 Nolang 是 str，拿 byte 去比 str 永遠為 false，
 ; 會讓 `c == SEP` 恆為 false → dir()/base()/ext() 永遠找不到分隔符
 ; （last-sep 停在 -1，dir() 一律回 '.'、base() 回整串）。
-; 下面 SEP/DOT 全部都當 byte/char 在用（`c == SEP`、`.p[out-n] = SEP`）。
+; SEP/DOT 只用於**寫入**（`.p[n] = SEP`）；掃描時請用下面的 SEP-BYTE / DOT-BYTE。
 SEP = "/"
 
 ; 當前目錄（'.' = 46；同上，雙引號 char 字面量）
 DOT = "."
+
+; 位元組版分隔符常量。`.p.byte(i)` 讀出的是**數值**（非 char），所以掃描迴圈裡的
+; 比較必須用數值常量。所有「讀取」一律走 .byte(i)：語義是位元組，且與 len-bytes()、
+; out-n 這些位元組游標同一單位 —— 混用碼點索引（.p[i]）與位元組游標會把非 ASCII
+; 路徑切壞（見 tests/std-byte-indexing.no）。
+SEP-BYTE = 47
+
+DOT-BYTE = 46
 
 ; ═══════════════════════════════════════════════
 ; path 結構體：封裝路徑字串
@@ -93,14 +101,14 @@ path.join = (b str) (out str) {
     out-n > 0 -> {
 
         #{index-out=0, overflow=wrap}
-        last-a = .p[out-n - 1]
-        last-a == SEP -> need-sep = 0
+        last-a = .p.byte(out-n - 1)
+        last-a == SEP-BYTE -> need-sep = 0
     }
     bn > 0 -> {
 
         #{index-out=0}
-        first-b = b[0]
-        first-b == SEP -> need-sep = 0
+        first-b = b.byte(0)
+        first-b == SEP-BYTE -> need-sep = 0
     }
     out-n == 0 -> need-sep = 0
     need-sep == 1 -> {
@@ -117,15 +125,15 @@ path.join = (b str) (out str) {
     bn > 0 -> {
 
         #{index-out=0}
-        first-b = b[0]
-        first-b == SEP -> start-b = 1
+        first-b = b.byte(0)
+        first-b == SEP-BYTE -> start-b = 1
     }
 
     ; 複製 b
     j <- [start-b..bn): {
 
         #{index-out=0, overflow=wrap}
-        .p[out-n] = b[j]
+        .p[out-n] = b.byte(j)
 
         #{overflow=wrap}
         out-n = out-n + 1
@@ -147,8 +155,8 @@ path.base = () (out str) {
     i <- [0...p.len-bytes()): {
 
         #{index-out=0, overflow=wrap}
-        c = .p[i]
-        c == SEP -> last-sep = i
+        c = .p.byte(i)
+        c == SEP-BYTE -> last-sep = i
     }
 
     #{overflow=wrap}
@@ -160,7 +168,7 @@ path.base = () (out str) {
     i <- [0..out-n): {
 
         #{index-out=0, overflow=wrap}
-        out[i] = .p[start + i]
+        out[i] = .p.byte(start + i)
     }
 }
 
@@ -173,8 +181,8 @@ path.dir = () (out str) {
     i <- [0...p.len-bytes()): {
 
         #{index-out=0}
-        c = .p[i]
-        c == SEP -> last-sep = i
+        c = .p.byte(i)
+        c == SEP-BYTE -> last-sep = i
     }
     {
         last-sep < 0 -> {
@@ -217,11 +225,11 @@ path.ext = () (out str) {
     i <- [0...p.len-bytes()): {
 
         #{index-out=0, overflow=wrap}
-        c = .p[i]
+        c = .p.byte(i)
         {
-            c == SEP -> last-sep = i
+            c == SEP-BYTE -> last-sep = i
 
-            c == DOT -> last-dot = i
+            c == DOT-BYTE -> last-dot = i
         }
     }
 
@@ -247,7 +255,7 @@ path.ext = () (out str) {
     i <- [0..out-n): {
 
         #{index-out=0, overflow=wrap}
-        out[i] = .p[start + i]
+        out[i] = .p.byte(start + i)
     }
 }
 
@@ -261,8 +269,8 @@ path.is-abs = () (yes bool) {
     .p.len-bytes() > 0 -> {
 
         #{index-out=0}
-        c = .p[0]
-        c == SEP -> yes = true
+        c = .p.byte(0)
+        c == SEP-BYTE -> yes = true
     }
 }
 
@@ -278,9 +286,9 @@ path.clean = () {
     i <- [0...p.len-bytes()): {
 
         #{index-out=0}
-        c = .p[i]
+        c = .p.byte(i)
         {
-            c == SEP -> {
+            c == SEP-BYTE -> {
 
                 ; 處理上一段
                 {
@@ -295,7 +303,7 @@ path.clean = () {
                         (j >= 0) {
 
                             #{overflow=wrap}
-                            .p[j] == SEP -> {
+                            .p.byte(j) == SEP-BYTE -> {
 
                                 #{index-out=0}
                                 break
@@ -314,8 +322,8 @@ path.clean = () {
                     out-n > 0 -> {
 
                         #{index-out=0, overflow=wrap}
-                        prev = .p[out-n - 1]
-                        prev != SEP -> {
+                        prev = .p.byte(out-n - 1)
+                        prev != SEP-BYTE -> {
 
                             #{index-out=0, overflow=wrap}
                             .p[out-n] = SEP
@@ -337,7 +345,7 @@ path.clean = () {
                 dot-count = 0
             }
 
-            c == DOT -> {
+            c == DOT-BYTE -> {
 
                 #{overflow=wrap}
                 dot-count = dot-count + 1
@@ -378,7 +386,7 @@ path.clean = () {
             (j >= 0) {
 
                 #{overflow=wrap}
-                .p[j] == SEP -> {
+                .p.byte(j) == SEP-BYTE -> {
 
                     #{index-out=0}
                     break
@@ -399,10 +407,10 @@ path.clean = () {
     out-n > 1 -> {
 
         #{index-out=0, overflow=wrap}
-        prev = .p[out-n - 1]
+        prev = .p.byte(out-n - 1)
 
         #{overflow=wrap}
-        prev == SEP -> out-n = out-n - 1
+        prev == SEP-BYTE -> out-n = out-n - 1
     }
     .p.len = out-n
 }
@@ -423,8 +431,8 @@ path.split = () (f str) {
     i <- [0...p.len-bytes()): {
 
         #{index-out=0, overflow=wrap}
-        c = .p[i]
-        c == SEP -> last-sep = i
+        c = .p.byte(i)
+        c == SEP-BYTE -> last-sep = i
     }
 
     ; 提取檔名
@@ -437,7 +445,7 @@ path.split = () (f str) {
     i <- [0..out-n): {
 
         #{index-out=0, overflow=wrap}
-        f[i] = .p[start + i]
+        f[i] = .p.byte(start + i)
     }
 
     ; 原地修改 .p 為目錄部分

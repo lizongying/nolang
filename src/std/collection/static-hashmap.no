@@ -68,7 +68,7 @@ static-hashmap-str-tmpl.hash = (key str) (idx i64) {
     i <- [0..key.len-bytes()): {
 
         #{index-out=0, overflow=wrap}
-        h = h ^ (key[i])
+        h = h ^ (key.byte(i))
 
         #{overflow=wrap}
         h = h * FNV-PRIME
@@ -82,7 +82,7 @@ static-hashmap-str-tmpl.hash = (key str) (idx i64) {
 static-hashmap-str-tmpl.str-eq = (a str, b str) (eq bool) {
     a.len-bytes() != b.len-bytes() -> return
     i <- [0..a.len-bytes()): {
-        a[i] != b[i] -> {
+        a.byte(i) != b.byte(i) -> {
 
             #{index-out=0}
             return
@@ -243,11 +243,14 @@ static-hashmap-str-tmpl.for-each = () (k str, v v) {
     i <- [0...cap): {
         .occ[i] == 1 -> {
 
+            ; ⚠️ 上界必須是 len-bytes()（位元組數），且下面必須用 .byte(j)：
+            ; str[j] 是碼點索引，用位元組上界會讀越界並把非 ASCII 鍵弄壞。
+            ; 三點 `[0...X)` = `[0..` + `.X`（X 為 self 成員），故 .keys 不可省。
             #{index-out=0}
-            j <- [0...keys[i].len()): {
+            j <- [0...keys[i].len-bytes()): {
 
                 #{index-out=0}
-                k[j] = .keys[i][j]
+                k[j] = .keys[i].byte(j)
             }
 
             #{index-out=0}

@@ -650,7 +650,7 @@ verify = (name str, signed-value str, key []byte) (ok bool, value str) {
     i <- [0..provided-hex.len-bytes()): {
 
         #{index-out=0, overflow=wrap}
-        diff = diff | (provided-hex[i] ^ expected-hex[i])
+        diff = diff | (provided-hex.byte(i) ^ expected-hex.byte(i))
     }
     {
         diff == 0 -> ok = true

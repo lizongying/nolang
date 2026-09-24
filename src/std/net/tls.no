@@ -396,8 +396,11 @@ recv-n = (fd fd, buf []byte, n i64) (ok bool) {
         r <= 0 -> return
         i <- [0..r): {
 
+            ; ⚠️ 必須用 .byte(i)（位元組級），不可用 tmp[i]：
+            ; str[i] 是「碼點索引」且回傳 char（見 docs/docs/lang/str.md），
+            ; 對 >= 0x80 的位元組會做 UTF-8 解碼，把原始位元組弄壞。
             #{index-out=0, overflow=wrap}
-            buf[total + i] = tmp[i]
+            buf[total + i] = tmp.byte(i)
         }
 
         #{overflow=wrap}
@@ -427,8 +430,11 @@ read-record = (fd fd, buf []byte) (ct i64, rlen i64) {
         r <= 0 -> return
         i <- [0..r): {
 
+            ; ⚠️ .byte(i) 而非 tmp[i]：str[i] 是碼點索引，會把 >= 0x80 的
+            ; 位元組（例如 TLS 記錄長度 0x94）解碼成別的碼點再截斷，
+            ; 導致 rlen 讀成 20 而不是 148 —— 這正是 e2e 握手失敗的根因。
             #{index-out=0, overflow=wrap}
-            buf[hdr-total + i] = tmp[i]
+            buf[hdr-total + i] = tmp.byte(i)
         }
 
         #{overflow=wrap}
@@ -460,8 +466,9 @@ read-record = (fd fd, buf []byte) (ct i64, rlen i64) {
         }
         i <- [0..r): {
 
+            ; ⚠️ .byte(i) 而非 tmp2[i]（同上：str[i] 是碼點索引）
             #{index-out=0, overflow=wrap}
-            buf[5 + body-total + i] = tmp2[i]
+            buf[5 + body-total + i] = tmp2.byte(i)
         }
 
         #{overflow=wrap}
@@ -477,6 +484,7 @@ read-record = (fd fd, buf []byte) (ct i64, rlen i64) {
 ; data []byte: 資料
 send-raw = (fd fd, ct i64, data []byte) {
     n = data.len()
+
     hdr [5]byte
 
     #{index-out=0}
@@ -1640,7 +1648,7 @@ conn.send-client-hello-13 = () (ok bool) {
     i <- [0...host.len-bytes()): {
 
         #{index-out=0, overflow=wrap}
-        hs[pos + i] = .host[i]
+        hs[pos + i] = .host.byte(i)
     }
 
     #{overflow=wrap}
@@ -4951,7 +4959,7 @@ https-serve-once = (listen-fd fd, status i64, body str) (ok bool) {
                 i <- [0..rn): {
 
                     #{index-out=0, overflow=wrap}
-                    recv-buf[recv-len + i] = tmp[i]
+                    recv-buf[recv-len + i] = tmp.byte(i)
                 }
 
                 #{overflow=wrap}

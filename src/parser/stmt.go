@@ -1885,7 +1885,15 @@ func (p *Parser) parseBlockStatement() *BlockStatement {
 	// Separate comments on the same line as { (opening brace comments)
 	// from doc comments for the first statement.
 	var openingComments *CommentGroup
-	if len(p.comments) > 0 && p.comments[0].Line == openBraceLine {
+	// A single-line empty block `{}`: the closing `}` sits on the same line
+	// as the opening `{`, so any same-line comment actually follows the `}` and
+	// is a suffix of the *enclosing statement* (e.g. `cond -> {}; comment`), not
+	// an opening-brace comment. Skip collecting it here so attachInlineComment
+	// can attach it to the statement instead. Without this guard the comment is
+	// mis-emitted as `cond -> {; comment}`, corrupting the structure (broke the
+	// notools/nogit repository.no module-level function detection).
+	inlineEmptyClose := p.currentToken.Type == lexer.RBRACE && p.currentToken.Line == openBraceLine
+	if !inlineEmptyClose && len(p.comments) > 0 && p.comments[0].Line == openBraceLine {
 		group := &CommentGroup{}
 		i := 0
 		for i < len(p.comments) && p.comments[i].Line == openBraceLine {
@@ -2027,11 +2035,18 @@ func (p *Parser) parseBlockStatement() *BlockStatement {
 	// outer scope, not to this block's trailing comments. Put them back into
 	// p.comments so the caller can pick them up.
 	closeBraceLine := p.currentToken.Line
+	// A single-line empty block `{}` (no statements, `{` and `}` on the same
+	// line): a comment on that line is a suffix of the enclosing statement, not
+	// block content. Treat it as outside so the caller attaches it to the
+	// statement (mirrors the opening-brace guard above). This keeps
+	// `cond -> {}; comment` stable instead of collapsing it into the block.
+	emptyInline := len(block.Statements) == 0 && openBraceLine == closeBraceLine
 	if block.TrailingComments != nil {
 		var outside []*Comment
 		var inside []*Comment
 		for _, c := range block.TrailingComments.List {
-			if c.Pos.Line >= openBraceLine && (closeBraceLine == 0 || c.Pos.Line <= closeBraceLine) {
+			if c.Pos.Line >= openBraceLine && (closeBraceLine == 0 || c.Pos.Line <= closeBraceLine) &&
+				!(emptyInline && c.Pos.Line == closeBraceLine) {
 				inside = append(inside, c)
 			} else {
 				outside = append(outside, c)

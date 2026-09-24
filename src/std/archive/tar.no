@@ -462,7 +462,7 @@ tar-builder.write-header = (name str, typ i64, sz i64) {
         i < 100 -> {
 
             #{index-out=0}
-            .buf[.pos + i] = name[i]
+            .buf[.pos + i] = name.byte(i)
         }
     }
 

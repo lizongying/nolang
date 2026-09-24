@@ -126,7 +126,7 @@ connect = (proxy-host str, proxy-port i64, target-host str, target-port i64, use
         i <- [0..n): {
 
             #{index-out=0, overflow=wrap}
-            raw[total + i] = buf[i]
+            raw[total + i] = buf.byte(i)
         }
 
         #{overflow=wrap}
@@ -479,10 +479,10 @@ socks5-connect = (proxy-host str, proxy-port i64, target-host str, target-port i
     }
 
     #{index-out=0}
-    ver = resp[0]
+    ver = resp.byte(0)
 
     #{index-out=0}
-    method = resp[1]
+    method = resp.byte(1)
     ver != SOCKS5-VERSION || method == SOCKS5-METHOD-NONE-ACCEPTABLE -> {
         fs.close(fd)
         fd = -1
@@ -507,7 +507,7 @@ socks5-connect = (proxy-host str, proxy-port i64, target-host str, target-port i
         i <- [0..username.len-bytes()): {
 
             #{index-out=0, overflow=wrap}
-            auth-req[pos] = username[i]
+            auth-req[pos] = username.byte(i)
             pos = pos + 1
         }
 
@@ -517,7 +517,7 @@ socks5-connect = (proxy-host str, proxy-port i64, target-host str, target-port i
         i <- [0..password.len-bytes()): {
 
             #{index-out=0, overflow=wrap}
-            auth-req[pos] = password[i]
+            auth-req[pos] = password.byte(i)
             pos = pos + 1
         }
         auth-str = auth-req.to-str()
@@ -536,7 +536,7 @@ socks5-connect = (proxy-host str, proxy-port i64, target-host str, target-port i
             fd = -1
             return
         }
-        (auth-resp[1]) != 0 -> {
+        (auth-resp.byte(1)) != 0 -> {
             fs.close(fd)
             fd = -1
             return
@@ -580,7 +580,7 @@ socks5-connect = (proxy-host str, proxy-port i64, target-host str, target-port i
     i <- [0..target-host.len-bytes()): {
 
         #{index-out=0, overflow=wrap}
-        conn-req[pos] = target-host[i]
+        conn-req[pos] = target-host.byte(i)
 
         #{overflow=wrap}
         pos = pos + 1
@@ -613,14 +613,14 @@ socks5-connect = (proxy-host str, proxy-port i64, target-host str, target-port i
         fd = -1
         return
     }
-    (reply[0]) != SOCKS5-VERSION -> {
+    (reply.byte(0)) != SOCKS5-VERSION -> {
         fs.close(fd)
         fd = -1
         return
     }
 
     #{index-out=0}
-    rep = reply[1]
+    rep = reply.byte(1)
     rep != 0 -> {
         fs.close(fd)
         fd = -1
