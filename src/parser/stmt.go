@@ -1249,6 +1249,11 @@ func (p *Parser) parseLetStatement() Statement {
 				Elem:       &NamedType{Token: nameToken, Value: elemValue, IsInferred: true},
 				IsInferred: true,
 			}
+			// 同时登记到语义表，使 `parts = [..]; parts[i]: { ok-> }` 这类
+			// 索引主体 option-match 能被 isSafeIndexBase / inferIndexElemType
+			// 识别为 slice 基底、归一化为安全索引（%option）。stmt.Type 已为
+			// SliceType（codegen 据此産 []elem），此处仅补充匹配查询所需的型别表。
+			p.setVarType(stmt.Name.Value, "[]"+elemValue)
 
 		case *SliceExpression:
 			// 切片表達式總是走 clone 路徑（generateSliceViewAssignment needClone=true），
@@ -1280,6 +1285,31 @@ func (p *Parser) parseLetStatement() Statement {
 			}
 
 		case *ArrayLiteral:
+			// 从元素推断数组字面量元素型别并登记到语义表，使
+			// `parts = ['a','b']; parts[i]: { ok-> ... }` 这类索引主体
+			// option-match 能被 isSafeIndexBase / inferIndexElemType 识别为
+			// arr/vec/slice 基底，从而归一化为安全索引（%option），走正确的
+			// 识别符 option-match 路径（it 绑 payload、== ok/nil/err 走 tag 比较）。
+			// 仅登记型别表、不改 stmt.Type：codegen 仍从 ArrayLiteral RHS 推導
+			// []elem（与下方登记一致，见 tohir.go KArrayLit）。
+			elemValue := "i64"
+			if len(v.Elements) > 0 {
+				switch v.Elements[0].(type) {
+				case *IntegerLiteral:
+					elemValue = "i64"
+				case *FloatLiteral:
+					elemValue = "f64"
+				case *StringLiteral:
+					elemValue = "str"
+				case *BooleanLiteral:
+					elemValue = "bool"
+				case *CharLiteral:
+					elemValue = ValueTypeChar.String()
+				default:
+					elemValue = "i64"
+				}
+			}
+			p.setVarType(stmt.Name.Value, "[]"+elemValue)
 		case *StructLiteral:
 			// Struct literal: record struct type in varDeclTypes so that
 			// resolveReceiverType can resolve method calls on this variable

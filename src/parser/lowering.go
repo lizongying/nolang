@@ -2562,6 +2562,19 @@ func (p *Parser) prependStmt(body *BlockStatement, stmt Statement) *BlockStateme
 	stmts = append(stmts, stmt)
 	stmts = append(stmts, body.Statements...)
 	nb := &BlockStatement{Token: body.Token, Statements: stmts, IsInline: body.IsInline}
+	// Preserve the original body block's comments when the desugar injects an
+	// `it` binding. The arm-body block is REPLACED by nb, so without this the
+	// comments that live inside the block (trailing comments before `}`, the
+	// closing-brace comment and the `{`-line comment) are silently dropped.
+	// Symptom: option-match arms such as `ok -> { s ; tail }` lost `; tail` on
+	// format (notools/nonpm tests). Bare-match arms never call prependStmt,
+	// which is why only `v: { ok -> { ... } }` regressed.
+	nb.TrailingComments = body.TrailingComments
+	nb.ClosingBraceComment = body.ClosingBraceComment
+	nb.RBrace = body.RBrace
+	if obc := p.sem.OpeningBraceCommentOf(body); obc != nil {
+		p.sem.SetOpeningBraceComment(nb, obc)
+	}
 	// 保留原 body 區塊的 #{overflow = ...} 等註解：裸配對臂的溢出模式掛在
 	// bodyBlock 上，desugar 插入 `it` 綁定時若丟棄註解，generateIfExpression
 	// 便無法從 Consequence/Alternative 區塊讀到模式，導致臂體條件內的整數

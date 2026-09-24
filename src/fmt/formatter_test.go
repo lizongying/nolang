@@ -1805,6 +1805,32 @@ INVSBOX = '\x52\x09\x6a\xd5\x30\x36\xa5\x38\xbf\x40\xa3\x9e\x81\xf3\xd7\xfb' +
     }
 }`,
 		},
+		{
+			// regression (notools/nonpm tests): an option-match arm body block must
+			// keep its trailing comments. The desugar injects the implicit `it`
+			// binding by rebuilding the arm-body block via prependStmt; if that
+			// rebuild drops TrailingComments, `; tail` after the last arm statement
+			// silently vanishes on format. Bare-match arms never hit prependStmt.
+			name: "option match arm body trailing comments preserved",
+			input: `main = () {
+    v: {
+        ok -> {
+            print(1)
+            ; tail D1
+            ; tail D2
+        }
+    }
+}`,
+			expected: `main = () {
+    v: {
+        ok -> {
+            print(1)
+            ; tail D1
+            ; tail D2
+        }
+    }
+}`,
+		},
 		// regression: a line comment on the same line as an empty arm body`s
 		// `}` (e.g. `cond -> {}; comment`) was swallowed into the block and
 		// re-emitted as `cond -> {; comment}`, corrupting the structure
