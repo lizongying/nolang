@@ -1056,6 +1056,29 @@ rc = close(.fd)      ; 意圖是 libc close(2)，回 i64
 HEAD** 的 binary 跑同一支探針 —— 若乾淨 HEAD 也炸，就是既有偏差，且要用**再往前一個
 commit**（這裡是 `d407f2b0`）當基準，否則「HEAD == NOW」這個判準會被既有回歸汙染。
 
+**後續（2026-09-25，**已套用**）**：廣閘門已套用於 `src/mir/hir2mir.go:6349`（窄名單的早退
+`hir2mir.go:6319` 保留；兩者嚴格遞增、不衝突）。驗收（對照組 = HEAD `58f3c677` 的 binary）：
+
+| 閘門 | `std-hash.no` | 7 檔 REGRESS | 464 檔 sweep |
+|---|---|---|---|
+| 窄名單（HEAD） | `rc=1` | 7 | `REGRESS=7` |
+| **廣閘門（已套用）** | `rc=0` | **0** | **`REGRESS=0`** |
+
+- `go test ./lexer ./parser ./hir ./fmt ./checker ./mir` 全 ok；`no vet src/std` **0 error**。
+- sweep：`SAME=461 DIVERGE=3 UNSTABLE=0 REGRESS=0 IMPROVED=0 BOTH_FAIL=0 NEW=17`；
+  `461+3 = 464` ✓（NEW=17 是 corpus 比 baseline 多出的檔）。對照組（窄名單，`NO=/tmp/no_head58/bin/no`）：
+  `SAME=454 DIVERGE=3 REGRESS=7`。
+- **全 corpus A/B（HEAD `58f3c677` vs 已套用），481 檔**：**只有 8 檔不同**，全部可解釋 ——
+  7 檔 `rc 1→0`（就是那 7 個 REGRESS），加上 `named-format.no` 的**輸出改變**：HEAD 會多印一整行
+  空白，套用後 sha 變成 `d1fda088268365f8…`，**與凍結的 golden 逐位元組相同** ⇒ 這是
+  **DIVERGE → SAME 的真改進**（同屬「裸名被方法劫持 ⇒ 值錯但不崩」那一類症狀，與 `with-len` 同族）。
+  其餘 473 檔**零變化**。
+- 3 個 DIVERGE **全部是既有的**：`default-params`／`std-new` 為 `NOW == HEAD`（後者本來就印
+  workspace 路徑）；`std-hash` 的 NOW（`rc=0`, sha `7b1bfa68…`）與三個**回歸前** binary
+  （`78fa336d`／`4ed84631`／`d407f2b0`）**逐位元組相同** ⇒ 廣閘門是把它從 REGRESS 還原成
+  回歸前的原狀，而非製造新偏差。golden 的 `74c210c6…` 是 `756530de`（改名 commit）凍結後**再也
+  沒更新**的過期指紋，五支 binary 沒有一支重現得了它。
+
 
 ## 13. 移除 `xNN` byte 字面量拼寫（已實作）
 

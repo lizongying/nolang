@@ -6324,7 +6324,29 @@ func (l *lowerer) resolveCallee(n *hir.Node) (callee string, recvV ValueID) {
 		// definition is qualified (process.spawn). Resolve that spelling only
 		// when there is exactly one qualified candidate; ambiguous names must
 		// remain unresolved rather than selecting an arbitrary module function.
-		if _, ok := l.funcNames[name]; !ok {
+		//
+		// ⚠️ `builtin.FindBuiltinMethod(name) == nil` is load-bearing, and it is
+		// NOT an optimisation. `l.funcNames` also holds METHOD entries, whose
+		// "owner" is a TYPE rather than a module. So this suffix scan can rewrite
+		// a BARE builtin name into a same-suffix method. Two measured cases:
+		//
+		//   with-len  — polymorphic (its type comes from the assignment's LHS);
+		//               rewritten to `str.with-len`, which returns `str`, so
+		//               `b []byte = with-len(4)` lowered a %str-long into a %vec
+		//               slot and died with SIGSEGV. (Also covered by
+		//               lhsInferredBuiltins above, kept as an early return.)
+		//   close     — `src/std/fs.no` calls the libc `close(.fd)` by BARE
+		//               name inside `fs.file.close`; rewritten to `fs.file.close`
+		//               itself, i.e. a RECURSIVE SELF-CALL whose type flips from
+		//               i64 to bool, so every fs open/close test blew the stack.
+		//
+		// The invariant is general, not a list: a bare name that IS a builtin
+		// must never be rewritten to a qualified method. A whitelist (the
+		// lhsInferredBuiltins table) only enumerates the cases someone already
+		// hit — it missed `close`, and the symptom there (infinite recursion)
+		// looked nothing like the with-len symptom (a mistyped value), so the
+		// shared root cause was easy to miss.
+		if _, ok := l.funcNames[name]; !ok && builtin.FindBuiltinMethod(name) == nil {
 			qualified := ""
 			qualifiedDots := int(^uint(0) >> 1)
 			ambiguous := false
