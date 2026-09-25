@@ -42,8 +42,6 @@ func (p *Parser) classifyExprReturnKind(expr Expression) returnTypeInfo {
 		return returnTypeInfo{kind: returnConcrete, typeName: "str"}
 	case *BooleanLiteral:
 		return returnTypeInfo{kind: returnConcrete, typeName: "bool"}
-	case *ByteLiteral:
-		return returnTypeInfo{kind: returnConcrete, typeName: "byte"}
 	case *CharLiteral:
 		return returnTypeInfo{kind: returnConcrete, typeName: "char"}
 	case *CallExpression:

@@ -252,13 +252,12 @@ func userCorpus(t *testing.T) []*hir.Package {
 }
 
 // snippetCorpus lowers the constructs neither file corpus happens to contain.
-// std has no imports/exports/casts; tests/ has no byte literals, no `as` casts
-// and no anonymous functions. Rather than exempt those kinds as "untested",
-// produce them here so the coverage guardrail below stays a real assertion.
+// std has no imports/exports/casts; tests/ has no `as` casts and no anonymous
+// functions. Rather than exempt those kinds as "untested", produce them here so
+// the coverage guardrail below stays a real assertion.
 func snippetCorpus(t *testing.T) []*hir.Package {
 	t.Helper()
 	snippets := map[string]string{
-		"byte-literal":  "a = x1f\n",
 		"pointer-cast":  "p = nil\nq = p as *byte\n",
 		"export":        "@ std/math.add\n",
 		"export-alias":  "@ std/math.add plus\n",

@@ -767,9 +767,10 @@ if dst > NoVal && m.isParamValue(f, dst) { return true }
 | 13 | 推進容器（`l.push(q)`，`OpCall` 到 builtin） | 逃逸閘門（與 §9.3 的 `l.push` 同一條） |
 | **14** | **先經區域別名再交還（`t = q` 之後 `r = t`）** | **§11.4 的迴歸（Phase 2b clone + 移進參數）** |
 
-⚠️ 變數名不可用 `x11`／`x12` 這種形狀：`x` + **兩個十六進位數字**是 **byte 字面量**
-（`src/lexer/lexer.go:907`，`x00`~`xFF`），`x11` 會被讀成 `0x11` 而不是識別字 ⇒
-`a statement cannot be just a literal value`。`x0`~`x9`（單一數字）與 `xa` 正常。
+（歷史註記：這些測檔的變數名原本得避開 `x11`／`x12` 這種形狀，因為 `x` + **兩個十六進位
+數字**曾是 **byte 字面量**（`src/lexer/lexer.go` 的 `x00`~`xFF` 規則），`x11` 會被讀成
+`0x11` 而不是識別字 ⇒ `a statement cannot be just a literal value`。該拼寫已從語言移除
+——見本檔 §13 ——現在 `x11` 是普通識別字。）
 
 本檔的判別力在「**過度標記**」：R5 標錯（例如把參數也標了）就會 double free 或
 use-after-free ⇒ 輸出變垃圾或 `trace/BPT trap` ⇒ rc=1。因此每組都必須 rc=0 且輸出
@@ -1026,3 +1027,106 @@ HEAD** 的 binary 跑同一支探針 —— 若乾淨 HEAD 也炸，就是既有
 commit**（這裡是 `d407f2b0`）當基準，否則「HEAD == NOW」這個判準會被既有回歸汙染。
 
 
+## 13. 移除 `xNN` byte 字面量拼寫（已實作）
+
+> 本節記錄一個**語言層的刪除**，與 enum 所有權無關，但源自同一輪除錯（§11.5 的測檔
+> 被迫把 `x11` 改名成 `r11`）。文件放在本檔是因為 §12 已經把這裡當成 MIR 工作日誌。
+
+### 13.1 決策
+
+`x` + **恰好兩個十六進位數字**（`x00`~`xFF`）原本會被 lexer 讀成 **byte 字面量**。
+使用者裁定：**不允許這個拼寫**。實作方式是把整個拼寫從語言移除，而**不是**修好它。
+
+### 13.2 為什麼是移除而不是修復
+
+1. **它跟識別字直接衝突。** `x11`、`x1a`、`xAB` 都是完全合理的變數名，卻被靜默讀成數值：
+   `x11 i64 = 1` ⇒ `a statement cannot be just a literal value`。而且 `readIdentifier`
+   本來就會吃數字，所以 `x00` **本來就是**合法的識別字形狀 —— 這條規則是在跟自己的
+   識別字文法搶地盤。
+2. **它的 MIR lowering 從來沒對過。** `a byte = x11` 印 **0**（`0x11` 印 17），印多個
+   還會出現 `EmitLLVM: … consumer reads value 0 (NoVal)`。
+3. **它沒有使用者。** 全語料 `.no` 檔**零**使用（只有 `'\x01'` 這種字串轉義，那是
+   `readString` 的事，與此無關）。
+4. **等價寫法早就存在且是文件化的正解。** `0xNN` 十六進位字面量在 `byte` 範圍內推斷為
+   `byte`（`docs/docs/lang/syntax.md` 的「十六進制字面量類型推斷」），超出範圍才需顯式
+   標註。
+
+### 13.3 移除的四層
+
+`xNN` 是 `BYTE` token 的**唯一**生產者，因此刪掉 lexer 規則之後，下游三層會變成
+**不可達程式碼**。四層一起刪，否則就是留下死碼：
+
+| 層 | 位置 | 處置 |
+|---|---|---|
+| lexer 規則 | `src/lexer/lexer.go` `default:` 分支 | 刪除；留下註解說明**不可再加回來** |
+| token | `src/lexer/token.go` `BYTE` const + `tokenNames` | 刪除（`isRegexStart` 的值產生清單同步移除） |
+| parser | `parseByteLiteral`、各 `case lexer.BYTE` | 刪除 |
+| AST | `parser.ByteLiteral` | 刪除 |
+| HIR | `hir.KByteLit` | 刪除 |
+
+⚠️ **`isHex` 要留著**：`readNumber` 的 `0xNN` 分支（`lexer.go`）還在用它。
+
+⚠️ 刪除 `BYTE`／`KByteLit` 會**位移 iota**（token 與 HIR kind 都是 `iota` 列舉）。已確認
+兩者都**沒有數值持久化**：`tokenNames`／`KindNames` 只供 `String()`／Dump 除錯，全 repo
+無 `gob`／JSON 序列化 token 或 kind，也沒有 token/HIR dump 指令進 golden。
+
+### 13.4 波及面（全部為機械式刪除）
+
+`src/lexer/{lexer,token}.go`、`src/parser/{ast,expr,parser,stmt,tohir,desugar}.go`、
+`src/parser/dump/dump.go`、`src/lsp/semantic.go`、`src/checker/checker.go`、
+`src/fmt/expr.go`、`src/hir/hir.go`、`src/mir/hir2mir.go`、
+`src/build/{no/generator,js/expr,wasm/codegen,transpiler}.go`。
+
+兩處順帶修正的**既有錯誤註解**：
+
+- `src/build/transpiler.go` 的 `case *parser.ByteLiteral` 寫著「byte 字面量（如 `0x41`）」
+  —— 但 `0x41` 走的是 `IntegerLiteral`，**只有 `x41` 拼寫能到這個臂**。該臂早就名不副實，
+  已連同註解刪除（不順手改寬：hex 的模組自動載入是另一件事，且此為已被 MIR 取代的
+  legacy 後端）。
+- `src/mir/hir2mir.go` 的 `case hir.KByteLit` 註解同樣舉 `0xfd` 為例，實際只涵蓋 `xNN`。
+  `[N]byte` 常數摺疊本來就由 `hir.KIntLit` 那條處理，行為不變。
+
+### 13.5 HIR Kind 覆蓋守門測試
+
+`src/hir/golden_test.go` 有兩個會**雙向失敗**的守門測試：
+
+- `TestKindNamesComplete`：`KindNames` 必須與 const 區塊同步（`[kindCount]string` 固定
+  長度）。
+- `TestKindCoverageAcrossBothCorpora`：每個 Kind 必須被三份語料（std／`tests/`／
+  inline snippet）**實際產生**，或在豁免清單裡附理由。豁免了卻被產生 ⇒ 失敗；沒被產生
+  又沒豁免 ⇒ 也失敗。
+
+`snippetCorpus` 原本有一條 `"byte-literal": "a = x1f\n"` **專門**用來產生 `KByteLit`
+（因為 `tests/` 沒有 byte 字面量）。既然 Kind 已刪，該 snippet 與相關註解一併移除 ——
+否則它會退化成「產生一個 KIdent」的假覆蓋。
+
+### 13.6 等價替代
+
+```no
+b = 0x00        ; byte，值 0（hex 在 byte 範圍內推斷為 byte）
+PORT i64 = 0x0303   ; 超出 byte 範圍 → 必須顯式標註
+```
+
+### 13.7 迴歸測試
+
+`src/lexer/lexer_test.go::TestLexerByteLiteralSpellingRemoved`（4 組）：
+
+| 子測 | 斷言 |
+|---|---|
+| `xNN is a plain identifier` | `x00 x11 x1a xAB xff` → 5 個 **IDENT** |
+| `x11 works as a declaration name` | `x11 i64 = 1` → `IDENT IDENT ASSIGN INT` |
+| `0xNN still lexes as INT` | `0x00 0x11 0xFF` → 3 個 **INT** |
+| `other x-prefixed names unaffected` | `x xa xyz x99z x0` → 5 個 IDENT |
+
+判別力：把 lexer 規則加回去，第 1、2 組立刻失敗（`x00` 會變 `BYTE`）。
+
+### 13.8 驗收
+
+- `gofmt`：`lexer.go`／`token.go` 在 **HEAD 就已經**不被 `gofmt -l` 接受（舊版 gofmt
+  排版），故**不做** `gofmt -w`（會產生數百行無關重排）。改以「`gofmt` 正規化後 diff」
+  驗證：HEAD 與 NOW 的正規化輸出差異**只有**本次的實質改動。
+- `cd src && go build ./...` 乾淨；`go test ./lexer ./parser ./hir ./fmt ./checker ./mir`
+  全 ok。
+- `TestKindCoverageAcrossBothCorpora`：**56 / 68 kinds exercised、12 exempt**（比移除前
+  少一個 kind）。
+- golden sweep（私有 worktree binary）：見 §12.9 的同一個 `NO=` 流程。

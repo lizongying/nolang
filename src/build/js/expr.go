@@ -57,8 +57,6 @@ func (g *Generator) generateExpression(expr parser.Expression) string {
 	switch e := expr.(type) {
 	case *parser.IntegerLiteral:
 		return fmt.Sprintf("%d", e.Value)
-	case *parser.ByteLiteral:
-		return fmt.Sprintf("%d", e.Value)
 	case *parser.FloatLiteral:
 		return fmt.Sprintf("%g", e.Value)
 	case *parser.StringLiteral:

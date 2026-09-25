@@ -12,7 +12,6 @@ const (
 	IDENT
 	INT
 	FLOAT
-	BYTE // x00 ~ xFF
 	STRING
 	CHAR  // "x" — double-quoted single Unicode character (rune)
 	REGEX // /pattern/flags — regex literal (JS-style, context-sensitive)
@@ -125,7 +124,6 @@ var tokenNames = map[TokenType]string{
 	IDENT:          "IDENT",
 	INT:            "INT",
 	FLOAT:          "FLOAT",
-	BYTE:           "BYTE",
 	STRING:         "STRING",
 	CHAR:           "CHAR",
 	REGEX:          "REGEX",

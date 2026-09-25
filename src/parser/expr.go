@@ -174,9 +174,6 @@ func (p *Parser) parseExpression(precedence int) Expression {
 	case lexer.FLOAT:
 		leftExp = p.parseFloatLiteral()
 
-	case lexer.BYTE:
-		leftExp = p.parseByteLiteral()
-
 	case lexer.STRING:
 		leftExp = p.parseStringLiteral()
 
@@ -657,25 +654,10 @@ func (p *Parser) parseIntegerLiteral() Expression {
 	return lit
 }
 
-// forward
-func (p *Parser) parseByteLiteral() Expression {
-	lit := &ByteLiteral{Token: p.currentToken}
-	// xNN → 整數值
-	val := int64(0)
-	for _, c := range p.currentToken.Literal[1:] {
-		if c >= '0' && c <= '9' {
-			val = val*16 + int64(c-'0')
-		} else if c >= 'a' && c <= 'f' {
-			val = val*16 + int64(c-'a'+10)
-		} else if c >= 'A' && c <= 'F' {
-			val = val*16 + int64(c-'A'+10)
-		}
-	}
-	lit.Value = val
-	p.nextToken()
-	return lit
-}
-
+// NOTE: there is deliberately no parseByteLiteral here. The `xNN` byte-literal
+// spelling was removed from the language (see the lexer's `default:` branch), so
+// no token ever reaches the parser that would need it. Bytes are written as hex
+// literals (`0x11`), which parse as ordinary integer literals.
 func (p *Parser) parseFloatLiteral() Expression {
 	lit := &FloatLiteral{Token: p.currentToken}
 	lit.Raw = p.currentToken.Literal
@@ -1051,16 +1033,13 @@ func (p *Parser) parseMatchExprFrom(matched Expression) Expression {
 			p.nextToken()
 		} else if p.currentToken.Type == lexer.IDENT || p.currentToken.Type == lexer.INT ||
 			p.currentToken.Type == lexer.FLOAT || p.currentToken.Type == lexer.STRING ||
-			p.currentToken.Type == lexer.NIL || p.currentToken.Type == lexer.TRUE || p.currentToken.Type == lexer.FALSE ||
-			p.currentToken.Type == lexer.BYTE {
+			p.currentToken.Type == lexer.NIL || p.currentToken.Type == lexer.TRUE || p.currentToken.Type == lexer.FALSE {
 			// 解析 match 條件（僅主要表達式，避免 | 被當作 OR）
 			switch p.currentToken.Type {
 			case lexer.INT:
 				ma.condition = p.parseIntegerLiteral()
 			case lexer.FLOAT:
 				ma.condition = p.parseFloatLiteral()
-			case lexer.BYTE:
-				ma.condition = p.parseByteLiteral()
 			case lexer.STRING:
 				ma.condition = p.parseStringLiteral()
 			case lexer.IDENT:
@@ -1094,8 +1073,6 @@ func (p *Parser) parseMatchExprFrom(matched Expression) Expression {
 						next = p.parseIntegerLiteral()
 					case lexer.FLOAT:
 						next = p.parseFloatLiteral()
-					case lexer.BYTE:
-						next = p.parseByteLiteral()
 					case lexer.STRING:
 						next = p.parseStringLiteral()
 					case lexer.TRUE, lexer.FALSE:
@@ -2154,8 +2131,6 @@ func (p *Parser) parseArgument() Expression {
 	case lexer.INT:
 		return p.parseExpression(LOWEST)
 	case lexer.FLOAT:
-		return p.parseExpression(LOWEST)
-	case lexer.BYTE:
 		return p.parseExpression(LOWEST)
 	case lexer.TRUE:
 		return p.parseExpression(LOWEST)

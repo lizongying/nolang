@@ -1266,16 +1266,9 @@ func (il *IntegerLiteral) expressionNode()        {}
 func (il *IntegerLiteral) Pos() lexer.Position    { return posFromToken(il.Token) }
 func (il *IntegerLiteral) EndPos() lexer.Position { return posFromToken(il.Token) }
 
-type ByteLiteral struct {
-	Token lexer.Token
-	Value int64
-	Raw   string
-}
-
-func (bl *ByteLiteral) expressionNode()        {}
-func (bl *ByteLiteral) Pos() lexer.Position    { return posFromToken(bl.Token) }
-func (bl *ByteLiteral) EndPos() lexer.Position { return posFromToken(bl.Token) }
-
+// NOTE: there is deliberately no ByteLiteral node. It existed only to represent
+// the removed `xNN` byte-literal spelling; bytes are now written as hex integer
+// literals (`0x11`) and flow through IntegerLiteral.
 type FloatLiteral struct {
 	Token lexer.Token
 	Value float64

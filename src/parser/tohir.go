@@ -694,9 +694,6 @@ func (c *hirConv) exprNode(e Expression) int32 {
 			Line: line, Col: col,
 		})
 
-	case *ByteLiteral:
-		return c.b.Add(hir.Node{Kind: hir.KByteLit, Val: e.Value, S: c.b.Intern(e.Raw), Line: line, Col: col})
-
 	case *FloatLiteral:
 		n := hir.Node{Kind: hir.KFloatLit, S: c.b.Intern(e.Raw), Line: line, Col: col}
 		n.SetFloat(e.Value)

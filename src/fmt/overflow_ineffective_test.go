@@ -232,6 +232,35 @@ func TestFormatPreservesEffectiveOverflowSelfDot(t *testing.T) {
 	}
 }
 
+// TestFormatPreservesEffectiveOverflowNumAlias 回归钉：`num`（= int | float）
+// 别名变数的算术（src/std/number.no `abs` 的 `r = 0 - a`）其 #{overflow=wrap}
+// 不得被误删。num 含 int 分支，合并 std 语境下 ovf-int-default 確會報錯；
+// 此前 nonIntTypeNames 错误地把 "num" 登记為「確定非整數」，单档解析时
+// operandIntKind 返回 "" → 判注解无效 → 删除后 vet 新增硬错。
+func TestFormatPreservesEffectiveOverflowNumAlias(t *testing.T) {
+	input := "num = int | float\n" +
+		"\n" +
+		"abs = (a num) (r num) {\n" +
+		"    {\n" +
+		"        a < 0 -> {\n" +
+		"            #{overflow=wrap}\n" +
+		"            r = 0 - a\n" +
+		"        }\n" +
+		"\n" +
+		"        -> r = a\n" +
+		"    }\n" +
+		"}\n"
+	program := parseForTest(input)
+	if program == nil {
+		t.Fatal("failed to parse test input")
+	}
+	relevant, governed := checker.OverflowAnnotationRelevance(program)
+	out := FormatProgramWithOverflow(program, input, relevant, governed)
+	if got := strings.Count(out, "#{overflow=wrap}"); got != 1 {
+		t.Errorf("num-alias effective overflow annotation stripped: kept %d, want 1:\n%s", got, out)
+	}
+}
+
 // parseForTest parses source with the same options the `no fmt` CLI uses.
 func parseForTest(src string) *parser.Program {
 	lx := lexer.New(src)

@@ -90,8 +90,6 @@ func inferExprType(expr parser.Expression, varTypes map[string]string, funcTypes
 		return "bool"
 	case *parser.CharLiteral:
 		return "char"
-	case *parser.ByteLiteral:
-		return "byte"
 	case *parser.RegexLiteral:
 		return "regexp"
 	case *parser.Identifier:
@@ -2978,8 +2976,12 @@ var unsignedIntTypeNames = map[string]bool{
 // "float" 是 number.no 中定義的型別別名（float = f32 | f64），必須在此註冊，
 // 否則 operandIntKind 對 float 型變數會保守回退為 "signed"，導致 float.div
 // （`q = . / b`）被誤報為整數溢出。
+// 注意："num"（= int | float）不得註冊——它含 int 分支，算術仍可能產生
+// option（number.no `abs` 的 `r = 0 - a` 在 std 合併語境下確會報 ovf-int-default）；
+// 若在此註冊會使 `no fmt` 判其注解無效而誤刪，vet 反增硬錯（兩管道 AST 形態
+// 不同：單檔解析時參數型別保留 NamedType "num"，合併 std 時已展開）。
 var nonIntTypeNames = map[string]bool{
-	"float": true, "num": true, "number.float": true, "number.num": true,
+	"float": true, "number.float": true,
 	"f32": true, "f64": true,
 	"str": true, "txt": true, "char": true, "bool": true, "byte": true, "rune": true,
 }
@@ -5555,15 +5557,6 @@ func checkHexCaseInExpr(expr parser.Expression) []ValidateResult {
 				Message: fmt.Sprintf("hex literal '%s' uses uppercase; format will convert to lowercase (e.g. 0xff)", e.Token.Literal),
 			})
 		}
-	case *parser.ByteLiteral:
-		if hasUpperHex(e.Token.Literal) {
-			results = append(results, ValidateResult{
-				TraceID: "ucj09vyi",
-				Line:    e.Token.Line,
-				Column:  e.Token.Column,
-				Message: fmt.Sprintf("byte literal '%s' uses uppercase hex; format will convert to lowercase (e.g. xff)", e.Token.Literal),
-			})
-		}
 	case *parser.InfixExpression:
 		results = append(results, checkHexCaseInExpr(e.Left)...)
 		results = append(results, checkHexCaseInExpr(e.Right)...)
@@ -6534,7 +6527,7 @@ func checkBareExprStatement(expr parser.Expression, funcNames map[string]bool) *
 		}
 		return nil
 	case *parser.StringLiteral, *parser.IntegerLiteral, *parser.FloatLiteral,
-		*parser.CharLiteral, *parser.BooleanLiteral, *parser.ByteLiteral, *parser.NilLiteral:
+		*parser.CharLiteral, *parser.BooleanLiteral, *parser.NilLiteral:
 		pos := expr.Pos()
 		return &ValidateResult{
 			TraceID: "yf6kxdmz",

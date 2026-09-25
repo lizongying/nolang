@@ -1314,7 +1314,7 @@ func (l *lowerer) typeOfNode(n *hir.Node) TypeID {
 			return l.b.Type(raw)
 		}
 		return l.inferredTypeOf(n)
-	case hir.KIntLit, hir.KByteLit:
+	case hir.KIntLit:
 		return l.b.Type("i64")
 	case hir.KCharLit:
 		// A char literal's value is produced by lowerCharLit with type `char`
@@ -1874,7 +1874,7 @@ func (l *lowerer) letTypeRaw(n *hir.Node) string {
 			// fallback previously mapped it to "str", which mistyped any
 			// top-level `c = 'A'` whose type could not be recovered elsewhere.
 			return "char"
-		case hir.KIntLit, hir.KByteLit:
+		case hir.KIntLit:
 			return "i64"
 		case hir.KFloatLit:
 			return "f64"
@@ -2177,7 +2177,7 @@ func (l *lowerer) tryUnsignedLitFold(nodeID int32, raw string) (ValueID, bool) {
 	}
 	var val int64
 	switch n.Kind {
-	case hir.KIntLit, hir.KByteLit:
+	case hir.KIntLit:
 		val = n.Val
 	case hir.KPrefix:
 		// `-1` lowers as KPrefix("-") over KIntLit(1).
@@ -2193,7 +2193,7 @@ func (l *lowerer) tryUnsignedLitFold(nodeID int32, raw string) (ValueID, bool) {
 			return NoVal, false
 		}
 		on := l.pkg.Node(operand)
-		if on == nil || (on.Kind != hir.KIntLit && on.Kind != hir.KByteLit) {
+		if on == nil || on.Kind != hir.KIntLit {
 			return NoVal, false
 		}
 		val = -on.Val
@@ -4549,17 +4549,6 @@ func (l *lowerer) foldConstText(n *hir.Node, gtype string) string {
 		return ""
 	case hir.KIntLit:
 		return fmt.Sprintf("i64 %d", n.Val)
-	case hir.KByteLit:
-		// A byte literal (`0xfd`, `b'a'`) carries its value in Val and is
-		// emitted as an i64 in the generic array fold (`[N x i64] [...]`), so it
-		// must fold like an int literal. Without this case the generic branch of
-		// KArrayLit hit an unfoldable element and returned "", leaving the whole
-		// array constant unregistered — a top-level `XZ-MAGIC = [0xfd, ...]`
-		// read from a std function then resolved to a void `const` and
-		// `XZ-MAGIC[i]` failed with "index slot: value ... void". (The
-		// `[N]byte` byteArrayRe branch above handles KByteLit itself, so
-		// substitution boxes were unaffected.)
-		return fmt.Sprintf("i64 %d", n.Val&0xff)
 	case hir.KCharLit:
 		// The code point lives in S (the interned character TEXT), not in Val:
 		// tohir stores a char literal as `{Kind: KCharLit, S: <text>}` and
@@ -4660,10 +4649,11 @@ func (l *lowerer) foldConstText(n *hir.Node, gtype string) string {
 			var data strings.Builder
 			for _, e := range elems {
 				ev := l.pkg.Node(e)
-				// Byte-array elements are emitted as KByteLit in HIR; accept both
-				// KByteLit and KIntLit (some array literals use i64 element
-				// literals) so substitution boxes ([256]byte) fold correctly.
-				if ev == nil || (ev.Kind != hir.KIntLit && ev.Kind != hir.KByteLit) {
+				// Byte-array elements are plain integer literals in HIR. (The
+				// removed `xNN` spelling used to produce a dedicated byte kind;
+				// `0xfd` has always been an int literal, so this branch is
+				// unchanged in behaviour.)
+				if ev == nil || ev.Kind != hir.KIntLit {
 					return ""
 				}
 				data.WriteString(fmt.Sprintf(`\%02X`, ev.Val&0xff))

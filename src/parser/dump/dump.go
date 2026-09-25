@@ -148,9 +148,6 @@ func dumpNode(buf *strings.Builder, node parser.Node, depth int) {
 	case *parser.CharLiteral:
 		fmt.Fprintf(buf, "%sCharLiteral{%s}\n", indent(depth), n.Value)
 
-	case *parser.ByteLiteral:
-		fmt.Fprintf(buf, "%sByteLiteral{%d}\n", indent(depth), n.Value)
-
 	case *parser.BooleanLiteral:
 		fmt.Fprintf(buf, "%sBooleanLiteral{%v}\n", indent(depth), n.Value)
 
@@ -295,8 +292,6 @@ func nodeString(node parser.Node) string {
 		return n.Value
 	case *parser.CharLiteral:
 		return n.Value
-	case *parser.ByteLiteral:
-		return fmt.Sprintf("%d", n.Value)
 	case *parser.BooleanLiteral:
 		return fmt.Sprintf("%v", n.Value)
 	case *parser.NilLiteral:

@@ -423,3 +423,80 @@ func TestLexerDotSelfArith(t *testing.T) {
 		})
 	}
 }
+
+// TestLexerByteLiteralSpellingRemoved pins the removal of the `xNN` byte-literal
+// spelling.
+//
+// `x` followed by exactly two hex digits used to lex as a BYTE literal, which
+// made ordinary identifiers such as `x11`, `x1a` or `xAB` unusable — they were
+// silently read as numbers, so `x11 i64 = 1` failed with "a statement cannot be
+// just a literal value". The MIR lowering of the literal was broken anyway (it
+// produced 0), so the spelling was dropped from the language instead of being
+// repaired.
+//
+// The documented hex form is `0xNN`, which is untouched here: it lexes as INT
+// and infers `byte` at the type level.
+func TestLexerByteLiteralSpellingRemoved(t *testing.T) {
+	type tok struct {
+		typ TokenType
+		lit string
+	}
+	tests := []struct {
+		name  string
+		input string
+		want  []tok
+	}{
+		{
+			name:  "xNN is a plain identifier",
+			input: "x00 x11 x1a xAB xff",
+			want: []tok{
+				{IDENT, "x00"}, {IDENT, "x11"}, {IDENT, "x1a"},
+				{IDENT, "xAB"}, {IDENT, "xff"},
+			},
+		},
+		{
+			// The exact shape that used to be unusable as a variable name.
+			name:  "x11 works as a declaration name",
+			input: "x11 i64 = 1",
+			want:  []tok{{IDENT, "x11"}, {IDENT, "i64"}, {ASSIGN, "="}, {INT, "1"}},
+		},
+		{
+			name:  "0xNN still lexes as INT",
+			input: "0x00 0x11 0xFF",
+			want:  []tok{{INT, "0x00"}, {INT, "0x11"}, {INT, "0xFF"}},
+		},
+		{
+			// Names that merely start with x, or continue past two digits,
+			// were never affected and must stay that way.
+			name:  "other x-prefixed names unaffected",
+			input: "x xa xyz x99z x0",
+			want: []tok{
+				{IDENT, "x"}, {IDENT, "xa"}, {IDENT, "xyz"},
+				{IDENT, "x99z"}, {IDENT, "x0"},
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			lex := New(tt.input)
+			var got []tok
+			for tk := lex.NextToken(); tk.Type != EOF; tk = lex.NextToken() {
+				if tk.Type == NEWLINE || tk.Type == COMMENT {
+					continue
+				}
+				got = append(got, tok{tk.Type, tk.Literal})
+			}
+			if len(got) != len(tt.want) {
+				t.Fatalf("token count: got %d %v, want %d %v",
+					len(got), got, len(tt.want), tt.want)
+			}
+			for i := range got {
+				if got[i] != tt.want[i] {
+					t.Errorf("token %d: got %s(%q), want %s(%q)", i,
+						got[i].typ.String(), got[i].lit,
+						tt.want[i].typ.String(), tt.want[i].lit)
+				}
+			}
+		})
+	}
+}

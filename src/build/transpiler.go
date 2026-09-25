@@ -1459,12 +1459,14 @@ func (t *Transpiler) collectReferencedStdModules(prog *parser.Program) map[strin
 			// @to-str（缺接收者/回傳欄位），報 "use of undefined value '@to-str'"
 			// （如 test_char_*.no 系列回歸）。
 			addRef("char")
-		case *parser.ByteLiteral:
-			// byte 字面量（如 0x41）隱含引用 std/byte.no 模組：byte 的方法
-			// （byte.to-str 等）經由推論變數呼叫，靜態掃描無法偵測。雖然
-			// print 家族推斷集（fmt/io/str/byte）在大多數情況已覆蓋 byte，
-			// 但純 byte 運算（不含 print）的程式仍需由字面量觸發載入。
-			addRef("byte")
+		// NOTE: there was a `case *parser.ByteLiteral` here that called
+		// addRef("byte"), documented as covering byte literals "such as 0x41".
+		// That was already wrong before the `xNN` spelling was removed: `0x41`
+		// parses as an IntegerLiteral, so only the `x41` spelling could ever
+		// reach this arm, and that spelling is gone. The dead arm was removed
+		// rather than widened — byte-method auto-loading for hex literals is a
+		// separate concern from the literal spelling, and this legacy backend
+		// is superseded by MIR.
 		case *parser.DotExpression:
 			addRef(dotModulePath(ex))
 			walkExpr(ex.Receiver)

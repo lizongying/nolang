@@ -466,7 +466,7 @@ func (l *Lexer) isRegexStart() bool {
 	}
 	switch prev {
 	// After these value-producing tokens, '/' is division.
-	case IDENT, INT, FLOAT, STRING, CHAR, BYTE, REGEX,
+	case IDENT, INT, FLOAT, STRING, CHAR, REGEX,
 		TRUE, FALSE, NIL,
 		RPAREN, RBRACKET, RBRACE,
 		INC, DEC,
@@ -904,12 +904,16 @@ func (l *Lexer) scanToken() (tok Token) {
 	default:
 		if isLetter(l.ch) {
 			literal := l.readIdentifier()
-			// xNN → byte 字面量（x00 ~ xFF）
-			if len(literal) == 3 && literal[0] == 'x' && isHex(literal[1]) && isHex(literal[2]) {
-				tok.Type = BYTE
-				tok.Literal = literal
-				return tok
-			}
+			// ⚠️ There is deliberately NO `xNN` byte-literal rule here. The
+			// `x00`~`xFF` spelling was removed from the language: it collided
+			// with ordinary identifiers (`x11` is a perfectly reasonable
+			// variable name, and readIdentifier below already consumes digits),
+			// and its MIR lowering never worked — it produced 0. Bytes are
+			// written with a hex literal instead (`0x11`), which infers `byte`
+			// when the value fits and needs an explicit annotation otherwise
+			// (see docs/docs/lang/syntax.md).
+			//
+			// Do not reintroduce it: `x00` must lex as a single IDENT.
 			tok.Type = lookupKeyword(literal)
 		if tok.Type == 0 {
 			tok.Type = IDENT

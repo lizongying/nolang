@@ -410,7 +410,7 @@ func (sp *SemanticTokensProvider) mapTokenType(tok lexer.Token, identTypes map[[
 		return -1
 	}
 	switch tok.Type {
-	case lexer.INT, lexer.FLOAT, lexer.BYTE:
+	case lexer.INT, lexer.FLOAT:
 		return SemTokenTypeNumber
 	case lexer.CHAR:
 		return SemTokenTypeNumber

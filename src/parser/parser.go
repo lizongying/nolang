@@ -236,7 +236,7 @@ func isStructFieldValueShape(tok3, tok4 lexer.Token) bool {
 func isFieldValueStart(t lexer.TokenType) bool {
 	switch t {
 	case lexer.IDENT, lexer.INT, lexer.FLOAT, lexer.STRING, lexer.CHAR,
-		lexer.BYTE, lexer.REGEX, lexer.TRUE, lexer.FALSE, lexer.NIL,
+		lexer.REGEX, lexer.TRUE, lexer.FALSE, lexer.NIL,
 		lexer.LBRACKET, lexer.LPAREN, lexer.NOT, lexer.SUB, lexer.UNDERSCORE:
 		return true
 	}
@@ -303,7 +303,7 @@ func (p *Parser) classifyBlock() blockType {
 	switch tok1.Type {
 	case lexer.UNDERSCORE, lexer.RARROW, lexer.COLON, lexer.LPAREN:
 		return blockMatch
-	case lexer.INT, lexer.FLOAT, lexer.STRING, lexer.BYTE, lexer.CHAR, lexer.REGEX, lexer.TRUE, lexer.FALSE:
+	case lexer.INT, lexer.FLOAT, lexer.STRING, lexer.CHAR, lexer.REGEX, lexer.TRUE, lexer.FALSE:
 		return blockMatch
 	}
 
@@ -376,8 +376,8 @@ func (p *Parser) classifyBlock() blockType {
 			(tok4.Type == lexer.NEWLINE || tok4.Type == lexer.RBRACE || tok4.Type == lexer.COMMA) {
 			return blockStruct
 		}
-		// Struct literal: name : <literal_value>\n (value is STRING/INT/BYTE/BOOL/NIL)
-		if (tok3.Type == lexer.STRING || tok3.Type == lexer.INT || tok3.Type == lexer.BYTE ||
+		// Struct literal: name : <literal_value>\n (value is STRING/INT/BOOL/NIL)
+		if (tok3.Type == lexer.STRING || tok3.Type == lexer.INT ||
 			tok3.Type == lexer.TRUE || tok3.Type == lexer.FALSE || tok3.Type == lexer.NIL) &&
 			(tok4.Type == lexer.NEWLINE || tok4.Type == lexer.RBRACE || tok4.Type == lexer.COMMA) {
 			return blockStruct
@@ -700,7 +700,7 @@ func (p *Parser) classifyBlockAtCurrent() blockType {
 	switch tok1.Type {
 	case lexer.UNDERSCORE, lexer.RARROW, lexer.COLON, lexer.LPAREN:
 		return blockMatch
-	case lexer.INT, lexer.FLOAT, lexer.STRING, lexer.BYTE, lexer.CHAR, lexer.REGEX, lexer.TRUE, lexer.FALSE:
+	case lexer.INT, lexer.FLOAT, lexer.STRING, lexer.CHAR, lexer.REGEX, lexer.TRUE, lexer.FALSE:
 		return blockMatch
 	case lexer.NOT:
 		// Bare match arm starting with !expr (negated condition),
@@ -775,7 +775,7 @@ func (p *Parser) classifyBlockAtCurrent() blockType {
 			return blockStruct
 		}
 		// Struct literal: name : <literal_value>\n
-		if (tok3.Type == lexer.STRING || tok3.Type == lexer.INT || tok3.Type == lexer.BYTE ||
+		if (tok3.Type == lexer.STRING || tok3.Type == lexer.INT ||
 			tok3.Type == lexer.TRUE || tok3.Type == lexer.FALSE || tok3.Type == lexer.NIL) &&
 			(tok4.Type == lexer.NEWLINE || tok4.Type == lexer.RBRACE || tok4.Type == lexer.COMMA) {
 			return blockStruct
@@ -1343,8 +1343,6 @@ func stmtExprEndLine(expr Expression) int {
 	case *FloatLiteral:
 		return e.Token.Line
 	case *BooleanLiteral:
-		return e.Token.Line
-	case *ByteLiteral:
 		return e.Token.Line
 	case *StringLiteral:
 		return e.Token.Line

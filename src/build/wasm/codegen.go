@@ -463,10 +463,6 @@ func (g *Generator) emitExpr(sb *bytes.Buffer, expr parser.Expression) ValType {
 		sb.WriteByte(OpI64Const)
 		writeSLEB(sb, e.Value)
 		return I64
-	case *parser.ByteLiteral:
-		sb.WriteByte(OpI64Const)
-		writeSLEB(sb, e.Value)
-		return I64
 	case *parser.CharLiteral:
 		// char 視為 i64（其碼點）。
 		var code int64
@@ -818,10 +814,6 @@ func (g *Generator) emitPrint(sb *bytes.Buffer, args []parser.Expression, addNew
 			sb.WriteByte(OpI64Const)
 			writeSLEB(sb, a.Value)
 			g.emitPrintI64OnStack(sb)
-		case *parser.ByteLiteral:
-			sb.WriteByte(OpI64Const)
-			writeSLEB(sb, a.Value)
-			g.emitPrintI64OnStack(sb)
 		case *parser.BooleanLiteral:
 			if a.Value {
 				g.emitPrintString(sb, "true")
@@ -1160,7 +1152,7 @@ func (g *Generator) emitF64Const(sb *bytes.Buffer, val float64) {
 // inferType 推斷表達式的 ValType（用於無顯式型別的變數宣告）。
 func (g *Generator) inferType(expr parser.Expression) ValType {
 	switch e := expr.(type) {
-	case *parser.IntegerLiteral, *parser.ByteLiteral, *parser.CharLiteral, *parser.NilLiteral:
+	case *parser.IntegerLiteral, *parser.CharLiteral, *parser.NilLiteral:
 		return I64
 	case *parser.FloatLiteral:
 		return F64

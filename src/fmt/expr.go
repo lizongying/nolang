@@ -16,8 +16,6 @@ func (f *formatter) formatExpression(expr parser.Expression) {
 		}
 	case *parser.IntegerLiteral:
 		f.write(lowerHexLiteral(e.Token.Literal))
-	case *parser.ByteLiteral:
-		f.write(lowerHexLiteral(e.Token.Literal))
 	case *parser.FloatLiteral:
 		f.write(e.Token.Literal)
 	case *parser.StringLiteral:

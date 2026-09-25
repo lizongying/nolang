@@ -57,7 +57,6 @@ const (
 	// ---- expressions ----
 	KIdent
 	KIntLit
-	KByteLit
 	KFloatLit
 	KStrLit
 	KCharLit
@@ -129,7 +128,7 @@ var KindNames = [kindCount]string{
 	KTaggedEnumDef: "tagged-enum", KInterfaceDef: "interface",
 	KStructDef: "struct",
 
-	KIdent: "ident", KIntLit: "int", KByteLit: "byte",
+	KIdent: "ident", KIntLit: "int",
 	KFloatLit: "float", KStrLit: "str", KCharLit: "char",
 	KRegexLit: "regex", KBoolLit: "bool", KNilLit: "nil",
 	KPrefix: "prefix", KInfix: "infix", KRun: "run", KAwait: "awy",

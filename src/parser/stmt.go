@@ -1868,7 +1868,7 @@ func isStatementBoundary(t lexer.TokenType) bool {
 		// 靜默地多跑 N 次）的原因。語料庫中沒有以 `-` 續行的多行運算式。
 		lexer.DOT, lexer.NOT, lexer.INT, lexer.STRING, lexer.SUB,
 		lexer.TRUE, lexer.FALSE, lexer.NIL, lexer.USE, lexer.AT,
-		lexer.SWITCH, lexer.TILDE, lexer.FLOAT, lexer.BYTE,
+		lexer.SWITCH, lexer.TILDE, lexer.FLOAT,
 		lexer.LBRACKET, lexer.HASH_LBRACE,
 		lexer.REGEX,
 		// Shorthand forms and loop labels that can begin a statement
