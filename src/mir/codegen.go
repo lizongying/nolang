@@ -11561,6 +11561,27 @@ func (c *codegen) emitBuiltinRawBytePut(f *Function, inst *Inst) error {
 		c.fail("builtin %s: receiver has no slot", inst.Sym)
 		return fmt.Errorf("builtin %s: no receiver slot", inst.Sym)
 	}
+	// Receiver WRITE-BACK: `b.s.set-byte(i, b)` / `arr[0].set-byte(i, b)` read
+	// the receiver OUT of a struct field or a container element, so its slot
+	// holds a COPY of the %str-long / %txt header and every byte written
+	// through it is discarded. The mutation has to reach the REAL field /
+	// element storage, exactly as emitCallBody does for method receivers
+	// (lvalueAddrOf) and resolveReceiverSlot for the vec builtins. Without
+	// this, `set-byte` silently did nothing for any receiver that is not a
+	// plain local.
+	//
+	// GUARD (%str-long): `%str-long` and `%txt` are DIFFERENT aggregates with
+	// the same conceptual role ({len,cap,data} heap pointer vs an inline
+	// 255-byte buffer with an i8 length), and lvalueAddrOf also serves
+	// projections that WIDEN (an i8 element read out as i64). Taking such an
+	// address here would GEP it as a %str-long and write past the real object.
+	// Only accept the projection when it preserves the receiver's OWN storage
+	// layout, and fall back to the copy slot on any mismatch.
+	if p, ptid, projected := c.lvalueAddrOf(inst.Args[0]); projected && p != "" && rt != "" {
+		if pt := c.mod.Type(ptid); pt != nil && c.llvmTypeOf(pt) == rt {
+			rslot = p
+		}
+	}
 	_, idxV := c.loadVal(inst.Args[1])
 	idxVT, _ := c.ptype(inst.Args[1])
 	idxV = c.coerceIndex(inst.Args[1], idxVT, idxV)

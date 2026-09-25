@@ -1,0 +1,96 @@
+; match-arm-binding-scope.no — match 臂的析構綁定必須**只在其臂內**有效
+;
+; `ok(v) ->` / `err(e) ->` 的綁定是 parser 合成的 `let v = <matched>`。它原本會沿用
+; 已存在的同名槽位（一般 `x = 2` 的「同名即修改」語義），但那個槽位可能屬於**外層臂**
+; 的同名綁定 —— 於是巢狀 match 之後，外層臂讀到的 `x` 變成內層的載荷：
+;   a ?i64 = ok(1)
+;   b ?i64 = ok(2)
+;   a: { ok(x) -> { b: { ok(x) -> print(x) }   ; 2
+;                   print(x) } }               ; 舊：2（應為 1）
+; 修法：臂綁定一律綁到自己的值，臂結束時還原被遮蔽的外層項目。
+;
+; 範圍限制：只有**不擁有堆記憶體**的臂綁定走「自己的槽位 + 還原」這條路。若綁定的值
+; 擁有堆（tagged enum 的 str / []T / struct 載荷），臂主體是直接從 match 主體投影讀出
+; 該欄位的（enumArmFieldValue 每次讀取都重新投影），給它一個新槽位等於同一塊緩衝有兩個
+; 擁有者 —— 槽位的結束 drop 與投影讀取的 drop 會釋放同一塊 → trace/BPT trap
+; （tests/tagged-enum.no 就是這樣被觸發）。因此這類綁定維持原本的重綁路徑（洩漏但不崩潰）。
+;
+; 已知、本次未修（皆為既有缺陷，與本檔無關）：單獨讀取 owned 載荷（`ok(v str) ->
+; print(v)`）會雙重釋放；在多語句臂主體中讀 owned 載荷會被推成 enum 型別（print 不支援）。
+;
+; 本檔的每個 case 都印 ok/fail，方便肉眼與 golden 比對。
+
+box { full(v i64) empty }
+
+main = () {
+
+    ; (1) 臂綁定本身要正確拿到載荷
+    a ?i64 = ok(7)
+    a: {
+        ok(x) -> print('ok 1: arm binding binds payload ' - x.to-str())
+        nil -> print('fail 1: nil')
+        err -> print('fail 1: err')
+    }
+
+    ; (2) 臂綁定不得覆蓋同名的外層普通變數
+    x i64 = 99
+    a: {
+        ok(x) -> {}
+        nil -> {}
+        err -> {}
+    }
+    x == 99 -> print('ok 2: outer local survives the arm binding')
+
+    -> print('fail 2: outer local got=' - x.to-str())
+
+    ; (3) 巢狀 match 同名綁定：內層用完要還原外層
+    p box = full(5)
+    q box = full(6)
+    p: {
+        full(v) -> {
+            v == 5 -> print('ok 3a: outer arm binding')
+
+            -> print('fail 3a: outer arm binding got=' - v.to-str())
+
+            q: {
+                full(v) -> print('ok 3b: inner arm binding ' - v.to-str())
+                empty -> print('fail 3b: empty')
+            }
+            v == 5 -> print('ok 3c: outer arm binding restored after the nested match')
+
+            -> print('fail 3c: outer arm binding leaked the inner payload, got=' - v.to-str())
+        }
+        empty -> print('fail 3: empty')
+    }
+
+    ; (4) 巢狀 match 同名綁定 + 三層
+    r box = full(1)
+    p: {
+        full(v) -> {
+            q: {
+                full(v) -> {
+                    r: {
+                        full(v) -> print('ok 4a: level-3 binding ' - v.to-str())
+                        empty -> print('fail 4a: empty')
+                    }
+                    v == 6 -> print('ok 4b: level-2 restored')
+
+                    -> print('fail 4b: level-2 got=' - v.to-str())
+                }
+                empty -> print('fail 4: empty')
+            }
+            v == 5 -> print('ok 4c: level-1 restored')
+
+            -> print('fail 4c: level-1 got=' - v.to-str())
+        }
+        empty -> print('fail 4: empty')
+    }
+
+    ; (5) 對照組：外層沒有同名變數時，臂綁定照舊可用於整個臂
+    z ?i64 = ok(42)
+    z: {
+        ok(w) -> print('ok 5: fresh arm binding ' - w.to-str())
+        nil -> print('fail 5: nil')
+        err -> print('fail 5: err')
+    }
+}

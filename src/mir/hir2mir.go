@@ -143,6 +143,15 @@ type lowerer struct {
 	// value always has the right type.
 	itSrc ValueID
 
+	// armScoped is the per-arm restore stack for match-arm bindings. A
+	// synthetic arm binding (`ok(v) -> ...` prepends `let v = <matched>`) is
+	// scoped to its arm, but `locals` is function-global: without this, a
+	// nested arm rebinding the same field name moved its payload into the
+	// OUTER arm's slot, so `print(x)` after the nested match printed the inner
+	// payload. lowerKLet pushes the enclosing entry the arm binding shadowed
+	// and lowerIf pops + restores it when the arm body ends.
+	armScoped []armScopedBind
+
 	// typeHint is the declared type of the binding currently being lowered.
 	// Some builtins (with-len / with-cap / with-cap-len) declare an EMPTY
 	// return list because their result type is inferred from the assignment's
@@ -274,6 +283,14 @@ type lowerer struct {
 	// result read as i64 prints the length instead of the string). Populated in
 	// lowerCall's OpRun branch and propagated through scalar let-copies.
 	asyncResTypes map[ValueID]TypeID
+}
+
+// armScopedBind is one `locals` entry that a match arm's synthetic binding
+// shadowed. lowerIf restores it when the arm body ends, so a nested match's
+// binding of the same field name cannot leak past its arm.
+type armScopedBind struct {
+	name  string
+	saved ValueID
 }
 
 // copiedEnumVariants returns a private copy of the enum-variant table so the
@@ -2552,7 +2569,43 @@ func (l *lowerer) lowerStmtInner(id int32) {
 			if l.pkg.Type(n.Type) == "txt" {
 				val = l.b.Emit(OpTxtFromStr, l.b.Type("txt"), []ValueID{val}, "")
 			}
-			if existing, ok := l.locals[name]; ok {
+			// A synthetic MATCH-ARM binding (`ok(v) -> ...` prepends
+			// `let v = <matched>`, flagged FlagArmBinding) is SCOPED TO ITS
+			// ARM. Re-binding an already-declared name normally moves the value
+			// into the EXISTING slot (value semantics: `x = 2` modifies `x`),
+			// but that slot may belong to an ENCLOSING arm's binding of the
+			// same field name — a nested match then destroys the outer value:
+			//   a ?i64 = ok(1)
+			//   b ?i64 = ok(2)
+			//   a: { ok(x) -> { b: { ok(x) -> print(x) }   ; 2
+			//                   print(x) } }               ; printed 2, want 1
+			// Bind the arm's OWN value instead (the same path a first-arm
+			// binding takes) and record the shadowed entry so lowerIf can put
+			// it back when the arm body ends. `it` is excluded: it already
+			// rebinds to a fresh value, and lowerIf restores it separately.
+			//
+			// Only a NON-OWNING binding may take that fresh-slot path. When the
+			// bound value owns heap — the `str` / `[]T` / struct payload of a
+			// tagged-enum destructuring — a fresh slot would hold a SECOND owner
+			// of the buffer, because the arm body reads the field straight out
+			// of the arm's subject (enumArmFieldValue re-projects on every
+			// read). The slot's exit drop then frees the same buffer the
+			// projection read frees -> trace/BPT trap (tests/tagged-enum.no:
+			// `ok(v) -> print(v)` over an `ok(v str)` variant). Such bindings
+			// keep the pre-existing rebind path; scalars and non-owning option
+			// payloads (`?i64`) own nothing and bind fresh safely.
+			armBinding := name != "it" && n.Flags&hir.FlagArmBinding != 0
+			armScoped := armBinding
+			if armScoped {
+				if f := l.mod.Func(l.curFunc); f != nil && l.mod.dropOwnsHeap(f, val) {
+					armScoped = false
+				}
+			}
+			existing, hasExisting := l.locals[name]
+			if hasExisting && armScoped {
+				l.armScoped = append(l.armScoped, armScopedBind{name: name, saved: existing})
+			}
+			if existing, ok := l.locals[name]; ok && !armScoped {
 				// Match-arm synthetic `it` is bound PER ARM but the `locals` map is
 				// function-global, so every arm after the first finds `it` already
 				// declared. The arms can carry DIFFERENT `it` types (err arm →
@@ -2641,7 +2694,7 @@ func (l *lowerer) lowerStmtInner(id int32) {
 			// value so both sides agree. Owned (heap) types are left to the
 			// fresh-slot path: their move needs clone/drop bookkeeping the
 			// global slot does not have.
-			if _, isGlobal := l.globals[name]; isGlobal {
+			if _, isGlobal := l.globals[name]; isGlobal && !armScoped {
 				if gv := l.lowerGlobalRef(name); gv != NoVal && !l.isOwnedLocal(gv) {
 					if gvt := l.valueTypeOf(gv); gvt != NoType && gvt != l.voidType {
 						if vt := l.valueTypeOf(val); vt == gvt {
@@ -2881,6 +2934,18 @@ func (l *lowerer) blockStartsWithIt(blockID int32) bool {
 	return false
 }
 
+// restoreArmScoped undoes the arm-binding shadowing recorded since `base`:
+// every match-arm binding that shadowed an enclosing `locals` entry is put
+// back, so the code after the arm reads the enclosing binding again. Called
+// when an arm body ends (see lowerIf). Nested arms push and pop their own
+// entries, so the stack unwinds in reverse and an inner arm restores first.
+func (l *lowerer) restoreArmScoped(base int) {
+	for i := len(l.armScoped) - 1; i >= base; i-- {
+		l.locals[l.armScoped[i].name] = l.armScoped[i].saved
+	}
+	l.armScoped = l.armScoped[:base]
+}
+
 func (l *lowerer) lowerIf(n *hir.Node) {
 	condID := l.slot(n.Id, "cond")
 	thenID := l.slot(n.Id, "then")
@@ -2997,7 +3062,12 @@ func (l *lowerer) lowerIf(n *hir.Node) {
 			l.matchDepth++
 		}
 		savedItSrc := l.itSrc
+		// Arm-scoped bindings (see lowerer.armScoped): restore the enclosing
+		// `locals` entries this arm's synthetic bindings shadowed as soon as
+		// the arm body ends, so a nested match cannot leak its payload out.
+		armScopedBase := len(l.armScoped)
 		armVal := l.lowerBlock(thenID)
+		l.restoreArmScoped(armScopedBase)
 		// The variant pattern only applies to THIS arm's body.
 		l.armVariant = nil
 		l.armEnum = nil
@@ -3029,7 +3099,9 @@ func (l *lowerer) lowerIf(n *hir.Node) {
 		if elseIsArm {
 			l.matchDepth++
 		}
+		armScopedBase := len(l.armScoped)
 		armVal := l.lowerBlock(elseID)
+		l.restoreArmScoped(armScopedBase)
 		if elseIsArm {
 			l.matchDepth--
 		}

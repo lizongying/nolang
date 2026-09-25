@@ -1,0 +1,76 @@
+; set-byte-receiver-writeback.no — 接收者寫回：`set-byte` 必須寫進真正的欄位/元素
+;
+; `txt.set-byte(i, b)` / `str.set-byte(i, b)` 是 raw-byte 寫入器（與 `.byte(i)` 配對），
+; txt 索引碼點化之後 std 的逐位元組填充都靠它。原本 emitBuiltinRawBytePut 直接拿
+; `valSlot[Args[0]]` 當接收者，而當接收者是「從結構體欄位 / 容器元素讀出來的」值時，
+; 那個槽位只是一份**副本**，於是寫入被丟棄：
+;   b.s.set-byte(0, 72)   ; b.s 仍是 'hello'（應為 'Hello'）
+; 修法：改用 lvalueAddrOf 投影回真實位址，並以「投影型別必須與接收者自身佈局相同」
+; 為護欄（%str-long 是 {len,cap,data} 堆指標，%txt 是 255 位元組內聯緩衝 + i8 長度，
+; 兩者不可互換）。
+;
+; 對照組（必須始終正確）：純區域變數接收者。
+
+box {
+    s str
+    t txt
+}
+
+wrap {
+    b box
+}
+
+main = () {
+
+    ; (1) 純區域變數 str 接收者（既有行為，對照組）
+    a str = 'hello'
+    a.set-byte(0, 72)
+    a == 'Hello' -> print('ok 1: local str receiver')
+
+    -> print('fail 1: local str receiver got=' - a)
+
+    ; (2) 結構體 str 欄位接收者：寫回必須到達欄位本身
+    b box = box {
+        s: 'hello'
+        t: 'hi'
+    }
+    b.s.set-byte(0, 72)
+    b.s == 'Hello' -> print('ok 2: struct str field receiver')
+
+    -> print('fail 2: struct str field receiver got=' - b.s)
+
+    ; (3) 結構體 txt 欄位接收者（%txt 佈局：內聯緩衝，與 %str-long 不同）
+    b.t.set-byte(0, 74)
+    b.t == 'Ji' -> print('ok 3: struct txt field receiver')
+
+    -> print('fail 3: struct txt field receiver got=' - b.t)
+
+    ; (4) 切片元素接收者
+    rows []str = ['x', 'y']
+    rows[0].set-byte(0, 90)
+    rows[0] == 'Z' -> print('ok 4: slice element receiver')
+
+    -> print('fail 4: slice element receiver got=' - rows[0])
+
+    ; (5) 巢狀結構體欄位接收者（兩層投影）
+    w wrap = wrap {
+        b: box {
+            s: 'aa'
+            t: 'bb'
+        }
+    }
+    w.b.s.set-byte(1, 88)
+    w.b.s == 'aX' -> print('ok 5: nested struct field receiver')
+
+    -> print('fail 5: nested struct field receiver got=' - w.b.s)
+
+    ; (6) 寫入不得影響其他欄位
+    w.b.t == 'bb' -> print('ok 6: sibling field untouched')
+
+    -> print('fail 6: sibling field got=' - w.b.t)
+
+    ; (7) set-byte 不改長度（raw byte 寫入）
+    b.s.len-bytes() == 5 -> print('ok 7: set-byte keeps the length')
+
+    -> print('fail 7: set-byte length got=' - b.s.len-bytes().to-str())
+}

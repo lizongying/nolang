@@ -195,6 +195,12 @@ const (
 	FlagOverflowMin      uint32 = 1 << 27
 	FlagOverflowMax      uint32 = 1 << 28
 	FlagOverflowSaturate uint32 = 1 << 29
+	// FlagArmBinding marks the synthetic `let <name> = <matched>` the parser
+	// prepends to a match arm body to destructure its payload (`ok(v) -> ...`).
+	// Such a binding is scoped to its arm: the MIR lowerer gives it its own
+	// slot and restores an enclosing binding of the same name when the arm
+	// ends, so a nested match cannot make the outer arm read the inner payload.
+	FlagArmBinding uint32 = 1 << 30
 )
 
 // NoID marks an absent child, sibling, string or type reference.

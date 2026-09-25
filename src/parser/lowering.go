@@ -1959,7 +1959,8 @@ func (p *Parser) buildMatchDesugar(sm *SurfaceMatch) Expression {
 									Receiver: &Identifier{Token: tok, Value: bindName},
 									Property: fmt.Sprintf("f%d", j),
 								},
-								IsSynthetic: true,
+								IsSynthetic:  true,
+								IsArmBinding: true,
 							}
 							arm.body = p.prependStmt(arm.body, extract)
 						}
@@ -2461,19 +2462,21 @@ func (p *Parser) buildItBindingForArm(tok lexer.Token, matched Expression, armTy
 		switch armType {
 		case "err":
 			return &LetStatement{
-				Token:       tok,
-				Name:        &Identifier{Token: tok, Value: name},
-				Value:       matched,
-				Type:        &NamedType{Value: "err"},
-				IsSynthetic: true,
+				Token:        tok,
+				Name:         &Identifier{Token: tok, Value: name},
+				Value:        matched,
+				Type:         &NamedType{Value: "err"},
+				IsSynthetic:  true,
+				IsArmBinding: true,
 			}
 		case "nil":
 			return &LetStatement{
-				Token:       tok,
-				Name:        &Identifier{Token: tok, Value: name},
-				Value:       matched,
-				Type:        &NamedType{Value: "nil"},
-				IsSynthetic: true,
+				Token:        tok,
+				Name:         &Identifier{Token: tok, Value: name},
+				Value:        matched,
+				Type:         &NamedType{Value: "nil"},
+				IsSynthetic:  true,
+				IsArmBinding: true,
 			}
 		default:
 			return nil
@@ -2534,11 +2537,12 @@ func (p *Parser) buildItBindingForArm(tok lexer.Token, matched Expression, armTy
 	}
 
 	return &LetStatement{
-		Token:       tok,
-		Name:        &Identifier{Token: tok, Value: name},
-		Value:       matched,
-		Type:        &NamedType{Value: typeStr},
-		IsSynthetic: true,
+		Token:        tok,
+		Name:         &Identifier{Token: tok, Value: name},
+		Value:        matched,
+		Type:         &NamedType{Value: typeStr},
+		IsSynthetic:  true,
+		IsArmBinding: true,
 	}
 }
 
@@ -2550,6 +2554,7 @@ func (p *Parser) namedItBinding(it *LetStatement, name string) *LetStatement {
 	}
 	nb := *it
 	nb.Name = &Identifier{Token: it.Token, Value: name}
+	nb.IsArmBinding = true
 	return &nb
 }
 

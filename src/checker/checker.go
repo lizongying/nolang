@@ -2973,7 +2973,7 @@ var unsignedIntTypeNames = map[string]bool{
 	"u8": true, "u16": true, "u32": true, "u64": true, "u128": true,
 }
 
-// nonIntTypeNames 是確定「非整數」（float / str / char / bool / byte / rune）的
+// nonIntTypeNames 是確定「非整數」（float / str / txt / char / bool / byte / rune）的
 // 型別集合；這些型別的算術不回傳 option，故不應提示 #{overflow} 註解（避免誤報）。
 // "float" 是 number.no 中定義的型別別名（float = f32 | f64），必須在此註冊，
 // 否則 operandIntKind 對 float 型變數會保守回退為 "signed"，導致 float.div
@@ -2981,7 +2981,7 @@ var unsignedIntTypeNames = map[string]bool{
 var nonIntTypeNames = map[string]bool{
 	"float": true, "num": true, "number.float": true, "number.num": true,
 	"f32": true, "f64": true,
-	"str": true, "char": true, "bool": true, "byte": true, "rune": true,
+	"str": true, "txt": true, "char": true, "bool": true, "byte": true, "rune": true,
 }
 
 // overflowAnnotatedNode 報告節點是否攜帶 #{overflow = ...} 註解。
@@ -3038,6 +3038,12 @@ func operandIntKind(e parser.Expression, declared map[string]string) string {
 		return "signed" // 整數字面量預設為有號
 	case *parser.FloatLiteral:
 		return "" // float 算術不回傳 option
+	case *parser.StringLiteral, *parser.CharLiteral, *parser.BooleanLiteral, *parser.RegexLiteral:
+		// str/txt 字面量（同一 StringLiteral 節點）、char、bool、regex 皆為確定
+		// 非整數運算元：str/txt 的 `-` 是字串拼接、不產生 option<int>，不應提示
+		// #{overflow}。此前這些字面量掉到尾部保守 `return "signed"`，導致
+		// `'got=' - x.to-str()` 這類拼接被誤報為整數溢出。
+		return ""
 	case *parser.PrefixExpression:
 		// 一元負號修飾整數字面量，如 -1
 		if x.Operator == "-" {

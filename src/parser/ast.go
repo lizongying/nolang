@@ -602,6 +602,14 @@ type LetStatement struct {
 	Type          Type
 	Value         Expression
 	IsSynthetic   bool               // compiler-injected (e.g. `it = matched`), not from source
+	// IsArmBinding marks the synthetic binding the parser prepends to a match
+	// arm body to destructure the arm's payload (`ok(v) -> ...` binds `v`).
+	// Unlike other synthetic lets, this one is SCOPED TO ITS ARM: it must not
+	// rebind an enclosing variable of the same name, or a nested match
+	// (`a: { ok(x) -> b: { ok(x) -> ... } print(x) }`) makes the outer `x` read
+	// the inner payload. MIR gives it a fresh slot and restores the outer entry
+	// when the arm ends.
+	IsArmBinding  bool
 	SyntheticEnd  lexer.Position     // override EndPos for synthetic bindings
 	// ItArmType 標記 match 派生 it 綁定的 arm 類型（ok/err/nil/else 等），
 	// 供校驗器在 matched 變數型別於解析期未知（跨模組回傳型別）時收窄 it。
