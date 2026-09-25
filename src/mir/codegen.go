@@ -3206,9 +3206,22 @@ func (c *codegen) emitEntry(main *Function) {
 	// MIR backend otherwise discards them after the entry prologue.
 	c.sb.WriteString("@nolang_argc = global i32 0\n")
 	c.sb.WriteString("@nolang_argv = global i8** null\n")
+	// Windows sockets require WSAStartup before any Winsock API. Bug A
+	// (synthesizeMainForTopLevel drops non-main top-level statements) means
+	// the `#{win-*} os.win-wsa-startup()` in std/net can never reach the
+	// binary, so bootstrap Winsock directly in the C entry prologue instead.
+	// The result is intentionally ignored: failed init surfaces on the first
+	// socket call. MAKEWORD(2,2)==0x0202==514; WSADATA needs >=512 bytes.
+	if targetGOOS() == "windows" {
+		c.sb.WriteString("@nolang_wsa_data = global [512 x i8] zeroinitializer\n")
+		c.sb.WriteString("declare i32 @WSAStartup(i16, i8*)\n")
+	}
 	c.sb.WriteString("define i32 @main(i32 %0, i8** %1) {\nentry:\n")
 	c.sb.WriteString("  store i32 %0, i32* @nolang_argc\n")
 	c.sb.WriteString("  store i8** %1, i8*** @nolang_argv\n")
+	if targetGOOS() == "windows" {
+		c.sb.WriteString("  call i32 @WSAStartup(i16 514, i8* bitcast ([512 x i8]* @nolang_wsa_data to i8*))\n")
+	}
 	if main != nil && len(main.ResultParams) > 0 {
 		rt, _ := c.ptype(main.ResultParams[0])
 		if rt == "" {

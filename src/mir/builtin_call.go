@@ -751,6 +751,8 @@ func (c *codegen) emitBuiltinForward(f *Function, inst *Inst, bm *builtin.Builti
 		return c.emitBuiltinUname(inst)
 	case "net-icmp-open":
 		return c.emitBuiltinNetIcmpOpen(inst)
+	case "win-wsa-startup":
+		return c.emitBuiltinWinWsaStartup(inst)
 	case "net-dial":
 		return c.emitBuiltinNetDial(inst)
 	case "net-listen":
@@ -2479,6 +2481,44 @@ func (c *codegen) emitBuiltinNetIcmpOpen(inst *Inst) error {
 		}
 	}
 	c.sb.WriteString(fmt.Sprintf("  store %s %s, %s* %s\n", dstLT, fd, dstLT, dstSlot))
+	return nil
+}
+
+// emitBuiltinWinWsaStartup lowers `os.win-wsa-startup()` -> bool: calls
+// WSAStartup(MAKEWORD(2,2)=514, &WSAData) and reports success when the
+// return code is 0. A stack [512 x i8] satisfies the >=408-byte WSADATA
+// layout, so the lowering has no module-global dependency. The only call
+// site in std/net is guarded by `#{win-*}`, so this runs on Windows targets
+// only; on other platforms Winsock does not exist and it stores false.
+func (c *codegen) emitBuiltinWinWsaStartup(inst *Inst) error {
+	if inst.Dst <= NoVal {
+		return nil
+	}
+	dstLT, _ := c.ptype(inst.Dst)
+	dstSlot := c.valSlot[inst.Dst]
+	if dstSlot == "" {
+		return fmt.Errorf("win-wsa-startup: no result slot")
+	}
+	if targetGOOS() != "windows" {
+		if v := c.coerce("i1", "false", dstLT); v != "" {
+			c.sb.WriteString(fmt.Sprintf("  store %s %s, %s* %s\n", dstLT, v, dstLT, dstSlot))
+		}
+		return nil
+	}
+	c.decl("declare i32 @WSAStartup(i16, i8*)")
+	buf := c.treg("wsa.buf")
+	c.sb.WriteString(fmt.Sprintf("  %s = alloca [512 x i8]\n", buf))
+	bufp := c.treg("wsa.bufp")
+	c.sb.WriteString(fmt.Sprintf("  %s = getelementptr inbounds [512 x i8], [512 x i8]* %s, i64 0, i64 0\n", bufp, buf))
+	rc := c.treg("wsa.rc")
+	c.sb.WriteString(fmt.Sprintf("  %s = call i32 @WSAStartup(i16 514, i8* %s)\n", rc, bufp))
+	ok := c.treg("wsa.ok")
+	c.sb.WriteString(fmt.Sprintf("  %s = icmp eq i32 %s, 0\n", ok, rc))
+	v := c.coerce("i1", ok, dstLT)
+	if v == "" {
+		return fmt.Errorf("win-wsa-startup: cannot coerce i1 to %s", dstLT)
+	}
+	c.sb.WriteString(fmt.Sprintf("  store %s %s, %s* %s\n", dstLT, v, dstLT, dstSlot))
 	return nil
 }
 

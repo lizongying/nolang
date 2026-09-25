@@ -3077,6 +3077,12 @@ func operandIntKind(e parser.Expression, declared map[string]string) string {
 // overflowArithOps 是會因整數溢出而（預設）回傳 option<int> 的二元運算子。
 // 對應 codegen 的 option-on-overflow 預設語意：+ - * 對有號與無號皆適用；
 // 有號 / 只有 INT_MIN / -1 會溢出，無號 / 因 a/b <= a 永不溢出。
+// 注意：% 不在列。std 有上千條未標註的 `%`（如 number.no gcd 的 `rb = ra % rb`）
+// 實際不產生 option、編譯執行皆正常，若在此加入 % 會使 ovf-int-default/ovfhndld
+// 新增大面積誤報（實測 src/std 新增 1600+ 錯誤）。但作者顯式標註的
+// `%` 行（如 even/odd 的 `r = a % 2`、sha3 的 `m = n % 64`）在舊版確會產生
+// option（刪註解後 fe0a5wt2），為不誤刪這類註解，`%` 僅在 fmt 相關性判定
+// （infixFlaggedByOvfLint 的 relevanceOps 寬集）中納入，報告方向保持不變。
 var overflowArithOps = map[string]bool{
 	"+": true, "-": true, "*": true, "/": true,
 }
@@ -3401,6 +3407,21 @@ func ValidateIntOverflow(program *parser.Program) []ValidateResult {
 				// 作用域限定：僅用本函數自身的參數 / let 型別，避免與 std 模組
 				// 同名參數互相污染（nolang vet 會合併 std 進同一 program）。
 				declared := collectFuncDeclared(fn)
+				// 併入 parser 階段的逐函數變數型別表（Sem.FuncVarTypes）：safe-index /
+				// unwrap lowering 會把 `arg str = args[i]` 改寫為 match desugar（顯式
+				// 型別的 let 從 AST 消失），僅靠 AST 收集會漏掉 arg → 保守視為整數 →
+				// 對純字串拼接鏈（process.no cmd 的 `cmdline - ' "' - arg`）誤報
+				// ovf-int-default；而 `no fmt`（skip-lowering 解析，讀得到原始型別）判其
+				// 無效而刪註解 → 刪後 vet 反而新增報錯。sem 表保留了原始宣告型別，兩邊
+				// 口徑自此一致。只補 AST 未登記的鍵、不覆寫既有條目（lowering 可能把
+				// 同名變數後寫成 ?T，AST 原始型別優先）。
+				if sem != nil && fn.Name != "" {
+					for k, v := range sem.FuncVarTypes[fn.Name] {
+						if _, exists := declared[k]; !exists {
+							declared[k] = v
+						}
+					}
+				}
 				file := parser.GetSourceFile(fn)
 				for _, b := range fn.Body.Statements {
 					walkStmtForOverflow(b, file, sem, declared, emit)
@@ -3979,7 +4000,7 @@ func isDirectOverflowValue(v parser.Expression, varTypes map[string]string, self
 // 保守視為有號整數（寧可多保留，不可誤刪）；relevant 取並集（超集）後即可保證：
 // 只刪沒有任何檢查會要求的注解。
 func infixFlaggedByOvfLint(inf *parser.InfixExpression, declared map[string]string) bool {
-	if !overflowArithOps[inf.Operator] {
+	if !relevanceOps[inf.Operator] {
 		return false
 	}
 	lk := operandIntKind(inf.Left, declared)
@@ -4002,6 +4023,14 @@ func infixFlaggedByOvfLint(inf *parser.InfixExpression, declared map[string]stri
 		return lk == "signed" || rk == "signed"
 	}
 	return true
+}
+
+// relevanceOps 是 fmt 「相關性」判定专用的寬運算子集：overflowArithOps 加上 %。
+// codegen 對某些 `%` 表達式（取決於除數型別/常數性）仍會產生 option（實測：
+// 刪除 even `r = a % 2` 的 wrap 註解後 r 推斷為 ?int、下游比較報 fe0a5wt2），
+// 故作者写在 % 行上的 #{overflow} 一律保守視為有效（只影響保留方向）。
+var relevanceOps = map[string]bool{
+	"+": true, "-": true, "*": true, "/": true, "%": true,
 }
 
 // isImplicitSelfIdent 報告 e 是否為裸 `.`（隱式 self 接收者）：parser 將 `.`
@@ -4081,9 +4110,13 @@ func ValidateUnhandledOverflow(program *parser.Program, mainFile string) []Valid
 	// 表達式陳述；若一律當丟棄處理會對這種寫法誤報「未處理溢出」。
 	var walkExpr func(e parser.Expression, fnReturnsOption, enclosingOverflow, valueCtx bool, varTypes map[string]string, selfType, curFile string)
 
-	// seedVarTypes 由函式參數（含方法 self 接收者）建立區域型別對照表，
+	// seedVarTypes 由函式參數（含方法 self 接收者）與結果名稱建立區域型別對照表，
 	// 供 isDirectOverflowValue 判斷運算元是否為整數（排除 str - str 等字串拼接）。
-	seedVarTypes := func(params []*parser.Parameter, isMethod bool) (map[string]string, string) {
+	// 結果名稱必須一併登記（與 collectFuncDeclared 口徑一致）：具名返回值如
+	// process.read-all 的 `content str` 在函式體内被重複賦值（拼接累加），若不登記
+	// 則型別未知 → 保守視為整數 → 其拼接行的 #{overflow} 被 ovfhndld 硬錯要求，
+	// 而 `no fmt` 的 relevant 集（讀得到結果型別）卻判其無效 → 刪除方向不一致。
+	seedVarTypes := func(params, results []*parser.Parameter, isMethod bool) (map[string]string, string) {
 		vt := map[string]string{}
 		st := ""
 		for i, p := range params {
@@ -4094,6 +4127,12 @@ func ValidateUnhandledOverflow(program *parser.Program, mainFile string) []Valid
 			if isMethod && i == 0 {
 				st = p.Type.String()
 			}
+		}
+		for _, r := range results {
+			if r == nil || r.Name == "" || r.Type == nil {
+				continue
+			}
+			vt[r.Name] = r.Type.String()
 		}
 		return vt, st
 	}
@@ -4176,7 +4215,7 @@ func ValidateUnhandledOverflow(program *parser.Program, mainFile string) []Valid
 			if cf == "" {
 				cf = mainFile
 			}
-			vt, st := seedVarTypes(s.Parameters, s.IsMethodDef)
+			vt, st := seedVarTypes(s.Parameters, declaredResults(s), s.IsMethodDef)
 			if s.Body != nil {
 				// 函式體是獨立作用域，只受其自身註解約束；不繼承外層 enclosingOverflow，
 				// 以免外層註解靜默掩蓋巢狀函式體內的真實泄漏。
@@ -4201,7 +4240,7 @@ func ValidateUnhandledOverflow(program *parser.Program, mainFile string) []Valid
 				if cf == "" {
 					cf = mainFile
 				}
-				vt, st := seedVarTypes(fl.Parameters, false)
+				vt, st := seedVarTypes(fl.Parameters, fl.Results, false)
 				if fl.Body != nil {
 					for _, b := range fl.Body.Statements {
 						walkStmt(b, fnOpt, false, vt, st, cf)
