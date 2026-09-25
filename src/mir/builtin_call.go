@@ -830,6 +830,13 @@ func (c *codegen) emitBuiltinForward(f *Function, inst *Inst, bm *builtin.Builti
 	if spec := forwardCSpecOf(bm.ForwardFunc); spec != nil {
 		return c.emitCCall(inst, spec)
 	}
+	// The builtin has a plain-C shape, but the C runtime of the TARGET does not
+	// provide the function. Report it here (nolang-level, with the builtin's
+	// name) instead of letting it become an `undefined symbol` at link time.
+	if why := forwardCSpecUnavailable(bm.ForwardFunc); why != "" {
+		c.fail("builtin %s: %s in func %s", inst.Sym, why, c.curFuncNameForFail())
+		return fmt.Errorf("builtin %s: %s", inst.Sym, why)
+	}
 	c.fail("unsupported builtin %s (ForwardFunc=%q) in func %s", inst.Sym, bm.ForwardFunc, f.Name)
 	return fmt.Errorf("unsupported builtin %s", inst.Sym)
 }

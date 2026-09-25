@@ -36,6 +36,7 @@ package mir
 import (
 	"fmt"
 	"strings"
+	"sync"
 )
 
 // cArgKind tells emitCCall how to marshal one argument for the C call.
@@ -193,22 +194,60 @@ type statLayout struct {
 	GidOff   int64
 	MtimeOff int64
 	SizeOff  int64
+	// UidW / GidW are the NATIVE bit widths of st_uid / st_gid — 32 on POSIX
+	// (uid_t/gid_t), 16 on Windows (msvcrt declares them `short`). Reading a
+	// wider field than the C struct declares folds the neighbouring member into
+	// the value, which is exactly the bug cRetField.Width was added to prevent.
+	UidW int
+	GidW int
 }
 
 func statLayoutFor() statLayout {
 	if targetGOOS() == "linux" {
 		if targetGOARCH() == "arm64" {
-			return statLayout{Size: 128, ModeOff: 16, UidOff: 24, GidOff: 28, MtimeOff: 88, SizeOff: 48}
+			return statLayout{Size: 128, ModeOff: 16, UidOff: 24, GidOff: 28, MtimeOff: 88, SizeOff: 48, UidW: 32, GidW: 32}
 		}
-		return statLayout{Size: 144, ModeOff: 24, UidOff: 28, GidOff: 32, MtimeOff: 88, SizeOff: 48}
+		return statLayout{Size: 144, ModeOff: 24, UidOff: 28, GidOff: 32, MtimeOff: 88, SizeOff: 48, UidW: 32, GidW: 32}
+	}
+	if targetGOOS() == "windows" {
+		// msvcrt `struct _stat64` (mingw _mingw_stat64.h) — the struct filled by
+		// _stat64 / _fstat64:
+		//   _dev_t st_dev          @0   unsigned int   (4)
+		//   _ino_t st_ino          @4   unsigned short (2)
+		//   unsigned short st_mode @6
+		//   short st_nlink         @8
+		//   short st_uid           @10
+		//   short st_gid           @12
+		//   _dev_t st_rdev         @16  (4-byte aligned)
+		//   __int64 st_size        @24  (8-byte aligned)
+		//   __time64_t st_atime    @32
+		//   __time64_t st_mtime    @40
+		//   __time64_t st_ctime    @48                        → sizeof 56
+		// S_IFREG (0x8000) / S_IFDIR (0x4000) keep their POSIX values, so the
+		// stat-file / stat-dir masks carry over unchanged.
+		return statLayout{Size: 56, ModeOff: 6, UidOff: 10, GidOff: 12, MtimeOff: 40, SizeOff: 24, UidW: 16, GidW: 16}
 	}
 	// darwin (and any unknown target, matching legacy's default branch)
-	return statLayout{Size: 144, ModeOff: 4, UidOff: 16, GidOff: 20, MtimeOff: 48, SizeOff: 96}
+	return statLayout{Size: 144, ModeOff: 4, UidOff: 16, GidOff: 20, MtimeOff: 48, SizeOff: 96, UidW: 32, GidW: 32}
 }
 
 // statBufArg is the `struct stat*` scratch-buffer argument shared by the whole
 // stat family: the caller owns it, C fills it.
 func statBufArg() cArgSpec { return cArgSpec{Kind: cArgBufPtr, From: -1, Size: statLayoutFor().Size} }
+
+// statFns are the C entry points of the stat family for the current target.
+//
+// Windows has no plain `stat`: mingw redirects the POSIX name to a fixed-size
+// variant at the ASSEMBLER level (`__MINGW_ASM_CALL(stat64i32)`), so the import
+// library exports only _stat32 / _stat64 / _stat64i32 / _fstat64 and a raw
+// `stat` reference fails to link. It has no `lstat` at all (msvcrt's stat never
+// resolves symlinks), so lstat collapses onto stat.
+func statFns() (statFn, lstatFn, fstatFn string) {
+	if targetGOOS() == "windows" {
+		return "_stat64", "_stat64", "_fstat64"
+	}
+	return "stat", "lstat", "fstat"
+}
 
 func sysconfNProc() string {
 	if targetGOOS() == "linux" {
@@ -217,15 +256,25 @@ func sysconfNProc() string {
 	return "58" // darwin _SC_NPROCESSORS_ONLN
 }
 
-// forwardCSpecs maps a ForwardFunc name to its C call. Adding a builtin is now a
-// data change, not a new emitter.
+// realpathSpec is `fs.realpath`.
 //
-// Entries whose semantics are NOT a plain C call (sort-asc, format, vec-push,
-// socket setup, ...) are intentionally absent: they keep their dedicated
-// handlers and this table must never claim them.
-var forwardCSpecs = map[string]cCallSpec{
-	// ------------------------------------------------- C-string -> str
-	"realpath": {
+// msvcrt has no realpath(3); _fullpath(buf, path, size) is the counterpart —
+// note the REVERSED argument order (destination buffer first). It returns buf on
+// success and NULL on failure, which cRetCStrToStr maps to the empty string,
+// i.e. the same contract as the POSIX version.
+func realpathSpec() cCallSpec {
+	if targetGOOS() == "windows" {
+		return cCallSpec{
+			Func: "_fullpath",
+			Args: []cArgSpec{
+				{Kind: cArgBufPtr, From: -1, Size: 4096},
+				{Kind: cArgCStr, From: 0},
+				{Kind: cArgFixed, Fixed: "4096", LLVM: "i64"}, // size_t
+			},
+			Ret: cRetSpec{Kind: cRetCStrToStr, LLVM: "i8*"},
+		}
+	}
+	return cCallSpec{
 		// macOS realpath does NOT support the glibc NULL-resolved-buffer
 		// extension (it returns NULL -> empty on darwin, and under a clang
 		// native binary that is instant garbage). Pass a PATH_MAX stack buffer
@@ -236,106 +285,39 @@ var forwardCSpecs = map[string]cCallSpec{
 		Func: "realpath",
 		Args: []cArgSpec{{Kind: cArgCStr, From: 0}, {Kind: cArgBufPtr, From: -1, Size: 4096}},
 		Ret:  cRetSpec{Kind: cRetCStrToStr, LLVM: "i8*"},
-	},
-	"getlogin": {
-		Func: "getlogin",
-		Ret:  cRetSpec{Kind: cRetCStrToStr, LLVM: "i8*"},
-	},
-	"ttyname": {
-		// ttyname(fd) -> char* (NULL when fd is not a tty). cRetCStrToStr maps
-		// NULL to the empty string, which is exactly the documented contract.
-		Func: "ttyname",
-		Args: []cArgSpec{{Kind: cArgI32, From: 0}},
-		Ret:  cRetSpec{Kind: cRetCStrToStr, LLVM: "i8*"},
-	},
-	"mkdtemp": {
-		// mkdtemp(tmpl) -> (name, ok). Like mkstemp it rewrites the template
-		// buffer in place and returns the same pointer (NULL on failure), so
-		// the name is adopted from the KeepAlive buffer and ok = (ret != NULL).
-		Func: "mkdtemp",
-		Args: []cArgSpec{{Kind: cArgCStr, From: 0, KeepAlive: true}},
-		Ret: cRetSpec{
-			Kind:   cRetStrFromArg,
-			LLVM:   "i8*",
-			BufIdx: 0,
-			Pair:   cPairSpec{Kind: cPairOKRetPtr},
-		},
-	},
+	}
+}
 
-	// ------------------------------------------------- scratch-buffer strings
-	"getdomainname": {
-		Func: "getdomainname",
-		Args: []cArgSpec{{Kind: cArgBufPtr, From: -1, Size: 1024}, {Kind: cArgFixed, Fixed: "1024", LLVM: "i64"}},
-		Ret:  cRetSpec{Kind: cRetBufStr, LLVM: "i32", BufIdx: 0},
-	},
-	"readlink": {
-		// readlink(path, buf, n) -> byte count, or -1 on error. The buffer is NOT
-		// NUL-terminated, so the length comes from the return value, not strlen.
-		Func: "readlink",
-		Args: []cArgSpec{{Kind: cArgCStr, From: 0}, {Kind: cArgBufPtr, From: -1, Size: 4096}, {Kind: cArgFixed, Fixed: "4096", LLVM: "i64"}},
-		Ret: cRetSpec{
-			Kind: cRetBufStr, LLVM: "i64", BufIdx: 1,
-			LenFromRet: true, TermBuf: true,
-			Pair: cPairSpec{Kind: cPairOKRetCode},
-		},
-	},
-	"mkstemp": {
-		// mkstemp(tmpl) -> (name, fd). The C call returns the fd and rewrites
-		// tmpl IN PLACE with the real name, so result 0 is the string adopted
-		// from the (KeepAlive) template buffer and result 1 is the fd.
-		Func: "mkstemp",
-		Args: []cArgSpec{{Kind: cArgCStr, From: 0, KeepAlive: true}},
-		Ret: cRetSpec{
-			Kind:   cRetStrFromArg,
-			LLVM:   "i32",
-			BufIdx: 0,
-			Pair:   cPairSpec{Kind: cPairI64FromRet, Signed: true},
-		},
-	},
+// syncSpec is `fs.sync` (flush filesystem buffers, no return value).
+//
+// Windows has no sync(2) — flushing every volume's buffers is only possible by
+// opening each volume and calling FlushFileBuffers. _flushall() flushes every
+// CRT stream, which is the closest msvcrt offers; the builtin returns nothing,
+// so callers cannot observe the difference either way.
+func syncSpec() cCallSpec {
+	if targetGOOS() == "windows" {
+		// _flushall returns int; cRetVoid with a non-void LLVM return type emits
+		// the call and drops the register.
+		return cCallSpec{Func: "_flushall", Ret: cRetSpec{Kind: cRetVoid, LLVM: "i32"}}
+	}
+	return cCallSpec{Func: "sync", Ret: cRetSpec{Kind: cRetVoid, LLVM: "void"}}
+}
 
-	// ------------------------------------------------- struct stat family
-	"stat-file":   {Func: "stat", Args: []cArgSpec{{Kind: cArgCStr, From: 0}, statBufArg()}, Ret: cRetSpec{Kind: cRetStatBool, LLVM: "i32", BufIdx: 1, Offset: statLayoutFor().ModeOff, ModeMask: 32768}},
-	"stat-dir":    {Func: "stat", Args: []cArgSpec{{Kind: cArgCStr, From: 0}, statBufArg()}, Ret: cRetSpec{Kind: cRetStatBool, LLVM: "i32", BufIdx: 1, Offset: statLayoutFor().ModeOff, ModeMask: 16384}},
-	"stat-exists": {Func: "stat", Args: []cArgSpec{{Kind: cArgCStr, From: 0}, statBufArg()}, Ret: cRetSpec{Kind: cRetBool, LLVM: "i32"}},
-	"lstat":       {Func: "lstat", Args: []cArgSpec{{Kind: cArgCStr, From: 0}, statBufArg()}, Ret: cRetSpec{Kind: cRetBool, LLVM: "i32"}},
-	"stat-size": {
-		Func: "stat", Args: []cArgSpec{{Kind: cArgCStr, From: 0}, statBufArg()},
-		Ret: cRetSpec{Kind: cRetField, LLVM: "i32", BufIdx: 1, Offset: statLayoutFor().SizeOff, Pair: cPairSpec{Kind: cPairOKRetZero}},
-	},
-	"fstat-size": {
-		Func: "fstat", Args: []cArgSpec{{Kind: cArgI32, From: 0}, statBufArg()},
-		Ret: cRetSpec{Kind: cRetField, LLVM: "i32", BufIdx: 1, Offset: statLayoutFor().SizeOff, Pair: cPairSpec{Kind: cPairOKRetZero}},
-	},
-	"stat-mode": {
-		Func: "stat", Args: []cArgSpec{{Kind: cArgCStr, From: 0}, statBufArg()},
-		Ret: cRetSpec{Kind: cRetField, LLVM: "i32", BufIdx: 1, Offset: statLayoutFor().ModeOff, Width: 16, Pair: cPairSpec{Kind: cPairOKRetZero}},
-	},
-	"stat-uid": {
-		Func: "stat", Args: []cArgSpec{{Kind: cArgCStr, From: 0}, statBufArg()},
-		Ret: cRetSpec{Kind: cRetField, LLVM: "i32", BufIdx: 1, Offset: statLayoutFor().UidOff, Width: 32, Pair: cPairSpec{Kind: cPairOKRetZero}},
-	},
-	"stat-gid": {
-		Func: "stat", Args: []cArgSpec{{Kind: cArgCStr, From: 0}, statBufArg()},
-		Ret: cRetSpec{Kind: cRetField, LLVM: "i32", BufIdx: 1, Offset: statLayoutFor().GidOff, Width: 32, Pair: cPairSpec{Kind: cPairOKRetZero}},
-	},
-	"stat-mtime": {
-		Func: "stat", Args: []cArgSpec{{Kind: cArgCStr, From: 0}, statBufArg()},
-		Ret: cRetSpec{Kind: cRetField, LLVM: "i32", BufIdx: 1, Offset: statLayoutFor().MtimeOff, Pair: cPairSpec{Kind: cPairOKRetZero}},
-	},
-
-	// ------------------------------------------------- scalar / void
-	"sync": {Func: "sync", Ret: cRetSpec{Kind: cRetVoid, LLVM: "void"}},
-	"num-cpu": {
-		Func: "sysconf",
-		Args: []cArgSpec{{Kind: cArgFixed, Fixed: sysconfNProc(), LLVM: "i32"}},
-		Ret:  cRetSpec{Kind: cRetI64, LLVM: "i64", Signed: true},
-	},
-
-	// ------------------------------------------------- process
-	"process-fork": {Func: "fork", Ret: cRetSpec{Kind: cRetI64, LLVM: "i32", Signed: true}},
-
-	// ------------------------------------------------- touch / dir
-	"touch-file": {
+// touchFileSpec is `fs.touch-file` (set atime/mtime to now).
+//
+// Windows has no utimensat(2). _utime64(path, NULL) sets both times to the
+// current time — touch's exact contract. It must be _utime64 and NOT _utime:
+// the latter is a header-only inline wrapper, so it has no symbol in the import
+// library and referencing it fails to link.
+func touchFileSpec() cCallSpec {
+	if targetGOOS() == "windows" {
+		return cCallSpec{
+			Func: "_utime64",
+			Args: []cArgSpec{{Kind: cArgCStr, From: 0}, {Kind: cArgNull}},
+			Ret:  cRetSpec{Kind: cRetBool, LLVM: "i32"},
+		}
+	}
+	return cCallSpec{
 		Func: "utimensat",
 		Args: []cArgSpec{
 			{Kind: cArgFixed, Fixed: "-2", LLVM: "i32"}, // AT_FDCWD
@@ -344,17 +326,198 @@ var forwardCSpecs = map[string]cCallSpec{
 			{Kind: cArgFixed, Fixed: "0", LLVM: "i32"},  // flags
 		},
 		Ret: cRetSpec{Kind: cRetBool, LLVM: "i32"},
-	},
-	"open-dir": {
-		Func: "opendir",
-		Args: []cArgSpec{{Kind: cArgCStr, From: 0}},
-		Ret:  cRetSpec{Kind: cRetI64, LLVM: "i8*", PtrToInt: true},
-	},
-	"close-dir": {
-		Func: "closedir",
-		Args: []cArgSpec{{Kind: cArgI64ToPtr, From: 0}},
-		Ret:  cRetSpec{Kind: cRetBool, LLVM: "i32"},
-	},
+	}
+}
+
+// numCpuSpec is `os.num-cpu`.
+//
+// msvcrt has no sysconf(3). GetNativeSystemInfo fills a SYSTEM_INFO
+// (sysinfoapi.h) whose dwNumberOfProcessors sits at offset 32 on a 64-bit target
+// (union dwOemId @0 · dwPageSize @4 · lpMinimumApplicationAddress @8 ·
+// lpMaximumApplicationAddress @16 · dwActiveProcessorMask @24 ·
+// dwNumberOfProcessors @32) and at offset 20 on i386 (everything 4 bytes wide).
+// The call returns void, so the field is read straight out of the scratch
+// buffer — no return register involved.
+func numCpuSpec() cCallSpec {
+	if targetGOOS() == "windows" {
+		off := int64(32)
+		if targetGOARCH() == "386" {
+			off = 20
+		}
+		return cCallSpec{
+			Func: "GetNativeSystemInfo",
+			Args: []cArgSpec{{Kind: cArgBufPtr, From: -1, Size: 64}},
+			Ret:  cRetSpec{Kind: cRetField, LLVM: "void", BufIdx: 0, Offset: off, Width: 32},
+		}
+	}
+	return cCallSpec{
+		Func: "sysconf",
+		Args: []cArgSpec{{Kind: cArgFixed, Fixed: sysconfNProc(), LLVM: "i32"}},
+		Ret:  cRetSpec{Kind: cRetI64, LLVM: "i64", Signed: true},
+	}
+}
+
+// buildForwardCSpecs maps a ForwardFunc name to its C call. Adding a builtin is
+// now a data change, not a new emitter.
+//
+// Entries whose semantics are NOT a plain C call (sort-asc, format, vec-push,
+// socket setup, ...) are intentionally absent: they keep their dedicated
+// handlers and this table must never claim them.
+//
+// ⚠️ THIS IS A FUNCTION, NOT A PACKAGE-LEVEL `var` — and that is load-bearing.
+// Several entries are target-dependent (statLayoutFor, statFns, sysconfNProc,
+// the Windows substitutions). A package-level var is initialised when the mir
+// package loads, long before the driver has parsed `-target`, so
+// mirTargetPlatform() still reported the HOST and every cross-compile baked the
+// host's `struct stat` offsets (and _SC_NPROCESSORS_ONLN value) into the target
+// binary: linux→darwin silently produced a macOS binary reading st_size at the
+// Linux offset. Built on demand (see forwardCSpecTable) it follows `-target`.
+func buildForwardCSpecs() map[string]cCallSpec {
+	st := statLayoutFor()
+	statFn, lstatFn, fstatFn := statFns()
+	t := map[string]cCallSpec{
+		// ------------------------------------------------- C-string -> str
+		"realpath": realpathSpec(),
+		"getlogin": {
+			Func: "getlogin",
+			Ret:  cRetSpec{Kind: cRetCStrToStr, LLVM: "i8*"},
+		},
+		"ttyname": {
+			// ttyname(fd) -> char* (NULL when fd is not a tty). cRetCStrToStr maps
+			// NULL to the empty string, which is exactly the documented contract.
+			Func: "ttyname",
+			Args: []cArgSpec{{Kind: cArgI32, From: 0}},
+			Ret:  cRetSpec{Kind: cRetCStrToStr, LLVM: "i8*"},
+		},
+		"mkdtemp": {
+			// mkdtemp(tmpl) -> (name, ok). Like mkstemp it rewrites the template
+			// buffer in place and returns the same pointer (NULL on failure), so
+			// the name is adopted from the KeepAlive buffer and ok = (ret != NULL).
+			Func: "mkdtemp",
+			Args: []cArgSpec{{Kind: cArgCStr, From: 0, KeepAlive: true}},
+			Ret: cRetSpec{
+				Kind:   cRetStrFromArg,
+				LLVM:   "i8*",
+				BufIdx: 0,
+				Pair:   cPairSpec{Kind: cPairOKRetPtr},
+			},
+		},
+
+		// ------------------------------------------------- scratch-buffer strings
+		"getdomainname": {
+			Func: "getdomainname",
+			Args: []cArgSpec{{Kind: cArgBufPtr, From: -1, Size: 1024}, {Kind: cArgFixed, Fixed: "1024", LLVM: "i64"}},
+			Ret:  cRetSpec{Kind: cRetBufStr, LLVM: "i32", BufIdx: 0},
+		},
+		"readlink": {
+			// readlink(path, buf, n) -> byte count, or -1 on error. The buffer is NOT
+			// NUL-terminated, so the length comes from the return value, not strlen.
+			Func: "readlink",
+			Args: []cArgSpec{{Kind: cArgCStr, From: 0}, {Kind: cArgBufPtr, From: -1, Size: 4096}, {Kind: cArgFixed, Fixed: "4096", LLVM: "i64"}},
+			Ret: cRetSpec{
+				Kind: cRetBufStr, LLVM: "i64", BufIdx: 1,
+				LenFromRet: true, TermBuf: true,
+				Pair: cPairSpec{Kind: cPairOKRetCode},
+			},
+		},
+		"mkstemp": {
+			// mkstemp(tmpl) -> (name, fd). The C call returns the fd and rewrites
+			// tmpl IN PLACE with the real name, so result 0 is the string adopted
+			// from the (KeepAlive) template buffer and result 1 is the fd.
+			Func: "mkstemp",
+			Args: []cArgSpec{{Kind: cArgCStr, From: 0, KeepAlive: true}},
+			Ret: cRetSpec{
+				Kind:   cRetStrFromArg,
+				LLVM:   "i32",
+				BufIdx: 0,
+				Pair:   cPairSpec{Kind: cPairI64FromRet, Signed: true},
+			},
+		},
+
+		// ------------------------------------------------- struct stat family
+		"stat-file":   {Func: statFn, Args: []cArgSpec{{Kind: cArgCStr, From: 0}, statBufArg()}, Ret: cRetSpec{Kind: cRetStatBool, LLVM: "i32", BufIdx: 1, Offset: st.ModeOff, ModeMask: 32768}},
+		"stat-dir":    {Func: statFn, Args: []cArgSpec{{Kind: cArgCStr, From: 0}, statBufArg()}, Ret: cRetSpec{Kind: cRetStatBool, LLVM: "i32", BufIdx: 1, Offset: st.ModeOff, ModeMask: 16384}},
+		"stat-exists": {Func: statFn, Args: []cArgSpec{{Kind: cArgCStr, From: 0}, statBufArg()}, Ret: cRetSpec{Kind: cRetBool, LLVM: "i32"}},
+		"lstat":       {Func: lstatFn, Args: []cArgSpec{{Kind: cArgCStr, From: 0}, statBufArg()}, Ret: cRetSpec{Kind: cRetBool, LLVM: "i32"}},
+		"stat-size": {
+			Func: statFn, Args: []cArgSpec{{Kind: cArgCStr, From: 0}, statBufArg()},
+			Ret: cRetSpec{Kind: cRetField, LLVM: "i32", BufIdx: 1, Offset: st.SizeOff, Pair: cPairSpec{Kind: cPairOKRetZero}},
+		},
+		"fstat-size": {
+			Func: fstatFn, Args: []cArgSpec{{Kind: cArgI32, From: 0}, statBufArg()},
+			Ret: cRetSpec{Kind: cRetField, LLVM: "i32", BufIdx: 1, Offset: st.SizeOff, Pair: cPairSpec{Kind: cPairOKRetZero}},
+		},
+		"stat-mode": {
+			Func: statFn, Args: []cArgSpec{{Kind: cArgCStr, From: 0}, statBufArg()},
+			Ret: cRetSpec{Kind: cRetField, LLVM: "i32", BufIdx: 1, Offset: st.ModeOff, Width: 16, Pair: cPairSpec{Kind: cPairOKRetZero}},
+		},
+		"stat-uid": {
+			Func: statFn, Args: []cArgSpec{{Kind: cArgCStr, From: 0}, statBufArg()},
+			Ret: cRetSpec{Kind: cRetField, LLVM: "i32", BufIdx: 1, Offset: st.UidOff, Width: st.UidW, Pair: cPairSpec{Kind: cPairOKRetZero}},
+		},
+		"stat-gid": {
+			Func: statFn, Args: []cArgSpec{{Kind: cArgCStr, From: 0}, statBufArg()},
+			Ret: cRetSpec{Kind: cRetField, LLVM: "i32", BufIdx: 1, Offset: st.GidOff, Width: st.GidW, Pair: cPairSpec{Kind: cPairOKRetZero}},
+		},
+		"stat-mtime": {
+			Func: statFn, Args: []cArgSpec{{Kind: cArgCStr, From: 0}, statBufArg()},
+			Ret: cRetSpec{Kind: cRetField, LLVM: "i32", BufIdx: 1, Offset: st.MtimeOff, Pair: cPairSpec{Kind: cPairOKRetZero}},
+		},
+
+		// ------------------------------------------------- scalar / void
+		"sync":    syncSpec(),
+		"num-cpu": numCpuSpec(),
+
+		// ------------------------------------------------- process
+		"process-fork": {Func: "fork", Ret: cRetSpec{Kind: cRetI64, LLVM: "i32", Signed: true}},
+
+		// ------------------------------------------------- touch / dir
+		"touch-file": touchFileSpec(),
+		"open-dir": {
+			Func: "opendir",
+			Args: []cArgSpec{{Kind: cArgCStr, From: 0}},
+			Ret:  cRetSpec{Kind: cRetI64, LLVM: "i8*", PtrToInt: true},
+		},
+		"close-dir": {
+			Func: "closedir",
+			Args: []cArgSpec{{Kind: cArgI64ToPtr, From: 0}},
+			Ret:  cRetSpec{Kind: cRetBool, LLVM: "i32"},
+		},
+	}
+	// Windows: drop the entries whose C function does not exist there (see
+	// windowsUnavailable) so forwardCSpecOf MISSES and the caller reports the
+	// builtin by name, instead of emitting a symbol lld-link will reject with a
+	// bare "undefined symbol".
+	if targetGOOS() == "windows" {
+		for ff := range windowsUnavailable {
+			delete(t, ff)
+		}
+	}
+	return t
+}
+
+// specCache memoises buildForwardCSpecs per (goos, goarch). A workspace build
+// compiles several targets in parallel goroutines (build/builder.go), and the
+// table is otherwise rebuilt for every single builtin call site, so it needs
+// both a lock and a per-target key.
+var (
+	specCacheMu sync.Mutex
+	specCache   = map[string]map[string]cCallSpec{}
+)
+
+// forwardCSpecTable returns the C-call table for the CURRENT -target platform,
+// building it on first use for that platform.
+func forwardCSpecTable() map[string]cCallSpec {
+	goos, goarch := mirTargetPlatform()
+	key := goos + "/" + goarch
+	specCacheMu.Lock()
+	defer specCacheMu.Unlock()
+	if t, ok := specCache[key]; ok {
+		return t
+	}
+	t := buildForwardCSpecs()
+	specCache[key] = t
+	return t
 }
 
 // forwardCSpecOf resolves a ForwardFunc name against the C-call table. It
@@ -363,13 +526,37 @@ var forwardCSpecs = map[string]cCallSpec{
 // The returned spec is a copy so emitCCall can stash per-call scratch registers
 // in Args[i].Temp without mutating the shared table across call sites.
 func forwardCSpecOf(ff string) *cCallSpec {
-	sp, ok := forwardCSpecs[ff]
+	sp, ok := forwardCSpecTable()[ff]
 	if !ok {
 		return nil
 	}
 	cp := sp
 	cp.Args = append([]cArgSpec(nil), sp.Args...)
 	return &cp
+}
+
+// windowsUnavailable lists the ForwardFuncs whose C entry point does not exist
+// in the Windows C runtime at all — no mingw header declares it and no import
+// library exports it (checked against the mingw-w64 headers shipped with zig's
+// libc). Emitting the POSIX symbol anyway only surfaced as
+// `lld-link: error: undefined symbol: <name>` with no hint about which nolang
+// builtin pulled it in; naming the builtin at compile time is actionable.
+var windowsUnavailable = map[string]string{
+	"readlink":      "no readlink(2) in the Windows C runtime",
+	"mkdtemp":       "no mkdtemp(3) in the Windows C runtime",
+	"ttyname":       "no ttyname(3) in the Windows C runtime",
+	"getdomainname": "no getdomainname(3) in the Windows C runtime",
+	"process-fork":  "no fork(2) on Windows",
+}
+
+// forwardCSpecUnavailable explains why ff cannot be lowered for the current
+// target, or "" when it can. Used only after forwardCSpecOf has missed, so a
+// builtin with a bespoke handler is never misreported.
+func forwardCSpecUnavailable(ff string) string {
+	if targetGOOS() != "windows" {
+		return ""
+	}
+	return windowsUnavailable[ff]
 }
 
 // emitCCall emits `declare` + argument marshalling + `call` + result conversion

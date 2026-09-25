@@ -86,6 +86,42 @@ tag 指向本地 commit。只 `git push origin vX.Y.Z` 而该 commit 不在远�
 CI checkout 拿不到包含 HISTORY.md 更新的代码，`history.sh` 读到的就是旧文件，release body 为空或错误。
 所以顺序固定为：提交 → `git push origin main` → `git push origin vX.Y.Z`。
 
+## 检测 release action 失败（最高本地 tag 没建成 release）
+
+push tag 后 `build.yml` 负责交叉编译并 `create-release`。如果这次 action 挂了，
+**tag 已经在远端，但 GitHub 上没有对应的 Release**。下一次发版如果直接 +1，
+就会跳过一个从未发布的版本号。
+
+`release.py plan` 的发版前检查专门处理这个情况：
+
+1. 拿仓库里最高的本地 tag（`all_tags` 末位）。
+2. 联网查最新的**已发布** release（`latest_release_tag`：先试 `gh api repos/<owner>/<repo>/releases/latest`，
+   退回公开的 `curl https://api.github.com/...`）。非 GitHub 远端 / 离线 / 私有未授权 → 返回 None，跳过检查。
+3. 若 `release tag < 最高本地 tag`，判定为 action 失败：
+   - **不 +1**，直接复用最高本地 tag（`resolve_version` 返回 `(prev, prev, rel)`）。
+   - 输出 `!!! RELEASE CHECK !!!` 与强制重推命令。
+   - **因为重推会 `git tag -f` 把 tag 对齐到当前 HEAD**，tag 之后的新提交会进入同一个 release，
+     所以必须用 `apply --version <tag> --update-existing` **重写现有 `## <tag>` 段落正文**（把新提交归纳进去），
+     而不是新增一个版本号段落（`--update-existing` 会跳过“tag 已存在”的拦截，就地替换正文）。
+
+GitHub Actions 的 `on: push: tags` 只在 tag **新建**时触发；同 commit 重推一个已存在的远端 tag 不会重跑。
+所以重新触发靠「先删后推」：
+
+```bash
+python3 <skill-dir>/scripts/release.py apply --version vX.Y.Z --update-existing --body-file /tmp/notes.md
+git add -A
+git commit -m "chore(release): vX.Y.Z"       # HISTORY.md 已包含新提交
+git tag -f vX.Y.Z                        # 把 tag 对齐到当前 HEAD（含新提交）
+git push origin <branch>                 # 先推分支，保证 CI checkout 拿得到新 HISTORY.md
+git push origin :refs/tags/vX.Y.Z        # 删掉远端那个「有 tag 无 release」的旧 tag
+git push origin vX.Y.Z                   # 重新 push，触发 create-release action
+```
+
+这是唯一允许对同名 tag 施 `-f` / 删远端重推的场景——目的是重跑失败的 action，而不是篡改一个已发布的版本。
+正常发版（release 与本地 tag 一致）下，碰到已存在的 tag 仍一律改用更高版本号，绝不复用。
+
+离线或非 GitHub 远端跳过联网检查：`release.py plan --no-release-check`。
+
 ## 删除/回滚 tag（出错时）
 
 ```bash

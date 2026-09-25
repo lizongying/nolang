@@ -9,6 +9,9 @@ Subcommands
 -----------
 plan     Resolve the version to release, list commits since the last tag and
          print the exact commands to run. Never mutates the repo.
+         First checks the latest *published* release: if the highest local tag
+         has no matching release (the tag push action failed), it REUSES that
+         tag instead of bumping +1 and prints force re-push commands.
          EXIT 2 if the working tree is dirty -- the user must commit first.
 apply    Prepend a `## vX.Y.Z` section to HISTORY.md (the only file mutation).
          Enforces English, conventional-commit style bullets.
@@ -17,7 +20,7 @@ verify   Run ./history.sh with no arguments and print what GitHub Actions will
 
 Usage
 -----
-    release.py plan  [--repo DIR] [--version v0.2.33]
+    release.py plan  [--repo DIR] [--version v0.2.33] [--no-release-check]
     release.py apply --version v0.2.33 --body-file /tmp/notes.md [--repo DIR]
     release.py verify [--repo DIR]
 
@@ -111,7 +114,8 @@ def run(repo: str, *args: str, strip: bool = True) -> str:
 def parse_version(v: str) -> tuple[int, int, int]:
     m = TAG_RE.match(v)
     if not m:
-        raise SystemExit(f"invalid version {v!r}: expected vMAJOR.MINOR.PATCH, e.g. v0.2.33")
+        raise SystemExit(
+            f"invalid version {v!r}: expected vMAJOR.MINOR.PATCH, e.g. v0.2.33")
     return int(m.group(1)), int(m.group(2)), int(m.group(3))
 
 
@@ -129,7 +133,8 @@ def normalize_version(raw: str) -> str:
         raise SystemExit("empty version")
     parts = s.split(".")
     if len(parts) > 3:
-        raise SystemExit(f"invalid version {raw!r}: too many dot-separated parts")
+        raise SystemExit(
+            f"invalid version {raw!r}: too many dot-separated parts")
     nums: list[int] = []
     for p in parts:
         if not p.isdigit():
@@ -143,14 +148,80 @@ def normalize_version(raw: str) -> str:
     return "v%d.%d.%d" % (nums[0], nums[1], nums[2])
 
 
+def _try(cmd: list[str]) -> subprocess.CompletedProcess | None:
+    """Run cmd, returning None when the binary is missing (e.g. no gh/curl)."""
+    try:
+        return subprocess.run(cmd, capture_output=True, text=True)
+    except FileNotFoundError:
+        return None
+
+
+def github_owner_repo(repo: str) -> tuple[str, str] | None:
+    """Parse (owner, name) from a GitHub origin URL, or None for non-GitHub remotes."""
+    url = remote_url(repo)
+    if not url:
+        return None
+    if url.startswith("git@") and ":" in url:
+        host, path = url[4:].split(":", 1)
+        url = f"https://{host}/{path}"
+    m = re.search(r"github\.com[:/]+([^/]+)/([^/]+?)(?:\.git)?/?$", url)
+    if not m:
+        return None
+    return m.group(1), m.group(2)
+
+
+def latest_release_tag(repo: str) -> str | None:
+    """Tag of the newest *published* GitHub Release.
+
+    Returns:
+      ''      -> the repo has no releases yet
+      tag str -> the release that CI actually created (e.g. 'v0.3.4')
+      None    -> cannot tell (non-GitHub remote / offline / private without auth)
+
+    Tries `gh` (handles private-repo auth) then the public API. Used to detect
+    the case where a tag was pushed but its release action failed: the highest
+    local tag then sits ahead of the latest published release.
+    """
+    orr = github_owner_repo(repo)
+    if not orr:
+        return None
+    owner, name = orr
+    gh = _try(
+        ["gh", "api", f"repos/{owner}/{name}/releases/latest", "--jq", ".tag_name"])
+    if gh is not None:
+        if gh.returncode == 0:
+            return gh.stdout.strip()
+        if "Not Found" in gh.stderr or "no releases" in gh.stderr.lower():
+            return ""
+    curl = _try(
+        ["curl", "-s", "-f",
+            f"https://api.github.com/repos/{owner}/{name}/releases/latest"]
+    )
+    if curl is not None and curl.returncode == 0 and curl.stdout.strip():
+        m = re.search(r'"tag_name"\s*:\s*"([^"]+)"', curl.stdout)
+        if m:
+            return m.group(1)
+        if re.search(r'"message"\s*:\s*"Not Found"', curl.stdout):
+            return ""
+    return None
+
+
 def all_tags(repo: str) -> list[tuple[int, int, int]]:
     raw = run(repo, "tag", "--list", "v*").splitlines()
     vers = [parse_version(t.strip()) for t in raw if TAG_RE.match(t.strip())]
     return sorted(vers)
 
 
-def resolve_version(repo: str, requested: str | None) -> tuple[str, str | None]:
-    """Return (version, previous_version)."""
+def resolve_version(
+    repo: str, requested: str | None, *, check_release: bool = True
+) -> tuple[str, str | None, str]:
+    """Return (version, previous_version, failed_release).
+
+    failed_release is '' normally. When it is set (a release tag), it means the
+    highest local tag was pushed but no matching release was published -- the
+    tag push action failed. In that case `version` reuses the current highest
+    tag instead of bumping +1, and the caller must force re-push that tag.
+    """
     vers = all_tags(repo)
     if not vers:
         raise SystemExit("no vX.Y.Z tag found in this repo; refuse to guess")
@@ -160,12 +231,24 @@ def resolve_version(repo: str, requested: str | None) -> tuple[str, str | None]:
         # Expand partial input: "0.3" -> "v0.3.0", "0.2.33" -> "v0.2.33".
         requested = normalize_version(requested)
         if parse_version(requested) in vers:
-            raise SystemExit(f"tag {requested} already exists; choose another version")
-        return requested, prev
+            raise SystemExit(
+                f"tag {requested} already exists; choose another version")
+        return requested, prev, ""
+    # Default flow: before bumping +1, check whether the latest published
+    # release lags behind the highest local tag (a failed release action).
+    if check_release:
+        rel = latest_release_tag(repo)
+        if (
+            rel
+            and TAG_RE.match(rel)
+            and parse_version(rel) < prev_tuple
+        ):
+            return prev, prev, rel
     nxt = "v%d.%d.%d" % (prev_tuple[0], prev_tuple[1], prev_tuple[2] + 1)
     if nxt in ["v%d.%d.%d" % v for v in vers]:
-        raise SystemExit(f"computed next version {nxt} already exists; pass --version explicitly")
-    return nxt, prev
+        raise SystemExit(
+            f"computed next version {nxt} already exists; pass --version explicitly")
+    return nxt, prev, ""
 
 
 def dirty_files(repo: str) -> list[str]:
@@ -209,7 +292,9 @@ def cmd_plan(args: argparse.Namespace) -> int:
         print("this skill will not commit on your behalf. Handle it, then re-run `plan`.")
         return 2
 
-    version, prev = resolve_version(repo, args.version)
+    version, prev, failed_release = resolve_version(
+        repo, args.version, check_release=not args.no_release_check
+    )
 
     print(f"repo:     {repo}")
     print(f"branch:   {run(repo, 'rev-parse', '--abbrev-ref', 'HEAD')}")
@@ -222,7 +307,24 @@ def cmd_plan(args: argparse.Namespace) -> int:
     print("working tree: clean")
     print()
 
-    commits = run(repo, "log", "--no-merges", "--format=%h %s", f"{prev}..HEAD").splitlines()
+    if failed_release:
+        print("!!! RELEASE CHECK: the previous tag push FAILED its release action !!!")
+        print(f"    highest local tag: {version}")
+        print(f"    latest published release: {failed_release}")
+        print(
+            f"    {version} was pushed but no GitHub Release was created -- CI failed.")
+        print(
+            f"    => REUSE {version} (do NOT bump +1) and force re-push it to retrigger CI.")
+        print(
+            f"    `git tag -f {version}` moves the tag onto HEAD, so any commits after")
+        print(
+            f"    {version} fold into the SAME release -- UPDATE the {version} HISTORY.md")
+        print(
+            f"    entry (apply --update-existing), do NOT add a new version section.")
+        print()
+
+    commits = run(repo, "log", "--no-merges", "--format=%h %s",
+                  f"{prev}..HEAD").splitlines()
     print(f"commits since {prev}: {len(commits)}")
     for c in commits[:200]:
         print(f"  {c}")
@@ -231,6 +333,30 @@ def cmd_plan(args: argparse.Namespace) -> int:
     print()
 
     branch = run(repo, "rev-parse", "--abbrev-ref", "HEAD")
+    url = releases_url(repo, version)
+    script = os.path.abspath(__file__)
+
+    if failed_release:
+        print("--- force re-push commands (after user confirmation) ---")
+        print(f"cd {repo}")
+        print(
+            f"# 1. fold the commits above into the existing {version} HISTORY.md entry:")
+        print(
+            f"python3 {script} apply --version {version} --update-existing --body-file /tmp/notes.md")
+        print("git add -A")
+        print(f'git commit -m "chore(release): {version}"')
+        print(
+            f"git tag -f {version}                 # retarget the tag at HEAD (now incl. new commits)")
+        print(
+            f"git push origin {branch}             # push the new commit(s)")
+        print(
+            f"git push origin :refs/tags/{version}   # delete the stale remote tag")
+        print(
+            f"git push origin {version}            # re-push to retrigger the release action")
+        if url:
+            print(f"# release page: {url}")
+        return 0
+
     print("--- commands to run after confirmation ---")
     print(f"cd {repo}")
     print("git add -A")
@@ -238,15 +364,47 @@ def cmd_plan(args: argparse.Namespace) -> int:
     print(f"git tag {version}")
     print(f"git push origin {branch}")
     print(f"git push origin {version}")
-    url = releases_url(repo, version)
     if url:
         print(f"# release page: {url}")
     return 0
 
 
+def _replace_section(text: str, version: str, body: str) -> str | None:
+    """Rewrite the body of the existing `## version` section, in place.
+
+    Everything between the `## version` header and the next `## ` header (or EOF)
+    is replaced by `body`. Returns None when the header is not found. Used to
+    fold new commits into a reused release whose CI action failed.
+    """
+    lines = text.split("\n")
+    hdr = None
+    pat = re.compile(rf"^## {re.escape(version)}\s*$")
+    for i, line in enumerate(lines):
+        if pat.match(line):
+            hdr = i
+            break
+    if hdr is None:
+        return None
+    nxt = len(lines)
+    for j in range(hdr + 1, len(lines)):
+        if HEADER_RE.match(lines[j]):
+            nxt = j
+            break
+    new_lines = lines[:hdr + 1] + ["", body, ""] + lines[nxt:]
+    out = "\n".join(new_lines)
+    if not out.endswith("\n"):
+        out += "\n"
+    return out
+
+
 def cmd_apply(args: argparse.Namespace) -> int:
     repo = args.repo
-    version, _ = resolve_version(repo, args.version)
+    if args.update_existing:
+        # Releasing a reused tag: the version already exists as a tag, so skip
+        # resolve_version's "already exists" guard and just normalize.
+        version = normalize_version(args.version)
+    else:
+        version, _, _ = resolve_version(repo, args.version)
     if args.version.strip() != version:
         print(f"note: {args.version.strip()} normalized to {version}")
 
@@ -262,7 +420,8 @@ def cmd_apply(args: argparse.Namespace) -> int:
     # Changelog body must be English, conventional-commit style.
     cjk, off = lint_body(body)
     if cjk and not args.allow_non_english:
-        print("BLOCKED: HISTORY.md entries must be written in English.", file=sys.stderr)
+        print("BLOCKED: HISTORY.md entries must be written in English.",
+              file=sys.stderr)
         for line in cjk[:20]:
             print(f"  non-English: {line}", file=sys.stderr)
         print("Rewrite them in English (or pass --allow-non-english).", file=sys.stderr)
@@ -280,7 +439,32 @@ def cmd_apply(args: argparse.Namespace) -> int:
         text = fh.read()
 
     if re.search(rf"^## {re.escape(version)}\s*$", text, re.M):
-        raise SystemExit(f"{HISTORY_FILE} already has a section for {version}")
+        if not args.update_existing:
+            raise SystemExit(
+                f"{HISTORY_FILE} already has a section for {version}; "
+                "pass --update-existing to rewrite it (used when re-releasing a tag "
+                "whose release action failed)"
+            )
+        out = _replace_section(text, version, body)
+        if out is None:
+            raise SystemExit(
+                f"could not locate the {version} section to update")
+        if args.dry_run:
+            sys.stdout.write(out)
+            return 0
+        with open(path, "w", encoding="utf-8") as fh:
+            fh.write(out)
+        print(f"updated existing {version} section in {path}")
+        extra = [s for s in dirty_files(
+            repo) if status_path(s) != HISTORY_FILE]
+        if extra:
+            print(
+                "BLOCKED: unexpected dirty files appeared -- do not commit yet.", file=sys.stderr)
+            for s in extra[:20]:
+                print(f"  {s}", file=sys.stderr)
+            return 2
+        print("working tree: only HISTORY.md modified -- safe to commit")
+        return 0
 
     lines = text.split("\n")
     insert_at = len(lines)
@@ -332,7 +516,8 @@ def cmd_verify(args: argparse.Namespace) -> int:
 
 
 def main() -> int:
-    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument(
         "--repo",
         help="repo root; defaults to the git toplevel of the current directory",
@@ -340,17 +525,31 @@ def main() -> int:
     sub = ap.add_subparsers(dest="cmd", required=True)
 
     p = sub.add_parser("plan", help="read-only release plan")
-    p.add_argument("--version", help="explicit version; partial forms are expanded (0.3 -> v0.3.0)")
+    p.add_argument(
+        "--version", help="explicit version; partial forms are expanded (0.3 -> v0.3.0)")
+    p.add_argument(
+        "--no-release-check",
+        action="store_true",
+        help="skip the online latest-release check (offline / non-GitHub remote)",
+    )
     p.set_defaults(func=cmd_plan)
 
     a = sub.add_parser("apply", help="prepend a version section to HISTORY.md")
-    a.add_argument("--version", required=True, help="partial forms are expanded (0.3 -> v0.3.0)")
+    a.add_argument("--version", required=True,
+                   help="partial forms are expanded (0.3 -> v0.3.0)")
     a.add_argument("--body-file", help="file containing the changelog bullets")
-    a.add_argument("--dry-run", action="store_true", help="print the resulting HISTORY.md instead of writing")
+    a.add_argument("--dry-run", action="store_true",
+                   help="print the resulting HISTORY.md instead of writing")
     a.add_argument(
         "--allow-non-english",
         action="store_true",
         help="skip the English / conventional-commit lint (do not use by default)",
+    )
+    a.add_argument(
+        "--update-existing",
+        action="store_true",
+        help="rewrite the body of an existing `## version` section instead of "
+             "prepending a new one (fold new commits into a reused release)",
     )
     a.set_defaults(func=cmd_apply)
 

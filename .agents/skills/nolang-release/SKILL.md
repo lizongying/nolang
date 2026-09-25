@@ -1,6 +1,6 @@
 ---
 name: nolang-release
-description: 给当前 git 仓库发版——检测工作树是否干净（不干净就中断交还给用户）、根据已有 tag 推导版本号（默认末位 +1）、在仓库根 HISTORY.md 顶部新增英文变更日志条目（GitHub Actions 会读取它作为 Release 正文）、打 tag，最后在用户确认后才执行 git push。当用户说「publish」「发版」「发布」「release」「打个 tag」「发 v0.3.0」或提到版本号与 HISTORY.md 时使用。
+description: 给当前 git 仓库发版——检测工作树是否干净（不干净就中断交还给用户）、先检查最新已发布 release 是否与最高本地 tag 一致（不一致则说明上次 tag 的 release action 失败，复用当前 tag 而不是 +1 并强制重推）、根据已有 tag 推导版本号（默认末位 +1）、在仓库根 HISTORY.md 顶部新增英文变更日志条目（GitHub Actions 会读取它作为 Release 正文）、打 tag，最后在用户确认后才执行 git push。当用户说「publish」「发版」「发布」「release」「打个 tag」「发 v0.3.0」或提到版本号与 HISTORY.md 时使用。
 agent_created: true
 ---
 
@@ -8,7 +8,8 @@ agent_created: true
 
 ## 目的
 
-把「发版」这件容易出错的事固化为固定流程：推导版本号 → 写 HISTORY.md → **停下来问用户** → 打 tag 并推送。
+把「发版」这件容易出错的事固化为固定流程：**检查最新 release 是否与最高本地 tag 一致**→ 推导版本号 → 写 HISTORY.md → **停下来问用户** → 打 tag 并推送。
+若上次 tag 的 release action 失败（最高本地 tag 没有对应 release），不 +1，而是复用当前 tag 并强制重推以重新触发 CI。
 
 **不绑定任何具体仓库**：仓库根、remote、分支都由脚本在运行时用 `git rev-parse --show-toplevel` /
 `git remote get-url origin` 探测，脚本从仓库内任意子目录执行都可以。只对「仓库根有 `HISTORY.md`
@@ -39,15 +40,29 @@ agent_created: true
 
 不在这一步代劳，也不要「先暂存起来发完版再恢复」。中断就是中断。
 
-### 1. 解析版本
+### 1. 解析版本（先检查最新 release）
 
 ```bash
-python3 <skill-dir>/scripts/release.py plan [--version vX.Y.Z]
+python3 <skill-dir>/scripts/release.py plan [--version vX.Y.Z] [--no-release-check]
 ```
 
 只读，输出：仓库根、当前分支、origin、工作树状态、上一个 tag、本次 tag、
 `commits since <last tag>`、待执行命令（含发布页 URL，由 origin 推出）。
 不带 `--version` 时按惯例**末位 +1**（`vX.Y.Z` → `vX.Y.(Z+1)`）。
+
+**`plan` 会先联网查最新的已发布 release**（走 `gh` 或 GitHub API），拿它和仓库里最高的本地 tag 比对：
+
+- **release == 最高本地 tag**：上次发版成功，走正常 +1 流程。
+- **release < 最高本地 tag**（例如本地已有 `v0.3.4`，但最新 release 还是 `v0.3.3`）：
+  说明 **`v0.3.4` 的 tag 推上去后 release action 失败了**。此时 `plan` **不会 +1**，
+  而是直接复用当前这个 `v0.3.4`，并打印一段 `!!! RELEASE CHECK !!!` 与**强制重推命令**。
+  因为重推会用 `git tag -f v0.3.4` 把 tag 对齐到当前 HEAD，**tag 之后的新提交会被折叠进同一个 release**，
+  所以**必须同步更新 HISTORY.md**（用 `apply --version v0.3.4 --update-existing` 重写现有 `## v0.3.4` 段落正文，
+  把新提交归纳进去），**不要新增版本号段落**。随后按强制重推命令：提交 → `git tag -f` → `push origin <branch>` →
+  删远端旧 tag → `push origin v0.3.4` 重新触发 CI。
+- 查不到（非 GitHub 远端 / 离线 / 私有未授权）：退回普通 +1 流程。
+
+离线或非 GitHub 远端想跳过联网检查，加 `--no-release-check`。
 
 用户给的版本号可以是**不完整的**，脚本会自动补全成 `vMAJOR.MINOR.PATCH`，并在输出里打一行 `note:` 说明补全结果：
 
@@ -138,7 +153,14 @@ git ls-remote --tags origin vX.Y.Z   # 远端 tag 是否已存在
   → `git push origin <branch>` → `git push origin vX.Y.Z`
 - **commit 已存在**（`git commit` 回 `nothing to commit`）：说明别处已经提交了。
   不要重试、不要 `--amend`，直接核对 `git log -1 --stat` 确认内容对得上，然后只补 `git tag` 和 push。
-- **tag 已存在**（本地或远端）：停下来告诉用户，改用更高的版本号重新走流程。**不要** `-f` 覆盖已有 tag。
+- **tag 已存在**（本地或远端）：先分辨是哪种情况：
+  - **正常发版撞车**（release 已经成功、只是想又打一个同名 tag）：停下来告诉用户，改用更高的版本号重新走流程。**不要** `-f` 覆盖已有 tag。
+  - **release action 失败**（`plan` 报 `!!! RELEASE CHECK !!!`，即最高本地 tag 没有对应 release）：
+    这**不是**撞车，而是上次推 tag 后 CI 没建成 release。此时**复用当前这个 tag**（不 +1）。
+    `plan` 会列出 tag 之后的新提交——先把它们归纳进现有段落：`apply --version <tag> --update-existing`（重写 `## <tag>` 正文，不新增版本号）。
+    然后按 `plan` 给的强制重推命令走：`git add -A` → `git commit` → `git tag -f <tag>`（tag 对齐到含新提交的 HEAD）
+    → `git push origin <branch>` → `git push origin :refs/tags/<tag>`（删远端旧 tag）→ `git push origin <tag>` 重新触发 CI。
+    这是唯一允许对同名 tag 施 `-f` / 删远端重推的场景，目的是重跑失败的 action，不是篡改已发布的版本。
 
 顺序固定：先提交、再 `push origin <branch>`、最后 `push origin <tag>`。
 （分支名以 `plan` 输出的 `branch:` 为准，不要写死 `main`。）
@@ -154,7 +176,9 @@ git ls-remote --tags origin vX.Y.Z   # 远端 tag 是否已存在
 - 只改写 `HISTORY.md` 一个文件的内容；不要顺手改代码、不要改版本号常量（版本由 CI 用 ldflag 注入）。
 - HISTORY.md 正文**只写英文**，且必须是 `- type(scope): description`；中文条目直接重写，不要绕过 lint。
 - 新条目永远是 HISTORY.md 中第一个 `## ` 段落。
-- 已在远端存在的 tag 不要复用；脚本会拒绝，此时改用更高的版本号并告知用户。永不 `-f` 覆盖 tag。
+- 已在远端存在的 tag **不要复用于正常发版**；正常流程下脚本会拒绝，此时改用更高的版本号并告知用户。永不 `-f` 覆盖已成功发布的 tag。
+- **例外：release action 失败**。当 `plan` 检测到最高本地 tag 没有对应的已发布 release（`!!! RELEASE CHECK !!!`），
+  说明上次 tag 推上去但 CI 失败了——此时**必须复用当前 tag而不是 +1**，并按强制重推命令删远端旧 tag 重新 push 以重新触发 action。
 - **提交前与推送前各重查一次真实状态**（`git status` / `git log -1` / `git tag --list`）——
   仓库常有并行 session，`git commit` 报 `nothing to commit` 就是它已经替你提交了。
 - commit message 用 `chore(release): vX.Y.Z`。
