@@ -3901,10 +3901,7 @@ func (c *codegen) emitOptionWrap(inst *Inst) error {
 	// inst.Type nor a payload tag, so both are resolved from the destination
 	// value instead. The tag defaults to 0 (val/ok/some), which is what a wrap
 	// assignment means.
-	dstVal := inst.Dst
-	if dstVal == NoVal && len(inst.Args) >= 2 {
-		dstVal = inst.Args[1]
-	}
+	dstVal := moveDst(inst)
 	if dstVal <= NoVal {
 		c.fail("option-wrap has no destination in func %d", c.cf)
 		return fmt.Errorf("option-wrap dst")
@@ -5118,10 +5115,7 @@ func (c *codegen) emitMove(inst *Inst) error {
 	//   b.Emit(OpMove, typ, [src])  -> Dst is a NEW value; src moves into it.
 	//   EmitMoveInto(dst, src)      -> Dst is NoVal, Args=[src, dst]; src moves
 	//                                  into the EXISTING dst slot (no new value).
-	dstVal := inst.Dst
-	if dstVal == NoVal && len(inst.Args) >= 2 {
-		dstVal = inst.Args[1]
-	}
+	dstVal := moveDst(inst)
 	if dstVal == NoVal {
 		c.fail("move with no destination in func %d", c.cf)
 		return fmt.Errorf("move no dst")
@@ -5455,10 +5449,7 @@ func (c *codegen) clonePtrStructKey(inst *Inst) (string, bool) {
 	if len(inst.Args) == 0 {
 		return "", false
 	}
-	dstVal := inst.Dst
-	if dstVal == NoVal && len(inst.Args) >= 2 {
-		dstVal = inst.Args[1]
-	}
+	dstVal := moveDst(inst)
 	for _, v := range []ValueID{dstVal, inst.Args[0]} {
 		if v <= NoVal {
 			continue
@@ -5482,10 +5473,7 @@ func (c *codegen) clonePtrStructKey(inst *Inst) (string, bool) {
 // the unchanged bitwise copy in emitMove, chosen by the analysis when the source
 // is provably dead afterwards.
 func (c *codegen) emitPtrStructClone(inst *Inst, key string) error {
-	dstVal := inst.Dst
-	if dstVal == NoVal && len(inst.Args) >= 2 {
-		dstVal = inst.Args[1]
-	}
+	dstVal := moveDst(inst)
 	dstSlot := c.valSlot[dstVal]
 	srcSlot := c.valSlot[inst.Args[0]]
 	if dstSlot == "" || srcSlot == "" {
@@ -5515,10 +5503,7 @@ func (c *codegen) cloneLeafStructKey(inst *Inst) (string, bool) {
 	if len(inst.Args) == 0 {
 		return "", false
 	}
-	dstVal := inst.Dst
-	if dstVal == NoVal && len(inst.Args) >= 2 {
-		dstVal = inst.Args[1]
-	}
+	dstVal := moveDst(inst)
 	for _, v := range []ValueID{dstVal, inst.Args[0]} {
 		if v <= NoVal {
 			continue
@@ -5540,10 +5525,7 @@ func (c *codegen) cloneLeafStructKey(inst *Inst) (string, bool) {
 // `b.name = x` would free a buffer `a` still reads (verified: leafshare.no went
 // from `A/A/B` to `A//B` when emitSetField freed the old occupant).
 func (c *codegen) emitLeafStructClone(inst *Inst, key string) error {
-	dstVal := inst.Dst
-	if dstVal == NoVal && len(inst.Args) >= 2 {
-		dstVal = inst.Args[1]
-	}
+	dstVal := moveDst(inst)
 	dstSlot := c.valSlot[dstVal]
 	srcSlot := c.valSlot[inst.Args[0]]
 	if dstSlot == "" || srcSlot == "" {
@@ -5867,10 +5849,7 @@ func (c *codegen) emitClone(inst *Inst) error {
 		// Args[1]) is exactly what a RE-assignment lowers to — which is the shape
 		// insertDrops rewrites to OpClone when the source is still live. Reading
 		// inst.Dst there yields NoVal, so ptype/valSlot fell back to i64/"".
-		dstVal := inst.Dst
-		if dstVal == NoVal && len(inst.Args) >= 2 {
-			dstVal = inst.Args[1]
-		}
+		dstVal := moveDst(inst)
 		dstT, _ := c.ptype(dstVal)
 		dstSlot := c.valSlot[dstVal]
 		_, srcV := c.loadVal(inst.Args[0])
@@ -5908,10 +5887,7 @@ func (c *codegen) emitClone(inst *Inst) error {
 		}
 		if elemType != NoType {
 			if fn := c.vecDeepClone(elemType, 0); fn != "" {
-				dstVal := inst.Dst
-				if dstVal == NoVal && len(inst.Args) >= 2 {
-					dstVal = inst.Args[1]
-				}
+				dstVal := moveDst(inst)
 				dstSlot := c.valSlot[dstVal]
 				if dstSlot != "" {
 					_, srcV := c.loadVal(inst.Args[0])
@@ -5932,10 +5908,7 @@ func (c *codegen) emitClone(inst *Inst) error {
 	// destination is never an option anyway.
 	if st := c.mod.Type(c.localTypeOf(inst.Args[0])); st != nil && st.Kind == KindEnum {
 		if ei := c.mod.TaggedEnums[st.Raw]; ei != nil {
-			dstVal := inst.Dst
-			if dstVal == NoVal && len(inst.Args) >= 2 {
-				dstVal = inst.Args[1]
-			}
+			dstVal := moveDst(inst)
 			dstSlot := c.valSlot[dstVal]
 			srcSlot := c.valSlot[inst.Args[0]]
 			if dstSlot != "" && srcSlot != "" {
@@ -5962,10 +5935,7 @@ func (c *codegen) emitClone(inst *Inst) error {
 	// will be dropped and must therefore own a block each. Copy, then re-box
 	// the copy (optBoxClone mallocs a fresh block and deep-copies the payload's
 	// owned contents into it).
-	dstVal := inst.Dst
-	if dstVal == NoVal && len(inst.Args) >= 2 {
-		dstVal = inst.Args[1]
-	}
+	dstVal := moveDst(inst)
 	if t := c.mod.Type(c.localTypeOf(dstVal)); t != nil && t.Kind == KindOption {
 		dstSlot := c.valSlot[dstVal]
 		if st := c.mod.Type(c.localTypeOf(inst.Args[0])); st != nil && st.Kind == KindOption {

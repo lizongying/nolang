@@ -193,6 +193,45 @@ func TestFormatPreservesEffectiveOverflowGenericElem(t *testing.T) {
 	}
 }
 
+// TestFormatPreservesEffectiveOverflowSelfDot 回归钉：方法体内裸 `.`（隱式
+// self）参与的整数算术（src/std/char.no `char.to-upper` 的 `result = . - 32`）
+// 其 #{overflow=wrap} 不得被误删。parser 将 `.` 脱糖为 Value=="self" 的
+// Identifier，method 的 declared 表把 self 登记为接收者型别（char）→
+// operandIntKind/isDirectOverflowValue 均判为「确定非整族」→ 注解误删；但
+// codegen 对 char self 算术实际产生 option，删后换来编译期 ovfhndld 硬错。
+// checker.infixFlaggedByOvfLint 对裸 `.` 保守改判为整数后修复。
+func TestFormatPreservesEffectiveOverflowSelfDot(t *testing.T) {
+	input := "char.to-upper = () (result char) {\n" +
+		"    {\n" +
+		"        . >= 97 && . <= 122 -> {\n" +
+		"            #{overflow=wrap}\n" +
+		"            result = . - 32\n" +
+		"        }\n" +
+		"\n" +
+		"        -> result = .\n" +
+		"    }\n" +
+		"}\n"
+	program := parseForTest(input)
+	if program == nil {
+		t.Fatal("failed to parse test input")
+	}
+	relevant, governed := checker.OverflowAnnotationRelevance(program)
+	out := FormatProgramWithOverflow(program, input, relevant, governed)
+	if got := strings.Count(out, "#{overflow=wrap}"); got != 1 {
+		t.Errorf("self-dot effective overflow annotation stripped: kept %d, want 1:\n%s", got, out)
+	}
+	// 幂等：二次格式化不得再变动。
+	program2 := parseForTest(out)
+	if program2 == nil {
+		t.Fatal("failed to re-parse formatted output")
+	}
+	relevant2, governed2 := checker.OverflowAnnotationRelevance(program2)
+	out2 := FormatProgramWithOverflow(program2, out, relevant2, governed2)
+	if out2 != out {
+		t.Errorf("not idempotent:\n--- first ---\n%s\n--- second ---\n%s", out, out2)
+	}
+}
+
 // parseForTest parses source with the same options the `no fmt` CLI uses.
 func parseForTest(src string) *parser.Program {
 	lx := lexer.New(src)

@@ -833,3 +833,196 @@ SAME=461  DIVERGE=3  UNSTABLE=0  REGRESS=0  IMPROVED=0  BOTH_FAIL=0  NEW=17
 `no vet src/std` = `0 error(s)`；`analysis.go` gofmt-clean。
 
 
+## 12. `OpMove` 的兩種編碼（已實作）
+
+§11.3 是「`enumEscapeSinks` 只讀 `inst.Dst`」，§11.4 是「移進參數」。兩者其實是同一個
+根因的兩個症狀：**`OpMove` 有兩種編碼，而所有走訪它的分析都只讀了其中一種。** 這一節
+把根因本身收掉。
+
+### 12.1 觀測：兩種編碼，三個 op 共用
+
+```
+b.Emit(OpMove, typ, [src])   // Dst = 全新的目的值，Args = [src]
+b.EmitMoveInto(dst, src)     // Dst = NoVal，Args = [src, dst]
+```
+
+第二種是「對**已綁定變數**賦值」的降階結果（`src/mir/builder.go:314`），也就是真實程式碼
+裡**最常見**的形狀：`t = q`、`s = opt`、`x = x`、以及對結果參數的任何寫入。
+
+編碼由**三個 op 共用**，不只是 `OpMove`：
+
+| op | 為什麼共用 |
+|---|---|
+| `OpMove` | 本體 |
+| `OpClone` | `insertDrops` 把一個 move 就地改寫成深拷貝（同 def/use 形狀、同運算元） |
+| `OpOptionWrap` | `o = c` 對已綁定的 option 就是一個 `EmitMoveInto` 的 wrap（`emitOptionWrap`） |
+
+### 12.2 為什麼這個盲點是**靜默**的
+
+以 `inst.Dst` 解析目的地的分析，會把 `dst=0 args=[v w]` 這一半**完全看不到**——沒有錯誤、
+沒有測試失敗，因為看不到的那一半只是**從未被分析**。它不是「分析錯了」，是「分析沒跑」。
+
+這種缺陷的判別力為零：`no run` 的 stdout 正確、rc=0、golden 的 sha 不變。§11.3 的
+`got: made → got:    ` 是唯一一次運氣好被 stdout 抓到。
+
+### 12.3 單一真相：`moveSrc` / `moveDst` / `moveLike`
+
+`src/mir/analysis.go` 新增三個 helper，並把 21 處手寫的目的地解析全部換掉
+（`analysis.go` 12 處、`codegen.go` 9 處）：
+
+| helper | 回傳 |
+|---|---|
+| `moveSrc(inst)` | `Args[0]`（非 move-like 或無運算元 → `NoVal`） |
+| `moveDst(inst)` | `Dst`（若 > `NoVal`），否則 `Args[1]`，否則 `NoVal` |
+| `moveLike(inst)` | op ∈ {`OpMove`, `OpClone`, `OpOptionWrap`} |
+
+不變式（`moveDst` 據此實作）：**`Dst` 有值 ⟺ `Emit`（1 個運算元）；`Dst == NoVal` ⟹
+`EmitMoveInto`（2 個運算元）**。因此不會出現「`Dst` 與 `Args[1]` 同時存在而語義不明」的
+指令。
+
+⚠️ **`moveLike` 必須含三個 op**：第一版只認 `OpMove`，結果 `emitOptionWrap` 立刻炸
+（`EmitLLVM: option-wrap dst`）——`s = o`（`?[]i64` → `[]i64`）在 HEAD 能跑，在那一版
+不能。`emitOptionWrap` 自己的註解早就寫明了 `OpOptionWrap` 走 `EmitMoveInto`。
+
+### 12.4 這次真正修好的：`markEnumPayloadOwners` 的 double free
+
+R5 把「本函式從未被抽取」的 enum 值標成 owning，並排除 **move 目的地**（別名不是擁有者）。
+登記目的地時只讀 `inst.Dst`，於是**賦值拼法**的目的地沒被登記：
+
+```
+t e-res = fail
+q e-res = ok('hi')
+t = q          ; move dst=0 args=[q t]   ← 第二種編碼
+```
+
+`t` 不在 `moveDest` ⇒ R5 把 `t` 和 `q` **都**標成 owning ⇒ 一份載荷兩次 `drop`。
+
+**實測（MIR，`main` 內的 drop）**：
+
+| 二進位 | 指令序列 |
+|---|---|
+| HEAD（`752386b9`） | `move dst=0 args=[3 1]` → `drop 1` **＋** `drop 3` |
+| 本版 | `move dst=0 args=[3 1]` → `drop 3` |
+
+⚠️ 這個 bug **完全沒有輸出症狀**：rc=0、stdout 逐字節正確（小字串的第二次 free 在此平台
+不 abort）。所以它不可能靠 `tests/*.no` 抓到，只能靠 MIR 的 drop 計數。
+
+### 12.5 誠實記錄：`isBorrowRead` 的加寬是 **no-op**
+
+同一輪也把 `isBorrowRead` 的 option-peel 分支從 `inst.Dst` 加寬到 `moveSrc`/`moveDst`。
+**它沒有修好任何東西**，而且可以證明：
+
+- 兩個呼叫點（`insertDrops`、`checkDropCount`）都只在 `inst.Dst > NoVal` 時才呼叫它；
+- `moveDst` 在 `Dst > NoVal` 時**就是**回傳 `inst.Dst`。
+
+⇒ 可達範圍內，加寬後的述詞與加寬前**逐字相同**。（`EmitMoveInto` 拼法的 peel 根本到不了
+這裡，而且每個值都有一條帶 `Dst` 的定義指令。）
+
+保留加寬形式的理由：helper 讓「拿掉那個 guard」變得順手，而 guard 一旦拿掉，這個分支就
+變成**承重**的。第一版註解曾把它寫成「修好了 `s = opt` 的 double free」——**那是錯的**，
+已改正。
+
+### 12.6 新增 Go 迴歸測試（判別力已驗）
+
+`src/mir/enum_move_encoding_test.go`：斷言的是 **MIR 的 drop 計數**，不是 stdout（見
+12.4 的「沒有輸出症狀」）。
+
+| 測試 | HEAD | 本版 |
+|---|---|---|
+| `TestEnumAssignmentMoveDropsPayloadOnce` | ✗ **got 2**（double free） | ✓ |
+| `TestEnumFreshBindingMoveDropsPayloadOnce` | ✓（這個拼法本來就沒壞） | ✓ |
+| `TestEnumMoveSpellingsAgreeOnDropCount` | ✗ assignment=2 vs fresh=1 | ✓ |
+
+第三個測試斷言的是**不變式本身**（同一支程式的兩種拼法必須得到相同結論），而不是某個
+魔術數字——這才是「兩種編碼」這個坑真正要守住的東西。
+
+### 12.7 順帶發現、**未修**：`?[]T` peel 的兩種拼法不一致
+
+追 12.5 時量到的既有偏差（與兩種編碼**無關**，HEAD 與本版相同）：
+
+- `s []i64 = o`（**全新綁定**）：`move dst=10 args=[9]`，`Dst > NoVal` ⇒ 走進
+  `isBorrowRead` 的 peel 分支 ⇒ 回傳 true ⇒ 10 不進 `droppable` ⇒ **被剝出的值從不
+  被 drop**。
+- `s = o`（**賦值**）：`move dst=0 args=[9 1]` ⇒ 到不了那個分支 ⇒ 1 照常 drop。
+
+而 `emitMove` 對 `%vec` 載荷**是會 clone 的**（`vecDeepClone`，元素型別可解析時），
+所以 12.5 那段註解的前提（「結果只是別名」）對 `?[]T` 已經過時：全新綁定那一側
+**漏掉一次 free**。
+
+量測：把 peel 放進 20 萬次的迴圈，fresh 與 assign 的 max RSS 分別是 14.56 MB / 14.58 MB
+（差異在噪音內），因為 peel 在該寫法下每個函式只執行一次而非每次迭代。MIR 的證據是
+確定的（value 10 沒有任何 `drop`），RSS 的證據是負面的。⇒ 需要獨立處理，本輪**不動**。
+
+### 12.8 驗收
+
+- 7 支 enum 測檔 `rc=0`，且 HEAD 與本版**輸出逐字節相同**（`tagged-enum-zero-match.no`
+  的改善已在 §11.6 落地，HEAD 已含）。
+- `go test ./mir/ ./parser/ ./checker/ ./fmt/ ./hir/` 全 ok；`no vet src/std` = `0 error(s)`。
+- `analysis.go`／`codegen.go`／新增測試檔 gofmt-clean。（`mir.go`／`hir2mir.go`／
+  `builtins.go`／`mir_test.go`／`arg_type_guard_test.go` 被 `gofmt -l` 列出，但**在 HEAD
+  就已是如此**——那是舊版 gofmt 的痕跡，本輪只給 `mir.go` 加了 2 行註解，不做整檔重排。）
+- golden sweep：見 §12.9。
+
+### 12.9 golden sweep（`NO=/tmp/no_y/bin/no`，私有 worktree binary）
+
+第一次 sweep 用 `NO=/tmp/no_x/bin/no`（= HEAD + 本輪的 trap-2 patch）得到
+`SAME=306 REGRESS=158 NEW=17` —— **158 檔 REGRESS**。這**不是** trap-2 造成的：乾淨的
+HEAD binary 同樣炸。往下追的結論是 HEAD（`752386b9`）自帶一個 mass regression，與
+enum 所有權無關（§12.10）。把那個回歸擋掉之後：
+
+```
+SAME=461  DIVERGE=3  UNSTABLE=0  REGRESS=0  IMPROVED=0  BOTH_FAIL=0  NEW=17
+461 + 3 = 464 ✓（= baseline 行數）
+```
+
+binary 的 sha256 在 sweep 前後都是 `3a20f564de1c…`（私有 worktree，不受並行 session
+重建影響）。三個 DIVERGE 是**既有**偏差，三方比對（rc 與 sha256 都比）顯示
+`pre(4ed84631) == Phase1(d407f2b0) == NOW`、三者都 ≠ golden：
+
+| 檔案 | golden | pre / Phase1 / NOW |
+|---|---|---|
+| `tests/default-params.no` | rc=0 `38b886a02dc3` | rc=0 `d41c6dd7d135` |
+| `tests/std-hash.no` | rc=0 `74c210c66ae5` | rc=0 `cfea7058549b` |
+| `tests/std-new.no` | rc=0 `40549726eb56` | rc=0 `33a12a8a3b9b` |
+
+⚠️ 注意 HEAD 這三支是 **rc=1**（就是那個 mass regression），所以「HEAD == NOW」在這裡
+不成立；要用 **Phase 1（`d407f2b0`）** 當「未受污染的 HEAD」才看得到真正的既有偏差。
+
+### 12.10 🔴 追 sweep 時發現的既有 mass regression（**不是**本輪引入，也**不是** enum 的）
+
+**症狀**：158 檔 `REGRESS`。最小的探針是 `with-len`：
+
+```
+b []byte = with-len(4)     ; HEAD: SIGSEGV（rc=139），v0.3.5 / 4ed84631 / d407f2b0 都正常
+```
+
+**根因**：`752386b9` 這個 commit **夾帶了一段與 enum 無關**的
+`src/mir/hir2mir.go` `resolveCallee` 改動 —— 「裸名 → 限定名」回退，用
+`strings.HasSuffix(fn, "."+name)` 掃 `l.funcNames`。問題是 `l.funcNames` **也含 method
+條目**，而 method 的「owner」是**型別**不是模組：
+
+|  | pre（`4ed84631`） | HEAD（`752386b9`） |
+|---|---|---|
+| MIR | `call dst=2:[]byte args=[1]` | `call dst=3:str args=[1 2]` → `str.with-len` |
+
+`with-len` 是多型 builtin，**型別由賦值左側推斷**（`[]i64 = with-len(n)` → `%vec`；
+`str = with-len(n)` → `%str-long`）。被改寫成 `str.with-len`（回 `str`）之後，
+`b []byte = …` 就把 `%str-long` 塞進 `%vec` 槽 ⇒ 記憶體破壞 ⇒ SIGSEGV。
+
+**三種變體實測（464 檔 golden）**：
+
+| 變體 | REGRESS |
+|---|---|
+| 回退照舊（HEAD） | **158** |
+| 整個回退刪掉 | **1** —— 就是它要修的 `tests/std-unix-fs-os-2.no`（`spawn`） |
+| 回退 + 跳過 LHS 推斷型別的 builtin | **0** |
+
+⇒ 這個回退**是必要的**（`spawn` 靠它），但不能把「裸名是 builtin」的名字改寫成限定
+方法名。工作樹已由並行 session 以 `lhsInferredBuiltins` 修好（**未提交**）；本輪用等價
+的 `builtin.FindBuiltinMethod(name) == nil` 驗證，兩者都得到 `REGRESS=0`。
+
+**教訓**：sweep 出現大面積 REGRESS 時，第一步不是懷疑自己的改動，而是先建一支**乾淨
+HEAD** 的 binary 跑同一支探針 —— 若乾淨 HEAD 也炸，就是既有偏差，且要用**再往前一個
+commit**（這裡是 `d407f2b0`）當基準，否則「HEAD == NOW」這個判準會被既有回歸汙染。
+
+

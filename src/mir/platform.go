@@ -75,10 +75,10 @@ func targetGOARCH() string {
 //
 // `process.cmd` is the case that made this visible: it has a POSIX definition
 // (#{mac-*, linux-*, wasi-wasm32}) and a Win32 definition (#{win-*}) with the
-// SAME parameter list, so build.mangleOverloads collapses both onto one symbol,
-// `process.cmd_str_slice.str_str_str_slice.str_i64_bool`. funcNames kept the
-// Win32 body, and calling it bailed out with "unsupported builtin
-// win-create-pipe" instead of running the POSIX implementation.
+// SAME parameter list. build.mangleOverloads must therefore leave these
+// platform alternatives under their source name; LowerHIR filters the HIR
+// nodes before registering the target body. Otherwise the alternatives either
+// collapse onto one symbol or bare calls lose the qualified module name.
 //
 // A node with no platform annotation is always kept, mirroring
 // build/llvm.matchesPlatform.

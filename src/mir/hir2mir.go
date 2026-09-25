@@ -6318,6 +6318,17 @@ func (l *lowerer) resolveCallee(n *hir.Node) (callee string, recvV ValueID) {
 		if tmpl := l.unionTemplateCalleeFromName(name); tmpl != "" {
 			return tmpl, NoVal
 		}
+		// A bare call to an LHS-inferred global builtin (with-cap / with-len /
+		// with-cap-len) must resolve to the GLOBAL builtin, never to a same-suffix
+		// type-method such as `str.with-cap` (std/str.no), which returns `str`.
+		// The global `#{buildin}` stub is removed from funcNames by the checker,
+		// so the module-qualified fallback below would otherwise hijack
+		// `x []str = with-cap(n)` to `str.with-cap`, mistyping the slice as `str`
+		// and turning every `x[i]` read into a `char` -> `vec.push` of that element
+		// into a `[]str` fails with "cannot push a value of type 'char'".
+		if lhsInferredBuiltins[name] {
+			return name, NoVal
+		}
 		// A free function imported from a module can appear as a bare
 		// identifier in merged HIR (for example spawn), while the registered
 		// definition is qualified (process.spawn). Resolve that spelling only

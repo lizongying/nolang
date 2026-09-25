@@ -3966,27 +3966,48 @@ func isDirectOverflowValue(v parser.Expression, varTypes map[string]string, self
 	return true
 }
 
-// infixFlaggedByOvfLint 用与 ovf-int-default lint 走查（walkExprForIntOverflow）
-// 完全相同的口径（operandIntKind）判定一个 + - * / 是否会被 lint 报告：若该 lint
-// 会报，则其所在陈述必须进入 relevant 集合——否则 `no fmt` 删掉注解后 lint/硬
-// 检查（ovfhndld）会反过来新增报错（删除方向不一致）。典型例子：char.to-upper 的
-// `result = . - 32`——裸 `.`（隐式 self）在 isDirectOverflowValue 语境下被推成
-// char（非整族）→ 注解误删 → 编译期 ovfhndld 报错；而 lint 对 `.` 一律保守视为
-// 有號整数。relevant 取两者并集（超集）后即可保证：只删没有任何检查会要求的注解。
+// infixFlaggedByOvfLint 用與 ovf-int-default lint 走查（walkExprForIntOverflow）
+// 完全相同的口径（operandIntKind）判定一個 + - * / 是否會被 lint 報告：若該 lint
+// 會報，則其所在陳述必須進入 relevant 集合——否則 `no fmt` 刪掉注解後 lint/硬
+// 檢查（ovfhndld）會反過來新增報錯（刪除方向不一致）。典型例子：char.to-upper 的
+// `result = . - 32`——裸 `.`（隱式 self，parser 脫糖為 Value=="self" 的 Identifier）
+// 在 method 的 declared 表裡被登記為接收者型別（如 char）→ operandIntKind 返
+// 回 ""（確定非整族）→ isDirectOverflowValue 亦同 → 注解誤刪 → 編譯期 ovfhndld
+// 報錯（codegen 對 char self 算術實際會產生 option）。因此本函式對裸 `.` 一律
+// 保守視為有號整數（寧可多保留，不可誤刪）；relevant 取並集（超集）後即可保證：
+// 只刪沒有任何檢查會要求的注解。
 func infixFlaggedByOvfLint(inf *parser.InfixExpression, declared map[string]string) bool {
 	if !overflowArithOps[inf.Operator] {
 		return false
 	}
 	lk := operandIntKind(inf.Left, declared)
 	rk := operandIntKind(inf.Right, declared)
+	// 裸 `.`（隱式 self）：operandIntKind 會因 declared["self"]=接收者型別
+	//（char 等整族以外的名字）而判為非整；但 codegen 對 char/新類型整型
+	// self 的算術實際仍產生 option，刪注解會換來 ovfhndld 硬錯。保守改判
+	// 為 "signed"（僅影響保留方向，不會新增任何報錯）。
+	if isImplicitSelfIdent(inf.Left) {
+		lk = "signed"
+	}
+	if isImplicitSelfIdent(inf.Right) {
+		rk = "signed"
+	}
 	if lk == "" || rk == "" {
 		return false
 	}
 	if inf.Operator == "/" {
-		// 与 walkExprForIntOverflow 一致：无号除法永不溢出，仅有號（含未知）侧才报。
+		// 與 walkExprForIntOverflow 一致：無號除法永不溢出，僅有號（含未知）側才報。
 		return lk == "signed" || rk == "signed"
 	}
 	return true
+}
+
+// isImplicitSelfIdent 報告 e 是否為裸 `.`（隱式 self 接收者）：parser 將 `.`
+// 脫糖為 Token.Type==DOT 且 Value=="self" 的 Identifier（顯式寫的 `self`
+// 不帶 DOT token）。
+func isImplicitSelfIdent(e parser.Expression) bool {
+	id, ok := e.(*parser.Identifier)
+	return ok && id != nil && id.Value == "self" && id.Token.Type == lexer.DOT
 }
 
 // isIntExpr 推斷表達式 e 是否為整數型別（用於判定 + - * / 是否會產生 option<int>）。

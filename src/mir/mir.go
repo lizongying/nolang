@@ -374,6 +374,8 @@ const (
 	OpLoad    // load from a slot
 	OpStore   // store into a slot
 	OpMove    // transfer ownership: source becomes invalid, drop follows dest
+	// ⚠️ OpMove has TWO encodings (fresh value vs EmitMoveInto assignment) and
+	// every consumer must read both — see moveSrc/moveDst in analysis.go.
 	OpClone   // deep copy (heap duplicated); both source and dest stay owned
 	OpDrop    // destructor + @free (owned, exactly once)
 	OpBorrow  // take a reference (no ownership transfer)

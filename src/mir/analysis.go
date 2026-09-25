@@ -103,13 +103,9 @@ func (m *Module) escapingValues(f *Function) map[ValueID]bool {
 			}
 			switch inst.Op {
 			case OpMove:
-				// Emit(OpMove, [src])     -> Dst is the fresh copy
-				// EmitMoveInto(dst, src)  -> Dst == NoVal, Args = [src, dst]
-				if inst.Dst > NoVal && len(inst.Args) >= 1 {
-					srcOf[inst.Dst] = append(srcOf[inst.Dst], inst.Args[0])
-				}
-				if len(inst.Args) >= 2 && inst.Args[1] > NoVal {
-					srcOf[inst.Args[1]] = append(srcOf[inst.Args[1]], inst.Args[0])
+				// BOTH encodings of OpMove — see moveSrc/moveDst in mir.go.
+				if dst := moveDst(inst); dst > NoVal && len(inst.Args) >= 1 {
+					srcOf[dst] = append(srcOf[dst], inst.Args[0])
 				}
 			case OpOptionWrap:
 				if inst.Dst > NoVal && len(inst.Args) >= 1 {
@@ -161,12 +157,8 @@ func (m *Module) frameEscapingValues(f *Function) map[ValueID]bool {
 			}
 			switch inst.Op {
 			case OpMove:
-				// Emit(OpMove, [src])     -> Dst is the fresh copy
-				// EmitMoveInto(dst, src)  -> Dst == NoVal, Args = [src, dst]
-				add(inst.Dst, inst.Args[0])
-				if len(inst.Args) >= 2 {
-					add(inst.Args[1], inst.Args[0])
-				}
+				// BOTH encodings of OpMove — see moveSrc/moveDst in mir.go.
+				add(moveDst(inst), moveSrc(inst))
 			case OpOptionWrap:
 				add(inst.Dst, inst.Args[0])
 			case OpSetField:
@@ -347,11 +339,8 @@ func (m *Module) demoteUnsafeSliceViews() {
 				case OpMove:
 					// `dst = src` (EmitMoveInto records the target in Args[1]).
 					// Either shape replaces what dst held, and the drop that
-					// follows frees the old buffer.
-					addClobber(inst.Dst, at)
-					if len(inst.Args) >= 2 {
-						addClobber(inst.Args[1], at)
-					}
+					// follows frees the old buffer. Both encodings: moveDst.
+					addClobber(moveDst(inst), at)
 				case OpCall, OpCallExtern, OpCallFFI:
 					// A callee handed the container may reassign, grow or free
 					// it; conservatively treat every argument as clobbered.
@@ -571,11 +560,25 @@ func (m *Module) markEnumPayloadOwners(f *Function) {
 			case OpMove:
 				// Record enum-typed move DESTINATIONS so the alias's own slot
 				// is never given a second drop (see the doc comment above).
-				if len(inst.Args) == 0 || inst.Args[0] <= NoVal || inst.Dst <= NoVal {
+				//
+				// ⚠️ BOTH encodings (moveDst). `t e-res = q` defines a fresh t
+				// (Dst set), but the REASSIGNMENT `t = q` stores into t's
+				// existing slot through EmitMoveInto (Dst == NoVal, target in
+				// Args[1]). Reading only inst.Dst left the assignment target out
+				// of moveDest, so R5 marked BOTH t and q owning and emitted two
+				// drops for one buffer — a double free:
+				//
+				//	t e-res = fail
+				//	q e-res = ok('hi')
+				//	t = q            ; move dst=0 args=[q t]
+				//	                 ; -> drop q AND drop t, one shared payload
+				if moveSrc(inst) <= NoVal {
 					continue
 				}
-				if ty := m.valueTypeOf(f, inst.Dst); ty != nil && ty.Kind == KindEnum {
-					moveDest[inst.Dst] = true
+				if dst := moveDst(inst); dst > NoVal {
+					if ty := m.valueTypeOf(f, dst); ty != nil && ty.Kind == KindEnum {
+						moveDest[dst] = true
+					}
 				}
 			}
 		}
@@ -822,8 +825,8 @@ func (m *Module) enumEscapeSinks(f *Function) map[ValueID]bool {
 					// A move is a bitwise alias, so v's payload is reachable
 					// through w: if w escapes, so does v.
 					//
-					// ⚠️ Read BOTH encodings of an OpMove, exactly as
-					// isOptionPeelMove and moveEnumSharesHeap already do:
+					// ⚠️ Read BOTH encodings of an OpMove (moveSrc/moveDst in
+					// mir.go):
 					//   `dst=w args=[v]`   the scrutinee binding
 					//   `dst=0 args=[v w]` an assignment statement (EmitMoveInto)
 					// Only reading the first left the second invisible, so
@@ -832,13 +835,10 @@ func (m *Module) enumEscapeSinks(f *Function) map[ValueID]bool {
 					// the very payload the caller had been handed: `got: made`
 					// became `got:    ` (silent use-after-free) — see
 					// tests/tagged-enum-zero-match.no case 11/12.
-					if len(inst.Args) > 0 && inst.Args[0] > NoVal {
-						dst := inst.Dst
-						if dst == NoVal && len(inst.Args) >= 2 {
-							dst = inst.Args[1]
-						}
-						if dst > NoVal && escaped[dst] && !escaped[inst.Args[0]] {
-							escaped[inst.Args[0]] = true
+					src := moveSrc(inst)
+					if src > NoVal {
+						if dst := moveDst(inst); dst > NoVal && escaped[dst] && !escaped[src] {
+							escaped[src] = true
 							changed = true
 						}
 					}
@@ -1113,10 +1113,7 @@ func (m *Module) moveStructHasPtrFields(f *Function, inst *Inst) bool {
 	if inst.Op != OpMove || len(inst.Args) == 0 {
 		return false
 	}
-	dst := inst.Dst
-	if dst == NoVal && len(inst.Args) >= 2 {
-		dst = inst.Args[1]
-	}
+	dst := moveDst(inst)
 	if m.typeIsPtrStruct(f, dst) {
 		return true
 	}
@@ -1162,10 +1159,7 @@ func (m *Module) moveStructSharesHeap(f *Function, inst *Inst) bool {
 	if inst.Op != OpMove || len(inst.Args) == 0 {
 		return false
 	}
-	dst := inst.Dst
-	if dst == NoVal && len(inst.Args) >= 2 {
-		dst = inst.Args[1]
-	}
+	dst := moveDst(inst)
 	return m.typeIsLeafStruct(f, dst) || m.typeIsLeafStruct(f, inst.Args[0])
 }
 
@@ -1204,10 +1198,7 @@ func (m *Module) optionCopySharesHeap(f *Function, inst *Inst) bool {
 		if st == nil || st.Kind != KindOption {
 			return false
 		}
-		dst := inst.Dst
-		if dst == NoVal && len(inst.Args) >= 2 {
-			dst = inst.Args[1]
-		}
+		dst := moveDst(inst)
 		if dst <= NoVal {
 			return false
 		}
@@ -1252,10 +1243,7 @@ func (m *Module) moveStrSharesHeap(f *Function, inst *Inst) bool {
 	if src <= NoVal {
 		return false
 	}
-	dst := inst.Dst
-	if dst == NoVal && len(inst.Args) >= 2 {
-		dst = inst.Args[1]
-	}
+	dst := moveDst(inst)
 	if dst <= NoVal || dst == src {
 		return false
 	}
@@ -1290,10 +1278,7 @@ func (m *Module) moveSliceSharesHeap(f *Function, inst *Inst) bool {
 	if src <= NoVal {
 		return false
 	}
-	dst := inst.Dst
-	if dst == NoVal && len(inst.Args) >= 2 {
-		dst = inst.Args[1]
-	}
+	dst := moveDst(inst)
 	if dst <= NoVal || dst == src {
 		return false
 	}
@@ -1452,10 +1437,30 @@ func (m *Module) isBorrowRead(f *Function, inst *Inst) bool {
 	// the copy frees the option's buffer out from under it. The option is the
 	// owner and frees the payload on its own drop (see the matching exemption
 	// from `moveSrc` in insertDrops).
-	if inst.Op == OpMove && len(inst.Args) > 0 && inst.Args[0] > NoVal && inst.Dst > NoVal {
-		if st := m.valueTypeOf(f, inst.Args[0]); st != nil && st.Kind == KindOption {
-			if dt := m.valueTypeOf(f, inst.Dst); dt != nil && dt.Kind == KindSlice {
-				return m.dropOwnsHeap(f, inst.Dst)
+	//
+	// ⚠️ Widened to moveSrc/moveDst for uniformity, but — unlike the two
+	// consumers named in the note above — this one is a NO-OP today, and that is
+	// provable rather than measured: both call sites (insertDrops, checkDropCount)
+	// reach isBorrowRead only under `inst.Dst > NoVal`, and moveDst returns
+	// inst.Dst whenever it is set. So the EmitMoveInto spelling of a peel can
+	// never arrive here. Kept in the widened form so the branch stays correct if
+	// a future call site ever drops that guard — do not "simplify" it back to
+	// inst.Dst on the strength of it being dead, and do not assume the
+	// assignment-shaped peel is covered here; it is not.
+	//
+	// (The premise above is also stale for `?[]T`: emitMove now CLONES a %vec
+	// payload via vecDeepClone when the element type resolves, so for that case
+	// the result owns a private buffer and suppressing its drop leaks the clone.
+	// Measured on the fresh-binding spelling: `s []i64 = o` never drops the
+	// peeled value, while the assignment spelling `s = o` does. Pre-existing and
+	// orthogonal to the two-encoding trap — tracked separately, not fixed here.)
+	if inst.Op == OpMove {
+		src, dst := moveSrc(inst), moveDst(inst)
+		if src > NoVal && dst > NoVal {
+			if st := m.valueTypeOf(f, src); st != nil && st.Kind == KindOption {
+				if dt := m.valueTypeOf(f, dst); dt != nil && dt.Kind == KindSlice {
+					return m.dropOwnsHeap(f, dst)
+				}
 			}
 		}
 	}
@@ -1589,10 +1594,7 @@ func (m *Module) insertDrops(f *Function, rep *Report) {
 			// single-buffer transfer, and the existing "source owns" rule, intact
 			// (that is the `let it = q` scrutinee shape, which must not clone).
 			if m.moveEnumSharesHeap(f, inst) {
-				dst := inst.Dst
-				if dst == NoVal && len(inst.Args) >= 2 {
-					dst = inst.Args[1]
-				}
+				dst := moveDst(inst)
 				if dst > NoVal && (liveOut[bid][dst] || m.readNonDropAfterInBlock(bid, iid, dst)) {
 					inst.Op = OpClone
 					m.enumOwnsPayload[inst.Args[0]] = true
@@ -2018,17 +2020,90 @@ func (m *Module) isOptionPeelMove(f *Function, inst *Inst) bool {
 	if st == nil || st.Kind != KindOption {
 		return false
 	}
-	// Both OpMove shapes: `dst = src` (Dst set) and EmitMoveInto (Dst NoVal,
-	// destination in Args[1]).
-	dst := inst.Dst
-	if dst == NoVal && len(inst.Args) >= 2 {
-		dst = inst.Args[1]
-	}
+	// Both OpMove encodings — see moveSrc/moveDst.
+	dst := moveDst(inst)
 	if dst <= NoVal {
 		return false
 	}
 	dt := m.valueTypeOf(f, dst)
 	return dt != nil && dt.Kind != KindOption
+}
+
+// ── OpMove has TWO encodings; every consumer must read both ──────────────────
+//
+//	b.Emit(OpMove, typ, [src])   // Dst = the fresh destination value
+//	b.EmitMoveInto(dst, src)     // Dst = NoVal, Args = [src, dst]
+//
+// The second is what an ASSIGNMENT to an already-bound variable lowers to
+// (`t = q`, `s = opt`, `x = x`, and any write to a result parameter), and it is
+// the common shape in real code. An analysis that resolves the destination as
+// `inst.Dst` alone therefore silently sees HALF the moves — with no error and no
+// test failure, because the half it misses is simply never analysed.
+//
+// The encoding is shared by three ops, all of which must be covered:
+//
+//	OpMove        the move itself
+//	OpClone       a move that insertDrops rewrote to a deep copy (same def/use
+//	              shape, same operands — see the note in insertDrops)
+//	OpOptionWrap  `o = c` on an already-bound option is an EmitMoveInto wrap
+//	              (see emitOptionWrap)
+//
+// That is not hypothetical. Two ownership bugs in this file came from reading
+// only inst.Dst, both of them silent:
+//
+//   - enumEscapeSinks did not propagate "the destination escapes" back to the
+//     source for the EmitMoveInto shape, so `r = q` with `r` a RESULT PARAMETER
+//     left `q` looking frame-local. The tagged-enum owner pass then freed the
+//     very payload being handed back to the caller (`got: made` -> `got:    `).
+//   - markEnumPayloadOwners never registered an assignment target as a move
+//     DESTINATION, so for `t = q` it marked BOTH `t` and `q` as payload owners
+//     and emitted two drops for one buffer — a double free.
+//
+// isBorrowRead's option-peel branch was widened too, but it is a NO-OP today
+// (both its call sites already require inst.Dst > NoVal) — see the note there.
+// That is worth knowing precisely: not every widened site was a live bug, and
+// guessing which is which is how a "fix" gets credited for something it did not
+// do.
+//
+// moveSrc/moveDst are the single place that knows the two shapes. Use them
+// instead of reading inst.Dst / inst.Args[1] by hand, so the next walk cannot
+// reintroduce the blind spot. Both return NoVal when the instruction is not
+// move-like or the value is absent.
+func moveSrc(inst *Inst) ValueID {
+	if !moveLike(inst) || len(inst.Args) == 0 {
+		return NoVal
+	}
+	return inst.Args[0]
+}
+
+// moveDst returns a move-like instruction's destination across BOTH encodings
+// (see moveSrc): Dst when the instruction defines a fresh value, Args[1] when
+// EmitMoveInto stores into an existing slot. NoVal when there is no destination.
+func moveDst(inst *Inst) ValueID {
+	if !moveLike(inst) {
+		return NoVal
+	}
+	if inst.Dst > NoVal {
+		return inst.Dst
+	}
+	if len(inst.Args) >= 2 {
+		return inst.Args[1]
+	}
+	return NoVal
+}
+
+// moveLike reports whether inst uses OpMove's operand encoding — OpMove itself,
+// the OpClone it may be rewritten to, or OpOptionWrap (which has the same two
+// shapes). See the note above moveSrc.
+func moveLike(inst *Inst) bool {
+	if inst == nil {
+		return false
+	}
+	switch inst.Op {
+	case OpMove, OpClone, OpOptionWrap:
+		return true
+	}
+	return false
 }
 
 func isTransferringMove(inst *Inst) bool {
@@ -2067,10 +2142,7 @@ func (m *Module) moveTransfersOwnership(f *Function, inst *Inst) bool {
 	if !isTransferringMove(inst) || m.isOptionPeelMove(f, inst) {
 		return false
 	}
-	dst := inst.Dst
-	if dst == NoVal && len(inst.Args) >= 2 {
-		dst = inst.Args[1]
-	}
+	dst := moveDst(inst)
 	if dst > NoVal && m.isParamValue(f, dst) {
 		return true
 	}
