@@ -1,5 +1,13 @@
 # 更新日誌
 
+## v0.3.5
+
+- feat(mir): build the libc call spec table per target instead of at package init
+- fix(mir): substitute msvcrt entry points for realpath, touch-file, sync, stat and num-cpu on windows
+- fix(mir): use the Windows struct _stat64 layout with 16-bit st_uid and st_gid
+- feat(mir): report POSIX-only builtins at compile time instead of failing at link
+- feat(nolang-release): reuse the latest tag when its release action failed
+
 ## v0.3.4
 
 - feat(txt): implement code-point indexing and updating for txt type
