@@ -219,7 +219,16 @@ decode = (in str) (out []byte) {
 
     #{overflow=wrap}
     out = with-cap(in.len-bytes() * 5 / 8)
-    in-len = in.len-bytes()
+
+    ; ⚠️ in-len 是**字元（碼點）數**，不是位元組數 —— 它只用於
+    ; 「第幾個 base32 符號」的位置運算，而底下的 in[i] 是**碼點索引**。
+    ; 原本寫成 in.len-bytes()：對純 ASCII 輸入兩者相等（base32 的合法輸入
+    ; 就是 ASCII），但含多位元組字元的輸入會讓 i 超出碼點數 ⇒ 讀到字串尾端
+    ; 之後（越界讀，靜默拿到垃圾）⇒ pad-count 算錯。
+    ; 用 .len() 讓「位置單位」與「索引單位」一致（同類錯誤見 str.md
+    ; 「s[i] 是碼點索引；位元組存取一律 s.byte(i)」）。
+    ; 輸出容量仍用 len-bytes()：那只是上限，非 ASCII 時偏大（安全）。
+    in-len = in.len()
 
     ; 計算填充數
     pad-count = 0
@@ -330,4 +339,13 @@ decode = (in str) (out []byte) {
 
         pad-count == 1 -> out-pos = out-pos - 1
     }
+
+    ; ⚠️ 必須真的把長度截短。out 來自 with-cap()（len=0），長度是被
+    ; `out[out-pos] = ...` 逐次寫入時用 max(len, i+1) 推上去的，所以
+    ; 上面那些 `out-pos = out-pos - N` 只改了**區域變數**，out 的 len 仍停在
+    ; 「完整群組數 × 5」。少了這一行，decode('MZXW6===')（'foo'）會回傳
+    ; 5 個位元組（102 111 111 0 0）而不是 3 個 —— 尾端多出零填充。
+    ; 這對合法輸入就會發生，與非 ASCII 無關。
+    #{overflow=wrap}
+    out.truncate(out-pos)
 }

@@ -339,7 +339,7 @@ NEW 桶的 14 支（golden 未覆蓋，sweep 不比較）另行逐支做 HEAD vs
 | **2** | 跨程序：callee enum 參數的 owning 標記（R1）＋ 呼叫者標記（R2）＋ 逃逸閘門 | **已實作** |
 | **2b** | 別名（`r = q`）：別名「之後還會被讀」時把那個 `OpMove` 改寫成 `OpClone`（tag-switched 深拷貝），兩邊各自擁有一塊；並統一 `checkMoves` 與 `insertDrops` 的 owning-enum 豁免 | **已實作** |
 | **3** | match 0 次 → owning（R5，修洩漏）；**並修好 `enumEscapeSinks` 只讀 `inst.Dst` 的編碼盲點**（`move dst=0 args=[v w]`），否則 R5 會把交還給呼叫者的載荷 drop 掉（§11） | **已實作** |
-| 3b | 讓 `checkDropCount` 對 tagged enum 也做檢查 | 未實作 |
+| 3b | 讓 `checkDropCount` 對 tagged enum 也做檢查 | **已實作**（見 §14） |
 
 ### 8.1 落地的檔案
 
@@ -439,7 +439,7 @@ Nolang 函式」→ 標 owning。
 4. **含結構體指標欄位的 enum 不能走 §10 的深拷貝**（沒有 struct clone helper）⇒
    那一類的別名維持舊路徑：洩漏，或 analyzer 大聲報 `[use-after-move]`。
 5. **match 0 次的洩漏** —— **已由 §11（Phase 3）修好**。`checkDropCount` 對 tagged
-   enum 的檢查仍未做（§8 的 3b）。
+   enum 的檢查已於 2026-09-25 補上（§8 的 3b，實作見 §14）。
 
 ### 9.6 驗收（實測）
 
@@ -1205,3 +1205,104 @@ PORT i64 = 0x0303   ; 超出 byte 範圍 → 必須顯式標註
 - ⇒ 本輪改動的**行為影響為零**：它只刪除了語料中**零使用**的拼寫與其不可達下游。唯一可觀測的
   非行為差異是 `src/std/types.no` 的註解改動使 `embeddedStdSigKey` 改變（已隨 `make no` 重生成
   `src/checker/stdsig_gen.go`）。
+
+---
+
+## 14. Phase 3b：`checkDropCount` 對 tagged enum 的檢查（2026-09-25 完成）
+
+§8 的 3b 是這個方案裡最後一格未實作項。實作時發現它**兩個方向都會錯**，兩個方向都必須修。
+
+### 14.1 缺口（兩個方向）
+
+`checkDropCount` 的職責是「每個 owned 值都恰好被 drop 一次（0 = 洩漏）」。它靠一個
+`moveSrc` 集合豁免「所有權已經交出去」的值。這個集合原本這樣長出來：
+
+```go
+if inst.Op == OpMove {
+    if len(inst.Args) > 0 && inst.Args[0] > NoVal {
+        moveSrc[inst.Args[0]] = true      // ← 任何 OpMove 的來源
+    }
+}
+```
+
+**方向一：太寬 ⇒ 對 owning tagged enum 靜默放行洩漏。** 一個 owning tagged enum 的 move
+（`r = q`、`let it = q`）是**位元別名**而不是移交（載荷 inline 在 enum 裡），來源**必須保留**
+那唯一的 drop（§10.1）。上面那行把來源也豁免掉 ⇒ 來源沒有 drop 也檢查不出來。
+
+實測（把 owning enum 的 drop 全刪掉再單獨呼叫 `checkDropCount`）：
+
+| 輸入 | 修前 | 修後 |
+|---|---|---|
+| `q e-res = ok('hi'); t e-res = q`（owning 來源的 drop 被移除） | **0 diagnostics**（靜默洩漏） | 1 × `missing-drop` |
+
+**方向二：只改用 `moveTransfersOwnership` ⇒ 太窄，14 檔誤報。** 第一次修就踩了這個：把豁免
+換成 `moveTransfersOwnership` 之後 golden sweep 出現 **`REGRESS=14`** —— 全是 **option-match**
+形狀（`fs-*`／`net-*`／`open-*`／`sse`／`yaml`／`std-new`／`opt-box-drop`／
+`struct-field-leaf-clone`／`mem-safety/str-field-set-clone`／`http-rest`），`no build` 直接以
+`[missing-drop] owned value 24 has no drop (leak)` 拒絕編譯（`rep.HasErrors()` 有任何
+diagnostic 就擋 codegen）。
+
+根因不在 enum，而在「move 是否移交所有權」這個問題**在 insertDrops 有 4 個判準**，而
+`moveTransfersOwnership` 只是最後一個：
+
+```go
+if m.moveStructSharesHeap(f, inst) { … continue }   // ① dst/src 是 leaf/ptr struct，
+                                                     //   或 option peel 的載荷有 owned leaf
+if m.moveStrSharesHeap(f, inst)    { … continue }   // ② owned str → owned str
+if m.moveSliceSharesHeap(f, inst)  { … continue }   // ③ owned slice → owned slice
+if m.moveEnumSharesHeap(f, inst)   { … }            // （不改 moveSrc，只標 enumOwnsPayload）
+if m.moveTransfersOwnership(f, inst) { moveSrc[inst.Args[0]] = true }  // ④
+```
+
+`f ?fs.file = fs.open(...)` 之後 match，peel 是 `move dst=<fs.file> args=[f]`：destination 是
+leaf struct（`fs.file` 有 `fd` ＋ owned `path str`），且 `optionCopySharesHeap` 的 `OpMove`
+分支看到載荷有 owned leaf ⇒ ① 命中 ⇒ insertDrops 豁免 `f`（它的 heap 由 ok 臂綁定的
+`drop 34` 釋放）。只認 ④ 的檢查因此要求 `f` 自己也有 drop ⇒ 誤報。
+
+### 14.2 修法：`moveExemptsSource`
+
+新增單一判準（`src/mir/analysis.go`），＝ insertDrops 的 4 個判準之聯集：
+
+```go
+func (m *Module) moveExemptsSource(f *Function, inst *Inst) bool {
+	if inst == nil || inst.Op != OpMove || len(inst.Args) == 0 || inst.Args[0] <= NoVal {
+		return false
+	}
+	return m.moveStructSharesHeap(f, inst) || m.moveStrSharesHeap(f, inst) ||
+		m.moveSliceSharesHeap(f, inst) || m.moveTransfersOwnership(f, inst)
+}
+```
+
+**為什麼不需要 liveness 參數**：①②③ 在 insertDrops 帶 liveness —— 來源若在 move 之後還活著，
+那個 `OpMove` 會被**改寫成 `OpClone`**（兩邊各自擁有、各自 drop）。所以分析完成後**仍然是
+`OpMove` 的**，正好就是「來源已死」那一支 —— 也就是豁免成立的那一支。`checkDropCount` 只對
+`OpMove` 問這個問題，因此列舉 4 個判準即可精確重現 insertDrops 的豁免集合。
+
+這與 §10.6 對 `checkMoves` 做的事同一個方向：**讓所有權相關的 pass 共用同一個判準**，
+而不是各自複製一份。
+
+### 14.3 迴歸測試 `src/mir/enum_drop_count_test.go`（4 測）
+
+| 測試 | 斷言 | 修前 |
+|---|---|---|
+| `TestEnumAliasMoveDoesNotTransferOwnership` | 別名 move 不得回報為移交；且來源確實有 drop | PASS |
+| `TestCheckDropCountCleanOwningEnumAliasIsSilent` | 乾淨程式**零** diagnostic（防誤報） | PASS |
+| `TestCheckDropCountReportsLeakedOwningEnumAlias` | 注入洩漏後**必須**報 `missing-drop` | **FAIL** |
+| `TestCheckDropCountReportsLeakedOptionPeelSource` | option peel 來源同理 | **FAIL** |
+
+判別力已驗：在修前的 `c0ed3d6f` 上 **2 FAIL**，修後 4 全 PASS。斷言在 **diagnostic** 上（不是
+stdout）—— 這是驗證器的缺口，可觀測量就是驗證器自己的輸出；語料庫沒有任何檔案會踩到它
+（insertDrops 一向正確插入了 drop），這正是它長期沒被發現的原因。
+
+### 14.4 驗收（實測）
+
+- **golden sweep**（私有 worktree binary `NO=/tmp/no_x3b/bin/no`，sha256 `8208067f…`）：
+  `SAME=461 DIVERGE=3 UNSTABLE=0 REGRESS=0 IMPROVED=0 BOTH_FAIL=0 NEW=18`，
+  `461+3 = 464` ✓（`NEW` 不計入 baseline）。`DIVERGE=3` = `default-params.no`／`std-hash.no`／
+  `std-new.no`，與本輪無關（`NOW == HEAD`，見 §12.10）。
+- **全語料 A/B（482 檔）**：把「修前（只換成 `moveTransfersOwnership`）」與「修後（
+  `moveExemptsSource`）」兩支 binary 的 `fp.txt` 依路徑對齊比較 —— **只有 15 檔不同**：
+  14 檔正是 `REGRESS` 那 14 檔（rc `1` → `0`，sha 由空字串 `e3b0c44…` 變成真實輸出），
+  外加 `tests/markdown.no`（rc 皆 0、stdout sha 不同 ⇒ §6.2 已記錄的**既有不確定性**，
+  與本輪無關）。⇒ 本輪的行為影響 = **只移除了那 14 個誤報**，沒有任何其他檔案改變。
+- `go test ./mir/` ok；`no vet src/std` **0 error**。

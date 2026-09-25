@@ -296,16 +296,19 @@ path.clean = () {
 
                     dot-count == 2 -> {
 
-                        ; 回退 '..'
-                        ; 找 .p 中前一個 '/'
+                        ; 回退 '..'：丟掉前一段，連同它前面的 '/'
+                        ; 從 out-n-2 往回找（out-n-1 是剛結束的那個 '/'）
                         #{overflow=wrap}
-                        j = out-n - 1
+                        j = out-n - 2
                         (j >= 0) {
 
                             #{overflow=wrap}
                             .p.byte(j) == SEP-BYTE -> {
 
-                                #{index-out=0}
+                                ; 保留該 '/' 本身 ⇒ 後續內容從它後面接上
+                                #{overflow=wrap}
+                                out-n = j + 1
+
                                 break
                             }
 
@@ -313,9 +316,14 @@ path.clean = () {
                             j = j - 1
                         }
                         {
-                            j < 0 -> out-n = 0
 
-                            -> out-n = j
+                            ; 找不到前一段 ⇒ 相對路徑已在開頭（清空），
+                            ; 絕對路徑則只保留根 '/'
+                            j < 0 -> {
+                                .p.byte(0) == SEP-BYTE -> out-n = 1
+
+                                -> out-n = 0
+                            }
                         }
                     }
 
@@ -382,13 +390,15 @@ path.clean = () {
         dot-count == 2 -> {
 
             #{overflow=wrap}
-            j = out-n - 1
+            j = out-n - 2
             (j >= 0) {
 
                 #{overflow=wrap}
                 .p.byte(j) == SEP-BYTE -> {
 
-                    #{index-out=0}
+                    #{overflow=wrap}
+                    out-n = j + 1
+
                     break
                 }
 
@@ -396,9 +406,12 @@ path.clean = () {
                 j = j - 1
             }
             {
-                j < 0 -> out-n = 0
 
-                -> out-n = j
+                j < 0 -> {
+                    .p.byte(0) == SEP-BYTE -> out-n = 1
+
+                    -> out-n = 0
+                }
             }
         }
     }

@@ -1448,23 +1448,57 @@ func (m *Module) isBorrowRead(f *Function, inst *Inst) bool {
 	// inst.Dst on the strength of it being dead, and do not assume the
 	// assignment-shaped peel is covered here; it is not.
 	//
-	// (The premise above is also stale for `?[]T`: emitMove now CLONES a %vec
-	// payload via vecDeepClone when the element type resolves, so for that case
-	// the result owns a private buffer and suppressing its drop leaks the clone.
-	// Measured on the fresh-binding spelling: `s []i64 = o` never drops the
-	// peeled value, while the assignment spelling `s = o` does. Pre-existing and
-	// orthogonal to the two-encoding trap — tracked separately, not fixed here.)
+	// (The premise above was ALSO stale for `?[]T`: emitMove CLONES a %vec
+	// payload via vecDeepClone as soon as the element type resolves, so for that
+	// case the result owns a private buffer and suppressing its drop leaked the
+	// clone. Fixed 2026-09-25 — the exemption now applies only when codegen could
+	// NOT clone, i.e. when optionSlicePeelClones is false. Measured BEFORE the
+	// fix, fresh-binding spelling `s []i64 = o`: MIR has
+	// `move dst=10:[]i64(owned=true) args=[9]` and no `drop 10` at all, while
+	// the assignment spelling `s = o` does drop its destination.)
 	if inst.Op == OpMove {
 		src, dst := moveSrc(inst), moveDst(inst)
 		if src > NoVal && dst > NoVal {
 			if st := m.valueTypeOf(f, src); st != nil && st.Kind == KindOption {
 				if dt := m.valueTypeOf(f, dst); dt != nil && dt.Kind == KindSlice {
-					return m.dropOwnsHeap(f, dst)
+					return !m.optionSlicePeelClones(f, src) && m.dropOwnsHeap(f, dst)
 				}
 			}
 		}
 	}
 	return false
+}
+
+// optionSlicePeelClones reports whether the option→slice peel `dst = src` hands
+// the destination its OWN copy of the payload (a vecDeepClone) rather than a
+// bitwise ALIAS of the option's backing store.
+//
+// It mirrors the predicate in codegen's emitMove peel branch exactly:
+//
+//	payloadLT == "%vec" && dstT == "%vec" && vecDeepClone(elem, 0) != ""
+//
+// vecDeepClone returns "" when the element type is missing or has no LLVM
+// lowering, so the clone happens iff the option wraps a SLICE whose element type
+// resolves. The LLVM-type half of that test has no analysis-side equivalent;
+// m.Type(elem) != nil is used as its proxy, which is conservative in the safe
+// direction — if a type were resolvable here but not lowerable there, this
+// returns true and we drop a value codegen had actually aliased. That cannot
+// happen for a type the backend lowers at all, and a module containing such a
+// type fails to codegen regardless.
+//
+// The distinction decides ownership: a CLONED destination owns its buffer and
+// must be dropped; an aliased one must not be (dropping it frees the option's
+// buffer out from under the still-live option).
+func (m *Module) optionSlicePeelClones(f *Function, src ValueID) bool {
+	st := m.valueTypeOf(f, src)
+	if st == nil || st.Kind != KindOption || st.Elem == NoType {
+		return false
+	}
+	inner := m.Type(st.Elem)
+	if inner == nil || inner.Kind != KindSlice || inner.Elem == NoType {
+		return false
+	}
+	return m.Type(inner.Elem) != nil
 }
 
 // insertDrops places exactly one OpDrop for every owned local on EVERY
@@ -2149,6 +2183,42 @@ func (m *Module) moveTransfersOwnership(f *Function, inst *Inst) bool {
 	return !m.enumOwnsPayload[inst.Args[0]]
 }
 
+// moveExemptsSource reports whether insertDrops is allowed to suppress the
+// SOURCE's drop for this OpMove — i.e. whether the move hands the heap over
+// instead of aliasing it.
+//
+// This is the predicate checkDropCount must use. insertDrops answers the same
+// question with FOUR tests, in this order, and `continue`s after the first
+// three:
+//
+//	moveStructSharesHeap(f, inst)   // dst/src is a leaf or ptr struct, or an
+//	                                // option peel whose payload owns heap
+//	moveStrSharesHeap(f, inst)      // owned str -> owned str
+//	moveSliceSharesHeap(f, inst)    // owned slice -> owned slice
+//	moveTransfersOwnership(f, inst) // everything else
+//
+// The first three carry a LIVENESS condition there: a source still live after
+// the move is rewritten to OpClone instead (each side then owns its own copy and
+// keeps its own drop), so a surviving OpMove in the analysed IR is exactly the
+// "source was provably dead" branch — which is the exemption. That is why this
+// helper needs no liveness argument.
+//
+// Using moveTransfersOwnership ALONE here was wrong and refused 14 corpus
+// programs. For `f ?fs.file = fs.open(...)` matched on, the peel
+// `move dst=<fs.file> args=[f]` is moveStructSharesHeap — the destination is a
+// leaf struct AND the option's payload has an owned `path str` leaf, which is
+// optionCopySharesHeap's OpMove case — so insertDrops exempted `f` while the
+// check demanded a drop for it: a false positive that gated codegen (14 REGRESS
+// in the golden sweep, every one of them an option-match shape). See
+// docs/design/tagged-enum-payload-ownership.md §8 row 3b.
+func (m *Module) moveExemptsSource(f *Function, inst *Inst) bool {
+	if inst == nil || inst.Op != OpMove || len(inst.Args) == 0 || inst.Args[0] <= NoVal {
+		return false
+	}
+	return m.moveStructSharesHeap(f, inst) || m.moveStrSharesHeap(f, inst) ||
+		m.moveSliceSharesHeap(f, inst) || m.moveTransfersOwnership(f, inst)
+}
+
 // isParamValue reports whether v is one of f's parameters — an input parameter
 // (borrowed storage owned by the caller) or a result parameter (the caller's
 // slot for the return value). Both outlive this frame, so a move into one is an
@@ -2310,6 +2380,14 @@ func (m *Module) checkMoves(f *Function, rep *Report) {
 // Zero means a leak; more than one means a double-free risk. Move sources are
 // exempt: their drop responsibility was transferred to the move destination, so a
 // missing drop there is correct, not a leak.
+//
+// The exemption is `moveExemptsSource` — the SAME predicate insertDrops uses to
+// decide whether it may suppress a source's drop. Reading it as a bare "source
+// of any OpMove" made this check blind to every move that is an ALIAS rather
+// than a hand-off, i.e. to the owning tagged enum (and the option peel); reading
+// it as moveTransfersOwnership alone made it report leaks insertDrops had
+// deliberately exempted. See the comment on the OpMove branch below and
+// docs/design/tagged-enum-payload-ownership.md §8 row 3b.
 func (m *Module) checkDropCount(f *Function, rep *Report) {
 	moveSrc := map[ValueID]bool{}
 	// Result parameters are OUT-PARAMETERS owned by the caller: the callee FILLS
@@ -2339,7 +2417,31 @@ func (m *Module) checkDropCount(f *Function, rep *Report) {
 				// Only the moved-from source (Args[0]) is exempt from dropping; the
 				// destination keeps its own drop responsibility. EmitMoveInto carries
 				// Args=[src, dst], so we must not mark dst as a move source.
-				if len(inst.Args) > 0 && inst.Args[0] > NoVal {
+				//
+				// ⚠️ The exemption must be the SAME predicate insertDrops uses
+				// (moveExemptsSource), NOT a bare "source of any OpMove" and NOT
+				// moveTransfersOwnership alone. Two things go wrong otherwise:
+				//
+				//   - too WIDE (bare source): an OWNING tagged enum's move is a
+				//     bitwise ALIAS — its payload lives INLINE in the enum, so the
+				//     source keeps the single drop and the destination is held out
+				//     of enumOwnsPayload by markEnumPayloadOwners' moveDest rule.
+				//     Exempting it made checkDropCount blind to exactly the leak
+				//     the ownership work exists to prevent. Measured on
+				//     `q e-res = ok('hi'); t e-res = q` with the owning source's
+				//     drop stripped: ZERO diagnostics before this fix, a
+				//     `missing-drop` after it.
+				//   - too NARROW (moveTransfersOwnership alone): insertDrops'
+				//     three "shares heap" branches also exempt the source, so
+				//     option-match shapes were reported as leaks and their builds
+				//     were refused (14 REGRESS in the golden sweep). See
+				//     moveExemptsSource for the full predicate list.
+				//
+				// insertDrops and checkMoves were already unified on the transfer
+				// predicate (docs/design/tagged-enum-payload-ownership.md §8 row
+				// 3b, §10.6); checkDropCount was the last caller reading it the
+				// old way.
+				if m.moveExemptsSource(f, inst) {
 					moveSrc[inst.Args[0]] = true
 				}
 			}
