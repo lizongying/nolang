@@ -1,0 +1,115 @@
+; tagged-enum-alias.no — 別名（`r = q`）與載荷所有權（Phase 2b）
+;
+; 背景：tagged enum 的載荷**內嵌**在 enum 裡（`{ i64 tag, [N x i64] payload }`），
+; 所以 `r e-res = q` 降落到 OpMove —— 那是**位元別名**：r 與 q 的 payload 槽指向
+; **同一塊**緩衝。Phase 1/2 的所有權模型是「**來源**擁有」（來源只有一個，而
+; `let it = q` 這種 scrutinee 別名可能有很多個，所以挑來源當唯一的 drop 點）。
+;
+; 那個模型只有在**別名是死的**時候才成立：
+;   - 別名之後被讀 → 在來源的最後使用處釋放會讓別名**懸空**；
+;   - 讓兩邊都擁有 → **double free**（checkMoves 會直接報
+;     `[use-after-move] ... (double-free risk)`，本檔 case 2 修好前就是編譯錯誤）。
+;
+; 修法：別名「之後還會被讀」時，把那個 OpMove 改寫成 **OpClone**（真正的深拷貝，
+; tag-switched 的 `@__nolang_enum_clone_*`），兩邊各自擁有一塊，各自 drop。
+; 別名若是死的，維持原本的單一緩衝轉移（`let it = q` 的 scrutinee 形狀不動）。
+;
+; 閘門：只有 payload 的 owned 欄位是 `str` / 切片（有現成深拷貝 helper）的 enum
+; 才走這條路；含結構體指標欄位的 enum 維持舊路徑（寧可洩漏／大聲編譯錯誤，
+; 也不要半套深拷貝造成的 double free）。
+;
+; 本檔每個 case 都印出可讀結果，方便肉眼與 golden 比對。修好前的行為：
+;   case 1、3、5、6、7、8 → 洩漏（輸出正確但沒釋放）
+;   case 2、4             → 編譯錯誤 `[use-after-move] ... (double-free risk)`
+; 修好後全部 rc=0 且每個載荷恰好釋放一次。
+
+e-res {
+    ok(v str),
+    fail,
+}
+
+; 切片載荷：走 emitEnumPayloadFieldClone 的 `%vec` 分支（vecDeepClone），
+; 與 `%str-long` 分支是不同的 code path。
+e-list {
+    ok2(v []i64),
+    none,
+}
+
+show = (q e-res) {
+    q: {
+        ok(v) -> print('show: ' - v)
+        fail -> print('show: fail')
+    }
+}
+
+show-list = (q e-list) {
+    q: {
+        ok2(v) -> {
+            print('show-list:')
+            for x in v {
+                print(x)
+            }
+        }
+        none -> print('show-list: none')
+    }
+}
+
+main = () {
+    ; 1) 別名是唯一的消費者（來源之後不再使用）
+    a1 e-res = ok('one')
+    b1 e-res = a1
+    show(b1)
+
+    ; 2) 來源與別名**都**被消費
+    a2 e-res = ok('two')
+    b2 e-res = a2
+    show(a2)
+    show(b2)
+
+    ; 3) 三層別名鏈
+    a3 e-res = ok('three')
+    b3 e-res = a3
+    c3 e-res = b3
+    show(c3)
+
+    ; 4) 兩層鏈，每一層都被消費
+    a4 e-res = ok('four')
+    b4 e-res = a4
+    show(a4)
+    show(b4)
+
+    ; 5) 無載荷變體經由別名（不需要深拷貝，但也不能出錯）
+    a5 e-res = fail
+    b5 e-res = a5
+    show(b5)
+
+    ; 6) 無載荷變體，來源與別名都被消費
+    a6 e-res = fail
+    b6 e-res = a6
+    show(a6)
+    show(b6)
+
+    ; 7) 同一個別名被消費兩次
+    a7 e-res = ok('seven')
+    b7 e-res = a7
+    show(b7)
+    show(b7)
+
+    ; 8) 別名是死的，只有來源被消費（維持原本的單一緩衝轉移）
+    a8 e-res = ok('eight')
+    b8 e-res = a8
+    show(a8)
+
+    ; 9) 切片載荷的別名是唯一消費者（%vec 深拷貝路徑）
+    l9 e-list = ok2([1, 2, 3])
+    m9 e-list = l9
+    show-list(m9)
+
+    ; 10) 切片載荷，來源與別名都被消費
+    l10 e-list = ok2([4, 5])
+    m10 e-list = l10
+    show-list(l10)
+    show-list(m10)
+
+    print('done')
+}

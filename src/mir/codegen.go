@@ -4813,6 +4813,21 @@ func (c *codegen) emitBitwise(inst *Inst) error {
 
 func (c *codegen) emitDrop(inst *Inst) error {
 	lt, _ := c.ptype(inst.Args[0])
+	// OWNING TAGGED ENUM: the value is matched two or more times, so no single
+	// extraction could take the payload. Free the live variant's payload through
+	// a tag-switched helper (see Module.enumOwnsPayload). Checked BEFORE loadVal
+	// so the early return emits nothing but the call.
+	if c.mod.enumOwnsPayload[inst.Args[0]] {
+		if val := c.mod.Value(inst.Args[0]); val != nil {
+			if ei := c.taggedEnumOf(enumRawOfType(c.mod, val.Type)); ei != nil {
+				if slot := c.valSlot[inst.Args[0]]; slot != "" {
+					c.emitEnumDropHelper(ei, lt)
+					c.sb.WriteString(fmt.Sprintf("  call void @%s(%s* %s)\n", enumDropName(lt), lt, slot))
+					return nil
+				}
+			}
+		}
+	}
 	_, v := c.loadVal(inst.Args[0])
 	if isOptionType(lt) {
 		// Real drop for an option that owns a heap element. Per-payload inline
@@ -5903,6 +5918,31 @@ func (c *codegen) emitClone(inst *Inst) error {
 					tmp := fmt.Sprintf("%%cl%d", inst.ID)
 					c.sb.WriteString(fmt.Sprintf("  %s = call %%vec %s(%%vec %s)\n", tmp, fn, srcV))
 					c.sb.WriteString(fmt.Sprintf("  store %%vec %s, %%vec* %s\n", tmp, dstSlot))
+					return nil
+				}
+			}
+		}
+	}
+	// A TAGGED ENUM: its payload lives INLINE in the enum, so the bitwise
+	// OpMove that `r e-res = q` lowers to aliases the payload buffer. insertDrops
+	// rewrites exactly the aliasing moves whose alias is still read to OpClone
+	// (see moveEnumSharesHeap), and this is what gives each side its own heap.
+	// Must come before the option branch below: that one keys off the
+	// destination's Kind and would otherwise not be reached — and an enum
+	// destination is never an option anyway.
+	if st := c.mod.Type(c.localTypeOf(inst.Args[0])); st != nil && st.Kind == KindEnum {
+		if ei := c.mod.TaggedEnums[st.Raw]; ei != nil {
+			dstVal := inst.Dst
+			if dstVal == NoVal && len(inst.Args) >= 2 {
+				dstVal = inst.Args[1]
+			}
+			dstSlot := c.valSlot[dstVal]
+			srcSlot := c.valSlot[inst.Args[0]]
+			if dstSlot != "" && srcSlot != "" {
+				if lt := c.llvmTypeOf(st); lt != "" && lt != "void" {
+					c.emitEnumCloneHelper(ei, lt)
+					c.sb.WriteString(fmt.Sprintf("  call void @%s(%s* %s, %s* %s)\n",
+						enumCloneName(lt), lt, dstSlot, lt, srcSlot))
 					return nil
 				}
 			}
@@ -8949,7 +8989,7 @@ func (c *codegen) emitEnumField(inst *Inst) error {
 	if valT == "" || valT == "void" {
 		valT = srcT
 	}
-	fieldLT, _ := c.ptype(inst.Dst)
+	fieldLT, fieldOwned := c.ptype(inst.Dst)
 	if fieldLT == "" || fieldLT == "void" {
 		fieldLT = "i64"
 	}
@@ -8990,6 +9030,19 @@ func (c *codegen) emitEnumField(inst *Inst) error {
 	c.loadSeq++
 	lv := fmt.Sprintf("%%ef%d", c.loadSeq)
 	c.sb.WriteString(fmt.Sprintf("  %s = load %s, %s* %s\n", lv, fieldLT, fieldLT, bc))
+	// OWNING ENUM: the enum frees this payload itself, so the extraction must
+	// not hand out a second reference to the same buffer. Clone owned `str`
+	// payloads exactly as emitGetField does for an owned struct field: the read
+	// then owns a PRIVATE buffer, which is why isBorrowRead's OpEnumField branch
+	// (mirroring this very condition) lets insertDrops free it. Non-str owned
+	// payloads (%vec, inline struct) have no clone helper, so they stay a
+	// borrow and the enum's destructor is their single free site.
+	if c.mod.enumOwnsPayload[inst.Args[0]] && fieldOwned && fieldLT == "%str-long" {
+		c.loadSeq++
+		cl := fmt.Sprintf("%%ef%d", c.loadSeq)
+		c.sb.WriteString(fmt.Sprintf("  %s = call %s @str_clone(%s %s)\n", cl, fieldLT, fieldLT, lv))
+		lv = cl
+	}
 	c.sb.WriteString(fmt.Sprintf("  store %s %s, %s* %s\n", fieldLT, lv, fieldLT, dstSlot))
 	return nil
 }
@@ -9000,6 +9053,270 @@ func enumRawOfType(m *Module, t TypeID) string {
 		return ty.Raw
 	}
 	return ""
+}
+
+// enumDropName is the LLVM name of the tag-guarded destructor for one tagged
+// enum type.
+func enumDropName(lt string) string {
+	return "__nolang_enum_drop_" + sanitize(strings.TrimPrefix(lt, "%"))
+}
+
+// emitEnumDropHelper emits the tag-switched destructor for one tagged enum
+// type: it reads the discriminant and frees the payload of whichever variant is
+// actually live.
+//
+// Only OWNING enums get one (Module.enumOwnsPayload). A single-use enum's
+// payload was MOVED OUT by its extraction, which then owns it, so freeing it
+// here as well would double-free; that is why the decision is value-level and
+// why the whole helper is opt-in. See
+// docs/design/tagged-enum-payload-ownership.md.
+//
+// The tag test must live in a FUNCTION rather than inline at the drop site:
+// emitDrop runs mid-block, and opening new basic blocks there breaks LLVM
+// verification. Same constraint and same shape as emitOptionDropHelper and
+// emitStructDropHelper.
+//
+// One branch per variant, and within a branch every owned field is freed at its
+// slot offset (enumFieldSlot) through a bitcast to the field's real type. The
+// switch is what makes the union layout safe to free: a `str` payload and an
+// `i64` payload may share slot 0, so a field's slots are only meaningful under
+// its own tag.
+func (c *codegen) emitEnumDropHelper(ei *TaggedEnumInfo, lt string) {
+	fn := enumDropName(lt)
+	if c.extraFuncs[fn] {
+		return
+	}
+	c.extraFuncs[fn] = true
+	c.decl("declare void @free(i8*)")
+
+	nSlots := ei.PayloadSlots
+	if nSlots <= 0 {
+		nSlots = 1
+	}
+	arrLT := fmt.Sprintf("[%d x i64]", nSlots)
+
+	var b strings.Builder
+	fmt.Fprintf(&b, "define void @%s(%s* %%p) {\n", fn, lt)
+	b.WriteString("entry:\n")
+	b.WriteString(fmt.Sprintf("  %%tp = getelementptr inbounds %s, %s* %%p, i32 0, i32 0\n", lt, lt))
+	b.WriteString("  %t = load i64, i64* %tp\n")
+	b.WriteString(fmt.Sprintf("  %%bp = getelementptr inbounds %s, %s* %%p, i32 0, i32 1\n", lt, lt))
+	if len(ei.Variants) == 0 {
+		// No variant can be live, but entry still needs a terminator.
+		b.WriteString("  br label %done\n")
+	}
+
+	for vi := range ei.Variants {
+		v := &ei.Variants[vi]
+		// The LAST variant's false edge goes straight to `done`. Giving it its
+		// own `nvN` label instead would leave that block without a terminator
+		// (it would fall through to `done:`), which LLVM rejects with
+		// "expected instruction opcode".
+		last := vi == len(ei.Variants)-1
+		next := fmt.Sprintf("nv%d", vi)
+		if last {
+			next = "done"
+		}
+		b.WriteString(fmt.Sprintf("  %%c%d = icmp eq i64 %%t, %d\n", vi, v.Tag))
+		b.WriteString(fmt.Sprintf("  br i1 %%c%d, label %%vv%d, label %%%s\n", vi, vi, next))
+		b.WriteString(fmt.Sprintf("vv%d:\n", vi))
+		for fi := range v.Fields {
+			raw := v.Fields[fi]
+			ft := c.mod.Type(c.mod.internType(raw))
+			if ft == nil || !c.mod.typeOwnsHeap(ft) {
+				continue // owns nothing: nothing to free (mirrors enumFieldFreeable)
+			}
+			fieldLT := c.llvmTypeOf(ft)
+			if fieldLT == "" || fieldLT == "void" {
+				continue
+			}
+			off, _ := c.enumFieldSlot(v, fi)
+			c.loadSeq++
+			gp := fmt.Sprintf("%%eg%d", c.loadSeq)
+			b.WriteString(fmt.Sprintf("  %s = getelementptr inbounds %s, %s* %%bp, i64 0, i64 %d\n",
+				gp, arrLT, arrLT, off))
+			c.loadSeq++
+			bc := fmt.Sprintf("%%eg%d", c.loadSeq)
+			b.WriteString(fmt.Sprintf("  %s = bitcast i64* %s to %s*\n", bc, gp, fieldLT))
+			c.emitEnumPayloadFieldFree(&b, fieldLT, bc, vi, fi)
+		}
+		b.WriteString("  br label %done\n")
+		if !last {
+			b.WriteString(next + ":\n")
+		}
+	}
+	b.WriteString("done:\n")
+	b.WriteString("  ret void\n}\n")
+	c.extraFuncsBody.WriteString(b.String())
+}
+
+// emitEnumPayloadFieldFree appends the free for one owned tagged-enum payload
+// field, given `ptr`, a `<fieldLT>*` at the field's slot inside the payload
+// union. It must stay in lockstep with Module.enumFieldFreeable — the analysis
+// gate promises every owned field is one of these shapes.
+//
+// SSA names carry a variant/field suffix because every variant's branch lives
+// in the SAME function and LLVM requires local value names to be unique per
+// function (unlike the option helper, which frees a single payload).
+func (c *codegen) emitEnumPayloadFieldFree(b *strings.Builder, fieldLT, ptr string, vi, fi int) {
+	sfx := fmt.Sprintf("%d_%d", vi, fi)
+	switch {
+	case fieldLT == "%str-long":
+		// @str_free already skips cap==0 / null data, so a zero-initialised
+		// slot is a harmless no-op and needs no null check.
+		b.WriteString(fmt.Sprintf("  %%ev%s = load %s, %s* %s\n", sfx, fieldLT, fieldLT, ptr))
+		b.WriteString(fmt.Sprintf("  call void @str_free(%s %%ev%s)\n", fieldLT, sfx))
+	case fieldLT == "%vec":
+		b.WriteString(fmt.Sprintf("  %%ev%s = load %s, %s* %s\n", sfx, fieldLT, fieldLT, ptr))
+		b.WriteString(fmt.Sprintf("  %%ed%s = extractvalue %s %%ev%s, 2\n", sfx, fieldLT, sfx))
+		b.WriteString(fmt.Sprintf("  %%ep%s = inttoptr i64 %%ed%s to i8*\n", sfx, sfx))
+		b.WriteString(fmt.Sprintf("  call void @free(i8* %%ep%s)\n", sfx))
+	default:
+		// Inline struct with pointees and/or owned leaves: recurse into the
+		// same destructor a plain struct local gets. Anything else owns nothing
+		// reachable through this field, so there is nothing to free.
+		if key := c.structKeyOfLLVM(fieldLT); key != "" &&
+			(c.mod.StructHasPtrFields(key) || c.mod.StructHasOwnedLeafFields(key)) {
+			c.emitStructDropHelper(fieldLT, key)
+			b.WriteString(fmt.Sprintf("  call void @%s(%s* %s)\n", structDropName(fieldLT), fieldLT, ptr))
+		}
+	}
+}
+
+// enumCloneName is the LLVM name of the tag-guarded deep copy for one tagged
+// enum type.
+func enumCloneName(lt string) string {
+	return "__nolang_enum_clone_" + sanitize(strings.TrimPrefix(lt, "%"))
+}
+
+// emitEnumCloneHelper emits the tag-switched deep copy for one tagged enum type:
+// it copies the value, then replaces every owned payload field with a clone of
+// its own, so the source and the destination end up with INDEPENDENT heap.
+//
+// Needed because a tagged enum's payload lives INLINE in the enum, so the
+// bitwise OpMove that `r e-res = q` lowers to leaves both slots pointing at one
+// buffer. insertDrops rewrites exactly those aliasing moves to OpClone when the
+// alias is still read afterwards; without a real copy here both sides would be
+// dropped and free the same buffer.
+//
+// Same tag-switch shape, and the same reason, as emitEnumDropHelper: the branch
+// has to live in a function (opening basic blocks at an arbitrary emit site
+// breaks LLVM verification), and a field's slot offset is only meaningful under
+// its own tag — a `str` payload and an `i64` payload may share slot 0.
+func (c *codegen) emitEnumCloneHelper(ei *TaggedEnumInfo, lt string) {
+	fn := enumCloneName(lt)
+	if c.extraFuncs[fn] {
+		return
+	}
+	c.extraFuncs[fn] = true
+
+	nSlots := ei.PayloadSlots
+	if nSlots <= 0 {
+		nSlots = 1
+	}
+	arrLT := fmt.Sprintf("[%d x i64]", nSlots)
+
+	var b strings.Builder
+	fmt.Fprintf(&b, "define void @%s(%s* %%dst, %s* %%src) {\n", fn, lt, lt)
+	b.WriteString("entry:\n")
+	// Copy the whole value first: that covers the tag and every field owning
+	// nothing (the majority), so only the owned fields need the second pass.
+	// Same aggregate load/store shape emitMove's generic fallback uses.
+	fmt.Fprintf(&b, "  %%ecv = load %s, %s* %%src\n", lt, lt)
+	fmt.Fprintf(&b, "  store %s %%ecv, %s* %%dst\n", lt, lt)
+	fmt.Fprintf(&b, "  %%ectp = getelementptr inbounds %s, %s* %%src, i32 0, i32 0\n", lt, lt)
+	b.WriteString("  %ect = load i64, i64* %ectp\n")
+	fmt.Fprintf(&b, "  %%esbp = getelementptr inbounds %s, %s* %%src, i32 0, i32 1\n", lt, lt)
+	fmt.Fprintf(&b, "  %%edbp = getelementptr inbounds %s, %s* %%dst, i32 0, i32 1\n", lt, lt)
+	if len(ei.Variants) == 0 {
+		// No variant can be live, but entry still needs a terminator.
+		b.WriteString("  br label %done\n")
+	}
+
+	for vi := range ei.Variants {
+		v := &ei.Variants[vi]
+		// The LAST variant's false edge goes straight to `done`; giving it its
+		// own label would leave that block without a terminator (it would fall
+		// through to `done:`), which LLVM rejects with
+		// "expected instruction opcode". Same trap as emitEnumDropHelper.
+		last := vi == len(ei.Variants)-1
+		next := fmt.Sprintf("nv%d", vi)
+		if last {
+			next = "done"
+		}
+		fmt.Fprintf(&b, "  %%cc%d = icmp eq i64 %%ect, %d\n", vi, v.Tag)
+		fmt.Fprintf(&b, "  br i1 %%cc%d, label %%vv%d, label %%%s\n", vi, vi, next)
+		fmt.Fprintf(&b, "vv%d:\n", vi)
+		for fi := range v.Fields {
+			raw := v.Fields[fi]
+			ft := c.mod.Type(c.mod.internType(raw))
+			if ft == nil || !c.mod.typeOwnsHeap(ft) {
+				continue // owns nothing: the copy above already handled it
+			}
+			fieldLT := c.llvmTypeOf(ft)
+			if fieldLT == "" || fieldLT == "void" {
+				continue
+			}
+			off, _ := c.enumFieldSlot(v, fi)
+			sp := c.enumPayloadSlotPtr(&b, arrLT, "%esbp", off, fieldLT)
+			dp := c.enumPayloadSlotPtr(&b, arrLT, "%edbp", off, fieldLT)
+			c.emitEnumPayloadFieldClone(&b, ft, fieldLT, sp, dp, vi, fi)
+		}
+		b.WriteString("  br label %done\n")
+		if !last {
+			b.WriteString(next + ":\n")
+		}
+	}
+	b.WriteString("done:\n")
+	b.WriteString("  ret void\n}\n")
+	c.extraFuncsBody.WriteString(b.String())
+}
+
+// enumPayloadSlotPtr appends the address of one payload slot, bitcast to the
+// field's real type, and returns the SSA name. The payload union is an
+// [N x i64], so the slot is reached as an i64 and then reinterpreted — exactly
+// what emitEnumDropHelper does before freeing.
+func (c *codegen) enumPayloadSlotPtr(b *strings.Builder, arrLT, base string, off int64, fieldLT string) string {
+	c.loadSeq++
+	gp := fmt.Sprintf("%%eg%d", c.loadSeq)
+	b.WriteString(fmt.Sprintf("  %s = getelementptr inbounds %s, %s* %s, i64 0, i64 %d\n",
+		gp, arrLT, arrLT, base, off))
+	c.loadSeq++
+	bp := fmt.Sprintf("%%eg%d", c.loadSeq)
+	b.WriteString(fmt.Sprintf("  %s = bitcast i64* %s to %s*\n", bp, gp, fieldLT))
+	return bp
+}
+
+// emitEnumPayloadFieldClone appends the deep copy of one owned tagged-enum
+// payload field, from `srcPtr` to `dstPtr` (each a `<fieldLT>*` at the field's
+// slot inside its own payload union). It must stay in lockstep with
+// Module.enumPayloadCloneable — the analysis gate promises every owned field is
+// one of these shapes, so the default arm is unreachable for a gated enum.
+//
+// SSA names carry a variant/field suffix because every variant's branch lives in
+// the SAME function and LLVM requires local value names to be unique per
+// function.
+func (c *codegen) emitEnumPayloadFieldClone(b *strings.Builder, ft *Type, fieldLT, srcPtr, dstPtr string, vi, fi int) {
+	sfx := fmt.Sprintf("%d_%d", vi, fi)
+	switch fieldLT {
+	case "%str-long":
+		// @str_clone duplicates the buffer at the same length, so the clone owns
+		// its own bytes and is freed independently of the source's.
+		b.WriteString(fmt.Sprintf("  %%ec%s = load %s, %s* %s\n", sfx, fieldLT, fieldLT, srcPtr))
+		b.WriteString(fmt.Sprintf("  %%en%s = call %s @str_clone(%s %%ec%s)\n", sfx, fieldLT, fieldLT, sfx))
+		b.WriteString(fmt.Sprintf("  store %s %%en%s, %s* %s\n", fieldLT, sfx, fieldLT, dstPtr))
+	case "%vec":
+		fn := ""
+		if ft != nil && ft.Elem != NoType {
+			fn = c.vecDeepClone(ft.Elem, 0)
+		}
+		if fn == "" {
+			return
+		}
+		b.WriteString(fmt.Sprintf("  %%ec%s = load %s, %s* %s\n", sfx, fieldLT, fieldLT, srcPtr))
+		b.WriteString(fmt.Sprintf("  %%en%s = call %s %s(%s %%ec%s)\n", sfx, fieldLT, fn, fieldLT, sfx))
+		b.WriteString(fmt.Sprintf("  store %s %%en%s, %s* %s\n", fieldLT, sfx, fieldLT, dstPtr))
+	}
 }
 
 // emitOptionPrintHelper emits a dedicated `define void @print_option_<payload>`

@@ -823,6 +823,15 @@ func (c *codegen) emitBuiltinForward(f *Function, inst *Inst, bm *builtin.Builti
 		return c.emitBuiltinGetGroups(inst)
 	case "syslog":
 		return c.emitBuiltinSyslog(inst)
+	case "readlink":
+		// Windows has no readlink(2): lower through the Win32 reparse-point
+		// path. Elsewhere the C-call table (forward_call.go) handles it.
+		if targetGOOS() == "windows" {
+			return c.emitBuiltinReadlinkWindows(inst)
+		}
+		if spec := forwardCSpecOf("readlink"); spec != nil {
+			return c.emitCCall(inst, spec)
+		}
 	}
 	// Generic C call: the whole point of forward_call.go. Consulted LAST so a
 	// bespoke handler always wins, but it turns "add a POSIX builtin" from a new

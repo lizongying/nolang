@@ -1,0 +1,76 @@
+; tagged-enum-payload-ownership.no — tagged enum 臂析構綁定的載荷**所有權**
+;
+; 背景一（double free）：臂主體每次讀到欄位名都會重新投影（enumArmFieldValue），而
+; parser 合成的綁定 `let v = <matched>` 也投影一次 —— 同一個 owned 載荷就有兩個擁有者，
+; 槽位的結束 drop 與投影讀取的 drop 釋放同一塊 → trace/BPT trap。
+; 修法：臂綁定記錄自己析構的欄位名（lowerer.armBoundNames），讀取時改為回傳該綁定
+; （唯一擁有者），並讓 owned 綁定也走自己的新槽位 —— 舊的重綁路徑會把載荷搬進前面
+; 別的型別的臂留下的舊槽位（`box.full(v i64)` 之後 `b-res.ok(v str)`），讀出來是舊型別的位元。
+;
+; 背景二（型別誤判）：單欄位變體的析構名是任意的（parser 只記 arity），但欄位原本按
+; **名字**查找，於是改名（`ok(s)` 對上 `ok(v str)`）會靜默綁到整個 enum，讀取時被當成
+; 載荷型別 → `print unsupported arg type %tenum_...`。修法：單欄位按位置解析。
+;
+; 背景三（載荷所有權，Phase 1 —— 已修，見 tests/tagged-enum-two-match.no）：析構把載荷的
+; 所有權**搬出** enum，而 enum 本身不 drop。所以**同一個 enum 被 match 兩次**時，第二次讀到的
+; 是已釋放的緩衝。已依「一次取用 = move，多次 = clone」的原則修好：被 match ≥2 次的 enum
+; 自己擁有並釋放載荷（tag-switched drop），抽取改為 clone（str）或 borrow（vec / 內嵌 struct）。
+; 本檔的每個 case 都只 match 一次（move 路徑），所以不受該修復影響 —— 這也是刻意的：
+; 它們是「單次取用路徑零改動」的守門測試。多次 match 的迴歸在 tagged-enum-two-match.no。
+;
+; 每個 case 都印 ok/fail，方便肉眼與 golden 比對。
+
+e-res {
+    ok(v str),
+    fail,
+}
+
+main = () {
+
+    ; (1) 單獨讀 owned 載荷：修前在 exit 時 trace/BPT trap
+    q1 e-res = ok('hi')
+    q1: {
+        ok(v) -> print('ok 1: owned payload ' - v)
+        fail -> print('fail 1')
+    }
+
+    ; (2) 改名綁定：欄位宣告為 v，綁到 s（單欄位按位置解析）
+    q2 e-res = ok('renamed')
+    q2: {
+        ok(s) -> print('ok 2: renamed binding ' - s)
+        fail -> print('fail 2')
+    }
+
+    ; (3) 多語句臂主體讀同名載荷
+    q3 e-res = ok('multi')
+    q3: {
+        ok(v) -> {
+            print('ok 3a: multi-statement arm body')
+            print('ok 3b: ' - v)
+        }
+        fail -> print('fail 3')
+    }
+
+    ; (4) 堆積載荷（非字面量），且與前面的臂同名
+    h str = 'he' - 'llo'
+    q4 e-res = ok(h)
+    q4: {
+        ok(v) -> print('ok 4: heap payload ' - v)
+        fail -> print('fail 4')
+    }
+
+    ; (5) 巢狀同名析構：內層用完必須還原外層
+    e1 e-res = ok('outer')
+    e2 e-res = ok('inner')
+    e1: {
+        ok(v) -> {
+            print('ok 5a: ' - v)
+            e2: {
+                ok(v) -> print('ok 5b: ' - v)
+                fail -> print('fail 5b')
+            }
+            print('ok 5c: outer restored ' - v)
+        }
+        fail -> print('fail 5')
+    }
+}

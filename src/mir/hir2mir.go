@@ -152,6 +152,15 @@ type lowerer struct {
 	// and lowerIf pops + restores it when the arm body ends.
 	armScoped []armScopedBind
 
+	// armBoundNames records the field names the CURRENT match arm destructured
+	// (`ok(v) ->` / `rect(w, h) ->`). A READ of such a name inside the arm must
+	// return the arm's BINDING — which already took the payload out of the
+	// enum's union — instead of re-projecting the field with a second
+	// extraction. Two extractions of one owned payload means two drops of one
+	// buffer (trace/BPT trap); see enumArmFieldValue. Reset per arm by lowerIf
+	// (nil is a safe zero value: every lookup misses).
+	armBoundNames map[string]bool
+
 	// typeHint is the declared type of the binding currently being lowered.
 	// Some builtins (with-len / with-cap / with-cap-len) declare an EMPTY
 	// return list because their result type is inferred from the assignment's
@@ -1652,6 +1661,18 @@ func (l *lowerer) enumArmFieldValue(name string) (ValueID, bool) {
 	if fi < 0 || fi >= len(l.armVariant.Fields) {
 		return NoVal, false
 	}
+	// This arm DESTRUCTURED the field to `name` (`ok(v) ->`): read the binding.
+	// It already owns the payload the extraction moved out of the enum's union,
+	// so projecting the field again would create a SECOND owner of one buffer
+	// and both drops would free it (trace/BPT trap: `ok(v str) -> print(v)`).
+	// The binding is also the value the arm body must see when a preceding
+	// nested match has cleared `armVariant` — reading it here keeps both paths
+	// on the same value.
+	if l.armBoundNames[name] {
+		if v, ok := l.locals[name]; ok {
+			return v, true
+		}
+	}
 	subj := l.itSrc
 	if subj == NoVal {
 		// No `let it` seen (an arm whose body does not start with the
@@ -2326,7 +2347,19 @@ func (l *lowerer) lowerStmtInner(id int32) {
 			if vt := l.valueTypeOf(val); vt != NoType && vt != l.voidType {
 				if ty := l.mod.Type(vt); ty != nil && ty.Kind == KindEnum {
 					if l.armEnum == nil || l.armEnum.Name == ty.Raw {
-						if fi := enumFieldIndex(l.armVariant, name); fi >= 0 && fi < len(l.armVariant.Fields) {
+						fi := enumFieldIndex(l.armVariant, name)
+						// A SINGLE-field variant's destructuring name is
+						// ARBITRARY: the parser only records the arity
+						// (`bindingName = names[0]`), and the multi-field form
+						// already binds BY POSITION (`let w = it.f0`). Resolve
+						// the sole field positionally, or a renamed binding
+						// (`ok(s) ->` over a variant declared `ok(v str)`)
+						// silently bound the WHOLE enum mis-typed as the payload
+						// -> "print unsupported arg type %tenum_...".
+						if fi < 0 && n.Flags&hir.FlagArmBinding != 0 && len(l.armVariant.Fields) == 1 {
+							fi = 0
+						}
+						if fi >= 0 && fi < len(l.armVariant.Fields) {
 							if ft := l.b.Type(l.armVariant.Fields[fi]); ft != NoType && ft != l.voidType {
 								var slot int64
 								for k := 0; k < fi; k++ {
@@ -2335,6 +2368,16 @@ func (l *lowerer) lowerStmtInner(id int32) {
 								fv := l.b.Emit(OpEnumField, ft, []ValueID{val}, "")
 								l.mod.Insts[len(l.mod.Insts)-1].Int = slot
 								val = fv
+								// This arm now BINDS the field to `name`. Record
+								// it so a read of `name` in the arm body reuses
+								// the binding instead of projecting the field a
+								// second time (see enumArmFieldValue).
+								if n.Flags&hir.FlagArmBinding != 0 {
+									if l.armBoundNames == nil {
+										l.armBoundNames = map[string]bool{}
+									}
+									l.armBoundNames[name] = true
+								}
 							}
 						}
 					}
@@ -2584,23 +2627,20 @@ func (l *lowerer) lowerStmtInner(id int32) {
 			// it back when the arm body ends. `it` is excluded: it already
 			// rebinds to a fresh value, and lowerIf restores it separately.
 			//
-			// Only a NON-OWNING binding may take that fresh-slot path. When the
-			// bound value owns heap — the `str` / `[]T` / struct payload of a
-			// tagged-enum destructuring — a fresh slot would hold a SECOND owner
-			// of the buffer, because the arm body reads the field straight out
-			// of the arm's subject (enumArmFieldValue re-projects on every
-			// read). The slot's exit drop then frees the same buffer the
-			// projection read frees -> trace/BPT trap (tests/tagged-enum.no:
-			// `ok(v) -> print(v)` over an `ok(v str)` variant). Such bindings
-			// keep the pre-existing rebind path; scalars and non-owning option
-			// payloads (`?i64`) own nothing and bind fresh safely.
+			// This applies to OWNED payloads too. It used to be gated on
+			// `!dropOwnsHeap` because an owned binding that took a fresh slot
+			// held a SECOND owner of the payload — the arm body read the field
+			// straight out of the subject, so the slot's exit drop and the
+			// read's drop freed one buffer (tests/tagged-enum.no). The read now
+			// returns this binding instead of re-projecting (enumArmFieldValue
+			// consults armBoundNames), so the binding is the ONLY owner and a
+			// fresh, correctly-typed slot is both safe and necessary: the
+			// rebind path would move the payload into a stale slot left by an
+			// earlier arm of a DIFFERENT payload type (`box.full(v i64)` then
+			// `b-res.ok(v str)` both bind `v`), and the read would then see the
+			// old type's bits.
 			armBinding := name != "it" && n.Flags&hir.FlagArmBinding != 0
 			armScoped := armBinding
-			if armScoped {
-				if f := l.mod.Func(l.curFunc); f != nil && l.mod.dropOwnsHeap(f, val) {
-					armScoped = false
-				}
-			}
 			existing, hasExisting := l.locals[name]
 			if hasExisting && armScoped {
 				l.armScoped = append(l.armScoped, armScopedBind{name: name, saved: existing})
@@ -3066,7 +3106,13 @@ func (l *lowerer) lowerIf(n *hir.Node) {
 		// `locals` entries this arm's synthetic bindings shadowed as soon as
 		// the arm body ends, so a nested match cannot leak its payload out.
 		armScopedBase := len(l.armScoped)
+		// The destructured field names are per-arm too (see
+		// lowerer.armBoundNames): a later arm that does NOT destructure the
+		// same name must fall back to re-projecting the field.
+		savedArmBound := l.armBoundNames
+		l.armBoundNames = nil
 		armVal := l.lowerBlock(thenID)
+		l.armBoundNames = savedArmBound
 		l.restoreArmScoped(armScopedBase)
 		// The variant pattern only applies to THIS arm's body.
 		l.armVariant = nil
@@ -3100,7 +3146,10 @@ func (l *lowerer) lowerIf(n *hir.Node) {
 			l.matchDepth++
 		}
 		armScopedBase := len(l.armScoped)
+		savedArmBound := l.armBoundNames
+		l.armBoundNames = nil
 		armVal := l.lowerBlock(elseID)
+		l.armBoundNames = savedArmBound
 		l.restoreArmScoped(armScopedBase)
 		if elseIsArm {
 			l.matchDepth--

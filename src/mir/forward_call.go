@@ -542,7 +542,6 @@ func forwardCSpecOf(ff string) *cCallSpec {
 // `lld-link: error: undefined symbol: <name>` with no hint about which nolang
 // builtin pulled it in; naming the builtin at compile time is actionable.
 var windowsUnavailable = map[string]string{
-	"readlink":      "no readlink(2) in the Windows C runtime",
 	"mkdtemp":       "no mkdtemp(3) in the Windows C runtime",
 	"ttyname":       "no ttyname(3) in the Windows C runtime",
 	"getdomainname": "no getdomainname(3) in the Windows C runtime",

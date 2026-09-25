@@ -1,0 +1,125 @@
+; tagged-enum-cross-fn.no — tagged enum 載荷所有權跨函式邊界（Phase 2）
+;
+; 背景（載荷所有權，Phase 1/2）：tagged enum 是 { i64 tag, [N x i64] payload }
+; 的 union，enum 自己**不**擁有載荷 —— 載荷的所有權由「抽取」（OpEnumField）
+; 搬出去。這個模型自洽的前提是「抽取恰好一次」。
+;
+; Phase 1 處理「同一個值在同一函式內被 match 兩次」；Phase 2 處理跨函式：
+; 傳參是 **by pointer to the caller's slot** ——
+;
+;     call void @show(ptr %q.s)                         ; caller
+;     define void @show(ptr readonly captures(none) %p0) ; callee 讀的就是 caller 的儲存
+;
+; 所以 callee 的參數**就是** caller 的儲存：callee 絕不可釋放該載荷，必須由
+; caller 釋放。判準（見 docs/design/tagged-enum-payload-ownership.md §9）：
+;   R1  callee 抽取過的 enum 參數 → 在 callee 內標為 owning（抽取改 clone/borrow，
+;       不再把載荷 move 出去），使 callee 不再釋放 caller 的緩衝。
+;   R2  caller 把 enum 傳給「會消耗該參數」的 callee → 在 caller 內標為 owning
+;       （由 caller 在最後一次使用處釋放）。
+; 閘門：值若同時逃逸進 sink（容器元素、option/另一 enum 的載荷、結構體欄位、
+; 結果參數、可能儲存參數的呼叫如 `l.push(q)`）→ 不標 owning，寧可洩漏不可懸空。
+;
+; 本檔每個 case 都印出可讀結果，方便肉眼與 golden 比對；有問題的 case 會印出
+; 截斷／空字串、或直接 crash（rc != 0）。
+;
+; 三個二進位的 A/B（同一份原始碼）：
+;   HEAD (4ed84631)      → 第一個跨函式 match 就 `trace/BPT trap`
+;   Phase 1 only         → 印出 `show: sho`（截斷）後 `trace/BPT trap`
+;   本版 (Phase 1+2)     → 全部正確，rc=0
+;
+; ⚠️ 刻意避開的既有（與本修復無關）缺陷，A/B 已確認 HEAD 同樣失敗：
+;   - `x.len()`（切片／str 的長度方法）無法編譯（bug #85）
+;   - 臂綁定的整數上呼叫 `.to-str` 無法編譯（bug #85）；改用 print(x) 直接印
+;   兩者在 HEAD 與本版輸出逐字節相同，不是本修復造成的。
+
+e-res {
+    ok(v str),
+    fail,
+}
+
+; (1) callee match 自己的參數一次
+show = (q e-res) {
+    q: {
+        ok(v) -> print('show: ' - v)
+        fail -> print('show: fail')
+    }
+}
+
+; (2) callee 完全不 match → 不得變成 owning
+ignore = (q e-res) {
+    print('ignore')
+}
+
+; (3) 一個 callee 兩個 enum 參數
+pair = (a e-res, b e-res) {
+    a: {
+        ok(v) -> print('a: ' - v)
+        fail -> print('a: fail')
+    }
+    b: {
+        ok(v) -> print('b: ' - v)
+        fail -> print('b: fail')
+    }
+}
+
+; (4) 轉手：載荷跨兩個邊界
+outer = (q e-res) {
+    print('outer')
+    show(q)
+}
+
+box {
+    n i64
+}
+
+; (5) method：receiver 是結構體，參數是 enum
+box.report = (q e-res) {
+    print('box n:')
+    print(.n)
+    q: {
+        ok(v) -> print('box.ok: ' - v)
+        fail -> print('box.fail')
+    }
+}
+
+main = () {
+    ; (1) caller 先 match、callee 再 match —— 兩邊讀同一份載荷
+    q e-res = ok('one')
+    q: {
+        ok(v) -> print('main: ' - v)
+        fail -> print('main: fail')
+    }
+    show(q)
+
+    ; (2) 只有 callee match
+    r e-res = ok('two')
+    show(r)
+
+    ; (3) 兩個參數，其中一個之後再用一次
+    a e-res = ok('three-a')
+    b e-res = ok('three-b')
+    pair(a, b)
+    show(a)
+
+    ; (4) 巢狀呼叫鏈
+    n e-res = ok('four')
+    outer(n)
+
+    ; (5) method receiver
+    bx box = box {
+        n: 5
+    }
+    m e-res = ok('five')
+    bx.report(m)
+
+    ; (6) 無載荷變體
+    f e-res = fail
+    show(f)
+
+    ; (7) 不消耗的 callee，之後才是消耗的 callee
+    g e-res = ok('seven')
+    ignore(g)
+    show(g)
+
+    print('done')
+}

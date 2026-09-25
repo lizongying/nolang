@@ -1,0 +1,157 @@
+; tagged-enum-two-match.no — 同一個 tagged enum 值被 match 兩次以上
+;
+; 背景（載荷所有權，Phase 1）：tagged enum 是 { i64 tag, [N x i64] payload } 的
+; union，enum 自己**不**擁有載荷 —— 載荷的所有權由「抽取」（OpEnumField）搬出去。
+; 這個模型自洽的前提是「抽取恰好一次」。
+;
+; 同一個 enum 被 match 兩次 → 第二次抽取讀到第一次已釋放的緩衝：
+;   - 修臂綁定之前：double free（trace/BPT trap）
+;   - 修臂綁定之後：靜默印出空字串
+;
+; 修法依 Nolang 的一貫原則 —— 「看用戶的意圖：只有一次就是 move，多次就是 clone」：
+;   - 抽取 1 次 → 維持 move（原路徑，零改動）
+;   - 抽取 ≥2 次 → enum 自己擁有並釋放載荷（tag-switched drop），
+;                 抽取改為 clone（owned str）或 borrow（vec / 內嵌 struct）
+; 判準是「同一個 arm body（= 同一個 MIR block）抽了同一組 slot 兩次」，而不是
+; 「抽取次數 ≥2」—— 單次 match 一個多欄位變體也會抽 2 個 slot，那不是兩次 match。
+; 詳見 docs/design/tagged-enum-payload-ownership.md。
+;
+; 本檔每個 case 都印 ok/fail，方便肉眼與 golden 比對；有問題的 case 會印出
+; 空字串、fail、或直接 crash（rc != 0）。
+;
+; ⚠️ 刻意避開的既有（與本修復無關）缺陷，A/B 已確認 HEAD 同樣失敗：
+;   - `x.len()`（切片／str 的長度方法）無法編譯（bug #85）
+;   - 臂綁定的整數上呼叫 `.to-str` 無法編譯（bug #85）；改用 print(x) 直接印
+;   兩者在 HEAD 與本版輸出逐字節相同，不是本修復造成的。
+
+e-res {
+    ok(v str),
+    fail,
+}
+
+shape {
+    circle(r i64),
+    rect(w i64, h i64),
+    dot,
+}
+
+list-res {
+    ok(items []str),
+    fail,
+}
+
+main = () {
+
+    ; (1) 單欄位 str 載荷 match 兩次：第二次必須仍讀到 'hi'
+    q1 e-res = ok('hi')
+    q1: {
+        ok(v) -> print('1a: ' - v)
+        fail -> print('fail 1a')
+    }
+    q1: {
+        ok(v) -> print('1b: ' - v)
+        fail -> print('fail 1b')
+    }
+
+    ; (2) 改名綁定 ×2：單欄位變體的析構名是任意的
+    q2 e-res = ok('renamed')
+    q2: {
+        ok(s) -> print('2a: ' - s)
+        fail -> print('fail 2a')
+    }
+    q2: {
+        ok(t) -> print('2b: ' - t)
+        fail -> print('fail 2b')
+    }
+
+    ; (3) 多欄位變體 ×2：兩個欄位都要在兩次 match 裡讀對
+    ;     注意這正是「單次 match 抽 2 個 slot ≠ 兩次 match」的守門案例：
+    ;     q3 只被 match 兩次，但每次抽 slot 0 與 slot 1。
+    q3 shape = rect(3, 4)
+    q3: {
+        circle(r) -> print('fail 3a: circle')
+        rect(w, h) -> {
+            print('3a: rect')
+            print(w)
+            print(h)
+        }
+        dot -> print('fail 3a: dot')
+    }
+    q3: {
+        circle(r) -> print('fail 3b: circle')
+        rect(w, h) -> {
+            print('3b: rect')
+            print(w)
+            print(h)
+        }
+        dot -> print('fail 3b: dot')
+    }
+
+    ; (4) 切片載荷 ×2：抽取是**借用**（無 @vec_clone），由 enum 的 drop 釋放一次
+    l4 []str = ['p', 'q']
+    q4 list-res = ok(l4)
+    q4: {
+        ok(items) -> {
+            for x in items {
+                print('4a: ' - x)
+            }
+        }
+        fail -> print('fail 4a')
+    }
+    q4: {
+        ok(items) -> {
+            for x in items {
+                print('4b: ' - x)
+            }
+        }
+        fail -> print('fail 4b')
+    }
+
+    ; (5) match 三次
+    q5 e-res = ok('three')
+    q5: {
+        ok(v) -> print('5a: ' - v)
+        fail -> print('fail 5a')
+    }
+    q5: {
+        ok(v) -> print('5b: ' - v)
+        fail -> print('fail 5b')
+    }
+    q5: {
+        ok(v) -> print('5c: ' - v)
+        fail -> print('fail 5c')
+    }
+
+    ; (6) 兩次 match 之間插入其他語句（含配置與釋放），載荷必須活到第二次
+    q6 e-res = ok('between')
+    q6: {
+        ok(v) -> print('6a: ' - v)
+        fail -> print('fail 6a')
+    }
+    filler str = 'noi' - 'se'
+    print('6m: ' - filler)
+    q6: {
+        ok(v) -> print('6b: ' - v)
+        fail -> print('fail 6b')
+    }
+
+    ; (7) 巢狀：外層 arm 裡對**另一個** enum match 兩次
+    ;     外層 e1 只抽 1 次（move），內層 e2 抽 2 次（owning）—— 兩者互不干擾
+    e1 e-res = ok('outer')
+    e2 e-res = ok('inner')
+    e1: {
+        ok(v) -> {
+            print('7a: ' - v)
+            e2: {
+                ok(w) -> print('7b: ' - w)
+                fail -> print('fail 7b')
+            }
+            e2: {
+                ok(w) -> print('7c: ' - w)
+                fail -> print('fail 7c')
+            }
+            print('7d: ' - v)
+        }
+        fail -> print('fail 7')
+    }
+}

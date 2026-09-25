@@ -1110,6 +1110,34 @@ type Module struct {
 	// never a global variant-name index.
 	TaggedEnums map[string]*TaggedEnumInfo
 
+	// enumOwnsPayload marks the individual tagged-enum VALUES that own their
+	// payload, and therefore get a tag-switched destructor (plus a cloned
+	// extraction). It is a VALUE-level set, not a type-level one, and that is
+	// the whole point: a tagged enum is a `{ i64 tag, [N x i64] payload }` union
+	// whose payload is moved OUT by extraction (OpEnumField). For the common
+	// single-use enum that move is the one and only owner, so also freeing the
+	// payload from the enum would double-free. Only when the SAME value is
+	// extracted two or more times is there no single owner to hand the payload
+	// to, and the enum must own it instead.
+	//
+	// Populated per function by markEnumPayloadOwners (analysis.go) and read by
+	// dropOwnsHeap / isBorrowRead / codegen. Keyed by ValueID, which is
+	// module-global (Module.Values), so one map serves every function. See
+	// docs/design/tagged-enum-payload-ownership.md.
+	enumOwnsPayload map[ValueID]bool
+
+	// enumExtractSites records, per function, the values whose payload that
+	// function extracts (an OpEnumField reading it). It is the cross-function
+	// half of the ownership decision (Phase 2): a CALLER has to know whether a
+	// callee consumes the enum it passes, because a tagged enum crosses a call
+	// boundary as a POINTER TO THE CALLER'S SLOT — the callee's parameter IS the
+	// caller's storage, so the callee must never free that payload and the
+	// caller must. Built by markEnumParamOwners before any per-function drop
+	// analysis, since a callee may be analyzed after its caller.
+	//
+	// See docs/design/tagged-enum-payload-ownership.md §9.
+	enumExtractSites map[FuncID]map[ValueID]bool
+
 	// TypeAliases maps a named function-type alias (e.g. `test-cb` from
 	// `test-cb = ()`) to the KindFunc MIR type ID it denotes. Populated during
 	// HIR lowering from KTypeAlias nodes flagged FlagFuncType. internType
@@ -1165,6 +1193,11 @@ func NewModule(name string) *Module {
 		StructFields: map[string][]FieldInfo{},
 		StructNames:  map[string]bool{},
 		TaggedEnums:  map[string]*TaggedEnumInfo{},
+
+		// Kept out of the aligned run above so adding it does not re-indent
+		// every pre-existing line (gofmt aligns contiguous key/value runs).
+		enumOwnsPayload:  map[ValueID]bool{},
+		enumExtractSites: map[FuncID]map[ValueID]bool{},
 	}
 	// reserve index 0 of each slice as a nil element
 	m.Funcs = append(m.Funcs, Function{})

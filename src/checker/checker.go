@@ -3436,60 +3436,81 @@ func StatementsWithIntOverflow(program *parser.Program) map[parser.Statement]boo
 	// exprHasIntOverflow 遞迴判斷表達式（含 if 分支陳述）是否含整數溢出運算。
 	// 對 InfixExpression 直接取用 isDirectOverflowValue（頂層運算元皆為整數時回 true，
 	// 未知型別保守視為整數）；對其它結構遞迴進子表達式 / 子陳述。
+	// 注意：必須「窮盡遍歷」不得提前 return true——relevant 集合是在 stmtHasIntOverflow
+	// 递归过程中副作用登记的，短路会遗漏后续兄弟语句（如 match 第二臂的 `x = x - 1`），
+	// 使其永远不在集合中，`no fmt` 就会把管辖真实整数运算的 #{overflow} 注解误删。
 	exprHasIntOverflow = func(e parser.Expression, declared map[string]string, selfType string) bool {
 		if e == nil {
 			return false
 		}
+		found := false
 		switch x := e.(type) {
 		case *parser.InfixExpression:
-			if isDirectOverflowValue(x, declared, selfType) {
-				return true
+			if isDirectOverflowValue(x, declared, selfType) ||
+				(overflowArithOps[x.Operator] &&
+					looseOperandIsInt(x.Left, declared, selfType) &&
+					looseOperandIsInt(x.Right, declared, selfType)) {
+				found = true
 			}
-			return exprHasIntOverflow(x.Left, declared, selfType) ||
-				exprHasIntOverflow(x.Right, declared, selfType)
+			if exprHasIntOverflow(x.Left, declared, selfType) {
+				found = true
+			}
+			if exprHasIntOverflow(x.Right, declared, selfType) {
+				found = true
+			}
 		case *parser.PrefixExpression:
-			return exprHasIntOverflow(x.Right, declared, selfType)
+			if exprHasIntOverflow(x.Right, declared, selfType) {
+				found = true
+			}
 		case *parser.CallExpression:
 			if exprHasIntOverflow(x.Function, declared, selfType) {
-				return true
+				found = true
 			}
 			for _, a := range x.Arguments {
 				if exprHasIntOverflow(a, declared, selfType) {
-					return true
+					found = true
 				}
 			}
 		case *parser.IfExpression:
 			if exprHasIntOverflow(x.Condition, declared, selfType) {
-				return true
+				found = true
 			}
 			if x.Consequence != nil {
 				for _, s := range x.Consequence.Statements {
 					if stmtHasIntOverflow(s, declared, selfType) {
-						return true
+						found = true
 					}
 				}
 			}
 			if x.Alternative != nil {
 				for _, s := range x.Alternative.Statements {
 					if stmtHasIntOverflow(s, declared, selfType) {
-						return true
+						found = true
 					}
 				}
 			}
 		case *parser.IndexExpression:
-			return exprHasIntOverflow(x.Left, declared, selfType) ||
-				exprHasIntOverflow(x.Index, declared, selfType)
+			if exprHasIntOverflow(x.Left, declared, selfType) {
+				found = true
+			}
+			if exprHasIntOverflow(x.Index, declared, selfType) {
+				found = true
+			}
 		case *parser.AssignExpression:
-			return exprHasIntOverflow(x.Left, declared, selfType) ||
-				exprHasIntOverflow(x.Value, declared, selfType)
+			if exprHasIntOverflow(x.Left, declared, selfType) {
+				found = true
+			}
+			if exprHasIntOverflow(x.Value, declared, selfType) {
+				found = true
+			}
 		case *parser.ArrayLiteral:
 			for _, el := range x.Elements {
 				if exprHasIntOverflow(el, declared, selfType) {
-					return true
+					found = true
 				}
 			}
 		}
-		return false
+		return found
 	}
 
 	// stmtHasIntOverflow 遞迴判斷陳述（含其巢狀子陳述）是否含整數溢出運算；
@@ -3637,8 +3658,22 @@ func OverflowAnnotationRelevance(program *parser.Program) (relevant map[parser.S
 
 	// collect 遞迴走遍所有陳述列表（頂層、函式體、區塊體、for 迴圈體），每個列表
 	// 各自獨立掃描（與 parser 對每個 BlockStatement 呼叫 applyLineOverflowAnnotations
-	// 的語意一致）。
+	// 的語意一致）。另必須下鑽 if/match 臂體（ExpressionStatement 或 Let 的值為
+	// IfExpression）：被管辖语句以 `.` 开头时（如 `.len = cur + 1`）parser 不会把行
+	// 注解附加到语句上，注解以独立 AnnotationStatement 形式留在臂块内；若此处不
+	// 扫描，governed 查不到 → gov=nil → formatter 误删有效的 #{overflow} 注解。
 	var collect func(stmts []parser.Statement)
+	collectIf := func(ie *parser.IfExpression) {
+		if ie == nil {
+			return
+		}
+		if ie.Consequence != nil {
+			collect(ie.Consequence.Statements)
+		}
+		if ie.Alternative != nil {
+			collect(ie.Alternative.Statements)
+		}
+	}
 	collect = func(stmts []parser.Statement) {
 		scanList(stmts)
 		for _, s := range stmts {
@@ -3652,6 +3687,14 @@ func OverflowAnnotationRelevance(program *parser.Program) (relevant map[parser.S
 			case *parser.ForStatement:
 				if v.Body != nil {
 					collect(v.Body.Statements)
+				}
+			case *parser.ExpressionStatement:
+				if ie, ok := v.Expression.(*parser.IfExpression); ok {
+					collectIf(ie)
+				}
+			case *parser.LetStatement:
+				if ie, ok := v.Value.(*parser.IfExpression); ok {
+					collectIf(ie)
 				}
 			}
 		}
@@ -3922,6 +3965,44 @@ func isDirectOverflowValue(v parser.Expression, varTypes map[string]string, self
 		inferExprType(inf.Right, varTypes, nil, selfType) == "i128" {
 		return false
 	}
+	return true
+}
+
+// looseOperandIsInt 是 relevant 集合（StatementsWithIntOverflow）专用的宽口径分类：
+// 在 isIntExpr 之外，额外把「泛型型别参数」视为整数。动机：`[]t.sum` 里的
+// `acc = acc + .[i]`，`.[i]` 推断为元素型别 "t"（型别参数名），isIntType("t")
+// 回 false 会被当成「确定非整数」，导致管辖它的 #{overflow} 註解被 `no fmt`
+// 误删（单态化为 i64 vec 后该运算确实可能溢出，wrap 是作者显式选择的语义）。
+// relevant 集合是超集语义（宁可多保留註解，绝不误删），故只在「确定非整数」
+// （内建非整型 / 容器 / option / 限定名 / 已知 struct / 具体型别别名且非整族）
+// 时回 false；其余无法归类的裸标识符（型别参数 / 未解析别名）一律保守回 true。
+// 仅供 relevant 计算使用，不影响编译期硬错误（ValidateUnhandledOverflow 仍用
+// 原口径的 isIntExpr）。
+func looseOperandIsInt(e parser.Expression, declared map[string]string, selfType string) bool {
+	t := inferExprType(e, declared, nil, selfType)
+	if t == "" {
+		return true // 推断失败：保守视为整数（与 isIntExpr 一致）
+	}
+	if isIntType(t) {
+		return true
+	}
+	if nonIntTypeNames[t] {
+		return false
+	}
+	// 容器 / option / 函数型别 / 限定名 / 联合：非整数家族（与原口径一致）。
+	if strings.ContainsAny(t, "[]?().| ") {
+		return false
+	}
+	// 已知 struct：struct 算术不产生 option。
+	if validationStructFields != nil {
+		if _, ok := validationStructFields[t]; ok {
+			return false
+		}
+	}
+	if at, ok := validationConcreteTypeAliases[t]; ok {
+		return isIntType(at)
+	}
+	// 裸未知标识符：视为泛型型别参数 → 保守整数。
 	return true
 }
 

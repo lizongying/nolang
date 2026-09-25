@@ -1,6 +1,7 @@
 package fmt
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/lizongying/nolang/checker"
@@ -116,6 +117,79 @@ func TestFormatPreservesEffectiveOverflow(t *testing.T) {
 	out := FormatProgramWithOverflow(program, input, relevant, governed)
 	if out != expected {
 		t.Errorf("effective overflow was stripped (should be preserved):\n--- got ---\n%s\n--- want ---\n%s", out, expected)
+	}
+}
+
+// TestFormatPreservesEffectiveOverflowInMatchArm 回归钉：match 臂体内的有效
+// #{overflow=wrap} 不得被误删（src/std/vec.no `[]t.insert` 实报）。
+//
+// 两个独立缺陷叠加造成误删：
+//
+//	(a) checker.exprHasIntOverflow 在 IfExpression 分支遇首个命中子语句即
+//	    `return true`，短路了后续兄弟语句的遍历；而 relevant 集合是靠递归
+//	    过程中的副作用逐个登记的，未被访问的语句（如第二臂的 `last = last - 1`）
+//	    永远不在集合中 → 其附加注解被 formatter 判为无效而删除。
+//	(b) OverflowAnnotationRelevance.collect() 不下钻 ExpressionStatement→IfExpression
+//	    的臂块，臂内「独立成行」的 overflow 注解（被管辖语句以 `.` 开头、parser
+//	    无法附加时，如 `.len = cur + 1`）拿不到 governed → gov=nil → 被删除，
+//	    即使被管辖语句本身已在 relevant 中。
+func TestFormatPreservesEffectiveOverflowInMatchArm(t *testing.T) {
+	input := "[]t.insert = (i i64, val t) {\n" +
+		"    {\n" +
+		"        i >= .len() -> {\n" +
+		"            #{overflow=wrap}\n" +
+		"            .len = cur + 1\n" +
+		"        }\n" +
+		"\n" +
+		"        -> {\n" +
+		"            #{overflow=wrap}\n" +
+		"            last = last - 1\n" +
+		"        }\n" +
+		"    }\n" +
+		"}\n"
+	program := parseForTest(input)
+	if program == nil {
+		t.Fatal("failed to parse test input")
+	}
+	relevant, governed := checker.OverflowAnnotationRelevance(program)
+	out := FormatProgramWithOverflow(program, input, relevant, governed)
+	// 两条注解都管辖真实整数运算（`cur + 1` / `last - 1`），均必须保留。
+	if got := strings.Count(out, "#{overflow=wrap}"); got != 2 {
+		t.Errorf("match-arm effective overflow annotations stripped: kept %d, want 2:\n%s", got, out)
+	}
+	// 幂等：二次格式化不得再变动。
+	program2 := parseForTest(out)
+	if program2 == nil {
+		t.Fatal("failed to re-parse formatted output")
+	}
+	relevant2, governed2 := checker.OverflowAnnotationRelevance(program2)
+	out2 := FormatProgramWithOverflow(program2, out, relevant2, governed2)
+	if out2 != out {
+		t.Errorf("not idempotent:\n--- first ---\n%s\n--- second ---\n%s", out, out2)
+	}
+}
+
+// TestFormatPreservesEffectiveOverflowGenericElem 回归钉：泛型容器的元素运算
+// （`[]t.sum` 的 `acc = acc + .[i]`，`.[i]` 推断为型别参数 "t"）必须被 relevant
+// 集合保守视为可能整数，其 #{overflow=wrap} 注解不得被 `no fmt` 误删
+// （单态化为 i64 vec 后该运算确实可能溢出，wrap 是作者显式选择的语义）。
+func TestFormatPreservesEffectiveOverflowGenericElem(t *testing.T) {
+	input := "[]t.sum = () (sum t) {\n" +
+		"    acc = 0\n" +
+		"    i <- [0...len()): {\n" +
+		"        #{overflow=wrap}\n" +
+		"        acc = acc + .[i]\n" +
+		"    }\n" +
+		"    sum = acc\n" +
+		"}\n"
+	program := parseForTest(input)
+	if program == nil {
+		t.Fatal("failed to parse test input")
+	}
+	relevant, governed := checker.OverflowAnnotationRelevance(program)
+	out := FormatProgramWithOverflow(program, input, relevant, governed)
+	if got := strings.Count(out, "#{overflow=wrap}"); got != 1 {
+		t.Errorf("generic-element effective overflow annotation stripped: kept %d, want 1:\n%s", got, out)
 	}
 }
 

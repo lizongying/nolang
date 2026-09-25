@@ -405,6 +405,13 @@ func (m *Module) demoteUnsafeSliceViews() {
 
 func (m *Module) Analyze() *Report {
 	m.BuildCFG()
+	// Rebuild the owning-enum marks from scratch: Analyze may run more than once
+	// on the same Module (tests re-analyze after mutating the IR), and a stale
+	// ValueID left owning would keep a drop the new IR no longer warrants.
+	m.enumOwnsPayload = map[ValueID]bool{}
+	// Phase 2 needs a whole-module pre-pass: a caller must know whether a callee
+	// consumes the enum it passes, and a callee may be analyzed after its caller.
+	m.markEnumParamOwners()
 	rep := &Report{}
 	for i := range m.Funcs {
 		f := &m.Funcs[i]
@@ -459,6 +466,15 @@ func (m *Module) dropOwnsHeap(f *Function, v ValueID) bool {
 	if v <= NoVal {
 		return false
 	}
+	// OWNING TAGGED ENUM (see enumOwnsPayload): the value is matched two or more
+	// times, so no single extraction could take the payload out. The enum keeps
+	// it and frees it through a tag-switched destructor. This is a VALUE-level
+	// answer and must be asked BEFORE the type-level one: the enum's own
+	// Type.Owned is false by design (widening it would change the ABI for every
+	// enum and make single-use enums double-free).
+	if m.enumOwnsPayload[v] {
+		return true
+	}
 	if t, ok := f.LocalTypes[v]; ok {
 		if ty := m.Type(t); ty != nil {
 			return m.typeOwnsHeap(ty)
@@ -470,6 +486,459 @@ func (m *Module) dropOwnsHeap(f *Function, v ValueID) bool {
 		}
 	}
 	return false
+}
+
+// markEnumPayloadOwners decides, for one function, which tagged-enum VALUES own
+// their payload. It is the Phase-1 core of
+// docs/design/tagged-enum-payload-ownership.md, and it implements the language
+// principle "one use is a move, several uses are a clone".
+//
+// Rationale. A tagged enum is a union whose payload extraction
+// (OpEnumField/emitEnumField) is a plain by-value load — it MOVES the payload
+// out, and the extraction result becomes the owner the drop pass frees. That is
+// exactly right when the value is matched once. Matched twice, the first
+// extraction's drop frees the buffer the second extraction still reads: the
+// second match printed an empty string (and, before the arm-binding fix,
+// double-freed). The fix has to be at the VALUE level, not the TYPE level —
+// making every payload-carrying enum owning would double-free the single-use
+// ones, whose payload was already moved out.
+//
+// The criterion is "matched twice", NOT "extracted twice", and the difference
+// is load-bearing. ONE match of a multi-field variant extracts EVERY field:
+//
+//	rect(w, h) -> ...      ; emits OpEnumField slot 0 AND slot 1
+//
+// so counting extractions would call `rect` matched-once "owning", suppress the
+// move-source exemption, and trip checkMoves' use-after-move on the value
+// (observed on tests/tagged-enum.no's `shape`). What actually identifies a
+// repeated MATCH is the ARM BODY, and each arm body is lowered into its own
+// basic block, so:
+//
+//	owning(v) <=> two or more blocks extracted v with the SAME slot set
+//
+// One block extracting several slots is a single match of one variant; two
+// blocks extracting the same slot set is the same variant matched twice. Two
+// blocks extracting DIFFERENT slot sets are different arms of one match (the
+// variant was not statically known) and are deliberately left on the move path.
+//
+// Two exclusions, both to keep the "exactly one drop per payload" invariant:
+//
+//   - MOVE DESTINATIONS. `r e-res = q` lowers to a bitwise OpMove of the
+//     { tag, payload } struct, i.e. an ALIAS, not a transfer (an enum's payload
+//     lives inline in the enum, so a bitwise copy copies the data pointer).
+//     If both `q` and `r` were marked owning, both would be dropped and the
+//     shared payload freed twice. Only the origin of the alias chain owns;
+//     insertDrops' moveSrc rule is adjusted in the same way (see there).
+//   - ENUMS WHOSE PAYLOAD THE HELPER CANNOT FREE. enumPayloadFreeable gates on
+//     the field shapes emitEnumDropHelper knows: `str`, slices/`vec`, and
+//     inline structs with owned leaves or pointees. An enum with, say, an
+//     `?T` payload is left on the pre-existing move-once path rather than
+//     half-freed — leaking is the safe side to err on.
+//
+// Values extracted ZERO times are deliberately left alone: that is the
+// pre-existing leak tracked as Phase 3, and fixing it here would widen the
+// blast radius of this change for no benefit to the reported bug.
+func (m *Module) markEnumPayloadOwners(f *Function) {
+	if f == nil {
+		return
+	}
+	// byBlock[v][block] = the set of payload slots that block extracted from v.
+	byBlock := map[ValueID]map[BlockID]map[int64]bool{}
+	moveDest := map[ValueID]bool{}
+	for _, bid := range f.Blocks {
+		blk := m.Block(bid)
+		if blk == nil {
+			continue
+		}
+		for _, iid := range blk.Insts {
+			inst := m.Inst(iid)
+			if inst == nil {
+				continue
+			}
+			switch inst.Op {
+			case OpEnumField:
+				if len(inst.Args) == 0 || inst.Args[0] <= NoVal {
+					continue
+				}
+				v := inst.Args[0]
+				if byBlock[v] == nil {
+					byBlock[v] = map[BlockID]map[int64]bool{}
+				}
+				if byBlock[v][bid] == nil {
+					byBlock[v][bid] = map[int64]bool{}
+				}
+				byBlock[v][bid][inst.Int] = true
+			case OpMove:
+				// Record enum-typed move DESTINATIONS so the alias's own slot
+				// is never given a second drop (see the doc comment above).
+				if len(inst.Args) == 0 || inst.Args[0] <= NoVal || inst.Dst <= NoVal {
+					continue
+				}
+				if ty := m.valueTypeOf(f, inst.Dst); ty != nil && ty.Kind == KindEnum {
+					moveDest[inst.Dst] = true
+				}
+			}
+		}
+	}
+	// R3 (same function): two arm bodies extracted the same slot set — the same
+	// variant matched twice, so no single extraction can take the payload.
+	candidates := map[ValueID]bool{}
+	for v, blocks := range byBlock {
+		if sameSlotSetTwice(blocks) {
+			candidates[v] = true
+		}
+	}
+
+	// R2 (cross-function): v is handed to a callee that CONSUMES its enum
+	// parameter. R1 already made that parameter owning, so the callee only
+	// borrows or clones; the payload must therefore be freed HERE, by the side
+	// that owns the storage. Values that also escape into a sink are excluded —
+	// see enumEscapeSinks for why a leak beats a dangling alias there.
+	escaped := m.enumEscapeSinks(f)
+	for _, bid := range f.Blocks {
+		blk := m.Block(bid)
+		if blk == nil {
+			continue
+		}
+		for _, iid := range blk.Insts {
+			inst := m.Inst(iid)
+			if inst == nil || inst.Op != OpCall || inst.Callee != NoVal {
+				continue // not a direct call to a named function
+			}
+			if !m.calleeConsumesEnumArg(inst.Sym) {
+				continue
+			}
+			for _, a := range inst.Args {
+				if a <= NoVal || escaped[a] {
+					continue
+				}
+				if ty := m.valueTypeOf(f, a); ty != nil && ty.Kind == KindEnum {
+					candidates[a] = true
+				}
+			}
+		}
+	}
+
+	for v := range candidates {
+		if moveDest[v] {
+			continue
+		}
+		ty := m.valueTypeOf(f, v)
+		if ty == nil || ty.Kind != KindEnum || !m.enumPayloadFreeable(ty) {
+			continue
+		}
+		if m.enumOwnsPayload == nil {
+			m.enumOwnsPayload = map[ValueID]bool{}
+		}
+		m.enumOwnsPayload[v] = true
+	}
+}
+
+// markEnumParamOwners is the Phase-2 (cross-function) pre-pass. A tagged enum
+// crosses a call boundary as a POINTER TO THE CALLER'S SLOT
+//
+//	call void @show(ptr %v1.s)                        ; caller
+//	define void @show(ptr readonly captures(none) %p0) ; callee reads caller's storage
+//
+// so the callee's parameter IS the caller's storage: the callee must never free
+// that payload, and the caller must. This function does the callee half (R1) and
+// records the per-function extraction sites the caller half (R2, in
+// markEnumPayloadOwners) consults.
+//
+// It must run for the WHOLE module before any per-function drop analysis, since
+// a callee can be analyzed after its caller. See
+// docs/design/tagged-enum-payload-ownership.md §9.
+func (m *Module) markEnumParamOwners() {
+	m.enumExtractSites = map[FuncID]map[ValueID]bool{}
+	for i := range m.Funcs {
+		f := &m.Funcs[i]
+		if f.IsExtern {
+			continue
+		}
+		sites := map[ValueID]bool{}
+		for _, bid := range f.Blocks {
+			blk := m.Block(bid)
+			if blk == nil {
+				continue
+			}
+			for _, iid := range blk.Insts {
+				inst := m.Inst(iid)
+				if inst == nil || inst.Op != OpEnumField {
+					continue
+				}
+				if len(inst.Args) == 0 || inst.Args[0] <= NoVal {
+					continue
+				}
+				sites[inst.Args[0]] = true
+			}
+		}
+		if len(sites) > 0 {
+			m.enumExtractSites[f.ID] = sites
+		}
+	}
+	// R1: a borrowed enum parameter the callee extracts must be owning IN THE
+	// CALLEE, so its extraction clones (owned `str`) or borrows (%vec / inline
+	// struct) instead of moving the payload out and dropping it. Parameters are
+	// already excluded from `droppable`, so this never makes the callee free
+	// anything — it only stops the callee from freeing the CALLER's buffer.
+	//
+	// Gated on enumPayloadFreeable for the same reason as the other rules: if
+	// the helper cannot free the payload, the callee must keep moving it out
+	// (today's behaviour) rather than borrow it and leave it unfreed forever.
+	for i := range m.Funcs {
+		f := &m.Funcs[i]
+		if f.IsExtern {
+			continue
+		}
+		sites := m.enumExtractSites[f.ID]
+		if len(sites) == 0 {
+			continue
+		}
+		for _, p := range f.Params {
+			if !sites[p] {
+				continue
+			}
+			ty := m.valueTypeOf(f, p)
+			if ty == nil || ty.Kind != KindEnum || !m.enumPayloadFreeable(ty) {
+				continue
+			}
+			m.enumOwnsPayload[p] = true
+		}
+	}
+}
+
+// calleeConsumesEnumArg reports whether the named callee takes ownership-relevant
+// action on an enum parameter — precisely, whether markEnumParamOwners marked one
+// of its parameters owning (R1). Only then must the caller take the payload's
+// ownership over, which is what keeps R2's blast radius to the calls that
+// actually move the payload rather than to every enum argument in the corpus.
+//
+// Variadic callees are skipped: their actual arguments do not map one-to-one
+// onto parameters, so "this callee consumes an enum" cannot be attributed to a
+// specific argument.
+func (m *Module) calleeConsumesEnumArg(sym string) bool {
+	if sym == "" {
+		return false
+	}
+	cid, ok := m.FuncByName[sym]
+	if !ok {
+		return false
+	}
+	callee := m.Func(cid)
+	if callee == nil || callee.IsExtern || callee.Variadic {
+		return false
+	}
+	for _, p := range callee.Params {
+		if m.enumOwnsPayload[p] {
+			return true
+		}
+	}
+	return false
+}
+
+// enumEscapeSinks returns the enum values in f whose payload may be aliased by
+// storage that outlives the current statement: a container element, an option
+// payload, another tagged enum's payload, a struct field, a result parameter, a
+// call that may store its argument (see the OpCall case), or — transitively — a
+// value that itself escapes.
+//
+// R2 declines to make such a value owning. Freeing it at its own last use would
+// leave the sink pointing at freed memory, and the sink is NOT something the
+// drop machinery frees (a tagged enum is not an owned type and its payload slots
+// are not traversed), so the alias would dangle. A leak is the safe side to err
+// on: see docs/design/tagged-enum-payload-ownership.md §9.3/§9.5.
+//
+// Every argument of a sink op counts, not just the stored one. Over-approximating
+// escape is safe — it can only make R2 more conservative — whereas guessing the
+// argument positions wrong could miss a real escape.
+func (m *Module) enumEscapeSinks(f *Function) map[ValueID]bool {
+	escaped := map[ValueID]bool{}
+	for _, p := range f.ResultParams {
+		escaped[p] = true // handed back to the caller: outlives this frame
+	}
+	for {
+		changed := false
+		for _, bid := range f.Blocks {
+			blk := m.Block(bid)
+			if blk == nil {
+				continue
+			}
+			for _, iid := range blk.Insts {
+				inst := m.Inst(iid)
+				if inst == nil {
+					continue
+				}
+				switch inst.Op {
+				case OpSetField, OpIndexStore, OpOptionWrap, OpEnumNew:
+					for _, a := range inst.Args {
+						if a > NoVal && !escaped[a] {
+							escaped[a] = true
+							changed = true
+						}
+					}
+				case OpMove:
+					// `move dst=w args=[v]` is a bitwise alias, so v's payload
+					// is reachable through w: if w escapes, so does v.
+					if len(inst.Args) > 0 && inst.Dst > NoVal && escaped[inst.Dst] &&
+						inst.Args[0] > NoVal && !escaped[inst.Args[0]] {
+						escaped[inst.Args[0]] = true
+						changed = true
+					}
+				case OpCall, OpCallExtern, OpCallFFI:
+					// A call to a Nolang function is R2's own trigger and is
+					// analysed by its callee's extraction sites — do not treat
+					// its arguments as escaping, or R2 could never fire.
+					if inst.Op == OpCall && inst.Callee == NoVal {
+						if _, _, ok := lookupBuiltin(inst.Sym); !ok {
+							continue
+						}
+					}
+					// Everything else is opaque storage. `l.push(q)` is the
+					// motivating case: it is an OpCall to the `vec.push`
+					// builtin, NOT an OpIndexStore, and it copies q into a
+					// container whose elements the drop machinery never
+					// traverses (a tagged enum is not an owned type, so its
+					// payload slots are not visited) — so the element aliases
+					// q's buffer without owning it. Extern/FFI calls and
+					// indirect calls through a function pointer are equally
+					// opaque. Mark every argument escaped: over-approximating
+					// can only make R2 decline to free, which leaks instead of
+					// dangling — the same safe side as the sinks above.
+					for _, a := range inst.Args {
+						if a > NoVal && !escaped[a] {
+							escaped[a] = true
+							changed = true
+						}
+					}
+				}
+			}
+		}
+		if !changed {
+			break
+		}
+	}
+	return escaped
+}
+
+// sameSlotSetTwice reports whether two of the given blocks extracted the same
+// set of payload slots — i.e. the same variant was matched by two arm bodies.
+func sameSlotSetTwice(blocks map[BlockID]map[int64]bool) bool {
+	seen := map[string]bool{}
+	for _, slots := range blocks {
+		keys := make([]int64, 0, len(slots))
+		for s := range slots {
+			keys = append(keys, s)
+		}
+		sort.Slice(keys, func(i, j int) bool { return keys[i] < keys[j] })
+		parts := make([]string, 0, len(keys))
+		for _, s := range keys {
+			parts = append(parts, fmt.Sprintf("%d", s))
+		}
+		key := strings.Join(parts, ",")
+		if seen[key] {
+			return true
+		}
+		seen[key] = true
+	}
+	return false
+}
+
+// enumPayloadFreeable reports whether every owned payload field of the enum
+// type is one emitEnumDropHelper can free, so marking the value owning cannot
+// produce a half-freed payload. Conservative by construction: an unrecognised
+// owned field shape returns false, leaving that enum on the move-once path.
+func (m *Module) enumPayloadFreeable(ty *Type) bool {
+	if ty == nil || ty.Kind != KindEnum {
+		return false
+	}
+	ei := m.TaggedEnums[ty.Raw]
+	if ei == nil {
+		return false
+	}
+	for vi := range ei.Variants {
+		for _, raw := range ei.Variants[vi].Fields {
+			ft := m.Type(m.internType(raw))
+			if ft == nil {
+				return false
+			}
+			if !m.typeOwnsHeap(ft) {
+				continue // owns nothing: nothing to free, nothing to get wrong
+			}
+			if !m.enumFieldFreeable(ft) {
+				return false
+			}
+		}
+	}
+	return true
+}
+
+// enumFieldFreeable is the field-shape whitelist behind enumPayloadFreeable; it
+// must stay in lockstep with the free cases in emitEnumDropHelper.
+func (m *Module) enumFieldFreeable(ft *Type) bool {
+	switch ft.Kind {
+	case KindStr, KindSlice:
+		return true
+	case KindStruct:
+		key := m.StructKeyOf(ft.Raw)
+		return key != "" && (m.StructHasPtrFields(key) || m.StructHasOwnedLeafFields(key))
+	}
+	return false
+}
+
+// enumPayloadCloneable reports whether every owned payload field of the enum
+// type has a deep-copy helper available, so a bitwise alias of the enum can be
+// BROKEN with a real copy rather than merely freed.
+//
+// Deliberately narrower than enumPayloadFreeable: freeing a field needs only its
+// address, whereas cloning it needs a cloner, and today only `str` (@str_clone)
+// and slice (vecDeepClone) have one. A struct-with-pointees field therefore
+// returns false, which keeps that enum on the pre-existing path — a leak, or the
+// analyzer's loud `[use-after-move]` — rather than emitting a half-deep copy
+// that would double-free. See docs/design/tagged-enum-payload-ownership.md §10.
+func (m *Module) enumPayloadCloneable(ty *Type) bool {
+	if ty == nil || ty.Kind != KindEnum {
+		return false
+	}
+	ei := m.TaggedEnums[ty.Raw]
+	if ei == nil {
+		return false
+	}
+	for vi := range ei.Variants {
+		for _, raw := range ei.Variants[vi].Fields {
+			ft := m.Type(m.internType(raw))
+			if ft == nil {
+				return false
+			}
+			if !m.typeOwnsHeap(ft) {
+				continue // owns nothing: nothing to copy, nothing to get wrong
+			}
+			switch ft.Kind {
+			case KindStr:
+				// @str_clone
+			case KindSlice:
+				// vecDeepClone; the element type must be resolvable for the
+				// helper to be specialised on it.
+				if ft.Elem == NoType {
+					return false
+				}
+			default:
+				return false
+			}
+		}
+	}
+	return true
+}
+
+// moveEnumSharesHeap reports whether inst is an OpMove of a tagged enum whose
+// payload owns heap. Such a move is a bitwise ALIAS of that heap, not a transfer
+// of it: the payload lives INLINE in the enum, so the copy leaves both slots
+// pointing at one buffer.
+func (m *Module) moveEnumSharesHeap(f *Function, inst *Inst) bool {
+	if inst == nil || inst.Op != OpMove || len(inst.Args) == 0 || inst.Args[0] <= NoVal {
+		return false
+	}
+	ty := m.valueTypeOf(f, inst.Args[0])
+	return ty != nil && ty.Kind == KindEnum && m.enumPayloadCloneable(ty)
 }
 
 // valueTypeOf resolves v's nolang type the same way isOwnedVal / dropOwnsHeap
@@ -895,6 +1364,30 @@ func (m *Module) isBorrowRead(f *Function, inst *Inst) bool {
 		}
 		return m.dropOwnsHeap(f, inst.Dst)
 	}
+	// OpEnumField: tagged-enum payload extraction. Its answer must MIRROR
+	// emitEnumField's clone condition exactly (same reasoning as OpGetField
+	// above), and the two shapes are chosen by whether the enum owns the
+	// payload:
+	//
+	//   - NOT owning (the common single-use enum): the extraction MOVES the
+	//     payload out and its result is the one and only owner. Return false so
+	//     insertDrops frees it — this is the pre-existing path, untouched.
+	//   - owning (two or more extractions, see markEnumPayloadOwners): the enum
+	//     frees the payload itself, so an extraction must NOT free it too.
+	//     - owned `str` -> emitEnumField calls @str_clone, so the result owns a
+	//       PRIVATE buffer and must be dropped (false).
+	//     - every other owned field (`%vec`, inline struct) -> not cloned (there
+	//       is no @vec_clone), so the result aliases the enum's storage and is a
+	//       genuine borrow (dropOwnsHeap).
+	if inst.Op == OpEnumField {
+		if !m.enumOwnsPayload[inst.Args[0]] {
+			return false
+		}
+		if ty := m.valueTypeOf(f, inst.Dst); ty != nil && ty.Owned && ty.Kind == KindStr {
+			return false
+		}
+		return m.dropOwnsHeap(f, inst.Dst)
+	}
 	// OpMove that peels an option into a SLICE: emitMove copies the %vec triple
 	// out of the option's payload slot, so the result ALIASES the option's
 	// backing store (only the %str-long peel clones, via @str_clone). Dropping
@@ -938,6 +1431,11 @@ func (m *Module) isBorrowRead(f *Function, inst *Inst) bool {
 // are borrowed and owned by the caller, so they are never dropped here (dropping
 // them would double-free the caller's buffer).
 func (m *Module) insertDrops(f *Function, rep *Report) {
+	// Decide which tagged-enum values own their payload BEFORE anything asks
+	// dropOwnsHeap about them (below, and via isBorrowRead). See
+	// markEnumPayloadOwners.
+	m.markEnumPayloadOwners(f)
+
 	// Liveness is needed to decide whether a constructor store CONSUMES its
 	// value (only when the value is dead after the store — a still-live value
 	// keeps its own drop at its last use).
@@ -1017,7 +1515,43 @@ func (m *Module) insertDrops(f *Function, rep *Report) {
 				}
 				continue
 			}
-			if isTransferringMove(inst) && !m.isOptionPeelMove(f, inst) {
+			// A tagged enum whose payload owns heap is the same hazard as the
+			// three cases above, one level down: `r e-res = q` lowers to OpMove,
+			// which bit-copies {tag, payload}, so BOTH slots point at the SAME
+			// payload buffer. The ownership model here is "the SOURCE owns" (see
+			// the note below), which is sound only while the alias stays dead: if
+			// the alias is READ later, freeing at the source's last use would
+			// leave it dangling, while letting both own would double-free —
+			// checkMoves reports exactly that, as
+			// `[use-after-move] ... (double-free risk)`.
+			//
+			// Break the alias with a deep copy instead: each side then owns its
+			// own buffer and both drop independently, whatever the block layout.
+			// Only when the alias is actually read — a dead alias leaves the
+			// single-buffer transfer, and the existing "source owns" rule, intact
+			// (that is the `let it = q` scrutinee shape, which must not clone).
+			if m.moveEnumSharesHeap(f, inst) {
+				dst := inst.Dst
+				if dst == NoVal && len(inst.Args) >= 2 {
+					dst = inst.Args[1]
+				}
+				if dst > NoVal && (liveOut[bid][dst] || m.readNonDropAfterInBlock(bid, iid, dst)) {
+					inst.Op = OpClone
+					m.enumOwnsPayload[inst.Args[0]] = true
+					m.enumOwnsPayload[dst] = true
+				}
+			}
+			// An OWNING tagged enum is exempt from this rule (see
+			// moveTransfersOwnership): its move is a bitwise ALIAS (`let it = q`
+			// for the match scrutinee, `r e-res = q` for a copy) and carries no
+			// ownership — the payload lives inline in the enum, so the
+			// destination shares it rather than receiving it. Marking the source
+			// as a move source would suppress exactly the drop that frees the
+			// payload, turning the fix into a leak; the destination is kept out
+			// of enumOwnsPayload by markEnumPayloadOwners' moveDest rule (and
+			// Phase 2b only ever lets it own when it got its own deep copy), so
+			// there is still exactly one drop per payload.
+			if m.moveTransfersOwnership(f, inst) {
 				moveSrc[inst.Args[0]] = true
 			}
 			// OpOptionWrap transfers ownership of its payload into the option
@@ -1446,6 +1980,22 @@ func isTransferringMove(inst *Inst) bool {
 	return len(inst.Args) < 2 || inst.Args[1] != inst.Args[0]
 }
 
+// moveTransfersOwnership is isTransferringMove as the OWNERSHIP passes must read
+// it: a move whose source hands its heap to the destination, so the source must
+// NOT be dropped afterwards.
+//
+// An OWNING tagged enum is excluded. Its payload lives INLINE in the enum, so
+// the move is a bitwise ALIAS rather than a hand-off: the SOURCE keeps the single
+// drop (the destination is held out of enumOwnsPayload by markEnumPayloadOwners'
+// moveDest rule, and Phase 2b only ever lets a destination own when it has been
+// given its own deep copy). insertDrops and checkMoves must agree on this — with
+// the exemption only in insertDrops, the drop it emitted for the source was then
+// reported as `[use-after-move] value N dropped after move (double-free risk)`,
+// i.e. the compiler refused to build its own correct output.
+func (m *Module) moveTransfersOwnership(f *Function, inst *Inst) bool {
+	return isTransferringMove(inst) && !m.isOptionPeelMove(f, inst) && !m.enumOwnsPayload[inst.Args[0]]
+}
+
 // checkMoves flags use-after-move in nolang's sense: a value DROPPED after it
 // has been moved (its ownership transferred to the move destination) is a
 // double-free — the destination already owns the heap pointer, so dropping the
@@ -1529,7 +2079,7 @@ func (m *Module) checkMoves(f *Function, rep *Report) {
 				if inst == nil {
 					continue
 				}
-				if isTransferringMove(inst) && !m.isOptionPeelMove(f, inst) {
+				if m.moveTransfersOwnership(f, inst) {
 					cur[inst.Args[0]] = true
 				}
 			}
@@ -1575,7 +2125,7 @@ func (m *Module) checkMoves(f *Function, rep *Report) {
 					})
 				}
 			}
-			if isTransferringMove(inst) && !m.isOptionPeelMove(f, inst) {
+			if m.moveTransfersOwnership(f, inst) {
 				cur[inst.Args[0]] = true
 			}
 		}

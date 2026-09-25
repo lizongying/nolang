@@ -105,6 +105,7 @@ func LintIneffectiveOverflow(program *parser.Program) []LintResult {
 	}
 	// 附加（IDENT 起始）註解：遍歷所有陳述，檢查其 side-table 中的 overflow 條目。
 	var collect func(stmts []parser.Statement)
+	var collectIf func(ie *parser.IfExpression)
 	collect = func(stmts []parser.Statement) {
 		for _, stmt := range stmts {
 			if stmt == nil {
@@ -136,7 +137,28 @@ func LintIneffectiveOverflow(program *parser.Program) []LintResult {
 				if v.Body != nil {
 					collect(v.Body.Statements)
 				}
+			case *parser.ExpressionStatement:
+				// if/match 臂体同样是行注解的作用域，必须下钻（与
+				// OverflowAnnotationRelevance.collect 保持一致）。
+				if ie, ok := v.Expression.(*parser.IfExpression); ok {
+					collectIf(ie)
+				}
+			case *parser.LetStatement:
+				if ie, ok := v.Value.(*parser.IfExpression); ok {
+					collectIf(ie)
+				}
 			}
+		}
+	}
+	collectIf = func(ie *parser.IfExpression) {
+		if ie == nil {
+			return
+		}
+		if ie.Consequence != nil {
+			collect(ie.Consequence.Statements)
+		}
+		if ie.Alternative != nil {
+			collect(ie.Alternative.Statements)
 		}
 	}
 	collect(program.Statements)
