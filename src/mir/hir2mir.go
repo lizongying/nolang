@@ -1064,6 +1064,22 @@ func LowerHIR(pkg *hir.Package, enumVariants map[string][]string) (*Module, *Rep
 				continue
 			}
 			l.funcNames[name] = id
+			// Imported module free functions are stored under their qualified
+			// HIR name (for example process.spawn), while source in another
+			// merged module may call the exported function by its bare name.
+			// Keep the target-filtered bare alias too; this is especially
+			// important for platform alternatives, which must not be mangled
+			// into an overload-only name before the MIR filter runs.
+			if strings.Count(name, ".") == 1 {
+				if dot := strings.LastIndex(name, "."); dot > 0 {
+					bare := name[dot+1:]
+					if owner, ok := pkg.FuncOwners[bare]; ok && owner == name[:dot] {
+						if _, exists := l.funcNames[bare]; !exists {
+							l.funcNames[bare] = id
+						}
+					}
+				}
+			}
 		case hir.KLet:
 			if !nodeMatchesPlatform(pkg, id) {
 				continue
@@ -6301,6 +6317,30 @@ func (l *lowerer) resolveCallee(n *hir.Node) (callee string, recvV ValueID) {
 		// directly — MIR supports union-typed locals/params/results.
 		if tmpl := l.unionTemplateCalleeFromName(name); tmpl != "" {
 			return tmpl, NoVal
+		}
+		// A free function imported from a module can appear as a bare
+		// identifier in merged HIR (for example spawn), while the registered
+		// definition is qualified (process.spawn). Resolve that spelling only
+		// when there is exactly one qualified candidate; ambiguous names must
+		// remain unresolved rather than selecting an arbitrary module function.
+		if _, ok := l.funcNames[name]; !ok {
+			qualified := ""
+			qualifiedDots := int(^uint(0) >> 1)
+			ambiguous := false
+			for fn := range l.funcNames {
+				if !strings.HasSuffix(fn, "."+name) {
+					continue
+				}
+				dots := strings.Count(fn, ".")
+				if dots < qualifiedDots {
+					qualified, qualifiedDots, ambiguous = fn, dots, false
+				} else if dots == qualifiedDots {
+					ambiguous = true
+				}
+			}
+			if qualified != "" && !ambiguous {
+				return qualified, NoVal
+			}
 		}
 		return canonSliceRecv(name), NoVal
 	case hir.KDot:

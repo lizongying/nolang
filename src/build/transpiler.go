@@ -60,7 +60,29 @@ func mangleOverloads(program *parser.Program, varTypes map[string]string) {
 		if len(uniqueFns) <= 1 {
 			continue
 		}
+		// Platform variants with the same ordinary signature are alternatives,
+		// not overloads. Keep their source name intact so the MIR platform pass
+		// can discard the non-matching body. Renaming them to the same mangled
+		// symbol would either collapse the alternatives or make bare calls (such
+		// as `spawn()`) miss the qualified symbol entirely.
+		platformVariantSigs := make(map[string]bool)
+		platformSigs := make(map[string]map[string]bool)
 		for _, fd := range fns {
+			sig := callSignature(name, fd.Parameters)
+			if platformSigs[sig] == nil {
+				platformSigs[sig] = make(map[string]bool)
+			}
+			platformSigs[sig][platformAwareCallSignature(name, fd.Parameters, program.Sem.PlatformKeysOf(fd))] = true
+		}
+		for sig, variants := range platformSigs {
+			if len(variants) > 1 {
+				platformVariantSigs[sig] = true
+			}
+		}
+		for _, fd := range fns {
+			if platformVariantSigs[callSignature(name, fd.Parameters)] {
+				continue
+			}
 			parts := []string{name}
 			for _, p := range fd.Parameters {
 				parts = append(parts, sanitizeTypeForName(p.Type.String()))

@@ -619,6 +619,48 @@ func (m *Module) markEnumPayloadOwners(f *Function) {
 		}
 	}
 
+	// R5 (Phase 3, same function): the payload was NEVER extracted here, so
+	// nothing took it out and this value is still the only possible drop site.
+	// Before this rule `q e-res = ok('hi')` with no match at all — or handed
+	// only to a callee that does not extract — leaked the payload silently:
+	// no extraction meant no owner, and an unowned enum is never dropped.
+	//
+	// Excluded, each for a concrete reason:
+	//   - parameters: a borrowed input is not owned here, and marking one would
+	//     also flip R2's trigger (calleeConsumesEnumArg) for a callee that in
+	//     fact consumes nothing. The CALLER's own value picks R5 up instead.
+	//   - move destinations: an alias, not an owner (the moveDest gate below);
+	//     the alias's SOURCE is the value R5 marks, which is also what makes
+	//     Phase 2b's dead-alias transfer case drop.
+	//   - escaped values: a sink (container element, option/struct field,
+	//     opaque call) keeps a shallow alias that the drop machinery never
+	//     traverses, so freeing here would leave it dangling. Same gate as R2.
+	isParam := map[ValueID]bool{}
+	for _, p := range f.Params {
+		isParam[p] = true
+	}
+	for _, p := range f.ResultParams {
+		isParam[p] = true
+	}
+	sites := m.enumExtractSites[f.ID]
+	for _, bid := range f.Blocks {
+		blk := m.Block(bid)
+		if blk == nil {
+			continue
+		}
+		for _, iid := range blk.Insts {
+			inst := m.Inst(iid)
+			if inst == nil || inst.Dst <= NoVal {
+				continue
+			}
+			v := inst.Dst
+			if sites[v] || isParam[v] || escaped[v] {
+				continue
+			}
+			candidates[v] = true
+		}
+	}
+
 	for v := range candidates {
 		if moveDest[v] {
 			continue
@@ -777,12 +819,28 @@ func (m *Module) enumEscapeSinks(f *Function) map[ValueID]bool {
 						}
 					}
 				case OpMove:
-					// `move dst=w args=[v]` is a bitwise alias, so v's payload
-					// is reachable through w: if w escapes, so does v.
-					if len(inst.Args) > 0 && inst.Dst > NoVal && escaped[inst.Dst] &&
-						inst.Args[0] > NoVal && !escaped[inst.Args[0]] {
-						escaped[inst.Args[0]] = true
-						changed = true
+					// A move is a bitwise alias, so v's payload is reachable
+					// through w: if w escapes, so does v.
+					//
+					// ⚠️ Read BOTH encodings of an OpMove, exactly as
+					// isOptionPeelMove and moveEnumSharesHeap already do:
+					//   `dst=w args=[v]`   the scrutinee binding
+					//   `dst=0 args=[v w]` an assignment statement (EmitMoveInto)
+					// Only reading the first left the second invisible, so
+					// `r = q` with `r` a RESULT PARAMETER never propagated the
+					// escape back to `q`. R5 then made `q` owning and dropped
+					// the very payload the caller had been handed: `got: made`
+					// became `got:    ` (silent use-after-free) — see
+					// tests/tagged-enum-zero-match.no case 11/12.
+					if len(inst.Args) > 0 && inst.Args[0] > NoVal {
+						dst := inst.Dst
+						if dst == NoVal && len(inst.Args) >= 2 {
+							dst = inst.Args[1]
+						}
+						if dst > NoVal && escaped[dst] && !escaped[inst.Args[0]] {
+							escaped[inst.Args[0]] = true
+							changed = true
+						}
 					}
 				case OpCall, OpCallExtern, OpCallFFI:
 					// A call to a Nolang function is R2's own trigger and is
@@ -1992,8 +2050,52 @@ func isTransferringMove(inst *Inst) bool {
 // the exemption only in insertDrops, the drop it emitted for the source was then
 // reported as `[use-after-move] value N dropped after move (double-free risk)`,
 // i.e. the compiler refused to build its own correct output.
+//
+// ⚠️ The alias reading holds only while BOTH sides stay in this frame. A move
+// whose destination is a PARAMETER hands the payload to the caller — the callee's
+// parameter IS the caller's storage (see markEnumParamOwners), and a result
+// parameter outlives this frame — so even an owning enum must be a transfer
+// there. Getting this wrong drops a buffer the caller is about to read:
+//
+//	make = () (r e-res) { q e-res = ok('made'); r = q }
+//
+// lowered as `move dst=0 args=[q r]`, where q is owning (R5 marks it, or Phase 2b
+// clones into a value that is then moved out). Without this arm the drop of the
+// source freed the returned payload: `got: made` became `got:    ` — a silent
+// use-after-free that 4ed84631 (before the enum work) did not have.
 func (m *Module) moveTransfersOwnership(f *Function, inst *Inst) bool {
-	return isTransferringMove(inst) && !m.isOptionPeelMove(f, inst) && !m.enumOwnsPayload[inst.Args[0]]
+	if !isTransferringMove(inst) || m.isOptionPeelMove(f, inst) {
+		return false
+	}
+	dst := inst.Dst
+	if dst == NoVal && len(inst.Args) >= 2 {
+		dst = inst.Args[1]
+	}
+	if dst > NoVal && m.isParamValue(f, dst) {
+		return true
+	}
+	return !m.enumOwnsPayload[inst.Args[0]]
+}
+
+// isParamValue reports whether v is one of f's parameters — an input parameter
+// (borrowed storage owned by the caller) or a result parameter (the caller's
+// slot for the return value). Both outlive this frame, so a move into one is an
+// ownership transfer out of the function rather than an intra-frame alias.
+func (m *Module) isParamValue(f *Function, v ValueID) bool {
+	if f == nil || v <= NoVal {
+		return false
+	}
+	for _, p := range f.Params {
+		if p == v {
+			return true
+		}
+	}
+	for _, p := range f.ResultParams {
+		if p == v {
+			return true
+		}
+	}
+	return false
 }
 
 // checkMoves flags use-after-move in nolang's sense: a value DROPPED after it

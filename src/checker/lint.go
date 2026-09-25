@@ -436,8 +436,8 @@ func RunAllLints(program *parser.Program, opts LintOptions) []LintResult {
 	// 运算直接报校验错误，强制显式标注或显式处理 option。
 	for _, u := range ValidateIntOverflow(program) {
 		results = append(results, LintResult{
-			File:   u.File, // 節點級來源檔；空則由下方行號範圍回退歸因
-			Line:   u.Line, Column: u.Column,
+			File: u.File, // 節點級來源檔；空則由下方行號範圍回退歸因
+			Line: u.Line, Column: u.Column,
 			Severity: LintError, Source: "nolang-overflow",
 			Message: u.Message, TraceID: u.TraceID,
 		})
@@ -447,8 +447,8 @@ func RunAllLints(program *parser.Program, opts LintOptions) []LintResult {
 	// 註解豁免，只要除數是整數字面量 0 即報錯。
 	for _, d := range ValidateDivByZero(program) {
 		results = append(results, LintResult{
-			File:   d.File,
-			Line:   d.Line, Column: d.Column,
+			File: d.File,
+			Line: d.Line, Column: d.Column,
 			Severity: LintError, Source: "nolang-div-zero",
 			Message: d.Message, TraceID: d.TraceID,
 		})
@@ -483,7 +483,7 @@ func RunAllLints(program *parser.Program, opts LintOptions) []LintResult {
 		results = append(results, LintResult{
 			Line: u.Line, Column: u.Column,
 			Severity: LintError, Source: "nolang-index",
-			File:     file,
+			File:    file,
 			Message: u.Message, TraceID: u.TraceID,
 		})
 	}

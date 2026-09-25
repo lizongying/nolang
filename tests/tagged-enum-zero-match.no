@@ -1,0 +1,185 @@
+; tagged-enum-zero-match.no — 載荷「一次都沒被抽取」的所有權（Phase 3 / R5）
+;
+; 背景：tagged enum 的載荷所有權在 Phase 1/2/2b 是靠「**抽取**（match 臂綁定）把
+; 載荷搬出去」來轉移的：抽取者成為新的擁有者。於是
+;
+;     q e-res = ok('hi')
+;     print('never matched')      ; 完全沒有 match
+;
+; 這種形狀**沒有任何抽取** ⇒ 沒有擁有者 ⇒ enum 永遠不會被 drop ⇒ 載荷**靜默洩漏**
+; （輸出完全正確，只是記憶體沒還）。同理，把值只傳給「不抽取」的 callee 也一樣。
+;
+; R5（Phase 3）：在 markEnumPayloadOwners 的尾端，把「本函式從未被抽取」的 enum 值
+; 也標成 owning，讓它走既有的 tag-switched drop helper。三個**必須**排除的類別：
+;   1. 參數       —— 借來的不擁有；標了還會誤觸發 R2（calleeConsumesEnumArg），
+;                    而 callee 的參數就是呼叫者的儲存 ⇒ 呼叫者/被呼叫者雙重釋放。
+;   2. move 目的地 —— 別名不是擁有者（Phase 2b），來源才是。
+;   3. 已逃逸的值  —— 容器元素／option 欄位／opaque call 只留淺別名，而 drop 機制
+;                    不會走進那些 sink ⇒ 在這裡釋放會留下**懸空**別名。閘門
+;                    enumEscapeSinks 也會把「被移動進 sink」的來源一併標成逃逸。
+;
+; 🔴 case 11/12 是這條閘門的**迴歸測試**，也是本次唯一抓到過的實際錯誤：
+;    `r = q`（r 是**結果參數**）在 MIR 裡是 `move dst=0 args=[q r]` —— 目的地寫在
+;    Args[1]，Dst 是 NoVal。enumEscapeSinks 的 OpMove 分支原本只讀 `inst.Dst`，
+;    於是「r 是結果參數 ⇒ 逃逸」永遠傳不回 q ⇒ R5 把 q 標成 owning 並 drop，
+;    而那份載荷正是要交還給呼叫者的：
+;        HEAD : got: made        NOW（未修前）: got:       ← 靜默 use-after-free
+;    修法 = 讓 enumEscapeSinks 也讀 `dst=0 args=[v w]` 這個編碼（與 isOptionPeelMove、
+;    moveEnumSharesHeap 一致）。修好後 case 11/12 與 HEAD 逐字節相同。
+;
+; 本檔的判別力在「**過度標記**」：R5 一旦標錯（例如把參數也標了），就會 double free
+; 或 use-after-free ⇒ 輸出變成垃圾或 `trace/BPT trap` ⇒ rc=1。因此每個 case 都必須
+; rc=0 且輸出正確。「標得不夠」（漏標）只會退回洩漏，stdout 看不出來，要靠 MIR 的
+; drop 計數另外驗（本檔的 case 1、3 在修前後 stdout 完全相同，差別是 drop 1→2）。
+;
+; ⚠️ 刻意**不**收錄的既有（與 R5 無關）缺陷：`t e-res = q` 之後 `r = t`（先經一個
+; 區域別名再寫進結果參數）在 HEAD 與本版**逐字節相同**地失敗（`got:` 後接垃圾，
+; rc=0）：Phase 2b 為那個活著的別名插了 clone，而 clone 的結果同時被 move 進結果
+; 參數、又被自己 drop ⇒ 交還給呼叫者的指標被釋放。兩個二進位的 MIR 完全一致
+; （`clone 15<-14` / `move [15 12]` / `drop 14` / `drop 15`），確認是既有偏差。
+
+e-res {
+    ok(v str),
+    fail,
+}
+
+; 切片載荷：走 emitEnumDropHelper 的 `%vec` 分支，與 `%str-long` 是不同的 code path。
+e-list {
+    ok2(v []i64),
+    none,
+}
+
+; 抽取的 callee（Phase 2 的 R2 會把呼叫者的引數標成 owning）
+consume = (q e-res) {
+    q: {
+        ok(v) -> print('consume: ' - v)
+        fail -> print('consume: fail')
+    }
+}
+
+; **不**抽取的 callee：R5 必須讓**呼叫者**擁有，而 callee 的參數不可被標
+; （否則同一個儲存被釋放兩次）。
+bystander = (q e-res) {
+    print('bystander: ignored')
+}
+
+show-list = (q e-list) {
+    q: {
+        ok2(v) -> {
+            print('show-list:')
+            for x in v {
+                print(x)
+            }
+        }
+        none -> print('show-list: none')
+    }
+}
+
+; 經**結果參數**把載荷交還呼叫者（case 11/12 的被呼叫端）。
+make-direct = () (r e-res) {
+    q e-res = ok('direct')
+    r = q
+}
+
+make-inner = () (r e-res) {
+    q e-res = ok('inner')
+    r = q
+}
+
+; 再轉手一層：接到 inner 的結果，原樣交還。
+make-outer = () (r e-res) {
+    t e-res = make-inner()
+    r = t
+}
+
+; 🔴 先經一個**區域別名**再交還：`t e-res = q` 會讓 Phase 2b 插一次深拷貝
+; （因為 t 之後會被讀），拷貝結果再被 move 進結果參數。這條路上的「所有權在
+; 來源」規則同樣必須讓位給「移進參數 = 離開這個框」（§11.4）。
+make-chain = () (r e-res) {
+    q e-res = ok('chain')
+    t e-res = q
+    r = t
+}
+
+main = () {
+    ; 1) 一次都沒被 match（R5 的主案例；修前 drop 1、修後 drop 2）
+    q1 e-res = ok('one')
+    print('case1')
+
+    ; 2) 無載荷變體，一次都沒被 match（沒有東西可釋放，也不能出錯）
+    q2 e-res = fail
+    print('case2')
+
+    ; 3) 只傳給**不抽取**的 callee：呼叫者擁有並釋放，callee 的參數不許釋放
+    q3 e-res = ok('three')
+    bystander(q3)
+    print('case3')
+
+    ; 4) 只傳給**會抽取**的 callee（R2 路徑；與 R5 的互動）
+    q4 e-res = ok('four')
+    consume(q4)
+    print('case4')
+
+    ; 5) 別名一次都沒被 match（R5 標的是**來源**，別名是死的）
+    a5 e-res = ok('five')
+    b5 e-res = a5
+    print('case5')
+
+    ; 6) 別名，經由別名抽取一次（Phase 2b 的 clone 路徑 + R5 的來源標記）
+    a6 e-res = ok('six')
+    b6 e-res = a6
+    consume(b6)
+    print('case6')
+
+    ; 7) 同一個函式裡多個從未被抽取的值（各自獨立標記、各自釋放）
+    q7a e-res = ok('seven-a')
+    q7b e-res = ok('seven-b')
+    q7c e-res = fail
+    print('case7')
+
+    ; 8) 切片載荷，一次都沒被 match（drop helper 的 %vec 分支）
+    l8 e-list = ok2([1, 2, 3])
+    print('case8')
+
+    ; 9) 切片載荷，經由別名抽取一次
+    l9 e-list = ok2([4, 5])
+    m9 e-list = l9
+    show-list(m9)
+    print('case9')
+
+    ; 10) 逃逸：包進 `?e-res`（OpOptionWrap）⇒ 不可在此釋放
+    b10 e-res = ok('ten')
+    o10 ?e-res = b10
+    print('case10')
+
+    ; 11) 🔴 經結果參數交還（`move dst=0 args=[q r]` 的編碼）⇒ q 不可被標
+    ;     ⚠️ 變數名不可用 `x11`/`x12` 這種形狀：`x` + 兩個十六進位數字是 **byte
+    ;     字面量**（lexer.go:907，x00~xFF），`x11` 會被讀成 0x11 而不是識別字。
+    r11 e-res = make-direct()
+    r11: {
+        ok(v) -> print('case11: ' - v)
+        fail -> print('case11: fail')
+    }
+
+    ; 12) 🔴 同上，再隔一層呼叫（逃逸必須跨函式邊界往回傳遞）
+    r12 e-res = make-outer()
+    r12: {
+        ok(v) -> print('case12: ' - v)
+        fail -> print('case12: fail')
+    }
+
+    ; 13) 逃逸：推進容器（`l.push(q)` 是 OpCall 到 vec.push builtin，不是索引寫）
+    b13 e-res = ok('thirteen')
+    l13 []e-res = []
+    l13.push(b13)
+    print('case13')
+
+    ; 14) 🔴 區域別名後才交還（Phase 2b 的 clone + §11.4 的轉移規則）
+    r14 e-res = make-chain()
+    r14: {
+        ok(v) -> print('case14: ' - v)
+        fail -> print('case14: fail')
+    }
+
+    print('done')
+}

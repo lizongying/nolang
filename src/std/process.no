@@ -216,6 +216,7 @@ process {
 ; input     : 寫入子進程 stdin 的內容；空字串 = 不提供 stdin
 ; merge-err : true = 將 stderr 合併到 stdout
 ; 返回 ok=true=成功；成功時設定 .pid/.stdout-fd/.stdin-fd/.running
+#{mac-amd64, mac-arm64, linux-amd64, linux-arm64, wasi-wasm32}
 process.start-with-opts = (program str, args []str, dir str, input str, merge-err bool) (ok bool) {
     ok = false
     .pid = 0
@@ -411,6 +412,11 @@ process.start-with-opts = (program str, args []str, dir str, input str, merge-er
     ok = true
 }
 
+#{win-amd64, win-arm64}
+process.start-with-opts = (program str, args []str, dir str, input str, merge-err bool) (ok bool) {
+    ok = false
+}
+
 ; start: 創建子進程並執行命令（便捷方法，單參數）
 ; program: 要執行的程式名
 ; arg: 傳給程式的參數
@@ -425,6 +431,7 @@ process.start = (program str, arg str) (ok bool) {
 
 ; wait: 等待子進程結束
 ; 返回 status=退出狀態碼（WEXITSTATUS）
+#{mac-amd64, mac-arm64, linux-amd64, linux-arm64, wasi-wasm32}
 process.wait = () (status i64) {
     status = 0
     .running == 0 -> {
@@ -436,8 +443,14 @@ process.wait = () (status i64) {
     .running = 0
 }
 
+#{win-amd64, win-arm64}
+process.wait = () (status i64) {
+    status = .exit-code
+}
+
 ; wait-nohang: 非阻塞等待（輪詢）
 ; 返回 status ?i64: ok=子進程已結束(退出狀態碼), nil=仍在執行
+#{mac-amd64, mac-arm64, linux-amd64, linux-arm64, wasi-wasm32}
 process.wait-nohang = () (status ?i64) {
     status = nil
     .running == 0 -> {
@@ -453,6 +466,11 @@ process.wait-nohang = () (status ?i64) {
     status = code
 }
 
+#{win-amd64, win-arm64}
+process.wait-nohang = () (status ?i64) {
+    status = nil
+}
+
 ; ═══════════════════════════════════════════════
 ; 進程控制
 ; ═══════════════════════════════════════════════
@@ -460,8 +478,14 @@ process.wait-nohang = () (status ?i64) {
 ; kill: 發送信號給子進程
 ; sig: 信號編號（如 SIG-TERM=15, SIG-KILL=9）
 ; 返回 ok=true=成功
+#{mac-amd64, mac-arm64, linux-amd64, linux-arm64, wasi-wasm32}
 process.kill = (sig i64) (ok bool) {
     ok = process-kill(.pid, sig)
+}
+
+#{win-amd64, win-arm64}
+process.kill = (sig i64) (ok bool) {
+    ok = false
 }
 
 ; terminate: 發送 SIG-TERM 信號
@@ -1284,6 +1308,7 @@ find-by-name = (name str) (pids []i64) {
 ; spawn: 創建子進程執行命令字串
 ; cmd: 完整命令字串（將透過 sh -c 執行）
 ; 返回 pid > 0=父進程(子PID), -1=錯誤
+#{mac-amd64, mac-arm64, linux-amd64, linux-arm64, wasi-wasm32}
 spawn = (cmd str) (pid i64) {
 
     ; fork
@@ -1306,16 +1331,28 @@ spawn = (cmd str) (pid i64) {
     }
 }
 
+#{win-amd64, win-arm64}
+spawn = (cmd str) (pid i64) {
+    pid = -1
+}
+
 ; wait: 等待指定子進程結束
 ; pid: 子進程 ID
 ; 返回 status=退出狀態碼（WEXITSTATUS）
+#{mac-amd64, mac-arm64, linux-amd64, linux-arm64, wasi-wasm32}
 wait = (pid i64) (status i64) {
     status = process-waitpid(pid, 0)
+}
+
+#{win-amd64, win-arm64}
+wait = (pid i64) (status i64) {
+    status = -1
 }
 
 ; shell: 執行 shell 命令字串並等待完成（spawn + wait 組合）
 ; cmd: 完整命令字串（將透過 sh -c 執行）
 ; 返回 code=退出碼（0=成功, >0=命令錯誤, 127=exec 失敗, -1=fork 失敗）
+#{mac-amd64, mac-arm64, linux-amd64, linux-arm64, wasi-wasm32}
 shell = (cmd str) (code i64) {
     pid = spawn(cmd)
     {
@@ -1323,4 +1360,9 @@ shell = (cmd str) (code i64) {
 
         pid < 0 -> code = -1
     }
+}
+
+#{win-amd64, win-arm64}
+shell = (cmd str) (code i64) {
+    code = -1
 }

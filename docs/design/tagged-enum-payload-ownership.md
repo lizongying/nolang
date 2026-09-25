@@ -321,7 +321,7 @@ NEW 桶的 14 支（golden 未覆蓋，sweep 不比較）另行逐支做 HEAD vs
    都不 owning → 仍是 move-once 語義（第二次讀到已釋放緩衝）。**與修改前一致，未變差。**
 2. **複製後的多次 match**：`r e-res = q` 之後 `q:` 與 `r:` 各 match 一次 → 目標是 move
    **目的地**故永不 owning，來源也只算 1 次 → 都不 owning。**與修改前一致。**
-3. **match 0 次的洩漏**：維持既有行為（Phase 3）。
+3. **match 0 次的洩漏**：維持既有行為（Phase 3）—— **Phase 3 已完成，見 §11**。
 4. **同一次 match 的不同臂抽不同變體**（變體非靜態已知）：兩個 block 抽**不同**的 slot 集合
    → 不 owning → move 路徑。若真的是同一個值在執行期被抽兩次，這個形狀**修不到**
    （判準刻意保守，見 §3.2 第三條）。
@@ -338,7 +338,8 @@ NEW 桶的 14 支（golden 未覆蓋，sweep 不比較）另行逐支做 HEAD vs
 | **1** | 值層級 `enumOwnsPayload`（同一組 slot 被兩個 block 抽過）＋ tag-switched drop ＋ 抽取 clone ＋ `isBorrowRead`／`moveSrc` 配套 | **已實作** |
 | **2** | 跨程序：callee enum 參數的 owning 標記（R1）＋ 呼叫者標記（R2）＋ 逃逸閘門 | **已實作** |
 | **2b** | 別名（`r = q`）：別名「之後還會被讀」時把那個 `OpMove` 改寫成 `OpClone`（tag-switched 深拷貝），兩邊各自擁有一塊；並統一 `checkMoves` 與 `insertDrops` 的 owning-enum 豁免 | **已實作** |
-| 3 | match 0 次 → owning（修洩漏），並讓 `checkDropCount` 對 tagged enum 也做檢查 | 未實作 |
+| **3** | match 0 次 → owning（R5，修洩漏）；**並修好 `enumEscapeSinks` 只讀 `inst.Dst` 的編碼盲點**（`move dst=0 args=[v w]`），否則 R5 會把交還給呼叫者的載荷 drop 掉（§11） | **已實作** |
+| 3b | 讓 `checkDropCount` 對 tagged enum 也做檢查 | 未實作 |
 
 ### 8.1 落地的檔案
 
@@ -350,6 +351,7 @@ NEW 桶的 14 支（golden 未覆蓋，sweep 不比較）另行逐支做 HEAD vs
 | `tests/tagged-enum-two-match.no` | Phase 1 迴歸測試（7 組） |
 | `tests/tagged-enum-cross-fn.no` | Phase 2 迴歸測試（7 組） |
 | `tests/tagged-enum-alias.no` | Phase 2b 迴歸測試（10 組） |
+| `tests/tagged-enum-zero-match.no` | Phase 3 迴歸測試（13 組） |
 
 ---
 
@@ -436,7 +438,8 @@ Nolang 函式」→ 標 owning。
    且這個方向的誤差只會洩漏不會懸空。
 4. **含結構體指標欄位的 enum 不能走 §10 的深拷貝**（沒有 struct clone helper）⇒
    那一類的別名維持舊路徑：洩漏，或 analyzer 大聲報 `[use-after-move]`。
-5. **match 0 次的洩漏**（Phase 3）與 `checkDropCount` 對 tagged enum 的檢查仍未做。
+5. **match 0 次的洩漏** —— **已由 §11（Phase 3）修好**。`checkDropCount` 對 tagged
+   enum 的檢查仍未做（§8 的 3b）。
 
 ### 9.6 驗收（實測）
 
@@ -651,3 +654,182 @@ SAME=461  DIVERGE=3  UNSTABLE=0  REGRESS=0  IMPROVED=0  BOTH_FAIL=0  NEW=16
 
 **其他閘門**：`go test ./mir/ ./parser/ ./checker/ ./fmt/ ./hir/` 全 ok；
 `no vet src/std` = `0 error(s)`；`analysis.go`／`codegen.go` gofmt-clean。
+
+---
+
+## 11. Phase 3 設計：抽取 0 次（已實作）
+
+### 11.1 觀測：沒有任何抽取 ⇒ 沒有擁有者 ⇒ 靜默洩漏
+
+Phase 1/2/2b 的所有權模型全部建立在「**抽取**把載荷搬出去」之上：抽取者成為新的
+擁有者。於是「一次都沒被抽取」的值沒有任何擁有者，而 tagged enum **自己永不 drop**
+（`Type.Owned` 依設計 false），載荷就這樣漏掉：
+
+```no
+q e-res = ok('hi')
+print('never matched')      ; 完全沒有 match
+```
+
+MIR 實測（`main`）：`drops=1`，而那唯一的 drop 是 `print` 的字串常數 —— enum 的
+載荷（1 次 malloc）從未被釋放。把值只傳給「不抽取」的 callee（`bystander(q)`）同理。
+
+### 11.2 規則 R5
+
+在 `markEnumPayloadOwners` 尾端：**本函式從未被抽取的 enum 值 → owning**，讓它走
+既有的 tag-switched drop helper。三個**必須**排除的類別：
+
+| 排除 | 理由 |
+|---|---|
+| 參數（含結果參數） | 借來的不擁有；標了還會誤觸發 R2（`calleeConsumesEnumArg`），而 callee 的參數**就是**呼叫者的儲存 ⇒ 呼叫者／被呼叫者雙重釋放。呼叫者自己的值會走 R5。 |
+| move 目的地 | 別名不是擁有者（§3.2 的 moveDest 規則）；**來源**才是 R5 標的。 |
+| 已逃逸的值 | 容器元素／option／struct 欄位／opaque call 只留淺別名，而 drop 機制不會走進那些 sink ⇒ 在此釋放會留下**懸空**別名（與 R2 共用同一道閘門）。 |
+
+### 11.3 🔴 坑一：`enumEscapeSinks` 只讀 `inst.Dst`（OpMove 有兩種編碼）
+
+R5 的第一版直接造成**靜默 use-after-free**（比洩漏更糟）：
+
+```no
+make = () (r e-res) { q e-res = ok('made')  r = q }
+main = () { x e-res = make()  x: { ok(v) -> print('got: ' - v)  fail -> ... } }
+```
+
+| 二進位 | 輸出 |
+|---|---|
+| HEAD（`d407f2b0`） | `got: made` |
+| R5 第一版 | `got:    ` ← 垃圾 |
+| R5 修好後 | `got: made` |
+
+根因：`r = q`（`r` 是**結果參數**）降落到 `move dst=0 args=[q r]` —— **目的地寫在
+`Args[1]`、`Dst` 是 `NoVal`**。而 `enumEscapeSinks` 的 `OpMove` 分支只讀 `inst.Dst`：
+
+```go
+if len(inst.Args) > 0 && inst.Dst > NoVal && escaped[inst.Dst] && ...
+```
+
+⇒「`r` 是結果參數 ⇒ 逃逸」永遠傳不回 `q` ⇒ R5 把 `q` 標成 owning 並 drop ⇒ 那份
+載荷正是要交還給呼叫者的。
+
+⚠️ 這個編碼盲點**不是 R5 引入的**：`isOptionPeelMove`、`moveEnumSharesHeap`、
+`isOptionPeelMove` 的註解都已經明寫兩種編碼，只有 `enumEscapeSinks` 漏了。修法就是
+讓它也讀（同一段 `dst := inst.Dst; if dst == NoVal && len(inst.Args) >= 2 { dst =
+inst.Args[1] }`）—— 這同時修好 R2 的同一道閘門。
+
+### 11.4 🔴 坑二：移進**參數**的 move 是「離開這個框」的轉移
+
+修好 11.3 之後仍有第二個形狀會 dangling，而且**不是 R5 造成的**（已提交的
+Phase 1/2/2b 就壞了）：
+
+```no
+make2 = () (r e-res) { q e-res = ok('chain')  t e-res = q  r = t }
+```
+
+| 二進位 | 輸出 |
+|---|---|
+| `4ed84631`（enum 工作之前） | `got: chain` |
+| HEAD（`d407f2b0`，Phase 1/2/2b） | `got:     ` ← 垃圾 |
+| 本版（R5 + 兩處修正） | `got: chain` |
+
+MIR（HEAD 與本版**第一版**逐字節相同，故確認與 R5 無關）：
+
+```llvm
+  clone  dst=15 args=[14]     ; Phase 2b：別名 t 之後會被讀 ⇒ 深拷貝
+  move   dst=0  args=[15 12]  ; r = t（12 是結果參數）
+  drop   dst=0  args=[14]     ; q 的原緩衝 —— 正確
+  drop   dst=0  args=[15]     ; ← 錯：15 已經交給呼叫者了
+```
+
+`moveTransfersOwnership` 對 owning enum 一律回 false（§3.2「來源擁有」），於是
+`move [15 12]` 不被當成轉移 ⇒ `15` 被 drop ⇒ 呼叫者拿到的指標被釋放。
+
+修法：**「來源擁有」只在別名留在同一個框裡時才成立**。目的地是**參數**時，載荷是
+離開這個框的（callee 的參數就是呼叫者的儲存；結果參數更是活過這個框）⇒ 一律算轉移：
+
+```go
+if dst > NoVal && m.isParamValue(f, dst) { return true }
+```
+
+### 11.5 迴歸測試 `tests/tagged-enum-zero-match.no`（13 組）
+
+| # | 形狀 | 驗什麼 |
+|---|---|---|
+| 1 | 一次都沒被 match | R5 主案例（修前 drop 1、修後 drop 2） |
+| 2 | 無載荷變體、沒被 match | 沒有東西可釋放也不能出錯 |
+| 3 | 只傳給**不抽取**的 callee | 呼叫者擁有；callee 的參數**不許**被標（標了 = double free） |
+| 4 | 只傳給**會抽取**的 callee | R2 路徑與 R5 的互動 |
+| 5 | 別名一次都沒被 match | R5 標的是來源，別名是死的 |
+| 6 | 經由別名抽取一次 | Phase 2b 的 clone 路徑 + R5 的來源標記 |
+| 7 | 同一個函式裡多個從未被抽取的值 | 各自獨立標記、各自釋放 |
+| 8 | 切片載荷、沒被 match | drop helper 的 `%vec` 分支 |
+| 9 | 切片載荷、經別名抽取一次 | clone helper 的 `%vec` 分支 |
+| 10 | 逃逸進 `?e-res`（`OpOptionWrap`） | 逃逸閘門（不可在此釋放） |
+| **11** | **經結果參數交還（`move dst=0 args=[q r]`）** | **§11.3 的迴歸** |
+| **12** | **同上，再隔一層呼叫** | **逃逸必須跨函式邊界往回傳遞** |
+| 13 | 推進容器（`l.push(q)`，`OpCall` 到 builtin） | 逃逸閘門（與 §9.3 的 `l.push` 同一條） |
+| **14** | **先經區域別名再交還（`t = q` 之後 `r = t`）** | **§11.4 的迴歸（Phase 2b clone + 移進參數）** |
+
+⚠️ 變數名不可用 `x11`／`x12` 這種形狀：`x` + **兩個十六進位數字**是 **byte 字面量**
+（`src/lexer/lexer.go:907`，`x00`~`xFF`），`x11` 會被讀成 `0x11` 而不是識別字 ⇒
+`a statement cannot be just a literal value`。`x0`~`x9`（單一數字）與 `xa` 正常。
+
+本檔的判別力在「**過度標記**」：R5 標錯（例如把參數也標了）就會 double free 或
+use-after-free ⇒ 輸出變垃圾或 `trace/BPT trap` ⇒ rc=1。因此每組都必須 rc=0 且輸出
+正確。「標得不夠」（漏標）只會退回洩漏，stdout 看不出來，要靠 MIR 的 drop 計數驗
+（case 1／3 修前後 stdout 完全相同，差別是 drop 1→2）。
+
+**刻意不收錄**：無。§11.4 的「別名鏈再交還」形狀已在本版修好（`4ed84631` 也正確，
+只有 Phase 1/2/2b 壞），並由 case 14 覆蓋。
+
+### 11.6 驗收（實測）
+
+**新測** `tests/tagged-enum-zero-match.no`（14 組）：`rc=0`、`sha256=a534e33c83fa…`
+（前 12 位元）。它是「過度標記」的守衛：修前後的 stdout **完全相同**（case 1／3 的
+差別只在 MIR 的 drop 數），但任何標錯都會 crash ⇒ rc=1。
+
+**洩漏客觀量測**（MIR，`main` 內的 `drop` 條數；那唯一的 drop 是 `print` 的字串常數）：
+
+| 探針 | HEAD | NOW |
+|---|---|---|
+| `tmp/zero1.no`（`q e-res = ok('hi')` 完全沒 match） | 1 | **2** |
+| `tmp/zero2.no`（只傳給不抽取的 callee） | 1 | **2** |
+
+**三支二進位 A/B**（`pre` = `4ed84631`，enum 工作之前；`HEAD` = `d407f2b0`；
+`NOW` = Phase 3 完成）：
+
+| 輸入 | pre | HEAD | NOW |
+|---|---|---|---|
+| `tmp/r5ret1.no`（`r = q`，r 是結果參數） | ✓ `made` | ✓ `made` | ✓ `made` |
+| `tmp/r5ret2.no`（`t = q` 之後 `r = t`） | ✓ `chain` | ✗ 垃圾 | ✓ `chain` |
+| `tmp/r5ret4.no`（跨函式一層） | ✓ `inner` | ✓ `inner` | ✓ `inner` |
+
+R5 **第一版**（只加規則、沒修 11.3）在 `r5ret1`／`r5ret4` 上輸出垃圾 ⇒ 這一欄就是
+「為什麼 R5 不能單獨落地」的證據。
+
+**既有 enum 測檔 sha256**：`tagged-enum.no`、`tagged-enum-two-match.no`、
+`tagged-enum-cross-fn.no`、`tagged-enum-alias.no`、`tagged-enum-payload-ownership.no`
+五支 HEAD == NOW（**全部 SAME**）；`tagged-enum-zero-match.no` 是新增檔，HEAD 與 NOW
+**不同**且正是預期的改善（case 14：HEAD 印垃圾、NOW 印 `chain`）。
+
+**golden sweep**（`NO=/tmp/no_p3/bin/no`，私有 binary，`shasum -c` 前後都是
+`bin/no: OK` —— 不受並行 session 重建影響）：
+
+```
+SAME=461  DIVERGE=3  UNSTABLE=0  REGRESS=0  IMPROVED=0  BOTH_FAIL=0  NEW=17
+461 + 3 = 464 ✓（= baseline 行數）
+```
+
+- 只加 §11.3（逃逸編碼修正）時跑過一次，數字**完全相同**；再加上 §11.4 後再跑一次，
+  仍然相同 ⇒ 兩個修正都沒有動到 golden 的行為。
+- 三個 DIVERGE 三方比對（rc 與 sha256 都比）全部是 `golden ≠ HEAD == NOW`：
+
+| 檔案 | golden | HEAD | NOW |
+|---|---|---|---|
+| `tests/default-params.no` | rc=0 `38b886a02dc3` | rc=0 `d41c6dd7d135` | 同 HEAD |
+| `tests/std-hash.no` | rc=0 `74c210c66ae5` | rc=0 `cfea7058549b` | 同 HEAD |
+| `tests/std-new.no` | rc=0 `40549726eb56` | rc=0 `33a12a8a3b9b` | 同 HEAD |
+
+- NEW 由 16 → 17（新增 `tests/tagged-enum-zero-match.no`）。
+
+**其他閘門**：`go test ./mir/ ./parser/ ./checker/ ./fmt/ ./hir/` 全 ok；
+`no vet src/std` = `0 error(s)`；`analysis.go` gofmt-clean。
+
+

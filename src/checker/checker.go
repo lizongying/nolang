@@ -3447,9 +3447,7 @@ func StatementsWithIntOverflow(program *parser.Program) map[parser.Statement]boo
 		switch x := e.(type) {
 		case *parser.InfixExpression:
 			if isDirectOverflowValue(x, declared, selfType) ||
-				(overflowArithOps[x.Operator] &&
-					looseOperandIsInt(x.Left, declared, selfType) &&
-					looseOperandIsInt(x.Right, declared, selfType)) {
+				infixFlaggedByOvfLint(x, declared) {
 				found = true
 			}
 			if exprHasIntOverflow(x.Left, declared, selfType) {
@@ -3968,41 +3966,26 @@ func isDirectOverflowValue(v parser.Expression, varTypes map[string]string, self
 	return true
 }
 
-// looseOperandIsInt 是 relevant 集合（StatementsWithIntOverflow）专用的宽口径分类：
-// 在 isIntExpr 之外，额外把「泛型型别参数」视为整数。动机：`[]t.sum` 里的
-// `acc = acc + .[i]`，`.[i]` 推断为元素型别 "t"（型别参数名），isIntType("t")
-// 回 false 会被当成「确定非整数」，导致管辖它的 #{overflow} 註解被 `no fmt`
-// 误删（单态化为 i64 vec 后该运算确实可能溢出，wrap 是作者显式选择的语义）。
-// relevant 集合是超集语义（宁可多保留註解，绝不误删），故只在「确定非整数」
-// （内建非整型 / 容器 / option / 限定名 / 已知 struct / 具体型别别名且非整族）
-// 时回 false；其余无法归类的裸标识符（型别参数 / 未解析别名）一律保守回 true。
-// 仅供 relevant 计算使用，不影响编译期硬错误（ValidateUnhandledOverflow 仍用
-// 原口径的 isIntExpr）。
-func looseOperandIsInt(e parser.Expression, declared map[string]string, selfType string) bool {
-	t := inferExprType(e, declared, nil, selfType)
-	if t == "" {
-		return true // 推断失败：保守视为整数（与 isIntExpr 一致）
-	}
-	if isIntType(t) {
-		return true
-	}
-	if nonIntTypeNames[t] {
+// infixFlaggedByOvfLint 用与 ovf-int-default lint 走查（walkExprForIntOverflow）
+// 完全相同的口径（operandIntKind）判定一个 + - * / 是否会被 lint 报告：若该 lint
+// 会报，则其所在陈述必须进入 relevant 集合——否则 `no fmt` 删掉注解后 lint/硬
+// 检查（ovfhndld）会反过来新增报错（删除方向不一致）。典型例子：char.to-upper 的
+// `result = . - 32`——裸 `.`（隐式 self）在 isDirectOverflowValue 语境下被推成
+// char（非整族）→ 注解误删 → 编译期 ovfhndld 报错；而 lint 对 `.` 一律保守视为
+// 有號整数。relevant 取两者并集（超集）后即可保证：只删没有任何检查会要求的注解。
+func infixFlaggedByOvfLint(inf *parser.InfixExpression, declared map[string]string) bool {
+	if !overflowArithOps[inf.Operator] {
 		return false
 	}
-	// 容器 / option / 函数型别 / 限定名 / 联合：非整数家族（与原口径一致）。
-	if strings.ContainsAny(t, "[]?().| ") {
+	lk := operandIntKind(inf.Left, declared)
+	rk := operandIntKind(inf.Right, declared)
+	if lk == "" || rk == "" {
 		return false
 	}
-	// 已知 struct：struct 算术不产生 option。
-	if validationStructFields != nil {
-		if _, ok := validationStructFields[t]; ok {
-			return false
-		}
+	if inf.Operator == "/" {
+		// 与 walkExprForIntOverflow 一致：无号除法永不溢出，仅有號（含未知）侧才报。
+		return lk == "signed" || rk == "signed"
 	}
-	if at, ok := validationConcreteTypeAliases[t]; ok {
-		return isIntType(at)
-	}
-	// 裸未知标识符：视为泛型型别参数 → 保守整数。
 	return true
 }
 
