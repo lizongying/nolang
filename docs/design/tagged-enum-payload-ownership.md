@@ -1014,13 +1014,43 @@ b []byte = with-len(4)     ; HEAD: SIGSEGV（rc=139），v0.3.5 / 4ed84631 / d40
 
 | 變體 | REGRESS |
 |---|---|
-| 回退照舊（HEAD） | **158** |
+| 回退照舊（`752386b9`） | **158** |
 | 整個回退刪掉 | **1** —— 就是它要修的 `tests/std-unix-fs-os-2.no`（`spawn`） |
-| 回退 + 跳過 LHS 推斷型別的 builtin | **0** |
+| 回退 + **廣閘門**（`builtin.FindBuiltinMethod(name) == nil`） | **0** |
+| 回退 + **窄名單**（`lhsInferredBuiltins`，即提交進 HEAD 的版本） | **7** —— 見下方更正 |
 
 ⇒ 這個回退**是必要的**（`spawn` 靠它），但不能把「裸名是 builtin」的名字改寫成限定
-方法名。工作樹已由並行 session 以 `lhsInferredBuiltins` 修好（**未提交**）；本輪用等價
-的 `builtin.FindBuiltinMethod(name) == nil` 驗證，兩者都得到 `REGRESS=0`。
+方法名。
+
+⚠️ **2026-09-25 更正 —— HEAD 的修法是不完整的。** 提交進 HEAD（`74881011`）的是**窄名單**
+`lhsInferredBuiltins`，只列了 `with-len`／`with-cap`／`with-cap-len`（＋ `vec.` 前綴）。
+它**擋不住所有案例**：實測 464 檔 golden 在乾淨 HEAD 上仍有 **7 檔 `REGRESS`**——
+`tests/{aes-vectors, fs-error-complete, fs-struct, open-perm, open-read, open-write, std-hash}.no`。
+
+精確根因（MIR 實證）：`src/std/fs.no:564` 的 `fs.file.close` 方法體內用**裸名**呼叫 libc：
+
+```no
+rc = close(.fd)      ; 意圖是 libc close(2)，回 i64
+```
+
+而 `close` **也是**一個已註冊的 builtin 方法名（`src/builtin/os.go:248`）。窄名單不含
+`close` ⇒ 後綴掃描把這個裸名改寫成 `fs.file.close` ⇒ **遞迴自我呼叫**、回傳型別從 `i64`
+變成 `bool`：
+
+| | MIR |
+|---|---|
+| 乾淨 HEAD（窄名單） | `call dst=173:bool args=[172]` ← 指向自己 |
+| 加廣閘門 | `call dst=173:i64 args=[172]` ← libc `close` |
+
+無限遞迴 ⇒ SIGSEGV。**已實測**：把 `hir2mir.go` 的條件從
+`if _, ok := l.funcNames[name]; !ok {` 改成
+`if _, ok := l.funcNames[name]; !ok && builtin.FindBuiltinMethod(name) == nil {`
+（即廣閘門），這 7 檔**全部回到 rc=0**。
+
+**教訓**：窄名單是**列舉**，而問題本質是**通則**（「裸名是 builtin ⇒ 永不可改寫成限定方法」）。
+凡是「用列舉去擋一個通則」的修法，都要問「名單漏了誰？」—— 這裡漏的是 `close`，而且症狀
+（無限遞迴 SIGSEGV）與原本的 `with-len` 症狀（型別錯置）完全不同，光看症狀不會聯想到同一個
+根因。
 
 **教訓**：sweep 出現大面積 REGRESS 時，第一步不是懷疑自己的改動，而是先建一支**乾淨
 HEAD** 的 binary 跑同一支探針 —— 若乾淨 HEAD 也炸，就是既有偏差，且要用**再往前一個
@@ -1129,4 +1159,25 @@ PORT i64 = 0x0303   ; 超出 byte 範圍 → 必須顯式標註
   全 ok。
 - `TestKindCoverageAcrossBothCorpora`：**56 / 68 kinds exercised、12 exempt**（比移除前
   少一個 kind）。
-- golden sweep（私有 worktree binary）：見 §12.9 的同一個 `NO=` 流程。
+- golden sweep（私有 worktree binary `NO=/tmp/no_z/bin/no`，sha256 `92aeb829…` 前後一致）：
+  `SAME=454 DIVERGE=3 UNSTABLE=0 REGRESS=7 IMPROVED=0 BOTH_FAIL=0 NEW=17`，
+  `454+3+7 = 464` ✓（`NEW` 不計入 baseline）。
+- ⚠️ **`REGRESS=7` 與 `DIVERGE=3` 都不是本輪造成的**，這是**逐檔三方比對**的結論，不是推測：
+  對全部 10 個非 SAME 的檔案，**乾淨的 `74881011`**（`/tmp/no_h5`，即**未含**本輪改動，
+  `lexer.go` 的 `xNN` 規則仍在）與**本輪 binary**（`/tmp/no_z` = `74881011` + 本輪 patch）的
+  **rc 與 stdout sha256 完全相同** ⇒ `NOW == HEAD` ⇒ 既有偏差。`REGRESS=7` 的根因見 §12.10
+  的更正（`src/std/fs.no:564` 的裸 `close` 被改寫成 `fs.file.close` ⇒ 遞迴 SIGSEGV）。
+  `DIVERGE=3` = `default-params.no`／`named-format.no`／`std-new.no`，同樣 `NOW == HEAD ≠ golden`。
+- **控制組整場 sweep**（`NO=/tmp/no_h5/bin/no`，sha256 `0f1735ee…`）：bucket 分佈與本輪
+  **完全相同**（同一組 3 個 DIVERGE、同一組 7 個 REGRESS、同一組 17 個 NEW ⇒ 兩邊都是
+  `SAME=454`）。⇒ 本輪改動的 bucket 影響為 **零**，已由「逐檔 rc+sha」與「整場 sweep」兩條
+  獨立證據確認。
+- ⚠️ **做控制組時踩到的坑**：第一次建控制組用的是 `git worktree add --detach … HEAD`，但當時
+  本輪改動**已經被提交**（`fd914272`）⇒ 那個「乾淨 HEAD」其實**已含本輪改動**，控制組無效
+  （`make no` 的 `-X main.version=` 蓋章揭露了這件事：蓋的是 `fd914272` 而不是預期的 `74881011`）。
+  有效的控制組必須**指名 commit**（`git worktree add --detach /tmp/no_h5 74881011`）並確認
+  `grep -c 'xNN → byte' src/lexer/lexer.go` 回 **1**。⇒ **並行 session 會在你工作時提交你的改動**；
+  「HEAD」不是穩定的控制組，**要指名 SHA**。
+- ⇒ 本輪改動的**行為影響為零**：它只刪除了語料中**零使用**的拼寫與其不可達下游。唯一可觀測的
+  非行為差異是 `src/std/types.no` 的註解改動使 `embeddedStdSigKey` 改變（已隨 `make no` 重生成
+  `src/checker/stdsig_gen.go`）。
