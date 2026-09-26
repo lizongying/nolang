@@ -1,5 +1,11 @@
 # 更新日誌
 
+## v0.3.7
+
+- feat(fmt): support variadic print/eprint with per-argument named format templates
+- fix(builtin): remove printf and eprintf, emitting a clear compile error to guide migration
+- refactor(mir): scope module global bindings by declaring module to prevent cross-module clobbering
+
 ## v0.3.6
 
 - feat(mir): implement tagged enum payload ownership with phased design
