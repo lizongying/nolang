@@ -1,0 +1,14 @@
+; global-owner-same-module.no — 模組綁定對「本模組」仍須可見（2026-09-26）
+;
+; 對照組（不得改變）：std/log.no 的 `level` 是小寫的模組級共享變數，由同模組的
+; set-level 寫入、debug/info/warn/error 讀取。按模組歸屬限定解析之後，
+; 「同一模組」必須照舊可見 —— 否則整個 logger 會失效。
+;
+; 期望輸出（stderr）：
+;   [INFO] a          級別 1（預設）允許 info
+;   [DEBUG] b         set-level(0) 之後允許 debug
+;   不出現 WARN / ERROR
+
+log.info('a')
+log.set-level(0)
+log.debug('b')

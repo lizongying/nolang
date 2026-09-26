@@ -9,11 +9,11 @@
 # potentially-different map order), asserting the output is ALWAYS the exact
 # correct string.
 #
-# Backends:
-#   0 — legacy HIR backend (NOLANG_MIR=0)
-#   3 — MIR backend, full gate, no fallback (NOLANG_MIR=3)
-# The fix lives in the shared transpiler (resolveMethodCall), so both must be
-# deterministic.
+# Backend:
+#   3 — MIR backend (the ONLY backend; the legacy HIR backend referenced by the
+#       original NOLANG_MIR=0 leg was removed, so that leg now errors and is gone).
+# The fix lives in the shared transpiler (resolveMethodCall), so the output must
+# be deterministic.
 #
 # Usage: ./tests/regress-vec-to-str.sh [N]
 #   N = iterations per backend (default 50).
@@ -32,7 +32,7 @@ if [ ! -x "$NO" ]; then
 fi
 
 fail=0
-for mir in 0 3; do
+for mir in 3; do
     mism=0
     for i in $(seq 1 "$N"); do
         out=$(NOLANG_MIR=$mir "$NO" run "$TEST" 2>/dev/null)
@@ -55,5 +55,5 @@ if [ "$fail" -ne 0 ]; then
     echo "RESULT: ❌ regression detected"
     exit 1
 fi
-echo "RESULT: ✅ $N x 2 backends deterministic & correct"
+echo "RESULT: ✅ $N runs deterministic & correct (MIR backend)"
 exit 0

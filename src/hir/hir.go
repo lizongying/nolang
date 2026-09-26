@@ -295,6 +295,20 @@ type Package struct {
 	// main program) would hijack the std call (and, when its body itself
 	// calls `fs.is-file()`, recurse infinitely: stack-overflow SIGSEGV).
 	FuncOwners map[string]string
+	// Owners maps each top-level declaration node id (the ids in Top) to the
+	// short name of the module that declares it; an absent entry means the
+	// main program. Filled by parser.ASTToHIRWithMap from the same AST
+	// ModuleOwner side-table as FuncOwners, but keyed by NODE so it covers
+	// every top-level statement — methods, struct/enum declarations and, most
+	// importantly, plain top-level `let` bindings, none of which FuncOwners
+	// (a name -> owner map of free functions only) can describe.
+	//
+	// The MIR backend uses it to scope module-binding resolution: a module
+	// binding owned by module M is only visible to functions ALSO owned by M.
+	// Without that scope a std module function's own local (`fmt-parse-spec`'s
+	// `i = 0`) resolved to the main program's same-named top-level binding and
+	// silently overwrote it — see nameUsedInFuncBodies in src/mir/hir2mir.go.
+	Owners map[int32]string
 	// Inferred holds the checker's inferred type strings, keyed by node id.
 	// HIR nodes only carry *declared* types in Node.Type; the rich inferred
 	// types (which the checker computes by mutating the AST) live here so

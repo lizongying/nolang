@@ -1,0 +1,17 @@
+; slice-to-str.no — default to-str for slices / arrays.
+; print() must auto-stringify a []str as [a, b, c], an empty slice as [],
+; and a numeric slice as [1, 2, 3]. Format fields also work.
+
+main = () {
+    s []str = ['a', 'b', 'c']
+    print(s); expect: [a, b, c]
+
+    e []i64 = []
+    print(e); expect: []
+
+    n []i64 = [1, 2, 3]
+    print(n); expect: [1, 2, 3]
+
+    print('s={s}'); expect: s=[a, b, c]
+    print('n={n}'); expect: n=[1, 2, 3]
+}

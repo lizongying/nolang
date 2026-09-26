@@ -1,0 +1,27 @@
+; print-eprint-to-str.no — print (stdout) and eprint (stderr) both auto-to-str.
+; print and eprint are the only print-family builtins in the MIR backend
+; (println/eprintln are NOT defined — they were legacy-only). `print` writes
+; stdout with a trailing newline; `eprint` writes stderr with a trailing
+; newline. Both must stringify struct / slice / map aggregates with no
+; hand-written .to-str.
+
+point {
+    x i64
+    y i64
+}
+
+main = () {
+    p = point { x: 1, y: 2 }
+    s []str = ['a', 'b']
+    m [str]i64 = { 'a': 1, 'b': 2 }
+
+    ; stdout (print):
+    print(p); expect: {x: 1, y: 2}
+    print(s); expect: [a, b]
+    print(m); expect: {b: 2, a: 1}
+
+    ; stderr (eprint):
+    eprint(p); expect(stderr): {x: 1, y: 2}
+    eprint(s); expect(stderr): [a, b]
+    eprint(m); expect(stderr): {b: 2, a: 1}
+}

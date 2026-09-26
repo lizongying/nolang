@@ -234,6 +234,19 @@ type lowerer struct {
 	// constant initializer can be folded on first reference.
 	globalNodes map[string]int32
 
+	// globalOwners records, for each registered module binding, the short name
+	// of the module that DECLARES it ("" = the main program), taken from
+	// hir.Package.Owners. Together with curOwner it scopes global resolution:
+	// a module binding is only visible to functions of its own module, so a std
+	// module's local (`fmt-parse-spec`'s `i = 0`) can never resolve to — and
+	// silently overwrite — a main-program binding of the same name.
+	globalOwners map[string]string
+
+	// curOwner is the module short name of the function currently being
+	// lowered ("" = the main program, which also covers the synthetic main).
+	// Set by lowerFunction from hir.Package.Owners.
+	curOwner string
+
 	// enumVariants maps an enum type name (e.g. "code") to its variant names in
 	// declaration order. Used to resolve enum-typed top-level `let`s and enum
 	// variant references (`code.io`) to i64 discriminants, and to map enum types
@@ -994,13 +1007,14 @@ func internStrPkg(pkg *hir.Package, s string) int32 {
 // lowering-coverage gaps.
 func LowerHIR(pkg *hir.Package, enumVariants map[string][]string) (*Module, *Report, []LowerDiag) {
 	l := &lowerer{
-		pkg:         pkg,
-		funcNames:   map[string]int32{},
-		lowered:     map[string]bool{},
-		locals:      map[string]ValueID{},
-		globals:     map[string]ValueID{},
-		globalTypes: map[string]string{},
-		globalNodes: map[string]int32{},
+		pkg:          pkg,
+		funcNames:    map[string]int32{},
+		lowered:      map[string]bool{},
+		locals:       map[string]ValueID{},
+		globals:      map[string]ValueID{},
+		globalTypes:  map[string]string{},
+		globalNodes:  map[string]int32{},
+		globalOwners: map[string]string{},
 		// Copy the caller's table: it is the SHARED std cache
 		// (checker.stdEnumVariantsCache), and collectLocalEnumVariants adds the
 		// program's own enum definitions to it. Writing into the shared map
@@ -1191,6 +1205,57 @@ func LowerHIR(pkg *hir.Package, enumVariants map[string][]string) (*Module, *Rep
 					if l.isUnsafeInlineType(raw) {
 						continue
 					}
+					// A foldable constant is the only shape that reaches here, and
+					// it used to be registered UNCONDITIONALLY ("the legacy codegen
+					// likewise emits every top-level constant `let` as a module
+					// global"). Keep the global in the two cases that need it, and
+					// only those:
+					//
+					//   * a GLOBAL-STYLE name (uppercase, or `_` + uppercase) — the
+					//     documented spelling for module data. This is what keeps
+					//     `#{mac-arm64} PV = 111` a real `@PV` global
+					//     (TestSetTargetPlatformEmptyFallsBackToHost).
+					//   * a name some real helper function READS (`SBOX`,
+					//     `XZ-MAGIC`, std/log.no's lowercase `level`) — referencedByFunc
+					//     is exactly that test, and it ignores functions that
+					//     SHADOW the name with a parameter/result/loop variable.
+					//
+					// A lowercase constant that no function reads is consumed only by
+					// the synthetic main, which inlines it as a local of main — which
+					// is indistinguishable for every read main performs, and is what
+					// the language reference promises ("小寫開頭的頂層變量會被編譯器
+					// 視為局部變量", docs/docs/lang/syntax.md).
+					//
+					// ONLY when the name is actually SHADOWED somewhere — i.e. some
+					// function declares a parameter / named result / loop variable of
+					// the same name (nameDeclaredAsLocalInAnyFunc). Dropping the
+					// global is not free — several top-level shapes (notably the
+					// `int` newtype, which has no registered struct layout) are NOT
+					// inlined by synthesizeMainForTopLevel, so a dropped binding
+					// vanishes entirely and later uses lower to void/undef or read a
+					// stale slot:
+					//
+					//	a int = 10 / b int = 2 / q = a / b   -> sdiv void undef, undef
+					//	q = a / 2                            -> prints 0, not 5
+					//	my-stdin fd = 0 / my-stdin == 0 ->   -> trace/BPT trap
+					//
+					// (test-div-mod-option, test-div-zero, test-fd-newtype), and
+					// tests/test-div-zero.no's deliberately-UB probe numbers also
+					// shift.
+					//
+					// ⚠️ This predicate is NOT what protects a script binding from
+					// being clobbered by another module: that is globalVisible's job
+					// (a module binding is only visible inside its own module). It
+					// used to carry that burden via a package-wide "some function
+					// declares this name as a local" scan, which both missed the
+					// real mechanism and broke same-module accumulator helpers
+					// (`total = 0` + `add = (n i64) { total = total + n }` printed
+					// 0 instead of 7).
+					if !referencedByFunc && !isGlobalStyleName(pkg.Str(n.S)) &&
+						l.isInlineableLetType(raw) &&
+						l.nameDeclaredAsLocalInAnyFunc(pkg.Str(n.S)) {
+						continue
+					}
 				}
 			}
 			gname := pkg.Str(n.S)
@@ -1219,6 +1284,10 @@ func LowerHIR(pkg *hir.Package, enumVariants map[string][]string) (*Module, *Rep
 					}
 					l.globals[gname] = NoVal // marker: declared, not yet materialized
 					l.globalNodes[gname] = id
+					// Remember WHICH module owns this binding ("" = the main
+					// program). Resolution of a module binding is scoped to its
+					// own module — see globalVisible.
+					l.globalOwners[gname] = l.pkg.Owners[id]
 				}
 			}
 		}
@@ -1990,6 +2059,10 @@ func (l *lowerer) lowerFunction(name string, hirID int32) {
 	isExtern := n.Kind == hir.KExtern
 	fid := l.b.NewFunc(name, params, results, isExtern)
 	l.curFunc = fid
+	// Scope module-binding resolution to this function's own module ("" = the
+	// main program, which includes the synthetic main and any top-level
+	// statement sequence lowered into it). See globalVisible.
+	l.curOwner = l.pkg.Owners[hirID]
 	l.curRecv = NoVal
 	// For a method, `self` is the first KResult (an out-param the caller
 	// passes by pointer so mutations propagate).  It is the implicit
@@ -2140,6 +2213,60 @@ func (l *lowerer) curFuncName() string {
 		return f.Name
 	}
 	return ""
+}
+
+// globalVisible reports whether the module binding `name` may be resolved from
+// the function currently being lowered.
+//
+// A module binding belongs to the module that DECLARES it (hir.Package.Owners;
+// "" = the main program). The main program and the std library are separate
+// scopes: a std module function must never bind a bare identifier to a
+// main-program binding. The alternative — resolving by name across the whole
+// merged program — is what made a std module's private local silently
+// overwrite the user's data:
+//
+//	n = 7 / i = 9 / m = 11
+//	print('n={n}') / print('i={i}') / print('m={m}')   ->  7 / 0 / 11
+//
+// std's fmt-parse-spec declares its own `i`, and because the script's `i = 9`
+// had been promoted to the module global `@i`, the std function's `i = 0`
+// stored straight into the user's binding. With the scope in place the std
+// function simply gets a fresh local, which is what it always meant.
+//
+// WHY THE STD SIDE IS *NOT* SCOPED PER-FILE. std is one shared namespace, not
+// one namespace per file, and the merge in build/transpiler.go makes that
+// explicit in two ways that a strict owner equality would break:
+//
+//   - cross-file reads are normal and are written QUALIFIED in the source.
+//     std/net/tls.no does `tls-server-keys.TLS-SERVER-RSA-N[i]`, and the
+//     qualifier is flattened to a bare `ident` before MIR ever sees it, so the
+//     reader (`tls`) and the declarer (`tls-server-keys`) differ. Requiring
+//     equality made that reference resolve to void and every TLS server test
+//     failed to codegen ("index slot: value id N (type void) has no slot").
+//   - cross-module constants are DEDUPED BY NAME — the merge keeps only the
+//     first `let` of a name and drops later ones ("跨模組同名常量去重", e.g.
+//     FNV-OFFSET in both collection/map.no and collection/static-hashmap.no).
+//     The surviving binding carries the FIRST module's owner, so the second
+//     module's own functions would be locked out of their own constant.
+//
+// So the boundary that is enforced is the one that matters: main-program state
+// is private to the main program.
+//
+// Note the main-program half is the same principle prefixCollidingFunctions
+// already applies to function NAMES ("主程序與模組同名時，模組側讓位"): a bare
+// name is a local concern of one module, never a channel into another module's
+// state.
+func (l *lowerer) globalVisible(name string) bool {
+	if _, isGlobal := l.globals[name]; !isGlobal {
+		return false
+	}
+	// "" = the main program (its top-level statements are lowered into the
+	// synthetic main, which carries no owner). A binding owned by the main
+	// program is invisible to a std module function.
+	if l.globalOwners[name] == "" && l.curOwner != "" {
+		return false
+	}
+	return true
 }
 
 // unsignedIntWidth returns the bit width of an unsigned nolang raw integer
@@ -2772,7 +2899,7 @@ func (l *lowerer) lowerStmtInner(id int32) {
 			// value so both sides agree. Owned (heap) types are left to the
 			// fresh-slot path: their move needs clone/drop bookkeeping the
 			// global slot does not have.
-			if _, isGlobal := l.globals[name]; isGlobal && !armScoped {
+			if l.globalVisible(name) && !armScoped {
 				if gv := l.lowerGlobalRef(name); gv != NoVal && !l.isOwnedLocal(gv) {
 					if gvt := l.valueTypeOf(gv); gvt != NoType && gvt != l.voidType {
 						if vt := l.valueTypeOf(val); vt == gvt {
@@ -2811,7 +2938,7 @@ func (l *lowerer) lowerStmtInner(id int32) {
 				cnName := l.pkg.Str(cn.S)
 				_, isLocal := l.locals[cnName]
 				isScalarGlobal := false
-				if _, isGlobal := l.globals[cnName]; isGlobal {
+				if l.globalVisible(cnName) {
 					if vt := l.mod.Type(l.valueTypeOf(val)); vt != nil {
 						switch vt.Kind {
 						case KindInt, KindFloat, KindBool, KindChar, KindPtr:
@@ -4417,7 +4544,132 @@ func (l *lowerer) nameUsedInFuncBodies(name string) bool {
 		if !nodeMatchesPlatform(l.pkg, id) {
 			continue
 		}
+		// A function that SHADOWS the name with its own parameter, named
+		// result or loop variable cannot be evidence that the top-level
+		// binding of that name is needed: every `ident name` in this body
+		// refers to that shadowing binding, not to the module one.
+		//
+		// Skipping only the declaration would not be enough — the body also
+		// READS the shadow, so subtreeHasIdent would still match. The whole
+		// function must be skipped.
+		//
+		// A plain `let` is NOT a shadow (see funcDeclaresName): the body's
+		// `name = expr` either writes the module binding or creates a local,
+		// which is exactly the question this predicate is trying to answer.
+		//
+		// WHY THE SCAN IS MODULE-SCOPED (silent data corruption, 2026-09-26):
+		// the scan runs over EVERY function in the merged package, std modules
+		// included, so a user script's top-level binding named after a common
+		// std local (`i`, `n`, `m`, `d`, ...) used to look "referenced by a
+		// function" and was promoted to a module global `@i`. std's own
+		// fmt-parse-spec declares `i` and would have written that global, which
+		// is why globalVisible now refuses a cross-module binding — the
+		// promotion itself is legitimate (a same-module function may well read
+		// it), the RESOLUTION was not.
+		//
+		// Measured before the scope existed:
+		//
+		//	n = 7 / i = 9 / m = 11
+		//	print('n={n}') / print('i={i}') / print('m={m}')   ->  7 / 0 / 11
+		if l.funcDeclaresName(n, name) {
+			continue
+		}
 		if l.subtreeHasIdent(n, name) {
+			return true
+		}
+	}
+	return false
+}
+
+// isGlobalStyleName reports whether name is spelled the way the language
+// reference requires for module-level data: an uppercase initial, or an
+// underscore followed by an uppercase initial (`_NOLANG`, `_PRIVATE-CONST`).
+//
+// docs/docs/lang/syntax.md: "全局常量、全局變量：必須使用大寫字母開頭 …
+// 小寫開頭的頂層變量會被編譯器視為局部變量". The compiler does NOT enforce the
+// rule as an error, but it uses this predicate to decide whether a lowercase
+// top-level constant may stay a local of the synthetic main instead of becoming
+// module storage (see the global-registration loop).
+func isGlobalStyleName(name string) bool {
+	if name == "" {
+		return false
+	}
+	if c := name[0]; c >= 'A' && c <= 'Z' {
+		return true
+	}
+	if name[0] == '_' && len(name) > 1 {
+		c := name[1]
+		return c >= 'A' && c <= 'Z'
+	}
+	return false
+}
+
+// funcDeclaresName reports whether the function subtree rooted at n introduces
+// its OWN binding called name that SHADOWS a same-named module binding — a
+// parameter (KParam), a named result (KResult) or a loop variable (KIter).
+//
+// ⚠️ A plain `let` (KLet) is deliberately NOT counted. A bare `name = expr`
+// inside a function body is an assignment when a module binding of that name is
+// visible and a fresh local otherwise (see globalVisible), so treating it as a
+// shadow is wrong for the same-module case and silently breaks accumulator
+// helpers:
+//
+//	total = 0
+//	add = (n i64) { total = total + n }    ; writes the module binding
+//	add(3) / add(4) / print(total)         ; must print 7
+//
+// Counting KLet here made `add` look like a pure shadow, so `total` was not
+// treated as function-shared, the global was dropped, and `add`'s
+// `total = total + n` became a dead local — the program printed 0. The
+// cross-module half of the same question (std's `fmt-parse-spec` doing
+// `i = 0` while the script has a top-level `i`) is answered by globalVisible
+// instead, which is what makes dropping the KLet case safe.
+func (l *lowerer) funcDeclaresName(n *hir.Node, name string) bool {
+	for c := n.First; c != hir.NoID; {
+		cn := l.pkg.Node(c)
+		if cn == nil {
+			break
+		}
+		switch cn.Kind {
+		case hir.KParam, hir.KResult, hir.KIter:
+			if l.pkg.Str(cn.S) == name {
+				return true
+			}
+		}
+		if l.funcDeclaresName(cn, name) {
+			return true
+		}
+		c = cn.Next
+	}
+	return false
+}
+
+// nameDeclaredAsLocalInAnyFunc reports whether ANY function in the merged
+// package SHADOWS the name with its own parameter, named result or loop
+// variable. Such a function cannot be a consumer of the module binding (see
+// funcDeclaresName), so a lowercase script constant of that name has no
+// cross-frame reader and may stay a local of the synthetic `main` — which is
+// what docs/docs/lang/syntax.md promises ("小寫開頭的頂層變量會被編譯器視為局部
+// 變量").
+//
+// Deliberately narrow. Dropping the global is not free (see the
+// isInlineableLetType note in the registration loop), and the cross-module
+// corruption the wider version used to guard against is now handled by
+// globalVisible instead — so this predicate no longer has to fire on a mere
+// same-named `let` somewhere in std.
+func (l *lowerer) nameDeclaredAsLocalInAnyFunc(name string) bool {
+	if name == "" {
+		return false
+	}
+	for _, id := range l.pkg.Top {
+		n := l.pkg.Node(id)
+		if n == nil || n.Kind != hir.KFuncDef {
+			continue
+		}
+		if !nodeMatchesPlatform(l.pkg, id) {
+			continue
+		}
+		if l.funcDeclaresName(n, name) {
 			return true
 		}
 	}
@@ -4873,7 +5125,7 @@ func (l *lowerer) lowerExpr(id int32) ValueID {
 			if v, ok := l.locals[name]; ok {
 				return v
 			}
-			if _, isGlobal := l.globals[name]; isGlobal {
+			if l.globalVisible(name) {
 				return l.lowerGlobalRef(name)
 			}
 			// A tagged enum may declare a variant named `ok` / `err` / `nil`
@@ -4942,8 +5194,11 @@ func (l *lowerer) lowerExpr(id int32) ValueID {
 		// A top-level module binding (SBOX, TLS-FINISHED-SIZE, perm-600, ...)
 		// lives outside every function; resolve it as a module global. This is
 		// the last resort before declaring the identifier unresolved, so it
-		// must come AFTER the locals lookup above (a local shadow wins).
-		if _, isGlobal := l.globals[name]; isGlobal {
+		// must come AFTER the locals lookup above (a local shadow wins) — and
+		// it is scoped to the binding's own module (see globalVisible), so a
+		// function in module M cannot reach a same-named binding of another
+		// module and silently share its storage.
+		if l.globalVisible(name) {
 			return l.lowerGlobalRef(name)
 		}
 		// A function name used as a value (not called): `run-suite(my-setup,
@@ -7351,7 +7606,7 @@ func (l *lowerer) lookupFormatValue(name string) (ValueID, bool) {
 	if v, ok := l.locals[name]; ok {
 		return v, true
 	}
-	if _, isGlobal := l.globals[name]; isGlobal {
+	if l.globalVisible(name) {
 		return l.lowerGlobalRef(name), true
 	}
 	// ident[index] pattern
@@ -8452,16 +8707,8 @@ func (l *lowerer) printableValue(v ValueID) ValueID {
 		return v
 	}
 	switch ty.Kind {
-	case KindStruct, KindMap:
+	case KindStruct, KindMap, KindSlice, KindArray:
 		return l.valueToStr(v)
-	case KindSlice, KindArray:
-		if callee := l.toStrCalleeFor(ty); callee != "" {
-			l.enqueueCallee(callee)
-			if dsts := l.b.EmitCallMulti([]TypeID{l.b.Type("str")}, []ValueID{v}, callee); len(dsts) > 0 {
-				return dsts[0]
-			}
-		}
-		return v
 	}
 	return v
 }
@@ -8500,13 +8747,7 @@ func (l *lowerer) valueToStr(v ValueID) ValueID {
 	case KindStr:
 		return v
 	case KindSlice, KindArray:
-		if callee := l.toStrCalleeFor(ty); callee != "" {
-			l.enqueueCallee(callee)
-			if d := l.b.EmitCallMulti([]TypeID{l.b.Type("str")}, []ValueID{v}, callee); len(d) > 0 {
-				return d[0]
-			}
-		}
-		return l.b.EmitStr(OpConst, l.b.Type("str"), "<"+ty.Raw+">", "")
+		return l.sliceToStr(v, ty)
 	case KindMap:
 		if callee := l.mapToStrCalleeFor(ty); callee != "" {
 			l.enqueueCallee(callee)
@@ -8514,16 +8755,19 @@ func (l *lowerer) valueToStr(v ValueID) ValueID {
 				return d[0]
 			}
 		}
-		if fs, _ := l.structFieldsOf(ty.Raw); fs != nil {
-			return l.structFieldsToStr(v, ty)
-		}
-		return l.b.EmitStr(OpConst, l.b.Type("str"), "<map>", "")
+		return l.mapFieldsToStr(v, ty)
 	case KindStruct:
 		if callee := l.structToStrCalleeFor(ty); callee != "" {
 			l.enqueueCallee(callee)
 			if d := l.b.EmitCallMulti([]TypeID{l.b.Type("str")}, []ValueID{v}, callee); len(d) > 0 {
 				return d[0]
 			}
+		}
+		// Built-in maps ([str]i64, [str]point, ...) lower to a struct carrying
+		// cap/keys/vals/occ fields. Render them as `{k: v, ...}` rather than a
+		// raw field dump (which would expose the internal layout).
+		if l.isMapStruct(ty) {
+			return l.mapFieldsToStr(v, ty)
 		}
 		return l.structFieldsToStr(v, ty)
 	default:
@@ -8580,6 +8824,26 @@ func (l *lowerer) structFieldsOf(raw string) ([]FieldInfo, string) {
 	return nil, raw
 }
 
+// isMapStruct reports whether a struct type is a built-in map layout (carrying
+// the cap/keys/vals/occ fields that hashmap-*-tmpl instantiates into). Such
+// structs must be rendered as `{k: v, ...}`, not as a raw field dump.
+func (l *lowerer) isMapStruct(ty *Type) bool {
+	if ty == nil {
+		return false
+	}
+	fields, _ := l.structFieldsOf(ty.Raw)
+	if len(fields) == 0 {
+		return false
+	}
+	want := map[string]bool{"cap": false, "keys": false, "vals": false, "occ": false}
+	for _, f := range fields {
+		if _, ok := want[f.Name]; ok {
+			want[f.Name] = true
+		}
+	}
+	return want["cap"] && want["keys"] && want["vals"] && want["occ"]
+}
+
 // structFieldsToStr renders a struct value as `{name: value, name2: value2}`.
 // Each field value is recursively stringified through valueToStr so nested
 // aggregates (structs, slices, str-maps) render correctly. Owned string fields
@@ -8606,6 +8870,210 @@ func (l *lowerer) structFieldsToStr(v ValueID, ty *Type) ValueID {
 		}
 	}
 	return l.concatStr(cur, l.b.EmitStr(OpConst, strT, "}", ""))
+}
+
+// sliceToStr renders a slice/array as `[e0, e1, ...]`. Every element is
+// recursively stringified through valueToStr so scalars, strings, structs,
+// nested slices and maps all render faithfully — the std `[]t.to-str` /
+// `[n]t.to-str` templates hardcode i64 conversion and mis-render non-i64
+// elements (e.g. `['a','b','c']` printed as `[1, 1, ...]`).
+//
+// It mirrors the loop-control bookkeeping of lowerFor (loopStack/contStack push
+// with deferred pop, pre→header→body→update→exit, and terminating `exit` to
+// `enclosingCont` only when one exists, leaving it dangling otherwise) so the
+// loop composes inside any enclosing control flow — including nested inside
+// structFieldsToStr, where valueToStr is called inline to dump a slice field.
+func (l *lowerer) sliceToStr(v ValueID, ty *Type) ValueID {
+	strT := l.b.Type("str")
+	i64T := l.b.Type("i64")
+	boolT := l.b.Type("bool")
+	if v == NoVal {
+		return l.b.EmitStr(OpConst, strT, "<slice>", "")
+	}
+	elemT := NoType
+	if ty != nil && ty.Elem != NoType {
+		elemT = ty.Elem
+	}
+	n := l.b.Emit(OpLen, i64T, []ValueID{v}, "")
+	// Seed owned string slots: a concat of two empties yields an alloca-backed
+	// slot we can EmitMoveInto into. A bare OpConst "" would be a read-only
+	// global and non-movable.
+	out := l.concatStr(l.b.EmitStr(OpConst, strT, "", ""), l.b.EmitStr(OpConst, strT, "", ""))
+	sep := l.concatStr(l.b.EmitStr(OpConst, strT, "", ""), l.b.EmitStr(OpConst, strT, "", ""))
+	comma := l.b.EmitStr(OpConst, strT, ", ", "")
+
+	enclosingCont := NoBlock
+	if len(l.contStack) > 0 {
+		enclosingCont = l.contStack[len(l.contStack)-1]
+	}
+	pre := l.b.CurrentBlock()
+	header := l.b.NewBlock("slice.hdr")
+	body := l.b.NewBlock("slice.body")
+	update := l.b.NewBlock("slice.upd")
+	exit := l.b.NewBlock("slice.exit")
+	l.loopStack = append(l.loopStack, loopCtx{exit: exit, update: update})
+	defer func() { l.loopStack = l.loopStack[:len(l.loopStack)-1] }()
+	l.contStack = append(l.contStack, update)
+	defer func() { l.contStack = l.contStack[:len(l.contStack)-1] }()
+
+	l.b.SetBlock(pre)
+	l.b.EmitMoveInto(out, l.b.EmitStr(OpConst, strT, "[", ""))
+	l.b.Terminate(OpBr, nil, []BlockID{header}, "")
+
+	iSlot := l.b.EmitInt(OpConst, i64T, 0, "slice.i")
+	l.b.SetBlock(header)
+	cond := l.b.Emit(OpLt, boolT, []ValueID{iSlot, n}, "")
+	l.b.Terminate(OpCondBr, []ValueID{cond}, []BlockID{body, exit}, "")
+
+	l.b.SetBlock(body)
+	var elemV ValueID
+	if elemT != NoType {
+		elemV = l.b.Emit(OpIndex, elemT, []ValueID{v, iSlot}, "")
+	} else {
+		elemV = v
+	}
+	elemStr := l.valueToStr(elemV)
+	tmp := l.concatStr(out, sep)
+	tmp = l.concatStr(tmp, elemStr)
+	l.b.EmitMoveInto(out, tmp)
+	l.b.EmitMoveInto(sep, comma)
+	// valueToStr may have redirected the current block (e.g. when the element is
+	// itself a slice) and already terminated it to `update`; only patch the
+	// current block when it is still open.
+	if cur := l.b.CurrentBlock(); cur != NoBlock && l.mod.Block(cur).Term == nil {
+		l.b.Terminate(OpBr, nil, []BlockID{update}, "")
+	}
+
+	l.b.SetBlock(update)
+	one := l.b.EmitInt(OpConst, i64T, 1, "")
+	nextI := l.b.Emit(OpAdd, i64T, []ValueID{iSlot, one}, "")
+	l.b.EmitMoveInto(iSlot, nextI)
+	l.b.Terminate(OpBr, nil, []BlockID{header}, "")
+
+	l.b.SetBlock(exit)
+	l.b.EmitMoveInto(out, l.concatStr(out, l.b.EmitStr(OpConst, strT, "]", "")))
+	if enclosingCont != NoBlock && l.mod.Block(exit).Term == nil {
+		l.b.Terminate(OpBr, nil, []BlockID{enclosingCont}, "")
+	}
+	return out
+}
+
+// mapFieldsToStr renders a built-in map ([k]v, KindMap) as `{k0: v0, k1: v1,
+// ...}`. It mirrors sliceToStr's loop bookkeeping and recursively stringifies
+// keys and values through valueToStr. str-maps lower to a KindStruct and are
+// handled by their own str-map.to-str / the struct field dump; this is the
+// faithful default for the generic map types (e.g. `[str]i64`).
+func (l *lowerer) mapFieldsToStr(v ValueID, ty *Type) ValueID {
+	strT := l.b.Type("str")
+	i64T := l.b.Type("i64")
+	boolT := l.b.Type("bool")
+	if v == NoVal || ty == nil {
+		return l.b.EmitStr(OpConst, strT, "<map>", "")
+	}
+	fields, _ := l.structFieldsOf(ty.Raw)
+	if fields == nil {
+		return l.b.EmitStr(OpConst, strT, "<map>", "")
+	}
+	fieldVal := func(name string) (ValueID, TypeID) {
+		for _, f := range fields {
+			if f.Name == name {
+				ft := l.b.Type(f.TypeRaw)
+				fv := l.b.Emit(OpGetField, ft, []ValueID{v}, "")
+				l.mod.Insts[len(l.mod.Insts)-1].Str = f.Name
+				return fv, ft
+			}
+		}
+		return NoVal, NoType
+	}
+	capV, _ := fieldVal("cap")
+	keysV, keysT := fieldVal("keys")
+	valsV, valsT := fieldVal("vals")
+	occV, occT := fieldVal("occ")
+	if capV == NoVal || keysV == NoVal || valsV == NoVal || occV == NoVal {
+		return l.b.EmitStr(OpConst, strT, "<map>", "")
+	}
+	elemOf := func(t TypeID) TypeID {
+		if t == NoType {
+			return NoType
+		}
+		if et := l.mod.Type(t); et != nil && et.Elem != NoType {
+			return et.Elem
+		}
+		return NoType
+	}
+	occElemT := elemOf(occT)
+	keyElemT := elemOf(keysT)
+	valElemT := elemOf(valsT)
+
+	out := l.concatStr(l.b.EmitStr(OpConst, strT, "", ""), l.b.EmitStr(OpConst, strT, "", ""))
+	sep := l.concatStr(l.b.EmitStr(OpConst, strT, "", ""), l.b.EmitStr(OpConst, strT, "", ""))
+	comma := l.b.EmitStr(OpConst, strT, ", ", "")
+	colon := l.b.EmitStr(OpConst, strT, ": ", "")
+
+	enclosingCont := NoBlock
+	if len(l.contStack) > 0 {
+		enclosingCont = l.contStack[len(l.contStack)-1]
+	}
+	pre := l.b.CurrentBlock()
+	header := l.b.NewBlock("map.hdr")
+	body := l.b.NewBlock("map.body")
+	update := l.b.NewBlock("map.upd")
+	exit := l.b.NewBlock("map.exit")
+	l.loopStack = append(l.loopStack, loopCtx{exit: exit, update: update})
+	defer func() { l.loopStack = l.loopStack[:len(l.loopStack)-1] }()
+	l.contStack = append(l.contStack, update)
+	defer func() { l.contStack = l.contStack[:len(l.contStack)-1] }()
+
+	l.b.SetBlock(pre)
+	l.b.EmitMoveInto(out, l.b.EmitStr(OpConst, strT, "{", ""))
+	l.b.Terminate(OpBr, nil, []BlockID{header}, "")
+
+	iSlot := l.b.EmitInt(OpConst, i64T, 0, "map.i")
+	l.b.SetBlock(header)
+	cond := l.b.Emit(OpLt, boolT, []ValueID{iSlot, capV}, "")
+	l.b.Terminate(OpCondBr, []ValueID{cond}, []BlockID{body, exit}, "")
+
+	// body: only emit `key: value` when this slot is occupied (occ[i] == 1).
+	l.b.SetBlock(body)
+	occEl := l.b.Emit(OpIndex, occElemT, []ValueID{occV, iSlot}, "")
+	oneOcc := l.b.EmitInt(OpConst, occElemT, 1, "")
+	isOcc := l.b.Emit(OpEq, boolT, []ValueID{occEl, oneOcc}, "")
+	bt := l.b.NewBlock("map.t")
+	bf := l.b.NewBlock("map.f")
+	l.b.Terminate(OpCondBr, []ValueID{isOcc}, []BlockID{bt, bf}, "")
+
+	l.b.SetBlock(bt)
+	keyEl := l.b.Emit(OpIndex, keyElemT, []ValueID{keysV, iSlot}, "")
+	valEl := l.b.Emit(OpIndex, valElemT, []ValueID{valsV, iSlot}, "")
+	keyStr := l.valueToStr(keyEl)
+	valStr := l.valueToStr(valEl)
+	tmp := l.concatStr(out, sep)
+	tmp = l.concatStr(tmp, keyStr)
+	tmp = l.concatStr(tmp, colon)
+	tmp = l.concatStr(tmp, valStr)
+	l.b.EmitMoveInto(out, tmp)
+	l.b.EmitMoveInto(sep, comma)
+	if cur := l.b.CurrentBlock(); cur != NoBlock && l.mod.Block(cur).Term == nil {
+		l.b.Terminate(OpBr, nil, []BlockID{update}, "")
+	}
+
+	l.b.SetBlock(bf)
+	if cur := l.b.CurrentBlock(); cur != NoBlock && l.mod.Block(cur).Term == nil {
+		l.b.Terminate(OpBr, nil, []BlockID{update}, "")
+	}
+
+	l.b.SetBlock(update)
+	one := l.b.EmitInt(OpConst, i64T, 1, "")
+	nextI := l.b.Emit(OpAdd, i64T, []ValueID{iSlot, one}, "")
+	l.b.EmitMoveInto(iSlot, nextI)
+	l.b.Terminate(OpBr, nil, []BlockID{header}, "")
+
+	l.b.SetBlock(exit)
+	l.b.EmitMoveInto(out, l.concatStr(out, l.b.EmitStr(OpConst, strT, "}", "")))
+	if enclosingCont != NoBlock && l.mod.Block(exit).Term == nil {
+		l.b.Terminate(OpBr, nil, []BlockID{enclosingCont}, "")
+	}
+	return out
 }
 
 // concatStr concatenates two `%str-long` values via the synthetic $str_concat
@@ -9084,7 +9552,7 @@ func (l *lowerer) lowerAssignNode(assignID int32) ValueID {
 				if t := l.valueTypeOf(slot); t != NoType && t != l.voidType {
 					l.typeHint = t
 				}
-			} else if _, isGlobal := l.globals[nm]; isGlobal {
+			} else if l.globalVisible(nm) {
 				// Target is a module-level binding, not a function local.
 				// The type hint matters here too: a global `px2 f64 = 0.0`
 				// has no local slot, and without the hint a void-typed RHS
@@ -9209,7 +9677,7 @@ func (l *lowerer) lowerAssignNode(assignID int32) ValueID {
 			// `px2 = px2 + mi * vi` silently kept its initial value and every
 			// iteration recomputed from zero (test-tmp-nbody-debug printed
 			// only the last term). Resolve the global and move into it.
-			if _, isGlobal := l.globals[nm]; isGlobal {
+			if l.globalVisible(nm) {
 				if slot, ok := l.globals[nm]; ok && slot == v {
 					// Self-assignment to a module global: no-op.
 					return v

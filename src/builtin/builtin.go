@@ -37,17 +37,17 @@ type CLibCall struct {
 	// variant forgot to list. set-set-env is the case that needs all three:
 	// Windows spells it _putenv_s(key, value), two args instead of POSIX's
 	// three (the overwrite flag disappears with the third parameter).
-	AltFuncs     map[string]string
-	AltArgTypes  map[string][]LLVMArgType
-	AltFixedArgs map[string]map[int]string
-	ArgTypes     []LLVMArgType
-	RetType      LLVMArgType
-	RetExt       *LLVMArgType
-	SprintfFmt   string
-	BufGlobal    string
-	RetBuf       bool
-	CmpRet       bool
-	FixedArgs    map[int]string
+	AltFuncs        map[string]string
+	AltArgTypes     map[string][]LLVMArgType
+	AltFixedArgs    map[string]map[int]string
+	ArgTypes        []LLVMArgType
+	RetType         LLVMArgType
+	RetExt          *LLVMArgType
+	SprintfFmt      string
+	BufGlobal       string
+	RetBuf          bool
+	CmpRet          bool
+	FixedArgs       map[int]string
 	FixedArgGlobals map[int]string
 	TruncArgs       map[int]LLVMArgType
 	StrDataArg      map[int]bool

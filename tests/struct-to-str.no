@@ -1,0 +1,30 @@
+; struct-to-str.no — default to-str for user structs.
+; A user struct with no hand-written `.to-str` must render as
+; `{field: value, ...}`, with nested aggregates (slices of structs)
+; recursively stringified, and it must also work inside a format field.
+
+point {
+    x i64
+    y i64
+}
+
+group {
+    name str
+    pts []point
+}
+
+main = () {
+    p = point { x: 1, y: 2 }
+    print(p); expect: {x: 1, y: 2}
+
+    g = group {
+        name: 'team'
+        pts: [point { x: 1, y: 2 }, point { x: 3, y: 4 }]
+    }
+    print(g); expect: {name: team, pts: [{x: 1, y: 2}, {x: 3, y: 4}]}
+
+    ; struct variable inside a format field
+    print('p={p}'); expect: p={x: 1, y: 2}
+
+    print('g={g}'); expect: g={name: team, pts: [{x: 1, y: 2}, {x: 3, y: 4}]}
+}

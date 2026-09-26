@@ -1,0 +1,17 @@
+; map-to-str.no — default to-str for built-in maps.
+; A [str]i64 / [str]bool map must render as `{key: value, ...}` (order is
+; hashmap-internal and stable per build, so the regression script pins it).
+; An empty map renders as `{}`. Format fields also work.
+
+main = () {
+    m [str]i64 = { 'a': 1, 'b': 2, 'c': 3 }
+    print(m); expect: {c: 3, b: 2, a: 1}
+
+    me [str]i64 = { }
+    print(me); expect: {}
+
+    mb [str]bool = { 'x': true, 'y': false }
+    print(mb); expect: {y: 0, x: 1}
+
+    print('m={m}'); expect: m={c: 3, b: 2, a: 1}
+}

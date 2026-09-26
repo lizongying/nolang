@@ -55,10 +55,19 @@ func ASTToHIRWithMap(prog *Program) (*hir.Package, map[Node]int32) {
 		return b.Package(), c.astOf
 	}
 	c.sem = prog.Sem
+	// Owners is filled while the top-level statements are lowered, because the
+	// owner is recorded per STATEMENT in the AST but is needed per NODE id by
+	// the backend (see hir.Package.Owners).
+	owners := make(map[int32]string, len(prog.Statements))
 	for _, stmt := range prog.Statements {
-		c.top(c.stmt(stmt))
+		id := c.stmt(stmt)
+		if owner := GetModuleOwner(stmt); owner != "" {
+			owners[id] = owner
+		}
+		c.top(id)
 	}
 	pkg := b.Package()
+	pkg.Owners = owners
 	// Record the owning module of every top-level free function so backends
 	// can validate module-qualified bare-name resolution (see
 	// hir.Package.FuncOwners). Names are taken AFTER build.mangleOverloads /
