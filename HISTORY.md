@@ -1,5 +1,10 @@
 # 更新日誌
 
+## v0.3.8
+
+- fix(mir): implement truncate on windows via kernel32 instead of the nonexistent _truncate CRT symbol
+- test(mir): verify every declared windows shim symbol against the import-library export list
+
 ## v0.3.7
 
 - feat(fmt): support variadic print/eprint with per-argument named format templates
