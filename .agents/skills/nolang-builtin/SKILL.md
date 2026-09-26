@@ -35,6 +35,34 @@ src/builtin/
 > 已删除（2026-09-21）：`database.go`（15 个 `db-*`）与 `ffi.go`（3 个 `ffi-cstr-*`）。
 > 原因见下文「半条命陷阱」——只注册、无 lowering。
 
+### 2b. `fmt.go` 的 print / eprint 是**变参** builtin
+
+注册的 `Params` 只有 `[]parser.Type{parser.TypeStr}`（只描述声明的签名），但编译器接受**任意个**参数：
+`print(a, b, c)` 以单个空格分隔各参数，整行末尾只补**一个**换行（`eprint` 同）。
+
+⚠️ 每个**字串字面量**参数**各自**是一个**具名格式模板**：其 `{name[:spec]}` 从**调用点作用域**取值，
+**不是** C 风格 printf 的格式串——字面量不会去描述或消费同一调用里的其它参数。
+非字面量参数（变量、表达式）按普通可变参数处理。
+
+```no
+val = 42
+print('result={val}', 42, 'result={val}')  ; result=42 42 result=42
+tmpl = '{val}'
+print(tmpl)                                ; {val} —— 变量是纯文字，不做替换
+```
+
+- 拦截点：`src/mir/hir2mir.go` 的 `lowerNamedFormat`（单参数走 `lowerNamedFormatStream`，
+  多参数走 `lowerNamedFormatMulti`）
+- codegen：`print`/`println` 在 `src/mir/codegen.go` 的 `emitCall`（`callee == "print"` 分支）；
+  `eprint` 在 `emitBuiltinEprint`
+- `format` / `sprintf` 仍是**单一格式字串**，没有多参数形式
+- ⚠️ **既有 bug（未修，2026-09-26 实测）**：`printf` / `eprintf` 在当前 MIR 后端**无法编译**——
+  带栏位时报 `unknown callee fmt-int in func main`，无栏位时报 `unsupported builtin printf`。
+  根因线索：printf/eprintf 分支里的 `enqueueCallee("fmt-int")` 没有生效；只要同一编译单元中
+  先出现一次 `print('{x}')`（它会成功 enqueue fmt-int），`printf('x={x}')` 就能正常输出。
+  两文件 `print`/`eprint`/`format`/`sprintf` 均正常，只有 printf/eprintf 受影响。
+- 语法侧（`{name:spec}` 说明符、`{{`/`}}` 转义）见 skill `nolang-syntax` 的 Output/Formatting
+
 ### 3. BuiltinMethod 结构体
 
 每个 builtin 注册时包含：

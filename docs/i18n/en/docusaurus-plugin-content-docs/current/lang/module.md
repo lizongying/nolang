@@ -87,9 +87,21 @@ These 6 functions are language-level global builtins that can be used directly w
 
 Nolang uses **named format strings** with `{name[:spec]}` syntax, referencing variables directly from scope — no positional arguments needed. Compile-time validation is supported. Output is written directly via `io.out`/`io.err` syscalls, without depending on libc `printf`.
 
-- `print(s)` — writes to stdout, **auto-appends newline**
-- `eprint(s)` — writes to stderr, **auto-appends newline**
+- `print(s)` / `print(s0, s1, ...)` — writes to stdout, multiple args separated by spaces, **auto-appends newline**
+- `eprint(s)` / `eprint(s0, s1, ...)` — writes to stderr, multiple args separated by spaces, **auto-appends newline**
 - `format(s)` — returns the formatted string (replaces `sprintf`), no newline
+
+**With multiple arguments, each string literal is a template — not a C-style format string.** In `print('result={val}', 42, 'result={val}')`, every string literal is a template **in its own right**: its `{val}` is resolved from the scope at the **call site**, independently of the other arguments in the same call. A literal **never** describes or consumes the following arguments — it is not `printf('%d', 42)`-style substitution. Non-literal arguments (variables, expressions) are handled as ordinary variadic arguments, separated by spaces, with a single trailing newline for the whole call.
+
+```no
+val = 42
+print('result={val}', 42, 'result={val}')  ; result=42 42 result=42
+tmpl = '{val}'
+print(tmpl)                                ; {val} — a variable is plain text, not a template
+print('a={val}', val)                      ; a=42 42
+```
+
+`format(s)` — and the deprecated `sprintf(s)` — still accept a **single format string** only; there is no multi-argument form.
 
 > `printf`, `eprintf`, `sprintf` are **deprecated**, kept only for backward compatibility. Replacements:
 > - `printf(s)` → `io.out(s)` (no newline, stdout)
@@ -108,8 +120,10 @@ v []i64 = with-len(100)          ; Length 100 slice
 ; Output/formatting (no prefix)
 print('hello {n}')               ; Auto-newline
 print(a, b, c)                   ; Multiple args, space-separated
+print('x={n}', n)                ; A literal is a template, a variable is a value
+print('result={val}', 42, 'result={val}')  ; Each literal substitutes on its own
 print()                          ; No args, just a newline
-s = format('x={x}')              ; Returns formatted string
+s = format('x={x}')              ; Returns formatted string (single format string)
 eprint('err: {n}')               ; Writes to stderr with newline
 eprint('err:', a, b)             ; Multiple args, space-separated on stderr
 print('id {id:06} amount {money:.2f}')  ; Supports align, fill, width, precision
@@ -155,7 +169,7 @@ print('{x:t}')              ; i64 (prints the type name of variable x)
 print('{s:v}')              ; 'hello' (string wrapped in single quotes)
 ```
 
-Use `{{` and `}}` to output literal `{` and `}`.
+`{{` and `}}` output literal `{` and `}` — but **only when the same string also contains at least one real `{name}` field**. A literal consisting solely of escapes is emitted verbatim: `print('{{n}}')` prints `{{n}}` (not `{n}`), and `print('{{')` prints `{{`. To emit a lone brace, just use `print('{')` / `print('}')`.
 
 ### 2. Same-File Definitions
 

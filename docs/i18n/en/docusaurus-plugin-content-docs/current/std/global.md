@@ -28,6 +28,9 @@ v []i64 = [].with-len-cap(100, 200)
 print('hello {name}')              ; Output to stdout with newline
 eprint('error: {msg}')             ; Output to stderr with newline
 s = format('x={x}')               ; Returns formatted string (no newline)
+print(a, b, c)                    ; Multiple args: space-separated, one trailing newline
+print('result={val}', 42, 'result={val}')  ; With multiple args, each literal is a template
+                                  ; ({val} resolves from call-site scope — not a C-style format string)
 ```
 
 ---

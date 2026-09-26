@@ -3,8 +3,16 @@ package builtin
 import "github.com/lizongying/nolang/parser"
 
 func init() {
-	// print: print string to stdout with newline via io.outln
-	// Accepts a single str argument which may contain {name:spec} replacement fields.
+	// print: print to stdout, followed by a newline.
+	//
+	// Variadic: print(a, b, c) writes its arguments separated by single spaces
+	// and appends ONE trailing newline. Each string-literal argument is its own
+	// {name:spec} template, resolved from the scope at the call site — a literal
+	// is NOT a C-style format string that describes/consumes the other
+	// arguments (it is not printf('%d', 42)-style substitution). Non-literal
+	// arguments are ordinary variadic values. Intercepted in
+	// src/mir/hir2mir.go (lowerNamedFormat / lowerNamedFormatMulti); the Params
+	// below only describe the declared signature arity, not the accepted count.
 	BuiltinMethodList = append(BuiltinMethodList, BuiltinMethod{
 		ReceiverType: ReceiverGlobal,
 		MethodName:   "print",
@@ -14,8 +22,9 @@ func init() {
 		ForwardFunc:  "println",
 	})
 
-	// eprint: print string to stderr with newline via io.errln
-	// Accepts a single str argument which may contain {name:spec} replacement fields.
+	// eprint: the stderr twin of print. Same variadic rules: arguments separated
+	// by single spaces, one trailing newline, and each string-literal argument is
+	// its own {name:spec} template resolved at the call site.
 	BuiltinMethodList = append(BuiltinMethodList, BuiltinMethod{
 		ReceiverType: ReceiverGlobal,
 		MethodName:   "eprint",
@@ -26,7 +35,8 @@ func init() {
 	})
 
 	// format: format string with {name:spec} named fields and return the result.
-	// Replaces the deprecated sprintf. Accepts a single str argument.
+	// Replaces the deprecated sprintf. Accepts a SINGLE format string only —
+	// there is no multi-argument form.
 	BuiltinMethodList = append(BuiltinMethodList, BuiltinMethod{
 		ReceiverType: ReceiverGlobal,
 		MethodName:   "format",
@@ -39,6 +49,7 @@ func init() {
 	// ─── Deprecated (kept for backward compatibility; prefer print/eprint/format + io.out) ───
 
 	// printf: deprecated. Use print (auto-newline) or io.out (no newline) instead.
+	// Single format string only (no multi-argument form).
 	BuiltinMethodList = append(BuiltinMethodList, BuiltinMethod{
 		ReceiverType: ReceiverGlobal,
 		MethodName:   "printf",
@@ -48,7 +59,7 @@ func init() {
 		ForwardFunc:  "printf",
 	})
 
-	// sprintf: deprecated. Use format instead.
+	// sprintf: deprecated. Use format instead. Single format string only.
 	BuiltinMethodList = append(BuiltinMethodList, BuiltinMethod{
 		ReceiverType: ReceiverGlobal,
 		MethodName:   "sprintf",
@@ -59,6 +70,7 @@ func init() {
 	})
 
 	// eprintf: deprecated. Use eprint (auto-newline) or io.err (no newline) instead.
+	// Single format string only (no multi-argument form).
 	BuiltinMethodList = append(BuiltinMethodList, BuiltinMethod{
 		ReceiverType: ReceiverGlobal,
 		MethodName:   "eprintf",

@@ -2276,8 +2276,12 @@ of:
 @.otrue = private constant [5 x i8] c"true\00"
 @.ofalse = private constant [6 x i8] c"false\00"
 
-; eprint_* mirror print_* but write to stderr (fd 2) and append a newline,
-; matching the legacy io.errln behavior. Reuse @digits for itoa.
+; eprint_* mirror print_* but write to stderr (fd 2). They write ONLY their own
+; bytes — no trailing newline — so that the variadic eprint (emitBuiltinEprint)
+; can write one space-separated line and append exactly ONE newline at the end,
+; and so the named-format lowering can emit each format segment separately
+; (mirroring legacy callNamedFormat's io.err-per-segment behavior). Reuse
+; @digits for itoa.
 define void @eprint_i64(i64 %v) {
 entry:
   %buf = alloca [24 x i8]
@@ -2301,7 +2305,6 @@ emit:
   %startp = ptrtoint i8* %start to i64
   %len = sub i64 %epp, %startp
   call i64 @write(i32 2, i8* %start, i64 %len)
-  call void @eprint_nl()
   ret void
 }
 
@@ -2310,13 +2313,20 @@ entry:
   %buf = alloca [1 x i8]
   store i8 %b, i8* %buf
   call i64 @write(i32 2, i8* %buf, i64 1)
-  call void @eprint_nl()
   ret void
 }
 
 define void @eprint_nl() {
 entry:
   call i64 @write(i32 2, i8* getelementptr inbounds ([2 x i8], [2 x i8]* @.nl, i64 0, i64 0), i64 1)
+  ret void
+}
+
+; Space separator between variadic eprint arguments (eprint(a, b) -> "a b\n"),
+; the stderr twin of @print_space.
+define void @eprint_space() {
+entry:
+  call i64 @write(i32 2, i8* getelementptr inbounds ([2 x i8], [2 x i8]* @.sp, i64 0, i64 0), i64 1)
   ret void
 }
 
@@ -12159,81 +12169,106 @@ func (c *codegen) emitBuiltinAlloc(inst *Inst, ff string) error {
 	return nil
 }
 
-// emitBuiltinEprint lowers eprint(s str): write the value's bytes to stderr
-// (fd 2) followed by a newline, mirroring the legacy io.errln behavior. It
-// accepts %str-long / i64 / byte(i8) / %txt; the str path writes raw bytes to
-// fd 2, the i64/byte paths route through the @eprint_* runtime helpers.
+// emitBuiltinEprint lowers the variadic eprint(a, b, c): every non-void
+// argument is written to stderr (fd 2) space-separated, with ONE trailing
+// newline — the stderr twin of print's stdout behaviour (legacy io.errln).
+//
+// The accepted value types are the ones @eprint_* has runtime helpers for:
+// %str-long, %txt, i64, i8 (byte), i32 (char) and i1 (bool, printed as 1/0
+// exactly like print). Anything else (a float, a container, an option) is
+// REPORTED rather than silently skipped: an argument that produces no output at
+// all is the one failure mode that is invisible from the outside.
 func (c *codegen) emitBuiltinEprint(inst *Inst) error {
 	if len(inst.Args) == 0 {
+		// `eprint()` writes nothing at all (while `print()` writes a bare
+		// newline) — unchanged historical behaviour.
 		return nil
 	}
-	lt, v := c.loadVal(inst.Args[0])
-	switch lt {
-	case "void":
-		// Void operands (e.g. a unit/() expression or a void-returning call)
-		// have no value to print; skip them, mirroring print's void handling.
-		return nil
-	case "%str-long":
-		lReg := fmt.Sprintf("%%be%d", c.loadSeq)
-		c.loadSeq++
-		c.sb.WriteString(fmt.Sprintf("  %s = extractvalue %%str-long %s, 0\n", lReg, v))
-		dReg := fmt.Sprintf("%%be%d", c.loadSeq)
-		c.loadSeq++
-		c.sb.WriteString(fmt.Sprintf("  %s = extractvalue %%str-long %s, 2\n", dReg, v))
-		c.sb.WriteString(fmt.Sprintf("  call i64 @write(i32 2, i8* %s, i64 %s)\n", dReg, lReg))
-		c.sb.WriteString("  call void @eprint_nl()\n")
-		return nil
-	case "i64":
-		c.sb.WriteString(fmt.Sprintf("  call void @eprint_i64(i64 %s)\n", v))
-		return nil
-	case "i8":
-		c.sb.WriteString(fmt.Sprintf("  call void @eprint_byte(i8 %s)\n", v))
-		return nil
-	case "%txt":
-		// Build a transient %str-long { len, cap=len, data=&txt.data[0] } and
-		// write it to fd 2 (mirrors the print(txt) path but to stderr).
-		slot := c.valSlot[inst.Args[0]]
-		if slot == "" {
-			c.fail("eprint(txt) receiver has no slot in func %d", c.cf)
-			return fmt.Errorf("eprint txt slot")
+	for i, a := range inst.Args {
+		lt, v := c.loadVal(a)
+		if v == "" || lt == "void" {
+			// Void operands (e.g. a unit/() expression or a void-returning
+			// call) have no value to print; skip them, mirroring print's void
+			// handling. Nothing was written, so no separator either.
+			continue
 		}
-		c.loadSeq++
-		lGEP := fmt.Sprintf("%%etlg%d", c.loadSeq)
-		c.sb.WriteString(fmt.Sprintf("  %s = getelementptr inbounds %%txt, %%txt* %s, i32 0, i32 1\n", lGEP, slot))
-		c.loadSeq++
-		lLd := fmt.Sprintf("%%etll%d", c.loadSeq)
-		c.sb.WriteString(fmt.Sprintf("  %s = load i8, i8* %s\n", lLd, lGEP))
-		c.loadSeq++
-		l64 := fmt.Sprintf("%%etl6%d", c.loadSeq)
-		c.sb.WriteString(fmt.Sprintf("  %s = zext i8 %s to i64\n", l64, lLd))
-		c.loadSeq++
-		dGEP := fmt.Sprintf("%%etdg%d", c.loadSeq)
-		c.sb.WriteString(fmt.Sprintf("  %s = getelementptr inbounds %%txt, %%txt* %s, i32 0, i32 0, i64 0\n", dGEP, slot))
-		c.loadSeq++
-		dPtr := fmt.Sprintf("%%etdp%d", c.loadSeq)
-		c.sb.WriteString(fmt.Sprintf("  %s = bitcast [255 x i8]* %s to i8*\n", dPtr, dGEP))
-		c.loadSeq++
-		r0 := fmt.Sprintf("%%etr0%d", c.loadSeq)
-		c.sb.WriteString(fmt.Sprintf("  %s = insertvalue %%str-long { i64 0, i64 0, i8* null }, i64 %s, 0\n", r0, l64))
-		c.loadSeq++
-		r1 := fmt.Sprintf("%%etr1%d", c.loadSeq)
-		c.sb.WriteString(fmt.Sprintf("  %s = insertvalue %%str-long %s, i64 %s, 1\n", r1, r0, l64))
-		c.loadSeq++
-		r2 := fmt.Sprintf("%%etr2%d", c.loadSeq)
-		c.sb.WriteString(fmt.Sprintf("  %s = insertvalue %%str-long %s, i8* %s, 2\n", r2, r1, dPtr))
-		lReg := fmt.Sprintf("%%be%d", c.loadSeq)
-		c.loadSeq++
-		c.sb.WriteString(fmt.Sprintf("  %s = extractvalue %%str-long %s, 0\n", lReg, r2))
-		dReg := fmt.Sprintf("%%be%d", c.loadSeq)
-		c.loadSeq++
-		c.sb.WriteString(fmt.Sprintf("  %s = extractvalue %%str-long %s, 2\n", dReg, r2))
-		c.sb.WriteString(fmt.Sprintf("  call i64 @write(i32 2, i8* %s, i64 %s)\n", dReg, lReg))
-		c.sb.WriteString("  call void @eprint_nl()\n")
-		return nil
-	default:
-		c.fail("eprint expects str/i64/byte arg, got %s", lt)
-		return fmt.Errorf("eprint expects str/i64/byte arg, got %s", lt)
+		if i > 0 {
+			c.sb.WriteString("  call void @eprint_space()\n")
+		}
+		switch lt {
+		case "%str-long":
+			lReg := fmt.Sprintf("%%be%d", c.loadSeq)
+			c.loadSeq++
+			c.sb.WriteString(fmt.Sprintf("  %s = extractvalue %%str-long %s, 0\n", lReg, v))
+			dReg := fmt.Sprintf("%%be%d", c.loadSeq)
+			c.loadSeq++
+			c.sb.WriteString(fmt.Sprintf("  %s = extractvalue %%str-long %s, 2\n", dReg, v))
+			c.sb.WriteString(fmt.Sprintf("  call i64 @write(i32 2, i8* %s, i64 %s)\n", dReg, lReg))
+		case "i64":
+			c.sb.WriteString(fmt.Sprintf("  call void @eprint_i64(i64 %s)\n", v))
+		case "i8":
+			c.sb.WriteString(fmt.Sprintf("  call void @eprint_byte(i8 %s)\n", v))
+		case "i32":
+			// char is the i32 scalar; a code point is non-negative, so this is
+			// a zero-extension and prints the DECIMAL value of the code point,
+			// matching what print(c) does.
+			c.loadSeq++
+			z := fmt.Sprintf("%%pez%d", c.loadSeq)
+			c.sb.WriteString(fmt.Sprintf("  %s = zext i32 %s to i64\n", z, v))
+			c.sb.WriteString(fmt.Sprintf("  call void @eprint_i64(i64 %s)\n", z))
+		case "i1":
+			// A bare bool prints as 1/0 (print_bool's convention), so widening
+			// to i64 and reusing eprint_i64 is exactly equivalent.
+			c.loadSeq++
+			z := fmt.Sprintf("%%peb%d", c.loadSeq)
+			c.sb.WriteString(fmt.Sprintf("  %s = zext i1 %s to i64\n", z, v))
+			c.sb.WriteString(fmt.Sprintf("  call void @eprint_i64(i64 %s)\n", z))
+		case "%txt":
+			// Build a transient %str-long { len, cap=len, data=&txt.data[0] }
+			// and write it to fd 2 (mirrors the print(txt) path but to stderr).
+			slot := c.valSlot[a]
+			if slot == "" {
+				c.fail("eprint(txt) receiver has no slot in func %d", c.cf)
+				return fmt.Errorf("eprint txt slot")
+			}
+			c.loadSeq++
+			lGEP := fmt.Sprintf("%%etlg%d", c.loadSeq)
+			c.sb.WriteString(fmt.Sprintf("  %s = getelementptr inbounds %%txt, %%txt* %s, i32 0, i32 1\n", lGEP, slot))
+			c.loadSeq++
+			lLd := fmt.Sprintf("%%etll%d", c.loadSeq)
+			c.sb.WriteString(fmt.Sprintf("  %s = load i8, i8* %s\n", lLd, lGEP))
+			c.loadSeq++
+			l64 := fmt.Sprintf("%%etl6%d", c.loadSeq)
+			c.sb.WriteString(fmt.Sprintf("  %s = zext i8 %s to i64\n", l64, lLd))
+			c.loadSeq++
+			dGEP := fmt.Sprintf("%%etdg%d", c.loadSeq)
+			c.sb.WriteString(fmt.Sprintf("  %s = getelementptr inbounds %%txt, %%txt* %s, i32 0, i32 0, i64 0\n", dGEP, slot))
+			c.loadSeq++
+			dPtr := fmt.Sprintf("%%etdp%d", c.loadSeq)
+			c.sb.WriteString(fmt.Sprintf("  %s = bitcast [255 x i8]* %s to i8*\n", dPtr, dGEP))
+			c.loadSeq++
+			r0 := fmt.Sprintf("%%etr0%d", c.loadSeq)
+			c.sb.WriteString(fmt.Sprintf("  %s = insertvalue %%str-long { i64 0, i64 0, i8* null }, i64 %s, 0\n", r0, l64))
+			c.loadSeq++
+			r1 := fmt.Sprintf("%%etr1%d", c.loadSeq)
+			c.sb.WriteString(fmt.Sprintf("  %s = insertvalue %%str-long %s, i64 %s, 1\n", r1, r0, l64))
+			c.loadSeq++
+			r2 := fmt.Sprintf("%%etr2%d", c.loadSeq)
+			c.sb.WriteString(fmt.Sprintf("  %s = insertvalue %%str-long %s, i8* %s, 2\n", r2, r1, dPtr))
+			lReg := fmt.Sprintf("%%be%d", c.loadSeq)
+			c.loadSeq++
+			c.sb.WriteString(fmt.Sprintf("  %s = extractvalue %%str-long %s, 0\n", lReg, r2))
+			dReg := fmt.Sprintf("%%be%d", c.loadSeq)
+			c.loadSeq++
+			c.sb.WriteString(fmt.Sprintf("  %s = extractvalue %%str-long %s, 2\n", dReg, r2))
+			c.sb.WriteString(fmt.Sprintf("  call i64 @write(i32 2, i8* %s, i64 %s)\n", dReg, lReg))
+		default:
+			c.fail("eprint expects str/i64/byte/char/bool arg, got %s", lt)
+			return fmt.Errorf("eprint expects str/i64/byte/char/bool arg, got %s", lt)
+		}
 	}
+	c.sb.WriteString("  call void @eprint_nl()\n")
+	return nil
 }
 
 func (c *codegen) emitTerm(f *Function, t *Term) error {

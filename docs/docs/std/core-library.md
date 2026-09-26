@@ -10,6 +10,7 @@ Nolang 使用**具名格式字串** `{name[:spec]}`，直接引用作用域變�
 
 ```no
 print('x={x}')                 ; 具名格式，自動換行（stdout）
+print('result={val}', 42, 'result={val}')  ; 多參數：空格分隔；每個字面量各自是模板
 eprint('err {x}')              ; 具名格式，自動換行（stderr）
 print('編號 {id:06} 金額 {money:.2f}')  ; 支援對齊/填充/寬度/精度
 s = format('x={x}')            ; 返回格式化字串（替代 sprintf）

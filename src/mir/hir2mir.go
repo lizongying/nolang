@@ -4971,33 +4971,7 @@ func (l *lowerer) lowerExpr(id int32) ValueID {
 		return l.b.EmitInt(OpConst, l.typeOfNode(n), val, "")
 	case hir.KStrLit:
 		s := l.pkg.Str(n.S)
-		// Nolang string interpolation (`print('x={expr}')`) is substituted ONLY
-		// at a print-family call site; see lowerNamedFormat. Everything else
-		// (`s = 'x={n}'`, a struct field, an argument to a user function) emits
-		// the braces literally — verified against the legacy backend, whose
-		// named-format interception is reachable solely from callFmt.
-		//
-		// The old test here was `Contains("{") && Contains("}")`, which also
-		// flagged ordinary brace-bearing literals (JSON, code templates, `{}`
-		// in embedded sources) and forced a whole-module fallback for them.
-		// Now the diagnostic is raised only when the literal really is a
-		// format string AND it appears as a print-family argument that the
-		// interception failed to lower — i.e. exactly the case where emitting
-		// the raw text would be silently wrong.
-		if strings.Contains(s, "{") && strings.Contains(s, "}") {
-			if segs, err := parser.ParseFormatString(s); err == nil {
-				hasField := false
-				for _, sg := range segs {
-					if sg.Field != nil {
-						hasField = true
-						break
-					}
-				}
-				if hasField && l.inPrintArgs > 0 {
-					l.unsupported(l.curFuncName(), "interp", "string interpolation not lowered: "+interpPreview(s))
-				}
-			}
-		}
+		l.reportUnloweredInterp(s)
 		return l.b.EmitStr(OpConst, l.b.Type("str"), s, "")
 	case hir.KRegexLit:
 		return l.lowerRegexLit(n)
@@ -5060,6 +5034,26 @@ func (l *lowerer) lowerExpr(id int32) ValueID {
 		}
 		return v
 	case hir.KInfix:
+		// Compile-time fold of a literal-only string concatenation
+		// (`'a=' - 'b'` is the constant `'a=b'`): emit ONE str literal instead
+		// of a runtime @str_concat. It must run BEFORE the operands are
+		// lowered, because lowering a literal that contains `{name}` while
+		// `inPrintArgs > 0` records the "interpolation not lowered" fallback
+		// diagnostic — which is exactly what made `print('a=' - '{x}')` a
+		// compile error before the format string was folded as a whole.
+		//
+		// A `txt` destination is excluded on purpose: `%txt` is a second,
+		// incompatible string layout (inline buffer + i8 length), so a `txt`
+		// target keeps the old arith path and its conversion.
+		if s, _, ok := l.foldStrConcat(id); ok {
+			if ty := l.mod.Type(l.typeOfNode(n)); ty == nil || ty.Raw != "txt" {
+				// Same guard as a bare literal, applied to the PARTS: a
+				// fragment that carries an unsubstituted {field} must not be
+				// emitted verbatim into a print-family call.
+				l.reportUnloweredInterpLeaves(id)
+				return l.b.EmitStr(OpConst, l.b.Type("str"), s, "")
+			}
+		}
 		var lr [2]int32
 		i := 0
 		for _, c := range l.pkg.Children(id) {
@@ -6739,12 +6733,182 @@ func isPrintFamilyCallee(callee string) bool {
 	return ok
 }
 
-// lowerNamedFormat lowers a print-family call whose format string contains
-// {name} / {name:spec} fields. It mirrors the legacy path
-// (llvm.callNamedFormat) in two respects that matter for output equality:
+// formatStringHasField reports whether `s` really is a named-format string,
+// i.e. it parses as one AND carries at least one {name} / {name:spec} field.
+// The cheap `Contains` pre-tests matter: an ordinary brace-bearing literal
+// (JSON, a code template, `{}` in an embedded source) is NOT a format string,
+// and treating it as one used to force a whole-module fallback.
+func formatStringHasField(s string) bool {
+	if !strings.Contains(s, "{") || !strings.Contains(s, "}") {
+		return false
+	}
+	segs, err := parser.ParseFormatString(s)
+	if err != nil {
+		return false
+	}
+	for _, sg := range segs {
+		if sg.Field != nil {
+			return true
+		}
+	}
+	return false
+}
+
+// reportUnloweredInterp records the "this really is a format string, but
+// nothing substituted its fields" diagnostic for a string literal that is
+// being emitted verbatim as a print-family argument. Emitting the raw text
+// there would be silently wrong, so it has to stay an error — which is why it
+// is shared by the bare-literal emit site and the folded-concat one (see
+// foldStrConcat / reportUnloweredInterpLeaves).
+func (l *lowerer) reportUnloweredInterp(s string) {
+	// Nolang string interpolation (`print('x={expr}')`) is substituted ONLY
+	// at a print-family call site; see lowerNamedFormat. Everything else
+	// (`s = 'x={n}'`, a struct field, an argument to a user function) emits
+	// the braces literally — verified against the legacy backend, whose
+	// named-format interception is reachable solely from callFmt.
+	if l.inPrintArgs > 0 && formatStringHasField(s) {
+		l.unsupported(l.curFuncName(), "interp", "string interpolation not lowered: "+interpPreview(s))
+	}
+}
+
+// foldStrConcat returns the compile-time value of the string expression at HIR
+// node `id` when every part of it is a string LITERAL: either the literal
+// itself, or a `+`/`-` concatenation whose BOTH sides fold. Nolang concatenates
+// strings with `-` (and `+`), so `format('a=' - '{x}')` is the compile-time
+// constant `format('a={x}')`.
 //
-//   - interception happens ONLY for a print-family callee, and for
-//     print/eprint only when the call has exactly one argument; and
+// Why it has to happen before anything is lowered: the named-format
+// interception below reads the format string out of ONE literal argument, so a
+// format string assembled from pieces used to reach the generic path; the
+// `{x}` fragment then hit KStrLit lowering while `inPrintArgs > 0` and was
+// reported as "interp: string interpolation not lowered" — a hard compile
+// error for code that is perfectly well-defined.
+//
+// The second result says whether any literal PART is itself a format string.
+// It is what keeps the fold from inventing interpolation: `'{' - 'x}'` joins
+// into `{x}`, but the author wrote two pieces of ordinary text, so treating
+// the join as a format string would silently change what the program prints.
+// Only a part that already carries a {field} marks the whole thing as
+// "meant to be interpolated".
+//
+// `ok` is false for anything that is not literal-only (a variable, a call, a
+// char/int operand, `str * n` repeat, ...), so no caller ever substitutes a
+// guess for a runtime value.
+func (l *lowerer) foldStrConcat(id int32) (s string, hasField bool, ok bool) {
+	n := l.pkg.Node(id)
+	if n == nil {
+		return "", false, false
+	}
+	switch n.Kind {
+	case hir.KStrLit:
+		s = l.pkg.Str(n.S)
+		return s, formatStringHasField(s), true
+	case hir.KGrouped:
+		// A parenthesised sub-expression: `(a - b)` is transparent here, just
+		// as it is in lowerExpr.
+		for _, c := range l.pkg.Children(id) {
+			return l.foldStrConcat(c)
+		}
+		return "", false, false
+	case hir.KInfix:
+		// Only concatenation. `*` is string REPEAT (`s * n`) and every other
+		// operator is not a string operation at all — none of them fold.
+		switch l.pkg.Str(n.S) {
+		case "-", "+":
+		default:
+			return "", false, false
+		}
+		var parts [2]int32
+		i := 0
+		for _, c := range l.pkg.Children(id) {
+			if i < 2 {
+				parts[i] = c
+				i++
+			}
+		}
+		if i != 2 {
+			return "", false, false
+		}
+		ls, lf, ok := l.foldStrConcat(parts[0])
+		if !ok {
+			return "", false, false
+		}
+		rs, rf, ok := l.foldStrConcat(parts[1])
+		if !ok {
+			return "", false, false
+		}
+		return ls + rs, lf || rf, true
+	}
+	return "", false, false
+}
+
+// reportUnloweredInterpLeaves applies reportUnloweredInterp to every string
+// literal inside a literal-only concatenation, so a folded constant is judged
+// by its PARTS and not by the joined text. `'{' - 'x}'` joins into `{x}`, but
+// neither part is a format string, so printing it verbatim is correct — while
+// `'{x}'` on its own (or `'{x}' - 'a' - n`) still has to be refused, because
+// there the braces really were meant to be substituted.
+func (l *lowerer) reportUnloweredInterpLeaves(id int32) {
+	n := l.pkg.Node(id)
+	if n == nil {
+		return
+	}
+	switch n.Kind {
+	case hir.KStrLit:
+		l.reportUnloweredInterp(l.pkg.Str(n.S))
+	case hir.KGrouped, hir.KInfix:
+		for _, c := range l.pkg.Children(id) {
+			l.reportUnloweredInterpLeaves(c)
+		}
+	}
+}
+
+// formatSegmentsOf parses a candidate named-format string: it must carry a
+// `{`/`}` pair, parse cleanly as a format string, and contain at least one
+// {name[:spec]} FIELD. Returns false for an ordinary brace-bearing literal
+// (JSON, a code template, `{}` in an embedded source), which is NOT a format
+// string — the cheap Contains pre-tests keep such literals from forcing a
+// ParseFormatString call (and from being treated as templates).
+func formatSegmentsOf(s string) ([]parser.FormatSegment, bool) {
+	if !strings.Contains(s, "{") || !strings.Contains(s, "}") {
+		return nil, false
+	}
+	segs, err := parser.ParseFormatString(s)
+	if err != nil {
+		return nil, false
+	}
+	for _, sg := range segs {
+		if sg.Field != nil {
+			return segs, true
+		}
+	}
+	return nil, false
+}
+
+// formatTemplateOf folds the argument at HIR node `id` into a named-format
+// TEMPLATE, returning its source text and parsed segments. It folds a
+// literal-only concatenation (`'a=' - '{x}'`) so the interception sees the
+// whole string, but requires — via foldStrConcat's hasField — that some PART
+// already carries a {field}, so a join of ordinary text fragments that merely
+// looks brace-shaped (`'{' - 'x}'`) is left alone.
+func (l *lowerer) formatTemplateOf(id int32) (string, []parser.FormatSegment, bool) {
+	s, hasField, ok := l.foldStrConcat(id)
+	if !ok || !hasField {
+		return "", nil, false
+	}
+	segs, ok := formatSegmentsOf(s)
+	if !ok {
+		return "", nil, false
+	}
+	return s, segs, true
+}
+
+// lowerNamedFormat lowers a print-family call that carries a named-format
+// string with {name} / {name:spec} fields. It mirrors the legacy path
+// (llvm.callNamedFormat) in the respects that matter for output equality:
+//
+//   - interception happens ONLY for a print-family callee, and only for an
+//     argument that really is a literal template; and
 //   - each literal segment is written verbatim, each field is rendered by the
 //     std fmt-* helper (fmt-int / fmt-uint / fmt-f64 / fmt-str / fmt-bool),
 //     and print/eprint append a single trailing newline.
@@ -6754,7 +6918,14 @@ func isPrintFamilyCallee(callee string) bool {
 // the call was lowered — or when it deliberately refused to lower and recorded
 // an "interp" fallback diagnostic, because emitting the un-substituted text
 // would be silently wrong.
-func (l *lowerer) lowerNamedFormat(callee string, n *hir.Node) (bool, ValueID) {
+//
+// print/eprint accept MULTIPLE arguments, and each string LITERAL among them is
+// a template in its own right (`print('result={val}', 42, 'result={val}')`).
+// A literal is NOT a C-style format string describing the other arguments: the
+// fields resolve against the enclosing scope at this call site, and every other
+// argument is printed by the ordinary variadic path — see
+// lowerNamedFormatMulti.
+func (l *lowerer) lowerNamedFormat(callee string, n *hir.Node, recvV ValueID) (bool, ValueID) {
 	base := callee
 	if i := strings.LastIndex(base, "."); i >= 0 {
 		if base[:i] != "fmt" {
@@ -6768,39 +6939,46 @@ func (l *lowerer) lowerNamedFormat(callee string, n *hir.Node) (bool, ValueID) {
 	}
 	args := l.slotArgs(n.Id, "arg")
 	if len(args) == 0 {
+		// `print()` / `eprint()` — nothing to substitute.
 		return false, NoVal
 	}
-	// Legacy intercepts print/eprint only for a single string-literal argument;
-	// a multi-arg call goes through the variadic (space-separated) path.
-	if (base == "print" || base == "eprint") && len(args) != 1 {
-		return false, NoVal
-	}
-	a0 := l.pkg.Node(args[0])
-	if a0 == nil || a0.Kind != hir.KStrLit {
-		return false, NoVal
-	}
-	s := l.pkg.Str(a0.S)
-	if !strings.Contains(s, "{") {
-		return false, NoVal
-	}
-	segs, err := parser.ParseFormatString(s)
-	if err != nil {
-		return false, NoVal
-	}
-	hasField := false
-	for _, sg := range segs {
-		if sg.Field != nil {
-			hasField = true
-			break
-		}
-	}
-	if !hasField {
-		return false, NoVal
-	}
+	// format()/sprintf() RETURN the formatted string instead of writing it, so
+	// they keep the single-format-string form they always had.
 	if k.retStr {
+		s, segs, ok := l.formatTemplateOf(args[0])
+		if !ok {
+			return false, NoVal
+		}
 		// format()/sprintf() CONCATENATE the segments into one str result.
 		return l.lowerNamedFormatResult(segs, s)
 	}
+	// printf/eprintf are the deprecated no-newline stream writers: this
+	// interception IS their only implementation (there is no generic codegen
+	// path for them), and they are documented as taking a single format string.
+	// Keep their historical single-argument behaviour exactly.
+	if base == "printf" || base == "eprintf" {
+		_, segs, ok := l.formatTemplateOf(args[0])
+		if !ok {
+			return false, NoVal
+		}
+		return l.lowerNamedFormatStream(k, segs)
+	}
+	// print / eprint.
+	if len(args) == 1 {
+		_, segs, ok := l.formatTemplateOf(args[0])
+		if !ok {
+			return false, NoVal
+		}
+		return l.lowerNamedFormatStream(k, segs)
+	}
+	return l.lowerNamedFormatMulti(callee, n, recvV, args)
+}
+
+// lowerNamedFormatStream writes the segments of a named-format string to the
+// stream named by k (stdout/stderr, with or without a trailing newline). Each
+// literal segment is written verbatim and each {field} is rendered by the
+// matching std fmt-* helper.
+func (l *lowerer) lowerNamedFormatStream(k namedFormatKind, segs []parser.FormatSegment) (bool, ValueID) {
 	writeFn := "$print_str"
 	nlFn := "$print_nl"
 	if k.stderr {
@@ -6826,6 +7004,76 @@ func (l *lowerer) lowerNamedFormat(callee string, n *hir.Node) (bool, ValueID) {
 	if k.newline {
 		l.b.EmitVoid(OpCall, nil, nlFn)
 	}
+	return true, NoVal
+}
+
+// lowerNamedFormatMulti lowers a MULTI-argument print/eprint call whose
+// arguments include at least one literal template, e.g.
+//
+//	print('result={val}', 42, 'result={val}')
+//
+// Each string LITERAL argument is a template in its own right: its
+// {name:spec} fields are substituted from the enclosing scope at this call
+// site, exactly as in the single-argument form. A literal is NOT a C-style
+// format string describing the other arguments — `print('x={a}', b)` prints the
+// substituted template and then b; it does not format b into the template.
+// Non-literal arguments keep the ordinary variadic print behaviour (a space
+// between arguments, one trailing newline), so `print('a={n}', 42)` yields
+// `a=7 42`.
+//
+// Interception happens ONLY when at least one argument really is a literal
+// template. A call with no template (`print(a, b, c)`) returns false and falls
+// through to the generic path, whose output is unchanged.
+func (l *lowerer) lowerNamedFormatMulti(callee string, n *hir.Node, recvV ValueID, args []int32) (bool, ValueID) {
+	tmpl := map[int32][]parser.FormatSegment{}
+	src := map[int32]string{}
+	for _, a := range args {
+		s, segs, ok := l.formatTemplateOf(a)
+		if !ok {
+			continue
+		}
+		tmpl[a] = segs
+		src[a] = s
+	}
+	if len(tmpl) == 0 {
+		return false, NoVal
+	}
+	// A template is consumed as SOURCE TEXT, so it must not be lowered as an
+	// ordinary literal — that would both waste work and trip the
+	// "interpolation not lowered" diagnostic (the literal sits inside a
+	// print-family call, which is exactly when that diagnostic fires). The
+	// replacement value is built LAZILY, when the argument's turn comes, so
+	// left-to-right evaluation order — and therefore side-effect order — is the
+	// same as the generic path's.
+	bad := false
+	pre := func(nodeID int32) (ValueID, bool) {
+		segs, ok := tmpl[nodeID]
+		if !ok {
+			return NoVal, false
+		}
+		_, v := l.lowerNamedFormatResult(segs, src[nodeID])
+		if v == NoVal {
+			bad = true
+		}
+		return v, true
+	}
+	l.enqueueCallee(callee)
+	l.inPrintArgs++
+	savedWrap := l.wrapPrintArgs
+	l.wrapPrintArgs = true
+	argv := l.lowerCallArgsWith(n, recvV, callee, pre)
+	l.inPrintArgs--
+	l.wrapPrintArgs = savedWrap
+	if bad {
+		// lowerNamedFormatResult already recorded the fallback diagnostic.
+		return true, NoVal
+	}
+	if len(argv) == 0 {
+		return true, NoVal
+	}
+	// The built templates arrive as ordinary `str` values, so the generic
+	// variadic print/eprint path does the spacing and the trailing newline.
+	l.b.EmitVoid(OpCall, argv, callee)
 	return true, NoVal
 }
 
@@ -7244,7 +7492,7 @@ func (l *lowerer) lowerCall(n *hir.Node) ValueID {
 	// source text that is gone by codegen. Returns true when the call has
 	// been fully lowered (or deliberately refused with a fallback
 	// diagnostic) and the generic path below must not run.
-	if handled, res := l.lowerNamedFormat(callee, n); handled {
+	if handled, res := l.lowerNamedFormat(callee, n, recvV); handled {
 		return res
 	}
 
@@ -7901,6 +8149,19 @@ func (l *lowerer) lowerEnumUnit(ei *TaggedEnumInfo, vi *VariantInfo) ValueID {
 }
 
 func (l *lowerer) lowerCallArgs(n *hir.Node, recvV ValueID, callee string) []ValueID {
+	return l.lowerCallArgsWith(n, recvV, callee, nil)
+}
+
+// lowerCallArgsWith is lowerCallArgs with an optional per-argument override:
+// when `pre` returns ok for an argument node, that value is used INSTEAD of
+// lowering the node. The hook is consulted in argument order, so a caller that
+// builds the replacement lazily inside it keeps left-to-right evaluation order
+// (and therefore side-effect order) intact.
+//
+// The only caller today is the multi-argument named-format path
+// (lowerNamedFormatMulti), which consumes a literal template as SOURCE TEXT and
+// hands over the str value its {fields} were substituted into.
+func (l *lowerer) lowerCallArgsWith(n *hir.Node, recvV ValueID, callee string, pre func(nodeID int32) (ValueID, bool)) []ValueID {
 	args := l.slotArgs(n.Id, "arg")
 	// For a VARIADIC callee in arg-form (`f(..., r)`), drop the trailing
 	// out-parameter arguments: the result is returned via the out-pointer, not
@@ -7973,6 +8234,16 @@ func (l *lowerer) lowerCallArgs(n *hir.Node, recvV ValueID, callee string) []Val
 		}
 	}
 	for i, a := range args {
+		// The caller has already produced this argument's value (a named-format
+		// template consumed as source text): use it as-is, without lowering the
+		// node. The hook is called IN ORDER, so lazily-built values still land
+		// in evaluation order.
+		if pre != nil {
+			if pv, ok := pre(a); ok {
+				argv = append(argv, pv)
+				continue
+			}
+		}
 		// The EXPECTED TYPE at an argument position is the CALLEE's declared
 		// parameter type — NOT the enclosing statement's hint. Letting the
 		// statement hint through leaked an OPTION type into plain-`T`

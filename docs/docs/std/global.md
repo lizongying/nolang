@@ -28,6 +28,9 @@ v = [].with-len-cap(100, 200)
 print('x={x}')                          ; 具名格式，stdout + 換行
 eprint('err {x}')                       ; 具名格式，stderr + 換行
 s = format('x={x}')                      ; 返回格式化字串
+print(a, b, c)                          ; 多參數：空格分隔，末尾只有一個換行
+print('result={val}', 42, 'result={val}')  ; 多參數時，每個字面量各自是模板
+                                        ; （{val} 從呼叫點作用域取值，不是 C 風格格式串）
 ```
 
 ---

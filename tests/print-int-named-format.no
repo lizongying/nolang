@@ -54,9 +54,11 @@ main = () {
     -> print('FAIL: 4a format-field value=[' - direct - ']')
 
     ; 內嵌在文字中（欄位在呼叫點解析）
-    ; ⚠️ 具名格式的攔截**只認單一字串字面量**：把 '{x}' 拿去跟別的字串 `-` 串接
-    ;    會走 generic 路徑並報 `interp: string interpolation not lowered: {x}`。
-    ;    所以整段（含文字）必須寫成同一個字面量。
+    ; ⚠️ 具名格式的攔截只認「可折疊成單一字串字面量」的參數：全部由字面量串成的
+    ;    寫法（`format('a=' - '{x}')`）會先在編譯期合併再替換欄位（見
+    ;    tests/format-concat-fold.no），但摻了執行期值的串接
+    ;    （`print('a=' - '{x}' - name)`）不是常數，仍然報
+    ;    `interp: string interpolation not lowered: {x}`。
     inlined = format('value={x}')
     (inlined == 'value=42') -> print('PASS: 4b field inside literal text')
     -> print('FAIL: 4b inlined=[' - inlined - ']')

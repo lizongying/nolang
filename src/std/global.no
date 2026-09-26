@@ -52,6 +52,17 @@ with-cap-len = (cap i64, len i64) {
 
 ; ── 输出/格式化 ────────────────────────────────────────────
 ;
+; 具名格式：{name[:spec]} 直接引用作用域中的变量，无需位置参数，支援编译期验证。
+;
+; ⚠️ 多参数时，字面量默认是模板，不是 C 风格的格式串：
+;     print('result={val}', 42, 'result={val}')
+;   → 每个字串字面量**各自**是一个模板：{val} 从**调用点作用域**取值，
+;     与同一调用里的其它参数无关。字面量不会去描述/消费后面的参数
+;     （不是 printf('%d', 42) 那样的替换）。
+;   非字面量参数（变量、表达式）按普通可变参数处理：空格分隔，整行末尾一个换行。
+;     tmpl = '{val}'
+;     print(tmpl)                 → {val}（变量是纯文字，不做替换）
+;
 ; 格式说明符 spec 语法（各字段顺序固定，均可省略）：
 ;   [[fill]align][sign][#][0][width][grouping][.precision][type]
 ;
@@ -93,11 +104,16 @@ with-cap-len = (cap i64, len i64) {
 ;     {s:.3}        → hel（截断为 3 字符）
 ;     {x:t}         → i64（打印变量 x 的类型名）
 ;     {s:v}         → 'hello'（字符串用单引号包裹）
-;   {{ 与 }} 用于输出字面 { 与 }
+;   {{ 与 }} 用于输出字面 { 与 }，但仅当同一字串中至少还有一个真正的 {name} 栏位时
+;   才生效；只含转义、不含栏位的字面量会原样输出（print('{{n}}') → {{n}}）。
+;   要输出单独的大括号，直接用 print('{') / print('}')。
 
 ; print: 输出字串到标准输出并换行，支援 {name:spec} 命名格式栏位
 ;   print('hello {name}')       → hello world（若 name = 'world'）
 ;   print('{x:.2f}')            → 3.14（若 x = 3.14159）
+;   多参数：print(a, b, c) 以空格分隔，整行末尾只有一个换行。
+;   多参数时每个字串字面量各自是模板（见上方「多参数时，字面量默认是模板」）：
+;     print('result={val}', 42, 'result={val}')  → result=42 42 result=42
 #{buildin}
 print = () {
 }
@@ -107,6 +123,8 @@ print = (s str) {
 
 ; eprint: 输出字串到标准错误并换行，支援 {name:spec} 命名格式栏位
 ;   eprint('error: {msg}')
+;   多参数：eprint('err:', a, b) 以空格分隔，整行末尾只有一个换行；
+;           每个字串字面量各自是模板（同 print）
 #{buildin}
 eprint = () {
 }
@@ -117,6 +135,7 @@ eprint = (s str) {
 ; format: 使用 {name:spec} 命名栏位格式化字串并返回结果（取代 sprintf）
 ;   s = format('{x:.2f}')       → '3.14'
 ;   s = format('{name} is {age}')  → 'Alice is 30'
+;   ⚠️ 只接受单一格式字串（没有多参数形式）
 #{buildin, intrinsic}
 format = () {
 }

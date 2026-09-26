@@ -10,6 +10,7 @@ Nolang uses **named format strings** `{name[:spec]}`, referencing variables dire
 
 ```no
 print('x={x}')                 ; Named format, auto-appends newline (stdout)
+print('result={val}', 42, 'result={val}')  ; Multiple args: space-separated; each literal is its own template
 eprint('err {x}')              ; Named format, auto-appends newline (stderr)
 print('id {id:06} amount {money:.2f}')  ; Supports align/fill/width/precision
 s = format('x={x}')            ; Returns formatted string (replaces sprintf)

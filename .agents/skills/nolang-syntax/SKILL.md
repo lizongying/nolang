@@ -2700,6 +2700,18 @@ Nolang uses **named format strings** with `{name[:spec]}` syntax, referencing va
 - `eprint(s)` / `eprint(s0, s1, ...)` — writes to stderr, multiple args separated by spaces, **auto-appends newline**
 - `format(s)` — returns the formatted string (replaces `sprintf`), no newline
 
+**With multiple arguments, each string literal is a template — not a C-style format string.** In `print('result={val}', 42, 'result={val}')`, every string literal is a template **in its own right**: its `{val}` is resolved from the scope at the **call site**, independently of the other arguments in the same call. A literal **never** describes or consumes the following arguments — it is not `printf('%d', 42)`-style substitution. Non-literal arguments (variables, expressions) are handled as ordinary variadic arguments, separated by spaces, with a single trailing newline for the whole call.
+
+```no
+val = 42
+print('result={val}', 42, 'result={val}')  // result=42 42 result=42
+tmpl = '{val}'
+print(tmpl)                                // {val} — a variable is plain text, not a template
+print('a={val}', val)                      // a=42 42
+```
+
+`format(s)` — and the deprecated `printf(s)` / `eprintf(s)` / `sprintf(s)` — still accept a **single format string** only.
+
 > `printf`, `eprintf`, `sprintf` are **deprecated**, kept only for backward compatibility. Replacements:
 > - `printf(s)` → `io.out(s)` (no newline, stdout)
 > - `eprintf(s)` → `io.err(s)` (no newline, stderr)
@@ -2717,8 +2729,10 @@ v []i64 = with-len(100)          // ✅ length 100 slice
 // Output/formatting (no prefix)
 print('hello {n}')               // ✅ auto-newline
 print(a, b, c)                   // ✅ multiple args, space-separated
+print('x={n}', n)                // ✅ a literal is a template, a variable is a value
+print('result={val}', 42, 'result={val}')  // ✅ each literal substitutes on its own
 print()                          // ✅ no args, just a newline
-s = format('x={x}')              // ✅ returns formatted string
+s = format('x={x}')              // ✅ returns formatted string (single format string)
 eprint('err: {n}')               // ✅ writes to stderr with newline
 print('id {id:06} amount {money:.2f}')  // supports align/fill/width/precision
 
@@ -2753,7 +2767,7 @@ print('{s:<10}')             // hello     (left-aligned)
 print('{s:.3}')              // hel (truncated to 3 chars)
 ```
 
-Use `{{` and `}}` to output literal `{` and `}`. C-style `%d`/`%s`/`%f` format strings are no longer supported (libc `printf` dependency removed); migrate to `{name}` syntax.
+`{{` and `}}` output literal `{` and `}` — but **only when the same string also contains at least one real `{name}` field**. A literal consisting solely of escapes is emitted verbatim: `print('{{n}}')` prints `{{n}}` (not `{n}`), and `print('{{')` prints `{{`. To emit a lone brace, just use `print('{')` / `print('}')`. C-style `%d`/`%s`/`%f` format strings are no longer supported (libc `printf` dependency removed); migrate to `{name}` syntax.
 
 **2. Same-file definitions**
 
