@@ -691,12 +691,12 @@ type matchArm struct {
 	// `it`）。嵌套 match 時用處最大——外層的 `it` 不會被內層覆蓋。
 	// 為空表示沿用隱含 `it`。
 	bindingName    string
-	bindingVariant string // "ok"（目前僅 ok 支援析構綁定）
+	bindingVariant string // "ok" / "err"（option 變體的析構綁定）
 	// bindingNames/bindingFields：多欄位變體的析構綁定（`rect(w, h) -> ...`）。
 	// 依位置把 `it.f0` / `it.f1` 綁到 bindingNames[0] / bindingNames[1]。
 	bindingNames  []string
 	bindingFields []string
-	skipItBinding  bool   // generated arms that never reference `it` (e.g. ?= / #{index-out}
+	skipItBinding bool // generated arms that never reference `it` (e.g. ?= / #{index-out}
 	// sentinel arms that just return or substitute a default) opt out of the
 	// synthetic `it` binding, so a sentinel arm's %str-long/nil `it` type can't
 	// clobber the ok arm's element-type `it` (which would corrupt codegen).

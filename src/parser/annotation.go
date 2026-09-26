@@ -1064,7 +1064,14 @@ func (p *Parser) parseAnnotationValue() AnnotationValue {
 	}
 	if p.currentToken.Type == lexer.LBRACKET {
 		openTok := p.currentToken
-		// 可能是陣列或範圍，需向前看
+		// 空陣列 `[]`（複合型別越界預設值 `#{index-out = []}` 的寫法）：範圍探測
+		// 會先呼叫 parseAnnotationSimpleValue 去試讀第一個元素，遇到 `]` 就直接
+		// 報 "expected annotation value, got RBRACKET"，即使隨後回溯、由
+		// parseAnnotationArray 正確解析也留下了一條誤報錯誤。`[` 後緊接 `]` 時
+		// 不可能是範圍，直接走陣列解析即可。
+		if p.peekToken.Type == lexer.RBRACKET {
+			return p.parseAnnotationArray()
+		}
 		// 暫存 parser 狀態以便回溯（含 ring 讀游標，不回寫 lexer 狀態）
 		saveState := p.saveState()
 
@@ -1190,6 +1197,54 @@ func (p *Parser) parseAnnotationSimpleValue() AnnotationValue {
 				Value: strings.Join(pathParts, ""),
 			}
 			return val
+		}
+		// 複合型別（結構體）字面量：`T{}` / `T{name:'x', age:0}`——非标量元素的
+		// `#{index-out}` 越界預設值需要這種寫法。IDENT 後緊接 `{` 即判定為結構體
+		// 字面量（普通 IDENT 值不可能以 `{` 接續，故無歧義）。
+		if p.peekToken.Type == lexer.LBRACE {
+			typeTok := p.currentToken
+			typeName := typeTok.Literal
+			p.nextToken() // 進入 LBRACE
+			p.nextToken() // skip {
+
+			var fields []AnnotationStructField
+			for p.currentToken.Type != lexer.RBRACE && p.currentToken.Type != lexer.EOF {
+				for p.currentToken.Type == lexer.NEWLINE || p.currentToken.Type == lexer.COMMA {
+					p.nextToken()
+				}
+				if p.currentToken.Type == lexer.RBRACE || p.currentToken.Type == lexer.EOF {
+					break
+				}
+				if p.currentToken.Type != lexer.IDENT {
+					msg := fmt.Sprintf("line %d, column %d: expected field name in struct literal, got %s instead",
+						p.currentToken.Line, p.currentToken.Column, p.currentToken.Type.String())
+					p.saveError(msg)
+					break
+				}
+				nameTok := p.currentToken
+				p.nextToken() // skip 欄位名
+				if p.currentToken.Type != lexer.COLON {
+					msg := fmt.Sprintf("line %d, column %d: expected ':' after struct field name, got %s instead",
+						p.currentToken.Line, p.currentToken.Column, p.currentToken.Type.String())
+					p.saveError(msg)
+					break
+				}
+				p.nextToken() // skip :
+				fv := p.parseAnnotationValue()
+				if fv != nil {
+					fields = append(fields, AnnotationStructField{Name: nameTok.Literal, Value: fv})
+				}
+				if p.currentToken.Type != lexer.COMMA && p.currentToken.Type != lexer.RBRACE {
+					msg := fmt.Sprintf("line %d, column %d: expected ',' or '}' in struct literal, got %s instead",
+						p.currentToken.Line, p.currentToken.Column, p.currentToken.Type.String())
+					p.saveError(msg)
+					break
+				}
+			}
+			if p.currentToken.Type == lexer.RBRACE {
+				p.nextToken() // skip }
+			}
+			return &AnnotationStructValue{Token: typeTok, Type: typeName, Fields: fields}
 		}
 		// 普通 IDENT 值
 		val := &AnnotationIdentValue{

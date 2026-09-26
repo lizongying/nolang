@@ -1092,20 +1092,50 @@ func overflowModeFieldOf(n Node) string {
 // defaultLiteralFor 依元素型別 elem 解釋 #{index-out} 的預設註解值 defVal，
 // 產生對應的 AST 字面量。回傳 (字面量, 錯誤訊息)；錯誤訊息非空表示無法轉換。
 func defaultLiteralFor(tok lexer.Token, elem string, defVal AnnotationValue) (Expression, string) {
-	// 非标量元素（切片 / 陣列 / 映射 / 結構體）：#{index-out} 越界預設值統一取「零值」。
-	// 觸發語法為 `nil` 或 `0`；越界時回傳空容器 / 零結構體字面量。
+	// 非标量元素（切片 / 陣列 / 映射 / 結構體）：越界預設值可以是
+	//   - `nil` 或 `0`            → 零值（空容器 / 零定長陣列 / 空映射 / 零結構體）
+	//   - `[]` / `[1, 2]`         → 明確的複合（容器）字面量
+	//   - `T{}` / `T{name:'x'}`   → 明確的結構體字面量
+	// 三者皆直接建成對應的 AST 字面量，成為 index-out 展開時的 none 臂值。
 	if isContainerOrStructElem(elem) {
-		switch defVal.(type) {
+		kind, elemType, _, _ := classifyCompositeElem(elem)
+		switch v := defVal.(type) {
 		case *AnnotationIdentValue:
-			if v, ok := defVal.(*AnnotationIdentValue); ok && v.Value == "nil" {
+			if v.Value == "nil" {
 				return zeroValueLiteralFor(tok, elem), ""
 			}
 		case *AnnotationIntValue:
-			if v, ok := defVal.(*AnnotationIntValue); ok && v.Value == 0 {
+			if v.Value == 0 {
 				return zeroValueLiteralFor(tok, elem), ""
 			}
+		case *AnnotationArrayValue:
+			// 陣列寫法只對容器（切片 / 定長陣列）有意義；映射的元素型別不接受
+			// 這種寫法（映射零值請用 `nil` / `0`）。
+			if kind != compositeMap {
+				elems := []Expression{}
+				for _, av := range v.Elements {
+					lit, emsg := defaultLiteralFor(tok, elemType, av)
+					if lit == nil {
+						return nil, emsg
+					}
+					elems = append(elems, lit)
+				}
+				return &ArrayLiteral{Token: tok, Elements: elems, WasSliceLiteral: true}, ""
+			}
+		case *AnnotationStructValue:
+			if kind == compositeStruct {
+				fields := []*StructField{}
+				for _, f := range v.Fields {
+					lit, emsg := looseLiteralFromAnnotationValue(tok, f.Value)
+					if lit == nil {
+						return nil, emsg
+					}
+					fields = append(fields, &StructField{Token: tok, Name: f.Name, Value: lit})
+				}
+				return &StructLiteral{Token: tok, Type: elem, Fields: fields}, ""
+			}
 		}
-		return nil, fmt.Sprintf("#{index-out} default for %s must be 'nil' or 0 (zero value)", elem)
+		return nil, fmt.Sprintf("#{index-out} default for %s must be 'nil', 0, or a composite literal", elem)
 	}
 	switch elem {
 	case "f64", "f32":
@@ -1178,13 +1208,136 @@ func isContainerOrStructElem(elem string) bool {
 	return true
 }
 
-// zeroValueLiteralFor 依元素型別 elem 產生越界預設值字面量：
-// 容器 → 空 ArrayLiteral（WasSliceLiteral）；結構體 → 空 StructLiteral。
-func zeroValueLiteralFor(tok lexer.Token, elem string) Expression {
-	if strings.HasPrefix(elem, "[") {
-		return &ArrayLiteral{Token: tok, Elements: []Expression{}, WasSliceLiteral: true}
+// compositeElemKind 描述元素型別屬於哪一種複合型別。
+const (
+	compositeSlice  = iota // []T
+	compositeArray         // [N]T
+	compositeMap           // [K]V
+	compositeStruct        // 具名結構體
+)
+
+// splitBracketType 拆分以 '[' 開頭的複合型別字串，取第一對方括號內的內容與其後
+// 剩餘部分。例：[]i64 → ("", "i64")；[3]i64 → ("3", "i64")；[str]i64 → ("str","i64")。
+func splitBracketType(elem string) (inner string, rest string, ok bool) {
+	if !strings.HasPrefix(elem, "[") {
+		return "", "", false
 	}
-	return &StructLiteral{Token: tok, Type: elem, Fields: nil}
+	depth := 0
+	for i := 0; i < len(elem); i++ {
+		switch elem[i] {
+		case '[':
+			depth++
+		case ']':
+			depth--
+			if depth == 0 {
+				return elem[1:i], elem[i+1:], true
+			}
+		}
+	}
+	return "", "", false
+}
+
+// classifyCompositeElem 分類複合元素型別。
+// elemType 是容器內的元素型別（映射則為值型別）；size 只在定長陣列時有意義；
+// keyType 只在映射時有意義。
+func classifyCompositeElem(elem string) (kind int, elemType string, size int64, keyType string) {
+	if inner, rest, ok := splitBracketType(elem); ok {
+		if inner == "" {
+			return compositeSlice, rest, 0, ""
+		}
+		if n, err := strconv.ParseInt(inner, 10, 64); err == nil {
+			return compositeArray, rest, n, ""
+		}
+		return compositeMap, rest, 0, inner
+	}
+	return compositeStruct, "", 0, ""
+}
+
+// zeroValueLiteralFor 依元素型別 elem 產生越界預設值字面量：
+// 切片 → 空 ArrayLiteral（WasSliceLiteral）；定長陣列 → N 個零元素；
+// 映射 → 空 MapLiteral；結構體 → 零 StructLiteral。
+func zeroValueLiteralFor(tok lexer.Token, elem string) Expression {
+	kind, elemType, size, _ := classifyCompositeElem(elem)
+	switch kind {
+	case compositeMap:
+		return &MapLiteral{Token: tok, Pairs: nil}
+	case compositeArray:
+		elems := []Expression{}
+		for i := int64(0); i < size; i++ {
+			elems = append(elems, scalarZeroLiteral(tok, elemType))
+		}
+		return &ArrayLiteral{
+			Token:    tok,
+			Size:     &IntegerLiteral{Token: tok, Value: size, Raw: strconv.FormatInt(size, 10)},
+			Elements: elems,
+		}
+	case compositeSlice:
+		return &ArrayLiteral{Token: tok, Elements: []Expression{}, WasSliceLiteral: true}
+	default:
+		return &StructLiteral{Token: tok, Type: elem, Fields: nil}
+	}
+}
+
+// scalarZeroLiteral 產生型別 typeName 的零值字面量；複合型別遞迴展開。
+func scalarZeroLiteral(tok lexer.Token, typeName string) Expression {
+	switch typeName {
+	case "f64", "f32":
+		return &FloatLiteral{Token: tok, Value: 0, Raw: "0"}
+	case "bool":
+		return &BooleanLiteral{Token: tok, Value: false}
+	case "str", "txt":
+		return &StringLiteral{Token: tok, Value: "", Raw: "''"}
+	default:
+		// 未列出的識別字型別可能是結構體 / 容器，遞迴取複合零值，
+		// 其餘（整數族）一律 i64 0。typeName 在遞迴中嚴格變短，必然終止。
+		if isContainerOrStructElem(typeName) {
+			return zeroValueLiteralFor(tok, typeName)
+		}
+		return &IntegerLiteral{Token: tok, Value: 0, Raw: "0"}
+	}
+}
+
+// looseLiteralFromAnnotationValue 依註解值自身的種類產生字面量。用於結構體欄位等
+// 「目標靜態型別不可得」的場合（defaultLiteralFor 拿不到符號表）：值先轉成通用
+// 字面量，型別相容性交由 checker 在 StructLiteral 上檢查。
+func looseLiteralFromAnnotationValue(tok lexer.Token, v AnnotationValue) (Expression, string) {
+	switch val := v.(type) {
+	case *AnnotationIntValue:
+		return &IntegerLiteral{Token: tok, Value: val.Value, Raw: strconv.FormatInt(val.Value, 10)}, ""
+	case *AnnotationBoolValue:
+		return &BooleanLiteral{Token: tok, Value: val.Value}, ""
+	case *AnnotationStringValue:
+		return &StringLiteral{Token: tok, Value: val.Value, Raw: "'" + val.Value + "'"}, ""
+	case *AnnotationIdentValue:
+		if val.Value == "nil" {
+			return &NilLiteral{Token: tok}, ""
+		}
+		if f, err := strconv.ParseFloat(val.Value, 64); err == nil {
+			return &FloatLiteral{Token: tok, Value: f, Raw: val.Value}, ""
+		}
+		return nil, fmt.Sprintf("unsupported value %q in composite #{index-out} default", val.Value)
+	case *AnnotationArrayValue:
+		elems := []Expression{}
+		for _, el := range val.Elements {
+			lit, emsg := looseLiteralFromAnnotationValue(tok, el)
+			if lit == nil {
+				return nil, emsg
+			}
+			elems = append(elems, lit)
+		}
+		return &ArrayLiteral{Token: tok, Elements: elems, WasSliceLiteral: true}, ""
+	case *AnnotationStructValue:
+		fields := []*StructField{}
+		for _, f := range val.Fields {
+			lit, emsg := looseLiteralFromAnnotationValue(tok, f.Value)
+			if lit == nil {
+				return nil, emsg
+			}
+			fields = append(fields, &StructField{Token: tok, Name: f.Name, Value: lit})
+		}
+		return &StructLiteral{Token: tok, Type: val.Type, Fields: fields}, ""
+	}
+	return nil, "unsupported value in composite #{index-out} default"
 }
 
 // preRegisterEnumArmBindings 在展開 match 之前，先依「被匹配變數的靜態型別」把
@@ -1962,6 +2115,11 @@ func (p *Parser) buildMatchDesugar(sm *SurfaceMatch) Expression {
 					bt := elemType
 					if armBindingType != "" {
 						bt = armBindingType
+					} else if armType == "err" && !matchedIsEnum {
+						// 內建 option 的 err 載荷恆為 str
+						//（option { ok(v t), nil, err(e str) }），與 codegen 端
+						// hir2mir 的 err-marker 剝皮語義一致；不可誤用 ok 載荷型別。
+						bt = "str"
 					}
 					if bt != "" {
 						p.sem.SetFuncVarType(p.curFuncName, arm.bindingName, bt)

@@ -970,6 +970,43 @@ func (v *AnnotationArrayValue) String() string {
 	return out.String()
 }
 
+// AnnotationStructValue — 複合型別（結構體）字面量值，例如
+// `#{index-out = person{name:'anon', age:0}}`。
+//
+// 用途：非标量元素（結構體）的 `#{index-out}` 越界預設值需要能寫出「複合型別」的
+// 字面量，annotation.AnnotationValue 原本只支援標量/陣列/範圍，無法表達 `T{...}`；
+// 沒有它，`#{index-out = person{}}` 會被解析器判為 `expected ',' or '}'` 錯誤。
+type AnnotationStructValue struct {
+	Token  lexer.Token
+	Type   string
+	Fields []AnnotationStructField
+}
+
+// AnnotationStructField 是結構體字面量裡的一個具名欄位。
+type AnnotationStructField struct {
+	Name  string
+	Value AnnotationValue
+}
+
+func (v *AnnotationStructValue) annotationValueNode()   {}
+func (v *AnnotationStructValue) Pos() lexer.Position    { return posFromToken(v.Token) }
+func (v *AnnotationStructValue) EndPos() lexer.Position { return posFromToken(v.Token) }
+func (v *AnnotationStructValue) String() string {
+	var out strings.Builder
+	out.WriteString(v.Type)
+	out.WriteString("{")
+	for i, f := range v.Fields {
+		if i > 0 {
+			out.WriteString(", ")
+		}
+		out.WriteString(f.Name)
+		out.WriteString(":")
+		out.WriteString(f.Value.String())
+	}
+	out.WriteString("}")
+	return out.String()
+}
+
 // AnnotationRangeValue — 範圍值（例如 range=[0..256)）
 type AnnotationRangeValue struct {
 	Token    lexer.Token

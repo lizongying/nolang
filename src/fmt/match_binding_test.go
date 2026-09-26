@@ -33,6 +33,19 @@ func TestFormatPreservesMatchArmBinding(t *testing.T) {
 			want: []string{"ok(v) ->", "nil ->", "err ->"},
 		},
 		{
+			name: "option err destructuring binding",
+			src: `main = () {
+    r ?i64 = err('boom')
+    r: {
+        ok(v) -> print(v)
+        nil -> print('n')
+        err(e) -> print(e)
+    }
+}
+`,
+			want: []string{"ok(v) ->", "nil ->", "err(e) ->"},
+		},
+		{
 			name: "enum single binding",
 			src: `shape {
     circle(r f64),

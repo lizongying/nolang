@@ -1,0 +1,48 @@
+; err-binding.no — `err(e) ->` 析構綁定端到端驗證
+;
+; 1) 基本：err(e) 把 err 載荷（str 訊息）綁到 e，等價於 `err ->` 但 it 改名 e
+; 2) 嵌套：內層 match 的 err(e) 綁定不得覆蓋外層綁定名
+; 3) err(e) 載荷可當 str 用（方法呼叫）
+main = () {
+    ; (1) 基本 err(e)
+    a ?i64 = err('boom')
+    a: {
+        ok(v) -> print('fail 1: ok ' - v.to-str() - '\n')
+
+        err(e) -> print('ok 1: ' - e - '\n')
+
+        nil -> print('fail 1: nil\n')
+    }
+
+    ; (2) 嵌套：外層 err(m) 進入後，內層 err(m) 不得污染外層 m
+    b ?i64 = err('inner')
+    outer ?i64 = err('outer-msg')
+    outer: {
+        ok(v) -> print('fail 2: outer ok\n')
+
+        err(m) -> {
+            b: {
+                ok(w) -> print('fail 2: inner ok\n')
+
+                err(m) -> print('ok 2a: inner ' - m - '\n')
+
+                nil -> print('fail 2: inner nil\n')
+            }
+            m == 'outer-msg' -> print('ok 2b: outer restored ' - m - '\n')
+
+            -> print('fail 2b: outer got ' - m - '\n')
+        }
+
+        nil -> print('fail 2: outer nil\n')
+    }
+
+    ; (3) err(e) 載荷可當 str 用
+    c ?str = err('oops')
+    c: {
+        ok(v) -> print('fail 3: ok\n')
+
+        err(e) -> print('ok 3: len=' - e.len().to-str() - '\n')
+
+        nil -> print('fail 3: nil\n')
+    }
+}

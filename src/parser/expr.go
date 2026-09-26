@@ -975,6 +975,21 @@ func (p *Parser) parseMatchExprFrom(matched Expression) Expression {
 				ma.isRawCond = true
 				ma.condition = okCond
 			}
+		} else if p.currentToken.Type == lexer.IDENT && p.currentToken.Literal == "err" && p.peekToken.Type == lexer.LPAREN &&
+			p.look(0).Type == lexer.IDENT && p.look(1).Type == lexer.RPAREN {
+			// err(e) → 析構綁定：把 err 變體的載荷綁定到 e（等價於 `err ->` 但 it 改名 e）。
+			// 消歧規則與上方 ok(v) 一致：括號內是「單個裸識別符」→ 析構綁定；
+			// 其餘形態（如 err(cond) 條件臂）落入通用 branch 保持原樣。
+			// 巢狀 match 時用處最大 —— 外層的 `it` 不會被內層覆蓋。
+			// 條件規範化為 Identifier{"err"}，使 option 完整性檢查把本臂計入 err 臂，
+			// 並復用 `err ->` 的 desugar/codegen 路徑（綁定型別在 lowering 補全）。
+			ma.condition = &Identifier{Token: p.currentToken, Value: "err"}
+			ma.bindingName = p.look(0).Literal
+			ma.bindingVariant = "err"
+			p.nextToken() // skip err
+			p.nextToken() // skip (
+			p.nextToken() // skip name
+			p.nextToken() // skip )
 		} else if p.currentToken.Type == lexer.IDENT && p.peekToken.Type == lexer.RARROW &&
 			(p.currentToken.Literal == "err" || p.currentToken.Literal == "nil" || p.currentToken.Literal == "ok") {
 			// err-> nil-> → option pattern

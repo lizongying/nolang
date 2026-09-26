@@ -655,6 +655,17 @@ func (c *hirConv) annValue(v AnnotationValue) int32 {
 		}
 		return c.b.Add(hir.Node{Kind: hir.KArrayLit, First: c.kids(nodes), Line: line, Col: col})
 
+	case *AnnotationStructValue:
+		// 複合型別（結構體）字面量：`T{name:'x', age:0}`。HIR 沒有專門的結構體
+		// 字面量節點，以 map-lit（鍵/值交替）承載，保證 annValue 對每種
+		// annotationValueNode 型別都有對應分支（見 tohir_exhaustive_test.go）。
+		nodes := make([]int32, 0, 2*len(v.Fields))
+		for _, f := range v.Fields {
+			nodes = append(nodes, c.b.Add(hir.Node{Kind: hir.KIdent, S: c.b.Intern(f.Name), Line: line, Col: col}))
+			nodes = append(nodes, c.annValue(f.Value))
+		}
+		return c.b.Add(hir.Node{Kind: hir.KMapLit, First: c.kids(nodes), Type: c.b.Intern(v.Type), Line: line, Col: col})
+
 	case *AnnotationRangeValue:
 		return c.b.Add(hir.Node{
 			Kind: hir.KRange,
