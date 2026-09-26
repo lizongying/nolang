@@ -199,7 +199,7 @@ func TestLintIneffectiveOverflow(t *testing.T) {
 		t.Fatalf("parse errors: %v", p.Errors())
 	}
 
-	results := LintIneffectiveOverflow(program)
+	results := LintIneffectiveOverflow(program, "src/app.no")
 	var warnings int
 	for _, r := range results {
 		if r.Source != "nolang-overflow-ineffective" {

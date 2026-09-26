@@ -208,7 +208,6 @@ server-conn.parse = () (ok bool) {
     cr = number.char-to-str(13)
     lf = number.char-to-str(10)
 
-    #{overflow=wrap}
     crlf = cr - lf
 
     #{overflow=wrap}
@@ -455,7 +454,6 @@ server-conn.write-status = (status i64) (ok bool) {
     cr = number.char-to-str(13)
     lf = number.char-to-str(10)
 
-    #{overflow=wrap}
     crlf = cr - lf
 
     status-s = status.to-str()
@@ -519,7 +517,6 @@ server-conn.write-header = (name str, value str) (ok bool) {
     cr = number.char-to-str(13)
     lf = number.char-to-str(10)
 
-    #{overflow=wrap}
     crlf = cr - lf
 
     line = name - ': ' - value - crlf
@@ -537,7 +534,6 @@ server-conn.write-headers-done = () (ok bool) {
     cr = number.char-to-str(13)
     lf = number.char-to-str(10)
 
-    #{overflow=wrap}
     crlf = cr - lf
     written = net.net-send(.fd, crlf, crlf.len-bytes())
     written < 0 -> return
@@ -569,7 +565,6 @@ server-conn.write-text = (status i64, text str) (ok bool) {
     cr = number.char-to-str(13)
     lf = number.char-to-str(10)
 
-    #{overflow=wrap}
     crlf = cr - lf
 
     ; 狀態行

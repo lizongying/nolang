@@ -113,10 +113,8 @@ client.next-event = () (ev ?event) {
     cr = number.char-to-str(13)
     lf = number.char-to-str(10)
 
-    #{overflow=wrap}
     crlf = cr - lf
 
-    #{overflow=wrap}
     lf-lf = lf - lf
 
     #{overflow=wrap}
@@ -335,7 +333,6 @@ client.reconnect = () (ok bool) {
     cr = number.char-to-str(13)
     lf = number.char-to-str(10)
 
-    #{overflow=wrap}
     crlf = cr - lf
 
     ; 建立連線
@@ -608,7 +605,6 @@ sse-connect = (url str) (client ?client) {
     cr = number.char-to-str(13)
     lf = number.char-to-str(10)
 
-    #{overflow=wrap}
     crlf = cr - lf
     req = 'GET '
 
@@ -872,7 +868,6 @@ server-conn.handshake = () (ok bool) {
     cr = number.char-to-str(13)
     lf = number.char-to-str(10)
 
-    #{overflow=wrap}
     crlf = cr - lf
 
     #{overflow=wrap}

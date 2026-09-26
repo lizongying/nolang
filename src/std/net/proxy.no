@@ -62,7 +62,6 @@ connect = (proxy-host str, proxy-port i64, target-host str, target-port i64, use
     cr = number.char-to-str(13)
     lf = number.char-to-str(10)
 
-    #{overflow=wrap}
     crlf = cr - lf
 
     ; 建構 CONNECT 請求

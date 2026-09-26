@@ -115,7 +115,6 @@ multipart-writer.write-field = (name str, value str) (ok bool) {
     cr = number.char-to-str(13)
     lf = number.char-to-str(10)
 
-    #{overflow=wrap}
     crlf = cr - lf
 
     #{overflow=wrap}
@@ -145,7 +144,6 @@ multipart-writer.write-file = (name str, filename str, content-type str, content
     cr = number.char-to-str(13)
     lf = number.char-to-str(10)
 
-    #{overflow=wrap}
     crlf = cr - lf
 
     #{overflow=wrap}
@@ -174,7 +172,6 @@ multipart-writer.close-form = () (ok bool) {
     cr = number.char-to-str(13)
     lf = number.char-to-str(10)
 
-    #{overflow=wrap}
     crlf = cr - lf
 
     #{overflow=wrap}
@@ -253,7 +250,6 @@ multipart-reader.parse-headers = (header-block str, part multipart-part) {
     cr = number.char-to-str(13)
     lf = number.char-to-str(10)
 
-    #{overflow=wrap}
     crlf = cr - lf
 
     pos = 0
@@ -328,7 +324,6 @@ multipart-reader.next = () (has-part bool) {
     cr = number.char-to-str(13)
     lf = number.char-to-str(10)
 
-    #{overflow=wrap}
     crlf = cr - lf
 
     ; 尋找邊界行: --boundary
@@ -573,7 +568,6 @@ multipart-writer.write-encrypted-file = (name str, filename str, content-type st
     cr = number.char-to-str(13)
     lf = number.char-to-str(10)
 
-    #{overflow=wrap}
     crlf = cr - lf
 
     #{overflow=wrap}
@@ -633,7 +627,6 @@ multipart-writer.write-encrypted-field = (name str, value str, key [32]byte, iv 
     cr = number.char-to-str(13)
     lf = number.char-to-str(10)
 
-    #{overflow=wrap}
     crlf = cr - lf
 
     #{overflow=wrap}

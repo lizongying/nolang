@@ -386,7 +386,6 @@ server-conn.handshake = () {
     cr = number.char-to-str(13)
     lf = number.char-to-str(10)
 
-    #{overflow=wrap}
     crlf = cr - lf
 
     #{overflow=wrap}
@@ -621,7 +620,6 @@ server-conn.recv = () (msg ?message) {
     cr = number.char-to-str(13)
     lf = number.char-to-str(10)
 
-    #{overflow=wrap}
     crlf = cr - lf
 
     ; 收集分片訊息
@@ -889,7 +887,6 @@ server-conn.recv-nb = () (msg ?message) {
     cr = number.char-to-str(13)
     lf = number.char-to-str(10)
 
-    #{overflow=wrap}
     crlf = cr - lf
 
     ; 1) 非阻塞填充 recv-buf，直到 would-block（-2）或緩衝區不足以再收一輪
@@ -1577,7 +1574,6 @@ connect = (url str) (c ?client) {
     cr = number.char-to-str(13)
     lf = number.char-to-str(10)
 
-    #{overflow=wrap}
     crlf = cr - lf
 
     req = 'GET ' - path - ' HTTP/1.1' - crlf

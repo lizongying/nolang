@@ -153,7 +153,6 @@ response.parse-headers = () {
     cr = number.char-to-str(13)
     lf = number.char-to-str(10)
 
-    #{overflow=wrap}
     crlf = cr - lf
 
     pos = 0
@@ -263,7 +262,6 @@ do = (method str, url str, body str) (resp ?response) {
     cr = number.char-to-str(13)
     lf = number.char-to-str(10)
 
-    #{overflow=wrap}
     crlf = cr - lf
     req = ''
     len-str = ''
@@ -513,7 +511,6 @@ do-req = (req request) (resp ?response) {
     cr = number.char-to-str(13)
     lf = number.char-to-str(10)
 
-    #{overflow=wrap}
     crlf = cr - lf
     req-str = ''
     len-str = ''

@@ -132,7 +132,6 @@ format-duration = (seconds i64) (out str) {
     m-s = number.i64-to-str(m)
     sec-s = number.i64-to-str(sec)
 
-    #{overflow=wrap}
     out = h-s - 'h' - m-s - 'm' - sec-s - 's'
 }
 

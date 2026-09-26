@@ -10,6 +10,7 @@ package checker
 
 import (
 	"fmt"
+	"path/filepath"
 	"sort"
 	"strings"
 
@@ -81,7 +82,17 @@ type LintOptions struct {
 // 採用 OverflowAnnotationRelevance 的保守（超集）語意：relevant 集合中的陳述未必
 // 真的需要註解，但不在其中的陳述註解必定無效——因此本 lint 只會對「確定無效」的
 // 註解發出，不會誤報有效的 overflow 註解。
-func LintIneffectiveOverflow(program *parser.Program) []LintResult {
+//
+// sourcePath 為當前被 vet 的主檔路徑。兩重作用：
+//  1. 只檢查主檔自己的語句：vet 合併模式下 program 含導入模組語句的副本，
+//     這些副本在合併上下文中的型別推斷與檔案自身 vet 時不一致（如
+//     number.no 的 f64 運算在本檔被推為整數運算、在別檔合併副本被推為
+//     浮點），會產生自相矛盾的誤報；目錄模式下每個檔案都會作為主檔被
+//     vet，導入副本直接跳過即可，不丟失覆蓋。
+//  2. File 回退歸因：結果必須攜帶 File（語句自帶的 SourceFile），否則
+//     下方案號範圍回退歸因會把導入模組的行號對到主檔某函式的行距範圍，
+//     造成診斷被誤歸因到被 vet 的檔案。
+func LintIneffectiveOverflow(program *parser.Program, sourcePath string) []LintResult {
 	if program == nil {
 		return nil
 	}
@@ -89,17 +100,46 @@ func LintIneffectiveOverflow(program *parser.Program) []LintResult {
 	if relevant == nil {
 		return nil
 	}
+	// isImportedCopy 報告語句是否來自導入模組的合併副本（非主檔自身）。
+	// SourceFile 為空表示主檔語句（未合併路徑，如 LSP）；與 sourcePath
+	// 同檔的副本也需檢查（合併程序可能同時帶入主檔自身的模組副本）。
+	isImportedCopy := func(file string) bool {
+		if file == "" {
+			return false
+		}
+		if sourcePath == "" {
+			return true
+		}
+		absFile, err1 := filepath.Abs(file)
+		absMain, err2 := filepath.Abs(sourcePath)
+		if err1 != nil || err2 != nil {
+			return file != sourcePath
+		}
+		return absFile != absMain
+	}
 	const msg = "此 #{overflow=...} 註解對應的陳述不含整數運算（如整行僅字串拼接），不會發生溢出，建議刪除。"
 	var results []LintResult
 	// 獨立成行註解節點：governed 直接給出管轄陳述。
 	for as, gov := range governed {
 		if gov == nil || !relevant[gov] {
+			// 來源檔優先取註解節點自身；回退到被管轄陳述，再回退到主檔。
+			file := parser.GetSourceFile(as)
+			if file == "" && gov != nil {
+				file = parser.GetSourceFile(gov)
+			}
+			if isImportedCopy(file) {
+				continue
+			}
+			if file == "" {
+				file = sourcePath
+			}
 			results = append(results, LintResult{
 				Line:     as.Pos().Line,
 				Column:   as.Pos().Column,
 				Severity: LintWarning,
 				Source:   "nolang-overflow-ineffective",
 				Message:  msg,
+				File:     file,
 			})
 		}
 	}
@@ -115,12 +155,20 @@ func LintIneffectiveOverflow(program *parser.Program) []LintResult {
 				for _, e := range program.Sem.AnnotationsOf(stmt) {
 					if e != nil && e.Key == "overflow" && !e.Trailing {
 						if !relevant[stmt] {
+							file := parser.GetSourceFile(stmt)
+							if isImportedCopy(file) {
+								continue
+							}
+							if file == "" {
+								file = sourcePath
+							}
 							results = append(results, LintResult{
 								Line:     e.Pos().Line,
 								Column:   e.Pos().Column,
 								Severity: LintWarning,
 								Source:   "nolang-overflow-ineffective",
 								Message:  msg,
+								File:     file,
 							})
 						}
 					}
@@ -456,7 +504,8 @@ func RunAllLints(program *parser.Program, opts LintOptions) []LintResult {
 
 	// 20c-ter. 無效 overflow 註解（WARNING）：管轄陳述不含整數運算，註解對溢出
 	// 無作用，建議刪除。採保守（超集）判定，不會誤報有效註解。
-	for _, u := range LintIneffectiveOverflow(program) {
+	// 結果自帶 File（語句 SourceFile 或主檔回退），不参与下方行號範圍回退歸因。
+	for _, u := range LintIneffectiveOverflow(program, opts.SourcePath) {
 		results = append(results, u)
 	}
 

@@ -377,6 +377,8 @@ func SetSourceFile(stmt Statement, file string) {
 		s.SourceFile = file
 	case *ExpressionStatement:
 		s.SourceFile = file
+	case *AnnotationStatement:
+		s.SourceFile = file
 	}
 }
 
@@ -402,6 +404,8 @@ func GetSourceFile(stmt Statement) string {
 	case *ExternStatement:
 		return s.SourceFile
 	case *ExpressionStatement:
+		return s.SourceFile
+	case *AnnotationStatement:
 		return s.SourceFile
 	}
 	return ""

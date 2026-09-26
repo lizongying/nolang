@@ -2907,6 +2907,11 @@ func printLintResults(results []nbuild.LintResult) int {
 	errorCount := 0
 	warnCount := 0
 	hintCount := 0
+	// 去重：vet 目錄模式下，每個檔案的 merged 程式都包含同一批導入模組，
+	// 同一條診斷（如 number.no 的無效 overflow 註解）會隨依賴鏈在被 vet
+	// 的每個檔案中重複產生；且主檔副本（相對路徑回退）與合併副本（絕對
+	// 路徑）路徑寫法不同。按（正規化檔案, 行, 列, 嚴重性, 來源, 消息）去重。
+	seen := map[string]bool{}
 	for _, fileResult := range results {
 		for _, l := range fileResult.Lints {
 			sev := strings.ToUpper(string(l.Severity))
@@ -2916,6 +2921,15 @@ func printLintResults(results []nbuild.LintResult) int {
 			if filePath == "" {
 				filePath = fileResult.File
 			}
+			dedupKey := filePath
+			if abs, err := filepath.Abs(filePath); err == nil {
+				dedupKey = abs
+			}
+			dedupKey = fmt.Sprintf("%s:%d:%d:%s:%s:%s", dedupKey, l.Line, l.Column, sev, l.Source, l.Message)
+			if seen[dedupKey] {
+				continue
+			}
+			seen[dedupKey] = true
 			if l.Line > 0 {
 				fmt.Printf("%s:%d:%d: [%s] %s: %s [%s]\n",
 					filePath, l.Line, l.Column, sev, l.Source, l.Message, l.TraceID)

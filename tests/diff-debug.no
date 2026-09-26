@@ -106,6 +106,7 @@ diff-engine-lcs = (a []str, b []str) (ops []diff-op) {
             dp[(i + 1) * cols + j] >= dp[i * cols + (j + 1)] -> {
                 op = diff-op {}
                 op.kind = 1
+                #{index-out = 0}
                 tmp-line = a[i]
                 op.line = tmp-line
 
@@ -121,6 +122,7 @@ diff-engine-lcs = (a []str, b []str) (ops []diff-op) {
             dp[(i + 1) * cols + j] < dp[i * cols + (j + 1)] -> {
                 op = diff-op {}
                 op.kind = 2
+                #{index-out = 0}
                 tmp-line = b[j]
                 op.line = tmp-line
 
@@ -135,6 +137,7 @@ diff-engine-lcs = (a []str, b []str) (ops []diff-op) {
         i < na -> {
             op = diff-op {}
             op.kind = 1
+            #{index-out = 0}
             tmp-line = a[i]
             op.line = tmp-line
 
@@ -148,6 +151,7 @@ diff-engine-lcs = (a []str, b []str) (ops []diff-op) {
         j < nb -> {
             op = diff-op {}
             op.kind = 2
+            #{index-out = 0}
             tmp-line = b[j]
             op.line = tmp-line
 
@@ -185,10 +189,12 @@ c'
         eprint('  c1[{i}]={b}')
     }
     i <- [0..n1): {
+        #{index-out = 0}
         s = lines1[i]
         eprint('  L1[{i}]={s}')
     }
     i <- [0..n2): {
+        #{index-out = 0}
         s = lines2[i]
         eprint('  L2[{i}]={s}')
     }
@@ -198,6 +204,7 @@ c'
     on = ops.len()
     eprint('ops.len={on}')
     i <- [0..on): {
+        #{index-out = 0}
         op = ops[i]
         k = op.kind
         eprint('  op[{i}] kind={k}')
