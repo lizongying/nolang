@@ -70,8 +70,19 @@ const windowsShimsConst = `
 ; --- Windows shims for POSIX builtins (target-gated, see builtin_win_shims.go)
 declare i32* @_errno()
 declare i32 @_isatty(i32)
-declare i32 @_truncate(i8*, i32)
 declare i64 @_get_osfhandle(i32)
+; truncate(2) is implemented over kernel32 (see nolang.win_truncate): the CRT
+; has no usable symbol for it. There is NO _truncate in the Windows CRT —
+; not in UCRT's io.h, not in mingw's unistd.h, and not in any of zig's bundled
+; import libraries (checked against libc/mingw/lib-common/*.def*) — so calling
+; it dies at lld-link with "undefined symbol: _truncate". mingw-w64 only
+; declares truncate/truncate64 as CRT extensions (libmingwex), and truncate
+; takes a 32-bit _off_t, which cannot express the i64 the builtin registry
+; passes.
+declare i64 @CreateFileA(i8*, i32, i32, i8*, i32, i32, i8*)
+declare i32 @SetFilePointerEx(i64, i64, i8*, i32)
+declare i32 @SetEndOfFile(i64)
+declare i32 @GetLastError()
 declare i64 @GetCurrentProcess()
 declare i32 @GetCurrentProcessId()
 declare i64 @OpenProcess(i32, i32, i32)
@@ -102,6 +113,24 @@ define internal void @nolang.win_seterrno(i32 %v) {
 entry:
   %e = call i32* @_errno()
   store i32 %v, i32* %e
+  ret void
+}
+
+; win_seterrno_win maps a Win32 GetLastError() code onto the nearest POSIX
+; errno. Only the three codes a path-based file operation realistically returns
+; are distinguished; everything else becomes EINVAL(22) rather than a made-up
+; value. Callers must read GetLastError BEFORE CloseHandle, which resets it.
+define internal void @nolang.win_seterrno_win(i32 %code) {
+entry:
+  %is2 = icmp eq i32 %code, 2  ; ERROR_FILE_NOT_FOUND
+  %is3 = icmp eq i32 %code, 3  ; ERROR_PATH_NOT_FOUND
+  %nofile = or i1 %is2, %is3
+  %is5 = icmp eq i32 %code, 5  ; ERROR_ACCESS_DENIED
+  %is32 = icmp eq i32 %code, 32 ; ERROR_SHARING_VIOLATION
+  %denied = or i1 %is5, %is32
+  %a = select i1 %nofile, i32 2, i32 22  ; ENOENT / EINVAL
+  %b = select i1 %denied, i32 13, i32 %a ; EACCES
+  call void @nolang.win_seterrno(i32 %b)
   ret void
 }
 
@@ -233,19 +262,56 @@ fail:
   ret i32 -1
 }
 
-; truncate(2): _truncate takes a 32-bit long on LLP64; larger lengths fail
-; with EFBIG(27) instead of silently wrapping.
+; truncate(2): CreateFileA + SetFilePointerEx + SetEndOfFile.
+;
+; Why not the CRT: the registry passes an i64 length, and neither _truncate
+; (does not exist anywhere in the Windows CRT — see the declares above) nor
+; mingw-w64's truncate (32-bit _off_t, a CRT extension not necessarily linked)
+; can serve. The kernel32 triple is exported by every Windows target and takes
+; a full 64-bit LARGE_INTEGER, so the old ">2GB fails with EFBIG" clamp is gone.
+;
+; ABI note: LARGE_INTEGER is an 8-byte POD, and both the Win64 and the Windows
+; ARM64 calling convention pass an 8-byte aggregate by value in a single
+; general-purpose register — i.e. exactly like an i64 — so declaring the second
+; parameter as i64 is correct on x86_64 and aarch64 alike.
+;
+; GENERIC_WRITE 0x40000000, share READ|WRITE|DELETE 7, OPEN_EXISTING 3,
+; FILE_ATTRIBUTE_NORMAL 0x80, FILE_BEGIN 0. Success is 0 (POSIX), -1 failure.
 define i32 @nolang.win_truncate(i8* %path, i64 %len) {
 entry:
-  %big = icmp sgt i64 %len, 2147483647
-  br i1 %big, label %toobig, label %doit
-toobig:
-  call void @nolang.win_seterrno(i32 27) ; EFBIG
+  %neg = icmp slt i64 %len, 0
+  br i1 %neg, label %einval, label %open
+einval:
+  call void @nolang.win_seterrno(i32 22) ; EINVAL
   ret i32 -1
-doit:
-  %l32 = trunc i64 %len to i32
-  %r = call i32 @_truncate(i8* %path, i32 %l32)
-  ret i32 %r
+open:
+  %h = call i64 @CreateFileA(i8* %path, i32 1073741824, i32 7, i8* null, i32 3, i32 128, i8* null)
+  %inv = icmp eq i64 %h, -1 ; INVALID_HANDLE_VALUE
+  br i1 %inv, label %openerr, label %seek
+openerr:
+  %le0 = call i32 @GetLastError()
+  call void @nolang.win_seterrno_win(i32 %le0)
+  ret i32 -1
+seek:
+  %sp = call i32 @SetFilePointerEx(i64 %h, i64 %len, i8* null, i32 0)
+  %spok = icmp ne i32 %sp, 0
+  br i1 %spok, label %end, label %seekerr
+seekerr:
+  %le1 = call i32 @GetLastError()
+  call i32 @CloseHandle(i64 %h)
+  call void @nolang.win_seterrno_win(i32 %le1)
+  ret i32 -1
+end:
+  %se = call i32 @SetEndOfFile(i64 %h)
+  %seok = icmp ne i32 %se, 0
+  %le2 = call i32 @GetLastError() ; must precede CloseHandle (it resets this)
+  call i32 @CloseHandle(i64 %h)
+  br i1 %seok, label %succ, label %enderr
+enderr:
+  call void @nolang.win_seterrno_win(i32 %le2)
+  ret i32 -1
+succ:
+  ret i32 0
 }
 
 ; setpriority(2): map nice values onto the nearest priority class. who != 0
